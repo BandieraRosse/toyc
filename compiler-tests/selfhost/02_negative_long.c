@@ -8,9 +8,7 @@
 //   C) 超 32-bit：mov rax, imm64 → 完整 64 位 ✅
 //
 // 已知限制：
-//   1. unsigned long 大小比较（> < >= <=）无符号/有符号区分 → 用 == / != 绕过
-//   2. 变参调用 ≤ 5 个变参（fmt + 5 variadic = 6 个参数以下）
-//   3. print_hex 用 while(n != 0) 而非 while(n > 0) 绕过 unsigned cmp bug
+//   1. 变参调用 ≤ 5 个变参（fmt + 5 variadic = 6 个参数以下）
 
 // ============================================================
 // syscall 包装（约束驱动，不依赖外部 .o）
@@ -51,7 +49,7 @@ static void print_dec(long n) {
 }
 
 static void print_hex(unsigned long n) {
-    /* 使用 n != 0 而非 n > 0，绕过 tcc 的 unsigned cmp 限制 */
+    /* unsigned cmp 已修复，while (n > 0) 能正确工作 */
     const char *hex = "0123456789abcdef";
     char buf[17]; int i = 0;
     if (n == 0) { sys_write(1, "0", 1); return; }
