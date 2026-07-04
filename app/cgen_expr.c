@@ -1278,6 +1278,10 @@ void cgen_expr(AstNode *node) {
                     node->right->ival <= 2147483647L)
                     { e1(0x48); e1(0x63); e1(0xC0); }  /* movsxd rax, eax */
                 e1(0x48); e1(0x89); e1(0x01);  /* mov [rcx], rax */
+            } else if (elem_size == 1) {
+                e1(0x88); e1(0x01);             /* mov [rcx], al */
+            } else if (elem_size == 2) {
+                e1(0x66); e1(0x89); e1(0x01);   /* mov [rcx], ax */
             } else {
                 e1(0x89); e1(0x01);             /* mov [rcx], eax */
             }
@@ -1292,12 +1296,32 @@ void cgen_expr(AstNode *node) {
             push_rax();
             cgen_expr(node->right);
             pop_rcx();                          /* rcx = 目标地址 */
-            /* cgen_expr 已更新 node->right->type_size，重新读取 */
-            int rhs_sz_deref = node->right ? node->right->type_size : 4;
+            /* 确定被指向类型的大小（同 TOK_STAR 加载逻辑） */
+            int deref_sz = 1;
+            if (node->left->expr && node->left->expr->kind == AST_VAR &&
+                node->left->expr->name) {
+                int vi;
+                for (vi = local_count - 1; vi >= 0; vi--) {
+                    if (strcmp(locals[vi].name, node->left->expr->name) == 0 &&
+                        locals[vi].scope_depth <= scope_depth) {
+                        if (locals[vi].element_size > 0)
+                            deref_sz = locals[vi].element_size;
+                        break;
+                    }
+                }
+            } else {
+                /* fallback: 用 RHS 类型推断 */
+                deref_sz = node->right ? node->right->type_size : 4;
+                if (deref_sz == 0) deref_sz = 4;
+            }
             if (rhs_float) {
                 e1(0xF2); e1(0x0F); e1(0x11); e1(0x01);  /* movsd [rcx], xmm0 */
-            } else if (rhs_sz_deref >= 8) {
+            } else if (deref_sz >= 8) {
                 e1(0x48); e1(0x89); e1(0x01);  /* mov [rcx], rax */
+            } else if (deref_sz == 1) {
+                e1(0x88); e1(0x01);             /* mov [rcx], al */
+            } else if (deref_sz == 2) {
+                e1(0x66); e1(0x89); e1(0x01);   /* mov [rcx], ax */
             } else {
                 e1(0x89); e1(0x01);             /* mov [rcx], eax */
             }
@@ -1361,13 +1385,18 @@ void cgen_expr(AstNode *node) {
                     s->sym_idx = -1;
                 }
                 if (si >= 0) {
-                    /* 使用变量的声明大小，而非仅 rhs_size */
+                    /* 使用变量的声明大小决定存储宽度 */
                     int var_size = syms[si].size;
-                    int size8 = (rhs_size == 8 ||
+                    int store_width = (rhs_size == 8 ||
                                  (node->right && node->right->type_size == 8) ||
-                                 var_size == 8);
-                    if (size8) {
+                                 var_size == 8) ? 8 : var_size;
+                    if (store_width == 0) store_width = 4;
+                    if (store_width >= 8) {
                         e1(0x48); e1(0x89); e1(0x05);  /* mov [rip+disp32], rax */
+                    } else if (store_width == 1) {
+                        e1(0x88); e1(0x05);             /* mov [rip+disp32], al */
+                    } else if (store_width == 2) {
+                        e1(0x66); e1(0x89); e1(0x05);   /* mov [rip+disp32], ax */
                     } else {
                         e1(0x89); e1(0x05);             /* mov [rip+disp32], eax */
                     }
@@ -1399,6 +1428,10 @@ void cgen_expr(AstNode *node) {
 
             if (rsize >= 8) {
                 e1(0x48); e1(0x89); e1(0x01);  /* mov [rcx], rax */
+            } else if (rsize == 1) {
+                e1(0x88); e1(0x01);             /* mov [rcx], al */
+            } else if (rsize == 2) {
+                e1(0x66); e1(0x89); e1(0x01);   /* mov [rcx], ax */
             } else {
                 e1(0x89); e1(0x01);             /* mov [rcx], eax */
             }

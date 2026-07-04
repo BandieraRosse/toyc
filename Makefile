@@ -160,9 +160,9 @@ test: $(BUILD)/tcc $(BUILD)/tcc_rt.o $(BUILD)/tcc_rt_start.o
 		[ -z "$$expect" ] && expect=0; \
 		$(BUILD)/tcc "$$f" -o /tmp/$$name.o 2>/dev/null || { printf "  $(RED)FAIL$(RESET) %s (compile)\n" "$$name"; fail=$$((fail+1)); continue; }; \
 		$(LD) $(LDTESTFLAGS) /tmp/$$name.o $(BUILD)/tcc_rt.o $(BUILD)/tcc_rt_start.o -o /tmp/$$name 2>/dev/null || { printf "  $(RED)FAIL$(RESET) %s (link)\n" "$$name"; fail=$$((fail+1)); continue; }; \
-		/tmp/$$name >/dev/null 2>&1; got=$$?; \
+		/tmp/$$name >tmp/$$name.log 2>&1; got=$$?; \
 		if [ "$$got" = "$$expect" ]; then printf "  $(GREEN)ok$(RESET)   %s (%d)\n" "$$name" "$$got"; ok=$$((ok+1)); \
-		else printf "  $(RED)FAIL$(RESET) %s (want %d got %d)\n" "$$name" "$$expect" "$$got"; fail=$$((fail+1)); fi; \
+		else printf "  $(RED)FAIL$(RESET) %s (want %d got %d) — log: tmp/$$name.log\n" "$$name" "$$expect" "$$got"; fail=$$((fail+1)); fi; \
 	done; \
 	printf "\n$(BLUE)=== $(GREEN)%d passed$(RESET), $(RED)%d failed$(RESET), %d total ===$(RESET)\n" "$$ok" "$$fail" "$$total"; \
 	[ "$$fail" -eq 0 ]
@@ -191,9 +191,9 @@ test-selfhost: $(BUILD)/tcc
 		[ -z "$$expect" ] && expect=0; \
 		$(BUILD)/tcc "$$f" -o /tmp/$$name.o 2>/dev/null || { printf "  $(RED)FAIL$(RESET) %s (compile)\n" "$$name"; fail=$$((fail+1)); continue; }; \
 		$(LD) $(LDTESTFLAGS) /tmp/$$name.o -o /tmp/$$name 2>/dev/null || { printf "  $(RED)FAIL$(RESET) %s (link)\n" "$$name"; fail=$$((fail+1)); continue; }; \
-		/tmp/$$name >/dev/null 2>&1; got=$$?; \
+		/tmp/$$name >tmp/$$name.log 2>&1; got=$$?; \
 		if [ "$$got" = "$$expect" ]; then printf "  $(GREEN)ok$(RESET)   %s (%d)\n" "$$name" "$$got"; ok=$$((ok+1)); \
-		else printf "  $(RED)FAIL$(RESET) %s (want %d got %d)\n" "$$name" "$$expect" "$$got"; fail=$$((fail+1)); fi; \
+		else printf "  $(RED)FAIL$(RESET) %s (want %d got %d) — log: tmp/$$name.log\n" "$$name" "$$expect" "$$got"; fail=$$((fail+1)); fi; \
 	done; \
 	printf "\n$(BLUE)=== $(GREEN)%d passed$(RESET), $(RED)%d failed$(RESET), %d total ===$(RESET)\n" "$$ok" "$$fail" "$$total"; \
 	[ "$$fail" -eq 0 ]

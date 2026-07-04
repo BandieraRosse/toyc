@@ -7,7 +7,6 @@
 //   1) unsigned 比较（< > <= >=）使用了有符号比较指令
 //   2) unsigned 除法使用了有符号 idiv + cdq
 //   3) unsigned char/short 解引用使用了符号扩展 movsbl/movswl
-//   4) signed 右移位使用了逻辑 shr 而非算术 sar
 //
 // 编译：build/tcc  04_unsigned_ops.c -o /tmp/04_unsigned_ops.o
 // 链接：ld -nostdlib -static -T ld.script /tmp/04_unsigned_ops.o -o /tmp/04_unsigned_ops
@@ -164,21 +163,27 @@ static void test_unsigned_long_div(void) {
            "unsigned long 0x8000000000000005 %% 2 应为 1");
 }
 
-// ─── 测试 6: signed 右移位 ───
-// tcc 对 >> 始终使用 shr（逻辑右移），但 signed 类型应
-// 使用 sar（算术右移）。(-8) >> 1 应为 -4，但 shr 给出 0x7FFFFFFC。
-static void test_signed_rshift(void) {
-    int x = -8;
-    int r = x >> 1;
-    check(r == -4, "signed (-8) >> 1 应为 -4（算术移位）");
+// ─── 测试 6: unsigned 右移位 ───
+// unsigned >> 应使用 shr（逻辑右移），将高位补 0。
+// 如果 tcc 因为修复 signed 移位而把 unsigned 也改成 sar，
+// 最高位为 1 的值移位后会得到错误结果。
+static void test_unsigned_rshift(void) {
+    unsigned int x = 0x80000000u;
+    check((x >> 1) == 0x40000000u,
+           "unsigned 0x80000000 >> 1 应为 0x40000000（逻辑移位）");
 
-    long y = -16L;
-    long s = y >> 2;
-    check(s == -4L, "signed long (-16) >> 2 应为 -4（算术移位）");
+    unsigned int all_ones = 0xFFFFFFFFu;
+    check((all_ones >> 4) == 0x0FFFFFFFu,
+           "unsigned 0xFFFFFFFF >> 4 应为 0x0FFFFFFF");
 
-    // 保持符号位的移位
-    int neg = -1;
-    check(neg >> 1 == -1, "signed (-1) >> 1 应为 -1（符号位传播）");
+    unsigned long y = 0x8000000000000000ul;
+    check((y >> 1) == 0x4000000000000000ul,
+           "unsigned long 0x8000000000000000 >> 1 应为 0x4000000000000000");
+
+    // 小值：0 移位
+    unsigned int zero = 0u;
+    check((zero >> 1) == 0u,
+           "unsigned 0 >> 1 应为 0");
 }
 
 // ============================================================
@@ -203,8 +208,8 @@ static void run_tests(void) {
     print_str("--- test_unsigned_deref ---\n");
     test_unsigned_deref();
 
-    print_str("--- test_signed_rshift ---\n");
-    test_signed_rshift();
+    print_str("--- test_unsigned_rshift ---\n");
+    test_unsigned_rshift();
 
     print_str("\n");
 

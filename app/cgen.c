@@ -332,8 +332,11 @@ static void cgen_return(AstNode *stmt) {
 }
 
 static void cgen_if(AstNode *stmt) {
-    /* cond 求值 → eax，cmp eax,0 → je else_label */
+    /* cond 求值 → eax，test eax, eax → je else_label */
     cgen_expr(stmt->cond);
+    /* 注意：条件表达式总是生成 int 结果（0 或 1），位于 eax 中。
+     * 裸变量作为条件（如 while(ptr)）走的是 while 循环路径，
+     * if 的条件始终是比较/逻辑表达式结果，用 32 位 test 即可。 */
     emit1(0x85); emit1(0xC0);  /* test eax, eax */
 
     int else_label = new_label();
@@ -368,7 +371,11 @@ static void cgen_while(AstNode *stmt) {
     set_label(start_label);
 
     cgen_expr(stmt->loop_cond);
-    emit1(0x85); emit1(0xC0);  /* test eax, eax */
+    if (stmt->loop_cond && stmt->loop_cond->type_size == 8) {
+        emit1(0x48); emit1(0x85); emit1(0xC0);  /* test rax, rax */
+    } else {
+        emit1(0x85); emit1(0xC0);  /* test eax, eax */
+    }
     emit_jcc(0x84, end_label);  /* je end_label */
 
     cgen_stmt(stmt->loop_body);
@@ -556,7 +563,11 @@ static void cgen_stmt(AstNode *stmt) {
         /* 条件为真（非零）时继续循环 */
         if (stmt->loop_cond) {
             cgen_expr(stmt->loop_cond);
-            emit1(0x85); emit1(0xC0);  /* test eax, eax */
+            if (stmt->loop_cond->type_size == 8) {
+                emit1(0x48); emit1(0x85); emit1(0xC0);  /* test rax, rax */
+            } else {
+                emit1(0x85); emit1(0xC0);  /* test eax, eax */
+            }
             emit_jcc(0x85, start_label);  /* jne start_label */
         }
         set_label(end_label);
