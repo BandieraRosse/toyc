@@ -175,3 +175,25 @@ test: $(BUILD)/tcc $(BUILD)/tcc_rt.o $(BUILD)/tcc_rt_start.o
 
 %:
 	@:
+
+# ─── 自举测试（selfhost）：tcc 独自编译，不依赖 tcc_rt.o / tcc_rt_start.o ──
+
+SELFTESTDIR := compiler-tests/selfhost
+
+test-selfhost: $(BUILD)/tcc
+	@ok=0; fail=0; total=0; \
+	printf "$(BLUE)=== selfhost tests (no runtime deps) ===$(RESET)\n\n"; \
+	for f in $(SELFTESTDIR)/*.c; do \
+		[ -f "$$f" ] || continue; \
+		total=$$((total+1)); \
+		name=$$(basename "$$f" .c); \
+		expect=$$(sed -n 's/.*EXPECT: *\([0-9]*\).*/\1/p' "$$f" | head -1); \
+		[ -z "$$expect" ] && expect=0; \
+		$(BUILD)/tcc "$$f" -o /tmp/$$name.o 2>/dev/null || { printf "  $(RED)FAIL$(RESET) %s (compile)\n" "$$name"; fail=$$((fail+1)); continue; }; \
+		$(LD) $(LDTESTFLAGS) /tmp/$$name.o -o /tmp/$$name 2>/dev/null || { printf "  $(RED)FAIL$(RESET) %s (link)\n" "$$name"; fail=$$((fail+1)); continue; }; \
+		/tmp/$$name >/dev/null 2>&1; got=$$?; \
+		if [ "$$got" = "$$expect" ]; then printf "  $(GREEN)ok$(RESET)   %s (%d)\n" "$$name" "$$got"; ok=$$((ok+1)); \
+		else printf "  $(RED)FAIL$(RESET) %s (want %d got %d)\n" "$$name" "$$expect" "$$got"; fail=$$((fail+1)); fi; \
+	done; \
+	printf "\n$(BLUE)=== $(GREEN)%d passed$(RESET), $(RED)%d failed$(RESET), %d total ===$(RESET)\n" "$$ok" "$$fail" "$$total"; \
+	[ "$$fail" -eq 0 ]

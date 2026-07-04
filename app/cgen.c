@@ -558,7 +558,7 @@ static void cgen_stmt(AstNode *stmt) {
     case AST_NULL_STMT:
         break;
     case AST_ASM:
-        if (stmt->asm_template)
+        if (stmt->asm_.asm_template)
             cgen_asm(stmt);
         break;
     case AST_SWITCH:
@@ -829,10 +829,12 @@ void cgen_program(AstNode *prog) {
     }
     elf_bss_size = bss_offset;
 
-    /* Phase 2: 生成函数代码 */
+    /* Phase 2: 生成函数代码 + 顶层 asm */
     for (AstNode *node = prog->body; node; node = node->next) {
         if (node->kind == AST_FUNC_DEF)
             cgen_func_def(node);
+        else if (node->kind == AST_ASM)
+            cgen_asm(node);
     }
 
     /* 在全部函数代码之后追加字符串池 */

@@ -165,6 +165,13 @@ typedef enum {
     AST_LABEL,         /* label: 定义 */
 } AstKind;
 
+/* ─── 内联汇编操作数 ─── */
+
+typedef struct {
+    const char *constraint;  /* 约束字符串，如 "a", "D", "=a" 等 */
+    struct AstNode *expr;    /* 约束对应的表达式 AST */
+} AsmOperand;
+
 /* ─── AST 节点 ─── */
 
 typedef struct AstNode {
@@ -196,8 +203,19 @@ typedef struct AstNode {
     const char *member_name;
     /* AST_STRING: str_val = 解码后的字符串内容 */
     const char *str_val;
-    /* AST_ASM: asm_template = 汇编模板字符串 */
-    const char *asm_template;
+    /* AST_ASM: 内联汇编的完整信息 */
+    struct {
+        const char *asm_template;   /* 汇编模板字符串 */
+        int is_volatile;            /* __volatile__ 标记 */
+        AsmOperand *outputs;        /* 输出操作数数组 */
+        int output_count;
+        AsmOperand *inputs;         /* 输入操作数数组 */
+        int input_count;
+        const char **clobbers;           /* 破坏列表（字符串数组） */
+        int clobber_count;
+    } asm_;
+
+    /* 注意：asm_ 是匿名子结构体，通过 node->asm_.inputs 等方式访问 */
     /* AST_FUNC_DEF: params = 参数声明链表 */
     struct AstNode *params;
     /* AST_UNARY / AST_BINOP 操作符标记 */

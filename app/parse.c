@@ -1895,41 +1895,113 @@ static AstNode *parse_statement(Parser *p) {
         return NULL;
     case TOK__ASM__: {
         
+        /* __asm__ [volatile] ("template" [: outputs [: inputs [: clobbers ]]]) */
+
+        int asm_volatile = 0;
         consume(p);
-        if (peek(p).kind == TOK_VOLATILE) consume(p);
+        if (peek(p).kind == TOK_VOLATILE) { consume(p); asm_volatile = 1; }
         expect(p, TOK_LPAREN);
         AstNode *n = new_ast(p, AST_ASM);
-        n->asm_template = NULL;
+        n->asm_.asm_template = NULL;
+        n->asm_.is_volatile = asm_volatile;
+        n->asm_.outputs = NULL; n->asm_.output_count = 0;
+        n->asm_.inputs  = NULL; n->asm_.input_count  = 0;
+        n->asm_.clobbers = NULL; n->asm_.clobber_count = 0;
+
+        /* 模板字符串 */
         if (peek(p).kind == TOK_STRING) {
             Token s = consume(p);
-            /* 复制模板字符串（去掉引号） */
             int slen = s.len - 2;
             if (slen > 0) {
                 char *buf = arena_alloc(p->arena, slen + 1);
                 int ci;
                 for (ci = 0; ci < slen; ci++) buf[ci] = s.start[ci + 1];
                 buf[slen] = '\0';
-                n->asm_template = buf;
+                n->asm_.asm_template = buf;
             }
         }
-        /* 跳过 :输出 :输入 :破坏列表 */
-        while (peek(p).kind != TOK_RPAREN && peek(p).kind != TOK_EOF) {
-            if (peek(p).kind == TOK_COLON) { consume(p); continue; }
-            if (peek(p).kind == TOK_STRING) { consume(p); continue; }
-            if (peek(p).kind == TOK_LPAREN) {
-                int depth = 1;
-                consume(p);
-                while (depth > 0 && peek(p).kind != TOK_EOF) {
-                    if (peek(p).kind == TOK_LPAREN) depth++;
-                    if (peek(p).kind == TOK_RPAREN) depth--;
-                    if (depth) consume(p);
-                }
-                if (depth == 0) consume(p);
-                continue;
-            }
-            /* 跳过标识符和数字 */
+
+        #define MAX_ASM_OPS 16
+
+        /* ── :输出 ── */
+        if (peek(p).kind == TOK_COLON) {
             consume(p);
+            AsmOperand ops[MAX_ASM_OPS];
+            int cnt = 0;
+            while (peek(p).kind != TOK_COLON && peek(p).kind != TOK_RPAREN && peek(p).kind != TOK_EOF) {
+                if (cnt >= MAX_ASM_OPS) { error_at(p, "too many asm operands"); break; }
+                if (peek(p).kind == TOK_LBRACKET) { consume(p); consume(p); expect(p, TOK_RBRACKET); }
+                if (peek(p).kind != TOK_STRING) { error_at(p, "expected constraint string"); break; }
+                Token cstr = consume(p);
+                int clen = cstr.len - 2;
+                char *cbuf = arena_alloc(p->arena, clen + 1);
+                int ci; for (ci = 0; ci < clen; ci++) cbuf[ci] = cstr.start[ci + 1];
+                cbuf[clen] = '\0';
+                ops[cnt].constraint = cbuf;
+                expect(p, TOK_LPAREN);
+                ops[cnt].expr = parse_expr_comma(p);
+                expect(p, TOK_RPAREN);
+                cnt++;
+                if (peek(p).kind == TOK_COMMA) consume(p);
+            }
+            if (cnt > 0) {
+                n->asm_.outputs = arena_alloc(p->arena, sizeof(AsmOperand) * cnt);
+                int i; for (i = 0; i < cnt; i++) n->asm_.outputs[i] = ops[i];
+                n->asm_.output_count = cnt;
+            }
         }
+
+        /* ── :输入 ── */
+        if (peek(p).kind == TOK_COLON) {
+            consume(p);
+            AsmOperand ops[MAX_ASM_OPS];
+            int cnt = 0;
+            while (peek(p).kind != TOK_COLON && peek(p).kind != TOK_RPAREN && peek(p).kind != TOK_EOF) {
+                if (cnt >= MAX_ASM_OPS) { error_at(p, "too many asm operands"); break; }
+                if (peek(p).kind == TOK_LBRACKET) { consume(p); consume(p); expect(p, TOK_RBRACKET); }
+                if (peek(p).kind != TOK_STRING) { error_at(p, "expected constraint string"); break; }
+                Token cstr = consume(p);
+                int clen = cstr.len - 2;
+                char *cbuf = arena_alloc(p->arena, clen + 1);
+                int ci; for (ci = 0; ci < clen; ci++) cbuf[ci] = cstr.start[ci + 1];
+                cbuf[clen] = '\0';
+                ops[cnt].constraint = cbuf;
+                expect(p, TOK_LPAREN);
+                ops[cnt].expr = parse_expr_comma(p);
+                expect(p, TOK_RPAREN);
+                cnt++;
+                if (peek(p).kind == TOK_COMMA) consume(p);
+            }
+            if (cnt > 0) {
+                n->asm_.inputs = arena_alloc(p->arena, sizeof(AsmOperand) * cnt);
+                int i; for (i = 0; i < cnt; i++) n->asm_.inputs[i] = ops[i];
+                n->asm_.input_count = cnt;
+            }
+        }
+
+        /* ── :破坏列表 ── */
+        if (peek(p).kind == TOK_COLON) {
+            consume(p);
+            const char *clist[MAX_ASM_OPS];
+            int cnt = 0;
+            while (peek(p).kind != TOK_RPAREN && peek(p).kind != TOK_EOF) {
+                if (cnt >= MAX_ASM_OPS) { error_at(p, "too many clobbers"); break; }
+                if (peek(p).kind != TOK_STRING) break;
+                Token ct = consume(p);
+                int clen = ct.len - 2;
+                char *cbuf = arena_alloc(p->arena, clen + 1);
+                int ci; for (ci = 0; ci < clen; ci++) cbuf[ci] = ct.start[ci + 1];
+                cbuf[clen] = '\0';
+                clist[cnt++] = cbuf;
+                if (peek(p).kind == TOK_COMMA) consume(p);
+            }
+            if (cnt > 0) {
+                n->asm_.clobbers = arena_alloc(p->arena, sizeof(char *) * cnt);
+                int i; for (i = 0; i < cnt; i++) n->asm_.clobbers[i] = clist[i];
+                n->asm_.clobber_count = cnt;
+            }
+        }
+
         expect(p, TOK_RPAREN);
         expect(p, TOK_SEMI);
         return n;
