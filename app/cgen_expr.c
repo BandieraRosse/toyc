@@ -492,10 +492,35 @@ void cgen_expr(AstNode *node) {
                         node->type_size = 8;  /* 数组→指针衰减 */
                     } else if (locals[i].size == 8)
                         load_rax_from_rbp(locals[i].offset);
-                    else if (locals[i].size == 1)
-                        if (disp8_fits(locals[i].offset)) { e1(0x0F); e1(0xB6); e1(0x45); e1(locals[i].offset & 0xFF); } else { e1(0x0F); e1(0xB6); e1(0x85); e4(locals[i].offset); }  /* movzbl */
-                    else if (locals[i].size == 2)
-                        if (disp8_fits(locals[i].offset)) { e1(0x0F); e1(0xB7); e1(0x45); e1(locals[i].offset & 0xFF); } else { e1(0x0F); e1(0xB7); e1(0x85); e4(locals[i].offset); }  /* movzwl */
+                    else if (locals[i].size == 1) {
+                        if (locals[i].is_unsigned) {
+                            /* movzbl — zero-extend byte load */
+                            if (disp8_fits(locals[i].offset))
+                                { e1(0x0F); e1(0xB6); e1(0x45); e1(locals[i].offset & 0xFF); }
+                            else
+                                { e1(0x0F); e1(0xB6); e1(0x85); e4(locals[i].offset); }
+                        } else {
+                            /* movsbl — sign-extend byte load */
+                            if (disp8_fits(locals[i].offset))
+                                { e1(0x0F); e1(0xBE); e1(0x45); e1(locals[i].offset & 0xFF); }
+                            else
+                                { e1(0x0F); e1(0xBE); e1(0x85); e4(locals[i].offset); }
+                        }
+                    } else if (locals[i].size == 2) {
+                        if (locals[i].is_unsigned) {
+                            /* movzwl — zero-extend word load */
+                            if (disp8_fits(locals[i].offset))
+                                { e1(0x0F); e1(0xB7); e1(0x45); e1(locals[i].offset & 0xFF); }
+                            else
+                                { e1(0x0F); e1(0xB7); e1(0x85); e4(locals[i].offset); }
+                        } else {
+                            /* movswl — sign-extend word load */
+                            if (disp8_fits(locals[i].offset))
+                                { e1(0x0F); e1(0xBF); e1(0x45); e1(locals[i].offset & 0xFF); }
+                            else
+                                { e1(0x0F); e1(0xBF); e1(0x85); e4(locals[i].offset); }
+                        }
+                    }
                     else
                         load_eax_from_rbp(locals[i].offset);
                 }
@@ -1359,10 +1384,24 @@ void cgen_expr(AstNode *node) {
                             if (do_sext)
                                 { e1(0x48); e1(0x63); e1(0xC0); }  /* movsxd rax, eax */
                         }
-                        if (locals[i].size == 8)
+                        if (locals[i].size == 8) {
                             store_rax_to_rbp(locals[i].offset);
-                        else
+                        } else if (locals[i].size == 1) {
+                            /* char: mov [rbp+off], al */
+                            if (disp8_fits(locals[i].offset))
+                                { e1(0x88); e1(0x45); e1(locals[i].offset & 0xFF); }
+                            else
+                                { e1(0x88); e1(0x85); e4(locals[i].offset); }
+                        } else if (locals[i].size == 2) {
+                            /* short: mov [rbp+off], ax */
+                            e1(0x66);
+                            if (disp8_fits(locals[i].offset))
+                                { e1(0x89); e1(0x45); e1(locals[i].offset & 0xFF); }
+                            else
+                                { e1(0x89); e1(0x85); e4(locals[i].offset); }
+                        } else {
                             store_eax_to_rbp(locals[i].offset);
+                        }
                     }
                     break;
                 }
