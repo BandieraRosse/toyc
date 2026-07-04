@@ -442,7 +442,11 @@ static void cgen_for(AstNode *stmt) {
     /* condition */
     if (stmt->loop_cond) {
         cgen_expr(stmt->loop_cond);
-        emit1(0x85); emit1(0xC0);
+        if (stmt->loop_cond->type_size == 8) {
+            emit1(0x48); emit1(0x85); emit1(0xC0);  /* test rax, rax */
+        } else {
+            emit1(0x85); emit1(0xC0);  /* test eax, eax */
+        }
         emit_jcc(0x84, end_label);
     }
 

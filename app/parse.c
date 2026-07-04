@@ -312,6 +312,14 @@ static AstNode *parse_primary(Parser *p) {
         n->ival = t.ival;
         n->is_float = t.is_float;
         if (t.is_float) n->dval = t.dval;
+        /* 设置 type_size：值在 32 位有符号范围内才用 4 字节，否则 8 字节 */
+        if (t.ival >= -2147483648L && t.ival <= 2147483647L)
+            n->type_size = 4;
+        else
+            n->type_size = 8;
+        /* 大正数（> 2^31-1）隐含 unsigned 语义 */
+        if (t.ival > 2147483647L)
+            n->is_unsigned = 1;
         return n;
     }
 
@@ -326,6 +334,12 @@ static AstNode *parse_primary(Parser *p) {
             if (find_enum_val_ex(arena_strdup(p->arena, t.start, t.len), &eval)) {
                 AstNode *n = new_ast(p, AST_CONSTANT);
                 n->ival = eval;
+                if (eval >= -2147483648L && eval <= 2147483647L)
+                    n->type_size = 4;
+                else
+                    n->type_size = 8;
+                if (eval > 2147483647L)
+                    n->is_unsigned = 1;
                 return n;
             }
         }
