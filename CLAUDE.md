@@ -31,9 +31,10 @@
 ## 构建
 
 ```sh
-make          # 构建 tcc、tpp、tas → build/
-make test     # 运行测试
-make test 03  # 运行指定编号测试
+make               # 构建 tcc、tpp、tas → build/
+make test          # 运行常规测试
+make test 03       # 运行指定编号测试
+make test-selfhost # 自举测试（tcc 独自编译，不依赖运行时对象）
 make clean
 ```
 

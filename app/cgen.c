@@ -402,6 +402,19 @@ static void cgen_for(AstNode *stmt) {
                             emit1(0xF2); emit1(0x0F); emit1(0x11);
                             emit1(0x45); emit1(locals[i].offset & 0xFF);
                         } else if (locals[i].size == 8) {
+                            /* int→long：来源于 4 字节表达式时需符号扩展 */
+                            if (stmt->loop_init->expr && !stmt->loop_init->expr->is_float && stmt->loop_init->expr->type_size < 8) {
+                                int do_sext = 0;
+                                if (stmt->loop_init->expr->kind == AST_VAR) {
+                                    do_sext = 1;
+                                } else if (stmt->loop_init->expr->kind == AST_CONSTANT &&
+                                           stmt->loop_init->expr->ival >= -2147483648L &&
+                                           stmt->loop_init->expr->ival <= 2147483647L) {
+                                    do_sext = 1;
+                                }
+                                if (do_sext)
+                                    { e1(0x48); e1(0x63); e1(0xC0); }
+                            }
                             store_rax_to_rbp(locals[i].offset);
                         } else {
                             store_eax_to_rbp(locals[i].offset);
@@ -606,6 +619,19 @@ static void cgen_stmt(AstNode *stmt) {
                             emit1(0xF2); emit1(0x0F); emit1(0x11);
                             emit1(0x45); emit1(locals[i].offset & 0xFF);
                         } else if (locals[i].size == 8) {
+                            /* int → long：仅对简单 4 字节源符号扩展 */
+                            if (stmt->expr && !stmt->expr->is_float && stmt->expr->type_size < 8) {
+                                int do_sext = 0;
+                                if (stmt->expr->kind == AST_VAR) {
+                                    do_sext = 1;  /* int 变量 → long */
+                                } else if (stmt->expr->kind == AST_CONSTANT &&
+                                           stmt->expr->ival >= -2147483648L &&
+                                           stmt->expr->ival <= 2147483647L) {
+                                    do_sext = 1;  /* 32 位常量 → long */
+                                }
+                                if (do_sext)
+                                    { e1(0x48); e1(0x63); e1(0xC0); }  /* movsxd rax, eax */
+                            }
                             store_rax_to_rbp(locals[i].offset);
                         } else {
                             store_eax_to_rbp(locals[i].offset);

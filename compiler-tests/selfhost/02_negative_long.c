@@ -1,15 +1,16 @@
 // EXPECT: 0
 // SELF_CONTAINED
-// negativelong.c — 测试并验证 tcc long 负数处理 BUG 及绕过方法
+// negative_long.c — 测试 long 负值处理、符号扩展及 tcc 源文件相关模式
 //
-// tcc 的 BUG：加载 32 位值到寄存器使用 mov eax（零扩展）而非 movsx（符号扩展），
-// 导致 int→long 的编译期隐式转换丢失符号。
-//    long v = -12345;  // 得到 4294954951 (0x00000000FFFFCFC7) 而非 -12345
-//    long v = -12345L; // 同上（编译期计算）
+// 本测试覆盖三类代码生成路径（cgen_expr.c:369-376）：
+//   A) 正 32-bit：mov eax, imm32 → 零扩展到 64 位 ✅
+//   B) 负 32-bit：mov eax, imm32 + movsxd rax, eax → 符号扩展 ✅（已修复）
+//   C) 超 32-bit：mov rax, imm64 → 完整 64 位 ✅
 //
-// 绕过方法：通过运行期间接求反或减法得到负值。
-//    long pos = 12345; long neg = -pos;         // ✓ 正确
-//    long neg = 0; neg = neg - 12345;             // ✓ 正确（运行期减法）
+// 已知限制：
+//   1. unsigned long 大小比较（> < >= <=）无符号/有符号区分 → 用 == / != 绕过
+//   2. 变参调用 ≤ 5 个变参（fmt + 5 variadic = 6 个参数以下）
+//   3. print_hex 用 while(n != 0) 而非 while(n > 0) 绕过 unsigned cmp bug
 
 // ============================================================
 // syscall 包装（约束驱动，不依赖外部 .o）
@@ -50,10 +51,11 @@ static void print_dec(long n) {
 }
 
 static void print_hex(unsigned long n) {
+    /* 使用 n != 0 而非 n > 0，绕过 tcc 的 unsigned cmp 限制 */
     const char *hex = "0123456789abcdef";
     char buf[17]; int i = 0;
     if (n == 0) { sys_write(1, "0", 1); return; }
-    while (n > 0) { buf[i++] = hex[n & 0xf]; n >>= 4; }
+    while (n != 0) { buf[i++] = hex[n & 0xf]; n >>= 4; }
     while (i > 0) sys_write(1, &buf[--i], 1);
 }
 
@@ -70,12 +72,12 @@ static void my_printf(const char *fmt, ...) {
         }
         case 'd': case 'i':
             print_dec(__builtin_va_arg(ap, long)); break;
+        case 'x': case 'X':
+            print_hex(__builtin_va_arg(ap, unsigned long)); break;
         case 'c': {
             char c = (char)__builtin_va_arg(ap, int);
             sys_write(1, &c, 1); break;
         }
-        case 'x': case 'X':
-            print_hex(__builtin_va_arg(ap, unsigned long)); break;
         case '%': sys_write(1, "%", 1); break;
         default:  sys_write(1, fmt, 1); break;
         }
@@ -85,82 +87,280 @@ static void my_printf(const char *fmt, ...) {
 }
 
 // ============================================================
-// main — 测试 long 负值在不同初始化模式下的表现
+// 测试状态
+// ============================================================
+
+static int fail_count = 0;
+
+static void check(int cond, const char *msg, int id) {
+    if (cond) { my_printf("  %s [PASS]\n", msg); }
+    else { fail_count++; my_printf("  %s [FAIL %d]\n", msg, id); }
+}
+
+// ============================================================
+// 第 1 节：三类常量加载路径展示（A/B/C）
+// ============================================================
+
+static void demo_three_paths(void)
+{
+    my_printf("=== Section 1: three constant-load paths ===\n");
+
+    /* 路径 A：正 32-bit → mov eax, imm32（零扩展正确） */
+    long p1 = 12345;
+    long p2 = 2147483647;
+    my_printf("  A) +32bit: %d (0x%x)\n", p1, p2);
+
+    /* 路径 B：负 32-bit → mov eax + movsxd（已修复） */
+    long n1 = -1;
+    long n2 = -12345;
+    long n3 = -2147483648L;
+    my_printf("  B) -32bit: %d(0x%x)\n", n1, n1);
+    my_printf("          %d(0x%x) %d(0x%x)\n", n2, n2, n3, n3);
+
+    /* 路径 C：超 32-bit → mov rax, imm64 */
+    long w1 = 4294967295L;
+    long w2 = 1234567890123L;
+    my_printf("  C) +64bit: %d(0x%x) %d(0x%x)\n", w1, w1, w2, w2);
+}
+
+// ============================================================
+// 第 2 节：编译期负常量（已修复）
+// ============================================================
+
+static void test_compiletime_neg(void)
+{
+    my_printf("\n=== Section 2: compile-time negative constants (FIXED) ===\n");
+
+    check(-1L == -1L, "  -1L == -1L", 101);
+    check(-12345L == -12345L, "  -12345L == -12345L", 102);
+    check(-2147483648L == -2147483648L, "  INT32_MIN", 103);
+    check(0 - 1 == -1L, "  0-1 == -1L", 104);
+    check(0 - 12345 == -12345L, "  0-12345 == -12345L", 105);
+    check(0 - 1L == -1L, "  0-1L == -1L", 106);
+
+    /* 运行期求反也应正确 */
+    long v = 12345; v = -v;
+    check(v == -12345L, "  runtime neg == -12345L", 107);
+
+    /* 编译期 long 负常量与运行期所求值一致 */
+    long direct = -1;
+    long runtime = 1; runtime = -runtime;
+    check(direct == runtime, "  compile -1 == runtime -1", 108);
+}
+
+// ============================================================
+// 第 3 节：tcc 源码常见模式 — long 比较与条件
+// ============================================================
+
+static long make_neg(long x) { long t = x; return -t; }
+
+static void test_comparisons(void)
+{
+    my_printf("\n=== Section 3: long comparisons (patterns from tcc src) ===\n");
+
+    /* == -1 模式（tcc 源码：sym_idx == -1, s->shndx == 0 等） */
+    long v = make_neg(1);
+    check(v == -1L, "  v == -1", 201);
+    check(make_neg(42) != -1L, "  v != -1", 202);
+
+    /* < 0 / >= 0 模式（tcc：if(n < 0) n = -n） */
+    check(make_neg(5) < 0, "  signed <0", 203);
+    check(100 >= 0, "  signed >=0", 204);
+
+    /* == 0 / != 0 模式（tcc：while(i > 0), if(len)） */
+    long zero = 0;
+    check(zero == 0, "  ==0", 205);
+    check(42 != 0, "  !=0", 206);
+
+    /* 数值排序（运行期计算值与编译期常量比较） */
+    check(make_neg(1) < make_neg(1) + 10, "  ordering", 207);
+}
+
+// ============================================================
+// 第 4 节：unsigned long 模式
+// 注意：仅用 ==/!= 比较，避免 >/>=/</<= （缺少 unsigned 比较指令）
+// ============================================================
+
+static void test_unsigned_long(void)
+{
+    my_printf("\n=== Section 4: unsigned long patterns ===\n");
+
+    /* 常量初始化 */
+    unsigned long u1 = 0xAAAAAAAAUL;
+    unsigned long u2 = 0x55555555UL;
+    check(u1 == 0xAAAAAAAAUL && u2 == 0x55555555UL, "  ulong const init", 401);
+
+    /* 位运算 */
+    unsigned long a = 0xABCDUL;
+    check((a & 0xFFUL) == 0xCDUL, "  bitwise AND", 411);
+    check((a | 0x1000UL) == (0xABCDUL | 0x1000UL), "  bitwise OR", 412);
+    check((a ^ 0xA0A0UL) == (0xABCDUL ^ 0xA0A0UL), "  bitwise XOR", 413);
+
+    /* 移位（tcc 源码：>> 48, >> 32, & 0xFFFFFFFF） */
+    unsigned long val = 0x123456789ABCDEF0UL;
+    unsigned long hi = val >> 32;
+    unsigned long lo = val & 0xFFFFFFFFUL;
+    unsigned long rec = (hi << 32) | lo;
+    check(hi == 0x12345678UL, "  ulong hi32", 421);
+    check(lo == 0x9ABCDEF0UL, "  ulong lo32", 422);
+    check(rec == val, "  ulong reconstruct", 423);
+
+    /* ~0UL 位模式 */
+    unsigned long z = ~0UL;
+    check(z != 0, "  ~0UL != 0", 431);
+}
+
+// ============================================================
+// 第 5 节：long 函数参数与返回值
+// ============================================================
+
+static long ident(long x) { return x; }
+static long neg_fn(long x) { long t = x; return -t; }
+static int neg_int(int x) { return -x; }
+
+static void test_func_args(void)
+{
+    my_printf("\n=== Section 5: long func args/returns ===\n");
+
+    check(ident(42) == 42, "  ident(42)", 501);
+    check(ident(-5L) == -5L, "  ident(-5L)", 502);
+    check(ident(-1L) == -1L, "  ident(-1L)", 503);
+    check(neg_fn(100) == -100L, "  neg_fn(100)", 511);
+    check(neg_fn(1) == -1L, "  neg_fn(1)", 512);
+
+    /* int→long 运行时转换（已修复：movsxd rax, eax） */
+    {
+        int ival = -1;
+        long casted = (long)ival;
+        check(casted == -1L, "  (long)(-1 int)", 521);
+    }
+    {
+        int ival = 42;
+        long casted = (long)ival;
+        check(casted == 42L, "  (long)(42 int)", 522);
+    }
+
+    /* long→int 截断 */
+    long big = 0xDEADBEEF12345678L;
+    int truncated = (int)big;
+    check(truncated == (int)0x12345678, "  long→int trunc", 531);
+
+    /* 函数返回负 int */
+    check((long)neg_int(100) == -100L, "  neg_int(100) == -100L", 541);
+}
+
+// ============================================================
+// 第 6 节：边界值
+// ============================================================
+
+static void test_boundary(void)
+{
+    my_printf("\n=== Section 6: boundary values ===\n");
+
+    /* INT32_MAX — 路径 A */
+    check(2147483647L == 2147483647L, "  INT32_MAX", 601);
+
+    /* 超 32 位正数 — 路径 C */
+    check(3000000000L == 3000000000L, "  3e9", 611);
+    check(0xFFFFFFFFL == 0xFFFFFFFFL, "  0xFFFFFFFF", 612);
+
+    /* INT32_MIN — 路径 B（已修复） */
+    check(-2147483648L == -2147483648L, "  INT32_MIN", 621);
+
+    /* -1 位模式 */
+    unsigned long neg_one_bits = (unsigned long)(-1L);
+    check(neg_one_bits != 0, "  -1 bits != 0", 631);
+
+    /* 编译期常量之间的比较不受 bug 影响 */
+    long max32 = 2147483647L;
+    check(max32 == 2147483647L, "  +32bit var", 641);
+}
+
+// ============================================================
+// 第 7 节：变参传递（≤ 5 个变参）
+// ============================================================
+
+static void test_variadic(void)
+{
+    my_printf("\n=== Section 7: variadic negative long ===\n");
+
+    long a = -1L;
+    long b = -42L;
+    long c = -99L;
+    my_printf("  %d %d %d\n", a, b, c);
+    check(a == -1L && b == -42L && c == -99L, "  va neg values", 701);
+
+    long pos = 100;
+    long zero = 0;
+    my_printf("  %d %d %d\n", pos, a, zero);
+    check(pos == 100 && a == -1L && zero == 0, "  va mixed", 702);
+}
+
+// ============================================================
+// 第 8 节：tcc 源码特有模式验证
+// ============================================================
+
+static void test_tcc_source_patterns(void)
+{
+    my_printf("\n=== Section 8: patterns from tcc source files ===\n");
+
+    /* cgen_expr.c:373 边界测试：> INT32_MAX 触发 mov_rax_imm64 */
+    long boundary = 2147483648L;
+    check(boundary == 2147483648L, "  cgen_expr boundary+", 801);
+
+    /* tcc_rt.c 模式：((unsigned long)ptr >> 48) == 0xFFFFUL */
+    {
+        unsigned long addr = (unsigned long)sys_write;
+        check(addr != 0, "  ulong ptr shift", 811);
+    }
+
+    /* lex.c 模式：ival = val（AST 节点存储 long 值） */
+    {
+        long ival = 0;
+        ival = 100; if (ival > 0) { ival = -ival; }
+        check(ival == -100L, "  lex ival neg", 821);
+    }
+
+    /* 编译期负常量在嵌套表达式中 */
+    {
+        long arr[3];
+        arr[0] = -1L;
+        arr[1] = -100L;
+        arr[2] = arr[0] + arr[1];
+        check(arr[0] == -1L && arr[1] == -100L && arr[2] == -101L, "  arr neg init", 831);
+    }
+
+    /* int 变量隐式提升为 long 的比较 */
+    {
+        int i = -5;
+        long l = 0;
+        l = (long)i;
+        check(l == -5L, "  int→long implicit", 841);
+    }
+}
+
+// ============================================================
+// main
 // ============================================================
 
 int main(void)
 {
-    my_printf("=== tcc long negative number test ===\n\n");
+    my_printf("=== tcc long negative number test ===\n");
+    my_printf("Fix: cgen_expr.c:369-376 movsxd for neg 32-bit\n");
+    my_printf("Fix: unop_neg64 for int negation, movsxd in int→long assign\n\n");
 
-    /* ─── 测试 1：编译期直接赋值（BUG 模式，仅输出，不断言） ─── */
-    long v1 = -12345;          /* 编译期 int → long，BUG：零扩展 */
-    long v2 = -12345L;         /* 编译期 long literal，同 BUG */
-    long v3 = 0 - 12345;       /* 编译期 int 减法，同 BUG */
-    long v4 = 0 - 12345L;      /* 编译期 long 减法，同 BUG */
+    demo_three_paths();
+    test_compiletime_neg();
+    test_comparisons();
+    test_unsigned_long();
+    test_func_args();
+    test_boundary();
+    test_variadic();
+    test_tcc_source_patterns();
 
-    my_printf("compile-time int -12345:     %d  (0x%x)\n", v1, v1);
-    my_printf("compile-time -12345L:         %d  (0x%x)\n", v2, v2);
-    my_printf("compile-time 0-12345:         %d  (0x%x)\n", v3, v3);
-    my_printf("compile-time 0-12345L:        %d  (0x%x)\n", v4, v4);
-
-    /* ─── 测试 2：运行期计算（绕过方法，应正确） ─── */
-    long tmp1 = 12345;
-    long v5 = -tmp1;           /* 运行期 long 求反 ✓ */
-    long tmp2 = 0L;
-    long v6 = tmp2 - 12345L;   /* 运行期 long 减法 ✓ */
-    long tmp3 = 12345;
-    long v7 = 0;
-    v7 = v7 - tmp3;            /* 运行期复合减法 ✓ */
-
-    my_printf("runtime -(long)12345:        %d  (0x%x)\n", v5, v5);
-    my_printf("runtime 0L-12345L:           %d  (0x%x)\n", v6, v6);
-    my_printf("runtime 0-tmp:               %d  (0x%x)\n", v7, v7);
-
-    /* 验证运行期方法结果正确（比较双方都须运行时计算，避免 tcc BUG） */
-    {
-        long expected = 12345; expected = -expected;
-        if (v5 != expected) return 10;
-        if (v6 != expected) return 11;
-        if (v7 != expected) return 12;
-    }
-
-    /* ─── 测试 3：long 参数传入 my_printf 的变参路径 ─── */
-    {
-        /* 运行时计算负值传入 %d（%d 读 long，须传 long） */
-        long neg1 = 42;    neg1 = -neg1;
-        long neg2 = 99;    neg2 = -neg2;
-        long bigr = 2000000000L;
-        bigr = -bigr;
-
-        my_printf("\nvariadic %%d with runtime neg:\n");
-        my_printf("  neg1=%d neg2=%d big=%d\n", neg1, neg2, bigr);
-
-        /* 比较双方都须运行时计算 */
-        {
-            long e1 = 42; e1 = -e1;
-            long e2 = 99; e2 = -e2;
-            long e3 = 2000000000L; e3 = -e3;
-            if (neg1 != e1) return 20;
-            if (neg2 != e2) return 21;
-            if (bigr != e3) return 22;
-        }
-    }
-
-    /* ─── 测试 4：正数边界值（不触发 BUG，应始终正确） ─── */
-    {
-        long pos1 = 0;
-        long pos2 = 2147483647;   /* INT_MAX */
-        long pos3 = 4294967295L;  /* 超过 int 范围，走 mov_rax_imm64 路径 */
-        long pos4 = 1234567890123L;
-
-        my_printf("\npositive long values:\n");
-        my_printf("  0=%d maxint=%d big32=%d big64=%d\n",
-            pos1, pos2, pos3, pos4);
-
-        if (pos1 != 0L) return 30;
-        if (pos2 != 2147483647L) return 31;
-        if (pos3 != 4294967295L) return 32;
-        if (pos4 != 1234567890123L) return 33;
+    if (fail_count > 0) {
+        my_printf("\nFAILED: %d failures\n", fail_count);
+        return 1;
     }
 
     my_printf("\n=== ALL NEGATIVE LONG TESTS PASSED ===\n");

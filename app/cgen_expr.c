@@ -370,7 +370,12 @@ void cgen_expr(AstNode *node) {
         if (node->is_float)
             load_double_imm(node->dval);
         else
-            if (node->ival >= -2147483648L && node->ival <= 2147483647L) mov_eax_imm((int)node->ival); else mov_rax_imm64(node->ival);
+            if (node->ival >= -2147483648L && node->ival <= 2147483647L) {
+                mov_eax_imm((int)node->ival);
+                if (node->ival < 0) { e1(0x48); e1(0x63); e1(0xC0); }  /* movsxd rax, eax: 符号扩展 32→64 */
+            } else {
+                mov_rax_imm64(node->ival);
+            }
         break;
 
     case AST_STRING: {
@@ -989,7 +994,7 @@ void cgen_expr(AstNode *node) {
             } else if (node->expr && node->expr->type_size == 8) {
                 unop_neg64();
             } else {
-                unop_neg();
+                unop_neg64();  /* 始终用 64 位求反：32 位 neg eax 会零扩展高 32 位 */
             }
             break;
         case TOK_TILDE:
@@ -1179,18 +1184,24 @@ void cgen_expr(AstNode *node) {
             /* 求值右操作数 */
             cgen_expr(node->right);
 
-            /* 存储到目标地址 — cgen_expr 可能更新了 node->right->type_size，重新读取 */
+            /* 存储到目标地址 — 用 elem_size 决定存储宽度（数组元素可能是 long） */
             pop_rcx();  /* rcx = 目标地址 */
-            int rhs_sz_after = node->right ? node->right->type_size : 4;
+            int store_sz = elem_size > 4 ? elem_size :
+                           (node->right ? node->right->type_size : 4);
             if (rhs_float) {
                 /* movsd [rcx], xmm0 */
                 e1(0xF2); e1(0x0F); e1(0x11); e1(0x01);
-            } else if (rhs_sz_after >= 8) {
+            } else if (store_sz >= 8) {
+                if (!rhs_float && node->right && node->right->type_size < 8 &&
+                    node->right->kind == AST_CONSTANT &&
+                    node->right->ival >= -2147483648L &&
+                    node->right->ival <= 2147483647L)
+                    { e1(0x48); e1(0x63); e1(0xC0); }  /* movsxd rax, eax */
                 e1(0x48); e1(0x89); e1(0x01);  /* mov [rcx], rax */
             } else {
                 e1(0x89); e1(0x01);             /* mov [rcx], eax */
             }
-            node->type_size = rhs_sz_after;
+            node->type_size = store_sz;
             break;
         }
 
@@ -1229,6 +1240,20 @@ void cgen_expr(AstNode *node) {
                         if (rhs_float) {
                             /* cvttsd2si eax, xmm0 */
                             e1(0xF2); e1(0x0F); e1(0x2C); e1(0xC0);
+                        }
+                        /* int → long：仅对简单 4 字节源（变量引用和 32 位常量）符号扩展 */
+                        if (locals[i].size == 8 && !rhs_float &&
+                            node->right && node->right->type_size < 8) {
+                            int do_sext = 0;
+                            if (node->right->kind == AST_VAR) {
+                                do_sext = 1;  /* int 变量 → long */
+                            } else if (node->right->kind == AST_CONSTANT &&
+                                       node->right->ival >= -2147483648L &&
+                                       node->right->ival <= 2147483647L) {
+                                do_sext = 1;  /* 32 位常量 → long */
+                            }
+                            if (do_sext)
+                                { e1(0x48); e1(0x63); e1(0xC0); }  /* movsxd rax, eax */
                         }
                         if (locals[i].size == 8)
                             store_rax_to_rbp(locals[i].offset);
