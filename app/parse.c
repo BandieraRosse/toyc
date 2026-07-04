@@ -42,15 +42,17 @@ static int pdecl_fptr_array_dim = 0;
 static const char *pvar_name[MAX_PVARS];       /* 变量名 */
 static const char *pvar_tag[MAX_PVARS];        /* struct 标签 */
 static int pvar_is_float_arr[MAX_PVARS];      /* 是否为 double 类型 */
+static int pvar_is_unsigned_arr[MAX_PVARS];   /* 是否为 unsigned 类型 */
 static int pvar_size_arr[MAX_PVARS];          /* 变量大小（用于 sizeof） */
 static int pvar_elem_size_arr[MAX_PVARS];     /* 数组元素大小（0=非数组） */
 static int pvar_count;
 
-static void pvar_add_ex(const char *name, const char *tag, int is_float, int size) {
+static void pvar_add_ex(const char *name, const char *tag, int is_float, int is_unsigned, int size) {
     if (pvar_count < MAX_PVARS && name && *name) {
         pvar_name[pvar_count] = name;
         pvar_tag[pvar_count] = tag;
         pvar_is_float_arr[pvar_count] = is_float;
+        pvar_is_unsigned_arr[pvar_count] = is_unsigned;
         pvar_size_arr[pvar_count] = size;
         pvar_elem_size_arr[pvar_count] = 0;
         pvar_count++;
@@ -68,7 +70,7 @@ static int pvar_find_elem_size(const char *name) {
         if (strcmp(pvar_name[i], name) == 0) return pvar_elem_size_arr[i];
     return 0;
 }
-#define pvar_add(name, tag, is_float) pvar_add_ex(name, tag, is_float, 0)
+#define pvar_add(name, tag, is_float) pvar_add_ex(name, tag, is_float, 0, 0)
 static const char *pvar_find_tag(const char *name) {
     int i;
     for (i = 0; i < pvar_count; i++)
@@ -87,6 +89,12 @@ static int pvar_find_float(const char *name) {
     int i;
     for (i = 0; i < pvar_count; i++)
         if (strcmp(pvar_name[i], name) == 0) return pvar_is_float_arr[i];
+    return 0;
+}
+static int pvar_find_unsigned(const char *name) {
+    int i;
+    for (i = 0; i < pvar_count; i++)
+        if (strcmp(pvar_name[i], name) == 0) return pvar_is_unsigned_arr[i];
     return 0;
 }
 /* 在 struct 中查找成员偏移 */
@@ -117,6 +125,9 @@ static int find_member_size(const char *struct_tag, const char *member) {
     }
     return 0;
 }
+
+/* ─── 当前类型说明符的有符号性（供变量声明和类型转换使用） ─── */
+static int last_type_is_unsigned = 0;
 
 /* ─── 类型系统全局表 ─── */
 
@@ -321,6 +332,7 @@ static AstNode *parse_primary(Parser *p) {
         AstNode *n = new_ast(p, AST_VAR);
         n->name = arena_strdup(p->arena, t.start, t.len);
         n->is_float = pvar_find_float(n->name);
+        n->is_unsigned = pvar_find_unsigned(n->name);
         return n;
     }
 
@@ -1223,30 +1235,31 @@ int parse_type_specifier(Parser *p) {
         for (ti = 0; ti < typedef_count; ti++) {
             if (strcmp(typedef_table[ti].name, tname) == 0) {
                 consume(p);
+                last_type_is_unsigned = typedef_table[ti].is_unsigned;
                 return typedef_table[ti].size;
             }
         }
     }
     switch (t.kind) {
-    case TOK_INT:      consume(p); return 4;
-    case TOK_CHAR:     consume(p); return 1;
-    case TOK_SHORT:    consume(p); return 2;
-    case TOK_DOUBLE:   consume(p); return 8;
-    case TOK__BUILTIN_VA_LIST: consume(p); return 24;  /* va_list = 4+4+8+8 bytes */
+    case TOK_INT:      last_type_is_unsigned = 0; consume(p); return 4;
+    case TOK_CHAR:     last_type_is_unsigned = 0; consume(p); return 1;
+    case TOK_SHORT:    last_type_is_unsigned = 0; consume(p); return 2;
+    case TOK_DOUBLE:   last_type_is_unsigned = 0; consume(p); return 8;
+    case TOK__BUILTIN_VA_LIST: last_type_is_unsigned = 0; consume(p); return 24;
     case TOK_LONG:
-        consume(p);
+        last_type_is_unsigned = 0; consume(p);
         if (peek(p).kind == TOK_LONG) { consume(p); if (peek(p).kind == TOK_INT) { consume(p); } return 8; }
         if (peek(p).kind == TOK_INT) { consume(p); } return 8;
     case TOK_STRUCT:
     case TOK_UNION: {
-        consume(p);
+        last_type_is_unsigned = 0; consume(p);
         StructType st;
         int sz = parse_struct_type(p, &st);
         return sz > 0 ? sz : 4;
     }
     case TOK_ENUM: {
-        consume(p);
-        if (peek(p).kind == TOK_IDENT) consume(p);  /* 可选的标签名 */
+        last_type_is_unsigned = 0; consume(p);
+        if (peek(p).kind == TOK_IDENT) consume(p);
         if (peek(p).kind == TOK_LBRACE) {
             consume(p);
             int enum_val = 0;
@@ -1266,11 +1279,12 @@ int parse_type_specifier(Parser *p) {
             }
             if (peek(p).kind == TOK_RBRACE) consume(p);
         }
-        return 4;  /* enum 大小 = int */
+        return 4;
     }
-    case TOK_VOID:     consume(p); return 0;
+    case TOK_VOID:     last_type_is_unsigned = 0; consume(p); return 0;
     case TOK_UNSIGNED:
         consume(p);
+        last_type_is_unsigned = 1;
         if (peek(p).kind == TOK_CHAR) { consume(p); return 1; }
         if (peek(p).kind == TOK_SHORT) { consume(p); if (peek(p).kind == TOK_INT) { consume(p); } return 2; }
         if (peek(p).kind == TOK_LONG) {
@@ -1282,6 +1296,7 @@ int parse_type_specifier(Parser *p) {
         return 4;
     case TOK_SIGNED:
         consume(p);
+        last_type_is_unsigned = 0;
         if (peek(p).kind == TOK_CHAR) { consume(p); return 1; }
         if (peek(p).kind == TOK_SHORT) { consume(p); if (peek(p).kind == TOK_INT) { consume(p); } return 2; }
         if (peek(p).kind == TOK_LONG) {
@@ -1428,8 +1443,15 @@ static AstNode *parse_for_statement(Parser *p) {
             n->loop_init->ival = loop_ptrs > 0 ? 8 : (ts > 0 ? ts : 4);
             n->loop_init->type_size = n->loop_init->ival;
             n->loop_init->is_float = (loop_is_double && loop_ptrs == 0);
+            if (loop_ptrs == 0) {
+                n->loop_init->is_unsigned = last_type_is_unsigned;
+                n->loop_init->elem_is_unsigned = 0;
+            } else {
+                n->loop_init->is_unsigned = 0;
+                n->loop_init->elem_is_unsigned = last_type_is_unsigned;
+            }
             if (n->loop_init->name && *n->loop_init->name)
-                pvar_add(n->loop_init->name, NULL, loop_is_double);
+                pvar_add_ex(n->loop_init->name, NULL, loop_is_double, n->loop_init->is_unsigned, 0);
             if (match(p, TOK_EQ))
                 n->loop_init->expr = parse_expr_comma(p);
         } else {
@@ -1642,26 +1664,34 @@ AstNode *parse_compound_statement(Parser *p) {
                 if (dv_ptrs == 0 && ts > 0 && ptr_typedef_pts > 0) {
                     decl->elem_size = ptr_typedef_pts; }
                 decl->is_float = (decl_is_double && dv_ptrs == 0);
+                /* 指针类型的变量本身无符号性，但元素可能有 */
+                if (dv_ptrs == 0) {
+                    decl->is_unsigned = last_type_is_unsigned;
+                    decl->elem_is_unsigned = 0;
+                } else {
+                    decl->is_unsigned = 0;
+                    decl->elem_is_unsigned = last_type_is_unsigned;
+                }
                 decl->is_static = q_static;
                 if (decl->name && *decl->name) {
                     if (decl_typedef_tag) {
-                        pvar_add_ex(decl->name, decl_typedef_tag, decl->is_float, decl->ival);
+                        pvar_add_ex(decl->name, decl_typedef_tag, decl->is_float, decl->is_unsigned, decl->ival);
                     } else if (last_struct_tag || last_struct_member_count > 0) {
                         pvar_add_ex(decl->name, last_struct_tag ? last_struct_tag : "",
-                                 decl->is_float, decl->ival);
+                                 decl->is_float, decl->is_unsigned, decl->ival);
                     } else {
                         int ti;
                         int found_typedef = 0;
                         for (ti = 0; ti < typedef_count; ti++) {
                             if (typedef_table[ti].member_count > 0 && ts == typedef_table[ti].size) {
                                 pvar_add_ex(decl->name, typedef_table[ti].name,
-                                         decl->is_float, decl->ival);
+                                         decl->is_float, decl->is_unsigned, decl->ival);
                                 found_typedef = 1;
                                 break;
                             }
                         }
                         if (!found_typedef)
-                            pvar_add_ex(decl->name, NULL, decl->is_float, decl->ival);
+                            pvar_add_ex(decl->name, NULL, decl->is_float, decl->is_unsigned, decl->ival);
                     }
                 }
                 last_struct_tag = NULL;
@@ -1777,10 +1807,17 @@ AstNode *parse_compound_statement(Parser *p) {
                     cdecl->elem_size = (c_ptrs > 1) ? 8
                         : (c_ptrs == 1 ? ts : 0);
                     cdecl->is_float = (decl_is_double && c_ptrs == 0);
+                    if (c_ptrs == 0) {
+                        cdecl->is_unsigned = last_type_is_unsigned;
+                        cdecl->elem_is_unsigned = 0;
+                    } else {
+                        cdecl->is_unsigned = 0;
+                        cdecl->elem_is_unsigned = last_type_is_unsigned;
+                    }
                     cdecl->is_static = q_static;
                     /* 注册局部变量名 */
                     if (cname && *cname)
-                        pvar_add_ex(cname, NULL, cdecl->is_float, cdecl->ival);
+                        pvar_add_ex(cname, NULL, cdecl->is_float, cdecl->is_unsigned, cdecl->ival);
                     /* 处理数组后缀 */
                     while (peek(p).kind == TOK_LBRACKET) {
                         consume(p);
@@ -2084,7 +2121,9 @@ static AstNode *parse_parameter_list(Parser *p, int *is_variadic) {
             pd->elem_size = (effective_ptr > 1) ? 8 : (effective_ptr == 1 ? psz : 0);
             pd->base_elem_size = (effective_ptr > 1) ? (psz > 0 ? psz : 4) : (effective_ptr == 1 ? psz : 0);
             pd->is_float = (param_is_double && ptr_level == 0);
-            pvar_add(pname, NULL, pd->is_float);
+            pd->is_unsigned = (effective_ptr == 0) ? last_type_is_unsigned : 0;
+            pd->elem_is_unsigned = (effective_ptr > 0) ? last_type_is_unsigned : 0;
+            pvar_add_ex(pname, NULL, pd->is_float, pd->is_unsigned, pd->ival);
             *tail = pd;
             tail = &pd->next;
         }
@@ -2378,7 +2417,7 @@ AstNode *parse_program(Parser *p) {
                     /* 注册 struct 标签和大小（供 sizeof 查找） */
                     {
                         const char *gvn = arena_strdup(p->arena, gv_name.start, gv_name.len);
-                        pvar_add_ex(gvn, global_typedef_tag ? global_typedef_tag : (last_struct_tag ? last_struct_tag : ""), 0, gv_total);
+                        pvar_add_ex(gvn, global_typedef_tag ? global_typedef_tag : (last_struct_tag ? last_struct_tag : ""), 0, 0, gv_total);
                         if (gv_is_array)
                             pvar_set_elem_size(gvn, gv_unit);
                         if (pvar_count > 3800) {

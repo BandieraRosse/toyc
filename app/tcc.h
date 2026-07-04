@@ -227,6 +227,8 @@ typedef struct AstNode {
     int type_size;       /* 类型大小（字节）：4=int, 8=指针/long/double, 1=char, 2=short */
     int elem_size;       /* AST_VAR_DECL: 指针变量的元素大小（int*→4, char**→8） */
     int base_elem_size;  /* AST_VAR_DECL: 数组的基础元素大小（多维数组中内层元素大小） */
+    int is_unsigned;     /* 1 表示 unsigned 类型（unsigned int/long/char/short） */
+    int elem_is_unsigned; /* 指针变量：指向的元素类型是否为 unsigned */
 } AstNode;
 
 /* ─── 符号表（代码生成输出用） ─── */
@@ -323,6 +325,8 @@ typedef struct {
     int base_elem_size;      /* 数组变量：单个元素的类型尺寸（多维数组的内层 elem_size） */
     int scope_depth;         /* 声明时的作用域深度（用于块作用域变量阴影） */
     int is_array;            /* 1 表示数组类型（访问时退化为指针） */
+    int is_unsigned;         /* 1 表示 unsigned 类型 */
+    int elem_is_unsigned;    /* 指针变量的元素是否为 unsigned（用于 *ptr 解引用） */
 } LocalVar;
 
 extern LocalVar locals[MAX_LOCALS];
@@ -364,6 +368,7 @@ typedef struct {
     int type_kind;   /* 0=基本, 1=struct, 2=pointer */
     int ptr_level;   /* 指针层数（0=非指针） */
     int points_to;   /* 指针指向的类型大小（ptr_level>0 时有效） */
+    int is_unsigned; /* 1 表示 unsigned 基本类型 */
     int struct_idx;
     Member members[MAX_MEMBERS];
     int member_count;

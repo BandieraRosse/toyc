@@ -285,9 +285,11 @@ static void collect_locals(AstNode *node) {
             locals[local_count].size = sz;
             locals[local_count].struct_tag = NULL;
             locals[local_count].is_float = node->is_float;
+            locals[local_count].is_unsigned = node->is_unsigned;
             locals[local_count].element_size = node->elem_size;
             locals[local_count].base_elem_size = node->base_elem_size;
             locals[local_count].scope_depth = scope_depth;
+            locals[local_count].elem_is_unsigned = node->elem_is_unsigned;
             /* 判断是否为数组：type_size 不等于指针大小(8)且 ival 为正数 */
             locals[local_count].is_array =
                 (node->type_size != 8 || node->ival > 8) && node->ival > 0 &&

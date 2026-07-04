@@ -129,11 +129,18 @@ static void binop_sub_swapped(void) {
 static void binop_mul(void) { e1(0x0F); e1(0xAF); e1(0xC1); }  /* imul eax, ecx */
 static void binop_div(void) { e1(0x91); e1(0x99); e1(0xF7); e1(0xF9); }  /* xchg; cdq; idiv ecx */
 static void binop_mod(void) { binop_div(); e1(0x89); e1(0xD0); }  /* div; mov eax,edx */
+
+/* 无符号除法/取模 */
+static void binop_divu(void) {
+    e1(0x91); e1(0x31); e1(0xD2); e1(0xF7); e1(0xF1);  /* xchg; xor edx,edx; div ecx */
+}
+static void binop_modu(void) { binop_divu(); e1(0x89); e1(0xD0); }  /* mov eax, edx */
 static void binop_and(void) { e1(0x21); e1(0xC8); }  /* and eax, ecx */
 static void binop_or(void)  { e1(0x09); e1(0xC8); }  /* or eax, ecx */
 static void binop_xor(void) { e1(0x31); e1(0xC8); }  /* xor eax, ecx */
 static void binop_shl(void) { e1(0x91); e1(0xD3); e1(0xE0); }  /* xchg eax,ecx; shl eax, cl */
-static void binop_shr(void) { e1(0x91); e1(0xD3); e1(0xE8); }  /* xchg eax,ecx; shr eax, cl */
+static void binop_shr(void) { e1(0x91); e1(0xD3); e1(0xE8); }  /* xchg eax,ecx; shr eax, cl (unsigned) */
+static void binop_sar(void) { e1(0x91); e1(0xD3); e1(0xF8); }  /* xchg eax,ecx; sar eax, cl (signed) */
 static void binop_cmp(int setcc_opcode) {
     e1(0x39); e1(0xC1);           /* cmp ecx, eax */
     e1(0x0F); e1(setcc_opcode); e1(0xC0);  /* setcc al */
@@ -153,11 +160,20 @@ static void binop_div64(void) {
     e1(0x48); e1(0xF7); e1(0xF9); /* idiv rcx */
 }
 static void binop_mod64(void) { binop_div64(); e1(0x48); e1(0x89); e1(0xD0); }  /* mov rax, rdx */
+
+/* 无符号 64-bit 除法/取模 */
+static void binop_divu64(void) {
+    e1(0x48); e1(0x91);           /* xchg rax, rcx */
+    e1(0x48); e1(0x31); e1(0xD2); /* xor rdx, rdx */
+    e1(0x48); e1(0xF7); e1(0xF1); /* div rcx */
+}
+static void binop_modu64(void) { binop_divu64(); e1(0x48); e1(0x89); e1(0xD0); }  /* mov rax, rdx */
 static void binop_and64(void) { e1(0x48); e1(0x21); e1(0xC8); }  /* and rax, rcx */
 static void binop_or64(void)  { e1(0x48); e1(0x09); e1(0xC8); }  /* or rax, rcx */
 static void binop_xor64(void) { e1(0x48); e1(0x31); e1(0xC8); }  /* xor rax, rcx */
 static void binop_shl64(void) { e1(0x48); e1(0x91); e1(0x48); e1(0xD3); e1(0xE0); }  /* xchg; shl rax, cl */
-static void binop_shr64(void) { e1(0x48); e1(0x91); e1(0x48); e1(0xD3); e1(0xE8); }  /* xchg; shr rax, cl */
+static void binop_shr64(void) { e1(0x48); e1(0x91); e1(0x48); e1(0xD3); e1(0xE8); }  /* xchg; shr rax, cl (unsigned) */
+static void binop_sar64(void) { e1(0x48); e1(0x91); e1(0x48); e1(0xD3); e1(0xF8); }  /* xchg; sar rax, cl (signed) */
 static void binop_cmp64(int setcc_opcode) {
     e1(0x48); e1(0x39); e1(0xC1); /* cmp rcx, rax */
     e1(0x0F); e1(setcc_opcode); e1(0xC0);  /* setcc al */
@@ -469,6 +485,7 @@ void cgen_expr(AstNode *node) {
                     cvti2d();
                 } else {
                     node->type_size = locals[i].size;
+                    node->is_unsigned = locals[i].is_unsigned;
                     if (locals[i].is_array || locals[i].size > 8) {
                         /* 数组/大结构体：退化为指针（lea rax, [rbp+off]） */
                         lea_from_rbp(locals[i].offset);
@@ -540,8 +557,9 @@ void cgen_expr(AstNode *node) {
             cgen_expr(node->right);  /* 索引 → eax */
             pop_rcx();               /* rcx = 指针 */
 
-            /* 确定元素大小（默认 1 = char*） */
+            /* 确定元素大小和符号性（默认 1 = char*，默认 signed） */
             int elem_size = 1;
+            int elem_unsigned = 0;
             int idx_is64 = (node->right && node->right->type_size == 8);
             if (node->left && node->left->kind == AST_VAR) {
                 int i;
@@ -550,6 +568,7 @@ void cgen_expr(AstNode *node) {
                         locals[i].scope_depth <= scope_depth) {
                         if (locals[i].element_size > 0)
                             elem_size = locals[i].element_size;
+                        elem_unsigned = locals[i].elem_is_unsigned;
                         break;
                     }
                 }
@@ -651,7 +670,7 @@ void cgen_expr(AstNode *node) {
                 }
             }
 
-            /* 按元素大小加载结果（子数组/大结构体不加载，退化为指针） */
+            /* 按元素大小和符号性加载结果（子数组/大结构体不加载，退化为指针） */
             if (is_subarray || elem_size > 8) {
                 /* 子数组/大结构体：不加载，rax 中已是指针 */
                 node->type_size = 8;
@@ -661,10 +680,22 @@ void cgen_expr(AstNode *node) {
             } else if (elem_size == 4) {
                 e1(0x8B); e1(0x00);                   /* mov eax, [rax] */
                 node->type_size = elem_size;
+            } else if (elem_size == 2) {
+                if (elem_unsigned) {
+                    e1(0x0F); e1(0xB7); e1(0x00);  /* movzwl (%rax), %eax — 零扩展字加载 */
+                } else {
+                    e1(0x0F); e1(0xBF); e1(0x00);  /* movswl (%rax), %eax — 符号扩展字加载 */
+                }
+                node->type_size = elem_size;
             } else {
-                e1(0x0F); e1(0xBE); e1(0x00);          /* movsbl eax, [rax] */
+                if (elem_unsigned) {
+                    e1(0x0F); e1(0xB6); e1(0x00);  /* movzbl (%rax), %eax — 零扩展字节加载 */
+                } else {
+                    e1(0x0F); e1(0xBE); e1(0x00);  /* movsbl (%rax), %eax — 符号扩展字节加载 */
+                }
                 node->type_size = elem_size;
             }
+            node->is_unsigned = elem_unsigned;
             break;
         }
 
@@ -854,21 +885,32 @@ void cgen_expr(AstNode *node) {
         }
 
         /* 判断是否需要 64-bit 运算（任一操作数为 64 位） */
+        /* 判断有符号性：若任一操作数为 unsigned，按无符号语义处理 */
+        int is_unsigned_binop = (node->left && node->left->is_unsigned) ||
+                                (node->right && node->right->is_unsigned);
+
         if (node->left && node->left->type_size == 8)
             { switch (node->op) {
             case TOK_PLUS:  binop_add64(); break;
             case TOK_MINUS: binop_sub_swapped64(); break;
             case TOK_STAR:  binop_mul64(); break;
-            case TOK_SLASH: binop_div64(); break;
-            case TOK_PERCENT: binop_mod64(); break;
-            case TOK_LESS:       binop_cmp64(0x9C); break;
-            case TOK_GREATER:    binop_cmp64(0x9F); break;
-            case TOK_LESS_EQ:    binop_cmp64(0x9E); break;
-            case TOK_GREATER_EQ: binop_cmp64(0x9D); break;
+            case TOK_SLASH:
+                if (is_unsigned_binop) binop_divu64(); else binop_div64(); break;
+            case TOK_PERCENT:
+                if (is_unsigned_binop) binop_modu64(); else binop_mod64(); break;
+            case TOK_LESS:
+                if (is_unsigned_binop) binop_cmp64(0x92); else binop_cmp64(0x9C); break;
+            case TOK_GREATER:
+                if (is_unsigned_binop) binop_cmp64(0x97); else binop_cmp64(0x9F); break;
+            case TOK_LESS_EQ:
+                if (is_unsigned_binop) binop_cmp64(0x96); else binop_cmp64(0x9E); break;
+            case TOK_GREATER_EQ:
+                if (is_unsigned_binop) binop_cmp64(0x93); else binop_cmp64(0x9D); break;
             case TOK_EQ_EQ:      binop_cmp64(0x94); break;
             case TOK_NOT_EQ:     binop_cmp64(0x95); break;
             case TOK_LESS_LESS:       binop_shl64(); break;
-            case TOK_GREATER_GREATER: binop_shr64(); break;
+            case TOK_GREATER_GREATER:
+                if (is_unsigned_binop) binop_shr64(); else binop_sar64(); break;
             case TOK_AMPERSAND: binop_and64(); break;
             case TOK_PIPE:      binop_or64();  break;
             case TOK_CARET:     binop_xor64(); break;
@@ -879,16 +921,23 @@ void cgen_expr(AstNode *node) {
             case TOK_PLUS:  binop_add64(); break;
             case TOK_MINUS: binop_sub_swapped64(); break;
             case TOK_STAR:  binop_mul64(); break;
-            case TOK_SLASH: binop_div64(); break;
-            case TOK_PERCENT: binop_mod64(); break;
-            case TOK_LESS:       binop_cmp64(0x9C); break;
-            case TOK_GREATER:    binop_cmp64(0x9F); break;
-            case TOK_LESS_EQ:    binop_cmp64(0x9E); break;
-            case TOK_GREATER_EQ: binop_cmp64(0x9D); break;
+            case TOK_SLASH:
+                if (is_unsigned_binop) binop_divu64(); else binop_div64(); break;
+            case TOK_PERCENT:
+                if (is_unsigned_binop) binop_modu64(); else binop_mod64(); break;
+            case TOK_LESS:
+                if (is_unsigned_binop) binop_cmp64(0x92); else binop_cmp64(0x9C); break;
+            case TOK_GREATER:
+                if (is_unsigned_binop) binop_cmp64(0x97); else binop_cmp64(0x9F); break;
+            case TOK_LESS_EQ:
+                if (is_unsigned_binop) binop_cmp64(0x96); else binop_cmp64(0x9E); break;
+            case TOK_GREATER_EQ:
+                if (is_unsigned_binop) binop_cmp64(0x93); else binop_cmp64(0x9D); break;
             case TOK_EQ_EQ:      binop_cmp64(0x94); break;
             case TOK_NOT_EQ:     binop_cmp64(0x95); break;
             case TOK_LESS_LESS:       binop_shl64(); break;
-            case TOK_GREATER_GREATER: binop_shr64(); break;
+            case TOK_GREATER_GREATER:
+                if (is_unsigned_binop) binop_shr64(); else binop_sar64(); break;
             case TOK_AMPERSAND: binop_and64(); break;
             case TOK_PIPE:      binop_or64();  break;
             case TOK_CARET:     binop_xor64(); break;
@@ -899,21 +948,42 @@ void cgen_expr(AstNode *node) {
             case TOK_PLUS:  binop_add(); break;
             case TOK_MINUS: binop_sub_swapped(); break;
             case TOK_STAR:  binop_mul(); break;
-            case TOK_SLASH: binop_div(); break;
-            case TOK_PERCENT: binop_mod(); break;
-            case TOK_LESS:       binop_cmp(0x9C); break;
-            case TOK_GREATER:    binop_cmp(0x9F); break;
-            case TOK_LESS_EQ:    binop_cmp(0x9E); break;
-            case TOK_GREATER_EQ: binop_cmp(0x9D); break;
+            case TOK_SLASH:
+                if (is_unsigned_binop) binop_divu(); else binop_div(); break;
+            case TOK_PERCENT:
+                if (is_unsigned_binop) binop_modu(); else binop_mod(); break;
+            case TOK_LESS:
+                if (is_unsigned_binop) binop_cmp(0x92); else binop_cmp(0x9C); break;
+            case TOK_GREATER:
+                if (is_unsigned_binop) binop_cmp(0x97); else binop_cmp(0x9F); break;
+            case TOK_LESS_EQ:
+                if (is_unsigned_binop) binop_cmp(0x96); else binop_cmp(0x9E); break;
+            case TOK_GREATER_EQ:
+                if (is_unsigned_binop) binop_cmp(0x93); else binop_cmp(0x9D); break;
             case TOK_EQ_EQ:      binop_cmp(0x94); break;
             case TOK_NOT_EQ:     binop_cmp(0x95); break;
             case TOK_LESS_LESS:       binop_shl(); break;
-            case TOK_GREATER_GREATER: binop_shr(); break;
+            case TOK_GREATER_GREATER:
+                if (is_unsigned_binop) binop_shr(); else binop_sar(); break;
             case TOK_AMPERSAND: binop_and(); break;
             case TOK_PIPE:      binop_or();  break;
             case TOK_CARET:     binop_xor(); break;
             default: break;
             } }
+
+        /* 传播无符号性和类型大小到二元运算结果 */
+        if (node->left && node->right) {
+            if (is_unsigned_binop) {
+                node->is_unsigned = 1;
+            }
+            /* 传播 64-bit 类型（结果类型取操作数中较大的） */
+            if (node->left->type_size == 8 || node->right->type_size == 8) {
+                if (node->op != TOK_LESS && node->op != TOK_GREATER &&
+                    node->op != TOK_LESS_EQ && node->op != TOK_GREATER_EQ &&
+                    node->op != TOK_EQ_EQ && node->op != TOK_NOT_EQ)
+                    node->type_size = 8;
+            }
+        }
 
         /* 指针减法：q-p 结果需要除以元素大小（以元素个数为单位的差值） */
         if (node->op == TOK_MINUS &&
@@ -1021,7 +1091,7 @@ void cgen_expr(AstNode *node) {
         case TOK_PLUS_PLUS:
         case TOK_MINUS_MINUS: {
             /* ++/-- : 计算地址 → 加载值 → 增减 → 写回
-             * 用 cgen_addr 统一处理 local/global/struct-member/*ptr */
+             * 用 cgen_addr 统一处理 local/global/struct-member/ptr (通过指针) */
             int sz = (node->expr && node->expr->type_size == 8) ? 8 : 4;
             /* 后缀(Postfix)：保存旧值，返回旧值
              * 前缀(Prefix)：返回新值（当前行为） */
@@ -1061,10 +1131,11 @@ void cgen_expr(AstNode *node) {
         case TOK_STAR:
             /* *ptr — 从指针地址加载值 */
             if (node->expr) {
-                /* 推测被指向的类型大小。
+                /* 推测被指向的类型大小和符号性。
                  * 在局部变量表中查找指针变量的 element_size：
                  * int * → 4, char * → 1, long * / double * → 8 */
                 int deref_size = 1;  /* 默认 char* 解引用 */
+                int elem_unsigned = 0;  /* 默认 signed */
                 if (node->expr->kind == AST_VAR && node->expr->name) {
                     int vi;
                     for (vi = local_count - 1; vi >= 0; vi--) {
@@ -1072,23 +1143,32 @@ void cgen_expr(AstNode *node) {
                             locals[vi].scope_depth <= scope_depth) {
                             if (locals[vi].element_size > 0)
                                 deref_size = locals[vi].element_size;
+                            elem_unsigned = locals[vi].elem_is_unsigned;
                             break;
                         }
                     }
                 }
                 if (deref_size == 1) {
-                    /* movsbl (%rax), %eax — 字节加载符号扩展 */
-                    e1(0x0F); e1(0xBE); e1(0x00);
+                    if (elem_unsigned) {
+                        e1(0x0F); e1(0xB6); e1(0x00);  /* movzbl (%rax), %eax — 零扩展字节加载 */
+                    } else {
+                        e1(0x0F); e1(0xBE); e1(0x00);  /* movsbl (%rax), %eax — 符号扩展字节加载 */
+                    }
                 } else if (deref_size == 8) {
                     /* mov rax, [rax] — 64-bit 加载 */
                     e1(0x48); e1(0x8B); e1(0x00);
                 } else if (deref_size == 2) {
-                    /* movswl (%rax), %eax — 字加载符号扩展 */
-                    e1(0x0F); e1(0xBF); e1(0x00);
+                    if (elem_unsigned) {
+                        e1(0x0F); e1(0xB7); e1(0x00);  /* movzwl (%rax), %eax — 零扩展字加载 */
+                    } else {
+                        e1(0x0F); e1(0xBF); e1(0x00);  /* movswl (%rax), %eax — 符号扩展字加载 */
+                    }
                 } else {
-                    /* mov (%rax), %eax — 32-bit 加载 */
+                    /* mov (%rax), %eax — 32-bit 加载（有符号无符号相同） */
                     e1(0x8B); e1(0x00);
                 }
+                /* 将元素的无符号性传播到解引用结果节点 */
+                node->is_unsigned = elem_unsigned;
                 node->type_size = deref_size;
             }
             break;
