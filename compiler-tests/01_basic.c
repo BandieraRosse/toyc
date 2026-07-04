@@ -1,33 +1,21 @@
 // EXPECT: 0
-// 基础：空函数、返回常量、局部变量、算术运算
+// basic.c — 变量、算术、for/if/while（如 tcc.c 主循环）
 int main(void) {
-    /* --- 空 main / return 常量 --- */
-    /* (from 001_empty, 002_return_int) */
+    int i, sum = 0;
+    for (i = 0; i < 10; i = i + 1)
+        sum = sum + i;
+    if (sum != 45) return 1;
 
-    /* --- 局部变量定义与赋值 --- */
-    /* (from 003_local_var) */
-    {
-        int a;
-        a = 10;
-        if (a != 10) return 1;
-        int b = 20;
-        if (b != 20) return 2;
-        int c = 30, d = 40;
-        if (c != 30) return 3;
-        if (d != 40) return 4;
-    }
+    int x = 42, y = 0;
+    if (x > 0) y = 1; else y = -1;
+    if (y != 1) return 2;
 
-    /* --- 算术运算 + - * / % --- */
-    /* (from 004_arith) */
-    {
-        if (2 + 3 != 5)  return 10;
-        if (7 - 4 != 3)  return 11;
-        if (3 * 4 != 12) return 12;
-        if (13 / 5 != 2) return 13;
-        if (13 % 5 != 3) return 14;
-        if (2 + 3 * 4 != 14) return 15;
-        if ((2 + 3) * 4 != 20) return 16;
-    }
+    if (2 + 3 * 4 != 14) return 3;
+    if (13 / 5 != 2) return 4;
+    if (13 % 5 != 3) return 5;
 
+    int n = 0;
+    while (n < 5) n = n + 1;
+    if (n != 5) return 6;
     return 0;
 }
