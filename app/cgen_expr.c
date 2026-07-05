@@ -1588,15 +1588,34 @@ void cgen_expr(AstNode *node) {
          */
         arg = node->args;
         int idx;
-        /* Phase 1: push 栈参数（6+）先入栈 → 沉到栈底 */
-        for (idx = 0; arg && idx < 6; idx++) arg = arg->next;  /* 跳过 0-5 */
-        for (; arg && idx < argc; idx++) {
-            cgen_expr(arg);
-            if (arg_is_float[idx])
-                push_xmm0();
-            else
-                push_rax();
-            arg = arg->next;
+        /* Phase 1: push 栈参数（6+）先入栈 → 沉到栈底
+         *
+         * 必须逆序压入（最右边的栈参数先入栈 → 最深）。
+         * 例子：sum8(a0..a5,a6=17,a7=19)
+         *   正序 push: a6(17) → a7(19)  → [rbp+0x10]=19 ✗
+         *   逆序 push: a7(19) → a6(17)  → [rbp+0x10]=17 ✓
+         *
+         * x86-64 ABI: 第一个栈参数 a6 在 [rbp+0x10]，
+         * 第二个 a7 在 [rbp+0x18]，以此类推。 */
+        {
+            int nstack = argc > 6 ? argc - 6 : 0;
+            if (nstack > 0) {
+                AstNode *stack_nodes[12];
+                AstNode *walker = node->args;
+                int ni;
+                for (ni = 0; walker && ni < 6; ni++) walker = walker->next;
+                for (ni = 6; walker && ni < argc && (ni - 6) < 12; ni++) {
+                    stack_nodes[ni - 6] = walker;
+                    walker = walker->next;
+                }
+                for (int si = nstack - 1; si >= 0; si--) {
+                    cgen_expr(stack_nodes[si]);
+                    if (arg_is_float[6 + si])
+                        push_xmm0();
+                    else
+                        push_rax();
+                }
+            }
         }
         /* Phase 2: push 寄存器参数（0-5）后入栈 → 在栈顶，pop 循环直接弹出 */
         arg = node->args;

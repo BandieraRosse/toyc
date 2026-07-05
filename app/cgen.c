@@ -782,14 +782,16 @@ static void cgen_func_def(AstNode *func) {
                                     e1(locals[i].offset & 0xFF);
                                 } else {
                                     if (param_size == 2) e1(0x66);  /* 16-bit prefix */
-                                    if (use64) e1(0x48);
+                                    /* REX 前缀：r0-r3 用 REX.W (0x48)，r4-r5 用 REX.WR (0x4C)
+                                     * 不能写 if(use64) e1(0x48) 再接 case 4/5 的 e1(0x44)，
+                                     * 因为双 REX 前缀会被 CPU 忽略第一个，W 位丢失 */
                                     switch (int_reg) {
-                                    case 0: e1(0x89); e1(0x7D); break;
-                                    case 1: e1(0x89); e1(0x75); break;
-                                    case 2: e1(0x89); e1(0x55); break;
-                                    case 3: e1(0x89); e1(0x4D); break;
-                                    case 4: e1(0x44); e1(0x89); e1(0x45); break;
-                                    case 5: e1(0x44); e1(0x89); e1(0x4D); break;
+                                    case 0: if (use64) e1(0x48); e1(0x89); e1(0x7D); break;
+                                    case 1: if (use64) e1(0x48); e1(0x89); e1(0x75); break;
+                                    case 2: if (use64) e1(0x48); e1(0x89); e1(0x55); break;
+                                    case 3: if (use64) e1(0x48); e1(0x89); e1(0x4D); break;
+                                    case 4: if (use64) e1(0x4C); else e1(0x44); e1(0x89); e1(0x45); break;
+                                    case 5: if (use64) e1(0x4C); else e1(0x44); e1(0x89); e1(0x4D); break;
                                     }
                                     e1(locals[i].offset & 0xFF);
                                 }
