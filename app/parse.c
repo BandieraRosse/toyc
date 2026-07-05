@@ -73,13 +73,13 @@ static int pvar_find_elem_size(const char *name) {
 #define pvar_add(name, tag, is_float) pvar_add_ex(name, tag, is_float, 0, 0)
 static const char *pvar_find_tag(const char *name) {
     int i;
-    for (i = 0; i < pvar_count; i++)
+    for (i = pvar_count - 1; i >= 0; i--)
         if (strcmp(pvar_name[i], name) == 0) return pvar_tag[i];
     return NULL;
 }
 static int pvar_find_size(const char *name) {
     int i;
-    for (i = 0; i < pvar_count; i++) {
+    for (i = pvar_count - 1; i >= 0; i--) {
         int match = strcmp(pvar_name[i], name);
         if (match == 0) return pvar_size_arr[i];
     }
@@ -87,13 +87,13 @@ static int pvar_find_size(const char *name) {
 }
 static int pvar_find_float(const char *name) {
     int i;
-    for (i = 0; i < pvar_count; i++)
+    for (i = pvar_count - 1; i >= 0; i--)
         if (strcmp(pvar_name[i], name) == 0) return pvar_is_float_arr[i];
     return 0;
 }
 static int pvar_find_unsigned(const char *name) {
     int i;
-    for (i = 0; i < pvar_count; i++)
+    for (i = pvar_count - 1; i >= 0; i--)
         if (strcmp(pvar_name[i], name) == 0) return pvar_is_unsigned_arr[i];
     return 0;
 }
