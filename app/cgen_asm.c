@@ -132,7 +132,20 @@ void cgen_asm(AstNode *node) {
      * Phase 2: 匹配已知模板并发射机器码
      * ================================================================ */
 
-    if (str_contains(t, "syscall")) {
+    /* 特定模式要先于通用模式检查，否则 mov $N,%%rax+syscall 会被
+     * 前面的 syscall 分支吃掉。 */
+    if (str_contains(t, "mov $") && str_contains(t, "%%rax") && str_contains(t, "syscall")) {
+        /* mov $N, %%rax + syscall — parse immediate */
+        const char *p = t;
+        while (*p && *p != '$') p++;
+        int imm = 0;
+        if (*p == '$') {
+            p++;
+            while (*p >= '0' && *p <= '9') { imm = imm * 10 + (*p - '0'); p++; }
+        }
+        e1(0x48); e1(0xC7); e1(0xC0); e4(imm);
+        e1(0x0F); e1(0x05);
+    } else if (str_contains(t, "syscall")) {
         e1(0x0F); e1(0x05);  /* syscall */
     } else if (str_contains(t, "lock xaddq")) {
         e1(0xF0); e1(0x48); e1(0x0F); e1(0xC1); e1(0x02);
@@ -148,17 +161,6 @@ void cgen_asm(AstNode *node) {
         e4(0);
     } else if (str_contains(t, "ecall")) {
         /* RISC-V ecall — placeholder */
-    } else if (str_contains(t, "mov $") && str_contains(t, "%%rax") && str_contains(t, "syscall")) {
-        /* mov $N, %%rax + syscall — parse immediate */
-        const char *p = t;
-        while (*p && *p != '$') p++;
-        int imm = 0;
-        if (*p == '$') {
-            p++;
-            while (*p >= '0' && *p <= '9') { imm = imm * 10 + (*p - '0'); p++; }
-        }
-        e1(0x48); e1(0xC7); e1(0xC0); e4(imm);
-        e1(0x0F); e1(0x05);
     } else {
         /* 未知模板 — 警告但不阻止编译 */
         __printf("tcc: unknown inline asm template: \"%s\"\n", t);
