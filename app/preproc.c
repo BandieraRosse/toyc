@@ -670,11 +670,81 @@ static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had
                             }
                         }
                         /* 递归展开临时缓冲区中的宏 */
+                        int used_follow_on = 0;
                         if (temp.data && temp.len > 0) {
-                            /* 注意：temp 是替换后的结果，此时不需要再标记宏为展开中
-                             * （标记已在参数展开阶段完成）。直接递归展开 */
                             if (depth < 64) {
-                                pp_buf_impl(temp.data, temp.len, out, depth + 1, NULL);
+                                /* Bug 1 修复：把宏名压入 expand_stack，防止自引用宏反复展开。
+                                 * 参数展开阶段已入栈/出栈过，但替换文本重扫时宏名已不在栈上。 */
+                                OutBuf pp_result = { 0, 0, 0 };
+                                expand_stack[expand_stack_depth++] = fn;
+                                pp_buf_impl(temp.data, temp.len, &pp_result, depth + 1, NULL);
+                                expand_stack_depth--;
+                                /* Bug 2 修复：## 粘贴产生宏名后，检查外层是否有 (args) 需合并展开。
+                                 * C 标准要求 paste 结果（例如 __syscall1）与后续的 (args) 一起重扫，
+                                 * 以允许函数宏二次展开。 */
+                                {
+                                    int ri = 0;
+                                    while (ri < pp_result.len && pp_ws(pp_result.data[ri])) ri++;
+                                    if (ri < pp_result.len && pp_id(pp_result.data[ri])) {
+                                        int rs = ri;
+                                        while (ri < pp_result.len && pp_id(pp_result.data[ri])) ri++;
+                                        int fmi2;
+                                        for (fmi2 = 0; fmi2 < func_macro_count; fmi2++) {
+                                            const char *fn2 = func_macros[fmi2].name;
+                                            int jn;
+                                            for (jn = 0; jn < ri - rs; jn++)
+                                                if (fn2[jn] != pp_result.data[rs + jn]) goto fnm2;
+                                            if (fn2[jn] != '\0') goto fnm2;
+                                            /* 匹配函数宏！检查外层紧跟 (args) */
+                                            if (ap + 1 < len && s[ap + 1] == '(' && !is_expanding(fn2)) {
+                                                int paren_start = ap + 1;
+                                                int paren_depth = 1;
+                                                int scan_pos = paren_start + 1;
+                                                while (paren_depth > 0 && scan_pos < len) {
+                                                    if (s[scan_pos] == '"') {
+                                                        scan_pos++;
+                                                        while (scan_pos < len && s[scan_pos] != '"') {
+                                                            if (s[scan_pos] == '\\' && scan_pos + 1 < len)
+                                                                scan_pos++;
+                                                            scan_pos++;
+                                                        }
+                                                        if (scan_pos < len) scan_pos++;
+                                                        continue;
+                                                    }
+                                                    if (s[scan_pos] == '(') paren_depth++;
+                                                    if (s[scan_pos] == ')') {
+                                                        paren_depth--;
+                                                        if (paren_depth == 0) break;
+                                                    }
+                                                    scan_pos++;
+                                                }
+                                                if (paren_depth == 0) {
+                                                    /* 合并：paste 结果 + (args) */
+                                                    OutBuf combined = { 0, 0, 0 };
+                                                    int ci;
+                                                    for (ci = 0; ci < pp_result.len; ci++)
+                                                        out_putc(&combined, pp_result.data[ci]);
+                                                    for (ci = paren_start; ci <= scan_pos; ci++)
+                                                        out_putc(&combined, s[ci]);
+                                                    /* 重扫组合后的宏调用 */
+                                                    pp_buf_impl(combined.data, combined.len,
+                                                                out, depth + 1, NULL);
+                                                    tlibc_free(combined.data);
+                                                    i = scan_pos + 1;
+                                                    used_follow_on = 1;
+                                                    break;
+                                                }
+                                            }
+                                            fnm2:;
+                                        }
+                                    }
+                                }
+                                if (!used_follow_on) {
+                                    int wi;
+                                    for (wi = 0; wi < pp_result.len; wi++)
+                                        out_putc(out, pp_result.data[wi]);
+                                }
+                                tlibc_free(pp_result.data);
                             } else {
                                 /* 深度超限：直接输出，不进一步展开 */
                                 int ti; for (ti = 0; ti < temp.len; ti++) out_putc(out, temp.data[ti]);
@@ -688,7 +758,9 @@ static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had
                                 if (expanded_args[ai]) tlibc_free(expanded_args[ai]);
                             }
                         }
-                        i = ap + 1; /* 跳过 ) */
+                        if (!used_follow_on) {
+                            i = ap + 1; /* 跳过 ) */
+                        }
                     }
                     break;
                     fnm:;
