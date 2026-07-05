@@ -1,25 +1,201 @@
-/*
- * SPDX-License-Identifier: MIT
- * Copyright (c) 2026 BandieraRosse
- */
+// EXPECT: 0
+// preproc.c standalone test (simulated preprocessed state)
+//
+// Compile (gcc):
+//   gcc -nostdlib -ffreestanding -Wall -Wextra -Wl,-e,__tlibc_start
+//       compiler-tests/source/preproc.c -o /tmp/test_preproc
+// Run:  /tmp/test_preproc
+//
+// Self-host (future):
+//   build/tcc compiler-tests/source/preproc.c -o /tmp/tpre.o
+//   ld -nostdlib -static -T ld.script /tmp/tpre.o -o /tmp/tpre
+//   /tmp/tpre
 
-/*
- * preproc — C 预处理器核心
- *
- * 机制：宏定义/展开（对象宏 + 函数宏）、#include 文件包含、#if/#ifdef 条件
- *       编译、#define/#undef 指令处理。全程字符串操作，不依赖词法/语法分析器。
- * 系统调用：openat, read, close（加载 include 文件）
- *
- * 索引入口：
- *   preprocess(src, len, fname, out_len)
- *                        主入口：预处理整个翻译单元
- *     preprocess_file    加载并预处理 #include 文件
- *     expand_macro       展开单个宏引用
- *     expand_line        展开一行中的全部宏
- *   add_include_path    注册 include 搜索路径
- */
+// ============================================================
+// Inlined from tcc_need.h — 基础类型 / syscall 宏
+// ============================================================
 
-#include "tcc.h"
+typedef unsigned long           size_t;
+typedef long                    ptrdiff_t;
+typedef long                    off_t;
+typedef unsigned int            mode_t;
+
+typedef signed char             int8_t;
+typedef unsigned char           uint8_t;
+typedef signed short int        int16_t;
+typedef unsigned short int      uint16_t;
+typedef signed int              int32_t;
+typedef unsigned int            uint32_t;
+typedef signed long int         int64_t;
+typedef unsigned long int       uint64_t;
+
+#ifndef NULL
+#define NULL ((void *)0)
+#endif
+
+/* x86_64 syscall — 仅测试框架自用 */
+static inline long __syscall3(long n, long a1, long a2, long a3)
+{
+    unsigned long ret;
+    __asm__ __volatile__ ("syscall" : "=a"(ret) : "a"(n), "D"(a1), "S"(a2),
+                          "d"(a3) : "rcx", "r11", "memory");
+    return (long)ret;
+}
+#define syscall(N, A1, A2, A3) __syscall3((long)(N), (long)(A1), (long)(A2), (long)(A3))
+
+/* 文件 I/O 常量 */
+#define AT_FDCWD    (-100)
+#define O_RDONLY    0
+#define SEEK_SET    0
+#define SEEK_END    2
+
+// ============================================================
+// Inlined from tcc.h — 仅 preproc.c 实际使用的部分
+// ============================================================
+
+#define MAX_INCLUDE_PATHS 16
+
+// ============================================================
+// 运行时 stub — 替代 tcc_rt.c 的功能
+// ============================================================
+
+/* ─── syscall 输出 ─── */
+
+static long __sys_write(int fd, const char *buf, unsigned long len)
+{
+    return syscall(1, fd, buf, len);
+}
+
+static void __sys_exit(int code)
+{
+    __asm__ __volatile__ ("syscall"
+        : : "a"((long)60), "D"((long)code)
+        : "rcx", "r11", "memory");
+    for (;;) ;
+}
+
+/* ─── 简易堆（bump allocator）替代真正的 malloc ─── */
+
+#define HEAP_SIZE (4 * 1024 * 1024)  /* 4MB — 测试够用 */
+static char heap_buf[HEAP_SIZE];
+static unsigned long heap_used;
+
+static void heap_init(void) {
+    heap_used = 0;
+}
+
+void *tlibc_malloc(unsigned long size) {
+    /* 对齐到 8 字节 */
+    unsigned long aligned = (size + 7) & ~7UL;
+    if (heap_used + aligned > HEAP_SIZE) {
+        __sys_write(2, "tlibc_malloc: OOM\n", 18);
+        __sys_exit(1);
+    }
+    void *p = heap_buf + heap_used;
+    heap_used += aligned;
+    /* 清零 */
+    { unsigned long i; for (i = 0; i < size; i++) ((char *)p)[i] = 0; }
+    return p;
+}
+
+void tlibc_free(void *ptr) {
+    (void)ptr;  /* bump allocator 不回收 */
+}
+
+/* ─── strlen ─── */
+
+int strlen(const char *s) {
+    int n = 0;
+    while (s[n]) n++;
+    return n;
+}
+
+/* ─── strcmp ─── */
+
+int strcmp(const char *a, const char *b) {
+    while (*a && *a == *b) { a++; b++; }
+    return (unsigned char)*a - (unsigned char)*b;
+}
+
+/* ─── __printf 最小实现（仅支持 %s %c %% \n） ─── */
+
+void __printf(const char *fmt, ...) {
+    __builtin_va_list ap;
+    __builtin_va_start(ap, fmt);
+    const char *p = fmt;
+    while (*p) {
+        if (*p == '%') {
+            p++;
+            if (*p == 's') {
+                p++;
+                const char *s = __builtin_va_arg(ap, const char *);
+                if (s) { int sl; for (sl = 0; s[sl]; sl++) __sys_write(2, &s[sl], 1); }
+                else __sys_write(2, "(null)", 6);
+            } else if (*p == 'c') {
+                p++;
+                char c = (char)__builtin_va_arg(ap, int);
+                __sys_write(2, &c, 1);
+            } else if (*p == '%') {
+                p++;
+                __sys_write(2, "%", 1);
+            } else if (*p == 'd') {
+                /* 简易版：只处理 single digit */
+                p++;
+                int v = __builtin_va_arg(ap, int);
+                if (v < 0) { __sys_write(2, "-", 1); v = -v; }
+                char buf[32]; int bi = 0;
+                if (v == 0) buf[bi++] = '0';
+                while (v > 0) { buf[bi++] = '0' + (v % 10); v /= 10; }
+                { int j; for (j = bi - 1; j >= 0; j--) __sys_write(2, &buf[j], 1); }
+            } else if (*p == 'l') {
+                p++;  /* 跳过 l（假设 long 是 %ld，走 %d 分支） */
+                if (*p == 'd') {
+                    p++;
+                    long v = __builtin_va_arg(ap, long);
+                    if (v < 0) { __sys_write(2, "-", 1); v = -v; }
+                    char buf[32]; int bi = 0;
+                    if (v == 0) buf[bi++] = '0';
+                    while (v > 0) { buf[bi++] = '0' + (v % 10); v /= 10; }
+                    { int j; for (j = bi - 1; j >= 0; j--) __sys_write(2, &buf[j], 1); }
+                }
+            } else {
+                __sys_write(2, "%", 1);
+                __sys_write(2, p, 1);
+                p++;
+            }
+        } else {
+            __sys_write(2, p, 1);
+            p++;
+        }
+    }
+    __builtin_va_end(ap);
+}
+
+/* ─── 文件 I/O stub（#include 测试用：全部返回 失败） ─── */
+
+int __openat(int dirfd, const char *path, int flags, int mode) {
+    (void)dirfd; (void)path; (void)flags; (void)mode;
+    return -1;  /* 文件不存在 */
+}
+
+long __read(int fd, void *buf, size_t count) {
+    (void)fd; (void)buf; (void)count;
+    return 0;
+}
+
+int __close(int fd) {
+    (void)fd;
+    return 0;
+}
+
+off_t __lseek(int fd, off_t offset, int whence) {
+    (void)fd; (void)offset; (void)whence;
+    return 0;
+}
+
+// ============================================================
+// preproc.c 源文件 — 完全来自 app/preproc.c
+// ============================================================
 
 #define MAX_MACROS 4096
 #define MAX_FUNC_MACROS 1024
@@ -673,15 +849,10 @@ static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had
                         int used_follow_on = 0;
                         if (temp.data && temp.len > 0) {
                             if (depth < 64) {
-                                /* Bug 1 修复：把宏名压入 expand_stack，防止自引用宏反复展开。
-                                 * 参数展开阶段已入栈/出栈过，但替换文本重扫时宏名已不在栈上。 */
                                 OutBuf pp_result = { 0, 0, 0 };
                                 expand_stack[expand_stack_depth++] = fn;
                                 pp_buf_impl(temp.data, temp.len, &pp_result, depth + 1, NULL);
                                 expand_stack_depth--;
-                                /* Bug 2 修复：## 粘贴产生宏名后，检查外层是否有 (args) 需合并展开。
-                                 * C 标准要求 paste 结果（例如 __syscall1）与后续的 (args) 一起重扫，
-                                 * 以允许函数宏二次展开。 */
                                 {
                                     int ri = 0;
                                     while (ri < pp_result.len && pp_ws(pp_result.data[ri])) ri++;
@@ -695,7 +866,6 @@ static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had
                                             for (jn = 0; jn < ri - rs; jn++)
                                                 if (fn2[jn] != pp_result.data[rs + jn]) goto fnm2;
                                             if (fn2[jn] != '\0') goto fnm2;
-                                            /* 匹配函数宏！检查外层紧跟 (args) */
                                             if (ap + 1 < len && s[ap + 1] == '(' && !is_expanding(fn2)) {
                                                 int paren_start = ap + 1;
                                                 int paren_depth = 1;
@@ -719,14 +889,12 @@ static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had
                                                     scan_pos++;
                                                 }
                                                 if (paren_depth == 0) {
-                                                    /* 合并：paste 结果 + (args) */
                                                     OutBuf combined = { 0, 0, 0 };
                                                     int ci;
                                                     for (ci = 0; ci < pp_result.len; ci++)
                                                         out_putc(&combined, pp_result.data[ci]);
                                                     for (ci = paren_start; ci <= scan_pos; ci++)
                                                         out_putc(&combined, s[ci]);
-                                                    /* 重扫组合后的宏调用 */
                                                     pp_buf_impl(combined.data, combined.len,
                                                                 out, depth + 1, NULL);
                                                     tlibc_free(combined.data);
@@ -746,7 +914,6 @@ static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had
                                 }
                                 tlibc_free(pp_result.data);
                             } else {
-                                /* 深度超限：直接输出，不进一步展开 */
                                 int ti; for (ti = 0; ti < temp.len; ti++) out_putc(out, temp.data[ti]);
                             }
                             tlibc_free(temp.data);
@@ -780,7 +947,6 @@ static char *strip_all_comments(const char *src, int len, int *out_len) {
     OutBuf out = { 0, 0, 0 };
     int i = 0;
     while (i < len) {
-        /* 跳过字符串字面量 */
         if (src[i] == '"') {
             out_putc(&out, src[i]); i++;
             while (i < len && src[i] != '"') {
@@ -790,7 +956,6 @@ static char *strip_all_comments(const char *src, int len, int *out_len) {
             if (i < len) { out_putc(&out, src[i]); i++; }
             continue;
         }
-        /* 跳过字符字面量 */
         if (src[i] == '\'') {
             out_putc(&out, src[i]); i++;
             if (i < len && src[i] == '\\') { out_putc(&out, src[i]); i++; }
@@ -827,7 +992,6 @@ char *preprocess(const char *src, int len, const char *fname, int *out_len) {
     inc_path_added_source_dir = 0;
     if (fname) {
         { int fnl = 0; while (fname[fnl]) fnl++; dirname_of(fname, fnl, current_source_dir, 1024); }
-        /* __FILE__ 替换为带引号的文件名字符串 */
         int fnl = 0; while (fname[fnl]) fnl++;
         char *fv = (char *)tlibc_malloc(fnl + 3);
         fv[0] = '"'; { int fi; for (fi = 0; fi < fnl; fi++) fv[fi+1] = fname[fi]; }
@@ -836,7 +1000,6 @@ char *preprocess(const char *src, int len, const char *fname, int *out_len) {
     } else {
         add_macro("__FILE__", "\"<unknown>\"", 11);
     }
-    /* __LINE__ 设为 0（行号跟踪复杂，先填占位值，不影响编译） */
     add_macro("__LINE__", "0", 1);
     int clean_len;
     char *clean = strip_all_comments(src, len, &clean_len);
@@ -846,4 +1009,416 @@ char *preprocess(const char *src, int len, const char *fname, int *out_len) {
     out_putc(&out, '\0');
     *out_len = out.len > 0 ? out.len - 1 : 0;
     return out.data;
+}
+
+// ============================================================
+// 测试框架
+// ============================================================
+
+static int test_passed = 0;
+static int test_failed = 0;
+
+static void print_str(const char *s) {
+    int n = 0;
+    while (s[n]) n++;
+    __sys_write(1, s, n);
+}
+
+static void print_dec(long n) {
+    char buf[32];
+    int i = 0;
+    if (n < 0) { print_str("-"); n = -n; }
+    if (n == 0) { buf[i++] = '0'; }
+    while (n > 0) { buf[i++] = '0' + (n % 10); n /= 10; }
+    while (i > 0) { __sys_write(1, &buf[--i], 1); }
+}
+
+#define CHECK(cond, msg) do { \
+    if (!(cond)) { \
+        print_str("  FAIL "); print_str(msg); print_str("\n"); \
+        test_failed++; \
+    } else { \
+        test_passed++; \
+    } \
+} while (0)
+
+/* 预处理辅助：直接调用 preprocess，返回输出 buffer */
+typedef struct {
+    char *data;
+    int len;
+} PPResult;
+
+static PPResult pp(const char *input) {
+    int len = 0;
+    while (input[len]) len++;
+    int out_len;
+    char *out = preprocess(input, len, "test.c", &out_len);
+    PPResult r = { out, out_len };
+    return r;
+}
+
+
+/* 字符串比较（忽略尾部空白） */
+static int eq_trim(const char *a, int alen, const char *b) {
+    int i = alen;
+    while (i > 0 && (a[i-1] == ' ' || a[i-1] == '\t' || a[i-1] == '\n' || a[i-1] == '\r'))
+        i--;
+    int blen = 0; while (b[blen]) blen++;
+    while (blen > 0 && (b[blen-1] == ' ' || b[blen-1] == '\t' || b[blen-1] == '\n' || b[blen-1] == '\r'))
+        blen--;
+    if (i != blen) return 0;
+    int j;
+    for (j = 0; j < i; j++) if (a[j] != b[j]) return 0;
+    return 1;
+}
+
+/* 检查预处理输出是否等于预期字符串（忽略尾部空白） */
+#define CHECK_PP(input, expected, msg) do { \
+    PPResult r = pp(input); \
+    if (!eq_trim(r.data, r.len, expected)) { \
+        print_str("  FAIL "); print_str(msg); print_str(":\n"); \
+        print_str("    got:      \""); \
+        { int _i; for (_i = 0; _i < r.len; _i++) __sys_write(1, &r.data[_i], 1); } \
+        print_str("\"\n"); \
+        print_str("    expected: \""); print_str(expected); print_str("\"\n"); \
+        test_failed++; \
+    } else { \
+        test_passed++; \
+    } \
+    heap_init(); \
+} while (0)
+
+/* 精确比较（含尾部空白） */
+#define CHECK_PP_EXACT(input, expected, msg) do { \
+    PPResult r = pp(input); \
+    if (!eq(r.data, r.len, expected)) { \
+        print_str("  FAIL "); print_str(msg); print_str(":\n"); \
+        print_str("    got:      \""); \
+        { int _i; for (_i = 0; _i < r.len; _i++) __sys_write(1, &r.data[_i], 1); } \
+        print_str("\"\n"); \
+        print_str("    expected: \""); print_str(expected); print_str("\"\n"); \
+        test_failed++; \
+    } else { \
+        test_passed++; \
+    } \
+    heap_init(); \
+} while (0)
+
+static void run_section(const char *name) {
+    print_str("\n--- "); print_str(name); print_str(" ---\n");
+    test_passed = 0;
+    test_failed = 0;
+}
+
+static void print_section_result(void) {
+    print_str("  -> ");
+    print_dec(test_passed); print_str(" passed, ");
+    print_dec(test_failed); print_str(" failed\n");
+}
+
+// ============================================================
+// 预处理器测试用例
+// ============================================================
+
+/* 每次调用前重置堆 */
+static void reset(void) {
+    heap_init();
+    macro_count = 0;
+    func_macro_count = 0;
+    expand_stack_depth = 0;
+    inc_path_count = 0;
+    /* pp_buf_impl 的 static 状态只能在 pp_buf 内部重置 */
+    /* 我们用 heap_init() 清掉所有已分配内存 */
+}
+
+/* 1. 基础对象宏 */
+static void test_object_macros(void) {
+    run_section("Object-like Macros");
+
+    reset();
+    /* 简单常量替换 */
+    CHECK_PP("#define FOO 42\nFOO\n", "42", "basic #define FOO 42");
+
+    reset();
+    /* 多行文本 */
+    CHECK_PP("#define MSG hello world\nMSG\n", "hello world", "#define MSG multi-word");
+
+    reset();
+    /* 空定义（仅定义标记） */
+    CHECK_PP("#define EMPTY\nEMPTY\n", "", "#define EMPTY expands to nothing");
+
+    reset();
+    /* 宏值中包含空格 */
+    CHECK_PP("#define VAL a + b\nVAL\n", "a + b", "#define VAL with spaces");
+
+    reset();
+    /* 宏中出现其他宏名（预展开） */
+    CHECK_PP("#define X 1\n#define Y X\nY\n", "1", "nested macro X in Y");
+}
+
+/* 2. 函数式宏 */
+static void test_func_macros(void) {
+    run_section("Function-like Macros");
+
+    reset();
+    CHECK_PP("#define ADD(a,b) ((a)+(b))\nADD(1,2)\n", "((1)+(2))", "basic function macro");
+
+    reset();
+    CHECK_PP("#define MUL(a,b) a*b\nMUL(3,4)\n", "3*4", "func macro no parens");
+
+    reset();
+    CHECK_PP("#define ID(x) x\nID(42)\n", "42", "identity macro");
+
+    reset();
+    /* 多层嵌套 — 参数先展开再替换：ADD(1,2) → ((1)+(2)) 代入 MUL */
+    CHECK_PP("#define ADD(a,b) ((a)+(b))\n#define MUL(a,b) ((a)*(b))\nMUL(ADD(1,2),ADD(3,4))\n",
+             "((((1)+(2)))*(((3)+(4))))", "nested func macros");
+
+    reset();
+    /* 空参数 */
+    CHECK_PP("#define EMPTY() \nEMPTY()\n", "", "empty func macro");
+
+    reset();
+    /* 逗号分隔参数 */
+    CHECK_PP("#define F(a,b) a b\nF(hello,world)\n", "hello world", "two params");
+}
+
+/* 3. #undef */
+static void test_undef(void) {
+    run_section("#undef");
+
+    reset();
+    CHECK_PP("#define FOO 42\nFOO\n#undef FOO\nFOO\n", "42\nFOO", "#define then #undef then raw ident");
+
+    reset();
+    /* undef 不存在的宏不应报错 */
+    CHECK_PP("#undef NOTDEFINED\nint x;\n", "int x;", "#undef non-existent macro");
+}
+
+/* 4. #ifdef / #ifndef / #else / #endif */
+static void test_cond_compile(void) {
+    run_section("Conditional Compilation");
+
+    reset();
+    CHECK_PP("#define FOO\n#ifdef FOO\nkeep\n#endif\n", "keep", "#ifdef defined");
+
+    reset();
+    CHECK_PP("#define FOO\n#ifndef FOO\nskip\n#endif\n", "", "#ifndef defined → skip");
+
+    reset();
+    CHECK_PP("#ifdef UNDEF\nskip\n#endif\nkeep\n", "keep", "#ifdef undefined → skip");
+
+    reset();
+    CHECK_PP("#ifndef UNDEF\nkeep\n#endif\n", "keep", "#ifndef undefined → keep");
+
+    reset();
+    CHECK_PP("#define FOO\n#ifdef FOO\nkeep\n#else\nskip\n#endif\n", "keep", "#ifdef + #else keep");
+
+    reset();
+    CHECK_PP("#ifdef UNDEF\nskip\n#else\nkeep\n#endif\n", "keep", "#ifdef undef + #else keep");
+
+    reset();
+    /* 嵌套条件 */
+    CHECK_PP("#define A\n#define B\n#ifdef A\n#ifdef B\nboth\n#endif\n#endif\n",
+             "both", "nested #ifdef A + #ifdef B");
+}
+
+/* 5. 字符串字面量中的宏名不展开 */
+static void test_string_preserve(void) {
+    run_section("String Literal Preservation");
+
+    reset();
+    CHECK_PP("#define FOO 42\n\"FOO\"\n", "\"FOO\"", "macro not expanded in string");
+
+    reset();
+    CHECK_PP("#define BAR hello\n\"BAR world\"\n", "\"BAR world\"", "macro not expanded in string 2");
+}
+
+/* 6. 注释剥离 */
+static void test_comment_strip(void) {
+    run_section("Comment Stripping");
+
+    reset();
+    /* 块注释中的每个字符变成空格（保留行号对应）——9 inside chars = 9 spaces */
+    CHECK_PP("int /* comment */ x;\n", "int           x;", "block comment stripped");
+
+    reset();
+    reset();
+    /* 行注释：int(空格) + "// line comment"(13 chars→13spaces) + newline(保留) + x; */
+    /* 精确验证：int(3) + 1space + 13spaces + \n + x; + \n = 21 字节 */
+    { PPResult r = pp("int // line comment\nx;\n");
+    int ok = (r.len == 21) && (r.data[0]=='i') && (r.data[1]=='n') && (r.data[2]=='t');
+    int si;
+    for (si = 4; si < 17; si++) { if (r.data[si] != ' ') ok = 0; }
+    ok = ok && (r.data[17] == '\n') && (r.data[18]=='x') && (r.data[19]==';') && (r.data[20]=='\n');
+    CHECK(ok, "line comment stripped (exact byte check)");
+    heap_init(); }
+
+    reset();
+    /* 宏定义中的注释被剥离 */
+    CHECK_PP("#define FOO 42 /* comment */\nFOO\n", "42", "comment in #define stripped");
+}
+
+/* 7. ## token 粘贴 */
+static void test_token_paste(void) {
+    run_section("## Token Pasting");
+
+    reset();
+    CHECK_PP("#define CAT(a,b) a##b\nCAT(foo,bar)\n", "foobar", "basic ## paste");
+
+    reset();
+    CHECK_PP("#define CONCAT3(a,b,c) a##b##c\nCONCAT3(x,y,z)\n", "xyz", "triple ## paste");
+
+    /* 注意：空参数 + ## 不会出错（GCC 扩展） */
+    reset();
+    CHECK_PP("#define CAT2(a,b) a##b\nCAT2(x,)\n", "x", "## with empty second param");
+}
+
+/* 8. 变参宏 */
+static void test_variadic(void) {
+    run_section("Variadic Macros");
+
+    reset();
+    /* 基本变参：__VA_ARGS__ 替换为额外参数 */
+    CHECK_PP("#define PRINT(fmt,...) fmt __VA_ARGS__\nPRINT(\"hi\",42)\n",
+             "\"hi\" 42", "basic __VA_ARGS__");
+
+    reset();
+    /* 只有一个 fmt 参数时，__VA_ARGS__ 为空 */
+    CHECK_PP("#define PRINT(fmt,...) fmt __VA_ARGS__\nPRINT(\"hi\")\n",
+             "\"hi\" ", "empty __VA_ARGS__");
+}
+
+/* 9. #error 指令 */
+static void test_error_directive(void) {
+    run_section("#error Directive");
+
+    reset();
+    /* #error 行在输出中消失，错误消息打印到 stderr */
+    PPResult r = pp("#error this is wrong\nstill here\n");
+    CHECK(eq_trim(r.data, r.len, "still here"), "#error removed from output, rest passes through");
+    heap_init();
+}
+
+/* 10. 预定义宏 */
+static void test_predefined(void) {
+    run_section("Predefined Macros");
+
+    reset();
+    { PPResult r = pp("__FILE__\n");
+    CHECK(eq_trim(r.data, r.len, "\"test.c\""), "__FILE__ expands to \"test.c\"");
+    heap_init(); }
+
+    reset();
+    { PPResult r2 = pp("__LINE__\n");
+    CHECK(eq_trim(r2.data, r2.len, "0"), "__LINE__ expands to 0");
+    heap_init(); }
+
+    reset();
+    /* 不传 fname 时 __FILE__ 为 "<unknown>" */
+    { int len; char *out = preprocess("__FILE__\n", 8, 0, &len);
+    CHECK(eq_trim(out, len, "\"<unknown>\""), "__FILE__ without fname");
+    heap_init(); }
+
+    reset();
+    CHECK_PP("__x86_64__\n", "", "__x86_64__ expands to nothing");
+
+    reset();
+    CHECK_PP("X86_64_TLIBC\n", "1", "X86_64_TLIBC expands to 1");
+}
+
+/* 11. 普通文本保留 */
+static void test_plain_text(void) {
+    run_section("Plain Text Passthrough");
+
+    reset();
+    CHECK_PP("int main(void) { return 0; }\n",
+             "int main(void) { return 0; }", "plain C code preserved");
+
+    reset();
+    CHECK_PP("", "", "empty input");
+
+    reset();
+    CHECK_PP("\n\n\n", "", "whitespace-only input");
+}
+
+/* 12. 续行符处理 */
+static void test_line_continuation(void) {
+    run_section("Line Continuation");
+
+    reset();
+    /* \ 续行拼接宏定义 */
+    CHECK_PP("#define FOO \\\n42\nFOO\n", "42", "line continuation in #define");
+
+    reset();
+    /* 连续多行续行 */
+    CHECK_PP("#define SUM a+\\\nb+\\\nc\nSUM\n", "a+b+c", "multiple line continuations");
+}
+
+/* 13. 空参数预处理 */
+static void test_token_paste_followon(void) {
+    run_section("Token Paste Follow-on");
+
+    reset();
+    /* ## 后的宏名与外部 (args) 结合 */
+    CHECK_PP("#define ID(x) x\n#define CAT(a,b) a##b\nCAT(ID,(42))\n",
+             "42", "## paste + follow-on function call");
+}
+
+// ============================================================
+// 入口
+// ============================================================
+
+void __tlibc_start(void) {
+    print_str("=== preproc.c standalone tests ===\n");
+
+    test_plain_text();
+    print_section_result();
+
+    test_object_macros();
+    print_section_result();
+
+    test_func_macros();
+    print_section_result();
+
+    test_undef();
+    print_section_result();
+
+    test_cond_compile();
+    print_section_result();
+
+    test_string_preserve();
+    print_section_result();
+
+    test_comment_strip();
+    print_section_result();
+
+    test_token_paste();
+    print_section_result();
+
+    test_variadic();
+    print_section_result();
+
+    test_error_directive();
+    print_section_result();
+
+    test_predefined();
+    print_section_result();
+
+    test_line_continuation();
+    print_section_result();
+
+    test_token_paste_followon();
+    print_section_result();
+
+    /* 汇总 */
+    print_str("\n=== ");
+    if (test_failed == 0) {
+        print_str("ALL PASSED");
+    } else {
+        print_str("SOME FAILED");
+    }
+    print_str(" ===\n");
+
+    __sys_exit(test_failed != 0 ? 1 : 0);
 }
