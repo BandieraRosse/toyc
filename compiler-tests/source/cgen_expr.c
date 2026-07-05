@@ -1,0 +1,2393 @@
+// EXPECT: 0
+// cgen_expr.c standalone test
+//
+// Compile (gcc):
+//   gcc -nostdlib -ffreestanding -Wall -Wextra -Wl,-e,__tlibc_start
+//       compiler-tests/source/cgen_expr.c -o /tmp/test_cgen_expr
+// Run:  /tmp/test_cgen_expr
+
+// ============================================================
+// Inlined from tcc_need.h
+// ============================================================
+
+typedef unsigned long size_t; typedef long ptrdiff_t; typedef long off_t; typedef unsigned int mode_t;
+typedef unsigned char uint8_t; typedef unsigned short uint16_t;
+typedef unsigned int uint32_t; typedef unsigned long uint64_t;
+typedef signed char int8_t; typedef signed short int16_t;
+typedef signed int int32_t; typedef signed long int64_t;
+#ifndef NULL
+#define NULL ((void *)0)
+#endif
+
+static void sys_exit(int code) {
+    __asm__ __volatile__ ("syscall" : : "a"((long)60), "D"((long)code) : "rcx", "r11", "memory");
+    for (;;) ;
+}
+static long sys_write(int fd, const void *buf, unsigned long len) {
+    unsigned long ret;
+    __asm__ __volatile__ ("syscall" : "=a"(ret) : "a"(1), "D"((long)fd), "S"(buf), "d"((long)len) : "rcx", "r11", "memory");
+    return (long)ret;
+}
+
+// ============================================================
+// Inlined from tcc.h
+// ============================================================
+
+#define CODE_BUF_SIZE 262144
+#define STRTAB_SIZE 262144
+#define STRPOOL_SIZE 262144
+#define MAX_SYMS 8192
+#define MAX_RELS 16384
+#define MAX_MEMBERS 128
+#define MAX_TAGS 512
+#define MAX_TYPEDEFS 1024
+#define MAX_ENUM_VALS 2048
+#define MAX_LOCALS 256
+#define MAX_STRINGS 1024
+
+/* ─── Token 运算符常量（cgen_expr 用这些作为 AST_BINOP.op / AST_UNARY.op） ─── */
+typedef enum {
+    TOK_SEMI=256, TOK_LBRACE, TOK_RBRACE, TOK_LPAREN, TOK_RPAREN,
+    TOK_LBRACKET, TOK_RBRACKET, TOK_COMMA, TOK_DOT, TOK_ARROW,
+    TOK_AMPERSAND, TOK_STAR, TOK_PLUS, TOK_MINUS,
+    TOK_TILDE, TOK_EXCLAM, TOK_SLASH, TOK_PERCENT,
+    TOK_LESS, TOK_GREATER,
+    TOK_LESS_EQ, TOK_GREATER_EQ, TOK_EQ_EQ, TOK_NOT_EQ,
+    TOK_AND_AND, TOK_OR_OR,
+    TOK_PIPE, TOK_CARET,
+    TOK_LESS_LESS, TOK_GREATER_GREATER,
+    TOK_EQ, TOK_PLUS_EQ, TOK_MINUS_EQ, TOK_STAR_EQ,
+    TOK_SLASH_EQ, TOK_PERCENT_EQ, TOK_AND_EQ, TOK_OR_EQ, TOK_CARET_EQ,
+    TOK_LESS_LESS_EQ, TOK_GREATER_GREATER_EQ,
+    TOK_PLUS_PLUS, TOK_MINUS_MINUS,
+    TOK_QUESTION, TOK_COLON,
+};
+
+typedef enum {
+    AST_PROGRAM=0, AST_FUNC_DEF, AST_RETURN, AST_CONSTANT,
+    AST_BINOP, AST_UNARY, AST_ASSIGN, AST_VAR, AST_VAR_DECL,
+    AST_IF, AST_WHILE, AST_FOR, AST_DO_WHILE,
+    AST_SWITCH, AST_CASE, AST_DEFAULT, AST_BREAK, AST_CONTINUE,
+    AST_BLOCK, AST_CALL, AST_EXPR_STMT, AST_NULL_STMT,
+    AST_MEMBER, AST_STRING, AST_STRUCT_DEF,
+    AST_ASM, AST_GOTO, AST_LABEL,
+} AstKind;
+
+typedef struct { const char *constraint; struct AstNode *expr; } AsmOperand;
+
+typedef struct AstNode {
+    AstKind kind; struct AstNode *next;
+    const char *name; struct AstNode *body, *expr;
+    long ival; double dval; int is_float;
+    struct AstNode *left, *right;
+    struct AstNode *cond, *then_stmt, *else_stmt;
+    struct AstNode *loop_cond, *loop_body, *loop_init, *loop_step;
+    struct AstNode *stmts, *args, *call_target;
+    const char *member_name, *str_val;
+    struct { const char *asm_template; int is_volatile;
+        AsmOperand *outputs, *inputs; int output_count, input_count;
+        const char **clobbers; int clobber_count; } asm_;
+    struct AstNode *params;
+    int op, is_static, is_variadic, is_postfix;
+    int type_size, elem_size, base_elem_size;
+    int is_unsigned, elem_is_unsigned;
+} AstNode;
+
+typedef struct { const char *name; int offset, size; const char *struct_tag;
+    int is_float, element_size, base_elem_size;
+    int scope_depth, is_array, is_unsigned, elem_is_unsigned; } LocalVar;
+
+typedef struct { int pool_offset, len, sym_index; char name[16]; } StrInfo;
+typedef struct { const char *name; int offset, size, is_global, is_func, shndx, sym_idx; } CgenSym;
+
+// ============================================================
+// ELF 类型（cgen_expr.c 需要生成重定位条目）
+// ============================================================
+
+typedef unsigned long Elf64_Addr;
+typedef unsigned long Elf64_Xword;
+typedef long Elf64_Sxword;
+#define ELF64_R_INFO(s, t)  ((((Elf64_Xword)(s)) << 32) | ((t) & 0xffffffffUL))
+#define R_X86_64_PC32 2
+#define R_X86_64_PLT32 4
+#define R_X86_64_32 10
+
+typedef struct {
+    Elf64_Addr r_offset;
+    Elf64_Xword r_info;
+    Elf64_Sxword r_addend;
+} Elf64_Rela;
+
+// ============================================================
+// 全局缓冲区（通常由 cgen.c 定义）
+// ============================================================
+
+unsigned char code_buf[CODE_BUF_SIZE]; int code_size;
+CgenSym syms[MAX_SYMS]; int sym_count;
+Elf64_Rela rels[MAX_RELS]; int rel_count;
+char strtab[STRTAB_SIZE]; int strtab_len;
+unsigned char strpool_buf[STRPOOL_SIZE]; int strpool_size;
+StrInfo str_infos[MAX_STRINGS]; int str_info_count;
+LocalVar locals[MAX_LOCALS]; int local_count, frame_size;
+int reg_save_offset, func_nparams, scope_depth;
+int global_elem_size[MAX_SYMS]; int global_base_elem_size[MAX_SYMS];
+int elf_bss_size;
+
+// ============================================================
+// 运行时 stub
+// ============================================================
+
+int strcmp(const char *a, const char *b) {
+    while (*a && *a == *b) { a++; b++; }
+    return (unsigned char)*a - (unsigned char)*b;
+}
+void __write(int fd, const void *buf, unsigned long len) { sys_write(fd, buf, len); }
+void __exit(int code) { sys_exit(code); }
+
+// ============================================================
+// 内联辅助函数（来自 tcc.h）
+// ============================================================
+
+static int disp8_fits(int offset) { return offset >= -128 && offset <= 127; }
+
+static void e1(int b) { if (code_size >= CODE_BUF_SIZE) return; code_buf[code_size++] = b & 0xFF; }
+static void e4(int v) { e1(v); e1(v>>8); e1(v>>16); e1(v>>24); }
+
+static void emit_store_rbp64(int reg, int off) {
+    e1(0x48); e1(0x89);
+    if (disp8_fits(off)) { e1(0x45 | (reg << 3)); e1(off & 0xFF); }
+    else { e1(0x85 | (reg << 3)); e4(off); }
+}
+static void emit_load_rbp64(int reg, int off) {
+    e1(0x48); e1(0x8B);
+    if (disp8_fits(off)) { e1(0x45 | (reg << 3)); e1(off & 0xFF); }
+    else { e1(0x85 | (reg << 3)); e4(off); }
+}
+static void emit_store_rbp32(int reg, int off) {
+    e1(0x89);
+    if (disp8_fits(off)) { e1(0x45 | (reg << 3)); e1(off & 0xFF); }
+    else { e1(0x85 | (reg << 3)); e4(off); }
+}
+static void load_rax_from_rbp(int off) { emit_load_rbp64(0, off); }
+static void store_rax_to_rbp(int off) { emit_store_rbp64(0, off); }
+static void store_eax_to_rbp(int off) { emit_store_rbp32(0, off); }
+static void load_eax_from_rbp(int off) { emit_load_rbp64(0, off); (void)off; }  /* 32-bit load wrapper */
+static void emit_store_rbp16(int off) { e1(0x66); emit_store_rbp32(0, off); }
+static void emit_store_rbp8(int off) { e1(0x88);
+    if (disp8_fits(off)) { e1(0x45); e1(off & 0xFF); }
+    else { e1(0x85); e4(off); }
+}
+
+// ============================================================
+// 前向声明（cgen_expr 递归调用自身）
+// ============================================================
+void cgen_expr(AstNode *node);
+
+// ============================================================
+// cgen_expr.c 源文件 — 来自 app/cgen_expr.c
+// ============================================================
+//（cat app/cgen_expr.c 追加到这里）
+/*
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2026 BandieraRosse
+ */
+
+/*
+ * cgen_expr.c — x86_64 表达式代码生成
+ *
+ * 表达式求值约定：结果始终放在 eax 中。
+ * 二元运算：左操作数入栈，右操作数求值到 eax，出栈到 ecx，计算 ecx OP eax → eax。
+ * 函数调用：参数按顺序移入 rdi/rsi/rdx/rcx/r8/r9，call 指令。
+ */
+
+/* #include "tcc.h" — inlined above */
+
+/* ─── push/pop ─── */
+
+static void push_rax(void) { e1(0x50); }  /* push rax */
+static void pop_rax(void) { e1(0x58); }   /* pop rax */
+static void pop_rcx(void) { e1(0x59); }   /* pop rcx */
+static void push_rcx(void) { e1(0x51); }  /* push rcx */
+
+/* ─── 加载常量到 eax ─── */
+
+static void mov_eax_imm(int v) { e1(0xB8); e4(v); }
+static void mov_rax_imm64(long v) {
+    e1(0x48); e1(0xB8);
+    e1(v & 0xFF); e1((v>>8) & 0xFF); e1((v>>16) & 0xFF); e1((v>>24) & 0xFF);
+    e1((v>>32) & 0xFF); e1((v>>40) & 0xFF); e1((v>>48) & 0xFF); e1((v>>56) & 0xFF);
+}
+
+/* ─── 加载/存储局部变量 [rbp+disp] ─── */
+/* 自动选择 disp8 或 disp32（用于大数组，如 elf_write 的 256KB static 缓冲） */
+
+static void lea_from_rbp(int offset) {
+    e1(0x48); e1(0x8D);
+    if (disp8_fits(offset)) { e1(0x45); e1(offset & 0xFF); }
+    else { e1(0x85); e4(offset); }
+}
+
+/* mov eax, [rbp+off] */
+
+/* mov rax, [rbp+off] — 64-bit 加载 */
+
+/* mov [rbp+off], eax — 32-bit 存储 */
+
+/* mov [rbp+off], rax — 64-bit 存储 */
+
+/* ─── SSE 浮点辅助（自举阶段可禁用，编译时加 -DTCC_FLOAT 开启） ─── */
+
+#ifdef TCC_FLOAT
+
+static void load_double_imm(double d) {
+    union { double d; unsigned long u; } u;
+    u.d = d;
+    unsigned long v = u.u;
+    e1(0x48); e1(0xB8);
+    e1(v & 0xFF); e1((v >> 8) & 0xFF);
+    e1((v >> 16) & 0xFF); e1((v >> 24) & 0xFF);
+    e1((v >> 32) & 0xFF); e1((v >> 40) & 0xFF);
+    e1((v >> 48) & 0xFF); e1((v >> 56) & 0xFF);
+    e1(0x66); e1(0x48); e1(0x0F); e1(0x6E); e1(0xC0);
+}
+
+static void load_double_from_rbp(int disp8) {
+    e1(0xF2); e1(0x0F); e1(0x10); e1(0x45); e1(disp8 & 0xFF);
+}
+
+static void store_double_to_rbp(int disp8) {
+    e1(0xF2); e1(0x0F); e1(0x11); e1(0x45); e1(disp8 & 0xFF);
+}
+
+static void push_xmm0(void) {
+    e1(0x48); e1(0x83); e1(0xEC); e1(0x08);
+    e1(0xF2); e1(0x0F); e1(0x11); e1(0x04); e1(0x24);
+}
+
+static void pop_xmm1(void) {
+    e1(0xF2); e1(0x0F); e1(0x10); e1(0x0C); e1(0x24);
+    e1(0x48); e1(0x83); e1(0xC4); e1(0x08);
+}
+
+static void pop_xmm0(void) {
+    e1(0xF2); e1(0x0F); e1(0x10); e1(0x04); e1(0x24);
+    e1(0x48); e1(0x83); e1(0xC4); e1(0x08);
+}
+
+static void cvti2d(void) {
+    e1(0xF2); e1(0x0F); e1(0x2A); e1(0xC0);
+}
+
+static void save_xmm0_to_xmm1(void) {
+    e1(0x66); e1(0x0F); e1(0x28); e1(0xC8);
+}
+
+static void restore_xmm1_to_xmm0(void) {
+    e1(0x66); e1(0x0F); e1(0x28); e1(0xC1);
+}
+
+static void negate_double(void) {
+    e1(0x48); e1(0xB8);
+    e1(0x00); e1(0x00); e1(0x00); e1(0x00);
+    e1(0x00); e1(0x00); e1(0x00); e1(0x80);
+    e1(0x66); e1(0x48); e1(0x0F); e1(0x6E); e1(0xC8);
+    e1(0x66); e1(0x0F); e1(0x57); e1(0xC1);
+}
+
+#else
+
+static void load_double_imm(double d) { (void)d; }
+static void load_double_from_rbp(int d) { (void)d; }
+static void store_double_to_rbp(int d) { (void)d; }
+static void push_xmm0(void) {}
+static void pop_xmm1(void) {}
+static void pop_xmm0(void) {}
+static void cvti2d(void) {}
+static void save_xmm0_to_xmm1(void) {}
+static void restore_xmm1_to_xmm0(void) {}
+static void negate_double(void) {}
+
+#endif
+
+/* ─── 二元运算（ecx/rcx OP eax/rax → eax/rax） ─── */
+/* 32-bit 版本 */
+static void binop_add(void) { e1(0x01); e1(0xC8); }  /* add eax, ecx */
+static void binop_sub_swapped(void) {
+    e1(0x91); e1(0x29); e1(0xC8);  /* xchg eax,ecx; sub eax,ecx — eax=left-right */
+}
+static void binop_mul(void) { e1(0x0F); e1(0xAF); e1(0xC1); }  /* imul eax, ecx */
+static void binop_div(void) { e1(0x91); e1(0x99); e1(0xF7); e1(0xF9); }  /* xchg; cdq; idiv ecx */
+static void binop_mod(void) { binop_div(); e1(0x89); e1(0xD0); }  /* div; mov eax,edx */
+
+/* 无符号除法/取模 */
+static void binop_divu(void) {
+    e1(0x91); e1(0x31); e1(0xD2); e1(0xF7); e1(0xF1);  /* xchg; xor edx,edx; div ecx */
+}
+static void binop_modu(void) { binop_divu(); e1(0x89); e1(0xD0); }  /* mov eax, edx */
+static void binop_and(void) { e1(0x21); e1(0xC8); }  /* and eax, ecx */
+static void binop_or(void)  { e1(0x09); e1(0xC8); }  /* or eax, ecx */
+static void binop_xor(void) { e1(0x31); e1(0xC8); }  /* xor eax, ecx */
+static void binop_shl(void) { e1(0x91); e1(0xD3); e1(0xE0); }  /* xchg eax,ecx; shl eax, cl */
+static void binop_shr(void) { e1(0x91); e1(0xD3); e1(0xE8); }  /* xchg eax,ecx; shr eax, cl (unsigned) */
+static void binop_sar(void) { e1(0x91); e1(0xD3); e1(0xF8); }  /* xchg eax,ecx; sar eax, cl (signed) */
+static void binop_cmp(int setcc_opcode) {
+    e1(0x39); e1(0xC1);           /* cmp ecx, eax */
+    e1(0x0F); e1(setcc_opcode); e1(0xC0);  /* setcc al */
+    e1(0x0F); e1(0xB6); e1(0xC0); /* movzx eax, al */
+}
+
+/* 64-bit 版本（带 REX.W 前缀） */
+static void binop_add64(void) { e1(0x48); e1(0x01); e1(0xC8); }  /* add rax, rcx */
+static void binop_sub_swapped64(void) {
+    e1(0x48); e1(0x91);           /* xchg rax, rcx */
+    e1(0x48); e1(0x29); e1(0xC8); /* sub rax, rcx */
+}
+static void binop_mul64(void) { e1(0x48); e1(0x0F); e1(0xAF); e1(0xC1); }  /* imul rax, rcx */
+static void binop_div64(void) {
+    e1(0x48); e1(0x91);           /* xchg rax, rcx */
+    e1(0x48); e1(0x99);           /* cqo (rax→rdx:rax sign-extend) */
+    e1(0x48); e1(0xF7); e1(0xF9); /* idiv rcx */
+}
+static void binop_mod64(void) { binop_div64(); e1(0x48); e1(0x89); e1(0xD0); }  /* mov rax, rdx */
+
+/* 无符号 64-bit 除法/取模 */
+static void binop_divu64(void) {
+    e1(0x48); e1(0x91);           /* xchg rax, rcx */
+    e1(0x48); e1(0x31); e1(0xD2); /* xor rdx, rdx */
+    e1(0x48); e1(0xF7); e1(0xF1); /* div rcx */
+}
+static void binop_modu64(void) { binop_divu64(); e1(0x48); e1(0x89); e1(0xD0); }  /* mov rax, rdx */
+static void binop_and64(void) { e1(0x48); e1(0x21); e1(0xC8); }  /* and rax, rcx */
+static void binop_or64(void)  { e1(0x48); e1(0x09); e1(0xC8); }  /* or rax, rcx */
+static void binop_xor64(void) { e1(0x48); e1(0x31); e1(0xC8); }  /* xor rax, rcx */
+static void binop_shl64(void) { e1(0x48); e1(0x91); e1(0x48); e1(0xD3); e1(0xE0); }  /* xchg; shl rax, cl */
+static void binop_shr64(void) { e1(0x48); e1(0x91); e1(0x48); e1(0xD3); e1(0xE8); }  /* xchg; shr rax, cl (unsigned) */
+static void binop_sar64(void) { e1(0x48); e1(0x91); e1(0x48); e1(0xD3); e1(0xF8); }  /* xchg; sar rax, cl (signed) */
+static void binop_cmp64(int setcc_opcode) {
+    e1(0x48); e1(0x39); e1(0xC1); /* cmp rcx, rax */
+    e1(0x0F); e1(setcc_opcode); e1(0xC0);  /* setcc al */
+    e1(0x0F); e1(0xB6); e1(0xC0); /* movzx eax, al */
+}
+
+/* ─── 一元运算（eax/rax OP → eax/rax） ─── */
+
+static void unop_neg(void) { e1(0xF7); e1(0xD8); }  /* neg eax */
+static void unop_not(void) { e1(0xF7); e1(0xD0); }  /* not eax */
+static void unop_neg64(void) { e1(0x48); e1(0xF7); e1(0xD8); }  /* neg rax */
+static void unop_not64(void) { e1(0x48); e1(0xF7); e1(0xD0); }  /* not rax */
+/* ─── 函数调用 ─── */
+
+static void emit_call(const char *name) {
+    if (!name) return;
+    /* 通过符号表查找函数地址。对于 .o 文件，使用 R_X86_64_PLT32 或 R_X86_64_PC32 重定位 */
+    /* 先找到或创建符号 */
+    int sym_idx = -1;
+    int i;
+    for (i = 0; i < sym_count; i++) {
+        if (syms[i].name && strcmp(syms[i].name, name) == 0) { sym_idx = i; break; }
+    }
+    if (sym_idx < 0) {
+        /* 创建未定义符号 */
+        if (sym_count >= MAX_SYMS) return;
+        sym_idx = sym_count;
+        CgenSym *s = &syms[sym_count++];
+        s->name = name;
+        s->offset = 0;
+        s->size = 0;
+        s->is_global = 1;   /* GLOBAL 以便链接器解析 */
+        s->is_func = 1;
+        s->shndx = 0;       /* SHN_UNDEF — 外部符号 */
+        s->sym_idx = -1;
+    }
+
+    /* 记录重定位 */
+    if (rel_count >= MAX_RELS) return;
+    Elf64_Rela *r = &rels[rel_count++];
+    int call_off = code_size;
+    r->r_offset = call_off + 1;
+    r->r_info = ELF64_R_INFO(sym_idx + 1, R_X86_64_PLT32);
+    r->r_addend = -4;
+
+    /* e8 00 00 00 00: call rel32（占位重定位） */
+    e1(0xE8); e4(0);
+}
+
+/* ─── 左值地址计算（用于 ++/--） ─── */
+
+/* 计算左值的内存地址到 rax 中，支持 AST_VAR、AST_MEMBER、*ptr */
+static void cgen_addr(AstNode *node) {
+    if (!node) return;
+
+    switch (node->kind) {
+    case AST_VAR: {
+        /* 局部变量：lea rax, [rbp+off] */
+        int i;
+        for (i = local_count - 1; i >= 0; i--) {
+            if (strcmp(locals[i].name, node->name) == 0 &&
+                locals[i].scope_depth <= scope_depth) {
+                lea_from_rbp(locals[i].offset);
+                return;
+            }
+        }
+        /* 全局变量：lea rax, [rip+disp32] */
+        if (node->name && *node->name) {
+            int si = -1;
+            for (i = 0; i < sym_count; i++) {
+                if (syms[i].name && strcmp(syms[i].name, node->name) == 0) { si = i; break; }
+            }
+            if (si < 0 && sym_count < MAX_SYMS) {
+                si = sym_count;
+                CgenSym *s = &syms[sym_count++];
+                s->name = node->name; s->offset = 0; s->size = 0;
+                s->is_global = 1; s->is_func = 0;
+                s->shndx = 0; s->sym_idx = -1;
+            }
+            if (si >= 0) {
+                e1(0x48); e1(0x8D); e1(0x05);
+                int ro = code_size; e4(0);
+                if (rel_count < MAX_RELS) {
+                    Elf64_Rela *r = &rels[rel_count++];
+                    r->r_offset = ro;
+                    r->r_info = ELF64_R_INFO(si + 1, R_X86_64_PC32);
+                    r->r_addend = -4;
+                }
+            }
+        }
+        return;
+    }
+    case AST_BINOP:
+        if (node->op == TOK_LBRACKET) {
+            /* a[i] 的地址：计算 base + index * elem_size */
+            cgen_expr(node->left);       /* 数组基地址 → rax */
+            push_rax();
+            cgen_expr(node->right);      /* 索引 → eax */
+            pop_rcx();                    /* rcx = 基地址 */
+
+            int elem_size = 1;
+            int idx_is64 = (node->right && node->right->type_size == 8);
+            if (node->left && node->left->kind == AST_VAR) {
+                int i;
+                for (i = local_count - 1; i >= 0; i--) {
+                    if (strcmp(locals[i].name, node->left->name) == 0 &&
+                        locals[i].scope_depth <= scope_depth) {
+                        if (locals[i].element_size > 0)
+                            elem_size = locals[i].element_size;
+                        break;
+                    }
+                }
+                if (i < 0) {
+                    for (i = 0; i < sym_count; i++) {
+                        if (syms[i].name && strcmp(syms[i].name, node->left->name) == 0) {
+                            if (i < MAX_SYMS && global_elem_size[i] > 0)
+                                elem_size = global_elem_size[i];
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (elem_size == 2) {
+                if (idx_is64) { e1(0x48); e1(0xC1); e1(0xE0); e1(0x01); }
+                else { e1(0xC1); e1(0xE0); e1(0x01); }
+            } else if (elem_size == 4) {
+                if (idx_is64) { e1(0x48); e1(0xC1); e1(0xE0); e1(0x02); }
+                else { e1(0xC1); e1(0xE0); e1(0x02); }
+            } else if (elem_size == 8) {
+                if (idx_is64) { e1(0x48); e1(0xC1); e1(0xE0); e1(0x03); }
+                else { e1(0xC1); e1(0xE0); e1(0x03); }
+            } else if (elem_size == 16) {
+                if (idx_is64) { e1(0x48); e1(0xC1); e1(0xE0); e1(0x04); }
+                else { e1(0xC1); e1(0xE0); e1(0x04); }
+            } else if (elem_size > 1) {
+                /* 非 2 的幂：用 imul 乘 */
+                e1(0x50);                            /* push rax (save index) */
+                if (idx_is64) {
+                    e1(0xB8); e4(elem_size); e4(0);   /* mov eax, elem_size (lower 32) */
+                    /* Need to handle 64-bit elem_size too, but typical struct size is small */
+                    e1(0x48); e1(0x0F); e1(0xAF); e1(0x04); e1(0x24);  /* imul rax, [rsp] */
+                } else {
+                    e1(0xB8); e4(elem_size);           /* mov eax, elem_size */
+                    e1(0x0F); e1(0xAF); e1(0x04); e1(0x24);  /* imul eax, [rsp] */
+                }
+                e1(0x48); e1(0x83); e1(0xC4); e1(0x08);  /* add rsp, 8 (pop and discard, result in rax) */
+            }
+            e1(0x48); e1(0x01); e1(0xC8);  /* add rax, rcx */
+            return;
+        }
+        break;
+    case AST_MEMBER: {
+        int moff = node->ival;
+        if (node->op == TOK_DOT && node->left && node->left->kind == AST_VAR) {
+            /* local_struct.member: lea rax, [rbp + base_off + member_off] */
+            int i;
+            for (i = local_count - 1; i >= 0; i--) {
+                if (strcmp(locals[i].name, node->left->name) == 0 &&
+                    locals[i].scope_depth <= scope_depth) {
+                    int addr = locals[i].offset + moff;
+                    lea_from_rbp(addr);
+                    return;
+                }
+            }
+        }
+        /* p->member: 计算指针值，加上成员偏移 */
+        if (node->op == TOK_ARROW) {
+            cgen_expr(node->left);       /* rax = 指针值 */
+            if (moff != 0) {
+                push_rax();
+                mov_eax_imm(moff);
+                pop_rcx();
+                e1(0x48); e1(0x01); e1(0xC8);  /* add rax, rcx */
+            }
+            return;
+        }
+        /* 非 AST_VAR 的 .member — 用 cgen_addr 取基地址（支持 a[i].member 等复合） */
+        cgen_addr(node->left);
+        if (moff != 0) {
+            push_rax();
+            mov_eax_imm(moff);
+            pop_rcx();
+            e1(0x48); e1(0x01); e1(0xC8);  /* add rax, rcx (64-bit) */
+        }
+        return;
+    }
+    case AST_UNARY:
+        if (node->op == TOK_STAR) {
+            /* *ptr: ptr 的值就是目标地址 */
+            cgen_expr(node->expr);
+            return;
+        }
+        break;
+    default:
+        break;
+    }
+    /* fallback：求值表达式，期望 rax 中为地址 */
+    cgen_expr(node);
+}
+
+/* ─── 对外接口：表达式代码生成 ─── */
+
+void cgen_expr(AstNode *node) {
+    if (!node) return;
+
+    switch (node->kind) {
+
+    case AST_CONSTANT:
+        if (node->is_float)
+            load_double_imm(node->dval);
+        else
+            if (node->ival >= -2147483648L && node->ival <= 2147483647L) {
+                mov_eax_imm((int)node->ival);
+                if (node->ival < 0) { e1(0x48); e1(0x63); e1(0xC0); }  /* movsxd rax, eax: 符号扩展 32→64 */
+            } else {
+                mov_rax_imm64(node->ival);
+            }
+        break;
+
+    case AST_STRING: {
+        /* 字符串字面量：追加到 strpool，创建 LOCAL 符号，发射 lea + 重定位 */
+        node->type_size = 8;  /* 字符串字面量是指针 */
+        const char *str = node->str_val;
+        if (!str) { mov_eax_imm(0); break; }
+        int len = 0;
+        while (str[len]) len++;
+        len++;  /* include null terminator */
+
+        /* 追加到字符串池 */
+        int pool_off = strpool_size;
+        if (strpool_size + len > STRPOOL_SIZE) {
+            __write(2, "tcc: string pool overflow\n", 26);
+            __exit(1);
+        }
+        int i;
+        for (i = 0; i < len; i++)
+            strpool_buf[strpool_size++] = str[i];
+
+        /* 在 syms[] 中创建 LOCAL 符号（必须早于后续 GLOBAL 创建，确保 ELF 顺序正确） */
+        if (str_info_count >= MAX_STRINGS) {
+            __write(2, "tcc: string info overflow\n", 26);
+            __exit(1);
+        }
+        /* 先构建符号名 .LC%d */
+        char name_buf[16];
+        int si = str_info_count;
+        char *np = name_buf;
+        *np++ = '.'; *np++ = 'L'; *np++ = 'C';
+        if (si >= 10000) *np++ = '0' + (si / 10000) % 10;
+        if (si >= 1000)  *np++ = '0' + (si / 1000) % 10;
+        if (si >= 100)   *np++ = '0' + (si / 100) % 10;
+        if (si >= 10)    *np++ = '0' + (si / 10) % 10;
+        *np++ = '0' + si % 10;
+        *np = '\0';
+
+        /* 用 str_infos 持久化符号名（name 数组在 elf_write 前一直有效） */
+        int ni;
+        for (ni = 0; ni < 16; ni++)
+            str_infos[si].name[ni] = name_buf[ni];
+
+        /* 添加 LOCAL 符号（offset 暂设为 0，后续在 cgen_program 中修正） */
+        int sym_idx = -1;
+        if (sym_count < MAX_SYMS) {
+            sym_idx = sym_count++;
+            syms[sym_idx].name = str_infos[si].name;
+            syms[sym_idx].offset = 0;
+            syms[sym_idx].size = len;
+            syms[sym_idx].is_global = 0;
+            syms[sym_idx].is_func = 0;
+            syms[sym_idx].shndx = 1;  /* .text */
+            syms[sym_idx].sym_idx = -1;
+        }
+
+        /* 记录字符串信息供后续偏移修正 */
+        str_infos[si].pool_offset = pool_off;
+        str_infos[si].len = len;
+        str_infos[si].sym_index = sym_idx;
+        str_info_count++;
+
+        /* 发射 lea rax, [rip + disp32] */
+        e1(0x48); e1(0x8D); e1(0x05);   /* lea rax, [rip + disp32] */
+        int reloc_off = code_size;
+        e4(0);                            /* disp32 占位（链接器覆盖） */
+
+        /* 记录重定位（直接用 sym_idx + 1，此时 syms[] 顺序与 ELF 索引一致） */
+        if (rel_count < MAX_RELS && sym_idx >= 0) {
+            Elf64_Rela *r = &rels[rel_count++];
+            r->r_offset = reloc_off;
+            r->r_info = ELF64_R_INFO(sym_idx + 1, R_X86_64_PC32);
+            r->r_addend = -4;
+        }
+        break;
+    }
+
+    case AST_VAR: {
+        /* 查找局部变量偏移 — 从后往前搜索，用 scope_depth 过滤块作用域阴影 */
+        int i;
+        for (i = local_count - 1; i >= 0; i--) {
+            if (strcmp(locals[i].name, node->name) == 0 &&
+                locals[i].scope_depth <= scope_depth) {
+                if (locals[i].is_float) {
+                    node->is_float = 1;
+                    node->type_size = 8;
+                    load_double_from_rbp(locals[i].offset);
+                } else if (node->is_float) {
+                    /* 转型：int 变量被标记为 float（如 (double)i） */
+                    load_eax_from_rbp(locals[i].offset);
+                    cvti2d();
+                } else {
+                    node->type_size = locals[i].size;
+                    node->is_unsigned = locals[i].is_unsigned;
+                    if (locals[i].is_array || locals[i].size > 8) {
+                        /* 数组/大结构体：退化为指针（lea rax, [rbp+off]） */
+                        lea_from_rbp(locals[i].offset);
+                        node->type_size = 8;  /* 数组→指针衰减 */
+                    } else if (locals[i].size == 8)
+                        load_rax_from_rbp(locals[i].offset);
+                    else if (locals[i].size == 1) {
+                        if (locals[i].is_unsigned) {
+                            /* movzbl — zero-extend byte load */
+                            if (disp8_fits(locals[i].offset))
+                                { e1(0x0F); e1(0xB6); e1(0x45); e1(locals[i].offset & 0xFF); }
+                            else
+                                { e1(0x0F); e1(0xB6); e1(0x85); e4(locals[i].offset); }
+                        } else {
+                            /* movsbl — sign-extend byte load */
+                            if (disp8_fits(locals[i].offset))
+                                { e1(0x0F); e1(0xBE); e1(0x45); e1(locals[i].offset & 0xFF); }
+                            else
+                                { e1(0x0F); e1(0xBE); e1(0x85); e4(locals[i].offset); }
+                        }
+                    } else if (locals[i].size == 2) {
+                        if (locals[i].is_unsigned) {
+                            /* movzwl — zero-extend word load */
+                            if (disp8_fits(locals[i].offset))
+                                { e1(0x0F); e1(0xB7); e1(0x45); e1(locals[i].offset & 0xFF); }
+                            else
+                                { e1(0x0F); e1(0xB7); e1(0x85); e4(locals[i].offset); }
+                        } else {
+                            /* movswl — sign-extend word load */
+                            if (disp8_fits(locals[i].offset))
+                                { e1(0x0F); e1(0xBF); e1(0x45); e1(locals[i].offset & 0xFF); }
+                            else
+                                { e1(0x0F); e1(0xBF); e1(0x85); e4(locals[i].offset); }
+                        }
+                    }
+                    else
+                        load_eax_from_rbp(locals[i].offset);
+                }
+                return;
+            }
+        }
+        /* 未找到局部变量：当作全局或外部符号，生成带重定位的加载 */
+        if (node->name && *node->name) {
+            int si = -1;
+            for (i = 0; i < sym_count; i++) {
+                if (syms[i].name && strcmp(syms[i].name, node->name) == 0)
+                    { si = i; break; }
+            }
+            if (si < 0 && sym_count < MAX_SYMS) {
+                si = sym_count;
+                CgenSym *s = &syms[sym_count++];
+                s->name = node->name;
+                s->offset = 0; s->size = 0;
+                s->is_global = 1;
+                s->is_func = 0;
+                s->shndx = 0;  /* SHN_UNDEF — 外部符号 */
+                s->sym_idx = -1;
+            }
+            if (si >= 0) {
+                /* 全局变量：使用符号表记录的大小确定加载宽度 */
+                int gsz = syms[si].size > 0 ? syms[si].size :
+                          (node->type_size > 0 ? node->type_size : 4);
+                if (gsz > 8) {
+                    /* 数组/大结构体：数组→指针衰减（lea rax, [rip + disp32]） */
+                    e1(0x48); e1(0x8D); e1(0x05);
+                    node->type_size = 8;
+                } else if (gsz == 8) {
+                    e1(0x48); e1(0x8B); e1(0x05);  /* mov rax, [rip + disp32] */
+                } else {
+                    e1(0x8B); e1(0x05);             /* mov eax, [rip + disp32] */
+                }
+                int ro = code_size;
+                e4(0);
+                if (rel_count < MAX_RELS) {
+                    Elf64_Rela *r = &rels[rel_count++];
+                    r->r_offset = ro;
+                    r->r_info = ELF64_R_INFO(si + 1, R_X86_64_PC32);
+                    r->r_addend = -4;
+                }
+            } else {
+                mov_eax_imm(0);
+            }
+        } else {
+            mov_eax_imm(0);
+        }
+        break;
+    }
+
+    case AST_BINOP: {
+        /* 数组下标 a[i] = *(a + i) — 支持指针运算 */
+        if (node->op == TOK_LBRACKET) {
+            cgen_expr(node->left);   /* 指针 → rax */
+            push_rax();
+            cgen_expr(node->right);  /* 索引 → eax */
+            pop_rcx();               /* rcx = 指针 */
+
+            /* 确定元素大小和符号性（默认 1 = char*，默认 signed） */
+            int elem_size = 1;
+            int elem_unsigned = 0;
+            int idx_is64 = (node->right && node->right->type_size == 8);
+            if (node->left && node->left->kind == AST_VAR) {
+                int i;
+                for (i = local_count - 1; i >= 0; i--) {
+                    if (strcmp(locals[i].name, node->left->name) == 0 &&
+                        locals[i].scope_depth <= scope_depth) {
+                        if (locals[i].element_size > 0)
+                            elem_size = locals[i].element_size;
+                        elem_unsigned = locals[i].elem_is_unsigned;
+                        break;
+                    }
+                }
+                if (i < 0) {
+                    for (i = 0; i < sym_count; i++) {
+                        if (syms[i].name && strcmp(syms[i].name, node->left->name) == 0) {
+                            if (i < MAX_SYMS && global_elem_size[i] > 0)
+                                elem_size = global_elem_size[i];
+                            break;
+                        }
+                    }
+                }
+            } else if (node->left && node->left->kind == AST_BINOP &&
+                       node->left->op == TOK_LBRACKET &&
+                       node->left->left && node->left->left->kind == AST_VAR) {
+                /* 多维数组外层下标：使用 base_elem_size（内层元素大小） */
+                int i;
+                for (i = local_count - 1; i >= 0; i--) {
+                    if (strcmp(locals[i].name, node->left->left->name) == 0 &&
+                        locals[i].scope_depth <= scope_depth) {
+                        if (locals[i].base_elem_size > 0)
+                            elem_size = locals[i].base_elem_size;
+                        else if (locals[i].element_size > 0)
+                            elem_size = locals[i].element_size;
+                        break;
+                    }
+                }
+                if (i < 0) {
+                    for (i = 0; i < sym_count; i++) {
+                        if (syms[i].name && strcmp(syms[i].name, node->left->left->name) == 0) {
+                            elem_size = 4;  /* 默认 int */
+                            break;
+                        }
+                    }
+                }
+            }
+
+            /* 索引 * 元素大小（移位加速），索引可能是 64-bit (size_t) */
+
+            if (elem_size == 2) {
+                if (idx_is64)
+                    { e1(0x48); e1(0xC1); e1(0xE0); e1(0x01); }  /* shl rax, 1 */
+                else
+                    { e1(0xC1); e1(0xE0); e1(0x01); }             /* shl eax, 1 */
+            } else if (elem_size == 4) {
+                if (idx_is64)
+                    { e1(0x48); e1(0xC1); e1(0xE0); e1(0x02); }  /* shl rax, 2 */
+                else
+                    { e1(0xC1); e1(0xE0); e1(0x02); }             /* shl eax, 2 */
+            } else if (elem_size == 8) {
+                if (idx_is64)
+                    { e1(0x48); e1(0xC1); e1(0xE0); e1(0x03); }  /* shl rax, 3 */
+                else
+                    { e1(0xC1); e1(0xE0); e1(0x03); }             /* shl eax, 3 */
+            } else if (elem_size == 16) {
+                if (idx_is64)
+                    { e1(0x48); e1(0xC1); e1(0xE0); e1(0x04); }  /* shl rax, 4 */
+                else
+                    { e1(0xC1); e1(0xE0); e1(0x04); }             /* shl eax, 4 */
+            } else if (elem_size > 1) {
+                /* 非 2 的幂：imul rax, rcx（需保存 rcx 中的基地址） */
+                e1(0x50);                            /* push rax (save index) */
+                if (idx_is64) {
+                    e1(0xB8); e4(elem_size); e4(0);   /* mov eax, elem_size */
+                    e1(0x48); e1(0x0F); e1(0xAF); e1(0x04); e1(0x24);  /* imul rax, [rsp] */
+                } else {
+                    e1(0xB8); e4(elem_size);           /* mov eax, elem_size */
+                    e1(0x0F); e1(0xAF); e1(0x04); e1(0x24);  /* imul eax, [rsp] */
+                }
+                e1(0x48); e1(0x83); e1(0xC4); e1(0x08);  /* add rsp, 8 (discard saved index) */
+            }
+
+            /* ptr + offset → rax */
+            e1(0x48); e1(0x01); e1(0xC8);  /* add rax, rcx */
+
+            /* 判断是否子数组（多维数组内层下标 → 退化为指针，不加载）
+             * 通过 base_elem_size 区分：int arr[3][4] 中 arr[i] 有
+             * element_size=16 base_elem_size=4（子数组），而 int *p 有 element_size=4 base_elem_size=0 */
+            int is_subarray = 0;
+            if (node->left && node->left->kind == AST_VAR && elem_size >= 4) {
+                int idx;
+                for (idx = local_count - 1; idx >= 0; idx--) {
+                    if (strcmp(locals[idx].name, node->left->name) == 0 &&
+                        locals[idx].scope_depth <= scope_depth) {
+                        if (locals[idx].is_array && locals[idx].base_elem_size > 0 &&
+                            locals[idx].base_elem_size < elem_size)
+                            is_subarray = 1;
+                        break;
+                    }
+                }
+                if (idx < 0) {
+                    for (idx = 0; idx < sym_count; idx++) {
+                        if (syms[idx].name && strcmp(syms[idx].name, node->left->name) == 0) {
+                            if (idx < MAX_SYMS && global_base_elem_size[idx] > 0 && global_base_elem_size[idx] < elem_size)
+                                is_subarray = 1;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            /* 按元素大小和符号性加载结果（子数组/大结构体不加载，退化为指针） */
+            if (is_subarray || elem_size > 8) {
+                /* 子数组/大结构体：不加载，rax 中已是指针 */
+                node->type_size = 8;
+            } else if (elem_size >= 8) {
+                e1(0x48); e1(0x8B); e1(0x00);    /* mov rax, [rax] */
+                node->type_size = elem_size;
+            } else if (elem_size == 4) {
+                e1(0x8B); e1(0x00);                   /* mov eax, [rax] */
+                node->type_size = elem_size;
+            } else if (elem_size == 2) {
+                if (elem_unsigned) {
+                    e1(0x0F); e1(0xB7); e1(0x00);  /* movzwl (%rax), %eax — 零扩展字加载 */
+                } else {
+                    e1(0x0F); e1(0xBF); e1(0x00);  /* movswl (%rax), %eax — 符号扩展字加载 */
+                }
+                node->type_size = elem_size;
+            } else {
+                if (elem_unsigned) {
+                    e1(0x0F); e1(0xB6); e1(0x00);  /* movzbl (%rax), %eax — 零扩展字节加载 */
+                } else {
+                    e1(0x0F); e1(0xBE); e1(0x00);  /* movsbl (%rax), %eax — 符号扩展字节加载 */
+                }
+                node->type_size = elem_size;
+            }
+            node->is_unsigned = elem_unsigned;
+            break;
+        }
+
+        if (node->op == TOK_AND_AND || node->op == TOK_OR_OR) {
+            /* 短路求值：用条件跳转避免求值不必要的右操作数 */
+            cgen_expr(node->left);
+            e1(0x85); e1(0xC0);                          /* test eax, eax */
+
+            int is_or = (node->op == TOK_OR_OR);
+            int j1_pos = code_size;
+
+            if (is_or) {
+                /* a || b: a 为 true 则跳到 true_path */
+                e1(0x0F); e1(0x85); e4(0);               /* jnz L_true */
+            } else {
+                /* a && b: a 为 false 则跳到 false_path */
+                e1(0x0F); e1(0x84); e4(0);               /* jz L_false */
+            }
+
+            cgen_expr(node->right);
+            e1(0x85); e1(0xC0);
+            int j2_pos = code_size;
+
+            if (is_or) {
+                /* b 也为 true → 跳到 true_path */
+                e1(0x0F); e1(0x85); e4(0);               /* jnz L_true */
+            } else {
+                /* b 为 false → 跳到 false_path */
+                e1(0x0F); e1(0x84); e4(0);               /* jz L_false */
+            }
+
+            if (is_or) {
+                /* a||b: 两个条件都假 → false_path */
+                int false_pos = code_size;
+                mov_eax_imm(0);
+                int ep = code_size;
+                e1(0xE9); e4(0);                          /* jmp L_end */
+                int true_pos = code_size;
+                /* 回填 j1 和 j2 到 true_pos */
+                { int d = true_pos - (j1_pos + 6); code_buf[j1_pos+2]=d&0xFF; code_buf[j1_pos+3]=(d>>8)&0xFF;
+                  code_buf[j1_pos+4]=(d>>16)&0xFF; code_buf[j1_pos+5]=(d>>24)&0xFF; }
+                { int d = true_pos - (j2_pos + 6); code_buf[j2_pos+2]=d&0xFF; code_buf[j2_pos+3]=(d>>8)&0xFF;
+                  code_buf[j2_pos+4]=(d>>16)&0xFF; code_buf[j2_pos+5]=(d>>24)&0xFF; }
+                mov_eax_imm(1);
+                /* 回填 ep */
+                int end = code_size;
+                { int d = end - (ep + 5); code_buf[ep+1]=d&0xFF; code_buf[ep+2]=(d>>8)&0xFF;
+                  code_buf[ep+3]=(d>>16)&0xFF; code_buf[ep+4]=(d>>24)&0xFF; }
+            } else {
+                /* a&&b: 两个条件都真 → true_path（fallthrough），第一个假 → false_path */
+                int true_pos = code_size;
+                mov_eax_imm(1);
+                int ep = code_size;
+                e1(0xE9); e4(0);                          /* jmp L_end */
+                int false_pos = code_size;
+                /* 回填 j1 和 j2 到 false_pos */
+                { int d = false_pos - (j1_pos + 6); code_buf[j1_pos+2]=d&0xFF; code_buf[j1_pos+3]=(d>>8)&0xFF;
+                  code_buf[j1_pos+4]=(d>>16)&0xFF; code_buf[j1_pos+5]=(d>>24)&0xFF; }
+                { int d = false_pos - (j2_pos + 6); code_buf[j2_pos+2]=d&0xFF; code_buf[j2_pos+3]=(d>>8)&0xFF;
+                  code_buf[j2_pos+4]=(d>>16)&0xFF; code_buf[j2_pos+5]=(d>>24)&0xFF; }
+                mov_eax_imm(0);
+                /* 回填 ep */
+                int end = code_size;
+                { int d = end - (ep + 5); code_buf[ep+1]=d&0xFF; code_buf[ep+2]=(d>>8)&0xFF;
+                  code_buf[ep+3]=(d>>16)&0xFF; code_buf[ep+4]=(d>>24)&0xFF; }
+            }
+            break;
+        }
+
+        /* 逗号运算符 */
+        if (node->op == TOK_COMMA) {
+            cgen_expr(node->left);
+            if (node->is_float) {
+                /* 左表达式的 double 结果需丢弃，但需要在栈上保存右结果 */
+            }
+            cgen_expr(node->right);
+            break;
+        }
+
+        /* 检测是否浮点运算 */
+        {
+        int left_f  = node->left  && node->left->is_float;
+        int right_f = node->right && node->right->is_float;
+
+        if (left_f || right_f) {
+            int is_cmp = (node->op == TOK_LESS || node->op == TOK_GREATER ||
+                          node->op == TOK_LESS_EQ || node->op == TOK_GREATER_EQ ||
+                          node->op == TOK_EQ_EQ || node->op == TOK_NOT_EQ);
+
+            /* 浮点比较：用 ucomisd，结果始终是 int (eax=0/1) */
+            if (is_cmp) {
+                cgen_expr(node->left);
+                if (!left_f) cvti2d();    /* 左操作数提升到 double */
+                save_xmm0_to_xmm1();      /* xmm1 = left */
+                cgen_expr(node->right);
+                if (!right_f) cvti2d();   /* 右操作数提升到 double */
+                /* ucomisd xmm1, xmm0 (xmm1 - xmm0) */
+                e1(0x66); e1(0x0F); e1(0x2E); e1(0xC8);
+                /* setcc al */
+                switch (node->op) {
+                case TOK_LESS:       e1(0x0F); e1(0x92); e1(0xC0); break;  /* setb */
+                case TOK_LESS_EQ:    e1(0x0F); e1(0x96); e1(0xC0); break;  /* setbe */
+                case TOK_GREATER:    e1(0x0F); e1(0x97); e1(0xC0); break;  /* seta */
+                case TOK_GREATER_EQ: e1(0x0F); e1(0x93); e1(0xC0); break;  /* setae */
+                case TOK_EQ_EQ:      e1(0x0F); e1(0x94); e1(0xC0); break;  /* sete */
+                case TOK_NOT_EQ:     e1(0x0F); e1(0x95); e1(0xC0); break;  /* setne */
+                default: break;
+                }
+                e1(0x0F); e1(0xB6); e1(0xC0);  /* movzx eax, al */
+                node->is_float = 0;  /* 比较结果始终是整数 */
+                break;
+            }
+
+            /* 浮点算术运算 */
+            cgen_expr(node->left);
+            if (!left_f) cvti2d();    /* 提升 int→double */
+            push_xmm0();               /* 保存左操作数 */
+
+            cgen_expr(node->right);
+            if (!right_f) cvti2d();   /* 提升 int→double */
+            pop_xmm1();                /* xmm1 = left, xmm0 = right */
+
+            /* xmm1 = xmm1 OP xmm0 */
+            switch (node->op) {
+            case TOK_PLUS:  e1(0xF2); e1(0x0F); e1(0x58); e1(0xC8); break;  /* addsd */
+            case TOK_MINUS: e1(0xF2); e1(0x0F); e1(0x5C); e1(0xC8); break;  /* subsd */
+            case TOK_STAR:  e1(0xF2); e1(0x0F); e1(0x59); e1(0xC8); break;  /* mulsd */
+            case TOK_SLASH: e1(0xF2); e1(0x0F); e1(0x5E); e1(0xC8); break;  /* divsd */
+            default: break;
+            }
+            restore_xmm1_to_xmm0();    /* 结果→xmm0 */
+            node->is_float = 1;
+            break;
+        }
+        }
+
+        /* 普通整数二元运算：左→栈，右→eax，出栈→ecx，计算 */
+        cgen_expr(node->left);
+        push_rax();
+        cgen_expr(node->right);
+        pop_rcx();  /* rcx = left, rax = right */
+
+        /* 指针算术缩放：ptr + int 或 int + ptr 时，整数操作数乘以元素大小 */
+        if ((node->op == TOK_PLUS || node->op == TOK_MINUS) &&
+            ((node->left && node->left->type_size == 8 &&
+              node->right && node->right->type_size <= 4) ||
+             (node->right && node->right->type_size == 8 &&
+              node->left && node->left->type_size <= 4))) {
+            /* 找到指针操作数及其元素大小 */
+            int ptelem = 1;
+            AstNode *ptr_node = (node->left->type_size == 8) ? node->left : node->right;
+            int right_is_ptr = (node->right->type_size == 8);
+            if (ptr_node && ptr_node->kind == AST_VAR && ptr_node->name) {
+                int vi;
+                for (vi = local_count - 1; vi >= 0; vi--) {
+                    if (strcmp(locals[vi].name, ptr_node->name) == 0 &&
+                        locals[vi].scope_depth <= scope_depth) {
+                        if (locals[vi].element_size > 0) ptelem = locals[vi].element_size;
+                        break;
+                    }
+                }
+            }
+            if (ptelem > 1) {
+                /* 缩放整数操作数（此后由下方 binop_add64/binop_sub... 完成加法） */
+                if (right_is_ptr) {
+                    /* left 是整数（在 rcx 中），right 是指针（在 rax 中） */
+                    /* xchg 使指针在 rcx，整数在 rax：之后 binop 做 add rax,rcx 得到 ptr+scaled_int */
+                    e1(0x48); e1(0x91);           /* xchg rax, rcx — rax=int, rcx=ptr */
+                    if (ptelem == 2)      { e1(0xC1); e1(0xE0); e1(0x01); }      /* shl eax, 1 */
+                    else if (ptelem == 4) { e1(0xC1); e1(0xE0); e1(0x02); }      /* shl eax, 2 */
+                    else if (ptelem == 8) { e1(0x48); e1(0xC1); e1(0xE0); e1(0x03); }  /* shl rax, 3 */
+                    else                  { e1(0x50); e1(0xB8); e4(ptelem);       /* push rax; mov eax, ptelem */
+                                            e1(0x0F); e1(0xAF); e1(0x04); e1(0x24);  /* imul eax, [rsp] */
+                                            e1(0x48); e1(0x83); e1(0xC4); e1(0x08); } /* add rsp, 8 */
+                    /* rcx=ptr, rax=scaled_int → 下方 binop_add64 做 add rax,rcx 得到 ptr+scaled_int */
+                } else {
+                    /* right 是整数（在 rax 中），left 是指针（在 rcx 中） */
+                    if (ptelem == 2)      { e1(0xC1); e1(0xE0); e1(0x01); }      /* shl eax, 1 */
+                    else if (ptelem == 4) { e1(0xC1); e1(0xE0); e1(0x02); }      /* shl eax, 2 */
+                    else if (ptelem == 8) { e1(0x48); e1(0xC1); e1(0xE0); e1(0x03); }  /* shl rax, 3 */
+                    else                  { push_rax(); mov_eax_imm(ptelem);
+                                            e1(0x0F); e1(0xAF); e1(0x04); e1(0x24);  /* imul eax, [rsp] */
+                                            e1(0x48); e1(0x83); e1(0xC4); e1(0x08); }
+                    /* rcx=ptr, rax=scaled_int → 下方 binop_add64 做 add rax,rcx 得到 ptr+scaled_int */
+                }
+            }
+        }
+
+        /* 判断是否需要 64-bit 运算（任一操作数为 64 位） */
+        /* 判断有符号性：若任一操作数为 unsigned，按无符号语义处理 */
+        int is_unsigned_binop = (node->left && node->left->is_unsigned) ||
+                                (node->right && node->right->is_unsigned);
+
+        if (node->left && node->left->type_size == 8)
+            { switch (node->op) {
+            case TOK_PLUS:  binop_add64(); break;
+            case TOK_MINUS: binop_sub_swapped64(); break;
+            case TOK_STAR:  binop_mul64(); break;
+            case TOK_SLASH:
+                if (is_unsigned_binop) binop_divu64(); else binop_div64(); break;
+            case TOK_PERCENT:
+                if (is_unsigned_binop) binop_modu64(); else binop_mod64(); break;
+            case TOK_LESS:
+                if (is_unsigned_binop) binop_cmp64(0x92); else binop_cmp64(0x9C); break;
+            case TOK_GREATER:
+                if (is_unsigned_binop) binop_cmp64(0x97); else binop_cmp64(0x9F); break;
+            case TOK_LESS_EQ:
+                if (is_unsigned_binop) binop_cmp64(0x96); else binop_cmp64(0x9E); break;
+            case TOK_GREATER_EQ:
+                if (is_unsigned_binop) binop_cmp64(0x93); else binop_cmp64(0x9D); break;
+            case TOK_EQ_EQ:      binop_cmp64(0x94); break;
+            case TOK_NOT_EQ:     binop_cmp64(0x95); break;
+            case TOK_LESS_LESS:       binop_shl64(); break;
+            case TOK_GREATER_GREATER:
+                if (is_unsigned_binop) binop_shr64(); else binop_sar64(); break;
+            case TOK_AMPERSAND: binop_and64(); break;
+            case TOK_PIPE:      binop_or64();  break;
+            case TOK_CARET:     binop_xor64(); break;
+            default: break;
+            } }
+        else if (node->right && node->right->type_size == 8)
+            { switch (node->op) {
+            case TOK_PLUS:  binop_add64(); break;
+            case TOK_MINUS: binop_sub_swapped64(); break;
+            case TOK_STAR:  binop_mul64(); break;
+            case TOK_SLASH:
+                if (is_unsigned_binop) binop_divu64(); else binop_div64(); break;
+            case TOK_PERCENT:
+                if (is_unsigned_binop) binop_modu64(); else binop_mod64(); break;
+            case TOK_LESS:
+                if (is_unsigned_binop) binop_cmp64(0x92); else binop_cmp64(0x9C); break;
+            case TOK_GREATER:
+                if (is_unsigned_binop) binop_cmp64(0x97); else binop_cmp64(0x9F); break;
+            case TOK_LESS_EQ:
+                if (is_unsigned_binop) binop_cmp64(0x96); else binop_cmp64(0x9E); break;
+            case TOK_GREATER_EQ:
+                if (is_unsigned_binop) binop_cmp64(0x93); else binop_cmp64(0x9D); break;
+            case TOK_EQ_EQ:      binop_cmp64(0x94); break;
+            case TOK_NOT_EQ:     binop_cmp64(0x95); break;
+            case TOK_LESS_LESS:       binop_shl64(); break;
+            case TOK_GREATER_GREATER:
+                if (is_unsigned_binop) binop_shr64(); else binop_sar64(); break;
+            case TOK_AMPERSAND: binop_and64(); break;
+            case TOK_PIPE:      binop_or64();  break;
+            case TOK_CARET:     binop_xor64(); break;
+            default: break;
+            } }
+        else
+            { switch (node->op) {
+            case TOK_PLUS:  binop_add(); break;
+            case TOK_MINUS: binop_sub_swapped(); break;
+            case TOK_STAR:  binop_mul(); break;
+            case TOK_SLASH:
+                if (is_unsigned_binop) binop_divu(); else binop_div(); break;
+            case TOK_PERCENT:
+                if (is_unsigned_binop) binop_modu(); else binop_mod(); break;
+            case TOK_LESS:
+                if (is_unsigned_binop) binop_cmp(0x92); else binop_cmp(0x9C); break;
+            case TOK_GREATER:
+                if (is_unsigned_binop) binop_cmp(0x97); else binop_cmp(0x9F); break;
+            case TOK_LESS_EQ:
+                if (is_unsigned_binop) binop_cmp(0x96); else binop_cmp(0x9E); break;
+            case TOK_GREATER_EQ:
+                if (is_unsigned_binop) binop_cmp(0x93); else binop_cmp(0x9D); break;
+            case TOK_EQ_EQ:      binop_cmp(0x94); break;
+            case TOK_NOT_EQ:     binop_cmp(0x95); break;
+            case TOK_LESS_LESS:       binop_shl(); break;
+            case TOK_GREATER_GREATER:
+                if (is_unsigned_binop) binop_shr(); else binop_sar(); break;
+            case TOK_AMPERSAND: binop_and(); break;
+            case TOK_PIPE:      binop_or();  break;
+            case TOK_CARET:     binop_xor(); break;
+            default: break;
+            } }
+
+        /* 传播无符号性和类型大小到二元运算结果 */
+        if (node->left && node->right) {
+            if (is_unsigned_binop) {
+                node->is_unsigned = 1;
+            }
+            /* 传播 64-bit 类型（结果类型取操作数中较大的） */
+            if (node->left->type_size == 8 || node->right->type_size == 8) {
+                if (node->op != TOK_LESS && node->op != TOK_GREATER &&
+                    node->op != TOK_LESS_EQ && node->op != TOK_GREATER_EQ &&
+                    node->op != TOK_EQ_EQ && node->op != TOK_NOT_EQ)
+                    node->type_size = 8;
+            }
+        }
+
+        /* 指针减法：q-p 结果需要除以元素大小（以元素个数为单位的差值） */
+        if (node->op == TOK_MINUS &&
+            node->left && node->left->type_size == 8 &&
+            node->right && node->right->type_size == 8) {
+            /* 查找指针元素大小 */
+            int ptelem = 1;
+            if (node->left->kind == AST_VAR && node->left->name) {
+                int vi;
+                for (vi = local_count - 1; vi >= 0; vi--) {
+                    if (strcmp(locals[vi].name, node->left->name) == 0 &&
+                        locals[vi].scope_depth <= scope_depth) {
+                        if (locals[vi].element_size > 0) ptelem = locals[vi].element_size;
+                        break;
+                    }
+                }
+            }
+            if (ptelem > 1) {
+                /* 用 imul 取倒数不可行，用 idiv：eax 中已有差值，除以 ptelem */
+                /* 差值已在 eax（从 64-bit 减法后的 32-bit 截断） */
+                /* 正确做法：用 64-bit 差值 */
+                /* 先将差值从 eax 符号扩展到 edx:eax */
+                e1(0x99);                          /* cdq: sign-extend eax→edx:eax */
+                e1(0xB9); e4(ptelem); e1(0xF7); e1(0xF9);  /* mov ecx, ptelem; idiv ecx */
+            }
+        }
+        break;
+    }
+
+    case AST_UNARY: {
+        /* &expr: 直接取地址，不经过子表达式求值（避免 struct 数组退化导致的重复 LEA） */
+        if (node->op == TOK_AMPERSAND) {
+            node->type_size = 8;
+            if (node->expr && node->expr->kind == AST_VAR) {
+                int found = 0;
+                int i;
+                for (i = local_count - 1; i >= 0; i--) {
+                    if (strcmp(locals[i].name, node->expr->name) == 0 &&
+                        locals[i].scope_depth <= scope_depth) {
+                        lea_from_rbp(locals[i].offset);
+                        found = 1;
+                        break;
+                    }
+                }
+                if (!found && node->expr->name) {
+                    int sym_idx = -1;
+                    for (i = 0; i < sym_count; i++) {
+                        if (syms[i].name && strcmp(syms[i].name, node->expr->name) == 0)
+                            { sym_idx = i; break; }
+                    }
+                    if (sym_idx < 0 && sym_count < MAX_SYMS) {
+                        sym_idx = sym_count;
+                        CgenSym *s = &syms[sym_count++];
+                        s->name = node->expr->name; s->offset = 0; s->size = 0;
+                        s->is_global = 1; s->is_func = 0;
+                        s->shndx = 0; s->sym_idx = -1;
+                    }
+                    int reloc_off = code_size;
+                    e1(0xB8); e4(0);
+                    if (sym_idx >= 0 && rel_count < MAX_RELS) {
+                        Elf64_Rela *r = &rels[rel_count++];
+                        r->r_offset = reloc_off + 1;
+                        r->r_info = ELF64_R_INFO(sym_idx + 1, R_X86_64_32);
+                        r->r_addend = 0;
+                    }
+                }
+            } else if (node->expr) {
+                cgen_addr(node->expr);
+            }
+            break;
+        }
+        cgen_expr(node->expr);  /* 子表达式结果在 eax 或 xmm0 */
+        switch (node->op) {
+        case TOK_MINUS:
+            if (node->expr && node->expr->is_float) {
+                negate_double();
+                node->is_float = 1;
+            } else if (node->expr && node->expr->type_size == 8) {
+                unop_neg64();
+            } else {
+                unop_neg64();  /* 始终用 64 位求反：32 位 neg eax 会零扩展高 32 位 */
+            }
+            break;
+        case TOK_TILDE:
+            if (node->expr && node->expr->type_size == 8)
+                unop_not64();
+            else
+                unop_not();
+            break;
+        case TOK_EXCLAM:
+            if (node->expr && node->expr->is_float) {
+                /* !double_val: 与 0.0 比较 */
+                /* xorpd xmm1, xmm1 (xmm1=0.0); ucomisd xmm1, xmm0; sete al; movzx */
+                e1(0x66); e1(0x0F); e1(0x57); e1(0xC9);  /* xorpd xmm1, xmm1 */
+                e1(0x66); e1(0x0F); e1(0x2E); e1(0xC8);  /* ucomisd xmm1, xmm0 */
+                e1(0x0F); e1(0x94); e1(0xC0);            /* sete al */
+                e1(0x0F); e1(0xB6); e1(0xC0);            /* movzx eax, al */
+            } else {
+                /* !x: cmp eax, 0; sete al; movzx eax, al */
+                e1(0x85); e1(0xC0);           /* test eax, eax */
+                e1(0x0F); e1(0x94); e1(0xC0); /* sete al */
+                e1(0x0F); e1(0xB6); e1(0xC0); /* movzx eax, al */
+            }
+            break;
+        case TOK_PLUS_PLUS:
+        case TOK_MINUS_MINUS: {
+            /* ++/-- : 计算地址 → 加载值 → 增减 → 写回
+             * 用 cgen_addr 统一处理 local/global/struct-member/ptr (通过指针) */
+            int sz = (node->expr && node->expr->type_size == 8) ? 8 : 4;
+            /* 后缀(Postfix)：保存旧值，返回旧值
+             * 前缀(Prefix)：返回新值（当前行为） */
+            cgen_addr(node->expr);       /* rax = 目标地址 */
+            push_rax();                  /* 保存地址 */
+            pop_rcx();                   /* rcx = 地址 */
+            if (node->is_postfix) {
+                /* 保存旧值 */
+                if (sz == 8) {
+                    e1(0x48); e1(0x8B); e1(0x01);  /* mov rax, [rcx] */
+                } else {
+                    e1(0x8B); e1(0x01);             /* mov eax, [rcx] */
+                }
+                push_rax();              /* 保存旧值到栈 */
+            }
+            /* 加载、增减、写回 */
+            if (sz == 8) {
+                e1(0x48); e1(0x8B); e1(0x01);  /* mov rax, [rcx] */
+                if (node->op == TOK_PLUS_PLUS)
+                    { e1(0x48); e1(0x83); e1(0xC0); e1(0x01); }  /* add rax, 1 */
+                else
+                    { e1(0x48); e1(0x83); e1(0xE8); e1(0x01); }  /* sub rax, 1 */
+                e1(0x48); e1(0x89); e1(0x01);  /* mov [rcx], rax */
+            } else {
+                e1(0x8B); e1(0x01);             /* mov eax, [rcx] */
+                if (node->op == TOK_PLUS_PLUS)
+                    { e1(0x83); e1(0xC0); e1(0x01); }  /* add eax, 1 */
+                else
+                    { e1(0x83); e1(0xE8); e1(0x01); }  /* sub eax, 1 */
+                e1(0x89); e1(0x01);             /* mov [rcx], eax */
+            }
+            if (node->is_postfix)
+                pop_rax();  /* eax/rax = 旧值 */
+            node->type_size = sz;
+            break;
+        }
+        case TOK_STAR:
+            /* *ptr — 从指针地址加载值 */
+            if (node->expr) {
+                /* 推测被指向的类型大小和符号性。
+                 * 在局部变量表中查找指针变量的 element_size：
+                 * int * → 4, char * → 1, long * / double * → 8 */
+                int deref_size = 1;  /* 默认 char* 解引用 */
+                int elem_unsigned = 0;  /* 默认 signed */
+                if (node->expr->kind == AST_VAR && node->expr->name) {
+                    int vi;
+                    for (vi = local_count - 1; vi >= 0; vi--) {
+                        if (strcmp(locals[vi].name, node->expr->name) == 0 &&
+                            locals[vi].scope_depth <= scope_depth) {
+                            if (locals[vi].element_size > 0)
+                                deref_size = locals[vi].element_size;
+                            elem_unsigned = locals[vi].elem_is_unsigned;
+                            break;
+                        }
+                    }
+                }
+                if (deref_size == 1) {
+                    if (elem_unsigned) {
+                        e1(0x0F); e1(0xB6); e1(0x00);  /* movzbl (%rax), %eax — 零扩展字节加载 */
+                    } else {
+                        e1(0x0F); e1(0xBE); e1(0x00);  /* movsbl (%rax), %eax — 符号扩展字节加载 */
+                    }
+                } else if (deref_size == 8) {
+                    /* mov rax, [rax] — 64-bit 加载 */
+                    e1(0x48); e1(0x8B); e1(0x00);
+                } else if (deref_size == 2) {
+                    if (elem_unsigned) {
+                        e1(0x0F); e1(0xB7); e1(0x00);  /* movzwl (%rax), %eax — 零扩展字加载 */
+                    } else {
+                        e1(0x0F); e1(0xBF); e1(0x00);  /* movswl (%rax), %eax — 符号扩展字加载 */
+                    }
+                } else {
+                    /* mov (%rax), %eax — 32-bit 加载（有符号无符号相同） */
+                    e1(0x8B); e1(0x00);
+                }
+                /* 将元素的无符号性传播到解引用结果节点 */
+                node->is_unsigned = elem_unsigned;
+                node->type_size = deref_size;
+            }
+            break;
+        default: break;
+        }
+        break;
+    }
+
+    case AST_ASSIGN: {
+        int rhs_float = node->right && node->right->is_float;
+        int rhs_size = node->right ? node->right->type_size : 4;
+
+        /* 数组下标赋值 a[i] = expr — 先计算地址，再求值右操作数并存储 */
+        if (node->left && node->left->kind == AST_BINOP &&
+            node->left->op == TOK_LBRACKET) {
+            /* 计算左地址：指针 + 索引 * 元素大小 */
+            cgen_expr(node->left->left);     /* 指针 → rax */
+            push_rax();
+            cgen_expr(node->left->right);    /* 索引 → eax */
+            pop_rcx();                        /* rcx = 指针 */
+            int elem_size = 1;
+            int idx_is64 = (node->left->right && node->left->right->type_size == 8);
+            AstNode *arr_base = node->left->left;
+            if (arr_base && arr_base->kind == AST_VAR) {
+                int i;
+                for (i = local_count - 1; i >= 0; i--) {
+                    if (strcmp(locals[i].name, arr_base->name) == 0 &&
+                        locals[i].scope_depth <= scope_depth) {
+                        if (locals[i].element_size > 0)
+                            elem_size = locals[i].element_size;
+                        break;
+                    }
+                }
+                if (i < 0) {
+                    for (i = 0; i < sym_count; i++) {
+                        if (syms[i].name && strcmp(syms[i].name, arr_base->name) == 0) {
+                            if (i < MAX_SYMS && global_elem_size[i] > 0)
+                                elem_size = global_elem_size[i];
+                            break;
+                        }
+                    }
+                }
+            } else if (arr_base && arr_base->kind == AST_BINOP &&
+                       arr_base->op == TOK_LBRACKET &&
+                       arr_base->left && arr_base->left->kind == AST_VAR) {
+                /* 多维数组外层下标：使用 base_elem_size */
+                int i;
+                for (i = local_count - 1; i >= 0; i--) {
+                    if (strcmp(locals[i].name, arr_base->left->name) == 0 &&
+                        locals[i].scope_depth <= scope_depth) {
+                        if (locals[i].base_elem_size > 0)
+                            elem_size = locals[i].base_elem_size;
+                        else if (locals[i].element_size > 0)
+                            elem_size = locals[i].element_size;
+                        break;
+                    }
+                }
+            }
+            if (elem_size == 2) {
+                if (idx_is64)
+                    { e1(0x48); e1(0xC1); e1(0xE0); e1(0x01); }
+                else
+                    { e1(0xC1); e1(0xE0); e1(0x01); }
+            } else if (elem_size == 4) {
+                if (idx_is64)
+                    { e1(0x48); e1(0xC1); e1(0xE0); e1(0x02); }
+                else
+                    { e1(0xC1); e1(0xE0); e1(0x02); }
+            } else if (elem_size == 8) {
+                if (idx_is64)
+                    { e1(0x48); e1(0xC1); e1(0xE0); e1(0x03); }
+                else
+                    { e1(0xC1); e1(0xE0); e1(0x03); }
+            } else if (elem_size == 16) {
+                if (idx_is64)
+                    { e1(0x48); e1(0xC1); e1(0xE0); e1(0x04); }
+                else
+                    { e1(0xC1); e1(0xE0); e1(0x04); }
+            } else if (elem_size > 1) {
+                e1(0x50);                            /* push rax */
+                if (idx_is64) {
+                    e1(0xB8); e4(elem_size); e4(0);
+                    e1(0x48); e1(0x0F); e1(0xAF); e1(0x04); e1(0x24);
+                } else {
+                    e1(0xB8); e4(elem_size);
+                    e1(0x0F); e1(0xAF); e1(0x04); e1(0x24);
+                }
+                e1(0x48); e1(0x83); e1(0xC4); e1(0x08);
+            }
+            e1(0x48); e1(0x01); e1(0xC8);  /* add rax, rcx → 目标地址 */
+            push_rax();                      /* 保存目标地址 */
+
+            /* 求值右操作数 */
+            cgen_expr(node->right);
+
+            /* 存储到目标地址 — 用 elem_size 决定存储宽度（数组元素可能是 long） */
+            pop_rcx();  /* rcx = 目标地址 */
+            int store_sz = elem_size > 4 ? elem_size :
+                           (node->right ? node->right->type_size : 4);
+            if (rhs_float) {
+                /* movsd [rcx], xmm0 */
+                e1(0xF2); e1(0x0F); e1(0x11); e1(0x01);
+            } else if (store_sz >= 8) {
+                if (!rhs_float && node->right && node->right->type_size < 8 &&
+                    node->right->kind == AST_CONSTANT &&
+                    node->right->ival >= -2147483648L &&
+                    node->right->ival <= 2147483647L)
+                    { e1(0x48); e1(0x63); e1(0xC0); }  /* movsxd rax, eax */
+                e1(0x48); e1(0x89); e1(0x01);  /* mov [rcx], rax */
+            } else if (elem_size == 1) {
+                e1(0x88); e1(0x01);             /* mov [rcx], al */
+            } else if (elem_size == 2) {
+                e1(0x66); e1(0x89); e1(0x01);   /* mov [rcx], ax */
+            } else {
+                e1(0x89); e1(0x01);             /* mov [rcx], eax */
+            }
+            node->type_size = store_sz;
+            break;
+        }
+
+        /* 指针解引用赋值 *ptr = expr */
+        if (node->left && node->left->kind == AST_UNARY &&
+            node->left->op == TOK_STAR) {
+            cgen_expr(node->left->expr);       /* 指针 → rax */
+            push_rax();
+            cgen_expr(node->right);
+            pop_rcx();                          /* rcx = 目标地址 */
+            /* 确定被指向类型的大小（同 TOK_STAR 加载逻辑） */
+            int deref_sz = 1;
+            if (node->left->expr && node->left->expr->kind == AST_VAR &&
+                node->left->expr->name) {
+                int vi;
+                for (vi = local_count - 1; vi >= 0; vi--) {
+                    if (strcmp(locals[vi].name, node->left->expr->name) == 0 &&
+                        locals[vi].scope_depth <= scope_depth) {
+                        if (locals[vi].element_size > 0)
+                            deref_sz = locals[vi].element_size;
+                        break;
+                    }
+                }
+            } else {
+                /* fallback: 用 RHS 类型推断 */
+                deref_sz = node->right ? node->right->type_size : 4;
+                if (deref_sz == 0) deref_sz = 4;
+            }
+            if (rhs_float) {
+                e1(0xF2); e1(0x0F); e1(0x11); e1(0x01);  /* movsd [rcx], xmm0 */
+            } else if (deref_sz >= 8) {
+                e1(0x48); e1(0x89); e1(0x01);  /* mov [rcx], rax */
+            } else if (deref_sz == 1) {
+                e1(0x88); e1(0x01);             /* mov [rcx], al */
+            } else if (deref_sz == 2) {
+                e1(0x66); e1(0x89); e1(0x01);   /* mov [rcx], ax */
+            } else {
+                e1(0x89); e1(0x01);             /* mov [rcx], eax */
+            }
+            break;
+        }
+
+        cgen_expr(node->right);
+        if (node->left && node->left->kind == AST_VAR) {
+            const char *vname = node->left->name;
+            int i;
+            for (i = local_count - 1; i >= 0; i--) {
+                if (strcmp(locals[i].name, vname) == 0 &&
+                    locals[i].scope_depth <= scope_depth) {
+                    if (locals[i].is_float) {
+                        /* 右操作数可能是 int，需要转换 */
+                        if (!rhs_float) cvti2d();
+                        store_double_to_rbp(locals[i].offset);
+                    } else {
+                        /* 右操作数可能是 double，需要转换 */
+                        if (rhs_float) {
+                            /* cvttsd2si eax, xmm0 */
+                            e1(0xF2); e1(0x0F); e1(0x2C); e1(0xC0);
+                        }
+                        /* int → long：仅对简单 4 字节源（变量引用和 32 位常量）符号扩展 */
+                        if (locals[i].size == 8 && !rhs_float &&
+                            node->right && node->right->type_size < 8) {
+                            int do_sext = 0;
+                            if (node->right->kind == AST_VAR) {
+                                do_sext = 1;  /* int 变量 → long */
+                            } else if (node->right->kind == AST_CONSTANT &&
+                                       node->right->ival >= -2147483648L &&
+                                       node->right->ival <= 2147483647L) {
+                                do_sext = 1;  /* 32 位常量 → long */
+                            }
+                            if (do_sext)
+                                { e1(0x48); e1(0x63); e1(0xC0); }  /* movsxd rax, eax */
+                        }
+                        if (locals[i].size == 8) {
+                            store_rax_to_rbp(locals[i].offset);
+                        } else if (locals[i].size == 1) {
+                            /* char: mov [rbp+off], al */
+                            if (disp8_fits(locals[i].offset))
+                                { e1(0x88); e1(0x45); e1(locals[i].offset & 0xFF); }
+                            else
+                                { e1(0x88); e1(0x85); e4(locals[i].offset); }
+                        } else if (locals[i].size == 2) {
+                            /* short: mov [rbp+off], ax */
+                            e1(0x66);
+                            if (disp8_fits(locals[i].offset))
+                                { e1(0x89); e1(0x45); e1(locals[i].offset & 0xFF); }
+                            else
+                                { e1(0x89); e1(0x85); e4(locals[i].offset); }
+                        } else {
+                            store_eax_to_rbp(locals[i].offset);
+                        }
+                    }
+                    break;
+                }
+            }
+            /* 全局变量赋值 — 用重定位生成 mov [rip+disp32], rax/eax */
+            if (i < 0 && vname && *vname) {
+                int si = -1;
+                for (i = 0; i < sym_count; i++) {
+                    if (syms[i].name && strcmp(syms[i].name, vname) == 0)
+                        { si = i; break; }
+                }
+                if (si < 0 && sym_count < MAX_SYMS) {
+                    si = sym_count;
+                    CgenSym *s = &syms[sym_count++];
+                    s->name = vname;
+                    s->offset = 0; s->size = 0;
+                    s->is_global = 1;
+                    s->is_func = 0;
+                    s->shndx = 0;  /* SHN_UNDEF */
+                    s->sym_idx = -1;
+                }
+                if (si >= 0) {
+                    /* 使用变量的声明大小决定存储宽度 */
+                    int var_size = syms[si].size;
+                    int store_width = (rhs_size == 8 ||
+                                 (node->right && node->right->type_size == 8) ||
+                                 var_size == 8) ? 8 : var_size;
+                    if (store_width == 0) store_width = 4;
+                    if (store_width >= 8) {
+                        e1(0x48); e1(0x89); e1(0x05);  /* mov [rip+disp32], rax */
+                    } else if (store_width == 1) {
+                        e1(0x88); e1(0x05);             /* mov [rip+disp32], al */
+                    } else if (store_width == 2) {
+                        e1(0x66); e1(0x89); e1(0x05);   /* mov [rip+disp32], ax */
+                    } else {
+                        e1(0x89); e1(0x05);             /* mov [rip+disp32], eax */
+                    }
+                    int ro = code_size;
+                    e4(0);
+                    if (rel_count < MAX_RELS) {
+                        Elf64_Rela *r = &rels[rel_count++];
+                        r->r_offset = ro;
+                        r->r_info = ELF64_R_INFO(si + 1, R_X86_64_PC32);
+                        r->r_addend = -4;
+                    }
+                }
+            }
+        } else if (node->left && node->left->kind == AST_MEMBER) {
+            /* s.member = expr 或 p->member = expr
+             * 注意：此时 eax 中已有 RHS 值（来自上方公共 cgen_expr），
+             * 需先保存再计算地址（cgen_addr 会覆写 eax）。
+             * 存储宽度用成员类型而非 RHS 类型（long 成员赋 int 常量时用 8 字节）。 */
+            int rsize = node->left->type_size > 0 ? node->left->type_size :
+                        (node->right ? node->right->type_size : 4);
+            if (rsize == 0) rsize = 8;
+
+            push_rax();              /* 保存 RHS 值 */
+
+            cgen_addr(node->left);   /* rax = 成员地址（覆写 eax） */
+
+            e1(0x48); e1(0x89); e1(0xC1);  /* mov rcx, rax (rcx = 地址) */
+            pop_rax();               /* rax = RHS 值 */
+
+            if (rsize >= 8) {
+                e1(0x48); e1(0x89); e1(0x01);  /* mov [rcx], rax */
+            } else if (rsize == 1) {
+                e1(0x88); e1(0x01);             /* mov [rcx], al */
+            } else if (rsize == 2) {
+                e1(0x66); e1(0x89); e1(0x01);   /* mov [rcx], ax */
+            } else {
+                e1(0x89); e1(0x01);             /* mov [rcx], eax */
+            }
+            node->type_size = rsize;
+            break;
+        }
+        break;
+    }
+
+    case AST_CALL: {
+        int argc = 0;
+        AstNode *arg = node->args;
+        while (arg) { argc++; arg = arg->next; }
+        /* 根据 x86_64 ABI 限制已消除 — 超出 6 个的参数通过栈传递 */
+        if (argc > 14) argc = 14;  /* 硬上限防止内部缓冲区溢出 */
+
+        /* 记录各实参的类型 */
+        int arg_is_float[16] = {0};
+        { AstNode *a = node->args; int ai = 0;
+          while (a && ai < 16) {
+              arg_is_float[ai] = (a->is_float != 0);
+              ai++; a = a->next;
+          }
+        }
+
+        /* 处理 __builtin_va_* （始终使用整数路径） */
+        if (node->name && node->name[0] == '_' && node->name[1] == '_') {
+            if (strcmp(node->name, "__builtin_va_start") == 0 && node->args) {
+                if (node->args->kind == AST_VAR) {
+                    int vi;
+                    for (vi = 0; vi < local_count; vi++) {
+                        if (strcmp(locals[vi].name, node->args->name) == 0) {
+                            lea_from_rbp(locals[vi].offset);
+                            break;
+                        }
+                    }
+                } else {
+                    cgen_expr(node->args);
+                }
+                push_rax();
+                pop_rcx();
+                e1(0xC7); e1(0x01); e4(func_nparams * 8);
+                e1(0xC7); e1(0x41); e1(0x04); e4(48);
+                e1(0x48); e1(0x8D); e1(0x45); e1(0x10);
+                e1(0x48); e1(0x89); e1(0x41); e1(0x08);
+                e1(0x48); e1(0x8D); e1(0x45); e1(reg_save_offset & 0xFF);
+                e1(0x48); e1(0x89); e1(0x41); e1(0x10);
+                break;
+            }
+            if (strcmp(node->name, "__builtin_va_arg") == 0 && node->args) {
+                /* 获取类型大小（第二个参数），默认 4 */
+                int type_size = 4;
+                if (node->args->next && node->args->next->kind == AST_CONSTANT)
+                    type_size = node->args->next->ival;
+                /* 默认参数提升：小于 4 升到 4，大于 8 截到 8 */
+                if (type_size < 4) type_size = 4;
+                if (type_size > 8) type_size = 8;
+
+                cgen_expr(node->args);              /* rax = &ap */
+                e1(0x48); e1(0x89); e1(0xC7);       /* mov rdi, rax — 保存 &ap */
+                e1(0x8B); e1(0x0F);                 /* mov ecx, [rdi] — gp_offset */
+                /* 检查 gp_offset >= 48（寄存器保存区 6×8 字节），是则走栈参数 */
+                e1(0x83); e1(0xF9); e1(0x30);       /* cmp ecx, 48 */
+                int _jge_pos = code_size;
+                e1(0x7D);                           /* jge rel8 → overflow */
+                int _jge_ofs = code_size;
+                e1(0);                              /* placeholder offset */
+
+                /* --- 寄存器路径（gp_offset < 48）--- */
+                e1(0x48); e1(0x8B); e1(0x47); e1(0x10); /* mov rax, [rdi+0x10] — reg_save_area */
+                if (type_size >= 8) {
+                    e1(0x48); e1(0x8B); e1(0x04); e1(0x08); /* mov rax, [rax+rcx]（64 位） */
+                } else {
+                    e1(0x8B); e1(0x04); e1(0x08);            /* mov eax, [rax+rcx]（32 位） */
+                }
+                e1(0x83); e1(0x07); e1(8);          /* add dword [rdi], 8 — gp_offset += 8 */
+                int _jmp_pos = code_size;
+                e1(0xEB);                           /* jmp rel8 → done */
+                int _jmp_ofs = code_size;
+                e1(0);                              /* placeholder offset */
+
+                /* --- Overflow 路径（gp_offset >= 48）--- */
+                code_buf[_jge_ofs] = code_size - _jge_ofs - 1;
+                e1(0x48); e1(0x8B); e1(0x47); e1(0x08); /* mov rax, [rdi+0x08] — overflow_arg_area */
+                if (type_size >= 8) {
+                    e1(0x48); e1(0x8B); e1(0x00);        /* mov rax, [rax]（64 位） */
+                } else {
+                    e1(0x8B); e1(0x00);                   /* mov eax, [rax]（32 位） */
+                }
+                /* overflow_arg_area += 8（栈槽一直是 8 字节） */
+                e1(0x48); e1(0x83); e1(0x47); e1(0x08); e1(0x08);
+
+                code_buf[_jmp_ofs] = code_size - _jmp_ofs - 1;
+                break;
+            }
+            if (strcmp(node->name, "__builtin_va_end") == 0) {
+                break;
+            }
+        }
+
+        /* 检查是否为函数指针调用 */
+        int is_fptr = 0;
+        int fptr_offset = 0;
+        if (node->name) {
+            int i;
+            for (i = local_count - 1; i >= 0; i--) {
+                if (strcmp(locals[i].name, node->name) == 0 &&
+                    locals[i].scope_depth <= scope_depth) {
+                    is_fptr = 1;
+                    fptr_offset = locals[i].offset;
+                    break;
+                }
+            }
+        }
+
+        int indirect_call = 0;  /* 需要压栈函数指针 → 间接调用 */
+        if (is_fptr) {
+            load_rax_from_rbp(fptr_offset);
+            push_rax();
+            indirect_call = 1;
+        } else if (node->call_target && node->call_target->kind != AST_VAR) {
+            /* 复杂表达式调用（如 ops[0](...)）：先求值表达式，压栈函数指针 */
+            cgen_expr(node->call_target);
+            push_rax();
+            indirect_call = 1;
+        }
+
+        /* 求值参数：float 用 push_xmm0，int 用 push_rax
+         *
+         * 参数在栈上的布局决定了 pop 循环能否正确取出寄存器参数。
+         * 当 argc ≤ 6 时单次循环即可。当 argc > 6 时：
+         *
+         *   必须 先 push 栈参数（索引 6+，它们本该在栈上供被调者访问），
+         *   再 push 寄存器参数（索引 0-5，它们在栈顶方便 pop 到寄存器）。
+         *
+         * 错误示例（修复前）：先 push 0-5 再 push 6+，
+         *   栈参数在栈顶，pop 循环先拿到栈参数，寄存器参数全部错位 1 位。
+         */
+        arg = node->args;
+        int idx;
+        /* Phase 1: push 栈参数（6+）先入栈 → 沉到栈底
+         *
+         * 必须逆序压入（最右边的栈参数先入栈 → 最深）。
+         * 例子：sum8(a0..a5,a6=17,a7=19)
+         *   正序 push: a6(17) → a7(19)  → [rbp+0x10]=19 ✗
+         *   逆序 push: a7(19) → a6(17)  → [rbp+0x10]=17 ✓
+         *
+         * x86-64 ABI: 第一个栈参数 a6 在 [rbp+0x10]，
+         * 第二个 a7 在 [rbp+0x18]，以此类推。 */
+        {
+            int nstack = argc > 6 ? argc - 6 : 0;
+            if (nstack > 0) {
+                AstNode *stack_nodes[12];
+                AstNode *walker = node->args;
+                int ni;
+                for (ni = 0; walker && ni < 6; ni++) walker = walker->next;
+                for (ni = 6; walker && ni < argc && (ni - 6) < 12; ni++) {
+                    stack_nodes[ni - 6] = walker;
+                    walker = walker->next;
+                }
+                for (int si = nstack - 1; si >= 0; si--) {
+                    cgen_expr(stack_nodes[si]);
+                    if (arg_is_float[6 + si])
+                        push_xmm0();
+                    else
+                        push_rax();
+                }
+            }
+        }
+        /* Phase 2: push 寄存器参数（0-5）后入栈 → 在栈顶，pop 循环直接弹出 */
+        arg = node->args;
+        for (idx = 0; arg && idx < argc && idx < 6; idx++) {
+            cgen_expr(arg);
+            if (arg_is_float[idx])
+                push_xmm0();
+            else
+                push_rax();
+            arg = arg->next;
+        }
+
+        /* 参数入寄存器（逆序） */
+        /* 收集各参数的类型大小 */
+        int arg_sizes[16] = {0};
+        { AstNode *a = node->args; int asi = 0;
+          while (a && asi < 16) {
+              arg_sizes[asi] = a->type_size;
+              asi++; a = a->next;
+          }
+        }
+
+        for (int ai = argc - 1; ai >= 0; ai--) {
+            /* 7th+ args stay on stack (x86_64 ABI) */
+            if (ai >= 6) continue;
+            if (arg_is_float[ai]) {
+                /* 从栈弹到 xmm[ai] */
+                e1(0xF2); e1(0x0F); e1(0x10);
+                e1(0x04 | ((ai & 7) << 3)); e1(0x24);  /* movsd xmmN, [rsp] */
+                e1(0x48); e1(0x83); e1(0xC4); e1(0x08); /* add rsp, 8 */
+            } else if (ai == 3) {
+                /* arg3 在 rcx 中 — 弹出到 rcx 不覆写后续操作 */
+                pop_rcx();
+            } else {
+                /* 弹出到 rax 再移动到目标寄存器，避免覆写 rcx */
+                pop_rax();
+                int use64 = 1;  /* 总用 64 位传参，防 type_size 丢失导致指针截断 */
+                switch (ai) {
+                case 0:
+                    if (use64) { e1(0x48); e1(0x89); e1(0xC7); }
+                    else { e1(0x89); e1(0xC7); }
+                    break;
+                case 1:
+                    if (use64) { e1(0x48); e1(0x89); e1(0xC6); }
+                    else { e1(0x89); e1(0xC6); }
+                    break;
+                case 2:
+                    if (use64) { e1(0x48); e1(0x89); e1(0xC2); }
+                    else { e1(0x89); e1(0xC2); }
+                    break;
+                case 4:
+                    if (use64) { e1(0x49); e1(0x89); e1(0xC0); }
+                    else { e1(0x41); e1(0x89); e1(0xC0); }
+                    break;
+                case 5:
+                    if (use64) { e1(0x49); e1(0x89); e1(0xC1); }
+                    else { e1(0x41); e1(0x89); e1(0xC1); }
+                    break;
+                }
+            }
+        }
+
+        if (indirect_call) {
+            if (argc > 3) {
+                /* rcx 已被 arg4 占用 → 用 r10 存函数指针 */
+                pop_rax();
+                e1(0x49); e1(0x89); e1(0xC2);  /* mov r10, rax */
+                e1(0x41); e1(0xFF); e1(0xD2);  /* call *r10 */
+            } else {
+                pop_rcx();
+                e1(0xFF); e1(0xD1); /* call *rcx */
+            }
+        } else {
+            emit_call(node->name);
+        }
+        /* 清理栈上传参（7th+ 参数被调用者未清理） */
+        if (argc > 6) {
+            int stack_args = argc - 6;
+            e1(0x48); e1(0x83); e1(0xC4); e1(stack_args * 8);  /* add rsp, N */
+        }
+        /* 若调用返回 double，标记节点 */
+        if (node->is_float)
+            ;  /* 结果已在 xmm0 中 */
+        else
+            node->type_size = 8;  /* x86-64 ABI: rax 中总是 64 位 */
+        break;
+    }
+
+    case AST_IF: {
+        /* 三元运算符 a ? b : c（作为表达式求值）
+         * 策略：两个分支都用栈保存结果，最后统一弹出 */
+        int is_f = node->is_float ||
+                   (node->then_stmt && node->then_stmt->is_float) ||
+                   (node->else_stmt && node->else_stmt->is_float);
+
+        /* 条件求值→eax */
+        cgen_expr(node->cond);
+        e1(0x85); e1(0xC0);              /* test eax, eax */
+
+        /* je else_label（向前跳转，6 字节占位） */
+        int je_pos = code_size;
+        e1(0x0F); e1(0x84); e4(0);
+
+        /* then 分支 */
+        cgen_expr(node->then_stmt);
+        if (is_f) push_xmm0(); else push_rax();
+
+        /* jmp end_label（5 字节占位） */
+        int jmp_pos = code_size;
+        e1(0xE9); e4(0);
+
+        /* else 标签 */
+        int else_pos = code_size;
+        /* 回填 je: disp = else_pos - (je_pos + 6) */
+        { int d = else_pos - (je_pos + 6);
+          code_buf[je_pos+2]=d&0xFF; code_buf[je_pos+3]=(d>>8)&0xFF;
+          code_buf[je_pos+4]=(d>>16)&0xFF; code_buf[je_pos+5]=(d>>24)&0xFF; }
+
+        cgen_expr(node->else_stmt);
+        if (is_f) push_xmm0(); else push_rax();
+
+        /* end 标签 */
+        int end_pos = code_size;
+        /* 回填 jmp: disp = end_pos - (jmp_pos + 5) */
+        { int d = end_pos - (jmp_pos + 5);
+          code_buf[jmp_pos+1]=d&0xFF; code_buf[jmp_pos+2]=(d>>8)&0xFF;
+          code_buf[jmp_pos+3]=(d>>16)&0xFF; code_buf[jmp_pos+4]=(d>>24)&0xFF; }
+
+        /* 统一结果: 从栈弹出 */
+        if (is_f) { pop_xmm0(); node->is_float = 1; }
+        else pop_rax();
+        /* 从分支推断 type_size（三元表达式可能返回指针） */
+        { int _ts = 4;
+          if (node->then_stmt && node->then_stmt->type_size > _ts)
+              _ts = node->then_stmt->type_size;
+          if (node->else_stmt && node->else_stmt->type_size > _ts)
+              _ts = node->else_stmt->type_size;
+          node->type_size = _ts; }
+        break;
+    }
+
+    case AST_MEMBER: {
+        /* s.member 或 p->member */
+        int member_off = node->ival;
+        if (node->op == TOK_DOT) {
+            /* s.member：加载结构的基地址 + 成员偏移 */
+            int is_local = 0;
+            if (node->left && node->left->kind == AST_VAR) {
+                int i;
+                for (i = local_count - 1; i >= 0; i--) {
+                    if (strcmp(locals[i].name, node->left->name) == 0 &&
+                        locals[i].scope_depth <= scope_depth) {
+                        int total_off = locals[i].offset + member_off;
+                        if (node->type_size > 8) {
+                            /* 数组成员：退化为指针 */
+                            lea_from_rbp(total_off);
+                            node->type_size = 8;
+                        } else if (node->type_size == 8)
+                            load_rax_from_rbp(total_off);
+                        else
+                            load_eax_from_rbp(total_off);
+                        is_local = 1;
+                        break;
+                    }
+                }
+            }
+            if (!is_local) {
+                const char *gname = (node->left && node->left->kind == AST_VAR) ? node->left->name : NULL;
+                if (gname) {
+                    /* lea rax, [rip+disp32] 取全局变量地址 */
+                    int si = -1;
+                    int i;
+                    for (i = 0; i < sym_count; i++) {
+                        if (syms[i].name && strcmp(syms[i].name, gname) == 0)
+                            { si = i; break; }
+                    }
+                    if (si < 0 && sym_count < MAX_SYMS) {
+                        si = sym_count;
+                        CgenSym *s = &syms[sym_count++];
+                        s->name = gname; s->offset = 0; s->size = 0;
+                        s->is_global = 1; s->is_func = 0;
+                        s->shndx = 3; s->sym_idx = -1;
+                    }
+                    if (si >= 0) {
+                        e1(0x48); e1(0x8D); e1(0x05);  /* lea rax, [rip+disp32] */
+                        int ro = code_size; e4(0);
+                        if (rel_count < MAX_RELS) {
+                            Elf64_Rela *r = &rels[rel_count++];
+                            r->r_offset = ro;
+                            r->r_info = ELF64_R_INFO(si + 1, R_X86_64_PC32);
+                            r->r_addend = -4;
+                        }
+                    }
+                } else {
+                    cgen_addr(node->left);
+                }
+                /* 加上成员偏移 */
+                if (member_off != 0) {
+                    push_rax();
+                    mov_eax_imm(member_off);
+                    pop_rcx();
+                    e1(0x48); e1(0x01); e1(0xC8);  /* add rax, rcx (64-bit — 地址运算) */
+                }
+                /* 从地址加载值（数组/大结构体成员不加载，退化为指针） */
+                if (node->type_size > 8) {
+                    node->type_size = 8;  /* 退化为指针 */
+                } else if (node->type_size == 8) {
+                    e1(0x48); e1(0x8B); e1(0x00);  /* mov rax, [rax] */
+                } else {
+                    e1(0x8B); e1(0x00);             /* mov eax, [rax] */
+                }
+            }
+        } else {
+            /* p->member：解引用指针 + 偏移 */
+            cgen_expr(node->left);
+            if (member_off != 0) {
+                push_rax();
+                mov_eax_imm(member_off);
+                pop_rcx();
+                e1(0x48); e1(0x01); e1(0xC8);  /* add rax, rcx (64-bit) */
+            }
+            /* 从地址加载值（数组/大结构体成员不加载，退化为指针） */
+            if (node->type_size > 8) {
+                node->type_size = 8;  /* 退化为指针 */
+            } else if (node->type_size == 8) {
+                e1(0x48); e1(0x8B); e1(0x00);  /* mov rax, [rax] */
+            } else {
+                e1(0x8B); e1(0x00);             /* mov eax, [rax] */
+            }
+        }
+        break;
+    }
+
+    default:
+        break;
+    }
+}
+
+// ============================================================
+// 测试框架
+// ============================================================
+
+static int test_passed = 0, test_failed = 0;
+
+static void pstr(const char *s) { int n=0; while(s[n]) n++; sys_write(1, s, n); }
+static void pdec(long n) {
+    char b[32]; int i=0;
+    if (n<0) { pstr("-"); n=-n; }
+    if (n==0) b[i++]='0';
+    while (n>0) { b[i++]='0'+(n%10); n/=10; }
+    while (i>0) { long ch=b[--i]; sys_write(1, &ch, 1); }
+}
+#define CHECK(cond, msg) do { \
+    if (!(cond)) { pstr("  FAIL "); pstr(msg); pstr("\n"); test_failed++; } \
+    else { test_passed++; } \
+} while (0)
+
+static int cm(int pos, const unsigned char *bytes, int n) {
+    if (pos+n>code_size) return 0;
+    int i; for(i=0;i<n;i++) if(code_buf[pos+i]!=bytes[i]) return 0;
+    return 1;
+}
+#define CK(pos, ...) do { \
+    unsigned char _e[]={__VA_ARGS__}; int _n=(int)(sizeof(_e)/sizeof(_e[0])); \
+    if(!cm(pos,_e,_n)){ pstr("  FAIL mismatch at "); pdec(pos); pstr("\n"); test_failed++; } \
+    else test_passed++; \
+} while(0)
+
+
+// ============================================================
+// 辅助：构造 AST 节点
+// ============================================================
+
+// ============================================================
+// 辅助：静态 AST 节点池（避免 compound literal 生命周期问题）
+// ============================================================
+
+#define MAX_AST_POOL 256
+static AstNode ast_pool[MAX_AST_POOL];
+static int ast_pool_used;
+
+static void sec(const char *n) { pstr("\n--- "); pstr(n); pstr(" ---\n"); test_passed=test_failed=0; }
+static void psr(void) { pstr("  -> "); pdec(test_passed); pstr(" passed, "); pdec(test_failed); pstr(" failed\n"); }
+static void rst(void) { code_size=0; local_count=0; sym_count=0; rel_count=0; strpool_size=0; str_info_count=0; ast_pool_used=0; }
+
+static void rst_pool(void) { ast_pool_used = 0; }
+
+static AstNode *nconst(long val, int sz) {
+    AstNode *n = &ast_pool[ast_pool_used++]; n->kind=AST_CONSTANT; n->ival=val;
+    n->type_size=sz; n->next=0; n->left=n->right=n->expr=n->args=n->call_target=0;
+    n->name=0; n->body=0; n->stmts=0; n->cond=n->then_stmt=n->else_stmt=0;
+    n->loop_cond=n->loop_body=n->loop_init=n->loop_step=0;
+    n->dval=0; n->is_float=0; n->member_name=0; n->str_val=0;
+    n->op=0; n->is_postfix=0; n->is_unsigned=0; n->elem_size=0;
+    return n;
+}
+static AstNode *nvar(const char *name) {
+    AstNode *n = &ast_pool[ast_pool_used++]; n->kind=AST_VAR; n->name=name;
+    n->type_size=4; n->next=0; n->left=n->right=n->expr=n->args=n->call_target=0;
+    n->ival=0; n->dval=0; n->is_float=0; n->body=n->stmts=n->cond=0;
+    n->member_name=0; n->str_val=0; n->op=0; n->elem_size=0;
+    return n;
+}
+static AstNode *nbin(int op, AstNode *l, AstNode *r, int sz) {
+    AstNode *n = &ast_pool[ast_pool_used++]; n->kind=AST_BINOP; n->op=op;
+    n->left=l; n->right=r; n->type_size=sz; n->next=0;
+    n->ival=0; n->name=0; n->expr=n->args=n->call_target=0;
+    return n;
+}
+static AstNode *nuna(int op, AstNode *e, int sz) {
+    AstNode *n = &ast_pool[ast_pool_used++]; n->kind=AST_UNARY; n->op=op;
+    n->expr=e; n->type_size=sz; n->next=0; n->left=n->right=0;
+    n->ival=0; n->name=0;
+    return n;
+}
+
+
+// ============================================================
+// 结构体/类型系统定义（test_member_dot/_arrow 需要）
+// ============================================================
+
+typedef struct { const char *name; int offset; int size; } Member;
+typedef struct { const char *tag; Member members[128]; int member_count; int total_size; } StructType;
+typedef struct { const char *name; int size; int type_kind; int ptr_level; int points_to;
+    int is_unsigned; int struct_idx; Member members[128]; int member_count; } TypedefEntry;
+
+StructType tag_table[512]; int tag_count;
+TypedefEntry typedef_table[1024]; int typedef_count;
+
+static void test_constant_int(void) {
+    sec("Constant (int)"); rst();
+    cgen_expr(nconst(42,4));
+    CK(0, 0xB8,0x2A,0x00,0x00,0x00);
+    CHECK(code_size==5, "int const 5 bytes");
+}
+
+static void test_constant_long(void) {
+    sec("Constant (long)"); rst();
+    cgen_expr(nconst(0x12345678ABCDL,8));
+    CK(0, 0x48,0xB8,0xCD,0xAB,0x78,0x56,0x34,0x12,0x00,0x00);
+    CHECK(code_size==10, "long const 10 bytes");
+}
+
+static void test_var_load(void) {
+    sec("Variable Load"); rst();
+    locals[0].name="x"; locals[0].offset=-4; locals[0].size=4; local_count=1;
+    cgen_expr(nvar("x"));
+    CHECK(code_size>0, "var load");
+}
+
+static void test_var_load_long(void) {
+    sec("Variable Load (long)"); rst();
+    locals[0].name="y"; locals[0].offset=-8; locals[0].size=8; local_count=1;
+    AstNode *v=nvar("y"); v->type_size=8;
+    cgen_expr(v);
+    CK(0, 0x48,0x8B,0x45,0xF8);
+}
+
+static void test_assign(void) {
+    sec("Assignment"); rst();
+    locals[0].name="x"; locals[0].offset=-4; locals[0].size=4; local_count=1;
+    AstNode *l=nvar("x"); AstNode *r=nconst(99,4);
+    AstNode n; n.kind=AST_ASSIGN; n.left=l; n.right=r; n.type_size=4; n.next=0;
+    cgen_expr(&n);
+    CK(0, 0xB8,0x63,0x00,0x00,0x00,0x89,0x45,0xFC);
+    CHECK(code_size==8, "assign 8 bytes");
+}
+
+static void test_add(void) {
+    sec("Binary Add"); rst();
+    cgen_expr(nbin(TOK_PLUS, nconst(1,4), nconst(2,4), 4));
+    CHECK(code_size>0, "add");
+}
+static void test_add64(void) {
+    sec("Binary Add64"); rst();
+    cgen_expr(nbin(TOK_PLUS, nconst(10,8), nconst(20,8), 8));
+    CHECK(code_size>0, "add64");
+}
+static void test_sub(void) {
+    sec("Binary Sub"); rst();
+    cgen_expr(nbin(TOK_MINUS, nconst(10,4), nconst(3,4), 4));
+    CK(0, 0xB8,0x0A,0x00,0x00,0x00,0x50,0xB8,0x03,0x00,0x00,0x00,0x59,0x91,0x29,0xC8);
+}
+static void test_mul(void) {
+    sec("Binary Mul"); rst();
+    cgen_expr(nbin(TOK_STAR, nconst(6,4), nconst(7,4), 4));
+    CK(0, 0xB8,0x06,0x00,0x00,0x00,0x50,0xB8,0x07,0x00,0x00,0x00,0x59,0x0F,0xAF,0xC1);
+}
+static void test_div(void) {
+    sec("Binary Div"); rst();
+    cgen_expr(nbin(TOK_SLASH, nconst(100,4), nconst(3,4), 4));
+    CHECK(code_size>0, "div emits code");
+}
+static void test_mod(void) {
+    sec("Binary Mod"); rst();
+    cgen_expr(nbin(TOK_PERCENT, nconst(100,4), nconst(3,4), 4));
+    CHECK(code_size>0, "mod emits code");
+}
+static void test_bitwise(void) {
+    sec("Bitwise"); rst();
+    cgen_expr(nbin(TOK_AMPERSAND, nconst(0xFF,4), nconst(0x0F,4), 4));
+    CK(0, 0xB8,0xFF,0x00,0x00,0x00,0x50,0xB8,0x0F,0x00,0x00,0x00,0x59,0x21,0xC8);
+    rst(); cgen_expr(nbin(TOK_PIPE, nconst(0xF0,4), nconst(0x0F,4), 4));
+    CK(0, 0xB8,0xF0,0x00,0x00,0x00,0x50,0xB8,0x0F,0x00,0x00,0x00,0x59,0x09,0xC8);
+    rst(); cgen_expr(nbin(TOK_CARET, nconst(0xFF,4), nconst(0x0F,4), 4));
+    CK(0, 0xB8,0xFF,0x00,0x00,0x00,0x50,0xB8,0x0F,0x00,0x00,0x00,0x59,0x31,0xC8);
+}
+static void test_shift(void) {
+    sec("Shift"); rst();
+    cgen_expr(nbin(TOK_LESS_LESS, nconst(1,4), nconst(4,4), 4));
+    CK(0, 0xB8,0x01,0x00,0x00,0x00,0x50,0xB8,0x04,0x00,0x00,0x00,0x59,0x91,0xD3,0xE0);
+}
+static void test_compare(void) {
+    sec("Comparison"); rst();
+    cgen_expr(nbin(TOK_EQ_EQ, nconst(1,4), nconst(2,4), 4));
+    CHECK(code_size>0, "== emits code");
+    rst(); cgen_expr(nbin(TOK_LESS, nconst(1,4), nconst(2,4), 4));
+    CHECK(code_size>0, "< emits code");
+}
+static void test_unary(void) {
+    sec("Unary"); rst();
+    cgen_expr(nuna(TOK_MINUS, nconst(42,4), 4));
+    CHECK(code_size>0, "negate");
+    rst(); cgen_expr(nuna(TOK_TILDE, nconst(42,4), 4));
+    CHECK(code_size>0, "complement");
+}
+
+static void test_ternary(void) {
+    sec("Ternary"); rst();
+    AstNode n; n.kind=AST_IF; n.cond=nconst(1,4); n.then_stmt=nconst(10,4);
+    n.else_stmt=nconst(20,4); n.type_size=4; n.next=0;
+    cgen_expr(&n);
+    CHECK(code_size>0, "ternary emits code");
+}
+
+static void test_string(void) {
+    sec("String"); rst();
+    AstNode n; n.kind=AST_STRING; n.str_val="hello"; n.type_size=8; n.next=0;
+    cgen_expr(&n);
+    CHECK(code_size>0, "string emits code");
+}
+
+static void test_sizeof(void) {
+    sec("Sizeof"); rst();
+    cgen_expr(nconst(8,8));
+    CK(0, 0x48,0xB8,0x08,0x00,0x00,0x00,0x00,0x00,0x00,0x00);
+}
+
+static void test_comma(void) {
+    sec("Comma"); rst();
+    /* Comma as BINOP(TOK_COMMA) — evaluate left, return right */
+    cgen_expr(nbin(TOK_COMMA, nconst(1,4), nconst(2,4), 4));
+    CHECK(code_size>0, "comma emits code");
+}
+
+static void test_call(void) {
+    sec("Function Call"); rst();
+    /* With an actual function style — name-only (direct call) */
+    /* Use call_target as VAR for direct call */
+    AstNode target; target.kind = AST_VAR; target.name = "my_func";
+    target.type_size = 8; target.next = 0;
+    AstNode call; call.kind = AST_CALL; call.call_target = &target;
+    call.args = 0; call.type_size = 4; call.is_float = 0; call.next = 0;
+    call.name = target.name;
+    cgen_expr(&call);
+    CHECK(code_size>0, "call emits code");
+}
+
+static void test_unary_addr(void) {
+    sec("Address-of"); rst();
+    locals[0].name="x"; locals[0].offset=-4; locals[0].size=4; local_count=1;
+    cgen_expr(nuna(TOK_AMPERSAND, nvar("x"), 8));
+    CK(0, 0x48,0x8D,0x45,0xFC);
+}
+
+static void test_unary_deref(void) {
+    sec("Dereference"); rst();
+    locals[0].name="p"; locals[0].offset=-8; locals[0].size=8; local_count=1;
+    locals[0].elem_is_unsigned=0; locals[0].element_size=4;
+    AstNode *v=nvar("p"); v->type_size=8;
+    cgen_expr(nuna(TOK_STAR, v, 4));
+    CHECK(code_size>0, "deref emits code");
+}
+
+static void test_member_dot(void) {
+    sec("Member ."); rst();
+    locals[0].name="s"; locals[0].offset=-16; locals[0].size=8; local_count=1;
+    AstNode *obj=nvar("s"); obj->type_size=8;
+    AstNode mem; mem.kind=AST_MEMBER; mem.left=obj; mem.member_name="x"; mem.op=TOK_DOT; mem.type_size=4; mem.next=0;
+    tag_table[0].tag="S"; tag_table[0].members[0].name="x"; tag_table[0].members[0].offset=0; tag_table[0].members[0].size=4;
+    tag_table[0].members[1].name="y"; tag_table[0].members[1].offset=4; tag_table[0].members[1].size=4;
+    tag_table[0].member_count=2; tag_table[0].total_size=8; tag_count=1;
+    cgen_expr(&mem);
+    CHECK(code_size>0, ". member emits code");
+}
+
+static void test_member_arrow(void) {
+    sec("Member ->"); rst();
+    locals[0].name="p"; locals[0].offset=-8; locals[0].size=8; local_count=1;
+    AstNode *ptr=nvar("p"); ptr->type_size=8;
+    AstNode mem; mem.kind=AST_MEMBER; mem.left=ptr; mem.member_name="y"; mem.op=TOK_ARROW; mem.type_size=4; mem.next=0;
+    tag_table[0].tag="S"; tag_table[0].members[0].name="x"; tag_table[0].members[0].offset=0; tag_table[0].members[0].size=4;
+    tag_table[0].members[1].name="y"; tag_table[0].members[1].offset=4; tag_table[0].members[1].size=4;
+    tag_table[0].member_count=2; tag_table[0].total_size=8; tag_count=1;
+    cgen_expr(&mem);
+    CHECK(code_size>0, "-> member emits code");
+}
+
+static void test_postfix_inc(void) {
+    sec("Postfix ++"); rst();
+    locals[0].name="x"; locals[0].offset=-4; locals[0].size=4; local_count=1;
+    AstNode n; n.kind=AST_UNARY; n.op=TOK_PLUS_PLUS; n.expr=nvar("x"); n.is_postfix=1; n.type_size=4; n.next=0;
+    cgen_expr(&n);
+    CHECK(code_size>0, "postfix ++ emits code");
+}
+
+static void test_compound_assign(void) {
+    sec("Compound Assign"); rst();
+    locals[0].name="x"; locals[0].offset=-4; locals[0].size=4; local_count=1;
+    AstNode n; n.kind=AST_ASSIGN; n.left=nvar("x"); n.right=nconst(5,4); n.op=TOK_PLUS_EQ; n.type_size=4; n.next=0;
+    cgen_expr(&n);
+    CHECK(code_size>0, "+= emits code");
+}
+
+
+// ============================================================
+// 入口
+// ============================================================
+
+__attribute__((force_align_arg_pointer)) void __tlibc_start(void) {
+    pstr("=== cgen_expr.c standalone tests ===\n");
+
+    test_constant_int();         psr();
+    test_constant_long();        psr();
+    test_var_load();             psr();
+    test_var_load_long();        psr();
+    test_assign();               psr();
+    test_add();                  psr();
+    test_add64();                psr();
+    test_sub();                  psr();
+    test_mul();                  psr();
+    test_div();                  psr();
+    test_mod();                  psr();
+    test_bitwise();              psr();
+    test_shift();                psr();
+    test_compare();              psr();
+    test_unary();                psr();
+    test_ternary();              psr();
+    test_string();               psr();
+    test_comma();                psr();
+    test_call();                 psr();
+    test_unary_addr();           psr();
+    test_unary_deref();          psr();
+    test_member_dot();           psr();
+    test_member_arrow();         psr();
+    test_postfix_inc();          psr();
+    test_compound_assign();      psr();
+
+    pstr("\n=== ");
+    pstr(test_failed == 0 ? "ALL PASSED" : "SOME FAILED");
+    pstr(" ===\n");
+    sys_exit(test_failed != 0 ? 1 : 0);
+}

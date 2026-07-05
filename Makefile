@@ -181,7 +181,7 @@ test: $(BUILD)/tcc $(BUILD)/tcc_rt.o $(BUILD)/tcc_rt_start.o
 SOURCETESTDIR := compiler-tests/source
 
 SCTEST_CC   ?= gcc
-SCTEST_CFLAGS ?= -nostdlib -ffreestanding -Wall -Wextra
+SCTEST_CFLAGS ?= -nostdlib -ffreestanding -Wall -Wextra -O0
 
 test-source: $(SOURCETESTDIR)/lex.c
 	@ok=0; fail=0; \
