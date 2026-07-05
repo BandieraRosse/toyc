@@ -361,6 +361,8 @@ typedef struct {
     const char *name;
     int offset;
     int size;
+    int elem_size;      /* 指针成员指向的元素大小（long*→8, int*→4），数组成员的元素大小 */
+    int is_unsigned;    /* 成员是否为 unsigned 类型 */
 } Member;
 
 /* 结构体类型（通过 struct 标签或匿名定义） */

@@ -296,6 +296,10 @@ static void cgen_addr(AstNode *node) {
                     }
                 }
             }
+            /* fallback: 结构体成员数组 s.arr[i] — 使用 AST_MEMBER 上的 elem_size */
+            if (elem_size == 1 && node->left && node->left->elem_size > 0) {
+                elem_size = node->left->elem_size;
+            }
 
             if (elem_size == 2) {
                 if (idx_is64) { e1(0x48); e1(0xC1); e1(0xE0); e1(0x01); }
@@ -629,6 +633,11 @@ void cgen_expr(AstNode *node) {
                         }
                     }
                 }
+            }
+            /* fallback: 结构体成员数组 s.arr[i] — 使用 AST_MEMBER 上的 elem_size */
+            if (elem_size == 1 && node->left && node->left->elem_size > 0) {
+                elem_size = node->left->elem_size;
+                elem_unsigned = node->left->is_unsigned;
             }
 
             /* 索引 * 元素大小（移位加速），索引可能是 64-bit (size_t) */
@@ -1173,6 +1182,11 @@ void cgen_expr(AstNode *node) {
                         }
                     }
                 }
+                /* fallback: 非简单变量表达式（如 s.member）从解析器传播的 elem_size 获取 */
+                if (deref_size == 1 && node->expr->elem_size > 0) {
+                    deref_size = node->expr->elem_size;
+                    elem_unsigned = node->expr->is_unsigned;
+                }
                 if (deref_size == 1) {
                     if (elem_unsigned) {
                         e1(0x0F); e1(0xB6); e1(0x00);  /* movzbl (%rax), %eax — 零扩展字节加载 */
@@ -1251,6 +1265,10 @@ void cgen_expr(AstNode *node) {
                         break;
                     }
                 }
+            }
+            /* fallback: 结构体成员数组 s.arr[i] — 使用 AST_MEMBER 上的 elem_size */
+            if (elem_size == 1 && arr_base && arr_base->elem_size > 0) {
+                elem_size = arr_base->elem_size;
             }
             if (elem_size == 2) {
                 if (idx_is64)
@@ -1384,7 +1402,18 @@ void cgen_expr(AstNode *node) {
                             if (do_sext)
                                 { e1(0x48); e1(0x63); e1(0xC0); }  /* movsxd rax, eax */
                         }
-                        if (locals[i].size == 8) {
+                        if (locals[i].size > 8) {
+                            /* 结构体直接赋值：cgen_expr(right) 对 > 8 字节变量
+                             * 返回指针（lea rax, [rbp+src_off]）。
+                             * 从 [RAX] 拷贝 locals[i].size 字节到目标变量。 */
+                            e1(0x48); e1(0x89); e1(0xC6);  /* mov rsi, rax */
+                            if (disp8_fits(locals[i].offset))
+                                { e1(0x48); e1(0x8D); e1(0x7D); e1(locals[i].offset & 0xFF); }
+                            else
+                                { e1(0x48); e1(0x8D); e1(0xBD); e4(locals[i].offset); }
+                            e1(0xB9); e4(locals[i].size);  /* mov ecx, size */
+                            e1(0xF3); e1(0xA4);            /* rep movsb */
+                        } else if (locals[i].size == 8) {
                             store_rax_to_rbp(locals[i].offset);
                         } else if (locals[i].size == 1) {
                             /* char: mov [rbp+off], al */
@@ -1598,12 +1627,12 @@ void cgen_expr(AstNode *node) {
             indirect_call = 1;
         }
 
-        /* 检查被调函数是否返回大结构体（>16 字节），需要传递隐藏指针 */
+        /* 检查被调函数是否返回大结构体（>8 字节），需要传递隐藏指针 */
         int has_hidden_ret = 0;
         int hidden_alloc_size = 0;
         if (node->name && !is_fptr) {
             int rsz = get_func_ret_size(node->name);
-            if (rsz > 16) has_hidden_ret = 1;
+            if (rsz > 8) has_hidden_ret = 1;
         }
 
         /* 求值参数：float 用 push_xmm0，int 用 push_rax
@@ -1842,7 +1871,33 @@ void cgen_expr(AstNode *node) {
                             node->type_size = 8;
                         } else if (node->type_size == 8)
                             load_rax_from_rbp(total_off);
-                        else
+                        else if (node->type_size == 1) {
+                            /* char 成员加载：按符号性选择 movsbl/movzbl */
+                            if (node->is_unsigned) {
+                                if (disp8_fits(total_off))
+                                    { e1(0x0F); e1(0xB6); e1(0x45); e1(total_off & 0xFF); }
+                                else
+                                    { e1(0x0F); e1(0xB6); e1(0x85); e4(total_off); }
+                            } else {
+                                if (disp8_fits(total_off))
+                                    { e1(0x0F); e1(0xBE); e1(0x45); e1(total_off & 0xFF); }
+                                else
+                                    { e1(0x0F); e1(0xBE); e1(0x85); e4(total_off); }
+                            }
+                        } else if (node->type_size == 2) {
+                            /* short 成员加载：按符号性选择 movswl/movzwl */
+                            if (node->is_unsigned) {
+                                if (disp8_fits(total_off))
+                                    { e1(0x0F); e1(0xB7); e1(0x45); e1(total_off & 0xFF); }
+                                else
+                                    { e1(0x0F); e1(0xB7); e1(0x85); e4(total_off); }
+                            } else {
+                                if (disp8_fits(total_off))
+                                    { e1(0x0F); e1(0xBF); e1(0x45); e1(total_off & 0xFF); }
+                                else
+                                    { e1(0x0F); e1(0xBF); e1(0x85); e4(total_off); }
+                            }
+                        } else
                             load_eax_from_rbp(total_off);
                         is_local = 1;
                         break;
@@ -1891,6 +1946,16 @@ void cgen_expr(AstNode *node) {
                     node->type_size = 8;  /* 退化为指针 */
                 } else if (node->type_size == 8) {
                     e1(0x48); e1(0x8B); e1(0x00);  /* mov rax, [rax] */
+                } else if (node->type_size == 1) {
+                    if (node->is_unsigned)
+                        { e1(0x0F); e1(0xB6); e1(0x00); }  /* movzbl (%rax), %eax */
+                    else
+                        { e1(0x0F); e1(0xBE); e1(0x00); }  /* movsbl (%rax), %eax */
+                } else if (node->type_size == 2) {
+                    if (node->is_unsigned)
+                        { e1(0x0F); e1(0xB7); e1(0x00); }  /* movzwl (%rax), %eax */
+                    else
+                        { e1(0x0F); e1(0xBF); e1(0x00); }  /* movswl (%rax), %eax */
                 } else {
                     e1(0x8B); e1(0x00);             /* mov eax, [rax] */
                 }
@@ -1909,6 +1974,16 @@ void cgen_expr(AstNode *node) {
                 node->type_size = 8;  /* 退化为指针 */
             } else if (node->type_size == 8) {
                 e1(0x48); e1(0x8B); e1(0x00);  /* mov rax, [rax] */
+            } else if (node->type_size == 1) {
+                if (node->is_unsigned)
+                    { e1(0x0F); e1(0xB6); e1(0x00); }  /* movzbl (%rax), %eax */
+                else
+                    { e1(0x0F); e1(0xBE); e1(0x00); }  /* movsbl (%rax), %eax */
+            } else if (node->type_size == 2) {
+                if (node->is_unsigned)
+                    { e1(0x0F); e1(0xB7); e1(0x00); }  /* movzwl (%rax), %eax */
+                else
+                    { e1(0x0F); e1(0xBF); e1(0x00); }  /* movswl (%rax), %eax */
             } else {
                 e1(0x8B); e1(0x00);             /* mov eax, [rax] */
             }

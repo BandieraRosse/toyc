@@ -336,7 +336,7 @@ static void collect_locals(AstNode *node) {
 static void cgen_return(AstNode *stmt) {
     if (stmt->expr) {
         cgen_expr(stmt->expr);
-        if (current_func_ret_size > 16) {
+        if (current_func_ret_size > 8) {
             /* 大结构体按值返回（hidden pointer ABI）
              *
              * x86-64 SysV: >16 字节的 struct 通过隐式第 0 个参数（RDI）
@@ -774,8 +774,8 @@ static void cgen_func_def(AstNode *func) {
     current_func_ret_size = func->type_size;
     current_hidden_ptr_offset = 0;
 
-    /* 大结构体返回值（>16 字节）：为隐藏指针分配栈槽 */
-    if (func->type_size > 16) {
+    /* 大结构体返回值（>8 字节）：为隐藏指针分配栈槽 */
+    if (func->type_size > 8) {
         frame_size += 8;
         current_hidden_ptr_offset = -frame_size;
     }

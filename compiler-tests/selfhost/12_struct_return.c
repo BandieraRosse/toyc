@@ -37,6 +37,26 @@ struct Nested {
 
 // (5 removed — struct array member subscript is a separate pre-existing bug)
 
+// 5. 小结构体（8 字节，单寄存器 RAX 返回，不触发 hidden pointer）
+struct Small {
+    long a;
+};
+
+// 6. 大结构体带指针成员（> 16 字节，hidden pointer ABI）
+struct WithPtr {
+    long val;
+    long *ptr;
+    long extra;      // 补齐到 24 字节
+};
+
+// 7. 含 char/short 成员的结构体
+struct WithCharShort {
+    char c;
+    long pad1;
+    short s;
+    long pad2;
+};
+
 // === 测试函数 ===
 
 // 测试1：小 struct 参数和返回（寄存器传递）
@@ -108,6 +128,45 @@ static int compare_mixed(struct Mixed *ap, struct Mixed *bp) {
     return 0;
 }
 
+// 测试9：8 字节结构体返回（寄存器 ABI）
+static struct Small make_small(long a) {
+    struct Small s;
+    s.a = a;
+    return s;
+}
+
+// 测试10：8 字节结构体多路径返回
+static struct Small choose_small(int choice, long a, long b) {
+    if (choice == 0) {
+        struct Small s;
+        s.a = a;
+        return s;
+    } else {
+        struct Small s;
+        s.a = b;
+        return s;
+    }
+}
+
+// 测试11：带指针成员结构体返回（hidden pointer ABI）
+static struct WithPtr make_with_ptr(long val, long *ptr, long extra) {
+    struct WithPtr wp;
+    wp.val = val;
+    wp.ptr = ptr;
+    wp.extra = extra;
+    return wp;
+}
+
+// 测试12：含 char/short 成员的结构体
+static struct WithCharShort make_with_char_short(char c, long pad1, short s, long pad2) {
+    struct WithCharShort w;
+    w.c = c;
+    w.pad1 = pad1;
+    w.s = s;
+    w.pad2 = pad2;
+    return w;
+}
+
 // === 主测试 ===
 void __tlibc_start(void) {
     // 测试1：小 struct 返回
@@ -159,6 +218,58 @@ void __tlibc_start(void) {
     struct Mixed m2 = make_mixed(100, 200, 300);
     struct Mixed m3 = make_mixed(100, 200, 300);
     if (compare_mixed(&m2, &m3) != 0) sys_exit(90);
+
+    // === 新增测试：8 字节 struct（寄存器返回）===
+    // 测试9：基本返回与字段访问
+    struct Small sm1 = make_small(42);
+    if (sm1.a != 42) sys_exit(100);
+
+    // 多路径返回
+    struct Small sm2 = choose_small(0, 111, 222);
+    if (sm2.a != 111) sys_exit(101);
+    struct Small sm3 = choose_small(1, 333, 444);
+    if (sm3.a != 444) sys_exit(102);
+
+    // 多个独立调用
+    struct Small sm4 = make_small(55);
+    struct Small sm5 = make_small(66);
+    if (sm4.a != 55) sys_exit(103);
+    if (sm5.a != 66) sys_exit(104);
+
+    // 结构体拷贝初始化（8 字节）
+    struct Small sm6 = sm4;
+    if (sm6.a != 55) sys_exit(105);
+    // 修改原变量，验证拷贝独立性
+    sm4.a = 999;
+    if (sm6.a != 55) sys_exit(106);
+
+    // === 新增测试：结构体指针成员（hidden pointer ABI）===
+    // 测试10：带指针成员
+    long data_val_1 = 777;
+    struct WithPtr wp1 = make_with_ptr(42, &data_val_1, 99);
+    if (wp1.val != 42) sys_exit(110);
+    // 直接解引用指针成员（elem_size 传播修复后可用）
+    if (*wp1.ptr != 777) sys_exit(111);
+    if (wp1.extra != 99) sys_exit(112);
+
+    // === 新增测试：24 字节 struct 拷贝初始化 ===
+    struct Medium mcopy = s1;   // s1 来自测试1：make_medium(100, 200, 300)
+    if (mcopy.a != 100) sys_exit(120);
+    if (mcopy.b != 200) sys_exit(121);
+    if (mcopy.c != 300) sys_exit(122);
+
+    // === 新增测试：char/short 成员 ===
+    // 测试12：char/short 成员的正确加载宽度
+    struct WithCharShort wcs1 = make_with_char_short((char)65, 1000, (short)-200, 2000);
+    if (wcs1.c != 65) sys_exit(140);
+    if (wcs1.pad1 != 1000) sys_exit(141);
+    if (wcs1.s != -200) sys_exit(142);
+    if (wcs1.pad2 != 2000) sys_exit(143);
+
+    // === 新增测试：返回结构体字段算术 ===
+    struct Mixed msum = make_mixed(10, 20, 30);
+    long total = msum.a + msum.b + msum.c;
+    if (total != 60) sys_exit(130);
 
     // 全部通过
     sys_exit(0);

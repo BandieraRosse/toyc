@@ -525,6 +525,8 @@ static AstNode *parse_postfix(Parser *p) {
                         if (strcmp(st->members[fi].name, n->member_name) == 0) {
                             n->ival = st->members[fi].offset;
                             n->type_size = st->members[fi].size;
+                            n->is_unsigned = st->members[fi].is_unsigned;
+                            n->elem_size = st->members[fi].elem_size;
                             break;
                         }
                     }
@@ -539,6 +541,8 @@ static AstNode *parse_postfix(Parser *p) {
                                 if (strcmp(typedef_table[ti].members[mi].name, n->member_name) == 0) {
                                     n->ival = typedef_table[ti].members[mi].offset;
                                     n->type_size = typedef_table[ti].members[mi].size;
+                                    n->is_unsigned = typedef_table[ti].members[mi].is_unsigned;
+                                    n->elem_size = typedef_table[ti].members[mi].elem_size;
                                     break;
                                 }
                             }
@@ -555,6 +559,8 @@ static AstNode *parse_postfix(Parser *p) {
                         if (strcmp(tag_table[ti].members[mi].name, n->member_name) == 0) {
                             n->ival = tag_table[ti].members[mi].offset;
                             n->type_size = tag_table[ti].members[mi].size;
+                            n->is_unsigned = tag_table[ti].members[mi].is_unsigned;
+                            n->elem_size = tag_table[ti].members[mi].elem_size;
                             break;
                         }
                     }
@@ -582,6 +588,8 @@ static AstNode *parse_postfix(Parser *p) {
                             if (strcmp(st->members[fi].name, n->member_name) == 0) {
                                 n->ival = st->members[fi].offset;
                                 n->type_size = st->members[fi].size;
+                            n->is_unsigned = st->members[fi].is_unsigned;
+                            n->elem_size = st->members[fi].elem_size;
                                 break;
                             }
                         }
@@ -596,6 +604,8 @@ static AstNode *parse_postfix(Parser *p) {
                                     if (strcmp(typedef_table[ti].members[mi].name, n->member_name) == 0) {
                                         n->ival = typedef_table[ti].members[mi].offset;
                                         n->type_size = typedef_table[ti].members[mi].size;
+                                    n->is_unsigned = typedef_table[ti].members[mi].is_unsigned;
+                                    n->elem_size = typedef_table[ti].members[mi].elem_size;
                                         break;
                                     }
                                 }
@@ -615,6 +625,8 @@ static AstNode *parse_postfix(Parser *p) {
                                 if (strcmp(typedef_table[ti].members[mi].name, n->member_name) == 0) {
                                     n->ival = typedef_table[ti].members[mi].offset;
                                     n->type_size = typedef_table[ti].members[mi].size;
+                                    n->is_unsigned = typedef_table[ti].members[mi].is_unsigned;
+                                    n->elem_size = typedef_table[ti].members[mi].elem_size;
                                     break;
                                 }
                             }
@@ -628,6 +640,8 @@ static AstNode *parse_postfix(Parser *p) {
                             if (strcmp(tag_table[ti].members[mi].name, n->member_name) == 0) {
                                 n->ival = tag_table[ti].members[mi].offset;
                                 n->type_size = tag_table[ti].members[mi].size;
+                            n->is_unsigned = tag_table[ti].members[mi].is_unsigned;
+                            n->elem_size = tag_table[ti].members[mi].elem_size;
                                 break;
                             }
                         }
@@ -1036,16 +1050,19 @@ static int parse_struct_body(Parser *p, Member *members, int *out_count) {
         while (peek(p).kind == TOK_CONST || peek(p).kind == TOK_VOLATILE ||
                peek(p).kind == TOK_RESTRICT) consume(p);
         int sz = parse_type_specifier(p);
+        int base_sz = sz;
+        int member_is_unsigned = last_type_is_unsigned;
         if (sz < 0) { error_at(p, "invalid struct member type"); break; }
 
         /* 指针 */
-        while (peek(p).kind == TOK_STAR) { consume(p); sz = 8; }
+        int ptr_count = 0;
+        while (peek(p).kind == TOK_STAR) { consume(p); ptr_count++; sz = 8; }
 
         /* 函数指针 (*name)(params) */
         if (peek(p).kind == TOK_LPAREN) {
             consume(p);
             if (peek(p).kind == TOK_STAR) {
-                consume(p); sz = 8;
+                consume(p); sz = 8; ptr_count++;
             } else {
                 /* 不是 (*name)，无法处理 */
             }
@@ -1056,7 +1073,9 @@ static int parse_struct_body(Parser *p, Member *members, int *out_count) {
             consume(p);
             /* 处理数组后缀 [N]（在注册成员前计算完整大小） */
             int member_sz = sz;
+            int is_array = 0;
             if (peek(p).kind == TOK_LBRACKET) {
+                is_array = 1;
                 consume(p);
                 if (peek(p).kind == TOK_NUMBER && peek(p).ival > 0) {
                     member_sz *= peek(p).ival;
@@ -1077,12 +1096,21 @@ static int parse_struct_body(Parser *p, Member *members, int *out_count) {
                 members[count].name = arena_strdup(p->arena, id.start, id.len);
                 members[count].offset = offset;
                 members[count].size = member_sz;
+                members[count].is_unsigned = member_is_unsigned;
+                /* elem_size: 指针→指向的类型大小，数组→元素大小 */
+                if (is_array)
+                    members[count].elem_size = sz;  /* 数组元素大小（乘 [N] 之前的 sz） */
+                else if (ptr_count == 1)
+                    members[count].elem_size = base_sz;
+                else if (ptr_count > 1)
+                    members[count].elem_size = 8;   /* 多级指针 → 指针大小 */
+                else
+                    members[count].elem_size = 0;
                 count++;
                 offset += member_sz;
             }
             sz = member_sz;  /* 逗号后成员使用相同的完整大小 */
         }
-
         /* 关闭函数指针的 ) 和参数列表 */
         if (sz == 8 && peek(p).kind == TOK_RPAREN) {
             consume(p);
