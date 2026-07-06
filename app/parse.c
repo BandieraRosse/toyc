@@ -2062,7 +2062,8 @@ AstNode *parse_compound_statement(Parser *p) {
                         if (!struct_brace && dim_count == 0 && init_idx > 0) {
                             int elem_ts = (dv_ptrs > 0) ? 8 : (ts > 0 ? ts : 4);
                             decl->ival = init_idx * elem_ts;
-                            decl->type_size = decl->ival;
+                            /* type_size 保持元素类型大小（不改写成 total size），
+                             * 以便 cgen.c 的 is_array 判断能正确识别 */
                             decl->elem_size = elem_ts;
                             decl->base_elem_size = elem_ts;
                             /* 更新局部变量表的大小 */
@@ -2082,7 +2083,7 @@ AstNode *parse_compound_statement(Parser *p) {
                             while (decl->expr->str_val[slen]) slen++;
                             slen++; /* 包含 null 终止符 */
                             decl->ival = slen;
-                            decl->type_size = slen;
+                            /* type_size 保持元素类型大小（不改成 total size） */
                             decl->elem_size = ts;
                             decl->base_elem_size = ts;
                             if (decl->name && *decl->name)
