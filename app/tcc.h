@@ -169,6 +169,17 @@ typedef enum {
     AST_LABEL,         /* label: 定义 */
 } AstKind;
 
+/* ─── 全局变量初始化器元素 ─── */
+
+#define INIT_TYPE_INT 0   /* 整数值 */
+#define INIT_TYPE_STR 1   /* 字符串（在 .data 中占 8 字节指针，需重定位） */
+
+typedef struct {
+    int type;            /* INIT_TYPE_INT 或 INIT_TYPE_STR */
+    long ival;           /* INIT_TYPE_INT 的整数值 */
+    const char *str;     /* INIT_TYPE_STR 的字符串内容（arena 分配，已解码） */
+} InitItem;
+
 /* ─── 内联汇编操作数 ─── */
 
 typedef struct {
@@ -231,6 +242,10 @@ typedef struct AstNode {
     int type_size;       /* 类型大小（字节）：4=int, 8=指针/long/double, 1=char, 2=short */
     int elem_size;       /* AST_VAR_DECL: 指针变量的元素大小（int*→4, char**→8） */
     int base_elem_size;  /* AST_VAR_DECL: 数组的基础元素大小（多维数组中内层元素大小） */
+    /* 全局变量初始化器数据（AST_VAR_DECL 且 = { ... } 时有效） */
+    int init_count;           /* init_items 数组长度 */
+    int init_items_per_elem;  /* 每个数组元素的标量初始化器数（用于元素内边距填充） */
+    InitItem *init_items;     /* arena 分配的数组 */
     int is_unsigned;     /* 1 表示 unsigned 类型（unsigned int/long/char/short） */
     int elem_is_unsigned; /* 指针变量：指向的元素类型是否为 unsigned */
 } AstNode;

@@ -39,12 +39,12 @@ Elf64_Rela elf_data_rels[ELF_MAX_RELS];
 int elf_data_rel_count;
 
 int elf_write_object(const char *path) {
-    int num_sections = 8;
+    int num_sections = 9;
 
     /* ── 构建 .shstrtab ── */
     unsigned char shstrtab_buf[256];
-    const char *sec_names[] = {".text", ".rela.text", ".data", ".bss", ".symtab", ".strtab", ".shstrtab"};
-    int shstrtab_sz = build_shstrtab(shstrtab_buf, sec_names, 7);
+    const char *sec_names[] = {".text", ".rela.text", ".data", ".rela.data", ".bss", ".symtab", ".strtab", ".shstrtab"};
+    int shstrtab_sz = build_shstrtab(shstrtab_buf, sec_names, 8);
 
     /* ── 构建 .strtab ── */
     #define ELF_STRTAB_SIZE 16384
@@ -80,7 +80,9 @@ int elf_write_object(const char *path) {
     int rela_sz  = elf_rel_count * 24;
     int data_ofs = (rela_ofs + rela_sz + 7) & -8;
     int data_sz  = elf_data_size;
-    int sym_ofs  = (data_ofs + data_sz + 7) & -8;
+    int rela_data_ofs = (data_ofs + data_sz + 7) & -8;
+    int rela_data_sz  = elf_data_rel_count * 24;
+    int sym_ofs  = (rela_data_ofs + rela_data_sz + 7) & -8;
     int sym_sz   = (elf_sym_count + 1) * 24;
     int str_ofs  = sym_ofs + sym_sz;
     int shstr_ofs = str_ofs + strtab_sz;
@@ -129,8 +131,8 @@ int elf_write_object(const char *path) {
     /* e_shnum (2) */
     b[p++] = num_sections; b[p++] = 0;
 
-    /* e_shstrndx (2) — 指向 .shstrtab 节区（索引 7） */
-    b[p++] = 7; b[p++] = 0;
+    /* e_shstrndx (2) — 指向 .shstrtab 节区（索引 8） */
+    b[p++] = 8; b[p++] = 0;
 
     /* ── Section header table (占位) ── */
     int shdr_start = p;
@@ -178,9 +180,40 @@ int elf_write_object(const char *path) {
         b[p++] = (ra>>48)&0xFF; b[p++] = (ra>>56)&0xFF;
     }
 
+    /* ── .data remap symbols ── */
+    for (int dri = 0; dri < elf_data_rel_count; dri++) {
+        unsigned long r_sym = ELF64_R_SYM(elf_data_rels[dri].r_info);
+        if (r_sym > 0) {
+            int cgen_idx = (int)(r_sym - 1);
+            if (cgen_idx >= 0 && cgen_idx < elf_sym_count) {
+                unsigned int r_type = ELF64_R_TYPE(elf_data_rels[dri].r_info);
+                elf_data_rels[dri].r_info = ELF64_R_INFO(elf_syms[cgen_idx].sym_idx, r_type);
+            }
+        }
+    }
+
     /* ── .data data ── */
     while (p < data_ofs) b[p++] = 0;
     for (ei = 0; ei < elf_data_size; ei++) b[p++] = elf_data_buf[ei];
+
+    /* ── .rela.data data ── */
+    while (p < rela_data_ofs) b[p++] = 0;
+    for (ei = 0; ei < elf_data_rel_count; ei++) {
+        int ro = elf_data_rels[ei].r_offset;
+        b[p++] = (ro)&0xFF; b[p++] = (ro>>8)&0xFF;
+        b[p++] = (ro>>16)&0xFF; b[p++] = (ro>>24)&0xFF;
+        for (int z=0;z<4;z++) b[p++] = 0;
+        long ri = elf_data_rels[ei].r_info;
+        b[p++] = (ri)&0xFF; b[p++] = (ri>>8)&0xFF;
+        b[p++] = (ri>>16)&0xFF; b[p++] = (ri>>24)&0xFF;
+        b[p++] = (ri>>32)&0xFF; b[p++] = (ri>>40)&0xFF;
+        b[p++] = (ri>>48)&0xFF; b[p++] = (ri>>56)&0xFF;
+        long ra = elf_data_rels[ei].r_addend;
+        b[p++] = (ra)&0xFF; b[p++] = (ra>>8)&0xFF;
+        b[p++] = (ra>>16)&0xFF; b[p++] = (ra>>24)&0xFF;
+        b[p++] = (ra>>32)&0xFF; b[p++] = (ra>>40)&0xFF;
+        b[p++] = (ra>>48)&0xFF; b[p++] = (ra>>56)&0xFF;
+    }
 
     /* ── .symtab data ── */
     while (p < sym_ofs) b[p++] = 0;
@@ -252,7 +285,7 @@ int elf_write_object(const char *path) {
     b[shdr_start+128]=7; b[shdr_start+132]=4;
     { int off = shdr_start + 128;
       SHDR_W4(off+24, rela_ofs); SHDR_W4(off+32, rela_sz);
-      b[off+40]=5;    /* sh_link = .symtab (5) */
+      b[off+40]=6;    /* sh_link = .symtab (6) */
       b[off+44]=1;    /* sh_info = .text (1) */
       b[off+48]=8; b[off+56]=24; }
 
@@ -263,31 +296,40 @@ int elf_write_object(const char *path) {
       SHDR_W4(off+24, data_ofs); SHDR_W4(off+32, data_sz);
       b[off+48]=32; }       /* sh_addralign */
 
-    /* 节区 4: .bss (sh_name=24) */
-    b[shdr_start+256]=24; b[shdr_start+260]=8;  /* SHT_NOBITS */
-    b[shdr_start+264]=3;                         /* SHF_ALLOC|SHF_WRITE */
+    /* 节区 4: .rela.data (sh_name=24) — NEW */
+    b[shdr_start+256]=24; b[shdr_start+260]=4;  /* SHT_RELA */
+    b[shdr_start+264]=0;                         /* sh_flags = 0 */
     { int off = shdr_start + 256;
+      SHDR_W4(off+24, rela_data_ofs); SHDR_W4(off+32, rela_data_sz);
+      b[off+40]=6;    /* sh_link = .symtab (6) */
+      b[off+44]=3;    /* sh_info = .data (3) */
+      b[off+48]=8; b[off+56]=24; }
+
+    /* 节区 5: .bss (sh_name=35) */
+    b[shdr_start+320]=35; b[shdr_start+324]=8;  /* SHT_NOBITS */
+    b[shdr_start+328]=3;                         /* SHF_ALLOC|SHF_WRITE */
+    { int off = shdr_start + 320;
       SHDR_W4(off+24, 0);   /* sh_offset = 0 (NOBITS) */
       SHDR_W4(off+32, elf_bss_size);
       b[off+48]=32; }       /* sh_addralign */
 
-    /* 节区 5: .symtab (sh_name=29) */
-    b[shdr_start+320]=29; b[shdr_start+324]=2;
-    { int off = shdr_start + 320;
+    /* 节区 6: .symtab (sh_name=40) */
+    b[shdr_start+384]=40; b[shdr_start+388]=2;
+    { int off = shdr_start + 384;
       SHDR_W4(off+24, sym_ofs); SHDR_W4(off+32, sym_sz);
-      SHDR_W4(off+40, 6); /* sh_link = .strtab (6) */
+      SHDR_W4(off+40, 7); /* sh_link = .strtab (7) */
       SHDR_W4(off+44, first_global);
       b[off+48]=8; b[off+56]=24; }
 
-    /* 节区 6: .strtab (sh_name=37) */
-    b[shdr_start+384]=37; b[shdr_start+388]=3;
-    { int off = shdr_start + 384;
+    /* 节区 7: .strtab (sh_name=48) */
+    b[shdr_start+448]=48; b[shdr_start+452]=3;
+    { int off = shdr_start + 448;
       SHDR_W4(off+24, str_ofs); SHDR_W4(off+32, strtab_sz);
       b[off+48]=1; }
 
-    /* 节区 7: .shstrtab (sh_name=45) */
-    b[shdr_start+448]=45; b[shdr_start+452]=3;
-    { int off = shdr_start + 448;
+    /* 节区 8: .shstrtab (sh_name=56) */
+    b[shdr_start+512]=56; b[shdr_start+516]=3;
+    { int off = shdr_start + 512;
       SHDR_W4(off+24, shstr_ofs); SHDR_W4(off+32, shstrtab_sz);
       b[off+48]=1; }
 

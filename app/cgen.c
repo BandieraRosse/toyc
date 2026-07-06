@@ -984,46 +984,176 @@ void cgen_init(void) {
     current_func_ret_size = 0;
 }
 
+/* ─── 全局变量初始化器的 .data 段数据发射 ─── */
+static void cgen_emit_data_init(AstNode *node) {
+    if (!node || !node->init_items || node->init_count <= 0) return;
+
+    int elem_size = node->elem_size;
+    int items_per_elem = node->init_items_per_elem;
+    if (items_per_elem <= 0) items_per_elem = node->init_count;
+
+    int item_idx = 0;
+    int elem_byte_count = 0;
+    int i;
+
+    for (i = 0; i < node->init_count; i++) {
+        InitItem *it = &node->init_items[i];
+
+        if (it->type == INIT_TYPE_STR) {
+            /* ── 字符串：创建 .LC 符号，发射 8 字节 + R_X86_64_64 ── */
+            int slen = 0;
+            if (it->str) { while (it->str[slen]) slen++; }
+            slen++; /* null terminator */
+
+            /* 追加到字符串池 */
+            int pool_off = strpool_size;
+            if (strpool_size + slen > STRPOOL_SIZE) {
+                __write(2, "tcc: strpool overflow (data init)\n", 34);
+                __exit(1);
+            }
+            int si;
+            for (si = 0; si < slen; si++)
+                strpool_buf[strpool_size++] = it->str[si];
+
+            /* 分配符号名 .LC%d */
+            int name_idx = str_info_count;
+            char name_buf[16];
+            char *np = name_buf;
+            *np++ = '.'; *np++ = 'L'; *np++ = 'C';
+            if (name_idx >= 10000) *np++ = '0' + (name_idx / 10000) % 10;
+            if (name_idx >= 1000)  *np++ = '0' + (name_idx / 1000) % 10;
+            if (name_idx >= 100)   *np++ = '0' + (name_idx / 100) % 10;
+            if (name_idx >= 10)    *np++ = '0' + (name_idx / 10) % 10;
+            *np++ = '0' + name_idx % 10;
+            *np = '\0';
+
+            if (name_idx >= MAX_STRINGS) {
+                __write(2, "tcc: max strings exceeded (data init)\n", 38);
+                __exit(1);
+            }
+            int ni;
+            for (ni = 0; ni < 16; ni++)
+                str_infos[name_idx].name[ni] = name_buf[ni];
+
+            /* 创建 LOCAL 符号 */
+            int sym_idx = -1;
+            if (sym_count < MAX_SYMS) {
+                sym_idx = sym_count++;
+                syms[sym_idx].name = str_infos[name_idx].name;
+                syms[sym_idx].offset = 0;    /* strpool fixup 会修正 */
+                syms[sym_idx].size = slen;
+                syms[sym_idx].is_global = 0;
+                syms[sym_idx].is_func = 0;
+                syms[sym_idx].shndx = 1;    /* strpool 在 .text 内 */
+                syms[sym_idx].sym_idx = -1;
+            }
+
+            str_infos[name_idx].pool_offset = pool_off;
+            str_infos[name_idx].len = slen;
+            str_infos[name_idx].sym_index = sym_idx;
+            str_info_count++;
+
+            /* 发射 8 字节占位 + R_X86_64_64 重定位 */
+            int data_off = data_size;
+            int bb;
+            for (bb = 0; bb < 8; bb++)
+                data_buf[data_size++] = 0;
+
+            if (data_rel_count < ELF_MAX_RELS && sym_idx >= 0) {
+                Elf64_Rela *r = &data_rels[data_rel_count++];
+                r->r_offset = data_off;
+                r->r_info = ELF64_R_INFO(sym_idx + 1, R_X86_64_64);
+                r->r_addend = 0;
+            }
+
+            elem_byte_count += 8;
+        } else {
+            /* ── 整数值：发射 4 字节 LE ── */
+            long v = it->ival;
+            data_buf[data_size++] = v & 0xFF;
+            data_buf[data_size++] = (v >> 8) & 0xFF;
+            data_buf[data_size++] = (v >> 16) & 0xFF;
+            data_buf[data_size++] = (v >> 24) & 0xFF;
+            elem_byte_count += 4;
+        }
+
+        item_idx++;
+
+        /* 每元素结束时填充对齐 */
+        if (items_per_elem > 0 && item_idx >= items_per_elem) {
+            while (elem_byte_count < elem_size) {
+                data_buf[data_size++] = 0;
+                elem_byte_count++;
+            }
+            elem_byte_count = 0;
+            item_idx = 0;
+        }
+    }
+    /* 最后一个元素的尾部填充 */
+    while (elem_byte_count > 0 && elem_byte_count < elem_size) {
+        data_buf[data_size++] = 0;
+        elem_byte_count++;
+    }
+}
+
 void cgen_program(AstNode *prog) {
     if (!prog || prog->kind != AST_PROGRAM) return;
 
     global_init_prog = prog;
 
-    /* Phase 1: 收集全局变量 */
+    /* Phase 1: 收集全局变量
+     *
+     * 注意：必须在 cgen_emit_data_init 之后创建符号——init 函数可能添加 .LC 符号
+     * （sym_count 因此增大），所以 symbol slot 必须在最后分配。
+     */
     int bss_offset = 0;
     int data_offset = 0;
     for (AstNode *node = prog->body; node; node = node->next) {
         if (node->kind == AST_VAR_DECL) {
             int vsize = node->ival > 0 ? node->ival : 4;
+            int shndx_val;
+            int off_val;
+            if (node->expr) {
+                /* 有初始化器 → .data 段 */
+                data_offset = (data_offset + 7) & -8;
+                off_val = data_offset;
+                shndx_val = 3;
+                /* 填充 data_buf 到符号偏移（应对对齐间隙） */
+                while (data_size < data_offset)
+                    data_buf[data_size++] = 0;
+                /* 发射初始化器真实数据（仅大括号初始器且可能添加 .LC 符号） */
+                if (node->init_count > 0 && node->init_items) {
+                    cgen_emit_data_init(node);
+                }
+                data_offset += vsize;
+            } else {
+                /* 无初始化器 → .bss 段 */
+                bss_offset = (bss_offset + 7) & -8;
+                off_val = bss_offset;
+                shndx_val = 5;
+                bss_offset += vsize;
+            }
+            /* 现在创建符号 (sym_count 已经是最终值) */
             if (sym_count < MAX_SYMS) {
-                int si = sym_count;
+                int si = sym_count++;
                 CgenSym *s = &syms[si];
                 s->name = node->name;
                 s->size = vsize;
                 s->is_global = !node->is_static;
                 s->is_func = 0;
                 s->sym_idx = -1;
+                s->offset = off_val;
+                s->shndx = shndx_val;
                 global_elem_size[si] = (vsize > 8) ? node->elem_size : 0;
                 global_base_elem_size[si] = node->base_elem_size;
-                if (node->expr) {
-                    /* 有初始化器 → .data 段 */
-                    data_offset = (data_offset + 7) & -8;
-                    s->offset = data_offset;
-                    s->shndx = 3;  /* .data */
-                    data_offset += vsize;
-                } else {
-                    /* 无初始化器 → .bss 段 */
-                    bss_offset = (bss_offset + 7) & -8;
-                    s->offset = bss_offset;
-                    s->shndx = 4;  /* .bss */
-                    bss_offset += vsize;
-                }
-                sym_count++;
             }
         }
     }
     elf_bss_size = bss_offset;
     elf_data_size = data_offset;
+    /* 确保 data_buf 填充到 data_offset（应对 scalar 初始器暂不发射数据的情况） */
+    while (data_size < data_offset)
+        data_buf[data_size++] = 0;
 
     /* Phase 1.5: 收集函数返回类型（供 struct 按值返回的 caller 侧使用） */
     func_ret_count = 0;

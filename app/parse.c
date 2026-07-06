@@ -70,6 +70,12 @@ static int pvar_find_elem_size(const char *name) {
         if (strcmp(pvar_name[i], name) == 0) return pvar_elem_size_arr[i];
     return 0;
 }
+static void pvar_update_size(const char *name, int new_size) {
+    int i;
+    for (i = 0; i < pvar_count; i++)
+        if (strcmp(pvar_name[i], name) == 0)
+            { pvar_size_arr[i] = new_size; return; }
+}
 #define pvar_add(name, tag, is_float) pvar_add_ex(name, tag, is_float, 0, 0)
 static const char *pvar_find_tag(const char *name) {
     int i;
@@ -1264,6 +1270,82 @@ static long long eval_const_expr(AstNode *n) {
         }
     default: return 0;
     }
+}
+
+/* ─── 全局变量初始化器解析辅助函数 ─── */
+
+/* 解析一个标量初始器值（字符串字面量或常量表达式）存入 items[idx] */
+/* 返回增加的项目数（总是 1）。idx >= max 时不存储但仍消耗输入 */
+static int parse_one_init(Parser *p, InitItem *items, int idx, int max) {
+    if (peek(p).kind == TOK_STRING) {
+        Token t = consume(p);
+        if (idx >= max) return 1;
+        int sl = t.len - 2;
+        char *dst = arena_alloc(p->arena, sl + 1);
+        int di = 0;
+        const char *src = t.start + 1;
+        int i = 0;
+        while (i < sl) {
+            char c = src[i++];
+            if (c == '\\' && i < sl) {
+                char e = src[i++];
+                switch (e) {
+                case 'n': dst[di++] = '\n'; break;
+                case 't': dst[di++] = '\t'; break;
+                case 'r': dst[di++] = '\r'; break;
+                case '0': dst[di++] = '\0'; break;
+                case '\\': dst[di++] = '\\'; break;
+                case '"': dst[di++] = '"'; break;
+                default:
+                    if (e >= '0' && e <= '7') {
+                        int ov = e - '0'; int od = 1;
+                        while (od < 3 && i < sl) {
+                            char oc = src[i];
+                            if (oc >= '0' && oc <= '7') { ov = ov*8+(oc-'0'); i++; od++; }
+                            else break;
+                        }
+                        dst[di++] = (char)ov;
+                    } else { dst[di++] = e; }
+                }
+            } else { dst[di++] = c; }
+        }
+        dst[di] = '\0';
+        items[idx].type = INIT_TYPE_STR;
+        items[idx].str = dst;
+        items[idx].ival = 0;
+        return 1;
+    }
+    if (idx >= max) { (void)parse_expr(p); return 1; }
+    AstNode *expr = parse_expr(p);
+    long val = eval_const_expr(expr);
+    items[idx].type = INIT_TYPE_INT;
+    items[idx].ival = val;
+    items[idx].str = NULL;
+    return 1;
+}
+
+/* 解析 { } 内的逗号分隔初始化列表，递归处理嵌套 { } */
+/* 返回解析的标量总数。items 可为 NULL 则只计数不存储 */
+/* 若 elem_count 非 NULL，返回时 *elem_count 设为顶层元素数（用于 items_per_elem） */
+static int parse_init_list(Parser *p, InitItem *items, int max, int *elem_count) {
+    int count = 0;
+    int elems = 0;
+    consume(p); /* skip { */
+    while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+        elems++;
+        if (peek(p).kind == TOK_LBRACE) {
+            /* 嵌套 { } — 结构体/嵌套数组元素初始化器 */
+            int sub = parse_init_list(p, items ? items + count : NULL,
+                                       max > count ? max - count : 0, NULL);
+            count += sub;
+        } else {
+            count += parse_one_init(p, items, count, max);
+        }
+        if (peek(p).kind == TOK_COMMA) consume(p);
+    }
+    if (peek(p).kind == TOK_RBRACE) consume(p);
+    if (elem_count) *elem_count = elems;
+    return count;
 }
 
 int parse_type_specifier(Parser *p) {
@@ -2618,13 +2700,36 @@ AstNode *parse_program(Parser *p) {
                                     gvar->type_size = gv_total;
                                     gvar->elem_size = gv_unit;
                                 }
+                                /* 更新 pvar 表（pvar_add_ex 在计数前已调用，当时 size=16） */
+                                if (gvar && gvar->name) pvar_update_size(gvar->name, gv_total);
                             }
-                            /* 标记为有初始化器（供 .data 段分配），然后跳过大括号内容 */
+                            /* 解析初始化器值，存储到 gvar->init_items[] */
                             if (gvar) {
+                                int max_est = (init_count > 0 ? init_count * 8 : 64);
+                                if (max_est > 65536) max_est = 65536;
+                                InitItem *items = arena_alloc(p->arena, max_est * sizeof(InitItem));
+                                int elem_count = 0;
+                                int actual = parse_init_list(p, items, max_est, &elem_count);
+                                if (actual > max_est) actual = max_est;
+                                /* 用实际解析的元素数修正 gv_total（应对尾随逗号） */
+                                if (elem_count > 0 && gv_unit * elem_count != gv_total) {
+                                    gv_total = gv_unit * elem_count;
+                                    gvar->ival = gv_total;
+                                    gvar->type_size = gv_total;
+                                    if (gvar->name) pvar_update_size(gvar->name, gv_total);
+                                }
+                                gvar->init_items = items;
+                                gvar->init_count = actual;
+                                /* 计算每个数组元素的标量项目数（直接解析得到，不受尾随逗号影响） */
+                                if (elem_count > 0 && actual >= elem_count) {
+                                    gvar->init_items_per_elem = actual / elem_count;
+                                } else {
+                                    gvar->init_items_per_elem = actual;
+                                }
                                 gvar->expr = new_ast(p, AST_CONSTANT);
                                 gvar->expr->ival = 0;
-                            }
-                            {
+                            } else {
+                                /* 无 gvar，仅跳过 */
                                 int d = 1; consume(p);
                                 while (d > 0 && peek(p).kind != TOK_EOF) {
                                     if (peek(p).kind == TOK_LBRACE) d++;
