@@ -1828,6 +1828,8 @@ AstNode *parse_compound_statement(Parser *p) {
                 decl_is_double = (peek(p).kind == TOK_DOUBLE);
                 ts = parse_type_specifier(p);
             }
+            /* 保存 struct 标签（逗号分隔变量需要，last_struct_tag 会在第一个变量后被清除） */
+            const char *saved_struct_tag = last_struct_tag;
             if (ts >= 0) {
                 AstNode *decl = new_ast(p, AST_VAR_DECL);
                 int dv_ptrs = 0;
@@ -1861,10 +1863,10 @@ AstNode *parse_compound_statement(Parser *p) {
                     if (decl_typedef_tag) {
                         pvar_add_ex(decl->name, decl_typedef_tag, decl->is_float, decl->is_unsigned, decl->ival);
                         resolved_tag = decl_typedef_tag;
-                    } else if (last_struct_tag || last_struct_member_count > 0) {
-                        pvar_add_ex(decl->name, last_struct_tag ? last_struct_tag : "",
+                    } else if (saved_struct_tag || last_struct_member_count > 0) {
+                        pvar_add_ex(decl->name, saved_struct_tag ? saved_struct_tag : "",
                                  decl->is_float, decl->is_unsigned, decl->ival);
-                        resolved_tag = last_struct_tag;
+                        resolved_tag = saved_struct_tag;
                     } else {
                         int ti;
                         int found_typedef = 0;
@@ -2072,9 +2074,9 @@ AstNode *parse_compound_statement(Parser *p) {
                     cdecl->is_static = q_static;
                     /* 注册局部变量名 */
                     if (cname && *cname) {
-                        pvar_add_ex(cname, last_struct_tag ? last_struct_tag : NULL, cdecl->is_float, cdecl->is_unsigned, cdecl->ival);
-                        if (last_struct_tag && *last_struct_tag)
-                            pvar_set_struct_type(cname, resolve_struct_type(last_struct_tag));
+                        pvar_add_ex(cname, saved_struct_tag ? saved_struct_tag : NULL, cdecl->is_float, cdecl->is_unsigned, cdecl->ival);
+                        if (saved_struct_tag && *saved_struct_tag)
+                            pvar_set_struct_type(cname, resolve_struct_type(saved_struct_tag));
                     }
                     /* 处理数组后缀 */
                     while (peek(p).kind == TOK_LBRACKET) {
