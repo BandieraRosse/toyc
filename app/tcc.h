@@ -187,6 +187,9 @@ typedef struct {
     struct AstNode *expr;    /* 约束对应的表达式 AST */
 } AsmOperand;
 
+/* ─── 前向声明（StructType 定义在 AstNode 之后） ─── */
+typedef struct StructType StructType;
+
 /* ─── AST 节点 ─── */
 
 typedef struct AstNode {
@@ -248,6 +251,7 @@ typedef struct AstNode {
     InitItem *init_items;     /* arena 分配的数组 */
     int is_unsigned;     /* 1 表示 unsigned 类型（unsigned int/long/char/short） */
     int elem_is_unsigned; /* 指针变量：指向的元素类型是否为 unsigned */
+    StructType *struct_type; /* 仅 struct 类型的表达式：指向解析后的 StructType，NULL=非 struct 或未知 */
 } AstNode;
 
 /* ─── 符号表（代码生成输出用） ─── */
@@ -394,10 +398,11 @@ typedef struct {
     int size;
     int elem_size;      /* 指针成员指向的元素大小（long*→8, int*→4），数组成员的元素大小 */
     int is_unsigned;    /* 成员是否为 unsigned 类型 */
+    const char *member_struct_tag;  /* 如果此成员本身是 struct 类型（非指针），存 struct 标签名；否则 NULL */
 } Member;
 
 /* 结构体类型（通过 struct 标签或匿名定义） */
-typedef struct {
+typedef struct StructType {
     const char *tag;        /* NULL 表示匿名 */
     Member members[MAX_MEMBERS];
     int member_count;
