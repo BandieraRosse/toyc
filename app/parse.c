@@ -1976,7 +1976,7 @@ AstNode *parse_compound_statement(Parser *p) {
                 /* 数组处理后更新 pvar 中的变量大小 */
                 if (decl->name && *decl->name && decl->ival > 4) {
                     int pi;
-                    for (pi = 0; pi < pvar_count; pi++)
+                    for (pi = pvar_count - 1; pi >= 0; pi--)
                         if (strcmp(pvar_name[pi], decl->name) == 0)
                             { pvar_size_arr[pi] = decl->ival; break; }
                 }

@@ -317,8 +317,7 @@ static void cgen_addr(AstNode *node) {
                 /* 非 2 的幂：用 imul 乘 */
                 e1(0x50);                            /* push rax (save index) */
                 if (idx_is64) {
-                    e1(0xB8); e4(elem_size); e4(0);   /* mov eax, elem_size (lower 32) */
-                    /* Need to handle 64-bit elem_size too, but typical struct size is small */
+                    e1(0xB8); e4(elem_size);   /* mov eax, elem_size (zero-extends to rax) */
                     e1(0x48); e1(0x0F); e1(0xAF); e1(0x04); e1(0x24);  /* imul rax, [rsp] */
                 } else {
                     e1(0xB8); e4(elem_size);           /* mov eax, elem_size */
@@ -666,7 +665,7 @@ void cgen_expr(AstNode *node) {
                 /* 非 2 的幂：imul rax, rcx（需保存 rcx 中的基地址） */
                 e1(0x50);                            /* push rax (save index) */
                 if (idx_is64) {
-                    e1(0xB8); e4(elem_size); e4(0);   /* mov eax, elem_size */
+                    e1(0xB8); e4(elem_size);   /* mov eax, elem_size (zero-extends to rax) */
                     e1(0x48); e1(0x0F); e1(0xAF); e1(0x04); e1(0x24);  /* imul rax, [rsp] */
                 } else {
                     e1(0xB8); e4(elem_size);           /* mov eax, elem_size */
@@ -1298,7 +1297,7 @@ void cgen_expr(AstNode *node) {
             } else if (elem_size > 1) {
                 e1(0x50);                            /* push rax */
                 if (idx_is64) {
-                    e1(0xB8); e4(elem_size); e4(0);
+                    e1(0xB8); e4(elem_size);
                     e1(0x48); e1(0x0F); e1(0xAF); e1(0x04); e1(0x24);
                 } else {
                     e1(0xB8); e4(elem_size);
