@@ -56,6 +56,9 @@ int func_nparams;      /* 当前函数的命名参数个数（供 va_start 使�
 
 /* ─── 作用域深度（用于变量阴影解析） ─── */
 int scope_depth;
+int scope_chain[MAX_SCOPE_IDS];
+int scope_chain_count;
+static int next_scope_id;
 
 /* ─── 函数返回类型表（供 struct 按值返回使用） ─── */
 const char *func_ret_names[MAX_FUNC_RET_TYPES];
@@ -276,14 +279,17 @@ static void collect_locals(AstNode *node) {
     case AST_FUNC_DEF:
         local_count = 0;
         frame_size = 0;
-        scope_depth = 0;
+        scope_depth = 0; scope_chain_count = 0; next_scope_id = 0;
         current_func_name = node->name;
         collect_locals(node->body);
         break;
     case AST_BLOCK:
         scope_depth++;
+        if (scope_chain_count < MAX_SCOPE_IDS)
+            scope_chain[scope_chain_count++] = ++next_scope_id;
         for (AstNode *s = node->stmts; s; s = s->next)
             collect_locals(s);
+        scope_chain_count--;
         scope_depth--;
         break;
     case AST_VAR_DECL:
@@ -317,6 +323,7 @@ static void collect_locals(AstNode *node) {
             locals[local_count].element_size = node->elem_size;
             locals[local_count].base_elem_size = node->base_elem_size;
             locals[local_count].scope_depth = scope_depth;
+            locals[local_count].scope_id = scope_chain_count > 0 ? scope_chain[scope_chain_count - 1] : 0;
             locals[local_count].elem_is_unsigned = node->elem_is_unsigned;
             /* 判断是否为数组：type_size 不等于指针大小(8)且 ival 为正数 */
             locals[local_count].is_array =
@@ -466,7 +473,7 @@ static void cgen_for(AstNode *stmt) {
                 int i;
                 for (i = local_count - 1; i >= 0; i--) {
                     if (strcmp(locals[i].name, stmt->loop_init->name) == 0 &&
-                        locals[i].scope_depth <= scope_depth) {
+                        locals[i].scope_depth <= scope_depth && (locals[i].scope_id == 0 || locals[i].scope_id <= scope_chain[scope_chain_count - 1])) {
                         if (locals[i].is_float) {
                             emit1(0xF2); emit1(0x0F); emit1(0x11);
                             emit1(0x45); emit1(locals[i].offset & 0xFF);
@@ -548,8 +555,11 @@ static void cgen_for(AstNode *stmt) {
 
 static void cgen_block(AstNode *block) {
     scope_depth++;
+    if (scope_chain_count < MAX_SCOPE_IDS)
+        scope_chain[scope_chain_count++] = ++next_scope_id;
     for (AstNode *s = block->stmts; s; s = s->next)
         cgen_stmt(s);
+    scope_chain_count--;
     scope_depth--;
 }
 
@@ -728,7 +738,7 @@ static void cgen_stmt(AstNode *stmt) {
                 int i;
                 for (i = local_count - 1; i >= 0; i--) {
                     if (strcmp(locals[i].name, stmt->name) == 0 &&
-                        locals[i].scope_depth <= scope_depth) {
+                        locals[i].scope_depth <= scope_depth && (locals[i].scope_id == 0 || locals[i].scope_id <= scope_chain[scope_chain_count - 1])) {
                         if (locals[i].is_float) {
                             emit1(0xF2); emit1(0x0F); emit1(0x11);
                             emit1(0x45); emit1(locals[i].offset & 0xFF);
@@ -790,9 +800,9 @@ static void cgen_func_def(AstNode *func) {
     int is_variadic = func->is_variadic;
 
     reset_labels();
-    scope_depth = 0;
+    scope_depth = 0; scope_chain_count = 0; next_scope_id = 0;
     collect_locals(func);
-    scope_depth = 0;
+    scope_depth = 0; scope_chain_count = 0; next_scope_id = 0;
 
     /* 记录当前函数的返回类型大小 */
     current_func_ret_size = func->type_size;
@@ -972,7 +982,7 @@ void cgen_init(void) {
     frame_size = 0;
     reg_save_offset = 0;
     func_nparams = 0;
-    scope_depth = 0;
+    scope_depth = 0; scope_chain_count = 0; next_scope_id = 0;
     strtab_len = 0;
     strtab[strtab_len++] = '\0';
     strpool_size = 0;

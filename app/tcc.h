@@ -359,6 +359,7 @@ typedef struct {
     int element_size;        /* 指针变量的元素大小（用于指针运算：int*→4, char**→8） */
     int base_elem_size;      /* 数组变量：单个元素的类型尺寸（多维数组的内层 elem_size） */
     int scope_depth;         /* 声明时的作用域深度（用于块作用域变量阴影） */
+    int scope_id;            /* 声明时所在块的唯一 scope ID（由 scope_chain 分配） */
     int is_array;            /* 1 表示数组类型（访问时退化为指针） */
     int is_unsigned;         /* 1 表示 unsigned 类型 */
     int elem_is_unsigned;    /* 指针变量的元素是否为 unsigned（用于 *ptr 解引用） */
@@ -369,7 +370,16 @@ extern int local_count;
 extern int frame_size;
 extern int reg_save_offset;
 extern int func_nparams;
-extern int scope_depth;   /* 当前作用域深度（用于变量阴影解析） */
+extern int scope_depth;
+#define MAX_SCOPE_IDS 64
+extern int scope_chain[MAX_SCOPE_IDS];
+extern int scope_chain_count;
+static inline int is_scope_visible(int id) {
+    int i;
+    for (i = 0; i < scope_chain_count; i++)
+        if (scope_chain[i] == id) return 1;
+    return 0;
+}
 
 /* ─── 函数返回类型表（供 struct 按值返回的 caller 侧使用） ─── */
 #define MAX_FUNC_RET_TYPES 512

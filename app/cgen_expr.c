@@ -235,7 +235,7 @@ static void cgen_addr(AstNode *node) {
         int i;
         for (i = local_count - 1; i >= 0; i--) {
             if (strcmp(locals[i].name, node->name) == 0 &&
-                locals[i].scope_depth <= scope_depth) {
+                locals[i].scope_depth <= scope_depth && (locals[i].scope_id == 0 || locals[i].scope_id <= scope_chain[scope_chain_count - 1])) {
                 lea_from_rbp(locals[i].offset);
                 return;
             }
@@ -280,7 +280,7 @@ static void cgen_addr(AstNode *node) {
                 int i;
                 for (i = local_count - 1; i >= 0; i--) {
                     if (strcmp(locals[i].name, node->left->name) == 0 &&
-                        locals[i].scope_depth <= scope_depth) {
+                        locals[i].scope_depth <= scope_depth && (locals[i].scope_id == 0 || locals[i].scope_id <= scope_chain[scope_chain_count - 1])) {
                         if (locals[i].element_size > 0)
                             elem_size = locals[i].element_size;
                         break;
@@ -336,7 +336,7 @@ static void cgen_addr(AstNode *node) {
             int i;
             for (i = local_count - 1; i >= 0; i--) {
                 if (strcmp(locals[i].name, node->left->name) == 0 &&
-                    locals[i].scope_depth <= scope_depth) {
+                    locals[i].scope_depth <= scope_depth && (locals[i].scope_id == 0 || locals[i].scope_id <= scope_chain[scope_chain_count - 1])) {
                     int addr = locals[i].offset + moff;
                     lea_from_rbp(addr);
                     return;
@@ -473,11 +473,11 @@ void cgen_expr(AstNode *node) {
     }
 
     case AST_VAR: {
-        /* 查找局部变量偏移 — 从后往前搜索，用 scope_depth 过滤块作用域阴影 */
+        /* 查找局部变量偏移 — 从后往前搜索，用 scope_depth + scope_chain 过滤 */
         int i;
         for (i = local_count - 1; i >= 0; i--) {
             if (strcmp(locals[i].name, node->name) == 0 &&
-                locals[i].scope_depth <= scope_depth) {
+                locals[i].scope_depth <= scope_depth && (locals[i].scope_id == 0 || locals[i].scope_id <= scope_chain[scope_chain_count - 1])) {
                 if (locals[i].is_float) {
                     node->is_float = 1;
                     node->type_size = 8;
@@ -596,7 +596,7 @@ void cgen_expr(AstNode *node) {
                 int i;
                 for (i = local_count - 1; i >= 0; i--) {
                     if (strcmp(locals[i].name, node->left->name) == 0 &&
-                        locals[i].scope_depth <= scope_depth) {
+                        locals[i].scope_depth <= scope_depth && (locals[i].scope_id == 0 || locals[i].scope_id <= scope_chain[scope_chain_count - 1])) {
                         if (locals[i].element_size > 0)
                             elem_size = locals[i].element_size;
                         elem_unsigned = locals[i].elem_is_unsigned;
@@ -619,7 +619,7 @@ void cgen_expr(AstNode *node) {
                 int i;
                 for (i = local_count - 1; i >= 0; i--) {
                     if (strcmp(locals[i].name, node->left->left->name) == 0 &&
-                        locals[i].scope_depth <= scope_depth) {
+                        locals[i].scope_depth <= scope_depth && (locals[i].scope_id == 0 || locals[i].scope_id <= scope_chain[scope_chain_count - 1])) {
                         if (locals[i].base_elem_size > 0)
                             elem_size = locals[i].base_elem_size;
                         else if (locals[i].element_size > 0)
@@ -688,7 +688,7 @@ void cgen_expr(AstNode *node) {
                 int idx;
                 for (idx = local_count - 1; idx >= 0; idx--) {
                     if (strcmp(locals[idx].name, node->left->name) == 0 &&
-                        locals[idx].scope_depth <= scope_depth) {
+                        locals[idx].scope_depth <= scope_depth && (locals[idx].scope_id == 0 || locals[idx].scope_id <= scope_chain[scope_chain_count - 1])) {
                         if (locals[idx].is_array && locals[idx].base_elem_size > 0 &&
                             locals[idx].base_elem_size < elem_size)
                             is_subarray = 1;
@@ -888,7 +888,7 @@ void cgen_expr(AstNode *node) {
                 int vi;
                 for (vi = local_count - 1; vi >= 0; vi--) {
                     if (strcmp(locals[vi].name, ptr_node->name) == 0 &&
-                        locals[vi].scope_depth <= scope_depth) {
+                        locals[vi].scope_depth <= scope_depth && (locals[vi].scope_id == 0 || locals[vi].scope_id <= scope_chain[scope_chain_count - 1])) {
                         if (locals[vi].element_size > 0) ptelem = locals[vi].element_size;
                         break;
                     }
@@ -1031,7 +1031,7 @@ void cgen_expr(AstNode *node) {
                 int vi;
                 for (vi = local_count - 1; vi >= 0; vi--) {
                     if (strcmp(locals[vi].name, node->left->name) == 0 &&
-                        locals[vi].scope_depth <= scope_depth) {
+                        locals[vi].scope_depth <= scope_depth && (locals[vi].scope_id == 0 || locals[vi].scope_id <= scope_chain[scope_chain_count - 1])) {
                         if (locals[vi].element_size > 0) ptelem = locals[vi].element_size;
                         break;
                     }
@@ -1058,7 +1058,7 @@ void cgen_expr(AstNode *node) {
                 int i;
                 for (i = local_count - 1; i >= 0; i--) {
                     if (strcmp(locals[i].name, node->expr->name) == 0 &&
-                        locals[i].scope_depth <= scope_depth) {
+                        locals[i].scope_depth <= scope_depth && (locals[i].scope_id == 0 || locals[i].scope_id <= scope_chain[scope_chain_count - 1])) {
                         lea_from_rbp(locals[i].offset);
                         found = 1;
                         break;
@@ -1181,7 +1181,7 @@ void cgen_expr(AstNode *node) {
                     int vi;
                     for (vi = local_count - 1; vi >= 0; vi--) {
                         if (strcmp(locals[vi].name, node->expr->name) == 0 &&
-                            locals[vi].scope_depth <= scope_depth) {
+                            locals[vi].scope_depth <= scope_depth && (locals[vi].scope_id == 0 || locals[vi].scope_id <= scope_chain[scope_chain_count - 1])) {
                             if (locals[vi].element_size > 0)
                                 deref_size = locals[vi].element_size;
                             elem_unsigned = locals[vi].elem_is_unsigned;
@@ -1242,7 +1242,7 @@ void cgen_expr(AstNode *node) {
                 int i;
                 for (i = local_count - 1; i >= 0; i--) {
                     if (strcmp(locals[i].name, arr_base->name) == 0 &&
-                        locals[i].scope_depth <= scope_depth) {
+                        locals[i].scope_depth <= scope_depth && (locals[i].scope_id == 0 || locals[i].scope_id <= scope_chain[scope_chain_count - 1])) {
                         if (locals[i].element_size > 0)
                             elem_size = locals[i].element_size;
                         break;
@@ -1264,7 +1264,7 @@ void cgen_expr(AstNode *node) {
                 int i;
                 for (i = local_count - 1; i >= 0; i--) {
                     if (strcmp(locals[i].name, arr_base->left->name) == 0 &&
-                        locals[i].scope_depth <= scope_depth) {
+                        locals[i].scope_depth <= scope_depth && (locals[i].scope_id == 0 || locals[i].scope_id <= scope_chain[scope_chain_count - 1])) {
                         if (locals[i].base_elem_size > 0)
                             elem_size = locals[i].base_elem_size;
                         else if (locals[i].element_size > 0)
@@ -1353,7 +1353,7 @@ void cgen_expr(AstNode *node) {
                 int vi;
                 for (vi = local_count - 1; vi >= 0; vi--) {
                     if (strcmp(locals[vi].name, node->left->expr->name) == 0 &&
-                        locals[vi].scope_depth <= scope_depth) {
+                        locals[vi].scope_depth <= scope_depth && (locals[vi].scope_id == 0 || locals[vi].scope_id <= scope_chain[scope_chain_count - 1])) {
                         if (locals[vi].element_size > 0)
                             deref_sz = locals[vi].element_size;
                         break;
@@ -1384,7 +1384,7 @@ void cgen_expr(AstNode *node) {
             int i;
             for (i = local_count - 1; i >= 0; i--) {
                 if (strcmp(locals[i].name, vname) == 0 &&
-                    locals[i].scope_depth <= scope_depth) {
+                    locals[i].scope_depth <= scope_depth && (locals[i].scope_id == 0 || locals[i].scope_id <= scope_chain[scope_chain_count - 1])) {
                     if (locals[i].is_float) {
                         /* 右操作数可能是 int，需要转换 */
                         if (!rhs_float) cvti2d();
@@ -1621,7 +1621,7 @@ void cgen_expr(AstNode *node) {
             int i;
             for (i = local_count - 1; i >= 0; i--) {
                 if (strcmp(locals[i].name, node->name) == 0 &&
-                    locals[i].scope_depth <= scope_depth) {
+                    locals[i].scope_depth <= scope_depth && (locals[i].scope_id == 0 || locals[i].scope_id <= scope_chain[scope_chain_count - 1])) {
                     is_fptr = 1;
                     fptr_offset = locals[i].offset;
                     break;
@@ -1877,7 +1877,7 @@ void cgen_expr(AstNode *node) {
                 int i;
                 for (i = local_count - 1; i >= 0; i--) {
                     if (strcmp(locals[i].name, node->left->name) == 0 &&
-                        locals[i].scope_depth <= scope_depth) {
+                        locals[i].scope_depth <= scope_depth && (locals[i].scope_id == 0 || locals[i].scope_id <= scope_chain[scope_chain_count - 1])) {
                         int total_off = locals[i].offset + member_off;
                         if (node->type_size > 8) {
                             /* 数组成员：退化为指针 */
