@@ -1159,8 +1159,10 @@ static int parse_struct_body(Parser *p, Member *members, int *out_count) {
                     members[count].elem_size = 8;   /* 多级指针 → 指针大小 */
                 else
                     members[count].elem_size = 0;
-                /* 如果成员本身就是 struct 类型（非指针），记录 struct 标签 */
-                members[count].member_struct_tag = (ptr_count == 0) ? last_struct_tag : NULL;
+                /* 记录 struct 标签，无论成员是否为指针（这样 p->member->sub
+                 * 链式访问的 struct_type 传播能正确工作）。非 struct 类型时
+                 * last_struct_tag 为 NULL，不影响。 */
+                members[count].member_struct_tag = last_struct_tag;
                 count++;
                 offset += member_sz;
             }
@@ -1246,7 +1248,10 @@ static int parse_struct_type(Parser *p, StructType *out) {
     }
 
     if (peek(p).kind == TOK_LBRACE) {
-        /* struct tag { ... } */
+        /* struct tag { ... } — 在 body 解析前设置 last_struct_tag，
+         * 使得 self-referencing 成员（如 struct Node *next）能获得
+         * 正确的 member_struct_tag，用于链式访问的 struct_type 传播。 */
+        last_struct_tag = tag;
         out->total_size = parse_struct_body(p, out->members, &out->member_count);
         while (peek(p).kind == TOK__ATTRIBUTE__) {
             consume(p); expect(p, TOK_LPAREN); expect(p, TOK_LPAREN);
@@ -1786,8 +1791,10 @@ AstNode *parse_compound_statement(Parser *p) {
                             int mi;
                             for (mi = 0; mi < last_struct_member_count && mi < MAX_MEMBERS; mi++)
                                 te->members[mi] = last_struct_members[mi];
-                            /* reg anonymous struct to tag_table for member lookup */
-                            if (tag_count < MAX_TAGS) {
+                            /* reg typedef'd struct to tag_table for member lookup.
+                             * Only add if tag doesn't already exist — prevents dup entries
+                             * that trigger the ambiguity detector in ->/. member lookup. */
+                            if (tag_count < MAX_TAGS && !find_struct_tag(tname)) {
                                 StructType *st = &tag_table[tag_count++];
                                 st->tag = tname;
                                 st->total_size = tsz;
