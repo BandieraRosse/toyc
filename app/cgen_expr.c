@@ -1487,14 +1487,21 @@ void cgen_expr(AstNode *node) {
                         (node->right ? node->right->type_size : 4);
             if (rsize == 0) rsize = 8;
 
-            push_rax();              /* 保存 RHS 值 */
+            push_rax();              /* 保存 RHS 值（>8 字节 struct 时 RAX 是源地址指针） */
 
             cgen_addr(node->left);   /* rax = 成员地址（覆写 eax） */
 
-            e1(0x48); e1(0x89); e1(0xC1);  /* mov rcx, rax (rcx = 地址) */
-            pop_rax();               /* rax = RHS 值 */
+            e1(0x48); e1(0x89); e1(0xC1);  /* mov rcx, rax (rcx = 目标地址) */
+            pop_rax();               /* rax = RHS 值（或源地址指针） */
 
-            if (rsize >= 8) {
+            if (rsize > 8) {
+                /* 大结构体成员赋值：RAX=源地址, RCX=目标地址
+                 * mov rsi, rax; mov rdi, rcx; mov ecx, rsize; rep movsb */
+                e1(0x48); e1(0x89); e1(0xC6);  /* mov rsi, rax */
+                e1(0x48); e1(0x89); e1(0xCF);  /* mov rdi, rcx */
+                e1(0xB9); e4(rsize);           /* mov ecx, rsize */
+                e1(0xF3); e1(0xA4);            /* rep movsb */
+            } else if (rsize >= 8) {
                 e1(0x48); e1(0x89); e1(0x01);  /* mov [rcx], rax */
             } else if (rsize == 1) {
                 e1(0x88); e1(0x01);             /* mov [rcx], al */

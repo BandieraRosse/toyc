@@ -298,7 +298,7 @@ static void collect_locals(AstNode *node) {
                 s->size = vsize;
                 s->is_global = 0;  /* STB_LOCAL */
                 s->is_func = 0;
-                s->shndx = 4;  /* .bss */
+                s->shndx = 5;  /* .bss (section index 5: 1-text 2-rela.text 3-data 4-rela.data 5-bss) */
                 s->sym_idx = -1;
                 global_elem_size[sym_count] = (vsize > 8) ? node->elem_size : 0;
                 global_base_elem_size[sym_count] = node->base_elem_size;

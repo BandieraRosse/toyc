@@ -326,6 +326,7 @@ static void test_basic_constraints(void) {
       AstNode n = mk_asm("syscall", 1, in, 0, 0);
       cgen_asm(&n);
       CHECK_CODE(0, 0x0F, 0x05);
+      if (code_size != 2) { print_str("  DEBUG code_size="); print_dec(code_size); print_str("\n"); }
       CHECK(code_size == 2, "a+syscall → 2 bytes"); }
 
     reset();

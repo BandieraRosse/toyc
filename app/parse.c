@@ -2644,7 +2644,8 @@ AstNode *parse_program(Parser *p) {
 
         if (is_func) {
             /* 先解析声明符 + 参数列表，看是定义还是声明 */
-            const char *fname = parse_declarator(p, NULL);
+            int fptr_level = 0;
+            const char *fname = parse_declarator(p, &fptr_level);
             int is_variadic_f = 0;
             AstNode *fparams = parse_parameter_list(p, &is_variadic_f);
             if (peek(p).kind == TOK_SEMI) {
@@ -2684,9 +2685,9 @@ AstNode *parse_program(Parser *p) {
                 func->is_static = current_static;
                 func->is_variadic = is_variadic_f;
                 func->ival = pcount;
-                func->type_size = typesize;  /* 存储返回类型大小，供 struct 按值返回使用 */
+                func->type_size = (fptr_level > 0) ? 8 : typesize;  /* 存储返回类型大小：指针返回 8 字节，struct 按值返回使用原大小 */
                 /* 记录 struct 返回类型（供解析期 func().member 使用） */
-                if (typesize > 8 && last_struct_tag && *last_struct_tag) {
+                if (fptr_level == 0 && typesize > 8 && last_struct_tag && *last_struct_tag) {
                     StructType *ret_st = find_struct_tag(last_struct_tag);
                     if (ret_st && parse_func_ret_count < MAX_PARSE_FUNC_RET) {
                         parse_func_ret_name[parse_func_ret_count] = fname;
