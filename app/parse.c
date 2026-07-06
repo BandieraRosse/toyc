@@ -1097,6 +1097,11 @@ static int parse_struct_body(Parser *p, Member *members, int *out_count) {
     expect(p, TOK_LBRACE);
     int count = 0;
     int offset = 0;
+    /* 保存当前正在解析的 struct 的标签。parse_type_specifier 每调用都会清
+     * last_struct_tag（line ~1430），导致自引用成员丢失 member_struct_tag。
+     * 这是一个外层不变值（由 parse_struct_type 在 line 1254 设置），不会
+     * 被内部的 parse_type_specifier 影响。 */
+    const char *outer_struct_tag = last_struct_tag;
 
     while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
         /* 跳过限定符 */
@@ -1105,6 +1110,10 @@ static int parse_struct_body(Parser *p, Member *members, int *out_count) {
         int sz = parse_type_specifier(p);
         int base_sz = sz;
         int member_is_unsigned = last_type_is_unsigned;
+        /* member_tag_for_chain：若 parse_type_specifier 正确设置了新的
+         * last_struct_tag（如非自引用的已注册 struct），使用新值；
+         * 否则回退到 outer_struct_tag（包含自引用成员等情况）。 */
+        const char *member_tag_for_chain = last_struct_tag ? last_struct_tag : outer_struct_tag;
         if (sz < 0) { error_at(p, "invalid struct member type"); break; }
 
         /* 指针 */
@@ -1161,8 +1170,8 @@ static int parse_struct_body(Parser *p, Member *members, int *out_count) {
                     members[count].elem_size = 0;
                 /* 记录 struct 标签，无论成员是否为指针（这样 p->member->sub
                  * 链式访问的 struct_type 传播能正确工作）。非 struct 类型时
-                 * last_struct_tag 为 NULL，不影响。 */
-                members[count].member_struct_tag = last_struct_tag;
+                 * member_tag_for_chain 为 NULL，不影响。 */
+                members[count].member_struct_tag = member_tag_for_chain;
                 count++;
                 offset += member_sz;
             }
@@ -1189,13 +1198,16 @@ static int parse_struct_body(Parser *p, Member *members, int *out_count) {
         /* 逗号分隔的成员：int a, b, c; */
         while (peek(p).kind == TOK_COMMA) {
             consume(p);
-            while (peek(p).kind == TOK_STAR) { consume(p); }
+            int comma_ptr_count = 0;
+            while (peek(p).kind == TOK_STAR) { consume(p); comma_ptr_count++; }
             Token cid = peek(p);
             if (cid.kind == TOK_IDENT) {
                 consume(p);
                 /* 处理逗号后成员的数组后缀 [N] */
                 int member_sz = sz;
+                int comma_is_array = 0;
                 if (peek(p).kind == TOK_LBRACKET) {
+                    comma_is_array = 1;
                     consume(p);
                     if (peek(p).kind == TOK_NUMBER && peek(p).ival > 0) {
                         member_sz *= peek(p).ival;
@@ -1215,6 +1227,16 @@ static int parse_struct_body(Parser *p, Member *members, int *out_count) {
                     members[count].name = arena_strdup(p->arena, cid.start, cid.len);
                     members[count].offset = offset;
                     members[count].size = member_sz;
+                    members[count].is_unsigned = member_is_unsigned;
+                    if (comma_is_array)
+                        members[count].elem_size = sz;
+                    else if (comma_ptr_count == 1)
+                        members[count].elem_size = base_sz;
+                    else if (comma_ptr_count > 1)
+                        members[count].elem_size = 8;
+                    else
+                        members[count].elem_size = 0;
+                    members[count].member_struct_tag = member_tag_for_chain;
                     count++;
                     offset += member_sz;
                 }
