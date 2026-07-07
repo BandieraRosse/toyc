@@ -290,6 +290,7 @@ static AstNode *new_ast(Parser *p, AstKind kind) {
     n->kind = kind;
     n->next = NULL;
     n->type_size = 4;  /* 默认 int 大小 */
+    n->elem_size = 0;  /* 必须初始化（arena_alloc 不归零） */
     n->is_float = 0;
     n->is_static = 0;
     n->is_variadic = 0;
@@ -1970,7 +1971,9 @@ AstNode *parse_compound_statement(Parser *p) {
                 if (dim_count > 0 && first_dim > 0) {
                     /* 数组：elem_size = 元素/行大小，base_elem_size = 基础元素类型 */
                     int elem_ts = (dv_ptrs > 0) ? 8 : (ts > 0 ? ts : 4);
-                    decl->base_elem_size = elem_ts;
+                    decl->base_elem_size = (dv_ptrs == 1 && bracket_count > 0) ? (ts > 0 ? ts : 4) : elem_ts;
+                    if (dv_ptrs > 0 && bracket_count > 0)
+                        decl->elem_is_ptr = 1;
                     if (dim_count > 1)
                         decl->elem_size = decl->ival / first_dim; /* row size */
                     else
@@ -1981,7 +1984,8 @@ AstNode *parse_compound_statement(Parser *p) {
                 } else {
                     if (dv_ptrs > 0 && bracket_count > 0) {
                         decl->elem_size = 8;
-                        decl->base_elem_size = ts > 0 ? ts : 4;
+                        decl->base_elem_size = (dv_ptrs == 1) ? (ts > 0 ? ts : 4) : 8;
+                        decl->elem_is_ptr = 1;
                     } else {
                         decl->base_elem_size = decl->elem_size;
                     }

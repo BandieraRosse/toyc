@@ -45,6 +45,7 @@ static inline void *arena_alloc(Arena *a, int size) {
     }
     void *p = a->ptr;
     a->ptr += size;
+    { char *zp = (char *)p; int zi; for (zi = 0; zi < size; zi++) zp[zi] = 0; }
     return p;
 }
 
@@ -245,6 +246,7 @@ typedef struct AstNode {
     int type_size;       /* 类型大小（字节）：4=int, 8=指针/long/double, 1=char, 2=short */
     int elem_size;       /* AST_VAR_DECL: 指针变量的元素大小（int*→4, char**→8） */
     int base_elem_size;  /* AST_VAR_DECL: 数组的基础元素大小（多维数组中内层元素大小） */
+    int elem_is_ptr;     /* 1: 数组元素为指针类型（char *arr[] 或 int *arr[N]） */
     /* 全局变量初始化器数据（AST_VAR_DECL 且 = { ... } 时有效） */
     int init_count;           /* init_items 数组长度 */
     int init_items_per_elem;  /* 每个数组元素的标量初始化器数（用于元素内边距填充） */
@@ -304,6 +306,7 @@ extern int strtab_len;
 /* 全局变量的元素大小（数组下标运算用） */
 extern int global_elem_size[MAX_SYMS];
 extern int global_base_elem_size[MAX_SYMS];
+extern int global_elem_is_ptr_arr[MAX_SYMS];
 
 /* 字符串字面量池 — cgen_expr 追加，cgen_program 结尾刷入 code_buf */
 extern unsigned char strpool_buf[STRPOOL_SIZE];
@@ -358,6 +361,7 @@ typedef struct {
     int is_float;            /* 1 表示 double 类型变量 */
     int element_size;        /* 指针变量的元素大小（用于指针运算：int*→4, char**→8） */
     int base_elem_size;      /* 数组变量：单个元素的类型尺寸（多维数组的内层 elem_size） */
+    int elem_is_ptr;         /* 1: 数组元素的基类型是指针（char *arr[]） */
     int scope_depth;         /* 声明时的作用域深度（用于块作用域变量阴影） */
     int scope_id;            /* 声明时所在块的唯一 scope ID（由 scope_chain 分配） */
     int is_array;            /* 1 表示数组类型（访问时退化为指针） */

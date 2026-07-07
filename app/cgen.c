@@ -243,6 +243,7 @@ static void emit_epilogue(void) {
 /* 全局变量的元素大小（供数组下标运算确定偏移量） */
 int global_elem_size[MAX_SYMS];
 int global_base_elem_size[MAX_SYMS];
+int global_elem_is_ptr_arr[MAX_SYMS];
 
 static int add_sym(const char *name, int offset, int size,
                    int is_global, int is_func) {
@@ -320,6 +321,7 @@ static void collect_locals(AstNode *node) {
                 s->sym_idx = -1;
                 global_elem_size[sym_count] = (vsize > 8) ? node->elem_size : 0;
                 global_base_elem_size[sym_count] = node->base_elem_size;
+                global_elem_is_ptr_arr[sym_count] = node->elem_is_ptr;
                 sym_count++;
             }
             elf_bss_size += vsize;
@@ -334,6 +336,7 @@ static void collect_locals(AstNode *node) {
             locals[local_count].is_unsigned = node->is_unsigned;
             locals[local_count].element_size = node->elem_size;
             locals[local_count].base_elem_size = node->base_elem_size;
+            locals[local_count].elem_is_ptr = node->elem_is_ptr;
             locals[local_count].scope_depth = scope_depth;
             locals[local_count].scope_id = scope_chain_count > 0 ? scope_chain[scope_chain_count - 1] : 0;
             locals[local_count].elem_is_unsigned = node->elem_is_unsigned;
@@ -1015,6 +1018,7 @@ void cgen_init(void) {
     for (int _i = 0; _i < MAX_SYMS; _i++) {
         global_elem_size[_i] = 0;
         global_base_elem_size[_i] = 0;
+        global_elem_is_ptr_arr[_i] = 0;
     }
     func_ret_count = 0;
     current_func_ret_size = 0;
@@ -1182,6 +1186,7 @@ void cgen_program(AstNode *prog) {
                 s->shndx = shndx_val;
                 global_elem_size[si] = (vsize > 8) ? node->elem_size : 0;
                 global_base_elem_size[si] = node->base_elem_size;
+                global_elem_is_ptr_arr[si] = node->elem_is_ptr;
             }
         }
     }

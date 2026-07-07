@@ -293,7 +293,7 @@ void cgen_addr(AstNode *node) {
                 }
             }
             /* fallback: 结构体成员数组 s.arr[i] — 使用 AST_MEMBER 上的 elem_size */
-            if (elem_size == 1 && node->left && node->left->elem_size > 0) {
+            if (elem_size == 1 && node->left && node->left->kind == AST_MEMBER && node->left->elem_size > 0) {
                 elem_size = node->left->elem_size;
             }
 
@@ -620,23 +620,27 @@ void cgen_expr(AstNode *node) {
                 int i;
                 SEARCH_LOCAL(i, node->left->left->name);
                 if (i >= 0) {
-                        if (locals[i].base_elem_size > 0)
+                        if (locals[i].base_elem_size > 0) {
                             elem_size = locals[i].base_elem_size;
-                        else if (locals[i].element_size > 0)
+                        } else if (locals[i].element_size > 0) {
                             elem_size = locals[i].element_size;
+                        }
 
                 }
                 if (i < 0) {
                     for (i = 0; i < sym_count; i++) {
                         if (syms[i].name && strcmp(syms[i].name, node->left->left->name) == 0) {
-                            elem_size = 4;  /* 默认 int */
+                            if (i < MAX_SYMS && global_base_elem_size[i] > 0)
+                                elem_size = global_base_elem_size[i];
                             break;
                         }
                     }
+                    /* 若未在上层查找到（struct 成员数组 s.arr[i][j]），
+                     * 或查找到但没有 base_elem_size，保持默认 1 */
                 }
             }
             /* fallback: 结构体成员数组 s.arr[i] — 使用 AST_MEMBER 上的 elem_size */
-            if (elem_size == 1 && node->left && node->left->elem_size > 0) {
+            if (elem_size == 1 && node->left && node->left->kind == AST_MEMBER && node->left->elem_size > 0) {
                 elem_size = node->left->elem_size;
                 elem_unsigned = node->left->is_unsigned;
             }
@@ -688,14 +692,15 @@ void cgen_expr(AstNode *node) {
                 SEARCH_LOCAL(idx, node->left->name);
                 if (idx >= 0) {
                         if (locals[idx].is_array && locals[idx].base_elem_size > 0 &&
-                            locals[idx].base_elem_size < elem_size)
+                            locals[idx].base_elem_size < elem_size && !locals[idx].elem_is_ptr)
                             is_subarray = 1;
 
                 }
                 if (idx < 0) {
                     for (idx = 0; idx < sym_count; idx++) {
                         if (syms[idx].name && strcmp(syms[idx].name, node->left->name) == 0) {
-                            if (idx < MAX_SYMS && global_base_elem_size[idx] > 0 && global_base_elem_size[idx] < elem_size)
+                            if (idx < MAX_SYMS && global_base_elem_size[idx] > 0 && global_base_elem_size[idx] < elem_size &&
+                                !global_elem_is_ptr_arr[idx])
                                 is_subarray = 1;
                             break;
                         }
@@ -1256,6 +1261,15 @@ void cgen_expr(AstNode *node) {
                         else if (locals[i].element_size > 0)
                             elem_size = locals[i].element_size;
 
+                } else {
+                    /* 全局变量 double subscript */
+                    for (i = 0; i < sym_count; i++) {
+                        if (syms[i].name && strcmp(syms[i].name, arr_base->left->name) == 0) {
+                            if (i < MAX_SYMS && global_base_elem_size[i] > 0)
+                                elem_size = global_base_elem_size[i];
+                            break;
+                        }
+                    }
                 }
             }
             /* fallback: 结构体成员数组 s.arr[i] — 使用 AST_MEMBER 上的 elem_size */
