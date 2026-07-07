@@ -303,6 +303,12 @@ void cgen_addr(AstNode *node) {
                 elem_size = node->left->elem_size;
             }
 
+            /* 符号扩展有符号 32 位索引到 64 位（指针算术需要完整 64-bit 偏移） */
+            if (!idx_is64 && node->right && !node->right->is_unsigned) {
+                e1(0x48); e1(0x63); e1(0xC0);  /* cdqe = movsxd rax, eax */
+                idx_is64 = 1;
+            }
+
             if (elem_size == 2) {
                 if (idx_is64) { e1(0x48); e1(0xC1); e1(0xE0); e1(0x01); }
                 else { e1(0xC1); e1(0xE0); e1(0x01); }
@@ -672,6 +678,12 @@ void cgen_expr(AstNode *node) {
                 elem_size = node->left->elem_size;
             }
 
+            /* 符号扩展有符号 32 位索引到 64 位（指针算术需要完整 64-bit 偏移） */
+            if (!idx_is64 && node->right && !node->right->is_unsigned) {
+                e1(0x48); e1(0x63); e1(0xC0);  /* cdqe = movsxd rax, eax */
+                idx_is64 = 1;
+            }
+
             /* 索引 * 元素大小（移位加速），索引可能是 64-bit (size_t) */
 
             if (elem_size == 2) {
@@ -1038,6 +1050,11 @@ void cgen_expr(AstNode *node) {
                     /* left 是整数（在 rcx 中），right 是指针（在 rax 中） */
                     /* xchg 使指针在 rcx，整数在 rax：之后 binop 做 add rax,rcx 得到 ptr+scaled_int */
                     e1(0x48); e1(0x91);           /* xchg rax, rcx — rax=int, rcx=ptr */
+                    /* 符号扩展有符号 32 位偏移到 64 位 */
+                    if (!int64_offset && int_node && !int_node->is_unsigned) {
+                        e1(0x48); e1(0x63); e1(0xC0);  /* cdqe = movsxd rax, eax */
+                        int64_offset = 1;
+                    }
                     if (ptelem == 2)      {
                         if (int64_offset) { e1(0x48); e1(0xC1); e1(0xE0); e1(0x01); }  /* shl rax, 1 */
                         else { e1(0xC1); e1(0xE0); e1(0x01); }                          /* shl eax, 1 */
@@ -1052,6 +1069,11 @@ void cgen_expr(AstNode *node) {
                     /* rcx=ptr, rax=scaled_int → 下方 binop_add64 做 add rax,rcx 得到 ptr+scaled_int */
                 } else {
                     /* right 是整数（在 rax 中），left 是指针（在 rcx 中） */
+                    /* 符号扩展有符号 32 位偏移到 64 位 */
+                    if (!int64_offset && int_node && !int_node->is_unsigned) {
+                        e1(0x48); e1(0x63); e1(0xC0);  /* cdqe = movsxd rax, eax */
+                        int64_offset = 1;
+                    }
                     if (ptelem == 2)      {
                         if (int64_offset) { e1(0x48); e1(0xC1); e1(0xE0); e1(0x01); }  /* shl rax, 1 */
                         else { e1(0xC1); e1(0xE0); e1(0x01); }                          /* shl eax, 1 */
