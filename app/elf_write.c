@@ -30,7 +30,6 @@ static int build_shstrtab(unsigned char *buf, const char *names[], int n) {
 /* ─── 主入口 ─── */
 
 int elf_bss_size;
-int elf_data_size;
 
 /* .data 段缓冲区（cgen.c / tas.c 共享） */
 unsigned char elf_data_buf[DATA_BUF_SIZE];

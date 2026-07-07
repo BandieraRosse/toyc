@@ -804,12 +804,14 @@ static AstNode *parse_unary(Parser *p) {
                peek(p).kind == TOK_RESTRICT) consume(p);
         int cast_to_double = (peek(p).kind == TOK_DOUBLE);
         int csz = parse_type_specifier(p);
+        int cast_ptr_stars = 0;
         if (csz >= 0) {
             /* 跳过星号和更多限定符（处理 char *, const unsigned char * 等） */
             while (peek(p).kind == TOK_CONST || peek(p).kind == TOK_VOLATILE ||
                    peek(p).kind == TOK_RESTRICT) consume(p);
             while (peek(p).kind == TOK_STAR) {
                 consume(p);
+                cast_ptr_stars++;
                 while (peek(p).kind == TOK_CONST || peek(p).kind == TOK_VOLATILE ||
                        peek(p).kind == TOK_RESTRICT) consume(p);
             }
@@ -836,8 +838,15 @@ static AstNode *parse_unary(Parser *p) {
             if (peek(p).kind == TOK_RPAREN) {
                 consume(p);
                 AstNode *inner = parse_unary(p);
-                if (inner && cast_to_double) inner->is_float = 1;
-                return inner;  /* 跳过转换，返回内部表达式 */
+                if (inner) {
+                    if (cast_ptr_stars == 0) {
+                        if (cast_to_double) inner->is_float = 1;
+                    } else {
+                        inner->elem_size = csz;
+                        inner->is_unsigned = last_type_is_unsigned;
+                    }
+                }
+                return inner;
             }
         }
         /* 不是类型转换，回溯 */

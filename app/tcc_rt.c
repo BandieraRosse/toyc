@@ -62,24 +62,7 @@ off_t __lseek(int fd, off_t offset, int whence)
 void *__mmap(void *addr, size_t length, int prot, int flags,
              int fd, off_t offset)
 {
-#ifdef __GNUC__
-    /* GCC/clang 版本 */
     return (void *)syscall(SYS_mmap, addr, length, prot, flags, fd, offset);
-#else
-    /* TCC fallback */
-    long n    = SYS_mmap;
-    long a1   = (long)addr;
-    long a2   = (long)length;
-    long a3   = (long)prot;
-    long a4   = (long)flags;
-    long a5   = (long)fd;
-    long a6   = (long)offset;
-    long ret;
-    __asm__ __volatile__("syscall"
-        : "=a"(ret) : "a"(n)
-        : "rcx", "r11", "memory");
-    return (void *)ret;
-#endif
 }
 
 int __munmap(void *addr, size_t length)

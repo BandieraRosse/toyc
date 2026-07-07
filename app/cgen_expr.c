@@ -1337,6 +1337,11 @@ void cgen_expr(AstNode *node) {
                             deref_sz = locals[vi].element_size;
 
                 }
+                /* 检查 AST 节点上的强转注解（如 *(long *)p = value）。
+                 * 解析器在 (type *) 强转时会在 inner 节点上设置 elem_size，
+                 * 该值覆盖变量的声明元素大小。 */
+                if (node->left->expr->elem_size > 0)
+                    deref_sz = node->left->expr->elem_size;
             } else {
                 /* fallback: 用 RHS 类型推断 */
                 deref_sz = node->right ? node->right->type_size : 4;
