@@ -423,7 +423,7 @@ static void cgen_if(AstNode *stmt) {
     cgen_expr(stmt->cond);
     /* 注意：裸指针作为条件（if(ptr)）时 type_size==8，需用 test rax,rax
      * 避免截断高 32 位。比较/逻辑表达式结果通常是 32 位 int。 */
-    if (stmt->cond && stmt->cond->type_size == 8) {
+    if (stmt->cond && stmt->cond->type_size >= 8) {
         emit1(0x48); emit1(0x85); emit1(0xC0);  /* test rax, rax */
     } else {
         emit1(0x85); emit1(0xC0);  /* test eax, eax */
@@ -461,7 +461,7 @@ static void cgen_while(AstNode *stmt) {
     set_label(start_label);
 
     cgen_expr(stmt->loop_cond);
-    if (stmt->loop_cond && stmt->loop_cond->type_size == 8) {
+    if (stmt->loop_cond && stmt->loop_cond->type_size >= 8) {
         emit1(0x48); emit1(0x85); emit1(0xC0);  /* test rax, rax */
     } else {
         emit1(0x85); emit1(0xC0);  /* test eax, eax */
@@ -552,7 +552,7 @@ static void cgen_for(AstNode *stmt) {
     /* condition */
     if (stmt->loop_cond) {
         cgen_expr(stmt->loop_cond);
-        if (stmt->loop_cond->type_size == 8) {
+        if (stmt->loop_cond->type_size >= 8) {
             emit1(0x48); emit1(0x85); emit1(0xC0);  /* test rax, rax */
         } else {
             emit1(0x85); emit1(0xC0);  /* test eax, eax */
@@ -695,7 +695,7 @@ static void cgen_stmt(AstNode *stmt) {
         /* 条件为真（非零）时继续循环 */
         if (stmt->loop_cond) {
             cgen_expr(stmt->loop_cond);
-            if (stmt->loop_cond->type_size == 8) {
+            if (stmt->loop_cond->type_size >= 8) {
                 emit1(0x48); emit1(0x85); emit1(0xC0);  /* test rax, rax */
             } else {
                 emit1(0x85); emit1(0xC0);  /* test eax, eax */
@@ -889,7 +889,7 @@ static void cgen_func_def(AstNode *func) {
                         e1(0x89); e1(0x05);
                     }
                     int ro = code_size;
-                    e4(0);
+                    e1(0x55); e1(0x66); e1(0x77); e1(0x88);
                     if (rel_count < MAX_RELS) {
                         Elf64_Rela *r = &rels[rel_count++];
                         r->r_offset = ro;

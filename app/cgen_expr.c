@@ -220,7 +220,7 @@ static void emit_call(const char *name) {
     r->r_addend = -4;
 
     /* e8 00 00 00 00: call rel32（占位重定位） */
-    e1(0xE8); e4(0);
+    e1(0xE8); e1(0x11); e1(0x22); e1(0x33); e1(0x44);
 }
 
 /* ─── 左值地址计算（用于 ++/--） ─── */
@@ -253,7 +253,7 @@ void cgen_addr(AstNode *node) {
             }
             if (si >= 0) {
                 e1(0x48); e1(0x8D); e1(0x05);
-                int ro = code_size; e4(0);
+                int ro = code_size; e1(0x55); e1(0x66); e1(0x77); e1(0x88);
                 if (rel_count < MAX_RELS) {
                     Elf64_Rela *r = &rels[rel_count++];
                     r->r_offset = ro;
@@ -456,7 +456,7 @@ void cgen_expr(AstNode *node) {
         /* 发射 lea rax, [rip + disp32] */
         e1(0x48); e1(0x8D); e1(0x05);   /* lea rax, [rip + disp32] */
         int reloc_off = code_size;
-        e4(0);                            /* disp32 占位（链接器覆盖） */
+        e1(0x55); e1(0x66); e1(0x77); e1(0x88);  /* disp32 占位（链接器覆盖） */
 
         /* 记录重定位（直接用 sym_idx + 1，此时 syms[] 顺序与 ELF 索引一致） */
         if (rel_count < MAX_RELS && sym_idx >= 0) {
@@ -575,7 +575,7 @@ void cgen_expr(AstNode *node) {
                     e1(0x8B); e1(0x05);             /* mov eax, [rip + disp32] */
                 }
                 int ro = code_size;
-                e4(0);
+                e1(0x55); e1(0x66); e1(0x77); e1(0x88);
                 if (rel_count < MAX_RELS) {
                     Elf64_Rela *r = &rels[rel_count++];
                     r->r_offset = ro;
@@ -772,10 +772,10 @@ void cgen_expr(AstNode *node) {
 
             if (is_or) {
                 /* a || b: a 为 true 则跳到 true_path */
-                e1(0x0F); e1(0x85); e4(0);               /* jnz L_true */
+                e1(0x0F); e1(0x85); e1(0x11); e1(0x22); e1(0x33); e1(0x44); /* jnz L_true */
             } else {
                 /* a && b: a 为 false 则跳到 false_path */
-                e1(0x0F); e1(0x84); e4(0);               /* jz L_false */
+                e1(0x0F); e1(0x84); e1(0x11); e1(0x22); e1(0x33); e1(0x44); /* jz L_false */
             }
 
             cgen_expr(node->right);
@@ -784,10 +784,10 @@ void cgen_expr(AstNode *node) {
 
             if (is_or) {
                 /* b 也为 true → 跳到 true_path */
-                e1(0x0F); e1(0x85); e4(0);               /* jnz L_true */
+                e1(0x0F); e1(0x85); e1(0x11); e1(0x22); e1(0x33); e1(0x44); /* jnz L_true */
             } else {
                 /* b 为 false → 跳到 false_path */
-                e1(0x0F); e1(0x84); e4(0);               /* jz L_false */
+                e1(0x0F); e1(0x84); e1(0x11); e1(0x22); e1(0x33); e1(0x44); /* jz L_false */
             }
 
             if (is_or) {
@@ -795,7 +795,7 @@ void cgen_expr(AstNode *node) {
                 int false_pos = code_size;
                 mov_eax_imm(0);
                 int ep = code_size;
-                e1(0xE9); e4(0);                          /* jmp L_end */
+                e1(0xE9); e1(0x55); e1(0x66); e1(0x77); e1(0x88); /* jmp L_end */
                 int true_pos = code_size;
                 /* 回填 j1 和 j2 到 true_pos */
                 { int d = true_pos - (j1_pos + 6); code_buf[j1_pos+2]=d&0xFF; code_buf[j1_pos+3]=(d>>8)&0xFF;
@@ -812,7 +812,7 @@ void cgen_expr(AstNode *node) {
                 int true_pos = code_size;
                 mov_eax_imm(1);
                 int ep = code_size;
-                e1(0xE9); e4(0);                          /* jmp L_end */
+                e1(0xE9); e1(0x55); e1(0x66); e1(0x77); e1(0x88); /* jmp L_end */
                 int false_pos = code_size;
                 /* 回填 j1 和 j2 到 false_pos */
                 { int d = false_pos - (j1_pos + 6); code_buf[j1_pos+2]=d&0xFF; code_buf[j1_pos+3]=(d>>8)&0xFF;
@@ -1143,7 +1143,7 @@ void cgen_expr(AstNode *node) {
                         s->shndx = 0; s->sym_idx = -1;
                     }
                     int reloc_off = code_size;
-                    e1(0xB8); e4(0);
+                    e1(0xB8); e1(0x55); e1(0x66); e1(0x77); e1(0x88);
                     if (sym_idx >= 0 && rel_count < MAX_RELS) {
                         Elf64_Rela *r = &rels[rel_count++];
                         r->r_offset = reloc_off + 1;
@@ -1573,7 +1573,7 @@ void cgen_expr(AstNode *node) {
                         e1(0x89); e1(0x05);             /* mov [rip+disp32], eax */
                     }
                     int ro = code_size;
-                    e4(0);
+                    e1(0x55); e1(0x66); e1(0x77); e1(0x88);
                     if (rel_count < MAX_RELS) {
                         Elf64_Rela *r = &rels[rel_count++];
                         r->r_offset = ro;
@@ -1589,7 +1589,7 @@ void cgen_expr(AstNode *node) {
              * 存储宽度用成员类型而非 RHS 类型（long 成员赋 int 常量时用 8 字节）。 */
             int rsize = node->left->type_size > 0 ? node->left->type_size :
                         (node->right ? node->right->type_size : 4);
-            if (rsize == 0) rsize = 8;
+            if (rsize == 0) rsize = 4;
 
             push_rax();              /* 保存 RHS 值（>8 字节 struct 时 RAX 是源地址指针） */
 
@@ -1936,7 +1936,7 @@ void cgen_expr(AstNode *node) {
 
         /* je else_label（向前跳转，6 字节占位） */
         int je_pos = code_size;
-        e1(0x0F); e1(0x84); e4(0);
+        e1(0x0F); e1(0x84); e1(0x11); e1(0x22); e1(0x33); e1(0x44);
 
         /* then 分支 */
         cgen_expr(node->then_stmt);
@@ -1944,7 +1944,7 @@ void cgen_expr(AstNode *node) {
 
         /* jmp end_label（5 字节占位） */
         int jmp_pos = code_size;
-        e1(0xE9); e4(0);
+        e1(0xE9); e1(0x55); e1(0x66); e1(0x77); e1(0x88);
 
         /* else 标签 */
         int else_pos = code_size;
@@ -2044,7 +2044,7 @@ void cgen_expr(AstNode *node) {
                     }
                     if (si >= 0) {
                         e1(0x48); e1(0x8D); e1(0x05);  /* lea rax, [rip+disp32] */
-                        int ro = code_size; e4(0);
+                        int ro = code_size; e1(0x55); e1(0x66); e1(0x77); e1(0x88);
                         if (rel_count < MAX_RELS) {
                             Elf64_Rela *r = &rels[rel_count++];
                             r->r_offset = ro;
