@@ -298,6 +298,7 @@ static AstNode *new_ast(Parser *p, AstKind kind) {
     n->dval = 0.0;
     n->op = 0;
     n->base_elem_size = 0;
+    n->is_array = 0;
     n->call_target = NULL;
     n->struct_type = NULL;
     return n;
@@ -1974,6 +1975,7 @@ AstNode *parse_compound_statement(Parser *p) {
                     decl->base_elem_size = (dv_ptrs == 1 && bracket_count > 0) ? (ts > 0 ? ts : 4) : elem_ts;
                     if (dv_ptrs > 0 && bracket_count > 0)
                         decl->elem_is_ptr = 1;
+                    decl->is_array = 1;  /* 显式标记为数组 */
                     if (dim_count > 1)
                         decl->elem_size = decl->ival / first_dim; /* row size */
                     else
@@ -2083,6 +2085,7 @@ AstNode *parse_compound_statement(Parser *p) {
                              * 以便 cgen.c 的 is_array 判断能正确识别 */
                             decl->elem_size = elem_ts;
                             decl->base_elem_size = elem_ts;
+                            decl->is_array = 1;
                             /* 更新局部变量表的大小 */
                             if (decl->name && *decl->name) {
                                 int pi;
@@ -2103,6 +2106,7 @@ AstNode *parse_compound_statement(Parser *p) {
                             /* type_size 保持元素类型大小（不改成 total size） */
                             decl->elem_size = ts;
                             decl->base_elem_size = ts;
+                            decl->is_array = 1;
                             if (decl->name && *decl->name)
                                 pvar_set_elem_size(decl->name, ts);
                         }
@@ -2149,6 +2153,8 @@ AstNode *parse_compound_statement(Parser *p) {
                         }
                         if (peek(p).kind == TOK_RBRACKET) consume(p);
                     }
+                    if (cdecl->ival > 4 && cdecl->elem_size > 0)
+                        cdecl->is_array = 1;
                     /* 数组处理后更新 pvar 中的变量大小 */
                     if (cname && *cname && cdecl->ival > 4) {
                         int pi;
@@ -2832,6 +2838,7 @@ AstNode *parse_program(Parser *p) {
                         gvar->base_elem_size = (gv_ptrs == 1 && gv_bracket_count > 0)
                             ? (typesize > 0 ? typesize : 4) : gv_unit;
                         gvar->elem_is_ptr = (gv_ptrs > 0 && gv_bracket_count > 0) ? 1 : 0;
+                        gvar->is_array = (gv_arr_len > 1) ? 1 : 0;
                         gvar->elem_is_unsigned = (gv_ptrs > 0 || gv_bracket_count > 0) ? last_type_is_unsigned : 0;
                         *tail = gvar;
                         tail = &gvar->next;
@@ -2875,6 +2882,7 @@ AstNode *parse_program(Parser *p) {
                                     gvar->ival = gv_total;
                                     gvar->type_size = gv_total;
                                     gvar->elem_size = gv_unit;
+                                    gvar->is_array = 1;
                                 }
                                 /* 更新 pvar 表（pvar_add_ex 在计数前已调用，当时 size=16） */
                                 if (gvar && gvar->name) pvar_update_size(gvar->name, gv_total);

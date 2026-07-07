@@ -247,6 +247,7 @@ typedef struct AstNode {
     int elem_size;       /* AST_VAR_DECL: 指针变量的元素大小（int*→4, char**→8） */
     int base_elem_size;  /* AST_VAR_DECL: 数组的基础元素大小（多维数组中内层元素大小） */
     int elem_is_ptr;     /* 1: 数组元素为指针类型（char *arr[] 或 int *arr[N]） */
+    int is_array;        /* 1: 数组变量（分配时退化为指针）0: 标量或指针变量 */
     /* 全局变量初始化器数据（AST_VAR_DECL 且 = { ... } 时有效） */
     int init_count;           /* init_items 数组长度 */
     int init_items_per_elem;  /* 每个数组元素的标量初始化器数（用于元素内边距填充） */
@@ -309,6 +310,7 @@ extern int global_ptr_elem_size[MAX_SYMS];  /* 全局指针变量的元素大小
 extern int global_base_elem_size[MAX_SYMS];
 extern int global_elem_is_ptr_arr[MAX_SYMS];
 extern int global_elem_unsigned[MAX_SYMS];
+extern int global_is_array[MAX_SYMS];        /* 全局变量是否为数组 */
 
 /* 字符串字面量池 — cgen_expr 追加，cgen_program 结尾刷入 code_buf */
 extern unsigned char strpool_buf[STRPOOL_SIZE];

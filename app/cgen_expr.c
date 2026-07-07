@@ -556,9 +556,8 @@ void cgen_expr(AstNode *node) {
                 /* 全局变量：使用符号表记录的大小确定加载宽度 */
                 int gsz = syms[si].size > 0 ? syms[si].size :
                           (node->type_size > 0 ? node->type_size : 4);
-                /* 数组检测：global_elem_size > 0 且小于总大小 → 非指针的数组 */
-                int is_global_arr = (si < MAX_SYMS && global_elem_size[si] > 0 &&
-                                     global_elem_size[si] < gsz);
+                /* 数组检测：从 AST 构建时记录的 is_array 标志判断 */
+                int is_global_arr = (si < MAX_SYMS && global_is_array[si]);
                 if (is_global_arr || gsz > 8) {
                     /* 数组/大结构体：数组→指针衰减（lea rax, [rip + disp32]） */
                     e1(0x48); e1(0x8D); e1(0x05);

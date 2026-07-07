@@ -246,6 +246,7 @@ int global_ptr_elem_size[MAX_SYMS];  /* 全局指针变量的元素大小（int*
 int global_base_elem_size[MAX_SYMS];
 int global_elem_is_ptr_arr[MAX_SYMS];
 int global_elem_unsigned[MAX_SYMS];
+int global_is_array[MAX_SYMS];        /* 全局变量是否为数组 */
 
 static int add_sym(const char *name, int offset, int size,
                    int is_global, int is_func) {
@@ -321,11 +322,12 @@ static void collect_locals(AstNode *node) {
                 s->is_func = 0;
                 s->shndx = 5;  /* .bss (section index 5: 1-text 2-rela.text 3-data 4-rela.data 5-bss) */
                 s->sym_idx = -1;
-                global_elem_size[sym_count] = (vsize > 8) ? node->elem_size : 0;
+                global_elem_size[sym_count] = node->is_array && node->elem_size > 0 ? node->elem_size : 0;
                 global_ptr_elem_size[sym_count] = (vsize == 8 && node->elem_size > 0) ? node->elem_size : 0;
                 global_base_elem_size[sym_count] = node->base_elem_size;
                 global_elem_is_ptr_arr[sym_count] = node->elem_is_ptr;
                 global_elem_unsigned[sym_count] = node->elem_is_unsigned;
+                global_is_array[sym_count] = node->is_array;
                 sym_count++;
             }
             elf_bss_size += vsize;
@@ -1115,13 +1117,23 @@ static void cgen_emit_data_init(AstNode *node) {
 
             elem_byte_count += 8;
         } else {
-            /* ── 整数值：发射 4 字节 LE ── */
+            /* ── 整数值：按元素类型大小发射 LE ── */
             long v = it->ival;
-            data_buf[data_size++] = v & 0xFF;
-            data_buf[data_size++] = (v >> 8) & 0xFF;
-            data_buf[data_size++] = (v >> 16) & 0xFF;
-            data_buf[data_size++] = (v >> 24) & 0xFF;
-            elem_byte_count += 4;
+            if (elem_size == 1) {
+                data_buf[data_size++] = v & 0xFF;
+                elem_byte_count += 1;
+            } else if (elem_size == 2) {
+                data_buf[data_size++] = v & 0xFF;
+                data_buf[data_size++] = (v >> 8) & 0xFF;
+                elem_byte_count += 2;
+            } else {
+                /* 默认 4 字节（兼容现有行为） */
+                data_buf[data_size++] = v & 0xFF;
+                data_buf[data_size++] = (v >> 8) & 0xFF;
+                data_buf[data_size++] = (v >> 16) & 0xFF;
+                data_buf[data_size++] = (v >> 24) & 0xFF;
+                elem_byte_count += 4;
+            }
         }
 
         item_idx++;
@@ -1191,11 +1203,12 @@ void cgen_program(AstNode *prog) {
                 s->sym_idx = -1;
                 s->offset = off_val;
                 s->shndx = shndx_val;
-                global_elem_size[si] = (vsize > 8) ? node->elem_size : 0;
+                global_elem_size[si] = node->is_array && node->elem_size > 0 ? node->elem_size : 0;
                 global_ptr_elem_size[si] = (vsize == 8 && node->elem_size > 0) ? node->elem_size : 0;
                 global_base_elem_size[si] = node->base_elem_size;
                 global_elem_is_ptr_arr[si] = node->elem_is_ptr;
                 global_elem_unsigned[si] = node->elem_is_unsigned;
+                global_is_array[si] = node->is_array;
             }
         }
     }
