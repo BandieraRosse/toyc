@@ -381,6 +381,20 @@ static inline int is_scope_visible(int id) {
     return 0;
 }
 
+/* 局部变量搜索：先 scope_id 精确过滤，回退到任意同名+同深度变量。 */
+#define SEARCH_LOCAL(i, name_expr) \
+    for (i = local_count - 1; i >= 0; i--) \
+        if (strcmp(locals[i].name, (name_expr)) == 0 && \
+            locals[i].scope_depth <= scope_depth && \
+            (locals[i].scope_id == 0 || \
+             (scope_chain_count > 0 && locals[i].scope_id <= scope_chain[scope_chain_count - 1])))\
+            break; \
+    if (i < 0) \
+        for (i = local_count - 1; i >= 0; i--) \
+            if (strcmp(locals[i].name, (name_expr)) == 0 && \
+                locals[i].scope_depth <= scope_depth) \
+                break
+
 /* ─── 函数返回类型表（供 struct 按值返回的 caller 侧使用） ─── */
 #define MAX_FUNC_RET_TYPES 512
 extern const char *func_ret_names[MAX_FUNC_RET_TYPES];

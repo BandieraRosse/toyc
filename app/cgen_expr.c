@@ -233,12 +233,10 @@ static void cgen_addr(AstNode *node) {
     case AST_VAR: {
         /* 局部变量：lea rax, [rbp+off] */
         int i;
-        for (i = local_count - 1; i >= 0; i--) {
-            if (strcmp(locals[i].name, node->name) == 0 &&
-                locals[i].scope_depth <= scope_depth && (locals[i].scope_id == 0 || locals[i].scope_id <= scope_chain[scope_chain_count - 1])) {
+        SEARCH_LOCAL(i, node->name);
+        if (i >= 0) {
                 lea_from_rbp(locals[i].offset);
                 return;
-            }
         }
         /* 全局变量：lea rax, [rip+disp32] */
         if (node->name && *node->name) {
@@ -278,13 +276,11 @@ static void cgen_addr(AstNode *node) {
             int idx_is64 = (node->right && node->right->type_size == 8);
             if (node->left && node->left->kind == AST_VAR) {
                 int i;
-                for (i = local_count - 1; i >= 0; i--) {
-                    if (strcmp(locals[i].name, node->left->name) == 0 &&
-                        locals[i].scope_depth <= scope_depth && (locals[i].scope_id == 0 || locals[i].scope_id <= scope_chain[scope_chain_count - 1])) {
+                SEARCH_LOCAL(i, node->left->name);
+                if (i >= 0) {
                         if (locals[i].element_size > 0)
                             elem_size = locals[i].element_size;
-                        break;
-                    }
+
                 }
                 if (i < 0) {
                     for (i = 0; i < sym_count; i++) {
@@ -334,13 +330,11 @@ static void cgen_addr(AstNode *node) {
         if (node->op == TOK_DOT && node->left && node->left->kind == AST_VAR) {
             /* local_struct.member: lea rax, [rbp + base_off + member_off] */
             int i;
-            for (i = local_count - 1; i >= 0; i--) {
-                if (strcmp(locals[i].name, node->left->name) == 0 &&
-                    locals[i].scope_depth <= scope_depth && (locals[i].scope_id == 0 || locals[i].scope_id <= scope_chain[scope_chain_count - 1])) {
+            SEARCH_LOCAL(i, node->left->name);
+            if (i >= 0) {
                     int addr = locals[i].offset + moff;
                     lea_from_rbp(addr);
                     return;
-                }
             }
         }
         /* p->member: 计算指针值，加上成员偏移 */
@@ -475,9 +469,8 @@ void cgen_expr(AstNode *node) {
     case AST_VAR: {
         /* 查找局部变量偏移 — 从后往前搜索，用 scope_depth + scope_chain 过滤 */
         int i;
-        for (i = local_count - 1; i >= 0; i--) {
-            if (strcmp(locals[i].name, node->name) == 0 &&
-                locals[i].scope_depth <= scope_depth && (locals[i].scope_id == 0 || locals[i].scope_id <= scope_chain[scope_chain_count - 1])) {
+        SEARCH_LOCAL(i, node->name);
+        if (i >= 0) {
                 if (locals[i].is_float) {
                     node->is_float = 1;
                     node->type_size = 8;
@@ -528,7 +521,6 @@ void cgen_expr(AstNode *node) {
                         load_eax_from_rbp(locals[i].offset);
                 }
                 return;
-            }
         }
         /* 未找到局部变量：当作全局或外部符号，生成带重定位的加载 */
         if (node->name && *node->name) {
@@ -594,14 +586,12 @@ void cgen_expr(AstNode *node) {
             int idx_is64 = (node->right && node->right->type_size == 8);
             if (node->left && node->left->kind == AST_VAR) {
                 int i;
-                for (i = local_count - 1; i >= 0; i--) {
-                    if (strcmp(locals[i].name, node->left->name) == 0 &&
-                        locals[i].scope_depth <= scope_depth && (locals[i].scope_id == 0 || locals[i].scope_id <= scope_chain[scope_chain_count - 1])) {
+                SEARCH_LOCAL(i, node->left->name);
+                if (i >= 0) {
                         if (locals[i].element_size > 0)
                             elem_size = locals[i].element_size;
                         elem_unsigned = locals[i].elem_is_unsigned;
-                        break;
-                    }
+
                 }
                 if (i < 0) {
                     for (i = 0; i < sym_count; i++) {
@@ -617,15 +607,13 @@ void cgen_expr(AstNode *node) {
                        node->left->left && node->left->left->kind == AST_VAR) {
                 /* 多维数组外层下标：使用 base_elem_size（内层元素大小） */
                 int i;
-                for (i = local_count - 1; i >= 0; i--) {
-                    if (strcmp(locals[i].name, node->left->left->name) == 0 &&
-                        locals[i].scope_depth <= scope_depth && (locals[i].scope_id == 0 || locals[i].scope_id <= scope_chain[scope_chain_count - 1])) {
+                SEARCH_LOCAL(i, node->left->left->name);
+                if (i >= 0) {
                         if (locals[i].base_elem_size > 0)
                             elem_size = locals[i].base_elem_size;
                         else if (locals[i].element_size > 0)
                             elem_size = locals[i].element_size;
-                        break;
-                    }
+
                 }
                 if (i < 0) {
                     for (i = 0; i < sym_count; i++) {
@@ -686,14 +674,12 @@ void cgen_expr(AstNode *node) {
             int is_subarray = 0;
             if (node->left && node->left->kind == AST_VAR && elem_size >= 4) {
                 int idx;
-                for (idx = local_count - 1; idx >= 0; idx--) {
-                    if (strcmp(locals[idx].name, node->left->name) == 0 &&
-                        locals[idx].scope_depth <= scope_depth && (locals[idx].scope_id == 0 || locals[idx].scope_id <= scope_chain[scope_chain_count - 1])) {
+                SEARCH_LOCAL(idx, node->left->name);
+                if (idx >= 0) {
                         if (locals[idx].is_array && locals[idx].base_elem_size > 0 &&
                             locals[idx].base_elem_size < elem_size)
                             is_subarray = 1;
-                        break;
-                    }
+
                 }
                 if (idx < 0) {
                     for (idx = 0; idx < sym_count; idx++) {
@@ -886,12 +872,10 @@ void cgen_expr(AstNode *node) {
             int right_is_ptr = (node->right->type_size == 8);
             if (ptr_node && ptr_node->kind == AST_VAR && ptr_node->name) {
                 int vi;
-                for (vi = local_count - 1; vi >= 0; vi--) {
-                    if (strcmp(locals[vi].name, ptr_node->name) == 0 &&
-                        locals[vi].scope_depth <= scope_depth && (locals[vi].scope_id == 0 || locals[vi].scope_id <= scope_chain[scope_chain_count - 1])) {
+                SEARCH_LOCAL(vi, ptr_node->name);
+                if (vi >= 0) {
                         if (locals[vi].element_size > 0) ptelem = locals[vi].element_size;
-                        break;
-                    }
+
                 }
             }
             if (ptelem > 1) {
@@ -1029,12 +1013,10 @@ void cgen_expr(AstNode *node) {
             int ptelem = 1;
             if (node->left->kind == AST_VAR && node->left->name) {
                 int vi;
-                for (vi = local_count - 1; vi >= 0; vi--) {
-                    if (strcmp(locals[vi].name, node->left->name) == 0 &&
-                        locals[vi].scope_depth <= scope_depth && (locals[vi].scope_id == 0 || locals[vi].scope_id <= scope_chain[scope_chain_count - 1])) {
+                SEARCH_LOCAL(vi, node->left->name);
+                if (vi >= 0) {
                         if (locals[vi].element_size > 0) ptelem = locals[vi].element_size;
-                        break;
-                    }
+
                 }
             }
             if (ptelem > 1) {
@@ -1056,13 +1038,11 @@ void cgen_expr(AstNode *node) {
             if (node->expr && node->expr->kind == AST_VAR) {
                 int found = 0;
                 int i;
-                for (i = local_count - 1; i >= 0; i--) {
-                    if (strcmp(locals[i].name, node->expr->name) == 0 &&
-                        locals[i].scope_depth <= scope_depth && (locals[i].scope_id == 0 || locals[i].scope_id <= scope_chain[scope_chain_count - 1])) {
+                SEARCH_LOCAL(i, node->expr->name);
+                if (i >= 0) {
                         lea_from_rbp(locals[i].offset);
                         found = 1;
-                        break;
-                    }
+
                 }
                 if (!found && node->expr->name) {
                     int sym_idx = -1;
@@ -1179,14 +1159,12 @@ void cgen_expr(AstNode *node) {
                 int elem_unsigned = 0;  /* 默认 signed */
                 if (node->expr->kind == AST_VAR && node->expr->name) {
                     int vi;
-                    for (vi = local_count - 1; vi >= 0; vi--) {
-                        if (strcmp(locals[vi].name, node->expr->name) == 0 &&
-                            locals[vi].scope_depth <= scope_depth && (locals[vi].scope_id == 0 || locals[vi].scope_id <= scope_chain[scope_chain_count - 1])) {
+                    SEARCH_LOCAL(vi, node->expr->name);
+                    if (vi >= 0) {
                             if (locals[vi].element_size > 0)
                                 deref_size = locals[vi].element_size;
                             elem_unsigned = locals[vi].elem_is_unsigned;
-                            break;
-                        }
+
                     }
                 }
                 /* fallback: 非简单变量表达式（如 s.member）从解析器传播的 elem_size 获取 */
@@ -1240,13 +1218,11 @@ void cgen_expr(AstNode *node) {
             AstNode *arr_base = node->left->left;
             if (arr_base && arr_base->kind == AST_VAR) {
                 int i;
-                for (i = local_count - 1; i >= 0; i--) {
-                    if (strcmp(locals[i].name, arr_base->name) == 0 &&
-                        locals[i].scope_depth <= scope_depth && (locals[i].scope_id == 0 || locals[i].scope_id <= scope_chain[scope_chain_count - 1])) {
+                SEARCH_LOCAL(i, arr_base->name);
+                if (i >= 0) {
                         if (locals[i].element_size > 0)
                             elem_size = locals[i].element_size;
-                        break;
-                    }
+
                 }
                 if (i < 0) {
                     for (i = 0; i < sym_count; i++) {
@@ -1262,15 +1238,13 @@ void cgen_expr(AstNode *node) {
                        arr_base->left && arr_base->left->kind == AST_VAR) {
                 /* 多维数组外层下标：使用 base_elem_size */
                 int i;
-                for (i = local_count - 1; i >= 0; i--) {
-                    if (strcmp(locals[i].name, arr_base->left->name) == 0 &&
-                        locals[i].scope_depth <= scope_depth && (locals[i].scope_id == 0 || locals[i].scope_id <= scope_chain[scope_chain_count - 1])) {
+                SEARCH_LOCAL(i, arr_base->left->name);
+                if (i >= 0) {
                         if (locals[i].base_elem_size > 0)
                             elem_size = locals[i].base_elem_size;
                         else if (locals[i].element_size > 0)
                             elem_size = locals[i].element_size;
-                        break;
-                    }
+
                 }
             }
             /* fallback: 结构体成员数组 s.arr[i] — 使用 AST_MEMBER 上的 elem_size */
@@ -1321,6 +1295,12 @@ void cgen_expr(AstNode *node) {
             if (rhs_float) {
                 /* movsd [rcx], xmm0 */
                 e1(0xF2); e1(0x0F); e1(0x11); e1(0x01);
+            } else if (store_sz > 8) {
+                /* 大结构体赋值：RAX=源地址(隐藏缓冲区), RCX=目标地址 */
+                e1(0x48); e1(0x89); e1(0xC6);  /* mov rsi, rax */
+                e1(0x48); e1(0x89); e1(0xCF);  /* mov rdi, rcx */
+                e1(0xB9); e4(store_sz);         /* mov ecx, store_sz */
+                e1(0xF3); e1(0xA4);            /* rep movsb */
             } else if (store_sz >= 8) {
                 if (!rhs_float && node->right && node->right->type_size < 8 &&
                     node->right->kind == AST_CONSTANT &&
@@ -1351,13 +1331,11 @@ void cgen_expr(AstNode *node) {
             if (node->left->expr && node->left->expr->kind == AST_VAR &&
                 node->left->expr->name) {
                 int vi;
-                for (vi = local_count - 1; vi >= 0; vi--) {
-                    if (strcmp(locals[vi].name, node->left->expr->name) == 0 &&
-                        locals[vi].scope_depth <= scope_depth && (locals[vi].scope_id == 0 || locals[vi].scope_id <= scope_chain[scope_chain_count - 1])) {
+                SEARCH_LOCAL(vi, node->left->expr->name);
+                if (vi >= 0) {
                         if (locals[vi].element_size > 0)
                             deref_sz = locals[vi].element_size;
-                        break;
-                    }
+
                 }
             } else {
                 /* fallback: 用 RHS 类型推断 */
@@ -1382,9 +1360,8 @@ void cgen_expr(AstNode *node) {
         if (node->left && node->left->kind == AST_VAR) {
             const char *vname = node->left->name;
             int i;
-            for (i = local_count - 1; i >= 0; i--) {
-                if (strcmp(locals[i].name, vname) == 0 &&
-                    locals[i].scope_depth <= scope_depth && (locals[i].scope_id == 0 || locals[i].scope_id <= scope_chain[scope_chain_count - 1])) {
+            SEARCH_LOCAL(i, vname);
+            if (i >= 0) {
                     if (locals[i].is_float) {
                         /* 右操作数可能是 int，需要转换 */
                         if (!rhs_float) cvti2d();
@@ -1439,8 +1416,7 @@ void cgen_expr(AstNode *node) {
                             store_eax_to_rbp(locals[i].offset);
                         }
                     }
-                    break;
-                }
+
             }
             /* 全局变量赋值 — 用重定位生成 mov [rip+disp32], rax/eax */
             if (i < 0 && vname && *vname) {
@@ -1619,13 +1595,11 @@ void cgen_expr(AstNode *node) {
         int fptr_offset = 0;
         if (node->name) {
             int i;
-            for (i = local_count - 1; i >= 0; i--) {
-                if (strcmp(locals[i].name, node->name) == 0 &&
-                    locals[i].scope_depth <= scope_depth && (locals[i].scope_id == 0 || locals[i].scope_id <= scope_chain[scope_chain_count - 1])) {
+            SEARCH_LOCAL(i, node->name);
+            if (i >= 0) {
                     is_fptr = 1;
                     fptr_offset = locals[i].offset;
-                    break;
-                }
+
             }
         }
 
@@ -1809,6 +1783,8 @@ void cgen_expr(AstNode *node) {
         /* 若调用返回 double，标记节点 */
         if (node->is_float)
             ;  /* 结果已在 xmm0 中 */
+        else if (has_hidden_ret)
+            ;  /* 大结构体：保留原始 type_size（外层赋值代码据此执行 rep movsb 全量拷贝） */
         else
             node->type_size = 8;  /* x86-64 ABI: rax 中总是 64 位 */
         break;
@@ -1875,9 +1851,8 @@ void cgen_expr(AstNode *node) {
             int is_local = 0;
             if (node->left && node->left->kind == AST_VAR) {
                 int i;
-                for (i = local_count - 1; i >= 0; i--) {
-                    if (strcmp(locals[i].name, node->left->name) == 0 &&
-                        locals[i].scope_depth <= scope_depth && (locals[i].scope_id == 0 || locals[i].scope_id <= scope_chain[scope_chain_count - 1])) {
+                SEARCH_LOCAL(i, node->left->name);
+                if (i >= 0) {
                         int total_off = locals[i].offset + member_off;
                         if (node->type_size > 8) {
                             /* 数组成员：退化为指针 */
@@ -1914,8 +1889,7 @@ void cgen_expr(AstNode *node) {
                         } else
                             load_eax_from_rbp(total_off);
                         is_local = 1;
-                        break;
-                    }
+
                 }
             }
             if (!is_local) {

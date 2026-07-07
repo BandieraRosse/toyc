@@ -471,9 +471,8 @@ static void cgen_for(AstNode *stmt) {
             if (stmt->loop_init->expr) {
                 cgen_expr(stmt->loop_init->expr);
                 int i;
-                for (i = local_count - 1; i >= 0; i--) {
-                    if (strcmp(locals[i].name, stmt->loop_init->name) == 0 &&
-                        locals[i].scope_depth <= scope_depth && (locals[i].scope_id == 0 || locals[i].scope_id <= scope_chain[scope_chain_count - 1])) {
+                SEARCH_LOCAL(i, stmt->loop_init->name);
+                if (i >= 0) {
                         if (locals[i].is_float) {
                             emit1(0xF2); emit1(0x0F); emit1(0x11);
                             emit1(0x45); emit1(locals[i].offset & 0xFF);
@@ -517,8 +516,7 @@ static void cgen_for(AstNode *stmt) {
                         } else {
                             store_eax_to_rbp(locals[i].offset);
                         }
-                        break;
-                    }
+
                 }
             }
         } else {
@@ -736,9 +734,8 @@ static void cgen_stmt(AstNode *stmt) {
             } else {
                 cgen_expr(stmt->expr);
                 int i;
-                for (i = local_count - 1; i >= 0; i--) {
-                    if (strcmp(locals[i].name, stmt->name) == 0 &&
-                        locals[i].scope_depth <= scope_depth && (locals[i].scope_id == 0 || locals[i].scope_id <= scope_chain[scope_chain_count - 1])) {
+                SEARCH_LOCAL(i, stmt->name);
+                if (i >= 0) {
                         if (locals[i].is_float) {
                             emit1(0xF2); emit1(0x0F); emit1(0x11);
                             emit1(0x45); emit1(locals[i].offset & 0xFF);
@@ -783,8 +780,7 @@ static void cgen_stmt(AstNode *stmt) {
                         } else {
                             store_eax_to_rbp(locals[i].offset);
                         }
-                        break;
-                    }
+
                 }
             }
         }
