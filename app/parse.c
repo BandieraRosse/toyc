@@ -843,6 +843,8 @@ static AstNode *parse_unary(Parser *p) {
                 if (inner) {
                     if (cast_ptr_stars == 0) {
                         if (cast_to_double) inner->is_float = 1;
+                        inner->type_size = csz;
+                        inner->is_unsigned = last_type_is_unsigned;
                     } else {
                         inner->elem_size = csz;
                         inner->is_unsigned = last_type_is_unsigned;

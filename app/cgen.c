@@ -84,6 +84,7 @@ static int label_count;
 
 static int fixup_label[MAX_FIXUPS];
 static int fixup_offset[MAX_FIXUPS];
+static int fixup_is_jmp[MAX_FIXUPS];  /* 1=jmp (E9), 0=jcc (0F 8x) */
 static int fixup_count;
 
 /* ─── break/continue 目标标签（用于循环和 switch） ─── */
@@ -163,9 +164,10 @@ static void emit_jmp(int label_id) {
             __exit(1);
         }
         fixup_label[fixup_count] = label_id;
-        fixup_offset[fixup_count] = code_size;
+        fixup_is_jmp[fixup_count] = 1;
+        emit1(0xE9); emit1(0x11); emit1(0x22); emit1(0x33); emit1(0x44);
+        fixup_offset[fixup_count] = code_size - 5;
         fixup_count++;
-        emit1(0xE9); emit4(0);  /* jmp rel32 占位 */
     }
 }
 
@@ -181,9 +183,10 @@ static void emit_jcc(int cc, int label_id) {
             __exit(1);
         }
         fixup_label[fixup_count] = label_id;
-        fixup_offset[fixup_count] = code_size;
+        fixup_is_jmp[fixup_count] = 0;
+        emit1(0x0F); emit1(cc); emit1(0x55); emit1(0x66); emit1(0x77); emit1(0x88);
+        fixup_offset[fixup_count] = code_size - 6;
         fixup_count++;
-        emit1(0x0F); emit1(cc); emit4(0);  /* 占位 */
     }
 }
 
@@ -194,17 +197,21 @@ static void apply_fixups(void) {
         if (label_off < 0) continue;
 
         int jump_off = fixup_offset[i];
-        int instr_len;
-        if ((code_buf[jump_off] == 0xE9)) {
-            instr_len = 5;  /* jmp rel32 */
+        int is_jmp = fixup_is_jmp[i];
+        int disp;
+        if (is_jmp) {
+            disp = label_off - (jump_off + 5);
+            code_buf[jump_off + 1] = disp & 0xFF;
+            code_buf[jump_off + 2] = (disp >> 8) & 0xFF;
+            code_buf[jump_off + 3] = (disp >> 16) & 0xFF;
+            code_buf[jump_off + 4] = (disp >> 24) & 0xFF;
         } else {
-            instr_len = 6;  /* 0F jcc rel32 */
+            disp = label_off - (jump_off + 6);
+            code_buf[jump_off + 2] = disp & 0xFF;
+            code_buf[jump_off + 3] = (disp >> 8) & 0xFF;
+            code_buf[jump_off + 4] = (disp >> 16) & 0xFF;
+            code_buf[jump_off + 5] = (disp >> 24) & 0xFF;
         }
-        int disp = label_off - (jump_off + instr_len);
-        code_buf[jump_off + instr_len - 4]     = disp & 0xFF;
-        code_buf[jump_off + instr_len - 3]     = (disp >> 8) & 0xFF;
-        code_buf[jump_off + instr_len - 2]     = (disp >> 16) & 0xFF;
-        code_buf[jump_off + instr_len - 1]     = (disp >> 24) & 0xFF;
     }
 }
 
