@@ -298,6 +298,10 @@ void cgen_addr(AstNode *node) {
             if (elem_size == 1 && node->left && node->left->kind == AST_MEMBER && node->left->elem_size > 0) {
                 elem_size = node->left->elem_size;
             }
+            /* 通用 fallback：非 AST_MEMBER 的左表达式（如 (p+N) 指针算术结果）也可能有 elem_size */
+            if (elem_size == 1 && node->left && node->left->elem_size > 0) {
+                elem_size = node->left->elem_size;
+            }
 
             if (elem_size == 2) {
                 if (idx_is64) { e1(0x48); e1(0xC1); e1(0xE0); e1(0x01); }
@@ -657,6 +661,16 @@ void cgen_expr(AstNode *node) {
                 elem_size = node->left->elem_size;
                 elem_unsigned = node->left->is_unsigned;
             }
+            /* 通用 fallback：非 AST_MEMBER 的左表达式（如 (p+N) 指针算术结果）也可能有 elem_size。
+             * 但排除嵌套 LBRACKET（如 strs[i][j] 的外层，inner 的 elem_size 是被加载值的大小，
+             * 并非指针指向元素的大小）。
+             * 注意：不传播 is_unsigned——AST_VAR 节点在解析阶段未正确设置 is_unsigned
+             *（尤其全局数组），应依赖 elem_size 查找时同步的 elem_unsigned 查找。 */
+            if (elem_size == 1 && node->left &&
+                !(node->left->kind == AST_BINOP && node->left->op == TOK_LBRACKET) &&
+                node->left->elem_size > 0) {
+                elem_size = node->left->elem_size;
+            }
 
             /* 索引 * 元素大小（移位加速），索引可能是 64-bit (size_t) */
 
@@ -904,60 +918,150 @@ void cgen_expr(AstNode *node) {
         /* 指针算术缩放：ptr + int 或 int + ptr 时，整数操作数乘以元素大小 */
         if ((node->op == TOK_PLUS || node->op == TOK_MINUS) &&
             ((node->left && node->left->type_size == 8 &&
-              node->right && node->right->type_size <= 4) ||
+              node->right && !node->right->is_float) ||
              (node->right && node->right->type_size == 8 &&
-              node->left && node->left->type_size <= 4))) {
-            /* 找到指针操作数及其元素大小 */
+              node->left && !node->left->is_float))) {
+            /* 找到指针操作数：先尝试左侧（type_size==8 的通常是指针），
+             * 若两侧都是 type_size==8（如 ptr + long），需通过 element_size
+             * 区分指针与纯 64 位整数。若左侧不是指针，再尝试右侧。 */
             int ptelem = 1;
-            AstNode *ptr_node = (node->left->type_size == 8) ? node->left : node->right;
-            int right_is_ptr = (node->right->type_size == 8);
-            if (ptr_node && ptr_node->kind == AST_VAR && ptr_node->name) {
-                int vi;
-                SEARCH_LOCAL(vi, ptr_node->name);
-                if (vi >= 0) {
-                        if (locals[vi].element_size > 0) ptelem = locals[vi].element_size;
+            AstNode *ptr_node = NULL;
+            int right_is_ptr = 0;
 
-                }
-                /* 全局变量 fallback：SEARCH_LOCAL 未找到时查符号表 */
-                if (vi < 0) {
-                    for (vi = 0; vi < sym_count; vi++) {
-                        if (syms[vi].name && strcmp(syms[vi].name, ptr_node->name) == 0) {
-                            if (vi < MAX_SYMS && global_elem_size[vi] > 0)
-                                ptelem = global_elem_size[vi];
-                            else if (vi < MAX_SYMS && global_ptr_elem_size[vi] > 0)
-                                ptelem = global_ptr_elem_size[vi];
-                            break;
+            /* ── 尝试左操作数 ── */
+            if (node->left && node->left->type_size == 8) {
+                if (node->left->kind == AST_VAR && node->left->name) {
+                    int vi;
+                    SEARCH_LOCAL(vi, node->left->name);
+                    if (vi >= 0) {
+                            if (locals[vi].element_size > 0) ptelem = locals[vi].element_size;
+
+                    }
+                    if (vi < 0) {
+                        for (vi = 0; vi < sym_count; vi++) {
+                            if (syms[vi].name && strcmp(syms[vi].name, node->left->name) == 0) {
+                                if (vi < MAX_SYMS && global_elem_size[vi] > 0)
+                                    ptelem = global_elem_size[vi];
+                                else if (vi < MAX_SYMS && global_ptr_elem_size[vi] > 0)
+                                    ptelem = global_ptr_elem_size[vi];
+                                break;
+                            }
                         }
                     }
                 }
+                if (ptelem == 1 && node->left->elem_size > 0 &&
+                    !(node->left->kind == AST_BINOP && node->left->op == TOK_LBRACKET))
+                    ptelem = node->left->elem_size;
+                if (ptelem > 1) {
+                    ptr_node = node->left;
+                    right_is_ptr = 0;
+                }
             }
-            /* 非 AST_VAR 指针表达式 fallback（如 AST_MEMBER、AST_BINOP 结果） */
-            if (ptelem == 1 && ptr_node && ptr_node->elem_size > 0) {
-                ptelem = ptr_node->elem_size;
+
+            /* ── 左侧不是指针 → 尝试右操作数 ── */
+            if (!ptr_node && node->right && node->right->type_size == 8) {
+                ptelem = 1;
+                if (node->right->kind == AST_VAR && node->right->name) {
+                    int vi;
+                    SEARCH_LOCAL(vi, node->right->name);
+                    if (vi >= 0) {
+                            if (locals[vi].element_size > 0) ptelem = locals[vi].element_size;
+
+                    }
+                    if (vi < 0) {
+                        for (vi = 0; vi < sym_count; vi++) {
+                            if (syms[vi].name && strcmp(syms[vi].name, node->right->name) == 0) {
+                                if (vi < MAX_SYMS && global_elem_size[vi] > 0)
+                                    ptelem = global_elem_size[vi];
+                                else if (vi < MAX_SYMS && global_ptr_elem_size[vi] > 0)
+                                    ptelem = global_ptr_elem_size[vi];
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (ptelem == 1 && node->right->elem_size > 0 &&
+                    !(node->right->kind == AST_BINOP && node->right->op == TOK_LBRACKET))
+                    ptelem = node->right->elem_size;
+                if (ptelem > 1) {
+                    ptr_node = node->right;
+                    right_is_ptr = 1;
+                }
             }
+
+            /* ptr - ptr：检查另一操作数是否也是指针（ptr - ptr 不应缩放整数，
+             * 直接做普通 64-bit 减法，后续指针减法代码除以 elem_size 即可） */
+            if (node->op == TOK_MINUS && ptr_node) {
+                AstNode *other = right_is_ptr ? node->left : node->right;
+                if (other && other->type_size == 8) {
+                    int other_pe = 1;
+                    if (other->kind == AST_VAR && other->name) {
+                        int vi;
+                        SEARCH_LOCAL(vi, other->name);
+                        if (vi >= 0) {
+                                if (locals[vi].element_size > 0) other_pe = locals[vi].element_size;
+
+                        }
+                        if (vi < 0) {
+                            for (vi = 0; vi < sym_count; vi++) {
+                                if (syms[vi].name && strcmp(syms[vi].name, other->name) == 0) {
+                                    if (vi < MAX_SYMS && global_elem_size[vi] > 0)
+                                        other_pe = global_elem_size[vi];
+                                    else if (vi < MAX_SYMS && global_ptr_elem_size[vi] > 0)
+                                        other_pe = global_ptr_elem_size[vi];
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    if (other_pe == 1 && other->elem_size > 0)
+                        other_pe = other->elem_size;
+                    if (other_pe > 1) {
+                        ptr_node = NULL;  /* 两侧都是指针 → 不缩放 */
+                        ptelem = 1;
+                    }
+                }
+            }
+
+            if (!ptr_node) ptelem = 1;  /* 两侧都不是指针 → 纯整数加法，不缩放 */
+
             /* 将元素大小回写到指针节点，供 *(p+N) 解引用时确定加载宽度 */
             if (ptr_node && ptelem > 0)
                 ptr_node->elem_size = ptelem;
             if (ptelem > 1) {
+                /* 确定整数偏移的宽度（64-bit 时需用 64-bit 移位/imul）：
+                 * 整数操作数是 ptr_node 另一侧的那个操作数 */
+                AstNode *int_node = right_is_ptr ? node->left : node->right;
+                int int64_offset = (int_node && int_node->type_size == 8);
                 /* 缩放整数操作数（此后由下方 binop_add64/binop_sub... 完成加法） */
                 if (right_is_ptr) {
                     /* left 是整数（在 rcx 中），right 是指针（在 rax 中） */
                     /* xchg 使指针在 rcx，整数在 rax：之后 binop 做 add rax,rcx 得到 ptr+scaled_int */
                     e1(0x48); e1(0x91);           /* xchg rax, rcx — rax=int, rcx=ptr */
-                    if (ptelem == 2)      { e1(0xC1); e1(0xE0); e1(0x01); }      /* shl eax, 1 */
-                    else if (ptelem == 4) { e1(0xC1); e1(0xE0); e1(0x02); }      /* shl eax, 2 */
-                    else if (ptelem == 8) { e1(0x48); e1(0xC1); e1(0xE0); e1(0x03); }  /* shl rax, 3 */
+                    if (ptelem == 2)      {
+                        if (int64_offset) { e1(0x48); e1(0xC1); e1(0xE0); e1(0x01); }  /* shl rax, 1 */
+                        else { e1(0xC1); e1(0xE0); e1(0x01); }                          /* shl eax, 1 */
+                    } else if (ptelem == 4) {
+                        if (int64_offset) { e1(0x48); e1(0xC1); e1(0xE0); e1(0x02); }  /* shl rax, 2 */
+                        else { e1(0xC1); e1(0xE0); e1(0x02); }                          /* shl eax, 2 */
+                    } else if (ptelem == 8) { e1(0x48); e1(0xC1); e1(0xE0); e1(0x03); }  /* shl rax, 3 */
                     else                  { e1(0x50); e1(0xB8); e4(ptelem);       /* push rax; mov eax, ptelem */
-                                            e1(0x0F); e1(0xAF); e1(0x04); e1(0x24);  /* imul eax, [rsp] */
+                                            if (int64_offset) { e1(0x48); e1(0x0F); e1(0xAF); e1(0x04); e1(0x24); }  /* imul rax, [rsp] */
+                                            else { e1(0x0F); e1(0xAF); e1(0x04); e1(0x24); }                           /* imul eax, [rsp] */
                                             e1(0x48); e1(0x83); e1(0xC4); e1(0x08); } /* add rsp, 8 */
                     /* rcx=ptr, rax=scaled_int → 下方 binop_add64 做 add rax,rcx 得到 ptr+scaled_int */
                 } else {
                     /* right 是整数（在 rax 中），left 是指针（在 rcx 中） */
-                    if (ptelem == 2)      { e1(0xC1); e1(0xE0); e1(0x01); }      /* shl eax, 1 */
-                    else if (ptelem == 4) { e1(0xC1); e1(0xE0); e1(0x02); }      /* shl eax, 2 */
-                    else if (ptelem == 8) { e1(0x48); e1(0xC1); e1(0xE0); e1(0x03); }  /* shl rax, 3 */
+                    if (ptelem == 2)      {
+                        if (int64_offset) { e1(0x48); e1(0xC1); e1(0xE0); e1(0x01); }  /* shl rax, 1 */
+                        else { e1(0xC1); e1(0xE0); e1(0x01); }                          /* shl eax, 1 */
+                    } else if (ptelem == 4) {
+                        if (int64_offset) { e1(0x48); e1(0xC1); e1(0xE0); e1(0x02); }  /* shl rax, 2 */
+                        else { e1(0xC1); e1(0xE0); e1(0x02); }                          /* shl eax, 2 */
+                    } else if (ptelem == 8) { e1(0x48); e1(0xC1); e1(0xE0); e1(0x03); }  /* shl rax, 3 */
                     else                  { push_rax(); mov_eax_imm(ptelem);
-                                            e1(0x0F); e1(0xAF); e1(0x04); e1(0x24);  /* imul eax, [rsp] */
+                                            if (int64_offset) { e1(0x48); e1(0x0F); e1(0xAF); e1(0x04); e1(0x24); }  /* imul rax, [rsp] */
+                                            else { e1(0x0F); e1(0xAF); e1(0x04); e1(0x24); }                           /* imul eax, [rsp] */
                                             e1(0x48); e1(0x83); e1(0xC4); e1(0x08); }
                     /* rcx=ptr, rax=scaled_int → 下方 binop_add64 做 add rax,rcx 得到 ptr+scaled_int */
                 }
@@ -1068,49 +1172,104 @@ void cgen_expr(AstNode *node) {
         /* 指针算术结果传播 elem_size（供后续 DEREF 解引用宽度使用） */
         if ((node->op == TOK_PLUS || node->op == TOK_MINUS) &&
             node->left && node->right &&
-            ((node->left->type_size == 8 && node->right->type_size <= 4) ||
-             (node->right->type_size == 8 && node->left->type_size <= 4))) {
-            AstNode *ptr_node = (node->left->type_size == 8) ? node->left : node->right;
-            node->elem_size = ptr_node->elem_size > 0 ? ptr_node->elem_size : 1;
+            !node->left->is_float && !node->right->is_float &&
+            (node->left->type_size == 8 || node->right->type_size == 8)) {
+            /* 找出真正的指针操作数（可能两侧都是 type_size==8，如 ptr + long）
+             * 并从局部/全局变量表获取其 element_size */
+            int ptr_elem = 0;
+            if (node->left->type_size == 8) {
+                if (node->left->kind == AST_VAR && node->left->name) {
+                    int vi; SEARCH_LOCAL(vi, node->left->name);
+                    if (vi >= 0) ptr_elem = locals[vi].element_size;
+                    if (vi < 0) {
+                        for (vi = 0; vi < sym_count; vi++) {
+                            if (syms[vi].name && strcmp(syms[vi].name, node->left->name) == 0) {
+                                if (vi < MAX_SYMS && global_elem_size[vi] > 0) ptr_elem = global_elem_size[vi];
+                                else if (vi < MAX_SYMS && global_ptr_elem_size[vi] > 0) ptr_elem = global_ptr_elem_size[vi];
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (ptr_elem == 0) ptr_elem = node->left->elem_size;
+            }
+            if (ptr_elem == 0 && node->right->type_size == 8) {
+                if (node->right->kind == AST_VAR && node->right->name) {
+                    int vi; SEARCH_LOCAL(vi, node->right->name);
+                    if (vi >= 0) ptr_elem = locals[vi].element_size;
+                    if (vi < 0) {
+                        for (vi = 0; vi < sym_count; vi++) {
+                            if (syms[vi].name && strcmp(syms[vi].name, node->right->name) == 0) {
+                                if (vi < MAX_SYMS && global_elem_size[vi] > 0) ptr_elem = global_elem_size[vi];
+                                else if (vi < MAX_SYMS && global_ptr_elem_size[vi] > 0) ptr_elem = global_ptr_elem_size[vi];
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (ptr_elem == 0) ptr_elem = node->right->elem_size;
+            }
+            node->elem_size = ptr_elem > 0 ? ptr_elem : 1;
         }
 
         /* 指针减法：q-p 结果需要除以元素大小（以元素个数为单位的差值） */
         if (node->op == TOK_MINUS &&
             node->left && node->left->type_size == 8 &&
             node->right && node->right->type_size == 8) {
-            /* 查找指针元素大小 */
-            int ptelem = 1;
-            if (node->left->kind == AST_VAR && node->left->name) {
+            /* 确认右操作数确实是指针（ptr - ptr），而非 ptr - long：
+             * 若右操作数不是指针（element_size == 0），则这是 ptr - int64
+             * 形式的指针算术，已在上面做了缩放，不应再除以 elem_size。 */
+            int right_is_ptr = 0;
+            if (node->right->kind == AST_VAR && node->right->name) {
                 int vi;
-                SEARCH_LOCAL(vi, node->left->name);
-                if (vi >= 0) {
-                        if (locals[vi].element_size > 0) ptelem = locals[vi].element_size;
-
-                }
-                /* 全局变量 fallback */
+                SEARCH_LOCAL(vi, node->right->name);
+                if (vi >= 0) { if (locals[vi].element_size > 0) right_is_ptr = 1; }
                 if (vi < 0) {
                     for (vi = 0; vi < sym_count; vi++) {
-                        if (syms[vi].name && strcmp(syms[vi].name, node->left->name) == 0) {
-                            if (vi < MAX_SYMS && global_elem_size[vi] > 0)
-                                ptelem = global_elem_size[vi];
-                            else if (vi < MAX_SYMS && global_ptr_elem_size[vi] > 0)
-                                ptelem = global_ptr_elem_size[vi];
-                            break;
+                        if (syms[vi].name && strcmp(syms[vi].name, node->right->name) == 0) {
+                            if (vi < MAX_SYMS && (global_elem_size[vi] > 0 || global_ptr_elem_size[vi] > 0))
+                                { right_is_ptr = 1; break; }
                         }
                     }
                 }
             }
-            /* 非 AST_VAR 指针表达式 fallback */
-            if (ptelem == 1 && node->left->elem_size > 0) {
-                ptelem = node->left->elem_size;
-            }
-            if (ptelem > 1) {
-                /* 用 imul 取倒数不可行，用 idiv：eax 中已有差值，除以 ptelem */
-                /* 差值已在 eax（从 64-bit 减法后的 32-bit 截断） */
-                /* 正确做法：用 64-bit 差值 */
-                /* 先将差值从 eax 符号扩展到 edx:eax */
-                e1(0x99);                          /* cdq: sign-extend eax→edx:eax */
-                e1(0xB9); e4(ptelem); e1(0xF7); e1(0xF9);  /* mov ecx, ptelem; idiv ecx */
+            if (!right_is_ptr && node->right->elem_size > 0)
+                right_is_ptr = 1;
+            if (right_is_ptr) {
+                /* 查找指针元素大小 */
+                int ptelem = 1;
+                if (node->left->kind == AST_VAR && node->left->name) {
+                    int vi;
+                    SEARCH_LOCAL(vi, node->left->name);
+                    if (vi >= 0) {
+                            if (locals[vi].element_size > 0) ptelem = locals[vi].element_size;
+
+                    }
+                    /* 全局变量 fallback */
+                    if (vi < 0) {
+                        for (vi = 0; vi < sym_count; vi++) {
+                            if (syms[vi].name && strcmp(syms[vi].name, node->left->name) == 0) {
+                                if (vi < MAX_SYMS && global_elem_size[vi] > 0)
+                                    ptelem = global_elem_size[vi];
+                                else if (vi < MAX_SYMS && global_ptr_elem_size[vi] > 0)
+                                    ptelem = global_ptr_elem_size[vi];
+                                break;
+                            }
+                        }
+                    }
+                }
+                /* 非 AST_VAR 指针表达式 fallback */
+                if (ptelem == 1 && node->left->elem_size > 0) {
+                    ptelem = node->left->elem_size;
+                }
+                if (ptelem > 1) {
+                    /* 用 imul 取倒数不可行，用 idiv：eax 中已有差值，除以 ptelem */
+                    /* 差值已在 eax（从 64-bit 减法后的 32-bit 截断） */
+                    /* 正确做法：用 64-bit 差值 */
+                    /* 先将差值从 eax 符号扩展到 edx:eax */
+                    e1(0x99);                          /* cdq: sign-extend eax→edx:eax */
+                    e1(0xB9); e4(ptelem); e1(0xF7); e1(0xF9);  /* mov ecx, ptelem; idiv ecx */
+                }
             }
         }
         break;
