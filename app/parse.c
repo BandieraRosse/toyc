@@ -2832,6 +2832,7 @@ AstNode *parse_program(Parser *p) {
                         gvar->base_elem_size = (gv_ptrs == 1 && gv_bracket_count > 0)
                             ? (typesize > 0 ? typesize : 4) : gv_unit;
                         gvar->elem_is_ptr = (gv_ptrs > 0 && gv_bracket_count > 0) ? 1 : 0;
+                        gvar->elem_is_unsigned = (gv_ptrs > 0 || gv_bracket_count > 0) ? last_type_is_unsigned : 0;
                         *tail = gvar;
                         tail = &gvar->next;
                     }

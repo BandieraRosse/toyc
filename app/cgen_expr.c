@@ -607,8 +607,10 @@ void cgen_expr(AstNode *node) {
                 if (i < 0) {
                     for (i = 0; i < sym_count; i++) {
                         if (syms[i].name && strcmp(syms[i].name, node->left->name) == 0) {
-                            if (i < MAX_SYMS && global_elem_size[i] > 0)
+                            if (i < MAX_SYMS && global_elem_size[i] > 0) {
                                 elem_size = global_elem_size[i];
+                                elem_unsigned = global_elem_unsigned[i];
+                            }
                             break;
                         }
                     }

@@ -307,6 +307,7 @@ extern int strtab_len;
 extern int global_elem_size[MAX_SYMS];
 extern int global_base_elem_size[MAX_SYMS];
 extern int global_elem_is_ptr_arr[MAX_SYMS];
+extern int global_elem_unsigned[MAX_SYMS];
 
 /* 字符串字面量池 — cgen_expr 追加，cgen_program 结尾刷入 code_buf */
 extern unsigned char strpool_buf[STRPOOL_SIZE];

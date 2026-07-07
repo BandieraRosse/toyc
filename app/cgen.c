@@ -244,6 +244,7 @@ static void emit_epilogue(void) {
 int global_elem_size[MAX_SYMS];
 int global_base_elem_size[MAX_SYMS];
 int global_elem_is_ptr_arr[MAX_SYMS];
+int global_elem_unsigned[MAX_SYMS];
 
 static int add_sym(const char *name, int offset, int size,
                    int is_global, int is_func) {
@@ -322,6 +323,7 @@ static void collect_locals(AstNode *node) {
                 global_elem_size[sym_count] = (vsize > 8) ? node->elem_size : 0;
                 global_base_elem_size[sym_count] = node->base_elem_size;
                 global_elem_is_ptr_arr[sym_count] = node->elem_is_ptr;
+                global_elem_unsigned[sym_count] = node->elem_is_unsigned;
                 sym_count++;
             }
             elf_bss_size += vsize;
@@ -1021,6 +1023,7 @@ void cgen_init(void) {
         global_elem_size[_i] = 0;
         global_base_elem_size[_i] = 0;
         global_elem_is_ptr_arr[_i] = 0;
+        global_elem_unsigned[_i] = 0;
     }
     func_ret_count = 0;
     current_func_ret_size = 0;
@@ -1189,6 +1192,7 @@ void cgen_program(AstNode *prog) {
                 global_elem_size[si] = (vsize > 8) ? node->elem_size : 0;
                 global_base_elem_size[si] = node->base_elem_size;
                 global_elem_is_ptr_arr[si] = node->elem_is_ptr;
+                global_elem_unsigned[si] = node->elem_is_unsigned;
             }
         }
     }
