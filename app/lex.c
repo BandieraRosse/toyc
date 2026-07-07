@@ -230,10 +230,14 @@ static Token read_number(Lexer *lx) {
     t.ival = 0;
     t.dval = 0.0;
     t.is_float = 0;
+    t.is_unsigned = 0;
     t.sval = 0;
 
     int base = 10;
     int maybe_float = 0;
+
+    /* 使用 unsigned long 累加，避免 >= 2^63 的值在有符号 long 中溢出 */
+    unsigned long uval = 0;
 
     if (t.start[0] == '0' && (input_peek(lx) == 'x' || input_peek(lx) == 'X')) {
         base = 16;
@@ -241,12 +245,12 @@ static Token read_number(Lexer *lx) {
     } else if (t.start[0] == '0' && is_digit(input_peek(lx))) {
         /* 以 0 开头且后跟数字：八进制字面量（如 0777 = 511） */
         base = 8;
-        t.ival = 0;
+        uval = 0;
     } else if (t.start[0] == '.') {
         /* 以 . 开头的浮点数：.5 .25 等 */
         maybe_float = 1;
     } else if (is_digit(t.start[0])) {
-        t.ival = t.start[0] - '0';  /* 把已消费的首位算回来 */
+        uval = t.start[0] - '0';  /* 把已消费的首位算回来 */
     }
 
     /* 读取整数位（十进制/十六进制/八进制） */
@@ -255,16 +259,16 @@ static Token read_number(Lexer *lx) {
         if (base == 8) {
             /* 八进制：只接受 0-7 */
             if (c >= '0' && c <= '7') {
-                t.ival = t.ival * 8 + (c - '0');
+                uval = uval * 8 + (c - '0');
                 advance(lx);
             } else {
                 break;
             }
         } else if (is_digit(c)) {
-            t.ival = t.ival * base + (c - '0');
+            uval = uval * base + (c - '0');
             advance(lx);
         } else if (base == 16 && ((c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))) {
-            t.ival = t.ival * 16 + ((c >= 'a') ? (c - 'a' + 10) : (c - 'A' + 10));
+            uval = uval * 16 + ((c >= 'a') ? (c - 'a' + 10) : (c - 'A' + 10));
             advance(lx);
         } else {
             break;
@@ -304,12 +308,17 @@ static Token read_number(Lexer *lx) {
     /* 跳过后缀：u/l/ll（整数）和 f/F（浮点） */
     while (1) {
         int c = input_peek(lx);
-        if (c == 'u' || c == 'U' || c == 'l' || c == 'L' ||
-            c == 'f' || c == 'F')
+        if (c == 'u' || c == 'U') {
+            t.is_unsigned = 1;
+            advance(lx);
+        } else if (c == 'l' || c == 'L' ||
+                   c == 'f' || c == 'F')
             advance(lx);
         else
             break;
     }
+
+    t.ival = (long)uval;  /* 位模式在 64 位二补码下保存不变 */
 
     t.len = lx->pos - t.start;
     return t;
@@ -322,6 +331,7 @@ static Token read_ident(Lexer *lx) {
     t.start = lx->pos - 1;
     t.kind = TOK_IDENT;
     t.ival = 0;
+    t.is_unsigned = 0;
     t.sval = 0;
 
     while (is_alnum(input_peek(lx)))
@@ -339,6 +349,7 @@ static Token read_string(Lexer *lx) {
     t.start = lx->pos - 1;
     t.kind = TOK_STRING;
     t.ival = 0;
+    t.is_unsigned = 0;
     t.sval = 0;
 
     while (1) {
@@ -374,6 +385,7 @@ Token lexer_next(Lexer *lx) {
             t.start = lx->pos;
             t.len = 0;
             t.ival = 0;
+            t.is_unsigned = 0;
             t.sval = 0;
             lx->cur = t;
             return t;
@@ -406,8 +418,9 @@ Token lexer_next(Lexer *lx) {
     Token t;
     t.start = lx->start;
     t.ival = 0;
-    t.sval = 0;
+    t.is_unsigned = 0;
     t.is_float = 0;
+    t.sval = 0;
 
     switch (c) {
     case '0': case '1': case '2': case '3': case '4':

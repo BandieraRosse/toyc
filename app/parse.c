@@ -361,9 +361,13 @@ static AstNode *parse_primary(Parser *p) {
             n->type_size = 4;
         else
             n->type_size = 8;
-        /* 大正数（> 2^31-1）隐含 unsigned 语义 */
-        if (t.ival > 2147483647L)
+        /* unsigned 判定：优先用 Token 记录的 U/UL 后缀，无后缀时用启发式 */
+        if (t.is_unsigned)
             n->is_unsigned = 1;
+        else if ((unsigned long)t.ival > 2147483647UL)
+            n->is_unsigned = 1;
+        else
+            n->is_unsigned = 0;
         return n;
     }
 

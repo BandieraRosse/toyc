@@ -134,6 +134,7 @@ typedef struct {
     long ival;      /* TOK_NUMBER 的整数值（64 位） */
     double dval;          /* 浮点字面量的值 */
     int is_float;         /* 1 表示浮点字面量（dval 有效） */
+    int is_unsigned;      /* 1 表示 u/ul/ull 后缀的整数常量 */
     const char *sval;    /* TOK_IDENT 的名称指针（arena 分配） */
 } Token;
 
