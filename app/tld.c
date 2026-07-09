@@ -1,0 +1,663 @@
+/*
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2026 BandieraRosse
+ */
+
+/*
+ * tld.c — Tinylibc x86_64 静态链接器
+ *
+ * 机制：读取 ET_REL(.o) 文件 → 合并段 → 解析符号 → 应用重定位
+ *        → 输出 ET_EXEC 静态可执行文件（含 program headers）
+ *
+ * 支持的 x86_64 重定位类型：
+ *   R_X86_64_64     S + A                    8 字节绝对地址（.data 段字符串指针）
+ *   R_X86_64_PC32   S + A - P                4 字节 PC 相对（全局变量、成员访问）
+ *   R_X86_64_32     S + A  < 2³²            4 字节零扩展绝对（sizeof 全局地址）
+ *   R_X86_64_PLT32  S + A - P                4 字节（静态链接中同 PC32）
+ *
+ * 默认配置（硬编码）：
+ *   基地址:   0x400000
+ *   入口:     __tlibc_start
+ *   段顺序:   .text → .data → .bss
+ *
+ * 用法：
+ *   tld input1.o [input2.o ...] -o output
+ *
+ * 零 libc 依赖，使用 tcc_need.h 的 syscall 包装。
+ */
+
+#include "tcc_need.h"
+#include "elf.h"
+
+/* ═══════════════════════════════════════════════════════════════════
+ *  配置常量
+ * ═══════════════════════════════════════════════════════════════════ */
+
+#define MAX_INPUTS       64
+#define MAX_SYMS         16384
+#define SECTION_BUF_SIZE (1024 * 1024)     /* 1MB 各合并段 */
+#define BASE_ADDR        0x400000
+#define ENTRY_SYM        "__tlibc_start"
+#define PAGE_SIZE        0x1000
+
+/* ═══════════════════════════════════════════════════════════════════
+ *  数据结构
+ * ═══════════════════════════════════════════════════════════════════ */
+
+/* 输入 .o 文件解析结果 */
+typedef struct {
+    const char      *name;
+    unsigned char   *data;          /* 完整文件内容 */
+    long             size;
+
+    /* 已知节区索引（-1 表示无此节区） */
+    int              sh_text;
+    int              sh_data;
+    int              sh_bss;
+    int              sh_symtab;
+    int              sh_strtab;
+    int              sh_rela_text;
+    int              sh_rela_data;
+
+    /* 节区原始数据指针 */
+    unsigned char   *text_data;
+    int              text_size;
+    unsigned char   *data_data;
+    int              data_size;
+    int              bss_size;
+
+    /* 符号表 */
+    unsigned char   *syms_raw;
+    int              sym_count;
+    char            *strtab_data;
+    int              strtab_size;
+
+    /* 重定位 */
+    unsigned char   *rela_text_raw;
+    int              rela_text_count;
+    unsigned char   *rela_data_raw;
+    int              rela_data_count;
+
+    /* 各段在合并后缓冲区中的偏移 */
+    int              text_merge_off;
+    int              data_merge_off;
+    int              bss_merge_off;
+
+    /* 各段在合并后的最终基地址 */
+    uint64_t         text_base;
+    uint64_t         data_base;
+    uint64_t         bss_base;
+} InputFile;
+
+/* 全局符号表条目 */
+typedef struct {
+    char            name[128];
+    uint64_t        value;
+    int             defined;
+    unsigned char   sym_info;
+} Symbol;
+
+/* ═══════════════════════════════════════════════════════════════════
+ *  全局状态
+ * ═══════════════════════════════════════════════════════════════════ */
+
+static InputFile    inputs[MAX_INPUTS];
+static int          input_count;
+static const char  *output_path;
+
+static Symbol       syms[MAX_SYMS];
+static int          sym_count;
+
+/* 合并后段缓冲区 */
+static unsigned char merged_text[SECTION_BUF_SIZE];
+static int          merged_text_size;
+static unsigned char merged_data[SECTION_BUF_SIZE];
+static int          merged_data_size;
+static int          merged_bss_size;
+
+/* 最终段基址 */
+static uint64_t     text_addr;
+static uint64_t     data_addr;
+static uint64_t     bss_addr;
+
+/* 入口地址 */
+static uint64_t     entry_addr;
+
+/* ═══════════════════════════════════════════════════════════════════
+ *  LE 整数读写辅助函数
+ * ═══════════════════════════════════════════════════════════════════ */
+
+static uint16_t r16(const unsigned char *p) {
+    return (uint16_t)p[0] | ((uint16_t)p[1] << 8);
+}
+static uint32_t r32(const unsigned char *p) {
+    return (uint32_t)p[0] | ((uint32_t)p[1] << 8)
+         | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
+}
+static uint64_t r64(const unsigned char *p) {
+    return (uint64_t)r32(p) | ((uint64_t)r32(p + 4) << 32);
+}
+static void w16(unsigned char *dest, uint16_t v) {
+    dest[0] = v & 0xFF; dest[1] = (v >> 8) & 0xFF;
+}
+static void w32(unsigned char *dest, uint32_t v) {
+    dest[0] = v & 0xFF; dest[1] = (v >> 8) & 0xFF;
+    dest[2] = (v >> 16) & 0xFF; dest[3] = (v >> 24) & 0xFF;
+}
+static void w64(unsigned char *dest, uint64_t v) {
+    w32(dest, v & 0xFFFFFFFF);
+    w32(dest + 4, (v >> 32) & 0xFFFFFFFF);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+ *  错误处理
+ * ═══════════════════════════════════════════════════════════════════ */
+
+static void error(const char *fmt, const char *arg) {
+    __write(2, "tld: error: ", 12);
+    __write(2, fmt, strlen(fmt));
+    if (arg) { __write(2, ": ", 2); __write(2, arg, strlen(arg)); }
+    __write(2, "\n", 1);
+    __exit(1);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+ *  文件 I/O
+ * ═══════════════════════════════════════════════════════════════════ */
+
+static unsigned char *read_whole_file(const char *path, long *out_size) {
+    int fd = __openat(AT_FDCWD, path, O_RDONLY, 0);
+    if (fd < 0) error("cannot open input file", path);
+
+    long size = __lseek(fd, 0, SEEK_END);
+    if (size < 0) { __close(fd); error("cannot seek input file", path); }
+    __lseek(fd, 0, SEEK_SET);
+
+    unsigned char *buf = (unsigned char *)tlibc_malloc(size + 64);
+    if (!buf) { __close(fd); error("out of memory reading", path); }
+
+    long total = 0;
+    while (total < size) {
+        long got = __read(fd, buf + total, size - total);
+        if (got <= 0) break;
+        total += got;
+    }
+    __close(fd);
+    if (total != size) {
+        tlibc_free(buf);
+        error("short read on input file", path);
+    }
+    /* 末尾多 zero-pad 防止字符串越界 */
+    buf[size] = 0; buf[size + 1] = 0;
+    buf[size + 2] = 0; buf[size + 3] = 0;
+
+    *out_size = size;
+    return buf;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+ *  ELF .o 文件解析
+ * ═══════════════════════════════════════════════════════════════════ */
+
+static int find_sh_by_name(InputFile *f, const char *target) {
+    int shnum  = r16(f->data + 60);    /* e_shnum */
+    int shstrndx = r16(f->data + 62);  /* e_shstrndx */
+    if (shnum <= 0 || shstrndx < 0 || shstrndx >= shnum) return -1;
+
+    int shoff = r64(f->data + 40);     /* e_shoff */
+    unsigned char *shdr_base = f->data + shoff;
+
+    /* .shstrtab section header → 内容 */
+    unsigned char *shstr_sh = shdr_base + shstrndx * 64;
+    uint64_t shstr_off = r64(shstr_sh + 24);
+    unsigned char *shstr_data = f->data + shstr_off;
+
+    for (int i = 1; i < shnum; i++) {
+        unsigned char *sh = shdr_base + i * 64;
+        uint32_t name_off = r32(sh);
+        const char *sname = (const char *)(shstr_data + name_off);
+        if (strcmp(sname, target) == 0) return i;
+    }
+    return -1;
+}
+
+static void read_input(const char *path) {
+    if (input_count >= MAX_INPUTS)
+        error("too many input files (max 64)", NULL);
+
+    InputFile *f = &inputs[input_count];
+    f->name = path;
+    f->sh_text = f->sh_data = f->sh_bss = f->sh_symtab = f->sh_strtab = -1;
+    f->sh_rela_text = f->sh_rela_data = -1;
+
+    f->data = read_whole_file(path, &f->size);
+
+    /* ── 校验 ELF header ── */
+    if (f->size < 64 || f->data[0] != 0x7F || f->data[1] != 'E'
+        || f->data[2] != 'L' || f->data[3] != 'F')
+        error("not a valid ELF file", path);
+    if (f->data[4] != 2)
+        error("not a 64-bit ELF file", path);
+    if (r16(f->data + 16) != 1)
+        error("not a relocatable object file (.o expected)", path);
+    if (r16(f->data + 18) != 62)
+        error("not an x86_64 ELF file", path);
+
+    /* ── 查找各段 ── */
+    f->sh_text      = find_sh_by_name(f, ".text");
+    f->sh_data      = find_sh_by_name(f, ".data");
+    f->sh_bss       = find_sh_by_name(f, ".bss");
+    f->sh_symtab    = find_sh_by_name(f, ".symtab");
+    f->sh_strtab    = find_sh_by_name(f, ".strtab");
+    f->sh_rela_text = find_sh_by_name(f, ".rela.text");
+    f->sh_rela_data = find_sh_by_name(f, ".rela.data");
+
+    int shnum = r16(f->data + 60);
+    int shoff = r64(f->data + 40);
+    unsigned char *shdr_base = f->data + shoff;
+
+    /* 辅助宏：读取段偏移和大小 */
+    #define READ_SH(i, off_var, sz_var) do { \
+        if ((i) >= 0 && (i) < shnum) { \
+            unsigned char *_sh = shdr_base + (i) * 64; \
+            off_var = (int)r64(_sh + 24); \
+            sz_var  = (int)r64(_sh + 32); \
+        } \
+    } while(0)
+
+    /* .text */
+    if (f->sh_text >= 0) { int off=0, sz=0;
+        READ_SH(f->sh_text, off, sz);
+        f->text_data = f->data + off; f->text_size = sz; }
+
+    /* .data */
+    if (f->sh_data >= 0) { int off=0, sz=0;
+        READ_SH(f->sh_data, off, sz);
+        f->data_data = f->data + off; f->data_size = sz; }
+
+    /* .bss — 只有大小，无数据 */
+    if (f->sh_bss >= 0) {
+        f->bss_size = (int)r64((shdr_base + f->sh_bss * 64) + 32); }
+
+    /* .symtab */
+    if (f->sh_symtab >= 0) { int off=0, sz=0;
+        READ_SH(f->sh_symtab, off, sz);
+        f->syms_raw = f->data + off; f->sym_count = sz / 24; }
+
+    /* .strtab */
+    if (f->sh_strtab >= 0) { int off=0, sz=0;
+        READ_SH(f->sh_strtab, off, sz);
+        f->strtab_data = (char *)f->data + off; f->strtab_size = sz; }
+
+    /* .rela.text */
+    if (f->sh_rela_text >= 0) { int off=0, sz=0;
+        READ_SH(f->sh_rela_text, off, sz);
+        f->rela_text_raw = f->data + off; f->rela_text_count = sz / 24; }
+
+    /* .rela.data */
+    if (f->sh_rela_data >= 0) { int off=0, sz=0;
+        READ_SH(f->sh_rela_data, off, sz);
+        f->rela_data_raw = f->data + off; f->rela_data_count = sz / 24; }
+
+    #undef READ_SH
+
+    input_count++;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+ *  段合并
+ * ═══════════════════════════════════════════════════════════════════ */
+
+static int align_up(int val, int align) {
+    if (align <= 1) return val;
+    return (val + align - 1) & -align;
+}
+
+/* 只计算偏移和基地址，不复制数据（数据复制由 main 在 resolve 之前完成） */
+static void merge_sections(void) {
+    merged_text_size = 0;
+    merged_data_size = 0;
+    merged_bss_size  = 0;
+
+    for (int i = 0; i < input_count; i++) {
+        InputFile *f = &inputs[i];
+
+        f->text_merge_off = merged_text_size;
+        merged_text_size += f->text_size;
+        merged_text_size = align_up(merged_text_size, 16);
+
+        f->data_merge_off = merged_data_size;
+        merged_data_size += f->data_size;
+        merged_data_size = align_up(merged_data_size, 32);
+
+        f->bss_merge_off = merged_bss_size;
+        merged_bss_size += f->bss_size;
+        merged_bss_size = align_up(merged_bss_size, 32);
+    }
+
+    text_addr = BASE_ADDR;
+    data_addr = text_addr + merged_text_size;
+    bss_addr  = data_addr + merged_data_size;
+
+    for (int i = 0; i < input_count; i++) {
+        InputFile *f = &inputs[i];
+        f->text_base = text_addr + f->text_merge_off;
+        f->data_base = data_addr + f->data_merge_off;
+        f->bss_base  = bss_addr  + f->bss_merge_off;
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+ *  符号解析
+ * ═══════════════════════════════════════════════════════════════════ */
+
+static const char *sym_name(InputFile *f, int idx) {
+    if (idx < 0 || idx >= f->sym_count) return "";
+    unsigned char *sym = f->syms_raw + idx * 24;
+    uint32_t name_off = r32(sym);
+    if (name_off >= (uint32_t)f->strtab_size) return "";
+    return f->strtab_data + name_off;
+}
+
+static Symbol *find_or_add_sym(const char *name) {
+    for (int i = 0; i < sym_count; i++)
+        if (strcmp(syms[i].name, name) == 0) return &syms[i];
+    if (sym_count >= MAX_SYMS) error("too many symbols", NULL);
+    Symbol *s = &syms[sym_count++];
+    int nlen = strlen(name);
+    if (nlen >= 128) nlen = 127;
+    int j;
+    for (j = 0; j < nlen; j++) s->name[j] = name[j];
+    s->name[j] = 0;
+    s->value = 0;
+    s->defined = 0;
+    s->sym_info = 0;
+    return s;
+}
+
+/* 计算本地符号在最终输出中的地址 */
+static uint64_t sym_final_addr(InputFile *f, unsigned char *sym_entry) {
+    uint64_t st_value = r64(sym_entry + 8);
+    uint16_t st_shndx = r16(sym_entry + 6);
+
+    if (st_shndx == 0) return 0;              /* SHN_UNDEF */
+    if (st_shndx == 0xFFF1) return st_value;  /* SHN_ABS */
+    if (st_shndx == (uint16_t)f->sh_text) return f->text_base + (int)st_value;
+    if (st_shndx == (uint16_t)f->sh_data) return f->data_base + (int)st_value;
+    if (st_shndx == (uint16_t)f->sh_bss)  return f->bss_base  + (int)st_value;
+
+    /* 其它段：按 shndx 计算（.o 中 sh_addr 为 0，需用合并后基址） */
+    return st_value;
+}
+
+static void resolve_symbols(void) {
+    entry_addr = 0;
+
+    /* 第一遍：收集 GLOBAL / WEAK 定义 */
+    for (int fi = 0; fi < input_count; fi++) {
+        InputFile *f = &inputs[fi];
+        if (!f->syms_raw || f->sym_count <= 0) continue;
+
+        for (int si = 0; si < f->sym_count; si++) {
+            unsigned char *sym = f->syms_raw + si * 24;
+            unsigned char info  = sym[4];         /* st_info */
+            int bind  = (info >> 4) & 0xF;
+            uint16_t shndx = r16(sym + 6);
+
+            if (bind == 0) continue;      /* STB_LOCAL */
+            if (shndx == 0) continue;     /* SHN_UNDEF — 未定义 */
+
+            const char *name = sym_name(f, si);
+            if (!name || !name[0]) continue;
+
+            Symbol *s = find_or_add_sym(name);
+            if (!s->defined) {
+                s->defined = 1;
+                s->value = sym_final_addr(f, sym);
+                s->sym_info = info;
+            }
+        }
+    }
+
+    /* 第二遍：登记 UNDEF 符号引用 */
+    for (int fi = 0; fi < input_count; fi++) {
+        InputFile *f = &inputs[fi];
+        if (!f->syms_raw) continue;
+
+        for (int si = 1; si < f->sym_count; si++) {
+            unsigned char *sym = f->syms_raw + si * 24;
+            unsigned char info = sym[4];
+            int bind = (info >> 4) & 0xF;
+            if (bind == 0) continue;
+            if (r16(sym + 6) != 0) continue;  /* 不是 UNDEF */
+
+            const char *name = sym_name(f, si);
+            if (!name || !name[0]) continue;
+            find_or_add_sym(name);  /* 确保符号在全局表中存在 */
+        }
+    }
+
+    /* 第三遍：检查未定义，找入口 */
+    for (int i = 0; i < sym_count; i++) {
+        if (!syms[i].defined) {
+            /* _GLOBAL_OFFSET_TABLE_ 是特殊符号，忽略 */
+            if (syms[i].name[0] == '_' && syms[i].name[1] == 'G')
+                continue;
+            error("undefined symbol", syms[i].name);
+        }
+        if (strcmp(syms[i].name, ENTRY_SYM) == 0)
+            entry_addr = syms[i].value;
+    }
+
+    if (entry_addr == 0)
+        error("entry point '" ENTRY_SYM "' not found", NULL);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+ *  重定位应用
+ * ═══════════════════════════════════════════════════════════════════ */
+
+static uint64_t find_sym_value(int sym_idx, InputFile *f) {
+    if (sym_idx < 0 || sym_idx >= f->sym_count) return 0;
+    unsigned char *sym = f->syms_raw + sym_idx * 24;
+    unsigned char info = sym[4];
+    int bind = (info >> 4) & 0xF;
+
+    if (bind == 0) {
+        /* LOCAL — 同一文件内 */
+        return sym_final_addr(f, sym);
+    } else {
+        /* GLOBAL / WEAK — 查全局表 */
+        const char *name = sym_name(f, sym_idx);
+        for (int i = 0; i < sym_count; i++)
+            if (strcmp(syms[i].name, name) == 0) return syms[i].value;
+        error("undefined symbol in relocation", name);
+        return 0;
+    }
+}
+
+static void apply_one_rela(InputFile *f,
+    unsigned char *rela_raw, int count,
+    unsigned char *merged_buf,
+    uint64_t section_base, int section_merge_off)
+{
+    for (int ri = 0; ri < count; ri++) {
+        unsigned char *rel = rela_raw + ri * 24;
+        uint64_t r_offset = r64(rel);
+        uint64_t r_info   = r64(rel + 8);
+        uint64_t r_addend = r64(rel + 16);  /* 当作 uint64 读取，后续符号扩展 */
+
+        uint32_t sym_idx = (uint32_t)(r_info >> 32);
+        uint32_t r_type  = (uint32_t)(r_info & 0xFFFFFFFF);
+
+        uint64_t P = section_base + (int)r_offset;   /* 重定位位置 */
+        uint64_t S = find_sym_value((int)sym_idx, f); /* 符号值 */
+        int patch_off = section_merge_off + (int)r_offset;
+
+        switch (r_type) {
+        case 0:  /* R_X86_64_NONE */
+            break;
+        case 1: { /* R_X86_64_64 — S + A */
+            uint64_t val = S + (int64_t)r_addend;
+            w64(merged_buf + patch_off, val);
+            break;
+        }
+        case 2:  /* R_X86_64_PC32 */
+        case 4: { /* R_X86_64_PLT32 — 静态链接中同 PC32 */
+            uint64_t val = S + (int64_t)r_addend - P;
+            w32(merged_buf + patch_off, (uint32_t)(val & 0xFFFFFFFF));
+            break;
+        }
+        case 10: { /* R_X86_64_32 S + A，零扩展 */
+            uint64_t val = S + (int64_t)r_addend;
+            w32(merged_buf + patch_off, (uint32_t)(val & 0xFFFFFFFF));
+            break;
+        }
+        default:
+            error("unsupported relocation type", NULL);
+        }
+    }
+}
+
+static void apply_relocations(void) {
+    for (int fi = 0; fi < input_count; fi++) {
+        InputFile *f = &inputs[fi];
+        apply_one_rela(f, f->rela_text_raw, f->rela_text_count,
+                       merged_text, f->text_base, f->text_merge_off);
+        apply_one_rela(f, f->rela_data_raw, f->rela_data_count,
+                       merged_data, f->data_base, f->data_merge_off);
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+ *  可执行文件输出
+ * ═══════════════════════════════════════════════════════════════════ */
+
+static void write_output(const char *path) {
+    /* ── 布局：
+     *   [0]         ELF header (64)
+     *   [64]        Program header (56)
+     *   [120..4095] 填充到页面边界
+     *   [0x1000]    .text 数据
+     *   [0x1000+ts] .data 数据
+     *   [0x1000+ts+ds] 文件结束
+     *   PT_LOAD: p_offset=0x1000, p_vaddr=BASE_ADDR, p_filesz=ts+ds, p_memsz=ts+ds+bs
+     *   → .text 在 vaddr BASE_ADDR 开始
+     *   → 符号偏移 st_value 直接加 BASE_ADDR 得到最终地址
+     * ── */
+    int ehdr_sz = 64;
+    int phdr_sz = 56;
+    int text_file_off = PAGE_SIZE;             /* 页面边界对齐 */
+    int data_file_off = text_file_off + merged_text_size;
+    int total_file_sz = data_file_off + merged_data_size;
+
+    unsigned char *buf = (unsigned char *)tlibc_malloc(total_file_sz + 16);
+    if (!buf) error("out of memory writing output", NULL);
+    __memset(buf, 0, total_file_sz + 16);
+
+    int p = 0;
+
+    /* ── ELF header ── */
+    buf[p++] = 0x7F; buf[p++] = 'E'; buf[p++] = 'L'; buf[p++] = 'F';
+    buf[p++] = 2;     /* ELFCLASS64 */
+    buf[p++] = 1;     /* ELFDATA2LSB */
+    buf[p++] = 1;     /* EV_CURRENT */
+    buf[p++] = 0;     /* ELFOSABI_NONE */
+    for (int i = 0; i < 8; i++) buf[p++] = 0;  /* e_ident[8..15] = 0 */
+
+    w16(buf + p, 2);   p += 2;  /* e_type = ET_EXEC */
+    w16(buf + p, 62);  p += 2;  /* e_machine = EM_X86_64 */
+    w32(buf + p, 1);   p += 4;  /* e_version */
+    w64(buf + p, entry_addr); p += 8;  /* e_entry */
+    w64(buf + p, 64);  p += 8;  /* e_phoff */
+    w64(buf + p, 0);   p += 8;  /* e_shoff = 0 */
+    w32(buf + p, 0);   p += 4;  /* e_flags */
+    w16(buf + p, 64);  p += 2;  /* e_ehsize */
+    w16(buf + p, 56);  p += 2;  /* e_phentsize */
+    w16(buf + p, 1);   p += 2;  /* e_phnum */
+    w16(buf + p, 0);   p += 2;  /* e_shentsize */
+    w16(buf + p, 0);   p += 2;  /* e_shnum */
+    w16(buf + p, 0);   p += 2;  /* e_shstrndx */
+
+    /* ── Program header: PT_LOAD ── */
+    w32(buf + p, 1);   p += 4;  /* p_type = PT_LOAD */
+    w32(buf + p, 7);   p += 4;  /* p_flags = PF_R|PF_W|PF_X */
+    w64(buf + p, text_file_off); p += 8;  /* p_offset = 0x1000 (页面边界的 .text) */
+    w64(buf + p, BASE_ADDR); p += 8;      /* p_vaddr */
+    w64(buf + p, BASE_ADDR); p += 8;      /* p_paddr */
+    w64(buf + p, merged_text_size + merged_data_size); p += 8;  /* p_filesz */
+    w64(buf + p, merged_text_size + merged_data_size + merged_bss_size); p += 8;  /* p_memsz */
+    w64(buf + p, PAGE_SIZE); p += 8;  /* p_align */
+
+    /* ── 写入段数据 ── */
+    for (int i = 0; i < merged_text_size; i++)
+        buf[text_file_off + i] = merged_text[i];
+    for (int i = 0; i < merged_data_size; i++)
+        buf[data_file_off + i] = merged_data[i];
+
+    /* ── 写文件 ── */
+    int fd = __openat(AT_FDCWD, path, O_WRONLY | O_CREAT | O_TRUNC, 0755);
+    if (fd < 0) error("cannot create output file", path);
+
+    int written = (int)__write(fd, buf, total_file_sz);
+    __close(fd);
+    tlibc_free(buf);
+
+    if (written != total_file_sz)
+        error("short write on output file", path);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+ *  入口
+ * ═══════════════════════════════════════════════════════════════════ */
+
+int main(int argc, char **argv) {
+    output_path = "a.out";
+
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "-o") == 0 && i + 1 < argc) {
+            output_path = argv[++i];
+        } else if (argv[i][0] == '-') {
+            /* 忽略其他 ld 参数 */
+        } else {
+            read_input(argv[i]);
+        }
+    }
+
+    if (input_count == 0)
+        error("no input files", NULL);
+
+    /* 1) 段合并 */
+    merge_sections();
+
+    /* 2) 数据复制到合并缓冲区 */
+    merged_text_size = 0;
+    merged_data_size = 0;
+    merged_bss_size  = 0;
+    for (int i = 0; i < input_count; i++) {
+        InputFile *f = &inputs[i];
+        for (int j = 0; j < f->text_size; j++)
+            merged_text[merged_text_size + j] = f->text_data[j];
+        merged_text_size += f->text_size;
+        merged_text_size = align_up(merged_text_size, 16);
+
+        for (int j = 0; j < f->data_size; j++)
+            merged_data[merged_data_size + j] = f->data_data[j];
+        merged_data_size += f->data_size;
+        merged_data_size = align_up(merged_data_size, 32);
+
+        merged_bss_size += f->bss_size;
+        merged_bss_size = align_up(merged_bss_size, 32);
+    }
+
+    /* 3) 符号解析 */
+    resolve_symbols();
+
+    /* 4) 重定位 */
+    apply_relocations();
+
+    /* 5) 写输出 */
+    write_output(output_path);
+
+    return 0;
+}

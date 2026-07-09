@@ -8,6 +8,7 @@
 ```
 ├── app/                # 编译器源码
 │   ├── tcc.c           # 主入口：编译 C → ELF .o
+│   └── tld.c           # x86_64 静态链接器（新增）
 │   ├── tcc_rt.c        # 独立运行时（syscall 包装、malloc、printf）
 │   ├── tcc_rt_start.S  # 启动汇编 __tlibc_start → main → exit
 │   ├── lex.c           # 词法分析
@@ -54,13 +55,14 @@ make clean
 
 全链零 gcc 依赖。`bootstrap/tcc` + `bootstrap/tas` 是 git 追踪的种子二进制。
 
-## 测试状态（2026-07-09）
+## 测试状态（2026-07-10）
 
 | 测试套件 | 通过/总数 | 说明 |
 |----------|-----------|------|
 | `make test` | 29/29 ✅ | tcc 编译 + ld 链接 tcc_rt 运行时 |
 | `make test-selfhost` | **35/35 ✅** | tcc 独立编译，无 tcc_rt 依赖 |
 | `make test-source` | 8/8 ✅ | tcc 编译源文件独立测试 |
+| `make test-tld` | **35/35 ✅** | selfhost 测试 × tld 链接（gcc 编译 tld） |
 | `bootstrap-selfhost.sh` | 35/35 ✅ | 种子自举 → stage-2 全部测试通过 |
 | `bootstrap-to-10.sh` | stage-2→10 字节级一致 ✅ | 全链收敛验证（头尾完整测试） |
 

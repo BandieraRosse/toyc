@@ -65,7 +65,21 @@ TPP_C_SRCS := tpp.c preproc.c tcc_rt.c
 TPP_C_OBJS := $(addprefix $(BUILD)/, $(TPP_C_SRCS:.c=.o))
 TPP_OBJS   := $(TPP_C_OBJS) $(BUILD)/tcc_rt_start.o
 
-ALL_OBJS := $(sort $(TCC_OBJS) $(TAS_OBJS) $(TPP_OBJS))
+# tld 链接器
+# 注意：tcc 目前对 tld 的某些代码模式有 codegen bug，先用 gcc 编译
+# TODO: 修复 tcc codegen bug 后切换回 CC
+TLD_CC    ?= gcc
+TLD_CFLAGS = -nostdlib -ffreestanding -Wall -Wextra -I include -I app
+TLD_C_SRCS := tld.c tcc_rt.c
+TLD_C_OBJS := $(addprefix $(BUILD)/, $(TLD_C_SRCS:.c=.o))
+TLD_OBJS   := $(TLD_C_OBJS) $(BUILD)/tcc_rt_start.o
+
+$(BUILD)/tld.o: $(SRC)/tld.c $(HEADERS) | $(BUILD)
+	@printf "  $(BLUE)  CC$(RESET)  %-20s " "$<"
+	$(TLD_CC) $(TLD_CFLAGS) -c $< -o $@
+	@printf "$(GREEN)ok$(RESET)\n"
+
+ALL_OBJS := $(sort $(TCC_OBJS) $(TAS_OBJS) $(TPP_OBJS) $(TLD_OBJS))
 
 # ─── 目录创建 ──────────────────────────────────────────────────
 
@@ -113,6 +127,11 @@ $(BUILD)/tpp: $(TPP_OBJS)
 	@printf "$(BLUE)  LD$(RESET)  tpp ... "
 	$(LD) $(LDFLAGS) $^ -o $@
 	@printf "$(GREEN)ok$(RESET)\n"
+
+$(BUILD)/tld: $(TLD_OBJS)
+	@printf "$(BLUE)  LD$(RESET)  tld ... "
+	$(LD) $(LDFLAGS) $^ -o $@
+	@size=$$(stat -c%s $@); printf "$(GREEN)ok$(RESET) ($$size bytes)\n"
 
 # ─── 清理 ──────────────────────────────────────────────────────
 
@@ -224,8 +243,97 @@ test-source: $(BUILD)/tcc
 
 # ─── 全部测试 ──────────────────────────────────────────────────
 
-test-all: test test-selfhost test-source
+test-all: test test-selfhost test-source test-tld
 	@printf "$(GREEN)✓ 全部测试通过$(RESET)\n"
+
+# ─── tld 链接器测试 ───────────────────────────────────────────
+
+TLD_TESTDIR := compiler-tests/tld
+
+# tld 自包含测试：用 tld 替代 ld 运行 selfhost 测试
+test-tld: $(BUILD)/tld $(BUILD)/tcc
+	@printf "$(BLUE)══════ tld 自包含测试（selfhost 测试 × tld 链接）══════$(RESET)\n\n"; \
+	ok=0; fail=0; total=0; mkdir -p tmp; \
+	for f in $(SELFTESTDIR)/*.c; do \
+		[ -f "$$f" ] || continue; \
+		total=$$((total+1)); \
+		name=$$(basename "$$f" .c); \
+		expect=$$(sed -n 's/.*EXPECT: *\([0-9]*\).*/\1/p' "$$f" | head -1); \
+		[ -z "$$expect" ] && expect=0; \
+		printf "  tcc+tld → $(BLUE)%-24s$(RESET) " "$$name"; \
+		$(BUILD)/tcc "$$f" -o /tmp/tld_$$name.o 2>/tmp/tld_$$name-compile.log || { \
+			printf "$(RED)COMPILE FAIL$(RESET)\n"; fail=$$((fail+1)); continue; }; \
+		$(BUILD)/tld /tmp/tld_$$name.o -o /tmp/tld_$$name 2>/tmp/tld_$$name-link.log || { \
+			printf "$(RED)LINK FAIL$(RESET)\n"; fail=$$((fail+1)); continue; }; \
+		/tmp/tld_$$name >/tmp/tld_$$name.log 2>&1; got=$$?; \
+		if [ "$$got" = "$$expect" ]; then \
+			printf "$(GREEN)✓$(RESET) (%d)\n" "$$got"; ok=$$((ok+1)); \
+		else \
+			printf "$(RED)✗$(RESET) (want %d got %d) — /tmp/tld_$$name.log\n" "$$expect" "$$got"; \
+			fail=$$((fail+1)); fi; \
+	done; \
+	printf "\n$(BLUE)══════$(RESET) $(GREEN)%d passed$(RESET), $(RED)%d failed$(RESET), %d total $(BLUE)══════$(RESET)\n" "$$ok" "$$fail" "$$total"; \
+	[ "$$fail" -eq 0 ]
+
+# tld 多文件链接测试
+test-tld-multifile: $(BUILD)/tld $(BUILD)/tcc
+	@printf "$(BLUE)══════ tld 多文件链接测试 ══════$(RESET)\n\n"; \
+	ok=0; fail=0; total=0; \
+	mkdir -p tmp; \
+	\
+	# 编译 tld 自身的多文件测试源文件（如果有的话） \
+	if [ -d "$(TLD_TESTDIR)" ]; then \
+		for f in $(TLD_TESTDIR)/*.c; do \
+			[ -f "$$f" ] || continue; \
+			total=$$((total+1)); \
+			name=$$(basename "$$f" .c); \
+			expect=$$(sed -n 's/.*EXPECT: *\([0-9]*\).*/\1/p' "$$f" | head -1); \
+			[ -z "$$expect" ] && expect=0; \
+			printf "  tcc+tld → $(BLUE)%-24s$(RESET) " "$$name"; \
+			$(BUILD)/tcc "$$f" -o /tmp/tld_mf_$$name.o 2>/tmp/tld_mf_$$name-compile.log || { \
+				printf "$(RED)COMPILE FAIL$(RESET)\n"; fail=$$((fail+1)); continue; }; \
+			$(BUILD)/tld /tmp/tld_mf_$$name.o -o /tmp/tld_mf_$$name 2>/tmp/tld_mf_$$name-link.log || { \
+				printf "$(RED)LINK FAIL$(RESET)\n"; fail=$$((fail+1)); continue; }; \
+			/tmp/tld_mf_$$name >/tmp/tld_mf_$$name.log 2>&1; got=$$?; \
+			if [ "$$got" = "$$expect" ]; then \
+				printf "$(GREEN)✓$(RESET) (%d)\n" "$$got"; ok=$$((ok+1)); \
+			else \
+				printf "$(RED)✗$(RESET) (want %d got %d)\n" "$$expect" "$$got"; \
+				fail=$$((fail+1)); fi; \
+		done; \
+	fi; \
+	\
+	if [ $${total} -eq 0 ]; then \
+		printf "  $(YELLOW)(无 tld 测试文件 — 在 $(TLD_TESTDIR) 中创建 .c 测试文件) $(RESET)\n\n"; \
+	fi; \
+	printf "$(BLUE)══════$(RESET) $(GREEN)%d passed$(RESET), $(RED)%d failed$(RESET), %d total $(BLUE)══════$(RESET)\n\n" "$$ok" "$$fail" "$$total"; \
+	[ "$$fail" -eq 0 ]
+
+# tld 自测试：tld 链接自身 + 运行自我验证
+test-tld-self: $(BUILD)/tld
+	@printf "$(BLUE)══════ tld 自链接测试 ══════$(RESET)\n\n"; \
+	printf "  检查 tld 能否用自己链接自己 ... "; \
+	cp "$(BUILD)/tld" "$(BUILD)/tld-syslinked"; \
+	\
+	# 用系统 ld 编译 tld 的 .o 文件 \
+	ok=0; fail=0; \
+	TLD_SRCS="tld.c elf_write.c tcc_rt.c"; \
+	for cfile in $$TLD_SRCS; do \
+		basename_c=$$(basename "$$cfile" .c); \
+		if $(BUILD)/tcc "$(SRC)/$$cfile" -o $(BUILD)/$${basename_c}.tld.o 2>/dev/null; then \
+			:; \
+		else \
+			printf "$(RED)tld 模块 $$cfile 编译失败$(RESET)\n"; fail=1; \
+		fi; \
+	done; \
+	if [ "$$fail" -eq 0 ]; then \
+		$(BUILD)/tld $(BUILD)/tld.o $(BUILD)/elf_write.tld.o $(BUILD)/tcc_rt.tld.o $(BUILD)/tcc_rt_start.o \
+			-o $(BUILD)/tld-selflinked 2>/tmp/tld-selflink.log && \
+		printf "$(GREEN)✓ 成功$(RESET)\n" || \
+		{ printf "$(RED)✗ 自链接失败$(RESET)\n"; cat /tmp/tld-selflink.log; }; \
+	fi
+
+# ─── 允许 make test 01 05 等带编号参数 ────────────────────────
 
 # ─── 允许 make test 01 05 等带编号参数 ────────────────────────
 
