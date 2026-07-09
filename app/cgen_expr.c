@@ -1525,7 +1525,9 @@ void cgen_expr(AstNode *node) {
                 }
             }
             /* fallback: 结构体成员数组 s.arr[i] — 使用 AST_MEMBER 上的 elem_size */
-            if (elem_size == 1 && arr_base && arr_base->elem_size > 0) {
+            if (elem_size == 1 && arr_base &&
+                !(arr_base->kind == AST_BINOP && arr_base->op == TOK_LBRACKET) &&
+                arr_base->elem_size > 0) {
                 elem_size = arr_base->elem_size;
             }
             if (elem_size == 2) {

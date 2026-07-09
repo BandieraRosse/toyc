@@ -2001,8 +2001,10 @@ AstNode *parse_compound_statement(Parser *p) {
                     else
                         decl->elem_size = elem_ts;
                     /* 注册数组元素大小到 pvar（供 sizeof(arr[i]) 使用） */
-                    if (decl->name && *decl->name)
-                        pvar_set_elem_size(decl->name, elem_ts);
+                    if (decl->name && *decl->name) {
+                        int pe = (dim_count > 1) ? decl->elem_size : elem_ts;
+                        pvar_set_elem_size(decl->name, pe);
+                    }
                 } else {
                     if (dv_ptrs > 0 && bracket_count > 0) {
                         decl->elem_size = 8;
@@ -2835,7 +2837,8 @@ AstNode *parse_program(Parser *p) {
                     /* 处理数组后缀 [N][M]...（多层） */
                     int gv_arr_len = 1;
                     int gv_bracket_count = 0;
-                    int gv_unspecified_dim = 0;  /* [] 空维度标记 */
+                    int gv_unspecified_dim = 0;
+                    int gv_first_dim = 0;  /* [] 空维度标记 */
                     while (peek(p).kind == TOK_LBRACKET) {
                         gv_bracket_count++;
                         consume(p);
@@ -2847,8 +2850,10 @@ AstNode *parse_program(Parser *p) {
                             AstNode *dim_expr = parse_expr(p);
                             if (dim_expr) {
                                 long long dim_val = eval_const_expr(dim_expr);
-                                if (dim_val > 0)
+                                if (dim_val > 0) {
+                                    if (gv_first_dim == 0) gv_first_dim = (int)dim_val;
                                     gv_arr_len *= (int)dim_val;
+                                }
                             }
                             /* 跳过到匹配的 ] */
                             int d = 1;
@@ -2864,6 +2869,13 @@ AstNode *parse_program(Parser *p) {
                     int gv_unit = gv_ptrs > 0 ? 8 : (typesize > 0 ? typesize : 4);
                     int gv_total = gv_arr_len > 1 ? gv_unit * gv_arr_len : gv_unit;
                     int gv_is_array = (gv_bracket_count > 0);
+                    int gv_elem_at = gv_unit;
+                    if (gv_is_array && gv_bracket_count > 1) {
+                        if (gv_first_dim > 0)
+                            gv_elem_at = gv_unit * (gv_arr_len / gv_first_dim);
+                        else
+                            gv_elem_at = gv_unit * gv_arr_len;
+                    }
                     /* 注册 struct 标签和大小（供 sizeof 查找） */
                     {
                         const char *gvn = arena_strdup(p->arena, gv_name.start, gv_name.len);
@@ -2874,7 +2886,7 @@ AstNode *parse_program(Parser *p) {
                                 pvar_set_struct_type(gvn, resolve_struct_type(gv_tag));
                         }
                         if (gv_is_array)
-                            pvar_set_elem_size(gvn, gv_unit);
+                            pvar_set_elem_size(gvn, gv_elem_at);
                         if (pvar_count > 3800) {
                             int _na = 0; while (gvn[_na]) _na++;
                             __write(2, "PVAR_FULL:", 10);
@@ -2891,7 +2903,7 @@ AstNode *parse_program(Parser *p) {
                         gvar->is_static = current_static;
                         gvar->ival = gv_total;
                         gvar->type_size = gv_total;
-                        gvar->elem_size = (gv_arr_len > 1) ? gv_unit : (gv_ptrs > 0 ? (gv_ptrs > 1 ? 8 : (typesize > 0 ? typesize : 4)) : 0);
+                        gvar->elem_size = (gv_arr_len > 1) ? gv_elem_at : (gv_ptrs > 0 ? (gv_ptrs > 1 ? 8 : (typesize > 0 ? typesize : 4)) : 0);
                         gvar->base_elem_size = (gv_ptrs == 1 && gv_bracket_count > 0)
                             ? (typesize > 0 ? typesize : 4) : gv_unit;
                         gvar->elem_is_ptr = (gv_ptrs > 0 && gv_bracket_count > 0) ? 1 : 0;
