@@ -1007,7 +1007,7 @@ void cgen_expr(AstNode *node) {
             if (node->op == TOK_MINUS && ptr_node) {
                 AstNode *other = right_is_ptr ? node->left : node->right;
                 if (other && other->type_size == 8) {
-                    int other_pe = 1;
+                    int other_pe = 0;
                     if (other->kind == AST_VAR && other->name) {
                         int vi;
                         SEARCH_LOCAL(vi, other->name);
@@ -1027,9 +1027,9 @@ void cgen_expr(AstNode *node) {
                             }
                         }
                     }
-                    if (other_pe == 1 && other->elem_size > 0)
+                    if (other_pe == 0 && other->elem_size > 0)
                         other_pe = other->elem_size;
-                    if (other_pe > 1) {
+                    if (other_pe > 0) {
                         ptr_node = NULL;  /* 两侧都是指针 → 不缩放 */
                         ptelem = 1;
                     }
@@ -1281,8 +1281,8 @@ void cgen_expr(AstNode *node) {
                         }
                     }
                 }
-                /* 非 AST_VAR 指针表达式 fallback */
-                if (ptelem == 1 && node->left->elem_size > 0) {
+                /* 优先使用节点上的 elem_size（反映转型后的实际指向类型，如 (char*)int_ptr） */
+                if (node->left->elem_size > 0) {
                     ptelem = node->left->elem_size;
                 }
                 if (ptelem > 1) {

@@ -34,7 +34,7 @@ int main(void) {
 
     /* 4. sizeof struct */
     if (sizeof(Point) != 8) return 30;
-    if (sizeof(Buf) != 24) return 31;  // 16 (char[16]) + 4 (int) + padded to 8 = 24
+    if (sizeof(Buf) != 20) return 31;  // 16 (char[16]) + 4 (int), x86_64 ABI tail pad to max(1,4)=4
 
     /* 5. sizeof 局部变量 */
     int a;

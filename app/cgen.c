@@ -1062,7 +1062,8 @@ static void cgen_emit_data_init(AstNode *node) {
         /* 如果正在处理 struct 成员，对齐到成员的自然对齐 */
         if (has_widths && has_struct && mi < st->member_count && memb_sub == 0) {
             Member *m = &st->members[mi];
-            memb_align = (m->size >= 8) ? 8 : (m->size >= 4) ? 4 : (m->size >= 2) ? 2 : 1;
+            int align_sz = m->memb_is_array ? m->elem_size : m->size;
+            memb_align = (align_sz >= 8) ? 8 : (align_sz >= 4) ? 4 : (align_sz >= 2) ? 2 : 1;
             /* 填充到对齐边界 */
             while (elem_byte_count & (memb_align - 1)) {
                 data_buf[data_size++] = 0;

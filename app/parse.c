@@ -1125,6 +1125,7 @@ static int parse_struct_body(Parser *p, Member *members, int *out_count) {
     expect(p, TOK_LBRACE);
     int count = 0;
     int offset = 0;
+    int max_align = 1;
     /* 保存当前正在解析的 struct 的标签。parse_type_specifier 每调用都会清
      * last_struct_tag（line ~1430），导致自引用成员丢失 member_struct_tag。
      * 这是一个外层不变值（由 parse_struct_type 在 line 1254 设置），不会
@@ -1180,9 +1181,11 @@ static int parse_struct_body(Parser *p, Member *members, int *out_count) {
                 if (peek(p).kind == TOK_RBRACKET) consume(p);
             }
             if (count < MAX_MEMBERS) {
-                /* 按类型自然对齐（指针/long long/double=8 字节对齐） */
-                int member_align = (member_sz >= 8) ? 8 : (member_sz >= 4) ? 4 : (member_sz >= 2) ? 2 : 1;
+                /* 按类型自然对齐（指针/long long/double=8 字节对齐。数组按其元素类型对齐） */
+                int align_sz = is_array ? sz : member_sz;
+                int member_align = (align_sz >= 8) ? 8 : (align_sz >= 4) ? 4 : (align_sz >= 2) ? 2 : 1;
                 offset = (offset + member_align - 1) & ~(member_align - 1);
+                if (member_align > max_align) max_align = member_align;
                 members[count].name = arena_strdup(p->arena, id.start, id.len);
                 members[count].offset = offset;
                 members[count].size = member_sz;
@@ -1251,8 +1254,10 @@ static int parse_struct_body(Parser *p, Member *members, int *out_count) {
                     if (peek(p).kind == TOK_RBRACKET) consume(p);
                 }
                 if (count < MAX_MEMBERS) {
-                    int member_align = (member_sz >= 8) ? 8 : (member_sz >= 4) ? 4 : (member_sz >= 2) ? 2 : 1;
+                    int align_sz = comma_is_array ? base_sz : member_sz;
+                    int member_align = (align_sz >= 8) ? 8 : (align_sz >= 4) ? 4 : (align_sz >= 2) ? 2 : 1;
                     offset = (offset + member_align - 1) & ~(member_align - 1);
+                    if (member_align > max_align) max_align = member_align;
                     members[count].name = arena_strdup(p->arena, cid.start, cid.len);
                     members[count].offset = offset;
                     members[count].size = member_sz;
@@ -1278,8 +1283,9 @@ static int parse_struct_body(Parser *p, Member *members, int *out_count) {
     }
     expect(p, TOK_RBRACE);
 
-    /* 对齐到 8 字节（支持指针/long long/double 等 8 字节类型） */
-    offset = (offset + 7) & ~7;
+    /* 对齐到最大成员对齐（x86_64 ABI：struct 尾部填充对齐到 max_align） */
+    if (max_align > 1)
+        offset = (offset + max_align - 1) & ~(max_align - 1);
 
     *out_count = count;
     return offset;
