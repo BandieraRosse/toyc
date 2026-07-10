@@ -326,13 +326,14 @@ static void pp_buf(const char *s, int len, OutBuf *out, int depth) {
 static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had_nl) {
     (void)had_nl;
     int i = 0;
+    int pp_line = 1;
     while (i < len) {
         /* conditional compilation state — uses file-scope pp_cond_* */
 
         /* skip mode: if inside a #ifdef block that should be skipped, consume line */
         if (pp_cond_skip > 0 && s[i] != '#') {
             while (i < len && s[i] != '\n') i++;
-            if (i < len && s[i] == '\n') i++;
+            if (i < len && s[i] == '\n') { i++; pp_line++; }
             continue;
         }
         if (s[i] == '#') {
@@ -366,7 +367,7 @@ static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had
                             }
                             pp_cond_emit[pp_cond_depth-1] = !pp_cond_emit[pp_cond_depth-1];
                         }
-                        i = le; if (i < len && s[i] == '\n') i++;
+                        i = le; if (i < len && s[i] == '\n') { i++; pp_line++; }
                         continue;
                     }
                     if (wlen >= 5 && s[cw]=='e'&&s[cw+1]=='n'&&s[cw+2]=='d'&&s[cw+3]=='i'&&s[cw+4]=='f') {
@@ -374,12 +375,16 @@ static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had
                             if (!pp_cond_emit[pp_cond_depth-1] && pp_cond_skip > 0) pp_cond_skip--;
                             pp_cond_depth--;
                         }
-                        i = le; if (i < len && s[i] == '\n') i++;
+                        i = le; if (i < len && s[i] == '\n') { i++; pp_line++; }
                         continue;
                     }
-                    if (wlen >= 5 && s[cw]=='i'&&s[cw+1]=='f') {
-                        int is_ifndef = (wlen >= 6 && s[cw+2]=='n');
-                        int is_ifdef = !is_ifndef && (wlen < 6 || s[cw+2]!='n');
+                    if (wlen >= 3 && s[cw]=='i' && s[cw+1]=='f') {
+                        int is_ifdef = 0, is_ifndef = 0;
+                        if (wlen >= 6 && s[cw+2]=='d' && s[cw+3]=='e' && s[cw+4]=='f')
+                            is_ifdef = 1;
+                        else if (wlen >= 7 && s[cw+2]=='n' && s[cw+3]=='d' && s[cw+4]=='e' && s[cw+5]=='f')
+                            is_ifndef = 1;
+
                         if (is_ifdef || is_ifndef) {
                             int mp = cw + (is_ifndef ? 6 : 5);
                             while (mp < le && (s[mp] == ' ' || s[mp] == '\t')) mp++;
@@ -405,7 +410,26 @@ static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had
                                 }
                                 pp_cond_depth++;
                             }
-                            i = le; if (i < len && s[i] == '\n') i++;
+                            i = le; if (i < len && s[i] == '\n') { i++; pp_line++; }
+                            continue;
+                        } else {
+                            /* #if 常量表达式 */
+                            int emit_block = 0;
+                            if (pp_cond_skip == 0) {
+                                int mp = cw + 2;
+                                while (mp < le && pp_ws(s[mp])) mp++;
+                                emit_block = if_eval(s + mp, le - mp);
+                            }
+                            if (pp_cond_depth < 32) {
+                                if (emit_block) {
+                                    pp_cond_emit[pp_cond_depth] = 1;
+                                } else {
+                                    pp_cond_emit[pp_cond_depth] = 0;
+                                    pp_cond_skip++;
+                                }
+                                pp_cond_depth++;
+                            }
+                            i = le; if (i < len && s[i] == '\n') { i++; pp_line++; }
                             continue;
                         }
                     }
@@ -413,12 +437,12 @@ static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had
 
                 /* if in skip mode, directives that we handle (#ifdef etc) are already consumed above */
                 if (pp_cond_skip > 0) {
-                    i = le; if (i < len && s[i] == '\n') i++;
+                    i = le; if (i < len && s[i] == '\n') { i++; pp_line++; }
                     continue;
                 }
 
                 do_directive(s, ls, le, out, depth);
-                i = le; if (i < len && s[i] == '\n') i++;
+                i = le; if (i < len && s[i] == '\n') { i++; pp_line++; }
                 continue;
             }
         }
@@ -442,6 +466,24 @@ static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had
             while (i < len && ((s[i] >= 'a' && s[i] <= 'z') || (s[i] >= 'A' && s[i] <= 'Z') ||
                    s[i] == '_' || (s[i] >= '0' && s[i] <= '9'))) i++;
             int id_len = i - start;
+            /* __LINE__：输出当前行号（行号从 1 开始） */
+            if (id_len == 8 &&
+                s[start] == '_' && s[start+1] == '_' &&
+                s[start+2] == 'L' && s[start+3] == 'I' &&
+                s[start+4] == 'N' && s[start+5] == 'E' &&
+                s[start+6] == '_' && s[start+7] == '_') {
+                char lbuf[16];
+                int llen = 0;
+                long lv = pp_line;
+                if (lv == 0) { lbuf[llen++] = '0'; }
+                else {
+                    char tmp[16]; int ti = 0;
+                    while (lv > 0) { tmp[ti++] = '0' + (char)(lv % 10); lv /= 10; }
+                    while (ti > 0) lbuf[llen++] = tmp[--ti];
+                }
+                { int vi; for (vi = 0; vi < llen; vi++) out_putc(out, lbuf[vi]); }
+                continue;
+            }
             int mi;
             int expanded = 0;
             for (mi = 0; mi < macro_count; mi++) {
@@ -638,8 +680,40 @@ static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had
                                     }
                                     continue;
                                 }
-                                /* 跳过 #（stringify 运算符—TODO：支持真正字符串化） */
-                                if (rp[ri]=='#' && ri+1 < rl && rp[ri+1] != '#') { ri++; continue; }
+                                /* # 字符串化：将参数原始文本转换为 "..." 字面量 */
+                                if (rp[ri]=='#' && ri+1 < rl && rp[ri+1] != '#') {
+                                    ri++;
+                                    while (ri < rl && (rp[ri] == ' ' || rp[ri] == '\t')) ri++;
+                                    if (ri < rl && pp_id(rp[ri])) {
+                                        int rs = ri;
+                                        while (ri < rl && pp_id(rp[ri])) ri++;
+                                        int pi;
+                                        for (pi = 0; pi < func_macros[fmi].param_count; pi++) {
+                                            const char *pn = func_macros[fmi].params[pi];
+                                            int jj;
+                                            for (jj = 0; jj < ri - rs; jj++) if (pn[jj] != rp[rs+jj]) goto str_skip;
+                                            if (pn[jj] != '\0') goto str_skip;
+                                            /* 字符串化：取原始参数文本（未预展开），修整收尾空白 */
+                                            {
+                                                const char *raw = arg_starts[pi];
+                                                int raw_len = arg_lens[pi];
+                                                while (raw_len > 0 && pp_ws(raw[0])) { raw++; raw_len--; }
+                                                while (raw_len > 0 && pp_ws(raw[raw_len-1])) raw_len--;
+                                                out_putc(&temp, '"');
+                                                int vi;
+                                                for (vi = 0; vi < raw_len; vi++) {
+                                                    if (raw[vi] == '\\') { out_putc(&temp, '\\'); out_putc(&temp, '\\'); }
+                                                    else if (raw[vi] == '"') { out_putc(&temp, '\\'); out_putc(&temp, '"'); }
+                                                    else out_putc(&temp, raw[vi]);
+                                                }
+                                                out_putc(&temp, '"');
+                                            }
+                                            break;
+                                            str_skip:;
+                                        }
+                                    }
+                                    continue;
+                                }
                                 /* ## 通用粘贴：移除两侧空白，连接 token */
                                 if (ri+1 < rl && rp[ri]=='#' && rp[ri+1]=='#') {
                                     ri += 2;  /* 跳过 ## */
@@ -787,7 +861,9 @@ static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had
             { int idx; for (idx = start; idx < i; idx++) out_putc(out, s[idx]); }
             continue;
         }
-        if (s[i] != 13) { out_putc(out, s[i]); } i++;
+        if (s[i] != 13) { out_putc(out, s[i]); }
+        if (s[i] == '\n') pp_line++;
+        i++;
     }
 }
 
@@ -838,6 +914,274 @@ static char *strip_all_comments(const char *src, int len, int *out_len) {
     return out.data;
 }
 
+/* ═══════════════════════════════════════════════════════════════
+ *  #if 常量表达式求值（precedence climbing）
+ *
+ *  支持：defined(MACRO)、整数常量（含宏展开）、字符常量、所有标准
+ *        运算符（+ - * / % & | ^ ~ ! && || == != < > <= >= << >>）、
+ *        () 分组。返回值 0 = 假，非 0 = 真。
+ * ═══════════════════════════════════════════════════════════════ */
+
+/* 词素类型 */
+#define IF_EOF     0
+#define IF_NUM     1
+#define IF_LPAREN  4
+#define IF_RPAREN  5
+#define IF_PLUS    6
+#define IF_MINUS   7
+#define IF_STAR    8
+#define IF_SLASH   9
+#define IF_PERCENT 10
+#define IF_AMPER   11
+#define IF_PIPE    12
+#define IF_CARET   13
+#define IF_TILDE   14
+#define IF_NOT     15
+#define IF_EQ      16
+#define IF_NE      17
+#define IF_LT      18
+#define IF_GT      19
+#define IF_LE      20
+#define IF_GE      21
+#define IF_LAND    22
+#define IF_LOR     23
+#define IF_SHL     24
+#define IF_SHR     25
+
+/* 运算符优先级表 */
+static int if_prec(int tok) {
+    switch (tok) {
+        case IF_LOR:  return 1;
+        case IF_LAND: return 2;
+        case IF_PIPE: return 3;
+        case IF_CARET: return 4;
+        case IF_AMPER: return 5;
+        case IF_EQ: case IF_NE: return 6;
+        case IF_LT: case IF_GT: case IF_LE: case IF_GE: return 7;
+        case IF_SHL: case IF_SHR: return 8;
+        case IF_PLUS: case IF_MINUS: return 9;
+        case IF_STAR: case IF_SLASH: case IF_PERCENT: return 10;
+        default: return -1;
+    }
+}
+
+/* 二元运算应用 */
+static long if_apply(long a, int op, long b) {
+    switch (op) {
+        case IF_PLUS:    return a + b;
+        case IF_MINUS:   return a - b;
+        case IF_STAR:    return a * b;
+        case IF_SLASH:   return b ? a / b : 0;
+        case IF_PERCENT: return b ? a % b : 0;
+        case IF_AMPER:   return a & b;
+        case IF_PIPE:    return a | b;
+        case IF_CARET:   return a ^ b;
+        case IF_LAND:    return (a && b) ? 1 : 0;
+        case IF_LOR:     return (a || b) ? 1 : 0;
+        case IF_EQ:      return (a == b) ? 1 : 0;
+        case IF_NE:      return (a != b) ? 1 : 0;
+        case IF_LT:      return (a < b) ? 1 : 0;
+        case IF_GT:      return (a > b) ? 1 : 0;
+        case IF_LE:      return (a <= b) ? 1 : 0;
+        case IF_GE:      return (a >= b) ? 1 : 0;
+        case IF_SHL:     return a << b;
+        case IF_SHR:     return a >> b;
+        default:         return 0;
+    }
+}
+
+static long if_parse_expr(const char *s, int len, int *pos, int depth, int min_prec);
+
+/* 读下一个词素。处理 defined() 和宏展开。返回类型，*ival 对 IF_NUM 有效。 */
+static int if_next_tok(const char *s, int len, int *pos, long *ival) {
+    while (*pos < len && pp_ws(s[*pos])) (*pos)++;
+    if (*pos >= len) return IF_EOF;
+    char c = s[*pos];
+
+    /* ── 数字常量 ── */
+    if (c >= '0' && c <= '9') {
+        *ival = 0;
+        if (c == '0' && *pos + 1 < len && (s[*pos+1] == 'x' || s[*pos+1] == 'X')) {
+            *pos += 2;
+            while (*pos < len) {
+                char c2 = s[*pos];
+                if (c2 >= '0' && c2 <= '9') { *ival = *ival * 16 + (c2 - '0'); (*pos)++; }
+                else if (c2 >= 'a' && c2 <= 'f') { *ival = *ival * 16 + (c2 - 'a' + 10); (*pos)++; }
+                else if (c2 >= 'A' && c2 <= 'F') { *ival = *ival * 16 + (c2 - 'A' + 10); (*pos)++; }
+                else break;
+            }
+        } else if (c == '0' && *pos + 1 < len && s[*pos+1] >= '0' && s[*pos+1] <= '7') {
+            (*pos)++;
+            while (*pos < len && s[*pos] >= '0' && s[*pos] <= '7')
+                { *ival = *ival * 8 + (s[*pos] - '0'); (*pos)++; }
+        } else {
+            *ival = c - '0'; (*pos)++;
+            while (*pos < len && s[*pos] >= '0' && s[*pos] <= '9')
+                { *ival = *ival * 10 + (s[*pos] - '0'); (*pos)++; }
+        }
+        while (*pos < len) {
+            char c2 = s[*pos];
+            if (c2 == 'u' || c2 == 'U' || c2 == 'l' || c2 == 'L') (*pos)++;
+            else break;
+        }
+        return IF_NUM;
+    }
+
+    /* ── 字符常量 'x' ── */
+    if (c == '\'') {
+        *ival = 0; (*pos)++;
+        if (*pos < len && s[*pos] == '\\') {
+            (*pos)++;
+            if (*pos < len) {
+                switch (s[*pos]) {
+                    case 'n': *ival = 10; break;
+                    case 't': *ival = 9; break;
+                    case 'r': *ival = 13; break;
+                    case '0': *ival = 0; break;
+                    case '\\': *ival = '\\'; break;
+                    case '\'': *ival = '\''; break;
+                    case '"': *ival = '"'; break;
+                    default: *ival = s[*pos]; break;
+                }
+                (*pos)++;
+            }
+        } else if (*pos < len) { *ival = s[*pos]; (*pos)++; }
+        if (*pos < len && s[*pos] == '\'') (*pos)++;
+        return IF_NUM;
+    }
+
+    /* ── 标识符：defined() 或宏展开 ── */
+    if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_') {
+        int start = *pos;
+        while (*pos < len && pp_id(s[*pos])) (*pos)++;
+        int idlen = *pos - start;
+
+        /* defined 关键字 — 不展开宏名 */
+        if (idlen == 7 &&
+            s[start]=='d' && s[start+1]=='e' && s[start+2]=='f' &&
+            s[start+3]=='i' && s[start+4]=='n' && s[start+5]=='e' && s[start+6]=='d') {
+            while (*pos < len && pp_ws(s[*pos])) (*pos)++;
+            int paren = (*pos < len && s[*pos] == '(');
+            if (paren) { (*pos)++; while (*pos < len && pp_ws(s[*pos])) (*pos)++; }
+            *ival = 0;
+            if (*pos < len && pp_id(s[*pos])) {
+                int ns = *pos;
+                while (*pos < len && pp_id(s[*pos])) (*pos)++;
+                int nl = *pos - ns;
+                { char mn[256]; int ci;
+                  for (ci = 0; ci < nl && ci < 255; ci++) mn[ci] = s[ns+ci];
+                  mn[nl] = '\0'; *ival = macro_defined(mn) ? 1 : 0; }
+            }
+            if (paren) {
+                while (*pos < len && pp_ws(s[*pos])) (*pos)++;
+                if (*pos < len && s[*pos] == ')') (*pos)++;
+            }
+            return IF_NUM;
+        }
+
+        /* 对象宏展开 */
+        {
+            int mi;
+            for (mi = 0; mi < macro_count; mi++) {
+                const char *mn = macros[mi].name;
+                int j;
+                for (j = 0; j < idlen; j++) if (mn[j] != s[start+j]) goto ifid_nom;
+                if (mn[j] != '\0') goto ifid_nom;
+                if (macros[mi].value && macros[mi].value_len > 0) {
+                    int vpos = 0;
+                    *ival = if_parse_expr(macros[mi].value, macros[mi].value_len, &vpos, 1, 1);
+                } else { *ival = 0; }
+                return IF_NUM;
+                ifid_nom:;
+            }
+        }
+        /* 未定义标识符 → 0 */
+        *ival = 0;
+        return IF_NUM;
+    }
+
+    /* ── 运算符和标点 ── */
+    (*pos)++;
+    switch (c) {
+        case '(': return IF_LPAREN;
+        case ')': return IF_RPAREN;
+        case '+': return IF_PLUS;
+        case '-': return IF_MINUS;
+        case '*': return IF_STAR;
+        case '/': return IF_SLASH;
+        case '%': return IF_PERCENT;
+        case '&':
+            if (*pos < len && s[*pos] == '&') { (*pos)++; return IF_LAND; }
+            return IF_AMPER;
+        case '|':
+            if (*pos < len && s[*pos] == '|') { (*pos)++; return IF_LOR; }
+            return IF_PIPE;
+        case '^': return IF_CARET;
+        case '~': return IF_TILDE;
+        case '!':
+            if (*pos < len && s[*pos] == '=') { (*pos)++; return IF_NE; }
+            return IF_NOT;
+        case '=':
+            if (*pos < len && s[*pos] == '=') { (*pos)++; return IF_EQ; }
+            return IF_EOF;
+        case '<':
+            if (*pos < len && s[*pos] == '<') { (*pos)++; return IF_SHL; }
+            if (*pos < len && s[*pos] == '=') { (*pos)++; return IF_LE; }
+            return IF_LT;
+        case '>':
+            if (*pos < len && s[*pos] == '>') { (*pos)++; return IF_SHR; }
+            if (*pos < len && s[*pos] == '=') { (*pos)++; return IF_GE; }
+            return IF_GT;
+        default: return IF_EOF;
+    }
+}
+
+/* 主表达式：数字、(expr)、一元运算 */
+static long if_parse_primary(const char *s, int len, int *pos, int depth) {
+    if (depth > 64) return 0;
+    long ival = 0;
+    int save = *pos;
+    int tok = if_next_tok(s, len, pos, &ival);
+    switch (tok) {
+        case IF_NUM: return ival;
+        case IF_LPAREN: {
+            long val = if_parse_expr(s, len, pos, depth, 1);
+            int save2 = *pos;
+            long tmp;
+            if (if_next_tok(s, len, pos, &tmp) != IF_RPAREN) *pos = save2;
+            return val;
+        }
+        case IF_PLUS:  return if_parse_primary(s, len, pos, depth);
+        case IF_MINUS: return -if_parse_primary(s, len, pos, depth);
+        case IF_TILDE: return ~if_parse_primary(s, len, pos, depth);
+        case IF_NOT:   return if_parse_primary(s, len, pos, depth) ? 0 : 1;
+        default: *pos = save; return 0;
+    }
+}
+
+/* 表达式求值（precedence climbing 算法） */
+static long if_parse_expr(const char *s, int len, int *pos, int depth, int min_prec) {
+    if (depth > 64) return 0;
+    long left = if_parse_primary(s, len, pos, depth);
+    while (1) {
+        int save = *pos;
+        long ival;
+        int tok = if_next_tok(s, len, pos, &ival);
+        int prec = if_prec(tok);
+        if (prec < min_prec) { *pos = save; return left; }
+        long right = if_parse_expr(s, len, pos, depth, prec + 1);
+        left = if_apply(left, tok, right);
+    }
+}
+
+/* 公开入口：返回 0 = 假，1 = 真 */
+static int if_eval(const char *s, int len) {
+    if (!s || len <= 0) return 0;
+    int pos = 0;
+    long val = if_parse_expr(s, len, &pos, 0, 1);
+    return (val != 0) ? 1 : 0;
+}
+
 char *preprocess(const char *src, int len, const char *fname, int *out_len) {
     current_source_dir[0] = '\0';
     inc_path_added_source_dir = 0;
@@ -852,8 +1196,7 @@ char *preprocess(const char *src, int len, const char *fname, int *out_len) {
     } else {
         add_macro("__FILE__", "\"<unknown>\"", 11);
     }
-    /* __LINE__ 设为 0（行号跟踪复杂，先填占位值，不影响编译） */
-    add_macro("__LINE__", "0", 1);
+    /* __LINE__ 在 pp_buf_impl 中动态展开，不在此处注册 */
     int clean_len;
     char *clean = strip_all_comments(src, len, &clean_len);
     OutBuf out = { 0, 0, 0 };
