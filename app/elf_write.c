@@ -46,8 +46,8 @@ int elf_write_object(const char *path) {
     int shstrtab_sz = build_shstrtab(shstrtab_buf, sec_names, 8);
 
     /* ── 构建 .strtab ── */
-    #define ELF_STRTAB_SIZE 16384
-    #define ELF_MAX_SYM_STR 4096
+    #define ELF_STRTAB_SIZE 65536
+    #define ELF_MAX_SYM_STR 16384
     static unsigned char strtab_buf[ELF_STRTAB_SIZE];
     int strtab_sz = 0;
     strtab_buf[strtab_sz++] = '\0';

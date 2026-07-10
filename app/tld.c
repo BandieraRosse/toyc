@@ -33,8 +33,8 @@
  *  配置常量
  * ═══════════════════════════════════════════════════════════════════ */
 
-#define MAX_INPUTS       64
-#define MAX_SYMS         16384
+#define MAX_INPUTS       256
+#define MAX_SYMS         65536
 #define BASE_ADDR        0x400000
 #define PAGE_SIZE        0x1000
 

@@ -36,11 +36,13 @@ mkdir -p "${TMP}" "${STAGES_DIR}"
 
 # ─── 辅助函数 ─────────────────────────────────────────────────────
 
-# 用给定的编译器编译 tcc 的 9 个 C 源文件 + 链接 → tcc-stage{N}
-# 参数: stage_num compiler_path
+# 用给定的编译器编译 tcc 的 C 源文件 + 链接 → tcc-stage{N}
+# 参数: stage_num compiler_path [tcc_rt_o_path]
+# tcc_rt_o_path 为可选，指定预编译的 tcc_rt.o（跳过重新编译）
 build_stage() {
     local stage_num="$1"
     local compiler="$2"
+    local prebuilt_rt="$3"
     local objdir="${STAGES_DIR}/stage${stage_num}"
     local compile_failed=0
 
@@ -49,6 +51,13 @@ build_stage() {
     for cfile in ${C_FILES}; do
         local basename_c; basename_c=$(basename "${cfile}" .c)
         local ofile="${objdir}/${basename_c}.o"
+
+        # tcc_rt.c 可用预编译版本（运行时代码不随编译器改变）
+        if [ "${basename_c}" = "tcc_rt" ] && [ -n "${prebuilt_rt}" ]; then
+            printf "  ${BLUE}复制${RESET} %s → %s ... " "${cfile}" "${ofile}"
+            cp "${prebuilt_rt}" "${ofile}" && printf "${GREEN}ok${RESET}\n" || { printf "${RED}FAIL${RESET}\n"; compile_failed=1; }
+            continue
+        fi
 
         printf "  ${BLUE}编译${RESET} %s → %s ... " "${cfile}" "${ofile}"
         if ${compiler} "${cfile}" -o "${ofile}" 2>"${TMP}/stage${stage_num}_compile_${basename_c}.log"; then
@@ -166,8 +175,15 @@ for stage in $(seq 2 10); do
         continue
     fi
 
+    # tcc_rt.c 仅由 stage-1/2 编译，后续 stage 复用最近成功的版本
+    #（运行时代码不随编译器改变，且中间 stage 的变参 codegen 可能不稳定）
+    rt_o=""
+    if [ "${stage}" -gt 2 ] && [ -f "${STAGES_DIR}/stage2/tcc_rt.o" ]; then
+        rt_o="${STAGES_DIR}/stage2/tcc_rt.o"
+    fi
+
     printf "${BLUE}[%d/%d]${RESET} 构建 stage-%d（← stage-%d tcc）\n" "${stage}" "10" "${stage}" "${prev}"
-    if build_stage "${stage}" "${compiler}"; then
+    if build_stage "${stage}" "${compiler}" "${rt_o}"; then
         printf "  ${GREEN}✓ stage-%d 构建成功${RESET}\n" "${stage}"
     else
         printf "  ${RED}✗ stage-%d 构建失败${RESET}\n" "${stage}"

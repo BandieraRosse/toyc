@@ -199,7 +199,9 @@ static void emit_call(const char *name) {
     }
     if (sym_idx < 0) {
         /* 创建未定义符号 */
-        if (sym_count >= MAX_SYMS) return;
+        if (sym_count >= MAX_SYMS) {
+            __write(2, "tcc: too many symbols\n", 22);
+            __exit(1); }
         sym_idx = sym_count;
         CgenSym *s = &syms[sym_count++];
         s->name = name;
@@ -212,7 +214,9 @@ static void emit_call(const char *name) {
     }
 
     /* 记录重定位 */
-    if (rel_count >= MAX_RELS) return;
+    if (rel_count >= MAX_RELS) {
+        __write(2, "tcc: too many relocations\n", 26);
+        __exit(1); }
     Elf64_Rela *r = &rels[rel_count++];
     int call_off = code_size;
     r->r_offset = call_off + 1;
@@ -449,17 +453,17 @@ void cgen_expr(AstNode *node) {
             str_infos[si].name[ni] = name_buf[ni];
 
         /* 添加 LOCAL 符号（offset 暂设为 0，后续在 cgen_program 中修正） */
-        int sym_idx = -1;
-        if (sym_count < MAX_SYMS) {
-            sym_idx = sym_count++;
-            syms[sym_idx].name = str_infos[si].name;
-            syms[sym_idx].offset = 0;
-            syms[sym_idx].size = len;
-            syms[sym_idx].is_global = 0;
-            syms[sym_idx].is_func = 0;
-            syms[sym_idx].shndx = 1;  /* .text */
-            syms[sym_idx].sym_idx = -1;
-        }
+        if (sym_count >= MAX_SYMS) {
+            __write(2, "tcc: too many symbols\n", 22);
+            __exit(1); }
+        int sym_idx = sym_count++;
+        syms[sym_idx].name = str_infos[si].name;
+        syms[sym_idx].offset = 0;
+        syms[sym_idx].size = len;
+        syms[sym_idx].is_global = 0;
+        syms[sym_idx].is_func = 0;
+        syms[sym_idx].shndx = 1;  /* .text */
+        syms[sym_idx].sym_idx = -1;
 
         /* 记录字符串信息供后续偏移修正 */
         str_infos[si].pool_offset = pool_off;

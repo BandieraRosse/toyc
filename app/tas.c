@@ -166,7 +166,7 @@ static const int instr_enc[] = {
 
 /* ─── 局部数字标号 ─── */
 
-#define MAX_LOCAL_LABELS 256
+#define MAX_LOCAL_LABELS 2048
 static int local_offsets[MAX_LOCAL_LABELS];           /* -1 = 未定义 */
 static int local_fixups[MAX_LOCAL_LABELS * 32];       /* 待回填的偏移列表（1D，避免 tcc 2D 数组 stride bug） */
 #define LOCAL_FIXUP(i,j) local_fixups[(i) * 32 + (j)]
@@ -182,7 +182,7 @@ static void reset_locals(void) {
 
 /* ─── 符号管理 ─── */
 
-#define TAS_MAX_SYMS 256
+#define TAS_MAX_SYMS 2048
 static char sym_names[TAS_MAX_SYMS * 128];  /* 持久化符号名（1D，避免 tcc 2D 数组 stride bug） */
 #define SYM_NAME(i) (sym_names + (i) * 128)
 
@@ -196,7 +196,9 @@ static int find_sym(const char *name) {
 
 static int add_sym(const char *name, int offset, int size,
                    int is_global, int is_func, int shndx) {
-    if (elf_sym_count >= TAS_MAX_SYMS) return -1;
+    if (elf_sym_count >= TAS_MAX_SYMS) {
+        __write(2, "tas: too many symbols\n", 22);
+        __exit(1); }
     ElfWriteSym *s = &elf_syms[elf_sym_count];
     /* 持久化复制符号名 */
     int ni = 0;
@@ -214,7 +216,9 @@ static int add_sym(const char *name, int offset, int size,
 }
 
 static void add_rel(int offset, int sym_idx, int type, Elf64_Sxword addend) {
-    if (elf_rel_count >= ELF_MAX_RELS) return;
+    if (elf_rel_count >= ELF_MAX_RELS) {
+        __write(2, "tas: too many relocations\n", 26);
+        __exit(1); }
     Elf64_Rela *r = &elf_rels[elf_rel_count++];
     r->r_offset = offset;
     r->r_info = ELF64_R_INFO(sym_idx + 1, type);
@@ -790,9 +794,13 @@ static int encode_instr(int idx, Operand *op0, Operand *op1,
         e1(ocode0);
         if (local_label > 0) {
             int n = local_label;
-            if (n < MAX_LOCAL_LABELS && local_nfixups[n] < 32) {
-                LOCAL_FIXUP(n, local_nfixups[n]++) = elf_code_size;
-            }
+            if (n >= MAX_LOCAL_LABELS) {
+                __write(2, "tas: local label overflow\n", 26);
+                __exit(1); }
+            if (local_nfixups[n] >= 32) {
+                __write(2, "tas: too many fixups for local label\n", 37);
+                __exit(1); }
+            LOCAL_FIXUP(n, local_nfixups[n]++) = elf_code_size;
             e1(0);
         } else if (local_label < 0) {
             int n = -local_label;
@@ -988,8 +996,10 @@ int tas_assemble(const char *src, int len) {
         }
 
         if (is_local_num) {
-            if (local_num < MAX_LOCAL_LABELS)
-                local_offsets[local_num] = elf_code_size;
+            if (local_num >= MAX_LOCAL_LABELS) {
+                __write(2, "tas: too many local labels\n", 27);
+                __exit(1); }
+            local_offsets[local_num] = elf_code_size;
             /* 数字标号后可能有同行指令（如 "1: ret"） */
             while (l < ln_end && (*l == ' ' || *l == '\t')) l++;
             if (l >= ln_end) { line = ln_end + 1; continue; }

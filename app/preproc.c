@@ -21,9 +21,9 @@
 
 #include "tcc.h"
 
-#define MAX_MACROS 4096
-#define MAX_FUNC_MACROS 1024
-#define MAX_MACRO_PARAMS 64
+#define MAX_MACROS 8192
+#define MAX_FUNC_MACROS 4096
+#define MAX_MACRO_PARAMS 128
 
 static int pp_had_error;  /* #error 指令触发后标记，preprocess() 据此返回 NULL */
 
@@ -43,7 +43,7 @@ static FuncMacro func_macros[MAX_FUNC_MACROS];
 static int func_macro_count;
 
 /* 宏展开栈：防止无限递归 */
-#define MAX_EXPAND_STACK 64
+#define MAX_EXPAND_STACK 256
 static const char *expand_stack[MAX_EXPAND_STACK];
 static int expand_stack_depth;
 
@@ -63,12 +63,14 @@ static const char *inc_paths[MAX_INCLUDE_PATHS];
 static int inc_path_count;
 
 void add_include_path(const char *path) {
-    if (inc_path_count < MAX_INCLUDE_PATHS) inc_paths[inc_path_count++] = path; }
+    if (inc_path_count < MAX_INCLUDE_PATHS) inc_paths[inc_path_count++] = path;
+    else { __write(2, "tcc: too many include paths\n", 28); __exit(1); } }
 
 static void add_macro(const char *name, const char *val, int vlen) {
     if (macro_count < MAX_MACROS) {
         macros[macro_count].name = name; macros[macro_count].value = val;
-        macros[macro_count].value_len = vlen; macro_count++; } }
+        macros[macro_count].value_len = vlen; macro_count++; }
+    else { __write(2, "tcc: too many macros\n", 21); __exit(1); } }
 
 static void undef_macro(const char *name) {
     int i; for (i = 0; i < macro_count; i++) {
@@ -237,7 +239,9 @@ static void do_directive(const char *s, int ls, int le, OutBuf *out, int depth) 
         int cp = p; while (cp < le && pp_ws(s[cp])) cp++;
         if (cp == p && cp < le && s[cp] == '(') {
             /* 函数式宏（必须 ( 紧跟宏名，无空白）— 存储定义 */
-            if (func_macro_count >= MAX_FUNC_MACROS) return;
+            if (func_macro_count >= MAX_FUNC_MACROS) {
+                __write(2, "tcc: too many function-like macros\n", 35);
+                __exit(1); }
             FuncMacro *fm = &func_macros[func_macro_count];
             char *mn2 = (char *)tlibc_malloc(mnl + 1);
             { int ci; for (ci = 0; ci < mnl; ci++) mn2[ci] = s[ms + ci]; mn2[mnl] = '\0'; }
@@ -256,7 +260,9 @@ static void do_directive(const char *s, int ls, int le, OutBuf *out, int depth) 
                     char *pn = (char *)tlibc_malloc(cp - ps + 1);
                     { int ci; for (ci = 0; ci < cp - ps; ci++) pn[ci] = s[ps + ci]; pn[cp - ps] = '\0'; }
                     fm->params[fm->param_count++] = pn;
-                }
+                } else if (cp > ps) {
+                    __write(2, "tcc: too many macro parameters\n", 31);
+                    __exit(1); }
                 while (cp < le && pp_ws(s[cp])) cp++;
                 if (cp < le && s[cp] == ',') { cp++; continue; }
             }
@@ -411,15 +417,14 @@ static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had
                             int emit_block;
                             if (is_ifdef) emit_block = is_def;
                             else emit_block = !is_def;
-                            if (pp_cond_depth < 32) {
-                                if (emit_block) {
-                                    pp_cond_emit[pp_cond_depth] = 1;
-                                } else {
-                                    pp_cond_emit[pp_cond_depth] = 0;
-                                    pp_cond_skip++;
-                                }
-                                pp_cond_depth++;
+                            if (pp_cond_depth >= 32) { __write(2, "tcc: #if nesting too deep\n", 26); __exit(1); }
+                            if (emit_block) {
+                                pp_cond_emit[pp_cond_depth] = 1;
+                            } else {
+                                pp_cond_emit[pp_cond_depth] = 0;
+                                pp_cond_skip++;
                             }
+                            pp_cond_depth++;
                             i = le; if (i < len && s[i] == '\n') { i++; pp_line++; }
                             continue;
                         } else {
@@ -430,15 +435,14 @@ static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had
                                 while (mp < le && pp_ws(s[mp])) mp++;
                                 emit_block = if_eval(s + mp, le - mp);
                             }
-                            if (pp_cond_depth < 32) {
-                                if (emit_block) {
-                                    pp_cond_emit[pp_cond_depth] = 1;
-                                } else {
-                                    pp_cond_emit[pp_cond_depth] = 0;
-                                    pp_cond_skip++;
-                                }
-                                pp_cond_depth++;
+                            if (pp_cond_depth >= 32) { __write(2, "tcc: #if nesting too deep\n", 26); __exit(1); }
+                            if (emit_block) {
+                                pp_cond_emit[pp_cond_depth] = 1;
+                            } else {
+                                pp_cond_emit[pp_cond_depth] = 0;
+                                pp_cond_skip++;
                             }
+                            pp_cond_depth++;
                             i = le; if (i < len && s[i] == '\n') { i++; pp_line++; }
                             continue;
                         }
@@ -558,7 +562,10 @@ static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had
                         }
                         if (s[ap] == '(') adepth++;
                         if (s[ap] == ')') { adepth--; if (adepth == 0) break; }
-                        if (adepth == 1 && s[ap] == ',' && arg_count < MAX_MACRO_PARAMS-1) {
+                        if (adepth == 1 && s[ap] == ',') {
+                            if (arg_count >= MAX_MACRO_PARAMS - 1) {
+                                __write(2, "tcc: too many macro arguments\n", 30);
+                                __exit(1); }
                             arg_lens[arg_count] = (s + ap) - arg_starts[arg_count];
                             arg_count++;
                             arg_starts[arg_count] = s + ap + 1;
@@ -589,6 +596,9 @@ static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had
                             for (ai = 0; ai < arg_count; ai++) {
                                 OutBuf ab = { 0, 0, 0 };
                                 /* 递归展开参数中的宏（depth+1，且当前宏已入栈保护） */
+                                if (expand_stack_depth >= MAX_EXPAND_STACK) {
+                                    __write(2, "tcc: macro expand stack overflow\n", 34);
+                                    __exit(1); }
                                 expand_stack[expand_stack_depth++] = fn;
                                 pp_buf_impl(arg_starts[ai], arg_lens[ai], &ab, depth + 1, NULL);
                                 expand_stack_depth--;
@@ -776,6 +786,9 @@ static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had
                                 /* Bug 1 修复：把宏名压入 expand_stack，防止自引用宏反复展开。
                                  * 参数展开阶段已入栈/出栈过，但替换文本重扫时宏名已不在栈上。 */
                                 OutBuf pp_result = { 0, 0, 0 };
+                                if (expand_stack_depth >= MAX_EXPAND_STACK) {
+                                    __write(2, "tcc: macro expand stack overflow\n", 34);
+                                    __exit(1); }
                                 expand_stack[expand_stack_depth++] = fn;
                                 pp_buf_impl(temp.data, temp.len, &pp_result, depth + 1, NULL);
                                 expand_stack_depth--;

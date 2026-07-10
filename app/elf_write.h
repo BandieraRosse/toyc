@@ -16,10 +16,12 @@
 
 /* ─── 符号描述符 ─── */
 
-#define ELF_MAX_SYMS 8192
-#define ELF_MAX_RELS 16384
-#define ELF_CODE_BUF_SIZE 262144  /* (256 * 1024) */
-#define DATA_BUF_SIZE 262144      /* .data 段缓冲区 (256*1024) */
+#define ELF_MAX_SYMS 16384
+#define ELF_MAX_RELS 32768
+#define ELF_CODE_BUF_SIZE 524288  /* (512 * 1024) */
+#ifndef DATA_BUF_SIZE
+#define DATA_BUF_SIZE 524288      /* .data 段缓冲区 (512*1024) */
+#endif
 
 typedef struct {
     const char *name;

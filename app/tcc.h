@@ -18,18 +18,18 @@
 
 /* ─── 缓冲区容量（固定分配，溢出时安全报错退出） ─── */
 
-#define CODE_BUF_SIZE  262144  /* 代码生成缓冲区 (256*1024) */
-#define STRTAB_SIZE    262144  /* ELF 字符串表 (256*1024) */
-#define STRPOOL_SIZE   262144  /* 字符串字面量池 (256*1024) */
+#define CODE_BUF_SIZE  524288  /* 代码生成缓冲区 (512*1024) */
+#define STRTAB_SIZE    524288  /* ELF 字符串表 (512*1024) */
+#define STRPOOL_SIZE   524288  /* 字符串字面量池 (512*1024) */
 #ifndef DATA_BUF_SIZE
-#define DATA_BUF_SIZE  262144  /* .data 段原始数据缓冲区 (256*1024) */
+#define DATA_BUF_SIZE  524288  /* .data 段原始数据缓冲区 (512*1024) */
 #endif
 
 #include "elf_write.h"
 
 /* ─── Arena 分配器 ─── */
 
-#define ARENA_SIZE 16777216  /* (16*1024*1024) */
+#define ARENA_SIZE 33554432  /* (32*1024*1024) */
 
 typedef struct {
     char *ptr;
@@ -260,8 +260,8 @@ typedef struct AstNode {
 
 /* ─── 符号表（代码生成输出用） ─── */
 
-#define MAX_SYMS 8192
-#define MAX_RELS 16384
+#define MAX_SYMS 16384
+#define MAX_RELS 32768
 
 typedef struct {
     const char *name;
@@ -318,7 +318,7 @@ extern unsigned char strpool_buf[STRPOOL_SIZE];
 extern int strpool_size;
 
 /* 字符串字面量引用记录（供 cgen_program 结尾修复偏移） */
-#define MAX_STRINGS 1024
+#define MAX_STRINGS 4096
 typedef struct {
     int pool_offset;       /* 在 strpool_buf 中的偏移 */
     int len;               /* 字符串长度（含 null） */
@@ -358,6 +358,7 @@ typedef struct {
     int func_depth;     /* 函数定义嵌套深度（>0 在函数体内） */
     int loop_depth;     /* 循环嵌套深度（while/for/do-while） */
     int switch_depth;   /* switch 嵌套深度 */
+    int block_depth;    /* 复合语句嵌套深度（预留给变量重定义检测） */
 } Parser;
 
 void parser_init(Parser *p, Lexer *lx, Arena *a);
@@ -365,7 +366,7 @@ AstNode *parse_program(Parser *p);
 
 /* ─── 局部变量表 ─── */
 
-#define MAX_LOCALS 256
+#define MAX_LOCALS 4096
 typedef struct {
     const char *name;
     int offset;  /* 距 rbp 的偏移（负值） */
@@ -388,7 +389,7 @@ extern int frame_size;
 extern int reg_save_offset;
 extern int func_nparams;
 extern int scope_depth;
-#define MAX_SCOPE_IDS 64
+#define MAX_SCOPE_IDS 256
 extern int scope_chain[MAX_SCOPE_IDS];
 extern int scope_chain_count;
 static inline int is_scope_visible(int id) {
@@ -413,7 +414,7 @@ static inline int is_scope_visible(int id) {
                 break
 
 /* ─── 函数返回类型表（供 struct 按值返回的 caller 侧使用） ─── */
-#define MAX_FUNC_RET_TYPES 512
+#define MAX_FUNC_RET_TYPES 4096
 extern const char *func_ret_names[MAX_FUNC_RET_TYPES];
 extern int func_ret_sizes[MAX_FUNC_RET_TYPES];
 extern int func_ret_count;
@@ -433,9 +434,9 @@ extern int parsed_func_ret_count;
 
 /* ─── 类型系统（Phase 3） ─── */
 
-#define MAX_MEMBERS 128
-#define MAX_TAGS 512
-#define MAX_TYPEDEFS 1024
+#define MAX_MEMBERS 256
+#define MAX_TAGS 2048
+#define MAX_TYPEDEFS 4096
 
 /* 结构体成员描述 */
 typedef struct {
@@ -478,7 +479,7 @@ extern int typedef_count;
 
 /* ─── enum 值表 ─── */
 
-#define MAX_ENUM_VALS 2048
+#define MAX_ENUM_VALS 8192
 
 typedef struct {
     const char *name;
@@ -504,7 +505,7 @@ StructType *find_struct_tag(const char *tag);
 
 /* ─── 预处理器 ─── */
 
-#define MAX_INCLUDE_PATHS 16
+#define MAX_INCLUDE_PATHS 64
 
 void add_include_path(const char *path);
 char *preprocess(const char *src, int len, const char *fname, int *out_len);

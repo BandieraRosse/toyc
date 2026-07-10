@@ -75,8 +75,8 @@ static int current_hidden_ptr_offset;  /* hidden pointer 栈槽的 RBP 偏移 */
 
 /* ─── 标签和回填 ─── */
 
-#define MAX_LABELS 1024
-#define MAX_FIXUPS 2048
+#define MAX_LABELS 4096
+#define MAX_FIXUPS 8192
 
 static int label_ids[MAX_LABELS];
 static int label_offsets[MAX_LABELS];
@@ -94,7 +94,7 @@ static int continue_target_label; /* continue 跳转目标，-1 表示无目标 
 static int new_label(void);
 
 /* ─── goto 标签名 → label_id 映射 ─── */
-#define MAX_GOTO_LABELS 256
+#define MAX_GOTO_LABELS 4096
 static const char *goto_label_names[MAX_GOTO_LABELS];
 static int goto_label_ids[MAX_GOTO_LABELS];
 static int goto_label_count;
@@ -104,14 +104,14 @@ static int get_or_create_goto_label(const char *name) {
     for (i = 0; i < goto_label_count; i++)
         if (strcmp(goto_label_names[i], name) == 0)
             return goto_label_ids[i];
-    if (goto_label_count < MAX_GOTO_LABELS) {
-        int id = new_label();
-        goto_label_names[goto_label_count] = name;
-        goto_label_ids[goto_label_count] = id;
-        goto_label_count++;
-        return id;
-    }
-    return -1;
+    if (goto_label_count >= MAX_GOTO_LABELS) {
+        __write(2, "tcc: too many goto labels\n", 26);
+        __exit(1); }
+    int id = new_label();
+    goto_label_names[goto_label_count] = name;
+    goto_label_ids[goto_label_count] = id;
+    goto_label_count++;
+    return id;
 }
 
 static void reset_labels(void) {
@@ -269,7 +269,9 @@ static int add_sym(const char *name, int offset, int size,
             }
         }
     }
-    if (sym_count >= MAX_SYMS) return -1;
+    if (sym_count >= MAX_SYMS) {
+        __write(2, "tcc: too many symbols\n", 22);
+        __exit(1); }
     CgenSym *s = &syms[sym_count++];
     s->name = name;
     s->offset = offset;
@@ -301,8 +303,10 @@ static void collect_locals(AstNode *node) {
         break;
     case AST_BLOCK:
         scope_depth++;
-        if (scope_chain_count < MAX_SCOPE_IDS)
-            scope_chain[scope_chain_count++] = ++next_scope_id;
+        if (scope_chain_count >= MAX_SCOPE_IDS) {
+            __write(2, "tcc: scope chain overflow\n", 26);
+            __exit(1); }
+        scope_chain[scope_chain_count++] = ++next_scope_id;
         for (AstNode *s = node->stmts; s; s = s->next)
             collect_locals(s);
         scope_chain_count--;
@@ -313,7 +317,10 @@ static void collect_locals(AstNode *node) {
             /* 静态局部变量 → BSS（非栈上），编译期间持久化 */
             int vsize = node->ival > 0 ? node->ival : 4;
             elf_bss_size = (elf_bss_size + 7) & -8;
-            if (sym_count < MAX_SYMS) {
+            if (sym_count >= MAX_SYMS) {
+                __write(2, "tcc: too many symbols\n", 22);
+                __exit(1); }
+            {
                 CgenSym *s = &syms[sym_count];
                 s->name = node->name;
                 s->offset = elf_bss_size;
@@ -331,7 +338,10 @@ static void collect_locals(AstNode *node) {
                 sym_count++;
             }
             elf_bss_size += vsize;
-        } else if (local_count < MAX_LOCALS && node->name) {
+        } else if (node->name) {
+            if (local_count >= MAX_LOCALS) {
+                __write(2, "tcc: too many local variables\n", 30);
+                __exit(1); }
             int sz = node->ival > 0 ? node->ival : 4;
             frame_size += sz;
             locals[local_count].name = node->name;
@@ -590,7 +600,8 @@ static void cgen_block(AstNode *block) {
 
 /* ─── switch/case/default ─── */
 
-#define MAX_CASES 256
+#define MAX_CASES 2048
+#define CASE_ENTRY_SIZE (sizeof(int)*3)
 
 typedef struct { int value; int value2; int label; } CaseEntry;
 
@@ -602,7 +613,9 @@ static void cgen_switch(AstNode *stmt) {
     /* Phase 1: 遍历体收集 case 信息 */
     for (AstNode *s = stmt->stmts; s; s = s->next) {
         if (s->kind == AST_CASE) {
-            if (case_count >= MAX_CASES) break;
+            if (case_count >= MAX_CASES) {
+                __write(2, "tcc: too many case labels\n", 26);
+                __exit(1); }
             cases[case_count].value = s->ival;
             cases[case_count].value2 = (s->right && s->right->kind == AST_CONSTANT)
                                        ? s->right->ival : s->ival;
@@ -901,12 +914,13 @@ static void cgen_func_def(AstNode *func) {
                     }
                     int ro = code_size;
                     e1(0x55); e1(0x66); e1(0x77); e1(0x88);
-                    if (rel_count < MAX_RELS) {
-                        Elf64_Rela *r = &rels[rel_count++];
-                        r->r_offset = ro;
-                        r->r_info = ELF64_R_INFO(si + 1, R_X86_64_PC32);
-                        r->r_addend = -4;
-                    }
+                    if (rel_count >= MAX_RELS) {
+                        __write(2, "tcc: too many relocations\n", 26);
+                        __exit(1); }
+                    Elf64_Rela *r = &rels[rel_count++];
+                    r->r_offset = ro;
+                    r->r_info = ELF64_R_INFO(si + 1, R_X86_64_PC32);
+                    r->r_addend = -4;
                 }
             }
         }
@@ -1117,16 +1131,17 @@ static void cgen_emit_data_init(AstNode *node) {
 
             /* 创建 LOCAL 符号 */
             int sym_idx = -1;
-            if (sym_count < MAX_SYMS) {
-                sym_idx = sym_count++;
-                syms[sym_idx].name = str_infos[name_idx].name;
-                syms[sym_idx].offset = 0;    /* strpool fixup 会修正 */
-                syms[sym_idx].size = slen;
-                syms[sym_idx].is_global = 0;
-                syms[sym_idx].is_func = 0;
-                syms[sym_idx].shndx = 1;    /* strpool 在 .text 内 */
-                syms[sym_idx].sym_idx = -1;
-            }
+            if (sym_count >= MAX_SYMS) {
+                __write(2, "tcc: too many symbols\n", 22);
+                __exit(1); }
+            sym_idx = sym_count++;
+            syms[sym_idx].name = str_infos[name_idx].name;
+            syms[sym_idx].offset = 0;    /* strpool fixup 会修正 */
+            syms[sym_idx].size = slen;
+            syms[sym_idx].is_global = 0;
+            syms[sym_idx].is_func = 0;
+            syms[sym_idx].shndx = 1;    /* strpool 在 .text 内 */
+            syms[sym_idx].sym_idx = -1;
 
             str_infos[name_idx].pool_offset = pool_off;
             str_infos[name_idx].len = slen;
@@ -1139,7 +1154,10 @@ static void cgen_emit_data_init(AstNode *node) {
             for (bb = 0; bb < 8; bb++)
                 data_buf[data_size++] = 0;
 
-            if (data_rel_count < ELF_MAX_RELS && sym_idx >= 0) {
+            if (sym_idx >= 0) {
+                if (data_rel_count >= ELF_MAX_RELS) {
+                    __write(2, "tcc: too many data relocations\n", 31);
+                    __exit(1); }
                 Elf64_Rela *r = &data_rels[data_rel_count++];
                 r->r_offset = data_off;
                 r->r_info = ELF64_R_INFO(sym_idx + 1, R_X86_64_64);
@@ -1270,7 +1288,10 @@ void cgen_program(AstNode *prog) {
                 bss_offset += vsize;
             }
             /* 现在创建符号 (sym_count 已经是最终值) */
-            if (sym_count < MAX_SYMS) {
+            if (sym_count >= MAX_SYMS) {
+                __write(2, "tcc: too many symbols\n", 22);
+                __exit(1); }
+            {
                 int si = sym_count++;
                 CgenSym *s = &syms[si];
                 s->name = node->name;
@@ -1291,6 +1312,9 @@ void cgen_program(AstNode *prog) {
     }
     elf_bss_size = bss_offset;
     elf_data_size = data_offset;
+    if (data_offset > DATA_BUF_SIZE) {
+        __write(2, "tcc: data buffer overflow\n", 26);
+        __exit(1); }
     /* 确保 data_buf 填充到 data_offset（应对 scalar 初始器暂不发射数据的情况） */
     while (data_size < data_offset)
         data_buf[data_size++] = 0;
@@ -1299,11 +1323,12 @@ void cgen_program(AstNode *prog) {
     func_ret_count = 0;
     for (AstNode *node = prog->body; node; node = node->next) {
         if (node->kind == AST_FUNC_DEF && node->name) {
-            if (func_ret_count < MAX_FUNC_RET_TYPES) {
-                func_ret_names[func_ret_count] = node->name;
-                func_ret_sizes[func_ret_count] = node->type_size;
-                func_ret_count++;
-            }
+            if (func_ret_count >= MAX_FUNC_RET_TYPES) {
+                __write(2, "tcc: too many function return types\n", 36);
+                __exit(1); }
+            func_ret_names[func_ret_count] = node->name;
+            func_ret_sizes[func_ret_count] = node->type_size;
+            func_ret_count++;
         }
     }
 
