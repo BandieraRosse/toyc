@@ -364,6 +364,7 @@ void cgen_addr(AstNode *node) {
             if (moff != 0) {
                 push_rax();
                 mov_eax_imm(moff);
+                if (moff < 0) { e1(0x48); e1(0x63); e1(0xC0); }  /* movsxd rax, eax */
                 pop_rcx();
                 e1(0x48); e1(0x01); e1(0xC8);  /* add rax, rcx */
             }
@@ -374,6 +375,7 @@ void cgen_addr(AstNode *node) {
         if (moff != 0) {
             e1(0x48); e1(0x89); e1(0xC1);  /* mov rcx, rax */
             mov_eax_imm(moff);
+            if (moff < 0) { e1(0x48); e1(0x63); e1(0xC0); }  /* movsxd rax, eax */
             e1(0x48); e1(0x01); e1(0xC8);  /* add rax, rcx (64-bit) */
         }
         return;
@@ -2266,6 +2268,7 @@ void cgen_expr(AstNode *node) {
                 if (member_off != 0) {
                     e1(0x48); e1(0x89); e1(0xC1);  /* mov rcx, rax */
                     mov_eax_imm(member_off);
+                    if (member_off < 0) { e1(0x48); e1(0x63); e1(0xC0); }  /* movsxd */
                     e1(0x48); e1(0x01); e1(0xC8);  /* add rax, rcx (64-bit — 地址运算) */
                 }
                 /* 从地址加载值（数组/大结构体成员不加载，退化为指针） */
@@ -2293,6 +2296,7 @@ void cgen_expr(AstNode *node) {
             if (member_off != 0) {
                 push_rax();
                 mov_eax_imm(member_off);
+                if (member_off < 0) { e1(0x48); e1(0x63); e1(0xC0); }  /* movsxd */
                 pop_rcx();
                 e1(0x48); e1(0x01); e1(0xC8);  /* add rax, rcx (64-bit) */
             }
