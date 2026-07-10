@@ -266,11 +266,16 @@ void cgen_addr(AstNode *node) {
     }
     case AST_BINOP:
         if (node->op == TOK_LBRACKET) {
-            /* a[i] 的地址：计算 base + index * elem_size */
-            cgen_expr(node->left);       /* 数组基地址 → rax */
-            push_rax();
+            /* a[i] 的地址：计算 base + index * elem_size
+             * 先算索引再算基地址，避免 push 覆盖函数返回的隐藏缓冲区 */
             cgen_expr(node->right);      /* 索引 → eax */
-            pop_rcx();                    /* rcx = 基地址 */
+            push_rax();                  /* 暂存索引（安全：函数调用尚未发生 */
+            cgen_expr(node->left);       /* 数组基地址 → rax */
+            pop_rcx();                    /* rcx = 索引, rax = 基地址 */
+            /* 交换：rax ← 索引（供扩展/移位），rcx ← 基地址（供最终加法） */
+            e1(0x48); e1(0x89); e1(0xC6);  /* mov rsi, rax */
+            e1(0x48); e1(0x89); e1(0xC8);  /* mov rax, rcx */
+            e1(0x48); e1(0x89); e1(0xF1);  /* mov rcx, rsi */
 
             int elem_size = 1;
             int idx_is64 = (node->right && node->right->type_size == 8);
@@ -363,9 +368,8 @@ void cgen_addr(AstNode *node) {
         /* 非 AST_VAR 的 .member — 用 cgen_addr 取基地址（支持 a[i].member 等复合） */
         cgen_addr(node->left);
         if (moff != 0) {
-            push_rax();
+            e1(0x48); e1(0x89); e1(0xC1);  /* mov rcx, rax */
             mov_eax_imm(moff);
-            pop_rcx();
             e1(0x48); e1(0x01); e1(0xC8);  /* add rax, rcx (64-bit) */
         }
         return;
@@ -604,10 +608,14 @@ void cgen_expr(AstNode *node) {
     case AST_BINOP: {
         /* 数组下标 a[i] = *(a + i) — 支持指针运算 */
         if (node->op == TOK_LBRACKET) {
-            cgen_expr(node->left);   /* 指针 → rax */
-            push_rax();
-            cgen_expr(node->right);  /* 索引 → eax */
-            pop_rcx();               /* rcx = 指针 */
+            cgen_expr(node->right);      /* 索引 → eax（先算索引，避免 push 覆盖隐藏缓冲区） */
+            push_rax();                  /* 暂存索引（安全：函数调用尚未发生） */
+            cgen_expr(node->left);       /* 指针 → rax（函数调用在此发生，隐藏缓冲区在 RSP 下方） */
+            pop_rcx();                    /* rcx = 索引, rax = 基地址 */
+            /* 交换：rax ← 索引（供符号扩展/移位），rcx ← 基地址（供最终加法） */
+            e1(0x48); e1(0x89); e1(0xC6);  /* mov rsi, rax */
+            e1(0x48); e1(0x89); e1(0xC8);  /* mov rax, rcx */
+            e1(0x48); e1(0x89); e1(0xF1);  /* mov rcx, rsi */
 
             /* 确定元素大小和符号性（默认 1 = char*，默认 signed） */
             int elem_size = 1;
@@ -2249,9 +2257,8 @@ void cgen_expr(AstNode *node) {
                 }
                 /* 加上成员偏移 */
                 if (member_off != 0) {
-                    push_rax();
+                    e1(0x48); e1(0x89); e1(0xC1);  /* mov rcx, rax */
                     mov_eax_imm(member_off);
-                    pop_rcx();
                     e1(0x48); e1(0x01); e1(0xC8);  /* add rax, rcx (64-bit — 地址运算) */
                 }
                 /* 从地址加载值（数组/大结构体成员不加载，退化为指针） */

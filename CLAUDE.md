@@ -90,7 +90,6 @@ make clean
 | `goto` 跨函数 | 未检查 |
 | 宽字符/宽字符串 | 未实现 |
 | `-I` include 路径、`-MD` 依赖追踪 | 静默忽略（tcc 参数解析极简） |
-| `func().non_first_member`（返回 struct 上访问非首个成员） | AST_MEMBER 的 push_rax 覆盖隐藏缓冲区，见 `compiler-tests/selfhost/29_struct_return_expr.c` |
 
 ### 已修复的历史限制
 
@@ -106,6 +105,7 @@ make clean
 | `Lexer` 结构体复制只复制 8 字节（自举阻断 bug） | 收敛验证 |
 | `add_rel()` int→Elf64_Sxword 符号扩展缺失（2026-07-09） | `app/tas.c` 参数改为 64 位 + `-4LL` |
 | int→long 符号扩展缺失（2026-07-10） | `app/cgen.c` + `app/cgen_expr.c` AST_VAR/AST_CONSTANT/BINOP 条件 + cgen_return + 全局/指针/数组成员/结构体成员赋值路径 |
+| `func().non_first_member` / `func().arr[idx]`（返回 struct 的非首个成员和数组成员，2026-07-10） | `app/cgen_expr.c` 将 AST_MEMBER 和数组下标的 push_rax 改为寄存器传偏移，避免覆盖隐藏缓冲区，见 `selfhost/29_struct_return_expr.c` 测试 I/J |
 
 ## 验证
 

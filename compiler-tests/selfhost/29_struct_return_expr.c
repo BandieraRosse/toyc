@@ -13,11 +13,9 @@
 //     func() 节点的 struct_type 被正确记录，func().kind 可正常解析。
 //     ca5bb66 补充测试注释。
 //
-// 已知限制：
-//   func().non_first_member（返回 struct 上的非首个成员）
-//   因 AST_MEMBER 的 push_rax 操作覆盖隐藏缓冲区后半段，
-//   目前返回垃圾值。绕过：先赋值给局部变量再访问。
-//   func().array_member[idx] 同理。
+// 以下限制已修复（2026-07-10）：
+//   func().non_first_member — 改用寄存器传偏移，避免 push 覆盖隐藏缓冲区
+//   func().array_member[idx] — 同上，cgen_addr 路径也同步修复
 //
 // 以下模式被测试验证为可用：
 //   make_tok(42).kind              ✅ func().first_member
@@ -93,6 +91,17 @@ void __tlibc_start(void) {
 
     /* Test H: func().first_member 连续调用 */
     if (make_tok(111).kind != 111) sys_exit(15);
+
+    /* Test I: func().non_first_member（原来阻塞的 bug） */
+    if (make_med(10L, 20, (short)30).a != 20) sys_exit(16);
+    if (make_med(10L, 20, (short)30).c != 30) sys_exit(17);
+    if (make_med(-10L, -20, (short)-30).a != -20) sys_exit(18);
+    if (make_med(1L, 2, (short)3).c != 3) sys_exit(19);
+
+    /* Test J: func().array_member[idx]（原来阻塞的 bug） */
+    if (make_tok(55).pad[4] != 5) sys_exit(20);
+    if (make_tok(55).pad[0] != 1) sys_exit(21);
+    if (make_tok(55).pad[2] != 3) sys_exit(22);
 
     sys_exit(0);
 }
