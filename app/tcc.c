@@ -182,7 +182,16 @@ int main(int argc, char *argv[]) {
     AstNode *prog = parse_program(&parser);
 
     if (parser.had_error) {
-        __eprintf("tcc: parse error\n");
+        if (parser.error_count <= 1) {
+            __eprintf("tcc: parse error\n");
+        } else {
+            __eprintf("tcc: %d errors\n", parser.error_count);
+            if (parser.error_count >= MAX_ERRORS)
+                __eprintf("  (stopped after %d to limit cascading)\n", MAX_ERRORS);
+            __eprintf("  note: tcc's error recovery is limited; the 2nd and later errors\n");
+            __eprintf("  may be misled by the preceding error. Fix the first error and\n");
+            __eprintf("  recompile to confirm.\n");
+        }
         tlibc_free(pp_src);
         tlibc_free(arena);
         return 1;

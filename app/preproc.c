@@ -25,6 +25,8 @@
 #define MAX_FUNC_MACROS 1024
 #define MAX_MACRO_PARAMS 64
 
+static int pp_had_error;  /* #error 指令触发后标记，preprocess() 据此返回 NULL */
+
 typedef struct { const char *name; const char *value; int value_len; } Macro;
 static Macro macros[MAX_MACROS];
 static int macro_count;
@@ -313,7 +315,7 @@ static void do_directive(const char *s, int ls, int le, OutBuf *out, int depth) 
     if (dl == 5 && s[dw]=='e'&&s[dw+1]=='r'&&s[dw+2]=='r') {
         while (p < le && pp_ws(s[p])) { p++; } __eprintf("tcc: #error: ");
         { int ei; for (ei = p; ei < le; ei++) { char ec = s[ei]; __write(2, &ec, 1); } }
-        __write(2, "\n", 1); return;
+        __write(2, "\n", 1); pp_had_error = 1; return;
     }
 }
 
@@ -1191,6 +1193,7 @@ static int if_eval(const char *s, int len) {
 }
 
 char *preprocess(const char *src, int len, const char *fname, int *out_len) {
+    pp_had_error = 0;
     current_source_dir[0] = '\0';
     inc_path_added_source_dir = 0;
     if (fname) {
@@ -1210,6 +1213,11 @@ char *preprocess(const char *src, int len, const char *fname, int *out_len) {
     OutBuf out = { 0, 0, 0 };
     pp_buf(clean, clean_len, &out, 0);
     tlibc_free(clean);
+    if (pp_had_error) {
+        tlibc_free(out.data);
+        *out_len = 0;
+        return NULL;
+    }
     out_putc(&out, '\0');
     *out_len = out.len > 0 ? out.len - 1 : 0;
     return out.data;

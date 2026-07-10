@@ -347,11 +347,17 @@ Token lexer_peek(Lexer *lx);
 
 /* ─── 解析器 ─── */
 
+#define MAX_ERRORS 8  /* 单次编译最大报错数，之后静默跳过解析 */
+
 typedef struct {
     Lexer *lexer;
     Token tok;          /* 超前查看的当前 token */
     Arena *arena;
     int had_error;
+    int error_count;    /* 已报错误数（已达 MAX_ERRORS 则后续错误静默跳过） */
+    int func_depth;     /* 函数定义嵌套深度（>0 在函数体内） */
+    int loop_depth;     /* 循环嵌套深度（while/for/do-while） */
+    int switch_depth;   /* switch 嵌套深度 */
 } Parser;
 
 void parser_init(Parser *p, Lexer *lx, Arena *a);

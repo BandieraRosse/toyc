@@ -354,37 +354,65 @@ static void token_lexeme(Parser *p, char *buf, int bufsz) {
 
 /* ─── 错误报告 ─── */
 
+/* 写 ANSI 转义序列：ESC + s（避免 \033 被 bootstrap/tcc 误译成 \0+33） */
+static void esc(const char *s, int len) {
+    char e = 27;
+    __write(2, &e, 1);
+    __write(2, s, len);
+}
+
+/* 格式化行号：右对齐 width 宽度 + " | "，写入 fd 2 */
+static void lineno_prefix(int line, int width) {
+    char rev[16];
+    int ri = 0, pd, i;
+    if (line == 0) rev[ri++] = '0';
+    else { int n = line; while (n > 0) { rev[ri++] = '0' + (n % 10); n /= 10; } }
+    pd = width - ri;  /* 前导空格数 */
+    if (pd < 0) pd = 0;
+    for (i = 0; i < pd; i++) __write(2, " ", 1);
+    while (ri > 0) __write(2, rev + --ri, 1);
+    __write(2, " | ", 3);
+}
+
 void error_at(Parser *p, const char *msg) {
+    if (p->error_count >= MAX_ERRORS) { p->had_error = 1; return; }
+    p->error_count++;
+    char esc = 27;
+    int err_line = p->lexer->line;
     const char *fn = p->lexer->filename ? p->lexer->filename : "<unknown>";
-    __eprintf("error: %s:%d:%d: %s\n", fn, p->lexer->line, p->lexer->col, msg);
-    /* 显示上下文行 */
+    __write(2, &esc, 1); __write(2, "[1;31merror:", 12);
+    __write(2, &esc, 1); __write(2, "[0m", 3);
+    __eprintf(" %s:%d:%d: %s\n", fn, err_line, p->lexer->col, msg);
+
     if (p->tok.start) {
-        /* 找行首 */
-        const char *bol = p->tok.start;
-        while (bol > p->lexer->start && *(bol - 1) != '\n') bol--;
-        /* 找行尾 */
-        const char *eol = p->tok.start;
+        const char *tokstart = p->tok.start;
+        const char *bol = tokstart;
+        while (bol > tokstart - 200 && *(bol - 1) != '\n' && *(bol - 1) != '\0') bol--;
+        const char *eol = tokstart;
         while (eol < p->lexer->end && *eol != '\n') eol++;
-        /* 显示上下文行 */
-        __write(2, "     ", 4);
-        const char *cp = bol;
-        while (cp < eol) {
-            __write(2, cp, 1);
-            cp++;
+
+        if (bol < tokstart && *bol) {
+            const char *pb = bol - 1;
+            while (pb > bol - 200 && *(pb - 1) != '\n' && *(pb - 1) != '\0') pb--;
+            if (pb < bol && *pb != '\0') {
+                __write(2, &esc, 1); __write(2, "[2m", 3);
+                lineno_prefix(err_line - 1, 3);
+                { const char *cp; for (cp = pb; cp < bol; cp++) __write(2, cp, 1); }
+                __write(2, &esc, 1); __write(2, "[0m\n", 4);
+            }
         }
+        lineno_prefix(err_line, 3);
+        { const char *cp; for (cp = bol; cp < eol; cp++) __write(2, cp, 1); }
         __write(2, "\n", 1);
-        /* 显示 ^~~ 指向标记位置 */
-        __write(2, "     ", 4);
-        int spaces = p->tok.start - bol;
-        int si;
-        for (si = 0; si < spaces; si++) __write(2, " ", 1);
-        __write(2, "^", 1);
-        /* 对于标识符和数字，标记宽度 */
+        __write(2, "    ", 4);
+        { int _si; int _sp = (int)(tokstart - bol); if (_sp > 1024) _sp = 0;
+          for (_si = 0; _si < _sp; _si++) __write(2, " ", 1); }
+        __write(2, &esc, 1); __write(2, "[1;31m^", 7);
         if (p->tok.len > 1 && (p->tok.kind == TOK_IDENT || p->tok.kind == TOK_NUMBER)) {
             int ti;
             for (ti = 1; ti < p->tok.len && ti < 40; ti++) __write(2, "~", 1);
         }
-        __write(2, "\n", 1);
+        __write(2, &esc, 1); __write(2, "[0m\n", 4);
     }
     p->had_error = 1;
 }
@@ -401,6 +429,8 @@ static int match(Parser *p, TokenKind kind) {
 
 static int expect(Parser *p, TokenKind kind) {
     if (p->tok.kind == kind) { consume(p); return 1; }
+    if (p->error_count >= MAX_ERRORS) { p->had_error = 1; return 0; }
+    p->error_count++;
     char lexeme[64];
     token_lexeme(p, lexeme, sizeof(lexeme));
     const char *fn = p->lexer->filename ? p->lexer->filename : "<unknown>";
@@ -411,12 +441,27 @@ static int expect(Parser *p, TokenKind kind) {
     return 0;
 }
 
+/* 恐慌模式错误恢复：跳过 token 到下一个 ; 或 }，减少级联报错 */
+static void error_recover(Parser *p) {
+    int depth = 0;
+    while (p->tok.kind != TOK_EOF && p->tok.kind != TOK_SEMI
+           && p->tok.kind != TOK_RBRACE) {
+        if (p->tok.kind == TOK_LBRACE) depth++;
+        if (p->tok.kind == TOK_RBRACE) { if (depth == 0) break; depth--; }
+        consume(p);
+    }
+}
+
 /* ─── 初始化 ─── */
 
 void parser_init(Parser *p, Lexer *lx, Arena *a) {
     p->lexer = lx;
     p->arena = a;
     p->had_error = 0;
+    p->error_count = 0;
+    p->func_depth = 0;
+    p->loop_depth = 0;
+    p->switch_depth = 0;
     p->tok = lexer_next(lx);
     enum_val_count = 0;  /* 重置 enum 表 */
 }
@@ -579,11 +624,24 @@ static AstNode *parse_primary(Parser *p) {
                     case 'n': dst[pos++] = '\n'; break;
                     case 't': dst[pos++] = '\t'; break;
                     case 'r': dst[pos++] = '\r'; break;
-                    case '0': dst[pos++] = '\0'; break;
+                    case 'e': dst[pos++] = 27; break;   /* \e → ESC */
                     case '\\': dst[pos++] = '\\'; break;
                     case '"': dst[pos++] = '"'; break;
+                    case 'x': {
+                        /* \xAB hex escape in strings */
+                        int hex_val = 0, hd = 0;
+                        while (hd < 2 && i < src_len) {
+                            char hc = src[i];
+                            if (hc >= '0' && hc <= '9') { hex_val = hex_val * 16 + (hc - '0'); i++; hd++; }
+                            else if (hc >= 'a' && hc <= 'f') { hex_val = hex_val * 16 + (hc - 'a' + 10); i++; hd++; }
+                            else if (hc >= 'A' && hc <= 'F') { hex_val = hex_val * 16 + (hc - 'A' + 10); i++; hd++; }
+                            else break;
+                        }
+                        dst[pos++] = (char)(hd > 0 ? hex_val : 'x');
+                        break;
+                    }
                     default:
-                        /* \NNN octal escape */
+                        /* \NNN octal escape (also handles \0, \00, \033, etc.) */
                         if (esc >= '0' && esc <= '7') {
                             int oct_val = esc - '0';
                             int od = 1;
@@ -1813,6 +1871,12 @@ static void skip_register_asm(Parser *p) {
 /* ─── 语句 ─── */
 
 static AstNode *parse_return_statement(Parser *p) {
+    if (p->func_depth == 0) {
+        error_at(p, "'return' outside function");
+        consume(p); /* skip return */
+        error_recover(p);
+        return NULL;
+    }
     consume(p);
     AstNode *n = new_ast(p, AST_RETURN);
     if (peek(p).kind != TOK_SEMI)
@@ -1823,7 +1887,12 @@ static AstNode *parse_return_statement(Parser *p) {
 
 static AstNode *parse_if_statement(Parser *p) {
     consume(p);  /* if */
-    expect(p, TOK_LPAREN);
+    if (p->tok.kind != TOK_LPAREN) {
+        error_at(p, "expected '(' after 'if'");
+        error_recover(p);
+        return NULL;
+    }
+    consume(p);
     AstNode *n = new_ast(p, AST_IF);
     n->cond = parse_expr(p);
     expect(p, TOK_RPAREN);
@@ -1837,17 +1906,29 @@ static AstNode *parse_if_statement(Parser *p) {
 
 static AstNode *parse_while_statement(Parser *p) {
     consume(p);  /* while */
-    expect(p, TOK_LPAREN);
+    if (p->tok.kind != TOK_LPAREN) {
+        error_at(p, "expected '(' after 'while'");
+        error_recover(p);
+        return NULL;
+    }
+    consume(p);
     AstNode *n = new_ast(p, AST_WHILE);
     n->loop_cond = parse_expr(p);
     expect(p, TOK_RPAREN);
+    p->loop_depth++;
     n->loop_body = parse_statement(p);
+    p->loop_depth--;
     return n;
 }
 
 static AstNode *parse_for_statement(Parser *p) {
     consume(p);  /* for */
-    expect(p, TOK_LPAREN);
+    if (p->tok.kind != TOK_LPAREN) {
+        error_at(p, "expected '(' after 'for'");
+        error_recover(p);
+        return NULL;
+    }
+    consume(p);
     AstNode *n = new_ast(p, AST_FOR);
 
     /* init */
@@ -1896,14 +1977,18 @@ static AstNode *parse_for_statement(Parser *p) {
     }
     expect(p, TOK_RPAREN);
 
+    p->loop_depth++;
     n->loop_body = parse_statement(p);
+    p->loop_depth--;
     return n;
 }
 
 static AstNode *parse_do_while(Parser *p) {
     consume(p);  /* do */
     AstNode *n = new_ast(p, AST_DO_WHILE);
+    p->loop_depth++;
     n->loop_body = parse_statement(p);
+    p->loop_depth--;
     expect(p, TOK_WHILE);
     expect(p, TOK_LPAREN);
     n->loop_cond = parse_expr(p);
@@ -1916,27 +2001,46 @@ static AstNode *parse_do_while(Parser *p) {
 
 static AstNode *parse_switch_statement(Parser *p) {
     consume(p);  /* switch */
-    expect(p, TOK_LPAREN);
+    if (p->tok.kind != TOK_LPAREN) {
+        error_at(p, "expected '(' after 'switch'");
+        error_recover(p);
+        return NULL;
+    }
+    consume(p);
     AstNode *n = new_ast(p, AST_SWITCH);
     n->cond = parse_expr(p);
     expect(p, TOK_RPAREN);
     /* switch 体使用复合语句解析器，由其处理 case/default 标签 */
     n->stmts = NULL;
+    p->switch_depth++;
     if (peek(p).kind == TOK_LBRACE) {
         AstNode *block = parse_compound_statement(p);
         if (block && block->stmts)
             n->stmts = block->stmts;
     }
+    p->switch_depth--;
     return n;
 }
 
 static AstNode *parse_break(Parser *p) {
+    if (p->loop_depth == 0 && p->switch_depth == 0) {
+        error_at(p, "'break' outside loop or switch");
+        consume(p);
+        error_recover(p);
+        return NULL;
+    }
     consume(p);
     expect(p, TOK_SEMI);
     return new_ast(p, AST_BREAK);
 }
 
 static AstNode *parse_continue(Parser *p) {
+    if (p->loop_depth == 0) {
+        error_at(p, "'continue' outside loop");
+        consume(p);
+        error_recover(p);
+        return NULL;
+    }
     consume(p);
     expect(p, TOK_SEMI);
     return new_ast(p, AST_CONTINUE);
@@ -1945,7 +2049,9 @@ static AstNode *parse_continue(Parser *p) {
 /* ─── 复合语句 ─── */
 
 AstNode *parse_compound_statement(Parser *p) {
-    expect(p, TOK_LBRACE);
+    if (!expect(p, TOK_LBRACE)) {
+        error_recover(p);
+    }
 
     AstNode *head = NULL;
     AstNode **tail = &head;
@@ -2428,6 +2534,16 @@ static AstNode *parse_statement(Parser *p) {
     case TOK_DO:      return parse_do_while(p);
     case TOK_SWITCH:  return parse_switch_statement(p);
     case TOK_CASE:
+        if (p->switch_depth == 0) {
+            error_at(p, "'case' outside switch");
+            consume(p); /* skip 'case' */
+            /* 跳过直至 : 或 ; 或 } 来恢复 */
+            while (p->tok.kind != TOK_EOF && p->tok.kind != TOK_SEMI
+                   && p->tok.kind != TOK_RBRACE && p->tok.kind != TOK_COLON)
+                consume(p);
+            if (p->tok.kind == TOK_COLON || p->tok.kind == TOK_SEMI) consume(p);
+            return NULL;
+        }
         consume(p);
         { AstNode *n = new_ast(p, AST_CASE);
           AstNode *val = parse_expr(p);
@@ -2442,6 +2558,12 @@ static AstNode *parse_statement(Parser *p) {
           }
           expect(p, TOK_COLON); return n; }
     case TOK_DEFAULT:
+        if (p->switch_depth == 0) {
+            error_at(p, "'default' outside switch");
+            consume(p); /* skip 'default' */
+            error_recover(p);
+            return NULL;
+        }
         consume(p);
         expect(p, TOK_COLON);
         return new_ast(p, AST_DEFAULT);
@@ -2575,7 +2697,7 @@ static AstNode *parse_statement(Parser *p) {
     case TOK_SEMI:    consume(p); return new_ast(p, AST_NULL_STMT);
     default: {
         AstNode *expr = parse_expr_comma(p);
-        expect(p, TOK_SEMI);
+        if (!expect(p, TOK_SEMI)) error_recover(p);
         if (!expr) return NULL;
         AstNode *n = new_ast(p, AST_EXPR_STMT);
         n->expr = expr;
@@ -2984,7 +3106,9 @@ AstNode *parse_program(Parser *p) {
                 expect(p, TOK_SEMI);
             } else {
                 /* 函数定义 */
+                p->func_depth++;
                 AstNode *fbody = parse_compound_statement(p);
+                p->func_depth--;
                 /* 先统计参数个数（在链入 body 之前） */
                 int pcount = 0; { AstNode *pp; for (pp = fparams; pp; pp = pp->next) pcount++; }
                 /* 将参数声明前置到函数体 */
