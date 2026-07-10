@@ -387,6 +387,10 @@ static void collect_locals(AstNode *node) {
 static void cgen_return(AstNode *stmt) {
     if (stmt->expr) {
         cgen_expr(stmt->expr);
+        /* 符号扩展：从 long 函数返回 int 表达式时，将 eax 扩展到 rax */
+        if (current_func_ret_size == 8 && stmt->expr && !stmt->expr->is_float &&
+            stmt->expr->type_size < 8 && !stmt->expr->is_unsigned)
+            { emit1(0x48); emit1(0x63); emit1(0xC0); }  /* movsxd rax, eax */
         if (current_func_ret_size > 8) {
             /* 大结构体按值返回（hidden pointer ABI）
              *
@@ -788,15 +792,19 @@ static void cgen_stmt(AstNode *stmt) {
                             e1(0xB9); e4(locals[i].size);  /* mov ecx, size */
                             e1(0xF3); e1(0xA4);            /* rep movsb */
                         } else if (locals[i].size == 8) {
-                            /* int → long：仅对简单 4 字节源符号扩展 */
+                            /* int → long：有符号整型赋值给 64 位变量时符号扩展 */
                             if (stmt->expr && !stmt->expr->is_float && stmt->expr->type_size < 8) {
                                 int do_sext = 0;
-                                if (stmt->expr->kind == AST_VAR) {
-                                    do_sext = 1;  /* int 变量 → long */
+                                if (stmt->expr->kind == AST_VAR && !stmt->expr->is_unsigned) {
+                                    do_sext = 1;  /* 有符号 int 变量 → long */
                                 } else if (stmt->expr->kind == AST_CONSTANT &&
                                            stmt->expr->ival >= -2147483648L &&
-                                           stmt->expr->ival <= 2147483647L) {
-                                    do_sext = 1;  /* 32 位常量 → long */
+                                           stmt->expr->ival <= 2147483647L &&
+                                           !stmt->expr->is_unsigned) {
+                                    do_sext = 1;  /* 有符号 32 位常量 → long */
+                                } else if (stmt->expr->kind == AST_BINOP &&
+                                           !stmt->expr->is_unsigned) {
+                                    do_sext = 1;  /* 有符号 int 表达式 → long */
                                 }
                                 if (do_sext)
                                     { e1(0x48); e1(0x63); e1(0xC0); }  /* movsxd rax, eax */

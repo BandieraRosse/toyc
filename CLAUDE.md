@@ -61,13 +61,13 @@ make clean
 | 测试套件 | 通过/总数 | 说明 |
 |----------|-----------|------|
 | `make test` | 29/29 ✅ | tcc 编译 + tld 链接 tcc_rt 运行时 |
-| `make test-selfhost` | **35/35 ✅** | tcc 独立编译，无 tcc_rt 依赖 |
+| `make test-selfhost` | **36/36 ✅** | tcc 独立编译，无 tcc_rt 依赖 |
 | `make test-source` | 8/8 ✅ | tcc 编译源文件独立测试 |
-| `make test-tld` | **35/35 ✅** | selfhost 测试 × tld 链接 |
+| `make test-tld` | **36/36 ✅** | selfhost 测试 × tld 链接 |
 | `make test-tld-multifile` | ✅ | 多 .o 文件交叉引用链接 |
 | `make test-tld-self` | **自举收敛 ✅** | tld 自链接 stage-1→stage-2 字节级一致 |
-| `bootstrap-selfhost.sh` | 35/35 ✅ | 种子自举 → stage-2 全部测试通过 |
-| `bootstrap-to-10.sh` | stage-2→10 字节级一致 ✅ | 全链收敛验证（头尾完整测试） |
+| `bootstrap-selfhost.sh` | 36/36 ✅ | 种子自举 → stage-2 全部测试通过 |
+| `bootstrap-to-10.sh` | stage-5→10 字节级一致 ✅ | 全链收敛验证（头尾完整测试） |
 
 ## 设计原则
 
@@ -80,7 +80,6 @@ make clean
 
 | 特性 | 状态 |
 |------|------|
-| int→int64_t 符号扩展（`int a=-4; int64_t b=a;` 高位丢） | codegen bug，未修 |
 | 浮点运算 | 默认未启用（`make CFLAGS+=-DTCC_FLOAT` 开启） |
 | VLA（变长数组） | 未实现 |
 | 位域（bitfield） | 未实现 |
@@ -105,20 +104,15 @@ make clean
 | 结构体返回值数组元素只复制 8 字节 | `selfhost/29_struct_return_expr.c` |
 | `Lexer` 结构体复制只复制 8 字节（自举阻断 bug） | 收敛验证 |
 | `add_rel()` int→Elf64_Sxword 符号扩展缺失（2026-07-09） | `app/tas.c` 参数改为 64 位 + `-4LL` |
-
-### codegen 待修复
-
-- **int→int64_t 赋值符号扩展**：tcc 用 `mov eax`（32-bit）加载 int，x86_64 硬件自动高位置零。
-  正确做法需 `movsxd rax`。影响所有 `int`→`long`/`int64_t`/`Elf64_Sxword` 赋值。
-  绕过：源头变量/参数直接用 64 位类型，常量用 `-4LL` 后缀。详见 `.claude/tcc-gotchas.md`。
+| int→long 符号扩展缺失（2026-07-10） | `app/cgen.c` + `app/cgen_expr.c` AST_VAR/AST_CONSTANT/BINOP 条件 + cgen_return + 全局/指针/数组成员/结构体成员赋值路径 |
 
 ## 验证
 
 ```sh
 make test             # 29/29 ✅
-make test-selfhost    # 35/35 ✅
+make test-selfhost    # 36/36 ✅
 make test-source      # 8/8 ✅
-make test-tld         # 35/35 ✅
+make test-tld         # 36/36 ✅
 make test-tld-self    # 自举收敛 ✅
 ./bootstrap-to-10.sh  # stage-2→10 字节级完全一致 ✅
 ```

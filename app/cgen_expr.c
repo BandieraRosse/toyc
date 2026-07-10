@@ -1591,10 +1591,7 @@ void cgen_expr(AstNode *node) {
                 e1(0xB9); e4(store_sz);         /* mov ecx, store_sz */
                 e1(0xF3); e1(0xA4);            /* rep movsb */
             } else if (store_sz >= 8) {
-                if (!rhs_float && node->right && node->right->type_size < 8 &&
-                    node->right->kind == AST_CONSTANT &&
-                    node->right->ival >= -2147483648L &&
-                    node->right->ival <= 2147483647L)
+                if (!rhs_float && node->right && node->right->type_size < 8 && !node->right->is_unsigned)
                     { e1(0x48); e1(0x63); e1(0xC0); }  /* movsxd rax, eax */
                 e1(0x48); e1(0x89); e1(0x01);  /* mov [rcx], rax */
             } else if (elem_size == 1) {
@@ -1639,6 +1636,8 @@ void cgen_expr(AstNode *node) {
             if (rhs_float) {
                 e1(0xF2); e1(0x0F); e1(0x11); e1(0x01);  /* movsd [rcx], xmm0 */
             } else if (deref_sz >= 8) {
+                if (!rhs_float && node->right && node->right->type_size < 8 && !node->right->is_unsigned)
+                    { e1(0x48); e1(0x63); e1(0xC0); }  /* movsxd rax, eax */
                 e1(0x48); e1(0x89); e1(0x01);  /* mov [rcx], rax */
             } else if (deref_sz == 1) {
                 e1(0x88); e1(0x01);             /* mov [rcx], al */
@@ -1686,16 +1685,19 @@ void cgen_expr(AstNode *node) {
                             /* cvttsd2si eax, xmm0 */
                             e1(0xF2); e1(0x0F); e1(0x2C); e1(0xC0);
                         }
-                        /* int → long：仅对简单 4 字节源（变量引用和 32 位常量）符号扩展 */
+                        /* int → long：有符号整型赋值给 64 位变量时符号扩展 */
                         if (locals[i].size == 8 && !rhs_float &&
                             node->right && node->right->type_size < 8) {
                             int do_sext = 0;
-                            if (node->right->kind == AST_VAR) {
-                                do_sext = 1;  /* int 变量 → long */
+                            if (node->right->kind == AST_VAR && !node->right->is_unsigned) {
+                                do_sext = 1;  /* 有符号 int 变量 → long */
                             } else if (node->right->kind == AST_CONSTANT &&
                                        node->right->ival >= -2147483648L &&
-                                       node->right->ival <= 2147483647L) {
-                                do_sext = 1;  /* 32 位常量 → long */
+                                       node->right->ival <= 2147483647L &&
+                                       !node->right->is_unsigned) {
+                                do_sext = 1;  /* 有符号 32 位常量 → long */
+                            } else if (!node->right->is_unsigned) {
+                                do_sext = 1;  /* 其他有符号 int 表达式 → long */
                             }
                             if (do_sext)
                                 { e1(0x48); e1(0x63); e1(0xC0); }  /* movsxd rax, eax */
@@ -1757,6 +1759,8 @@ void cgen_expr(AstNode *node) {
                                  var_size == 8) ? 8 : var_size;
                     if (store_width == 0) store_width = 4;
                     if (store_width >= 8) {
+                        if (!rhs_float && node->right && node->right->type_size < 8 && !node->right->is_unsigned)
+                            { e1(0x48); e1(0x63); e1(0xC0); }  /* movsxd rax, eax */
                         e1(0x48); e1(0x89); e1(0x05);  /* mov [rip+disp32], rax */
                     } else if (store_width == 1) {
                         e1(0x88); e1(0x05);             /* mov [rip+disp32], al */
@@ -1799,6 +1803,8 @@ void cgen_expr(AstNode *node) {
                 e1(0xB9); e4(rsize);           /* mov ecx, rsize */
                 e1(0xF3); e1(0xA4);            /* rep movsb */
             } else if (rsize >= 8) {
+                if (!rhs_float && node->right && node->right->type_size < 8 && !node->right->is_unsigned)
+                    { e1(0x48); e1(0x63); e1(0xC0); }  /* movsxd rax, eax */
                 e1(0x48); e1(0x89); e1(0x01);  /* mov [rcx], rax */
             } else if (rsize == 1) {
                 e1(0x88); e1(0x01);             /* mov [rcx], al */
