@@ -47,6 +47,8 @@ make test 03                      # 指定编号测试
 make test 03 07                   # 多编号测试
 make test-selfhost                # 自包含测试（35 个）
 make test-source                  # 源文件独立测试（8 个）
+make test-tld                     # tld 链接测试（35 个）
+make test-tld-self                # tld 自举验证（stage-1 → stage-2 → 收敛）
 make update-bootstrap             # 用最新 build/ 产物更新 bootstrap/ 种子
 ./bootstrap-selfhost.sh           # 自举测试：bootstrap/tcc → stage-2 → 35 测试
 ./bootstrap-to-10.sh              # 全链收敛验证（stage-1 → stage-10）
@@ -62,7 +64,8 @@ make clean
 | `make test` | 29/29 ✅ | tcc 编译 + ld 链接 tcc_rt 运行时 |
 | `make test-selfhost` | **35/35 ✅** | tcc 独立编译，无 tcc_rt 依赖 |
 | `make test-source` | 8/8 ✅ | tcc 编译源文件独立测试 |
-| `make test-tld` | **35/35 ✅** | selfhost 测试 × tld 链接（gcc 编译 tld） |
+| `make test-tld` | **35/35 ✅** | selfhost 测试 × tld 链接（tcc 编译 tld）|
+| `make test-tld-self` | **自举收敛 ✅** | tld 自链接 stage-1→stage-2 字节级一致 |
 | `bootstrap-selfhost.sh` | 35/35 ✅ | 种子自举 → stage-2 全部测试通过 |
 | `bootstrap-to-10.sh` | stage-2→10 字节级一致 ✅ | 全链收敛验证（头尾完整测试） |
 

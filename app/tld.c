@@ -91,7 +91,7 @@ typedef struct {
 
 /* 全局符号表条目 */
 typedef struct {
-    char            name[128];
+    const char     *name;  /* pointer to strtab */
     uint64_t        value;
     int             defined;
     unsigned char   sym_info;
@@ -364,11 +364,7 @@ static Symbol *find_or_add_sym(const char *name) {
         if (strcmp(syms[i].name, name) == 0) return &syms[i];
     if (sym_count >= MAX_SYMS) error("too many symbols", NULL);
     Symbol *s = &syms[sym_count++];
-    int nlen = strlen(name);
-    if (nlen >= 128) nlen = 127;
-    int j;
-    for (j = 0; j < nlen; j++) s->name[j] = name[j];
-    s->name[j] = 0;
+    s->name = name;   /* 指向 strtab，避免 tcc 的 char 逐字节拷贝 bug */
     s->value = 0;
     s->defined = 0;
     s->sym_info = 0;

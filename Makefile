@@ -65,19 +65,11 @@ TPP_C_SRCS := tpp.c preproc.c tcc_rt.c
 TPP_C_OBJS := $(addprefix $(BUILD)/, $(TPP_C_SRCS:.c=.o))
 TPP_OBJS   := $(TPP_C_OBJS) $(BUILD)/tcc_rt_start.o
 
-# tld 链接器
-# 注意：tcc 目前对 tld 的某些代码模式有 codegen bug，先用 gcc 编译
-# TODO: 修复 tcc codegen bug 后切换回 CC
-TLD_CC    ?= gcc
+# tld 链接器（现已可由 tcc 编译：Symbol.name 改为 const char* 避开了 char 拷贝 bug）
 TLD_CFLAGS = -nostdlib -ffreestanding -Wall -Wextra -I include -I app
 TLD_C_SRCS := tld.c tcc_rt.c
 TLD_C_OBJS := $(addprefix $(BUILD)/, $(TLD_C_SRCS:.c=.o))
 TLD_OBJS   := $(TLD_C_OBJS) $(BUILD)/tcc_rt_start.o
-
-$(BUILD)/tld.o: $(SRC)/tld.c $(HEADERS) | $(BUILD)
-	@printf "  $(BLUE)  CC$(RESET)  %-20s " "$<"
-	$(TLD_CC) $(TLD_CFLAGS) -c $< -o $@
-	@printf "$(GREEN)ok$(RESET)\n"
 
 ALL_OBJS := $(sort $(TCC_OBJS) $(TAS_OBJS) $(TPP_OBJS) $(TLD_OBJS))
 
@@ -310,27 +302,40 @@ test-tld-multifile: $(BUILD)/tld $(BUILD)/tcc
 	[ "$$fail" -eq 0 ]
 
 # tld 自测试：tld 链接自身 + 运行自我验证
-test-tld-self: $(BUILD)/tld
+test-tld-self: $(BUILD)/tld $(BUILD)/tcc_rt.o $(BUILD)/tcc_rt_start.o
 	@printf "$(BLUE)══════ tld 自链接测试 ══════$(RESET)\n\n"; \
-	printf "  检查 tld 能否用自己链接自己 ... "; \
-	cp "$(BUILD)/tld" "$(BUILD)/tld-syslinked"; \
-	\
-	# 用系统 ld 编译 tld 的 .o 文件 \
 	ok=0; fail=0; \
-	TLD_SRCS="tld.c elf_write.c tcc_rt.c"; \
-	for cfile in $$TLD_SRCS; do \
-		basename_c=$$(basename "$$cfile" .c); \
-		if $(BUILD)/tcc "$(SRC)/$$cfile" -o $(BUILD)/$${basename_c}.tld.o 2>/dev/null; then \
-			:; \
+	\
+	# 1) 用 build/tld 链接自身 .o 文件 \
+	printf "  1) 自链接 stage-1 ... "; \
+	if $(BUILD)/tld $(BUILD)/tld.o $(BUILD)/tcc_rt.o $(BUILD)/tcc_rt_start.o \
+		-o $(BUILD)/tld-stage1 2>/tmp/tld-stage1.log; then \
+		printf "$(GREEN)✓$(RESET)\n"; ok=1; \
+	else \
+		printf "$(RED)✗$(RESET) (see /tmp/tld-stage1.log)\n"; fail=1; \
+	fi; \
+	\
+	if [ "$$ok" -eq 1 ]; then \
+		# 2) stage-1 再链接自身 → stage-2 \
+		printf "  2) 自链接 stage-2 ... "; \
+		if $(BUILD)/tld-stage1 $(BUILD)/tld.o $(BUILD)/tcc_rt.o $(BUILD)/tcc_rt_start.o \
+			-o $(BUILD)/tld-stage2 2>/tmp/tld-stage2.log; then \
+			printf "$(GREEN)✓$(RESET)\n"; \
+			# 3) 检查 stage-1 和 stage-2 字节级一致 \
+			if diff $(BUILD)/tld-stage1 $(BUILD)/tld-stage2 >/dev/null 2>&1; then \
+				printf "  3) 收敛检查: $(GREEN)字节级一致$(RESET) ✅\n"; \
+			else \
+				printf "  3) 收敛检查: $(RED)字节不同$(RESET)\n"; fail=1; \
+			fi; \
 		else \
-			printf "$(RED)tld 模块 $$cfile 编译失败$(RESET)\n"; fail=1; \
+			printf "$(RED)✗$(RESET) (see /tmp/tld-stage2.log)\n"; fail=1; \
 		fi; \
-	done; \
+	fi; \
+	\
 	if [ "$$fail" -eq 0 ]; then \
-		$(BUILD)/tld $(BUILD)/tld.o $(BUILD)/elf_write.tld.o $(BUILD)/tcc_rt.tld.o $(BUILD)/tcc_rt_start.o \
-			-o $(BUILD)/tld-selflinked 2>/tmp/tld-selflink.log && \
-		printf "$(GREEN)✓ 成功$(RESET)\n" || \
-		{ printf "$(RED)✗ 自链接失败$(RESET)\n"; cat /tmp/tld-selflink.log; }; \
+		printf "\n$(GREEN)✓ tld 自举验证通过$(RESET)\n"; \
+	else \
+		printf "\n$(RED)✗ tld 自举验证失败$(RESET)\n"; \
 	fi
 
 # ─── 允许 make test 01 05 等带编号参数 ────────────────────────
