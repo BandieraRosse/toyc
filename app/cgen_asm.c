@@ -163,7 +163,7 @@ void cgen_asm(AstNode *node) {
         /* RISC-V ecall — placeholder */
     } else {
         /* 未知模板 — 警告但不阻止编译 */
-        __printf("tcc: unknown inline asm template: \"%s\"\n", t);
+        __eprintf("tcc: warning: unknown inline asm template: \"%s\"\n", t);
         return;
     }
 

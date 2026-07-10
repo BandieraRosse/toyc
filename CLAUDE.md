@@ -91,29 +91,15 @@ make clean
 | 宽字符/宽字符串 | 未实现 |
 | `-I` include 路径、`-MD` 依赖追踪 | 静默忽略（tcc 参数解析极简） |
 
-### 已修复的历史限制
-
-以下问题曾阻断自举，现已修复，持续回归验证：
-
-| 问题 | 修复 |
-|------|------|
-| `*main()` 的 `return` 代码生成缺陷 | 基本测试全过 |
-| 变参超过 5 个传参错误 | `selfhost/11_printf_manyargs.c` |
-| `*(ptr + N)` 指针嵌套解引用按 1 字节加载 | `selfhost/20_ptr_arith.c` |
-| `*(cast_type *)ptr = val` 存储宽度错误 | `selfhost/16_cast_deref_assign.c` |
-| 结构体返回值数组元素只复制 8 字节 | `selfhost/29_struct_return_expr.c` |
-| `Lexer` 结构体复制只复制 8 字节（自举阻断 bug） | 收敛验证 |
-| `add_rel()` int→Elf64_Sxword 符号扩展缺失（2026-07-09） | `app/tas.c` 参数改为 64 位 + `-4LL` |
-| int→long 符号扩展缺失（2026-07-10） | `app/cgen.c` + `app/cgen_expr.c` AST_VAR/AST_CONSTANT/BINOP 条件 + cgen_return + 全局/指针/数组成员/结构体成员赋值路径 |
-| `func().non_first_member` / `func().arr[idx]`（返回 struct 的非首个成员和数组成员，2026-07-10） | `app/cgen_expr.c` 将 AST_MEMBER 和数组下标的 push_rax 改为寄存器传偏移，避免覆盖隐藏缓冲区，见 `selfhost/29_struct_return_expr.c` 测试 I/J |
 
 ## 验证
 
 ```sh
 make test             # 29/29 ✅
-make test-selfhost    # 36/36 ✅
+make test-selfhost    # 38/38 ✅
 make test-source      # 8/8 ✅
-make test-tld         # 36/36 ✅
+make test-tld         # 38/38 ✅
+make test-error       # 7/7 ✅
 make test-tld-self    # 自举收敛 ✅
 ./bootstrap-to-10.sh  # stage-2→10 字节级完全一致 ✅
 ```

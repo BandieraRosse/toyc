@@ -100,12 +100,14 @@ next:;
 
 /* ─── 初始化和字符操作 ─── */
 
-void lexer_init(Lexer *lx, const char *src, int len) {
+void lexer_init(Lexer *lx, const char *src, int len, const char *fname) {
     lx->start = src;
     lx->pos = src;
     lx->end = src + len;
+    lx->filename = fname;
     lx->line = 1;
     lx->col = 1;
+    lx->lex_err = 0;
     lx->cur.kind = TOK_EOF;
 }
 
@@ -360,6 +362,7 @@ static Token read_string(Lexer *lx) {
         }
         if (c == '\n' || c == (-1)) {
             t.kind = TOK_ERROR;
+            lx->lex_err = "unterminated string literal";
             break;
         }
         if (c == '\\') {
@@ -411,6 +414,7 @@ Token lexer_next(Lexer *lx) {
         break;
     }
 
+    lx->lex_err = 0;
     lx->start = lx->pos;
     int c = input_peek(lx);
     advance(lx);
@@ -491,7 +495,7 @@ Token lexer_next(Lexer *lx) {
         if (input_peek(lx) == '\'')
             advance(lx);
         else
-            t.kind = TOK_ERROR;
+            { t.kind = TOK_ERROR; lx->lex_err = "unterminated character constant"; }
         break;
     }
 
@@ -515,7 +519,7 @@ Token lexer_next(Lexer *lx) {
             t = read_number(lx);
         } else if (input_peek(lx) == '.') { advance(lx);
             if (input_peek(lx) == '.') { advance(lx); t.kind = TOK_ELLIPSIS; }
-            else t.kind = TOK_ERROR;
+            else { t.kind = TOK_ERROR; lx->lex_err = "invalid token '..'"; }
         } else t.kind = TOK_DOT;
         break;
 
@@ -589,6 +593,8 @@ Token lexer_next(Lexer *lx) {
 
     default:
         t.kind = TOK_ERROR;
+        lx->lex_err = "unrecognized character";
+        t.ival = c;
         break;
     }
 

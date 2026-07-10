@@ -128,17 +128,17 @@ void tlibc_free(void *ptr)
  */
 
 /* 辅助：输出十进制整数 */
-static void print_dec(long n)
+static void print_dec(long n, int fd)
 {
     char buf[32];
     int i = 0;
 
     if (n < 0) {
-        __write(1, "-", 1);
+        __write(fd, "-", 1);
         n = -n;
     }
     if (n == 0) {
-        __write(1, "0", 1);
+        __write(fd, "0", 1);
         return;
     }
     while (n > 0) {
@@ -146,18 +146,18 @@ static void print_dec(long n)
         n /= 10;
     }
     while (i > 0)
-        __write(1, &buf[--i], 1);
+        __write(fd, &buf[--i], 1);
 }
 
 /* 辅助：输出十六进制整数 */
-static void print_hex(unsigned long n)
+static void print_hex(unsigned long n, int fd)
 {
     const char *hex = "0123456789abcdef";
     char buf[17];
     int i = 0;
 
     if (n == 0) {
-        __write(1, "0", 1);
+        __write(fd, "0", 1);
         return;
     }
     while (n > 0) {
@@ -165,7 +165,7 @@ static void print_hex(unsigned long n)
         n >>= 4;
     }
     while (i > 0)
-        __write(1, &buf[--i], 1);
+        __write(fd, &buf[--i], 1);
 }
 
 /*
@@ -202,7 +202,7 @@ void __printf(const char *fmt, ...)
         }
         case 'd':
         case 'i':
-            print_dec(__builtin_va_arg(ap, long));
+            print_dec(__builtin_va_arg(ap, long), 1);
             break;
         case 'c': {
             char c = (char)__builtin_va_arg(ap, int);
@@ -211,7 +211,7 @@ void __printf(const char *fmt, ...)
         }
         case 'x':
         case 'X':
-            print_hex((unsigned long)__builtin_va_arg(ap, long));
+            print_hex((unsigned long)__builtin_va_arg(ap, long), 1);
             break;
         case '%':
             __write(1, "%", 1);
@@ -225,3 +225,53 @@ void __printf(const char *fmt, ...)
 
     __builtin_va_end(ap);
 }
+
+/* __eprintf — 格式化输出到 stderr (fd 2)。
+ * 注意：case 块内不声明局部变量（char buf[N] 等），全部委托给外部函数。
+ * 否则 tcc 在变参函数 case 内的栈布局会出问题。 */
+void __eprintf(const char *fmt, ...)
+{
+    __builtin_va_list ap;
+    __builtin_va_start(ap, fmt);
+    const char *p = fmt;
+
+    while (*p) {
+        if (*p != '%') {
+            __write(2, p, 1);
+            p++;
+            continue;
+        }
+        p++;
+        switch (*p) {
+        case 's': {
+            const char *s = __builtin_va_arg(ap, const char *);
+            int slen = strlen(s);
+            __write(2, s, slen);
+            break;
+        }
+        case 'd':
+        case 'i':
+            print_dec(__builtin_va_arg(ap, long), 2);
+            break;
+        case 'c': {
+            char c = (char)__builtin_va_arg(ap, int);
+            __write(2, &c, 1);
+            break;
+        }
+        case 'x':
+        case 'X':
+            print_hex((unsigned long)__builtin_va_arg(ap, long), 2);
+            break;
+        case '%':
+            __write(2, "%", 1);
+            break;
+        default:
+            __write(2, p, 1);
+            break;
+        }
+        p++;
+    }
+
+    __builtin_va_end(ap);
+}
+

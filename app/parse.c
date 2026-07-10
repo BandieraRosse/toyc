@@ -230,21 +230,161 @@ static int add_struct_tag(const char *tag, StructType *st) {
     return tag_count - 1;
 }
 
+/* ─── Token 名称表（供错误报告使用） ─── */
+
+static const char *token_name(TokenKind kind) {
+    switch (kind) {
+    case TOK_EOF:             return "end-of-file";
+    case TOK_ERROR:           return "error";
+
+    /* 关键字 */
+    case TOK_INT:             return "'int'";
+    case TOK_VOID:            return "'void'";
+    case TOK_CHAR:            return "'char'";
+    case TOK_SHORT:           return "'short'";
+    case TOK_LONG:            return "'long'";
+    case TOK_UNSIGNED:        return "'unsigned'";
+    case TOK_SIGNED:          return "'signed'";
+    case TOK_RETURN:          return "'return'";
+    case TOK_IF:              return "'if'";
+    case TOK_ELSE:            return "'else'";
+    case TOK_WHILE:           return "'while'";
+    case TOK_FOR:             return "'for'";
+    case TOK_DO:              return "'do'";
+    case TOK_DOUBLE:          return "'double'";
+    case TOK_BREAK:           return "'break'";
+    case TOK_CONTINUE:        return "'continue'";
+    case TOK_SWITCH:          return "'switch'";
+    case TOK_CASE:            return "'case'";
+    case TOK_DEFAULT:         return "'default'";
+    case TOK_GOTO:            return "'goto'";
+    case TOK_SIZEOF:          return "'sizeof'";
+    case TOK_STRUCT:          return "'struct'";
+    case TOK_UNION:           return "'union'";
+    case TOK_ENUM:            return "'enum'";
+    case TOK_TYPEDEF:         return "'typedef'";
+    case TOK_CONST:           return "'const'";
+    case TOK_VOLATILE:        return "'volatile'";
+    case TOK_RESTRICT:        return "'restrict'";
+    case TOK_REGISTER:        return "'register'";
+    case TOK_STATIC:          return "'static'";
+    case TOK_EXTERN:          return "'extern'";
+    case TOK_INLINE:          return "'inline'";
+    case TOK__ATTRIBUTE__:    return "'__attribute__'";
+    case TOK__ASM__:          return "'__asm__'";
+    case TOK__BUILTIN_VA_LIST: return "'__builtin_va_list'";
+    case TOK__BUILTIN_VA_START: return "'__builtin_va_start'";
+    case TOK__BUILTIN_VA_ARG: return "'__builtin_va_arg'";
+    case TOK__BUILTIN_VA_END: return "'__builtin_va_end'";
+
+    /* 标识符和字面量 */
+    case TOK_IDENT:           return "identifier";
+    case TOK_NUMBER:          return "number";
+    case TOK_STRING:          return "string literal";
+
+    /* 标点符号 */
+    case TOK_SEMI:            return "';'";
+    case TOK_LBRACE:          return "'{'";
+    case TOK_RBRACE:          return "'}'";
+    case TOK_LPAREN:          return "'('";
+    case TOK_RPAREN:          return "')'";
+    case TOK_LBRACKET:        return "'['";
+    case TOK_RBRACKET:        return "']'";
+    case TOK_COMMA:           return "','";
+    case TOK_DOT:             return "'.'";
+    case TOK_ARROW:           return "'->'";
+    case TOK_AMPERSAND:       return "'&'";
+    case TOK_STAR:            return "'*'";
+    case TOK_PLUS:            return "'+'";
+    case TOK_MINUS:           return "'-'";
+    case TOK_TILDE:           return "'~'";
+    case TOK_EXCLAM:          return "'!'";
+    case TOK_SLASH:           return "'/'";
+    case TOK_PERCENT:         return "'%'";
+    case TOK_LESS:            return "'<'";
+    case TOK_GREATER:         return "'>'";
+    case TOK_LESS_EQ:         return "'<='";
+    case TOK_GREATER_EQ:      return "'>='";
+    case TOK_EQ_EQ:           return "'=='";
+    case TOK_NOT_EQ:          return "'!='";
+    case TOK_AND_AND:         return "'&&'";
+    case TOK_OR_OR:           return "'||'";
+    case TOK_PIPE:            return "'|'";
+    case TOK_CARET:           return "'^'";
+    case TOK_LESS_LESS:       return "'<<'";
+    case TOK_GREATER_GREATER: return "'>>'";
+    case TOK_EQ:              return "'='";
+    case TOK_PLUS_EQ:         return "'+='";
+    case TOK_MINUS_EQ:        return "'-='";
+    case TOK_STAR_EQ:         return "'*='";
+    case TOK_SLASH_EQ:        return "'/='";
+    case TOK_PERCENT_EQ:      return "'%='";
+    case TOK_AND_EQ:          return "'&='";
+    case TOK_OR_EQ:           return "'|='";
+    case TOK_CARET_EQ:        return "'^='";
+    case TOK_LESS_LESS_EQ:    return "'<<='";
+    case TOK_GREATER_GREATER_EQ: return "'>>='";
+    case TOK_PLUS_PLUS:       return "'++'";
+    case TOK_MINUS_MINUS:     return "'--'";
+    case TOK_QUESTION:        return "'?'";
+    case TOK_COLON:           return "':'";
+    case TOK_ELLIPSIS:        return "'...'";
+    }
+    return "unknown token";
+}
+
+/* 从 token 中提取简短的可读词素（用于显示实际出现的符号） */
+static void token_lexeme(Parser *p, char *buf, int bufsz) {
+    Token t = p->tok;
+    if (t.kind == TOK_IDENT || t.kind == TOK_NUMBER || t.kind == TOK_STRING) {
+        int i;
+        int max = t.len < bufsz - 1 ? t.len : bufsz - 1;
+        for (i = 0; i < max; i++) buf[i] = t.start[i];
+        buf[max] = '\0';
+    } else if (t.kind == TOK_EOF) {
+        buf[0] = '<'; buf[1] = 'E'; buf[2] = 'O'; buf[3] = 'F'; buf[4] = '>'; buf[5] = '\0';
+    } else if (t.kind == TOK_ERROR) {
+        buf[0] = '<'; buf[1] = 'l'; buf[2] = 'e'; buf[3] = 'x'; buf[4] = '-'; buf[5] = 'e'; buf[6] = 'r'; buf[7] = 'r'; buf[8] = '>'; buf[9] = '\0';
+    } else {
+        const char *tn = token_name(t.kind);
+        int i; for (i = 0; tn[i] && i < bufsz - 1; i++) buf[i] = tn[i];
+        buf[i] = '\0';
+    }
+}
+
 /* ─── 错误报告 ─── */
 
 void error_at(Parser *p, const char *msg) {
-    __printf("error [line %d tok=%d]: %s\n", p->lexer->line, p->tok.kind, msg);
-    /* Debug: print surrounding context */
+    const char *fn = p->lexer->filename ? p->lexer->filename : "<unknown>";
+    __eprintf("error: %s:%d:%d: %s\n", fn, p->lexer->line, p->lexer->col, msg);
+    /* 显示上下文行 */
     if (p->tok.start) {
-        int ctx = 0;
-        while (ctx < 40 && p->tok.start + ctx < p->lexer->end) {
-            char c = p->tok.start[ctx];
-            if (c == '\n') { __printf("\\n"); break; }
-            if (c >= 32) __printf("%c", c);
-            else __printf("\\x%02x", (unsigned char)c);
-            ctx++;
+        /* 找行首 */
+        const char *bol = p->tok.start;
+        while (bol > p->lexer->start && *(bol - 1) != '\n') bol--;
+        /* 找行尾 */
+        const char *eol = p->tok.start;
+        while (eol < p->lexer->end && *eol != '\n') eol++;
+        /* 显示上下文行 */
+        __write(2, "     ", 4);
+        const char *cp = bol;
+        while (cp < eol) {
+            __write(2, cp, 1);
+            cp++;
         }
-        __printf("\n");
+        __write(2, "\n", 1);
+        /* 显示 ^~~ 指向标记位置 */
+        __write(2, "     ", 4);
+        int spaces = p->tok.start - bol;
+        int si;
+        for (si = 0; si < spaces; si++) __write(2, " ", 1);
+        __write(2, "^", 1);
+        /* 对于标识符和数字，标记宽度 */
+        if (p->tok.len > 1 && (p->tok.kind == TOK_IDENT || p->tok.kind == TOK_NUMBER)) {
+            int ti;
+            for (ti = 1; ti < p->tok.len && ti < 40; ti++) __write(2, "~", 1);
+        }
+        __write(2, "\n", 1);
     }
     p->had_error = 1;
 }
@@ -261,7 +401,13 @@ static int match(Parser *p, TokenKind kind) {
 
 static int expect(Parser *p, TokenKind kind) {
     if (p->tok.kind == kind) { consume(p); return 1; }
-    error_at(p, "unexpected token");
+    char lexeme[64];
+    token_lexeme(p, lexeme, sizeof(lexeme));
+    const char *fn = p->lexer->filename ? p->lexer->filename : "<unknown>";
+    __eprintf("error: %s:%d:%d: expected %s but got %s\n",
+             fn, p->lexer->line, p->lexer->col,
+             token_name(kind), lexeme);
+    p->had_error = 1;
     return 0;
 }
 
@@ -468,6 +614,13 @@ static AstNode *parse_primary(Parser *p) {
         AstNode *n = parse_expr_comma(p);
         expect(p, TOK_RPAREN);
         return n;
+    }
+
+    if (t.kind == TOK_ERROR) {
+        error_at(p, p->lexer->lex_err ? p->lexer->lex_err : "unrecognized character or invalid token");
+        p->lexer->lex_err = 0;
+        consume(p);
+        return NULL;
     }
 
     error_at(p, "expected expression");

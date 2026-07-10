@@ -210,6 +210,9 @@ extern int    __munmap(void *addr, size_t length);
  */
 extern void   __printf(const char *fmt, ...);
 
+/* __eprintf — 格式化输出到 stderr (fd 2)。实现同 __printf 但写 fd 2。 */
+extern void   __eprintf(const char *fmt, ...);
+
 /* 内存分配 */
 extern void  *tlibc_malloc(size_t size);
 extern void   tlibc_free(void *ptr);

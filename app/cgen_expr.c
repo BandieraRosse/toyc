@@ -1863,7 +1863,10 @@ void cgen_expr(AstNode *node) {
                 e1(0xC7); e1(0x41); e1(0x04); e4(48);
                 e1(0x48); e1(0x8D); e1(0x45); e1(0x10);
                 e1(0x48); e1(0x89); e1(0x41); e1(0x08);
-                e1(0x48); e1(0x8D); e1(0x45); e1(reg_save_offset & 0xFF);
+                if (disp8_fits(reg_save_offset))
+                    { e1(0x48); e1(0x8D); e1(0x45); e1(reg_save_offset & 0xFF); }
+                else
+                    { e1(0x48); e1(0x8D); e1(0x85); e4(reg_save_offset); }
                 e1(0x48); e1(0x89); e1(0x41); e1(0x10);
                 break;
             }

@@ -29,7 +29,7 @@
 static char *read_file(const char *path, int *out_len) {
     int fd = __openat(AT_FDCWD, path, O_RDONLY, 0);
     if (fd < 0) {
-        __printf("tcc: cannot open '%s'\n", path);
+        __eprintf("tcc: cannot open '%s'\n", path);
         return NULL;
     }
 
@@ -37,14 +37,14 @@ static char *read_file(const char *path, int *out_len) {
     __lseek(fd, 0, SEEK_SET);
 
     if (size <= 0 || size > 1024 * 1024) {
-        __printf("tcc: invalid file size for '%s'\n", path);
+        __eprintf("tcc: invalid file size for '%s'\n", path);
         __close(fd);
         return NULL;
     }
 
     char *buf = (char *)tlibc_malloc(size + 2);
     if (!buf) {
-        __printf("tcc: out of memory\n");
+        __eprintf("tcc: out of memory\n");
         __close(fd);
         return NULL;
     }
@@ -53,7 +53,7 @@ static char *read_file(const char *path, int *out_len) {
     __close(fd);
 
     if (n != size) {
-        __printf("tcc: read error on '%s'\n", path);
+        __eprintf("tcc: read error on '%s'\n", path);
         tlibc_free(buf);
         return NULL;
     }
@@ -123,7 +123,7 @@ int main(int argc, char *argv[]) {
     }
 
     if (!input_path) {
-        __printf("usage: tcc input.c [-o output.o]\n");
+        __eprintf("usage: tcc input.c [-o output.o]\n");
         return 1;
     }
 
@@ -145,7 +145,7 @@ int main(int argc, char *argv[]) {
     char *pp_src = preprocess(src, src_len, input_path, &pp_len);
     tlibc_free(src);
     if (!pp_src) {
-        __printf("tcc: preprocessing failed\n");
+        __eprintf("tcc: preprocessing failed\n");
         return 1;
     }
 
@@ -155,19 +155,19 @@ int main(int argc, char *argv[]) {
         __printf("--- PREPROCESSED OUTPUT (first 300 lines) ---\n");
         for (pp_i = 0; pp_i < pp_len && line_n <= 300; pp_i++) {
             if (pp_src[pp_i] == '\n') {
-                __printf("\n"); line_n++;
+                __eprintf("\n"); line_n++;
             } else {
-                __printf("%c", pp_src[pp_i]);
+                __eprintf("%c", pp_src[pp_i]);
             }
         }
-        __printf("\n--- END (shown %d lines) ---\n", line_n - 1);
+        __eprintf("\n--- END (shown %d lines) ---\n", line_n - 1);
         tlibc_free(pp_src);
         return 0;
     }
 
     Arena *arena = (Arena *)tlibc_malloc(sizeof(Arena) + ARENA_SIZE);
     if (!arena) {
-        __printf("tcc: out of memory\n");
+        __eprintf("tcc: out of memory\n");
         tlibc_free(pp_src);
         return 1;
     }
@@ -175,14 +175,14 @@ int main(int argc, char *argv[]) {
     arena->end = arena->ptr + ARENA_SIZE;
 
     Lexer lexer;
-    lexer_init(&lexer, pp_src, pp_len);
+    lexer_init(&lexer, pp_src, pp_len, input_path);
 
     Parser parser;
     parser_init(&parser, &lexer, arena);
     AstNode *prog = parse_program(&parser);
 
     if (parser.had_error) {
-        __printf("tcc: parse error\n");
+        __eprintf("tcc: parse error\n");
         tlibc_free(pp_src);
         tlibc_free(arena);
         return 1;
@@ -195,7 +195,7 @@ int main(int argc, char *argv[]) {
     make_output_path(input_path, output_path, out_path, sizeof(out_path));
 
     if (elf_write_object(out_path) != 0) {
-        __printf("tcc: cannot write '%s'\n", out_path);
+        __eprintf("tcc: cannot write '%s'\n", out_path);
         tlibc_free(pp_src);
         tlibc_free(arena);
         return 1;

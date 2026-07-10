@@ -157,7 +157,7 @@ static void do_include(const char *s, int *pos, int len, OutBuf *out, int depth)
 
     /* #include <...>：标准库头文件，tcc 不支持 */
     if (delim == '<') {
-        __printf("tcc: standard library header '<%s>' not supported (tcc is freestanding, no libc headers)\n", fn);
+        __eprintf("tcc: standard library header '<%s>' not supported (tcc is freestanding, no libc headers)\n", fn);
         return;
     }
 
@@ -184,7 +184,7 @@ static void do_include(const char *s, int *pos, int len, OutBuf *out, int depth)
         int l2; char *fc = pp_read(pth, &l2);
         if (fc) { pp_buf(fc, l2, out, depth + 1); tlibc_free(fc); fnd = 1; break; }
     }
-    if (!fnd) { __printf("tcc: cannot find '%s'\n", fn); }
+    if (!fnd) { __eprintf("tcc: cannot find '%s'\n", fn); }
 }
 
 static void get_name(const char *s, int start, int end, char *buf, int bufsz) {
@@ -311,8 +311,9 @@ static void do_directive(const char *s, int ls, int le, OutBuf *out, int depth) 
     }
 
     if (dl == 5 && s[dw]=='e'&&s[dw+1]=='r'&&s[dw+2]=='r') {
-        while (p < le && pp_ws(s[p])) { p++; } __printf("tcc: #error ");
-        while (p < le) { __printf("%c", s[p++]); } __printf("\n"); return;
+        while (p < le && pp_ws(s[p])) { p++; } __eprintf("tcc: #error: ");
+        { int ei; for (ei = p; ei < le; ei++) { char ec = s[ei]; __write(2, &ec, 1); } }
+        __write(2, "\n", 1); return;
     }
 }
 

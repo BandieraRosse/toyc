@@ -228,7 +228,7 @@ test-source: $(BUILD)/tcc $(BUILD)/tld
 
 # ─── 全部测试 ──────────────────────────────────────────────────
 
-test-all: test test-selfhost test-source test-tld
+test-all: test test-selfhost test-source test-tld test-error
 	@printf "$(GREEN)✓ 全部测试通过$(RESET)\n"
 
 # ─── tld 链接器测试 ───────────────────────────────────────────
@@ -326,3 +326,41 @@ test-tld-self: $(BUILD)/tld $(BUILD)/tcc_rt.o $(BUILD)/tcc_rt_start.o
 	else \
 		printf "\n$(RED)✗ tld 自举验证失败$(RESET)\n"; \
 	fi
+
+# ─── 错误报告测试 ───────────────────────────────────────────
+
+ERRTESTDIR := compiler-tests/error
+test-error: $(BUILD)/tcc
+	@ok=0; fail=0; total=0; mkdir -p tmp; \
+	printf "$(BLUE)══════ tcc 错误报告测试 ══════$(RESET)\n\n"; \
+	for f in $(ERRTESTDIR)/*.c; do \
+		[ -f "$$f" ] || continue; \
+		total=$$((total+1)); \
+		name=$$(basename "$$f" .c); \
+		expect_err=$$(sed -n 's/.*EXPECT_ERR:[[:space:]]*\(.*\)\*\//\1/p' "$$f" | head -1 | sed 's/[[:space:]]*$$//'); \
+		printf "  $(BLUE)━━━ %s ━━━$(RESET)\n" "$$name"; \
+		output=$$($(BUILD)/tcc "$$f" -o /tmp/err_$$name.o 2>&1); \
+		rc=$$?; \
+		logfile="tmp/err_$${name}.log"; \
+		echo "$$output" > "$$logfile"; \
+		printf "  tcc output:\n"; \
+		if [ -n "$$output" ]; then \
+			echo "$$output" | sed 's/^/    /'; \
+		else \
+			echo "    (no output)"; \
+		fi; \
+		if [ $$rc -eq 0 ]; then \
+			printf "  $(RED)✗ 编译成功，但期望报错$(RESET)\n"; \
+			fail=$$((fail+1)); \
+		elif [ -n "$$expect_err" ] && ! echo "$$output" | grep -qF "$$expect_err"; then \
+			printf "  $(RED)✗ 错误模式不匹配$(RESET)\n"; \
+			printf "    expect: %s\n" "$$expect_err"; \
+			fail=$$((fail+1)); \
+		else \
+			printf "  $(GREEN)✓ 错误正确$(RESET)\n"; \
+			ok=$$((ok+1)); \
+		fi; \
+		printf "\n"; \
+	done; \
+	printf "$(BLUE)══════$(RESET) $(GREEN)%d passed$(RESET), $(RED)%d failed$(RESET), %d total $(BLUE)══════$(RESET)\n" "$$ok" "$$fail" "$$total"; \
+	[ "$$fail" -eq 0 ]

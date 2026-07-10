@@ -334,12 +334,14 @@ typedef struct {
     const char *start;   /* 当前 token 起始 */
     const char *pos;     /* 当前位置 */
     const char *end;     /* 源文件结束 */
+    const char *filename;/* 源文件名（供错误报告使用） */
     int line;
     int col;
     Token cur;           /* 当前 token */
+    const char *lex_err; /* 最近一次词法错误的描述（供 parser 提取） */
 } Lexer;
 
-void lexer_init(Lexer *lx, const char *src, int len);
+void lexer_init(Lexer *lx, const char *src, int len, const char *fname);
 Token lexer_next(Lexer *lx);
 Token lexer_peek(Lexer *lx);
 
