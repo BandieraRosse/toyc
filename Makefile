@@ -19,13 +19,13 @@
 BOOTSTRAP := bootstrap
 CC        := $(BOOTSTRAP)/tcc
 AS        := $(BOOTSTRAP)/tas
-LD        ?= ld
+LD        := $(BOOTSTRAP)/tld
 
 # ─── 标志 ───────────────────────────────────────────────────────
 
 CFLAGS  := -nostdlib -ffreestanding -Wall -Wextra -I include -I app
 # tcc 忽略所有不识别的 flag（-nostdlib -Wall -Wextra -I -MD 等均无害）。
-LDFLAGS := -nostdlib -static -e __tlibc_start
+# tld 直接链接，不需要 LDFLAGS
 
 # ─── 路径 ───────────────────────────────────────────────────────
 
@@ -44,7 +44,7 @@ HEADERS  := $(TCC_NEED) $(ELF_H) $(ELF_W_H)
 
 .PHONY: all clean update-bootstrap test test-selfhost test-source test-all
 
-all: $(BUILD)/tcc $(BUILD)/tas
+all: $(BUILD)/tcc $(BUILD)/tas $(BUILD)/tld
 	@printf "$(GREEN)✓ 构建完成$(RESET)\n"
 
 # ─── 源文件分组 ────────────────────────────────────────────────
@@ -105,24 +105,24 @@ $(BUILD)/tcc_rt.o: $(SRC)/tcc_rt.c $(TCC_NEED) | $(BUILD)
 
 # ─── 链接规则 ──────────────────────────────────────────────────
 
-$(BUILD)/tcc: $(TCC_OBJS)
+$(BUILD)/tcc: $(BUILD)/tld $(TCC_OBJS)
 	@printf "$(BLUE)  LD$(RESET)  tcc ... "
-	$(LD) $(LDFLAGS) $^ -o $@
+	$(LD) $(TCC_OBJS) -o $@
 	@size=$$(stat -c%s $@); printf "$(GREEN)ok$(RESET) ($$size bytes)\n"
 
-$(BUILD)/tas: $(TAS_OBJS)
+$(BUILD)/tas: $(BUILD)/tld $(TAS_OBJS)
 	@printf "$(BLUE)  LD$(RESET)  tas ... "
-	$(LD) $(LDFLAGS) $^ -o $@
+	$(LD) $(TAS_OBJS) -o $@
 	@printf "$(GREEN)ok$(RESET)\n"
 
-$(BUILD)/tpp: $(TPP_OBJS)
+$(BUILD)/tpp: $(BUILD)/tld $(TPP_OBJS)
 	@printf "$(BLUE)  LD$(RESET)  tpp ... "
-	$(LD) $(LDFLAGS) $^ -o $@
+	$(LD) $(TPP_OBJS) -o $@
 	@printf "$(GREEN)ok$(RESET)\n"
 
 $(BUILD)/tld: $(TLD_OBJS)
 	@printf "$(BLUE)  LD$(RESET)  tld ... "
-	$(LD) $(LDFLAGS) $^ -o $@
+	$(LD) $(TLD_OBJS) -o $@
 	@size=$$(stat -c%s $@); printf "$(GREEN)ok$(RESET) ($$size bytes)\n"
 
 # ─── 清理 ──────────────────────────────────────────────────────
@@ -134,12 +134,13 @@ clean:
 
 # ─── 更新自举种子 ──────────────────────────────────────────────
 
-update-bootstrap: $(BUILD)/tcc $(BUILD)/tas
+update-bootstrap: $(BUILD)/tcc $(BUILD)/tas $(BUILD)/tld
 	@printf "$(BLUE)  BOOTSTRAP$(RESET) 更新自举种子 ...\n"
 	@mkdir -p $(BOOTSTRAP)
 	cp $(BUILD)/tcc $(BOOTSTRAP)/tcc
 	cp $(BUILD)/tas $(BOOTSTRAP)/tas
-	@printf "$(GREEN)✓ 种子已更新: $(BOOTSTRAP)/tcc $(BOOTSTRAP)/tas$(RESET)\n"
+	cp $(BUILD)/tld $(BOOTSTRAP)/tld
+	@printf "$(GREEN)✓ 种子已更新: bootstrap/tcc bootstrap/tas bootstrap/tld$(RESET)\n"
 
 # ─── 依赖文件包含（-MD 自动生成的 .d 实现增量头文件跟踪） ──
 -include $(ALL_OBJS:.o=.d)
@@ -154,18 +155,12 @@ RESET  := \033[0m
 
 TESTDIR     := compiler-tests/basic
 SELFTESTDIR := compiler-tests/selfhost
-LDTESTFLAGS := -nostdlib -static -T ld.script
-
 # 常规测试
-test: $(BUILD)/tcc $(BUILD)/tcc_rt.o $(BUILD)/tcc_rt_start.o
+test: $(BUILD)/tcc $(BUILD)/tcc_rt.o $(BUILD)/tcc_rt_start.o $(BUILD)/tld
 	@ok=0; fail=0; total=0; mkdir -p tmp; \
-	ids=$(filter-out test test-all test-selfhost test-source,$(MAKECMDGOALS)); \
-	if [ -z "$$ids" ]; then files="$(TESTDIR)/*.c"; \
-	else files=; for n in $$ids; do files="$$files $(TESTDIR)/$${n}_*.c"; done; fi; \
 	printf "$(BLUE)══════ tcc 常规测试 ══════$(RESET)\n"; \
-	if [ -n "$$ids" ]; then printf "  指定编号: $$ids\n"; fi; \
 	printf "\n"; \
-	for f in $$files; do \
+	for f in $(TESTDIR)/*.c; do \
 		[ -f "$$f" ] || continue; \
 		total=$$((total+1)); \
 		name=$$(basename "$$f" .c); \
@@ -173,7 +168,7 @@ test: $(BUILD)/tcc $(BUILD)/tcc_rt.o $(BUILD)/tcc_rt_start.o
 		[ -z "$$expect" ] && expect=0; \
 		printf "  tcc → $(BLUE)%-26s$(RESET) " "$$name"; \
 		$(BUILD)/tcc "$$f" -o /tmp/$$name.o 2>/dev/null || { printf "$(RED)COMPILE FAIL$(RESET)\n"; fail=$$((fail+1)); continue; }; \
-		$(LD) $(LDTESTFLAGS) /tmp/$$name.o $(BUILD)/tcc_rt.o $(BUILD)/tcc_rt_start.o -o /tmp/$$name 2>/dev/null || { printf "$(RED)LINK FAIL$(RESET)\n"; fail=$$((fail+1)); continue; }; \
+		$(BUILD)/tld /tmp/$$name.o $(BUILD)/tcc_rt.o $(BUILD)/tcc_rt_start.o -o /tmp/$$name 2>/dev/null || { printf "$(RED)LINK FAIL$(RESET)\n"; fail=$$((fail+1)); continue; }; \
 		/tmp/$$name >tmp/$$name.log 2>&1; got=$$?; \
 		if [ "$$got" = "$$expect" ]; then printf "$(GREEN)✓$(RESET) (%d)\n" "$$got"; ok=$$((ok+1)); \
 		else printf "$(RED)✗$(RESET) (want %d got %d) — tmp/$$name.log\n" "$$expect" "$$got"; fail=$$((fail+1)); fi; \
@@ -182,7 +177,7 @@ test: $(BUILD)/tcc $(BUILD)/tcc_rt.o $(BUILD)/tcc_rt_start.o
 	[ "$$fail" -eq 0 ]
 
 # 自包含测试（无 tcc_rt 依赖）
-test-selfhost: $(BUILD)/tcc
+test-selfhost: $(BUILD)/tcc $(BUILD)/tld
 	@ok=0; fail=0; total=0; mkdir -p tmp; \
 	printf "$(BLUE)══════ tcc 自包含测试 ══════$(RESET)\n\n"; \
 	for f in $(SELFTESTDIR)/*.c; do \
@@ -193,7 +188,7 @@ test-selfhost: $(BUILD)/tcc
 		[ -z "$$expect" ] && expect=0; \
 		printf "  tcc → $(BLUE)%-26s$(RESET) " "$$name"; \
 		$(BUILD)/tcc "$$f" -o /tmp/$$name.o 2>/dev/null || { printf "$(RED)COMPILE FAIL$(RESET)\n"; fail=$$((fail+1)); continue; }; \
-		$(LD) $(LDTESTFLAGS) /tmp/$$name.o -o /tmp/$$name 2>/dev/null || { printf "$(RED)LINK FAIL$(RESET)\n"; fail=$$((fail+1)); continue; }; \
+		$(BUILD)/tld /tmp/$$name.o -o /tmp/$$name 2>/dev/null || { printf "$(RED)LINK FAIL$(RESET)\n"; fail=$$((fail+1)); continue; }; \
 		/tmp/$$name >tmp/$$name.log 2>&1; got=$$?; \
 		if [ "$$got" = "$$expect" ]; then printf "$(GREEN)✓$(RESET) (%d)\n" "$$got"; ok=$$((ok+1)); \
 		else printf "$(RED)✗$(RESET) (want %d got %d) — tmp/$$name.log\n" "$$expect" "$$got"; fail=$$((fail+1)); fi; \
@@ -204,9 +199,7 @@ test-selfhost: $(BUILD)/tcc
 # ─── 源文件独立测试 ───────────────────────────────────────────
 
 SOURCETESTDIR := compiler-tests/source
-SCTEST_LDFLAGS := -nostdlib -static -T ld.script
-
-test-source: $(BUILD)/tcc
+test-source: $(BUILD)/tcc $(BUILD)/tld
 	@ok=0; fail=0; total=0; mkdir -p tmp; \
 	printf "$(BLUE)══════ source 测试（tcc 编译）══════$(RESET)\n\n"; \
 	for f in $(SOURCETESTDIR)/*.c; do \
@@ -219,7 +212,7 @@ test-source: $(BUILD)/tcc
 		if [ $$? -ne 0 ]; then \
 			printf "$(RED)COMPILE FAIL$(RESET)\n"; fail=$$((fail+1)); continue; \
 		fi; \
-		$(LD) $(SCTEST_LDFLAGS) /tmp/$$name.o -o /tmp/test_$$name 2>tmp/test_source_$$name-link.log; \
+		$(BUILD)/tld /tmp/$$name.o -o /tmp/test_$$name 2>tmp/test_source_$$name-link.log; \
 		if [ $$? -ne 0 ]; then \
 			printf "$(RED)LINK FAIL$(RESET)\n"; fail=$$((fail+1)); continue; \
 		fi; \
@@ -333,10 +326,3 @@ test-tld-self: $(BUILD)/tld $(BUILD)/tcc_rt.o $(BUILD)/tcc_rt_start.o
 	else \
 		printf "\n$(RED)✗ tld 自举验证失败$(RESET)\n"; \
 	fi
-
-# ─── 允许 make test 01 05 等带编号参数 ────────────────────────
-
-# ─── 允许 make test 01 05 等带编号参数 ────────────────────────
-
-%:
-	@:

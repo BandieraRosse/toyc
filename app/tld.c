@@ -35,10 +35,11 @@
 
 #define MAX_INPUTS       64
 #define MAX_SYMS         16384
-#define SECTION_BUF_SIZE (1024 * 1024)     /* 1MB 各合并段 */
 #define BASE_ADDR        0x400000
-#define ENTRY_SYM        "__tlibc_start"
 #define PAGE_SIZE        0x1000
+
+/* 入口符号，可由 -e 覆盖 */
+static const char *entry_sym_name = "__tlibc_start";
 
 /* ═══════════════════════════════════════════════════════════════════
  *  数据结构
@@ -108,12 +109,12 @@ static const char  *output_path;
 static Symbol       syms[MAX_SYMS];
 static int          sym_count;
 
-/* 合并后段缓冲区 */
-static unsigned char merged_text[SECTION_BUF_SIZE];
-static int          merged_text_size;
-static unsigned char merged_data[SECTION_BUF_SIZE];
-static int          merged_data_size;
-static int          merged_bss_size;
+/* 合并后段缓冲区（堆分配） */
+static unsigned char *merged_text;
+static int           merged_text_size;
+static unsigned char *merged_data;
+static int           merged_data_size;
+static int           merged_bss_size;
 
 /* 最终段基址 */
 static uint64_t     text_addr;
@@ -441,12 +442,12 @@ static void resolve_symbols(void) {
                 continue;
             error("undefined symbol", syms[i].name);
         }
-        if (strcmp(syms[i].name, ENTRY_SYM) == 0)
+        if (strcmp(syms[i].name, entry_sym_name) == 0)
             entry_addr = syms[i].value;
     }
 
     if (entry_addr == 0)
-        error("entry point '" ENTRY_SYM "' not found", NULL);
+        error("entry point not found", entry_sym_name);
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -536,16 +537,29 @@ static void write_output(const char *path) {
      *   [120..4095] 填充到页面边界
      *   [0x1000]    .text 数据
      *   [0x1000+ts] .data 数据
-     *   [0x1000+ts+ds] 文件结束
+     *   [ += mds ]  .shstrtab
+     *   [ += shstr_sz ] Section header table (5 × 64)
      *   PT_LOAD: p_offset=0x1000, p_vaddr=BASE_ADDR, p_filesz=ts+ds, p_memsz=ts+ds+bs
-     *   → .text 在 vaddr BASE_ADDR 开始
-     *   → 符号偏移 st_value 直接加 BASE_ADDR 得到最终地址
+     *   → 节区表位于 PT_LOAD 范围之后，不干扰程序加载
      * ── */
-    int ehdr_sz = 64;
-    int phdr_sz = 56;
-    int text_file_off = PAGE_SIZE;             /* 页面边界对齐 */
+
+    /* .shstrtab：各节区名称的 null-结尾顺序拼接 */
+    static const char shstrtab_data[28] = {
+        0, '.','t','e','x','t', 0,
+        '.','d','a','t','a', 0,
+        '.','b','s','s', 0,
+        '.','s','h','s','t','r','t','a','b', 0
+    };
+    /* 偏移：0="" 1=".text" 7=".data" 13=".bss" 18=".shstrtab" */
+    int shstrtab_size = sizeof(shstrtab_data);
+    int shnum = 5;         /* SHN_UNDEF + .text + .data + .bss + .shstrtab */
+    int shentsize = 64;
+
+    int text_file_off = PAGE_SIZE;
     int data_file_off = text_file_off + merged_text_size;
-    int total_file_sz = data_file_off + merged_data_size;
+    int shstrtab_off  = data_file_off + merged_data_size;
+    int shdr_off      = shstrtab_off + shstrtab_size;
+    int total_file_sz = shdr_off + shnum * shentsize;
 
     unsigned char *buf = (unsigned char *)tlibc_malloc(total_file_sz + 16);
     if (!buf) error("out of memory writing output", NULL);
@@ -561,35 +575,97 @@ static void write_output(const char *path) {
     buf[p++] = 0;     /* ELFOSABI_NONE */
     for (int i = 0; i < 8; i++) buf[p++] = 0;  /* e_ident[8..15] = 0 */
 
-    w16(buf + p, 2);   p += 2;  /* e_type = ET_EXEC */
-    w16(buf + p, 62);  p += 2;  /* e_machine = EM_X86_64 */
-    w32(buf + p, 1);   p += 4;  /* e_version */
-    w64(buf + p, entry_addr); p += 8;  /* e_entry */
-    w64(buf + p, 64);  p += 8;  /* e_phoff */
-    w64(buf + p, 0);   p += 8;  /* e_shoff = 0 */
-    w32(buf + p, 0);   p += 4;  /* e_flags */
-    w16(buf + p, 64);  p += 2;  /* e_ehsize */
-    w16(buf + p, 56);  p += 2;  /* e_phentsize */
-    w16(buf + p, 1);   p += 2;  /* e_phnum */
-    w16(buf + p, 0);   p += 2;  /* e_shentsize */
-    w16(buf + p, 0);   p += 2;  /* e_shnum */
-    w16(buf + p, 0);   p += 2;  /* e_shstrndx */
+    w16(buf + p, 2);    p += 2;  /* e_type = ET_EXEC */
+    w16(buf + p, 62);   p += 2;  /* e_machine = EM_X86_64 */
+    w32(buf + p, 1);    p += 4;  /* e_version */
+    w64(buf + p, entry_addr);    p += 8;  /* e_entry */
+    w64(buf + p, 64);            p += 8;  /* e_phoff */
+    w64(buf + p, (uint64_t)shdr_off); p += 8;  /* e_shoff */
+    w32(buf + p, 0);    p += 4;  /* e_flags */
+    w16(buf + p, 64);   p += 2;  /* e_ehsize */
+    w16(buf + p, 56);   p += 2;  /* e_phentsize */
+    w16(buf + p, 1);    p += 2;  /* e_phnum */
+    w16(buf + p, shentsize); p += 2;  /* e_shentsize */
+    w16(buf + p, shnum); p += 2;  /* e_shnum */
+    w16(buf + p, 4);    p += 2;  /* e_shstrndx (.shstrtab = index 4) */
 
     /* ── Program header: PT_LOAD ── */
     w32(buf + p, 1);   p += 4;  /* p_type = PT_LOAD */
     w32(buf + p, 7);   p += 4;  /* p_flags = PF_R|PF_W|PF_X */
-    w64(buf + p, text_file_off); p += 8;  /* p_offset = 0x1000 (页面边界的 .text) */
-    w64(buf + p, BASE_ADDR); p += 8;      /* p_vaddr */
-    w64(buf + p, BASE_ADDR); p += 8;      /* p_paddr */
-    w64(buf + p, merged_text_size + merged_data_size); p += 8;  /* p_filesz */
-    w64(buf + p, merged_text_size + merged_data_size + merged_bss_size); p += 8;  /* p_memsz */
-    w64(buf + p, PAGE_SIZE); p += 8;  /* p_align */
+    w64(buf + p, text_file_off); p += 8;
+    w64(buf + p, BASE_ADDR); p += 8;
+    w64(buf + p, BASE_ADDR); p += 8;
+    w64(buf + p, merged_text_size + merged_data_size); p += 8;
+    w64(buf + p, merged_text_size + merged_data_size + merged_bss_size); p += 8;
+    w64(buf + p, PAGE_SIZE); p += 8;
 
     /* ── 写入段数据 ── */
     for (int i = 0; i < merged_text_size; i++)
         buf[text_file_off + i] = merged_text[i];
     for (int i = 0; i < merged_data_size; i++)
         buf[data_file_off + i] = merged_data[i];
+
+    /* ── 写入 .shstrtab ── */
+    for (int i = 0; i < shstrtab_size; i++)
+        buf[shstrtab_off + i] = shstrtab_data[i];
+
+    /* ── 写入 Section header table ── */
+    p = shdr_off;
+
+    /* index 0: SHN_UNDEF — 全零（memset 已清零，跳过） */
+    p += shentsize;
+
+    /* index 1: .text — SHF_ALLOC | SHF_EXECINSTR */
+    w32(buf + p, 1);   p += 4;  /* sh_name */
+    w32(buf + p, 1);   p += 4;  /* sh_type = SHT_PROGBITS */
+    w64(buf + p, 0x6); p += 8;  /* sh_flags */
+    w64(buf + p, text_addr); p += 8;
+    w64(buf + p, text_file_off); p += 8;
+    w64(buf + p, merged_text_size); p += 8;
+    w32(buf + p, 0);   p += 4;
+    w32(buf + p, 0);   p += 4;
+    w64(buf + p, 16);  p += 8;  /* sh_addralign */
+    w64(buf + p, 0);   p += 8;
+
+    /* index 2: .data — SHF_ALLOC | SHF_WRITE */
+    w32(buf + p, 7);   p += 4;  /* sh_name */
+    w32(buf + p, 1);   p += 4;  /* sh_type = SHT_PROGBITS */
+    w64(buf + p, 0x3); p += 8;  /* sh_flags */
+    w64(buf + p, data_addr); p += 8;
+    w64(buf + p, data_file_off); p += 8;
+    w64(buf + p, merged_data_size); p += 8;
+    w32(buf + p, 0);   p += 4;
+    w32(buf + p, 0);   p += 4;
+    w64(buf + p, 32);  p += 8;
+    w64(buf + p, 0);   p += 8;
+
+    /* index 3: .bss — SHF_ALLOC | SHF_WRITE | SHT_NOBITS */
+    w32(buf + p, 13);  p += 4;  /* sh_name */
+    w32(buf + p, 8);   p += 4;  /* sh_type = SHT_NOBITS */
+    w64(buf + p, 0x3); p += 8;  /* sh_flags */
+    w64(buf + p, bss_addr); p += 8;
+    w64(buf + p, 0);   p += 8;  /* sh_offset = 0 (NOBITS) */
+    w64(buf + p, merged_bss_size); p += 8;
+    w32(buf + p, 0);   p += 4;
+    w32(buf + p, 0);   p += 4;
+    w64(buf + p, 32);  p += 8;
+    w64(buf + p, 0);   p += 8;
+
+    /* index 4: .shstrtab — SHT_STRTAB */
+    w32(buf + p, 18);  p += 4;  /* sh_name */
+    w32(buf + p, 3);   p += 4;  /* sh_type = SHT_STRTAB */
+    w64(buf + p, 0);   p += 8;  /* sh_flags = 0 */
+    w64(buf + p, 0);   p += 8;  /* sh_addr = 0 (不加载) */
+    w64(buf + p, shstrtab_off); p += 8;
+    w64(buf + p, shstrtab_size); p += 8;
+    w32(buf + p, 0);   p += 4;
+    w32(buf + p, 0);   p += 4;
+    w64(buf + p, 1);   p += 8;  /* sh_addralign = 1 */
+    w64(buf + p, 0);   p += 8;
+
+    /* ── RWX 警告 ── */
+    __write(2, "tld: warning: all sections mapped RWX "
+               "(single PT_LOAD segment)\n", 63);
 
     /* ── 写文件 ── */
     int fd = __openat(AT_FDCWD, path, O_WRONLY | O_CREAT | O_TRUNC, 0755);
@@ -613,6 +689,8 @@ int main(int argc, char **argv) {
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-o") == 0 && i + 1 < argc) {
             output_path = argv[++i];
+        } else if (strcmp(argv[i], "-e") == 0 && i + 1 < argc) {
+            entry_sym_name = argv[++i];
         } else if (argv[i][0] == '-') {
             /* 忽略其他 ld 参数 */
         } else {
@@ -627,6 +705,14 @@ int main(int argc, char **argv) {
     merge_sections();
 
     /* 2) 数据复制到合并缓冲区 */
+
+    /* 1.5) 分配合并段缓冲区 */
+    merged_text = (unsigned char *)tlibc_malloc(merged_text_size > 0 ? merged_text_size : 1);
+    merged_data = (unsigned char *)tlibc_malloc(merged_data_size > 0 ? merged_data_size : 1);
+    if (!merged_text || !merged_data) error("out of memory", NULL);
+    __memset(merged_text, 0, merged_text_size);
+    __memset(merged_data, 0, merged_data_size);
+
     merged_text_size = 0;
     merged_data_size = 0;
     merged_bss_size  = 0;
