@@ -270,35 +270,31 @@ test-tld: $(BUILD)/tld $(BUILD)/tcc
 # tld 多文件链接测试
 test-tld-multifile: $(BUILD)/tld $(BUILD)/tcc
 	@printf "$(BLUE)══════ tld 多文件链接测试 ══════$(RESET)\n\n"; \
-	ok=0; fail=0; total=0; \
-	mkdir -p tmp; \
-	\
-	# 编译 tld 自身的多文件测试源文件（如果有的话） \
-	if [ -d "$(TLD_TESTDIR)" ]; then \
-		for f in $(TLD_TESTDIR)/*.c; do \
-			[ -f "$$f" ] || continue; \
-			total=$$((total+1)); \
-			name=$$(basename "$$f" .c); \
-			expect=$$(sed -n 's/.*EXPECT: *\([0-9]*\).*/\1/p' "$$f" | head -1); \
-			[ -z "$$expect" ] && expect=0; \
-			printf "  tcc+tld → $(BLUE)%-24s$(RESET) " "$$name"; \
-			$(BUILD)/tcc "$$f" -o /tmp/tld_mf_$$name.o 2>/tmp/tld_mf_$$name-compile.log || { \
-				printf "$(RED)COMPILE FAIL$(RESET)\n"; fail=$$((fail+1)); continue; }; \
-			$(BUILD)/tld /tmp/tld_mf_$$name.o -o /tmp/tld_mf_$$name 2>/tmp/tld_mf_$$name-link.log || { \
-				printf "$(RED)LINK FAIL$(RESET)\n"; fail=$$((fail+1)); continue; }; \
-			/tmp/tld_mf_$$name >/tmp/tld_mf_$$name.log 2>&1; got=$$?; \
-			if [ "$$got" = "$$expect" ]; then \
-				printf "$(GREEN)✓$(RESET) (%d)\n" "$$got"; ok=$$((ok+1)); \
+	ok=0; fail=0; \
+	printf "  mf_helper + mf_main ... "; \
+	if $(BUILD)/tcc -nostdlib -ffreestanding -I include -I app \
+		$(TLD_TESTDIR)/mf_helper.c -o /tmp/tld_mf_helper.o 2>/tmp/tld_mf_compile.log && \
+	   $(BUILD)/tcc -nostdlib -ffreestanding -I include -I app \
+		$(TLD_TESTDIR)/mf_main.c -o /tmp/tld_mf_main.o 2>>/tmp/tld_mf_compile.log; then \
+		:; \
+	else \
+		printf "$(RED)COMPILE FAIL$(RESET)\n"; fail=1; \
+	fi; \
+	if [ $$fail -eq 0 ]; then \
+		if $(BUILD)/tld /tmp/tld_mf_main.o /tmp/tld_mf_helper.o \
+			-o /tmp/tld_mf_test 2>/tmp/tld_mf_link.log; then \
+			/tmp/tld_mf_test >/tmp/tld_mf_test.log 2>&1; got=$$?; \
+			if [ "$$got" = "0" ]; then \
+				printf "$(GREEN)✓$(RESET) (exit 0)\n"; ok=1; \
 			else \
-				printf "$(RED)✗$(RESET) (want %d got %d)\n" "$$expect" "$$got"; \
-				fail=$$((fail+1)); fi; \
-		done; \
+				printf "$(RED)✗$(RESET) (exit $$got) — /tmp/tld_mf_test.log\n"; fail=1; \
+			fi; \
+		else \
+			printf "$(RED)LINK FAIL$(RESET)\n"; cat /tmp/tld_mf_link.log; fail=1; \
+		fi; \
 	fi; \
 	\
-	if [ $${total} -eq 0 ]; then \
-		printf "  $(YELLOW)(无 tld 测试文件 — 在 $(TLD_TESTDIR) 中创建 .c 测试文件) $(RESET)\n\n"; \
-	fi; \
-	printf "$(BLUE)══════$(RESET) $(GREEN)%d passed$(RESET), $(RED)%d failed$(RESET), %d total $(BLUE)══════$(RESET)\n\n" "$$ok" "$$fail" "$$total"; \
+	printf "\n$(BLUE)══════$(RESET) $(GREEN)%d passed$(RESET), $(RED)%d failed$(RESET), 1 total $(BLUE)══════$(RESET)\n\n" "$$ok" "$$fail"; \
 	[ "$$fail" -eq 0 ]
 
 # tld 自测试：tld 链接自身 + 运行自我验证
