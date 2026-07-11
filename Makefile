@@ -24,14 +24,14 @@ LD        := $(BOOTSTRAP)/tld
 
 # ─── 标志 ───────────────────────────────────────────────────────
 
-CFLAGS  := -nostdlib -ffreestanding -Wall -Wextra -I include -I app
+CFLAGS  := -nostdlib -ffreestanding -Wall -Wextra -I include -I compiler
 # tcc 忽略所有不识别的 flag（-nostdlib -Wall -Wextra -I -MD 等均无害）。
 # tld 直接链接，不需要 LDFLAGS
 
 # ─── 路径 ───────────────────────────────────────────────────────
 
 BUILD   := build
-SRC     := app
+SRC     := compiler
 INC     := include
 
 # ─── 头文件依赖（修改后触发增量编译） ─────────────────────────
@@ -67,7 +67,7 @@ TPP_C_OBJS := $(addprefix $(BUILD)/, $(TPP_C_SRCS:.c=.o))
 TPP_OBJS   := $(TPP_C_OBJS) $(BUILD)/tcc_rt_start.o
 
 # tld 链接器（现已可由 tcc 编译：Symbol.name 改为 const char* 避开了 char 拷贝 bug）
-TLD_CFLAGS = -nostdlib -ffreestanding -Wall -Wextra -I include -I app
+TLD_CFLAGS = -nostdlib -ffreestanding -Wall -Wextra -I include -I compiler
 TLD_C_SRCS := tld.c tcc_rt.c
 TLD_C_OBJS := $(addprefix $(BUILD)/, $(TLD_C_SRCS:.c=.o))
 TLD_OBJS   := $(TLD_C_OBJS) $(BUILD)/tcc_rt_start.o
@@ -266,9 +266,9 @@ test-tld-multifile: $(BUILD)/tld $(BUILD)/tcc
 	@printf "$(BLUE)══════ tld 多文件链接测试 ══════$(RESET)\n\n"; \
 	ok=0; fail=0; \
 	printf "  mf_helper + mf_main ... "; \
-	if $(BUILD)/tcc -nostdlib -ffreestanding -I include -I app \
+	if $(BUILD)/tcc -nostdlib -ffreestanding -I include -I compiler \
 		$(TLD_TESTDIR)/mf_helper.c -o /tmp/tld_mf_helper.o 2>/tmp/tld_mf_compile.log && \
-	   $(BUILD)/tcc -nostdlib -ffreestanding -I include -I app \
+	   $(BUILD)/tcc -nostdlib -ffreestanding -I include -I compiler \
 		$(TLD_TESTDIR)/mf_main.c -o /tmp/tld_mf_main.o 2>>/tmp/tld_mf_compile.log; then \
 		:; \
 	else \

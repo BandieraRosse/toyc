@@ -1,6 +1,6 @@
 # tcc  — C 语言功能支持清单
 
-> 基于 `app/tcc` 源码分析，测试套件 `compiler-tests/` 验证。
+> 基于 `compiler/tcc` 源码分析，测试套件 `compiler-tests/` 验证。
 > 更新日期：2026-07-11
 
 ## 图例

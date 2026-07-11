@@ -211,7 +211,7 @@ void __write(int fd, const void *buf, size_t len) {
 void __exit(int code) { sys_exit(code); }
 
 // ============================================================
-// cgen.c 源文件 — 完全来自 app/cgen.c
+// cgen.c 源文件 — 完全来自 compiler/cgen.c
 // ============================================================
 
 #define MAX_LABELS 1024

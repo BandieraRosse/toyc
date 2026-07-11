@@ -184,9 +184,9 @@ static void emit_store_rbp8(int off) { e1(0x88);
 void cgen_expr(AstNode *node);
 
 // ============================================================
-// cgen_expr.c 源文件 — 来自 app/cgen_expr.c
+// cgen_expr.c 源文件 — 来自 compiler/cgen_expr.c
 // ============================================================
-//（cat app/cgen_expr.c 追加到这里）
+//（cat compiler/cgen_expr.c 追加到这里）
 /*
  * SPDX-License-Identifier: MIT
  * Copyright (c) 2026 BandieraRosse

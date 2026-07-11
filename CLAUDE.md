@@ -6,7 +6,7 @@
 ## 项目结构
 
 ```
-├── app/                # 编译器源码
+├── compiler/           # 编译器源码
 │   ├── tcc.c           # 主入口：编译 C → ELF .o
 │   └── tld.c           # x86_64 静态链接器（新增）
 │   ├── tcc_rt.c        # 独立运行时（syscall 包装、malloc、printf）

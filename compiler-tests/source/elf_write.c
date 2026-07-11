@@ -180,7 +180,7 @@ static void print_dec(long n) {
 }
 
 // ============================================================
-// elf_write.c 源文件 — 完全来自 app/elf_write.c
+// elf_write.c 源文件 — 完全来自 compiler/elf_write.c
 // ============================================================
 
 static int build_shstrtab(unsigned char *buf, const char *names[], int n) {

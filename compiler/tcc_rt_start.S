@@ -6,7 +6,7 @@
 # 替代 lib/init/start.S，跳过 TLS 和内存池初始化，直接调用 main。
 # 与 ld.script 的 ENTRY(__tlibc_start) 匹配。
 #
-# 注：tas 汇编器（app/tas.c）使用，仅支持 tas 识别的指令格式。
+# 注：tas 汇编器（compiler/tas.c）使用，仅支持 tas 识别的指令格式。
 # mov/lea 自动检测 64 位寄存器，无需 movq/leaq 后缀。
 
 .text

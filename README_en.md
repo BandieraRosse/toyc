@@ -51,9 +51,9 @@ gcc                 Initially: gcc builds the first self-compiling tcc
 
 | Component | Source | Function |
 |-----------|--------|----------|
-| **tcc** | `app/tcc.c` + lex/parse/cgen/... | C source → ELF64 .o |
-| **tas** | `app/tas.c` | x86_64 assembly → ELF64 .o |
-| **tld** | `app/tld.c` | multiple .o → ET_EXEC static executable |
+| **tcc** | `compiler/tcc.c` + lex/parse/cgen/... | C source → ELF64 .o |
+| **tas** | `compiler/tas.c` | x86_64 assembly → ELF64 .o |
+| **tld** | `compiler/tld.c` | multiple .o → ET_EXEC static executable |
 
 ## Why This Project Exists
 
@@ -113,7 +113,7 @@ make clean
 ## Project Structure
 
 ```
-├── app/                # Compiler sources
+├── compiler/           # Compiler sources
 │   ├── tcc.c           # Main entry: compile C → ELF .o
 │   ├── tld.c           # x86_64 static linker
 │   ├── tcc_rt.c        # Standalone runtime (syscall wrappers, malloc, printf)

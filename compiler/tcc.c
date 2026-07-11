@@ -6,7 +6,7 @@
 /*
  * tcc — Tinylibc C 编译器（统一入口）
  *
- * 此文件是 tmake 识别的单一应用入口。多文件编译由 app/compiler/tmakelist
+ * 此文件是 tmake 识别的单一应用入口。多文件编译由 compiler/tmakelist
  * 文件描述，tmake 读取后分别编译各模块并联合链接。
  *
  * 开发时各模块文件（lex.c / parse.c / cgen.c / elf_write.c）保持独立，

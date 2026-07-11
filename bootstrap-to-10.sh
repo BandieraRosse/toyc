@@ -16,7 +16,7 @@ set -o pipefail
 RED='\033[31m'; GREEN='\033[32m'; YELLOW='\033[33m'; BLUE='\033[34m'; CYAN='\033[36m'; RESET='\033[0m'
 
 BUILD="build"
-SRC="app"
+SRC="compiler"
 TMP="tmp"
 STAGES_DIR="${BUILD}/stages"
 SELFTESTDIR="compiler-tests/selfhost"

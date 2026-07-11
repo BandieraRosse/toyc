@@ -48,9 +48,9 @@ gcc                 最初：gcc 编译出能自举的 tcc
 
 | 组件 | 源码 | 功能 |
 |------|------|------|
-| **tcc** | `app/tcc.c` + lex/parse/cgen/… | C 源码 → ELF64 .o |
-| **tas** | `app/tas.c` | x86_64 汇编 → ELF64 .o |
-| **tld** | `app/tld.c` | 多个 .o → ET_EXEC 静态可执行文件 |
+| **tcc** | `compiler/tcc.c` + lex/parse/cgen/… | C 源码 → ELF64 .o |
+| **tas** | `compiler/tas.c` | x86_64 汇编 → ELF64 .o |
+| **tld** | `compiler/tld.c` | 多个 .o → ET_EXEC 静态可执行文件 |
 
 ## 为什么做这个
 

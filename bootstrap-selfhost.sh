@@ -18,7 +18,7 @@ RESET='\033[0m'
 
 # ─── 路径 ────────────────────────────────────────────────────────────
 BUILD="build"
-SRC="app"
+SRC="compiler"
 INC="include"
 TMP="tmp"
 SELFTESTDIR="compiler-tests/selfhost"

@@ -116,7 +116,7 @@ int strcmp(const char *a, const char *b) {
 void __printf(const char *fmt, ...) { (void)fmt; }
 
 // ============================================================
-// cgen_asm.c 源文件 — 完全来自 app/cgen_asm.c
+// cgen_asm.c 源文件 — 完全来自 compiler/cgen_asm.c
 // ============================================================
 
 static int str_contains(const char *haystack, const char *needle) {
