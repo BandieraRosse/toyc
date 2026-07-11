@@ -1,6 +1,24 @@
-# ToyCCompiler (tcc)
+```http
+HTTP/1.1 301 Moved Permanently
+Server: tcc/0.1 (self-hosted, retired)
+Location: https://github.com/BandieraRosse/toyc
+Content-Length: 0
+Connection: close
 
-一个面向 x86-64 Linux 的自举 C 编译器。约一万行 C 代码，零外部依赖，零 libc。
+Your browser would've followed this automatically.
+
+Git, however, does not speak HTTP. So this commit is the redirect.
+
+Please update your remotes:
+
+    git remote set-url origin https://github.com/BandieraRosse/toyc
+
+In view of the circumstances that have developed as a result of the creation
+of the new repository, I hereby cease my activities as the maintainer of this
+codebase. This decision is made on the basis of principled considerations.
+
+— BandieraRosse
+```
 
 ## 这是什么
 
