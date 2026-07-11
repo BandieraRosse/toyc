@@ -1,24 +1,14 @@
-```http
-HTTP/1.1 301 Moved Permanently
-Server: tcc/0.1 (self-hosted, retired)
-Location: https://github.com/BandieraRosse/toyc
-Content-Length: 0
-Connection: close
+# toyc
 
-Your browser would've followed this automatically.
+`tcc` is the core component of the **toyc** ecosystem — a self-bootstrapping
+C compiler for x86-64 Linux. Approximately 10,000 lines of C, zero external
+dependencies, zero libc.
 
-Git, however, does not speak HTTP. So this commit is the redirect.
-
-Please update your remotes:
-
-    git remote set-url origin https://github.com/BandieraRosse/toyc
-
-In view of the circumstances that have developed as a result of the creation
-of the new repository, I hereby cease my activities as the maintainer of this
-codebase. This decision is made on the basis of principled considerations.
-
-— BandieraRosse
-```
+Born from the merger of
+[ToyCCompiler](https://github.com/BandieraRosse/ToyCCompiler) and
+[Tinylibc](https://github.com/WHU-SC7/Tinylibc).
+toyc will grow beyond either parent into an independent systems-software
+ecosystem.
 
 ## What This Is
 
