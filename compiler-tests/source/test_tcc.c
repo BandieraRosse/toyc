@@ -2,7 +2,7 @@
 // tcc.c standalone test — stub pipeline, verify orchestration logic
 //
 // gcc -nostdlib -ffreestanding -O0 -Wall -Wextra -Wl,-e,__tlibc_start \
-//     compiler-tests/source/tcc.c -o /tmp/test_tcc && /tmp/test_tcc
+//     compiler-tests/source/test_tcc.c -o /tmp/test_tcc && /tmp/test_tcc
 
 typedef unsigned long size_t; typedef long off_t;
 #define NULL ((void*)0)

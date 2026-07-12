@@ -3,7 +3,7 @@
 //
 // Compile (gcc):
 //   gcc -nostdlib -ffreestanding -Wall -Wextra -Wl,-e,__tlibc_start
-//       compiler-tests/source/lex.c -o /tmp/test_lex
+//       compiler-tests/source/test_lex.c -o /tmp/test_lex
 // Run:  /tmp/test_lex
 //
 // Self-host (future):

@@ -3,7 +3,7 @@
 //
 // Compile (gcc):
 //   gcc -nostdlib -ffreestanding -Wall -Wextra -Wl,-e,__tlibc_start
-//       compiler-tests/source/parse.c -o /tmp/test_parse
+//       compiler-tests/source/test_parse.c -o /tmp/test_parse
 // Run:  /tmp/test_parse
 //
 // 注意：此测试文件嵌入了 lex.c + parse.c 的完整源码。

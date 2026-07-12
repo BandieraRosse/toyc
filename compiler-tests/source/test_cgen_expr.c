@@ -3,7 +3,7 @@
 //
 // Compile (gcc):
 //   gcc -nostdlib -ffreestanding -Wall -Wextra -Wl,-e,__tlibc_start
-//       compiler-tests/source/cgen_expr.c -o /tmp/test_cgen_expr
+//       compiler-tests/source/test_cgen_expr.c -o /tmp/test_cgen_expr
 // Run:  /tmp/test_cgen_expr
 
 // ============================================================

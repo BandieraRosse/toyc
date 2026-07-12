@@ -3,11 +3,11 @@
 //
 // Compile (gcc):
 //   gcc -nostdlib -ffreestanding -Wall -Wextra -Wl,-e,__tlibc_start
-//       compiler-tests/source/elf_write.c -o /tmp/test_elf_write
+//       compiler-tests/source/test_elf_write.c -o /tmp/test_elf_write
 // Run:  /tmp/test_elf_write
 //
 // Self-host (future):
-//   build/tcc compiler-tests/source/elf_write.c -o /tmp/tew.o
+//   build/tcc compiler-tests/source/test_elf_write.c -o /tmp/tew.o
 //   ld -nostdlib -static -T ld.script /tmp/tew.o -o /tmp/tew
 //   /tmp/tew
 

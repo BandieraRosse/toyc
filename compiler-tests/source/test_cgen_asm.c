@@ -3,7 +3,7 @@
 //
 // Compile (gcc):
 //   gcc -nostdlib -ffreestanding -Wall -Wextra -Wl,-e,__tlibc_start
-//       compiler-tests/source/cgen_asm.c -o /tmp/test_cgen_asm
+//       compiler-tests/source/test_cgen_asm.c -o /tmp/test_cgen_asm
 // Run:  /tmp/test_cgen_asm
 
 // ============================================================
