@@ -113,9 +113,6 @@ void *tlibc_malloc(unsigned long size)
 void tlibc_free(void *ptr)
 {
     if (!ptr) return;
-    /* 跳过内核空间地址（高 16 位为 0xFFFF） */
-    if (((unsigned long)ptr >> 48) == 0xFFFFUL)
-        return;
     size_t *base = (size_t *)ptr - 1;
     size_t total = *base + MALLOC_HDR_SZ;
     __munmap((void *)base, total);
