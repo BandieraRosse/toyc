@@ -3,6 +3,8 @@
 #
 # 用法：
 #   make                        自举构建（bootstrap/tcc + bootstrap/tas）
+#   make apps                   编译 apps/ 下零依赖的应用（tcc toolchain）
+#   make external               编译 external/ 下带三方依赖的应用（gcc）
 #   make test                   运行常规测试（29 个）
 #   make test 03                指定编号测试
 #   make test 03 07             多编号测试
@@ -10,7 +12,7 @@
 #   make test-source            源文件独立测试（8 个）
 #   make test-error             错误报告测试（16 个）
 #   make update-bootstrap       用 build 产物更新 bootstrap/ 种子
-#   make clean
+#   make clean                  删除所有构建产物 + apps/external 产物
 #
 # 全链自举构建。种子二进制见 bootstrap/README.md
 #
@@ -43,10 +45,33 @@ HEADERS  := $(TCC_NEED) $(ELF_H) $(ELF_W_H)
 
 # ─── 默认目标 ──────────────────────────────────────────────────
 
-.PHONY: all clean update-bootstrap test test-selfhost test-source test-all
+.PHONY: all apps external clean clean-apps clean-external update-bootstrap \
+        test test-selfhost test-source test-all
 
 all: $(BUILD)/tcc $(BUILD)/tas $(BUILD)/tld
 	@printf "$(GREEN)✓ 构建完成$(RESET)\n"
+
+# ─── apps（零依赖，tcc toolchain） ───────────────────────────
+
+APPS_DIRS := $(sort $(dir $(wildcard apps/*/Makefile)))
+
+apps: $(BUILD)/tcc $(BUILD)/tas $(BUILD)/tld
+	@for d in $(APPS_DIRS); do \
+		name=$$(basename $$d); \
+		printf "$(BLUE)  APP$(RESET)  %s\n" "$$name"; \
+		$(MAKE) -C "$$d" CC="$(CC)" AS="$(AS)" LD="$(LD)" CFLAGS="$(CFLAGS)" BUILD_DIR="$(BUILD)/apps/$$name"; \
+	done
+
+# ─── external（有三方依赖，编译器自选） ──────────────────────
+
+EXTERNAL_DIRS := $(sort $(dir $(wildcard external/*/Makefile)))
+
+external:
+	@for d in $(EXTERNAL_DIRS); do \
+		name=$$(basename $$d); \
+		printf "$(BLUE)  EXT$(RESET) %s\n" "$$name"; \
+		$(MAKE) -C "$$d" BUILD_DIR="$(CURDIR)/$(BUILD)/external/$$name"; \
+	done
 
 # ─── 源文件分组 ────────────────────────────────────────────────
 
@@ -129,9 +154,25 @@ $(BUILD)/tld: $(TLD_OBJS)
 # ─── 清理 ──────────────────────────────────────────────────────
 
 clean:
-	@printf "$(BLUE)  CLEAN$(RESET) 删除构建产物 ... "
+	@printf "$(BLUE)  CLEAN$(RESET) compiler ... "
 	rm -rf $(BUILD) tmp
 	@printf "$(GREEN)done$(RESET)\n"
+
+clean-apps:
+	@for d in $(APPS_DIRS); do \
+		name=$$(basename $$d); \
+		printf "$(BLUE)  CLEAN$(RESET) apps/%-18s " "$$name"; \
+		$(MAKE) -C "$$d" clean 2>/dev/null; \
+		printf "$(GREEN)done$(RESET)\n"; \
+	done
+
+clean-external:
+	@for d in $(EXTERNAL_DIRS); do \
+		name=$$(basename $$d); \
+		printf "$(BLUE)  CLEAN$(RESET) external/%-14s " "$$name"; \
+		$(MAKE) -C "$$d" clean BUILD_DIR="$(CURDIR)/$(BUILD)/external/$$name" 2>/dev/null; \
+		printf "$(GREEN)done$(RESET)\n"; \
+	done
 
 # ─── 更新自举种子 ──────────────────────────────────────────────
 
