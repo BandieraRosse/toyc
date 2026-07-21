@@ -976,7 +976,8 @@ void cgen_expr(AstNode *node) {
                         }
                     }
                 }
-                if (ptelem == 1 && node->left->elem_size > 0 &&
+                /* Cast 可能改变了 elem_size（如 (char*)int_ptr），优先使用 AST 节点值 */
+                if (node->left->elem_size > 0 &&
                     !(node->left->kind == AST_BINOP && node->left->op == TOK_LBRACKET))
                     ptelem = node->left->elem_size;
                 if (ptelem > 1) {
@@ -1007,7 +1008,8 @@ void cgen_expr(AstNode *node) {
                         }
                     }
                 }
-                if (ptelem == 1 && node->right->elem_size > 0 &&
+                /* Cast 可能改变了 elem_size，优先使用 AST 节点值 */
+                if (node->right->elem_size > 0 &&
                     !(node->right->kind == AST_BINOP && node->right->op == TOK_LBRACKET))
                     ptelem = node->right->elem_size;
                 if (ptelem > 1) {
@@ -1228,7 +1230,10 @@ void cgen_expr(AstNode *node) {
                         }
                     }
                 }
-                if (ptr_elem == 0) ptr_elem = node->left->elem_size;
+                /* Cast 可能改变了 elem_size，优先使用 AST 节点值 */
+                if (node->left->elem_size > 0)
+                    ptr_elem = node->left->elem_size;
+                else if (ptr_elem == 0) ptr_elem = node->left->elem_size;
             }
             if (ptr_elem == 0 && node->right->type_size == 8) {
                 if (node->right->kind == AST_VAR && node->right->name) {
@@ -1244,7 +1249,10 @@ void cgen_expr(AstNode *node) {
                         }
                     }
                 }
-                if (ptr_elem == 0) ptr_elem = node->right->elem_size;
+                /* Cast 可能改变了 elem_size，优先使用 AST 节点值 */
+                if (node->right->elem_size > 0)
+                    ptr_elem = node->right->elem_size;
+                else if (ptr_elem == 0) ptr_elem = node->right->elem_size;
             }
             node->elem_size = ptr_elem > 0 ? ptr_elem : 1;
         }
@@ -1457,8 +1465,10 @@ void cgen_expr(AstNode *node) {
 
                     }
                 }
-                /* fallback: 非简单变量表达式（如 s.member）从解析器传播的 elem_size 获取 */
-                if (deref_size == 1 && node->expr->elem_size > 0) {
+                /* fallback / cast override: 检查 AST 节点的 elem_size（Cast 设置了它）。
+                 * 对非简单变量表达式（如 s.member）或类型转换后的指针（如 (char*)p），
+                 * 使用 AST 上记录的 elem_size 而非局部变量表中的声明值。 */
+                if (node->expr->elem_size > 0) {
                     deref_size = node->expr->elem_size;
                     elem_unsigned = node->expr->is_unsigned;
                 }
