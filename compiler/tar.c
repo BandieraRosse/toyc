@@ -324,7 +324,7 @@ static void write_archive(const char *path) {
                 if (r32(sh + 4) == 2) {
                     sym_off = (int)r64(sh + 24);
                     sym_sz  = (int)r64(sh + 32);
-                    int slink = (int)r32(sh + 44);
+                    int slink = (int)r32(sh + 40); /* sh_link */
                     if (slink > 0 && slink < shnum) {
                         const unsigned char *ssh = shd + slink * 64;
                         str_off = (int)r64(ssh + 24);
@@ -345,9 +345,9 @@ static void write_archive(const char *path) {
                 unsigned char bind = (info >> 4) & 0xF;
                 unsigned char typ = info & 0xF;
                 uint16_t shndx = r16(ent + 6);
-                if (bind != 1 && bind != 2) continue;
+                if (bind != 1 && bind != 2) continue;   /* STB_GLOBAL | STB_WEAK */
                 if (shndx == 0) continue;
-                if (typ == 4 || typ == 2) continue;
+                if (typ == 4 || typ == 3) continue;     /* skip STT_FILE | STT_SECTION */
                 uint32_t noff = r32(ent);
                 if (noff >= (uint32_t)str_sz) continue;
                 const char *sn = strtab + noff;
