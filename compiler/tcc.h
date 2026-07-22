@@ -70,6 +70,7 @@ typedef enum {
     TOK_WHILE,
     TOK_FOR,
     TOK_DO,
+    TOK_FLOAT,
     TOK_DOUBLE,
     TOK_BREAK,
     TOK_CONTINUE,
@@ -133,7 +134,7 @@ typedef struct {
     int len;             /* 词素的字节长度 */
     long ival;      /* TOK_NUMBER 的整数值（64 位）; 对 float 常量存词素长度 */
     double dval;          /* 浮点字面量的值（未使用，占位保留） */
-    int is_float;         /* 1 表示浮点字面量（dval 有效） */
+    int is_float;         /* 0=非浮点, 4=float(32-bit), 8=double(64-bit) */
     int is_unsigned;      /* 1 表示 u/ul/ull 后缀的整数常量 */
     const char *sval;    /* TOK_IDENT 的名称指针（arena 分配） */
 } Token;
@@ -205,8 +206,8 @@ typedef struct AstNode {
     struct AstNode *expr;
     /* AST_CONSTANT */
     long ival;
-    double dval;      /* 浮点常量值（is_float=1 时有效） */
-    int is_float;     /* 1 表示此表达式结果为 double 类型 */
+    double dval;      /* 浮点常量值（is_float!=0 时有效） */
+    int is_float;     /* 0=非浮点, 4=float(32-bit), 8=double(64-bit) */
     /* AST_BINOP */
     struct AstNode *left, *right;
     /* AST_IF */
@@ -372,7 +373,7 @@ typedef struct {
     int offset;  /* 距 rbp 的偏移（负值） */
     int size;    /* 类型大小 */
     const char *struct_tag;  /* 如果是 struct 类型，存标签名 */
-    int is_float;            /* 1 表示 double 类型变量 */
+    int is_float;            /* 0=非浮点, 4=float(32-bit), 8=double(64-bit) */
     int element_size;        /* 指针变量的元素大小（用于指针运算：int*→4, char**→8） */
     int base_elem_size;      /* 数组变量：单个元素的类型尺寸（多维数组的内层 elem_size） */
     int elem_is_ptr;         /* 1: 数组元素的基类型是指针（char *arr[]） */

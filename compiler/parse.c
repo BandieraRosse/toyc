@@ -32,6 +32,7 @@
 static const char *last_struct_tag = NULL;
 static Member last_struct_members[MAX_MEMBERS];
 static int last_struct_member_count = 0;
+static int last_type_is_float = 0;     /* 最近 parse_type_specifier 结果是否为 float/double：0=否, 4=float, 8=double */
 
 /* parse_declarator 在处理 (*name[N])(params) 时捕获的数组维度（供外层声明使用） */
 static int pdecl_fptr_array_dim = 0;
@@ -259,6 +260,7 @@ static const char *token_name(TokenKind kind) {
     case TOK_FOR:             return "'for'";
     case TOK_DO:              return "'do'";
     case TOK_DOUBLE:          return "'double'";
+    case TOK_FLOAT:           return "'float'";
     case TOK_BREAK:           return "'break'";
     case TOK_CONTINUE:        return "'continue'";
     case TOK_SWITCH:          return "'switch'";
@@ -561,9 +563,10 @@ static AstNode *parse_primary(Parser *p) {
         } else {
             n->ival = t.ival;
         }
-        /* 设置 type_size：浮点类型始终 8 字节；整数在 32 位范围内用 4 字节 */
+        /* 设置 type_size：浮点类型用 is_float 值（4=float, 8=double）；
+         * 整数在 32 位范围内用 4 字节，否则 8 字节 */
         if (n->is_float)
-            n->type_size = 8;
+            n->type_size = n->is_float;
         else if (t.ival >= -2147483648L && t.ival <= 2147483647L)
             n->type_size = 4;
         else
@@ -722,8 +725,10 @@ static AstNode *parse_postfix(Parser *p) {
                 if (call->name && (peek(p).kind == TOK_INT || peek(p).kind == TOK_CHAR ||
                     peek(p).kind == TOK_SHORT || peek(p).kind == TOK_LONG ||
                     peek(p).kind == TOK_VOID || peek(p).kind == TOK_DOUBLE ||
+                    peek(p).kind == TOK_FLOAT ||
                     peek(p).kind == TOK_UNSIGNED || peek(p).kind == TOK_SIGNED ||
                     peek(p).kind == TOK_CONST || peek(p).kind == TOK_VOLATILE)) {
+                    int first_kind = peek(p).kind;
                     int tsz = parse_type_specifier(p);
                     /* 处理指针类型：char*, const void* 等 */
                     while (peek(p).kind == TOK_STAR || peek(p).kind == TOK_CONST ||
@@ -734,12 +739,15 @@ static AstNode *parse_postfix(Parser *p) {
                     if (tsz > 0) {
                         *tail = new_ast(p, AST_CONSTANT);
                         (*tail)->ival = tsz;
+                        if (first_kind == TOK_FLOAT || first_kind == TOK_DOUBLE)
+                            (*tail)->is_float = tsz;
                     }
                 } else {
                     *tail = parse_expr(p);
                 }
                 /* 回退路径：parse_expr 返回 NULL 时尝试类型 */
                 if (*tail == NULL && call->name) {
+                    int first_kind = peek(p).kind;
                     int tsz = parse_type_specifier(p);
                     /* 处理 const 后的指针星号 */
                     while (peek(p).kind == TOK_STAR || peek(p).kind == TOK_CONST)
@@ -747,6 +755,8 @@ static AstNode *parse_postfix(Parser *p) {
                     if (tsz > 0) {
                         *tail = new_ast(p, AST_CONSTANT);
                         (*tail)->ival = tsz;
+                        if (first_kind == TOK_FLOAT || first_kind == TOK_DOUBLE)
+                            (*tail)->is_float = tsz;
                     }
                 }
                 if (*tail) {
@@ -756,11 +766,11 @@ static AstNode *parse_postfix(Parser *p) {
                 else break;
             }
             expect(p, TOK_RPAREN);
-            /* 启发式：若任一实参为 float，则假定函数返回 double */
+            /* 启发式：若任一实参为 float，则假定函数返回 float/double */
             {
                 AstNode *a;
                 for (a = call->args; a; a = a->next)
-                    if (a->is_float) { call->is_float = 1; break; }
+                    if (a->is_float) { call->is_float = a->is_float; break; }
             }
             /* 查找解析期记录的 struct 返回类型（供 func().member 使用） */
             if (call->name) {
@@ -1004,7 +1014,7 @@ static AstNode *parse_unary(Parser *p) {
         if ((t.kind == TOK_PLUS || t.kind == TOK_MINUS ||
              t.kind == TOK_PLUS_PLUS || t.kind == TOK_MINUS_MINUS) &&
             n->expr && n->expr->is_float)
-            n->is_float = 1;
+            n->is_float = n->expr->is_float;
         return n;
     }
 
@@ -1065,6 +1075,7 @@ static AstNode *parse_unary(Parser *p) {
         while (peek(p).kind == TOK_CONST || peek(p).kind == TOK_VOLATILE ||
                peek(p).kind == TOK_RESTRICT) consume(p);
         int cast_to_double = (peek(p).kind == TOK_DOUBLE);
+        int cast_to_float = (peek(p).kind == TOK_FLOAT);
         int csz = parse_type_specifier(p);
         int cast_ptr_stars = 0;
         if (csz >= 0) {
@@ -1102,7 +1113,6 @@ static AstNode *parse_unary(Parser *p) {
                 AstNode *inner = parse_unary(p);
                 if (inner) {
                     if (cast_ptr_stars == 0) {
-                        if (cast_to_double) inner->is_float = 1;
                         inner->type_size = csz;
                         inner->is_unsigned = last_type_is_unsigned;
                         /* 对 signed char/short 常量值做截断符号扩展 */
@@ -1112,13 +1122,16 @@ static AstNode *parse_unary(Parser *p) {
                             else if (csz == 2 && !last_type_is_unsigned)
                                 inner->ival = (long)(signed short)(int)inner->ival;
                         }
-                        /* 浮点相关的转型创建包装节点走 default: 转换路径 */
-                        if (inner->is_float || cast_to_double) {
+                        /* 浮点相关的转型创建包装节点走 default: 转换路径。
+                         * 注意：不修改 inner->is_float，让 cgen_expr 的包装节点
+                         * 在 default: 路径中处理 int↔float 转换。 */
+                        if (inner->is_float || cast_to_double || cast_to_float) {
                             AstNode *w = new_ast(p, AST_UNARY);
                             w->expr = inner;
                             w->type_size = csz;
                             w->is_unsigned = last_type_is_unsigned;
-                            if (cast_to_double) w->is_float = 1;
+                            if (cast_to_double) w->is_float = 8;
+                            if (cast_to_float) w->is_float = 4;
                             return w;
                         }
                     } else {
@@ -1147,10 +1160,14 @@ static AstNode *parse_mul(Parser *p) {
         AstNode *right = parse_unary(p);
         AstNode *n = new_ast(p, AST_BINOP);
         n->left = left; n->right = right; n->op = op.kind;
-        /* 浮点传播：* 和 / 保留浮点类型 */
+        /* 浮点传播：* 和 / 保留浮点类型，较大的类型优先级更高 */
         if (op.kind != TOK_PERCENT &&
-            ((left && left->is_float) || (right && right->is_float)))
-            n->is_float = 1;
+            ((left && left->is_float) || (right && right->is_float))) {
+            if ((left && left->is_float == 8) || (right && right->is_float == 8))
+                n->is_float = 8;
+            else
+                n->is_float = 4;
+        }
         left = n;
     }
     return left;
@@ -1164,8 +1181,12 @@ static AstNode *parse_add(Parser *p) {
         AstNode *right = parse_mul(p);
         AstNode *n = new_ast(p, AST_BINOP);
         n->left = left; n->right = right; n->op = op.kind;
-        if ((left && left->is_float) || (right && right->is_float))
-            n->is_float = 1;
+        if ((left && left->is_float) || (right && right->is_float)) {
+            if ((left && left->is_float == 8) || (right && right->is_float == 8))
+                n->is_float = 8;
+            else
+                n->is_float = 4;
+        }
         left = n;
     }
     return left;
@@ -1289,8 +1310,13 @@ static AstNode *parse_ternary(Parser *p) {
         n->then_stmt = then_expr;
         n->else_stmt = else_expr;
         if ((then_expr && then_expr->is_float) ||
-            (else_expr && else_expr->is_float))
-            n->is_float = 1;
+            (else_expr && else_expr->is_float)) {
+            if ((then_expr && then_expr->is_float == 8) ||
+                (else_expr && else_expr->is_float == 8))
+                n->is_float = 8;
+            else
+                n->is_float = 4;
+        }
         return n;
     }
     return cond;
@@ -1306,7 +1332,7 @@ static AstNode *parse_assign(Parser *p) {
         n->left = left;
         n->right = right;
         n->op = TOK_EQ;
-        if (right && right->is_float) n->is_float = 1;
+        if (right && right->is_float) n->is_float = right->is_float;
         return n;
     }
     /* 复合赋值 += -= *= /= %= <<= >>= &= |= ^= → 展开为 left = left OP right */
@@ -1350,9 +1376,14 @@ static AstNode *parse_assign(Parser *p) {
             bin->left = left;  /* 对非 AST_VAR 的左值，共享原节点 */
         }
         bin->right = right;
-        if (right && right->is_float) bin->is_float = 1;
+        if (right && right->is_float) {
+            if (right->is_float == 8 || (left && left->is_float == 8))
+                bin->is_float = 8;
+            else
+                bin->is_float = 4;
+        }
         n->right = bin;
-        if (bin->is_float) n->is_float = 1;
+        if (bin->is_float) n->is_float = bin->is_float;
         return n;
     }
     return left;
@@ -1374,7 +1405,7 @@ static AstNode *parse_expr_comma(Parser *p) {
         cn->left = n;
         cn->right = right;
         /* 逗号表达式的结果类型 = 右操作数 */
-        if (right && right->is_float) cn->is_float = 1;
+        if (right && right->is_float) cn->is_float = right->is_float;
         n = cn;
     }
     return n;
@@ -1758,6 +1789,7 @@ int parse_type_specifier(Parser *p) {
     Token t = peek(p);
     /* 每次调用时清除 struct tag（非 struct 类型不会设置它） */
     last_struct_tag = NULL;
+    last_type_is_float = 0;
     /* 检查 typedef 名（先提取词素，t.start 不是 null 终止的） */
     if (t.kind == TOK_IDENT) {
         char tname[128];
@@ -1779,7 +1811,8 @@ int parse_type_specifier(Parser *p) {
     case TOK_INT:      last_type_is_unsigned = 0; consume(p); return 4;
     case TOK_CHAR:     last_type_is_unsigned = 0; consume(p); return 1;
     case TOK_SHORT:    last_type_is_unsigned = 0; consume(p); return 2;
-    case TOK_DOUBLE:   last_type_is_unsigned = 0; consume(p); return 8;
+    case TOK_FLOAT:    last_type_is_unsigned = 0; last_type_is_float = 4; consume(p); return 4;
+    case TOK_DOUBLE:   last_type_is_unsigned = 0; last_type_is_float = 8; consume(p); return 8;
     case TOK__BUILTIN_VA_LIST: last_type_is_unsigned = 0; consume(p); return 24;
     case TOK_LONG:
         last_type_is_unsigned = 0; consume(p);
@@ -2225,6 +2258,7 @@ AstNode *parse_compound_statement(Parser *p) {
                 continue;
             }
             int decl_is_double = (peek(p).kind == TOK_DOUBLE);
+            int decl_is_float_type = (peek(p).kind == TOK_FLOAT || peek(p).kind == TOK_DOUBLE);
             /* 检查类型说明符是否是指针 typedef（提前到 parse_type_specifier 之前 peek） */
             int ptr_typedef_pts = 0;
             {
@@ -2257,6 +2291,7 @@ AstNode *parse_compound_statement(Parser *p) {
                 p->lexer->col = qcol;
                 p->tok = qtok;
                 decl_is_double = (peek(p).kind == TOK_DOUBLE);
+                decl_is_float_type = (peek(p).kind == TOK_FLOAT || peek(p).kind == TOK_DOUBLE);
                 ts = parse_type_specifier(p);
             }
             /* 保存 struct 标签（逗号分隔变量需要，last_struct_tag 会在第一个变量后被清除） */
@@ -2279,7 +2314,8 @@ AstNode *parse_compound_statement(Parser *p) {
                 /* 检查类型本身是否是指针 typedef（如 typedef char* string; string s;） */
                 if (dv_ptrs == 0 && ts > 0 && ptr_typedef_pts > 0) {
                     decl->elem_size = ptr_typedef_pts; }
-                decl->is_float = (decl_is_double && dv_ptrs == 0);
+                decl->is_float = (dv_ptrs == 0 && decl_is_float_type) ?
+                    last_type_is_float : 0;
                 /* 指针类型的变量本身无符号性，但元素可能有 */
                 if (dv_ptrs == 0) {
                     decl->is_unsigned = last_type_is_unsigned;
@@ -2507,7 +2543,7 @@ AstNode *parse_compound_statement(Parser *p) {
                     cdecl->type_size = cdecl->ival;
                     cdecl->elem_size = (c_ptrs > 1) ? 8
                         : (c_ptrs == 1 ? ts : 0);
-                    cdecl->is_float = (decl_is_double && c_ptrs == 0);
+                    cdecl->is_float = (c_ptrs == 0 && decl_is_float_type) ? last_type_is_float : 0;
                     if (c_ptrs == 0) {
                         cdecl->is_unsigned = last_type_is_unsigned;
                         cdecl->elem_is_unsigned = 0;
@@ -2818,6 +2854,7 @@ static AstNode *parse_parameter_list(Parser *p, int *is_variadic) {
                peek(p).kind == TOK_RESTRICT) consume(p);
 
         int param_is_double = 0;
+        int param_is_float_type = 0;
         int psz = 0;
 
         if (peek(p).kind == TOK_VOID) {
@@ -2837,6 +2874,7 @@ static AstNode *parse_parameter_list(Parser *p, int *is_variadic) {
             last_type_is_unsigned = 0;
         } else {
             param_is_double = (peek(p).kind == TOK_DOUBLE);
+            param_is_float_type = (peek(p).kind == TOK_FLOAT || peek(p).kind == TOK_DOUBLE);
             psz = parse_type_specifier(p);
         }
 
@@ -2863,7 +2901,7 @@ static AstNode *parse_parameter_list(Parser *p, int *is_variadic) {
             pd->type_size = pd->ival;
             pd->elem_size = (effective_ptr > 1) ? 8 : (effective_ptr == 1 ? psz : 0);
             pd->base_elem_size = (effective_ptr > 1) ? (psz > 0 ? psz : 4) : (effective_ptr == 1 ? psz : 0);
-            pd->is_float = (param_is_double && ptr_level == 0);
+            pd->is_float = (ptr_level == 0 && param_is_float_type) ? last_type_is_float : 0;
             pd->is_unsigned = (effective_ptr == 0) ? last_type_is_unsigned : 0;
             pd->elem_is_unsigned = (effective_ptr > 0) ? last_type_is_unsigned : 0;
             {
@@ -3216,6 +3254,7 @@ AstNode *parse_program(Parser *p) {
                 func->is_variadic = is_variadic_f;
                 func->ival = pcount;
                 func->type_size = (fptr_level > 0) ? 8 : typesize;  /* 存储返回类型大小：指针返回 8 字节，struct 按值返回使用原大小 */
+                func->is_float = (fptr_level == 0) ? last_type_is_float : 0;
                 /* 记录 struct 返回类型（供解析期 func().member 使用） */
                 if (fptr_level == 0 && typesize > 8 && parse_func_ret_count < MAX_PARSE_FUNC_RET) {
                     StructType *ret_st = NULL;
@@ -3282,7 +3321,7 @@ AstNode *parse_program(Parser *p) {
                     /* 注册 struct 标签和大小（供 sizeof 查找） */
                     {
                         const char *gvn = arena_strdup(p->arena, gv_name.start, gv_name.len);
-                        pvar_add_ex(gvn, global_typedef_tag ? global_typedef_tag : (last_struct_tag ? last_struct_tag : ""), 0, 0, gv_total);
+                        pvar_add_ex(gvn, global_typedef_tag ? global_typedef_tag : (last_struct_tag ? last_struct_tag : ""), last_type_is_float, last_type_is_unsigned, gv_total);
                         {
                             const char *gv_tag = global_typedef_tag ? global_typedef_tag : last_struct_tag;
                             if (gv_tag)
@@ -3312,6 +3351,7 @@ AstNode *parse_program(Parser *p) {
                         gvar->elem_is_ptr = (gv_ptrs > 0 && gv_bracket_count > 0) ? 1 : 0;
                         gvar->is_array = (gv_bracket_count > 0) ? 1 : 0;  /* int arr[1] 也能正确标记 */
                         gvar->elem_is_unsigned = (gv_ptrs > 0 || gv_bracket_count > 0) ? last_type_is_unsigned : 0;
+                        gvar->is_float = last_type_is_float;
                         /* 设置 struct_type（供 cgen 按成员实际大小发射初始化数据） */
                         {
                             const char *gv_tag = global_typedef_tag ? global_typedef_tag :

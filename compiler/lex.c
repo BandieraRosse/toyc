@@ -56,7 +56,7 @@ static Keyword keywords[] = {
     {"else",                      TOK_ELSE},
     {"enum",                      TOK_ENUM},
     {"extern",                    TOK_EXTERN},
-    {"float",                     TOK_IDENT},
+    {"float",                     TOK_FLOAT},
     {"for",                       TOK_FOR},
     {"goto",                      TOK_GOTO},
     {"if",                        TOK_IF},
@@ -467,7 +467,7 @@ static Token read_number(Lexer *lx) {
 
     /* 计算浮点值 */
     if (maybe_float) {
-        t.is_float = 1;
+        t.is_float = 8;  /* 默认 double (64-bit) */
     }
 
     /* 跳过后缀：u/l/ll（整数）和 f/F（浮点） */
@@ -476,10 +476,12 @@ static Token read_number(Lexer *lx) {
         if (c == 'u' || c == 'U') {
             t.is_unsigned = 1;
             advance(lx);
-        } else if (c == 'l' || c == 'L' ||
-                   c == 'f' || c == 'F')
+        } else if (c == 'l' || c == 'L') {
             advance(lx);
-        else
+        } else if (c == 'f' || c == 'F') {
+            if (t.is_float) t.is_float = 4;  /* f 后缀 → float (32-bit) */
+            advance(lx);
+        } else
             break;
     }
 

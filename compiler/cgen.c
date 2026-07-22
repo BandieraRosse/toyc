@@ -343,6 +343,8 @@ static void collect_locals(AstNode *node) {
                 __write(2, "tcc: too many local variables\n", 30);
                 __exit(1); }
             int sz = node->ival > 0 ? node->ival : 4;
+            /* Float 类型分配 8 字节栈槽（与 double 同宽，简化 XMM 内存操作） */
+            if (node->is_float && sz < 8) sz = 8;
             frame_size += sz;
             locals[local_count].name = node->name;
             locals[local_count].offset = -frame_size;

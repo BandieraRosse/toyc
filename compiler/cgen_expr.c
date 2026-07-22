@@ -82,6 +82,10 @@ static void cvti2d(void) {
     e1(0xF2); e1(0x0F); e1(0x2A); e1(0xC0);
 }
 
+static void cvti2f(void) {
+    e1(0xF3); e1(0x0F); e1(0x2A); e1(0xC0);  /* cvtsi2ss xmm0, eax */
+}
+
 static void save_xmm0_to_xmm1(void) {
     e1(0x66); e1(0x0F); e1(0x28); e1(0xC8);
 }
@@ -386,6 +390,10 @@ void cgen_expr(AstNode *node) {
             unsigned int lo, hi;
             parse_float_literal(node->name, (int)node->ival, &lo, &hi);
             load_double_bits_halves(hi, lo);
+            /* 对 float (32-bit) 字面量：将 double 位模式转换为 float */
+            if (node->type_size == 4) {
+                e1(0xF2); e1(0x0F); e1(0x5A); e1(0xC0);  /* cvtsd2ss xmm0, xmm0 */
+            }
         } else
             if (node->ival >= -2147483648L && node->ival <= 2147483647L) {
                 mov_eax_imm((int)node->ival);
@@ -476,8 +484,9 @@ void cgen_expr(AstNode *node) {
         SEARCH_LOCAL(i, node->name);
         if (i >= 0) {
                 if (locals[i].is_float) {
-                    node->is_float = 1;
-                    node->type_size = 8;
+                    node->is_float = locals[i].is_float;
+                    node->type_size = locals[i].is_float;
+                    /* 无论 float/double 都用 movsd 加载（栈槽统一 8 字节） */
                     load_double_from_rbp(locals[i].offset);
                 } else if (node->is_float) {
                     /* 转型：int 变量被标记为 float（如 (double)i） */
@@ -871,21 +880,33 @@ void cgen_expr(AstNode *node) {
                           node->op == TOK_LESS_EQ || node->op == TOK_GREATER_EQ ||
                           node->op == TOK_EQ_EQ || node->op == TOK_NOT_EQ);
 
-            /* 浮点比较：用 ucomisd，结果始终是 int (eax=0/1) */
+            /* 确定浮点操作类型（4=float, 8=double）：较大的类型优先级更高 */
+            int float_type = 0;
+            if (node->left && node->left->is_float == 8) float_type = 8;
+            else if (node->right && node->right->is_float == 8) float_type = 8;
+            else if (node->left && node->left->is_float == 4) float_type = 4;
+            else if (node->right && node->right->is_float == 4) float_type = 4;
+            int is_ss = (float_type == 4);  /* 单精度（ss）vs 双精度（sd） */
+
+            /* 浮点比较：用 ucomiss/ucomisd，结果始终是 int (eax=0/1) */
             if (is_cmp) {
                 cgen_expr(node->left);
-                if (!left_f) cvti2d();    /* 左操作数提升到 double */
+                if (!left_f) { if (is_ss) cvti2f(); else cvti2d(); }
                 save_xmm0_to_xmm1();      /* xmm1 = left */
                 /* 保存 xmm1 到栈上：右表达式求值可能通过 negate_double()
                  * 用 movq xmm1,rax 冲掉 xmm1（如负数字面量 -3.13）。 */
                 e1(0x48); e1(0x83); e1(0xEC); e1(0x08);  /* sub rsp, 8 */
                 e1(0xF2); e1(0x0F); e1(0x11); e1(0x0C); e1(0x24);  /* movsd [rsp], xmm1 */
                 cgen_expr(node->right);
-                if (!right_f) cvti2d();   /* 右操作数提升到 double */
+                if (!right_f) { if (is_ss) cvti2f(); else cvti2d(); }
                 e1(0xF2); e1(0x0F); e1(0x10); e1(0x0C); e1(0x24);  /* movsd xmm1, [rsp] */
                 e1(0x48); e1(0x83); e1(0xC4); e1(0x08);  /* add rsp, 8 */
-                /* ucomisd xmm1, xmm0 (xmm1 - xmm0) */
-                e1(0x66); e1(0x0F); e1(0x2E); e1(0xC8);
+                /* ucomiss/ucomisd xmm1, xmm0 (xmm1 - xmm0) */
+                if (is_ss) {
+                    e1(0x0F); e1(0x2E); e1(0xC8);       /* ucomiss xmm1, xmm0 */
+                } else {
+                    e1(0x66); e1(0x0F); e1(0x2E); e1(0xC8);  /* ucomisd xmm1, xmm0 */
+                }
                 /* setcc al */
                 switch (node->op) {
                 case TOK_LESS:       e1(0x0F); e1(0x92); e1(0xC0); break;  /* setb */
@@ -903,23 +924,24 @@ void cgen_expr(AstNode *node) {
 
             /* 浮点算术运算 */
             cgen_expr(node->left);
-            if (!left_f) cvti2d();    /* 提升 int→double */
+            if (!left_f) { if (is_ss) cvti2f(); else cvti2d(); }
             push_xmm0();               /* 保存左操作数 */
 
             cgen_expr(node->right);
-            if (!right_f) cvti2d();   /* 提升 int→double */
+            if (!right_f) { if (is_ss) cvti2f(); else cvti2d(); }
             pop_xmm1();                /* xmm1 = left, xmm0 = right */
 
-            /* xmm1 = xmm1 OP xmm0 */
+            /* xmm1 = xmm1 OP xmm0（F2=sd, F3=ss） */
+            int op_prefix = is_ss ? 0xF3 : 0xF2;
             switch (node->op) {
-            case TOK_PLUS:  e1(0xF2); e1(0x0F); e1(0x58); e1(0xC8); break;  /* addsd */
-            case TOK_MINUS: e1(0xF2); e1(0x0F); e1(0x5C); e1(0xC8); break;  /* subsd */
-            case TOK_STAR:  e1(0xF2); e1(0x0F); e1(0x59); e1(0xC8); break;  /* mulsd */
-            case TOK_SLASH: e1(0xF2); e1(0x0F); e1(0x5E); e1(0xC8); break;  /* divsd */
+            case TOK_PLUS:  e1(op_prefix); e1(0x0F); e1(0x58); e1(0xC8); break;
+            case TOK_MINUS: e1(op_prefix); e1(0x0F); e1(0x5C); e1(0xC8); break;
+            case TOK_STAR:  e1(op_prefix); e1(0x0F); e1(0x59); e1(0xC8); break;
+            case TOK_SLASH: e1(op_prefix); e1(0x0F); e1(0x5E); e1(0xC8); break;
             default: break;
             }
             restore_xmm1_to_xmm0();    /* 结果→xmm0 */
-            node->is_float = 1;
+            node->is_float = float_type;
             break;
         }
         }
@@ -1361,8 +1383,15 @@ void cgen_expr(AstNode *node) {
         switch (node->op) {
         case TOK_MINUS:
             if (node->expr && node->expr->is_float) {
-                negate_double();
-                node->is_float = 1;
+                if (node->expr->is_float == 4) {
+                    /* float 求反：xorps with 0x80000000 sign bit */
+                    e1(0xB8); e4(0x80000000);             /* mov eax, 0x80000000 */
+                    e1(0x66); e1(0x0F); e1(0x6E); e1(0xC8);  /* movd xmm1, eax */
+                    e1(0x0F); e1(0x57); e1(0xC1);            /* xorps xmm0, xmm1 */
+                } else {
+                    negate_double();
+                }
+                node->is_float = node->expr->is_float;
             } else if (node->expr && node->expr->type_size == 8) {
                 unop_neg64();
             } else {
@@ -1377,10 +1406,15 @@ void cgen_expr(AstNode *node) {
             break;
         case TOK_EXCLAM:
             if (node->expr && node->expr->is_float) {
-                /* !double_val: 与 0.0 比较 */
-                /* xorpd xmm1, xmm1 (xmm1=0.0); ucomisd xmm1, xmm0; sete al; movzx */
-                e1(0x66); e1(0x0F); e1(0x57); e1(0xC9);  /* xorpd xmm1, xmm1 */
-                e1(0x66); e1(0x0F); e1(0x2E); e1(0xC8);  /* ucomisd xmm1, xmm0 */
+                if (node->expr->is_float == 4) {
+                    /* !float_val: xorps xmm1,xmm1; ucomiss xmm1,xmm0; sete al */
+                    e1(0x0F); e1(0x57); e1(0xC9);            /* xorps xmm1, xmm1 */
+                    e1(0x0F); e1(0x2E); e1(0xC8);            /* ucomiss xmm1, xmm0 */
+                } else {
+                    /* !double_val: xorpd xmm1,xmm1; ucomisd xmm1,xmm0 */
+                    e1(0x66); e1(0x0F); e1(0x57); e1(0xC9);  /* xorpd xmm1, xmm1 */
+                    e1(0x66); e1(0x0F); e1(0x2E); e1(0xC8);  /* ucomisd xmm1, xmm0 */
+                }
                 e1(0x0F); e1(0x94); e1(0xC0);            /* sete al */
                 e1(0x0F); e1(0xB6); e1(0xC0);            /* movzx eax, al */
             } else if (node->expr && node->expr->type_size == 8) {
@@ -1487,10 +1521,20 @@ void cgen_expr(AstNode *node) {
         default:
             /* 类型转换：包装节点，解析器在 parse_unary 中创建了
              * AST_UNARY (op=0) 作为包装器，expr 指向内层表达式。 */
-            if (node->expr && node->expr->is_float &&
-                node->type_size > 0 && node->type_size < 8) {
-                /* double→int/char/short: 发射 cvttsd2si */
-                e1(0xF2); e1(0x0F); e1(0x2C); e1(0xC0);  /* cvttsd2si eax, xmm0 */
+            if (node->is_float && node->expr && !node->expr->is_float) {
+                /* int→float/double：内层整数在 eax 中 */
+                if (node->is_float == 4)
+                    cvti2f();  /* cvtsi2ss xmm0, eax */
+                else
+                    cvti2d();  /* cvtsi2sd xmm0, eax */
+            } else if (!node->is_float && node->expr && node->expr->is_float &&
+                       node->type_size > 0 && node->type_size < 8) {
+                /* float/double→int/char/short */
+                if (node->expr->is_float == 4) {
+                    e1(0xF3); e1(0x0F); e1(0x2C); e1(0xC0);  /* cvttss2si eax, xmm0 */
+                } else {
+                    e1(0xF2); e1(0x0F); e1(0x2C); e1(0xC0);  /* cvttsd2si eax, xmm0 */
+                }
                 node->is_float = 0;
                 if (node->type_size == 1) {
                     if (node->is_unsigned)
@@ -1503,11 +1547,14 @@ void cgen_expr(AstNode *node) {
                     else
                         { e1(0x0F); e1(0xBF); e1(0xC0); }  /* movswl %ax, %eax */
                 }
-            } else if (node->expr && node->is_float &&
-                       !node->expr->is_float) {
-                /* int→double: 内层结果是整数（在 eax/rax 中），发射 cvti2d */
-                cvti2d();  /* cvtsi2sd xmm0, eax */
-                node->expr->type_size = 8;
+            } else if (node->is_float && node->expr && node->expr->is_float &&
+                       node->is_float != node->expr->is_float) {
+                /* float↔double 互转 */
+                if (node->is_float == 4) {
+                    e1(0xF2); e1(0x0F); e1(0x5A); e1(0xC0);  /* cvtsd2ss xmm0, xmm0 */
+                } else {
+                    e1(0xF3); e1(0x0F); e1(0x5A); e1(0xC0);  /* cvtss2sd xmm0, xmm0 */
+                }
             }
             break;
         }
@@ -1716,13 +1763,18 @@ void cgen_expr(AstNode *node) {
             if (i >= 0) {
                     if (locals[i].is_float) {
                         /* 右操作数可能是 int，需要转换 */
-                        if (!rhs_float) cvti2d();
+                        if (!rhs_float) {
+                            if (locals[i].is_float == 4) cvti2f(); else cvti2d();
+                        }
                         store_double_to_rbp(locals[i].offset);
                     } else {
-                        /* 右操作数可能是 double，需要转换 */
+                        /* 右操作数可能是 float/double，需要转换 */
                         if (rhs_float) {
-                            /* cvttsd2si eax, xmm0 */
-                            e1(0xF2); e1(0x0F); e1(0x2C); e1(0xC0);
+                            if (node->right && node->right->is_float == 4) {
+                                e1(0xF3); e1(0x0F); e1(0x2C); e1(0xC0);  /* cvttss2si eax, xmm0 */
+                            } else {
+                                e1(0xF2); e1(0x0F); e1(0x2C); e1(0xC0);  /* cvttsd2si eax, xmm0 */
+                            }
                         }
                         /* int → long：有符号整型赋值给 64 位变量时符号扩展 */
                         if (locals[i].size == 8 && !rhs_float &&
