@@ -124,6 +124,9 @@ void tlibc_free(void *ptr)
  * 支持的格式子集：%s %d %c %x %f %%
  */
 
+/* 前向声明 */
+static void print_dec(long n, int fd);
+
 /* 辅助：输出浮点 double（最多 6 位小数）
  * 注意：参数顺序为 (fd, val) 以匹配 tcc 的 ABI：int 在前 → RDI，double 在后 → XMM0 */
 static void print_double(int fd, double val)

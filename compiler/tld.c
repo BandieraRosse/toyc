@@ -444,6 +444,9 @@ static void read_input_mem(const char *name, unsigned char *data, int size) {
  *  符号注册（用于归档延迟加载前的 UNDEF 检测）
  * ═══════════════════════════════════════════════════════════════════ */
 
+/* 前向声明（GCC 要求定义前调用） */
+static const char *sym_name(InputFile *f, int idx);
+
 /* 将指定输入文件的全局 UNDEF 符号注册到 syms 表 */
 static void register_input_undefs(int idx) {
     InputFile *f = &inputs[idx];

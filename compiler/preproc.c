@@ -27,6 +27,9 @@
 
 static int pp_had_error;  /* #error 指令触发后标记，preprocess() 据此返回 NULL */
 
+/* 前向声明（GCC 要求定义前调用） */
+static int if_eval(const char *s, int len);
+
 typedef struct { const char *name; const char *value; int value_len; } Macro;
 static Macro macros[MAX_MACROS];
 static int macro_count;

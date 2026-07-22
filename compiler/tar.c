@@ -282,7 +282,7 @@ static void read_archive(const char *path) {
                 && buf[pos + 1] >= '0' && buf[pos + 1] <= '9'
                 && lname_data)
             {
-                int off = parse_dec(buf[pos + 1], 15);
+                int off = parse_dec(buf + pos + 1, 15);
                 if (off < lname_sz) {
                     int end = off;
                     while (end < lname_sz && lname_data[end] != '\n') end++;

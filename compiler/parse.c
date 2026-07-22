@@ -1221,6 +1221,8 @@ static AstNode *parse_unary(Parser *p) {
                     } else {
                         inner->elem_size = csz;
                         inner->is_unsigned = last_type_is_unsigned;
+                        if (cast_to_double) inner->elem_is_float = 8;
+                        else if (cast_to_float) inner->elem_is_float = 4;
                     }
                 }
                 return inner;

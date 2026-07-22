@@ -611,8 +611,8 @@ void cgen_expr(AstNode *node) {
                 /* 全局变量：使用符号表记录的大小确定加载宽度 */
                 int gsz = syms[si].size > 0 ? syms[si].size :
                           (node->type_size > 0 ? node->type_size : 4);
-                /* 数组检测：从 AST 构建时记录的 is_array 标志判断 */
-                int is_global_arr = (si < MAX_SYMS && global_is_array[si]);
+                /* 数组检测（复用外层声明的 is_global_arr） */
+                is_global_arr = (si < MAX_SYMS && global_is_array[si]);
                 if (is_global_arr || gsz > 8) {
                     /* 数组/大结构体：数组→指针衰减（lea rax, [rip + disp32]） */
                     e1(0x48); e1(0x8D); e1(0x05);
@@ -1500,6 +1500,14 @@ void cgen_expr(AstNode *node) {
             }
             break;
         }
+        /* 保存子表达式的类型信息。对 (double *)(base + off) 模式，
+         * 解析器在 cast 时设置了 expr->elem_size=8，但随后的 BINOP
+         * 指针算术代码生成（line 1342-1388）会覆盖 elem_size 为基指针的
+         * element_size（例如 char*→1），使 TOK_STAR 解引用时读不到正确
+         * 的加载宽度。此处保存 cast 设置的原始值。 */
+        int _saved_expr_elem_size  = node->expr ? node->expr->elem_size : 0;
+        int _saved_expr_elem_float = node->expr ? node->expr->elem_is_float : 0;
+        int _saved_expr_unsigned   = node->expr ? node->expr->is_unsigned : 0;
         cgen_expr(node->expr);  /* 子表达式结果在 eax 或 xmm0 */
         switch (node->op) {
         case TOK_MINUS:
@@ -1675,17 +1683,26 @@ void cgen_expr(AstNode *node) {
                                 deref_size = locals[vi].element_size;
                     }
                 }
-                /* fallback / cast override: 检查 AST 节点的 elem_size（Cast 设置了它）。
-                 * 对非简单变量表达式（如 s.member）或类型转换后的指针（如 (char*)p），
-                 * 使用 AST 上记录的 elem_size 而非局部变量表中的声明值。 */
-                if (node->expr->elem_size > 0) {
+                /* cast override: 优先使用代码生成前保存的 AST 节点值。
+                 * 对 (double*)(base+off) 模式，BINOP 指针算术代码生成会覆盖
+                 * elem_size（例：base 为 char* 时 element_size=1 → 覆盖了
+                 * cast 设的 8），因此不能在此处读 node->expr->elem_size。
+                 * 用 cgen_expr 之前保存的 _saved_expr_elem_size。 */
+                if (_saved_expr_elem_size > 0) {
+                    deref_size = _saved_expr_elem_size;
+                    elem_unsigned = _saved_expr_unsigned;
+                }
+                /* fallback: 用代码生成后的 node->expr->elem_size。
+                 * 对 *ptrs[0]（ptr 数组）模式，BINOP 的 elem_size 被
+                 * base_elem_size 传播代码（line 843）设为正确解引用宽度。 */
+                else if (node->expr->elem_size > 0) {
                     deref_size = node->expr->elem_size;
                     elem_unsigned = node->expr->is_unsigned;
                 }
-                /* 检查 elem_is_float（全局或 AST 节点上的属性）。
-                 * 优先用节点上的 elem_is_float，其次尝试局部变量表。 */
-                if (node->expr->elem_is_float > 0)
-                    elem_float = node->expr->elem_is_float;
+                /* 使用保存的 elem_is_float（解析器对指针类型转换设置，
+                 * BINOP 代码生成不覆盖 elem_is_float）。 */
+                if (_saved_expr_elem_float > 0)
+                    elem_float = _saved_expr_elem_float;
                 if (elem_float) {
                     /* float/double 指针解引用 */
                     if (elem_float == 4) {
