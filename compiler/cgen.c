@@ -526,12 +526,15 @@ static void cgen_for(AstNode *stmt) {
                             /* int→long：来源于 4 字节表达式时需符号扩展 */
                             if (stmt->loop_init->expr && !stmt->loop_init->expr->is_float && stmt->loop_init->expr->type_size < 8) {
                                 int do_sext = 0;
-                                if (stmt->loop_init->expr->kind == AST_VAR) {
+                                if (stmt->loop_init->expr->kind == AST_VAR && !stmt->loop_init->expr->is_unsigned) {
                                     do_sext = 1;
                                 } else if (stmt->loop_init->expr->kind == AST_CONSTANT &&
                                            stmt->loop_init->expr->ival >= -2147483648L &&
-                                           stmt->loop_init->expr->ival <= 2147483647L) {
+                                           stmt->loop_init->expr->ival <= 2147483647L &&
+                                           !stmt->loop_init->expr->is_unsigned) {
                                     do_sext = 1;
+                                } else if (!stmt->loop_init->expr->is_unsigned) {
+                                    do_sext = 1;  /* 其他有符号 int 表达式（BINOP/UNARY 等）→ long */
                                 }
                                 if (do_sext)
                                     { e1(0x48); e1(0x63); e1(0xC0); }
@@ -815,9 +818,8 @@ static void cgen_stmt(AstNode *stmt) {
                                            stmt->expr->ival <= 2147483647L &&
                                            !stmt->expr->is_unsigned) {
                                     do_sext = 1;  /* 有符号 32 位常量 → long */
-                                } else if (stmt->expr->kind == AST_BINOP &&
-                                           !stmt->expr->is_unsigned) {
-                                    do_sext = 1;  /* 有符号 int 表达式 → long */
+                                } else if (!stmt->expr->is_unsigned) {
+                                    do_sext = 1;  /* 其他有符号 int 表达式（UNARY/CALL 等）→ long */
                                 }
                                 if (do_sext)
                                     { e1(0x48); e1(0x63); e1(0xC0); }  /* movsxd rax, eax */

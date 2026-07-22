@@ -2136,6 +2136,25 @@ void cgen_expr(AstNode *node) {
                 e1(0x48); e1(0x81); e1(0xC4); e4(hidden_alloc_size);
             }
         }
+        /* 符号扩展：函数返回 signed int/char/short 时，将 EAX 符号扩展到 RAX，
+         * 保证后续 int→long 赋值、传参等所有路径的正确性。
+         * 注：避免在 !has_hidden_ret 之前扩展（大结构体返回的指针不需符号扩展）。 */
+        if (!node->is_float && !has_hidden_ret && node->name && !is_fptr) {
+            int rsz = get_func_ret_size(node->name);
+            if (rsz == 0) {
+                int pi;
+                for (pi = 0; pi < parsed_func_ret_count; pi++) {
+                    if (parsed_func_ret_names[pi] &&
+                        strcmp(parsed_func_ret_names[pi], node->name) == 0) {
+                        rsz = parsed_func_ret_sizes[pi];
+                        break;
+                    }
+                }
+            }
+            /* rsz=0 表示隐式声明，C 标准规定隐式返回 int */
+            if (rsz == 0 || (rsz > 0 && rsz < 8))
+                { e1(0x48); e1(0x63); e1(0xC0); }  /* movsxd rax, eax */
+        }
         /* 若调用返回 double，标记节点 */
         if (node->is_float)
             ;  /* 结果已在 xmm0 中 */
