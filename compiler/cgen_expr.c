@@ -1603,8 +1603,10 @@ void cgen_expr(AstNode *node) {
 
             /* 存储到目标地址 — 用 elem_size 决定存储宽度（数组元素可能是 long） */
             pop_rcx();  /* rcx = 目标地址 */
-            int store_sz = elem_size > 4 ? elem_size :
-                           (node->right ? node->right->type_size : 4);
+            /* 存储宽度由元素大小决定（char=1, short=2, int=4, long=8），
+             * 不能使用 RHS 的类型大小：char[i] = long_expr 应只存 1 字节，
+             * 否则会覆写相邻内存。 */
+            int store_sz = elem_size > 0 ? elem_size : 4;
             if (rhs_float) {
                 /* movsd [rcx], xmm0 */
                 e1(0xF2); e1(0x0F); e1(0x11); e1(0x01);
