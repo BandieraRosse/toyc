@@ -115,6 +115,14 @@ $(BUILD)/tcc_rt.o: $(SRC)/tcc_rt.c $(TCC_NEED) | $(BUILD)
 $(BUILD)/tcc: $(BUILD)/tld $(TCC_OBJS)
 	@printf "$(BLUE)  LD$(RESET)  tcc ... "
 	$(LD) $(TCC_OBJS) -o $@
+	@printf "ok\n"
+	@printf "$(BLUE)  CC$(RESET)  tcc_rt.c (self) ... "
+	@build/tcc -nostdlib -ffreestanding -Wall -Wextra -I include -I compiler -MD -c compiler/tcc_rt.c -o $(BUILD)/tcc_rt_self.o 2>/dev/null; \
+	 if [ -f $(BUILD)/tcc_rt_self.o ]; then \
+	   printf "$(GREEN)ok$(RESET)\n"; \
+	   $(LD) $(filter-out $(BUILD)/tcc_rt.o,$(TCC_OBJS)) $(BUILD)/tcc_rt_self.o -o $@; \
+	   mv -f $(BUILD)/tcc_rt_self.o $(BUILD)/tcc_rt.o; \
+	 else printf "$(YELLOW)skip$(RESET)\n"; fi
 	@size=$$(stat -c%s $@); printf "$(GREEN)ok$(RESET) ($$size bytes)\n"
 
 $(BUILD)/tas: $(BUILD)/tld $(TAS_OBJS)

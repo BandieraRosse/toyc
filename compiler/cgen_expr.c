@@ -1530,8 +1530,62 @@ void cgen_expr(AstNode *node) {
             /* ++/-- : 计算地址 → 加载值 → 增减 → 写回
              * 用 cgen_addr 统一处理 local/global/struct-member/ptr (通过指针) */
             int sz = (node->expr && node->expr->type_size == 8) ? 8 : 4;
-            /* 后缀(Postfix)：保存旧值，返回旧值
-             * 前缀(Prefix)：返回新值（当前行为） */
+            int expr_is_float = node->expr ? node->expr->is_float : 0;
+
+            if (expr_is_float) {
+                /* 浮点自增/自减：使用 SSE addss/addsd / subss/subsd */
+                int is_ss = (expr_is_float == 4);
+
+                cgen_addr(node->expr);       /* rax = 目标地址 */
+                push_rax();
+                pop_rcx();                   /* rcx = 地址 */
+
+                if (node->is_postfix) {
+                    /* 保存旧值到栈 */
+                    if (is_ss) {
+                        e1(0xF3); e1(0x0F); e1(0x10); e1(0x01);  /* movss xmm0, [rcx] */
+                    } else {
+                        e1(0xF2); e1(0x0F); e1(0x10); e1(0x01);  /* movsd xmm0, [rcx] */
+                    }
+                    push_xmm0();              /* 保存旧 xmm0 到栈 */
+                }
+
+                /* 加载值到 xmm0 */
+                if (is_ss) {
+                    e1(0xF3); e1(0x0F); e1(0x10); e1(0x01);  /* movss xmm0, [rcx] */
+                } else {
+                    e1(0xF2); e1(0x0F); e1(0x10); e1(0x01);  /* movsd xmm0, [rcx] */
+                }
+
+                /* 创建常数 1.0 在 xmm1: cvtsi2ss/sd xmm1, eax (eax=1) */
+                e1(0xB8); e1(0x01); e1(0x00); e1(0x00); e1(0x00);  /* mov eax, 1 */
+                e1(0xF2 | (is_ss ? 1 : 0)); e1(0x0F); e1(0x2A); e1(0xC8);  /* cvtsi2ss/sd xmm1, eax */
+
+                /* xmm0 = xmm0 +/- 1.0 */
+                int op_prefix = is_ss ? 0xF3 : 0xF2;
+                if (node->op == TOK_PLUS_PLUS) {
+                    e1(op_prefix); e1(0x0F); e1(0x58); e1(0xC1);  /* addss/addsd xmm0, xmm1 */
+                } else {
+                    e1(op_prefix); e1(0x0F); e1(0x5C); e1(0xC1);  /* subss/subsd xmm0, xmm1 */
+                }
+
+                /* 写回 */
+                if (is_ss) {
+                    e1(0xF3); e1(0x0F); e1(0x11); e1(0x01);  /* movss [rcx], xmm0 */
+                } else {
+                    e1(0xF2); e1(0x0F); e1(0x11); e1(0x01);  /* movsd [rcx], xmm0 */
+                }
+
+                if (node->is_postfix) {
+                    pop_xmm0();  /* xmm0 = 旧值 */
+                }
+
+                node->type_size = expr_is_float;
+                node->is_float = expr_is_float;
+                break;
+            }
+
+            /* 整数自增/自减路径 */
             cgen_addr(node->expr);       /* rax = 目标地址 */
             push_rax();                  /* 保存地址 */
             pop_rcx();                   /* rcx = 地址 */
@@ -1668,6 +1722,15 @@ void cgen_expr(AstNode *node) {
                     else
                         { e1(0x0F); e1(0xBF); e1(0xC0); }  /* movswl %ax, %eax */
                 }
+            } else if (!node->is_float && node->expr && node->expr->is_float &&
+                       node->type_size == 8) {
+                /* double→long (64-bit)：REX.W cvttsd2si rax, xmm0 */
+                if (node->expr->is_float == 4) {
+                    e1(0xF3); e1(0x48); e1(0x0F); e1(0x2C); e1(0xC0);  /* cvttss2si rax, xmm0 */
+                } else {
+                    e1(0xF2); e1(0x48); e1(0x0F); e1(0x2C); e1(0xC0);  /* cvttsd2si rax, xmm0 */
+                }
+                node->is_float = 0;
             } else if (node->is_float && node->expr && node->expr->is_float &&
                        node->is_float != node->expr->is_float) {
                 /* float↔double 互转 */
@@ -1931,10 +1994,19 @@ void cgen_expr(AstNode *node) {
                     } else {
                         /* 右操作数可能是 float/double，需要转换 */
                         if (rhs_float) {
-                            if (node->right && node->right->is_float == 4) {
-                                e1(0xF3); e1(0x0F); e1(0x2C); e1(0xC0);  /* cvttss2si eax, xmm0 */
+                            if (locals[i].size == 8) {
+                                /* long (64-bit)：用 REX.W */
+                                if (node->right && node->right->is_float == 4) {
+                                    e1(0xF3); e1(0x48); e1(0x0F); e1(0x2C); e1(0xC0);  /* cvttss2si rax, xmm0 */
+                                } else {
+                                    e1(0xF2); e1(0x48); e1(0x0F); e1(0x2C); e1(0xC0);  /* cvttsd2si rax, xmm0 */
+                                }
                             } else {
-                                e1(0xF2); e1(0x0F); e1(0x2C); e1(0xC0);  /* cvttsd2si eax, xmm0 */
+                                if (node->right && node->right->is_float == 4) {
+                                    e1(0xF3); e1(0x0F); e1(0x2C); e1(0xC0);  /* cvttss2si eax, xmm0 */
+                                } else {
+                                    e1(0xF2); e1(0x0F); e1(0x2C); e1(0xC0);  /* cvttsd2si eax, xmm0 */
+                                }
                             }
                         }
                         /* int → long：有符号整型赋值给 64 位变量时符号扩展 */
@@ -2147,40 +2219,61 @@ void cgen_expr(AstNode *node) {
             if (strcmp(node->name, "__builtin_va_arg") == 0 && node->args) {
                 /* 获取类型大小（第二个参数），默认 4 */
                 int type_size = 4;
-                if (node->args->next && node->args->next->kind == AST_CONSTANT)
+                int is_float_arg = 0;
+                if (node->args->next && node->args->next->kind == AST_CONSTANT) {
                     type_size = node->args->next->ival;
+                    is_float_arg = node->args->next->is_float;
+                }
                 /* 默认参数提升：小于 4 升到 4，大于 8 截到 8 */
                 if (type_size < 4) type_size = 4;
                 if (type_size > 8) type_size = 8;
 
                 cgen_expr(node->args);              /* rax = &ap */
                 e1(0x48); e1(0x89); e1(0xC7);       /* mov rdi, rax — 保存 &ap */
-                e1(0x8B); e1(0x0F);                 /* mov ecx, [rdi] — gp_offset */
-                /* 检查 gp_offset >= 48（寄存器保存区 6×8 字节），是则走栈参数 */
-                e1(0x83); e1(0xF9); e1(0x30);       /* cmp ecx, 48 */
-                int _jge_pos = code_size;
-                e1(0x7D);                           /* jge rel8 → overflow */
-                int _jge_ofs = code_size;
-                e1(0);                              /* placeholder offset */
 
-                /* --- 寄存器路径（gp_offset < 48）--- */
-                e1(0x48); e1(0x8B); e1(0x47); e1(0x10); /* mov rax, [rdi+0x10] — reg_save_area */
-                /* 始终用 64 位加载：x86-64 ABI 的所有变参槽都是 8 字节 */
-                e1(0x48); e1(0x8B); e1(0x04); e1(0x08); /* mov rax, [rax+rcx]（64 位） */
-                e1(0x83); e1(0x07); e1(8);          /* add dword [rdi], 8 — gp_offset += 8 */
-                int _jmp_pos = code_size;
-                e1(0xEB);                           /* jmp rel8 → done */
-                int _jmp_ofs = code_size;
-                e1(0);                              /* placeholder offset */
+                if (is_float_arg) {
+                    /* 浮点路径：使用 fp_offset（ap+4），从 48 开始，最大 48+8*8=112 */
+                    e1(0x8B); e1(0x47); e1(0x04);   /* mov eax, [rdi+4] — fp_offset */
+                    e1(0x83); e1(0xF8); e1(0x70);   /* cmp eax, 112 */
+                    int _f_jge_ofs;
+                    { int _pos = code_size; e1(0x7D); _f_jge_ofs = code_size; e1(0); }
 
-                /* --- Overflow 路径（gp_offset >= 48）--- */
-                code_buf[_jge_ofs] = code_size - _jge_ofs - 1;
-                e1(0x48); e1(0x8B); e1(0x47); e1(0x08); /* mov rax, [rdi+0x08] — overflow_arg_area */
-                /* 同样始终用 64 位加载 */
-                e1(0x48); e1(0x8B); e1(0x00);        /* mov rax, [rax]（64 位） */
-                /* overflow_arg_area += 8（栈槽一直是 8 字节） */
-                e1(0x48); e1(0x83); e1(0x47); e1(0x08); e1(0x08);
-                code_buf[_jmp_ofs] = code_size - _jmp_ofs - 1;
+                    /* 寄存器路径（fp_offset < 112）：从 reg_save_area[fp_offset] 加载到 xmm0 */
+                    e1(0x48); e1(0x8B); e1(0x4F); e1(0x10); /* mov rcx, [rdi+0x10] — reg_save_area */
+                    /* eax 是 fp_offset（零扩展到了 rax），直接用作地址偏移 */
+                    e1(0xF2); e1(0x0F); e1(0x10); e1(0x04); e1(0x01); /* movsd xmm0, [rcx+rax] */
+                    e1(0x83); e1(0x47); e1(0x04); e1(0x08); /* add dword [rdi+4], 8 — fp_offset += 8 */
+                    int _f_jmp_ofs;
+                    { int _pos = code_size; e1(0xEB); _f_jmp_ofs = code_size; e1(0); }
+
+                    /* Overflow 路径 */
+                    code_buf[_f_jge_ofs] = code_size - _f_jge_ofs - 1;
+                    e1(0x48); e1(0x8B); e1(0x47); e1(0x08); /* mov rax, [rdi+0x08] — overflow_arg_area */
+                    e1(0xF2); e1(0x0F); e1(0x10); e1(0x00); /* movsd xmm0, [rax] */
+                    e1(0x48); e1(0x83); e1(0x47); e1(0x08); e1(0x08); /* add qword [rdi+0x08], 8 */
+                    code_buf[_f_jmp_ofs] = code_size - _f_jmp_ofs - 1;
+                } else {
+                    /* 整数路径：使用 gp_offset */
+                    e1(0x8B); e1(0x0F);                 /* mov ecx, [rdi] — gp_offset */
+                    e1(0x83); e1(0xF9); e1(0x30);       /* cmp ecx, 48 */
+                    int _jge_ofs;
+                    { int _pos = code_size; e1(0x7D); _jge_ofs = code_size; e1(0); }
+
+                    /* --- 寄存器路径（gp_offset < 48）--- */
+                    e1(0x48); e1(0x8B); e1(0x47); e1(0x10); /* mov rax, [rdi+0x10] — reg_save_area */
+                    e1(0x48); e1(0x8B); e1(0x04); e1(0x08); /* mov rax, [rax+rcx]（64 位） */
+                    e1(0x83); e1(0x07); e1(8);          /* add dword [rdi], 8 — gp_offset += 8 */
+                    int _jmp_ofs;
+                    { int _pos = code_size; e1(0xEB); _jmp_ofs = code_size; e1(0); }
+
+                    /* --- Overflow 路径（gp_offset >= 48）--- */
+                    code_buf[_jge_ofs] = code_size - _jge_ofs - 1;
+                    e1(0x48); e1(0x8B); e1(0x47); e1(0x08); /* mov rax, [rdi+0x08] — overflow_arg_area */
+                    e1(0x48); e1(0x8B); e1(0x00);        /* mov rax, [rax]（64 位） */
+                    e1(0x48); e1(0x83); e1(0x47); e1(0x08); e1(0x08);
+                    code_buf[_jmp_ofs] = code_size - _jmp_ofs - 1;
+                }
+                node->type_size = type_size;
                 break;
             }
             if (strcmp(node->name, "__builtin_va_end") == 0) {
@@ -2311,6 +2404,10 @@ void cgen_expr(AstNode *node) {
 
         {
             int total = argc + has_hidden_ret;
+            /* 预计算浮点参数总数（XMM 寄存器从 0 开始独立计数，符合 SysV ABI） */
+            int total_floats = 0;
+            { for (int _ri = 0; _ri < argc; _ri++) if (arg_is_float[_ri]) total_floats++; }
+            int float_reg = total_floats;  /* 从后向前分配（栈顶 = 最后参数 = 最高 XMM 编号） */
             for (int ai = total - 1; ai >= 0; ai--) {
                 /* With hidden pointer: pushed first (bottom of stack), popped last into RDI */
                 if (has_hidden_ret && ai == 0) {
@@ -2325,9 +2422,12 @@ void cgen_expr(AstNode *node) {
                 int rt = has_hidden_ret ? ri + 1 : ri;
                 if (rt >= 6) continue;  /* 7th+ stay on stack */
                 if (arg_is_float[ri]) {
-                    e1(0xF2); e1(0x0F); e1(0x10);
-                    e1(0x04 | ((ri & 7) << 3)); e1(0x24);  /* movsd xmm[ri], [rsp] */
-                    e1(0x48); e1(0x83); e1(0xC4); e1(0x08); /* add rsp, 8 */
+                    float_reg--;
+                    if (float_reg >= 0) {
+                        e1(0xF2); e1(0x0F); e1(0x10);
+                        e1(0x04 | ((float_reg & 7) << 3)); e1(0x24);  /* movsd xmm[float_reg], [rsp] */
+                        e1(0x48); e1(0x83); e1(0xC4); e1(0x08); /* add rsp, 8 */
+                    }  /* else: 9th+ float arg stays on stack */
                 } else {
                     pop_rax();
                     int use64 = 1;

@@ -121,8 +121,32 @@ void tlibc_free(void *ptr)
 /* ── 变参 __printf（使用 __builtin_va_*，编译器内置，不依赖 libc） ── */
 
 /*
- * 支持的格式子集：%s %d %c %x %%
+ * 支持的格式子集：%s %d %c %x %f %%
  */
+
+/* 辅助：输出浮点 double（最多 6 位小数）
+ * 注意：参数顺序为 (fd, val) 以匹配 tcc 的 ABI：int 在前 → RDI，double 在后 → XMM0 */
+static void print_double(int fd, double val)
+{
+    if (val < 0.0) {
+        __write(fd, "-", 1);
+        val = -val;
+    }
+    /* 整数部分 */
+    long ipart = (long)val;
+    double frac = val - (double)ipart;
+    if (frac < 0.0) frac = -frac;
+    print_dec(ipart, fd);
+    __write(fd, ".", 1);
+    /* 小数部分：逐位输出 */
+    for (int i = 0; i < 6; i++) {
+        frac *= 10.0;
+        int d = (int)frac;
+        char c = '0' + d;
+        __write(fd, &c, 1);
+        frac -= (double)d;
+    }
+}
 
 /* 辅助：输出十进制整数 */
 static void print_dec(long n, int fd)
@@ -210,6 +234,10 @@ void __printf(const char *fmt, ...)
         case 'X':
             print_hex((unsigned long)__builtin_va_arg(ap, long), 1);
             break;
+        case 'f':
+        case 'F':
+            print_double(1, __builtin_va_arg(ap, double));
+            break;
         case '%':
             __write(1, "%", 1);
             break;
@@ -258,6 +286,10 @@ void __eprintf(const char *fmt, ...)
         case 'x':
         case 'X':
             print_hex((unsigned long)__builtin_va_arg(ap, long), 2);
+            break;
+        case 'f':
+        case 'F':
+            print_double(2, __builtin_va_arg(ap, double));
             break;
         case '%':
             __write(2, "%", 1);

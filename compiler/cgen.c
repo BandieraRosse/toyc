@@ -860,7 +860,10 @@ static void cgen_stmt(AstNode *stmt) {
                                            !stmt->expr->is_unsigned) {
                                     do_sext = 1;  /* 有符号 32 位常量 → long */
                                 } else if (!stmt->expr->is_unsigned) {
-                                    do_sext = 1;  /* 其他有符号 int 表达式（UNARY/CALL 等）→ long */
+                                    /* 排除 __builtin_va_arg：va_arg 始终返回 64 位完整值 */
+                                    if (!(stmt->expr->kind == AST_CALL && stmt->expr->name &&
+                                          strcmp(stmt->expr->name, "__builtin_va_arg") == 0))
+                                        do_sext = 1;  /* 其他有符号 int 表达式（UNARY/CALL 等）→ long */
                                 }
                                 if (do_sext)
                                     { e1(0x48); e1(0x63); e1(0xC0); }  /* movsxd rax, eax */
@@ -912,8 +915,8 @@ static void cgen_func_def(AstNode *func) {
         current_hidden_ptr_offset = -frame_size;
     }
 
-    /* 可变参数函数：在帧底追加 48 字节寄存器保存区（局部变量之后） */
-    if (is_variadic) frame_size += 48;
+    /* 可变参数函数：在帧底追加 GP (48) + XMM (64) 寄存器保存区（局部变量之后） */
+    if (is_variadic) frame_size += 48 + 64;
 
     int func_start = code_size;
     if (is_variadic) {
@@ -1053,7 +1056,7 @@ static void cgen_func_def(AstNode *func) {
         }
     }
 
-    /* 可变参数函数：保存 6 个 GP 寄存器到寄存器保存区 */
+    /* 可变参数函数：保存 6 个 GP + 8 个 XMM 寄存器到寄存器保存区 */
     if (is_variadic) {
         int sb = reg_save_offset;
         emit_store_rbp64(7, sb);/* rdi */
@@ -1062,6 +1065,15 @@ static void cgen_func_def(AstNode *func) {
         emit_store_rbp64(1, sb + 24);/* rcx */
         /* r8 */ e1(0x4C); e1(0x89); if (disp8_fits(sb+32)) { e1(0x45); e1((sb+32)&0xFF); } else { e1(0x85); e4(sb+32); }
         /* r9 */ e1(0x4C); e1(0x89); if (disp8_fits(sb+40)) { e1(0x4D); e1((sb+40)&0xFF); } else { e1(0x8D); e4(sb+40); }
+        /* XMM0-XMM7 保存区（GP 保存区之后，偏移 48-104） */
+        { int xi; for (xi = 0; xi < 8; xi++) {
+            int off = sb + 48 + xi * 8;
+            e1(0xF2); e1(0x0F); e1(0x11);  /* movsd [rbp+off], xmmN */
+            if (disp8_fits(off))
+                { e1(0x45 | (xi << 3)); e1(off & 0xFF); }
+            else
+                { e1(0x85 | (xi << 3)); e4(off); }
+        }}
     }
 
     cgen_block(func->body);
