@@ -495,8 +495,6 @@ static AstNode *new_ast(Parser *p, AstKind kind) {
     n->is_variadic = 0;
     n->ival = 0;
     n->dval = 0.0;
-    n->dval_bits_lo = 0;
-    n->dval_bits_hi = 0;
     n->op = 0;
     n->base_elem_size = 0;
     n->is_array = 0;
@@ -554,9 +552,15 @@ static AstNode *parse_primary(Parser *p) {
     if (t.kind == TOK_NUMBER) {
         consume(p);
         AstNode *n = new_ast(p, AST_CONSTANT);
-        n->ival = t.ival;
         n->is_float = t.is_float;
-        if (t.is_float) { n->dval = t.dval; n->dval_bits_lo = t.dval_bits_lo; n->dval_bits_hi = t.dval_bits_hi; }
+        if (t.is_float) {
+            /* 浮点常量：在 name/ival 中存源字符串指针和长度，
+             * 在代码生成时用 32 位整数运算解析 IEEE 754 位模式。 */
+            n->name = t.start;
+            n->ival = t.len;
+        } else {
+            n->ival = t.ival;
+        }
         /* 设置 type_size：值在 32 位有符号范围内才用 4 字节，否则 8 字节 */
         if (t.ival >= -2147483648L && t.ival <= 2147483647L)
             n->type_size = 4;

@@ -13,6 +13,10 @@
 
 #include "tcc.h"
 
+/* 纯 32 位整数浮点字面量解析（定义在 lex.c） */
+extern void parse_float_literal(const char *s, int len,
+                                unsigned int *out_lo, unsigned int *out_hi);
+
 /* ─── push/pop ─── */
 
 static void push_rax(void) { e1(0x50); }  /* push rax */
@@ -377,10 +381,11 @@ void cgen_expr(AstNode *node) {
 
     case AST_CONSTANT:
         if (node->is_float) {
-            /* dval_bits_lo/hi are precomputed from the decimal string
-             * in the lexer using only 32-bit integer arithmetic, avoiding
-             * tcc's 64-bit shift/union/char*-alias codegen bugs. */
-            load_double_bits_halves(node->dval_bits_hi, node->dval_bits_lo);
+            /* 在代码生成时用纯 32 位整数运算解析浮点字面量，
+             * 避免 tcc 的 double 算术 bug 和 struct 字段偏移 bug。 */
+            unsigned int lo, hi;
+            parse_float_literal(node->name, (int)node->ival, &lo, &hi);
+            load_double_bits_halves(hi, lo);
         } else
             if (node->ival >= -2147483648L && node->ival <= 2147483647L) {
                 mov_eax_imm((int)node->ival);
