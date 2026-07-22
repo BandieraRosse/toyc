@@ -561,8 +561,10 @@ static AstNode *parse_primary(Parser *p) {
         } else {
             n->ival = t.ival;
         }
-        /* 设置 type_size：值在 32 位有符号范围内才用 4 字节，否则 8 字节 */
-        if (t.ival >= -2147483648L && t.ival <= 2147483647L)
+        /* 设置 type_size：浮点类型始终 8 字节；整数在 32 位范围内用 4 字节 */
+        if (n->is_float)
+            n->type_size = 8;
+        else if (t.ival >= -2147483648L && t.ival <= 2147483647L)
             n->type_size = 4;
         else
             n->type_size = 8;
@@ -1109,6 +1111,15 @@ static AstNode *parse_unary(Parser *p) {
                                 inner->ival = (long)(signed char)(int)inner->ival;
                             else if (csz == 2 && !last_type_is_unsigned)
                                 inner->ival = (long)(signed short)(int)inner->ival;
+                        }
+                        /* 浮点相关的转型创建包装节点走 default: 转换路径 */
+                        if (inner->is_float || cast_to_double) {
+                            AstNode *w = new_ast(p, AST_UNARY);
+                            w->expr = inner;
+                            w->type_size = csz;
+                            w->is_unsigned = last_type_is_unsigned;
+                            if (cast_to_double) w->is_float = 1;
+                            return w;
                         }
                     } else {
                         inner->elem_size = csz;

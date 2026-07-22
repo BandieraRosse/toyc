@@ -276,11 +276,38 @@ void parse_float_literal(const char *s, int len,
     { int _b = 0; unsigned int _t = tmp;
       while (_t > 1) { _t >>= 1; _b++; } bit_pos += _b; }
 
+    /* 若 Q == 0 但有余数，则数字为纯分数 < 1.0（如 0.9）。
+     * 需在 R/D 的二进制展开中找前导 1 的位置来设定负的 bit_pos，
+     * 使后续尾数展开提供足够的位数。 */
+    if (m_hi == 0 && m_lo == 0 && divs > 0 && (R_hi > 0 || R_lo > 0)) {
+        unsigned int r_hi = R_hi, r_lo = R_lo;
+        unsigned int d_hi = D_hi, d_lo = D_lo;
+        int lz = 0;
+        while (lz < 2048) {
+            r_hi = (r_hi << 1) | (r_lo >> 31);
+            r_lo <<= 1;
+            if (r_hi > d_hi || (r_hi == d_hi && r_lo >= d_lo)) {
+                /* 找到前导 1：位置 -lz-1（如 0.9→-1, 0.1→-4） */
+                unsigned int sub_lo = r_lo - d_lo;
+                unsigned int sub_hi = r_hi - d_hi - (sub_lo > r_lo ? 1 : 0);
+                R_hi = sub_hi; R_lo = sub_lo;
+                break;
+            }
+            lz++;
+        }
+        bit_pos = -(lz + 1);
+    }
+
+    /* Q == 0（纯分数）时前导 1 已在上述过程中从 R/D 中提取，
+     * R 已更新为剩余小数。mbits 固定为 52（只占 IEEE 52 位尾数），
+     * 避免负 bit_pos 导致展开产生多余的溢出位。 */
+
     /* 构建 52 位 IEEE 尾数
      * 公式: mantissa = (Q - 2^P) × 2^(52-P) + R/D × 2^(52-P)
      * 其中 P = bit_pos, Q = m_hi/m_lo, R = R_hi/R_lo, D = D_hi/D_lo */
     unsigned int mant_lo = 0, mant_hi = 0;
     int mbits = 52 - bit_pos;  /* 尾数中需要的位数（减去前导 1 后的剩余） */
+    if (m_hi == 0 && m_lo == 0 && bit_pos < 0) mbits = 52;
 
     if (mbits > 0) {
         /* 计算整数部分: (Q - 2^P) × 2^(mbits) 作为 64 位值 */

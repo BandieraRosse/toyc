@@ -876,8 +876,14 @@ void cgen_expr(AstNode *node) {
                 cgen_expr(node->left);
                 if (!left_f) cvti2d();    /* 左操作数提升到 double */
                 save_xmm0_to_xmm1();      /* xmm1 = left */
+                /* 保存 xmm1 到栈上：右表达式求值可能通过 negate_double()
+                 * 用 movq xmm1,rax 冲掉 xmm1（如负数字面量 -3.13）。 */
+                e1(0x48); e1(0x83); e1(0xEC); e1(0x08);  /* sub rsp, 8 */
+                e1(0xF2); e1(0x0F); e1(0x11); e1(0x0C); e1(0x24);  /* movsd [rsp], xmm1 */
                 cgen_expr(node->right);
                 if (!right_f) cvti2d();   /* 右操作数提升到 double */
+                e1(0xF2); e1(0x0F); e1(0x10); e1(0x0C); e1(0x24);  /* movsd xmm1, [rsp] */
+                e1(0x48); e1(0x83); e1(0xC4); e1(0x08);  /* add rsp, 8 */
                 /* ucomisd xmm1, xmm0 (xmm1 - xmm0) */
                 e1(0x66); e1(0x0F); e1(0x2E); e1(0xC8);
                 /* setcc al */
@@ -1479,11 +1485,11 @@ void cgen_expr(AstNode *node) {
             }
             break;
         default:
-            /* 类型转换 (int)expr / (char)expr — 解析器修改了 inner 的
-             * type_size 但没有插入转换指令。若子表达式是 float 且目标
-             * 是整数，发射 cvttsd2si 进行 double→int 转换。 */
+            /* 类型转换：包装节点，解析器在 parse_unary 中创建了
+             * AST_UNARY (op=0) 作为包装器，expr 指向内层表达式。 */
             if (node->expr && node->expr->is_float &&
                 node->type_size > 0 && node->type_size < 8) {
+                /* double→int/char/short: 发射 cvttsd2si */
                 e1(0xF2); e1(0x0F); e1(0x2C); e1(0xC0);  /* cvttsd2si eax, xmm0 */
                 node->is_float = 0;
                 if (node->type_size == 1) {
@@ -1497,6 +1503,11 @@ void cgen_expr(AstNode *node) {
                     else
                         { e1(0x0F); e1(0xBF); e1(0xC0); }  /* movswl %ax, %eax */
                 }
+            } else if (node->expr && node->is_float &&
+                       !node->expr->is_float) {
+                /* int→double: 内层结果是整数（在 eax/rax 中），发射 cvti2d */
+                cvti2d();  /* cvtsi2sd xmm0, eax */
+                node->expr->type_size = 8;
             }
             break;
         }
