@@ -2223,7 +2223,14 @@ void cgen_expr(AstNode *node) {
                 if (node->args->next && node->args->next->kind == AST_CONSTANT) {
                     type_size = node->args->next->ival;
                     is_float_arg = node->args->next->is_float;
+                    /* 回退：若解析期 is_float 未正确传播，使用调用节点的启发式结果 */
+                    if (!is_float_arg && node->is_float && node->is_float == type_size)
+                        is_float_arg = node->is_float;
                 }
+                /* 回退：对 __builtin_va_arg(ap, double) 中 type_size=8
+                 * 且调用节点的启发式结果 is_float=8 的情况强制使用浮点路径 */
+                if (!is_float_arg && type_size == 8 && node->is_float == 8)
+                    is_float_arg = 8;
                 /* 默认参数提升：小于 4 升到 4，大于 8 截到 8 */
                 if (type_size < 4) type_size = 4;
                 if (type_size > 8) type_size = 8;
@@ -2407,6 +2414,15 @@ void cgen_expr(AstNode *node) {
             /* 预计算浮点参数总数（XMM 寄存器从 0 开始独立计数，符合 SysV ABI） */
             int total_floats = 0;
             { for (int _ri = 0; _ri < argc; _ri++) if (arg_is_float[_ri]) total_floats++; }
+            /* 预计算各参数的 GP 寄存器编号（独立于浮点参数位置，匹配被调方 int_reg 计数）。
+             * 非浮点参数顺序递增 GP 编号：第 1 个 GP 参数→RDI(rt=0)，第 2 个→RSI(rt=1)... */
+            int gp_reg_for_arg[16];
+            { int _gp = has_hidden_ret ? 1 : 0;  /* hidden ptr occupies RDI */
+              for (int _ri = 0; _ri < argc && _ri < 16; _ri++) {
+                  if (arg_is_float[_ri]) gp_reg_for_arg[_ri] = -1;
+                  else { gp_reg_for_arg[_ri] = _gp; _gp++; }
+              }
+            }
             int float_reg = total_floats;  /* 从后向前分配（栈顶 = 最后参数 = 最高 XMM 编号） */
             for (int ai = total - 1; ai >= 0; ai--) {
                 /* With hidden pointer: pushed first (bottom of stack), popped last into RDI */
@@ -2417,10 +2433,6 @@ void cgen_expr(AstNode *node) {
                 }
                 /* Real argument index (without hidden) */
                 int ri = has_hidden_ret ? ai - 1 : ai;
-                /* Register target index (RDI=0, RSI=1, ..., R9=5, stack=6+).
-                 * With hidden pointer, RDI is taken → all real args shift right by 1. */
-                int rt = has_hidden_ret ? ri + 1 : ri;
-                if (rt >= 6) continue;  /* 7th+ stay on stack */
                 if (arg_is_float[ri]) {
                     float_reg--;
                     if (float_reg >= 0) {
@@ -2429,6 +2441,8 @@ void cgen_expr(AstNode *node) {
                         e1(0x48); e1(0x83); e1(0xC4); e1(0x08); /* add rsp, 8 */
                     }  /* else: 9th+ float arg stays on stack */
                 } else {
+                    int rt = gp_reg_for_arg[ri];
+                    if (rt >= 6) continue;  /* 7th+ GP arg stays on stack */
                     pop_rax();
                     int use64 = 1;
                     switch (rt) {

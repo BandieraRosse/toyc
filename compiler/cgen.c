@@ -68,6 +68,7 @@ int func_ret_count;
 /* 解析期记录的函数返回类型表（由 parse.c 在原型处填充，cgen_expr.c 查询） */
 const char *parsed_func_ret_names[MAX_FUNC_RET_TYPES];
 int parsed_func_ret_sizes[MAX_FUNC_RET_TYPES];
+int parsed_func_ret_float[MAX_FUNC_RET_TYPES];
 int parsed_func_ret_count;
 static int current_func_ret_size;
 static const char *current_func_name;

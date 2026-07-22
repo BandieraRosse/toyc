@@ -780,11 +780,30 @@ static AstNode *parse_postfix(Parser *p) {
                 else break;
             }
             expect(p, TOK_RPAREN);
-            /* 启发式：若任一实参为 float，则假定函数返回 float/double */
+            /* 启发式：若任一实参为 float 且函数返回类型未知，则假定函数返回 float/double */
             {
                 AstNode *a;
                 for (a = call->args; a; a = a->next)
-                    if (a->is_float) { call->is_float = a->is_float; break; }
+                    if (a->is_float) {
+                        int _known = 0;
+                        /* 优先使用解析期记录的函数返回类型（函数原型或定义提供了准确信息） */
+                        if (call->name) {
+                            int _fi;
+                            for (_fi = 0; _fi < parsed_func_ret_count; _fi++) {
+                                if (parsed_func_ret_names[_fi] &&
+                                    strcmp(parsed_func_ret_names[_fi], call->name) == 0) {
+                                    if (parsed_func_ret_float[_fi])
+                                        call->is_float = parsed_func_ret_float[_fi];
+                                    _known = 1;
+                                    break;
+                                }
+                            }
+                        }
+                        /* 回退：函数未记录（隐式声明），用参数类型猜测 */
+                        if (!_known)
+                            call->is_float = a->is_float;
+                        break;
+                    }
             }
             /* 查找解析期记录的 struct 返回类型（供 func().member 使用） */
             if (call->name) {
@@ -3176,8 +3195,9 @@ AstNode *parse_program(Parser *p) {
                         global_typedef_tag = typedef_table[pti].name; break; } } }
         }
         int typesize = parse_type_specifier(p);
-        /* 保存返回类型的 struct tag（其后 parse_parameter_list 会覆盖 last_struct_tag） */
+        /* 保存返回类型的 struct tag 和 float 状态（其后 parse_parameter_list 会覆盖这些全局变量） */
         const char *ret_struct_tag = last_struct_tag;
+        int ret_type_is_float = last_type_is_float;
         if (typesize < 0) {
             error_at(p, "expected type specifier");
             break;
@@ -3239,6 +3259,7 @@ AstNode *parse_program(Parser *p) {
                     parsed_func_ret_count < MAX_FUNC_RET_TYPES) {
                     parsed_func_ret_names[parsed_func_ret_count] = fname;
                     parsed_func_ret_sizes[parsed_func_ret_count] = typesize;
+                    parsed_func_ret_float[parsed_func_ret_count] = ret_type_is_float;
                     parsed_func_ret_count++;
                 }
                 /* 记录 struct 返回类型的 tag（供 AST_MEMBER .member 查找成员偏移） */
@@ -3290,7 +3311,15 @@ AstNode *parse_program(Parser *p) {
                 func->is_variadic = is_variadic_f;
                 func->ival = pcount;
                 func->type_size = (fptr_level > 0) ? 8 : typesize;  /* 存储返回类型大小：指针返回 8 字节，struct 按值返回使用原大小 */
-                func->is_float = (fptr_level == 0) ? last_type_is_float : 0;
+                func->is_float = (fptr_level == 0) ? ret_type_is_float : 0;
+                /* 记录到 parsed_func_ret 表供调用点代码生成与返回类型推断 */
+                if (fptr_level == 0 && fname &&
+                    parsed_func_ret_count < MAX_FUNC_RET_TYPES) {
+                    parsed_func_ret_names[parsed_func_ret_count] = fname;
+                    parsed_func_ret_sizes[parsed_func_ret_count] = typesize;
+                    parsed_func_ret_float[parsed_func_ret_count] = func->is_float;
+                    parsed_func_ret_count++;
+                }
                 /* 记录 struct 返回类型（供解析期 func().member 使用） */
                 if (fptr_level == 0 && typesize > 8 && parse_func_ret_count < MAX_PARSE_FUNC_RET) {
                     StructType *ret_st = NULL;
