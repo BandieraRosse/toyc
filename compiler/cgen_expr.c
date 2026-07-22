@@ -2151,8 +2151,9 @@ void cgen_expr(AstNode *node) {
                     }
                 }
             }
-            /* rsz=0 表示隐式声明，C 标准规定隐式返回 int */
-            if (rsz == 0 || (rsz > 0 && rsz < 8))
+            /* rsz=0 表示未知（隐式/extern 函数），保守假设返回指针大小不做扩展。
+             * 已知返回 signed int/char/short 时符号扩展。 */
+            if (rsz > 0 && rsz < 8)
                 { e1(0x48); e1(0x63); e1(0xC0); }  /* movsxd rax, eax */
         }
         /* 若调用返回 double，标记节点 */
