@@ -43,9 +43,10 @@ HEADERS  := $(TCC_NEED) $(ELF_H) $(ELF_W_H)
 
 # ─── 默认目标 ──────────────────────────────────────────────────
 
-.PHONY: all clean update-bootstrap test test-selfhost test-source test-all
+.PHONY: all clean update-bootstrap test test-selfhost test-source test-all \
+        test-tar
 
-all: $(BUILD)/tcc $(BUILD)/tas $(BUILD)/tld
+all: $(BUILD)/tcc $(BUILD)/tas $(BUILD)/tld $(BUILD)/tar
 	@printf "$(GREEN)✓ 构建完成$(RESET)\n"
 
 # ─── 源文件分组 ────────────────────────────────────────────────
@@ -72,7 +73,12 @@ TLD_C_SRCS := tld.c tcc_rt.c
 TLD_C_OBJS := $(addprefix $(BUILD)/, $(TLD_C_SRCS:.c=.o))
 TLD_OBJS   := $(TLD_C_OBJS) $(BUILD)/tcc_rt_start.o
 
-ALL_OBJS := $(sort $(TCC_OBJS) $(TAS_OBJS) $(TPP_OBJS) $(TLD_OBJS))
+# tar 归档器
+TAR_C_SRCS := tar.c tcc_rt.c
+TAR_C_OBJS := $(addprefix $(BUILD)/, $(TAR_C_SRCS:.c=.o))
+TAR_OBJS   := $(TAR_C_OBJS) $(BUILD)/tcc_rt_start.o
+
+ALL_OBJS := $(sort $(TCC_OBJS) $(TAS_OBJS) $(TPP_OBJS) $(TLD_OBJS) $(TAR_OBJS))
 
 # ─── 目录创建 ──────────────────────────────────────────────────
 
@@ -121,6 +127,11 @@ $(BUILD)/tpp: $(BUILD)/tld $(TPP_OBJS)
 	$(LD) $(TPP_OBJS) -o $@
 	@printf "$(GREEN)ok$(RESET)\n"
 
+$(BUILD)/tar: $(BUILD)/tld $(TAR_OBJS)
+	@printf "$(BLUE)  LD$(RESET)  tar ... "
+	$(LD) $(TAR_OBJS) -o $@
+	@size=$$(stat -c%s $@); printf "$(GREEN)ok$(RESET) ($$size bytes)\n"
+
 $(BUILD)/tld: $(TLD_OBJS)
 	@printf "$(BLUE)  LD$(RESET)  tld ... "
 	$(LD) $(TLD_OBJS) -o $@
@@ -135,13 +146,14 @@ clean:
 
 # ─── 更新自举种子 ──────────────────────────────────────────────
 
-update-bootstrap: $(BUILD)/tcc $(BUILD)/tas $(BUILD)/tld
+update-bootstrap: $(BUILD)/tcc $(BUILD)/tas $(BUILD)/tld $(BUILD)/tar
 	@printf "$(BLUE)  BOOTSTRAP$(RESET) 更新自举种子 ...\n"
 	@mkdir -p $(BOOTSTRAP)
 	cp $(BUILD)/tcc $(BOOTSTRAP)/tcc
 	cp $(BUILD)/tas $(BOOTSTRAP)/tas
 	cp $(BUILD)/tld $(BOOTSTRAP)/tld
-	@printf "$(GREEN)✓ 种子已更新: bootstrap/tcc bootstrap/tas bootstrap/tld$(RESET)\n"
+	cp $(BUILD)/tar $(BOOTSTRAP)/tar
+	@printf "$(GREEN)✓ 种子已更新: bootstrap/{tcc,tas,tld,tar}$(RESET)\n"
 
 # ─── 依赖文件包含（-MD 自动生成的 .d 实现增量头文件跟踪） ──
 -include $(ALL_OBJS:.o=.d)
@@ -229,7 +241,7 @@ test-source: $(BUILD)/tcc $(BUILD)/tld
 
 # ─── 全部测试 ──────────────────────────────────────────────────
 
-test-all: test test-selfhost test-source test-tld test-error
+test-all: test test-selfhost test-source test-tld test-error test-tar
 	@printf "$(GREEN)✓ 全部测试通过$(RESET)\n"
 
 # ─── tld 链接器测试 ───────────────────────────────────────────
@@ -364,4 +376,85 @@ test-error: $(BUILD)/tcc
 		printf "\n"; \
 	done; \
 	printf "$(BLUE)══════$(RESET) $(GREEN)%d passed$(RESET), $(RED)%d failed$(RESET), %d total $(BLUE)══════$(RESET)\n" "$$ok" "$$fail" "$$total"; \
+	[ "$$fail" -eq 0 ]
+
+# ─── tar 归档器测试 ────────────────────────────────────────────
+
+TARTESTDIR := compiler-tests/tar
+test-tar: $(BUILD)/tar $(BUILD)/tcc $(BUILD)/tld $(BUILD)/tcc_rt.o $(BUILD)/tcc_rt_start.o
+	@printf "$(BLUE)══════ tar 归档器测试 ══════$(RESET)\n\n"; \
+	ok=0; fail=0; total=0; mkdir -p tmp; \
+	\
+	for f in $(TARTESTDIR)/*.c; do \
+		[ -f "$$f" ] || continue; \
+		total=$$((total+1)); \
+		name=$$(basename "$$f" .c); \
+		expect=$$(sed -n 's/.*EXPECT: *\([0-9]*\).*/\1/p' "$$f" | head -1); \
+		[ -z "$$expect" ] && expect=0; \
+		printf "  $(BLUE)%-25s$(RESET) " "$$name"; \
+		$(BUILD)/tcc "$$f" -o /tmp/$$name.o 2>/tmp/tar_$$name-compile.log || { \
+			printf "$(RED)COMPILE FAIL$(RESET)\n"; fail=$$((fail+1)); continue; }; \
+		$(BUILD)/tld /tmp/$$name.o $(BUILD)/tcc_rt.o $(BUILD)/tcc_rt_start.o \
+			-o /tmp/tar_$$name 2>/tmp/tar_$$name-link.log || { \
+			printf "$(RED)LINK FAIL$(RESET)\n"; fail=$$((fail+1)); continue; }; \
+		/tmp/tar_$$name >tmp/tar_$$name.log 2>&1; got=$$?; \
+		if [ "$$got" = "$$expect" ]; then \
+			printf "$(GREEN)✓$(RESET) (%d)\n" "$$got"; ok=$$((ok+1)); \
+		else \
+			printf "$(RED)✗$(RESET) (want %d got %d) — tmp/tar_$$name.log\n" "$$expect" "$$got"; \
+			fail=$$((fail+1)); \
+		fi; \
+	done; \
+	\
+	# 归档创建+列表+提取+符号表测试 \
+	printf "  $(BLUE)%-25s$(RESET) " "archive_create"; \
+	echo 'int fn(void){return 42;}' > /tmp/tar_test_fn.c && \
+	if $(BUILD)/tcc /tmp/tar_test_fn.c -o /tmp/tar_test_fn.o 2>/dev/null; then \
+		if $(BUILD)/tar rcs /tmp/tar_test.a /tmp/tar_test_fn.o 2>/dev/null; then \
+			if [ -f /tmp/tar_test.a ]; then \
+				printf "$(GREEN)✓$(RESET)\n"; ok=$$((ok+1)); \
+			else \
+				printf "$(RED)✗ (archive not created)$(RESET)\n"; fail=$$((fail+1)); \
+			fi; \
+		else \
+			printf "$(RED)✗ (tar failed)$(RESET)\n"; fail=$$((fail+1)); \
+		fi; \
+	else \
+		printf "$(RED)✗ (compile failed)$(RESET)\n"; fail=$$((fail+1)); \
+	fi; \
+	total=$$((total+1)); \
+	\
+	printf "  $(BLUE)%-25s$(RESET) " "archive_list"; \
+	if $(BUILD)/tar t /tmp/tar_test.a 2>/dev/null | grep -q tar_test_fn 2>/dev/null; then \
+		printf "$(GREEN)✓$(RESET)\n"; ok=$$((ok+1)); \
+	else \
+		printf "$(RED)✗ (list failed)$(RESET)\n"; fail=$$((fail+1)); \
+	fi; \
+	total=$$((total+1)); \
+	\
+	printf "  $(BLUE)%-25s$(RESET) " "archive_extract"; \
+	rm -f tar_test_fn.o && \
+	if $(BUILD)/tar x /tmp/tar_test.a 2>/dev/null && [ -f tar_test_fn.o ]; then \
+		rm -f tar_test_fn.o; \
+		printf "$(GREEN)✓$(RESET)\n"; ok=$$((ok+1)); \
+	else \
+		printf "$(RED)✗ (extract failed)$(RESET)\n"; fail=$$((fail+1)); \
+	fi; \
+	total=$$((total+1)); \
+	\
+	printf "  $(BLUE)%-25s$(RESET) " "symtab_test"; \
+	echo 'int global_func(void){return 99;}' > /tmp/tar_sym.c && \
+	if $(BUILD)/tcc /tmp/tar_sym.c -o /tmp/tar_sym.o 2>/dev/null \
+	   && $(BUILD)/tar rcs /tmp/tar_sym.a /tmp/tar_sym.o 2>/dev/null; then \
+		printf "$(GREEN)✓$(RESET)\n"; ok=$$((ok+1)); \
+	else \
+		printf "$(RED)✗ (symtab test failed)$(RESET)\n"; fail=$$((fail+1)); \
+	fi; \
+	total=$$((total+1)); \
+	\
+	# 清理 \
+	rm -f /tmp/tar_test_fn.c /tmp/tar_test_fn.o /tmp/tar_test.a; \
+	rm -f /tmp/tar_sym.c /tmp/tar_sym.o /tmp/tar_sym.a; \
+	\
+	printf "\n$(BLUE)══════$(RESET) $(GREEN)%d passed$(RESET), $(RED)%d failed$(RESET), %d total $(BLUE)══════$(RESET)\n" "$$ok" "$$fail" "$$total"; \
 	[ "$$fail" -eq 0 ]
