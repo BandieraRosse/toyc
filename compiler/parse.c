@@ -28,6 +28,46 @@
 
 #include "tcc.h"
 
+/* lex.c 中的浮点字面量解析函数：将十进制浮点字符串解析为 IEEE 754 64 位位模式 */
+extern void parse_float_literal(const char *s, int len,
+                                unsigned int *out_lo, unsigned int *out_hi);
+
+/* 将 64 位 double IEEE 754 位模式转换为 32 位 float IEEE 754 位模式。
+ * 纯 32 位整数运算，避免浮点硬件或 tcc 的 double 算术 bug。
+ * hi = 双精度高 32 位，lo = 低 32 位。返回 32 位 float 位模式。 */
+static unsigned int double_bits_to_float(unsigned int hi, unsigned int lo) {
+    unsigned int sign = hi >> 31;
+    unsigned int exp_d = (hi >> 20) & 0x7FF;  /* 11-bit biased exponent */
+
+    /* 零值（含 -0.0） */
+    if ((hi & 0x7FFFFFFF) == 0 && lo == 0)
+        return sign << 31;
+
+    /* 无穷大和 NaN */
+    if (exp_d == 0x7FF) {
+        int is_nan = (hi & 0xFFFFF) || lo;
+        if (is_nan)
+            return (sign << 31) | 0x7FC00000;  /* quiet NaN */
+        return (sign << 31) | 0x7F800000;      /* Infinity */
+    }
+
+    /* 指数钳位：double 偏置 1023 → float 偏置 127 */
+    int exp_new = (int)exp_d - 1023 + 127;
+
+    if (exp_new >= 255)
+        return (sign << 31) | 0x7F800000;  /* 上溢到无穷大 */
+
+    if (exp_new <= 0)
+        return sign << 31;                 /* 下溢到零（简化处理） */
+
+    /* 取 52 位尾数的高 23 位：
+     * 双精度尾数布局：hi[19:0] (20 bits) || lo[31:0] (32 bits)
+     * 取位 51→29: hi[19:0] << 3 + lo[31:29] */
+    unsigned int mant = ((hi & 0xFFFFF) << 3) | (lo >> 29);
+
+    return (sign << 31) | ((unsigned)exp_new << 23) | (mant & 0x7FFFFF);
+}
+
 /* 解析 struct 类型时捕获的信息（供变量声明和成员访问追踪） */
 static const char *last_struct_tag = NULL;
 static Member last_struct_members[MAX_MEMBERS];
@@ -1800,7 +1840,50 @@ static int parse_one_init(Parser *p, InitItem *items, int idx, int max) {
     }
     if (idx >= max) { (void)parse_expr(p); return 1; }
     AstNode *expr = parse_expr(p);
-    long val = eval_const_expr(expr);
+    long val;
+    if (expr && expr->kind == AST_CONSTANT && expr->is_float) {
+        /* 浮点常量：使用 parse_float_literal 提取 IEEE 754 位模式，
+         * 避免 eval_const_expr 将浮点当做整数处理。
+         * 用字节数组组合 hi/lo 以避开 tcc 自举时移位和联合体的 bug。 */
+        unsigned int lo, hi;
+        parse_float_literal(expr->name, (int)expr->ival, &lo, &hi);
+        if (expr->is_float == 4) {
+            val = (long)double_bits_to_float(hi, lo);
+        } else {
+            unsigned char _b[8];
+            _b[0] = (unsigned char)( lo        & 0xFF);
+            _b[1] = (unsigned char)((lo >>  8) & 0xFF);
+            _b[2] = (unsigned char)((lo >> 16) & 0xFF);
+            _b[3] = (unsigned char)((lo >> 24) & 0xFF);
+            _b[4] = (unsigned char)( hi        & 0xFF);
+            _b[5] = (unsigned char)((hi >>  8) & 0xFF);
+            _b[6] = (unsigned char)((hi >> 16) & 0xFF);
+            _b[7] = (unsigned char)((hi >> 24) & 0xFF);
+            val = *(long *)_b;
+        }
+    } else if (expr && expr->kind == AST_UNARY && expr->op == TOK_MINUS &&
+               expr->expr && expr->expr->kind == AST_CONSTANT && expr->expr->is_float) {
+        /* -浮点常量：对内部常量取负（翻转符号位） */
+        unsigned int lo, hi;
+        parse_float_literal(expr->expr->name, (int)expr->expr->ival, &lo, &hi);
+        if (expr->expr->is_float == 4) {
+            unsigned int f = double_bits_to_float(hi, lo) ^ 0x80000000U;
+            val = (long)f;
+        } else {
+            unsigned char _b[8];
+            _b[0] = (unsigned char)( lo        & 0xFF);
+            _b[1] = (unsigned char)((lo >>  8) & 0xFF);
+            _b[2] = (unsigned char)((lo >> 16) & 0xFF);
+            _b[3] = (unsigned char)((lo >> 24) & 0xFF);
+            _b[4] = (unsigned char)((hi ^ 0x80000000U)        & 0xFF);
+            _b[5] = (unsigned char)(((hi ^ 0x80000000U) >>  8) & 0xFF);
+            _b[6] = (unsigned char)(((hi ^ 0x80000000U) >> 16) & 0xFF);
+            _b[7] = (unsigned char)(((hi ^ 0x80000000U) >> 24) & 0xFF);
+            val = *(long *)_b;
+        }
+    } else {
+        val = eval_const_expr(expr);
+    }
     items[idx].type = INIT_TYPE_INT;
     items[idx].ival = val;
     items[idx].str = NULL;

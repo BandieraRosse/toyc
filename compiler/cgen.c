@@ -1249,6 +1249,8 @@ static void cgen_emit_data_init(AstNode *node) {
                 iw = 1;
             } else if (elem_size == 2) {
                 iw = 2;
+            } else if (!has_struct && elem_size >= 8) {
+                iw = 8;  /* 非 struct 数组的 8 字节元素（double/long/指针） */
             }
 
             long v = it->ival;

@@ -566,7 +566,32 @@ void cgen_expr(AstNode *node) {
                 }
             }
             if (si >= 0) {
-                /* 浮点全局变量：用 movss/movsd 加载到 xmm0 */
+                /* 数组检测：从 AST 构建时记录的 is_array 标志判断 */
+                int is_global_arr = (si < MAX_SYMS && global_is_array[si]);
+                if (is_global_arr) {
+                    /* 数组→指针衰减（lea rax, [rip + disp32]），优先于 is_float 检查 */
+                    e1(0x48); e1(0x8D); e1(0x05);
+                    node->type_size = 8;
+                    /* 传播数组元素大小、浮点类型和符号性供下标/解引用使用 */
+                    if (si < MAX_SYMS) {
+                        if (global_elem_size[si] > 0)
+                            node->elem_size = global_elem_size[si];
+                        if (global_elem_float[si])
+                            node->elem_is_float = global_elem_float[si];
+                        if (global_elem_unsigned[si])
+                            node->elem_is_unsigned = 1;
+                    }
+                    int ro = code_size;
+                    e1(0x55); e1(0x66); e1(0x77); e1(0x88);
+                    if (rel_count < MAX_RELS) {
+                        Elf64_Rela *r = &rels[rel_count++];
+                        r->r_offset = ro;
+                        r->r_info = ELF64_R_INFO(si + 1, R_X86_64_PC32);
+                        r->r_addend = -4;
+                    }
+                    break;
+                }
+                /* 浮点全局变量（非数组）：用 movss/movsd 加载到 xmm0 */
                 if (node->is_float) {
                     if (node->is_float == 4) {
                         e1(0xF3); e1(0x0F); e1(0x10); e1(0x05);  /* movss xmm0, [rip+disp32] */

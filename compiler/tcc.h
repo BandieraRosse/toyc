@@ -206,8 +206,8 @@ typedef struct AstNode {
     struct AstNode *expr;
     /* AST_CONSTANT */
     long ival;
-    double dval;      /* 浮点常量值（is_float!=0 时有效） */
     int is_float;     /* 0=非浮点, 4=float(32-bit), 8=double(64-bit) */
+    double dval;      /* 浮点常量值（is_float!=0 时有效） */
     /* AST_BINOP */
     struct AstNode *left, *right;
     /* AST_IF */

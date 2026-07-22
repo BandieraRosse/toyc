@@ -61,10 +61,10 @@ make clean
 
 | 测试套件 | 通过/总数 | 说明 |
 |----------|-----------|------|
-| `make test` | **32/32 ✅** | 含 extended float 测试（28 断言） |
-| `make test-selfhost` | **39/39 ✅** | tcc 独立编译，无 tcc_rt 依赖 |
+| `make test` | **35/35 ✅** | 含 float brace init（23 断言） |
+| `make test-selfhost` | **40/40 ✅** | tcc 独立编译，无 tcc_rt 依赖 |
 | `make test-source` | 8/8 ✅ | tcc 编译源文件独立测试 |
-| `make test-tld` | **39/39 ✅** | selfhost 测试 × tld 链接 |
+| `make test-tld` | **40/40 ✅** | selfhost 测试 × tld 链接 |
 | `make test-tld-multifile` | ✅ | 多 .o 文件交叉引用链接 |
 | `make test-tld-self` | **自举收敛 ✅** | tld 自链接 stage-1→stage-2 字节级一致 |
 | `make test-error` | **16/16 ✅** | 错误报告测试 |
@@ -83,7 +83,8 @@ make clean
 | 特性 | 状态 |
 |------|------|
 | 浮点运算 | ✅ 完整支持 float(32-bit) 和 double(64-bit)，SSE 指令无条件启用 |
-| `%f` 格式化 | 未实现 — 运行时 tcc_rt.c 无浮点输出 |
+| 全局 float/double 花括号初始化 | ✅ `float arr[] = {1.0f, 2.0f}` 等 |
+| `%f` 格式化 | ✅ tcc_rt.c 运行时支持 |
 | VLA（变长数组） | 未实现 |
 | 位域（bitfield） | 未实现 |
 | 复合字面量 `(int[]){1,2}` | 未实现 |
@@ -98,10 +99,10 @@ make clean
 ## 验证
 
 ```sh
-make test             # 32/32 ✅
+make test             # 35/35 ✅
 make test-selfhost    # 40/40 ✅
 make test-source      # 8/8 ✅
-make test-tld         # 39/39 ✅
+make test-tld         # 40/40 ✅
 make test-error       # 16/16 ✅
 make test-tld-self    # 自举收敛 ✅
 ./bootstrap-to-10.sh  # stage-2→10 字节级完全一致 ✅
