@@ -189,6 +189,30 @@ static void print_hex(unsigned long n, int fd)
         __write(fd, &buf[--i], 1);
 }
 
+/* ── va_arg double 直接读取辅助 ──
+ * 直接从 FP 寄存器保存区读取 double，绕过 __builtin_va_arg
+ * 在自举编译中的 is_float 检测 bug。 */
+
+/* va_list 布局（x86_64 SysV ABI）：4+4+8+8=24 字节 */
+struct _tcc_valist {
+    unsigned gp_offset;
+    unsigned fp_offset;
+    void *overflow_arg_area;
+    void *reg_save_area;
+};
+
+static double _tcc_va_double(struct _tcc_valist *ap) {
+    double *p;
+    if (ap->fp_offset < 112) {  /* 48 + 8*8 = 112 */
+        p = (double *)((char *)ap->reg_save_area + ap->fp_offset);
+        ap->fp_offset += 8;
+    } else {
+        p = (double *)ap->overflow_arg_area;
+        ap->overflow_arg_area = (char *)ap->overflow_arg_area + 8;
+    }
+    return *p;
+}
+
 /*
  * __printf(fmt, ...) — 变参格式化输出
  *
@@ -236,7 +260,7 @@ void __printf(const char *fmt, ...)
             break;
         case 'f':
         case 'F':
-            print_double(1, __builtin_va_arg(ap, double));
+            print_double(1, _tcc_va_double((struct _tcc_valist *)&ap));
             break;
         case '%':
             __write(1, "%", 1);
@@ -289,7 +313,7 @@ void __eprintf(const char *fmt, ...)
             break;
         case 'f':
         case 'F':
-            print_double(2, __builtin_va_arg(ap, double));
+            print_double(2, _tcc_va_double((struct _tcc_valist *)&ap));
             break;
         case '%':
             __write(2, "%", 1);
