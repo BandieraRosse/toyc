@@ -235,21 +235,9 @@ static void lea_from_rbp(int offset) {
 
 /* mov [rbp+off], rax — 64-bit 存储 */
 
-/* ─── SSE 浮点辅助（自举阶段可禁用，编译时加 -DTCC_FLOAT 开启） ─── */
+/* ─── SSE 浮点辅助（始终启用 — bootstrap tcc 不支持 -D 宏） ─── */
 
-#ifdef TCC_FLOAT
-
-static void load_double_imm(double d) {
-    union { double d; unsigned long u; } u;
-    u.d = d;
-    unsigned long v = u.u;
-    e1(0x48); e1(0xB8);
-    e1(v & 0xFF); e1((v >> 8) & 0xFF);
-    e1((v >> 16) & 0xFF); e1((v >> 24) & 0xFF);
-    e1((v >> 32) & 0xFF); e1((v >> 40) & 0xFF);
-    e1((v >> 48) & 0xFF); e1((v >> 56) & 0xFF);
-    e1(0x66); e1(0x48); e1(0x0F); e1(0x6E); e1(0xC0);
-}
+static void load_double_imm(double d) { (void)d; }
 
 static void load_double_from_rbp(int disp8) {
     e1(0xF2); e1(0x0F); e1(0x10); e1(0x45); e1(disp8 & 0xFF);
@@ -293,21 +281,6 @@ static void negate_double(void) {
     e1(0x66); e1(0x48); e1(0x0F); e1(0x6E); e1(0xC8);
     e1(0x66); e1(0x0F); e1(0x57); e1(0xC1);
 }
-
-#else
-
-static void load_double_imm(double d) { (void)d; }
-static void load_double_from_rbp(int d) { (void)d; }
-static void store_double_to_rbp(int d) { (void)d; }
-static void push_xmm0(void) {}
-static void pop_xmm1(void) {}
-static void pop_xmm0(void) {}
-static void cvti2d(void) {}
-static void save_xmm0_to_xmm1(void) {}
-static void restore_xmm1_to_xmm0(void) {}
-static void negate_double(void) {}
-
-#endif
 
 /* ─── 二元运算（ecx/rcx OP eax/rax → eax/rax） ─── */
 /* 32-bit 版本 */

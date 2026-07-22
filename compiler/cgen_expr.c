@@ -46,21 +46,10 @@ static void lea_from_rbp(int offset) {
 
 /* mov [rbp+off], rax — 64-bit 存储 */
 
-/* ─── SSE 浮点辅助（自举阶段可禁用，编译时加 -DTCC_FLOAT 开启） ─── */
+/* ─── SSE 浮点辅助（始终启用） ─── */
 
-#ifdef TCC_FLOAT
-
-static void load_double_imm(double d) {
-    union { double d; unsigned long u; } u;
-    u.d = d;
-    unsigned long v = u.u;
-    e1(0x48); e1(0xB8);
-    e1(v & 0xFF); e1((v >> 8) & 0xFF);
-    e1((v >> 16) & 0xFF); e1((v >> 24) & 0xFF);
-    e1((v >> 32) & 0xFF); e1((v >> 40) & 0xFF);
-    e1((v >> 48) & 0xFF); e1((v >> 56) & 0xFF);
-    e1(0x66); e1(0x48); e1(0x0F); e1(0x6E); e1(0xC0);
-}
+/* load_double_bits_halves() 在 cgen_float_hack.c 中实现 */
+extern void load_double_bits_halves(unsigned int hi, unsigned int lo);
 
 static void load_double_from_rbp(int disp8) {
     e1(0xF2); e1(0x0F); e1(0x10); e1(0x45); e1(disp8 & 0xFF);
@@ -104,21 +93,6 @@ static void negate_double(void) {
     e1(0x66); e1(0x48); e1(0x0F); e1(0x6E); e1(0xC8);
     e1(0x66); e1(0x0F); e1(0x57); e1(0xC1);
 }
-
-#else
-
-static void load_double_imm(double d) { (void)d; }
-static void load_double_from_rbp(int d) { (void)d; }
-static void store_double_to_rbp(int d) { (void)d; }
-static void push_xmm0(void) {}
-static void pop_xmm1(void) {}
-static void pop_xmm0(void) {}
-static void cvti2d(void) {}
-static void save_xmm0_to_xmm1(void) {}
-static void restore_xmm1_to_xmm0(void) {}
-static void negate_double(void) {}
-
-#endif
 
 /* ─── 二元运算（ecx/rcx OP eax/rax → eax/rax） ─── */
 /* 32-bit 版本 */
@@ -402,9 +376,12 @@ void cgen_expr(AstNode *node) {
     switch (node->kind) {
 
     case AST_CONSTANT:
-        if (node->is_float)
-            load_double_imm(node->dval);
-        else
+        if (node->is_float) {
+            /* dval_bits_lo/hi are precomputed from the decimal string
+             * in the lexer using only 32-bit integer arithmetic, avoiding
+             * tcc's 64-bit shift/union/char*-alias codegen bugs. */
+            load_double_bits_halves(node->dval_bits_hi, node->dval_bits_lo);
+        } else
             if (node->ival >= -2147483648L && node->ival <= 2147483647L) {
                 mov_eax_imm((int)node->ival);
                 if (node->ival < 0) { e1(0x48); e1(0x63); e1(0xC0); }  /* movsxd rax, eax: 符号扩展 32→64 */
@@ -1496,7 +1473,27 @@ void cgen_expr(AstNode *node) {
                 node->type_size = deref_size;
             }
             break;
-        default: break;
+        default:
+            /* 类型转换 (int)expr / (char)expr — 解析器修改了 inner 的
+             * type_size 但没有插入转换指令。若子表达式是 float 且目标
+             * 是整数，发射 cvttsd2si 进行 double→int 转换。 */
+            if (node->expr && node->expr->is_float &&
+                node->type_size > 0 && node->type_size < 8) {
+                e1(0xF2); e1(0x0F); e1(0x2C); e1(0xC0);  /* cvttsd2si eax, xmm0 */
+                node->is_float = 0;
+                if (node->type_size == 1) {
+                    if (node->is_unsigned)
+                        { e1(0x0F); e1(0xB6); e1(0xC0); }  /* movzbl %al, %eax */
+                    else
+                        { e1(0x0F); e1(0xBE); e1(0xC0); }  /* movsbl %al, %eax */
+                } else if (node->type_size == 2) {
+                    if (node->is_unsigned)
+                        { e1(0x0F); e1(0xB7); e1(0xC0); }  /* movzwl %ax, %eax */
+                    else
+                        { e1(0x0F); e1(0xBF); e1(0xC0); }  /* movswl %ax, %eax */
+                }
+            }
+            break;
         }
         break;
     }

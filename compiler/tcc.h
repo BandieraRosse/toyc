@@ -136,6 +136,8 @@ typedef struct {
     int is_float;         /* 1 表示浮点字面量（dval 有效） */
     int is_unsigned;      /* 1 表示 u/ul/ull 后缀的整数常量 */
     const char *sval;    /* TOK_IDENT 的名称指针（arena 分配） */
+    unsigned int dval_bits_lo; /* IEEE 754 原始位模式 (低 32 位) */
+    unsigned int dval_bits_hi; /* IEEE 754 原始位模式 (高 32 位) */
 } Token;
 
 /* ─── AST 节点类型 ─── */
@@ -256,6 +258,8 @@ typedef struct AstNode {
     int is_unsigned;     /* 1 表示 unsigned 类型（unsigned int/long/char/short） */
     int elem_is_unsigned; /* 指针变量：指向的元素类型是否为 unsigned */
     StructType *struct_type; /* 仅 struct 类型的表达式：指向解析后的 StructType，NULL=非 struct 或未知 */
+    unsigned int dval_bits_lo; /* IEEE 754 低 32 位 */
+    unsigned int dval_bits_hi; /* IEEE 754 高 32 位 */
 } AstNode;
 
 /* ─── 符号表（代码生成输出用） ─── */

@@ -53,7 +53,7 @@ all: $(BUILD)/tcc $(BUILD)/tas $(BUILD)/tld $(BUILD)/tar
 
 # tcc 编译器
 TCC_C_SRCS := tcc.c lex.c parse.c preproc.c cgen.c cgen_expr.c \
-              cgen_asm.c elf_write.c tcc_rt.c
+              cgen_asm.c cgen_float_hack.c elf_write.c tcc_rt.c
 TCC_C_OBJS := $(addprefix $(BUILD)/, $(TCC_C_SRCS:.c=.o))
 TCC_OBJS   := $(TCC_C_OBJS) $(BUILD)/tcc_rt_start.o
 

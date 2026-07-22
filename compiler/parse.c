@@ -495,6 +495,8 @@ static AstNode *new_ast(Parser *p, AstKind kind) {
     n->is_variadic = 0;
     n->ival = 0;
     n->dval = 0.0;
+    n->dval_bits_lo = 0;
+    n->dval_bits_hi = 0;
     n->op = 0;
     n->base_elem_size = 0;
     n->is_array = 0;
@@ -554,7 +556,7 @@ static AstNode *parse_primary(Parser *p) {
         AstNode *n = new_ast(p, AST_CONSTANT);
         n->ival = t.ival;
         n->is_float = t.is_float;
-        if (t.is_float) n->dval = t.dval;
+        if (t.is_float) { n->dval = t.dval; n->dval_bits_lo = t.dval_bits_lo; n->dval_bits_hi = t.dval_bits_hi; }
         /* 设置 type_size：值在 32 位有符号范围内才用 4 字节，否则 8 字节 */
         if (t.ival >= -2147483648L && t.ival <= 2147483647L)
             n->type_size = 4;
@@ -1365,10 +1367,11 @@ static AstNode *parse_expr_comma(Parser *p) {
 
 /* ─── 解析 struct 体（返回成员列表和总大小） ─── */
 
-static int parse_struct_body(Parser *p, Member *members, int *out_count) {
+static int parse_struct_body(Parser *p, Member *members, int *out_count, int is_union) {
     expect(p, TOK_LBRACE);
     int count = 0;
     int offset = 0;
+    int max_offset = 0;  /* union: total_size = max member size */
     int max_align = 1;
     /* 保存当前正在解析的 struct 的标签。parse_type_specifier 每调用都会清
      * last_struct_tag（line ~1430），导致自引用成员丢失 member_struct_tag。
@@ -1428,13 +1431,15 @@ static int parse_struct_body(Parser *p, Member *members, int *out_count) {
                 error_at(p, "too many struct/union members");
                 break; }
             if (1) {
+                /* union: 所有成员从偏移 0 开始 */
+                int member_offset = is_union ? 0 : offset;
                 /* 按类型自然对齐（指针/long long/double=8 字节对齐。数组按其元素类型对齐） */
                 int align_sz = is_array ? sz : member_sz;
                 int member_align = (align_sz >= 8) ? 8 : (align_sz >= 4) ? 4 : (align_sz >= 2) ? 2 : 1;
-                offset = (offset + member_align - 1) & ~(member_align - 1);
+                member_offset = (member_offset + member_align - 1) & ~(member_align - 1);
                 if (member_align > max_align) max_align = member_align;
                 members[count].name = arena_strdup(p->arena, id.start, id.len);
-                members[count].offset = offset;
+                members[count].offset = member_offset;
                 members[count].size = member_sz;
                 members[count].is_unsigned = member_is_unsigned;
                 /* elem_size: 指针→指向的类型大小，数组→元素大小 */
@@ -1452,7 +1457,12 @@ static int parse_struct_body(Parser *p, Member *members, int *out_count) {
                  * member_tag_for_chain 为 NULL，不影响。 */
                 members[count].member_struct_tag = member_tag_for_chain;
                 count++;
-                offset += member_sz;
+                if (is_union) {
+                    if (member_sz > max_offset) max_offset = member_sz;
+                    /* 指针解引用后，使用指针元素大小计算联合体成员偏移 */
+                } else {
+                    offset = member_offset + member_sz;
+                }
             }
             sz = member_sz;  /* 逗号后成员使用相同的完整大小 */
         }
@@ -1504,12 +1514,13 @@ static int parse_struct_body(Parser *p, Member *members, int *out_count) {
                     error_at(p, "too many struct/union members");
                     break; }
                 if (1) {
+                    int comma_offset = is_union ? 0 : offset;
                     int align_sz = comma_is_array ? base_sz : member_sz;
                     int member_align = (align_sz >= 8) ? 8 : (align_sz >= 4) ? 4 : (align_sz >= 2) ? 2 : 1;
-                    offset = (offset + member_align - 1) & ~(member_align - 1);
+                    comma_offset = (comma_offset + member_align - 1) & ~(member_align - 1);
                     if (member_align > max_align) max_align = member_align;
                     members[count].name = arena_strdup(p->arena, cid.start, cid.len);
-                    members[count].offset = offset;
+                    members[count].offset = comma_offset;
                     members[count].size = member_sz;
                     members[count].is_unsigned = member_is_unsigned;
                     if (comma_is_array)
@@ -1523,7 +1534,11 @@ static int parse_struct_body(Parser *p, Member *members, int *out_count) {
                     members[count].memb_is_array = comma_is_array;
                     members[count].member_struct_tag = member_tag_for_chain;
                     count++;
-                    offset += member_sz;
+                    if (is_union) {
+                        if (member_sz > max_offset) max_offset = member_sz;
+                    } else {
+                        offset = comma_offset + member_sz;
+                    }
                 }
                 sz = member_sz;
             }
@@ -1533,17 +1548,22 @@ static int parse_struct_body(Parser *p, Member *members, int *out_count) {
     }
     expect(p, TOK_RBRACE);
 
-    /* 对齐到最大成员对齐（x86_64 ABI：struct 尾部填充对齐到 max_align） */
+    *out_count = count;
+    if (is_union) {
+        /* union 大小 = 最大成员大小（向上对齐到 max_align） */
+        if (max_align > 1)
+            max_offset = (max_offset + max_align - 1) & ~(max_align - 1);
+        return max_offset > 0 ? max_offset : 1;
+    }
+    /* struct: 对齐到最大成员对齐（x86_64 ABI：struct 尾部填充对齐到 max_align） */
     if (max_align > 1)
         offset = (offset + max_align - 1) & ~(max_align - 1);
-
-    *out_count = count;
-    return offset;
+    return offset > 0 ? offset : 1;
 }
 
 /* 解析 struct 类型：struct [tag] { ... }  或 struct tag
  * 返回 0 表示失败或 forward-declaration */
-static int parse_struct_type(Parser *p, StructType *out) {
+static int parse_struct_type(Parser *p, StructType *out, int is_union) {
     out->tag = NULL;
     out->member_count = 0;
     out->total_size = 0;
@@ -1560,7 +1580,7 @@ static int parse_struct_type(Parser *p, StructType *out) {
          * 使得 self-referencing 成员（如 struct Node *next）能获得
          * 正确的 member_struct_tag，用于链式访问的 struct_type 传播。 */
         last_struct_tag = tag;
-        out->total_size = parse_struct_body(p, out->members, &out->member_count);
+        out->total_size = parse_struct_body(p, out->members, &out->member_count, is_union);
         while (peek(p).kind == TOK__ATTRIBUTE__) {
             consume(p); expect(p, TOK_LPAREN); expect(p, TOK_LPAREN);
             int d = 2;
@@ -1753,6 +1773,7 @@ int parse_type_specifier(Parser *p) {
     case TOK_STRUCT:
     case TOK_UNION: {
         last_type_is_unsigned = 0; consume(p);
+        int _is_union = (t.kind == TOK_UNION) ? 1 : 0;
         /* 提前获取 struct 标签名（用于 total_size 回退，绕过 stage-2
          * 中 *out = *existing 大结构体拷贝导致 total_size 丢失的 bug） */
         const char *_tag_fb = NULL;
@@ -1765,7 +1786,7 @@ int parse_type_specifier(Parser *p) {
             }
         }
         StructType st;
-        int sz = parse_struct_type(p, &st);
+        int sz = parse_struct_type(p, &st, _is_union);
         if (st.member_count > 0)
             last_struct_tag = st.tag ? st.tag : "";
         /* 回退：struct 拷贝丢失了 total_size，直接从 tag_table 取 */
