@@ -241,7 +241,7 @@ test-source: $(BUILD)/tcc $(BUILD)/tld
 
 # ─── 全部测试 ──────────────────────────────────────────────────
 
-test-all: test test-selfhost test-source test-tld test-error test-tar
+test-all: test test-selfhost test-source test-tld test-error test-tar test-tld-archive
 	@printf "$(GREEN)✓ 全部测试通过$(RESET)\n"
 
 # ─── tld 链接器测试 ───────────────────────────────────────────
@@ -376,6 +376,62 @@ test-error: $(BUILD)/tcc
 		printf "\n"; \
 	done; \
 	printf "$(BLUE)══════$(RESET) $(GREEN)%d passed$(RESET), $(RED)%d failed$(RESET), %d total $(BLUE)══════$(RESET)\n" "$$ok" "$$fail" "$$total"; \
+	[ "$$fail" -eq 0 ]
+
+# ─── tld 归档链接测试 ───────────────────────────────────────
+
+test-tld-archive: $(BUILD)/tld $(BUILD)/tcc $(BUILD)/tar $(BUILD)/tcc_rt.o $(BUILD)/tcc_rt_start.o
+	@printf "$(BLUE)══════ tld 归档链接测试 ══════$(RESET)\n\n"; \
+	ok=0; fail=0; total=0; \
+	\
+	printf "  $(BLUE)%-25s$(RESET) " "archive_basic"; \
+	if $(BUILD)/tcc -nostdlib -ffreestanding -I include -I compiler \
+		$(TLD_TESTDIR)/arch_helper.c -o /tmp/arch_helper.o 2>/tmp/arch_compile.log \
+		&& $(BUILD)/tcc -nostdlib -ffreestanding -I include -I compiler \
+		   $(TLD_TESTDIR)/arch_main.c -o /tmp/arch_main.o 2>>/tmp/arch_compile.log \
+		&& $(BUILD)/tar rcs /tmp/libarch_basic.a /tmp/arch_helper.o 2>/dev/null \
+		&& $(BUILD)/tld /tmp/arch_main.o /tmp/libarch_basic.a \
+		   $(BUILD)/tcc_rt.o $(BUILD)/tcc_rt_start.o -o /tmp/arch_basic_test 2>/tmp/arch_link.log; then \
+		/tmp/arch_basic_test >/tmp/arch_basic_test.log 2>&1; got=$$?; \
+		if [ "$$got" = "42" ]; then \
+			printf "$(GREEN)✓$(RESET) (exit $$got)\n"; ok=$$((ok+1)); \
+		else \
+			printf "$(RED)✗$(RESET) (want 42 got $$got)\n"; fail=$$((fail+1)); \
+		fi; \
+	else \
+		printf "$(RED)✗$(RESET)\n"; fail=$$((fail+1)); \
+	fi; \
+	total=$$((total+1)); \
+	\
+	printf "  $(BLUE)%-25s$(RESET) " "archive_transitive"; \
+	if $(BUILD)/tcc -nostdlib -ffreestanding -I include -I compiler \
+		$(TLD_TESTDIR)/arch_leaf.c -o /tmp/arch_leaf.o 2>>/tmp/arch_compile.log \
+		&& $(BUILD)/tcc -nostdlib -ffreestanding -I include -I compiler \
+		   $(TLD_TESTDIR)/arch_mid.c -o /tmp/arch_mid.o 2>>/tmp/arch_compile.log \
+		&& $(BUILD)/tcc -nostdlib -ffreestanding -I include -I compiler \
+		   $(TLD_TESTDIR)/arch_trans.c -o /tmp/arch_trans.o 2>>/tmp/arch_compile.log \
+		&& $(BUILD)/tar rcs /tmp/libarch_trans.a /tmp/arch_mid.o /tmp/arch_leaf.o 2>/dev/null \
+		&& $(BUILD)/tld /tmp/arch_trans.o /tmp/libarch_trans.a \
+		   $(BUILD)/tcc_rt.o $(BUILD)/tcc_rt_start.o -o /tmp/arch_trans_test 2>/tmp/arch_link.log; then \
+		/tmp/arch_trans_test >/tmp/arch_trans_test.log 2>&1; got=$$?; \
+		if [ "$$got" = "42" ]; then \
+			printf "$(GREEN)✓$(RESET) (exit $$got)\n"; ok=$$((ok+1)); \
+		else \
+			printf "$(RED)✗$(RESET) (want 42 got $$got)\n"; fail=$$((fail+1)); \
+		fi; \
+	else \
+		printf "$(RED)✗$(RESET)\n"; fail=$$((fail+1)); \
+	fi; \
+	total=$$((total+1)); \
+	\
+	# 清理临时文件 \
+	rm -f /tmp/arch_helper.o /tmp/arch_main.o /tmp/arch_leaf.o /tmp/arch_mid.o /tmp/arch_trans.o; \
+	rm -f /tmp/libarch_basic.a /tmp/libarch_trans.a; \
+	rm -f /tmp/arch_basic_test /tmp/arch_trans_test; \
+	rm -f /tmp/arch_compile.log /tmp/arch_link.log; \
+	rm -f /tmp/arch_basic_test.log /tmp/arch_trans_test.log; \
+	\
+	printf "\n$(BLUE)══════$(RESET) $(GREEN)%d passed$(RESET), $(RED)%d failed$(RESET), %d total $(BLUE)══════$(RESET)\n" "$$ok" "$$fail" "$$total"; \
 	[ "$$fail" -eq 0 ]
 
 # ─── tar 归档器测试 ────────────────────────────────────────────

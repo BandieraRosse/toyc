@@ -42,6 +42,21 @@
 static const char *entry_sym_name = "__tlibc_start";
 
 /* ═══════════════════════════════════════════════════════════════════
+ *  归档（.a）格式常量
+ * ═══════════════════════════════════════════════════════════════════ */
+
+#define SARMAG          8
+#define ARMAG           "!<arch>\n"
+#define AR_HDR_SIZE     60
+#define H_NAME          0
+#define H_SIZE          48
+#define H_FMAG          58
+
+#define MAX_ARCHIVES    16
+#define MAX_AR_MEMBERS  256
+#define MAX_AR_SYMS     4096
+
+/* ═══════════════════════════════════════════════════════════════════
  *  数据结构
  * ═══════════════════════════════════════════════════════════════════ */
 
@@ -98,6 +113,30 @@ typedef struct {
     unsigned char   sym_info;
 } Symbol;
 
+/* 归档成员：从 .a 文件中提取的单个 .o 文件 */
+typedef struct {
+    const char     *name;      /* 成员名 */
+    unsigned char  *data;      /* 成员 .o 数据（独立分配） */
+    int             size;
+    int             loaded;    /* 已作为输入加载 */
+    int             hdr_off;   /* ar_hdr 在归档中的偏移 */
+} ArchiveMember;
+
+/* 归档符号表条目 */
+typedef struct {
+    const char     *name;      /* 指向归档缓冲区的符号名 */
+    int             member_idx;
+} ArchiveSym;
+
+/* 单个归档文件的状态 */
+typedef struct {
+    ArchiveMember   members[MAX_AR_MEMBERS];
+    int             member_count;
+    ArchiveSym      syms[MAX_AR_SYMS];
+    int             sym_count;
+    unsigned char  *raw_symtab; /* 原始符号表数据（指向归档缓冲区） */
+} Archive;
+
 /* ═══════════════════════════════════════════════════════════════════
  *  全局状态
  * ═══════════════════════════════════════════════════════════════════ */
@@ -108,6 +147,9 @@ static const char  *output_path;
 
 static Symbol       syms[MAX_SYMS];
 static int          sym_count;
+
+static Archive      archives[MAX_ARCHIVES];
+static int          archive_count;
 
 /* 合并后段缓冲区（堆分配） */
 static unsigned char *merged_text;
@@ -148,6 +190,12 @@ static void w32(unsigned char *dest, uint32_t v) {
 static void w64(unsigned char *dest, uint64_t v) {
     w32(dest, v & 0xFFFFFFFF);
     w32(dest + 4, (v >> 32) & 0xFFFFFFFF);
+}
+
+/* 大端 uint32 读取 */
+static uint32_t r32be(const unsigned char *p) {
+    return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16)
+         | ((uint32_t)p[2] << 8) | (uint32_t)p[3];
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -303,6 +351,314 @@ static void read_input(const char *path) {
     #undef READ_SH
 
     input_count++;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+ *  从内存缓冲区读取 ELF .o（用于归档成员）
+ * ═══════════════════════════════════════════════════════════════════ */
+
+static void read_input_mem(const char *name, unsigned char *data, int size) {
+    if (input_count >= MAX_INPUTS)
+        error("too many input files", NULL);
+
+    InputFile *f = &inputs[input_count];
+    f->name = name;
+    f->sh_text = f->sh_data = f->sh_bss = f->sh_symtab = f->sh_strtab = -1;
+    f->sh_rela_text = f->sh_rela_data = -1;
+
+    f->data = data;
+    f->size = size;
+
+    /* ── 校验 ELF header ── */
+    if (f->size < 64 || f->data[0] != 0x7F || f->data[1] != 'E'
+        || f->data[2] != 'L' || f->data[3] != 'F')
+        error("not a valid ELF member in archive", name);
+    if (f->data[4] != 2)
+        error("not a 64-bit ELF member in archive", name);
+    if (r16(f->data + 16) != 1)
+        error("not a relocatable object member in archive", name);
+    if (r16(f->data + 18) != 62)
+        error("not an x86_64 ELF member in archive", name);
+
+    /* ── 查找各段 ── */
+    f->sh_text      = find_sh_by_name(f, ".text");
+    f->sh_data      = find_sh_by_name(f, ".data");
+    f->sh_bss       = find_sh_by_name(f, ".bss");
+    f->sh_symtab    = find_sh_by_name(f, ".symtab");
+    f->sh_strtab    = find_sh_by_name(f, ".strtab");
+    f->sh_rela_text = find_sh_by_name(f, ".rela.text");
+    f->sh_rela_data = find_sh_by_name(f, ".rela.data");
+
+    int shnum = r16(f->data + 60);
+    int shoff = r64(f->data + 40);
+    unsigned char *shdr_base = f->data + shoff;
+
+    #define READ_SH(i, off_var, sz_var) do { \
+        if ((i) >= 0 && (i) < shnum) { \
+            unsigned char *_sh = shdr_base + (i) * 64; \
+            off_var = (int)r64(_sh + 24); \
+            sz_var  = (int)r64(_sh + 32); \
+        } \
+    } while(0)
+
+    /* .text */
+    if (f->sh_text >= 0) { int off=0, sz=0;
+        READ_SH(f->sh_text, off, sz);
+        f->text_data = f->data + off; f->text_size = sz; }
+
+    /* .data */
+    if (f->sh_data >= 0) { int off=0, sz=0;
+        READ_SH(f->sh_data, off, sz);
+        f->data_data = f->data + off; f->data_size = sz; }
+
+    /* .bss — 只有大小，无数据 */
+    if (f->sh_bss >= 0) {
+        f->bss_size = (int)r64((shdr_base + f->sh_bss * 64) + 32); }
+
+    /* .symtab */
+    if (f->sh_symtab >= 0) { int off=0, sz=0;
+        READ_SH(f->sh_symtab, off, sz);
+        f->syms_raw = f->data + off; f->sym_count = sz / 24; }
+
+    /* .strtab */
+    if (f->sh_strtab >= 0) { int off=0, sz=0;
+        READ_SH(f->sh_strtab, off, sz);
+        f->strtab_data = (char *)f->data + off; f->strtab_size = sz; }
+
+    /* .rela.text */
+    if (f->sh_rela_text >= 0) { int off=0, sz=0;
+        READ_SH(f->sh_rela_text, off, sz);
+        f->rela_text_raw = f->data + off; f->rela_text_count = sz / 24; }
+
+    /* .rela.data */
+    if (f->sh_rela_data >= 0) { int off=0, sz=0;
+        READ_SH(f->sh_rela_data, off, sz);
+        f->rela_data_raw = f->data + off; f->rela_data_count = sz / 24; }
+
+    #undef READ_SH
+
+    input_count++;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+ *  符号注册（用于归档延迟加载前的 UNDEF 检测）
+ * ═══════════════════════════════════════════════════════════════════ */
+
+/* 将指定输入文件的全局 UNDEF 符号注册到 syms 表 */
+static void register_input_undefs(int idx) {
+    InputFile *f = &inputs[idx];
+    if (!f->syms_raw) return;
+    for (int si = 1; si < f->sym_count; si++) {
+        unsigned char *sym = f->syms_raw + si * 24;
+        unsigned char info = sym[4];
+        int bind = (info >> 4) & 0xF;
+        if (bind == 0) continue;                       /* STB_LOCAL */
+        if (r16(sym + 6) != 0) continue;               /* 不是 UNDEF */
+        const char *name = sym_name(f, si);
+        if (!name || !name[0]) continue;
+        find_or_add_sym(name);  /* 创建 UNDEF 条目（如不存在） */
+    }
+}
+
+/* 检查符号是否已定义 */
+static int sym_is_undef(const char *name) {
+    for (int i = 0; i < sym_count; i++)
+        if (syms[i].name && strcmp(syms[i].name, name) == 0 && !syms[i].defined)
+            return 1;
+    return 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+ *  归档文件（.a）解析与延迟加载
+ * ═══════════════════════════════════════════════════════════════════ */
+
+/* 复制内存（通过函数参数传递，避免 tcc 在局部变量中截断 64 位指针） */
+static void copy_bytes(unsigned char *d, const unsigned char *s, int n) {
+    int i;
+    for (i = 0; i < n; i++) d[i] = s[i];
+}
+
+/* 解析十进制字符串 */
+static int parse_dec(const char *s, int maxlen) {
+    int v = 0;
+    for (int i = 0; i < maxlen && s[i] >= '0' && s[i] <= '9'; i++)
+        v = v * 10 + (s[i] - '0');
+    return v;
+}
+
+/* 在归档中查找成员索引（通过 ar_hdr 偏移） */
+static int find_ar_member(Archive *a, int hdr_off) {
+    for (int i = 0; i < a->member_count; i++)
+        if (a->members[i].hdr_off == hdr_off) return i;
+    return -1;
+}
+
+/* 读取并解析 .a 归档文件 */
+static void read_archive(const char *path) {
+    if (archive_count >= MAX_ARCHIVES)
+        error("too many archive files", NULL);
+
+    Archive *a = &archives[archive_count];
+    a->member_count = 0;
+    a->sym_count = 0;
+    a->raw_symtab = NULL;
+
+    long fsz;
+    unsigned char *buf = read_whole_file(path, &fsz);
+
+    /* ── 校验 magic ── */
+    if (fsz < SARMAG) error("bad archive", path);
+    if (buf[0] != '!' || buf[1] != '<' || buf[2] != 'a' || buf[3] != 'r'
+        || buf[4] != 'c' || buf[5] != 'h' || buf[6] != '>' || buf[7] != '\n')
+        error("bad archive magic", path);
+
+    int pos = SARMAG;
+    char *lname_data = NULL;
+    int lname_sz = 0;
+
+    /* ── Phase 1: 扫描所有成员 ── */
+    while (pos + AR_HDR_SIZE <= fsz) {
+        /* 读取名称长度（到空格或 '/' 的字符数） */
+        int nl = 0;
+        while (nl < 16 && buf[pos + nl] && buf[pos + nl] != ' ') nl++;
+
+        int dsz = parse_dec((const char *)buf + pos + H_SIZE, 10);
+        int dp = pos + AR_HDR_SIZE;
+        if (dp + dsz > fsz) error("truncated archive", path);
+
+        /* 校验 fmag */
+        if (buf[pos + H_FMAG] != '`' || buf[pos + H_FMAG + 1] != '\n')
+            error("bad archive header", path);
+
+        if (nl == 1 && buf[pos] == '/') {
+            /* 符号表成员 — 保存原始数据，Phase 2 再解析 */
+            a->raw_symtab = buf + dp;
+        } else if (nl >= 2 && buf[pos] == '/' && buf[pos + 1] == '/') {
+            /* 长名表 */
+            lname_data = (char *)buf + dp;
+            lname_sz = dsz;
+        } else if (!(nl == 1 && buf[pos] == ' ')) {
+            /* 普通成员（跳过尾部的 ` ` 空记录） */
+            if (a->member_count >= MAX_AR_MEMBERS)
+                error("too many archive members", path);
+
+            ArchiveMember *m = &a->members[a->member_count];
+            m->hdr_off = pos;
+            m->loaded = 0;
+            m->size = dsz;
+            m->data = NULL;
+            m->name = NULL;
+
+            /* 分配并复制成员数据（末尾补零） */
+            m->data = (unsigned char *)tlibc_malloc(dsz + 4);
+            if (!m->data) error("out of memory reading archive", path);
+            copy_bytes(m->data, buf + dp, dsz);
+            m->data[dsz] = 0; m->data[dsz+1] = 0;
+            m->data[dsz+2] = 0; m->data[dsz+3] = 0;
+
+            /* 提取成员名 */
+            if (nl >= 2 && buf[pos] == '/'
+                && buf[pos + 1] >= '0' && buf[pos + 1] <= '9' && lname_data)
+            {
+                /* 长名引用：/N → N 指向长名表偏移 */
+                int noff = parse_dec((const char *)buf + pos + 1, 15);
+                if (noff < lname_sz) {
+                    int end = noff;
+                    while (end < lname_sz && lname_data[end] != '\n') end++;
+                    int llen = end - noff;
+                    char *nb = (char *)tlibc_malloc(llen + 1);
+                    if (nb) {
+                        copy_bytes((unsigned char *)nb,
+                                   (const unsigned char *)lname_data + noff, llen);
+                        nb[llen] = 0;
+                        m->name = nb;
+                    }
+                }
+            }
+            if (!m->name) {
+                /* 短名：去掉末尾的 '/' */
+                int sl = nl;
+                if (sl > 0 && buf[pos + sl - 1] == '/') sl--;
+                char *nb = (char *)tlibc_malloc(sl + 1);
+                if (nb) {
+                    for (int i = 0; i < sl; i++) nb[i] = buf[pos + i];
+                    nb[sl] = 0;
+                    m->name = nb;
+                }
+            }
+
+            a->member_count++;
+        }
+
+        pos = dp + dsz;
+        if (pos & 1) pos++;
+    }
+
+    /* ── Phase 2: 解析符号表 ── */
+    if (a->raw_symtab) {
+        int nsym = (int)r32be(a->raw_symtab);
+        if (nsym > 0 && nsym < (fsz - (a->raw_symtab - buf)) / 4) {
+            int name_pos = 4 + nsym * 4;
+            for (int i = 0; i < nsym && a->sym_count < MAX_AR_SYMS; i++) {
+                int member_off = (int)r32be(a->raw_symtab + 4 + i * 4);
+                const char *sym_name = (const char *)(a->raw_symtab + name_pos);
+
+                int mi = find_ar_member(a, member_off);
+
+                /* 计算名称长度用于步进 */
+                int nlen = 0;
+                while (sym_name[nlen]) nlen++;
+
+                if (mi >= 0 && sym_name[0]) {
+                    a->syms[a->sym_count].name = sym_name;
+                    a->syms[a->sym_count].member_idx = mi;
+                    a->sym_count++;
+                }
+
+                name_pos += nlen + 1;
+                if (name_pos >= (int)fsz - (int)(a->raw_symtab - buf)) break;
+            }
+        }
+    }
+
+    archive_count++;
+}
+
+/* 检查归档文件扩展名 */
+static int is_archive_name(const char *path) {
+    int len = 0;
+    while (path[len]) len++;
+    return (len >= 2 && path[len-2] == '.' && path[len-1] == 'a');
+}
+
+/* 延迟加载：从归档中取出需要的成员 */
+static void lazy_load_archives(void) {
+    int loaded;
+    do {
+        loaded = 0;
+        for (int ai = 0; ai < archive_count && !loaded; ai++) {
+            Archive *a = &archives[ai];
+            for (int mi = 0; mi < a->member_count && !loaded; mi++) {
+                if (a->members[mi].loaded) continue;
+                /* 检查该成员是否定义了当前未定义的符号 */
+                int needed = 0;
+                for (int si = 0; si < a->sym_count && !needed; si++) {
+                    if (a->syms[si].member_idx == mi
+                        && sym_is_undef(a->syms[si].name))
+                        needed = 1;
+                }
+                if (needed) {
+                    read_input_mem(a->members[mi].name,
+                                   a->members[mi].data,
+                                   a->members[mi].size);
+                    a->members[mi].loaded = 1;
+                    /* 注册新输入中的 UNDEF，以便触发更多归档加载 */
+                    register_input_undefs(input_count - 1);
+                    loaded = 1;
+                }
+            }
+        }
+    } while (loaded);
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -693,13 +1049,22 @@ int main(int argc, char **argv) {
             entry_sym_name = argv[++i];
         } else if (argv[i][0] == '-') {
             /* 忽略其他 ld 参数 */
+        } else if (is_archive_name(argv[i])) {
+            read_archive(argv[i]);
         } else {
             read_input(argv[i]);
         }
     }
 
-    if (input_count == 0)
+    if (input_count == 0 && archive_count == 0)
         error("no input files", NULL);
+
+    /* ── 注册直接输入的 UNDEF 符号 ── */
+    for (int i = 0; i < input_count; i++)
+        register_input_undefs(i);
+
+    /* ── 从归档延迟加载需要的成员 ── */
+    lazy_load_archives();
 
     /* 1) 段合并 */
     merge_sections();
