@@ -249,6 +249,7 @@ typedef struct AstNode {
     int elem_size;       /* AST_VAR_DECL: 指针变量的元素大小（int*→4, char**→8） */
     int base_elem_size;  /* AST_VAR_DECL: 数组的基础元素大小（多维数组中内层元素大小） */
     int elem_is_ptr;     /* 1: 数组元素为指针类型（char *arr[] 或 int *arr[N]） */
+    int elem_is_float;   /* 指针变量的元素是否为 float/double */
     int is_array;        /* 1: 数组变量（分配时退化为指针）0: 标量或指针变量 */
     /* 全局变量初始化器数据（AST_VAR_DECL 且 = { ... } 时有效） */
     int init_count;           /* init_items 数组长度 */
@@ -312,6 +313,7 @@ extern int global_ptr_elem_size[MAX_SYMS];  /* 全局指针变量的元素大小
 extern int global_base_elem_size[MAX_SYMS];
 extern int global_elem_is_ptr_arr[MAX_SYMS];
 extern int global_elem_unsigned[MAX_SYMS];
+extern int global_elem_float[MAX_SYMS];      /* 全局数组/指针元素的浮点类型：0=非浮点, 4=float, 8=double */
 extern int global_is_array[MAX_SYMS];        /* 全局变量是否为数组 */
 
 /* 字符串字面量池 — cgen_expr 追加，cgen_program 结尾刷入 code_buf */
@@ -382,6 +384,7 @@ typedef struct {
     int is_array;            /* 1 表示数组类型（访问时退化为指针） */
     int is_unsigned;         /* 1 表示 unsigned 类型 */
     int elem_is_unsigned;    /* 指针变量的元素是否为 unsigned（用于 *ptr 解引用） */
+    int elem_is_float;       /* 指针变量的元素是否为 float/double（用于 *ptr 解引用） */
 } LocalVar;
 
 extern LocalVar locals[MAX_LOCALS];
@@ -446,6 +449,7 @@ typedef struct {
     int size;
     int elem_size;      /* 指针成员指向的元素大小（long*→8, int*→4），数组成员的元素大小 */
     int is_unsigned;    /* 成员是否为 unsigned 类型 */
+    int is_float;       /* 0=非浮点, 4=float, 8=double */
     int memb_is_array;  /* 1=数组成员, 0=指针或标量（用于 init 数据发射宽度计算） */
     const char *member_struct_tag;  /* 如果此成员本身是 struct 类型（非指针），存 struct 标签名；否则 NULL */
 } Member;

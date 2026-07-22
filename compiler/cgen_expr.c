@@ -483,7 +483,13 @@ void cgen_expr(AstNode *node) {
         int i;
         SEARCH_LOCAL(i, node->name);
         if (i >= 0) {
-                if (locals[i].is_float) {
+                /* 数组/大结构体优先于浮点判断：float arr[] 应先退化为指针 */
+                if (locals[i].is_array || locals[i].size > 8) {
+                    /* 数组/大结构体：退化为指针（lea rax, [rbp+off]） */
+                    lea_from_rbp(locals[i].offset);
+                    node->type_size = 8;
+                    node->is_float = 0;  /* 指针不是浮点值 */
+                } else if (locals[i].is_float) {
                     node->is_float = locals[i].is_float;
                     node->type_size = locals[i].is_float;
                     /* 无论 float/double 都用 movsd 加载（栈槽统一 8 字节） */
@@ -495,11 +501,7 @@ void cgen_expr(AstNode *node) {
                 } else {
                     node->type_size = locals[i].size;
                     node->is_unsigned = locals[i].is_unsigned;
-                    if (locals[i].is_array || locals[i].size > 8) {
-                        /* 数组/大结构体：退化为指针（lea rax, [rbp+off]） */
-                        lea_from_rbp(locals[i].offset);
-                        node->type_size = 8;  /* 数组→指针衰减 */
-                    } else if (locals[i].size == 8)
+                    if (locals[i].size == 8)
                         load_rax_from_rbp(locals[i].offset);
                     else if (locals[i].size == 1) {
                         if (locals[i].is_unsigned) {
@@ -564,6 +566,23 @@ void cgen_expr(AstNode *node) {
                 }
             }
             if (si >= 0) {
+                /* 浮点全局变量：用 movss/movsd 加载到 xmm0 */
+                if (node->is_float) {
+                    if (node->is_float == 4) {
+                        e1(0xF3); e1(0x0F); e1(0x10); e1(0x05);  /* movss xmm0, [rip+disp32] */
+                    } else {
+                        e1(0xF2); e1(0x0F); e1(0x10); e1(0x05);  /* movsd xmm0, [rip+disp32] */
+                    }
+                    int ro = code_size;
+                    e1(0x55); e1(0x66); e1(0x77); e1(0x88);
+                    if (rel_count < MAX_RELS) {
+                        Elf64_Rela *r = &rels[rel_count++];
+                        r->r_offset = ro;
+                        r->r_info = ELF64_R_INFO(si + 1, R_X86_64_PC32);
+                        r->r_addend = -4;
+                    }
+                    break;
+                }
                 /* 全局变量：使用符号表记录的大小确定加载宽度 */
                 int gsz = syms[si].size > 0 ? syms[si].size :
                           (node->type_size > 0 ? node->type_size : 4);
@@ -617,6 +636,7 @@ void cgen_expr(AstNode *node) {
             /* 确定元素大小和符号性（默认 1 = char*，默认 signed） */
             int elem_size = 1;
             int elem_unsigned = 0;
+            int elem_float = 0;      /* 0=非浮点, 4=float, 8=double */
             int idx_is64 = (node->right && node->right->type_size == 8);
             if (node->left && node->left->kind == AST_VAR) {
                 int i;
@@ -625,6 +645,9 @@ void cgen_expr(AstNode *node) {
                         if (locals[i].element_size > 0)
                             elem_size = locals[i].element_size;
                         elem_unsigned = locals[i].elem_is_unsigned;
+                        /* float 数组：检查 is_float（数组的 is_float 表示元素类型） */
+                        if (locals[i].is_array && locals[i].is_float)
+                            elem_float = locals[i].is_float;
 
                 }
                 if (i < 0) {
@@ -634,6 +657,7 @@ void cgen_expr(AstNode *node) {
                                 if (global_elem_size[i] > 0) {
                                     elem_size = global_elem_size[i];
                                     elem_unsigned = global_elem_unsigned[i];
+                                    elem_float = global_elem_float[i];
                                 } else if (global_ptr_elem_size[i] > 0) {
                                     elem_size = global_ptr_elem_size[i];
                                 }
@@ -654,6 +678,8 @@ void cgen_expr(AstNode *node) {
                         else if (locals[i].element_size > 0)
                             elem_size = locals[i].element_size;
                         elem_unsigned = locals[i].elem_is_unsigned;
+                        if (locals[i].is_array && locals[i].is_float)
+                            elem_float = locals[i].is_float;
                 }
                 if (i < 0) {
                     for (i = 0; i < sym_count; i++) {
@@ -662,6 +688,8 @@ void cgen_expr(AstNode *node) {
                                 if (global_base_elem_size[i] > 0)
                                     elem_size = global_base_elem_size[i];
                                 elem_unsigned = global_elem_unsigned[i];
+                                if (global_elem_float[i] > 0)
+                                    elem_float = global_elem_float[i];
                             }
                             break;
                         }
@@ -753,10 +781,19 @@ void cgen_expr(AstNode *node) {
                 }
             }
 
-            /* 按元素大小和符号性加载结果（子数组/大结构体不加载，退化为指针） */
+            /* 按元素大小、浮点性和符号性加载结果（子数组/大结构体不加载，退化为指针） */
             if (is_subarray || elem_size > 8) {
                 /* 子数组/大结构体：不加载，rax 中已是指针 */
                 node->type_size = 8;
+            } else if (elem_float) {
+                /* float/double 数组元素：加载到 xmm0 */
+                if (elem_float == 4) {
+                    e1(0xF3); e1(0x0F); e1(0x10); e1(0x00);  /* movss xmm0, [rax] */
+                } else {
+                    e1(0xF2); e1(0x0F); e1(0x10); e1(0x00);  /* movsd xmm0, [rax] */
+                }
+                node->is_float = elem_float;
+                node->type_size = elem_size;
             } else if (elem_size >= 8) {
                 e1(0x48); e1(0x8B); e1(0x00);    /* mov rax, [rax] */
                 node->type_size = elem_size;
@@ -948,6 +985,65 @@ void cgen_expr(AstNode *node) {
 
         /* 普通整数二元运算：左→栈，右→eax，出栈→ecx，计算 */
         cgen_expr(node->left);
+        /* 代码生成后重新检测浮点：某些表达式（如 *float_ptr）在 parse 时
+         * 无法确定浮点类型，但 cgen_expr 之后 node->left->is_float 已正确设置。
+         * 注意：若上方 float 分支已执行，它已 break，不会走到这里。 */
+        if (node->left && node->left->is_float) {
+            int _ss = (node->left->is_float == 4);
+            int _cmp = (node->op == TOK_LESS || node->op == TOK_GREATER ||
+                        node->op == TOK_LESS_EQ || node->op == TOK_GREATER_EQ ||
+                        node->op == TOK_EQ_EQ || node->op == TOK_NOT_EQ);
+            if (_cmp) {
+                /* 浮点比较 */
+                cgen_expr(node->left);
+                if (!_ss) cvti2d();
+                save_xmm0_to_xmm1();
+                e1(0x48); e1(0x83); e1(0xEC); e1(0x08);
+                e1(0xF2); e1(0x0F); e1(0x11); e1(0x0C); e1(0x24);
+                cgen_expr(node->right);
+                if (!(node->right && node->right->is_float)) {
+                    if (_ss) cvti2f(); else cvti2d();
+                }
+                e1(0xF2); e1(0x0F); e1(0x10); e1(0x0C); e1(0x24);
+                e1(0x48); e1(0x83); e1(0xC4); e1(0x08);
+                if (_ss) {
+                    e1(0x0F); e1(0x2E); e1(0xC8);  /* ucomiss */
+                } else {
+                    e1(0x66); e1(0x0F); e1(0x2E); e1(0xC8);  /* ucomisd */
+                }
+                if (node->op == TOK_LESS) { e1(0x0F); e1(0x92); e1(0xC0); }
+                else if (node->op == TOK_LESS_EQ) { e1(0x0F); e1(0x96); e1(0xC0); }
+                else if (node->op == TOK_GREATER) { e1(0x0F); e1(0x97); e1(0xC0); }
+                else if (node->op == TOK_GREATER_EQ) { e1(0x0F); e1(0x93); e1(0xC0); }
+                else if (node->op == TOK_EQ_EQ) { e1(0x0F); e1(0x94); e1(0xC0); }
+                else if (node->op == TOK_NOT_EQ) { e1(0x0F); e1(0x95); e1(0xC0); }
+                e1(0x0F); e1(0xB6); e1(0xC0);  /* movzx eax, al */
+                node->is_float = 0;
+            } else {
+                push_xmm0();
+                cgen_expr(node->right);
+                if (!(node->right && node->right->is_float)) {
+                    if (_ss) cvti2f(); else cvti2d();
+                }
+                pop_xmm1();
+                if (node->op == TOK_PLUS) {
+                    if (_ss) { e1(0xF3); e1(0x0F); e1(0x58); e1(0xC8); }
+                    else { e1(0xF2); e1(0x0F); e1(0x58); e1(0xC8); }
+                } else if (node->op == TOK_MINUS) {
+                    if (_ss) { e1(0xF3); e1(0x0F); e1(0x5C); e1(0xC8); }
+                    else { e1(0xF2); e1(0x0F); e1(0x5C); e1(0xC8); }
+                } else if (node->op == TOK_STAR) {
+                    if (_ss) { e1(0xF3); e1(0x0F); e1(0x59); e1(0xC8); }
+                    else { e1(0xF2); e1(0x0F); e1(0x59); e1(0xC8); }
+                } else if (node->op == TOK_SLASH) {
+                    if (_ss) { e1(0xF3); e1(0x0F); e1(0x5E); e1(0xC8); }
+                    else { e1(0xF2); e1(0x0F); e1(0x5E); e1(0xC8); }
+                }
+                e1(0x66); e1(0x0F); e1(0x28); e1(0xC1);  /* movapd xmm0, xmm1 */
+                node->is_float = node->left->is_float;
+            }
+            break;
+        }
         push_rax();
         cgen_expr(node->right);
         pop_rcx();  /* rcx = left, rax = right */
@@ -1472,11 +1568,12 @@ void cgen_expr(AstNode *node) {
         case TOK_STAR:
             /* *ptr — 从指针地址加载值 */
             if (node->expr) {
-                /* 推测被指向的类型大小和符号性。
+                /* 推测被指向的类型大小、浮点性和符号性。
                  * 在局部变量表中查找指针变量的 element_size：
                  * int * → 4, char * → 1, long * / double * → 8 */
                 int deref_size = 1;  /* 默认 char* 解引用 */
                 int elem_unsigned = 0;  /* 默认 signed */
+                int elem_float = 0;     /* 0=非浮点, 4=float, 8=double */
                 if (node->expr->kind == AST_VAR && node->expr->name) {
                     int vi;
                     SEARCH_LOCAL(vi, node->expr->name);
@@ -1484,7 +1581,19 @@ void cgen_expr(AstNode *node) {
                             if (locals[vi].element_size > 0)
                                 deref_size = locals[vi].element_size;
                             elem_unsigned = locals[vi].elem_is_unsigned;
+                            elem_float = locals[vi].elem_is_float;
 
+                    }
+                }
+                /* ptr + int 表达式（如 fp+1）：检查基变量的 elem_is_float */
+                if (node->expr->kind == AST_BINOP && node->expr->left &&
+                    node->expr->left->kind == AST_VAR && node->expr->left->name) {
+                    int vi;
+                    SEARCH_LOCAL(vi, node->expr->left->name);
+                    if (vi >= 0) {
+                            elem_float = locals[vi].elem_is_float;
+                            if (locals[vi].element_size > 0)
+                                deref_size = locals[vi].element_size;
                     }
                 }
                 /* fallback / cast override: 检查 AST 节点的 elem_size（Cast 设置了它）。
@@ -1494,7 +1603,18 @@ void cgen_expr(AstNode *node) {
                     deref_size = node->expr->elem_size;
                     elem_unsigned = node->expr->is_unsigned;
                 }
-                if (deref_size == 1) {
+                /* 检查 elem_is_float（全局或 AST 节点上的属性）。
+                 * 优先用节点上的 elem_is_float，其次尝试局部变量表。 */
+                if (node->expr->elem_is_float > 0)
+                    elem_float = node->expr->elem_is_float;
+                if (elem_float) {
+                    /* float/double 指针解引用 */
+                    if (elem_float == 4) {
+                        e1(0xF3); e1(0x0F); e1(0x10); e1(0x00);  /* movss xmm0, [rax] */
+                    } else {
+                        e1(0xF2); e1(0x0F); e1(0x10); e1(0x00);  /* movsd xmm0, [rax] */
+                    }
+                } else if (deref_size == 1) {
                     if (elem_unsigned) {
                         e1(0x0F); e1(0xB6); e1(0x00);  /* movzbl (%rax), %eax — 零扩展字节加载 */
                     } else {
@@ -1513,8 +1633,9 @@ void cgen_expr(AstNode *node) {
                     /* mov (%rax), %eax — 32-bit 加载（有符号无符号相同） */
                     e1(0x8B); e1(0x00);
                 }
-                /* 将元素的无符号性传播到解引用结果节点 */
+                /* 传播元数据 */
                 node->is_unsigned = elem_unsigned;
+                if (elem_float) node->is_float = elem_float;
                 node->type_size = deref_size;
             }
             break;
@@ -1575,6 +1696,7 @@ void cgen_expr(AstNode *node) {
             pop_rcx();                        /* rcx = 指针 */
             int elem_size = 1;
             int idx_is64 = (node->left->right && node->left->right->type_size == 8);
+            int elem_float = 0;  /* 数组元素类型是否为 float/double */
             AstNode *arr_base = node->left->left;
             if (arr_base && arr_base->kind == AST_VAR) {
                 int i;
@@ -1582,14 +1704,17 @@ void cgen_expr(AstNode *node) {
                 if (i >= 0) {
                         if (locals[i].element_size > 0)
                             elem_size = locals[i].element_size;
+                        if (locals[i].is_array && locals[i].is_float)
+                            elem_float = locals[i].is_float;
 
                 }
                 if (i < 0) {
                     for (i = 0; i < sym_count; i++) {
                         if (syms[i].name && strcmp(syms[i].name, arr_base->name) == 0) {
-                            if (i < MAX_SYMS && global_elem_size[i] > 0)
+                            if (i < MAX_SYMS && global_elem_size[i] > 0) {
                                 elem_size = global_elem_size[i];
-                            else if (i < MAX_SYMS && global_ptr_elem_size[i] > 0)
+                                elem_float = global_elem_float[i];
+                            } else if (i < MAX_SYMS && global_ptr_elem_size[i] > 0)
                                 elem_size = global_ptr_elem_size[i];
                             break;
                         }
@@ -1606,13 +1731,16 @@ void cgen_expr(AstNode *node) {
                             elem_size = locals[i].base_elem_size;
                         else if (locals[i].element_size > 0)
                             elem_size = locals[i].element_size;
-
+                        if (locals[i].is_array && locals[i].is_float)
+                            elem_float = locals[i].is_float;
                 } else {
                     /* 全局变量 double subscript */
                     for (i = 0; i < sym_count; i++) {
                         if (syms[i].name && strcmp(syms[i].name, arr_base->left->name) == 0) {
-                            if (i < MAX_SYMS && global_base_elem_size[i] > 0)
+                            if (i < MAX_SYMS && global_base_elem_size[i] > 0) {
                                 elem_size = global_base_elem_size[i];
+                                elem_float = global_elem_float[i];
+                            }
                             break;
                         }
                     }
@@ -1624,6 +1752,9 @@ void cgen_expr(AstNode *node) {
                 arr_base->elem_size > 0) {
                 elem_size = arr_base->elem_size;
             }
+            /* fallback: 从 arr_base AST 节点传播 is_float（如结构体成员数组 s.arr[i]） */
+            if (elem_float == 0 && arr_base && arr_base->is_float)
+                elem_float = arr_base->is_float;
             if (elem_size == 2) {
                 if (idx_is64)
                     { e1(0x48); e1(0xC1); e1(0xE0); e1(0x01); }
@@ -1667,9 +1798,20 @@ void cgen_expr(AstNode *node) {
              * 不能使用 RHS 的类型大小：char[i] = long_expr 应只存 1 字节，
              * 否则会覆写相邻内存。 */
             int store_sz = elem_size > 0 ? elem_size : 4;
+            /* int→float 转换：数组元素是 float/double 但 RHS 是 int */
+            if (elem_float && !rhs_float) {
+                if (elem_float == 4) cvti2f(); else cvti2d();
+                rhs_float = elem_float;
+            }
             if (rhs_float) {
-                /* movsd [rcx], xmm0 */
-                e1(0xF2); e1(0x0F); e1(0x11); e1(0x01);
+                /* float/double 数组元素存储：根据元素宽度选择 movss/movsd。
+                 * store_sz == 4 → float 数组，用 movss（4 字节）
+                 * store_sz >= 8 → double 数组，用 movsd（8 字节） */
+                if (store_sz == 4) {
+                    e1(0xF3); e1(0x0F); e1(0x11); e1(0x01);  /* movss [rcx], xmm0 */
+                } else {
+                    e1(0xF2); e1(0x0F); e1(0x11); e1(0x01);  /* movsd [rcx], xmm0 */
+                }
             } else if (store_sz > 8) {
                 /* 大结构体赋值：RAX=源地址(隐藏缓冲区), RCX=目标地址 */
                 e1(0x48); e1(0x89); e1(0xC6);  /* mov rsi, rax */
@@ -1719,7 +1861,26 @@ void cgen_expr(AstNode *node) {
                 deref_sz = node->right ? node->right->type_size : 4;
                 if (deref_sz == 0) deref_sz = 4;
             }
-            if (rhs_float) {
+            /* 检查是否指向 float/double：优先从局部变量表获取 elem_is_float */
+            int ptr_elem_float = 0;
+            if (node->left->expr && node->left->expr->kind == AST_VAR) {
+                int vi;
+                SEARCH_LOCAL(vi, node->left->expr->name);
+                if (vi >= 0) ptr_elem_float = locals[vi].elem_is_float;
+            }
+            /* fallback: AST 节点上的 elem_is_float（如 (float*) 强转） */
+            if (ptr_elem_float == 0 && node->left->expr && node->left->expr->elem_is_float > 0)
+                ptr_elem_float = node->left->expr->elem_is_float;
+            if (ptr_elem_float) {
+                if (!rhs_float) {
+                    if (ptr_elem_float == 4) cvti2f(); else cvti2d();
+                }
+                if (ptr_elem_float == 4) {
+                    e1(0xF3); e1(0x0F); e1(0x11); e1(0x01);  /* movss [rcx], xmm0 */
+                } else {
+                    e1(0xF2); e1(0x0F); e1(0x11); e1(0x01);  /* movsd [rcx], xmm0 */
+                }
+            } else if (rhs_float) {
                 e1(0xF2); e1(0x0F); e1(0x11); e1(0x01);  /* movsd [rcx], xmm0 */
             } else if (deref_sz >= 8) {
                 if (!rhs_float && node->right && node->right->type_size < 8 && !node->right->is_unsigned)
@@ -1843,6 +2004,26 @@ void cgen_expr(AstNode *node) {
                     s->sym_idx = -1;
                 }
                 if (si >= 0) {
+                    /* 浮点全局变量赋值 */
+                    if (node->left && node->left->is_float) {
+                        if (!rhs_float) {
+                            if (node->left->is_float == 4) cvti2f(); else cvti2d();
+                        }
+                        if (node->left->is_float == 4) {
+                            e1(0xF3); e1(0x0F); e1(0x11); e1(0x05);  /* movss [rip+disp32], xmm0 */
+                        } else {
+                            e1(0xF2); e1(0x0F); e1(0x11); e1(0x05);  /* movsd [rip+disp32], xmm0 */
+                        }
+                        int ro = code_size;
+                        e1(0x55); e1(0x66); e1(0x77); e1(0x88);
+                        if (rel_count < MAX_RELS) {
+                            Elf64_Rela *r = &rels[rel_count++];
+                            r->r_offset = ro;
+                            r->r_info = ELF64_R_INFO(si + 1, R_X86_64_PC32);
+                            r->r_addend = -4;
+                        }
+                        break;
+                    }
                     /* 使用变量的声明大小决定存储宽度 */
                     int var_size = syms[si].size;
                     int store_width = (rhs_size == 8 ||
@@ -1886,7 +2067,17 @@ void cgen_expr(AstNode *node) {
             e1(0x48); e1(0x89); e1(0xC1);  /* mov rcx, rax (rcx = 目标地址) */
             pop_rax();               /* rax = RHS 值（或源地址指针） */
 
-            if (rsize > 8) {
+            if (node->left->is_float) {
+                /* float/double 成员赋值 */
+                if (!rhs_float) {
+                    if (node->left->is_float == 4) cvti2f(); else cvti2d();
+                }
+                if (node->left->is_float == 4) {
+                    e1(0xF3); e1(0x0F); e1(0x11); e1(0x01);  /* movss [rcx], xmm0 */
+                } else {
+                    e1(0xF2); e1(0x0F); e1(0x11); e1(0x01);  /* movsd [rcx], xmm0 */
+                }
+            } else if (rsize > 8) {
                 /* 大结构体成员赋值：RAX=源地址, RCX=目标地址
                  * mov rsi, rax; mov rdi, rcx; mov ecx, rsize; rep movsb */
                 e1(0x48); e1(0x89); e1(0xC6);  /* mov rsi, rax */
@@ -2293,7 +2484,14 @@ void cgen_expr(AstNode *node) {
                 SEARCH_LOCAL(i, node->left->name);
                 if (i >= 0) {
                         int total_off = locals[i].offset + member_off;
-                        if (node->type_size > 8 || node->is_array) {
+                        if (node->is_float) {
+                            if (node->is_float == 4) {
+                                e1(0xF3); e1(0x0F); e1(0x10);  /* movss xmm0, [rbp+off] */
+                                e1(0x45); e1(total_off & 0xFF);
+                            } else {
+                                load_double_from_rbp(total_off);
+                            }
+                        } else if (node->type_size > 8 || node->is_array) {
                             /* 数组成员（含 <=8 字节）：退化为指针 */
                             lea_from_rbp(total_off);
                             node->type_size = 8;
@@ -2369,7 +2567,13 @@ void cgen_expr(AstNode *node) {
                     e1(0x48); e1(0x01); e1(0xC8);  /* add rax, rcx (64-bit — 地址运算) */
                 }
                 /* 从地址加载值（数组/大结构体成员不加载，退化为指针） */
-                if (node->type_size > 8 || node->is_array) {
+                if (node->is_float) {
+                    if (node->is_float == 4) {
+                        e1(0xF3); e1(0x0F); e1(0x10); e1(0x00);  /* movss xmm0, [rax] */
+                    } else {
+                        e1(0xF2); e1(0x0F); e1(0x10); e1(0x00);  /* movsd xmm0, [rax] */
+                    }
+                } else if (node->type_size > 8 || node->is_array) {
                     node->type_size = 8;  /* 退化为指针 */
                 } else if (node->type_size == 8) {
                     e1(0x48); e1(0x8B); e1(0x00);  /* mov rax, [rax] */
@@ -2398,7 +2602,13 @@ void cgen_expr(AstNode *node) {
                 e1(0x48); e1(0x01); e1(0xC8);  /* add rax, rcx (64-bit) */
             }
             /* 从地址加载值（数组/大结构体成员不加载，退化为指针） */
-            if (node->type_size > 8 || node->is_array) {
+            if (node->is_float) {
+                if (node->is_float == 4) {
+                    e1(0xF3); e1(0x0F); e1(0x10); e1(0x00);  /* movss xmm0, [rax] */
+                } else {
+                    e1(0xF2); e1(0x0F); e1(0x10); e1(0x00);  /* movsd xmm0, [rax] */
+                }
+            } else if (node->type_size > 8 || node->is_array) {
                 node->type_size = 8;  /* 退化为指针 */
             } else if (node->type_size == 8) {
                 e1(0x48); e1(0x8B); e1(0x00);  /* mov rax, [rax] */

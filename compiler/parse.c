@@ -46,6 +46,7 @@ static int pvar_is_float_arr[MAX_PVARS];      /* 是否为 double 类型 */
 static int pvar_is_unsigned_arr[MAX_PVARS];   /* 是否为 unsigned 类型 */
 static int pvar_size_arr[MAX_PVARS];          /* 变量大小（用于 sizeof） */
 static int pvar_elem_size_arr[MAX_PVARS];     /* 数组元素大小（0=非数组） */
+static int pvar_elem_float_arr[MAX_PVARS];    /* 指针/数组元素的浮点类型 */
 static StructType *pvar_struct_type_arr[MAX_PVARS]; /* 解析后的 StructType*（NULL=非 struct 或未知） */
 static int pvar_count;
 
@@ -61,6 +62,7 @@ static void pvar_add_ex(const char *name, const char *tag, int is_float, int is_
         pvar_is_unsigned_arr[pvar_count] = is_unsigned;
         pvar_size_arr[pvar_count] = size;
         pvar_elem_size_arr[pvar_count] = 0;
+        pvar_elem_float_arr[pvar_count] = 0;
         pvar_struct_type_arr[pvar_count] = NULL;
         pvar_count++;
     }
@@ -75,6 +77,18 @@ static int pvar_find_elem_size(const char *name) {
     int i;
     for (i = 0; i < pvar_count; i++)
         if (strcmp(pvar_name[i], name) == 0) return pvar_elem_size_arr[i];
+    return 0;
+}
+static void pvar_set_elem_float(const char *name, int elem_float) {
+    int i;
+    for (i = 0; i < pvar_count; i++)
+        if (strcmp(pvar_name[i], name) == 0)
+            { pvar_elem_float_arr[i] = elem_float; return; }
+}
+static int pvar_find_elem_float(const char *name) {
+    int i;
+    for (i = 0; i < pvar_count; i++)
+        if (strcmp(pvar_name[i], name) == 0) return pvar_elem_float_arr[i];
     return 0;
 }
 static void pvar_update_size(const char *name, int new_size) {
@@ -793,8 +807,10 @@ static AstNode *parse_postfix(Parser *p) {
             n->op = TOK_LBRACKET;  /* 用 op 标记下标操作 */
             n->left = left;
             n->right = idx;
-            /* a[i] 继承 left（数组/指针）的 struct 类型 */
+            /* a[i] 继承 left（数组/指针）的 struct 类型和浮点类型 */
             n->struct_type = left ? left->struct_type : NULL;
+            if (left && left->is_float)
+                n->is_float = left->is_float;
             left = n;
 
         } else if (t.kind == TOK_DOT) {
@@ -838,6 +854,7 @@ static AstNode *parse_postfix(Parser *p) {
                         n->ival = st->members[fi].offset;
                         n->type_size = st->members[fi].size;
                         n->is_unsigned = st->members[fi].is_unsigned;
+                        n->is_float = st->members[fi].is_float;
                         n->elem_size = st->members[fi].elem_size;
                         n->is_array = st->members[fi].memb_is_array;
                         /* 如果此成员是 struct 类型，传播 struct_type 供链式访问 */
@@ -865,6 +882,7 @@ static AstNode *parse_postfix(Parser *p) {
                             n->ival = tag_table[ti].members[mi].offset;
                             n->type_size = tag_table[ti].members[mi].size;
                             n->is_unsigned = tag_table[ti].members[mi].is_unsigned;
+                            n->is_float = tag_table[ti].members[mi].is_float;
                             n->elem_size = tag_table[ti].members[mi].elem_size;
                             n->is_array = tag_table[ti].members[mi].memb_is_array;
                             if (tag_table[ti].members[mi].member_struct_tag)
@@ -930,6 +948,7 @@ static AstNode *parse_postfix(Parser *p) {
                         n->ival = st->members[fi].offset;
                         n->type_size = st->members[fi].size;
                         n->is_unsigned = st->members[fi].is_unsigned;
+                        n->is_float = st->members[fi].is_float;
                         n->elem_size = st->members[fi].elem_size;
                         if (st->members[fi].member_struct_tag)
                             n->struct_type = find_struct_tag(st->members[fi].member_struct_tag);
@@ -954,6 +973,7 @@ static AstNode *parse_postfix(Parser *p) {
                             n->ival = tag_table[ti].members[mi].offset;
                             n->type_size = tag_table[ti].members[mi].size;
                             n->is_unsigned = tag_table[ti].members[mi].is_unsigned;
+                            n->is_float = tag_table[ti].members[mi].is_float;
                             n->elem_size = tag_table[ti].members[mi].elem_size;
                             if (tag_table[ti].members[mi].member_struct_tag)
                                 n->struct_type = find_struct_tag(tag_table[ti].members[mi].member_struct_tag);
@@ -1010,11 +1030,16 @@ static AstNode *parse_unary(Parser *p) {
         AstNode *n = new_ast(p, AST_UNARY);
         n->op = t.kind;
         n->expr = parse_unary(p);
-        /* +/- 和 ++/-- 保留操作数的浮点类型 */
+        /* +/-, ++/--, * 保留操作数的浮点类型 */
         if ((t.kind == TOK_PLUS || t.kind == TOK_MINUS ||
              t.kind == TOK_PLUS_PLUS || t.kind == TOK_MINUS_MINUS) &&
             n->expr && n->expr->is_float)
             n->is_float = n->expr->is_float;
+        /* *ptr：检查指针指向的浮点类型 */
+        if (t.kind == TOK_STAR && n->expr && n->expr->kind == AST_VAR && n->expr->name) {
+            int ef = pvar_find_elem_float(n->expr->name);
+            if (ef) n->is_float = ef;
+        }
         return n;
     }
 
@@ -1488,6 +1513,7 @@ static int parse_struct_body(Parser *p, Member *members, int *out_count, int is_
                 members[count].offset = member_offset;
                 members[count].size = member_sz;
                 members[count].is_unsigned = member_is_unsigned;
+                members[count].is_float = last_type_is_float;
                 /* elem_size: 指针→指向的类型大小，数组→元素大小 */
                 if (is_array)
                     members[count].elem_size = sz;  /* 数组元素大小（乘 [N] 之前的 sz） */
@@ -1569,6 +1595,7 @@ static int parse_struct_body(Parser *p, Member *members, int *out_count, int is_
                     members[count].offset = comma_offset;
                     members[count].size = member_sz;
                     members[count].is_unsigned = member_is_unsigned;
+                    members[count].is_float = last_type_is_float;
                     if (comma_is_array)
                         members[count].elem_size = sz;
                     else if (comma_ptr_count == 1)
@@ -2044,7 +2071,6 @@ static AstNode *parse_for_statement(Parser *p) {
         /* 跳过限定符：for (const char *p = ...) */
         while (peek(p).kind == TOK_CONST || peek(p).kind == TOK_VOLATILE ||
                peek(p).kind == TOK_RESTRICT) consume(p);
-        int loop_is_double = (peek(p).kind == TOK_DOUBLE);
         int ts = parse_type_specifier(p);
         if (ts >= 0) {
             int loop_ptrs = 0;
@@ -2052,18 +2078,21 @@ static AstNode *parse_for_statement(Parser *p) {
             n->loop_init->name = parse_declarator(p, &loop_ptrs);
             n->loop_init->ival = loop_ptrs > 0 ? 8 : (ts > 0 ? ts : 4);
             n->loop_init->type_size = n->loop_init->ival;
-            n->loop_init->is_float = (loop_is_double && loop_ptrs == 0);
+            n->loop_init->is_float = (loop_ptrs == 0) ? last_type_is_float : 0;
             if (loop_ptrs == 0) {
                 n->loop_init->is_unsigned = last_type_is_unsigned;
                 n->loop_init->elem_is_unsigned = 0;
             } else {
                 n->loop_init->is_unsigned = 0;
                 n->loop_init->elem_is_unsigned = last_type_is_unsigned;
+                n->loop_init->elem_is_float = last_type_is_float;
             }
             if (n->loop_init->name && *n->loop_init->name) {
-                pvar_add_ex(n->loop_init->name, last_struct_tag, loop_is_double, n->loop_init->is_unsigned, 0);
+                pvar_add_ex(n->loop_init->name, last_struct_tag, n->loop_init->is_float, n->loop_init->is_unsigned, 0);
                 if (last_struct_tag && *last_struct_tag)
                     pvar_set_struct_type(n->loop_init->name, resolve_struct_type(last_struct_tag));
+                if (loop_ptrs > 0 && last_type_is_float)
+                    pvar_set_elem_float(n->loop_init->name, last_type_is_float);
             }
             if (match(p, TOK_EQ))
                 n->loop_init->expr = parse_expr_comma(p);
@@ -2323,6 +2352,7 @@ AstNode *parse_compound_statement(Parser *p) {
                 } else {
                     decl->is_unsigned = 0;
                     decl->elem_is_unsigned = last_type_is_unsigned;
+                    decl->elem_is_float = last_type_is_float;
                 }
                 decl->is_static = q_static;
                 if (decl->name && *decl->name) {
@@ -2348,6 +2378,9 @@ AstNode *parse_compound_statement(Parser *p) {
                         }
                         if (!found_typedef)
                             pvar_add_ex(decl->name, NULL, decl->is_float, decl->is_unsigned, decl->ival);
+                        /* 指针类型：记录指向类型是否为 float/double */
+                        if (dv_ptrs > 0 && last_type_is_float)
+                            pvar_set_elem_float(decl->name, last_type_is_float);
                     }
                     if (resolved_tag)
                         pvar_set_struct_type(decl->name, resolve_struct_type(resolved_tag));
@@ -2550,6 +2583,7 @@ AstNode *parse_compound_statement(Parser *p) {
                     } else {
                         cdecl->is_unsigned = 0;
                         cdecl->elem_is_unsigned = last_type_is_unsigned;
+                        cdecl->elem_is_float = last_type_is_float;
                     }
                     cdecl->is_static = q_static;
                     /* 注册局部变量名 */
@@ -2557,6 +2591,8 @@ AstNode *parse_compound_statement(Parser *p) {
                         pvar_add_ex(cname, saved_struct_tag ? saved_struct_tag : NULL, cdecl->is_float, cdecl->is_unsigned, cdecl->ival);
                         if (saved_struct_tag && *saved_struct_tag)
                             pvar_set_struct_type(cname, resolve_struct_type(saved_struct_tag));
+                        if (c_ptrs > 0 && last_type_is_float)
+                            pvar_set_elem_float(cname, last_type_is_float);
                     }
                     /* 处理数组后缀 */
                     int comma_was_bracket = 0;
@@ -3321,7 +3357,8 @@ AstNode *parse_program(Parser *p) {
                     /* 注册 struct 标签和大小（供 sizeof 查找） */
                     {
                         const char *gvn = arena_strdup(p->arena, gv_name.start, gv_name.len);
-                        pvar_add_ex(gvn, global_typedef_tag ? global_typedef_tag : (last_struct_tag ? last_struct_tag : ""), last_type_is_float, last_type_is_unsigned, gv_total);
+                        int gv_is_float = (gv_ptrs == 0) ? last_type_is_float : 0;
+                        pvar_add_ex(gvn, global_typedef_tag ? global_typedef_tag : (last_struct_tag ? last_struct_tag : ""), gv_is_float, last_type_is_unsigned, gv_total);
                         {
                             const char *gv_tag = global_typedef_tag ? global_typedef_tag : last_struct_tag;
                             if (gv_tag)
@@ -3329,6 +3366,8 @@ AstNode *parse_program(Parser *p) {
                         }
                         if (gv_is_array)
                             pvar_set_elem_size(gvn, gv_elem_at);
+                        if (gv_ptrs > 0 && last_type_is_float)
+                            pvar_set_elem_float(gvn, last_type_is_float);
                         if (pvar_count > 3800) {
                             int _na = 0; while (gvn[_na]) _na++;
                             __write(2, "PVAR_FULL:", 10);
@@ -3351,7 +3390,8 @@ AstNode *parse_program(Parser *p) {
                         gvar->elem_is_ptr = (gv_ptrs > 0 && gv_bracket_count > 0) ? 1 : 0;
                         gvar->is_array = (gv_bracket_count > 0) ? 1 : 0;  /* int arr[1] 也能正确标记 */
                         gvar->elem_is_unsigned = (gv_ptrs > 0 || gv_bracket_count > 0) ? last_type_is_unsigned : 0;
-                        gvar->is_float = last_type_is_float;
+                        gvar->is_float = (gv_ptrs == 0) ? last_type_is_float : 0;
+                        gvar->elem_is_float = (gv_ptrs > 0) ? last_type_is_float : 0;
                         /* 设置 struct_type（供 cgen 按成员实际大小发射初始化数据） */
                         {
                             const char *gv_tag = global_typedef_tag ? global_typedef_tag :

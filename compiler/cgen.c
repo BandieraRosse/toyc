@@ -246,6 +246,7 @@ int global_ptr_elem_size[MAX_SYMS];  /* 全局指针变量的元素大小（int*
 int global_base_elem_size[MAX_SYMS];
 int global_elem_is_ptr_arr[MAX_SYMS];
 int global_elem_unsigned[MAX_SYMS];
+int global_elem_float[MAX_SYMS];
 int global_is_array[MAX_SYMS];        /* 全局变量是否为数组 */
 
 static int add_sym(const char *name, int offset, int size,
@@ -334,6 +335,8 @@ static void collect_locals(AstNode *node) {
                 global_base_elem_size[sym_count] = node->base_elem_size;
                 global_elem_is_ptr_arr[sym_count] = node->elem_is_ptr;
                 global_elem_unsigned[sym_count] = node->elem_is_unsigned;
+                global_elem_float[sym_count] = node->elem_is_float ? node->elem_is_float :
+                    (node->is_array && node->is_float ? node->is_float : 0);
                 global_is_array[sym_count] = node->is_array;
                 sym_count++;
             }
@@ -358,6 +361,7 @@ static void collect_locals(AstNode *node) {
             locals[local_count].scope_depth = scope_depth;
             locals[local_count].scope_id = scope_chain_count > 0 ? scope_chain[scope_chain_count - 1] : 0;
             locals[local_count].elem_is_unsigned = node->elem_is_unsigned;
+            locals[local_count].elem_is_float = node->elem_is_float;
             /* 数组判定：用解析器标记的 is_array（覆盖所有数组，包括
              * ≤8 字节的 int[2]、char[8]、short[4] 等）。回退 heuristic
              * 仅用于解析器未标记的罕见边界情况。 */
@@ -513,6 +517,13 @@ static void cgen_for(AstNode *stmt) {
                 SEARCH_LOCAL(i, stmt->loop_init->name);
                 if (i >= 0) {
                         if (locals[i].is_float) {
+                            /* int→float: for (float x = int_expr; ...) */
+                            if (stmt->loop_init->expr && !stmt->loop_init->expr->is_float) {
+                                if (locals[i].is_float == 4)
+                                    { e1(0xF3); e1(0x0F); e1(0x2A); e1(0xC0); }
+                                else
+                                    { e1(0xF2); e1(0x0F); e1(0x2A); e1(0xC0); }
+                            }
                             emit1(0xF2); emit1(0x0F); emit1(0x11);
                             emit1(0x45); emit1(locals[i].offset & 0xFF);
                         } else if (locals[i].size > 8) {
@@ -797,8 +808,36 @@ static void cgen_stmt(AstNode *stmt) {
                     SEARCH_LOCAL(i, stmt->name);
                     if (i >= 0) {
                         if (locals[i].is_float) {
+                            /* int→float: float var = int_expr */
+                            if (stmt->expr && !stmt->expr->is_float) {
+                                if (locals[i].is_float == 4)
+                                    { e1(0xF3); e1(0x0F); e1(0x2A); e1(0xC0); }  /* cvtsi2ss */
+                                else
+                                    { e1(0xF2); e1(0x0F); e1(0x2A); e1(0xC0); }  /* cvtsi2sd */
+                            }
                             emit1(0xF2); emit1(0x0F); emit1(0x11);
                             emit1(0x45); emit1(locals[i].offset & 0xFF);
+                        } else if (stmt->expr && stmt->expr->is_float) {
+                            /* float→int 转换：int var = float_expr */
+                            if (stmt->expr->is_float == 4)
+                                { e1(0xF3); e1(0x0F); e1(0x2C); e1(0xC0); }  /* cvttss2si eax, xmm0 */
+                            else
+                                { e1(0xF2); e1(0x0F); e1(0x2C); e1(0xC0); }  /* cvttsd2si eax, xmm0 */
+                            /* 回退到整数存储路径 */
+                            if (locals[i].size == 1) {
+                                if (disp8_fits(locals[i].offset))
+                                    { e1(0x88); e1(0x45); e1(locals[i].offset & 0xFF); }
+                                else
+                                    { e1(0x88); e1(0x85); e4(locals[i].offset); }
+                            } else if (locals[i].size == 2) {
+                                e1(0x66);
+                                if (disp8_fits(locals[i].offset))
+                                    { e1(0x89); e1(0x45); e1(locals[i].offset & 0xFF); }
+                                else
+                                    { e1(0x89); e1(0x85); e4(locals[i].offset); }
+                            } else {
+                                store_eax_to_rbp(locals[i].offset);
+                            }
                         } else if (locals[i].size > 8) {
                             /* 大结构体赋值：cgen_expr 返回指针（RAX），
                              * 从 [RAX] 拷贝 locals[i].size 字节到局部变量 */
@@ -911,7 +950,14 @@ static void cgen_func_def(AstNode *func) {
                 }
                 if (si >= 0) {
                     int vsize = gn->ival > 0 ? gn->ival : 4;
-                    if (vsize == 8) {
+                    if (gn->is_float) {
+                        /* float/double 全局变量初始化：存储 xmm0 */
+                        if (gn->is_float == 4) {
+                            e1(0xF3); e1(0x0F); e1(0x11); e1(0x05);  /* movss [rip+disp32], xmm0 */
+                        } else {
+                            e1(0xF2); e1(0x0F); e1(0x11); e1(0x05);  /* movsd [rip+disp32], xmm0 */
+                        }
+                    } else if (vsize == 8) {
                         e1(0x48); e1(0x89); e1(0x05);
                     } else {
                         e1(0x89); e1(0x05);
@@ -1057,6 +1103,7 @@ void cgen_init(void) {
         global_base_elem_size[_i] = 0;
         global_elem_is_ptr_arr[_i] = 0;
         global_elem_unsigned[_i] = 0;
+        global_elem_float[_i] = 0;
     }
     func_ret_count = 0;
     current_func_ret_size = 0;
@@ -1310,6 +1357,8 @@ void cgen_program(AstNode *prog) {
                 global_base_elem_size[si] = node->base_elem_size;
                 global_elem_is_ptr_arr[si] = node->elem_is_ptr;
                 global_elem_unsigned[si] = node->elem_is_unsigned;
+                global_elem_float[si] = node->elem_is_float ? node->elem_is_float :
+                    (node->is_array && node->is_float ? node->is_float : 0);
                 global_is_array[si] = node->is_array;
             }
         }
