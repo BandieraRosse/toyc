@@ -49,10 +49,10 @@
  * ═══════════════════════════════════════════════════════════════════ */
 
 typedef struct {
-    char   name[16];      /* ar_name（短名含 '/'，长名临时占位） */
-    char  *long_name;     /* 原始长名（NULL 表示短名） */
-    int    size;          /* 数据体大小 */
-    char  *data;          /* 数据体指针 */
+    char   name[16];        /* ar_name（短名含 '/'，长名 /offset） */
+    int    long_name_off;   /* data 中长名偏移（-1 表示短名） */
+    int    size;            /* 数据体大小 */
+    char  *data;            /* 数据体指针 */
 } Member;
 
 typedef struct {
@@ -191,10 +191,11 @@ static void fill_ar_hdr(char *buf, const char *name16, int data_size) {
 static int match_name(int idx, const char *bn) {
     Member *m = &members[idx];
     int bl = strlen(bn);
-    if (m->long_name) {
-        if ((int)strlen(m->long_name) != bl) return 0;
+    if (m->long_name_off >= 0) {
+        const char *ln = m->data + m->long_name_off;
+        if ((int)strlen(ln) != bl) return 0;
         for (int i = 0; i < bl; i++)
-            if (m->long_name[i] != bn[i]) return 0;
+            if (ln[i] != bn[i]) return 0;
         return 1;
     }
     int nl = 0;
@@ -206,11 +207,18 @@ static int match_name(int idx, const char *bn) {
     return 1;
 }
 
+/* 通过函数参数传递指针，避免 tcc 在局部变量中截断 64 位指针 */
+static void copy_bytes(char *d, const char *s, int n) {
+    int i;
+    for (i = 0; i < n; i++) d[i] = s[i];
+}
+
 static void add_member(const char *path) {
     if (member_count >= MAX_MEMBERS) error("too many members", NULL);
     Member *m = &members[member_count];
+    m->size = 0;
     m->data = read_file(path, &m->size);
-    m->long_name = NULL;
+    m->long_name_off = -1;
     const char *bn = file_base(path);
     int bl = strlen(bn);
     for (int i = 0; i < 16; i++) m->name[i] = ' ';
@@ -218,10 +226,8 @@ static void add_member(const char *path) {
         for (int i = 0; i < bl; i++) m->name[i] = bn[i];
         m->name[bl] = '/';
     } else {
-        char *ln = (char *)tlibc_malloc(bl + 1);
-        for (int i = 0; i < bl; i++) ln[i] = bn[i];
-        ln[bl] = 0;
-        m->long_name = ln;
+        /* 文件名 >15 字符暂不支持——tcc 代码生成 bug 导致二次分配时 64 位指针被截断 */
+        error("filename too long (max 15 chars)", bn);
     }
     member_count++;
 }
@@ -265,28 +271,33 @@ static void read_archive(const char *path) {
             Member *m = &members[member_count];
             for (int i = 0; i < 16; i++)
                 m->name[i] = (i < nl) ? buf[pos + i] : ' ';
-            m->long_name = NULL;
-
-            if (nl >= 2 && buf[pos] == '/'
-                && buf[pos + 1] >= '0' && buf[pos + 1] <= '9'
-                && lname_data)
-            {
-                int off = parse_dec(buf + pos + 1, 15);
-                if (off < lname_sz) {
-                    int end = off;
-                    while (end < lname_sz && lname_data[end] != '\n') end++;
-                    int llen = end - off;
-                    char *ln = (char *)tlibc_malloc(llen + 1);
-                    for (int i = 0; i < llen; i++) ln[i] = lname_data[off + i];
-                    ln[llen] = 0;
-                    m->long_name = ln;
-                }
-            }
+            m->long_name_off = -1;
 
             char *cpy = (char *)tlibc_malloc(dsz);
             for (int i = 0; i < dsz; i++) cpy[i] = buf[dp + i];
             m->data = cpy;
             m->size = dsz;
+
+            if (nl >= 2 && buf[pos] == '/'
+                && buf[pos + 1] >= '0' && buf[pos + 1] <= '9'
+                && lname_data)
+            {
+                int off = parse_dec(buf[pos + 1], 15);
+                if (off < lname_sz) {
+                    int end = off;
+                    while (end < lname_sz && lname_data[end] != '\n') end++;
+                    int llen = end - off;
+                    /* 扩展 data buffer 嵌入长名 (这里 cpy 是局部变量，不会触发 tcc truncation) */
+                    int newsz = dsz + llen + 1;
+                    cpy = (char *)tlibc_malloc(newsz);
+                    for (int i = 0; i < dsz; i++) cpy[i] = buf[dp + i];
+                    for (int i = 0; i < llen; i++) cpy[dsz + i] = lname_data[off + i];
+                    cpy[dsz + llen] = 0;
+                    tlibc_free(m->data);
+                    m->data = cpy;
+                    m->long_name_off = dsz;
+                }
+            }
             member_count++;
         }
 
@@ -378,9 +389,9 @@ static void write_archive(const char *path) {
     int  lnsz = 0;
     int  loff[MAX_MEMBERS];
     for (int i = 0; i < member_count; i++) {
-        if (members[i].long_name) {
+        if (members[i].long_name_off >= 0) {
             loff[i] = lnsz;
-            const char *p = members[i].long_name;
+            const char *p = members[i].data + members[i].long_name_off;
             while (*p && lnsz < MAX_NAMELEN) lname[lnsz++] = *p++;
             if (lnsz < MAX_NAMELEN) lname[lnsz++] = '\n';
         } else {
@@ -459,7 +470,7 @@ static void write_archive(const char *path) {
 
         for (int j = 0; j < 16; j++) name16[j] = ' ';
 
-        if (m->long_name) {
+        if (members[i].long_name_off >= 0) {
             int off = loff[i];
             name16[0] = '/';
             int tmp = off;
@@ -500,8 +511,9 @@ static void list_archive(const char *path) {
     member_count = 0;
     read_archive(path);
     for (int i = 0; i < member_count; i++) {
-        if (members[i].long_name) {
-            __write(1, members[i].long_name, strlen(members[i].long_name));
+        Member *m = &members[i];
+        if (m->long_name_off >= 0) {
+            __write(1, m->data + m->long_name_off, strlen(m->data + m->long_name_off));
         } else {
             int nl = 0;
             while (nl < 16 && members[i].name[nl]
@@ -520,8 +532,8 @@ static void extract_archive(const char *path) {
         Member *m = &members[i];
         const char *fn;
         char nb[32];
-        if (m->long_name) {
-            fn = m->long_name;
+        if (m->long_name_off >= 0) {
+            fn = m->data + m->long_name_off;
         } else {
             int nl = 0;
             while (nl < 16 && m->name[nl] && m->name[nl] != ' ' && m->name[nl] != '/') {
@@ -587,7 +599,6 @@ int main(int argc, char **argv) {
             if (match_name(j, bn)) { old = j; break; }
         }
         if (old >= 0) {
-            if (members[old].long_name) tlibc_free(members[old].long_name);
             tlibc_free(members[old].data);
             for (int j = old; j < member_count - 1; j++) members[j] = members[j + 1];
             member_count--;
