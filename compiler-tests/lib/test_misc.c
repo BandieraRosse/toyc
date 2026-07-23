@@ -19,6 +19,8 @@ int tlibc_get_file_len(char *path);
 int tlibc_is_path_dir(const char *path);
 int tlibc_is_path_file(const char *path);
 int tlibc_rm_file(const char *path);
+int tlibc_get_file_count(const char *dir_path);
+int tlibc_get_dir_count(const char *dir_path);
 void tlibc_cal_absolute_path(const char *path, const char *cwd,
                              char *absolute_path, size_t max_len);
 
@@ -96,6 +98,13 @@ int main(void)
     /* ── get_file_len on nonexistent ── */
     n = tlibc_get_file_len("/nonexistent_path_xxxxx");
     check("get_file_len nonexistent == -1", n == -1);
+
+    /* ── tlibc_get_file_count / tlibc_get_dir_count（getdents64 模式） ── */
+    n = tlibc_get_file_count(".");
+    check("get_file_count(.) > 0", n > 0);
+
+    n = tlibc_get_dir_count(".");
+    check("get_dir_count(.) >= 0", n >= 0);
 
     /* ── 清理 ── */
     __unlinkat(AT_FDCWD, "tmp/libt_misc_test", AT_REMOVEDIR);
