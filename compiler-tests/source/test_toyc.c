@@ -1,8 +1,8 @@
 // EXPECT: 0
-// tcc.c standalone test — stub pipeline, verify orchestration logic
+// toyc.c standalone test — stub pipeline, verify orchestration logic
 //
 // gcc -nostdlib -ffreestanding -O0 -Wall -Wextra -Wl,-e,__tlibc_start \
-//     compiler-tests/source/test_tcc.c -o /tmp/test_tcc && /tmp/test_tcc
+//     compiler-tests/source/test_toyc.c -o /tmp/test_tcc && /tmp/test_tcc
 
 typedef unsigned long size_t; typedef long off_t;
 #define NULL ((void*)0)
@@ -48,7 +48,7 @@ static void make_output_path(const char*input,const char*output,char*buf,int bs)
     if(i>=2&&buf[i-2]=='.'&&buf[i-1]=='c')buf[i-2]=0;
     for(j=0;buf[j];j++);buf[j]='.';buf[j+1]='o';buf[j+2]=0;
 }
-int tcc_main(int argc,char*argv[]){
+int toyc_main(int argc,char*argv[]){
     const char*ip=0,*op=0;int debug=0,i;
     for(i=1;i<argc;i++){
         if(argv[i][0]=='-'){
@@ -82,7 +82,7 @@ static int tp=0,tf=0;
 #define RST preprocess_ret="";elf_write_ret=0;cgen_init_called=0;cgen_program_called=0;elf_write_called=0
 
 void __tlibc_start(void){
-    P("=== tcc.c standalone tests ===\n");
+    P("=== toyc.c standalone tests ===\n");
     int tt=0,tf2=0;
 
     SEC("make_output_path");{char b[64];
@@ -92,23 +92,23 @@ void __tlibc_start(void){
     make_output_path("x.c","out.o",b,64);CK(b[0]=='o',"-o out.o");}
     PR;PR2;tt+=tp;tf2+=tf;
 
-    SEC("tcc_main: no args");RST;
-    {char*a[]={"tcc",0};int r=tcc_main(1,a);CK(r==1,"no args→1");}
+    SEC("toyc_main: no args");RST;
+    {char*a[]={"toyc",0};int r=toyc_main(1,a);CK(r==1,"no args→1");}
     PR;PR2;tt+=tp;tf2+=tf;
 
-    SEC("tcc_main: basic");RST;
-    {char*a[]={"tcc","in.c",0};int r=tcc_main(2,a);CK(r==0,"basic");}
+    SEC("toyc_main: basic");RST;
+    {char*a[]={"toyc","in.c",0};int r=toyc_main(2,a);CK(r==0,"basic");}
     CK(cgen_init_called==1,"cgen_init");CK(cgen_program_called==1,"cgen_program");
     CK(elf_write_called==1,"elf_write");PR;PR2;tt+=tp;tf2+=tf;
 
-    SEC("tcc_main: -d");RST;
-    {char*a[]={"tcc","-d","in.c",0};int r=tcc_main(3,a);CK(r==0,"-d");}
-    RST;{char*a[]={"tcc","--debug","in.c",0};int r=tcc_main(3,a);CK(r==0,"--debug");}
+    SEC("toyc_main: -d");RST;
+    {char*a[]={"toyc","-d","in.c",0};int r=toyc_main(3,a);CK(r==0,"-d");}
+    RST;{char*a[]={"toyc","--debug","in.c",0};int r=toyc_main(3,a);CK(r==0,"--debug");}
     PR;PR2;tt+=tp;tf2+=tf;
 
-    SEC("tcc_main: errors");RST;
-    preprocess_ret=0;{char*a[]={"tcc","in.c",0};int r=tcc_main(2,a);CK(r==1,"pp fail");}
-    RST;elf_write_ret=-1;{char*a[]={"tcc","in.c",0};int r=tcc_main(2,a);CK(r==1,"elf fail");}
+    SEC("toyc_main: errors");RST;
+    preprocess_ret=0;{char*a[]={"toyc","in.c",0};int r=toyc_main(2,a);CK(r==1,"pp fail");}
+    RST;elf_write_ret=-1;{char*a[]={"toyc","in.c",0};int r=toyc_main(2,a);CK(r==1,"elf fail");}
     PR;PR2;tt+=tp;tf2+=tf;
 
     P("\n=== ");P(tf2==0?"ALL PASSED":"SOME FAILED");P(" ===\n");

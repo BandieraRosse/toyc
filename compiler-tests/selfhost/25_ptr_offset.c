@@ -9,7 +9,7 @@
 //    long 的 type_size=8 被跳过）
 // 3. 64-bit 整数偏移用 32-bit shift/imul 截断高 32 位
 //
-// 编译：build/tcc  24_ptr_offset.c -o /tmp/24_ptr_offset.o
+// 编译：build/toyc  24_ptr_offset.c -o /tmp/24_ptr_offset.o
 // 链接：ld -nostdlib -static -T ld.script /tmp/24_ptr_offset.o -o /tmp/24_ptr_offset
 // 运行：/tmp/24_ptr_offset
 

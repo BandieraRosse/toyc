@@ -19,7 +19,7 @@
  *   add_include_path    注册 include 搜索路径
  */
 
-#include "tcc.h"
+#include "toyc.h"
 
 #define MAX_MACROS 8192
 #define MAX_FUNC_MACROS 4096
@@ -50,7 +50,7 @@ static int func_macro_count;
 static const char *expand_stack[MAX_EXPAND_STACK];
 static int expand_stack_depth;
 
-/* 条件编译状态（需为文件作用域，tcc 不支持递归函数内的 static 局部变量） */
+/* 条件编译状态（需为文件作用域，toyc 不支持递归函数内的 static 局部变量） */
 static int pp_cond_skip = 0;
 static int pp_cond_depth = 0;
 static int pp_cond_emit[32];
@@ -67,13 +67,13 @@ static int inc_path_count;
 
 void add_include_path(const char *path) {
     if (inc_path_count < MAX_INCLUDE_PATHS) inc_paths[inc_path_count++] = path;
-    else { __write(2, "tcc: too many include paths\n", 28); __exit(1); } }
+    else { __write(2, "toyc: too many include paths\n", 28); __exit(1); } }
 
 static void add_macro(const char *name, const char *val, int vlen) {
     if (macro_count < MAX_MACROS) {
         macros[macro_count].name = name; macros[macro_count].value = val;
         macros[macro_count].value_len = vlen; macro_count++; }
-    else { __write(2, "tcc: too many macros\n", 21); __exit(1); } }
+    else { __write(2, "toyc: too many macros\n", 21); __exit(1); } }
 
 static void undef_macro(const char *name) {
     int i; for (i = 0; i < macro_count; i++) {
@@ -162,9 +162,9 @@ static void do_include(const char *s, int *pos, int len, OutBuf *out, int depth)
     char fn[512]; int fi;
     for (fi = 0; fi < flen && fi < 500; fi++) { fn[fi] = s[fs + fi]; } fn[fi] = '\0';
 
-    /* #include <...>：标准库头文件，tcc 不支持 */
+    /* #include <...>：标准库头文件，toyc 不支持 */
     if (delim == '<') {
-        __eprintf("tcc: standard library header '<%s>' not supported (tcc is freestanding, no libc headers)\n", fn);
+        __eprintf("toyc: standard library header '<%s>' not supported (toyc is freestanding, no libc headers)\n", fn);
         return;
     }
 
@@ -191,7 +191,7 @@ static void do_include(const char *s, int *pos, int len, OutBuf *out, int depth)
         int l2; char *fc = pp_read(pth, &l2);
         if (fc) { pp_buf(fc, l2, out, depth + 1); tlibc_free(fc); fnd = 1; break; }
     }
-    if (!fnd) { __eprintf("tcc: cannot find '%s'\n", fn); }
+    if (!fnd) { __eprintf("toyc: cannot find '%s'\n", fn); }
 }
 
 static void get_name(const char *s, int start, int end, char *buf, int bufsz) {
@@ -243,7 +243,7 @@ static void do_directive(const char *s, int ls, int le, OutBuf *out, int depth) 
         if (cp == p && cp < le && s[cp] == '(') {
             /* 函数式宏（必须 ( 紧跟宏名，无空白）— 存储定义 */
             if (func_macro_count >= MAX_FUNC_MACROS) {
-                __write(2, "tcc: too many function-like macros\n", 35);
+                __write(2, "toyc: too many function-like macros\n", 35);
                 __exit(1); }
             FuncMacro *fm = &func_macros[func_macro_count];
             char *mn2 = (char *)tlibc_malloc(mnl + 1);
@@ -264,7 +264,7 @@ static void do_directive(const char *s, int ls, int le, OutBuf *out, int depth) 
                     { int ci; for (ci = 0; ci < cp - ps; ci++) pn[ci] = s[ps + ci]; pn[cp - ps] = '\0'; }
                     fm->params[fm->param_count++] = pn;
                 } else if (cp > ps) {
-                    __write(2, "tcc: too many macro parameters\n", 31);
+                    __write(2, "toyc: too many macro parameters\n", 31);
                     __exit(1); }
                 while (cp < le && pp_ws(s[cp])) cp++;
                 if (cp < le && s[cp] == ',') { cp++; continue; }
@@ -322,7 +322,7 @@ static void do_directive(const char *s, int ls, int le, OutBuf *out, int depth) 
     }
 
     if (dl == 5 && s[dw]=='e'&&s[dw+1]=='r'&&s[dw+2]=='r') {
-        while (p < le && pp_ws(s[p])) { p++; } __eprintf("tcc: #error: ");
+        while (p < le && pp_ws(s[p])) { p++; } __eprintf("toyc: #error: ");
         { int ei; for (ei = p; ei < le; ei++) { char ec = s[ei]; __write(2, &ec, 1); } }
         __write(2, "\n", 1); pp_had_error = 1; return;
     }
@@ -420,7 +420,7 @@ static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had
                             int emit_block;
                             if (is_ifdef) emit_block = is_def;
                             else emit_block = !is_def;
-                            if (pp_cond_depth >= 32) { __write(2, "tcc: #if nesting too deep\n", 26); __exit(1); }
+                            if (pp_cond_depth >= 32) { __write(2, "toyc: #if nesting too deep\n", 26); __exit(1); }
                             if (emit_block) {
                                 pp_cond_emit[pp_cond_depth] = 1;
                             } else {
@@ -438,7 +438,7 @@ static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had
                                 while (mp < le && pp_ws(s[mp])) mp++;
                                 emit_block = if_eval(s + mp, le - mp);
                             }
-                            if (pp_cond_depth >= 32) { __write(2, "tcc: #if nesting too deep\n", 26); __exit(1); }
+                            if (pp_cond_depth >= 32) { __write(2, "toyc: #if nesting too deep\n", 26); __exit(1); }
                             if (emit_block) {
                                 pp_cond_emit[pp_cond_depth] = 1;
                             } else {
@@ -567,7 +567,7 @@ static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had
                         if (s[ap] == ')') { adepth--; if (adepth == 0) break; }
                         if (adepth == 1 && s[ap] == ',') {
                             if (arg_count >= MAX_MACRO_PARAMS - 1) {
-                                __write(2, "tcc: too many macro arguments\n", 30);
+                                __write(2, "toyc: too many macro arguments\n", 30);
                                 __exit(1); }
                             arg_lens[arg_count] = (s + ap) - arg_starts[arg_count];
                             arg_count++;
@@ -600,7 +600,7 @@ static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had
                                 OutBuf ab = { 0, 0, 0 };
                                 /* 递归展开参数中的宏（depth+1，且当前宏已入栈保护） */
                                 if (expand_stack_depth >= MAX_EXPAND_STACK) {
-                                    __write(2, "tcc: macro expand stack overflow\n", 34);
+                                    __write(2, "toyc: macro expand stack overflow\n", 34);
                                     __exit(1); }
                                 expand_stack[expand_stack_depth++] = fn;
                                 pp_buf_impl(arg_starts[ai], arg_lens[ai], &ab, depth + 1, NULL);
@@ -790,7 +790,7 @@ static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had
                                  * 参数展开阶段已入栈/出栈过，但替换文本重扫时宏名已不在栈上。 */
                                 OutBuf pp_result = { 0, 0, 0 };
                                 if (expand_stack_depth >= MAX_EXPAND_STACK) {
-                                    __write(2, "tcc: macro expand stack overflow\n", 34);
+                                    __write(2, "toyc: macro expand stack overflow\n", 34);
                                     __exit(1); }
                                 expand_stack[expand_stack_depth++] = fn;
                                 pp_buf_impl(temp.data, temp.len, &pp_result, depth + 1, NULL);

@@ -1,6 +1,6 @@
 // EXPECT: 0
 // typedef_struct.c — 测试 typedef + struct 复杂模式
-// 自举关键：tcc.h 和 parse.c 大量使用 typedef struct { ... } Name
+// 自举关键：toyc.h 和 parse.c 大量使用 typedef struct { ... } Name
 
 /* 1. 基本 typedef struct */
 typedef struct { int x; int y; } Point;

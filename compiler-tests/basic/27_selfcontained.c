@@ -2,16 +2,16 @@
 // selfcontained.c — 完全自包含：实现 printf → 正常返回
 // 不引用任何外部函数（不链接 tcc_rt.o）
 //
-// 编译：build/tcc  27_selfcontained.c -o /tmp/27.o
-// 链接：ld -nostdlib -static -T ld.script -e main /tmp/27.o build/tcc_rt_start.o -o /tmp/27
+// 编译：build/toyc  27_selfcontained.c -o /tmp/27.o
+// 链接：ld -nostdlib -static -T ld.script -e main /tmp/27.o build/toyc_rt_start.o -o /tmp/27
 // 运行：/tmp/27
 //
-// 依赖（仅链接时）：tcc_rt_start.o（提供 __tlibc_start → main → exit）
+// 依赖（仅链接时）：toyc_rt_start.o（提供 __tlibc_start → main → exit）
 // 编译期无任何外部依赖
 
 // ============================================================
 // syscall 包装 — 直接内联汇编，无外部依赖
-// 注意：tcc 的 asm 约束只生成局部变量（不加载到寄存器），
+// 注意：toyc 的 asm 约束只生成局部变量（不加载到寄存器），
 // 因此必须通过调用约定配置 rax/rdi/rsi/rdx。
 // 方案：利用调用前 rax=函数返回值、rdi/rsi/rdx=参数的约定。
 // ============================================================
@@ -27,8 +27,8 @@ static long sys_write(int fd, const char *buf, unsigned long len)
     return (long)ret;
 }
 
-/* sys_exit 无法用 asm 约束工作（tcc 不将 "a" 约束加载到 rax），
- * 由 tcc_rt_start.o 的 __tlibc_start 在 main 返回后执行 SYS_exit。 */
+/* sys_exit 无法用 asm 约束工作（toyc 不将 "a" 约束加载到 rax），
+ * 由 toyc_rt_start.o 的 __tlibc_start 在 main 返回后执行 SYS_exit。 */
 
 // ============================================================
 // 字符串辅助函数（自包含，无外部引用）
@@ -42,7 +42,7 @@ static int my_strlen(const char *s)
 }
 
 // ============================================================
-// printf 实现（仿照 tcc_rt.c __printf，使用 __builtin_va_*）
+// printf 实现（仿照 toyc_rt.c __printf，使用 __builtin_va_*）
 // ============================================================
 
 static void print_dec(long n)
@@ -129,7 +129,7 @@ static void my_printf(const char *fmt, ...)
 }
 
 // ============================================================
-// main — 由 tcc_rt_start.o 的 __tlibc_start 调用
+// main — 由 toyc_rt_start.o 的 __tlibc_start 调用
 // ============================================================
 
 int main(void)
@@ -140,7 +140,7 @@ int main(void)
     /* %s */
     my_printf("[%%s]  String: %s\n", "Hello from self-contained printf!");
 
-    /* %d — tcc int→long 有零扩展 BUG，负值须运行时计算 */
+    /* %d — toyc int→long 有零扩展 BUG，负值须运行时计算 */
     {
         long neg = 12345;
         neg = -neg;

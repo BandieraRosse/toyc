@@ -2,7 +2,7 @@
 // SELF_CONTAINED
 // consecutive_inline.c — 测试连续的 static inline 函数调用的代码生成正确性
 //
-// 背景：tcc 在自举过程中编译自身时，cgen.c/tcc.h 大量使用了连续的 static inline
+// 背景：toyc 在自举过程中编译自身时，cgen.c/toyc.h 大量使用了连续的 static inline
 // 函数调用模式（如 emit1/e1/emit4/e4），每行连续调用 2-6 次。
 //
 // 验证模式：
@@ -89,7 +89,7 @@ static inline void emit4(int v)
     emit(v); emit(v >> 8); emit(v >> 16); emit(v >> 24);
 }
 
-/* 模拟 e1（tcc.h 中的 inline 版本） */
+/* 模拟 e1（toyc.h 中的 inline 版本） */
 static inline void e1(int b)
 {
     if (code_size < 32)
@@ -213,7 +213,7 @@ void __tlibc_start(void)
     check(code_buf[3] == 0xFF, "emit4(-1): all 0xFF");
 
     /* ════════════════════════════════════════════════
-       测试组 5：e1 连续相同参数（tcc.h 版本）
+       测试组 5：e1 连续相同参数（toyc.h 版本）
        ════════════════════════════════════════════════ */
 
     emit_reset();

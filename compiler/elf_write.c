@@ -4,7 +4,7 @@
  */
 
 /*
- * elf_write.c — ELF64 可重定位目标文件写入器（tcc/tas 共享）
+ * elf_write.c — ELF64 可重定位目标文件写入器（toyc/toyas 共享）
  *
  * 机制：接收代码缓冲区和符号表，生成 ELF64 .o 文件。
  *       使用静态缓冲区逐步构建并一次性写入。
@@ -31,7 +31,7 @@ static int build_shstrtab(unsigned char *buf, const char *names[], int n) {
 
 int elf_bss_size;
 
-/* .data 段缓冲区（cgen.c / tas.c 共享） */
+/* .data 段缓冲区（toyc.c / toyas.c 共享） */
 unsigned char elf_data_buf[DATA_BUF_SIZE];
 int elf_data_size;
 Elf64_Rela elf_data_rels[ELF_MAX_RELS];

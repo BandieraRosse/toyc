@@ -1,5 +1,5 @@
 // EXPECT: 0
-// arrays.c — 局部定长数组、char 下标、sizeof 求数组长度（如 tcc.c out_path、lex.c sizeof/sizeof）
+// arrays.c — 局部定长数组、char 下标、sizeof 求数组长度（如 toyc.c out_path、lex.c sizeof/sizeof）
 int main(void) {
     char buf[8];
     buf[0] = 'H'; buf[1] = 'i'; buf[2] = '\0';

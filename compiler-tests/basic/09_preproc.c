@@ -1,5 +1,5 @@
 // EXPECT: 0
-// preproc.c — #define 常量、函数宏、条件编译（如 tcc.h 宏定义）
+// preproc.c — #define 常量、函数宏、条件编译（如 toyc.h 宏定义）
 #define CODE_BUF_SIZE 262144
 #define MAX_SYMS 8192
 #define ARENA_SIZE 16777216

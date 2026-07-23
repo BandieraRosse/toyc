@@ -3,7 +3,7 @@
 // type_system.c — 测试类型系统最后一环：混合符号比较、long long、
 //                  64 位循环条件、指针条件、变参 unsigned
 //
-// 编译：build/tcc  06_type_system.c -o /tmp/06_type_system.o
+// 编译：build/toyc  06_type_system.c -o /tmp/06_type_system.o
 // 链接：ld -nostdlib -static -T ld.script /tmp/06_type_system.o -o /tmp/06_type_system
 // 运行：/tmp/06_type_system
 
@@ -42,7 +42,7 @@ static void print_str(const char *s) {
 }
 
 // ============================================================
-// 测试框架 — 不用 __LINE__（tcc __LINE__ 返回 0）
+// 测试框架 — 不用 __LINE__（toyc __LINE__ 返回 0）
 // ============================================================
 
 static int failures = 0;

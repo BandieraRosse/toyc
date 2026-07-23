@@ -4,16 +4,16 @@
  */
 
 /*
- * tcc.h — Tinylibc C 编译器核心类型定义
+ * toyc.h — ToyC 编译器核心类型定义
  *
  * 机制：定义 Token、AST 节点、Arena 分配器、代码生成中间结构。
  *       所有编译器源文件通过包含此头文件共享类型。
  */
 
-#ifndef TCC_H
-#define TCC_H
+#ifndef TOYC_H
+#define TOYC_H
 
-#include "tcc_need.h"
+#include "toyc_need.h"
 #include "elf.h"
 
 /* ─── 缓冲区容量（固定分配，溢出时安全报错退出） ─── */
@@ -283,7 +283,7 @@ typedef struct {
 #define sym_count   elf_sym_count
 #define rels        elf_rels
 #define rel_count   elf_rel_count
-/* 注意：tcc 的 CgenSym 必须与 elf_write.h 的 ElfWriteSym 布局兼容 */
+/* 注意：toyc 的 CgenSym 必须与 elf_write.h 的 ElfWriteSym 布局兼容 */
 #define CgenSym ElfWriteSym
 
 extern unsigned char elf_code_buf[CODE_BUF_SIZE];
@@ -539,7 +539,7 @@ static inline int align_up(int offset, int align) {
 /* 代码生成共享辅助（所有 cgen_*.c 文件共用） */
 static inline void e1(int b) {
     if (code_size >= CODE_BUF_SIZE) {
-        __write(2, "tcc: code buffer overflow\n", 26);
+        __write(2, "toyc: code buffer overflow\n", 26);
         __exit(1);
     }
     code_buf[code_size++] = b & 0xFF;
@@ -605,4 +605,4 @@ static inline const char *arena_strdup(Arena *a, const char *start, int len) {
 
 void error_at(Parser *p, const char *msg);
 
-#endif /* TCC_H */
+#endif /* TOYC_H */

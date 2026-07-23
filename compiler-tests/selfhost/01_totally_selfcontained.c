@@ -1,10 +1,10 @@
 // EXPECT: 0
 // totally_selfcontained.c — 零外部依赖：自身实现 _start + printf + exit
-// 编译：build/tcc 28_totally_selfcontained.c -o /tmp/28.o
+// 编译：build/toyc 28_totally_selfcontained.c -o /tmp/28.o
 // 链接：ld -nostdlib -static -T ld.script /tmp/28.o -o /tmp/28
-// 不依赖 tcc_rt.o 也不依赖 tcc_rt_start.o
+// 不依赖 tcc_rt.o 也不依赖 toyc_rt_start.o
 //
-// 验证 tcc 的内联汇编约束加载功能（2026-07-04 新增特性）
+// 验证 toyc 的内联汇编约束加载功能（2026-07-04 新增特性）
 
 // ============================================================
 // syscall 包装 — 使用约束驱动的内联汇编

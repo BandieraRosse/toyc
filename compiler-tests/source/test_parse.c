@@ -10,7 +10,7 @@
 // parse.c 需要提前包含 lex.c（词法分析器提供 Token 流）。
 
 // ============================================================
-// Inlined from tcc_need.h — 最小类型 + syscall
+// Inlined from toyc_need.h — 最小类型 + syscall
 // ============================================================
 
 typedef unsigned long size_t;
@@ -42,7 +42,7 @@ static void sys_exit(int code) {
 }
 
 // ============================================================
-// Inlined from tcc.h — 全部类型定义
+// Inlined from toyc.h — 全部类型定义
 // ============================================================
 
 #define CODE_BUF_SIZE  262144
@@ -583,7 +583,7 @@ Token lexer_peek(Lexer *lx) { return lx->cur; }
 // ============================================================
 // parse.c 源文件 — 完全来自 app/parse.c
 // ============================================================
-//（注：parse.c 的 #include "tcc.h" 已通过上方类型定义展开）
+//（注：parse.c 的 #include "toyc.h" 已通过上方类型定义展开）
 
 /* 解析 struct 类型时捕获的信息（供变量声明和成员访问追踪） */
 static const char *last_struct_tag = NULL;

@@ -1,6 +1,6 @@
 // EXPECT: 0
 // c99_decls.c — 测试 C99 特性：语句后声明、for 循环内声明、复合字面量风格
-// 自举关键：tcc 源码大量使用 for (int i = 0; ...)
+// 自举关键：toyc 源码大量使用 for (int i = 0; ...)
 
 int main(void) {
     /* 1. 声明与语句混合（基本） */

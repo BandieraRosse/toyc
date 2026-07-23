@@ -1,6 +1,6 @@
 // EXPECT: 0
 // int_to_long_sext.c — int→long 符号扩展各路径的回归测试
-// 历史：tcc 在 64 位 long 变量的声明+初始化路径中缺少 movsxd rax,eax，
+// 历史：toyc 在 64 位 long 变量的声明+初始化路径中缺少 movsxd rax,eax，
 // 导致 AST_UNARY（如 -a）、AST_CALL 等表达式被零扩展而非符号扩展。
 // 修复：cgen.c 的 var_decl/for_init/global_init 路径统一用 catch-all
 

@@ -4,7 +4,7 @@
  */
 
 /*
- * tld.c — Tinylibc x86_64 静态链接器
+ * toyld.c — ToyC x86_64 静态链接器
  *
  * 机制：读取 ET_REL(.o) 文件 → 合并段 → 解析符号 → 应用重定位
  *        → 输出 ET_EXEC 静态可执行文件（含 program headers）
@@ -21,12 +21,12 @@
  *   段顺序:   .text → .data → .bss
  *
  * 用法：
- *   tld input1.o [input2.o ...] -o output
+ *   toyld input1.o [input2.o ...] -o output
  *
- * 零 libc 依赖，使用 tcc_need.h 的 syscall 包装。
+ * 零 libc 依赖，使用 toyc_need.h 的 syscall 包装。
  */
 
-#include "tcc_need.h"
+#include "toyc_need.h"
 #include "elf.h"
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -203,7 +203,7 @@ static uint32_t r32be(const unsigned char *p) {
  * ═══════════════════════════════════════════════════════════════════ */
 
 static void error(const char *fmt, const char *arg) {
-    __write(2, "tld: error: ", 12);
+    __write(2, "toyld: error: ", 12);
     __write(2, fmt, strlen(fmt));
     if (arg) { __write(2, ": ", 2); __write(2, arg, strlen(arg)); }
     __write(2, "\n", 1);
@@ -475,7 +475,7 @@ static int sym_is_undef(const char *name) {
  *  归档文件（.a）解析与延迟加载
  * ═══════════════════════════════════════════════════════════════════ */
 
-/* 复制内存（通过函数参数传递，避免 tcc 在局部变量中截断 64 位指针） */
+/* 复制内存（通过函数参数传递，避免 toyc 在局部变量中截断 64 位指针） */
 static void copy_bytes(unsigned char *d, const unsigned char *s, int n) {
     int i;
     for (i = 0; i < n; i++) d[i] = s[i];
@@ -724,7 +724,7 @@ static Symbol *find_or_add_sym(const char *name) {
         if (strcmp(syms[i].name, name) == 0) return &syms[i];
     if (sym_count >= MAX_SYMS) error("too many symbols", NULL);
     Symbol *s = &syms[sym_count++];
-    s->name = name;   /* 指向 strtab，避免 tcc 的 char 逐字节拷贝 bug */
+    s->name = name;   /* 指向 strtab，避免 toyc 的 char 逐字节拷贝 bug */
     s->value = 0;
     s->defined = 0;
     s->sym_info = 0;
@@ -1023,7 +1023,7 @@ static void write_output(const char *path) {
     w64(buf + p, 0);   p += 8;
 
     /* ── RWX 警告 ── */
-    __write(2, "tld: warning: all sections mapped RWX "
+    __write(2, "toyld: warning: all sections mapped RWX "
                "(single PT_LOAD segment)\n", 63);
 
     /* ── 写文件 ── */

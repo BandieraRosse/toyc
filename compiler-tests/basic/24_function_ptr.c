@@ -1,6 +1,6 @@
 // EXPECT: 0
 // function_ptr.c — 测试函数指针
-// 自举关键：tcc.h 通过函数指针模式间接使用
+// 自举关键：toyc.h 通过函数指针模式间接使用
 
 static int add(int a, int b) { return a + b; }
 static int sub(int a, int b) { return a - b; }

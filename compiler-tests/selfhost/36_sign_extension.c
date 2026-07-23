@@ -2,7 +2,7 @@
 // SELF_CONTAINED
 // 36_sign_extension.c — int→long 符号扩展全面测试
 //
-// 验证 tcc 在有符号 32 位（及更窄）表达式赋值/返回/传参到
+// 验证 toyc 在有符号 32 位（及更窄）表达式赋值/返回/传参到
 // 64 位位置时正确发射 movsxd（符号扩展）。
 //
 // 负的 int 在位模式上是 0xFFFFFFFF（低32位全1）。

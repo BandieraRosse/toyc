@@ -11,7 +11,7 @@
  * 函数调用：参数按顺序移入 rdi/rsi/rdx/rcx/r8/r9，call 指令。
  */
 
-#include "tcc.h"
+#include "toyc.h"
 
 /* 纯 32 位整数浮点字面量解析（定义在 lex.c） */
 extern void parse_float_literal(const char *s, int len,
@@ -191,7 +191,7 @@ static void emit_call(const char *name) {
     if (sym_idx < 0) {
         /* 创建未定义符号 */
         if (sym_count >= MAX_SYMS) {
-            __write(2, "tcc: too many symbols\n", 22);
+            __write(2, "toyc: too many symbols\n", 22);
             __exit(1); }
         sym_idx = sym_count;
         CgenSym *s = &syms[sym_count++];
@@ -206,7 +206,7 @@ static void emit_call(const char *name) {
 
     /* 记录重定位 */
     if (rel_count >= MAX_RELS) {
-        __write(2, "tcc: too many relocations\n", 26);
+        __write(2, "toyc: too many relocations\n", 26);
         __exit(1); }
     Elf64_Rela *r = &rels[rel_count++];
     int call_off = code_size;
@@ -401,7 +401,7 @@ void cgen_expr(AstNode *node) {
                 lo = (unsigned int)(node->ival);
             } else {
                 /* 在代码生成时用纯 32 位整数运算解析浮点字面量，
-                 * 避免 tcc 的 double 算术 bug 和 struct 字段偏移 bug。 */
+                 * 避免 toyc 的 double 算术 bug 和 struct 字段偏移 bug。 */
                 parse_float_literal(node->name, (int)node->ival, &lo, &hi);
             }
             load_double_bits_halves(hi, lo);
@@ -430,7 +430,7 @@ void cgen_expr(AstNode *node) {
         /* 追加到字符串池 */
         int pool_off = strpool_size;
         if (strpool_size + len > STRPOOL_SIZE) {
-            __write(2, "tcc: string pool overflow\n", 26);
+            __write(2, "toyc: string pool overflow\n", 26);
             __exit(1);
         }
         int i;
@@ -439,7 +439,7 @@ void cgen_expr(AstNode *node) {
 
         /* 在 syms[] 中创建 LOCAL 符号（必须早于后续 GLOBAL 创建，确保 ELF 顺序正确） */
         if (str_info_count >= MAX_STRINGS) {
-            __write(2, "tcc: string info overflow\n", 26);
+            __write(2, "toyc: string info overflow\n", 26);
             __exit(1);
         }
         /* 先构建符号名 .LC%d */
@@ -461,7 +461,7 @@ void cgen_expr(AstNode *node) {
 
         /* 添加 LOCAL 符号（offset 暂设为 0，后续在 cgen_program 中修正） */
         if (sym_count >= MAX_SYMS) {
-            __write(2, "tcc: too many symbols\n", 22);
+            __write(2, "toyc: too many symbols\n", 22);
             __exit(1); }
         int sym_idx = sym_count++;
         syms[sym_idx].name = str_infos[si].name;

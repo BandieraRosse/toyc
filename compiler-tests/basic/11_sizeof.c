@@ -1,6 +1,6 @@
 // EXPECT: 0
 // sizeof.c — 测试 sizeof 对各种类型、表达式、数组、struct 的支持
-// 这是自举的关键：tcc.h 大量使用 sizeof(Arena)、sizeof(keywords)/sizeof(keywords[0])
+// 这是自举的关键：toyc.h 大量使用 sizeof(Arena)、sizeof(keywords)/sizeof(keywords[0])
 
 typedef struct { int x; int y; } Point;
 typedef struct { char data[16]; int len; } Buf;
@@ -44,7 +44,7 @@ int main(void) {
     char c;
     if (sizeof(c) != 1) return 42;
 
-    /* 6. sizeof 全局变量（自举关键：tcc.c 的 sizeof(out_path)） */
+    /* 6. sizeof 全局变量（自举关键：toyc.c 的 sizeof(out_path)） */
     if (sizeof(global_arr) != 40) return 50;  // 10*4
 
     /* 7. sizeof 变量（直接查 pvar 表） */

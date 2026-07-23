@@ -1,16 +1,16 @@
 // EXPECT: 0
 // sizeof_pending.c — sizeof(struct) 尾部填充计算错误
 //
-// BUG: tcc 对包含数组成员 + 后续 int 成员的 struct 计算 sizeof 时，
+// BUG: toyc 对包含数组成员 + 后续 int 成员的 struct 计算 sizeof 时，
 //      得到错误结果。例如 {char[16]; int;} 正确的 sizeof 是 20，
-//      但 tcc 返回 48。
+//      但 toyc 返回 48。
 //
 // 影响：
 //   - malloc(sizeof(struct)) 多分配（浪费但不崩溃）
 //   - 数组步长错误：arr[i+1] 可能落在错误位置
 //   - x86_64 ABI 不兼容
 //
-// 自举影响：低。tcc 自己的 struct 布局内部一致，
+// 自举影响：低。toyc 自己的 struct 布局内部一致，
 //           自身源码未触发此 bug 路径。
 
 typedef struct { char data[16]; int len; } Buf;

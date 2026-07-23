@@ -4,9 +4,9 @@
  */
 
 /*
- * tcc_need.h — tcc 独立项目的最小化头文件
+ * toyc_need.h — toyc 独立项目的最小化头文件
  *
- * 从 Tinylibc 项目中提取 tcc 所需的类型、常量、函数声明和系统调用宏，
+ * 从 Tinylibc 项目中提取 toyc 所需的类型、常量、函数声明和系统调用宏，
  * 避免直接依赖 tlibc_everything.h 和 arch/syscall.h，从而可以作为
  * 独立项目编译，不与原项目产生冲突。
  *
@@ -18,8 +18,8 @@
  *   函数声明     __write / __printf / tlibc_malloc 等（实现在 tcc_rt.c）
  */
 
-#ifndef TCC_NEED_H
-#define TCC_NEED_H
+#ifndef TOYC_NEED_H
+#define TOYC_NEED_H
 
 /* ═══════════════════════════════════════════════════════════════
  *  基础类型 (from tlibc_types.h)
@@ -73,7 +73,7 @@ typedef unsigned long int       uint64_t;
 #define MAP_FAILED      ((void *)-1)
 
 /* ═══════════════════════════════════════════════════════════════
- *  x86_64 Linux 系统调用号（tcc 使用的子集）
+ *  x86_64 Linux 系统调用号（toyc 使用的子集）
  * ═══════════════════════════════════════════════════════════════ */
 
 #define SYS_read        0
@@ -190,7 +190,7 @@ static inline long __syscall6(long n, long a1, long a2, long a3, long a4, long a
  */
 
 /* ═══════════════════════════════════════════════════════════════
- *  tcc 运行时函数声明 (实现在 tcc_rt.c)
+ *  toyc 运行时函数声明 (实现在 toyc_rt.c)
  * ═══════════════════════════════════════════════════════════════ */
 
 /* Syscall 包装 */
@@ -222,4 +222,4 @@ extern int    strcmp(const char *s1, const char *s2);
 extern int    strlen(const char *s);
 extern void  *__memset(void *dst, int val, size_t n);
 
-#endif /* TCC_NEED_H */
+#endif /* TOYC_NEED_H */

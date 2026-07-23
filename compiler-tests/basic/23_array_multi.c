@@ -1,6 +1,6 @@
 // EXPECT: 0
 // array_multi.c — 测试多维数组
-// 自举关键：tcc 可能使用数组嵌套
+// 自举关键：toyc 可能使用数组嵌套
 
 int main(void) {
     /* 1. 二维 int 数组 */

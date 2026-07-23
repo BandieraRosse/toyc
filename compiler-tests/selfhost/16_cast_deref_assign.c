@@ -2,7 +2,7 @@
 // SELF_CONTAINED
 // cast_deref_assign.c — 验证 *(cast_type *)ptr = val 的代码生成
 //
-// 背景：tcc 曾将 *(long *)ptr = val 生成为 8 位存储（mov %al, (%rcx)），
+// 背景：toyc 曾将 *(long *)ptr = val 生成为 8 位存储（mov %al, (%rcx)），
 // 因为解析器抛弃了强转类型信息，代码生成器用 void* 变量的 element_size(1)
 // 决定存储宽度。
 //

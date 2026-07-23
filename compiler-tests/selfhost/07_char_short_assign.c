@@ -17,7 +17,7 @@
 //   c = 'A';   // 32-bit write corrupts s
 //   if (s != 0xAAAAAAAA) crash;
 //
-// 编译：build/tcc  07_char_short_assign.c -o /tmp/07_char_short_assign.o
+// 编译：build/toyc  07_char_short_assign.c -o /tmp/07_char_short_assign.o
 // 链接：ld -nostdlib -static -T ld.script /tmp/07_char_short_assign.o -o /tmp/07_char_short_assign
 // 运行：/tmp/07_char_short_assign
 

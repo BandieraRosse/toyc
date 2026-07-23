@@ -2,7 +2,7 @@
 // SELF_CONTAINED
 // 39_cast_ptr_arith.c — 验证 (cast_type*)ptr + N 指针算术的字节偏移正确性
 //
-// 背景：tcc 在 (char *)int_ptr + N 中错误地按 N * sizeof(int) 缩放偏移，
+// 背景：toyc 在 (char *)int_ptr + N 中错误地按 N * sizeof(int) 缩放偏移，
 // 因为 locals 表中 int* 的 element_size=4 覆盖了解析器在 cast 中设置的
 // elem_size=1。此 bug 影响所有目录遍历代码（如 dirent_get_name 中的
 // (char*)data + d->reclen 模式）。

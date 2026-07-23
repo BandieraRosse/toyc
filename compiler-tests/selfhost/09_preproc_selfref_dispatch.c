@@ -2,7 +2,7 @@
 // SELF_CONTAINED
 // 09_preproc_selfref_dispatch.c — 验证预处理器自引用宏与 ## dispatch 修复
 //
-// 本文件验证 tcc 预处理器的两项修复：
+// 本文件验证 toyc 预处理器的两项修复：
 //
 // Bug 1 修复：自引用函数宏（与 inline 函数同名的包装宏）在替换文本
 //   重扫描时正确禁用自身，不会无限递归。关键测试是包装宏中使用 __scc(a)
@@ -13,7 +13,7 @@
 //   中 ## 产生 __syscallN 后，应连同 (args) 一起重扫描，触发包装宏展开。
 //
 // 测试策略：
-//   使用完整的 tcc_need.h 式宏体系（包括 __scc 包装宏），对每个参数
+//   使用完整的 toyc_need.h 式宏体系（包括 __scc 包装宏），对每个参数
 //   数量（0-6）都用三种方式测试并比较结果：
 //   (a) 直接调用 inline 函数（__syscallN(no, arg...)）
 //   (b) 通过包装宏直接调用（__syscallN(no, arg...) 触发同名宏展开）
@@ -47,7 +47,7 @@
 #define MAP_ANONYMOUS   0x20
 
 /* ═══════════════════════════════════════════════════════════════
- *  syscall 内联汇编函数 — 完全来自 tcc_need.h
+ *  syscall 内联汇编函数 — 完全来自 toyc_need.h
  * ═══════════════════════════════════════════════════════════════ */
 
 static inline long __syscall0(long n)
@@ -115,7 +115,7 @@ static inline long __syscall6(long n, long a1, long a2, long a3, long a4, long a
 }
 
 /* ═══════════════════════════════════════════════════════════════
- *  syscall 宏体系 — 完整来自 tcc_need.h，使用 __scc(a)
+ *  syscall 宏体系 — 完整来自 toyc_need.h，使用 __scc(a)
  *
  *  注意：本测试使用 __scc(a) 而非 ((long)(a))，专门验证 Bug 1+2 修复。
  *  如果自引用禁用正确，__scc 会在重扫描阶段被展开；如果 ## dispatch

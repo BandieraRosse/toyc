@@ -9,7 +9,7 @@
 //   2. sizeof(keywords) 在 [] + 初始化器推断后返回正确值
 //   3. 线性查找（keyword_lookup 模式）能正确定位关键字
 //
-// 历史：此测试覆盖了 tcc 自举中的关键 bug：
+// 历史：此测试覆盖了 toyc 自举中的关键 bug：
 //   - pvar_add_ex 在初始器计数前已调用（size 太小）
 //   - 尾随逗号导致 init_count 偏大 1
 //   - 修正后在 Phase 1 中符号 slot 的分配顺序

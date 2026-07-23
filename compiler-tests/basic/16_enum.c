@@ -1,6 +1,6 @@
 // EXPECT: 0
 // enum.c — 测试 enum 定义和使用
-// 自举关键：tcc.h 定义 TOK_INT = 256 等枚举
+// 自举关键：toyc.h 定义 TOK_INT = 256 等枚举
 
 enum Color { RED, GREEN, BLUE };
 enum Status { OK = 0, ERROR = -1, BUSY = 5 };

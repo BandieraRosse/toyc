@@ -1,6 +1,6 @@
 // EXPECT: 0
 // pointer_arith.c — 测试指针运算各类模式
-// 自举关键：tcc 源码大量使用 ptr + offset、ptr[i] 等
+// 自举关键：toyc 源码大量使用 ptr + offset、ptr[i] 等
 
 int main(void) {
     int arr[5];

@@ -4,7 +4,7 @@
  */
 
 /*
- * tcc — Tinylibc C 编译器（统一入口）
+ * toyc — ToyC 编译器（统一入口）
  *
  * 此文件是 tmake 识别的单一应用入口。多文件编译由 compiler/tmakelist
  * 文件描述，tmake 读取后分别编译各模块并联合链接。
@@ -13,23 +13,23 @@
  * 支持单独修改和增量重编。
  *
  * 用法：
- *   tcc input.c                  # 输出 input.o
- *   tcc input.c -o output.o      # 指定输出文件
- *   tcc -d input.c               # 调试：打印 Token 序列
+ *   toyc input.c                  # 输出 input.o
+ *   toyc input.c -o output.o      # 指定输出文件
+ *   toyc -d input.c               # 调试：打印 Token 序列
  *
  * 索引：
  *   main            主入口：参数解析 → 读取 → 编译 → 输出
  *     read_file     读取整个源文件到堆内存
  */
 
-#include "tcc.h"
+#include "toyc.h"
 
 /* ─── 读取文件 ─── */
 
 static char *read_file(const char *path, int *out_len) {
     int fd = __openat(AT_FDCWD, path, O_RDONLY, 0);
     if (fd < 0) {
-        __eprintf("tcc: cannot open '%s'\n", path);
+        __eprintf("toyc: cannot open '%s'\n", path);
         return NULL;
     }
 
@@ -37,14 +37,14 @@ static char *read_file(const char *path, int *out_len) {
     __lseek(fd, 0, SEEK_SET);
 
     if (size <= 0 || size > 1024 * 1024) {
-        __eprintf("tcc: invalid file size for '%s'\n", path);
+        __eprintf("toyc: invalid file size for '%s'\n", path);
         __close(fd);
         return NULL;
     }
 
     char *buf = (char *)tlibc_malloc(size + 2);
     if (!buf) {
-        __eprintf("tcc: out of memory\n");
+        __eprintf("toyc: out of memory\n");
         __close(fd);
         return NULL;
     }
@@ -53,7 +53,7 @@ static char *read_file(const char *path, int *out_len) {
     __close(fd);
 
     if (n != size) {
-        __eprintf("tcc: read error on '%s'\n", path);
+        __eprintf("toyc: read error on '%s'\n", path);
         tlibc_free(buf);
         return NULL;
     }
@@ -123,7 +123,7 @@ int main(int argc, char *argv[]) {
     }
 
     if (!input_path) {
-        __eprintf("usage: tcc input.c [-o output.o]\n");
+        __eprintf("usage: toyc input.c [-o output.o]\n");
         return 1;
     }
 
@@ -145,7 +145,7 @@ int main(int argc, char *argv[]) {
     char *pp_src = preprocess(src, src_len, input_path, &pp_len);
     tlibc_free(src);
     if (!pp_src) {
-        __eprintf("tcc: preprocessing failed\n");
+        __eprintf("toyc: preprocessing failed\n");
         return 1;
     }
 
@@ -167,7 +167,7 @@ int main(int argc, char *argv[]) {
 
     Arena *arena = (Arena *)tlibc_malloc(sizeof(Arena) + ARENA_SIZE);
     if (!arena) {
-        __eprintf("tcc: out of memory\n");
+        __eprintf("toyc: out of memory\n");
         tlibc_free(pp_src);
         return 1;
     }
@@ -183,12 +183,12 @@ int main(int argc, char *argv[]) {
 
     if (parser.had_error) {
         if (parser.error_count <= 1) {
-            __eprintf("tcc: parse error\n");
+            __eprintf("toyc: parse error\n");
         } else {
-            __eprintf("tcc: %d errors\n", parser.error_count);
+            __eprintf("toyc: %d errors\n", parser.error_count);
             if (parser.error_count >= MAX_ERRORS)
                 __eprintf("  (stopped after %d to limit cascading)\n", MAX_ERRORS);
-            __eprintf("  note: tcc's error recovery is limited; the 2nd and later errors\n");
+            __eprintf("  note: toyc's error recovery is limited; the 2nd and later errors\n");
             __eprintf("  may be misled by the preceding error. Fix the first error and\n");
             __eprintf("  recompile to confirm.\n");
         }
@@ -204,13 +204,13 @@ int main(int argc, char *argv[]) {
     make_output_path(input_path, output_path, out_path, sizeof(out_path));
 
     if (elf_write_object(out_path) != 0) {
-        __eprintf("tcc: cannot write '%s'\n", out_path);
+        __eprintf("toyc: cannot write '%s'\n", out_path);
         tlibc_free(pp_src);
         tlibc_free(arena);
         return 1;
     }
 
-    __printf("tcc: wrote %s (%d bytes code, %d symbols)\n",
+    __printf("toyc: wrote %s (%d bytes code, %d symbols)\n",
              out_path, code_size, sym_count);
 
     tlibc_free(pp_src);

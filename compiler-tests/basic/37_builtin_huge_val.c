@@ -1,6 +1,6 @@
 /* Test: __builtin_huge_val / __builtin_huge_valf
  *
- * 验证 tcc 对 __builtin_huge_val() 和 __builtin_huge_valf() 的支持。
+ * 验证 toyc 对 __builtin_huge_val() 和 __builtin_huge_valf() 的支持。
  * 两者分别产生 IEEE 754 双精度和单精度正无穷常量。
  *
  * 手动解析位模式验证（不使用 %f，因为运行时的 printf
@@ -12,7 +12,7 @@
  *   float (32-bit):  [1 sign][8 exponent][23 mantissa]
  *     +inff: sign=0, exponent=0xFF, mantissa=0
  *
- * 注意：所有测试写在同一函数 main 中，以验证 tcc 在大量
+ * 注意：所有测试写在同一函数 main 中，以验证 toyc 在大量
  * float/double 局部变量（超过 128 字节栈帧）时的内存访问正确性。
  *
  * EXPECT: 0

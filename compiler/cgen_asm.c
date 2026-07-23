@@ -14,7 +14,7 @@
  *   模板            → 匹配已知字符串并发射对应 x86_64 机器码
  */
 
-#include "tcc.h"
+#include "toyc.h"
 
 /* ─── 在模板字符串中查找子串 ─── */
 
@@ -163,7 +163,7 @@ void cgen_asm(AstNode *node) {
         /* RISC-V ecall — placeholder */
     } else {
         /* 未知模板 — 警告但不阻止编译 */
-        __eprintf("tcc: warning: unknown inline asm template: \"%s\"\n", t);
+        __eprintf("toyc: warning: unknown inline asm template: \"%s\"\n", t);
         return;
     }
 
@@ -186,7 +186,7 @@ void cgen_asm(AstNode *node) {
         for (j = 0; j < local_count; j++) {
             if (strcmp(locals[j].name, expr->name) != 0) continue;
 
-            int off = locals[j].offset & 0xFF;  /* 偏移在 -128~127 内（由 tcc 保证） */
+            int off = locals[j].offset & 0xFF;  /* 偏移在 -128~127 内（由 toyc 保证） */
             if (locals[j].size == 8) {
                 e1(0x48); e1(0x89); e1(0x45); e1(off);  /* mov [rbp+off], rax */
             } else if (locals[j].size == 4) {

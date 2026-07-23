@@ -2,7 +2,7 @@
 // t02_struct_return_global_corrupt.c — Bug B: global variable corruption
 //   after struct-return function call
 //
-// tcc bug: code_size (or other globals) gets wrong value after
+// toyc bug: code_size (or other globals) gets wrong value after
 //          assigning struct return value to a local variable.
 //
 // This test uses a global variable `counter` to simulate code_size.

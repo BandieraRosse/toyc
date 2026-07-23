@@ -1,6 +1,6 @@
 # toyc
 
-`tcc` is the core component of the **toyc** ecosystem — a self-bootstrapping
+`toyc` is the core component of the **toyc** ecosystem — a self-bootstrapping
 C compiler for x86-64 Linux. Approximately 10,000 lines of C, zero external
 dependencies, zero libc.
 
@@ -12,27 +12,27 @@ ecosystem.
 
 ## What This Is
 
-ToyCCompiler is a small, standalone C compiler suite consisting of a compiler (tcc), an assembler (tas), and a static linker (tld) — all three self-bootstrapping.
+ToyCCompiler is a small, standalone C compiler suite consisting of a compiler (toyc), an assembler (toyas), and a static linker (toyld) — all three self-bootstrapping.
 
 It does not use LLVM, GCC, or any existing compiler infrastructure. It talks to the Linux kernel directly through inline `syscall` instructions. Output is a statically linked ELF64 executable. The entire chain requires only `make`, with no external dependencies.
 
 ## Bootstrap Chain Evolution
 
 ```
-gcc                 Initially: gcc builds the first self-compiling tcc
+gcc                 Initially: gcc builds the first self-compiling toyc
  │
- ├──→ stage-1 tcc   tcc is born: can compile its own source
+ ├──→ stage-1 toyc   toyc is born: can compile its own source
  │
- ├──→ tcc + gcc ──→ tas      Assembler joins: tcc compiles tas.c, gcc links
+ ├──→ toyc + gcc ──→ toyas      Assembler joins: toyc compiles toyas.c, gcc links
  │
- ├──→ tcc + tas ──→ tld      Linker joins: tcc compiles tld.c, tas assembles startup
+ ├──→ toyc + toyas ──→ toyld      Linker joins: toyc compiles toyld.c, toyas assembles startup
  │                           Previously ld handled all linking
  │
- └──→ tld ──→ ld replaced   tld takes over all linking
+ └──→ toyld ──→ ld replaced   toyld takes over all linking
        │                    From this point: zero external dependencies, only make
        │
        ↓
-  stage-2 tcc + tas + tld  ← Bootstrap closed loop
+  stage-2 toyc + toyas + toyld  ← Bootstrap closed loop
        │
        ↓
   stage-3…10 byte-identical convergence
@@ -40,24 +40,24 @@ gcc                 Initially: gcc builds the first self-compiling tcc
 
 | Stage | Built/Assembled/Linked with | Notes |
 |-------|---------------------------|-------|
-| Seed | gcc builds tcc | Seed binary `bootstrap/tcc` |
-| tas joins | tcc compiles tas, gcc links | Assembler `bootstrap/tas` added |
-| tld joins | tcc + tas compile tld, ld links | Linker `bootstrap/tld` added |
-| tld replaces ld | tcc + tas + tld full chain | ld no longer needed |
-| stage-2 | tcc + tas + tld compile themselves | Full chain bootstrap verified |
+| Seed | gcc builds toyc | Seed binary `bootstrap/toyc` |
+| toyas joins | toyc compiles toyas, gcc links | Assembler `bootstrap/toyas` added |
+| toyld joins | toyc + toyas compile toyld, ld links | Linker `bootstrap/toyld` added |
+| toyld replaces ld | toyc + toyas + toyld full chain | ld no longer needed |
+| stage-2 | toyc + toyas + toyld compile themselves | Full chain bootstrap verified |
 | stage-3…10 | repeat stage-2 process | Byte-identical convergence |
 
 ## Toolchain Trio
 
 | Component | Source | Function |
 |-----------|--------|----------|
-| **tcc** | `compiler/tcc.c` + lex/parse/cgen/... | C source → ELF64 .o |
-| **tas** | `compiler/tas.c` | x86_64 assembly → ELF64 .o |
-| **tld** | `compiler/tld.c` | multiple .o → ET_EXEC static executable |
+| **toyc** | `compiler/toyc.c` + lex/parse/cgen/... | C source → ELF64 .o |
+| **toyas** | `compiler/toyas.c` | x86_64 assembly → ELF64 .o |
+| **toyld** | `compiler/toyld.c` | multiple .o → ET_EXEC static executable |
 
 ## Why This Project Exists
 
-There is no shortage of C compilers. GCC is 15 million lines. LLVM is a sprawling ecosystem. Even Fabrice Bellard's `tcc` is ten times larger than this one.
+There is no shortage of C compilers. GCC is 15 million lines. LLVM is a sprawling ecosystem. Even Fabrice Bellard's `toyc` is ten times larger than this one.
 
 This one exists for two reasons:
 
@@ -71,9 +71,9 @@ This one exists for two reasons:
 make test             # 29/29 ✅
 make test-selfhost    # 38/38 ✅
 make test-source      # 8/8   ✅
-make test-tld         # 38/38 ✅
+make test-toyld         # 38/38 ✅
 make test-error       # 16/16 ✅
-make test-tld-self    # bootstrap converged ✅
+make test-toyld-self    # bootstrap converged ✅
 ./bootstrap-to-10.sh  # stage-2→10 byte-identical ✅
 ```
 
@@ -92,7 +92,7 @@ Zero external dependencies across the entire chain (only `make`). Bootstrap conv
 | `long double` | Not supported |
 | Cross-function `goto` | Not checked |
 | Wide char/wide strings | Not implemented |
-| `-I` include paths, `-MD` dependency tracking | Silently ignored (tcc argument parsing is minimal) |
+| `-I` include paths, `-MD` dependency tracking | Silently ignored (toyc argument parsing is minimal) |
 
 ## Build
 
@@ -101,9 +101,9 @@ make                              # bootstrap build
 make test                         # basic tests (29)
 make test-selfhost                # self-contained tests (38)
 make test-source                  # individual source tests (8)
-make test-tld                     # tld linker tests (38)
+make test-toyld                     # toyld linker tests (38)
 make test-error                   # error reporting tests (16)
-make test-tld-self                # tld self-bootstrap verification
+make test-toyld-self                # toyld self-bootstrap verification
 make update-bootstrap             # update bootstrap/ seeds from build/
 ./bootstrap-selfhost.sh           # bootstrap self-host test
 ./bootstrap-to-10.sh              # full-chain convergence verification
@@ -114,10 +114,10 @@ make clean
 
 ```
 ├── compiler/           # Compiler sources
-│   ├── tcc.c           # Main entry: compile C → ELF .o
-│   ├── tld.c           # x86_64 static linker
-│   ├── tcc_rt.c        # Standalone runtime (syscall wrappers, malloc, printf)
-│   ├── tcc_rt_start.S  # Startup assembly __tlibc_start → main → exit
+│   ├── toyc.c           # Main entry: compile C → ELF .o
+│   ├── toyld.c           # x86_64 static linker
+│   ├── toyc_rt.c        # Standalone runtime (syscall wrappers, malloc, printf)
+│   ├── toyc_rt_start.S  # Startup assembly __tlibc_start → main → exit
 │   ├── lex.c           # Lexical analysis
 │   ├── parse.c         # Recursive descent parser
 │   ├── preproc.c       # Preprocessor (macro expansion, #include, conditional compilation)
@@ -126,22 +126,22 @@ make clean
 │   ├── cgen_asm.c      # __asm__ inline assembly
 │   ├── elf_write.c     # ELF64 .o file writer
 │   ├── elf_write.h     # ELF writer interface
-│   ├── tcc.h           # Compiler core type definitions
-│   ├── tpp.c           # Standalone preprocessor
-│   └── tas.c           # x86_64 assembler
+│   ├── toyc.h           # Compiler core type definitions
+│   ├── toypp.c           # Standalone preprocessor
+│   └── toyas.c           # x86_64 assembler
 ├── include/
-│   ├── tcc_need.h      # Minimal types/constants/syscall macros/function declarations
+│   ├── toyc_need.h      # Minimal types/constants/syscall macros/function declarations
 │   └── elf.h           # ELF64 struct definitions
 ├── compiler-tests/     # Test files
-│   ├── basic/          # Standard tests (tcc compile + tld link with tcc_rt, 29)
-│   ├── selfhost/       # Self-contained tests (tcc standalone, no tcc_rt, 38)
+│   ├── basic/          # Standard tests (toyc compile + toyld link with toyc_rt, 29)
+│   ├── selfhost/       # Self-contained tests (toyc standalone, no toyc_rt, 38)
 │   ├── source/         # Single-source tests (verify individual .c files, 8)
-│   ├── tld/            # tld multi-file linker tests
+│   ├── toyld/            # toyld multi-file linker tests
 │   ├── error/          # Error reporting tests (16)
 │   └── pending/        # Bug reproduction cases awaiting fix
-├── bootstrap/          # Bootstrap seeds (tcc + tas + tld binaries, git-tracked)
+├── bootstrap/          # Bootstrap seeds (toyc + toyas + toyld binaries, git-tracked)
 │   └── README.md
-├── Makefile            # Build system (defaults to bootstrap/tcc + bootstrap/tas + bootstrap/tld)
+├── Makefile            # Build system (defaults to bootstrap/toyc + bootstrap/toyas + bootstrap/toyld)
 ├── bootstrap-selfhost.sh  # Bootstrap self-host test
 └── bootstrap-to-10.sh     # Full-chain convergence verification
 ```

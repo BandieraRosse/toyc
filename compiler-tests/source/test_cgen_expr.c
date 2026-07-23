@@ -7,7 +7,7 @@
 // Run:  /tmp/test_cgen_expr
 
 // ============================================================
-// Inlined from tcc_need.h
+// Inlined from toyc_need.h
 // ============================================================
 
 typedef unsigned long size_t; typedef long ptrdiff_t; typedef long off_t; typedef unsigned int mode_t;
@@ -30,7 +30,7 @@ static long sys_write(int fd, const void *buf, unsigned long len) {
 }
 
 // ============================================================
-// Inlined from tcc.h
+// Inlined from toyc.h
 // ============================================================
 
 #define CODE_BUF_SIZE 262144
@@ -145,7 +145,7 @@ void __write(int fd, const void *buf, unsigned long len) { sys_write(fd, buf, le
 void __exit(int code) { sys_exit(code); }
 
 // ============================================================
-// 内联辅助函数（来自 tcc.h）
+// 内联辅助函数（来自 toyc.h）
 // ============================================================
 
 static int disp8_fits(int offset) { return offset >= -128 && offset <= 127; }
@@ -200,7 +200,7 @@ void cgen_expr(AstNode *node);
  * 函数调用：参数按顺序移入 rdi/rsi/rdx/rcx/r8/r9，call 指令。
  */
 
-/* #include "tcc.h" — inlined above */
+/* #include "toyc.h" — inlined above */
 
 /* ─── push/pop ─── */
 
@@ -235,7 +235,7 @@ static void lea_from_rbp(int offset) {
 
 /* mov [rbp+off], rax — 64-bit 存储 */
 
-/* ─── SSE 浮点辅助（始终启用 — bootstrap tcc 不支持 -D 宏） ─── */
+/* ─── SSE 浮点辅助（始终启用 — bootstrap toyc 不支持 -D 宏） ─── */
 
 static void load_double_imm(double d) { (void)d; }
 
@@ -568,7 +568,7 @@ void cgen_expr(AstNode *node) {
         /* 追加到字符串池 */
         int pool_off = strpool_size;
         if (strpool_size + len > STRPOOL_SIZE) {
-            __write(2, "tcc: string pool overflow\n", 26);
+            __write(2, "toyc: string pool overflow\n", 26);
             __exit(1);
         }
         int i;
@@ -577,7 +577,7 @@ void cgen_expr(AstNode *node) {
 
         /* 在 syms[] 中创建 LOCAL 符号（必须早于后续 GLOBAL 创建，确保 ELF 顺序正确） */
         if (str_info_count >= MAX_STRINGS) {
-            __write(2, "tcc: string info overflow\n", 26);
+            __write(2, "toyc: string info overflow\n", 26);
             __exit(1);
         }
         /* 先构建符号名 .LC%d */

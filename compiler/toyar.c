@@ -4,7 +4,7 @@
  */
 
 /*
- * tar.c — Toy ARchiver — System V 静态库归档器
+ * toyar.c — Toy ARchiver — System V 静态库归档器
  *
  * 用法：
  *   tar rcs libfoo.a foo.o bar.o    创建归档 + 符号索引
@@ -18,10 +18,10 @@
  * 无 " " 结束标记。
  *
  * 注意：避免使用 struct pointer cast 访问缓存中的 ar_hdr，
- * tcc 对此有代码生成 bug。使用直接偏移写入。
+ * toyc 对此有代码生成 bug。使用直接偏移写入。
  */
 
-#include "tcc_need.h"
+#include "toyc_need.h"
 #include "elf.h"
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -97,7 +97,7 @@ static void w32be(unsigned char *p, uint32_t v) {
  * ═══════════════════════════════════════════════════════════════════ */
 
 static void error(const char *msg, const char *arg) {
-    __write(2, "tar: error: ", 12);
+    __write(2, "toyar: error: ", 12);
     __write(2, msg, strlen(msg));
     if (arg) { __write(2, ": ", 2); __write(2, arg, strlen(arg)); }
     __write(2, "\n", 1);
@@ -165,7 +165,7 @@ static void write_file(const char *path, const char *data, int sz) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
- *  ar_hdr 写入 — 直接偏移写入，避 tcc struct ptr cast bug
+ *  ar_hdr 写入 — 直接偏移写入，避 toyc struct ptr cast bug
  * ═══════════════════════════════════════════════════════════════════ */
 
 static void fill_ar_hdr(char *buf, const char *name16, int data_size) {
@@ -207,7 +207,7 @@ static int match_name(int idx, const char *bn) {
     return 1;
 }
 
-/* 通过函数参数传递指针，避免 tcc 在局部变量中截断 64 位指针 */
+/* 通过函数参数传递指针，避免 toyc 在局部变量中截断 64 位指针 */
 static void copy_bytes(char *d, const char *s, int n) {
     int i;
     for (i = 0; i < n; i++) d[i] = s[i];
@@ -226,7 +226,7 @@ static void add_member(const char *path) {
         for (int i = 0; i < bl; i++) m->name[i] = bn[i];
         m->name[bl] = '/';
     } else {
-        /* 文件名 >15 字符暂不支持——tcc 代码生成 bug 导致二次分配时 64 位指针被截断 */
+        /* 文件名 >15 字符暂不支持——toyc 代码生成 bug 导致二次分配时 64 位指针被截断 */
         error("filename too long (max 15 chars)", bn);
     }
     member_count++;
@@ -287,7 +287,7 @@ static void read_archive(const char *path) {
                     int end = off;
                     while (end < lname_sz && lname_data[end] != '\n') end++;
                     int llen = end - off;
-                    /* 扩展 data buffer 嵌入长名 (这里 cpy 是局部变量，不会触发 tcc truncation) */
+                    /* 扩展 data buffer 嵌入长名 (这里 cpy 是局部变量，不会触发 toyc truncation) */
                     int newsz = dsz + llen + 1;
                     cpy = (char *)tlibc_malloc(newsz);
                     for (int i = 0; i < dsz; i++) cpy[i] = buf[dp + i];
@@ -553,7 +553,7 @@ static void extract_archive(const char *path) {
 
 int main(int argc, char **argv) {
     if (argc < 3) {
-        __write(2, "usage: tar {r|t|x}[c][s] archive [files...]\n", 44);
+        __write(2, "usage: toyar {r|t|x}[c][s] archive [files...]\n", 44);
         return 1;
     }
 
@@ -569,7 +569,7 @@ int main(int argc, char **argv) {
         case 's': sym_flag = 1; break;
         case 'c': break;
         default:
-            __write(2, "tar: unknown option '", 20);
+            __write(2, "toyar: unknown option '", 20);
             __write(2, p, 1);
             __write(2, "'\n", 2);
             return 1;
@@ -577,7 +577,7 @@ int main(int argc, char **argv) {
     }
 
     if (replace_flag + list_flag + extract_flag != 1) {
-        __write(2, "tar: exactly one of {r,t,x} required\n", 38);
+        __write(2, "toyar: exactly one of {r,t,x} required\n", 38);
         return 1;
     }
 

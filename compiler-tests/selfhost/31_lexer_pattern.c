@@ -2,7 +2,7 @@
 // t04_lexer_pattern.c — Bug A: exact lex.c pattern reproduction
 //
 // Uses the SAME Token struct, Lexer struct, and function signature
-// as the real lex.c test. If this fails with tcc, we've reproduced Bug A.
+// as the real lex.c test. If this fails with toyc, we've reproduced Bug A.
 
 static void sys_exit(int code) {
     __asm__ __volatile__ ("syscall"

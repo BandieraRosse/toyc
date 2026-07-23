@@ -33,7 +33,7 @@ static int is_expanding(const char*name){int i;for(i=0;i<expand_stack_depth;i++)
 static int pp_cond_skip=0;static int pp_cond_depth=0;static int pp_cond_emit[32];
 static void get_name(const char*s,int start,int end,char*buf,int bufsz){int i;int n=end-start;if(n>bufsz-1)n=bufsz-1;for(i=0;i<n;i++)buf[i]=s[start+i];buf[n]='\0';}
 
-/* Global arrays for func macro arg/expanded storage — avoids tcc local-array codegen bug */
+/* Global arrays for func macro arg/expanded storage — avoids toyc local-array codegen bug */
 static const char *g_arg_starts[16];
 static int g_arg_lens[16];
 static int g_arg_count;
@@ -59,7 +59,7 @@ static void pp_push_level(void) {
 }
 
 
-/* Flat 1D stack arrays for nested func macro support (avoids tcc 2D array bug) */
+/* Flat 1D stack arrays for nested func macro support (avoids toyc 2D array bug) */
 static char *g_pp_ex[1024];
 static int g_pp_ex_len[1024];
 static const char *g_pp_as[1024];

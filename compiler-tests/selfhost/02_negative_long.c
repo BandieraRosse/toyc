@@ -1,6 +1,6 @@
 // EXPECT: 0
 // SELF_CONTAINED
-// negative_long.c — 测试 long 负值处理、符号扩展及 tcc 源文件相关模式
+// negative_long.c — 测试 long 负值处理、符号扩展及 toyc 源文件相关模式
 //
 // 本测试覆盖三类代码生成路径（cgen_expr.c:369-376）：
 //   A) 正 32-bit：mov eax, imm32 → 零扩展到 64 位 ✅
@@ -147,25 +147,25 @@ static void test_compiletime_neg(void)
 }
 
 // ============================================================
-// 第 3 节：tcc 源码常见模式 — long 比较与条件
+// 第 3 节：toyc 源码常见模式 — long 比较与条件
 // ============================================================
 
 static long make_neg(long x) { long t = x; return -t; }
 
 static void test_comparisons(void)
 {
-    my_printf("\n=== Section 3: long comparisons (patterns from tcc src) ===\n");
+    my_printf("\n=== Section 3: long comparisons (patterns from toyc src) ===\n");
 
-    /* == -1 模式（tcc 源码：sym_idx == -1, s->shndx == 0 等） */
+    /* == -1 模式（toyc 源码：sym_idx == -1, s->shndx == 0 等） */
     long v = make_neg(1);
     check(v == -1L, "  v == -1", 201);
     check(make_neg(42) != -1L, "  v != -1", 202);
 
-    /* < 0 / >= 0 模式（tcc：if(n < 0) n = -n） */
+    /* < 0 / >= 0 模式（toyc：if(n < 0) n = -n） */
     check(make_neg(5) < 0, "  signed <0", 203);
     check(100 >= 0, "  signed >=0", 204);
 
-    /* == 0 / != 0 模式（tcc：while(i > 0), if(len)） */
+    /* == 0 / != 0 模式（toyc：while(i > 0), if(len)） */
     long zero = 0;
     check(zero == 0, "  ==0", 205);
     check(42 != 0, "  !=0", 206);
@@ -194,7 +194,7 @@ static void test_unsigned_long(void)
     check((a | 0x1000UL) == (0xABCDUL | 0x1000UL), "  bitwise OR", 412);
     check((a ^ 0xA0A0UL) == (0xABCDUL ^ 0xA0A0UL), "  bitwise XOR", 413);
 
-    /* 移位（tcc 源码：>> 48, >> 32, & 0xFFFFFFFF） */
+    /* 移位（toyc 源码：>> 48, >> 32, & 0xFFFFFFFF） */
     unsigned long val = 0x123456789ABCDEF0UL;
     unsigned long hi = val >> 32;
     unsigned long lo = val & 0xFFFFFFFFUL;
@@ -295,18 +295,18 @@ static void test_variadic(void)
 }
 
 // ============================================================
-// 第 8 节：tcc 源码特有模式验证
+// 第 8 节：toyc 源码特有模式验证
 // ============================================================
 
-static void test_tcc_source_patterns(void)
+static void test_toyc_source_patterns(void)
 {
-    my_printf("\n=== Section 8: patterns from tcc source files ===\n");
+    my_printf("\n=== Section 8: patterns from toyc source files ===\n");
 
     /* cgen_expr.c:373 边界测试：> INT32_MAX 触发 mov_rax_imm64 */
     long boundary = 2147483648L;
     check(boundary == 2147483648L, "  cgen_expr boundary+", 801);
 
-    /* tcc_rt.c 模式：((unsigned long)ptr >> 48) == 0xFFFFUL */
+    /* toyc_rt.c 模式：((unsigned long)ptr >> 48) == 0xFFFFUL */
     {
         unsigned long addr = (unsigned long)sys_write;
         check(addr != 0, "  ulong ptr shift", 811);
@@ -343,7 +343,7 @@ static void test_tcc_source_patterns(void)
 
 int main(void)
 {
-    my_printf("=== tcc long negative number test ===\n");
+    my_printf("=== toyc long negative number test ===\n");
     my_printf("Fix: cgen_expr.c:369-376 movsxd for neg 32-bit\n");
     my_printf("Fix: unop_neg64 for int negation, movsxd in int→long assign\n\n");
 
@@ -354,7 +354,7 @@ int main(void)
     test_func_args();
     test_boundary();
     test_variadic();
-    test_tcc_source_patterns();
+    test_toyc_source_patterns();
 
     if (fail_count > 0) {
         my_printf("\nFAILED: %d failures\n", fail_count);

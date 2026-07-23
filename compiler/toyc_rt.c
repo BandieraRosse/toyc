@@ -4,9 +4,9 @@
  */
 
 /*
- * tcc_rt.c — tcc 独立运行时
+ * toyc_rt.c — toyc 独立运行时
  *
- * 为 tcc/tpp/tas 提供减少外部依赖的执行环境。
+ * 为 toyc/toypp/toyas 提供减少外部依赖的执行环境。
  * 只依赖 arch/ 中的内联 syscall 宏，不依赖 tlibc.a。
  *
  * 包含：简化 _start → main → exit
@@ -19,11 +19,11 @@
 /* ── 自包含的架构/类型头（仅宏+内联，无链接依赖） ── */
 
 /*
- * 注意：不包含 tcc.h，仅包含最小化头文件 tcc_need.h。
- * tcc_need.h 提供类型、常量、系统调用宏和函数声明。
+ * 注意：不包含 toyc.h，仅包含最小化头文件 toyc_need.h。
+ * toyc_need.h 提供类型、常量、系统调用宏和函数声明。
  */
 
-#include "tcc_need.h"
+#include "toyc_need.h"
 
 /* ── syscall 包装 ── */
 
@@ -128,7 +128,7 @@ void tlibc_free(void *ptr)
 static void print_dec(long n, int fd);
 
 /* 辅助：输出浮点 double（最多 6 位小数）
- * 注意：参数顺序为 (fd, val) 以匹配 tcc 的 ABI：int 在前 → RDI，double 在后 → XMM0 */
+ * 注意：参数顺序为 (fd, val) 以匹配 toyc 的 ABI：int 在前 → RDI，double 在后 → XMM0 */
 static void print_double(int fd, double val)
 {
     if (val < 0.0) {
@@ -280,7 +280,7 @@ void __printf(const char *fmt, ...)
 
 /* __eprintf — 格式化输出到 stderr (fd 2)。
  * 注意：case 块内不声明局部变量（char buf[N] 等），全部委托给外部函数。
- * 否则 tcc 在变参函数 case 内的栈布局会出问题。 */
+ * 否则 toyc 在变参函数 case 内的栈布局会出问题。 */
 void __eprintf(const char *fmt, ...)
 {
     __builtin_va_list ap;

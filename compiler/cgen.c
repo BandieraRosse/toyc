@@ -19,7 +19,7 @@
  *   [rbp-N]  (rsp 在函数执行期间指向这里)
  */
 
-#include "tcc.h"
+#include "toyc.h"
 
 /* ─── 全局缓冲区 ─── */
 
@@ -106,7 +106,7 @@ static int get_or_create_goto_label(const char *name) {
         if (strcmp(goto_label_names[i], name) == 0)
             return goto_label_ids[i];
     if (goto_label_count >= MAX_GOTO_LABELS) {
-        __write(2, "tcc: too many goto labels\n", 26);
+        __write(2, "toyc: too many goto labels\n", 26);
         __exit(1); }
     int id = new_label();
     goto_label_names[goto_label_count] = name;
@@ -128,7 +128,7 @@ static int new_label(void) {
 
 static void set_label(int id) {
     if (label_count >= MAX_LABELS) {
-        __write(2, "tcc: label overflow\n", 20);
+        __write(2, "toyc: label overflow\n", 20);
         __exit(1);
     }
     label_ids[label_count] = id;
@@ -161,7 +161,7 @@ static void emit_jmp(int label_id) {
     } else {
         /* 向前跳转：记录回填 */
         if (fixup_count >= MAX_FIXUPS) {
-            __write(2, "tcc: fixup overflow\n", 20);
+            __write(2, "toyc: fixup overflow\n", 20);
             __exit(1);
         }
         fixup_label[fixup_count] = label_id;
@@ -180,7 +180,7 @@ static void emit_jcc(int cc, int label_id) {
         emit1(0x0F); emit1(cc); emit4(disp);
     } else {
         if (fixup_count >= MAX_FIXUPS) {
-            __write(2, "tcc: fixup overflow\n", 20);
+            __write(2, "toyc: fixup overflow\n", 20);
             __exit(1);
         }
         fixup_label[fixup_count] = label_id;
@@ -272,7 +272,7 @@ static int add_sym(const char *name, int offset, int size,
         }
     }
     if (sym_count >= MAX_SYMS) {
-        __write(2, "tcc: too many symbols\n", 22);
+        __write(2, "toyc: too many symbols\n", 22);
         __exit(1); }
     CgenSym *s = &syms[sym_count++];
     s->name = name;
@@ -306,7 +306,7 @@ static void collect_locals(AstNode *node) {
     case AST_BLOCK:
         scope_depth++;
         if (scope_chain_count >= MAX_SCOPE_IDS) {
-            __write(2, "tcc: scope chain overflow\n", 26);
+            __write(2, "toyc: scope chain overflow\n", 26);
             __exit(1); }
         scope_chain[scope_chain_count++] = ++next_scope_id;
         for (AstNode *s = node->stmts; s; s = s->next)
@@ -320,7 +320,7 @@ static void collect_locals(AstNode *node) {
             int vsize = node->ival > 0 ? node->ival : 4;
             elf_bss_size = (elf_bss_size + 7) & -8;
             if (sym_count >= MAX_SYMS) {
-                __write(2, "tcc: too many symbols\n", 22);
+                __write(2, "toyc: too many symbols\n", 22);
                 __exit(1); }
             {
                 CgenSym *s = &syms[sym_count];
@@ -344,7 +344,7 @@ static void collect_locals(AstNode *node) {
             elf_bss_size += vsize;
         } else if (node->name) {
             if (local_count >= MAX_LOCALS) {
-                __write(2, "tcc: too many local variables\n", 30);
+                __write(2, "toyc: too many local variables\n", 30);
                 __exit(1); }
             int sz = node->ival > 0 ? node->ival : 4;
             /* Float 类型分配 8 字节栈槽（与 double 同宽，简化 XMM 内存操作） */
@@ -636,7 +636,7 @@ static void cgen_switch(AstNode *stmt) {
     for (AstNode *s = stmt->stmts; s; s = s->next) {
         if (s->kind == AST_CASE) {
             if (case_count >= MAX_CASES) {
-                __write(2, "tcc: too many case labels\n", 26);
+                __write(2, "toyc: too many case labels\n", 26);
                 __exit(1); }
             cases[case_count].value = s->ival;
             cases[case_count].value2 = (s->right && s->right->kind == AST_CONSTANT)
@@ -979,7 +979,7 @@ static void cgen_func_def(AstNode *func) {
                     int ro = code_size;
                     e1(0x55); e1(0x66); e1(0x77); e1(0x88);
                     if (rel_count >= MAX_RELS) {
-                        __write(2, "tcc: too many relocations\n", 26);
+                        __write(2, "toyc: too many relocations\n", 26);
                         __exit(1); }
                     Elf64_Rela *r = &rels[rel_count++];
                     r->r_offset = ro;
@@ -1182,7 +1182,7 @@ static void cgen_emit_data_init(AstNode *node) {
             /* 追加到字符串池 */
             int pool_off = strpool_size;
             if (strpool_size + slen > STRPOOL_SIZE) {
-                __write(2, "tcc: strpool overflow (data init)\n", 34);
+                __write(2, "toyc: strpool overflow (data init)\n", 34);
                 __exit(1);
             }
             int si;
@@ -1202,7 +1202,7 @@ static void cgen_emit_data_init(AstNode *node) {
             *np = '\0';
 
             if (name_idx >= MAX_STRINGS) {
-                __write(2, "tcc: max strings exceeded (data init)\n", 38);
+                __write(2, "toyc: max strings exceeded (data init)\n", 38);
                 __exit(1);
             }
             int ni;
@@ -1212,7 +1212,7 @@ static void cgen_emit_data_init(AstNode *node) {
             /* 创建 LOCAL 符号 */
             int sym_idx = -1;
             if (sym_count >= MAX_SYMS) {
-                __write(2, "tcc: too many symbols\n", 22);
+                __write(2, "toyc: too many symbols\n", 22);
                 __exit(1); }
             sym_idx = sym_count++;
             syms[sym_idx].name = str_infos[name_idx].name;
@@ -1236,7 +1236,7 @@ static void cgen_emit_data_init(AstNode *node) {
 
             if (sym_idx >= 0) {
                 if (data_rel_count >= ELF_MAX_RELS) {
-                    __write(2, "tcc: too many data relocations\n", 31);
+                    __write(2, "toyc: too many data relocations\n", 31);
                     __exit(1); }
                 Elf64_Rela *r = &data_rels[data_rel_count++];
                 r->r_offset = data_off;
@@ -1371,7 +1371,7 @@ void cgen_program(AstNode *prog) {
             }
             /* 现在创建符号 (sym_count 已经是最终值) */
             if (sym_count >= MAX_SYMS) {
-                __write(2, "tcc: too many symbols\n", 22);
+                __write(2, "toyc: too many symbols\n", 22);
                 __exit(1); }
             {
                 int si = sym_count++;
@@ -1397,7 +1397,7 @@ void cgen_program(AstNode *prog) {
     elf_bss_size = bss_offset;
     elf_data_size = data_offset;
     if (data_offset > DATA_BUF_SIZE) {
-        __write(2, "tcc: data buffer overflow\n", 26);
+        __write(2, "toyc: data buffer overflow\n", 26);
         __exit(1); }
     /* 确保 data_buf 填充到 data_offset（应对 scalar 初始器暂不发射数据的情况） */
     while (data_size < data_offset)
@@ -1408,7 +1408,7 @@ void cgen_program(AstNode *prog) {
     for (AstNode *node = prog->body; node; node = node->next) {
         if (node->kind == AST_FUNC_DEF && node->name) {
             if (func_ret_count >= MAX_FUNC_RET_TYPES) {
-                __write(2, "tcc: too many function return types\n", 36);
+                __write(2, "toyc: too many function return types\n", 36);
                 __exit(1); }
             func_ret_names[func_ret_count] = node->name;
             func_ret_sizes[func_ret_count] = node->type_size;
@@ -1427,7 +1427,7 @@ void cgen_program(AstNode *prog) {
     /* 在全部函数代码之后追加字符串池 */
     if (strpool_size > 0) {
         if (code_size + strpool_size > CODE_BUF_SIZE) {
-            __write(2, "tcc: code buffer overflow\n", 26);
+            __write(2, "toyc: code buffer overflow\n", 26);
             __exit(1);
         }
         int string_start = code_size;

@@ -1,4 +1,4 @@
-/* test_math.c — 验证 math.c 能否被 tcc 编译并运行
+/* test_math.c — 验证 math.c 能否被 toyc 编译并运行
  * 使用同目录下的 stub 头文件 (core.h, math.h)。
  * 编译后运行打印每个函数的 PASS/FAIL 状态。
  * EXPECT: 0
@@ -7,7 +7,7 @@
 #include "core.h"
 #include "math.h"
 
-/* tcc 需要链接 __printf 入 tcc_rt.o */
+/* toyc 需要链接 __printf 入 tcc_rt.o */
 extern void __printf(const char *fmt, ...);
 
 /* 允许的误差范围 */

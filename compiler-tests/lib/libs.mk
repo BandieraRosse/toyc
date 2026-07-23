@@ -29,8 +29,8 @@ _SRCS_core    := core/io.c core/mem.c core/proc.c \
                  core/signal.c core/sync.c core/time.c
 
 # ── stdio — 格式化 I/O
-# 注意：printf.c/snprintf.c 使用 __builtin_va_arg，tcc 编译后运行时 segfault
-#       （已知 tcc cgen va_arg bug）。功能测试暂跳过，编译已覆盖。 ──
+# 注意：printf.c/snprintf.c 使用 __builtin_va_arg，toyc 编译后运行时 segfault
+#       （已知 toyc cgen va_arg bug）。功能测试暂跳过，编译已覆盖。 ──
 _SRCS_stdio   := stdio/printf.c stdio/scanf.c stdio/snprintf.c
 _DEPS_stdio   := core string ctype
 
@@ -72,5 +72,5 @@ _SRCS_audio   := audio/alsa.c
 _DEPS_audio   := core
 
 # ── 以下 lib 因架构限制跳过：
-#   init/    — 含 init.c + start.S（汇编），需要 tas/gas
+#   init/    — 含 init.c + start.S（汇编），需要 toyas/gas
 #   thread/  — 含 TLS 和 clone.S，需要 gcc

@@ -3,7 +3,7 @@
 //
 // 25_neg_ptr_arith.c — 测试负数指针偏移（指针 + 有符号 32 位负数）
 //
-// 已知 bug：stage-1 tcc 指针偏移使用 32 位算术（shl eax），
+// 已知 bug：stage-1 toyc 指针偏移使用 32 位算术（shl eax），
 // 负数索引经 32 位运算后高 32 位被清零，导致地址溢出 0xffffffff 前缀。
 // 修复后使用 cdqe 符号扩展后执行 64 位移位/imul。
 

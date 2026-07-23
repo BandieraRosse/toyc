@@ -31,7 +31,7 @@ int main(void) {
 
     /* 5. 测试格式化输出：十六进制地址 */
     __printf("ptr=%p val=%s\n", buf, buf);
-    /* 注意：tcc 的 __printf 可能不支持 %p；这里用 %x 演示 */
+    /* 注意：toyc 的 __printf 可能不支持 %p；这里用 %x 演示 */
     __printf("ptr_low=%x val=%s\n", (unsigned int)(unsigned long)buf, buf);
 
     /* 6. 多次分配 */

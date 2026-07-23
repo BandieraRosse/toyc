@@ -1,15 +1,15 @@
 /*
- * 32_tas_emulate.c — tas_assemble 栈布局模拟测试
+ * 32_toyas_emulate.c — tas_assemble 栈布局模拟测试
  *
- * 本测试来自调试 tas.c 自举编译的过程。重现 tas_assemble 函数中
+ * 本测试来自调试 toyas.c 自举编译的过程。重现 tas_assemble 函数中
  * 标签定义路径的完整模式：多个局部 int + const char* 变量，
  * 栈上 char nbuf[256] 大数组，然后调用 6 参数的 add_sym()。
  *
- * 在调试早期怀疑 tcc 对复杂栈布局或 6 参数调用的代码生成有 bug，
+ * 在调试早期怀疑 toyc 对复杂栈布局或 6 参数调用的代码生成有 bug，
  * 此测试确认这些模式本身没有问题。实际 bug 是 struct 数组的 sizeof
  * 计算错误和 2D 数组 stride 计算错误（见 pending/12_struct_array_sizeof.c）。
  *
- * 保留此测试作为回归验证：确保 tcc 对混合类型局部变量 + 大栈数组
+ * 保留此测试作为回归验证：确保 toyc 对混合类型局部变量 + 大栈数组
  * + 多参数调用的代码生成保持正确。
  *
  * EXP: 0

@@ -107,7 +107,7 @@ void __tlibc_start(void)
         int idx = 2;
         if (g_int_ptr[idx + 0] != 30) { sys_write(1,"F7a\n",4); sys_exit(1); }
         if (g_int_ptr[idx + 1] != 40) { sys_write(1,"F7b\n",4); sys_exit(1); }
-        /* code_buf[idx + expr] 风格 — 如 tcc 自身源码中的模式 */
+        /* code_buf[idx + expr] 风格 — 如 toyc 自身源码中的模式 */
         {
             int base = 0;
             if (g_int_ptr[base + 1] != 20) { sys_write(1,"F7c\n",4); sys_exit(1); }

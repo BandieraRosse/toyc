@@ -1,11 +1,11 @@
 #!/bin/bash
 #
-# bootstrap-to-10.sh — tcc 自举到 stage 10
+# bootstrap-to-10.sh — toyc 自举到 stage 10
 #
-# 逐级用 stage-N tcc 编译自身源码，产出 stage-(N+1)，并验证每级通过 selfhost 测试。
+# 逐级用 stage-N toyc 编译自身源码，产出 stage-(N+1)，并验证每级通过 selfhost 测试。
 # 不修改任何已有文件。
 #
-# 原理：如果 tcc 是正确自举的编译器，从某个 stage 开始二进制会收敛（不再变化），
+# 原理：如果 toyc 是正确自举的编译器，从某个 stage 开始二进制会收敛（不再变化），
 # 后续 stage 与之前的完全相同。本脚本验证这一收敛性。
 #
 # 用法:  ./bootstrap-to-10.sh
@@ -21,22 +21,22 @@ TMP="tmp"
 STAGES_DIR="${BUILD}/stages"
 SELFTESTDIR="compiler-tests/selfhost"
 BOOTSTRAP="bootstrap"
-SEED_TCC="${BOOTSTRAP}/tcc"
-SEED_TAS="${BOOTSTRAP}/tas"
+SEED_TOYC="${BOOTSTRAP}/toyc"
+SEED_TOYAS="${BOOTSTRAP}/toyas"
 
 # ─── 工具链 ────────────────────────────────────────────────────────
 LD="ld"
 LDFLAGS="-nostdlib -static -e __tlibc_start"
 SELFTEST_LDFLAGS="-nostdlib -static -T ld.script"
 
-# tcc 编译器本身的 C 源文件（不含 tpp、tas — 它们是独立工具）
-C_FILES="${SRC}/tcc.c ${SRC}/lex.c ${SRC}/parse.c ${SRC}/preproc.c ${SRC}/cgen.c ${SRC}/cgen_expr.c ${SRC}/cgen_asm.c ${SRC}/elf_write.c ${SRC}/tcc_rt.c"
+# toyc 编译器本身的 C 源文件（不含 toypp、toyas — 它们是独立工具）
+C_FILES="${SRC}/toyc.c ${SRC}/lex.c ${SRC}/parse.c ${SRC}/preproc.c ${SRC}/cgen.c ${SRC}/cgen_expr.c ${SRC}/cgen_asm.c ${SRC}/cgen_float_hack.c ${SRC}/elf_write.c ${SRC}/toyc_rt.c"
 
 mkdir -p "${TMP}" "${STAGES_DIR}"
 
 # ─── 辅助函数 ─────────────────────────────────────────────────────
 
-# 用给定的编译器编译 tcc 的 9 个 C 源文件 + 链接 → tcc-stage{N}
+# 用给定的编译器编译 tcc 的 9 个 C 源文件 + 链接 → toyc-stage{N}
 # 参数: stage_num compiler_path
 build_stage() {
     local stage_num="$1"
@@ -60,9 +60,9 @@ build_stage() {
         fi
     done
 
-    # tcc_rt_start.S 是汇编文件，用自举种子 tas 汇编
-    printf "  ${BLUE}[tas]${RESET} %s → %s ... " "tcc_rt_start.S" "${objdir}/tcc_rt_start.o"
-    if ${SEED_TAS} "${SRC}/tcc_rt_start.S" -o "${objdir}/tcc_rt_start.o" \
+    # toyc_rt_start.S 是汇编文件，用自举种子 toyas 汇编
+    printf "  ${BLUE}[toyas]${RESET} %s → %s ... " "toyc_rt_start.S" "${objdir}/toyc_rt_start.o"
+    if ${SEED_TOYAS} "${SRC}/toyc_rt_start.S" -o "${objdir}/toyc_rt_start.o" \
         2>"${TMP}/stage${stage_num}_compile_tcc_rt_start.log"; then
         printf "${GREEN}ok${RESET}\n"
     else
@@ -72,10 +72,10 @@ build_stage() {
 
     [ "${compile_failed}" -eq 1 ] && return 1
 
-    local objs="${objdir}/tcc.o ${objdir}/lex.o ${objdir}/parse.o ${objdir}/preproc.o ${objdir}/cgen.o ${objdir}/cgen_expr.o ${objdir}/cgen_asm.o ${objdir}/elf_write.o ${objdir}/tcc_rt.o ${objdir}/tcc_rt_start.o"
-    local out="${STAGES_DIR}/tcc-stage${stage_num}"
+    local objs="${objdir}/toyc.o ${objdir}/lex.o ${objdir}/parse.o ${objdir}/preproc.o ${objdir}/cgen.o ${objdir}/cgen_expr.o ${objdir}/cgen_asm.o ${objdir}/cgen_float_hack.o ${objdir}/elf_write.o ${objdir}/toyc_rt.o ${objdir}/toyc_rt_start.o"
+    local out="${STAGES_DIR}/toyc-stage${stage_num}"
 
-    printf "  链接 stage-%d tcc ... " "${stage_num}"
+    printf "  链接 stage-%d toyc ... " "${stage_num}"
     if ${LD} ${LDFLAGS} ${objs} -o "${out}" 2>"${TMP}/stage${stage_num}_link.log"; then
         printf "${GREEN}ok${RESET} → $(ls -lh "${out}" | awk '{print $5}')\n"
         return 0
@@ -86,11 +86,11 @@ build_stage() {
     fi
 }
 
-# 用 stage-N tcc 运行全部 28 个 selfhost 测试
+# 用 stage-N toyc 运行全部 28 个 selfhost 测试
 # 输出 "ok fail total"
 test_stage() {
     local stage_num="$1"
-    local compiler="${STAGES_DIR}/tcc-stage${stage_num}"
+    local compiler="${STAGES_DIR}/toyc-stage${stage_num}"
     local ok=0 fail=0 total=0
     local logdir="${TMP}/stage${stage_num}_selfhost"
 
@@ -123,24 +123,24 @@ test_stage() {
 # ─── 主流程 ─────────────────────────────────────────────────────────
 
 printf "${CYAN}╔══════════════════════════════════════════════════════════════╗${RESET}\n"
-printf "${CYAN}║            tcc 自举到 Stage 10                             ║${RESET}\n"
+printf "${CYAN}║            toyc 自举到 Stage 10                             ║${RESET}\n"
 printf "${CYAN}║  逐级自编译 → MD5 收敛验证                                   ║${RESET}\n"
 printf "${CYAN}║  完整测试: stage-1(种子) + stage-2(首自编) + stage-10(收敛)  ║${RESET}\n"
 printf "${CYAN}╚══════════════════════════════════════════════════════════════╝${RESET}\n\n"
 
 # ─── 确保 stage-1（自举种子）存在 ──────────────────────────
 
-printf "${BLUE}═══ [准备] 确认自举种子（${SEED_TCC} + ${SEED_TAS}） ═══${RESET}\n"
-if [ ! -x "${SEED_TCC}" ] || [ ! -x "${SEED_TAS}" ]; then
+printf "${BLUE}═══ [准备] 确认自举种子（${SEED_TOYC} + ${SEED_TOYAS}） ═══${RESET}\n"
+if [ ! -x "${SEED_TOYC}" ] || [ ! -x "${SEED_TOYAS}" ]; then
     printf "  ${RED}✗ 自举种子不存在，请先运行 'make seed'。${RESET}\n"
-    printf "  需要: ${SEED_TCC} 和 ${SEED_TAS}\n"
+    printf "  需要: ${SEED_TOYC} 和 ${SEED_TOYAS}\n"
     exit 1
 fi
-printf "  ${GREEN}✓${RESET} Seed tcc: ${SEED_TCC} ($(ls -lh "${SEED_TCC}" | awk '{print $5}'))\n"
-printf "  ${GREEN}✓${RESET} Seed tas: ${SEED_TAS} ($(ls -lh "${SEED_TAS}" | awk '{print $5}'))\n"
+printf "  ${GREEN}✓${RESET} Seed toyc: ${SEED_TOYC} ($(ls -lh "${SEED_TOYC}" | awk '{print $5}'))\n"
+printf "  ${GREEN}✓${RESET} Seed toyas: ${SEED_TOYAS} ($(ls -lh "${SEED_TOYAS}" | awk '{print $5}'))\n"
 
-if [ ! -f "${STAGES_DIR}/tcc-stage1" ]; then
-    cp "${SEED_TCC}" "${STAGES_DIR}/tcc-stage1"
+if [ ! -f "${STAGES_DIR}/toyc-stage1" ]; then
+    cp "${SEED_TOYC}" "${STAGES_DIR}/toyc-stage1"
     printf "  ${GREEN}✓${RESET} 复制为 stage-1\n"
 else
     printf "  ${GREEN}✓${RESET} stage-1 已存在\n"
@@ -153,7 +153,7 @@ ALL_FAILED=0
 
 for stage in $(seq 2 10); do
     prev=$((stage - 1))
-    compiler="${STAGES_DIR}/tcc-stage${prev}"
+    compiler="${STAGES_DIR}/toyc-stage${prev}"
 
     if [ ! -x "${compiler}" ]; then
         printf "${RED}✗ stage-%d 编译器 ${compiler} 不存在，无法构建 stage-%d${RESET}\n" "${prev}" "${stage}"
@@ -161,12 +161,12 @@ for stage in $(seq 2 10); do
         continue
     fi
 
-    if [ -f "${STAGES_DIR}/tcc-stage${stage}" ]; then
+    if [ -f "${STAGES_DIR}/toyc-stage${stage}" ]; then
         printf "${BLUE}[%d/%d]${RESET} stage-%d 已存在，跳过构建。\n" "${stage}" "10" "${stage}"
         continue
     fi
 
-    printf "${BLUE}[%d/%d]${RESET} 构建 stage-%d（← stage-%d tcc）\n" "${stage}" "10" "${stage}" "${prev}"
+    printf "${BLUE}[%d/%d]${RESET} 构建 stage-%d（← stage-%d toyc）\n" "${stage}" "10" "${stage}" "${prev}"
     if build_stage "${stage}" "${compiler}"; then
         printf "  ${GREEN}✓ stage-%d 构建成功${RESET}\n" "${stage}"
     else
@@ -188,7 +188,7 @@ declare -a STAGE_RESULTS
 TEST_STAGES="1 2 10"
 
 for stage in $(seq 1 10); do
-    if [ ! -f "${STAGES_DIR}/tcc-stage${stage}" ] || [ ! -x "${STAGES_DIR}/tcc-stage${stage}" ]; then
+    if [ ! -f "${STAGES_DIR}/toyc-stage${stage}" ] || [ ! -x "${STAGES_DIR}/toyc-stage${stage}" ]; then
         STAGE_RESULTS[${stage}]="—"
         continue
     fi
@@ -228,7 +228,7 @@ printf "  %-10s %-10s %-34s %s\n" "──────" "────" "───
 
 STAGE_HASHES=()
 for s in $(seq 1 10); do
-    f="${STAGES_DIR}/tcc-stage${s}"
+    f="${STAGES_DIR}/toyc-stage${s}"
     if [ -f "${f}" ]; then
         size=$(stat -c%s "${f}" 2>/dev/null)
         hash=$(md5sum "${f}" | awk '{print $1}')
@@ -254,22 +254,22 @@ done
 printf "\n"
 if [ -n "${CONVERGED_AT}" ]; then
     printf "  ${GREEN}✓ 自举在 stage-%d 收敛${RESET}\n" "${CONVERGED_AT}"
-    printf "    Stage-%d 到 stage-10 的二进制完全相同，证明 tcc 是自洽的编译器。\n" "${CONVERGED_AT}"
+    printf "    Stage-%d 到 stage-10 的二进制完全相同，证明 toyc 是自洽的编译器。\n" "${CONVERGED_AT}"
     printf "\n"
     printf "    ${CYAN}收敛含义：${RESET}\n"
     printf "    - stage-%d 编译自身产生的代码与 stage-%d 完全一致\n" "$((CONVERGED_AT-1))" "${CONVERGED_AT}"
     printf "    - 后续 stages 只是重复同一过程，验证了自举的稳定性\n"
-    printf "    - tcc 已掌握自身源码的编译能力，不依赖宿主编译器\n"
+    printf "    - toyc 已掌握自身源码的编译能力，不依赖宿主编译器\n"
 else
     # 检查是否所有 stage 都存在但不相同
     ALL_EXIST=true
     for s in $(seq 1 10); do
-        [ -f "${STAGES_DIR}/tcc-stage${s}" ] || { ALL_EXIST=false; break; }
+        [ -f "${STAGES_DIR}/toyc-stage${s}" ] || { ALL_EXIST=false; break; }
     done
     if [ "${ALL_EXIST}" = true ]; then
         h2="${STAGE_HASHES[2]}"; h3="${STAGE_HASHES[3]}"
         if [ -n "${h2}" ] && [ -n "${h3}" ] && [ "${h2}" != "${h3}" ]; then
-            printf "  ${YELLOW}⚠ stage-2 和 stage-3 不同（预期：种子 tcc vs 自编译 tcc 生成不同），stage-3 之后未完全收敛${RESET}\n"
+            printf "  ${YELLOW}⚠ stage-2 和 stage-3 不同（预期：种子 toyc vs 自编译 tcc 生成不同），stage-3 之后未完全收敛${RESET}\n"
         fi
     fi
 fi
@@ -284,7 +284,7 @@ printf "  ${GREEN}Tests passed:    %d/3${RESET} (stage-1 + stage-2 + stage-10)\n
 if [ "${STAGE_FAIL}" -gt 0 ]; then
     printf "  ${RED}Tests failed:    %d${RESET}\n" "${STAGE_FAIL}"
 fi
-printf "  Stage binaries:   ${STAGES_DIR}/tcc-stage{1..10}\n"
+printf "  Stage binaries:   ${STAGES_DIR}/toyc-stage{1..10}\n"
 printf "  中间目标文件:     ${STAGES_DIR}/stage{2..10}/\n"
 printf "  构建日志:         ${TMP}/stage{2..10}_compile_*.log\n"
 printf "  链接日志:         ${TMP}/stage{2..10}_link.log\n"

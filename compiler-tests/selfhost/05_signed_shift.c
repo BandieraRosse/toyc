@@ -2,10 +2,10 @@
 // SELF_CONTAINED
 // signed_shift.c — 测试 signed 类型的右移位行为
 //
-// tcc 代码生成缺陷：对有符号负数 >> 使用了 shr（逻辑右移）
+// toyc 代码生成缺陷：对有符号负数 >> 使用了 shr（逻辑右移）
 // 而非 sar（算术右移），导致高位补 0 而非补符号位。
 //
-// 编译：build/tcc  05_signed_shift.c -o /tmp/05_signed_shift.o
+// 编译：build/toyc  05_signed_shift.c -o /tmp/05_signed_shift.o
 // 链接：ld -nostdlib -static -T ld.script /tmp/05_signed_shift.o -o /tmp/05_signed_shift
 // 运行：/tmp/05_signed_shift
 
@@ -59,7 +59,7 @@ static void check(int cond, const char *msg) {
 }
 
 // ─── 测试 1: signed int 右移位 ───
-// tcc 曾对 >> 始终使用 shr（逻辑右移），但 signed 类型应
+// toyc 曾对 >> 始终使用 shr（逻辑右移），但 signed 类型应
 // 使用 sar（算术右移，高位补符号位）。
 // (-8) >> 1 应为 -4，但 shr 给出 0x7FFFFFFC。
 static void test_int_rshift(void) {

@@ -7,7 +7,7 @@
 // Run:  /tmp/test_cgen
 
 // ============================================================
-// Inlined from tcc_need.h — 最小类型
+// Inlined from toyc_need.h — 最小类型
 // ============================================================
 
 typedef unsigned long size_t;
@@ -68,7 +68,7 @@ typedef struct {
 } CgenSym;
 
 // ============================================================
-// Inlined from tcc.h — AstKind / AstNode / LocalVar / StrInfo / 常量
+// Inlined from toyc.h — AstKind / AstNode / LocalVar / StrInfo / 常量
 // ============================================================
 
 #define CODE_BUF_SIZE  262144
@@ -154,7 +154,7 @@ int global_base_elem_size[MAX_SYMS];
 int elf_bss_size;
 
 // ============================================================
-// 内联辅助函数（来自 tcc.h）
+// 内联辅助函数（来自 toyc.h）
 // ============================================================
 
 static int disp8_fits(int offset) { return offset >= -128 && offset <= 127; }
@@ -263,7 +263,7 @@ static int new_label(void) {
 
 static void set_label(int id) {
     if (label_count >= MAX_LABELS) {
-        __write(2, "tcc: label overflow\n", 20);
+        __write(2, "toyc: label overflow\n", 20);
         __exit(1);
     }
     label_ids[label_count] = id;
@@ -288,7 +288,7 @@ static void emit_jmp(int label_id) {
         emit1(0xE9); emit4(disp);
     } else {
         if (fixup_count >= MAX_FIXUPS) {
-            __write(2, "tcc: fixup overflow\n", 20);
+            __write(2, "toyc: fixup overflow\n", 20);
             __exit(1);
         }
         fixup_label[fixup_count] = label_id;
@@ -305,7 +305,7 @@ static void emit_jcc(int cc, int label_id) {
         emit1(0x0F); emit1(cc); emit4(disp);
     } else {
         if (fixup_count >= MAX_FIXUPS) {
-            __write(2, "tcc: fixup overflow\n", 20);
+            __write(2, "toyc: fixup overflow\n", 20);
             __exit(1);
         }
         fixup_label[fixup_count] = label_id;
@@ -826,7 +826,7 @@ void cgen_program(AstNode *prog) {
     }
     if (strpool_size > 0) {
         if (code_size + strpool_size > CODE_BUF_SIZE) {
-            __write(2, "tcc: code buffer overflow\n", 26);
+            __write(2, "toyc: code buffer overflow\n", 26);
             __exit(1);
         }
         int string_start = code_size;

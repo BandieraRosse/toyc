@@ -92,7 +92,7 @@ void __tlibc_start(void)
 
     /* 直接常量 >> (不经过变量) */
     {
-        /* 这里直接计算常量 >> 1，tcc 不会做编译期常量折叠 */
+        /* 这里直接计算常量 >> 1，toyc 不会做编译期常量折叠 */
         unsigned long sr = 0x8000000000000000UL >> 1;
         if (sr == 0x4000000000000000UL) {
             print_str("Test D: OK (direct shift)\n");

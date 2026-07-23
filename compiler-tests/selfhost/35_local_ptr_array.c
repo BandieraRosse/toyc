@@ -1,7 +1,7 @@
 // EXPECT: 0
 // t03_local_ptr_array.c — Bug C: local pointer array crash
 //
-// tcc bug: declaring char *arr[] = {"a", "b", 0} inside a function
+// toyc bug: declaring char *arr[] = {"a", "b", 0} inside a function
 //          and accessing arr[i] causes segfault.
 
 static void sys_exit(int code) {
@@ -43,7 +43,7 @@ void __tlibc_start(void) {
         if (slen(names[1]) != 5) sys_exit(12);
     }
 
-    /* Test C: array of char* as tcc args */
+    /* Test C: array of char* as toyc args */
     {
         char *a[] = {"program", "input.c", 0};
         if (a[0][0] != 'p') sys_exit(20);

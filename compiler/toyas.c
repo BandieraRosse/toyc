@@ -4,13 +4,13 @@
  */
 
 /*
- * tas.c — Tinylibc x86_64 汇编器
+ * toyas.c — ToyC x86_64 汇编器
  *
  * 机制：将 AT&T 语法 x86_64 汇编源文件直接编码为 ELF64 .o 文件。
  *       按行解析，支持项目 .S 文件所需的 13 种指令和 5 种伪指令。
  *
  * 用法：
- *   tas input.S [-o output.o]
+ *   toyas input.S [-o output.o]
  *
  * 索引：
  *   main               入口：参数解析、读文件、调用汇编函数
@@ -40,7 +40,7 @@ int elf_rel_count;
 #define REG_SIZE_MASK 0x30
 #define REG_IDX_MASK  0x0F
 
-/* reg_table 已内联到 find_reg 中，避免 tcc 的 struct 数组 sizeof bug */
+/* reg_table 已内联到 find_reg 中，避免 toyc 的 struct 数组 sizeof bug */
 
 static int find_reg(const char *name) {
     if (!name || !name[0]) return -1;
@@ -135,7 +135,7 @@ typedef struct {
     int op_ext;     /* ModRM reg/opcode 扩展 */
 } InstrDef;
 
-/* 指令定义 — 用 int 常量编码所有字段，避免 tcc 对 struct 数据布局的 bug */
+/* 指令定义 — 用 int 常量编码所有字段，避免 toyc 对 struct 数据布局的 bug */
 /* 每个指令用 5 个 int: { opcode0, opcode1, oplen, op_ext, fmt } */
 #define INSTR_ENCODE(o0,o1,l,ex,f) (o0),(o1),(l),(ex),(f)
 /* 指令编码表（int 平面数组，不含 name 指针字段） */
@@ -168,7 +168,7 @@ static const int instr_enc[] = {
 
 #define MAX_LOCAL_LABELS 2048
 static int local_offsets[MAX_LOCAL_LABELS];           /* -1 = 未定义 */
-static int local_fixups[MAX_LOCAL_LABELS * 32];       /* 待回填的偏移列表（1D，避免 tcc 2D 数组 stride bug） */
+static int local_fixups[MAX_LOCAL_LABELS * 32];       /* 待回填的偏移列表（1D，避免 toyc 2D 数组 stride bug） */
 #define LOCAL_FIXUP(i,j) local_fixups[(i) * 32 + (j)]
 static int local_nfixups[MAX_LOCAL_LABELS];
 
@@ -182,8 +182,8 @@ static void reset_locals(void) {
 
 /* ─── 符号管理 ─── */
 
-#define TAS_MAX_SYMS 2048
-static char sym_names[TAS_MAX_SYMS * 128];  /* 持久化符号名（1D，避免 tcc 2D 数组 stride bug） */
+#define TOYAS_MAX_SYMS 2048
+static char sym_names[TOYAS_MAX_SYMS * 128];  /* 持久化符号名（1D，避免 toyc 2D 数组 stride bug） */
 #define SYM_NAME(i) (sym_names + (i) * 128)
 
 static int find_sym(const char *name) {
@@ -196,8 +196,8 @@ static int find_sym(const char *name) {
 
 static int add_sym(const char *name, int offset, int size,
                    int is_global, int is_func, int shndx) {
-    if (elf_sym_count >= TAS_MAX_SYMS) {
-        __write(2, "tas: too many symbols\n", 22);
+    if (elf_sym_count >= TOYAS_MAX_SYMS) {
+        __write(2, "toyas: too many symbols\n", 22);
         __exit(1); }
     ElfWriteSym *s = &elf_syms[elf_sym_count];
     /* 持久化复制符号名 */
@@ -217,7 +217,7 @@ static int add_sym(const char *name, int offset, int size,
 
 static void add_rel(int offset, int sym_idx, int type, Elf64_Sxword addend) {
     if (elf_rel_count >= ELF_MAX_RELS) {
-        __write(2, "tas: too many relocations\n", 26);
+        __write(2, "toyas: too many relocations\n", 26);
         __exit(1); }
     Elf64_Rela *r = &elf_rels[elf_rel_count++];
     r->r_offset = offset;
@@ -229,7 +229,7 @@ static void add_rel(int offset, int sym_idx, int type, Elf64_Sxword addend) {
 
 static void e1(int b) {
     if (elf_code_size >= ELF_CODE_BUF_SIZE) {
-        __write(2, "tas: code buffer overflow\n", 26);
+        __write(2, "toyas: code buffer overflow\n", 26);
         __exit(1);
     }
     elf_code_buf[elf_code_size++] = b & 0xFF;
@@ -795,10 +795,10 @@ static int encode_instr(int idx, Operand *op0, Operand *op1,
         if (local_label > 0) {
             int n = local_label;
             if (n >= MAX_LOCAL_LABELS) {
-                __write(2, "tas: local label overflow\n", 26);
+                __write(2, "toyas: local label overflow\n", 26);
                 __exit(1); }
             if (local_nfixups[n] >= 32) {
-                __write(2, "tas: too many fixups for local label\n", 37);
+                __write(2, "toyas: too many fixups for local label\n", 37);
                 __exit(1); }
             LOCAL_FIXUP(n, local_nfixups[n]++) = elf_code_size;
             e1(0);
@@ -997,7 +997,7 @@ int tas_assemble(const char *src, int len) {
 
         if (is_local_num) {
             if (local_num >= MAX_LOCAL_LABELS) {
-                __write(2, "tas: too many local labels\n", 27);
+                __write(2, "toyas: too many local labels\n", 27);
                 __exit(1); }
             local_offsets[local_num] = elf_code_size;
             /* 数字标号后可能有同行指令（如 "1: ret"） */
@@ -1106,7 +1106,7 @@ int tas_assemble(const char *src, int len) {
             instr_idx = find_instr_def(mnem, saved_mlen, want_fmt);
 
             if (instr_idx < 0) {
-                __write(2, "tas: unknown instruction: ", 26);
+                __write(2, "toyas: unknown instruction: ", 26);
                 __write(2, mnem, saved_mlen < 10 ? saved_mlen : 10);
                 __write(2, "\n", 1);
                 line = ln_end + 1;
@@ -1116,7 +1116,7 @@ int tas_assemble(const char *src, int len) {
             if (encode_instr(instr_idx, has_op0 ? &op0 : NULL,
                              has_op1 ? &op1 : NULL,
                              label_ref, local_label) != 0) {
-                __write(2, "tas: encoding error: ", 21);
+                __write(2, "toyas: encoding error: ", 21);
                 __write(2, mnem, saved_mlen < 10 ? saved_mlen : 10);
                 __write(2, "\n", 1);
             }
@@ -1153,7 +1153,7 @@ int main(int argc, char *argv[]) {
     }
 
     if (!in_path) {
-        __write(2, "usage: tas input.S [-o output.o]\n", 33);
+        __write(2, "usage: toyas input.S [-o output.o]\n", 33);
         return 1;
     }
     if (!out_path) out_path = "tas_out.o";
@@ -1161,7 +1161,7 @@ int main(int argc, char *argv[]) {
     /* 读文件 */
     int fd = __openat(AT_FDCWD, in_path, O_RDONLY, 0);
     if (fd < 0) {
-        __write(2, "tas: cannot open input file\n", 28);
+        __write(2, "toyas: cannot open input file\n", 28);
         return 1;
     }
 
@@ -1178,11 +1178,11 @@ int main(int argc, char *argv[]) {
 
     /* 写 .o 文件 */
     if (elf_write_object(out_path) != 0) {
-        __write(2, "tas: failed to write output\n", 28);
+        __write(2, "toyas: failed to write output\n", 28);
         return 1;
     }
 
-    __printf("tas: wrote %s (%d bytes code, %d symbols)\n",
+    __printf("toyas: wrote %s (%d bytes code, %d symbols)\n",
              out_path, elf_code_size, elf_sym_count);
     return 0;
 }

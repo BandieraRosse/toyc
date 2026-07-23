@@ -1,6 +1,6 @@
 // EXPECT: 0
 // static_inline.c — 测试 static inline 函数模式
-// 自举关键：tcc.h 大量使用 static inline 辅助函数
+// 自举关键：toyc.h 大量使用 static inline 辅助函数
 
 static inline int add(int a, int b) {
     return a + b;

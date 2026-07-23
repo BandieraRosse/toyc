@@ -7,13 +7,13 @@
 // Run:  /tmp/test_lex
 //
 // Self-host (future):
-//   build/tcc tcc/source/lex.c -o /tmp/tlex.o
+//   build/toyc toyc/source/lex.c -o /tmp/tlex.o
 //   ld -nostdlib -static -T ld.script /tmp/tlex.o -o /tmp/tlex
 //   /tmp/tlex
 //
 
 // ============================================================
-// Inlined from tcc_need.h — 基础类型、NULL
+// Inlined from toyc_need.h — 基础类型、NULL
 // ============================================================
 
 typedef unsigned long           size_t;
@@ -51,7 +51,7 @@ static inline long __syscall3(long n, long a1, long a2, long a3)
 // ============================================================
 
 // ============================================================
-// Inlined from tcc.h — Token / Lexer / 函数声明
+// Inlined from toyc.h — Token / Lexer / 函数声明
 // ============================================================
 
 typedef enum {
@@ -152,7 +152,7 @@ Token lexer_peek(Lexer *lx);
 
 /* 文件结束标志（非 EOF 宏，避免与 TOK_EOF 冲突）。
  * 直接使用字面值 (-1)，不依赖宏展开
- * （tcc 自编译时预处理器有展开 bug）。 */
+ * （toyc 自编译时预处理器有展开 bug）。 */
 
 typedef struct {
     const char *word;
@@ -801,7 +801,7 @@ static void print_section_result(void) {
 // 词法分析器测试用例
 // ============================================================
 
-/* 字符串长度辅助（替代 strlen，避免依赖 tcc_rt.c） */
+/* 字符串长度辅助（替代 strlen，避免依赖 toyc_rt.c） */
 static int slen(const char *s) {
     int n = 0;
     while (s[n]) n++;

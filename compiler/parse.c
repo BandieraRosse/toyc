@@ -26,7 +26,7 @@
  *   基本     id num string (expr)
  */
 
-#include "tcc.h"
+#include "toyc.h"
 
 /* lex.c 中的浮点字面量解析函数：将十进制浮点字符串解析为 IEEE 754 64 位位模式 */
 extern void parse_float_literal(const char *s, int len,
@@ -93,7 +93,7 @@ static int pvar_count;
 static void pvar_add_ex(const char *name, const char *tag, int is_float, int is_unsigned, int size) {
     if (name && *name) {
         if (pvar_count >= MAX_PVARS) {
-            __write(2, "tcc: too many local variables (parser)\n", 39);
+            __write(2, "toyc: too many local variables (parser)\n", 39);
             __exit(1); }
         /* 暂不实现变量重定义检测 */
         pvar_name[pvar_count] = name;
@@ -242,7 +242,7 @@ int enum_val_count;
 
 void register_enum_val(const char *name, int value) {
     if (enum_val_count >= MAX_ENUM_VALS) {
-        __write(2, "tcc: too many enum values\n", 26);
+        __write(2, "toyc: too many enum values\n", 26);
         __exit(1); }
     enum_vals[enum_val_count].name = name;
     enum_vals[enum_val_count].value = value;
@@ -280,7 +280,7 @@ StructType *find_struct_tag(const char *tag) {
 
 static int add_struct_tag(const char *tag, StructType *st) {
     if (tag_count >= MAX_TAGS) {
-        __write(2, "tcc: too many struct/union tags\n", 32);
+        __write(2, "toyc: too many struct/union tags\n", 32);
         __exit(1); }
     StructType *s = &tag_table[tag_count++];
     s->tag = tag;
@@ -2387,7 +2387,7 @@ AstNode *parse_compound_statement(Parser *p) {
                              * that trigger the ambiguity detector in ->/. member lookup. */
                             if (!find_struct_tag(tname)) {
                                 if (tag_count >= MAX_TAGS) {
-                                    __write(2, "tcc: too many struct/union tags\n", 32);
+                                    __write(2, "toyc: too many struct/union tags\n", 32);
                                     __exit(1); }
                                 StructType *st = &tag_table[tag_count++];
                                 st->tag = tname;
@@ -3154,7 +3154,7 @@ AstNode *parse_program(Parser *p) {
                         /* 注册 typedef 名到 tag_table（匿名 struct 用 typedef 名做 tag） */
                         if (!find_struct_tag(tname)) {
                             if (tag_count >= MAX_TAGS) {
-                                __write(2, "tcc: too many struct/union tags\n", 32);
+                                __write(2, "toyc: too many struct/union tags\n", 32);
                                 __exit(1); }
                             StructType *st = &tag_table[tag_count++];
                             st->tag = tname;

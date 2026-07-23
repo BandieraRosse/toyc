@@ -1,6 +1,6 @@
 // EXPECT: 0
 // SELF_CONTAINED
-// manyargs_variadic_macros.c — 验证 tcc 对以下特性的支持：
+// manyargs_variadic_macros.c — 验证 toyc 对以下特性的支持：
 //
 //   1. 超过6个参数的函数调用（x86-64 ABI：前6个走寄存器，第7+个走栈）
 //   2. 可变参数宏（__VA_ARGS__）与 GCC 扩展 ,##__VA_ARGS__
@@ -11,7 +11,7 @@
 //   2026-07-05 修复了栈参数压入顺序（正序->逆序）。
 // 本文件综合验证以上修复。
 //
-// 编译：build/tcc  compiler-tests/selfhost/10_manyargs_variadic_macros.c  -o /tmp/10.o
+// 编译：build/toyc  compiler-tests/selfhost/10_manyargs_variadic_macros.c  -o /tmp/10.o
 // 链接：ld -nostdlib -static -T ld.script /tmp/10.o -o /tmp/10
 // 运行：/tmp/10
 

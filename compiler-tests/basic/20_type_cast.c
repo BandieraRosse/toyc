@@ -1,6 +1,6 @@
 // EXPECT: 0
 // type_cast.c — 测试类型转换（显式和隐式）
-// 自举关键：tcc 源码中大量使用 (char *)arena + sizeof(Arena) 等类型转换
+// 自举关键：toyc 源码中大量使用 (char *)arena + sizeof(Arena) 等类型转换
 
 int main(void) {
     int i;

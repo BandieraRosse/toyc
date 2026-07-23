@@ -2,13 +2,13 @@
 // SELF_CONTAINED
 // unsigned_ops.c — 测试 unsigned 类型的比较、除法、右移位行为
 //
-// tcc 类型系统缺陷：不区分 signed/unsigned。
+// toyc 类型系统缺陷：不区分 signed/unsigned。
 // 本测试暴露三类错误：
 //   1) unsigned 比较（< > <= >=）使用了有符号比较指令
 //   2) unsigned 除法使用了有符号 idiv + cdq
 //   3) unsigned char/short 解引用使用了符号扩展 movsbl/movswl
 //
-// 编译：build/tcc  04_unsigned_ops.c -o /tmp/04_unsigned_ops.o
+// 编译：build/toyc  04_unsigned_ops.c -o /tmp/04_unsigned_ops.o
 // 链接：ld -nostdlib -static -T ld.script /tmp/04_unsigned_ops.o -o /tmp/04_unsigned_ops
 // 运行：/tmp/04_unsigned_ops
 
@@ -62,7 +62,7 @@ static void check(int cond, const char *msg) {
 }
 
 // ─── 测试 1: unsigned int 比较 ───
-// tcc 当前对有符号/无符号一视同仁，对 0x80000000u > 0
+// toyc 当前对有符号/无符号一视同仁，对 0x80000000u > 0
 // 使用 setg（有符号大于）而非 seta（无符号大于）。
 // 0x80000000 在 signed int 中是 -2147483648，所以
 // setg 判定 -2147483648 > 0 为假 → 错误！
@@ -108,7 +108,7 @@ static void test_unsigned_long_cmp(void) {
 }
 
 // ─── 测试 3: unsigned int 除法 ───
-// tcc 使用 idiv（有符号除法）+ cdq（符号扩展）而非
+// toyc 使用 idiv（有符号除法）+ cdq（符号扩展）而非
 // div（无符号）+ xor edx,edx（零扩展），因此高位设 1 的值
 // 在除法中会先被符号扩展为负值，导致错误结果。
 static void test_unsigned_div(void) {
@@ -127,7 +127,7 @@ static void test_unsigned_div(void) {
 }
 
 // ─── 测试 4: unsigned char 解引用 ───
-// tcc 对 unsigned char* 的 *p 使用 movsbl（符号扩展字节加载），
+// toyc 对 unsigned char* 的 *p 使用 movsbl（符号扩展字节加载），
 // 这会将 0x80 扩展为 0xFFFFFF80（-128），而非 0x00000080（128）。
 // 正确行为是使用 movzbl（零扩展字节加载）。
 static void test_unsigned_deref(void) {
@@ -165,7 +165,7 @@ static void test_unsigned_long_div(void) {
 
 // ─── 测试 6: unsigned 右移位 ───
 // unsigned >> 应使用 shr（逻辑右移），将高位补 0。
-// 如果 tcc 因为修复 signed 移位而把 unsigned 也改成 sar，
+// 如果 toyc 因为修复 signed 移位而把 unsigned 也改成 sar，
 // 最高位为 1 的值移位后会得到错误结果。
 static void test_unsigned_rshift(void) {
     unsigned int x = 0x80000000u;
@@ -219,7 +219,7 @@ static void run_tests(void) {
     }
 
     // Exit with failure count (avoid returning from main to work
-    // around a tcc codegen issue with function epilogue)
+    // around a toyc codegen issue with function epilogue)
     sys_exit(failures);
 }
 

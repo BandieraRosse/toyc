@@ -1,5 +1,5 @@
 // EXPECT: 0
-// basic.c — 变量、算术、for/if/while（如 tcc.c 主循环）
+// basic.c — 变量、算术、for/if/while（如 toyc.c 主循环）
 int main(void) {
     int i, sum = 0;
     for (i = 0; i < 10; i = i + 1)

@@ -7,12 +7,12 @@
 // Run:  /tmp/test_elf_write
 //
 // Self-host (future):
-//   build/tcc compiler-tests/source/test_elf_write.c -o /tmp/tew.o
+//   build/toyc compiler-tests/source/test_elf_write.c -o /tmp/tew.o
 //   ld -nostdlib -static -T ld.script /tmp/tew.o -o /tmp/tew
 //   /tmp/tew
 
 // ============================================================
-// Inlined from tcc_need.h — 基础类型 / syscall 宏 / 常量
+// Inlined from toyc_need.h — 基础类型 / syscall 宏 / 常量
 // ============================================================
 
 typedef unsigned long           size_t;
@@ -134,7 +134,7 @@ int elf_rel_count;
 int elf_bss_size;
 
 // ============================================================
-// 运行时 stub — 替代 tcc_rt.c 的功能
+// 运行时 stub — 替代 toyc_rt.c 的功能
 // ============================================================
 
 static void __sys_exit(int code) {

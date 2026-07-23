@@ -1,8 +1,8 @@
 // EXPECT: 0
 // SELF_CONTAINED
-// syscall_macros.c — 完整验证 tcc_need.h 中所有系统调用宏与内联汇编
+// syscall_macros.c — 完整验证 toyc_need.h 中所有系统调用宏与内联汇编
 //
-// 本文件完整包含 tcc_need.h 的 syscall 宏体系：
+// 本文件完整包含 toyc_need.h 的 syscall 宏体系：
 //   - __syscall0 ~ __syscall6 七个内联汇编函数
 //   - __scc() 指针→long 类型转换宏
 //   - 七个同名参数包装宏（自动 __scc 转换）
@@ -10,7 +10,7 @@
 //   - __SYSCALL_CONCAT / __SYSCALL_DISP 派发机制
 //   - __syscall / syscall 统一入口宏
 //
-// 注意：tcc 预处理器的已知限制——在"宏与函数同名"模式下（即包装宏展开
+// 注意：toyc 预处理器的已知限制——在"宏与函数同名"模式下（即包装宏展开
 // 时禁用自身重展开），其内部的其他函数式宏（如 __scc）在重扫描阶段不
 // 会展开。因此包装宏中使用 ((long)(a)) 直接展开，而非通过 __scc(a)。
 // __scc 宏本身定义完整保留，并在测试中单独验证。
@@ -23,12 +23,12 @@
 //
 // 选择的系统调用均无副作用（出错返回负值，不修改全局状态）。
 //
-// 编译：build/tcc  08_syscall_macros.c -o /tmp/08_syscall_macros.o
+// 编译：build/toyc  08_syscall_macros.c -o /tmp/08_syscall_macros.o
 // 链接：ld -nostdlib -static -T ld.script /tmp/08_syscall_macros.o -o /tmp/08_syscall_macros
 // 运行：/tmp/08_syscall_macros
 
 /* ═══════════════════════════════════════════════════════════════
- *  系统调用号（来自 tcc_need.h）
+ *  系统调用号（来自 toyc_need.h）
  * ═══════════════════════════════════════════════════════════════ */
 
 #define SYS_read        0
@@ -44,7 +44,7 @@
 #define SYS_renameat2   316
 
 /* ═══════════════════════════════════════════════════════════════
- *  系统调用内联汇编 — 完全来自 tcc_need.h
+ *  系统调用内联汇编 — 完全来自 toyc_need.h
  *
  *  使用 syscall 指令，参数 4 走 r10（不是 rcx，因为 syscall 会破坏 rcx）。
  *  通过 __SYSCALL_NARGS 计数宏自动派发到 __syscall0-6。
@@ -120,7 +120,7 @@ static inline long __syscall6(long n, long a1, long a2, long a3, long a4, long a
 #define __scc(X) ((long)(X))
 
 /*
- * 注意：tcc 预处理器不支持在"宏与函数同名"（即包装宏展开时自身被禁用）
+ * 注意：toyc 预处理器不支持在"宏与函数同名"（即包装宏展开时自身被禁用）
  * 的重扫描阶段展开其他函数式宏。因此 __scc 在此处包装宏中直接以内联
  * 转型 `((long)(a))` 书写，而非通过 __scc(a) 间接调用。
  *
@@ -157,7 +157,7 @@ static inline long __syscall6(long n, long a1, long a2, long a3, long a4, long a
  */
 
 /* ═══════════════════════════════════════════════════════════════
- *  常量（来自 tcc_need.h，用于系统调用参数）
+ *  常量（来自 toyc_need.h，用于系统调用参数）
  * ═══════════════════════════════════════════════════════════════ */
 
 #define AT_FDCWD    (-100)
@@ -268,7 +268,7 @@ static void assert_fail(const char *msg) {
 static void test_macro_basics(void) {
     test_start("__scc macro and basic constants");
 
-    /* __scc 展开验证（非"宏与函数同名"上下文，tcc 正常处理） */
+    /* __scc 展开验证（非"宏与函数同名"上下文，toyc 正常处理） */
     long x = __scc((void *)0x1234);
     CHECK(x == 0x1234, "__scc((void*)0x1234) == 0x1234");
 

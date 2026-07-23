@@ -5,7 +5,7 @@
 // 背景：
 //   03_many_printf_args.c 因 ≥7 参数传参 bug 限制每个 my_printf 调用最多 5 个
 //   变参。该 bug（commit 2a3e5e9）及后续 r8/r9 REX 前缀/栈参数顺序 bug
-//   （commit f841f69）已在 tcc 中修复。本测试全面验证修复后的效果。
+//   （commit f841f69）已在 toyc 中修复。本测试全面验证修复后的效果。
 //
 // 测试内容：
 //   Part 1: 格式说明符正确性 — %s %d %i %c %x %X %% 各格式独立测试
@@ -71,12 +71,12 @@ static void print_hex(unsigned long n) {
 }
 
 /* ============================================================
- *  my_printf — 完全匹配 tcc_rt.c 中 __printf 的实现
+ *  my_printf — 完全匹配 toyc_rt.c 中 __printf 的实现
  *
  *  支持的格式子集：%s %d %i %c %x %X %%
  *
  *  注意：在自举测试中，%x 的实现使用 (unsigned long) 转换。
- *  与 tcc_rt.c 版本的唯一差异：函数名和 __write→sys_write。
+ *  与 toyc_rt.c 版本的唯一差异：函数名和 __write→sys_write。
  * ============================================================ */
 
 static void my_printf(const char *fmt, ...)

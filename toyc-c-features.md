@@ -1,6 +1,6 @@
-# tcc  — C 语言功能支持清单
+# toyc  — C 语言功能支持清单
 
-> 基于 `compiler/tcc` 源码分析，测试套件 `compiler-tests/` 验证。
+> 基于 `compiler/toyc` 源码分析，测试套件 `compiler-tests/` 验证。
 > 更新日期：2026-07-11
 
 ## 图例
@@ -310,7 +310,7 @@
 | 特性 | 状态 | 说明 |
 |------|------|------|
 | ELF64 .o 输出 | ✅ | |
-| 静态链接 (tld) | ✅ | 自链接已验证 |
+| 静态链接 (toyld) | ✅ | 自链接已验证 |
 | 无 libc 运行时 | ✅ | 纯 syscall |
 | syscall0–syscall6 | ✅ | 内联汇编 |
 | 自包含 `_start` → main → exit | ✅ | |

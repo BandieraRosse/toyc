@@ -4,7 +4,7 @@
  */
 
 /*
- * elf_write.h — ELF64 可重定位目标文件写入器（tcc/tas 共享）
+ * elf_write.h — ELF64 可重定位目标文件写入器（toyc/toyas 共享）
  *
  * 调用者填充全局缓冲区（code/syms/rels），然后调用 elf_write_object()。
  */
@@ -12,7 +12,7 @@
 #ifndef ELF_WRITE_H
 #define ELF_WRITE_H
 
-#include "elf.h"     /* 通过 elf.h → tcc_need.h 获得所有基础类型 */
+#include "elf.h"     /* 通过 elf.h → toyc_need.h 获得所有基础类型 */
 
 /* ─── 符号描述符 ─── */
 

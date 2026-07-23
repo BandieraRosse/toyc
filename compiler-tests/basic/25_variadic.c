@@ -1,6 +1,6 @@
 // EXPECT: 0
 // variadic.c — 测试变参函数和 __builtin_va_* 支持
-// 自举关键：tcc_rt.c 的 __printf 使用 __builtin_va_*
+// 自举关键：toyc_rt.c 的 __printf 使用 __builtin_va_*
 
 static int sum_count(int count, ...) {
     __builtin_va_list ap;

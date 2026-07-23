@@ -1,8 +1,8 @@
 // EXPECT: 0
 // string_init.c — 测试字符串初始化和指针访问模式
-// 自举关键：tcc.c 的 buf[size + 2]、parse.c 的字符串解码
+// 自举关键：toyc.c 的 buf[size + 2]、parse.c 的字符串解码
 //
-// 注意：tcc 暂不支持 char buf[] = "str" 复制初始化（只存指针），
+// 注意：toyc 暂不支持 char buf[] = "str" 复制初始化（只存指针），
 //       所以测试改用指针 + 定长数组模式。
 
 int main(void) {

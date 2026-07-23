@@ -1,5 +1,5 @@
 // EXPECT: 0
-// pointers.c — 取地址/解引用、指针参数遍历数组（如 tcc.c read_file、cgen.c）
+// pointers.c — 取地址/解引用、指针参数遍历数组（如 toyc.c read_file、cgen.c）
 static int sum_array(int *arr, int n) {
     int i, s = 0;
     for (i = 0; i < n; i = i + 1) s = s + arr[i];

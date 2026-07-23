@@ -2,7 +2,7 @@
 // SELF_CONTAINED
 // macro_const_sign.c — 验证宏常量/整数常量的符号扩展正确性
 //
-// 测试 tcc 对 unsigned 后缀（u/ul）的跟踪和符号扩展行为。
+// 测试 toyc 对 unsigned 后缀（u/ul）的跟踪和符号扩展行为。
 // 已知问题：lexer 的 read_number() 消耗了 U/UL 后缀但不设置 is_unsigned，
 // 解析器用启发式 t.ival > 2147483647L 判断 unsigned，导致：
 //   1) U 后缀的值在 [0, 2^31] 内被误判为 signed

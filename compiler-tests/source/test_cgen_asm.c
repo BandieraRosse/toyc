@@ -7,7 +7,7 @@
 // Run:  /tmp/test_cgen_asm
 
 // ============================================================
-// Inlined from tcc_need.h — 最小类型
+// Inlined from toyc_need.h — 最小类型
 // ============================================================
 
 typedef unsigned long size_t;
@@ -26,7 +26,7 @@ static void sys_exit(int code) {
 }
 
 // ============================================================
-// Inlined from tcc.h — AstKind / AstNode / AsmOperand / LocalVar
+// Inlined from toyc.h — AstKind / AstNode / AsmOperand / LocalVar
 // ============================================================
 
 #define CODE_BUF_SIZE  262144
@@ -93,7 +93,7 @@ unsigned char code_buf[CODE_BUF_SIZE];
 int code_size;
 
 // ============================================================
-// 内联辅助函数（来自 tcc.h）
+// 内联辅助函数（来自 toyc.h）
 // ============================================================
 
 static void e1(int b) {
@@ -202,7 +202,7 @@ void cgen_asm(AstNode *node) {
         e4(0);
     } else if (str_contains(t, "ecall")) {
     } else {
-        __printf("tcc: unknown inline asm template: \"%s\"\n", t);
+        __printf("toyc: unknown inline asm template: \"%s\"\n", t);
         return;
     }
     for (i = 0; i < node->asm_.output_count; i++) {

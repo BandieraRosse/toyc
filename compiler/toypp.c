@@ -4,24 +4,24 @@
  */
 
 /*
- * tpp — Tinylibc 独立预处理器
+ * toypp — ToyC 独立预处理器
  *
  * 机制：读取 C 源文件，调用 preprocess() 做宏展开、头文件包含、条件编译，
  *       输出预处理后的文本。可独立于编译器使用，用于调试预处理结果。
  * 系统调用：openat, lseek, read, write, close
  *
  * 用法：
- *   tpp input.c output.i     # 预处理 input.c，输出到 output.i
+ *   toypp input.c output.i     # 预处理 input.c，输出到 output.i
  *
  * 索引：
  *   main            入口：读文件 → preprocess → 写结果
  */
 
-#include "tcc.h"
+#include "toyc.h"
 
 int main(int argc, char *argv[]) {
     if (argc < 3) {
-        __write(2, "用法: tpp <输入.c> <输出.i>\n", 34);
+        __write(2, "用法: toypp <输入.c> <输出.i>\n", 34);
         return 1;
     }
     add_include_path(".");
@@ -49,7 +49,7 @@ int main(int argc, char *argv[]) {
         }
     }
     if (!input || !output) {
-        __write(2, "用法: tpp <输入.c> <输出.i>\n", 34);
+        __write(2, "用法: toypp <输入.c> <输出.i>\n", 34);
         return 1;
     }
 
