@@ -96,6 +96,8 @@ typedef enum {
     TOK__BUILTIN_VA_START,
     TOK__BUILTIN_VA_ARG,
     TOK__BUILTIN_VA_END,
+    TOK__BUILTIN_HUGE_VAL,
+    TOK__BUILTIN_HUGE_VALF,
 
     /* 标识符和字面量 */
     TOK_IDENT,

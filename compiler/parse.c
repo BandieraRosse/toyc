@@ -635,6 +635,19 @@ static AstNode *parse_primary(Parser *p) {
         return n;
     }
 
+    /* __builtin_huge_val() / __builtin_huge_valf() → double/float 正无穷常量 */
+    if (t.kind == TOK__BUILTIN_HUGE_VAL || t.kind == TOK__BUILTIN_HUGE_VALF) {
+        consume(p);
+        expect(p, TOK_LPAREN);
+        expect(p, TOK_RPAREN);
+        AstNode *n = new_ast(p, AST_CONSTANT);
+        n->is_float = (t.kind == TOK__BUILTIN_HUGE_VAL) ? 8 : 4;
+        n->type_size = n->is_float;
+        n->name = NULL;  /* NULL → 代码生成时使用预计算位模式 */
+        n->ival = 0x7FF0000000000000LL;  /* double 正无穷 IEEE 754 位模式 */
+        return n;
+    }
+
     if (t.kind == TOK_IDENT ||
         t.kind == TOK__BUILTIN_VA_START || t.kind == TOK__BUILTIN_VA_ARG ||
         t.kind == TOK__BUILTIN_VA_END || t.kind == TOK__BUILTIN_VA_LIST ||

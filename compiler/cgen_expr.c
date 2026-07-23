@@ -385,10 +385,16 @@ void cgen_expr(AstNode *node) {
 
     case AST_CONSTANT:
         if (node->is_float) {
-            /* 在代码生成时用纯 32 位整数运算解析浮点字面量，
-             * 避免 tcc 的 double 算术 bug 和 struct 字段偏移 bug。 */
             unsigned int lo, hi;
-            parse_float_literal(node->name, (int)node->ival, &lo, &hi);
+            if (node->name == NULL) {
+                /* __builtin_huge_val / __builtin_huge_valf：使用预计算位模式 */
+                hi = (unsigned int)(node->ival >> 32);
+                lo = (unsigned int)(node->ival);
+            } else {
+                /* 在代码生成时用纯 32 位整数运算解析浮点字面量，
+                 * 避免 tcc 的 double 算术 bug 和 struct 字段偏移 bug。 */
+                parse_float_literal(node->name, (int)node->ival, &lo, &hi);
+            }
             load_double_bits_halves(hi, lo);
             /* 对 float (32-bit) 字面量：将 double 位模式转换为 float */
             if (node->type_size == 4) {

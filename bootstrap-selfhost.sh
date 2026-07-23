@@ -56,7 +56,7 @@ printf "${BLUE}=== [2/3] 构建 stage-2 tcc（seed tcc 编译自身 → ${BUILD}
 
 # 需要编译的 C 源文件（只编译 tcc 本身所需的模块；tpp 和 tas 是独立工具，
 # 它们有自己的 main() 和重复符号，不能混入同一个链接。）
-STAGE2_C_FILES="${SRC}/tcc.c ${SRC}/lex.c ${SRC}/parse.c ${SRC}/preproc.c ${SRC}/cgen.c ${SRC}/cgen_expr.c ${SRC}/cgen_asm.c ${SRC}/elf_write.c ${SRC}/tcc_rt.c"
+STAGE2_C_FILES="${SRC}/tcc.c ${SRC}/lex.c ${SRC}/parse.c ${SRC}/preproc.c ${SRC}/cgen.c ${SRC}/cgen_expr.c ${SRC}/cgen_float_hack.c ${SRC}/cgen_asm.c ${SRC}/elf_write.c ${SRC}/tcc_rt.c"
 
 # 用种子 tcc 编译每个 C 源文件
 COMPILE_FAILED=0
@@ -91,7 +91,7 @@ fi
 
 # 链接 stage-2 tcc
 printf "\n  链接 stage-2 tcc ... "
-STAGE2_OBJS="${STAGE2_DIR}/tcc.o ${STAGE2_DIR}/lex.o ${STAGE2_DIR}/parse.o ${STAGE2_DIR}/preproc.o ${STAGE2_DIR}/cgen.o ${STAGE2_DIR}/cgen_expr.o ${STAGE2_DIR}/cgen_asm.o ${STAGE2_DIR}/elf_write.o ${STAGE2_DIR}/tcc_rt.o ${STAGE2_DIR}/tcc_rt_start.o"
+STAGE2_OBJS="${STAGE2_DIR}/tcc.o ${STAGE2_DIR}/lex.o ${STAGE2_DIR}/parse.o ${STAGE2_DIR}/preproc.o ${STAGE2_DIR}/cgen.o ${STAGE2_DIR}/cgen_expr.o ${STAGE2_DIR}/cgen_float_hack.o ${STAGE2_DIR}/cgen_asm.o ${STAGE2_DIR}/elf_write.o ${STAGE2_DIR}/tcc_rt.o ${STAGE2_DIR}/tcc_rt_start.o"
 
 if ${LD} ${LDFLAGS} ${STAGE2_OBJS} -o "${BUILD}/tcc-stage2" 2>"${TMP}/stage2_link.log"; then
     printf "${GREEN}ok${RESET} → ${BUILD}/tcc-stage2\n"

@@ -34,6 +34,8 @@ typedef struct {
 static Keyword keywords[] = {
     {"__asm__",                   TOK__ASM__},
     {"__attribute__",             TOK__ATTRIBUTE__},
+    {"__builtin_huge_val",        TOK__BUILTIN_HUGE_VAL},
+    {"__builtin_huge_valf",       TOK__BUILTIN_HUGE_VALF},
     {"__builtin_va_arg",          TOK__BUILTIN_VA_ARG},
     {"__builtin_va_end",          TOK__BUILTIN_VA_END},
     {"__builtin_va_list",         TOK__BUILTIN_VA_LIST},

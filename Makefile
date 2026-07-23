@@ -257,7 +257,7 @@ test-all: test test-selfhost test-source test-lib test-tld test-error test-tar t
 TINYLIBC_DIR   := ../Tinylibc
 LIBT_OBJDIR    := /tmp/libt_obj
 
-# override 放首位以遮蔽 tcc 不兼容头（如 __builtin_huge_val）
+# -Icompiler-tests/lib/override 保留空目录以备后续遮蔽需要
 TINYLIBC_CFLAGS := -Icompiler-tests/lib/override \
                    -I$(TINYLIBC_DIR)/include \
                    -I$(TINYLIBC_DIR)/include/posix \
