@@ -519,6 +519,7 @@ void cgen_expr(AstNode *node) {
                     load_eax_from_rbp(locals[i].offset);
                     cvti2d();
                 } else {
+                    int orig_ts = node->type_size;  /* 保存转型设置的类型大小（如有） */
                     node->type_size = locals[i].size;
                     node->is_unsigned = locals[i].is_unsigned;
                     if (locals[i].size == 8)
@@ -554,6 +555,13 @@ void cgen_expr(AstNode *node) {
                     }
                     else
                         load_eax_from_rbp(locals[i].offset);
+                    /* 有符号窄变量被转型为更宽类型时补符号扩展（如 (long)int_var）
+                     * 对于有符号类型，32-bit 加载仅零扩展到 64-bit，但 cast 要求符号扩展。
+                     * 例：int n = -42; (long)n → 需从 0xFFFFFFD6 扩展为 0xFFFFFFFFFFFFFFD6 */
+                    if (orig_ts > locals[i].size && orig_ts == 8 && !locals[i].is_unsigned) {
+                        e1(0x48); e1(0x63); e1(0xC0);  /* movsxd rax, eax */
+                        node->type_size = orig_ts;     /* 恢复类型宽度，反映实际值宽度 */
+                    }
                 }
                 return;
         }
