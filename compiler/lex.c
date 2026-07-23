@@ -181,14 +181,17 @@ void u64_mul10(unsigned int *hi, unsigned int *lo) {
 }
 
 unsigned int u64_div10(unsigned int *hi, unsigned int *lo) {
-    unsigned int h = *hi;
-    unsigned int q_hi = 0;
-    while (h >= 10) { h -= 10; q_hi++; }
-    unsigned int r_hi = h;
-    unsigned int r_lo = r_hi * 6 + (*lo % 10);
-    unsigned int q_lo = *lo / 10 + r_lo / 10;
-    *hi = q_hi; *lo = q_lo;
-    return r_lo % 10;
+    /* (hi * 2^32 + lo) / 10 = (hi/10) * 2^32 + (hi%10) * 429496729 + (hi%10 * 6 + lo) / 10
+     * 其中 2^32 = 10 * 429496729 + 6 */
+    unsigned int old_lo = *lo;
+    unsigned int q_hi = *hi / 10;
+    unsigned int r_hi = *hi % 10;
+    unsigned int extra = old_lo / 10 + (r_hi * 6 + old_lo % 10) / 10;
+    unsigned int q_lo = r_hi * 429496729U + extra;
+    unsigned int carry = (q_lo < r_hi * 429496729U) ? 1 : 0;
+    *hi = q_hi + carry;
+    *lo = q_lo;
+    return (r_hi * 6 + old_lo % 10) % 10;
 }
 
 void u64_add_digit(unsigned int *hi, unsigned int *lo, unsigned int d) {
@@ -211,7 +214,7 @@ void parse_float_literal(const char *s, int len,
     unsigned int m_lo = 0, m_hi = 0;
     int total_digits = 0;
     int seen_dot = 0;
-    int frac_digits = 0;
+    int int_digits = 0;            /* 整数部分位数（小数点前的位数） */
 
     while (i < len) {
         if (s[i] >= '0' && s[i] <= '9') {
@@ -220,7 +223,7 @@ void parse_float_literal(const char *s, int len,
                 u64_add_digit(&m_hi, &m_lo, (unsigned)(s[i] - '0'));
                 total_digits++;
             }
-            if (seen_dot) frac_digits++;
+            if (!seen_dot) int_digits++;
             i++;
         } else if (s[i] == '.') { seen_dot = 1; i++; }
         else { break; }
@@ -236,7 +239,11 @@ void parse_float_literal(const char *s, int len,
         }
     }
 
-    int exp_total = exp10 * exp_sign - frac_digits;
+    int frac_in_m = total_digits - int_digits;
+    if (frac_in_m < 0) { frac_in_m = 0; }
+    /* 当整数部分超过 18 位限制时，补偿被截断的高位 */
+    int int_excess = (int_digits > total_digits) ? (int_digits - total_digits) : 0;
+    int exp_total = exp10 * exp_sign - frac_in_m + int_excess;
     if (total_digits == 0 || (m_hi == 0 && m_lo == 0)) {
         *out_lo = 0; *out_hi = sign_flag ? 0x80000000U : 0; return;
     }
