@@ -525,8 +525,13 @@ static void cgen_for(AstNode *stmt) {
                                 else
                                     { e1(0xF2); e1(0x0F); e1(0x2A); e1(0xC0); }
                             }
-                            emit1(0xF2); emit1(0x0F); emit1(0x11);
-                            emit1(0x45); emit1(locals[i].offset & 0xFF);
+                            if (disp8_fits(locals[i].offset)) {
+                                emit1(0xF2); emit1(0x0F); emit1(0x11);
+                                emit1(0x45); emit1(locals[i].offset & 0xFF);
+                            } else {
+                                emit1(0xF2); emit1(0x0F); emit1(0x11);
+                                emit1(0x85); e4(locals[i].offset);
+                            }
                         } else if (locals[i].size > 8) {
                             /* 大结构体赋值 */
                             e1(0x48); e1(0x89); e1(0xC6);  /* mov rsi, rax */
@@ -816,8 +821,13 @@ static void cgen_stmt(AstNode *stmt) {
                                 else
                                     { e1(0xF2); e1(0x0F); e1(0x2A); e1(0xC0); }  /* cvtsi2sd */
                             }
-                            emit1(0xF2); emit1(0x0F); emit1(0x11);
-                            emit1(0x45); emit1(locals[i].offset & 0xFF);
+                            if (disp8_fits(locals[i].offset)) {
+                                emit1(0xF2); emit1(0x0F); emit1(0x11);
+                                emit1(0x45); emit1(locals[i].offset & 0xFF);
+                            } else {
+                                emit1(0xF2); emit1(0x0F); emit1(0x11);
+                                emit1(0x85); e4(locals[i].offset);
+                            }
                         } else if (stmt->expr && stmt->expr->is_float) {
                             /* float→int 转换：int var = float_expr */
                             if (stmt->expr->is_float == 4)
@@ -996,9 +1006,15 @@ static void cgen_func_def(AstNode *func) {
                         if (locals[i].is_float) {
                             /* 保存 xmm 寄存器: movsd [rbp+off], xmmN */
                             if (float_reg < 8) {
-                                e1(0xF2); e1(0x0F); e1(0x11);
-                                e1(0x45 | ((float_reg & 7) << 3));
-                                e1(locals[i].offset & 0xFF);
+                                if (disp8_fits(locals[i].offset)) {
+                                    e1(0xF2); e1(0x0F); e1(0x11);
+                                    e1(0x45 | ((float_reg & 7) << 3));
+                                    e1(locals[i].offset & 0xFF);
+                                } else {
+                                    e1(0xF2); e1(0x0F); e1(0x11);
+                                    e1(0x85 | ((float_reg & 7) << 3));
+                                    e4(locals[i].offset);
+                                }
                             }
                             float_reg++;
                         } else {

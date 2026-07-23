@@ -55,12 +55,21 @@ static void lea_from_rbp(int offset) {
 /* load_double_bits_halves() 在 cgen_float_hack.c 中实现 */
 extern void load_double_bits_halves(unsigned int hi, unsigned int lo);
 
-static void load_double_from_rbp(int disp8) {
-    e1(0xF2); e1(0x0F); e1(0x10); e1(0x45); e1(disp8 & 0xFF);
+/* movsd xmm0, [rbp+off] / movsd [rbp+off], xmm0 — 自动选择 disp8/disp32 */
+static void load_double_from_rbp(int off) {
+    if (disp8_fits(off)) {
+        e1(0xF2); e1(0x0F); e1(0x10); e1(0x45); e1(off & 0xFF);
+    } else {
+        e1(0xF2); e1(0x0F); e1(0x10); e1(0x85); e4(off);
+    }
 }
 
-static void store_double_to_rbp(int disp8) {
-    e1(0xF2); e1(0x0F); e1(0x11); e1(0x45); e1(disp8 & 0xFF);
+static void store_double_to_rbp(int off) {
+    if (disp8_fits(off)) {
+        e1(0xF2); e1(0x0F); e1(0x11); e1(0x45); e1(off & 0xFF);
+    } else {
+        e1(0xF2); e1(0x0F); e1(0x11); e1(0x85); e4(off);
+    }
 }
 
 static void push_xmm0(void) {

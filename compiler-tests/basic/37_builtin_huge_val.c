@@ -12,35 +12,18 @@
  *   float (32-bit):  [1 sign][8 exponent][23 mantissa]
  *     +inff: sign=0, exponent=0xFF, mantissa=0
  *
+ * 注意：所有测试写在同一函数 main 中，以验证 tcc 在大量
+ * float/double 局部变量（超过 128 字节栈帧）时的内存访问正确性。
+ *
  * EXPECT: 0
  */
 
-/* 取 double 位模式下标 32-63（高位） */
 static int exp_bits_double(unsigned long bits) {
     return (int)((bits >> 52) & 0x7FFUL);
 }
 
-/* 取 float 位模式下标 23-30（指数） */
 static int exp_bits_float(unsigned int bits) {
     return (int)((bits >> 23) & 0xFFU);
-}
-
-/* 将 float 的指数校验和尾数全零校验封装在独立函数中，
- * 避免 tcc 局部变量分配时的 float 相互作用。 */
-static int test_float_return(void) {
-    float a = __builtin_huge_valf();
-    float b = __builtin_huge_valf();
-    if (a != b) return 13;
-    return 0;
-}
-
-static int test_float_assign(void) {
-    float rv8 = __builtin_huge_valf();
-    float x = rv8;
-    unsigned int *q = (unsigned int *)&x;
-    if (((*q >> 23) & 0xFFU) != 0xFFU) return 17;
-    if ((*q & ((1U << 23) - 1)) != 0) return 18;
-    return 0;
 }
 
 int main(void) {
@@ -49,14 +32,10 @@ int main(void) {
         double inf = __builtin_huge_val();
         unsigned long *p = (unsigned long *)&inf;
 
-        /* sign = 0（正数）*/
         if (inf < 0.0) return 1;
-        if (inf > 0.0) ; else return 2;  /* 必须是正数 */
+        if (inf > 0.0) ; else return 2;
 
-        /* exponent = 0x7FF（全 1 → 无穷大/NaN）*/
         if (exp_bits_double(*p) != 0x7FF) return 3;
-
-        /* mantissa = 0（无穷大，非 NaN）*/
         if ((*p & ((1UL << 52) - 1)) != 0) return 4;
     }
 
@@ -65,13 +44,8 @@ int main(void) {
         float valf = __builtin_huge_valf();
         unsigned int *p = (unsigned int *)&valf;
 
-        /* sign = 0 */
         if (valf < 0.0f) return 5;
-
-        /* exponent = 0xFF（全 1）*/
         if (exp_bits_float(*p) != 0xFF) return 6;
-
-        /* mantissa = 0 */
         if ((*p & ((1U << 23) - 1)) != 0) return 7;
     }
 
@@ -81,13 +55,8 @@ int main(void) {
         double neg = -inf;
         unsigned long *p = (unsigned long *)&neg;
 
-        /* sign 必须为 1 */
         if (*p >> 63) ; else return 8;
-
-        /* exponent 仍为全 1 */
         if (exp_bits_double(*p) != 0x7FF) return 9;
-
-        /* 负无穷大比较 */
         if (neg < 0.0) ; else return 10;
     }
 
@@ -97,29 +66,26 @@ int main(void) {
         double b = __builtin_huge_val();
 
         if (a != b) return 11;
-        if (a == a) ; else return 12;  /* inf == inf */
+        if (a == a) ; else return 12;
     }
 
-    /* ─── Test 5: float 自等性（独立函数）─── */
+    /* ─── Test 5: float 自等性（多个 float 局部变量）─── */
     {
-        int r = test_float_return();
-        if (r) return r;
+        float a = __builtin_huge_valf();
+        float b = __builtin_huge_valf();
+        if (a != b) return 13;
     }
 
-    /* ─── Test 6: inf > DBL_MAX（无穷大大于任何有限双精度）─ */
+    /* ─── Test 6: inf > DBL_MAX ─── */
     {
         double inf = __builtin_huge_val();
         double huge = 1.7976931348623157e+308;
-
         if (!(inf > huge)) return 14;
     }
 
-    /* ─── Test 7: inf 函数参数传递 ─── */
+    /* ─── Test 7: double 赋值传递 ─── */
     {
         double rv7 = __builtin_huge_val();
-        unsigned long *p = (unsigned long *)&rv7;
-
-        /* 通过赋值传递后检查位模式是否保持 */
         {
             double x = rv7;
             unsigned long *q = (unsigned long *)&x;
@@ -128,10 +94,16 @@ int main(void) {
         }
     }
 
-    /* ─── Test 8: float 赋值传递（独立函数）─── */
+    /* ─── Test 8: float 赋值传递（和上面大量 float/double
+     * 变量共存，验证栈偏移超过 disp8 范围时的正确性）─── */
     {
-        int r = test_float_assign();
-        if (r) return r;
+        float rv8 = __builtin_huge_valf();
+        {
+            float x = rv8;
+            unsigned int *q = (unsigned int *)&x;
+            if (((*q >> 23) & 0xFFU) != 0xFFU) return 17;
+            if ((*q & ((1U << 23) - 1)) != 0) return 18;
+        }
     }
 
     return 0;
