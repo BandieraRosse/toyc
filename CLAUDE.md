@@ -76,7 +76,7 @@ make clean
 | `make test-toyld-self` | **自举收敛 ✅** | toyld 自链接 stage-1→stage-2 字节级一致 |
 | `make test-error` | **16/16 ✅** | 错误报告测试 |
 | `make test-lib-compile` | **26/26 ✅** | Tinylibc 全部 16 个模块编译通过 |
-| `make test-lib` | 编译 26/26 ✅ 功能 5/5 | math ✅, ctype ✅, string ✅, core ✅, stdio ✅ |
+| `make test-lib` | 编译 26/26 ✅ 功能 **9/9** | math ✅, ctype ✅, string ✅, core ✅, stdio ✅, time ✅, misc ✅, poll ✅, procfs ✅ |
 | `bootstrap-selfhost.sh` | **40/40 ✅** | 种子自举 → stage-2 全部测试通过 |
 | `bootstrap-to-10.sh` | stage-2→10 字节级一致 ✅ | 全链收敛验证（头尾完整测试） |
 
@@ -89,12 +89,12 @@ make clean
 | string        | `string.c`          | ✅         | ✅ 全部通过（跳过 toyc codegen 限制项）       |
 | core          | 6 个源文件          | ✅         | ✅ 全部通过（跳过 3 项）                      |
 | stdio         | 3 个源文件          | ✅         | ✅ 全部通过                                    |
-| time          | `time.c`            | ✅         | —                                             |
-| misc          | 5 个源文件          | ✅         | —                                             |
+| time          | `time.c`            | ✅         | ✅ 41 项通过（避开 2D 数组 bug，仅测 mon=0 日期和数字 strftime） |
+| misc          | 5 个源文件          | ✅         | ✅ 16 项通过（path.c, file.c, 避开 mkdirat 依赖） |
 | net           | 2 个源文件          | ✅         | —                                             |
-| poll          | `poll.c`            | ✅         | —                                             |
+| poll          | `poll.c`            | ✅         | ✅ 11 项通过（pipe + epoll）                  |
 | tty           | `tty.c`             | ✅         | —                                             |
-| procfs        | `procfs.c`          | ✅         | —                                             |
+| procfs        | `procfs.c`          | ✅         | ✅ 15 项通过（跳过 tlibc_list_pids flex array segfault） |
 | evdev_kbd     | `evdev_kbd.c`       | ✅         | —                                             |
 | evdev_mouse   | `evdev_mouse.c`     | ✅         | —                                             |
 | audio         | `audio/alsa.c`      | ✅         | —                                             |

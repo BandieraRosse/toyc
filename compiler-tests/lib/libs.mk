@@ -44,12 +44,14 @@ _TEST_stdio   := test_stdio
 
 # ── time — 时间函数 ───────────────────────────────────────────────
 _SRCS_time    := time.c
-_DEPS_time    := core
+_DEPS_time    := core stdio string ctype
+_TEST_time    := test_time
 
 # ── misc — 多样的工具函数 ─────────────────────────────────────────
 _SRCS_misc    := misc/assert.c misc/envp.c misc/file.c \
                  misc/path.c misc/system.c
-_DEPS_misc    := core
+_DEPS_misc    := core stdio string ctype
+_TEST_misc    := test_misc
 
 # ── net — 网络相关 ────────────────────────────────────────────────
 _SRCS_net     := net/socket.c net/dns.c
@@ -58,6 +60,7 @@ _DEPS_net     := core
 # ── poll — I/O 多路复用 ──────────────────────────────────────────
 _SRCS_poll    := poll.c
 _DEPS_poll    := core
+_TEST_poll    := test_poll
 
 # ── tty — 终端控制 ────────────────────────────────────────────────
 _SRCS_tty     := tty.c
@@ -65,7 +68,8 @@ _DEPS_tty     := core
 
 # ── procfs — 进程文件系统读取 ─────────────────────────────────────
 _SRCS_procfs  := procfs.c
-_DEPS_procfs  := core
+_DEPS_procfs  := core stdio string ctype
+_TEST_procfs  := test_procfs
 
 # ── evdev_kbd — 键盘输入设备 ─────────────────────────────────────
 _SRCS_evdev_kbd   := evdev_kbd.c
