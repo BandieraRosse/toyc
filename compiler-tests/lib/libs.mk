@@ -21,12 +21,16 @@ _SRCS_ctype   := ctype.c
 _TEST_ctype   := test_ctype
 
 # ── string — 字符串操作（stderror 内部调用了 snprintf，功能测试需要 stdio
-#              链接，暂跳过。编译检查已覆盖） ─────────────────
+#              链接，strerror(0-40) 返回静态字符串无需 snprintf，故测试独立通过） ──
 _SRCS_string  := string.c
+_DEPS_string  := stdio ctype
+_TEST_string  := test_string
 
 # ── core — 系统调用封装，6 个源文件 ──────────────────────────────
 _SRCS_core    := core/io.c core/mem.c core/proc.c \
                  core/signal.c core/sync.c core/time.c
+_DEPS_core    := string stdio ctype
+_TEST_core    := test_core
 
 # ── stdio — 格式化 I/O
 # Bug fix: __builtin_va_start 用了 forward linear search 而非 scope-aware
