@@ -499,11 +499,16 @@ void cgen_expr(AstNode *node) {
         SEARCH_LOCAL(i, node->name);
         if (i >= 0) {
                 /* 数组/大结构体优先于浮点判断：float arr[] 应先退化为指针 */
-                if (locals[i].is_array || locals[i].size > 8) {
-                    /* 数组/大结构体：退化为指针（lea rax, [rbp+off]） */
+                if (locals[i].is_array || (locals[i].size > 8 && !locals[i].is_param)) {
+                    /* 数组/大结构体（非参数）：退化为指针（lea rax, [rbp+off]） */
                     lea_from_rbp(locals[i].offset);
                     node->type_size = 8;
                     node->is_float = 0;  /* 指针不是浮点值 */
+                } else if (locals[i].size > 8 && locals[i].is_param) {
+                    /* 大结构体参数：局部变量保存的是指向调用方结构体的指针，加载该指针 */
+                    load_rax_from_rbp(locals[i].offset);
+                    node->type_size = 8;
+                    node->is_float = 0;
                 } else if (locals[i].is_float) {
                     node->is_float = locals[i].is_float;
                     node->type_size = locals[i].is_float;
@@ -2251,11 +2256,9 @@ void cgen_expr(AstNode *node) {
             if (strcmp(node->name, "__builtin_va_start") == 0 && node->args) {
                 if (node->args->kind == AST_VAR) {
                     int vi;
-                    for (vi = 0; vi < local_count; vi++) {
-                        if (strcmp(locals[vi].name, node->args->name) == 0) {
-                            lea_from_rbp(locals[vi].offset);
-                            break;
-                        }
+                    SEARCH_LOCAL(vi, node->args->name);
+                    if (vi >= 0) {
+                        lea_from_rbp(locals[vi].offset);
                     }
                 } else {
                     cgen_expr(node->args);

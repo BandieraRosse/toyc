@@ -385,6 +385,7 @@ typedef struct {
     int scope_id;            /* 声明时所在块的唯一 scope ID（由 scope_chain 分配） */
     int is_array;            /* 1 表示数组类型（访问时退化为指针） */
     int is_unsigned;         /* 1 表示 unsigned 类型 */
+    int is_param;            /* 1 表示函数参数（大结构体参数保存指针而非数据） */
     int elem_is_unsigned;    /* 指针变量的元素是否为 unsigned（用于 *ptr 解引用） */
     int elem_is_float;       /* 指针变量的元素是否为 float/double（用于 *ptr 解引用） */
 } LocalVar;

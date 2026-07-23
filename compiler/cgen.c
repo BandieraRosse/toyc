@@ -363,6 +363,7 @@ static void collect_locals(AstNode *node) {
             locals[local_count].scope_id = scope_chain_count > 0 ? scope_chain[scope_chain_count - 1] : 0;
             locals[local_count].elem_is_unsigned = node->elem_is_unsigned;
             locals[local_count].elem_is_float = node->elem_is_float;
+            locals[local_count].is_param = 0;
             /* 数组判定：用解析器标记的 is_array（覆盖所有数组，包括
              * ≤8 字节的 int[2]、char[8]、short[4] 等）。回退 heuristic
              * 仅用于解析器未标记的罕见边界情况。 */
@@ -1019,6 +1020,12 @@ static void cgen_func_def(AstNode *func) {
                             float_reg++;
                         } else {
                             int param_size = locals[i].size;
+                            /* 大结构体参数（>8 字节）：寄存器保存的是指向调用方结构体的指针 */
+                            int is_large_struct = (param_size > 8);
+                            if (is_large_struct) {
+                                param_size = 8;
+                                locals[i].is_param = 1;
+                            }
                             int use64 = (param_size == 8);
                             int r = int_reg + hshift;  /* physical register number (RDI=0) */
                             if (r < 6) {

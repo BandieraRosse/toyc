@@ -29,10 +29,14 @@ _SRCS_core    := core/io.c core/mem.c core/proc.c \
                  core/signal.c core/sync.c core/time.c
 
 # ── stdio — 格式化 I/O
-# 注意：printf.c/snprintf.c 使用 __builtin_va_arg，toyc 编译后运行时 segfault
-#       （已知 toyc cgen va_arg bug）。功能测试暂跳过，编译已覆盖。 ──
+# Bug fix: __builtin_va_start 用了 forward linear search 而非 scope-aware
+# SEARCH_LOCAL，当 if 分支和外部同时声明 args 变量时 va_start 用内层偏移
+# 而函数参数传参用外层偏移，导致 segfault。同时修复了大结构体参数传递的
+# 64 位指针截断和 AST_VAR 指针加载问题。
+# 已知 3/17 功能测试失败（%X 大写、%u 大值、%d 负数，数值格式化问题）。 ──
 _SRCS_stdio   := stdio/printf.c stdio/scanf.c stdio/snprintf.c
 _DEPS_stdio   := core string ctype
+_TEST_stdio   := test_stdio
 
 # ── time — 时间函数 ───────────────────────────────────────────────
 _SRCS_time    := time.c
