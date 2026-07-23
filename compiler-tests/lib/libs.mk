@@ -54,8 +54,10 @@ _DEPS_misc    := core stdio string ctype
 _TEST_misc    := test_misc
 
 # ── net — 网络相关 ────────────────────────────────────────────────
+# 功能测试 test_net.c 覆盖 socket syscall、纯逻辑（htons/inet_addr/inet_ntoa）和 DNS 解析函数
 _SRCS_net     := net/socket.c net/dns.c
-_DEPS_net     := core
+_DEPS_net     := core string stdio ctype
+_TEST_net     := test_net
 
 # ── poll — I/O 多路复用 ──────────────────────────────────────────
 _SRCS_poll    := poll.c
@@ -65,6 +67,7 @@ _TEST_poll    := test_poll
 # ── tty — 终端控制 ────────────────────────────────────────────────
 _SRCS_tty     := tty.c
 _DEPS_tty     := core
+_TEST_tty     := test_tty
 
 # ── procfs — 进程文件系统读取 ─────────────────────────────────────
 _SRCS_procfs  := procfs.c
