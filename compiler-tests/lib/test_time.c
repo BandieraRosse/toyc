@@ -1,9 +1,7 @@
 /* test_time.c — time.c 功能测试
  * 测试 gmtime_r / mktime / strftime / gettimeofday
  *
- * 注意：toyc 有 2D 数组 bug（month_days[leap][mon] 读错行），
- * 且 static const char *[] 数组的 relocation 可能出错；
- * 故仅测试 mon=0（1月）的 gmtime_r 和数字格式的 strftime。
+ * 注意：2D 数组 bug 已修复（2026-07-23），所有 strftime 格式均可测试。
  * EXPECT: 0
  */
 
@@ -86,7 +84,7 @@ int main(void)
     t = mktime(&tm2);
     check("mktime 1970-01-01 == 0", t == 0);
 
-    /* ── strftime — 仅使用数字格式（避免 string array relocation bug） ── */
+    /* ── strftime — 数字格式 ── */
     t = 0;
     gmtime_r(&t, &tm1);
 
@@ -143,6 +141,44 @@ int main(void)
     strftime(buf, sizeof(buf), "%X", &tm1);
     check("strftime %X == 00:00:00",
           buf[0]=='0'&&buf[1]=='0');
+
+    /* ── strftime — 字符串格式（之前因 2D 数组 bug 禁用，现以修复）── */
+    t = 0;
+    gmtime_r(&t, &tm1);
+
+    /* %a (weekday abbr): epoch = Thu */
+    strftime(buf, sizeof(buf), "%a", &tm1);
+    check("strftime %a == Thu",
+          buf[0]=='T' && buf[1]=='h' && buf[2]=='u' && buf[3]=='\0');
+
+    /* %A (weekday full): epoch = Thursday */
+    strftime(buf, sizeof(buf), "%A", &tm1);
+    check("strftime %A == Thursday",
+          buf[0]=='T' && buf[1]=='h' && buf[2]=='u' && buf[3]=='r'
+       && buf[4]=='s' && buf[5]=='d' && buf[6]=='a' && buf[7]=='y'
+       && buf[8]=='\0');
+
+    /* %b (month abbr): epoch = Jan */
+    strftime(buf, sizeof(buf), "%b", &tm1);
+    check("strftime %b == Jan",
+          buf[0]=='J' && buf[1]=='a' && buf[2]=='n' && buf[3]=='\0');
+
+    /* %B (month full): epoch = January */
+    strftime(buf, sizeof(buf), "%B", &tm1);
+    check("strftime %B == January",
+          buf[0]=='J' && buf[1]=='a' && buf[2]=='n' && buf[3]=='u'
+       && buf[4]=='a' && buf[5]=='r' && buf[6]=='y' && buf[7]=='\0');
+
+    /* %p (AM/PM): epoch = midnight = AM */
+    strftime(buf, sizeof(buf), "%p", &tm1);
+    check("strftime %p == AM",
+          buf[0]=='A' && buf[1]=='M' && buf[2]=='\0');
+
+    /* %p PM: 13:00 = PM */
+    tm1.tm_hour = 13;
+    strftime(buf, sizeof(buf), "%p", &tm1);
+    check("strftime %p 13:00 == PM",
+          buf[0]=='P' && buf[1]=='M' && buf[2]=='\0');
 
     /* %% literal */
     strftime(buf, sizeof(buf), "%%", &tm1);

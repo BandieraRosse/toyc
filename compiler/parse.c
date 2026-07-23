@@ -2605,45 +2605,82 @@ AstNode *parse_compound_statement(Parser *p) {
                         int init_idx = 0;
                         while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
                             const char *ipos = p->lexer->pos;  /* 防死循环：不支持 .member 指派初始化器 */
-                            AstNode *ie = parse_expr(p);
-                            if (!ie && p->lexer->pos == ipos) { consume(p); continue; }
-                            if (ie && decl->name) {
-                                if (struct_brace && init_idx < struct_mem_cnt) {
-                                    /* struct 初始化：s.member = expr */
-                                    AstNode *var = new_ast(p, AST_VAR);
-                                    var->name = decl->name;
-                                    AstNode *member = new_ast(p, AST_MEMBER);
-                                    member->left = var;
-                                    member->member_name = struct_mems[init_idx].name;
-                                    member->ival = struct_mems[init_idx].offset;
-                                    member->type_size = struct_mems[init_idx].size;
-                                    AstNode *assign = new_ast(p, AST_ASSIGN);
-                                    assign->left = member;
-                                    assign->right = ie;
-                                    assign->type_size = struct_mems[init_idx].size;
-                                    if (prev_init) prev_init->next = assign;
-                                    else decl->expr = assign;
-                                    prev_init = assign;
-                                } else {
-                                    /* 数组初始化：a[i] = expr */
-                                    AstNode *idx = new_ast(p, AST_CONSTANT);
-                                    idx->ival = init_idx;
-                                    AstNode *sub = new_ast(p, AST_BINOP);
-                                    sub->op = TOK_LBRACKET;
-                                    AstNode *var = new_ast(p, AST_VAR);
-                                    var->name = decl->name;
-                                    sub->left = var;
-                                    sub->right = idx;
-                                    AstNode *assign = new_ast(p, AST_ASSIGN);
-                                    assign->left = sub;
-                                    assign->right = ie;
-                                    assign->type_size = (ts > 0 ? ts : 4);
-                                    if (prev_init) prev_init->next = assign;
-                                    else decl->expr = assign;
-                                    prev_init = assign;
+                            /* 多维数组嵌套 { } 初始化：int a[2][3] = {{1,2,3},{4,5,6}} */
+                            if (!struct_brace && dim_count > 1 && peek(p).kind == TOK_LBRACE) {
+                                consume(p); /* 跳过内层 { */
+                                int inner_idx = 0;
+                                while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+                                    AstNode *ie = parse_expr(p);
+                                    if (ie && decl->name) {
+                                        /* 创建赋值 a[init_idx][inner_idx] = ie */
+                                        AstNode *outer_idx = new_ast(p, AST_CONSTANT);
+                                        outer_idx->ival = init_idx;
+                                        AstNode *inner_idx_node = new_ast(p, AST_CONSTANT);
+                                        inner_idx_node->ival = inner_idx;
+                                        AstNode *var_node = new_ast(p, AST_VAR);
+                                        var_node->name = decl->name;
+                                        AstNode *outer_sub = new_ast(p, AST_BINOP);
+                                        outer_sub->op = TOK_LBRACKET;
+                                        outer_sub->left = var_node;
+                                        outer_sub->right = outer_idx;
+                                        AstNode *inner_sub = new_ast(p, AST_BINOP);
+                                        inner_sub->op = TOK_LBRACKET;
+                                        inner_sub->left = outer_sub;
+                                        inner_sub->right = inner_idx_node;
+                                        AstNode *assign = new_ast(p, AST_ASSIGN);
+                                        assign->left = inner_sub;
+                                        assign->right = ie;
+                                        assign->type_size = (ts > 0 ? ts : 4);
+                                        if (prev_init) prev_init->next = assign;
+                                        else decl->expr = assign;
+                                        prev_init = assign;
+                                        inner_idx++;
+                                    }
+                                    if (peek(p).kind == TOK_COMMA) consume(p);
                                 }
+                                if (peek(p).kind == TOK_RBRACE) consume(p);
+                                init_idx++;
+                            } else {
+                                AstNode *ie = parse_expr(p);
+                                if (!ie && p->lexer->pos == ipos) { consume(p); continue; }
+                                if (ie && decl->name) {
+                                    if (struct_brace && init_idx < struct_mem_cnt) {
+                                        /* struct 初始化：s.member = expr */
+                                        AstNode *var = new_ast(p, AST_VAR);
+                                        var->name = decl->name;
+                                        AstNode *member = new_ast(p, AST_MEMBER);
+                                        member->left = var;
+                                        member->member_name = struct_mems[init_idx].name;
+                                        member->ival = struct_mems[init_idx].offset;
+                                        member->type_size = struct_mems[init_idx].size;
+                                        AstNode *assign = new_ast(p, AST_ASSIGN);
+                                        assign->left = member;
+                                        assign->right = ie;
+                                        assign->type_size = struct_mems[init_idx].size;
+                                        if (prev_init) prev_init->next = assign;
+                                        else decl->expr = assign;
+                                        prev_init = assign;
+                                    } else {
+                                        /* 数组初始化：a[i] = expr */
+                                        AstNode *idx = new_ast(p, AST_CONSTANT);
+                                        idx->ival = init_idx;
+                                        AstNode *sub = new_ast(p, AST_BINOP);
+                                        sub->op = TOK_LBRACKET;
+                                        AstNode *var = new_ast(p, AST_VAR);
+                                        var->name = decl->name;
+                                        sub->left = var;
+                                        sub->right = idx;
+                                        AstNode *assign = new_ast(p, AST_ASSIGN);
+                                        assign->left = sub;
+                                        assign->right = ie;
+                                        assign->type_size = (ts > 0 ? ts : 4);
+                                        if (prev_init) prev_init->next = assign;
+                                        else decl->expr = assign;
+                                        prev_init = assign;
+                                    }
+                                }
+                                init_idx++;
                             }
-                            init_idx++;
                             if (peek(p).kind == TOK_COMMA) consume(p);
                         }
                         if (peek(p).kind == TOK_RBRACE) consume(p);
@@ -3585,15 +3622,34 @@ AstNode *parse_program(Parser *p) {
                             }
                             /* 解析初始化器值，存储到 gvar->init_items[] */
                             if (gvar) {
-                                int max_est = (init_count > 0 ? init_count * 8 : 64);
+                                int max_est;
+                                if (gv_arr_len > 0) {
+                                    /* 结构体数组：每个元素产生 member_count 个 InitItem */
+                                    int member_est = 1;
+                                    if (gvar->struct_type && gvar->struct_type->member_count > 0)
+                                        member_est = gvar->struct_type->member_count;
+                                    max_est = gv_arr_len * member_est;
+                                    if (max_est < 64) max_est = 64;
+                                } else if (init_count > 0) {
+                                    max_est = init_count * 8;
+                                } else {
+                                    max_est = 64;
+                                }
                                 if (max_est > 65536) max_est = 65536;
                                 InitItem *items = arena_alloc(p->arena, max_est * sizeof(InitItem));
                                 int elem_count = 0;
                                 int actual = parse_init_list(p, items, max_est, &elem_count);
                                 if (actual > max_est) actual = max_est;
                                 /* 用实际解析的元素数修正 gv_total（应对尾随逗号） */
-                                if (elem_count > 0 && gv_unit * elem_count != gv_total) {
-                                    gv_total = gv_unit * elem_count;
+                                if (actual > 0 && gv_unit * actual != gv_total) {
+                                    /* 多维数组（bracket_count>1）的 elem_count 是行数，
+                                     * 用 actual（总标量项数）计算总大小。
+                                     * 结构体/1D 数组的 elem_count 是正确元素数。 */
+                                    if (gv_bracket_count > 1) {
+                                        gv_total = gv_unit * actual;
+                                    } else {
+                                        gv_total = gv_unit * elem_count;
+                                    }
                                     gvar->ival = gv_total;
                                     gvar->type_size = gv_total;
                                     if (gvar->name) pvar_update_size(gvar->name, gv_total);

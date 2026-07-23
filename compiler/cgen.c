@@ -1285,12 +1285,22 @@ static void cgen_emit_data_init(AstNode *node) {
                     iw = 8;  /* 指针 */
                 else
                     iw = m->size;
-            } else if (elem_size == 1) {
-                iw = 1;
-            } else if (elem_size == 2) {
-                iw = 2;
-            } else if (!has_struct && elem_size >= 8) {
-                iw = 8;  /* 非 struct 数组的 8 字节元素（double/long/指针） */
+            } else {
+                /* 确定有效元素宽度：
+                 * 多维数组（int arr[M][N]）的 elem_size 是行大小（N*4），
+                 * 而非标量元素宽度。使用 base_elem_size（最内层元素大小）
+                 * 以正确发射 4 字节 int 而非 8 字节。 */
+                int eff_es = elem_size;
+                if (node->is_array && !node->elem_is_ptr &&
+                    node->base_elem_size > 0 && node->base_elem_size < elem_size)
+                    eff_es = node->base_elem_size;
+                if (eff_es == 1) {
+                    iw = 1;
+                } else if (eff_es == 2) {
+                    iw = 2;
+                } else if (!has_struct && eff_es >= 8) {
+                    iw = 8;
+                }
             }
 
             long v = it->ival;
