@@ -10,7 +10,7 @@
 #   _TEST_<name>  — 测试驱动名（compiler-tests/lib/test_<name>.c，不含 .c 后缀）
 #                   不定义则跳过功能测试（仅编译检查）
 
-LIBS := math ctype string core stdio time misc net poll tty procfs evdev_kbd evdev_mouse audio
+LIBS := math ctype string core stdio time misc net poll tty procfs evdev_kbd evdev_mouse audio thread
 
 # ── math — 纯数值计算，无系统调用 ──────────────────────────────────
 _SRCS_math    := math/math.c
@@ -86,6 +86,12 @@ _DEPS_evdev_mouse := core string
 _SRCS_audio   := audio/alsa.c
 _DEPS_audio   := core
 
-# ── 以下 lib 因架构限制跳过：
-#   init/    — 含 init.c + start.S（汇编），需要 toyas/gas
-#   thread/  — 含 TLS 和 clone.S，需要 gcc
+# ── thread — pthread 线程库 ──────────────────────────────────────
+# clone.S 由 toyas 汇编。注意事项：
+# 主线程 TLS（fs_base）需在 main() 开头手动设置：
+#   syscall(SYS_arch_prctl, 0x1002 /* ARCH_SET_FS */, &tls_struct)
+# toyc_rt_start.S 不自动初始化 fs_base，因此 test driver 必须自行完成
+_SRCS_thread  := thread/pthread.c
+_ASM_thread   := thread/clone.S
+_DEPS_thread  := core string stdio ctype
+_TEST_thread  := test_thread

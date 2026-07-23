@@ -271,8 +271,11 @@ include compiler-tests/lib/libs.mk
 
 # 路径转换：math/math.c -> /tmp/libt_obj/math_math.o
 _lib_obj = $(LIBT_OBJDIR)/$(subst /,_,$(1:.c=.o))
-# 单个 lib 的所有目标文件
-_lib_objs = $(foreach src,$(_SRCS_$(1)),$(call _lib_obj,$(src)))
+# 路径转换：thread/clone.S -> /tmp/libt_obj/thread_clone.o
+_lib_asm_obj = $(LIBT_OBJDIR)/$(subst /,_,$(patsubst %.S,%.o,$(1)))
+# 单个 lib 的所有目标文件（.c + .S）
+_lib_objs = $(foreach src,$(_SRCS_$(1)),$(call _lib_obj,$(src))) \
+            $(foreach src,$(_ASM_$(1)),$(call _lib_asm_obj,$(src)))
 # lib + 直接依赖的所有目标文件（排序去重）
 _lib_bundle = $(sort $(call _lib_objs,$(1)) \
                $(foreach dep,$(_DEPS_$(1)),$(call _lib_objs,$(dep))))
@@ -288,6 +291,16 @@ test-lib-compile: $(BUILD)/toyc
 	    printf "  $(BLUE)%-25s$(RESET) " "$(src)"; \
 	    $(BUILD)/toyc $(TINYLIBC_CFLAGS) -c $(TINYLIBC_DIR)/lib/$(src) \
 	      -o $(call _lib_obj,$(src)) 2>/tmp/libt_$(lib).log \
+	    && { printf "$(GREEN)✓$(RESET)\n"; ok=$$((ok+1)); } \
+	    || { printf "$(RED)✗$(RESET)\n"; cat /tmp/libt_$(lib).log; fail=$$((fail+1)); }; \
+	    total=$$((total+1)); \
+	  ) \
+	) \
+	$(foreach lib,$(LIBS), \
+	  $(foreach src,$(_ASM_$(lib)), \
+	    printf "  $(BLUE)%-25s$(RESET) " "$(src)"; \
+	    $(BUILD)/toyas $(TINYLIBC_DIR)/lib/$(src) -o $(LIBT_OBJDIR)/$(subst /,_,$(src:.S=.o)) \
+	      2>/tmp/libt_$(lib).log \
 	    && { printf "$(GREEN)✓$(RESET)\n"; ok=$$((ok+1)); } \
 	    || { printf "$(RED)✗$(RESET)\n"; cat /tmp/libt_$(lib).log; fail=$$((fail+1)); }; \
 	    total=$$((total+1)); \
@@ -309,6 +322,16 @@ test-lib: $(BUILD)/toyc $(BUILD)/toyld $(BUILD)/toyc_rt.o $(BUILD)/toyc_rt_start
 	    printf "  $(BLUE)%-25s$(RESET) " "$(src)"; \
 	    $(BUILD)/toyc $(TINYLIBC_CFLAGS) -c $(TINYLIBC_DIR)/lib/$(src) \
 	      -o $(call _lib_obj,$(src)) 2>/tmp/libt_$(lib).log \
+	    && { printf "$(GREEN)✓$(RESET)\n"; ok=$$((ok+1)); } \
+	    || { printf "$(RED)✗$(RESET)\n"; cat /tmp/libt_$(lib).log; fail=$$((fail+1)); }; \
+	    total=$$((total+1)); \
+	  ) \
+	) \
+	$(foreach lib,$(LIBS), \
+	  $(foreach src,$(_ASM_$(lib)), \
+	    printf "  $(BLUE)%-25s$(RESET) " "$(src)"; \
+	    $(BUILD)/toyas $(TINYLIBC_DIR)/lib/$(src) -o $(LIBT_OBJDIR)/$(subst /,_,$(src:.S=.o)) \
+	      2>/tmp/libt_$(lib).log \
 	    && { printf "$(GREEN)✓$(RESET)\n"; ok=$$((ok+1)); } \
 	    || { printf "$(RED)✗$(RESET)\n"; cat /tmp/libt_$(lib).log; fail=$$((fail+1)); }; \
 	    total=$$((total+1)); \
