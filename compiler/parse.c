@@ -810,6 +810,7 @@ static AstNode *parse_postfix(Parser *p) {
                         (*tail)->ival = tsz;
                         if (first_kind == TOK_FLOAT || first_kind == TOK_DOUBLE)
                             (*tail)->is_float = tsz;
+                        (*tail)->is_unsigned = last_type_is_unsigned;
                     }
                 } else {
                     *tail = parse_expr(p);
@@ -826,6 +827,7 @@ static AstNode *parse_postfix(Parser *p) {
                         (*tail)->ival = tsz;
                         if (first_kind == TOK_FLOAT || first_kind == TOK_DOUBLE)
                             (*tail)->is_float = tsz;
+                        (*tail)->is_unsigned = last_type_is_unsigned;
                     }
                 }
                 if (*tail) {

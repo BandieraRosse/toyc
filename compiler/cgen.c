@@ -405,7 +405,7 @@ static void collect_locals(AstNode *node) {
 static void cgen_return(AstNode *stmt) {
     if (stmt->expr) {
         cgen_expr(stmt->expr);
-        /* 符号扩展：从 long 函数返回 int 表达式时，将 eax 扩展到 rax */
+        /* 符号扩展：从 long 函数返回 signed int/char/short 表达式时，将 eax 扩展到 rax */
         if (current_func_ret_size == 8 && stmt->expr && !stmt->expr->is_float &&
             stmt->expr->type_size < 8 && !stmt->expr->is_unsigned)
             { emit1(0x48); emit1(0x63); emit1(0xC0); }  /* movsxd rax, eax */

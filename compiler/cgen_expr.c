@@ -2340,6 +2340,10 @@ void cgen_expr(AstNode *node) {
                     e1(0x48); e1(0x83); e1(0x47); e1(0x08); e1(0x08);
                     code_buf[_jmp_ofs] = code_size - _jmp_ofs - 1;
                 }
+                /* 先传播 is_unsigned，再设置 type_size（确保两者都正确，
+                 * 交换顺序排查 toyc 编译自身的结构体成员赋值 bug） */
+                if (node->args->next && node->args->next->kind == AST_CONSTANT)
+                    node->is_unsigned = node->args->next->is_unsigned;
                 node->type_size = type_size;
                 break;
             }
