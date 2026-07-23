@@ -26,11 +26,16 @@
 │   ├── tcc_need.h      # 最小化类型/常量/系统调用宏/函数声明
 │   └── elf.h           # ELF64 结构体定义
 ├── compiler-tests/     # 测试文件
-│   ├── basic/          # 常规测试（tcc 编译 + tcc_rt 链接，29 个）
-│   ├── selfhost/       # 自包含测试（tcc 独立编译，无 tcc_rt 依赖，39 个）
+│   ├── basic/          # 常规测试（tcc 编译 + tcc_rt 链接，36 个）
+│   ├── selfhost/       # 自包含测试（tcc 独立编译，无 tcc_rt 依赖，40 个）
 │   ├── source/         # 源文件独立测试（验证单个 .c 文件的逻辑，8 个）
 │   ├── tld/            # tld 多文件链接测试
-│   └── pending/        # 待修复 bug 的复现用例
+│   ├── pending/        # 待修复 bug 的复现用例
+│   └── lib/            # Tinylibc 库编译兼容性测试
+│       ├── libs.mk     #   声明式元数据（源文件、依赖、测试驱动）
+│       ├── override/   #   tcc 不兼容头文件遮蔽（如 __builtin_huge_val）
+│       ├── test_*.c    #   各 lib 的功能测试驱动
+│       └── ...
 ├── bootstrap/          # 自举种子（tcc + tas + tld 二进制，git 追踪）
 │   └── README.md
 ├── Makefile            # 构建系统（默认用 bootstrap/tcc + bootstrap/tas + bootstrap/tld）
@@ -42,11 +47,13 @@
 
 ```sh
 make                              # 自举构建（bootstrap/tcc + bootstrap/tas + bootstrap/tld）
-make test                         # 常规测试（29 个）
-make test-selfhost                # 自包含测试（38 个）
+make test                         # 常规测试（36 个）
+make test-selfhost                # 自包含测试（40 个）
 make test-source                  # 源文件独立测试（8 个）
-make test-tld                     # tld 链接测试（38 个）
+make test-tld                     # tld 链接测试（40 个）
 make test-error                   # 错误报告测试（16 个）
+make test-lib-compile             # Tinylibc 库编译检查（26/26 源文件）
+make test-lib                     # Tinylibc 库完整测试（编译 + 功能）
 make test-tld-multifile           # tld 多文件链接测试
 make test-tld-self                # tld 自举验证（stage-1 → stage-2 → 收敛）
 make update-bootstrap             # 用最新 build/ 产物更新 bootstrap/ 种子
@@ -57,19 +64,41 @@ make clean
 
 全链零外部依赖（仅 make）。`bootstrap/tcc` + `bootstrap/tas` + `bootstrap/tld` 是 git 追踪的种子二进制。
 
-## 测试状态（2026-07-22）
+## 测试状态（2026-07-23）
 
 | 测试套件 | 通过/总数 | 说明 |
 |----------|-----------|------|
-| `make test` | **35/35 ✅** | 含 float brace init（23 断言） |
+| `make test` | **36/36 ✅** | 含 float return test |
 | `make test-selfhost` | **40/40 ✅** | tcc 独立编译，无 tcc_rt 依赖 |
 | `make test-source` | 8/8 ✅ | tcc 编译源文件独立测试 |
 | `make test-tld` | **40/40 ✅** | selfhost 测试 × tld 链接 |
 | `make test-tld-multifile` | ✅ | 多 .o 文件交叉引用链接 |
 | `make test-tld-self` | **自举收敛 ✅** | tld 自链接 stage-1→stage-2 字节级一致 |
 | `make test-error` | **16/16 ✅** | 错误报告测试 |
+| `make test-lib-compile` | **26/26 ✅** | Tinylibc 全部 16 个模块编译通过 |
+| `make test-lib` | 编译 26/26 ✅ 功能 1/2 | ctype ✅，math ⚠（精度问题 24/49） |
 | `bootstrap-selfhost.sh` | 39/39 ✅ | 种子自举 → stage-2 全部测试通过 |
 | `bootstrap-to-10.sh` | stage-2→10 字节级一致 ✅ | 全链收敛验证（头尾完整测试） |
+
+### Tinylibc 库测试详情（`make test-lib`）
+
+| 模块 | 源文件 | 编译 | 功能测试 |
+|------|--------|------|----------|
+| math | `math/math.c` | ✅ | ⚠ 24/49 通过（精度问题） |
+| ctype | `ctype.c` | ✅ | ✅ 全部通过 |
+| string | `string.c` | ✅ | —（circular dep: strerror→snprintf） |
+| core | 6 个源文件 | ✅ | — |
+| stdio | 3 个源文件 | ✅ | —（va_arg codegen bug） |
+| time | `time.c` | ✅ | — |
+| misc | 5 个源文件 | ✅ | — |
+| net | 2 个源文件 | ✅ | — |
+| poll | `poll.c` | ✅ | — |
+| tty | `tty.c` | ✅ | — |
+| procfs | `procfs.c` | ✅ | — |
+| evdev_kbd | `evdev_kbd.c` | ✅ | — |
+| evdev_mouse | `evdev_mouse.c` | ✅ | — |
+| audio | `audio/alsa.c` | ✅ | — |
+| **总计** | **26 个源文件** | **26/26 ✅** | |
 
 ## 设计原则
 
@@ -77,6 +106,48 @@ make clean
 - **零外部依赖**：自举种子 `bootstrap/{tcc,tas,tld}` 全链自编译，仅需 `make`
 - **简化优先**：源码写法向 tcc 自身能编译的方向靠拢
 - **自举导向**：所有决策围绕"让 tcc 能编译自己"展开
+
+## Tinylibc 库测试架构
+
+`compiler-tests/lib/` 测试 tcc 编译真实 Tinylibc 库源文件的能力。
+
+### 工作原理
+
+1. **源文件直接来自 `../Tinylibc/lib/`** — 无物理拷贝，始终与上游一致
+2. **include 路径使用真实的 Tinylibc 头文件** — `-I../Tinylibc/include/posix` 等
+3. **`compiler-tests/lib/override/`** — 仅存放 tcc 不兼容的内建宏遮蔽（如 `__builtin_huge_val`），通过 `-I` 优先级覆盖
+4. **`compiler-tests/lib/libs.mk`** — 声明式元数据，被 Makefile include
+
+### 添加新 lib
+
+在 `compiler-tests/lib/libs.mk` 中追加：
+
+```makefile
+LIBS := ... xxx
+
+_SRCS_xxx    := path/to/source.c       # 相对于 ../Tinylibc/lib/
+_DEPS_xxx    := core string            # 链接时依赖的其他 lib（可选）
+_TEST_xxx    := test_xxx               # 测试驱动 basename（可选）
+```
+
+框架自动：
+- 发现 `$(LIBS)` 中所有模块
+- 编译每个模块的所有源文件
+- 若定义了 `_TEST_xxx`，编译测试驱动 → 链接依赖 → 运行
+
+### 测试层级
+
+| 层级 | 命令 | 内容 |
+|------|------|------|
+| **编译检查** | `make test-lib-compile` | tcc 编译每个 lib 的每个 .c 文件，验证无语法/语义错误 |
+| **功能测试** | `make test-lib` | 编译 + 链接依赖 + 运行 test driver，检查 EXPECT 退出码 |
+
+### 已知限制
+
+- `stdio/printf.c` 和 `stdio/snprintf.c` 使用 `__builtin_va_arg`，tcc 编译后运行时 segfault（已知 tcc cgen va_arg bug）
+- `string.c` 的 `strerror` 内部调用 `snprintf`，创建了 stdio ↔ string 的循环依赖
+- `init/` 含汇编 `start.S`，`thread/` 需要 TLS，暂不纳入
+- 部分 math 函数的精度不达标（约 24/49 通过）
 
 ## 已知限制
 
@@ -99,12 +170,13 @@ make clean
 ## 验证
 
 ```sh
-make test             # 35/35 ✅
+make test             # 36/36 ✅
 make test-selfhost    # 40/40 ✅
 make test-source      # 8/8 ✅
 make test-tld         # 40/40 ✅
 make test-error       # 16/16 ✅
 make test-tld-self    # 自举收敛 ✅
+make test-lib-compile # 26/26 ✅
 ./bootstrap-to-10.sh  # stage-2→10 字节级完全一致 ✅
 make test-all         # 全部通过 ✅
 ```

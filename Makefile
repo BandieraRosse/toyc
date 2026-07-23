@@ -249,8 +249,113 @@ test-source: $(BUILD)/tcc $(BUILD)/tld
 
 # ─── 全部测试 ──────────────────────────────────────────────────
 
-test-all: test test-selfhost test-source test-tld test-error test-tar test-tld-archive
+test-all: test test-selfhost test-source test-lib test-tld test-error test-tar test-tld-archive
 	@printf "$(GREEN)✓ 全部测试通过$(RESET)\n"
+
+# ─── Tinylibc 库测试（从真实 Tinylibc 源文件编译） ─────────────
+
+TINYLIBC_DIR   := ../Tinylibc
+LIBT_OBJDIR    := /tmp/libt_obj
+
+# override 放首位以遮蔽 tcc 不兼容头（如 __builtin_huge_val）
+TINYLIBC_CFLAGS := -Icompiler-tests/lib/override \
+                   -I$(TINYLIBC_DIR)/include \
+                   -I$(TINYLIBC_DIR)/include/posix \
+                   -I$(TINYLIBC_DIR)/include/tlibc \
+                   -I$(TINYLIBC_DIR)/arch \
+                   -I$(TINYLIBC_DIR)/arch/x86_64 \
+                   -DX86_64_TLIBC=1
+
+# 引入 lib 模块声明（LIBS, _SRCS_*, _DEPS_*, _TEST_*）
+include compiler-tests/lib/libs.mk
+
+# 路径转换：math/math.c -> /tmp/libt_obj/math_math.o
+_lib_obj = $(LIBT_OBJDIR)/$(subst /,_,$(1:.c=.o))
+# 单个 lib 的所有目标文件
+_lib_objs = $(foreach src,$(_SRCS_$(1)),$(call _lib_obj,$(src)))
+# lib + 直接依赖的所有目标文件（排序去重）
+_lib_bundle = $(sort $(call _lib_objs,$(1)) \
+               $(foreach dep,$(_DEPS_$(1)),$(call _lib_objs,$(dep))))
+
+.PHONY: test-lib-compile
+
+test-lib-compile: $(BUILD)/tcc
+	@mkdir -p $(LIBT_OBJDIR) tmp; \
+	ok=0; fail=0; total=0; \
+	printf "$(BLUE)══════ Tinylibc 库编译检查 ══════$(RESET)\n\n"; \
+	$(foreach lib,$(LIBS), \
+	  $(foreach src,$(_SRCS_$(lib)), \
+	    printf "  $(BLUE)%-25s$(RESET) " "$(src)"; \
+	    $(BUILD)/tcc $(TINYLIBC_CFLAGS) -c $(TINYLIBC_DIR)/lib/$(src) \
+	      -o $(call _lib_obj,$(src)) 2>/tmp/libt_$(lib).log \
+	    && { printf "$(GREEN)✓$(RESET)\n"; ok=$$((ok+1)); } \
+	    || { printf "$(RED)✗$(RESET)\n"; cat /tmp/libt_$(lib).log; fail=$$((fail+1)); }; \
+	    total=$$((total+1)); \
+	  ) \
+	) \
+	printf "\n$(BLUE)══════$(RESET) 编译: $(GREEN)%d passed$(RESET), $(RED)%d failed$(RESET), %d total $(BLUE)══════$(RESET)\n" "$$ok" "$$fail" "$$total"; \
+	[ "$$fail" -eq 0 ]
+
+.PHONY: test-lib
+
+test-lib: $(BUILD)/tcc $(BUILD)/tld $(BUILD)/tcc_rt.o $(BUILD)/tcc_rt_start.o
+	@mkdir -p $(LIBT_OBJDIR) tmp; \
+	\
+	# Phase 1: 编译所有源文件 \
+	ok=0; fail=0; total=0; \
+	printf "$(BLUE)══ Tinylibc 库编译测试 ══$(RESET)\n\n"; \
+	$(foreach lib,$(LIBS), \
+	  $(foreach src,$(_SRCS_$(lib)), \
+	    printf "  $(BLUE)%-25s$(RESET) " "$(src)"; \
+	    $(BUILD)/tcc $(TINYLIBC_CFLAGS) -c $(TINYLIBC_DIR)/lib/$(src) \
+	      -o $(call _lib_obj,$(src)) 2>/tmp/libt_$(lib).log \
+	    && { printf "$(GREEN)✓$(RESET)\n"; ok=$$((ok+1)); } \
+	    || { printf "$(RED)✗$(RESET)\n"; cat /tmp/libt_$(lib).log; fail=$$((fail+1)); }; \
+	    total=$$((total+1)); \
+	  ) \
+	) \
+	printf "\n$(BLUE)══$(RESET) 编译: $(GREEN)%d passed$(RESET), $(RED)%d failed$(RESET), %d total $(BLUE)══$(RESET)\n" "$$ok" "$$fail" "$$total"; \
+	if [ "$$fail" -ne 0 ]; then exit 1; fi; \
+	\
+	# Phase 2: 功能测试 \
+	printf "\n$(BLUE)══ 功能测试 ══$(RESET)\n\n"; \
+	ft_ok=0; ft_fail=0; ft_total=0; \
+	$(foreach lib,$(LIBS), \
+	  $(if $(_TEST_$(lib)), \
+	    printf "  $(BLUE)%-25s$(RESET) " "$(lib)"; \
+	    $(BUILD)/tcc $(TINYLIBC_CFLAGS) -c compiler-tests/lib/$(_TEST_$(lib)).c \
+	      -o $(LIBT_OBJDIR)/tdrv_$(lib).o 2>/tmp/libt_$(lib)_tdrv.log \
+	    && { \
+	      $(BUILD)/tld $(call _lib_bundle,$(lib)) $(LIBT_OBJDIR)/tdrv_$(lib).o \
+	        $(BUILD)/tcc_rt.o $(BUILD)/tcc_rt_start.o \
+	        -o /tmp/libt_$(lib) 2>/tmp/libt_$(lib)_link.log \
+	      && { \
+	        /tmp/libt_$(lib) > tmp/libt_$(lib).log 2>&1; got=$$?; \
+	        expect=$$(sed -n 's/.*EXPECT: *\([0-9]*\).*/\1/p' \
+	          compiler-tests/lib/$(_TEST_$(lib)).c | head -1); \
+	        [ -z "$$expect" ] && expect=0; \
+	        if [ "$$got" = "$$expect" ]; then \
+	          printf "$(GREEN)✓$(RESET) (exit %d)\n" "$$got"; ft_ok=$$((ft_ok+1)); \
+	        else \
+	          printf "$(RED)✗$(RESET) (want %d got %d)\n" "$$expect" "$$got"; \
+	          cat tmp/libt_$(lib).log; ft_fail=$$((ft_fail+1)); \
+	        fi; \
+	      } || { \
+	        printf "$(RED)LINK FAIL$(RESET)\n"; cat /tmp/libt_$(lib)_link.log; \
+	        ft_fail=$$((ft_fail+1)); \
+	      }; \
+	    } || { \
+	      printf "$(RED)COMPILE FAIL$(RESET)\n"; cat /tmp/libt_$(lib)_tdrv.log; \
+	      ft_fail=$$((ft_fail+1)); \
+	    }; \
+	    ft_total=$$((ft_total+1)); \
+	  ) \
+	) \
+	if [ "$$ft_total" -gt 0 ]; then \
+	  printf "\n$(BLUE)══$(RESET) 功能: $(GREEN)%d passed$(RESET), $(RED)%d failed$(RESET), %d total $(BLUE)══$(RESET)\n" \
+	    "$$ft_ok" "$$ft_fail" "$$ft_total"; \
+	fi; \
+	[ "$$fail" -eq 0 ] && [ "$$ft_fail" -eq 0 ]
 
 # ─── tld 链接器测试 ───────────────────────────────────────────
 
