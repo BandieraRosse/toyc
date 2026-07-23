@@ -1026,6 +1026,7 @@ static AstNode *parse_postfix(Parser *p) {
                         n->is_unsigned = st->members[fi].is_unsigned;
                         n->is_float = st->members[fi].is_float;
                         n->elem_size = st->members[fi].elem_size;
+                        n->is_array = st->members[fi].memb_is_array;
                         if (st->members[fi].member_struct_tag)
                             n->struct_type = find_struct_tag(st->members[fi].member_struct_tag);
                         break;
@@ -1051,6 +1052,7 @@ static AstNode *parse_postfix(Parser *p) {
                             n->is_unsigned = tag_table[ti].members[mi].is_unsigned;
                             n->is_float = tag_table[ti].members[mi].is_float;
                             n->elem_size = tag_table[ti].members[mi].elem_size;
+                            n->is_array = tag_table[ti].members[mi].memb_is_array;
                             if (tag_table[ti].members[mi].member_struct_tag)
                                 n->struct_type = find_struct_tag(tag_table[ti].members[mi].member_struct_tag);
                         }

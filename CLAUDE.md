@@ -94,7 +94,7 @@ make clean
 | net           | 2 个源文件          | ✅         | ✅ 全部通过（已修复 uint16_t typedef is_unsigned、返回值截断和 0xFFFFFFFFU 比较） |
 | poll          | `poll.c`            | ✅         | ✅ 11 项通过（pipe + epoll）                  |
 | tty           | `tty.c`             | ✅         | ✅ 全部通过（错误路径 + cursor 输出）          |
-| procfs        | `procfs.c`          | ✅         | ✅ 15 项通过（跳过 tlibc_list_pids flex array segfault） |
+| procfs        | `procfs.c`          | ✅         | ✅ 20 项全部通过 |
 | evdev_kbd     | `evdev_kbd.c`       | ✅         | —                                             |
 | evdev_mouse   | `evdev_mouse.c`     | ✅         | —                                             |
 | audio         | `audio/alsa.c`      | ✅         | —                                             |

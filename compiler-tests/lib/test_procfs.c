@@ -1,9 +1,6 @@
 /* test_procfs.c — procfs.c 功能测试
- * 测试 tlibc_read_proc_status, tlibc_read_proc_stat,
+ * 测试 tlibc_list_pids, tlibc_read_proc_status, tlibc_read_proc_stat,
  * tlibc_jiffies_to_sec, tlibc_format_time
- *
- * 注意：tlibc_list_pids 在 toyc 下 segfault（char buf[4096] + flex array 问题），
- * 跳过该函数，直接测试其他功能。
  * EXPECT: 0
  */
 
@@ -29,6 +26,23 @@ int main(void)
 
     __printf("procfs.c 功能测试\n");
     __printf("-----------------\n");
+
+    /* ── tlibc_list_pids ── */
+    {
+        pid_t pids[128];
+        int n = tlibc_list_pids(pids, 128);
+        __printf("  list_pids() = %d\n", n);
+        check("list_pids() > 0 (at least PID 1)", n > 0);
+        if (n > 0) {
+            check("list_pids()[0] > 0 (first PID valid)", pids[0] > 0);
+            int found_init = 0;
+            int i;
+            for (i = 0; i < n; i++) {
+                if (pids[i] == 1) { found_init = 1; break; }
+            }
+            check("list_pids() contains PID 1", found_init);
+        }
+    }
 
     /* ── tlibc_read_proc_status on PID 1 (init) ── */
     ret = tlibc_read_proc_status(1, &st);
