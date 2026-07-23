@@ -650,3 +650,110 @@ test-toyar: $(BUILD)/toyar $(BUILD)/toyc $(BUILD)/toyld $(BUILD)/toyc_rt.o $(BUI
 	\
 	printf "\n$(BLUE)══════$(RESET) $(GREEN)%d passed$(RESET), $(RED)%d failed$(RESET), %d total $(BLUE)══════$(RESET)\n" "$$ok" "$$fail" "$$total"; \
 	[ "$$fail" -eq 0 ]
+
+
+# ════════════════════════════════════════════════════════════════
+# Tinylibc 库（toyc.a）+ App 构建（gcc 套件）
+# ════════════════════════════════════════════════════════════════
+# 用法：
+#   make lib             编译 lib/ → build/toyc.a
+#   make app             编译所有 app/ 可执行文件到 build/
+#   make app-<name>      编译单个 app（如 make app-echo）
+#   make clean-app       清理 app + lib 产物
+#
+# 注意：tlibc 程序入口为 __tlibc_start（lib/init/start.S），
+#       链接时通过 -Wl,-e,__tlibc_start 指定。
+# ════════════════════════════════════════════════════════════════
+
+GCC       := gcc
+AR        := ar
+LIBC_DIR  := lib
+APP_DIR   := app
+LIBC_A    := $(BUILD)/toyc.a
+
+# gcc 标志：无 libc、独立环境、包含 Tinylibc 头文件路径
+LIBC_CFLAGS := -nostdlib -ffreestanding -Wall -Wextra -O0 \
+               -I include -I include/posix -I include/tlibc \
+               -I arch -I arch/x86_64 \
+               -DX86_64_TLIBC=1 \
+               -fno-stack-protector -fno-common -MD
+
+# ─── 库源文件列表 ──────────────────────────────────────────────
+
+LIBC_C_SRCS   := $(shell find $(LIBC_DIR) -name '*.c' | LANG=C sort)
+LIBC_ASM_SRCS := $(shell find $(LIBC_DIR) -name '*.S' | LANG=C sort)
+
+# 路径压平：lib/core/io.c → build/libc_core_io.o
+LIBC_C_OBJS   := $(foreach src,$(LIBC_C_SRCS),\
+                   $(BUILD)/libc_$(subst /,_,$(patsubst $(LIBC_DIR)/%.c,%,$(src))).o)
+LIBC_ASM_OBJS := $(foreach src,$(LIBC_ASM_SRCS),\
+                   $(BUILD)/libc_$(subst /,_,$(patsubst $(LIBC_DIR)/%.S,%,$(src))).o)
+LIBC_OBJS     := $(LIBC_C_OBJS) $(LIBC_ASM_OBJS)
+
+# ─── App 源文件列表 ─────────────────────────────────────────────
+
+APP_SRCS    := $(shell find $(APP_DIR) -name '*.c' | LANG=C sort)
+APP_NAMES   := $(sort $(basename $(notdir $(APP_SRCS))))
+APP_OBJS    := $(foreach src,$(APP_SRCS),$(BUILD)/$(notdir $(basename $(src))).o)
+APP_TARGETS := $(foreach name,$(APP_NAMES),$(BUILD)/$(name))
+
+# ─── 库编译规则 ────────────────────────────────────────────────
+
+# 每个 .c 文件 → .o
+define LIBC_C_rule
+$$(BUILD)/libc_$(subst /,_,$(patsubst $(LIBC_DIR)/%.c,%,$(1))).o: $(1) | $$(BUILD)
+	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$(1)"
+	$$(GCC) $$(LIBC_CFLAGS) -c $(1) -o $$@
+endef
+$(foreach src,$(LIBC_C_SRCS),$(eval $(call LIBC_C_rule,$(src))))
+
+# 每个 .S 文件 → .o
+define LIBC_ASM_rule
+$$(BUILD)/libc_$(subst /,_,$(patsubst $(LIBC_DIR)/%.S,%,$(1))).o: $(1) | $$(BUILD)
+	@printf "  $(BLUE)  AS$(RESET)  %s\n" "$(1)"
+	$$(GCC) $$(LIBC_CFLAGS) -c $(1) -o $$@
+endef
+$(foreach src,$(LIBC_ASM_SRCS),$(eval $(call LIBC_ASM_rule,$(src))))
+
+# 归档
+$(LIBC_A): $(LIBC_OBJS)
+	@printf "$(BLUE)  AR$(RESET)  toyc.a (%d files)\n" $(words $^)
+	$(AR) rcs $@ $^
+
+# ─── App 编译 + 链接规则 ───────────────────────────────────────
+
+define APP_rule
+
+# 编译 app 源文件 → .o
+$$(BUILD)/$(notdir $(basename $(1))).o: $(1) | $$(BUILD)
+	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$(1)"
+	$$(GCC) $$(LIBC_CFLAGS) -c $(1) -o $$@
+
+# 链接 app.o + toyc.a → 可执行文件
+# -Wl,--whole-archive 强制提取所有 .o，避免归档单遍扫描的符号遗漏
+$$(BUILD)/$(notdir $(basename $(1))): $$(BUILD)/$(notdir $(basename $(1))).o $$(LIBC_A)
+	@printf "$(BLUE)  LD$(RESET)  %s\n" "$(notdir $(basename $(1)))"
+	$$(GCC) $$(LIBC_CFLAGS) $$< -Wl,--whole-archive $$(LIBC_A) -Wl,--no-whole-archive -Wl,-e,__tlibc_start -o $$@
+endef
+$(foreach src,$(APP_SRCS),$(eval $(call APP_rule,$(src))))
+
+# ─── 目标 ───────────────────────────────────────────────────────
+
+.PHONY: lib app $(addprefix app-,$(APP_NAMES)) clean-app
+
+lib: $(LIBC_A)
+
+app: $(APP_TARGETS)
+
+# 单个 app：make app-echo
+$(foreach name,$(APP_NAMES),$(eval app-$(name): $(BUILD)/$(name)))
+
+# ─── 清理 ───────────────────────────────────────────────────────
+
+clean-app:
+	rm -f $(LIBC_OBJS) $(LIBC_OBJS:.o=.d) $(LIBC_A)
+	rm -f $(APP_OBJS) $(APP_OBJS:.o=.d) $(APP_TARGETS)
+
+# ─── 依赖文件包含 ───────────────────────────────────────────────
+
+-include $(LIBC_OBJS:.o=.d) $(APP_OBJS:.o=.d)
