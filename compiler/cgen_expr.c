@@ -2592,9 +2592,23 @@ void cgen_expr(AstNode *node) {
                 }
             }
             /* rsz=0 表示未知（隐式/extern 函数），保守假设返回指针大小不做扩展。
-             * 已知返回 signed int/char/short 时符号扩展。 */
-            if (rsz > 0 && rsz < 8)
-                { e1(0x48); e1(0x63); e1(0xC0); }  /* movsxd rax, eax */
+             * 已知返回 signed int/char/short 时符号扩展，unsigned 时零扩展（无需操作）。 */
+            if (rsz > 0 && rsz < 8) {
+                int _unsigned_ret = 0;
+                { int _pi;
+                  for (_pi = 0; _pi < parsed_func_ret_count; _pi++) {
+                      if (parsed_func_ret_names[_pi] &&
+                          strcmp(parsed_func_ret_names[_pi], node->name) == 0) {
+                          if (parsed_func_ret_unsigned[_pi])
+                              _unsigned_ret = 1;
+                          break;
+                      }
+                  }
+                }
+                if (!_unsigned_ret)
+                    { e1(0x48); e1(0x63); e1(0xC0); }  /* movsxd rax, eax */
+                /* 无符号返回值已在 RAX 中零扩展（x86-64 32 位操作自动清高 32 位） */
+            }
         }
         /* 若调用返回 double，标记节点 */
         if (node->is_float)

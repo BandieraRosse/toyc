@@ -7,8 +7,6 @@
  *          tlibc_dns_get_question、tlibc_dns_get_record、tlibc_dns_get_nameserver
  *
  * 注意：需网络的 DNS 查询/解析函数跳过。
- *       已知 toyc 限制：不截断 unsigned short 返回值、不支持 >INT_MAX 的无符号常量、
- *       不支持 uint8_t 数组初始化的值 >127，测试均已绕过。
  * EXPECT: 0
  */
 
@@ -34,20 +32,19 @@ int main(void)
     /*  纯逻辑函数（无需 syscall）                                        */
     /* ================================================================ */
 
-    /* ── tlibc_htons ──
-     * 注意：toyc 不截断 unsigned short 返回值，加 & 0xFFFF 正确化 */
+    /* ── tlibc_htons ── */
     check("htons(0x1234) == 0x3412",
-          (tlibc_htons(0x1234) & 0xFFFF) == 0x3412);
+          tlibc_htons(0x1234) == 0x3412);
     check("htons(0x0001) == 0x0100",
-          (tlibc_htons(0x0001) & 0xFFFF) == 0x0100);
+          tlibc_htons(0x0001) == 0x0100);
     check("htons(0xFFFF) == 0xFFFF",
-          (tlibc_htons(0xFFFF) & 0xFFFF) == 0xFFFF);
+          tlibc_htons(0xFFFF) == 0xFFFF);
 
     /* ── tlibc_ntohs ── */
     check("ntohs(0x3412) == 0x1234",
-          (tlibc_ntohs(0x3412) & 0xFFFF) == 0x1234);
+          tlibc_ntohs(0x3412) == 0x1234);
     check("ntohs(0xFFFF) == 0xFFFF",
-          (tlibc_ntohs(0xFFFF) & 0xFFFF) == 0xFFFF);
+          tlibc_ntohs(0xFFFF) == 0xFFFF);
 
     /* ── tlibc_inet_addr ──
      * 有效 IP 检查 */
@@ -59,19 +56,19 @@ int main(void)
           tlibc_inet_addr("192.168.1.1") != 0);
 
     /* 无效 IP：tlibc_inet_addr 返回 0xFFFFFFFF（全 1 表示错误） */
-    check("inet_addr('bad') error",
-          ~tlibc_inet_addr("bad") == 0);
-    check("inet_addr('300.1.1.1') val>255 error",
-          ~tlibc_inet_addr("300.1.1.1") == 0);
-    check("inet_addr('1.2.3') only 3 parts error",
-          ~tlibc_inet_addr("1.2.3") == 0);
-    check("inet_addr('') empty error",
-          ~tlibc_inet_addr("") == 0);
-    check("inet_addr(NULL) error",
-          ~tlibc_inet_addr(0) == 0);
+    check("inet_addr('bad') == 0xFFFFFFFF",
+          tlibc_inet_addr("bad") == 0xFFFFFFFFU);
+    check("inet_addr('300.1.1.1') == 0xFFFFFFFF",
+          tlibc_inet_addr("300.1.1.1") == 0xFFFFFFFFU);
+    check("inet_addr('1.2.3') == 0xFFFFFFFF",
+          tlibc_inet_addr("1.2.3") == 0xFFFFFFFFU);
+    check("inet_addr('') == 0xFFFFFFFF",
+          tlibc_inet_addr("") == 0xFFFFFFFFU);
+    check("inet_addr(NULL) == 0xFFFFFFFF",
+          tlibc_inet_addr(0) == 0xFFFFFFFFU);
 
     /* ── tlibc_inet_ntoa ──
-     * 注：仅测试 s_addr < INT_MAX 的值，toyc 不支持 >INT_MAX 的无符号常量赋值 */
+     * 测试 s_addr > INT_MAX 的值 */
     {
         struct in_addr in;
         const char *s;
@@ -332,13 +329,8 @@ int main(void)
 
     /* ── tlibc_dns_name_decode: simple name ── */
     {
-        uint8_t wire[16];
-        int i;
-        /* manual init: toyc bug with >127 in uint8_t initializers */
-        wire[0] = 7; wire[1] = 'e'; wire[2] = 'x'; wire[3] = 'a';
-        wire[4] = 'm'; wire[5] = 'p'; wire[6] = 'l'; wire[7] = 'e';
-        wire[8] = 3; wire[9] = 'c'; wire[10] = 'o'; wire[11] = 'm';
-        wire[12] = 0;
+        uint8_t wire[] = {7, 'e', 'x', 'a', 'm', 'p', 'l', 'e',
+                          3, 'c', 'o', 'm', 0};
 
         char out[64];
         int ret = tlibc_dns_name_decode(wire, 13, 0, out, sizeof(out));
@@ -359,16 +351,11 @@ int main(void)
         check("dns_name_decode root == '.'", out[0]=='.');
     }
 
-    /* ── tlibc_dns_name_decode: compressed name ──
-     * 用 decimal 192 (0xC0) 赋值绕过 toyc uint8_t >127 bug */
+    /* ── tlibc_dns_name_decode: compressed name ── */
     {
-        uint8_t wire[16];
-        wire[0] = 7; wire[1] = 'e'; wire[2] = 'x'; wire[3] = 'a';
-        wire[4] = 'm'; wire[5] = 'p'; wire[6] = 'l'; wire[7] = 'e';
-        wire[8] = 3; wire[9] = 'c'; wire[10] = 'o'; wire[11] = 'm';
-        wire[12] = 0;
-        wire[13] = 192;   /* 0xC0 — compression pointer MSB */
-        wire[14] = 0;     /* offset = 0 */
+        uint8_t wire[] = {7, 'e', 'x', 'a', 'm', 'p', 'l', 'e',
+                          3, 'c', 'o', 'm', 0,
+                          0xC0, 0x00};  /* compression ptr @offset 0 */
 
         char out[64];
         int ret = tlibc_dns_name_decode(wire, 15, 13, out, sizeof(out));
@@ -433,8 +420,7 @@ int main(void)
 
     /* ── tlibc_dns_get_record (full response with answer) ── */
     {
-        /* Construct a DNS response with one answer record.
-         * 用 decimal 和分步赋值绕过 toyc 的 >127 byte bug */
+        /* Construct a DNS response with one answer record. */
         uint8_t resp[64];
         int pos = 0;
 
@@ -464,10 +450,9 @@ int main(void)
         resp[pos++] = 0x00; resp[pos++] = 0x00; /* TTL = 300 (high 16 bits) */
         resp[pos++] = 0x01; resp[pos++] = 44;   /* TTL = 300 (low bytes: 0x012C) */
         resp[pos++] = 0x00; resp[pos++] = 0x04; /* RDLENGTH = 4 */
-        /* RDATA: use values <128 to avoid toyc's >128 byte bug in comparison.
-         * 0x5D=93, 0x22=34, and two safe bytes <128 */
-        resp[pos++] = 93;   resp[pos++] = 100;  /* 0x5D, 0x64 (was 0xB8) */
-        resp[pos++] = 110;  resp[pos++] = 34;   /* 0x6E, 0x22 (was 0xD8) */
+        /* RDATA: IP 192.168.1.1 */
+        resp[pos++] = 0xC0;  resp[pos++] = 0xA8;  /* 192, 168 */
+        resp[pos++] = 0x01;  resp[pos++] = 0x01;  /* 1, 1 */
 
         {
             int resp_len = pos;
@@ -487,10 +472,10 @@ int main(void)
                 check("dns record class == IN", class == DNS_CLASS_IN);
                 check("dns record TTL == 300", ttl == 300);
                 check("dns record rdlen == 4", rdlen == 4);
-                check("dns record rdata[0]==93", rdata[0] == 93);
-                check("dns record rdata[1]==100", rdata[1] == 100);
-                check("dns record rdata[2]==110", rdata[2] == 110);
-                check("dns record rdata[3]==34", rdata[3] == 34);
+                check("dns record rdata[0]==192", rdata[0] == 0xC0);
+                check("dns record rdata[1]==168", rdata[1] == 0xA8);
+                check("dns record rdata[2]==1", rdata[2] == 1);
+                check("dns record rdata[3]==1", rdata[3] == 1);
             }
         }
     }

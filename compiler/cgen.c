@@ -69,8 +69,10 @@ int func_ret_count;
 const char *parsed_func_ret_names[MAX_FUNC_RET_TYPES];
 int parsed_func_ret_sizes[MAX_FUNC_RET_TYPES];
 int parsed_func_ret_float[MAX_FUNC_RET_TYPES];
+int parsed_func_ret_unsigned[MAX_FUNC_RET_TYPES];
 int parsed_func_ret_count;
 static int current_func_ret_size;
+static int current_func_is_unsigned;    /* 当前函数返回类型是否为 unsigned */
 static const char *current_func_name;
 static int current_hidden_ptr_offset;  /* hidden pointer 栈槽的 RBP 偏移 */
 
@@ -409,6 +411,20 @@ static void cgen_return(AstNode *stmt) {
         if (current_func_ret_size == 8 && stmt->expr && !stmt->expr->is_float &&
             stmt->expr->type_size < 8 && !stmt->expr->is_unsigned)
             { emit1(0x48); emit1(0x63); emit1(0xC0); }  /* movsxd rax, eax */
+        /* 窄返回类型截断：char (1) / short (2) 类型返回值需截断或扩展 */
+        if (current_func_ret_size < 4 && stmt->expr && !stmt->expr->is_float) {
+            if (current_func_ret_size == 1) {
+                if (current_func_is_unsigned)
+                    { e1(0x0F); e1(0xB6); e1(0xC0); }  /* movzbl %al, %eax — 零扩展 byte */
+                else
+                    { e1(0x0F); e1(0xBE); e1(0xC0); }  /* movsbl %al, %eax — 符号扩展 byte */
+            } else if (current_func_ret_size == 2) {
+                if (current_func_is_unsigned)
+                    { e1(0x0F); e1(0xB7); e1(0xC0); }  /* movzwl %ax, %eax — 零扩展 word */
+                else
+                    { e1(0x0F); e1(0xBF); e1(0xC0); }  /* movswl %ax, %eax — 符号扩展 word */
+            }
+        }
         if (current_func_ret_size > 8) {
             /* 大结构体按值返回（hidden pointer ABI）
              *
@@ -919,6 +935,7 @@ static void cgen_func_def(AstNode *func) {
 
     /* 记录当前函数的返回类型大小 */
     current_func_ret_size = func->type_size;
+    current_func_is_unsigned = func->is_unsigned;
     current_hidden_ptr_offset = 0;
 
     /* 大结构体返回值（>8 字节）：为隐藏指针分配栈槽 */

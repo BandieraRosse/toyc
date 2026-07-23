@@ -2381,6 +2381,7 @@ AstNode *parse_compound_statement(Parser *p) {
                         te->type_kind = tptr_level > 0 ? 2 : (last_struct_member_count > 0 ? 1 : 0);
                         te->ptr_level = tptr_level;
                         te->points_to = tptr_level > 0 ? tsz : 0;
+                        te->is_unsigned = (tptr_level == 0) ? last_type_is_unsigned : 0;
                         if (last_struct_member_count > 0) {
                             te->member_count = last_struct_member_count;
                             int mi;
@@ -3148,6 +3149,7 @@ AstNode *parse_program(Parser *p) {
                     te->type_kind = tptr_level > 0 ? 2 : (last_struct_member_count > 0 ? 1 : 0);
                     te->ptr_level = tptr_level;
                     te->points_to = tptr_level > 0 ? tsz : 0;
+                    te->is_unsigned = (tptr_level == 0) ? last_type_is_unsigned : 0;
                     te->struct_idx = -1;
                     /* 对 struct typedef 保存成员信息 */
                     if (last_struct_member_count > 0) {
@@ -3297,9 +3299,10 @@ AstNode *parse_program(Parser *p) {
                         global_typedef_tag = typedef_table[pti].name; break; } } }
         }
         int typesize = parse_type_specifier(p);
-        /* 保存返回类型的 struct tag 和 float 状态（其后 parse_parameter_list 会覆盖这些全局变量） */
+        /* 保存返回类型的 struct tag、float、unsigned 状态（其后 parse_parameter_list 会覆盖这些全局变量） */
         const char *ret_struct_tag = last_struct_tag;
         int ret_type_is_float = last_type_is_float;
+        int ret_type_is_unsigned = last_type_is_unsigned;
         if (typesize < 0) {
             error_at(p, "expected type specifier");
             break;
@@ -3362,6 +3365,7 @@ AstNode *parse_program(Parser *p) {
                     parsed_func_ret_names[parsed_func_ret_count] = fname;
                     parsed_func_ret_sizes[parsed_func_ret_count] = typesize;
                     parsed_func_ret_float[parsed_func_ret_count] = ret_type_is_float;
+                    parsed_func_ret_unsigned[parsed_func_ret_count] = ret_type_is_unsigned;
                     parsed_func_ret_count++;
                 }
                 /* 记录 struct 返回类型的 tag（供 AST_MEMBER .member 查找成员偏移） */
@@ -3414,12 +3418,14 @@ AstNode *parse_program(Parser *p) {
                 func->ival = pcount;
                 func->type_size = (fptr_level > 0) ? 8 : typesize;  /* 存储返回类型大小：指针返回 8 字节，struct 按值返回使用原大小 */
                 func->is_float = (fptr_level == 0) ? ret_type_is_float : 0;
+                func->is_unsigned = (fptr_level == 0) ? ret_type_is_unsigned : 0;
                 /* 记录到 parsed_func_ret 表供调用点代码生成与返回类型推断 */
                 if (fptr_level == 0 && fname &&
                     parsed_func_ret_count < MAX_FUNC_RET_TYPES) {
                     parsed_func_ret_names[parsed_func_ret_count] = fname;
                     parsed_func_ret_sizes[parsed_func_ret_count] = typesize;
                     parsed_func_ret_float[parsed_func_ret_count] = func->is_float;
+                    parsed_func_ret_unsigned[parsed_func_ret_count] = ret_type_is_unsigned;
                     parsed_func_ret_count++;
                 }
                 /* 记录 struct 返回类型（供解析期 func().member 使用） */

@@ -91,7 +91,7 @@ make clean
 | stdio         | 3 个源文件          | ✅         | ✅ 全部通过                                    |
 | time          | `time.c`            | ✅         | ✅ 41 项通过（避开 2D 数组 bug，仅测 mon=0 日期和数字 strftime） |
 | misc          | 5 个源文件          | ✅         | ✅ 16 项通过（path.c, file.c, 避开 mkdirat 依赖） |
-| net           | 2 个源文件          | ✅         | ✅ 全部通过（绕过 toyc >127 byte 等限制）     |
+| net           | 2 个源文件          | ✅         | ✅ 全部通过（已修复 uint16_t typedef is_unsigned、返回值截断和 0xFFFFFFFFU 比较） |
 | poll          | `poll.c`            | ✅         | ✅ 11 项通过（pipe + epoll）                  |
 | tty           | `tty.c`             | ✅         | ✅ 全部通过（错误路径 + cursor 输出）          |
 | procfs        | `procfs.c`          | ✅         | ✅ 15 项通过（跳过 tlibc_list_pids flex array segfault） |

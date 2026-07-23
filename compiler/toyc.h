@@ -438,6 +438,7 @@ static inline int get_func_ret_size(const char *name) {
 extern const char *parsed_func_ret_names[MAX_FUNC_RET_TYPES];
 extern int parsed_func_ret_sizes[MAX_FUNC_RET_TYPES];
 extern int parsed_func_ret_float[MAX_FUNC_RET_TYPES];
+extern int parsed_func_ret_unsigned[MAX_FUNC_RET_TYPES];
 extern int parsed_func_ret_count;
 
 /* ─── 类型系统（Phase 3） ─── */
