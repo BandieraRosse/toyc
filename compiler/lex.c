@@ -654,6 +654,11 @@ Token lexer_next(Lexer *lx) {
                 case 'n': t.ival = '\n'; break;
                 case 't': t.ival = '\t'; break;
                 case 'r': t.ival = '\r'; break;
+                case 'f': t.ival = 0x0C; break;  /* \f = form feed */
+                case 'v': t.ival = 0x0B; break;  /* \v = vertical tab */
+                case 'a': t.ival = 0x07; break;  /* \a = alert */
+                case 'b': t.ival = 0x08; break;  /* \b = backspace */
+                case '?': t.ival = 0x3F; break;  /* \? = question mark */
                 case '0': t.ival = '\0'; break;
                 case '\\': t.ival = '\\'; break;
                 case '\'': t.ival = '\''; break;
