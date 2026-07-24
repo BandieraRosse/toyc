@@ -1850,6 +1850,16 @@ void cgen_expr(AstNode *node) {
                 } else {
                     e1(0xF3); e1(0x0F); e1(0x5A); e1(0xC0);  /* cvtss2sd xmm0, xmm0 */
                 }
+            } else if (!node->is_float && node->expr && !node->expr->is_float &&
+                       node->is_unsigned && node->type_size < 4) {
+                /* unsigned char/short 截断：零扩展。对 (unsigned char)expr
+                 * 需用 movzbl 清除子表达式可能的符号扩展（如 signed char 的
+                 * movsbl 把 0xAA 变成 0xFFFFFFAA）。signed char/short 不在此
+                 * 处理——BINOP/return 路径已有各自的截断逻辑。 */
+                if (node->type_size == 1)
+                    { e1(0x0F); e1(0xB6); e1(0xC0); }  /* movzbl %al, %eax */
+                else if (node->type_size == 2)
+                    { e1(0x0F); e1(0xB7); e1(0xC0); }  /* movzwl %ax, %eax */
             }
             break;
         }

@@ -826,6 +826,17 @@ static void cgen_stmt(AstNode *stmt) {
                         { e1(0x48); e1(0x8D); e1(0xBD); e4(locals[_vi].offset); }
                     e1(0xB9); e4(locals[_vi].size);  /* mov ecx, size */
                     e1(0xF3); e1(0xA4);              /* rep movsb */
+                } else if (_vi >= 0 && locals[_vi].is_array && stmt->expr &&
+                           stmt->expr->kind == AST_STRING) {
+                    /* char buf[] = "string" ≤8 字节：拷贝字符串字节，而非存地址 */
+                    cgen_addr(stmt->expr);           /* rax = 源地址 */
+                    e1(0x48); e1(0x89); e1(0xC6);  /* mov rsi, rax */
+                    if (disp8_fits(locals[_vi].offset))
+                        { e1(0x48); e1(0x8D); e1(0x7D); e1(locals[_vi].offset & 0xFF); }
+                    else
+                        { e1(0x48); e1(0x8D); e1(0xBD); e4(locals[_vi].offset); }
+                    e1(0xB9); e4(locals[_vi].size);  /* mov ecx, size */
+                    e1(0xF3); e1(0xA4);              /* rep movsb */
                 } else {
                     cgen_expr(stmt->expr);
                     int i;
