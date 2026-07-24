@@ -20,13 +20,13 @@ TEST_DEFINE_COUNTERS();
 
 #define ASSERT_NEAR(val, expected, eps) \
     do { \
-        double diff_ = (double)(val) - (double)(expected); \
+        double _v_ = (double)(val); \
+        double _e_ = (double)(expected); \
+        double diff_ = _v_ - _e_; \
         if (diff_ < 0) diff_ = -diff_; \
         if (diff_ > (double)(eps)) { \
-            __printf(_T_RED "FAIL" _T_RESET "\n    %s:%d: " \
-                     "%s = %f, expected %f (diff %f > %f)\n", \
-                     __FILE__, __LINE__, \
-                     #val, (double)(val), (double)(expected), diff_, (double)(eps)); \
+            __printf(_T_RED "FAIL" _T_RESET "\n    %s:%d: %s\n", \
+                     __FILE__, __LINE__, #val); \
             __test_failed++; \
             return; \
         } \
