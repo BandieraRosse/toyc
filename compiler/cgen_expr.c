@@ -2115,7 +2115,10 @@ void cgen_expr(AstNode *node) {
                                        !node->right->is_unsigned) {
                                 do_sext = 1;  /* 有符号 32 位常量 → long */
                             } else if (!node->right->is_unsigned) {
-                                do_sext = 1;  /* 其他有符号 int 表达式 → long */
+                                /* 排除 __builtin_va_arg：va_arg 始终返回 64 位完整值 */
+                                if (!(node->right->kind == AST_CALL && node->right->name &&
+                                      strcmp(node->right->name, "__builtin_va_arg") == 0))
+                                    do_sext = 1;  /* 其他有符号 int 表达式 → long */
                             }
                             if (do_sext)
                                 { e1(0x48); e1(0x63); e1(0xC0); }  /* movsxd rax, eax */
