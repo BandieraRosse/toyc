@@ -156,7 +156,8 @@ _TEST_xxx    := test_xxx               # 测试驱动 basename（可选）
 | 浮点运算 | ✅ 完整支持 float(32-bit) 和 double(64-bit)，SSE 指令无条件启用 |
 | 全局 float/double 花括号初始化 | ✅ `float arr[] = {1.0f, 2.0f}` 等 |
 | `%f` 格式化 | ✅ toyc_rt.c 运行时支持 |
-| VLA（变长数组） | 未实现 |
+| VLA（变长数组） | ❌ 未实现。`int pids[n]` 生成错误代码，需改为固定大小数组 |
+| `char (*)[N]` 指针转数组访问 | ❌ `files[i]` 被当作 `char**`（取指针）而非地址偏移（取元素），需用平坦指针+手动偏移 |
 | 位域（bitfield） | 未实现 |
 | 复合字面量 `(int[]){1,2}` | 未实现 |
 | 指定初始化器 `.field=val` | 未实现 |

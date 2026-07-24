@@ -5,6 +5,7 @@
 
 #define LIB_DIR "lib"
 #define LIB_OUTPUT "tlibc.a"//静态库的文件名
+#define FILE_PATH_SZ 512 // 文件路径缓冲区大小（转为平坦指针时的跨度）
 
 char pwd[512];
 char *build_path = "./build";
@@ -291,7 +292,7 @@ int parallel_compile_task(char *path, int max_jobs){
     tlibc_recursive_mkdir(buf);
 
     if(max_jobs > files_count) max_jobs = files_count;
-    int pids[max_jobs];
+    int pids[64];
     int active = 0, next = 0, failed = 0;
 
     while(next < files_count || active > 0){
@@ -366,11 +367,11 @@ int compile_task(char *path){
 
 //需要知道目标文件所在路径
 static int collect_files_recursive(const char *path, const char *ext,
-                                   char (*files)[512], int max);
+                                   char *files, int max);
 
 int ar_library(char *build_path){
 #define MAX_LIB_O_FILES 4096
-    char (*files)[512] = (char (*)[512])tlibc_malloc(MAX_LIB_O_FILES * 512);
+    char *files = (char *)tlibc_malloc(MAX_LIB_O_FILES * FILE_PATH_SZ);
     int total = collect_files_recursive(build_path, ".o", files, MAX_LIB_O_FILES);
     if(total <= 0){
         printf("没有找到 .o 文件, 路径=%s\n", build_path);
@@ -382,7 +383,7 @@ int ar_library(char *build_path){
     int flag_num = copy_default_ar_flags(ar_flags);
     ar_flags[flag_num++] = LIB_OUTPUT;
     for(int i = 0; i < total; i++)
-        ar_flags[flag_num++] = files[i] + prefix_len;
+        ar_flags[flag_num++] = files + i * FILE_PATH_SZ + prefix_len;
     ar_flags[flag_num] = NULL;
     int pid = fork();
     if(pid == 0){
@@ -506,7 +507,7 @@ int parallel_link_task(char *all_app_path, char *output_path, int max_jobs){
     files_count = tlibc_get_file_name_list(all_app_path, (uint64_t)file_name_list, files_count);
 
     if(max_jobs > files_count) max_jobs = files_count;
-    int pids[max_jobs];
+    int pids[64];
     int active = 0, next = 0, failed = 0;
 
     while(next < files_count || active > 0){
@@ -618,10 +619,10 @@ static void install_core_tools(void);
 
 int compile_recursive_task(const char *path){
 #define MAX_FLAT_FILES 4096
-    char (*files)[512] = (char (*)[512])tlibc_malloc(MAX_FLAT_FILES * 512);
+    char *files = (char *)tlibc_malloc(MAX_FLAT_FILES * FILE_PATH_SZ);
     int total = collect_files_recursive(path, ".c", files, MAX_FLAT_FILES);
     /* 追加 .S 汇编文件（如 clone.S、start.S） */
-    int s_total = collect_files_recursive(path, ".S", files + total, MAX_FLAT_FILES - total);
+    int s_total = collect_files_recursive(path, ".S", files + total * FILE_PATH_SZ, MAX_FLAT_FILES - total);
     total += s_total;
     if(total <= 0){
         printf("没有找到需要编译的文件, 路径=%s\n", path);
@@ -635,14 +636,14 @@ int compile_recursive_task(const char *path){
         int idx = 0;
         while (idx < total) {
             char dir[256], name[64];
-            get_file_dir(files[idx], dir, sizeof(dir));
-            get_file_basename(files[idx], name, sizeof(name));
+            get_file_dir(files + idx * FILE_PATH_SZ, dir, sizeof(dir));
+            get_file_basename(files + idx * FILE_PATH_SZ, name, sizeof(name));
 
             Tmakelist tl;
             int ret = read_tmakelist(dir, &tl);
             if (ret > 0 && !tmakelist_has_source(&tl, name)) {
                 /* 合法 tmakelist 中未引用此文件 → 跳过 */
-                snprintf(files[idx], 512, "%s", files[total - 1]);
+                snprintf(files + idx * FILE_PATH_SZ, FILE_PATH_SZ, "%s", files + (total - 1) * FILE_PATH_SZ);
                 total--;
                 continue;
             }
@@ -653,7 +654,7 @@ int compile_recursive_task(const char *path){
     // 确保所有 build 子目录存在
     for(int i = 0; i < total; i++){
         char out[256];
-        out_subdir_from_path(files[i], out, sizeof(out));
+        out_subdir_from_path(files + i * FILE_PATH_SZ, out, sizeof(out));
         char build_dir[512];
         snprintf(build_dir, 512, "build/%s", out);
         tlibc_recursive_mkdir(build_dir);
@@ -662,9 +663,9 @@ int compile_recursive_task(const char *path){
     if(g_max_jobs <= 1){
         for(int i = 0; i < total; i++){
             char out[256];
-            out_subdir_from_path(files[i], out, sizeof(out));
-            printf("编译文件%d: %s\n", i, files[i]);
-            if(compile_file(files[i], out) < 0){
+            out_subdir_from_path(files + i * FILE_PATH_SZ, out, sizeof(out));
+            printf("编译文件%d: %s\n", i, files + i * FILE_PATH_SZ);
+            if(compile_file(files + i * FILE_PATH_SZ, out) < 0){
                 tlibc_free(files);
                 return -1;
             }
@@ -676,18 +677,18 @@ int compile_recursive_task(const char *path){
     // 并行编译：所有文件通过同一个工作池分派
     int max_jobs = g_max_jobs;
     if(max_jobs > total) max_jobs = total;
-    int pids[max_jobs];
+    int pids[64];
     int active = 0, next = 0, failed = 0;
 
     while(next < total || active > 0){
         while(active < max_jobs && next < total && !failed){
             char out[256];
-            out_subdir_from_path(files[next], out, sizeof(out));
-            int pid = compile_file_start(files[next], out);
+            out_subdir_from_path(files + next * FILE_PATH_SZ, out, sizeof(out));
+            int pid = compile_file_start(files + next * FILE_PATH_SZ, out);
             if(pid == -2){
-                printf("跳过文件%d: %s\n", next, files[next]);
+                printf("跳过文件%d: %s\n", next, files + next * FILE_PATH_SZ);
             } else if(pid > 0){
-                printf("编译文件%d: %s\n", next, files[next]);
+                printf("编译文件%d: %s\n", next, files + next * FILE_PATH_SZ);
                 pids[active++] = pid;
             }
             next++;
@@ -727,7 +728,7 @@ static int  link_multi_app_start(char **obj_paths, int count,
 //   output_path: 可执行文件输出目录（如 "build/output"）
 //   支持多文件模块：检测源目录下的 tmakelist 文件，将多个 .o 联合链接
 int link_recursive_task(const char *path, const char *output_path){
-    char (*files)[512] = (char (*)[512])tlibc_malloc(MAX_FLAT_FILES * 512);
+    char *files = (char *)tlibc_malloc(MAX_FLAT_FILES * FILE_PATH_SZ);
     int total = collect_files_recursive(path, ".o", files, MAX_FLAT_FILES);
     if(total <= 0){
         printf("没有找到需要链接的 .o 文件 路径=%s\n", path);
@@ -752,7 +753,7 @@ int link_recursive_task(const char *path, const char *output_path){
 
         /* 从 build 路径反推源目录 */
         char src_dir[256];
-        obj_to_src_dir(files[i], src_dir, sizeof(src_dir));
+        obj_to_src_dir(files + i * FILE_PATH_SZ, src_dir, sizeof(src_dir));
 
         Tmakelist tl;
         int tl_ret = read_tmakelist(src_dir, &tl);
@@ -765,7 +766,7 @@ int link_recursive_task(const char *path, const char *output_path){
                          src_dir, tl.targets[0].name);
                 int already = 0;
                 for (int j = 0; j < total; j++) {
-                    if (strcmp(files[j], main_obj) == 0 && handled[j]) {
+                    if (strcmp(files + j * FILE_PATH_SZ, main_obj) == 0 && handled[j]) {
                         already = 1; break;
                     }
                 }
@@ -783,8 +784,8 @@ int link_recursive_task(const char *path, const char *output_path){
                     snprintf(expected, sizeof(expected), "build/%s/%s.o",
                              src_dir, tgt->name);
                     for (int j = 0; j < total; j++) {
-                        if (strcmp(files[j], expected) == 0) {
-                            job_objs[job_total][obj_idx++] = files[j];
+                        if (strcmp(files + j * FILE_PATH_SZ, expected) == 0) {
+                            job_objs[job_total][obj_idx++] = files + j * FILE_PATH_SZ;
                             handled[j] = 1;
                             break;
                         }
@@ -797,8 +798,8 @@ int link_recursive_task(const char *path, const char *output_path){
                     snprintf(expected, sizeof(expected), "build/%s/%s.o",
                              src_dir, tgt->srcs + s * 64);
                     for (int j = 0; j < total; j++) {
-                        if (strcmp(files[j], expected) == 0) {
-                            job_objs[job_total][obj_idx++] = files[j];
+                        if (strcmp(files + j * FILE_PATH_SZ, expected) == 0) {
+                            job_objs[job_total][obj_idx++] = files + j * FILE_PATH_SZ;
                             handled[j] = 1;
                             break;
                         }
@@ -848,14 +849,14 @@ int link_recursive_task(const char *path, const char *output_path){
         if (!failed) {
             for (int i = 0; i < total; i++) {
                 if (handled[i]) continue;
-                if (link_app(files[i], output_path) < 0) {
+                if (link_app(files + i * FILE_PATH_SZ, output_path) < 0) {
                     failed = 1; break;
                 }
             }
         }
     } else {
         /* 并行池：tmakelist 目标 + 单文件混合 */
-        int pids[max_jobs];
+        int pids[64];
         int active = 0;
         int next_job = 0;     /* tmakelist 任务游标 */
         int next_file = 0;    /* 单文件游标 */
@@ -878,7 +879,7 @@ int link_recursive_task(const char *path, const char *output_path){
                 /* 然后启动单文件 */
                 while (next_file < total && !failed) {
                     if (handled[next_file]) { next_file++; continue; }
-                    int pid = link_app_start(files[next_file], output_path);
+                    int pid = link_app_start(files + next_file * FILE_PATH_SZ, output_path);
                     if (pid > 0) {
                         pids[active++] = pid;
                     }
@@ -1199,11 +1200,11 @@ static long sum_file_sizes(const char *path){
 /* ================================================================== */
 
 /* 递归收集 path 下所有扩展名为 ext（如 ".c"）的文件，写入 files[0..max) 中。
- * files 为二维数组 char files[max][512]。
+ * files 为平坦缓冲区，每项固定 FILE_PATH_SZ 字节。
  * 返回收集到的文件总数（可能超过 max）。 */
 static int
 collect_files_recursive(const char *path, const char *ext,
-                        char (*files)[512], int max)
+                        char *files, int max)
 {
     int total = 0;
 
@@ -1217,8 +1218,10 @@ collect_files_recursive(const char *path, const char *ext,
 
         for(int i = 0; i < n && total < max; i++){
             char *dot = strrchr(names[i], '.');
-            if(dot && strcmp(dot, ext) == 0)
-                snprintf(files[total++], 512, "%s/%s", path, names[i]);
+            if(dot && strcmp(dot, ext) == 0){
+                snprintf(files + total * FILE_PATH_SZ, FILE_PATH_SZ, "%s/%s", path, names[i]);
+                total++;
+            }
         }
         tlibc_free(names);
         tlibc_free(buf);
@@ -1235,7 +1238,7 @@ collect_files_recursive(const char *path, const char *ext,
         for(int i = 0; i < dir_cnt && total < max; i++){
             char sub[512];
             snprintf(sub, 512, "%s/%s", path, dirs[i]);
-            total += collect_files_recursive(sub, ext, files + total, max - total);
+            total += collect_files_recursive(sub, ext, files + total * FILE_PATH_SZ, max - total);
         }
         tlibc_free(dirs);
         tlibc_free(dbuf);
@@ -1601,10 +1604,10 @@ int main(int argc, char *argv[]){
         }
     }
 
-    //检查工作目录是否是Tinylibc项目，以tlibc_everything.h为标志
+    //检查工作目录是否是Tinylibc项目，以include/tlibc/tlibc_everything.h为标志
     memset(pwd, 0, sizeof(pwd));
     getcwd(pwd, 512);
-    int ret = tlibc_is_path_file("tlibc_commit_log.md");
+    int ret = tlibc_is_path_file("include/tlibc/tlibc_everything.h");
     if(ret != 1){
         printf("当前目录不是Tinylibc项目! 切换到Tinylibc项目目录再尝试tmake生成!\n");
         return 1;
@@ -1696,7 +1699,7 @@ int main(int argc, char *argv[]){
     // 统计信息（只计 .o 文件，排除 .d 等）
     int lib_o_count = 0;
     {
-        char (*_ofiles)[512] = (char (*)[512])tlibc_malloc(4096 * 512);
+        char *_ofiles = (char *)tlibc_malloc(4096 * FILE_PATH_SZ);
         int n = collect_files_recursive("build/lib", ".o", _ofiles, 4096);
         lib_o_count = n > 0 ? n : 0;
         tlibc_free(_ofiles);
