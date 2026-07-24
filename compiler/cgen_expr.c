@@ -1101,6 +1101,23 @@ void cgen_expr(AstNode *node) {
         cgen_expr(node->right);
         pop_rcx();  /* rcx = left, rax = right */
 
+        /* 符号扩展：int + long long 等混合宽度运算时，32 位有符号整数需在
+         * 64 位运算前符号扩展到 64 位，否则 32 位负值被零扩展后参与 64 位
+         * 运算会得出错误结果（如 int(-1)=0xFFFFFFFF → 0x00000000FFFFFFFF）。
+         * 注意：仅当 64 位操作数也是有符号时做符号扩展。若 64 位操作数为
+         * unsigned（例如 0xAAAAAAAA 等 > INT_MAX 的十六进制常量被 toyc
+         * 存为 type_size=8 但语义上是 unsigned int），则不做符号扩展，
+         * 保持零扩展以匹配 C 的 usual arithmetic conversions。 */
+        if (node->left && node->right) {
+            int lsz = node->left->type_size;
+            int rsz = node->right->type_size;
+            if (lsz == 4 && rsz == 8 && !node->left->is_unsigned && !node->right->is_unsigned) {
+                e1(0x48); e1(0x63); e1(0xC9);  /* movsxd rcx, ecx */
+            } else if (rsz == 4 && lsz == 8 && !node->right->is_unsigned && !node->left->is_unsigned) {
+                e1(0x48); e1(0x63); e1(0xC0);  /* cdqe — movsxd rax, eax */
+            }
+        }
+
         /* 指针算术缩放：ptr + int 或 int + ptr 时，整数操作数乘以元素大小 */
         if ((node->op == TOK_PLUS || node->op == TOK_MINUS) &&
             ((node->left && node->left->type_size == 8 &&
