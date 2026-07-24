@@ -2319,10 +2319,11 @@ void cgen_expr(AstNode *node) {
                     if (!is_float_arg && node->is_float && node->is_float == type_size)
                         is_float_arg = node->is_float;
                 }
-                /* 回退：对 __builtin_va_arg(ap, double) 中 type_size=8
-                 * 且调用节点的启发式结果 is_float=8 的情况强制使用浮点路径 */
-                if (!is_float_arg && type_size == 8 && node->is_float == 8)
-                    is_float_arg = 8;
+                /* 回退：直接使用 call 节点的 is_float（方案B 在 parse.c 类型参数
+                 * 处理中直接从 first_kind 设置，不依赖 struct 成员读取）。
+                 * 这覆盖自举编译时 args->next->is_float 可能丢失的情况。 */
+                if (!is_float_arg && node->is_float)
+                    is_float_arg = node->is_float;
                 /* 默认参数提升：小于 4 升到 4，大于 8 截到 8 */
                 if (type_size < 4) type_size = 4;
                 if (type_size > 8) type_size = 8;

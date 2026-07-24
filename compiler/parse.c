@@ -820,8 +820,14 @@ static AstNode *parse_postfix(Parser *p) {
                     if (tsz > 0) {
                         *tail = new_ast(p, AST_CONSTANT);
                         (*tail)->ival = tsz;
-                        if (first_kind == TOK_FLOAT || first_kind == TOK_DOUBLE)
+                        if (first_kind == TOK_FLOAT || first_kind == TOK_DOUBLE) {
                             (*tail)->is_float = tsz;
+                            /* 方案B：直接传播到 __builtin_va_arg 的 call 节点，
+                             * 确保 self-hosted toyc 在 is_float 通过 struct 成员
+                             * 访问可能丢失时，codegen 回退仍能正确判定浮点路径。 */
+                            if (call->name && strcmp(call->name, "__builtin_va_arg") == 0)
+                                call->is_float = tsz;
+                        }
                         (*tail)->is_unsigned = last_type_is_unsigned;
                     }
                 } else {
@@ -837,8 +843,11 @@ static AstNode *parse_postfix(Parser *p) {
                     if (tsz > 0) {
                         *tail = new_ast(p, AST_CONSTANT);
                         (*tail)->ival = tsz;
-                        if (first_kind == TOK_FLOAT || first_kind == TOK_DOUBLE)
+                        if (first_kind == TOK_FLOAT || first_kind == TOK_DOUBLE) {
                             (*tail)->is_float = tsz;
+                            if (call->name && strcmp(call->name, "__builtin_va_arg") == 0)
+                                call->is_float = tsz;
+                        }
                         (*tail)->is_unsigned = last_type_is_unsigned;
                     }
                 }

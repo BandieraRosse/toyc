@@ -69,17 +69,63 @@ int main(void) {
     n = snprintf(buf, sizeof(buf), "%ld", 100000L);
     check("snprintf long",      n == 6 && strcmp(buf, "100000") == 0);
 
+    /* %lu（值在 32-bit 正数范围内，避免触发 toyc 大常量符号扩展预存 bug） */
+    n = snprintf(buf, sizeof(buf), "%lu", 2000000000UL);
+    check("snprintf %%lu 2e9",    n == 10 && strcmp(buf, "2000000000") == 0);
+
+    n = snprintf(buf, sizeof(buf), "%lu", 0UL);
+    check("snprintf %%lu zero",   n == 1 && strcmp(buf, "0") == 0);
+
+    /* %x */
+    n = snprintf(buf, sizeof(buf), "%x", 0xdead);
+    check("snprintf %%x",         n == 4 && strcmp(buf, "dead") == 0);
+
+    /* %lx（值在 32-bit 范围，避免触发符号扩展预存 bug） */
+    n = snprintf(buf, sizeof(buf), "%lx", 0x1234abcdUL);
+    check("snprintf %%lx",        n == 8 && strcmp(buf, "1234abcd") == 0);
+
+    /* %p（lib 实现输出 "0x" 前缀，null 输出 "0x0" 而非 "(nil)"） */
+    n = snprintf(buf, sizeof(buf), "%p", (void*)0x0);
+    check("snprintf %%p null",    n == 3 && strcmp(buf, "0x0") == 0);
+
+    n = snprintf(buf, sizeof(buf), "%p", (void*)0x1234);
+    check("snprintf %%p addr",    n == 6 && strcmp(buf, "0x1234") == 0);
+
     /* %c */
     n = snprintf(buf, sizeof(buf), "%c", 'A');
-    check("snprintf char",      n == 1 && strcmp(buf, "A") == 0);
+    check("snprintf char",        n == 1 && strcmp(buf, "A") == 0);
 
     /* 多参数 */
     n = snprintf(buf, sizeof(buf), "%s=%d", "count", 42);
-    check("snprintf multi",     n == 8 && strcmp(buf, "count=42") == 0);
+    check("snprintf multi",       n == 8 && strcmp(buf, "count=42") == 0);
 
     /* 负数 */
     n = snprintf(buf, sizeof(buf), "%d", -42);
-    check("snprintf neg",       n == 3 && strcmp(buf, "-42") == 0);
+    check("snprintf neg",         n == 3 && strcmp(buf, "-42") == 0);
+
+    /* ── %f 浮点格式化 ── */
+
+    n = snprintf(buf, sizeof(buf), "%f", 3.14159);
+    check("snprintf %%f pi",      n == 8 && strcmp(buf, "3.141590") == 0);
+
+    n = snprintf(buf, sizeof(buf), "%f", 0.0);
+    check("snprintf %%f zero",    n == 8 && strcmp(buf, "0.000000") == 0);
+
+    n = snprintf(buf, sizeof(buf), "%f", -2.5);
+    check("snprintf %%f neg",     n == 9 && strcmp(buf, "-2.500000") == 0);
+
+    n = snprintf(buf, sizeof(buf), "%.2f", 3.14159);
+    check("snprintf %%.2f",       n == 4 && strcmp(buf, "3.14") == 0);
+
+    /* 注意：double_to_str 对 %.0f 保留 ".0"（即使精度为 0） */
+    n = snprintf(buf, sizeof(buf), "%.0f", 3.14159);
+    check("snprintf %%.0f",       n == 3 && strcmp(buf, "3.0") == 0);
+
+    n = snprintf(buf, sizeof(buf), "%f %f", 1.5, 2.5);
+    check("snprintf %%f %%f",     n == 17 && strcmp(buf, "1.500000 2.500000") == 0);
+
+    n = snprintf(buf, sizeof(buf), "%d %f %s", 42, 3.14, "ok");
+    check("snprintf int float str", n == 14 && strcmp(buf, "42 3.140000 ok") == 0);
 
     /* ── __printf 基本确认 ── */
     __printf("  __printf 输出正常\n");
