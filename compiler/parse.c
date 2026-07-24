@@ -2641,7 +2641,7 @@ AstNode *parse_compound_statement(Parser *p) {
                         AstNode *prev_init = NULL;
                         int init_idx = 0;
                         while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
-                            const char *ipos = p->lexer->pos;  /* 防死循环：不支持 .member 指派初始化器 */
+                            const char *ipos = p->lexer->pos;
                             /* 多维数组嵌套 { } 初始化：int a[2][3] = {{1,2,3},{4,5,6}} */
                             if (!struct_brace && dim_count > 1 && peek(p).kind == TOK_LBRACE) {
                                 consume(p); /* 跳过内层 { */
@@ -2677,6 +2677,45 @@ AstNode *parse_compound_statement(Parser *p) {
                                 }
                                 if (peek(p).kind == TOK_RBRACE) consume(p);
                                 init_idx++;
+                            } else if (struct_brace && peek(p).kind == TOK_DOT) {
+                                /* 指派初始化器：.fieldname = expr（C99 指定初始化器） */
+                                consume(p); /* 跳过 . */
+                                Token fname = consume(p);
+                                char dmn[128];
+                                int dnl = fname.len < 127 ? fname.len : 127;
+                                int dmi; for (dmi = 0; dmi < dnl; dmi++) dmn[dmi] = fname.start[dmi];
+                                dmn[dnl] = '\0';
+                                if (peek(p).kind == TOK_EQ) {
+                                    consume(p); /* 跳过 = */
+                                    AstNode *ie = parse_expr(p);
+                                    if (ie && decl->name) {
+                                        int fi = -1;
+                                        int mj;
+                                        for (mj = 0; mj < struct_mem_cnt; mj++) {
+                                            if (strcmp(struct_mems[mj].name, dmn) == 0) { fi = mj; break; }
+                                        }
+                                        if (fi >= 0) {
+                                            AstNode *var = new_ast(p, AST_VAR);
+                                            var->name = decl->name;
+                                            AstNode *member = new_ast(p, AST_MEMBER);
+                                            member->left = var;
+                                            member->member_name = struct_mems[fi].name;
+                                            member->ival = struct_mems[fi].offset;
+                                            member->type_size = struct_mems[fi].size;
+                                            AstNode *assign = new_ast(p, AST_ASSIGN);
+                                            assign->left = member;
+                                            assign->right = ie;
+                                            assign->type_size = struct_mems[fi].size;
+                                            if (prev_init) prev_init->next = assign;
+                                            else decl->expr = assign;
+                                            prev_init = assign;
+                                        } else {
+                                            error_at(p, "unknown field '%s' in designated initializer", dmn);
+                                        }
+                                    }
+                                } else {
+                                    error_at(p, "expected '=' after member name in designated initializer");
+                                }
                             } else {
                                 AstNode *ie = parse_expr(p);
                                 if (!ie && p->lexer->pos == ipos) { consume(p); continue; }
