@@ -1237,10 +1237,12 @@ static AstNode *parse_unary(Parser *p) {
                             else if (csz == 2 && !last_type_is_unsigned)
                                 inner->ival = (long)(signed short)(int)inner->ival;
                         }
-                        /* 浮点相关的转型创建包装节点走 default: 转换路径。
-                         * 注意：不修改 inner->is_float，让 cgen_expr 的包装节点
-                         * 在 default: 路径中处理 int↔float 转换。 */
-                        if (inner->is_float || cast_to_double || cast_to_float) {
+                        /* 创建包装节点保存转型类型信息。
+                         * 对浮点转型，走 default: 路径做 int↔float 转换。
+                         * 对整数转型（如 (unsigned long)ptr），包装节点防止
+                         * AST_VAR 节点在代码生成时被局部变量表覆盖 is_unsigned，
+                         * 确保父 BINOP 能看到正确的无符号属性。 */
+                        {
                             AstNode *w = new_ast(p, AST_UNARY);
                             w->expr = inner;
                             w->type_size = csz;

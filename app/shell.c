@@ -697,6 +697,12 @@ int main(int argc, char *argv[])
                 panic("读取错误!\n");
                 continue;
             }
+            if(i == 0) // EOF（stdin 是 /dev/null 或已关闭）
+            {
+                tlibc_restore_term(STDIN);
+                munmap(buf, SHELL_BUF_SIZE);
+                return 0;
+            }
             // __printf("接收到输入，字符的码值: %d\n",buf[read_count]);
             if(ch == '\n' || ch == '\r') //输入一行结束（raw 模式下 Enter 发 \r）
             {
