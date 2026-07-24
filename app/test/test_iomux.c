@@ -140,7 +140,8 @@ test_poll_nval(void)
 {
     TEST_START("poll — 无效 fd 返回 POLLNVAL");
 
-    struct pollfd pf = { .fd = 9999, .events = POLLIN, .revents = 0 };
+    struct pollfd pf;
+    pf.fd = 9999; pf.events = POLLIN; pf.revents = 0;
     int ret = poll(&pf, 1, TMO_SHORT);
     TEST_ASSERT(ret > 0,          "poll 应检测到无效 fd");
     TEST_ASSERT(pf.revents & POLLNVAL, "revents 应包含 POLLNVAL");
@@ -226,7 +227,8 @@ test_poll_neg_fd(void)
 {
     TEST_START("poll — fd=-1 被内核忽略");
 
-    struct pollfd pf = { .fd = -1, .events = POLLIN, .revents = 0 };
+    struct pollfd pf;
+    pf.fd = -1; pf.events = POLLIN; pf.revents = 0;
     int ret = poll(&pf, 1, TMO_SHORT);
     TEST_ASSERT(ret == 0, "poll fd=-1 应返还 0");
 

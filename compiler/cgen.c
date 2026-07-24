@@ -1429,8 +1429,8 @@ void cgen_program(AstNode *prog) {
         }
     }
     elf_bss_size = bss_offset;
-    elf_data_size = data_offset;
-    if (data_offset > DATA_BUF_SIZE) {
+    elf_data_size = data_size > data_offset ? data_size : data_offset;
+    if (elf_data_size > DATA_BUF_SIZE) {
         __write(2, "toyc: data buffer overflow\n", 26);
         __exit(1); }
     /* 确保 data_buf 填充到 data_offset（应对 scalar 初始器暂不发射数据的情况） */

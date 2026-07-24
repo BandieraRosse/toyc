@@ -1926,7 +1926,7 @@ static int parse_one_init(Parser *p, InitItem *items, int idx, int max) {
 /* 解析 { } 内的逗号分隔初始化列表，递归处理嵌套 { } */
 /* 返回解析的标量总数。items 可为 NULL 则只计数不存储 */
 /* 若 elem_count 非 NULL，返回时 *elem_count 设为顶层元素数（用于 items_per_elem） */
-static int parse_init_list(Parser *p, InitItem *items, int max, int *elem_count) {
+static int parse_init_list(Parser *p, InitItem *items, int max, int *elem_count, int *elem_item_counts) {
     int count = 0;
     int elems = 0;
     consume(p); /* skip { */
@@ -1935,10 +1935,13 @@ static int parse_init_list(Parser *p, InitItem *items, int max, int *elem_count)
         if (peek(p).kind == TOK_LBRACE) {
             /* 嵌套 { } — 结构体/嵌套数组元素初始化器 */
             int sub = parse_init_list(p, items ? items + count : NULL,
-                                       max > count ? max - count : 0, NULL);
+                                       max > count ? max - count : 0, NULL, NULL);
+            if (elem_item_counts) elem_item_counts[elems - 1] = sub;
             count += sub;
         } else {
-            count += parse_one_init(p, items, count, max);
+            int sub = parse_one_init(p, items, count, max);
+            if (elem_item_counts) elem_item_counts[elems - 1] += sub;
+            count += sub;
         }
         if (peek(p).kind == TOK_COMMA) consume(p);
     }
@@ -3640,10 +3643,13 @@ AstNode *parse_program(Parser *p) {
                             if (gvar) {
                                 int max_est;
                                 if (gv_arr_len > 0) {
-                                    /* 结构体数组：每个元素产生 member_count 个 InitItem */
-                                    int member_est = 1;
+                                    /* 结构体数组：每个元素产生 member_count 个 InitItem，
+                                     * 嵌套 { }（数组成员）进一步加倍。乘 3 留余量。
+                                     * struct_type 可能不可用（匿名 struct typedef），
+                                     * 无 fallback 用 20（常见 struct 成员数上界）。 */
+                                    int member_est = 20;
                                     if (gvar->struct_type && gvar->struct_type->member_count > 0)
-                                        member_est = gvar->struct_type->member_count;
+                                        member_est = gvar->struct_type->member_count * 3;
                                     max_est = gv_arr_len * member_est;
                                     if (max_est < 64) max_est = 64;
                                 } else if (init_count > 0) {
@@ -3654,8 +3660,34 @@ AstNode *parse_program(Parser *p) {
                                 if (max_est > 65536) max_est = 65536;
                                 InitItem *items = arena_alloc(p->arena, max_est * sizeof(InitItem));
                                 int elem_count = 0;
-                                int actual = parse_init_list(p, items, max_est, &elem_count);
+                                /* 为每个元素分配 item 计数空间，用于重包装对齐 */
+                                int *elem_item_counts = arena_alloc(p->arena, (max_est / 4 + 1) * sizeof(int));
+                                int actual = parse_init_list(p, items, max_est, &elem_count, elem_item_counts);
                                 if (actual > max_est) actual = max_est;
+                                /* 用最大元素 item 数重包装，使每个元素 item 数一致 */
+                                if (elem_count > 0 && actual >= elem_count) {
+                                    int max_ipe = 0;
+                                    int ei;
+                                    for (ei = 0; ei < elem_count; ei++)
+                                        if (elem_item_counts[ei] > max_ipe) max_ipe = elem_item_counts[ei];
+                                    int new_total = max_ipe * elem_count;
+                                    if (new_total > actual && new_total <= max_est) {
+                                        InitItem *new_items = arena_alloc(p->arena, new_total * sizeof(InitItem));
+                                        int src = 0, dst = 0;
+                                        for (ei = 0; ei < elem_count; ei++) {
+                                            int ci;
+                                            for (ci = 0; ci < elem_item_counts[ei]; ci++)
+                                                new_items[dst++] = items[src++];
+                                            for (ci = elem_item_counts[ei]; ci < max_ipe; ci++) {
+                                                new_items[dst].type = INIT_TYPE_INT;
+                                                new_items[dst].ival = 0;
+                                                dst++;
+                                            }
+                                        }
+                                        items = new_items;
+                                        actual = new_total;
+                                    }
+                                }
                                 /* 用实际解析的元素数修正 gv_total（应对尾随逗号） */
                                 if (actual > 0 && gv_unit * actual != gv_total) {
                                     /* 多维数组（bracket_count>1）的 elem_count 是行数，

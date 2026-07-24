@@ -81,23 +81,29 @@
 #define CAT_OTHER       4
 #define CAT_SKIP        5
 
-static const char *g_cat_name[] = {
-    [CAT_COREUTILS] = "Coreutils",
-    [CAT_TEST_SUITE] = "Test Suite",
-    [CAT_BENCH]      = "Benchmark",
-    [CAT_NETWORK]    = "Network",
-    [CAT_OTHER]      = "Other",
-    [CAT_SKIP]       = "Terminal (skipped)",
-};
+static const char *cat_name(int cat) {
+    switch (cat) {
+    case CAT_COREUTILS:  return "Coreutils";
+    case CAT_TEST_SUITE: return "Test Suite";
+    case CAT_BENCH:      return "Benchmark";
+    case CAT_NETWORK:    return "Network";
+    case CAT_OTHER:      return "Other";
+    case CAT_SKIP:       return "Terminal (skipped)";
+    default:             return "Unknown";
+    }
+}
 
-static const char *g_cat_key[] = {
-    [CAT_COREUTILS] = "core",
-    [CAT_TEST_SUITE] = "test",
-    [CAT_BENCH]      = "bench",
-    [CAT_NETWORK]    = "net",
-    [CAT_OTHER]      = "other",
-    [CAT_SKIP]       = "term",
-};
+static const char *cat_key(int cat) {
+    switch (cat) {
+    case CAT_COREUTILS:  return "core";
+    case CAT_TEST_SUITE: return "test";
+    case CAT_BENCH:      return "bench";
+    case CAT_NETWORK:    return "net";
+    case CAT_OTHER:      return "other";
+    case CAT_SKIP:       return "term";
+    default:             return "";
+    }
+}
 
 /* ════════════════════════════════════════════════
    测试用例定义
@@ -600,7 +606,7 @@ static void list_tests(void)
         const TestCase *tc = &g_tests[i];
         if (tc->category != last_cat) {
             __printf("\n" _T_CYAN "── %s ──" _T_RESET "\n",
-                     g_cat_name[tc->category]);
+                     cat_name(tc->category));
             last_cat = tc->category;
         }
         __printf("  %s", tc->name);
@@ -616,7 +622,7 @@ static int match_category(const TestCase *tc, const char *filter)
 {
     if (filter == NULL) return 1;              /* 不过滤 */
     if (strcmp(filter, "all") == 0) return 1;
-    return strcmp(g_cat_key[tc->category], filter) == 0;
+    return strcmp(cat_key(tc->category), filter) == 0;
 }
 
 /* ── 递归扫描 app/ 下所有 .c，找出未测试的程序 ── */
@@ -768,7 +774,7 @@ int main(int argc, char *argv[])
         /* 分类标题 */
         if (tc->category != last_cat) {
             __printf("\n" _T_CYAN "── %s ──" _T_RESET "\n",
-                     g_cat_name[tc->category]);
+                     cat_name(tc->category));
             last_cat = tc->category;
         }
 
