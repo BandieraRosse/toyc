@@ -1646,6 +1646,30 @@ void cgen_expr(AstNode *node) {
                 break;
             }
 
+            /* 确定指针步长：++p/p++ 对指针应加 sizeof(*ptr) 而非固定 1 */
+            int ptr_step = 1;
+            if (sz == 8 && node->expr && node->expr->type_size == 8) {
+                if (node->expr->kind == AST_VAR && node->expr->name) {
+                    int vi;
+                    SEARCH_LOCAL(vi, node->expr->name);
+                    if (vi >= 0 && locals[vi].element_size > 0)
+                        ptr_step = locals[vi].element_size;
+                    if (vi < 0) {
+                        for (vi = 0; vi < sym_count; vi++) {
+                            if (syms[vi].name && strcmp(syms[vi].name, node->expr->name) == 0) {
+                                if (vi < MAX_SYMS && global_elem_size[vi] > 0)
+                                    ptr_step = global_elem_size[vi];
+                                else if (vi < MAX_SYMS && global_ptr_elem_size[vi] > 0)
+                                    ptr_step = global_ptr_elem_size[vi];
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (ptr_step == 1 && node->expr->elem_size > 0)
+                    ptr_step = node->expr->elem_size;
+            }
+
             /* 整数自增/自减路径 */
             cgen_addr(node->expr);       /* rax = 目标地址 */
             push_rax();                  /* 保存地址 */
@@ -1663,9 +1687,9 @@ void cgen_expr(AstNode *node) {
             if (sz == 8) {
                 e1(0x48); e1(0x8B); e1(0x01);  /* mov rax, [rcx] */
                 if (node->op == TOK_PLUS_PLUS)
-                    { e1(0x48); e1(0x83); e1(0xC0); e1(0x01); }  /* add rax, 1 */
+                    { e1(0x48); e1(0x83); e1(0xC0); e1(ptr_step); }  /* add rax, ptr_step */
                 else
-                    { e1(0x48); e1(0x83); e1(0xE8); e1(0x01); }  /* sub rax, 1 */
+                    { e1(0x48); e1(0x83); e1(0xE8); e1(ptr_step); }  /* sub rax, ptr_step */
                 e1(0x48); e1(0x89); e1(0x01);  /* mov [rcx], rax */
             } else {
                 e1(0x8B); e1(0x01);             /* mov eax, [rcx] */
