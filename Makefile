@@ -271,7 +271,7 @@ test-source: $(BUILD)/toyc $(BUILD)/toyld
 
 # ─── 全部测试 ──────────────────────────────────────────────────
 
-test-all: test test-selfhost test-source test-lib test-toyld test-error test-toyar test-toyld-archive test-self-app
+test-all: test test-selfhost test-source test-lib test-toyld test-error test-toyar test-toyld-archive test-self-app test-llm
 	@printf "$(GREEN)✓ 全部测试通过$(RESET)\n"
 
 # ─── Lib 库测试（从 lib/ 源文件编译） ─────────────────────────
@@ -909,3 +909,57 @@ test-self-app:
 	fi; \
 	printf ", %d total $(BLUE)══════$(RESET)\n" "$$total"; \
 	[ "$$fail" -eq 0 ]
+
+# ════════════════════════════════════════════════════════════════
+# llm — GPT-2 模型学习项目（gcc + toyc.a）
+# ════════════════════════════════════════════════════════════════
+# 用法：
+#   make llm                  编译 llm/ → build/llm
+#   make test-llm             编译并运行功能测试
+#   make clean-llm            清理 llm 产物
+#
+# 使用 gcc 编译，链接 toyc.a（Tinylibc）获得数学函数、malloc、printf。
+# 详见 CLAUDE.md 的 TOYC 兼容性标记。
+# ════════════════════════════════════════════════════════════════
+
+LLM_DIR     := llm
+LLM_CFLAGS  := -Wall -Wextra -O2 -I . -I include -I include/posix \
+               -I include/tlibc -I arch -I arch/x86_64 \
+               -DX86_64_TLIBC=1 -nostdlib -ffreestanding \
+               -fno-stack-protector -fno-common -MD
+
+# llm 源文件 → build/llm_*.o
+LLM_SRCS    := $(wildcard $(LLM_DIR)/*.c)
+LLM_OBJS    := $(patsubst $(LLM_DIR)/%.c,$(BUILD)/llm_%.o,$(LLM_SRCS))
+LLM_TARGET  := $(BUILD)/llm
+
+.PHONY: llm test-llm clean-llm
+
+llm: $(LLM_TARGET)
+
+$(BUILD)/llm_%.o: $(LLM_DIR)/%.c | $(BUILD)
+	@printf "  $(BLUE)  CC(llm)$(RESET)  %s\n" "$<"
+	$(GCC) $(LLM_CFLAGS) -c $< -o $@
+
+# 链接：多个 .o + toyc.a + crt，__tlibc_start 入口
+$(LLM_TARGET): $(LLM_OBJS) $(LIBC_A) $(SELF_CRT_OBJS)
+	@printf "$(BLUE)  LD(llm)$(RESET)  llm ... "
+	$(GCC) $(LLM_CFLAGS) $(LLM_OBJS) \
+	       -Wl,--whole-archive $(LIBC_A) -Wl,--no-whole-archive \
+	       -Wl,-e,__tlibc_start -o $@
+	@size=$$(stat -c%s $@); printf "$(GREEN)ok$(RESET) (%d bytes)\n" "$$size"
+
+test-llm: $(LLM_TARGET)
+	@printf "$(BLUE)══════ llm 功能测试 ══════$(RESET)\n"
+	$(LLM_TARGET); \
+	rc=$$?; \
+	if [ "$$rc" -eq 0 ]; then \
+		printf "$(GREEN)✓ llm 全部测试通过$(RESET)\n"; \
+	else \
+		printf "$(RED)✗ llm 测试失败 (exit=%d)$(RESET)\n" "$$rc"; \
+		exit 1; \
+	fi
+
+clean-llm:
+	rm -f $(LLM_OBJS) $(LLM_OBJS:.o=.d) $(LLM_TARGET)
+	@printf "$(GREEN)✓ llm 清理完成$(RESET)\n"

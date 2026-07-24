@@ -25,6 +25,11 @@
 │   ├── toypp.c           # 独立预处理器
 │   ├── toyas.c           # x86_64 汇编器
 │   └── toyar.c           # ar 归档器
+├── llm/                 # GPT-2 模型学习项目（基于 Karpathy llm.c）
+│   ├── llm.h             # 公共头文件：float 数学包装、tanh/GELU、softmax、RNG
+│   ├── gpt2.h            # GPT-2 模型类型（config、params）和 API
+│   ├── gpt2.c            # 各层 forward 实现 + 完整模型前向传播
+│   └── main.c            # 测试驱动（合成数据，无需 checkpoint）
 ├── include/
 │   ├── toyc_need.h      # 最小化类型/常量/系统调用宏/函数声明
 │   ├── core.h           # Tinylibc 核心头文件
@@ -91,7 +96,9 @@ make test-toyld-self              # toyld 自举验证（stage-1 → stage-2 字
 make test-toyar                   # 归档器功能测试（5 个）
 make test-toyld-archive           # toyld 从归档链接（2 个）
 make test-self-app                # 自托管 App 冒烟测试
-make test-all                     # 全部测试套件
+make llm                          # 编译 llm/（GPT-2 模型，gcc + Tinylibc）
+make test-llm                     # llm 功能测试（29/29 ✅，合成数据）
+make test-all                     # 全部测试套件（含 llm）
 ```
 
 ### 自举收敛验证
@@ -120,6 +127,8 @@ make test-all                     # 全部测试套件
 | `make test-lib` | 编译 28/28 ✅ 功能 **12/12** | math ✅, ctype ✅, string ✅, core ✅, stdio ✅, time ✅, misc ✅, net ✅, poll ✅, tty ✅, procfs ✅, **thread ✅** |
 | `bootstrap-selfhost.sh` | **41/41 ✅** | 种子自举 → stage-2 全部测试通过 |
 | `bootstrap-to-10.sh` | stage-2→10 字节级一致 ✅ | 全链收敛验证（头尾完整测试） |
+| `make llm` | **编译 ✅** | GPT-2 模型（gcc + Tinylibc，见下方说明） |
+| `make test-llm` | **29/29 ✅** | Softmax, GELU, LayerNorm, MatMul, Encoder, 完整 GPT-2 前向 |
 
 ### Tinylibc 库测试详情（`make test-lib`）
 
