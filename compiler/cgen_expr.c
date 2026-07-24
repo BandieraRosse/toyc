@@ -2297,8 +2297,8 @@ void cgen_expr(AstNode *node) {
                 }
                 push_rax();
                 pop_rcx();
-                e1(0xC7); e1(0x01); e4(func_nparams * 8);
-                e1(0xC7); e1(0x41); e1(0x04); e4(48);
+                e1(0xC7); e1(0x01); e4((func_nparams - func_nparams_fp) * 8);
+                e1(0xC7); e1(0x41); e1(0x04); e4(48 + func_nparams_fp * 8);
                 e1(0x48); e1(0x8D); e1(0x45); e1(0x10);
                 e1(0x48); e1(0x89); e1(0x41); e1(0x08);
                 if (disp8_fits(reg_save_offset))

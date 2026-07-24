@@ -623,7 +623,7 @@ static AstNode *parse_primary(Parser *p) {
         if (n->is_float)
             n->type_size = n->is_float;
         else if (t.is_unsigned)
-            n->type_size = (t.ival >= 0 && t.ival <= 4294967295L) ? 4 : 8;
+            n->type_size = (t.ival >= 0 && t.ival <= 2147483647L) ? 4 : 8;
         else if (t.ival >= -2147483648L && t.ival <= 2147483647L)
             n->type_size = 4;
         else

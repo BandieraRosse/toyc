@@ -53,6 +53,7 @@ int frame_size;
 /* 可变参数函数：寄存器保存区在栈中的偏移 */
 int reg_save_offset;  /* 从 rbp 向下的偏移（负值） */
 int func_nparams;      /* 当前函数的命名参数个数（供 va_start 使用） */
+int func_nparams_fp;   /* 其中 float/double 类型的参数个数 */
 
 /* ─── 作用域深度（用于变量阴影解析） ─── */
 int scope_depth;
@@ -954,6 +955,17 @@ static void cgen_func_def(AstNode *func) {
 
     func_nparams = func->ival;
 
+    /* 统计 float/double 命名参数个数（va_start 需要分别计算 GP 和 FP 寄存器偏移） */
+    func_nparams_fp = 0;
+    if (func->is_variadic && func->params) {
+        AstNode *p;
+        int pi;
+        for (p = func->params, pi = 0; p && pi < func_nparams; p = p->next, pi++) {
+            if (p->kind == AST_VAR_DECL && p->is_float)
+                func_nparams_fp++;
+        }
+    }
+
     emit_prologue();
 
     /* 保存隐藏指针参数（RDI）到大结构体返回值函数 */
@@ -1144,6 +1156,7 @@ void cgen_init(void) {
     frame_size = 0;
     reg_save_offset = 0;
     func_nparams = 0;
+    func_nparams_fp = 0;
     scope_depth = 0; scope_chain_count = 0; next_scope_id = 0;
     strtab_len = 0;
     strtab[strtab_len++] = '\0';

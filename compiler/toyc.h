@@ -396,6 +396,7 @@ extern int local_count;
 extern int frame_size;
 extern int reg_save_offset;
 extern int func_nparams;
+extern int func_nparams_fp;
 extern int scope_depth;
 #define MAX_SCOPE_IDS 256
 extern int scope_chain[MAX_SCOPE_IDS];
