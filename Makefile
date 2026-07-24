@@ -2,15 +2,37 @@
 # Makefile — toyc (ToyCCompiler) 构建系统
 #
 # 用法：
-#   make                        自举构建（bootstrap/toyc + bootstrap/toyas）
-#   make test                   运行常规测试（29 个）
-#   make test 03                指定编号测试
-#   make test 03 07             多编号测试
-#   make test-selfhost          自包含测试（38 个）
-#   make test-source            源文件独立测试（8 个）
-#   make test-error             错误报告测试（16 个）
-#   make update-bootstrap       用 build 产物更新 bootstrap/ 种子
-#   make clean
+#   编译器工具链
+#     make                        自举构建（bootstrap/{toyc,toyas,toyld,toyar} → build/）
+#     make update-bootstrap       用 build/ 产物更新 bootstrap/ 种子
+#     make clean                  清除 build/
+#
+#   App 构建
+#     make lib                    构建 libtlibc.a（gcc 编译的 Tinylibc 库）
+#     make app                    用 gcc 编译所有 app（shell, tmake）
+#     make app-<name>             用 gcc 编译单个 app
+#     make self-lib               构建自托管 libtlibc.a（toyc 编译）
+#     make self-app               用 toyc 编译所有 app
+#     make self-app-<name>        用 toyc 编译单个 app
+#
+#   测试
+#     make test                   常规测试
+#     make test-selfhost          自包含测试
+#     make test-source            源文件独立测试
+#     make test-toyld              toyld 链接测试
+#     make test-error             错误报告测试
+#     make test-lib-compile       Tinylibc 库编译检查
+#     make test-lib               Tinylibc 库完整测试
+#     make test-toyld-multifile    toyld 多 .o 交叉引用链接
+#     make test-toyld-self         toyld 自举验证
+#     make test-toyar             归档器功能测试
+#     make test-toyld-archive      toyld 从归档链接
+#     make test-self-app          自托管 App 冒烟测试
+#     make test-all               全部测试套件
+#
+#   自举收敛验证
+#     ./bootstrap-selfhost.sh     种子 → stage-2 → 全部测试通过
+#     ./bootstrap-to-10.sh        全链收敛验证（stage-1 → stage-10 字节级一致）
 #
 # 全链自举构建。种子二进制见 bootstrap/README.md
 #

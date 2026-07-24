@@ -1,14 +1,16 @@
 # toyc — ToyCCompiler
 
-从 [Tinylibc](https://github.com/WHU-SC7/Tinylibc) 项目提取、独立发展的 C 编译器。
-约一万行 C，零 libc 依赖，已通过完整自举验证。
+核心是 C 编译器，最初在 [Tinylibc](https://github.com/WHU-SC7/Tinylibc) 项目中发展，
+后来独立为 [ToyCCompiler](https://github.com/BandieraRosse/ToyCCompiler.git) 开发至能自举。现在转变为新项目 Toyc，
+同时引入了原 Tinylibc 的库和程序，可以编译它们（虽有妥协）。
+约一万行 C，零 libc 依赖，已通过完整自举收敛验证。
 
 ## 项目结构
 
 ```
 ├── compiler/           # 编译器源码
 │   ├── toyc.c           # 主入口：编译 C → ELF .o
-│   └── toyld.c           # x86_64 静态链接器（新增）
+│   ├── toyld.c           # x86_64 静态链接器
 │   ├── toyc_rt.c        # 独立运行时（syscall 包装、malloc、printf）
 │   ├── toyc_rt_start.S  # 启动汇编 __tlibc_start → main → exit
 │   ├── lex.c           # 词法分析
@@ -21,13 +23,19 @@
 │   ├── elf_write.h     # ELF 写入器接口
 │   ├── toyc.h           # 编译器核心类型定义
 │   ├── toypp.c           # 独立预处理器
-│   └── toyas.c           # x86_64 汇编器
+│   ├── toyas.c           # x86_64 汇编器
+│   └── toyar.c           # ar 归档器
 ├── include/
 │   ├── toyc_need.h      # 最小化类型/常量/系统调用宏/函数声明
-│   └── elf.h           # ELF64 结构体定义
+│   ├── core.h           # Tinylibc 核心头文件
+│   ├── elf.h           # ELF64 结构体定义
+│   ├── posix/           # POSIX 兼容头文件
+│   └── tlibc/           # Tinylibc 专用头文件
+├── lib/                 # Tinylibc 库源码（math, stdio, string, core 等 16 个模块）
+├── arch/                # 架构相关头文件
 ├── compiler-tests/     # 测试文件
-│   ├── basic/          # 常规测试（toyc 编译 + toyc_rt 链接，36 个）
-│   ├── selfhost/       # 自包含测试（toyc 独立编译，无 toyc_rt 依赖，40 个）
+│   ├── basic/          # 常规测试（toyc 编译 + toyc_rt 链接，43 个）
+│   ├── selfhost/       # 自包含测试（toyc 独立编译，无 toyc_rt 依赖，41 个）
 │   ├── source/         # 源文件独立测试（验证单个 .c 文件的逻辑，8 个）
 │   ├── toyld/            # toyld 多文件链接测试
 │   ├── pending/        # 待修复 bug 的复现用例
@@ -36,43 +44,77 @@
 │       ├── override/   #   toyc 不兼容头文件遮蔽（目前为空，builtin 已填补）
 │       ├── test_*.c    #   各 lib 的功能测试驱动
 │       └── ...
-├── bootstrap/          # 自举种子（toyc + toyas + toyld 二进制，git 追踪）
+├── bootstrap/          # 自举种子（toyc + toyas + toyld + toyar 二进制，git 追踪）
 │   └── README.md
-├── Makefile            # 构建系统（默认用 bootstrap/toyc + bootstrap/toyas + bootstrap/toyld）
+├── Makefile            # 构建系统（默认用 bootstrap/toyc + bootstrap/toyas + bootstrap/toyld + bootstrap/toyar）
 ├── bootstrap-selfhost.sh  # 自举自托管测试
 └── bootstrap-to-10.sh     # 全链收敛验证
 ```
 
 ## 构建
 
+### 编译器工具链
+
 ```sh
-make                              # 自举构建（bootstrap/toyc + bootstrap/toyas + bootstrap/toyld）
-make test                         # 常规测试（36 个）
-make test-selfhost                # 自包含测试（41 个）
-make test-source                  # 源文件独立测试（8 个）
-make test-toyld                     # toyld 链接测试（40 个）
-make test-error                   # 错误报告测试（16 个）
-make test-lib-compile             # Tinylibc 库编译检查（28/28 源文件，含 clone.S 汇编）
-make test-lib                     # Tinylibc 库完整测试（编译 + 功能）
-make test-toyld-multifile           # toyld 多文件链接测试
-make test-toyld-self                # toyld 自举验证（stage-1 → stage-2 → 收敛）
-make update-bootstrap             # 用最新 build/ 产物更新 bootstrap/ 种子
-./bootstrap-selfhost.sh           # 自举测试：bootstrap/toyc → stage-2 → 40 测试
-./bootstrap-to-10.sh              # 全链收敛验证（stage-1 → stage-10）
-make clean
+make                              # 自举构建：bootstrap/{toyc,toyas,toyld,toyar} → build/
+make update-bootstrap             # 用 build/ 产物更新 bootstrap/ 种子
+make clean                        # 清除 build/
 ```
 
-全链零外部依赖（仅 make）。`bootstrap/toyc` + `bootstrap/toyas` + `bootstrap/toyld` 是 git 追踪的种子二进制。
+### App 构建
 
-## 测试状态（2026-07-23）
+项目附带一批自托管应用（`app/` 目录）和一个来自 Tinylibc 的库（`lib/`），可通过名字指定单个 app 构建：
+
+```sh
+make lib                          # 构建 libtlibc.a（gcc 编译的 Tinylibc 库）
+make app                          # 用 gcc 编译所有 app（shell, tmake）
+make app-shell                    # 用 gcc 编译单个 app，按名字指定
+make app-tmake
+make self-lib                     # 构建自托管 libtlibc.a（toyc 编译）
+make self-app                     # 用 toyc 编译所有 app
+make self-app-shell               # 用 toyc 编译单个 app，按名字指定
+make self-app-tmake
+```
+
+### 测试
+
+```sh
+make test                         # 常规测试（43 个）
+make test-selfhost                # 自包含测试，无 toyc_rt 依赖（41 个）
+make test-source                  # 源文件独立测试（8 个）
+make test-toyld                   # toyld 链接测试（41 个）
+make test-error                   # 错误报告测试（16 个）
+make test-lib-compile             # Tinylibc 库编译检查（28/28 源文件，含 clone.S）
+make test-lib                     # Tinylibc 库完整测试（编译 + 功能）
+make test-toyld-multifile         # toyld 多 .o 交叉引用链接
+make test-toyld-self              # toyld 自举验证（stage-1 → stage-2 字节级一致）
+make test-toyar                   # 归档器功能测试（5 个）
+make test-toyld-archive           # toyld 从归档链接（2 个）
+make test-self-app                # 自托管 App 冒烟测试
+make test-all                     # 全部测试套件
+```
+
+### 自举收敛验证
+
+```sh
+./bootstrap-selfhost.sh           # bootstrap/toyc → stage-2 → 41 测试全部通过
+./bootstrap-to-10.sh              # 全链收敛验证（stage-1 → stage-10 字节级一致）
+```
+
+全链零外部依赖（仅 make）。`bootstrap/{toyc,toyas,toyld,toyar}` 是 git 追踪的种子二进制。
+
+## 测试状态（2026-07-24）
 
 | 测试套件 | 通过/总数 | 说明 |
 |----------|-----------|------|
-| `make test` | **36/36 ✅** | 含 float return test |
-| `make test-selfhost` | **41/41 ✅** | toyc 独立编译，无 toyc_rt 依赖 || `make test-source` | 8/8 ✅ | toyc 编译源文件独立测试 |
-| `make test-toyld` | **40/40 ✅** | selfhost 测试 × toyld 链接 |
+| `make test` | **43/43 ✅** | 含 float return test |
+| `make test-selfhost` | **41/41 ✅** | toyc 独立编译，无 toyc_rt 依赖 |
+| `make test-source` | 8/8 ✅ | toyc 编译源文件独立测试 |
+| `make test-toyld` | **41/41 ✅** | selfhost 测试 × toyld 链接 |
 | `make test-toyld-multifile` | ✅ | 多 .o 文件交叉引用链接 |
 | `make test-toyld-self` | **自举收敛 ✅** | toyld 自链接 stage-1→stage-2 字节级一致 |
+| `make test-toyar` | **5/5 ✅** | 归档器功能测试 |
+| `make test-toyld-archive` | **2/2 ✅** | toyld 从归档链接 |
 | `make test-error` | **16/16 ✅** | 错误报告测试 |
 | `make test-lib-compile` | **28/28 ✅** | Tinylibc 全部 16 个模块编译通过（含 thread + clone.S 汇编） |
 | `make test-lib` | 编译 28/28 ✅ 功能 **12/12** | math ✅, ctype ✅, string ✅, core ✅, stdio ✅, time ✅, misc ✅, net ✅, poll ✅, tty ✅, procfs ✅, **thread ✅** |
@@ -83,13 +125,13 @@ make clean
 
 | 模块          | 源文件              | 编译       | 功能测试                                      |
 |---------------|---------------------|------------|-----------------------------------------------|
-| math          | `math/math.c`       | ✅         | ✅ 全部通过                                   |
+| math          | `math/math.c`       | ✅         | ✅ 49/49 全部通过                             |
 | ctype         | `ctype.c`           | ✅         | ✅ 全部通过                                    |
-| string        | `string.c`          | ✅         | ✅ 全部通过（跳过 toyc codegen 限制项）       |
-| core          | 6 个源文件          | ✅         | ✅ 全部通过（跳过 3 项）                      |
-| stdio         | 3 个源文件          | ✅         | ✅ 全部通过                                    |
-| time          | `time.c`            | ✅         | ✅ 41 项通过（避开 2D 数组 bug，仅测 mon=0 日期和数字 strftime） |
-| misc          | 5 个源文件          | ✅         | ✅ 18 项通过（含 getdents64 文件计数） |
+| string        | `string.c`          | ✅         | ✅ 61/61 全部通过                              |
+| core          | 6 个源文件          | ✅         | ✅ 9/9 全部通过                               |
+| stdio         | 3 个源文件          | ✅         | ✅ 33/33 全部通过（va_arg %f bug 已修复）     |
+| time          | `time.c`            | ✅         | ✅ 51/51 全部通过                             |
+| misc          | 5 个源文件          | ✅         | ✅ 19 项通过（含 getdents64 文件计数） |
 | net           | 2 个源文件          | ✅         | ✅ 全部通过（已修复 uint16_t typedef is_unsigned、返回值截断和 0xFFFFFFFFU 比较） |
 | poll          | `poll.c`            | ✅         | ✅ 11 项通过（pipe + epoll）                  |
 | tty           | `tty.c`             | ✅         | ✅ 全部通过（错误路径 + cursor 输出）          |
@@ -103,18 +145,18 @@ make clean
 ## 设计原则
 
 - **无 libc 依赖**：运行时通过 `syscall` 宏直接调用 Linux 内核
-- **零外部依赖**：自举种子 `bootstrap/{toyc,toyas,toyld}` 全链自编译，仅需 `make`
+- **零外部依赖**：自举种子 `bootstrap/{toyc,toyas,toyld,toyar}` 全链自编译，仅需 `make`
 - **简化优先**：源码写法向 toyc 自身能编译的方向靠拢
 - **自举导向**：所有决策围绕"让 toyc 能编译自己"展开
 
 ## Tinylibc 库测试架构
 
-`compiler-tests/lib/` 测试 toyc 编译真实 Tinylibc 库源文件的能力。
+`compiler-tests/lib/` 测试 toyc 编译内部 `lib/` 中 Tinylibc 库源文件的能力。
 
 ### 工作原理
 
-1. **源文件直接来自 `../Tinylibc/lib/`** — 无物理拷贝，始终与上游一致
-2. **include 路径使用真实的 Tinylibc 头文件** — `-I../Tinylibc/include/posix` 等
+1. **源文件来自项目 `lib/` 目录** — Tinylibc 的完整库移植到项目内部，与编译器同仓库
+2. **include 路径使用项目自身 `include/`** — 基于 `TINYLIBC_DIR := .`（项目根），自动使用 `include/`, `include/posix/`, `include/tlibc/`, `arch/`, `arch/x86_64/`
 3. **`compiler-tests/lib/override/`** — 目前为空（`__builtin_huge_val` 已由 toyc 直接支持），保留作为遮蔽备用
 4. **`compiler-tests/lib/libs.mk`** — 声明式元数据，被 Makefile include
 
@@ -125,59 +167,74 @@ make clean
 ```makefile
 LIBS := ... xxx
 
-_SRCS_xxx    := path/to/source.c       # 相对于 ../Tinylibc/lib/
+_SRCS_xxx    := path/to/source.c       # 相对于 lib/
 _DEPS_xxx    := core string            # 链接时依赖的其他 lib（可选）
 _TEST_xxx    := test_xxx               # 测试驱动 basename（可选）
+_ASM_xxx     := path/to/file.S         # 汇编源文件（可选，由 toyas 编译）
 ```
 
 框架自动：
 - 发现 `$(LIBS)` 中所有模块
-- 编译每个模块的所有源文件
+- 编译每个模块的所有 .c 源文件（toyc）和 .S 源文件（toyas）
 - 若定义了 `_TEST_xxx`，编译测试驱动 → 链接依赖 → 运行
 
 ### 测试层级
 
 | 层级 | 命令 | 内容 |
 |------|------|------|
-| **编译检查** | `make test-lib-compile` | toyc 编译每个 lib 的每个 .c 文件，验证无语法/语义错误 |
+| **编译检查** | `make test-lib-compile` | toyc 编译每个 lib 的每个 .c 文件，toyas 汇编 .S 文件，验证无语法/语义错误 |
 | **功能测试** | `make test-lib` | 编译 + 链接依赖 + 运行 test driver，检查 EXPECT 退出码 |
 
-### 已知限制
+### 已修复的已知限制
 
-- `stdio/printf.c` 和 `stdio/snprintf.c` 使用 `__builtin_va_arg`，toyc 编译后运行时 segfault（已知 toyc cgen va_arg bug）
-- `string.c` 的 `strerror` 内部调用 `snprintf`，创建了 stdio ↔ string 的循环依赖
-- `init/` 含汇编 `start.S`，`thread/` 需要 TLS，暂不纳入
-- 部分 math 函数的精度不达标（约 24/49 通过）
+- ~~`stdio/printf.c` 和 `stdio/snprintf.c` 使用 `__builtin_va_arg` 导致 segfault~~ → **已修复**，stdio 功能测试 33/33 通过
+- ~~`time` 测试因 2D 数组代码生成 bug 只能测 mon=0 日期和数字 strftime~~ → **已修复**，全部 51/51 通过
+- ~~`math` 函数精度约 24/49 通过~~ → **已修复**，全部 49/49 通过（`__builtin_huge_val` 已由 toyc 直接支持）
+- ~~`string` 编译在 toyc 下有限制项~~ → **已修复**，61/61 全部通过
 
-## 已知限制
+### 剩余已知限制
 
-| 特性 | 状态 |
+- `string.c` 的 `strerror` 内部调用 `snprintf`，创建了 stdio ↔ string 的循环依赖（但功能测试中的 strerror(0-40) 返回静态字符串，无需 snprintf，测试独立通过）
+- `init/` 含汇编 `start.S`，暂不纳入自托管编译
+- `graphics/` 含 SDL/OpenGL 绑定，暂不纳入
+
+### toyc 已支持
+
+| 特性 | 说明 |
 |------|------|
 | 浮点运算 | ✅ 完整支持 float(32-bit) 和 double(64-bit)，SSE 指令无条件启用 |
 | 全局 float/double 花括号初始化 | ✅ `float arr[] = {1.0f, 2.0f}` 等 |
 | `%f` 格式化 | ✅ toyc_rt.c 运行时支持 |
-| VLA（变长数组） | ❌ 未实现。`int pids[n]` 生成错误代码，需改为固定大小数组 |
+| `__func__` 预定义标识符 | ✅ C99 标准支持 |
+| `__builtin_va_arg` | ✅ 已修复，stdio 功能测试 33/33 通过 |
+
+### 暂不支持
+
+| 特性 | 说明 |
+|------|------|
+| VLA（变长数组） | ❌ `int pids[n]` 生成错误代码，需改为固定大小数组 |
 | `char (*)[N]` 指针转数组访问 | ❌ `files[i]` 被当作 `char**`（取指针）而非地址偏移（取元素），需用平坦指针+手动偏移 |
-| 位域（bitfield） | 未实现 |
-| 复合字面量 `(int[]){1,2}` | 未实现 |
-| 指定初始化器 `.field=val` | 未实现 |
-| `_Generic` | 未实现 |
-| `long double` | 不支持 |
-| `goto` 跨函数 | 未检查 |
-| 宽字符/宽字符串 | 未实现 |
-| `-I` include 路径、`-MD` 依赖追踪 | 静默忽略（toyc 参数解析极简） |
+| 位域（bitfield） | ❌ 未实现 |
+| 复合字面量 `(int[]){1,2}` | ❌ 未实现 |
+| 指定初始化器 `.field=val` | ❌ 未实现 |
+| `_Generic` | ❌ 未实现 |
+| `long double` | ❌ 不支持 |
+| `goto` 跨函数 | ❌ 未检查 |
+| 宽字符/宽字符串 | ❌ 未实现 |
+| `-I` include 路径、`-MD` 依赖追踪 | ❌ 静默忽略（toyc 参数解析极简） |
 
 
 ## 验证
 
 ```sh
-make test             # 36/36 ✅
+make test             # 43/43 ✅
 make test-selfhost    # 41/41 ✅
 make test-source      # 8/8 ✅
-make test-toyld         # 40/40 ✅
+make test-toyld         # 41/41 ✅
 make test-error       # 16/16 ✅
 make test-toyld-self    # 自举收敛 ✅
 make test-lib-compile # 28/28 ✅
+make test-lib         # 编译 28/28 + 功能 12/12 ✅
 ./bootstrap-to-10.sh  # stage-2→10 字节级完全一致 ✅
 make test-all         # 全部通过 ✅
 ```
