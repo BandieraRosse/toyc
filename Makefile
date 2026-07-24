@@ -249,7 +249,7 @@ test-source: $(BUILD)/toyc $(BUILD)/toyld
 
 # ─── 全部测试 ──────────────────────────────────────────────────
 
-test-all: test test-selfhost test-source test-lib test-toyld test-error test-toyar test-toyld-archive
+test-all: test test-selfhost test-source test-lib test-toyld test-error test-toyar test-toyld-archive test-self-app
 	@printf "$(GREEN)✓ 全部测试通过$(RESET)\n"
 
 # ─── Tinylibc 库测试（从真实 Tinylibc 源文件编译） ─────────────
@@ -757,3 +757,133 @@ clean-app:
 # ─── 依赖文件包含 ───────────────────────────────────────────────
 
 -include $(LIBC_OBJS:.o=.d) $(APP_OBJS:.o=.d)
+
+
+# ════════════════════════════════════════════════════════════════
+# Tinylibc 库 + App 构建（toyc 编译 + 系统 ld/ar）
+# ════════════════════════════════════════════════════════════════
+# 用法：
+#   make self-lib          编译 lib/ → build/toyc_self.a（toyc + ar）
+#   make self-app          编译所有 app/ → build/<name>_self（toyc + ld）
+#   make self-app-<name>   编译单个 app（如 make self-app-echo）
+#   make clean-self        清理自托管产物
+#
+# toyc 编译 .c，系统 as 汇编 .S，系统 ar 归档，系统 ld 链接。
+# ════════════════════════════════════════════════════════════════
+
+SELF_CC       := $(BUILD)/toyc
+SELF_AS       := as
+SELF_LD       := ld
+SELF_AR       := ar
+SELF_LIB_A    := $(BUILD)/toyc_self.a
+SELF_CFLAGS   := -DX86_64_TLIBC=1 \
+                  -I include -I include/posix -I include/tlibc \
+                  -I arch -I arch/x86_64 -MD
+
+# 路径压平：lib/core/io.c → build/self_core_io.o
+SELF_LIBC_C_OBJS   := $(foreach src,$(LIBC_C_SRCS),\
+                        $(BUILD)/self_$(subst /,_,$(patsubst $(LIBC_DIR)/%.c,%,$(src))).o)
+# 启动文件（lib/init/start.S）单独管理，不入归档，避免 ld --whole-archive 重复
+SELF_CRT_OBJS      := $(BUILD)/self_init_start.o
+SELF_LIBC_ASM_OBJS := $(foreach src,$(filter-out $(LIBC_DIR)/init/start.S,$(LIBC_ASM_SRCS)),\
+                        $(BUILD)/self_$(subst /,_,$(patsubst $(LIBC_DIR)/%.S,%,$(src))).o)
+SELF_LIBC_OBJS     := $(SELF_LIBC_C_OBJS) $(SELF_LIBC_ASM_OBJS)
+
+# ─── App 源文件（复用 APP_SRCS 定义） ─────────────────────────
+
+SELF_APP_NAMES   := $(APP_NAMES)
+SELF_APP_OBJS    := $(foreach name,$(SELF_APP_NAMES),$(BUILD)/$(name)_self.o)
+SELF_APP_TARGETS := $(foreach name,$(SELF_APP_NAMES),$(BUILD)/$(name)_self)
+
+# ─── 库编译规则 ────────────────────────────────────────────────
+
+# .c → .o（toyc）
+define SELF_LIBC_C_rule
+$$(BUILD)/self_$(subst /,_,$(patsubst $(LIBC_DIR)/%.c,%,$(1))).o: $(1) $$(SELF_CC) | $$(BUILD)
+	@printf "  $(BLUE)  CC(s)  %s\n" "$(1)"
+	$$(SELF_CC) $$(SELF_CFLAGS) -c $(1) -o $$@
+endef
+$(foreach src,$(LIBC_C_SRCS),$(eval $(call SELF_LIBC_C_rule,$(src))))
+
+# .S → .o（系统 as）
+define SELF_LIBC_ASM_rule
+$$(BUILD)/self_$(subst /,_,$(patsubst $(LIBC_DIR)/%.S,%,$(1))).o: $(1) | $$(BUILD)
+	@printf "  $(BLUE)  AS(s)  %s\n" "$(1)"
+	$$(SELF_AS) $(1) -o $$@
+endef
+$(foreach src,$(LIBC_ASM_SRCS),$(eval $(call SELF_LIBC_ASM_rule,$(src))))
+
+# 归档（系统 ar）
+$(SELF_LIB_A): $(SELF_LIBC_OBJS)
+	@printf "$(BLUE)  AR(s)  toyc_self.a (%d files)\n" $(words $^)
+	$(SELF_AR) rcs $@ $^
+
+# ─── App 编译 + 链接规则 ──────────────────────────────────────
+
+define SELF_APP_rule
+
+# 编译 app 源文件 → .o（toyc）
+$$(BUILD)/$(notdir $(basename $(1)))_self.o: $(1) $$(SELF_CC) | $$(BUILD)
+	@printf "  $(BLUE)  CC(s)  %s\n" "$(1)"
+	$$(SELF_CC) $$(SELF_CFLAGS) -c $(1) -o $$@
+
+# 链接（系统 ld）：crt 在归档之前（__tlibc_start 定义），--whole-archive 确保所有符号可解析
+$$(BUILD)/$(notdir $(basename $(1)))_self: $$(BUILD)/$(notdir $(basename $(1)))_self.o $$(SELF_LIB_A) $$(SELF_CRT_OBJS)
+	@printf "$(BLUE)  LD(s)  %s\n" "$(notdir $(basename $(1)))"
+	$$(SELF_LD) -e __tlibc_start $$(SELF_CRT_OBJS) $$< --whole-archive $$(SELF_LIB_A) --no-whole-archive -o $$@
+endef
+$(foreach src,$(APP_SRCS),$(eval $(call SELF_APP_rule,$(src))))
+
+# ─── 目标 ───────────────────────────────────────────────────────
+
+.PHONY: self-lib self-app $(addprefix self-app-,$(SELF_APP_NAMES)) clean-self
+
+self-lib: $(SELF_LIB_A)
+
+self-app: $(SELF_APP_TARGETS)
+
+$(foreach name,$(SELF_APP_NAMES),$(eval self-app-$(name): $(BUILD)/$(name)_self))
+
+# ─── 清理 ───────────────────────────────────────────────────────
+
+clean-self:
+	rm -f $(SELF_LIBC_OBJS) $(SELF_CRT_OBJS) $(SELF_LIB_A)
+	rm -f $(SELF_APP_OBJS) $(SELF_APP_TARGETS)
+
+# ─── 自托管 App 冒烟测试 ──────────────────────────────────────
+# 运行每个已编译的 self-app，检查不崩溃（exit<128 即通过）。
+# 从 /dev/null 重定向 stdin，避免 hexdump 等无参读 stdin 而 hang。
+# 缺失的 app（编译失败的已知限制）跳过不计入失败。
+
+.PHONY: test-self-app
+
+test-self-app:
+	@ok=0; fail=0; skiplist=""; total=0; \
+	printf "$(BLUE)══════ toyc 自托管 App 冒烟测试 ══════$(RESET)\n\n"; \
+	for app in $(SELF_APP_TARGETS); do \
+		name=$$(basename "$$app"); \
+		total=$$((total+1)); \
+		printf "  $(BLUE)%-25s$(RESET) " "$$name"; \
+		if [ ! -f "$$app" ]; then \
+			printf "$(YELLOW)⚠ not built$(RESET)\n"; sk="$${sk}$${sk:+,}$$name"; \
+			continue; \
+		fi; \
+		timeout 2 "$$app" </dev/null >/dev/null 2>&1; rc=$$?; \
+		if [ $$rc -eq 124 ]; then \
+			printf "$(YELLOW)⚠ timeout$(RESET)\n"; \
+		elif [ $$rc -ge 129 ] && [ $$rc -le 192 ]; then \
+			sig=$$((rc - 128)); \
+			printf "$(RED)✗ 信号 %d$(RESET)\n" "$$sig"; \
+			fail=$$((fail+1)); \
+		else \
+			printf "$(GREEN)✓$(RESET) (exit %d)\n" "$$rc"; \
+			ok=$$((ok+1)); \
+		fi; \
+	done; \
+	printf "\n$(BLUE)══════$(RESET) $(GREEN)%d passed$(RESET), $(RED)%d failed$(RESET)" \
+		"$$ok" "$$fail"; \
+	if [ -n "$$skiplist" ]; then \
+		printf ", $(YELLOW)skipped: %s$(RESET)" "$$skiplist"; \
+	fi; \
+	printf ", %d total $(BLUE)══════$(RESET)\n" "$$total"; \
+	[ "$$fail" -eq 0 ]

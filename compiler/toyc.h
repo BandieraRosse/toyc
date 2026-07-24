@@ -361,6 +361,7 @@ typedef struct {
     int had_error;
     int error_count;    /* 已报错误数（已达 MAX_ERRORS 则后续错误静默跳过） */
     int func_depth;     /* 函数定义嵌套深度（>0 在函数体内） */
+    const char *func_name; /* 当前正在解析的函数名（供 __func__ 预定义标识符使用） */
     int loop_depth;     /* 循环嵌套深度（while/for/do-while） */
     int switch_depth;   /* switch 嵌套深度 */
     int block_depth;    /* 复合语句嵌套深度（预留给变量重定义检测） */

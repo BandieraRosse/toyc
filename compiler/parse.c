@@ -523,6 +523,7 @@ void parser_init(Parser *p, Lexer *lx, Arena *a) {
     p->had_error = 0;
     p->error_count = 0;
     p->func_depth = 0;
+    p->func_name = NULL;
     p->loop_depth = 0;
     p->switch_depth = 0;
     p->block_depth = 0;
@@ -669,6 +670,17 @@ static AstNode *parse_primary(Parser *p) {
                     n->is_unsigned = 1;
                 return n;
             }
+        }
+        /* C99 预定义标识符 __func__：等效于 static const char __func__[] = "函数名" */
+        if (t.len == 8 && t.start[0] == '_' && t.start[1] == '_'
+            && t.start[2] == 'f' && t.start[3] == 'u' && t.start[4] == 'n'
+            && t.start[5] == 'c' && t.start[6] == '_' && t.start[7] == '_'
+            && t.kind == TOK_IDENT) {
+            /* 生成字符串常量节点 */
+            AstNode *n = new_ast(p, AST_STRING);
+            const char *fn = p->func_name ? p->func_name : "";
+            n->str_val = arena_strdup(p->arena, fn, strlen(fn));
+            return n;
         }
         AstNode *n = new_ast(p, AST_VAR);
         n->name = arena_strdup(p->arena, t.start, t.len);
@@ -3437,7 +3449,9 @@ AstNode *parse_program(Parser *p) {
             } else {
                 /* 函数定义 */
                 p->func_depth++;
+                p->func_name = fname;  /* 供 __func__ 预定义标识符使用 */
                 AstNode *fbody = parse_compound_statement(p);
+                p->func_name = NULL;
                 p->func_depth--;
                 /* 先统计参数个数（在链入 body 之前） */
                 int pcount = 0; { AstNode *pp; for (pp = fparams; pp; pp = pp->next) pcount++; }
