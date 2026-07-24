@@ -65,12 +65,47 @@ static void emit_mov_ext_from_rax(int reg_num) {
     e1(modrm);
 }
 
+/* ─── 为 "+m" 输出加载内存地址到 RDX ─── */
+
+static void load_memory_operand_address(AstNode *node) {
+    for (int i = 0; i < node->asm_.output_count; i++) {
+        const char *c = node->asm_.outputs[i].constraint;
+        if (!c || c[0] != '+' || c[1] != 'm' || c[2] != '\0') continue;
+
+        AstNode *expr = node->asm_.outputs[i].expr;
+        if (!expr) continue;
+
+        if (expr->kind == AST_UNARY && expr->op == TOK_STAR) {
+            /* "+m"(*ptr) — 解引用：评估 ptr（指针值）作为地址 */
+            if (expr->expr) {
+                cgen_expr(expr->expr);     /* RAX = ptr 的值 */
+                e1(0x48); e1(0x89); e1(0xC2);  /* mov rdx, rax */
+            }
+        }
+        /* 此处可扩展其他 "+m" 模式 */
+    }
+}
+
 /* ─── 主入口：为 AST_ASM 节点生成代码 ─── */
 
 void cgen_asm(AstNode *node) {
     if (!node || !node->asm_.asm_template) return;
 
     const char *t = node->asm_.asm_template;
+    int has_lock = str_contains(t, "lock ");  /* 是否含 LOCK 前缀的原子操作 */
+
+    /* ================================================================
+     * Phase 0: 加载 "+m"(mem) 输出操作数的地址到 RDX
+     * ================================================================
+     * GCC 扩展 asm 的 "+m"(expr) 表示 expr 在内存中，需将其地址加载到
+     * 寄存器供指令使用。当前实现仅处理 "+m"(*ptr) 模式，将 ptr 的值
+     * （指针）加载到 RDX，与 Phase 2 的原子操作模板硬编码的 [rdx] 匹配。
+     *
+     * 放在 Phase 1 之前：cgen_expr 会用到 RAX 但不会意外更改 RDX，
+     * 而后续 Phase 1 也仅通过 "d" 约束才写 RDX（原子操作中不会出现
+     * "d" 输入约束）。
+     * ================================================================ */
+    load_memory_operand_address(node);
 
     /* ================================================================
      * Phase 1: 处理输入约束 — 将表达式值加载到指定寄存器
@@ -84,6 +119,8 @@ void cgen_asm(AstNode *node) {
      * ================================================================ */
 
     int r_counter = 0;  /* "r" 约束分配计数器：0→r10, 1→r8, 2→r9 */
+    int r_regs[3] = {10, 8, 9};  /* "r" 约束的寄存器分配顺序 */
+    int r_assigned = -1;          /* 第一个 "r" 约束分配到的寄存器号，供 cmpxchg 使用 */
 
     /* Phase 1: 加载约束值到寄存器
      *
@@ -114,8 +151,11 @@ void cgen_asm(AstNode *node) {
         cgen_expr(expr);  /* 结果 → rax */
 
         if (c[0] == 'r') {
-            int ext_regs[] = {10, 8, 9};
-            if (r_counter < 3) emit_mov_ext_from_rax(ext_regs[r_counter]);
+            if (r_counter < 3) {
+                int reg = r_regs[r_counter];
+                emit_mov_ext_from_rax(reg);
+                if (r_assigned < 0) r_assigned = reg;  /* 记录第一个 "r" 的寄存器 */
+            }
             r_counter++;
         } else {
             emit_mov_from_rax(c[0]);
@@ -132,8 +172,6 @@ void cgen_asm(AstNode *node) {
      * Phase 2: 匹配已知模板并发射机器码
      * ================================================================ */
 
-    /* 特定模式要先于通用模式检查，否则 mov $N,%%rax+syscall 会被
-     * 前面的 syscall 分支吃掉。 */
     if (str_contains(t, "mov $") && str_contains(t, "%%rax") && str_contains(t, "syscall")) {
         /* mov $N, %%rax + syscall — parse immediate */
         const char *p = t;
@@ -148,13 +186,51 @@ void cgen_asm(AstNode *node) {
     } else if (str_contains(t, "syscall")) {
         e1(0x0F); e1(0x05);  /* syscall */
     } else if (str_contains(t, "lock xaddq")) {
+        /* lock xaddq %0, %1
+         * %0 = "=r"(result) / "0"(val) → 在 RAX
+         * %1 = "+m"(*ptr)       → 地址在 RDX (Phase 0 已加载)
+         * 编码: F0 48 0F C1 02 = lock xaddq [rdx], rax */
         e1(0xF0); e1(0x48); e1(0x0F); e1(0xC1); e1(0x02);
     } else if (str_contains(t, "lock xaddl")) {
+        /* lock xaddl %0, %1
+         * %0 = "=r"(result) / "0"(val) → 在 EAX
+         * %1 = "+m"(*ptr)       → 地址在 RDX (Phase 0 已加载)
+         * 编码: F0 0F C1 02 = lock xaddl [rdx], eax */
         e1(0xF0); e1(0x0F); e1(0xC1); e1(0x02);
-    } else if (str_contains(t, "lock cmpxchgq")) {
-        e1(0xF0); e1(0x48); e1(0x0F); e1(0xB1); e1(0x02);
-    } else if (str_contains(t, "lock cmpxchgl")) {
-        e1(0xF0); e1(0x0F); e1(0xB1); e1(0x02);
+    } else if (str_contains(t, "lock cmpxchgq") || str_contains(t, "lock cmpxchgl")) {
+        /* lock cmpxchg[lq] %2, %1
+         * %1 = "+m"(*ptr)      → 地址在 RDX (Phase 0 已加载)
+         * %2 = "r"(desired)    → 分配到 r10/r8/r9，记录在 r_assigned
+         * %0 = "=a"(result) / "0"(result) → 在 RAX (CMPXCHG 隐式用 EAX 比较)
+         *
+         * CMPXCHG 编码: 0F B1 /r
+         *   /r 的 reg 字段 = %2（desired）的寄存器号
+         *   r/m 字段 = [rdx]
+         *   EAX 参与比较是隐含的，不额外编码。
+         *
+         *  r_assigned 在 Phase 1 中已记录第一个 "r" 约束的寄存器号。 */
+
+        int is64 = (t[13] == 'q'); /* "lock cmpxchgq" → 第 14 字符是 q */
+
+        /* 确定 %2 所在寄存器：r_assigned 在 Phase 1 中已记录 */
+        int r2 = (r_assigned >= 0) ? r_assigned : 0;  /* 缺省 RAX */
+
+        e1(0xF0);  /* LOCK 前缀 */
+
+        /* REX 前缀: 0100.WRXB
+         * W = 1 仅对 cmpxchgq (64-bit)
+         * R = 1 当 %2 寄存器 ≥ 8 (r10/r8/r9)
+         * B = 0 (r/m=RDX 在 0-7 范围内) */
+        int rex = 0x40;
+        if (is64) rex |= 0x08;                        /* REX.W */
+        if (r2 >= 8) rex |= ((r2 >> 3) & 1) << 2;     /* REX.R */
+        if (rex != 0x40 || is64) e1(rex);              /* 只有 32-bit+低 8 寄存器免 REX */
+
+        e1(0x0F); e1(0xB1);  /* CMPXCHG opcode */
+
+        /* ModRM: mod=00, reg=low3(r2), r/m=010 ([rdx]) */
+        e1(0x02 | ((r2 & 7) << 3));
+
     } else if (str_contains(t, "%%fs:0")) {
         /* mov %%fs:0, %0 — 64 48 8B 04 25 00 00 00 00 */
         e1(0x64); e1(0x48); e1(0x8B); e1(0x04); e1(0x25);

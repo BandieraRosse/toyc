@@ -170,8 +170,12 @@ int main(int argc, char *argv[]) {
     __printf("队列初始化完成\n");
 
     // 创建线程
-    pthread_t producers[thread_num];
-    // pthread_t consumers[thread_num];
+    pthread_t *producers = (pthread_t*)tlibc_malloc(sizeof(pthread_t) * thread_num);
+    if (!producers) {
+        __printf("线程数组分配失败\n");
+        return -1;
+    }
+    // pthread_t *consumers = (pthread_t*)tlibc_malloc(sizeof(pthread_t) * thread_num);
     int ret;
     
     // 创建生产者线程
@@ -219,6 +223,7 @@ int main(int argc, char *argv[]) {
     
     // 清理资源
     destroy_queue(queue);
+    tlibc_free(producers);
 
     return 0;
 }
