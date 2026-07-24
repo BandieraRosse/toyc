@@ -345,6 +345,33 @@ static void collect_locals(AstNode *node) {
                 sym_count++;
             }
             elf_bss_size += vsize;
+        } else if (node->is_vla && node->name) {
+            /* VLA：只分配两个隐藏 8 字节栈槽（指针+大小槽），数据栈空间在函数体中运行时分配 */
+            if (local_count >= MAX_LOCALS) {
+                __write(2, "toyc: too many local variables\n", 30);
+                __exit(1); }
+            /* 指针槽 — 保存 VLA 数据在栈上的基地址 */
+            frame_size += 8;
+            locals[local_count].name = node->name;
+            locals[local_count].offset = -frame_size;
+            locals[local_count].size = 8;     /* 指针槽 */
+            locals[local_count].struct_tag = NULL;
+            locals[local_count].is_float = 0;
+            locals[local_count].is_unsigned = node->is_unsigned;
+            locals[local_count].element_size = node->elem_size > 0 ? node->elem_size : (node->is_float ? 8 : 4);
+            locals[local_count].base_elem_size = node->base_elem_size;
+            locals[local_count].elem_is_ptr = node->elem_is_ptr;
+            locals[local_count].scope_depth = scope_depth;
+            locals[local_count].scope_id = scope_chain_count > 0 ? scope_chain[scope_chain_count - 1] : 0;
+            locals[local_count].elem_is_unsigned = node->elem_is_unsigned;
+            locals[local_count].elem_is_float = node->elem_is_float;
+            locals[local_count].is_param = 0;
+            locals[local_count].is_array = 1;   /* VLA 退化为指针 */
+            locals[local_count].is_vla = 1;
+            /* 大小槽 — sizeof(VLA) 运行时值 */
+            frame_size += 8;
+            locals[local_count].vla_size_offset = -frame_size;
+            local_count++;
         } else if (node->name) {
             if (local_count >= MAX_LOCALS) {
                 __write(2, "toyc: too many local variables\n", 30);
@@ -804,6 +831,53 @@ static void cgen_stmt(AstNode *stmt) {
         }
         break;
     case AST_VAR_DECL:
+        /* VLA 运行时栈分配 */
+        if (stmt->is_vla && stmt->vla_dim_expr) {
+            int _vla_i;
+            SEARCH_LOCAL(_vla_i, stmt->name);
+            if (_vla_i >= 0) {
+                int elem_sz = locals[_vla_i].element_size > 0 ? locals[_vla_i].element_size : 4;
+                /* 1. 求值维度表达式 → rax */
+                cgen_expr(stmt->vla_dim_expr);
+                /* 2. 对维度做符号扩展（32→64 位），确保 64-bit 指针算术正确 */
+                if (stmt->vla_dim_expr && stmt->vla_dim_expr->type_size < 8 &&
+                    !stmt->vla_dim_expr->is_unsigned)
+                    { e1(0x48); e1(0x63); e1(0xC0); }  /* movsxd rax, eax */
+                /* 3. 乘以元素大小 → rax = byte size */
+                if (elem_sz == 2) {
+                    e1(0x48); e1(0xC1); e1(0xE0); e1(0x01);  /* shl rax, 1 */
+                } else if (elem_sz == 4) {
+                    e1(0x48); e1(0xC1); e1(0xE0); e1(0x02);  /* shl rax, 2 */
+                } else if (elem_sz == 8) {
+                    e1(0x48); e1(0xC1); e1(0xE0); e1(0x03);  /* shl rax, 3 */
+                } else if (elem_sz > 1) {
+                    /* 非 2 的幂：imul */
+                    e1(0x50);                            /* push rax */
+                    e1(0xB8); e4(elem_sz);               /* mov eax, elem_sz */
+                    e1(0x48); e1(0x0F); e1(0xAF); e1(0x04); e1(0x24);  /* imul rax, [rsp] */
+                    e1(0x48); e1(0x83); e1(0xC4); e1(0x08);  /* add rsp, 8 */
+                } /* elem_sz == 1 无需操作 */
+                /* 4. 保存实际 byte size（对齐前）到 sizeof 槽 */
+                e1(0x50);                            /* push rax — 暂存实际 byte_size */
+                /* 5. 对齐到 16 字节 */
+                e1(0x48); e1(0x05); e4(15);           /* add rax, 15 */
+                e1(0x48); e1(0x25); e4((-16) & 0xFFFFFFFF);  /* and rax, -16 */
+                /* 将实际 byte_size 从栈中弹出到 rcx */
+                e1(0x59);                            /* pop rcx */
+                /* 存入实际 byte size 到 sizeof 槽 */
+                { int _off = locals[_vla_i].vla_size_offset;
+                  if (disp8_fits(_off))
+                      { e1(0x48); e1(0x89); e1(0x4D); e1(_off & 0xFF); }  /* mov [rbp+off], rcx */
+                  else
+                      { e1(0x48); e1(0x89); e1(0x8D); e4(_off); }         /* mov [rbp+off32], rcx */
+                }
+                /* 6. sub rsp, rax — 分配栈空间 */
+                e1(0x48); e1(0x29); e1(0xC4);  /* sub rsp, rax */
+                /* 7. 保存 VLA 基地址（当前 RSP）到指针槽（用于数组访问） */
+                e1(0x48); e1(0x89); e1(0xE0);  /* mov rax, rsp */
+                store_rax_to_rbp(locals[_vla_i].offset);
+            }
+        }
         /* 初始化 */
         if (stmt->expr) {
             if (stmt->expr->kind == AST_ASSIGN) {

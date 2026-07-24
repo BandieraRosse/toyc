@@ -226,11 +226,14 @@ void cgen_addr(AstNode *node) {
 
     switch (node->kind) {
     case AST_VAR: {
-        /* 局部变量：lea rax, [rbp+off] */
+        /* 局部变量：lea rax, [rbp+off]（VLA 从隐藏指针槽加载基地址） */
         int i;
         SEARCH_LOCAL(i, node->name);
         if (i >= 0) {
-                lea_from_rbp(locals[i].offset);
+                if (locals[i].is_vla)
+                    load_rax_from_rbp(locals[i].offset);
+                else
+                    lea_from_rbp(locals[i].offset);
                 return;
         }
         /* 全局变量：lea rax, [rip+disp32] */
@@ -392,6 +395,19 @@ void cgen_expr(AstNode *node) {
 
     switch (node->kind) {
 
+    case AST_VLA_SIZEOF: {
+        /* sizeof(VLA) — 从隐藏大小槽加载运行时值 */
+        int _vi;
+        SEARCH_LOCAL(_vi, node->name);
+        if (_vi >= 0 && locals[_vi].is_vla) {
+            load_rax_from_rbp(locals[_vi].vla_size_offset);
+            node->type_size = 8;
+        } else {
+            mov_eax_imm(0);
+        }
+        break;
+    }
+
     case AST_CONSTANT:
         if (node->is_float) {
             unsigned int lo, hi;
@@ -498,8 +514,13 @@ void cgen_expr(AstNode *node) {
         int i;
         SEARCH_LOCAL(i, node->name);
         if (i >= 0) {
+                /* VLA 优先：从隐藏指针槽加载基地址（VLA 的栈位置运行时确定） */
+                if (locals[i].is_vla) {
+                    load_rax_from_rbp(locals[i].offset);
+                    node->type_size = 8;
+                    node->is_float = 0;
                 /* 数组/大结构体优先于浮点判断：float arr[] 应先退化为指针 */
-                if (locals[i].is_array || (locals[i].size > 8 && !locals[i].is_param)) {
+                } else if (locals[i].is_array || (locals[i].size > 8 && !locals[i].is_param)) {
                     /* 数组/大结构体（非参数）：退化为指针（lea rax, [rbp+off]） */
                     lea_from_rbp(locals[i].offset);
                     node->type_size = 8;

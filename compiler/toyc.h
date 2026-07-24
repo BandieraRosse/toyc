@@ -172,6 +172,7 @@ typedef enum {
     AST_ASM,           /* __asm__ 内联汇编 */
     AST_GOTO,          /* goto label */
     AST_LABEL,         /* label: 定义 */
+    AST_VLA_SIZEOF,    /* VLA 的 sizeof — 运行时求值 */
 } AstKind;
 
 /* ─── 全局变量初始化器元素 ─── */
@@ -253,6 +254,8 @@ typedef struct AstNode {
     int elem_is_ptr;     /* 1: 数组元素为指针类型（char *arr[] 或 int *arr[N]） */
     int elem_is_float;   /* 指针变量的元素是否为 float/double */
     int is_array;        /* 1: 数组变量（分配时退化为指针）0: 标量或指针变量 */
+    int is_vla;          /* 1: VLA（变长数组 — 运行时决定大小，无需栈帧预分配） */
+    struct AstNode *vla_dim_expr; /* VLA 的维度表达式 AST（存于 arena，codegen 时求值并分配栈） */
     /* 全局变量初始化器数据（AST_VAR_DECL 且 = { ... } 时有效） */
     int init_count;           /* init_items 数组长度 */
     int init_items_per_elem;  /* 每个数组元素的标量初始化器数（用于元素内边距填充） */
@@ -389,6 +392,8 @@ typedef struct {
     int is_param;            /* 1 表示函数参数（大结构体参数保存指针而非数据） */
     int elem_is_unsigned;    /* 指针变量的元素是否为 unsigned（用于 *ptr 解引用） */
     int elem_is_float;       /* 指针变量的元素是否为 float/double（用于 *ptr 解引用） */
+    int is_vla;              /* 1: VLA（变长数组，运行时分配栈空间） */
+    int vla_size_offset;     /* sizeof(VLA) 运行时值的栈槽偏移（RBP-relative, 8 字节） */
 } LocalVar;
 
 extern LocalVar locals[MAX_LOCALS];

@@ -114,8 +114,8 @@ make test-all                     # 全部测试套件（含 llm）
 
 | 测试套件 | 通过/总数 | 说明 |
 |----------|-----------|------|
-| `make test` | **43/43 ✅** | 含 float return test |
-| `make test-selfhost` | **41/41 ✅** | toyc 独立编译，无 toyc_rt 依赖 |
+| `make test` | **44/44 ✅** | 含 VLA 测试 |
+| `make test-selfhost` | **42/42 ✅** | 含 VLA 自包含测试 |
 | `make test-source` | 8/8 ✅ | toyc 编译源文件独立测试 |
 | `make test-toyld` | **41/41 ✅** | selfhost 测试 × toyld 链接 |
 | `make test-toyld-multifile` | ✅ | 多 .o 文件交叉引用链接 |
@@ -125,7 +125,7 @@ make test-all                     # 全部测试套件（含 llm）
 | `make test-error` | **16/16 ✅** | 错误报告测试 |
 | `make test-lib-compile` | **28/28 ✅** | Tinylibc 全部 16 个模块编译通过（含 thread + clone.S 汇编） |
 | `make test-lib` | 编译 28/28 ✅ 功能 **12/12** | math ✅, ctype ✅, string ✅, core ✅, stdio ✅, time ✅, misc ✅, net ✅, poll ✅, tty ✅, procfs ✅, **thread ✅** |
-| `bootstrap-selfhost.sh` | **41/41 ✅** | 种子自举 → stage-2 全部测试通过 |
+| `bootstrap-selfhost.sh` | **42/42 ✅** | 种子自举 → stage-2 全部测试通过（含 VLA） |
 | `bootstrap-to-10.sh` | stage-2→10 字节级一致 ✅ | 全链收敛验证（头尾完整测试） |
 | `make llm` | **编译 ✅** | GPT-2 模型（gcc + Tinylibc，见下方说明） |
 | `make test-llm` | **29/29 ✅** | Softmax, GELU, LayerNorm, MatMul, Encoder, 完整 GPT-2 前向 |
@@ -221,7 +221,7 @@ _ASM_xxx     := path/to/file.S         # 汇编源文件（可选，由 toyas �
 
 | 特性 | 说明 |
 |------|------|
-| VLA（变长数组） | ❌ `int pids[n]` 生成错误代码，需改为固定大小数组 |
+| VLA（变长数组） | ✅ `int arr[n]` 运行时栈分配、元素访问、`sizeof` 运行时求值<br/>⚠ 限制：仅支持一维 VLA（完整）；多维 `int arr[n][m]` 仅支持首维为运行时表达式<br/>❌ goto 跨 VLA 声明未检测（C99 约束） |
 | `char (*)[N]` 指针转数组访问 | ❌ `files[i]` 被当作 `char**`（取指针）而非地址偏移（取元素），需用平坦指针+手动偏移 |
 | 位域（bitfield） | ❌ 未实现 |
 | 复合字面量 `(int[]){1,2}` | ❌ 未实现 |
@@ -236,8 +236,8 @@ _ASM_xxx     := path/to/file.S         # 汇编源文件（可选，由 toyas �
 ## 验证
 
 ```sh
-make test             # 43/43 ✅
-make test-selfhost    # 41/41 ✅
+make test             # 44/44 ✅
+make test-selfhost    # 42/42 ✅
 make test-source      # 8/8 ✅
 make test-toyld         # 41/41 ✅
 make test-error       # 16/16 ✅

@@ -88,6 +88,7 @@ static int pvar_size_arr[MAX_PVARS];          /* 变量大小（用于 sizeof）
 static int pvar_elem_size_arr[MAX_PVARS];     /* 数组元素大小（0=非数组） */
 static int pvar_elem_float_arr[MAX_PVARS];    /* 指针/数组元素的浮点类型 */
 static StructType *pvar_struct_type_arr[MAX_PVARS]; /* 解析后的 StructType*（NULL=非 struct 或未知） */
+static int pvar_is_vla_arr[MAX_PVARS];       /* 1: VLA（变长数组） */
 static int pvar_count;
 
 static void pvar_add_ex(const char *name, const char *tag, int is_float, int is_unsigned, int size) {
@@ -104,6 +105,7 @@ static void pvar_add_ex(const char *name, const char *tag, int is_float, int is_
         pvar_elem_size_arr[pvar_count] = 0;
         pvar_elem_float_arr[pvar_count] = 0;
         pvar_struct_type_arr[pvar_count] = NULL;
+        pvar_is_vla_arr[pvar_count] = 0;
         pvar_count++;
     }
 }
@@ -136,6 +138,18 @@ static void pvar_update_size(const char *name, int new_size) {
     for (i = 0; i < pvar_count; i++)
         if (strcmp(pvar_name[i], name) == 0)
             { pvar_size_arr[i] = new_size; return; }
+}
+static void pvar_set_vla(const char *name) {
+    int i;
+    for (i = 0; i < pvar_count; i++)
+        if (strcmp(pvar_name[i], name) == 0)
+            { pvar_is_vla_arr[i] = 1; return; }
+}
+static int pvar_find_vla(const char *name) {
+    int i;
+    for (i = pvar_count - 1; i >= 0; i--)
+        if (strcmp(pvar_name[i], name) == 0) return pvar_is_vla_arr[i];
+    return 0;
 }
 #define pvar_add(name, tag, is_float) pvar_add_ex(name, tag, is_float, 0, 0)
 static const char *pvar_find_tag(const char *name) {
@@ -1180,13 +1194,21 @@ static AstNode *parse_unary(Parser *p) {
             expect(p, TOK_RPAREN);
             n->ival = 8;
             if (sexpr && sexpr->kind == AST_VAR && sexpr->name) {
-                int vsize = pvar_find_size(sexpr->name);
-                if (vsize > 0)
-                    n->ival = vsize;
+                /* VLA 变量：创建 AST_VLA_SIZEOF 节点以便运行时求值 */
+                if (pvar_find_vla(sexpr->name)) {
+                    n->kind = AST_VLA_SIZEOF;
+                    n->name = sexpr->name;  /* 变量名，供 codegen 查找 vla_size_offset */
+                    n->ival = 0;
+                } else {
+                    int vsize = pvar_find_size(sexpr->name);
+                    if (vsize > 0)
+                        n->ival = vsize;
+                }
             }
             /* sizeof(arr[i]) — 数组下标表达式：返回元素类型大小 */
             if (sexpr && sexpr->kind == AST_BINOP && sexpr->op == TOK_LBRACKET &&
                 sexpr->left && sexpr->left->kind == AST_VAR && sexpr->left->name) {
+                /* 如果基数组是 VLA，arr[i] 的元素大小仍是编译时常量（类型大小） */
                 int es = pvar_find_elem_size(sexpr->left->name);
                 if (es > 0) n->ival = es;
             }
@@ -1844,6 +1866,17 @@ static long long eval_const_expr(AstNode *n) {
         case TOK_GREATER_GREATER: return eval_const_expr(n->left) >> eval_const_expr(n->right);
         default: return 0;
         }
+    default: return 0;
+    }
+}
+
+/* 判断表达式树是否全部由编译时常量组成（不含变量引用/函数调用） */
+static int expr_is_const(AstNode *n) {
+    if (!n) return 1;
+    switch (n->kind) {
+    case AST_CONSTANT: return 1;
+    case AST_UNARY: return expr_is_const(n->expr);
+    case AST_BINOP: return expr_is_const(n->left) && expr_is_const(n->right);
     default: return 0;
     }
 }
@@ -2555,14 +2588,20 @@ AstNode *parse_compound_statement(Parser *p) {
                     if (peek(p).kind == TOK_RBRACKET) {
                         /* 空维度 int arr[] — 无操作 */
                     } else {
-                        /* 维度表达式：int arr[4], int arr[4*1024], int arr[(4)] */
+                        /* 维度表达式：int arr[4], int arr[4*1024], int arr[n] */
                         AstNode *dim_expr = parse_expr(p);
                         if (dim_expr) {
                             long long dim_val = eval_const_expr(dim_expr);
-                            if (dim_val > 0) {
+                            int is_const = expr_is_const(dim_expr);
+                            if (is_const && dim_val > 0) {
                                 if (dim_count == 0) first_dim = (int)dim_val;
                                 decl->ival *= (int)dim_val;
                                 dim_count++;
+                            } else if (!is_const) {
+                                /* VLA: 运行时维度的变长数组，如 int arr[n] */
+                                decl->is_vla = 1;
+                                decl->vla_dim_expr = dim_expr;
+                                if (dim_count == 0) dim_count = 1;
                             }
                         }
                         /* 跳过到匹配的 ] */
@@ -2575,7 +2614,20 @@ AstNode *parse_compound_statement(Parser *p) {
                     }
                     if (peek(p).kind == TOK_RBRACKET) consume(p);
                 }
-                if (dim_count > 0 && first_dim > 0) {
+                if (decl->is_vla) {
+                    /* VLA: elem_size = 元素大小，总大小运行时决定 */
+                    int elem_ts = (dv_ptrs > 0) ? 8 : (ts > 0 ? ts : 4);
+                    decl->base_elem_size = (dv_ptrs == 1 && bracket_count > 0) ? (ts > 0 ? ts : 4) : elem_ts;
+                    if (dv_ptrs > 0 && bracket_count > 0)
+                        decl->elem_is_ptr = 1;
+                    decl->is_array = 1;
+                    decl->elem_size = elem_ts;
+                    /* 注册 VLA 标记和数组元素大小到 pvar */
+                    if (decl->name && *decl->name) {
+                        pvar_set_elem_size(decl->name, decl->elem_size);
+                        pvar_set_vla(decl->name);
+                    }
+                } else if (dim_count > 0 && first_dim > 0) {
                     /* 数组：elem_size = 元素/行大小，base_elem_size = 基础元素类型 */
                     int elem_ts = (dv_ptrs > 0) ? 8 : (ts > 0 ? ts : 4);
                     decl->base_elem_size = (dv_ptrs == 1 && bracket_count > 0) ? (ts > 0 ? ts : 4) : elem_ts;
@@ -2834,20 +2886,44 @@ AstNode *parse_compound_statement(Parser *p) {
                     while (peek(p).kind == TOK_LBRACKET) {
                         comma_was_bracket = 1;
                         consume(p);
-                        if (peek(p).kind == TOK_NUMBER && peek(p).ival > 0) {
-                            cdecl->ival *= peek(p).ival;
-                            consume(p);
-                        }
-                        int d = 1;
-                        while (d > 0 && peek(p).kind != TOK_EOF) {
-                            if (peek(p).kind == TOK_LBRACKET) d++;
-                            if (peek(p).kind == TOK_RBRACKET) d--;
-                            if (d) consume(p);
+                        if (peek(p).kind == TOK_RBRACKET) {
+                            /* 空维度 int arr[] — 无操作 */
+                        } else {
+                            /* 维度表达式：int arr[4] 或 int arr[n] */
+                            AstNode *cdim = parse_expr(p);
+                            if (cdim) {
+                                long long cdim_val = eval_const_expr(cdim);
+                                int c_is_const = expr_is_const(cdim);
+                                if (c_is_const && cdim_val > 0) {
+                                    cdecl->ival *= (int)cdim_val;
+                                } else if (!c_is_const) {
+                                    /* VLA：运行时维度的变长数组 */
+                                    cdecl->is_vla = 1;
+                                    cdecl->vla_dim_expr = cdim;
+                                }
+                            }
+                            /* 跳过到匹配的 ] */
+                            int d = 1;
+                            while (d > 0 && peek(p).kind != TOK_EOF) {
+                                if (peek(p).kind == TOK_LBRACKET) d++;
+                                if (peek(p).kind == TOK_RBRACKET) d--;
+                                if (d) consume(p);
+                            }
                         }
                         if (peek(p).kind == TOK_RBRACKET) consume(p);
                     }
                     if (comma_was_bracket && cdecl->elem_size > 0)
                         cdecl->is_array = 1;
+                    if (cdecl->is_vla) {
+                        /* VLA 的 elem_size 和 pvar 注册 */
+                        int celem_ts = (c_ptrs > 0) ? 8 : (ts > 0 ? ts : 4);
+                        cdecl->base_elem_size = celem_ts;
+                        cdecl->elem_size = celem_ts;
+                        if (cname && *cname) {
+                            pvar_set_elem_size(cname, celem_ts);
+                            pvar_set_vla(cname);
+                        }
+                    }
                     /* 数组处理后更新 pvar 中的变量大小 */
                     if (cname && *cname && cdecl->ival > 4) {
                         int pi;
