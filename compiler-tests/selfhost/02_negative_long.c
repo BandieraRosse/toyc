@@ -338,6 +338,104 @@ static void test_toyc_source_patterns(void)
 }
 
 // ============================================================
+// 第 9 节：LLONG_MIN = -LLONG_MAX - 1（AST_UNARY type_size 传播，pr 45b9d27）
+// ============================================================
+
+static long make_neg64(long x) { return -x; }
+
+static void test_llong_min_neg(void)
+{
+    my_printf("\n=== Section 9: LLONG_MIN = -LLONG_MAX - 1 (AST_UNARY type_size fix) ===\n");
+
+    /* -9223372036854775807LL - 1 = LLONG_MIN */
+    long lmin_expr = -9223372036854775807LL - 1;
+    check(lmin_expr == -9223372036854775807LL - 1, "  -9223372036854775807LL - 1", 901);
+
+    /* 验证它就是 LLONG_MIN：最小负 long */
+    check(lmin_expr < -9223372036854775807LL, "  LLONG_MIN < -LLONG_MAX", 902);
+    check(lmin_expr + 1 == -9223372036854775807LL, "  LLONG_MIN + 1 == -LLONG_MAX", 903);
+
+    /* LLONG_MAX · -LLONG_MAX */
+    check(-9223372036854775807LL == -9223372036854775807LL, "  -LLONG_MAX", 911);
+    check(-9223372036854775808LL == -9223372036854775807LL - 1, "  LLONG_MIN literal eq expr", 912);
+
+    /* 运行期负 64 位值 */
+    long big = 9223372036854775807LL;
+    long neg_big = -big;
+    check(neg_big == -9223372036854775807LL, "  runtime -(LLONG_MAX)", 921);
+
+    /* 函数返回 -x 对 long 参数（测试 AST_UNARY type_size 在调用处） */
+    check(make_neg64(9223372036854775807LL) == -9223372036854775807LL, "  fn neg LLONG_MAX", 931);
+    check(make_neg64(0) == 0, "  fn neg 0", 932);
+    check(make_neg64(1) == -1L, "  fn neg 1", 933);
+
+    /* LLONG_MIN 在运行期求反：-(-9223372036854775807LL-1) 对 64 位无法表示，
+     * 但在 -9223372036854775808LL 上求负是未定义行为，不测试。 */
+    check(make_neg64(-9223372036854775807LL) == 9223372036854775807LL, "  fn neg -LLONG_MAX", 941);
+}
+
+// ============================================================
+// 第 10 节：long 变量赋值符号扩展（AST_VAR type_size 传播，pr this）
+//   long x = INT_MIN; x = -x; 不应因冗余 movsxd 截断高 32 位
+// ============================================================
+
+static long neg_long(long n) { n = -n; return n; }
+
+static void test_long_assign_sext(void)
+{
+    my_printf("\n=== Section 10: long var assign sign-extension (AST_VAR type_size fix) ===\n");
+
+    /* INT_MIN 通过赋值求反（触发 store_sz >= 8 代码路径） */
+    {
+        long x = -2147483648L;
+        x = -x;
+        check(x == 2147483648L, "  long x=INT_MIN; x=-x → 2147483648", 1001);
+    }
+
+    /* INT_MIN 经过条件分支求反（printf long_to_buf 的精确模式） */
+    {
+        long x = -2147483647L - 1L;   /* INT_MIN */
+        if (x < 0) {
+            x = -x;
+        }
+        check(x == 2147483648L, "  if(x<0) x=-x → 2147483648", 1002);
+    }
+
+    /* 函数参数 long 求反（long_to_buf 的直接模式） */
+    check(neg_long(-2147483648L) == 2147483648L, "  neg_long(INT_MIN) == 2147483648L", 1011);
+    check(neg_long(-1L) == 1L, "  neg_long(-1L) == 1L", 1012);
+    check(neg_long(0L) == 0L, "  neg_long(0L) == 0L", 1013);
+    check(neg_long(2147483648L) == -2147483648L, "  neg_long(2147483648L) == -2147483648L", 1014);
+
+    /* 超过 INT32 范围的 long 值求反 */
+    check(neg_long(3000000000L) == -3000000000L, "  neg_long(3e9) == -3e9", 1021);
+    check(neg_long(0xFFFFFFFFL) == -4294967295L, "  neg_long(0xFFFFFFFFL) == -4294967295L", 1022);
+
+    /* 无符号 long 求反（不受此 bug 影响，对比验证） */
+    {
+        unsigned long u = 2147483648UL;
+        u = -u;
+        check(u == (unsigned long)(-2147483648L), "  unsigned long neg", 1031);
+    }
+
+    /* printf 中具体模式：long_to_buf(num, buf) 内的 num = -num */
+    {
+        char buf[32];
+        long num = -2147483647L - 1L;  /* INT_MIN */
+        int i = 0;
+        char tmp[32];
+        if (num < 0) {
+            num = -num;   /* 触发 bug 的核心代码 */
+        }
+        do {
+            buf[i++] = '0' + (int)(num % 10);
+            num /= 10;
+        } while (num > 0);
+        check(i == 10 && buf[0] == '8' && buf[1] == '4', "  int-min-digit: ends with 84", 1041);
+    }
+}
+
+// ============================================================
 // main
 // ============================================================
 
@@ -355,6 +453,8 @@ int main(void)
     test_boundary();
     test_variadic();
     test_toyc_source_patterns();
+    test_llong_min_neg();
+    test_long_assign_sext();
 
     if (fail_count > 0) {
         my_printf("\nFAILED: %d failures\n", fail_count);

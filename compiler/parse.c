@@ -686,6 +686,8 @@ static AstNode *parse_primary(Parser *p) {
         n->name = arena_strdup(p->arena, t.start, t.len);
         n->is_float = pvar_find_float(n->name);
         n->is_unsigned = pvar_find_unsigned(n->name);
+        n->type_size = pvar_find_size(n->name);
+        if (n->type_size == 0) n->type_size = 4;  /* 默认 int */
         n->struct_type = pvar_find_struct_type(n->name);
         return n;
     }
