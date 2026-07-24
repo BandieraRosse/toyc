@@ -252,9 +252,9 @@ test-source: $(BUILD)/toyc $(BUILD)/toyld
 test-all: test test-selfhost test-source test-lib test-toyld test-error test-toyar test-toyld-archive test-self-app
 	@printf "$(GREEN)✓ 全部测试通过$(RESET)\n"
 
-# ─── Tinylibc 库测试（从真实 Tinylibc 源文件编译） ─────────────
+# ─── Lib 库测试（从 lib/ 源文件编译） ─────────────────────────
 
-TINYLIBC_DIR   := ../Tinylibc
+TINYLIBC_DIR   := .
 LIBT_OBJDIR    := /tmp/libt_obj
 
 # -Icompiler-tests/lib/override 保留空目录以备后续遮蔽需要

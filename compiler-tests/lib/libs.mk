@@ -1,11 +1,11 @@
-# libs.mk — Tinylibc 库模块声明
+# libs.mk — Lib 库模块声明
 #
 # 用法：被 Makefile 的 test-lib 目标 include。
 #
 # 添加新库：在 LIBS 后追加名称，定义 _SRCS_<name>，可选定义 _DEPS_<name> 和 _TEST_<name>。
 #
 # 变量约定：
-#   _SRCS_<name>  — 源文件列表（相对于 ../Tinylibc/lib/）
+#   _SRCS_<name>  — 源文件列表（相对于 lib/）
 #   _DEPS_<name>  — 链接时依赖的其他 lib 模块（空格分隔）
 #   _TEST_<name>  — 测试驱动名（compiler-tests/lib/test_<name>.c，不含 .c 后缀）
 #                   不定义则跳过功能测试（仅编译检查）
