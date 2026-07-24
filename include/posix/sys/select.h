@@ -12,31 +12,40 @@ typedef long suseconds_t;
 /* ── fd_set — 位图实现（FD_SETSIZE=1024） ── */
 #define FD_SETSIZE  1024
 
+/* toyc 限制：
+ *
+ * 1. sizeof(struct_member_array) 返回 8（指针大小）而非数组大小，
+ *    因此所有 fd_set 宏用 (unsigned long*) 强制转换绕开。
+ *
+ * 2. struct 数组成员维度不支持常量表达式（仅接受 TOK_NUMBER），
+ *    因此 fd_set 用硬编码值 [16]（1024 / 64）而非 __FD_ELTS。
+ *
+ * __FD_ELTS 仅用于 FD_ZERO 的循环上界：sizeof 在表达式上下文中正确返回 8。 */
+#define __FD_ELTS (FD_SETSIZE / (8 * (int)sizeof(unsigned long)))
+
 typedef struct {
-    unsigned long fds_bits[FD_SETSIZE / (8 * sizeof(unsigned long))];
+    unsigned long fds_bits[16];    /* 16 × 8 bytes = 1024 bits */
 } fd_set;
 
 /* ── 宏 ── */
 #define FD_ZERO(set)                                         \
     do {                                                     \
+        unsigned long *__bits = (unsigned long *)(set);      \
         int __i;                                             \
-        for (__i = 0;                                        \
-             __i < (int)(sizeof((set)->fds_bits) /           \
-                         sizeof(*(set)->fds_bits));           \
-             __i++)                                          \
-            (set)->fds_bits[__i] = 0UL;                      \
+        for (__i = 0; __i < __FD_ELTS; __i++)                \
+            __bits[__i] = 0UL;                               \
     } while (0)
 
 #define FD_SET(fd, set)                                      \
-    ((set)->fds_bits[(fd) / (8 * (int)sizeof(unsigned long))] \
+    (((unsigned long *)(set))[(fd) / (8 * (int)sizeof(unsigned long))] \
         |= (1UL << ((fd) % (8 * (int)sizeof(unsigned long)))))
 
 #define FD_CLR(fd, set)                                      \
-    ((set)->fds_bits[(fd) / (8 * (int)sizeof(unsigned long))] \
+    (((unsigned long *)(set))[(fd) / (8 * (int)sizeof(unsigned long))] \
         &= ~(1UL << ((fd) % (8 * (int)sizeof(unsigned long)))))
 
 #define FD_ISSET(fd, set)                                    \
-    ((set)->fds_bits[(fd) / (8 * (int)sizeof(unsigned long))] \
+    (((unsigned long *)(set))[(fd) / (8 * (int)sizeof(unsigned long))] \
         & (1UL << ((fd) % (8 * (int)sizeof(unsigned long)))))
 
 /* ── 函数声明 ── */
