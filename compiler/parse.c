@@ -1139,6 +1139,13 @@ static AstNode *parse_unary(Parser *p) {
             int ef = pvar_find_elem_float(n->expr->name);
             if (ef) n->is_float = ef;
         }
+        /* 传播类型大小和有符号性给值保持运算符（+、-、~），
+         * 确保后续 BINOP 能正确选择 64-bit vs 32-bit 代码生成路径。
+         * 例如 -9223372036854775807LL 是 64 位，缺少传播将导致 32 位截断。 */
+        if (n->expr && (t.kind == TOK_PLUS || t.kind == TOK_MINUS || t.kind == TOK_TILDE)) {
+            n->type_size = n->expr->type_size;
+            n->is_unsigned = n->expr->is_unsigned;
+        }
         return n;
     }
 
