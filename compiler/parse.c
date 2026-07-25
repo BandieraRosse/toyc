@@ -1296,6 +1296,19 @@ static AstNode *parse_unary(Parser *p) {
                         inner->is_unsigned = last_type_is_unsigned;
                         if (cast_to_double) inner->elem_is_float = 8;
                         else if (cast_to_float) inner->elem_is_float = 4;
+                        /* 指针转型到 struct 指针：传播 struct 类型供后续 -> 成员访问。
+                         * 例如 ((struct sockaddr_in *)sa)->sin_addr 一行内联转型时，
+                         * last_struct_tag 由 parse_type_specifier 设置为 "sockaddr_in"，
+                         * 此处将其传播到 inner 节点，使 TOK_ARROW 处理能找到正确成员。 */
+                        /* 指针转型到 struct 指针：传播 struct 类型供后续 -> 成员访问。
+                         * 例如 ((struct sockaddr_in *)sa)->sin_addr 一行内联转型时，
+                         * last_struct_tag 由 parse_type_specifier 设置为 "sockaddr_in"，
+                         * 此处将其传播到 inner 节点，使 TOK_ARROW 处理能找到正确成员。 */
+                        if (last_struct_tag) {
+                            StructType *cast_st = find_struct_tag(last_struct_tag);
+                            if (cast_st)
+                                inner->struct_type = cast_st;
+                        }
                     }
                 }
                 return inner;
