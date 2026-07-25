@@ -2503,6 +2503,17 @@ void cgen_expr(AstNode *node) {
          *
          * x86-64 ABI: 第一个栈参数 a6 在 [rbp+0x10]，
          * 第二个 a7 在 [rbp+0x18]，以此类推。 */
+        int align_pad = 0;
+        /* x86-64 ABI: call 前 RSP 必须 16 字节对齐。
+         * 只有栈参数 (argc>6 的部分) 在 pop 循环后留在栈上。
+         * 当栈参数个数为奇数时，插入 8 字节填充以使剩余栈项为偶数。 */
+        { int _stack_args = argc > 6 ? argc - 6 : 0;
+          if (_stack_args & 1) { align_pad = 1; } }
+        /* 对齐填充：在参数设置前 sub rsp, 8，清理时补回 */
+        if (align_pad) {
+            e1(0x48); e1(0x83); e1(0xEC); e1(0x08);  /* sub rsp, 8 */
+        }
+        /* 隐藏指针占 RDI（has_hidden_ret=1 时，第 1 个 GP 参数） */
         {
             int nstack = argc > 6 ? argc - 6 : 0;
             if (nstack > 0) {
@@ -2627,7 +2638,30 @@ void cgen_expr(AstNode *node) {
         }
 
         if (indirect_call) {
-            if (argc > 3) {
+            if (argc > 6) {
+                /* Bug fix: fn_ptr 在栈参数下方（被先压栈），需要跳过栈参数。
+                 * 栈布局： [align_gap][fn_ptr][stack_args...][reg_args...]
+                 * pop 循环后 rsp → stack_args[0], fn_ptr 在 [rsp + (nstack+align_pad)*8] */
+                int nstack = argc - 6;
+                int offset = (nstack + align_pad) * 8;
+                if (offset <= 127) {
+                    e1(0x4C); e1(0x8B); e1(0x54); e1(0x24); e1(offset);
+                } else {
+                    e1(0x4C); e1(0x8B); e1(0x94); e1(0x24);
+                    e4(offset);
+                }
+                e1(0x41); e1(0xFF); e1(0xD2);  /* call *r10 */
+                /* 清理 fn_ptr + 栈参数（共 nstack+1 个 8 字节槽） */
+                { int clean = (nstack + 1) * 8;
+                  if (clean <= 127) {
+                      e1(0x48); e1(0x83); e1(0xC4); e1(clean);
+                  } else {
+                      e1(0x48); e1(0x81); e1(0xC4); e4(clean);
+                  }
+                }
+                /* 阻止后续重复清理栈参数 */
+                argc = 0;
+            } else if (argc > 3) {
                 /* rcx 已被 arg4 占用 → 用 r10 存函数指针 */
                 pop_rax();
                 e1(0x49); e1(0x89); e1(0xC2);  /* mov r10, rax */
@@ -2643,6 +2677,10 @@ void cgen_expr(AstNode *node) {
         if (argc > 6) {
             int stack_args = argc - 6;
             e1(0x48); e1(0x83); e1(0xC4); e1(stack_args * 8);  /* add rsp, N */
+        }
+        /* 回收对齐填充 */
+        if (align_pad) {
+            e1(0x48); e1(0x83); e1(0xC4); e1(0x08);  /* add rsp, 8 */
         }
         /* 大结构体返回值：清理隐藏指针分配的空间 */
         if (hidden_alloc_size > 0) {
