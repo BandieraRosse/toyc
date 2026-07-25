@@ -1623,6 +1623,16 @@ static int parse_struct_body(Parser *p, Member *members, int *out_count, int is_
                 if (peek(p).kind == TOK_NUMBER && peek(p).ival > 0) {
                     member_sz *= peek(p).ival;
                     consume(p);
+                    /* 处理数组维度中的常量表达式：N*M, N*M*K 等 */
+                    while (peek(p).kind == TOK_STAR) {
+                        consume(p);  /* 跳过 * */
+                        if (peek(p).kind == TOK_NUMBER && peek(p).ival > 0) {
+                            member_sz *= peek(p).ival;
+                            consume(p);
+                        } else {
+                            break;
+                        }
+                    }
                 }
                 int d = 1;
                 while (d > 0 && peek(p).kind != TOK_EOF) {
@@ -1707,6 +1717,16 @@ static int parse_struct_body(Parser *p, Member *members, int *out_count, int is_
                     if (peek(p).kind == TOK_NUMBER && peek(p).ival > 0) {
                         member_sz *= peek(p).ival;
                         consume(p);
+                        /* 处理数组维度中的常量表达式：N*M, N*M*K 等 */
+                        while (peek(p).kind == TOK_STAR) {
+                            consume(p);  /* 跳过 * */
+                            if (peek(p).kind == TOK_NUMBER && peek(p).ival > 0) {
+                                member_sz *= peek(p).ival;
+                                consume(p);
+                            } else {
+                                break;
+                            }
+                        }
                     }
                     int d2 = 1;
                     while (d2 > 0 && peek(p).kind != TOK_EOF) {
