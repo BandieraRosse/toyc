@@ -1,0 +1,69 @@
+toyc 预处理器大文件尾部宏不展开的已知 bug
+===========================================
+
+**发现时间**: 2026-07-25
+**复现文件**: compiler-tests/pending/webserv.c（原版 app/net/webserv.c）
+**当前状态**: 未修复（app/net/webserv.c 已用 enum 等方案绕过）
+
+现象
+----
+- 对象宏（`#define WEBSERV_PORT 8080`）在文件尾部不展开 → 成为 `U` 符号
+- 函数宏（`printf(fmt, ...)`）在文件尾部不展开 → `printf` 成为外部引用
+- 头文件宏（`AF_INET`, `NULL`, `PROT_READ`, `close` 等）不展开 → 链接失败
+- 偶发字符串字面量内容损坏（`"getcwd()"` → `"__getcwd(, size)"`）
+- 用 `__printf("` 直接替换 `printf("` 可绕过函数宏展开失败
+- 用 `enum` 替代 `#define` 可绕过对象宏（enum 由解析器直接处理）
+- 用 `__close()` 替代 `close()` 可绕过 POSIX 兼容宏展开失败
+
+触发条件
+--------
+- 文件 >~1000 行（具体触发点 content-dependent，~1044 行左右）
+- 多个 `#include`（累积 400+ 宏定义）
+- 影响 depth=0 调用中约 800 行后的全部标识符扫描
+- 非文件行数或内容特异性，而是经过约 800 行处理后内部状态损坏
+
+奇怪现象
+--------
+1. `fdprintf`/`fprintf` 17/17 全部展开，`printf` 仅 2/19 展开——三者在同一头文件定义
+2. 文件前部宏（`FILE_CHUNK_SIZE`, `BOUNDARY_MAX`）展开，后部（`WEBSERV_PORT`, `PATH_MAX`）不展开
+3. 新宏定义在文件**末尾**（after 全部原始代码）可正常展开
+4. 编译正常产生 .o，仅链接时暴露未展开宏（自举链接缺 `__` 前缀的内部符号）
+
+根因推测
+--------
+深度=0 的 `pp_buf_impl` 在处理约 800 行后就**不再正常扫描标识符**。
+后续文件内容经递归调用（函数宏参数预展开等路径）写入输出缓冲区，
+绕过正常的宏展开机制。`macro_count` 文件作用域 static 变量可能在深层递归
+后被读到错误值（0），导致宏查找循环形同虚设。
+
+具体怀疑：
+- `macro_count`（static int）在递归调用中被修改后，外层读到缓存值
+- 或 `func_macros` 大数组（4096 条目 × ~1064 bytes = 4.3MB BSS）导致边界效应
+- 用 `volatile` 修饰 `macro_count` 后部分缓解但不能根除
+
+调试方法
+--------
+- `add_macro` 内加 `__write` 确认宏已注册（count=417）
+- pp_buf_impl 入口打印 `macro_count` 确认初始值为 3，处理后为 417
+- 二分裁剪文件内容定位触发点在 ~1044 行
+- 标识符追踪（每次扫描输出 id_name + pp_line + macro_count）
+  发现 pp_line 800+ 后的标识符从未进入扫描器
+
+规避方案（已用于 app/net/webserv.c）
+------------------------------------
+| 方式 | 适用范围 |
+|------|----------|
+| enum 常量 | 所有数值宏（WEBSERV_PORT, PATH_MAX 等） |
+| #undef + enum | 头文件常量宏（AF_INET, PROT_READ 等） |
+| 直接替换 `__printf(` | 所有 printf 调用 |
+| 直接替换 `__close(` 等 | POSIX 兼容宏（close, mmap, memset, stat 等） |
+| 直接替换 `((void*)0)` | NULL |
+| 直接替换字符串 | TLIBC_WWW_DIR |
+| 内联函数 | S_ISDIR |
+
+当前验证
+--------
+- `make test` — 46/46 ✅
+- `make test-selfhost` — 42/42 ✅
+- `make self-app-webserv` — 编译链接 ✅
+- app/net/webserv.o — 29512 bytes code, 231 symbols，无宏名 U 符号
