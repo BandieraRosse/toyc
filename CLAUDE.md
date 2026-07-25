@@ -3,7 +3,13 @@
 核心是 C 编译器，最初在 [Tinylibc](https://github.com/WHU-SC7/Tinylibc) 项目中发展，
 后来独立为 [ToyCCompiler](https://github.com/BandieraRosse/ToyCCompiler.git) 开发至能自举。现在转变为新项目 Toyc，
 同时引入了原 Tinylibc 的库和程序，可以编译它们（虽有妥协）。
-约一万行 C，零 libc 依赖，已通过完整自举收敛验证。
+约一万行 C，零 libc 依赖。
+
+构建策略：**gcc 编译 toyc 工具链，保证功能正确。**
+- `make` — gcc 编译 toyc/toyas/toyld/toyar → `build/`
+- 运行时 toyc_rt.c 由 gcc 编译的 toyc 再编译（确保与 toyld 兼容）
+- `self-*` 目标用 `build/toyc` 编译 app/，验证 toyc 代码生成能力
+- 自举收敛验证（`bootstrap-selfhost.sh` / `bootstrap-to-10.sh`）为可选，不纳入默认流程
 
 ## 项目结构
 
@@ -61,8 +67,7 @@
 ### 编译器工具链
 
 ```sh
-make                              # 自举构建：bootstrap/{toyc,toyas,toyld,toyar} → build/
-make update-bootstrap             # 用 build/ 产物更新 bootstrap/ 种子
+make                              # gcc 编译 toyc 套件 → build/{toyc,toyas,toyld,toyar}
 make clean                        # 清除 build/
 ```
 
@@ -75,9 +80,9 @@ make lib                          # 构建 libtlibc.a（gcc 编译的 Tinylibc �
 make app                          # 用 gcc 编译所有 app（shell, tmake）
 make app-shell                    # 用 gcc 编译单个 app，按名字指定
 make app-tmake
-make self-lib                     # 构建自托管 libtlibc.a（toyc 编译）
-make self-app                     # 用 toyc 编译所有 app
-make self-app-shell               # 用 toyc 编译单个 app，按名字指定
+make self-lib                     # 自托管 libtlibc.a（build/toyc 编译）
+make self-app                     # 用 build/toyc 编译所有 app
+make self-app-shell               # 用 build/toyc 编译单个 app，按名字指定
 make self-app-tmake
 ```
 
@@ -225,7 +230,7 @@ _ASM_xxx     := path/to/file.S         # 汇编源文件（可选，由 toyas �
 | `char (*)[N]` 指针转数组访问 | ❌ `files[i]` 被当作 `char**`（取指针）而非地址偏移（取元素），需用平坦指针+手动偏移 |
 | 位域（bitfield） | ❌ 未实现 |
 | 复合字面量 `(int[]){1,2}` | ❌ 未实现 |
-| 指定初始化器 `.field=val` | ❌ 未实现 |
+| — | (已实现 ✅) |
 | `_Generic` | ❌ 未实现 |
 | `long double` | ❌ 不支持 |
 | `goto` 跨函数 | ❌ 未检查 |

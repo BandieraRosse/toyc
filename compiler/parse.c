@@ -1709,7 +1709,7 @@ static int parse_struct_body(Parser *p, Member *members, int *out_count, int is_
             if (cid.kind == TOK_IDENT) {
                 consume(p);
                 /* 处理逗号后成员的数组后缀 [N] */
-                int member_sz = sz;
+                int member_sz = (comma_ptr_count > 0) ? 8 : base_sz;
                 int comma_is_array = 0;
                 if (peek(p).kind == TOK_LBRACKET) {
                     comma_is_array = 1;
@@ -1751,7 +1751,7 @@ static int parse_struct_body(Parser *p, Member *members, int *out_count, int is_
                     members[count].is_unsigned = member_is_unsigned;
                     members[count].is_float = last_type_is_float;
                     if (comma_is_array)
-                        members[count].elem_size = sz;
+                        members[count].elem_size = (comma_ptr_count > 0) ? 8 : base_sz;
                     else if (comma_ptr_count == 1)
                         members[count].elem_size = base_sz;
                     else if (comma_ptr_count > 1)
@@ -2782,7 +2782,13 @@ AstNode *parse_compound_statement(Parser *p) {
                                             else decl->expr = assign;
                                             prev_init = assign;
                                         } else {
-                                            error_at(p, "unknown field '%s' in designated initializer", dmn);
+                                            if (p->error_count < MAX_ERRORS) {
+                                                p->error_count++;
+                                                __eprintf("error: %s:%d:%d: unknown field '%s' in designated initializer\n",
+                                                          p->lexer->filename ? p->lexer->filename : "<unknown>",
+                                                          p->lexer->line, p->lexer->col, dmn);
+                                                p->had_error = 1;
+                                            } else { p->had_error = 1; }
                                         }
                                     }
                                 } else {

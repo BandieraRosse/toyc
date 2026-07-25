@@ -3,21 +3,20 @@
 #
 # 用法：
 #   编译器工具链
-#     make                        自举构建（bootstrap/{toyc,toyas,toyld,toyar} → build/）
-#     make update-bootstrap       用 build/ 产物更新 bootstrap/ 种子
+#     make                        用 gcc 编译 toyc 工具链 → build/
 #     make clean                  清除 build/
 #
 #   App 构建
 #     make lib                    构建 libtlibc.a（gcc 编译的 Tinylibc 库）
 #     make app                    用 gcc 编译所有 app（shell, tmake）
 #     make app-<name>             用 gcc 编译单个 app
-#     make self-lib               构建自托管 libtlibc.a（toyc 编译）
+#     make self-lib               自托管 libtlibc.a（toyc 编译）
 #     make self-app               用 toyc 编译所有 app
 #     make self-app-<name>        用 toyc 编译单个 app
 #
 #   测试
-#     make test                   常规测试
-#     make test-selfhost          自包含测试
+#     make test                   常规测试（toyc 编译 + toyld 链接）
+#     make test-selfhost          自包含测试（无 toyc_rt 依赖）
 #     make test-source            源文件独立测试
 #     make test-toyld              toyld 链接测试
 #     make test-error             错误报告测试
@@ -30,25 +29,23 @@
 #     make test-self-app          自托管 App 冒烟测试
 #     make test-all               全部测试套件
 #
-#   自举收敛验证
-#     ./bootstrap-selfhost.sh     种子 → stage-2 → 全部测试通过
-#     ./bootstrap-to-10.sh        全链收敛验证（stage-1 → stage-10 字节级一致）
-#
-# 全链自举构建。种子二进制见 bootstrap/README.md
+# 策略：gcc 编译 toyc 工具链，保证功能正确。
+#       self-* 目标用 toyc 编译 app/ 来验证代码生成。
+#       自举收敛验证见 bootstrap-selfhost.sh / bootstrap-to-10.sh（可选）。
 #
 
 # ─── 工具链 ────────────────────────────────────────────────────
+# 用 gcc 编译 toyc 工具链，不依赖自举种子。
+# self-* 目标使用 build/toyc（gcc 编译的）测试 toyc 的代码生成能力。
 
-BOOTSTRAP := bootstrap
-CC        := $(BOOTSTRAP)/toyc
-AS        := $(BOOTSTRAP)/toyas
-LD        := $(BOOTSTRAP)/toyld
+CC        := gcc
+AS        := as
+LD        := ld
 
 # ─── 标志 ───────────────────────────────────────────────────────
 
-CFLAGS  := -nostdlib -ffreestanding -Wall -Wextra -I include -I compiler
-# toyc 忽略所有不识别的 flag（-nostdlib -Wall -Wextra -I -MD 等均无害）。
-# toyld 直接链接，不需要 LDFLAGS
+# gcc 标志：无 libc、独立环境、包含 toyc 头文件
+CFLAGS  := -nostdlib -ffreestanding -Wall -Wextra -I include -I compiler -MD
 
 # ─── 路径 ───────────────────────────────────────────────────────
 
@@ -113,58 +110,65 @@ $(BUILD)/toyc_rt_start.o: $(SRC)/toyc_rt_start.S | $(BUILD)
 	@printf "  $(BLUE)  AS$(RESET)  %s\n" "$<"
 	$(AS) $< -o $@
 
-# ─── C 编译规则 ────────────────────────────────────────────────
+# ─── C 编译规则（gcc）──────────────────────────────────────────
 
 $(BUILD)/%.o: $(SRC)/%.c $(HEADERS) | $(BUILD)
 	@printf "  $(BLUE)  CC$(RESET)  %-20s " "$<"
-	$(CC) $(CFLAGS) -MD -c $< -o $@
+	$(CC) $(CFLAGS) -c $< -o $@
 	@printf "$(GREEN)ok$(RESET)\n"
 
 # parse.c：无 #include 行，强制包含 toyc.h
 $(BUILD)/parse.o: $(SRC)/parse.c $(HEADERS) | $(BUILD)
 	@printf "  $(BLUE)  CC$(RESET)  %-20s " "$<"
-	$(CC) $(CFLAGS) -include toyc.h -MD -c $< -o $@
+	$(CC) $(CFLAGS) -include toyc.h -c $< -o $@
 	@printf "$(GREEN)ok$(RESET)\n"
 
 # toyc_rt.c：自包含运行时，仅依赖 toyc_need.h
 $(BUILD)/toyc_rt.o: $(SRC)/toyc_rt.c $(TOYC_NEED) | $(BUILD)
 	@printf "  $(BLUE)  CC$(RESET)  %-20s " "$<"
-	$(CC) $(CFLAGS) -MD -c $< -o $@
+	$(CC) $(CFLAGS) -c $< -o $@
 	@printf "$(GREEN)ok$(RESET)\n"
 
-# ─── 链接规则 ──────────────────────────────────────────────────
+# ─── 链接规则（gcc 编译 + ld 链接，然后 toyc 自编译运行时 relink）─
+# 1. gcc 编译所有源文件（含 toyc_rt.c），ld 链接 → 初始 build/toyc
+# 2. 用 build/toyc 重新编译 toyc_rt.c（toyc 编译的运行时与 toyld 兼容）
+# 3. relink build/toyc，替换 toyc_rt.o 为 toyc 编译版本
 
-$(BUILD)/toyc: $(BUILD)/toyld $(TOYC_OBJS)
+LDFLAGS := -T ld.script -nostdlib -static
+
+$(BUILD)/toyc: $(TOYC_OBJS)
 	@printf "$(BLUE)  LD$(RESET)  toyc ... "
-	$(LD) $(TOYC_OBJS) -o $@
-	@printf "ok\n"
+	$(LD) $(LDFLAGS) $(TOYC_OBJS) -o $@
+	@printf "$(GREEN)ok$(RESET)"
+	@size=$$(stat -c%s $@); printf " ($$size bytes)\n"
 	@printf "$(BLUE)  CC$(RESET)  toyc_rt.c (self) ... "
-	@build/toyc -nostdlib -ffreestanding -Wall -Wextra -I include -I compiler -MD -c compiler/toyc_rt.c -o $(BUILD)/toyc_rt_self.o 2>/dev/null; \
+	@build/toyc -nostdlib -ffreestanding -Wall -Wextra -I include -I compiler -c compiler/toyc_rt.c -o $(BUILD)/toyc_rt_self.o 2>/dev/null; \
 	 if [ -f $(BUILD)/toyc_rt_self.o ]; then \
 	   printf "$(GREEN)ok$(RESET)\n"; \
-	   $(LD) $(filter-out $(BUILD)/toyc_rt.o,$(TOYC_OBJS)) $(BUILD)/toyc_rt_self.o -o $@; \
+	   $(LD) $(LDFLAGS) $(filter-out $(BUILD)/toyc_rt.o,$(TOYC_OBJS)) $(BUILD)/toyc_rt_self.o -o $@; \
 	   mv -f $(BUILD)/toyc_rt_self.o $(BUILD)/toyc_rt.o; \
+	   printf "$(BLUE)  LD$(RESET)  toyc (relink with self rt) ... "; \
+	   size=$$(stat -c%s $@); printf "$(GREEN)ok$(RESET) ($$size bytes)\n"; \
 	 else printf "$(YELLOW)skip$(RESET)\n"; fi
-	@size=$$(stat -c%s $@); printf "$(GREEN)ok$(RESET) ($$size bytes)\n"
 
-$(BUILD)/toyas: $(BUILD)/toyld $(TOYAS_OBJS)
+$(BUILD)/toyas: $(TOYAS_OBJS)
 	@printf "$(BLUE)  LD$(RESET)  toyas ... "
-	$(LD) $(TOYAS_OBJS) -o $@
+	$(LD) $(LDFLAGS) $(TOYAS_OBJS) -o $@
 	@printf "$(GREEN)ok$(RESET)\n"
 
-$(BUILD)/toypp: $(BUILD)/toyld $(TOYPP_OBJS)
+$(BUILD)/toypp: $(TOYPP_OBJS)
 	@printf "$(BLUE)  LD$(RESET)  toypp ... "
-	$(LD) $(TOYPP_OBJS) -o $@
+	$(LD) $(LDFLAGS) $(TOYPP_OBJS) -o $@
 	@printf "$(GREEN)ok$(RESET)\n"
 
-$(BUILD)/toyar: $(BUILD)/toyld $(TOYAR_OBJS)
+$(BUILD)/toyar: $(TOYAR_OBJS)
 	@printf "$(BLUE)  LD$(RESET)  toyar ... "
-	$(LD) $(TOYAR_OBJS) -o $@
+	$(LD) $(LDFLAGS) $(TOYAR_OBJS) -o $@
 	@size=$$(stat -c%s $@); printf "$(GREEN)ok$(RESET) ($$size bytes)\n"
 
 $(BUILD)/toyld: $(TOYLD_OBJS)
 	@printf "$(BLUE)  LD$(RESET)  toyld ... "
-	$(LD) $(TOYLD_OBJS) -o $@
+	$(LD) $(LDFLAGS) $(TOYLD_OBJS) -o $@
 	@size=$$(stat -c%s $@); printf "$(GREEN)ok$(RESET) ($$size bytes)\n"
 
 # ─── 清理 ──────────────────────────────────────────────────────
@@ -174,7 +178,7 @@ clean:
 	rm -rf $(BUILD) tmp
 	@printf "$(GREEN)done$(RESET)\n"
 
-# ─── 更新自举种子 ──────────────────────────────────────────────
+# ─── 自举种子更新（可选） ──────────────────────────────────────
 
 update-bootstrap: $(BUILD)/toyc $(BUILD)/toyas $(BUILD)/toyld $(BUILD)/toyar
 	@printf "$(BLUE)  BOOTSTRAP$(RESET) 更新自举种子 ...\n"
