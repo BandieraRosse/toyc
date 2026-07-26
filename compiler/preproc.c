@@ -28,6 +28,8 @@
 static int pp_had_error;  /* #error 指令触发后标记，preprocess() 据此返回 NULL */
 
 int pp_verbose = 0;  /* -P 标志，启用预处理器调试输出 */
+static int pp_stats_try = 0;     /* 深度 0 函数宏检查次数 */
+static int pp_stats_expand = 0;  /* 深度 0 成功展开次数 */
 
 /* 前向声明（GCC 要求定义前调用） */
 static int if_eval(const char *s, int len);
@@ -334,16 +336,7 @@ static char *strip_all_comments(const char *src, int len, int *out_len);
 
 static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had_nl);
 
-/* 预处理器调试输出助手（pp_verbose 时生效，由 -P 启用） */
-static void pp_wr(const char *s) { if (s) { int i; for (i = 0; s[i]; i++); __write(2, s, i); } }
-static void pp_wr_int(long v) {
-    char buf[32]; int bi = 0;
-    if (v == 0) { __write(2, "0", 1); return; }
-    if (v < 0) { __write(2, "-", 1); v = -v; }
-    while (v > 0) { buf[bi++] = '0' + (char)(v % 10); v /= 10; }
-    while (bi > 0) __write(2, buf + --bi, 1);
-}
-static void pp_wr_c(char c) { __write(2, &c, 1); }
+/* 预处理器调试输出（pp_verbose 时生效，由 -P 启用；用 __eprintf 格式化） */
 
 static void pp_buf(const char *s, int len, OutBuf *out, int depth) {
     if (depth > 32) return;
@@ -359,6 +352,7 @@ static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had
     (void)had_nl;
     int i = 0;
     int pp_line = 1;
+    if (pp_verbose && depth == 0) { pp_stats_try = 0; pp_stats_expand = 0; }
     while (i < len) {
         /* conditional compilation state — uses file-scope pp_cond_* */
 
@@ -551,11 +545,8 @@ static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had
                     char id_buf[64]; int ci;
                     for (ci = 0; ci < id_len && ci < 63; ci++) id_buf[ci] = s[start + ci];
                     id_buf[ci] = '\0';
-                    pp_wr("PP:FM d="); pp_wr_int(depth);
-                    pp_wr(" L="); pp_wr_int(pp_line);
-                    pp_wr(" \""); pp_wr(id_buf);
-                    pp_wr("\" i="); pp_wr_int(i);
-                    pp_wr_c('\n');
+                    pp_stats_try++;
+                    __eprintf("[PP] L%d  → try func-macro '%s' at buf[%d]\n", pp_line, id_buf, i);
                 }
                 int id_match = 0;
                 int fmi;
@@ -823,6 +814,7 @@ static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had
                         }
                         /* 递归展开临时缓冲区中的宏 */
                         int used_follow_on = 0;
+                        char *expand_saved = 0;
                         if (temp.data && temp.len > 0) {
                             if (depth < 64) {
                                 /* Bug 1 修复：把宏名压入 expand_stack，防止自引用宏反复展开。
@@ -898,6 +890,14 @@ static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had
                                     int wi;
                                     for (wi = 0; wi < pp_result.len; wi++)
                                         out_putc(out, pp_result.data[wi]);
+                                    if (pp_verbose && depth == 0) {
+                                        expand_saved = tlibc_malloc(pp_result.len + 1);
+                                        if (expand_saved) {
+                                            for (wi = 0; wi < pp_result.len; wi++)
+                                                expand_saved[wi] = pp_result.data[wi];
+                                            expand_saved[pp_result.len] = '\0';
+                                        }
+                                    }
                                 }
                                 tlibc_free(pp_result.data);
                             } else {
@@ -915,15 +915,28 @@ static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had
                         }
                         if (!used_follow_on) {
                             i = ap + 1; /* 跳过 ) */
-                            /* DEBUG: trace position after expansion */
                             if (pp_verbose && depth == 0) {
-                                pp_wr("PP:AFTER L="); pp_wr_int(pp_line);
-                                pp_wr(" i="); pp_wr_int(i);
-                                pp_wr(" n="); pp_wr_int(len);
-                                pp_wr(" rm="); pp_wr_int(len - i);
-                                pp_wr_c('\n');
+                                pp_stats_expand++;
+                                int orig_len = ap - start + 1;
+                                char *orig_text = tlibc_malloc(orig_len + 1);
+                                if (orig_text) {
+                                    int oi;
+                                    for (oi = 0; oi < orig_len; oi++)
+                                        orig_text[oi] = s[start + oi];
+                                    orig_text[orig_len] = '\0';
+                                }
+                                __eprintf("[PP] ═══════════════════════════════════════\n"
+                                          "[PP] L%d  → expand '%s'\n"
+                                          "[PP]   BEFORE: %s\n",
+                                          pp_line, fn,
+                                          orig_text ? orig_text : "(oom)");
+                                if (orig_text) tlibc_free(orig_text);
+                                if (expand_saved)
+                                    __eprintf("[PP]   AFTER:  %s\n", expand_saved);
+                                __eprintf("[PP] ═══════════════════════════════════════\n");
                             }
                         }
+                        if (expand_saved) tlibc_free(expand_saved);
                     }
                     break;
                     fnm:;
@@ -939,10 +952,12 @@ static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had
         i++;
     }
     if (pp_verbose && depth == 0) {
-        pp_wr("PP:DONE L="); pp_wr_int(pp_line);
-        pp_wr(" i="); pp_wr_int(i);
-        pp_wr(" n="); pp_wr_int(len);
-        pp_wr_c('\n');
+        __eprintf("[PP] L%d  → done (buf[%d]/%d)\n", pp_line, i, len);
+        __eprintf("[PP] ── summary ─────────────────────────────────\n"
+                  "[PP]   macros checked:   %d  (identifiers followed by ()\n"
+                  "[PP]   macros expanded:  %d  (shown with BEFORE/AFTER)\n"
+                  "[PP] ────────────────────────────────────────────\n",
+                  pp_stats_try, pp_stats_expand);
     }
 }
 

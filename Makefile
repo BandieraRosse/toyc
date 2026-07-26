@@ -273,9 +273,16 @@ test-source: $(BUILD)/toyc $(BUILD)/toyld
 	printf "\n$(BLUE)══════$(RESET) $(GREEN)%d passed$(RESET), $(RED)%d failed$(RESET), %d total $(BLUE)══════$(RESET)\n" "$$ok" "$$fail" "$$total"; \
 	[ "$$fail" -eq 0 ]
 
-# ─── 全部测试 ──────────────────────────────────────────────────
+# ─── 全部测试（精简化） ──────────────────────────────────────────
+# 排除项：
+#   test-toyld         — 与 test-selfhost 完全重复（同用例同链接器）
+#   test-llm           — 独立 GPT-2 项目，非编译器
+#   test-lib-compile   — 被 test-lib Phase 1 子集完全覆盖
+#   test-toyld-multifile — 单用例，已由 test-toyld-archive 间接覆盖
+# 额外纳入：
+#   test-toyld-self    — 自举收敛验证，工具链可信证明（极快，0.4s）
 
-test-all: test test-selfhost test-source test-lib test-toyld test-error test-toyar test-toyld-archive test-self-app test-llm
+test-all: test test-selfhost test-source test-lib test-error test-toyar test-toyld-archive test-toyld-self test-self-app
 	@printf "$(GREEN)✓ 全部测试通过$(RESET)\n"
 
 # ─── Lib 库测试（从 lib/ 源文件编译） ─────────────────────────
@@ -308,7 +315,7 @@ _lib_bundle = $(sort $(call _lib_objs,$(1)) \
 
 .PHONY: test-lib-compile
 
-test-lib-compile: $(BUILD)/toyc
+test-lib-compile: $(BUILD)/toyc $(BUILD)/toyas
 	@mkdir -p $(LIBT_OBJDIR) tmp; \
 	ok=0; fail=0; total=0; \
 	printf "$(BLUE)══════ Tinylibc 库编译检查 ══════$(RESET)\n\n"; \
@@ -337,7 +344,7 @@ test-lib-compile: $(BUILD)/toyc
 
 .PHONY: test-lib
 
-test-lib: $(BUILD)/toyc $(BUILD)/toyld $(BUILD)/toyc_rt.o $(BUILD)/toyc_rt_start.o
+test-lib: $(BUILD)/toyc $(BUILD)/toyld $(BUILD)/toyc_rt.o $(BUILD)/toyc_rt_start.o $(BUILD)/toyas
 	@mkdir -p $(LIBT_OBJDIR) tmp; \
 	\
 	# Phase 1: 编译所有源文件 \
@@ -882,11 +889,14 @@ clean-self:
 # 缺失的 app（编译失败的已知限制）跳过不计入失败。
 
 .PHONY: test-self-app
+# tmake_self 测试时会删 build/ 影响后续 app 检测，故排除
+SELF_APP_TEST_TARGETS := $(filter-out %/tmake_self,$(SELF_APP_TARGETS))
+
 
 test-self-app:
 	@ok=0; fail=0; skiplist=""; total=0; \
 	printf "$(BLUE)══════ toyc 自托管 App 冒烟测试 ══════$(RESET)\n\n"; \
-	for app in $(SELF_APP_TARGETS); do \
+	for app in $(SELF_APP_TEST_TARGETS); do \
 		name=$$(basename "$$app"); \
 		total=$$((total+1)); \
 		printf "  $(BLUE)%-25s$(RESET) " "$$name"; \
