@@ -928,8 +928,10 @@ test-self-app:
 # llm — GPT-2 模型学习项目（gcc + toyc.a）
 # ════════════════════════════════════════════════════════════════
 # 用法：
-#   make llm                  编译 llm/ → build/llm
-#   make test-llm             编译并运行功能测试
+#   make llm                  编译生成器 → build/llm
+#   make test-llm             编译并运行功能测试 → build/test-llm
+#   make download-model       下载 GPT-2 124M checkpoint + tokenizer
+#   make export-bpe           导出 BPE merge 规则（需 tiktoken）
 #   make clean-llm            清理 llm 产物
 #
 # 使用 gcc 编译，链接 toyc.a（Tinylibc）获得数学函数、malloc、printf。
@@ -942,20 +944,24 @@ LLM_CFLAGS  := -Wall -Wextra -O2 -I . -I include -I include/posix \
                -DX86_64_TLIBC=1 -nostdlib -ffreestanding \
                -fno-stack-protector -fno-common -MD
 
-# llm 源文件 → build/llm_*.o
-LLM_SRCS    := $(wildcard $(LLM_DIR)/*.c)
-LLM_OBJS    := $(patsubst $(LLM_DIR)/%.c,$(BUILD)/llm_%.o,$(LLM_SRCS))
-LLM_TARGET  := $(BUILD)/llm
+# 生成二进制：main.c + gpt2.c + tokenizer.c
+LLM_OBJS     := $(BUILD)/llm_main.o $(BUILD)/llm_gpt2.o $(BUILD)/llm_tokenizer.o
+LLM_TARGET   := $(BUILD)/llm
 
-.PHONY: llm test-llm clean-llm
+# 测试二进制：test.c + gpt2.c
+LLM_TEST_OBJS   := $(BUILD)/llm_test.o $(BUILD)/llm_gpt2.o
+LLM_TEST_TARGET := $(BUILD)/test-llm
+
+.PHONY: llm test-llm clean-llm download-model
 
 llm: $(LLM_TARGET)
 
+# 通用 .c → .o 编译规则
 $(BUILD)/llm_%.o: $(LLM_DIR)/%.c | $(BUILD)
 	@printf "  $(BLUE)  CC(llm)$(RESET)  %s\n" "$<"
 	$(GCC) $(LLM_CFLAGS) -c $< -o $@
 
-# 链接：多个 .o + toyc.a + crt，__tlibc_start 入口
+# 链接生成二进制（带完整运行时）
 $(LLM_TARGET): $(LLM_OBJS) $(LIBC_A) $(SELF_CRT_OBJS)
 	@printf "$(BLUE)  LD(llm)$(RESET)  llm ... "
 	$(GCC) $(LLM_CFLAGS) $(LLM_OBJS) \
@@ -963,9 +969,17 @@ $(LLM_TARGET): $(LLM_OBJS) $(LIBC_A) $(SELF_CRT_OBJS)
 	       -Wl,-e,__tlibc_start -o $@
 	@size=$$(stat -c%s $@); printf "$(GREEN)ok$(RESET) (%d bytes)\n" "$$size"
 
-test-llm: $(LLM_TARGET)
+# 链接测试二进制
+$(LLM_TEST_TARGET): $(LLM_TEST_OBJS) $(LIBC_A) $(SELF_CRT_OBJS)
+	@printf "$(BLUE)  LD(llm)$(RESET)  test-llm ... "
+	$(GCC) $(LLM_CFLAGS) $(LLM_TEST_OBJS) \
+	       -Wl,--whole-archive $(LIBC_A) -Wl,--no-whole-archive \
+	       -Wl,-e,__tlibc_start -o $@
+	@size=$$(stat -c%s $@); printf "$(GREEN)ok$(RESET) (%d bytes)\n" "$$size"
+
+test-llm: $(LLM_TEST_TARGET)
 	@printf "$(BLUE)══════ llm 功能测试 ══════$(RESET)\n"
-	$(LLM_TARGET); \
+	$(LLM_TEST_TARGET); \
 	rc=$$?; \
 	if [ "$$rc" -eq 0 ]; then \
 		printf "$(GREEN)✓ llm 全部测试通过$(RESET)\n"; \
@@ -974,6 +988,21 @@ test-llm: $(LLM_TARGET)
 		exit 1; \
 	fi
 
+# 清理：只删当前使用的 .o（保留其他可能存在的 llm_*.o）
 clean-llm:
-	rm -f $(LLM_OBJS) $(LLM_OBJS:.o=.d) $(LLM_TARGET)
+	rm -f $(LLM_OBJS) $(LLM_OBJS:.o=.d) $(LLM_TEST_OBJS) $(LLM_TEST_OBJS:.o=.d) \
+	      $(LLM_TARGET) $(LLM_TEST_TARGET)
 	@printf "$(GREEN)✓ llm 清理完成$(RESET)\n"
+
+# 下载 GPT-2 124M checkpoint + tokenizer（约 520MB）
+
+# 下载 GPT-2 124M checkpoint + tokenizer（约 520MB）
+download-model:
+	@printf "$(BLUE)══════ 下载 GPT-2 124M 模型资源 ══════$(RESET)\n"
+	@bash $(LLM_DIR)/download_model.sh
+
+# 导出 BPE merge 规则（需要 tiktoken Python 包）
+export-bpe:
+	@printf "$(BLUE)══════ 导出 BPE merge 规则 ══════$(RESET)\n"
+	@python3 $(LLM_DIR)/export_bpe.py
+	@printf "$(GREEN)✓ BPE merge 规则已导出$(RESET)\n"

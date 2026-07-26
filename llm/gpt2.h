@@ -74,7 +74,6 @@ typedef struct {
     float *projb;            /* (L, C)     MLP projection bias */
     float *lnfw;             /* (C)        final ln weight */
     float *lnfb;             /* (C)        final ln bias */
-    float *lm_head;          /* (Vp, C)    lm_head (通常与 wte 共享) */
 } ParameterTensors;
 
 /* ==================================================================
@@ -107,8 +106,8 @@ typedef struct {
     /* 推理输入 */
     int *tokens;             /* (B, T) */
 
-    /* 参数大小表（17 项，用于偏移计算） */
-    int param_sizes[17];
+    /* 参数大小表（16 项，用于偏移计算） */
+    int param_sizes[16];
     size_t total_params;     /* float 总数 */
     size_t total_bytes;      /* 参数字节数 */
 } GPT2;
@@ -186,5 +185,40 @@ void mlp_forward(float *out, const float *inp,
                  const float *fcw, const float *fcb,
                  const float *projw, const float *projb,
                  int B, int T, int C);
+
+/* ==================================================================
+ *  KV Cache 推理（默认方式，~30-50x 加速）
+ *
+ *  每次只处理一个 token，缓存所有 layer 的 K、V 矩阵。
+ *  GPT-2 MHA 场景下 num_heads_kv = num_heads。
+ * ================================================================== */
+
+/* KV Cache 状态 */
+typedef struct {
+    float *k_cache;       /* [L * maxT * C] */
+    float *v_cache;       /* [L * maxT * C] */
+    int maxT;
+} KVCache;
+
+/*
+ * 用 prompt tokens 初始化 KV cache：
+ *   逐 token 调用 gpt2_forward_kv，缓存 K、V 值。
+ *   n_tokens 个 token 处理完毕后，model->logits[n_tokens-1] 位置有 logits，
+ *   后续生成从该位置采样。
+ */
+void gpt2_init_kvcache(GPT2 *model, KVCache *kv,
+                        int *tokens, int n_tokens, int maxT);
+
+/*
+ * 单个 token 前向传播（带 KV cache）
+ *   token — 当前要处理的 token id
+ *   pos   — 该 token 在序列中的位置（0-indexed）
+ *
+ *   效果：
+ *     - 将当前 token 的 K、V 追加到缓存
+ *     - 写 logits 到 model->logits[pos * Vp]
+ *     - 注：不做 softmax（sample_next 内部处理）
+ */
+void gpt2_forward_kv(GPT2 *model, KVCache *kv, int token, int pos);
 
 #endif /* GPT2_H */

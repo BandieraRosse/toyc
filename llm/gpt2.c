@@ -146,7 +146,7 @@ void matmul_forward(float *out,
             for (int o = 0; o < OC; o++) {
                 float val = (bias != NULL) ? bias[o] : 0.0f;
                 for (int i = 0; i < C; i++) {
-                    val += inp_bt[i] * weight[i * OC + o];
+                    val += inp_bt[i] * weight[o * C + i];
                 }
                 out_bt[o] = val;
             }
@@ -197,10 +197,9 @@ void attention_forward(float *attn_output,
                 float kv = qkb ? qkb[C + o] : 0.0f;
                 float vv = qkb ? qkb[2 * C + o] : 0.0f;
                 for (int i = 0; i < C; i++) {
-                    float w = qkw[i * 3 * C + o];
-                    qv += inp_bt[i] * w;
-                    kv += inp_bt[i] * qkw[i * 3 * C + C + o];
-                    vv += inp_bt[i] * qkw[i * 3 * C + 2 * C + o];
+                    qv += inp_bt[i] * qkw[o * C + i];
+                    kv += inp_bt[i] * qkw[(C + o) * C + i];
+                    vv += inp_bt[i] * qkw[(2 * C + o) * C + i];
                 }
                 q_bt[o] = qv;
                 k_bt[o] = kv;
@@ -273,7 +272,7 @@ void attention_forward(float *attn_output,
                 for (int o = 0; o < C; o++) {
                     float val = attn_projb ? attn_projb[o] : 0.0f;
                     for (int i = 0; i < C; i++) {
-                        val += x[i] * attn_projw[i * C + o];
+                        val += x[i] * attn_projw[o * C + i];
                     }
                     y[o] = val;
                 }
@@ -320,7 +319,7 @@ void mlp_forward(float *out,
             for (int o = 0; o < HC; o++) {
                 float val = fcb ? fcb[o] : 0.0f;
                 for (int i = 0; i < C; i++) {
-                    val += x[i] * fcw[i * HC + o];
+                    val += x[i] * fcw[o * C + i];
                 }
                 y[o] = val;
             }
@@ -340,7 +339,7 @@ void mlp_forward(float *out,
             for (int o = 0; o < C; o++) {
                 float val = projb ? projb[o] : 0.0f;
                 for (int i = 0; i < HC; i++) {
-                    val += x[i] * projw[i * C + o];
+                    val += x[i] * projw[o * HC + i];
                 }
                 y[o] = val;
             }
@@ -436,9 +435,8 @@ void gpt2_forward(GPT2 *model, int *tokens, int B, int T)
                       B, T, C);
 
     /* ==============================================================
-     *  Step 4: LM Head (logits)
-     *  使用 lm_head 权重（或与 wte 共享） projection
-     *  logits[b,t,v] = ln1[b,t,:] @ lm_head[v,:]
+     *  Step 4: LM Head (logits) — 使用 wte 权重（权重绑定）
+     *  logits[b,t,v] = ln1[b,t,:] @ wte[v,:]
      * ============================================================== */
     for (int b = 0; b < B; b++) {
         for (int t = 0; t < T; t++) {
@@ -447,7 +445,7 @@ void gpt2_forward(GPT2 *model, int *tokens, int B, int T)
             for (int v = 0; v < Vp; v++) {
                 float val = 0.0f;
                 for (int i = 0; i < C; i++) {
-                    val += x[i] * p.lm_head[v * C + i];
+                    val += x[i] * p.wte[v * C + i];
                 }
                 logit[v] = val;
             }
@@ -458,7 +456,7 @@ void gpt2_forward(GPT2 *model, int *tokens, int B, int T)
 /* ==================================================================
  *  gpt2_param_sizes — 计算各参数张量大小
  *
- *  按顺序填充 17 个 int，顺序与 ParameterTensors 字段一致。
+ *  按顺序填充 16 个 int，顺序与 ParameterTensors 字段一致。
  * ================================================================== */
 
 void gpt2_param_sizes(GPT2Config cfg, int *sizes, size_t *total)
@@ -484,10 +482,9 @@ void gpt2_param_sizes(GPT2Config cfg, int *sizes, size_t *total)
     sizes[13] = L * C;              /* projb */
     sizes[14] = C;                  /* lnfw */
     sizes[15] = C;                  /* lnfb */
-    sizes[16] = Vp * C;             /* lm_head */
 
     size_t sum = 0;
-    for (int i = 0; i < 17; i++)
+    for (int i = 0; i < 16; i++)
         sum += sizes[i];
 
     if (total) *total = sum;
@@ -537,7 +534,6 @@ int gpt2_init(GPT2 *model, GPT2Config config)
     model->params.projb     = ptr; ptr += model->param_sizes[13];
     model->params.lnfw      = ptr; ptr += model->param_sizes[14];
     model->params.lnfb      = ptr; ptr += model->param_sizes[15];
-    model->params.lm_head   = ptr; ptr += model->param_sizes[16];
 
     /* 分配运行时缓存（使用 B=1, T=max_seq_len 的最大大小） */
     int B = 1;
@@ -621,11 +617,11 @@ void gpt2_free(GPT2 *model)
 /* ==================================================================
  *  gpt2_load_weights — 从 checkpoint 文件加载权重
  *
- *  文件格式（Karpathy llm.c checkpoint v1）：
+ *  文件格式（Karpathy llm.c checkpoint v1/v3）：
  *    header[0] = 20240326 (magic)
  *    header[1] = version
  *    header[2..255] = config values
- *    然后按 param_sizes 顺序的 float 权重数据
+ *    然后按 param_sizes 顺序的 float 权重数据（16 个张量，无独立 lm_head）
  *
  *  TOYC: __openat 使用 AT_FDCWD = -100，flags = O_RDONLY = 0 ✅
  *        __mmap 使用 MAP_PRIVATE | MAP_ANONYMOUS... 不对，这里不需要
@@ -689,4 +685,219 @@ int gpt2_load_weights(GPT2 *model, const char *path)
 
     __munmap(mapped, (size_t)file_size);
     return 0;
+}
+
+/* ==================================================================
+ *  attention_forward_kvcache — 带 KV cache 的因果自注意力
+ *
+ *  只处理当前 position（pos）的 query，k、v 从缓存读取。
+ *  用于 gpt2_forward_kv 每层的注意力计算。
+ *
+ *  out:       (C)           当前 position 的注意力输出
+ *  q:         (C)           当前 position 的 query
+ *  k_cache:   (maxT, C)     本层所有已缓存的 K
+ *  v_cache:   (maxT, C)     本层所有已缓存的 V
+ *  pos:                     当前 position（0-indexed，包含已缓存的历史）
+ *  C/NH/T:                  模型维度
+ *
+ *  TOYC: preatt 用固定 1024 栈数组（非 VLA），C 语言标准支持 ✅
+ * ================================================================== */
+
+static void attention_forward_kvcache(float *out, const float *q,
+                                       const float *k_cache, const float *v_cache,
+                                       int pos, int C, int NH, int maxT)
+{
+    int hs = C / NH;
+    float scale = 1.0f / sqrtf_((float)hs);
+
+    for (int h = 0; h < NH; h++) {
+        const float *q_h = q + h * hs;
+
+        /* Pass 1: Q · K^T / sqrt(d) */
+        float preatt[1024];  /* maxT-sized 栈缓冲（GPT-2 maxT=1024） */
+        float maxval = -10000.0f;
+
+        for (int t2 = 0; t2 <= pos; t2++) {
+            const float *k_h = k_cache + t2 * C + h * hs;
+            float val = 0.0f;
+            for (int i = 0; i < hs; i++)
+                val += q_h[i] * k_h[i];
+            val *= scale;
+            if (val > maxval) maxval = val;
+            preatt[t2] = val;
+        }
+
+        /* Pass 2: softmax (exp, sum, normalize) */
+        float expsum = 0.0f;
+        for (int t2 = 0; t2 <= pos; t2++) {
+            float expv = expf_(preatt[t2] - maxval);
+            expsum += expv;
+            preatt[t2] = expv;
+        }
+        float expsum_inv = expsum == 0.0f ? 0.0f : 1.0f / expsum;
+        for (int t2 = 0; t2 <= pos; t2++)
+            preatt[t2] *= expsum_inv;
+
+        /* Pass 3: weighted sum of V */
+        float *out_h = out + h * hs;
+        for (int i = 0; i < hs; i++) out_h[i] = 0.0f;
+        for (int t2 = 0; t2 <= pos; t2++) {
+            const float *v_h = v_cache + t2 * C + h * hs;
+            float att = preatt[t2];
+            for (int i = 0; i < hs; i++)
+                out_h[i] += att * v_h[i];
+        }
+    }
+}
+
+/* ==================================================================
+ *  gpt2_forward_kv — 单 token 前向传播（带 KV cache）
+ *
+ *  只处理 position pos 的一个 token，缓存 K、V。
+ *  对 prompt 编码和逐 step 生成统一使用。
+ *
+ *  TOYC: 一次 tlibc_malloc 分配全部临时缓冲，无 VLA ✅
+ * ================================================================== */
+
+void gpt2_forward_kv(GPT2 *model, KVCache *kv, int token, int pos)
+{
+    GPT2Config cfg = model->config;
+    ParameterTensors p = model->params;
+    int C = cfg.channels;
+    int NH = cfg.num_heads;
+    int Vp = cfg.vocab_size_padded;
+    int L = cfg.num_layers;
+    int maxT = kv->maxT;
+
+    /* 一次分配全部临时缓冲（无 VLA） */
+    int need = C     /* x/residual */
+             + C     /* ln1 */
+             + 3*C   /* qkv */
+             + C     /* atty */
+             + C     /* attproj */
+             + C     /* residual2 */
+             + C     /* ln2 */
+             + 4*C   /* fch */
+             + C;    /* fcproj */
+    float *buf = (float *)tlibc_malloc((size_t)need * sizeof(float));
+    if (!buf) { __printf("gpt2_forward_kv: malloc(%d) failed\n", need); __exit(1); }
+
+    float *x         = buf;
+    float *ln1       = x + C;
+    float *qkv       = ln1 + C;
+    float *atty      = qkv + 3*C;
+    float *attproj   = atty + C;
+    float *residual2 = attproj + C;
+    float *ln2       = residual2 + C;
+    float *fch       = ln2 + C;
+    float *fcproj    = fch + 4*C;
+
+    /* ── Step 1: 单个 token 的 embedding ── */
+    {
+        const float *wte_ix = p.wte + token * C;
+        const float *wpe_t  = p.wpe + pos * C;
+        for (int i = 0; i < C; i++)
+            x[i] = wte_ix[i] + wpe_t[i];
+    }
+    float *residual = x;
+
+    /* ── Step 2: transformer layers ── */
+    for (int l = 0; l < L; l++) {
+        /* LayerNorm 1 (pre-attention) */
+        float ln1_mean, ln1_rstd;
+        layernorm_forward(ln1, &ln1_mean, &ln1_rstd,
+                          residual,
+                          p.ln1w + l * C, p.ln1b + l * C,
+                          1, 1, C);
+
+        /* QKV projection */
+        matmul_forward(qkv, ln1,
+                       p.qkw + l * C * 3 * C, p.qkb + l * 3 * C,
+                       1, 1, C, 3 * C);
+
+        /* Cache K, V */
+        float *k_layer = kv->k_cache + l * maxT * C;
+        float *v_layer = kv->v_cache + l * maxT * C;
+        for (int i = 0; i < C; i++) {
+            k_layer[pos * C + i] = qkv[C + i];      /* K: qkv 的第二个 C 元素块 */
+            v_layer[pos * C + i] = qkv[2 * C + i];  /* V: qkv 的第三个 C 元素块 */
+        }
+
+        /* Causal self-attention with KV cache */
+        attention_forward_kvcache(atty, qkv, k_layer, v_layer,
+                                  pos, C, NH, maxT);
+
+        /* Attention output projection */
+        matmul_forward(attproj, atty,
+                       p.attn_projw + l * C * C, p.attn_projb + l * C,
+                       1, 1, C, C);
+
+        /* Residual 1: residual2 = residual + attproj */
+        for (int i = 0; i < C; i++)
+            residual2[i] = residual[i] + attproj[i];
+
+        /* LayerNorm 2 (pre-MLP) */
+        float ln2_mean, ln2_rstd;
+        layernorm_forward(ln2, &ln2_mean, &ln2_rstd,
+                          residual2,
+                          p.ln2w + l * C, p.ln2b + l * C,
+                          1, 1, C);
+
+        /* MLP FC + GELU */
+        matmul_forward(fch, ln2,
+                       p.fcw + l * C * 4 * C, p.fcb + l * 4 * C,
+                       1, 1, C, 4 * C);
+        for (int i = 0; i < 4 * C; i++)
+            fch[i] = gelu_forward(fch[i]);
+
+        /* MLP projection */
+        matmul_forward(fcproj, fch,
+                       p.projw + l * 4 * C * C, p.projb + l * C,
+                       1, 1, 4 * C, C);
+
+        /* Residual 2: fcproj (复用为 residual3) = residual2 + fcproj */
+        for (int i = 0; i < C; i++)
+            fcproj[i] = residual2[i] + fcproj[i];
+
+        residual = fcproj;
+    }
+
+    /* ── Step 3: Final LayerNorm（用 x 做输出缓冲，已不需要原始 embedding）─ */
+    float lnf_mean, lnf_rstd;
+    layernorm_forward(x, &lnf_mean, &lnf_rstd,
+                      residual,
+                      p.lnfw, p.lnfb,
+                      1, 1, C);
+
+    /* ── Step 4: LM Head（logits[pos] = x @ wte）─ */
+    float *logits = model->logits + pos * Vp;
+    matmul_forward(logits, x, p.wte, NULL, 1, 1, C, Vp);
+
+    tlibc_free(buf);
+}
+
+/* ==================================================================
+ *  gpt2_init_kvcache — 用 prompt token 初始化 KV cache
+ *
+ *  逐 token 调用 gpt2_forward_kv，完成后 model->logits[n_tokens-1]
+ *  处有最后一个 prompt token 的 logits，可直接用于首次采样。
+ * ================================================================== */
+
+void gpt2_init_kvcache(GPT2 *model, KVCache *kv,
+                        int *tokens, int n_tokens, int maxT)
+{
+    int L = model->config.num_layers;
+    int C = model->config.channels;
+
+    kv->k_cache = (float *)tlibc_malloc((size_t)L * maxT * C * sizeof(float));
+    kv->v_cache = (float *)tlibc_malloc((size_t)L * maxT * C * sizeof(float));
+    kv->maxT = maxT;
+
+    if (!kv->k_cache || !kv->v_cache) {
+        __printf("gpt2_init_kvcache: malloc failed\n");
+        __exit(1);
+    }
+
+    for (int i = 0; i < n_tokens; i++)
+        gpt2_forward_kv(model, kv, tokens[i], i);
 }
