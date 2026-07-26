@@ -31,39 +31,15 @@
 #include "tlibc_types.h"
 #include "tlibc_everything.h"
 
-/*
- * toyc 预处理器在大文件尾部有不展开部分宏的深层 bug，
- * 故用 enum 常量替代 #define 宏。enum 值由解析器直接处理，不受影响。
- * 头文件同名宏先用 #undef 移除再 enum 定义。
- */
-#undef AF_INET
-#undef INADDR_ANY
-#undef PROT_READ
-#undef PROT_WRITE
-#undef MAP_ANONYMOUS
-#undef MAP_PRIVATE
-#undef SOL_SOCKET
-#undef SO_REUSEADDR
-enum {
-    WEBSERV_PORT     = 8080,
-    HEADER_BUF_SIZE  = 16384,
-    FILE_CHUNK_SIZE  = 4096,
-    PATH_MAX         = 1024,
-    MAX_UPLOAD_SIZE  = 32 * 1024 * 1024,  /* 32 MiB */
-    MAX_FILENAME     = 255,
-    BOUNDARY_MAX     = 128,
-    AF_INET          = 2,
-    INADDR_ANY       = 0x00000000,
-    PROT_READ        = 0x1,
-    PROT_WRITE       = 0x2,
-    MAP_ANONYMOUS    = 0x20,
-    MAP_PRIVATE      = 0x02,
-    SOL_SOCKET       = 1,
-    SO_REUSEADDR     = 2,
-    SOCK_STREAM      = 1,
-};
-/* S_ISDIR 用内联函数替代 */
-static int is_dir_mode(mode_t m) { return ((m) & 0170000) == 0040000; }
+
+#define WEBSERV_PORT     8080
+#define HEADER_BUF_SIZE  16384
+#define FILE_CHUNK_SIZE  4096
+#define PATH_MAX         1024
+#define MAX_UPLOAD_SIZE  (32 * 1024 * 1024)  /* 32 MiB */
+#define MAX_FILENAME     255
+#define BOUNDARY_MAX     128
+#define TLIBC_WWW_DIR    "tlibc_www"
 
 /* ------------------------------------------------------------------ */
 /*  Structures                                                        */
@@ -119,7 +95,7 @@ static const struct {
     {".h",    "text/plain; charset=utf-8"},
     {".S",    "text/plain; charset=utf-8"},
     {".ld",   "text/plain; charset=utf-8"},
-    {((void*)0), ((void*)0)}
+    {NULL, NULL}
 };
 
 static const char *
@@ -128,7 +104,7 @@ get_mime_type(const char *path)
     const char *dot = strrchr(path, '.');
     if (!dot)
         return "application/octet-stream";
-    for (int i = 0; mime_table[i].ext != ((void*)0); i++) {
+    for (int i = 0; mime_table[i].ext != NULL; i++) {
         if (strcmp(dot, mime_table[i].ext) == 0)
             return mime_table[i].mime;
     }
@@ -222,7 +198,7 @@ check_path_safe(const char *resolved, const char *root_dir)
 static int
 parse_http_request(const char *raw, int raw_len, struct http_request *req)
 {
-    const char *line_end = ((void*)0);
+    const char *line_end = NULL;
 
     /* 找第一行结尾 */
     for (int i = 0; i < raw_len && raw[i]; i++) {
@@ -485,11 +461,11 @@ serve_file(int fd, const char *abs_path)
     }
 
     struct stat st;
-    __memset(&st, 0, sizeof(st));
-    if (__fstat(file_fd, &st) < 0) {
+    memset(&st, 0, sizeof(st));
+    if (fstat(file_fd, &st) < 0) {
         send_error(fd, 500, "Internal Server Error",
                    "Could not stat the requested file");
-        __close(file_fd);
+        close(file_fd);
         return;
     }
 
@@ -512,7 +488,7 @@ serve_file(int fd, const char *abs_path)
             write(fd, chunk, n);
     }
 
-    __close(file_fd);
+    close(file_fd);
 }
 
 /* ------------------------------------------------------------------ */
@@ -534,24 +510,24 @@ serve_directory(int fd, const char *abs_path, const char *url_path)
         return;
     }
 
-    char *ls_buf = __mmap(0, TLIBC_BUF_SIZE,
+    char *ls_buf = mmap(0, TLIBC_BUF_SIZE,
                         PROT_READ | PROT_WRITE,
                         MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
     if (ls_buf == MAP_FAILED) {
-        __close(dir_fd);
+        close(dir_fd);
         send_error(fd, 500, "Internal Server Error",
                    "Out of memory");
         return;
     }
 
-    __memset(ls_buf, 0, TLIBC_BUF_SIZE);
+    memset(ls_buf, 0, TLIBC_BUF_SIZE);
     int ret = getdents64(dir_fd,
                          (struct linux_dirent64 *)ls_buf,
                          TLIBC_BUF_SIZE);
-    __close(dir_fd);
+    close(dir_fd);
 
     if (ret < 0) {
-        __munmap(ls_buf, TLIBC_BUF_SIZE);
+        munmap(ls_buf, TLIBC_BUF_SIZE);
         send_error(fd, 500, "Internal Server Error",
                    "Failed to read directory");
         return;
@@ -627,13 +603,13 @@ serve_directory(int fd, const char *abs_path, const char *url_path)
                      "%s/%s", abs_path, name);
 
             struct stat st;
-            __memset(&st, 0, sizeof(st));
+            memset(&st, 0, sizeof(st));
             int is_dir = 0;
             long file_size = 0;
             long mod_time = 0;
 
-            if (tlibc_stat(entry_path, &st) == 0) {
-                is_dir   = is_dir_mode;
+            if (stat(entry_path, &st) == 0) {
+                is_dir   = S_ISDIR(st.st_mode);
                 file_size = (long)st.st_size;
                 mod_time  = (long)st.st_mtim.tv_sec;
             }
@@ -681,7 +657,7 @@ serve_directory(int fd, const char *abs_path, const char *url_path)
         "<em>Tinylibc HTTP File Server</em>\n"
         "</body></html>\n");
 
-    __munmap(ls_buf, TLIBC_BUF_SIZE);
+    munmap(ls_buf, TLIBC_BUF_SIZE);
 }
 
 /* 前向声明（handle_post_request 在该函数之后定义） */
@@ -709,7 +685,7 @@ webserv_thread_entry(void *arg)
 
     /* ---- 解析 HTTP 请求行 ---- */
     struct http_request req;
-    __memset(&req, 0, sizeof(req));
+    memset(&req, 0, sizeof(req));
     req.content_length = -1;
 
     if (parse_http_request(buf, n, &req) < 0) {
@@ -739,7 +715,7 @@ webserv_thread_entry(void *arg)
         }
 
         char normalized[PATH_MAX];
-        tlibc_cal_absolute_path(full_path, ((void*)0),
+        tlibc_cal_absolute_path(full_path, NULL,
                                 normalized, sizeof(normalized));
 
         if (!check_path_safe(normalized, targ->root_dir)) {
@@ -750,8 +726,8 @@ webserv_thread_entry(void *arg)
 
         /* ---- 检查路径是否存在 ---- */
         struct stat st;
-        __memset(&st, 0, sizeof(st));
-        if (tlibc_stat(normalized, &st) < 0) {
+        memset(&st, 0, sizeof(st));
+        if (stat(normalized, &st) < 0) {
             send_error(fd, 404, "Not Found",
                        "The requested resource was not found on this server");
             goto out;
@@ -773,7 +749,7 @@ webserv_thread_entry(void *arg)
         }
 
         /* 目录 URL 缺少尾部斜杠时重定向（保证浏览器相对链接正确） */
-        if (is_dir_mode) {
+        if (S_ISDIR(st.st_mode)) {
             int dlen = strlen(decoded);
             if (dlen == 0 || decoded[dlen - 1] != '/') {
                 char redirect[PATH_MAX];
@@ -784,7 +760,7 @@ webserv_thread_entry(void *arg)
         }
 
         /* ---- 响应 ---- */
-        if (is_dir_mode)
+        if (S_ISDIR(st.st_mode))
             serve_directory(fd, normalized, display_path);
         else if (S_ISREG(st.st_mode))
             serve_file(fd, normalized);
@@ -800,9 +776,9 @@ webserv_thread_entry(void *arg)
     }
 
 out:
-    __close(fd);
-    __munmap(targ, sizeof(struct webserv_thread_arg));
-    return ((void*)0);
+    close(fd);
+    munmap(targ, sizeof(struct webserv_thread_arg));
+    return NULL;
 }
 
 /* ------------------------------------------------------------------ */
@@ -815,15 +791,15 @@ recv_request_body(int fd, const char *initial_buf, int initial_len,
                   char **out_body)
 {
     if (content_length <= 0) {
-        *out_body = ((void*)0);
+        *out_body = NULL;
         return 0;
     }
 
-    *out_body = __mmap(0, content_length + 1,
+    *out_body = mmap(0, content_length + 1,
                      PROT_READ | PROT_WRITE,
                      MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
     if (*out_body == MAP_FAILED) {
-        *out_body = ((void*)0);
+        *out_body = NULL;
         return -1;
     }
 
@@ -840,8 +816,8 @@ recv_request_body(int fd, const char *initial_buf, int initial_len,
     while (total < content_length) {
         int n = recv(fd, *out_body + total, content_length - total, 0);
         if (n <= 0) {
-            __munmap(*out_body, content_length + 1);
-            *out_body = ((void*)0);
+            munmap(*out_body, content_length + 1);
+            *out_body = NULL;
             return -1;
         }
         total += n;
@@ -885,18 +861,18 @@ save_file_part(const char *content, long content_len,
     snprintf(abs_path, sizeof(abs_path), "%s/%s", upload_dir, safe_name);
 
     char normalized[PATH_MAX];
-    tlibc_cal_absolute_path(abs_path, ((void*)0), normalized, sizeof(normalized));
+    tlibc_cal_absolute_path(abs_path, NULL, normalized, sizeof(normalized));
 
     /* 二次验证路径安全 */
     if (!check_path_safe(normalized, upload_dir)) {
-        __printf("Upload blocked: path traversal detected: %s\n", safe_name);
+        printf("Upload blocked: path traversal detected: %s\n", safe_name);
         return -1;
     }
 
     int file_fd = openat(AT_FDCWD, normalized,
                          O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (file_fd < 0) {
-        __printf("Failed to create upload file: %s\n", normalized);
+        printf("Failed to create upload file: %s\n", normalized);
         return -1;
     }
 
@@ -904,13 +880,13 @@ save_file_part(const char *content, long content_len,
     while (written < content_len) {
         int n = write(file_fd, content + written, content_len - written);
         if (n < 0) {
-            __close(file_fd);
+            close(file_fd);
             return -1;
         }
         written += n;
     }
 
-    __close(file_fd);
+    close(file_fd);
     return 0;
 }
 
@@ -953,7 +929,7 @@ parse_multipart_upload(const char *body, long body_len,
     /* 遍历各部分 */
     while (p < end && *saved_count < max_save) {
         /* 查找下一个边界 "CRLF--boundary" 或 "CRLF--boundary--" */
-        const char *next = ((void*)0);
+        const char *next = NULL;
         int is_last = 0;
 
         const char *scan = p;
@@ -993,7 +969,7 @@ parse_multipart_upload(const char *body, long body_len,
         if (part_len < 0) part_len = 0;
 
         /* 在此部分中查找头部空行（\r\n\r\n 或 \n\n） */
-        const char *hdr_end = ((void*)0);
+        const char *hdr_end = NULL;
         for (const char *hp = p; hp + 1 < part_end; hp++) {
             if (hp[0] == '\r' && hp[1] == '\n') {
                 if (hp + 3 < part_end && hp[2] == '\r' && hp[3] == '\n') {
@@ -1110,7 +1086,7 @@ handle_post_request(int fd, char *buf, int buf_len,
     }
 
     char upload_dir[PATH_MAX];
-    tlibc_cal_absolute_path(full_path, ((void*)0),
+    tlibc_cal_absolute_path(full_path, NULL,
                             upload_dir, sizeof(upload_dir));
 
     if (!check_path_safe(upload_dir, targ->root_dir)) {
@@ -1121,8 +1097,8 @@ handle_post_request(int fd, char *buf, int buf_len,
 
     /* ---- 检查目录是否存在 ---- */
     struct stat st;
-    __memset(&st, 0, sizeof(st));
-    if (tlibc_stat(upload_dir, &st) < 0 || !is_dir_mode) {
+    memset(&st, 0, sizeof(st));
+    if (stat(upload_dir, &st) < 0 || !S_ISDIR(st.st_mode)) {
         send_error(fd, 404, "Not Found",
                    "The upload directory was not found");
         return;
@@ -1141,7 +1117,7 @@ handle_post_request(int fd, char *buf, int buf_len,
     }
 
     /* ---- 读取请求体 ---- */
-    char *body = ((void*)0);
+    char *body = NULL;
     if (recv_request_body(fd, buf, buf_len, body_offset,
                           req->content_length, &body) < 0 || !body)
     {
@@ -1164,7 +1140,7 @@ handle_post_request(int fd, char *buf, int buf_len,
     send_upload_response(fd, saved_count, saved_names,
                          saved_sizes, display_path);
 
-    __munmap(body, req->content_length + 1);
+    munmap(body, req->content_length + 1);
 }
 
 /* ------------------------------------------------------------------ */
@@ -1191,14 +1167,14 @@ get_default_root_dir(char *buf, size_t buf_size)
     if (home[0] == '\0')
         return -1;
 
-    snprintf(buf, buf_size, "%s/%s", home, "tlibc_www");
+    snprintf(buf, buf_size, "%s/%s", home, TLIBC_WWW_DIR);
 
     /* 尝试创建目录（如果已存在则 EEXIST 不报错） */
     tlibc_recursive_mkdir(buf);
 
     /* 确认是有效目录 */
     if (tlibc_is_path_dir(buf) != 1) {
-        __printf("Warning: '%s' is not a valid directory\n", buf);
+        printf("Warning: '%s' is not a valid directory\n", buf);
         return -1;
     }
 
@@ -1218,8 +1194,8 @@ int main(int argc, char *argv[])
     /* 默认根目录：当前工作目录（临时，如用户未指定则后续覆盖） */
     {
         char cwd[PATH_MAX];
-        if (!__getcwd(cwd, sizeof(cwd))) {
-            __printf("__getcwd() failed\n");
+        if (!getcwd(cwd, sizeof(cwd))) {
+            printf("getcwd() failed\n");
             return 1;
         }
         strncpy(root_dir, cwd, sizeof(root_dir) - 1);
@@ -1237,7 +1213,7 @@ int main(int argc, char *argv[])
             port = (int)tlibc_strtoul(argv[1]);
             if (argc >= 3) {
                 char cwd[PATH_MAX];
-                if (__getcwd(cwd, sizeof(cwd))) {
+                if (getcwd(cwd, sizeof(cwd))) {
                     tlibc_cal_absolute_path(argv[2], cwd,
                                             root_dir, sizeof(root_dir));
                     root_dir_explicit = 1;
@@ -1245,7 +1221,7 @@ int main(int argc, char *argv[])
             }
         } else {
             char cwd[PATH_MAX];
-            if (__getcwd(cwd, sizeof(cwd))) {
+            if (getcwd(cwd, sizeof(cwd))) {
                 char abs_path[PATH_MAX];
                 tlibc_cal_absolute_path(argv[1], cwd,
                                         abs_path, sizeof(abs_path));
@@ -1254,7 +1230,7 @@ int main(int argc, char *argv[])
                     root_dir[sizeof(root_dir) - 1] = '\0';
                     root_dir_explicit = 1;
                 } else {
-                    __printf("Error: '%s' is not a valid directory\n",
+                    printf("Error: '%s' is not a valid directory\n",
                            argv[1]);
                     return 1;
                 }
@@ -1265,33 +1241,33 @@ int main(int argc, char *argv[])
     /* 用户未指定根目录时，使用 ~/tlibc_www */
     if (!root_dir_explicit) {
         if (get_default_root_dir(root_dir, sizeof(root_dir)) != 0) {
-            __printf("Warning: could not create default www directory, "
+            printf("Warning: could not create default www directory, "
                    "using current directory\n");
             /* 保持 cwd 作为 fallback */
         }
     }
 
     if (tlibc_is_path_dir(root_dir) != 1) {
-        __printf("Error: root directory '%s' is not valid\n", root_dir);
+        printf("Error: root directory '%s' is not valid\n", root_dir);
         return 1;
     }
 
-    __printf("Tinylibc HTTP File Server\n");
-    __printf("Serving: %s\n", root_dir);
-    __printf("Listening on port %d\n\n", port);
+    printf("Tinylibc HTTP File Server\n");
+    printf("Serving: %s\n", root_dir);
+    printf("Listening on port %d\n\n", port);
 
     /* ---- socket ---- */
     int server_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (server_fd < 0) {
-        __printf("socket() failed\n");
+        printf("socket() failed\n");
         return 1;
     }
 
     int opt = 1;
     if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR,
                    &opt, sizeof(opt)) < 0) {
-        __printf("setsockopt() failed\n");
-        __close(server_fd);
+        printf("setsockopt() failed\n");
+        close(server_fd);
         return 1;
     }
 
@@ -1303,19 +1279,19 @@ int main(int argc, char *argv[])
 
     if (bind(server_fd, (struct sockaddr *)&addr,
              sizeof(addr)) < 0) {
-        __printf("bind() failed\n");
-        __close(server_fd);
+        printf("bind() failed\n");
+        close(server_fd);
         return 1;
     }
 
     /* ---- listen ---- */
     if (listen(server_fd, 5) < 0) {
-        __printf("listen() failed\n");
-        __close(server_fd);
+        printf("listen() failed\n");
+        close(server_fd);
         return 1;
     }
 
-    __printf("Server started. Press Ctrl+C to stop.\n\n");
+    printf("Server started. Press Ctrl+C to stop.\n\n");
 
     /* ---- accept 主循环 ---- */
     while (1) {
@@ -1326,16 +1302,16 @@ int main(int argc, char *argv[])
                                (struct sockaddr *)&client_addr,
                                &client_len);
         if (client_fd < 0) {
-            __printf("accept() failed\n");
+            printf("accept() failed\n");
             continue;
         }
 
-        __printf("Connection from %s:%d\n",
+        printf("Connection from %s:%d\n",
                tlibc_inet_ntoa(client_addr.sin_addr),
                tlibc_ntohs(client_addr.sin_port));
 
         struct webserv_thread_arg *targ =
-            __mmap(0, sizeof(struct webserv_thread_arg),
+            mmap(0, sizeof(struct webserv_thread_arg),
                  PROT_READ | PROT_WRITE,
                  MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
         targ->client_fd = client_fd;
@@ -1345,10 +1321,10 @@ int main(int argc, char *argv[])
         targ->root_dir[sizeof(targ->root_dir) - 1] = '\0';
 
         pthread_t thread;
-        pthread_create(&thread, ((void*)0),
+        pthread_create(&thread, NULL,
                        webserv_thread_entry, targ);
     }
 
-    __close(server_fd);
+    close(server_fd);
     return 0;
 }

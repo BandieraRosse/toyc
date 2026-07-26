@@ -289,6 +289,7 @@ typedef struct {
 /* 注意：toyc 的 CgenSym 必须与 elf_write.h 的 ElfWriteSym 布局兼容 */
 #define CgenSym ElfWriteSym
 
+extern int pp_verbose;  /* 预处理器调试输出标志，由 -P 启用 */
 extern unsigned char elf_code_buf[CODE_BUF_SIZE];
 extern int elf_code_size;
 extern ElfWriteSym elf_syms[MAX_SYMS];

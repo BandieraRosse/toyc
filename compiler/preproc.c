@@ -27,6 +27,8 @@
 
 static int pp_had_error;  /* #error 指令触发后标记，preprocess() 据此返回 NULL */
 
+int pp_verbose = 0;  /* -P 标志，启用预处理器调试输出 */
+
 /* 前向声明（GCC 要求定义前调用） */
 static int if_eval(const char *s, int len);
 
@@ -332,6 +334,17 @@ static char *strip_all_comments(const char *src, int len, int *out_len);
 
 static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had_nl);
 
+/* 预处理器调试输出助手（pp_verbose 时生效，由 -P 启用） */
+static void pp_wr(const char *s) { if (s) { int i; for (i = 0; s[i]; i++); __write(2, s, i); } }
+static void pp_wr_int(long v) {
+    char buf[32]; int bi = 0;
+    if (v == 0) { __write(2, "0", 1); return; }
+    if (v < 0) { __write(2, "-", 1); v = -v; }
+    while (v > 0) { buf[bi++] = '0' + (char)(v % 10); v /= 10; }
+    while (bi > 0) __write(2, buf + --bi, 1);
+}
+static void pp_wr_c(char c) { __write(2, &c, 1); }
+
 static void pp_buf(const char *s, int len, OutBuf *out, int depth) {
     if (depth > 32) return;
     if (depth == 0) {
@@ -464,6 +477,15 @@ static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had
             }
         }
 
+        /* ─── 跳过字符字面量（防止 '"' 被误认为字符串开头） ─── */
+        if (s[i] == '\'') {
+            out_putc(out, '\''); i++;
+            if (i < len && s[i] == '\\') { out_putc(out, s[i]); i++; }
+            if (i < len) { out_putc(out, s[i]); i++; }
+            if (i < len && s[i] == '\'') { out_putc(out, s[i]); i++; }
+            continue;
+        }
+
         /* ─── 跳过字符串字面量（宏不展开其中的标识符） ─── */
         if (s[i] == '"') {
             out_putc(out, '"'); i++;
@@ -524,6 +546,17 @@ static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had
             if (expanded) continue;
             /* 检查函数式宏：标识符后跟 ( */
             if (i < len && s[i] == '(' && func_macro_count > 0) {
+                /* DEBUG: trace function macro attempt at depth=0 */
+                if (pp_verbose && depth == 0) {
+                    char id_buf[64]; int ci;
+                    for (ci = 0; ci < id_len && ci < 63; ci++) id_buf[ci] = s[start + ci];
+                    id_buf[ci] = '\0';
+                    pp_wr("PP:FM d="); pp_wr_int(depth);
+                    pp_wr(" L="); pp_wr_int(pp_line);
+                    pp_wr(" \""); pp_wr(id_buf);
+                    pp_wr("\" i="); pp_wr_int(i);
+                    pp_wr_c('\n');
+                }
                 int id_match = 0;
                 int fmi;
                 for (fmi = 0; fmi < func_macro_count; fmi++) {
@@ -575,6 +608,12 @@ static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had
                         }
                         ap++;
                         if (ap >= len) break;
+                    }
+                    if (adepth > 0) {
+                        /* 参数未能正确闭合（不匹配的 ) 或缓冲区耗尽）。
+                         * 回退：让主循环原样输出该标识符和 (args)，
+                         * 而不是静默吞掉宏名导致字符串内容泄漏。 */
+                        id_match = 0;
                     }
                     if (adepth == 0) {
                         arg_lens[arg_count] = (s + ap) - arg_starts[arg_count];
@@ -876,6 +915,14 @@ static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had
                         }
                         if (!used_follow_on) {
                             i = ap + 1; /* 跳过 ) */
+                            /* DEBUG: trace position after expansion */
+                            if (pp_verbose && depth == 0) {
+                                pp_wr("PP:AFTER L="); pp_wr_int(pp_line);
+                                pp_wr(" i="); pp_wr_int(i);
+                                pp_wr(" n="); pp_wr_int(len);
+                                pp_wr(" rm="); pp_wr_int(len - i);
+                                pp_wr_c('\n');
+                            }
                         }
                     }
                     break;
@@ -890,6 +937,12 @@ static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had
         if (s[i] != 13) { out_putc(out, s[i]); }
         if (s[i] == '\n') pp_line++;
         i++;
+    }
+    if (pp_verbose && depth == 0) {
+        pp_wr("PP:DONE L="); pp_wr_int(pp_line);
+        pp_wr(" i="); pp_wr_int(i);
+        pp_wr(" n="); pp_wr_int(len);
+        pp_wr_c('\n');
     }
 }
 

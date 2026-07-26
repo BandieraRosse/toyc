@@ -113,6 +113,8 @@ int main(int argc, char *argv[]) {
                 debug = 1;
             else if (argv[i][1] == 'd')
                 debug = 1;
+            else if (argv[i][1] == 'P' && argv[i][2] == '\0')
+                pp_verbose = 1;
             else if (argv[i][1] == 'I' && argv[i][2] == '\0' && i + 1 < argc)
                 add_include_path(argv[++i]);
             else if (argv[i][1] == 'I')
