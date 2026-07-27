@@ -165,4 +165,18 @@ static inline void softmax_inplace(float *x, int n)
     } \
 } while (0)
 
+/* ==================================================================
+ *  DEBUG: 调试日志全局状态（不影响核心推理功能）
+ *
+ *  由 main.c 中 --log / --log-level 参数设置，gpt2.c 读取。
+ *  不传 --log 时 g_log_fd = -1，所有日志调用立即返回，零开销。
+ *
+ *  __fprintf 声明自 lib/stdio/printf.c 的格式化输出函数。
+ *  lib/ 在 gcc 链接时提供，不是 toyc 编译器的功能。
+ * ================================================================== */
+
+extern int g_log_fd;
+extern int g_log_level;
+extern void __fprintf(int fd, const char *fmt, ...);
+
 #endif /* LLM_H */

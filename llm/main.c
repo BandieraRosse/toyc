@@ -65,10 +65,89 @@ static void print_help(void)
     __printf("  --seed N            random seed (default: 42)\n");
     __printf("  --prompt PATH       load binary token file (overrides text prompt)\n");
     __printf("  --no-kv             disable KV cache (use naive full forward)\n");
+    __printf("  --log FILE          override log path (default: llm/models/gpt2_debug.log)\n");
+    __printf("  --no-log            disable log file\n");
+    __printf("  --log-level N       1=step summary, 2=+per-layer, 3=+tensor diag\n");
     __printf("  -h, --help          show this help\n");
     __printf("\n");
     __printf("KV cache is enabled by default (~30-50x faster). Use --no-kv for\n");
     __printf("the original per-step full-sequence forward pass.\n");
+}
+
+/* ==================================================================
+ *  DEBUG: Level 1 — 每步 top-5 候选词日志
+ *
+ *  从 raw logits 找 logit 最大的 5 个 token ID，做 top-5 内 softmax
+ *  得相对概率，按  "token_id(token_text)=xx.x%"  格式输出到日志 fd。
+ *  选中词前带 * 标记。token 文本中的 \n \r \t 会被转义以免断行。
+ *
+ *  不影响核心生成逻辑；无 --log 时 g_log_fd < 0，本函数不被调用。
+ * ================================================================== */
+
+/* 写 token 文本到日志 fd，转义 \n \r \t 避免断行 */
+static void dump_token_text(int fd, const char *s)
+{
+    char buf[256];
+    int pos = 0;
+    if (!s) { __write(fd, "(null)", 6); return; }
+    for (int i = 0; s[i] && pos < (int)sizeof(buf) - 5; i++) {
+        unsigned char c = (unsigned char)s[i];
+        if (c == '\n') { buf[pos++] = '\\'; buf[pos++] = 'n'; }
+        else if (c == '\r') { buf[pos++] = '\\'; buf[pos++] = 'r'; }
+        else if (c == '\t') { buf[pos++] = '\\'; buf[pos++] = 't'; }
+        else if (c >= 32) { buf[pos++] = (char)c; }
+        else {
+            /* 其他控制字符转 ^X */
+            buf[pos++] = '^';
+            buf[pos++] = (char)('@' + c);
+        }
+    }
+    buf[pos] = '\0';
+    __fprintf(fd, "%s", buf);
+}
+
+static void log_top5(int fd, const float *logits, int V,
+                     Tokenizer *tokenizer, int selected, int step, int abs_pos)
+{
+    int   top5_id[5] = {0};
+    float top5_val[5] = {-1e10f, -1e10f, -1e10f, -1e10f, -1e10f};
+
+    /* 找 raw logit 最大的 5 个 */
+    for (int v = 0; v < V; v++) {
+        float val = logits[v];
+        for (int k = 0; k < 5; k++) {
+            if (val > top5_val[k]) {
+                for (int j = 4; j > k; j--) {
+                    top5_id[j]  = top5_id[j-1];
+                    top5_val[j] = top5_val[j-1];
+                }
+                top5_id[k]  = v;
+                top5_val[k] = val;
+                break;
+            }
+        }
+    }
+
+    /* top-5 内 softmax 得相对概率 */
+    float maxv = top5_val[0];
+    float sum_exp = 0.0f;
+    for (int k = 0; k < 5; k++) {
+        top5_val[k] = expf_(top5_val[k] - maxv);
+        sum_exp += top5_val[k];
+    }
+
+    __fprintf(fd, "[GEN %d @%d]", step, abs_pos);
+    __fprintf(fd, " token %d(", selected);
+    dump_token_text(fd, tokenizer_decode(tokenizer, selected));
+    __fprintf(fd, ") top5:");
+    for (int k = 0; k < 5; k++) {
+        float pct = 100.0f * (sum_exp > 0.0f ? top5_val[k] / sum_exp : 0.0f);
+        const char *mark = (top5_id[k] == selected) ? "*" : " ";
+        __fprintf(fd, " %s%d(", mark, top5_id[k]);
+        dump_token_text(fd, tokenizer_decode(tokenizer, top5_id[k]));
+        __fprintf(fd, ")=%.1f%%", pct);
+    }
+    __fprintf(fd, "\n");
 }
 
 /* ==================================================================
@@ -101,6 +180,11 @@ static int generate_tokens(GPT2 *model, Tokenizer *tokenizer,
             float *logits = model->logits + (t - 1) * Vp;
             int next = sample_next(sampler, logits, V);
             if (next == tokenizer->eot_token) break;
+
+            /* DEBUG: Level 1 — top-5 日志 */
+            if (g_log_level >= 1)
+                log_top5(g_log_fd, logits, V, tokenizer, next, gen_count, t - 1);
+
             const char *token_str = tokenizer_decode(tokenizer, next);
             tokenizer_safe_print(token_str);
             model->tokens[t] = next;
@@ -127,6 +211,10 @@ static int generate_tokens(GPT2 *model, Tokenizer *tokenizer,
         int next = sample_next(sampler, logits, V);
         if (next == tokenizer->eot_token) break;
 
+        /* DEBUG: Level 1 — top-5 日志 */
+        if (g_log_level >= 1)
+            log_top5(g_log_fd, logits, V, tokenizer, next, gen_count, t - 1);
+
         const char *token_str = tokenizer_decode(tokenizer, next);
         tokenizer_safe_print(token_str);
         model->tokens[t] = next;
@@ -138,6 +226,11 @@ static int generate_tokens(GPT2 *model, Tokenizer *tokenizer,
 
     tlibc_free(kv.k_cache);
     tlibc_free(kv.v_cache);
+
+    /* DEBUG: 生成完毕摘要 */
+    if (g_log_level >= 1 && gen_count > 0)
+        __fprintf(g_log_fd, "[GEN] done: %d tokens generated\n", gen_count);
+
     return gen_count;
 }
 
@@ -220,6 +313,11 @@ int main(int argc, char *argv[])
     int seed = 42;
     int use_kv = 1;
 
+    /* ── 默认日志（覆盖 --log 可改路径，--no-log 可关闭） ── */
+    g_log_fd = __openat(AT_FDCWD, "llm/models/gpt2_debug.log",
+                        O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    /* 打开失败静默降级为无日志，不阻断运行 */
+
     /* 收集非选项参数作为 prompt 文本 */
     char prompt_text[4096] = {0};
     int prompt_pos = 0;
@@ -244,6 +342,20 @@ int main(int argc, char *argv[])
                 prompt_path = argv[++i];
             } else if (strcmp(argv[i], "--no-kv") == 0) {
                 use_kv = 0;
+            } else if (strcmp(argv[i], "--log") == 0 && i + 1 < argc && argv[i+1][0] != '-') {
+                /* 覆盖日志路径 */
+                if (g_log_fd >= 0) __close(g_log_fd);
+                g_log_fd = __openat(AT_FDCWD, argv[++i],
+                                    O_WRONLY | O_CREAT | O_TRUNC, 0644);
+                if (g_log_fd < 0) {
+                    __printf("Failed to open log file\n");
+                    return 1;
+                }
+            } else if (strcmp(argv[i], "--no-log") == 0) {
+                if (g_log_fd >= 0) { __close(g_log_fd); g_log_fd = -1; }
+                g_log_level = 0;
+            } else if (strcmp(argv[i], "--log-level") == 0 && i + 1 < argc) {
+                g_log_level = parse_int(argv[++i]);
             } else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
                 print_help();
                 return 0;

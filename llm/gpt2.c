@@ -27,6 +27,13 @@
 #include "gpt2.h"
 
 /* ==================================================================
+ *  DEBUG: 调试日志全局（定义在这里，main.c 和 test.c 都链接 gpt2.o）
+ * ================================================================== */
+
+int g_log_fd = -1;
+int g_log_level = 1;
+
+/* ==================================================================
  *  内部辅助
  * ================================================================== */
 
@@ -815,6 +822,11 @@ void gpt2_forward_kv(GPT2 *model, KVCache *kv, int token, int pos)
                        p.qkw + l * C * 3 * C, p.qkb + l * 3 * C,
                        1, 1, C, 3 * C);
 
+        /* — Level 2: Q 部分最大值 — */
+        float q_max = qkv[0];
+        for (int i = 1; i < C; i++)
+            if (qkv[i] > q_max) q_max = qkv[i];
+
         /* Cache K, V */
         float *k_layer = kv->k_cache + l * maxT * C;
         float *v_layer = kv->v_cache + l * maxT * C;
@@ -826,6 +838,12 @@ void gpt2_forward_kv(GPT2 *model, KVCache *kv, int token, int pos)
         /* Causal self-attention with KV cache */
         attention_forward_kvcache(atty, qkv, k_layer, v_layer,
                                   pos, C, NH, maxT);
+
+        /* — Level 2: 注意力输出 RMS — */
+        float atty_sum_sq = 0.0f;
+        for (int i = 0; i < C; i++)
+            atty_sum_sq += atty[i] * atty[i];
+        float atty_rms = sqrtf_(atty_sum_sq / (float)C);
 
         /* Attention output projection */
         matmul_forward(attproj, atty,
@@ -847,19 +865,37 @@ void gpt2_forward_kv(GPT2 *model, KVCache *kv, int token, int pos)
         matmul_forward(fch, ln2,
                        p.fcw + l * C * 4 * C, p.fcb + l * 4 * C,
                        1, 1, C, 4 * C);
-        for (int i = 0; i < 4 * C; i++)
+        float gelu_nz = 0.0f;
+        for (int i = 0; i < 4 * C; i++) {
             fch[i] = gelu_forward(fch[i]);
+            if (fch[i] > 0.0f) gelu_nz += 1.0f;
+        }
 
         /* MLP projection */
         matmul_forward(fcproj, fch,
                        p.projw + l * 4 * C * C, p.projb + l * C,
                        1, 1, 4 * C, C);
 
+        /* — Level 2: MLP 输出 RMS — */
+        float fcproj_sum_sq = 0.0f;
+        for (int i = 0; i < C; i++)
+            fcproj_sum_sq += fcproj[i] * fcproj[i];
+        float fcproj_rms = sqrtf_(fcproj_sum_sq / (float)C);
+
         /* Residual 2: fcproj (复用为 residual3) = residual2 + fcproj */
         for (int i = 0; i < C; i++)
             fcproj[i] = residual2[i] + fcproj[i];
 
         residual = fcproj;
+
+        /* DEBUG: Level 2 — 单层统计日志 */
+        if (g_log_level >= 2) {
+            float gelu_pct = 100.0f * gelu_nz / (float)(4 * C);
+            __fprintf(g_log_fd,
+                      "[L%d] ln1_m=%.3f q_max=%.2f"
+                      " atty_rms=%.3f gelu_nz=%.1f%% fcp_rms=%.2f\n",
+                      l, ln1_mean, q_max, atty_rms, gelu_pct, fcproj_rms);
+        }
     }
 
     /* ── Step 3: Final LayerNorm（用 x 做输出缓冲，已不需要原始 embedding）─ */
@@ -872,6 +908,25 @@ void gpt2_forward_kv(GPT2 *model, KVCache *kv, int token, int pos)
     /* ── Step 4: LM Head（logits[pos] = x @ wte）─ */
     float *logits = model->logits + pos * Vp;
     matmul_forward(logits, x, p.wte, NULL, 1, 1, C, Vp);
+
+    /* DEBUG: Level 3 — logits 分布概览（仅深层调试） */
+    if (g_log_level >= 3) {
+        float logit_max = logits[0];
+        int logit_argmax = 0;
+        float logit_min = logits[0];
+        float logit_sum = 0.0f;
+        for (int i = 0; i < Vp; i++) {
+            float v = logits[i];
+            if (v > logit_max) { logit_max = v; logit_argmax = i; }
+            if (v < logit_min) logit_min = v;
+            logit_sum += v;
+        }
+        const char *padding = (logit_argmax >= cfg.vocab_size) ? " [PAD]" : "";
+        __fprintf(g_log_fd, "[pos %d] logits: max=%+.4f argmax=%d%s"
+                  " min=%.2f mean=%.3f\n",
+                  pos, logit_max, logit_argmax, padding, logit_min,
+                  logit_sum / (float)Vp);
+    }
 
     tlibc_free(buf);
 }
