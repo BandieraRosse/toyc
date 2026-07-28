@@ -451,6 +451,13 @@ extern int parsed_func_ret_float[MAX_FUNC_RET_TYPES];
 extern int parsed_func_ret_unsigned[MAX_FUNC_RET_TYPES];
 extern int parsed_func_ret_count;
 
+/* ─── 函数参数类型表（供调用点 int→double 转换使用） ─── */
+#define MAX_FUNC_PARAM_INFO 16
+extern const char *parsed_func_param_names[MAX_FUNC_RET_TYPES];
+extern int parsed_func_param_float[MAX_FUNC_RET_TYPES][MAX_FUNC_PARAM_INFO];
+extern int parsed_func_param_count[MAX_FUNC_RET_TYPES];
+extern int parsed_func_param_info_count;
+
 /* ─── 类型系统（Phase 3） ─── */
 
 #define MAX_MEMBERS 256

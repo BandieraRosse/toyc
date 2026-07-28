@@ -3898,6 +3898,24 @@ AstNode *parse_program(Parser *p) {
                     parsed_func_ret_unsigned[parsed_func_ret_count] = ret_type_is_unsigned;
                     parsed_func_ret_count++;
                 }
+                /* 记录非可变参数函数的参数类型（供调用点 int→double 转换使用） */
+                if (fname && !is_variadic_f &&
+                    parsed_func_param_info_count < MAX_FUNC_RET_TYPES) {
+                    parsed_func_param_names[parsed_func_param_info_count] = fname;
+                    int pi;
+                    for (pi = 0; pi < MAX_FUNC_PARAM_INFO; pi++)
+                        parsed_func_param_float[parsed_func_param_info_count][pi] = -1;
+                    pi = 0;
+                    AstNode *pp = fparams;
+                    while (pp && pi < MAX_FUNC_PARAM_INFO) {
+                        parsed_func_param_float[parsed_func_param_info_count][pi] =
+                            (pp->kind == AST_VAR_DECL) ? pp->is_float : 0;
+                        pi++;
+                        pp = pp->next;
+                    }
+                    parsed_func_param_count[parsed_func_param_info_count] = pi;
+                    parsed_func_param_info_count++;
+                }
                 /* 记录 struct 返回类型（供解析期 func().member 使用） */
                 if (fptr_level == 0 && typesize > 8 && parse_func_ret_count < MAX_PARSE_FUNC_RET) {
                     StructType *ret_st = NULL;

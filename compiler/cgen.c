@@ -72,6 +72,12 @@ int parsed_func_ret_sizes[MAX_FUNC_RET_TYPES];
 int parsed_func_ret_float[MAX_FUNC_RET_TYPES];
 int parsed_func_ret_unsigned[MAX_FUNC_RET_TYPES];
 int parsed_func_ret_count;
+
+/* ─── 函数参数类型表（供调用点 int→double 转换使用） ─── */
+const char *parsed_func_param_names[MAX_FUNC_RET_TYPES];
+int parsed_func_param_float[MAX_FUNC_RET_TYPES][MAX_FUNC_PARAM_INFO];
+int parsed_func_param_count[MAX_FUNC_RET_TYPES];
+int parsed_func_param_info_count = 0;
 static int current_func_ret_size;
 static int current_func_is_unsigned;    /* 当前函数返回类型是否为 unsigned */
 static const char *current_func_name;

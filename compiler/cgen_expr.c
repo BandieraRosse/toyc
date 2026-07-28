@@ -2368,7 +2368,12 @@ void cgen_expr(AstNode *node) {
         /* 根据 x86_64 ABI 限制已消除 — 超出 6 个的参数通过栈传递 */
         if (argc > 14) argc = 14;  /* 硬上限防止内部缓冲区溢出 */
 
-        /* 记录各实参的类型 */
+        /* 记录各实参的类型 — 初步从实参自身 is_float 标记。
+         * 后面在 is_fptr 已知后会再用函数参数类型覆盖（支持 int→double 转换）。 */
+        int func_param_info_known = 0;
+        int known_func_pf[MAX_FUNC_PARAM_INFO];
+        for (int _kk = 0; _kk < MAX_FUNC_PARAM_INFO; _kk++)
+            known_func_pf[_kk] = -1;
         int arg_is_float[16] = {0};
         { AstNode *a = node->args; int ai = 0;
           while (a && ai < 16) {
@@ -2504,6 +2509,32 @@ void cgen_expr(AstNode *node) {
             indirect_call = 1;
         }
 
+        /* 用已知函数参数类型覆盖 arg_is_float + int→double 转换 */
+        if (node->name && !is_fptr && parsed_func_param_info_count > 0) {
+            int _fi;
+            for (_fi = 0; _fi < parsed_func_param_info_count; _fi++) {
+                if (parsed_func_param_names[_fi] &&
+                    strcmp(parsed_func_param_names[_fi], node->name) == 0) {
+                    int _np = parsed_func_param_count[_fi];
+                    if (_np > MAX_FUNC_PARAM_INFO) _np = MAX_FUNC_PARAM_INFO;
+                    for (int _pi = 0; _pi < _np; _pi++)
+                        known_func_pf[_pi] = parsed_func_param_float[_fi][_pi];
+                    func_param_info_known = 1;
+                    /* 重写 arg_is_float — 仅当参数类型与实参类型不同时 */
+                    { int _ai = 0; AstNode *_a = node->args;
+                      while (_a && _ai < 16 && _ai < _np) {
+                          int pf = (known_func_pf[_ai] > 0) ? 1 : 0;
+                          if (pf != arg_is_float[_ai]) {
+                              arg_is_float[_ai] = pf;
+                          }
+                          _ai++; _a = _a->next;
+                      }
+                    }
+                    break;
+                }
+            }
+        }
+
         /* 检查被调函数是否返回大结构体（>8 字节），需要传递隐藏指针 */
         int has_hidden_ret = 0;
         int hidden_ret_size = 0;
@@ -2594,9 +2625,16 @@ void cgen_expr(AstNode *node) {
         arg = node->args;
         for (idx = 0; arg && idx < argc && idx < 6; idx++) {
             cgen_expr(arg);
-            if (arg_is_float[idx])
+            if (arg_is_float[idx]) {
+                if (arg && !arg->is_float) {
+                    /* int→double/float 转换：实参为 int（rax），参数需 double/float */
+                    /* 用 known_func_pf 判断宽度，fallback 到 cvti2d */
+                    int _pf = (func_param_info_known && idx < MAX_FUNC_PARAM_INFO)
+                              ? known_func_pf[idx] : 0;
+                    if (_pf == 4) cvti2f(); else cvti2d();
+                }
                 push_xmm0();
-            else
+            } else
                 push_rax();
             arg = arg->next;
         }
