@@ -225,6 +225,8 @@ typedef struct AstNode {
     struct AstNode *call_target;  /* 函数调用目标表达式（函数指针表达式如 ops[0]） */
     /* AST_MEMBER: member_name = 成员名字 */
     const char *member_name;
+    int bit_offset;     /* AST_MEMBER 位域成员：在位域存储单元中的位偏移，非位域=0 */
+    int bit_width;      /* AST_MEMBER 位域成员：位宽度，非位域=0 */
     /* AST_STRING: str_val = 解码后的字符串内容 */
     const char *str_val;
     /* AST_ASM: 内联汇编的完整信息 */
@@ -465,6 +467,8 @@ typedef struct {
     int is_float;       /* 0=非浮点, 4=float, 8=double */
     int memb_is_array;  /* 1=数组成员, 0=指针或标量（用于 init 数据发射宽度计算） */
     const char *member_struct_tag;  /* 如果此成员本身是 struct 类型（非指针），存 struct 标签名；否则 NULL */
+    int bit_offset;     /* 位域成员：在位域存储单元中的位偏移（0=LSB），-1 表示非位域 */
+    int bit_width;      /* 位域宽度（位），0=非位域 */
 } Member;
 
 /* 结构体类型（通过 struct 标签或匿名定义） */
@@ -473,6 +477,7 @@ typedef struct StructType {
     Member members[MAX_MEMBERS];
     int member_count;
     int total_size;
+    int alignment;          /* 最大成员对齐（用于 struct 整体对齐和作为子成员时的对齐计算） */
 } StructType;
 
 /* struct/union/enum 标签表 */

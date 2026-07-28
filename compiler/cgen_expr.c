@@ -2284,6 +2284,49 @@ void cgen_expr(AstNode *node) {
             e1(0x48); e1(0x89); e1(0xC1);  /* mov rcx, rax (rcx = 目标地址) */
             pop_rax();               /* rax = RHS 值（或源地址指针） */
 
+            /* 位域赋值：读-改-写（先检查后走常规路径） */
+            if (node->left->bit_width > 0 && !node->left->is_float) {
+                int bw = node->left->bit_width;
+                int bo = node->left->bit_offset;
+                /* 32-bit RMW 序列 */
+                /* rax=RHS, rcx=addr */
+                e1(0x51);                    /* push rcx (保存地址) */
+                /* mask = (1 << width) - 1 */
+                e1(0xB9); e4(bw);            /* mov ecx, bw */
+                e1(0xBA); e4(1);             /* mov edx, 1 */
+                e1(0xD3); e1(0xE2);          /* shl edx, cl */
+                e1(0x83); e1(0xEA); e1(1);   /* sub edx, 1 */  /* edx = mask */
+                /* clamped_RHS = RHS & mask */
+                e1(0x21); e1(0xD0);          /* and eax, edx */ /* eax = clamped */
+                /* shifted_RHS = clamped << offset */
+                e1(0xB9); e4(bo);            /* mov ecx, bo */
+                e1(0xD3); e1(0xE0);          /* shl eax, cl */  /* eax = shifted */
+                e1(0x89); e1(0xC2);          /* mov edx, eax */ /* edx = shifted_RHS */
+                /* 加载当前值 */
+                e1(0x59);                    /* pop rcx (地址) */
+                e1(0x51);                    /* push rcx (再保存) */
+                e1(0x52);                    /* push rdx (暂存 shifted) */
+                e1(0x8B); e1(0x01);          /* mov eax, [rcx] */ /* eax = current */
+                /* 计算清零掩码 ~(mask << offset) */
+                e1(0xB9); e4(bw);            /* mov ecx, bw */
+                e1(0xBA); e4(1);             /* mov edx, 1 */
+                e1(0xD3); e1(0xE2);          /* shl edx, cl */
+                e1(0x83); e1(0xEA); e1(1);   /* sub edx, 1 */  /* edx = mask */
+                e1(0xB9); e4(bo);            /* mov ecx, bo */
+                e1(0xD3); e1(0xE2);          /* shl edx, cl */  /* edx = mask << offset */
+                e1(0xF7); e1(0xD2);          /* not edx */      /* edx = ~(mask << offset) */
+                /* 清零目标位 */
+                e1(0x21); e1(0xD0);          /* and eax, edx */ /* eax = current & ~bits */
+                /* 合并 */
+                e1(0x5A);                    /* pop rdx (shifted_RHS) */
+                e1(0x09); e1(0xD0);          /* or eax, edx */  /* eax = final */
+                /* 存回 */
+                e1(0x59);                    /* pop rcx (地址) */
+                e1(0x89); e1(0x01);          /* mov [rcx], eax */
+                node->type_size = 4;
+                break;
+            }
+
             if (node->left->is_float) {
                 /* float/double 成员赋值 */
                 if (!rhs_float) {
@@ -2939,6 +2982,41 @@ void cgen_expr(AstNode *node) {
             } else {
                 e1(0x8B); e1(0x00);             /* mov eax, [rax] */
             }
+        }
+        /* 位域提取：右移 + 掩码 + 符号扩展 */
+        if (node->bit_width > 0 && !node->is_float && !node->is_array) {
+            int bw = node->bit_width;
+            int bo = node->bit_offset;
+            if (node->type_size >= 8) {
+                /* 64-bit 位域 */
+                if (bo > 0) { e1(0x48); e1(0xC1); e1(0xE8); e1(bo); }
+                if (bw < 64) {
+                    if (bw <= 31) {
+                        e1(0x89); e1(0xC1);           /* mov ecx, eax */
+                        e1(0xB8); e4((1U << bw) - 1); /* mov eax, mask */
+                        e1(0x48); e1(0x21); e1(0xC1); /* and rcx, rax */
+                        e1(0x48); e1(0x89); e1(0xC8); /* mov rax, rcx */
+                    }
+                    if (!node->is_unsigned && bw < 32) {
+                        int s = 32 - bw;
+                        e1(0xC1); e1(0xE0); e1(s);    /* shl eax, s */
+                        e1(0xC1); e1(0xF8); e1(s);    /* sar eax, s */
+                    }
+                }
+            } else {
+                /* 32-bit 位域（最常用） */
+                if (bo > 0) { e1(0xC1); e1(0xE8); e1(bo); }  /* shr eax, bo (imm8) */
+                if (bw < 32) {
+                    unsigned int mask = (1U << bw) - 1;
+                    e1(0x25); e4((int)mask);             /* and eax, imm32 */
+                }
+                if (!node->is_unsigned && bw < 32 && bw > 0) {
+                    int s = 32 - bw;
+                    e1(0xC1); e1(0xE0); e1(s);           /* shl eax, s (imm8) */
+                    e1(0xC1); e1(0xF8); e1(s);           /* sar eax, s (imm8) */
+                }
+            }
+            node->type_size = 4;  /* 位域求值结果为 32 位 int */
         }
         break;
     }

@@ -571,6 +571,8 @@ static AstNode *new_ast(Parser *p, AstKind kind) {
     n->is_array = 0;
     n->call_target = NULL;
     n->struct_type = NULL;
+    n->bit_offset = -1;
+    n->bit_width = 0;
     return n;
 }
 
@@ -970,6 +972,8 @@ static AstNode *parse_postfix(Parser *p) {
                         n->is_float = st->members[fi].is_float;
                         n->elem_size = st->members[fi].elem_size;
                         n->is_array = st->members[fi].memb_is_array;
+                        n->bit_offset = st->members[fi].bit_offset;
+                        n->bit_width = st->members[fi].bit_width;
                         /* 如果此成员是 struct 类型，传播 struct_type 供链式访问 */
                         if (st->members[fi].member_struct_tag)
                             n->struct_type = find_struct_tag(st->members[fi].member_struct_tag);
@@ -998,6 +1002,8 @@ static AstNode *parse_postfix(Parser *p) {
                             n->is_float = tag_table[ti].members[mi].is_float;
                             n->elem_size = tag_table[ti].members[mi].elem_size;
                             n->is_array = tag_table[ti].members[mi].memb_is_array;
+                            n->bit_offset = tag_table[ti].members[mi].bit_offset;
+                            n->bit_width = tag_table[ti].members[mi].bit_width;
                             if (tag_table[ti].members[mi].member_struct_tag)
                                 n->struct_type = find_struct_tag(tag_table[ti].members[mi].member_struct_tag);
                         }
@@ -1064,6 +1070,8 @@ static AstNode *parse_postfix(Parser *p) {
                         n->is_float = st->members[fi].is_float;
                         n->elem_size = st->members[fi].elem_size;
                         n->is_array = st->members[fi].memb_is_array;
+                        n->bit_offset = st->members[fi].bit_offset;
+                        n->bit_width = st->members[fi].bit_width;
                         if (st->members[fi].member_struct_tag)
                             n->struct_type = find_struct_tag(st->members[fi].member_struct_tag);
                         break;
@@ -1090,6 +1098,8 @@ static AstNode *parse_postfix(Parser *p) {
                             n->is_float = tag_table[ti].members[mi].is_float;
                             n->elem_size = tag_table[ti].members[mi].elem_size;
                             n->is_array = tag_table[ti].members[mi].memb_is_array;
+                            n->bit_offset = tag_table[ti].members[mi].bit_offset;
+                            n->bit_width = tag_table[ti].members[mi].bit_width;
                             if (tag_table[ti].members[mi].member_struct_tag)
                                 n->struct_type = find_struct_tag(tag_table[ti].members[mi].member_struct_tag);
                         }
@@ -1590,12 +1600,16 @@ static AstNode *parse_expr_comma(Parser *p) {
 
 /* ─── 解析 struct 体（返回成员列表和总大小） ─── */
 
-static int parse_struct_body(Parser *p, Member *members, int *out_count, int is_union) {
+static int parse_struct_body(Parser *p, Member *members, int *out_count, int is_union, int *out_align) {
     expect(p, TOK_LBRACE);
     int count = 0;
     int offset = 0;
     int max_offset = 0;  /* union: total_size = max member size */
     int max_align = 1;
+    /* ── 位域打包状态 ── */
+    int bf_off = -1;          /* 当前位域存储单元字节偏移，-1=无活跃单元 */
+    int bf_bits_avail = 0;    /* 当前存储单元剩余可用位数 */
+    int bf_storage_sz = 0;    /* 当前存储单元字节大小（如 uint32_t→4） */
     /* 保存当前正在解析的 struct 的标签。parse_type_specifier 每调用都会清
      * last_struct_tag（line ~1430），导致自引用成员丢失 member_struct_tag。
      * 这是一个外层不变值（由 parse_struct_type 在 line 1254 设置），不会
@@ -1629,27 +1643,38 @@ static int parse_struct_body(Parser *p, Member *members, int *out_count, int is_
             }
         }
 
+        /* ═══════════════════════════════════════════════════════════
+         * 成员声明处理：支持位域 :N、数组 [N]、逗号分隔列表
+         * 位域打包规则：
+         *   - 相邻同类型位域共享同一存储单元（uint32_t→4 字节单元）
+         *   - 放不下时推进到下一对齐的存储单元
+         *   - :0 强制对齐到下一存储单元（不注册成员）
+         *   - 非位域成员关闭当前位域单元
+         * ═══════════════════════════════════════════════════════════ */
+        int member_bf_width = 0;  /* >0 = 当前处理的是位域 */
+        int member_consumed = 0;  /* 已消费了标识符 */
+
         Token id = peek(p);
         if (id.kind == TOK_IDENT) {
             consume(p);
-            /* 处理数组后缀 [N]（在注册成员前计算完整大小） */
-            int member_sz = sz;
+            member_consumed = 1;
+            /* 处理数组后缀 [N]（位域无数组，但提前检查可避免歧义） */
             int is_array = 0;
+            int member_sz = sz;
             if (peek(p).kind == TOK_LBRACKET) {
+                /* 位域不能有数组后缀，所以先跳过 */
+                if (peek(p).kind == TOK_COLON) { /* not possible, but safe */ }
                 is_array = 1;
                 consume(p);
                 if (peek(p).kind == TOK_NUMBER && peek(p).ival > 0) {
                     member_sz *= peek(p).ival;
                     consume(p);
-                    /* 处理数组维度中的常量表达式：N*M, N*M*K 等 */
                     while (peek(p).kind == TOK_STAR) {
-                        consume(p);  /* 跳过 * */
+                        consume(p);
                         if (peek(p).kind == TOK_NUMBER && peek(p).ival > 0) {
                             member_sz *= peek(p).ival;
                             consume(p);
-                        } else {
-                            break;
-                        }
+                        } else break;
                     }
                 }
                 int d = 1;
@@ -1660,48 +1685,113 @@ static int parse_struct_body(Parser *p, Member *members, int *out_count, int is_
                 }
                 if (peek(p).kind == TOK_RBRACKET) consume(p);
             }
-            if (count >= MAX_MEMBERS) {
-                error_at(p, "too many struct/union members");
-                break; }
-            if (1) {
-                /* union: 所有成员从偏移 0 开始 */
-                int member_offset = is_union ? 0 : offset;
-                /* 按类型自然对齐（指针/long long/double=8 字节对齐。数组按其元素类型对齐） */
-                int align_sz = is_array ? sz : member_sz;
-                int member_align = (align_sz >= 8) ? 8 : (align_sz >= 4) ? 4 : (align_sz >= 2) ? 2 : 1;
-                member_offset = (member_offset + member_align - 1) & ~(member_align - 1);
+
+            /* ── 检查位域 :N ── */
+            if (peek(p).kind == TOK_COLON) {
+                consume(p); /* skip : */
+                int w = 0;
+                while (peek(p).kind == TOK_NUMBER || peek(p).kind == TOK_IDENT ||
+                       peek(p).kind == TOK_LPAREN || peek(p).kind == TOK_PLUS ||
+                       peek(p).kind == TOK_MINUS || peek(p).kind == TOK_STAR) {
+                    if (peek(p).kind == TOK_NUMBER && w == 0)
+                        w = (int)peek(p).ival;
+                    consume(p);
+                }
+                if (w < 0) w = 0;
+                if (w >= (sz * 8) && ptr_count == 0) w = sz * 8; /* 不超存储单元 */
+                member_bf_width = w;
+
+                /* 计算存储单元参数 */
+                int unit_sz = (ptr_count > 0) ? 8 : (sz > 0 ? sz : 4);
+                int unit_bits = unit_sz * 8;
+                if (w > unit_bits) w = unit_bits;
+                int unit_align = (unit_sz >= 8) ? 8 : (unit_sz >= 4) ? 4
+                               : (unit_sz >= 2) ? 2 : 1;
+
+                /* 关闭之前的非位域间隙（若上次声明是常规成员而非位域） */
+                /* union 特例：所有位域从偏移 0 开始 */
+                if (is_union && bf_off < 0) { bf_off = 0; bf_storage_sz = unit_sz; bf_bits_avail = unit_bits; }
+
+                /* 检查是否需要新存储单元 */
+                if (bf_off < 0 || bf_bits_avail < w || unit_sz != bf_storage_sz) {
+                    if (bf_off >= 0) {
+                        int unit_end = bf_off + bf_storage_sz;
+                        if (unit_end > offset) offset = unit_end;
+                    }
+                    int new_off = (offset + unit_align - 1) & ~(unit_align - 1);
+                    offset = new_off;
+                    bf_off = new_off;
+                    bf_storage_sz = unit_sz;
+                    bf_bits_avail = unit_bits;
+                    if (unit_align > max_align) max_align = unit_align;
+                }
+
+                /* 注册位域成员 */
+                int bit_off = (bf_storage_sz * 8) - bf_bits_avail;
+                if (w > 0 && count < MAX_MEMBERS) {
+                    members[count].name = arena_strdup(p->arena, id.start, id.len);
+                    members[count].offset = bf_off;
+                    members[count].size = bf_storage_sz;
+                    members[count].elem_size = 0;
+                    members[count].is_unsigned = member_is_unsigned;
+                    members[count].is_float = 0;
+                    members[count].memb_is_array = 0;
+                    members[count].member_struct_tag = NULL;
+                    members[count].bit_offset = bit_off;
+                    members[count].bit_width = w;
+                    count++;
+                }
+                bf_bits_avail -= w;
+                member_bf_width = w;
+                sz = bf_storage_sz; /* 逗号后同类型位域共享存储单元大小 */
+            } else {
+                /* ── 非位域常规成员（含数组） ── */
+                /* 关闭活跃位域单元 */
+                if (bf_off >= 0) {
+                    int unit_end = bf_off + bf_storage_sz;
+                    if (unit_end > offset) offset = unit_end;
+                    bf_off = -1; bf_bits_avail = 0; bf_storage_sz = 0;
+                }
+                if (count >= MAX_MEMBERS) { error_at(p, "too many members"); break; }
+                int mem_off = is_union ? 0 : offset;
+                int member_align;
+                if (ptr_count == 0 && member_tag_for_chain) {
+                    /* 结构体类型成员：从注册的结构体获取对齐 */
+                    StructType *mst = find_struct_tag(member_tag_for_chain);
+                    member_align = mst ? mst->alignment : 1;
+                    if (member_align < 1) member_align = 1;
+                } else {
+                    int align_sz = is_array ? sz : member_sz;
+                    member_align = (align_sz >= 8) ? 8 : (align_sz >= 4) ? 4
+                                 : (align_sz >= 2) ? 2 : 1;
+                }
+                mem_off = (mem_off + member_align - 1) & ~(member_align - 1);
                 if (member_align > max_align) max_align = member_align;
                 members[count].name = arena_strdup(p->arena, id.start, id.len);
-                members[count].offset = member_offset;
+                members[count].offset = mem_off;
                 members[count].size = member_sz;
                 members[count].is_unsigned = member_is_unsigned;
                 members[count].is_float = last_type_is_float;
-                /* elem_size: 指针→指向的类型大小，数组→元素大小 */
-                if (is_array)
-                    members[count].elem_size = sz;  /* 数组元素大小（乘 [N] 之前的 sz） */
-                else if (ptr_count == 1)
-                    members[count].elem_size = base_sz;
-                else if (ptr_count > 1)
-                    members[count].elem_size = 8;   /* 多级指针 → 指针大小 */
-                else
-                    members[count].elem_size = 0;
+                if (is_array) members[count].elem_size = sz;
+                else if (ptr_count == 1) members[count].elem_size = base_sz;
+                else if (ptr_count > 1) members[count].elem_size = 8;
+                else members[count].elem_size = 0;
                 members[count].memb_is_array = is_array;
-                /* 记录 struct 标签，无论成员是否为指针（这样 p->member->sub
-                 * 链式访问的 struct_type 传播能正确工作）。非 struct 类型时
-                 * member_tag_for_chain 为 NULL，不影响。 */
                 members[count].member_struct_tag = member_tag_for_chain;
+                members[count].bit_offset = -1;
+                members[count].bit_width = 0;
                 count++;
                 if (is_union) {
                     if (member_sz > max_offset) max_offset = member_sz;
-                    /* 指针解引用后，使用指针元素大小计算联合体成员偏移 */
                 } else {
-                    offset = member_offset + member_sz;
+                    offset = mem_off + member_sz;
                 }
+                sz = member_sz;
             }
-            sz = member_sz;  /* 逗号后成员使用相同的完整大小 */
         }
+
         /* 关闭函数指针的 ) 和参数列表 */
-        if (sz == 8 && peek(p).kind == TOK_RPAREN) {
+        if (sz == 8 && peek(p).kind == TOK_RPAREN && !member_bf_width) {
             consume(p);
             if (peek(p).kind == TOK_LPAREN) {
                 int depth = 1; consume(p);
@@ -1714,78 +1804,172 @@ static int parse_struct_body(Parser *p, Member *members, int *out_count, int is_
             }
         }
 
-        /* 跳过位域 :N */
-        if (peek(p).kind == TOK_COLON) { consume(p);
-            while (peek(p).kind != TOK_SEMI && peek(p).kind != TOK_EOF) consume(p); }
+        /* ── 匿名位域：类型名后直接跟 :N（无 declarator） ── */
+        if (!member_consumed && peek(p).kind == TOK_COLON) {
+            consume(p);
+            int w = 0;
+            while (peek(p).kind == TOK_NUMBER || peek(p).kind == TOK_IDENT ||
+                   peek(p).kind == TOK_LPAREN || peek(p).kind == TOK_PLUS ||
+                   peek(p).kind == TOK_MINUS || peek(p).kind == TOK_STAR) {
+                if (peek(p).kind == TOK_NUMBER && w == 0)
+                    w = (int)peek(p).ival;
+                consume(p);
+            }
+            int unit_sz = (ptr_count > 0) ? 8 : (sz > 0 ? sz : 4);
+            int unit_bits = unit_sz * 8;
+            int unit_align = (unit_sz >= 8) ? 8 : (unit_sz >= 4) ? 4
+                           : (unit_sz >= 2) ? 2 : 1;
 
-        /* 逗号分隔的成员：int a, b, c; */
+            if (w == 0) {
+                /* :0 强制对齐到下一存储单元 */
+                if (bf_off >= 0) {
+                    int unit_end = bf_off + bf_storage_sz;
+                    if (unit_end > offset) offset = unit_end;
+                    bf_off = -1; bf_bits_avail = 0; bf_storage_sz = 0;
+                }
+            } else if (w > 0) {
+                if (w > unit_bits) w = unit_bits;
+                if (bf_off < 0 || bf_bits_avail < w || unit_sz != bf_storage_sz) {
+                    if (bf_off >= 0) {
+                        int unit_end = bf_off + bf_storage_sz;
+                        if (unit_end > offset) offset = unit_end;
+                    }
+                    int new_off = (offset + unit_align - 1) & ~(unit_align - 1);
+                    offset = new_off;
+                    bf_off = new_off;
+                    bf_storage_sz = unit_sz;
+                    bf_bits_avail = unit_bits;
+                    if (unit_align > max_align) max_align = unit_align;
+                }
+                bf_bits_avail -= w;
+            }
+            member_bf_width = 1; /* 标记为位域，跳过常规逗号处理 */
+            sz = unit_sz;
+        }
+
+        /* ── 逗号分隔的成员（位域或常规） ── */
         while (peek(p).kind == TOK_COMMA) {
             consume(p);
-            int comma_ptr_count = 0;
-            while (peek(p).kind == TOK_STAR) { consume(p); comma_ptr_count++; }
+            int comma_ptr_cnt = 0;
+            while (peek(p).kind == TOK_STAR) { consume(p); comma_ptr_cnt++; }
             Token cid = peek(p);
             if (cid.kind == TOK_IDENT) {
                 consume(p);
-                /* 处理逗号后成员的数组后缀 [N] */
-                int member_sz = (comma_ptr_count > 0) ? 8 : base_sz;
-                int comma_is_array = 0;
-                if (peek(p).kind == TOK_LBRACKET) {
-                    comma_is_array = 1;
-                    consume(p);
-                    if (peek(p).kind == TOK_NUMBER && peek(p).ival > 0) {
-                        member_sz *= peek(p).ival;
+
+                /* 检查此逗号成员是否为位域 */
+                int comma_is_bf = (peek(p).kind == TOK_COLON);
+
+                if (comma_is_bf) {
+                    /* ── 逗号分隔位域 ── */
+                    consume(p); /* skip : */
+                    int w2 = 0;
+                    while (peek(p).kind == TOK_NUMBER || peek(p).kind == TOK_IDENT ||
+                           peek(p).kind == TOK_LPAREN || peek(p).kind == TOK_PLUS ||
+                           peek(p).kind == TOK_MINUS || peek(p).kind == TOK_STAR) {
+                        if (peek(p).kind == TOK_NUMBER && w2 == 0) w2 = (int)peek(p).ival;
                         consume(p);
-                        /* 处理数组维度中的常量表达式：N*M, N*M*K 等 */
-                        while (peek(p).kind == TOK_STAR) {
-                            consume(p);  /* 跳过 * */
-                            if (peek(p).kind == TOK_NUMBER && peek(p).ival > 0) {
-                                member_sz *= peek(p).ival;
+                    }
+                    if (w2 < 0) w2 = 0;
+                    int unit_sz2 = sz;
+                    if (unit_sz2 <= 0) unit_sz2 = 4;
+                    if (w2 > unit_sz2 * 8) w2 = unit_sz2 * 8;
+
+                    /* 若没有活跃位域单元，创建之 */
+                    if (bf_off < 0) {
+                        bf_off = offset;
+                        bf_storage_sz = unit_sz2;
+                        bf_bits_avail = unit_sz2 * 8;
+                    }
+
+                    if (bf_bits_avail < w2) {
+                        int unit_end = bf_off + bf_storage_sz;
+                        if (unit_end > offset) offset = unit_end;
+                        int new_off = offset;
+                        bf_off = new_off;
+                        bf_bits_avail = bf_storage_sz * 8;
+                    }
+
+                    int bit_off2 = (bf_storage_sz * 8) - bf_bits_avail;
+                    if (w2 > 0 && count < MAX_MEMBERS) {
+                        members[count].name = arena_strdup(p->arena, cid.start, cid.len);
+                        members[count].offset = bf_off;
+                        members[count].size = bf_storage_sz;
+                        members[count].elem_size = 0;
+                        members[count].is_unsigned = member_is_unsigned;
+                        members[count].is_float = 0;
+                        members[count].memb_is_array = 0;
+                        members[count].member_struct_tag = NULL;
+                        members[count].bit_offset = bit_off2;
+                        members[count].bit_width = w2;
+                        count++;
+                    }
+                    bf_bits_avail -= w2;
+                    member_bf_width = 1;
+                } else {
+                    /* ── 逗号分隔常规成员（非位域） ── */
+                    /* 关闭活跃位域 */
+                    if (bf_off >= 0) {
+                        int unit_end = bf_off + bf_storage_sz;
+                        if (unit_end > offset) offset = unit_end;
+                        bf_off = -1; bf_bits_avail = 0; bf_storage_sz = 0;
+                    }
+                    int csz = (comma_ptr_cnt > 0) ? 8 : base_sz;
+                    int comma_is_array = 0;
+                    if (peek(p).kind == TOK_LBRACKET) {
+                        comma_is_array = 1;
+                        consume(p);
+                        if (peek(p).kind == TOK_NUMBER && peek(p).ival > 0) {
+                            csz *= peek(p).ival;
+                            consume(p);
+                            while (peek(p).kind == TOK_STAR) {
                                 consume(p);
-                            } else {
-                                break;
+                                if (peek(p).kind == TOK_NUMBER && peek(p).ival > 0) {
+                                    csz *= peek(p).ival;
+                                    consume(p);
+                                } else break;
                             }
                         }
+                        int d2 = 1;
+                        while (d2 > 0 && peek(p).kind != TOK_EOF) {
+                            if (peek(p).kind == TOK_LBRACKET) d2++;
+                            if (peek(p).kind == TOK_RBRACKET) d2--;
+                            if (d2) consume(p);
+                        }
+                        if (peek(p).kind == TOK_RBRACKET) consume(p);
                     }
-                    int d2 = 1;
-                    while (d2 > 0 && peek(p).kind != TOK_EOF) {
-                        if (peek(p).kind == TOK_LBRACKET) d2++;
-                        if (peek(p).kind == TOK_RBRACKET) d2--;
-                        if (d2) consume(p);
+                    if (count >= MAX_MEMBERS) { error_at(p, "too many members"); break; }
+                    int c_off = is_union ? 0 : offset;
+                    int cmalign;
+                    if (comma_ptr_cnt == 0 && member_tag_for_chain) {
+                        StructType *mst = find_struct_tag(member_tag_for_chain);
+                        cmalign = mst ? mst->alignment : 1;
+                        if (cmalign < 1) cmalign = 1;
+                    } else {
+                        int cal = comma_is_array ? base_sz : csz;
+                        cmalign = (cal >= 8) ? 8 : (cal >= 4) ? 4 : (cal >= 2) ? 2 : 1;
                     }
-                    if (peek(p).kind == TOK_RBRACKET) consume(p);
-                }
-                if (count >= MAX_MEMBERS) {
-                    error_at(p, "too many struct/union members");
-                    break; }
-                if (1) {
-                    int comma_offset = is_union ? 0 : offset;
-                    int align_sz = comma_is_array ? base_sz : member_sz;
-                    int member_align = (align_sz >= 8) ? 8 : (align_sz >= 4) ? 4 : (align_sz >= 2) ? 2 : 1;
-                    comma_offset = (comma_offset + member_align - 1) & ~(member_align - 1);
-                    if (member_align > max_align) max_align = member_align;
+                    c_off = (c_off + cmalign - 1) & ~(cmalign - 1);
+                    if (cmalign > max_align) max_align = cmalign;
                     members[count].name = arena_strdup(p->arena, cid.start, cid.len);
-                    members[count].offset = comma_offset;
-                    members[count].size = member_sz;
+                    members[count].offset = c_off;
+                    members[count].size = csz;
                     members[count].is_unsigned = member_is_unsigned;
                     members[count].is_float = last_type_is_float;
-                    if (comma_is_array)
-                        members[count].elem_size = (comma_ptr_count > 0) ? 8 : base_sz;
-                    else if (comma_ptr_count == 1)
-                        members[count].elem_size = base_sz;
-                    else if (comma_ptr_count > 1)
-                        members[count].elem_size = 8;
-                    else
-                        members[count].elem_size = 0;
+                    if (comma_is_array) members[count].elem_size = (comma_ptr_cnt > 0) ? 8 : base_sz;
+                    else if (comma_ptr_cnt == 1) members[count].elem_size = base_sz;
+                    else if (comma_ptr_cnt > 1) members[count].elem_size = 8;
+                    else members[count].elem_size = 0;
                     members[count].memb_is_array = comma_is_array;
                     members[count].member_struct_tag = member_tag_for_chain;
+                    members[count].bit_offset = -1;
+                    members[count].bit_width = 0;
                     count++;
                     if (is_union) {
-                        if (member_sz > max_offset) max_offset = member_sz;
+                        if (csz > max_offset) max_offset = csz;
                     } else {
-                        offset = comma_offset + member_sz;
+                        offset = c_off + csz;
                     }
                 }
-                sz = member_sz;
             }
         }
 
@@ -1794,6 +1978,12 @@ static int parse_struct_body(Parser *p, Member *members, int *out_count, int is_
     expect(p, TOK_RBRACE);
 
     *out_count = count;
+    /* 关闭末尾活跃位域单元 */
+    if (bf_off >= 0) {
+        int unit_end = bf_off + bf_storage_sz;
+        if (unit_end > offset) offset = unit_end;
+    }
+    if (out_align) *out_align = max_align;
     if (is_union) {
         /* union 大小 = 最大成员大小（向上对齐到 max_align） */
         if (max_align > 1)
@@ -1825,7 +2015,8 @@ static int parse_struct_type(Parser *p, StructType *out, int is_union) {
          * 使得 self-referencing 成员（如 struct Node *next）能获得
          * 正确的 member_struct_tag，用于链式访问的 struct_type 传播。 */
         last_struct_tag = tag;
-        out->total_size = parse_struct_body(p, out->members, &out->member_count, is_union);
+        out->alignment = 1;
+        out->total_size = parse_struct_body(p, out->members, &out->member_count, is_union, &out->alignment);
         while (peek(p).kind == TOK__ATTRIBUTE__) {
             consume(p); expect(p, TOK_LPAREN); expect(p, TOK_LPAREN);
             int d = 2;
