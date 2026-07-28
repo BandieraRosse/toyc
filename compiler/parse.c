@@ -1268,8 +1268,13 @@ static AstNode *parse_unary(Parser *p) {
                 AstNode *inner = parse_unary(p);
                 if (inner) {
                     if (cast_ptr_stars == 0) {
-                        inner->type_size = csz;
-                        inner->is_unsigned = last_type_is_unsigned;
+                        /* AST_MEMBER 的加载宽度和符号性由结构体定义决定，
+                         * 不应被转型覆盖。转型的类型信息（type_size, is_unsigned）
+                         * 由下方创建的 AST_UNARY 包装节点承载。 */
+                        if (inner->kind != AST_MEMBER) {
+                            inner->type_size = csz;
+                            inner->is_unsigned = last_type_is_unsigned;
+                        }
                         /* 对 signed char/short 常量值做截断符号扩展 */
                         if (inner->kind == AST_CONSTANT) {
                             if (csz == 1 && !last_type_is_unsigned)
@@ -2851,6 +2856,37 @@ AstNode *parse_compound_statement(Parser *p) {
                             if (peek(p).kind == TOK_COMMA) consume(p);
                         }
                         if (peek(p).kind == TOK_RBRACE) consume(p);
+                        /* 用 0 填充数组未显式初始化的剩余元素（C99 语义）。
+                         * 如 int arr[8] = {0} 应零化全数组，而非仅首元素。
+                         * 多维数组暂不处理（dim_count > 1 的嵌套 init 另有路径）。 */
+                        if (!struct_brace && decl->name && init_idx > 0 &&
+                            dim_count <= 1 && dv_ptrs == 0) {
+                            int elem_ts = (ts > 0 ? ts : 4);
+                            if (decl->ival > 0) {
+                                int total_elems = decl->ival / elem_ts;
+                                if (init_idx < total_elems) {
+                                    int pad;
+                                    for (pad = init_idx; pad < total_elems; pad++) {
+                                        AstNode *zidx = new_ast(p, AST_CONSTANT);
+                                        zidx->ival = pad;
+                                        AstNode *zsub = new_ast(p, AST_BINOP);
+                                        zsub->op = TOK_LBRACKET;
+                                        AstNode *zvar = new_ast(p, AST_VAR);
+                                        zvar->name = decl->name;
+                                        zsub->left = zvar;
+                                        zsub->right = zidx;
+                                        AstNode *zassign = new_ast(p, AST_ASSIGN);
+                                        zassign->left = zsub;
+                                        zassign->right = new_ast(p, AST_CONSTANT);
+                                        zassign->right->ival = 0;
+                                        zassign->type_size = elem_ts;
+                                        if (prev_init) prev_init->next = zassign;
+                                        else decl->expr = zassign;
+                                        prev_init = zassign;
+                                    }
+                                }
+                            }
+                        }
                         /* 根据初始化元素修正数组大小（int arr[] = {1,2,3} → 3 元素） */
                         /* struct 初始化的变量大小 = sizeof(struct)，不由 init_idx 修正 */
                         if (!struct_brace && dim_count == 0 && init_idx > 0) {
