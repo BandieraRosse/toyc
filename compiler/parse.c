@@ -303,6 +303,7 @@ static int add_struct_tag(const char *tag, StructType *st) {
         s->members[i] = st->members[i];
     s->member_count = st->member_count;
     s->total_size = st->total_size;
+    s->alignment = st->alignment;
     return tag_count - 1;
 }
 
@@ -1758,7 +1759,14 @@ static int parse_struct_body(Parser *p, Member *members, int *out_count, int is_
                 if (ptr_count == 0 && member_tag_for_chain) {
                     /* 结构体类型成员：从注册的结构体获取对齐 */
                     StructType *mst = find_struct_tag(member_tag_for_chain);
-                    member_align = mst ? mst->alignment : 1;
+                    if (mst) {
+                        member_align = mst->alignment;
+                    } else {
+                        /* struct 尚未注册（当前正在定义自身），用类型大小推算对齐 */
+                        int align_sz = is_array ? sz : member_sz;
+                        member_align = (align_sz >= 8) ? 8 : (align_sz >= 4) ? 4
+                                             : (align_sz >= 2) ? 2 : 1;
+                    }
                     if (member_align < 1) member_align = 1;
                 } else {
                     int align_sz = is_array ? sz : member_sz;
@@ -1942,7 +1950,12 @@ static int parse_struct_body(Parser *p, Member *members, int *out_count, int is_
                     int cmalign;
                     if (comma_ptr_cnt == 0 && member_tag_for_chain) {
                         StructType *mst = find_struct_tag(member_tag_for_chain);
-                        cmalign = mst ? mst->alignment : 1;
+                        if (mst) {
+                            cmalign = mst->alignment;
+                        } else {
+                            int cal = comma_is_array ? base_sz : csz;
+                            cmalign = (cal >= 8) ? 8 : (cal >= 4) ? 4 : (cal >= 2) ? 2 : 1;
+                        }
                         if (cmalign < 1) cmalign = 1;
                     } else {
                         int cal = comma_is_array ? base_sz : csz;
