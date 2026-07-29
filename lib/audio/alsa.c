@@ -46,7 +46,11 @@ static int is_pcm_playback(const char *name)
 /* 尝试打开指定路径，成功返回 fd，失败返回负 errno */
 static int try_open_dev(const char *path)
 {
-    int fd = __openat(AT_FDCWD, path, O_RDWR | O_NONBLOCK | O_CLOEXEC, 0);
+    /* 注意：不要使用 O_NONBLOCK — ALSA 内核驱动在 open() 时缓存该标志
+     * 到 runtime->nonblock，后续 fcntl(F_SETFL) 无法清除！
+     * 非阻塞打开导致 write() 返回 EAGAIN + 碎片化小写入（每 2-3 帧一次
+     * 系统调用，~25000 次/秒），是音频撕裂/沙沙声的常见根源。 */
+    int fd = __openat(AT_FDCWD, path, O_RDWR | O_CLOEXEC, 0);
     if (fd < 0) {
         /* openat 返回负 errno，直接传递 */
         return fd;
@@ -275,9 +279,6 @@ int tlibc_pcm_configure(struct tlibc_pcm *pcm)
     ret = (int)__ioctl(fd, SNDRV_PCM_IOCTL_PREPARE, 0);
     if (ret < 0)
         return ret;
-
-    /* 配置完成后切回阻塞模式（open 时用了 O_NONBLOCK），使 write 自然阻塞 */
-    __fcntl(fd, F_SETFL, O_RDWR | O_CLOEXEC);
 
     return 0;
 }
