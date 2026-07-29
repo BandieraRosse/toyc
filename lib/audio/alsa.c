@@ -242,6 +242,21 @@ int tlibc_pcm_configure(struct tlibc_pcm *pcm)
                          pcm->bits_per_sample * pcm->channels);
     }
 
+    /* 显式设置内核缓冲大小（同 mpg123 策略：~200ms），
+     * 防止内核给极小默认值（~10ms），大幅降低 XRUN 概率。
+     * 不设 period_size 约束——让内核自动选合理的值，兼容性最好。 */
+    {
+        int bs_idx = SND_INTERVAL_IDX(SNDRV_PCM_HW_PARAM_BUFFER_SIZE);
+        unsigned int target_buf = pcm->rate / 5;  /* 200ms */
+
+        hw.intervals[bs_idx].min = target_buf;
+        hw.intervals[bs_idx].max = 0xFFFFFFFF;
+        hw.intervals[bs_idx].openmin = 0;
+        hw.intervals[bs_idx].openmax = 0;
+        hw.intervals[bs_idx].integer = 0;
+        hw.intervals[bs_idx].empty = 0;
+    }
+
     hw.rmask = ~0U;
 
     ret = (int)__ioctl(fd, SNDRV_PCM_IOCTL_HW_PARAMS, &hw);
@@ -262,7 +277,9 @@ int tlibc_pcm_configure(struct tlibc_pcm *pcm)
     sw.sleep_min        = 0;
     sw.avail_min        = 1;                       /* 有空间即唤醒 */
     sw.xfer_align       = 1;
-    sw.start_threshold  = 1;                       /* 有数据即启动 */
+    sw.start_threshold  = (pcm->buffer_size > 1)
+                           ? (unsigned long)(pcm->buffer_size / 2)
+                           : 1;                     /* 半满才启动（同 mpg123），防 XRUN */
     sw.stop_threshold   = 0x7FFFFFFFFFFFFFFFUL;    /* 几乎不自动停止 */
     sw.silence_threshold = 0;
     sw.silence_size     = 0;
@@ -287,6 +304,7 @@ int tlibc_pcm_configure(struct tlibc_pcm *pcm)
  * tlibc_pcm_write — 写入 PCM 数据
  *
  * 阻塞写入 frames 帧。内含部分写入重试循环。
+ * EPIPE（XRUN）不自动恢复，返回 -EPIPE 供上层做带等待的精确恢复。
  * 成功返回写入的帧数，失败返回负 errno。
  */
 long tlibc_pcm_write(struct tlibc_pcm *pcm, const void *buf, unsigned long frames)
@@ -299,13 +317,10 @@ long tlibc_pcm_write(struct tlibc_pcm *pcm, const void *buf, unsigned long frame
     while (remain > 0) {
         ssize_t written = __write(fd, ptr, (int)(remain * frame_size));
         if (written < 0) {
-            /* EPIPE = underrun，尝试恢复 */
-            if (written == -EPIPE) {
-                /* 重新 PREPARE */
-                __ioctl(fd, SNDRV_PCM_IOCTL_PREPARE, 0);
-                continue;
-            }
-            /* EAGAIN = 非阻塞模式下缓冲区满，等待 POLLOUT 后重试 */
+            /* EPIPE = underrun，返回供上层精确恢复（含预加载等待） */
+            if (written == -EPIPE)
+                return -EPIPE;
+            /* EAGAIN = 阻塞模式下缓冲区满，等待 POLLOUT 后重试 */
             if (written == -EAGAIN) {
                 struct pollfd pfd;
                 pfd.fd     = fd;
@@ -365,6 +380,11 @@ int tlibc_pcm_write_all(struct tlibc_pcm *pcm, const void *buf,
                         unsigned long frames)
 {
     long ret = tlibc_pcm_write(pcm, buf, frames);
+    if (ret == -EPIPE) {
+        /* XRUN：恢复设备后重试一次 */
+        __ioctl(pcm->fd, SNDRV_PCM_IOCTL_PREPARE, 0);
+        ret = tlibc_pcm_write(pcm, buf, frames);
+    }
     if (ret < 0)
         return (int)ret;
     if ((unsigned long)ret < frames)
