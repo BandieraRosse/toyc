@@ -32,6 +32,13 @@
 /* 重采样输出缓冲区：最大一帧 1152 帧 × 2ch，48000/44100 最大放大比 ~1.089 */
 #define RESAMPLE_BUF_SZ  4096
 
+/* 攒批写入帧数：累积多个 MP3 帧的 PCM 数据再一次性写入 ALSA。
+ * 8 帧 ≈ 210ms 音频（@48000Hz），减少 write() 频率以分摊 ALSA period 开销，
+ * 避免逐帧写入的累积延迟导致周期性 XRUN（约每 8 秒撕裂）。 */
+#define BATCH_FRAMES    32
+/* 攒批缓冲区 = 8 × 最大重采样帧数 × 2ch */
+#define BATCH_BUF_SZ    (BATCH_FRAMES * 4096)
+
 /* ── 状态 ── */
 
 struct mp3_player {
@@ -53,6 +60,14 @@ struct mp3_player {
 
     /* 重采样临时缓冲区（避免栈上大分配） */
     mp3d_sample_t resample_buf[RESAMPLE_BUF_SZ];
+
+    /* 攒批写入：累积多帧后一次写出，避免逐帧写入的累计延迟导致 XRUN */
+    mp3d_sample_t batch_buf[BATCH_BUF_SZ];
+    int batch_frames;               /* 当前 batch 累积的每声道帧数 */
+    int batch_count;                /* 当前 batch 累积的 MP3 帧数 */
+
+    /* 重采样精度补偿：累计取整误差，防止周期性的帧数缺失 */
+    double resample_remainder;
 };
 
 /* ── 文件读取 ── */
@@ -123,6 +138,38 @@ static int resample_pcm(const mp3d_sample_t *in, int in_frames,
     return out_idx;
 }
 
+/* 带取整补偿的重采样：通过累计小数误差，使长期平均帧率匹配理论值，
+ * 避免截断误差累积导致周期性帧数缺失。 */
+static int resample_pcm_frac(const mp3d_sample_t *in, int in_frames,
+                              int in_rate, int out_rate, int ch,
+                              mp3d_sample_t *out, double *remainder)
+{
+    int base = resample_pcm(in, in_frames, in_rate, out_rate, ch, out);
+    if (in_rate == out_rate || base <= 0)
+        return base;
+
+    /* 理想输出帧数 = in_frames * out_rate / in_rate */
+    double ideal = (double)in_frames * (double)out_rate / (double)in_rate;
+    double acc   = ideal - (double)base + *remainder;
+
+    if (acc >= 1.0) {
+        int extra = (int)acc;
+        acc -= (double)extra;
+
+        /* 复制最后一个输出帧 extra 次（在边界处保持连续性） */
+        mp3d_sample_t *last = out + (base - 1) * ch;
+        for (int e = 0; e < extra; e++) {
+            mp3d_sample_t *dst = out + (base + e) * ch;
+            for (int c = 0; c < ch; c++)
+                dst[c] = last[c];
+        }
+        base += extra;
+    }
+
+    *remainder = acc;
+    return base;
+}
+
 /* ── 音频输出 ── */
 
 static int open_audio(struct mp3_player *p)
@@ -156,18 +203,51 @@ static int open_audio(struct mp3_player *p)
     return 0;
 }
 
-static int write_pcm(struct mp3_player *p, mp3d_sample_t *samples,
-                      int samples_per_ch)
+/* ── 攒批写入 ── */
+
+/* 将 batch 缓冲区中的累积 PCM 数据一次写入 ALSA */
+static int batch_flush(struct mp3_player *p)
 {
-    /* samples_per_ch 是 mp3dec_decode_frame 返回值（每声道采样数）。
-     * 使用 tlibc_pcm_write 而非 write_all：
-     *   write_all 内部会 drain，导致设备停止，后续写入失败 (EBADFD)。 */
-    long ret = tlibc_pcm_write(&p->pcm, samples,
-                               (unsigned long)samples_per_ch);
+    if (p->batch_frames <= 0)
+        return 0;
+
+    long ret = tlibc_pcm_write(&p->pcm, p->batch_buf,
+                               (unsigned long)p->batch_frames);
     if (ret < 0)
         return (int)ret;
 
-    p->total_frames += samples_per_ch;
+    p->total_frames += p->batch_frames;
+    p->batch_frames = 0;
+    p->batch_count = 0;
+    return 0;
+}
+
+/* 将一帧重采样后的 PCM 数据追加到 batch 缓冲区；
+ * 累积满 BATCH_FRAMES 帧后自动写出到 ALSA */
+static int batch_append(struct mp3_player *p,
+                         const mp3d_sample_t *samples, int out_frames,
+                         int channels)
+{
+    int total_samples = out_frames * channels;
+
+    /* batch 缓冲区溢出保护（不应发生） */
+    if (p->batch_frames + out_frames > BATCH_BUF_SZ / channels) {
+        int ret = batch_flush(p);
+        if (ret < 0)
+            return ret;
+    }
+
+    /* 追加：拷贝到 batch_buf 的尾部 */
+    mp3d_sample_t *dst = p->batch_buf + p->batch_frames * channels;
+    for (int i = 0; i < total_samples; i++)
+        dst[i] = samples[i];
+    p->batch_frames += out_frames;
+    p->batch_count++;
+
+    /* 积累 BATCH_FRAMES 帧后写出 */
+    if (p->batch_count >= BATCH_FRAMES)
+        return batch_flush(p);
+
     return 0;
 }
 
@@ -176,6 +256,10 @@ static int write_pcm(struct mp3_player *p, mp3d_sample_t *samples,
 static int play_mp3(struct mp3_player *p)
 {
     int ret;
+
+    p->batch_frames = 0;
+    p->batch_count = 0;
+    p->resample_remainder = 0.0;
 
     /* 第一轮读取 */
     ret = read_file_chunk(p);
@@ -207,12 +291,13 @@ static int play_mp3(struct mp3_player *p)
     if (ret < 0)
         return 1;
 
-    /* 重采样第一帧并写入 */
+    /* 重采样第一帧并追加到 batch */
     {
-        int out_frames = resample_pcm(pcm_buf, samples,
+        int out_frames = resample_pcm_frac(pcm_buf, samples,
                               p->mp3_rate, p->alsa_rate, p->mp3_channels,
-                              p->resample_buf);
-        ret = write_pcm(p, p->resample_buf, out_frames);
+                              p->resample_buf, &p->resample_remainder);
+        ret = batch_append(p, p->resample_buf, out_frames,
+                           p->mp3_channels);
         if (ret < 0) {
             __printf("mp3_player: PCM 写入失败 (errno=%d)\n", -ret);
             tlibc_pcm_close(&p->pcm);
@@ -226,6 +311,7 @@ static int play_mp3(struct mp3_player *p)
             ret = read_file_chunk(p);
             if (ret < 0) {
                 __printf("mp3_player: 读取错误\n");
+                batch_flush(p);
                 tlibc_pcm_drain(&p->pcm);
                 tlibc_pcm_close(&p->pcm);
                 return 1;
@@ -247,8 +333,19 @@ static int play_mp3(struct mp3_player *p)
                          " %dch/%dHz → %dch/%dHz，重新配置设备\n",
                          p->mp3_channels, p->mp3_rate,
                          p->info.channels, p->info.hz);
+
+                /* 先 flush 当前 batch */
+                ret = batch_flush(p);
+                if (ret < 0) {
+                    __printf("mp3_player: PCM 写入失败 (errno=%d)\n", -ret);
+                    tlibc_pcm_drain(&p->pcm);
+                    tlibc_pcm_close(&p->pcm);
+                    return 1;
+                }
+
                 p->mp3_rate = p->info.hz;
                 p->mp3_channels = p->info.channels;
+                p->resample_remainder = 0.0;
                 tlibc_pcm_drain(&p->pcm);
                 tlibc_pcm_close(&p->pcm);
                 p->pcm.channels = 0;
@@ -257,14 +354,17 @@ static int play_mp3(struct mp3_player *p)
                     return 1;
             }
 
-            /* 重采样后再写入 */
+            /* 重采样后追加到 batch */
             {
-                int out_frames = resample_pcm(pcm_buf, samples,
+                int out_frames = resample_pcm_frac(pcm_buf, samples,
                                       p->mp3_rate, p->alsa_rate,
-                                      p->mp3_channels, p->resample_buf);
-                ret = write_pcm(p, p->resample_buf, out_frames);
+                                      p->mp3_channels, p->resample_buf,
+                                      &p->resample_remainder);
+                ret = batch_append(p, p->resample_buf, out_frames,
+                                   p->mp3_channels);
                 if (ret < 0) {
                     __printf("mp3_player: PCM 写入失败 (errno=%d)\n", -ret);
+                    batch_flush(p);
                     tlibc_pcm_drain(&p->pcm);
                     tlibc_pcm_close(&p->pcm);
                     return 1;
@@ -278,6 +378,8 @@ static int play_mp3(struct mp3_player *p)
     }
 
 done:
+    /* flush 剩余数据 */
+    batch_flush(p);
     __printf("mp3_player: 播放完成 — %d 帧\n", p->total_frames);
     tlibc_pcm_drain(&p->pcm);
     tlibc_pcm_close(&p->pcm);
