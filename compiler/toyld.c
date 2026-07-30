@@ -74,6 +74,10 @@ typedef struct {
     int              sh_strtab;
     int              sh_rela_text;
     int              sh_rela_data;
+    int              sh_rodata;          /* .rodata（gcc 生成的字符串常量等） */
+    int              sh_rela_rodata;     /* .rela.rodata */
+    int              sh_data_rel_local;  /* .data.rel.local（已重定位的数据指针） */
+    int              sh_rela_data_rel_local; /* .rela.data.rel.local */
 
     /* 节区原始数据指针 */
     unsigned char   *text_data;
@@ -81,6 +85,10 @@ typedef struct {
     unsigned char   *data_data;
     int              data_size;
     int              bss_size;
+    unsigned char   *rodata_data;       /* .rodata 数据 */
+    int              rodata_size;
+    unsigned char   *data_rel_local_data; /* .data.rel.local 数据 */
+    int              data_rel_local_size;
 
     /* 符号表 */
     unsigned char   *syms_raw;
@@ -93,11 +101,17 @@ typedef struct {
     int              rela_text_count;
     unsigned char   *rela_data_raw;
     int              rela_data_count;
+    unsigned char   *rela_rodata_raw;       /* .rela.rodata */
+    int              rela_rodata_count;
+    unsigned char   *rela_data_rel_local_raw; /* .rela.data.rel.local */
+    int              rela_data_rel_local_count;
 
     /* 各段在合并后缓冲区中的偏移 */
     int              text_merge_off;
     int              data_merge_off;
     int              bss_merge_off;
+    int              rodata_merge_off;       /* .rodata 在 merged_data 中的偏移 */
+    int              data_rel_local_merge_off; /* .data.rel.local 在 merged_data 中的偏移 */
 
     /* 各段在合并后的最终基地址 */
     uint64_t         text_base;
@@ -278,6 +292,8 @@ static void read_input(const char *path) {
     f->name = path;
     f->sh_text = f->sh_data = f->sh_bss = f->sh_symtab = f->sh_strtab = -1;
     f->sh_rela_text = f->sh_rela_data = -1;
+    f->sh_rodata = f->sh_rela_rodata = -1;
+    f->sh_data_rel_local = f->sh_rela_data_rel_local = -1;
 
     f->data = read_whole_file(path, &f->size);
 
@@ -348,6 +364,30 @@ static void read_input(const char *path) {
         READ_SH(f->sh_rela_data, off, sz);
         f->rela_data_raw = f->data + off; f->rela_data_count = sz / 24; }
 
+    /* .rodata */
+    f->sh_rodata = find_sh_by_name(f, ".rodata");
+    if (f->sh_rodata >= 0) { int off=0, sz=0;
+        READ_SH(f->sh_rodata, off, sz);
+        f->rodata_data = f->data + off; f->rodata_size = sz; }
+
+    /* .rela.rodata */
+    f->sh_rela_rodata = find_sh_by_name(f, ".rela.rodata");
+    if (f->sh_rela_rodata >= 0) { int off=0, sz=0;
+        READ_SH(f->sh_rela_rodata, off, sz);
+        f->rela_rodata_raw = f->data + off; f->rela_rodata_count = sz / 24; }
+
+    /* .data.rel.local */
+    f->sh_data_rel_local = find_sh_by_name(f, ".data.rel.local");
+    if (f->sh_data_rel_local >= 0) { int off=0, sz=0;
+        READ_SH(f->sh_data_rel_local, off, sz);
+        f->data_rel_local_data = f->data + off; f->data_rel_local_size = sz; }
+
+    /* .rela.data.rel.local */
+    f->sh_rela_data_rel_local = find_sh_by_name(f, ".rela.data.rel.local");
+    if (f->sh_rela_data_rel_local >= 0) { int off=0, sz=0;
+        READ_SH(f->sh_rela_data_rel_local, off, sz);
+        f->rela_data_rel_local_raw = f->data + off; f->rela_data_rel_local_count = sz / 24; }
+
     #undef READ_SH
 
     input_count++;
@@ -365,6 +405,8 @@ static void read_input_mem(const char *name, unsigned char *data, int size) {
     f->name = name;
     f->sh_text = f->sh_data = f->sh_bss = f->sh_symtab = f->sh_strtab = -1;
     f->sh_rela_text = f->sh_rela_data = -1;
+    f->sh_rodata = f->sh_rela_rodata = -1;
+    f->sh_data_rel_local = f->sh_rela_data_rel_local = -1;
 
     f->data = data;
     f->size = size;
@@ -434,6 +476,30 @@ static void read_input_mem(const char *name, unsigned char *data, int size) {
     if (f->sh_rela_data >= 0) { int off=0, sz=0;
         READ_SH(f->sh_rela_data, off, sz);
         f->rela_data_raw = f->data + off; f->rela_data_count = sz / 24; }
+
+    /* .rodata */
+    f->sh_rodata = find_sh_by_name(f, ".rodata");
+    if (f->sh_rodata >= 0) { int off=0, sz=0;
+        READ_SH(f->sh_rodata, off, sz);
+        f->rodata_data = f->data + off; f->rodata_size = sz; }
+
+    /* .rela.rodata */
+    f->sh_rela_rodata = find_sh_by_name(f, ".rela.rodata");
+    if (f->sh_rela_rodata >= 0) { int off=0, sz=0;
+        READ_SH(f->sh_rela_rodata, off, sz);
+        f->rela_rodata_raw = f->data + off; f->rela_rodata_count = sz / 24; }
+
+    /* .data.rel.local */
+    f->sh_data_rel_local = find_sh_by_name(f, ".data.rel.local");
+    if (f->sh_data_rel_local >= 0) { int off=0, sz=0;
+        READ_SH(f->sh_data_rel_local, off, sz);
+        f->data_rel_local_data = f->data + off; f->data_rel_local_size = sz; }
+
+    /* .rela.data.rel.local */
+    f->sh_rela_data_rel_local = find_sh_by_name(f, ".rela.data.rel.local");
+    if (f->sh_rela_data_rel_local >= 0) { int off=0, sz=0;
+        READ_SH(f->sh_rela_data_rel_local, off, sz);
+        f->rela_data_rel_local_raw = f->data + off; f->rela_data_rel_local_count = sz / 24; }
 
     #undef READ_SH
 
@@ -689,6 +755,14 @@ static void merge_sections(void) {
 
         f->data_merge_off = merged_data_size;
         merged_data_size += f->data_size;
+        if (f->rodata_data) {
+            f->rodata_merge_off = merged_data_size;
+            merged_data_size += f->rodata_size;
+        }
+        if (f->data_rel_local_data) {
+            f->data_rel_local_merge_off = merged_data_size;
+            merged_data_size += f->data_rel_local_size;
+        }
         merged_data_size = align_up(merged_data_size, 32);
 
         f->bss_merge_off = merged_bss_size;
@@ -742,6 +816,10 @@ static uint64_t sym_final_addr(InputFile *f, unsigned char *sym_entry) {
     if (st_shndx == (uint16_t)f->sh_text) return f->text_base + (int)st_value;
     if (st_shndx == (uint16_t)f->sh_data) return f->data_base + (int)st_value;
     if (st_shndx == (uint16_t)f->sh_bss)  return f->bss_base  + (int)st_value;
+    if (st_shndx == (uint16_t)f->sh_rodata)
+        return data_addr + f->rodata_merge_off + (int)st_value;
+    if (st_shndx == (uint16_t)f->sh_data_rel_local)
+        return data_addr + f->data_rel_local_merge_off + (int)st_value;
 
     /* 其它段：按 shndx 计算（.o 中 sh_addr 为 0，需用合并后基址） */
     return st_value;
@@ -883,6 +961,12 @@ static void apply_relocations(void) {
                        merged_text, f->text_base, f->text_merge_off);
         apply_one_rela(f, f->rela_data_raw, f->rela_data_count,
                        merged_data, f->data_base, f->data_merge_off);
+        if (f->rela_rodata_count > 0)
+            apply_one_rela(f, f->rela_rodata_raw, f->rela_rodata_count,
+                           merged_data, data_addr, f->rodata_merge_off);
+        if (f->rela_data_rel_local_count > 0)
+            apply_one_rela(f, f->rela_data_rel_local_raw, f->rela_data_rel_local_count,
+                           merged_data, data_addr, f->data_rel_local_merge_off);
     }
 }
 
@@ -1095,6 +1179,16 @@ int main(int argc, char **argv) {
         for (int j = 0; j < f->data_size; j++)
             merged_data[merged_data_size + j] = f->data_data[j];
         merged_data_size += f->data_size;
+        if (f->rodata_data) {
+            for (int j = 0; j < f->rodata_size; j++)
+                merged_data[merged_data_size + j] = f->rodata_data[j];
+            merged_data_size += f->rodata_size;
+        }
+        if (f->data_rel_local_data) {
+            for (int j = 0; j < f->data_rel_local_size; j++)
+                merged_data[merged_data_size + j] = f->data_rel_local_data[j];
+            merged_data_size += f->data_rel_local_size;
+        }
         merged_data_size = align_up(merged_data_size, 32);
 
         merged_bss_size += f->bss_size;
