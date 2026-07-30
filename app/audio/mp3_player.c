@@ -260,36 +260,36 @@ struct mp3_player {
 
     /* ── 统计（主线程读取）─ */
     int total_frames;
+
+#ifdef MONITOR_PLAYBACK
+    /* ── 播放质量监控 ──
+     * 音频线程每轮写入后记录 ALSA 缓冲水平和环形缓冲水平，
+     * 播放结束时由主线程汇总报告。仅 MONITOR_PLAYBACK 编译时启用。 */
+    struct {
+        long alsa_delay_min;     /* 最小 ALSA 缓冲延迟（帧），接近 0 = 濒临 XRUN */
+        long alsa_delay_max;     /* 最大 ALSA 缓冲延迟 */
+        long alsa_delay_sum;     /* 延迟累加，用于均值计算 */
+        int   alsa_delay_count;  /* 采样数 */
+        int   ring_avail_min;    /* 最小环形缓冲可用帧数 */
+        int   ring_avail_sum;    /* 环形缓冲可用帧累加 */
+        int   ring_avail_count;  /* 采样数 */
+        int   low_delay_events;  /* ALSA 延迟 < 48 帧（1ms）的事件数 */
+        int   low_ring_events;   /* 环形缓冲 < 1024 帧的事件数 */
+    } monitor;
+#endif
 };
 
 /* ── 文件读取 ── */
 
 static int read_file_chunk(struct mp3_player *p)
 {
-    unsigned char *dst;
-    int space;
-
-    if (p->file_pos > 0 && p->file_pos < p->file_len) {
-        int remain = p->file_len - p->file_pos;
-        memmove(p->file_buf, p->file_buf + p->file_pos, (unsigned long)remain);
-        p->file_len = remain;
-        p->file_pos = 0;
-        dst = p->file_buf + p->file_len;
-        space = p->file_cap - p->file_len;
-    } else {
-        p->file_len = 0;
-        p->file_pos = 0;
-        dst = p->file_buf;
-        space = p->file_cap;
-    }
-
-    if (space <= 0)
+    /* 整个 MP3 文件通过 mmap 映射到 file_buf，无需分块读取。
+     * 用 file_pos 判断是否已到达文件末尾：
+     *   - file_pos + 4 >= file_len → EOF，返回 0 让调用方结束解码
+     *   - 否则数据已就绪，返回 1 表示可用 */
+    if (p->file_pos + 4 >= p->file_len)
         return 0;
-    long n = __read(p->mp3_fd, dst, (unsigned long)space);
-    if (n < 0)  return -1;
-    if (n == 0) return  0;
-    p->file_len += (int)n;
-    return (int)n;
+    return 1;
 }
 
 /* ── 线性插值采样率转换 ── */
@@ -516,10 +516,44 @@ static void *audio_thread_func(void *arg)
 
         p->total_frames += frames;
 
-        /* 预防性检查：如果环形缓冲已接近排空，提前进入预加载 */
-        if (ring_avail(&p->ring) < PCM_READ_BATCH) {
-            preloading = 1;
+#ifdef MONITOR_PLAYBACK
+        /* ── 播放质量监控 ── */
+        {
+            long delay = 0;
+            int ret_delay = (int)__ioctl(p->pcm.fd, SNDRV_PCM_IOCTL_DELAY, &delay);
+            if (ret_delay == 0) {
+                if (delay < p->monitor.alsa_delay_min)
+                    p->monitor.alsa_delay_min = delay;
+                if (delay > p->monitor.alsa_delay_max)
+                    p->monitor.alsa_delay_max = delay;
+                p->monitor.alsa_delay_sum += delay;
+                p->monitor.alsa_delay_count++;
+                if (delay < 48)  /* < 1ms @48kHz */
+                    p->monitor.low_delay_events++;
+            }
+            int ra = ring_avail(&p->ring);
+            if (ra < p->monitor.ring_avail_min)
+                p->monitor.ring_avail_min = ra;
+            p->monitor.ring_avail_sum += ra;
+            p->monitor.ring_avail_count++;
+            if (ra < 1024)  /* < ~21ms @48kHz */
+                p->monitor.low_ring_events++;
         }
+#endif
+
+        /* 后写预加载检查已移除（2026-07-30）
+         *
+         * 旧代码：if (ring_avail(&p->ring) < PCM_READ_BATCH) preloading = 1;
+         *
+         * PCM_READ_BATCH(8192) == RING_BUF_SIZE/2，环形缓冲刚被读取 <= 8192 帧
+         * 后必然 < 8192，导致音频线程每次写入后都进入预加载等待（ring_wait_avail），
+         * 反复振荡于 PLAYING↔PRELOADING 状态：
+         *   写 8192 帧到 ALSA → 等缓冲攒到 8192(170ms) → ALSA 缓冲空转 → 再写
+         * 这造成周期性 ALSA 缓冲递送不足，表现为微卡顿。
+         *
+         * 正确行为：不主动休眠——持续从环形缓冲读取并写入 ALSA。
+         * 当无数据可读时 ring_wait_read() 自然阻塞，当 ALSA 缓冲满时
+         * write() 自然阻塞。预加载仅保留给启动和 XRUN 恢复。 */
     }
 
     /* 等待硬件播放完缓冲中最后的数据 */
@@ -670,6 +704,39 @@ static int play_mp3(struct mp3_player *p)
 
     __printf("mp3_player: 播放完成 — %d 帧\n", p->total_frames);
 
+#ifdef MONITOR_PLAYBACK
+    if (p->monitor.alsa_delay_count > 0) {
+        long avg_delay = p->monitor.alsa_delay_sum
+                         / (long)p->monitor.alsa_delay_count;
+        int avg_ring   = p->monitor.ring_avail_count > 0
+                         ? p->monitor.ring_avail_sum
+                           / p->monitor.ring_avail_count
+                         : 0;
+        __printf("mp3_player: [MONITOR] ALSA 缓冲延迟: 最小=%ld 帧"
+                 " (%.1fms), 最大=%ld 帧 (%.1fms), 均值=%ld 帧 (%.1fms),"
+                 " 低水位事件=%d\n",
+                 p->monitor.alsa_delay_min,
+                 (double)p->monitor.alsa_delay_min
+                   / (double)p->alsa_rate * 1000.0,
+                 p->monitor.alsa_delay_max,
+                 (double)p->monitor.alsa_delay_max
+                   / (double)p->alsa_rate * 1000.0,
+                 avg_delay,
+                 (double)avg_delay / (double)p->alsa_rate * 1000.0,
+                 p->monitor.low_delay_events);
+        __printf("mp3_player: [MONITOR] 环形缓冲可用: 最小=%d 帧"
+                 " (%.1fms), 均值=%d 帧 (%.1fms),"
+                 " 低水位事件=%d, 采样数=%d\n",
+                 p->monitor.ring_avail_min,
+                 (double)p->monitor.ring_avail_min
+                   / (double)p->alsa_rate * 1000.0,
+                 avg_ring,
+                 (double)avg_ring / (double)p->alsa_rate * 1000.0,
+                 p->monitor.low_ring_events,
+                 p->monitor.ring_avail_count);
+    }
+#endif
+
     /* ── 7. 关闭设备 ── */
 
     tlibc_pcm_close(&p->pcm);
@@ -746,6 +813,11 @@ int main(int argc, char **argv)
     struct mp3_player player;
 
     memset(&player, 0, sizeof(player));
+#ifdef MONITOR_PLAYBACK
+    player.monitor.alsa_delay_min  = 0x7FFFFFFF;  /* 初始化为最大可能值 */
+    player.monitor.alsa_delay_max  = 0;
+    player.monitor.ring_avail_min  = 0x7FFFFFFF;
+#endif
 
     if (argc < 2) {
         __printf("用法: mp3_player <file.mp3> [pcm_device]\n");
@@ -783,21 +855,41 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    player.file_cap = READ_BLOCK_SZ;
-    player.file_buf = (unsigned char *)tlibc_malloc(
-                         (unsigned long)player.file_cap);
-    if (!player.file_buf) {
-        __printf("mp3_player: 内存不足\n");
-        __close(player.mp3_fd);
-        return 1;
+    /* ── mmap 整个 MP3 文件到内存 ──
+     *
+     * 替代旧的 256KB 滑动窗口 + read_file_chunk 分块读取方案。
+     * 消除每 ~10 秒一次的 memmove + __read() 系统调用，
+     * 避免该同步 I/O 阻塞解码线程导致环形缓冲周期性欠载。
+     */
+    {
+        long fsize = __lseek(player.mp3_fd, 0, SEEK_END);
+        if (fsize <= 0) {
+            __printf("mp3_player: 文件为空\n");
+            __close(player.mp3_fd);
+            return 1;
+        }
+        player.file_buf = (unsigned char *)__mmap(NULL,
+                           (unsigned long)fsize,
+                           PROT_READ, MAP_PRIVATE,
+                           player.mp3_fd, 0);
+        /* mmap 内核接口出错时返回 -errno（负值），__mmap 包装直接转型为 void*。
+         * 不同于 libc 的 MAP_FAILED 归一化，需手工判断指针值的符号。 */
+        if ((long)player.file_buf < 0) {
+            int mmap_err = -(int)(long)player.file_buf;
+            __printf("mp3_player: mmap 失败 (errno=%d)\n", mmap_err);
+            __close(player.mp3_fd);
+            return 1;
+        }
+        player.file_len = (int)fsize;
+        /* file_cap 不再需要，旧代码通过它判断缓冲是否装满 */
     }
 
     mp3dec_init(&player.dec);
 
     int ret = play_mp3(&player);
 
-    if (player.file_buf)
-        tlibc_free(player.file_buf);
+    if (player.file_buf && (long)player.file_buf > 0)
+        __munmap(player.file_buf, (unsigned long)player.file_len);
     if (player.mp3_fd >= 0)
         __close(player.mp3_fd);
 

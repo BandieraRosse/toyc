@@ -302,6 +302,9 @@ struct snd_pcm_info {
 #define SNDRV_PCM_IOCTL_SW_PARAMS  __ALSA_IOWR('A', 0x13, \
                                      sizeof(struct snd_pcm_sw_params))
 
+/* 状态查询 */
+#define SNDRV_PCM_IOCTL_DELAY    __ALSA_IOR('A', 0x21, sizeof(long))
+
 /* 帧传输 */
 #define SNDRV_PCM_IOCTL_WRITEI_FRAMES  __ALSA_IOW('A', 0x50, \
                                          sizeof(struct snd_xferi))
