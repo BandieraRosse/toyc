@@ -38,8 +38,9 @@ struct evdev_kbd;
 #define EVDEV_REPEAT  2
 
 /*
- * 自动发现并打开系统中第一个键盘类 evdev 设备。
- * 扫描 /dev/input/event[0..31]，选取纯按键设备（有 EV_KEY、无 EV_REL/ABS）。
+ * 自动发现并打开系统中评分最高的键盘类 evdev 设备。
+ * 扫描 /dev/input/event[0..31]，按按键数 + 总线类型 + 设备名 评分，
+ * 选取最可能是真实键盘的设备。
  * 以 O_RDONLY | O_NONBLOCK 模式打开。
  * 返回句柄（失败返回 NULL）。
  */

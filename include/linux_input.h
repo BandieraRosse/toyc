@@ -79,6 +79,33 @@ struct input_event {
     int32_t  value;        /* 1=按下, 0=松开, 2=重复 */
 };
 
+/* ── 设备总线类型 (struct input_id.bustype) ── */
+/* 来自 Linux 内核 UAPI <linux/input-event-codes.h> */
+
+#define BUS_PCI          0x01    /* PCI 总线 */
+#define BUS_ISAPNP       0x02    /* ISA PnP */
+#define BUS_USB          0x03    /* USB */
+#define BUS_HIL          0x04    /* HP HIL（古早） */
+#define BUS_BLUETOOTH    0x05    /* 蓝牙 */
+#define BUS_VIRTUAL      0x06    /* 虚拟设备 */
+#define BUS_ISA          0x10    /* ISA */
+#define BUS_I8042        0x11    /* i8042 PS/2 */
+#define BUS_XTKBD        0x12    /* XT 键盘 */
+#define BUS_RS232        0x13    /* RS-232 串口 */
+#define BUS_GAMEPORT     0x14    /* 游戏口 */
+#define BUS_PARPORT      0x15    /* 并口 */
+#define BUS_AMIGA        0x16    /* Amiga */
+#define BUS_ADB          0x17    /* Mac ADB */
+#define BUS_I2C          0x18    /* I2C */
+#define BUS_HOST         0x19    /* 平台/主机总线（含 ACPI） */
+#define BUS_GSC          0x1A    /* GSC（HP PA-RISC） */
+#define BUS_ATARI        0x1B    /* Atari */
+#define BUS_SPI          0x1C    /* SPI */
+#define BUS_RMI          0x1D    /* RMI（Synaptics） */
+#define BUS_CEC          0x1E    /* HDMI CEC */
+#define BUS_INTEL_ISHTP  0x1F    /* Intel ISHTP */
+#define BUS_AMD_SFH      0x20    /* AMD SFH */
+
 /* ── 事件类型 (ev.type) ── */
 
 #define EV_SYN          0x00    /* 同步标记 */
