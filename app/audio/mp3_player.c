@@ -298,8 +298,12 @@ static int resample_pcm(const mp3d_sample_t *in, int in_frames,
                         int in_rate, int out_rate, int ch,
                         mp3d_sample_t *out)
 {
-    if (in_rate == out_rate)
+    if (in_rate == out_rate) {
+        int total = in_frames * ch;
+        for (int i = 0; i < total; i++)
+            out[i] = in[i];
         return in_frames;
+    }
 
     double step  = (double)in_rate / (double)out_rate;
     double pos   = 0.0;
@@ -529,7 +533,18 @@ static int play_mp3(struct mp3_player *p)
 {
     int ret;
 
-    /* ── 1. 读取并解码第一帧，获取音频格式 ── */
+    /* ── 1. 读取并跳过 Xing/Info 帧、预热解码器 ──
+     *
+     * CBR 和部分 VBR MP3 文件的首帧是 Xing/Info 元数据帧，
+     * 不含实际音频。minimp3 解码该帧后，其零值比特库会污染
+     * 后续帧，导致全声道无声。
+     *
+     * 处理策略：
+     *   1. 检测帧头偏移 36 处的 "Info"/"Xing" 签名，跳过该帧
+     *   2. 重置解码器避免比特库污染
+     *   3. 重置后解码器需预热：跳过 main_data_begin>0 导致的全零帧
+     *   4. 取首个非零 PCM 帧作为实际音频起始
+     */
 
     ret = read_file_chunk(p);
     if (ret <= 0) {
@@ -538,17 +553,72 @@ static int play_mp3(struct mp3_player *p)
     }
 
     mp3d_sample_t first_pcm[MINIMP3_MAX_SAMPLES_PER_FRAME];
-    int samples = mp3dec_decode_frame(&p->dec,
-                     p->file_buf + p->file_pos,
-                     p->file_len - p->file_pos,
-                     first_pcm, &p->info);
-    if (samples <= 0) {
-        __printf("mp3_player: 不是有效的 MP3 文件\n");
-        return 1;
+    int decoder_reset = 0;
+    int found_audio = 0;
+    int first_samples = 0;
+
+    while (!found_audio) {
+        /* 确保有足够数据解码一帧 */
+        while (p->file_pos + 4 >= p->file_len) {
+            int r = read_file_chunk(p);
+            if (r < 0) {
+                __printf("mp3_player: 读取错误\n");
+                return 1;
+            }
+            if (r == 0) {
+                __printf("mp3_player: 未找到有效的 MP3 音频帧\n");
+                return 1;
+            }
+        }
+
+        int samples = mp3dec_decode_frame(&p->dec,
+                         p->file_buf + p->file_pos,
+                         p->file_len - p->file_pos,
+                         first_pcm, &p->info);
+        if (samples <= 0) {
+            if (p->info.frame_bytes <= 0)
+                break;
+            p->file_pos += p->info.frame_bytes;
+            continue;
+        }
+
+        /* 检测 Xing/Info 帧签名（位于帧头偏移 36 或 21 处） */
+        {
+            int side_sz = (p->info.channels == 1) ? 17 : 32;
+            int xing_off = p->file_pos + p->info.frame_offset
+                           + 4 + side_sz;
+            if (xing_off + 4 <= p->file_len) {
+                const unsigned char *d = p->file_buf + xing_off;
+                if ((d[0] == 'X' && d[1] == 'i' && d[2] == 'n' && d[3] == 'g') ||
+                    (d[0] == 'I' && d[1] == 'n' && d[2] == 'f' && d[3] == 'o')) {
+                    /* 跳过 Xing/Info 帧，重置解码器防止比特库污染 */
+                    mp3dec_init(&p->dec);
+                    p->file_pos += p->info.frame_bytes;
+                    decoder_reset = 1;
+                    continue;
+                }
+            }
+        }
+
+        p->file_pos += p->info.frame_bytes;
+
+        /* 跳过解码器预热帧（重置后比特库为空，解码为全零） */
+        if (decoder_reset) {
+            int nz = 0;
+            int total = samples * p->info.channels;
+            for (int i = 0; i < total; i++) {
+                if (first_pcm[i] != 0) { nz = 1; break; }
+            }
+            if (!nz)
+                continue;
+        }
+
+        /* 找到第一帧真实音频 */
+        p->mp3_rate = p->info.hz;
+        p->mp3_channels = p->info.channels;
+        first_samples = samples;
+        found_audio = 1;
     }
-    p->file_pos += p->info.frame_bytes;
-    p->mp3_rate = p->info.hz;
-    p->mp3_channels = p->info.channels;
 
     __printf("mp3_player: %d Hz, %d ch, %d kbps, Layer %d\n",
              p->info.hz, p->info.channels,
@@ -567,7 +637,7 @@ static int play_mp3(struct mp3_player *p)
     /* ── 4. 重采样并推入第一帧 PCM ── */
 
     {
-        int out_frames = resample_pcm_frac(first_pcm, samples,
+        int out_frames = resample_pcm_frac(first_pcm, first_samples,
                               p->mp3_rate, p->alsa_rate, p->mp3_channels,
                               p->resample_buf, &p->resample_remainder);
         ring_write(&p->ring, p->resample_buf, out_frames);
