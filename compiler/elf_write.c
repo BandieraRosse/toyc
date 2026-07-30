@@ -87,7 +87,7 @@ int elf_write_object(const char *path) {
     int shstr_ofs = str_ofs + strtab_sz;
 
     /* ── 用静态缓冲区一次性构建完整文件 ── */
-    static unsigned char buf[262144];
+    static unsigned char buf[524288];
     int p = 0;
     unsigned char *b = buf;
 
@@ -335,6 +335,10 @@ int elf_write_object(const char *path) {
     #undef SHDR_W4
 
     /* ── 写入文件 ── */
+    if (p > (int)sizeof(buf)) {
+        __write(2, "elf_write: output buffer overflow\n", 34);
+        __exit(1);
+    }
     int fd = __openat(AT_FDCWD, path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (fd < 0) return -1;
     int written = __write(fd, buf, p);

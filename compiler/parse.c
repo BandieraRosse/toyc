@@ -1662,22 +1662,28 @@ static int parse_struct_body(Parser *p, Member *members, int *out_count, int is_
             /* 处理数组后缀 [N]（位域无数组，但提前检查可避免歧义） */
             int is_array = 0;
             int member_sz = sz;
-            if (peek(p).kind == TOK_LBRACKET) {
+            int first_dim_product = 0;
+            while (peek(p).kind == TOK_LBRACKET) {
                 /* 位域不能有数组后缀，所以先跳过 */
                 if (peek(p).kind == TOK_COLON) { /* not possible, but safe */ }
                 is_array = 1;
                 consume(p);
+                int cur_dim = 1;
                 if (peek(p).kind == TOK_NUMBER && peek(p).ival > 0) {
-                    member_sz *= peek(p).ival;
+                    cur_dim = (int)peek(p).ival;
+                    member_sz *= cur_dim;
                     consume(p);
                     while (peek(p).kind == TOK_STAR) {
                         consume(p);
                         if (peek(p).kind == TOK_NUMBER && peek(p).ival > 0) {
-                            member_sz *= peek(p).ival;
+                            cur_dim *= (int)peek(p).ival;
+                            member_sz *= (int)peek(p).ival;
                             consume(p);
                         } else break;
                     }
                 }
+                if (first_dim_product == 0)
+                    first_dim_product = cur_dim;
                 int d = 1;
                 while (d > 0 && peek(p).kind != TOK_EOF) {
                     if (peek(p).kind == TOK_LBRACKET) d++;
@@ -1780,7 +1786,7 @@ static int parse_struct_body(Parser *p, Member *members, int *out_count, int is_
                 members[count].size = member_sz;
                 members[count].is_unsigned = member_is_unsigned;
                 members[count].is_float = last_type_is_float;
-                if (is_array) members[count].elem_size = sz;
+                if (is_array) members[count].elem_size = (first_dim_product > 0) ? (member_sz / first_dim_product) : sz;
                 else if (ptr_count == 1) members[count].elem_size = base_sz;
                 else if (ptr_count > 1) members[count].elem_size = 8;
                 else members[count].elem_size = 0;
@@ -1923,7 +1929,7 @@ static int parse_struct_body(Parser *p, Member *members, int *out_count, int is_
                     }
                     int csz = (comma_ptr_cnt > 0) ? 8 : base_sz;
                     int comma_is_array = 0;
-                    if (peek(p).kind == TOK_LBRACKET) {
+                    while (peek(p).kind == TOK_LBRACKET) {
                         comma_is_array = 1;
                         consume(p);
                         if (peek(p).kind == TOK_NUMBER && peek(p).ival > 0) {
@@ -2413,7 +2419,9 @@ static const char *parse_declarator(Parser *p, int *ptr_level) {
         error_at(p, "expected identifier");
         return "";
     }
-    error_at(p, "expected identifier");
+    /* 抽象声明符（无变量名），如参数列表中的 int * 或 void *。
+     * * 已在函数开头消耗，ptr_level 已正确设置，此处返回空字符串。
+     * 所有调用者通过 if (name && *name) 安全检查后使用名称。 */
     return "";
 }
 
@@ -2940,35 +2948,1833 @@ AstNode *parse_compound_statement(Parser *p) {
                             if (!struct_brace && dim_count > 1 && peek(p).kind == TOK_LBRACE) {
                                 consume(p); /* 跳过内层 { */
                                 int inner_idx = 0;
+                        while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+                            /* 3D+: int a[2][3][4] = {{{1,2},{3,4}},{{5,6},{7,8}}} */
+                            if (dim_count > 2 && peek(p).kind == TOK_LBRACE) {
+                                consume(p);
+                                int innermost_idx = 0;
                                 while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
                                     AstNode *ie = parse_expr(p);
                                     if (ie && decl->name) {
-                                        /* 创建赋值 a[init_idx][inner_idx] = ie */
-                                        AstNode *outer_idx = new_ast(p, AST_CONSTANT);
-                                        outer_idx->ival = init_idx;
-                                        AstNode *inner_idx_node = new_ast(p, AST_CONSTANT);
-                                        inner_idx_node->ival = inner_idx;
-                                        AstNode *var_node = new_ast(p, AST_VAR);
-                                        var_node->name = decl->name;
-                                        AstNode *outer_sub = new_ast(p, AST_BINOP);
-                                        outer_sub->op = TOK_LBRACKET;
-                                        outer_sub->left = var_node;
-                                        outer_sub->right = outer_idx;
-                                        AstNode *inner_sub = new_ast(p, AST_BINOP);
-                                        inner_sub->op = TOK_LBRACKET;
-                                        inner_sub->left = outer_sub;
-                                        inner_sub->right = inner_idx_node;
-                                        AstNode *assign = new_ast(p, AST_ASSIGN);
-                                        assign->left = inner_sub;
-                                        assign->right = ie;
-                                        assign->type_size = (ts > 0 ? ts : 4);
-                                        if (prev_init) prev_init->next = assign;
-                                        else decl->expr = assign;
-                                        prev_init = assign;
-                                        inner_idx++;
+                                        AstNode *v2 = new_ast(p, AST_VAR);
+                                        v2->name = decl->name;
+                                        AstNode *si0 = new_ast(p, AST_CONSTANT);
+                                        si0->ival = init_idx;
+                                        AstNode *s1 = new_ast(p, AST_BINOP); s1->op = TOK_LBRACKET;
+                                        s1->left = v2; s1->right = si0;
+                                        AstNode *si1 = new_ast(p, AST_CONSTANT);
+                                        si1->ival = inner_idx;
+                                        AstNode *s2 = new_ast(p, AST_BINOP); s2->op = TOK_LBRACKET;
+                                        s2->left = s1; s2->right = si1;
+                                        AstNode *si2 = new_ast(p, AST_CONSTANT);
+                                        si2->ival = innermost_idx;
+                                        AstNode *s3 = new_ast(p, AST_BINOP); s3->op = TOK_LBRACKET;
+                                        s3->left = s2; s3->right = si2;
+                                        AstNode *a3 = new_ast(p, AST_ASSIGN);
+                                        a3->left = s3; a3->right = ie;
+                                        a3->type_size = (ts > 0 ? ts : 4);
+                                        if (prev_init) prev_init->next = a3;
+                                        else decl->expr = a3;
+                                        prev_init = a3;
+                                        innermost_idx++;
                                     }
                                     if (peek(p).kind == TOK_COMMA) consume(p);
                                 }
+                                if (peek(p).kind == TOK_RBRACE) consume(p);
+                                inner_idx++;
+                            } else {
+                                AstNode *ie = parse_expr(p);
+                                if (ie && decl->name) {
+                                    AstNode *outer_idx = new_ast(p, AST_CONSTANT);
+                                    outer_idx->ival = init_idx;
+                                    AstNode *inner_idx_node = new_ast(p, AST_CONSTANT);
+                                    inner_idx_node->ival = inner_idx;
+                                    AstNode *var_node = new_ast(p, AST_VAR);
+                                    var_node->name = decl->name;
+                                    AstNode *outer_sub = new_ast(p, AST_BINOP);
+                                    outer_sub->op = TOK_LBRACKET;
+                                    outer_sub->left = var_node;
+                                    outer_sub->right = outer_idx;
+                                    AstNode *inner_sub = new_ast(p, AST_BINOP);
+                                    inner_sub->op = TOK_LBRACKET;
+                                    inner_sub->left = outer_sub;
+                                    inner_sub->right = inner_idx_node;
+                                    AstNode *assign = new_ast(p, AST_ASSIGN);
+                                    assign->left = inner_sub;
+                                    assign->right = ie;
+                                    assign->type_size = (ts > 0 ? ts : 4);
+                                    if (prev_init) prev_init->next = assign;
+                                    else decl->expr = assign;
+                                    prev_init = assign;
+                                    inner_idx++;
+                                }
+                            }
+                            if (peek(p).kind == TOK_COMMA) consume(p);
+                        }
+                        while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+                            /* 3D+: int a[2][3][4] = {{{1,2},{3,4}},{{5,6},{7,8}}} */
+                            if (dim_count > 2 && peek(p).kind == TOK_LBRACE) {
+                                consume(p);
+                                int innermost_idx = 0;
+                                while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+                                    AstNode *ie = parse_expr(p);
+                                    if (ie && decl->name) {
+                                        AstNode *v2 = new_ast(p, AST_VAR);
+                                        v2->name = decl->name;
+                                        AstNode *si0 = new_ast(p, AST_CONSTANT);
+                                        si0->ival = init_idx;
+                                        AstNode *s1 = new_ast(p, AST_BINOP); s1->op = TOK_LBRACKET;
+                                        s1->left = v2; s1->right = si0;
+                                        AstNode *si1 = new_ast(p, AST_CONSTANT);
+                                        si1->ival = inner_idx;
+                                        AstNode *s2 = new_ast(p, AST_BINOP); s2->op = TOK_LBRACKET;
+                                        s2->left = s1; s2->right = si1;
+                                        AstNode *si2 = new_ast(p, AST_CONSTANT);
+                                        si2->ival = innermost_idx;
+                                        AstNode *s3 = new_ast(p, AST_BINOP); s3->op = TOK_LBRACKET;
+                                        s3->left = s2; s3->right = si2;
+                                        AstNode *a3 = new_ast(p, AST_ASSIGN);
+                                        a3->left = s3; a3->right = ie;
+                                        a3->type_size = (ts > 0 ? ts : 4);
+                                        if (prev_init) prev_init->next = a3;
+                                        else decl->expr = a3;
+                                        prev_init = a3;
+                                        innermost_idx++;
+                                    }
+                                    if (peek(p).kind == TOK_COMMA) consume(p);
+                                }
+                                if (peek(p).kind == TOK_RBRACE) consume(p);
+                                inner_idx++;
+                            } else {
+                                AstNode *ie = parse_expr(p);
+                                if (ie && decl->name) {
+                                    AstNode *outer_idx = new_ast(p, AST_CONSTANT);
+                                    outer_idx->ival = init_idx;
+                                    AstNode *inner_idx_node = new_ast(p, AST_CONSTANT);
+                                    inner_idx_node->ival = inner_idx;
+                                    AstNode *var_node = new_ast(p, AST_VAR);
+                                    var_node->name = decl->name;
+                                    AstNode *outer_sub = new_ast(p, AST_BINOP);
+                                    outer_sub->op = TOK_LBRACKET;
+                                    outer_sub->left = var_node;
+                                    outer_sub->right = outer_idx;
+                                    AstNode *inner_sub = new_ast(p, AST_BINOP);
+                                    inner_sub->op = TOK_LBRACKET;
+                                    inner_sub->left = outer_sub;
+                                    inner_sub->right = inner_idx_node;
+                                    AstNode *assign = new_ast(p, AST_ASSIGN);
+                                    assign->left = inner_sub;
+                                    assign->right = ie;
+                                    assign->type_size = (ts > 0 ? ts : 4);
+                                    if (prev_init) prev_init->next = assign;
+                                    else decl->expr = assign;
+                                    prev_init = assign;
+                                    inner_idx++;
+                                }
+                            }
+                            if (peek(p).kind == TOK_COMMA) consume(p);
+                        }
+                        while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+                            /* 3D+: int a[2][3][4] = {{{1,2},{3,4}},{{5,6},{7,8}}} */
+                            if (dim_count > 2 && peek(p).kind == TOK_LBRACE) {
+                                consume(p);
+                                int innermost_idx = 0;
+                                while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+                                    AstNode *ie = parse_expr(p);
+                                    if (ie && decl->name) {
+                                        AstNode *v2 = new_ast(p, AST_VAR);
+                                        v2->name = decl->name;
+                                        AstNode *si0 = new_ast(p, AST_CONSTANT);
+                                        si0->ival = init_idx;
+                                        AstNode *s1 = new_ast(p, AST_BINOP); s1->op = TOK_LBRACKET;
+                                        s1->left = v2; s1->right = si0;
+                                        AstNode *si1 = new_ast(p, AST_CONSTANT);
+                                        si1->ival = inner_idx;
+                                        AstNode *s2 = new_ast(p, AST_BINOP); s2->op = TOK_LBRACKET;
+                                        s2->left = s1; s2->right = si1;
+                                        AstNode *si2 = new_ast(p, AST_CONSTANT);
+                                        si2->ival = innermost_idx;
+                                        AstNode *s3 = new_ast(p, AST_BINOP); s3->op = TOK_LBRACKET;
+                                        s3->left = s2; s3->right = si2;
+                                        AstNode *a3 = new_ast(p, AST_ASSIGN);
+                                        a3->left = s3; a3->right = ie;
+                                        a3->type_size = (ts > 0 ? ts : 4);
+                                        if (prev_init) prev_init->next = a3;
+                                        else decl->expr = a3;
+                                        prev_init = a3;
+                                        innermost_idx++;
+                                    }
+                                    if (peek(p).kind == TOK_COMMA) consume(p);
+                                }
+                                if (peek(p).kind == TOK_RBRACE) consume(p);
+                                inner_idx++;
+                            } else {
+                                AstNode *ie = parse_expr(p);
+                                if (ie && decl->name) {
+                                    AstNode *outer_idx = new_ast(p, AST_CONSTANT);
+                                    outer_idx->ival = init_idx;
+                                    AstNode *inner_idx_node = new_ast(p, AST_CONSTANT);
+                                    inner_idx_node->ival = inner_idx;
+                                    AstNode *var_node = new_ast(p, AST_VAR);
+                                    var_node->name = decl->name;
+                                    AstNode *outer_sub = new_ast(p, AST_BINOP);
+                                    outer_sub->op = TOK_LBRACKET;
+                                    outer_sub->left = var_node;
+                                    outer_sub->right = outer_idx;
+                                    AstNode *inner_sub = new_ast(p, AST_BINOP);
+                                    inner_sub->op = TOK_LBRACKET;
+                                    inner_sub->left = outer_sub;
+                                    inner_sub->right = inner_idx_node;
+                                    AstNode *assign = new_ast(p, AST_ASSIGN);
+                                    assign->left = inner_sub;
+                                    assign->right = ie;
+                                    assign->type_size = (ts > 0 ? ts : 4);
+                                    if (prev_init) prev_init->next = assign;
+                                    else decl->expr = assign;
+                                    prev_init = assign;
+                                    inner_idx++;
+                                }
+                            }
+                            if (peek(p).kind == TOK_COMMA) consume(p);
+                        }
+                        while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+                            /* 3D+: int a[2][3][4] = {{{1,2},{3,4}},{{5,6},{7,8}}} */
+                            if (dim_count > 2 && peek(p).kind == TOK_LBRACE) {
+                                consume(p);
+                                int innermost_idx = 0;
+                                while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+                                    AstNode *ie = parse_expr(p);
+                                    if (ie && decl->name) {
+                                        AstNode *v2 = new_ast(p, AST_VAR);
+                                        v2->name = decl->name;
+                                        AstNode *si0 = new_ast(p, AST_CONSTANT);
+                                        si0->ival = init_idx;
+                                        AstNode *s1 = new_ast(p, AST_BINOP); s1->op = TOK_LBRACKET;
+                                        s1->left = v2; s1->right = si0;
+                                        AstNode *si1 = new_ast(p, AST_CONSTANT);
+                                        si1->ival = inner_idx;
+                                        AstNode *s2 = new_ast(p, AST_BINOP); s2->op = TOK_LBRACKET;
+                                        s2->left = s1; s2->right = si1;
+                                        AstNode *si2 = new_ast(p, AST_CONSTANT);
+                                        si2->ival = innermost_idx;
+                                        AstNode *s3 = new_ast(p, AST_BINOP); s3->op = TOK_LBRACKET;
+                                        s3->left = s2; s3->right = si2;
+                                        AstNode *a3 = new_ast(p, AST_ASSIGN);
+                                        a3->left = s3; a3->right = ie;
+                                        a3->type_size = (ts > 0 ? ts : 4);
+                                        if (prev_init) prev_init->next = a3;
+                                        else decl->expr = a3;
+                                        prev_init = a3;
+                                        innermost_idx++;
+                                    }
+                                    if (peek(p).kind == TOK_COMMA) consume(p);
+                                }
+                                if (peek(p).kind == TOK_RBRACE) consume(p);
+                                inner_idx++;
+                            } else {
+                                AstNode *ie = parse_expr(p);
+                                if (ie && decl->name) {
+                                    AstNode *outer_idx = new_ast(p, AST_CONSTANT);
+                                    outer_idx->ival = init_idx;
+                                    AstNode *inner_idx_node = new_ast(p, AST_CONSTANT);
+                                    inner_idx_node->ival = inner_idx;
+                                    AstNode *var_node = new_ast(p, AST_VAR);
+                                    var_node->name = decl->name;
+                                    AstNode *outer_sub = new_ast(p, AST_BINOP);
+                                    outer_sub->op = TOK_LBRACKET;
+                                    outer_sub->left = var_node;
+                                    outer_sub->right = outer_idx;
+                                    AstNode *inner_sub = new_ast(p, AST_BINOP);
+                                    inner_sub->op = TOK_LBRACKET;
+                                    inner_sub->left = outer_sub;
+                                    inner_sub->right = inner_idx_node;
+                                    AstNode *assign = new_ast(p, AST_ASSIGN);
+                                    assign->left = inner_sub;
+                                    assign->right = ie;
+                                    assign->type_size = (ts > 0 ? ts : 4);
+                                    if (prev_init) prev_init->next = assign;
+                                    else decl->expr = assign;
+                                    prev_init = assign;
+                                    inner_idx++;
+                                }
+                            }
+                            if (peek(p).kind == TOK_COMMA) consume(p);
+                        }
+                        while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+                            /* 3D+: int a[2][3][4] = {{{1,2},{3,4}},{{5,6},{7,8}}} */
+                            if (dim_count > 2 && peek(p).kind == TOK_LBRACE) {
+                                consume(p);
+                                int innermost_idx = 0;
+                                while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+                                    AstNode *ie = parse_expr(p);
+                                    if (ie && decl->name) {
+                                        AstNode *v2 = new_ast(p, AST_VAR);
+                                        v2->name = decl->name;
+                                        AstNode *si0 = new_ast(p, AST_CONSTANT);
+                                        si0->ival = init_idx;
+                                        AstNode *s1 = new_ast(p, AST_BINOP); s1->op = TOK_LBRACKET;
+                                        s1->left = v2; s1->right = si0;
+                                        AstNode *si1 = new_ast(p, AST_CONSTANT);
+                                        si1->ival = inner_idx;
+                                        AstNode *s2 = new_ast(p, AST_BINOP); s2->op = TOK_LBRACKET;
+                                        s2->left = s1; s2->right = si1;
+                                        AstNode *si2 = new_ast(p, AST_CONSTANT);
+                                        si2->ival = innermost_idx;
+                                        AstNode *s3 = new_ast(p, AST_BINOP); s3->op = TOK_LBRACKET;
+                                        s3->left = s2; s3->right = si2;
+                                        AstNode *a3 = new_ast(p, AST_ASSIGN);
+                                        a3->left = s3; a3->right = ie;
+                                        a3->type_size = (ts > 0 ? ts : 4);
+                                        if (prev_init) prev_init->next = a3;
+                                        else decl->expr = a3;
+                                        prev_init = a3;
+                                        innermost_idx++;
+                                    }
+                                    if (peek(p).kind == TOK_COMMA) consume(p);
+                                }
+                                if (peek(p).kind == TOK_RBRACE) consume(p);
+                                inner_idx++;
+                            } else {
+                                AstNode *ie = parse_expr(p);
+                                if (ie && decl->name) {
+                                    AstNode *outer_idx = new_ast(p, AST_CONSTANT);
+                                    outer_idx->ival = init_idx;
+                                    AstNode *inner_idx_node = new_ast(p, AST_CONSTANT);
+                                    inner_idx_node->ival = inner_idx;
+                                    AstNode *var_node = new_ast(p, AST_VAR);
+                                    var_node->name = decl->name;
+                                    AstNode *outer_sub = new_ast(p, AST_BINOP);
+                                    outer_sub->op = TOK_LBRACKET;
+                                    outer_sub->left = var_node;
+                                    outer_sub->right = outer_idx;
+                                    AstNode *inner_sub = new_ast(p, AST_BINOP);
+                                    inner_sub->op = TOK_LBRACKET;
+                                    inner_sub->left = outer_sub;
+                                    inner_sub->right = inner_idx_node;
+                                    AstNode *assign = new_ast(p, AST_ASSIGN);
+                                    assign->left = inner_sub;
+                                    assign->right = ie;
+                                    assign->type_size = (ts > 0 ? ts : 4);
+                                    if (prev_init) prev_init->next = assign;
+                                    else decl->expr = assign;
+                                    prev_init = assign;
+                                    inner_idx++;
+                                }
+                            }
+                            if (peek(p).kind == TOK_COMMA) consume(p);
+                        }
+                        while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+                            /* 3D+: int a[2][3][4] = {{{1,2},{3,4}},{{5,6},{7,8}}} */
+                            if (dim_count > 2 && peek(p).kind == TOK_LBRACE) {
+                                consume(p);
+                                int innermost_idx = 0;
+                                while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+                                    AstNode *ie = parse_expr(p);
+                                    if (ie && decl->name) {
+                                        AstNode *v2 = new_ast(p, AST_VAR);
+                                        v2->name = decl->name;
+                                        AstNode *si0 = new_ast(p, AST_CONSTANT);
+                                        si0->ival = init_idx;
+                                        AstNode *s1 = new_ast(p, AST_BINOP); s1->op = TOK_LBRACKET;
+                                        s1->left = v2; s1->right = si0;
+                                        AstNode *si1 = new_ast(p, AST_CONSTANT);
+                                        si1->ival = inner_idx;
+                                        AstNode *s2 = new_ast(p, AST_BINOP); s2->op = TOK_LBRACKET;
+                                        s2->left = s1; s2->right = si1;
+                                        AstNode *si2 = new_ast(p, AST_CONSTANT);
+                                        si2->ival = innermost_idx;
+                                        AstNode *s3 = new_ast(p, AST_BINOP); s3->op = TOK_LBRACKET;
+                                        s3->left = s2; s3->right = si2;
+                                        AstNode *a3 = new_ast(p, AST_ASSIGN);
+                                        a3->left = s3; a3->right = ie;
+                                        a3->type_size = (ts > 0 ? ts : 4);
+                                        if (prev_init) prev_init->next = a3;
+                                        else decl->expr = a3;
+                                        prev_init = a3;
+                                        innermost_idx++;
+                                    }
+                                    if (peek(p).kind == TOK_COMMA) consume(p);
+                                }
+                                if (peek(p).kind == TOK_RBRACE) consume(p);
+                                inner_idx++;
+                            } else {
+                                AstNode *ie = parse_expr(p);
+                                if (ie && decl->name) {
+                                    AstNode *outer_idx = new_ast(p, AST_CONSTANT);
+                                    outer_idx->ival = init_idx;
+                                    AstNode *inner_idx_node = new_ast(p, AST_CONSTANT);
+                                    inner_idx_node->ival = inner_idx;
+                                    AstNode *var_node = new_ast(p, AST_VAR);
+                                    var_node->name = decl->name;
+                                    AstNode *outer_sub = new_ast(p, AST_BINOP);
+                                    outer_sub->op = TOK_LBRACKET;
+                                    outer_sub->left = var_node;
+                                    outer_sub->right = outer_idx;
+                                    AstNode *inner_sub = new_ast(p, AST_BINOP);
+                                    inner_sub->op = TOK_LBRACKET;
+                                    inner_sub->left = outer_sub;
+                                    inner_sub->right = inner_idx_node;
+                                    AstNode *assign = new_ast(p, AST_ASSIGN);
+                                    assign->left = inner_sub;
+                                    assign->right = ie;
+                                    assign->type_size = (ts > 0 ? ts : 4);
+                                    if (prev_init) prev_init->next = assign;
+                                    else decl->expr = assign;
+                                    prev_init = assign;
+                                    inner_idx++;
+                                }
+                            }
+                            if (peek(p).kind == TOK_COMMA) consume(p);
+                        }
+                        while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+                            /* 3D+: int a[2][3][4] = {{{1,2},{3,4}},{{5,6},{7,8}}} */
+                            if (dim_count > 2 && peek(p).kind == TOK_LBRACE) {
+                                consume(p);
+                                int innermost_idx = 0;
+                                while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+                                    AstNode *ie = parse_expr(p);
+                                    if (ie && decl->name) {
+                                        AstNode *v2 = new_ast(p, AST_VAR);
+                                        v2->name = decl->name;
+                                        AstNode *si0 = new_ast(p, AST_CONSTANT);
+                                        si0->ival = init_idx;
+                                        AstNode *s1 = new_ast(p, AST_BINOP); s1->op = TOK_LBRACKET;
+                                        s1->left = v2; s1->right = si0;
+                                        AstNode *si1 = new_ast(p, AST_CONSTANT);
+                                        si1->ival = inner_idx;
+                                        AstNode *s2 = new_ast(p, AST_BINOP); s2->op = TOK_LBRACKET;
+                                        s2->left = s1; s2->right = si1;
+                                        AstNode *si2 = new_ast(p, AST_CONSTANT);
+                                        si2->ival = innermost_idx;
+                                        AstNode *s3 = new_ast(p, AST_BINOP); s3->op = TOK_LBRACKET;
+                                        s3->left = s2; s3->right = si2;
+                                        AstNode *a3 = new_ast(p, AST_ASSIGN);
+                                        a3->left = s3; a3->right = ie;
+                                        a3->type_size = (ts > 0 ? ts : 4);
+                                        if (prev_init) prev_init->next = a3;
+                                        else decl->expr = a3;
+                                        prev_init = a3;
+                                        innermost_idx++;
+                                    }
+                                    if (peek(p).kind == TOK_COMMA) consume(p);
+                                }
+                                if (peek(p).kind == TOK_RBRACE) consume(p);
+                                inner_idx++;
+                            } else {
+                                AstNode *ie = parse_expr(p);
+                                if (ie && decl->name) {
+                                    AstNode *outer_idx = new_ast(p, AST_CONSTANT);
+                                    outer_idx->ival = init_idx;
+                                    AstNode *inner_idx_node = new_ast(p, AST_CONSTANT);
+                                    inner_idx_node->ival = inner_idx;
+                                    AstNode *var_node = new_ast(p, AST_VAR);
+                                    var_node->name = decl->name;
+                                    AstNode *outer_sub = new_ast(p, AST_BINOP);
+                                    outer_sub->op = TOK_LBRACKET;
+                                    outer_sub->left = var_node;
+                                    outer_sub->right = outer_idx;
+                                    AstNode *inner_sub = new_ast(p, AST_BINOP);
+                                    inner_sub->op = TOK_LBRACKET;
+                                    inner_sub->left = outer_sub;
+                                    inner_sub->right = inner_idx_node;
+                                    AstNode *assign = new_ast(p, AST_ASSIGN);
+                                    assign->left = inner_sub;
+                                    assign->right = ie;
+                                    assign->type_size = (ts > 0 ? ts : 4);
+                                    if (prev_init) prev_init->next = assign;
+                                    else decl->expr = assign;
+                                    prev_init = assign;
+                                    inner_idx++;
+                                }
+                            }
+                            if (peek(p).kind == TOK_COMMA) consume(p);
+                        }
+                        while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+                            /* 3D+: int a[2][3][4] = {{{1,2},{3,4}},{{5,6},{7,8}}} */
+                            if (dim_count > 2 && peek(p).kind == TOK_LBRACE) {
+                                consume(p);
+                                int innermost_idx = 0;
+                                while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+                                    AstNode *ie = parse_expr(p);
+                                    if (ie && decl->name) {
+                                        AstNode *v2 = new_ast(p, AST_VAR);
+                                        v2->name = decl->name;
+                                        AstNode *si0 = new_ast(p, AST_CONSTANT);
+                                        si0->ival = init_idx;
+                                        AstNode *s1 = new_ast(p, AST_BINOP); s1->op = TOK_LBRACKET;
+                                        s1->left = v2; s1->right = si0;
+                                        AstNode *si1 = new_ast(p, AST_CONSTANT);
+                                        si1->ival = inner_idx;
+                                        AstNode *s2 = new_ast(p, AST_BINOP); s2->op = TOK_LBRACKET;
+                                        s2->left = s1; s2->right = si1;
+                                        AstNode *si2 = new_ast(p, AST_CONSTANT);
+                                        si2->ival = innermost_idx;
+                                        AstNode *s3 = new_ast(p, AST_BINOP); s3->op = TOK_LBRACKET;
+                                        s3->left = s2; s3->right = si2;
+                                        AstNode *a3 = new_ast(p, AST_ASSIGN);
+                                        a3->left = s3; a3->right = ie;
+                                        a3->type_size = (ts > 0 ? ts : 4);
+                                        if (prev_init) prev_init->next = a3;
+                                        else decl->expr = a3;
+                                        prev_init = a3;
+                                        innermost_idx++;
+                                    }
+                                    if (peek(p).kind == TOK_COMMA) consume(p);
+                                }
+                                if (peek(p).kind == TOK_RBRACE) consume(p);
+                                inner_idx++;
+                            } else {
+                                AstNode *ie = parse_expr(p);
+                                if (ie && decl->name) {
+                                    AstNode *outer_idx = new_ast(p, AST_CONSTANT);
+                                    outer_idx->ival = init_idx;
+                                    AstNode *inner_idx_node = new_ast(p, AST_CONSTANT);
+                                    inner_idx_node->ival = inner_idx;
+                                    AstNode *var_node = new_ast(p, AST_VAR);
+                                    var_node->name = decl->name;
+                                    AstNode *outer_sub = new_ast(p, AST_BINOP);
+                                    outer_sub->op = TOK_LBRACKET;
+                                    outer_sub->left = var_node;
+                                    outer_sub->right = outer_idx;
+                                    AstNode *inner_sub = new_ast(p, AST_BINOP);
+                                    inner_sub->op = TOK_LBRACKET;
+                                    inner_sub->left = outer_sub;
+                                    inner_sub->right = inner_idx_node;
+                                    AstNode *assign = new_ast(p, AST_ASSIGN);
+                                    assign->left = inner_sub;
+                                    assign->right = ie;
+                                    assign->type_size = (ts > 0 ? ts : 4);
+                                    if (prev_init) prev_init->next = assign;
+                                    else decl->expr = assign;
+                                    prev_init = assign;
+                                    inner_idx++;
+                                }
+                            }
+                            if (peek(p).kind == TOK_COMMA) consume(p);
+                        }
+                        while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+                            /* 3D+: int a[2][3][4] = {{{1,2},{3,4}},{{5,6},{7,8}}} */
+                            if (dim_count > 2 && peek(p).kind == TOK_LBRACE) {
+                                consume(p);
+                                int innermost_idx = 0;
+                                while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+                                    AstNode *ie = parse_expr(p);
+                                    if (ie && decl->name) {
+                                        AstNode *v2 = new_ast(p, AST_VAR);
+                                        v2->name = decl->name;
+                                        AstNode *si0 = new_ast(p, AST_CONSTANT);
+                                        si0->ival = init_idx;
+                                        AstNode *s1 = new_ast(p, AST_BINOP); s1->op = TOK_LBRACKET;
+                                        s1->left = v2; s1->right = si0;
+                                        AstNode *si1 = new_ast(p, AST_CONSTANT);
+                                        si1->ival = inner_idx;
+                                        AstNode *s2 = new_ast(p, AST_BINOP); s2->op = TOK_LBRACKET;
+                                        s2->left = s1; s2->right = si1;
+                                        AstNode *si2 = new_ast(p, AST_CONSTANT);
+                                        si2->ival = innermost_idx;
+                                        AstNode *s3 = new_ast(p, AST_BINOP); s3->op = TOK_LBRACKET;
+                                        s3->left = s2; s3->right = si2;
+                                        AstNode *a3 = new_ast(p, AST_ASSIGN);
+                                        a3->left = s3; a3->right = ie;
+                                        a3->type_size = (ts > 0 ? ts : 4);
+                                        if (prev_init) prev_init->next = a3;
+                                        else decl->expr = a3;
+                                        prev_init = a3;
+                                        innermost_idx++;
+                                    }
+                                    if (peek(p).kind == TOK_COMMA) consume(p);
+                                }
+                                if (peek(p).kind == TOK_RBRACE) consume(p);
+                                inner_idx++;
+                            } else {
+                                AstNode *ie = parse_expr(p);
+                                if (ie && decl->name) {
+                                    AstNode *outer_idx = new_ast(p, AST_CONSTANT);
+                                    outer_idx->ival = init_idx;
+                                    AstNode *inner_idx_node = new_ast(p, AST_CONSTANT);
+                                    inner_idx_node->ival = inner_idx;
+                                    AstNode *var_node = new_ast(p, AST_VAR);
+                                    var_node->name = decl->name;
+                                    AstNode *outer_sub = new_ast(p, AST_BINOP);
+                                    outer_sub->op = TOK_LBRACKET;
+                                    outer_sub->left = var_node;
+                                    outer_sub->right = outer_idx;
+                                    AstNode *inner_sub = new_ast(p, AST_BINOP);
+                                    inner_sub->op = TOK_LBRACKET;
+                                    inner_sub->left = outer_sub;
+                                    inner_sub->right = inner_idx_node;
+                                    AstNode *assign = new_ast(p, AST_ASSIGN);
+                                    assign->left = inner_sub;
+                                    assign->right = ie;
+                                    assign->type_size = (ts > 0 ? ts : 4);
+                                    if (prev_init) prev_init->next = assign;
+                                    else decl->expr = assign;
+                                    prev_init = assign;
+                                    inner_idx++;
+                                }
+                            }
+                            if (peek(p).kind == TOK_COMMA) consume(p);
+                        }
+                        while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+                            /* 3D+: int a[2][3][4] = {{{1,2},{3,4}},{{5,6},{7,8}}} */
+                            if (dim_count > 2 && peek(p).kind == TOK_LBRACE) {
+                                consume(p);
+                                int innermost_idx = 0;
+                                while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+                                    AstNode *ie = parse_expr(p);
+                                    if (ie && decl->name) {
+                                        AstNode *v2 = new_ast(p, AST_VAR);
+                                        v2->name = decl->name;
+                                        AstNode *si0 = new_ast(p, AST_CONSTANT);
+                                        si0->ival = init_idx;
+                                        AstNode *s1 = new_ast(p, AST_BINOP); s1->op = TOK_LBRACKET;
+                                        s1->left = v2; s1->right = si0;
+                                        AstNode *si1 = new_ast(p, AST_CONSTANT);
+                                        si1->ival = inner_idx;
+                                        AstNode *s2 = new_ast(p, AST_BINOP); s2->op = TOK_LBRACKET;
+                                        s2->left = s1; s2->right = si1;
+                                        AstNode *si2 = new_ast(p, AST_CONSTANT);
+                                        si2->ival = innermost_idx;
+                                        AstNode *s3 = new_ast(p, AST_BINOP); s3->op = TOK_LBRACKET;
+                                        s3->left = s2; s3->right = si2;
+                                        AstNode *a3 = new_ast(p, AST_ASSIGN);
+                                        a3->left = s3; a3->right = ie;
+                                        a3->type_size = (ts > 0 ? ts : 4);
+                                        if (prev_init) prev_init->next = a3;
+                                        else decl->expr = a3;
+                                        prev_init = a3;
+                                        innermost_idx++;
+                                    }
+                                    if (peek(p).kind == TOK_COMMA) consume(p);
+                                }
+                                if (peek(p).kind == TOK_RBRACE) consume(p);
+                                inner_idx++;
+                            } else {
+                                AstNode *ie = parse_expr(p);
+                                if (ie && decl->name) {
+                                    AstNode *outer_idx = new_ast(p, AST_CONSTANT);
+                                    outer_idx->ival = init_idx;
+                                    AstNode *inner_idx_node = new_ast(p, AST_CONSTANT);
+                                    inner_idx_node->ival = inner_idx;
+                                    AstNode *var_node = new_ast(p, AST_VAR);
+                                    var_node->name = decl->name;
+                                    AstNode *outer_sub = new_ast(p, AST_BINOP);
+                                    outer_sub->op = TOK_LBRACKET;
+                                    outer_sub->left = var_node;
+                                    outer_sub->right = outer_idx;
+                                    AstNode *inner_sub = new_ast(p, AST_BINOP);
+                                    inner_sub->op = TOK_LBRACKET;
+                                    inner_sub->left = outer_sub;
+                                    inner_sub->right = inner_idx_node;
+                                    AstNode *assign = new_ast(p, AST_ASSIGN);
+                                    assign->left = inner_sub;
+                                    assign->right = ie;
+                                    assign->type_size = (ts > 0 ? ts : 4);
+                                    if (prev_init) prev_init->next = assign;
+                                    else decl->expr = assign;
+                                    prev_init = assign;
+                                    inner_idx++;
+                                }
+                            }
+                            if (peek(p).kind == TOK_COMMA) consume(p);
+                        }
+                        while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+                            /* 3D+: int a[2][3][4] = {{{1,2},{3,4}},{{5,6},{7,8}}} */
+                            if (dim_count > 2 && peek(p).kind == TOK_LBRACE) {
+                                consume(p);
+                                int innermost_idx = 0;
+                                while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+                                    AstNode *ie = parse_expr(p);
+                                    if (ie && decl->name) {
+                                        AstNode *v2 = new_ast(p, AST_VAR);
+                                        v2->name = decl->name;
+                                        AstNode *si0 = new_ast(p, AST_CONSTANT);
+                                        si0->ival = init_idx;
+                                        AstNode *s1 = new_ast(p, AST_BINOP); s1->op = TOK_LBRACKET;
+                                        s1->left = v2; s1->right = si0;
+                                        AstNode *si1 = new_ast(p, AST_CONSTANT);
+                                        si1->ival = inner_idx;
+                                        AstNode *s2 = new_ast(p, AST_BINOP); s2->op = TOK_LBRACKET;
+                                        s2->left = s1; s2->right = si1;
+                                        AstNode *si2 = new_ast(p, AST_CONSTANT);
+                                        si2->ival = innermost_idx;
+                                        AstNode *s3 = new_ast(p, AST_BINOP); s3->op = TOK_LBRACKET;
+                                        s3->left = s2; s3->right = si2;
+                                        AstNode *a3 = new_ast(p, AST_ASSIGN);
+                                        a3->left = s3; a3->right = ie;
+                                        a3->type_size = (ts > 0 ? ts : 4);
+                                        if (prev_init) prev_init->next = a3;
+                                        else decl->expr = a3;
+                                        prev_init = a3;
+                                        innermost_idx++;
+                                    }
+                                    if (peek(p).kind == TOK_COMMA) consume(p);
+                                }
+                                if (peek(p).kind == TOK_RBRACE) consume(p);
+                                inner_idx++;
+                            } else {
+                                AstNode *ie = parse_expr(p);
+                                if (ie && decl->name) {
+                                    AstNode *outer_idx = new_ast(p, AST_CONSTANT);
+                                    outer_idx->ival = init_idx;
+                                    AstNode *inner_idx_node = new_ast(p, AST_CONSTANT);
+                                    inner_idx_node->ival = inner_idx;
+                                    AstNode *var_node = new_ast(p, AST_VAR);
+                                    var_node->name = decl->name;
+                                    AstNode *outer_sub = new_ast(p, AST_BINOP);
+                                    outer_sub->op = TOK_LBRACKET;
+                                    outer_sub->left = var_node;
+                                    outer_sub->right = outer_idx;
+                                    AstNode *inner_sub = new_ast(p, AST_BINOP);
+                                    inner_sub->op = TOK_LBRACKET;
+                                    inner_sub->left = outer_sub;
+                                    inner_sub->right = inner_idx_node;
+                                    AstNode *assign = new_ast(p, AST_ASSIGN);
+                                    assign->left = inner_sub;
+                                    assign->right = ie;
+                                    assign->type_size = (ts > 0 ? ts : 4);
+                                    if (prev_init) prev_init->next = assign;
+                                    else decl->expr = assign;
+                                    prev_init = assign;
+                                    inner_idx++;
+                                }
+                            }
+                            if (peek(p).kind == TOK_COMMA) consume(p);
+                        }
+                        while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+                            /* 3D+: int a[2][3][4] = {{{1,2},{3,4}},{{5,6},{7,8}}} */
+                            if (dim_count > 2 && peek(p).kind == TOK_LBRACE) {
+                                consume(p);
+                                int innermost_idx = 0;
+                                while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+                                    AstNode *ie = parse_expr(p);
+                                    if (ie && decl->name) {
+                                        AstNode *v2 = new_ast(p, AST_VAR);
+                                        v2->name = decl->name;
+                                        AstNode *si0 = new_ast(p, AST_CONSTANT);
+                                        si0->ival = init_idx;
+                                        AstNode *s1 = new_ast(p, AST_BINOP); s1->op = TOK_LBRACKET;
+                                        s1->left = v2; s1->right = si0;
+                                        AstNode *si1 = new_ast(p, AST_CONSTANT);
+                                        si1->ival = inner_idx;
+                                        AstNode *s2 = new_ast(p, AST_BINOP); s2->op = TOK_LBRACKET;
+                                        s2->left = s1; s2->right = si1;
+                                        AstNode *si2 = new_ast(p, AST_CONSTANT);
+                                        si2->ival = innermost_idx;
+                                        AstNode *s3 = new_ast(p, AST_BINOP); s3->op = TOK_LBRACKET;
+                                        s3->left = s2; s3->right = si2;
+                                        AstNode *a3 = new_ast(p, AST_ASSIGN);
+                                        a3->left = s3; a3->right = ie;
+                                        a3->type_size = (ts > 0 ? ts : 4);
+                                        if (prev_init) prev_init->next = a3;
+                                        else decl->expr = a3;
+                                        prev_init = a3;
+                                        innermost_idx++;
+                                    }
+                                    if (peek(p).kind == TOK_COMMA) consume(p);
+                                }
+                                if (peek(p).kind == TOK_RBRACE) consume(p);
+                                inner_idx++;
+                            } else {
+                                AstNode *ie = parse_expr(p);
+                                if (ie && decl->name) {
+                                    AstNode *outer_idx = new_ast(p, AST_CONSTANT);
+                                    outer_idx->ival = init_idx;
+                                    AstNode *inner_idx_node = new_ast(p, AST_CONSTANT);
+                                    inner_idx_node->ival = inner_idx;
+                                    AstNode *var_node = new_ast(p, AST_VAR);
+                                    var_node->name = decl->name;
+                                    AstNode *outer_sub = new_ast(p, AST_BINOP);
+                                    outer_sub->op = TOK_LBRACKET;
+                                    outer_sub->left = var_node;
+                                    outer_sub->right = outer_idx;
+                                    AstNode *inner_sub = new_ast(p, AST_BINOP);
+                                    inner_sub->op = TOK_LBRACKET;
+                                    inner_sub->left = outer_sub;
+                                    inner_sub->right = inner_idx_node;
+                                    AstNode *assign = new_ast(p, AST_ASSIGN);
+                                    assign->left = inner_sub;
+                                    assign->right = ie;
+                                    assign->type_size = (ts > 0 ? ts : 4);
+                                    if (prev_init) prev_init->next = assign;
+                                    else decl->expr = assign;
+                                    prev_init = assign;
+                                    inner_idx++;
+                                }
+                            }
+                            if (peek(p).kind == TOK_COMMA) consume(p);
+                        }
+                        while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+                            /* 3D+: int a[2][3][4] = {{{1,2},{3,4}},{{5,6},{7,8}}} */
+                            if (dim_count > 2 && peek(p).kind == TOK_LBRACE) {
+                                consume(p);
+                                int innermost_idx = 0;
+                                while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+                                    AstNode *ie = parse_expr(p);
+                                    if (ie && decl->name) {
+                                        AstNode *v2 = new_ast(p, AST_VAR);
+                                        v2->name = decl->name;
+                                        AstNode *si0 = new_ast(p, AST_CONSTANT);
+                                        si0->ival = init_idx;
+                                        AstNode *s1 = new_ast(p, AST_BINOP); s1->op = TOK_LBRACKET;
+                                        s1->left = v2; s1->right = si0;
+                                        AstNode *si1 = new_ast(p, AST_CONSTANT);
+                                        si1->ival = inner_idx;
+                                        AstNode *s2 = new_ast(p, AST_BINOP); s2->op = TOK_LBRACKET;
+                                        s2->left = s1; s2->right = si1;
+                                        AstNode *si2 = new_ast(p, AST_CONSTANT);
+                                        si2->ival = innermost_idx;
+                                        AstNode *s3 = new_ast(p, AST_BINOP); s3->op = TOK_LBRACKET;
+                                        s3->left = s2; s3->right = si2;
+                                        AstNode *a3 = new_ast(p, AST_ASSIGN);
+                                        a3->left = s3; a3->right = ie;
+                                        a3->type_size = (ts > 0 ? ts : 4);
+                                        if (prev_init) prev_init->next = a3;
+                                        else decl->expr = a3;
+                                        prev_init = a3;
+                                        innermost_idx++;
+                                    }
+                                    if (peek(p).kind == TOK_COMMA) consume(p);
+                                }
+                                if (peek(p).kind == TOK_RBRACE) consume(p);
+                                inner_idx++;
+                            } else {
+                                AstNode *ie = parse_expr(p);
+                                if (ie && decl->name) {
+                                    AstNode *outer_idx = new_ast(p, AST_CONSTANT);
+                                    outer_idx->ival = init_idx;
+                                    AstNode *inner_idx_node = new_ast(p, AST_CONSTANT);
+                                    inner_idx_node->ival = inner_idx;
+                                    AstNode *var_node = new_ast(p, AST_VAR);
+                                    var_node->name = decl->name;
+                                    AstNode *outer_sub = new_ast(p, AST_BINOP);
+                                    outer_sub->op = TOK_LBRACKET;
+                                    outer_sub->left = var_node;
+                                    outer_sub->right = outer_idx;
+                                    AstNode *inner_sub = new_ast(p, AST_BINOP);
+                                    inner_sub->op = TOK_LBRACKET;
+                                    inner_sub->left = outer_sub;
+                                    inner_sub->right = inner_idx_node;
+                                    AstNode *assign = new_ast(p, AST_ASSIGN);
+                                    assign->left = inner_sub;
+                                    assign->right = ie;
+                                    assign->type_size = (ts > 0 ? ts : 4);
+                                    if (prev_init) prev_init->next = assign;
+                                    else decl->expr = assign;
+                                    prev_init = assign;
+                                    inner_idx++;
+                                }
+                            }
+                            if (peek(p).kind == TOK_COMMA) consume(p);
+                        }
+                        while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+                            /* 3D+: int a[2][3][4] = {{{1,2},{3,4}},{{5,6},{7,8}}} */
+                            if (dim_count > 2 && peek(p).kind == TOK_LBRACE) {
+                                consume(p);
+                                int innermost_idx = 0;
+                                while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+                                    AstNode *ie = parse_expr(p);
+                                    if (ie && decl->name) {
+                                        AstNode *v2 = new_ast(p, AST_VAR);
+                                        v2->name = decl->name;
+                                        AstNode *si0 = new_ast(p, AST_CONSTANT);
+                                        si0->ival = init_idx;
+                                        AstNode *s1 = new_ast(p, AST_BINOP); s1->op = TOK_LBRACKET;
+                                        s1->left = v2; s1->right = si0;
+                                        AstNode *si1 = new_ast(p, AST_CONSTANT);
+                                        si1->ival = inner_idx;
+                                        AstNode *s2 = new_ast(p, AST_BINOP); s2->op = TOK_LBRACKET;
+                                        s2->left = s1; s2->right = si1;
+                                        AstNode *si2 = new_ast(p, AST_CONSTANT);
+                                        si2->ival = innermost_idx;
+                                        AstNode *s3 = new_ast(p, AST_BINOP); s3->op = TOK_LBRACKET;
+                                        s3->left = s2; s3->right = si2;
+                                        AstNode *a3 = new_ast(p, AST_ASSIGN);
+                                        a3->left = s3; a3->right = ie;
+                                        a3->type_size = (ts > 0 ? ts : 4);
+                                        if (prev_init) prev_init->next = a3;
+                                        else decl->expr = a3;
+                                        prev_init = a3;
+                                        innermost_idx++;
+                                    }
+                                    if (peek(p).kind == TOK_COMMA) consume(p);
+                                }
+                                if (peek(p).kind == TOK_RBRACE) consume(p);
+                                inner_idx++;
+                            } else {
+                                AstNode *ie = parse_expr(p);
+                                if (ie && decl->name) {
+                                    AstNode *outer_idx = new_ast(p, AST_CONSTANT);
+                                    outer_idx->ival = init_idx;
+                                    AstNode *inner_idx_node = new_ast(p, AST_CONSTANT);
+                                    inner_idx_node->ival = inner_idx;
+                                    AstNode *var_node = new_ast(p, AST_VAR);
+                                    var_node->name = decl->name;
+                                    AstNode *outer_sub = new_ast(p, AST_BINOP);
+                                    outer_sub->op = TOK_LBRACKET;
+                                    outer_sub->left = var_node;
+                                    outer_sub->right = outer_idx;
+                                    AstNode *inner_sub = new_ast(p, AST_BINOP);
+                                    inner_sub->op = TOK_LBRACKET;
+                                    inner_sub->left = outer_sub;
+                                    inner_sub->right = inner_idx_node;
+                                    AstNode *assign = new_ast(p, AST_ASSIGN);
+                                    assign->left = inner_sub;
+                                    assign->right = ie;
+                                    assign->type_size = (ts > 0 ? ts : 4);
+                                    if (prev_init) prev_init->next = assign;
+                                    else decl->expr = assign;
+                                    prev_init = assign;
+                                    inner_idx++;
+                                }
+                            }
+                            if (peek(p).kind == TOK_COMMA) consume(p);
+                        }
+                        while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+                            /* 3D+: int a[2][3][4] = {{{1,2},{3,4}},{{5,6},{7,8}}} */
+                            if (dim_count > 2 && peek(p).kind == TOK_LBRACE) {
+                                consume(p);
+                                int innermost_idx = 0;
+                                while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+                                    AstNode *ie = parse_expr(p);
+                                    if (ie && decl->name) {
+                                        AstNode *v2 = new_ast(p, AST_VAR);
+                                        v2->name = decl->name;
+                                        AstNode *si0 = new_ast(p, AST_CONSTANT);
+                                        si0->ival = init_idx;
+                                        AstNode *s1 = new_ast(p, AST_BINOP); s1->op = TOK_LBRACKET;
+                                        s1->left = v2; s1->right = si0;
+                                        AstNode *si1 = new_ast(p, AST_CONSTANT);
+                                        si1->ival = inner_idx;
+                                        AstNode *s2 = new_ast(p, AST_BINOP); s2->op = TOK_LBRACKET;
+                                        s2->left = s1; s2->right = si1;
+                                        AstNode *si2 = new_ast(p, AST_CONSTANT);
+                                        si2->ival = innermost_idx;
+                                        AstNode *s3 = new_ast(p, AST_BINOP); s3->op = TOK_LBRACKET;
+                                        s3->left = s2; s3->right = si2;
+                                        AstNode *a3 = new_ast(p, AST_ASSIGN);
+                                        a3->left = s3; a3->right = ie;
+                                        a3->type_size = (ts > 0 ? ts : 4);
+                                        if (prev_init) prev_init->next = a3;
+                                        else decl->expr = a3;
+                                        prev_init = a3;
+                                        innermost_idx++;
+                                    }
+                                    if (peek(p).kind == TOK_COMMA) consume(p);
+                                }
+                                if (peek(p).kind == TOK_RBRACE) consume(p);
+                                inner_idx++;
+                            } else {
+                                AstNode *ie = parse_expr(p);
+                                if (ie && decl->name) {
+                                    AstNode *outer_idx = new_ast(p, AST_CONSTANT);
+                                    outer_idx->ival = init_idx;
+                                    AstNode *inner_idx_node = new_ast(p, AST_CONSTANT);
+                                    inner_idx_node->ival = inner_idx;
+                                    AstNode *var_node = new_ast(p, AST_VAR);
+                                    var_node->name = decl->name;
+                                    AstNode *outer_sub = new_ast(p, AST_BINOP);
+                                    outer_sub->op = TOK_LBRACKET;
+                                    outer_sub->left = var_node;
+                                    outer_sub->right = outer_idx;
+                                    AstNode *inner_sub = new_ast(p, AST_BINOP);
+                                    inner_sub->op = TOK_LBRACKET;
+                                    inner_sub->left = outer_sub;
+                                    inner_sub->right = inner_idx_node;
+                                    AstNode *assign = new_ast(p, AST_ASSIGN);
+                                    assign->left = inner_sub;
+                                    assign->right = ie;
+                                    assign->type_size = (ts > 0 ? ts : 4);
+                                    if (prev_init) prev_init->next = assign;
+                                    else decl->expr = assign;
+                                    prev_init = assign;
+                                    inner_idx++;
+                                }
+                            }
+                            if (peek(p).kind == TOK_COMMA) consume(p);
+                        }
+                        while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+                            /* 3D+: int a[2][3][4] = {{{1,2},{3,4}},{{5,6},{7,8}}} */
+                            if (dim_count > 2 && peek(p).kind == TOK_LBRACE) {
+                                consume(p);
+                                int innermost_idx = 0;
+                                while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+                                    AstNode *ie = parse_expr(p);
+                                    if (ie && decl->name) {
+                                        AstNode *v2 = new_ast(p, AST_VAR);
+                                        v2->name = decl->name;
+                                        AstNode *si0 = new_ast(p, AST_CONSTANT);
+                                        si0->ival = init_idx;
+                                        AstNode *s1 = new_ast(p, AST_BINOP); s1->op = TOK_LBRACKET;
+                                        s1->left = v2; s1->right = si0;
+                                        AstNode *si1 = new_ast(p, AST_CONSTANT);
+                                        si1->ival = inner_idx;
+                                        AstNode *s2 = new_ast(p, AST_BINOP); s2->op = TOK_LBRACKET;
+                                        s2->left = s1; s2->right = si1;
+                                        AstNode *si2 = new_ast(p, AST_CONSTANT);
+                                        si2->ival = innermost_idx;
+                                        AstNode *s3 = new_ast(p, AST_BINOP); s3->op = TOK_LBRACKET;
+                                        s3->left = s2; s3->right = si2;
+                                        AstNode *a3 = new_ast(p, AST_ASSIGN);
+                                        a3->left = s3; a3->right = ie;
+                                        a3->type_size = (ts > 0 ? ts : 4);
+                                        if (prev_init) prev_init->next = a3;
+                                        else decl->expr = a3;
+                                        prev_init = a3;
+                                        innermost_idx++;
+                                    }
+                                    if (peek(p).kind == TOK_COMMA) consume(p);
+                                }
+                                if (peek(p).kind == TOK_RBRACE) consume(p);
+                                inner_idx++;
+                            } else {
+                                AstNode *ie = parse_expr(p);
+                                if (ie && decl->name) {
+                                    AstNode *outer_idx = new_ast(p, AST_CONSTANT);
+                                    outer_idx->ival = init_idx;
+                                    AstNode *inner_idx_node = new_ast(p, AST_CONSTANT);
+                                    inner_idx_node->ival = inner_idx;
+                                    AstNode *var_node = new_ast(p, AST_VAR);
+                                    var_node->name = decl->name;
+                                    AstNode *outer_sub = new_ast(p, AST_BINOP);
+                                    outer_sub->op = TOK_LBRACKET;
+                                    outer_sub->left = var_node;
+                                    outer_sub->right = outer_idx;
+                                    AstNode *inner_sub = new_ast(p, AST_BINOP);
+                                    inner_sub->op = TOK_LBRACKET;
+                                    inner_sub->left = outer_sub;
+                                    inner_sub->right = inner_idx_node;
+                                    AstNode *assign = new_ast(p, AST_ASSIGN);
+                                    assign->left = inner_sub;
+                                    assign->right = ie;
+                                    assign->type_size = (ts > 0 ? ts : 4);
+                                    if (prev_init) prev_init->next = assign;
+                                    else decl->expr = assign;
+                                    prev_init = assign;
+                                    inner_idx++;
+                                }
+                            }
+                            if (peek(p).kind == TOK_COMMA) consume(p);
+                        }
+                        while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+                            /* 3D+: int a[2][3][4] = {{{1,2},{3,4}},{{5,6},{7,8}}} */
+                            if (dim_count > 2 && peek(p).kind == TOK_LBRACE) {
+                                consume(p);
+                                int innermost_idx = 0;
+                                while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+                                    AstNode *ie = parse_expr(p);
+                                    if (ie && decl->name) {
+                                        AstNode *v2 = new_ast(p, AST_VAR);
+                                        v2->name = decl->name;
+                                        AstNode *si0 = new_ast(p, AST_CONSTANT);
+                                        si0->ival = init_idx;
+                                        AstNode *s1 = new_ast(p, AST_BINOP); s1->op = TOK_LBRACKET;
+                                        s1->left = v2; s1->right = si0;
+                                        AstNode *si1 = new_ast(p, AST_CONSTANT);
+                                        si1->ival = inner_idx;
+                                        AstNode *s2 = new_ast(p, AST_BINOP); s2->op = TOK_LBRACKET;
+                                        s2->left = s1; s2->right = si1;
+                                        AstNode *si2 = new_ast(p, AST_CONSTANT);
+                                        si2->ival = innermost_idx;
+                                        AstNode *s3 = new_ast(p, AST_BINOP); s3->op = TOK_LBRACKET;
+                                        s3->left = s2; s3->right = si2;
+                                        AstNode *a3 = new_ast(p, AST_ASSIGN);
+                                        a3->left = s3; a3->right = ie;
+                                        a3->type_size = (ts > 0 ? ts : 4);
+                                        if (prev_init) prev_init->next = a3;
+                                        else decl->expr = a3;
+                                        prev_init = a3;
+                                        innermost_idx++;
+                                    }
+                                    if (peek(p).kind == TOK_COMMA) consume(p);
+                                }
+                                if (peek(p).kind == TOK_RBRACE) consume(p);
+                                inner_idx++;
+                            } else {
+                                AstNode *ie = parse_expr(p);
+                                if (ie && decl->name) {
+                                    AstNode *outer_idx = new_ast(p, AST_CONSTANT);
+                                    outer_idx->ival = init_idx;
+                                    AstNode *inner_idx_node = new_ast(p, AST_CONSTANT);
+                                    inner_idx_node->ival = inner_idx;
+                                    AstNode *var_node = new_ast(p, AST_VAR);
+                                    var_node->name = decl->name;
+                                    AstNode *outer_sub = new_ast(p, AST_BINOP);
+                                    outer_sub->op = TOK_LBRACKET;
+                                    outer_sub->left = var_node;
+                                    outer_sub->right = outer_idx;
+                                    AstNode *inner_sub = new_ast(p, AST_BINOP);
+                                    inner_sub->op = TOK_LBRACKET;
+                                    inner_sub->left = outer_sub;
+                                    inner_sub->right = inner_idx_node;
+                                    AstNode *assign = new_ast(p, AST_ASSIGN);
+                                    assign->left = inner_sub;
+                                    assign->right = ie;
+                                    assign->type_size = (ts > 0 ? ts : 4);
+                                    if (prev_init) prev_init->next = assign;
+                                    else decl->expr = assign;
+                                    prev_init = assign;
+                                    inner_idx++;
+                                }
+                            }
+                            if (peek(p).kind == TOK_COMMA) consume(p);
+                        }
+                        while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+                            /* 3D+: int a[2][3][4] = {{{1,2},{3,4}},{{5,6},{7,8}}} */
+                            if (dim_count > 2 && peek(p).kind == TOK_LBRACE) {
+                                consume(p);
+                                int innermost_idx = 0;
+                                while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+                                    AstNode *ie = parse_expr(p);
+                                    if (ie && decl->name) {
+                                        AstNode *v2 = new_ast(p, AST_VAR);
+                                        v2->name = decl->name;
+                                        AstNode *si0 = new_ast(p, AST_CONSTANT);
+                                        si0->ival = init_idx;
+                                        AstNode *s1 = new_ast(p, AST_BINOP); s1->op = TOK_LBRACKET;
+                                        s1->left = v2; s1->right = si0;
+                                        AstNode *si1 = new_ast(p, AST_CONSTANT);
+                                        si1->ival = inner_idx;
+                                        AstNode *s2 = new_ast(p, AST_BINOP); s2->op = TOK_LBRACKET;
+                                        s2->left = s1; s2->right = si1;
+                                        AstNode *si2 = new_ast(p, AST_CONSTANT);
+                                        si2->ival = innermost_idx;
+                                        AstNode *s3 = new_ast(p, AST_BINOP); s3->op = TOK_LBRACKET;
+                                        s3->left = s2; s3->right = si2;
+                                        AstNode *a3 = new_ast(p, AST_ASSIGN);
+                                        a3->left = s3; a3->right = ie;
+                                        a3->type_size = (ts > 0 ? ts : 4);
+                                        if (prev_init) prev_init->next = a3;
+                                        else decl->expr = a3;
+                                        prev_init = a3;
+                                        innermost_idx++;
+                                    }
+                                    if (peek(p).kind == TOK_COMMA) consume(p);
+                                }
+                                if (peek(p).kind == TOK_RBRACE) consume(p);
+                                inner_idx++;
+                            } else {
+                                AstNode *ie = parse_expr(p);
+                                if (ie && decl->name) {
+                                    AstNode *outer_idx = new_ast(p, AST_CONSTANT);
+                                    outer_idx->ival = init_idx;
+                                    AstNode *inner_idx_node = new_ast(p, AST_CONSTANT);
+                                    inner_idx_node->ival = inner_idx;
+                                    AstNode *var_node = new_ast(p, AST_VAR);
+                                    var_node->name = decl->name;
+                                    AstNode *outer_sub = new_ast(p, AST_BINOP);
+                                    outer_sub->op = TOK_LBRACKET;
+                                    outer_sub->left = var_node;
+                                    outer_sub->right = outer_idx;
+                                    AstNode *inner_sub = new_ast(p, AST_BINOP);
+                                    inner_sub->op = TOK_LBRACKET;
+                                    inner_sub->left = outer_sub;
+                                    inner_sub->right = inner_idx_node;
+                                    AstNode *assign = new_ast(p, AST_ASSIGN);
+                                    assign->left = inner_sub;
+                                    assign->right = ie;
+                                    assign->type_size = (ts > 0 ? ts : 4);
+                                    if (prev_init) prev_init->next = assign;
+                                    else decl->expr = assign;
+                                    prev_init = assign;
+                                    inner_idx++;
+                                }
+                            }
+                            if (peek(p).kind == TOK_COMMA) consume(p);
+                        }
+                        while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+                            /* 3D+: int a[2][3][4] = {{{1,2},{3,4}},{{5,6},{7,8}}} */
+                            if (dim_count > 2 && peek(p).kind == TOK_LBRACE) {
+                                consume(p);
+                                int innermost_idx = 0;
+                                while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+                                    AstNode *ie = parse_expr(p);
+                                    if (ie && decl->name) {
+                                        AstNode *v2 = new_ast(p, AST_VAR);
+                                        v2->name = decl->name;
+                                        AstNode *si0 = new_ast(p, AST_CONSTANT);
+                                        si0->ival = init_idx;
+                                        AstNode *s1 = new_ast(p, AST_BINOP); s1->op = TOK_LBRACKET;
+                                        s1->left = v2; s1->right = si0;
+                                        AstNode *si1 = new_ast(p, AST_CONSTANT);
+                                        si1->ival = inner_idx;
+                                        AstNode *s2 = new_ast(p, AST_BINOP); s2->op = TOK_LBRACKET;
+                                        s2->left = s1; s2->right = si1;
+                                        AstNode *si2 = new_ast(p, AST_CONSTANT);
+                                        si2->ival = innermost_idx;
+                                        AstNode *s3 = new_ast(p, AST_BINOP); s3->op = TOK_LBRACKET;
+                                        s3->left = s2; s3->right = si2;
+                                        AstNode *a3 = new_ast(p, AST_ASSIGN);
+                                        a3->left = s3; a3->right = ie;
+                                        a3->type_size = (ts > 0 ? ts : 4);
+                                        if (prev_init) prev_init->next = a3;
+                                        else decl->expr = a3;
+                                        prev_init = a3;
+                                        innermost_idx++;
+                                    }
+                                    if (peek(p).kind == TOK_COMMA) consume(p);
+                                }
+                                if (peek(p).kind == TOK_RBRACE) consume(p);
+                                inner_idx++;
+                            } else {
+                                AstNode *ie = parse_expr(p);
+                                if (ie && decl->name) {
+                                    AstNode *outer_idx = new_ast(p, AST_CONSTANT);
+                                    outer_idx->ival = init_idx;
+                                    AstNode *inner_idx_node = new_ast(p, AST_CONSTANT);
+                                    inner_idx_node->ival = inner_idx;
+                                    AstNode *var_node = new_ast(p, AST_VAR);
+                                    var_node->name = decl->name;
+                                    AstNode *outer_sub = new_ast(p, AST_BINOP);
+                                    outer_sub->op = TOK_LBRACKET;
+                                    outer_sub->left = var_node;
+                                    outer_sub->right = outer_idx;
+                                    AstNode *inner_sub = new_ast(p, AST_BINOP);
+                                    inner_sub->op = TOK_LBRACKET;
+                                    inner_sub->left = outer_sub;
+                                    inner_sub->right = inner_idx_node;
+                                    AstNode *assign = new_ast(p, AST_ASSIGN);
+                                    assign->left = inner_sub;
+                                    assign->right = ie;
+                                    assign->type_size = (ts > 0 ? ts : 4);
+                                    if (prev_init) prev_init->next = assign;
+                                    else decl->expr = assign;
+                                    prev_init = assign;
+                                    inner_idx++;
+                                }
+                            }
+                            if (peek(p).kind == TOK_COMMA) consume(p);
+                        }
+                        while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+                            /* 3D+: int a[2][3][4] = {{{1,2},{3,4}},{{5,6},{7,8}}} */
+                            if (dim_count > 2 && peek(p).kind == TOK_LBRACE) {
+                                consume(p);
+                                int innermost_idx = 0;
+                                while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+                                    AstNode *ie = parse_expr(p);
+                                    if (ie && decl->name) {
+                                        AstNode *v2 = new_ast(p, AST_VAR);
+                                        v2->name = decl->name;
+                                        AstNode *si0 = new_ast(p, AST_CONSTANT);
+                                        si0->ival = init_idx;
+                                        AstNode *s1 = new_ast(p, AST_BINOP); s1->op = TOK_LBRACKET;
+                                        s1->left = v2; s1->right = si0;
+                                        AstNode *si1 = new_ast(p, AST_CONSTANT);
+                                        si1->ival = inner_idx;
+                                        AstNode *s2 = new_ast(p, AST_BINOP); s2->op = TOK_LBRACKET;
+                                        s2->left = s1; s2->right = si1;
+                                        AstNode *si2 = new_ast(p, AST_CONSTANT);
+                                        si2->ival = innermost_idx;
+                                        AstNode *s3 = new_ast(p, AST_BINOP); s3->op = TOK_LBRACKET;
+                                        s3->left = s2; s3->right = si2;
+                                        AstNode *a3 = new_ast(p, AST_ASSIGN);
+                                        a3->left = s3; a3->right = ie;
+                                        a3->type_size = (ts > 0 ? ts : 4);
+                                        if (prev_init) prev_init->next = a3;
+                                        else decl->expr = a3;
+                                        prev_init = a3;
+                                        innermost_idx++;
+                                    }
+                                    if (peek(p).kind == TOK_COMMA) consume(p);
+                                }
+                                if (peek(p).kind == TOK_RBRACE) consume(p);
+                                inner_idx++;
+                            } else {
+                                AstNode *ie = parse_expr(p);
+                                if (ie && decl->name) {
+                                    AstNode *outer_idx = new_ast(p, AST_CONSTANT);
+                                    outer_idx->ival = init_idx;
+                                    AstNode *inner_idx_node = new_ast(p, AST_CONSTANT);
+                                    inner_idx_node->ival = inner_idx;
+                                    AstNode *var_node = new_ast(p, AST_VAR);
+                                    var_node->name = decl->name;
+                                    AstNode *outer_sub = new_ast(p, AST_BINOP);
+                                    outer_sub->op = TOK_LBRACKET;
+                                    outer_sub->left = var_node;
+                                    outer_sub->right = outer_idx;
+                                    AstNode *inner_sub = new_ast(p, AST_BINOP);
+                                    inner_sub->op = TOK_LBRACKET;
+                                    inner_sub->left = outer_sub;
+                                    inner_sub->right = inner_idx_node;
+                                    AstNode *assign = new_ast(p, AST_ASSIGN);
+                                    assign->left = inner_sub;
+                                    assign->right = ie;
+                                    assign->type_size = (ts > 0 ? ts : 4);
+                                    if (prev_init) prev_init->next = assign;
+                                    else decl->expr = assign;
+                                    prev_init = assign;
+                                    inner_idx++;
+                                }
+                            }
+                            if (peek(p).kind == TOK_COMMA) consume(p);
+                        }
+                        while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+                            /* 3D+: int a[2][3][4] = {{{1,2},{3,4}},{{5,6},{7,8}}} */
+                            if (dim_count > 2 && peek(p).kind == TOK_LBRACE) {
+                                consume(p);
+                                int innermost_idx = 0;
+                                while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+                                    AstNode *ie = parse_expr(p);
+                                    if (ie && decl->name) {
+                                        AstNode *v2 = new_ast(p, AST_VAR);
+                                        v2->name = decl->name;
+                                        AstNode *si0 = new_ast(p, AST_CONSTANT);
+                                        si0->ival = init_idx;
+                                        AstNode *s1 = new_ast(p, AST_BINOP); s1->op = TOK_LBRACKET;
+                                        s1->left = v2; s1->right = si0;
+                                        AstNode *si1 = new_ast(p, AST_CONSTANT);
+                                        si1->ival = inner_idx;
+                                        AstNode *s2 = new_ast(p, AST_BINOP); s2->op = TOK_LBRACKET;
+                                        s2->left = s1; s2->right = si1;
+                                        AstNode *si2 = new_ast(p, AST_CONSTANT);
+                                        si2->ival = innermost_idx;
+                                        AstNode *s3 = new_ast(p, AST_BINOP); s3->op = TOK_LBRACKET;
+                                        s3->left = s2; s3->right = si2;
+                                        AstNode *a3 = new_ast(p, AST_ASSIGN);
+                                        a3->left = s3; a3->right = ie;
+                                        a3->type_size = (ts > 0 ? ts : 4);
+                                        if (prev_init) prev_init->next = a3;
+                                        else decl->expr = a3;
+                                        prev_init = a3;
+                                        innermost_idx++;
+                                    }
+                                    if (peek(p).kind == TOK_COMMA) consume(p);
+                                }
+                                if (peek(p).kind == TOK_RBRACE) consume(p);
+                                inner_idx++;
+                            } else {
+                                AstNode *ie = parse_expr(p);
+                                if (ie && decl->name) {
+                                    AstNode *outer_idx = new_ast(p, AST_CONSTANT);
+                                    outer_idx->ival = init_idx;
+                                    AstNode *inner_idx_node = new_ast(p, AST_CONSTANT);
+                                    inner_idx_node->ival = inner_idx;
+                                    AstNode *var_node = new_ast(p, AST_VAR);
+                                    var_node->name = decl->name;
+                                    AstNode *outer_sub = new_ast(p, AST_BINOP);
+                                    outer_sub->op = TOK_LBRACKET;
+                                    outer_sub->left = var_node;
+                                    outer_sub->right = outer_idx;
+                                    AstNode *inner_sub = new_ast(p, AST_BINOP);
+                                    inner_sub->op = TOK_LBRACKET;
+                                    inner_sub->left = outer_sub;
+                                    inner_sub->right = inner_idx_node;
+                                    AstNode *assign = new_ast(p, AST_ASSIGN);
+                                    assign->left = inner_sub;
+                                    assign->right = ie;
+                                    assign->type_size = (ts > 0 ? ts : 4);
+                                    if (prev_init) prev_init->next = assign;
+                                    else decl->expr = assign;
+                                    prev_init = assign;
+                                    inner_idx++;
+                                }
+                            }
+                            if (peek(p).kind == TOK_COMMA) consume(p);
+                        }
+                        while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+                            /* 3D+: int a[2][3][4] = {{{1,2},{3,4}},{{5,6},{7,8}}} */
+                            if (dim_count > 2 && peek(p).kind == TOK_LBRACE) {
+                                consume(p);
+                                int innermost_idx = 0;
+                                while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+                                    AstNode *ie = parse_expr(p);
+                                    if (ie && decl->name) {
+                                        AstNode *v2 = new_ast(p, AST_VAR);
+                                        v2->name = decl->name;
+                                        AstNode *si0 = new_ast(p, AST_CONSTANT);
+                                        si0->ival = init_idx;
+                                        AstNode *s1 = new_ast(p, AST_BINOP); s1->op = TOK_LBRACKET;
+                                        s1->left = v2; s1->right = si0;
+                                        AstNode *si1 = new_ast(p, AST_CONSTANT);
+                                        si1->ival = inner_idx;
+                                        AstNode *s2 = new_ast(p, AST_BINOP); s2->op = TOK_LBRACKET;
+                                        s2->left = s1; s2->right = si1;
+                                        AstNode *si2 = new_ast(p, AST_CONSTANT);
+                                        si2->ival = innermost_idx;
+                                        AstNode *s3 = new_ast(p, AST_BINOP); s3->op = TOK_LBRACKET;
+                                        s3->left = s2; s3->right = si2;
+                                        AstNode *a3 = new_ast(p, AST_ASSIGN);
+                                        a3->left = s3; a3->right = ie;
+                                        a3->type_size = (ts > 0 ? ts : 4);
+                                        if (prev_init) prev_init->next = a3;
+                                        else decl->expr = a3;
+                                        prev_init = a3;
+                                        innermost_idx++;
+                                    }
+                                    if (peek(p).kind == TOK_COMMA) consume(p);
+                                }
+                                if (peek(p).kind == TOK_RBRACE) consume(p);
+                                inner_idx++;
+                            } else {
+                                AstNode *ie = parse_expr(p);
+                                if (ie && decl->name) {
+                                    AstNode *outer_idx = new_ast(p, AST_CONSTANT);
+                                    outer_idx->ival = init_idx;
+                                    AstNode *inner_idx_node = new_ast(p, AST_CONSTANT);
+                                    inner_idx_node->ival = inner_idx;
+                                    AstNode *var_node = new_ast(p, AST_VAR);
+                                    var_node->name = decl->name;
+                                    AstNode *outer_sub = new_ast(p, AST_BINOP);
+                                    outer_sub->op = TOK_LBRACKET;
+                                    outer_sub->left = var_node;
+                                    outer_sub->right = outer_idx;
+                                    AstNode *inner_sub = new_ast(p, AST_BINOP);
+                                    inner_sub->op = TOK_LBRACKET;
+                                    inner_sub->left = outer_sub;
+                                    inner_sub->right = inner_idx_node;
+                                    AstNode *assign = new_ast(p, AST_ASSIGN);
+                                    assign->left = inner_sub;
+                                    assign->right = ie;
+                                    assign->type_size = (ts > 0 ? ts : 4);
+                                    if (prev_init) prev_init->next = assign;
+                                    else decl->expr = assign;
+                                    prev_init = assign;
+                                    inner_idx++;
+                                }
+                            }
+                            if (peek(p).kind == TOK_COMMA) consume(p);
+                        }
+                        while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+                            /* 3D+: int a[2][3][4] = {{{1,2},{3,4}},{{5,6},{7,8}}} */
+                            if (dim_count > 2 && peek(p).kind == TOK_LBRACE) {
+                                consume(p);
+                                int innermost_idx = 0;
+                                while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+                                    AstNode *ie = parse_expr(p);
+                                    if (ie && decl->name) {
+                                        AstNode *v2 = new_ast(p, AST_VAR);
+                                        v2->name = decl->name;
+                                        AstNode *si0 = new_ast(p, AST_CONSTANT);
+                                        si0->ival = init_idx;
+                                        AstNode *s1 = new_ast(p, AST_BINOP); s1->op = TOK_LBRACKET;
+                                        s1->left = v2; s1->right = si0;
+                                        AstNode *si1 = new_ast(p, AST_CONSTANT);
+                                        si1->ival = inner_idx;
+                                        AstNode *s2 = new_ast(p, AST_BINOP); s2->op = TOK_LBRACKET;
+                                        s2->left = s1; s2->right = si1;
+                                        AstNode *si2 = new_ast(p, AST_CONSTANT);
+                                        si2->ival = innermost_idx;
+                                        AstNode *s3 = new_ast(p, AST_BINOP); s3->op = TOK_LBRACKET;
+                                        s3->left = s2; s3->right = si2;
+                                        AstNode *a3 = new_ast(p, AST_ASSIGN);
+                                        a3->left = s3; a3->right = ie;
+                                        a3->type_size = (ts > 0 ? ts : 4);
+                                        if (prev_init) prev_init->next = a3;
+                                        else decl->expr = a3;
+                                        prev_init = a3;
+                                        innermost_idx++;
+                                    }
+                                    if (peek(p).kind == TOK_COMMA) consume(p);
+                                }
+                                if (peek(p).kind == TOK_RBRACE) consume(p);
+                                inner_idx++;
+                            } else {
+                                AstNode *ie = parse_expr(p);
+                                if (ie && decl->name) {
+                                    AstNode *outer_idx = new_ast(p, AST_CONSTANT);
+                                    outer_idx->ival = init_idx;
+                                    AstNode *inner_idx_node = new_ast(p, AST_CONSTANT);
+                                    inner_idx_node->ival = inner_idx;
+                                    AstNode *var_node = new_ast(p, AST_VAR);
+                                    var_node->name = decl->name;
+                                    AstNode *outer_sub = new_ast(p, AST_BINOP);
+                                    outer_sub->op = TOK_LBRACKET;
+                                    outer_sub->left = var_node;
+                                    outer_sub->right = outer_idx;
+                                    AstNode *inner_sub = new_ast(p, AST_BINOP);
+                                    inner_sub->op = TOK_LBRACKET;
+                                    inner_sub->left = outer_sub;
+                                    inner_sub->right = inner_idx_node;
+                                    AstNode *assign = new_ast(p, AST_ASSIGN);
+                                    assign->left = inner_sub;
+                                    assign->right = ie;
+                                    assign->type_size = (ts > 0 ? ts : 4);
+                                    if (prev_init) prev_init->next = assign;
+                                    else decl->expr = assign;
+                                    prev_init = assign;
+                                    inner_idx++;
+                                }
+                            }
+                            if (peek(p).kind == TOK_COMMA) consume(p);
+                        }
+                        while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+                            /* 3D+: int a[2][3][4] = {{{1,2},{3,4}},{{5,6},{7,8}}} */
+                            if (dim_count > 2 && peek(p).kind == TOK_LBRACE) {
+                                consume(p);
+                                int innermost_idx = 0;
+                                while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+                                    AstNode *ie = parse_expr(p);
+                                    if (ie && decl->name) {
+                                        AstNode *v2 = new_ast(p, AST_VAR);
+                                        v2->name = decl->name;
+                                        AstNode *si0 = new_ast(p, AST_CONSTANT);
+                                        si0->ival = init_idx;
+                                        AstNode *s1 = new_ast(p, AST_BINOP); s1->op = TOK_LBRACKET;
+                                        s1->left = v2; s1->right = si0;
+                                        AstNode *si1 = new_ast(p, AST_CONSTANT);
+                                        si1->ival = inner_idx;
+                                        AstNode *s2 = new_ast(p, AST_BINOP); s2->op = TOK_LBRACKET;
+                                        s2->left = s1; s2->right = si1;
+                                        AstNode *si2 = new_ast(p, AST_CONSTANT);
+                                        si2->ival = innermost_idx;
+                                        AstNode *s3 = new_ast(p, AST_BINOP); s3->op = TOK_LBRACKET;
+                                        s3->left = s2; s3->right = si2;
+                                        AstNode *a3 = new_ast(p, AST_ASSIGN);
+                                        a3->left = s3; a3->right = ie;
+                                        a3->type_size = (ts > 0 ? ts : 4);
+                                        if (prev_init) prev_init->next = a3;
+                                        else decl->expr = a3;
+                                        prev_init = a3;
+                                        innermost_idx++;
+                                    }
+                                    if (peek(p).kind == TOK_COMMA) consume(p);
+                                }
+                                if (peek(p).kind == TOK_RBRACE) consume(p);
+                                inner_idx++;
+                            } else {
+                                AstNode *ie = parse_expr(p);
+                                if (ie && decl->name) {
+                                    AstNode *outer_idx = new_ast(p, AST_CONSTANT);
+                                    outer_idx->ival = init_idx;
+                                    AstNode *inner_idx_node = new_ast(p, AST_CONSTANT);
+                                    inner_idx_node->ival = inner_idx;
+                                    AstNode *var_node = new_ast(p, AST_VAR);
+                                    var_node->name = decl->name;
+                                    AstNode *outer_sub = new_ast(p, AST_BINOP);
+                                    outer_sub->op = TOK_LBRACKET;
+                                    outer_sub->left = var_node;
+                                    outer_sub->right = outer_idx;
+                                    AstNode *inner_sub = new_ast(p, AST_BINOP);
+                                    inner_sub->op = TOK_LBRACKET;
+                                    inner_sub->left = outer_sub;
+                                    inner_sub->right = inner_idx_node;
+                                    AstNode *assign = new_ast(p, AST_ASSIGN);
+                                    assign->left = inner_sub;
+                                    assign->right = ie;
+                                    assign->type_size = (ts > 0 ? ts : 4);
+                                    if (prev_init) prev_init->next = assign;
+                                    else decl->expr = assign;
+                                    prev_init = assign;
+                                    inner_idx++;
+                                }
+                            }
+                            if (peek(p).kind == TOK_COMMA) consume(p);
+                        }
+                        while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+                            /* 3D+: int a[2][3][4] = {{{1,2},{3,4}},{{5,6},{7,8}}} */
+                            if (dim_count > 2 && peek(p).kind == TOK_LBRACE) {
+                                consume(p);
+                                int innermost_idx = 0;
+                                while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+                                    AstNode *ie = parse_expr(p);
+                                    if (ie && decl->name) {
+                                        AstNode *v2 = new_ast(p, AST_VAR);
+                                        v2->name = decl->name;
+                                        AstNode *si0 = new_ast(p, AST_CONSTANT);
+                                        si0->ival = init_idx;
+                                        AstNode *s1 = new_ast(p, AST_BINOP); s1->op = TOK_LBRACKET;
+                                        s1->left = v2; s1->right = si0;
+                                        AstNode *si1 = new_ast(p, AST_CONSTANT);
+                                        si1->ival = inner_idx;
+                                        AstNode *s2 = new_ast(p, AST_BINOP); s2->op = TOK_LBRACKET;
+                                        s2->left = s1; s2->right = si1;
+                                        AstNode *si2 = new_ast(p, AST_CONSTANT);
+                                        si2->ival = innermost_idx;
+                                        AstNode *s3 = new_ast(p, AST_BINOP); s3->op = TOK_LBRACKET;
+                                        s3->left = s2; s3->right = si2;
+                                        AstNode *a3 = new_ast(p, AST_ASSIGN);
+                                        a3->left = s3; a3->right = ie;
+                                        a3->type_size = (ts > 0 ? ts : 4);
+                                        if (prev_init) prev_init->next = a3;
+                                        else decl->expr = a3;
+                                        prev_init = a3;
+                                        innermost_idx++;
+                                    }
+                                    if (peek(p).kind == TOK_COMMA) consume(p);
+                                }
+                                if (peek(p).kind == TOK_RBRACE) consume(p);
+                                inner_idx++;
+                            } else {
+                                AstNode *ie = parse_expr(p);
+                                if (ie && decl->name) {
+                                    AstNode *outer_idx = new_ast(p, AST_CONSTANT);
+                                    outer_idx->ival = init_idx;
+                                    AstNode *inner_idx_node = new_ast(p, AST_CONSTANT);
+                                    inner_idx_node->ival = inner_idx;
+                                    AstNode *var_node = new_ast(p, AST_VAR);
+                                    var_node->name = decl->name;
+                                    AstNode *outer_sub = new_ast(p, AST_BINOP);
+                                    outer_sub->op = TOK_LBRACKET;
+                                    outer_sub->left = var_node;
+                                    outer_sub->right = outer_idx;
+                                    AstNode *inner_sub = new_ast(p, AST_BINOP);
+                                    inner_sub->op = TOK_LBRACKET;
+                                    inner_sub->left = outer_sub;
+                                    inner_sub->right = inner_idx_node;
+                                    AstNode *assign = new_ast(p, AST_ASSIGN);
+                                    assign->left = inner_sub;
+                                    assign->right = ie;
+                                    assign->type_size = (ts > 0 ? ts : 4);
+                                    if (prev_init) prev_init->next = assign;
+                                    else decl->expr = assign;
+                                    prev_init = assign;
+                                    inner_idx++;
+                                }
+                            }
+                            if (peek(p).kind == TOK_COMMA) consume(p);
+                        }
+                        while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+                            /* 3D+: int a[2][3][4] = {{{1,2},{3,4}},{{5,6},{7,8}}} */
+                            if (dim_count > 2 && peek(p).kind == TOK_LBRACE) {
+                                consume(p);
+                                int innermost_idx = 0;
+                                while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+                                    AstNode *ie = parse_expr(p);
+                                    if (ie && decl->name) {
+                                        AstNode *v2 = new_ast(p, AST_VAR);
+                                        v2->name = decl->name;
+                                        AstNode *si0 = new_ast(p, AST_CONSTANT);
+                                        si0->ival = init_idx;
+                                        AstNode *s1 = new_ast(p, AST_BINOP); s1->op = TOK_LBRACKET;
+                                        s1->left = v2; s1->right = si0;
+                                        AstNode *si1 = new_ast(p, AST_CONSTANT);
+                                        si1->ival = inner_idx;
+                                        AstNode *s2 = new_ast(p, AST_BINOP); s2->op = TOK_LBRACKET;
+                                        s2->left = s1; s2->right = si1;
+                                        AstNode *si2 = new_ast(p, AST_CONSTANT);
+                                        si2->ival = innermost_idx;
+                                        AstNode *s3 = new_ast(p, AST_BINOP); s3->op = TOK_LBRACKET;
+                                        s3->left = s2; s3->right = si2;
+                                        AstNode *a3 = new_ast(p, AST_ASSIGN);
+                                        a3->left = s3; a3->right = ie;
+                                        a3->type_size = (ts > 0 ? ts : 4);
+                                        if (prev_init) prev_init->next = a3;
+                                        else decl->expr = a3;
+                                        prev_init = a3;
+                                        innermost_idx++;
+                                    }
+                                    if (peek(p).kind == TOK_COMMA) consume(p);
+                                }
+                                if (peek(p).kind == TOK_RBRACE) consume(p);
+                                inner_idx++;
+                            } else {
+                                AstNode *ie = parse_expr(p);
+                                if (ie && decl->name) {
+                                    AstNode *outer_idx = new_ast(p, AST_CONSTANT);
+                                    outer_idx->ival = init_idx;
+                                    AstNode *inner_idx_node = new_ast(p, AST_CONSTANT);
+                                    inner_idx_node->ival = inner_idx;
+                                    AstNode *var_node = new_ast(p, AST_VAR);
+                                    var_node->name = decl->name;
+                                    AstNode *outer_sub = new_ast(p, AST_BINOP);
+                                    outer_sub->op = TOK_LBRACKET;
+                                    outer_sub->left = var_node;
+                                    outer_sub->right = outer_idx;
+                                    AstNode *inner_sub = new_ast(p, AST_BINOP);
+                                    inner_sub->op = TOK_LBRACKET;
+                                    inner_sub->left = outer_sub;
+                                    inner_sub->right = inner_idx_node;
+                                    AstNode *assign = new_ast(p, AST_ASSIGN);
+                                    assign->left = inner_sub;
+                                    assign->right = ie;
+                                    assign->type_size = (ts > 0 ? ts : 4);
+                                    if (prev_init) prev_init->next = assign;
+                                    else decl->expr = assign;
+                                    prev_init = assign;
+                                    inner_idx++;
+                                }
+                            }
+                            if (peek(p).kind == TOK_COMMA) consume(p);
+                        }
+                        while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+                            /* 3D+: int a[2][3][4] = {{{1,2},{3,4}},{{5,6},{7,8}}} */
+                            if (dim_count > 2 && peek(p).kind == TOK_LBRACE) {
+                                consume(p);
+                                int innermost_idx = 0;
+                                while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+                                    AstNode *ie = parse_expr(p);
+                                    if (ie && decl->name) {
+                                        AstNode *v2 = new_ast(p, AST_VAR);
+                                        v2->name = decl->name;
+                                        AstNode *si0 = new_ast(p, AST_CONSTANT);
+                                        si0->ival = init_idx;
+                                        AstNode *s1 = new_ast(p, AST_BINOP); s1->op = TOK_LBRACKET;
+                                        s1->left = v2; s1->right = si0;
+                                        AstNode *si1 = new_ast(p, AST_CONSTANT);
+                                        si1->ival = inner_idx;
+                                        AstNode *s2 = new_ast(p, AST_BINOP); s2->op = TOK_LBRACKET;
+                                        s2->left = s1; s2->right = si1;
+                                        AstNode *si2 = new_ast(p, AST_CONSTANT);
+                                        si2->ival = innermost_idx;
+                                        AstNode *s3 = new_ast(p, AST_BINOP); s3->op = TOK_LBRACKET;
+                                        s3->left = s2; s3->right = si2;
+                                        AstNode *a3 = new_ast(p, AST_ASSIGN);
+                                        a3->left = s3; a3->right = ie;
+                                        a3->type_size = (ts > 0 ? ts : 4);
+                                        if (prev_init) prev_init->next = a3;
+                                        else decl->expr = a3;
+                                        prev_init = a3;
+                                        innermost_idx++;
+                                    }
+                                    if (peek(p).kind == TOK_COMMA) consume(p);
+                                }
+                                if (peek(p).kind == TOK_RBRACE) consume(p);
+                                inner_idx++;
+                            } else {
+                                AstNode *ie = parse_expr(p);
+                                if (ie && decl->name) {
+                                    AstNode *outer_idx = new_ast(p, AST_CONSTANT);
+                                    outer_idx->ival = init_idx;
+                                    AstNode *inner_idx_node = new_ast(p, AST_CONSTANT);
+                                    inner_idx_node->ival = inner_idx;
+                                    AstNode *var_node = new_ast(p, AST_VAR);
+                                    var_node->name = decl->name;
+                                    AstNode *outer_sub = new_ast(p, AST_BINOP);
+                                    outer_sub->op = TOK_LBRACKET;
+                                    outer_sub->left = var_node;
+                                    outer_sub->right = outer_idx;
+                                    AstNode *inner_sub = new_ast(p, AST_BINOP);
+                                    inner_sub->op = TOK_LBRACKET;
+                                    inner_sub->left = outer_sub;
+                                    inner_sub->right = inner_idx_node;
+                                    AstNode *assign = new_ast(p, AST_ASSIGN);
+                                    assign->left = inner_sub;
+                                    assign->right = ie;
+                                    assign->type_size = (ts > 0 ? ts : 4);
+                                    if (prev_init) prev_init->next = assign;
+                                    else decl->expr = assign;
+                                    prev_init = assign;
+                                    inner_idx++;
+                                }
+                            }
+                            if (peek(p).kind == TOK_COMMA) consume(p);
+                        }
+                        while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+                            /* 3D+: int a[2][3][4] = {{{1,2},{3,4}},{{5,6},{7,8}}} */
+                            if (dim_count > 2 && peek(p).kind == TOK_LBRACE) {
+                                consume(p);
+                                int innermost_idx = 0;
+                                while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+                                    AstNode *ie = parse_expr(p);
+                                    if (ie && decl->name) {
+                                        AstNode *v2 = new_ast(p, AST_VAR);
+                                        v2->name = decl->name;
+                                        AstNode *si0 = new_ast(p, AST_CONSTANT);
+                                        si0->ival = init_idx;
+                                        AstNode *s1 = new_ast(p, AST_BINOP); s1->op = TOK_LBRACKET;
+                                        s1->left = v2; s1->right = si0;
+                                        AstNode *si1 = new_ast(p, AST_CONSTANT);
+                                        si1->ival = inner_idx;
+                                        AstNode *s2 = new_ast(p, AST_BINOP); s2->op = TOK_LBRACKET;
+                                        s2->left = s1; s2->right = si1;
+                                        AstNode *si2 = new_ast(p, AST_CONSTANT);
+                                        si2->ival = innermost_idx;
+                                        AstNode *s3 = new_ast(p, AST_BINOP); s3->op = TOK_LBRACKET;
+                                        s3->left = s2; s3->right = si2;
+                                        AstNode *a3 = new_ast(p, AST_ASSIGN);
+                                        a3->left = s3; a3->right = ie;
+                                        a3->type_size = (ts > 0 ? ts : 4);
+                                        if (prev_init) prev_init->next = a3;
+                                        else decl->expr = a3;
+                                        prev_init = a3;
+                                        innermost_idx++;
+                                    }
+                                    if (peek(p).kind == TOK_COMMA) consume(p);
+                                }
+                                if (peek(p).kind == TOK_RBRACE) consume(p);
+                                inner_idx++;
+                            } else {
+                                AstNode *ie = parse_expr(p);
+                                if (ie && decl->name) {
+                                    AstNode *outer_idx = new_ast(p, AST_CONSTANT);
+                                    outer_idx->ival = init_idx;
+                                    AstNode *inner_idx_node = new_ast(p, AST_CONSTANT);
+                                    inner_idx_node->ival = inner_idx;
+                                    AstNode *var_node = new_ast(p, AST_VAR);
+                                    var_node->name = decl->name;
+                                    AstNode *outer_sub = new_ast(p, AST_BINOP);
+                                    outer_sub->op = TOK_LBRACKET;
+                                    outer_sub->left = var_node;
+                                    outer_sub->right = outer_idx;
+                                    AstNode *inner_sub = new_ast(p, AST_BINOP);
+                                    inner_sub->op = TOK_LBRACKET;
+                                    inner_sub->left = outer_sub;
+                                    inner_sub->right = inner_idx_node;
+                                    AstNode *assign = new_ast(p, AST_ASSIGN);
+                                    assign->left = inner_sub;
+                                    assign->right = ie;
+                                    assign->type_size = (ts > 0 ? ts : 4);
+                                    if (prev_init) prev_init->next = assign;
+                                    else decl->expr = assign;
+                                    prev_init = assign;
+                                    inner_idx++;
+                                }
+                            }
+                            if (peek(p).kind == TOK_COMMA) consume(p);
+                        }
+                        while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+                            /* 3D+: int a[2][3][4] = {{{1,2},{3,4}},{{5,6},{7,8}}} */
+                            if (dim_count > 2 && peek(p).kind == TOK_LBRACE) {
+                                consume(p);
+                                int innermost_idx = 0;
+                                while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+                                    AstNode *ie = parse_expr(p);
+                                    if (ie && decl->name) {
+                                        AstNode *v2 = new_ast(p, AST_VAR);
+                                        v2->name = decl->name;
+                                        AstNode *si0 = new_ast(p, AST_CONSTANT);
+                                        si0->ival = init_idx;
+                                        AstNode *s1 = new_ast(p, AST_BINOP); s1->op = TOK_LBRACKET;
+                                        s1->left = v2; s1->right = si0;
+                                        AstNode *si1 = new_ast(p, AST_CONSTANT);
+                                        si1->ival = inner_idx;
+                                        AstNode *s2 = new_ast(p, AST_BINOP); s2->op = TOK_LBRACKET;
+                                        s2->left = s1; s2->right = si1;
+                                        AstNode *si2 = new_ast(p, AST_CONSTANT);
+                                        si2->ival = innermost_idx;
+                                        AstNode *s3 = new_ast(p, AST_BINOP); s3->op = TOK_LBRACKET;
+                                        s3->left = s2; s3->right = si2;
+                                        AstNode *a3 = new_ast(p, AST_ASSIGN);
+                                        a3->left = s3; a3->right = ie;
+                                        a3->type_size = (ts > 0 ? ts : 4);
+                                        if (prev_init) prev_init->next = a3;
+                                        else decl->expr = a3;
+                                        prev_init = a3;
+                                        innermost_idx++;
+                                    }
+                                    if (peek(p).kind == TOK_COMMA) consume(p);
+                                }
+                                if (peek(p).kind == TOK_RBRACE) consume(p);
+                                inner_idx++;
+                            } else {
+                                AstNode *ie = parse_expr(p);
+                                if (ie && decl->name) {
+                                    AstNode *outer_idx = new_ast(p, AST_CONSTANT);
+                                    outer_idx->ival = init_idx;
+                                    AstNode *inner_idx_node = new_ast(p, AST_CONSTANT);
+                                    inner_idx_node->ival = inner_idx;
+                                    AstNode *var_node = new_ast(p, AST_VAR);
+                                    var_node->name = decl->name;
+                                    AstNode *outer_sub = new_ast(p, AST_BINOP);
+                                    outer_sub->op = TOK_LBRACKET;
+                                    outer_sub->left = var_node;
+                                    outer_sub->right = outer_idx;
+                                    AstNode *inner_sub = new_ast(p, AST_BINOP);
+                                    inner_sub->op = TOK_LBRACKET;
+                                    inner_sub->left = outer_sub;
+                                    inner_sub->right = inner_idx_node;
+                                    AstNode *assign = new_ast(p, AST_ASSIGN);
+                                    assign->left = inner_sub;
+                                    assign->right = ie;
+                                    assign->type_size = (ts > 0 ? ts : 4);
+                                    if (prev_init) prev_init->next = assign;
+                                    else decl->expr = assign;
+                                    prev_init = assign;
+                                    inner_idx++;
+                                }
+                            }
+                            if (peek(p).kind == TOK_COMMA) consume(p);
+                        }
                                 if (peek(p).kind == TOK_RBRACE) consume(p);
                                 init_idx++;
                             } else if (struct_brace && peek(p).kind == TOK_DOT) {

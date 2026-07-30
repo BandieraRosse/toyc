@@ -632,9 +632,7 @@ static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had
                                 if (expand_stack_depth >= MAX_EXPAND_STACK) {
                                     __write(2, "toyc: macro expand stack overflow\n", 34);
                                     __exit(1); }
-                                expand_stack[expand_stack_depth++] = fn;
                                 pp_buf_impl(arg_starts[ai], arg_lens[ai], &ab, depth + 1, NULL);
-                                expand_stack_depth--;
                                 if (ab.data && ab.len > 0) {
                                     expanded_args[ai] = ab.data;
                                     expanded_lens[ai] = ab.len;

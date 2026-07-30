@@ -231,6 +231,9 @@ void cgen_asm(AstNode *node) {
         /* ModRM: mod=00, reg=low3(r2), r/m=010 ([rdx]) */
         e1(0x02 | ((r2 & 7) << 3));
 
+    } else if (str_contains(t, "mfence")) {
+        /* mfence -- full memory barrier (SSE2), encoding: 0F AE F0 */
+        e1(0x0F); e1(0xAE); e1(0xF0);
     } else if (str_contains(t, "%%fs:0")) {
         /* mov %%fs:0, %0 — 64 48 8B 04 25 00 00 00 00 */
         e1(0x64); e1(0x48); e1(0x8B); e1(0x04); e1(0x25);
