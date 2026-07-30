@@ -1,0 +1,171 @@
+lu@lu-Lenovo-Legion-R70002021:~/Desktop/toyc$ build/fb_evdev_info_self -v
+Input devices found on this system:
+
+── event0 ──
+  Name:   Power Button
+  Phys:   PNP0C0C/button/input0
+  Bus:    ACPI (0x0019)
+  Vendor: 0x0000  Product: 0x0001  Version: 0x0000
+  Types:  ?, KEY
+  Class:  Keyboard
+    Key count: 2
+    Keys: ── event1 ──
+  Name:   Lid Switch
+  Phys:   PNP0C0D/button/input0
+  Bus:    ACPI (0x0019)
+  Vendor: 0x0000  Product: 0x0005  Version: 0x0000
+  Types:  ?, SW
+  Class:  Switch
+── event2 ──
+  Name:   Power Button
+  Phys:   LNXPWRBN/button/input0
+  Bus:    ACPI (0x0019)
+  Vendor: 0x0000  Product: 0x0001  Version: 0x0000
+  Types:  ?, KEY
+  Class:  Keyboard
+    Key count: 2
+    Keys: ── event3 ──
+  Name:   AT Translated Set 2 keyboard
+  Phys:   isa0060/serio0/input0
+  Bus:    I2C (0x0011)
+  Vendor: 0x0001  Product: 0x0001  Version: 0xab83
+  Types:  ?, KEY, MSC, LED, REP
+  Class:  Keyboard
+    Key count: 145
+    Keys: Esc, BS, Tab, Enter, LCtrl, A, B, C, D, E, F, G
+           , H, I, J, K, L, M, N, O, RShift, LAlt, Spc, Caps
+           , F1, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, F12
+           , F13, F14, F15, F16, F17, F18, F19, F20, F21, F22, F23, F24
+           , F25, F27, F28, F29, F30, RCtrl, RAlt, Home, Up, PgUp, Lt, Rt
+           , End, Dn, PgDn, Ins, Del
+── event4 ──
+  Name:   HDA NVidia HDMI/DP,pcm=3
+  Phys:   ALSA
+  Bus:    PCI (0x0000)
+  Vendor: 0x0000  Product: 0x0000  Version: 0x0000
+  Types:  ?, SW
+  Class:  Switch
+── event5 ──
+  Name:   HDA NVidia HDMI/DP,pcm=8
+  Phys:   ALSA
+  Bus:    PCI (0x0000)
+  Vendor: 0x0000  Product: 0x0000  Version: 0x0000
+  Types:  ?, SW
+  Class:  Switch
+── event6 ──
+  Name:   Video Bus
+  Phys:   LNXVIDEO/video/input0
+  Bus:    ACPI (0x0019)
+  Vendor: 0x0000  Product: 0x0006  Version: 0x0000
+  Types:  ?, KEY
+  Class:  Keyboard
+    Key count: 8
+    Keys: ── event7 ──
+  Name:   Video Bus
+  Phys:   LNXVIDEO/video/input0
+  Bus:    ACPI (0x0019)
+  Vendor: 0x0000  Product: 0x0006  Version: 0x0000
+  Types:  ?, KEY
+  Class:  Keyboard
+    Key count: 8
+    Keys: ── event8 ──
+  Name:   INSTANT USB GAMING MOUSE 
+  Phys:   usb-0000:06:00.4-2/input0
+  Bus:    HIL (0x0003)
+  Vendor: 0x30fa  Product: 0x1701  Version: 0x0110
+  Types:  ?, KEY, REL, MSC
+  Class:  Mouse
+    Key count: 5
+    Keys: ── event9 ──
+  Name:   INSTANT USB GAMING MOUSE  Keyboard
+  Phys:   usb-0000:06:00.4-2/input1
+  Bus:    HIL (0x0003)
+  Vendor: 0x30fa  Product: 0x1701  Version: 0x0110
+  Types:  ?, KEY, REL, ABS, MSC, REP
+  Class:  Keyboard
+    Key count: 270
+    Keys: Esc, BS, Tab, Enter, LCtrl, A, B, C, D, E, F, G
+           , H, I, J, K, L, M, N, O, RShift, LAlt, Spc, Caps
+           , F1, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, F12
+           , F13, F14, F15, F16, F17, F18, F19, F20, F21, F22, F23, F24
+           , F25, F27, F28, F29, F30, RCtrl, RAlt, Home, Up, PgUp, Lt, Rt
+           , End, Dn, PgDn, Ins, Del
+── event10 ──
+  Name:   ITE Tech. Inc. ITE Device(8910) Keyboard
+  Phys:   usb-0000:06:00.3-4/input0
+  Bus:    HIL (0x0003)
+  Vendor: 0x048d  Product: 0xc101  Version: 0x0110
+  Types:  ?, KEY, REL, ABS, MSC, LED, REP
+  Class:  Keyboard
+    Key count: 265
+    Keys: Esc, BS, Tab, Enter, LCtrl, A, B, C, D, E, F, G
+           , H, I, J, K, L, M, N, O, RShift, LAlt, Spc, Caps
+           , F1, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, F12
+           , F13, F14, F15, F16, F17, F18, F19, F20, F21, F22, F23, F24
+           , F25, F27, F28, F29, F30, RCtrl, RAlt, Home, Up, PgUp, Lt, Rt
+           , End, Dn, PgDn, Ins, Del
+── event11 ──
+  Name:   ITE Tech. Inc. ITE Device(8910) Wireless Radio Control
+  Phys:   usb-0000:06:00.3-4/input0
+  Bus:    HIL (0x0003)
+  Vendor: 0x048d  Product: 0xc101  Version: 0x0110
+  Types:  ?, KEY, MSC
+  Class:  Keyboard
+    Key count: 1
+    Keys: ── event12 ──
+  Name:   Ideapad extra buttons
+  Phys:   ideapad/input0
+  Bus:    ACPI (0x0019)
+  Vendor: 0x0000  Product: 0x0000  Version: 0x0000
+  Types:  ?, KEY, MSC
+  Class:  Keyboard
+    Key count: 23
+    Keys: Esc
+── event13 ──
+  Name:   HDA NVidia HDMI/DP,pcm=7
+  Phys:   ALSA
+  Bus:    PCI (0x0000)
+  Vendor: 0x0000  Product: 0x0000  Version: 0x0000
+  Types:  ?, SW
+  Class:  Switch
+── event14 ──
+  Name:   HD-Audio Generic Mic
+  Phys:   ALSA
+  Bus:    PCI (0x0000)
+  Vendor: 0x0000  Product: 0x0000  Version: 0x0000
+  Types:  ?, SW
+  Class:  Switch
+── event15 ──
+  Name:   HDA NVidia HDMI/DP,pcm=9
+  Phys:   ALSA
+  Bus:    PCI (0x0000)
+  Vendor: 0x0000  Product: 0x0000  Version: 0x0000
+  Types:  ?, SW
+  Class:  Switch
+── event16 ──
+  Name:   HD-Audio Generic Headphone
+  Phys:   ALSA
+  Bus:    PCI (0x0000)
+  Vendor: 0x0000  Product: 0x0000  Version: 0x0000
+  Types:  ?, SW
+  Class:  Switch
+── event17 ──
+  Name:   ELAN06FA:00 04F3:31DD Mouse
+  Phys:   i2c-ELAN06FA:00
+  Bus:    Unknown (0x0018)
+  Vendor: 0x04f3  Product: 0x31dd  Version: 0x0100
+  Types:  ?, KEY, REL, MSC
+  Class:  Mouse
+    Key count: 2
+    Keys: ── event18 ──
+  Name:   ELAN06FA:00 04F3:31DD Touchpad
+  Phys:   i2c-ELAN06FA:00
+  Bus:    Unknown (0x0018)
+  Vendor: 0x04f3  Product: 0x31dd  Version: 0x0100
+  Types:  ?, KEY, ABS, MSC
+  Class:  Touchscreen
+    Key count: 7
+    Keys: 
+Total: 1 device(s)
+Tip: use fb_evdev_info -v for extended key listing
+Tip: fb_evdev_info <N> to show only eventN

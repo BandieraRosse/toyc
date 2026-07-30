@@ -608,6 +608,68 @@ static int play_mp3(struct mp3_player *p)
 
 /* ── 入口 ── */
 
+/*
+ * try_pasuspender_fallback — 通过 pasuspender 重新执行自身
+ *
+ * 当自动选择的最佳音频设备被 PulseAudio 占用时，
+ * 通过 execve /usr/bin/pasuspender 挂起 PulseAudio 后重新运行。
+ *
+ * 成功时不返回（当前进程被替换），失败时返回（pasuspender 不可用）。
+ */
+static void try_pasuspender_fallback(int argc, char **argv)
+{
+    /* 递归防护：已在 pasuspender 下则不再重试 */
+    if (get_env_var(global_envp, "_MP3_PASUSPENDER") != NULL)
+        return;
+
+    /* 检查 /usr/bin/pasuspender 是否存在 */
+    int fd = __openat(AT_FDCWD, "/usr/bin/pasuspender",
+                      O_RDONLY | O_CLOEXEC, 0);
+    if (fd < 0)
+        return;
+    __close(fd);
+
+    __printf("mp3_player: 设备被 PulseAudio 占用，通过 pasuspender 重试...\n");
+
+    /* ── 构建新 argv ── */
+    int new_argc = argc + 2;
+    char **new_argv = tlibc_malloc((unsigned long)(new_argc + 1)
+                                   * sizeof(char *));
+    if (!new_argv) return;
+
+    new_argv[0] = "/usr/bin/pasuspender";
+    new_argv[1] = "--";
+    new_argv[2] = argv[0];
+    for (int i = 1; i < argc; i++)
+        new_argv[i + 2] = argv[i];
+    new_argv[new_argc] = NULL;
+
+    /* ── 构建新 envp（追加 _MP3_PASUSPENDER=1）── */
+    int env_count = tlibc_envp_count(global_envp);
+    char **new_envp = tlibc_malloc((unsigned long)(env_count + 2)
+                                   * sizeof(char *));
+    if (!new_envp) {
+        tlibc_free(new_argv);
+        return;
+    }
+
+    for (int i = 0; i < env_count; i++)
+        new_envp[i] = global_envp[i];
+
+    {
+        static char pa_flag[] = "_MP3_PASUSPENDER=1";
+        new_envp[env_count] = pa_flag;
+    }
+    new_envp[env_count + 1] = NULL;
+
+    /* ── execve：成功则当前进程完全替换 ── */
+    {
+        int ret = execve("/usr/bin/pasuspender", new_argv, new_envp);
+        PRINT_COLOR(RED_COLOR_PRINT,
+            "mp3_player: pasuspender 启动失败 (errno=%d)\n", -ret);
+    }
+}
+
 int main(int argc, char **argv)
 {
     const char *file_path;
@@ -624,6 +686,25 @@ int main(int argc, char **argv)
 
     file_path = argv[1];
     player.dev_path = (argc > 2) ? argv[2] : NULL;
+
+    /* ── PulseAudio 冲突提前检测 ──
+     *
+     * 在自动模式下，如果 PulseAudio 占用最佳模拟设备，
+     * 在打开音频前主动尝试 pasuspender 回退，
+     * 避免已打开次优设备（如 HDMI）后再切换的麻烦。
+     */
+    if (!player.dev_path) {
+        struct tlibc_audio_dev devs[16];
+        int ndev = tlibc_audio_scan(devs, 16, 0, 0);
+        if (ndev > 1 && devs[0].busy && tlibc_check_pulseaudio()) {
+            /* 最佳设备被占且 PulseAudio 在运行 → 尝试 pasuspender */
+            try_pasuspender_fallback(argc, argv);
+            /* 执行到这里说明 pasuspender 失败，继续使用 fallback */
+            __printf("mp3_player: pasuspender 不可用，"
+                     "将使用次优设备 %s (评分 %d)\n",
+                     devs[1].name, devs[1].score);
+        }
+    }
 
     player.mp3_fd = __openat(AT_FDCWD, file_path, O_RDONLY, 0);
     if (player.mp3_fd < 0) {

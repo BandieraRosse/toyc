@@ -107,7 +107,16 @@ static int scan_pcm_device(void)
 /*
  * tlibc_pcm_open — 打开 PCM 播放设备
  *
- * dev 为 NULL 时自动扫描 /dev/snd/。
+ * dev 为 NULL 时使用评分系统自动选择最佳设备。
+ *
+ * 选择策略（dev==NULL 时）：
+ *   1. 通过 tlibc_audio_scan() 枚举所有 PCM 播放设备
+ *   2. 按评分降序尝试打开（类型分 + 格式分 + 卡优先级）
+ *   3. 若最高分设备被占（EBUSY），尝试次高分可用设备
+ *   4. 若全部被占，返回 -EBUSY（调用者可尝试 pasuspender 回退）
+ *
+ * 环境变量 ALSA_DEVICE 可强制指定设备路径，跳过扫描。
+ *
  * 成功返回 0，pcm 结构体被填充；失败返回负 errno。
  */
 int tlibc_pcm_open(struct tlibc_pcm *pcm, const char *dev,
@@ -119,26 +128,109 @@ int tlibc_pcm_open(struct tlibc_pcm *pcm, const char *dev,
     if (!pcm)
         return -EINVAL;
 
+    pcm->best_was_busy = 0;
+    pcm->opened_path[0] = '\0';
+
+    /* ── 指定设备：直接尝试打开 ── */
     if (dev) {
         fd = try_open_dev(dev);
-    } else {
-        /* 1. 尝试默认路径 */
-        fd = try_open_dev("/dev/snd/pcmC0D0p");
-        /* 2. 失败则扫描 */
         if (fd < 0)
-            fd = scan_pcm_device();
+            return fd;
+        pcm->fd             = fd;
+        pcm->channels       = channels;
+        pcm->rate           = rate;
+        pcm->bits_per_sample = bits;
+        pcm->frame_size     = (bits / 8) * channels;
+        pcm->buffer_size    = 0;
+        return 0;
     }
 
-    if (fd < 0)
-        return fd;
+    /* ── 自动选择：使用评分系统 ── */
+    {
+        struct tlibc_audio_dev devs[16];
+        int ndev = tlibc_audio_scan(devs, 16, rate, channels);
 
+        if (ndev < 0) {
+            /* 扫描器完全失败，回退到原始扫描 */
+            fd = try_open_dev("/dev/snd/pcmC0D0p");
+            if (fd < 0)
+                fd = scan_pcm_device();
+            if (fd < 0)
+                return fd;
+            goto found;
+        }
+
+        if (ndev == 0)
+            return -ENOENT;
+
+        /* ── 按评分降序尝试打开 ──
+         *
+         * 注意：扫描器用 O_NONBLOCK 探测设备可用性，PulseAudio 空闲时
+         * 可能返回成功。但实际 tlibc_pcm_open 使用阻塞打开，
+         * 如果 PulseAudio 在扫描和打开之间开始播放，可能返回 EBUSY。
+         * 因此不依赖 devs[i].busy 标记，直接尝试打开每个设备。
+         */
+        int best_idx = -1;
+        int tried_0_failed = 0;   /* 最佳设备在真正打开时失败 */
+
+        for (int i = 0; i < ndev; i++) {
+            fd = try_open_dev(devs[i].path);
+            if (fd >= 0) {
+                best_idx = i;
+                break;
+            }
+            if (i == 0 && fd == -EBUSY)
+                tried_0_failed = 1;
+        }
+
+        /* 没有可用设备 */
+        if (best_idx < 0)
+            return -EBUSY;
+
+        /* 调试输出：选中设备信息 */
+        {
+            const struct tlibc_audio_dev *d = &devs[best_idx];
+            int best_was_unavailable = (best_idx > 0 && tried_0_failed);
+            __printf("mp3_player: 选中音频设备 [%s] %s  (评分 %d, "
+                     "共 %d 设备)\n",
+                     tlibc_audio_dev_type_str(d->type),
+                     d->name, d->score, ndev);
+            if (best_was_unavailable) {
+                pcm->best_was_busy = 1;
+                __printf("  注意: 最佳设备 %s (%d分) 被占用，"
+                         "使用次优\n", devs[0].name, devs[0].score);
+            }
+        }
+
+        /* 记录实际打开的设备路径 */
+        {
+            const struct tlibc_audio_dev *d = &devs[best_idx];
+            int ni = 0;
+            while (d->path[ni] && ni < TLIB_AUDIO_PATH_SZ - 1) {
+                pcm->opened_path[ni] = d->path[ni];
+                ni++;
+            }
+            pcm->opened_path[ni] = '\0';
+        }
+
+        pcm->fd             = fd;
+        pcm->channels       = channels;
+        pcm->rate           = rate;
+        pcm->bits_per_sample = bits;
+        pcm->frame_size     = (bits / 8) * channels;
+        pcm->buffer_size    = 0;
+        return 0;
+    }
+
+found:
     pcm->fd             = fd;
     pcm->channels       = channels;
     pcm->rate           = rate;
     pcm->bits_per_sample = bits;
     pcm->frame_size     = (bits / 8) * channels;
-    pcm->buffer_size    = 0;   /* 由 HW_PARAMS 填充 */
-
+    pcm->buffer_size    = 0;
+    pcm->best_was_busy  = 0;
+    /* fallback 路径没有设备名，留空 */
     return 0;
 }
 

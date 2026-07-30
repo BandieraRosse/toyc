@@ -323,6 +323,22 @@ struct snd_pcm_info {
                                              sizeof(struct snd_pcm_info))
 
 /* ══════════════════════════════════════════════════════════════════════
+ *  设备扫描 / 评分 — alsa_scan.c
+ * ══════════════════════════════════════════════════════════════════════ */
+
+#define TLIB_AUDIO_DEV_NAME_SZ  80
+#define TLIB_AUDIO_PATH_SZ      48
+
+enum tlibc_dev_type {
+    DEV_TYPE_ANALOG  = 0,
+    DEV_TYPE_USB,
+    DEV_TYPE_SPDIF,
+    DEV_TYPE_HDMI,
+    DEV_TYPE_OTHER,
+    DEV_TYPE_UNKNOWN,
+};
+
+/* ══════════════════════════════════════════════════════════════════════
  *  PCM 描述符（上层应用使用）
  * ══════════════════════════════════════════════════════════════════════ */
 
@@ -333,7 +349,34 @@ struct tlibc_pcm {
     unsigned int    bits_per_sample; /* 位深 */
     unsigned int    frame_size;      /* 每帧字节数 */
     unsigned long   buffer_size;     /* 缓冲区大小（帧） */
+    int             best_was_busy;   /* 最佳设备被占(EBUSY)，选了次优 */
+    char            opened_path[TLIB_AUDIO_PATH_SZ]; /* 实际打开的路径 */
 };
+
+struct tlibc_audio_dev {
+    int   card;
+    int   device;
+    char  name[TLIB_AUDIO_DEV_NAME_SZ];
+    enum  tlibc_dev_type type;
+    int   score;
+    int   fd;
+    int   busy;
+    char  path[TLIB_AUDIO_PATH_SZ];
+};
+
+/* 枚举所有 PCM 播放设备，按评分降序排列 */
+int  tlibc_audio_scan(struct tlibc_audio_dev *devs, int max_devs,
+                      unsigned int req_rate, unsigned int req_ch);
+
+/* 辅助：按路径查找设备下标 */
+int  tlibc_audio_find_by_path(const struct tlibc_audio_dev *devs,
+                              int count, const char *path);
+
+/* 辅助：获取设备类型字符串 */
+const char *tlibc_audio_dev_type_str(enum tlibc_dev_type t);
+
+/* 检查 PulseAudio 是否活跃（用于 EBUSY 诊断） */
+int  tlibc_check_pulseaudio(void);
 
 /* ── PCM API 声明 ── */
 

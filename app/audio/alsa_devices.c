@@ -160,111 +160,185 @@ static void probe_caps(int fd)
 
 int main(int argc, char **argv)
 {
-    int card = 0;
+    int show_all = 0;
     (void)argc;
     (void)argv;
+
+    /* 简单参数解析 */
+    for (int i = 1; i < argc; i++) {
+        if (argv[i][0] == '-') {
+            for (int j = 1; argv[i][j]; j++) {
+                if (argv[i][j] == 'a') show_all = 1;
+            }
+        }
+    }
 
     PRINT_COLOR(BRIGHT_BLUE_COLOR_PRINT,
         "╔══════════════════════════════════════════════╗\n"
         "║  ALSA PCM 设备探针                           ║\n"
-        "║  controlC* ioctl → 名称 → HW_REFINE → 能力   ║\n"
+        "║  scoring + multi-card + device scan          ║\n"
         "╚══════════════════════════════════════════════╝\n");
 
     __printf("\n缩写: PLAY=播放  CAP=录音  [模拟]=模拟音频  [HDMI]=数字输出\n");
-    __printf("名称来源: SNDRV_CTL_IOCTL_PCM_INFO（控制设备 ioctl，设备被占也可读）\n");
 
-    /* 打开控制设备 */
-    char ctl_path[32];
-    snprintf(ctl_path, sizeof(ctl_path), "/dev/snd/controlC%d", card);
-    int ctl_fd = __openat(AT_FDCWD, ctl_path, O_RDWR | O_CLOEXEC, 0);
-    int use_ctl = (ctl_fd >= 0);
+    /* ── 使用新扫描器枚举所有卡的播放设备 ── */
+    struct tlibc_audio_dev devs[48];
+    int ndev = tlibc_audio_scan(devs, 48, 48000, 2);
 
-    /* 枚举所有 PCM 设备 */
-    int dev_idx = -1;
-    int found = 0;
+    if (ndev > 0) {
+        __printf("\n");
+        PRINT_COLOR(BRIGHT_CYAN_COLOR_PRINT,
+            "▶ 播放设备（评分降序，目标 48000Hz/2ch）\n");
 
-    while (1) {
-        int next = dev_idx;
-        if (!use_ctl || __ioctl(ctl_fd,
-                SNDRV_CTL_IOCTL_PCM_NEXT_DEVICE, &next) < 0)
-            break;
-        if (next <= dev_idx) break;
-        dev_idx = next;
-
-        /* 两个方向：PLAYBACK 和 CAPTURE */
-        static const int streams[] = {
-            SNDRV_PCM_STREAM_PLAYBACK,
-            SNDRV_PCM_STREAM_CAPTURE
-        };
-        static const char stream_ch[] = { 'p', 'c' };
-        static const char *stream_str[] = { "PLAY", "CAP " };
-
-        for (int si = 0; si < 2; si++) {
-            struct snd_pcm_info info;
-            memset(&info, 0, sizeof(info));
-            info.device    = dev_idx;
-            info.subdevice = 0;
-            info.stream    = streams[si];
-
-            /* 通过 control 设备查询名称 */
-            int has_ctl = (use_ctl && __ioctl(ctl_fd,
-                           SNDRV_CTL_IOCTL_PCM_INFO, &info) == 0);
-
-            /* 后备：无 control 或查询失败 → procfs */
-            char fallback_name[96] = "?";
-            if (!has_ctl) {
-                if (read_name_from_procfs(card, dev_idx, streams[si] == 0,
-                                           fallback_name,
-                                           sizeof(fallback_name)) < 0)
-                    continue;  /* 该设备无此方向 */
-            }
-
-            const char *dev_name = has_ctl ? (const char *)info.name
-                                           : fallback_name;
-            const char *type = classify_dev(dev_name);
+        for (int i = 0; i < ndev; i++) {
+            const struct tlibc_audio_dev *d = &devs[i];
 
             /* 颜色 */
             const char *color;
-            if (strstr(type, "HDMI"))       color = BRIGHT_YELLOW_COLOR_PRINT;
-            else if (si == 1)               color = BRIGHT_GREEN_COLOR_PRINT;
-            else                            color = BRIGHT_CYAN_COLOR_PRINT;
-
-            __printf("\n");
-            PRINT_COLOR(color,
-                "pcmC%dD%d%c  %s  %s  [%s]\n",
-                info.card, info.device, stream_ch[si],
-                stream_str[si], dev_name, type);
-
-            /* 打开 PCM 节点做 HW_REFINE */
-            char path[48];
-            snprintf(path, sizeof(path), "/dev/snd/pcmC%dD%d%c",
-                     info.card, info.device, stream_ch[si]);
-            int pcm_fd = __openat(AT_FDCWD, path,
-                                  O_RDWR | O_NONBLOCK | O_CLOEXEC, 0);
-
-            if (pcm_fd == -EBUSY) {
-                __printf("  状态: 被占用 (EBUSY)\n");
-            } else if (pcm_fd < 0) {
-                __printf("  状态: 无法打开 (errno=%d)\n", -pcm_fd);
-            } else {
-                __printf("  状态: 可用\n");
-                probe_caps(pcm_fd);
-                __close(pcm_fd);
+            switch (d->type) {
+            case DEV_TYPE_ANALOG: color = CYAN_COLOR_PRINT; break;
+            case DEV_TYPE_HDMI:   color = YELLOW_COLOR_PRINT; break;
+            case DEV_TYPE_USB:    color = MAGANTA_COLOR_PRINT; break;
+            default:              color = CLEAR_COLOR_PRINT; break;
             }
-            found++;
+
+            PRINT_COLOR(color,
+                "  #%d  %s  %s  [%s]  评分=%d%s\n",
+                i, d->path, d->name,
+                tlibc_audio_dev_type_str(d->type),
+                d->score,
+                d->busy ? "  ⚠ 被占用(EBUSY)" : "");
+        }
+
+        /* ── 显示选中结果 ── */
+        __printf("\n");
+        int best_available = -1;
+        for (int i = 0; i < ndev; i++) {
+            if (!devs[i].busy) {
+                best_available = i;
+                break;
+            }
+        }
+
+        if (best_available >= 0) {
+            const struct tlibc_audio_dev *d = &devs[best_available];
+            if (best_available == 0 && !devs[0].busy) {
+                PRINT_COLOR(BRIGHT_GREEN_COLOR_PRINT,
+                    "✓ 自动选中: %s (%s) — 最佳匹配\n",
+                    d->path, d->name);
+            } else {
+                __printf("自动选中: %s (%s) — ", d->path, d->name);
+                if (devs[0].busy) {
+                    PRINT_COLOR(BRIGHT_YELLOW_COLOR_PRINT,
+                        "最佳设备 %s 被占用 ← 换用次优\n", devs[0].name);
+                } else {
+                    __printf("第 %d 优\n", best_available + 1);
+                }
+            }
+        } else {
+            PRINT_COLOR(BRIGHT_RED_COLOR_PRINT,
+                "✗ 所有 %d 个播放设备均被占用\n", ndev);
+            if (tlibc_check_pulseaudio()) {
+                __printf("  检测到 PulseAudio 活跃，可尝试 pasuspender\n");
+            }
         }
     }
 
-    if (use_ctl) __close(ctl_fd);
+    /* ── 旧式枚举：按原名显示 replay + capture ── */
+    {
+        int card = 0;
+        char ctl_path[32];
+        snprintf(ctl_path, sizeof(ctl_path), "/dev/snd/controlC%d", card);
+        int ctl_fd = __openat(AT_FDCWD, ctl_path, O_RDWR | O_CLOEXEC, 0);
+        int use_ctl = (ctl_fd >= 0);
 
-    if (!found) __printf("未发现 PCM 设备\n");
+        /* 枚举所有 PCM 设备 */
+        int dev_idx = -1;
+        int found = 0;
 
-    __printf("\n══════════════════════════════════════════════\n");
-    __printf("判别依据:\n");
-    __printf("  • 设备名称含 \"Analog\" → 模拟输出（接耳机/扬声器）\n");
-    __printf("  • 设备名称含 \"HDMI\"   → 数字输出（接显示器）\n");
-    __printf("  • 支持 MULTI 多重打开    → HDMI/数字接口特性\n");
-    __printf("  • 支持 AC3 格式         → 仅数字接口\n");
-    __printf("\n");
+        while (1) {
+            int next = dev_idx;
+            if (!use_ctl || __ioctl(ctl_fd,
+                    SNDRV_CTL_IOCTL_PCM_NEXT_DEVICE, &next) < 0)
+                break;
+            if (next <= dev_idx) break;
+            dev_idx = next;
+
+            /* 两个方向：PLAYBACK 和 CAPTURE */
+            static const int streams[] = {
+                SNDRV_PCM_STREAM_PLAYBACK,
+                SNDRV_PCM_STREAM_CAPTURE
+            };
+            static const char stream_ch[] = { 'p', 'c' };
+            static const char *stream_str[] = { "PLAY", "CAP " };
+
+            for (int si = 0; si < 2; si++) {
+                struct snd_pcm_info info;
+                memset(&info, 0, sizeof(info));
+                info.device    = dev_idx;
+                info.subdevice = 0;
+                info.stream    = streams[si];
+
+                int has_ctl = (use_ctl && __ioctl(ctl_fd,
+                               SNDRV_CTL_IOCTL_PCM_INFO, &info) == 0);
+
+                char fallback_name[96] = "?";
+                if (!has_ctl) {
+                    if (read_name_from_procfs(card, dev_idx, streams[si] == 0,
+                                               fallback_name,
+                                               sizeof(fallback_name)) < 0)
+                        continue;
+                }
+
+                const char *dev_name = has_ctl ? (const char *)info.name
+                                               : fallback_name;
+                const char *type = classify_dev(dev_name);
+
+                const char *color;
+                if (strstr(type, "HDMI"))       color = BRIGHT_YELLOW_COLOR_PRINT;
+                else if (si == 1)               color = BRIGHT_GREEN_COLOR_PRINT;
+                else                            color = BRIGHT_CYAN_COLOR_PRINT;
+
+                __printf("\n");
+                PRINT_COLOR(color,
+                    "pcmC%dD%d%c  %s  %s  [%s]\n",
+                    info.card, info.device, stream_ch[si],
+                    stream_str[si], dev_name, type);
+
+                char path[48];
+                snprintf(path, sizeof(path), "/dev/snd/pcmC%dD%d%c",
+                         info.card, info.device, stream_ch[si]);
+                int pcm_fd = __openat(AT_FDCWD, path,
+                                      O_RDWR | O_NONBLOCK | O_CLOEXEC, 0);
+
+                if (pcm_fd == -EBUSY) {
+                    __printf("  状态: 被占用 (EBUSY)\n");
+                } else if (pcm_fd < 0) {
+                    __printf("  状态: 无法打开 (errno=%d)\n", -pcm_fd);
+                } else {
+                    __printf("  状态: 可用\n");
+                    if (show_all) {
+                        probe_caps(pcm_fd);
+                    }
+                    __close(pcm_fd);
+                }
+                found++;
+            }
+        }
+
+        if (use_ctl) __close(ctl_fd);
+
+        if (!found && ndev <= 0)
+            __printf("未发现 PCM 设备\n");
+    }
+
+    if (ndev > 0) {
+        __printf("\n══════════════════════════════════════════════\n");
+        __printf("评分判据:\n");
+        __printf("  • 设备类型: 模拟+200, USB+150, SPDIF+60, HDMI+10\n");
+        __printf("  • 格式匹配: 精确匹配需求 +100, 仅声道匹配 +40\n");
+        __printf("  • 卡优先级: 默认卡 +30, 其他卡 +10\n");
+        __printf("  • EBUSY 惩罚: -150（保留 pasuspender 回退机会）\n");
+    }
     return 0;
 }

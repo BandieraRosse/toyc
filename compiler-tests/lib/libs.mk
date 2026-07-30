@@ -83,7 +83,7 @@ _SRCS_evdev_mouse := evdev_mouse.c
 _DEPS_evdev_mouse := core string
 
 # ── audio — ALSA 音频 ────────────────────────────────────────────
-_SRCS_audio   := audio/alsa.c
+_SRCS_audio   := audio/alsa.c audio/alsa_scan.c
 _DEPS_audio   := core
 
 # ── thread — pthread 线程库 ──────────────────────────────────────

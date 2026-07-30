@@ -1,0 +1,30 @@
+[36;1m══════════════════════════════════════════════════
+  设备快照 — Device Snapshot
+  主机: [33;1mlu-SFA16-71[36;1m
+[36;1m══════════════════════════════════════════════════
+[0m
+[36;1m▶ 音频播放设备[0m
+  [34;1m#    设备                 名称                         类型   评分[0m
+  [34;1m---  ------                 ----                           ----     ----[0m
+  [32;1m#0   /dev/snd/pcmC0D0p      ALC269VC Analog                [模拟] 250[0m
+  [33;1m#1   /dev/snd/pcmC0D3p      HDMI 0                         [HDMI ]  60[0m
+  [33;1m#2   /dev/snd/pcmC0D7p      HDMI 1                         [HDMI ]  60[0m
+  [33;1m#3   /dev/snd/pcmC0D8p      HDMI 2                         [HDMI ]  60[0m
+  [33;1m#4   /dev/snd/pcmC0D9p      HDMI 3                         [HDMI ]  60[0m
+
+  [36;1m→ 自动选中分析:[0m
+    [32;1m✓ /dev/snd/pcmC0D0p (评分 250)[0m
+    → 最佳匹配，设备可用
+
+[36;1m▶ 键盘设备[0m
+  选中: YICHIP Wireless Device (evdev_kbd 评分系统)
+
+[36;1m▶ 鼠标设备[0m
+  选中: YICHIP Wireless Device Mouse (evdev_mouse 评分系统)
+
+[36;1m══════════════════════════════════════════════════
+  快照结束 — 可将以上输出记录到
+  compiler-tests/device-tables/<hostname>.txt
+  用于回归验证设备发现逻辑
+[36;1m══════════════════════════════════════════════════
+[0m

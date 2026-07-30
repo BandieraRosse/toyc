@@ -1,0 +1,37 @@
+lu@lu-Lenovo-Legion-R70002021:~/Desktop/toyc$ build/alsa_devices_self 
+╔══════════════════════════════════════════════╗
+║  ALSA PCM 设备探针                           ║
+║  controlC* ioctl → 名称 → HW_REFINE → 能力   ║
+╚══════════════════════════════════════════════╝
+
+缩写: PLAY=播放  CAP=录音  [模拟]=模拟音频  [HDMI]=数字输出
+名称来源: SNDRV_CTL_IOCTL_PCM_INFO（控制设备 ioctl，设备被占也可读）
+
+pcmC0D3p  PLAY  HDMI 0  [HDMI]
+  状态: 可用
+  格式:     S16_LE
+  采样位深: 16 ~ 32  |  声道: 2 ~ 8
+  采样率:   32000 ~ 192000 Hz
+  Period:   4 ~ 524288  |  Buffer: 8 ~ 1048576 帧
+
+pcmC0D7p  PLAY  HDMI 1  [HDMI]
+  状态: 可用
+  格式:     S16_LE
+  采样位深: 16 ~ 32  |  声道: 2 ~ 8
+  采样率:   32000 ~ 192000 Hz
+  Period:   4 ~ 524288  |  Buffer: 8 ~ 1048576 帧
+
+pcmC0D8p  PLAY  HDMI 2  [HDMI]
+  状态: 可用
+  格式:     S16_LE
+  采样位深: 16 ~ 32  |  声道: 2 ~ 8
+  采样率:   32000 ~ 192000 Hz
+  Period:   4 ~ 524288  |  Buffer: 8 ~ 1048576 帧
+
+pcmC0D9p  PLAY  HDMI 3  [HDMI]
+  状态: 可用
+  格式:     S16_LE
+  采样位深: 16 ~ 32  |  声道: 2 ~ 8
+  采样率:   32000 ~ 192000 Hz
+  Period:   4 ~ 524288  |  Buffer: 8 ~ 1048576 帧
+
