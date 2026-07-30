@@ -217,6 +217,7 @@ struct input_event {
 #define BTN_LEFT        0x110   /* 左键 */
 #define BTN_RIGHT       0x111   /* 右键 */
 #define BTN_MIDDLE      0x112   /* 中键 */
+#define BTN_TOOL_FINGER 0x145   /* 触摸板手指检测 */
 
 /* ── 鼠标相对轴 (EV_REL) code ── */
 

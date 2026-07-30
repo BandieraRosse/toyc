@@ -65,9 +65,11 @@ static int mouse_score(int fd)
     if (__ioctl(fd, EVIOCGBIT(0, sizeof(evbits)), evbits) < 0)
         return 0;
 
-    /* 必须有相对坐标能力（EV_REL） */
+    /* 必须有相对坐标能力（EV_REL）和按键事件能力 */
     if (!test_bit(EV_REL, evbits, sizeof(evbits)))
         return 0;
+    if (!test_bit(EV_KEY, evbits, sizeof(evbits)))
+        return 0;   /* 纯位移传感器不是鼠标 */
 
     /* 检查 REL_X / REL_Y / REL_WHEEL */
     {
@@ -82,11 +84,14 @@ static int mouse_score(int fd)
             score += 2;     /* 有滚轮 → 更像是真鼠标 */
     }
 
-    /* 统计 BTN 按键数量 */
+    /* 统计 BTN 按键数量，同时排除触摸板 */
     {
         unsigned char keybits[128] = {0};
         int len = sizeof(keybits);
         if (__ioctl(fd, EVIOCGBIT(EV_KEY, len), keybits) >= 0) {
+            if (test_bit(BTN_TOOL_FINGER, keybits, len))
+                return 0;       /* 触摸板不是鼠标 */
+
             int count = 0;
             for (int i = BTN_LEFT; i < len * 8 && i < BTN_LEFT + 16; i++) {
                 if (test_bit(i, keybits, len))

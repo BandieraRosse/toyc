@@ -37,6 +37,18 @@ struct evdev_kbd {
     char name[128];
 };
 
+/* 不区分大小写的子串检测 */
+static int has_substr(const char *str, const char *sub)
+{
+    int i, j;
+    for (i = 0; str[i]; i++) {
+        for (j = 0; sub[j]; j++)
+            if ((str[i+j]|32) != (sub[j]|32)) break;
+        if (!sub[j]) return 1;
+    }
+    return 0;
+}
+
 /* ── 给 fd 的键盘度打分（0=不是键盘，分越高越像真键盘）──
  *
  * 评分规则：
@@ -92,6 +104,13 @@ static int keyboard_score(int fd, char *name_out, int name_sz)
     if (key_ext > key_std)
         return 0;
 
+    /* 必须有字母键（筛掉条码扫描器、遥控器等只有数字/功能键的设备） */
+    if (!test_bit(KEY_A, keybits, sizeof(keybits)) ||
+        !test_bit(KEY_Q, keybits, sizeof(keybits)) ||
+        !test_bit(KEY_ESC, keybits, sizeof(keybits)) ||
+        !test_bit(KEY_ENTER, keybits, sizeof(keybits)))
+        return 0;
+
     /* ── 基础分：标准键盘键数 ×3（强调"打字键"而非按钮）── */
     int score = key_std * 3;
 
@@ -105,20 +124,11 @@ static int keyboard_score(int fd, char *name_out, int name_sz)
         return 0;
     score += 300;
 
-    /* ── 读取设备名（只读一次，后续所有检测共用）── */
+    /* ── 读取设备名 ── */
     char dev_name[128] = {0};
     int name_has_kbd = 0;
-    if (__ioctl(fd, EVIOCGNAME(sizeof(dev_name)), dev_name) >= 0) {
-        for (int i = 0; dev_name[i]; i++) {
-            if ((dev_name[i]|32)=='k' && (dev_name[i+1]|32)=='e' &&
-                (dev_name[i+2]|32)=='y' && (dev_name[i+3]|32)=='b' &&
-                (dev_name[i+4]|32)=='o' && (dev_name[i+5]|32)=='a' &&
-                (dev_name[i+6]|32)=='r' && (dev_name[i+7]|32)=='d') {
-                name_has_kbd = 1;
-                break;
-            }
-        }
-    }
+    if (__ioctl(fd, EVIOCGNAME(sizeof(dev_name)), dev_name) >= 0 && dev_name[0])
+        name_has_kbd = has_substr(dev_name, "keyboard");
 
     /* ── 键鼠复合体检测 ──
      *   设备有鼠标能力（EV_REL/EV_ABS）但名字里没写 "Keyboard"：
@@ -149,66 +159,16 @@ static int keyboard_score(int fd, char *name_out, int name_sz)
         }
     }
 
-    /* ── 设备名检测（用已读取的 dev_name，避免重复 ioctl）── */
+    /* ── 设备名检测 ── */
     if (dev_name[0]) {
-        if (name_has_kbd)
-            score += 300;       /* "Keyboard" 字样 → 肯定是真键盘，大额加分 */
+        if (name_has_kbd) score += 300;
+        if (has_substr(dev_name, "extra"))  score -= 300;
+        if (has_substr(dev_name, "radio"))  score -= 300;
+        if (has_substr(dev_name, "sensor")) score -= 300;
+        if (has_substr(dev_name, "button")) score -= 200;
+        if (has_substr(dev_name, "mouse"))  score -= 200;
+        if (has_substr(dev_name, "touch"))  score -= 200;
 
-        /* "extra" → 功能键 */
-        for (int i = 0; dev_name[i]; i++) {
-            if ((dev_name[i]|32)=='e' && (dev_name[i+1]|32)=='x' &&
-                (dev_name[i+2]|32)=='t' && (dev_name[i+3]|32)=='r' &&
-                (dev_name[i+4]|32)=='a') {
-                score -= 300;
-                break;
-            }
-        }
-        /* "radio" → 无线控制 */
-        for (int i = 0; dev_name[i]; i++) {
-            if ((dev_name[i]|32)=='r' && (dev_name[i+1]|32)=='a' &&
-                (dev_name[i+2]|32)=='d' && (dev_name[i+3]|32)=='i' &&
-                (dev_name[i+4]|32)=='o') {
-                score -= 300;
-                break;
-            }
-        }
-        /* "sensor" → 传感器 */
-        for (int i = 0; dev_name[i]; i++) {
-            if ((dev_name[i]|32)=='s' && (dev_name[i+1]|32)=='e' &&
-                (dev_name[i+2]|32)=='n' && (dev_name[i+3]|32)=='s' &&
-                (dev_name[i+4]|32)=='o' && (dev_name[i+5]|32)=='r') {
-                score -= 300;
-                break;
-            }
-        }
-        /* "button" → 按钮面板 */
-        for (int i = 0; dev_name[i]; i++) {
-            if ((dev_name[i]|32)=='b' && (dev_name[i+1]|32)=='u' &&
-                (dev_name[i+2]|32)=='t' && (dev_name[i+3]|32)=='t' &&
-                (dev_name[i+4]|32)=='o' && (dev_name[i+5]|32)=='n') {
-                score -= 200;
-                break;
-            }
-        }
-        /* "mouse" → 鼠标上的伪键盘接口 */
-        for (int i = 0; dev_name[i]; i++) {
-            if ((dev_name[i]|32)=='m' && (dev_name[i+1]|32)=='o' &&
-                (dev_name[i+2]|32)=='u' && (dev_name[i+3]|32)=='s' &&
-                (dev_name[i+4]|32)=='e') {
-                score -= 200;
-                break;
-            }
-        }
-        /* "touch" → 触摸屏/触摸板 */
-        for (int i = 0; dev_name[i]; i++) {
-            if ((dev_name[i]|32)=='t' && (dev_name[i+1]|32)=='o' &&
-                (dev_name[i+2]|32)=='u' && (dev_name[i+3]|32)=='c' &&
-                (dev_name[i+4]|32)=='h') {
-                score -= 200;
-                break;
-            }
-        }
-        /* 传出名称给调用者 */
         if (name_out) {
             int n = 0;
             while (dev_name[n] && n < name_sz - 1) { name_out[n] = dev_name[n]; n++; }
