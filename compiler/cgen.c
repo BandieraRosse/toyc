@@ -1280,7 +1280,7 @@ static void cgen_emit_data_init(AstNode *node) {
     int memb_sub = 0;  /* 数组成员内的子索引 */
     int memb_align = 1;/* 当前成员的对齐 */
     int has_struct = (st && st->member_count > 0);
-    int has_widths = has_struct ? 0 : 0; /* 在成员展开匹配时设为 1 */
+    int has_widths = has_struct ? 1 : 0; /* 按 struct 成员的实际大小发射初始化数据 */
 
     int item_idx = 0;
     int elem_byte_count = 0;
@@ -1373,10 +1373,17 @@ static void cgen_emit_data_init(AstNode *node) {
             }
 
             elem_byte_count += 8;
-            if (has_widths && has_struct) {
-                /* STR 对应指针成员，总是 1 个 item，移到下一成员 */
-                mi++;
-                memb_sub = 0;
+            if (has_widths && has_struct && mi < st->member_count) {
+                /* STR 总是 8 字节指针，用数组成员计数避免跨成员 */
+                Member *m = &st->members[mi];
+                int item_count = 1;
+                if (m->memb_is_array && m->elem_size > 0 && m->size > m->elem_size)
+                    item_count = m->size / m->elem_size;
+                memb_sub++;
+                if (memb_sub >= item_count) {
+                    mi++;
+                    memb_sub = 0;
+                }
             }
         } else {
             /* ── 整数值：按 item 宽度或元素类型大小发射 LE ── */
