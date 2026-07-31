@@ -1,206 +1,96 @@
-# toyc
+# Toyc
 
-At its core is a C compiler, initially developed within
-[Tinylibc](https://github.com/WHU-SC7/Tinylibc),
-then spun out as ToyCCompiler and evolved to self-bootstrapping.
-Now transformed into the new Toyc project, which also incorporates
-the original Tinylibc libraries and programs — compiling them
-(with some compromises).
-~10,000 lines of C, zero libc dependency, verified full bootstrap convergence.
+[中文](README.md)
+
+Toyc is a small, self-hosting C toolchain for Linux x86_64, descended from
+[Tinylibc](https://github.com/WHU-SC7/Tinylibc) and ToyCCompiler. The toolchain
+does not link libc; its runtime calls the Linux kernel directly. The repository
+also contains Tinylibc, example programs, and a small GPT-2 implementation.
 
 ## Toolchain
 
-| Component | Source | Function |
-|-----------|--------|----------|
-| **toyc** | `compiler/toyc.c` + lex/parse/cgen/… | C source → ELF64 .o |
-| **toyas** | `compiler/toyas.c` | x86_64 assembly → ELF64 .o |
-| **toyld** | `compiler/toyld.c` | multiple .o → ET_EXEC static executable |
-| **toypp** | `compiler/toypp.c` | standalone preprocessor |
-| **toyar** | `compiler/toyar.c` | ar archiver |
-
-## Bootstrap Chain Evolution
-
-```
-gcc                 Initially: gcc builds the first self-compiling toyc
- │
- ├──→ stage-1 toyc   toyc is born: can compile its own source
- │
- ├──→ toyc + gcc ──→ toyas      Assembler joins
- │
- ├──→ toyc + toyas ──→ toyld     Linker joins
- │                          Previously ld handled all linking
- │
- └──→ toyld ──→ ld replaced   toyld takes over all linking
-       │                    From this point: zero external deps, only make
-       │
-       ↓
-  stage-2 toyc + toyas + toyld + toyar  ← Bootstrap closed loop
-       │
-       ↓
-  stage-3…10 byte-identical convergence
-```
+| Program | Purpose |
+|---|---|
+| `toyc` | C source → ELF64 object |
+| `toyas` | x86_64 assembly → ELF64 object |
+| `toyld` | objects/archives → static executable |
+| `toyar` | create, list, and extract ar archives |
+| `toypp` | standalone preprocessor (optional target) |
 
 ## Build
 
-### Compiler Toolchain
+Requirements: Linux x86_64, GNU make, GCC, and GNU binutils (`as`, `ld`, and
+`ar`). The default build uses GCC/binutils; only the `self-*` targets use the
+generated Toyc compiler.
 
 ```sh
-make                              # bootstrap build: bootstrap/{toyc,toyas,toyld,toyar} → build/
-make update-bootstrap             # update bootstrap/ seeds from build/
-make clean                        # clean build/
+make                    # build/{toyc,toyas,toyld,toyar}
+make build/toypp        # optional standalone preprocessor
+make self-lib           # build Tinylibc with build/toyc
+make self-app           # build every app with build/toyc
+make clean              # remove build/ and tmp/
 ```
 
-### App Build
+Use `make lib`, `make app`, or `make app-<name>` for GCC builds of the library,
+all apps, or one app. `make self-app-<name>` is the self-hosted equivalent.
 
-The project ships several self-hosted apps (`app/`) and a Tinylibc library (`lib/`). Individual apps can be built by name:
+`bootstrap/` contains versioned seed binaries. They are for periodic bootstrap
+checks, are not used by the default `make`, and may lag behind the source:
 
 ```sh
-make lib                          # build libtlibc.a (gcc-compiled Tinylibc library)
-make app                          # build all apps with gcc (shell, tmake)
-make app-<name>                   # build a single app with gcc
-make self-lib                     # build self-hosted libtlibc.a (compiled by toyc)
-make self-app                     # build all apps with toyc
-make self-app-<name>              # build a single app with toyc
+make update-bootstrap       # intentionally replace the versioned seeds
+./bootstrap-selfhost.sh     # seed → stage 2, then self-contained tests
+./bootstrap-to-10.sh        # verify byte convergence from stages 2 through 10
 ```
 
-### Tests
+## Test
 
 ```sh
-make test                         # standard tests (43)
-make test-selfhost                # self-contained tests, no toyc_rt (41)
-make test-source                  # source file tests (8)
-make test-toyld                   # toyld linker tests (41)
-make test-error                   # error reporting tests (16)
-make test-lib-compile             # Tinylibc library compile check (28/28, incl. clone.S)
-make test-lib                     # full Tinylibc library test (compile + functional)
-make test-toyld-multifile         # toyld multi-.o cross-referencing
-make test-toyld-self              # toyld self-bootstrap verification (byte-identical)
-make test-toyar                   # archiver functional tests (5)
-make test-toyld-archive           # toyld archive linking (2)
-make test-self-app                # self-hosted app smoke test
-make test-all                     # all test suites
+make test               # 58 regular compile/run tests
+make test-selfhost      # 42 self-contained tests without toyc_rt
+make test-source        # 8 compiler source tests
+make test-lib           # 29 library compile units + 12 functional suites
+make test-error         # 16 diagnostic tests
+make test-toyld         # 42 link/run tests using toyld
+make test-toyar         # 5 archiver tests
+make test-toyld-archive # 2 archive-linking tests
+make test-toyld-self    # two-stage byte identity for toyld
+make test-llm           # 29 GPT-2 numerical/forward tests
+make test-all           # core aggregate; excludes test-toyld and test-llm
 ```
 
-### Bootstrap Convergence
+`make test-self-app` checks only existing `build/*_self` files. Run
+`make self-app` first, or missing programs will be skipped.
 
-```sh
-./bootstrap-selfhost.sh           # bootstrap/toyc → stage-2 → all 41 tests pass
-./bootstrap-to-10.sh              # full-chain convergence (stage-1 → stage-10 byte-identical)
+### Verified on 2026-07-31
+
+The current run in a restricted container produced:
+
+- `make test`: 58/58; `make test-source`: 8/8; `make test-error`: 16/16.
+- `make test-toyar`: 5/5; `make test-toyld-archive`: 2/2;
+  `make test-toyld-self`: byte-identical stages.
+- `make test-llm`: 29/29.
+- `make test-selfhost` and `make test-toyld`: both 40/42. Two tests call
+  `renameat2` on root-level paths; the container returns `EROFS` while the
+  assertions require `ENOENT`.
+- `make test-lib`: 29/29 compile units and 11/12 functional suites. The
+  `procfs` suite sees `starttime=0` for container PID 1; its other 19/20
+  assertions pass.
+
+Consequently, `make test-all` stops at `test-selfhost` in this environment and
+must not be reported as fully passing.
+
+## Layout
+
+```text
+compiler/        compiler, assembler, linker, archiver, and runtime
+compiler-tests/  compiler, linker, and Tinylibc tests
+include/         Toyc/Tinylibc headers
+lib/             Tinylibc sources
+app/             examples and self-hosted applications
+llm/             small GPT-2 implementation and tests
+bootstrap/       versioned bootstrap seeds
 ```
 
-## Test Status (2026-07-24)
-
-| Suite | Pass/Total | Notes |
-|-------|------------|-------|
-| `make test` | **43/43 ✅** | includes float return test |
-| `make test-selfhost` | **41/41 ✅** | toyc standalone, no toyc_rt |
-| `make test-source` | 8/8 ✅ | individual source file tests |
-| `make test-toyld` | **41/41 ✅** | selfhost tests × toyld link |
-| `make test-toyld-self` | **converged ✅** | stage-1→stage-2 byte-identical |
-| `make test-toyar` | **5/5 ✅** | archiver tests |
-| `make test-error` | **16/16 ✅** | error reporting tests |
-| `make test-lib` | compile **28/28** + func **12/12** | math, ctype, string, core, stdio, time, misc, net, poll, tty, procfs, thread all pass |
-| `bootstrap-selfhost.sh` | **41/41 ✅** | seed → stage-2 all pass |
-| `bootstrap-to-10.sh` | stage-2→10 byte-identical ✅ | full-chain convergence |
-
-## Why This Exists
-
-There is no shortage of C compilers. GCC is 15 million lines. LLVM is a sprawling ecosystem.
-
-This one exists for two reasons:
-
-1. **To see if it could be done** — a self-bootstrapping C compiler in the fewest possible lines, with no dependencies, no runtime, no outside help. Just the source code, the CPU, and the System V ABI.
-
-2. **To understand, completely** — a compiler you write yourself, you understand yourself. Every bug is yours. Every tradeoff is yours.
-
-## Verification
-
-```sh
-make test             # 43/43 ✅
-make test-selfhost    # 41/41 ✅
-make test-source      # 8/8 ✅
-make test-toyld         # 41/41 ✅
-make test-error       # 16/16 ✅
-make test-toyld-self    # bootstrap converged ✅
-make test-lib-compile # 28/28 ✅
-make test-lib         # compile 28/28 + func 12/12 ✅
-./bootstrap-to-10.sh  # stage-2→10 byte-identical ✅
-make test-all         # all pass ✅
-```
-
-Zero external dependencies across the entire chain (only `make`). Bootstrap convergence proves the toolchain is self-consistent.
-
-## Known Limitations
-
-### Supported by toyc
-
-| Feature | Status |
-|---------|--------|
-| Floating point | ✅ Full support for float (32-bit) and double (64-bit), SSE always enabled |
-| Global float/double brace init | ✅ `float arr[] = {1.0f, 2.0f}` etc. |
-| `%f` formatting | ✅ toyc_rt.c runtime support |
-| `__func__` predefined identifier | ✅ C99 standard support |
-| `__builtin_va_arg` | ✅ Fixed, stdio functional tests 33/33 pass |
-
-### Not yet supported
-
-| Feature | Status |
-|---------|--------|
-| VLA (variable-length arrays) | ❌ `int pids[n]` generates wrong code, use fixed-size arrays |
-| `char (*)[N]` pointer-to-array access | ❌ `files[i]` treated as `char**` instead of address offset, use flat pointer + manual offset |
-| Bitfields | ❌ Not implemented |
-| Compound literals `(int[]){1,2}` | ❌ Not implemented |
-| Designated initializers `.field=val` | ❌ Not implemented |
-| `_Generic` | ❌ Not implemented |
-| `long double` | ❌ Not supported |
-| Cross-function `goto` | ❌ Not checked |
-| Wide char/wide strings | ❌ Not implemented |
-| `-I` include paths, `-MD` dependency tracking | ❌ Silently ignored (toyc argument parsing is minimal) |
-
-## Project Structure
-
-```
-├── compiler/           # Compiler sources
-│   ├── toyc.c           # Main entry: compile C → ELF .o
-│   ├── toyld.c           # x86_64 static linker
-│   ├── toyc_rt.c        # Standalone runtime (syscall wrappers, malloc, printf)
-│   ├── toyc_rt_start.S  # Startup assembly __tlibc_start → main → exit
-│   ├── lex.c           # Lexical analysis
-│   ├── parse.c         # Recursive descent parser
-│   ├── preproc.c       # Preprocessor (macro expansion, #include, conditional compilation)
-│   ├── cgen.c          # Code generation (functions, control flow)
-│   ├── cgen_expr.c     # Expression code generation
-│   ├── cgen_asm.c      # __asm__ inline assembly
-│   ├── elf_write.c     # ELF64 .o file writer
-│   ├── elf_write.h     # ELF writer interface
-│   ├── toyc.h           # Compiler core type definitions
-│   ├── toypp.c           # Standalone preprocessor
-│   ├── toyas.c           # x86_64 assembler
-│   └── toyar.c           # ar archiver
-├── include/
-│   ├── toyc_need.h      # Minimal types/constants/syscall macros/function declarations
-│   ├── core.h           # Tinylibc core header
-│   ├── elf.h           # ELF64 struct definitions
-│   ├── posix/           # POSIX compatibility headers
-│   └── tlibc/           # Tinylibc-specific headers
-├── lib/                 # Tinylibc library sources (math, stdio, string, core, etc. — 16 modules)
-├── arch/                # Architecture-specific headers
-├── compiler-tests/     # Test files
-│   ├── basic/          # Standard tests (toyc + toyc_rt, 43)
-│   ├── selfhost/       # Self-contained tests (toyc standalone, no toyc_rt, 41)
-│   ├── source/         # Single-source tests (8)
-│   ├── toyld/            # toyld multi-file linker tests
-│   ├── pending/        # Bug reproduction cases awaiting fix
-│   └── lib/            # Tinylibc library compatibility tests
-│       ├── libs.mk     #   Declarative metadata (sources, deps, test drivers)
-│       ├── override/   #   Header overrides for incompatible types (currently empty)
-│       ├── test_*.c    #   Functional test drivers for each lib module
-│       └── ...
-├── bootstrap/          # Bootstrap seeds (toyc + toyas + toyld + toyar, git-tracked)
-│   └── README.md
-├── Makefile            # Build system (defaults to bootstrap/{toyc,toyas,toyld,toyar})
-├── bootstrap-selfhost.sh  # Bootstrap self-host test
-└── bootstrap-to-10.sh     # Full-chain convergence verification
-```
-
-*Built in 2026. Zero external dependencies. Self-bootstrapping verified through byte-identical convergence.*
+See [toyc-c-features.md](toyc-c-features.md) for detailed language feature
+notes and [bootstrap/README.md](bootstrap/README.md) for seed details.

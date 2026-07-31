@@ -1,128 +1,92 @@
-# toyc
+# Toyc
 
-核心是 C 编译器，最初在 [Tinylibc](https://github.com/WHU-SC7/Tinylibc) 项目中发展，
-后来独立为 ToyCCompiler 开发至能自举。现在转变为新项目 Toyc，
-同时引入了原 Tinylibc 的库和程序，可以编译它们（虽有妥协）。
-约一万行 C，零 libc 依赖，已通过完整自举收敛验证。
+[English](README_en.md)
+
+Toyc 是一个面向 Linux x86_64 的小型、自托管 C 工具链，源自
+[Tinylibc](https://github.com/WHU-SC7/Tinylibc) 和 ToyCCompiler。工具链自身不链接
+libc，运行时直接使用 Linux 系统调用；仓库同时包含 Tinylibc、示例程序和一个小型
+GPT-2 实现。
 
 ## 工具链
 
-| 组件 | 源码 | 功能 |
-|------|------|------|
-| **toyc** | `compiler/toyc.c` + lex/parse/cgen/… | C 源码 → ELF64 .o |
-| **toyas** | `compiler/toyas.c` | x86_64 汇编 → ELF64 .o |
-| **toyld** | `compiler/toyld.c` | 多个 .o → ET_EXEC 静态可执行文件 |
-| **toypp** | `compiler/toypp.c` | 独立预处理器 |
-| **toyar** | `compiler/toyar.c` | ar 归档器 |
-
-## 自举链演进
-
-```
-gcc                 最初：gcc 编译出能自举的 toyc
- │
- ├──→ stage-1 toyc    toyc 诞生：可以编译自身源码
- │
- ├──→ toyc + gcc ──→ toyas     汇编器加入
- │
- ├──→ toyc + toyas ──→ toyld    链接器加入
- │                         此前 ld 负责所有链接
- │
- └──→ toyld ──→ ld 被替代      toyld 接手所有链接任务
-       │                     从此全链零外部依赖，仅需 make
-       │
-       ↓
-  stage-2 toyc + toyas + toyld + toyar  ← 自举闭环
-       │
-       ↓
-  stage-3…10 字节级收敛
-```
+| 程序 | 用途 |
+|---|---|
+| `toyc` | C 源码 → ELF64 目标文件 |
+| `toyas` | x86_64 汇编 → ELF64 目标文件 |
+| `toyld` | 目标文件/归档 → 静态可执行文件 |
+| `toyar` | ar 归档创建、查看与提取 |
+| `toypp` | 独立预处理器（可选目标） |
 
 ## 构建
 
-### 编译器工具链
+需要 Linux x86_64、GNU make、GCC 和 GNU binutils（`as`、`ld`、`ar`）。默认构建
+由 GCC/binutils 生成工具链；`self-*` 目标才使用生成的 Toyc。
 
 ```sh
-make                              # 自举构建：bootstrap/{toyc,toyas,toyld,toyar} → build/
-make update-bootstrap             # 用 build/ 产物更新 bootstrap/ 种子
-make clean                        # 清除 build/
+make                    # build/{toyc,toyas,toyld,toyar}
+make build/toypp        # 可选：构建独立预处理器
+make self-lib           # 用 build/toyc 构建 Tinylibc
+make self-app           # 用 build/toyc 构建全部应用
+make clean              # 删除 build/ 和 tmp/
 ```
 
-### App 构建
+也可使用 `make lib`、`make app` 或 `make app-<name>` 由 GCC 构建库、全部应用或单个
+应用；`make self-app-<name>` 是对应的自托管构建。
 
-项目附带一批自托管应用（`app/` 目录）和一个来自 Tinylibc 的库（`lib/`），可通过名字指定单个 app 构建：
+`bootstrap/` 保存版本控制内的种子二进制。它们用于阶段性的自举检查，不参与默认
+`make`，而且可能落后于源码：
 
 ```sh
-make lib                          # 构建 libtlibc.a（gcc 编译的 Tinylibc 库）
-make app                          # 用 gcc 编译所有 app（shell, tmake）
-make app-<name>                   # 用 gcc 编译单个 app
-make self-lib                     # 构建自托管 libtlibc.a（toyc 编译）
-make self-app                     # 用 toyc 编译所有 app
-make self-app-<name>              # 用 toyc 编译单个 app
+make update-bootstrap       # 有意更新种子；会修改跟踪的二进制
+./bootstrap-selfhost.sh     # 种子 → stage 2，并运行自包含测试
+./bootstrap-to-10.sh        # 验证 stage 2…10 字节级收敛
 ```
 
-### 测试
+## 测试
 
 ```sh
-make test                         # 常规测试（43 个）
-make test-selfhost                # 自包含测试，无 toyc_rt 依赖（41 个）
-make test-source                  # 源文件独立测试（8 个）
-make test-toyld                   # toyld 链接测试（41 个）
-make test-error                   # 错误报告测试（16 个）
-make test-lib-compile             # Tinylibc 库编译检查（28/28 源文件，含 clone.S）
-make test-lib                     # Tinylibc 库完整测试（编译 + 功能）
-make test-toyld-multifile         # toyld 多 .o 交叉引用链接
-make test-toyld-self              # toyld 自举验证（stage-1 → stage-2 字节级一致）
-make test-toyar                   # 归档器功能测试（5 个）
-make test-toyld-archive           # toyld 从归档链接（2 个）
-make test-self-app                # 自托管 App 冒烟测试
-make test-all                     # 全部测试套件
+make test               # 58 个常规编译/运行测试
+make test-selfhost      # 42 个无 toyc_rt 的自包含测试
+make test-source        # 8 个编译器源码级测试
+make test-lib           # 29 个库编译单元 + 12 个功能套件
+make test-error         # 16 个诊断测试
+make test-toyld         # 42 个使用 toyld 的链接/运行测试
+make test-toyar         # 5 个归档器测试
+make test-toyld-archive # 2 个归档链接测试
+make test-toyld-self    # toyld 两阶段字节一致性
+make test-llm           # 29 个 GPT-2 数值/前向传播测试
+make test-all           # 核心聚合目标；不包含 test-toyld 和 test-llm
 ```
 
-### 自举收敛验证
+`make test-self-app` 只测试已经存在的 `build/*_self`，因此应先运行
+`make self-app`；否则缺少的程序会被跳过。
 
-```sh
-./bootstrap-selfhost.sh           # bootstrap/toyc → stage-2 → 41 测试全部通过
-./bootstrap-to-10.sh              # 全链收敛验证（stage-1 → stage-10 字节级一致）
+### 2026-07-31 实测
+
+在受限容器中，本次运行结果为：
+
+- `make test`：58/58；`make test-source`：8/8；`make test-error`：16/16。
+- `make test-toyar`：5/5；`make test-toyld-archive`：2/2；
+  `make test-toyld-self`：两阶段字节一致。
+- `make test-llm`：29/29。
+- `make test-selfhost` 和 `make test-toyld`：均为 40/42。两个用例调用根目录路径上的
+  `renameat2`，容器返回 `EROFS`，而测试固定期待 `ENOENT`；这是环境相关的断言差异。
+- `make test-lib`：编译 29/29，功能 11/12。`procfs` 套件读取容器 PID 1 时得到
+  `starttime=0`，其余 19/20 个断言通过。
+
+因此本环境的 `make test-all` 会在 `test-selfhost` 处停止，不能标记为全绿。
+
+## 目录
+
+```text
+compiler/        编译器、汇编器、链接器、归档器与运行时
+compiler-tests/  编译器、链接器和 Tinylibc 测试
+include/         Toyc/Tinylibc 头文件
+lib/             Tinylibc 源码
+app/             示例与自托管应用
+llm/             小型 GPT-2 实现和测试
+bootstrap/       版本控制内的自举种子
 ```
 
-## 测试状态（2026-07-24）
-
-| 测试套件 | 通过/总数 | 说明 |
-|----------|-----------|------|
-| `make test` | **43/43 ✅** | 含 float return test |
-| `make test-selfhost` | **41/41 ✅** | toyc 独立编译，无 toyc_rt 依赖 |
-| `make test-source` | 8/8 ✅ | toyc 编译源文件独立测试 |
-| `make test-toyld` | **41/41 ✅** | selfhost 测试 × toyld 链接 |
-| `make test-toyld-self` | **自举收敛 ✅** | toyld 自链接 stage-1→stage-2 字节级一致 |
-| `make test-toyar` | **5/5 ✅** | 归档器功能测试 |
-| `make test-error` | **16/16 ✅** | 错误报告测试 |
-| `make test-lib` | 编译 **28/28** + 功能 **12/12** | math, ctype, string, core, stdio, time, misc, net, poll, tty, procfs, thread 全部通过 |
-| `bootstrap-selfhost.sh` | **41/41 ✅** | 种子自举 → stage-2 全部测试通过 |
-| `bootstrap-to-10.sh` | stage-2→10 字节级一致 ✅ | 全链收敛验证 |
-
-## 为什么做这个
-
-C 编译器并不稀缺。GCC 有一千五百万行代码。LLVM 是一个庞大的生态系统。
-
-做这个的原因有两个：
-
-1. **为了看看能不能做到**——用最少的代码行，零依赖、零运行时、零外部帮助，写一个自举的 C 编译器。只有源码、CPU 和 System V ABI。
-
-2. **为了彻底地理解**——你自己写的编译器，你自己就能完全理解。每一个 Bug 都是你的。每一个取舍都是你的。
-
-## 验证
-
-```sh
-make test             # 43/43 ✅
-make test-selfhost    # 41/41 ✅
-make test-source      # 8/8 ✅
-make test-toyld         # 41/41 ✅
-make test-error       # 16/16 ✅
-make test-toyld-self    # 自举收敛 ✅
-make test-lib-compile # 28/28 ✅
-make test-lib         # 编译 28/28 + 功能 12/12 ✅
-./bootstrap-to-10.sh  # stage-2→10 字节级完全一致 ✅
-make test-all         # 全部通过 ✅
-```
-
-全链零外部依赖（仅 make）。自举收敛证明 toyc 是自洽的编译器。
+更细的语言特性记录见 [toyc-c-features.md](toyc-c-features.md)，种子说明见
+[bootstrap/README.md](bootstrap/README.md)。
