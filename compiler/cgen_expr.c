@@ -95,6 +95,36 @@ static void cvti2f(void) {
     e1(0xF3); e1(0x0F); e1(0x2A); e1(0xC0);  /* cvtsi2ss xmm0, eax */
 }
 
+/* 实参浮点宽度与参数浮点宽度不一致时发出宽度转换：
+ *   - 实参 int、参数 float/double → cvtsi2ss/cvtsi2sd
+ *   - 实参 float(4)、参数 double(8) → cvtss2sd
+ *     （否则高 32 位垃圾位按 double 位模式传参，值变成极小垃圾数）
+ *   - 实参 double(8)、参数 float(4) → cvtsd2ss
+ * arg_is_float=0 返回 0（调用方走整数路径 push_rax）；
+ * 返回 1 表示结果在 xmm0，调用方应 push_xmm0。 */
+static int emit_arg_float_convert(int arg_is_float, AstNode *arg, int param_pf) {
+    if (!arg_is_float) return 0;
+    int arg_pf = (arg && arg->is_float) ? arg->is_float : 0;
+    if (arg_pf == 0) {
+        /* 实参求值后是整数/指针（arg_is_float=1 是求值前的启发式，
+         * 数组名衰减会把 is_float 清 0）。仅当参数类型已知为浮点
+         * （func_param_info_known 且 pf>0）时才做 int→float 转换；
+         * 未知时（隐式声明/无原型）保持整数路径 —— 原实现 param_pf=0
+         * 也走 cvti2d，把 float 数组名衰减的地址当 int 转 double，
+         * 参数错位导致 memcpy 等调用崩溃。 */
+        if (param_pf > 0) {
+            if (param_pf == 4) cvti2f(); else cvti2d();
+            return 1;
+        }
+        return 0;
+    } else if (arg_pf == 4 && param_pf == 8) {
+        e1(0xF3); e1(0x0F); e1(0x5A); e1(0xC0);  /* cvtss2sd xmm0, xmm0 */
+    } else if (arg_pf == 8 && param_pf == 4) {
+        e1(0xF2); e1(0x0F); e1(0x5A); e1(0xC0);  /* cvtsd2ss xmm0, xmm0 */
+    }
+    return 1;
+}
+
 static void save_xmm0_to_xmm1(void) {
     e1(0x66); e1(0x0F); e1(0x28); e1(0xC8);
 }
@@ -1118,8 +1148,36 @@ void cgen_expr(AstNode *node) {
 
         /* 检测是否浮点运算 */
         {
-        int left_f  = node->left  && node->left->is_float;
-        int right_f = node->right && node->right->is_float;
+        /* 数组名衰减为指针：float arr[] 参与算术时按指针处理（arr+1 是指针
+         * 算术）。解析期 AST_VAR 的 is_float=4 表示数组元素浮点性，不代表
+         * 数组名本身是浮点值 —— 需排除，否则 arr+1 走浮点加法路径：
+         * 右操作数常量求值会覆盖 rax 中的数组地址，参数错乱（mp3 崩溃）。 */
+        int left_is_arr  = node->left  && node->left->kind == AST_VAR && node->left->name;
+        int right_is_arr = node->right && node->right->kind == AST_VAR && node->right->name;
+        if (left_is_arr) {
+            int _vi;
+            SEARCH_LOCAL(_vi, node->left->name);
+            if (_vi >= 0) { left_is_arr = locals[_vi].is_array; }
+            else {
+                left_is_arr = 0;
+                for (_vi = 0; _vi < sym_count; _vi++)
+                    if (syms[_vi].name && strcmp(syms[_vi].name, node->left->name) == 0)
+                        { left_is_arr = global_is_array[_vi]; break; }
+            }
+        }
+        if (right_is_arr) {
+            int _vi;
+            SEARCH_LOCAL(_vi, node->right->name);
+            if (_vi >= 0) { right_is_arr = locals[_vi].is_array; }
+            else {
+                right_is_arr = 0;
+                for (_vi = 0; _vi < sym_count; _vi++)
+                    if (syms[_vi].name && strcmp(syms[_vi].name, node->right->name) == 0)
+                        { right_is_arr = global_is_array[_vi]; break; }
+            }
+        }
+        int left_f  = node->left  && node->left->is_float && !left_is_arr;
+        int right_f = node->right && node->right->is_float && !right_is_arr;
 
         if (left_f || right_f) {
             int is_cmp = (node->op == TOK_LESS || node->op == TOK_GREATER ||
@@ -1882,8 +1940,14 @@ void cgen_expr(AstNode *node) {
             if (node->expr && node->expr->kind == AST_VAR && node->expr->name) {
                 int vi;
                 SEARCH_LOCAL(vi, node->expr->name);
-                if (vi >= 0)
+                if (vi >= 0) {
                     node->elem_is_float = locals[vi].elem_is_float;
+                    /* 同样传播符号性：*p++（p 为 uint8_t*）的解引用
+                     * fallback 读 expr->is_unsigned 决定 movzbl/movsbl，
+                     * 缺失时 0xF0 被 movsbl 符号扩展到 0xFFFFFFF0，
+                     * 污染 get_bits 等位运算（mp3_player 静音根因）。 */
+                    node->is_unsigned = locals[vi].elem_is_unsigned;
+                }
             }
             break;
         }
@@ -1904,6 +1968,10 @@ void cgen_expr(AstNode *node) {
                                 deref_size = locals[vi].element_size;
                             elem_unsigned = locals[vi].elem_is_unsigned;
                             elem_float = locals[vi].elem_is_float;
+                            /* 数组名衰减：float arr[] 的 is_float 表示元素
+                             * 浮点性（elem_is_float 仅对指针变量设置） */
+                            if (!elem_float && locals[vi].is_array)
+                                elem_float = locals[vi].is_float;
 
                     }
                 }
@@ -1916,6 +1984,8 @@ void cgen_expr(AstNode *node) {
                             elem_float = locals[vi].elem_is_float;
                             if (locals[vi].element_size > 0)
                                 deref_size = locals[vi].element_size;
+                            if (!elem_float && locals[vi].is_array)
+                                elem_float = locals[vi].is_float;
                     }
                 }
                 /* cast override: 优先使用代码生成前保存的 AST 节点值。
@@ -2561,7 +2631,18 @@ void cgen_expr(AstNode *node) {
         int arg_is_float[16] = {0};
         { AstNode *a = node->args; int ai = 0;
           while (a && ai < 16) {
-              arg_is_float[ai] = (a->is_float != 0);
+              int af = (a->is_float != 0);
+              /* 数组名衰减为指针：float arr[] 作为实参是地址而非浮点值。
+               * 求值后 AST_VAR 分支会把 is_float 清 0，但 arg_is_float 在
+               * 求值前计算 —— 需提前排除，否则 pop 循环误按浮点参数
+               * 分配 XMM 寄存器，导致参数错位（memcpy 崩溃根因）。 */
+              if (af && a->kind == AST_VAR && a->name) {
+                  int _vi;
+                  SEARCH_LOCAL(_vi, a->name);
+                  if (_vi >= 0 && locals[_vi].is_array)
+                      af = 0;
+              }
+              arg_is_float[ai] = af;
               ai++; a = a->next;
           }
         }
@@ -2785,7 +2866,9 @@ void cgen_expr(AstNode *node) {
                 }
                 for (int si = nstack - 1; si >= 0; si--) {
                     cgen_expr(stack_nodes[si]);
-                    if (arg_is_float[6 + si])
+                    int _ppf = (func_param_info_known && (6 + si) < MAX_FUNC_PARAM_INFO)
+                               ? known_func_pf[6 + si] : 0;
+                    if (emit_arg_float_convert(arg_is_float[6 + si], stack_nodes[si], _ppf))
                         push_xmm0();
                     else
                         push_rax();
@@ -2809,16 +2892,11 @@ void cgen_expr(AstNode *node) {
         arg = node->args;
         for (idx = 0; arg && idx < argc && idx < 6; idx++) {
             cgen_expr(arg);
-            if (arg_is_float[idx]) {
-                if (arg && !arg->is_float) {
-                    /* int→double/float 转换：实参为 int（rax），参数需 double/float */
-                    /* 用 known_func_pf 判断宽度，fallback 到 cvti2d */
-                    int _pf = (func_param_info_known && idx < MAX_FUNC_PARAM_INFO)
-                              ? known_func_pf[idx] : 0;
-                    if (_pf == 4) cvti2f(); else cvti2d();
-                }
+            int _ppf = (func_param_info_known && idx < MAX_FUNC_PARAM_INFO)
+                       ? known_func_pf[idx] : 0;
+            if (emit_arg_float_convert(arg_is_float[idx], arg, _ppf))
                 push_xmm0();
-            } else
+            else
                 push_rax();
             arg = arg->next;
         }

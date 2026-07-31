@@ -579,6 +579,8 @@ static AstNode *parse_expr_comma(Parser *p);
 static AstNode *parse_statement(Parser *p);
 static AstNode *parse_compound_statement(Parser *p);
 int parse_type_specifier(Parser *p);
+static long long eval_const_expr(AstNode *n);
+static int expr_is_const(AstNode *n);
 
 /* ─── 一元表达式的解析 ─── */
 /* 按优先级从低到高定义 */
@@ -905,30 +907,33 @@ static AstNode *parse_postfix(Parser *p) {
                 else break;
             }
             expect(p, TOK_RPAREN);
-            /* 启发式：若任一实参为 float 且函数返回类型未知，则假定函数返回 float/double */
+            /* 推断调用节点的返回浮点性。
+             * 优先使用解析期记录的函数返回类型（函数原型或定义提供了准确信息，
+             * 不依赖实参 —— 无参 float 返回函数如 f() 也能正确标记，原启发式
+             * 要求"任一实参为 float"导致这类调用被当作 int 返回，(int)f() 转换丢失）。 */
             {
-                AstNode *a;
-                for (a = call->args; a; a = a->next)
-                    if (a->is_float) {
-                        int _known = 0;
-                        /* 优先使用解析期记录的函数返回类型（函数原型或定义提供了准确信息） */
-                        if (call->name) {
-                            int _fi;
-                            for (_fi = 0; _fi < parsed_func_ret_count; _fi++) {
-                                if (parsed_func_ret_names[_fi] &&
-                                    strcmp(parsed_func_ret_names[_fi], call->name) == 0) {
-                                    if (parsed_func_ret_float[_fi])
-                                        call->is_float = parsed_func_ret_float[_fi];
-                                    _known = 1;
-                                    break;
-                                }
-                            }
+                int _known = 0;
+                if (call->name) {
+                    int _fi;
+                    for (_fi = 0; _fi < parsed_func_ret_count; _fi++) {
+                        if (parsed_func_ret_names[_fi] &&
+                            strcmp(parsed_func_ret_names[_fi], call->name) == 0) {
+                            if (parsed_func_ret_float[_fi])
+                                call->is_float = parsed_func_ret_float[_fi];
+                            _known = 1;
+                            break;
                         }
-                        /* 回退：函数未记录（隐式声明），用参数类型猜测 */
-                        if (!_known)
-                            call->is_float = a->is_float;
-                        break;
                     }
+                }
+                /* 回退：函数未记录（隐式声明），若任一实参为 float 则猜测返回 float */
+                if (!_known) {
+                    AstNode *a;
+                    for (a = call->args; a; a = a->next)
+                        if (a->is_float) {
+                            call->is_float = a->is_float;
+                            break;
+                        }
+                }
             }
             /* 查找解析期记录的 struct 返回类型（供 func().member 使用） */
             if (call->name) {
@@ -1814,17 +1819,18 @@ static int parse_struct_body(Parser *p, Member *members, int *out_count, int is_
                 is_array = 1;
                 consume(p);
                 int cur_dim = 1;
-                if (peek(p).kind == TOK_NUMBER && peek(p).ival > 0) {
-                    cur_dim = (int)peek(p).ival;
-                    member_sz *= cur_dim;
-                    consume(p);
-                    while (peek(p).kind == TOK_STAR) {
-                        consume(p);
-                        if (peek(p).kind == TOK_NUMBER && peek(p).ival > 0) {
-                            cur_dim *= (int)peek(p).ival;
-                            member_sz *= (int)peek(p).ival;
-                            consume(p);
-                        } else break;
+                if (peek(p).kind != TOK_RBRACKET) {
+                    /* 维度表达式：int arr[4], float syn[18+15][2*32]。
+                     * 原实现只认 TOK_NUMBER，[18+15] 取 18 丢掉 +15，
+                     * 成员数组布局错误导致 mp3_player 写穿栈帧（SIGILL）。
+                     * 参考局部变量声明（parse_expr + eval_const_expr 模式）求值。 */
+                    AstNode *dim_expr = parse_expr(p);
+                    if (dim_expr) {
+                        long long dim_val = eval_const_expr(dim_expr);
+                        if (expr_is_const(dim_expr) && dim_val > 0) {
+                            cur_dim = (int)dim_val;
+                            member_sz *= cur_dim;
+                        }
                     }
                 }
                 if (first_dim_product == 0)
@@ -2090,17 +2096,20 @@ static int parse_struct_body(Parser *p, Member *members, int *out_count, int is_
                         comma_is_array = 1;
                         consume(p);
                         int cur_cdim = 1;
-                        if (peek(p).kind == TOK_NUMBER && peek(p).ival > 0) {
-                            cur_cdim = (int)peek(p).ival;
-                            csz *= cur_cdim;
-                            consume(p);
-                            while (peek(p).kind == TOK_STAR) {
-                                consume(p);
-                                if (peek(p).kind == TOK_NUMBER && peek(p).ival > 0) {
-                                    cur_cdim *= (int)peek(p).ival;
-                                    csz *= (int)peek(p).ival;
-                                    consume(p);
-                                } else break;
+                        if (peek(p).kind != TOK_RBRACKET) {
+                            /* 维度表达式：float grbuf[2][576], scf[40], syn[18+15][2*32]。
+                             * 逗号分隔成员路径必须与首个成员路径一致地用
+                             * parse_expr + eval_const_expr 求值 —— 原实现只认
+                             * TOK_NUMBER，[18+15] 取 18 丢掉 +15，结构体欠分配
+                             * （mp3_player 崩溃根因：scratch.syn 少 3840 字节，
+                             * 尾部溢出覆盖调用者帧）。 */
+                            AstNode *cdim_expr = parse_expr(p);
+                            if (cdim_expr) {
+                                long long cdim_val = eval_const_expr(cdim_expr);
+                                if (expr_is_const(cdim_expr) && cdim_val > 0) {
+                                    cur_cdim = (int)cdim_val;
+                                    csz *= cur_cdim;
+                                }
                             }
                         }
                         /* 记录每维尺寸 */

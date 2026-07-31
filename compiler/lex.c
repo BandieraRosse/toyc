@@ -450,10 +450,13 @@ static Token read_number(Lexer *lx) {
         }
     }
 
-    /* 小数部分（仅十进制，且下一位必须是数字：3.f → 3 . f，不是 float） */
+    /* 小数部分（仅十进制）。小数点后可为空（C99 合法浮点字面量）：
+     * 3.14、1.5f 以及 1.f / 1.e5（下一位为 f/F 后缀或 e/E 指数）。
+     * 原实现要求小数点后必须是数字，导致 1.f 被解析为"1 . f"
+     * （整数 1 的成员访问）——基址 1 + 成员偏移 -1 = 0，加载 [0] 崩溃。 */
     if (base == 10 && input_peek(lx) == '.') {
         int next = (lx->pos + 1 < lx->end) ? (unsigned char)*(lx->pos + 1) : -1;
-        if (is_digit(next)) {
+        if (is_digit(next) || next == 'f' || next == 'F' || next == 'e' || next == 'E') {
             maybe_float = 1;
             advance(lx);  /* 跳过 . */
             while (is_digit(input_peek(lx)))
