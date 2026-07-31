@@ -89,6 +89,8 @@ static int pvar_elem_size_arr[MAX_PVARS];     /* 数组元素大小（0=非数�
 static int pvar_elem_float_arr[MAX_PVARS];    /* 指针/数组元素的浮点类型 */
 static StructType *pvar_struct_type_arr[MAX_PVARS]; /* 解析后的 StructType*（NULL=非 struct 或未知） */
 static int pvar_is_vla_arr[MAX_PVARS];       /* 1: VLA（变长数组） */
+static int pvar_dims_arr[MAX_PVARS][MAX_ARRAY_DIMS]; /* 数组变量：每维元素个数 */
+static int pvar_dim_count_arr[MAX_PVARS];    /* 已记录维度个数 */
 static int pvar_count;
 
 static void pvar_add_ex(const char *name, const char *tag, int is_float, int is_unsigned, int size) {
@@ -106,6 +108,7 @@ static void pvar_add_ex(const char *name, const char *tag, int is_float, int is_
         pvar_elem_float_arr[pvar_count] = 0;
         pvar_struct_type_arr[pvar_count] = NULL;
         pvar_is_vla_arr[pvar_count] = 0;
+        pvar_dim_count_arr[pvar_count] = 0;
         pvar_count++;
     }
 }
@@ -114,6 +117,30 @@ static void pvar_set_elem_size(const char *name, int elem_size) {
     for (i = 0; i < pvar_count; i++)
         if (strcmp(pvar_name[i], name) == 0)
             { pvar_elem_size_arr[i] = elem_size; return; }
+}
+static void pvar_set_dims(const char *name, const int *dims, int dim_count) {
+    int i;
+    for (i = 0; i < pvar_count; i++)
+        if (strcmp(pvar_name[i], name) == 0) {
+            int d;
+            pvar_dim_count_arr[i] = dim_count;
+            for (d = 0; d < dim_count && d < MAX_ARRAY_DIMS; d++)
+                pvar_dims_arr[i][d] = dims[d];
+            return;
+        }
+}
+static int pvar_find_dims(const char *name, int *dims) {
+    int i;
+    /* 与 pvar_set_dims/pvar_find_elem_size 一致：从 0 开始找第一个同名条目
+     * （set 写入第一个，find 必须读同一个；头文件原型可能注册同名参数占位） */
+    for (i = 0; i < pvar_count; i++)
+        if (strcmp(pvar_name[i], name) == 0) {
+            int d;
+            for (d = 0; d < pvar_dim_count_arr[i] && d < MAX_ARRAY_DIMS; d++)
+                dims[d] = pvar_dims_arr[i][d];
+            return pvar_dim_count_arr[i];
+        }
+    return 0;
 }
 static int pvar_find_elem_size(const char *name) {
     int i;
@@ -569,6 +596,7 @@ static AstNode *new_ast(Parser *p, AstKind kind) {
     n->dval = 0.0;
     n->op = 0;
     n->base_elem_size = 0;
+    n->dim_count = 0;
     n->is_array = 0;
     n->call_target = NULL;
     n->struct_type = NULL;
@@ -923,10 +951,51 @@ static AstNode *parse_postfix(Parser *p) {
             n->op = TOK_LBRACKET;  /* 用 op 标记下标操作 */
             n->left = left;
             n->right = idx;
-            /* a[i] 继承 left（数组/指针）的 struct 类型和浮点类型 */
+            /* a[i] 继承 left（数组/指针）的 struct 类型和浮点类型。
+             * 多维数组内层下标（子数组）退化为指针，不继承浮点类型：
+             * 否则 float arr[2][N] 的 arr[i] 会被当作浮点值（实参经 XMM 传递
+             * 而 callee 按 GP 读取 → 崩溃）。 */
             n->struct_type = left ? left->struct_type : NULL;
-            if (left && left->is_float)
-                n->is_float = left->is_float;
+            if (left) {
+                int is_sub = 0;
+                AstNode *_b = left;
+                int _lv = 0;
+                int _dims2[MAX_ARRAY_DIMS];
+                int _dc = 0;
+                {
+                    while (_b && _b->kind == AST_BINOP && _b->op == TOK_LBRACKET) {
+                        _b = _b->left;
+                        _lv++;
+                    }
+                    if (_b && _b->kind == AST_VAR && _b->name)
+                        _dc = pvar_find_dims(_b->name, _dims2);
+                    else if (_b && _b->kind == AST_MEMBER)
+                        _dc = _b->dim_count;
+                    if (_dc > 1 && _lv < _dc - 1)
+                        is_sub = 1;
+                }
+                /* 元素浮点类型：从链底（MEMBER/VAR）取，保证多层下标
+                 * （如 s->grbuf[1][3]）的浮点性不因中间层子数组节点丢失 */
+                {
+                    int _ef = 0;
+                    if (_b && _b->kind == AST_MEMBER) {
+                        _ef = _b->elem_is_float ? _b->elem_is_float : _b->is_float;
+                    } else if (_b && _b->kind == AST_VAR && _b->name) {
+                        _ef = pvar_find_float(_b->name);
+                        if (!_ef) _ef = pvar_find_elem_float(_b->name);
+                    }
+                    if (!_ef && left->elem_is_float)
+                        _ef = left->elem_is_float;
+                    if (!_ef && left->is_float)
+                        _ef = left->is_float;
+                    if (is_sub) {
+                        /* 子数组：元素浮点性存 elem_is_float，供外层下标继承 */
+                        if (_ef) n->elem_is_float = _ef;
+                    } else if (_ef) {
+                        n->is_float = _ef;
+                    }
+                }
+            }
             left = n;
 
         } else if (t.kind == TOK_DOT) {
@@ -973,6 +1042,17 @@ static AstNode *parse_postfix(Parser *p) {
                         n->is_float = st->members[fi].is_float;
                         n->elem_size = st->members[fi].elem_size;
                         n->is_array = st->members[fi].memb_is_array;
+                        /* 数组成员的值退化为指针（非浮点值）；元素浮点类型存 elem_is_float */
+                        if (st->members[fi].memb_is_array) {
+                            n->elem_is_float = st->members[fi].is_float;
+                            n->is_float = 0;
+                        }
+                        n->dim_count = st->members[fi].dim_count;
+                        {
+                            int _ad;
+                            for (_ad = 0; _ad < st->members[fi].dim_count && _ad < MAX_ARRAY_DIMS; _ad++)
+                                n->dims[_ad] = st->members[fi].dims[_ad];
+                        }
                         n->bit_offset = st->members[fi].bit_offset;
                         n->bit_width = st->members[fi].bit_width;
                         /* 如果此成员是 struct 类型，传播 struct_type 供链式访问 */
@@ -1003,6 +1083,17 @@ static AstNode *parse_postfix(Parser *p) {
                             n->is_float = tag_table[ti].members[mi].is_float;
                             n->elem_size = tag_table[ti].members[mi].elem_size;
                             n->is_array = tag_table[ti].members[mi].memb_is_array;
+                            /* 数组成员的值退化为指针（非浮点值）；元素浮点类型存 elem_is_float */
+                            if (tag_table[ti].members[mi].memb_is_array) {
+                                n->elem_is_float = tag_table[ti].members[mi].is_float;
+                                n->is_float = 0;
+                            }
+                            n->dim_count = tag_table[ti].members[mi].dim_count;
+                            {
+                                int _ad;
+                                for (_ad = 0; _ad < tag_table[ti].members[mi].dim_count && _ad < MAX_ARRAY_DIMS; _ad++)
+                                    n->dims[_ad] = tag_table[ti].members[mi].dims[_ad];
+                            }
                             n->bit_offset = tag_table[ti].members[mi].bit_offset;
                             n->bit_width = tag_table[ti].members[mi].bit_width;
                             if (tag_table[ti].members[mi].member_struct_tag)
@@ -1071,6 +1162,17 @@ static AstNode *parse_postfix(Parser *p) {
                         n->is_float = st->members[fi].is_float;
                         n->elem_size = st->members[fi].elem_size;
                         n->is_array = st->members[fi].memb_is_array;
+                        /* 数组成员的值退化为指针（非浮点值）；元素浮点类型存 elem_is_float */
+                        if (st->members[fi].memb_is_array) {
+                            n->elem_is_float = st->members[fi].is_float;
+                            n->is_float = 0;
+                        }
+                        n->dim_count = st->members[fi].dim_count;
+                        {
+                            int _ad;
+                            for (_ad = 0; _ad < st->members[fi].dim_count && _ad < MAX_ARRAY_DIMS; _ad++)
+                                n->dims[_ad] = st->members[fi].dims[_ad];
+                        }
                         n->bit_offset = st->members[fi].bit_offset;
                         n->bit_width = st->members[fi].bit_width;
                         if (st->members[fi].member_struct_tag)
@@ -1099,6 +1201,17 @@ static AstNode *parse_postfix(Parser *p) {
                             n->is_float = tag_table[ti].members[mi].is_float;
                             n->elem_size = tag_table[ti].members[mi].elem_size;
                             n->is_array = tag_table[ti].members[mi].memb_is_array;
+                            /* 数组成员的值退化为指针（非浮点值）；元素浮点类型存 elem_is_float */
+                            if (tag_table[ti].members[mi].memb_is_array) {
+                                n->elem_is_float = tag_table[ti].members[mi].is_float;
+                                n->is_float = 0;
+                            }
+                            n->dim_count = tag_table[ti].members[mi].dim_count;
+                            {
+                                int _ad;
+                                for (_ad = 0; _ad < tag_table[ti].members[mi].dim_count && _ad < MAX_ARRAY_DIMS; _ad++)
+                                    n->dims[_ad] = tag_table[ti].members[mi].dims[_ad];
+                            }
                             n->bit_offset = tag_table[ti].members[mi].bit_offset;
                             n->bit_width = tag_table[ti].members[mi].bit_width;
                             if (tag_table[ti].members[mi].member_struct_tag)
@@ -1216,12 +1329,42 @@ static AstNode *parse_unary(Parser *p) {
                         n->ival = vsize;
                 }
             }
-            /* sizeof(arr[i]) — 数组下标表达式：返回元素类型大小 */
-            if (sexpr && sexpr->kind == AST_BINOP && sexpr->op == TOK_LBRACKET &&
-                sexpr->left && sexpr->left->kind == AST_VAR && sexpr->left->name) {
-                /* 如果基数组是 VLA，arr[i] 的元素大小仍是编译时常量（类型大小） */
-                int es = pvar_find_elem_size(sexpr->left->name);
-                if (es > 0) n->ival = es;
+            /* sizeof(s.member) — 结构体成员：返回成员声明大小（含数组成员） */
+            if (n->ival == 8 && sexpr && sexpr->kind == AST_MEMBER && sexpr->type_size > 0)
+                n->ival = sexpr->type_size;
+            /* sizeof(arr[i]...) — 数组下标表达式：返回剩余子数组/元素大小。
+             * L 级下标后剩余大小 = elem_size / product(dims[1..L-1])：
+             *   arr[i]        → elem_size（行大小）
+             *   arr[i][j]     → elem_size / dims[1]（次行大小）
+             *   arr[i][j][k]  → elem_size / (dims[1]*dims[2])（元素大小） */
+            if (n->ival == 8 && sexpr && sexpr->kind == AST_BINOP && sexpr->op == TOK_LBRACKET) {
+                int chain = 0;
+                AstNode *base = sexpr;
+                int dims[MAX_ARRAY_DIMS];
+                int dim_count = 0;
+                int es = 0;
+                while (base && base->kind == AST_BINOP && base->op == TOK_LBRACKET) {
+                    chain++;
+                    base = base->left;
+                }
+                if (base && base->kind == AST_VAR && base->name) {
+                    dim_count = pvar_find_dims(base->name, dims);
+                    es = pvar_find_elem_size(base->name);
+                } else if (base && base->kind == AST_MEMBER) {
+                    dim_count = base->dim_count;
+                    {
+                        int _di;
+                        for (_di = 0; _di < base->dim_count && _di < MAX_ARRAY_DIMS; _di++)
+                            dims[_di] = base->dims[_di];
+                    }
+                    es = base->elem_size;
+                }
+                if (es > 0) {
+                    int i;
+                    for (i = 1; i < chain && i < dim_count; i++)
+                        es /= dims[i];
+                    n->ival = es > 0 ? es : 1;
+                }
             }
         } else {
             n->ival = 4;
@@ -1663,6 +1806,8 @@ static int parse_struct_body(Parser *p, Member *members, int *out_count, int is_
             int is_array = 0;
             int member_sz = sz;
             int first_dim_product = 0;
+            int mem_dims[MAX_ARRAY_DIMS];
+            int mem_dim_count = 0;
             while (peek(p).kind == TOK_LBRACKET) {
                 /* 位域不能有数组后缀，所以先跳过 */
                 if (peek(p).kind == TOK_COLON) { /* not possible, but safe */ }
@@ -1684,6 +1829,10 @@ static int parse_struct_body(Parser *p, Member *members, int *out_count, int is_
                 }
                 if (first_dim_product == 0)
                     first_dim_product = cur_dim;
+                /* 记录每维尺寸（供多维下标代码生成计算各层 stride） */
+                if (mem_dim_count < MAX_ARRAY_DIMS)
+                    mem_dims[mem_dim_count] = cur_dim;
+                mem_dim_count++;
                 int d = 1;
                 while (d > 0 && peek(p).kind != TOK_EOF) {
                     if (peek(p).kind == TOK_LBRACKET) d++;
@@ -1791,6 +1940,12 @@ static int parse_struct_body(Parser *p, Member *members, int *out_count, int is_
                 else if (ptr_count > 1) members[count].elem_size = 8;
                 else members[count].elem_size = 0;
                 members[count].memb_is_array = is_array;
+                members[count].dim_count = mem_dim_count;
+                {
+                    int _md;
+                    for (_md = 0; _md < mem_dim_count && _md < MAX_ARRAY_DIMS; _md++)
+                        members[count].dims[_md] = mem_dims[_md];
+                }
                 members[count].member_struct_tag = member_tag_for_chain;
                 members[count].bit_offset = -1;
                 members[count].bit_width = 0;
@@ -1929,20 +2084,29 @@ static int parse_struct_body(Parser *p, Member *members, int *out_count, int is_
                     }
                     int csz = (comma_ptr_cnt > 0) ? 8 : base_sz;
                     int comma_is_array = 0;
+                    int comma_dims[MAX_ARRAY_DIMS];
+                    int comma_dim_count = 0;
                     while (peek(p).kind == TOK_LBRACKET) {
                         comma_is_array = 1;
                         consume(p);
+                        int cur_cdim = 1;
                         if (peek(p).kind == TOK_NUMBER && peek(p).ival > 0) {
-                            csz *= peek(p).ival;
+                            cur_cdim = (int)peek(p).ival;
+                            csz *= cur_cdim;
                             consume(p);
                             while (peek(p).kind == TOK_STAR) {
                                 consume(p);
                                 if (peek(p).kind == TOK_NUMBER && peek(p).ival > 0) {
-                                    csz *= peek(p).ival;
+                                    cur_cdim *= (int)peek(p).ival;
+                                    csz *= (int)peek(p).ival;
                                     consume(p);
                                 } else break;
                             }
                         }
+                        /* 记录每维尺寸 */
+                        if (comma_dim_count < MAX_ARRAY_DIMS)
+                            comma_dims[comma_dim_count] = cur_cdim;
+                        comma_dim_count++;
                         int d2 = 1;
                         while (d2 > 0 && peek(p).kind != TOK_EOF) {
                             if (peek(p).kind == TOK_LBRACKET) d2++;
@@ -1974,11 +2138,22 @@ static int parse_struct_body(Parser *p, Member *members, int *out_count, int is_
                     members[count].size = csz;
                     members[count].is_unsigned = member_is_unsigned;
                     members[count].is_float = last_type_is_float;
-                    if (comma_is_array) members[count].elem_size = (comma_ptr_cnt > 0) ? 8 : base_sz;
+                    if (comma_is_array) {
+                        if (comma_dim_count > 1 && comma_dims[0] > 0)
+                            members[count].elem_size = csz / comma_dims[0]; /* row size */
+                        else
+                            members[count].elem_size = (comma_ptr_cnt > 0) ? 8 : base_sz;
+                    }
                     else if (comma_ptr_cnt == 1) members[count].elem_size = base_sz;
                     else if (comma_ptr_cnt > 1) members[count].elem_size = 8;
                     else members[count].elem_size = 0;
                     members[count].memb_is_array = comma_is_array;
+                    members[count].dim_count = comma_dim_count;
+                    {
+                        int _cd;
+                        for (_cd = 0; _cd < comma_dim_count && _cd < MAX_ARRAY_DIMS; _cd++)
+                            members[count].dims[_cd] = comma_dims[_cd];
+                    }
                     members[count].member_struct_tag = member_tag_for_chain;
                     members[count].bit_offset = -1;
                     members[count].bit_width = 0;
@@ -2846,6 +3021,9 @@ AstNode *parse_compound_statement(Parser *p) {
                             if (is_const && dim_val > 0) {
                                 if (dim_count == 0) first_dim = (int)dim_val;
                                 decl->ival *= (int)dim_val;
+                                /* 记录每维尺寸（供多维下标代码生成计算各层 stride） */
+                                if (dim_count < MAX_ARRAY_DIMS)
+                                    decl->dims[dim_count] = (int)dim_val;
                                 dim_count++;
                             } else if (!is_const) {
                                 /* VLA: 运行时维度的变长数组，如 int arr[n] */
@@ -2864,6 +3042,7 @@ AstNode *parse_compound_statement(Parser *p) {
                     }
                     if (peek(p).kind == TOK_RBRACKET) consume(p);
                 }
+                decl->dim_count = dim_count;
                 if (decl->is_vla) {
                     /* VLA: elem_size = 元素大小，总大小运行时决定 */
                     int elem_ts = (dv_ptrs > 0) ? 8 : (ts > 0 ? ts : 4);
@@ -2892,6 +3071,7 @@ AstNode *parse_compound_statement(Parser *p) {
                     if (decl->name && *decl->name) {
                         int pe = (dim_count > 1) ? decl->elem_size : elem_ts;
                         pvar_set_elem_size(decl->name, pe);
+                        pvar_set_dims(decl->name, decl->dims, dim_count);
                     }
                 } else {
                     if (dv_ptrs > 0 && bracket_count > 0) {
@@ -5336,6 +5516,8 @@ static AstNode *parse_parameter_list(Parser *p, int *is_variadic) {
             pd->is_float = (ptr_level == 0 && param_is_float_type) ? last_type_is_float : 0;
             pd->is_unsigned = (effective_ptr == 0) ? last_type_is_unsigned : 0;
             pd->elem_is_unsigned = (effective_ptr > 0) ? last_type_is_unsigned : 0;
+            /* 指针参数指向 float/double 时记录元素浮点类型（float *p 的 p[i]） */
+            pd->elem_is_float = (effective_ptr > 0) ? last_type_is_float : 0;
             {
                 const char *param_tag = NULL;
                 if (last_struct_tag && *last_struct_tag)
@@ -5748,6 +5930,8 @@ AstNode *parse_program(Parser *p) {
                     int gv_bracket_count = 0;
                     int gv_unspecified_dim = 0;
                     int gv_first_dim = 0;  /* [] 空维度标记 */
+                    int gv_dims[MAX_ARRAY_DIMS];
+                    int gv_dim_count = 0;
                     while (peek(p).kind == TOK_LBRACKET) {
                         gv_bracket_count++;
                         consume(p);
@@ -5762,6 +5946,10 @@ AstNode *parse_program(Parser *p) {
                                 if (dim_val > 0) {
                                     if (gv_first_dim == 0) gv_first_dim = (int)dim_val;
                                     gv_arr_len *= (int)dim_val;
+                                    /* 记录每维尺寸（供多维下标代码生成计算各层 stride） */
+                                    if (gv_dim_count < MAX_ARRAY_DIMS)
+                                        gv_dims[gv_dim_count] = (int)dim_val;
+                                    gv_dim_count++;
                                 }
                             }
                             /* 跳过到匹配的 ] */
@@ -5795,8 +5983,10 @@ AstNode *parse_program(Parser *p) {
                             if (gv_tag)
                                 pvar_set_struct_type(gvn, resolve_struct_type(gv_tag));
                         }
-                        if (gv_is_array)
+                        if (gv_is_array) {
                             pvar_set_elem_size(gvn, gv_elem_at);
+                            pvar_set_dims(gvn, gv_dims, gv_dim_count);
+                        }
                         if (gv_ptrs > 0 && last_type_is_float)
                             pvar_set_elem_float(gvn, last_type_is_float);
                         if (pvar_count > 3800) {
@@ -5820,6 +6010,12 @@ AstNode *parse_program(Parser *p) {
                             ? (typesize > 0 ? typesize : 4) : gv_unit;
                         gvar->elem_is_ptr = (gv_ptrs > 0 && gv_bracket_count > 0) ? 1 : 0;
                         gvar->is_array = (gv_bracket_count > 0) ? 1 : 0;  /* int arr[1] 也能正确标记 */
+                        gvar->dim_count = gv_dim_count;
+                        {
+                            int _gd;
+                            for (_gd = 0; _gd < gv_dim_count && _gd < MAX_ARRAY_DIMS; _gd++)
+                                gvar->dims[_gd] = gv_dims[_gd];
+                        }
                         gvar->elem_is_unsigned = (gv_ptrs > 0 || gv_bracket_count > 0) ? last_type_is_unsigned : 0;
                         gvar->is_float = (gv_ptrs == 0) ? last_type_is_float : 0;
                         gvar->elem_is_float = (gv_ptrs > 0) ? last_type_is_float : 0;

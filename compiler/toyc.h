@@ -16,6 +16,9 @@
 #include "toyc_need.h"
 #include "elf.h"
 
+/* 数组最多支持的维度数（每维尺寸记录在 dims[] 中） */
+#define MAX_ARRAY_DIMS 4
+
 /* ─── 缓冲区容量（固定分配，溢出时安全报错退出） ─── */
 
 #define CODE_BUF_SIZE  524288  /* 代码生成缓冲区 (512*1024) */
@@ -253,6 +256,8 @@ typedef struct AstNode {
     int type_size;       /* 类型大小（字节）：4=int, 8=指针/long/double, 1=char, 2=short */
     int elem_size;       /* AST_VAR_DECL: 指针变量的元素大小（int*→4, char**→8） */
     int base_elem_size;  /* AST_VAR_DECL: 数组的基础元素大小（多维数组中内层元素大小） */
+    int dims[MAX_ARRAY_DIMS];  /* AST_VAR_DECL: 每维元素个数（dims[0]=第一维） */
+    int dim_count;       /* AST_VAR_DECL: 已记录的维度个数（含 1D） */
     int elem_is_ptr;     /* 1: 数组元素为指针类型（char *arr[] 或 int *arr[N]） */
     int elem_is_float;   /* 指针变量的元素是否为 float/double */
     int is_array;        /* 1: 数组变量（分配时退化为指针）0: 标量或指针变量 */
@@ -319,6 +324,8 @@ extern int strtab_len;
 extern int global_elem_size[MAX_SYMS];
 extern int global_ptr_elem_size[MAX_SYMS];  /* 全局指针变量的元素大小（int*→4, long*→8） */
 extern int global_base_elem_size[MAX_SYMS];
+extern int global_dims[MAX_SYMS][MAX_ARRAY_DIMS];  /* 全局/静态数组每维元素个数 */
+extern int global_dim_count[MAX_SYMS];             /* 已记录维度个数 */
 extern int global_elem_is_ptr_arr[MAX_SYMS];
 extern int global_elem_unsigned[MAX_SYMS];
 extern int global_elem_float[MAX_SYMS];      /* 全局数组/指针元素的浮点类型：0=非浮点, 4=float, 8=double */
@@ -387,6 +394,8 @@ typedef struct {
     int is_float;            /* 0=非浮点, 4=float(32-bit), 8=double(64-bit) */
     int element_size;        /* 指针变量的元素大小（用于指针运算：int*→4, char**→8） */
     int base_elem_size;      /* 数组变量：单个元素的类型尺寸（多维数组的内层 elem_size） */
+    int dims[MAX_ARRAY_DIMS];/* 数组变量：每维元素个数 */
+    int dim_count;           /* 已记录维度个数 */
     int elem_is_ptr;         /* 1: 数组元素的基类型是指针（char *arr[]） */
     int scope_depth;         /* 声明时的作用域深度（用于块作用域变量阴影） */
     int scope_id;            /* 声明时所在块的唯一 scope ID（由 scope_chain 分配） */
@@ -470,6 +479,8 @@ typedef struct {
     int offset;
     int size;
     int elem_size;      /* 指针成员指向的元素大小（long*→8, int*→4），数组成员的元素大小 */
+    int dims[MAX_ARRAY_DIMS];  /* 数组成员：每维元素个数 */
+    int dim_count;      /* 已记录维度个数 */
     int is_unsigned;    /* 成员是否为 unsigned 类型 */
     int is_float;       /* 0=非浮点, 4=float, 8=double */
     int memb_is_array;  /* 1=数组成员, 0=指针或标量（用于 init 数据发射宽度计算） */

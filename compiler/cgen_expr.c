@@ -218,6 +218,95 @@ static void emit_call(const char *name) {
     e1(0xE8); e1(0x11); e1(0x22); e1(0x33); e1(0x44);
 }
 
+/* ─── 多维数组下标链信息 ─── */
+
+/* 数组下标链：node 是 LBRACKET 节点，沿 node->left 下探到基变量（VAR/MEMBER）。
+ * 返回 level = 当前节点相对基变量的下标层数（a[i]→0，a[i][j] 外层→1），
+ * 并通过输出参数返回基数组的尺寸信息：
+ *   dims[]/dim_count — 每维元素个数（parse 阶段记录）
+ *   elem_size — 基数组的行大小（elem_size，字节）
+ *   elem_float — 数组元素浮点类型（0=非浮点, 4=float, 8=double）
+ * 基数组信息缺失（指针基、未识别符号）时 dim_count = 0，调用方回退旧逻辑。
+ * 基数组各层 stride：stride(level) = elem_size / product(dims[1..level])。 */
+static int subscript_chain_info(AstNode *node, int *dims, int *dim_count,
+                                int *elem_size, int *elem_float,
+                                int *elem_unsigned)
+{
+    int level = 0;
+    AstNode *base = node ? node->left : NULL;
+    while (base && base->kind == AST_BINOP && base->op == TOK_LBRACKET) {
+        base = base->left;
+        level++;
+    }
+    *dim_count = 0;
+    *elem_size = 0;
+    if (elem_float) *elem_float = 0;
+    if (elem_unsigned) *elem_unsigned = 0;
+    if (!base) return level;
+
+    if (base->kind == AST_MEMBER) {
+        /* AST_MEMBER 在 parse 阶段已从成员表复制数组信息。
+         * 数组成员的 is_float 已清 0（值退化为指针），元素浮点性在 elem_is_float。 */
+        if (base->dim_count > 0 && base->dim_count <= MAX_ARRAY_DIMS) {
+            int d;
+            *dim_count = base->dim_count;
+            for (d = 0; d < base->dim_count; d++)
+                dims[d] = base->dims[d];
+            *elem_size = base->elem_size;
+            if (elem_float) {
+                *elem_float = base->elem_is_float ? base->elem_is_float : base->is_float;
+            }
+            if (elem_unsigned) *elem_unsigned = base->is_unsigned;
+        }
+        return level;
+    }
+
+    if (base->kind == AST_VAR && base->name) {
+        int i;
+        SEARCH_LOCAL(i, base->name);
+        if (i >= 0 && locals[i].dim_count > 0) {
+            int d;
+            *dim_count = locals[i].dim_count;
+            for (d = 0; d < locals[i].dim_count; d++)
+                dims[d] = locals[i].dims[d];
+            *elem_size = locals[i].element_size;
+            if (elem_float) *elem_float = locals[i].is_float;
+            if (elem_unsigned) *elem_unsigned = locals[i].elem_is_unsigned;
+            return level;
+        }
+        if (i < 0) {
+            for (i = 0; i < sym_count; i++) {
+                if (syms[i].name && strcmp(syms[i].name, base->name) == 0) {
+                    if (global_dim_count[i] > 0 && global_dim_count[i] <= MAX_ARRAY_DIMS) {
+                        int d;
+                        *dim_count = global_dim_count[i];
+                        for (d = 0; d < global_dim_count[i]; d++)
+                            dims[d] = global_dims[i][d];
+                        if (global_elem_size[i] > 0)
+                            *elem_size = global_elem_size[i];
+                        else if (global_ptr_elem_size[i] > 0)
+                            *elem_size = global_ptr_elem_size[i];
+                        if (elem_float) *elem_float = global_elem_float[i];
+                        if (elem_unsigned) *elem_unsigned = global_elem_unsigned[i];
+                    }
+                    break;
+                }
+            }
+        }
+    }
+    return level;
+}
+
+/* stride(level) = elem_size / product(dims[1..level])（空积 = 1） */
+static int subscript_stride(int elem_size, const int *dims, int dim_count, int level)
+{
+    int i;
+    for (i = 1; i <= level && i < dim_count; i++)
+        elem_size /= dims[i];
+    if (elem_size < 1) elem_size = 1;
+    return elem_size;
+}
+
 /* ─── 左值地址计算（用于 ++/--） ─── */
 
 /* 计算左值的内存地址到 rax 中，支持 AST_VAR、AST_MEMBER、*ptr */
@@ -304,6 +393,21 @@ void cgen_addr(AstNode *node) {
             /* 通用 fallback：非 AST_MEMBER 的左表达式（如 (p+N) 指针算术结果）也可能有 elem_size */
             if (elem_size == 1 && node->left && node->left->elem_size > 0) {
                 elem_size = node->left->elem_size;
+            }
+
+            /* 多维数组：用链信息计算本层 stride（覆盖 2D/3D 各层） */
+            {
+                int cdims[MAX_ARRAY_DIMS];
+                int cdim_count = 0;
+                int cbase_es = 0;
+                int clevel = subscript_chain_info(node, cdims, &cdim_count,
+                                                  &cbase_es, NULL, NULL);
+                /* 链信息仅覆盖数组维度内（level < dim_count）的下标层；
+                 * 超出维度（指针元素再下标，如 char *extra[2] 的 extra[0][0]）
+                 * 回退旧逻辑（默认 char* 语义） */
+                if (cbase_es > 0 && cdim_count > 0 && clevel < cdim_count)
+                    elem_size = subscript_stride(cbase_es, cdims, cdim_count,
+                                                 clevel);
             }
 
             /* 符号扩展有符号 32 位索引到 64 位（指针算术需要完整 64-bit 偏移） */
@@ -621,6 +725,7 @@ void cgen_expr(AstNode *node) {
                     /* 数组→指针衰减（lea rax, [rip + disp32]），优先于 is_float 检查 */
                     e1(0x48); e1(0x8D); e1(0x05);
                     node->type_size = 8;
+                    node->is_float = 0;  /* 指针不是浮点值 */
                     /* 传播数组元素大小、浮点类型和符号性供下标/解引用使用 */
                     if (si < MAX_SYMS) {
                         if (global_elem_size[si] > 0)
@@ -719,9 +824,12 @@ void cgen_expr(AstNode *node) {
                         if (locals[i].element_size > 0)
                             elem_size = locals[i].element_size;
                         elem_unsigned = locals[i].elem_is_unsigned;
-                        /* float 数组：检查 is_float（数组的 is_float 表示元素类型） */
+                        /* float 数组：检查 is_float（数组的 is_float 表示元素类型）；
+                         * float *p 指针基：检查 elem_is_float */
                         if (locals[i].is_array && locals[i].is_float)
                             elem_float = locals[i].is_float;
+                        else if (!locals[i].is_array && locals[i].elem_is_float)
+                            elem_float = locals[i].elem_is_float;
 
                 }
                 if (i < 0) {
@@ -754,6 +862,8 @@ void cgen_expr(AstNode *node) {
                         elem_unsigned = locals[i].elem_is_unsigned;
                         if (locals[i].is_array && locals[i].is_float)
                             elem_float = locals[i].is_float;
+                        else if (!locals[i].is_array && locals[i].elem_is_float)
+                            elem_float = locals[i].elem_is_float;
                 }
                 if (i < 0) {
                     for (i = 0; i < sym_count; i++) {
@@ -784,6 +894,24 @@ void cgen_expr(AstNode *node) {
                 !(node->left->kind == AST_BINOP && node->left->op == TOK_LBRACKET) &&
                 node->left->elem_size > 0) {
                 elem_size = node->left->elem_size;
+            }
+
+            /* 多维数组：用链信息计算本层 stride 和浮点性（覆盖 2D/3D 各层，
+             * 替代原仅下探 2 层的 base_elem_size 查找） */
+            int cdims[MAX_ARRAY_DIMS];
+            int cdim_count = 0;
+            int cbase_es = 0;
+            int cbase_float = 0;
+            int cbase_unsigned = 0;
+            int clevel = subscript_chain_info(node, cdims, &cdim_count,
+                                              &cbase_es, &cbase_float,
+                                              &cbase_unsigned);
+            if (cbase_es > 0 && cdim_count > 0 && clevel < cdim_count) {
+                elem_size = subscript_stride(cbase_es, cdims, cdim_count,
+                                             clevel);
+                if (cbase_float > 0)
+                    elem_float = cbase_float;
+                elem_unsigned = cbase_unsigned;
             }
 
             /* 符号扩展有符号 32 位索引到 64 位（指针算术需要完整 64-bit 偏移） */
@@ -832,9 +960,15 @@ void cgen_expr(AstNode *node) {
 
             /* 判断是否子数组（多维数组内层下标 → 退化为指针，不加载）
              * 通过 base_elem_size 区分：int arr[3][4] 中 arr[i] 有
-             * element_size=16 base_elem_size=4（子数组），而 int *p 有 element_size=4 base_elem_size=0 */
+             * element_size=16 base_elem_size=4（子数组），而 int *p 有 element_size=4 base_elem_size=0
+             *
+             * 多维数组（dims 已知）：剩余下标层数 > 0 → 元素仍为数组，退化为指针。
+             * 修复 3D 数组中间层（node->left 为嵌套 LBRACKET）和 2D 小行数组
+             * （行大小 < 4）未退化导致把加载值当地址使用的崩溃。 */
             int is_subarray = 0;
-            if (node->left && node->left->kind == AST_VAR && elem_size >= 4) {
+            if (cdim_count > 0) {
+                is_subarray = (clevel < cdim_count - 1);
+            } else if (node->left && node->left->kind == AST_VAR && elem_size >= 4) {
                 int idx;
                 SEARCH_LOCAL(idx, node->left->name);
                 if (idx >= 0) {
@@ -859,6 +993,7 @@ void cgen_expr(AstNode *node) {
             if (is_subarray || elem_size > 8) {
                 /* 子数组/大结构体：不加载，rax 中已是指针 */
                 node->type_size = 8;
+                node->is_float = 0;  /* 指针不是浮点值 */
             } else if (elem_float) {
                 /* float/double 数组元素：加载到 xmm0 */
                 if (elem_float == 4) {
@@ -1740,6 +1875,16 @@ void cgen_expr(AstNode *node) {
             if (node->is_postfix)
                 pop_rax();  /* eax/rax = 旧值 */
             node->type_size = sz;
+            /* 传播指针元素信息：*w++ / *p-- 的解引用宽度和浮点性
+             * 由 ptr_step（元素大小）和基变量 elem_is_float 决定，
+             * 否则 TOK_STAR 的 fallback 会按 char* 解引用。 */
+            node->elem_size = ptr_step;
+            if (node->expr && node->expr->kind == AST_VAR && node->expr->name) {
+                int vi;
+                SEARCH_LOCAL(vi, node->expr->name);
+                if (vi >= 0)
+                    node->elem_is_float = locals[vi].elem_is_float;
+            }
             break;
         }
         case TOK_STAR:
@@ -1784,10 +1929,13 @@ void cgen_expr(AstNode *node) {
                 }
                 /* fallback: 用代码生成后的 node->expr->elem_size。
                  * 对 *ptrs[0]（ptr 数组）模式，BINOP 的 elem_size 被
-                 * base_elem_size 传播代码（line 843）设为正确解引用宽度。 */
+                 * base_elem_size 传播代码（line 843）设为正确解引用宽度。
+                 * elem_is_float 由 ++/-- 等复合表达式代码生成传播（如 *w++）。 */
                 else if (node->expr->elem_size > 0) {
                     deref_size = node->expr->elem_size;
                     elem_unsigned = node->expr->is_unsigned;
+                    if (node->expr->elem_is_float > 0)
+                        elem_float = node->expr->elem_is_float;
                 }
                 /* 使用保存的 elem_is_float（解析器对指针类型转换设置，
                  * BINOP 代码生成不覆盖 elem_is_float）。 */
@@ -1911,6 +2059,8 @@ void cgen_expr(AstNode *node) {
                             elem_size = locals[i].element_size;
                         if (locals[i].is_array && locals[i].is_float)
                             elem_float = locals[i].is_float;
+                        else if (!locals[i].is_array && locals[i].elem_is_float)
+                            elem_float = locals[i].elem_is_float;
 
                 }
                 if (i < 0) {
@@ -1938,6 +2088,8 @@ void cgen_expr(AstNode *node) {
                             elem_size = locals[i].element_size;
                         if (locals[i].is_array && locals[i].is_float)
                             elem_float = locals[i].is_float;
+                        else if (!locals[i].is_array && locals[i].elem_is_float)
+                            elem_float = locals[i].elem_is_float;
                 } else {
                     /* 全局变量 double subscript */
                     for (i = 0; i < sym_count; i++) {
@@ -1960,6 +2112,30 @@ void cgen_expr(AstNode *node) {
             /* fallback: 从 arr_base AST 节点传播 is_float（如结构体成员数组 s.arr[i]） */
             if (elem_float == 0 && arr_base && arr_base->is_float)
                 elem_float = arr_base->is_float;
+
+            /* 多维数组：用链信息计算本层 stride 和浮点性。
+             * node->left 是完整 LHS 下标链（a[i]、a[i][j]、a[i][j][k]），
+             * 链信息给出各层正确 stride（替代原仅下探 2 层的查找）。 */
+            {
+                int cdims[MAX_ARRAY_DIMS];
+                int cdim_count = 0;
+                int cbase_es = 0;
+                int cbase_float = 0;
+                int clevel = subscript_chain_info(node->left, cdims, &cdim_count,
+                                                  &cbase_es, &cbase_float, NULL);
+                if (cbase_es > 0 && cdim_count > 0 && clevel < cdim_count) {
+                    elem_size = subscript_stride(cbase_es, cdims, cdim_count,
+                                                 clevel);
+                    if (cbase_float > 0)
+                        elem_float = cbase_float;
+                }
+            }
+            /* 符号扩展有符号 32 位索引到 64 位（指针算术需要完整 64-bit 偏移），
+             * 否则负索引（如 4*(i-16)+2）在 32 位移位后零扩展，污染地址高 32 位 */
+            if (!idx_is64 && node->left->right && !node->left->right->is_unsigned) {
+                e1(0x48); e1(0x63); e1(0xC0);  /* cdqe = movsxd rax, eax */
+                idx_is64 = 1;
+            }
             if (elem_size == 2) {
                 if (idx_is64)
                     { e1(0x48); e1(0xC1); e1(0xE0); e1(0x01); }
@@ -1996,6 +2172,10 @@ void cgen_expr(AstNode *node) {
 
             /* 求值右操作数 */
             cgen_expr(node->right);
+            /* 刷新 rhs_float：下标表达式（如 xr[i]）的浮点性在代码生成后才
+             * 设置（elem_float 查找），预评估标志可能为 0 导致误做 int→float 转换 */
+            if (node->right)
+                rhs_float = node->right->is_float;
 
             /* 存储到目标地址 — 用 elem_size 决定存储宽度（数组元素可能是 long） */
             pop_rcx();  /* rcx = 目标地址 */
@@ -2122,6 +2302,10 @@ void cgen_expr(AstNode *node) {
         }
 
         cgen_expr(node->right);
+        /* 刷新 rhs_float：代码生成会修正表达式的浮点性
+         *（如 *scf++ 解引用后 is_float 才被设置），预评估标志可能为 0 */
+        if (node->right)
+            rhs_float = node->right->is_float;
         if (node->left && node->left->kind == AST_VAR) {
             const char *vname = node->left->name;
             int i;
@@ -2890,6 +3074,7 @@ void cgen_expr(AstNode *node) {
                             /* 数组成员（含 <=8 字节）：退化为指针 */
                             lea_from_rbp(total_off);
                             node->type_size = 8;
+                            node->is_float = 0;  /* 指针不是浮点值 */
                         } else if (node->type_size == 8)
                             load_rax_from_rbp(total_off);
                         else if (node->type_size == 1) {
@@ -2961,15 +3146,18 @@ void cgen_expr(AstNode *node) {
                     if (member_off < 0) { e1(0x48); e1(0x63); e1(0xC0); }  /* movsxd */
                     e1(0x48); e1(0x01); e1(0xC8);  /* add rax, rcx (64-bit — 地址运算) */
                 }
-                /* 从地址加载值（数组/大结构体成员不加载，退化为指针） */
-                if (node->is_float) {
+                /* 从地址加载值（数组/大结构体成员不加载，退化为指针）
+                 * 注意：数组成员（含 float 数组）必须先判退化为指针，
+                 * 否则 float 数组成员会被当作标量 float 加载。 */
+                if (node->type_size > 8 || node->is_array) {
+                    node->type_size = 8;  /* 退化为指针 */
+                    node->is_float = 0;    /* 指针不是浮点值 */
+                } else if (node->is_float) {
                     if (node->is_float == 4) {
                         e1(0xF3); e1(0x0F); e1(0x10); e1(0x00);  /* movss xmm0, [rax] */
                     } else {
                         e1(0xF2); e1(0x0F); e1(0x10); e1(0x00);  /* movsd xmm0, [rax] */
                     }
-                } else if (node->type_size > 8 || node->is_array) {
-                    node->type_size = 8;  /* 退化为指针 */
                 } else if (node->type_size == 8) {
                     e1(0x48); e1(0x8B); e1(0x00);  /* mov rax, [rax] */
                 } else if (node->type_size == 1) {

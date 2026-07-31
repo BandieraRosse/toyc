@@ -258,6 +258,8 @@ int global_elem_is_ptr_arr[MAX_SYMS];
 int global_elem_unsigned[MAX_SYMS];
 int global_elem_float[MAX_SYMS];
 int global_is_array[MAX_SYMS];        /* 全局变量是否为数组 */
+int global_dims[MAX_SYMS][MAX_ARRAY_DIMS];  /* 全局/静态数组每维元素个数 */
+int global_dim_count[MAX_SYMS];             /* 已记录维度个数 */
 
 static int add_sym(const char *name, int offset, int size,
                    int is_global, int is_func) {
@@ -300,6 +302,15 @@ static void cgen_stmt(AstNode *stmt);
 static AstNode *global_init_prog;  /* 用于全局变量初始化 */
 
 /* ─── 为函数收集局部变量 ─── */
+
+/* 将 AST 声明节点的每维尺寸复制到目标数组（dims/dim_count 已由 parse 记录） */
+static void copy_decl_dims(const AstNode *node, int *dims, int *dim_count) {
+    int i;
+    *dim_count = (node && node->dim_count > 0) ? node->dim_count : 0;
+    if (*dim_count > MAX_ARRAY_DIMS) *dim_count = MAX_ARRAY_DIMS;
+    for (i = 0; i < *dim_count; i++)
+        dims[i] = node->dims[i];
+}
 
 static void collect_locals(AstNode *node) {
     if (!node) return;
@@ -348,6 +359,7 @@ static void collect_locals(AstNode *node) {
                 global_elem_float[sym_count] = node->elem_is_float ? node->elem_is_float :
                     (node->is_array && node->is_float ? node->is_float : 0);
                 global_is_array[sym_count] = node->is_array;
+                copy_decl_dims(node, global_dims[sym_count], &global_dim_count[sym_count]);
                 sym_count++;
             }
             elf_bss_size += vsize;
@@ -366,6 +378,7 @@ static void collect_locals(AstNode *node) {
             locals[local_count].is_unsigned = node->is_unsigned;
             locals[local_count].element_size = node->elem_size > 0 ? node->elem_size : (node->is_float ? 8 : 4);
             locals[local_count].base_elem_size = node->base_elem_size;
+            copy_decl_dims(node, locals[local_count].dims, &locals[local_count].dim_count);
             locals[local_count].elem_is_ptr = node->elem_is_ptr;
             locals[local_count].scope_depth = scope_depth;
             locals[local_count].scope_id = scope_chain_count > 0 ? scope_chain[scope_chain_count - 1] : 0;
@@ -394,6 +407,7 @@ static void collect_locals(AstNode *node) {
             locals[local_count].is_unsigned = node->is_unsigned;
             locals[local_count].element_size = node->elem_size;
             locals[local_count].base_elem_size = node->base_elem_size;
+            copy_decl_dims(node, locals[local_count].dims, &locals[local_count].dim_count);
             locals[local_count].elem_is_ptr = node->elem_is_ptr;
             locals[local_count].scope_depth = scope_depth;
             locals[local_count].scope_id = scope_chain_count > 0 ? scope_chain[scope_chain_count - 1] : 0;
@@ -1261,6 +1275,7 @@ void cgen_init(void) {
         global_elem_is_ptr_arr[_i] = 0;
         global_elem_unsigned[_i] = 0;
         global_elem_float[_i] = 0;
+        global_dim_count[_i] = 0;
     }
     func_ret_count = 0;
     current_func_ret_size = 0;
@@ -1536,6 +1551,7 @@ void cgen_program(AstNode *prog) {
                 global_elem_float[si] = node->elem_is_float ? node->elem_is_float :
                     (node->is_array && node->is_float ? node->is_float : 0);
                 global_is_array[si] = node->is_array;
+                copy_decl_dims(node, global_dims[si], &global_dim_count[si]);
             }
         }
     }
