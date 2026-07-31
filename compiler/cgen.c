@@ -1430,6 +1430,31 @@ static void cgen_emit_data_init(AstNode *node) {
             }
 
             long v = it->ival;
+            /* float/double 数组元素的整数初始化器（如 float a[] = {1, -1}）：
+             * ival 存的是整数值，需转 float 位模式；浮点字面量已在 parse 阶段
+             * 存好位模式（is_fbits>0），直接发射。整数值直写 int 位模式会
+             * 把 1 变成 1.4e-45（次正规）、-1 变成 NaN（mp3 g_pow43 杂音根因）。 */
+            {
+                int elem_f = node->elem_is_float ? node->elem_is_float :
+                             (node->is_array ? node->is_float : 0);
+                if (!it->is_fbits && elem_f) {
+                    if (elem_f == 4) {
+                        float fv = (float)v;
+                        unsigned int fb;
+                        unsigned char *bp = (unsigned char *)&fv;
+                        fb = bp[0] | (bp[1] << 8) | (bp[2] << 16) | (bp[3] << 24);
+                        v = (long)fb;
+                    } else {
+                        double dv = (double)v;
+                        unsigned char *bp = (unsigned char *)&dv;
+                        unsigned long db = 0;
+                        int bi;
+                        for (bi = 7; bi >= 0; bi--)
+                            db = (db << 8) | bp[bi];
+                        v = (long)db;
+                    }
+                }
+            }
             if (iw == 1) {
                 data_buf[data_size++] = v & 0xFF;
                 elem_byte_count += 1;

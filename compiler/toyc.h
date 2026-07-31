@@ -186,6 +186,7 @@ typedef enum {
 typedef struct {
     int type;            /* INIT_TYPE_INT 或 INIT_TYPE_STR */
     long ival;           /* INIT_TYPE_INT 的整数值 */
+    int is_fbits;        /* ival 已存 float/double 位模式（浮点字面量），非整数值 */
     const char *str;     /* INIT_TYPE_STR 的字符串内容（arena 分配，已解码） */
 } InitItem;
 

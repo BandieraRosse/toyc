@@ -65,6 +65,22 @@ static unsigned int double_bits_to_float(unsigned int hi, unsigned int lo) {
      * 取位 51→29: hi[19:0] << 3 + lo[31:29] */
     unsigned int mant = ((hi & 0xFFFFF) << 3) | (lo >> 29);
 
+    /* 舍入到最近偶数（IEEE round-to-nearest-even）：
+     * 丢弃部分 = lo 的低 29 位；舍入位 = lo 的第 29 位。
+     * 被丢弃部分 > 半值，或 = 半值且 mant 为奇数 → 进位。
+     * 截断（round-toward-zero）会导致 float 字面量差 1 ulp
+     * （如 69.227979f 得 0x428A74B9 而非 0x428A74BA，mp3 杂音根因之五）。 */
+    {
+        unsigned int dropped = lo & 0x1FFFFFFF;   /* 半值以下的位（粘滞位） */
+        unsigned int half    = lo & 0x20000000;   /* 半值位 */
+        if (half && (dropped != 0 || (mant & 1)))
+            mant++;
+        if (mant > 0x7FFFFF) {
+            mant = 0;
+            exp_new++;
+        }
+    }
+
     return (sign << 31) | ((unsigned)exp_new << 23) | (mant & 0x7FFFFF);
 }
 
@@ -2364,9 +2380,11 @@ static int parse_one_init(Parser *p, InitItem *items, int idx, int max) {
          * 避免 eval_const_expr 将浮点当做整数处理。
          * 用字节数组组合 hi/lo 以避开 tcc 自举时移位和联合体的 bug。 */
         unsigned int lo, hi;
+        int fbits = 0;
         parse_float_literal(expr->name, (int)expr->ival, &lo, &hi);
         if (expr->is_float == 4) {
             val = (long)double_bits_to_float(hi, lo);
+            fbits = 4;
         } else {
             unsigned char _b[8];
             _b[0] = (unsigned char)( lo        & 0xFF);
@@ -2378,15 +2396,19 @@ static int parse_one_init(Parser *p, InitItem *items, int idx, int max) {
             _b[6] = (unsigned char)((hi >> 16) & 0xFF);
             _b[7] = (unsigned char)((hi >> 24) & 0xFF);
             val = *(long *)_b;
+            fbits = 8;
         }
+        items[idx].is_fbits = fbits;
     } else if (expr && expr->kind == AST_UNARY && expr->op == TOK_MINUS &&
                expr->expr && expr->expr->kind == AST_CONSTANT && expr->expr->is_float) {
         /* -浮点常量：对内部常量取负（翻转符号位） */
         unsigned int lo, hi;
+        int fbits = 0;
         parse_float_literal(expr->expr->name, (int)expr->expr->ival, &lo, &hi);
         if (expr->expr->is_float == 4) {
             unsigned int f = double_bits_to_float(hi, lo) ^ 0x80000000U;
             val = (long)f;
+            fbits = 4;
         } else {
             unsigned char _b[8];
             _b[0] = (unsigned char)( lo        & 0xFF);
@@ -2398,9 +2420,12 @@ static int parse_one_init(Parser *p, InitItem *items, int idx, int max) {
             _b[6] = (unsigned char)(((hi ^ 0x80000000U) >> 16) & 0xFF);
             _b[7] = (unsigned char)(((hi ^ 0x80000000U) >> 24) & 0xFF);
             val = *(long *)_b;
+            fbits = 8;
         }
+        items[idx].is_fbits = fbits;
     } else {
         val = eval_const_expr(expr);
+        items[idx].is_fbits = 0;
     }
     items[idx].type = INIT_TYPE_INT;
     items[idx].ival = val;
@@ -5155,10 +5180,16 @@ AstNode *parse_compound_statement(Parser *p) {
                         if (c_ptrs > 0 && last_type_is_float)
                             pvar_set_elem_float(cname, last_type_is_float);
                     }
-                    /* 处理数组后缀 */
+                    /* 处理数组后缀（与主声明路径一致：记录维度、elem_size、
+                     * base_elem_size、is_array —— 缺失会导致 b[2] 被当 char 数组
+                     * 生成 movsbl/movsd 错位代码，mp3d_synth 杂音根因之二） */
                     int comma_was_bracket = 0;
+                    int c_dim_count = 0;
+                    int c_first_dim = 0;
+                    int c_bracket_count = 0;
                     while (peek(p).kind == TOK_LBRACKET) {
                         comma_was_bracket = 1;
+                        c_bracket_count++;
                         consume(p);
                         if (peek(p).kind == TOK_RBRACKET) {
                             /* 空维度 int arr[] — 无操作 */
@@ -5169,7 +5200,11 @@ AstNode *parse_compound_statement(Parser *p) {
                                 long long cdim_val = eval_const_expr(cdim);
                                 int c_is_const = expr_is_const(cdim);
                                 if (c_is_const && cdim_val > 0) {
+                                    if (c_dim_count == 0) c_first_dim = (int)cdim_val;
                                     cdecl->ival *= (int)cdim_val;
+                                    if (c_dim_count < MAX_ARRAY_DIMS)
+                                        cdecl->dims[c_dim_count] = (int)cdim_val;
+                                    c_dim_count++;
                                 } else if (!c_is_const) {
                                     /* VLA：运行时维度的变长数组 */
                                     cdecl->is_vla = 1;
@@ -5186,17 +5221,41 @@ AstNode *parse_compound_statement(Parser *p) {
                         }
                         if (peek(p).kind == TOK_RBRACKET) consume(p);
                     }
-                    if (comma_was_bracket && cdecl->elem_size > 0)
-                        cdecl->is_array = 1;
+                    cdecl->dim_count = c_dim_count;
                     if (cdecl->is_vla) {
                         /* VLA 的 elem_size 和 pvar 注册 */
                         int celem_ts = (c_ptrs > 0) ? 8 : (ts > 0 ? ts : 4);
-                        cdecl->base_elem_size = celem_ts;
+                        cdecl->base_elem_size = (c_ptrs == 1 && c_bracket_count > 0) ? (ts > 0 ? ts : 4) : celem_ts;
                         cdecl->elem_size = celem_ts;
+                        if (c_ptrs > 0 && c_bracket_count > 0)
+                            cdecl->elem_is_ptr = 1;
                         if (cname && *cname) {
                             pvar_set_elem_size(cname, celem_ts);
                             pvar_set_vla(cname);
                         }
+                    } else if (c_dim_count > 0 && c_first_dim > 0) {
+                        /* 数组：elem_size = 元素/行大小，base_elem_size = 基础元素类型 */
+                        int celem_ts = (c_ptrs > 0) ? 8 : (ts > 0 ? ts : 4);
+                        cdecl->base_elem_size = (c_ptrs == 1 && c_bracket_count > 0) ? (ts > 0 ? ts : 4) : celem_ts;
+                        if (c_ptrs > 0 && c_bracket_count > 0)
+                            cdecl->elem_is_ptr = 1;
+                        cdecl->is_array = 1;
+                        if (c_dim_count > 1)
+                            cdecl->elem_size = cdecl->ival / c_first_dim; /* row size */
+                        else
+                            cdecl->elem_size = celem_ts;
+                        if (cname && *cname) {
+                            int cpe = (c_dim_count > 1) ? cdecl->elem_size : celem_ts;
+                            pvar_set_elem_size(cname, cpe);
+                            pvar_set_dims(cname, cdecl->dims, c_dim_count);
+                        }
+                    } else if (comma_was_bracket && c_ptrs > 0) {
+                        /* 无维度的指针数组形态 int *arr[N] */
+                        cdecl->elem_size = 8;
+                        cdecl->base_elem_size = (c_ptrs == 1) ? (ts > 0 ? ts : 4) : 8;
+                        cdecl->elem_is_ptr = 1;
+                    } else if (comma_was_bracket && cdecl->elem_size > 0) {
+                        cdecl->is_array = 1;
                     }
                     /* 数组处理后更新 pvar 中的变量大小 */
                     if (cname && *cname && cdecl->ival > 4) {
@@ -6124,6 +6183,7 @@ AstNode *parse_program(Parser *p) {
                                             for (ci = elem_item_counts[ei]; ci < max_ipe; ci++) {
                                                 new_items[dst].type = INIT_TYPE_INT;
                                                 new_items[dst].ival = 0;
+                                                new_items[dst].is_fbits = 0;
                                                 dst++;
                                             }
                                         }

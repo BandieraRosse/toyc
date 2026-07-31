@@ -1228,11 +1228,19 @@ void cgen_expr(AstNode *node) {
 
             /* 浮点算术运算 */
             cgen_expr(node->left);
-            if (!left_f) { if (is_ss) cvti2f(); else cvti2d(); }
+            /* 转换判断须在求值后复查：pre-flag left_f 在 parse 阶段可能为 0
+             * （如参数指针 float *z 的 z[64] 元素浮点性未传播到父 BINOP），
+             * 但求值后 left 已是浮点 —— 此时重复 cvti2f 会用 eax 残留值
+             * 覆盖正确的浮点结果（mp3d_synth_pair 杂音根因）。 */
+            if (!left_f && !(node->left && node->left->is_float)) {
+                if (is_ss) cvti2f(); else cvti2d();
+            }
             push_xmm0();               /* 保存左操作数 */
 
             cgen_expr(node->right);
-            if (!right_f) { if (is_ss) cvti2f(); else cvti2d(); }
+            if (!right_f && !(node->right && node->right->is_float)) {
+                if (is_ss) cvti2f(); else cvti2d();
+            }
             pop_xmm1();                /* xmm1 = left, xmm0 = right */
 
             /* xmm1 = xmm1 OP xmm0（F2=sd, F3=ss） */
@@ -2294,6 +2302,12 @@ void cgen_expr(AstNode *node) {
             cgen_expr(node->left->expr);       /* 指针 → rax */
             push_rax();
             cgen_expr(node->right);
+            /* 刷新 rhs_float：LBRACKET 表达式（如 xr[0*len]）的浮点性在
+             * 代码生成后才设置（elem_float 查找），预评估标志可能为 0，
+             * 导致下方 ptr_elem_float 分支误做 int→float 转换
+             * （cvtsi2ss 用 eax 残留值覆盖浮点结果，L3_reorder 杂音根因） */
+            if (node->right)
+                rhs_float = node->right->is_float;
             pop_rcx();                          /* rcx = 目标地址 */
             /* 确定被指向类型的大小（同 TOK_STAR 加载逻辑） */
             int deref_sz = 1;
