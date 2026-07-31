@@ -9,7 +9,10 @@
 - `make` — gcc 编译 toyc/toyas/toyld/toyar → `build/`
 - 运行时 toyc_rt.c 由 gcc 编译的 toyc 再编译（确保与 toyld 兼容）
 - `self-*` 目标用 `build/toyc` 编译 app/，验证 toyc 代码生成能力
-- 自举收敛验证（`bootstrap-selfhost.sh` / `bootstrap-to-10.sh`）为可选，不纳入默认流程
+- 自举收敛验证（`bootstrap-selfhost.sh` / `bootstrap-to-10.sh`）为**阶段性检查**：
+  仅在种子更新时（`make update-bootstrap`）验证，不要求每次代码改动后通过。
+  种子（`bootstrap/`）可能滞后于最新代码——此时先 `make update-bootstrap`
+  用 `build/` 产物更新种子，再跑 `bootstrap-selfhost.sh` 验证。
 
 ## 项目结构
 
@@ -115,25 +118,41 @@ make test-all                     # 全部测试套件（含 llm）
 
 全链零外部依赖（仅 make）。`bootstrap/{toyc,toyas,toyld,toyar}` 是 git 追踪的种子二进制。
 
-## 测试状态（2026-07-24）
+## 测试状态（2026-07-31）
 
 | 测试套件 | 通过/总数 | 说明 |
 |----------|-----------|------|
-| `make test` | **44/44 ✅** | 含 VLA 测试 |
+| `make test` | **58/58 ✅** | 常规测试 |
 | `make test-selfhost` | **42/42 ✅** | 含 VLA 自包含测试 |
 | `make test-source` | 8/8 ✅ | toyc 编译源文件独立测试 |
-| `make test-toyld` | **41/41 ✅** | selfhost 测试 × toyld 链接 |
+| `make test-toyld` | **42/42 ✅** | selfhost 测试 × toyld 链接 |
 | `make test-toyld-multifile` | ✅ | 多 .o 文件交叉引用链接 |
 | `make test-toyld-self` | **自举收敛 ✅** | toyld 自链接 stage-1→stage-2 字节级一致 |
 | `make test-toyar` | **5/5 ✅** | 归档器功能测试 |
 | `make test-toyld-archive` | **2/2 ✅** | toyld 从归档链接 |
 | `make test-error` | **16/16 ✅** | 错误报告测试 |
-| `make test-lib-compile` | **28/28 ✅** | Tinylibc 全部 16 个模块编译通过（含 thread + clone.S 汇编） |
-| `make test-lib` | 编译 28/28 ✅ 功能 **12/12** | math ✅, ctype ✅, string ✅, core ✅, stdio ✅, time ✅, misc ✅, net ✅, poll ✅, tty ✅, procfs ✅, **thread ✅** |
-| `bootstrap-selfhost.sh` | **42/42 ✅** | 种子自举 → stage-2 全部测试通过（含 VLA） |
-| `bootstrap-to-10.sh` | stage-2→10 字节级一致 ✅ | 全链收敛验证（头尾完整测试） |
+| `make test-lib-compile` | **29/29 ✅** | Tinylibc 全部 16 个模块编译通过（含 thread + clone.S 汇编） |
+| `make test-lib` | 编译 29/29 ✅ 功能 **12/12** | math ✅, ctype ✅, string ✅, core ✅, stdio ✅, time ✅, misc ✅, net ✅, poll ✅, tty ✅, procfs ✅, **thread ✅** |
 | `make llm` | **编译 ✅** | GPT-2 模型（gcc + Tinylibc，见下方说明） |
 | `make test-llm` | **29/29 ✅** | Softmax, GELU, LayerNorm, MatMul, Encoder, 完整 GPT-2 前向 |
+| mp3_player 解码 | **500 帧 PCM 与 gcc 0 差异 ✅** | 4 类新 bug 已修复（见下方 mp3 修复记录） |
+| `bootstrap-selfhost.sh` | ⚠ 种子滞后 | 种子（2026-07-30）编译 parse.c 段错误；阶段性检查，`make update-bootstrap` 更新种子后验证 |
+| `bootstrap-to-10.sh` | ⚠ 同上 | 全链收敛验证（stage-1 → stage-10 字节级一致） |
+
+### mp3_player 解码修复记录（2026-07-31）
+
+mp3_player 解码 500 帧 PCM 与 gcc 字节级 0 差异（此前 93.68% 采样不同，1-2 ulp 种子经 qmf/overlap 放大）。4 类根因：
+
+1. **`parse_float_literal` 舍入 bug**（lex.c）：`if (carry || extra)` 在舍入位为 0 但有余数时错误进位，
+   十进制→double 偏大 1 ulp → g_pow43 表 71/145 项与 gcc 差 ±1 ulp。改为 IEEE round-to-nearest-even。
+2. **`double_bits_to_float` 舍入位错一位**（parse.c）：mant 已消耗 lo bit 29，舍入位应为 bit 28
+   （0x10000000）而非 bit 29（0x20000000），float 字面量 ±1 ulp。
+3. **指针差 is_unsigned 误传播**（cgen_expr.c）：`(ptr - buf)` 结果应为有符号 ptrdiff_t；
+   `const unsigned char *` 的 is_unsigned 经表达式链传播使 int→64 位符号扩展失效，
+   huffman BSPOS 中 bs_sh=-4 零扩展参与 64 位加法产生高 32 位进位垃圾，
+   64 位比较误判 `BSPOS > layer3gr_limit` → count1 区谱值缺失。
+4. **浮点混合比较缺 cvtss2sd 提升**（cgen_expr.c）：`float >= double` 时 float 侧未提升，
+   ucomisd 比较 movsd 槽的垃圾高位 → mp3d_scale_pcm 饱和判断误判（偶发差 ~70 的杂音）。
 
 ### Tinylibc 库测试详情（`make test-lib`）
 

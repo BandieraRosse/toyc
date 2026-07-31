@@ -66,13 +66,15 @@ static unsigned int double_bits_to_float(unsigned int hi, unsigned int lo) {
     unsigned int mant = ((hi & 0xFFFFF) << 3) | (lo >> 29);
 
     /* 舍入到最近偶数（IEEE round-to-nearest-even）：
-     * 丢弃部分 = lo 的低 29 位；舍入位 = lo 的第 29 位。
-     * 被丢弃部分 > 半值，或 = 半值且 mant 为奇数 → 进位。
-     * 截断（round-toward-zero）会导致 float 字面量差 1 ulp
-     * （如 69.227979f 得 0x428A74B9 而非 0x428A74BA，mp3 杂音根因之五）。 */
+     * 丢弃部分 = lo 的低 29 位（bit 28..0）；舍入位 = lo 的 bit 28。
+     * 注意：mant 已通过 (lo >> 29) 消耗了 lo 的 bit 31..29（含 bit 29），
+     * 因此真正被丢弃的从 bit 28 开始。若误把 bit 29 当舍入位，
+     * 会在 b29=1,b28=0 时错误进位（+1 ulp）、b29=0,b28=1 时漏进位（-1 ulp），
+     * 产生 ±1 ulp 误差（如 2.519842f 得 0x40214518 而非 0x40214517，
+     * mp3 g_pow43 表 71/145 项与 gcc 差 1 ulp，解码杂音根因）。 */
     {
-        unsigned int dropped = lo & 0x1FFFFFFF;   /* 半值以下的位（粘滞位） */
-        unsigned int half    = lo & 0x20000000;   /* 半值位 */
+        unsigned int dropped = lo & 0x0FFFFFFF;   /* bit 27..0（粘滞位） */
+        unsigned int half    = lo & 0x10000000;   /* bit 28（舍入位） */
         if (half && (dropped != 0 || (mant & 1)))
             mant++;
         if (mant > 0x7FFFFF) {

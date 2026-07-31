@@ -372,9 +372,14 @@ void parse_float_literal(const char *s, int len,
                 }
                 if (r_hi > 0 || r_lo > 0) extra = 1;
             }
-            /* 舍入 */
-            if (carry || extra) {
-                /* 简单舍入：如果下一个位是 1 或有余数，尾数 += 1 */
+            /* 舍入（IEEE round-to-nearest-even）
+             * carry = 第 mbits 位（舍入位），extra = 粘滞位（余数非零）。
+             * 进位当且仅当：舍入位为 1 且（粘滞位非零 或 尾数最低位为 1）。
+             * 旧实现 "carry || extra" 在舍入位为 0 但有余数时错误进位
+             * （值低于半值却向上舍入），浮点字面量偏大 1 ulp，
+             * 经 double→float 后产生 ±1 ulp 误差（mp3 g_pow43 表 71/145 项
+             * 与 gcc 差 1 ulp，解码杂音根因）。 */
+            if (carry && (extra || (mant_lo & 1))) {
                 unsigned int old_lo = mant_lo;
                 mant_lo += 1;
                 if (mant_lo < old_lo) {

@@ -40,6 +40,10 @@ make test-toyld-self              # toyld 自链接 stage-1→stage-2 字节级�
 ./bootstrap-to-10.sh              # stage-2→10 字节级收敛验证
 ```
 
+> **阶段性检查**：自举收敛验证仅在种子更新时（`make update-bootstrap`）执行，
+> 不要求每次代码改动后通过。种子可能滞后于最新代码（旧种子编译新源码
+> 可能崩溃或失败）——此时先 `make update-bootstrap` 更新种子再验证。
+
 ## 历史
 
 种子最初由宿主机 C 编译器 + ld 编译生成。自 toyld 加入后，

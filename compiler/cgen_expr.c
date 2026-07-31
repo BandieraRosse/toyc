@@ -1192,10 +1192,17 @@ void cgen_expr(AstNode *node) {
             else if (node->right && node->right->is_float == 4) float_type = 4;
             int is_ss = (float_type == 4);  /* 单精度（ss）vs 双精度（sd） */
 
-            /* 浮点比较：用 ucomiss/ucomisd，结果始终是 int (eax=0/1) */
+            /* 浮点比较：用 ucomiss/ucomisd，结果始终是 int (eax=0/1)
+             * float 与 double 混合比较时（C 的 usual arithmetic conversions），
+             * float 侧必须 cvtss2sd 提升为 double。否则 ucomisd 直接比较
+             * movsd 槽加载的 float（高 32 位是栈残留垃圾），结果取决于垃圾值
+             * （mp3d_scale_pcm 的 sample >= 32766.5 饱和判断误判）。 */
             if (is_cmp) {
                 cgen_expr(node->left);
                 if (!left_f) { if (is_ss) cvti2f(); else cvti2d(); }
+                else if (!is_ss && node->left && node->left->is_float == 4) {
+                    e1(0xF3); e1(0x0F); e1(0x5A); e1(0xC0);  /* cvtss2sd: left float → double */
+                }
                 save_xmm0_to_xmm1();      /* xmm1 = left */
                 /* 保存 xmm1 到栈上：右表达式求值可能通过 negate_double()
                  * 用 movq xmm1,rax 冲掉 xmm1（如负数字面量 -3.13）。 */
@@ -1203,6 +1210,9 @@ void cgen_expr(AstNode *node) {
                 e1(0xF2); e1(0x0F); e1(0x11); e1(0x0C); e1(0x24);  /* movsd [rsp], xmm1 */
                 cgen_expr(node->right);
                 if (!right_f) { if (is_ss) cvti2f(); else cvti2d(); }
+                else if (!is_ss && node->right && node->right->is_float == 4) {
+                    e1(0xF3); e1(0x0F); e1(0x5A); e1(0xC0);  /* cvtss2sd: right float → double */
+                }
                 e1(0xF2); e1(0x0F); e1(0x10); e1(0x0C); e1(0x24);  /* movsd xmm1, [rsp] */
                 e1(0x48); e1(0x83); e1(0xC4); e1(0x08);  /* add rsp, 8 */
                 /* ucomiss/ucomisd xmm1, xmm0 (xmm1 - xmm0) */
@@ -1269,19 +1279,30 @@ void cgen_expr(AstNode *node) {
                         node->op == TOK_LESS_EQ || node->op == TOK_GREATER_EQ ||
                         node->op == TOK_EQ_EQ || node->op == TOK_NOT_EQ);
             if (_cmp) {
-                /* 浮点比较 */
+                /* 浮点比较
+                 * float 与 double 混合比较时（C 的 usual arithmetic conversions），
+                 * float 侧必须 cvtss2sd 提升为 double。若直接 ucomisd 比较
+                 * movsd 槽加载的 float（高 32 位是栈残留垃圾），结果取决于垃圾值
+                 * （mp3d_scale_pcm 的 sample >= 32766.5 饱和判断误判，
+                 * 解码样本偶发不饱和，差 ~70 的杂音）。 */
+                int right_is_double = (node->right && node->right->is_float == 8);
                 cgen_expr(node->left);
                 if (!_ss) cvti2d();
+                if (_ss && right_is_double) {
+                    e1(0xF3); e1(0x0F); e1(0x5A); e1(0xC0);  /* cvtss2sd xmm0, xmm0 */
+                }
                 save_xmm0_to_xmm1();
                 e1(0x48); e1(0x83); e1(0xEC); e1(0x08);
                 e1(0xF2); e1(0x0F); e1(0x11); e1(0x0C); e1(0x24);
                 cgen_expr(node->right);
                 if (!(node->right && node->right->is_float)) {
                     if (_ss) cvti2f(); else cvti2d();
+                } else if (!_ss && node->right->is_float == 4) {
+                    e1(0xF3); e1(0x0F); e1(0x5A); e1(0xC0);  /* cvtss2sd: right float → double */
                 }
                 e1(0xF2); e1(0x0F); e1(0x10); e1(0x0C); e1(0x24);
                 e1(0x48); e1(0x83); e1(0xC4); e1(0x08);
-                if (_ss) {
+                if (_ss && !right_is_double) {
                     e1(0x0F); e1(0x2E); e1(0xC8);  /* ucomiss */
                 } else {
                     e1(0x66); e1(0x0F); e1(0x2E); e1(0xC8);  /* ucomisd */
@@ -1679,6 +1700,14 @@ void cgen_expr(AstNode *node) {
             if (!right_is_ptr && node->right->elem_size > 0)
                 right_is_ptr = 1;
             if (right_is_ptr) {
+                /* 指针差（ptr - ptr）的结果是 ptrdiff_t（有符号 64 位）。
+                 * 若未修正，unsigned 指针（如 const unsigned char *）的
+                 * is_unsigned 会经 1597 行传播到整条表达式链（MUL/MINUS/PLUS），
+                 * 使 1333/1338 行的 int→64 位符号扩展失效——32 位负值（如
+                 * bs_sh=-4）被零扩展参与 64 位加法，产生高 32 位进位垃圾，
+                 * 64 位比较误判（mp3 huffman BSPOS > limit 提前 break，
+                 * count1 区谱值缺失，解码杂音根因）。 */
+                node->is_unsigned = 0;
                 /* 查找指针元素大小 */
                 int ptelem = 1;
                 if (node->left->kind == AST_VAR && node->left->name) {
