@@ -12,15 +12,8 @@ typedef long suseconds_t;
 /* ── fd_set — 位图实现（FD_SETSIZE=1024） ── */
 #define FD_SETSIZE  1024
 
-/* toyc 限制：
- *
- * 1. sizeof(struct_member_array) 返回 8（指针大小）而非数组大小，
- *    因此所有 fd_set 宏用 (unsigned long*) 强制转换绕开。
- *
- * 2. struct 数组成员维度不支持常量表达式（仅接受 TOK_NUMBER），
- *    因此 fd_set 用硬编码值 [16]（1024 / 64）而非 __FD_ELTS。
- *
- * __FD_ELTS 仅用于 FD_ZERO 的循环上界：sizeof 在表达式上下文中正确返回 8。 */
+/* 使用固定布局和显式 unsigned long 指针运算，保持 fd_set 宏简单，并兼容旧自举种子。
+ * 当前 toyc 已支持结构体数组成员的 sizeof 和常量表达式维度。 */
 #define __FD_ELTS (FD_SETSIZE / (8 * (int)sizeof(unsigned long)))
 
 typedef struct {

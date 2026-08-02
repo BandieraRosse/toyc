@@ -1,8 +1,8 @@
 /*
  * cgen_float_hack.c — SSE 浮点辅助函数
  *
- * 在单独的编译单元中以避开 toyc 的 double ABI bug（tcc 用 RDI
- * 传 double 而非 XMM0）和 struct 字段偏移 bug。
+ * 在单独的编译单元中保留按位传递路径，以兼容仍带有旧 double ABI
+ * 和 struct 字段偏移问题的自举种子；当前 toyc 已有相应回归覆盖。
  */
 
 #include "toyc.h"

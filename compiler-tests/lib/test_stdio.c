@@ -21,14 +21,11 @@ static void check(const char *name, int cond) {
     else      { __printf("  %s: FAIL\n", name); }
 }
 
-/* ── 已知问题测试辅助函数 ── */
+/* ── va_start 浮点参数回归测试辅助函数 ── */
 
 /*
- * Bug 3: toyc __builtin_va_start 固定 fp_offset=48 且
- * gp_offset=func_nparams*8，未区分 GP/FP 参数类型。
- * 当命名参数含 double 时，fp_offset 应从 56(48+8) 开始，
- * 但当前固定 48，导致首个 va_arg(double) 误读命名参数的值，
- * 返回 99.0 而非 1.0（见下方测试）。
+ * 回归覆盖：命名参数含 double 时，__builtin_va_start 必须分别计算
+ * GP/FP 偏移，使首个 va_arg(double) 从下一个 XMM 保存槽读取。
  */
 static double test_va_double(double a, ...) {
     __builtin_va_list args;
@@ -88,22 +85,22 @@ int main(void) {
     n = snprintf(buf, sizeof(buf), "%ld", 100000L);
     check("snprintf long",      n == 6 && strcmp(buf, "100000") == 0);
 
-    /* %lu（值在 32-bit 正数范围内，避免触发 toyc 大常量符号扩展预存 bug） */
+    /* %lu（32-bit 正数范围） */
     n = snprintf(buf, sizeof(buf), "%lu", 2000000000UL);
     check("snprintf %%lu 2e9",    n == 10 && strcmp(buf, "2000000000") == 0);
 
     n = snprintf(buf, sizeof(buf), "%lu", 0UL);
     check("snprintf %%lu zero",   n == 1 && strcmp(buf, "0") == 0);
 
-    /* %lu >= 2^31 -- toyc parser/codegen 对大常量有符号扩展问题 */
+    /* %lu >= 2^31 回归覆盖 */
     n = snprintf(buf, sizeof(buf), "%lu", 3000000000UL);
-    check("snprintf %%lu 3e9 (KNOWN BUG)", n == 10 && strcmp(buf, "3000000000") == 0);
+    check("snprintf %%lu 3e9", n == 10 && strcmp(buf, "3000000000") == 0);
 
     /* %x */
     n = snprintf(buf, sizeof(buf), "%x", 0xdead);
     check("snprintf %%x",         n == 4 && strcmp(buf, "dead") == 0);
 
-    /* %lx（值在 32-bit 范围，避免触发符号扩展预存 bug） */
+    /* %lx（32-bit 范围） */
     n = snprintf(buf, sizeof(buf), "%lx", 0x1234abcdUL);
     check("snprintf %%lx",        n == 8 && strcmp(buf, "1234abcd") == 0);
 
@@ -153,22 +150,17 @@ int main(void) {
     n = snprintf(buf, sizeof(buf), "%d %f %s", 42, 3.14, "ok");
     check("snprintf int float str", n == 14 && strcmp(buf, "42 3.140000 ok") == 0);
 
-    /* ── 已知问题测试 ── */
+    /* ── 已修复问题的回归测试 ── */
 
     /*
-     * Bug 3: toyc __builtin_va_start 在命名参数为 double 时，
-     * fp_offset 固定 48 而非 56(48+1*8)，gp_offset 用
-     * func_nparams*8(=8) 而非 0。导致第一个 va_arg(double)
-     * 读到命名参数 a=99.0 而非第一个变参 1.0。
-     *
-     * 正确传参：test_va_double(named=99.0, 1.0, 2.0, 3.0)
+     * 历史回归：命名 double 参数曾使 FP/GP 偏移计算错误。
+     * 传参：test_va_double(named=99.0, 1.0, 2.0, 3.0)
      *   寄存器分配：%xmm0=99.0, %xmm1=1.0, %xmm2=2.0, %xmm3=3.0
      *   fp_offset 应为 56(48+8) 指向 %xmm1=1.0
-     *   实际 fp_offset=48 指向 %xmm0=99.0 → v1=99.0, sum=102.0
      *   正确 fp_offset=56 → v1=1.0, v2=2.0, v3=3.0, sum=6.0
      */
     n = snprintf(buf, sizeof(buf), "%.1f", test_va_double(99.0, 1.0, 2.0, 3.0));
-    check("snprintf va_double named (KNOWN BUG)", n == 3 && strcmp(buf, "6.0") == 0);
+    check("snprintf va_double named", n == 3 && strcmp(buf, "6.0") == 0);
 
     /* ── __printf 基本确认 ── */
     __printf("  __printf 输出正常\n");

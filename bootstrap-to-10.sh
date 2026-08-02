@@ -36,7 +36,7 @@ mkdir -p "${TMP}" "${STAGES_DIR}"
 
 # ─── 辅助函数 ─────────────────────────────────────────────────────
 
-# 用给定的编译器编译 tcc 的 9 个 C 源文件 + 链接 → toyc-stage{N}
+# 用给定的编译器编译 toyc 所需的 C 源文件并链接 → toyc-stage{N}
 # 参数: stage_num compiler_path
 build_stage() {
     local stage_num="$1"
@@ -86,7 +86,7 @@ build_stage() {
     fi
 }
 
-# 用 stage-N toyc 运行全部 28 个 selfhost 测试
+# 用 stage-N toyc 运行全部 selfhost 测试（数量由目录内容动态决定）
 # 输出 "ok fail total"
 test_stage() {
     local stage_num="$1"
@@ -269,7 +269,7 @@ else
     if [ "${ALL_EXIST}" = true ]; then
         h2="${STAGE_HASHES[2]}"; h3="${STAGE_HASHES[3]}"
         if [ -n "${h2}" ] && [ -n "${h3}" ] && [ "${h2}" != "${h3}" ]; then
-            printf "  ${YELLOW}⚠ stage-2 和 stage-3 不同（预期：种子 toyc vs 自编译 tcc 生成不同），stage-3 之后未完全收敛${RESET}\n"
+            printf "  ${YELLOW}⚠ stage-2 和 stage-3 不同（预期：种子 toyc vs 自编译 toyc 生成不同），stage-3 之后未完全收敛${RESET}\n"
         fi
     fi
 fi

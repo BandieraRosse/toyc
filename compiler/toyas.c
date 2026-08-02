@@ -40,7 +40,7 @@ int elf_rel_count;
 #define REG_SIZE_MASK 0x30
 #define REG_IDX_MASK  0x0F
 
-/* reg_table 已内联到 find_reg 中，避免 toyc 的 struct 数组 sizeof bug */
+/* reg_table 内联到 find_reg 中，保持查找简单并兼容旧自举种子的 struct 数组布局。 */
 
 static int find_reg(const char *name) {
     if (!name || !name[0]) return -1;
@@ -135,7 +135,7 @@ typedef struct {
     int op_ext;     /* ModRM reg/opcode 扩展 */
 } InstrDef;
 
-/* 指令定义 — 用 int 常量编码所有字段，避免 toyc 对 struct 数据布局的 bug */
+/* 指令定义 — 用 int 常量编码所有字段，保持布局明确并兼容旧自举种子。 */
 /* 每个指令用 5 个 int: { opcode0, opcode1, oplen, op_ext, fmt } */
 #define INSTR_ENCODE(o0,o1,l,ex,f) (o0),(o1),(l),(ex),(f)
 /* 指令编码表（int 平面数组，不含 name 指针字段） */
@@ -168,7 +168,7 @@ static const int instr_enc[] = {
 
 #define MAX_LOCAL_LABELS 2048
 static int local_offsets[MAX_LOCAL_LABELS];           /* -1 = 未定义 */
-static int local_fixups[MAX_LOCAL_LABELS * 32];       /* 待回填的偏移列表（1D，避免 toyc 2D 数组 stride bug） */
+static int local_fixups[MAX_LOCAL_LABELS * 32];       /* 待回填偏移列表；扁平布局兼容旧自举种子 */
 #define LOCAL_FIXUP(i,j) local_fixups[(i) * 32 + (j)]
 static int local_nfixups[MAX_LOCAL_LABELS];
 
@@ -183,7 +183,7 @@ static void reset_locals(void) {
 /* ─── 符号管理 ─── */
 
 #define TOYAS_MAX_SYMS 2048
-static char sym_names[TOYAS_MAX_SYMS * 128];  /* 持久化符号名（1D，避免 toyc 2D 数组 stride bug） */
+static char sym_names[TOYAS_MAX_SYMS * 128];  /* 持久化符号名；扁平布局兼容旧自举种子 */
 #define SYM_NAME(i) (sym_names + (i) * 128)
 
 static int find_sym(const char *name) {

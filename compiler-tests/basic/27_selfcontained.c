@@ -140,7 +140,7 @@ int main(void)
     /* %s */
     my_printf("[%%s]  String: %s\n", "Hello from self-contained printf!");
 
-    /* %d — toyc int→long 有零扩展 BUG，负值须运行时计算 */
+    /* %d — 覆盖负 long 的格式化路径 */
     {
         long neg = 12345;
         neg = -neg;

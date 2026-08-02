@@ -37,7 +37,7 @@ _TEST_core    := test_core
 # SEARCH_LOCAL，当 if 分支和外部同时声明 args 变量时 va_start 用内层偏移
 # 而函数参数传参用外层偏移，导致 segfault。同时修复了大结构体参数传递的
 # 64 位指针截断和 AST_VAR 指针加载问题。
-# 已知 3/17 功能测试失败（%X 大写、%u 大值、%d 负数，数值格式化问题）。 ──
+# 相关格式化和 va_start 问题均有 test_stdio.c 回归覆盖。 ──
 _SRCS_stdio   := stdio/printf.c stdio/scanf.c stdio/snprintf.c
 _DEPS_stdio   := core string ctype
 _TEST_stdio   := test_stdio

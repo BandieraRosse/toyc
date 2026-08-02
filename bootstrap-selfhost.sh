@@ -52,7 +52,7 @@ printf "\n"
 
 # ─── 第 2 步：用种子 toyc 编译自身 → stage-2 toyc ─────────────
 
-printf "${BLUE}=== [2/3] 构建 stage-2 toyc（seed tcc 编译自身 → ${BUILD}/toyc-stage2） ===${RESET}\n"
+printf "${BLUE}=== [2/3] 构建 stage-2 toyc（seed toyc 编译自身 → ${BUILD}/toyc-stage2） ===${RESET}\n"
 
 # 需要编译的 C 源文件（只编译 toyc 本身所需的模块；toypp 和 toyas 是独立工具，
 # 它们有自己的 main() 和重复符号，不能混入同一个链接。）

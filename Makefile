@@ -417,7 +417,7 @@ test-lib: $(BUILD)/toyc $(BUILD)/toyld $(BUILD)/toyc_rt.o $(BUILD)/toyc_rt_start
 
 TOYLD_TESTDIR := compiler-tests/toyld
 
-# toyld 自包含测试：用 tld 替代 ld 运行 selfhost 测试
+# toyld 自包含测试：用 toyld 替代 ld 运行 selfhost 测试
 test-toyld: $(BUILD)/toyld $(BUILD)/toyc
 	@printf "$(BLUE)══════ toyld 自包含测试（selfhost 测试 × toyld 链接）══════$(RESET)\n\n"; \
 	ok=0; fail=0; total=0; mkdir -p tmp; \
@@ -472,7 +472,7 @@ test-toyld-multifile: $(BUILD)/toyld $(BUILD)/toyc
 	printf "\n$(BLUE)══════$(RESET) $(GREEN)%d passed$(RESET), $(RED)%d failed$(RESET), 1 total $(BLUE)══════$(RESET)\n\n" "$$ok" "$$fail"; \
 	[ "$$fail" -eq 0 ]
 
-# tld 自测试：toyld 链接自身 + 运行自我验证
+# toyld 自测试：toyld 链接自身 + 运行自我验证
 test-toyld-self: $(BUILD)/toyld $(BUILD)/toyc_rt.o $(BUILD)/toyc_rt_start.o
 	@printf "$(BLUE)══════ toyld 自链接测试 ══════$(RESET)\n\n"; \
 	ok=0; fail=0; \

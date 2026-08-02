@@ -33,7 +33,7 @@ extern void parse_float_literal(const char *s, int len,
                                 unsigned int *out_lo, unsigned int *out_hi);
 
 /* 将 64 位 double IEEE 754 位模式转换为 32 位 float IEEE 754 位模式。
- * 纯 32 位整数运算，避免浮点硬件或 tcc 的 double 算术 bug。
+ * 纯 32 位整数运算，保持实现简单并兼容旧自举种子的 double 算术路径。
  * hi = 双精度高 32 位，lo = 低 32 位。返回 32 位 float 位模式。 */
 static unsigned int double_bits_to_float(unsigned int hi, unsigned int lo) {
     unsigned int sign = hi >> 31;
@@ -477,7 +477,7 @@ static void token_lexeme(Parser *p, char *buf, int bufsz) {
 
 /* ─── 错误报告 ─── */
 
-/* 写 ANSI 转义序列：ESC + s（避免 \033 被 bootstrap/tcc 误译成 \0+33） */
+/* 写 ANSI 转义序列：ESC + s（兼容会把 \033 误译成 \0+33 的旧自举种子） */
 static void esc(const char *s, int len) {
     char e = 27;
     __write(2, &e, 1);

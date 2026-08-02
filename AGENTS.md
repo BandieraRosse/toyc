@@ -46,6 +46,11 @@ make clean              # 删除 build/ 和 tmp/
 
 修改后先运行与改动最接近的测试，再根据风险扩大范围：
 
+如果没有修改 `compiler/toyc.c`、`compiler/lex.c`、`compiler/parse.c`、
+`compiler/preproc.c`、`compiler/cgen*.c`、`compiler/elf_write.c`、`compiler/toyc.h` 等
+toyc 编译器源文件，则不要求执行完整测试；运行与本次改动直接相关的构建和测试即可。
+只有修改编译器实现、公共代码生成路径或影响范围无法可靠限定时，才需要扩大到完整测试。
+
 ```sh
 make test               # 常规编译/运行测试
 make test-selfhost      # 无 toyc_rt 的自包含测试

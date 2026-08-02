@@ -1075,7 +1075,7 @@ static int tmakelist_has_source(Tmakelist *tl, const char *name)
     return 0;
 }
 
-/* 从 build .o 路径反推源目录（如 "build/app/compiler/tcc.o" → "app/compiler"） */
+/* 从 build .o 路径反推源目录（如 "build/app/compiler/toyc.o" → "app/compiler"） */
 static void obj_to_src_dir(const char *obj_path, char *dir, int size)
 {
     /* 跳过 "build/" 前缀 */

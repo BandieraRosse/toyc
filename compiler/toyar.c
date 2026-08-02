@@ -7,10 +7,10 @@
  * toyar.c — Toy ARchiver — System V 静态库归档器
  *
  * 用法：
- *   tar rcs libfoo.a foo.o bar.o    创建归档 + 符号索引
- *   tar t libfoo.a                  列表成员
- *   tar x libfoo.a                  提取成员
- *   tar r libfoo.a new.o            追加/替换
+ *   toyar rcs libfoo.a foo.o bar.o    创建归档 + 符号索引
+ *   toyar t libfoo.a                  列表成员
+ *   toyar x libfoo.a                  提取成员
+ *   toyar r libfoo.a new.o            追加/替换
  *
  * 零 libc 依赖。
  * 符号表偏移指向对应 .o 的 ar_hdr 起始位置。

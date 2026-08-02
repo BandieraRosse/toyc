@@ -551,7 +551,7 @@ void cgen_expr(AstNode *node) {
                 lo = (unsigned int)(node->ival);
             } else {
                 /* 在代码生成时用纯 32 位整数运算解析浮点字面量，
-                 * 避免 toyc 的 double 算术 bug 和 struct 字段偏移 bug。 */
+                 * 保留按位传递路径，以兼容旧自举种子的 double 算术和 struct 字段偏移问题。 */
                 parse_float_literal(node->name, (int)node->ival, &lo, &hi);
             }
             load_double_bits_halves(hi, lo);

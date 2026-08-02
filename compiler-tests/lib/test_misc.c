@@ -1,8 +1,7 @@
 /* test_misc.c — misc 子系统功能测试
  * 测试 file.c（文件操作）、path.c（路径解析）
  *
- * 注意：toyc 有 2D 数组 bug + string array relocation bug，
- * 且部分 misc 函数依赖 mkdirat/openat 宏（在 tlibc_compat.h 中），
+ * 部分 misc 函数依赖 mkdirat/openat 宏（在 tlibc_compat.h 中），
  * 测试驱动使用 core.h 的 __openat/__mkdirat 等 __ 版本。
  *
  * EXPECT: 0
