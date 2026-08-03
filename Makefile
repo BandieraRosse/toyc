@@ -969,7 +969,7 @@ QWEN2_OBJS := $(BUILD)/llm_qwen2_main.o $(BUILD)/llm_qwen2_model.o \
 QWEN2_TARGET := $(BUILD)/llm-qwen2
 
 QWEN2_MODEL_DIR ?= $(LLM_DIR)/models/qwen2.5-0.5b-instruct
-QWEN2_CHECKPOINT ?= $(QWEN2_MODEL_DIR)/qwen2.5-0.5b-f32.bin
+QWEN2_CHECKPOINT ?= $(QWEN2_MODEL_DIR)/model.safetensors
 
 .PHONY: llm llm-gpt2 llm-qwen2 test-llm test-llm-gpt2 test-llm-qwen2 \
         clean-llm download-model download-qwen2 export-bpe export-qwen2 \

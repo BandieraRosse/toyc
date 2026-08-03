@@ -69,6 +69,7 @@ static int dump_logits(const char *path, const float *logits, int count)
 static void usage(void)
 {
     __printf("usage: llm-qwen2 --checkpoint FILE --prompt-tokens FILE"
+             " | --prompt TEXT"
              " [--tokenizer FILE] [--dump-logits FILE]"
              " [--steps N] [--context N]"
              " [--temperature F] [--top-k N]\n");
@@ -78,6 +79,7 @@ int main(int argc, char **argv)
 {
     const char *checkpoint_path = NULL;
     const char *prompt_path = NULL;
+    const char *prompt_text = NULL;
     const char *tokenizer_path = NULL;
     const char *logits_path = NULL;
     int steps = 32;
@@ -89,6 +91,8 @@ int main(int argc, char **argv)
             checkpoint_path = argv[++i];
         else if (strcmp(argv[i], "--prompt-tokens") == 0 && i + 1 < argc)
             prompt_path = argv[++i];
+        else if (strcmp(argv[i], "--prompt") == 0 && i + 1 < argc)
+            prompt_text = argv[++i];
         else if (strcmp(argv[i], "--tokenizer") == 0 && i + 1 < argc)
             tokenizer_path = argv[++i];
         else if (strcmp(argv[i], "--dump-logits") == 0 && i + 1 < argc)
@@ -103,14 +107,37 @@ int main(int argc, char **argv)
             top_k = parse_int(argv[++i]);
         else { usage(); return 1; }
     }
-    if (!checkpoint_path || !prompt_path || steps < 0 || context <= 0) {
+    if (!checkpoint_path || (!prompt_path && !prompt_text) ||
+        (prompt_path && prompt_text) || steps < 0 || context <= 0) {
         usage();
         return 1;
     }
     int *tokens = NULL;
     int prompt_count = 0;
-    if (load_prompt(prompt_path, &tokens, &prompt_count) != 0 ||
-        prompt_count + steps > context) {
+    Qwen2Tokenizer tokenizer;
+    int have_tokenizer = tokenizer_path &&
+        qwen2_tokenizer_load(&tokenizer, tokenizer_path) == 0;
+    if (prompt_text) {
+        char merges_path[512];
+        if (!have_tokenizer) { __printf("--prompt requires --tokenizer\n"); return 1; }
+        int n = 0;
+        while (tokenizer_path[n] && n < (int)sizeof(merges_path) - 1) {
+            merges_path[n] = tokenizer_path[n]; n++;
+        }
+        merges_path[n] = 0;
+        while (n > 0 && merges_path[n - 1] != '/') n--;
+        const char *merges_name = "merges.txt";
+        int j = 0;
+        while (merges_name[j] && n + j < (int)sizeof(merges_path) - 1) {
+            merges_path[n + j] = merges_name[j]; j++;
+        }
+        merges_path[n + j] = 0;
+        tokens = tlibc_malloc((size_t)context * sizeof(int));
+        if (!tokens || qwen2_tokenizer_load_merges(&tokenizer, merges_path) != 0 ||
+            (prompt_count = qwen2_tokenizer_encode(&tokenizer, prompt_text, tokens, context)) <= 0)
+            prompt_count = 0;
+    } else if (load_prompt(prompt_path, &tokens, &prompt_count) != 0) prompt_count = 0;
+    if (prompt_count == 0 || prompt_count + steps > context) {
         __printf("failed to load prompt or context is too small\n");
         if (tokens) tlibc_free(tokens);
         return 1;
@@ -135,9 +162,6 @@ int main(int argc, char **argv)
     }
     Sampler sampler;
     sampler_init(&sampler, temperature, top_k, 42);
-    Qwen2Tokenizer tokenizer;
-    int have_tokenizer = tokenizer_path &&
-        qwen2_tokenizer_load(&tokenizer, tokenizer_path) == 0;
     if (tokenizer_path && !have_tokenizer)
         __printf("warning: failed to load tokenizer; printing token ids\n");
     int position = prompt_count;

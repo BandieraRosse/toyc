@@ -60,8 +60,9 @@ make test-llm-qwen2     # Qwen2 operators, checkpoint, and token-forward tests
 make test-all           # core aggregate; excludes test-toyld and test-llm
 ```
 
-Export an FP32 checkpoint from a local Hugging Face Qwen2/Qwen2.5 directory
-(requires Python, PyTorch, and `safetensors`):
+The Qwen2.5 runtime directly reads a single Hugging Face `model.safetensors`
+file with BF16 or F32 weights. The old FP32 export remains available for
+format compatibility and debugging:
 
 ```sh
 make export-qwen2 \
@@ -73,23 +74,19 @@ ModelScope can be used as the preferred download source where Hugging Face is
 slow or unavailable:
 
 ```sh
-python3 -m pip install modelscope torch safetensors
+python3 -m pip install modelscope
 make download-qwen2
-make export-qwen2 export-qwen2-tokenizer
-python3 llm/tools/encode_qwen2_prompt.py \
-  llm/models/qwen2.5-0.5b-instruct /tmp/qwen-prompt.bin \
-  --prompt "Hello, please introduce yourself."
+make export-qwen2-tokenizer
 make llm-qwen2
 ./build/llm-qwen2 \
-  --checkpoint llm/models/qwen2.5-0.5b-instruct/qwen2.5-0.5b-f32.bin \
+  --checkpoint llm/models/qwen2.5-0.5b-instruct/model.safetensors \
   --tokenizer llm/models/qwen2.5-0.5b-instruct/tokenizer.bin \
-  --prompt-tokens /tmp/qwen-prompt.bin --steps 32 --context 2048
+  --prompt "Hello, please introduce yourself." --steps 32 --context 2048
 ```
 
-Prompt encoding currently uses the ModelScope/Transformers tokenizer. The C
-runtime performs raw UTF-8 token decoding, sampling, and KV-cache inference.
-The FP32 checkpoint is approximately twice the size of the original BF16
-weights.
+The C runtime performs byte-level BPE prompt encoding, UTF-8 token decoding,
+sampling, and KV-cache inference. Merge rules are loaded from `merges.txt`
+beside `tokenizer.bin`.
 With the ModelScope Qwen2.5-0.5B-Instruct weights, the C runtime matched the
 PyTorch reference argmax and complete top-10 set for the last-position logits;
 the maximum absolute error was approximately `5.01e-5`. Greedy generation also

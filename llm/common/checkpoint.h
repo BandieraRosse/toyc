@@ -26,6 +26,8 @@ typedef struct {
     size_t mapping_size;
     const unsigned char *directory;
     int tensor_count;
+    LLMTensor *tensors;
+    void **owned_data;
 } LLMCheckpoint;
 
 int llm_checkpoint_open(LLMCheckpoint *checkpoint, const char *path);
