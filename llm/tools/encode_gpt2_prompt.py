@@ -3,10 +3,10 @@
 SPDX-License-Identifier: MIT
 Copyright (c) 2026 BandieraRosse
 
-encode_prompt.py — 将文本编码为 GPT-2 token ID 序列
+encode_gpt2_prompt.py — 将文本编码为 GPT-2 token ID 序列
 
 用法：
-  echo "Your prompt text here" | python llm/encode_prompt.py > /tmp/prompt.bin
+  echo "Your prompt text here" | python llm/tools/encode_gpt2_prompt.py > /tmp/prompt.bin
   ./build/llm generate --prompt /tmp/prompt.bin --steps 200
 
 输出二进制格式：

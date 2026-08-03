@@ -3,7 +3,7 @@
 SPDX-License-Identifier: MIT
 Copyright (c) 2026 BandieraRosse
 
-export_bpe.py — 从 tiktoken 导出 GPT-2 BPE merge 规则为二进制文件
+export_gpt2_bpe.py — 从 tiktoken 导出 GPT-2 BPE merge 规则为二进制文件
 
 输出：llm/models/bpe_merges.bin
 

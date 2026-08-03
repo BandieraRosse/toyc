@@ -26,6 +26,8 @@
 #     make test-toyld-self         toyld 自举验证
 #     make test-toyar             归档器功能测试
 #     make test-toyld-archive      toyld 从归档链接
+#     make test-llm-gpt2           GPT-2 数值和前向传播测试
+#     make test-llm-qwen2          Qwen2 配置和基础算子测试
 #     make test-self-app          自托管 App 冒烟测试
 #     make test-all               全部测试套件
 #
@@ -925,11 +927,13 @@ test-self-app:
 	[ "$$fail" -eq 0 ]
 
 # ════════════════════════════════════════════════════════════════
-# llm — GPT-2 模型学习项目（gcc + toyc.a）
+# llm — 语言模型推理项目（gcc + toyc.a）
 # ════════════════════════════════════════════════════════════════
 # 用法：
-#   make llm                  编译生成器 → build/llm
-#   make test-llm             编译并运行功能测试 → build/test-llm
+#   make llm-gpt2             编译 GPT-2 生成器 → build/llm
+#   make llm-qwen2            编译 Qwen2 生成器 → build/llm-qwen2
+#   make test-llm-gpt2        编译并运行 GPT-2 功能测试 → build/test-llm
+#   make llm / test-llm       上述 GPT-2 目标的兼容别名
 #   make download-model       下载 GPT-2 124M checkpoint + tokenizer
 #   make export-bpe           导出 BPE merge 规则（需 tiktoken）
 #   make clean-llm            清理 llm 产物
@@ -939,26 +943,61 @@ test-self-app:
 # ════════════════════════════════════════════════════════════════
 
 LLM_DIR     := llm
-LLM_CFLAGS  := -Wall -Wextra -O2 -I . -I include -I include/posix \
+LLM_CFLAGS  := -Wall -Wextra -O2 -I . -I llm/common -I llm/gpt2 -I llm/qwen2 \
+               -I include -I include/posix \
                -I include/tlibc -I arch -I arch/x86_64 \
                -DX86_64_TLIBC=1 -nostdlib -ffreestanding \
                -fno-stack-protector -fno-common -MD
 
-# 生成二进制：main.c + gpt2.c + tokenizer.c
-LLM_OBJS     := $(BUILD)/llm_main.o $(BUILD)/llm_gpt2.o $(BUILD)/llm_tokenizer.o
+# GPT-2 生成二进制：main.c + gpt2.c + tokenizer.c
+LLM_OBJS     := $(BUILD)/llm_gpt2_main.o $(BUILD)/llm_gpt2_model.o \
+                $(BUILD)/llm_gpt2_tokenizer.o
 LLM_TARGET   := $(BUILD)/llm
 
 # 测试二进制：test.c + gpt2.c
-LLM_TEST_OBJS   := $(BUILD)/llm_test.o $(BUILD)/llm_gpt2.o
+LLM_TEST_OBJS   := $(BUILD)/llm_gpt2_test.o $(BUILD)/llm_gpt2_model.o
 LLM_TEST_TARGET := $(BUILD)/test-llm
 
-.PHONY: llm test-llm clean-llm download-model
+# Qwen2 算子、checkpoint 和微型模型前向传播测试。
+QWEN2_TEST_OBJS   := $(BUILD)/llm_qwen2_test.o $(BUILD)/llm_qwen2_model.o \
+                     $(BUILD)/llm_common_tensor.o $(BUILD)/llm_common_checkpoint.o
+QWEN2_TEST_TARGET := $(BUILD)/test-llm-qwen2
+QWEN2_TEST_CHECKPOINT := $(BUILD)/qwen2-test.bin
+QWEN2_OBJS := $(BUILD)/llm_qwen2_main.o $(BUILD)/llm_qwen2_model.o \
+              $(BUILD)/llm_qwen2_tokenizer.o $(BUILD)/llm_common_tensor.o \
+              $(BUILD)/llm_common_checkpoint.o
+QWEN2_TARGET := $(BUILD)/llm-qwen2
 
-llm: $(LLM_TARGET)
+QWEN2_MODEL_DIR ?= $(LLM_DIR)/models/qwen2.5-0.5b-instruct
+QWEN2_CHECKPOINT ?= $(QWEN2_MODEL_DIR)/qwen2.5-0.5b-f32.bin
+
+.PHONY: llm llm-gpt2 llm-qwen2 test-llm test-llm-gpt2 test-llm-qwen2 \
+        clean-llm download-model download-qwen2 export-bpe export-qwen2 \
+        export-qwen2-tokenizer
+
+llm llm-gpt2: $(LLM_TARGET)
+
+llm-qwen2: $(QWEN2_TARGET)
 
 # 通用 .c → .o 编译规则
-$(BUILD)/llm_%.o: $(LLM_DIR)/%.c | $(BUILD)
-	@printf "  $(BLUE)  CC(llm)$(RESET)  %s\n" "$<"
+$(BUILD)/llm_gpt2_%.o: $(LLM_DIR)/gpt2/%.c | $(BUILD)
+	@printf "  $(BLUE)  CC(llm:gpt2)$(RESET)  %s\n" "$<"
+	$(GCC) $(LLM_CFLAGS) -c $< -o $@
+
+$(BUILD)/llm_gpt2_model.o: $(LLM_DIR)/gpt2/gpt2.c | $(BUILD)
+	@printf "  $(BLUE)  CC(llm:gpt2)$(RESET)  %s\n" "$<"
+	$(GCC) $(LLM_CFLAGS) -c $< -o $@
+
+$(BUILD)/llm_common_%.o: $(LLM_DIR)/common/%.c | $(BUILD)
+	@printf "  $(BLUE)  CC(llm:common)$(RESET)  %s\n" "$<"
+	$(GCC) $(LLM_CFLAGS) -c $< -o $@
+
+$(BUILD)/llm_qwen2_%.o: $(LLM_DIR)/qwen2/%.c | $(BUILD)
+	@printf "  $(BLUE)  CC(llm:qwen2)$(RESET)  %s\n" "$<"
+	$(GCC) $(LLM_CFLAGS) -c $< -o $@
+
+$(BUILD)/llm_qwen2_model.o: $(LLM_DIR)/qwen2/qwen2.c | $(BUILD)
+	@printf "  $(BLUE)  CC(llm:qwen2)$(RESET)  %s\n" "$<"
 	$(GCC) $(LLM_CFLAGS) -c $< -o $@
 
 # 链接生成二进制（带完整运行时）
@@ -977,7 +1016,7 @@ $(LLM_TEST_TARGET): $(LLM_TEST_OBJS) $(LIBC_A) $(SELF_CRT_OBJS)
 	       -Wl,-e,__tlibc_start -o $@
 	@size=$$(stat -c%s $@); printf "$(GREEN)ok$(RESET) (%d bytes)\n" "$$size"
 
-test-llm: $(LLM_TEST_TARGET)
+test-llm test-llm-gpt2: $(LLM_TEST_TARGET)
 	@printf "$(BLUE)══════ llm 功能测试 ══════$(RESET)\n"
 	$(LLM_TEST_TARGET); \
 	rc=$$?; \
@@ -988,10 +1027,34 @@ test-llm: $(LLM_TEST_TARGET)
 		exit 1; \
 	fi
 
+$(QWEN2_TEST_CHECKPOINT): $(LLM_DIR)/tools/make_qwen2_test_checkpoint.py | $(BUILD)
+	python3 $< $@
+
+$(QWEN2_TEST_TARGET): $(QWEN2_TEST_OBJS) $(QWEN2_TEST_CHECKPOINT) $(LIBC_A) $(SELF_CRT_OBJS)
+	@printf "$(BLUE)  LD(llm)$(RESET)  test-llm-qwen2 ... "
+	$(GCC) $(LLM_CFLAGS) $(QWEN2_TEST_OBJS) \
+	       -Wl,--whole-archive $(LIBC_A) -Wl,--no-whole-archive \
+	       -Wl,-e,__tlibc_start -o $@
+	@printf "$(GREEN)ok$(RESET)\n"
+
+$(QWEN2_TARGET): $(QWEN2_OBJS) $(LIBC_A) $(SELF_CRT_OBJS)
+	@printf "$(BLUE)  LD(llm)$(RESET)  llm-qwen2 ... "
+	$(GCC) $(LLM_CFLAGS) $(QWEN2_OBJS) \
+	       -Wl,--whole-archive $(LIBC_A) -Wl,--no-whole-archive \
+	       -Wl,-e,__tlibc_start -o $@
+	@printf "$(GREEN)ok$(RESET)\n"
+
+test-llm-qwen2: $(QWEN2_TEST_TARGET)
+	@printf "$(BLUE)══════ Qwen2 算子与前向传播测试 ══════$(RESET)\n"
+	$(QWEN2_TEST_TARGET)
+
 # 清理：只删当前使用的 .o（保留其他可能存在的 llm_*.o）
 clean-llm:
 	rm -f $(LLM_OBJS) $(LLM_OBJS:.o=.d) $(LLM_TEST_OBJS) $(LLM_TEST_OBJS:.o=.d) \
-	      $(LLM_TARGET) $(LLM_TEST_TARGET)
+	      $(QWEN2_TEST_OBJS) $(QWEN2_TEST_OBJS:.o=.d) \
+	      $(QWEN2_OBJS) $(QWEN2_OBJS:.o=.d) \
+	      $(LLM_TARGET) $(LLM_TEST_TARGET) $(QWEN2_TEST_TARGET) \
+	      $(QWEN2_TARGET) $(QWEN2_TEST_CHECKPOINT)
 	@printf "$(GREEN)✓ llm 清理完成$(RESET)\n"
 
 # 下载 GPT-2 124M checkpoint + tokenizer（约 520MB）
@@ -999,10 +1062,23 @@ clean-llm:
 # 下载 GPT-2 124M checkpoint + tokenizer（约 520MB）
 download-model:
 	@printf "$(BLUE)══════ 下载 GPT-2 124M 模型资源 ══════$(RESET)\n"
-	@bash $(LLM_DIR)/download_model.sh
+	@bash $(LLM_DIR)/tools/download_gpt2_model.sh
+
+download-qwen2:
+	@bash $(LLM_DIR)/tools/download_qwen2_model.sh
 
 # 导出 BPE merge 规则（需要 tiktoken Python 包）
 export-bpe:
 	@printf "$(BLUE)══════ 导出 BPE merge 规则 ══════$(RESET)\n"
-	@python3 $(LLM_DIR)/export_bpe.py
+	@python3 $(LLM_DIR)/tools/export_gpt2_bpe.py
 	@printf "$(GREEN)✓ BPE merge 规则已导出$(RESET)\n"
+
+# 将本地 Hugging Face Qwen2/Qwen2.5 safetensors 转为只读 FP32 checkpoint。
+# 可通过 QWEN2_MODEL_DIR=... QWEN2_CHECKPOINT=... 覆盖输入输出路径。
+export-qwen2:
+	python3 $(LLM_DIR)/tools/export_qwen2.py \
+	        $(QWEN2_MODEL_DIR) $(QWEN2_CHECKPOINT)
+
+export-qwen2-tokenizer:
+	python3 $(LLM_DIR)/tools/export_qwen2_tokenizer.py \
+	        $(QWEN2_MODEL_DIR) $(QWEN2_MODEL_DIR)/tokenizer.bin

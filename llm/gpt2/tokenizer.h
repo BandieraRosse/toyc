@@ -8,7 +8,8 @@
  *   decode: token ID → 文本（查表）
  *   encode: 文本 → token ID（真正的 BPE merge，非贪心近似）
  *
- * BPE merge 规则从 llm/models/bpe_merges.bin 加载（由 export_bpe.py 生成）。
+ * BPE merge 规则从 llm/models/bpe_merges.bin 加载
+ *（由 tools/export_gpt2_bpe.py 生成）。
  * 若 merge 规则不可用，回退到贪心编码。
  *
  * toyc: __openat/__mmap ✅, tlibc_malloc ✅

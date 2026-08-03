@@ -56,8 +56,44 @@ make test-toyar         # 5 archiver tests
 make test-toyld-archive # 2 archive-linking tests
 make test-toyld-self    # two-stage byte identity for toyld
 make test-llm           # 29 GPT-2 numerical/forward tests
+make test-llm-qwen2     # Qwen2 operators, checkpoint, and token-forward tests
 make test-all           # core aggregate; excludes test-toyld and test-llm
 ```
+
+Export an FP32 checkpoint from a local Hugging Face Qwen2/Qwen2.5 directory
+(requires Python, PyTorch, and `safetensors`):
+
+```sh
+make export-qwen2 \
+  QWEN2_MODEL_DIR=/path/to/Qwen2.5-0.5B-Instruct \
+  QWEN2_CHECKPOINT=llm/models/qwen2.5-0.5b-instruct/model-f32.bin
+```
+
+ModelScope can be used as the preferred download source where Hugging Face is
+slow or unavailable:
+
+```sh
+python3 -m pip install modelscope torch safetensors
+make download-qwen2
+make export-qwen2 export-qwen2-tokenizer
+python3 llm/tools/encode_qwen2_prompt.py \
+  llm/models/qwen2.5-0.5b-instruct /tmp/qwen-prompt.bin \
+  --prompt "Hello, please introduce yourself."
+make llm-qwen2
+./build/llm-qwen2 \
+  --checkpoint llm/models/qwen2.5-0.5b-instruct/qwen2.5-0.5b-f32.bin \
+  --tokenizer llm/models/qwen2.5-0.5b-instruct/tokenizer.bin \
+  --prompt-tokens /tmp/qwen-prompt.bin --steps 32 --context 2048
+```
+
+Prompt encoding currently uses the ModelScope/Transformers tokenizer. The C
+runtime performs raw UTF-8 token decoding, sampling, and KV-cache inference.
+The FP32 checkpoint is approximately twice the size of the original BF16
+weights.
+With the ModelScope Qwen2.5-0.5B-Instruct weights, the C runtime matched the
+PyTorch reference argmax and complete top-10 set for the last-position logits;
+the maximum absolute error was approximately `5.01e-5`. Greedy generation also
+produced valid Chinese output while advancing the KV cache.
 
 `make test-self-app` checks only existing `build/*_self` files. Run
 `make self-app` first, or missing programs will be skipped.
@@ -88,7 +124,7 @@ compiler-tests/  compiler, linker, and Tinylibc tests
 include/         Toyc/Tinylibc headers
 lib/             Tinylibc sources
 app/             examples and self-hosted applications
-llm/             small GPT-2 implementation and tests
+llm/             GPT-2/Qwen2 inference and shared numerical infrastructure
 bootstrap/       versioned bootstrap seeds
 ```
 

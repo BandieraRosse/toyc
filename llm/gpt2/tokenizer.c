@@ -106,7 +106,7 @@ int tokenizer_init(Tokenizer *t, const char *path)
 /* ==================================================================
  *  tokenizer_load_merges — 加载 BPE merge 规则
  *
- *  文件格式（由 export_bpe.py 生成）：
+ *  文件格式（由 tools/export_gpt2_bpe.py 生成）：
  *    [4 bytes: num_merges]
  *    [256 × 2 bytes: byte_to_token]    // byte 值 → token ID
  *    [num_merges × {2+2+2 bytes}]      // left, right, merged_id

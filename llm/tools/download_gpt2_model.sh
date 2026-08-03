@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 BandieraRosse
 #
-# download_model.sh — 下载 GPT-2 124M checkpoint + tokenizer
+# download_gpt2_model.sh — 下载 GPT-2 124M checkpoint + tokenizer
 #
 # 数据来源：Karpathy llmc-starter-pack (HuggingFace datasets)
 #    gpt2_124M.bin         — 预训练权重（约 500MB）

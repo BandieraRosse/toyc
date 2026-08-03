@@ -55,8 +55,40 @@ make test-toyar         # 5 个归档器测试
 make test-toyld-archive # 2 个归档链接测试
 make test-toyld-self    # toyld 两阶段字节一致性
 make test-llm           # 29 个 GPT-2 数值/前向传播测试
+make test-llm-qwen2     # Qwen2 算子、checkpoint 和单 token 前向测试
 make test-all           # 核心聚合目标；不包含 test-toyld 和 test-llm
 ```
+
+Qwen2.5 FP32 checkpoint 可从本地 Hugging Face 模型目录导出（需要 Python、
+PyTorch 和 `safetensors`）：
+
+```sh
+make export-qwen2 \
+  QWEN2_MODEL_DIR=/path/to/Qwen2.5-0.5B-Instruct \
+  QWEN2_CHECKPOINT=llm/models/qwen2.5-0.5b-instruct/model-f32.bin
+```
+
+国内网络环境可优先通过 ModelScope 下载并运行：
+
+```sh
+python3 -m pip install modelscope torch safetensors
+make download-qwen2
+make export-qwen2 export-qwen2-tokenizer
+python3 llm/tools/encode_qwen2_prompt.py \
+  llm/models/qwen2.5-0.5b-instruct /tmp/qwen-prompt.bin \
+  --prompt "你好，请介绍一下自己。"
+make llm-qwen2
+./build/llm-qwen2 \
+  --checkpoint llm/models/qwen2.5-0.5b-instruct/qwen2.5-0.5b-f32.bin \
+  --tokenizer llm/models/qwen2.5-0.5b-instruct/tokenizer.bin \
+  --prompt-tokens /tmp/qwen-prompt.bin --steps 32 --context 2048
+```
+
+当前 prompt 编码由 ModelScope/Transformers tokenizer 完成，C 端负责 UTF-8 token
+解码、采样和 KV-cache 推理。FP32 checkpoint 约为原 BF16 权重的两倍大小。
+使用 ModelScope 的 Qwen2.5-0.5B-Instruct 实测时，C 与 PyTorch 参考实现的
+最后位置 logits argmax 和 top-10 完全一致，最大绝对误差约为 `5.01e-5`；greedy
+生成可正常输出中文并连续推进 KV cache。
 
 `make test-self-app` 只测试已经存在的 `build/*_self`，因此应先运行
 `make self-app`；否则缺少的程序会被跳过。
@@ -84,7 +116,7 @@ compiler-tests/  编译器、链接器和 Tinylibc 测试
 include/         Toyc/Tinylibc 头文件
 lib/             Tinylibc 源码
 app/             示例与自托管应用
-llm/             小型 GPT-2 实现和测试
+llm/             GPT-2、Qwen2 推理实现与共享数值基础设施
 bootstrap/       版本控制内的自举种子
 ```
 
