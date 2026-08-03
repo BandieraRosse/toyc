@@ -1,5 +1,8 @@
 /* SPDX-License-Identifier: MIT */
 #include "qwen2.h"
+#include "tokenizer.h"
+
+/* 不依赖外部测试框架的 Qwen2 算子、checkpoint 和 tokenizer 回归测试。 */
 
 static int failures;
 
@@ -66,6 +69,7 @@ static void test_gqa(void)
 
 static void test_checkpoint_forward(void)
 {
+    /* build/qwen2-test.bin 是 Makefile 生成的确定性微型 checkpoint。 */
     Qwen2Config config = {
         .vocab_size = 8, .hidden_size = 4, .intermediate_size = 8,
         .num_layers = 1, .num_attention_heads = 2, .num_kv_heads = 1,
@@ -89,6 +93,28 @@ static void test_checkpoint_forward(void)
     qwen2_free(&model);
 }
 
+static void test_tokenizer_json(void)
+{
+    /*
+     * test-tokenizer.json 是严格 JSON，不能写注释。它用五个 token 和一条
+     * merge 规则覆盖基础词表、added token 以及 BPE 合并三个加载路径。
+     */
+    Qwen2Tokenizer tokenizer;
+    int tokens[4];
+    int loaded = qwen2_tokenizer_load_json(&tokenizer,
+                                            "llm/qwen2/test-tokenizer.json") == 0;
+    CHECK(loaded, "load tokenizer.json without Python");
+    if (!loaded) return;
+    CHECK(tokenizer.vocab_size == 5 && tokenizer.merge_count == 1,
+          "parse vocab, added tokens, and merges");
+    int count = qwen2_tokenizer_encode(&tokenizer, "ab", tokens, 4);
+    CHECK(count == 1 && tokens[0] == 2, "tokenizer.json BPE encode");
+    count = qwen2_tokenizer_encode(&tokenizer, "a<eos>b", tokens, 4);
+    CHECK(count == 3 && tokens[0] == 0 && tokens[1] == 4 && tokens[2] == 1,
+          "tokenizer.json added-token encode");
+    qwen2_tokenizer_free(&tokenizer);
+}
+
 int main(void)
 {
     __printf("Qwen2 common operator tests\n");
@@ -98,6 +124,7 @@ int main(void)
     test_rope();
     test_gqa();
     test_checkpoint_forward();
+    test_tokenizer_json();
     __printf("%s (%d failures)\n", failures ? "FAILED" : "PASSED", failures);
     return failures ? 1 : 0;
 }

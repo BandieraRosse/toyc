@@ -68,21 +68,18 @@ make export-qwen2 \
   QWEN2_CHECKPOINT=llm/models/qwen2.5-0.5b-instruct/model-f32.bin
 ```
 
-国内网络环境可优先通过 ModelScope 下载并运行：
+只需下载标准 Hugging Face 模型文件，不需要安装 Python 包：
 
 ```sh
-python3 -m pip install modelscope
 make download-qwen2
-make export-qwen2-tokenizer
 make llm-qwen2
 ./build/llm-qwen2 \
-  --checkpoint llm/models/qwen2.5-0.5b-instruct/model.safetensors \
-  --tokenizer llm/models/qwen2.5-0.5b-instruct/tokenizer.bin \
+  --model llm/models/qwen2.5-0.5b-instruct \
   --prompt "你好，请介绍一下自己。" --steps 32 --context 2048
 ```
 
-C 端直接执行 byte-level BPE prompt 编码、UTF-8 token 解码、采样和 KV-cache
-推理；合并规则从 `tokenizer.bin` 同目录的 `merges.txt` 读取。
+C 端直接解析 `config.json`、`tokenizer.json` 和单文件 `model.safetensors`，执行
+byte-level BPE prompt 编码、UTF-8 token 解码、采样和 KV-cache 推理。
 使用 ModelScope 的 Qwen2.5-0.5B-Instruct 实测时，C 与 PyTorch 参考实现的
 最后位置 logits argmax 和 top-10 完全一致，最大绝对误差约为 `5.01e-5`；greedy
 生成可正常输出中文并连续推进 KV cache。

@@ -960,11 +960,13 @@ LLM_TEST_TARGET := $(BUILD)/test-llm
 
 # Qwen2 算子、checkpoint 和微型模型前向传播测试。
 QWEN2_TEST_OBJS   := $(BUILD)/llm_qwen2_test.o $(BUILD)/llm_qwen2_model.o \
+                     $(BUILD)/llm_qwen2_tokenizer.o $(BUILD)/llm_qwen2_tokenizer_json.o \
                      $(BUILD)/llm_common_tensor.o $(BUILD)/llm_common_checkpoint.o
 QWEN2_TEST_TARGET := $(BUILD)/test-llm-qwen2
 QWEN2_TEST_CHECKPOINT := $(BUILD)/qwen2-test.bin
 QWEN2_OBJS := $(BUILD)/llm_qwen2_main.o $(BUILD)/llm_qwen2_model.o \
-              $(BUILD)/llm_qwen2_tokenizer.o $(BUILD)/llm_common_tensor.o \
+              $(BUILD)/llm_qwen2_tokenizer.o $(BUILD)/llm_qwen2_tokenizer_json.o \
+              $(BUILD)/llm_common_tensor.o \
               $(BUILD)/llm_common_checkpoint.o
 QWEN2_TARGET := $(BUILD)/llm-qwen2
 

@@ -1,7 +1,70 @@
 /* SPDX-License-Identifier: MIT */
 #include "qwen2.h"
 
+/*
+ * Qwen2 的最小 standalone 前向实现。
+ * 不依赖宿主 libc 或深度学习框架：权重由 checkpoint mmap，矩阵运算和
+ * 数学函数来自 llm/common，内存及文件操作使用 Tinylibc/syscall 封装。
+ */
+
 extern int snprintf(char *str, size_t size, const char *format, ...);
+extern char *strstr(const char *haystack, const char *needle);
+extern int strncmp(const char *left, const char *right, size_t count);
+
+static char *config_find(char *document, const char *key)
+{
+    char pattern[64]; int n = 0; pattern[n++] = '"';
+    while (*key && n < 61) pattern[n++] = *key++;
+    pattern[n++] = '"'; pattern[n] = 0;
+    char *p = strstr(document, pattern); if (!p) return NULL;
+    p += n; while (*p && *p != ':') p++; if (!*p) return NULL;
+    p++; while (*p == ' ' || *p == '\n' || *p == '\r' || *p == '\t') p++;
+    return p;
+}
+
+/*
+ * config.json 的结构固定，因此这里只提取所需的顶层标量，而不是实现
+ * 通用 JSON 解析器。导出的 NUL 结尾文档使 strstr/strncmp 可以直接使用。
+ */
+static int config_int(char *doc, const char *key, int *out)
+{
+    char *p = config_find(doc, key); if (!p || *p < '0' || *p > '9') return -1;
+    int value = 0; while (*p >= '0' && *p <= '9') value = value * 10 + *p++ - '0';
+    *out = value; return 0;
+}
+
+static int config_float(char *doc, const char *key, float *out)
+{
+    char *p = config_find(doc, key); if (!p) return -1; double value = 0.0, scale = 1.0;
+    while (*p >= '0' && *p <= '9') value = value * 10.0 + *p++ - '0';
+    if (*p == '.') { p++; while (*p >= '0' && *p <= '9') { scale *= 0.1; value += (*p++ - '0') * scale; } }
+    if (*p == 'e' || *p == 'E') { p++; int sign = 1, exponent = 0; if (*p == '-') { sign = -1; p++; } else if (*p == '+') p++; while (*p >= '0' && *p <= '9') exponent = exponent * 10 + *p++ - '0'; while (exponent--) value = sign > 0 ? value * 10.0 : value / 10.0; }
+    *out = (float)value; return 0;
+}
+
+int qwen2_config_load(Qwen2Config *cfg, const char *path)
+{
+    int fd = __openat(AT_FDCWD, path, O_RDONLY, 0); if (fd < 0) return -1;
+    off_t size = __lseek(fd, 0, SEEK_END); if (size <= 0 || __lseek(fd, 0, SEEK_SET) < 0) { __close(fd); return -1; }
+    char *doc = tlibc_malloc((size_t)size + 1); if (!doc) { __close(fd); return -1; }
+    size_t got = 0; while (got < (size_t)size) { long n = __read(fd, doc + got, (size_t)size - got); if (n <= 0) { tlibc_free(doc); __close(fd); return -1; } got += (size_t)n; }
+    __close(fd); doc[size] = 0; char *type = config_find(doc, "model_type");
+    int tied = 0; char *tie = config_find(doc, "tie_word_embeddings");
+    int ok = type && strncmp(type, "\"qwen2\"", 7) == 0 &&
+        config_int(doc, "vocab_size", &cfg->vocab_size) == 0 &&
+        config_int(doc, "hidden_size", &cfg->hidden_size) == 0 &&
+        config_int(doc, "intermediate_size", &cfg->intermediate_size) == 0 &&
+        config_int(doc, "num_hidden_layers", &cfg->num_layers) == 0 &&
+        config_int(doc, "num_attention_heads", &cfg->num_attention_heads) == 0 &&
+        config_int(doc, "num_key_value_heads", &cfg->num_kv_heads) == 0 &&
+        config_int(doc, "max_position_embeddings", &cfg->max_seq_len) == 0 &&
+        config_float(doc, "rms_norm_eps", &cfg->rms_norm_eps) == 0 &&
+        config_float(doc, "rope_theta", &cfg->rope_theta) == 0;
+    if (tie && strncmp(tie, "true", 4) == 0) tied = 1;
+    cfg->tie_word_embeddings = tied;
+    cfg->head_dim = ok && cfg->num_attention_heads ? cfg->hidden_size / cfg->num_attention_heads : 0;
+    tlibc_free(doc); return ok && qwen2_config_validate(cfg) == 0 ? 0 : -1;
+}
 
 int qwen2_config_validate(const Qwen2Config *cfg)
 {
@@ -9,6 +72,7 @@ int qwen2_config_validate(const Qwen2Config *cfg)
     if (cfg->num_layers <= 0 || cfg->num_attention_heads <= 0) return -1;
     if (cfg->num_kv_heads <= 0 || cfg->head_dim <= 0) return -1;
     if (cfg->hidden_size != cfg->num_attention_heads * cfg->head_dim) return -1;
+    /* 每个 KV head 必须能被整数个 query head 共享（GQA）。 */
     if (cfg->num_attention_heads % cfg->num_kv_heads != 0) return -1;
     if (cfg->head_dim % 2 != 0 || cfg->max_seq_len <= 0) return -1;
     return 0;
@@ -36,6 +100,7 @@ void qwen2_swiglu(float *out, const float *gate, const float *up, int count)
 static void rope_heads(float *values, int num_heads, int head_dim,
                        int position, float theta)
 {
+    /* Qwen2 使用 half-split RoPE：前后两个 half 中同下标元素成对旋转。 */
     int half = head_dim / 2;
     for (int h = 0; h < num_heads; h++) {
         float *head = values + h * head_dim;
@@ -65,6 +130,7 @@ void qwen2_gqa_attention(float *out, const float *q, const float *key_cache,
                          const float *value_cache, int position,
                          int num_q_heads, int num_kv_heads, int head_dim)
 {
+    /* 多个相邻 query head 共享一个 KV head。cache 已包含当前位置。 */
     int kv_dim = num_kv_heads * head_dim;
     int queries_per_kv = num_q_heads / num_kv_heads;
     float scale = 1.0f / sqrtf_((float)head_dim);
@@ -81,6 +147,7 @@ void qwen2_gqa_attention(float *out, const float *q, const float *key_cache,
             scores[t] = llm_dot_f32(q_head, k_head, head_dim) * scale;
             if (scores[t] > max_score) max_score = scores[t];
         }
+        /* 减去最大值，避免 softmax 的 exp 溢出。 */
         float sum = 0.0f;
         for (int t = 0; t < tokens; t++) {
             scores[t] = expf_(scores[t] - max_score);
@@ -112,6 +179,7 @@ static int tensor_shape(const LLMCheckpoint *checkpoint, const char *name,
     return 0;
 }
 
+/* 按 Hugging Face safetensors 名称绑定一层，并同时校验每个张量形状。 */
 static int bind_layer(Qwen2 *model, int layer)
 {
     Qwen2Config *cfg = &model->config;
@@ -155,6 +223,7 @@ static int allocate_runtime(Qwen2 *model, int capacity)
     int I = cfg->intermediate_size;
     int Q = cfg->num_attention_heads * cfg->head_dim;
     int KV = cfg->num_kv_heads * cfg->head_dim;
+    /* 所有短生命周期向量共用一个连续块，避免逐 token 重复分配。 */
     size_t work_count = (size_t)C * 4 + Q + (size_t)KV * 2 +
                         (size_t)I * 3 + cfg->vocab_size;
     size_t cache_count = (size_t)cfg->num_layers * capacity * KV;
@@ -206,6 +275,7 @@ int qwen2_load(Qwen2 *model, const char *path, Qwen2Config config,
     if (!model->weights.layers) goto fail;
     for (int layer = 0; layer < config.num_layers; layer++)
         if (bind_layer(model, layer) != 0) goto fail;
+    /* Qwen2.5 通常让输出分类器复用输入 embedding。 */
     if (config.tie_word_embeddings) {
         model->weights.lm_head = model->weights.token_embedding;
     } else if (tensor_shape(&model->checkpoint, "lm_head.weight", 2,
@@ -241,11 +311,13 @@ int qwen2_forward_token(Qwen2 *model, int token, int position,
     int C = cfg->hidden_size;
     int I = cfg->intermediate_size;
     int KV = cfg->num_kv_heads * cfg->head_dim;
+    /* 连续 position 是 KV cache 正确性的必要条件，不允许跳写或回写。 */
     if (!rt->work || token < 0 || token >= cfg->vocab_size || position < 0 ||
         position >= rt->cache_capacity || position != rt->cache_length)
         return -1;
     llm_memcpy(rt->x, model->weights.token_embedding + (size_t)token * C,
                (size_t)C * sizeof(float));
+    /* Decoder layer：pre-norm attention 残差，再接 pre-norm MLP 残差。 */
     for (int layer = 0; layer < cfg->num_layers; layer++) {
         Qwen2LayerWeights *w = &model->weights.layers[layer];
         qwen2_rmsnorm(rt->norm, rt->x, w->input_norm, C, cfg->rms_norm_eps);
@@ -255,6 +327,7 @@ int qwen2_forward_token(Qwen2 *model, int token, int position,
         qwen2_apply_rope(rt->q, rt->k, cfg->num_attention_heads,
                          cfg->num_kv_heads, cfg->head_dim, position,
                          cfg->rope_theta);
+        /* 仅追加当前 token 的 K/V；历史位置已经保存在 cache 中。 */
         size_t layer_offset = (size_t)layer * rt->cache_capacity * KV;
         float *keys = rt->key_cache + layer_offset;
         float *values = rt->value_cache + layer_offset;
@@ -275,6 +348,7 @@ int qwen2_forward_token(Qwen2 *model, int token, int position,
         llm_matvec_f32(rt->projection, rt->mlp, w->down_proj, NULL, I, C);
         for (int i = 0; i < C; i++) rt->x[i] += rt->projection[i];
     }
+    /* 最终归一化后投影到整个词表，供采样器选择下一个 token。 */
     qwen2_rmsnorm(rt->norm, rt->x, model->weights.final_norm, C,
                   cfg->rms_norm_eps);
     llm_matvec_f32(rt->logits, rt->norm, model->weights.lm_head, NULL, C,

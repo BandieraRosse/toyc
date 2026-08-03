@@ -70,23 +70,20 @@ make export-qwen2 \
   QWEN2_CHECKPOINT=llm/models/qwen2.5-0.5b-instruct/model-f32.bin
 ```
 
-ModelScope can be used as the preferred download source where Hugging Face is
-slow or unavailable:
+Only the standard Hugging Face model files are required; no Python package is
+needed:
 
 ```sh
-python3 -m pip install modelscope
 make download-qwen2
-make export-qwen2-tokenizer
 make llm-qwen2
 ./build/llm-qwen2 \
-  --checkpoint llm/models/qwen2.5-0.5b-instruct/model.safetensors \
-  --tokenizer llm/models/qwen2.5-0.5b-instruct/tokenizer.bin \
+  --model llm/models/qwen2.5-0.5b-instruct \
   --prompt "Hello, please introduce yourself." --steps 32 --context 2048
 ```
 
-The C runtime performs byte-level BPE prompt encoding, UTF-8 token decoding,
-sampling, and KV-cache inference. Merge rules are loaded from `merges.txt`
-beside `tokenizer.bin`.
+The C runtime directly parses `config.json`, `tokenizer.json`, and a single-file
+`model.safetensors`, then performs byte-level BPE prompt encoding, UTF-8 token
+decoding, sampling, and KV-cache inference.
 With the ModelScope Qwen2.5-0.5B-Instruct weights, the C runtime matched the
 PyTorch reference argmax and complete top-10 set for the last-position logits;
 the maximum absolute error was approximately `5.01e-5`. Greedy generation also

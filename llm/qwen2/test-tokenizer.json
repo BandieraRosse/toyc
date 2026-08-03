@@ -1,0 +1,13 @@
+{
+  "added_tokens": [
+    {"id": 4, "content": "<eos>", "special": true}
+  ],
+  "normalizer": {"type": "NFC"},
+  "pre_tokenizer": {"type": "ByteLevel", "add_prefix_space": false},
+  "decoder": {"type": "ByteLevel"},
+  "model": {
+    "type": "BPE",
+    "vocab": {"a": 0, "b": 1, "ab": 2, "Ġ": 3},
+    "merges": ["a b"]
+  }
+}
