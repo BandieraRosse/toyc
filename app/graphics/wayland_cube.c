@@ -5,7 +5,8 @@
  * and pointer input are supplied by the platform window layer.  Rendering uses
  * the shared CPU triangle rasterizer; no host libc, EGL or OpenGL.
  *
- * Controls: Esc quits, arrows rotate, mouse position changes the view.
+ * Controls: arrows rotate, left click captures the pointer, mouse look rotates,
+ * Esc releases a captured pointer or quits when the pointer is free.
  */
 
 #include "core.h"
@@ -19,6 +20,7 @@
 #define KEY_RIGHT 106
 #define KEY_UP    103
 #define KEY_DOWN  108
+#define BTN_LEFT  0x110
 
 struct rotation { int sy, cy, sx, cx; };
 
@@ -141,11 +143,16 @@ int main(int argc, char **argv)
     int rendered_frames = 0;
     int frame_limit = 0;
     int cube_pixels = 0;
+    int pointer_lock_requested = 0;
+    int lock_test = 0;
     long last_time, accumulator = 0;
 
     if (argc == 3 && strcmp(argv[1], "--frames") == 0) {
         const char *p = argv[2];
         while (*p >= '0' && *p <= '9') frame_limit = frame_limit * 10 + (*p++ - '0');
+    } else if (argc == 2 && strcmp(argv[1], "--lock-test") == 0) {
+        frame_limit = 3;
+        lock_test = 1;
     }
     rot.sy = 445; rot.cy = 922;
     rot.sx = 253; rot.cx = 992;
@@ -158,6 +165,10 @@ int main(int argc, char **argv)
         __fprintf(2, "check XDG_RUNTIME_DIR and WAYLAND_DISPLAY\n");
         return 1;
     }
+    __printf("wayland_cube: relative pointer %s\n",
+             toy_window_pointer_lock_supported(window) ? "available" : "unavailable");
+    if (lock_test && toy_window_set_pointer_lock(window, 1) > 0)
+        pointer_lock_requested = 1;
     last_time = monotonic_us();
     while (running) {
         long now, elapsed;
@@ -165,11 +176,30 @@ int main(int argc, char **argv)
         toy_input_begin_frame(&input);
         if (toy_window_poll(window, &events, 1000) < 0) break;
         toy_input_apply(&input, &events);
-        if (events.close_requested || toy_input_pressed(&input, KEY_ESC)) running = 0;
+        if (events.pointer_lock_changed && !events.pointer_locked)
+            pointer_lock_requested = 0;
+        if (events.button_pressed && events.button == BTN_LEFT &&
+            toy_window_pointer_lock_supported(window)) {
+            int lock_result = toy_window_set_pointer_lock(window, 1);
+            if (lock_result > 0) pointer_lock_requested = 1;
+        }
+        if (toy_input_pressed(&input, KEY_ESC)) {
+            if (input.pointer_locked || pointer_lock_requested) {
+                toy_window_set_pointer_lock(window, 0);
+                pointer_lock_requested = 0;
+            } else {
+                running = 0;
+            }
+        }
+        if (events.close_requested) running = 0;
         if (toy_input_pressed(&input, KEY_LEFT)) rot.sy -= 82;
         if (toy_input_pressed(&input, KEY_RIGHT)) rot.sy += 82;
         if (toy_input_pressed(&input, KEY_UP)) rot.sx -= 82;
         if (toy_input_pressed(&input, KEY_DOWN)) rot.sx += 82;
+        if (input.pointer_locked) {
+            rot.sy += input.relative_x * 4;
+            rot.sx += input.relative_y * 4;
+        }
         if (!running) break;
         now = monotonic_us();
         elapsed = now - last_time;

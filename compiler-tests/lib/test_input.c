@@ -20,12 +20,20 @@ int main(void)
     events.key_events[0].pressed = 1;
     events.key_events[1].key = 31;
     events.key_events[1].pressed = 1;
+    events.relative_moved = 1;
+    events.relative_x = 7;
+    events.relative_y = -3;
+    events.pointer_lock_changed = 1;
+    events.pointer_locked = 1;
     toy_input_apply(&input, &events);
     if (!toy_input_down(&input, 30) || !toy_input_pressed(&input, 30)) return 1;
     if (!toy_input_down(&input, 31) || !toy_input_pressed(&input, 31)) return 2;
+    if (input.relative_x != 7 || input.relative_y != -3 ||
+        !input.pointer_locked) return 6;
 
     toy_input_begin_frame(&input);
     if (!toy_input_down(&input, 30) || toy_input_pressed(&input, 30)) return 3;
+    if (input.relative_x != 0 || input.relative_y != 0) return 7;
     memset(&events, 0, sizeof(events));
     events.key_event_count = 2;
     events.key_events[0].key = 30;
@@ -39,7 +47,10 @@ int main(void)
     memset(&events, 0, sizeof(events));
     events.keyboard_focus_changed = 1;
     events.keyboard_focused = 0;
+    events.pointer_lock_changed = 1;
+    events.pointer_locked = 0;
     toy_input_apply(&input, &events);
     if (toy_input_down(&input, 31) || !toy_input_released(&input, 31)) return 5;
+    if (input.pointer_locked) return 8;
     return 0;
 }

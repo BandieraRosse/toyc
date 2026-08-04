@@ -26,7 +26,9 @@
 enum object_kind {
     OBJ_NONE, OBJ_ZOMBIE, OBJ_DISPLAY, OBJ_REGISTRY, OBJ_CALLBACK, OBJ_COMPOSITOR,
     OBJ_SHM, OBJ_SHM_POOL, OBJ_BUFFER, OBJ_SEAT, OBJ_POINTER, OBJ_KEYBOARD,
-    OBJ_SURFACE, OBJ_XDG_WM_BASE, OBJ_XDG_SURFACE, OBJ_XDG_TOPLEVEL
+    OBJ_SURFACE, OBJ_XDG_WM_BASE, OBJ_XDG_SURFACE, OBJ_XDG_TOPLEVEL,
+    OBJ_RELATIVE_POINTER_MANAGER, OBJ_RELATIVE_POINTER,
+    OBJ_POINTER_CONSTRAINTS, OBJ_LOCKED_POINTER
 };
 
 struct wl_buf {
@@ -43,8 +45,12 @@ struct toywl {
     unsigned char kinds[WL_MAX_OBJECTS];
     uint32_t registry, compositor, shm, seat, pointer, keyboard;
     uint32_t surface, wm_base, xdg_surface, toplevel, frame_callback;
+    uint32_t relative_manager, relative_pointer;
+    uint32_t pointer_constraints, locked_pointer;
     uint32_t compositor_name, shm_name, seat_name, wm_base_name;
+    uint32_t relative_manager_name, pointer_constraints_name;
     uint32_t compositor_ver, shm_ver, seat_ver, wm_base_ver;
+    uint32_t relative_manager_ver, pointer_constraints_ver;
     struct wl_buf buffers[2];
     int draw_index;
     int width, height;
@@ -285,6 +291,10 @@ static void handle_registry(struct toywl *wl, uint16_t opcode,
         wl->seat_name = name; wl->seat_ver = version;
     } else if (interface_is(p, len, "xdg_wm_base")) {
         wl->wm_base_name = name; wl->wm_base_ver = version;
+    } else if (interface_is(p, len, "zwp_relative_pointer_manager_v1")) {
+        wl->relative_manager_name = name; wl->relative_manager_ver = version;
+    } else if (interface_is(p, len, "zwp_pointer_constraints_v1")) {
+        wl->pointer_constraints_name = name; wl->pointer_constraints_ver = version;
     }
 }
 
@@ -349,8 +359,16 @@ static void handle_keyboard(struct toywl *wl, uint16_t opcode,
             wl->pending.key_events[at].pressed = pressed;
             wl->pending.key_event_count++;
         }
-        if (key == 1 && pressed)
-            wl->pending.close_requested = 1;
+    }
+}
+
+static void handle_relative_pointer(struct toywl *wl, uint16_t opcode,
+                                    const unsigned char *p, int len)
+{
+    if (opcode == 0 && len >= 24) {
+        wl->pending.relative_x += (int32_t)rd32(p + 8) / 256;
+        wl->pending.relative_y += (int32_t)rd32(p + 12) / 256;
+        wl->pending.relative_moved = 1;
     }
 }
 
@@ -392,6 +410,13 @@ static void handle_event(struct toywl *wl, uint32_t object, uint16_t opcode,
         handle_pointer(wl, opcode, p, len);
     } else if (kind == OBJ_KEYBOARD) {
         handle_keyboard(wl, opcode, p, len);
+    } else if (kind == OBJ_RELATIVE_POINTER) {
+        handle_relative_pointer(wl, opcode, p, len);
+    } else if (kind == OBJ_LOCKED_POINTER) {
+        if (opcode == 0 || opcode == 1) {
+            wl->pending.pointer_lock_changed = 1;
+            wl->pending.pointer_locked = opcode == 0;
+        }
     } else if (kind == OBJ_BUFFER && opcode == 0) {
         for (int i = 0; i < 2; i++)
             if (wl->buffers[i].id == object) wl->buffers[i].busy = 0;
@@ -575,6 +600,16 @@ struct toywl *toywl_open(const char *title, int width, int height)
     if (wl->seat_name && bind_global(wl, wl->seat_name, "wl_seat",
                     wl->seat_ver < 7 ? wl->seat_ver : 7,
                     OBJ_SEAT, &wl->seat) < 0) goto fail;
+    if (wl->relative_manager_name &&
+        bind_global(wl, wl->relative_manager_name,
+                    "zwp_relative_pointer_manager_v1", 1,
+                    OBJ_RELATIVE_POINTER_MANAGER,
+                    &wl->relative_manager) < 0) goto fail;
+    if (wl->pointer_constraints_name &&
+        bind_global(wl, wl->pointer_constraints_name,
+                    "zwp_pointer_constraints_v1", 1,
+                    OBJ_POINTER_CONSTRAINTS,
+                    &wl->pointer_constraints) < 0) goto fail;
 
     wl->surface = new_object(wl, OBJ_SURFACE);
     mb_init(&m, wl->compositor, 0); mb_u32(&m, wl->surface);
@@ -658,10 +693,54 @@ int toywl_present(struct toywl *wl)
     return 0;
 }
 
+int toywl_pointer_lock_supported(struct toywl *wl)
+{
+    return wl && wl->relative_manager && wl->pointer_constraints && wl->pointer;
+}
+
+int toywl_set_pointer_lock(struct toywl *wl, int locked)
+{
+    struct msg_builder m;
+    if (!toywl_pointer_lock_supported(wl)) return 0;
+    if (locked) {
+        if (wl->locked_pointer) return 1;
+        if (!wl->relative_pointer) {
+            wl->relative_pointer = new_object(wl, OBJ_RELATIVE_POINTER);
+            if (!wl->relative_pointer) return -1;
+            mb_init(&m, wl->relative_manager, 1);
+            mb_u32(&m, wl->relative_pointer);
+            mb_u32(&m, wl->pointer);
+            if (send_request(wl, &m, -1) < 0) return -1;
+        }
+        wl->locked_pointer = new_object(wl, OBJ_LOCKED_POINTER);
+        if (!wl->locked_pointer) return -1;
+        mb_init(&m, wl->pointer_constraints, 1);
+        mb_u32(&m, wl->locked_pointer);
+        mb_u32(&m, wl->surface);
+        mb_u32(&m, wl->pointer);
+        mb_u32(&m, 0); /* nullable wl_region */
+        mb_u32(&m, 2); /* persistent lifetime */
+        if (send_request(wl, &m, -1) < 0) return -1;
+        return 1;
+    }
+    if (wl->locked_pointer) {
+        request0(wl, wl->locked_pointer, 0);
+        wl->kinds[wl->locked_pointer] = OBJ_ZOMBIE;
+        wl->locked_pointer = 0;
+        wl->pending.pointer_lock_changed = 1;
+        wl->pending.pointer_locked = 0;
+    }
+    return 1;
+}
+
 void toywl_close(struct toywl *wl)
 {
     if (!wl) return;
     destroy_buffers(wl);
+    if (wl->locked_pointer) request0(wl, wl->locked_pointer, 0);
+    if (wl->relative_pointer) request0(wl, wl->relative_pointer, 0);
+    if (wl->pointer_constraints) request0(wl, wl->pointer_constraints, 0);
+    if (wl->relative_manager) request0(wl, wl->relative_manager, 0);
     if (wl->pointer) request0(wl, wl->pointer, 1);
     if (wl->keyboard) request0(wl, wl->keyboard, 0);
     if (wl->toplevel) request0(wl, wl->toplevel, 0);

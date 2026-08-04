@@ -27,6 +27,11 @@ struct toywl_input {
     int pointer_x;
     int pointer_y;
     int pointer_moved;
+    int relative_x;
+    int relative_y;
+    int relative_moved;
+    int pointer_lock_changed;
+    int pointer_locked;
     unsigned int button;
     int button_pressed;
     int keyboard_focus_changed;
@@ -41,6 +46,8 @@ struct toywl *toywl_open(const char *title, int width, int height);
 int toywl_dispatch(struct toywl *wl, struct toywl_input *input, int timeout_ms);
 int toywl_begin_frame(struct toywl *wl, struct toywl_frame *frame);
 int toywl_present(struct toywl *wl);
+int toywl_pointer_lock_supported(struct toywl *wl);
+int toywl_set_pointer_lock(struct toywl *wl, int locked);
 void toywl_close(struct toywl *wl);
 
 #endif

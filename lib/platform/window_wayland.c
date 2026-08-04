@@ -38,6 +38,11 @@ int toy_window_poll(struct toy_window *window, struct toy_window_events *events,
         events->pointer_x = input.pointer_x;
         events->pointer_y = input.pointer_y;
         events->pointer_moved = input.pointer_moved;
+        events->relative_x = input.relative_x;
+        events->relative_y = input.relative_y;
+        events->relative_moved = input.relative_moved;
+        events->pointer_lock_changed = input.pointer_lock_changed;
+        events->pointer_locked = input.pointer_locked;
         events->button = input.button;
         events->button_pressed = input.button_pressed;
         events->keyboard_focus_changed = input.keyboard_focus_changed;
@@ -70,6 +75,17 @@ int toy_window_present(struct toy_window *window)
 {
     if (!window) return -1;
     return toywl_present(window->wayland);
+}
+
+int toy_window_pointer_lock_supported(struct toy_window *window)
+{
+    return window && toywl_pointer_lock_supported(window->wayland);
+}
+
+int toy_window_set_pointer_lock(struct toy_window *window, int locked)
+{
+    if (!window) return -1;
+    return toywl_set_pointer_lock(window->wayland, locked);
 }
 
 void toy_window_close(struct toy_window *window)

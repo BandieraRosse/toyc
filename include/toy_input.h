@@ -11,6 +11,9 @@ struct toy_input {
     int pointer_x;
     int pointer_y;
     int pointer_moved;
+    int relative_x;
+    int relative_y;
+    int pointer_locked;
 };
 
 void toy_input_init(struct toy_input *input);

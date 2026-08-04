@@ -28,6 +28,11 @@ struct toy_window_events {
     int pointer_x;
     int pointer_y;
     int pointer_moved;
+    int relative_x;
+    int relative_y;
+    int relative_moved;
+    int pointer_lock_changed;
+    int pointer_locked;
     unsigned int button;
     int button_pressed;
     int keyboard_focus_changed;
@@ -42,6 +47,8 @@ int toy_window_poll(struct toy_window *window, struct toy_window_events *events,
                     int timeout_ms);
 int toy_window_begin_frame(struct toy_window *window, struct toy_surface *surface);
 int toy_window_present(struct toy_window *window);
+int toy_window_pointer_lock_supported(struct toy_window *window);
+int toy_window_set_pointer_lock(struct toy_window *window, int locked);
 void toy_window_close(struct toy_window *window);
 
 #endif
