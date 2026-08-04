@@ -12,6 +12,13 @@ struct toywl_frame {
     int stride;
 };
 
+#define TOYWL_MAX_KEY_EVENTS 16
+
+struct toywl_key_event {
+    unsigned int key;
+    int pressed;
+};
+
 struct toywl_input {
     int close_requested;
     int resized;
@@ -22,8 +29,10 @@ struct toywl_input {
     int pointer_moved;
     unsigned int button;
     int button_pressed;
-    unsigned int key;
-    int key_pressed;
+    int keyboard_focus_changed;
+    int keyboard_focused;
+    int key_event_count;
+    struct toywl_key_event key_events[TOYWL_MAX_KEY_EVENTS];
 };
 
 /* A deliberately small, freestanding Wayland client for software-rendered

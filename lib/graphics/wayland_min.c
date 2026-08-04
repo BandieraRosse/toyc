@@ -334,10 +334,22 @@ static void handle_keyboard(struct toywl *wl, uint16_t opcode,
     if (opcode == 0) {
         int fd = take_fd(wl);
         if (fd >= 0) __close(fd); /* Keymap is unnecessary for evdev key codes. */
+    } else if (opcode == 1) {
+        wl->pending.keyboard_focus_changed = 1;
+        wl->pending.keyboard_focused = 1;
+    } else if (opcode == 2) {
+        wl->pending.keyboard_focus_changed = 1;
+        wl->pending.keyboard_focused = 0;
     } else if (opcode == 3 && len >= 16) {
-        wl->pending.key = rd32(p + 8);
-        wl->pending.key_pressed = rd32(p + 12) == WL_KEYBOARD_KEY_PRESSED;
-        if (wl->pending.key == 1 && wl->pending.key_pressed)
+        unsigned int key = rd32(p + 8);
+        int pressed = rd32(p + 12) == WL_KEYBOARD_KEY_PRESSED;
+        int at = wl->pending.key_event_count;
+        if (at < TOYWL_MAX_KEY_EVENTS) {
+            wl->pending.key_events[at].key = key;
+            wl->pending.key_events[at].pressed = pressed;
+            wl->pending.key_event_count++;
+        }
+        if (key == 1 && pressed)
             wl->pending.close_requested = 1;
     }
 }

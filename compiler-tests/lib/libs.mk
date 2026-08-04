@@ -10,7 +10,7 @@
 #   _TEST_<name>  — 测试驱动名（compiler-tests/lib/test_<name>.c，不含 .c 后缀）
 #                   不定义则跳过功能测试（仅编译检查）
 
-LIBS := math ctype string core stdio time misc net poll tty procfs evdev_kbd evdev_mouse audio thread graphics
+LIBS := math ctype string core stdio time misc net poll tty procfs evdev_kbd evdev_mouse audio thread graphics input
 
 # ── math — 纯数值计算，无系统调用 ──────────────────────────────────
 _SRCS_math    := math/math.c
@@ -100,3 +100,8 @@ _TEST_thread  := test_thread
 _SRCS_graphics := graphics/renderer.c
 _DEPS_graphics := core string stdio ctype
 _TEST_graphics := test_graphics
+
+# ── input — 平台无关的按键状态与帧边沿 ────────────────────────────
+_SRCS_input := input/input.c
+_DEPS_input := string stdio ctype
+_TEST_input := test_input

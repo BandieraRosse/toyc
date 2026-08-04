@@ -12,6 +12,7 @@
 #include "string.h"
 #include "toy_window.h"
 #include "toy_renderer.h"
+#include "toy_input.h"
 
 #define KEY_ESC   1
 #define KEY_LEFT  105
@@ -20,6 +21,26 @@
 #define KEY_DOWN  108
 
 struct rotation { int sy, cy, sx, cx; };
+
+#define FIXED_STEP_US 16667
+#define MAX_FRAME_US  250000
+#define MAX_LOGIC_STEPS 4
+
+static long monotonic_us(void)
+{
+    struct timespec now;
+    if (__clock_gettime(CLOCK_MONOTONIC, &now) < 0) return 0;
+    return now.tv_sec * 1000000L + now.tv_nsec / 1000;
+}
+
+static void update_rotation(struct rotation *rot)
+{
+    int old_sy = rot->sy, old_sx = rot->sx;
+    rot->sy = (old_sy * 1024 + rot->cy * 13) / 1024;
+    rot->cy = (rot->cy * 1024 - old_sy * 13) / 1024;
+    rot->sx = (old_sx * 1024 + rot->cx * 8) / 1024;
+    rot->cx = (rot->cx * 1024 - old_sx * 8) / 1024;
+}
 
 static void put_pixel(struct toy_surface *surface, int x, int y, uint32_t color)
 {
@@ -111,15 +132,16 @@ static int render_cube(struct toy_renderer *renderer, const struct rotation *rot
 int main(int argc, char **argv)
 {
     struct toy_window *window;
-    struct toy_window_events input;
+    struct toy_window_events events;
+    struct toy_input input;
     struct toy_surface surface;
     struct toy_renderer renderer;
     struct rotation rot;
-    int pointer_x = 0, pointer_y = 0;
     int running = 1;
     int rendered_frames = 0;
     int frame_limit = 0;
     int cube_pixels = 0;
+    long last_time, accumulator = 0;
 
     if (argc == 3 && strcmp(argv[1], "--frames") == 0) {
         const char *p = argv[2];
@@ -128,6 +150,7 @@ int main(int argc, char **argv)
     rot.sy = 445; rot.cy = 922;
     rot.sx = 253; rot.cx = 992;
     toy_renderer_init(&renderer);
+    toy_input_init(&input);
 
     window = toy_window_open("Toyc Wayland Software 3D", 640, 360);
     if (!window) {
@@ -135,31 +158,37 @@ int main(int argc, char **argv)
         __fprintf(2, "check XDG_RUNTIME_DIR and WAYLAND_DISPLAY\n");
         return 1;
     }
+    last_time = monotonic_us();
     while (running) {
-        if (toy_window_poll(window, &input, 1000) < 0) break;
-        if (input.close_requested) running = 0;
-        if (input.pointer_moved) { pointer_x = input.pointer_x; pointer_y = input.pointer_y; }
-        if (input.key_pressed) {
-            if (input.key == KEY_ESC) running = 0;
-            else if (input.key == KEY_LEFT) rot.sy -= 82;
-            else if (input.key == KEY_RIGHT) rot.sy += 82;
-            else if (input.key == KEY_UP) rot.sx -= 82;
-            else if (input.key == KEY_DOWN) rot.sx += 82;
-        }
+        long now, elapsed;
+        int logic_steps = 0;
+        toy_input_begin_frame(&input);
+        if (toy_window_poll(window, &events, 1000) < 0) break;
+        toy_input_apply(&input, &events);
+        if (events.close_requested || toy_input_pressed(&input, KEY_ESC)) running = 0;
+        if (toy_input_pressed(&input, KEY_LEFT)) rot.sy -= 82;
+        if (toy_input_pressed(&input, KEY_RIGHT)) rot.sy += 82;
+        if (toy_input_pressed(&input, KEY_UP)) rot.sx -= 82;
+        if (toy_input_pressed(&input, KEY_DOWN)) rot.sx += 82;
         if (!running) break;
+        now = monotonic_us();
+        elapsed = now - last_time;
+        last_time = now;
+        if (elapsed < 0) elapsed = 0;
+        if (elapsed > MAX_FRAME_US) elapsed = MAX_FRAME_US;
+        accumulator += elapsed;
+        while (accumulator >= FIXED_STEP_US && logic_steps < MAX_LOGIC_STEPS) {
+            update_rotation(&rot);
+            accumulator -= FIXED_STEP_US;
+            logic_steps++;
+        }
+        if (accumulator >= FIXED_STEP_US) accumulator %= FIXED_STEP_US;
         int ready = toy_window_begin_frame(window, &surface);
         if (ready < 0) break;
         if (ready > 0) {
             if (toy_renderer_begin(&renderer, &surface, 0) < 0) break;
-            {
-                int old_sy = rot.sy, old_sx = rot.sx;
-                rot.sy = (old_sy * 1024 + rot.cy * 13) / 1024;
-                rot.cy = (rot.cy * 1024 - old_sy * 13) / 1024;
-                rot.sx = (old_sx * 1024 + rot.cx * 8) / 1024;
-                rot.cx = (rot.cx * 1024 - old_sx * 8) / 1024;
-            }
             cube_pixels = render_cube(&renderer, &rot,
-                                      pointer_x, pointer_y);
+                                      input.pointer_x, input.pointer_y);
             if (toy_window_present(window) < 0) break;
             rendered_frames++;
             if (frame_limit > 0 && rendered_frames >= frame_limit) running = 0;

@@ -12,6 +12,14 @@ struct toy_surface {
     int stride;
 };
 
+#define TOY_WINDOW_MAX_KEY_EVENTS 16
+#define TOY_INPUT_KEY_COUNT 256
+
+struct toy_key_event {
+    unsigned int key;
+    int pressed;
+};
+
 struct toy_window_events {
     int close_requested;
     int resized;
@@ -22,8 +30,10 @@ struct toy_window_events {
     int pointer_moved;
     unsigned int button;
     int button_pressed;
-    unsigned int key;
-    int key_pressed;
+    int keyboard_focus_changed;
+    int keyboard_focused;
+    int key_event_count;
+    struct toy_key_event key_events[TOY_WINDOW_MAX_KEY_EVENTS];
 };
 
 /* Platform-neutral window surface used by software-rendered Toyc apps. */
