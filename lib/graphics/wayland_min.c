@@ -58,6 +58,7 @@ struct toywl {
     int configured;
     int frame_ready;
     int pointer_x, pointer_y;
+    int relative_x_remainder, relative_y_remainder;
     unsigned char inbuf[WL_IN_CAP];
     int in_len;
     int fds[WL_FD_CAP];
@@ -366,8 +367,26 @@ static void handle_relative_pointer(struct toywl *wl, uint16_t opcode,
                                     const unsigned char *p, int len)
 {
     if (opcode == 0 && len >= 24) {
-        wl->pending.relative_x += (int32_t)rd32(p + 8) / 256;
-        wl->pending.relative_y += (int32_t)rd32(p + 12) / 256;
+        int whole_x, whole_y;
+        int raw_x = (int32_t)rd32(p + 8);
+        int raw_y = (int32_t)rd32(p + 12);
+        int raw_unaccelerated_x = (int32_t)rd32(p + 16);
+        int raw_unaccelerated_y = (int32_t)rd32(p + 20);
+        /* wl_fixed_t is signed 24.8.  Preserve subpixel motion between
+         * events instead of truncating every WSLg/RDP delta to zero. */
+        if (raw_x == 0 && raw_y == 0 &&
+            (raw_unaccelerated_x != 0 || raw_unaccelerated_y != 0)) {
+            raw_x = raw_unaccelerated_x;
+            raw_y = raw_unaccelerated_y;
+        }
+        wl->relative_x_remainder += raw_x;
+        wl->relative_y_remainder += raw_y;
+        whole_x = wl->relative_x_remainder / 256;
+        whole_y = wl->relative_y_remainder / 256;
+        wl->relative_x_remainder -= whole_x * 256;
+        wl->relative_y_remainder -= whole_y * 256;
+        wl->pending.relative_x += whole_x;
+        wl->pending.relative_y += whole_y;
         wl->pending.relative_moved = 1;
     }
 }

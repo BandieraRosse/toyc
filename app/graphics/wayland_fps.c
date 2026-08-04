@@ -229,13 +229,13 @@ static void update_player(struct camera *camera, const struct toy_input *input)
     if (!position_blocked(camera->x, next_z)) camera->z = next_z;
 }
 
-static void update_mouse(struct camera *camera, const struct toy_input *input)
+static void update_mouse(struct camera *camera, int relative_x, int relative_y)
 {
-    int turn = clampi(input->relative_x * 3, -128, 128);
+    int turn = clampi(relative_x * 3, -128, 128);
     int old_sy = camera->sy;
     camera->sy = (old_sy * 1024 + camera->cy * turn) / 1024;
     camera->cy = (camera->cy * 1024 - old_sy * turn) / 1024;
-    camera->pitch = clampi(camera->pitch + input->relative_y * 2, -240, 240);
+    camera->pitch = clampi(camera->pitch + relative_y * 2, -240, 240);
 }
 
 static void draw_crosshair(struct toy_surface *surface)
@@ -306,6 +306,7 @@ int main(int argc, char **argv)
     struct camera camera;
     long last_time, accumulator = 0;
     int running = 1, pointer_lock_requested = 0;
+    int last_pointer_x = 0, last_pointer_y = 0, have_pointer_position = 0;
     int frame_limit = 0, rendered_frames = 0, scene_pixels = 0;
 
     if (argc == 2 && strcmp(argv[1], "--logic-test") == 0)
@@ -334,8 +335,12 @@ int main(int argc, char **argv)
         if (events.pointer_lock_changed && !events.pointer_locked)
             pointer_lock_requested = 0;
         if (events.button_pressed && events.button == BTN_LEFT &&
-            toy_window_set_pointer_lock(window, 1) > 0)
+            toy_window_set_pointer_lock(window, 1) > 0) {
             pointer_lock_requested = 1;
+            last_pointer_x = input.pointer_x;
+            last_pointer_y = input.pointer_y;
+            have_pointer_position = 1;
+        }
         if (toy_input_pressed(&input, KEY_ESC)) {
             if (input.pointer_locked || pointer_lock_requested) {
                 toy_window_set_pointer_lock(window, 0);
@@ -344,7 +349,19 @@ int main(int argc, char **argv)
         }
         if (events.close_requested) running = 0;
         if (!running) break;
-        if (input.pointer_locked) update_mouse(&camera, &input);
+        /* Some compositors acknowledge locked asynchronously. Relative
+         * events received after our accepted request are already valid. */
+        if ((input.pointer_locked || pointer_lock_requested) &&
+            events.relative_moved) {
+            update_mouse(&camera, input.relative_x, input.relative_y);
+        } else if (pointer_lock_requested && input.pointer_moved) {
+            if (have_pointer_position)
+                update_mouse(&camera, input.pointer_x - last_pointer_x,
+                              input.pointer_y - last_pointer_y);
+            last_pointer_x = input.pointer_x;
+            last_pointer_y = input.pointer_y;
+            have_pointer_position = 1;
+        }
         now = monotonic_us();
         elapsed = now - last_time;
         last_time = now;

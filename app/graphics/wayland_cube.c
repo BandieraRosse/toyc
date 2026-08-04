@@ -81,7 +81,7 @@ static void draw_background(struct toy_surface *surface)
 }
 
 static int render_cube(struct toy_renderer *renderer, const struct rotation *rot,
-                       int pointer_x, int pointer_y)
+                       int pointer_x, int pointer_y, int shot_flash)
 {
     struct toy_surface *surface = &renderer->surface;
     struct toy_screen_vertex projected[8];
@@ -112,11 +112,25 @@ static int render_cube(struct toy_renderer *renderer, const struct rotation *rot
     }
     /* Crosshair and pointer marker also make input/configure errors visible. */
     int cx = surface->width / 2, cy = surface->height / 2;
+    uint32_t crosshair_color = shot_flash > 0 ? 0xFFD040 : 0xFFFFFF;
     for (int d = -8; d <= 8; d++) {
         if (cx + d >= 0 && cx + d < surface->width)
-            put_pixel(surface, cx + d, cy, 0xFFFFFF);
+            put_pixel(surface, cx + d, cy, crosshair_color);
         if (cy + d >= 0 && cy + d < surface->height)
-            put_pixel(surface, cx, cy + d, 0xFFFFFF);
+            put_pixel(surface, cx, cy + d, crosshair_color);
+    }
+    if (shot_flash > 0) {
+        int radius = 12 + shot_flash * 2;
+        for (int d = -radius; d <= radius; d++) {
+            if (cx + d >= 0 && cx + d < surface->width) {
+                if (cy - radius >= 0) put_pixel(surface, cx + d, cy - radius, 0xFF8A20);
+                if (cy + radius < surface->height) put_pixel(surface, cx + d, cy + radius, 0xFF8A20);
+            }
+            if (cy + d >= 0 && cy + d < surface->height) {
+                if (cx - radius >= 0) put_pixel(surface, cx - radius, cy + d, 0xFF8A20);
+                if (cx + radius < surface->width) put_pixel(surface, cx + radius, cy + d, 0xFF8A20);
+            }
+        }
     }
     if (pointer_x >= 0 && pointer_x < surface->width &&
         pointer_y >= 0 && pointer_y < surface->height) {
@@ -145,6 +159,9 @@ int main(int argc, char **argv)
     int cube_pixels = 0;
     int pointer_lock_requested = 0;
     int lock_test = 0;
+    int shot_count = 0, shot_flash = 0;
+    int relative_reports = 0;
+    int last_pointer_x = 0, last_pointer_y = 0, have_pointer_position = 0;
     long last_time, accumulator = 0;
 
     if (argc == 3 && strcmp(argv[1], "--frames") == 0) {
@@ -176,12 +193,28 @@ int main(int argc, char **argv)
         toy_input_begin_frame(&input);
         if (toy_window_poll(window, &events, 1000) < 0) break;
         toy_input_apply(&input, &events);
-        if (events.pointer_lock_changed && !events.pointer_locked)
-            pointer_lock_requested = 0;
-        if (events.button_pressed && events.button == BTN_LEFT &&
-            toy_window_pointer_lock_supported(window)) {
-            int lock_result = toy_window_set_pointer_lock(window, 1);
-            if (lock_result > 0) pointer_lock_requested = 1;
+        if (events.pointer_lock_changed) {
+            __printf("wayland_cube: pointer %s\n",
+                     events.pointer_locked ? "locked" : "unlocked");
+            if (!events.pointer_locked) pointer_lock_requested = 0;
+        }
+        if (events.relative_moved && relative_reports < 12) {
+            __printf("wayland_cube: relative dx=%d dy=%d locked=%d requested=%d\n",
+                     events.relative_x, events.relative_y,
+                     input.pointer_locked, pointer_lock_requested);
+            relative_reports++;
+        }
+        if (events.button_pressed && events.button == BTN_LEFT) {
+            shot_count++;
+            shot_flash = 6;
+            last_pointer_x = input.pointer_x;
+            last_pointer_y = input.pointer_y;
+            have_pointer_position = 1;
+            __printf("wayland_cube: shot %d\n", shot_count);
+            if (toy_window_pointer_lock_supported(window)) {
+                int lock_result = toy_window_set_pointer_lock(window, 1);
+                if (lock_result > 0) pointer_lock_requested = 1;
+            }
         }
         if (toy_input_pressed(&input, KEY_ESC)) {
             if (input.pointer_locked || pointer_lock_requested) {
@@ -196,9 +229,20 @@ int main(int argc, char **argv)
         if (toy_input_pressed(&input, KEY_RIGHT)) rot.sy += 82;
         if (toy_input_pressed(&input, KEY_UP)) rot.sx -= 82;
         if (toy_input_pressed(&input, KEY_DOWN)) rot.sx += 82;
-        if (input.pointer_locked) {
+        if ((input.pointer_locked || pointer_lock_requested) &&
+            events.relative_moved) {
             rot.sy += input.relative_x * 4;
             rot.sx += input.relative_y * 4;
+        } else if (pointer_lock_requested && input.pointer_moved) {
+            /* Absolute-motion fallback keeps WSLg usable until the
+             * compositor confirms pointer constraints. */
+            if (have_pointer_position) {
+                rot.sy += (input.pointer_x - last_pointer_x) * 4;
+                rot.sx += (input.pointer_y - last_pointer_y) * 4;
+            }
+            last_pointer_x = input.pointer_x;
+            last_pointer_y = input.pointer_y;
+            have_pointer_position = 1;
         }
         if (!running) break;
         now = monotonic_us();
@@ -218,14 +262,17 @@ int main(int argc, char **argv)
         if (ready > 0) {
             if (toy_renderer_begin(&renderer, &surface, 0) < 0) break;
             cube_pixels = render_cube(&renderer, &rot,
-                                      input.pointer_x, input.pointer_y);
+                                      input.pointer_x, input.pointer_y,
+                                      shot_flash);
             if (toy_window_present(window) < 0) break;
+            if (shot_flash > 0) shot_flash--;
             rendered_frames++;
             if (frame_limit > 0 && rendered_frames >= frame_limit) running = 0;
         }
     }
     toy_renderer_destroy(&renderer);
     toy_window_close(window);
-    __printf("wayland_cube: %d frames, %d cube pixels\n", rendered_frames, cube_pixels);
+    __printf("wayland_cube: %d frames, %d cube pixels, %d shots\n",
+             rendered_frames, cube_pixels, shot_count);
     return rendered_frames > 0 && cube_pixels == 0 ? 2 : 0;
 }
