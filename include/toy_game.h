@@ -1,0 +1,153 @@
+/*
+ * toy_game — 平台无关的僵尸潮射击游戏规则（供 wayland_fps 等窗口游戏使用）。
+ *
+ * 职责边界：本库只包含游戏规则 —— PRNG、世界碰撞查询、僵尸 AI/攻击、
+ * 波次生成、hitscan 射击与障碍遮挡、弹匣/换弹、玩家生命/死亡、事件队列
+ * （供音效与 HUD 消费）。纯整数运算、零系统调用、零内存分配（固定数组），
+ * 不依赖窗口/输入/渲染设施，可无窗口测试。
+ *
+ * 约定：所有计时字段单位 ms；朝向 sy/cy 为 1024 基准定点（同 wayland_fps
+ * 的 camera）；玩家位置 px/pz 由宿主每帧同步。
+ */
+
+#ifndef TOYC_TOY_GAME_H
+#define TOYC_TOY_GAME_H
+
+#include "tlibc_types.h"
+
+#define TOY_GAME_MAX_ENEMIES    32
+#define TOY_GAME_MAG_SIZE       30
+#define TOY_GAME_MAG_RESERVE    60
+#define TOY_GAME_RELOAD_MS      1500
+#define TOY_GAME_BITE_MS        1000
+#define TOY_GAME_BITE_DAMAGE    15
+#define TOY_GAME_FIRE_COOLDOWN_MS 200
+#define TOY_GAME_MUZZLE_FLASH_MS 80
+#define TOY_GAME_DAMAGE_FLASH_MS 250
+#define TOY_GAME_DYING_MS       400
+#define TOY_GAME_WAVE_FIRST_DELAY_MS 1500
+#define TOY_GAME_WAVE_PAUSE_MS  2500
+#define TOY_GAME_SPAWN_INTERVAL_MS 500
+#define TOY_GAME_MAX_EVENTS     16
+
+#define TOY_GAME_ENEMY_RADIUS   100     /* 敌人碰撞半径 */
+#define TOY_GAME_HIT_RADIUS     150     /* 命中判定半径（覆盖渲染 box 半宽） */
+#define TOY_GAME_ATTACK_RANGE   300     /* 敌我距离小于此值开始咬 */
+#define TOY_GAME_ENEMY_HALF     120     /* 渲染 box 半宽（宿主用） */
+#define TOY_GAME_ENEMY_HEIGHT   950     /* 敌人盒高度（宿主用） */
+#define TOY_GAME_SPAWN_EDGE     250     /* 生成点距房间边界内缩量 */
+#define TOY_GAME_MIN_SPAWN_DIST 1200    /* 生成点距玩家最小距离（防贴脸） */
+
+#define TOY_GAME_KEY_RELOAD     19      /* evdev KEY_R */
+
+enum toy_game_state { TOY_GAME_PLAYING, TOY_GAME_OVER };
+
+enum toy_game_event {
+    TOY_GAME_EV_SHOOT,
+    TOY_GAME_EV_DRY_FIRE,
+    TOY_GAME_EV_RELOAD_START,
+    TOY_GAME_EV_RELOAD_DONE,
+    TOY_GAME_EV_KILL,
+    TOY_GAME_EV_BITE,
+    TOY_GAME_EV_PLAYER_DEATH,
+    TOY_GAME_EV_WAVE_START,
+};
+
+/* 碰撞/命中共用的 xz 平面轴对齐盒（与房间障碍物同尺度） */
+struct toy_game_box { int minx, maxx, minz, maxz; };
+
+struct toy_game_enemy {
+    int active;         /* 0=空槽 1=存活 2=倒地中 */
+    int x, z;           /* 世界坐标（xz 平面） */
+    int speed;          /* 每 16ms 逻辑步移动单位 */
+    int hp;
+    int bite_cooldown_ms;
+    int flash;          /* 命中闪白计时 */
+    int hurt;           /* 受击闪红计时 */
+    int dying_ms;       /* 倒地压扁计时 */
+};
+
+struct toy_game {
+    /* 玩家 */
+    int px, pz;         /* 宿主每帧同步相机位置 */
+    int hp;
+    int state;          /* enum toy_game_state */
+    int ammo_mag, ammo_reserve;
+    int reloading, reload_timer_ms;
+    int fire_cooldown_ms;
+    int muzzle_flash_ms;
+    int damage_flash_ms;
+    int kills;
+
+    /* 敌人与波次 */
+    struct toy_game_enemy enemies[TOY_GAME_MAX_ENEMIES];
+    int wave;
+    int to_spawn;       /* 本波待生成配额 */
+    int spawn_timer_ms;
+    int enemies_alive;
+
+    /* 世界（宿主所有，只读借用） */
+    const struct toy_game_box *world;
+    int world_count;
+    int room_limit;
+
+    /* PRNG（xorshift64*，init 时播种） */
+    uint64_t rng;
+
+    /* 本帧事件队列（宿主每帧 drain） */
+    int event_count;
+    unsigned char events[TOY_GAME_MAX_EVENTS];
+};
+
+void toy_game_init(struct toy_game *g, uint64_t seed);      /* 初始化/重开共用 */
+void toy_game_set_world(struct toy_game *g,
+                        const struct toy_game_box *boxes,
+                        int box_count, int room_limit);
+int  toy_game_position_blocked(const struct toy_game *g,
+                               int x, int z, int radius);
+void toy_game_update(struct toy_game *g,
+                     const unsigned char *keys_pressed,     /* 可 NULL */
+                     int fire_pressed, int sy, int cy, int dt_ms);
+int  toy_game_fire(struct toy_game *g, int sy, int cy);     /* hitscan，命中返回 1 */
+int  toy_game_drain_events(struct toy_game *g, unsigned char *out, int max);
+void toy_game_place_enemy(struct toy_game *g, int x, int z); /* 测试钩子 */
+
+/* ── SFX 引擎（程序合成，平台无关，可无设备单测） ──────────────── */
+
+#define TOY_SFX_RATE        44100
+#define TOY_SFX_MAX_VOICES  8
+
+enum toy_sfx_kind {
+    TOY_SFX_GUNSHOT,
+    TOY_SFX_DRY_FIRE,
+    TOY_SFX_RELOAD_START,
+    TOY_SFX_RELOAD_DONE,
+    TOY_SFX_HIT_MARKER,
+    TOY_SFX_KILL,
+    TOY_SFX_BITE,
+    TOY_SFX_PLAYER_DEATH,
+};
+
+struct toy_sfx_voice {
+    int active;
+    int kind;
+    int pos, len;       /* 已生成/总样本数 */
+    int phase;          /* DDS 相位累加器（16.16 定点） */
+    int step0, step1;   /* 相位增量扫频端点（16.16 定点） */
+    int step;           /* 当前相位增量 */
+    int vol;            /* 初始振幅（样本单位 0-32768） */
+    uint32_t seed;      /* 噪声源（xorshift32） */
+    int lp;             /* 一阶低通状态（噪声上色） */
+};
+
+struct toy_sfx {
+    int rate;
+    int enabled;        /* 设备不可用时可关闭，渲染输出静音 */
+    struct toy_sfx_voice voices[TOY_SFX_MAX_VOICES];
+};
+
+void toy_sfx_init(struct toy_sfx *sfx, int rate);
+void toy_sfx_play(struct toy_sfx *sfx, int kind);       /* 触发；满 8 voice 偷剩余最短者 */
+void toy_sfx_render(struct toy_sfx *sfx, short *out, int frames); /* 混音至 S16 立体声 */
+
+#endif /* TOYC_TOY_GAME_H */
