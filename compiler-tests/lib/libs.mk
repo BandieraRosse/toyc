@@ -10,7 +10,7 @@
 #   _TEST_<name>  — 测试驱动名（compiler-tests/lib/test_<name>.c，不含 .c 后缀）
 #                   不定义则跳过功能测试（仅编译检查）
 
-LIBS := math ctype string core stdio time misc net poll tty procfs evdev_kbd evdev_mouse audio thread
+LIBS := math ctype string core stdio time misc net poll tty procfs evdev_kbd evdev_mouse audio thread graphics
 
 # ── math — 纯数值计算，无系统调用 ──────────────────────────────────
 _SRCS_math    := math/math.c
@@ -95,3 +95,8 @@ _SRCS_thread  := thread/pthread.c
 _ASM_thread   := thread/clone.S
 _DEPS_thread  := core string stdio ctype
 _TEST_thread  := test_thread
+
+# ── graphics — 平台无关的软件光栅器 ──────────────────────────────
+_SRCS_graphics := graphics/renderer.c
+_DEPS_graphics := core string stdio ctype
+_TEST_graphics := test_graphics
