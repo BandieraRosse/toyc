@@ -1,8 +1,8 @@
 /*
  * wayland_fps — Toyc software-rendered first-person graybox.
  *
- * Controls: left click captures the pointer, mouse looks, WASD moves,
- * Esc releases the pointer or quits.  Rendering and input are freestanding.
+ * Controls: left click captures the pointer, mouse or arrows look, WASD moves,
+ * Esc pauses/releases the pointer or quits.  Rendering and input are freestanding.
  */
 
 #include "core.h"
@@ -16,6 +16,10 @@
 #define KEY_A   30
 #define KEY_S   31
 #define KEY_D   32
+#define KEY_UP    103
+#define KEY_LEFT  105
+#define KEY_RIGHT 106
+#define KEY_DOWN  108
 #define BTN_LEFT 0x110
 
 #define FIXED_STEP_US 16667
@@ -229,13 +233,27 @@ static void update_player(struct camera *camera, const struct toy_input *input)
     if (!position_blocked(camera->x, next_z)) camera->z = next_z;
 }
 
-static void update_mouse(struct camera *camera, int relative_x, int relative_y)
+static void rotate_camera(struct camera *camera, int turn, int pitch)
 {
-    int turn = clampi(relative_x * 3, -128, 128);
     int old_sy = camera->sy;
     camera->sy = (old_sy * 1024 + camera->cy * turn) / 1024;
     camera->cy = (camera->cy * 1024 - old_sy * turn) / 1024;
-    camera->pitch = clampi(camera->pitch + relative_y * 2, -240, 240);
+    camera->pitch = clampi(camera->pitch + pitch, -240, 240);
+}
+
+static void update_mouse(struct camera *camera, int relative_x, int relative_y)
+{
+    rotate_camera(camera, clampi(relative_x * 3, -128, 128), -relative_y * 2);
+}
+
+static void update_keyboard_look(struct camera *camera,
+                                 const struct toy_input *input)
+{
+    int turn = toy_input_down(input, KEY_RIGHT) -
+               toy_input_down(input, KEY_LEFT);
+    int pitch = toy_input_down(input, KEY_UP) -
+                toy_input_down(input, KEY_DOWN);
+    if (turn || pitch) rotate_camera(camera, turn * 24, pitch * 5);
 }
 
 static void draw_crosshair(struct toy_surface *surface)
@@ -297,15 +315,24 @@ static int run_logic_test(void)
     for (int i = 0; i < 10; i++) update_player(&camera, &input);
     if (camera.z >= obstacles[0].minz - PLAYER_RADIUS) return 2;
 
+    input.key_down[KEY_W] = 0;
+    input.key_down[KEY_RIGHT] = 1;
+    update_keyboard_look(&camera, &input);
+    if (camera.sy <= 0 || camera.cy >= 1024) return 3;
+    input.key_down[KEY_RIGHT] = 0;
+    input.key_down[KEY_UP] = 1;
+    update_keyboard_look(&camera, &input);
+    if (camera.pitch <= 0) return 4;
+
     triangle[0].x = -100; triangle[0].y = 0; triangle[0].z = 100;
     triangle[1].x =  100; triangle[1].y = 0; triangle[1].z = 400;
     triangle[2].x =    0; triangle[2].y = 100; triangle[2].z = 400;
     count = clip_near(triangle, 3, clipped);
-    if (count != 4) return 3;
+    if (count != 4) return 5;
     for (int i = 0; i < count; i++)
-        if (clipped[i].z < NEAR_Z) return 4;
+        if (clipped[i].z < NEAR_Z) return 6;
     pixels = tlibc_malloc(320 * 180 * sizeof(uint32_t));
-    if (!pixels) return 5;
+    if (!pixels) return 7;
     surface.pixels = pixels;
     surface.width = 320;
     surface.height = 180;
@@ -316,7 +343,7 @@ static int run_logic_test(void)
         render_scene(&renderer, &camera) <= 0) {
         toy_renderer_destroy(&renderer);
         tlibc_free(pixels);
-        return 6;
+        return 8;
     }
     toy_renderer_destroy(&renderer);
     tlibc_free(pixels);
@@ -352,7 +379,7 @@ int main(int argc, char **argv)
         __fprintf(2, "wayland_fps: cannot create Wayland window\n");
         return 1;
     }
-    __printf("wayland_fps: paused; click to play, Esc pauses/exits\n");
+    __printf("wayland_fps: click to play; mouse/arrows look, WASD moves, Esc pauses/exits\n");
     last_time = monotonic_us();
     while (running) {
         long now, elapsed;
@@ -369,7 +396,7 @@ int main(int argc, char **argv)
             }
         }
         if (paused && events.button_pressed && events.button == BTN_LEFT) {
-            int capture_result = toy_window_set_pointer_confine(window, 1);
+            int capture_result = toy_window_set_pointer_lock(window, 1);
             pointer_lock_requested = capture_result > 0;
             paused = 0;
             last_pointer_x = input.pointer_x;
@@ -380,7 +407,7 @@ int main(int argc, char **argv)
         }
         if (toy_input_pressed(&input, KEY_ESC)) {
             if (!paused) {
-                toy_window_set_pointer_confine(window, 0);
+                toy_window_set_pointer_lock(window, 0);
                 pointer_lock_requested = 0;
                 paused = 1;
                 __printf("wayland_fps: paused, pointer released\n");
@@ -408,7 +435,10 @@ int main(int argc, char **argv)
         if (elapsed > MAX_FRAME_US) elapsed = MAX_FRAME_US;
         accumulator += elapsed;
         while (accumulator >= FIXED_STEP_US && logic_steps < MAX_LOGIC_STEPS) {
-            if (!paused) update_player(&camera, &input);
+            if (!paused) {
+                update_player(&camera, &input);
+                update_keyboard_look(&camera, &input);
+            }
             accumulator -= FIXED_STEP_US;
             logic_steps++;
         }
