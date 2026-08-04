@@ -249,6 +249,34 @@ static void draw_crosshair(struct toy_surface *surface)
     }
 }
 
+static void fill_rect(struct toy_surface *surface, int x, int y,
+                      int width, int height, uint32_t color)
+{
+    int right = x + width, bottom = y + height;
+    if (x < 0) x = 0;
+    if (y < 0) y = 0;
+    if (right > surface->width) right = surface->width;
+    if (bottom > surface->height) bottom = surface->height;
+    for (int py = y; py < bottom; py++)
+        for (int px = x; px < right; px++) put_pixel(surface, px, py, color);
+}
+
+static void draw_pause_overlay(struct toy_surface *surface)
+{
+    int panel_w = surface->width / 3;
+    int panel_h = surface->height / 3;
+    int x = (surface->width - panel_w) / 2;
+    int y = (surface->height - panel_h) / 2;
+    int bar_w = panel_w / 10;
+    int bar_h = panel_h / 2;
+    fill_rect(surface, x - 3, y - 3, panel_w + 6, panel_h + 6, 0xD88A32);
+    fill_rect(surface, x, y, panel_w, panel_h, 0x171B24);
+    fill_rect(surface, surface->width / 2 - bar_w - bar_w / 2,
+              surface->height / 2 - bar_h / 2, bar_w, bar_h, 0xE7E9EC);
+    fill_rect(surface, surface->width / 2 + bar_w / 2,
+              surface->height / 2 - bar_h / 2, bar_w, bar_h, 0xE7E9EC);
+}
+
 static int run_logic_test(void)
 {
     struct camera camera;
@@ -305,7 +333,7 @@ int main(int argc, char **argv)
     struct toy_renderer renderer;
     struct camera camera;
     long last_time, accumulator = 0;
-    int running = 1, pointer_lock_requested = 0;
+    int running = 1, pointer_lock_requested = 0, paused = 1;
     int last_pointer_x = 0, last_pointer_y = 0, have_pointer_position = 0;
     int frame_limit = 0, rendered_frames = 0, scene_pixels = 0;
 
@@ -324,7 +352,7 @@ int main(int argc, char **argv)
         __fprintf(2, "wayland_fps: cannot create Wayland window\n");
         return 1;
     }
-    __printf("wayland_fps: click to capture, WASD move, mouse look, Esc release/quit\n");
+    __printf("wayland_fps: paused; click to play, Esc pauses/exits\n");
     last_time = monotonic_us();
     while (running) {
         long now, elapsed;
@@ -332,29 +360,40 @@ int main(int argc, char **argv)
         toy_input_begin_frame(&input);
         if (toy_window_poll(window, &events, 1000) < 0) break;
         toy_input_apply(&input, &events);
-        if (events.pointer_lock_changed && !events.pointer_locked)
-            pointer_lock_requested = 0;
-        if (events.button_pressed && events.button == BTN_LEFT &&
-            toy_window_set_pointer_lock(window, 1) > 0) {
-            pointer_lock_requested = 1;
+        if (events.pointer_lock_changed) {
+            if (events.pointer_locked)
+                __printf("wayland_fps: pointer constraint activated\n");
+            else {
+                __printf("wayland_fps: pointer constraint released\n");
+                pointer_lock_requested = 0;
+            }
+        }
+        if (paused && events.button_pressed && events.button == BTN_LEFT) {
+            int capture_result = toy_window_set_pointer_confine(window, 1);
+            pointer_lock_requested = capture_result > 0;
+            paused = 0;
             last_pointer_x = input.pointer_x;
             last_pointer_y = input.pointer_y;
             have_pointer_position = 1;
+            __printf("wayland_fps: resumed, pointer constraint %s\n",
+                     pointer_lock_requested ? "requested" : "unavailable");
         }
         if (toy_input_pressed(&input, KEY_ESC)) {
-            if (input.pointer_locked || pointer_lock_requested) {
-                toy_window_set_pointer_lock(window, 0);
+            if (!paused) {
+                toy_window_set_pointer_confine(window, 0);
                 pointer_lock_requested = 0;
+                paused = 1;
+                __printf("wayland_fps: paused, pointer released\n");
             } else running = 0;
         }
         if (events.close_requested) running = 0;
         if (!running) break;
         /* Some compositors acknowledge locked asynchronously. Relative
          * events received after our accepted request are already valid. */
-        if ((input.pointer_locked || pointer_lock_requested) &&
+        if (!paused && (input.pointer_locked || pointer_lock_requested) &&
             events.relative_moved) {
             update_mouse(&camera, input.relative_x, input.relative_y);
-        } else if (pointer_lock_requested && input.pointer_moved) {
+        } else if (!paused && pointer_lock_requested && input.pointer_moved) {
             if (have_pointer_position)
                 update_mouse(&camera, input.pointer_x - last_pointer_x,
                               input.pointer_y - last_pointer_y);
@@ -369,7 +408,7 @@ int main(int argc, char **argv)
         if (elapsed > MAX_FRAME_US) elapsed = MAX_FRAME_US;
         accumulator += elapsed;
         while (accumulator >= FIXED_STEP_US && logic_steps < MAX_LOGIC_STEPS) {
-            update_player(&camera, &input);
+            if (!paused) update_player(&camera, &input);
             accumulator -= FIXED_STEP_US;
             logic_steps++;
         }
@@ -379,7 +418,8 @@ int main(int argc, char **argv)
         if (ready > 0) {
             if (toy_renderer_begin(&renderer, &surface, 0x151922) < 0) break;
             scene_pixels = render_scene(&renderer, &camera);
-            draw_crosshair(&surface);
+            if (paused) draw_pause_overlay(&surface);
+            else draw_crosshair(&surface);
             if (toy_window_present(window) < 0) break;
             rendered_frames++;
             if (frame_limit > 0 && rendered_frames >= frame_limit) running = 0;

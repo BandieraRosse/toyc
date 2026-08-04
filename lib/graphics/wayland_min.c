@@ -28,7 +28,7 @@ enum object_kind {
     OBJ_SHM, OBJ_SHM_POOL, OBJ_BUFFER, OBJ_SEAT, OBJ_POINTER, OBJ_KEYBOARD,
     OBJ_SURFACE, OBJ_XDG_WM_BASE, OBJ_XDG_SURFACE, OBJ_XDG_TOPLEVEL,
     OBJ_RELATIVE_POINTER_MANAGER, OBJ_RELATIVE_POINTER,
-    OBJ_POINTER_CONSTRAINTS, OBJ_LOCKED_POINTER
+    OBJ_POINTER_CONSTRAINTS, OBJ_LOCKED_POINTER, OBJ_CONFINED_POINTER
 };
 
 struct wl_buf {
@@ -46,7 +46,7 @@ struct toywl {
     uint32_t registry, compositor, shm, seat, pointer, keyboard;
     uint32_t surface, wm_base, xdg_surface, toplevel, frame_callback;
     uint32_t relative_manager, relative_pointer;
-    uint32_t pointer_constraints, locked_pointer;
+    uint32_t pointer_constraints, locked_pointer, confined_pointer;
     uint32_t compositor_name, shm_name, seat_name, wm_base_name;
     uint32_t relative_manager_name, pointer_constraints_name;
     uint32_t compositor_ver, shm_ver, seat_ver, wm_base_ver;
@@ -436,6 +436,11 @@ static void handle_event(struct toywl *wl, uint32_t object, uint16_t opcode,
             wl->pending.pointer_lock_changed = 1;
             wl->pending.pointer_locked = opcode == 0;
         }
+    } else if (kind == OBJ_CONFINED_POINTER) {
+        if (opcode == 0 || opcode == 1) {
+            wl->pending.pointer_lock_changed = 1;
+            wl->pending.pointer_locked = opcode == 0;
+        }
     } else if (kind == OBJ_BUFFER && opcode == 0) {
         for (int i = 0; i < 2; i++)
             if (wl->buffers[i].id == object) wl->buffers[i].busy = 0;
@@ -752,10 +757,38 @@ int toywl_set_pointer_lock(struct toywl *wl, int locked)
     return 1;
 }
 
+int toywl_set_pointer_confine(struct toywl *wl, int confined)
+{
+    struct msg_builder m;
+    if (!wl || !wl->pointer_constraints || !wl->pointer) return 0;
+    if (confined) {
+        if (wl->confined_pointer) return 1;
+        wl->confined_pointer = new_object(wl, OBJ_CONFINED_POINTER);
+        if (!wl->confined_pointer) return -1;
+        mb_init(&m, wl->pointer_constraints, 2);
+        mb_u32(&m, wl->confined_pointer);
+        mb_u32(&m, wl->surface);
+        mb_u32(&m, wl->pointer);
+        mb_u32(&m, 0); /* nullable wl_region */
+        mb_u32(&m, 2); /* persistent lifetime */
+        if (send_request(wl, &m, -1) < 0) return -1;
+        return 1;
+    }
+    if (wl->confined_pointer) {
+        request0(wl, wl->confined_pointer, 0);
+        wl->kinds[wl->confined_pointer] = OBJ_ZOMBIE;
+        wl->confined_pointer = 0;
+        wl->pending.pointer_lock_changed = 1;
+        wl->pending.pointer_locked = 0;
+    }
+    return 1;
+}
+
 void toywl_close(struct toywl *wl)
 {
     if (!wl) return;
     destroy_buffers(wl);
+    if (wl->confined_pointer) request0(wl, wl->confined_pointer, 0);
     if (wl->locked_pointer) request0(wl, wl->locked_pointer, 0);
     if (wl->relative_pointer) request0(wl, wl->relative_pointer, 0);
     if (wl->pointer_constraints) request0(wl, wl->pointer_constraints, 0);

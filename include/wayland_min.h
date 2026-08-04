@@ -48,6 +48,7 @@ int toywl_begin_frame(struct toywl *wl, struct toywl_frame *frame);
 int toywl_present(struct toywl *wl);
 int toywl_pointer_lock_supported(struct toywl *wl);
 int toywl_set_pointer_lock(struct toywl *wl, int locked);
+int toywl_set_pointer_confine(struct toywl *wl, int confined);
 void toywl_close(struct toywl *wl);
 
 #endif

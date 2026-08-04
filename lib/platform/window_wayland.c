@@ -88,6 +88,12 @@ int toy_window_set_pointer_lock(struct toy_window *window, int locked)
     return toywl_set_pointer_lock(window->wayland, locked);
 }
 
+int toy_window_set_pointer_confine(struct toy_window *window, int confined)
+{
+    if (!window) return -1;
+    return toywl_set_pointer_confine(window->wayland, confined);
+}
+
 void toy_window_close(struct toy_window *window)
 {
     if (!window) return;

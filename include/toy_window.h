@@ -49,6 +49,7 @@ int toy_window_begin_frame(struct toy_window *window, struct toy_surface *surfac
 int toy_window_present(struct toy_window *window);
 int toy_window_pointer_lock_supported(struct toy_window *window);
 int toy_window_set_pointer_lock(struct toy_window *window, int locked);
+int toy_window_set_pointer_confine(struct toy_window *window, int confined);
 void toy_window_close(struct toy_window *window);
 
 #endif
