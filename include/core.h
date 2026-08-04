@@ -75,6 +75,7 @@ int __fcntl(int fd, int cmd, unsigned long arg);
 int __dup(int oldfd);
 int __dup2(int oldfd, int newfd);
 int __dup3(int oldfd, int newfd, int flags);
+int __memfd_create(const char *name, unsigned int flags);
 
 //printf
 void tlibc_print_int(int num);

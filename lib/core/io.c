@@ -50,6 +50,11 @@ int __ftruncate(int fd, off_t length)
     return syscall(SYS_ftruncate, fd, length);
 }
 
+int __memfd_create(const char *name, unsigned int flags)
+{
+    return (int)syscall(SYS_memfd_create, name, flags);
+}
+
 int __ioctl(int fd, unsigned long request, void *argp)
 {
     return syscall(SYS_ioctl, fd, request, argp);

@@ -54,6 +54,16 @@ int shutdown(int sockfd, int how)
     return syscall(SYS_shutdown, sockfd, how);
 }
 
+ssize_t sendmsg(int sockfd, const struct msghdr *msg, int flags)
+{
+    return syscall(SYS_sendmsg, sockfd, msg, flags);
+}
+
+ssize_t recvmsg(int sockfd, struct msghdr *msg, int flags)
+{
+    return syscall(SYS_recvmsg, sockfd, msg, flags);
+}
+
 /* 库函数 */
 
 //x86_64的小端字节序转换为网络的大端

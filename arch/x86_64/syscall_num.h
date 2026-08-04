@@ -57,6 +57,8 @@
 #define SYS_accept      __NR_accept
 #define SYS_recvfrom    __NR_recvfrom
 #define SYS_sendto     __NR_sendto
+#define SYS_sendmsg     __NR_sendmsg
+#define SYS_recvmsg     __NR_recvmsg
 
 #define SYS_fcntl       __NR_fcntl
 #define SYS_dup         __NR_dup
@@ -71,6 +73,7 @@
 #define SYS_fstatfs     __NR_fstatfs
 
 #define SYS_shutdown    __NR_shutdown
+#define SYS_memfd_create __NR_memfd_create
 
 #define SYS_getsockname __NR_getsockname
 
