@@ -409,8 +409,9 @@ static void test_all_arg_counts(void) {
                                AT_FDCWD, (long)np, 0);
         long r_d = syscall(SYS_renameat2,
                             AT_FDCWD, op, AT_FDCWD, np, 0);
-        CHECK(r_i == -2, "5-arg inline == -ENOENT");
-        CHECK(r_d == -2, "5-arg dispatch == -ENOENT");
+        /* 只读容器可能在检查路径是否存在前先返回 EROFS(-30)。 */
+        CHECK(r_i == -2 || r_i == -30, "5-arg inline == -ENOENT or -EROFS");
+        CHECK(r_d == -2 || r_d == -30, "5-arg dispatch == -ENOENT or -EROFS");
         CHECK(r_i == r_d, "5-arg inline == dispatch");
     }
 

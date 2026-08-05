@@ -1355,6 +1355,16 @@ static AstNode *parse_unary(Parser *p) {
             /* sizeof(s.member) — 结构体成员：返回成员声明大小（含数组成员） */
             if (n->ival == 8 && sexpr && sexpr->kind == AST_MEMBER && sexpr->type_size > 0)
                 n->ival = sexpr->type_size;
+            /* sizeof(*ptr) — 解引用后的类型大小来自指针的元素类型。
+             * sizeof 不会执行解引用，因此即使 ptr 为 NULL 也必须只做类型推导。 */
+            if (sexpr && sexpr->kind == AST_UNARY && sexpr->op == TOK_STAR &&
+                sexpr->expr && sexpr->expr->kind == AST_VAR && sexpr->expr->name) {
+                int es = pvar_find_elem_size(sexpr->expr->name);
+                if (es > 0)
+                    n->ival = es;
+                else if (sexpr->expr->struct_type && sexpr->expr->struct_type->total_size > 0)
+                    n->ival = sexpr->expr->struct_type->total_size;
+            }
             /* sizeof(arr[i]...) — 数组下标表达式：返回剩余子数组/元素大小。
              * L 级下标后剩余大小 = elem_size / product(dims[1..L-1])：
              *   arr[i]        → elem_size（行大小）
@@ -3037,6 +3047,8 @@ AstNode *parse_compound_statement(Parser *p) {
                     }
                     if (resolved_tag)
                         pvar_set_struct_type(decl->name, resolve_struct_type(resolved_tag));
+                    if (dv_ptrs > 0 && decl->elem_size > 0)
+                        pvar_set_elem_size(decl->name, decl->elem_size);
                 }
                 last_struct_tag = NULL;
                 /* 处理数组后缀 [N]（将数组维数乘入 ival；表达式维数跳过处理） */
@@ -5611,6 +5623,8 @@ static AstNode *parse_parameter_list(Parser *p, int *is_variadic) {
                 pvar_add_ex(pname, param_tag, pd->is_float, pd->is_unsigned, pd->ival);
                 if (param_tag)
                     pvar_set_struct_type(pname, resolve_struct_type(param_tag));
+                if (effective_ptr > 0 && pd->elem_size > 0)
+                    pvar_set_elem_size(pname, pd->elem_size);
             }
             *tail = pd;
             tail = &pd->next;

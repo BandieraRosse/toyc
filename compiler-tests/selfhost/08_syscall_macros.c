@@ -438,18 +438,21 @@ static void test_5arg(void) {
     test_start("__syscall5 / syscall() 5-arg — SYS_renameat2 (r10+r8)");
 
     /* renameat2(olddirfd, oldpath, newdirfd, newpath, flags)
-     * 两侧路径均不存在 → -ENOENT = -2 */
+     * 普通可写根文件系统返回 ENOENT；只读容器可能先返回 EROFS。两者都能
+     * 验证第 4、5 参数已正确传入内核，且下方仍要求两条调用路径一致。 */
     const char *oldpath = "/nonexistent_old_xyz_12345";
     const char *newpath = "/nonexistent_new_xyz_12345";
 
     long r1 = __syscall5(SYS_renameat2,
                          AT_FDCWD, (long)oldpath,
                          AT_FDCWD, (long)newpath, 0);
-    CHECK(r1 == -2, "inline __syscall5: renameat2(nonexistent) == -ENOENT (-2)");
+    CHECK(r1 == -2 || r1 == -30,
+          "inline __syscall5: renameat2 returns -ENOENT or read-only -EROFS");
 
     long r2 = syscall(SYS_renameat2,
                       AT_FDCWD, oldpath, AT_FDCWD, newpath, 0);
-    CHECK(r2 == -2, "syscall 5-arg: renameat2(nonexistent) == -ENOENT (-2)");
+    CHECK(r2 == -2 || r2 == -30,
+          "syscall 5-arg: renameat2 returns -ENOENT or read-only -EROFS");
 
     CHECK(r1 == r2, "renameat2 returns same via both paths");
     print_str("    renameat2(nonexistent) = ");
