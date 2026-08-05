@@ -928,15 +928,23 @@ int toy_game_fire(struct toy_game *g, int sy, int cy)
     g->fire_seq++;
     g->ray_count = w->pellets;
     for (pellet = 0; pellet < w->pellets; pellet++) {
-        int off = rand_range(g, -w->spread, w->spread);
-        int ray_sy = (sy * 1024 - cy * off) / 1024;
-        int ray_cy = (cy * 1024 + sy * off) / 1024;
+        int off_x, off_y;
+        int ray_sy, ray_cy;
+        /* 在准心周围取圆形散布，而不是只在水平线上散布。 */
+        do {
+            off_x = rand_range(g, -w->spread, w->spread);
+            off_y = rand_range(g, -w->spread, w->spread);
+        } while (off_x * off_x + off_y * off_y >
+                 w->spread * w->spread);
+        ray_sy = (sy * 1024 - cy * off_x) / 1024;
+        ray_cy = (cy * 1024 + sy * off_x) / 1024;
         int ex, ez, hit_world, killed;
         normalize_dir(&ray_sy, &ray_cy);   /* 旋转后长度略偏，归一化保证判定一致 */
         killed = fire_ray(g, ray_sy, ray_cy, &ex, &ez, &hit_world);
         if (killed) hit = 1;
         g->rays[pellet].sy = ray_sy;
         g->rays[pellet].cy = ray_cy;
+        g->rays[pellet].vy = off_y;
         g->rays[pellet].ex = ex;
         g->rays[pellet].ez = ez;
         g->rays[pellet].hit_enemy = killed;

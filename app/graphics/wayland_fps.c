@@ -1,11 +1,13 @@
 /*
  * wayland_fps — Toyc software-rendered safe-room-to-safe-room zombie shooter.
  *
- * Controls: left click captures the pointer, mouse or arrows look, WASD moves,
- * left click / Space fire (Space held = SMG full auto), R reloads, 1/2 switch
- * weapon slots, E interacts with highlighted pickups, Esc pauses/releases the
- * pointer or quits. Rendering and input are freestanding; game rules live in
- * lib/game.
+ * Controls: left click captures the pointer, mouse or arrows look (pitch is
+ * limited to 75 degrees up/down), WASD moves, left click / Space fire (Space
+ * held = SMG full auto), R reloads, 1/2 switch weapon slots, E interacts with
+ * highlighted pickups, Esc pauses/releases the pointer or quits. A first
+ * person weapon viewmodel sits bottom-right; tracers originate from the gun
+ * muzzle. Rendering and input are freestanding;
+ * game rules live in lib/game.
  */
 
 #include "core.h"
@@ -49,9 +51,12 @@
 #define PLAYER_RADIUS 180
 #define MOVE_STEP 76
 #define UV_ONE 65536
+#define PITCH_LIMIT_SY 989        /* sin(75°) * 1024 */
+#define PITCH_LIMIT_CY 265        /* cos(75°) * 1024 */
 
 struct vec3 { int x, y, z; };
-struct camera { int x, z, sy, cy, pitch; };
+/* 朝向：sy/cy = 偏航 sin/cos，pitch_sy/pitch_cy = 俯仰 sin/cos（均 1024 定点）。 */
+struct camera { int x, z, sy, cy, pitch_sy, pitch_cy; };
 struct box { int minx, maxx, minz, maxz, height; uint32_t color; };
 struct control_settings { int mouse_level, keyboard_level; };
 struct pause_menu { int selected; };
@@ -150,7 +155,8 @@ static void reset_game(struct camera *camera, uint64_t seed)
     camera->z = level_map.start_z;
     camera->sy = 0;
     camera->cy = 1024;
-    camera->pitch = 0;
+    camera->pitch_sy = 0;
+    camera->pitch_cy = 1024;
     toy_game_init(&game, seed);
     toy_game_set_world(&game, map_bounds, level_map.box_count, level_map.room_limit);
     toy_game_set_campaign(&game, map_safe_rooms, level_map.safe_count,
@@ -209,14 +215,18 @@ static void copy_vec3(struct vec3 *out, const struct vec3 *in)
     out->x = in->x; out->y = in->y; out->z = in->z;
 }
 
+/* 偏航（绕 Y 轴）后再做俯仰（绕 X 轴）的真实 3D 旋转：
+ * pitch 为正 = 上仰，视平线以下的点投影到屏幕下方。 */
 static void world_to_view(const struct camera *camera, const struct vec3 *world,
                           struct vec3 *view)
 {
     int dx = world->x - camera->x;
     int dz = world->z - camera->z;
-    view->x = (dx * camera->cy - dz * camera->sy) / 1024;
-    view->y = world->y;
-    view->z = (dx * camera->sy + dz * camera->cy) / 1024;
+    int wx = (dx * camera->cy - dz * camera->sy) / 1024;
+    int wz = (dx * camera->sy + dz * camera->cy) / 1024;
+    view->x = wx;
+    view->y = (world->y * camera->pitch_cy - wz * camera->pitch_sy) / 1024;
+    view->z = (world->y * camera->pitch_sy + wz * camera->pitch_cy) / 1024;
 }
 
 static void near_intersection(const struct vec3 *a, const struct vec3 *b,
@@ -293,21 +303,21 @@ static int clip_near_uv(const struct world_uv_vertex *input, int count,
 }
 
 static void project_vertex(const struct toy_surface *surface,
-                           const struct vec3 *view, int pitch,
+                           const struct vec3 *view,
                            struct toy_screen_vertex *screen)
 {
     int focal = surface->width * 3 / 4;
     screen->x = surface->width / 2 + view->x * focal / view->z;
-    screen->y = surface->height / 2 + pitch - view->y * focal / view->z;
+    screen->y = surface->height / 2 - view->y * focal / view->z;
     screen->z = view->z;
 }
 
 static void project_uv_vertex(const struct toy_surface *surface,
-                              const struct vec3 *view, int pitch,
+                              const struct vec3 *view,
                               int u, int v,
                               struct toy_screen_vertex *screen)
 {
-    project_vertex(surface, view, pitch, screen);
+    project_vertex(surface, view, screen);
     screen->u = u; screen->v = v;
     screen->inv_z = (long)1048576 / view->z;
     screen->u_over_z = (long)u * 1048576L / view->z;
@@ -329,9 +339,9 @@ static int draw_world_triangle(struct toy_renderer *renderer,
     for (int i = 1; i + 1 < count; i++) {
         struct toy_screen_vertex sa, sb, sc;
         int area;
-        project_vertex(&renderer->surface, &clipped[0], camera->pitch, &sa);
-        project_vertex(&renderer->surface, &clipped[i], camera->pitch, &sb);
-        project_vertex(&renderer->surface, &clipped[i + 1], camera->pitch, &sc);
+        project_vertex(&renderer->surface, &clipped[0], &sa);
+        project_vertex(&renderer->surface, &clipped[i], &sb);
+        project_vertex(&renderer->surface, &clipped[i + 1], &sc);
         /* Projected coordinates are bounded here, so 32-bit area is safe and
          * avoids Toyc's signed int-to-long promotion bug. */
         area = (sc.x - sa.x) * (sb.y - sa.y) -
@@ -366,11 +376,11 @@ static int draw_world_triangle_tex(struct toy_renderer *renderer,
         struct toy_screen_vertex sa, sb, sc;
         int area;
         project_uv_vertex(&renderer->surface, &clipped[0].p,
-                          camera->pitch, clipped[0].u, clipped[0].v, &sa);
+                          clipped[0].u, clipped[0].v, &sa);
         project_uv_vertex(&renderer->surface, &clipped[i].p,
-                          camera->pitch, clipped[i].u, clipped[i].v, &sb);
+                          clipped[i].u, clipped[i].v, &sb);
         project_uv_vertex(&renderer->surface, &clipped[i + 1].p,
-                          camera->pitch, clipped[i + 1].u, clipped[i + 1].v, &sc);
+                          clipped[i + 1].u, clipped[i + 1].v, &sc);
         area = (sc.x - sa.x) * (sb.y - sa.y) -
                (sc.y - sa.y) * (sb.x - sa.x);
         if (area >= 0) {
@@ -475,7 +485,7 @@ static void draw_world_label(struct toy_renderer *renderer,
     world.z = (zone->minz + zone->maxz) / 2;
     world_to_view(camera, &world, &view);
     if (view.z < NEAR_Z) return;
-    project_vertex(&renderer->surface, &view, camera->pitch, &screen);
+    project_vertex(&renderer->surface, &view, &screen);
     screen.x -= width / 2;
     if (screen.x < 0 || screen.x + width >= renderer->surface.width ||
         screen.y < 0 || screen.y + FB_FONT_H >= renderer->surface.height) return;
@@ -702,8 +712,210 @@ static int render_interactables(struct toy_renderer *renderer,
     return pixels;
 }
 
+/* ── 第一人称武器模型：视图空间盒体固定在镜头右下方，开火后坐后移 ── */
+
+#define VIEWMODEL_KICK_MAX 110
+
+static int weapon_kick;   /* 开火瞬间置最大，随逻辑步衰减 */
+
+static int viewmodel_weapon(void)
+{
+    int slot = game.current_slot;
+    if (slot < 0 || slot >= TOY_GAME_WEAPON_SLOTS) return -1;
+    return game.slots[slot].weapon;
+}
+
+/* 视图空间逆变换：枪口偏移 → 世界坐标（供弹道起点与枪口粒子） */
+static void view_to_world(const struct camera *camera, const struct vec3 *view,
+                          struct vec3 *world)
+{
+    int vx = view->x, vy = view->y, vz = view->z;
+    int wy = (vy * camera->pitch_cy + vz * camera->pitch_sy) / 1024;
+    int wz = (-vy * camera->pitch_sy + vz * camera->pitch_cy) / 1024;
+    /* 调用方会原地逆变换，先缓存三个分量，避免写入 x 后破坏 z 计算。 */
+    world->x = camera->x + (vx * camera->cy + wz * camera->sy) / 1024;
+    world->z = camera->z + (-vx * camera->sy + wz * camera->cy) / 1024;
+    world->y = wy;
+}
+
+/* 当前武器的枪口视图偏移（含后坐力位移：后移、下沉、略右偏） */
+static void viewmodel_muzzle_offset(int weapon, int kick, struct vec3 *muzzle)
+{
+    if (weapon == TOY_GAME_WEAPON_SMG) {
+        muzzle->x = 105; muzzle->y = -65; muzzle->z = 450;
+    } else if (weapon == TOY_GAME_WEAPON_SHOTGUN) {
+        muzzle->x = 100; muzzle->y = -65; muzzle->z = 560;
+    } else {
+        muzzle->x = 102; muzzle->y = -70; muzzle->z = 420;
+    }
+    muzzle->x += kick / 3;
+    muzzle->y -= kick / 2;
+    muzzle->z += kick;
+}
+
+/* 视图模型专用 2D 三角形填充：直接写表面、不参与深度测试 ——
+ * 站在墙边/低头看地时枪永远不会被近处几何裁掉。 */
+static int fill_triangle_2d(struct toy_surface *surface,
+                            int x0, int y0, int x1, int y1, int x2, int y2,
+                            uint32_t color)
+{
+    int y, tmp, xa, xb, ymin, ymax, drawn = 0;
+    long dx01 = 0, dx02, dx12 = 0, xl, xr, lt;
+    if (y0 > y1) { tmp = x0; x0 = x1; x1 = tmp; tmp = y0; y0 = y1; y1 = tmp; }
+    if (y1 > y2) { tmp = x1; x1 = x2; x2 = tmp; tmp = y1; y1 = y2; y2 = tmp; }
+    if (y0 > y1) { tmp = x0; x0 = x1; x1 = tmp; tmp = y0; y0 = y1; y1 = tmp; }
+    if (y0 == y2 || y2 < 0 || y0 >= surface->height) return 0;
+    if (y1 > y0) dx01 = (long)(x1 - x0) * 65536 / (y1 - y0);
+    dx02 = (long)(x2 - x0) * 65536 / (y2 - y0);
+    if (y2 > y1) dx12 = (long)(x2 - x1) * 65536 / (y2 - y1);
+    ymin = y0 < 0 ? 0 : y0;
+    ymax = y2 >= surface->height ? surface->height - 1 : y2;
+    for (y = ymin; y <= ymax; y++) {
+        if (y <= y1) {
+            xl = (long)x0 * 65536 + dx01 * (y - y0);
+            xr = (long)x0 * 65536 + dx02 * (y - y0);
+        } else {
+            xl = (long)x1 * 65536 + dx12 * (y - y1);
+            xr = (long)x0 * 65536 + dx02 * (y - y0);
+        }
+        if (xl > xr) { lt = xl; xl = xr; xr = lt; }
+        xa = (int)(xl >> 16);
+        xb = (int)(xr >> 16);
+        if (xa < 0) xa = 0;
+        if (xb >= surface->width) xb = surface->width - 1;
+        if (xa <= xb) {
+            uint32_t *row = (uint32_t *)((unsigned char *)surface->pixels +
+                                         y * surface->stride);
+            for (int x = xa; x <= xb; x++) row[x] = color;
+            drawn += xb - xa + 1;
+        }
+    }
+    return drawn;
+}
+
+/* 视图空间四边形 → 两个 2D 三角形（枪体 z 恒 > 近平面，无需裁剪） */
+static int draw_view_quad(struct toy_surface *surface,
+                          const struct vec3 *p1, const struct vec3 *p2,
+                          const struct vec3 *p3, const struct vec3 *p4,
+                          uint32_t color)
+{
+    struct toy_screen_vertex s1, s2, s3, s4;
+    project_vertex(surface, p1, &s1);
+    project_vertex(surface, p2, &s2);
+    project_vertex(surface, p3, &s3);
+    project_vertex(surface, p4, &s4);
+    if (s1.z < NEAR_Z || s2.z < NEAR_Z ||
+        s3.z < NEAR_Z || s4.z < NEAR_Z) return 0;
+    return fill_triangle_2d(surface, s1.x, s1.y, s2.x, s2.y, s3.x, s3.y,
+                            color) +
+           fill_triangle_2d(surface, s1.x, s1.y, s3.x, s3.y, s4.x, s4.y,
+                            color);
+}
+
+/* 视图空间盒体：skip_back/skip_top 用于起始端埋进相邻盒内的部件，
+ * 避免隐藏的内部面在屏幕上开出颜色补丁。 */
+static int draw_view_box(struct toy_surface *surface,
+                         int minx, int maxx, int miny, int maxy,
+                         int minz, int maxz, uint32_t color,
+                         int skip_back, int skip_top)
+{
+    struct vec3 a, b, c, d, e, f, g, h;
+    int pixels = 0;
+    a.x = minx; a.y = miny; a.z = minz;
+    b.x = maxx; b.y = miny; b.z = minz;
+    c.x = maxx; c.y = miny; c.z = maxz;
+    d.x = minx; d.y = miny; d.z = maxz;
+    e.x = minx; e.y = maxy; e.z = minz;
+    f.x = maxx; f.y = maxy; f.z = minz;
+    g.x = maxx; g.y = maxy; g.z = maxz;
+    h.x = minx; h.y = maxy; h.z = maxz;
+    /* 视图模型不走深度缓冲，盒体必须从远到近绘制。否则近端面会
+     * 被侧面/顶面覆盖，部件交叠处就会出现错误的颜色层。 */
+    pixels += draw_view_quad(surface, &d, &c, &g, &h, color);
+    pixels += draw_view_quad(surface, &b, &c, &g, &f, color + 0x0A0A0A);
+    pixels += draw_view_quad(surface, &d, &a, &e, &h, color - 0x0A0A0A);
+    if (!skip_top)
+        pixels += draw_view_quad(surface, &e, &f, &g, &h, color + 0x141414);
+    if (!skip_back)
+        pixels += draw_view_quad(surface, &a, &b, &f, &e, color - 0x141414);
+    pixels += draw_view_quad(surface, &a, &b, &c, &d, color - 0x0C0C0C);
+    return pixels;
+}
+
+/* 视图空间盒体 + 后坐力位移 */
+static int draw_view_box_kick(struct toy_surface *surface,
+                              int minx, int maxx, int miny, int maxy,
+                              int minz, int maxz, uint32_t color,
+                              int skip_back, int skip_top)
+{
+    int kx = weapon_kick / 3;
+    int ky = -weapon_kick / 2;
+    int kz = weapon_kick;
+    return draw_view_box(surface, minx + kx, maxx + kx,
+                         miny + ky, maxy + ky,
+                         minz + kz, maxz + kz, color,
+                         skip_back, skip_top);
+}
+
+/* 手枪：握把 → 套筒 → 枪管。后画者在前，部件大幅互嵌成一体。 */
+static int render_view_pistol(struct toy_renderer *renderer)
+{
+    struct toy_surface *s = &renderer->surface;
+    int pixels = 0;
+    pixels += draw_view_box_kick(s, 90, 150, -180, -95, 255, 305,
+                                 0x5A4630, 1, 1);
+    pixels += draw_view_box_kick(s, 85, 160, -115, -45, 255, 340,
+                                 0x3E4652, 0, 0);
+    pixels += draw_view_box_kick(s, 75, 130, -90, -50, 300, 420,
+                                 0x2E343D, 1, 0);
+    return pixels;
+}
+
+/* SMG：弹匣 → 机匣 → 枪管 */
+static int render_view_smg(struct toy_renderer *renderer)
+{
+    struct toy_surface *s = &renderer->surface;
+    int pixels = 0;
+    pixels += draw_view_box_kick(s, 95, 155, -170, -95, 275, 320,
+                                 0x4A4438, 1, 1);
+    pixels += draw_view_box_kick(s, 90, 170, -115, -40, 255, 345,
+                                 0x3B4148, 0, 0);
+    pixels += draw_view_box_kick(s, 70, 140, -85, -40, 310, 450,
+                                 0x2F343B, 1, 0);
+    return pixels;
+}
+
+/* 霰弹枪：机匣 → 长枪管 → 护木（护木包在枪管中段） */
+static int render_view_shotgun(struct toy_renderer *renderer)
+{
+    struct toy_surface *s = &renderer->surface;
+    int pixels = 0;
+    pixels += draw_view_box_kick(s, 95, 175, -110, -40, 270, 355,
+                                 0x46505A, 0, 0);
+    pixels += draw_view_box_kick(s, 70, 130, -90, -40, 335, 560,
+                                 0x3A434D, 1, 0);
+    pixels += draw_view_box_kick(s, 75, 140, -100, -45, 390, 460,
+                                 0x2C3138, 0, 0);
+    return pixels;
+}
+
+/* 跟随当前武器出枪；空槽不显示 */
+static int render_viewmodel(struct toy_renderer *renderer)
+{
+    int weapon = viewmodel_weapon();
+    if (weapon == TOY_GAME_WEAPON_SMG) return render_view_smg(renderer);
+    if (weapon == TOY_GAME_WEAPON_SHOTGUN) return render_view_shotgun(renderer);
+    if (weapon == TOY_GAME_WEAPON_PISTOL) return render_view_pistol(renderer);
+    return 0;
+}
+
 static void fill_rect(struct toy_surface *surface, int x, int y,
                       int width, int height, uint32_t color);
+static uint32_t mix_color(uint32_t from, uint32_t to, int num, int den);
+static void draw_sky_ground(struct toy_surface *surface,
+                            const struct camera *camera);
+static void draw_sky_features(struct toy_surface *surface,
+                              const struct camera *camera);
 
 /* E 互动提示固定在屏幕底部中央，高亮时可见；已持有的武器显示 REFILL */
 static void draw_interact_prompt(struct toy_renderer *renderer)
@@ -747,6 +959,8 @@ static int render_scene(struct toy_renderer *renderer, const struct camera *came
 {
     int pixels = 0;
     struct vec3 a, b, c, d;
+    /* 自由俯仰下先铺天空/地面：地平线由俯仰角决定，墙面与地板随后覆盖 */
+    draw_sky_ground(&renderer->surface, camera);
     for (int z = level_map.minz; z < level_map.maxz; z += 1000) {
         for (int x = level_map.minx; x < level_map.maxx; x += 1000) {
             uint32_t color = (((x + z) / 1000) & 1) ? 0x30343A : 0x272B31;
@@ -813,6 +1027,7 @@ static void update_player(struct camera *camera, const struct toy_input *input)
 static void rotate_camera(struct camera *camera, int turn, int pitch)
 {
     int old_sy = camera->sy;
+    int old_psy = camera->pitch_sy;
     long long length;
     camera->sy = (old_sy * 1024 + camera->cy * turn) / 1024;
     camera->cy = (camera->cy * 1024 - old_sy * turn) / 1024;
@@ -822,7 +1037,31 @@ static void rotate_camera(struct camera *camera, int turn, int pitch)
         camera->sy = (int)((long long)camera->sy * 1024 / length);
         camera->cy = (int)((long long)camera->cy * 1024 / length);
     }
-    camera->pitch = clampi(camera->pitch + pitch, -240, 240);
+    /* 俯仰先按角度增量旋转，再钳制到 ±75°，避免镜头翻过头。 */
+    camera->pitch_sy = (old_psy * 1024 + camera->pitch_cy * pitch) / 1024;
+    camera->pitch_cy = (camera->pitch_cy * 1024 - old_psy * pitch) / 1024;
+    length = isqrt((long long)camera->pitch_sy * camera->pitch_sy +
+                   (long long)camera->pitch_cy * camera->pitch_cy);
+    if (length > 0) {
+        camera->pitch_sy = (int)((long long)camera->pitch_sy * 1024 / length);
+        camera->pitch_cy = (int)((long long)camera->pitch_cy * 1024 / length);
+    }
+    /* 不能只看 sin：一次较大的鼠标输入可能直接越过 90°，此时
+     * sin 会重新变小但 cos 已为负，仍必须钳回边界。 */
+    if (camera->pitch_cy < PITCH_LIMIT_CY) {
+        if (camera->pitch_sy < 0) {
+            camera->pitch_sy = -PITCH_LIMIT_SY;
+        } else {
+            camera->pitch_sy = PITCH_LIMIT_SY;
+        }
+        camera->pitch_cy = PITCH_LIMIT_CY;
+    } else if (camera->pitch_sy > PITCH_LIMIT_SY) {
+        camera->pitch_sy = PITCH_LIMIT_SY;
+        camera->pitch_cy = PITCH_LIMIT_CY;
+    } else if (camera->pitch_sy < -PITCH_LIMIT_SY) {
+        camera->pitch_sy = -PITCH_LIMIT_SY;
+        camera->pitch_cy = PITCH_LIMIT_CY;
+    }
 }
 
 static int sensitivity_percent(int level)
@@ -834,8 +1073,9 @@ static void update_mouse(struct camera *camera, int relative_x, int relative_y,
                          const struct control_settings *settings)
 {
     int percent = sensitivity_percent(settings->mouse_level);
+    /* 水平/垂直同一倍率，避免方向手感不一致 */
     int turn = relative_x * 3 * percent / 100;
-    int pitch = -relative_y * 2 * percent / 100;
+    int pitch = -relative_y * 3 * percent / 100;
     rotate_camera(camera, clampi(turn, -256, 256), pitch);
 }
 
@@ -848,9 +1088,10 @@ static void update_keyboard_look(struct camera *camera,
     int pitch = toy_input_down(input, KEY_UP) -
                 toy_input_down(input, KEY_DOWN);
     int percent = sensitivity_percent(settings->keyboard_level);
+    /* 左右/上下同一倍率 */
     if (turn || pitch)
-        rotate_camera(camera, turn * 24 * percent / 100,
-                      pitch * 5 * percent / 100);
+        rotate_camera(camera, turn * 16 * percent / 100,
+                      pitch * 16 * percent / 100);
 }
 
 static void draw_crosshair(struct toy_surface *surface)
@@ -1010,7 +1251,7 @@ static void render_enemy_alert(struct toy_renderer *renderer,
     world.z = e->z;
     world_to_view(camera, &world, &view);
     if (view.z < NEAR_Z) return;
-    project_vertex(&renderer->surface, &view, camera->pitch, &screen);
+    project_vertex(&renderer->surface, &view, &screen);
     x = screen.x - 5;
     y = screen.y;
     if (x < 1 || x + 11 >= renderer->surface.width ||
@@ -1163,6 +1404,34 @@ static void render_hud(struct toy_surface *surface, int fps)
     }
 }
 
+/* --dump-frame：把最后一帧写为 PPM（XRGB8888 → RGB，调试渲染用） */
+static void dump_frame_ppm(const char *path, const struct toy_surface *surface)
+{
+    char header[48];
+    unsigned char *rgb;
+    int hlen, fd, i;
+    if (!surface || !surface->pixels || surface->width <= 0 ||
+        surface->height <= 0) return;
+    hlen = snprintf(header, sizeof(header), "P6\n%d %d\n255\n",
+                    surface->width, surface->height);
+    rgb = tlibc_malloc((size_t)surface->width * surface->height * 3);
+    if (!rgb) return;
+    for (i = 0; i < surface->width * surface->height; i++) {
+        uint32_t p = ((uint32_t *)surface->pixels)[i];
+        rgb[i * 3 + 0] = (unsigned char)(p & 0xFF);
+        rgb[i * 3 + 1] = (unsigned char)((p >> 8) & 0xFF);
+        rgb[i * 3 + 2] = (unsigned char)((p >> 16) & 0xFF);
+    }
+    fd = __creat(path, 0644);
+    if (fd >= 0) {
+        __write(fd, header, hlen);
+        __write(fd, rgb, surface->width * surface->height * 3);
+        __close(fd);
+        __printf("wayland_fps: dumped frame to %s\n", path);
+    }
+    tlibc_free(rgb);
+}
+
 /* 受击红屏：棋盘隔像素填充（省一半写入量） */
 static void render_damage_flash(struct toy_surface *surface)
 {
@@ -1174,23 +1443,16 @@ static void render_damage_flash(struct toy_surface *surface)
     }
 }
 
-static void render_muzzle_flash(struct toy_surface *surface)
-{
-    if (game.muzzle_flash_ms <= 0) return;
-    fb_fill_circle((unsigned char *)surface->pixels,
-                   surface->width / 2, surface->height / 2, 8,
-                   0xFFCC80, surface->stride);
-}
-
 /* ── 子弹轨迹与命中粒子（纯视觉；逻辑步进 16ms 推进） ──────────── */
 
-#define TRACER_SLOTS 16
+#define TRACER_SLOTS 32
 #define TRACER_LIFE_MS 160
 #define TRACER_Y (-350)         /* 弹道高度：躯干/头部之间，与命中判定同平面 */
 
 struct tracer {
     int active;
-    int sx, sz, ex, ez;
+    int sx, sy, sz;     /* 起点：枪口世界坐标（开火瞬间采样） */
+    int ex, ey, ez;     /* 视觉终点：沿准心方向；命中点另由火花表示 */
     int life_ms;
 };
 
@@ -1241,8 +1503,98 @@ static uint32_t mix_color(uint32_t from, uint32_t to, int num, int den)
                       ((fb * num + tb * (den - num)) / den));
 }
 
+/* 视平线以上画渐变天空、以下铺地面色。地平线屏幕位置
+ * y = h/2 + focal·tan(pitch)，tan(pitch) = pitch_sy/pitch_cy；
+ * 俯仰接近 ±90° 时地平线越出屏幕，整屏填天空或地面。 */
+static void draw_sky_ground(struct toy_surface *surface,
+                            const struct camera *camera)
+{
+    int focal = surface->width * 3 / 4;
+    int horizon = surface->height / 2;
+    int pitch_cy = camera->pitch_cy;
+    int sky_bottom, ground_top;
+    if (pitch_cy < 0) pitch_cy = -pitch_cy;
+    if (pitch_cy >= 64) {
+        long long offset = (long long)focal * camera->pitch_sy / camera->pitch_cy;
+        if (offset > 2LL * surface->height) offset = 2LL * surface->height;
+        if (offset < -2LL * surface->height) offset = -2LL * surface->height;
+        horizon += (int)offset;
+    } else if (camera->pitch_sy > 0) {
+        horizon = -surface->height;      /* 看向正上方：全屏天空 */
+    } else {
+        horizon = surface->height * 2;   /* 看向正下方：全屏地面 */
+    }
+    sky_bottom = horizon < surface->height ? horizon : surface->height;
+    ground_top = horizon > 0 ? horizon : 0;
+    if (sky_bottom > 0) {
+        int band_h = sky_bottom / 8 + 1;
+        int y;
+        for (y = 0; y < sky_bottom; y += band_h) {
+            int band = y / band_h;
+            uint32_t color = mix_color(0x3B82C4, 0xB9E3FF,
+                                       8 - 1 - band, 8);
+            fill_rect(surface, 0, y, surface->width, band_h, color);
+        }
+    }
+    if (ground_top < surface->height)
+        fill_rect(surface, 0, ground_top, surface->width,
+                  surface->height - ground_top, 0x0F1218);
+    /* 固定在天空盒方向上的像素立方体白云。 */
+    draw_sky_features(surface, camera);
+}
+
+/* 把世界方向（1024 定点单位向量）投影到屏幕；在身后返回 0 */
+static int project_sky_dir(const struct camera *camera, const struct toy_surface *surface,
+                           int dx, int dy, int dz, int *sx, int *sy)
+{
+    int vx = (dx * camera->cy - dz * camera->sy) / 1024;
+    int vz0 = (dx * camera->sy + dz * camera->cy) / 1024;
+    int vy2 = (dy * camera->pitch_cy - vz0 * camera->pitch_sy) / 1024;
+    int vz2 = (dy * camera->pitch_sy + vz0 * camera->pitch_cy) / 1024;
+    int focal = surface->width * 3 / 4;
+    if (vz2 <= 64) return 0;
+    *sx = surface->width / 2 + vx * focal / vz2;
+    *sy = surface->height / 2 - vy2 * focal / vz2;
+    return 1;
+}
+
+static void draw_sky_cloud(struct toy_surface *surface, int x, int y, int scale)
+{
+    int unit = scale / 4;
+    if (unit < 2) unit = 2;
+    /* 方块轮廓、顶部高光和底部阴影，保持 Minecraft 式立方体云朵。 */
+    fill_rect(surface, x - unit * 6, y, unit * 12, unit * 3, 0xEAF7FF);
+    fill_rect(surface, x - unit * 3, y - unit * 2, unit * 6, unit * 2,
+              0xFFFFFF);
+    fill_rect(surface, x - unit * 7, y + unit * 2, unit * 14, unit,
+              0xB9D9EC);
+    fill_rect(surface, x - unit * 5, y - unit, unit * 2, unit,
+              0xFFFFFF);
+    fill_rect(surface, x + unit * 3, y - unit, unit * 2, unit,
+              0xFFFFFF);
+}
+
+/* 三朵云的方向固定在天空盒中，转动镜头时只改变观察位置，不随时间漂移。 */
+static void draw_sky_features(struct toy_surface *surface,
+                              const struct camera *camera)
+{
+    static const int cloud_dir[3][3] = {
+        {340, 248, -934},
+        {-872, 172, -512},
+        {-488, 380, -816},
+    };
+    static const int cloud_scale[3] = {16, 12, 10};
+    int cx, cy, i;
+    for (i = 0; i < 3; i++) {
+        if (!project_sky_dir(camera, surface, cloud_dir[i][0],
+                             cloud_dir[i][1], cloud_dir[i][2], &cx, &cy))
+            continue;
+        draw_sky_cloud(surface, cx, cy, cloud_scale[i]);
+    }
+}
+
 /* 命中统一火花：弹着点 7 颗，沿弹道方向喷射，随后受重力回落 */
-static void spawn_hit_particles(int x, int z, int sy, int cy)
+static void spawn_hit_particles(int x, int y, int z, int sy, int cy)
 {
     int i;
     for (i = 0; i < 7; i++) {
@@ -1250,7 +1602,7 @@ static void spawn_hit_particles(int x, int z, int sy, int cy)
         particle_next = (particle_next + 1) % PARTICLE_SLOTS;
         p->active = 1;
         p->x = x;
-        p->y = TRACER_Y + effect_rand(-10, 10);
+        p->y = y + effect_rand(-10, 10);
         p->z = z;
         p->vx = sy * 22 / 1024 + effect_rand(-24, 24);
         p->vy = effect_rand(8, 30);
@@ -1262,6 +1614,8 @@ static void spawn_hit_particles(int x, int z, int sy, int cy)
 static void update_effects(int dt_ms)
 {
     int i;
+    weapon_kick -= dt_ms * 2;
+    if (weapon_kick < 0) weapon_kick = 0;
     for (i = 0; i < TRACER_SLOTS; i++) {
         struct tracer *t = &tracers[i];
         if (!t->active) continue;
@@ -1280,11 +1634,43 @@ static void update_effects(int dt_ms)
     }
 }
 
+/* 把游戏层的水平射线转成从枪口指向屏幕准心的 3D 视觉终点。
+ * 游戏命中仍使用水平平面，而 tracer 必须补偿枪口在右下方造成的视差，
+ * 否则它会从枪口斜着飞向准心旁边。 */
+static void tracer_aim_endpoint(const struct camera *camera,
+                                const struct toy_game_ray *ray,
+                                int ex, int ez, int *out_x, int *out_y,
+                                int *out_z)
+{
+    struct vec3 view_end;
+    int dx = ex - game.px;
+    int dz = ez - game.pz;
+    int distance = isqrt((long long)dx * dx + (long long)dz * dz);
+    int view_x, view_y, view_z;
+    if (distance < 1) distance = 1;
+    view_x = (dx * camera->cy - dz * camera->sy) / 1024;
+    view_z = (dx * camera->sy + dz * camera->cy) / 1024;
+    if (view_z < 1) view_z = 1;
+    view_y = ray->vy * distance / 1024;
+    /* 保留游戏层的实际 x/z 命中点，只补上同一颗弹丸的垂直扩散，
+     * 射线和命中粒子因此使用完全一致的落点。 */
+    view_end.x = view_x;
+    view_end.y = view_y;
+    view_end.z = view_z;
+    view_to_world(camera, &view_end, &view_end);
+    *out_x = view_end.x;
+    *out_y = view_end.y;
+    *out_z = view_end.z;
+}
+
 /* 每次实际开火后同步：把 game 里最新一枪的射线搬进 tracer 环，
- * 命中（敌人或墙体）的弹丸在弹着点生成火花。 */
-static void sync_fire_effects(void)
+ * 起点统一取枪口世界坐标；命中（敌人或墙体）的弹丸在弹着点生成
+ * 火花，枪口火花则由独立的粒子与闪光绘制。 */
+static void sync_fire_effects(const struct camera *camera)
 {
     int i, ray_count;
+    struct vec3 muzzle;
+    struct vec3 muzzle_view;
     if (game.fire_seq < last_fire_seq) {
         /* 新局（R 重开/死亡重开）：丢弃旧弹道与粒子 */
         memset(tracers, 0, sizeof(tracers));
@@ -1292,6 +1678,7 @@ static void sync_fire_effects(void)
         tracer_next = 0;
         particle_next = 0;
         last_fire_seq = 0;
+        weapon_kick = 0;
         return;
     }
     if (game.fire_seq == last_fire_seq) return;
@@ -1299,18 +1686,26 @@ static void sync_fire_effects(void)
     ray_count = game.ray_count;
     if (ray_count < 0) ray_count = 0;
     if (ray_count > TOY_GAME_MAX_RAYS) ray_count = TOY_GAME_MAX_RAYS;
+    /* 后坐力 + 枪口世界坐标（开火瞬间采样，含后坐位移） */
+    weapon_kick = VIEWMODEL_KICK_MAX;
+    viewmodel_muzzle_offset(viewmodel_weapon(), weapon_kick, &muzzle_view);
+    muzzle.x = muzzle_view.x;
+    muzzle.y = muzzle_view.y;
+    muzzle.z = muzzle_view.z;
+    view_to_world(camera, &muzzle, &muzzle);
     for (i = 0; i < ray_count; i++) {
         const struct toy_game_ray *r = &game.rays[i];
         struct tracer *t = &tracers[tracer_next];
         tracer_next = (tracer_next + 1) % TRACER_SLOTS;
         t->active = 1;
-        t->sx = game.px;
-        t->sz = game.pz;
-        t->ex = r->ex;
-        t->ez = r->ez;
+        t->sx = muzzle.x;
+        t->sy = muzzle.y;
+        t->sz = muzzle.z;
+        tracer_aim_endpoint(camera, r, r->ex, r->ez,
+                            &t->ex, &t->ey, &t->ez);
         t->life_ms = TRACER_LIFE_MS;
         if (r->hit_enemy || r->hit_world)
-            spawn_hit_particles(r->ex, r->ez, r->sy, r->cy);
+            spawn_hit_particles(r->ex, t->ey, r->ez, r->sy, r->cy);
     }
 }
 
@@ -1338,15 +1733,17 @@ static void draw_effect_line(struct toy_surface *surface,
     }
 }
 
-/* 弹道投影为屏幕线段：先裁剪到近平面，再 Liang-Barsky 裁剪到屏幕。 */
+/* 弹道投影为屏幕线段：起点（枪口）与终点（命中点）都从世界空间投影，
+ * 先裁剪到近平面，再 Liang-Barsky 裁剪到屏幕。 */
 static void draw_tracer_line(struct toy_surface *surface, const struct camera *camera,
-                             int sx, int sz, int ex, int ez, uint32_t color)
+                             int sx, int sy, int sz, int ex, int ey, int ez,
+                             uint32_t color)
 {
     struct vec3 a, b, clipped;
     struct toy_screen_vertex pa, pb;
     int x0, y0, x1, y1, t0, t1, t_in, t_out, tmp;
-    a.x = sx; a.y = TRACER_Y; a.z = sz;
-    b.x = ex; b.y = TRACER_Y; b.z = ez;
+    a.x = sx; a.y = sy; a.z = sz;
+    b.x = ex; b.y = ey; b.z = ez;
     world_to_view(camera, &a, &a);
     world_to_view(camera, &b, &b);
     if (a.z < NEAR_Z && b.z < NEAR_Z) return;
@@ -1361,8 +1758,8 @@ static void draw_tracer_line(struct toy_surface *surface, const struct camera *c
         b.y = clipped.y;
         b.z = clipped.z;
     }
-    project_vertex(surface, &a, camera->pitch, &pa);
-    project_vertex(surface, &b, camera->pitch, &pb);
+    project_vertex(surface, &a, &pa);
+    project_vertex(surface, &b, &pb);
     x0 = pa.x; y0 = pa.y; x1 = pb.x; y1 = pb.y;
     /* 16.16 定点 Liang-Barsky；投影坐标有界但可能远超屏幕。
      * 裁剪到 [0, w-2]×[0, h-2]：第二条偏移线 (+1,+1) 也必须在界内。 */
@@ -1413,8 +1810,8 @@ static int render_tracers(struct toy_renderer *renderer, const struct camera *ca
         if (!t->active) continue;
         color = mix_color(0xFFE060, 0x3A2C14,
                           t->life_ms * 256 / TRACER_LIFE_MS, 256);
-        draw_tracer_line(&renderer->surface, camera, t->sx, t->sz,
-                         t->ex, t->ez, color);
+        draw_tracer_line(&renderer->surface, camera, t->sx, t->sy, t->sz,
+                         t->ex, t->ey, t->ez, color);
         pixels++;
     }
     return pixels;
@@ -1434,7 +1831,7 @@ static int render_particles(struct toy_renderer *renderer, const struct camera *
         world.z = p->z;
         world_to_view(camera, &world, &view);
         if (view.z < NEAR_Z) continue;
-        project_vertex(&renderer->surface, &view, camera->pitch, &screen);
+        project_vertex(&renderer->surface, &view, &screen);
         if (screen.x < 0 || screen.x + 2 >= renderer->surface.width ||
             screen.y < 0 || screen.y + 2 >= renderer->surface.height) continue;
         k = p->life_ms * 256 / PARTICLE_LIFE_MS;
@@ -1695,7 +2092,7 @@ static int run_logic_test(void)
     input.key_down[KEY_RIGHT] = 0;
     input.key_down[KEY_UP] = 1;
     update_keyboard_look(&camera, &input, &settings);
-    if (camera.pitch <= 0) return 4;
+    if (camera.pitch_sy <= 0) return 4;
     camera.sy = 0;
     camera.cy = 1024;
     for (int i = 0; i < 10000; i++) rotate_camera(&camera, 37, 0);
@@ -1704,6 +2101,25 @@ static int run_logic_test(void)
     if (direction_length < 1022 || direction_length > 1026) return 16;
     camera.sy = 0;
     camera.cy = 1024;
+    /* 俯仰持续旋转时保持归一化，并钳制在 ±75°，不能跨过 ±90°。 */
+    camera.pitch_sy = 0;
+    camera.pitch_cy = 1024;
+    for (int i = 0; i < 10000; i++) rotate_camera(&camera, 0, 37);
+    direction_length = isqrt((long long)camera.pitch_sy * camera.pitch_sy +
+                             (long long)camera.pitch_cy * camera.pitch_cy);
+    if (direction_length < 1022 || direction_length > 1026) return 41;
+    if (camera.pitch_cy != PITCH_LIMIT_CY ||
+        camera.pitch_sy != PITCH_LIMIT_SY) return 43;
+    camera.pitch_sy = -1024;
+    camera.pitch_cy = 0;
+    for (int i = 0; i < 1000; i++) rotate_camera(&camera, 0, -31);
+    direction_length = isqrt((long long)camera.pitch_sy * camera.pitch_sy +
+                             (long long)camera.pitch_cy * camera.pitch_cy);
+    if (direction_length < 1022 || direction_length > 1026) return 42;
+    if (camera.pitch_cy != PITCH_LIMIT_CY ||
+        camera.pitch_sy != -PITCH_LIMIT_SY) return 44;
+    camera.pitch_sy = 0;
+    camera.pitch_cy = 1024;
 
     triangle[0].x = -100; triangle[0].y = 0; triangle[0].z = 100;
     triangle[1].x =  100; triangle[1].y = 0; triangle[1].z = 400;
@@ -1755,12 +2171,14 @@ static int run_logic_test(void)
         struct particle *p = &particles[0];
         t->active = 1;
         t->sx = camera.x;
+        t->sy = TRACER_Y;
         t->sz = camera.z;
         t->ex = camera.x;
         t->ez = camera.z - 3000;
         t->life_ms = 100;
         tracers[1].active = 1;
         tracers[1].sx = camera.x;
+        tracers[1].sy = TRACER_Y;
         tracers[1].sz = camera.z;
         tracers[1].ex = camera.x + 4000;
         tracers[1].ez = camera.z - 3000;
@@ -1776,7 +2194,8 @@ static int run_logic_test(void)
         memset(particles, 0, sizeof(particles));
     }
     /* 开发者区域场景：纹理墙/模型台座渲染 + 真实开火产生弹道与命中
-     * 火花（向北穿门洞直达最大射程长弹道，向西命中空气墙 1800） */
+     * 火花（向北穿门洞直达最大射程长弹道，向西命中空气墙 1800）。
+     * 弹道起点取枪口世界坐标；同帧附加枪口粒子。 */
     {
         camera.x = 0;
         camera.z = -6400;
@@ -1786,12 +2205,14 @@ static int run_logic_test(void)
         render_scene(&renderer, &camera);
         last_fire_seq = game.fire_seq;
         toy_game_fire(&game, 0, 1024);
-        sync_fire_effects();
+        sync_fire_effects(&camera);
         toy_game_fire(&game, -1024, 0);
-        sync_fire_effects();
+        sync_fire_effects(&camera);
         update_effects(16);
         render_tracers(&renderer, &camera);
         render_particles(&renderer, &camera);
+        /* 第一人称武器模型冒烟：SMG 几何进入光栅器 */
+        render_viewmodel(&renderer);
         memset(tracers, 0, sizeof(tracers));
         memset(particles, 0, sizeof(particles));
     }
@@ -1971,7 +2392,8 @@ static int run_logic_test(void)
         aim_cam.z = -7000;
         aim_cam.sy = 0;
         aim_cam.cy = -1024;
-        aim_cam.pitch = 0;
+        aim_cam.pitch_sy = 0;
+        aim_cam.pitch_cy = 1024;
         if (compute_highlight(&aim_cam) != 0) return 33;
     }
     /* 高亮判定：世界空间朝向锥。面向桌子（武器低于视平线）可选中最远
@@ -1982,7 +2404,8 @@ static int run_logic_test(void)
         aim_cam.z = -7000;
         aim_cam.sy = 0;
         aim_cam.cy = -1024;
-        aim_cam.pitch = 0;
+        aim_cam.pitch_sy = 0;
+        aim_cam.pitch_cy = 1024;
         highlighted = compute_highlight(&aim_cam);
         if (highlighted != 0) return 34;
         aim_cam.sy = 1024;
@@ -2029,12 +2452,15 @@ int main(int argc, char **argv)
 
     int logic_test = 0;
     int auto_mode = 0;
+    const char *dump_path = 0;
     for (int arg = 1; arg < argc; arg++) {
         if (strcmp(argv[arg], "--input-test") == 0) input_debug = 1;
         else if (strcmp(argv[arg], "--logic-test") == 0) logic_test = 1;
         else if (strcmp(argv[arg], "--auto") == 0) auto_mode = 1;
         else if (strcmp(argv[arg], "--no-textures") == 0) textures_enabled = 0;
         else if (strcmp(argv[arg], "--texture-stats") == 0) texture_stats = 1;
+        else if (strcmp(argv[arg], "--dump-frame") == 0 && arg + 1 < argc)
+            dump_path = argv[++arg];
         else if (strcmp(argv[arg], "--frames") == 0 && arg + 1 < argc) {
             const char *p = argv[++arg];
             while (*p >= '0' && *p <= '9')
@@ -2265,7 +2691,7 @@ int main(int argc, char **argv)
             accumulator -= FIXED_STEP_US;
             logic_steps++;
         }
-        if (!paused) sync_fire_effects();
+        if (!paused) sync_fire_effects(&camera);
         if (accumulator >= FIXED_STEP_US) accumulator %= FIXED_STEP_US;
         int ready = toy_window_begin_frame(window, &surface);
         if (ready < 0) break;
@@ -2275,6 +2701,8 @@ int main(int argc, char **argv)
             scene_pixels += render_enemies(&renderer, &camera);
             scene_pixels += render_tracers(&renderer, &camera);
             scene_pixels += render_particles(&renderer, &camera);
+            /* 第一人称武器：最后画，叠加在世界之上 */
+            scene_pixels += render_viewmodel(&renderer);
             if (game.state == TOY_GAME_OVER) {
                 draw_game_over_panel(&surface);
             } else if (game.state == TOY_GAME_WON) {
@@ -2284,7 +2712,6 @@ int main(int argc, char **argv)
             } else {
                 draw_crosshair(&surface);
                 render_hud(&surface, display_fps);
-                render_muzzle_flash(&surface);
             }
             if (game.state == TOY_GAME_PLAYING && !paused) {
                 scene_pixels += render_interactables(&renderer, &camera);
@@ -2316,6 +2743,7 @@ int main(int argc, char **argv)
     for (int kind = 0; kind <= TOY_SFX_PLAYER_DEATH; kind++)
         if (sfx_assets[kind].blob) toy_sound_unload(&sfx_assets[kind]);
     if (scene_texture.blob) toy_texture_unload(&scene_texture);
+    if (dump_path) dump_frame_ppm(dump_path, &surface);
     toy_map_unload(&level_map);
     toy_window_close(window);
     __printf("wayland_fps: %d frames, %d scene pixels, position=(%d,%d)\n",

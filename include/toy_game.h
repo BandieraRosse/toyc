@@ -125,7 +125,8 @@ struct toy_game_weapon_info {
 
 /* 弹丸射线记录：宿主据此渲染子弹轨迹（tracer）与命中特效 */
 struct toy_game_ray {
-    int sy, cy;        /* 弹丸方向（1024 定点，已归一化） */
+    int sy, cy;        /* 水平弹丸方向（1024 定点，已归一化） */
+    int vy;            /* 屏幕竖直扩散方向（1024 定点，向上为正） */
     int ex, ez;        /* 终点：命中敌人/墙体位置，或最大射程端点 */
     int hit_enemy;     /* 该弹丸击倒敌人 */
     int hit_world;     /* 该弹丸撞上障碍（终点为墙体交点） */
