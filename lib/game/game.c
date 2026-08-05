@@ -45,7 +45,7 @@ static int rand_range(struct toy_game *g, int lo, int hi)
 static const struct toy_game_weapon_info weapon_table[TOY_GAME_WEAPON_COUNT] = {
     { 30, TOY_GAME_AMMO_INFINITE, 200, 1500, 0, 1, 12 },
     { 50, 650, 100, 2000, 1, 1, 90 },
-    { 8, 64, 600, 2500, 0, 4, 230 },
+    { 8, 64, 600, 2500, 0, 10, 230 },
 };
 
 const struct toy_game_weapon_info *toy_game_weapon_info(int weapon)

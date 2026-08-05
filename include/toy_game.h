@@ -49,7 +49,7 @@
 #define TOY_GAME_MIN_SPAWN_DIST 1200    /* 生成点距玩家最小距离（防贴脸） */
 #define TOY_GAME_GOAL_HOLD_MS   1500    /* 终点安全室内停留多久判定通关 */
 #define TOY_GAME_MAX_RANGE      11500   /* 弹丸最大射程（世界单位，≈地图尺度） */
-#define TOY_GAME_MAX_RAYS       4       /* 单枪最大弹丸数（霰弹枪），弹道记录上限 */
+#define TOY_GAME_MAX_RAYS       10      /* 单枪最大弹丸数（霰弹枪），弹道记录上限 */
 #define TOY_GAME_DETECT_RANGE   2800    /* 视觉最远察觉距离 */
 #define TOY_GAME_CLOSE_DETECT_RANGE 600 /* 极近距离无需处于正面视野 */
 #define TOY_GAME_NOTICE_MIN_MS  700     /* 进入范围后至少观察多久 */

@@ -2324,7 +2324,7 @@ static int run_logic_test(void)
             toy_game_update(&game, NULL, 0, 0, 1024, 16);
         if (game.reloading || game.slots[0].mag != 50 ||
             game.slots[0].reserve != 648) return 28;
-        /* 霰弹枪 8/64：4 弹丸随机散射，整匣内应放倒并排两敌 */
+        /* 霰弹枪 8/64：10 弹丸随机散射，整匣内应放倒并排两敌 */
         if (toy_game_equip_weapon(&game, TOY_GAME_WEAPON_SHOTGUN) != 1 ||
             game.slots[0].mag != 8 || game.slots[0].reserve != 64) return 29;
         memset(game.enemies, 0, sizeof(game.enemies));
@@ -2342,8 +2342,8 @@ static int run_logic_test(void)
                 toy_game_fire(&game, 0, 1024);
             if (game.kills != 2) return 30;
             if (game.slots[0].mag != 8 - i) return 31;
-            /* 弹道记录：每枪 4 条射线，方向已归一化，终点不越最大射程 */
-            if (game.ray_count != 4 ||
+            /* 弹道记录：每枪 10 条射线，方向已归一化，终点不越最大射程 */
+            if (game.ray_count != 10 ||
                 game.fire_seq != seq_before + (unsigned int)i) return 38;
             for (i = 0; i < game.ray_count; i++) {
                 const struct toy_game_ray *r = &game.rays[i];
@@ -2363,7 +2363,7 @@ static int run_logic_test(void)
         memset(game.enemies, 0, sizeof(game.enemies));
         game.enemies_alive = 0;
         toy_game_fire(&game, -1024, 0);
-        if (game.ray_count != 4) return 39;
+        if (game.ray_count != 10) return 39;
         for (i = 0; i < game.ray_count; i++) {
             const struct toy_game_ray *r = &game.rays[i];
             if (r->hit_enemy || !r->hit_world) return 39;
