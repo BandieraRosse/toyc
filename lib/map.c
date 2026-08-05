@@ -53,6 +53,18 @@ int toy_map_load(const char *path, struct toy_map *m)
         else if(!strcmp(kind,"label") && get4(&p,&a,&b,&c,&d)==0){char *co=word(&p),*t=word(&p);add_draw(m,TOY_MAP_DRAW_LABEL,a,b,c,d,0,0,color(co),t);}
         else if(!strcmp(kind,"model") && get4(&p,&a,&b,&c,&d)==0){char *y0=word(&p),*y1=word(&p),*co=word(&p),*st=word(&p);if(y0&&y1){add_draw(m,TOY_MAP_DRAW_MODEL,a,b,c,d,number(y0,10),number(y1,10),color(co),NULL);if(st)m->draw[m->draw_count-1].style=number(st,10);}}
         else if(!strcmp(kind,"texture") && get4(&p,&a,&b,&c,&d)==0){char *y=word(&p),*u=word(&p),*v=word(&p),*co=word(&p);if(y&&u&&v){add_draw(m,TOY_MAP_DRAW_TEXTURE,a,b,c,d,number(y,10),0,color(co),NULL);m->draw[m->draw_count-1].texture_u=number(u,10);m->draw[m->draw_count-1].texture_v=number(v,10);}}
+        else if(!strcmp(kind,"pickup") && m->pickup_count<TOY_MAP_MAX_PICKUPS){
+            char *k=word(&p),*sx=word(&p),*sz=word(&p),*sy=word(&p);
+            if(k&&sx&&sz&&sy){
+                m->pickups[m->pickup_count].kind=
+                    !strcmp(k,"smg")?TOY_MAP_PICKUP_SMG:
+                    !strcmp(k,"shotgun")?TOY_MAP_PICKUP_SHOTGUN:TOY_MAP_PICKUP_AMMO;
+                m->pickups[m->pickup_count].x=number(sx,10);
+                m->pickups[m->pickup_count].z=number(sz,10);
+                m->pickups[m->pickup_count].y=number(sy,10);
+                m->pickup_count++;
+            }
+        }
     }
     return m->room_limit>0 && m->box_count>0 ? 0 : (toy_map_unload(m),-1);
 }

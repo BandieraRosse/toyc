@@ -16,12 +16,9 @@
 #include "tlibc_types.h"
 
 #define TOY_GAME_MAX_ENEMIES    32
-#define TOY_GAME_MAG_SIZE       30
 #define TOY_GAME_AMMO_INFINITE  (-1)
-#define TOY_GAME_RELOAD_MS      1500
 #define TOY_GAME_BITE_MS        1000
 #define TOY_GAME_BITE_DAMAGE    2
-#define TOY_GAME_FIRE_COOLDOWN_MS 200
 #define TOY_GAME_MUZZLE_FLASH_MS 80
 #define TOY_GAME_DAMAGE_FLASH_MS 250
 #define TOY_GAME_DYING_MS       400
@@ -65,6 +62,8 @@
 #define TOY_GAME_SEARCH_MS      4000
 
 #define TOY_GAME_KEY_RELOAD     19      /* evdev KEY_R */
+#define TOY_GAME_KEY_SLOT_1     2       /* evdev KEY_1：主武器槽 */
+#define TOY_GAME_KEY_SLOT_2     3       /* evdev KEY_2：副武器（手枪）槽 */
 
 enum toy_game_state { TOY_GAME_PLAYING, TOY_GAME_OVER, TOY_GAME_WON };
 
@@ -101,6 +100,33 @@ enum toy_game_event {
 /* 碰撞/命中共用的 xz 平面轴对齐盒（与房间障碍物同尺度） */
 struct toy_game_box { int minx, maxx, minz, maxz; };
 
+/* ── 武器槽：0=主武器（SMG/霰弹枪），1=副武器（手枪）────────── */
+
+#define TOY_GAME_WEAPON_SLOTS 2
+
+enum toy_game_weapon {
+    TOY_GAME_WEAPON_PISTOL = 0,
+    TOY_GAME_WEAPON_SMG,
+    TOY_GAME_WEAPON_SHOTGUN,
+    TOY_GAME_WEAPON_COUNT
+};
+
+struct toy_game_weapon_info {
+    int mag_size;      /* 弹匣容量 */
+    int reserve_max;   /* 备弹上限；TOY_GAME_AMMO_INFINITE = 无限 */
+    int cooldown_ms;   /* 两发最小间隔 */
+    int reload_ms;     /* 换弹耗时 */
+    int full_auto;     /* 按住连发 */
+    int pellets;       /* 每次扣扳机弹丸数（霰弹枪散射） */
+    int spread;        /* 弹丸偏角（1024 定点，奇数弹丸居中均匀分布） */
+};
+
+struct toy_game_slot {
+    int weapon;        /* enum toy_game_weapon；-1 = 空槽 */
+    int mag;
+    int reserve;
+};
+
 struct toy_game_enemy {
     int active;         /* 0=空槽 1=存活 2=倒地中 */
     int x, z;           /* 世界坐标（xz 平面） */
@@ -124,7 +150,8 @@ struct toy_game {
     int px, pz;         /* 宿主每帧同步相机位置 */
     int hp;
     int state;          /* enum toy_game_state */
-    int ammo_mag, ammo_reserve;
+    struct toy_game_slot slots[TOY_GAME_WEAPON_SLOTS];
+    int current_slot;   /* 当前出枪槽位（0/1） */
     int reloading, reload_timer_ms;
     int fire_cooldown_ms;
     int muzzle_flash_ms;
@@ -186,7 +213,15 @@ int  toy_game_position_blocked(const struct toy_game *g,
 void toy_game_update(struct toy_game *g,
                      const unsigned char *keys_pressed,     /* 可 NULL */
                      int fire_pressed, int sy, int cy, int dt_ms);
+void toy_game_update_held(struct toy_game *g,
+                          const unsigned char *keys_pressed, /* 可 NULL */
+                          int fire_pressed, int fire_held,
+                          int sy, int cy, int dt_ms);       /* 全自动武器的按住连发 */
 int  toy_game_fire(struct toy_game *g, int sy, int cy);     /* hitscan，命中返回 1 */
+int  toy_game_switch_weapon(struct toy_game *g, int slot);  /* 切枪；空槽/同槽返回 0 */
+int  toy_game_equip_weapon(struct toy_game *g, int weapon); /* 拾取主武器；同武器=补充弹药返回 0，新武器返回 1，非法返回 -1 */
+int  toy_game_refill_ammo(struct toy_game *g);              /* 弹药盒：补满已拥有武器的备弹，有变化返回 1 */
+const struct toy_game_weapon_info *toy_game_weapon_info(int weapon);
 int  toy_game_drain_events(struct toy_game *g, unsigned char *out, int max);
 void toy_game_place_enemy(struct toy_game *g, int x, int z); /* 测试钩子 */
 

@@ -2,8 +2,10 @@
  * wayland_fps — Toyc software-rendered safe-room-to-safe-room zombie shooter.
  *
  * Controls: left click captures the pointer, mouse or arrows look, WASD moves,
- * left click / Space fire, R reloads, Esc pauses/releases the pointer or quits.
- * Rendering and input are freestanding; game rules live in lib/game.
+ * left click / Space fire (Space held = SMG full auto), R reloads, 1/2 switch
+ * weapon slots, E interacts with highlighted pickups, Esc pauses/releases the
+ * pointer or quits. Rendering and input are freestanding; game rules live in
+ * lib/game.
  */
 
 #include "core.h"
@@ -24,8 +26,11 @@
 #include "math.h"
 
 #define KEY_ESC   1
-#define KEY_ENTER 28
+#define KEY_1     2
+#define KEY_2     3
+#define KEY_E     18
 #define KEY_R     19
+#define KEY_ENTER 28
 #define KEY_W     17
 #define KEY_A     30
 #define KEY_S     31
@@ -136,6 +141,8 @@ static void prepare_map_rules(void)
  * cover remains flat-shaded so texture sampling does not dominate the
  * software rasterizer. */
 
+static void reset_interactables(void);
+
 /* 新局和死亡重开必须走同一路径，避免 toy_game_init 清空世界配置。 */
 static void reset_game(struct camera *camera, uint64_t seed)
 {
@@ -151,6 +158,29 @@ static void reset_game(struct camera *camera, uint64_t seed)
     toy_game_set_alarm(&game, &level_map.alarm_zone, level_map.has_alarm);
     game.px = camera->x;
     game.pz = camera->z;
+    reset_interactables();
+}
+
+/* ── 固定拾取点（主武器/弹药盒）：E 互动，准星对准时高亮。
+ * 拾取物永远在场不消失；同武器再互动 = 补充弹药。 ─────────────── */
+
+#define INTERACT_RANGE 1000
+
+struct interactable { int kind; int x, z, y; };
+static struct interactable interactables[TOY_MAP_MAX_PICKUPS];
+static int interactable_count;
+static int highlighted = -1;   /* 本帧准星对准的拾取物索引，-1=无 */
+
+static void reset_interactables(void)
+{
+    int i;
+    interactable_count = level_map.pickup_count;
+    for (i = 0; i < interactable_count; i++) {
+        interactables[i].kind = level_map.pickups[i].kind;
+        interactables[i].x = level_map.pickups[i].x;
+        interactables[i].z = level_map.pickups[i].z;
+        interactables[i].y = level_map.pickups[i].y;
+    }
 }
 
 static long monotonic_us(void)
@@ -574,6 +604,145 @@ static int draw_face_rect(struct toy_renderer *renderer,
     return draw_quad(renderer, camera, &a, &b, &c, &d, color);
 }
 
+/* ── 可交互拾取物渲染：桌上武器与弹药盒（准星对准时整体提亮） ── */
+
+static uint32_t highlight_tint(uint32_t color, int on)
+{
+    return on ? color + 0x383838 : color;
+}
+
+/* 平放的 SMG：机匣 + 枪管 + 弹匣 + 木托 + 照门，枪口朝 +z */
+static int render_smg(struct toy_renderer *renderer, const struct camera *camera,
+                      int x, int y, int z, int on)
+{
+    int pixels = 0;
+    pixels += draw_cuboid(renderer, camera, x - 35, x + 35, y - 13, y + 13,
+                          z - 60, z + 60, highlight_tint(0x3B4148, on));
+    pixels += draw_cuboid(renderer, camera, x - 14, x + 14, y - 2, y + 10,
+                          z + 60, z + 150, highlight_tint(0x2F343B, on));
+    pixels += draw_cuboid(renderer, camera, x - 20, x + 20, y - 48, y - 16,
+                          z - 20, z + 10, highlight_tint(0x4A4438, on));
+    pixels += draw_cuboid(renderer, camera, x - 24, x + 24, y - 9, y + 7,
+                          z - 118, z - 60, highlight_tint(0x6B4A30, on));
+    pixels += draw_cuboid(renderer, camera, x - 3, x + 3, y + 13, y + 21,
+                          z - 15, z + 15, highlight_tint(0x2A2E34, on));
+    return pixels;
+}
+
+/* 平放的霰弹枪：机匣 + 长枪管 + 护木 + 木托，枪口朝 +z */
+static int render_shotgun(struct toy_renderer *renderer, const struct camera *camera,
+                          int x, int y, int z, int on)
+{
+    int pixels = 0;
+    pixels += draw_cuboid(renderer, camera, x - 32, x + 32, y - 13, y + 13,
+                          z - 45, z + 45, highlight_tint(0x46505A, on));
+    pixels += draw_cuboid(renderer, camera, x - 11, x + 11, y - 2, y + 10,
+                          z + 45, z + 150, highlight_tint(0x3A434D, on));
+    pixels += draw_cuboid(renderer, camera, x - 17, x + 17, y - 19, y - 4,
+                          z + 45, z + 100, highlight_tint(0x2C3138, on));
+    pixels += draw_cuboid(renderer, camera, x - 24, x + 24, y - 8, y + 8,
+                          z - 100, z - 45, highlight_tint(0x6B4A30, on));
+    return pixels;
+}
+
+/* 弹药盒：橄榄绿箱体 + 浅色箱盖 */
+static int render_ammo_box(struct toy_renderer *renderer, const struct camera *camera,
+                           int x, int y, int z, int on)
+{
+    int pixels = 0;
+    pixels += draw_cuboid(renderer, camera, x - 60, x + 60, y - 40, y + 40,
+                          z - 80, z + 80, highlight_tint(0x555F3F, on));
+    pixels += draw_cuboid(renderer, camera, x - 60, x + 60, y + 16, y + 40,
+                          z - 80, z + 80, highlight_tint(0x6A7550, on));
+    return pixels;
+}
+
+/* 距离 + 朝向锥判定高亮目标。拾取物（桌上武器/地面弹药盒）都在视平线
+ * 以下，屏幕投影天然偏低，不能用中心像素窗口；改在世界空间按水平朝向
+ * 放宽到约 40° 半角，垂直方向不限，取范围内最近者。 */
+#define INTERACT_AIM_CONE 784   /* cos(≈38°)，1024 定点 */
+
+static int compute_highlight(const struct camera *camera)
+{
+    int i, best = -1;
+    long best_d2 = 0;
+    for (i = 0; i < interactable_count; i++) {
+        const struct interactable *it = &interactables[i];
+        long dx, dz, d2, dist, dot;
+        dx = it->x - camera->x;
+        dz = it->z - camera->z;
+        d2 = dx * dx + dz * dz;
+        if (d2 > (long)INTERACT_RANGE * INTERACT_RANGE || d2 == 0) continue;
+        dist = (long)isqrt(d2);
+        if (dist <= 0) continue;
+        dot = dx * camera->sy + dz * camera->cy;
+        if (dot < dist * INTERACT_AIM_CONE) continue;
+        if (best < 0 || d2 < best_d2) {
+            best = i;
+            best_d2 = d2;
+        }
+    }
+    return best;
+}
+
+static int render_interactables(struct toy_renderer *renderer,
+                                const struct camera *camera)
+{
+    int i, pixels = 0;
+    for (i = 0; i < interactable_count; i++) {
+        const struct interactable *it = &interactables[i];
+        int on = i == highlighted;
+        if (it->kind == TOY_MAP_PICKUP_SMG)
+            pixels += render_smg(renderer, camera, it->x, it->y, it->z, on);
+        else if (it->kind == TOY_MAP_PICKUP_SHOTGUN)
+            pixels += render_shotgun(renderer, camera, it->x, it->y, it->z, on);
+        else
+            pixels += render_ammo_box(renderer, camera, it->x, it->y, it->z, on);
+    }
+    return pixels;
+}
+
+static void fill_rect(struct toy_surface *surface, int x, int y,
+                      int width, int height, uint32_t color);
+
+/* E 互动提示固定在屏幕底部中央，高亮时可见；已持有的武器显示 REFILL */
+static void draw_interact_prompt(struct toy_renderer *renderer)
+{
+    const struct interactable *it;
+    char label[24];
+    int text_w, x, y;
+    if (highlighted < 0) return;
+    it = &interactables[highlighted];
+    if (it->kind == TOY_MAP_PICKUP_AMMO) {
+        snprintf(label, sizeof(label), "E TAKE AMMO");
+    } else {
+        int weapon = it->kind == TOY_MAP_PICKUP_SMG ?
+                     TOY_GAME_WEAPON_SMG : TOY_GAME_WEAPON_SHOTGUN;
+        const char *name = it->kind == TOY_MAP_PICKUP_SMG ? "SMG" : "SHOTGUN";
+        snprintf(label, sizeof(label), "E %s %s",
+                 game.slots[0].weapon == weapon ? "REFILL" : "PICK UP", name);
+    }
+    text_w = (int)strlen(label) * FB_FONT_W;
+    x = (renderer->surface.width - text_w) / 2;
+    y = renderer->surface.height - FB_FONT_H - 18;
+    fill_rect(&renderer->surface, x - 5, y - 3, text_w + 10, FB_FONT_H + 6,
+              0x171B24);
+    fb_draw_string((unsigned char *)renderer->surface.pixels, x, y,
+                   label, 0xFFD060, renderer->surface.stride);
+}
+
+/* E 键互动：拾取主武器（替换槽 0 并切出），同武器 = 补充弹药；
+ * 弹药盒补满备弹。拾取点是固定的，互动后保留在场。 */
+static void interact_current(struct interactable *it)
+{
+    if (it->kind == TOY_MAP_PICKUP_AMMO) {
+        toy_game_refill_ammo(&game);
+        return;
+    }
+    toy_game_equip_weapon(&game, it->kind == TOY_MAP_PICKUP_SMG ?
+                          TOY_GAME_WEAPON_SMG : TOY_GAME_WEAPON_SHOTGUN);
+}
+
 static int render_scene(struct toy_renderer *renderer, const struct camera *camera)
 {
     int pixels = 0;
@@ -908,10 +1077,36 @@ static int draw_hud_value(struct toy_surface *surface, int x,
     return x + value_w + FB_FONT_W * 2;
 }
 
+static const char *weapon_names[TOY_GAME_WEAPON_COUNT] = {
+    "PISTOL", "SMG", "SHOTGUN"
+};
+
+/* 武器栏：1[主武器] 弹匣/备弹  2[手枪] 弹匣/备弹，当前槽位高亮 */
+static void render_weapon_hud(struct toy_surface *surface, int x, int y)
+{
+    char line[48];
+    int i;
+    for (i = 0; i < TOY_GAME_WEAPON_SLOTS; i++) {
+        const struct toy_game_slot *s = &game.slots[i];
+        uint32_t color = i == game.current_slot ? 0xFFD060 : 0x9AA6B4;
+        if (s->weapon < 0)
+            snprintf(line, sizeof(line), "%d[-] ", i + 1);
+        else if (s->reserve == TOY_GAME_AMMO_INFINITE)
+            snprintf(line, sizeof(line), "%d[%s] %d/INF ", i + 1,
+                     weapon_names[s->weapon], s->mag);
+        else
+            snprintf(line, sizeof(line), "%d[%s] %d/%d ", i + 1,
+                     weapon_names[s->weapon], s->mag, s->reserve);
+        fb_draw_string((unsigned char *)surface->pixels, x, y, line, color,
+                       surface->stride);
+        x += (int)strlen(line) * FB_FONT_W;
+    }
+}
+
 static void render_hud(struct toy_surface *surface, int fps)
 {
     char line[96];
-    int n, x = 8;
+    int n, x = 8, hint_y;
     uint32_t phase_color = game.campaign_phase == TOY_GAME_PHASE_HORDE ?
                            0xFFD040 : 0x80E0C0;
     x = draw_hud_value(surface, x, "DIR ",
@@ -930,43 +1125,40 @@ static void render_hud(struct toy_surface *surface, int fps)
     x = draw_hud_value(surface, x, "RUN ", line, 0xC0A0FF);
     snprintf(line, sizeof(line), "%d", fps);
     draw_hud_value(surface, x, "FPS ", line, 0x90F090);
-    if (game.ammo_reserve == TOY_GAME_AMMO_INFINITE)
-        n = snprintf(line, sizeof(line), "HP %d  PISTOL %d/INF  KILLS %d",
-                     game.hp, game.ammo_mag, game.kills);
-    else
-        n = snprintf(line, sizeof(line), "HP %d  MAG %d/%d  KILLS %d",
-                     game.hp, game.ammo_mag, game.ammo_reserve, game.kills);
+    n = snprintf(line, sizeof(line), "HP %d  KILLS %d", game.hp, game.kills);
     if (n > 0)
         fb_draw_string((unsigned char *)surface->pixels, 8, 8 + FB_FONT_H,
                        line, 0xE7E9EC, surface->stride);
+    render_weapon_hud(surface, 8, 8 + FB_FONT_H * 2);
+    hint_y = 8 + FB_FONT_H * (game.reloading ? 4 : 3);
     if (game.reloading)
-        fb_draw_string((unsigned char *)surface->pixels, 8, 8 + FB_FONT_H * 2,
+        fb_draw_string((unsigned char *)surface->pixels, 8, 8 + FB_FONT_H * 3,
                        "RELOADING...", 0xD88A32, surface->stride);
     if (level_map.safe_count > 1 && toy_game_point_in_box(game.px, game.pz, &map_safe_rooms[1])) {
         snprintf(line, sizeof(line), "EXIT SECURE %d%%",
                  game.goal_hold_ms * 100 / TOY_GAME_GOAL_HOLD_MS);
-        fb_draw_string((unsigned char *)surface->pixels, 8, 8 + FB_FONT_H * 3,
+        fb_draw_string((unsigned char *)surface->pixels, 8, hint_y,
                        line, 0x80E080, surface->stride);
     } else if (level_map.safe_count > 0 && toy_game_point_in_box(game.px, game.pz, &map_safe_rooms[0])) {
-        fb_draw_string((unsigned char *)surface->pixels, 8, 8 + FB_FONT_H * 3,
+        fb_draw_string((unsigned char *)surface->pixels, 8, hint_y,
                        "START SAFE ROOM - REACH GREEN EXIT", 0x80E080,
                        surface->stride);
     } else if (game.alarm_timer_ms > 0) {
         snprintf(line, sizeof(line), "ALARM HORDE %d SEC",
                  (game.alarm_timer_ms + 999) / 1000);
-        fb_draw_string((unsigned char *)surface->pixels, 8, 8 + FB_FONT_H * 3,
+        fb_draw_string((unsigned char *)surface->pixels, 8, hint_y,
                        line, 0xFFD040, surface->stride);
     } else if (game.campaign_phase == TOY_GAME_PHASE_RELAX) {
         snprintf(line, sizeof(line), "HORDE CLEARED - RELAX %d SEC",
                  (game.phase_timer_ms + 999) / 1000);
-        fb_draw_string((unsigned char *)surface->pixels, 8, 8 + FB_FONT_H * 3,
+        fb_draw_string((unsigned char *)surface->pixels, 8, hint_y,
                        line, 0x80E080, surface->stride);
     } else if (!game.alarm_triggered) {
-        fb_draw_string((unsigned char *)surface->pixels, 8, 8 + FB_FONT_H * 3,
+        fb_draw_string((unsigned char *)surface->pixels, 8, hint_y,
                        "YELLOW BORDER = HORDE TRIGGER", 0xFFD040,
                        surface->stride);
     } else {
-        fb_draw_string((unsigned char *)surface->pixels, 8, 8 + FB_FONT_H * 3,
+        fb_draw_string((unsigned char *)surface->pixels, 8, hint_y,
                        "RED FLOOR = SPAWN ZONE", 0xE08080, surface->stride);
     }
 }
@@ -1351,6 +1543,119 @@ static int run_logic_test(void)
             }
         }
     }
+    /* 武器槽：默认手枪出枪（槽 2），主武器槽为空；切空槽无效 */
+    {
+        int i;
+        unsigned char keys[TOY_INPUT_KEY_COUNT];
+        reset_game(&camera, 7);
+        if (game.current_slot != 1 ||
+            game.slots[1].weapon != TOY_GAME_WEAPON_PISTOL ||
+            game.slots[1].mag != 30 ||
+            game.slots[1].reserve != TOY_GAME_AMMO_INFINITE ||
+            game.slots[0].weapon != -1) return 17;
+        if (toy_game_switch_weapon(&game, 0)) return 18;
+        /* 拾取 SMG：50/650 并自动切出；同武器再拾取 = 补充弹药 */
+        if (toy_game_equip_weapon(&game, TOY_GAME_WEAPON_SMG) != 1) return 19;
+        if (game.current_slot != 0 || game.slots[0].mag != 50 ||
+            game.slots[0].reserve != 650) return 20;
+        game.slots[0].mag = 7;
+        game.slots[0].reserve = 120;
+        if (toy_game_equip_weapon(&game, TOY_GAME_WEAPON_SMG) != 0 ||
+            game.slots[0].mag != 50 || game.slots[0].reserve != 650) return 21;
+        /* 切枪保留各自弹药状态 */
+        if (!toy_game_switch_weapon(&game, 1) || game.slots[1].mag != 30)
+            return 22;
+        if (!toy_game_switch_weapon(&game, 0) ||
+            game.slots[0].mag != 50 || game.slots[0].reserve != 650) return 23;
+        /* 弹药盒补满备弹，不碰弹匣 */
+        game.slots[0].mag = 3;
+        game.slots[0].reserve = 5;
+        if (!toy_game_refill_ammo(&game) || game.slots[0].reserve != 650 ||
+            game.slots[0].mag != 3) return 24;
+        /* SMG 全自动：按住 10 步（160ms，100ms 冷却）消耗 2 发 */
+        game.slots[0].mag = 50;
+        for (i = 0; i < 10; i++)
+            toy_game_update_held(&game, NULL, 0, 1, 0, 1024, 16);
+        if (game.slots[0].mag != 48) return 25;
+        /* 手枪半自动：按住不连发 */
+        toy_game_switch_weapon(&game, 1);
+        for (i = 0; i < 5; i++)
+            toy_game_update_held(&game, NULL, 0, 1, 0, 1024, 16);
+        if (game.slots[1].mag != 30) return 26;
+        /* 有限备弹换弹：SMG 2000ms，消耗备弹 */
+        memset(keys, 0, sizeof(keys));
+        keys[TOY_GAME_KEY_RELOAD] = 1;
+        toy_game_switch_weapon(&game, 0);
+        toy_game_update(&game, keys, 0, 0, 1024, 16);
+        if (!game.reloading) return 27;
+        for (i = 0; i < 125; i++)
+            toy_game_update(&game, NULL, 0, 0, 1024, 16);
+        if (game.reloading || game.slots[0].mag != 50 ||
+            game.slots[0].reserve != 648) return 28;
+        /* 霰弹枪 8/64：单次 4 弹丸可同时击毙并排两敌 */
+        if (toy_game_equip_weapon(&game, TOY_GAME_WEAPON_SHOTGUN) != 1 ||
+            game.slots[0].mag != 8 || game.slots[0].reserve != 64) return 29;
+        memset(game.enemies, 0, sizeof(game.enemies));
+        game.enemies[0].active = 1;
+        game.enemies[0].x = game.px + 120;
+        game.enemies[0].z = game.pz + 900;
+        game.enemies[1].active = 1;
+        game.enemies[1].x = game.px - 120;
+        game.enemies[1].z = game.pz + 900;
+        game.enemies_alive = 2;
+        game.kills = 0;
+        if (!toy_game_fire(&game, 0, 1024)) return 30;
+        if (game.kills != 2 || game.slots[0].mag != 7) return 31;
+    }
+    /* 地图拾取物解析：2 把主武器 + 1 个弹药盒 */
+    if (interactable_count != 3 ||
+        interactables[0].kind != TOY_MAP_PICKUP_SMG ||
+        interactables[2].kind != TOY_MAP_PICKUP_AMMO) return 32;
+    /* 固定拾取点：拾取后武器仍在场，同武器再互动 = 补充弹药 */
+    highlighted = 0;
+    interact_current(&interactables[0]);
+    if (game.slots[0].weapon != TOY_GAME_WEAPON_SMG ||
+        game.slots[0].mag != 50 || game.slots[0].reserve != 650) return 33;
+    game.slots[0].mag = 3;
+    game.slots[0].reserve = 5;
+    highlighted = 0;
+    interact_current(&interactables[0]);
+    if (game.slots[0].mag != 50 || game.slots[0].reserve != 650) return 33;
+    /* 拾取不影响高亮：SMG 固定点仍可被选中 */
+    {
+        struct camera aim_cam;
+        aim_cam.x = 0;
+        aim_cam.z = -7000;
+        aim_cam.sy = 0;
+        aim_cam.cy = -1024;
+        aim_cam.pitch = 0;
+        if (compute_highlight(&aim_cam) != 0) return 33;
+    }
+    /* 高亮判定：世界空间朝向锥。面向桌子（武器低于视平线）可选中最远
+     * 的 SMG；背对或超出距离均不可选。 */
+    {
+        struct camera aim_cam;
+        aim_cam.x = 0;
+        aim_cam.z = -7000;
+        aim_cam.sy = 0;
+        aim_cam.cy = -1024;
+        aim_cam.pitch = 0;
+        highlighted = compute_highlight(&aim_cam);
+        if (highlighted != 0) return 34;
+        aim_cam.sy = 1024;
+        aim_cam.cy = 0;
+        if (compute_highlight(&aim_cam) != -1) return 35;
+        aim_cam.sy = 0;
+        aim_cam.cy = -1024;
+        aim_cam.z = -5200;
+        if (compute_highlight(&aim_cam) != -1) return 36;
+        /* 斜向面向桌子东侧：只有弹药盒在锥内（两把枪横向偏角过大） */
+        aim_cam.x = 1000;
+        aim_cam.z = -7000;
+        aim_cam.sy = 0;
+        aim_cam.cy = -1024;
+        if (compute_highlight(&aim_cam) != 2) return 37;
+    }
     __printf("wayland_fps: logic test passed\n");
     return 0;
 }
@@ -1371,6 +1676,7 @@ int main(int argc, char **argv)
     int frame_limit = 0, rendered_frames = 0, scene_pixels = 0;
     int display_fps = 0, fps_window_frames = 0;
     int fire_edge = 0;
+    int interact_consumed = 0;   /* 每帧 E 互动只消费一次 */
     int input_debug = 0, input_event_count = 0, have_last_key = 0;
     int texture_stats = 0;
     unsigned int last_key = 0;
@@ -1439,7 +1745,8 @@ int main(int argc, char **argv)
         return 1;
     }
     __printf("wayland_fps: pause menu uses arrows + Enter; mouse/arrows look, "
-             "WASD moves, click/Space fire, R reload, Esc pauses/resumes\n");
+             "WASD moves, click/Space fire (hold for SMG), R reload, "
+             "1/2 weapons, E interact, Esc pauses/resumes\n");
     if (input_debug)
         __printf("wayland_fps: input debug HUD enabled; test chords and focus changes\n");
     load_sfx_assets();
@@ -1546,6 +1853,7 @@ int main(int argc, char **argv)
         if (elapsed < 0) elapsed = 0;
         if (elapsed > MAX_FRAME_US) elapsed = MAX_FRAME_US;
         accumulator += elapsed;
+        interact_consumed = 0;
         while (accumulator >= FIXED_STEP_US && logic_steps < MAX_LOGIC_STEPS) {
             if (!paused) {
                 if (game.state == TOY_GAME_PLAYING) {
@@ -1553,8 +1861,16 @@ int main(int argc, char **argv)
                     update_keyboard_look(&camera, &input, &settings);
                     game.px = camera.x;
                     game.pz = camera.z;
-                    toy_game_update(&game, input.key_pressed, fire_edge,
-                                    camera.sy, camera.cy, FIXED_STEP_US / 1000);
+                    highlighted = compute_highlight(&camera);
+                    if (highlighted >= 0 && !interact_consumed &&
+                        toy_input_pressed(&input, KEY_E)) {
+                        interact_current(&interactables[highlighted]);
+                        interact_consumed = 1;
+                    }
+                    toy_game_update_held(&game, input.key_pressed, fire_edge,
+                                         toy_input_down(&input, KEY_SPACE),
+                                         camera.sy, camera.cy,
+                                         FIXED_STEP_US / 1000);
                     fire_edge = 0;
                 } else if (toy_input_pressed(&input, KEY_R)) {
                     /* 死亡或通关结算：R 重开 */
@@ -1582,6 +1898,10 @@ int main(int argc, char **argv)
                 draw_crosshair(&surface);
                 render_hud(&surface, display_fps);
                 render_muzzle_flash(&surface);
+            }
+            if (game.state == TOY_GAME_PLAYING && !paused) {
+                scene_pixels += render_interactables(&renderer, &camera);
+                draw_interact_prompt(&renderer);
             }
             render_damage_flash(&surface);
             if (input_debug)

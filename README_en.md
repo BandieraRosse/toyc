@@ -70,7 +70,7 @@ make update-bootstrap       # intentionally replace the versioned seeds
 make test               # 58 regular compile/run tests
 make test-selfhost      # 42 self-contained tests without toyc_rt
 make test-source        # 8 compiler source tests
-make test-lib           # 33 library compile units + 15 functional suites
+make test-lib           # 34 library compile units + 16 functional suites
 make test-error         # 16 diagnostic tests
 make test-toyld         # 42 link/run tests using toyld
 make test-toyar         # 5 archiver tests
@@ -124,8 +124,9 @@ The current run in a restricted container produced:
 - `make test-selfhost` and `make test-toyld`: both 40/42. Two tests call
   `renameat2` on root-level paths; the container returns `EROFS` while the
   assertions require `ENOENT`.
-- `make test-lib`: 33/33 compile units and 15/15 functional suites (including
-  the new `game` module covering game rules and SFX synthesis).
+- `make test-lib`: 34/34 compile units and 16/16 functional suites (including
+  the `game` module covering game rules and SFX synthesis, with dedicated
+  cases for weapon-slot rules and multi-pellet shotgun spread).
 
 Consequently, `make test-all` stops at `test-selfhost` in this environment and
 must not be reported as fully passing.

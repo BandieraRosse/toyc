@@ -65,7 +65,7 @@ make update-bootstrap       # 有意更新种子；会修改跟踪的二进制
 make test               # 58 个常规编译/运行测试
 make test-selfhost      # 42 个无 toyc_rt 的自包含测试
 make test-source        # 8 个编译器源码级测试
-make test-lib           # 33 个库编译单元 + 15 个功能套件
+make test-lib           # 34 个库编译单元 + 16 个功能套件
 make test-error         # 16 个诊断测试
 make test-toyld         # 42 个使用 toyld 的链接/运行测试
 make test-toyar         # 5 个归档器测试
@@ -114,8 +114,8 @@ byte-level BPE prompt 编码、UTF-8 token 解码、采样和 KV-cache 推理。
 - `make test-llm`：29/29。
 - `make test-selfhost` 和 `make test-toyld`：均为 40/42。两个用例调用根目录路径上的
   `renameat2`，容器返回 `EROFS`，而测试固定期待 `ENOENT`；这是环境相关的断言差异。
-- `make test-lib`：编译 33/33，功能 15/15（含新增 `game` 模块的游戏规则与
-  SFX 合成套件）。
+- `make test-lib`：编译 34/34，功能 16/16（含 `game` 模块的游戏规则与
+  SFX 合成套件，其中武器槽规则与多弹丸霰弹枪散射有专门用例）。
 
 因此本环境的 `make test-all` 会在 `test-selfhost` 处停止，不能标记为全绿。
 

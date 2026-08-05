@@ -63,3 +63,19 @@ texture -4200 -2600 -11180 1050 2 1 1 808080
 texture -1200 1200 -11180 1050 2 1 1 C08040
 texture 2600 4200 -11180 1050 2 1 1 40A0C0
 label -4500 4500 -10600 -10100 FFD060 TEXTURE_DISPLAY
+
+# Weapon table: full-footprint air box for collision, slab top + four legs
+# rendered. SMG on the west half, shotgun on the east, muzzle toward the door.
+box -700 700 -7600 -7300 -250 5A3E28 air
+model -700 700 -7600 -7300 -750 -250 6A4A30
+model -700 -610 -7600 -7510 -900 -250 5A3E28
+model 610 700 -7600 -7510 -900 -250 5A3E28
+model -700 -610 -7390 -7300 -900 -250 5A3E28
+model 610 700 -7390 -7300 -900 -250 5A3E28
+pickup smg -250 -7450 -235
+pickup shotgun 250 -7450 -235
+
+# Ammo crate on a pallet beside the table, east side.
+box 820 940 -7570 -7390 -560 6A5538 air
+model 820 940 -7570 -7390 -900 -560 6A5538
+pickup ammo 880 -7480 -520

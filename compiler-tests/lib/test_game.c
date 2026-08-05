@@ -269,14 +269,14 @@ static int test_ammo_reload(void)
         if ((i % 5) == 4 && i < 29)
             toy_game_drain_events(&g, evs, 16);  /* 防止 SHOOT 灌满队列 */
     }
-    if (g.ammo_mag != 0 || g.ammo_reserve != TOY_GAME_AMMO_INFINITE ||
+    if (g.slots[1].mag != 0 || g.slots[1].reserve != TOY_GAME_AMMO_INFINITE ||
         !g.reloading) return 11;
     n = toy_game_drain_events(&g, evs, 16);
     if (!has_event(evs, n, TOY_GAME_EV_RELOAD_START)) return 11;
     for (i = 0; i < 94; i++) toy_game_update(&g, NULL, 0, 0, 1024, 16);
     if (g.reloading) return 11;
-    if (g.ammo_mag != 30 ||
-        g.ammo_reserve != TOY_GAME_AMMO_INFINITE) return 11;
+    if (g.slots[1].mag != 30 ||
+        g.slots[1].reserve != TOY_GAME_AMMO_INFINITE) return 11;
     n = toy_game_drain_events(&g, evs, 16);
     if (!has_event(evs, n, TOY_GAME_EV_RELOAD_DONE)) return 11;
     return 0;
@@ -292,14 +292,14 @@ static int test_fire_rate(void)
     g.px = 0;
     g.pz = 0;
     toy_game_update(&g, NULL, 1, 0, 1024, 16);
-    if (g.ammo_mag != 29) return 12;
+    if (g.slots[1].mag != 29) return 12;
     toy_game_update(&g, NULL, 0, 0, 1024, 16);
     toy_game_update(&g, NULL, 0, 0, 1024, 16);
     toy_game_update(&g, NULL, 1, 0, 1024, 16);
-    if (g.ammo_mag != 29) return 12;
+    if (g.slots[1].mag != 29) return 12;
     for (i = 0; i < 13; i++) toy_game_update(&g, NULL, 0, 0, 1024, 16);
     toy_game_update(&g, NULL, 1, 0, 1024, 16);
-    if (g.ammo_mag != 28) return 12;
+    if (g.slots[1].mag != 28) return 12;
     return 0;
 }
 
@@ -354,7 +354,7 @@ static int test_sfx(void)
 {
     struct toy_sfx sfx;
     short buf[2048];
-    int i, nonzero = 0, peak = 0;
+    int i, nonzero = 0;
     toy_sfx_init(&sfx, 44100);
     toy_sfx_render(&sfx, buf, 1024);
     for (i = 0; i < 1024; i++)
@@ -369,10 +369,8 @@ static int test_sfx(void)
     toy_sfx_render(&sfx, buf, 1024);
     for (i = 0; i < 1024; i++) {
         int s = buf[2 * i];
-        if (s < 0) s = -s;
-        if (s > peak) peak = s;
+        if (s > 32767 || s < -32768) return 15;
     }
-    if (peak > 32767) return 15;
     return 0;
 }
 
@@ -736,6 +734,73 @@ static int test_last_seen_and_search(void)
     return 0;
 }
 
+/* 29: 武器槽规则：手枪默认槽 2、主武器拾取/换弹/全自动/霰弹散射 */
+static int test_weapon_slots(void)
+{
+    struct toy_game g;
+    unsigned char keys[TOY_GAME_KEY_RELOAD + 1];
+    int i;
+    toy_game_init(&g, 29);
+    toy_game_set_world(&g, world, 3, ROOM);
+    g.px = 0;
+    g.pz = 0;
+    if (g.current_slot != 1 || g.slots[1].weapon != TOY_GAME_WEAPON_PISTOL ||
+        g.slots[1].mag != 30 ||
+        g.slots[1].reserve != TOY_GAME_AMMO_INFINITE ||
+        g.slots[0].weapon != -1) return 29;
+    if (toy_game_switch_weapon(&g, 0)) return 29;
+    /* 拾取 SMG：50/650 并自动切出；同武器再拾取 = 补充弹药 */
+    if (toy_game_equip_weapon(&g, TOY_GAME_WEAPON_SMG) != 1) return 29;
+    if (g.current_slot != 0 || g.slots[0].mag != 50 ||
+        g.slots[0].reserve != 650) return 29;
+    g.slots[0].mag = 7;
+    g.slots[0].reserve = 120;
+    if (toy_game_equip_weapon(&g, TOY_GAME_WEAPON_SMG) != 0 ||
+        g.slots[0].mag != 50 || g.slots[0].reserve != 650) return 29;
+    /* 切枪保留各自弹药状态；弹药盒补备弹不碰弹匣 */
+    if (!toy_game_switch_weapon(&g, 1) || g.slots[1].mag != 30) return 29;
+    if (!toy_game_switch_weapon(&g, 0) ||
+        g.slots[0].mag != 50 || g.slots[0].reserve != 650) return 29;
+    g.slots[0].mag = 3;
+    g.slots[0].reserve = 5;
+    if (!toy_game_refill_ammo(&g) || g.slots[0].reserve != 650 ||
+        g.slots[0].mag != 3) return 29;
+    /* SMG 全自动：按住 10 步（160ms，100ms 冷却）消耗 2 发 */
+    g.slots[0].mag = 50;
+    for (i = 0; i < 10; i++)
+        toy_game_update_held(&g, NULL, 0, 1, 0, 1024, 16);
+    if (g.slots[0].mag != 48) return 29;
+    /* 手枪半自动：按住不连发 */
+    toy_game_switch_weapon(&g, 1);
+    for (i = 0; i < 5; i++)
+        toy_game_update_held(&g, NULL, 0, 1, 0, 1024, 16);
+    if (g.slots[1].mag != 30) return 29;
+    /* 有限备弹换弹：SMG 2000ms，消耗备弹 */
+    memset(keys, 0, sizeof(keys));
+    keys[TOY_GAME_KEY_RELOAD] = 1;
+    toy_game_switch_weapon(&g, 0);
+    toy_game_update(&g, keys, 0, 0, 1024, 16);
+    if (!g.reloading) return 29;
+    for (i = 0; i < 125; i++) toy_game_update(&g, NULL, 0, 0, 1024, 16);
+    if (g.reloading || g.slots[0].mag != 50 ||
+        g.slots[0].reserve != 648) return 29;
+    /* 霰弹枪 8/64：单次 4 弹丸可同时击毙并排两敌 */
+    if (toy_game_equip_weapon(&g, TOY_GAME_WEAPON_SHOTGUN) != 1 ||
+        g.slots[0].mag != 8 || g.slots[0].reserve != 64) return 29;
+    memset(g.enemies, 0, sizeof(g.enemies));
+    g.enemies[0].active = 1;
+    g.enemies[0].x = 120;
+    g.enemies[0].z = 900;
+    g.enemies[1].active = 1;
+    g.enemies[1].x = -120;
+    g.enemies[1].z = 900;
+    g.enemies_alive = 2;
+    g.kills = 0;
+    if (!toy_game_fire(&g, 0, 1024)) return 29;
+    if (g.kills != 2 || g.slots[0].mag != 7) return 29;
+    return 0;
+}
+
 int main(void)
 {
     if (test_prng_determinism()) return 1;
@@ -766,5 +831,6 @@ int main(void)
     if (test_local_alert_propagation()) return 26;
     if (test_director_small_group()) return 27;
     if (test_last_seen_and_search()) return 28;
+    if (test_weapon_slots()) return 29;
     return 0;
 }

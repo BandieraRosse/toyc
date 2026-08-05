@@ -37,6 +37,23 @@ static int rand_range(struct toy_game *g, int lo, int hi)
     return lo + (int)(raw % (uint64_t)span);
 }
 
+/* ── 武器定义 ─────────────────────────────────────────────────── */
+
+/* 手枪保持历史默认（30 发弹匣、无限备弹、半自动）；SMG 弹匣 50/备弹 650、
+ * 全自动 100ms 冷却；霰弹枪弹匣 8/备弹 64，单次 4 弹丸 ±7.5° 散射。 */
+static const struct toy_game_weapon_info weapon_table[TOY_GAME_WEAPON_COUNT] = {
+    { 30, TOY_GAME_AMMO_INFINITE, 200, 1500, 0, 1, 0 },
+    { 50, 650, 100, 2000, 1, 1, 0 },
+    { 8, 64, 600, 2500, 0, 4, 90 },
+};
+
+const struct toy_game_weapon_info *toy_game_weapon_info(int weapon)
+{
+    if (weapon < 0 || weapon >= TOY_GAME_WEAPON_COUNT)
+        return &weapon_table[TOY_GAME_WEAPON_PISTOL];
+    return &weapon_table[weapon];
+}
+
 static int segment_hits_box(int px, int pz, int qx, int qz,
                             const struct toy_game_box *b);
 
@@ -69,12 +86,18 @@ static int wave_quota(int wave)
 
 void toy_game_init(struct toy_game *g, uint64_t seed)
 {
+    const struct toy_game_weapon_info *w;
     memset(g, 0, sizeof(struct toy_game));
     g->rng = seed ? seed : 0x9E3779B97F4A7C15ULL;
     g->hp = 100;
     g->state = TOY_GAME_PLAYING;
-    g->ammo_mag = TOY_GAME_MAG_SIZE;
-    g->ammo_reserve = TOY_GAME_AMMO_INFINITE;
+    /* 槽 0 主武器为空；槽 1 默认为满弹匣手枪，开局出枪。 */
+    g->slots[0].weapon = -1;
+    g->slots[1].weapon = TOY_GAME_WEAPON_PISTOL;
+    w = toy_game_weapon_info(TOY_GAME_WEAPON_PISTOL);
+    g->slots[1].mag = w->mag_size;
+    g->slots[1].reserve = w->reserve_max;
+    g->current_slot = 1;
     g->wave = 1;
     g->to_spawn = wave_quota(1);
     g->spawn_timer_ms = TOY_GAME_WAVE_FIRST_DELAY_MS;
@@ -775,26 +798,11 @@ static int segment_hits_box(int px, int pz, int qx, int qz,
     return t0 <= t1;
 }
 
-int toy_game_fire(struct toy_game *g, int sy, int cy)
+/* 单发 hitscan：最近且未被障碍遮挡的敌人一枪毙命，命中返回 1 */
+static int fire_ray(struct toy_game *g, int sy, int cy)
 {
     int best = -1, best_t = 0, i;
     int radius_times_1024 = TOY_GAME_HIT_RADIUS * 1024;
-    if (g->state != TOY_GAME_PLAYING || g->reloading) return 0;
-    g->fire_cooldown_ms = TOY_GAME_FIRE_COOLDOWN_MS;
-    g->muzzle_flash_ms = TOY_GAME_MUZZLE_FLASH_MS;
-    if (g->ammo_mag <= 0) {
-        push_event(g, TOY_GAME_EV_DRY_FIRE);
-        return 0;
-    }
-    g->ammo_mag--;
-    push_event(g, TOY_GAME_EV_SHOOT);
-    emit_enemy_noise(g, g->px, g->pz, TOY_GAME_GUNSHOT_RANGE);
-    if (g->ammo_mag == 0) {
-        g->reloading = 1;
-        g->reload_timer_ms = TOY_GAME_RELOAD_MS;
-        push_event(g, TOY_GAME_EV_RELOAD_START);
-    }
-
     for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
         struct toy_game_enemy *e = &g->enemies[i];
         int lx, lz, proj, cross, t, hit_x, hit_z, occluded = 0, j;
@@ -834,13 +842,103 @@ int toy_game_fire(struct toy_game *g, int sy, int cy)
     return 0;
 }
 
+int toy_game_fire(struct toy_game *g, int sy, int cy)
+{
+    struct toy_game_slot *s = &g->slots[g->current_slot];
+    const struct toy_game_weapon_info *w = toy_game_weapon_info(s->weapon);
+    int pellet, hit = 0;
+    if (g->state != TOY_GAME_PLAYING || g->reloading) return 0;
+    g->fire_cooldown_ms = w->cooldown_ms;
+    g->muzzle_flash_ms = TOY_GAME_MUZZLE_FLASH_MS;
+    if (s->mag <= 0) {
+        push_event(g, TOY_GAME_EV_DRY_FIRE);
+        return 0;
+    }
+    s->mag--;
+    push_event(g, TOY_GAME_EV_SHOOT);
+    emit_enemy_noise(g, g->px, g->pz, TOY_GAME_GUNSHOT_RANGE);
+    if (s->mag == 0) {
+        g->reloading = 1;
+        g->reload_timer_ms = w->reload_ms;
+        push_event(g, TOY_GAME_EV_RELOAD_START);
+    }
+    /* 霰弹枪按 spread 均匀偏转弹丸；单发武器只打一束。 */
+    for (pellet = 0; pellet < w->pellets; pellet++) {
+        int off = (2 * pellet - w->pellets + 1) * w->spread / 2;
+        int ray_sy = (sy * 1024 - cy * off) / 1024;
+        int ray_cy = (cy * 1024 + sy * off) / 1024;
+        if (fire_ray(g, ray_sy, ray_cy)) hit = 1;
+    }
+    return hit;
+}
+
+/* 切枪：只允许切到有武器的槽位；换弹被打断 */
+int toy_game_switch_weapon(struct toy_game *g, int slot)
+{
+    if (slot < 0 || slot >= TOY_GAME_WEAPON_SLOTS) return 0;
+    if (slot == g->current_slot || g->slots[slot].weapon < 0) return 0;
+    g->current_slot = slot;
+    g->reloading = 0;
+    g->reload_timer_ms = 0;
+    return 1;
+}
+
+/* 拾取主武器（SMG/霰弹枪）。同武器 = 补满弹匣与备弹；新武器替换槽 0 并自动切出。 */
+int toy_game_equip_weapon(struct toy_game *g, int weapon)
+{
+    const struct toy_game_weapon_info *w;
+    if (weapon != TOY_GAME_WEAPON_SMG && weapon != TOY_GAME_WEAPON_SHOTGUN)
+        return -1;
+    w = toy_game_weapon_info(weapon);
+    if (g->slots[0].weapon == weapon) {
+        g->slots[0].mag = w->mag_size;
+        g->slots[0].reserve = w->reserve_max;
+        return 0;
+    }
+    g->slots[0].weapon = weapon;
+    g->slots[0].mag = w->mag_size;
+    g->slots[0].reserve = w->reserve_max;
+    toy_game_switch_weapon(g, 0);
+    return 1;
+}
+
+/* 弹药盒：补满已拥有武器的备弹（手枪无限备弹跳过），有变化返回 1 */
+int toy_game_refill_ammo(struct toy_game *g)
+{
+    int i, changed = 0;
+    for (i = 0; i < TOY_GAME_WEAPON_SLOTS; i++) {
+        struct toy_game_slot *s = &g->slots[i];
+        const struct toy_game_weapon_info *w;
+        if (s->weapon < 0) continue;
+        w = toy_game_weapon_info(s->weapon);
+        if (w->reserve_max == TOY_GAME_AMMO_INFINITE) continue;
+        if (s->reserve < w->reserve_max) {
+            s->reserve = w->reserve_max;
+            changed = 1;
+        }
+    }
+    return changed;
+}
+
 /* ── 主更新 ────────────────────────────────────────────────────── */
 
-void toy_game_update(struct toy_game *g, const unsigned char *keys_pressed,
-                     int fire_pressed, int sy, int cy, int dt_ms)
+void toy_game_update_held(struct toy_game *g,
+                          const unsigned char *keys_pressed,
+                          int fire_pressed, int fire_held,
+                          int sy, int cy, int dt_ms)
 {
+    struct toy_game_slot *s;
+    const struct toy_game_weapon_info *w;
     int i;
     if (g->state != TOY_GAME_PLAYING) return;
+
+    /* 切枪键（1/2）：先于换弹与射击处理，切换即打断换弹 */
+    if (keys_pressed) {
+        if (keys_pressed[TOY_GAME_KEY_SLOT_1]) toy_game_switch_weapon(g, 0);
+        if (keys_pressed[TOY_GAME_KEY_SLOT_2]) toy_game_switch_weapon(g, 1);
+    }
+    s = &g->slots[g->current_slot];
+    w = toy_game_weapon_info(s->weapon);
 
     if (g->fire_cooldown_ms > 0) {
         g->fire_cooldown_ms -= dt_ms;
@@ -859,27 +957,28 @@ void toy_game_update(struct toy_game *g, const unsigned char *keys_pressed,
     if (g->reloading) {
         g->reload_timer_ms -= dt_ms;
         if (g->reload_timer_ms <= 0) {
-            int used = TOY_GAME_MAG_SIZE - g->ammo_mag;
-            if (g->ammo_reserve != TOY_GAME_AMMO_INFINITE &&
-                used > g->ammo_reserve) used = g->ammo_reserve;
-            g->ammo_mag += used;
-            if (g->ammo_reserve != TOY_GAME_AMMO_INFINITE)
-                g->ammo_reserve -= used;
+            int used = w->mag_size - s->mag;
+            if (s->reserve != TOY_GAME_AMMO_INFINITE &&
+                used > s->reserve) used = s->reserve;
+            s->mag += used;
+            if (s->reserve != TOY_GAME_AMMO_INFINITE)
+                s->reserve -= used;
             g->reloading = 0;
             push_event(g, TOY_GAME_EV_RELOAD_DONE);
         }
     } else if (keys_pressed && keys_pressed[TOY_GAME_KEY_RELOAD] &&
-               g->ammo_mag < TOY_GAME_MAG_SIZE &&
-               (g->ammo_reserve > 0 ||
-                g->ammo_reserve == TOY_GAME_AMMO_INFINITE)) {
+               s->mag < w->mag_size &&
+               (s->reserve > 0 || s->reserve == TOY_GAME_AMMO_INFINITE)) {
         g->reloading = 1;
-        g->reload_timer_ms = TOY_GAME_RELOAD_MS;
+        g->reload_timer_ms = w->reload_ms;
         push_event(g, TOY_GAME_EV_RELOAD_START);
     }
 
-    /* 射击（半自动：fire_pressed 边沿 + 冷却） */
-    if (fire_pressed && !g->reloading && g->fire_cooldown_ms <= 0)
-        toy_game_fire(g, sy, cy);
+    /* 射击：半自动武器走边沿；全自动武器（SMG）按住连发 */
+    if (!g->reloading && g->fire_cooldown_ms <= 0) {
+        if (fire_pressed) toy_game_fire(g, sy, cy);
+        else if (fire_held && w->full_auto) toy_game_fire(g, sy, cy);
+    }
 
     /* 敌人计时器与移动/攻击/倒地 */
     for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
@@ -906,4 +1005,11 @@ void toy_game_update(struct toy_game *g, const unsigned char *keys_pressed,
     separate_enemies(g);
     if (g->campaign_mode) update_campaign(g, dt_ms);
     else update_waves(g, dt_ms);
+}
+
+/* 半自动兼容入口：无按住连发（历史测试/宿主行为不变） */
+void toy_game_update(struct toy_game *g, const unsigned char *keys_pressed,
+                     int fire_pressed, int sy, int cy, int dt_ms)
+{
+    toy_game_update_held(g, keys_pressed, fire_pressed, 0, sy, cy, dt_ms);
 }
