@@ -255,6 +255,8 @@ typedef struct AstNode {
     int is_variadic;     /* 变参函数（...） */
     int is_postfix;      /* 1 表示 x++/x--（后缀），0 表示 ++x/--x（前缀） */
     int type_size;       /* 类型大小（字节）：4=int, 8=指针/long/double, 1=char, 2=short */
+    int cast_from_size;  /* AST_UNARY 类型转换：覆盖前的源类型大小，非转换为 0 */
+    int cast_from_unsigned; /* AST_UNARY 类型转换：源类型是否为 unsigned */
     int elem_size;       /* AST_VAR_DECL: 指针变量的元素大小（int*→4, char**→8） */
     int base_elem_size;  /* AST_VAR_DECL: 数组的基础元素大小（多维数组中内层元素大小） */
     int dims[MAX_ARRAY_DIMS];  /* AST_VAR_DECL: 每维元素个数（dims[0]=第一维） */

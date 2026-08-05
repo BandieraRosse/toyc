@@ -103,6 +103,45 @@ static int continue_target_label; /* continue 跳转目标，-1 表示无目标 
 
 static int new_label(void);
 
+/* 大结构体参数按调用方对象地址传递。入口处将其复制到参数自己的栈槽，
+ * 之后成员访问即可与普通局部结构体使用同一路径。源地址固定放在 r10。 */
+static void copy_struct_param_from_r10(int dst_off, int size) {
+    int copied = 0;
+    while (size - copied >= 8) {
+        if (copied == 0)
+            { e1(0x49); e1(0x8B); e1(0x02); }              /* mov rax, [r10] */
+        else if (copied <= 127)
+            { e1(0x49); e1(0x8B); e1(0x42); e1(copied); }  /* mov rax, [r10+disp8] */
+        else
+            { e1(0x49); e1(0x8B); e1(0x82); e4(copied); }  /* mov rax, [r10+disp32] */
+        store_rax_to_rbp(dst_off + copied);
+        copied += 8;
+    }
+    if (size - copied >= 4) {
+        if (copied <= 127)
+            { e1(0x41); e1(0x8B); e1(0x42); e1(copied); }
+        else
+            { e1(0x41); e1(0x8B); e1(0x82); e4(copied); }
+        store_eax_to_rbp(dst_off + copied);
+        copied += 4;
+    }
+    if (size - copied >= 2) {
+        if (copied <= 127)
+            { e1(0x41); e1(0x0F); e1(0xB7); e1(0x42); e1(copied); }
+        else
+            { e1(0x41); e1(0x0F); e1(0xB7); e1(0x82); e4(copied); }
+        emit_store_rbp16(dst_off + copied);
+        copied += 2;
+    }
+    if (size - copied >= 1) {
+        if (copied <= 127)
+            { e1(0x41); e1(0x0F); e1(0xB6); e1(0x42); e1(copied); }
+        else
+            { e1(0x41); e1(0x0F); e1(0xB6); e1(0x82); e4(copied); }
+        emit_store_rbp8(dst_off + copied);
+    }
+}
+
 /* ─── goto 标签名 → label_id 映射 ─── */
 #define MAX_GOTO_LABELS 4096
 static const char *goto_label_names[MAX_GOTO_LABELS];
@@ -1156,12 +1195,33 @@ static void cgen_func_def(AstNode *func) {
                             int param_size = locals[i].size;
                             /* 大结构体参数（>8 字节）：寄存器保存的是指向调用方结构体的指针 */
                             int is_large_struct = (param_size > 8);
-                            if (is_large_struct) {
-                                param_size = 8;
-                                locals[i].is_param = 1;
-                            }
+                            if (is_large_struct)
+                                locals[i].is_param = 0;
                             int use64 = (param_size == 8);
                             int r = int_reg + hshift;  /* physical register number (RDI=0) */
+                            if (is_large_struct) {
+                                /* 调用方传入结构体地址；先移到不会承载参数的 r10，
+                                 * 再完整复制，避免 rep movsb 覆盖尚未保存的参数寄存器。 */
+                                if (r < 6) {
+                                    switch (r) {
+                                    case 0: e1(0x49); e1(0x89); e1(0xFA); break; /* rdi -> r10 */
+                                    case 1: e1(0x49); e1(0x89); e1(0xF2); break; /* rsi -> r10 */
+                                    case 2: e1(0x49); e1(0x89); e1(0xD2); break; /* rdx -> r10 */
+                                    case 3: e1(0x49); e1(0x89); e1(0xCA); break; /* rcx -> r10 */
+                                    case 4: e1(0x4D); e1(0x89); e1(0xC2); break; /* r8 -> r10 */
+                                    case 5: e1(0x4D); e1(0x89); e1(0xCA); break; /* r9 -> r10 */
+                                    }
+                                } else {
+                                    int sd = 0x10 + (r - 6) * 8;
+                                    if (disp8_fits(sd))
+                                        { e1(0x4C); e1(0x8B); e1(0x55); e1(sd & 0xFF); }
+                                    else
+                                        { e1(0x4C); e1(0x8B); e1(0x95); e4(sd); }
+                                }
+                                copy_struct_param_from_r10(locals[i].offset, param_size);
+                                int_reg++;
+                                break;
+                            }
                             if (r < 6) {
                                 /* 使用正确的数据宽度存储参数（防止 char/short 的 32-bit 存储覆写相邻变量） */
                                 if (param_size == 1) {

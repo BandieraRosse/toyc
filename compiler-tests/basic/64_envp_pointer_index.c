@@ -1,7 +1,4 @@
-/*
- * Pending regression behind the Wayland client's /proc/self/environ fallback:
- * scanning a char ** environment-style vector must return the matching value.
- */
+/* char ** 参数下标后仍是 char *，后续指针运算必须按单字节缩放。 */
 static char *find_value(char **envp, const char *name)
 {
     int name_len = 0;

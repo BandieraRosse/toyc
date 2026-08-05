@@ -1062,7 +1062,8 @@ void cgen_expr(AstNode *node) {
             node->elem_size = elem_size;  /* default: the loaded value IS the data */
             if (node->left && node->left->kind == AST_VAR && node->left->name) {
                 int _di; SEARCH_LOCAL(_di, node->left->name);
-                if (_di >= 0 && (locals[_di].elem_is_ptr || is_subarray)
+                if (_di >= 0 && (locals[_di].elem_is_ptr || is_subarray ||
+                    (locals[_di].size == 8 && locals[_di].element_size == 8))
                     && locals[_di].base_elem_size > 0) {
                     node->elem_size = locals[_di].base_elem_size;
                 }
@@ -2136,6 +2137,13 @@ void cgen_expr(AstNode *node) {
                     { e1(0x0F); e1(0xB6); e1(0xC0); }  /* movzbl %al, %eax */
                 else if (node->type_size == 2)
                     { e1(0x0F); e1(0xB7); e1(0xC0); }  /* movzwl %ax, %eax */
+            } else if (!node->is_float && node->expr && !node->expr->is_float &&
+                       node->type_size == 8 && node->cast_from_size > 0 &&
+                       node->cast_from_size < 8 && node->expr->elem_size == 0) {
+                /* 窄整数转 long/unsigned long。32 位运算会隐式清零 RAX
+                 * 高半部；有符号源必须显式符号扩展，无符号源则保留零扩展。 */
+                if (!node->cast_from_unsigned)
+                    { e1(0x48); e1(0x63); e1(0xC0); }  /* movsxd rax, eax */
             }
             break;
         }

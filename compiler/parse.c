@@ -608,6 +608,8 @@ static AstNode *new_ast(Parser *p, AstKind kind) {
     n->kind = kind;
     n->next = NULL;
     n->type_size = 4;  /* 默认 int 大小 */
+    n->cast_from_size = 0;
+    n->cast_from_unsigned = 0;
     n->elem_size = 0;  /* 必须初始化（arena_alloc 不归零） */
     n->is_float = 0;
     n->is_static = 0;
@@ -1458,6 +1460,8 @@ static AstNode *parse_unary(Parser *p) {
                         /* AST_MEMBER 的加载宽度和符号性由结构体定义决定，
                          * 不应被转型覆盖。转型的类型信息（type_size, is_unsigned）
                          * 由下方创建的 AST_UNARY 包装节点承载。 */
+                        int cast_from_size = inner->type_size;
+                        int cast_from_unsigned = inner->is_unsigned;
                         if (inner->kind != AST_MEMBER) {
                             inner->type_size = csz;
                             inner->is_unsigned = last_type_is_unsigned;
@@ -1479,6 +1483,8 @@ static AstNode *parse_unary(Parser *p) {
                             w->expr = inner;
                             w->type_size = csz;
                             w->is_unsigned = last_type_is_unsigned;
+                            w->cast_from_size = cast_from_size;
+                            w->cast_from_unsigned = cast_from_unsigned;
                             if (cast_to_double) w->is_float = 8;
                             if (cast_to_float) w->is_float = 4;
                             return w;
