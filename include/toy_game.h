@@ -48,6 +48,8 @@
 #define TOY_GAME_SPAWN_EDGE     250     /* 生成点距房间边界内缩量 */
 #define TOY_GAME_MIN_SPAWN_DIST 1200    /* 生成点距玩家最小距离（防贴脸） */
 #define TOY_GAME_GOAL_HOLD_MS   1500    /* 终点安全室内停留多久判定通关 */
+#define TOY_GAME_MAX_RANGE      11500   /* 弹丸最大射程（世界单位，≈地图尺度） */
+#define TOY_GAME_MAX_RAYS       4       /* 单枪最大弹丸数（霰弹枪），弹道记录上限 */
 #define TOY_GAME_DETECT_RANGE   2800    /* 视觉最远察觉距离 */
 #define TOY_GAME_CLOSE_DETECT_RANGE 600 /* 极近距离无需处于正面视野 */
 #define TOY_GAME_NOTICE_MIN_MS  700     /* 进入范围后至少观察多久 */
@@ -118,7 +120,15 @@ struct toy_game_weapon_info {
     int reload_ms;     /* 换弹耗时 */
     int full_auto;     /* 按住连发 */
     int pellets;       /* 每次扣扳机弹丸数（霰弹枪散射） */
-    int spread;        /* 弹丸偏角（1024 定点，奇数弹丸居中均匀分布） */
+    int spread;        /* 每颗弹丸随机偏角上限（1024 定点，[-spread,+spread] 均匀） */
+};
+
+/* 弹丸射线记录：宿主据此渲染子弹轨迹（tracer）与命中特效 */
+struct toy_game_ray {
+    int sy, cy;        /* 弹丸方向（1024 定点，已归一化） */
+    int ex, ez;        /* 终点：命中敌人/墙体位置，或最大射程端点 */
+    int hit_enemy;     /* 该弹丸击倒敌人 */
+    int hit_world;     /* 该弹丸撞上障碍（终点为墙体交点） */
 };
 
 struct toy_game_slot {
@@ -157,6 +167,11 @@ struct toy_game {
     int muzzle_flash_ms;
     int damage_flash_ms;
     int kills;
+
+    /* 弹道记录：最近一次射击产生的弹丸射线（宿主渲染 tracer） */
+    unsigned int fire_seq;   /* 每次实际开火 +1；宿主以此检测新弹道 */
+    int ray_count;
+    struct toy_game_ray rays[TOY_GAME_MAX_RAYS];
 
     /* 敌人与波次 */
     struct toy_game_enemy enemies[TOY_GAME_MAX_ENEMIES];

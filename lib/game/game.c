@@ -39,12 +39,13 @@ static int rand_range(struct toy_game *g, int lo, int hi)
 
 /* ── 武器定义 ─────────────────────────────────────────────────── */
 
-/* 手枪保持历史默认（30 发弹匣、无限备弹、半自动）；SMG 弹匣 50/备弹 650、
- * 全自动 100ms 冷却；霰弹枪弹匣 8/备弹 64，单次 4 弹丸 ±7.5° 散射。 */
+/* 固定散射：每颗弹丸在 [-spread, +spread] 内随机偏转（1024 定点）。
+ * 手枪 ±12（≈±0.7°，几乎精准）；SMG ±90（≈±5°，连发略散）；
+ * 霰弹枪 ±230（≈±12.7°，近距离密集、远距离发散）。 */
 static const struct toy_game_weapon_info weapon_table[TOY_GAME_WEAPON_COUNT] = {
-    { 30, TOY_GAME_AMMO_INFINITE, 200, 1500, 0, 1, 0 },
-    { 50, 650, 100, 2000, 1, 1, 0 },
-    { 8, 64, 600, 2500, 0, 4, 90 },
+    { 30, TOY_GAME_AMMO_INFINITE, 200, 1500, 0, 1, 12 },
+    { 50, 650, 100, 2000, 1, 1, 90 },
+    { 8, 64, 600, 2500, 0, 4, 230 },
 };
 
 const struct toy_game_weapon_info *toy_game_weapon_info(int weapon)
@@ -798,11 +799,61 @@ static int segment_hits_box(int px, int pz, int qx, int qz,
     return t0 <= t1;
 }
 
-/* 单发 hitscan：最近且未被障碍遮挡的敌人一枪毙命，命中返回 1 */
-static int fire_ray(struct toy_game *g, int sy, int cy)
+/* 射线 [px,pz] + (sy,cy) 与盒子的首个相交距离（u 单位 1<<20 定点，
+ * 沿射线方向；u×1024 = 世界距离）。起点在盒内时返回出射距离；
+ * 整盒在身后或射向不经过盒子返回 0。 */
+static int ray_box_entry(int px, int pz, int sy, int cy,
+                         const struct toy_game_box *b, long long *out)
+{
+    long long t0 = 0, t1 = 1LL << 62, t_in, t_out, tmp;
+    if (sy == 0) {
+        if (px < b->minx || px > b->maxx) return 0;
+    } else {
+        t_in = ((long long)(b->minx - px) << 20) / sy;
+        t_out = ((long long)(b->maxx - px) << 20) / sy;
+        if (t_in > t_out) { tmp = t_in; t_in = t_out; t_out = tmp; }
+        if (t_in > t0) t0 = t_in;
+        if (t_out < t1) t1 = t_out;
+    }
+    if (cy == 0) {
+        if (pz < b->minz || pz > b->maxz) return 0;
+    } else {
+        t_in = ((long long)(b->minz - pz) << 20) / cy;
+        t_out = ((long long)(b->maxz - pz) << 20) / cy;
+        if (t_in > t_out) { tmp = t_in; t_in = t_out; t_out = tmp; }
+        if (t_in > t0) t0 = t_in;
+        if (t_out < t1) t1 = t_out;
+    }
+    if (t1 <= 0 || t0 > t1) return 0;
+    if (t0 <= 0) t0 = t1;   /* 起点在盒内：取出射点 */
+    *out = t0;
+    return 1;
+}
+
+static void normalize_dir(int *sy, int *cy)
+{
+    long long length = isqrt((long long)*sy * *sy + (long long)*cy * *cy);
+    if (length > 0) {
+        *sy = (int)((long long)*sy * 1024 / length);
+        *cy = (int)((long long)*cy * 1024 / length);
+    }
+}
+
+/* 单发 hitscan：最近且未被障碍遮挡的敌人一枪毙命，命中返回 1。
+ * 同时输出射线终点：命中敌人 → 敌人位置；未命中 → 首个墙交点或最大射程。 */
+static int fire_ray(struct toy_game *g, int sy, int cy,
+                    int *out_ex, int *out_ez, int *out_hit_world)
 {
     int best = -1, best_t = 0, i;
     int radius_times_1024 = TOY_GAME_HIT_RADIUS * 1024;
+    long long world_t = (long long)TOY_GAME_MAX_RANGE << 20; /* 世界距离定点 */
+    for (i = 0; i < g->world_count; i++) {
+        long long entry_u;
+        if (ray_box_entry(g->px, g->pz, sy, cy, &g->world[i], &entry_u)) {
+            long long entry_w = entry_u * 1024;
+            if (entry_w < world_t) world_t = entry_w;
+        }
+    }
     for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
         struct toy_game_enemy *e = &g->enemies[i];
         int lx, lz, proj, cross, t, hit_x, hit_z, occluded = 0, j;
@@ -815,6 +866,7 @@ static int fire_ray(struct toy_game *g, int sy, int cy)
         if (cross > radius_times_1024 || cross < -radius_times_1024) continue;
         t = proj / 1024;
         if (best >= 0 && t >= best_t) continue;
+        if ((long long)t << 20 >= world_t) continue;   /* 墙先于敌人 */
         hit_x = g->px + (sy * t) / 1024;
         hit_z = g->pz + (cy * t) / 1024;
         for (j = 0; j < g->world_count; j++) {
@@ -830,6 +882,9 @@ static int fire_ray(struct toy_game *g, int sy, int cy)
     }
     if (best >= 0) {
         struct toy_game_enemy *e = &g->enemies[best];
+        *out_ex = g->px + (sy * best_t) / 1024;
+        *out_ez = g->pz + (cy * best_t) / 1024;
+        *out_hit_world = 0;
         e->hp = 0;
         e->active = 2;
         e->dying_ms = TOY_GAME_DYING_MS;
@@ -838,6 +893,12 @@ static int fire_ray(struct toy_game *g, int sy, int cy)
         g->kills++;
         push_event(g, TOY_GAME_EV_KILL);
         return 1;
+    }
+    {
+        long long dist_w = world_t >> 20;
+        *out_ex = g->px + (int)(sy * dist_w / 1024);
+        *out_ez = g->pz + (int)(cy * dist_w / 1024);
+        *out_hit_world = world_t < ((long long)TOY_GAME_MAX_RANGE << 20);
     }
     return 0;
 }
@@ -862,12 +923,24 @@ int toy_game_fire(struct toy_game *g, int sy, int cy)
         g->reload_timer_ms = w->reload_ms;
         push_event(g, TOY_GAME_EV_RELOAD_START);
     }
-    /* 霰弹枪按 spread 均匀偏转弹丸；单发武器只打一束。 */
+    /* 每颗弹丸在 [-spread, +spread] 内随机偏转（1024 定点）：霰弹枪
+     * 近距离密集、远距离发散；弹道记录供宿主渲染 tracer 与命中特效。 */
+    g->fire_seq++;
+    g->ray_count = w->pellets;
     for (pellet = 0; pellet < w->pellets; pellet++) {
-        int off = (2 * pellet - w->pellets + 1) * w->spread / 2;
+        int off = rand_range(g, -w->spread, w->spread);
         int ray_sy = (sy * 1024 - cy * off) / 1024;
         int ray_cy = (cy * 1024 + sy * off) / 1024;
-        if (fire_ray(g, ray_sy, ray_cy)) hit = 1;
+        int ex, ez, hit_world, killed;
+        normalize_dir(&ray_sy, &ray_cy);   /* 旋转后长度略偏，归一化保证判定一致 */
+        killed = fire_ray(g, ray_sy, ray_cy, &ex, &ez, &hit_world);
+        if (killed) hit = 1;
+        g->rays[pellet].sy = ray_sy;
+        g->rays[pellet].cy = ray_cy;
+        g->rays[pellet].ex = ex;
+        g->rays[pellet].ez = ez;
+        g->rays[pellet].hit_enemy = killed;
+        g->rays[pellet].hit_world = hit_world;
     }
     return hit;
 }

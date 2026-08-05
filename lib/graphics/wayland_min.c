@@ -12,6 +12,10 @@
 #include "string.h"
 #include "tlibc_compat.h"
 
+#ifndef MSG_NOSIGNAL
+#define MSG_NOSIGNAL 0x4000
+#endif
+
 #define WL_MAX_OBJECTS 4096
 #define WL_IN_CAP       16384
 #define WL_FD_CAP       16
@@ -117,7 +121,13 @@ static uint32_t new_object(struct toywl *wl, enum object_kind kind)
     for (uint32_t attempts = 0; attempts < WL_MAX_OBJECTS - 2; attempts++) {
         uint32_t id = wl->next_id++;
         if (wl->next_id >= WL_MAX_OBJECTS) wl->next_id = 2;
-        if (id >= 2 && wl->kinds[id] == OBJ_NONE) {
+        /* ZOMBIE 槽位可复用：进入 ZOMBIE 的只有已销毁对象（回调 done 后
+         * 由服务器销毁；shm pool/buffer、指针约束对象均已发出 destroy）。
+         * 组合器按序处理请求，旧对象的销毁必然先于新 id 的使用。不回收
+         * 会在大约 4094 帧后耗尽 id 空间，new_object 返回 0 并让
+         * wl_surface.frame 携带非法 id 0，触发协议错误。 */
+        if (id >= 2 && (wl->kinds[id] == OBJ_NONE ||
+                        wl->kinds[id] == OBJ_ZOMBIE)) {
             wl->kinds[id] = (unsigned char)kind;
             return id;
         }
@@ -175,7 +185,9 @@ static int send_request(struct toywl *wl, struct msg_builder *m, int pass_fd)
         *(int *)CMSG_DATA(cmsg) = pass_fd;
     }
     while (sent < m->len) {
-        ssize_t n = sendmsg(wl->fd, &msg, 0);
+        /* MSG_NOSIGNAL：组合器断开连接时 sendmsg 返回 EPIPE 而非
+         * 触发 SIGPIPE 杀死进程，由调用方按错误路径处理 */
+        ssize_t n = sendmsg(wl->fd, &msg, MSG_NOSIGNAL);
         if (n <= 0) return -1;
         sent += (int)n;
         iov.iov_base = m->data + sent;

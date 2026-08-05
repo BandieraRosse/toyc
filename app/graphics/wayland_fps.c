@@ -1182,6 +1182,270 @@ static void render_muzzle_flash(struct toy_surface *surface)
                    0xFFCC80, surface->stride);
 }
 
+/* ── 子弹轨迹与命中粒子（纯视觉；逻辑步进 16ms 推进） ──────────── */
+
+#define TRACER_SLOTS 16
+#define TRACER_LIFE_MS 160
+#define TRACER_Y (-350)         /* 弹道高度：躯干/头部之间，与命中判定同平面 */
+
+struct tracer {
+    int active;
+    int sx, sz, ex, ez;
+    int life_ms;
+};
+
+#define PARTICLE_SLOTS 96
+#define PARTICLE_LIFE_MS 240
+#define PARTICLE_GRAVITY 4      /* 每 16ms 步重力加速度（世界单位） */
+
+struct particle {
+    int active;
+    int x, y, z;
+    int vx, vy, vz;
+    int life_ms;
+};
+
+static struct tracer tracers[TRACER_SLOTS];
+static int tracer_next;
+static struct particle particles[PARTICLE_SLOTS];
+static int particle_next;
+static unsigned int last_fire_seq;
+
+/* 纯视觉随机源（xorshift32），不占用游戏 PRNG，无需与逻辑同步 */
+static uint32_t effect_rng = 0x243F6A88;
+
+static uint32_t xorshift32(uint32_t *state)
+{
+    uint32_t x = *state;
+    x ^= x << 13;
+    x ^= x >> 17;
+    x ^= x << 5;
+    *state = x;
+    return x;
+}
+
+static int effect_rand(int lo, int hi)
+{
+    uint32_t raw = xorshift32(&effect_rng);
+    int span = hi - lo + 1;
+    return lo + (int)(raw % (uint32_t)span);
+}
+
+/* num/den 线性插值两色（num=den 时取 from，0 时取 to） */
+static uint32_t mix_color(uint32_t from, uint32_t to, int num, int den)
+{
+    unsigned long fr = (from >> 16) & 0xFF, fg = (from >> 8) & 0xFF, fb = from & 0xFF;
+    unsigned long tr = (to >> 16) & 0xFF, tg = (to >> 8) & 0xFF, tb = to & 0xFF;
+    return (uint32_t)(((fr * num + tr * (den - num)) / den) << 16 |
+                      ((fg * num + tg * (den - num)) / den) << 8 |
+                      ((fb * num + tb * (den - num)) / den));
+}
+
+/* 命中统一火花：弹着点 7 颗，沿弹道方向喷射，随后受重力回落 */
+static void spawn_hit_particles(int x, int z, int sy, int cy)
+{
+    int i;
+    for (i = 0; i < 7; i++) {
+        struct particle *p = &particles[particle_next];
+        particle_next = (particle_next + 1) % PARTICLE_SLOTS;
+        p->active = 1;
+        p->x = x;
+        p->y = TRACER_Y + effect_rand(-10, 10);
+        p->z = z;
+        p->vx = sy * 22 / 1024 + effect_rand(-24, 24);
+        p->vy = effect_rand(8, 30);
+        p->vz = cy * 22 / 1024 + effect_rand(-24, 24);
+        p->life_ms = PARTICLE_LIFE_MS + effect_rand(-40, 40);
+    }
+}
+
+static void update_effects(int dt_ms)
+{
+    int i;
+    for (i = 0; i < TRACER_SLOTS; i++) {
+        struct tracer *t = &tracers[i];
+        if (!t->active) continue;
+        t->life_ms -= dt_ms;
+        if (t->life_ms <= 0) t->active = 0;
+    }
+    for (i = 0; i < PARTICLE_SLOTS; i++) {
+        struct particle *p = &particles[i];
+        if (!p->active) continue;
+        p->x += p->vx;
+        p->y += p->vy;
+        p->z += p->vz;
+        p->vy -= PARTICLE_GRAVITY;
+        p->life_ms -= dt_ms;
+        if (p->life_ms <= 0 || p->y < -880) p->active = 0;
+    }
+}
+
+/* 每次实际开火后同步：把 game 里最新一枪的射线搬进 tracer 环，
+ * 命中（敌人或墙体）的弹丸在弹着点生成火花。 */
+static void sync_fire_effects(void)
+{
+    int i, ray_count;
+    if (game.fire_seq < last_fire_seq) {
+        /* 新局（R 重开/死亡重开）：丢弃旧弹道与粒子 */
+        memset(tracers, 0, sizeof(tracers));
+        memset(particles, 0, sizeof(particles));
+        tracer_next = 0;
+        particle_next = 0;
+        last_fire_seq = 0;
+        return;
+    }
+    if (game.fire_seq == last_fire_seq) return;
+    last_fire_seq = game.fire_seq;
+    ray_count = game.ray_count;
+    if (ray_count < 0) ray_count = 0;
+    if (ray_count > TOY_GAME_MAX_RAYS) ray_count = TOY_GAME_MAX_RAYS;
+    for (i = 0; i < ray_count; i++) {
+        const struct toy_game_ray *r = &game.rays[i];
+        struct tracer *t = &tracers[tracer_next];
+        tracer_next = (tracer_next + 1) % TRACER_SLOTS;
+        t->active = 1;
+        t->sx = game.px;
+        t->sz = game.pz;
+        t->ex = r->ex;
+        t->ez = r->ez;
+        t->life_ms = TRACER_LIFE_MS;
+        if (r->hit_enemy || r->hit_world)
+            spawn_hit_particles(r->ex, r->ez, r->sy, r->cy);
+    }
+}
+
+/* 一个带最终边界检查的 Bresenham。投影裁剪是为了避免远处端点导致
+ * 巨量迭代，像素检查则是最后一道防线：fb_draw_line 不检查坐标。 */
+static void draw_effect_line(struct toy_surface *surface,
+                             int x0, int y0, int x1, int y1,
+                             uint32_t color)
+{
+    int dx = x1 > x0 ? x1 - x0 : x0 - x1;
+    int dy = y1 > y0 ? y0 - y1 : y1 - y0;
+    int sx = x0 < x1 ? 1 : -1;
+    int sy = y0 < y1 ? 1 : -1;
+    int err = dx + dy;
+    for (;;) {
+        if (x0 >= 0 && x0 < surface->width &&
+            y0 >= 0 && y0 < surface->height)
+            put_pixel(surface, x0, y0, color);
+        if (x0 == x1 && y0 == y1) break;
+        {
+            int e2 = 2 * err;
+            if (e2 >= dy) { err += dy; x0 += sx; }
+            if (e2 <= dx) { err += dx; y0 += sy; }
+        }
+    }
+}
+
+/* 弹道投影为屏幕线段：先裁剪到近平面，再 Liang-Barsky 裁剪到屏幕。 */
+static void draw_tracer_line(struct toy_surface *surface, const struct camera *camera,
+                             int sx, int sz, int ex, int ez, uint32_t color)
+{
+    struct vec3 a, b, clipped;
+    struct toy_screen_vertex pa, pb;
+    int x0, y0, x1, y1, t0, t1, t_in, t_out, tmp;
+    a.x = sx; a.y = TRACER_Y; a.z = sz;
+    b.x = ex; b.y = TRACER_Y; b.z = ez;
+    world_to_view(camera, &a, &a);
+    world_to_view(camera, &b, &b);
+    if (a.z < NEAR_Z && b.z < NEAR_Z) return;
+    if (a.z < NEAR_Z) {
+        near_intersection(&a, &b, &clipped);
+        a.x = clipped.x;
+        a.y = clipped.y;
+        a.z = clipped.z;
+    } else if (b.z < NEAR_Z) {
+        near_intersection(&b, &a, &clipped);
+        b.x = clipped.x;
+        b.y = clipped.y;
+        b.z = clipped.z;
+    }
+    project_vertex(surface, &a, camera->pitch, &pa);
+    project_vertex(surface, &b, camera->pitch, &pb);
+    x0 = pa.x; y0 = pa.y; x1 = pb.x; y1 = pb.y;
+    /* 16.16 定点 Liang-Barsky；投影坐标有界但可能远超屏幕。
+     * 裁剪到 [0, w-2]×[0, h-2]：第二条偏移线 (+1,+1) 也必须在界内。 */
+    t0 = 0;
+    t1 = 1 << 16;
+    if (x0 != x1) {
+        t_in = (int)((long long)(0 - x0) * 65536 / (x1 - x0));
+        t_out = (int)((long long)(surface->width - 2 - x0) * 65536 / (x1 - x0));
+        if (t_in > t_out) { tmp = t_in; t_in = t_out; t_out = tmp; }
+        if (t_in > t0) t0 = t_in;
+        if (t_out < t1) t1 = t_out;
+        if (t0 > t1) return;
+    } else if (x0 < 0 || x0 >= surface->width - 1) {
+        return;   /* 竖直段整体在屏幕外 */
+    }
+    if (y0 != y1) {
+        t_in = (int)((long long)(0 - y0) * 65536 / (y1 - y0));
+        t_out = (int)((long long)(surface->height - 2 - y0) * 65536 / (y1 - y0));
+        if (t_in > t_out) { tmp = t_in; t_in = t_out; t_out = tmp; }
+        if (t_in > t0) t0 = t_in;
+        if (t_out < t1) t1 = t_out;
+        if (t0 > t1) return;
+    } else if (y0 < 0 || y0 >= surface->height - 1) {
+        return;   /* 水平段整体在屏幕外 */
+    }
+    if (t0 < 0) t0 = 0;
+    if (t1 > (1 << 16)) t1 = 1 << 16;
+    if (t0 > t1) return;
+    if (t0 != 0 || t1 != (1 << 16)) {
+        int nx0 = x0 + (int)((long long)(x1 - x0) * t0 / 65536);
+        int ny0 = y0 + (int)((long long)(y1 - y0) * t0 / 65536);
+        x1 = nx0 + (int)((long long)(x1 - x0) * (t1 - t0) / 65536);
+        y1 = ny0 + (int)((long long)(y1 - y0) * (t1 - t0) / 65536);
+        x0 = nx0;
+        y0 = ny0;
+    }
+    /* 双线 = 2px 粗的射线；偏移像素同色，无需额外混合 */
+    draw_effect_line(surface, x0, y0, x1, y1, color);
+    draw_effect_line(surface, x0 + 1, y0 + 1, x1 + 1, y1 + 1, color);
+}
+
+static int render_tracers(struct toy_renderer *renderer, const struct camera *camera)
+{
+    int i, pixels = 0;
+    for (i = 0; i < TRACER_SLOTS; i++) {
+        const struct tracer *t = &tracers[i];
+        uint32_t color;
+        if (!t->active) continue;
+        color = mix_color(0xFFE060, 0x3A2C14,
+                          t->life_ms * 256 / TRACER_LIFE_MS, 256);
+        draw_tracer_line(&renderer->surface, camera, t->sx, t->sz,
+                         t->ex, t->ez, color);
+        pixels++;
+    }
+    return pixels;
+}
+
+static int render_particles(struct toy_renderer *renderer, const struct camera *camera)
+{
+    int i, pixels = 0;
+    for (i = 0; i < PARTICLE_SLOTS; i++) {
+        const struct particle *p = &particles[i];
+        struct vec3 world, view;
+        struct toy_screen_vertex screen;
+        int k;
+        if (!p->active) continue;
+        world.x = p->x;
+        world.y = p->y;
+        world.z = p->z;
+        world_to_view(camera, &world, &view);
+        if (view.z < NEAR_Z) continue;
+        project_vertex(&renderer->surface, &view, camera->pitch, &screen);
+        if (screen.x < 0 || screen.x + 2 >= renderer->surface.width ||
+            screen.y < 0 || screen.y + 2 >= renderer->surface.height) continue;
+        k = p->life_ms * 256 / PARTICLE_LIFE_MS;
+        if (k > 256) k = 256;   /* 寿命随机 +40ms 可能超出基准，钳制插值比例 */
+        fill_rect(&renderer->surface, screen.x, screen.y, 2, 2,
+                  mix_color(0xFFC860, 0x4A2008, k, 256));
+        pixels++;
+    }
+    return pixels;
+}
+
 static void draw_game_over_panel(struct toy_surface *surface)
 {
     char line[96];
@@ -1484,6 +1748,53 @@ static int run_logic_test(void)
         tlibc_free(pixels);
         return 15;
     }
+    /* 弹道/粒子渲染冒烟：轴向弹道 + 终点越出右屏的弹道（屏幕裁剪与
+     * 偏移线边界） + 远处粒子 */
+    {
+        struct tracer *t = &tracers[0];
+        struct particle *p = &particles[0];
+        t->active = 1;
+        t->sx = camera.x;
+        t->sz = camera.z;
+        t->ex = camera.x;
+        t->ez = camera.z - 3000;
+        t->life_ms = 100;
+        tracers[1].active = 1;
+        tracers[1].sx = camera.x;
+        tracers[1].sz = camera.z;
+        tracers[1].ex = camera.x + 4000;
+        tracers[1].ez = camera.z - 3000;
+        tracers[1].life_ms = 100;
+        p->active = 1;
+        p->x = camera.x + 200;
+        p->y = -350;
+        p->z = camera.z - 2000;
+        p->life_ms = 100;
+        render_tracers(&renderer, &camera);
+        render_particles(&renderer, &camera);
+        memset(tracers, 0, sizeof(tracers));
+        memset(particles, 0, sizeof(particles));
+    }
+    /* 开发者区域场景：纹理墙/模型台座渲染 + 真实开火产生弹道与命中
+     * 火花（向北穿门洞直达最大射程长弹道，向西命中空气墙 1800） */
+    {
+        camera.x = 0;
+        camera.z = -6400;
+        game.px = 0;
+        game.pz = -6400;
+        if (toy_game_equip_weapon(&game, TOY_GAME_WEAPON_SMG) != 1) return 40;
+        render_scene(&renderer, &camera);
+        last_fire_seq = game.fire_seq;
+        toy_game_fire(&game, 0, 1024);
+        sync_fire_effects();
+        toy_game_fire(&game, -1024, 0);
+        sync_fire_effects();
+        update_effects(16);
+        render_tracers(&renderer, &camera);
+        render_particles(&renderer, &camera);
+        memset(tracers, 0, sizeof(tracers));
+        memset(particles, 0, sizeof(particles));
+    }
     toy_renderer_destroy(&renderer);
     tlibc_free(pixels);
 
@@ -1592,7 +1903,7 @@ static int run_logic_test(void)
             toy_game_update(&game, NULL, 0, 0, 1024, 16);
         if (game.reloading || game.slots[0].mag != 50 ||
             game.slots[0].reserve != 648) return 28;
-        /* 霰弹枪 8/64：单次 4 弹丸可同时击毙并排两敌 */
+        /* 霰弹枪 8/64：4 弹丸随机散射，整匣内应放倒并排两敌 */
         if (toy_game_equip_weapon(&game, TOY_GAME_WEAPON_SHOTGUN) != 1 ||
             game.slots[0].mag != 8 || game.slots[0].reserve != 64) return 29;
         memset(game.enemies, 0, sizeof(game.enemies));
@@ -1604,8 +1915,40 @@ static int run_logic_test(void)
         game.enemies[1].z = game.pz + 900;
         game.enemies_alive = 2;
         game.kills = 0;
-        if (!toy_game_fire(&game, 0, 1024)) return 30;
-        if (game.kills != 2 || game.slots[0].mag != 7) return 31;
+        {
+            unsigned int seq_before = game.fire_seq;
+            for (i = 0; i < 8 && game.kills < 2; i++)
+                toy_game_fire(&game, 0, 1024);
+            if (game.kills != 2) return 30;
+            if (game.slots[0].mag != 8 - i) return 31;
+            /* 弹道记录：每枪 4 条射线，方向已归一化，终点不越最大射程 */
+            if (game.ray_count != 4 ||
+                game.fire_seq != seq_before + (unsigned int)i) return 38;
+            for (i = 0; i < game.ray_count; i++) {
+                const struct toy_game_ray *r = &game.rays[i];
+                long long len_sq = (long long)r->sy * r->sy +
+                                   (long long)r->cy * r->cy;
+                if (len_sq < 1022 * 1022 || len_sq > 1026 * 1026) return 38;
+                if (r->ex < game.px - TOY_GAME_MAX_RANGE ||
+                    r->ex > game.px + TOY_GAME_MAX_RANGE ||
+                    r->ez < game.pz - TOY_GAME_MAX_RANGE ||
+                    r->ez > game.pz + TOY_GAME_MAX_RANGE) return 38;
+            }
+        }
+        /* 无敌人时射线止于墙：向西命中起点安全室西墙（x=-1800 面）。
+         * 弹丸有随机偏转，但终点都应落在该墙面范围内。 */
+        game.reloading = 0;
+        game.slots[0].mag = 8;
+        memset(game.enemies, 0, sizeof(game.enemies));
+        game.enemies_alive = 0;
+        toy_game_fire(&game, -1024, 0);
+        if (game.ray_count != 4) return 39;
+        for (i = 0; i < game.ray_count; i++) {
+            const struct toy_game_ray *r = &game.rays[i];
+            if (r->hit_enemy || !r->hit_world) return 39;
+            if (r->ex < game.px - 1803 || r->ex > game.px - 1797) return 39;
+            if (r->ez < -5700 || r->ez > -3800) return 39;
+        }
     }
     /* 地图拾取物解析：2 把主武器 + 1 个弹药盒 */
     if (interactable_count != 3 ||
@@ -1685,9 +2028,11 @@ int main(int argc, char **argv)
     uint64_t seed;
 
     int logic_test = 0;
+    int auto_mode = 0;
     for (int arg = 1; arg < argc; arg++) {
         if (strcmp(argv[arg], "--input-test") == 0) input_debug = 1;
         else if (strcmp(argv[arg], "--logic-test") == 0) logic_test = 1;
+        else if (strcmp(argv[arg], "--auto") == 0) auto_mode = 1;
         else if (strcmp(argv[arg], "--no-textures") == 0) textures_enabled = 0;
         else if (strcmp(argv[arg], "--texture-stats") == 0) texture_stats = 1;
         else if (strcmp(argv[arg], "--frames") == 0 && arg + 1 < argc) {
@@ -1727,6 +2072,10 @@ int main(int argc, char **argv)
         toy_map_unload(&level_map);
         return result;
     }
+    /* 服务器断开（WSLg 组合器/音频服务重启）时 socket 写会触发 SIGPIPE
+     * 并默认杀死进程；忽略后写返回 EPIPE，由既有错误路径接管（音频线程
+     * 静默停声、wayland 发送失败则主循环干净退出）。SIG_IGN 值为 1。 */
+    tlibc_sigaction(SIGPIPE, (void (*)(int))1);
     toy_input_init(&input);
     toy_renderer_init(&renderer);
     settings.mouse_level = 5;
@@ -1834,6 +2183,40 @@ int main(int argc, char **argv)
             fire_edge = 1;
         if (events.close_requested) running = 0;
         if (!running) break;
+        /* --auto：炮弹幕压测（复现崩溃用）。瞬移到关键区域（起点室/
+         * 开发者区/中心/刷怪区），快速转枪口持续轰击：弹道终点大量落
+         * 在屏幕边缘/屏外（裁剪路径）、穿门洞长弹道（最大射程）、
+         * 近距离墙面（命中火花）。 */
+        if (auto_mode) {
+            static const int spots[][2] = {
+                {0, -5000}, {0, -6400}, {0, -9000}, {0, 0},
+                {-5500, -1500}, {4500, 500}, {-6000, -2000}, {2000, 2500},
+            };
+            int idx;
+            if (rendered_frames == 60 && paused) {
+                paused = 0;
+                __printf("wayland_fps: auto barrage started\n");
+            }
+            if (rendered_frames > 60) {
+                if (game.state != TOY_GAME_PLAYING)
+                    input.key_pressed[KEY_R] = 1;   /* 死亡重开 */
+                fire_edge = 1;
+                rotate_camera(&camera, 37, 5);      /* 快速扫射 */
+                idx = rendered_frames / 60;
+                if (rendered_frames % 60 == 0 && idx < 32) {
+                    static const int wslot[3] = {TOY_GAME_WEAPON_PISTOL,
+                                                 TOY_GAME_WEAPON_SMG,
+                                                 TOY_GAME_WEAPON_SHOTGUN};
+                    camera.x = spots[idx % 8][0];
+                    camera.z = spots[idx % 8][1];
+                    game.px = camera.x;
+                    game.pz = camera.z;
+                    toy_game_equip_weapon(&game, wslot[idx % 3]);
+                    __printf("wayland_fps: auto teleport %d to (%d,%d) w=%d\n",
+                             idx, camera.x, camera.z, wslot[idx % 3]);
+                }
+            }
+        }
         /* Some compositors acknowledge locked asynchronously. Relative
          * events received after our accepted request are already valid. */
         if (!paused && (input.pointer_locked || pointer_lock_requested) &&
@@ -1856,6 +2239,7 @@ int main(int argc, char **argv)
         interact_consumed = 0;
         while (accumulator >= FIXED_STEP_US && logic_steps < MAX_LOGIC_STEPS) {
             if (!paused) {
+                update_effects(FIXED_STEP_US / 1000);
                 if (game.state == TOY_GAME_PLAYING) {
                     update_player(&camera, &input);
                     update_keyboard_look(&camera, &input, &settings);
@@ -1881,6 +2265,7 @@ int main(int argc, char **argv)
             accumulator -= FIXED_STEP_US;
             logic_steps++;
         }
+        if (!paused) sync_fire_effects();
         if (accumulator >= FIXED_STEP_US) accumulator %= FIXED_STEP_US;
         int ready = toy_window_begin_frame(window, &surface);
         if (ready < 0) break;
@@ -1888,6 +2273,8 @@ int main(int argc, char **argv)
             if (toy_renderer_begin(&renderer, &surface, 0x151922) < 0) break;
             scene_pixels = render_scene(&renderer, &camera);
             scene_pixels += render_enemies(&renderer, &camera);
+            scene_pixels += render_tracers(&renderer, &camera);
+            scene_pixels += render_particles(&renderer, &camera);
             if (game.state == TOY_GAME_OVER) {
                 draw_game_over_panel(&surface);
             } else if (game.state == TOY_GAME_WON) {

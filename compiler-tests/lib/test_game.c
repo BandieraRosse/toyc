@@ -784,7 +784,7 @@ static int test_weapon_slots(void)
     for (i = 0; i < 125; i++) toy_game_update(&g, NULL, 0, 0, 1024, 16);
     if (g.reloading || g.slots[0].mag != 50 ||
         g.slots[0].reserve != 648) return 29;
-    /* 霰弹枪 8/64：单次 4 弹丸可同时击毙并排两敌 */
+    /* 霰弹枪 8/64：4 弹丸随机散射，整匣内应放倒并排两敌 */
     if (toy_game_equip_weapon(&g, TOY_GAME_WEAPON_SHOTGUN) != 1 ||
         g.slots[0].mag != 8 || g.slots[0].reserve != 64) return 29;
     memset(g.enemies, 0, sizeof(g.enemies));
@@ -796,8 +796,23 @@ static int test_weapon_slots(void)
     g.enemies[1].z = 900;
     g.enemies_alive = 2;
     g.kills = 0;
-    if (!toy_game_fire(&g, 0, 1024)) return 29;
-    if (g.kills != 2 || g.slots[0].mag != 7) return 29;
+    {
+        unsigned int seq_before = g.fire_seq;
+        for (i = 0; i < 8 && g.kills < 2; i++)
+            toy_game_fire(&g, 0, 1024);
+        if (g.kills != 2 || g.slots[0].mag != 8 - i) return 29;
+        /* 弹道记录：每枪 4 条射线，方向已归一化，终点不越最大射程 */
+        if (g.ray_count != 4 ||
+            g.fire_seq != seq_before + (unsigned int)i) return 29;
+        for (i = 0; i < g.ray_count; i++) {
+            const struct toy_game_ray *r = &g.rays[i];
+            long long len_sq = (long long)r->sy * r->sy +
+                               (long long)r->cy * r->cy;
+            if (len_sq < 1022 * 1022 || len_sq > 1026 * 1026) return 29;
+            if (r->ex < -TOY_GAME_MAX_RANGE || r->ex > TOY_GAME_MAX_RANGE ||
+                r->ez < -TOY_GAME_MAX_RANGE || r->ez > TOY_GAME_MAX_RANGE) return 29;
+        }
+    }
     return 0;
 }
 
