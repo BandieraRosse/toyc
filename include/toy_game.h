@@ -20,7 +20,7 @@
 #define TOY_GAME_AMMO_INFINITE  (-1)
 #define TOY_GAME_RELOAD_MS      1500
 #define TOY_GAME_BITE_MS        1000
-#define TOY_GAME_BITE_DAMAGE    15
+#define TOY_GAME_BITE_DAMAGE    2
 #define TOY_GAME_FIRE_COOLDOWN_MS 200
 #define TOY_GAME_MUZZLE_FLASH_MS 80
 #define TOY_GAME_DAMAGE_FLASH_MS 250
@@ -38,14 +38,25 @@
 #define TOY_GAME_HIT_RADIUS     150     /* 命中判定半径（覆盖渲染 box 半宽） */
 #define TOY_GAME_ATTACK_RANGE   300     /* 敌我距离小于此值开始咬 */
 #define TOY_GAME_ENEMY_HALF     120     /* 渲染 box 半宽（宿主用） */
-#define TOY_GAME_ENEMY_HEIGHT   950     /* 敌人盒高度（宿主用） */
+#define TOY_GAME_ENEMY_HEIGHT   350     /* 敌人模型顶部略高于玩家视角 */
 #define TOY_GAME_SPAWN_EDGE     250     /* 生成点距房间边界内缩量 */
 #define TOY_GAME_MIN_SPAWN_DIST 1200    /* 生成点距玩家最小距离（防贴脸） */
 #define TOY_GAME_GOAL_HOLD_MS   1500    /* 终点安全室内停留多久判定通关 */
+#define TOY_GAME_DETECT_RANGE   2400    /* 闲置敌人的圆形侦测半径 */
+#define TOY_GAME_NOTICE_MIN_MS  1000    /* 进入范围后至少观察多久 */
+#define TOY_GAME_NOTICE_MAX_MS  2000
+#define TOY_GAME_ALERT_MS       700     /* 发现玩家后转向、显示感叹号的停顿 */
 
 #define TOY_GAME_KEY_RELOAD     19      /* evdev KEY_R */
 
 enum toy_game_state { TOY_GAME_PLAYING, TOY_GAME_OVER, TOY_GAME_WON };
+
+enum toy_game_enemy_ai {
+    TOY_GAME_ENEMY_IDLE,
+    TOY_GAME_ENEMY_NOTICE,
+    TOY_GAME_ENEMY_ALERT,
+    TOY_GAME_ENEMY_CHASE
+};
 
 enum toy_game_event {
     TOY_GAME_EV_SHOOT,
@@ -72,6 +83,10 @@ struct toy_game_enemy {
     int flash;          /* 命中闪白计时 */
     int hurt;           /* 受击闪红计时 */
     int dying_ms;       /* 倒地压扁计时 */
+    int ai_state;       /* enum toy_game_enemy_ai */
+    int ai_timer_ms;    /* 侦测/警觉阶段倒计时 */
+    int wander_timer_ms;
+    int dir_x, dir_z;   /* 面向，1024 基准定点 */
 };
 
 struct toy_game {

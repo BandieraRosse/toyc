@@ -14,6 +14,7 @@
 #include "toy_window.h"
 #include "toy_renderer.h"
 #include "toy_input.h"
+#include "math.h"
 
 #define KEY_ESC   1
 #define KEY_LEFT  105
@@ -35,13 +36,23 @@ static long monotonic_us(void)
     return now.tv_sec * 1000000L + now.tv_nsec / 1000;
 }
 
+static void rotate_pair(int *sine, int *cosine, int turn)
+{
+    int old_sine = *sine;
+    long long length;
+    *sine = (old_sine * 1024 + *cosine * turn) / 1024;
+    *cosine = (*cosine * 1024 - old_sine * turn) / 1024;
+    length = isqrt((long long)*sine * *sine + (long long)*cosine * *cosine);
+    if (length > 0) {
+        *sine = (int)((long long)*sine * 1024 / length);
+        *cosine = (int)((long long)*cosine * 1024 / length);
+    }
+}
+
 static void update_rotation(struct rotation *rot)
 {
-    int old_sy = rot->sy, old_sx = rot->sx;
-    rot->sy = (old_sy * 1024 + rot->cy * 13) / 1024;
-    rot->cy = (rot->cy * 1024 - old_sy * 13) / 1024;
-    rot->sx = (old_sx * 1024 + rot->cx * 8) / 1024;
-    rot->cx = (rot->cx * 1024 - old_sx * 8) / 1024;
+    rotate_pair(&rot->sy, &rot->cy, 13);
+    rotate_pair(&rot->sx, &rot->cx, 8);
 }
 
 static void put_pixel(struct toy_surface *surface, int x, int y, uint32_t color)
@@ -145,6 +156,24 @@ static int render_cube(struct toy_renderer *renderer, const struct rotation *rot
     return drawn;
 }
 
+static int run_logic_test(void)
+{
+    struct rotation rot;
+    long long y_length, x_length;
+    rot.sy = 0; rot.cy = 1024;
+    rot.sx = 0; rot.cx = 1024;
+    for (int i = 0; i < 10000; i++) {
+        rotate_pair(&rot.sy, &rot.cy, 37);
+        rotate_pair(&rot.sx, &rot.cx, -29);
+    }
+    y_length = isqrt((long long)rot.sy * rot.sy + (long long)rot.cy * rot.cy);
+    x_length = isqrt((long long)rot.sx * rot.sx + (long long)rot.cx * rot.cx);
+    if (y_length < 1022 || y_length > 1026 ||
+        x_length < 1022 || x_length > 1026) return 2;
+    __printf("wayland_cube: logic test passed\n");
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     struct toy_window *window;
@@ -164,6 +193,8 @@ int main(int argc, char **argv)
     int last_pointer_x = 0, last_pointer_y = 0, have_pointer_position = 0;
     long last_time, accumulator = 0;
 
+    if (argc == 2 && strcmp(argv[1], "--logic-test") == 0)
+        return run_logic_test();
     if (argc == 3 && strcmp(argv[1], "--frames") == 0) {
         const char *p = argv[2];
         while (*p >= '0' && *p <= '9') frame_limit = frame_limit * 10 + (*p++ - '0');
@@ -225,20 +256,26 @@ int main(int argc, char **argv)
             }
         }
         if (events.close_requested) running = 0;
-        if (toy_input_pressed(&input, KEY_LEFT)) rot.sy -= 82;
-        if (toy_input_pressed(&input, KEY_RIGHT)) rot.sy += 82;
-        if (toy_input_pressed(&input, KEY_UP)) rot.sx -= 82;
-        if (toy_input_pressed(&input, KEY_DOWN)) rot.sx += 82;
+        if (toy_input_pressed(&input, KEY_LEFT))
+            rotate_pair(&rot.sy, &rot.cy, -82);
+        if (toy_input_pressed(&input, KEY_RIGHT))
+            rotate_pair(&rot.sy, &rot.cy, 82);
+        if (toy_input_pressed(&input, KEY_UP))
+            rotate_pair(&rot.sx, &rot.cx, -82);
+        if (toy_input_pressed(&input, KEY_DOWN))
+            rotate_pair(&rot.sx, &rot.cx, 82);
         if ((input.pointer_locked || pointer_lock_requested) &&
             events.relative_moved) {
-            rot.sy += input.relative_x * 4;
-            rot.sx += input.relative_y * 4;
+            rotate_pair(&rot.sy, &rot.cy, input.relative_x * 4);
+            rotate_pair(&rot.sx, &rot.cx, input.relative_y * 4);
         } else if (pointer_lock_requested && input.pointer_moved) {
             /* Absolute-motion fallback keeps WSLg usable until the
              * compositor confirms pointer constraints. */
             if (have_pointer_position) {
-                rot.sy += (input.pointer_x - last_pointer_x) * 4;
-                rot.sx += (input.pointer_y - last_pointer_y) * 4;
+                rotate_pair(&rot.sy, &rot.cy,
+                            (input.pointer_x - last_pointer_x) * 4);
+                rotate_pair(&rot.sx, &rot.cx,
+                            (input.pointer_y - last_pointer_y) * 4);
             }
             last_pointer_x = input.pointer_x;
             last_pointer_y = input.pointer_y;

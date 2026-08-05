@@ -19,6 +19,7 @@
 #include "toy_audio.h"
 #include "pthread.h"
 #include "errno.h"
+#include "math.h"
 
 #define KEY_ESC   1
 #define KEY_ENTER 28
@@ -46,6 +47,14 @@
 struct vec3 { int x, y, z; };
 struct camera { int x, z, sy, cy, pitch; };
 struct box { int minx, maxx, minz, maxz, height; uint32_t color; };
+struct control_settings { int mouse_level, keyboard_level; };
+struct pause_menu { int selected; };
+
+#define PAUSE_ITEM_RESUME   0
+#define PAUSE_ITEM_MOUSE    1
+#define PAUSE_ITEM_KEYBOARD 2
+#define PAUSE_ITEM_QUIT     3
+#define PAUSE_ITEM_COUNT    4
 
 static const struct box obstacles[OBSTACLE_COUNT] = {
     {-1700, -700,  300, 1700, 1000, 0x755A47},
@@ -309,6 +318,101 @@ static int draw_box(struct toy_renderer *renderer, const struct camera *camera,
     return pixels;
 }
 
+/* 敌人模型使用任意底面高度的盒体，而场景障碍物仍走上面的落地盒体。 */
+static int draw_cuboid(struct toy_renderer *renderer, const struct camera *camera,
+                       int minx, int maxx, int miny, int maxy,
+                       int minz, int maxz, uint32_t color)
+{
+    struct vec3 a, b, c, d, e, f, g, h;
+    int pixels = 0;
+    a.x = minx; a.y = miny; a.z = minz;
+    b.x = maxx; b.y = miny; b.z = minz;
+    c.x = maxx; c.y = miny; c.z = maxz;
+    d.x = minx; d.y = miny; d.z = maxz;
+    e.x = minx; e.y = maxy; e.z = minz;
+    f.x = maxx; f.y = maxy; f.z = minz;
+    g.x = maxx; g.y = maxy; g.z = maxz;
+    h.x = minx; h.y = maxy; h.z = maxz;
+    pixels += draw_quad(renderer, camera, &a, &b, &f, &e, color);
+    pixels += draw_quad(renderer, camera, &b, &c, &g, &f, color + 0x080808);
+    pixels += draw_quad(renderer, camera, &c, &d, &h, &g, color);
+    pixels += draw_quad(renderer, camera, &d, &a, &e, &h, color + 0x080808);
+    pixels += draw_quad(renderer, camera, &e, &f, &g, &h, color + 0x181818);
+    return pixels;
+}
+
+static const int circle_x[8] = {1024, 724, 0, -724, -1024, -724, 0, 724};
+static const int circle_z[8] = {0, 724, 1024, 724, 0, -724, -1024, -724};
+
+static int draw_cylinder(struct toy_renderer *renderer,
+                         const struct camera *camera, int x, int z,
+                         int radius, int bottom, int top, uint32_t color)
+{
+    int pixels = 0;
+    struct vec3 lo[8], hi[8], cap;
+    cap.x = x; cap.y = top; cap.z = z;
+    for (int i = 0; i < 8; i++) {
+        lo[i].x = x + circle_x[i] * radius / 1024;
+        lo[i].y = bottom;
+        lo[i].z = z + circle_z[i] * radius / 1024;
+        hi[i].x = lo[i].x; hi[i].y = top; hi[i].z = lo[i].z;
+    }
+    for (int i = 0; i < 8; i++) {
+        int next = (i + 1) & 7;
+        uint32_t shade = color + ((i & 3) * 0x030303);
+        pixels += draw_quad(renderer, camera, &lo[i], &lo[next],
+                            &hi[next], &hi[i], shade);
+        pixels += draw_world_triangle(renderer, camera, &cap,
+                                      &hi[i], &hi[next], color + 0x181818);
+    }
+    return pixels;
+}
+
+/* 三圈八边面组成的低多边形椭圆头。 */
+static int draw_ellipsoid_head(struct toy_renderer *renderer,
+                               const struct camera *camera, int x, int z,
+                               int center_y, int rx, int ry, uint32_t color)
+{
+    static const int ring_r[5] = {0, 724, 1024, 724, 0};
+    static const int ring_y[5] = {-1024, -724, 0, 724, 1024};
+    struct vec3 ring[5][8];
+    int pixels = 0;
+    for (int r = 0; r < 5; r++) {
+        for (int i = 0; i < 8; i++) {
+            ring[r][i].x = x + circle_x[i] * rx * ring_r[r] / 1048576;
+            ring[r][i].y = center_y + ring_y[r] * ry / 1024;
+            ring[r][i].z = z + circle_z[i] * rx * ring_r[r] / 1048576;
+        }
+    }
+    for (int r = 0; r < 4; r++) {
+        for (int i = 0; i < 8; i++) {
+            int next = (i + 1) & 7;
+            pixels += draw_quad(renderer, camera, &ring[r][i], &ring[r][next],
+                                &ring[r + 1][next], &ring[r + 1][i],
+                                color + ((i & 3) * 0x030303));
+        }
+    }
+    return pixels;
+}
+
+/* 沿敌人当前朝向在头部平面画小矩形，转身过程因此清晰可见。 */
+static int draw_face_rect(struct toy_renderer *renderer,
+                          const struct camera *camera, int x, int z, int radius,
+                          int face_x, int face_z, int h0, int h1,
+                          int y0, int y1, uint32_t color)
+{
+    struct vec3 a, b, c, d;
+    int cx = x + face_x * (radius + 3) / 1024;
+    int cz = z + face_z * (radius + 3) / 1024;
+    a.x = cx - face_z * h0 / 1024; a.y = y0;
+    a.z = cz + face_x * h0 / 1024;
+    b.x = cx - face_z * h1 / 1024; b.y = y0;
+    b.z = cz + face_x * h1 / 1024;
+    c.x = b.x; c.y = y1; c.z = b.z;
+    d.x = a.x; d.y = y1; d.z = a.z;
+    return draw_quad(renderer, camera, &a, &b, &c, &d, color);
+}
+
 static int render_scene(struct toy_renderer *renderer, const struct camera *camera)
 {
     int pixels = 0;
@@ -370,24 +474,44 @@ static void update_player(struct camera *camera, const struct toy_input *input)
 static void rotate_camera(struct camera *camera, int turn, int pitch)
 {
     int old_sy = camera->sy;
+    long long length;
     camera->sy = (old_sy * 1024 + camera->cy * turn) / 1024;
     camera->cy = (camera->cy * 1024 - old_sy * turn) / 1024;
+    length = isqrt((long long)camera->sy * camera->sy +
+                   (long long)camera->cy * camera->cy);
+    if (length > 0) {
+        camera->sy = (int)((long long)camera->sy * 1024 / length);
+        camera->cy = (int)((long long)camera->cy * 1024 / length);
+    }
     camera->pitch = clampi(camera->pitch + pitch, -240, 240);
 }
 
-static void update_mouse(struct camera *camera, int relative_x, int relative_y)
+static int sensitivity_percent(int level)
 {
-    rotate_camera(camera, clampi(relative_x * 3, -128, 128), -relative_y * 2);
+    return 50 + clampi(level, 0, 15) * 10;
+}
+
+static void update_mouse(struct camera *camera, int relative_x, int relative_y,
+                         const struct control_settings *settings)
+{
+    int percent = sensitivity_percent(settings->mouse_level);
+    int turn = relative_x * 3 * percent / 100;
+    int pitch = -relative_y * 2 * percent / 100;
+    rotate_camera(camera, clampi(turn, -256, 256), pitch);
 }
 
 static void update_keyboard_look(struct camera *camera,
-                                 const struct toy_input *input)
+                                 const struct toy_input *input,
+                                 const struct control_settings *settings)
 {
     int turn = toy_input_down(input, KEY_RIGHT) -
                toy_input_down(input, KEY_LEFT);
     int pitch = toy_input_down(input, KEY_UP) -
                 toy_input_down(input, KEY_DOWN);
-    if (turn || pitch) rotate_camera(camera, turn * 24, pitch * 5);
+    int percent = sensitivity_percent(settings->keyboard_level);
+    if (turn || pitch)
+        rotate_camera(camera, turn * 24 * percent / 100,
+                      pitch * 5 * percent / 100);
 }
 
 static void draw_crosshair(struct toy_surface *surface)
@@ -413,54 +537,181 @@ static void fill_rect(struct toy_surface *surface, int x, int y,
         for (int px = x; px < right; px++) put_pixel(surface, px, py, color);
 }
 
-static void draw_pause_overlay(struct toy_surface *surface)
+static void draw_pause_overlay(struct toy_surface *surface,
+                               const struct pause_menu *menu,
+                               const struct control_settings *settings)
 {
-    int panel_w = surface->width / 3;
-    int panel_h = surface->height / 3;
+    char line[64];
+    int panel_w = surface->width * 3 / 5;
+    int panel_h = surface->height * 2 / 3;
     int x = (surface->width - panel_w) / 2;
     int y = (surface->height - panel_h) / 2;
+    int row_y = y + 58;
     fill_rect(surface, x - 3, y - 3, panel_w + 6, panel_h + 6, 0xD88A32);
     fill_rect(surface, x, y, panel_w, panel_h, 0x171B24);
     fb_draw_string((unsigned char *)surface->pixels,
                    x + (panel_w - FB_FONT_W * 6) / 2, y + 28,
                    "PAUSED", 0xE7E9EC, surface->stride);
-    fb_draw_string((unsigned char *)surface->pixels,
-                   x + (panel_w - FB_FONT_W * 22) / 2, y + 60,
-                   "CLICK ENTER SPACE PLAY", 0xD88A32, surface->stride);
-    fb_draw_string((unsigned char *)surface->pixels,
-                   x + (panel_w - FB_FONT_W * 21) / 2, y + 88,
-                   "WASD MOVE ARROWS LOOK", 0xE7E9EC, surface->stride);
+    for (int item = 0; item < PAUSE_ITEM_COUNT; item++) {
+        uint32_t color = item == menu->selected ? 0xFFD060 : 0xE7E9EC;
+        if (item == menu->selected)
+            fill_rect(surface, x + 30, row_y - 3, panel_w - 60,
+                      FB_FONT_H + 6, 0x343B49);
+        if (item == PAUSE_ITEM_RESUME)
+            snprintf(line, sizeof(line), "%c RESUME", item == menu->selected ? '>' : ' ');
+        else if (item == PAUSE_ITEM_MOUSE)
+            snprintf(line, sizeof(line), "%c MOUSE SENS  < %d%% >",
+                     item == menu->selected ? '>' : ' ',
+                     sensitivity_percent(settings->mouse_level));
+        else if (item == PAUSE_ITEM_KEYBOARD)
+            snprintf(line, sizeof(line), "%c KEYBOARD SENS < %d%% >",
+                     item == menu->selected ? '>' : ' ',
+                     sensitivity_percent(settings->keyboard_level));
+        else
+            snprintf(line, sizeof(line), "%c QUIT", item == menu->selected ? '>' : ' ');
+        fb_draw_string((unsigned char *)surface->pixels, x + 42, row_y,
+                       line, color, surface->stride);
+        row_y += 30;
+    }
+    fb_draw_string((unsigned char *)surface->pixels, x + 42, y + panel_h - 62,
+                   "UP DOWN SELECT  LEFT RIGHT CHANGE", 0xAEB6C2,
+                   surface->stride);
+    fb_draw_string((unsigned char *)surface->pixels, x + 42, y + panel_h - 38,
+                   "ENTER CONFIRM  ESC RESUME", 0xD88A32, surface->stride);
 }
 
-/* 敌人彩盒：存活灰绿（受击闪红/命中闪白），倒地压扁 */
+static int enemy_y(int y, int scale)
+{
+    return -900 + (y + 900) * scale / 1000;
+}
+
+/* 偶数槽位：方块人。分离的靴子、腿、躯干和头保持 Minecraft 式轮廓。 */
+static int render_block_enemy(struct toy_renderer *renderer,
+                              const struct camera *camera,
+                              const struct toy_game_enemy *e,
+                              int scale, uint32_t color)
+{
+    int x = e->x, z = e->z, pixels = 0;
+    pixels += draw_cuboid(renderer, camera, x - 105, x - 15,
+                          enemy_y(-900, scale), enemy_y(-760, scale),
+                          z - 105, z + 105, 0x252A30);
+    pixels += draw_cuboid(renderer, camera, x + 15, x + 105,
+                          enemy_y(-900, scale), enemy_y(-760, scale),
+                          z - 105, z + 105, 0x252A30);
+    pixels += draw_cuboid(renderer, camera, x - 100, x - 10,
+                          enemy_y(-760, scale), enemy_y(-450, scale),
+                          z - 85, z + 85, color - 0x101008);
+    pixels += draw_cuboid(renderer, camera, x + 10, x + 100,
+                          enemy_y(-760, scale), enemy_y(-450, scale),
+                          z - 85, z + 85, color - 0x101008);
+    pixels += draw_cuboid(renderer, camera, x - 175, x + 175,
+                          enemy_y(-470, scale), enemy_y(20, scale),
+                          z - 105, z + 105, color);
+    pixels += draw_cuboid(renderer, camera, x - 155, x + 155,
+                          enemy_y(0, scale), enemy_y(320, scale),
+                          z - 155, z + 155, color + 0x202010);
+    /* 像素化愤怒脸：下压的双眉、亮眼和紧闭嘴。 */
+    pixels += draw_face_rect(renderer, camera, x, z, 155, e->dir_x, e->dir_z,
+                             -105, -18, enemy_y(210, scale),
+                             enemy_y(235, scale), 0x4A1010);
+    pixels += draw_face_rect(renderer, camera, x, z, 155, e->dir_x, e->dir_z,
+                             18, 105, enemy_y(210, scale),
+                             enemy_y(235, scale), 0x4A1010);
+    pixels += draw_face_rect(renderer, camera, x, z, 155, e->dir_x, e->dir_z,
+                             -82, -28, enemy_y(160, scale),
+                             enemy_y(200, scale), 0xFFF0A0);
+    pixels += draw_face_rect(renderer, camera, x, z, 155, e->dir_x, e->dir_z,
+                             28, 82, enemy_y(160, scale),
+                             enemy_y(200, scale), 0xFFF0A0);
+    pixels += draw_face_rect(renderer, camera, x, z, 155, e->dir_x, e->dir_z,
+                             -70, 70, enemy_y(80, scale),
+                             enemy_y(105, scale), 0x4A1010);
+    return pixels;
+}
+
+/* 奇数槽位：Madness 风格无臂人，圆柱躯干、椭圆头和厚底短靴。 */
+static int render_round_enemy(struct toy_renderer *renderer,
+                              const struct camera *camera,
+                              const struct toy_game_enemy *e,
+                              int scale, uint32_t color)
+{
+    int x = e->x, z = e->z, pixels = 0;
+    pixels += draw_cuboid(renderer, camera, x - 145, x - 12,
+                          enemy_y(-900, scale), enemy_y(-760, scale),
+                          z - 180, z + 95, 0x202328);
+    pixels += draw_cuboid(renderer, camera, x + 12, x + 145,
+                          enemy_y(-900, scale), enemy_y(-760, scale),
+                          z - 180, z + 95, 0x202328);
+    pixels += draw_cylinder(renderer, camera, x, z, 180,
+                            enemy_y(-770, scale), enemy_y(20, scale), color);
+    pixels += draw_ellipsoid_head(renderer, camera, x, z,
+                                  enemy_y(155, scale), 205,
+                                  (enemy_y(350, scale) - enemy_y(-40, scale)) / 2,
+                                  color + 0x181810);
+    /* 普通敌人面部只有一个醒目的十字。 */
+    pixels += draw_face_rect(renderer, camera, x, z, 205, e->dir_x, e->dir_z,
+                             -25, 25, enemy_y(35, scale),
+                             enemy_y(275, scale), 0x251F20);
+    pixels += draw_face_rect(renderer, camera, x, z, 205, e->dir_x, e->dir_z,
+                             -120, 120, enemy_y(135, scale),
+                             enemy_y(175, scale), 0x251F20);
+    return pixels;
+}
+
+static void render_enemy_alert(struct toy_renderer *renderer,
+                               const struct camera *camera,
+                               const struct toy_game_enemy *e, int scale)
+{
+    struct vec3 world, view;
+    struct toy_screen_vertex screen;
+    int x, y;
+    if (e->ai_state != TOY_GAME_ENEMY_ALERT) return;
+    world.x = e->x;
+    world.y = enemy_y(500, scale);
+    world.z = e->z;
+    world_to_view(camera, &world, &view);
+    if (view.z < NEAR_Z) return;
+    project_vertex(&renderer->surface, &view, camera->pitch, &screen);
+    x = screen.x - 5;
+    y = screen.y;
+    if (x < 1 || x + 11 >= renderer->surface.width ||
+        y < 1 || y + 27 >= renderer->surface.height)
+        return;
+    fill_rect(&renderer->surface, x - 1, y - 1, 11, 18, 0x301010);
+    fill_rect(&renderer->surface, x + 1, y + 1, 7, 14, 0xFF3030);
+    fill_rect(&renderer->surface, x - 1, y + 19, 11, 8, 0x301010);
+    fill_rect(&renderer->surface, x + 1, y + 21, 7, 4, 0xFF3030);
+}
+
+/* 两种低多边形敌人；受击闪红/命中闪白，倒地时整体纵向压扁。 */
 static int render_enemies(struct toy_renderer *renderer,
                           const struct camera *camera)
 {
     int pixels = 0;
     for (int i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
         const struct toy_game_enemy *e = &game.enemies[i];
-        struct box b;
         struct vec3 center, view;
+        uint32_t color;
+        int scale = 1000;
         if (e->active == 0) continue;
         center.x = e->x;
         center.y = 0;
         center.z = e->z;
         world_to_view(camera, &center, &view);
-        if (view.z > 3500) continue;   /* 远距剔除：该距离下盒高不足 11px */
-        b.minx = e->x - TOY_GAME_ENEMY_HALF;
-        b.maxx = e->x + TOY_GAME_ENEMY_HALF;
-        b.minz = e->z - TOY_GAME_ENEMY_HALF;
-        b.maxz = e->z + TOY_GAME_ENEMY_HALF;
+        if (view.z > 8000) continue;
         if (e->active == 2) {
-            b.height = TOY_GAME_ENEMY_HEIGHT * e->dying_ms / TOY_GAME_DYING_MS;
-            b.color = 0x5A1A1A;
+            scale = e->dying_ms * 1000 / TOY_GAME_DYING_MS;
+            color = 0x5A1A1A;
         } else {
-            b.height = TOY_GAME_ENEMY_HEIGHT;
-            if (e->hurt > 0) b.color = 0xBB3333;
-            else if (e->flash > 0) b.color = 0xFFFFFF;
-            else b.color = 0x4A5D3A;
+            if (e->hurt > 0) color = 0xBB3333;
+            else if (e->flash > 0) color = 0xDFDFDF;
+            else color = 0x4A5D3A;
         }
-        pixels += draw_box(renderer, camera, &b);
+        if ((i & 1) == 0)
+            pixels += render_block_enemy(renderer, camera, e, scale, color);
+        else
+            pixels += render_round_enemy(renderer, camera, e, scale, color);
+        render_enemy_alert(renderer, camera, e, scale);
     }
     return pixels;
 }
@@ -705,12 +956,16 @@ static void play_game_events(struct audio_ctx *audio)
 static int run_logic_test(void)
 {
     struct camera camera;
+    struct control_settings settings;
     struct toy_input input;
     struct vec3 triangle[3], clipped[4];
     struct toy_surface surface;
     struct toy_renderer renderer;
     uint32_t *pixels;
     int count;
+    long long direction_length;
+    settings.mouse_level = 5;
+    settings.keyboard_level = 5;
     toy_input_init(&input);
     reset_game(&camera, 1);
     input.key_down[KEY_W] = 1;
@@ -734,13 +989,21 @@ static int run_logic_test(void)
 
     input.key_down[KEY_W] = 0;
     input.key_down[KEY_RIGHT] = 1;
-    update_keyboard_look(&camera, &input);
+    update_keyboard_look(&camera, &input, &settings);
     /* 首次转向时 old_sy=0，定点旋转 cy 恰为 1024 不变，只断言转向生效 */
     if (camera.sy <= 0) return 3;
     input.key_down[KEY_RIGHT] = 0;
     input.key_down[KEY_UP] = 1;
-    update_keyboard_look(&camera, &input);
+    update_keyboard_look(&camera, &input, &settings);
     if (camera.pitch <= 0) return 4;
+    camera.sy = 0;
+    camera.cy = 1024;
+    for (int i = 0; i < 10000; i++) rotate_camera(&camera, 37, 0);
+    direction_length = isqrt((long long)camera.sy * camera.sy +
+                             (long long)camera.cy * camera.cy);
+    if (direction_length < 1022 || direction_length > 1026) return 16;
+    camera.sy = 0;
+    camera.cy = 1024;
 
     triangle[0].x = -100; triangle[0].y = 0; triangle[0].z = 100;
     triangle[1].x =  100; triangle[1].y = 0; triangle[1].z = 400;
@@ -768,6 +1031,22 @@ static int run_logic_test(void)
         toy_renderer_destroy(&renderer);
         tlibc_free(pixels);
         return 8;
+    }
+    /* 两个槽位分别覆盖方块人和圆柱人，确保模型几何进入光栅器。 */
+    memset(game.enemies, 0, sizeof(game.enemies));
+    game.enemies[0].active = 1;
+    game.enemies[0].x = -350;
+    game.enemies[0].z = -2500;
+    game.enemies[0].dir_z = -1024;
+    game.enemies[1].active = 1;
+    game.enemies[1].x = 350;
+    game.enemies[1].z = -2500;
+    game.enemies[1].dir_z = -1024;
+    game.enemies[1].ai_state = TOY_GAME_ENEMY_ALERT;
+    if (render_enemies(&renderer, &camera) < 1000) {
+        toy_renderer_destroy(&renderer);
+        tlibc_free(pixels);
+        return 15;
     }
     toy_renderer_destroy(&renderer);
     tlibc_free(pixels);
@@ -840,6 +1119,8 @@ int main(int argc, char **argv)
     struct toy_surface surface;
     struct toy_renderer renderer;
     struct camera camera;
+    struct control_settings settings;
+    struct pause_menu pause_menu;
     long last_time, accumulator = 0;
     int running = 1, pointer_lock_requested = 0, paused = 1;
     int last_pointer_x = 0, last_pointer_y = 0, have_pointer_position = 0;
@@ -861,6 +1142,9 @@ int main(int argc, char **argv)
     }
     toy_input_init(&input);
     toy_renderer_init(&renderer);
+    settings.mouse_level = 5;
+    settings.keyboard_level = 5;
+    pause_menu.selected = PAUSE_ITEM_RESUME;
     if (__getrandom(&seed, sizeof(seed), 0) < 0)
         seed = (uint64_t)monotonic_us();
     if (seed == 0) seed = 1;
@@ -870,8 +1154,8 @@ int main(int argc, char **argv)
         __fprintf(2, "wayland_fps: cannot create Wayland window\n");
         return 1;
     }
-    __printf("wayland_fps: click/Enter/Space to play; mouse/arrows look, WASD moves, "
-             "click/Space fire, R reload, Esc pauses/exits\n");
+    __printf("wayland_fps: pause menu uses arrows + Enter; mouse/arrows look, "
+             "WASD moves, click/Space fire, R reload, Esc pauses/resumes\n");
     if (input_debug)
         __printf("wayland_fps: input debug HUD enabled; test chords and focus changes\n");
     if (audio_start(&audio) < 0) {
@@ -900,9 +1184,34 @@ int main(int argc, char **argv)
                 pointer_lock_requested = 0;
             }
         }
-        if (paused && ((events.button_pressed && events.button == BTN_LEFT) ||
-                       toy_input_pressed(&input, KEY_ENTER) ||
-                       toy_input_pressed(&input, KEY_SPACE))) {
+        if (paused && game.state == TOY_GAME_PLAYING) {
+            int resume_requested = 0;
+            if (toy_input_pressed(&input, KEY_UP)) {
+                pause_menu.selected--;
+                if (pause_menu.selected < 0)
+                    pause_menu.selected = PAUSE_ITEM_COUNT - 1;
+            }
+            if (toy_input_pressed(&input, KEY_DOWN)) {
+                pause_menu.selected++;
+                if (pause_menu.selected >= PAUSE_ITEM_COUNT)
+                    pause_menu.selected = 0;
+            }
+            if (toy_input_pressed(&input, KEY_LEFT) ||
+                toy_input_pressed(&input, KEY_RIGHT)) {
+                int change = toy_input_pressed(&input, KEY_RIGHT) ? 1 : -1;
+                if (pause_menu.selected == PAUSE_ITEM_MOUSE)
+                    settings.mouse_level = clampi(settings.mouse_level + change, 0, 15);
+                else if (pause_menu.selected == PAUSE_ITEM_KEYBOARD)
+                    settings.keyboard_level = clampi(settings.keyboard_level + change, 0, 15);
+            }
+            if (toy_input_pressed(&input, KEY_ENTER)) {
+                if (pause_menu.selected == PAUSE_ITEM_RESUME)
+                    resume_requested = 1;
+                else if (pause_menu.selected == PAUSE_ITEM_QUIT)
+                    running = 0;
+            }
+            if (toy_input_pressed(&input, KEY_ESC)) resume_requested = 1;
+            if (resume_requested) {
             int capture_result = toy_window_set_pointer_lock(window, 1);
             pointer_lock_requested = capture_result > 0;
             paused = 0;
@@ -912,16 +1221,18 @@ int main(int argc, char **argv)
             resumed = 1;
             __printf("wayland_fps: resumed, pointer constraint %s\n",
                      pointer_lock_requested ? "requested" : "unavailable");
+            }
         }
-        if (toy_input_pressed(&input, KEY_ESC)) {
+        if (!paused && !resumed && toy_input_pressed(&input, KEY_ESC)) {
             if (game.state == TOY_GAME_OVER || game.state == TOY_GAME_WON)
                 running = 0;
-            else if (!paused) {
+            else {
                 toy_window_set_pointer_lock(window, 0);
                 pointer_lock_requested = 0;
                 paused = 1;
+                pause_menu.selected = PAUSE_ITEM_RESUME;
                 __printf("wayland_fps: paused, pointer released\n");
-            } else running = 0;
+            }
         }
         /* 射击输入：每帧只取一次边沿（恢复点击帧不开火） */
         if (!paused && !resumed && events.button_pressed && events.button == BTN_LEFT)
@@ -934,11 +1245,11 @@ int main(int argc, char **argv)
          * events received after our accepted request are already valid. */
         if (!paused && (input.pointer_locked || pointer_lock_requested) &&
             events.relative_moved) {
-            update_mouse(&camera, input.relative_x, input.relative_y);
+            update_mouse(&camera, input.relative_x, input.relative_y, &settings);
         } else if (!paused && pointer_lock_requested && input.pointer_moved) {
             if (have_pointer_position)
                 update_mouse(&camera, input.pointer_x - last_pointer_x,
-                              input.pointer_y - last_pointer_y);
+                              input.pointer_y - last_pointer_y, &settings);
             last_pointer_x = input.pointer_x;
             last_pointer_y = input.pointer_y;
             have_pointer_position = 1;
@@ -953,7 +1264,7 @@ int main(int argc, char **argv)
             if (!paused) {
                 if (game.state == TOY_GAME_PLAYING) {
                     update_player(&camera, &input);
-                    update_keyboard_look(&camera, &input);
+                    update_keyboard_look(&camera, &input, &settings);
                     game.px = camera.x;
                     game.pz = camera.z;
                     toy_game_update(&game, input.key_pressed, fire_edge,
@@ -980,7 +1291,7 @@ int main(int argc, char **argv)
             } else if (game.state == TOY_GAME_WON) {
                 draw_level_won_panel(&surface);
             } else if (paused) {
-                draw_pause_overlay(&surface);
+                draw_pause_overlay(&surface, &pause_menu, &settings);
             } else {
                 draw_crosshair(&surface);
                 render_hud(&surface);

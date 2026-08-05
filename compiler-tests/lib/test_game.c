@@ -60,6 +60,9 @@ static int test_prng_determinism(void)
         if (a.enemies[i].x != b.enemies[i].x) return 1;
         if (a.enemies[i].z != b.enemies[i].z) return 1;
         if (a.enemies[i].hp != b.enemies[i].hp) return 1;
+        if (a.enemies[i].ai_state != b.enemies[i].ai_state) return 1;
+        if (a.enemies[i].dir_x != b.enemies[i].dir_x ||
+            a.enemies[i].dir_z != b.enemies[i].dir_z) return 1;
     }
     return 0;
 }
@@ -89,17 +92,27 @@ static int test_wave_spawn(void)
     return 0;
 }
 
-/* 3: 追玩家（无障碍时距离单调收敛到攻击范围） */
+/* 3: 先侦测/警觉，再追玩家；不会生成后立刻扑向玩家 */
 static int test_chase_player(void)
 {
     struct toy_game g;
-    int i;
+    int i, saw_alert = 0;
     long long dist;
     toy_game_init(&g, 3);
     toy_game_set_world(&g, NULL, 0, ROOM);
     g.px = 0;
     g.pz = 0;
     toy_game_place_enemy(&g, 2000, 0);
+    for (i = 0; i < 60; i++) toy_game_update(&g, NULL, 0, 0, 1024, 16);
+    if (g.enemies[0].ai_state != TOY_GAME_ENEMY_NOTICE) return 3;
+    dist = (long long)g.enemies[0].x * g.enemies[0].x +
+           (long long)g.enemies[0].z * g.enemies[0].z;
+    if (isqrt(dist) < 1500) return 3;
+    for (i = 0; i < 170; i++) {
+        toy_game_update(&g, NULL, 0, 0, 1024, 16);
+        if (g.enemies[0].ai_state == TOY_GAME_ENEMY_ALERT) saw_alert = 1;
+    }
+    if (!saw_alert || g.enemies[0].ai_state != TOY_GAME_ENEMY_CHASE) return 3;
     for (i = 0; i < 60; i++) toy_game_update(&g, NULL, 0, 0, 1024, 16);
     dist = (long long)g.enemies[0].x * g.enemies[0].x +
            (long long)g.enemies[0].z * g.enemies[0].z;
@@ -117,13 +130,14 @@ static int test_wall_blocks(void)
     g.px = -1000;
     g.pz = 0;
     toy_game_place_enemy(&g, 3000, 0);
+    g.enemies[0].ai_state = TOY_GAME_ENEMY_CHASE;
     for (i = 0; i < 120; i++) toy_game_update(&g, NULL, 0, 0, 1024, 16);
     /* 逐轴滑动允许圆缘擦过障碍（x≈750 贴墙），但中心绝不可越过 maxx 穿墙 */
     if (g.enemies[0].x < 1800) return 4;
     return 0;
 }
 
-/* 5: 攻击扣血 + 独立冷却（1000ms 只咬一次） */
+/* 5: 每次攻击扣 2 点血 + 独立冷却（1000ms 只咬一次） */
 static int test_bite_damage(void)
 {
     struct toy_game g;
@@ -134,14 +148,15 @@ static int test_bite_damage(void)
     g.px = 0;
     g.pz = 0;
     toy_game_place_enemy(&g, 250, 0);
+    g.enemies[0].ai_state = TOY_GAME_ENEMY_CHASE;
     toy_game_update(&g, NULL, 0, 0, 1024, 16);
-    if (g.hp != 85) return 5;
+    if (g.hp != 98) return 5;
     n = toy_game_drain_events(&g, evs, 16);
     if (!has_event(evs, n, TOY_GAME_EV_BITE)) return 5;
     for (i = 0; i < 10; i++) toy_game_update(&g, NULL, 0, 0, 1024, 16);
-    if (g.hp != 85) return 5;
+    if (g.hp != 98) return 5;
     for (i = 0; i < 60; i++) toy_game_update(&g, NULL, 0, 0, 1024, 16);
-    if (g.hp != 70) return 5;
+    if (g.hp != 96) return 5;
     return 0;
 }
 
@@ -299,7 +314,10 @@ static int test_game_over(void)
     g.to_spawn = 0;
     g.hp = 5;
     toy_game_place_enemy(&g, 250, 0);
+    g.enemies[0].ai_state = TOY_GAME_ENEMY_CHASE;
     toy_game_update(&g, NULL, 0, 0, 1024, 16);
+    if (g.state != TOY_GAME_PLAYING || g.hp != 3) return 13;
+    for (i = 0; i < 126; i++) toy_game_update(&g, NULL, 0, 0, 1024, 16);
     if (g.state != TOY_GAME_OVER || g.hp != 0) return 13;
     n = toy_game_drain_events(&g, evs, 16);
     if (!has_event(evs, n, TOY_GAME_EV_PLAYER_DEATH)) return 13;
