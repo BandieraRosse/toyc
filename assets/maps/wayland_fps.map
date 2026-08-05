@@ -1,0 +1,65 @@
+# wayland_fps map v1
+# world minx maxx minz maxz room_limit
+world -12000 12000 -12000 7000 11500
+start 0 -5000
+
+# Solid gameplay cover: minx maxx minz maxz height color
+box -1700 -700 300 1700 1000 755A47
+box 600 1800 -900 100 1450 49677D
+box 2300 3200 1800 3000 750 64704B
+
+# Start safe room and exit safe room
+box -2000 -1800 -5700 -3800 1300 3F6751
+box 1800 2000 -5700 -3800 1300 3F6751
+box -1800 -600 -4000 -3800 1300 3F6751
+box 600 1800 -4000 -3800 1300 3F6751
+# Rear wall of the starting safe room; the center is the developer door.
+box -1800 -600 -5700 -5680 1300 3F6751
+box 600 1800 -5700 -5680 1300 3F6751
+box -2000 -1800 3800 5700 1300 477A58
+box 1800 2000 3800 5700 1300 477A58
+box -1800 -600 3800 4000 1300 477A58
+box 600 1800 3800 4000 1300 477A58
+
+safe -1800 1800 -5700 -4000
+safe -1800 1800 4000 5700
+spawn -5200 -3500 -2600 -800 6E2828
+spawn 3500 5200 -500 1400 6E2828
+spawn -3300 -1500 2100 3600 6E2828
+alarm 3300 5200 -3000 -1500
+
+# Presentation and gameplay floor elements
+floor -1800 1800 -5700 -4000 245238
+floor -1800 1800 4000 5700 2D7047
+floor -5200 -3500 -2600 -800 6E2828
+floor 3500 5200 -500 1400 6E2828
+floor -3300 -1500 2100 3600 6E2828
+border 3300 5200 -3000 -1500 90 D8B020
+label 3300 5200 -3000 -1500 FFD040 WARNING_HORDE
+
+# Distant room boundary: wall x1 x2 z1 z2 top color
+wall -12000 12000 -12000 -12000 1800 555B68
+wall -12000 12000 7000 7000 1800 4C5260
+wall -12000 -12000 -12000 7000 1800 5E5965
+wall 12000 12000 -7000 7000 1800 56515D
+
+# Developer area: behind the starting room, with a narrow center doorway.
+# Only the boundary toward the old map/safe room is an air wall.
+box -5500 -1800 -6500 -6300 1800 000000 air
+box 1800 5500 -6500 -6300 1800 000000 air
+floor -5300 5300 -11300 -6500 20252A
+label -5000 5000 -10800 -10300 FFD060 DEVELOPER_ZONE
+
+# Model display plinths (x1 x2 z1 z2 bottom top color), decorative only.
+floor -3600 -1400 -9000 -7800 343B48
+floor 1400 3600 -9000 -7800 343B48
+model -3200 -2000 -8700 -8100 -900 700 B66A35 1
+model 2000 3200 -8700 -8100 -900 900 3F8FBA 2
+label -4000 4000 -9700 -9200 90D0FF MODEL_DISPLAY
+
+# Texture display wall, facing the player from the north side of the room.
+wall -4800 4800 -11200 -11200 1200 404A58
+texture -4200 -2600 -11180 1050 2 1 1 808080
+texture -1200 1200 -11180 1050 2 1 1 C08040
+texture 2600 4200 -11180 1050 2 1 1 40A0C0
+label -4500 4500 -10600 -10100 FFD060 TEXTURE_DISPLAY

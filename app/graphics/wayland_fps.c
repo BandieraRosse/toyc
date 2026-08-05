@@ -18,6 +18,7 @@
 #include "fb_font.h"
 #include "linux_audio.h"
 #include "toy_audio.h"
+#include "toy_map.h"
 #include "pthread.h"
 #include "errno.h"
 #include "math.h"
@@ -40,10 +41,8 @@
 #define MAX_FRAME_US 250000
 #define MAX_LOGIC_STEPS 4
 #define NEAR_Z 192
-#define ROOM_LIMIT 5700
 #define PLAYER_RADIUS 180
 #define MOVE_STEP 76
-#define OBSTACLE_COUNT 11
 #define UV_ONE 65536
 
 struct vec3 { int x, y, z; };
@@ -58,16 +57,17 @@ struct pause_menu { int selected; };
 #define PAUSE_ITEM_QUIT     3
 #define PAUSE_ITEM_COUNT    4
 
+#if 0
 static const struct box obstacles[OBSTACLE_COUNT] = {
     {-1700, -700,  300, 1700, 1000, 0x755A47},
     {  600, 1800, -900,  100, 1450, 0x49677D},
     { 2300, 3200, 1800, 3000,  750, 0x64704B},
-    /* 起点安全室：两侧墙 + 留出中央门洞的前墙。 */
+    /* start room */
     {-2000, -1800, -5700, -3800, 1300, 0x3F6751},
     { 1800,  2000, -5700, -3800, 1300, 0x3F6751},
     {-1800,  -600, -4000, -3800, 1300, 0x3F6751},
     {  600,  1800, -4000, -3800, 1300, 0x3F6751},
-    /* 终点安全室：面向主体地图同样保留中央门洞。 */
+    /* exit room */
     {-2000, -1800,  3800,  5700, 1300, 0x477A58},
     { 1800,  2000,  3800,  5700, 1300, 0x477A58},
     {-1800,  -600,  3800,  4000, 1300, 0x477A58},
@@ -107,12 +107,30 @@ static const struct toy_game_box alarm_zone = {
     3300, 5200, -3000, -1500
 };
 
+#endif
+static struct toy_map level_map;
+static struct toy_game_box map_bounds[TOY_MAP_MAX_BOXES];
+static struct toy_game_box map_safe_rooms[TOY_MAP_MAX_ZONES];
+static struct toy_game_box map_spawn_zones[TOY_MAP_MAX_ZONES];
+static int map_spawn_count;
 static struct toy_game game;   /* 游戏规则状态（main / logic-test 共用） */
 static struct toy_texture_asset scene_texture;
 static struct toy_texture_view scene_texture_view;
 static struct toy_texture_view wall_texture_view;
 static struct toy_texture_view *active_texture_view;
 static int textures_enabled = 1;
+
+static void prepare_map_rules(void)
+{
+    int i;
+    for (i=0; i<level_map.box_count; i++) {
+        map_bounds[i].minx=level_map.boxes[i].minx; map_bounds[i].maxx=level_map.boxes[i].maxx;
+        map_bounds[i].minz=level_map.boxes[i].minz; map_bounds[i].maxz=level_map.boxes[i].maxz;
+    }
+    for (i=0; i<level_map.safe_count; i++) map_safe_rooms[i]=level_map.safe_rooms[i];
+    map_spawn_count=level_map.spawn_count;
+    for (i=0; i<map_spawn_count; i++) map_spawn_zones[i]=level_map.spawn_zones[i].box;
+}
 
 /* Only the distant room boundary uses the stylized wall texture. Gameplay
  * cover remains flat-shaded so texture sampling does not dominate the
@@ -121,15 +139,16 @@ static int textures_enabled = 1;
 /* 新局和死亡重开必须走同一路径，避免 toy_game_init 清空世界配置。 */
 static void reset_game(struct camera *camera, uint64_t seed)
 {
-    camera->x = 0;
-    camera->z = -5000;
+    camera->x = level_map.start_x;
+    camera->z = level_map.start_z;
     camera->sy = 0;
     camera->cy = 1024;
     camera->pitch = 0;
     toy_game_init(&game, seed);
-    toy_game_set_world(&game, bounds, OBSTACLE_COUNT, ROOM_LIMIT);
-    toy_game_set_campaign(&game, safe_rooms, 2, spawn_zones, 3);
-    toy_game_set_alarm(&game, &alarm_zone, 1);
+    toy_game_set_world(&game, map_bounds, level_map.box_count, level_map.room_limit);
+    toy_game_set_campaign(&game, map_safe_rooms, level_map.safe_count,
+                          map_spawn_zones, map_spawn_count);
+    toy_game_set_alarm(&game, &level_map.alarm_zone, level_map.has_alarm);
     game.px = camera->x;
     game.pz = camera->z;
 }
@@ -434,6 +453,11 @@ static void draw_world_label(struct toy_renderer *renderer,
                    screen.x, screen.y, label, color, renderer->surface.stride);
 }
 
+static int render_block_enemy(struct toy_renderer *, const struct camera *,
+                              const struct toy_game_enemy *, int, uint32_t);
+static int render_round_enemy(struct toy_renderer *, const struct camera *,
+                              const struct toy_game_enemy *, int, uint32_t);
+
 static int draw_box(struct toy_renderer *renderer, const struct camera *camera,
                     const struct box *box)
 {
@@ -554,8 +578,8 @@ static int render_scene(struct toy_renderer *renderer, const struct camera *came
 {
     int pixels = 0;
     struct vec3 a, b, c, d;
-    for (int z = -6000; z < 6000; z += 1000) {
-        for (int x = -6000; x < 6000; x += 1000) {
+    for (int z = level_map.minz; z < level_map.maxz; z += 1000) {
+        for (int x = level_map.minx; x < level_map.maxx; x += 1000) {
             uint32_t color = (((x + z) / 1000) & 1) ? 0x30343A : 0x272B31;
             a.x = x;        a.y = -900; a.z = z;
             b.x = x + 1000; b.y = -900; b.z = z;
@@ -564,35 +588,39 @@ static int render_scene(struct toy_renderer *renderer, const struct camera *came
             pixels += draw_quad(renderer, camera, &a, &b, &c, &d, color);
         }
     }
-    a.x = -6000; a.y = -900; a.z = -6000;
-    b.x =  6000; b.y = -900; b.z = -6000;
-    c.x =  6000; c.y = 1800; c.z = -6000;
-    d.x = -6000; d.y = 1800; d.z = -6000;
     active_texture_view = &wall_texture_view;
-    pixels += draw_position_quad_tex(renderer, camera, &a, &b, &c, &d,
-                                     5 * UV_ONE, 2 * UV_ONE, 0x555B68);
-    a.z = 6000; b.z = 6000; c.z = 6000; d.z = 6000;
-    pixels += draw_position_quad_tex(renderer, camera, &a, &b, &c, &d,
-                                     5 * UV_ONE, 2 * UV_ONE, 0x4C5260);
-    a.x = -6000; a.y = -900; a.z = -6000;
-    b.x = -6000; b.y = -900; b.z =  6000;
-    c.x = -6000; c.y = 1800; c.z =  6000;
-    d.x = -6000; d.y = 1800; d.z = -6000;
-    pixels += draw_position_quad_tex(renderer, camera, &a, &b, &c, &d,
-                                     5 * UV_ONE, 2 * UV_ONE, 0x5E5965);
-    a.x = 6000; b.x = 6000; c.x = 6000; d.x = 6000;
-    pixels += draw_position_quad_tex(renderer, camera, &a, &b, &c, &d,
-                                     5 * UV_ONE, 2 * UV_ONE, 0x56515D);
-    for (int i = 0; i < 2; i++)
-        pixels += draw_floor_zone(renderer, camera, &safe_rooms[i],
-                                  i == 0 ? 0x245238 : 0x2D7047);
-    for (int i = 0; i < 3; i++)
-        pixels += draw_floor_zone(renderer, camera, &spawn_zones[i], 0x6E2828);
-    pixels += draw_floor_border(renderer, camera, &alarm_zone, 90, 0xD8B020);
-    for (int i = 0; i < OBSTACLE_COUNT; i++)
-        pixels += draw_box(renderer, camera, &obstacles[i]);
-    draw_world_label(renderer, camera, &alarm_zone,
-                     "WARNING HORDE", 0xFFD040);
+    for (int i=0; i<level_map.draw_count; i++) {
+        struct toy_map_draw *x=&level_map.draw[i];
+        if (x->type==TOY_MAP_DRAW_FLOOR) {
+            struct toy_game_box zone={x->a,x->b,x->c,x->d}; pixels+=draw_floor_zone(renderer,camera,&zone,x->color);
+        } else if (x->type==TOY_MAP_DRAW_BORDER) {
+            struct toy_game_box zone={x->a,x->b,x->c,x->d}; pixels+=draw_floor_border(renderer,camera,&zone,x->e,x->color);
+        } else if (x->type==TOY_MAP_DRAW_WALL) {
+            if (x->c==x->d) { a.x=x->a;a.y=-900;a.z=x->c;b.x=x->b;b.y=-900;b.z=x->c;c.x=x->b;c.y=x->e;c.z=x->c;d.x=x->a;d.y=x->e;d.z=x->c; }
+            else { a.x=x->a;a.y=-900;a.z=x->c;b.x=x->a;b.y=-900;b.z=x->d;c.x=x->a;c.y=x->e;c.z=x->d;d.x=x->a;d.y=x->e;d.z=x->c; }
+            pixels+=draw_quad(renderer,camera,&a,&b,&c,&d,x->color);
+        } else if (x->type==TOY_MAP_DRAW_MODEL) {
+            if (x->style) {
+                struct toy_game_enemy model;
+                memset(&model,0,sizeof(model)); model.active=1;
+                model.x=(x->a+x->b)/2; model.z=(x->c+x->d)/2; model.dir_z=-1024;
+                if (x->style==1) pixels+=render_block_enemy(renderer,camera,&model,1000,x->color);
+                else pixels+=render_round_enemy(renderer,camera,&model,1000,x->color);
+            } else {
+                struct box model={x->a,x->b,x->c,x->d,x->f,x->color};
+                pixels+=draw_cuboid(renderer,camera,model.minx,model.maxx,x->e,x->f,model.minz,model.maxz,model.color);
+            }
+        } else if (x->type==TOY_MAP_DRAW_TEXTURE) {
+            a.x=x->a;a.y=-900;a.z=x->c;b.x=x->b;b.y=-900;b.z=x->c;c.x=x->b;c.y=x->e;c.z=x->c;d.x=x->a;d.y=x->e;d.z=x->c;
+            pixels+=draw_position_quad_tex(renderer,camera,&a,&b,&c,&d,x->texture_u*UV_ONE,x->texture_v*UV_ONE,x->color);
+        } else if (x->type==TOY_MAP_DRAW_LABEL) {
+            struct toy_game_box zone={x->a,x->b,x->c,x->d}; draw_world_label(renderer,camera,&zone,x->text,x->color);
+        }
+    }
+    for (int i=0; i<level_map.box_count; i++) if (!level_map.boxes[i].air) {
+        struct box obstacle={level_map.boxes[i].minx,level_map.boxes[i].maxx,level_map.boxes[i].minz,level_map.boxes[i].maxz,level_map.boxes[i].height,level_map.boxes[i].color};
+        pixels+=draw_box(renderer,camera,&obstacle);
+    }
     return pixels;
 }
 
@@ -914,12 +942,12 @@ static void render_hud(struct toy_surface *surface, int fps)
     if (game.reloading)
         fb_draw_string((unsigned char *)surface->pixels, 8, 8 + FB_FONT_H * 2,
                        "RELOADING...", 0xD88A32, surface->stride);
-    if (toy_game_point_in_box(game.px, game.pz, &safe_rooms[1])) {
+    if (level_map.safe_count > 1 && toy_game_point_in_box(game.px, game.pz, &map_safe_rooms[1])) {
         snprintf(line, sizeof(line), "EXIT SECURE %d%%",
                  game.goal_hold_ms * 100 / TOY_GAME_GOAL_HOLD_MS);
         fb_draw_string((unsigned char *)surface->pixels, 8, 8 + FB_FONT_H * 3,
                        line, 0x80E080, surface->stride);
-    } else if (toy_game_point_in_box(game.px, game.pz, &safe_rooms[0])) {
+    } else if (level_map.safe_count > 0 && toy_game_point_in_box(game.px, game.pz, &map_safe_rooms[0])) {
         fb_draw_string((unsigned char *)surface->pixels, 8, 8 + FB_FONT_H * 3,
                        "START SAFE ROOM - REACH GREEN EXIT", 0x80E080,
                        surface->stride);
@@ -1162,8 +1190,8 @@ static int run_logic_test(void)
     /* 死亡重开仍须恢复世界碰撞配置并能推进首波。 */
     game.state = TOY_GAME_OVER;
     reset_game(&camera, 2);
-    if (game.world != bounds || game.world_count != OBSTACLE_COUNT ||
-        game.room_limit != ROOM_LIMIT ||
+    if (game.world != map_bounds || game.world_count != level_map.box_count ||
+        game.room_limit != level_map.room_limit ||
         toy_game_position_blocked(&game, camera.x, camera.z,
                                   PLAYER_RADIUS)) return 13;
     for (int i = 0; i < 170; i++)
@@ -1172,7 +1200,7 @@ static int run_logic_test(void)
 
     camera.x = -1200; camera.z = 0;
     for (int i = 0; i < 10; i++) update_player(&camera, &input);
-    if (camera.z >= obstacles[0].minz - PLAYER_RADIUS) return 2;
+    if (camera.z >= level_map.boxes[0].minz - PLAYER_RADIUS) return 2;
 
     input.key_down[KEY_W] = 0;
     input.key_down[KEY_RIGHT] = 1;
@@ -1286,7 +1314,7 @@ static int run_logic_test(void)
         int first_wave = 0, first_kills = 0, first_hp = 0;
         for (pass = 0; pass < 2; pass++) {
             toy_game_init(&smoke, 1234);
-            toy_game_set_world(&smoke, bounds, OBSTACLE_COUNT, ROOM_LIMIT);
+            toy_game_set_world(&smoke, map_bounds, level_map.box_count, level_map.room_limit);
             smoke.px = 0;
             smoke.pz = -5000;
             for (i = 0; i < 500; i++)
@@ -1340,6 +1368,11 @@ int main(int argc, char **argv)
                 frame_limit = frame_limit * 10 + (*p++ - '0');
         }
     }
+    if (toy_map_load("assets/maps/wayland_fps.map", &level_map) < 0) {
+        __fprintf(2, "wayland_fps: cannot load map assets/maps/wayland_fps.map\n");
+        return 1;
+    }
+    prepare_map_rules();
     memset(&scene_texture, 0, sizeof(scene_texture));
     memset(&scene_texture_view, 0, sizeof(scene_texture_view));
     if (textures_enabled && toy_texture_load("assets/generated/wall.ttex",
@@ -1363,6 +1396,7 @@ int main(int argc, char **argv)
     if (logic_test) {
         int result = run_logic_test();
         if (scene_texture.blob) toy_texture_unload(&scene_texture);
+        toy_map_unload(&level_map);
         return result;
     }
     toy_input_init(&input);
@@ -1378,6 +1412,7 @@ int main(int argc, char **argv)
     if (!window) {
         __fprintf(2, "wayland_fps: cannot create Wayland window\n");
         if (scene_texture.blob) toy_texture_unload(&scene_texture);
+        toy_map_unload(&level_map);
         toy_renderer_destroy(&renderer);
         return 1;
     }
@@ -1549,6 +1584,7 @@ int main(int argc, char **argv)
     }
     audio_stop(&audio);
     if (scene_texture.blob) toy_texture_unload(&scene_texture);
+    toy_map_unload(&level_map);
     toy_window_close(window);
     __printf("wayland_fps: %d frames, %d scene pixels, position=(%d,%d)\n",
              rendered_frames, scene_pixels, camera.x, camera.z);
