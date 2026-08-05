@@ -16,6 +16,7 @@
 #include "fb_draw.h"
 #include "fb_font.h"
 #include "linux_audio.h"
+#include "toy_audio.h"
 #include "pthread.h"
 #include "errno.h"
 
@@ -598,68 +599,41 @@ static void draw_input_debug(struct toy_surface *surface,
                    line, 0xD8B060, surface->stride);
 }
 
-/* ── 音效输出：音频线程 + futex 环形缓冲（mp3_player 范式） ────── */
+/* ── 音效输出：独立音频线程持续混音，游戏线程只提交事件 ──────── */
 
-#define SFX_RING_SHIFT 13                /* 8192 帧 ≈ 186ms@44.1k */
-#define SFX_RING_SIZE (1 << SFX_RING_SHIFT)
-#define SFX_RING_MASK (SFX_RING_SIZE - 1)
-#define SFX_BLOCK_FRAMES 2048
-
-struct sfx_ring {
-    short buf[SFX_RING_SIZE * 2];
-    volatile unsigned int wpos;   /* 生产者写入（单调帧计数） */
-    volatile unsigned int rpos;   /* 消费者读取 */
-};
+#define SFX_BLOCK_FRAMES 512
+#define AUDIO_EVENT_RING 32
 
 struct audio_ctx {
-    struct sfx_ring ring;
-    struct tlibc_pcm pcm;
+    struct toy_audio output;
+    struct toy_sfx sfx;
+    unsigned char events[AUDIO_EVENT_RING];
+    volatile unsigned int event_wpos;
+    volatile unsigned int event_rpos;
     pthread_t thread;
     volatile int quit;
     int running;
 };
 
-/* 生产者非阻塞：空间不足丢弃整块（SFX 最佳努力，丢无感知） */
-static void ring_push_drop(struct sfx_ring *r, const short *data, int frames)
+/* 单生产者/单消费者事件环；满时丢弃新事件，避免阻塞游戏线程。 */
+static void audio_post_event(struct audio_ctx *ctx, int kind)
 {
-    int avail;
-    unsigned int wp;
-    if (frames <= 0 || frames >= SFX_RING_SIZE) return;
-    avail = (int)(r->wpos - r->rpos);
-    if (avail + frames > SFX_RING_SIZE) return;
-    wp = r->wpos & SFX_RING_MASK;
-    for (int i = 0; i < frames; i++) {
-        r->buf[wp * 2] = data[2 * i];
-        r->buf[wp * 2 + 1] = data[2 * i + 1];
-        wp = (wp + 1) & SFX_RING_MASK;
-    }
+    unsigned int wp = ctx->event_wpos;
+    if (wp - ctx->event_rpos >= AUDIO_EVENT_RING) return;
+    ctx->events[wp & (AUDIO_EVENT_RING - 1)] = (unsigned char)kind;
     __sync_synchronize();
-    r->wpos += (unsigned int)frames;
-    __futex((unsigned int *)&r->wpos, 1 /* FUTEX_WAKE */, -1, NULL, NULL, 0);
+    ctx->event_wpos = wp + 1;
 }
 
-/* 消费者：等待数据并读取最多 max_frames 帧 */
-static int ring_wait_read(struct sfx_ring *r, short *dst, int max_frames)
+static void audio_drain_events(struct audio_ctx *ctx)
 {
-    for (;;) {
-        int avail = (int)(r->wpos - r->rpos);
-        if (avail > 0) {
-            unsigned int rp;
-            if (avail > max_frames) avail = max_frames;
-            rp = r->rpos & SFX_RING_MASK;
-            for (int i = 0; i < avail; i++) {
-                dst[2 * i] = r->buf[rp * 2];
-                dst[2 * i + 1] = r->buf[rp * 2 + 1];
-                rp = (rp + 1) & SFX_RING_MASK;
-            }
-            __sync_synchronize();
-            r->rpos += (unsigned int)avail;
-            __futex((unsigned int *)&r->rpos, 1 /* FUTEX_WAKE */, -1,
-                    NULL, NULL, 0);
-            return avail;
-        }
-        __futex((unsigned int *)&r->wpos, 0 /* FUTEX_WAIT */, r->wpos,
-                NULL, NULL, 0);
+    while (ctx->event_rpos != ctx->event_wpos) {
+        unsigned int rp = ctx->event_rpos;
+        int kind;
+        __sync_synchronize();
+        kind = ctx->events[rp & (AUDIO_EVENT_RING - 1)];
+        ctx->event_rpos = rp + 1;
+        toy_sfx_play(&ctx->sfx, kind);
     }
 }
 
@@ -667,16 +641,14 @@ static void *audio_thread_func(void *arg)
 {
     struct audio_ctx *ctx = (struct audio_ctx *)arg;
     short play_buf[SFX_BLOCK_FRAMES * 2];
-    for (;;) {
-        int frames;
+    while (!ctx->quit) {
         long ret;
-        if (ctx->quit) break;
-        frames = ring_wait_read(&ctx->ring, play_buf, SFX_BLOCK_FRAMES);
-        if (ctx->quit) break;
-        ret = tlibc_pcm_write(&ctx->pcm, play_buf, (unsigned long)frames);
-        if (ret == -EPIPE) {
+        audio_drain_events(ctx);
+        toy_sfx_render(&ctx->sfx, play_buf, SFX_BLOCK_FRAMES);
+        ret = toy_audio_write(&ctx->output, play_buf, SFX_BLOCK_FRAMES);
+        if (ret == -EPIPE && ctx->output.backend == TOY_AUDIO_ALSA) {
             /* XRUN：恢复设备后继续 */
-            __ioctl(ctx->pcm.fd, SNDRV_PCM_IOCTL_PREPARE, 0);
+            __ioctl(ctx->output.alsa.fd, SNDRV_PCM_IOCTL_PREPARE, 0);
             continue;
         }
         if (ret < 0) break;   /* 设备级错误：静默停声 */
@@ -687,16 +659,16 @@ static void *audio_thread_func(void *arg)
 static int audio_start(struct audio_ctx *ctx)
 {
     memset(ctx, 0, sizeof(struct audio_ctx));
-    if (tlibc_pcm_open(&ctx->pcm, NULL, 2, TOY_SFX_RATE, 16) < 0) return -1;
-    if (tlibc_pcm_configure(&ctx->pcm) < 0) {
-        tlibc_pcm_close(&ctx->pcm);
-        return -1;
-    }
+    if (toy_audio_open(&ctx->output, TOY_SFX_RATE, 2) < 0) return -1;
+    toy_sfx_init(&ctx->sfx, TOY_SFX_RATE);
+    toy_sfx_music(&ctx->sfx, 1);
     if (pthread_create(&ctx->thread, NULL, audio_thread_func, ctx) != 0) {
-        tlibc_pcm_close(&ctx->pcm);
+        toy_audio_close(&ctx->output);
         return -1;
     }
     ctx->running = 1;
+    __printf("wayland_fps: audio backend: %s\n",
+             toy_audio_backend_name(&ctx->output));
     return 0;
 }
 
@@ -704,15 +676,13 @@ static void audio_stop(struct audio_ctx *ctx)
 {
     if (!ctx->running) return;
     ctx->quit = 1;
-    __futex((unsigned int *)&ctx->ring.wpos, 1 /* FUTEX_WAKE */, -1,
-            NULL, NULL, 0);
     pthread_join(ctx->thread, NULL);
-    tlibc_pcm_close(&ctx->pcm);
+    toy_audio_close(&ctx->output);
     ctx->running = 0;
 }
 
 /* 事件 → 音效（每帧上限 4 个，防同帧爆发撑爆 voice） */
-static void play_game_events(struct toy_sfx *sfx)
+static void play_game_events(struct audio_ctx *audio)
 {
     unsigned char evs[TOY_GAME_MAX_EVENTS];
     int ne = toy_game_drain_events(&game, evs, TOY_GAME_MAX_EVENTS);
@@ -720,13 +690,13 @@ static void play_game_events(struct toy_sfx *sfx)
     if (ne > 4) ne = 4;
     for (i = 0; i < ne; i++) {
         switch (evs[i]) {
-        case TOY_GAME_EV_SHOOT: toy_sfx_play(sfx, TOY_SFX_GUNSHOT); break;
-        case TOY_GAME_EV_DRY_FIRE: toy_sfx_play(sfx, TOY_SFX_DRY_FIRE); break;
-        case TOY_GAME_EV_RELOAD_START: toy_sfx_play(sfx, TOY_SFX_RELOAD_START); break;
-        case TOY_GAME_EV_RELOAD_DONE: toy_sfx_play(sfx, TOY_SFX_RELOAD_DONE); break;
-        case TOY_GAME_EV_KILL: toy_sfx_play(sfx, TOY_SFX_KILL); break;
-        case TOY_GAME_EV_BITE: toy_sfx_play(sfx, TOY_SFX_BITE); break;
-        case TOY_GAME_EV_PLAYER_DEATH: toy_sfx_play(sfx, TOY_SFX_PLAYER_DEATH); break;
+        case TOY_GAME_EV_SHOOT: audio_post_event(audio, TOY_SFX_GUNSHOT); break;
+        case TOY_GAME_EV_DRY_FIRE: audio_post_event(audio, TOY_SFX_DRY_FIRE); break;
+        case TOY_GAME_EV_RELOAD_START: audio_post_event(audio, TOY_SFX_RELOAD_START); break;
+        case TOY_GAME_EV_RELOAD_DONE: audio_post_event(audio, TOY_SFX_RELOAD_DONE); break;
+        case TOY_GAME_EV_KILL: audio_post_event(audio, TOY_SFX_KILL); break;
+        case TOY_GAME_EV_BITE: audio_post_event(audio, TOY_SFX_BITE); break;
+        case TOY_GAME_EV_PLAYER_DEATH: audio_post_event(audio, TOY_SFX_PLAYER_DEATH); break;
         default: break;
         }
     }
@@ -879,8 +849,6 @@ int main(int argc, char **argv)
     unsigned int last_key = 0;
     int last_key_pressed = 0;
     struct audio_ctx audio;
-    struct toy_sfx sfx;
-    short block[SFX_BLOCK_FRAMES * 2];
     uint64_t seed;
 
     if (argc == 2 && strcmp(argv[1], "--logic-test") == 0)
@@ -906,10 +874,8 @@ int main(int argc, char **argv)
              "click/Space fire, R reload, Esc pauses/exits\n");
     if (input_debug)
         __printf("wayland_fps: input debug HUD enabled; test chords and focus changes\n");
-    toy_sfx_init(&sfx, TOY_SFX_RATE);
     if (audio_start(&audio) < 0) {
         __printf("wayland_fps: audio unavailable, playing silent\n");
-        sfx.enabled = 0;
     }
     last_time = monotonic_us();
     while (running) {
@@ -1026,15 +992,8 @@ int main(int argc, char **argv)
                                  have_last_key ? last_key : 0,
                                  have_last_key ? last_key_pressed : 0,
                                  input_event_count);
-            /* 音效：事件 → voice；按真实流逝时间合成样本块推给音频线程 */
-            play_game_events(&sfx);
-            if (sfx.enabled) {
-                int sfx_frames = (int)((long long)elapsed * TOY_SFX_RATE / 1000000);
-                if (sfx_frames < 1) sfx_frames = 1;
-                if (sfx_frames > SFX_BLOCK_FRAMES) sfx_frames = SFX_BLOCK_FRAMES;
-                toy_sfx_render(&sfx, block, sfx_frames);
-                ring_push_drop(&audio.ring, block, sfx_frames);
-            }
+            /* 游戏线程只投递事件，音乐与 SFX 由音频线程持续混音。 */
+            if (audio.running) play_game_events(&audio);
             if (toy_window_present(window) < 0) break;
             rendered_frames++;
             if (frame_limit > 0 && rendered_frames >= frame_limit) running = 0;

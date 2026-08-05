@@ -171,11 +171,16 @@ struct toy_sfx_voice {
 struct toy_sfx {
     int rate;
     int enabled;        /* 设备不可用时可关闭，渲染输出静音 */
+    int music_enabled;  /* 程序化背景音乐，与 SFX 在同一 PCM 流混音 */
+    unsigned int music_pos;
+    unsigned int melody_phase;
+    unsigned int bass_phase;
     struct toy_sfx_voice voices[TOY_SFX_MAX_VOICES];
 };
 
 void toy_sfx_init(struct toy_sfx *sfx, int rate);
 void toy_sfx_play(struct toy_sfx *sfx, int kind);       /* 触发；满 8 voice 偷剩余最短者 */
+void toy_sfx_music(struct toy_sfx *sfx, int enabled);
 void toy_sfx_render(struct toy_sfx *sfx, short *out, int frames); /* 混音至 S16 立体声 */
 
 #endif /* TOYC_TOY_GAME_H */

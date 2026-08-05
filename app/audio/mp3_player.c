@@ -23,6 +23,7 @@
 
 #include "tlibc_everything.h"
 #include "linux_audio.h"
+#include "toy_audio.h"
 #include "errno.h"
 #include "pthread.h"
 
@@ -242,8 +243,8 @@ struct mp3_player {
     int mp3_rate;
     int mp3_channels;
 
-    /* ── ALSA 设备（音频线程独占）─ */
-    struct tlibc_pcm pcm;
+    /* ── 统一音频设备（音频线程独占）─ */
+    struct toy_audio output;
     int alsa_rate;
 
     /* ── 重采样（解码线程独占）─ */
@@ -360,34 +361,37 @@ static int resample_pcm_frac(const mp3d_sample_t *in, int in_frames,
     return base;
 }
 
-/* ── ALSA 音频输出（音频线程）─ */
+/* ── 统一音频输出（WSLg native pulse / 原生 ALSA）─ */
 
 static int open_audio(struct mp3_player *p)
 {
-    int ret = tlibc_pcm_open(&p->pcm, p->dev_path,
+    int ret;
+    if (p->dev_path) {
+        memset(&p->output, 0, sizeof(p->output));
+        ret = tlibc_pcm_open(&p->output.alsa, p->dev_path,
                              (unsigned int)p->mp3_channels,
                              (unsigned int)p->mp3_rate, PCM_BITS);
+        if (ret == 0) ret = tlibc_pcm_configure(&p->output.alsa);
+        if (ret == 0) p->output.backend = TOY_AUDIO_ALSA;
+    } else {
+        ret = toy_audio_open(&p->output, (unsigned int)p->mp3_rate,
+                             (unsigned int)p->mp3_channels);
+    }
     if (ret < 0) {
-        __printf("mp3_player: 无法打开 PCM 设备 (errno=%d)\n", -ret);
+        __printf("mp3_player: 无法打开音频输出 (errno=%d)\n", -ret);
         return ret;
     }
-
-    ret = tlibc_pcm_configure(&p->pcm);
-    if (ret < 0) {
-        __printf("mp3_player: PCM 配置失败 (errno=%d)\n", -ret);
-        tlibc_pcm_close(&p->pcm);
-        return ret;
-    }
-
-    p->alsa_rate = (int)p->pcm.rate;
+    p->alsa_rate = p->output.backend == TOY_AUDIO_ALSA
+                 ? (int)p->output.alsa.rate : p->mp3_rate;
 
     if (p->alsa_rate != p->mp3_rate) {
         __printf("mp3_player: 音频设备已配置 — %dHz/%dbit/%dch"
                  "  (源 %dHz，将重采样适配)\n",
-                 p->alsa_rate, PCM_BITS, p->pcm.channels, p->mp3_rate);
+                 p->alsa_rate, PCM_BITS, p->mp3_channels, p->mp3_rate);
     } else {
-        __printf("mp3_player: 音频设备已配置 — %dHz/%dbit/%dch, 缓冲区 %lu 帧\n",
-                 p->alsa_rate, PCM_BITS, p->pcm.channels, p->pcm.buffer_size);
+        __printf("mp3_player: 音频后端 %s — %dHz/%dbit/%dch\n",
+                 toy_audio_backend_name(&p->output), p->alsa_rate,
+                 PCM_BITS, p->mp3_channels);
     }
     return 0;
 }
@@ -497,13 +501,13 @@ static void *audio_thread_func(void *arg)
         /* ══════════════════════════════════════════════════
          * 写入 ALSA 设备
          * ══════════════════════════════════════════════════ */
-        long ret = tlibc_pcm_write(&p->pcm, play_buf,
-                                    (unsigned long)frames);
-        if (ret == -EPIPE) {
+        long ret = toy_audio_write(&p->output, play_buf,
+                                   (unsigned long)frames);
+        if (ret == -EPIPE && p->output.backend == TOY_AUDIO_ALSA) {
             /* XRUN：恢复设备 + 进入预加载状态。
              * mpg123 的做法：pause → 等缓冲积累 → resume。
              * 这里恢复设备后不急于重写，先积累缓冲再播放。 */
-            __ioctl(p->pcm.fd, SNDRV_PCM_IOCTL_PREPARE, 0);
+            __ioctl(p->output.alsa.fd, SNDRV_PCM_IOCTL_PREPARE, 0);
             preloading = 1;
             in_xrun = 1;
             continue;
@@ -520,7 +524,9 @@ static void *audio_thread_func(void *arg)
         /* ── 播放质量监控 ── */
         {
             long delay = 0;
-            int ret_delay = (int)__ioctl(p->pcm.fd, SNDRV_PCM_IOCTL_DELAY, &delay);
+            int ret_delay = p->output.backend == TOY_AUDIO_ALSA
+                ? (int)__ioctl(p->output.alsa.fd, SNDRV_PCM_IOCTL_DELAY, &delay)
+                : -EOPNOTSUPP;
             if (ret_delay == 0) {
                 if (delay < p->monitor.alsa_delay_min)
                     p->monitor.alsa_delay_min = delay;
@@ -557,7 +563,7 @@ static void *audio_thread_func(void *arg)
     }
 
     /* 等待硬件播放完缓冲中最后的数据 */
-    tlibc_pcm_drain(&p->pcm);
+    toy_audio_drain(&p->output);
     return NULL;
 }
 
@@ -683,7 +689,7 @@ static int play_mp3(struct mp3_player *p)
     if (ret != 0) {
         __printf("mp3_player: 创建解码线程失败\n");
         p->quit = 1;
-        tlibc_pcm_close(&p->pcm);
+        toy_audio_close(&p->output);
         return 1;
     }
 
@@ -693,7 +699,7 @@ static int play_mp3(struct mp3_player *p)
         p->quit = 1;
         /* 等解码线程退出 */
         pthread_join(p->dec_thread, NULL);
-        tlibc_pcm_close(&p->pcm);
+        toy_audio_close(&p->output);
         return 1;
     }
 
@@ -739,7 +745,7 @@ static int play_mp3(struct mp3_player *p)
 
     /* ── 7. 关闭设备 ── */
 
-    tlibc_pcm_close(&p->pcm);
+    toy_audio_close(&p->output);
     return 0;
 }
 
@@ -835,7 +841,7 @@ int main(int argc, char **argv)
      * 在打开音频前主动尝试 pasuspender 回退，
      * 避免已打开次优设备（如 HDMI）后再切换的麻烦。
      */
-    if (!player.dev_path) {
+    if (!player.dev_path && !toy_pulse_available()) {
         struct tlibc_audio_dev devs[16];
         int ndev = tlibc_audio_scan(devs, 16, 0, 0);
         if (ndev > 1 && devs[0].busy && tlibc_check_pulseaudio()) {

@@ -126,6 +126,45 @@ void toy_sfx_play(struct toy_sfx *sfx, int kind)
     v->lp = 0;
 }
 
+void toy_sfx_music(struct toy_sfx *sfx, int enabled)
+{
+    if (!sfx) return;
+    sfx->music_enabled = enabled ? 1 : 0;
+}
+
+/* 低音量循环琶音：全部运行时合成，不需要音乐资源文件。 */
+static void render_music(struct toy_sfx *sfx, int *left, int *right)
+{
+    static const int melody_hz[16] = {
+        220, 262, 330, 392, 247, 294, 370, 440,
+        196, 247, 330, 392, 220, 277, 330, 415
+    };
+    static const int bass_hz[4] = { 110, 123, 98, 110 };
+    unsigned int beat_len = (unsigned int)sfx->rate / 4;
+    unsigned int note = (sfx->music_pos / beat_len) & 15;
+    unsigned int bar = (note >> 2) & 3;
+    unsigned int within = sfx->music_pos % beat_len;
+    unsigned int melody_step;
+    unsigned int bass_step;
+    int env;
+    int melody;
+    int bass;
+
+    if (!sfx->music_enabled || beat_len == 0) return;
+    melody_step = (unsigned int)((unsigned long long)melody_hz[note] *
+                                 65536ULL / (unsigned int)sfx->rate);
+    bass_step = (unsigned int)((unsigned long long)bass_hz[bar] *
+                               65536ULL / (unsigned int)sfx->rate);
+    sfx->melody_phase += melody_step;
+    sfx->bass_phase += bass_step;
+    env = 900 * (int)(beat_len - within) / (int)beat_len;
+    melody = sine_at((int)sfx->melody_phase) * env / 32768;
+    bass = sine_at((int)sfx->bass_phase) * 550 / 32768;
+    *left += melody + bass;
+    *right += melody * 3 / 4 + bass;
+    sfx->music_pos++;
+}
+
 static int render_voice(struct toy_sfx_voice *v)
 {
     int sample = 0;
@@ -182,17 +221,24 @@ void toy_sfx_render(struct toy_sfx *sfx, short *out, int frames)
         return;
     }
     for (f = 0; f < frames; f++) {
-        int sum = 0;
+        int left = 0, right = 0;
+        render_music(sfx, &left, &right);
         for (v = 0; v < TOY_SFX_MAX_VOICES; v++) {
             struct toy_sfx_voice *voice = &sfx->voices[v];
             if (!voice->active) continue;
-            sum += render_voice(voice);
+            {
+                int sample = render_voice(voice);
+                left += sample;
+                right += sample;
+            }
             voice->pos++;
             if (voice->pos >= voice->len) voice->active = 0;
         }
-        if (sum > 32767) sum = 32767;
-        else if (sum < -32768) sum = -32768;
-        out[2 * f] = (short)sum;
-        out[2 * f + 1] = (short)sum;
+        if (left > 32767) left = 32767;
+        else if (left < -32768) left = -32768;
+        if (right > 32767) right = 32767;
+        else if (right < -32768) right = -32768;
+        out[2 * f] = (short)left;
+        out[2 * f + 1] = (short)right;
     }
 }
