@@ -20,6 +20,7 @@
 #include "errno.h"
 
 #define KEY_ESC   1
+#define KEY_ENTER 28
 #define KEY_R     19
 #define KEY_W     17
 #define KEY_A     30
@@ -58,6 +59,20 @@ static const struct toy_game_box bounds[3] = {
 };
 
 static struct toy_game game;   /* 游戏规则状态（main / logic-test 共用） */
+
+/* 新局和死亡重开必须走同一路径，避免 toy_game_init 清空世界配置。 */
+static void reset_game(struct camera *camera, uint64_t seed)
+{
+    camera->x = 0;
+    camera->z = -4200;
+    camera->sy = 0;
+    camera->cy = 1024;
+    camera->pitch = 0;
+    toy_game_init(&game, seed);
+    toy_game_set_world(&game, bounds, 3, ROOM_LIMIT);
+    game.px = camera->x;
+    game.pz = camera->z;
+}
 
 static long monotonic_us(void)
 {
@@ -296,14 +311,17 @@ static void draw_pause_overlay(struct toy_surface *surface)
     int panel_h = surface->height / 3;
     int x = (surface->width - panel_w) / 2;
     int y = (surface->height - panel_h) / 2;
-    int bar_w = panel_w / 10;
-    int bar_h = panel_h / 2;
     fill_rect(surface, x - 3, y - 3, panel_w + 6, panel_h + 6, 0xD88A32);
     fill_rect(surface, x, y, panel_w, panel_h, 0x171B24);
-    fill_rect(surface, surface->width / 2 - bar_w - bar_w / 2,
-              surface->height / 2 - bar_h / 2, bar_w, bar_h, 0xE7E9EC);
-    fill_rect(surface, surface->width / 2 + bar_w / 2,
-              surface->height / 2 - bar_h / 2, bar_w, bar_h, 0xE7E9EC);
+    fb_draw_string((unsigned char *)surface->pixels,
+                   x + (panel_w - FB_FONT_W * 6) / 2, y + 28,
+                   "PAUSED", 0xE7E9EC, surface->stride);
+    fb_draw_string((unsigned char *)surface->pixels,
+                   x + (panel_w - FB_FONT_W * 22) / 2, y + 60,
+                   "CLICK ENTER SPACE PLAY", 0xD88A32, surface->stride);
+    fb_draw_string((unsigned char *)surface->pixels,
+                   x + (panel_w - FB_FONT_W * 21) / 2, y + 88,
+                   "WASD MOVE ARROWS LOOK", 0xE7E9EC, surface->stride);
 }
 
 /* 敌人彩盒：存活灰绿（受击闪红/命中闪白），倒地压扁 */
@@ -392,6 +410,39 @@ static void draw_game_over_panel(struct toy_surface *surface)
     fb_draw_string((unsigned char *)surface->pixels,
                    x + (panel_w - FB_FONT_W * 21) / 2, y + 104,
                    "R restart   Esc quit", 0xD88A32, surface->stride);
+}
+
+static void draw_input_debug(struct toy_surface *surface,
+                             const struct toy_input *input,
+                             unsigned int last_key, int last_pressed,
+                             int event_count)
+{
+    char line[96];
+    int x = 8;
+    int y = surface->height - FB_FONT_H * 4 - 12;
+    unsigned int color = input->keyboard_focused ? 0x80E080 : 0xE08080;
+    fill_rect(surface, x - 4, y - 4, 390, FB_FONT_H * 4 + 8, 0x171B24);
+    snprintf(line, sizeof(line), "KEYBOARD %s  EVENTS %d",
+             input->keyboard_focused ? "FOCUSED" : "UNFOCUSED", event_count);
+    fb_draw_string((unsigned char *)surface->pixels, x, y,
+                   line, color, surface->stride);
+    snprintf(line, sizeof(line), "LAST %u %s",
+             last_key, last_pressed ? "PRESSED" : "RELEASED");
+    fb_draw_string((unsigned char *)surface->pixels, x, y + FB_FONT_H,
+                   line, 0xE7E9EC, surface->stride);
+    snprintf(line, sizeof(line), "DOWN W%d A%d S%d D%d SPC%d ENT%d",
+             toy_input_down(input, KEY_W), toy_input_down(input, KEY_A),
+             toy_input_down(input, KEY_S), toy_input_down(input, KEY_D),
+             toy_input_down(input, KEY_SPACE), toy_input_down(input, KEY_ENTER));
+    fb_draw_string((unsigned char *)surface->pixels, x, y + FB_FONT_H * 2,
+                   line, 0xE7E9EC, surface->stride);
+    snprintf(line, sizeof(line), "EDGE SPC P%d R%d  R P%d R%d",
+             toy_input_pressed(input, KEY_SPACE),
+             toy_input_released(input, KEY_SPACE),
+             toy_input_pressed(input, KEY_R),
+             toy_input_released(input, KEY_R));
+    fb_draw_string((unsigned char *)surface->pixels, x, y + FB_FONT_H * 3,
+                   line, 0xD8B060, surface->stride);
 }
 
 /* ── 音效输出：音频线程 + futex 环形缓冲（mp3_player 范式） ────── */
@@ -537,14 +588,22 @@ static int run_logic_test(void)
     struct toy_renderer renderer;
     uint32_t *pixels;
     int count;
-    toy_game_init(&game, 1);
-    toy_game_set_world(&game, bounds, 3, ROOM_LIMIT);
     toy_input_init(&input);
-    camera.x = 0; camera.z = -4200;
-    camera.sy = 0; camera.cy = 1024; camera.pitch = 0;
+    reset_game(&camera, 1);
     input.key_down[KEY_W] = 1;
     for (int i = 0; i < 10; i++) update_player(&camera, &input);
     if (camera.x != 0 || camera.z != -3480) return 1;
+
+    /* 死亡重开仍须恢复世界碰撞配置并能推进首波。 */
+    game.state = TOY_GAME_OVER;
+    reset_game(&camera, 2);
+    if (game.world != bounds || game.world_count != 3 ||
+        game.room_limit != ROOM_LIMIT ||
+        toy_game_position_blocked(&game, camera.x, camera.z,
+                                  PLAYER_RADIUS)) return 13;
+    for (int i = 0; i < 100; i++)
+        toy_game_update(&game, NULL, 0, camera.sy, camera.cy, 16);
+    if (game.enemies_alive == 0) return 14;
 
     camera.x = -1200; camera.z = 0;
     for (int i = 0; i < 10; i++) update_player(&camera, &input);
@@ -583,6 +642,40 @@ static int run_logic_test(void)
     }
     toy_renderer_destroy(&renderer);
     tlibc_free(pixels);
+
+    /* 输入状态回归：组合键、重复 press 边沿、释放和失焦清理。 */
+    {
+        struct toy_window_events ev;
+        toy_input_init(&input);
+        memset(&ev, 0, sizeof(ev));
+        ev.keyboard_focus_changed = 1;
+        ev.keyboard_focused = 1;
+        ev.key_event_count = 2;
+        ev.key_events[0].key = KEY_W;
+        ev.key_events[0].pressed = 1;
+        ev.key_events[1].key = KEY_D;
+        ev.key_events[1].pressed = 1;
+        toy_input_apply(&input, &ev);
+        if (!toy_input_down(&input, KEY_W) || !toy_input_down(&input, KEY_D) ||
+            !toy_input_pressed(&input, KEY_W) ||
+            !toy_input_pressed(&input, KEY_D)) return 10;
+        toy_input_begin_frame(&input);
+        memset(&ev, 0, sizeof(ev));
+        ev.key_event_count = 1;
+        ev.key_events[0].key = KEY_W;
+        ev.key_events[0].pressed = 1; /* compositor repeat */
+        toy_input_apply(&input, &ev);
+        if (!toy_input_down(&input, KEY_W) ||
+            toy_input_pressed(&input, KEY_W)) return 11;
+        toy_input_begin_frame(&input);
+        memset(&ev, 0, sizeof(ev));
+        ev.keyboard_focus_changed = 1;
+        ev.keyboard_focused = 0;
+        toy_input_apply(&input, &ev);
+        if (toy_input_down(&input, KEY_W) || toy_input_down(&input, KEY_D) ||
+            !toy_input_released(&input, KEY_W) ||
+            !toy_input_released(&input, KEY_D)) return 12;
+    }
 
     /* 游戏规则冒烟：同 seed 推进 500 步，两遍运行状态一致 */
     {
@@ -623,6 +716,9 @@ int main(int argc, char **argv)
     int last_pointer_x = 0, last_pointer_y = 0, have_pointer_position = 0;
     int frame_limit = 0, rendered_frames = 0, scene_pixels = 0;
     int fire_edge = 0;
+    int input_debug = 0, input_event_count = 0, have_last_key = 0;
+    unsigned int last_key = 0;
+    int last_key_pressed = 0;
     struct audio_ctx audio;
     struct toy_sfx sfx;
     short block[SFX_BLOCK_FRAMES * 2];
@@ -630,28 +726,27 @@ int main(int argc, char **argv)
 
     if (argc == 2 && strcmp(argv[1], "--logic-test") == 0)
         return run_logic_test();
+    if (argc == 2 && strcmp(argv[1], "--input-test") == 0)
+        input_debug = 1;
     if (argc == 3 && strcmp(argv[1], "--frames") == 0) {
         const char *p = argv[2];
         while (*p >= '0' && *p <= '9') frame_limit = frame_limit * 10 + (*p++ - '0');
     }
-    camera.x = 0; camera.z = -4200;
-    camera.sy = 0; camera.cy = 1024; camera.pitch = 0;
     toy_input_init(&input);
     toy_renderer_init(&renderer);
     if (__getrandom(&seed, sizeof(seed), 0) < 0)
         seed = (uint64_t)monotonic_us();
     if (seed == 0) seed = 1;
-    toy_game_init(&game, seed);
-    toy_game_set_world(&game, bounds, 3, ROOM_LIMIT);
-    game.px = camera.x;
-    game.pz = camera.z;
+    reset_game(&camera, seed);
     window = toy_window_open("Toyc FPS Zombies", 800, 450);
     if (!window) {
         __fprintf(2, "wayland_fps: cannot create Wayland window\n");
         return 1;
     }
-    __printf("wayland_fps: click to play; mouse/arrows look, WASD moves, "
+    __printf("wayland_fps: click/Enter/Space to play; mouse/arrows look, WASD moves, "
              "click/Space fire, R reload, Esc pauses/exits\n");
+    if (input_debug)
+        __printf("wayland_fps: input debug HUD enabled; test chords and focus changes\n");
     toy_sfx_init(&sfx, TOY_SFX_RATE);
     if (audio_start(&audio) < 0) {
         __printf("wayland_fps: audio unavailable, playing silent\n");
@@ -665,6 +760,13 @@ int main(int argc, char **argv)
         toy_input_begin_frame(&input);
         if (toy_window_poll(window, &events, 1000) < 0) break;
         toy_input_apply(&input, &events);
+        if (events.key_event_count > 0) {
+            int at = events.key_event_count - 1;
+            last_key = events.key_events[at].key;
+            last_key_pressed = events.key_events[at].pressed;
+            have_last_key = 1;
+            input_event_count += events.key_event_count;
+        }
         if (events.pointer_lock_changed) {
             if (events.pointer_locked)
                 __printf("wayland_fps: pointer constraint activated\n");
@@ -673,7 +775,9 @@ int main(int argc, char **argv)
                 pointer_lock_requested = 0;
             }
         }
-        if (paused && events.button_pressed && events.button == BTN_LEFT) {
+        if (paused && ((events.button_pressed && events.button == BTN_LEFT) ||
+                       toy_input_pressed(&input, KEY_ENTER) ||
+                       toy_input_pressed(&input, KEY_SPACE))) {
             int capture_result = toy_window_set_pointer_lock(window, 1);
             pointer_lock_requested = capture_result > 0;
             paused = 0;
@@ -731,11 +835,7 @@ int main(int argc, char **argv)
                     fire_edge = 0;
                 } else if (toy_input_pressed(&input, KEY_R)) {
                     /* 死亡结算：R 重开 */
-                    camera.x = 0; camera.z = -4200;
-                    camera.sy = 0; camera.cy = 1024; camera.pitch = 0;
-                    toy_game_init(&game, seed);
-                    game.px = camera.x;
-                    game.pz = camera.z;
+                    reset_game(&camera, seed);
                     fire_edge = 0;
                 }
             }
@@ -759,6 +859,11 @@ int main(int argc, char **argv)
                 render_muzzle_flash(&surface);
             }
             render_damage_flash(&surface);
+            if (input_debug)
+                draw_input_debug(&surface, &input,
+                                 have_last_key ? last_key : 0,
+                                 have_last_key ? last_key_pressed : 0,
+                                 input_event_count);
             /* 音效：事件 → voice；按真实流逝时间合成样本块推给音频线程 */
             play_game_events(&sfx);
             if (sfx.enabled) {
