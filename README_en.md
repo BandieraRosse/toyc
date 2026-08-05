@@ -36,13 +36,13 @@ all apps, or one app. `make self-app-<name>` is the self-hosted equivalent.
 
 ### Asset factory v0.1
 
-`make assets` builds the GCC-hosted `build/toyasset` converter. It imports 8-bit
-non-interlaced PNG, baseline JPEG, PCM 16-bit WAV, and static triangle OBJ into the
-runtime-only `.ttex`, `.tsnd`, and `.tmesh` formats. `make validate-assets` converts
-and validates the minimal fixtures. Runtime code reads only these versioned,
-explicitly encoded little-endian formats; it never parses PNG/JPEG/WAV/OBJ. See
-[assets/README.md](assets/README.md) for source, licensing, and conversion records.
-Compression, FBX, glTF, skeletal animation, and GUI editing are outside v0.1.
+`make validate-assets` builds the GCC-hosted `build/toyasset` tool and validates
+the small committed `.ttex`, `.tsnd`, and `.tmesh` test assets. Raw PNG/JPEG/WAV/OBJ
+must be converted offline with `build/toyasset convert`; source files and large
+intermediates are not committed (see `.gitignore`). Runtime code reads only these
+versioned, explicitly encoded little-endian formats; it never parses PNG/JPEG/WAV/OBJ.
+See [assets/README.md](assets/README.md) for the format notes. Compression, FBX,
+glTF, skeletal animation, and GUI editing are outside v0.1.
 
 The FPS v0.2 slice loads `assets/generated/wall.ttex` by default and uses nearest
 RGB888 sampling on walls, floors, and boxes. Use `--no-textures` for the pure-color

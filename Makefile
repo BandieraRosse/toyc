@@ -5,8 +5,7 @@
 #   编译器工具链
 #     make                        用 gcc 编译 toyc 工具链 → build/
 #     make clean                  清除 build/
-#     make assets                 构建 toyasset 并转换最小资产
-#     make validate-assets        转换并校验最小资产
+#     make validate-assets        构建 toyasset 并校验仓库内小型资产
 #
 #   App 构建
 #     make lib                    构建 libtlibc.a（gcc 编译的 Tinylibc 库）
@@ -76,22 +75,8 @@ $(BUILD)/toyasset: tools/toyasset.c tools/jpg_decode.c | $(BUILD)
 	@printf "  $(BLUE)  GCC$(RESET)  $<\n"
 	$(CC) -std=c11 -Wall -Wextra -O2 $< tools/jpg_decode.c -lz -o $@
 
-.PHONY: assets validate-assets
-assets: $(BUILD)/toyasset
-	@mkdir -p assets/generated
-	@base64 -d assets/sources/test.jpg.b64 > assets/sources/test.jpg
-	@base64 -d assets/sources/test.png.b64 > assets/sources/test.png
-	@base64 -d assets/sources/test.wav.b64 > assets/sources/test.wav
-	@base64 -d assets/sources/uv_test.png.b64 > assets/sources/uv_test.png
-	@$(BUILD)/toyasset convert jpg assets/sources/test.jpg assets/generated/test.jpg.ttex
-	@$(BUILD)/toyasset convert png assets/sources/test.png assets/generated/test.ttex
-	@$(BUILD)/toyasset convert wav assets/sources/test.wav assets/generated/test.tsnd
-	@$(BUILD)/toyasset convert obj assets/sources/test.obj assets/generated/test.tmesh
-	@$(BUILD)/toyasset convert png assets/sources/uv_test.png assets/generated/uv_test.ttex
-	@$(BUILD)/toyasset validate assets/generated/wall.ttex
-	@printf "$(GREEN)✓ 资产转换完成$(RESET)\n"
-
-validate-assets: assets
+.PHONY: validate-assets
+validate-assets: $(BUILD)/toyasset
 	@sh tests/assets.sh
 
 # ─── 源文件分组 ────────────────────────────────────────────────

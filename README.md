@@ -35,13 +35,12 @@ make clean              # 删除 build/ 和 tmp/
 
 ### 资产工厂 v0.1
 
-`make assets` 用 GCC 构建离线工具 `build/toyasset`，把 8-bit 非隔行 PNG、
-baseline JPEG、PCM 16-bit WAV 和静态三角 OBJ 转换为运行时专用的 `.ttex`、
-`.tsnd` 和 `.tmesh`。`make validate-assets` 会转换并检查仓库内最小测试资产。
-游戏运行时只读取这些带 magic、版本和显式小端字段的格式，不解析
-PNG/JPEG/WAV/OBJ 容器。资产来源、许可证和转换记录见
-[assets/README.md](assets/README.md)。v0.1 不包含压缩、FBX、glTF、骨骼
-动画或 GUI 编辑器。
+`make validate-assets` 用 GCC 构建离线工具 `build/toyasset`，校验仓库内提交的
+小型 `.ttex`、`.tsnd` 和 `.tmesh` 测试资产。原始 PNG/JPEG/WAV/OBJ 需要离线用
+`build/toyasset convert` 转换为运行时专用格式，来源文件和大型中间产物不入库
+（见 `.gitignore`）。游戏运行时只读取带 magic、版本和显式小端字段的格式，不解析
+PNG/JPEG/WAV/OBJ 容器。格式说明见 [assets/README.md](assets/README.md)。
+v0.1 不包含压缩、FBX、glTF、骨骼动画或 GUI 编辑器。
 
 FPS 的 v0.2 纹理切片默认加载 `assets/generated/wall.ttex`，将 nearest RGB888
 采样用于墙、地板和箱体；`--no-textures` 切回纯色，`--texture-stats` 输出纹理

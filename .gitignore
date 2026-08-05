@@ -4,9 +4,12 @@ build-self/**
 tmp/**
 .claude/**
 llm/models/**
+# 只提交小型 toyc 运行时资产；原始来源与大型中间文件不入库
+assets/sources/**
 assets/generated/*
 !assets/generated/wall.ttex
-assets/sources/test.jpg
-assets/sources/test.png
-assets/sources/test.wav
-assets/sources/uv_test.png
+!assets/generated/test.ttex
+!assets/generated/test.jpg.ttex
+!assets/generated/test.tsnd
+!assets/generated/test.tmesh
+!assets/generated/uv_test.ttex
