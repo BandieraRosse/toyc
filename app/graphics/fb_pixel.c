@@ -29,6 +29,9 @@
 #include "fb_font.h"
 #include "tty.h"
 
+/* snprintf 声明（定义在 lib/stdio/snprintf.c） */
+int snprintf(char *str, unsigned long size, const char *fmt, ...);
+
 /* KDSETMODE：切换 TTY 文本/图形模式 */
 #define KDSETMODE     0x4B3A
 #define KD_TEXT       0x00
