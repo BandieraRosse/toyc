@@ -5,6 +5,7 @@ tmp/**
 .claude/**
 llm/models/**
 assets/generated/*
+!assets/generated/wall.ttex
 assets/sources/test.jpg
 assets/sources/test.png
 assets/sources/test.wav

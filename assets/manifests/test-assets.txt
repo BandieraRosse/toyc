@@ -1,6 +1,6 @@
 name: test-assets
-source: assets/sources/test.jpg.b64, assets/sources/test.png.b64, assets/sources/uv_test.png.b64, assets/sources/test.wav.b64, assets/sources/test.obj, assets/sources/wall.jpg, assets/sources/wall_stylized.png
-license: test fixtures are project-generated; wall.jpg is Poly Haven Square Brick Floor, CC0 1.0; wall_stylized.png is a derived game texture
+source: assets/sources/test.jpg.b64, assets/sources/test.png.b64, assets/sources/uv_test.png.b64, assets/sources/test.wav.b64, assets/sources/test.obj
+license: test fixtures are project-generated; wall.ttex is a derived runtime texture from Poly Haven Square Brick Floor, CC0 1.0
 wall-source: https://polyhaven.com/a/square_brick_floor
 wall-source-file: square_brick_floor_diff_1k.jpg
 commands:
