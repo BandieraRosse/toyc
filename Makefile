@@ -6,6 +6,7 @@
 #     make                        用 gcc 编译 toyc 工具链 → build/
 #     make clean                  清除 build/
 #     make validate-assets        构建 toyasset 并校验仓库内小型资产
+#     make generate-assets        重建程序合成音效资产（gen_sfx + 校验）
 #
 #   App 构建
 #     make lib                    构建 libtlibc.a（gcc 编译的 Tinylibc 库）
@@ -77,6 +78,19 @@ $(BUILD)/toyasset: tools/toyasset.c tools/jpg_decode.c | $(BUILD)
 
 .PHONY: validate-assets
 validate-assets: $(BUILD)/toyasset
+	@sh tests/assets.sh
+
+$(BUILD)/gen_sfx: tools/gen_sfx.c lib/game/sfx.c | $(BUILD)
+	@printf "  $(BLUE)  GCC$(RESET)  $<\n"
+	$(CC) -std=c11 -Wall -Wextra -O2 -D_GNU_SOURCE \
+	    -D__memset=memset -D__memmove=memmove \
+	    -Iinclude -Iinclude/tlibc -Ilib \
+	    $< lib/game/sfx.c -lm -o $@
+
+# 程序合成音效资产：链接 lib/game/sfx.c 引擎离线渲染，输出确定性可复现
+.PHONY: generate-assets
+generate-assets: $(BUILD)/gen_sfx
+	@$(BUILD)/gen_sfx
 	@sh tests/assets.sh
 
 # ─── 源文件分组 ────────────────────────────────────────────────
