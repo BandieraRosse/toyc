@@ -21,5 +21,6 @@ little-endian 16-bit WAV，以及三角面静态 OBJ。PNG/JPEG/WAV/OBJ 只在�
 阶段出现，游戏运行时只读取带版本和显式字段的自有格式。测试 PNG/JPEG 以 `.b64`
 保存，避免在源码树中手工维护二进制文件；它们由 Makefile 解码后再转换。
 `sources/wall.jpg` 是 Poly Haven “Square Brick Floor” 的 1024×1024 砖纹漫反射图，
-按项目用户确认采用 CC0 1.0。来源 URL 和转换记录见 `licenses/wall-source.txt`；
-CC0 不要求署名，但保留来源链接用于溯源。
+按项目用户确认采用 CC0 1.0。`sources/wall_stylized.png` 是用于游戏的低细节风格化版本，
+构建时缩放为 128×128 后写入 `generated/wall.ttex`。来源 URL 和转换记录见
+`licenses/wall-source.txt`；CC0 不要求署名，但保留来源链接用于溯源。

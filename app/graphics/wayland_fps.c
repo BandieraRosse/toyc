@@ -45,7 +45,6 @@
 #define MOVE_STEP 76
 #define OBSTACLE_COUNT 11
 #define UV_ONE 65536
-#define UV_WORLD_SCALE 500
 
 struct vec3 { int x, y, z; };
 struct camera { int x, z, sy, cy, pitch; };
@@ -112,10 +111,12 @@ static struct toy_game game;   /* 游戏规则状态（main / logic-test 共用�
 static struct toy_texture_asset scene_texture;
 static struct toy_texture_view scene_texture_view;
 static struct toy_texture_view wall_texture_view;
-static struct toy_texture_view floor_texture_view;
-static struct toy_texture_view box_texture_view;
 static struct toy_texture_view *active_texture_view;
 static int textures_enabled = 1;
+
+/* Only the distant room boundary uses the stylized wall texture. Gameplay
+ * cover remains flat-shaded so texture sampling does not dominate the
+ * software rasterizer. */
 
 /* 新局和死亡重开必须走同一路径，避免 toy_game_init 清空世界配置。 */
 static void reset_game(struct camera *camera, uint64_t seed)
@@ -384,15 +385,12 @@ static int draw_floor_zone(struct toy_renderer *renderer,
                            const struct camera *camera,
                            const struct toy_game_box *zone, uint32_t color)
 {
-    struct world_uv_vertex a, b, c, d;
-    int du = (zone->maxx - zone->minx) * UV_ONE / UV_WORLD_SCALE;
-    int dv = (zone->maxz - zone->minz) * UV_ONE / UV_WORLD_SCALE;
-    a.p.x = zone->minx; a.p.y = -894; a.p.z = zone->minz; a.u = 0; a.v = 0;
-    b.p.x = zone->maxx; b.p.y = -894; b.p.z = zone->minz; b.u = du; b.v = 0;
-    c.p.x = zone->maxx; c.p.y = -894; c.p.z = zone->maxz; c.u = du; c.v = dv;
-    d.p.x = zone->minx; d.p.y = -894; d.p.z = zone->maxz; d.u = 0; d.v = dv;
-    active_texture_view = &floor_texture_view;
-    return draw_quad_tex(renderer, camera, &a, &b, &c, &d, color);
+    struct vec3 a, b, c, d;
+    a.x = zone->minx; a.y = -894; a.z = zone->minz;
+    b.x = zone->maxx; b.y = -894; b.z = zone->minz;
+    c.x = zone->maxx; c.y = -894; c.z = zone->maxz;
+    d.x = zone->minx; d.y = -894; d.z = zone->maxz;
+    return draw_quad(renderer, camera, &a, &b, &c, &d, color);
 }
 
 static int draw_floor_border(struct toy_renderer *renderer,
@@ -439,36 +437,21 @@ static void draw_world_label(struct toy_renderer *renderer,
 static int draw_box(struct toy_renderer *renderer, const struct camera *camera,
                     const struct box *box)
 {
-    struct world_uv_vertex a, b, c, d, e, f, g, h;
-    int du = (box->maxx - box->minx) * UV_ONE / UV_WORLD_SCALE;
-    int dz = (box->maxz - box->minz) * UV_ONE / UV_WORLD_SCALE;
-    int dy = (box->height + 900) * UV_ONE / UV_WORLD_SCALE;
+    struct vec3 a, b, c, d, e, f, g, h;
     int pixels = 0;
-    active_texture_view = &box_texture_view;
-    a.p.x = box->minx; a.p.y = -900; a.p.z = box->minz;
-    b.p.x = box->maxx; b.p.y = -900; b.p.z = box->minz;
-    c.p.x = box->maxx; c.p.y = -900; c.p.z = box->maxz;
-    d.p.x = box->minx; d.p.y = -900; d.p.z = box->maxz;
-    e.p.x = a.p.x; e.p.y = box->height; e.p.z = a.p.z;
-    f.p.x = b.p.x; f.p.y = box->height; f.p.z = b.p.z;
-    g.p.x = c.p.x; g.p.y = box->height; g.p.z = c.p.z;
-    h.p.x = d.p.x; h.p.y = box->height; h.p.z = d.p.z;
-    a.u=0; a.v=0; b.u=du; b.v=0; c.u=du; c.v=dz; d.u=0; d.v=dz;
-    e.u=0; e.v=dy; f.u=du; f.v=dy; g.u=du; g.v=dz+dy; h.u=0; h.v=dz+dy;
-    /* Each face owns its UV chart; shared position vertices therefore do not
-     * force unrelated faces to share a seam coordinate. */
-    { struct world_uv_vertex q0,q1,q2,q3;
-      copy_world_uv(&q0,&a); copy_world_uv(&q1,&b); copy_world_uv(&q2,&f); copy_world_uv(&q3,&e); q0.u=0;q0.v=0;q1.u=du;q1.v=0;q2.u=du;q2.v=dy;q3.u=0;q3.v=dy;
-      pixels += draw_quad_tex(renderer,camera,&q0,&q1,&q2,&q3,box->color);
-      copy_world_uv(&q0,&b); copy_world_uv(&q1,&c); copy_world_uv(&q2,&g); copy_world_uv(&q3,&f); q0.u=0;q0.v=0;q1.u=dz;q1.v=0;q2.u=dz;q2.v=dy;q3.u=0;q3.v=dy;
-      pixels += draw_quad_tex(renderer,camera,&q0,&q1,&q2,&q3,box->color+0x080808);
-      copy_world_uv(&q0,&c); copy_world_uv(&q1,&d); copy_world_uv(&q2,&h); copy_world_uv(&q3,&g); q0.u=0;q0.v=0;q1.u=du;q1.v=0;q2.u=du;q2.v=dy;q3.u=0;q3.v=dy;
-      pixels += draw_quad_tex(renderer,camera,&q0,&q1,&q2,&q3,box->color);
-      copy_world_uv(&q0,&d); copy_world_uv(&q1,&a); copy_world_uv(&q2,&e); copy_world_uv(&q3,&h); q0.u=0;q0.v=0;q1.u=dz;q1.v=0;q2.u=dz;q2.v=dy;q3.u=0;q3.v=dy;
-      pixels += draw_quad_tex(renderer,camera,&q0,&q1,&q2,&q3,box->color+0x080808);
-      copy_world_uv(&q0,&e); copy_world_uv(&q1,&f); copy_world_uv(&q2,&g); copy_world_uv(&q3,&h); q0.u=0;q0.v=0;q1.u=du;q1.v=0;q2.u=du;q2.v=dz;q3.u=0;q3.v=dz;
-      pixels += draw_quad_tex(renderer,camera,&q0,&q1,&q2,&q3,box->color+0x181818);
-    }
+    a.x = box->minx; a.y = -900; a.z = box->minz;
+    b.x = box->maxx; b.y = -900; b.z = box->minz;
+    c.x = box->maxx; c.y = -900; c.z = box->maxz;
+    d.x = box->minx; d.y = -900; d.z = box->maxz;
+    e.x = a.x; e.y = box->height; e.z = a.z;
+    f.x = b.x; f.y = box->height; f.z = b.z;
+    g.x = c.x; g.y = box->height; g.z = c.z;
+    h.x = d.x; h.y = box->height; h.z = d.z;
+    pixels += draw_quad(renderer,camera,&a,&b,&f,&e,box->color);
+    pixels += draw_quad(renderer,camera,&b,&c,&g,&f,box->color + 0x080808);
+    pixels += draw_quad(renderer,camera,&c,&d,&h,&g,box->color);
+    pixels += draw_quad(renderer,camera,&d,&a,&e,&h,box->color + 0x080808);
+    pixels += draw_quad(renderer,camera,&e,&f,&g,&h,box->color + 0x181818);
     return pixels;
 }
 
@@ -571,7 +554,6 @@ static int render_scene(struct toy_renderer *renderer, const struct camera *came
 {
     int pixels = 0;
     struct vec3 a, b, c, d;
-    active_texture_view = &floor_texture_view;
     for (int z = -6000; z < 6000; z += 1000) {
         for (int x = -6000; x < 6000; x += 1000) {
             uint32_t color = (((x + z) / 1000) & 1) ? 0x30343A : 0x272B31;
@@ -588,19 +570,19 @@ static int render_scene(struct toy_renderer *renderer, const struct camera *came
     d.x = -6000; d.y = 1800; d.z = -6000;
     active_texture_view = &wall_texture_view;
     pixels += draw_position_quad_tex(renderer, camera, &a, &b, &c, &d,
-                                     12 * UV_ONE, 3 * UV_ONE, 0x555B68);
+                                     5 * UV_ONE, 2 * UV_ONE, 0x555B68);
     a.z = 6000; b.z = 6000; c.z = 6000; d.z = 6000;
     pixels += draw_position_quad_tex(renderer, camera, &a, &b, &c, &d,
-                                     12 * UV_ONE, 3 * UV_ONE, 0x4C5260);
+                                     5 * UV_ONE, 2 * UV_ONE, 0x4C5260);
     a.x = -6000; a.y = -900; a.z = -6000;
     b.x = -6000; b.y = -900; b.z =  6000;
     c.x = -6000; c.y = 1800; c.z =  6000;
     d.x = -6000; d.y = 1800; d.z = -6000;
     pixels += draw_position_quad_tex(renderer, camera, &a, &b, &c, &d,
-                                     12 * UV_ONE, 3 * UV_ONE, 0x5E5965);
+                                     5 * UV_ONE, 2 * UV_ONE, 0x5E5965);
     a.x = 6000; b.x = 6000; c.x = 6000; d.x = 6000;
     pixels += draw_position_quad_tex(renderer, camera, &a, &b, &c, &d,
-                                     12 * UV_ONE, 3 * UV_ONE, 0x56515D);
+                                     5 * UV_ONE, 2 * UV_ONE, 0x56515D);
     for (int i = 0; i < 2; i++)
         pixels += draw_floor_zone(renderer, camera, &safe_rooms[i],
                                   i == 0 ? 0x245238 : 0x2D7047);
@@ -1370,14 +1352,6 @@ int main(int argc, char **argv)
         wall_texture_view.width = scene_texture_view.width;
         wall_texture_view.height = scene_texture_view.height;
         wall_texture_view.data_size = scene_texture_view.data_size;
-        floor_texture_view.data = scene_texture_view.data;
-        floor_texture_view.width = scene_texture_view.width;
-        floor_texture_view.height = scene_texture_view.height;
-        floor_texture_view.data_size = scene_texture_view.data_size;
-        box_texture_view.data = scene_texture_view.data;
-        box_texture_view.width = scene_texture_view.width;
-        box_texture_view.height = scene_texture_view.height;
-        box_texture_view.data_size = scene_texture_view.data_size;
         __printf("wayland_fps: UV texture loaded (%u x %u)\n",
                  scene_texture.width, scene_texture.height);
     } else if (textures_enabled) {

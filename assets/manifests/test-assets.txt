@@ -1,8 +1,8 @@
 name: test-assets
-source: assets/sources/test.jpg.b64, assets/sources/test.png.b64, assets/sources/uv_test.png.b64, assets/sources/test.wav.b64, assets/sources/test.obj, assets/sources/wall.jpg
-license: test fixtures are project-generated; wall.jpg is Poly Haven Square Brick Floor, CC0 1.0
+source: assets/sources/test.jpg.b64, assets/sources/test.png.b64, assets/sources/uv_test.png.b64, assets/sources/test.wav.b64, assets/sources/test.obj, assets/sources/wall.jpg, assets/sources/wall_stylized.png
+license: test fixtures are project-generated; wall.jpg is Poly Haven Square Brick Floor, CC0 1.0; wall_stylized.png is a derived game texture
 wall-source: https://polyhaven.com/a/square_brick_floor
 wall-source-file: square_brick_floor_diff_1k.jpg
 commands:
   make assets
-outputs: test.jpg.ttex (16x16 RGB888, gray quadrants 16/64/128/64, baseline 4:2:0 JPEG), wall.ttex (1024x1024 RGB888 brick diffuse), test.ttex (1x1 RGB888), uv_test.ttex (8x8 RGB888, corner markers/grid), test.tsnd (44100 Hz mono PCM16, 1 frame), test.tmesh (3 vertices, 1 triangle)
+outputs: test.jpg.ttex (16x16 RGB888, gray quadrants 16/64/128/64, baseline 4:2:0 JPEG), wall.ttex (128x128 RGB888 stylized brick wall), test.ttex (1x1 RGB888), uv_test.ttex (8x8 RGB888, corner markers/grid), test.tsnd (44100 Hz mono PCM16, 1 frame), test.tmesh (3 vertices, 1 triangle)

@@ -88,7 +88,7 @@ assets: $(BUILD)/toyasset
 	@$(BUILD)/toyasset convert wav assets/sources/test.wav assets/generated/test.tsnd
 	@$(BUILD)/toyasset convert obj assets/sources/test.obj assets/generated/test.tmesh
 	@$(BUILD)/toyasset convert png assets/sources/uv_test.png assets/generated/uv_test.ttex
-	@$(BUILD)/toyasset convert jpg assets/sources/wall.jpg assets/generated/wall.ttex
+	@$(BUILD)/toyasset convert png128 assets/sources/wall_stylized.png assets/generated/wall.ttex
 	@printf "$(GREEN)✓ 资产转换完成$(RESET)\n"
 
 validate-assets: assets
