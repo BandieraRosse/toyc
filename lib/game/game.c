@@ -2,8 +2,8 @@
  * game.c — 僵尸潮射击游戏规则（平台无关）。
  *
  * 全部规则集中于此：xorshift64* PRNG、世界碰撞查询、僵尸 AI（追逐/
- * 攻击/分离/倒地）、波次生成、hitscan 射击与障碍遮挡、弹匣/换弹、
- * 玩家生命/死亡冻结、事件队列。
+ * 攻击/分离/倒地）、波次或固定区域生成、安全室与终点、hitscan 射击与
+ * 障碍遮挡、弹匣/换弹、玩家生命/死亡/通关冻结、事件队列。
  *
  * 实现约束（自托管友好，同 renderer.c 注释风格）：
  *  - 禁整结构赋值（用 memcpy / 逐字段）
@@ -71,7 +71,7 @@ void toy_game_init(struct toy_game *g, uint64_t seed)
     g->hp = 100;
     g->state = TOY_GAME_PLAYING;
     g->ammo_mag = TOY_GAME_MAG_SIZE;
-    g->ammo_reserve = TOY_GAME_MAG_RESERVE;
+    g->ammo_reserve = TOY_GAME_AMMO_INFINITE;
     g->wave = 1;
     g->to_spawn = wave_quota(1);
     g->spawn_timer_ms = TOY_GAME_WAVE_FIRST_DELAY_MS;
@@ -86,6 +86,44 @@ void toy_game_set_world(struct toy_game *g,
     g->room_limit = room_limit;
 }
 
+int toy_game_point_in_box(int x, int z, const struct toy_game_box *box)
+{
+    return box && x >= box->minx && x <= box->maxx &&
+           z >= box->minz && z <= box->maxz;
+}
+
+void toy_game_set_campaign(struct toy_game *g,
+                           const struct toy_game_box *safe_rooms,
+                           int safe_room_count,
+                           const struct toy_game_box *spawn_zones,
+                           int spawn_zone_count)
+{
+    g->safe_rooms = safe_rooms;
+    g->safe_room_count = safe_room_count;
+    g->spawn_zones = spawn_zones;
+    g->spawn_zone_count = spawn_zone_count;
+    g->campaign_mode = safe_room_count >= 2 && spawn_zone_count > 0;
+    g->goal_hold_ms = 0;
+    g->alarm_spawn_zone = -1;
+    if (g->campaign_mode) {
+        g->to_spawn = 0;
+        g->spawn_timer_ms = TOY_GAME_CAMPAIGN_FIRST_SPAWN_MS;
+    }
+}
+
+void toy_game_set_alarm(struct toy_game *g,
+                        const struct toy_game_box *alarm_zone,
+                        int spawn_zone_index)
+{
+    g->alarm_zone = alarm_zone;
+    if (spawn_zone_index >= 0 && spawn_zone_index < g->spawn_zone_count)
+        g->alarm_spawn_zone = spawn_zone_index;
+    else
+        g->alarm_spawn_zone = -1;
+    g->alarm_triggered = 0;
+    g->alarm_timer_ms = 0;
+}
+
 /* 圆形碰撞体 (x, z, radius) 是否与房间边界或障碍物重叠 */
 int toy_game_position_blocked(const struct toy_game *g,
                               int x, int z, int radius)
@@ -98,6 +136,27 @@ int toy_game_position_blocked(const struct toy_game *g,
         if (x + radius > b->minx && x - radius < b->maxx &&
             z + radius > b->minz && z - radius < b->maxz) return 1;
     }
+    return 0;
+}
+
+static int enemy_position_blocked(const struct toy_game *g,
+                                  int x, int z, int radius)
+{
+    int i;
+    if (toy_game_position_blocked(g, x, z, radius)) return 1;
+    for (i = 0; i < g->safe_room_count; i++) {
+        const struct toy_game_box *b = &g->safe_rooms[i];
+        if (x + radius > b->minx && x - radius < b->maxx &&
+            z + radius > b->minz && z - radius < b->maxz) return 1;
+    }
+    return 0;
+}
+
+static int player_in_safe_room(const struct toy_game *g)
+{
+    int i;
+    for (i = 0; i < g->safe_room_count; i++)
+        if (toy_game_point_in_box(g->px, g->pz, &g->safe_rooms[i])) return 1;
     return 0;
 }
 
@@ -120,14 +179,22 @@ static int try_spawn(struct toy_game *g)
     for (i = 0; i < 16; i++) {
         int side = rand_range(g, 0, 3);
         int x, z, dx, dz;
-        if (side < 2) {
+        if (g->campaign_mode) {
+            const struct toy_game_box *zone;
+            int zone_index = rand_range(g, 0, g->spawn_zone_count - 1);
+            if (zone_index == g->alarm_spawn_zone && g->alarm_timer_ms <= 0)
+                continue;
+            zone = &g->spawn_zones[zone_index];
+            x = rand_range(g, zone->minx, zone->maxx);
+            z = rand_range(g, zone->minz, zone->maxz);
+        } else if (side < 2) {
             x = rand_range(g, -edge, edge);
             z = (side == 0) ? -edge : edge;
         } else {
             z = rand_range(g, -edge, edge);
             x = (side == 2) ? -edge : edge;
         }
-        if (toy_game_position_blocked(g, x, z, TOY_GAME_ENEMY_RADIUS)) continue;
+        if (enemy_position_blocked(g, x, z, TOY_GAME_ENEMY_RADIUS)) continue;
         dx = x - g->px;
         dz = z - g->pz;
         if (dx * dx + dz * dz < min_dist2) continue;
@@ -136,13 +203,13 @@ static int try_spawn(struct toy_game *g)
         g->enemies[slot].active = 1;
         g->enemies[slot].x = x;
         g->enemies[slot].z = z;
-        g->enemies[slot].speed = rand_range(g, 46, 70);
+        g->enemies[slot].speed = rand_range(g, 38, 56);
         g->enemies[slot].hp = 1;
         g->enemies[slot].bite_cooldown_ms = 0;
         g->enemies[slot].flash = 0;
         g->enemies[slot].hurt = 0;
         g->enemies[slot].dying_ms = 0;
-        g->to_spawn--;
+        if (!g->campaign_mode) g->to_spawn--;
         g->enemies_alive++;
         return 1;
     }
@@ -187,6 +254,40 @@ static void update_waves(struct toy_game *g, int dt_ms)
     }
 }
 
+static void update_campaign(struct toy_game *g, int dt_ms)
+{
+    const struct toy_game_box *goal;
+    int spawn_interval = TOY_GAME_CAMPAIGN_SPAWN_INTERVAL_MS;
+    if (!g->alarm_triggered && g->alarm_zone &&
+        toy_game_point_in_box(g->px, g->pz, g->alarm_zone)) {
+        g->alarm_triggered = 1;
+        g->alarm_timer_ms = TOY_GAME_ALARM_DURATION_MS;
+        g->spawn_timer_ms = 0;
+        push_event(g, TOY_GAME_EV_ALARM_TRIGGERED);
+    }
+    if (g->alarm_timer_ms > 0) {
+        g->alarm_timer_ms -= dt_ms;
+        if (g->alarm_timer_ms < 0) g->alarm_timer_ms = 0;
+        spawn_interval = TOY_GAME_ALARM_SPAWN_INTERVAL_MS;
+    }
+    g->spawn_timer_ms -= dt_ms;
+    if (g->spawn_timer_ms <= 0) {
+        try_spawn(g);
+        g->spawn_timer_ms = spawn_interval;
+    }
+    goal = &g->safe_rooms[g->safe_room_count - 1];
+    if (toy_game_point_in_box(g->px, g->pz, goal)) {
+        g->goal_hold_ms += dt_ms;
+        if (g->goal_hold_ms >= TOY_GAME_GOAL_HOLD_MS) {
+            g->goal_hold_ms = TOY_GAME_GOAL_HOLD_MS;
+            g->state = TOY_GAME_WON;
+            push_event(g, TOY_GAME_EV_LEVEL_WON);
+        }
+    } else {
+        g->goal_hold_ms = 0;
+    }
+}
+
 /* ── 僵尸 AI ───────────────────────────────────────────────────── */
 
 static void bite_player(struct toy_game *g, struct toy_game_enemy *e)
@@ -212,15 +313,15 @@ static void move_enemy(struct toy_game *g, struct toy_game_enemy *e)
     long long dist = isqrt(dist2);
     int nx, nz;
     if (dist < TOY_GAME_ATTACK_RANGE) {
-        bite_player(g, e);
+        if (!player_in_safe_room(g)) bite_player(g, e);
         return;
     }
     if (dist == 0) return;
     nx = (int)((long long)dx * e->speed / dist);
     nz = (int)((long long)dz * e->speed / dist);
-    if (!toy_game_position_blocked(g, e->x + nx, e->z, TOY_GAME_ENEMY_RADIUS))
+    if (!enemy_position_blocked(g, e->x + nx, e->z, TOY_GAME_ENEMY_RADIUS))
         e->x += nx;
-    if (!toy_game_position_blocked(g, e->x, e->z + nz, TOY_GAME_ENEMY_RADIUS))
+    if (!enemy_position_blocked(g, e->x, e->z + nz, TOY_GAME_ENEMY_RADIUS))
         e->z += nz;
 }
 
@@ -242,10 +343,18 @@ static void separate_enemies(struct toy_game *g)
             if (dist2 == 0 || dist2 >= 260 * 260) continue;
             dist = isqrt(dist2);
             if (dist > 0) {
-                a->x -= (int)((long long)dx * 8 / dist);
-                a->z -= (int)((long long)dz * 8 / dist);
-                b->x += (int)((long long)dx * 8 / dist);
-                b->z += (int)((long long)dz * 8 / dist);
+                int ax = a->x - (int)((long long)dx * 8 / dist);
+                int az = a->z - (int)((long long)dz * 8 / dist);
+                int bx = b->x + (int)((long long)dx * 8 / dist);
+                int bz = b->z + (int)((long long)dz * 8 / dist);
+                if (!enemy_position_blocked(g, ax, az, TOY_GAME_ENEMY_RADIUS)) {
+                    a->x = ax;
+                    a->z = az;
+                }
+                if (!enemy_position_blocked(g, bx, bz, TOY_GAME_ENEMY_RADIUS)) {
+                    b->x = bx;
+                    b->z = bz;
+                }
             }
         }
     }
@@ -299,7 +408,7 @@ int toy_game_fire(struct toy_game *g, int sy, int cy)
 {
     int best = -1, best_t = 0, i;
     int radius_times_1024 = TOY_GAME_HIT_RADIUS * 1024;
-    if (g->state != TOY_GAME_PLAYING) return 0;
+    if (g->state != TOY_GAME_PLAYING || g->reloading) return 0;
     g->fire_cooldown_ms = TOY_GAME_FIRE_COOLDOWN_MS;
     g->muzzle_flash_ms = TOY_GAME_MUZZLE_FLASH_MS;
     if (g->ammo_mag <= 0) {
@@ -308,6 +417,11 @@ int toy_game_fire(struct toy_game *g, int sy, int cy)
     }
     g->ammo_mag--;
     push_event(g, TOY_GAME_EV_SHOOT);
+    if (g->ammo_mag == 0) {
+        g->reloading = 1;
+        g->reload_timer_ms = TOY_GAME_RELOAD_MS;
+        push_event(g, TOY_GAME_EV_RELOAD_START);
+    }
 
     for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
         struct toy_game_enemy *e = &g->enemies[i];
@@ -374,14 +488,18 @@ void toy_game_update(struct toy_game *g, const unsigned char *keys_pressed,
         g->reload_timer_ms -= dt_ms;
         if (g->reload_timer_ms <= 0) {
             int used = TOY_GAME_MAG_SIZE - g->ammo_mag;
-            if (used > g->ammo_reserve) used = g->ammo_reserve;
+            if (g->ammo_reserve != TOY_GAME_AMMO_INFINITE &&
+                used > g->ammo_reserve) used = g->ammo_reserve;
             g->ammo_mag += used;
-            g->ammo_reserve -= used;
+            if (g->ammo_reserve != TOY_GAME_AMMO_INFINITE)
+                g->ammo_reserve -= used;
             g->reloading = 0;
             push_event(g, TOY_GAME_EV_RELOAD_DONE);
         }
     } else if (keys_pressed && keys_pressed[TOY_GAME_KEY_RELOAD] &&
-               g->ammo_mag < TOY_GAME_MAG_SIZE && g->ammo_reserve > 0) {
+               g->ammo_mag < TOY_GAME_MAG_SIZE &&
+               (g->ammo_reserve > 0 ||
+                g->ammo_reserve == TOY_GAME_AMMO_INFINITE)) {
         g->reloading = 1;
         g->reload_timer_ms = TOY_GAME_RELOAD_MS;
         push_event(g, TOY_GAME_EV_RELOAD_START);
@@ -414,5 +532,6 @@ void toy_game_update(struct toy_game *g, const unsigned char *keys_pressed,
         }
     }
     separate_enemies(g);
-    update_waves(g, dt_ms);
+    if (g->campaign_mode) update_campaign(g, dt_ms);
+    else update_waves(g, dt_ms);
 }

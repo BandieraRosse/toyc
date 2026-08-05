@@ -2,7 +2,7 @@
  * toy_game — 平台无关的僵尸潮射击游戏规则（供 wayland_fps 等窗口游戏使用）。
  *
  * 职责边界：本库只包含游戏规则 —— PRNG、世界碰撞查询、僵尸 AI/攻击、
- * 波次生成、hitscan 射击与障碍遮挡、弹匣/换弹、玩家生命/死亡、事件队列
+ * 波次或闯关刷怪、安全室/终点、hitscan 射击与障碍遮挡、弹匣/换弹、玩家生命/死亡、事件队列
  * （供音效与 HUD 消费）。纯整数运算、零系统调用、零内存分配（固定数组），
  * 不依赖窗口/输入/渲染设施，可无窗口测试。
  *
@@ -17,7 +17,7 @@
 
 #define TOY_GAME_MAX_ENEMIES    32
 #define TOY_GAME_MAG_SIZE       30
-#define TOY_GAME_MAG_RESERVE    60
+#define TOY_GAME_AMMO_INFINITE  (-1)
 #define TOY_GAME_RELOAD_MS      1500
 #define TOY_GAME_BITE_MS        1000
 #define TOY_GAME_BITE_DAMAGE    15
@@ -28,6 +28,10 @@
 #define TOY_GAME_WAVE_FIRST_DELAY_MS 1500
 #define TOY_GAME_WAVE_PAUSE_MS  2500
 #define TOY_GAME_SPAWN_INTERVAL_MS 500
+#define TOY_GAME_CAMPAIGN_FIRST_SPAWN_MS 2500
+#define TOY_GAME_CAMPAIGN_SPAWN_INTERVAL_MS 2200
+#define TOY_GAME_ALARM_SPAWN_INTERVAL_MS 1200
+#define TOY_GAME_ALARM_DURATION_MS 10000
 #define TOY_GAME_MAX_EVENTS     16
 
 #define TOY_GAME_ENEMY_RADIUS   100     /* 敌人碰撞半径 */
@@ -37,10 +41,11 @@
 #define TOY_GAME_ENEMY_HEIGHT   950     /* 敌人盒高度（宿主用） */
 #define TOY_GAME_SPAWN_EDGE     250     /* 生成点距房间边界内缩量 */
 #define TOY_GAME_MIN_SPAWN_DIST 1200    /* 生成点距玩家最小距离（防贴脸） */
+#define TOY_GAME_GOAL_HOLD_MS   1500    /* 终点安全室内停留多久判定通关 */
 
 #define TOY_GAME_KEY_RELOAD     19      /* evdev KEY_R */
 
-enum toy_game_state { TOY_GAME_PLAYING, TOY_GAME_OVER };
+enum toy_game_state { TOY_GAME_PLAYING, TOY_GAME_OVER, TOY_GAME_WON };
 
 enum toy_game_event {
     TOY_GAME_EV_SHOOT,
@@ -51,6 +56,8 @@ enum toy_game_event {
     TOY_GAME_EV_BITE,
     TOY_GAME_EV_PLAYER_DEATH,
     TOY_GAME_EV_WAVE_START,
+    TOY_GAME_EV_LEVEL_WON,
+    TOY_GAME_EV_ALARM_TRIGGERED,
 };
 
 /* 碰撞/命中共用的 xz 平面轴对齐盒（与房间障碍物同尺度） */
@@ -86,6 +93,18 @@ struct toy_game {
     int spawn_timer_ms;
     int enemies_alive;
 
+    /* 经典闯关模式：固定刷怪区，安全室对敌人视为禁区。 */
+    const struct toy_game_box *safe_rooms;
+    int safe_room_count;
+    const struct toy_game_box *spawn_zones;
+    int spawn_zone_count;
+    int campaign_mode;
+    int goal_hold_ms;
+    const struct toy_game_box *alarm_zone;
+    int alarm_spawn_zone;
+    int alarm_triggered;
+    int alarm_timer_ms;
+
     /* 世界（宿主所有，只读借用） */
     const struct toy_game_box *world;
     int world_count;
@@ -103,6 +122,15 @@ void toy_game_init(struct toy_game *g, uint64_t seed);      /* 初始化/重开�
 void toy_game_set_world(struct toy_game *g,
                         const struct toy_game_box *boxes,
                         int box_count, int room_limit);
+void toy_game_set_campaign(struct toy_game *g,
+                           const struct toy_game_box *safe_rooms,
+                           int safe_room_count,
+                           const struct toy_game_box *spawn_zones,
+                           int spawn_zone_count);
+void toy_game_set_alarm(struct toy_game *g,
+                        const struct toy_game_box *alarm_zone,
+                        int spawn_zone_index);
+int  toy_game_point_in_box(int x, int z, const struct toy_game_box *box);
 int  toy_game_position_blocked(const struct toy_game *g,
                                int x, int z, int radius);
 void toy_game_update(struct toy_game *g,

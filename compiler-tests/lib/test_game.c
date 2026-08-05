@@ -11,6 +11,14 @@ static const struct toy_game_box world[3] = {
     {  600, 1800, -900,  100 },
     { 2300, 3200, 1800, 3000 },
 };
+static const struct toy_game_box test_safe_rooms[2] = {
+    {-1000, 1000, -5000, -4000},
+    {-1000, 1000,  4000,  5000},
+};
+static const struct toy_game_box test_spawn_zones[2] = {
+    {-4000, -3000, -1000, 1000},
+    { 3000,  4000, -1000, 1000},
+};
 #define ROOM 5700
 
 static int count_alive(const struct toy_game *g)
@@ -229,11 +237,11 @@ static int test_obstacle_occlusion(void)
     return 0;
 }
 
-/* 11: 弹药耗尽 / 空枪事件 / 换弹回填 */
+/* 11: 弹匣打空自动换弹，手枪备用弹药无限。 */
 static int test_ammo_reload(void)
 {
     struct toy_game g;
-    unsigned char evs[16], keys[256];
+    unsigned char evs[16];
     int i, n;
     toy_game_init(&g, 21);
     toy_game_set_world(&g, NULL, 0, ROOM);
@@ -241,22 +249,17 @@ static int test_ammo_reload(void)
     g.pz = 0;
     for (i = 0; i < 30; i++) {
         toy_game_fire(&g, 0, 1024);
-        if ((i % 5) == 4) toy_game_drain_events(&g, evs, 16);  /* 防止 SHOOT 灌满队列 */
+        if ((i % 5) == 4 && i < 29)
+            toy_game_drain_events(&g, evs, 16);  /* 防止 SHOOT 灌满队列 */
     }
-    if (g.ammo_mag != 0 || g.ammo_reserve != 60) return 11;
-    if (toy_game_fire(&g, 0, 1024)) return 11;        /* 空枪不命中 */
-    if (g.ammo_mag != 0) return 11;
-    n = toy_game_drain_events(&g, evs, 16);
-    if (!has_event(evs, n, TOY_GAME_EV_DRY_FIRE)) return 11;
-    memset(keys, 0, sizeof(keys));
-    keys[TOY_GAME_KEY_RELOAD] = 1;
-    toy_game_update(&g, keys, 0, 0, 1024, 16);
-    if (!g.reloading) return 11;
+    if (g.ammo_mag != 0 || g.ammo_reserve != TOY_GAME_AMMO_INFINITE ||
+        !g.reloading) return 11;
     n = toy_game_drain_events(&g, evs, 16);
     if (!has_event(evs, n, TOY_GAME_EV_RELOAD_START)) return 11;
-    for (i = 0; i < 94; i++) toy_game_update(&g, keys, 0, 0, 1024, 16);
+    for (i = 0; i < 94; i++) toy_game_update(&g, NULL, 0, 0, 1024, 16);
     if (g.reloading) return 11;
-    if (g.ammo_mag != 30 || g.ammo_reserve != 30) return 11;
+    if (g.ammo_mag != 30 ||
+        g.ammo_reserve != TOY_GAME_AMMO_INFINITE) return 11;
     n = toy_game_drain_events(&g, evs, 16);
     if (!has_event(evs, n, TOY_GAME_EV_RELOAD_DONE)) return 11;
     return 0;
@@ -353,6 +356,109 @@ static int test_sfx(void)
     return 0;
 }
 
+/* 16: 闯关模式只从固定刷怪区生成，且玩家速度配置高于僵尸。 */
+static int test_campaign_spawn_zone(void)
+{
+    struct toy_game g;
+    int i, in_zone = 0;
+    toy_game_init(&g, 31);
+    toy_game_set_world(&g, NULL, 0, ROOM);
+    toy_game_set_campaign(&g, test_safe_rooms, 2, test_spawn_zones, 2);
+    g.px = 0;
+    g.pz = -4500;
+    g.spawn_timer_ms = 0;
+    toy_game_update(&g, NULL, 0, 0, 1024, 16);
+    if (count_alive(&g) != 1) return 16;
+    for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
+        const struct toy_game_enemy *e = &g.enemies[i];
+        int j;
+        if (e->active != 1) continue;
+        if (e->speed >= 76) return 16;
+        for (j = 0; j < 2; j++)
+            if (toy_game_point_in_box(e->x, e->z, &test_spawn_zones[j]))
+                in_zone = 1;
+    }
+    return in_zone ? 0 : 16;
+}
+
+/* 17: 僵尸追到安全室边界后不能进入，也不能隔着边界伤害玩家。 */
+static int test_safe_room_blocks_enemy(void)
+{
+    struct toy_game g;
+    int i;
+    toy_game_init(&g, 33);
+    toy_game_set_world(&g, NULL, 0, ROOM);
+    toy_game_set_campaign(&g, test_safe_rooms, 2, test_spawn_zones, 2);
+    g.spawn_timer_ms = 1000000;
+    g.px = 0;
+    g.pz = -4500;
+    toy_game_place_enemy(&g, 0, -3800);
+    for (i = 0; i < 100; i++) toy_game_update(&g, NULL, 0, 0, 1024, 16);
+    if (g.enemies[0].z < -3900) return 17;
+    if (g.hp != 100) return 17;
+    return 0;
+}
+
+/* 18: 在终点安全室连续停留 1.5 秒后通关并产生事件。 */
+static int test_goal_hold_and_win(void)
+{
+    struct toy_game g;
+    unsigned char evs[16];
+    int n;
+    toy_game_init(&g, 35);
+    toy_game_set_world(&g, NULL, 0, ROOM);
+    toy_game_set_campaign(&g, test_safe_rooms, 2, test_spawn_zones, 2);
+    g.spawn_timer_ms = 1000000;
+    g.px = 0;
+    g.pz = 4500;
+    toy_game_update(&g, NULL, 0, 0, 1024, 1000);
+    g.pz = 0;
+    toy_game_update(&g, NULL, 0, 0, 1024, 16);
+    if (g.goal_hold_ms != 0) return 18;
+    g.pz = 4500;
+    toy_game_update(&g, NULL, 0, 0, 1024, 1490);
+    if (g.state != TOY_GAME_PLAYING) return 18;
+    toy_game_update(&g, NULL, 0, 0, 1024, 10);
+    if (g.state != TOY_GAME_WON ||
+        g.goal_hold_ms != TOY_GAME_GOAL_HOLD_MS) return 18;
+    n = toy_game_drain_events(&g, evs, 16);
+    if (!has_event(evs, n, TOY_GAME_EV_LEVEL_WON)) return 18;
+    return 0;
+}
+
+/* 19: 警告区触发前专属刷怪区关闭，触发后限时开启且只触发一次。 */
+static int test_alarm_spawn_window(void)
+{
+    static const struct toy_game_box warning = {-500, 500, -500, 500};
+    struct toy_game g;
+    unsigned char evs[16];
+    int i, n;
+    toy_game_init(&g, 37);
+    toy_game_set_world(&g, NULL, 0, ROOM);
+    toy_game_set_campaign(&g, test_safe_rooms, 2, &test_spawn_zones[1], 1);
+    toy_game_set_alarm(&g, &warning, 0);
+    g.px = 0;
+    g.pz = -4500;
+    g.spawn_timer_ms = 0;
+    toy_game_update(&g, NULL, 0, 0, 1024, 16);
+    if (count_alive(&g) != 0 || g.alarm_triggered) return 19;
+    g.pz = 0;
+    toy_game_update(&g, NULL, 0, 0, 1024, 16);
+    if (count_alive(&g) != 1 || !g.alarm_triggered ||
+        g.alarm_timer_ms <= 0) return 19;
+    n = toy_game_drain_events(&g, evs, 16);
+    if (!has_event(evs, n, TOY_GAME_EV_ALARM_TRIGGERED)) return 19;
+    for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) g.enemies[i].active = 0;
+    g.enemies_alive = 0;
+    g.pz = -4500;
+    toy_game_update(&g, NULL, 0, 0, 1024, TOY_GAME_ALARM_DURATION_MS);
+    if (g.alarm_timer_ms != 0) return 19;
+    g.spawn_timer_ms = 0;
+    toy_game_update(&g, NULL, 0, 0, 1024, 16);
+    if (count_alive(&g) != 0) return 19;
+    return 0;
+}
+
 int main(void)
 {
     if (test_prng_determinism()) return 1;
@@ -370,5 +476,9 @@ int main(void)
     if (test_game_over()) return 13;
     if (test_capacity()) return 14;
     if (test_sfx()) return 15;
+    if (test_campaign_spawn_zone()) return 16;
+    if (test_safe_room_blocks_enemy()) return 17;
+    if (test_goal_hold_and_win()) return 18;
+    if (test_alarm_spawn_window()) return 19;
     return 0;
 }

@@ -1,5 +1,5 @@
 /*
- * wayland_fps — Toyc software-rendered first-person zombie-horde shooter.
+ * wayland_fps — Toyc software-rendered safe-room-to-safe-room zombie shooter.
  *
  * Controls: left click captures the pointer, mouse or arrows look, WASD moves,
  * left click / Space fire, R reloads, Esc pauses/releases the pointer or quits.
@@ -39,23 +39,60 @@
 #define NEAR_Z 192
 #define ROOM_LIMIT 5700
 #define PLAYER_RADIUS 180
-#define MOVE_STEP 72
+#define MOVE_STEP 76
+#define OBSTACLE_COUNT 11
 
 struct vec3 { int x, y, z; };
 struct camera { int x, z, sy, cy, pitch; };
 struct box { int minx, maxx, minz, maxz, height; uint32_t color; };
 
-static const struct box obstacles[3] = {
+static const struct box obstacles[OBSTACLE_COUNT] = {
     {-1700, -700,  300, 1700, 1000, 0x755A47},
     {  600, 1800, -900,  100, 1450, 0x49677D},
-    { 2300, 3200, 1800, 3000,  750, 0x64704B}
+    { 2300, 3200, 1800, 3000,  750, 0x64704B},
+    /* 起点安全室：两侧墙 + 留出中央门洞的前墙。 */
+    {-2000, -1800, -5700, -3800, 1300, 0x3F6751},
+    { 1800,  2000, -5700, -3800, 1300, 0x3F6751},
+    {-1800,  -600, -4000, -3800, 1300, 0x3F6751},
+    {  600,  1800, -4000, -3800, 1300, 0x3F6751},
+    /* 终点安全室：面向主体地图同样保留中央门洞。 */
+    {-2000, -1800,  3800,  5700, 1300, 0x477A58},
+    { 1800,  2000,  3800,  5700, 1300, 0x477A58},
+    {-1800,  -600,  3800,  4000, 1300, 0x477A58},
+    {  600,  1800,  3800,  4000, 1300, 0x477A58}
 };
 
 /* 游戏世界（与 obstacles 同 xz 范围，交给 lib/game 做碰撞与遮挡） */
-static const struct toy_game_box bounds[3] = {
+static const struct toy_game_box bounds[OBSTACLE_COUNT] = {
     {-1700, -700,  300, 1700},
     {  600, 1800, -900,  100},
-    { 2300, 3200, 1800, 3000}
+    { 2300, 3200, 1800, 3000},
+    {-2000, -1800, -5700, -3800},
+    { 1800,  2000, -5700, -3800},
+    {-1800,  -600, -4000, -3800},
+    {  600,  1800, -4000, -3800},
+    {-2000, -1800,  3800,  5700},
+    { 1800,  2000,  3800,  5700},
+    {-1800,  -600,  3800,  4000},
+    {  600,  1800,  3800,  4000}
+};
+
+/* 经典闯关路线：南侧起点安全室，穿过主体区域后抵达北侧终点安全室。 */
+static const struct toy_game_box safe_rooms[2] = {
+    {-1800, 1800, -5700, -4000},
+    {-1800, 1800,  4000,  5700}
+};
+
+/* 固定刷怪区域；渲染为红色地面，便于玩家识别危险区。 */
+static const struct toy_game_box spawn_zones[3] = {
+    {-5200, -3500, -2600, -800},
+    { 3500,  5200,  -500, 1400},
+    {-3300, -1500,  2100, 3600}
+};
+
+/* 踏入黄框后，右侧 spawn_zones[1] 开启 10 秒。 */
+static const struct toy_game_box alarm_zone = {
+    3300, 5200, -3000, -1500
 };
 
 static struct toy_game game;   /* 游戏规则状态（main / logic-test 共用） */
@@ -64,12 +101,14 @@ static struct toy_game game;   /* 游戏规则状态（main / logic-test 共用�
 static void reset_game(struct camera *camera, uint64_t seed)
 {
     camera->x = 0;
-    camera->z = -4200;
+    camera->z = -5000;
     camera->sy = 0;
     camera->cy = 1024;
     camera->pitch = 0;
     toy_game_init(&game, seed);
-    toy_game_set_world(&game, bounds, 3, ROOM_LIMIT);
+    toy_game_set_world(&game, bounds, OBSTACLE_COUNT, ROOM_LIMIT);
+    toy_game_set_campaign(&game, safe_rooms, 2, spawn_zones, 3);
+    toy_game_set_alarm(&game, &alarm_zone, 1);
     game.px = camera->x;
     game.pz = camera->z;
 }
@@ -115,8 +154,12 @@ static void near_intersection(const struct vec3 *a, const struct vec3 *b,
 {
     long numerator = NEAR_Z - a->z;
     long denominator = b->z - a->z;
-    out->x = a->x + (int)((long)(b->x - a->x) * numerator / denominator);
-    out->y = a->y + (int)((long)(b->y - a->y) * numerator / denominator);
+    /* Toyc-safe widening: cast operands before subtraction so a negative
+     * signed-int delta is sign-extended instead of zero-extended. */
+    out->x = a->x + (int)(((long)b->x - (long)a->x) *
+                          numerator / denominator);
+    out->y = a->y + (int)(((long)b->y - (long)a->y) *
+                          numerator / denominator);
     out->z = NEAR_Z;
 }
 
@@ -163,12 +206,14 @@ static int draw_world_triangle(struct toy_renderer *renderer,
     count = clip_near(input, 3, clipped);
     for (int i = 1; i + 1 < count; i++) {
         struct toy_screen_vertex sa, sb, sc;
-        long area;
+        int area;
         project_vertex(&renderer->surface, &clipped[0], camera->pitch, &sa);
         project_vertex(&renderer->surface, &clipped[i], camera->pitch, &sb);
         project_vertex(&renderer->surface, &clipped[i + 1], camera->pitch, &sc);
-        area = (long)(sc.x - sa.x) * (sb.y - sa.y) -
-               (long)(sc.y - sa.y) * (sb.x - sa.x);
+        /* Projected coordinates are bounded here, so 32-bit area is safe and
+         * avoids Toyc's signed int-to-long promotion bug. */
+        area = (sc.x - sa.x) * (sb.y - sa.y) -
+               (sc.y - sa.y) * (sb.x - sa.x);
         if (area >= 0) {
             struct toy_screen_vertex swap;
             swap.x = sb.x; swap.y = sb.y; swap.z = sb.z;
@@ -187,6 +232,59 @@ static int draw_quad(struct toy_renderer *renderer, const struct camera *camera,
 {
     return draw_world_triangle(renderer, camera, a, b, c, color) +
            draw_world_triangle(renderer, camera, a, c, d, color);
+}
+
+static int draw_floor_zone(struct toy_renderer *renderer,
+                           const struct camera *camera,
+                           const struct toy_game_box *zone, uint32_t color)
+{
+    struct vec3 a, b, c, d;
+    a.x = zone->minx; a.y = -894; a.z = zone->minz;
+    b.x = zone->maxx; b.y = -894; b.z = zone->minz;
+    c.x = zone->maxx; c.y = -894; c.z = zone->maxz;
+    d.x = zone->minx; d.y = -894; d.z = zone->maxz;
+    return draw_quad(renderer, camera, &a, &b, &c, &d, color);
+}
+
+static int draw_floor_border(struct toy_renderer *renderer,
+                             const struct camera *camera,
+                             const struct toy_game_box *zone, int width,
+                             uint32_t color)
+{
+    struct toy_game_box edge;
+    int pixels = 0;
+    edge.minx = zone->minx; edge.maxx = zone->maxx;
+    edge.minz = zone->minz; edge.maxz = zone->minz + width;
+    pixels += draw_floor_zone(renderer, camera, &edge, color);
+    edge.minz = zone->maxz - width; edge.maxz = zone->maxz;
+    pixels += draw_floor_zone(renderer, camera, &edge, color);
+    edge.minx = zone->minx; edge.maxx = zone->minx + width;
+    edge.minz = zone->minz + width; edge.maxz = zone->maxz - width;
+    pixels += draw_floor_zone(renderer, camera, &edge, color);
+    edge.minx = zone->maxx - width; edge.maxx = zone->maxx;
+    pixels += draw_floor_zone(renderer, camera, &edge, color);
+    return pixels;
+}
+
+static void draw_world_label(struct toy_renderer *renderer,
+                             const struct camera *camera,
+                             const struct toy_game_box *zone,
+                             const char *label, uint32_t color)
+{
+    struct vec3 world, view;
+    struct toy_screen_vertex screen;
+    int width = (int)strlen(label) * FB_FONT_W;
+    world.x = (zone->minx + zone->maxx) / 2;
+    world.y = -650;
+    world.z = (zone->minz + zone->maxz) / 2;
+    world_to_view(camera, &world, &view);
+    if (view.z < NEAR_Z) return;
+    project_vertex(&renderer->surface, &view, camera->pitch, &screen);
+    screen.x -= width / 2;
+    if (screen.x < 0 || screen.x + width >= renderer->surface.width ||
+        screen.y < 0 || screen.y + FB_FONT_H >= renderer->surface.height) return;
+    fb_draw_string((unsigned char *)renderer->surface.pixels,
+                   screen.x, screen.y, label, color, renderer->surface.stride);
 }
 
 static int draw_box(struct toy_renderer *renderer, const struct camera *camera,
@@ -238,7 +336,16 @@ static int render_scene(struct toy_renderer *renderer, const struct camera *came
     pixels += draw_quad(renderer, camera, &a, &b, &c, &d, 0x5E5965);
     a.x = 6000; b.x = 6000; c.x = 6000; d.x = 6000;
     pixels += draw_quad(renderer, camera, &a, &b, &c, &d, 0x56515D);
-    for (int i = 0; i < 3; i++) pixels += draw_box(renderer, camera, &obstacles[i]);
+    for (int i = 0; i < 2; i++)
+        pixels += draw_floor_zone(renderer, camera, &safe_rooms[i],
+                                  i == 0 ? 0x245238 : 0x2D7047);
+    for (int i = 0; i < 3; i++)
+        pixels += draw_floor_zone(renderer, camera, &spawn_zones[i], 0x6E2828);
+    pixels += draw_floor_border(renderer, camera, &alarm_zone, 90, 0xD8B020);
+    for (int i = 0; i < OBSTACLE_COUNT; i++)
+        pixels += draw_box(renderer, camera, &obstacles[i]);
+    draw_world_label(renderer, camera, &alarm_zone,
+                     "WARNING HORDE", 0xFFD040);
     return pixels;
 }
 
@@ -361,15 +468,40 @@ static void render_hud(struct toy_surface *surface)
 {
     char line[96];
     int n;
-    n = snprintf(line, sizeof(line), "HP %d  MAG %d/%d  KILLS %d  WAVE %d",
-                 game.hp, game.ammo_mag, game.ammo_reserve,
-                 game.kills, game.wave);
+    if (game.ammo_reserve == TOY_GAME_AMMO_INFINITE)
+        n = snprintf(line, sizeof(line), "HP %d  PISTOL %d/INF  KILLS %d",
+                     game.hp, game.ammo_mag, game.kills);
+    else
+        n = snprintf(line, sizeof(line), "HP %d  MAG %d/%d  KILLS %d",
+                     game.hp, game.ammo_mag, game.ammo_reserve, game.kills);
     if (n > 0)
         fb_draw_string((unsigned char *)surface->pixels, 8, 8,
                        line, 0xE7E9EC, surface->stride);
     if (game.reloading)
         fb_draw_string((unsigned char *)surface->pixels, 8, 8 + FB_FONT_H,
                        "RELOADING...", 0xD88A32, surface->stride);
+    if (toy_game_point_in_box(game.px, game.pz, &safe_rooms[1])) {
+        snprintf(line, sizeof(line), "EXIT SECURE %d%%",
+                 game.goal_hold_ms * 100 / TOY_GAME_GOAL_HOLD_MS);
+        fb_draw_string((unsigned char *)surface->pixels, 8, 8 + FB_FONT_H * 2,
+                       line, 0x80E080, surface->stride);
+    } else if (toy_game_point_in_box(game.px, game.pz, &safe_rooms[0])) {
+        fb_draw_string((unsigned char *)surface->pixels, 8, 8 + FB_FONT_H * 2,
+                       "START SAFE ROOM - REACH GREEN EXIT", 0x80E080,
+                       surface->stride);
+    } else if (game.alarm_timer_ms > 0) {
+        snprintf(line, sizeof(line), "ALARM HORDE %d SEC",
+                 (game.alarm_timer_ms + 999) / 1000);
+        fb_draw_string((unsigned char *)surface->pixels, 8, 8 + FB_FONT_H * 2,
+                       line, 0xFFD040, surface->stride);
+    } else if (!game.alarm_triggered) {
+        fb_draw_string((unsigned char *)surface->pixels, 8, 8 + FB_FONT_H * 2,
+                       "YELLOW BORDER = HORDE TRIGGER", 0xFFD040,
+                       surface->stride);
+    } else {
+        fb_draw_string((unsigned char *)surface->pixels, 8, 8 + FB_FONT_H * 2,
+                       "RED FLOOR = SPAWN ZONE", 0xE08080, surface->stride);
+    }
 }
 
 /* 受击红屏：棋盘隔像素填充（省一半写入量） */
@@ -404,6 +536,27 @@ static void draw_game_over_panel(struct toy_surface *surface)
                    x + (panel_w - FB_FONT_W * 8) / 2, y + 28,
                    "YOU DIED", 0xE7E9EC, surface->stride);
     snprintf(line, sizeof(line), "WAVE %d  KILLS %d", game.wave, game.kills);
+    fb_draw_string((unsigned char *)surface->pixels,
+                   x + (panel_w - FB_FONT_W * (int)strlen(line)) / 2, y + 60,
+                   line, 0xE7E9EC, surface->stride);
+    fb_draw_string((unsigned char *)surface->pixels,
+                   x + (panel_w - FB_FONT_W * 21) / 2, y + 104,
+                   "R restart   Esc quit", 0xD88A32, surface->stride);
+}
+
+static void draw_level_won_panel(struct toy_surface *surface)
+{
+    char line[96];
+    int panel_w = surface->width / 3;
+    int panel_h = surface->height / 3;
+    int x = (surface->width - panel_w) / 2;
+    int y = (surface->height - panel_h) / 2;
+    fill_rect(surface, x - 3, y - 3, panel_w + 6, panel_h + 6, 0x56B878);
+    fill_rect(surface, x, y, panel_w, panel_h, 0x171B24);
+    fb_draw_string((unsigned char *)surface->pixels,
+                   x + (panel_w - FB_FONT_W * 17) / 2, y + 28,
+                   "SAFE ROOM REACHED", 0x80E080, surface->stride);
+    snprintf(line, sizeof(line), "KILLS %d", game.kills);
     fb_draw_string((unsigned char *)surface->pixels,
                    x + (panel_w - FB_FONT_W * (int)strlen(line)) / 2, y + 60,
                    line, 0xE7E9EC, surface->stride);
@@ -592,16 +745,16 @@ static int run_logic_test(void)
     reset_game(&camera, 1);
     input.key_down[KEY_W] = 1;
     for (int i = 0; i < 10; i++) update_player(&camera, &input);
-    if (camera.x != 0 || camera.z != -3480) return 1;
+    if (camera.x != 0 || camera.z != -4240) return 1;
 
     /* 死亡重开仍须恢复世界碰撞配置并能推进首波。 */
     game.state = TOY_GAME_OVER;
     reset_game(&camera, 2);
-    if (game.world != bounds || game.world_count != 3 ||
+    if (game.world != bounds || game.world_count != OBSTACLE_COUNT ||
         game.room_limit != ROOM_LIMIT ||
         toy_game_position_blocked(&game, camera.x, camera.z,
                                   PLAYER_RADIUS)) return 13;
-    for (int i = 0; i < 100; i++)
+    for (int i = 0; i < 170; i++)
         toy_game_update(&game, NULL, 0, camera.sy, camera.cy, 16);
     if (game.enemies_alive == 0) return 14;
 
@@ -634,8 +787,14 @@ static int run_logic_test(void)
     surface.stride = 320 * sizeof(uint32_t);
     camera.x = 0; camera.z = -4200;
     toy_renderer_init(&renderer);
-    if (toy_renderer_begin(&renderer, &surface, 0x151922) < 0 ||
-        render_scene(&renderer, &camera) <= 0) {
+    if (toy_renderer_begin(&renderer, &surface, 0x151922) < 0) {
+        toy_renderer_destroy(&renderer);
+        tlibc_free(pixels);
+        return 8;
+    }
+    count = render_scene(&renderer, &camera);
+    /* 破碎画面曾仍返回正数；完整 320x180 场景应稳定超过此下限。 */
+    if (count < 50000) {
         toy_renderer_destroy(&renderer);
         tlibc_free(pixels);
         return 8;
@@ -684,9 +843,9 @@ static int run_logic_test(void)
         int first_wave = 0, first_kills = 0, first_hp = 0;
         for (pass = 0; pass < 2; pass++) {
             toy_game_init(&smoke, 1234);
-            toy_game_set_world(&smoke, bounds, 3, ROOM_LIMIT);
+            toy_game_set_world(&smoke, bounds, OBSTACLE_COUNT, ROOM_LIMIT);
             smoke.px = 0;
-            smoke.pz = -4200;
+            smoke.pz = -5000;
             for (i = 0; i < 500; i++)
                 toy_game_update(&smoke, NULL, 0, 0, 1024, 16);
             if (pass == 0) {
@@ -789,7 +948,8 @@ int main(int argc, char **argv)
                      pointer_lock_requested ? "requested" : "unavailable");
         }
         if (toy_input_pressed(&input, KEY_ESC)) {
-            if (game.state == TOY_GAME_OVER) running = 0;
+            if (game.state == TOY_GAME_OVER || game.state == TOY_GAME_WON)
+                running = 0;
             else if (!paused) {
                 toy_window_set_pointer_lock(window, 0);
                 pointer_lock_requested = 0;
@@ -834,7 +994,7 @@ int main(int argc, char **argv)
                                     camera.sy, camera.cy, FIXED_STEP_US / 1000);
                     fire_edge = 0;
                 } else if (toy_input_pressed(&input, KEY_R)) {
-                    /* 死亡结算：R 重开 */
+                    /* 死亡或通关结算：R 重开 */
                     reset_game(&camera, seed);
                     fire_edge = 0;
                 }
@@ -851,6 +1011,8 @@ int main(int argc, char **argv)
             scene_pixels += render_enemies(&renderer, &camera);
             if (game.state == TOY_GAME_OVER) {
                 draw_game_over_panel(&surface);
+            } else if (game.state == TOY_GAME_WON) {
+                draw_level_won_panel(&surface);
             } else if (paused) {
                 draw_pause_overlay(&surface);
             } else {
