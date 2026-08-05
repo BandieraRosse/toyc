@@ -33,6 +33,21 @@ make clean              # 删除 build/ 和 tmp/
 也可使用 `make lib`、`make app` 或 `make app-<name>` 由 GCC 构建库、全部应用或单个
 应用；`make self-app-<name>` 是对应的自托管构建。
 
+### 资产工厂 v0.1
+
+`make assets` 用 GCC 构建离线工具 `build/toyasset`，把 8-bit 非隔行 PNG、
+baseline JPEG、PCM 16-bit WAV 和静态三角 OBJ 转换为运行时专用的 `.ttex`、
+`.tsnd` 和 `.tmesh`。`make validate-assets` 会转换并检查仓库内最小测试资产。
+游戏运行时只读取这些带 magic、版本和显式小端字段的格式，不解析
+PNG/JPEG/WAV/OBJ 容器。资产来源、许可证和转换记录见
+[assets/README.md](assets/README.md)。v0.1 不包含压缩、FBX、glTF、骨骼
+动画或 GUI 编辑器。
+
+FPS 的 v0.2 纹理切片默认加载 `assets/generated/wall.ttex`，将 nearest RGB888
+采样用于墙、地板和箱体；`--no-textures` 切回纯色，`--texture-stats` 输出纹理
+三角形、像素和占位纹理统计。可用 `build/wayland_fps --frames 300 --texture-stats`
+在 Wayland 环境预览，`build/wayland_fps --logic-test` 为无窗口回归预览。
+
 `bootstrap/` 保存版本控制内的种子二进制。它们用于阶段性的自举检查，不参与默认
 `make`，而且可能落后于源码：
 

@@ -4,3 +4,8 @@ build-self/**
 tmp/**
 .claude/**
 llm/models/**
+assets/generated/*
+assets/sources/test.jpg
+assets/sources/test.png
+assets/sources/test.wav
+assets/sources/uv_test.png

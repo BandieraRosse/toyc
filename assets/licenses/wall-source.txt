@@ -1,0 +1,9 @@
+Source: Poly Haven, “Square Brick Floor”
+URL: https://polyhaven.com/a/square_brick_floor
+License: CC0 1.0 (confirmed by the project user)
+Source file: square_brick_floor_diff_1k.jpg
+Repository file: assets/sources/wall.jpg
+
+CC0 does not require attribution. The source URL is retained for provenance. The
+JPEG is converted offline to assets/generated/wall.ttex and is not parsed by the
+game at runtime.

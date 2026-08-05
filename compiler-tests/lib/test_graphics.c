@@ -10,6 +10,11 @@ int main(void)
     struct toy_surface surface;
     struct toy_renderer renderer;
     struct toy_screen_vertex a, b, c;
+    static const unsigned char texels[12] = {
+        255, 0, 0,  0, 255, 0,
+        0, 0, 255, 255, 255, 255
+    };
+    struct toy_texture_view texture = {texels, 2, 2, 12};
     int near_drawn, far_drawn;
 
     surface.pixels = pixels;
@@ -30,6 +35,23 @@ int main(void)
     a.z = 20; b.z = 20; c.z = 20;
     far_drawn = toy_renderer_triangle(&renderer, &a, &b, &c, 0x445566);
     if (far_drawn != 0 || pixels[2 * 8 + 2] != 0xAABBCC) return 4;
+
+    toy_renderer_begin(&renderer, &surface, 0);
+    a.x = 1; a.y = 1; a.z = 10; a.u = 0; a.v = 0;
+    b.x = 6; b.y = 1; b.z = 10; b.u = 2 * 65536; b.v = 0;
+    c.x = 1; c.y = 6; c.z = 10; c.u = 0; c.v = 2 * 65536;
+    a.inv_z = b.inv_z = c.inv_z = 104857;
+    a.u_over_z = (long)a.u * a.inv_z;
+    b.u_over_z = (long)b.u * b.inv_z;
+    c.u_over_z = (long)c.u * c.inv_z;
+    a.v_over_z = (long)a.v * a.inv_z;
+    b.v_over_z = (long)b.v * b.inv_z;
+    c.v_over_z = (long)c.v * c.inv_z;
+    if (toy_renderer_triangle_textured(&renderer, &a, &b, &c,
+                                       &texture, 1, 0x123456) <= 0)
+        return 5;
+    if (pixels[2 * 8 + 2] != 0xFFFF0000U)
+        return 6;
 
     toy_renderer_destroy(&renderer);
     return 0;

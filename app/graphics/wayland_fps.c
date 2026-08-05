@@ -11,6 +11,7 @@
 #include "tlibc_everything.h"
 #include "toy_window.h"
 #include "toy_renderer.h"
+#include "toy_assets.h"
 #include "toy_input.h"
 #include "toy_game.h"
 #include "fb_draw.h"
@@ -43,6 +44,8 @@
 #define PLAYER_RADIUS 180
 #define MOVE_STEP 76
 #define OBSTACLE_COUNT 11
+#define UV_ONE 65536
+#define UV_WORLD_SCALE 500
 
 struct vec3 { int x, y, z; };
 struct camera { int x, z, sy, cy, pitch; };
@@ -106,6 +109,13 @@ static const struct toy_game_box alarm_zone = {
 };
 
 static struct toy_game game;   /* 游戏规则状态（main / logic-test 共用） */
+static struct toy_texture_asset scene_texture;
+static struct toy_texture_view scene_texture_view;
+static struct toy_texture_view wall_texture_view;
+static struct toy_texture_view floor_texture_view;
+static struct toy_texture_view box_texture_view;
+static struct toy_texture_view *active_texture_view;
+static int textures_enabled = 1;
 
 /* 新局和死亡重开必须走同一路径，避免 toy_game_init 清空世界配置。 */
 static void reset_game(struct camera *camera, uint64_t seed)
@@ -192,6 +202,46 @@ static int clip_near(const struct vec3 *input, int count, struct vec3 *output)
     return out_count;
 }
 
+struct world_uv_vertex { struct vec3 p; int u, v; };
+
+static void copy_world_uv(struct world_uv_vertex *out,
+                          const struct world_uv_vertex *in)
+{
+    copy_vec3(&out->p, &in->p);
+    out->u = in->u; out->v = in->v;
+}
+
+static void near_intersection_uv(const struct world_uv_vertex *a,
+                                 const struct world_uv_vertex *b,
+                                 struct world_uv_vertex *out)
+{
+    long numerator = NEAR_Z - a->p.z;
+    long denominator = b->p.z - a->p.z;
+    near_intersection(&a->p, &b->p, &out->p);
+    out->u = a->u + (int)(((long)b->u - a->u) * numerator / denominator);
+    out->v = a->v + (int)(((long)b->v - a->v) * numerator / denominator);
+}
+
+static int clip_near_uv(const struct world_uv_vertex *input, int count,
+                        struct world_uv_vertex *output)
+{
+    int out_count = 0;
+    struct world_uv_vertex previous;
+    copy_world_uv(&previous, &input[count - 1]);
+    int previous_inside = previous.p.z >= NEAR_Z;
+    for (int i = 0; i < count; i++) {
+        struct world_uv_vertex current;
+        copy_world_uv(&current, &input[i]);
+        int current_inside = current.p.z >= NEAR_Z;
+        if (current_inside != previous_inside)
+            near_intersection_uv(&previous, &current, &output[out_count++]);
+        if (current_inside) copy_world_uv(&output[out_count++], &current);
+        copy_world_uv(&previous, &current);
+        previous_inside = current_inside;
+    }
+    return out_count;
+}
+
 static void project_vertex(const struct toy_surface *surface,
                            const struct vec3 *view, int pitch,
                            struct toy_screen_vertex *screen)
@@ -200,6 +250,18 @@ static void project_vertex(const struct toy_surface *surface,
     screen->x = surface->width / 2 + view->x * focal / view->z;
     screen->y = surface->height / 2 + pitch - view->y * focal / view->z;
     screen->z = view->z;
+}
+
+static void project_uv_vertex(const struct toy_surface *surface,
+                              const struct vec3 *view, int pitch,
+                              int u, int v,
+                              struct toy_screen_vertex *screen)
+{
+    project_vertex(surface, view, pitch, screen);
+    screen->u = u; screen->v = v;
+    screen->inv_z = (long)1048576 / view->z;
+    screen->u_over_z = (long)u * 1048576L / view->z;
+    screen->v_over_z = (long)v * 1048576L / view->z;
 }
 
 static int draw_world_triangle(struct toy_renderer *renderer,
@@ -235,6 +297,80 @@ static int draw_world_triangle(struct toy_renderer *renderer,
     return drawn;
 }
 
+static int draw_world_triangle_tex(struct toy_renderer *renderer,
+                                    const struct camera *camera,
+                                    const struct world_uv_vertex *a,
+                                    const struct world_uv_vertex *b,
+                                    const struct world_uv_vertex *c)
+{
+    struct world_uv_vertex input[3], clipped[4];
+    int count, drawn = 0;
+    world_to_view(camera, &a->p, &input[0].p);
+    world_to_view(camera, &b->p, &input[1].p);
+    world_to_view(camera, &c->p, &input[2].p);
+    input[0].u = a->u; input[0].v = a->v;
+    input[1].u = b->u; input[1].v = b->v;
+    input[2].u = c->u; input[2].v = c->v;
+    count = clip_near_uv(input, 3, clipped);
+    for (int i = 1; i + 1 < count; i++) {
+        struct toy_screen_vertex sa, sb, sc;
+        int area;
+        project_uv_vertex(&renderer->surface, &clipped[0].p,
+                          camera->pitch, clipped[0].u, clipped[0].v, &sa);
+        project_uv_vertex(&renderer->surface, &clipped[i].p,
+                          camera->pitch, clipped[i].u, clipped[i].v, &sb);
+        project_uv_vertex(&renderer->surface, &clipped[i + 1].p,
+                          camera->pitch, clipped[i + 1].u, clipped[i + 1].v, &sc);
+        area = (sc.x - sa.x) * (sb.y - sa.y) -
+               (sc.y - sa.y) * (sb.x - sa.x);
+        if (area >= 0) {
+            struct toy_screen_vertex swap;
+            swap.x=sb.x; swap.y=sb.y; swap.z=sb.z;
+            swap.u=sb.u; swap.v=sb.v; swap.inv_z=sb.inv_z;
+            swap.u_over_z=sb.u_over_z; swap.v_over_z=sb.v_over_z;
+            sb.x=sc.x; sb.y=sc.y; sb.z=sc.z;
+            sb.u=sc.u; sb.v=sc.v; sb.inv_z=sc.inv_z;
+            sb.u_over_z=sc.u_over_z; sb.v_over_z=sc.v_over_z;
+            sc.x=swap.x; sc.y=swap.y; sc.z=swap.z;
+            sc.u=swap.u; sc.v=swap.v; sc.inv_z=swap.inv_z;
+            sc.u_over_z=swap.u_over_z; sc.v_over_z=swap.v_over_z;
+        }
+        drawn += toy_renderer_triangle_textured(renderer, &sa, &sb, &sc,
+                                                 active_texture_view, 1,
+                                                 0xFF202020U);
+    }
+    return drawn;
+}
+
+static int draw_quad_tex(struct toy_renderer *renderer,
+                         const struct camera *camera,
+                         const struct world_uv_vertex *a,
+                         const struct world_uv_vertex *b,
+                         const struct world_uv_vertex *c,
+                         const struct world_uv_vertex *d,
+                         uint32_t color)
+{
+    if (!textures_enabled)
+        return draw_world_triangle(renderer, camera, &a->p, &b->p, &c->p, color) +
+               draw_world_triangle(renderer, camera, &a->p, &c->p, &d->p, color);
+    return draw_world_triangle_tex(renderer, camera, a, b, c) +
+           draw_world_triangle_tex(renderer, camera, a, c, d);
+}
+
+static int draw_position_quad_tex(struct toy_renderer *renderer,
+                                  const struct camera *camera,
+                                  const struct vec3 *a, const struct vec3 *b,
+                                  const struct vec3 *c, const struct vec3 *d,
+                                  int u1, int v1, uint32_t color)
+{
+    struct world_uv_vertex wa, wb, wc, wd;
+    copy_vec3(&wa.p, a); copy_vec3(&wb.p, b);
+    copy_vec3(&wc.p, c); copy_vec3(&wd.p, d);
+    wa.u=0; wa.v=0; wb.u=u1; wb.v=0;
+    wc.u=u1; wc.v=v1; wd.u=0; wd.v=v1;
+    return draw_quad_tex(renderer, camera, &wa, &wb, &wc, &wd, color);
+}
+
 static int draw_quad(struct toy_renderer *renderer, const struct camera *camera,
                      const struct vec3 *a, const struct vec3 *b,
                      const struct vec3 *c, const struct vec3 *d,
@@ -248,12 +384,15 @@ static int draw_floor_zone(struct toy_renderer *renderer,
                            const struct camera *camera,
                            const struct toy_game_box *zone, uint32_t color)
 {
-    struct vec3 a, b, c, d;
-    a.x = zone->minx; a.y = -894; a.z = zone->minz;
-    b.x = zone->maxx; b.y = -894; b.z = zone->minz;
-    c.x = zone->maxx; c.y = -894; c.z = zone->maxz;
-    d.x = zone->minx; d.y = -894; d.z = zone->maxz;
-    return draw_quad(renderer, camera, &a, &b, &c, &d, color);
+    struct world_uv_vertex a, b, c, d;
+    int du = (zone->maxx - zone->minx) * UV_ONE / UV_WORLD_SCALE;
+    int dv = (zone->maxz - zone->minz) * UV_ONE / UV_WORLD_SCALE;
+    a.p.x = zone->minx; a.p.y = -894; a.p.z = zone->minz; a.u = 0; a.v = 0;
+    b.p.x = zone->maxx; b.p.y = -894; b.p.z = zone->minz; b.u = du; b.v = 0;
+    c.p.x = zone->maxx; c.p.y = -894; c.p.z = zone->maxz; c.u = du; c.v = dv;
+    d.p.x = zone->minx; d.p.y = -894; d.p.z = zone->maxz; d.u = 0; d.v = dv;
+    active_texture_view = &floor_texture_view;
+    return draw_quad_tex(renderer, camera, &a, &b, &c, &d, color);
 }
 
 static int draw_floor_border(struct toy_renderer *renderer,
@@ -300,21 +439,36 @@ static void draw_world_label(struct toy_renderer *renderer,
 static int draw_box(struct toy_renderer *renderer, const struct camera *camera,
                     const struct box *box)
 {
-    struct vec3 a, b, c, d, e, f, g, h;
+    struct world_uv_vertex a, b, c, d, e, f, g, h;
+    int du = (box->maxx - box->minx) * UV_ONE / UV_WORLD_SCALE;
+    int dz = (box->maxz - box->minz) * UV_ONE / UV_WORLD_SCALE;
+    int dy = (box->height + 900) * UV_ONE / UV_WORLD_SCALE;
     int pixels = 0;
-    a.x = box->minx; a.y = -900; a.z = box->minz;
-    b.x = box->maxx; b.y = -900; b.z = box->minz;
-    c.x = box->maxx; c.y = -900; c.z = box->maxz;
-    d.x = box->minx; d.y = -900; d.z = box->maxz;
-    e.x = a.x; e.y = box->height; e.z = a.z;
-    f.x = b.x; f.y = box->height; f.z = b.z;
-    g.x = c.x; g.y = box->height; g.z = c.z;
-    h.x = d.x; h.y = box->height; h.z = d.z;
-    pixels += draw_quad(renderer, camera, &a, &b, &f, &e, box->color);
-    pixels += draw_quad(renderer, camera, &b, &c, &g, &f, box->color + 0x080808);
-    pixels += draw_quad(renderer, camera, &c, &d, &h, &g, box->color);
-    pixels += draw_quad(renderer, camera, &d, &a, &e, &h, box->color + 0x080808);
-    pixels += draw_quad(renderer, camera, &e, &f, &g, &h, box->color + 0x181818);
+    active_texture_view = &box_texture_view;
+    a.p.x = box->minx; a.p.y = -900; a.p.z = box->minz;
+    b.p.x = box->maxx; b.p.y = -900; b.p.z = box->minz;
+    c.p.x = box->maxx; c.p.y = -900; c.p.z = box->maxz;
+    d.p.x = box->minx; d.p.y = -900; d.p.z = box->maxz;
+    e.p.x = a.p.x; e.p.y = box->height; e.p.z = a.p.z;
+    f.p.x = b.p.x; f.p.y = box->height; f.p.z = b.p.z;
+    g.p.x = c.p.x; g.p.y = box->height; g.p.z = c.p.z;
+    h.p.x = d.p.x; h.p.y = box->height; h.p.z = d.p.z;
+    a.u=0; a.v=0; b.u=du; b.v=0; c.u=du; c.v=dz; d.u=0; d.v=dz;
+    e.u=0; e.v=dy; f.u=du; f.v=dy; g.u=du; g.v=dz+dy; h.u=0; h.v=dz+dy;
+    /* Each face owns its UV chart; shared position vertices therefore do not
+     * force unrelated faces to share a seam coordinate. */
+    { struct world_uv_vertex q0,q1,q2,q3;
+      copy_world_uv(&q0,&a); copy_world_uv(&q1,&b); copy_world_uv(&q2,&f); copy_world_uv(&q3,&e); q0.u=0;q0.v=0;q1.u=du;q1.v=0;q2.u=du;q2.v=dy;q3.u=0;q3.v=dy;
+      pixels += draw_quad_tex(renderer,camera,&q0,&q1,&q2,&q3,box->color);
+      copy_world_uv(&q0,&b); copy_world_uv(&q1,&c); copy_world_uv(&q2,&g); copy_world_uv(&q3,&f); q0.u=0;q0.v=0;q1.u=dz;q1.v=0;q2.u=dz;q2.v=dy;q3.u=0;q3.v=dy;
+      pixels += draw_quad_tex(renderer,camera,&q0,&q1,&q2,&q3,box->color+0x080808);
+      copy_world_uv(&q0,&c); copy_world_uv(&q1,&d); copy_world_uv(&q2,&h); copy_world_uv(&q3,&g); q0.u=0;q0.v=0;q1.u=du;q1.v=0;q2.u=du;q2.v=dy;q3.u=0;q3.v=dy;
+      pixels += draw_quad_tex(renderer,camera,&q0,&q1,&q2,&q3,box->color);
+      copy_world_uv(&q0,&d); copy_world_uv(&q1,&a); copy_world_uv(&q2,&e); copy_world_uv(&q3,&h); q0.u=0;q0.v=0;q1.u=dz;q1.v=0;q2.u=dz;q2.v=dy;q3.u=0;q3.v=dy;
+      pixels += draw_quad_tex(renderer,camera,&q0,&q1,&q2,&q3,box->color+0x080808);
+      copy_world_uv(&q0,&e); copy_world_uv(&q1,&f); copy_world_uv(&q2,&g); copy_world_uv(&q3,&h); q0.u=0;q0.v=0;q1.u=du;q1.v=0;q2.u=du;q2.v=dz;q3.u=0;q3.v=dz;
+      pixels += draw_quad_tex(renderer,camera,&q0,&q1,&q2,&q3,box->color+0x181818);
+    }
     return pixels;
 }
 
@@ -417,6 +571,7 @@ static int render_scene(struct toy_renderer *renderer, const struct camera *came
 {
     int pixels = 0;
     struct vec3 a, b, c, d;
+    active_texture_view = &floor_texture_view;
     for (int z = -6000; z < 6000; z += 1000) {
         for (int x = -6000; x < 6000; x += 1000) {
             uint32_t color = (((x + z) / 1000) & 1) ? 0x30343A : 0x272B31;
@@ -431,16 +586,21 @@ static int render_scene(struct toy_renderer *renderer, const struct camera *came
     b.x =  6000; b.y = -900; b.z = -6000;
     c.x =  6000; c.y = 1800; c.z = -6000;
     d.x = -6000; d.y = 1800; d.z = -6000;
-    pixels += draw_quad(renderer, camera, &a, &b, &c, &d, 0x555B68);
+    active_texture_view = &wall_texture_view;
+    pixels += draw_position_quad_tex(renderer, camera, &a, &b, &c, &d,
+                                     12 * UV_ONE, 3 * UV_ONE, 0x555B68);
     a.z = 6000; b.z = 6000; c.z = 6000; d.z = 6000;
-    pixels += draw_quad(renderer, camera, &a, &b, &c, &d, 0x4C5260);
+    pixels += draw_position_quad_tex(renderer, camera, &a, &b, &c, &d,
+                                     12 * UV_ONE, 3 * UV_ONE, 0x4C5260);
     a.x = -6000; a.y = -900; a.z = -6000;
     b.x = -6000; b.y = -900; b.z =  6000;
     c.x = -6000; c.y = 1800; c.z =  6000;
     d.x = -6000; d.y = 1800; d.z = -6000;
-    pixels += draw_quad(renderer, camera, &a, &b, &c, &d, 0x5E5965);
+    pixels += draw_position_quad_tex(renderer, camera, &a, &b, &c, &d,
+                                     12 * UV_ONE, 3 * UV_ONE, 0x5E5965);
     a.x = 6000; b.x = 6000; c.x = 6000; d.x = 6000;
-    pixels += draw_quad(renderer, camera, &a, &b, &c, &d, 0x56515D);
+    pixels += draw_position_quad_tex(renderer, camera, &a, &b, &c, &d,
+                                     12 * UV_ONE, 3 * UV_ONE, 0x56515D);
     for (int i = 0; i < 2; i++)
         pixels += draw_floor_zone(renderer, camera, &safe_rooms[i],
                                   i == 0 ? 0x245238 : 0x2D7047);
@@ -1077,6 +1237,13 @@ static int run_logic_test(void)
         tlibc_free(pixels);
         return 8;
     }
+    if ((textures_enabled && (renderer.textured_triangles == 0 ||
+                              renderer.textured_pixels == 0)) ||
+        (!textures_enabled && renderer.textured_triangles != 0)) {
+        toy_renderer_destroy(&renderer);
+        tlibc_free(pixels);
+        return 17;
+    }
     /* 两个槽位分别覆盖方块人和圆柱人，确保模型几何进入光栅器。 */
     memset(game.enemies, 0, sizeof(game.enemies));
     game.enemies[0].active = 1;
@@ -1173,18 +1340,56 @@ int main(int argc, char **argv)
     int display_fps = 0, fps_window_frames = 0;
     int fire_edge = 0;
     int input_debug = 0, input_event_count = 0, have_last_key = 0;
+    int texture_stats = 0;
     unsigned int last_key = 0;
     int last_key_pressed = 0;
     struct audio_ctx audio;
     uint64_t seed;
 
-    if (argc == 2 && strcmp(argv[1], "--logic-test") == 0)
-        return run_logic_test();
-    if (argc == 2 && strcmp(argv[1], "--input-test") == 0)
-        input_debug = 1;
-    if (argc == 3 && strcmp(argv[1], "--frames") == 0) {
-        const char *p = argv[2];
-        while (*p >= '0' && *p <= '9') frame_limit = frame_limit * 10 + (*p++ - '0');
+    int logic_test = 0;
+    for (int arg = 1; arg < argc; arg++) {
+        if (strcmp(argv[arg], "--input-test") == 0) input_debug = 1;
+        else if (strcmp(argv[arg], "--logic-test") == 0) logic_test = 1;
+        else if (strcmp(argv[arg], "--no-textures") == 0) textures_enabled = 0;
+        else if (strcmp(argv[arg], "--texture-stats") == 0) texture_stats = 1;
+        else if (strcmp(argv[arg], "--frames") == 0 && arg + 1 < argc) {
+            const char *p = argv[++arg];
+            while (*p >= '0' && *p <= '9')
+                frame_limit = frame_limit * 10 + (*p++ - '0');
+        }
+    }
+    memset(&scene_texture, 0, sizeof(scene_texture));
+    memset(&scene_texture_view, 0, sizeof(scene_texture_view));
+    if (textures_enabled && toy_texture_load("assets/generated/wall.ttex",
+                                              &scene_texture) == 0) {
+        scene_texture_view.data = scene_texture.data;
+        scene_texture_view.width = scene_texture.width;
+        scene_texture_view.height = scene_texture.height;
+        scene_texture_view.data_size = scene_texture.data_size;
+        wall_texture_view.data = scene_texture_view.data;
+        wall_texture_view.width = scene_texture_view.width;
+        wall_texture_view.height = scene_texture_view.height;
+        wall_texture_view.data_size = scene_texture_view.data_size;
+        floor_texture_view.data = scene_texture_view.data;
+        floor_texture_view.width = scene_texture_view.width;
+        floor_texture_view.height = scene_texture_view.height;
+        floor_texture_view.data_size = scene_texture_view.data_size;
+        box_texture_view.data = scene_texture_view.data;
+        box_texture_view.width = scene_texture_view.width;
+        box_texture_view.height = scene_texture_view.height;
+        box_texture_view.data_size = scene_texture_view.data_size;
+        __printf("wayland_fps: UV texture loaded (%u x %u)\n",
+                 scene_texture.width, scene_texture.height);
+    } else if (textures_enabled) {
+        __printf("wayland_fps: UV texture unavailable, using checkerboard fallback\n");
+    } else {
+        __printf("wayland_fps: textures disabled, using pure colors\n");
+    }
+    active_texture_view = &scene_texture_view;
+    if (logic_test) {
+        int result = run_logic_test();
+        if (scene_texture.blob) toy_texture_unload(&scene_texture);
+        return result;
     }
     toy_input_init(&input);
     toy_renderer_init(&renderer);
@@ -1198,6 +1403,8 @@ int main(int argc, char **argv)
     window = toy_window_open("Toyc FPS Zombies", 800, 450);
     if (!window) {
         __fprintf(2, "wayland_fps: cannot create Wayland window\n");
+        if (scene_texture.blob) toy_texture_unload(&scene_texture);
+        toy_renderer_destroy(&renderer);
         return 1;
     }
     __printf("wayland_fps: pause menu uses arrows + Enter; mouse/arrows look, "
@@ -1367,9 +1574,14 @@ int main(int argc, char **argv)
         }
     }
     audio_stop(&audio);
-    toy_renderer_destroy(&renderer);
+    if (scene_texture.blob) toy_texture_unload(&scene_texture);
     toy_window_close(window);
     __printf("wayland_fps: %d frames, %d scene pixels, position=(%d,%d)\n",
              rendered_frames, scene_pixels, camera.x, camera.z);
+    if (texture_stats)
+        __printf("wayland_fps: texture stats triangles=%lu pixels=%lu fallback=%lu\n",
+                 renderer.textured_triangles, renderer.textured_pixels,
+                 renderer.texture_fallback_pixels);
+    toy_renderer_destroy(&renderer);
     return rendered_frames > 0 && scene_pixels == 0 ? 2 : 0;
 }

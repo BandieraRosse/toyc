@@ -34,6 +34,22 @@ make clean              # remove build/ and tmp/
 Use `make lib`, `make app`, or `make app-<name>` for GCC builds of the library,
 all apps, or one app. `make self-app-<name>` is the self-hosted equivalent.
 
+### Asset factory v0.1
+
+`make assets` builds the GCC-hosted `build/toyasset` converter. It imports 8-bit
+non-interlaced PNG, baseline JPEG, PCM 16-bit WAV, and static triangle OBJ into the
+runtime-only `.ttex`, `.tsnd`, and `.tmesh` formats. `make validate-assets` converts
+and validates the minimal fixtures. Runtime code reads only these versioned,
+explicitly encoded little-endian formats; it never parses PNG/JPEG/WAV/OBJ. See
+[assets/README.md](assets/README.md) for source, licensing, and conversion records.
+Compression, FBX, glTF, skeletal animation, and GUI editing are outside v0.1.
+
+The FPS v0.2 slice loads `assets/generated/wall.ttex` by default and uses nearest
+RGB888 sampling on walls, floors, and boxes. Use `--no-textures` for the pure-color
+path and `--texture-stats` for textured triangle/pixel/fallback counters. Preview with
+`build/wayland_fps --frames 300 --texture-stats` under Wayland; use
+`build/wayland_fps --logic-test` for the headless regression preview.
+
 `bootstrap/` contains versioned seed binaries. They are for periodic bootstrap
 checks, are not used by the default `make`, and may lag behind the source:
 
