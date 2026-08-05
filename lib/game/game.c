@@ -37,6 +37,9 @@ static int rand_range(struct toy_game *g, int lo, int hi)
     return lo + (int)(raw % (uint64_t)span);
 }
 
+static int segment_hits_box(int px, int pz, int qx, int qz,
+                            const struct toy_game_box *b);
+
 /* ── 事件队列 ──────────────────────────────────────────────────── */
 
 static void push_event(struct toy_game *g, unsigned char event)
@@ -107,7 +110,12 @@ void toy_game_set_campaign(struct toy_game *g,
     g->alarm_spawn_zone = -1;
     if (g->campaign_mode) {
         g->to_spawn = 0;
-        g->spawn_timer_ms = TOY_GAME_CAMPAIGN_FIRST_SPAWN_MS;
+        g->campaign_phase = TOY_GAME_PHASE_BUILDUP;
+        g->spawn_budget = TOY_GAME_CAMPAIGN_AMBIENT_BUDGET;
+        g->phase_timer_ms = 0;
+        g->active_attackers = 0;
+        g->director_encounters = 0;
+        g->spawn_timer_ms = 0;
     }
 }
 
@@ -178,6 +186,11 @@ static void init_enemy_ai(struct toy_game *g, struct toy_game_enemy *e)
     int direction = rand_range(g, 0, 7);
     e->ai_state = TOY_GAME_ENEMY_IDLE;
     e->ai_timer_ms = 0;
+    e->target_x = e->x;
+    e->target_z = e->z;
+    e->last_seen_x = e->x;
+    e->last_seen_z = e->z;
+    e->lost_sight_ms = 0;
     e->wander_timer_ms = rand_range(g, 600, 1800);
     e->dir_x = enemy_dir_x[direction];
     e->dir_z = enemy_dir_z[direction];
@@ -223,6 +236,14 @@ static int try_spawn(struct toy_game *g)
         g->enemies[slot].hurt = 0;
         g->enemies[slot].dying_ms = 0;
         init_enemy_ai(g, &g->enemies[slot]);
+        if (g->campaign_mode &&
+            g->campaign_phase == TOY_GAME_PHASE_HORDE) {
+            g->enemies[slot].ai_state = TOY_GAME_ENEMY_CHASE;
+            g->enemies[slot].target_x = g->px;
+            g->enemies[slot].target_z = g->pz;
+            g->enemies[slot].last_seen_x = g->px;
+            g->enemies[slot].last_seen_z = g->pz;
+        }
         if (!g->campaign_mode) g->to_spawn--;
         g->enemies_alive++;
         return 1;
@@ -269,27 +290,9 @@ static void update_waves(struct toy_game *g, int dt_ms)
     }
 }
 
-static void update_campaign(struct toy_game *g, int dt_ms)
+static void update_campaign_goal(struct toy_game *g, int dt_ms)
 {
     const struct toy_game_box *goal;
-    int spawn_interval = TOY_GAME_CAMPAIGN_SPAWN_INTERVAL_MS;
-    if (!g->alarm_triggered && g->alarm_zone &&
-        toy_game_point_in_box(g->px, g->pz, g->alarm_zone)) {
-        g->alarm_triggered = 1;
-        g->alarm_timer_ms = TOY_GAME_ALARM_DURATION_MS;
-        g->spawn_timer_ms = 0;
-        push_event(g, TOY_GAME_EV_ALARM_TRIGGERED);
-    }
-    if (g->alarm_timer_ms > 0) {
-        g->alarm_timer_ms -= dt_ms;
-        if (g->alarm_timer_ms < 0) g->alarm_timer_ms = 0;
-        spawn_interval = TOY_GAME_ALARM_SPAWN_INTERVAL_MS;
-    }
-    g->spawn_timer_ms -= dt_ms;
-    if (g->spawn_timer_ms <= 0) {
-        try_spawn(g);
-        g->spawn_timer_ms = spawn_interval;
-    }
     goal = &g->safe_rooms[g->safe_room_count - 1];
     if (toy_game_point_in_box(g->px, g->pz, goal)) {
         g->goal_hold_ms += dt_ms;
@@ -301,6 +304,113 @@ static void update_campaign(struct toy_game *g, int dt_ms)
     } else {
         g->goal_hold_ms = 0;
     }
+}
+
+static void campaign_enter_relax(struct toy_game *g)
+{
+    g->campaign_phase = TOY_GAME_PHASE_RELAX;
+    g->spawn_budget = 0;
+    g->phase_timer_ms = TOY_GAME_CAMPAIGN_RELAX_MS;
+    g->alarm_timer_ms = 0;
+}
+
+static void campaign_enter_calm(struct toy_game *g)
+{
+    g->campaign_phase = TOY_GAME_PHASE_CALM;
+    g->spawn_budget = 0;
+    g->phase_timer_ms = rand_range(g, TOY_GAME_DIRECTOR_MIN_DELAY_MS,
+                                   TOY_GAME_DIRECTOR_MAX_DELAY_MS);
+}
+
+static void update_alarm_event(struct toy_game *g, int dt_ms)
+{
+    if (!g->alarm_triggered && g->alarm_zone &&
+        toy_game_point_in_box(g->px, g->pz, g->alarm_zone)) {
+        g->alarm_triggered = 1;
+        g->campaign_phase = TOY_GAME_PHASE_HORDE;
+        g->spawn_budget = TOY_GAME_ALARM_SPAWN_BUDGET;
+        g->phase_timer_ms = TOY_GAME_ALARM_DURATION_MS;
+        g->alarm_timer_ms = TOY_GAME_ALARM_DURATION_MS;
+        g->spawn_timer_ms = 0;
+        push_event(g, TOY_GAME_EV_ALARM_TRIGGERED);
+    }
+    if (g->campaign_phase == TOY_GAME_PHASE_HORDE) {
+        g->phase_timer_ms -= dt_ms;
+        g->alarm_timer_ms = g->phase_timer_ms;
+        if (g->phase_timer_ms <= 0) campaign_enter_relax(g);
+    } else if (g->campaign_phase == TOY_GAME_PHASE_RELAX) {
+        g->phase_timer_ms -= dt_ms;
+        if (g->phase_timer_ms <= 0) {
+            campaign_enter_calm(g);
+        }
+    }
+}
+
+static void update_director(struct toy_game *g, int dt_ms)
+{
+    if (g->campaign_phase != TOY_GAME_PHASE_CALM) return;
+    if (player_in_safe_room(g)) return;
+    if (g->enemies_alive > TOY_GAME_DIRECTOR_ALIVE_LOW ||
+        g->active_attackers > TOY_GAME_DIRECTOR_ATTACKER_LOW) return;
+    g->phase_timer_ms -= dt_ms;
+    if (g->phase_timer_ms > 0) return;
+    g->campaign_phase = TOY_GAME_PHASE_BUILDUP;
+    g->spawn_budget = rand_range(g, TOY_GAME_DIRECTOR_MIN_GROUP,
+                                 TOY_GAME_DIRECTOR_MAX_GROUP);
+    g->spawn_timer_ms = 0;
+    g->phase_timer_ms = 0;
+    g->director_encounters++;
+}
+
+static void update_campaign_spawning(struct toy_game *g, int dt_ms)
+{
+    int interval;
+    if (g->campaign_phase != TOY_GAME_PHASE_BUILDUP &&
+        g->campaign_phase != TOY_GAME_PHASE_HORDE) return;
+    if (g->spawn_budget <= 0) {
+        if (g->campaign_phase == TOY_GAME_PHASE_HORDE)
+            campaign_enter_relax(g);
+        else
+            campaign_enter_calm(g);
+        return;
+    }
+    if (g->campaign_phase == TOY_GAME_PHASE_HORDE &&
+        g->enemies_alive >= TOY_GAME_CAMPAIGN_ACTIVE_LIMIT) return;
+    g->spawn_timer_ms -= dt_ms;
+    if (g->spawn_timer_ms <= 0) {
+        if (try_spawn(g)) g->spawn_budget--;
+        interval = g->campaign_phase == TOY_GAME_PHASE_HORDE ?
+                   TOY_GAME_ALARM_SPAWN_INTERVAL_MS :
+                   TOY_GAME_CAMPAIGN_AMBIENT_SPAWN_INTERVAL_MS;
+        g->spawn_timer_ms = interval;
+        if (g->spawn_budget <= 0) {
+            if (g->campaign_phase == TOY_GAME_PHASE_HORDE)
+                campaign_enter_relax(g);
+            else
+                campaign_enter_calm(g);
+        }
+    }
+}
+
+static void update_campaign(struct toy_game *g, int dt_ms)
+{
+    int i, phase_before;
+    g->active_attackers = 0;
+    for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
+        const struct toy_game_enemy *e = &g->enemies[i];
+        if (e->active == 1 &&
+            (e->ai_state == TOY_GAME_ENEMY_ALERT ||
+             e->ai_state == TOY_GAME_ENEMY_CHASE))
+            g->active_attackers++;
+    }
+    update_campaign_goal(g, dt_ms);
+    if (g->state != TOY_GAME_PLAYING) return;
+    phase_before = g->campaign_phase;
+    update_alarm_event(g, dt_ms);
+    if (phase_before == TOY_GAME_PHASE_CALM &&
+        g->campaign_phase == TOY_GAME_PHASE_CALM)
+        update_director(g, dt_ms);
+    update_campaign_spawning(g, dt_ms);
 }
 
 /* ── 僵尸 AI ───────────────────────────────────────────────────── */
@@ -380,6 +490,110 @@ static void chase_enemy(struct toy_game *g, struct toy_game_enemy *e,
         e->z += nz;
 }
 
+static void enemy_investigate_noise(struct toy_game_enemy *e, int x, int z)
+{
+    if (e->ai_state == TOY_GAME_ENEMY_ALERT ||
+        e->ai_state == TOY_GAME_ENEMY_CHASE) return;
+    e->ai_state = TOY_GAME_ENEMY_INVESTIGATE;
+    e->ai_timer_ms = TOY_GAME_INVESTIGATE_MS;
+    e->target_x = x;
+    e->target_z = z;
+}
+
+static void enemy_remember_player(const struct toy_game *g,
+                                  struct toy_game_enemy *e)
+{
+    e->last_seen_x = g->px;
+    e->last_seen_z = g->pz;
+    e->target_x = g->px;
+    e->target_z = g->pz;
+    e->lost_sight_ms = 0;
+}
+
+static void enemy_enter_search(struct toy_game_enemy *e)
+{
+    e->ai_state = TOY_GAME_ENEMY_SEARCH;
+    e->ai_timer_ms = TOY_GAME_SEARCH_MS;
+    e->wander_timer_ms = 0;
+}
+
+static void emit_enemy_noise(struct toy_game *g, int x, int z, int range)
+{
+    int i;
+    long long range2 = (long long)range * range;
+    for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
+        struct toy_game_enemy *e = &g->enemies[i];
+        long long dx, dz;
+        if (e->active != 1) continue;
+        dx = e->x - x;
+        dz = e->z - z;
+        if (dx * dx + dz * dz <= range2)
+            enemy_investigate_noise(e, x, z);
+    }
+}
+
+static void alert_nearby_enemies(struct toy_game *g,
+                                 struct toy_game_enemy *source)
+{
+    int i;
+    long long alert2 = (long long)TOY_GAME_LOCAL_ALERT_RANGE *
+                       TOY_GAME_LOCAL_ALERT_RANGE;
+    long long alert_max2 = (long long)TOY_GAME_LOCAL_ALERT_MAX_RANGE *
+                           TOY_GAME_LOCAL_ALERT_MAX_RANGE;
+    for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
+        struct toy_game_enemy *e = &g->enemies[i];
+        long long dx, dz, dist2;
+        if (e == source || e->active != 1) continue;
+        if (e->ai_state == TOY_GAME_ENEMY_ALERT ||
+            e->ai_state == TOY_GAME_ENEMY_CHASE) continue;
+        dx = e->x - source->x;
+        dz = e->z - source->z;
+        dist2 = dx * dx + dz * dz;
+        if (dist2 <= alert_max2) {
+            e->ai_state = TOY_GAME_ENEMY_ALERT;
+            if (dist2 <= alert2)
+                e->ai_timer_ms = rand_range(g, TOY_GAME_PROPAGATED_ALERT_MIN_MS,
+                                             TOY_GAME_PROPAGATED_ALERT_MAX_MS);
+            else
+                e->ai_timer_ms = rand_range(g,
+                                             TOY_GAME_PROPAGATED_ALERT_MAX_MS + 200,
+                                             TOY_GAME_PROPAGATED_ALERT_MAX_MS + 700);
+            e->target_x = g->px;
+            e->target_z = g->pz;
+            e->last_seen_x = g->px;
+            e->last_seen_z = g->pz;
+            e->lost_sight_ms = 0;
+        }
+    }
+    push_event(g, TOY_GAME_EV_ENEMY_ALERT);
+}
+
+static int enemy_has_line_of_sight(const struct toy_game *g,
+                                   const struct toy_game_enemy *e)
+{
+    int i;
+    for (i = 0; i < g->world_count; i++)
+        if (segment_hits_box(e->x, e->z, g->px, g->pz, &g->world[i]))
+            return 0;
+    return 1;
+}
+
+/* 0=不可见，1=侧面/边缘视野，2=正面或极近距离。 */
+static int enemy_visual_stimulus(const struct toy_game *g,
+                                 const struct toy_game_enemy *e,
+                                 int dx, int dz, long long dist)
+{
+    long long dot;
+    if (player_in_safe_room(g) || dist > TOY_GAME_DETECT_RANGE) return 0;
+    if (!enemy_has_line_of_sight(g, e)) return 0;
+    if (dist <= TOY_GAME_CLOSE_DETECT_RANGE) return 2;
+    dot = (long long)e->dir_x * dx + (long long)e->dir_z * dz;
+    if (dot <= 0) return 0;
+    /* 约 cos(70°)：正面约 140° 为强刺激，其余前半球为弱刺激。 */
+    if (dot * 3 >= dist * 1024) return 2;
+    return 1;
+}
+
 static void update_enemy_ai(struct toy_game *g, struct toy_game_enemy *e,
                             int dt_ms)
 {
@@ -387,34 +601,63 @@ static void update_enemy_ai(struct toy_game *g, struct toy_game_enemy *e,
     int dz = g->pz - e->z;
     long long dist2 = (long long)dx * dx + (long long)dz * dz;
     long long dist = isqrt(dist2);
-    int in_range = dist <= TOY_GAME_DETECT_RANGE && !player_in_safe_room(g);
+    int visual = enemy_visual_stimulus(g, e, dx, dz, dist);
 
     if (e->ai_state == TOY_GAME_ENEMY_IDLE) {
         wander_enemy(g, e, dt_ms);
-        if (in_range) {
+        if (visual) {
             e->ai_state = TOY_GAME_ENEMY_NOTICE;
             e->ai_timer_ms = rand_range(g, TOY_GAME_NOTICE_MIN_MS,
                                         TOY_GAME_NOTICE_MAX_MS);
+            if (visual == 1) e->ai_timer_ms = e->ai_timer_ms * 3 / 2;
+            enemy_remember_player(g, e);
         }
         return;
     }
     if (e->ai_state == TOY_GAME_ENEMY_NOTICE) {
-        if (!in_range) {
+        if (!visual) {
             e->ai_state = TOY_GAME_ENEMY_IDLE;
             e->ai_timer_ms = 0;
             e->wander_timer_ms = rand_range(g, 600, 1800);
             return;
         }
         turn_enemy_toward(e, dx, dz);
+        enemy_remember_player(g, e);
         e->ai_timer_ms -= dt_ms;
         if (e->ai_timer_ms <= 0) {
             e->ai_state = TOY_GAME_ENEMY_ALERT;
             e->ai_timer_ms = TOY_GAME_ALERT_MS;
+            alert_nearby_enemies(g, e);
         }
         return;
     }
-    turn_enemy_toward(e, dx, dz);
+    if (e->ai_state == TOY_GAME_ENEMY_INVESTIGATE) {
+        int tx = e->target_x - e->x;
+        int tz = e->target_z - e->z;
+        long long target_dist = isqrt((long long)tx * tx + (long long)tz * tz);
+        if (visual) {
+            e->ai_state = TOY_GAME_ENEMY_NOTICE;
+            e->ai_timer_ms = TOY_GAME_NOTICE_MIN_MS;
+            enemy_remember_player(g, e);
+            return;
+        }
+        e->ai_timer_ms -= dt_ms;
+        if (e->ai_timer_ms <= 0 || target_dist <= TOY_GAME_ATTACK_RANGE) {
+            e->ai_state = TOY_GAME_ENEMY_IDLE;
+            e->ai_timer_ms = 0;
+            e->wander_timer_ms = rand_range(g, 600, 1800);
+            return;
+        }
+        turn_enemy_toward(e, tx, tz);
+        chase_enemy(g, e, tx, tz, target_dist);
+        return;
+    }
     if (e->ai_state == TOY_GAME_ENEMY_ALERT) {
+        int tx, tz;
+        if (visual) enemy_remember_player(g, e);
+        tx = e->target_x - e->x;
+        tz = e->target_z - e->z;
+        turn_enemy_toward(e, tx, tz);
         e->ai_timer_ms -= dt_ms;
         if (e->ai_timer_ms <= 0) {
             e->ai_state = TOY_GAME_ENEMY_CHASE;
@@ -422,7 +665,35 @@ static void update_enemy_ai(struct toy_game *g, struct toy_game_enemy *e,
         }
         return;
     }
-    chase_enemy(g, e, dx, dz, dist);
+    if (e->ai_state == TOY_GAME_ENEMY_CHASE) {
+        int tx, tz;
+        long long target_dist;
+        if (visual) enemy_remember_player(g, e);
+        else e->lost_sight_ms += dt_ms;
+        tx = e->last_seen_x - e->x;
+        tz = e->last_seen_z - e->z;
+        target_dist = isqrt((long long)tx * tx + (long long)tz * tz);
+        if (!visual && target_dist <= TOY_GAME_ATTACK_RANGE) {
+            enemy_enter_search(e);
+            return;
+        }
+        turn_enemy_toward(e, tx, tz);
+        chase_enemy(g, e, tx, tz, target_dist);
+        return;
+    }
+    if (visual) {
+        enemy_remember_player(g, e);
+        e->ai_state = TOY_GAME_ENEMY_CHASE;
+        return;
+    }
+    e->ai_timer_ms -= dt_ms;
+    if (e->ai_timer_ms <= 0) {
+        e->ai_state = TOY_GAME_ENEMY_IDLE;
+        e->ai_timer_ms = 0;
+        e->wander_timer_ms = rand_range(g, 600, 1800);
+        return;
+    }
+    wander_enemy(g, e, dt_ms);
 }
 
 /* 敌人间分离：距离 < 260 时沿连线各推 8 单位 */
@@ -517,6 +788,7 @@ int toy_game_fire(struct toy_game *g, int sy, int cy)
     }
     g->ammo_mag--;
     push_event(g, TOY_GAME_EV_SHOOT);
+    emit_enemy_noise(g, g->px, g->pz, TOY_GAME_GUNSHOT_RANGE);
     if (g->ammo_mag == 0) {
         g->reloading = 1;
         g->reload_timer_ms = TOY_GAME_RELOAD_MS;

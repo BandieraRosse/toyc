@@ -28,10 +28,19 @@
 #define TOY_GAME_WAVE_FIRST_DELAY_MS 1500
 #define TOY_GAME_WAVE_PAUSE_MS  2500
 #define TOY_GAME_SPAWN_INTERVAL_MS 500
-#define TOY_GAME_CAMPAIGN_FIRST_SPAWN_MS 2500
-#define TOY_GAME_CAMPAIGN_SPAWN_INTERVAL_MS 2200
+#define TOY_GAME_CAMPAIGN_AMBIENT_BUDGET 10
+#define TOY_GAME_CAMPAIGN_AMBIENT_SPAWN_INTERVAL_MS 100
 #define TOY_GAME_ALARM_SPAWN_INTERVAL_MS 1200
-#define TOY_GAME_ALARM_DURATION_MS 10000
+#define TOY_GAME_ALARM_DURATION_MS 20000
+#define TOY_GAME_ALARM_SPAWN_BUDGET 16
+#define TOY_GAME_CAMPAIGN_ACTIVE_LIMIT 20
+#define TOY_GAME_CAMPAIGN_RELAX_MS 12000
+#define TOY_GAME_DIRECTOR_MIN_DELAY_MS 7000
+#define TOY_GAME_DIRECTOR_MAX_DELAY_MS 12000
+#define TOY_GAME_DIRECTOR_MIN_GROUP 2
+#define TOY_GAME_DIRECTOR_MAX_GROUP 4
+#define TOY_GAME_DIRECTOR_ALIVE_LOW 5
+#define TOY_GAME_DIRECTOR_ATTACKER_LOW 2
 #define TOY_GAME_MAX_EVENTS     16
 
 #define TOY_GAME_ENEMY_RADIUS   100     /* 敌人碰撞半径 */
@@ -42,20 +51,37 @@
 #define TOY_GAME_SPAWN_EDGE     250     /* 生成点距房间边界内缩量 */
 #define TOY_GAME_MIN_SPAWN_DIST 1200    /* 生成点距玩家最小距离（防贴脸） */
 #define TOY_GAME_GOAL_HOLD_MS   1500    /* 终点安全室内停留多久判定通关 */
-#define TOY_GAME_DETECT_RANGE   2400    /* 闲置敌人的圆形侦测半径 */
-#define TOY_GAME_NOTICE_MIN_MS  1000    /* 进入范围后至少观察多久 */
-#define TOY_GAME_NOTICE_MAX_MS  2000
+#define TOY_GAME_DETECT_RANGE   2800    /* 视觉最远察觉距离 */
+#define TOY_GAME_CLOSE_DETECT_RANGE 600 /* 极近距离无需处于正面视野 */
+#define TOY_GAME_NOTICE_MIN_MS  700     /* 进入范围后至少观察多久 */
+#define TOY_GAME_NOTICE_MAX_MS  1400
 #define TOY_GAME_ALERT_MS       700     /* 发现玩家后转向、显示感叹号的停顿 */
+#define TOY_GAME_GUNSHOT_RANGE  3600    /* 枪声调查半径，允许绕过视觉遮挡 */
+#define TOY_GAME_LOCAL_ALERT_RANGE 1800 /* 尖叫直接警觉半径 */
+#define TOY_GAME_LOCAL_ALERT_MAX_RANGE 3200
+#define TOY_GAME_PROPAGATED_ALERT_MIN_MS 850
+#define TOY_GAME_PROPAGATED_ALERT_MAX_MS 1100
+#define TOY_GAME_INVESTIGATE_MS 5000
+#define TOY_GAME_SEARCH_MS      4000
 
 #define TOY_GAME_KEY_RELOAD     19      /* evdev KEY_R */
 
 enum toy_game_state { TOY_GAME_PLAYING, TOY_GAME_OVER, TOY_GAME_WON };
 
+enum toy_game_campaign_phase {
+    TOY_GAME_PHASE_CALM,
+    TOY_GAME_PHASE_BUILDUP,
+    TOY_GAME_PHASE_HORDE,
+    TOY_GAME_PHASE_RELAX
+};
+
 enum toy_game_enemy_ai {
     TOY_GAME_ENEMY_IDLE,
     TOY_GAME_ENEMY_NOTICE,
+    TOY_GAME_ENEMY_INVESTIGATE,
     TOY_GAME_ENEMY_ALERT,
-    TOY_GAME_ENEMY_CHASE
+    TOY_GAME_ENEMY_CHASE,
+    TOY_GAME_ENEMY_SEARCH
 };
 
 enum toy_game_event {
@@ -69,6 +95,7 @@ enum toy_game_event {
     TOY_GAME_EV_WAVE_START,
     TOY_GAME_EV_LEVEL_WON,
     TOY_GAME_EV_ALARM_TRIGGERED,
+    TOY_GAME_EV_ENEMY_ALERT,
 };
 
 /* 碰撞/命中共用的 xz 平面轴对齐盒（与房间障碍物同尺度） */
@@ -85,6 +112,9 @@ struct toy_game_enemy {
     int dying_ms;       /* 倒地压扁计时 */
     int ai_state;       /* enum toy_game_enemy_ai */
     int ai_timer_ms;    /* 侦测/警觉阶段倒计时 */
+    int target_x, target_z; /* 调查目标或最后声源 */
+    int last_seen_x, last_seen_z;
+    int lost_sight_ms;
     int wander_timer_ms;
     int dir_x, dir_z;   /* 面向，1024 基准定点 */
 };
@@ -114,6 +144,11 @@ struct toy_game {
     const struct toy_game_box *spawn_zones;
     int spawn_zone_count;
     int campaign_mode;
+    int campaign_phase;
+    int spawn_budget;
+    int phase_timer_ms;
+    int active_attackers;
+    int director_encounters;
     int goal_hold_ms;
     const struct toy_game_box *alarm_zone;
     int alarm_spawn_zone;

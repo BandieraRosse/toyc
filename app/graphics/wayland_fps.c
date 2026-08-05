@@ -100,7 +100,7 @@ static const struct toy_game_box spawn_zones[3] = {
     {-3300, -1500,  2100, 3600}
 };
 
-/* 踏入黄框后，右侧 spawn_zones[1] 开启 10 秒。 */
+/* 踏入黄框后，右侧 spawn_zones[1] 在有限配额的警报尸潮中开启。 */
 static const struct toy_game_box alarm_zone = {
     3300, 5200, -3000, -1500
 };
@@ -716,10 +716,50 @@ static int render_enemies(struct toy_renderer *renderer,
     return pixels;
 }
 
-static void render_hud(struct toy_surface *surface)
+static const char *campaign_phase_name(int phase)
+{
+    if (phase == TOY_GAME_PHASE_BUILDUP) return "BUILDUP";
+    if (phase == TOY_GAME_PHASE_HORDE) return "HORDE";
+    if (phase == TOY_GAME_PHASE_RELAX) return "RELAX";
+    return "CALM";
+}
+
+static int draw_hud_value(struct toy_surface *surface, int x,
+                          const char *label, const char *value, uint32_t color)
+{
+    int label_w = (int)strlen(label) * FB_FONT_W;
+    int value_w = (int)strlen(value) * FB_FONT_W;
+    fb_draw_string((unsigned char *)surface->pixels, x, 8,
+                   label, 0xAAB4C0, surface->stride);
+    x += label_w;
+    fill_rect(surface, x - 1, 6, value_w + 2, FB_FONT_H + 4, 0x26384C);
+    fb_draw_string((unsigned char *)surface->pixels, x, 8,
+                   value, color, surface->stride);
+    return x + value_w + FB_FONT_W * 2;
+}
+
+static void render_hud(struct toy_surface *surface, int fps)
 {
     char line[96];
-    int n;
+    int n, x = 8;
+    uint32_t phase_color = game.campaign_phase == TOY_GAME_PHASE_HORDE ?
+                           0xFFD040 : 0x80E0C0;
+    x = draw_hud_value(surface, x, "DIR ",
+                       campaign_phase_name(game.campaign_phase), phase_color);
+    snprintf(line, sizeof(line), "%d", game.spawn_budget);
+    x = draw_hud_value(surface, x, "BUD ", line, 0xFFD070);
+    snprintf(line, sizeof(line), "%d", game.enemies_alive);
+    x = draw_hud_value(surface, x, "LIVE ", line, 0xF0F0F0);
+    snprintf(line, sizeof(line), "%d", game.active_attackers);
+    x = draw_hud_value(surface, x, "ACT ", line,
+                       game.active_attackers > 0 ? 0xFF8060 : 0x80E080);
+    snprintf(line, sizeof(line), "%dS",
+             game.phase_timer_ms > 0 ? (game.phase_timer_ms + 999) / 1000 : 0);
+    x = draw_hud_value(surface, x, "NEXT ", line, 0x80C8FF);
+    snprintf(line, sizeof(line), "%d", game.director_encounters);
+    x = draw_hud_value(surface, x, "RUN ", line, 0xC0A0FF);
+    snprintf(line, sizeof(line), "%d", fps);
+    draw_hud_value(surface, x, "FPS ", line, 0x90F090);
     if (game.ammo_reserve == TOY_GAME_AMMO_INFINITE)
         n = snprintf(line, sizeof(line), "HP %d  PISTOL %d/INF  KILLS %d",
                      game.hp, game.ammo_mag, game.kills);
@@ -727,31 +767,36 @@ static void render_hud(struct toy_surface *surface)
         n = snprintf(line, sizeof(line), "HP %d  MAG %d/%d  KILLS %d",
                      game.hp, game.ammo_mag, game.ammo_reserve, game.kills);
     if (n > 0)
-        fb_draw_string((unsigned char *)surface->pixels, 8, 8,
+        fb_draw_string((unsigned char *)surface->pixels, 8, 8 + FB_FONT_H,
                        line, 0xE7E9EC, surface->stride);
     if (game.reloading)
-        fb_draw_string((unsigned char *)surface->pixels, 8, 8 + FB_FONT_H,
+        fb_draw_string((unsigned char *)surface->pixels, 8, 8 + FB_FONT_H * 2,
                        "RELOADING...", 0xD88A32, surface->stride);
     if (toy_game_point_in_box(game.px, game.pz, &safe_rooms[1])) {
         snprintf(line, sizeof(line), "EXIT SECURE %d%%",
                  game.goal_hold_ms * 100 / TOY_GAME_GOAL_HOLD_MS);
-        fb_draw_string((unsigned char *)surface->pixels, 8, 8 + FB_FONT_H * 2,
+        fb_draw_string((unsigned char *)surface->pixels, 8, 8 + FB_FONT_H * 3,
                        line, 0x80E080, surface->stride);
     } else if (toy_game_point_in_box(game.px, game.pz, &safe_rooms[0])) {
-        fb_draw_string((unsigned char *)surface->pixels, 8, 8 + FB_FONT_H * 2,
+        fb_draw_string((unsigned char *)surface->pixels, 8, 8 + FB_FONT_H * 3,
                        "START SAFE ROOM - REACH GREEN EXIT", 0x80E080,
                        surface->stride);
     } else if (game.alarm_timer_ms > 0) {
         snprintf(line, sizeof(line), "ALARM HORDE %d SEC",
                  (game.alarm_timer_ms + 999) / 1000);
-        fb_draw_string((unsigned char *)surface->pixels, 8, 8 + FB_FONT_H * 2,
+        fb_draw_string((unsigned char *)surface->pixels, 8, 8 + FB_FONT_H * 3,
                        line, 0xFFD040, surface->stride);
+    } else if (game.campaign_phase == TOY_GAME_PHASE_RELAX) {
+        snprintf(line, sizeof(line), "HORDE CLEARED - RELAX %d SEC",
+                 (game.phase_timer_ms + 999) / 1000);
+        fb_draw_string((unsigned char *)surface->pixels, 8, 8 + FB_FONT_H * 3,
+                       line, 0x80E080, surface->stride);
     } else if (!game.alarm_triggered) {
-        fb_draw_string((unsigned char *)surface->pixels, 8, 8 + FB_FONT_H * 2,
+        fb_draw_string((unsigned char *)surface->pixels, 8, 8 + FB_FONT_H * 3,
                        "YELLOW BORDER = HORDE TRIGGER", 0xFFD040,
                        surface->stride);
     } else {
-        fb_draw_string((unsigned char *)surface->pixels, 8, 8 + FB_FONT_H * 2,
+        fb_draw_string((unsigned char *)surface->pixels, 8, 8 + FB_FONT_H * 3,
                        "RED FLOOR = SPAWN ZONE", 0xE08080, surface->stride);
     }
 }
@@ -1121,10 +1166,11 @@ int main(int argc, char **argv)
     struct camera camera;
     struct control_settings settings;
     struct pause_menu pause_menu;
-    long last_time, accumulator = 0;
+    long last_time, accumulator = 0, fps_window_start, fps_elapsed;
     int running = 1, pointer_lock_requested = 0, paused = 1;
     int last_pointer_x = 0, last_pointer_y = 0, have_pointer_position = 0;
     int frame_limit = 0, rendered_frames = 0, scene_pixels = 0;
+    int display_fps = 0, fps_window_frames = 0;
     int fire_edge = 0;
     int input_debug = 0, input_event_count = 0, have_last_key = 0;
     unsigned int last_key = 0;
@@ -1162,6 +1208,7 @@ int main(int argc, char **argv)
         __printf("wayland_fps: audio unavailable, playing silent\n");
     }
     last_time = monotonic_us();
+    fps_window_start = last_time;
     while (running) {
         long now, elapsed;
         int logic_steps = 0;
@@ -1294,7 +1341,7 @@ int main(int argc, char **argv)
                 draw_pause_overlay(&surface, &pause_menu, &settings);
             } else {
                 draw_crosshair(&surface);
-                render_hud(&surface);
+                render_hud(&surface, display_fps);
                 render_muzzle_flash(&surface);
             }
             render_damage_flash(&surface);
@@ -1307,6 +1354,15 @@ int main(int argc, char **argv)
             if (audio.running) play_game_events(&audio);
             if (toy_window_present(window) < 0) break;
             rendered_frames++;
+            fps_window_frames++;
+            now = monotonic_us();
+            fps_elapsed = now - fps_window_start;
+            if (fps_elapsed >= 1000000) {
+                display_fps = (int)((long long)fps_window_frames * 1000000 /
+                                    fps_elapsed);
+                fps_window_frames = 0;
+                fps_window_start = now;
+            }
             if (frame_limit > 0 && rendered_frames >= frame_limit) running = 0;
         }
     }

@@ -103,6 +103,8 @@ static int test_chase_player(void)
     g.px = 0;
     g.pz = 0;
     toy_game_place_enemy(&g, 2000, 0);
+    g.enemies[0].dir_x = -1024;
+    g.enemies[0].dir_z = 0;
     for (i = 0; i < 60; i++) toy_game_update(&g, NULL, 0, 0, 1024, 16);
     if (g.enemies[0].ai_state != TOY_GAME_ENEMY_NOTICE) return 3;
     dist = (long long)g.enemies[0].x * g.enemies[0].x +
@@ -374,7 +376,7 @@ static int test_sfx(void)
     return 0;
 }
 
-/* 16: 闯关模式只从固定刷怪区生成，且玩家速度配置高于僵尸。 */
+/* 16: 闯关环境感染者只从固定刷怪区生成。 */
 static int test_campaign_spawn_zone(void)
 {
     struct toy_game g;
@@ -464,6 +466,9 @@ static int test_alarm_spawn_window(void)
     toy_game_update(&g, NULL, 0, 0, 1024, 16);
     if (count_alive(&g) != 1 || !g.alarm_triggered ||
         g.alarm_timer_ms <= 0) return 19;
+    if (g.enemies[0].ai_state != TOY_GAME_ENEMY_CHASE ||
+        g.enemies[0].last_seen_x != g.px ||
+        g.enemies[0].last_seen_z != g.pz) return 19;
     n = toy_game_drain_events(&g, evs, 16);
     if (!has_event(evs, n, TOY_GAME_EV_ALARM_TRIGGERED)) return 19;
     for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) g.enemies[i].active = 0;
@@ -474,6 +479,260 @@ static int test_alarm_spawn_window(void)
     g.spawn_timer_ms = 0;
     toy_game_update(&g, NULL, 0, 0, 1024, 16);
     if (count_alive(&g) != 0) return 19;
+    return 0;
+}
+
+/* 20: 开局环境感染者用尽固定预算后进入 CALM，不再定时补充。 */
+static int test_campaign_ambient_budget(void)
+{
+    struct toy_game g;
+    int i;
+    toy_game_init(&g, 39);
+    toy_game_set_world(&g, NULL, 0, ROOM);
+    toy_game_set_campaign(&g, test_safe_rooms, 2, test_spawn_zones, 2);
+    g.px = 0;
+    g.pz = -4500;
+    for (i = 0; i < TOY_GAME_CAMPAIGN_AMBIENT_BUDGET; i++) {
+        g.spawn_timer_ms = 0;
+        toy_game_update(&g, NULL, 0, 0, 1024, 16);
+    }
+    if (count_alive(&g) != TOY_GAME_CAMPAIGN_AMBIENT_BUDGET) return 20;
+    if (g.spawn_budget != 0 || g.campaign_phase != TOY_GAME_PHASE_CALM)
+        return 20;
+    for (i = 0; i < 100; i++)
+        toy_game_update(&g, NULL, 0, 0, 1024, 100);
+    if (count_alive(&g) != TOY_GAME_CAMPAIGN_AMBIENT_BUDGET) return 20;
+    return 0;
+}
+
+/* 21: 警报尸潮有独立配额，配额耗尽后进入 RELAX 并禁止补怪。 */
+static int test_alarm_budget_and_relax(void)
+{
+    static const struct toy_game_box warning = {-500, 500, -500, 500};
+    struct toy_game g;
+    int i;
+    toy_game_init(&g, 41);
+    toy_game_set_world(&g, NULL, 0, ROOM);
+    toy_game_set_campaign(&g, test_safe_rooms, 2, &test_spawn_zones[1], 1);
+    toy_game_set_alarm(&g, &warning, 0);
+    g.px = 0;
+    g.pz = 0;
+    for (i = 0; i < TOY_GAME_ALARM_SPAWN_BUDGET; i++) {
+        g.spawn_timer_ms = 0;
+        toy_game_update(&g, NULL, 0, 0, 1024, 16);
+    }
+    if (count_alive(&g) != TOY_GAME_ALARM_SPAWN_BUDGET) return 21;
+    if (g.spawn_budget != 0 || g.campaign_phase != TOY_GAME_PHASE_RELAX ||
+        g.phase_timer_ms != TOY_GAME_CAMPAIGN_RELAX_MS) return 21;
+    for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) g.enemies[i].active = 0;
+    g.enemies_alive = 0;
+    g.spawn_timer_ms = 0;
+    toy_game_update(&g, NULL, 0, 0, 1024, 1000);
+    if (count_alive(&g) != 0 || g.campaign_phase != TOY_GAME_PHASE_RELAX)
+        return 21;
+    toy_game_update(&g, NULL, 0, 0, 1024, TOY_GAME_CAMPAIGN_RELAX_MS);
+    if (count_alive(&g) != 0 || g.campaign_phase != TOY_GAME_PHASE_CALM)
+        return 21;
+    return 0;
+}
+
+/* 22: 尸潮达到存活上限时保留预算，腾出槽位后才继续生成。 */
+static int test_alarm_active_limit(void)
+{
+    static const struct toy_game_box warning = {-500, 500, -500, 500};
+    struct toy_game g;
+    int i;
+    toy_game_init(&g, 43);
+    toy_game_set_world(&g, NULL, 0, ROOM);
+    toy_game_set_campaign(&g, test_safe_rooms, 2, &test_spawn_zones[1], 1);
+    toy_game_set_alarm(&g, &warning, 0);
+    g.px = 0;
+    g.pz = 0;
+    for (i = 0; i < TOY_GAME_CAMPAIGN_ACTIVE_LIMIT; i++)
+        toy_game_place_enemy(&g, 3000 + i * 10, 3000);
+    toy_game_update(&g, NULL, 0, 0, 1024, 16);
+    if (count_alive(&g) != TOY_GAME_CAMPAIGN_ACTIVE_LIMIT ||
+        g.spawn_budget != TOY_GAME_ALARM_SPAWN_BUDGET) return 22;
+    g.enemies[0].active = 0;
+    g.enemies_alive--;
+    g.spawn_timer_ms = 0;
+    toy_game_update(&g, NULL, 0, 0, 1024, 16);
+    if (count_alive(&g) != TOY_GAME_CAMPAIGN_ACTIVE_LIMIT ||
+        g.spawn_budget != TOY_GAME_ALARM_SPAWN_BUDGET - 1) return 22;
+    return 0;
+}
+
+/* 23: 远处背后的玩家不可见；转入正面后开始 NOTICE，极近背后仍能察觉。 */
+static int test_enemy_view_cone(void)
+{
+    struct toy_game g;
+    int i;
+    toy_game_init(&g, 45);
+    toy_game_set_world(&g, NULL, 0, ROOM);
+    g.px = 1000;
+    g.pz = 0;
+    toy_game_place_enemy(&g, 0, 0);
+    g.enemies[0].dir_x = -1024;
+    g.enemies[0].dir_z = 0;
+    g.enemies[0].wander_timer_ms = 100000;
+    for (i = 0; i < 100; i++) toy_game_update(&g, NULL, 0, 0, 1024, 16);
+    if (g.enemies[0].ai_state != TOY_GAME_ENEMY_IDLE) return 23;
+    g.enemies[0].dir_x = 1024;
+    toy_game_update(&g, NULL, 0, 0, 1024, 16);
+    if (g.enemies[0].ai_state != TOY_GAME_ENEMY_NOTICE) return 23;
+
+    toy_game_init(&g, 47);
+    toy_game_set_world(&g, NULL, 0, ROOM);
+    g.px = 300;
+    g.pz = 0;
+    toy_game_place_enemy(&g, 0, 0);
+    g.enemies[0].dir_x = -1024;
+    g.enemies[0].dir_z = 0;
+    g.enemies[0].wander_timer_ms = 100000;
+    toy_game_update(&g, NULL, 0, 0, 1024, 16);
+    if (g.enemies[0].ai_state != TOY_GAME_ENEMY_NOTICE) return 23;
+    return 0;
+}
+
+/* 24: 障碍物切断视觉，感染者不能隔墙进入 NOTICE。 */
+static int test_enemy_sight_occlusion(void)
+{
+    static const struct toy_game_box wall = {400, 600, -500, 500};
+    struct toy_game g;
+    int i;
+    toy_game_init(&g, 49);
+    toy_game_set_world(&g, &wall, 1, ROOM);
+    g.px = 1000;
+    g.pz = 0;
+    toy_game_place_enemy(&g, 0, 0);
+    g.enemies[0].dir_x = 1024;
+    g.enemies[0].dir_z = 0;
+    g.enemies[0].wander_timer_ms = 100000;
+    for (i = 0; i < 100; i++) toy_game_update(&g, NULL, 0, 0, 1024, 16);
+    if (g.enemies[0].ai_state != TOY_GAME_ENEMY_IDLE) return 24;
+    return 0;
+}
+
+/* 25: 枪声穿过视觉遮挡，只让范围内敌人调查开枪位置。 */
+static int test_gunshot_investigation(void)
+{
+    static const struct toy_game_box wall = {400, 600, -500, 500};
+    struct toy_game g;
+    toy_game_init(&g, 51);
+    toy_game_set_world(&g, &wall, 1, ROOM);
+    g.px = 0;
+    g.pz = 0;
+    toy_game_place_enemy(&g, 1000, 0);
+    g.enemies[0].dir_x = 1024;
+    g.enemies[0].dir_z = 0;
+    toy_game_update(&g, NULL, 1, 0, -1024, 16);
+    if (g.enemies[0].ai_state != TOY_GAME_ENEMY_INVESTIGATE) return 25;
+    if (g.enemies[0].target_x != 0 || g.enemies[0].target_z != 0) return 25;
+    return 0;
+}
+
+/* 26: 局部同伴一起 ALERT 并追玩家，但传播后的启动延迟略长。 */
+static int test_local_alert_propagation(void)
+{
+    struct toy_game g;
+    unsigned char evs[16];
+    int n;
+    toy_game_init(&g, 53);
+    toy_game_set_world(&g, NULL, 0, ROOM);
+    g.px = 1000;
+    g.pz = 0;
+    toy_game_place_enemy(&g, 0, 0);
+    toy_game_place_enemy(&g, 0, 1000);
+    toy_game_place_enemy(&g, 0, 2500);
+    g.enemies[0].ai_state = TOY_GAME_ENEMY_NOTICE;
+    g.enemies[0].ai_timer_ms = 1;
+    g.enemies[0].dir_x = 1024;
+    g.enemies[0].dir_z = 0;
+    g.enemies[1].dir_x = -1024;
+    g.enemies[1].dir_z = 0;
+    g.enemies[2].dir_x = -1024;
+    g.enemies[2].dir_z = 0;
+    toy_game_update(&g, NULL, 0, 0, 1024, 16);
+    if (g.enemies[0].ai_state != TOY_GAME_ENEMY_ALERT) return 26;
+    if (g.enemies[1].ai_state != TOY_GAME_ENEMY_ALERT) return 26;
+    if (g.enemies[2].ai_state != TOY_GAME_ENEMY_ALERT) return 26;
+    if (g.enemies[1].ai_timer_ms <= g.enemies[0].ai_timer_ms ||
+        g.enemies[2].ai_timer_ms <= g.enemies[1].ai_timer_ms) return 26;
+    if (g.enemies[1].target_x != g.px || g.enemies[1].target_z != g.pz ||
+        g.enemies[2].target_x != g.px || g.enemies[2].target_z != g.pz)
+        return 26;
+    n = toy_game_drain_events(&g, evs, 16);
+    if (!has_event(evs, n, TOY_GAME_EV_ENEMY_ALERT)) return 26;
+    return 0;
+}
+
+/* 27: 低压力时导演补充 2~4 只；安全室内暂停遭遇倒计时。 */
+static int test_director_small_group(void)
+{
+    struct toy_game g;
+    int i, calm_timer, group_budget;
+    toy_game_init(&g, 55);
+    toy_game_set_world(&g, NULL, 0, ROOM);
+    toy_game_set_campaign(&g, test_safe_rooms, 2, test_spawn_zones, 2);
+    g.px = 0;
+    g.pz = -4500;
+    for (i = 0; i < TOY_GAME_CAMPAIGN_AMBIENT_BUDGET; i++) {
+        g.spawn_timer_ms = 0;
+        toy_game_update(&g, NULL, 0, 0, 1024, 16);
+    }
+    for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) g.enemies[i].active = 0;
+    g.enemies_alive = 0;
+    calm_timer = g.phase_timer_ms;
+    toy_game_update(&g, NULL, 0, 0, 1024, 1000);
+    if (g.phase_timer_ms != calm_timer || g.director_encounters != 0) return 27;
+
+    g.pz = 0;
+    g.phase_timer_ms = 1;
+    toy_game_update(&g, NULL, 0, 0, 1024, 16);
+    if (g.campaign_phase != TOY_GAME_PHASE_BUILDUP ||
+        g.director_encounters != 1 || count_alive(&g) != 1) return 27;
+    group_budget = g.spawn_budget + 1;
+    if (group_budget < TOY_GAME_DIRECTOR_MIN_GROUP ||
+        group_budget > TOY_GAME_DIRECTOR_MAX_GROUP) return 27;
+    while (g.campaign_phase == TOY_GAME_PHASE_BUILDUP) {
+        g.spawn_timer_ms = 0;
+        toy_game_update(&g, NULL, 0, 0, 1024, 16);
+    }
+    if (count_alive(&g) != group_budget ||
+        g.campaign_phase != TOY_GAME_PHASE_CALM) return 27;
+    return 0;
+}
+
+/* 28: CHASE 丢失视线后只追最后目击点，搜索失败回到 IDLE；可重新发现。 */
+static int test_last_seen_and_search(void)
+{
+    static const struct toy_game_box wall = {1100, 1300, -5700, 5700};
+    struct toy_game g;
+    int i;
+    toy_game_init(&g, 57);
+    toy_game_set_world(&g, NULL, 0, ROOM);
+    g.px = 1000;
+    g.pz = 0;
+    toy_game_place_enemy(&g, 0, 0);
+    g.enemies[0].ai_state = TOY_GAME_ENEMY_CHASE;
+    g.enemies[0].dir_x = 1024;
+    g.enemies[0].dir_z = 0;
+    toy_game_update(&g, NULL, 0, 0, 1024, 16);
+    if (g.enemies[0].last_seen_x != 1000) return 28;
+    toy_game_set_world(&g, &wall, 1, ROOM);
+    g.px = 2000;
+    for (i = 0; i < 180; i++) toy_game_update(&g, NULL, 0, 0, 1024, 16);
+    if (g.enemies[0].ai_state != TOY_GAME_ENEMY_SEARCH) return 28;
+    if (g.enemies[0].last_seen_x != 1000 || g.enemies[0].x >= 1100) return 28;
+    for (i = 0; i < 260; i++) toy_game_update(&g, NULL, 0, 0, 1024, 16);
+    if (g.enemies[0].ai_state != TOY_GAME_ENEMY_IDLE) return 28;
+
+    toy_game_set_world(&g, NULL, 0, ROOM);
+    g.enemies[0].dir_x = 1024;
+    g.enemies[0].dir_z = 0;
+    toy_game_update(&g, NULL, 0, 0, 1024, 16);
+    if (g.enemies[0].ai_state != TOY_GAME_ENEMY_NOTICE ||
+        g.enemies[0].last_seen_x != 2000) return 28;
     return 0;
 }
 
@@ -498,5 +757,14 @@ int main(void)
     if (test_safe_room_blocks_enemy()) return 17;
     if (test_goal_hold_and_win()) return 18;
     if (test_alarm_spawn_window()) return 19;
+    if (test_campaign_ambient_budget()) return 20;
+    if (test_alarm_budget_and_relax()) return 21;
+    if (test_alarm_active_limit()) return 22;
+    if (test_enemy_view_cone()) return 23;
+    if (test_enemy_sight_occlusion()) return 24;
+    if (test_gunshot_investigation()) return 25;
+    if (test_local_alert_propagation()) return 26;
+    if (test_director_small_group()) return 27;
+    if (test_last_seen_and_search()) return 28;
     return 0;
 }
