@@ -39,8 +39,13 @@ all apps, or one app. `make self-app-<name>` is the self-hosted equivalent.
 `make validate-assets` builds the GCC-hosted `build/toyasset` tool and validates
 the small committed `.ttex`, `.tsnd`, and `.tmesh` test assets. Raw PNG/JPEG/WAV/OBJ
 must be converted offline with `build/toyasset convert`; source files and large
-intermediates are not committed (see `.gitignore`). Runtime code reads only these
-versioned, explicitly encoded little-endian formats; it never parses PNG/JPEG/WAV/OBJ.
+intermediates are not committed (see `.gitignore`). The 8 core wayland_fps sound
+effects (`assets/generated/sfx_*.tsnd`) are rendered offline by
+`make generate-assets`, which links the `lib/game/sfx.c` engine for deterministic,
+reproducible output with no external source files; wayland_fps loads and plays them
+at startup, falling back to procedural synthesis if a file fails to load. Runtime
+code reads only these versioned, explicitly encoded little-endian formats; it never
+parses PNG/JPEG/WAV/OBJ.
 See [assets/README.md](assets/README.md) for the format notes. Compression, FBX,
 glTF, skeletal animation, and GUI editing are outside v0.1.
 

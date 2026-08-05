@@ -1,9 +1,13 @@
 /*
- * sfx.c — 程序合成 SFX 引擎（平台无关）。
+ * sfx.c — SFX 混音引擎（平台无关）。
  *
- * 全部音效运行时生成，无 WAV 资源：正弦 DDS（1024 项查表）+ xorshift32
- * 噪声 + 一阶低通上色，线性/平方包络衰减，8 voice 求和混音后饱和钳制
- * 输出 S16 立体声。设备无关，宿主只需周期性调用 toy_sfx_render 取样本。
+ * 两种音色来源，按 kind 切换：
+ *  - 程序合成（默认）：正弦 DDS（1024 项查表）+ xorshift32 噪声 + 一阶
+ *    低通上色，线性/平方包络衰减；
+ *  - 样本模式：toy_sfx_set_sample 注册的 TSND 资产（44100Hz PCM16，
+ *    由 tools/gen_sfx.c 离线生成），播放时尾部线性淡出防截断。
+ * 8 voice 求和混音后饱和钳制输出 S16 立体声。设备无关，宿主只需周期性
+ * 调用 toy_sfx_render 取样本。
  *
  * 实现约束（自托管友好）：
  *  - 扫频相位增量每 128 样本更新一次（避免每样本 64 位除法）
@@ -31,9 +35,11 @@ static void ensure_sine_table(void)
     sine_table_ready = 1;
 }
 
-static int sine_at(int phase)
+/* 16.16 定点查表：一个周期 = 65536 相位单位，表 1024 项/周期，
+ * 索引取相位的小数位（phase >> 6 的 10 位），unsign 在 2^32 处自然回绕。 */
+static int sine_at(unsigned phase)
 {
-    int index = (phase >> 16) & (SIN_TABLE_SIZE - 1);
+    int index = (int)((phase >> 6) & (SIN_TABLE_SIZE - 1));
     return sine_table[index];
 }
 
@@ -56,14 +62,14 @@ struct sfx_spec {
 };
 
 static const struct sfx_spec sfx_specs[TOY_SFX_PLAYER_DEATH + 1] = {
-    { 100, 6000, 0,   0   },   /* GUNSHOT：噪声 + 平方衰减 */
-    {  10, 3200, 0,   0   },   /* DRY_FIRE：短噪声 */
-    {  35, 4000, 900, 900 },   /* RELOAD_START：双咔嗒（2ms 噪声 + 25ms 方波） */
-    {   8, 3600, 900, 900 },   /* RELOAD_DONE：单咔嗒 */
-    {  30, 4200, 1800, 1800 }, /* HIT_MARKER：高频短音 */
-    { 200, 4600, 150, 60  },   /* KILL：下扫 */
-    { 250, 3400, 100, 50  },   /* BITE：低频下扫 + 二次谐波 */
-    { 600, 5200, 400, 60  },   /* PLAYER_DEATH：长下扫 */
+    { 130, 22000, 110, 55 },   /* GUNSHOT：噪声 + 平方衰减 + 110→55Hz 低频炮膛声 */
+    {  14, 18000, 0,   0   },  /* DRY_FIRE：短噪声 */
+    {  40, 18000, 1100, 1100 },/* RELOAD_START：双咔嗒（2ms 噪声 + 1100Hz 方波） */
+    {  12, 18000, 1300, 1300 },/* RELOAD_DONE：单高咔嗒 */
+    {  40, 16000, 1500, 1500 },/* HIT_MARKER：高频短音 */
+    { 220, 20000, 140, 50  },  /* KILL：轻噪声冲击 + 140→50Hz 下扫 */
+    { 280, 18000, 150, 55  },  /* BITE：150→55Hz 下扫 + 强二次谐波 */
+    { 750, 20000, 380, 45  },  /* PLAYER_DEATH：长下扫 + 淡泛音 */
 };
 
 static int voice_noise_sample(struct toy_sfx_voice *v)
@@ -84,7 +90,7 @@ static int voice_sine_step(struct toy_sfx_voice *v)
                                    (long long)((v->len + 127) >> 7));
     }
     v->phase += v->step;
-    return sine_at(v->phase);
+    return sine_at((unsigned)v->phase);
 }
 
 void toy_sfx_init(struct toy_sfx *sfx, int rate)
@@ -116,6 +122,13 @@ void toy_sfx_play(struct toy_sfx *sfx, int kind)
     v->active = 1;
     v->kind = kind;
     v->pos = 0;
+    if (sfx->samples[kind].data) {
+        /* 样本模式：直接播放注册的 TSND 资产（rate 同为 44100，无需重采样） */
+        v->sample = sfx->samples[kind].data;
+        v->len = (int)sfx->samples[kind].frames;
+        return;
+    }
+    v->sample = NULL;
     v->len = spec->len_ms * sfx->rate / 1000;
     v->phase = 0;
     v->step0 = (int)((long long)spec->freq0 * 65536 / sfx->rate);
@@ -124,6 +137,21 @@ void toy_sfx_play(struct toy_sfx *sfx, int kind)
     v->vol = spec->vol;
     v->seed = (uint32_t)(kind * 2654435761u + 12345u);
     v->lp = 0;
+}
+
+/* 注册样本音色替代程序合成；pcm 或 frames 为空时清除，回退程序合成。
+ * 样本必须是 TOY_SFX_RATE 的 PCM16 单声道（由 gen_sfx 生成的 TSND 资产）。 */
+void toy_sfx_set_sample(struct toy_sfx *sfx, int kind, const short *pcm,
+                        unsigned frames)
+{
+    if (!sfx || kind < 0 || kind > TOY_SFX_PLAYER_DEATH) return;
+    if (pcm && frames > 0) {
+        sfx->samples[kind].data = pcm;
+        sfx->samples[kind].frames = frames;
+    } else {
+        sfx->samples[kind].data = NULL;
+        sfx->samples[kind].frames = 0;
+    }
 }
 
 void toy_sfx_music(struct toy_sfx *sfx, int enabled)
@@ -158,8 +186,8 @@ static void render_music(struct toy_sfx *sfx, int *left, int *right)
     sfx->melody_phase += melody_step;
     sfx->bass_phase += bass_step;
     env = 900 * (int)(beat_len - within) / (int)beat_len;
-    melody = sine_at((int)sfx->melody_phase) * env / 32768;
-    bass = sine_at((int)sfx->bass_phase) * 550 / 32768;
+    melody = sine_at(sfx->melody_phase) * env / 32768;
+    bass = sine_at(sfx->bass_phase) * 550 / 32768;
     *left += melody + bass;
     *right += melody * 3 / 4 + bass;
     sfx->music_pos++;
@@ -171,12 +199,19 @@ static int render_voice(struct toy_sfx_voice *v)
     int amp, env;
     int remain = v->len - v->pos;
     if (remain <= 0) return 0;
+    if (v->sample) {
+        /* 样本模式：资产已含振幅包络，直接播放；尾部 256 样本线性淡出防咔嗒 */
+        int s = v->sample[v->pos];
+        if (remain <= 256) s = s * remain / 256;
+        return s;
+    }
     env = v->vol * remain / v->len;
     switch (v->kind) {
     case TOY_SFX_GUNSHOT:
-        /* 噪声 + 低通 + 平方衰减（枪声锐尾） */
+        /* 噪声 + 低通 + 平方衰减（枪声锐尾），叠加低频炮膛声增加分量 */
         amp = env * env / 32768;
         sample = voice_noise_sample(v) * amp / 32768;
+        sample += voice_sine_step(v) * env / 32768 * 3 / 8;
         break;
     case TOY_SFX_DRY_FIRE:
         sample = voice_noise_sample(v) * env / 32768;
@@ -185,26 +220,36 @@ static int render_voice(struct toy_sfx_voice *v)
         /* 双咔嗒：0-2ms 噪声 + 25-30ms 方波 */
         if (v->pos < v->len / 17) {
             sample = voice_noise_sample(v) * env / 32768;
-        } else if (v->pos >= v->len * 25 / 35 && v->pos < v->len * 30 / 35) {
-            int square = (v->phase & 0x80000000) ? env : -env;
+        } else if (v->pos >= v->len * 25 / 40 && v->pos < v->len * 30 / 40) {
+            int square = (v->phase & 0x8000) ? env : -env;   /* 半周期 = 0x8000 */
             v->phase += v->step0;
             sample = square;
         }
         break;
     case TOY_SFX_RELOAD_DONE:
-        sample = (v->phase & 0x80000000) ? env : -env;
+        sample = (v->phase & 0x8000) ? env : -env;   /* 半周期 = 0x8000 */
         v->phase += v->step0;
         break;
     case TOY_SFX_HIT_MARKER:
+        sample = voice_sine_step(v) * env / 32768;
+        break;
     case TOY_SFX_KILL:
+        /* 轻噪声冲击（前 1/8、半幅，避免尖锐）+ 140→50Hz 下扫 */
+        sample = voice_sine_step(v) * env / 32768;
+        if (v->pos < v->len / 8)
+            sample += voice_noise_sample(v) * env / 2 / 32768;
+        break;
     case TOY_SFX_BITE:
     case TOY_SFX_PLAYER_DEATH:
+        /* 低频下扫 + 二次谐波；被咬谐波强（听感凶），死亡音泛音淡（厚度） */
         sample = voice_sine_step(v) * env / 32768;
-        if (v->kind == TOY_SFX_BITE) {
-            /* 二次谐波叠加，幅度减半 */
-            int phase2 = v->phase * 2;
-            int index2 = (phase2 >> 16) & (SIN_TABLE_SIZE - 1);
-            sample += sine_table[index2] * env / 65536;
+        {
+            unsigned phase2 = (unsigned)v->phase * 2;
+            int index2 = (int)((phase2 >> 6) & (SIN_TABLE_SIZE - 1));
+            if (v->kind == TOY_SFX_BITE)
+                sample += sine_table[index2] * env * 3 / 4 / 32768;
+            else
+                sample += sine_table[index2] * env / 4 / 32768;
         }
         break;
     default:

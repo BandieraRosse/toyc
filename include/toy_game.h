@@ -206,10 +206,17 @@ enum toy_sfx_kind {
     TOY_SFX_PLAYER_DEATH,
 };
 
+/* 每个 kind 可注册一段 PCM16 样本（TSND 资产）替代程序合成 */
+struct toy_sfx_sample {
+    const short *data;   /* NULL = 回退程序合成 */
+    unsigned frames;     /* 帧数；rate 必须与 sfx->rate 一致（无重采样） */
+};
+
 struct toy_sfx_voice {
     int active;
     int kind;
     int pos, len;       /* 已生成/总样本数 */
+    const short *sample; /* 非 NULL = 样本模式，直接播 PCM16 资产 */
     int phase;          /* DDS 相位累加器（16.16 定点） */
     int step0, step1;   /* 相位增量扫频端点（16.16 定点） */
     int step;           /* 当前相位增量 */
@@ -225,11 +232,14 @@ struct toy_sfx {
     unsigned int music_pos;
     unsigned int melody_phase;
     unsigned int bass_phase;
+    struct toy_sfx_sample samples[TOY_SFX_PLAYER_DEATH + 1];
     struct toy_sfx_voice voices[TOY_SFX_MAX_VOICES];
 };
 
 void toy_sfx_init(struct toy_sfx *sfx, int rate);
 void toy_sfx_play(struct toy_sfx *sfx, int kind);       /* 触发；满 8 voice 偷剩余最短者 */
+void toy_sfx_set_sample(struct toy_sfx *sfx, int kind, const short *pcm, unsigned frames);
+                                                        /* 注册样本音色；pcm/frames 为空则回退程序合成 */
 void toy_sfx_music(struct toy_sfx *sfx, int enabled);
 void toy_sfx_render(struct toy_sfx *sfx, short *out, int frames); /* 混音至 S16 立体声 */
 

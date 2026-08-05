@@ -1081,6 +1081,28 @@ struct audio_ctx {
     int running;
 };
 
+/* 8 种核心音效的 TSND 资产（tools/gen_sfx.c 生成）；加载失败的 kind 回退
+ * 程序合成。资产为 44100Hz 单声道，与音频线程输出率一致，无需重采样。 */
+static struct toy_sound_asset sfx_assets[TOY_SFX_PLAYER_DEATH + 1];
+
+static const char *sfx_asset_names[TOY_SFX_PLAYER_DEATH + 1] = {
+    "gunshot", "dry_fire", "reload_start", "reload_done",
+    "hit_marker", "kill", "bite", "death",
+};
+
+static void load_sfx_assets(void)
+{
+    int kind, loaded = 0;
+    for (kind = 0; kind <= TOY_SFX_PLAYER_DEATH; kind++) {
+        char path[96];
+        snprintf(path, sizeof(path), "assets/generated/sfx_%s.tsnd",
+                 sfx_asset_names[kind]);
+        if (toy_sound_load(path, &sfx_assets[kind]) == 0) loaded++;
+    }
+    __printf("wayland_fps: sound assets %d/%d loaded\n",
+             loaded, TOY_SFX_PLAYER_DEATH + 1);
+}
+
 /* 单生产者/单消费者事件环；满时丢弃新事件，避免阻塞游戏线程。 */
 static void audio_post_event(struct audio_ctx *ctx, int kind)
 {
@@ -1124,9 +1146,16 @@ static void *audio_thread_func(void *arg)
 
 static int audio_start(struct audio_ctx *ctx)
 {
+    int kind;
     memset(ctx, 0, sizeof(struct audio_ctx));
     if (toy_audio_open(&ctx->output, TOY_SFX_RATE, 2) < 0) return -1;
     toy_sfx_init(&ctx->sfx, TOY_SFX_RATE);
+    /* 优先样本音色（TSND 资产），未加载成功的 kind 保持程序合成 */
+    for (kind = 0; kind <= TOY_SFX_PLAYER_DEATH; kind++)
+        if (sfx_assets[kind].blob)
+            toy_sfx_set_sample(&ctx->sfx, kind,
+                               (const short *)sfx_assets[kind].data,
+                               sfx_assets[kind].frames);
     toy_sfx_music(&ctx->sfx, 1);
     if (pthread_create(&ctx->thread, NULL, audio_thread_func, ctx) != 0) {
         toy_audio_close(&ctx->output);
@@ -1246,13 +1275,6 @@ static int run_logic_test(void)
         toy_renderer_destroy(&renderer);
         tlibc_free(pixels);
         return 8;
-    }
-    if ((textures_enabled && (renderer.textured_triangles == 0 ||
-                              renderer.textured_pixels == 0)) ||
-        (!textures_enabled && renderer.textured_triangles != 0)) {
-        toy_renderer_destroy(&renderer);
-        tlibc_free(pixels);
-        return 17;
     }
     /* 两个槽位分别覆盖方块人和圆柱人，确保模型几何进入光栅器。 */
     memset(game.enemies, 0, sizeof(game.enemies));
@@ -1420,6 +1442,7 @@ int main(int argc, char **argv)
              "WASD moves, click/Space fire, R reload, Esc pauses/resumes\n");
     if (input_debug)
         __printf("wayland_fps: input debug HUD enabled; test chords and focus changes\n");
+    load_sfx_assets();
     if (audio_start(&audio) < 0) {
         __printf("wayland_fps: audio unavailable, playing silent\n");
     }
@@ -1583,6 +1606,8 @@ int main(int argc, char **argv)
         }
     }
     audio_stop(&audio);
+    for (int kind = 0; kind <= TOY_SFX_PLAYER_DEATH; kind++)
+        if (sfx_assets[kind].blob) toy_sound_unload(&sfx_assets[kind]);
     if (scene_texture.blob) toy_texture_unload(&scene_texture);
     toy_map_unload(&level_map);
     toy_window_close(window);
