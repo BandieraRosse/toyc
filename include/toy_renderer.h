@@ -60,6 +60,10 @@ struct toy_renderer {
     unsigned long textured_pixels;
     unsigned long textured_triangles;
     unsigned long texture_fallback_pixels;
+    /* 记录阶段成功入列的三角形数与提交顶点数（每三角形 3 个），
+     * toy_renderer_begin 清零；供调用方按阶段做性能统计。 */
+    unsigned long submitted_triangles;
+    unsigned long submitted_vertices;
     /* 命令列表（记录阶段） */
     struct toy_raster_cmd *cmds;
     int cmd_count;

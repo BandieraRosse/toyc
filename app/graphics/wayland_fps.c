@@ -2429,6 +2429,146 @@ static int run_logic_test(void)
     return 0;
 }
 
+/* ── 性能统计：分阶段三角形/顶点/耗时 + 帧时间分布 ─────────────
+ * 每个统计窗口（默认 5 秒）向终端输出一次：窗口平均帧率、帧渲染
+ * 时间均值/p95/p99/最长，以及 logic/begin/scene/enemies/raster/
+ * overlay/present 各阶段平均每帧的三角形、顶点（提交三角形×3）、
+ * 像素与耗时（及耗时占比）；退出时再输出一次全量汇总。
+ * 帧渲染时间从申请缓冲（begin_frame）计到 present 提交结束；双缓冲
+ * 被组合器占用时的等待单独计入 stall，不算渲染帧。--no-stats 关闭
+ * 终端输出（采集仍然进行，开销可忽略）。 */
+
+#define STATS_WINDOW_US   5000000L
+#define STATS_RING_SIZE   1024
+#define STATS_STAGE_MAX   7
+
+enum {
+    STATS_STAGE_LOGIC = 0,
+    STATS_STAGE_BEGIN,
+    STATS_STAGE_SCENE,
+    STATS_STAGE_ENEMIES,
+    STATS_STAGE_RASTER,
+    STATS_STAGE_OVERLAY,
+    STATS_STAGE_PRESENT
+};
+
+static const char *stats_stage_names[STATS_STAGE_MAX] = {
+    "logic", "begin", "scene", "enemies", "raster", "overlay", "present"
+};
+
+struct perf_stats {
+    long window_start;              /* 窗口起点（us） */
+    int frames;                     /* 已渲染帧数 */
+    long stall_us;                  /* 双缓冲占用等待（us） */
+    long stage_us[STATS_STAGE_MAX];
+    unsigned long stage_tris[STATS_STAGE_MAX];
+    unsigned long stage_pixels[STATS_STAGE_MAX];
+    int ring[STATS_RING_SIZE];      /* 帧渲染时间环形缓冲（us） */
+    int ring_count;
+    int ring_head;
+    long frame_sum;                 /* 窗口内帧时间总和 */
+    long frame_max;
+};
+
+static void perf_init(struct perf_stats *s)
+{
+    memset(s, 0, sizeof(*s));
+    s->window_start = monotonic_us();
+}
+
+/* 阶段结束：把阶段耗时与三角形/像素计数同时累积进窗口与全量两个
+ * 结构，stage_start 推进到当前时刻。 */
+static void perf_end_stage(struct perf_stats *window, struct perf_stats *total,
+                           int stage, long *stage_start,
+                           unsigned long tris, unsigned long pixels)
+{
+    long now = monotonic_us();
+    window->stage_us[stage] += now - *stage_start;
+    total->stage_us[stage] += now - *stage_start;
+    window->stage_tris[stage] += tris;
+    total->stage_tris[stage] += tris;
+    window->stage_pixels[stage] += pixels;
+    total->stage_pixels[stage] += pixels;
+    *stage_start = now;
+}
+
+static void ring_add(struct perf_stats *s, long us)
+{
+    s->ring[s->ring_head] = (int)us;
+    s->ring_head = (s->ring_head + 1) % STATS_RING_SIZE;
+    if (s->ring_count < STATS_RING_SIZE) s->ring_count++;
+    s->frame_sum += us;
+    if (us > s->frame_max) s->frame_max = us;
+    s->frames++;
+}
+
+static void perf_record_frame(struct perf_stats *window,
+                              struct perf_stats *total, long us)
+{
+    ring_add(window, us);
+    ring_add(total, us);
+}
+
+static void perf_add_stall(struct perf_stats *window,
+                           struct perf_stats *total, long us)
+{
+    window->stall_us += us;
+    total->stall_us += us;
+}
+
+/* 排序副本上的最近秩百分位（us）：p95 即第 ceil(0.95*n) 个样本。 */
+static long perf_percentile(const struct perf_stats *s, int pct)
+{
+    int tmp[STATS_RING_SIZE];
+    int i, j, n = s->ring_count, idx;
+    long v;
+    if (n <= 0) return 0;
+    for (i = 0; i < n; i++) tmp[i] = s->ring[i];
+    for (i = 1; i < n; i++) {
+        v = tmp[i];
+        for (j = i - 1; j >= 0 && tmp[j] > v; j--) tmp[j + 1] = tmp[j];
+        tmp[j + 1] = (int)v;
+    }
+    idx = n * pct / 100;
+    if (idx >= n) idx = n - 1;
+    return tmp[idx];
+}
+
+static void perf_dump(const struct perf_stats *s, const char *label)
+{
+    long elapsed = monotonic_us() - s->window_start;
+    long fps10, avg_us, total_us, p95, p99;
+    unsigned long tris_all = 0, pixels_all = 0;
+    int i;
+    if (s->frames <= 0 || elapsed <= 0) return;
+    fps10 = (long)((long long)s->frames * 10 * 1000000 / elapsed);
+    avg_us = s->frame_sum / s->frames;
+    p95 = s->ring_count > 0 ? perf_percentile(s, 95) : 0;
+    p99 = s->ring_count > 0 ? perf_percentile(s, 99) : 0;
+    total_us = 0;
+    for (i = 0; i < STATS_STAGE_MAX; i++) total_us += s->stage_us[i];
+    if (total_us <= 0) total_us = 1;
+    __printf("[stats:%s] window=%ld.%03lds frames=%d fps=%ld.%ld "
+             "frame_us avg=%ld p95=%ld p99=%ld max=%ld stall_ms=%ld\n",
+             label, elapsed / 1000000L, (elapsed % 1000000L) / 1000L,
+             s->frames, fps10 / 10, fps10 % 10,
+             avg_us, p95, p99, s->frame_max, s->stall_us / 1000);
+    __printf("[stats:%s] %-7s %8s %8s %9s %10s %5s\n", label,
+             "stage", "tris/f", "verts/f", "px/f", "us/f", "%time");
+    for (i = 0; i < STATS_STAGE_MAX; i++) {
+        unsigned long tris = s->stage_tris[i] / (unsigned long)s->frames;
+        unsigned long px = s->stage_pixels[i] / (unsigned long)s->frames;
+        long pct = s->stage_us[i] * 100 / total_us;
+        tris_all += tris;
+        pixels_all += px;
+        __printf("[stats:%s] %-7s %8lu %8lu %9lu %10ld %4ld%%\n", label,
+                 stats_stage_names[i], tris, tris * 3UL, px,
+                 s->stage_us[i] / s->frames, pct);
+    }
+    __printf("[stats:%s] per-frame total tris=%lu verts=%lu pixels=%lu\n",
+             label, tris_all, tris_all * 3UL, pixels_all);
+}
+
 int main(int argc, char **argv)
 {
     struct toy_window *window;
@@ -2448,6 +2588,8 @@ int main(int argc, char **argv)
     int interact_consumed = 0;   /* 每帧 E 互动只消费一次 */
     int input_debug = 0, input_event_count = 0, have_last_key = 0;
     int texture_stats = 0;
+    int stats_enabled = 1;
+    struct perf_stats stats, stats_total;
     unsigned int last_key = 0;
     int last_key_pressed = 0;
     struct audio_ctx audio;
@@ -2461,6 +2603,7 @@ int main(int argc, char **argv)
         else if (strcmp(argv[arg], "--logic-test") == 0) logic_test = 1;
         else if (strcmp(argv[arg], "--auto") == 0) auto_mode = 1;
         else if (strcmp(argv[arg], "--no-textures") == 0) textures_enabled = 0;
+        else if (strcmp(argv[arg], "--no-stats") == 0) stats_enabled = 0;
         else if (strcmp(argv[arg], "--texture-stats") == 0) texture_stats = 1;
         else if (strcmp(argv[arg], "--dump-frame") == 0 && arg + 1 < argc)
             dump_path = argv[++arg];
@@ -2533,10 +2676,15 @@ int main(int argc, char **argv)
     }
     last_time = monotonic_us();
     fps_window_start = last_time;
+    perf_init(&stats);
+    perf_init(&stats_total);
     while (running) {
-        long now, elapsed;
+        long now, elapsed, t_frame, t_stage;
+        unsigned long prev_tris;
         int logic_steps = 0;
         int resumed = 0;
+        int stage_pixels;
+        int ready;
         toy_input_begin_frame(&input);
         /* 非阻塞收输入：present 后立刻开始下一帧 CPU 工作，组合器处理
          * 已提交缓冲的时间被渲染流水线掩盖（双缓冲）。 */
@@ -2670,6 +2818,7 @@ int main(int argc, char **argv)
         if (elapsed > MAX_FRAME_US) elapsed = MAX_FRAME_US;
         accumulator += elapsed;
         interact_consumed = 0;
+        t_stage = now;
         while (accumulator >= FIXED_STEP_US && logic_steps < MAX_LOGIC_STEPS) {
             if (!paused) {
                 update_effects(FIXED_STEP_US / 1000);
@@ -2700,24 +2849,58 @@ int main(int argc, char **argv)
         }
         if (!paused) sync_fire_effects(&camera);
         if (accumulator >= FIXED_STEP_US) accumulator %= FIXED_STEP_US;
-        int ready = toy_window_begin_frame(window, &surface);
+        perf_end_stage(&stats, &stats_total, STATS_STAGE_LOGIC, &t_stage, 0, 0);
+        /* 帧渲染计时从申请缓冲开始；双缓冲占用时的等待计入 stall */
+        t_frame = monotonic_us();
+        t_stage = t_frame;
+        ready = toy_window_begin_frame(window, &surface);
         if (ready < 0) break;
         if (ready == 0) {
+            struct toy_window_events stall_events;
             /* 双缓冲都在组合器手里：阻塞等 frame callback 释放，期间
-             * 继续收输入；下一轮重新取缓冲。 */
-            if (toy_window_poll(window, &events, 1000) < 0) break;
+             * 继续收输入。等待批次必须立即并入输入状态——若沿用共用
+             * events，下一轮 poll 会覆盖这批事件，按键释放事件丢失后
+             * key_down 无法清零，角色会持续移动不受控制（粘键）。 */
+            perf_add_stall(&stats, &stats_total, monotonic_us() - t_frame);
+            if (toy_window_poll(window, &stall_events, 1000) < 0) break;
+            toy_input_apply(&input, &stall_events);
+            /* 等待批次的射击边沿同样不能丢：鼠标点击不经过 apply，
+             * Space 按下边沿会在下一轮 begin_frame 被清掉——手枪
+             * 单发依赖边沿，漏一次就是吞键（连发武器靠按住不受影响）。 */
+            if (!paused && !resumed) {
+                if (stall_events.button_pressed &&
+                    stall_events.button == BTN_LEFT)
+                    fire_edge = 1;
+                if (toy_input_pressed(&input, KEY_SPACE))
+                    fire_edge = 1;
+            }
             continue;
         }
         if (ready > 0) {
             if (toy_renderer_begin(&renderer, &surface, 0x151922) < 0) break;
+            perf_end_stage(&stats, &stats_total, STATS_STAGE_BEGIN,
+                           &t_stage, 0, 0);
+            prev_tris = renderer.submitted_triangles;
             scene_pixels = render_scene(&renderer, &camera);
+            perf_end_stage(&stats, &stats_total, STATS_STAGE_SCENE, &t_stage,
+                           renderer.submitted_triangles - prev_tris, 0);
+            prev_tris = renderer.submitted_triangles;
             scene_pixels += render_enemies(&renderer, &camera);
+            perf_end_stage(&stats, &stats_total, STATS_STAGE_ENEMIES, &t_stage,
+                           renderer.submitted_triangles - prev_tris, 0);
             /* 世界几何并行光栅化；弹道/粒子/枪模随后直接写屏覆盖 */
-            scene_pixels += toy_renderer_flush(&renderer);
-            scene_pixels += render_tracers(&renderer, &camera);
-            scene_pixels += render_particles(&renderer, &camera);
+            prev_tris = (unsigned long)renderer.cmd_count;
+            stage_pixels = toy_renderer_flush(&renderer);
+            scene_pixels += stage_pixels;
+            perf_end_stage(&stats, &stats_total, STATS_STAGE_RASTER,
+                           &t_stage, prev_tris, (unsigned long)stage_pixels);
+            /* 直接写屏与第二次光栅化（拾取物）都归入 overlay 阶段 */
+            prev_tris = renderer.submitted_triangles;
+            stage_pixels = 0;
+            stage_pixels += render_tracers(&renderer, &camera);
+            stage_pixels += render_particles(&renderer, &camera);
             /* 第一人称武器：最后画，叠加在世界之上 */
-            scene_pixels += render_viewmodel(&renderer);
+            stage_pixels += render_viewmodel(&renderer);
             if (game.state == TOY_GAME_OVER) {
                 draw_game_over_panel(&surface);
             } else if (game.state == TOY_GAME_WON) {
@@ -2729,11 +2912,12 @@ int main(int argc, char **argv)
                 render_hud(&surface, display_fps);
             }
             if (game.state == TOY_GAME_PLAYING && !paused) {
-                scene_pixels += render_interactables(&renderer, &camera);
+                stage_pixels += render_interactables(&renderer, &camera);
                 /* 拾取物保持画在枪模之上的现状顺序 */
-                scene_pixels += toy_renderer_flush(&renderer);
+                stage_pixels += toy_renderer_flush(&renderer);
                 draw_interact_prompt(&renderer);
             }
+            scene_pixels += stage_pixels;
             render_damage_flash(&surface);
             if (input_debug)
                 draw_input_debug(&surface, &input,
@@ -2742,10 +2926,16 @@ int main(int argc, char **argv)
                                  input_event_count);
             /* 游戏线程只投递事件，音乐与 SFX 由音频线程持续混音。 */
             if (audio.running) play_game_events(&audio);
+            perf_end_stage(&stats, &stats_total, STATS_STAGE_OVERLAY,
+                           &t_stage, renderer.submitted_triangles - prev_tris,
+                           (unsigned long)stage_pixels);
             if (toy_window_present(window) < 0) break;
+            perf_end_stage(&stats, &stats_total, STATS_STAGE_PRESENT,
+                           &t_stage, 0, 0);
             rendered_frames++;
             fps_window_frames++;
             now = monotonic_us();
+            perf_record_frame(&stats, &stats_total, now - t_frame);
             fps_elapsed = now - fps_window_start;
             if (fps_elapsed >= 1000000) {
                 display_fps = (int)((long long)fps_window_frames * 1000000 /
@@ -2753,9 +2943,16 @@ int main(int argc, char **argv)
                 fps_window_frames = 0;
                 fps_window_start = now;
             }
+            if (stats_enabled &&
+                now - stats.window_start >= STATS_WINDOW_US) {
+                perf_dump(&stats, "window");
+                perf_init(&stats);
+            }
             if (frame_limit > 0 && rendered_frames >= frame_limit) running = 0;
         }
     }
+    if (stats_enabled && stats_total.frames > 0)
+        perf_dump(&stats_total, "total");
     audio_stop(&audio);
     for (int kind = 0; kind <= TOY_SFX_PLAYER_DEATH; kind++)
         if (sfx_assets[kind].blob) toy_sound_unload(&sfx_assets[kind]);

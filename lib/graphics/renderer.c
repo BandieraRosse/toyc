@@ -262,7 +262,10 @@ int toy_renderer_triangle(struct toy_renderer *renderer,
     if (!renderer || !renderer->depth || !a || !b || !c) return 0;
     area = edge(a, b, c->x, c->y);
     if (area >= 0) return 0;
-    record_cmd(renderer, 0, a, b, c, area, color, NULL, 0, 0);
+    if (record_cmd(renderer, 0, a, b, c, area, color, NULL, 0, 0)) {
+        renderer->submitted_triangles++;
+        renderer->submitted_vertices += 3;
+    }
     return 0;
 }
 
@@ -278,7 +281,11 @@ int toy_renderer_triangle_textured(struct toy_renderer *renderer,
     area = edge(a, b, c->x, c->y);
     if (area >= 0) return 0;
     renderer->textured_triangles++;
-    record_cmd(renderer, 1, a, b, c, area, 0, texture, repeat, fallback_color);
+    if (record_cmd(renderer, 1, a, b, c, area, 0, texture, repeat,
+                   fallback_color)) {
+        renderer->submitted_triangles++;
+        renderer->submitted_vertices += 3;
+    }
     return 0;
 }
 
@@ -480,6 +487,8 @@ int toy_renderer_begin(struct toy_renderer *renderer,
     renderer->textured_pixels = 0;
     renderer->textured_triangles = 0;
     renderer->texture_fallback_pixels = 0;
+    renderer->submitted_triangles = 0;
+    renderer->submitted_vertices = 0;
     /* Keep this self-host friendly: avoid a whole-structure assignment here. */
     renderer->surface.pixels = surface->pixels;
     renderer->surface.width = surface->width;

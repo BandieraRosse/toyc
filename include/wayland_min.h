@@ -12,7 +12,7 @@ struct toywl_frame {
     int stride;
 };
 
-#define TOYWL_MAX_KEY_EVENTS 16
+#define TOYWL_MAX_KEY_EVENTS 64
 
 struct toywl_key_event {
     unsigned int key;

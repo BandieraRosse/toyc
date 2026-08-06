@@ -12,7 +12,7 @@ struct toy_surface {
     int stride;
 };
 
-#define TOY_WINDOW_MAX_KEY_EVENTS 16
+#define TOY_WINDOW_MAX_KEY_EVENTS 64
 #define TOY_INPUT_KEY_COUNT 256
 
 struct toy_key_event {
