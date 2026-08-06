@@ -44,9 +44,13 @@ static int rand_range(struct toy_game *g, int lo, int hi)
  * 手枪 ±12（≈±0.7°，几乎精准）；SMG ±90（≈±5°，连发略散）；
  * 霰弹枪 ±230（≈±12.7°，近距离密集、远距离发散）。 */
 static const struct toy_game_weapon_info weapon_table[TOY_GAME_WEAPON_COUNT] = {
-    { 30, TOY_GAME_AMMO_INFINITE, 200, 1500, 0, 1, 12 },
-    { 50, 650, 100, 2000, 1, 1, 90 },
-    { 8, 64, 600, 2500, 0, 10, 230 },
+    { 30, TOY_GAME_AMMO_INFINITE, 200, 1500, 0, 1, 12, 1 },
+    { 50, 650, 100, 2000, 1, 1, 90, 0 },
+    { 8, 64, 600, 2500, 0, 10, 230, 0 },
+};
+
+static const char *weapon_names[TOY_GAME_WEAPON_COUNT] = {
+    "PISTOL", "SMG", "SHOTGUN"
 };
 
 const struct toy_game_weapon_info *toy_game_weapon_info(int weapon)
@@ -54,6 +58,12 @@ const struct toy_game_weapon_info *toy_game_weapon_info(int weapon)
     if (weapon < 0 || weapon >= TOY_GAME_WEAPON_COUNT)
         return &weapon_table[TOY_GAME_WEAPON_PISTOL];
     return &weapon_table[weapon];
+}
+
+const char *toy_game_weapon_name(int weapon)
+{
+    if (weapon < 0 || weapon >= TOY_GAME_WEAPON_COUNT) return "UNKNOWN";
+    return weapon_names[weapon];
 }
 
 static int segment_hits_box(int px, int pz, int qx, int qz,
@@ -1066,18 +1076,20 @@ int toy_game_switch_weapon(struct toy_game *g, int slot)
 int toy_game_equip_weapon(struct toy_game *g, int weapon)
 {
     const struct toy_game_weapon_info *w;
-    if (weapon != TOY_GAME_WEAPON_SMG && weapon != TOY_GAME_WEAPON_SHOTGUN)
-        return -1;
+    int slot;
+    if (weapon < 0 || weapon >= TOY_GAME_WEAPON_COUNT) return -1;
     w = toy_game_weapon_info(weapon);
-    if (g->slots[0].weapon == weapon) {
-        g->slots[0].mag = w->mag_size;
-        g->slots[0].reserve = w->reserve_max;
+    slot = w->slot;
+    if (slot < 0 || slot >= TOY_GAME_WEAPON_SLOTS) return -1;
+    if (g->slots[slot].weapon == weapon) {
+        g->slots[slot].mag = w->mag_size;
+        g->slots[slot].reserve = w->reserve_max;
         return 0;
     }
-    g->slots[0].weapon = weapon;
-    g->slots[0].mag = w->mag_size;
-    g->slots[0].reserve = w->reserve_max;
-    toy_game_switch_weapon(g, 0);
+    g->slots[slot].weapon = weapon;
+    g->slots[slot].mag = w->mag_size;
+    g->slots[slot].reserve = w->reserve_max;
+    toy_game_switch_weapon(g, slot);
     return 1;
 }
 

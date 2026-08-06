@@ -122,6 +122,7 @@ struct toy_game_weapon_info {
     int full_auto;     /* 按住连发 */
     int pellets;       /* 每次扣扳机弹丸数（霰弹枪散射） */
     int spread;        /* 每颗弹丸随机偏角上限（1024 定点，[-spread,+spread] 均匀） */
+    int slot;          /* 装备槽：0=主武器，1=副武器 */
 };
 
 /* 弹丸射线记录：宿主据此渲染子弹轨迹（tracer）与命中特效 */
@@ -236,9 +237,10 @@ void toy_game_update_held(struct toy_game *g,
                           int sy, int cy, int dt_ms);       /* 全自动武器的按住连发 */
 int  toy_game_fire(struct toy_game *g, int sy, int cy);     /* hitscan，命中返回 1 */
 int  toy_game_switch_weapon(struct toy_game *g, int slot);  /* 切枪；空槽/同槽返回 0 */
-int  toy_game_equip_weapon(struct toy_game *g, int weapon); /* 拾取主武器；同武器=补充弹药返回 0，新武器返回 1，非法返回 -1 */
+int  toy_game_equip_weapon(struct toy_game *g, int weapon); /* 按武器定义装备到对应槽；同武器=补充弹药返回 0，新武器返回 1，非法返回 -1 */
 int  toy_game_refill_ammo(struct toy_game *g);              /* 弹药盒：补满已拥有武器的备弹，有变化返回 1 */
 const struct toy_game_weapon_info *toy_game_weapon_info(int weapon);
+const char *toy_game_weapon_name(int weapon);
 int  toy_game_drain_events(struct toy_game *g, unsigned char *out, int max);
 void toy_game_place_enemy(struct toy_game *g, int x, int z); /* 测试钩子 */
 int  toy_game_spawn_horde(struct toy_game *g, int count_min, int count_max,

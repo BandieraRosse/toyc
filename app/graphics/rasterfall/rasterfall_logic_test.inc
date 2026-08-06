@@ -1,49 +1,50 @@
 static int run_logic_test(void)
 {
     struct camera camera;
-    struct control_settings settings;
     struct toy_input input;
     struct vec3 triangle[3], clipped[4];
     struct toy_surface surface;
     struct toy_renderer renderer;
+    struct rasterfall_command command;
     uint32_t *pixels;
     int count;
     long long direction_length;
-    settings.mouse_level = 5;
-    settings.keyboard_level = 5;
     toy_input_init(&input);
-    reset_game(&camera, 1);
-    input.key_down[KEY_W] = 1;
-    for (int i = 0; i < 10; i++) update_player(&camera, &input);
+    rasterfall_session_reset(&session, &camera, 1);
+    memset(&command, 0, sizeof(command));
+    command.move_forward = 1;
+    for (int i = 0; i < 10; i++)
+        rasterfall_session_step(&session, &camera, &command, 16);
     if (camera.x != 0 || camera.z != -4240) return 1;
 
     /* 死亡重开仍须恢复世界碰撞配置并能推进首波。 */
     game.state = TOY_GAME_OVER;
-    reset_game(&camera, 2);
+    rasterfall_session_reset(&session, &camera, 2);
     if (game.world != map_bounds || game.world_count != level_map.box_count ||
         game.room_limit != level_map.room_limit ||
         toy_game_position_blocked(&game, camera.x, camera.z,
-                                  PLAYER_RADIUS)) return 13;
+                                  RASTERFALL_PLAYER_RADIUS)) return 13;
     for (int i = 0; i < 170; i++)
         toy_game_update(&game, NULL, 0, camera.sy, camera.cy, 16);
     if (game.enemies_alive == 0) return 14;
 
     camera.x = -1200; camera.z = 0;
-    for (int i = 0; i < 10; i++) update_player(&camera, &input);
-    if (camera.z >= level_map.boxes[0].minz - PLAYER_RADIUS) return 2;
+    for (int i = 0; i < 10; i++)
+        rasterfall_session_step(&session, &camera, &command, 16);
+    if (camera.z >= level_map.boxes[0].minz - RASTERFALL_PLAYER_RADIUS) return 2;
 
-    input.key_down[KEY_W] = 0;
-    input.key_down[KEY_RIGHT] = 1;
-    update_keyboard_look(&camera, &input, &settings);
+    memset(&command, 0, sizeof(command));
+    command.turn = 16;
+    rasterfall_session_step(&session, &camera, &command, 16);
     /* 首次转向时 old_sy=0，定点旋转 cy 恰为 1024 不变，只断言转向生效 */
     if (camera.sy <= 0) return 3;
-    input.key_down[KEY_RIGHT] = 0;
-    input.key_down[KEY_UP] = 1;
-    update_keyboard_look(&camera, &input, &settings);
+    memset(&command, 0, sizeof(command));
+    command.pitch = 16;
+    rasterfall_session_step(&session, &camera, &command, 16);
     if (camera.pitch_sy <= 0) return 4;
     camera.sy = 0;
     camera.cy = 1024;
-    for (int i = 0; i < 10000; i++) rotate_camera(&camera, 37, 0);
+    for (int i = 0; i < 10000; i++) rasterfall_camera_rotate(&camera, 37, 0);
     direction_length = isqrt((long long)camera.sy * camera.sy +
                              (long long)camera.cy * camera.cy);
     if (direction_length < 1022 || direction_length > 1026) return 16;
@@ -52,20 +53,20 @@ static int run_logic_test(void)
     /* 俯仰持续旋转时保持归一化，并钳制在 ±75°，不能跨过 ±90°。 */
     camera.pitch_sy = 0;
     camera.pitch_cy = 1024;
-    for (int i = 0; i < 10000; i++) rotate_camera(&camera, 0, 37);
+    for (int i = 0; i < 10000; i++) rasterfall_camera_rotate(&camera, 0, 37);
     direction_length = isqrt((long long)camera.pitch_sy * camera.pitch_sy +
                              (long long)camera.pitch_cy * camera.pitch_cy);
     if (direction_length < 1022 || direction_length > 1026) return 41;
-    if (camera.pitch_cy != PITCH_LIMIT_CY ||
-        camera.pitch_sy != PITCH_LIMIT_SY) return 43;
+    if (camera.pitch_cy != RASTERFALL_PITCH_LIMIT_CY ||
+        camera.pitch_sy != RASTERFALL_PITCH_LIMIT_SY) return 43;
     camera.pitch_sy = -1024;
     camera.pitch_cy = 0;
-    for (int i = 0; i < 1000; i++) rotate_camera(&camera, 0, -31);
+    for (int i = 0; i < 1000; i++) rasterfall_camera_rotate(&camera, 0, -31);
     direction_length = isqrt((long long)camera.pitch_sy * camera.pitch_sy +
                              (long long)camera.pitch_cy * camera.pitch_cy);
     if (direction_length < 1022 || direction_length > 1026) return 42;
-    if (camera.pitch_cy != PITCH_LIMIT_CY ||
-        camera.pitch_sy != -PITCH_LIMIT_SY) return 44;
+    if (camera.pitch_cy != RASTERFALL_PITCH_LIMIT_CY ||
+        camera.pitch_sy != -RASTERFALL_PITCH_LIMIT_SY) return 44;
     camera.pitch_sy = 0;
     camera.pitch_cy = 1024;
 
@@ -228,7 +229,7 @@ static int run_logic_test(void)
     {
         int i;
         unsigned char keys[TOY_INPUT_KEY_COUNT];
-        reset_game(&camera, 7);
+        rasterfall_session_reset(&session, &camera, 7);
         if (game.current_slot != 1 ||
             game.slots[1].weapon != TOY_GAME_WEAPON_PISTOL ||
             game.slots[1].mag != 30 ||
@@ -328,13 +329,23 @@ static int run_logic_test(void)
         interactables[3].kind != TOY_MAP_PICKUP_AMMO) return 32;
     /* 固定拾取点：拾取后武器仍在场，同武器再互动 = 补充弹药 */
     highlighted = 0;
-    interact_current(&interactables[1]);
+    {
+        struct camera aim = {0, -7000, 0, -1024, 0, 1024};
+        memset(&command, 0, sizeof(command));
+        command.buttons = RASTERFALL_CMD_INTERACT;
+        rasterfall_session_step(&session, &aim, &command, 16);
+    }
     if (game.slots[0].weapon != TOY_GAME_WEAPON_SMG ||
         game.slots[0].mag != 50 || game.slots[0].reserve != 650) return 33;
     game.slots[0].mag = 3;
     game.slots[0].reserve = 5;
     highlighted = 0;
-    interact_current(&interactables[1]);
+    {
+        struct camera aim = {0, -7000, 0, -1024, 0, 1024};
+        memset(&command, 0, sizeof(command));
+        command.buttons = RASTERFALL_CMD_INTERACT;
+        rasterfall_session_step(&session, &aim, &command, 16);
+    }
     if (game.slots[0].mag != 50 || game.slots[0].reserve != 650) return 33;
     /* 拾取不影响高亮：SMG 固定点仍可被选中 */
     {
@@ -345,7 +356,7 @@ static int run_logic_test(void)
         aim_cam.cy = -1024;
         aim_cam.pitch_sy = 0;
         aim_cam.pitch_cy = 1024;
-        if (compute_highlight(&aim_cam) != 1) return 33;
+        if (rasterfall_session_compute_highlight(&session, &aim_cam) != 1) return 33;
     }
     /* 高亮判定：世界空间朝向锥。面向桌子（武器低于视平线）可选中最远
      * 的 SMG；背对或超出距离均不可选。 */
@@ -357,21 +368,21 @@ static int run_logic_test(void)
         aim_cam.cy = -1024;
         aim_cam.pitch_sy = 0;
         aim_cam.pitch_cy = 1024;
-        highlighted = compute_highlight(&aim_cam);
+        highlighted = rasterfall_session_compute_highlight(&session, &aim_cam);
         if (highlighted != 1) return 34;
         aim_cam.sy = 1024;
         aim_cam.cy = 0;
-        if (compute_highlight(&aim_cam) != -1) return 35;
+        if (rasterfall_session_compute_highlight(&session, &aim_cam) != -1) return 35;
         aim_cam.sy = 0;
         aim_cam.cy = -1024;
         aim_cam.z = -5200;
-        if (compute_highlight(&aim_cam) != -1) return 36;
+        if (rasterfall_session_compute_highlight(&session, &aim_cam) != -1) return 36;
         /* 斜向面向桌子东侧：只有弹药盒在锥内（两把枪横向偏角过大） */
         aim_cam.x = 1000;
         aim_cam.z = -7000;
         aim_cam.sy = 0;
         aim_cam.cy = -1024;
-        if (compute_highlight(&aim_cam) != 3) return 37;
+        if (rasterfall_session_compute_highlight(&session, &aim_cam) != 3) return 37;
     }
     /* 召唤按钮：位于西侧边界，E 互动召唤 15-20 个追踪敌人，
      * 全部处于持续追踪态且落在三个刷怪点之一的矩形内；再次互动应再次召唤。 */
@@ -380,8 +391,12 @@ static int run_logic_test(void)
         if (interactables[0].x != -11940 || interactables[0].z != -10000)
             return 45;
         had = game.enemies_alive;
-        highlighted = 0;
-        interact_current(&interactables[0]);
+        {
+            struct camera aim = {-10950, -10000, -1024, 0, 0, 1024};
+            memset(&command, 0, sizeof(command));
+            command.buttons = RASTERFALL_CMD_INTERACT;
+            rasterfall_session_step(&session, &aim, &command, 16);
+        }
         n = game.enemies_alive - had;
         if (n < 15 || n > 20) return 46;
         for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
@@ -395,8 +410,12 @@ static int run_logic_test(void)
                     in_point = 1;
             if (!in_point) return 47;
         }
-        highlighted = 0;
-        interact_current(&interactables[0]);
+        {
+            struct camera aim = {-10950, -10000, -1024, 0, 0, 1024};
+            memset(&command, 0, sizeof(command));
+            command.buttons = RASTERFALL_CMD_INTERACT;
+            rasterfall_session_step(&session, &aim, &command, 16);
+        }
         if (game.enemies_alive <= had + n) return 48;
     }
     __printf("rasterfall: logic test passed\n");

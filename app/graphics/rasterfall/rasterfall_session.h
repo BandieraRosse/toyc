@@ -1,0 +1,70 @@
+#ifndef RASTERFALL_SESSION_H
+#define RASTERFALL_SESSION_H
+
+#include "core.h"
+#include "toy_game.h"
+#include "toy_map.h"
+#include "rasterfall_camera.h"
+#include "rasterfall_map.h"
+
+#define RASTERFALL_PLAYER_RADIUS 180
+#define RASTERFALL_MOVE_STEP 76
+#define RASTERFALL_INTERACT_RANGE 1000
+
+enum rasterfall_command_button {
+    RASTERFALL_CMD_FIRE       = 1 << 0,
+    RASTERFALL_CMD_RELOAD     = 1 << 1,
+    RASTERFALL_CMD_SLOT_1     = 1 << 2,
+    RASTERFALL_CMD_SLOT_2     = 1 << 3,
+    RASTERFALL_CMD_INTERACT   = 1 << 4,
+    RASTERFALL_CMD_TURN_LEFT  = 1 << 5,
+    RASTERFALL_CMD_TURN_RIGHT = 1 << 6,
+    RASTERFALL_CMD_RESET      = 1 << 7
+};
+
+/* 与窗口系统无关的单个逻辑步输入。以后网络客户端发送的也是这类游戏语义，
+ * 而不是 evdev 键码或 toy_input 的内部数组。 */
+struct rasterfall_command {
+    int move_forward;
+    int move_strafe;
+    int turn;
+    int pitch;
+    unsigned int buttons;
+    int fire_held;
+};
+
+struct rasterfall_session {
+    struct toy_map level;
+    struct toy_game game_state;
+    struct toy_game_box bounds[TOY_MAP_MAX_BOXES];
+    struct toy_game_box safe_rooms[TOY_MAP_MAX_ZONES];
+    struct toy_game_box spawn_zones[TOY_MAP_MAX_ZONES];
+    int spawn_count;
+    struct rasterfall_interactable items[TOY_MAP_MAX_PICKUPS];
+    int item_count;
+    struct rasterfall_map_state map_ops;
+
+    int air_walls_enabled;
+    int manual_alarm_on;
+    int manual_alarm_timer;
+    int highlight_index;
+    int banner_ms;
+    const char *banner_text;
+    int smooth_turn_remaining;
+    uint64_t seed;
+};
+
+int rasterfall_session_load(struct rasterfall_session *session,
+                            const char *map_path);
+void rasterfall_session_unload(struct rasterfall_session *session);
+void rasterfall_session_reset(struct rasterfall_session *session,
+                              struct camera *camera, uint64_t seed);
+void rasterfall_session_step(struct rasterfall_session *session,
+                             struct camera *camera,
+                             const struct rasterfall_command *command,
+                             int dt_ms);
+void rasterfall_camera_rotate(struct camera *camera, int turn, int pitch);
+int rasterfall_session_compute_highlight(const struct rasterfall_session *session,
+                                         const struct camera *camera);
+
+#endif

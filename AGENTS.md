@@ -55,7 +55,6 @@ toyc 编译器源文件，则不要求执行完整测试；运行与本次改动
 make test               # 常规编译/运行测试
 make test-selfhost      # 无 toyc_rt 的自包含测试
 make test-source        # 编译器源码级测试
-make test-lib           # Tinylibc 编译和功能测试
 make test-error         # 诊断测试
 make test-toyld         # toyld 链接/运行测试
 make test-toyar
@@ -67,6 +66,8 @@ make test-all           # 核心聚合目标，不包含 test-toyld 和 test-llm
 
 测试注意事项：
 
+- `make test-lib` 是早期用于验证 Toyc 能否编译 Tinylibc 的阶段性目标；该历史任务已经
+  完成，目标现已弃用，不再作为修改后的验证入口，也不要在常规开发中运行。
 - `make test-all` 遇到首个失败会停止，后续目标需要单独补跑。
 - `make test-self-app` 不负责构建应用；应先运行 `make self-app`，否则缺失程序会被
   跳过，出现“零失败”但没有实际覆盖的结果。

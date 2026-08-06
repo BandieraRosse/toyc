@@ -76,6 +76,7 @@
 #include "rasterfall_effects.h"
 #include "rasterfall_sky.h"
 #include "rasterfall_viewmodel.h"
+#include "rasterfall_session.h"
 #include "math.h"
 
 #define KEY_ESC   1
@@ -102,13 +103,9 @@
 #define MAX_LOGIC_STEPS 4
 #define NEAR_Z 192
 #define ENEMY_RENDER_DISTANCE 24000 /* 3x the old 8000-unit enemy cutoff */
-#define PLAYER_RADIUS 180
-#define MOVE_STEP 76
 #define UV_ONE 65536
 #define BAKED_LM_W 32
 #define BAKED_LM_H 24
-#define PITCH_LIMIT_SY 989        /* sin(75°) * 1024 */
-#define PITCH_LIMIT_CY 265        /* cos(75°) * 1024 */
 
 struct vec3 { int x, y, z; };
 /* 朝向：sy/cy = 偏航 sin/cos，pitch_sy/pitch_cy = 俯仰 sin/cos（均 1024 定点）。 */
@@ -173,19 +170,19 @@ static const struct toy_game_box alarm_zone = {
 };
 
 #endif
-static struct toy_map level_map;
-static struct toy_game_box map_bounds[TOY_MAP_MAX_BOXES];
-static struct toy_game_box map_safe_rooms[TOY_MAP_MAX_ZONES];
-static struct toy_game_box map_spawn_zones[TOY_MAP_MAX_ZONES];
-static int map_spawn_count;
-static struct toy_game game;   /* 游戏规则状态（main / logic-test 共用） */
-static int air_wall_enabled = 1;
-static struct rasterfall_map_state map_ops;
+static struct rasterfall_session session;
+#define level_map (session.level)
+#define map_bounds (session.bounds)
+#define map_safe_rooms (session.safe_rooms)
+#define map_spawn_zones (session.spawn_zones)
+#define map_spawn_count (session.spawn_count)
+#define game (session.game_state)
+#define air_wall_enabled (session.air_walls_enabled)
 typedef struct rasterfall_interactable interactable;
-static struct rasterfall_interactable interactables[TOY_MAP_MAX_PICKUPS];
-static int interactable_count;
-static int manual_alarm_enabled;
-static int manual_alarm_timer_ms;
+#define interactables (session.items)
+#define interactable_count (session.item_count)
+#define manual_alarm_enabled (session.manual_alarm_on)
+#define manual_alarm_timer_ms (session.manual_alarm_timer)
 static struct toy_texture_asset scene_texture;
 static struct toy_texture_view scene_texture_view;
 static struct toy_texture_view wall_texture_view;
@@ -259,86 +256,43 @@ static int world_distance(const struct camera *camera, int x, int z)
 /* Map floor paint is an authored area colour, not a lightmap preview. */
 static int fixed_floor_lighting;
 
-static void prepare_map_rules(void)
-{
-    rasterfall_map_bind(&map_ops, &level_map, map_bounds, map_safe_rooms,
-                        map_spawn_zones, &map_spawn_count, &air_wall_enabled,
-                        interactables, &interactable_count);
-    rasterfall_map_prepare(&map_ops);
-}
-
-static void set_air_walls_enabled(int enabled)
-{
-    rasterfall_map_set_air_walls(&map_ops, enabled);
-}
-
 /* Only the distant room boundary uses the stylized wall texture. Gameplay
  * cover remains flat-shaded so texture sampling does not dominate the
  * software rasterizer. */
+#define horde_banner_ms (session.banner_ms)
+#define interaction_banner (session.banner_text)
+#define highlighted (session.highlight_index)
 
-static void reset_interactables(void);
-
-/* 开发者区召唤按钮：每次 E 互动都召唤 15-20 个持续追踪尸潮。
- * 尸潮实际使用地图中的 spawn 区，避免和场景装饰坐标产生两套定义。 */
-#define HORDE_COUNT_MIN    15
-#define HORDE_COUNT_MAX    20
-#define HORDE_MIN_PLAYER_DIST 700
-static int horde_banner_ms;   /* HUD 提示剩余显示时间 */
-static const char *interaction_banner;
-static int smooth_turn_remaining; /* 待完成的水平转向量（turn 单位） */
-
-/* 新局和死亡重开必须走同一路径，避免 toy_game_init 清空世界配置。 */
-static void reset_game(struct camera *camera, uint64_t seed)
-{
-    camera->x = level_map.start_x;
-    camera->z = level_map.start_z;
-    camera->sy = 0;
-    camera->cy = 1024;
-    camera->pitch_sy = 0;
-    camera->pitch_cy = 1024;
-    toy_game_init(&game, seed);
-    toy_game_set_world(&game, map_bounds, level_map.box_count, level_map.room_limit);
-    toy_game_set_campaign(&game, map_safe_rooms, level_map.safe_count,
-                          map_spawn_zones, map_spawn_count);
-    toy_game_set_alarm(&game, level_map.has_alarm ? &level_map.alarm_zone : NULL,
-                       level_map.has_alarm ? 1 : -1);
-    game.px = camera->x;
-    game.pz = camera->z;
-    horde_banner_ms = 0;
-    interaction_banner = NULL;
-    manual_alarm_enabled = 0;
-    manual_alarm_timer_ms = 1000;
-    set_air_walls_enabled(1);
-    smooth_turn_remaining = 0;
-    reset_interactables();
-}
-
-/* ── 固定拾取点（主武器/弹药盒）：E 互动，准星对准时高亮。
- * 拾取物永远在场不消失；同武器再互动 = 补充弹药。 ─────────────── */
-
-#define INTERACT_RANGE 1000
-
-static int highlighted = -1;   /* 本帧准星对准的拾取物索引，-1=无 */
-
-static void reset_interactables(void)
-{
-    rasterfall_map_reset_interactables(&map_ops);
-}
-
+#undef game
+#undef interactables
+#undef interactable_count
+#undef highlighted
+#undef manual_alarm_enabled
+#undef manual_alarm_timer_ms
+#undef horde_banner_ms
+#undef interaction_banner
 static void fill_hud_state(struct rasterfall_hud_state *hud)
 {
-    hud->game = &game;
+    hud->game = &session.game_state;
     hud->map = &level_map;
     hud->safe_rooms = map_safe_rooms;
-    hud->interactables = interactables;
-    hud->interactable_count = interactable_count;
-    hud->highlighted = highlighted;
+    hud->interactables = session.items;
+    hud->interactable_count = session.item_count;
+    hud->highlighted = session.highlight_index;
     hud->air_walls_enabled = air_wall_enabled;
-    hud->manual_alarm_enabled = manual_alarm_enabled;
-    hud->manual_alarm_timer_ms = manual_alarm_timer_ms;
-    hud->horde_banner_ms = horde_banner_ms;
-    hud->interaction_banner = interaction_banner;
+    hud->manual_alarm_enabled = session.manual_alarm_on;
+    hud->manual_alarm_timer_ms = session.manual_alarm_timer;
+    hud->horde_banner_ms = session.banner_ms;
+    hud->interaction_banner = session.banner_text;
 }
+#define game (session.game_state)
+#define interactables (session.items)
+#define interactable_count (session.item_count)
+#define highlighted (session.highlight_index)
+#define manual_alarm_enabled (session.manual_alarm_on)
+#define manual_alarm_timer_ms (session.manual_alarm_timer)
+#define horde_banner_ms (session.banner_ms)
+#define interaction_banner (session.banner_text)
 
 static long monotonic_us(void)
 {
@@ -887,34 +841,6 @@ static int render_button(struct toy_renderer *renderer, const struct camera *cam
     return pixels;
 }
 
-/* 距离 + 朝向锥判定高亮目标。拾取物（桌上武器/地面弹药盒）都在视平线
- * 以下，屏幕投影天然偏低，不能用中心像素窗口；改在世界空间按水平朝向
- * 放宽到约 40° 半角，垂直方向不限，取范围内最近者。 */
-#define INTERACT_AIM_CONE 784   /* cos(≈38°)，1024 定点 */
-
-static int compute_highlight(const struct camera *camera)
-{
-    int i, best = -1;
-    long best_d2 = 0;
-    for (i = 0; i < interactable_count; i++) {
-        const interactable *it = &interactables[i];
-        long dx, dz, d2, dist, dot;
-        dx = it->x - camera->x;
-        dz = it->z - camera->z;
-        d2 = dx * dx + dz * dz;
-        if (d2 > (long)INTERACT_RANGE * INTERACT_RANGE || d2 == 0) continue;
-        dist = (long)isqrt(d2);
-        if (dist <= 0) continue;
-        dot = dx * camera->sy + dz * camera->cy;
-        if (dot < dist * INTERACT_AIM_CONE) continue;
-        if (best < 0 || d2 < best_d2) {
-            best = i;
-            best_d2 = d2;
-        }
-    }
-    return best;
-}
-
 static int render_interactables(struct toy_renderer *renderer,
                                 const struct camera *camera)
 {
@@ -956,58 +882,6 @@ static void view_to_world(const struct camera *camera, const struct vec3 *view,
 static void fill_rect(struct toy_surface *surface, int x, int y,
                       int width, int height, uint32_t color);
 static uint32_t mix_color(uint32_t from, uint32_t to, int num, int den);
-
-/* E 键互动：拾取主武器（替换槽 0 并切出），同武器 = 补充弹药；
- * 弹药盒补满备弹；召唤按钮每次互动触发 15-20 个追踪尸潮。
- * 拾取点是固定的，互动后保留在场。 */
-static void interact_current(interactable *it)
-{
-    if (it->kind == TOY_MAP_PICKUP_BUTTON) {
-        int n;
-        horde_banner_ms = 3500;
-        interaction_banner = "HORDE SUMMONED - THEY WILL FIND YOU";
-        n = toy_game_spawn_horde(&game, HORDE_COUNT_MIN, HORDE_COUNT_MAX,
-                                 map_spawn_zones, map_spawn_count,
-                                 HORDE_MIN_PLAYER_DIST);
-        __printf("rasterfall: horde summoned %d tracking enemies\n", n);
-        return;
-    }
-    if (it->kind == TOY_MAP_PICKUP_AIR_BUTTON) {
-        set_air_walls_enabled(!air_wall_enabled);
-        horde_banner_ms = 1800;
-        interaction_banner = air_wall_enabled ?
-            "AIR WALLS ENABLED" : "AIR WALLS DISABLED";
-        __printf("rasterfall: air walls %s\n", air_wall_enabled ? "enabled" : "disabled");
-        return;
-    }
-    if (it->kind == TOY_MAP_PICKUP_ALARM_BUTTON) {
-        manual_alarm_enabled = !manual_alarm_enabled;
-        manual_alarm_timer_ms = 1000;
-        horde_banner_ms = 1800;
-        interaction_banner = manual_alarm_enabled ?
-            "ALARM ENABLED - 2-3 ENEMIES EACH SECOND" : "ALARM DISABLED";
-        __printf("rasterfall: alarm %s\n", manual_alarm_enabled ? "enabled" : "disabled");
-        return;
-    }
-    if (it->kind == TOY_MAP_PICKUP_AMMO) {
-        toy_game_refill_ammo(&game);
-        return;
-    }
-    toy_game_equip_weapon(&game, it->kind == TOY_MAP_PICKUP_SMG ?
-                          TOY_GAME_WEAPON_SMG : TOY_GAME_WEAPON_SHOTGUN);
-}
-
-static void update_manual_alarm(int dt_ms)
-{
-    int n;
-    if (!manual_alarm_enabled || game.state != TOY_GAME_PLAYING) return;
-    manual_alarm_timer_ms -= dt_ms;
-    if (manual_alarm_timer_ms > 0) return;
-    manual_alarm_timer_ms += 1000;
-    n = toy_game_spawn_horde(&game, 2, 3, map_spawn_zones, map_spawn_count,
-                             HORDE_MIN_PLAYER_DIST);
-    if (n > 0) __printf("rasterfall: alarm spawned %d enemies\n", n);
-}
 
 static int render_scene(struct toy_renderer *renderer, const struct camera *camera)
 {
@@ -1069,107 +943,61 @@ static int render_scene(struct toy_renderer *renderer, const struct camera *came
     return pixels;
 }
 
-static int position_blocked(int x, int z)
-{
-    return toy_game_position_blocked(&game, x, z, PLAYER_RADIUS);
-}
-
-static void update_player(struct camera *camera, const struct toy_input *input)
-{
-    int forward = toy_input_down(input, KEY_W) - toy_input_down(input, KEY_S);
-    int strafe = toy_input_down(input, KEY_D) - toy_input_down(input, KEY_A);
-    int dx = (camera->sy * forward + camera->cy * strafe) * MOVE_STEP / 1024;
-    int dz = (camera->cy * forward - camera->sy * strafe) * MOVE_STEP / 1024;
-    int next_x = camera->x + dx;
-    int next_z = camera->z + dz;
-    if (!position_blocked(next_x, camera->z)) camera->x = next_x;
-    if (!position_blocked(camera->x, next_z)) camera->z = next_z;
-}
-
-static void rotate_camera(struct camera *camera, int turn, int pitch)
-{
-    int old_sy = camera->sy;
-    int old_psy = camera->pitch_sy;
-    long long length;
-    camera->sy = (old_sy * 1024 + camera->cy * turn) / 1024;
-    camera->cy = (camera->cy * 1024 - old_sy * turn) / 1024;
-    length = isqrt((long long)camera->sy * camera->sy +
-                   (long long)camera->cy * camera->cy);
-    if (length > 0) {
-        camera->sy = (int)((long long)camera->sy * 1024 / length);
-        camera->cy = (int)((long long)camera->cy * 1024 / length);
-    }
-    /* 俯仰先按角度增量旋转，再钳制到 ±75°，避免镜头翻过头。 */
-    camera->pitch_sy = (old_psy * 1024 + camera->pitch_cy * pitch) / 1024;
-    camera->pitch_cy = (camera->pitch_cy * 1024 - old_psy * pitch) / 1024;
-    length = isqrt((long long)camera->pitch_sy * camera->pitch_sy +
-                   (long long)camera->pitch_cy * camera->pitch_cy);
-    if (length > 0) {
-        camera->pitch_sy = (int)((long long)camera->pitch_sy * 1024 / length);
-        camera->pitch_cy = (int)((long long)camera->pitch_cy * 1024 / length);
-    }
-    /* 不能只看 sin：一次较大的鼠标输入可能直接越过 90°，此时
-     * sin 会重新变小但 cos 已为负，仍必须钳回边界。 */
-    if (camera->pitch_cy < PITCH_LIMIT_CY) {
-        if (camera->pitch_sy < 0) {
-            camera->pitch_sy = -PITCH_LIMIT_SY;
-        } else {
-            camera->pitch_sy = PITCH_LIMIT_SY;
-        }
-        camera->pitch_cy = PITCH_LIMIT_CY;
-    } else if (camera->pitch_sy > PITCH_LIMIT_SY) {
-        camera->pitch_sy = PITCH_LIMIT_SY;
-        camera->pitch_cy = PITCH_LIMIT_CY;
-    } else if (camera->pitch_sy < -PITCH_LIMIT_SY) {
-        camera->pitch_sy = -PITCH_LIMIT_SY;
-        camera->pitch_cy = PITCH_LIMIT_CY;
-    }
-}
-
 static int sensitivity_percent(int level)
 {
     return 50 + clampi(level, 0, 15) * 10;
 }
 
-static void update_mouse(struct camera *camera, int relative_x, int relative_y,
-                         const struct control_settings *settings)
+static void accumulate_mouse_look(int *pending_turn, int *pending_pitch,
+                                  int relative_x, int relative_y,
+                                  const struct control_settings *settings)
 {
     int percent = sensitivity_percent(settings->mouse_level);
     /* 水平/垂直同一倍率，避免方向手感不一致 */
     int turn = relative_x * 3 * percent / 100;
     int pitch = -relative_y * 3 * percent / 100;
-    rotate_camera(camera, clampi(turn, -256, 256), pitch);
+    *pending_turn += clampi(turn, -256, 256);
+    *pending_pitch += pitch;
 }
 
-static void update_keyboard_look(struct camera *camera,
-                                 const struct toy_input *input,
-                                 const struct control_settings *settings)
+static void build_game_command(struct rasterfall_command *command,
+                               const struct toy_input *input,
+                               const struct control_settings *settings,
+                               int fire_edge, int pointer_turn,
+                               int pointer_pitch)
 {
-    int turn = toy_input_down(input, KEY_RIGHT) -
-               toy_input_down(input, KEY_LEFT);
-    int pitch = toy_input_down(input, KEY_UP) -
-                toy_input_down(input, KEY_DOWN);
     int percent = sensitivity_percent(settings->keyboard_level);
-    /* 左右/上下同一倍率 */
-    if (turn || pitch)
-        rotate_camera(camera, turn * 16 * percent / 100,
-                      pitch * 16 * percent / 100);
+    memset(command, 0, sizeof(struct rasterfall_command));
+    command->move_forward = toy_input_down(input, KEY_W) -
+                            toy_input_down(input, KEY_S);
+    command->move_strafe = toy_input_down(input, KEY_D) -
+                           toy_input_down(input, KEY_A);
+    command->turn = pointer_turn +
+                    (toy_input_down(input, KEY_RIGHT) -
+                     toy_input_down(input, KEY_LEFT)) * 16 * percent / 100;
+    command->pitch = pointer_pitch +
+                     (toy_input_down(input, KEY_UP) -
+                      toy_input_down(input, KEY_DOWN)) * 16 * percent / 100;
+    command->fire_held = toy_input_down(input, KEY_SPACE);
+    if (fire_edge) command->buttons |= RASTERFALL_CMD_FIRE;
+    if (toy_input_pressed(input, KEY_R)) command->buttons |= RASTERFALL_CMD_RELOAD;
+    if (toy_input_pressed(input, KEY_1)) command->buttons |= RASTERFALL_CMD_SLOT_1;
+    if (toy_input_pressed(input, KEY_2)) command->buttons |= RASTERFALL_CMD_SLOT_2;
+    if (toy_input_pressed(input, KEY_E)) command->buttons |= RASTERFALL_CMD_INTERACT;
+    if (toy_input_pressed(input, KEY_COMMA))
+        command->buttons |= RASTERFALL_CMD_TURN_LEFT;
+    if (toy_input_pressed(input, KEY_DOT))
+        command->buttons |= RASTERFALL_CMD_TURN_RIGHT;
 }
 
-/* ,/. 不是瞬间跳转，而是把 90° 加入队列，在固定逻辑步中快速完成。
- * turn=1024 约等于 1 弧度，90° 约为 1611 turn 单位；每步最多转 128，
- * 约 0.2 秒完成一次，期间仍可继续按键排队。 */
-#define QUARTER_TURN 1611
-#define SMOOTH_TURN_STEP 128
-
-static void update_smooth_turn(struct camera *camera)
+static void consume_game_command_edges(struct toy_input *input)
 {
-    int step = smooth_turn_remaining;
-    if (step > SMOOTH_TURN_STEP) step = SMOOTH_TURN_STEP;
-    if (step < -SMOOTH_TURN_STEP) step = -SMOOTH_TURN_STEP;
-    if (step == 0) return;
-    rotate_camera(camera, step, 0);
-    smooth_turn_remaining -= step;
+    input->key_pressed[KEY_R] = 0;
+    input->key_pressed[KEY_1] = 0;
+    input->key_pressed[KEY_2] = 0;
+    input->key_pressed[KEY_E] = 0;
+    input->key_pressed[KEY_COMMA] = 0;
+    input->key_pressed[KEY_DOT] = 0;
 }
 
 static void draw_crosshair(struct toy_surface *surface)
@@ -1717,6 +1545,7 @@ int main(int argc, char **argv)
     int frame_limit = 0, rendered_frames = 0, scene_pixels = 0;
     int display_fps = 0, fps_window_frames = 0;
     int fire_edge = 0;
+    int pointer_turn_pending = 0, pointer_pitch_pending = 0;
     long menu_nav_ready_us = 0;
     /* 按键按压边沿跨帧保留位：逻辑步（E/R/,/. 及切枪换弹）可能因
      * accumulator 不足而整帧不跑（长 stall 后连续几帧都不跑），边沿若
@@ -1724,7 +1553,6 @@ int main(int argc, char **argv)
      * 到达的按压，每帧合入 key_pressed 供消费方读取；逻辑步跑过的那
      * 帧末尾统一清除。 */
     unsigned char pending_key_edges[TOY_INPUT_KEY_COUNT];
-    int interact_consumed = 0;   /* 每帧 E 互动只消费一次 */
     int input_debug = 0, input_event_count = 0, have_last_key = 0;
     int texture_stats = 0;
     int stats_enabled = 1;
@@ -1752,17 +1580,13 @@ int main(int argc, char **argv)
                 frame_limit = frame_limit * 10 + (*p++ - '0');
         }
     }
-    rasterfall_map_bind(&map_ops, &level_map, map_bounds, map_safe_rooms,
-                        map_spawn_zones, &map_spawn_count, &air_wall_enabled,
-                        interactables, &interactable_count);
-    if (rasterfall_map_load(&map_ops, "assets/maps/rasterfall.map") < 0) {
+    if (rasterfall_session_load(&session, "assets/maps/rasterfall.map") < 0) {
         __fprintf(2, "rasterfall: cannot load map assets/maps/rasterfall.map\n");
         return 1;
     }
     bake_static_lightmap();
     rasterfall_effects_init(&effects);
     __printf("rasterfall: baked lightmap %dx%d\n", BAKED_LM_W, BAKED_LM_H);
-    prepare_map_rules();
     memset(&scene_texture, 0, sizeof(scene_texture));
     memset(&scene_texture_view, 0, sizeof(scene_texture_view));
     if (textures_enabled && toy_texture_load("assets/generated/wall.ttex",
@@ -1786,7 +1610,7 @@ int main(int argc, char **argv)
     if (logic_test) {
         int result = run_logic_test();
         if (scene_texture.blob) toy_texture_unload(&scene_texture);
-        rasterfall_map_unload(&map_ops);
+        rasterfall_session_unload(&session);
         return result;
     }
     /* 服务器断开（WSLg 组合器/音频服务重启）时 socket 写会触发 SIGPIPE
@@ -1802,12 +1626,12 @@ int main(int argc, char **argv)
     if (__getrandom(&seed, sizeof(seed), 0) < 0)
         seed = (uint64_t)monotonic_us();
     if (seed == 0) seed = 1;
-    reset_game(&camera, seed);
+    rasterfall_session_reset(&session, &camera, seed);
     window = toy_window_open("Rasterfall", 800, 450);
     if (!window) {
         __fprintf(2, "rasterfall: cannot create Wayland window\n");
         if (scene_texture.blob) toy_texture_unload(&scene_texture);
-        rasterfall_map_unload(&map_ops);
+        rasterfall_session_unload(&session);
         toy_renderer_destroy(&renderer);
         return 1;
     }
@@ -1816,6 +1640,7 @@ int main(int argc, char **argv)
              "1/2 weapons, E interact, ,/. turn 90, Esc pauses/resumes\n");
     if (input_debug)
         __printf("rasterfall: input debug HUD enabled; test chords and focus changes\n");
+    memset(&audio, 0, sizeof(audio));
     rasterfall_audio_load_assets(&audio);
     if (rasterfall_audio_start(&audio) < 0) {
         __printf("rasterfall: audio unavailable, playing silent\n");
@@ -1831,6 +1656,8 @@ int main(int argc, char **argv)
         int resumed = 0;
         int stage_pixels;
         int ready;
+        unsigned char game_events[TOY_GAME_MAX_EVENTS];
+        int game_event_count;
         toy_input_begin_frame(&input);
         /* 非阻塞收输入：present 后立刻开始下一帧 CPU 工作，组合器处理
          * 已提交缓冲的时间被渲染流水线掩盖（双缓冲）。 */
@@ -1910,6 +1737,8 @@ int main(int argc, char **argv)
             int capture_result = toy_window_set_pointer_lock(window, 1);
             pointer_lock_requested = capture_result > 0;
             paused = 0;
+            pointer_turn_pending = 0;
+            pointer_pitch_pending = 0;
             last_pointer_x = input.pointer_x;
             last_pointer_y = input.pointer_y;
             have_pointer_position = 1;
@@ -1925,6 +1754,8 @@ int main(int argc, char **argv)
                 toy_window_set_pointer_lock(window, 0);
                 pointer_lock_requested = 0;
                 paused = 1;
+                pointer_turn_pending = 0;
+                pointer_pitch_pending = 0;
                 pause_menu.selected = PAUSE_ITEM_RESUME;
                 __printf("rasterfall: paused, pointer released\n");
             }
@@ -1958,7 +1789,7 @@ int main(int argc, char **argv)
                 fire_edge = 1;
                 /* 只在水平面扫射：向上俯仰会让大部分几何体离开视锥，
                  * 帧数虚高，无法反映真实渲染负载。 */
-                rotate_camera(&camera, 37, 0);
+                rasterfall_camera_rotate(&camera, 37, 0);
                 idx = rendered_frames / 60;
                 if (rendered_frames % 60 == 0 && idx < 32) {
                     static const int wslot[3] = {TOY_GAME_WEAPON_PISTOL,
@@ -1978,11 +1809,13 @@ int main(int argc, char **argv)
          * events received after our accepted request are already valid. */
         if (!paused && (input.pointer_locked || pointer_lock_requested) &&
             events.relative_moved) {
-            update_mouse(&camera, input.relative_x, input.relative_y, &settings);
+            accumulate_mouse_look(&pointer_turn_pending, &pointer_pitch_pending,
+                                  input.relative_x, input.relative_y, &settings);
         } else if (!paused && pointer_lock_requested && input.pointer_moved) {
             if (have_pointer_position)
-                update_mouse(&camera, input.pointer_x - last_pointer_x,
-                              input.pointer_y - last_pointer_y, &settings);
+                accumulate_mouse_look(&pointer_turn_pending, &pointer_pitch_pending,
+                                      input.pointer_x - last_pointer_x,
+                                      input.pointer_y - last_pointer_y, &settings);
             last_pointer_x = input.pointer_x;
             last_pointer_y = input.pointer_y;
             have_pointer_position = 1;
@@ -1993,47 +1826,40 @@ int main(int argc, char **argv)
         if (elapsed < 0) elapsed = 0;
         if (elapsed > MAX_FRAME_US) elapsed = MAX_FRAME_US;
         accumulator += elapsed;
-        interact_consumed = 0;
         t_stage = now;
         while (accumulator >= FIXED_STEP_US && logic_steps < MAX_LOGIC_STEPS) {
             if (!paused) {
+                struct rasterfall_command command;
                 rasterfall_effects_update(&effects, FIXED_STEP_US / 1000);
                 if (game.state == TOY_GAME_PLAYING) {
-                    update_player(&camera, &input);
-                    update_keyboard_look(&camera, &input, &settings);
-                    /* 90° 快转：按键只加入队列，同一帧多个逻辑步也只加入一次 */
-                    if (toy_input_pressed(&input, KEY_COMMA)) {
-                        smooth_turn_remaining -= QUARTER_TURN;
-                        input.key_pressed[KEY_COMMA] = 0;
-                    }
-                    if (toy_input_pressed(&input, KEY_DOT)) {
-                        smooth_turn_remaining += QUARTER_TURN;
-                        input.key_pressed[KEY_DOT] = 0;
-                    }
-                    update_smooth_turn(&camera);
-                    game.px = camera.x;
-                    game.pz = camera.z;
-                    highlighted = compute_highlight(&camera);
-                    if (highlighted >= 0 && !interact_consumed &&
-                        toy_input_pressed(&input, KEY_E)) {
-                        interact_current(&interactables[highlighted]);
-                        interact_consumed = 1;
-                    }
-                    toy_game_update_held(&game, input.key_pressed, fire_edge,
-                                         toy_input_down(&input, KEY_SPACE),
-                                         camera.sy, camera.cy,
-                                         FIXED_STEP_US / 1000);
-                    update_manual_alarm(FIXED_STEP_US / 1000);
+                    build_game_command(&command, &input, &settings, fire_edge,
+                                       pointer_turn_pending,
+                                       pointer_pitch_pending);
+                    rasterfall_session_step(&session, &camera, &command,
+                                            FIXED_STEP_US / 1000);
+                    consume_game_command_edges(&input);
+                    pointer_turn_pending = 0;
+                    pointer_pitch_pending = 0;
                     fire_edge = 0;
                 } else if (toy_input_pressed(&input, KEY_R)) {
                     /* 死亡或通关结算：R 重开 */
-                    reset_game(&camera, seed);
+                    memset(&command, 0, sizeof(command));
+                    command.buttons = RASTERFALL_CMD_RESET;
+                    rasterfall_session_step(&session, &camera, &command,
+                                            FIXED_STEP_US / 1000);
+                    input.key_pressed[KEY_R] = 0;
                     fire_edge = 0;
                 }
             }
             accumulator -= FIXED_STEP_US;
             logic_steps++;
         }
+        /* 会话事件只取出一次，再分发给音频以及未来的网络/展示消费者。
+         * 音频不可用时仍清空本 tick 事件，避免单消费者队列永久塞满。 */
+        game_event_count = toy_game_drain_events(&game, game_events,
+                                                 TOY_GAME_MAX_EVENTS);
+        if (audio.running && game_event_count > 0)
+            rasterfall_audio_play_events(&audio, game_events, game_event_count);
         if (!paused) sync_fire_effects(&camera);
         if (accumulator >= FIXED_STEP_US) accumulator %= FIXED_STEP_US;
         /* 本帧跑过逻辑步：所有保留边沿都已暴露给消费方，可以清除；
@@ -2151,8 +1977,6 @@ int main(int argc, char **argv)
                                  have_last_key ? last_key : 0,
                                  have_last_key ? last_key_pressed : 0,
                                  input_event_count);
-            /* 游戏线程只投递事件，音乐与 SFX 由音频线程持续混音。 */
-            if (audio.running) rasterfall_audio_play_game_events(&audio, &game);
             rasterfall_perf_end_stage(&stats, &stats_total, RASTERFALL_STATS_OVERLAY,
                            &t_stage, renderer.submitted_triangles - prev_tris,
                            (unsigned long)stage_pixels);
@@ -2185,7 +2009,7 @@ int main(int argc, char **argv)
     rasterfall_audio_unload_assets(&audio);
     if (scene_texture.blob) toy_texture_unload(&scene_texture);
     if (dump_path) rasterfall_hud_dump_frame(dump_path, &surface);
-    rasterfall_map_unload(&map_ops);
+    rasterfall_session_unload(&session);
     toy_window_close(window);
     __printf("rasterfall: %d frames, %d scene pixels, position=(%d,%d)\n",
              rendered_frames, scene_pixels, camera.x, camera.z);

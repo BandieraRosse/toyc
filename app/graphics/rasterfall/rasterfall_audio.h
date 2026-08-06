@@ -23,8 +23,8 @@ struct rasterfall_audio {
 void rasterfall_audio_load_assets(struct rasterfall_audio *audio);
 int rasterfall_audio_start(struct rasterfall_audio *audio);
 void rasterfall_audio_stop(struct rasterfall_audio *audio);
-void rasterfall_audio_play_game_events(struct rasterfall_audio *audio,
-                                       const struct toy_game *game);
+void rasterfall_audio_play_events(struct rasterfall_audio *audio,
+                                  const unsigned char *events, int count);
 void rasterfall_audio_unload_assets(struct rasterfall_audio *audio);
 
 #endif

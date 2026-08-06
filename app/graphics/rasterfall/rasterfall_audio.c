@@ -69,7 +69,6 @@ static void *audio_thread_func(void *arg)
 int rasterfall_audio_start(struct rasterfall_audio *audio)
 {
     int kind;
-    memset(audio, 0, sizeof(struct rasterfall_audio));
     if (toy_audio_open(&audio->output, TOY_SFX_RATE, 2) < 0) return -1;
     toy_sfx_init(&audio->sfx, TOY_SFX_RATE);
     for (kind = 0; kind <= TOY_SFX_PLAYER_DEATH; kind++)
@@ -97,16 +96,13 @@ void rasterfall_audio_stop(struct rasterfall_audio *audio)
     audio->running = 0;
 }
 
-void rasterfall_audio_play_game_events(struct rasterfall_audio *audio,
-                                       const struct toy_game *game)
+void rasterfall_audio_play_events(struct rasterfall_audio *audio,
+                                  const unsigned char *events, int count)
 {
-    unsigned char evs[TOY_GAME_MAX_EVENTS];
-    int ne = toy_game_drain_events((struct toy_game *)game, evs,
-                                   TOY_GAME_MAX_EVENTS);
     int i;
-    if (ne > 4) ne = 4;
-    for (i = 0; i < ne; i++) {
-        switch (evs[i]) {
+    if (count > 4) count = 4;
+    for (i = 0; i < count; i++) {
+        switch (events[i]) {
         case TOY_GAME_EV_SHOOT: audio_post_event(audio, TOY_SFX_GUNSHOT); break;
         case TOY_GAME_EV_DRY_FIRE: audio_post_event(audio, TOY_SFX_DRY_FIRE); break;
         case TOY_GAME_EV_RELOAD_START: audio_post_event(audio, TOY_SFX_RELOAD_START); break;

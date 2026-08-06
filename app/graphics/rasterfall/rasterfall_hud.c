@@ -39,10 +39,6 @@ static int draw_hud_value(struct toy_surface *surface, int x,
     return x + value_w + FB_FONT_W * 2;
 }
 
-static const char *weapon_names[TOY_GAME_WEAPON_COUNT] = {
-    "PISTOL", "SMG", "SHOTGUN"
-};
-
 static void render_weapon_hud(struct toy_surface *surface, int x, int y,
                               const struct toy_game *game)
 {
@@ -55,10 +51,10 @@ static void render_weapon_hud(struct toy_surface *surface, int x, int y,
             snprintf(line, sizeof(line), "%d[-] ", i + 1);
         else if (s->reserve == TOY_GAME_AMMO_INFINITE)
             snprintf(line, sizeof(line), "%d[%s] %d/INF ", i + 1,
-                     weapon_names[s->weapon], s->mag);
+                     toy_game_weapon_name(s->weapon), s->mag);
         else
             snprintf(line, sizeof(line), "%d[%s] %d/%d ", i + 1,
-                     weapon_names[s->weapon], s->mag, s->reserve);
+                     toy_game_weapon_name(s->weapon), s->mag, s->reserve);
         fb_draw_string((unsigned char *)surface->pixels, x, y, line, color,
                        surface->stride);
         x += (int)strlen(line) * FB_FONT_W;

@@ -1,0 +1,240 @@
+#include "tlibc_everything.h"
+#include "math.h"
+#include "rasterfall_session.h"
+
+#define INTERACT_AIM_CONE 784
+#define HORDE_COUNT_MIN 15
+#define HORDE_COUNT_MAX 20
+#define HORDE_MIN_PLAYER_DIST 700
+#define QUARTER_TURN 1611
+#define SMOOTH_TURN_STEP 128
+
+static void session_set_air_walls(struct rasterfall_session *session,
+                                  int enabled)
+{
+    rasterfall_map_set_air_walls(&session->map_ops, enabled);
+}
+
+int rasterfall_session_load(struct rasterfall_session *session,
+                            const char *map_path)
+{
+    memset(session, 0, sizeof(struct rasterfall_session));
+    session->air_walls_enabled = 1;
+    session->highlight_index = -1;
+    rasterfall_map_bind(&session->map_ops, &session->level, session->bounds,
+                        session->safe_rooms, session->spawn_zones,
+                        &session->spawn_count, &session->air_walls_enabled,
+                        session->items, &session->item_count);
+    if (rasterfall_map_load(&session->map_ops, map_path) < 0) return -1;
+    rasterfall_map_prepare(&session->map_ops);
+    return 0;
+}
+
+void rasterfall_session_unload(struct rasterfall_session *session)
+{
+    rasterfall_map_unload(&session->map_ops);
+}
+
+void rasterfall_session_reset(struct rasterfall_session *session,
+                              struct camera *camera, uint64_t seed)
+{
+    camera->x = session->level.start_x;
+    camera->z = session->level.start_z;
+    camera->sy = 0;
+    camera->cy = 1024;
+    camera->pitch_sy = 0;
+    camera->pitch_cy = 1024;
+    session->seed = seed ? seed : 1;
+    toy_game_init(&session->game_state, session->seed);
+    toy_game_set_world(&session->game_state, session->bounds,
+                       session->level.box_count, session->level.room_limit);
+    toy_game_set_campaign(&session->game_state, session->safe_rooms,
+                          session->level.safe_count, session->spawn_zones,
+                          session->spawn_count);
+    toy_game_set_alarm(&session->game_state,
+                       session->level.has_alarm ? &session->level.alarm_zone : NULL,
+                       session->level.has_alarm ? 1 : -1);
+    session->game_state.px = camera->x;
+    session->game_state.pz = camera->z;
+    session->banner_ms = 0;
+    session->banner_text = NULL;
+    session->manual_alarm_on = 0;
+    session->manual_alarm_timer = 1000;
+    session->highlight_index = -1;
+    session->smooth_turn_remaining = 0;
+    session_set_air_walls(session, 1);
+    rasterfall_map_reset_interactables(&session->map_ops);
+}
+
+void rasterfall_camera_rotate(struct camera *camera, int turn, int pitch)
+{
+    int old_sy = camera->sy;
+    int old_psy = camera->pitch_sy;
+    long long length;
+    camera->sy = (old_sy * 1024 + camera->cy * turn) / 1024;
+    camera->cy = (camera->cy * 1024 - old_sy * turn) / 1024;
+    length = isqrt((long long)camera->sy * camera->sy +
+                   (long long)camera->cy * camera->cy);
+    if (length > 0) {
+        camera->sy = (int)((long long)camera->sy * 1024 / length);
+        camera->cy = (int)((long long)camera->cy * 1024 / length);
+    }
+    camera->pitch_sy = (old_psy * 1024 + camera->pitch_cy * pitch) / 1024;
+    camera->pitch_cy = (camera->pitch_cy * 1024 - old_psy * pitch) / 1024;
+    length = isqrt((long long)camera->pitch_sy * camera->pitch_sy +
+                   (long long)camera->pitch_cy * camera->pitch_cy);
+    if (length > 0) {
+        camera->pitch_sy = (int)((long long)camera->pitch_sy * 1024 / length);
+        camera->pitch_cy = (int)((long long)camera->pitch_cy * 1024 / length);
+    }
+    if (camera->pitch_cy < RASTERFALL_PITCH_LIMIT_CY) {
+        camera->pitch_sy = camera->pitch_sy < 0 ?
+            -RASTERFALL_PITCH_LIMIT_SY : RASTERFALL_PITCH_LIMIT_SY;
+        camera->pitch_cy = RASTERFALL_PITCH_LIMIT_CY;
+    } else if (camera->pitch_sy > RASTERFALL_PITCH_LIMIT_SY) {
+        camera->pitch_sy = RASTERFALL_PITCH_LIMIT_SY;
+        camera->pitch_cy = RASTERFALL_PITCH_LIMIT_CY;
+    } else if (camera->pitch_sy < -RASTERFALL_PITCH_LIMIT_SY) {
+        camera->pitch_sy = -RASTERFALL_PITCH_LIMIT_SY;
+        camera->pitch_cy = RASTERFALL_PITCH_LIMIT_CY;
+    }
+}
+
+static void session_move_player(struct rasterfall_session *session,
+                                struct camera *camera,
+                                const struct rasterfall_command *command)
+{
+    int dx = (camera->sy * command->move_forward +
+              camera->cy * command->move_strafe) * RASTERFALL_MOVE_STEP / 1024;
+    int dz = (camera->cy * command->move_forward -
+              camera->sy * command->move_strafe) * RASTERFALL_MOVE_STEP / 1024;
+    int next_x = camera->x + dx;
+    int next_z = camera->z + dz;
+    if (!toy_game_position_blocked(&session->game_state, next_x, camera->z,
+                                   RASTERFALL_PLAYER_RADIUS))
+        camera->x = next_x;
+    if (!toy_game_position_blocked(&session->game_state, camera->x, next_z,
+                                   RASTERFALL_PLAYER_RADIUS))
+        camera->z = next_z;
+}
+
+static void session_update_smooth_turn(struct rasterfall_session *session,
+                                       struct camera *camera)
+{
+    int step = session->smooth_turn_remaining;
+    if (step > SMOOTH_TURN_STEP) step = SMOOTH_TURN_STEP;
+    if (step < -SMOOTH_TURN_STEP) step = -SMOOTH_TURN_STEP;
+    if (step == 0) return;
+    rasterfall_camera_rotate(camera, step, 0);
+    session->smooth_turn_remaining -= step;
+}
+
+int rasterfall_session_compute_highlight(const struct rasterfall_session *session,
+                                         const struct camera *camera)
+{
+    int i, best = -1;
+    long best_d2 = 0;
+    for (i = 0; i < session->item_count; i++) {
+        const struct rasterfall_interactable *it = &session->items[i];
+        long dx = it->x - camera->x;
+        long dz = it->z - camera->z;
+        long d2 = dx * dx + dz * dz;
+        long dist, dot;
+        if (d2 > (long)RASTERFALL_INTERACT_RANGE * RASTERFALL_INTERACT_RANGE ||
+            d2 == 0) continue;
+        dist = (long)isqrt(d2);
+        if (dist <= 0) continue;
+        dot = dx * camera->sy + dz * camera->cy;
+        if (dot < dist * INTERACT_AIM_CONE) continue;
+        if (best < 0 || d2 < best_d2) {
+            best = i;
+            best_d2 = d2;
+        }
+    }
+    return best;
+}
+
+static void session_interact(struct rasterfall_session *session,
+                             struct rasterfall_interactable *it)
+{
+    if (it->kind == TOY_MAP_PICKUP_BUTTON) {
+        int n;
+        session->banner_ms = 3500;
+        session->banner_text = "HORDE SUMMONED - THEY WILL FIND YOU";
+        n = toy_game_spawn_horde(&session->game_state, HORDE_COUNT_MIN,
+                                 HORDE_COUNT_MAX, session->spawn_zones,
+                                 session->spawn_count, HORDE_MIN_PLAYER_DIST);
+        __printf("rasterfall: horde summoned %d tracking enemies\n", n);
+    } else if (it->kind == TOY_MAP_PICKUP_AIR_BUTTON) {
+        session_set_air_walls(session, !session->air_walls_enabled);
+        session->banner_ms = 1800;
+        session->banner_text = session->air_walls_enabled ?
+            "AIR WALLS ENABLED" : "AIR WALLS DISABLED";
+    } else if (it->kind == TOY_MAP_PICKUP_ALARM_BUTTON) {
+        session->manual_alarm_on = !session->manual_alarm_on;
+        session->manual_alarm_timer = 1000;
+        session->banner_ms = 1800;
+        session->banner_text = session->manual_alarm_on ?
+            "ALARM ENABLED - 2-3 ENEMIES EACH SECOND" : "ALARM DISABLED";
+    } else if (it->kind == TOY_MAP_PICKUP_AMMO) {
+        toy_game_refill_ammo(&session->game_state);
+    } else {
+        toy_game_equip_weapon(&session->game_state,
+            it->kind == TOY_MAP_PICKUP_SMG ?
+            TOY_GAME_WEAPON_SMG : TOY_GAME_WEAPON_SHOTGUN);
+    }
+}
+
+static void session_update_manual_alarm(struct rasterfall_session *session,
+                                        int dt_ms)
+{
+    if (!session->manual_alarm_on ||
+        session->game_state.state != TOY_GAME_PLAYING) return;
+    session->manual_alarm_timer -= dt_ms;
+    if (session->manual_alarm_timer > 0) return;
+    session->manual_alarm_timer += 1000;
+    toy_game_spawn_horde(&session->game_state, 2, 3, session->spawn_zones,
+                         session->spawn_count, HORDE_MIN_PLAYER_DIST);
+}
+
+void rasterfall_session_step(struct rasterfall_session *session,
+                             struct camera *camera,
+                             const struct rasterfall_command *command,
+                             int dt_ms)
+{
+    unsigned char keys[TOY_GAME_KEY_RELOAD + 1];
+    if (command->buttons & RASTERFALL_CMD_RESET) {
+        rasterfall_session_reset(session, camera, session->seed);
+        return;
+    }
+    if (session->game_state.state != TOY_GAME_PLAYING) return;
+    session_move_player(session, camera, command);
+    if (command->turn || command->pitch)
+        rasterfall_camera_rotate(camera, command->turn, command->pitch);
+    if (command->buttons & RASTERFALL_CMD_TURN_LEFT)
+        session->smooth_turn_remaining -= QUARTER_TURN;
+    if (command->buttons & RASTERFALL_CMD_TURN_RIGHT)
+        session->smooth_turn_remaining += QUARTER_TURN;
+    session_update_smooth_turn(session, camera);
+    session->game_state.px = camera->x;
+    session->game_state.pz = camera->z;
+    session->highlight_index = rasterfall_session_compute_highlight(session, camera);
+    if ((command->buttons & RASTERFALL_CMD_INTERACT) &&
+        session->highlight_index >= 0)
+        session_interact(session, &session->items[session->highlight_index]);
+    memset(keys, 0, sizeof(keys));
+    if (command->buttons & RASTERFALL_CMD_RELOAD) keys[TOY_GAME_KEY_RELOAD] = 1;
+    if (command->buttons & RASTERFALL_CMD_SLOT_1) keys[TOY_GAME_KEY_SLOT_1] = 1;
+    if (command->buttons & RASTERFALL_CMD_SLOT_2) keys[TOY_GAME_KEY_SLOT_2] = 1;
+    toy_game_update_held(&session->game_state, keys,
+                         (command->buttons & RASTERFALL_CMD_FIRE) != 0,
+                         command->fire_held, camera->sy, camera->cy, dt_ms);
+    session_update_manual_alarm(session, dt_ms);
+    if (session->banner_ms > 0) {
+        session->banner_ms -= dt_ms;
+        if (session->banner_ms <= 0) {
+            session->banner_ms = 0;
+            session->banner_text = NULL;
+        }
+    }
+}
