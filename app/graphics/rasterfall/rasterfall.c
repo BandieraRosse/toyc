@@ -69,13 +69,10 @@
 #include "toy_game.h"
 #include "fb_draw.h"
 #include "fb_font.h"
-#include "linux_audio.h"
-#include "toy_audio.h"
 #include "toy_map.h"
 #include "rasterfall_map.h"
 #include "rasterfall_hud.h"
-#include "pthread.h"
-#include "errno.h"
+#include "rasterfall_audio.h"
 #include "math.h"
 
 #define KEY_ESC   1
@@ -2062,138 +2059,6 @@ static void draw_input_debug(struct toy_surface *surface,
                    line, 0xD8B060, surface->stride);
 }
 
-/* ── 音效输出：独立音频线程持续混音，游戏线程只提交事件 ──────── */
-
-#define SFX_BLOCK_FRAMES 512
-#define AUDIO_EVENT_RING 32
-
-struct audio_ctx {
-    struct toy_audio output;
-    struct toy_sfx sfx;
-    unsigned char events[AUDIO_EVENT_RING];
-    volatile unsigned int event_wpos;
-    volatile unsigned int event_rpos;
-    pthread_t thread;
-    volatile int quit;
-    int running;
-};
-
-/* 8 种核心音效的 TSND 资产（tools/gen_sfx.c 生成）；加载失败的 kind 回退
- * 程序合成。资产为 44100Hz 单声道，与音频线程输出率一致，无需重采样。 */
-static struct toy_sound_asset sfx_assets[TOY_SFX_PLAYER_DEATH + 1];
-
-static const char *sfx_asset_names[TOY_SFX_PLAYER_DEATH + 1] = {
-    "gunshot", "dry_fire", "reload_start", "reload_done",
-    "hit_marker", "kill", "bite", "death",
-};
-
-static void load_sfx_assets(void)
-{
-    int kind, loaded = 0;
-    for (kind = 0; kind <= TOY_SFX_PLAYER_DEATH; kind++) {
-        char path[96];
-        snprintf(path, sizeof(path), "assets/generated/sfx_%s.tsnd",
-                 sfx_asset_names[kind]);
-        if (toy_sound_load(path, &sfx_assets[kind]) == 0) loaded++;
-    }
-    __printf("rasterfall: sound assets %d/%d loaded\n",
-             loaded, TOY_SFX_PLAYER_DEATH + 1);
-}
-
-/* 单生产者/单消费者事件环；满时丢弃新事件，避免阻塞游戏线程。 */
-static void audio_post_event(struct audio_ctx *ctx, int kind)
-{
-    unsigned int wp = ctx->event_wpos;
-    if (wp - ctx->event_rpos >= AUDIO_EVENT_RING) return;
-    ctx->events[wp & (AUDIO_EVENT_RING - 1)] = (unsigned char)kind;
-    __sync_synchronize();
-    ctx->event_wpos = wp + 1;
-}
-
-static void audio_drain_events(struct audio_ctx *ctx)
-{
-    while (ctx->event_rpos != ctx->event_wpos) {
-        unsigned int rp = ctx->event_rpos;
-        int kind;
-        __sync_synchronize();
-        kind = ctx->events[rp & (AUDIO_EVENT_RING - 1)];
-        ctx->event_rpos = rp + 1;
-        toy_sfx_play(&ctx->sfx, kind);
-    }
-}
-
-static void *audio_thread_func(void *arg)
-{
-    struct audio_ctx *ctx = (struct audio_ctx *)arg;
-    short play_buf[SFX_BLOCK_FRAMES * 2];
-    while (!ctx->quit) {
-        long ret;
-        audio_drain_events(ctx);
-        toy_sfx_render(&ctx->sfx, play_buf, SFX_BLOCK_FRAMES);
-        ret = toy_audio_write(&ctx->output, play_buf, SFX_BLOCK_FRAMES);
-        if (ret == -EPIPE && ctx->output.backend == TOY_AUDIO_ALSA) {
-            /* XRUN：恢复设备后继续 */
-            __ioctl(ctx->output.alsa.fd, SNDRV_PCM_IOCTL_PREPARE, 0);
-            continue;
-        }
-        if (ret < 0) break;   /* 设备级错误：静默停声 */
-    }
-    return NULL;
-}
-
-static int audio_start(struct audio_ctx *ctx)
-{
-    int kind;
-    memset(ctx, 0, sizeof(struct audio_ctx));
-    if (toy_audio_open(&ctx->output, TOY_SFX_RATE, 2) < 0) return -1;
-    toy_sfx_init(&ctx->sfx, TOY_SFX_RATE);
-    /* 优先样本音色（TSND 资产），未加载成功的 kind 保持程序合成 */
-    for (kind = 0; kind <= TOY_SFX_PLAYER_DEATH; kind++)
-        if (sfx_assets[kind].blob)
-            toy_sfx_set_sample(&ctx->sfx, kind,
-                               (const short *)sfx_assets[kind].data,
-                               sfx_assets[kind].frames);
-    toy_sfx_music(&ctx->sfx, 1);
-    if (pthread_create(&ctx->thread, NULL, audio_thread_func, ctx) != 0) {
-        toy_audio_close(&ctx->output);
-        return -1;
-    }
-    ctx->running = 1;
-    __printf("rasterfall: audio backend: %s\n",
-             toy_audio_backend_name(&ctx->output));
-    return 0;
-}
-
-static void audio_stop(struct audio_ctx *ctx)
-{
-    if (!ctx->running) return;
-    ctx->quit = 1;
-    pthread_join(ctx->thread, NULL);
-    toy_audio_close(&ctx->output);
-    ctx->running = 0;
-}
-
-/* 事件 → 音效（每帧上限 4 个，防同帧爆发撑爆 voice） */
-static void play_game_events(struct audio_ctx *audio)
-{
-    unsigned char evs[TOY_GAME_MAX_EVENTS];
-    int ne = toy_game_drain_events(&game, evs, TOY_GAME_MAX_EVENTS);
-    int i;
-    if (ne > 4) ne = 4;
-    for (i = 0; i < ne; i++) {
-        switch (evs[i]) {
-        case TOY_GAME_EV_SHOOT: audio_post_event(audio, TOY_SFX_GUNSHOT); break;
-        case TOY_GAME_EV_DRY_FIRE: audio_post_event(audio, TOY_SFX_DRY_FIRE); break;
-        case TOY_GAME_EV_RELOAD_START: audio_post_event(audio, TOY_SFX_RELOAD_START); break;
-        case TOY_GAME_EV_RELOAD_DONE: audio_post_event(audio, TOY_SFX_RELOAD_DONE); break;
-        case TOY_GAME_EV_KILL: audio_post_event(audio, TOY_SFX_KILL); break;
-        case TOY_GAME_EV_BITE: audio_post_event(audio, TOY_SFX_BITE); break;
-        case TOY_GAME_EV_PLAYER_DEATH: audio_post_event(audio, TOY_SFX_PLAYER_DEATH); break;
-        default: break;
-        }
-    }
-}
-
 #include "rasterfall_logic_test.inc"
 
 #include "rasterfall_perf.h"
@@ -2229,7 +2094,7 @@ int main(int argc, char **argv)
     struct rasterfall_perf_stats stats, stats_total;
     unsigned int last_key = 0;
     int last_key_pressed = 0;
-    struct audio_ctx audio;
+    struct rasterfall_audio audio;
     uint64_t seed;
 
     int logic_test = 0;
@@ -2313,8 +2178,8 @@ int main(int argc, char **argv)
              "1/2 weapons, E interact, ,/. turn 90, Esc pauses/resumes\n");
     if (input_debug)
         __printf("rasterfall: input debug HUD enabled; test chords and focus changes\n");
-    load_sfx_assets();
-    if (audio_start(&audio) < 0) {
+    rasterfall_audio_load_assets(&audio);
+    if (rasterfall_audio_start(&audio) < 0) {
         __printf("rasterfall: audio unavailable, playing silent\n");
     }
     last_time = monotonic_us();
@@ -2649,7 +2514,7 @@ int main(int argc, char **argv)
                                  have_last_key ? last_key_pressed : 0,
                                  input_event_count);
             /* 游戏线程只投递事件，音乐与 SFX 由音频线程持续混音。 */
-            if (audio.running) play_game_events(&audio);
+            if (audio.running) rasterfall_audio_play_game_events(&audio, &game);
             rasterfall_perf_end_stage(&stats, &stats_total, RASTERFALL_STATS_OVERLAY,
                            &t_stage, renderer.submitted_triangles - prev_tris,
                            (unsigned long)stage_pixels);
@@ -2678,9 +2543,8 @@ int main(int argc, char **argv)
     }
     if (stats_enabled && stats_total.frames > 0)
         rasterfall_perf_dump(&stats_total, "total");
-    audio_stop(&audio);
-    for (int kind = 0; kind <= TOY_SFX_PLAYER_DEATH; kind++)
-        if (sfx_assets[kind].blob) toy_sound_unload(&sfx_assets[kind]);
+    rasterfall_audio_stop(&audio);
+    rasterfall_audio_unload_assets(&audio);
     if (scene_texture.blob) toy_texture_unload(&scene_texture);
     if (dump_path) rasterfall_hud_dump_frame(dump_path, &surface);
     rasterfall_map_unload(&map_ops);
