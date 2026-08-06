@@ -8,7 +8,7 @@
 #define NET_MAGIC_2 'N'
 #define NET_MAGIC_3 '1'
 #define NET_INPUT_SIZE 24
-#define NET_PLAYER_SIZE 22
+#define NET_PLAYER_SIZE 34
 #define NET_ENEMY_SIZE 24
 #define NET_EVENT_SIZE (1 + TOY_GAME_MAX_EVENTS)
 #define NET_WORLD_SIZE 16
@@ -242,7 +242,9 @@ int rasterfall_net_send_command(struct rasterfall_net *net,
 
 static void encode_player(unsigned char *p, int id, int active,
                           const struct camera *camera, int hp,
-                          int weapon, int state)
+                          int weapon, int state,
+                          const struct toy_game_slot *slots,
+                          int current_slot, int reloading, int reload_timer_ms)
 {
     p[0] = (unsigned char)(active != 0);
     p[1] = (unsigned char)id;
@@ -255,6 +257,13 @@ static void encode_player(unsigned char *p, int id, int active,
     put_i16(p + 16, camera->pitch_sy);
     put_i16(p + 18, camera->pitch_cy);
     put_i16(p + 20, hp);
+    p[22] = (unsigned char)current_slot;
+    put_i16(p + 23, slots ? slots[0].mag : 0);
+    put_i16(p + 25, slots ? slots[0].reserve : 0);
+    put_i16(p + 27, slots ? slots[1].mag : 0);
+    put_i16(p + 29, slots ? slots[1].reserve : 0);
+    p[31] = (unsigned char)(reloading != 0);
+    put_i16(p + 32, reload_timer_ms);
 }
 
 static int decode_player(const unsigned char *p,
@@ -271,6 +280,10 @@ static int decode_player(const unsigned char *p,
     player->camera.pitch_sy = get_i16(p + 16);
     player->camera.pitch_cy = get_i16(p + 18);
     player->hp = get_i16(p + 20);
+    player->current_slot = p[22] < TOY_GAME_WEAPON_SLOTS ? p[22] : 0;
+    player->mag[0] = get_i16(p + 23); player->reserve[0] = get_i16(p + 25);
+    player->mag[1] = get_i16(p + 27); player->reserve[1] = get_i16(p + 29);
+    player->reloading = p[31] != 0; player->reload_timer_ms = get_i16(p + 32);
     return player->id >= 0 && player->id < RASTERFALL_NET_PLAYER_MAX ? 0 : -1;
 }
 
@@ -283,7 +296,7 @@ static void encode_enemy(unsigned char *p, const struct toy_game_enemy *e)
     put_i16(p + 12, e->speed); put_i16(p + 14, e->bite_cooldown_ms);
     put_i16(p + 16, e->flash); put_i16(p + 18, e->hurt);
     put_i16(p + 20, e->dying_ms);
-    /* Direction is intentionally quantized to int8-sized values. */
+    p[22] = put_i8_value(e->dir_x); p[23] = put_i8_value(e->dir_z);
 }
 
 static void decode_enemy(const unsigned char *p, struct rasterfall_net_enemy *e)
@@ -294,11 +307,14 @@ static void decode_enemy(const unsigned char *p, struct rasterfall_net_enemy *e)
     e->speed = get_i16(p + 12); e->bite_cooldown_ms = get_i16(p + 14);
     e->flash = get_i16(p + 16); e->hurt = get_i16(p + 18);
     e->dying_ms = get_i16(p + 20);
+    e->dir_x = get_i8_value(p[22]); e->dir_z = get_i8_value(p[23]);
 }
 
 int rasterfall_net_send_snapshot(struct rasterfall_net *net,
                                  const struct camera *host_camera,
-                                 const struct toy_game *game)
+                                 const struct toy_game *game,
+                                 int air_walls_enabled,
+                                 int manual_alarm_enabled)
 {
     unsigned char packet[RASTERFALL_NET_MAX_PACKET];
     unsigned char *p = packet + NET_HEADER_SIZE;
@@ -317,10 +333,13 @@ int rasterfall_net_send_snapshot(struct rasterfall_net *net,
     p[4] = RASTERFALL_NET_PLAYER_MAX;
     p[5] = p[6] = p[7] = 0;
     encode_player(p + NET_SNAPSHOT_BASE, 0, 1, host_camera, game->hp,
-                  weapon, game->state);
+                  weapon, game->state, game->slots, game->current_slot,
+                  game->reloading, game->reload_timer_ms);
     encode_player(p + NET_SNAPSHOT_BASE + NET_PLAYER_SIZE, 1,
                   net->peer_known, &net->peer_camera, net->peer_hp,
-                  peer_weapon, net->peer_state);
+                  peer_weapon, net->peer_state, net->peer_slots,
+                  net->peer_current_slot, net->peer_reloading,
+                  net->peer_reload_timer_ms);
     p[NET_SNAPSHOT_BASE + RASTERFALL_NET_PLAYER_MAX * NET_PLAYER_SIZE] =
         TOY_GAME_MAX_ENEMIES;
     for (int i = 0; i < TOY_GAME_MAX_ENEMIES; i++)
@@ -349,6 +368,10 @@ int rasterfall_net_send_snapshot(struct rasterfall_net *net,
     put_i16(p + NET_SNAPSHOT_BASE + RASTERFALL_NET_PLAYER_MAX * NET_PLAYER_SIZE +
             12 + TOY_GAME_MAX_ENEMIES * NET_ENEMY_SIZE + TOY_GAME_MAX_EVENTS,
             game->alarm_timer_ms);
+    p[NET_SNAPSHOT_BASE + RASTERFALL_NET_PLAYER_MAX * NET_PLAYER_SIZE +
+      14 + TOY_GAME_MAX_ENEMIES * NET_ENEMY_SIZE + TOY_GAME_MAX_EVENTS] =
+        (unsigned char)((air_walls_enabled ? 1 : 0) |
+                        (manual_alarm_enabled ? 2 : 0));
     return net_send(net, packet, size);
 }
 
@@ -394,6 +417,10 @@ static int decode_snapshot(const unsigned char *payload, int size,
                                                  10 + TOY_GAME_MAX_ENEMIES * NET_ENEMY_SIZE + TOY_GAME_MAX_EVENTS);
     net->snapshot_world_alarm_timer_ms = get_i16(payload + NET_SNAPSHOT_BASE + count * NET_PLAYER_SIZE +
                                                  12 + TOY_GAME_MAX_ENEMIES * NET_ENEMY_SIZE + TOY_GAME_MAX_EVENTS);
+    net->snapshot_air_walls_enabled = payload[NET_SNAPSHOT_BASE + count * NET_PLAYER_SIZE +
+                                              14 + TOY_GAME_MAX_ENEMIES * NET_ENEMY_SIZE + TOY_GAME_MAX_EVENTS] & 1;
+    net->snapshot_manual_alarm_enabled = (payload[NET_SNAPSHOT_BASE + count * NET_PLAYER_SIZE +
+                                                 14 + TOY_GAME_MAX_ENEMIES * NET_ENEMY_SIZE + NET_EVENT_SIZE] & 2) != 0;
     net->snapshot_ready = 1;
     return 0;
 }
@@ -609,12 +636,23 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
     if (session) {
         session->game_state.hp = own->hp;
         session->game_state.state = own->state;
+        session->game_state.current_slot = own->current_slot;
+        session->game_state.slots[0].mag = own->mag[0];
+        session->game_state.slots[0].reserve = own->reserve[0];
+        session->game_state.slots[1].mag = own->mag[1];
+        session->game_state.slots[1].reserve = own->reserve[1];
+        session->game_state.reloading = own->reloading;
+        session->game_state.reload_timer_ms = own->reload_timer_ms;
         session->game_state.wave = net->snapshot_world_wave;
         session->game_state.to_spawn = net->snapshot_world_to_spawn;
         session->game_state.enemies_alive = net->snapshot_world_enemies_alive;
         session->game_state.campaign_phase = net->snapshot_world_phase;
         session->game_state.phase_timer_ms = net->snapshot_world_phase_timer_ms;
         session->game_state.alarm_timer_ms = net->snapshot_world_alarm_timer_ms;
+        session->air_walls_enabled = net->snapshot_air_walls_enabled;
+        session->manual_alarm_on = net->snapshot_manual_alarm_enabled;
+        rasterfall_map_set_air_walls(&session->map_ops,
+                                     session->air_walls_enabled);
     }
     if (session && net->enemy_count >= 0) {
         int i;
@@ -626,6 +664,7 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
             dst->speed = src->speed; dst->bite_cooldown_ms = src->bite_cooldown_ms;
             dst->flash = src->flash; dst->hurt = src->hurt;
             dst->dying_ms = src->dying_ms;
+            dst->dir_x = src->dir_x; dst->dir_z = src->dir_z;
         }
     }
     dx = own->camera.x - camera->x;
@@ -649,6 +688,7 @@ int rasterfall_net_self_test(void)
     struct rasterfall_net net;
     struct rasterfall_net host, client;
     struct toy_game test_game;
+    struct toy_game_slot test_slots[TOY_GAME_WEAPON_SLOTS];
     int size, type, payload_size;
     int port, i, transport_result = 0;
     uint32_t sequence;
@@ -682,12 +722,17 @@ int rasterfall_net_self_test(void)
     camera.cy = 1024;
     camera.pitch_sy = 0;
     camera.pitch_cy = 1024;
+    memset(test_slots, 0, sizeof(test_slots));
+    test_slots[0].mag = 11; test_slots[0].reserve = 37;
+    test_slots[1].mag = 6; test_slots[1].reserve = TOY_GAME_AMMO_INFINITE;
     encode_player(packet, 1, 1, &camera, 87, TOY_GAME_WEAPON_SMG,
-                  TOY_GAME_PLAYING);
+                  TOY_GAME_PLAYING, test_slots, 0, 1, 240);
     if (decode_player(packet, &net.players[1]) < 0 ||
         net.players[1].camera.x != camera.x ||
         net.players[1].camera.z != camera.z || net.players[1].hp != 87 ||
-        net.players[1].weapon != TOY_GAME_WEAPON_SMG) return 6;
+        net.players[1].weapon != TOY_GAME_WEAPON_SMG ||
+        net.players[1].mag[0] != 11 || net.players[1].reserve[0] != 37 ||
+        !net.players[1].reloading || net.players[1].reload_timer_ms != 240) return 6;
 
     /* 真正经过 localhost UDP socket 的输入与快照回环，覆盖非阻塞
      * sendto/recvfrom、对端锁定和包头校验。逐个尝试测试端口，避免并行
@@ -717,7 +762,7 @@ int rasterfall_net_self_test(void)
         host.remote_command.turn != -321)) transport_result = 10;
     toy_game_init(&test_game, 1);
     if (!transport_result &&
-        rasterfall_net_send_snapshot(&host, &camera, &test_game) < 0)
+        rasterfall_net_send_snapshot(&host, &camera, &test_game, 1, 0) < 0)
         transport_result = 11;
     for (i = 0; i < 1000 && !client.snapshot_ready; i++)
         rasterfall_net_poll(&client);

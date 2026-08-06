@@ -1930,7 +1930,8 @@ int main(int argc, char **argv)
             if (!paused) {
                 struct rasterfall_command command;
                 rasterfall_effects_update(&effects, FIXED_STEP_US / 1000);
-                if (game.state == TOY_GAME_PLAYING) {
+                if (game.state == TOY_GAME_PLAYING &&
+                    !(net.mode == RASTERFALL_NET_CLIENT && !net.connected)) {
                     build_game_command(&command, &input, &settings, fire_edge,
                                        pointer_turn_pending,
                                        pointer_pitch_pending);
@@ -1941,7 +1942,9 @@ int main(int argc, char **argv)
                     else if (net.mode == RASTERFALL_NET_HOST) {
                         rasterfall_net_apply_remote(&net, &session);
                         if ((net.tick % 3) == 0)
-                            rasterfall_net_send_snapshot(&net, &camera, &game);
+                            rasterfall_net_send_snapshot(&net, &camera, &game,
+                                                         session.air_walls_enabled,
+                                                         session.manual_alarm_on);
                     }
                     consume_game_command_edges(&input);
                     pointer_turn_pending = 0;

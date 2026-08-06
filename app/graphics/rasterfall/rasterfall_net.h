@@ -30,6 +30,11 @@ struct rasterfall_net_player {
     int hp;
     int weapon;
     int state;
+    int current_slot;
+    int mag[TOY_GAME_WEAPON_SLOTS];
+    int reserve[TOY_GAME_WEAPON_SLOTS];
+    int reloading;
+    int reload_timer_ms;
 };
 
 struct rasterfall_net_enemy {
@@ -76,6 +81,8 @@ struct rasterfall_net {
     int snapshot_world_phase;
     int snapshot_world_phase_timer_ms;
     int snapshot_world_alarm_timer_ms;
+    int snapshot_air_walls_enabled;
+    int snapshot_manual_alarm_enabled;
     int snapshot_ready;
     int connected;
     int rtt_ms;
@@ -99,7 +106,9 @@ int rasterfall_net_send_command(struct rasterfall_net *net,
                                 const struct camera *predicted);
 int rasterfall_net_send_snapshot(struct rasterfall_net *net,
                                  const struct camera *host_camera,
-                                 const struct toy_game *game);
+                                 const struct toy_game *game,
+                                 int air_walls_enabled,
+                                 int manual_alarm_enabled);
 void rasterfall_net_apply_remote(struct rasterfall_net *net,
                                  struct rasterfall_session *session);
 void rasterfall_net_reconcile_client(struct rasterfall_net *net,
