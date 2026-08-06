@@ -93,6 +93,9 @@ enemy world. Both sides render a teammate model, and the client predicts and
 reconciles its position. Full enemy-state/event replication and reconnect handling
 remain for the next stage; this is an executable co-op prototype.
 
+The top-right HUD shows `HOST`/`CLIENT`, peer connection state, and live RTT.
+The host displays `WAITING FOR PLAYER` until a client is accepted.
+
 `bootstrap/` contains versioned seed binaries. They are for periodic bootstrap
 checks, are not used by the default `make`, and may lag behind the source:
 

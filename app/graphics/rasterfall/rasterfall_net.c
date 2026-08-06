@@ -12,6 +12,13 @@
 #define NET_SNAPSHOT_BASE 8
 #define NET_INPUT_HOLD_TICKS 15
 
+static long net_monotonic_ms(void)
+{
+    struct timespec now;
+    if (__clock_gettime(CLOCK_MONOTONIC, &now) < 0) return 0;
+    return (long)now.tv_sec * 1000L + now.tv_nsec / 1000000L;
+}
+
 static void put_u16(unsigned char *p, unsigned int value)
 {
     p[0] = (unsigned char)(value >> 8);
@@ -76,7 +83,8 @@ static int packet_begin(unsigned char *packet, int type, int payload_size,
 }
 
 static int packet_header(const unsigned char *packet, int size, int *type,
-                         int *payload_size, uint32_t *sequence)
+                         int *payload_size, uint32_t *sequence,
+                         uint32_t *ack)
 {
     int payload;
     if (size < NET_HEADER_SIZE || packet[0] != NET_MAGIC_0 ||
@@ -88,6 +96,7 @@ static int packet_header(const unsigned char *packet, int size, int *type,
     *type = packet[5];
     *payload_size = payload;
     *sequence = get_u32(packet + 8);
+    if (ack) *ack = get_u32(packet + 12);
     return 0;
 }
 
@@ -216,6 +225,8 @@ int rasterfall_net_send_command(struct rasterfall_net *net,
     net->tick++;
     size = encode_command(packet, ++net->send_sequence,
                           net->receive_sequence, net->tick, command, predicted);
+    net->last_command_sequence = net->send_sequence;
+    net->last_command_sent_ms = net_monotonic_ms();
     return net_send(net, packet, size);
 }
 
@@ -268,6 +279,8 @@ int rasterfall_net_send_snapshot(struct rasterfall_net *net,
     if (net->mode != RASTERFALL_NET_HOST || !net->peer_known) return -1;
     size = packet_begin(packet, RASTERFALL_NET_SNAPSHOT, payload_size,
                         ++net->send_sequence, net->receive_sequence);
+    net->last_snapshot_sequence = net->send_sequence;
+    net->last_snapshot_sent_ms = net_monotonic_ms();
     put_u32(p, net->tick);
     p[4] = RASTERFALL_NET_PLAYER_MAX;
     p[5] = p[6] = p[7] = 0;
@@ -309,7 +322,7 @@ void rasterfall_net_poll(struct rasterfall_net *net)
     if (net->fd < 0) return;
     for (;;) {
         int type, payload_size;
-        uint32_t sequence;
+        uint32_t sequence, ack;
         source_len = sizeof(source);
         received = recvfrom(net->fd, packet, sizeof(packet), 0,
                             (struct sockaddr *)&source, &source_len);
@@ -318,13 +331,14 @@ void rasterfall_net_poll(struct rasterfall_net *net)
             return;
         }
         if (packet_header(packet, (int)received, &type, &payload_size,
-                          &sequence) < 0) continue;
+                          &sequence, &ack) < 0) continue;
         if (net->mode == RASTERFALL_NET_HOST) {
             if (!net->peer_known) {
                 if (type != RASTERFALL_NET_HELLO && type != RASTERFALL_NET_INPUT)
                     continue;
                 memcpy(&net->peer, &source, sizeof(source));
                 net->peer_known = 1;
+                net->connected = 1;
             } else if (!same_peer(&net->peer, &source)) {
                 continue;
             }
@@ -332,6 +346,11 @@ void rasterfall_net_poll(struct rasterfall_net *net)
                 sequence > net->last_input_sequence &&
                 decode_command(packet + NET_HEADER_SIZE, payload_size,
                                &net->remote_command) == 0) {
+                if (ack == net->last_snapshot_sequence &&
+                    net->last_snapshot_sent_ms) {
+                    long elapsed = net_monotonic_ms() - net->last_snapshot_sent_ms;
+                    if (elapsed >= 0 && elapsed < 60000) net->rtt_ms = (int)elapsed;
+                }
                 net->last_input_sequence = sequence;
                 net->receive_sequence = sequence;
                 net->remote_command_ready = 1;
@@ -342,6 +361,13 @@ void rasterfall_net_poll(struct rasterfall_net *net)
                 sequence > net->receive_sequence &&
                 decode_snapshot(packet + NET_HEADER_SIZE, payload_size, net) == 0)
                 net->receive_sequence = sequence;
+            if (type == RASTERFALL_NET_SNAPSHOT) {
+                net->connected = 1;
+                if (ack == net->last_command_sequence && net->last_command_sent_ms) {
+                    long elapsed = net_monotonic_ms() - net->last_command_sent_ms;
+                    if (elapsed >= 0 && elapsed < 60000) net->rtt_ms = (int)elapsed;
+                }
+            }
         }
     }
 }
@@ -472,7 +498,7 @@ int rasterfall_net_self_test(void)
     camera.z = 654321;
     size = encode_command(packet, 0x10203040U, 7, 99, &input, &camera);
     if (size != NET_HEADER_SIZE + NET_INPUT_SIZE) return 1;
-    if (packet_header(packet, size, &type, &payload_size, &sequence) < 0 ||
+    if (packet_header(packet, size, &type, &payload_size, &sequence, NULL) < 0 ||
         type != RASTERFALL_NET_INPUT || sequence != 0x10203040U ||
         payload_size != NET_INPUT_SIZE) return 2;
     if (decode_command(packet + NET_HEADER_SIZE, payload_size, &output) < 0 ||
@@ -481,9 +507,9 @@ int rasterfall_net_self_test(void)
         output.pitch != input.pitch || output.buttons != input.buttons ||
         output.fire_held != input.fire_held) return 3;
     packet[4]++;
-    if (packet_header(packet, size, &type, &payload_size, &sequence) == 0) return 4;
+    if (packet_header(packet, size, &type, &payload_size, &sequence, NULL) == 0) return 4;
     packet[4]--;
-    if (packet_header(packet, size - 1, &type, &payload_size, &sequence) == 0)
+    if (packet_header(packet, size - 1, &type, &payload_size, &sequence, NULL) == 0)
         return 5;
     rasterfall_net_init(&net);
     camera.sy = 0;

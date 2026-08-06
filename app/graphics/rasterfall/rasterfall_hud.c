@@ -61,6 +61,34 @@ static void render_weapon_hud(struct toy_surface *surface, int x, int y,
     }
 }
 
+static void render_network_hud(struct toy_surface *surface,
+                               const struct rasterfall_net *net)
+{
+    char line[96];
+    int width, x, y = 8;
+    uint32_t color;
+    if (!net || net->mode == RASTERFALL_NET_OFF) return;
+    if (net->mode == RASTERFALL_NET_HOST) {
+        if (net->peer_known)
+            snprintf(line, sizeof(line), "HOST  PLAYER 2  RTT %d MS", net->rtt_ms);
+        else
+            snprintf(line, sizeof(line), "HOST  WAITING FOR PLAYER");
+        color = net->peer_known ? 0x80E0C0 : 0xFFD070;
+    } else if (net->connected) {
+        snprintf(line, sizeof(line), "CLIENT  CONNECTED  RTT %d MS", net->rtt_ms);
+        color = net->rtt_ms > 150 ? 0xFFB060 : 0x80E0C0;
+    } else {
+        snprintf(line, sizeof(line), "CLIENT  CONNECTING...");
+        color = 0xFFD070;
+    }
+    width = (int)strlen(line) * FB_FONT_W;
+    x = surface->width - width - 10;
+    if (x < 8) x = 8;
+    hud_fill_rect(surface, x - 4, y - 2, width + 8, FB_FONT_H + 4, 0x182634);
+    fb_draw_string((unsigned char *)surface->pixels, x, y, line, color,
+                   surface->stride);
+}
+
 void rasterfall_hud_render(struct toy_surface *surface, int fps,
                            const struct rasterfall_hud_state *state)
 {
@@ -85,6 +113,7 @@ void rasterfall_hud_render(struct toy_surface *surface, int fps,
     x = draw_hud_value(surface, x, "RUN ", line, 0xC0A0FF);
     snprintf(line, sizeof(line), "%d", fps);
     draw_hud_value(surface, x, "FPS ", line, 0x90F090);
+    render_network_hud(surface, state->net);
     n = snprintf(line, sizeof(line), "HP %d  KILLS %d", game->hp, game->kills);
     if (n > 0)
         fb_draw_string((unsigned char *)surface->pixels, 8, 8 + FB_FONT_H,

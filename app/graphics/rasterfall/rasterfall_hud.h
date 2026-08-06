@@ -5,6 +5,7 @@
 #include "toy_game.h"
 #include "toy_map.h"
 #include "rasterfall_map.h"
+#include "rasterfall_net.h"
 
 struct rasterfall_hud_state {
     const struct toy_game *game;
@@ -18,6 +19,7 @@ struct rasterfall_hud_state {
     int manual_alarm_timer_ms;
     int horde_banner_ms;
     const char *interaction_banner;
+    const struct rasterfall_net *net;
 };
 
 void rasterfall_hud_draw_interact_prompt(struct toy_renderer *renderer,

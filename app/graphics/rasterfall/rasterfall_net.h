@@ -60,6 +60,12 @@ struct rasterfall_net {
     int peer_state_initialized;
     struct rasterfall_net_player players[RASTERFALL_NET_PLAYER_MAX];
     int snapshot_ready;
+    int connected;
+    int rtt_ms;
+    uint32_t last_command_sequence;
+    long last_command_sent_ms;
+    uint32_t last_snapshot_sequence;
+    long last_snapshot_sent_ms;
 };
 
 void rasterfall_net_init(struct rasterfall_net *net);

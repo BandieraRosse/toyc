@@ -277,7 +277,8 @@ static int fixed_floor_lighting;
 #undef manual_alarm_timer_ms
 #undef horde_banner_ms
 #undef interaction_banner
-static void fill_hud_state(struct rasterfall_hud_state *hud)
+static void fill_hud_state(struct rasterfall_hud_state *hud,
+                           const struct rasterfall_net *net_state)
 {
     hud->game = &session.game_state;
     hud->map = &level_map;
@@ -290,6 +291,7 @@ static void fill_hud_state(struct rasterfall_hud_state *hud)
     hud->manual_alarm_timer_ms = session.manual_alarm_timer;
     hud->horde_banner_ms = session.banner_ms;
     hud->interaction_banner = session.banner_text;
+    hud->net = net_state;
 }
 #define game (session.game_state)
 #define interactables (session.items)
@@ -2054,7 +2056,7 @@ int main(int argc, char **argv)
                 draw_crosshair(&surface);
                 {
                     struct rasterfall_hud_state hud;
-                    fill_hud_state(&hud);
+                    fill_hud_state(&hud, &net);
                     rasterfall_hud_render(&surface, display_fps, &hud);
                 }
             }
@@ -2064,7 +2066,7 @@ int main(int argc, char **argv)
                 stage_pixels += toy_renderer_flush(&renderer);
                 {
                     struct rasterfall_hud_state hud;
-                    fill_hud_state(&hud);
+                    fill_hud_state(&hud, &net);
                     rasterfall_hud_draw_interact_prompt(&renderer, &hud);
                 }
             }
