@@ -75,6 +75,7 @@
 #include "rasterfall_audio.h"
 #include "rasterfall_effects.h"
 #include "rasterfall_sky.h"
+#include "rasterfall_viewmodel.h"
 #include "math.h"
 
 #define KEY_ESC   1
@@ -938,16 +939,7 @@ static int render_interactables(struct toy_renderer *renderer,
 
 /* ── 第一人称武器模型：视图空间盒体固定在镜头右下方，开火后坐后移 ── */
 
-#define VIEWMODEL_KICK_MAX 110
-
 static struct rasterfall_effects effects;
-
-static int viewmodel_weapon(void)
-{
-    int slot = game.current_slot;
-    if (slot < 0 || slot >= TOY_GAME_WEAPON_SLOTS) return -1;
-    return game.slots[slot].weapon;
-}
 
 /* 视图空间逆变换：枪口偏移 → 世界坐标（供弹道起点与枪口粒子） */
 static void view_to_world(const struct camera *camera, const struct vec3 *view,
@@ -956,181 +948,9 @@ static void view_to_world(const struct camera *camera, const struct vec3 *view,
     int vx = view->x, vy = view->y, vz = view->z;
     int wy = (vy * camera->pitch_cy + vz * camera->pitch_sy) / 1024;
     int wz = (-vy * camera->pitch_sy + vz * camera->pitch_cy) / 1024;
-    /* 调用方会原地逆变换，先缓存三个分量，避免写入 x 后破坏 z 计算。 */
     world->x = camera->x + (vx * camera->cy + wz * camera->sy) / 1024;
     world->z = camera->z + (-vx * camera->sy + wz * camera->cy) / 1024;
     world->y = wy;
-}
-
-/* 当前武器的枪口视图偏移（含后坐力位移：后移、下沉、略右偏） */
-static void viewmodel_muzzle_offset(int weapon, int kick, struct vec3 *muzzle)
-{
-    if (weapon == TOY_GAME_WEAPON_SMG) {
-        muzzle->x = 105; muzzle->y = -65; muzzle->z = 450;
-    } else if (weapon == TOY_GAME_WEAPON_SHOTGUN) {
-        muzzle->x = 100; muzzle->y = -65; muzzle->z = 560;
-    } else {
-        muzzle->x = 102; muzzle->y = -70; muzzle->z = 420;
-    }
-    muzzle->x += kick / 3;
-    muzzle->y -= kick / 2;
-    muzzle->z += kick;
-}
-
-/* 视图模型专用 2D 三角形填充：直接写表面、不参与深度测试 ——
- * 站在墙边/低头看地时枪永远不会被近处几何裁掉。 */
-static int fill_triangle_2d(struct toy_surface *surface,
-                            int x0, int y0, int x1, int y1, int x2, int y2,
-                            uint32_t color)
-{
-    int y, tmp, xa, xb, ymin, ymax, drawn = 0;
-    long dx01 = 0, dx02, dx12 = 0, xl, xr, lt;
-    if (y0 > y1) { tmp = x0; x0 = x1; x1 = tmp; tmp = y0; y0 = y1; y1 = tmp; }
-    if (y1 > y2) { tmp = x1; x1 = x2; x2 = tmp; tmp = y1; y1 = y2; y2 = tmp; }
-    if (y0 > y1) { tmp = x0; x0 = x1; x1 = tmp; tmp = y0; y0 = y1; y1 = tmp; }
-    if (y0 == y2 || y2 < 0 || y0 >= surface->height) return 0;
-    if (y1 > y0) dx01 = (long)(x1 - x0) * 65536 / (y1 - y0);
-    dx02 = (long)(x2 - x0) * 65536 / (y2 - y0);
-    if (y2 > y1) dx12 = (long)(x2 - x1) * 65536 / (y2 - y1);
-    ymin = y0 < 0 ? 0 : y0;
-    ymax = y2 >= surface->height ? surface->height - 1 : y2;
-    for (y = ymin; y <= ymax; y++) {
-        if (y <= y1) {
-            xl = (long)x0 * 65536 + dx01 * (y - y0);
-            xr = (long)x0 * 65536 + dx02 * (y - y0);
-        } else {
-            xl = (long)x1 * 65536 + dx12 * (y - y1);
-            xr = (long)x0 * 65536 + dx02 * (y - y0);
-        }
-        if (xl > xr) { lt = xl; xl = xr; xr = lt; }
-        xa = (int)(xl >> 16);
-        xb = (int)(xr >> 16);
-        if (xa < 0) xa = 0;
-        if (xb >= surface->width) xb = surface->width - 1;
-        if (xa <= xb) {
-            uint32_t *row = (uint32_t *)((unsigned char *)surface->pixels +
-                                         y * surface->stride);
-            for (int x = xa; x <= xb; x++) row[x] = color;
-            drawn += xb - xa + 1;
-        }
-    }
-    return drawn;
-}
-
-/* 视图空间四边形 → 两个 2D 三角形（枪体 z 恒 > 近平面，无需裁剪） */
-static int draw_view_quad(struct toy_surface *surface,
-                          const struct vec3 *p1, const struct vec3 *p2,
-                          const struct vec3 *p3, const struct vec3 *p4,
-                          uint32_t color)
-{
-    struct toy_screen_vertex s1, s2, s3, s4;
-    project_vertex(surface, p1, &s1);
-    project_vertex(surface, p2, &s2);
-    project_vertex(surface, p3, &s3);
-    project_vertex(surface, p4, &s4);
-    if (s1.z < NEAR_Z || s2.z < NEAR_Z ||
-        s3.z < NEAR_Z || s4.z < NEAR_Z) return 0;
-    return fill_triangle_2d(surface, s1.x, s1.y, s2.x, s2.y, s3.x, s3.y,
-                            color) +
-           fill_triangle_2d(surface, s1.x, s1.y, s3.x, s3.y, s4.x, s4.y,
-                            color);
-}
-
-/* 视图空间盒体：skip_back/skip_top 用于起始端埋进相邻盒内的部件，
- * 避免隐藏的内部面在屏幕上开出颜色补丁。 */
-static int draw_view_box(struct toy_surface *surface,
-                         int minx, int maxx, int miny, int maxy,
-                         int minz, int maxz, uint32_t color,
-                         int skip_back, int skip_top)
-{
-    struct vec3 a, b, c, d, e, f, g, h;
-    int pixels = 0;
-    a.x = minx; a.y = miny; a.z = minz;
-    b.x = maxx; b.y = miny; b.z = minz;
-    c.x = maxx; c.y = miny; c.z = maxz;
-    d.x = minx; d.y = miny; d.z = maxz;
-    e.x = minx; e.y = maxy; e.z = minz;
-    f.x = maxx; f.y = maxy; f.z = minz;
-    g.x = maxx; g.y = maxy; g.z = maxz;
-    h.x = minx; h.y = maxy; h.z = maxz;
-    /* 视图模型不走深度缓冲，盒体必须从远到近绘制。否则近端面会
-     * 被侧面/顶面覆盖，部件交叠处就会出现错误的颜色层。 */
-    pixels += draw_view_quad(surface, &d, &c, &g, &h, color);
-    pixels += draw_view_quad(surface, &b, &c, &g, &f, color + 0x0A0A0A);
-    pixels += draw_view_quad(surface, &d, &a, &e, &h, color - 0x0A0A0A);
-    if (!skip_top)
-        pixels += draw_view_quad(surface, &e, &f, &g, &h, color + 0x141414);
-    if (!skip_back)
-        pixels += draw_view_quad(surface, &a, &b, &f, &e, color - 0x141414);
-    pixels += draw_view_quad(surface, &a, &b, &c, &d, color - 0x0C0C0C);
-    return pixels;
-}
-
-/* 视图空间盒体 + 后坐力位移 */
-static int draw_view_box_kick(struct toy_surface *surface,
-                              int minx, int maxx, int miny, int maxy,
-                              int minz, int maxz, uint32_t color,
-                              int skip_back, int skip_top)
-{
-    int kx = effects.weapon_kick / 3;
-    int ky = -effects.weapon_kick / 2;
-    int kz = effects.weapon_kick;
-    return draw_view_box(surface, minx + kx, maxx + kx,
-                         miny + ky, maxy + ky,
-                         minz + kz, maxz + kz, color,
-                         skip_back, skip_top);
-}
-
-/* 手枪：握把 → 套筒 → 枪管。后画者在前，部件大幅互嵌成一体。 */
-static int render_view_pistol(struct toy_renderer *renderer)
-{
-    struct toy_surface *s = &renderer->surface;
-    int pixels = 0;
-    pixels += draw_view_box_kick(s, 90, 150, -180, -95, 255, 305,
-                                 0x5A4630, 1, 1);
-    pixels += draw_view_box_kick(s, 85, 160, -115, -45, 255, 340,
-                                 0x3E4652, 0, 0);
-    pixels += draw_view_box_kick(s, 75, 130, -90, -50, 300, 420,
-                                 0x2E343D, 1, 0);
-    return pixels;
-}
-
-/* SMG：弹匣 → 机匣 → 枪管 */
-static int render_view_smg(struct toy_renderer *renderer)
-{
-    struct toy_surface *s = &renderer->surface;
-    int pixels = 0;
-    pixels += draw_view_box_kick(s, 95, 155, -170, -95, 275, 320,
-                                 0x4A4438, 1, 1);
-    pixels += draw_view_box_kick(s, 90, 170, -115, -40, 255, 345,
-                                 0x3B4148, 0, 0);
-    pixels += draw_view_box_kick(s, 70, 140, -85, -40, 310, 450,
-                                 0x2F343B, 1, 0);
-    return pixels;
-}
-
-/* 霰弹枪：机匣 → 长枪管 → 护木（护木包在枪管中段） */
-static int render_view_shotgun(struct toy_renderer *renderer)
-{
-    struct toy_surface *s = &renderer->surface;
-    int pixels = 0;
-    pixels += draw_view_box_kick(s, 95, 175, -110, -40, 270, 355,
-                                 0x46505A, 0, 0);
-    pixels += draw_view_box_kick(s, 70, 130, -90, -40, 335, 560,
-                                 0x3A434D, 1, 0);
-    pixels += draw_view_box_kick(s, 75, 140, -100, -45, 390, 460,
-                                 0x2C3138, 0, 0);
-    return pixels;
-}
-
-/* 跟随当前武器出枪；空槽不显示 */
-static int render_viewmodel(struct toy_renderer *renderer)
-{
-    int weapon = viewmodel_weapon();
-    if (weapon == TOY_GAME_WEAPON_SMG) return render_view_smg(renderer);
-    if (weapon == TOY_GAME_WEAPON_SHOTGUN) return render_view_shotgun(renderer);
-    if (weapon == TOY_GAME_WEAPON_PISTOL) return render_view_pistol(renderer);
-    return 0;
 }
 
 static void fill_rect(struct toy_surface *surface, int x, int y,
@@ -1638,7 +1458,14 @@ static void sync_fire_effects(const struct camera *camera)
     if (ray_count > TOY_GAME_MAX_RAYS) ray_count = TOY_GAME_MAX_RAYS;
     /* 后坐力 + 枪口世界坐标（开火瞬间采样，含后坐位移） */
     effects.weapon_kick = VIEWMODEL_KICK_MAX;
-    viewmodel_muzzle_offset(viewmodel_weapon(), effects.weapon_kick, &muzzle_view);
+    {
+        int mx, my, mz;
+        rasterfall_viewmodel_muzzle_offset(rasterfall_viewmodel_weapon(&game),
+                                           effects.weapon_kick, &mx, &my, &mz);
+        muzzle_view.x = mx;
+        muzzle_view.y = my;
+        muzzle_view.z = mz;
+    }
     muzzle.x = muzzle_view.x;
     muzzle.y = muzzle_view.y;
     muzzle.z = muzzle_view.z;
@@ -2292,7 +2119,7 @@ int main(int argc, char **argv)
             stage_pixels += render_tracers(&renderer, &camera);
             stage_pixels += render_particles(&renderer, &camera);
             /* 第一人称武器：最后画，叠加在世界之上 */
-            stage_pixels += render_viewmodel(&renderer);
+            stage_pixels += rasterfall_viewmodel_render(&renderer, &game, &effects);
             if (game.state == TOY_GAME_OVER) {
                 draw_game_over_panel(&surface);
             } else if (game.state == TOY_GAME_WON) {

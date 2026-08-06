@@ -162,7 +162,7 @@ static int run_logic_test(void)
         render_tracers(&renderer, &camera);
         render_particles(&renderer, &camera);
         /* 第一人称武器模型冒烟：SMG 几何进入光栅器 */
-        render_viewmodel(&renderer);
+        rasterfall_viewmodel_render(&renderer, &game, &effects);
         rasterfall_effects_reset_fire(&effects);
     }
     toy_renderer_destroy(&renderer);
