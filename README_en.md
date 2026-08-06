@@ -52,14 +52,31 @@ glTF, skeletal animation, and GUI editing are outside v0.1.
 The FPS v0.2 slice loads `assets/generated/wall.ttex` by default and uses nearest
 RGB888 sampling on walls, floors, and boxes. Use `--no-textures` for the pure-color
 path and `--texture-stats` for textured triangle/pixel/fallback counters. Every
-5 seconds the app prints frame statistics to the terminal: average FPS, frame
-render time mean/p95/p99/max, frame intervals (wall/wait/stall, explaining the
-gap between average FPS and active render time), per-stage (logic/begin/scene/
-enemies/raster/overlay/present) per-frame averages of triangle, vertex, pixel
-and time (with time share), the raster pixel funnel (bbox scan → coverage →
-depth pass) and the flat/textured path split, with a full-run summary on exit;
-`--no-stats` disables that output. Preview with
-`build/wayland_fps --frames 300 --texture-stats` under Wayland; use
+5 seconds the app prints frame statistics to the terminal (plus a full-run summary
+on exit; `--no-stats` disables the output):
+
+- `fps`/`wall_us`: average FPS and frame interval. `wall` is the wall-clock time
+  between consecutive frame starts (begin_frame), accumulated over all loop
+  iterations and divided by rendered frames, so it equals 1e6/fps exactly; it is
+  the sum of active render time (`frame_us`) and inter-iteration overhead
+  (`wait_us`), and the two strictly reconcile — `wait` accounts for the gap
+  between average FPS and active render time (compositor pacing, double-buffer
+  backpressure, polling/scheduling).
+- `frame_us` (mean/p95/p99/max): active render-pipeline time per frame
+  (begin_frame to present); the percentiles reflect frame-drop risk.
+- `wait_us`: derived as `wall − active` (never measured directly, so the
+  accounting stays exact); `stall_ms` is its compositor-backpressure part
+  (waiting for the compositor to release a buffer).
+- Stage table `logic/begin/scene/enemies/raster/overlay/present`: per-frame
+  averages of triangles, vertices, pixels and time (with time share) per stage,
+  for hotspot identification.
+- Pixel funnel `funnel`: bbox-scan pixels → coverage-pass pixels (triangle
+  efficiency) → depth-pass pixels (actual screen writes); the two ratios reveal
+  coverage waste and overdraw.
+- Path split `path`: triangles/pixels/time of the flat and textured raster
+  paths, to compare their costs.
+
+Preview with `build/wayland_fps --frames 300 --texture-stats` under Wayland; use
 `build/wayland_fps --logic-test` for the headless regression preview.
 
 `bootstrap/` contains versioned seed binaries. They are for periodic bootstrap

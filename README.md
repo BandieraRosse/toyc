@@ -47,13 +47,26 @@ v0.1 不包含压缩、FBX、glTF、骨骼动画或 GUI 编辑器。
 
 FPS 的 v0.2 纹理切片默认加载 `assets/generated/wall.ttex`，将 nearest RGB888
 采样用于墙、地板和箱体；`--no-textures` 切回纯色，`--texture-stats` 输出纹理
-三角形、像素和占位纹理统计。每 5 秒向终端输出一次性能统计：平均帧率、帧渲染
-时间均值/p95/p99/最长、帧间隔（wall/wait/stall，用于解释平均帧率与活跃渲染
-耗时的缺口），以及 logic/begin/scene/enemies/raster/overlay/present 各阶段
-平均每帧的三角形、顶点、像素与耗时（及占比），外加光栅化像素漏斗（包围盒
-扫描→覆盖测试→深度通过）与纯色/纹理路径拆分；退出时再输出全量汇总；
-`--no-stats` 关闭该输出。可用 `build/wayland_fps --frames 300 --texture-stats`
-在 Wayland 环境预览，`build/wayland_fps --logic-test` 为无窗口回归预览。
+三角形、像素和占位纹理统计。每 5 秒向终端输出一次性能统计（退出时再输出全量
+汇总，`--no-stats` 关闭），字段含义：
+
+- `fps`/`wall_us`：平均帧率与帧间隔。`wall` 是相邻两帧渲染起点（begin_frame）
+  之间的墙钟时间，按循环迭代累计除以渲染帧数，精确等于 1e6/fps；它由活跃渲染
+  时间（`frame_us`）与迭代间开销（`wait_us`）构成，与两者严格对账——平均帧率
+  与渲染耗时的缺口就是 `wait` 的去向（组合器节拍/双缓冲背压/轮询调度）。
+- `frame_us`（均值/p95/p99/max）：单帧渲染流水线活跃时间（begin_frame 到
+  present），分位数反映掉帧风险。
+- `wait_us`：由 `wall − active` 推导的迭代间开销（事件轮询、逻辑调度、双缓冲
+  背压），不直接测量以保证对账严格；`stall_ms` 是其组合器背压部分（等组合器
+  释放 buffer）。
+- 阶段表 `logic/begin/scene/enemies/raster/overlay/present`：各阶段平均每帧的
+  三角形、顶点、像素与耗时（及占比），用于定位热点阶段。
+- 像素漏斗 `funnel`：包围盒扫描像素 → 覆盖测试通过像素（三角形覆盖效率）→
+  深度通过像素（实际写屏量），两段比例揭示覆盖浪费与过度绘制。
+- 路径拆分 `path`：纯色/纹理两条光栅化路径的三角形、像素与耗时，区分两者成本。
+
+可用 `build/wayland_fps --frames 300 --texture-stats` 在 Wayland 环境预览，
+`build/wayland_fps --logic-test` 为无窗口回归预览。
 
 `bootstrap/` 保存版本控制内的种子二进制。它们用于阶段性的自举检查，不参与默认
 `make`，而且可能落后于源码：

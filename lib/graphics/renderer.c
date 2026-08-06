@@ -76,26 +76,37 @@ static long raster_flat(struct toy_renderer *renderer,
                         int y0, int y1, uint32_t color)
 {
     struct toy_surface *surface = &renderer->surface;
+    int *depth = renderer->depth;
+    int width = surface->width;
     int y, x, drawn = 0;
     unsigned long inside = 0;
+    /* 增量边函数：E(x+1,y)=E(x,y)+dEx、E(x,y+1)=E(x,y)+dEy，每像素
+     * 由 3 次完整边函数（-O0 下是 3 次调用 + 6 次乘法）退化为 3 次加法；
+     * 行首边值只按行增量更新。整数加法与逐像素重算完全一致。 */
+    long dEx0 = c->y - b->y, dEx1 = a->y - c->y, dEx2 = b->y - a->y;
+    long dEy0 = b->x - c->x, dEy1 = c->x - a->x, dEy2 = a->x - b->x;
+    long w0 = edge(b, c, minx, y0);
+    long w1 = edge(c, a, minx, y0);
+    long w2 = edge(a, b, minx, y0);
     for (y = y0; y <= y1; y++) {
         uint32_t *row = (uint32_t *)((unsigned char *)surface->pixels +
                                      y * surface->stride);
+        int base = y * width;
+        long e0 = w0, e1 = w1, e2 = w2;
         for (x = minx; x <= maxx; x++) {
-            long w0 = edge(b, c, x, y);
-            long w1 = edge(c, a, x, y);
-            long w2 = edge(a, b, x, y);
-            if (w0 <= 0 && w1 <= 0 && w2 <= 0) {
+            if (e0 <= 0 && e1 <= 0 && e2 <= 0) {
                 inside++;
-                int z = (int)((w0 * a->z + w1 * b->z + w2 * c->z) / area);
-                int at = y * surface->width + x;
-                if (z < renderer->depth[at]) {
-                    renderer->depth[at] = z;
+                int z = (int)((e0 * a->z + e1 * b->z + e2 * c->z) / area);
+                int at = base + x;
+                if (z < depth[at]) {
+                    depth[at] = z;
                     row[x] = color;
                     drawn++;
                 }
             }
+            e0 += dEx0; e1 += dEx1; e2 += dEx2;
         }
+        w0 += dEy0; w1 += dEy1; w2 += dEy2;
     }
     worker->inside_px += inside;
     return drawn;
@@ -160,36 +171,45 @@ static long raster_tex(struct toy_renderer *renderer,
                        unsigned long *fallback_pixels)
 {
     struct toy_surface *surface = &renderer->surface;
+    int *depth = renderer->depth;
+    int width = surface->width;
     int y, x, drawn = 0;
     unsigned long inside = 0;
+    /* 与 raster_flat 相同的增量边函数（行首边值按行增量更新）。 */
+    long dEx0 = c->y - b->y, dEx1 = a->y - c->y, dEx2 = b->y - a->y;
+    long dEy0 = b->x - c->x, dEy1 = c->x - a->x, dEy2 = a->x - b->x;
+    long w0 = edge(b, c, minx, y0);
+    long w1 = edge(c, a, minx, y0);
+    long w2 = edge(a, b, minx, y0);
     for (y = y0; y <= y1; y++) {
         uint32_t *row = (uint32_t *)((unsigned char *)surface->pixels +
                                      y * surface->stride);
+        int base = y * width;
+        long e0 = w0, e1 = w1, e2 = w2;
         for (x = minx; x <= maxx; x++) {
-            long w0 = edge(b, c, x, y);
-            long w1 = edge(c, a, x, y);
-            long w2 = edge(a, b, x, y);
-            if (w0 <= 0 && w1 <= 0 && w2 <= 0) {
+            if (e0 <= 0 && e1 <= 0 && e2 <= 0) {
                 inside++;
-                long z = (w0 * a->z + w1 * b->z + w2 * c->z) / area;
-                int at = y * surface->width + x;
-                if (z < renderer->depth[at]) {
-                    long inv = w0 * a->inv_z + w1 * b->inv_z + w2 * c->inv_z;
-                    long uoz = w0 * a->u_over_z + w1 * b->u_over_z + w2 * c->u_over_z;
-                    long voz = w0 * a->v_over_z + w1 * b->v_over_z + w2 * c->v_over_z;
+                long z = (e0 * a->z + e1 * b->z + e2 * c->z) / area;
+                int at = base + x;
+                if (z < depth[at]) {
+                    long inv = e0 * a->inv_z + e1 * b->inv_z + e2 * c->inv_z;
+                    long uoz = e0 * a->u_over_z + e1 * b->u_over_z + e2 * c->u_over_z;
+                    long voz = e0 * a->v_over_z + e1 * b->v_over_z + e2 * c->v_over_z;
                     int used_fallback = 0;
                     long u = inv ? (uoz / inv) : 0;
                     long v = inv ? (voz / inv) : 0;
                     uint32_t color = texture_sample(texture, u, v, repeat,
                                                      fallback_color, &used_fallback);
-                    renderer->depth[at] = (int)z;
+                    depth[at] = (int)z;
                     row[x] = color;
                     (*tex_pixels)++;
                     if (used_fallback) (*fallback_pixels)++;
                     drawn++;
                 }
             }
+            e0 += dEx0; e1 += dEx1; e2 += dEx2;
         }
+        w0 += dEy0; w1 += dEy1; w2 += dEy2;
     }
     worker->inside_px += inside;
     return drawn;
