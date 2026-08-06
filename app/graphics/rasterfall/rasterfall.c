@@ -73,6 +73,7 @@
 #include "toy_audio.h"
 #include "toy_map.h"
 #include "rasterfall_map.h"
+#include "rasterfall_hud.h"
 #include "pthread.h"
 #include "errno.h"
 #include "math.h"
@@ -323,6 +324,21 @@ static int highlighted = -1;   /* 本帧准星对准的拾取物索引，-1=无 
 static void reset_interactables(void)
 {
     rasterfall_map_reset_interactables(&map_ops);
+}
+
+static void fill_hud_state(struct rasterfall_hud_state *hud)
+{
+    hud->game = &game;
+    hud->map = &level_map;
+    hud->safe_rooms = map_safe_rooms;
+    hud->interactables = interactables;
+    hud->interactable_count = interactable_count;
+    hud->highlighted = highlighted;
+    hud->air_walls_enabled = air_wall_enabled;
+    hud->manual_alarm_enabled = manual_alarm_enabled;
+    hud->manual_alarm_timer_ms = manual_alarm_timer_ms;
+    hud->horde_banner_ms = horde_banner_ms;
+    hud->interaction_banner = interaction_banner;
 }
 
 static long monotonic_us(void)
@@ -1127,40 +1143,6 @@ static void draw_sky_ground(struct toy_surface *surface,
 static void draw_sky_features(struct toy_surface *surface,
                               const struct camera *camera);
 
-/* E 互动提示固定在屏幕底部中央，高亮时可见；已持有的武器显示 REFILL */
-static void draw_interact_prompt(struct toy_renderer *renderer)
-{
-    const interactable *it;
-    char label[24];
-    int text_w, x, y;
-    if (highlighted < 0) return;
-    it = &interactables[highlighted];
-    if (it->kind == TOY_MAP_PICKUP_BUTTON) {
-        snprintf(label, sizeof(label), "E SUMMON HORDE");
-    } else if (it->kind == TOY_MAP_PICKUP_AIR_BUTTON) {
-        snprintf(label, sizeof(label), "E AIR WALLS %s",
-                 air_wall_enabled ? "OFF" : "ON");
-    } else if (it->kind == TOY_MAP_PICKUP_ALARM_BUTTON) {
-        snprintf(label, sizeof(label), "E ALARM %s",
-                 manual_alarm_enabled ? "OFF" : "ON");
-    } else if (it->kind == TOY_MAP_PICKUP_AMMO) {
-        snprintf(label, sizeof(label), "E TAKE AMMO");
-    } else {
-        int weapon = it->kind == TOY_MAP_PICKUP_SMG ?
-                     TOY_GAME_WEAPON_SMG : TOY_GAME_WEAPON_SHOTGUN;
-        const char *name = it->kind == TOY_MAP_PICKUP_SMG ? "SMG" : "SHOTGUN";
-        snprintf(label, sizeof(label), "E %s %s",
-                 game.slots[0].weapon == weapon ? "REFILL" : "PICK UP", name);
-    }
-    text_w = (int)strlen(label) * FB_FONT_W;
-    x = (renderer->surface.width - text_w) / 2;
-    y = renderer->surface.height - FB_FONT_H - 18;
-    fill_rect(&renderer->surface, x - 5, y - 3, text_w + 10, FB_FONT_H + 6,
-              0x171B24);
-    fb_draw_string((unsigned char *)renderer->surface.pixels, x, y,
-                   label, 0xFFD060, renderer->surface.stride);
-}
-
 /* E 键互动：拾取主武器（替换槽 0 并切出），同武器 = 补充弹药；
  * 弹药盒补满备弹；召唤按钮每次互动触发 15-20 个追踪尸潮。
  * 拾取点是固定的，互动后保留在场。 */
@@ -1600,8 +1582,6 @@ static int render_enemies(struct toy_renderer *renderer,
     }
     return pixels;
 }
-
-#include "rasterfall_hud.inc"
 
 /* ── 子弹轨迹与命中粒子（纯视觉；逻辑步进 16ms 推进） ──────────── */
 
@@ -2645,16 +2625,24 @@ int main(int argc, char **argv)
                 draw_pause_overlay(&surface, &pause_menu, &settings);
             } else {
                 draw_crosshair(&surface);
-                render_hud(&surface, display_fps);
+                {
+                    struct rasterfall_hud_state hud;
+                    fill_hud_state(&hud);
+                    rasterfall_hud_render(&surface, display_fps, &hud);
+                }
             }
             if (game.state == TOY_GAME_PLAYING && !paused) {
                 stage_pixels += render_interactables(&renderer, &camera);
                 /* 拾取物保持画在枪模之上的现状顺序 */
                 stage_pixels += toy_renderer_flush(&renderer);
-                draw_interact_prompt(&renderer);
+                {
+                    struct rasterfall_hud_state hud;
+                    fill_hud_state(&hud);
+                    rasterfall_hud_draw_interact_prompt(&renderer, &hud);
+                }
             }
             scene_pixels += stage_pixels;
-            render_damage_flash(&surface);
+            rasterfall_hud_damage_flash(&surface, &game);
             if (input_debug)
                 draw_input_debug(&surface, &input,
                                  have_last_key ? last_key : 0,
@@ -2694,7 +2682,7 @@ int main(int argc, char **argv)
     for (int kind = 0; kind <= TOY_SFX_PLAYER_DEATH; kind++)
         if (sfx_assets[kind].blob) toy_sound_unload(&sfx_assets[kind]);
     if (scene_texture.blob) toy_texture_unload(&scene_texture);
-    if (dump_path) dump_frame_ppm(dump_path, &surface);
+    if (dump_path) rasterfall_hud_dump_frame(dump_path, &surface);
     rasterfall_map_unload(&map_ops);
     toy_window_close(window);
     __printf("rasterfall: %d frames, %d scene pixels, position=(%d,%d)\n",

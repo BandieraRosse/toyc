@@ -15,6 +15,7 @@
 #include "string.h"
 #include "pthread.h"
 #include "tlibc_compat.h"
+#include "atomic.h"
 
 #define TOY_UV_ONE 65536L
 #define TOY_INV_Z_SCALE 1048576L
@@ -528,7 +529,7 @@ static void *render_worker_main(void *arg)
      * 若此时主线程已推进 generation，唤醒会丢失、worker 永久休眠。
      * 先快照 generation 并累加 done_count，主线程等全部确认后才分发。 */
     __sync_synchronize();
-    __sync_fetch_and_add((int *)&renderer->job_done_count, 1);
+    atomic_fetch_add_u32((volatile uint32_t *)&renderer->job_done_count, 1);
     for (;;) {
         __sync_synchronize();
         while (renderer->job_generation == seen && !renderer->quit) {
@@ -554,7 +555,7 @@ static void *render_worker_main(void *arg)
         else
             worker_rasterize(renderer, worker->id, worker);
         __sync_synchronize();
-        __sync_fetch_and_add((int *)&renderer->job_done_count, 1);
+        atomic_fetch_add_u32((volatile uint32_t *)&renderer->job_done_count, 1);
     }
     return NULL;
 }
