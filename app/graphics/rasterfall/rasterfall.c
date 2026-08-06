@@ -1753,8 +1753,15 @@ int main(int argc, char **argv)
         if (toy_window_poll(window, &events, 0) < 0) break;
         toy_input_apply(&input, &events);
         rasterfall_net_poll(&net);
+        rasterfall_net_update_connection(&net);
+        if (net.mode == RASTERFALL_NET_CLIENT && net.remote_event_count > 0) {
+            if (audio.running)
+                rasterfall_audio_play_events(&audio, net.remote_events,
+                                             net.remote_event_count);
+            net.remote_event_count = 0;
+        }
         if (net.mode == RASTERFALL_NET_CLIENT)
-            rasterfall_net_reconcile_client(&net, &camera);
+                rasterfall_net_reconcile_client(&net, &session, &camera);
         /* 本帧到达的按压边沿并入保留位，再把保留位全部合入 key_pressed
          * 供顶部消费方（菜单/射击）读取。保留位在逻辑步跑过的那帧末尾
          * 才清除，因此不跑逻辑步的帧不会吞掉 E/R/,/. 等按键。 */

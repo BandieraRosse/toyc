@@ -7,7 +7,7 @@
 #include "rasterfall_session.h"
 
 #define RASTERFALL_NET_DEFAULT_PORT 28460
-#define RASTERFALL_NET_MAX_PACKET 512
+#define RASTERFALL_NET_MAX_PACKET 1400
 #define RASTERFALL_NET_PROTOCOL_VERSION 1
 #define RASTERFALL_NET_PLAYER_MAX 2
 
@@ -30,6 +30,13 @@ struct rasterfall_net_player {
     int hp;
     int weapon;
     int state;
+};
+
+struct rasterfall_net_enemy {
+    int active, ai_state, hp;
+    int x, z, speed;
+    int bite_cooldown_ms, flash, hurt, dying_ms;
+    int dir_x, dir_z;
 };
 
 struct rasterfall_net {
@@ -59,6 +66,10 @@ struct rasterfall_net {
     unsigned int peer_fire_seq;
     int peer_state_initialized;
     struct rasterfall_net_player players[RASTERFALL_NET_PLAYER_MAX];
+    struct rasterfall_net_enemy enemies[TOY_GAME_MAX_ENEMIES];
+    int enemy_count;
+    int remote_event_count;
+    unsigned char remote_events[TOY_GAME_MAX_EVENTS];
     int snapshot_ready;
     int connected;
     int rtt_ms;
@@ -66,6 +77,8 @@ struct rasterfall_net {
     long last_command_sent_ms;
     uint32_t last_snapshot_sequence;
     long last_snapshot_sent_ms;
+    long last_receive_ms;
+    long last_hello_ms;
 };
 
 void rasterfall_net_init(struct rasterfall_net *net);
@@ -74,6 +87,7 @@ int rasterfall_net_host(struct rasterfall_net *net, int port,
 int rasterfall_net_connect(struct rasterfall_net *net, const char *ip, int port);
 void rasterfall_net_close(struct rasterfall_net *net);
 void rasterfall_net_poll(struct rasterfall_net *net);
+void rasterfall_net_update_connection(struct rasterfall_net *net);
 int rasterfall_net_send_command(struct rasterfall_net *net,
                                 const struct rasterfall_command *command,
                                 const struct camera *predicted);
@@ -83,7 +97,8 @@ int rasterfall_net_send_snapshot(struct rasterfall_net *net,
 void rasterfall_net_apply_remote(struct rasterfall_net *net,
                                  struct rasterfall_session *session);
 void rasterfall_net_reconcile_client(struct rasterfall_net *net,
-                                    struct camera *camera);
+                                     struct rasterfall_session *session,
+                                     struct camera *camera);
 int rasterfall_net_self_test(void);
 
 #endif

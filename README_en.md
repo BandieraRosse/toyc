@@ -90,8 +90,12 @@ build/rasterfall --net-test              # headless protocol + localhost UDP loo
 At this stage the host validates remote movement and executes remote weapon
 switching, reloads, shooting, hits, and map interactions against the authoritative
 enemy world. Both sides render a teammate model, and the client predicts and
-reconciles its position. Full enemy-state/event replication and reconnect handling
-remain for the next stage; this is an executable co-op prototype.
+reconciles its position. Enemy pose, health, and death state are replicated by
+the host snapshot. Enemy event/audio replication and reconnect handling remain
+for the next stage; remote shooting/reload/hit events are also forwarded to client audio,
+and the host authoritatively decides the remote player's health and death state.
+After roughly three seconds without packets the HUD reports a disconnect. The client
+retries with HELLO once per second, and the host releases the stale peer slot.
 
 The top-right HUD shows `HOST`/`CLIENT`, peer connection state, and live RTT.
 The host displays `WAITING FOR PLAYER` until a client is accepted.
