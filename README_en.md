@@ -79,6 +79,12 @@ on exit; `--no-stats` disables the output):
 Preview with `build/rasterfall --frames 300 --texture-stats` under Wayland; use
 `build/rasterfall --logic-test` for the headless regression preview.
 
+Launching `build/rasterfall` now opens the main menu. It can create a room or join
+using an explicit host IP and port. Game traffic uses port `28460` by default.
+After creating a room, the HUD shows
+the address and port that other players should enter.
+The `--host` and `--connect` options remain available for scripts and debugging.
+
 Rasterfall's first UDP networking stage can be started with:
 
 ```sh

@@ -11,6 +11,8 @@
 #define RASTERFALL_NET_PROTOCOL_VERSION 2
 #define RASTERFALL_NET_PLAYER_MAX 2
 #define RASTERFALL_NET_EVENT_QUEUE_MAX 64
+#define RASTERFALL_NET_DISCOVERY_PORT 28459
+#define RASTERFALL_NET_DISCOVERY_MAX_ROOMS 8
 
 enum rasterfall_net_mode {
     RASTERFALL_NET_OFF,
@@ -22,6 +24,31 @@ enum rasterfall_net_packet_type {
     RASTERFALL_NET_HELLO = 1,
     RASTERFALL_NET_INPUT,
     RASTERFALL_NET_SNAPSHOT
+};
+
+struct rasterfall_net_room {
+    int active;
+    struct sockaddr_in address;
+    char name[32];
+    int game_port;
+    int players;
+    int max_players;
+    int state;
+    long last_seen_ms;
+};
+
+struct rasterfall_net_discovery {
+    int fd;
+    int mode;
+    long last_query_ms;
+    int room_count;
+    struct rasterfall_net_room rooms[RASTERFALL_NET_DISCOVERY_MAX_ROOMS];
+};
+
+enum rasterfall_net_discovery_mode {
+    RASTERFALL_NET_DISCOVERY_OFF,
+    RASTERFALL_NET_DISCOVERY_BROWSER,
+    RASTERFALL_NET_DISCOVERY_HOST
 };
 
 struct rasterfall_net_player {
@@ -120,7 +147,15 @@ void rasterfall_net_init(struct rasterfall_net *net);
 int rasterfall_net_host(struct rasterfall_net *net, int port,
                         const struct camera *spawn);
 int rasterfall_net_connect(struct rasterfall_net *net, const char *ip, int port);
+int rasterfall_net_local_address(char *buffer, int buffer_size);
 void rasterfall_net_close(struct rasterfall_net *net);
+void rasterfall_net_discovery_init(struct rasterfall_net_discovery *discovery);
+int rasterfall_net_discovery_browser_start(struct rasterfall_net_discovery *discovery);
+int rasterfall_net_discovery_host_start(struct rasterfall_net_discovery *discovery);
+void rasterfall_net_discovery_close(struct rasterfall_net_discovery *discovery);
+void rasterfall_net_discovery_poll(struct rasterfall_net_discovery *discovery,
+                                   const char *room_name, int game_port,
+                                   int players, int max_players, int state);
 void rasterfall_net_poll(struct rasterfall_net *net);
 void rasterfall_net_update_connection(struct rasterfall_net *net);
 int rasterfall_net_send_command(struct rasterfall_net *net,

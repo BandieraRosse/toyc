@@ -97,6 +97,7 @@ struct cmsghdr {
 #define CMSG_DATA(cmsg) ((unsigned char *)(cmsg) + CMSG_ALIGN(sizeof(struct cmsghdr)))
 
 #define SO_REUSEADDR  2
+#define SO_BROADCAST  6
 #define INADDR_ANY   (0x00000000) //bind
 
 /* shutdown() how 参数 */

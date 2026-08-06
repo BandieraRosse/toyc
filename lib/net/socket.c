@@ -12,6 +12,11 @@ int connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen){
     return syscall(SYS_connect, sockfd, addr, addrlen);
 }
 
+int getsockname(int sockfd, struct sockaddr *addr, socklen_t *addrlen)
+{
+    return syscall(SYS_getsockname, sockfd, addr, addrlen);
+}
+
 int setsockopt(int sockfd, int level, int optname, const void *optval, socklen_t optlen)
 {
     return syscall(SYS_setsockopt, sockfd, level, optname, optval, optlen);
@@ -81,12 +86,11 @@ char* tlibc_inet_ntoa(struct in_addr in) {
     uint8_t *bytes = (uint8_t*)&addr;
     uint8_t a, b, c, d;
     
-    /* 网络字节序是大端，在x86_64小端下需要反转字节顺序 */
-    /* 如果 addr 已经是主机字节序，则直接使用；这里按标准 inet_ntoa 接受网络字节序 */
-    a = bytes[3];  /* 最高地址字节对应 IP 的第一个字节（大端） */
-    b = bytes[2];
-    c = bytes[1];
-    d = bytes[0];
+    /* s_addr 在内存中已经按网络字节序保存；不要再次反转。 */
+    a = bytes[0];
+    b = bytes[1];
+    c = bytes[2];
+    d = bytes[3];
     
     /* 手动格式化字符串，不使用任何库函数 */
     char *p = buffer;

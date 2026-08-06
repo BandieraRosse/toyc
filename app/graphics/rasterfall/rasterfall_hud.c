@@ -62,7 +62,8 @@ static void render_weapon_hud(struct toy_surface *surface, int x, int y,
 }
 
 static void render_network_hud(struct toy_surface *surface,
-                               const struct rasterfall_net *net)
+                               const struct rasterfall_net *net,
+                               const char *host_address, int host_port)
 {
     char line[96];
     int width, x, y = 8;
@@ -90,6 +91,16 @@ static void render_network_hud(struct toy_surface *surface,
     hud_fill_rect(surface, x - 4, y - 2, width + 8, FB_FONT_H + 4, 0x182634);
     fb_draw_string((unsigned char *)surface->pixels, x, y, line, color,
                    surface->stride);
+    if (net->mode == RASTERFALL_NET_HOST && host_address && host_address[0]) {
+        snprintf(line, sizeof(line), "JOIN %s:%d", host_address, host_port);
+        width = (int)strlen(line) * FB_FONT_W;
+        x = surface->width - width - 10;
+        if (x < 8) x = 8;
+        hud_fill_rect(surface, x - 4, y + FB_FONT_H,
+                      width + 8, FB_FONT_H + 4, 0x182634);
+        fb_draw_string((unsigned char *)surface->pixels, x, y + FB_FONT_H,
+                       line, 0xFFD060, surface->stride);
+    }
 }
 
 void rasterfall_hud_render(struct toy_surface *surface, int fps,
@@ -116,7 +127,7 @@ void rasterfall_hud_render(struct toy_surface *surface, int fps,
     x = draw_hud_value(surface, x, "RUN ", line, 0xC0A0FF);
     snprintf(line, sizeof(line), "%d", fps);
     draw_hud_value(surface, x, "FPS ", line, 0x90F090);
-    render_network_hud(surface, state->net);
+    render_network_hud(surface, state->net, state->host_address, state->host_port);
     n = snprintf(line, sizeof(line), "HP %d  KILLS %d", game->hp, game->kills);
     if (n > 0)
         fb_draw_string((unsigned char *)surface->pixels, 8, 8 + FB_FONT_H,

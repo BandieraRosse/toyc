@@ -68,6 +68,10 @@ FPS 的 v0.2 纹理切片默认加载 `assets/generated/wall.ttex`，将 nearest
 可用 `build/rasterfall --frames 300 --texture-stats` 在 Wayland 环境预览，
 `build/rasterfall --logic-test` 为无窗口回归预览。
 
+直接启动 `build/rasterfall` 会进入主菜单，可创建房间或通过手动输入主机 IP 和端口
+加入。创建房间后默认使用游戏端口 `28460`，游戏 HUD 会显示可连接的地址和端口。
+`--host`、`--connect` 参数保留给脚本和调试使用。
+
 Rasterfall 的第一阶段 UDP 联机可用以下命令启动：
 
 ```sh

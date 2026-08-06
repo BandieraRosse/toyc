@@ -20,6 +20,8 @@ struct rasterfall_hud_state {
     int horde_banner_ms;
     const char *interaction_banner;
     const struct rasterfall_net *net;
+    const char *host_address;
+    int host_port;
 };
 
 void rasterfall_hud_draw_interact_prompt(struct toy_renderer *renderer,
