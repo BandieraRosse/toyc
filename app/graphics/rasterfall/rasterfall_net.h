@@ -8,8 +8,9 @@
 
 #define RASTERFALL_NET_DEFAULT_PORT 28460
 #define RASTERFALL_NET_MAX_PACKET 1400
-#define RASTERFALL_NET_PROTOCOL_VERSION 1
+#define RASTERFALL_NET_PROTOCOL_VERSION 2
 #define RASTERFALL_NET_PLAYER_MAX 2
+#define RASTERFALL_NET_EVENT_QUEUE_MAX 64
 
 enum rasterfall_net_mode {
     RASTERFALL_NET_OFF,
@@ -36,6 +37,10 @@ struct rasterfall_net_player {
     int reloading;
     int reload_timer_ms;
     int muzzle_flash_ms;
+    int kills;
+    unsigned int fire_seq;
+    int ray_count;
+    struct toy_game_ray rays[TOY_GAME_MAX_RAYS];
 };
 
 struct rasterfall_net_enemy {
@@ -58,6 +63,7 @@ struct rasterfall_net {
     struct rasterfall_command remote_command;
     int remote_command_ready;
     struct camera peer_camera;
+    struct camera peer_spawn;
     /* 主机为第二名玩家保留独立的武器状态；敌人和地图仍由主机唯一推进。 */
     struct toy_game_slot peer_slots[TOY_GAME_WEAPON_SLOTS];
     int peer_current_slot;
@@ -70,18 +76,33 @@ struct rasterfall_net {
     int peer_damage_flash_ms;
     int peer_kills;
     unsigned int peer_fire_seq;
+    int peer_ray_count;
+    struct toy_game_ray peer_rays[TOY_GAME_MAX_RAYS];
     int peer_state_initialized;
     struct rasterfall_net_player players[RASTERFALL_NET_PLAYER_MAX];
     struct rasterfall_net_enemy enemies[TOY_GAME_MAX_ENEMIES];
     int enemy_count;
     int remote_event_count;
     unsigned char remote_events[TOY_GAME_MAX_EVENTS];
+    unsigned char remote_event_queue[RASTERFALL_NET_EVENT_QUEUE_MAX];
+    uint32_t remote_event_ids[RASTERFALL_NET_EVENT_QUEUE_MAX];
+    int remote_event_queue_count;
+    uint32_t remote_event_next_id;
+    uint32_t remote_event_last_id;
+    uint32_t remote_event_snapshot_last_id;
+    uint32_t remote_event_snapshot_sequence;
     int snapshot_world_wave;
     int snapshot_world_to_spawn;
     int snapshot_world_enemies_alive;
     int snapshot_world_phase;
     int snapshot_world_phase_timer_ms;
     int snapshot_world_alarm_timer_ms;
+    int snapshot_world_spawn_budget;
+    int snapshot_world_active_attackers;
+    int snapshot_world_director_encounters;
+    int snapshot_world_goal_hold_ms;
+    int snapshot_world_manual_alarm_timer_ms;
+    int snapshot_world_alarm_triggered;
     int snapshot_air_walls_enabled;
     int snapshot_manual_alarm_enabled;
     int snapshot_ready;
@@ -109,9 +130,11 @@ int rasterfall_net_send_snapshot(struct rasterfall_net *net,
                                  const struct camera *host_camera,
                                  const struct toy_game *game,
                                  int air_walls_enabled,
-                                 int manual_alarm_enabled);
+                                 int manual_alarm_enabled,
+                                 int manual_alarm_timer_ms);
 void rasterfall_net_apply_remote(struct rasterfall_net *net,
-                                 struct rasterfall_session *session);
+                                 struct rasterfall_session *session,
+                                 struct camera *host_camera);
 void rasterfall_net_reconcile_client(struct rasterfall_net *net,
                                      struct rasterfall_session *session,
                                      struct camera *camera);

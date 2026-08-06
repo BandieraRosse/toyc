@@ -1270,6 +1270,16 @@ static int render_network_teammate(struct toy_renderer *renderer,
                           -620, -100, z - 100, z + 100, 0x386B96);
     pixels += draw_cuboid(renderer, camera, x - 125, x + 125,
                           -90, 190, z - 125, z + 125, 0xD2A878);
+    /* 玩家模型的面朝方向与相机一致；脸上的十字让正面在远处也可辨认。 */
+    pixels += draw_face_rect(renderer, camera, x, z, 128,
+                             remote->sy, remote->cy,
+                             -72, 72, -35, 185, 0x252A30);
+    pixels += draw_face_rect(renderer, camera, x, z, 128,
+                             remote->sy, remote->cy,
+                             -16, 16, 5, 145, 0xE8D2A8);
+    pixels += draw_face_rect(renderer, camera, x, z, 128,
+                             remote->sy, remote->cy,
+                             -72, 72, 55, 80, 0xE8D2A8);
     if (muzzle_flash > 0)
         pixels += draw_cuboid(renderer, camera, x - 45, x + 45,
                               -560, -430, z - 120, z + 120, 0xFFD060);
@@ -1364,6 +1374,40 @@ static void sync_fire_effects(const struct camera *camera)
             rasterfall_effects_spawn_hit_particles(&effects, r->ex, t->ey,
                                                    r->ez, r->sy, r->cy);
     }
+}
+
+static void sync_network_fire_effects(const struct camera *viewer,
+                                      const struct camera *remote,
+                                      int weapon, unsigned int fire_seq,
+                                      int ray_count,
+                                      const struct toy_game_ray *rays)
+{
+    struct vec3 muzzle_view, muzzle;
+    int i, mx, my, mz;
+    if (!fire_seq || fire_seq == effects.last_network_fire_seq) return;
+    if (fire_seq < effects.last_network_fire_seq)
+        effects.last_network_fire_seq = 0;
+    effects.last_network_fire_seq = fire_seq;
+    if (ray_count < 0) ray_count = 0;
+    if (ray_count > TOY_GAME_MAX_RAYS) ray_count = TOY_GAME_MAX_RAYS;
+    rasterfall_viewmodel_muzzle_offset(weapon, 0, &mx, &my, &mz);
+    muzzle_view.x = mx; muzzle_view.y = my; muzzle_view.z = mz;
+    muzzle = muzzle_view;
+    view_to_world(remote, &muzzle, &muzzle);
+    for (i = 0; i < ray_count; i++) {
+        const struct toy_game_ray *r = &rays[i];
+        struct rasterfall_tracer *t = &effects.tracers[effects.tracer_next];
+        effects.tracer_next = (effects.tracer_next + 1) % RASTERFALL_TRACER_SLOTS;
+        t->active = 1;
+        t->sx = muzzle.x; t->sy = muzzle.y; t->sz = muzzle.z;
+        tracer_aim_endpoint(remote, r, r->ex, r->ez,
+                            &t->ex, &t->ey, &t->ez);
+        t->life_ms = RASTERFALL_TRACER_LIFE_MS;
+        if (r->hit_enemy || r->hit_world)
+            rasterfall_effects_spawn_hit_particles(&effects, r->ex, t->ey,
+                                                   r->ez, r->sy, r->cy);
+    }
+    (void)viewer;
 }
 
 /* 一个带最终边界检查的 Bresenham。投影裁剪是为了避免远处端点导致
@@ -1769,6 +1813,18 @@ int main(int argc, char **argv)
         }
         if (net.mode == RASTERFALL_NET_CLIENT)
                 rasterfall_net_reconcile_client(&net, &session, &camera);
+        if (net.mode == RASTERFALL_NET_HOST && net.peer_known) {
+            sync_network_fire_effects(&camera, &net.peer_camera,
+                                      net.peer_slots[net.peer_current_slot].weapon,
+                                      net.peer_fire_seq, net.peer_ray_count,
+                                      net.peer_rays);
+        } else if (net.mode == RASTERFALL_NET_CLIENT && net.players[0].active) {
+            sync_network_fire_effects(&camera, &net.players[0].camera,
+                                      net.players[0].weapon,
+                                      net.players[0].fire_seq,
+                                      net.players[0].ray_count,
+                                      net.players[0].rays);
+        }
         /* 本帧到达的按压边沿并入保留位，再把保留位全部合入 key_pressed
          * 供顶部消费方（菜单/射击）读取。保留位在逻辑步跑过的那帧末尾
          * 才清除，因此不跑逻辑步的帧不会吞掉 E/R/,/. 等按键。 */
@@ -1942,17 +1998,15 @@ int main(int argc, char **argv)
                     build_game_command(&command, &input, &settings, fire_edge,
                                        pointer_turn_pending,
                                        pointer_pitch_pending);
-                    rasterfall_session_step(&session, &camera, &command,
-                                            FIXED_STEP_US / 1000);
+                    if (net.mode == RASTERFALL_NET_CLIENT)
+                        rasterfall_session_step_client(&session, &camera,
+                                                       &command,
+                                                       FIXED_STEP_US / 1000);
+                    else
+                        rasterfall_session_step(&session, &camera, &command,
+                                                FIXED_STEP_US / 1000);
                     if (net.mode == RASTERFALL_NET_CLIENT)
                         rasterfall_net_send_command(&net, &command, &camera);
-                    else if (net.mode == RASTERFALL_NET_HOST) {
-                        rasterfall_net_apply_remote(&net, &session);
-                        if ((net.tick % 3) == 0)
-                            rasterfall_net_send_snapshot(&net, &camera, &game,
-                                                         session.air_walls_enabled,
-                                                         session.manual_alarm_on);
-                    }
                     consume_game_command_edges(&input);
                     pointer_turn_pending = 0;
                     pointer_pitch_pending = 0;
@@ -1963,8 +2017,18 @@ int main(int argc, char **argv)
                     command.buttons = RASTERFALL_CMD_RESET;
                     rasterfall_session_step(&session, &camera, &command,
                                             FIXED_STEP_US / 1000);
+                    if (net.mode == RASTERFALL_NET_CLIENT)
+                        rasterfall_net_send_command(&net, &command, &camera);
                     input.key_pressed[KEY_R] = 0;
                     fire_edge = 0;
+                }
+                if (net.mode == RASTERFALL_NET_HOST) {
+                    rasterfall_net_apply_remote(&net, &session, &camera);
+                    if ((net.tick % 3) == 0)
+                        rasterfall_net_send_snapshot(&net, &camera, &game,
+                                                     session.air_walls_enabled,
+                                                     session.manual_alarm_on,
+                                                     session.manual_alarm_timer);
                 }
             }
             accumulator -= FIXED_STEP_US;

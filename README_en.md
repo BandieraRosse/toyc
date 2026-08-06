@@ -91,9 +91,10 @@ At this stage the host validates remote movement and executes remote weapon
 switching, reloads, shooting, hits, and map interactions against the authoritative
 enemy world. Both sides render a teammate model, and the client predicts and
 reconciles its position. Enemy pose, health, and death state are replicated by
-the host snapshot. Enemy event/audio replication and reconnect handling remain
-for the next stage; remote shooting/reload/hit events are also forwarded to client audio,
-and the host authoritatively decides the remote player's health and death state.
+the host snapshot. Remote shooting, reload, and damage events use sequenced pending delivery
+to client audio; campaign progress, director state, and terminal state are also restored from
+snapshots. Reconnect performs a new handshake and receives the host state. Public rooms, NAT
+traversal, and a matchmaking service are not included yet.
 After roughly three seconds without packets the HUD reports a disconnect. The client
 retries with HELLO once per second, and the host releases the stale peer slot.
 

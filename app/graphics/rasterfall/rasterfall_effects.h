@@ -30,6 +30,7 @@ struct rasterfall_effects {
     struct rasterfall_particle particles[RASTERFALL_PARTICLE_SLOTS];
     int particle_next;
     unsigned int last_fire_seq;
+    unsigned int last_network_fire_seq;
     uint32_t rng;
     int weapon_kick;
 };

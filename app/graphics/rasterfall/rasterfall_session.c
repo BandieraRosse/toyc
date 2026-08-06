@@ -259,3 +259,54 @@ void rasterfall_session_step(struct rasterfall_session *session,
         }
     }
 }
+
+void rasterfall_session_step_client(struct rasterfall_session *session,
+                                    struct camera *camera,
+                                    const struct rasterfall_command *command,
+                                    int dt_ms)
+{
+    unsigned char keys[TOY_GAME_KEY_RELOAD + 1];
+    struct toy_game_enemy enemies[TOY_GAME_MAX_ENEMIES];
+    int enemy_count, kills, event_start, write, i;
+    if (command->buttons & RASTERFALL_CMD_RESET) {
+        rasterfall_session_reset(session, camera, session->seed);
+        return;
+    }
+    if (session->game_state.state != TOY_GAME_PLAYING) return;
+    session_move_player(session, camera, command);
+    if (command->turn || command->pitch)
+        rasterfall_camera_rotate(camera, command->turn, command->pitch);
+    if (command->buttons & RASTERFALL_CMD_TURN_LEFT)
+        session->smooth_turn_remaining -= QUARTER_TURN;
+    if (command->buttons & RASTERFALL_CMD_TURN_RIGHT)
+        session->smooth_turn_remaining += QUARTER_TURN;
+    session_update_smooth_turn(session, camera);
+    session->game_state.px = camera->x;
+    session->game_state.pz = camera->z;
+    session->highlight_index = rasterfall_session_compute_highlight(session, camera);
+    if ((command->buttons & RASTERFALL_CMD_INTERACT) &&
+        session->highlight_index >= 0)
+        session_interact(session, &session->items[session->highlight_index]);
+    memset(keys, 0, sizeof(keys));
+    if (command->buttons & RASTERFALL_CMD_RELOAD) keys[TOY_GAME_KEY_RELOAD] = 1;
+    if (command->buttons & RASTERFALL_CMD_SLOT_1) keys[TOY_GAME_KEY_SLOT_1] = 1;
+    if (command->buttons & RASTERFALL_CMD_SLOT_2) keys[TOY_GAME_KEY_SLOT_2] = 1;
+    memcpy(enemies, session->game_state.enemies, sizeof(enemies));
+    enemy_count = session->game_state.enemies_alive;
+    kills = session->game_state.kills;
+    event_start = session->game_state.event_count;
+    toy_game_update_weapon_held(&session->game_state, keys,
+                                (command->buttons & RASTERFALL_CMD_FIRE) != 0,
+                                command->fire_held, camera->sy, camera->cy,
+                                dt_ms);
+    memcpy(session->game_state.enemies, enemies, sizeof(enemies));
+    session->game_state.enemies_alive = enemy_count;
+    session->game_state.kills = kills;
+    /* 预测射击仍保留开火/换弹音效，但击杀音效只由主机事件复制。 */
+    write = event_start;
+    for (i = event_start; i < session->game_state.event_count; i++)
+        if (session->game_state.events[i] != TOY_GAME_EV_KILL)
+            session->game_state.events[write++] = session->game_state.events[i];
+    session->game_state.event_count = write;
+    (void)dt_ms;
+}
