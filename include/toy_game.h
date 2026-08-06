@@ -235,6 +235,12 @@ void toy_game_update_held(struct toy_game *g,
                           const unsigned char *keys_pressed, /* 可 NULL */
                           int fire_pressed, int fire_held,
                           int sy, int cy, int dt_ms);       /* 全自动武器的按住连发 */
+/* 只推进一名玩家的武器/换弹状态，不更新敌人、波次或世界。联机主机
+ * 用它在同一份权威世界上验证远端射击。 */
+void toy_game_update_weapon_held(struct toy_game *g,
+                                 const unsigned char *keys_pressed,
+                                 int fire_pressed, int fire_held,
+                                 int sy, int cy, int dt_ms);
 int  toy_game_fire(struct toy_game *g, int sy, int cy);     /* hitscan，命中返回 1 */
 int  toy_game_switch_weapon(struct toy_game *g, int slot);  /* 切枪；空槽/同槽返回 0 */
 int  toy_game_equip_weapon(struct toy_game *g, int weapon); /* 按武器定义装备到对应槽；同武器=补充弹药返回 0，新武器返回 1，非法返回 -1 */

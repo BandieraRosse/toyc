@@ -261,6 +261,7 @@ int rasterfall_net_send_snapshot(struct rasterfall_net *net,
                          RASTERFALL_NET_PLAYER_MAX * NET_PLAYER_SIZE];
     unsigned char *p = packet + NET_HEADER_SIZE;
     int weapon = game->slots[game->current_slot].weapon;
+    int peer_weapon = net->peer_slots[net->peer_current_slot].weapon;
     int payload_size = NET_SNAPSHOT_BASE +
                        RASTERFALL_NET_PLAYER_MAX * NET_PLAYER_SIZE;
     int size;
@@ -273,8 +274,8 @@ int rasterfall_net_send_snapshot(struct rasterfall_net *net,
     encode_player(p + NET_SNAPSHOT_BASE, 0, 1, host_camera, game->hp,
                   weapon, game->state);
     encode_player(p + NET_SNAPSHOT_BASE + NET_PLAYER_SIZE, 1,
-                  net->peer_known, &net->peer_camera, 100,
-                  TOY_GAME_WEAPON_PISTOL, TOY_GAME_PLAYING);
+                  net->peer_known, &net->peer_camera, net->peer_hp,
+                  peer_weapon, net->peer_state);
     return net_send(net, packet, size);
 }
 
@@ -348,14 +349,80 @@ void rasterfall_net_poll(struct rasterfall_net *net)
 void rasterfall_net_apply_remote(struct rasterfall_net *net,
                                  struct rasterfall_session *session)
 {
+    struct toy_game *g = &session->game_state;
+    struct toy_game_slot host_slots[TOY_GAME_WEAPON_SLOTS];
+    struct toy_game_ray host_rays[TOY_GAME_MAX_RAYS];
+    int host_px, host_pz, host_hp, host_state, host_current;
+    int host_reloading, host_reload_timer, host_cooldown, host_muzzle;
+    int host_damage, host_kills, host_ray_count;
+    unsigned int host_fire_seq;
+    unsigned char keys[TOY_GAME_KEY_RELOAD + 1];
     net->tick++;
     if (net->remote_command_ready) {
         net->last_input_tick = net->tick;
         net->remote_command_ready = 0;
     }
-    if (net->peer_known && net->tick - net->last_input_tick <= NET_INPUT_HOLD_TICKS)
+    if (net->peer_known && !net->peer_state_initialized) {
+        memcpy(net->peer_slots, g->slots, sizeof(net->peer_slots));
+        net->peer_current_slot = g->current_slot;
+        net->peer_hp = g->hp;
+        net->peer_state = g->state;
+        net->peer_state_initialized = 1;
+    }
+    if (net->peer_known && net->tick - net->last_input_tick <= NET_INPUT_HOLD_TICKS) {
         rasterfall_session_step_remote_player(session, &net->peer_camera,
                                               &net->remote_command);
+        if (net->remote_command.buttons & RASTERFALL_CMD_INTERACT)
+            rasterfall_session_interact_remote(session, &net->peer_camera);
+        /* 暂时把第二名玩家装载到 toy_game 的兼容单玩家视图，只执行
+         * 武器/换弹/命中逻辑；随后恢复主机玩家，敌人与波次不重复推进。 */
+        memcpy(host_slots, g->slots, sizeof(host_slots));
+        memcpy(host_rays, g->rays, sizeof(host_rays));
+        host_px = g->px; host_pz = g->pz; host_hp = g->hp;
+        host_state = g->state; host_current = g->current_slot;
+        host_reloading = g->reloading; host_reload_timer = g->reload_timer_ms;
+        host_cooldown = g->fire_cooldown_ms; host_muzzle = g->muzzle_flash_ms;
+        host_damage = g->damage_flash_ms; host_kills = g->kills;
+        host_ray_count = g->ray_count; host_fire_seq = g->fire_seq;
+        memcpy(g->slots, net->peer_slots, sizeof(g->slots));
+        g->current_slot = net->peer_current_slot;
+        g->hp = net->peer_hp; g->state = net->peer_state;
+        g->reloading = net->peer_reloading;
+        g->reload_timer_ms = net->peer_reload_timer_ms;
+        g->fire_cooldown_ms = net->peer_fire_cooldown_ms;
+        g->muzzle_flash_ms = net->peer_muzzle_flash_ms;
+        g->damage_flash_ms = net->peer_damage_flash_ms;
+        g->kills = net->peer_kills;
+        g->fire_seq = net->peer_fire_seq;
+        g->px = net->peer_camera.x; g->pz = net->peer_camera.z;
+        memset(keys, 0, sizeof(keys));
+        if (net->remote_command.buttons & RASTERFALL_CMD_RELOAD)
+            keys[TOY_GAME_KEY_RELOAD] = 1;
+        if (net->remote_command.buttons & RASTERFALL_CMD_SLOT_1)
+            keys[TOY_GAME_KEY_SLOT_1] = 1;
+        if (net->remote_command.buttons & RASTERFALL_CMD_SLOT_2)
+            keys[TOY_GAME_KEY_SLOT_2] = 1;
+        toy_game_update_weapon_held(g, keys,
+            (net->remote_command.buttons & RASTERFALL_CMD_FIRE) != 0,
+            net->remote_command.fire_held, net->peer_camera.sy,
+            net->peer_camera.cy, 16);
+        memcpy(net->peer_slots, g->slots, sizeof(net->peer_slots));
+        net->peer_current_slot = g->current_slot; net->peer_hp = g->hp;
+        net->peer_state = g->state; net->peer_reloading = g->reloading;
+        net->peer_reload_timer_ms = g->reload_timer_ms;
+        net->peer_fire_cooldown_ms = g->fire_cooldown_ms;
+        net->peer_muzzle_flash_ms = g->muzzle_flash_ms;
+        net->peer_damage_flash_ms = g->damage_flash_ms;
+        net->peer_kills = g->kills; net->peer_fire_seq = g->fire_seq;
+        memcpy(g->slots, host_slots, sizeof(g->slots));
+        g->px = host_px; g->pz = host_pz; g->hp = host_hp;
+        g->state = host_state; g->current_slot = host_current;
+        g->reloading = host_reloading; g->reload_timer_ms = host_reload_timer;
+        g->fire_cooldown_ms = host_cooldown; g->muzzle_flash_ms = host_muzzle;
+        g->damage_flash_ms = host_damage; g->kills = host_kills;
+        g->ray_count = host_ray_count; g->fire_seq = host_fire_seq;
+        memcpy(g->rays, host_rays, sizeof(g->rays));
+    }
     net->remote_command.turn = 0;
     net->remote_command.pitch = 0;
     net->remote_command.buttons = 0;

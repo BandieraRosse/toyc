@@ -1113,14 +1113,13 @@ int toy_game_refill_ammo(struct toy_game *g)
 
 /* ── 主更新 ────────────────────────────────────────────────────── */
 
-void toy_game_update_held(struct toy_game *g,
-                          const unsigned char *keys_pressed,
-                          int fire_pressed, int fire_held,
-                          int sy, int cy, int dt_ms)
+void toy_game_update_weapon_held(struct toy_game *g,
+                                 const unsigned char *keys_pressed,
+                                 int fire_pressed, int fire_held,
+                                 int sy, int cy, int dt_ms)
 {
     struct toy_game_slot *s;
     const struct toy_game_weapon_info *w;
-    int i;
     if (g->state != TOY_GAME_PLAYING) return;
 
     /* 切枪键（1/2）：先于换弹与射击处理，切换即打断换弹 */
@@ -1170,6 +1169,18 @@ void toy_game_update_held(struct toy_game *g,
         if (fire_pressed) toy_game_fire(g, sy, cy);
         else if (fire_held && w->full_auto) toy_game_fire(g, sy, cy);
     }
+
+}
+
+void toy_game_update_held(struct toy_game *g,
+                          const unsigned char *keys_pressed,
+                          int fire_pressed, int fire_held,
+                          int sy, int cy, int dt_ms)
+{
+    int i;
+    if (g->state != TOY_GAME_PLAYING) return;
+    toy_game_update_weapon_held(g, keys_pressed, fire_pressed, fire_held,
+                                sy, cy, dt_ms);
 
     /* 敌人计时器与移动/攻击/倒地 */
     for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {

@@ -9,6 +9,9 @@
 #define QUARTER_TURN 1611
 #define SMOOTH_TURN_STEP 128
 
+static void session_interact(struct rasterfall_session *session,
+                             struct rasterfall_interactable *it);
+
 static void session_set_air_walls(struct rasterfall_session *session,
                                   int enabled)
 {
@@ -136,6 +139,15 @@ void rasterfall_session_step_remote_player(struct rasterfall_session *session,
     session_move_player(session, camera, command);
     if (command->turn || command->pitch)
         rasterfall_camera_rotate(camera, command->turn, command->pitch);
+}
+
+void rasterfall_session_interact_remote(struct rasterfall_session *session,
+                                        const struct camera *camera)
+{
+    int index;
+    if (session->game_state.state != TOY_GAME_PLAYING) return;
+    index = rasterfall_session_compute_highlight(session, camera);
+    if (index >= 0) session_interact(session, &session->items[index]);
 }
 
 int rasterfall_session_compute_highlight(const struct rasterfall_session *session,

@@ -87,10 +87,11 @@ build/rasterfall --connect 127.0.0.1 --port 28460
 build/rasterfall --net-test              # headless protocol + localhost UDP loopback
 ```
 
-At this stage the host validates remote movement and synchronizes both player
-positions, both sides render a teammate model, and the client predicts and
-reconciles its position. Enemies, damage, remote shooting, and map interactions
-are not yet authority-synchronized, so this is not a complete co-op mode yet.
+At this stage the host validates remote movement and executes remote weapon
+switching, reloads, shooting, hits, and map interactions against the authoritative
+enemy world. Both sides render a teammate model, and the client predicts and
+reconciles its position. Full enemy-state/event replication and reconnect handling
+remain for the next stage; this is an executable co-op prototype.
 
 `bootstrap/` contains versioned seed binaries. They are for periodic bootstrap
 checks, are not used by the default `make`, and may lag behind the source:

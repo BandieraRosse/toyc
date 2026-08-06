@@ -45,6 +45,19 @@ struct rasterfall_net {
     struct rasterfall_command remote_command;
     int remote_command_ready;
     struct camera peer_camera;
+    /* 主机为第二名玩家保留独立的武器状态；敌人和地图仍由主机唯一推进。 */
+    struct toy_game_slot peer_slots[TOY_GAME_WEAPON_SLOTS];
+    int peer_current_slot;
+    int peer_hp;
+    int peer_state;
+    int peer_reloading;
+    int peer_reload_timer_ms;
+    int peer_fire_cooldown_ms;
+    int peer_muzzle_flash_ms;
+    int peer_damage_flash_ms;
+    int peer_kills;
+    unsigned int peer_fire_seq;
+    int peer_state_initialized;
     struct rasterfall_net_player players[RASTERFALL_NET_PLAYER_MAX];
     int snapshot_ready;
 };
