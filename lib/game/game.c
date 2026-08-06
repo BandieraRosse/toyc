@@ -2,8 +2,9 @@
  * game.c — 僵尸潮射击游戏规则（平台无关）。
  *
  * 全部规则集中于此：xorshift64* PRNG、世界碰撞查询、僵尸 AI（追逐/
- * 攻击/分离/倒地）、波次或固定区域生成、安全室与终点、hitscan 射击与
- * 障碍遮挡、弹匣/换弹、玩家生命/死亡/通关冻结、事件队列。
+ * 攻击/分离/倒地，以及无视遮挡持续追踪玩家的尸潮追踪者）、波次或
+ * 固定区域生成、安全室与终点、hitscan 射击与障碍遮挡、弹匣/换弹、
+ * 玩家生命/死亡/通关冻结、事件队列。
  *
  * 实现约束（自托管友好，同 renderer.c 注释风格）：
  *  - 禁整结构赋值（用 memcpy / 逐字段）
@@ -220,6 +221,91 @@ static void init_enemy_ai(struct toy_game *g, struct toy_game_enemy *e)
     e->dir_z = enemy_dir_z[direction];
 }
 
+/* 在矩形区域内随机生成一个追踪型敌人；距玩家过近、压障碍或槽满
+ * 返回 0。生成方向直接朝向玩家（追踪态首个逻辑步就会转脸）。 */
+static int spawn_tracking_enemy(struct toy_game *g, int minx, int maxx,
+                                int minz, int maxz, int min_dist2)
+{
+    int i, slot;
+    for (i = 0; i < 24; i++) {
+        int x, z, dx, dz;
+        long long dist2, dist;
+        x = rand_range(g, minx, maxx);
+        z = rand_range(g, minz, maxz);
+        dx = x - g->px;
+        dz = z - g->pz;
+        dist2 = (long long)dx * dx + (long long)dz * dz;
+        if (dist2 < (long long)min_dist2) continue;
+        if (enemy_position_blocked(g, x, z, TOY_GAME_ENEMY_RADIUS)) continue;
+        slot = find_free_slot(g);
+        if (slot < 0) return 0;
+        g->enemies[slot].active = 1;
+        g->enemies[slot].x = x;
+        g->enemies[slot].z = z;
+        /* 追踪者比普通僵尸更快、更执拗 */
+        g->enemies[slot].speed = rand_range(g, 58, 70);
+        g->enemies[slot].hp = 1;
+        g->enemies[slot].bite_cooldown_ms = 0;
+        g->enemies[slot].flash = 0;
+        g->enemies[slot].hurt = 0;
+        g->enemies[slot].dying_ms = 0;
+        init_enemy_ai(g, &g->enemies[slot]);
+        g->enemies[slot].ai_state = TOY_GAME_ENEMY_TRACKING;
+        g->enemies[slot].target_x = g->px;
+        g->enemies[slot].target_z = g->pz;
+        g->enemies[slot].last_seen_x = g->px;
+        g->enemies[slot].last_seen_z = g->pz;
+        dist = isqrt(dist2);
+        if (dist > 0) {
+            g->enemies[slot].dir_x = (int)((long long)dx * 1024 / dist);
+            g->enemies[slot].dir_z = (int)((long long)dz * 1024 / dist);
+        }
+        g->enemies_alive++;
+        return 1;
+    }
+    return 0;
+}
+
+/* 召唤尸潮：从 points 中随机选 1-3 个互异刷怪点（最多 point_count
+ * 个），把 [count_min, count_max] 只敌人均摊到各点矩形内，逐只找合法
+ * 位置；槽位满则停止。返回实际生成数。 */
+int toy_game_spawn_horde(struct toy_game *g, int count_min, int count_max,
+                         const struct toy_game_box *points, int point_count,
+                         int min_player_dist)
+{
+    int count, spawned = 0, i, j, n_points, per, extra;
+    int min_dist2 = min_player_dist * min_player_dist;
+    int order[8];
+    if (g->state != TOY_GAME_PLAYING) return 0;
+    if (!points || point_count <= 0) return 0;
+    if (point_count > 8) point_count = 8;
+    count = rand_range(g, count_min, count_max);
+    if (count > TOY_GAME_MAX_ENEMIES) count = TOY_GAME_MAX_ENEMIES;
+    n_points = 1 + rand_range(g, 0, 2);
+    if (n_points > point_count) n_points = point_count;
+    for (i = 0; i < point_count; i++) order[i] = i;
+    for (i = 0; i < n_points; i++) {        /* 部分洗牌：选出互异刷怪点 */
+        int k = rand_range(g, i, point_count - 1);
+        int t = order[i];
+        order[i] = order[k];
+        order[k] = t;
+    }
+    per = count / n_points;
+    extra = count % n_points;
+    for (i = 0; i < n_points; i++) {
+        const struct toy_game_box *p = &points[order[i]];
+        int want = per + (i < extra ? 1 : 0);
+        for (j = 0; j < want; j++) {
+            if (spawn_tracking_enemy(g, p->minx, p->maxx, p->minz, p->maxz,
+                                     min_dist2))
+                spawned++;
+            else if (find_free_slot(g) < 0)
+                return spawned;             /* 槽满：本次召唤到此为止 */
+        }
+    }
+    return spawned;
+}
+
 /* 从房间边界带随机选一个合法生成点；找不到返回 0 */
 static int try_spawn(struct toy_game *g)
 {
@@ -424,7 +510,8 @@ static void update_campaign(struct toy_game *g, int dt_ms)
         const struct toy_game_enemy *e = &g->enemies[i];
         if (e->active == 1 &&
             (e->ai_state == TOY_GAME_ENEMY_ALERT ||
-             e->ai_state == TOY_GAME_ENEMY_CHASE))
+             e->ai_state == TOY_GAME_ENEMY_CHASE ||
+             e->ai_state == TOY_GAME_ENEMY_TRACKING))
             g->active_attackers++;
     }
     update_campaign_goal(g, dt_ms);
@@ -517,7 +604,8 @@ static void chase_enemy(struct toy_game *g, struct toy_game_enemy *e,
 static void enemy_investigate_noise(struct toy_game_enemy *e, int x, int z)
 {
     if (e->ai_state == TOY_GAME_ENEMY_ALERT ||
-        e->ai_state == TOY_GAME_ENEMY_CHASE) return;
+        e->ai_state == TOY_GAME_ENEMY_CHASE ||
+        e->ai_state == TOY_GAME_ENEMY_TRACKING) return;
     e->ai_state = TOY_GAME_ENEMY_INVESTIGATE;
     e->ai_timer_ms = TOY_GAME_INVESTIGATE_MS;
     e->target_x = x;
@@ -569,7 +657,8 @@ static void alert_nearby_enemies(struct toy_game *g,
         long long dx, dz, dist2;
         if (e == source || e->active != 1) continue;
         if (e->ai_state == TOY_GAME_ENEMY_ALERT ||
-            e->ai_state == TOY_GAME_ENEMY_CHASE) continue;
+            e->ai_state == TOY_GAME_ENEMY_CHASE ||
+            e->ai_state == TOY_GAME_ENEMY_TRACKING) continue;
         dx = e->x - source->x;
         dz = e->z - source->z;
         dist2 = dx * dx + dz * dz;
@@ -626,6 +715,15 @@ static void update_enemy_ai(struct toy_game *g, struct toy_game_enemy *e,
     long long dist2 = (long long)dx * dx + (long long)dz * dz;
     long long dist = isqrt(dist2);
     int visual = enemy_visual_stimulus(g, e, dx, dz, dist);
+
+    /* 尸潮追踪者：不走普通 AI 状态机，无视视线遮挡/声源/丢失目标，
+     * 每帧直扑玩家当前位置（安全室仍能挡下，作为玩家最后的庇护）。 */
+    if (e->ai_state == TOY_GAME_ENEMY_TRACKING) {
+        enemy_remember_player(g, e);
+        turn_enemy_toward(e, dx, dz);
+        chase_enemy(g, e, dx, dz, dist);
+        return;
+    }
 
     if (e->ai_state == TOY_GAME_ENEMY_IDLE) {
         wander_enemy(g, e, dt_ms);

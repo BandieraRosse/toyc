@@ -65,6 +65,16 @@ int toy_map_load(const char *path, struct toy_map *m)
                 m->pickup_count++;
             }
         }
+        else if(!strcmp(kind,"button") && m->pickup_count<TOY_MAP_MAX_PICKUPS){
+            char *sx=word(&p),*sz=word(&p),*sy=word(&p);
+            if(sx&&sz&&sy){
+                m->pickups[m->pickup_count].kind=TOY_MAP_PICKUP_BUTTON;
+                m->pickups[m->pickup_count].x=number(sx,10);
+                m->pickups[m->pickup_count].z=number(sz,10);
+                m->pickups[m->pickup_count].y=number(sy,10);
+                m->pickup_count++;
+            }
+        }
     }
     return m->room_limit>0 && m->box_count>0 ? 0 : (toy_map_unload(m),-1);
 }

@@ -82,7 +82,8 @@ enum toy_game_enemy_ai {
     TOY_GAME_ENEMY_INVESTIGATE,
     TOY_GAME_ENEMY_ALERT,
     TOY_GAME_ENEMY_CHASE,
-    TOY_GAME_ENEMY_SEARCH
+    TOY_GAME_ENEMY_SEARCH,
+    TOY_GAME_ENEMY_TRACKING
 };
 
 enum toy_game_event {
@@ -240,6 +241,14 @@ int  toy_game_refill_ammo(struct toy_game *g);              /* 弹药盒：补�
 const struct toy_game_weapon_info *toy_game_weapon_info(int weapon);
 int  toy_game_drain_events(struct toy_game *g, unsigned char *out, int max);
 void toy_game_place_enemy(struct toy_game *g, int x, int z); /* 测试钩子 */
+int  toy_game_spawn_horde(struct toy_game *g, int count_min, int count_max,
+                          const struct toy_game_box *points, int point_count,
+                          int min_player_dist);
+    /* 召唤尸潮：从 points 中随机选出 1-3 个互异刷怪点（不超过
+     * point_count），把 count_min..count_max 个持续追踪型敌人
+     * （TOY_GAME_ENEMY_TRACKING，无视遮挡与丢失目标，永远直扑玩家）
+     * 均摊到各点矩形内随机生成，每个位置距玩家至少 min_player_dist
+     * （单位同世界坐标）。受空槽位限制，返回实际生成数。 */
 
 /* ── SFX 引擎（程序合成，平台无关，可无设备单测） ──────────────── */
 

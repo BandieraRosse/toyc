@@ -21,11 +21,13 @@ enum toy_map_draw_type {
 struct toy_map_box { int minx, maxx, minz, maxz, height; unsigned int color; int air; };
 struct toy_map_zone { struct toy_game_box box; unsigned int color; };
 
-/* 可交互拾取物：smg/shotgun（主武器）与 ammo（弹药盒），x/z/y 为锚点坐标 */
+/* 可交互拾取物：smg/shotgun（主武器）、ammo（弹药盒）与 button（墙上
+ * 召唤按钮），x/z/y 为锚点坐标 */
 enum toy_map_pickup_kind {
     TOY_MAP_PICKUP_SMG,
     TOY_MAP_PICKUP_SHOTGUN,
-    TOY_MAP_PICKUP_AMMO
+    TOY_MAP_PICKUP_AMMO,
+    TOY_MAP_PICKUP_BUTTON
 };
 struct toy_map_pickup { int kind; int x, z, y; };
 struct toy_map_draw {

@@ -816,6 +816,49 @@ static int test_weapon_slots(void)
     return 0;
 }
 
+/* 30: 尸潮召唤：数量/位置合法、全部持续追踪、均匀落在所选刷怪点内；
+ * 隔墙遮挡不丢失目标、不转入搜索；死亡结算后不可再召唤。 */
+static int test_horde_tracking(void)
+{
+    static const struct toy_game_box wall = {-600, -400, -500, 500};
+    static const struct toy_game_box points[3] = {
+        {-3000, -2600, 1000, 1400}, {-2400, -2000, 2200, 2600},
+        {-1400, -1000, 1000, 3000},
+    };
+    struct toy_game g;
+    int i, n, spawned;
+    toy_game_init(&g, 61);
+    toy_game_set_world(&g, &wall, 1, ROOM);
+    g.px = 0;
+    g.pz = 0;
+    spawned = toy_game_spawn_horde(&g, 15, 20, points, 3, 700);
+    if (spawned < 15 || spawned > 20) return 30;
+    n = count_alive(&g);
+    if (n != spawned || g.enemies_alive != spawned) return 30;
+    for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
+        const struct toy_game_enemy *e = &g.enemies[i];
+        if (e->active != 1) continue;
+        if (e->ai_state != TOY_GAME_ENEMY_TRACKING) return 30;
+        if (!toy_game_point_in_box(e->x, e->z, &points[0]) &&
+            !toy_game_point_in_box(e->x, e->z, &points[1]) &&
+            !toy_game_point_in_box(e->x, e->z, &points[2])) return 30;
+    }
+    /* 玩家与尸潮之间隔墙：追踪者无视视线遮挡，状态永不退化，直扑玩家
+     * 并最终咬到（HP 下降证明穿越了遮挡）。 */
+    for (i = 0; i < 200; i++) toy_game_update(&g, NULL, 0, 0, 1024, 16);
+    for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
+        const struct toy_game_enemy *e = &g.enemies[i];
+        if (e->active != 1) continue;
+        if (e->ai_state != TOY_GAME_ENEMY_TRACKING) return 30;
+    }
+    if (g.hp >= 100) return 30;
+    /* 游戏结束后召唤无效 */
+    g.state = TOY_GAME_OVER;
+    if (toy_game_spawn_horde(&g, 15, 20, points, 3, 700) != 0)
+        return 30;
+    return 0;
+}
+
 int main(void)
 {
     if (test_prng_determinism()) return 1;
@@ -847,5 +890,6 @@ int main(void)
     if (test_director_small_group()) return 27;
     if (test_last_seen_and_search()) return 28;
     if (test_weapon_slots()) return 29;
+    if (test_horde_tracking()) return 30;
     return 0;
 }

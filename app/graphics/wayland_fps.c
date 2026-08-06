@@ -1,13 +1,60 @@
 /*
- * wayland_fps — Toyc software-rendered safe-room-to-safe-room zombie shooter.
+ * wayland_fps — Toyc 软件渲染第一人称僵尸射击游戏
  *
- * Controls: left click captures the pointer, mouse or arrows look (pitch is
- * limited to 75 degrees up/down), WASD moves, left click / Space fire (Space
- * held = SMG full auto), R reloads, 1/2 switch weapon slots, E interacts with
- * highlighted pickups, Esc pauses/releases the pointer or quits. A first
- * person weapon viewmodel sits bottom-right; tracers originate from the gun
- * muzzle. Rendering and input are freestanding;
- * game rules live in lib/game.
+ * 注释更新时间：2026-08-06
+ *
+ * 【程序定位】
+ *   这是 Toyc 项目中的 Linux x86_64 / Wayland FPS 示例程序。玩家从起始
+ *   安全室出发，穿过地图中的场景和刷怪区域，前往另一间安全室；核心玩法
+ *   是移动、瞄准、射击、换弹、拾取武器以及应对普通尸群和可重复召唤的尸潮。
+ *   程序使用 wl_shm 软件帧缓冲和项目自带的 Wayland 最小实现，不依赖 SDL、
+ *   OpenGL 或 libc；游戏规则主要位于 lib/game，窗口、输入和渲染在本文件
+ *   中协调完成。
+ *
+ * 【代码结构】
+ *   1. 地图与规则：加载 assets/maps/wayland_fps.map，复制地图碰撞箱、
+ *      安全室、正式 spawn 区和交互物；toy_game 负责敌人 AI、碰撞、武器、
+ *      弹道、波次、伤害和游戏状态。
+ *   2. 输入与主循环：Wayland 事件先进入 toy_input，使用固定 16.667ms
+ *      逻辑步；渲染帧和逻辑步解耦，并限制单帧最多推进 MAX_LOGIC_STEPS，
+ *      避免窗口卡顿后逻辑无限追赶。
+ *   3. 相机与控制：camera 保存位置、偏航/俯仰的 1024 定点 sin/cos；
+ *      WASD 移动，鼠标和方向键连续视角控制，逗号/句号分别排队完成快速
+ *      左右 90 度转向，而不是瞬时跳转。
+ *   4. 渲染：软件光栅化场景、墙面纹理、地面、模型、敌人、武器视图模型、
+ *      交互物、准星和 HUD；支持 --no-textures、--texture-stats、--dump-frame
+ *      等调试/性能选项。
+ *   5. 音频：启动时加载 assets/generated/sfx_*.tsnd；音频不可用时游戏仍
+ *      可运行并静默降级。
+ *
+ * 【主要操作】
+ *   鼠标左键：捕获指针并射击；Space：射击（按住可使 SMG 连发）
+ *   WASD：移动；鼠标/方向键：视角；, / .：连续快速左转/右转 90 度
+ *   R：换弹或在死亡/通关状态重新开始；1/2：切换武器槽
+ *   E：与准星高亮的武器、弹药箱或召唤按钮互动
+ *   Esc：暂停并释放指针；暂停菜单使用上下键选择、左右键调整灵敏度、
+ *       Enter 确认。
+ *
+ * 【尸潮与地图约定】
+ *   开发区西侧墙上的召唤按钮可以重复触发，每次生成 15-20 个持续追踪
+ *   玩家的敌人。生成位置不在按钮附近，而是直接从地图定义的 spawn 区
+ *   随机选择 1-3 个区域，并避开玩家的最小距离；正式刷怪区统一来自
+ *   map_spawn_zones/map_spawn_count，勿在本文件另造一套坐标。
+ *   地图中的 pickup/button 坐标由 map 文件决定；按钮位于侧墙时，渲染代码
+ *   需要同步处理其朝向和可交互高亮范围。
+ *
+ * 【构建与验证】
+ *   make build/wayland_fps       构建程序
+ *   build/wayland_fps --logic-test 运行无窗口逻辑回归测试
+ *   build/wayland_fps --frames N    在 Wayland 下运行有限帧数预览
+ *   完整项目测试入口和工具链约束以仓库根目录 README.md、AGENTS.md 为准。
+ *   修改本文件的输入、地图交互或公共渲染路径后，至少重新构建本目标并
+ *   运行 --logic-test；若影响共享编译器/游戏规则代码，再扩大测试范围。
+ *
+ * 【实现约束】
+ *   保持 freestanding，不引入宿主 libc；避免把 build/、tmp/ 或运行时生成物
+ *   当作源码提交。Wayland/音频设备、容器 procfs 和只读文件系统可能造成
+ *   环境相关失败，应与游戏逻辑或编译回归区分。
  */
 
 #include "core.h"
@@ -38,19 +85,13 @@
 #define KEY_S     31
 #define KEY_D     32
 #define KEY_SPACE 57
+#define KEY_COMMA 51
+#define KEY_DOT   52
 #define KEY_UP    103
 #define KEY_LEFT  105
 #define KEY_RIGHT 106
 #define KEY_DOWN  108
 #define BTN_LEFT 0x110
-/* 菜单按键位掩码：stall 批次里按下的边沿会在下一轮 begin_frame 被清掉，
- * 用位掩码跨迭代保留，菜单块消费后逐位清除。 */
-#define MENU_KEY_UP      0x01
-#define MENU_KEY_DOWN    0x02
-#define MENU_KEY_LEFT    0x04
-#define MENU_KEY_RIGHT   0x08
-#define MENU_KEY_ENTER   0x10
-#define MENU_KEY_ESC     0x20
 
 #define FIXED_STEP_US 16667
 #define MAX_FRAME_US 250000
@@ -225,6 +266,14 @@ static void prepare_map_rules(void)
 
 static void reset_interactables(void);
 
+/* 开发者区召唤按钮：每次 E 互动都召唤 15-20 个持续追踪尸潮。
+ * 尸潮实际使用地图中的 spawn 区，避免和场景装饰坐标产生两套定义。 */
+#define HORDE_COUNT_MIN    15
+#define HORDE_COUNT_MAX    20
+#define HORDE_MIN_PLAYER_DIST 700
+static int horde_banner_ms;   /* HUD 提示剩余显示时间 */
+static int smooth_turn_remaining; /* 待完成的水平转向量（turn 单位） */
+
 /* 新局和死亡重开必须走同一路径，避免 toy_game_init 清空世界配置。 */
 static void reset_game(struct camera *camera, uint64_t seed)
 {
@@ -241,6 +290,8 @@ static void reset_game(struct camera *camera, uint64_t seed)
     toy_game_set_alarm(&game, &level_map.alarm_zone, level_map.has_alarm);
     game.px = camera->x;
     game.pz = camera->z;
+    horde_banner_ms = 0;
+    smooth_turn_remaining = 0;
     reset_interactables();
 }
 
@@ -770,6 +821,39 @@ static int render_ammo_box(struct toy_renderer *renderer, const struct camera *c
     return pixels;
 }
 
+/* 召唤按钮：从墙面凸出的暗色面板 + 正面 LED。每次都可再次触发；
+ * 准星对准时面板整体提亮。 */
+static int render_button(struct toy_renderer *renderer, const struct camera *camera,
+                         int x, int y, int z, int on, int side_wall)
+{
+    struct vec3 a, b, c, d;
+    int pixels = 0;
+    if (side_wall) {
+        pixels += draw_cuboid(renderer, camera, x - 55, x + 55, y - 55, y + 55,
+                              z - 45, z + 55, highlight_tint(0x2E333B, on));
+        pixels += draw_cuboid(renderer, camera, x + 55, x + 60, y - 45, y + 45,
+                              z - 45, z + 45, highlight_tint(0x1E2229, on));
+        /* 西侧墙按钮朝向房间（+x） */
+        a.x = x + 61; a.y = y - 22; a.z = z - 24;
+        b.x = x + 61; b.y = y + 22; b.z = z - 24;
+        c.x = x + 61; c.y = y + 22; c.z = z + 24;
+        d.x = x + 61; d.y = y - 22; d.z = z + 24;
+    } else {
+        pixels += draw_cuboid(renderer, camera, x - 55, x + 55, y - 55, y + 55,
+                              z - 45, z + 55, highlight_tint(0x2E333B, on));
+        pixels += draw_cuboid(renderer, camera, x - 45, x + 45, y - 45, y + 45,
+                              z + 55, z + 60, highlight_tint(0x1E2229, on));
+        /* 正面 LED 小方块，面向房间（+z） */
+        a.x = x - 24; a.y = y - 22; a.z = z + 61;
+        b.x = x + 24; b.y = y - 22; b.z = z + 61;
+        c.x = x + 24; c.y = y + 22; c.z = z + 61;
+        d.x = x - 24; d.y = y + 22; d.z = z + 61;
+    }
+    pixels += draw_quad(renderer, camera, &a, &b, &c, &d,
+                        0xFF3030);
+    return pixels;
+}
+
 /* 距离 + 朝向锥判定高亮目标。拾取物（桌上武器/地面弹药盒）都在视平线
  * 以下，屏幕投影天然偏低，不能用中心像素窗口；改在世界空间按水平朝向
  * 放宽到约 40° 半角，垂直方向不限，取范围内最近者。 */
@@ -809,6 +893,9 @@ static int render_interactables(struct toy_renderer *renderer,
             pixels += render_smg(renderer, camera, it->x, it->y, it->z, on);
         else if (it->kind == TOY_MAP_PICKUP_SHOTGUN)
             pixels += render_shotgun(renderer, camera, it->x, it->y, it->z, on);
+        else if (it->kind == TOY_MAP_PICKUP_BUTTON)
+            pixels += render_button(renderer, camera, it->x, it->y, it->z, on,
+                                    it->x < -5000);
         else
             pixels += render_ammo_box(renderer, camera, it->x, it->y, it->z, on);
     }
@@ -1028,7 +1115,9 @@ static void draw_interact_prompt(struct toy_renderer *renderer)
     int text_w, x, y;
     if (highlighted < 0) return;
     it = &interactables[highlighted];
-    if (it->kind == TOY_MAP_PICKUP_AMMO) {
+    if (it->kind == TOY_MAP_PICKUP_BUTTON) {
+        snprintf(label, sizeof(label), "E SUMMON HORDE");
+    } else if (it->kind == TOY_MAP_PICKUP_AMMO) {
         snprintf(label, sizeof(label), "E TAKE AMMO");
     } else {
         int weapon = it->kind == TOY_MAP_PICKUP_SMG ?
@@ -1047,9 +1136,19 @@ static void draw_interact_prompt(struct toy_renderer *renderer)
 }
 
 /* E 键互动：拾取主武器（替换槽 0 并切出），同武器 = 补充弹药；
- * 弹药盒补满备弹。拾取点是固定的，互动后保留在场。 */
+ * 弹药盒补满备弹；召唤按钮每次互动触发 15-20 个追踪尸潮。
+ * 拾取点是固定的，互动后保留在场。 */
 static void interact_current(struct interactable *it)
 {
+    if (it->kind == TOY_MAP_PICKUP_BUTTON) {
+        int n;
+        horde_banner_ms = 3500;
+        n = toy_game_spawn_horde(&game, HORDE_COUNT_MIN, HORDE_COUNT_MAX,
+                                 map_spawn_zones, map_spawn_count,
+                                 HORDE_MIN_PLAYER_DIST);
+        __printf("wayland_fps: horde summoned %d tracking enemies\n", n);
+        return;
+    }
     if (it->kind == TOY_MAP_PICKUP_AMMO) {
         toy_game_refill_ammo(&game);
         return;
@@ -1205,6 +1304,22 @@ static void update_keyboard_look(struct camera *camera,
                       pitch * 16 * percent / 100);
 }
 
+/* ,/. 不是瞬间跳转，而是把 90° 加入队列，在固定逻辑步中快速完成。
+ * turn=1024 约等于 1 弧度，90° 约为 1611 turn 单位；每步最多转 128，
+ * 约 0.2 秒完成一次，期间仍可继续按键排队。 */
+#define QUARTER_TURN 1611
+#define SMOOTH_TURN_STEP 128
+
+static void update_smooth_turn(struct camera *camera)
+{
+    int step = smooth_turn_remaining;
+    if (step > SMOOTH_TURN_STEP) step = SMOOTH_TURN_STEP;
+    if (step < -SMOOTH_TURN_STEP) step = -SMOOTH_TURN_STEP;
+    if (step == 0) return;
+    rotate_camera(camera, step, 0);
+    smooth_turn_remaining -= step;
+}
+
 static void draw_crosshair(struct toy_surface *surface)
 {
     int cx = surface->width / 2, cy = surface->height / 2;
@@ -1356,7 +1471,9 @@ static void render_enemy_alert(struct toy_renderer *renderer,
     struct vec3 world, view;
     struct toy_screen_vertex screen;
     int x, y;
-    if (e->ai_state != TOY_GAME_ENEMY_ALERT) return;
+    /* 追踪尸潮也常显红色惊叹号：它们已知晓玩家位置，无需侦测。 */
+    if (e->ai_state != TOY_GAME_ENEMY_ALERT &&
+        e->ai_state != TOY_GAME_ENEMY_TRACKING) return;
     world.x = e->x;
     world.y = enemy_y(500, scale);
     world.z = e->z;
@@ -1414,6 +1531,8 @@ static int render_enemies(struct toy_renderer *renderer,
         } else {
             if (e->hurt > 0) color = 0xBB3333;
             else if (e->flash > 0) color = 0xDFDFDF;
+            else if (e->ai_state == TOY_GAME_ENEMY_TRACKING)
+                color = 0x8A2A2A;   /* 尸潮追踪者：红色，一眼可辨 */
             else color = 0x4A5D3A;
         }
         pixels += render_blob_shadow(renderer, camera, e, scale);
@@ -1531,6 +1650,14 @@ static void render_hud(struct toy_surface *surface, int fps)
     } else {
         fb_draw_string((unsigned char *)surface->pixels, 8, hint_y,
                        "RED FLOOR = SPAWN ZONE", 0xE08080, surface->stride);
+    }
+    /* 召唤提示：屏幕中央横幅，短暂显示 */
+    if (horde_banner_ms > 0) {
+        static const char *banner = "HORDE SUMMONED - THEY WILL FIND YOU";
+        int banner_y = surface->height / 3;
+        fb_draw_string((unsigned char *)surface->pixels,
+                       (surface->width - (int)strlen(banner) * FB_FONT_W) / 2,
+                       banner_y, banner, 0xFF3030, surface->stride);
     }
 }
 
@@ -1744,6 +1871,10 @@ static void spawn_hit_particles(int x, int y, int z, int sy, int cy)
 static void update_effects(int dt_ms)
 {
     int i;
+    if (horde_banner_ms > 0) {
+        horde_banner_ms -= dt_ms;
+        if (horde_banner_ms < 0) horde_banner_ms = 0;
+    }
     weapon_kick -= dt_ms * 2;
     if (weapon_kick < 0) weapon_kick = 0;
     for (i = 0; i < TRACER_SLOTS; i++) {
@@ -2504,19 +2635,21 @@ static int run_logic_test(void)
             if (r->ez < -5700 || r->ez > -3800) return 39;
         }
     }
-    /* 地图拾取物解析：2 把主武器 + 1 个弹药盒 */
-    if (interactable_count != 3 ||
-        interactables[0].kind != TOY_MAP_PICKUP_SMG ||
-        interactables[2].kind != TOY_MAP_PICKUP_AMMO) return 32;
+    /* 地图拾取物解析：1 个召唤按钮 + 2 把主武器 + 1 个弹药盒，顺序按
+     * 地图文件（按钮行在武器桌前）。 */
+    if (interactable_count != 4 ||
+        interactables[0].kind != TOY_MAP_PICKUP_BUTTON ||
+        interactables[1].kind != TOY_MAP_PICKUP_SMG ||
+        interactables[3].kind != TOY_MAP_PICKUP_AMMO) return 32;
     /* 固定拾取点：拾取后武器仍在场，同武器再互动 = 补充弹药 */
     highlighted = 0;
-    interact_current(&interactables[0]);
+    interact_current(&interactables[1]);
     if (game.slots[0].weapon != TOY_GAME_WEAPON_SMG ||
         game.slots[0].mag != 50 || game.slots[0].reserve != 650) return 33;
     game.slots[0].mag = 3;
     game.slots[0].reserve = 5;
     highlighted = 0;
-    interact_current(&interactables[0]);
+    interact_current(&interactables[1]);
     if (game.slots[0].mag != 50 || game.slots[0].reserve != 650) return 33;
     /* 拾取不影响高亮：SMG 固定点仍可被选中 */
     {
@@ -2527,7 +2660,7 @@ static int run_logic_test(void)
         aim_cam.cy = -1024;
         aim_cam.pitch_sy = 0;
         aim_cam.pitch_cy = 1024;
-        if (compute_highlight(&aim_cam) != 0) return 33;
+        if (compute_highlight(&aim_cam) != 1) return 33;
     }
     /* 高亮判定：世界空间朝向锥。面向桌子（武器低于视平线）可选中最远
      * 的 SMG；背对或超出距离均不可选。 */
@@ -2540,7 +2673,7 @@ static int run_logic_test(void)
         aim_cam.pitch_sy = 0;
         aim_cam.pitch_cy = 1024;
         highlighted = compute_highlight(&aim_cam);
-        if (highlighted != 0) return 34;
+        if (highlighted != 1) return 34;
         aim_cam.sy = 1024;
         aim_cam.cy = 0;
         if (compute_highlight(&aim_cam) != -1) return 35;
@@ -2553,7 +2686,33 @@ static int run_logic_test(void)
         aim_cam.z = -7000;
         aim_cam.sy = 0;
         aim_cam.cy = -1024;
-        if (compute_highlight(&aim_cam) != 2) return 37;
+        if (compute_highlight(&aim_cam) != 3) return 37;
+    }
+    /* 召唤按钮：位于开发者区纹理墙西端，E 互动召唤 15-20 个追踪敌人，
+     * 全部处于持续追踪态且落在三个刷怪点之一的矩形内；再次互动应再次召唤。 */
+    {
+        int n, i, had;
+        if (interactables[0].x != -5240 || interactables[0].z != -10000)
+            return 45;
+        had = game.enemies_alive;
+        highlighted = 0;
+        interact_current(&interactables[0]);
+        n = game.enemies_alive - had;
+        if (n < 15 || n > 20) return 46;
+        for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
+            int j, in_point = 0;
+            const struct toy_game_enemy *e = &game.enemies[i];
+            if (e->active != 1) continue;
+            if (e->ai_state != TOY_GAME_ENEMY_TRACKING) return 47;
+            for (j = 0; j < map_spawn_count; j++)
+                if (toy_game_point_in_box(e->x, e->z,
+                                          &map_spawn_zones[j]))
+                    in_point = 1;
+            if (!in_point) return 47;
+        }
+        highlighted = 0;
+        interact_current(&interactables[0]);
+        if (game.enemies_alive <= had + n) return 48;
     }
     __printf("wayland_fps: logic test passed\n");
     return 0;
@@ -2808,7 +2967,13 @@ int main(int argc, char **argv)
     int frame_limit = 0, rendered_frames = 0, scene_pixels = 0;
     int display_fps = 0, fps_window_frames = 0;
     int fire_edge = 0;
-    unsigned int menu_pending = 0;   /* stall 批次到达的菜单按键边沿 */
+    long menu_nav_ready_us = 0;
+    /* 按键按压边沿跨帧保留位：逻辑步（E/R/,/. 及切枪换弹）可能因
+     * accumulator 不足而整帧不跑（长 stall 后连续几帧都不跑），边沿若
+     * 只在 key_pressed 里会被下一轮 begin_frame 清掉。这里逐键记录
+     * 到达的按压，每帧合入 key_pressed 供消费方读取；逻辑步跑过的那
+     * 帧末尾统一清除。 */
+    unsigned char pending_key_edges[TOY_INPUT_KEY_COUNT];
     int interact_consumed = 0;   /* 每帧 E 互动只消费一次 */
     int input_debug = 0, input_event_count = 0, have_last_key = 0;
     int texture_stats = 0;
@@ -2875,6 +3040,7 @@ int main(int argc, char **argv)
      * 静默停声、wayland 发送失败则主循环干净退出）。SIG_IGN 值为 1。 */
     tlibc_sigaction(SIGPIPE, (void (*)(int))1);
     toy_input_init(&input);
+    memset(pending_key_edges, 0, sizeof(pending_key_edges));
     toy_renderer_init(&renderer);
     settings.mouse_level = 5;
     settings.keyboard_level = 5;
@@ -2893,7 +3059,7 @@ int main(int argc, char **argv)
     }
     __printf("wayland_fps: pause menu uses arrows + Enter; mouse/arrows look, "
              "WASD moves, click/Space fire (hold for SMG), R reload, "
-             "1/2 weapons, E interact, Esc pauses/resumes\n");
+             "1/2 weapons, E interact, ,/. turn 90, Esc pauses/resumes\n");
     if (input_debug)
         __printf("wayland_fps: input debug HUD enabled; test chords and focus changes\n");
     load_sfx_assets();
@@ -2916,6 +3082,15 @@ int main(int argc, char **argv)
          * 已提交缓冲的时间被渲染流水线掩盖（双缓冲）。 */
         if (toy_window_poll(window, &events, 0) < 0) break;
         toy_input_apply(&input, &events);
+        /* 本帧到达的按压边沿并入保留位，再把保留位全部合入 key_pressed
+         * 供顶部消费方（菜单/射击）读取。保留位在逻辑步跑过的那帧末尾
+         * 才清除，因此不跑逻辑步的帧不会吞掉 E/R/,/. 等按键。 */
+        for (int k = 0; k < TOY_INPUT_KEY_COUNT; k++) {
+            if (input.key_pressed[k]) pending_key_edges[k] = 1;
+            if (pending_key_edges[k]) input.key_pressed[k] = 1;
+        }
+        if (events.keyboard_focus_changed && !events.keyboard_focused)
+            memset(pending_key_edges, 0, sizeof(pending_key_edges));
         if (events.key_event_count > 0) {
             int at = events.key_event_count - 1;
             last_key = events.key_events[at].key;
@@ -2933,49 +3108,48 @@ int main(int argc, char **argv)
         }
         if (paused && game.state == TOY_GAME_PLAYING) {
             int resume_requested = 0;
-            /* 边沿计数：普通路径与 stall 锁存路径的按压各自独立，同一
-             * 迭代都到达时按次数移动（否则两次按压会被 || 合并成一次）。 */
-            int up = toy_input_pressed(&input, KEY_UP) +
-                     ((menu_pending & MENU_KEY_UP) ? 1 : 0);
-            int down = toy_input_pressed(&input, KEY_DOWN) +
-                       ((menu_pending & MENU_KEY_DOWN) ? 1 : 0);
-            if (up > 0) {
-                menu_pending &= ~MENU_KEY_UP;
-                pause_menu.selected -= up;
-                if (pause_menu.selected < 0)
-                    pause_menu.selected += PAUSE_ITEM_COUNT;
-            }
-            if (down > 0) {
-                menu_pending &= ~MENU_KEY_DOWN;
-                pause_menu.selected += down;
-                if (pause_menu.selected >= PAUSE_ITEM_COUNT)
-                    pause_menu.selected -= PAUSE_ITEM_COUNT;
+            /* 菜单导航使用独立节流；Wayland/键盘自动重复可能在一帧内
+             * 送来多次边沿，不能让选项随帧率飞快滚动。 */
+            int up = toy_input_pressed(&input, KEY_UP);
+            int down = toy_input_pressed(&input, KEY_DOWN);
+            if (up > 0 || down > 0) {
+                long menu_now = monotonic_us();
+                if (menu_now >= menu_nav_ready_us) {
+                    if (up > 0) {
+                        pause_menu.selected--;
+                        if (pause_menu.selected < 0)
+                            pause_menu.selected += PAUSE_ITEM_COUNT;
+                    } else {
+                        pause_menu.selected++;
+                        if (pause_menu.selected >= PAUSE_ITEM_COUNT)
+                            pause_menu.selected -= PAUSE_ITEM_COUNT;
+                    }
+                    menu_nav_ready_us = menu_now + 180000;
+                }
+                /* 无论本次是否因节流被接受，都消费这个边沿；释放后
+                 * 再按才会产生下一次导航。 */
+                input.key_pressed[KEY_UP] = 0;
+                input.key_pressed[KEY_DOWN] = 0;
+                pending_key_edges[KEY_UP] = 0;
+                pending_key_edges[KEY_DOWN] = 0;
             }
             {
-                int left = toy_input_pressed(&input, KEY_LEFT) +
-                           ((menu_pending & MENU_KEY_LEFT) ? 1 : 0);
-                int right = toy_input_pressed(&input, KEY_RIGHT) +
-                            ((menu_pending & MENU_KEY_RIGHT) ? 1 : 0);
-                int change = right - left;
+                int change = toy_input_pressed(&input, KEY_RIGHT) -
+                             toy_input_pressed(&input, KEY_LEFT);
                 if (change != 0) {
-                    menu_pending &= ~(MENU_KEY_LEFT | MENU_KEY_RIGHT);
                     if (pause_menu.selected == PAUSE_ITEM_MOUSE)
                         settings.mouse_level = clampi(settings.mouse_level + change, 0, 15);
                     else if (pause_menu.selected == PAUSE_ITEM_KEYBOARD)
                         settings.keyboard_level = clampi(settings.keyboard_level + change, 0, 15);
                 }
             }
-            if (toy_input_pressed(&input, KEY_ENTER) ||
-                (menu_pending & MENU_KEY_ENTER)) {
-                menu_pending &= ~MENU_KEY_ENTER;
+            if (toy_input_pressed(&input, KEY_ENTER)) {
                 if (pause_menu.selected == PAUSE_ITEM_RESUME)
                     resume_requested = 1;
                 else if (pause_menu.selected == PAUSE_ITEM_QUIT)
                     running = 0;
             }
-            if (toy_input_pressed(&input, KEY_ESC) ||
-                (menu_pending & MENU_KEY_ESC)) {
-                menu_pending &= ~MENU_KEY_ESC;
+            if (toy_input_pressed(&input, KEY_ESC)) {
                 resume_requested = 1;
             }
             if (resume_requested) {
@@ -2990,10 +3164,7 @@ int main(int argc, char **argv)
                      pointer_lock_requested ? "requested" : "unavailable");
             }
         }
-        if (!paused && !resumed &&
-            (toy_input_pressed(&input, KEY_ESC) ||
-             (menu_pending & MENU_KEY_ESC))) {
-            menu_pending &= ~MENU_KEY_ESC;
+        if (!paused && !resumed && toy_input_pressed(&input, KEY_ESC)) {
             if (game.state == TOY_GAME_OVER || game.state == TOY_GAME_WON)
                 running = 0;
             else {
@@ -3074,6 +3245,16 @@ int main(int argc, char **argv)
                 if (game.state == TOY_GAME_PLAYING) {
                     update_player(&camera, &input);
                     update_keyboard_look(&camera, &input, &settings);
+                    /* 90° 快转：按键只加入队列，同一帧多个逻辑步也只加入一次 */
+                    if (toy_input_pressed(&input, KEY_COMMA)) {
+                        smooth_turn_remaining -= QUARTER_TURN;
+                        input.key_pressed[KEY_COMMA] = 0;
+                    }
+                    if (toy_input_pressed(&input, KEY_DOT)) {
+                        smooth_turn_remaining += QUARTER_TURN;
+                        input.key_pressed[KEY_DOT] = 0;
+                    }
+                    update_smooth_turn(&camera);
                     game.px = camera.x;
                     game.pz = camera.z;
                     highlighted = compute_highlight(&camera);
@@ -3098,6 +3279,11 @@ int main(int argc, char **argv)
         }
         if (!paused) sync_fire_effects(&camera);
         if (accumulator >= FIXED_STEP_US) accumulator %= FIXED_STEP_US;
+        /* 本帧跑过逻辑步：所有保留边沿都已暴露给消费方，可以清除；
+         * 一帧都没跑（accumulator 不足，长 stall 后常见）则留到下一帧，
+         * 避免按键被吞。 */
+        if (logic_steps > 0)
+            memset(pending_key_edges, 0, sizeof(pending_key_edges));
         perf_end_stage(&stats, &stats_total, STATS_STAGE_LOGIC, &t_stage, 0, 0);
         /* 帧渲染计时从申请缓冲开始；双缓冲占用时的等待计入 stall。
          * 帧间隔：本次 begin_frame 距上次的墙钟时间 wall，与上次渲染
@@ -3126,33 +3312,28 @@ int main(int argc, char **argv)
              * 即 wait 中双缓冲背压的部分。 */
             perf_add_stall(&stats, &stats_total, monotonic_us() - t_frame);
             toy_input_apply(&input, &stall_events);
-            /* 等待批次的射击/菜单按键边沿不能丢，也不能重复：菜单块在
-             * 迭代顶部已消费过本迭代的事件，此时 key_pressed 里可能
-             * 残留旧边沿（begin_frame 只在迭代顶部清）——再读
-             * key_pressed 锁存会让一次按键触发两次（暂停后立即恢复、
-             * 按一下菜单动两格）。只能从本批次原始事件取边沿，锁存到
-             * menu_pending/fire_edge 由下一迭代消费。Esc 在暂停和游戏
-             * 中都要保留，由下一迭代的消费方按状态决定语义。 */
-            if (!paused && !resumed) {
-                if (stall_events.button_pressed &&
-                    stall_events.button == BTN_LEFT)
-                    fire_edge = 1;
-            }
+            /* 等待批次的按键边沿不能丢，也不能重复：菜单块在迭代顶部已
+             * 消费过本迭代的事件，此时 key_pressed 里可能残留旧边沿
+             * （begin_frame 只在迭代顶部清）——再读 key_pressed 锁存
+             * 会让一次按键触发两次（暂停后立即恢复、按一下菜单动两格）。
+             * 改为把本批次所有按下事件逐键记入 pending_key_edges，由
+             * 帧顶合入 key_pressed，各消费方按当时状态决定语义（如
+             * Esc 在暂停和游戏中的含义不同）。E/R/1/2/逗号句号等所有
+             * 按键都走这条路径，不再吞键；释放事件已由 apply 更新
+             * key_down，不会粘键。BTN_LEFT 不在按键表里，仍需单独
+             * 锁存 fire_edge。 */
+            if (stall_events.keyboard_focus_changed &&
+                !stall_events.keyboard_focused)
+                memset(pending_key_edges, 0, sizeof(pending_key_edges));
             for (int i = 0; i < stall_events.key_event_count; i++) {
-                unsigned int k;
-                if (!stall_events.key_events[i].pressed) continue;
-                k = stall_events.key_events[i].key;
-                if (!paused && !resumed && k == KEY_SPACE)
-                    fire_edge = 1;
-                if (paused && !resumed) {
-                    if (k == KEY_UP) menu_pending |= MENU_KEY_UP;
-                    else if (k == KEY_DOWN) menu_pending |= MENU_KEY_DOWN;
-                    else if (k == KEY_LEFT) menu_pending |= MENU_KEY_LEFT;
-                    else if (k == KEY_RIGHT) menu_pending |= MENU_KEY_RIGHT;
-                    else if (k == KEY_ENTER) menu_pending |= MENU_KEY_ENTER;
-                }
-                if (k == KEY_ESC) menu_pending |= MENU_KEY_ESC;
+                unsigned int k = stall_events.key_events[i].key;
+                if (stall_events.key_events[i].pressed &&
+                    k < TOY_INPUT_KEY_COUNT)
+                    pending_key_edges[k] = 1;
             }
+            if (!paused && !resumed && stall_events.button_pressed &&
+                stall_events.button == BTN_LEFT)
+                fire_edge = 1;
             continue;
         }
         if (ready > 0) {

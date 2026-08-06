@@ -56,6 +56,9 @@ wall 12000 12000 -7000 7000 1800 56515D
 # Only the boundary toward the old map/safe room is an air wall.
 box -5500 -1800 -6500 -6300 1800 000000 air
 box 1800 5500 -6500 -6300 1800 000000 air
+# Solid west side wall for the developer area; the summon button is mounted
+# on its room-facing surface.
+box -5500 -5300 -11300 -6500 1800 404A58
 floor -5300 5300 -11300 -6500 20252A
 label -5000 5000 -10800 -10300 FFD060 DEVELOPER_ZONE
 
@@ -72,6 +75,10 @@ texture -4200 -2600 -11180 1050 2 1 1 808080
 texture -1200 1200 -11180 1050 2 1 1 C08040
 texture 2600 4200 -11180 1050 2 1 1 40A0C0
 label -4500 4500 -10600 -10100 FFD060 TEXTURE_DISPLAY
+
+# Horde summon button on the west side wall, facing into the developer area.
+# (E while highlighted summons 15-20 tracking enemies at map spawn zones.)
+button -5240 -10000 200
 
 # Weapon table: full-footprint air box for collision, slab top + four legs
 # rendered. SMG on the west half, shotgun on the east, muzzle toward the door.
