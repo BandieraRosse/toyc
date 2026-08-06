@@ -129,6 +129,15 @@ static void session_update_smooth_turn(struct rasterfall_session *session,
     session->smooth_turn_remaining -= step;
 }
 
+void rasterfall_session_step_remote_player(struct rasterfall_session *session,
+                                           struct camera *camera,
+                                           const struct rasterfall_command *command)
+{
+    session_move_player(session, camera, command);
+    if (command->turn || command->pitch)
+        rasterfall_camera_rotate(camera, command->turn, command->pitch);
+}
+
 int rasterfall_session_compute_highlight(const struct rasterfall_session *session,
                                          const struct camera *camera)
 {

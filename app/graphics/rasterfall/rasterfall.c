@@ -26,6 +26,8 @@
  *      等调试/性能选项。
  *   5. 音频：启动时加载 assets/generated/sfx_*.tsnd；音频不可用时游戏仍
  *      可运行并静默降级。
+ *   6. 联机：版本化 UDP 协议传输语义化输入与玩家快照；当前主机权威校验
+ *      远端移动，客户端预测并校正位置，完整战斗权威同步仍在后续阶段。
  *
  * 【主要操作】
  *   鼠标左键：捕获指针并射击；Space：射击（按住可使 SMG 连发）
@@ -49,6 +51,9 @@
  *   make build/rasterfall       构建程序
  *   build/rasterfall --logic-test 运行无窗口逻辑回归测试
  *   build/rasterfall --frames N    在 Wayland 下运行有限帧数预览
+ *   build/rasterfall --net-test    运行无窗口协议与 localhost UDP 回环
+ *   build/rasterfall --host --port 28460
+ *   build/rasterfall --connect 127.0.0.1 --port 28460
  *   完整项目测试入口和工具链约束以仓库根目录 README.md、AGENTS.md 为准。
  *   修改本文件的输入、地图交互或公共渲染路径后，至少重新构建本目标并
  *   运行 --logic-test；若影响共享编译器/游戏规则代码，再扩大测试范围。
@@ -77,6 +82,7 @@
 #include "rasterfall_sky.h"
 #include "rasterfall_viewmodel.h"
 #include "rasterfall_session.h"
+#include "rasterfall_net.h"
 #include "math.h"
 
 #define KEY_ESC   1
@@ -299,6 +305,18 @@ static long monotonic_us(void)
     struct timespec now;
     if (__clock_gettime(CLOCK_MONOTONIC, &now) < 0) return 0;
     return now.tv_sec * 1000000L + now.tv_nsec / 1000;
+}
+
+static int parse_positive_int(const char *text, int fallback)
+{
+    int value = 0;
+    if (!text || !*text) return fallback;
+    while (*text >= '0' && *text <= '9') {
+        value = value * 10 + (*text - '0');
+        text++;
+    }
+    if (*text || value <= 0 || value > 65535) return fallback;
+    return value;
 }
 
 static int clampi(int value, int low, int high)
@@ -1225,6 +1243,30 @@ static int render_enemies(struct toy_renderer *renderer,
     return pixels;
 }
 
+static int render_network_teammate(struct toy_renderer *renderer,
+                                   const struct camera *camera,
+                                   const struct rasterfall_net *net)
+{
+    const struct camera *remote = NULL;
+    int x, z, pixels = 0;
+    if (net->mode == RASTERFALL_NET_HOST && net->peer_known)
+        remote = &net->peer_camera;
+    else if (net->mode == RASTERFALL_NET_CLIENT && net->players[0].active)
+        remote = &net->players[0].camera;
+    if (!remote) return 0;
+    x = remote->x;
+    z = remote->z;
+    pixels += draw_cuboid(renderer, camera, x - 95, x - 10,
+                          -900, -610, z - 75, z + 75, 0x25354A);
+    pixels += draw_cuboid(renderer, camera, x + 10, x + 95,
+                          -900, -610, z - 75, z + 75, 0x25354A);
+    pixels += draw_cuboid(renderer, camera, x - 155, x + 155,
+                          -620, -100, z - 100, z + 100, 0x386B96);
+    pixels += draw_cuboid(renderer, camera, x - 125, x + 125,
+                          -90, 190, z - 125, z + 125, 0xD2A878);
+    return pixels;
+}
+
 /* ── 子弹轨迹与命中粒子（纯视觉；逻辑步进 16ms 推进） ──────────── */
 
 /* num/den 线性插值两色（num=den 时取 from，0 时取 to） */
@@ -1560,14 +1602,27 @@ int main(int argc, char **argv)
     unsigned int last_key = 0;
     int last_key_pressed = 0;
     struct rasterfall_audio audio;
+    struct rasterfall_net net;
     uint64_t seed;
 
     int logic_test = 0;
+    int net_test = 0;
+    int requested_net_mode = RASTERFALL_NET_OFF;
+    int net_port = RASTERFALL_NET_DEFAULT_PORT;
+    const char *net_address = NULL;
     int auto_mode = 0;
     const char *dump_path = 0;
     for (int arg = 1; arg < argc; arg++) {
         if (strcmp(argv[arg], "--input-test") == 0) input_debug = 1;
         else if (strcmp(argv[arg], "--logic-test") == 0) logic_test = 1;
+        else if (strcmp(argv[arg], "--net-test") == 0) net_test = 1;
+        else if (strcmp(argv[arg], "--host") == 0)
+            requested_net_mode = RASTERFALL_NET_HOST;
+        else if (strcmp(argv[arg], "--connect") == 0 && arg + 1 < argc) {
+            requested_net_mode = RASTERFALL_NET_CLIENT;
+            net_address = argv[++arg];
+        } else if (strcmp(argv[arg], "--port") == 0 && arg + 1 < argc)
+            net_port = parse_positive_int(argv[++arg], RASTERFALL_NET_DEFAULT_PORT);
         else if (strcmp(argv[arg], "--auto") == 0) auto_mode = 1;
         else if (strcmp(argv[arg], "--no-textures") == 0) textures_enabled = 0;
         else if (strcmp(argv[arg], "--no-stats") == 0) stats_enabled = 0;
@@ -1580,6 +1635,13 @@ int main(int argc, char **argv)
                 frame_limit = frame_limit * 10 + (*p++ - '0');
         }
     }
+    if (net_test) {
+        int result = rasterfall_net_self_test();
+        if (result == 0) __printf("rasterfall: network protocol test passed\n");
+        else __fprintf(2, "rasterfall: network protocol test failed: %d\n", result);
+        return result;
+    }
+    rasterfall_net_init(&net);
     if (rasterfall_session_load(&session, "assets/maps/rasterfall.map") < 0) {
         __fprintf(2, "rasterfall: cannot load map assets/maps/rasterfall.map\n");
         return 1;
@@ -1627,10 +1689,35 @@ int main(int argc, char **argv)
         seed = (uint64_t)monotonic_us();
     if (seed == 0) seed = 1;
     rasterfall_session_reset(&session, &camera, seed);
+    if (requested_net_mode == RASTERFALL_NET_HOST) {
+        struct camera peer_spawn;
+        memcpy(&peer_spawn, &camera, sizeof(peer_spawn));
+        peer_spawn.x += 350;
+        if (rasterfall_net_host(&net, net_port, &peer_spawn) < 0) {
+            __fprintf(2, "rasterfall: cannot host UDP port %d\n", net_port);
+            if (scene_texture.blob) toy_texture_unload(&scene_texture);
+            rasterfall_session_unload(&session);
+            toy_renderer_destroy(&renderer);
+            return 1;
+        }
+        __printf("rasterfall: hosting UDP port %d\n", net_port);
+    } else if (requested_net_mode == RASTERFALL_NET_CLIENT) {
+        if (!net_address || rasterfall_net_connect(&net, net_address, net_port) < 0) {
+            __fprintf(2, "rasterfall: cannot connect to %s:%d\n",
+                      net_address ? net_address : "(null)", net_port);
+            if (scene_texture.blob) toy_texture_unload(&scene_texture);
+            rasterfall_session_unload(&session);
+            toy_renderer_destroy(&renderer);
+            return 1;
+        }
+        __printf("rasterfall: connecting to %s:%d over UDP\n",
+                 net_address, net_port);
+    }
     window = toy_window_open("Rasterfall", 800, 450);
     if (!window) {
         __fprintf(2, "rasterfall: cannot create Wayland window\n");
         if (scene_texture.blob) toy_texture_unload(&scene_texture);
+        rasterfall_net_close(&net);
         rasterfall_session_unload(&session);
         toy_renderer_destroy(&renderer);
         return 1;
@@ -1663,6 +1750,9 @@ int main(int argc, char **argv)
          * 已提交缓冲的时间被渲染流水线掩盖（双缓冲）。 */
         if (toy_window_poll(window, &events, 0) < 0) break;
         toy_input_apply(&input, &events);
+        rasterfall_net_poll(&net);
+        if (net.mode == RASTERFALL_NET_CLIENT)
+            rasterfall_net_reconcile_client(&net, &camera);
         /* 本帧到达的按压边沿并入保留位，再把保留位全部合入 key_pressed
          * 供顶部消费方（菜单/射击）读取。保留位在逻辑步跑过的那帧末尾
          * 才清除，因此不跑逻辑步的帧不会吞掉 E/R/,/. 等按键。 */
@@ -1837,6 +1927,13 @@ int main(int argc, char **argv)
                                        pointer_pitch_pending);
                     rasterfall_session_step(&session, &camera, &command,
                                             FIXED_STEP_US / 1000);
+                    if (net.mode == RASTERFALL_NET_CLIENT)
+                        rasterfall_net_send_command(&net, &command, &camera);
+                    else if (net.mode == RASTERFALL_NET_HOST) {
+                        rasterfall_net_apply_remote(&net, &session);
+                        if ((net.tick % 3) == 0)
+                            rasterfall_net_send_snapshot(&net, &camera, &game);
+                    }
                     consume_game_command_edges(&input);
                     pointer_turn_pending = 0;
                     pointer_pitch_pending = 0;
@@ -1929,6 +2026,7 @@ int main(int argc, char **argv)
                            renderer.submitted_triangles - prev_tris, 0);
             prev_tris = renderer.submitted_triangles;
             scene_pixels += render_enemies(&renderer, &camera);
+            scene_pixels += render_network_teammate(&renderer, &camera, &net);
             rasterfall_perf_end_stage(&stats, &stats_total, RASTERFALL_STATS_ENEMIES, &t_stage,
                            renderer.submitted_triangles - prev_tris, 0);
             /* 世界几何并行光栅化；弹道/粒子/枪模随后直接写屏覆盖 */
@@ -2009,6 +2107,7 @@ int main(int argc, char **argv)
     rasterfall_audio_unload_assets(&audio);
     if (scene_texture.blob) toy_texture_unload(&scene_texture);
     if (dump_path) rasterfall_hud_dump_frame(dump_path, &surface);
+    rasterfall_net_close(&net);
     rasterfall_session_unload(&session);
     toy_window_close(window);
     __printf("rasterfall: %d frames, %d scene pixels, position=(%d,%d)\n",

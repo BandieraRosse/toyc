@@ -68,6 +68,17 @@ FPS 的 v0.2 纹理切片默认加载 `assets/generated/wall.ttex`，将 nearest
 可用 `build/rasterfall --frames 300 --texture-stats` 在 Wayland 环境预览，
 `build/rasterfall --logic-test` 为无窗口回归预览。
 
+Rasterfall 的第一阶段 UDP 联机可用以下命令启动：
+
+```sh
+build/rasterfall --host --port 28460
+build/rasterfall --connect 127.0.0.1 --port 28460
+build/rasterfall --net-test              # 无窗口协议与 localhost UDP 回环
+```
+
+当前阶段由主机校验远端移动并同步双方位置，双方能够看到队友模型，客户端带有位置预测
+与校正。敌人、伤害、远端射击和地图互动尚未完成权威同步，暂不视为完整合作模式。
+
 `bootstrap/` 保存版本控制内的种子二进制。它们用于阶段性的自举检查，不参与默认
 `make`，而且可能落后于源码：
 
@@ -83,7 +94,6 @@ make update-bootstrap       # 有意更新种子；会修改跟踪的二进制
 make test               # 58 个常规编译/运行测试
 make test-selfhost      # 42 个无 toyc_rt 的自包含测试
 make test-source        # 8 个编译器源码级测试
-make test-lib           # 34 个库编译单元 + 16 个功能套件
 make test-error         # 16 个诊断测试
 make test-toyld         # 42 个使用 toyld 的链接/运行测试
 make test-toyar         # 5 个归档器测试
@@ -132,9 +142,6 @@ byte-level BPE prompt 编码、UTF-8 token 解码、采样和 KV-cache 推理。
 - `make test-llm`：29/29。
 - `make test-selfhost` 和 `make test-toyld`：均为 40/42。两个用例调用根目录路径上的
   `renameat2`，容器返回 `EROFS`，而测试固定期待 `ENOENT`；这是环境相关的断言差异。
-- `make test-lib`：编译 34/34，功能 16/16（含 `game` 模块的游戏规则与
-  SFX 合成套件，其中武器槽规则与多弹丸霰弹枪散射有专门用例）。
-
 因此本环境的 `make test-all` 会在 `test-selfhost` 处停止，不能标记为全绿。
 
 ## 目录

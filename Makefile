@@ -758,11 +758,12 @@ APP_SRCS    := $(shell find $(APP_DIR) -name '*.c' \
                     ! -path '$(APP_DIR)/graphics/rasterfall/rasterfall_perf.c' \
                     ! -path '$(APP_DIR)/graphics/rasterfall/rasterfall_sky.c' \
                     ! -path '$(APP_DIR)/graphics/rasterfall/rasterfall_session.c' \
+                    ! -path '$(APP_DIR)/graphics/rasterfall/rasterfall_net.c' \
                     ! -path '$(APP_DIR)/graphics/rasterfall/rasterfall_viewmodel.c' | LANG=C sort)
 APP_NAMES   := $(sort $(basename $(notdir $(APP_SRCS))))
 APP_OBJS    := $(foreach src,$(APP_SRCS),$(BUILD)/$(notdir $(basename $(src))).o)
 APP_TARGETS := $(foreach name,$(APP_NAMES),$(BUILD)/$(name))
-APP_EXTRA_OBJS_rasterfall := $(BUILD)/rasterfall_map.o $(BUILD)/rasterfall_session.o $(BUILD)/rasterfall_hud.o $(BUILD)/rasterfall_audio.o $(BUILD)/rasterfall_effects.o $(BUILD)/rasterfall_perf.o $(BUILD)/rasterfall_sky.o $(BUILD)/rasterfall_viewmodel.o
+APP_EXTRA_OBJS_rasterfall := $(BUILD)/rasterfall_map.o $(BUILD)/rasterfall_session.o $(BUILD)/rasterfall_net.o $(BUILD)/rasterfall_hud.o $(BUILD)/rasterfall_audio.o $(BUILD)/rasterfall_effects.o $(BUILD)/rasterfall_perf.o $(BUILD)/rasterfall_sky.o $(BUILD)/rasterfall_viewmodel.o
 
 # ─── 库编译规则 ────────────────────────────────────────────────
 
@@ -776,6 +777,13 @@ $(BUILD)/rasterfall_session.o: app/graphics/rasterfall/rasterfall_session.c \
                                app/graphics/rasterfall/rasterfall_session.h \
                                app/graphics/rasterfall/rasterfall_camera.h \
                                app/graphics/rasterfall/rasterfall_map.h | $(BUILD)
+	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
+	$(GCC) $(LIBC_CFLAGS) -I app/graphics/rasterfall -c $< -o $@
+
+$(BUILD)/rasterfall_net.o: app/graphics/rasterfall/rasterfall_net.c \
+                           app/graphics/rasterfall/rasterfall_net.h \
+                           app/graphics/rasterfall/rasterfall_session.h \
+                           app/graphics/rasterfall/rasterfall_camera.h | $(BUILD)
 	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
 	$(GCC) $(LIBC_CFLAGS) -I app/graphics/rasterfall -c $< -o $@
 
@@ -854,6 +862,7 @@ $(foreach src,$(APP_SRCS),$(eval $(call APP_rule,$(src))))
 $(BUILD)/rasterfall.o: app/graphics/rasterfall/rasterfall_hud.h \
                        app/graphics/rasterfall/rasterfall_logic_test.inc \
                        app/graphics/rasterfall/rasterfall_session.h \
+                       app/graphics/rasterfall/rasterfall_net.h \
                        app/graphics/rasterfall/rasterfall_camera.h \
                        app/graphics/rasterfall/rasterfall_audio.h \
                        app/graphics/rasterfall/rasterfall_effects.h \
@@ -887,6 +896,7 @@ clean-app:
 	rm -f $(APP_OBJS) $(APP_OBJS:.o=.d) $(APP_TARGETS)
 	rm -f $(BUILD)/rasterfall_map.o $(BUILD)/rasterfall_map_self.o \
 	      $(BUILD)/rasterfall_session.o $(BUILD)/rasterfall_session_self.o \
+	      $(BUILD)/rasterfall_net.o $(BUILD)/rasterfall_net_self.o \
 	      $(BUILD)/rasterfall_hud.o $(BUILD)/rasterfall_hud_self.o \
       $(BUILD)/rasterfall_audio.o $(BUILD)/rasterfall_audio_self.o \
       $(BUILD)/rasterfall_effects.o $(BUILD)/rasterfall_effects_self.o \
@@ -934,7 +944,7 @@ SELF_LIBC_OBJS     := $(SELF_LIBC_C_OBJS) $(SELF_LIBC_ASM_OBJS)
 SELF_APP_NAMES   := $(APP_NAMES)
 SELF_APP_OBJS    := $(foreach name,$(SELF_APP_NAMES),$(BUILD)/$(name)_self.o)
 SELF_APP_TARGETS := $(foreach name,$(SELF_APP_NAMES),$(BUILD)/$(name)_self)
-SELF_APP_EXTRA_OBJS_rasterfall := $(BUILD)/rasterfall_map_self.o $(BUILD)/rasterfall_session_self.o $(BUILD)/rasterfall_hud_self.o $(BUILD)/rasterfall_audio_self.o $(BUILD)/rasterfall_effects_self.o $(BUILD)/rasterfall_perf_self.o $(BUILD)/rasterfall_sky_self.o $(BUILD)/rasterfall_viewmodel_self.o
+SELF_APP_EXTRA_OBJS_rasterfall := $(BUILD)/rasterfall_map_self.o $(BUILD)/rasterfall_session_self.o $(BUILD)/rasterfall_net_self.o $(BUILD)/rasterfall_hud_self.o $(BUILD)/rasterfall_audio_self.o $(BUILD)/rasterfall_effects_self.o $(BUILD)/rasterfall_perf_self.o $(BUILD)/rasterfall_sky_self.o $(BUILD)/rasterfall_viewmodel_self.o
 
 # ─── 库编译规则 ────────────────────────────────────────────────
 
@@ -970,6 +980,13 @@ $(BUILD)/rasterfall_session_self.o: app/graphics/rasterfall/rasterfall_session.c
                                     app/graphics/rasterfall/rasterfall_session.h \
                                     app/graphics/rasterfall/rasterfall_camera.h \
                                     app/graphics/rasterfall/rasterfall_map.h $(SELF_CC) | $(BUILD)
+	@printf "  $(BLUE)  CC(s)  %s\n" "$<"
+	$(SELF_CC) $(SELF_CFLAGS) -I app/graphics/rasterfall -c $< -o $@
+
+$(BUILD)/rasterfall_net_self.o: app/graphics/rasterfall/rasterfall_net.c \
+                                app/graphics/rasterfall/rasterfall_net.h \
+                                app/graphics/rasterfall/rasterfall_session.h \
+                                app/graphics/rasterfall/rasterfall_camera.h $(SELF_CC) | $(BUILD)
 	@printf "  $(BLUE)  CC(s)  %s\n" "$<"
 	$(SELF_CC) $(SELF_CFLAGS) -I app/graphics/rasterfall -c $< -o $@
 

@@ -79,6 +79,19 @@ on exit; `--no-stats` disables the output):
 Preview with `build/rasterfall --frames 300 --texture-stats` under Wayland; use
 `build/rasterfall --logic-test` for the headless regression preview.
 
+Rasterfall's first UDP networking stage can be started with:
+
+```sh
+build/rasterfall --host --port 28460
+build/rasterfall --connect 127.0.0.1 --port 28460
+build/rasterfall --net-test              # headless protocol + localhost UDP loopback
+```
+
+At this stage the host validates remote movement and synchronizes both player
+positions, both sides render a teammate model, and the client predicts and
+reconciles its position. Enemies, damage, remote shooting, and map interactions
+are not yet authority-synchronized, so this is not a complete co-op mode yet.
+
 `bootstrap/` contains versioned seed binaries. They are for periodic bootstrap
 checks, are not used by the default `make`, and may lag behind the source:
 
@@ -94,7 +107,6 @@ make update-bootstrap       # intentionally replace the versioned seeds
 make test               # 58 regular compile/run tests
 make test-selfhost      # 42 self-contained tests without toyc_rt
 make test-source        # 8 compiler source tests
-make test-lib           # 34 library compile units + 16 functional suites
 make test-error         # 16 diagnostic tests
 make test-toyld         # 42 link/run tests using toyld
 make test-toyar         # 5 archiver tests
@@ -148,10 +160,6 @@ The current run in a restricted container produced:
 - `make test-selfhost` and `make test-toyld`: both 40/42. Two tests call
   `renameat2` on root-level paths; the container returns `EROFS` while the
   assertions require `ENOENT`.
-- `make test-lib`: 34/34 compile units and 16/16 functional suites (including
-  the `game` module covering game rules and SFX synthesis, with dedicated
-  cases for weapon-slot rules and multi-pellet shotgun spread).
-
 Consequently, `make test-all` stops at `test-selfhost` in this environment and
 must not be reported as fully passing.
 
