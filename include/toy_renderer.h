@@ -32,6 +32,10 @@ struct toy_texture_view {
 struct toy_raster_cmd {
     int textured;
     int repeat;
+    /* 覆盖层：跳过深度比较与深度写入，按记录顺序后画者直接覆盖先画者。
+     * 用于与底层几乎共面、仅靠画家算法分层的区域涂色（如地板刷色），
+     * 避免近共面深度竞争在掠射角下抖动。 */
+    int overlay;
     uint32_t color;
     uint32_t fallback;
     int light;
@@ -67,6 +71,8 @@ struct toy_render_worker {
 
 struct toy_renderer {
     struct toy_surface surface;
+    /* 逆深度缓冲：存屏幕空间线性插值的 1/z（越大越近），0 为清除值。
+     * 透视校正，避免仿射插值在掠射角下对近共面判错遮挡。 */
     int *depth;
     size_t depth_size;
     unsigned long textured_pixels;
@@ -115,6 +121,14 @@ int toy_renderer_triangle_lit(struct toy_renderer *renderer,
                               const struct toy_screen_vertex *b,
                               const struct toy_screen_vertex *c,
                               uint32_t color, int light, int fog);
+/* 与 toy_renderer_triangle_lit 相同，但按覆盖层光栅化：不比较、不写深度，
+ * 后画的覆盖先画的。适用于与底层几乎共面且先画者已在命令列表中排序在前
+ * 的区域涂色。 */
+int toy_renderer_triangle_lit_overlay(struct toy_renderer *renderer,
+                                      const struct toy_screen_vertex *a,
+                                      const struct toy_screen_vertex *b,
+                                      const struct toy_screen_vertex *c,
+                                      uint32_t color, int light, int fog);
 int toy_renderer_triangle_textured(struct toy_renderer *renderer,
                                    const struct toy_screen_vertex *a,
                                    const struct toy_screen_vertex *b,

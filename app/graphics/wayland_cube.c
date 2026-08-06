@@ -115,6 +115,8 @@ static int render_cube(struct toy_renderer *renderer, const struct rotation *rot
         projected[i].x = surface->width / 2 + vx * scale_i / vz;
         projected[i].y = surface->height / 2 - vy * scale_i / vz;
         projected[i].z = vz;
+        /* 渲染器深度缓冲使用逆深度（1/z），所有顶点必须提供该值。 */
+        projected[i].inv_z = 1048576 / vz;
     }
     for (int i = 0; i < 12; i++) {
         toy_renderer_triangle(renderer,

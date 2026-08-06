@@ -387,6 +387,8 @@ static void project_vertex(const struct toy_surface *surface,
     screen->x = surface->width / 2 + view->x * focal / view->z;
     screen->y = surface->height / 2 - view->y * focal / view->z;
     screen->z = view->z;
+    /* 渲染器深度缓冲使用逆深度，纯色路径也读该字段；必须在投影时填好。 */
+    screen->inv_z = (long)1048576 / view->z;
     screen->light = 256;
     screen->fog = 0;
 }
@@ -428,16 +430,26 @@ static int draw_world_triangle(struct toy_renderer *renderer,
         if (area >= 0) {
             struct toy_screen_vertex swap;
             swap.x = sb.x; swap.y = sb.y; swap.z = sb.z;
+            swap.inv_z = sb.inv_z;
             sb.x = sc.x; sb.y = sc.y; sb.z = sc.z;
+            sb.inv_z = sc.inv_z;
             sc.x = swap.x; sc.y = swap.y; sc.z = swap.z;
+            sc.inv_z = swap.inv_z;
         }
         int center_x = (a->x + b->x + c->x) / 3;
         int center_z = (a->z + b->z + c->z) / 3;
         int light = fixed_floor_lighting ? 256 : baked_light_at(center_x, center_z);
         int fog = fixed_floor_lighting ? 0 :
                   baked_fog_at(world_distance(camera, center_x, center_z));
-        drawn += toy_renderer_triangle_lit(renderer, &sa, &sb, &sc,
-                                           color, light, fog);
+        /* 区域涂色（fixed_floor_lighting）与地砖仅差 6 个世界单位，掠射角下
+         * 插值深度误差会盖过真实差值导致 z-fight；涂色按覆盖层绘制，
+         * 依赖"地砖先画、墙后画"的记录顺序保证遮挡正确。 */
+        if (fixed_floor_lighting)
+            drawn += toy_renderer_triangle_lit_overlay(renderer, &sa, &sb, &sc,
+                                                       color, light, fog);
+        else
+            drawn += toy_renderer_triangle_lit(renderer, &sa, &sb, &sc,
+                                               color, light, fog);
     }
     return drawn;
 }
@@ -1071,7 +1083,12 @@ static int render_scene(struct toy_renderer *renderer, const struct camera *came
             pixels+=draw_floor_zone(renderer,camera,&zone,x->color);
             fixed_floor_lighting = 0;
         } else if (x->type==TOY_MAP_DRAW_BORDER) {
-            struct toy_game_box zone={x->a,x->b,x->c,x->d}; pixels+=draw_floor_border(renderer,camera,&zone,x->e,x->color);
+            struct toy_game_box zone={x->a,x->b,x->c,x->d};
+            /* 边框与涂色同层：同样走无深度覆盖绘制，颜色也是作者指定的
+             * 固定色（不参与烘焙光照/雾）。 */
+            fixed_floor_lighting = 1;
+            pixels+=draw_floor_border(renderer,camera,&zone,x->e,x->color);
+            fixed_floor_lighting = 0;
         } else if (x->type==TOY_MAP_DRAW_WALL) {
             if (x->c==x->d) { a.x=x->a;a.y=-900;a.z=x->c;b.x=x->b;b.y=-900;b.z=x->c;c.x=x->b;c.y=x->e;c.z=x->c;d.x=x->a;d.y=x->e;d.z=x->c; }
             else { a.x=x->a;a.y=-900;a.z=x->c;b.x=x->a;b.y=-900;b.z=x->d;c.x=x->a;c.y=x->e;c.z=x->d;d.x=x->a;d.y=x->e;d.z=x->c; }

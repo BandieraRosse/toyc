@@ -73,7 +73,7 @@ static long raster_flat(struct toy_renderer *renderer,
                         const struct toy_screen_vertex *b,
                         const struct toy_screen_vertex *c,
                         long area, int minx, int maxx,
-                        int y0, int y1, uint32_t color)
+                        int y0, int y1, uint32_t color, int overlay)
 {
     struct toy_surface *surface = &renderer->surface;
     int *depth = renderer->depth;
@@ -96,10 +96,20 @@ static long raster_flat(struct toy_renderer *renderer,
         for (x = minx; x <= maxx; x++) {
             if (e0 <= 0 && e1 <= 0 && e2 <= 0) {
                 inside++;
-                int z = (int)((e0 * a->z + e1 * b->z + e2 * c->z) / area);
+                /* 逆深度（1/z）在屏幕空间精确线性插值；仿射插值 z 在
+                 * 掠射角下有显著误差，会让近共面（墙脚与地板）判错深度。
+                 * 除 area 归一化到 ≤ max(inv_z)，防止大三角形（近平
+                 * 面裁剪产生的巨屏外三角形）加权和在 int 截断时溢出。 */
+                long inv = (e0 * a->inv_z + e1 * b->inv_z + e2 * c->inv_z) / area;
                 int at = base + x;
-                if (z < depth[at]) {
-                    depth[at] = z;
+                /* 覆盖层不做深度比较与深度写入；深度保持底层值，
+                 * 后画的更近面仍能正常通过测试。 */
+                /* 平局（≥）判给后画者：共面/共边像素深度相等（墙脚与地板、
+                 * 盒体相邻棱边），先画者赢会在棱边透出隐藏面颜色；后画者
+                 * 赢与"可见面在后、按绘制顺序叠加"的意图一致。调用方顶点
+                 * 交换必须携带 inv_z，否则深度插值错配。 */
+                if (overlay || inv >= depth[at]) {
+                    if (!overlay) depth[at] = (int)inv;
                     row[x] = color;
                     drawn++;
                 }
@@ -206,10 +216,14 @@ static long raster_tex(struct toy_renderer *renderer,
         for (x = minx; x <= maxx; x++) {
             if (e0 <= 0 && e1 <= 0 && e2 <= 0) {
                 inside++;
-                long z = (e0 * a->z + e1 * b->z + e2 * c->z) / area;
+                /* 与 flat 路径相同的逆深度比较（透视校正，无仿射误差）；
+                 * inv 未归一化仅用于 UV 比值，深度用归一化后的 inv_norm
+                 * 避免大三角形加权和溢出 int 截断。 */
+                long inv = e0 * a->inv_z + e1 * b->inv_z + e2 * c->inv_z;
+                long inv_norm = inv / area;
                 int at = base + x;
-                if (z < depth[at]) {
-                    long inv = e0 * a->inv_z + e1 * b->inv_z + e2 * c->inv_z;
+                /* 与 flat 路径相同：平局（≥）判给后画者。 */
+                if (inv_norm >= depth[at]) {
                     long uoz = e0 * a->u_over_z + e1 * b->u_over_z + e2 * c->u_over_z;
                     long voz = e0 * a->v_over_z + e1 * b->v_over_z + e2 * c->v_over_z;
                     int used_fallback = 0;
@@ -222,7 +236,7 @@ static long raster_tex(struct toy_renderer *renderer,
                     long fog = fog_factor >= 0 ? fog_factor :
                         (e0 * a->fog + e1 * b->fog + e2 * c->fog) / area;
                     color = shade_color(color, (int)light, (int)fog);
-                    depth[at] = (int)z;
+                    depth[at] = (int)inv_norm;
                     row[x] = color;
                     (*tex_pixels)++;
                     if (used_fallback) (*fallback_pixels)++;
@@ -281,7 +295,8 @@ static void rasterize_cmd(struct toy_renderer *renderer,
         worker->pixels += raster_flat(renderer, worker, &cmd->a, &cmd->b, &cmd->c,
                                       cmd->area, cmd->bbox_minx,
                                       cmd->bbox_maxx, y0, y1,
-                                      shade_color(cmd->color, cmd->light, cmd->fog));
+                                      shade_color(cmd->color, cmd->light, cmd->fog),
+                                      cmd->overlay);
 }
 
 static int grow_cmds(struct toy_renderer *renderer)
@@ -307,7 +322,8 @@ static int record_cmd(struct toy_renderer *renderer, int textured,
                       const struct toy_screen_vertex *c,
                       long area, uint32_t color,
                       const struct toy_texture_view *texture,
-                      int repeat, uint32_t fallback, int light, int fog)
+                      int repeat, uint32_t fallback, int light, int fog,
+                      int overlay)
 {
     struct toy_raster_cmd *cmd;
     if (renderer->cmd_count >= renderer->cmd_cap) {
@@ -318,6 +334,7 @@ static int record_cmd(struct toy_renderer *renderer, int textured,
     }
     cmd = &renderer->cmds[renderer->cmd_count++];
     cmd->textured = textured;
+    cmd->overlay = overlay;
     cmd->repeat = repeat;
     cmd->color = color;
     cmd->fallback = fallback;
@@ -364,7 +381,25 @@ int toy_renderer_triangle_lit(struct toy_renderer *renderer,
     area = edge(a, b, c->x, c->y);
     if (area >= 0) return 0;
     if (record_cmd(renderer, 0, a, b, c, area, color, NULL, 0, 0,
-                   light, fog)) {
+                   light, fog, 0)) {
+        renderer->submitted_triangles++;
+        renderer->submitted_vertices += 3;
+    }
+    return 0;
+}
+
+int toy_renderer_triangle_lit_overlay(struct toy_renderer *renderer,
+                                      const struct toy_screen_vertex *a,
+                                      const struct toy_screen_vertex *b,
+                                      const struct toy_screen_vertex *c,
+                                      uint32_t color, int light, int fog)
+{
+    long area;
+    if (!renderer || !renderer->depth || !a || !b || !c) return 0;
+    area = edge(a, b, c->x, c->y);
+    if (area >= 0) return 0;
+    if (record_cmd(renderer, 0, a, b, c, area, color, NULL, 0, 0,
+                   light, fog, 1)) {
         renderer->submitted_triangles++;
         renderer->submitted_vertices += 3;
     }
@@ -396,7 +431,7 @@ int toy_renderer_triangle_textured_lit(struct toy_renderer *renderer,
     if (area >= 0) return 0;
     renderer->textured_triangles++;
     if (record_cmd(renderer, 1, a, b, c, area, 0, texture, repeat,
-                   fallback_color, light, fog)) {
+                   fallback_color, light, fog, 0)) {
         renderer->submitted_triangles++;
         renderer->submitted_vertices += 3;
     }
@@ -445,7 +480,7 @@ static void worker_clear(struct toy_renderer *renderer, int id)
         for (int y = 0; y < rows; y++) {
             for (int x = 0; x < renderer->surface.width; x++) {
                 pixels[x] = renderer->job_clear_color;
-                depth[x] = 0x7fffffff;
+                depth[x] = 0;
             }
             pixels = (uint32_t *)((unsigned char *)pixels +
                                   renderer->surface.stride);
@@ -580,7 +615,7 @@ static void clear_single(struct toy_renderer *renderer, uint32_t clear_color)
         int *depth = renderer->depth + y * renderer->surface.width;
         for (int x = 0; x < renderer->surface.width; x++) {
             row[x] = clear_color;
-            depth[x] = 0x7fffffff;
+            depth[x] = 0;
         }
     }
 }
