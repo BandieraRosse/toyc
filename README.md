@@ -38,9 +38,9 @@ make clean              # 删除 build/ 和 tmp/
 `make validate-assets` 用 GCC 构建离线工具 `build/toyasset`，校验仓库内提交的
 小型 `.ttex`、`.tsnd` 和 `.tmesh` 测试资产。原始 PNG/JPEG/WAV/OBJ 需要离线用
 `build/toyasset convert` 转换为运行时专用格式，来源文件和大型中间产物不入库
-（见 `.gitignore`）。wayland_fps 的 8 种核心音效（`assets/generated/sfx_*.tsnd`）
+（见 `.gitignore`）。rasterfall 的 8 种核心音效（`assets/generated/sfx_*.tsnd`）
 由 `make generate-assets` 链接 `lib/game/sfx.c` 引擎离线渲染，输出确定性可复现，
-无需外部来源文件；wayland_fps 启动时加载播放，缺失时回退程序合成。游戏运行时
+无需外部来源文件；rasterfall 启动时加载播放，缺失时回退程序合成。游戏运行时
 只读取带 magic、版本和显式小端字段的格式，不解析
 PNG/JPEG/WAV/OBJ 容器。格式说明见 [assets/README.md](assets/README.md)。
 v0.1 不包含压缩、FBX、glTF、骨骼动画或 GUI 编辑器。
@@ -65,8 +65,8 @@ FPS 的 v0.2 纹理切片默认加载 `assets/generated/wall.ttex`，将 nearest
   深度通过像素（实际写屏量），两段比例揭示覆盖浪费与过度绘制。
 - 路径拆分 `path`：纯色/纹理两条光栅化路径的三角形、像素与耗时，区分两者成本。
 
-可用 `build/wayland_fps --frames 300 --texture-stats` 在 Wayland 环境预览，
-`build/wayland_fps --logic-test` 为无窗口回归预览。
+可用 `build/rasterfall --frames 300 --texture-stats` 在 Wayland 环境预览，
+`build/rasterfall --logic-test` 为无窗口回归预览。
 
 `bootstrap/` 保存版本控制内的种子二进制。它们用于阶段性的自举检查，不参与默认
 `make`，而且可能落后于源码：

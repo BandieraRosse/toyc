@@ -1,5 +1,5 @@
 /*
- * wayland_fps — Toyc 软件渲染第一人称僵尸射击游戏
+ * rasterfall — Toyc 软件渲染第一人称僵尸射击游戏
  *
  * 注释更新时间：2026-08-06
  *
@@ -12,7 +12,7 @@
  *   中协调完成。
  *
  * 【代码结构】
- *   1. 地图与规则：加载 assets/maps/wayland_fps.map，复制地图碰撞箱、
+ *   1. 地图与规则：加载 assets/maps/rasterfall.map，复制地图碰撞箱、
  *      安全室、正式 spawn 区和交互物；toy_game 负责敌人 AI、碰撞、武器、
  *      弹道、波次、伤害和游戏状态。
  *   2. 输入与主循环：Wayland 事件先进入 toy_input，使用固定 16.667ms
@@ -46,9 +46,9 @@
  *   需要同步处理其朝向和可交互高亮范围。
  *
  * 【构建与验证】
- *   make build/wayland_fps       构建程序
- *   build/wayland_fps --logic-test 运行无窗口逻辑回归测试
- *   build/wayland_fps --frames N    在 Wayland 下运行有限帧数预览
+ *   make build/rasterfall       构建程序
+ *   build/rasterfall --logic-test 运行无窗口逻辑回归测试
+ *   build/rasterfall --frames N    在 Wayland 下运行有限帧数预览
  *   完整项目测试入口和工具链约束以仓库根目录 README.md、AGENTS.md 为准。
  *   修改本文件的输入、地图交互或公共渲染路径后，至少重新构建本目标并
  *   运行 --logic-test；若影响共享编译器/游戏规则代码，再扩大测试范围。
@@ -72,6 +72,7 @@
 #include "linux_audio.h"
 #include "toy_audio.h"
 #include "toy_map.h"
+#include "rasterfall_map.h"
 #include "pthread.h"
 #include "errno.h"
 #include "math.h"
@@ -178,8 +179,11 @@ static struct toy_game_box map_safe_rooms[TOY_MAP_MAX_ZONES];
 static struct toy_game_box map_spawn_zones[TOY_MAP_MAX_ZONES];
 static int map_spawn_count;
 static struct toy_game game;   /* 游戏规则状态（main / logic-test 共用） */
-static int air_wall_indices[2] = {-1, -1};
 static int air_wall_enabled = 1;
+static struct rasterfall_map_state map_ops;
+typedef struct rasterfall_interactable interactable;
+static struct rasterfall_interactable interactables[TOY_MAP_MAX_PICKUPS];
+static int interactable_count;
 static int manual_alarm_enabled;
 static int manual_alarm_timer_ms;
 static struct toy_texture_asset scene_texture;
@@ -257,35 +261,15 @@ static int fixed_floor_lighting;
 
 static void prepare_map_rules(void)
 {
-    int i, gate_count = 0;
-    for (i=0; i<level_map.box_count; i++) {
-        map_bounds[i].minx=level_map.boxes[i].minx; map_bounds[i].maxx=level_map.boxes[i].maxx;
-        map_bounds[i].minz=level_map.boxes[i].minz; map_bounds[i].maxz=level_map.boxes[i].maxz;
-        if (level_map.boxes[i].air && level_map.boxes[i].minz == -5700 &&
-            level_map.boxes[i].maxz == -5680 && gate_count < 2)
-            air_wall_indices[gate_count++] = i;
-    }
-    for (i=0; i<level_map.safe_count; i++) map_safe_rooms[i]=level_map.safe_rooms[i];
-    map_spawn_count=level_map.spawn_count;
-    for (i=0; i<map_spawn_count; i++) map_spawn_zones[i]=level_map.spawn_zones[i].box;
+    rasterfall_map_bind(&map_ops, &level_map, map_bounds, map_safe_rooms,
+                        map_spawn_zones, &map_spawn_count, &air_wall_enabled,
+                        interactables, &interactable_count);
+    rasterfall_map_prepare(&map_ops);
 }
 
 static void set_air_walls_enabled(int enabled)
 {
-    int i, index;
-    air_wall_enabled = enabled != 0;
-    for (i = 0; i < 2; i++) {
-        index = air_wall_indices[i];
-        if (index < 0) continue;
-        if (air_wall_enabled) {
-            map_bounds[index].minx = level_map.boxes[index].minx;
-            map_bounds[index].maxx = level_map.boxes[index].maxx;
-        } else {
-            /* An inverted box is ignored by both collision and ray tests. */
-            map_bounds[index].minx = 20000;
-            map_bounds[index].maxx = 19000;
-        }
-    }
+    rasterfall_map_set_air_walls(&map_ops, enabled);
 }
 
 /* Only the distant room boundary uses the stylized wall texture. Gameplay
@@ -334,21 +318,11 @@ static void reset_game(struct camera *camera, uint64_t seed)
 
 #define INTERACT_RANGE 1000
 
-struct interactable { int kind; int x, z, y; };
-static struct interactable interactables[TOY_MAP_MAX_PICKUPS];
-static int interactable_count;
 static int highlighted = -1;   /* 本帧准星对准的拾取物索引，-1=无 */
 
 static void reset_interactables(void)
 {
-    int i;
-    interactable_count = level_map.pickup_count;
-    for (i = 0; i < interactable_count; i++) {
-        interactables[i].kind = level_map.pickups[i].kind;
-        interactables[i].x = level_map.pickups[i].x;
-        interactables[i].z = level_map.pickups[i].z;
-        interactables[i].y = level_map.pickups[i].y;
-    }
+    rasterfall_map_reset_interactables(&map_ops);
 }
 
 static long monotonic_us(void)
@@ -908,7 +882,7 @@ static int compute_highlight(const struct camera *camera)
     int i, best = -1;
     long best_d2 = 0;
     for (i = 0; i < interactable_count; i++) {
-        const struct interactable *it = &interactables[i];
+        const interactable *it = &interactables[i];
         long dx, dz, d2, dist, dot;
         dx = it->x - camera->x;
         dz = it->z - camera->z;
@@ -931,7 +905,7 @@ static int render_interactables(struct toy_renderer *renderer,
 {
     int i, pixels = 0;
     for (i = 0; i < interactable_count; i++) {
-        const struct interactable *it = &interactables[i];
+        const interactable *it = &interactables[i];
         int on = i == highlighted;
         if (it->kind == TOY_MAP_PICKUP_SMG)
             pixels += render_smg(renderer, camera, it->x, it->y, it->z, on);
@@ -1156,7 +1130,7 @@ static void draw_sky_features(struct toy_surface *surface,
 /* E 互动提示固定在屏幕底部中央，高亮时可见；已持有的武器显示 REFILL */
 static void draw_interact_prompt(struct toy_renderer *renderer)
 {
-    const struct interactable *it;
+    const interactable *it;
     char label[24];
     int text_w, x, y;
     if (highlighted < 0) return;
@@ -1190,7 +1164,7 @@ static void draw_interact_prompt(struct toy_renderer *renderer)
 /* E 键互动：拾取主武器（替换槽 0 并切出），同武器 = 补充弹药；
  * 弹药盒补满备弹；召唤按钮每次互动触发 15-20 个追踪尸潮。
  * 拾取点是固定的，互动后保留在场。 */
-static void interact_current(struct interactable *it)
+static void interact_current(interactable *it)
 {
     if (it->kind == TOY_MAP_PICKUP_BUTTON) {
         int n;
@@ -1199,7 +1173,7 @@ static void interact_current(struct interactable *it)
         n = toy_game_spawn_horde(&game, HORDE_COUNT_MIN, HORDE_COUNT_MAX,
                                  map_spawn_zones, map_spawn_count,
                                  HORDE_MIN_PLAYER_DIST);
-        __printf("wayland_fps: horde summoned %d tracking enemies\n", n);
+        __printf("rasterfall: horde summoned %d tracking enemies\n", n);
         return;
     }
     if (it->kind == TOY_MAP_PICKUP_AIR_BUTTON) {
@@ -1207,7 +1181,7 @@ static void interact_current(struct interactable *it)
         horde_banner_ms = 1800;
         interaction_banner = air_wall_enabled ?
             "AIR WALLS ENABLED" : "AIR WALLS DISABLED";
-        __printf("wayland_fps: air walls %s\n", air_wall_enabled ? "enabled" : "disabled");
+        __printf("rasterfall: air walls %s\n", air_wall_enabled ? "enabled" : "disabled");
         return;
     }
     if (it->kind == TOY_MAP_PICKUP_ALARM_BUTTON) {
@@ -1216,7 +1190,7 @@ static void interact_current(struct interactable *it)
         horde_banner_ms = 1800;
         interaction_banner = manual_alarm_enabled ?
             "ALARM ENABLED - 2-3 ENEMIES EACH SECOND" : "ALARM DISABLED";
-        __printf("wayland_fps: alarm %s\n", manual_alarm_enabled ? "enabled" : "disabled");
+        __printf("rasterfall: alarm %s\n", manual_alarm_enabled ? "enabled" : "disabled");
         return;
     }
     if (it->kind == TOY_MAP_PICKUP_AMMO) {
@@ -1236,7 +1210,7 @@ static void update_manual_alarm(int dt_ms)
     manual_alarm_timer_ms += 1000;
     n = toy_game_spawn_horde(&game, 2, 3, map_spawn_zones, map_spawn_count,
                              HORDE_MIN_PLAYER_DIST);
-    if (n > 0) __printf("wayland_fps: alarm spawned %d enemies\n", n);
+    if (n > 0) __printf("rasterfall: alarm spawned %d enemies\n", n);
 }
 
 static int render_scene(struct toy_renderer *renderer, const struct camera *camera)
@@ -1627,164 +1601,7 @@ static int render_enemies(struct toy_renderer *renderer,
     return pixels;
 }
 
-static const char *campaign_phase_name(int phase)
-{
-    if (phase == TOY_GAME_PHASE_BUILDUP) return "BUILDUP";
-    if (phase == TOY_GAME_PHASE_HORDE) return "HORDE";
-    if (phase == TOY_GAME_PHASE_RELAX) return "RELAX";
-    return "CALM";
-}
-
-static int draw_hud_value(struct toy_surface *surface, int x,
-                          const char *label, const char *value, uint32_t color)
-{
-    int label_w = (int)strlen(label) * FB_FONT_W;
-    int value_w = (int)strlen(value) * FB_FONT_W;
-    fb_draw_string((unsigned char *)surface->pixels, x, 8,
-                   label, 0xAAB4C0, surface->stride);
-    x += label_w;
-    fill_rect(surface, x - 1, 6, value_w + 2, FB_FONT_H + 4, 0x26384C);
-    fb_draw_string((unsigned char *)surface->pixels, x, 8,
-                   value, color, surface->stride);
-    return x + value_w + FB_FONT_W * 2;
-}
-
-static const char *weapon_names[TOY_GAME_WEAPON_COUNT] = {
-    "PISTOL", "SMG", "SHOTGUN"
-};
-
-/* 武器栏：1[主武器] 弹匣/备弹  2[手枪] 弹匣/备弹，当前槽位高亮 */
-static void render_weapon_hud(struct toy_surface *surface, int x, int y)
-{
-    char line[48];
-    int i;
-    for (i = 0; i < TOY_GAME_WEAPON_SLOTS; i++) {
-        const struct toy_game_slot *s = &game.slots[i];
-        uint32_t color = i == game.current_slot ? 0xFFD060 : 0x9AA6B4;
-        if (s->weapon < 0)
-            snprintf(line, sizeof(line), "%d[-] ", i + 1);
-        else if (s->reserve == TOY_GAME_AMMO_INFINITE)
-            snprintf(line, sizeof(line), "%d[%s] %d/INF ", i + 1,
-                     weapon_names[s->weapon], s->mag);
-        else
-            snprintf(line, sizeof(line), "%d[%s] %d/%d ", i + 1,
-                     weapon_names[s->weapon], s->mag, s->reserve);
-        fb_draw_string((unsigned char *)surface->pixels, x, y, line, color,
-                       surface->stride);
-        x += (int)strlen(line) * FB_FONT_W;
-    }
-}
-
-static void render_hud(struct toy_surface *surface, int fps)
-{
-    char line[96];
-    int n, x = 8, hint_y;
-    uint32_t phase_color = game.campaign_phase == TOY_GAME_PHASE_HORDE ?
-                           0xFFD040 : 0x80E0C0;
-    x = draw_hud_value(surface, x, "DIR ",
-                       campaign_phase_name(game.campaign_phase), phase_color);
-    snprintf(line, sizeof(line), "%d", game.spawn_budget);
-    x = draw_hud_value(surface, x, "BUD ", line, 0xFFD070);
-    snprintf(line, sizeof(line), "%d", game.enemies_alive);
-    x = draw_hud_value(surface, x, "LIVE ", line, 0xF0F0F0);
-    snprintf(line, sizeof(line), "%d", game.active_attackers);
-    x = draw_hud_value(surface, x, "ACT ", line,
-                       game.active_attackers > 0 ? 0xFF8060 : 0x80E080);
-    snprintf(line, sizeof(line), "%dS",
-             game.phase_timer_ms > 0 ? (game.phase_timer_ms + 999) / 1000 : 0);
-    x = draw_hud_value(surface, x, "NEXT ", line, 0x80C8FF);
-    snprintf(line, sizeof(line), "%d", game.director_encounters);
-    x = draw_hud_value(surface, x, "RUN ", line, 0xC0A0FF);
-    snprintf(line, sizeof(line), "%d", fps);
-    draw_hud_value(surface, x, "FPS ", line, 0x90F090);
-    n = snprintf(line, sizeof(line), "HP %d  KILLS %d", game.hp, game.kills);
-    if (n > 0)
-        fb_draw_string((unsigned char *)surface->pixels, 8, 8 + FB_FONT_H,
-                       line, 0xE7E9EC, surface->stride);
-    render_weapon_hud(surface, 8, 8 + FB_FONT_H * 2);
-    hint_y = 8 + FB_FONT_H * (game.reloading ? 4 : 3);
-    if (game.reloading)
-        fb_draw_string((unsigned char *)surface->pixels, 8, 8 + FB_FONT_H * 3,
-                       "RELOADING...", 0xD88A32, surface->stride);
-    if (level_map.safe_count > 1 && toy_game_point_in_box(game.px, game.pz, &map_safe_rooms[1])) {
-        snprintf(line, sizeof(line), "EXIT SECURE %d%%",
-                 game.goal_hold_ms * 100 / TOY_GAME_GOAL_HOLD_MS);
-        fb_draw_string((unsigned char *)surface->pixels, 8, hint_y,
-                       line, 0x80E080, surface->stride);
-    } else if (level_map.safe_count > 0 && toy_game_point_in_box(game.px, game.pz, &map_safe_rooms[0])) {
-        fb_draw_string((unsigned char *)surface->pixels, 8, hint_y,
-                       "START SAFE ROOM - REACH GREEN EXIT", 0x80E080,
-                       surface->stride);
-    } else if (manual_alarm_enabled) {
-        snprintf(line, sizeof(line), "ALARM ACTIVE  NEXT %d SEC",
-                 (manual_alarm_timer_ms + 999) / 1000);
-        fb_draw_string((unsigned char *)surface->pixels, 8, hint_y,
-                       line, 0xFF6040, surface->stride);
-    } else if (game.alarm_timer_ms > 0) {
-        snprintf(line, sizeof(line), "ALARM HORDE %d SEC",
-                 (game.alarm_timer_ms + 999) / 1000);
-        fb_draw_string((unsigned char *)surface->pixels, 8, hint_y,
-                       line, 0xFFD040, surface->stride);
-    } else if (game.campaign_phase == TOY_GAME_PHASE_RELAX) {
-        snprintf(line, sizeof(line), "HORDE CLEARED - RELAX %d SEC",
-                 (game.phase_timer_ms + 999) / 1000);
-        fb_draw_string((unsigned char *)surface->pixels, 8, hint_y,
-                       line, 0x80E080, surface->stride);
-    } else if (!manual_alarm_enabled) {
-        fb_draw_string((unsigned char *)surface->pixels, 8, hint_y,
-                       "ALARM OFF - USE RED PANEL", 0xFFD040,
-                       surface->stride);
-    } else {
-        fb_draw_string((unsigned char *)surface->pixels, 8, hint_y,
-                       "RED FLOOR = SPAWN ZONE", 0xE08080, surface->stride);
-    }
-    /* 召唤提示：屏幕中央横幅，短暂显示 */
-    if (horde_banner_ms > 0) {
-        int banner_y = surface->height / 3;
-        fb_draw_string((unsigned char *)surface->pixels,
-                       (surface->width - (int)strlen(interaction_banner) * FB_FONT_W) / 2,
-                       banner_y, interaction_banner, 0xFF3030, surface->stride);
-    }
-}
-
-/* --dump-frame：把最后一帧写为 PPM（XRGB8888 → RGB，调试渲染用） */
-static void dump_frame_ppm(const char *path, const struct toy_surface *surface)
-{
-    char header[48];
-    unsigned char *rgb;
-    int hlen, fd, i;
-    if (!surface || !surface->pixels || surface->width <= 0 ||
-        surface->height <= 0) return;
-    hlen = snprintf(header, sizeof(header), "P6\n%d %d\n255\n",
-                    surface->width, surface->height);
-    rgb = tlibc_malloc((size_t)surface->width * surface->height * 3);
-    if (!rgb) return;
-    for (i = 0; i < surface->width * surface->height; i++) {
-        uint32_t p = ((uint32_t *)surface->pixels)[i];
-        rgb[i * 3 + 0] = (unsigned char)(p & 0xFF);
-        rgb[i * 3 + 1] = (unsigned char)((p >> 8) & 0xFF);
-        rgb[i * 3 + 2] = (unsigned char)((p >> 16) & 0xFF);
-    }
-    fd = __creat(path, 0644);
-    if (fd >= 0) {
-        __write(fd, header, hlen);
-        __write(fd, rgb, surface->width * surface->height * 3);
-        __close(fd);
-        __printf("wayland_fps: dumped frame to %s\n", path);
-    }
-    tlibc_free(rgb);
-}
-
-/* 受击红屏：棋盘隔像素填充（省一半写入量） */
-static void render_damage_flash(struct toy_surface *surface)
-{
-    if (game.damage_flash_ms <= 0) return;
-    for (int y = 0; y < surface->height; y++) {
-        uint32_t *row = (uint32_t *)((unsigned char *)surface->pixels +
-                                     y * surface->stride);
-        for (int x = y & 1; x < surface->width; x += 2) row[x] = 0xAA0000;
-    }
-}
+#include "rasterfall_hud.inc"
 
 /* ── 子弹轨迹与命中粒子（纯视觉；逻辑步进 16ms 推进） ──────────── */
 
@@ -2299,7 +2116,7 @@ static void load_sfx_assets(void)
                  sfx_asset_names[kind]);
         if (toy_sound_load(path, &sfx_assets[kind]) == 0) loaded++;
     }
-    __printf("wayland_fps: sound assets %d/%d loaded\n",
+    __printf("rasterfall: sound assets %d/%d loaded\n",
              loaded, TOY_SFX_PLAYER_DEATH + 1);
 }
 
@@ -2362,7 +2179,7 @@ static int audio_start(struct audio_ctx *ctx)
         return -1;
     }
     ctx->running = 1;
-    __printf("wayland_fps: audio backend: %s\n",
+    __printf("rasterfall: audio backend: %s\n",
              toy_audio_backend_name(&ctx->output));
     return 0;
 }
@@ -2397,644 +2214,9 @@ static void play_game_events(struct audio_ctx *audio)
     }
 }
 
-static int run_logic_test(void)
-{
-    struct camera camera;
-    struct control_settings settings;
-    struct toy_input input;
-    struct vec3 triangle[3], clipped[4];
-    struct toy_surface surface;
-    struct toy_renderer renderer;
-    uint32_t *pixels;
-    int count;
-    long long direction_length;
-    settings.mouse_level = 5;
-    settings.keyboard_level = 5;
-    toy_input_init(&input);
-    reset_game(&camera, 1);
-    input.key_down[KEY_W] = 1;
-    for (int i = 0; i < 10; i++) update_player(&camera, &input);
-    if (camera.x != 0 || camera.z != -4240) return 1;
+#include "rasterfall_logic_test.inc"
 
-    /* 死亡重开仍须恢复世界碰撞配置并能推进首波。 */
-    game.state = TOY_GAME_OVER;
-    reset_game(&camera, 2);
-    if (game.world != map_bounds || game.world_count != level_map.box_count ||
-        game.room_limit != level_map.room_limit ||
-        toy_game_position_blocked(&game, camera.x, camera.z,
-                                  PLAYER_RADIUS)) return 13;
-    for (int i = 0; i < 170; i++)
-        toy_game_update(&game, NULL, 0, camera.sy, camera.cy, 16);
-    if (game.enemies_alive == 0) return 14;
-
-    camera.x = -1200; camera.z = 0;
-    for (int i = 0; i < 10; i++) update_player(&camera, &input);
-    if (camera.z >= level_map.boxes[0].minz - PLAYER_RADIUS) return 2;
-
-    input.key_down[KEY_W] = 0;
-    input.key_down[KEY_RIGHT] = 1;
-    update_keyboard_look(&camera, &input, &settings);
-    /* 首次转向时 old_sy=0，定点旋转 cy 恰为 1024 不变，只断言转向生效 */
-    if (camera.sy <= 0) return 3;
-    input.key_down[KEY_RIGHT] = 0;
-    input.key_down[KEY_UP] = 1;
-    update_keyboard_look(&camera, &input, &settings);
-    if (camera.pitch_sy <= 0) return 4;
-    camera.sy = 0;
-    camera.cy = 1024;
-    for (int i = 0; i < 10000; i++) rotate_camera(&camera, 37, 0);
-    direction_length = isqrt((long long)camera.sy * camera.sy +
-                             (long long)camera.cy * camera.cy);
-    if (direction_length < 1022 || direction_length > 1026) return 16;
-    camera.sy = 0;
-    camera.cy = 1024;
-    /* 俯仰持续旋转时保持归一化，并钳制在 ±75°，不能跨过 ±90°。 */
-    camera.pitch_sy = 0;
-    camera.pitch_cy = 1024;
-    for (int i = 0; i < 10000; i++) rotate_camera(&camera, 0, 37);
-    direction_length = isqrt((long long)camera.pitch_sy * camera.pitch_sy +
-                             (long long)camera.pitch_cy * camera.pitch_cy);
-    if (direction_length < 1022 || direction_length > 1026) return 41;
-    if (camera.pitch_cy != PITCH_LIMIT_CY ||
-        camera.pitch_sy != PITCH_LIMIT_SY) return 43;
-    camera.pitch_sy = -1024;
-    camera.pitch_cy = 0;
-    for (int i = 0; i < 1000; i++) rotate_camera(&camera, 0, -31);
-    direction_length = isqrt((long long)camera.pitch_sy * camera.pitch_sy +
-                             (long long)camera.pitch_cy * camera.pitch_cy);
-    if (direction_length < 1022 || direction_length > 1026) return 42;
-    if (camera.pitch_cy != PITCH_LIMIT_CY ||
-        camera.pitch_sy != -PITCH_LIMIT_SY) return 44;
-    camera.pitch_sy = 0;
-    camera.pitch_cy = 1024;
-
-    triangle[0].x = -100; triangle[0].y = 0; triangle[0].z = 100;
-    triangle[1].x =  100; triangle[1].y = 0; triangle[1].z = 400;
-    triangle[2].x =    0; triangle[2].y = 100; triangle[2].z = 400;
-    count = clip_near(triangle, 3, clipped);
-    if (count != 4) return 5;
-    for (int i = 0; i < count; i++)
-        if (clipped[i].z < NEAR_Z) return 6;
-    pixels = tlibc_malloc(320 * 180 * sizeof(uint32_t));
-    if (!pixels) return 7;
-    surface.pixels = pixels;
-    surface.width = 320;
-    surface.height = 180;
-    surface.stride = 320 * sizeof(uint32_t);
-    camera.x = 0; camera.z = -4200;
-    toy_renderer_init(&renderer);
-    if (toy_renderer_begin(&renderer, &surface, 0x151922) < 0) {
-        toy_renderer_destroy(&renderer);
-        tlibc_free(pixels);
-        return 8;
-    }
-    render_scene(&renderer, &camera);
-    count = toy_renderer_flush(&renderer);
-    /* 破碎画面曾仍返回正数；完整 320x180 场景应稳定超过此下限。 */
-    if (count < 50000) {
-        toy_renderer_destroy(&renderer);
-        tlibc_free(pixels);
-        return 8;
-    }
-    /* 两个槽位分别覆盖方块人和圆柱人，确保模型几何进入光栅器。 */
-    memset(game.enemies, 0, sizeof(game.enemies));
-    game.enemies[0].active = 1;
-    game.enemies[0].x = -350;
-    game.enemies[0].z = -2500;
-    game.enemies[0].dir_z = -1024;
-    game.enemies[1].active = 1;
-    game.enemies[1].x = 350;
-    game.enemies[1].z = -2500;
-    game.enemies[1].dir_z = -1024;
-    game.enemies[1].ai_state = TOY_GAME_ENEMY_ALERT;
-    render_enemies(&renderer, &camera);
-    if (toy_renderer_flush(&renderer) < 1000) {
-        toy_renderer_destroy(&renderer);
-        tlibc_free(pixels);
-        return 15;
-    }
-    /* 弹道/粒子渲染冒烟：轴向弹道 + 终点越出右屏的弹道（屏幕裁剪与
-     * 偏移线边界） + 远处粒子 */
-    {
-        struct tracer *t = &tracers[0];
-        struct particle *p = &particles[0];
-        t->active = 1;
-        t->sx = camera.x;
-        t->sy = TRACER_Y;
-        t->sz = camera.z;
-        t->ex = camera.x;
-        t->ez = camera.z - 3000;
-        t->life_ms = 100;
-        tracers[1].active = 1;
-        tracers[1].sx = camera.x;
-        tracers[1].sy = TRACER_Y;
-        tracers[1].sz = camera.z;
-        tracers[1].ex = camera.x + 4000;
-        tracers[1].ez = camera.z - 3000;
-        tracers[1].life_ms = 100;
-        p->active = 1;
-        p->x = camera.x + 200;
-        p->y = -350;
-        p->z = camera.z - 2000;
-        p->life_ms = 100;
-        render_tracers(&renderer, &camera);
-        render_particles(&renderer, &camera);
-        memset(tracers, 0, sizeof(tracers));
-        memset(particles, 0, sizeof(particles));
-    }
-    /* 开发者区域场景：纹理墙/模型台座渲染 + 真实开火产生弹道与命中
-     * 火花（向北穿门洞直达最大射程长弹道，向西命中空气墙 1800）。
-     * 弹道起点取枪口世界坐标；同帧附加枪口粒子。 */
-    {
-        camera.x = 0;
-        camera.z = -6400;
-        game.px = 0;
-        game.pz = -6400;
-        if (toy_game_equip_weapon(&game, TOY_GAME_WEAPON_SMG) != 1) return 40;
-        render_scene(&renderer, &camera);
-        toy_renderer_flush(&renderer);
-        last_fire_seq = game.fire_seq;
-        toy_game_fire(&game, 0, 1024);
-        sync_fire_effects(&camera);
-        toy_game_fire(&game, -1024, 0);
-        sync_fire_effects(&camera);
-        update_effects(16);
-        render_tracers(&renderer, &camera);
-        render_particles(&renderer, &camera);
-        /* 第一人称武器模型冒烟：SMG 几何进入光栅器 */
-        render_viewmodel(&renderer);
-        memset(tracers, 0, sizeof(tracers));
-        memset(particles, 0, sizeof(particles));
-    }
-    toy_renderer_destroy(&renderer);
-    tlibc_free(pixels);
-
-    /* 输入状态回归：组合键、重复 press 边沿、释放和失焦清理。 */
-    {
-        struct toy_window_events ev;
-        toy_input_init(&input);
-        memset(&ev, 0, sizeof(ev));
-        ev.keyboard_focus_changed = 1;
-        ev.keyboard_focused = 1;
-        ev.key_event_count = 2;
-        ev.key_events[0].key = KEY_W;
-        ev.key_events[0].pressed = 1;
-        ev.key_events[1].key = KEY_D;
-        ev.key_events[1].pressed = 1;
-        toy_input_apply(&input, &ev);
-        if (!toy_input_down(&input, KEY_W) || !toy_input_down(&input, KEY_D) ||
-            !toy_input_pressed(&input, KEY_W) ||
-            !toy_input_pressed(&input, KEY_D)) return 10;
-        toy_input_begin_frame(&input);
-        memset(&ev, 0, sizeof(ev));
-        ev.key_event_count = 1;
-        ev.key_events[0].key = KEY_W;
-        ev.key_events[0].pressed = 1; /* compositor repeat */
-        toy_input_apply(&input, &ev);
-        if (!toy_input_down(&input, KEY_W) ||
-            toy_input_pressed(&input, KEY_W)) return 11;
-        toy_input_begin_frame(&input);
-        memset(&ev, 0, sizeof(ev));
-        ev.keyboard_focus_changed = 1;
-        ev.keyboard_focused = 0;
-        toy_input_apply(&input, &ev);
-        if (toy_input_down(&input, KEY_W) || toy_input_down(&input, KEY_D) ||
-            !toy_input_released(&input, KEY_W) ||
-            !toy_input_released(&input, KEY_D)) return 12;
-    }
-
-    /* 游戏规则冒烟：同 seed 推进 500 步，两遍运行状态一致 */
-    {
-        struct toy_game smoke;
-        int pass, i;
-        int first_wave = 0, first_kills = 0, first_hp = 0;
-        for (pass = 0; pass < 2; pass++) {
-            toy_game_init(&smoke, 1234);
-            toy_game_set_world(&smoke, map_bounds, level_map.box_count, level_map.room_limit);
-            smoke.px = 0;
-            smoke.pz = -5000;
-            for (i = 0; i < 500; i++)
-                toy_game_update(&smoke, NULL, 0, 0, 1024, 16);
-            if (pass == 0) {
-                first_wave = smoke.wave;
-                first_kills = smoke.kills;
-                first_hp = smoke.hp;
-            } else if (smoke.wave != first_wave || smoke.kills != first_kills ||
-                       smoke.hp != first_hp) {
-                return 9;
-            }
-        }
-    }
-    /* 武器槽：默认手枪出枪（槽 2），主武器槽为空；切空槽无效 */
-    {
-        int i;
-        unsigned char keys[TOY_INPUT_KEY_COUNT];
-        reset_game(&camera, 7);
-        if (game.current_slot != 1 ||
-            game.slots[1].weapon != TOY_GAME_WEAPON_PISTOL ||
-            game.slots[1].mag != 30 ||
-            game.slots[1].reserve != TOY_GAME_AMMO_INFINITE ||
-            game.slots[0].weapon != -1) return 17;
-        if (toy_game_switch_weapon(&game, 0)) return 18;
-        /* 拾取 SMG：50/650 并自动切出；同武器再拾取 = 补充弹药 */
-        if (toy_game_equip_weapon(&game, TOY_GAME_WEAPON_SMG) != 1) return 19;
-        if (game.current_slot != 0 || game.slots[0].mag != 50 ||
-            game.slots[0].reserve != 650) return 20;
-        game.slots[0].mag = 7;
-        game.slots[0].reserve = 120;
-        if (toy_game_equip_weapon(&game, TOY_GAME_WEAPON_SMG) != 0 ||
-            game.slots[0].mag != 50 || game.slots[0].reserve != 650) return 21;
-        /* 切枪保留各自弹药状态 */
-        if (!toy_game_switch_weapon(&game, 1) || game.slots[1].mag != 30)
-            return 22;
-        if (!toy_game_switch_weapon(&game, 0) ||
-            game.slots[0].mag != 50 || game.slots[0].reserve != 650) return 23;
-        /* 弹药盒补满备弹，不碰弹匣 */
-        game.slots[0].mag = 3;
-        game.slots[0].reserve = 5;
-        if (!toy_game_refill_ammo(&game) || game.slots[0].reserve != 650 ||
-            game.slots[0].mag != 3) return 24;
-        /* SMG 全自动：按住 10 步（160ms，100ms 冷却）消耗 2 发 */
-        game.slots[0].mag = 50;
-        for (i = 0; i < 10; i++)
-            toy_game_update_held(&game, NULL, 0, 1, 0, 1024, 16);
-        if (game.slots[0].mag != 48) return 25;
-        /* 手枪半自动：按住不连发 */
-        toy_game_switch_weapon(&game, 1);
-        for (i = 0; i < 5; i++)
-            toy_game_update_held(&game, NULL, 0, 1, 0, 1024, 16);
-        if (game.slots[1].mag != 30) return 26;
-        /* 有限备弹换弹：SMG 2000ms，消耗备弹 */
-        memset(keys, 0, sizeof(keys));
-        keys[TOY_GAME_KEY_RELOAD] = 1;
-        toy_game_switch_weapon(&game, 0);
-        toy_game_update(&game, keys, 0, 0, 1024, 16);
-        if (!game.reloading) return 27;
-        for (i = 0; i < 125; i++)
-            toy_game_update(&game, NULL, 0, 0, 1024, 16);
-        if (game.reloading || game.slots[0].mag != 50 ||
-            game.slots[0].reserve != 648) return 28;
-        /* 霰弹枪 8/64：10 弹丸随机散射，整匣内应放倒并排两敌 */
-        if (toy_game_equip_weapon(&game, TOY_GAME_WEAPON_SHOTGUN) != 1 ||
-            game.slots[0].mag != 8 || game.slots[0].reserve != 64) return 29;
-        memset(game.enemies, 0, sizeof(game.enemies));
-        game.enemies[0].active = 1;
-        game.enemies[0].x = game.px + 120;
-        game.enemies[0].z = game.pz + 900;
-        game.enemies[1].active = 1;
-        game.enemies[1].x = game.px - 120;
-        game.enemies[1].z = game.pz + 900;
-        game.enemies_alive = 2;
-        game.kills = 0;
-        {
-            unsigned int seq_before = game.fire_seq;
-            for (i = 0; i < 8 && game.kills < 2; i++)
-                toy_game_fire(&game, 0, 1024);
-            if (game.kills != 2) return 30;
-            if (game.slots[0].mag != 8 - i) return 31;
-            /* 弹道记录：每枪 10 条射线，方向已归一化，终点不越最大射程 */
-            if (game.ray_count != 10 ||
-                game.fire_seq != seq_before + (unsigned int)i) return 38;
-            for (i = 0; i < game.ray_count; i++) {
-                const struct toy_game_ray *r = &game.rays[i];
-                long long len_sq = (long long)r->sy * r->sy +
-                                   (long long)r->cy * r->cy;
-                if (len_sq < 1022 * 1022 || len_sq > 1026 * 1026) return 38;
-                if (r->ex < game.px - TOY_GAME_MAX_RANGE ||
-                    r->ex > game.px + TOY_GAME_MAX_RANGE ||
-                    r->ez < game.pz - TOY_GAME_MAX_RANGE ||
-                    r->ez > game.pz + TOY_GAME_MAX_RANGE) return 38;
-            }
-        }
-        /* 无敌人时射线止于墙：向西命中起点安全室西墙（x=-1800 面）。
-         * 弹丸有随机偏转，但终点都应落在该墙面范围内。 */
-        game.reloading = 0;
-        game.slots[0].mag = 8;
-        memset(game.enemies, 0, sizeof(game.enemies));
-        game.enemies_alive = 0;
-        toy_game_fire(&game, -1024, 0);
-        if (game.ray_count != 10) return 39;
-        for (i = 0; i < game.ray_count; i++) {
-            const struct toy_game_ray *r = &game.rays[i];
-            if (r->hit_enemy || !r->hit_world) return 39;
-            if (r->ex < game.px - 1803 || r->ex > game.px - 1797) return 39;
-            if (r->ez < -5700 || r->ez > -3800) return 39;
-        }
-    }
-    /* 地图拾取物解析：3 个控制按钮 + 2 把主武器 + 1 个弹药盒，顺序按
-     * 地图文件（尸潮按钮在武器桌前）。 */
-    if (interactable_count != 6 ||
-        interactables[0].kind != TOY_MAP_PICKUP_BUTTON ||
-        interactables[1].kind != TOY_MAP_PICKUP_SMG ||
-        interactables[3].kind != TOY_MAP_PICKUP_AMMO) return 32;
-    /* 固定拾取点：拾取后武器仍在场，同武器再互动 = 补充弹药 */
-    highlighted = 0;
-    interact_current(&interactables[1]);
-    if (game.slots[0].weapon != TOY_GAME_WEAPON_SMG ||
-        game.slots[0].mag != 50 || game.slots[0].reserve != 650) return 33;
-    game.slots[0].mag = 3;
-    game.slots[0].reserve = 5;
-    highlighted = 0;
-    interact_current(&interactables[1]);
-    if (game.slots[0].mag != 50 || game.slots[0].reserve != 650) return 33;
-    /* 拾取不影响高亮：SMG 固定点仍可被选中 */
-    {
-        struct camera aim_cam;
-        aim_cam.x = 0;
-        aim_cam.z = -7000;
-        aim_cam.sy = 0;
-        aim_cam.cy = -1024;
-        aim_cam.pitch_sy = 0;
-        aim_cam.pitch_cy = 1024;
-        if (compute_highlight(&aim_cam) != 1) return 33;
-    }
-    /* 高亮判定：世界空间朝向锥。面向桌子（武器低于视平线）可选中最远
-     * 的 SMG；背对或超出距离均不可选。 */
-    {
-        struct camera aim_cam;
-        aim_cam.x = 0;
-        aim_cam.z = -7000;
-        aim_cam.sy = 0;
-        aim_cam.cy = -1024;
-        aim_cam.pitch_sy = 0;
-        aim_cam.pitch_cy = 1024;
-        highlighted = compute_highlight(&aim_cam);
-        if (highlighted != 1) return 34;
-        aim_cam.sy = 1024;
-        aim_cam.cy = 0;
-        if (compute_highlight(&aim_cam) != -1) return 35;
-        aim_cam.sy = 0;
-        aim_cam.cy = -1024;
-        aim_cam.z = -5200;
-        if (compute_highlight(&aim_cam) != -1) return 36;
-        /* 斜向面向桌子东侧：只有弹药盒在锥内（两把枪横向偏角过大） */
-        aim_cam.x = 1000;
-        aim_cam.z = -7000;
-        aim_cam.sy = 0;
-        aim_cam.cy = -1024;
-        if (compute_highlight(&aim_cam) != 3) return 37;
-    }
-    /* 召唤按钮：位于西侧边界，E 互动召唤 15-20 个追踪敌人，
-     * 全部处于持续追踪态且落在三个刷怪点之一的矩形内；再次互动应再次召唤。 */
-    {
-        int n, i, had;
-        if (interactables[0].x != -11940 || interactables[0].z != -10000)
-            return 45;
-        had = game.enemies_alive;
-        highlighted = 0;
-        interact_current(&interactables[0]);
-        n = game.enemies_alive - had;
-        if (n < 15 || n > 20) return 46;
-        for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
-            int j, in_point = 0;
-            const struct toy_game_enemy *e = &game.enemies[i];
-            if (e->active != 1) continue;
-            if (e->ai_state != TOY_GAME_ENEMY_TRACKING) return 47;
-            for (j = 0; j < map_spawn_count; j++)
-                if (toy_game_point_in_box(e->x, e->z,
-                                          &map_spawn_zones[j]))
-                    in_point = 1;
-            if (!in_point) return 47;
-        }
-        highlighted = 0;
-        interact_current(&interactables[0]);
-        if (game.enemies_alive <= had + n) return 48;
-    }
-    __printf("wayland_fps: logic test passed\n");
-    return 0;
-}
-
-/* ── 性能统计：分阶段三角形/顶点/耗时 + 帧时间分布 ─────────────
- * 每个统计窗口（默认 5 秒）向终端输出一次：窗口平均帧率、帧渲染
- * 时间均值/p95/p99/最长，以及 logic/begin/scene/enemies/raster/
- * overlay/present 各阶段平均每帧的三角形、顶点（提交三角形×3）、
- * 像素与耗时（及耗时占比）；退出时再输出一次全量汇总。
- * 帧渲染时间从申请缓冲（begin_frame）计到 present 提交结束；双缓冲
- * 被组合器占用时的等待单独计入 stall，不算渲染帧。--no-stats 关闭
- * 终端输出（采集仍然进行，开销可忽略）。 */
-
-#define STATS_WINDOW_US   5000000L
-#define STATS_RING_SIZE   1024
-#define STATS_STAGE_MAX   7
-
-enum {
-    STATS_STAGE_LOGIC = 0,
-    STATS_STAGE_BEGIN,
-    STATS_STAGE_SCENE,
-    STATS_STAGE_ENEMIES,
-    STATS_STAGE_RASTER,
-    STATS_STAGE_OVERLAY,
-    STATS_STAGE_PRESENT
-};
-
-static const char *stats_stage_names[STATS_STAGE_MAX] = {
-    "logic", "begin", "scene", "enemies", "raster", "overlay", "present"
-};
-
-struct perf_stats {
-    long window_start;              /* 窗口起点（us） */
-    int frames;                     /* 已渲染帧数 */
-    long stall_us;                  /* 双缓冲占用等待（us，含 poll 等待） */
-    long wall_us;                   /* begin_frame → 下一帧 begin_frame */
-    long stage_us[STATS_STAGE_MAX];
-    unsigned long stage_tris[STATS_STAGE_MAX];
-    unsigned long stage_pixels[STATS_STAGE_MAX];
-    int ring[STATS_RING_SIZE];      /* 帧渲染时间环形缓冲（us） */
-    int ring_count;
-    int ring_head;
-    long frame_sum;                 /* 窗口内帧时间总和 */
-    long frame_max;
-    /* 光栅化像素漏斗与纯色/纹理路径拆分（每帧主 flush 的快照） */
-    unsigned long raster_bbox_px;
-    unsigned long raster_inside_px;
-    unsigned long raster_flat_tris;
-    unsigned long raster_tex_tris;
-    unsigned long raster_flat_px;
-    unsigned long raster_tex_px;
-    long raster_flat_us;
-    long raster_tex_us;
-};
-
-static void perf_init(struct perf_stats *s)
-{
-    memset(s, 0, sizeof(*s));
-    s->window_start = monotonic_us();
-}
-
-/* 阶段结束：把阶段耗时与三角形/像素计数同时累积进窗口与全量两个
- * 结构，stage_start 推进到当前时刻。 */
-static void perf_end_stage(struct perf_stats *window, struct perf_stats *total,
-                           int stage, long *stage_start,
-                           unsigned long tris, unsigned long pixels)
-{
-    long now = monotonic_us();
-    window->stage_us[stage] += now - *stage_start;
-    total->stage_us[stage] += now - *stage_start;
-    window->stage_tris[stage] += tris;
-    total->stage_tris[stage] += tris;
-    window->stage_pixels[stage] += pixels;
-    total->stage_pixels[stage] += pixels;
-    *stage_start = now;
-}
-
-static void ring_add(struct perf_stats *s, long us)
-{
-    s->ring[s->ring_head] = (int)us;
-    s->ring_head = (s->ring_head + 1) % STATS_RING_SIZE;
-    if (s->ring_count < STATS_RING_SIZE) s->ring_count++;
-    s->frame_sum += us;
-    if (us > s->frame_max) s->frame_max = us;
-    s->frames++;
-}
-
-static void perf_record_frame(struct perf_stats *window,
-                              struct perf_stats *total, long us)
-{
-    ring_add(window, us);
-    ring_add(total, us);
-}
-
-static void perf_add_stall(struct perf_stats *window,
-                           struct perf_stats *total, long us)
-{
-    window->stall_us += us;
-    total->stall_us += us;
-}
-
-/* 帧间隔：wall 从一次 begin_frame 到下一次 begin_frame（含双缓冲等待、
- * 事件轮询、逻辑与调度）。按循环迭代累计（stall 迭代也算），除以渲染帧
- * 数即每渲染帧的均值（应≈1e6/fps）。wait 在 dump 中用 wall − 活跃帧
- * 时间推导，保证恒等对消。 */
-static void perf_add_interval(struct perf_stats *window, struct perf_stats *total,
-                              long wall_us)
-{
-    window->wall_us += wall_us;
-    total->wall_us += wall_us;
-}
-
-/* RASTER 阶段结束后读取渲染器最近一次 flush 的漏斗与路径快照。flat
- * 三角形/像素 = 本 flush 总数 − 纹理路径（last_tex_* 为覆盖式快照，
- * overlay 的第二次 flush 不重复计入）。 */
-static void perf_add_raster(struct perf_stats *window, struct perf_stats *total,
-                            const struct toy_renderer *r,
-                            unsigned long tris, unsigned long pixels)
-{
-    unsigned long tex_tris = r->last_tex_tris;
-    unsigned long tex_px = r->last_tex_px;
-    unsigned long flat_tris = tris > tex_tris ? tris - tex_tris : 0;
-    unsigned long flat_px = pixels > tex_px ? pixels - tex_px : 0;
-    window->raster_bbox_px += r->last_bbox_px;
-    total->raster_bbox_px += r->last_bbox_px;
-    window->raster_inside_px += r->last_inside_px;
-    total->raster_inside_px += r->last_inside_px;
-    window->raster_flat_tris += flat_tris;
-    total->raster_flat_tris += flat_tris;
-    window->raster_tex_tris += tex_tris;
-    total->raster_tex_tris += tex_tris;
-    window->raster_flat_px += flat_px;
-    total->raster_flat_px += flat_px;
-    window->raster_tex_px += tex_px;
-    total->raster_tex_px += tex_px;
-    window->raster_flat_us += r->last_flat_us;
-    total->raster_flat_us += r->last_flat_us;
-    window->raster_tex_us += r->last_tex_us;
-    total->raster_tex_us += r->last_tex_us;
-}
-
-/* 排序副本上的最近秩百分位（us）：p95 即第 ceil(0.95*n) 个样本。 */
-static long perf_percentile(const struct perf_stats *s, int pct)
-{
-    int tmp[STATS_RING_SIZE];
-    int i, j, n = s->ring_count, idx;
-    long v;
-    if (n <= 0) return 0;
-    for (i = 0; i < n; i++) tmp[i] = s->ring[i];
-    for (i = 1; i < n; i++) {
-        v = tmp[i];
-        for (j = i - 1; j >= 0 && tmp[j] > v; j--) tmp[j + 1] = tmp[j];
-        tmp[j + 1] = (int)v;
-    }
-    idx = n * pct / 100;
-    if (idx >= n) idx = n - 1;
-    return tmp[idx];
-}
-
-static void perf_dump(const struct perf_stats *s, const char *label)
-{
-    long elapsed = monotonic_us() - s->window_start;
-    long fps10, avg_us, total_us, p95, p99;
-    unsigned long tris_all = 0, pixels_all = 0;
-    int i;
-    if (s->frames <= 0 || elapsed <= 0) return;
-    fps10 = (long)((long long)s->frames * 10 * 1000000 / elapsed);
-    avg_us = s->frame_sum / s->frames;
-    p95 = s->ring_count > 0 ? perf_percentile(s, 95) : 0;
-    p99 = s->ring_count > 0 ? perf_percentile(s, 99) : 0;
-    /* wait = wall − 活跃帧时间：present 到下一次 begin 的间隔（轮询/
-     * 逻辑/调度/组合器背压），由对消恒等式推导，与各阶段统计严格一致 */
-    {
-        long wall_avg = s->wall_us / s->frames;
-        long wait_avg = wall_avg - avg_us;
-        if (wait_avg < 0) wait_avg = 0;
-        __printf("[stats:%s] window=%ld.%03lds frames=%d fps=%ld.%ld "
-                 "frame_us avg=%ld p95=%ld p99=%ld max=%ld "
-                 "wall_us avg=%ld wait_us avg=%ld stall_ms=%ld\n",
-                 label, elapsed / 1000000L, (elapsed % 1000000L) / 1000L,
-                 s->frames, fps10 / 10, fps10 % 10,
-                 avg_us, p95, p99, s->frame_max, wall_avg, wait_avg,
-                 s->stall_us / 1000);
-    }
-    total_us = 0;
-    for (i = 0; i < STATS_STAGE_MAX; i++) total_us += s->stage_us[i];
-    if (total_us <= 0) total_us = 1;
-    __printf("[stats:%s] %-7s %8s %8s %9s %10s %5s\n", label,
-             "stage", "tris/f", "verts/f", "px/f", "us/f", "%time");
-    for (i = 0; i < STATS_STAGE_MAX; i++) {
-        unsigned long tris = s->stage_tris[i] / (unsigned long)s->frames;
-        unsigned long px = s->stage_pixels[i] / (unsigned long)s->frames;
-        long pct = s->stage_us[i] * 100 / total_us;
-        tris_all += tris;
-        pixels_all += px;
-        __printf("[stats:%s] %-7s %8lu %8lu %9lu %10ld %4ld%%\n", label,
-                 stats_stage_names[i], tris, tris * 3UL, px,
-                 s->stage_us[i] / s->frames, pct);
-    }
-    __printf("[stats:%s] per-frame total tris=%lu verts=%lu pixels=%lu\n",
-             label, tris_all, tris_all * 3UL, pixels_all);
-    {
-        /* 像素漏斗：bbox=包围盒扫描 → inside=边函数覆盖 → depth/shade/
-         * write=深度通过/着色/写入。当前实现三者相等（=raster 阶段实际
-         * 写入像素）；引入提前深度裁剪或增量扫描后会分叉。 */
-        unsigned long bbox = s->raster_bbox_px / (unsigned long)s->frames;
-        unsigned long inside = s->raster_inside_px / (unsigned long)s->frames;
-        unsigned long written =
-            s->stage_pixels[STATS_STAGE_RASTER] / (unsigned long)s->frames;
-        long ib10 = bbox > 0 ? (long)(inside * 1000 / bbox) : 0;
-        long di10 = inside > 0 ? (long)(written * 1000 / inside) : 0;
-        __printf("[stats:%s] funnel px/f bbox=%lu inside=%lu depth=%lu "
-                 "shade=%lu write=%lu inside/bbox=%ld.%ld%% "
-                 "depth/inside=%ld.%ld%%\n",
-                 label, bbox, inside, written, written, written,
-                 ib10 / 10, ib10 % 10, di10 / 10, di10 % 10);
-    }
-    {
-        /* 纯色/纹理路径拆分：像素与三角形来自本帧主 flush 快照，
-         * 耗时为各 worker 路径段计时之和（并行近似，与 stage 墙钟
-         * 不同口径）。 */
-        unsigned long flat_tris = s->raster_flat_tris / (unsigned long)s->frames;
-        unsigned long tex_tris = s->raster_tex_tris / (unsigned long)s->frames;
-        unsigned long flat_px = s->raster_flat_px / (unsigned long)s->frames;
-        unsigned long tex_px = s->raster_tex_px / (unsigned long)s->frames;
-        long flat_us = s->raster_flat_us / s->frames;
-        long tex_us = s->raster_tex_us / s->frames;
-        long path_us = flat_us + tex_us;
-        long fpct = path_us > 0 ? flat_us * 100 / path_us : 0;
-        __printf("[stats:%s] path tris/f flat=%lu tex=%lu px/f flat=%lu "
-                 "tex=%lu us/f flat=%ld tex=%ld time flat=%ld%% tex=%ld%%\n",
-                 label, flat_tris, tex_tris, flat_px, tex_px,
-                 flat_us, tex_us, fpct, 100 - fpct);
-    }
-}
+#include "rasterfall_perf.inc"
 
 int main(int argc, char **argv)
 {
@@ -3088,12 +2270,15 @@ int main(int argc, char **argv)
                 frame_limit = frame_limit * 10 + (*p++ - '0');
         }
     }
-    if (toy_map_load("assets/maps/wayland_fps.map", &level_map) < 0) {
-        __fprintf(2, "wayland_fps: cannot load map assets/maps/wayland_fps.map\n");
+    rasterfall_map_bind(&map_ops, &level_map, map_bounds, map_safe_rooms,
+                        map_spawn_zones, &map_spawn_count, &air_wall_enabled,
+                        interactables, &interactable_count);
+    if (rasterfall_map_load(&map_ops, "assets/maps/rasterfall.map") < 0) {
+        __fprintf(2, "rasterfall: cannot load map assets/maps/rasterfall.map\n");
         return 1;
     }
     bake_static_lightmap();
-    __printf("wayland_fps: baked lightmap %dx%d\n", BAKED_LM_W, BAKED_LM_H);
+    __printf("rasterfall: baked lightmap %dx%d\n", BAKED_LM_W, BAKED_LM_H);
     prepare_map_rules();
     memset(&scene_texture, 0, sizeof(scene_texture));
     memset(&scene_texture_view, 0, sizeof(scene_texture_view));
@@ -3107,18 +2292,18 @@ int main(int argc, char **argv)
         wall_texture_view.width = scene_texture_view.width;
         wall_texture_view.height = scene_texture_view.height;
         wall_texture_view.data_size = scene_texture_view.data_size;
-        __printf("wayland_fps: UV texture loaded (%u x %u)\n",
+        __printf("rasterfall: UV texture loaded (%u x %u)\n",
                  scene_texture.width, scene_texture.height);
     } else if (textures_enabled) {
-        __printf("wayland_fps: UV texture unavailable, using checkerboard fallback\n");
+        __printf("rasterfall: UV texture unavailable, using checkerboard fallback\n");
     } else {
-        __printf("wayland_fps: textures disabled, using pure colors\n");
+        __printf("rasterfall: textures disabled, using pure colors\n");
     }
     active_texture_view = &scene_texture_view;
     if (logic_test) {
         int result = run_logic_test();
         if (scene_texture.blob) toy_texture_unload(&scene_texture);
-        toy_map_unload(&level_map);
+        rasterfall_map_unload(&map_ops);
         return result;
     }
     /* 服务器断开（WSLg 组合器/音频服务重启）时 socket 写会触发 SIGPIPE
@@ -3135,22 +2320,22 @@ int main(int argc, char **argv)
         seed = (uint64_t)monotonic_us();
     if (seed == 0) seed = 1;
     reset_game(&camera, seed);
-    window = toy_window_open("Toyc FPS Zombies", 800, 450);
+    window = toy_window_open("Rasterfall", 800, 450);
     if (!window) {
-        __fprintf(2, "wayland_fps: cannot create Wayland window\n");
+        __fprintf(2, "rasterfall: cannot create Wayland window\n");
         if (scene_texture.blob) toy_texture_unload(&scene_texture);
-        toy_map_unload(&level_map);
+        rasterfall_map_unload(&map_ops);
         toy_renderer_destroy(&renderer);
         return 1;
     }
-    __printf("wayland_fps: pause menu uses arrows + Enter; mouse/arrows look, "
+    __printf("rasterfall: pause menu uses arrows + Enter; mouse/arrows look, "
              "WASD moves, click/Space fire (hold for SMG), R reload, "
              "1/2 weapons, E interact, ,/. turn 90, Esc pauses/resumes\n");
     if (input_debug)
-        __printf("wayland_fps: input debug HUD enabled; test chords and focus changes\n");
+        __printf("rasterfall: input debug HUD enabled; test chords and focus changes\n");
     load_sfx_assets();
     if (audio_start(&audio) < 0) {
-        __printf("wayland_fps: audio unavailable, playing silent\n");
+        __printf("rasterfall: audio unavailable, playing silent\n");
     }
     last_time = monotonic_us();
     fps_window_start = last_time;
@@ -3186,9 +2371,9 @@ int main(int argc, char **argv)
         }
         if (events.pointer_lock_changed) {
             if (events.pointer_locked)
-                __printf("wayland_fps: pointer constraint activated\n");
+                __printf("rasterfall: pointer constraint activated\n");
             else {
-                __printf("wayland_fps: pointer constraint released\n");
+                __printf("rasterfall: pointer constraint released\n");
                 pointer_lock_requested = 0;
             }
         }
@@ -3246,7 +2431,7 @@ int main(int argc, char **argv)
             last_pointer_y = input.pointer_y;
             have_pointer_position = 1;
             resumed = 1;
-            __printf("wayland_fps: resumed, pointer constraint %s\n",
+            __printf("rasterfall: resumed, pointer constraint %s\n",
                      pointer_lock_requested ? "requested" : "unavailable");
             }
         }
@@ -3258,7 +2443,7 @@ int main(int argc, char **argv)
                 pointer_lock_requested = 0;
                 paused = 1;
                 pause_menu.selected = PAUSE_ITEM_RESUME;
-                __printf("wayland_fps: paused, pointer released\n");
+                __printf("rasterfall: paused, pointer released\n");
             }
         }
         /* 射击输入：每帧只取一次边沿（恢复点击帧不开火） */
@@ -3273,14 +2458,16 @@ int main(int argc, char **argv)
          * 在屏幕边缘/屏外（裁剪路径）、穿门洞长弹道（最大射程）、
          * 近距离墙面（命中火花）。 */
         if (auto_mode) {
-            static const int spots[][2] = {
-                {0, -5000}, {0, -6400}, {0, -9000}, {0, 0},
-                {-5500, -1500}, {4500, 500}, {-6000, -2000}, {2000, 2500},
+            static const int spot_x[8] = {
+                0, 0, 0, 0, -5500, 4500, -6000, 2000
+            };
+            static const int spot_z[8] = {
+                -5000, -6400, -9000, 0, -1500, 500, -2000, 2500
             };
             int idx;
             if (rendered_frames == 60 && paused) {
                 paused = 0;
-                __printf("wayland_fps: auto barrage started\n");
+                __printf("rasterfall: auto barrage started\n");
             }
             if (rendered_frames > 60) {
                 if (game.state != TOY_GAME_PLAYING)
@@ -3294,12 +2481,12 @@ int main(int argc, char **argv)
                     static const int wslot[3] = {TOY_GAME_WEAPON_PISTOL,
                                                  TOY_GAME_WEAPON_SMG,
                                                  TOY_GAME_WEAPON_SHOTGUN};
-                    camera.x = spots[idx % 8][0];
-                    camera.z = spots[idx % 8][1];
+                    camera.x = spot_x[idx % 8];
+                    camera.z = spot_z[idx % 8];
                     game.px = camera.x;
                     game.pz = camera.z;
                     toy_game_equip_weapon(&game, wslot[idx % 3]);
-                    __printf("wayland_fps: auto teleport %d to (%d,%d) w=%d\n",
+                    __printf("rasterfall: auto teleport %d to (%d,%d) w=%d\n",
                              idx, camera.x, camera.z, wslot[idx % 3]);
                 }
             }
@@ -3508,12 +2695,12 @@ int main(int argc, char **argv)
         if (sfx_assets[kind].blob) toy_sound_unload(&sfx_assets[kind]);
     if (scene_texture.blob) toy_texture_unload(&scene_texture);
     if (dump_path) dump_frame_ppm(dump_path, &surface);
-    toy_map_unload(&level_map);
+    rasterfall_map_unload(&map_ops);
     toy_window_close(window);
-    __printf("wayland_fps: %d frames, %d scene pixels, position=(%d,%d)\n",
+    __printf("rasterfall: %d frames, %d scene pixels, position=(%d,%d)\n",
              rendered_frames, scene_pixels, camera.x, camera.z);
     if (texture_stats)
-        __printf("wayland_fps: texture stats triangles=%lu pixels=%lu fallback=%lu\n",
+        __printf("rasterfall: texture stats triangles=%lu pixels=%lu fallback=%lu\n",
                  renderer.textured_triangles, renderer.textured_pixels,
                  renderer.texture_fallback_pixels);
     toy_renderer_destroy(&renderer);

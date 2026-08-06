@@ -1,8 +1,8 @@
 # Toyc 资产 v0.1
 
-`generated/` 保存仓库内提交的小型 toyc 运行时资产：`wall.ttex` 是 wayland_fps
+`generated/` 保存仓库内提交的小型 toyc 运行时资产：`wall.ttex` 是 Rasterfall
 使用的墙面纹理，`test*.ttex`、`test.tsnd`、`test.tmesh` 是 `validate-assets`
-校验的最小测试资产，`sfx_*.tsnd` 是 wayland_fps 的程序合成音效（见下）。
+校验的最小测试资产，`sfx_*.tsnd` 是 Rasterfall 的程序合成音效（见下）。
 `maps/` 保存运行时地图。原始来源（PNG/JPEG/WAV/OBJ）和大型中间文件不随仓库
 分发，见根目录 `.gitignore`；需要重新生成资产时，先在本地准备来源文件，再用
 `build/toyasset convert` 转换。`validate-assets` 自动发现并校验
@@ -11,10 +11,10 @@
 
 ### 程序合成音效
 
-`sfx_*.tsnd` 是 wayland_fps 的 8 种核心音效，由 `tools/gen_sfx.c` 链接
+`sfx_*.tsnd` 是 Rasterfall 的 8 种核心音效，由 `tools/gen_sfx.c` 链接
 `lib/game/sfx.c` 引擎离线渲染：44100Hz 单声道 PCM16（从引擎立体声输出下混取
 均值）。合成参数与运行时逐字节一致、输出确定性可复现，无外部来源文件。
-wayland_fps 启动时加载这些资产并以 `toy_sfx` 样本模式播放（资产率与音频
+Rasterfall 启动时加载这些资产并以 `toy_sfx` 样本模式播放（资产率与音频
 线程输出率一致，无需重采样）；加载失败的音效回退程序合成，背景音乐仍为
 运行时合成。
 

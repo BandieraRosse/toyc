@@ -39,10 +39,10 @@ all apps, or one app. `make self-app-<name>` is the self-hosted equivalent.
 `make validate-assets` builds the GCC-hosted `build/toyasset` tool and validates
 the small committed `.ttex`, `.tsnd`, and `.tmesh` test assets. Raw PNG/JPEG/WAV/OBJ
 must be converted offline with `build/toyasset convert`; source files and large
-intermediates are not committed (see `.gitignore`). The 8 core wayland_fps sound
+intermediates are not committed (see `.gitignore`). The 8 core rasterfall sound
 effects (`assets/generated/sfx_*.tsnd`) are rendered offline by
 `make generate-assets`, which links the `lib/game/sfx.c` engine for deterministic,
-reproducible output with no external source files; wayland_fps loads and plays them
+reproducible output with no external source files; rasterfall loads and plays them
 at startup, falling back to procedural synthesis if a file fails to load. Runtime
 code reads only these versioned, explicitly encoded little-endian formats; it never
 parses PNG/JPEG/WAV/OBJ.
@@ -76,8 +76,8 @@ on exit; `--no-stats` disables the output):
 - Path split `path`: triangles/pixels/time of the flat and textured raster
   paths, to compare their costs.
 
-Preview with `build/wayland_fps --frames 300 --texture-stats` under Wayland; use
-`build/wayland_fps --logic-test` for the headless regression preview.
+Preview with `build/rasterfall --frames 300 --texture-stats` under Wayland; use
+`build/rasterfall --logic-test` for the headless regression preview.
 
 `bootstrap/` contains versioned seed binaries. They are for periodic bootstrap
 checks, are not used by the default `make`, and may lag behind the source:

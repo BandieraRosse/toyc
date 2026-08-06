@@ -1,13 +1,13 @@
 /*
  * gen_sfx — 把 lib/game/sfx.c 的程序合成音效离线渲染为 TSND 资产。
  *
- * wayland_fps 的 8 种核心音效（枪声/空枪/换弹/命中/击杀/被咬/死亡）由
+ * Rasterfall 的 8 种核心音效（枪声/空枪/换弹/命中/击杀/被咬/死亡）由
  * lib/game/sfx.c 在运行时程序合成。本工具链接同一引擎，把它们一次性渲染成
  * assets/generated/sfx_*.tsnd（44100Hz 单声道 PCM16，从引擎的立体声输出
  * 下混取均值——voice 在左右声道等幅），作为资产库中的离线
  * 表示：可供播放验证、供其他宿主引用，也保证引擎改动时能一键重建资产。
  * 合成参数与引擎逐字节一致（同 seed 的 xorshift 噪声），输出确定性可复现。
- * wayland_fps 启动时加载这些资产并以 toy_sfx 样本模式播放；加载失败的
+ * Rasterfall 启动时加载这些资产并以 toy_sfx 样本模式播放；加载失败的
  * kind 回退程序合成，背景音乐仍为运行时合成。
  *
  * 宿主编译说明：sfx.c 通过 tlibc_compat.h 把 memset/memmove 重映射到 tlibc

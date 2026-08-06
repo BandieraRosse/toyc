@@ -750,12 +750,20 @@ LIBC_OBJS     := $(LIBC_C_OBJS) $(LIBC_ASM_OBJS)
 
 # ─── App 源文件列表 ─────────────────────────────────────────────
 
-APP_SRCS    := $(shell find $(APP_DIR) -name '*.c' | LANG=C sort)
+APP_SRCS    := $(shell find $(APP_DIR) -name '*.c' \
+                    ! -path '$(APP_DIR)/graphics/rasterfall/rasterfall_map.c' | LANG=C sort)
 APP_NAMES   := $(sort $(basename $(notdir $(APP_SRCS))))
 APP_OBJS    := $(foreach src,$(APP_SRCS),$(BUILD)/$(notdir $(basename $(src))).o)
 APP_TARGETS := $(foreach name,$(APP_NAMES),$(BUILD)/$(name))
+APP_EXTRA_OBJS_rasterfall := $(BUILD)/rasterfall_map.o
 
 # ─── 库编译规则 ────────────────────────────────────────────────
+
+# Rasterfall 地图模块作为独立编译单元参与主程序链接。
+$(BUILD)/rasterfall_map.o: app/graphics/rasterfall/rasterfall_map.c \
+                           app/graphics/rasterfall/rasterfall_map.h | $(BUILD)
+	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
+	$(GCC) $(LIBC_CFLAGS) -I app/graphics/rasterfall -c $< -o $@
 
 # 每个 .c 文件 → .o
 define LIBC_C_rule
@@ -789,11 +797,16 @@ $$(BUILD)/$(notdir $(basename $(1))).o: $(1) | $$(BUILD)
 
 # 链接 app.o + toyc.a → 可执行文件
 # -Wl,--whole-archive 强制提取所有 .o，避免归档单遍扫描的符号遗漏
-$$(BUILD)/$(notdir $(basename $(1))): $$(BUILD)/$(notdir $(basename $(1))).o $$(LIBC_A)
+$$(BUILD)/$(notdir $(basename $(1))): $$(BUILD)/$(notdir $(basename $(1))).o $$(LIBC_A) $(APP_EXTRA_OBJS_$(notdir $(basename $(1))))
 	@printf "$(BLUE)  LD$(RESET)  %s\n" "$(notdir $(basename $(1)))"
-	$$(GCC) $$(LIBC_CFLAGS) $$< -Wl,--whole-archive $$(LIBC_A) -Wl,--no-whole-archive -Wl,-e,__tlibc_start -o $$@
+	$$(GCC) $$(LIBC_CFLAGS) $$< $(APP_EXTRA_OBJS_$(notdir $(basename $(1)))) -Wl,--whole-archive $$(LIBC_A) -Wl,--no-whole-archive -Wl,-e,__tlibc_start -o $$@
 endef
 $(foreach src,$(APP_SRCS),$(eval $(call APP_rule,$(src))))
+
+# Rasterfall 的内部实现片段属于主编译单元，显式列为依赖以支持增量构建。
+$(BUILD)/rasterfall.o: app/graphics/rasterfall/rasterfall_hud.inc \
+                       app/graphics/rasterfall/rasterfall_logic_test.inc \
+                       app/graphics/rasterfall/rasterfall_perf.inc
 
 # ─── 目标 ───────────────────────────────────────────────────────
 
@@ -803,6 +816,14 @@ lib: $(LIBC_A)
 
 app: $(APP_TARGETS)
 
+# Rasterfall 的正式名称；保留旧目标作为兼容别名，避免已有脚本失效。
+$(BUILD)/wayland_fps: $(BUILD)/rasterfall
+	@ln -sf rasterfall $@
+
+.PHONY: rasterfall wayland_fps
+rasterfall: $(BUILD)/rasterfall
+wayland_fps: $(BUILD)/wayland_fps
+
 # 单个 app：make app-echo
 $(foreach name,$(APP_NAMES),$(eval app-$(name): $(BUILD)/$(name)))
 
@@ -811,6 +832,7 @@ $(foreach name,$(APP_NAMES),$(eval app-$(name): $(BUILD)/$(name)))
 clean-app:
 	rm -f $(LIBC_OBJS) $(LIBC_OBJS:.o=.d) $(LIBC_A)
 	rm -f $(APP_OBJS) $(APP_OBJS:.o=.d) $(APP_TARGETS)
+	rm -f $(BUILD)/rasterfall_map.o $(BUILD)/rasterfall_map_self.o
 
 # ─── 依赖文件包含 ───────────────────────────────────────────────
 
@@ -852,6 +874,7 @@ SELF_LIBC_OBJS     := $(SELF_LIBC_C_OBJS) $(SELF_LIBC_ASM_OBJS)
 SELF_APP_NAMES   := $(APP_NAMES)
 SELF_APP_OBJS    := $(foreach name,$(SELF_APP_NAMES),$(BUILD)/$(name)_self.o)
 SELF_APP_TARGETS := $(foreach name,$(SELF_APP_NAMES),$(BUILD)/$(name)_self)
+SELF_APP_EXTRA_OBJS_rasterfall := $(BUILD)/rasterfall_map_self.o
 
 # ─── 库编译规则 ────────────────────────────────────────────────
 
@@ -878,6 +901,11 @@ $(SELF_LIB_A): $(SELF_LIBC_OBJS)
 
 # ─── App 编译 + 链接规则 ──────────────────────────────────────
 
+$(BUILD)/rasterfall_map_self.o: app/graphics/rasterfall/rasterfall_map.c \
+                                app/graphics/rasterfall/rasterfall_map.h $(SELF_CC) | $(BUILD)
+	@printf "  $(BLUE)  CC(s)  %s\n" "$<"
+	$(SELF_CC) $(SELF_CFLAGS) -I app/graphics/rasterfall -c $< -o $@
+
 define SELF_APP_rule
 
 # 编译 app 源文件 → .o（toyc）
@@ -886,9 +914,9 @@ $$(BUILD)/$(notdir $(basename $(1)))_self.o: $(1) $$(SELF_CC) | $$(BUILD)
 	$$(SELF_CC) $$(SELF_CFLAGS) -c $(1) -o $$@
 
 # 链接（系统 ld）：crt 在归档之前（__tlibc_start 定义），--whole-archive 确保所有符号可解析
-$$(BUILD)/$(notdir $(basename $(1)))_self: $$(BUILD)/$(notdir $(basename $(1)))_self.o $$(SELF_LIB_A) $$(SELF_CRT_OBJS)
+$$(BUILD)/$(notdir $(basename $(1)))_self: $$(BUILD)/$(notdir $(basename $(1)))_self.o $$(SELF_LIB_A) $$(SELF_CRT_OBJS) $(SELF_APP_EXTRA_OBJS_$(notdir $(basename $(1))))
 	@printf "$(BLUE)  LD(s)  %s\n" "$(notdir $(basename $(1)))"
-	$$(SELF_LD) -e __tlibc_start $$(SELF_CRT_OBJS) $$< --whole-archive $$(SELF_LIB_A) --no-whole-archive -o $$@
+	$$(SELF_LD) -e __tlibc_start $$(SELF_CRT_OBJS) $$< $(SELF_APP_EXTRA_OBJS_$(notdir $(basename $(1)))) --whole-archive $$(SELF_LIB_A) --no-whole-archive -o $$@
 endef
 $(foreach src,$(APP_SRCS),$(eval $(call SELF_APP_rule,$(src))))
 
