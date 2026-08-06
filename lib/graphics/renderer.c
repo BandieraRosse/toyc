@@ -28,8 +28,8 @@
 static long edge(const struct toy_screen_vertex *a,
                  const struct toy_screen_vertex *b, int px, int py)
 {
-    return (px - a->x) * (b->y - a->y) -
-           (py - a->y) * (b->x - a->x);
+    return ((long)px - a->x) * ((long)b->y - a->y) -
+           ((long)py - a->y) * ((long)b->x - a->x);
 }
 
 static int clampi(int value, int low, int high)
@@ -132,19 +132,6 @@ static int texture_valid(const struct toy_texture_view *t)
     return pixels <= 0xffffffffUL / 3UL && t->data_size == pixels * 3UL;
 }
 
-static long wrap_coord(long value, long limit, int repeat)
-{
-    if (repeat) {
-        if (limit <= 0) return 0;
-        value %= limit;
-        if (value < 0) value += limit;
-        return value;
-    }
-    if (value < 0) return 0;
-    if (value >= limit) return limit - 1;
-    return value;
-}
-
 static uint32_t texture_sample(const struct toy_texture_view *t,
                                long u, long v, int repeat,
                                uint32_t fallback, int *used_fallback)
@@ -159,8 +146,18 @@ static uint32_t texture_sample(const struct toy_texture_view *t,
     }
     /* UVs are expressed in tile units: 1.0 spans the whole image, so the
      * address period is one Q16 tile, independent of pixel dimensions. */
-    u = wrap_coord(u, TOY_UV_ONE, repeat);
-    v = wrap_coord(v, TOY_UV_ONE, repeat);
+    /* Rasterfall 的贴图坐标以一个 Q16 tile 为周期。用位掩码完成重复
+     * 归一化，避免自托管版在极端透视插值下执行长整型取模；非重复路径
+     * 仍明确限制到合法的一个 tile。最终 u/v 始终落在 [0, 65535]。 */
+    if (repeat) {
+        u &= TOY_UV_ONE - 1;
+        v &= TOY_UV_ONE - 1;
+    } else {
+        if (u < 0) u = 0;
+        if (v < 0) v = 0;
+        if (u >= TOY_UV_ONE) u = TOY_UV_ONE - 1;
+        if (v >= TOY_UV_ONE) v = TOY_UV_ONE - 1;
+    }
     x = (u * t->width) / TOY_UV_ONE;
     y = (v * t->height) / TOY_UV_ONE;
     at = (y * t->width + x) * 3;
@@ -220,16 +217,22 @@ static long raster_tex(struct toy_renderer *renderer,
                 /* 与 flat 路径相同的逆深度比较（透视校正，无仿射误差）；
                  * inv 未归一化仅用于 UV 比值，深度用归一化后的 inv_norm
                  * 避免大三角形加权和溢出 int 截断。 */
-                long inv = e0 * a->inv_z + e1 * b->inv_z + e2 * c->inv_z;
-                long inv_norm = inv / area;
+                long long inv64 = (long long)e0 * a->inv_z +
+                                  (long long)e1 * b->inv_z +
+                                  (long long)e2 * c->inv_z;
+                long inv_norm = (long)(inv64 / area);
                 int at = base + x;
                 /* 与 flat 路径相同：平局（≥）判给后画者。 */
                 if (inv_norm >= depth[at]) {
-                    long uoz = e0 * a->u_over_z + e1 * b->u_over_z + e2 * c->u_over_z;
-                    long voz = e0 * a->v_over_z + e1 * b->v_over_z + e2 * c->v_over_z;
+                    long long uoz = (long long)e0 * a->u_over_z +
+                                    (long long)e1 * b->u_over_z +
+                                    (long long)e2 * c->u_over_z;
+                    long long voz = (long long)e0 * a->v_over_z +
+                                    (long long)e1 * b->v_over_z +
+                                    (long long)e2 * c->v_over_z;
                     int used_fallback = 0;
-                    long u = inv ? (uoz / inv) : 0;
-                    long v = inv ? (voz / inv) : 0;
+                    long u = inv64 ? (long)(uoz / inv64) : 0;
+                    long v = inv64 ? (long)(voz / inv64) : 0;
                     uint32_t color = texture_sample(texture, u, v, repeat,
                                                      fallback_color, &used_fallback);
                     long light = light_factor >= 0 ? light_factor :
@@ -271,6 +274,7 @@ static void rasterize_cmd(struct toy_renderer *renderer,
                           int y0, int y1,
                           struct toy_render_worker *worker)
 {
+    if (cmd->area >= 0) return;
     /* 路径段计时：命令类型翻转时才取一次钟（见 renderer_monotonic_us
      * 注释）；同段内两条带的光栅化都累计进该路径。 */
     if (cmd->textured != worker->last_path) {

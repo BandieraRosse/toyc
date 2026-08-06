@@ -96,10 +96,15 @@ static int draw_view_box(struct toy_surface *surface,
                          int minz, int maxz, uint32_t color,
                          int skip_back, int skip_top, int kick)
 {
-    struct view_vec3 a={minx,miny,minz}, b={maxx,miny,minz};
-    struct view_vec3 c={maxx,miny,maxz}, d={minx,miny,maxz};
-    struct view_vec3 e={minx,maxy,minz}, f={maxx,maxy,minz};
-    struct view_vec3 g={maxx,maxy,maxz}, h={minx,maxy,maxz};
+    struct view_vec3 a, b, c, d, e, f, g, h;
+    a.x=minx; a.y=miny; a.z=minz;
+    b.x=maxx; b.y=miny; b.z=minz;
+    c.x=maxx; c.y=miny; c.z=maxz;
+    d.x=minx; d.y=miny; d.z=maxz;
+    e.x=minx; e.y=maxy; e.z=minz;
+    f.x=maxx; f.y=maxy; f.z=minz;
+    g.x=maxx; g.y=maxy; g.z=maxz;
+    h.x=minx; h.y=maxy; h.z=maxz;
     int kx=kick/3, ky=-kick/2, kz=kick, pixels=0;
     a.x+=kx; b.x+=kx; c.x+=kx; d.x+=kx; e.x+=kx; f.x+=kx; g.x+=kx; h.x+=kx;
     a.y+=ky; b.y+=ky; c.y+=ky; d.y+=ky; e.y+=ky; f.y+=ky; g.y+=ky; h.y+=ky;

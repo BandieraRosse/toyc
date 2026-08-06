@@ -200,7 +200,9 @@ static struct toy_texture_asset scene_texture;
 static struct toy_texture_view scene_texture_view;
 static struct toy_texture_view wall_texture_view;
 static struct toy_texture_view *active_texture_view;
-static int textures_enabled = 1;
+/* Toyc 自托管版的纹理光栅化仍有运行时崩溃风险；纯色路径作为稳定默认值。
+ * 调试纹理渲染时可显式传入 --textures。 */
+static int textures_enabled = 0;
 static unsigned short baked_lightmap[BAKED_LM_W * BAKED_LM_H];
 
 /* A deliberately tiny offline-style light bake.  The map is static, so this
@@ -442,11 +444,14 @@ static void project_vertex(const struct toy_surface *surface,
                            struct toy_screen_vertex *screen)
 {
     int focal = surface->width * 3 / 4;
-    screen->x = surface->width / 2 + view->x * focal / view->z;
-    screen->y = surface->height / 2 - view->y * focal / view->z;
-    screen->z = view->z;
+    int z = view->z < NEAR_Z ? NEAR_Z : view->z;
+    screen->x = surface->width / 2 +
+                (int)((long)view->x * focal / z);
+    screen->y = surface->height / 2 -
+                (int)((long)view->y * focal / z);
+    screen->z = z;
     /* 渲染器深度缓冲使用逆深度，纯色路径也读该字段；必须在投影时填好。 */
-    screen->inv_z = (long)1048576 / view->z;
+    screen->inv_z = (long)1048576 / z;
     screen->light = 256;
     screen->fog = 0;
 }
@@ -456,11 +461,12 @@ static void project_uv_vertex(const struct toy_surface *surface,
                               int u, int v,
                               struct toy_screen_vertex *screen)
 {
+    int z = view->z < NEAR_Z ? NEAR_Z : view->z;
     project_vertex(surface, view, screen);
     screen->u = u; screen->v = v;
-    screen->inv_z = (long)1048576 / view->z;
-    screen->u_over_z = (long)u * 1048576L / view->z;
-    screen->v_over_z = (long)v * 1048576L / view->z;
+    screen->inv_z = (long)1048576 / z;
+    screen->u_over_z = (long)u * 1048576L / z;
+    screen->v_over_z = (long)v * 1048576L / z;
 }
 
 static int draw_world_triangle(struct toy_renderer *renderer,
@@ -477,14 +483,14 @@ static int draw_world_triangle(struct toy_renderer *renderer,
     count = clip_near(input, 3, clipped);
     for (int i = 1; i + 1 < count; i++) {
         struct toy_screen_vertex sa, sb, sc;
-        int area;
+        long area;
         project_vertex(&renderer->surface, &clipped[0], &sa);
         project_vertex(&renderer->surface, &clipped[i], &sb);
         project_vertex(&renderer->surface, &clipped[i + 1], &sc);
         /* Projected coordinates are bounded here, so 32-bit area is safe and
          * avoids Toyc's signed int-to-long promotion bug. */
-        area = (sc.x - sa.x) * (sb.y - sa.y) -
-               (sc.y - sa.y) * (sb.x - sa.x);
+        area = ((long)sc.x - sa.x) * ((long)sb.y - sa.y) -
+               ((long)sc.y - sa.y) * ((long)sb.x - sa.x);
         if (area >= 0) {
             struct toy_screen_vertex swap;
             swap.x = sb.x; swap.y = sb.y; swap.z = sb.z;
@@ -529,15 +535,15 @@ static int draw_world_triangle_tex(struct toy_renderer *renderer,
     count = clip_near_uv(input, 3, clipped);
     for (int i = 1; i + 1 < count; i++) {
         struct toy_screen_vertex sa, sb, sc;
-        int area;
+        long area;
         project_uv_vertex(&renderer->surface, &clipped[0].p,
                           clipped[0].u, clipped[0].v, &sa);
         project_uv_vertex(&renderer->surface, &clipped[i].p,
                           clipped[i].u, clipped[i].v, &sb);
         project_uv_vertex(&renderer->surface, &clipped[i + 1].p,
                           clipped[i + 1].u, clipped[i + 1].v, &sc);
-        area = (sc.x - sa.x) * (sb.y - sa.y) -
-               (sc.y - sa.y) * (sb.x - sa.x);
+        area = ((long)sc.x - sa.x) * ((long)sb.y - sa.y) -
+               ((long)sc.y - sa.y) * ((long)sb.x - sa.x);
         if (area >= 0) {
             struct toy_screen_vertex swap;
             swap.x=sb.x; swap.y=sb.y; swap.z=sb.z;
@@ -1513,8 +1519,8 @@ static void tracer_aim_endpoint(const struct camera *camera,
                                 int *out_z)
 {
     struct vec3 view_end;
-    int dx = ex - game.px;
-    int dz = ez - game.pz;
+    int dx = ex - camera->x;
+    int dz = ez - camera->z;
     int distance = isqrt((long long)dx * dx + (long long)dz * dz);
     int view_x, view_y, view_z;
     if (distance < 1) distance = 1;
@@ -1622,16 +1628,30 @@ static void draw_effect_line(struct toy_surface *surface,
                              int x0, int y0, int x1, int y1,
                              uint32_t color)
 {
+    int bound_x = surface->width * 4;
+    int bound_y = surface->height * 4;
     int dx = x1 > x0 ? x1 - x0 : x0 - x1;
     int dy = y1 > y0 ? y0 - y1 : y1 - y0;
     int sx = x0 < x1 ? 1 : -1;
     int sy = y0 < y1 ? 1 : -1;
     int err = dx + dy;
+    int steps = 0;
+    int max_steps = (surface->width + surface->height) * 4;
+    x0 = clampi(x0, -bound_x, bound_x);
+    x1 = clampi(x1, -bound_x, bound_x);
+    y0 = clampi(y0, -bound_y, bound_y);
+    y1 = clampi(y1, -bound_y, bound_y);
+    dx = x1 > x0 ? x1 - x0 : x0 - x1;
+    dy = y1 > y0 ? y0 - y1 : y1 - y0;
+    sx = x0 < x1 ? 1 : -1;
+    sy = y0 < y1 ? 1 : -1;
+    err = dx + dy;
     for (;;) {
         if (x0 >= 0 && x0 < surface->width &&
             y0 >= 0 && y0 < surface->height)
             put_pixel(surface, x0, y0, color);
         if (x0 == x1 && y0 == y1) break;
+        if (++steps > max_steps) break;
         {
             int e2 = 2 * err;
             if (e2 >= dy) { err += dy; x0 += sx; }
@@ -1887,6 +1907,7 @@ int main(int argc, char **argv)
         } else if (strcmp(argv[arg], "--port") == 0 && arg + 1 < argc)
             net_port = parse_positive_int(argv[++arg], RASTERFALL_NET_DEFAULT_PORT);
         else if (strcmp(argv[arg], "--auto") == 0) auto_mode = 1;
+        else if (strcmp(argv[arg], "--textures") == 0) textures_enabled = 1;
         else if (strcmp(argv[arg], "--no-textures") == 0) textures_enabled = 0;
         else if (strcmp(argv[arg], "--no-stats") == 0) stats_enabled = 0;
         else if (strcmp(argv[arg], "--texture-stats") == 0) texture_stats = 1;
