@@ -29,7 +29,6 @@ safe -1800 1800 4000 5700
 spawn -5200 -3500 -2600 -800 6E2828
 spawn 3500 5200 -500 1400 6E2828
 spawn -3300 -1500 2100 3600 6E2828
-alarm 3300 5200 -3000 -1500
 
 # Horde-area corner ceilings, attached to opposite walls and enlarged.
 model 3500 4400 -500 500 1450 1750 414955 0
@@ -53,14 +52,14 @@ wall -12000 -12000 -12000 7000 1800 5E5965
 wall 12000 12000 -7000 7000 1800 56515D
 
 # Developer area: behind the starting room, with a narrow center doorway.
-# Only the boundary toward the old map/safe room is an air wall.
-box -5500 -1800 -6500 -6300 1800 000000 air
-box 1800 5500 -6500 -6300 1800 000000 air
-# Solid west side wall for the developer area; the summon button is mounted
-# on its room-facing surface.
-box -5500 -5300 -11300 -6500 1800 404A58
-floor -5300 5300 -11300 -6500 20252A
-label -5000 5000 -10800 -10300 FFD060 DEVELOPER_ZONE
+# Two controllable air walls continue from both sides of the safe-room door
+# on the same wall line, all the way to the world boundary. Their footprints
+# are painted immediately in front of that line.
+box -12000 -1800 -5700 -5680 1800 000000 air
+box 1800 12000 -5700 -5680 1800 000000 air
+floor -12000 -1800 -5900 -5700 26394A
+floor 1800 12000 -5900 -5700 26394A
+label -11000 11000 -6200 -6000 70D8FF AIR WALL CONTROL LINE
 
 # Model display plinths (x1 x2 z1 z2 bottom top color), decorative only.
 floor -3600 -1400 -9000 -7800 343B48
@@ -76,9 +75,8 @@ texture -1200 1200 -11180 1050 2 1 1 C08040
 texture 2600 4200 -11180 1050 2 1 1 40A0C0
 label -4500 4500 -10600 -10100 FFD060 TEXTURE_DISPLAY
 
-# Horde summon button on the west side wall, facing into the developer area.
-# (E while highlighted summons 15-20 tracking enemies at map spawn zones.)
-button -5240 -10000 200
+# Horde control is first in the interaction list for the existing logic test.
+button -11940 -10000 200
 
 # Weapon table: full-footprint air box for collision, slab top + four legs
 # rendered. SMG on the west half, shotgun on the east, muzzle toward the door.
@@ -95,3 +93,8 @@ pickup shotgun 250 -7450 -235
 box 820 940 -7570 -7390 -560 6A5538 air
 model 820 940 -7570 -7390 -900 -560 6A5538
 pickup ammo 880 -7480 -520
+
+# All control panels are mounted on the world boundary side walls.
+# (E while highlighted activates a reusable control.)
+button_air -11940 -7600 200
+button_alarm -11940 -3000 200

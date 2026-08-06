@@ -65,10 +65,13 @@ int toy_map_load(const char *path, struct toy_map *m)
                 m->pickup_count++;
             }
         }
-        else if(!strcmp(kind,"button") && m->pickup_count<TOY_MAP_MAX_PICKUPS){
+        else if((!strcmp(kind,"button") || !strcmp(kind,"button_air") ||
+                 !strcmp(kind,"button_alarm")) && m->pickup_count<TOY_MAP_MAX_PICKUPS){
             char *sx=word(&p),*sz=word(&p),*sy=word(&p);
             if(sx&&sz&&sy){
-                m->pickups[m->pickup_count].kind=TOY_MAP_PICKUP_BUTTON;
+                m->pickups[m->pickup_count].kind=!strcmp(kind,"button_air") ?
+                    TOY_MAP_PICKUP_AIR_BUTTON : !strcmp(kind,"button_alarm") ?
+                    TOY_MAP_PICKUP_ALARM_BUTTON : TOY_MAP_PICKUP_BUTTON;
                 m->pickups[m->pickup_count].x=number(sx,10);
                 m->pickups[m->pickup_count].z=number(sz,10);
                 m->pickups[m->pickup_count].y=number(sy,10);

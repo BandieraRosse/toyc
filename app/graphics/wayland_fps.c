@@ -36,8 +36,10 @@
  *       Enter 确认。
  *
  * 【尸潮与地图约定】
- *   开发区西侧墙上的召唤按钮可以重复触发，每次生成 15-20 个持续追踪
- *   玩家的敌人。生成位置不在按钮附近，而是直接从地图定义的 spawn 区
+ *   边界侧墙上的控制按钮均可重复使用：召唤按钮每次生成 15-20 个持续追踪
+ *   玩家的敌人，空气墙按钮切换两段门控碰撞墙，警报按钮切换持续警报。
+ *   警报开启后每秒从地图定义的 spawn 区生成 2-3 个敌人，直到再次关闭。
+ *   生成位置不在按钮附近，而是直接从地图定义的 spawn 区
  *   随机选择 1-3 个区域，并避开玩家的最小距离；正式刷怪区统一来自
  *   map_spawn_zones/map_spawn_count，勿在本文件另造一套坐标。
  *   地图中的 pickup/button 坐标由 map 文件决定；按钮位于侧墙时，渲染代码
@@ -97,6 +99,7 @@
 #define MAX_FRAME_US 250000
 #define MAX_LOGIC_STEPS 4
 #define NEAR_Z 192
+#define ENEMY_RENDER_DISTANCE 24000 /* 3x the old 8000-unit enemy cutoff */
 #define PLAYER_RADIUS 180
 #define MOVE_STEP 76
 #define UV_ONE 65536
@@ -175,6 +178,10 @@ static struct toy_game_box map_safe_rooms[TOY_MAP_MAX_ZONES];
 static struct toy_game_box map_spawn_zones[TOY_MAP_MAX_ZONES];
 static int map_spawn_count;
 static struct toy_game game;   /* 游戏规则状态（main / logic-test 共用） */
+static int air_wall_indices[2] = {-1, -1};
+static int air_wall_enabled = 1;
+static int manual_alarm_enabled;
+static int manual_alarm_timer_ms;
 static struct toy_texture_asset scene_texture;
 static struct toy_texture_view scene_texture_view;
 static struct toy_texture_view wall_texture_view;
@@ -233,9 +240,9 @@ static int baked_light_at(int x, int z)
 
 static int baked_fog_at(int distance)
 {
-    if (distance <= 4500) return 0;
-    if (distance >= 12000) return 210;
-    return (distance - 4500) * 210 / 7500;
+    if (distance <= 12000) return 0;
+    if (distance >= 24000) return 210;
+    return (distance - 12000) * 210 / 12000;
 }
 
 static int world_distance(const struct camera *camera, int x, int z)
@@ -250,14 +257,35 @@ static int fixed_floor_lighting;
 
 static void prepare_map_rules(void)
 {
-    int i;
+    int i, gate_count = 0;
     for (i=0; i<level_map.box_count; i++) {
         map_bounds[i].minx=level_map.boxes[i].minx; map_bounds[i].maxx=level_map.boxes[i].maxx;
         map_bounds[i].minz=level_map.boxes[i].minz; map_bounds[i].maxz=level_map.boxes[i].maxz;
+        if (level_map.boxes[i].air && level_map.boxes[i].minz == -5700 &&
+            level_map.boxes[i].maxz == -5680 && gate_count < 2)
+            air_wall_indices[gate_count++] = i;
     }
     for (i=0; i<level_map.safe_count; i++) map_safe_rooms[i]=level_map.safe_rooms[i];
     map_spawn_count=level_map.spawn_count;
     for (i=0; i<map_spawn_count; i++) map_spawn_zones[i]=level_map.spawn_zones[i].box;
+}
+
+static void set_air_walls_enabled(int enabled)
+{
+    int i, index;
+    air_wall_enabled = enabled != 0;
+    for (i = 0; i < 2; i++) {
+        index = air_wall_indices[i];
+        if (index < 0) continue;
+        if (air_wall_enabled) {
+            map_bounds[index].minx = level_map.boxes[index].minx;
+            map_bounds[index].maxx = level_map.boxes[index].maxx;
+        } else {
+            /* An inverted box is ignored by both collision and ray tests. */
+            map_bounds[index].minx = 20000;
+            map_bounds[index].maxx = 19000;
+        }
+    }
 }
 
 /* Only the distant room boundary uses the stylized wall texture. Gameplay
@@ -272,6 +300,7 @@ static void reset_interactables(void);
 #define HORDE_COUNT_MAX    20
 #define HORDE_MIN_PLAYER_DIST 700
 static int horde_banner_ms;   /* HUD 提示剩余显示时间 */
+static const char *interaction_banner;
 static int smooth_turn_remaining; /* 待完成的水平转向量（turn 单位） */
 
 /* 新局和死亡重开必须走同一路径，避免 toy_game_init 清空世界配置。 */
@@ -287,10 +316,15 @@ static void reset_game(struct camera *camera, uint64_t seed)
     toy_game_set_world(&game, map_bounds, level_map.box_count, level_map.room_limit);
     toy_game_set_campaign(&game, map_safe_rooms, level_map.safe_count,
                           map_spawn_zones, map_spawn_count);
-    toy_game_set_alarm(&game, &level_map.alarm_zone, level_map.has_alarm);
+    toy_game_set_alarm(&game, level_map.has_alarm ? &level_map.alarm_zone : NULL,
+                       level_map.has_alarm ? 1 : -1);
     game.px = camera->x;
     game.pz = camera->z;
     horde_banner_ms = 0;
+    interaction_banner = NULL;
+    manual_alarm_enabled = 0;
+    manual_alarm_timer_ms = 1000;
+    set_air_walls_enabled(1);
     smooth_turn_remaining = 0;
     reset_interactables();
 }
@@ -828,7 +862,7 @@ static int render_button(struct toy_renderer *renderer, const struct camera *cam
 {
     struct vec3 a, b, c, d;
     int pixels = 0;
-    if (side_wall) {
+    if (side_wall == 1) {
         pixels += draw_cuboid(renderer, camera, x - 55, x + 55, y - 55, y + 55,
                               z - 45, z + 55, highlight_tint(0x2E333B, on));
         pixels += draw_cuboid(renderer, camera, x + 55, x + 60, y - 45, y + 45,
@@ -838,6 +872,16 @@ static int render_button(struct toy_renderer *renderer, const struct camera *cam
         b.x = x + 61; b.y = y + 22; b.z = z - 24;
         c.x = x + 61; c.y = y + 22; c.z = z + 24;
         d.x = x + 61; d.y = y - 22; d.z = z + 24;
+    } else if (side_wall == 2) {
+        pixels += draw_cuboid(renderer, camera, x - 55, x + 55, y - 55, y + 55,
+                              z - 45, z + 55, highlight_tint(0x2E333B, on));
+        pixels += draw_cuboid(renderer, camera, x - 60, x - 55, y - 45, y + 45,
+                              z - 45, z + 45, highlight_tint(0x1E2229, on));
+        /* 东侧墙按钮朝向房间（-x） */
+        a.x = x - 61; a.y = y - 22; a.z = z + 24;
+        b.x = x - 61; b.y = y + 22; b.z = z + 24;
+        c.x = x - 61; c.y = y + 22; c.z = z - 24;
+        d.x = x - 61; d.y = y - 22; d.z = z - 24;
     } else {
         pixels += draw_cuboid(renderer, camera, x - 55, x + 55, y - 55, y + 55,
                               z - 45, z + 55, highlight_tint(0x2E333B, on));
@@ -893,9 +937,11 @@ static int render_interactables(struct toy_renderer *renderer,
             pixels += render_smg(renderer, camera, it->x, it->y, it->z, on);
         else if (it->kind == TOY_MAP_PICKUP_SHOTGUN)
             pixels += render_shotgun(renderer, camera, it->x, it->y, it->z, on);
-        else if (it->kind == TOY_MAP_PICKUP_BUTTON)
+        else if (it->kind == TOY_MAP_PICKUP_BUTTON ||
+                 it->kind == TOY_MAP_PICKUP_AIR_BUTTON ||
+                 it->kind == TOY_MAP_PICKUP_ALARM_BUTTON)
             pixels += render_button(renderer, camera, it->x, it->y, it->z, on,
-                                    it->x < -5000);
+                                    it->x < -10000 ? 1 : it->x > 10000 ? 2 : 0);
         else
             pixels += render_ammo_box(renderer, camera, it->x, it->y, it->z, on);
     }
@@ -1117,6 +1163,12 @@ static void draw_interact_prompt(struct toy_renderer *renderer)
     it = &interactables[highlighted];
     if (it->kind == TOY_MAP_PICKUP_BUTTON) {
         snprintf(label, sizeof(label), "E SUMMON HORDE");
+    } else if (it->kind == TOY_MAP_PICKUP_AIR_BUTTON) {
+        snprintf(label, sizeof(label), "E AIR WALLS %s",
+                 air_wall_enabled ? "OFF" : "ON");
+    } else if (it->kind == TOY_MAP_PICKUP_ALARM_BUTTON) {
+        snprintf(label, sizeof(label), "E ALARM %s",
+                 manual_alarm_enabled ? "OFF" : "ON");
     } else if (it->kind == TOY_MAP_PICKUP_AMMO) {
         snprintf(label, sizeof(label), "E TAKE AMMO");
     } else {
@@ -1143,10 +1195,28 @@ static void interact_current(struct interactable *it)
     if (it->kind == TOY_MAP_PICKUP_BUTTON) {
         int n;
         horde_banner_ms = 3500;
+        interaction_banner = "HORDE SUMMONED - THEY WILL FIND YOU";
         n = toy_game_spawn_horde(&game, HORDE_COUNT_MIN, HORDE_COUNT_MAX,
                                  map_spawn_zones, map_spawn_count,
                                  HORDE_MIN_PLAYER_DIST);
         __printf("wayland_fps: horde summoned %d tracking enemies\n", n);
+        return;
+    }
+    if (it->kind == TOY_MAP_PICKUP_AIR_BUTTON) {
+        set_air_walls_enabled(!air_wall_enabled);
+        horde_banner_ms = 1800;
+        interaction_banner = air_wall_enabled ?
+            "AIR WALLS ENABLED" : "AIR WALLS DISABLED";
+        __printf("wayland_fps: air walls %s\n", air_wall_enabled ? "enabled" : "disabled");
+        return;
+    }
+    if (it->kind == TOY_MAP_PICKUP_ALARM_BUTTON) {
+        manual_alarm_enabled = !manual_alarm_enabled;
+        manual_alarm_timer_ms = 1000;
+        horde_banner_ms = 1800;
+        interaction_banner = manual_alarm_enabled ?
+            "ALARM ENABLED - 2-3 ENEMIES EACH SECOND" : "ALARM DISABLED";
+        __printf("wayland_fps: alarm %s\n", manual_alarm_enabled ? "enabled" : "disabled");
         return;
     }
     if (it->kind == TOY_MAP_PICKUP_AMMO) {
@@ -1155,6 +1225,18 @@ static void interact_current(struct interactable *it)
     }
     toy_game_equip_weapon(&game, it->kind == TOY_MAP_PICKUP_SMG ?
                           TOY_GAME_WEAPON_SMG : TOY_GAME_WEAPON_SHOTGUN);
+}
+
+static void update_manual_alarm(int dt_ms)
+{
+    int n;
+    if (!manual_alarm_enabled || game.state != TOY_GAME_PLAYING) return;
+    manual_alarm_timer_ms -= dt_ms;
+    if (manual_alarm_timer_ms > 0) return;
+    manual_alarm_timer_ms += 1000;
+    n = toy_game_spawn_horde(&game, 2, 3, map_spawn_zones, map_spawn_count,
+                             HORDE_MIN_PLAYER_DIST);
+    if (n > 0) __printf("wayland_fps: alarm spawned %d enemies\n", n);
 }
 
 static int render_scene(struct toy_renderer *renderer, const struct camera *camera)
@@ -1524,7 +1606,7 @@ static int render_enemies(struct toy_renderer *renderer,
         center.y = 0;
         center.z = e->z;
         world_to_view(camera, &center, &view);
-        if (view.z > 8000) continue;
+        if (view.z > ENEMY_RENDER_DISTANCE) continue;
         if (e->active == 2) {
             scale = e->dying_ms * 1000 / TOY_GAME_DYING_MS;
             color = 0x5A1A1A;
@@ -1633,6 +1715,11 @@ static void render_hud(struct toy_surface *surface, int fps)
         fb_draw_string((unsigned char *)surface->pixels, 8, hint_y,
                        "START SAFE ROOM - REACH GREEN EXIT", 0x80E080,
                        surface->stride);
+    } else if (manual_alarm_enabled) {
+        snprintf(line, sizeof(line), "ALARM ACTIVE  NEXT %d SEC",
+                 (manual_alarm_timer_ms + 999) / 1000);
+        fb_draw_string((unsigned char *)surface->pixels, 8, hint_y,
+                       line, 0xFF6040, surface->stride);
     } else if (game.alarm_timer_ms > 0) {
         snprintf(line, sizeof(line), "ALARM HORDE %d SEC",
                  (game.alarm_timer_ms + 999) / 1000);
@@ -1643,9 +1730,9 @@ static void render_hud(struct toy_surface *surface, int fps)
                  (game.phase_timer_ms + 999) / 1000);
         fb_draw_string((unsigned char *)surface->pixels, 8, hint_y,
                        line, 0x80E080, surface->stride);
-    } else if (!game.alarm_triggered) {
+    } else if (!manual_alarm_enabled) {
         fb_draw_string((unsigned char *)surface->pixels, 8, hint_y,
-                       "YELLOW BORDER = HORDE TRIGGER", 0xFFD040,
+                       "ALARM OFF - USE RED PANEL", 0xFFD040,
                        surface->stride);
     } else {
         fb_draw_string((unsigned char *)surface->pixels, 8, hint_y,
@@ -1653,11 +1740,10 @@ static void render_hud(struct toy_surface *surface, int fps)
     }
     /* 召唤提示：屏幕中央横幅，短暂显示 */
     if (horde_banner_ms > 0) {
-        static const char *banner = "HORDE SUMMONED - THEY WILL FIND YOU";
         int banner_y = surface->height / 3;
         fb_draw_string((unsigned char *)surface->pixels,
-                       (surface->width - (int)strlen(banner) * FB_FONT_W) / 2,
-                       banner_y, banner, 0xFF3030, surface->stride);
+                       (surface->width - (int)strlen(interaction_banner) * FB_FONT_W) / 2,
+                       banner_y, interaction_banner, 0xFF3030, surface->stride);
     }
 }
 
@@ -2635,9 +2721,9 @@ static int run_logic_test(void)
             if (r->ez < -5700 || r->ez > -3800) return 39;
         }
     }
-    /* 地图拾取物解析：1 个召唤按钮 + 2 把主武器 + 1 个弹药盒，顺序按
-     * 地图文件（按钮行在武器桌前）。 */
-    if (interactable_count != 4 ||
+    /* 地图拾取物解析：3 个控制按钮 + 2 把主武器 + 1 个弹药盒，顺序按
+     * 地图文件（尸潮按钮在武器桌前）。 */
+    if (interactable_count != 6 ||
         interactables[0].kind != TOY_MAP_PICKUP_BUTTON ||
         interactables[1].kind != TOY_MAP_PICKUP_SMG ||
         interactables[3].kind != TOY_MAP_PICKUP_AMMO) return 32;
@@ -2688,11 +2774,11 @@ static int run_logic_test(void)
         aim_cam.cy = -1024;
         if (compute_highlight(&aim_cam) != 3) return 37;
     }
-    /* 召唤按钮：位于开发者区纹理墙西端，E 互动召唤 15-20 个追踪敌人，
+    /* 召唤按钮：位于西侧边界，E 互动召唤 15-20 个追踪敌人，
      * 全部处于持续追踪态且落在三个刷怪点之一的矩形内；再次互动应再次召唤。 */
     {
         int n, i, had;
-        if (interactables[0].x != -5240 || interactables[0].z != -10000)
+        if (interactables[0].x != -11940 || interactables[0].z != -10000)
             return 45;
         had = game.enemies_alive;
         highlighted = 0;
@@ -3267,6 +3353,7 @@ int main(int argc, char **argv)
                                          toy_input_down(&input, KEY_SPACE),
                                          camera.sy, camera.cy,
                                          FIXED_STEP_US / 1000);
+                    update_manual_alarm(FIXED_STEP_US / 1000);
                     fire_edge = 0;
                 } else if (toy_input_pressed(&input, KEY_R)) {
                     /* 死亡或通关结算：R 重开 */
