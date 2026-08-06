@@ -34,6 +34,7 @@ struct toywl_input {
     int pointer_locked;
     unsigned int button;
     int button_pressed;
+    uint32_t button_serial;
     int keyboard_focus_changed;
     int keyboard_focused;
     int key_event_count;
@@ -49,6 +50,7 @@ int toywl_present(struct toywl *wl);
 int toywl_pointer_lock_supported(struct toywl *wl);
 int toywl_set_pointer_lock(struct toywl *wl, int locked);
 int toywl_set_pointer_confine(struct toywl *wl, int confined);
+int toywl_move(struct toywl *wl, uint32_t serial);
 void toywl_close(struct toywl *wl);
 
 #endif

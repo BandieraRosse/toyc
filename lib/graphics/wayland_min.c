@@ -346,6 +346,7 @@ static void handle_pointer(struct toywl *wl, uint16_t opcode,
         wl->pending.pointer_y = wl->pointer_y;
         wl->pending.pointer_moved = 1;
     } else if (opcode == 3 && len >= 16) {
+        wl->pending.button_serial = rd32(p);
         wl->pending.button = rd32(p + 8);
         wl->pending.button_pressed = rd32(p + 12) == WL_POINTER_BUTTON_PRESSED;
     }
@@ -794,6 +795,16 @@ int toywl_set_pointer_confine(struct toywl *wl, int confined)
         wl->pending.pointer_locked = 0;
     }
     return 1;
+}
+
+int toywl_move(struct toywl *wl, uint32_t serial)
+{
+    struct msg_builder m;
+    if (!wl || !wl->toplevel || !wl->seat || !serial) return -1;
+    mb_init(&m, wl->toplevel, 5); /* xdg_toplevel.move */
+    mb_u32(&m, wl->seat);
+    mb_u32(&m, serial);
+    return send_request(wl, &m, -1) < 0 ? -1 : 0;
 }
 
 void toywl_close(struct toywl *wl)

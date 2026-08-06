@@ -45,6 +45,7 @@ int toy_window_poll(struct toy_window *window, struct toy_window_events *events,
         events->pointer_locked = input.pointer_locked;
         events->button = input.button;
         events->button_pressed = input.button_pressed;
+        events->button_serial = input.button_serial;
         events->keyboard_focus_changed = input.keyboard_focus_changed;
         events->keyboard_focused = input.keyboard_focused;
         events->key_event_count = input.key_event_count;
@@ -92,6 +93,12 @@ int toy_window_set_pointer_confine(struct toy_window *window, int confined)
 {
     if (!window) return -1;
     return toywl_set_pointer_confine(window->wayland, confined);
+}
+
+int toy_window_move(struct toy_window *window, uint32_t serial)
+{
+    if (!window) return -1;
+    return toywl_move(window->wayland, serial);
 }
 
 void toy_window_close(struct toy_window *window)

@@ -1127,6 +1127,9 @@ static void draw_startup_menu(struct toy_surface *surface, int screen,
         fb_draw_string((unsigned char *)surface->pixels, 190, 290,
                        "UP DOWN SELECT   ENTER CONFIRM", 0x9AA6B4,
                        surface->stride);
+        fb_draw_string((unsigned char *)surface->pixels, 260, 315,
+                       "DRAG TITLE AREA TO MOVE", 0x73808D,
+                       surface->stride);
         if (error && error[0])
             fb_draw_string((unsigned char *)surface->pixels, 90, 340,
                            error, 0xFF8060, surface->stride);
@@ -1167,6 +1170,11 @@ static int run_startup_menu(struct toy_window *window, struct toy_renderer *rend
         toy_input_begin_frame(input);
         if (toy_window_poll(window, events, 0) < 0) break;
         toy_input_apply(input, events);
+        /* Wayland 的 xdg_toplevel.move 必须使用鼠标按下事件的 serial。
+         * 菜单顶部保留为可拖拽区域，不影响下方按钮操作。 */
+        if (events->button_pressed && events->button == BTN_LEFT &&
+            events->button_serial && events->pointer_y < 70)
+            toy_window_move(window, events->button_serial);
         if (events->close_requested) break;
         if (screen == RASTERFALL_STARTUP_MANUAL_IP) {
             for (int i = 0; i < events->key_event_count; i++) {

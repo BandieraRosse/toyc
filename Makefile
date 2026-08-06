@@ -929,6 +929,8 @@ SELF_LIB_A    := $(BUILD)/toyc_self.a
 SELF_CFLAGS   := -DX86_64_TLIBC=1 \
                   -I include -I include/posix -I include/tlibc \
                   -I arch -I arch/x86_64 -MD
+SELF_HEADERS  := $(wildcard include/*.h include/posix/*.h include/tlibc/*.h \
+                           arch/*.h arch/x86_64/*.h)
 
 # 路径压平：lib/core/io.c → build/self_core_io.o
 SELF_LIBC_C_OBJS   := $(foreach src,$(LIBC_C_SRCS),\
@@ -950,7 +952,7 @@ SELF_APP_EXTRA_OBJS_rasterfall := $(BUILD)/rasterfall_map_self.o $(BUILD)/raster
 
 # .c → .o（toyc）
 define SELF_LIBC_C_rule
-$$(BUILD)/self_$(subst /,_,$(patsubst $(LIBC_DIR)/%.c,%,$(1))).o: $(1) $$(SELF_CC) | $$(BUILD)
+$$(BUILD)/self_$(subst /,_,$(patsubst $(LIBC_DIR)/%.c,%,$(1))).o: $(1) $$(SELF_CC) $$(SELF_HEADERS) | $$(BUILD)
 	@printf "  $(BLUE)  CC(s)  %s\n" "$(1)"
 	$$(SELF_CC) $$(SELF_CFLAGS) -c $(1) -o $$@
 endef
@@ -1026,7 +1028,7 @@ $(BUILD)/rasterfall_viewmodel_self.o: app/graphics/rasterfall/rasterfall_viewmod
 define SELF_APP_rule
 
 # 编译 app 源文件 → .o（toyc）
-$$(BUILD)/$(notdir $(basename $(1)))_self.o: $(1) $$(SELF_CC) | $$(BUILD)
+$$(BUILD)/$(notdir $(basename $(1)))_self.o: $(1) $$(SELF_CC) $$(SELF_HEADERS) | $$(BUILD)
 	@printf "  $(BLUE)  CC(s)  %s\n" "$(1)"
 	$$(SELF_CC) $$(SELF_CFLAGS) -c $(1) -o $$@
 

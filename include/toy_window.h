@@ -35,6 +35,7 @@ struct toy_window_events {
     int pointer_locked;
     unsigned int button;
     int button_pressed;
+    uint32_t button_serial;
     int keyboard_focus_changed;
     int keyboard_focused;
     int key_event_count;
@@ -50,6 +51,7 @@ int toy_window_present(struct toy_window *window);
 int toy_window_pointer_lock_supported(struct toy_window *window);
 int toy_window_set_pointer_lock(struct toy_window *window, int locked);
 int toy_window_set_pointer_confine(struct toy_window *window, int confined);
+int toy_window_move(struct toy_window *window, uint32_t serial);
 void toy_window_close(struct toy_window *window);
 
 #endif
