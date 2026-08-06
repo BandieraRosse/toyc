@@ -43,6 +43,14 @@
 #define KEY_RIGHT 106
 #define KEY_DOWN  108
 #define BTN_LEFT 0x110
+/* 菜单按键位掩码：stall 批次里按下的边沿会在下一轮 begin_frame 被清掉，
+ * 用位掩码跨迭代保留，菜单块消费后逐位清除。 */
+#define MENU_KEY_UP      0x01
+#define MENU_KEY_DOWN    0x02
+#define MENU_KEY_LEFT    0x04
+#define MENU_KEY_RIGHT   0x08
+#define MENU_KEY_ENTER   0x10
+#define MENU_KEY_ESC     0x20
 
 #define FIXED_STEP_US 16667
 #define MAX_FRAME_US 250000
@@ -2459,7 +2467,8 @@ static const char *stats_stage_names[STATS_STAGE_MAX] = {
 struct perf_stats {
     long window_start;              /* 窗口起点（us） */
     int frames;                     /* 已渲染帧数 */
-    long stall_us;                  /* 双缓冲占用等待（us） */
+    long stall_us;                  /* 双缓冲占用等待（us，含 poll 等待） */
+    long wall_us;                   /* begin_frame → 下一帧 begin_frame */
     long stage_us[STATS_STAGE_MAX];
     unsigned long stage_tris[STATS_STAGE_MAX];
     unsigned long stage_pixels[STATS_STAGE_MAX];
@@ -2468,6 +2477,15 @@ struct perf_stats {
     int ring_head;
     long frame_sum;                 /* 窗口内帧时间总和 */
     long frame_max;
+    /* 光栅化像素漏斗与纯色/纹理路径拆分（每帧主 flush 的快照） */
+    unsigned long raster_bbox_px;
+    unsigned long raster_inside_px;
+    unsigned long raster_flat_tris;
+    unsigned long raster_tex_tris;
+    unsigned long raster_flat_px;
+    unsigned long raster_tex_px;
+    long raster_flat_us;
+    long raster_tex_us;
 };
 
 static void perf_init(struct perf_stats *s)
@@ -2516,6 +2534,46 @@ static void perf_add_stall(struct perf_stats *window,
     total->stall_us += us;
 }
 
+/* 帧间隔：wall 从一次 begin_frame 到下一次 begin_frame（含双缓冲等待、
+ * 事件轮询、逻辑与调度）。按循环迭代累计（stall 迭代也算），除以渲染帧
+ * 数即每渲染帧的均值（应≈1e6/fps）。wait 在 dump 中用 wall − 活跃帧
+ * 时间推导，保证恒等对消。 */
+static void perf_add_interval(struct perf_stats *window, struct perf_stats *total,
+                              long wall_us)
+{
+    window->wall_us += wall_us;
+    total->wall_us += wall_us;
+}
+
+/* RASTER 阶段结束后读取渲染器最近一次 flush 的漏斗与路径快照。flat
+ * 三角形/像素 = 本 flush 总数 − 纹理路径（last_tex_* 为覆盖式快照，
+ * overlay 的第二次 flush 不重复计入）。 */
+static void perf_add_raster(struct perf_stats *window, struct perf_stats *total,
+                            const struct toy_renderer *r,
+                            unsigned long tris, unsigned long pixels)
+{
+    unsigned long tex_tris = r->last_tex_tris;
+    unsigned long tex_px = r->last_tex_px;
+    unsigned long flat_tris = tris > tex_tris ? tris - tex_tris : 0;
+    unsigned long flat_px = pixels > tex_px ? pixels - tex_px : 0;
+    window->raster_bbox_px += r->last_bbox_px;
+    total->raster_bbox_px += r->last_bbox_px;
+    window->raster_inside_px += r->last_inside_px;
+    total->raster_inside_px += r->last_inside_px;
+    window->raster_flat_tris += flat_tris;
+    total->raster_flat_tris += flat_tris;
+    window->raster_tex_tris += tex_tris;
+    total->raster_tex_tris += tex_tris;
+    window->raster_flat_px += flat_px;
+    total->raster_flat_px += flat_px;
+    window->raster_tex_px += tex_px;
+    total->raster_tex_px += tex_px;
+    window->raster_flat_us += r->last_flat_us;
+    total->raster_flat_us += r->last_flat_us;
+    window->raster_tex_us += r->last_tex_us;
+    total->raster_tex_us += r->last_tex_us;
+}
+
 /* 排序副本上的最近秩百分位（us）：p95 即第 ceil(0.95*n) 个样本。 */
 static long perf_percentile(const struct perf_stats *s, int pct)
 {
@@ -2545,14 +2603,23 @@ static void perf_dump(const struct perf_stats *s, const char *label)
     avg_us = s->frame_sum / s->frames;
     p95 = s->ring_count > 0 ? perf_percentile(s, 95) : 0;
     p99 = s->ring_count > 0 ? perf_percentile(s, 99) : 0;
+    /* wait = wall − 活跃帧时间：present 到下一次 begin 的间隔（轮询/
+     * 逻辑/调度/组合器背压），由对消恒等式推导，与各阶段统计严格一致 */
+    {
+        long wall_avg = s->wall_us / s->frames;
+        long wait_avg = wall_avg - avg_us;
+        if (wait_avg < 0) wait_avg = 0;
+        __printf("[stats:%s] window=%ld.%03lds frames=%d fps=%ld.%ld "
+                 "frame_us avg=%ld p95=%ld p99=%ld max=%ld "
+                 "wall_us avg=%ld wait_us avg=%ld stall_ms=%ld\n",
+                 label, elapsed / 1000000L, (elapsed % 1000000L) / 1000L,
+                 s->frames, fps10 / 10, fps10 % 10,
+                 avg_us, p95, p99, s->frame_max, wall_avg, wait_avg,
+                 s->stall_us / 1000);
+    }
     total_us = 0;
     for (i = 0; i < STATS_STAGE_MAX; i++) total_us += s->stage_us[i];
     if (total_us <= 0) total_us = 1;
-    __printf("[stats:%s] window=%ld.%03lds frames=%d fps=%ld.%ld "
-             "frame_us avg=%ld p95=%ld p99=%ld max=%ld stall_ms=%ld\n",
-             label, elapsed / 1000000L, (elapsed % 1000000L) / 1000L,
-             s->frames, fps10 / 10, fps10 % 10,
-             avg_us, p95, p99, s->frame_max, s->stall_us / 1000);
     __printf("[stats:%s] %-7s %8s %8s %9s %10s %5s\n", label,
              "stage", "tris/f", "verts/f", "px/f", "us/f", "%time");
     for (i = 0; i < STATS_STAGE_MAX; i++) {
@@ -2567,6 +2634,39 @@ static void perf_dump(const struct perf_stats *s, const char *label)
     }
     __printf("[stats:%s] per-frame total tris=%lu verts=%lu pixels=%lu\n",
              label, tris_all, tris_all * 3UL, pixels_all);
+    {
+        /* 像素漏斗：bbox=包围盒扫描 → inside=边函数覆盖 → depth/shade/
+         * write=深度通过/着色/写入。当前实现三者相等（=raster 阶段实际
+         * 写入像素）；引入提前深度裁剪或增量扫描后会分叉。 */
+        unsigned long bbox = s->raster_bbox_px / (unsigned long)s->frames;
+        unsigned long inside = s->raster_inside_px / (unsigned long)s->frames;
+        unsigned long written =
+            s->stage_pixels[STATS_STAGE_RASTER] / (unsigned long)s->frames;
+        long ib10 = bbox > 0 ? (long)(inside * 1000 / bbox) : 0;
+        long di10 = inside > 0 ? (long)(written * 1000 / inside) : 0;
+        __printf("[stats:%s] funnel px/f bbox=%lu inside=%lu depth=%lu "
+                 "shade=%lu write=%lu inside/bbox=%ld.%ld%% "
+                 "depth/inside=%ld.%ld%%\n",
+                 label, bbox, inside, written, written, written,
+                 ib10 / 10, ib10 % 10, di10 / 10, di10 % 10);
+    }
+    {
+        /* 纯色/纹理路径拆分：像素与三角形来自本帧主 flush 快照，
+         * 耗时为各 worker 路径段计时之和（并行近似，与 stage 墙钟
+         * 不同口径）。 */
+        unsigned long flat_tris = s->raster_flat_tris / (unsigned long)s->frames;
+        unsigned long tex_tris = s->raster_tex_tris / (unsigned long)s->frames;
+        unsigned long flat_px = s->raster_flat_px / (unsigned long)s->frames;
+        unsigned long tex_px = s->raster_tex_px / (unsigned long)s->frames;
+        long flat_us = s->raster_flat_us / s->frames;
+        long tex_us = s->raster_tex_us / s->frames;
+        long path_us = flat_us + tex_us;
+        long fpct = path_us > 0 ? flat_us * 100 / path_us : 0;
+        __printf("[stats:%s] path tris/f flat=%lu tex=%lu px/f flat=%lu "
+                 "tex=%lu us/f flat=%ld tex=%ld time flat=%ld%% tex=%ld%%\n",
+                 label, flat_tris, tex_tris, flat_px, tex_px,
+                 flat_us, tex_us, fpct, 100 - fpct);
+    }
 }
 
 int main(int argc, char **argv)
@@ -2580,11 +2680,13 @@ int main(int argc, char **argv)
     struct control_settings settings;
     struct pause_menu pause_menu;
     long last_time, accumulator = 0, fps_window_start, fps_elapsed;
+    long prev_begin = 0, last_active = 0;   /* 帧间隔统计 */
     int running = 1, pointer_lock_requested = 0, paused = 1;
     int last_pointer_x = 0, last_pointer_y = 0, have_pointer_position = 0;
     int frame_limit = 0, rendered_frames = 0, scene_pixels = 0;
     int display_fps = 0, fps_window_frames = 0;
     int fire_edge = 0;
+    unsigned int menu_pending = 0;   /* stall 批次到达的菜单按键边沿 */
     int interact_consumed = 0;   /* 每帧 E 互动只消费一次 */
     int input_debug = 0, input_event_count = 0, have_last_key = 0;
     int texture_stats = 0;
@@ -2707,31 +2809,51 @@ int main(int argc, char **argv)
         }
         if (paused && game.state == TOY_GAME_PLAYING) {
             int resume_requested = 0;
-            if (toy_input_pressed(&input, KEY_UP)) {
-                pause_menu.selected--;
+            /* 边沿计数：普通路径与 stall 锁存路径的按压各自独立，同一
+             * 迭代都到达时按次数移动（否则两次按压会被 || 合并成一次）。 */
+            int up = toy_input_pressed(&input, KEY_UP) +
+                     ((menu_pending & MENU_KEY_UP) ? 1 : 0);
+            int down = toy_input_pressed(&input, KEY_DOWN) +
+                       ((menu_pending & MENU_KEY_DOWN) ? 1 : 0);
+            if (up > 0) {
+                menu_pending &= ~MENU_KEY_UP;
+                pause_menu.selected -= up;
                 if (pause_menu.selected < 0)
-                    pause_menu.selected = PAUSE_ITEM_COUNT - 1;
+                    pause_menu.selected += PAUSE_ITEM_COUNT;
             }
-            if (toy_input_pressed(&input, KEY_DOWN)) {
-                pause_menu.selected++;
+            if (down > 0) {
+                menu_pending &= ~MENU_KEY_DOWN;
+                pause_menu.selected += down;
                 if (pause_menu.selected >= PAUSE_ITEM_COUNT)
-                    pause_menu.selected = 0;
+                    pause_menu.selected -= PAUSE_ITEM_COUNT;
             }
-            if (toy_input_pressed(&input, KEY_LEFT) ||
-                toy_input_pressed(&input, KEY_RIGHT)) {
-                int change = toy_input_pressed(&input, KEY_RIGHT) ? 1 : -1;
-                if (pause_menu.selected == PAUSE_ITEM_MOUSE)
-                    settings.mouse_level = clampi(settings.mouse_level + change, 0, 15);
-                else if (pause_menu.selected == PAUSE_ITEM_KEYBOARD)
-                    settings.keyboard_level = clampi(settings.keyboard_level + change, 0, 15);
+            {
+                int left = toy_input_pressed(&input, KEY_LEFT) +
+                           ((menu_pending & MENU_KEY_LEFT) ? 1 : 0);
+                int right = toy_input_pressed(&input, KEY_RIGHT) +
+                            ((menu_pending & MENU_KEY_RIGHT) ? 1 : 0);
+                int change = right - left;
+                if (change != 0) {
+                    menu_pending &= ~(MENU_KEY_LEFT | MENU_KEY_RIGHT);
+                    if (pause_menu.selected == PAUSE_ITEM_MOUSE)
+                        settings.mouse_level = clampi(settings.mouse_level + change, 0, 15);
+                    else if (pause_menu.selected == PAUSE_ITEM_KEYBOARD)
+                        settings.keyboard_level = clampi(settings.keyboard_level + change, 0, 15);
+                }
             }
-            if (toy_input_pressed(&input, KEY_ENTER)) {
+            if (toy_input_pressed(&input, KEY_ENTER) ||
+                (menu_pending & MENU_KEY_ENTER)) {
+                menu_pending &= ~MENU_KEY_ENTER;
                 if (pause_menu.selected == PAUSE_ITEM_RESUME)
                     resume_requested = 1;
                 else if (pause_menu.selected == PAUSE_ITEM_QUIT)
                     running = 0;
             }
-            if (toy_input_pressed(&input, KEY_ESC)) resume_requested = 1;
+            if (toy_input_pressed(&input, KEY_ESC) ||
+                (menu_pending & MENU_KEY_ESC)) {
+                menu_pending &= ~MENU_KEY_ESC;
+                resume_requested = 1;
+            }
             if (resume_requested) {
             int capture_result = toy_window_set_pointer_lock(window, 1);
             pointer_lock_requested = capture_result > 0;
@@ -2744,7 +2866,10 @@ int main(int argc, char **argv)
                      pointer_lock_requested ? "requested" : "unavailable");
             }
         }
-        if (!paused && !resumed && toy_input_pressed(&input, KEY_ESC)) {
+        if (!paused && !resumed &&
+            (toy_input_pressed(&input, KEY_ESC) ||
+             (menu_pending & MENU_KEY_ESC))) {
+            menu_pending &= ~MENU_KEY_ESC;
             if (game.state == TOY_GAME_OVER || game.state == TOY_GAME_WON)
                 running = 0;
             else {
@@ -2850,8 +2975,19 @@ int main(int argc, char **argv)
         if (!paused) sync_fire_effects(&camera);
         if (accumulator >= FIXED_STEP_US) accumulator %= FIXED_STEP_US;
         perf_end_stage(&stats, &stats_total, STATS_STAGE_LOGIC, &t_stage, 0, 0);
-        /* 帧渲染计时从申请缓冲开始；双缓冲占用时的等待计入 stall */
+        /* 帧渲染计时从申请缓冲开始；双缓冲占用时的等待计入 stall。
+         * 帧间隔：本次 begin_frame 距上次的墙钟时间 wall，与上次渲染
+         * 帧的活跃时间相减得到 wait（轮询/逻辑/调度/组合器等待），
+         * 用来解释平均帧率与各阶段活跃耗时之间的缺口。 */
+        /* 帧间隔：本次 begin_frame 距上次的墙钟时间 wall（含双缓冲等待、
+         * 事件轮询、逻辑与调度）。循环会在双缓冲被占用时反复走 stall 路径
+         * 而不渲染，wall 按迭代累计、除以渲染帧数即 1/fps；wait（present
+         * 到下一次 begin 的间隔）在 dump 中用 wall − 活跃帧时间推导，
+         * 与各阶段统计严格对消。 */
         t_frame = monotonic_us();
+        if (prev_begin > 0)
+            perf_add_interval(&stats, &stats_total, t_frame - prev_begin);
+        prev_begin = t_frame;
         t_stage = t_frame;
         ready = toy_window_begin_frame(window, &surface);
         if (ready < 0) break;
@@ -2861,18 +2997,37 @@ int main(int argc, char **argv)
              * 继续收输入。等待批次必须立即并入输入状态——若沿用共用
              * events，下一轮 poll 会覆盖这批事件，按键释放事件丢失后
              * key_down 无法清零，角色会持续移动不受控制（粘键）。 */
-            perf_add_stall(&stats, &stats_total, monotonic_us() - t_frame);
             if (toy_window_poll(window, &stall_events, 1000) < 0) break;
+            /* stall 从申请缓冲计到等回 frame callback（含 poll 等待），
+             * 即 wait 中双缓冲背压的部分。 */
+            perf_add_stall(&stats, &stats_total, monotonic_us() - t_frame);
             toy_input_apply(&input, &stall_events);
-            /* 等待批次的射击边沿同样不能丢：鼠标点击不经过 apply，
-             * Space 按下边沿会在下一轮 begin_frame 被清掉——手枪
-             * 单发依赖边沿，漏一次就是吞键（连发武器靠按住不受影响）。 */
+            /* 等待批次的射击/菜单按键边沿不能丢，也不能重复：菜单块在
+             * 迭代顶部已消费过本迭代的事件，此时 key_pressed 里可能
+             * 残留旧边沿（begin_frame 只在迭代顶部清）——再读
+             * key_pressed 锁存会让一次按键触发两次（暂停后立即恢复、
+             * 按一下菜单动两格）。只能从本批次原始事件取边沿，锁存到
+             * menu_pending/fire_edge 由下一迭代消费。Esc 在暂停和游戏
+             * 中都要保留，由下一迭代的消费方按状态决定语义。 */
             if (!paused && !resumed) {
                 if (stall_events.button_pressed &&
                     stall_events.button == BTN_LEFT)
                     fire_edge = 1;
-                if (toy_input_pressed(&input, KEY_SPACE))
+            }
+            for (int i = 0; i < stall_events.key_event_count; i++) {
+                unsigned int k;
+                if (!stall_events.key_events[i].pressed) continue;
+                k = stall_events.key_events[i].key;
+                if (!paused && !resumed && k == KEY_SPACE)
                     fire_edge = 1;
+                if (paused && !resumed) {
+                    if (k == KEY_UP) menu_pending |= MENU_KEY_UP;
+                    else if (k == KEY_DOWN) menu_pending |= MENU_KEY_DOWN;
+                    else if (k == KEY_LEFT) menu_pending |= MENU_KEY_LEFT;
+                    else if (k == KEY_RIGHT) menu_pending |= MENU_KEY_RIGHT;
+                    else if (k == KEY_ENTER) menu_pending |= MENU_KEY_ENTER;
+                }
+                if (k == KEY_ESC) menu_pending |= MENU_KEY_ESC;
             }
             continue;
         }
@@ -2894,6 +3049,8 @@ int main(int argc, char **argv)
             scene_pixels += stage_pixels;
             perf_end_stage(&stats, &stats_total, STATS_STAGE_RASTER,
                            &t_stage, prev_tris, (unsigned long)stage_pixels);
+            perf_add_raster(&stats, &stats_total, &renderer, prev_tris,
+                            (unsigned long)stage_pixels);
             /* 直接写屏与第二次光栅化（拾取物）都归入 overlay 阶段 */
             prev_tris = renderer.submitted_triangles;
             stage_pixels = 0;
@@ -2935,7 +3092,8 @@ int main(int argc, char **argv)
             rendered_frames++;
             fps_window_frames++;
             now = monotonic_us();
-            perf_record_frame(&stats, &stats_total, now - t_frame);
+            last_active = now - t_frame;
+            perf_record_frame(&stats, &stats_total, last_active);
             fps_elapsed = now - fps_window_start;
             if (fps_elapsed >= 1000000) {
                 display_fps = (int)((long long)fps_window_frames * 1000000 /

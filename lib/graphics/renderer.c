@@ -38,6 +38,28 @@ static int clampi(int value, int low, int high)
     return value;
 }
 
+/* tlibc 的 __clock_gettime 是裸系统调用（无 vdso），逐命令计时会显著
+ * 污染测量本身，因此路径耗时只按“路径段切换”取钟：场景按类型成组提交，
+ * 每帧仅数次调用。 */
+static long renderer_monotonic_us(void)
+{
+    struct timespec now;
+    if (__clock_gettime(CLOCK_MONOTONIC, &now) < 0) return 0;
+    return now.tv_sec * 1000000L + now.tv_nsec / 1000;
+}
+
+/* 收拢当前路径段的计时（worker_rasterize 与单线程降级路径在命令循环
+ * 结束后调用）。 */
+static void close_runs(struct toy_render_worker *worker)
+{
+    if (worker->last_path >= 0) {
+        long dt = renderer_monotonic_us() - worker->path_start;
+        if (worker->last_path) worker->tex_us += dt;
+        else worker->flat_us += dt;
+        worker->last_path = -1;
+    }
+}
+
 void toy_renderer_init(struct toy_renderer *renderer)
 {
     if (renderer) memset(renderer, 0, sizeof(struct toy_renderer));
@@ -46,6 +68,7 @@ void toy_renderer_init(struct toy_renderer *renderer)
 /* ── 条带化逐像素光栅化（y 范围由调用方给定，数学与单线程版完全一致） ── */
 
 static long raster_flat(struct toy_renderer *renderer,
+                        struct toy_render_worker *worker,
                         const struct toy_screen_vertex *a,
                         const struct toy_screen_vertex *b,
                         const struct toy_screen_vertex *c,
@@ -54,6 +77,7 @@ static long raster_flat(struct toy_renderer *renderer,
 {
     struct toy_surface *surface = &renderer->surface;
     int y, x, drawn = 0;
+    unsigned long inside = 0;
     for (y = y0; y <= y1; y++) {
         uint32_t *row = (uint32_t *)((unsigned char *)surface->pixels +
                                      y * surface->stride);
@@ -62,6 +86,7 @@ static long raster_flat(struct toy_renderer *renderer,
             long w1 = edge(c, a, x, y);
             long w2 = edge(a, b, x, y);
             if (w0 <= 0 && w1 <= 0 && w2 <= 0) {
+                inside++;
                 int z = (int)((w0 * a->z + w1 * b->z + w2 * c->z) / area);
                 int at = y * surface->width + x;
                 if (z < renderer->depth[at]) {
@@ -72,6 +97,7 @@ static long raster_flat(struct toy_renderer *renderer,
             }
         }
     }
+    worker->inside_px += inside;
     return drawn;
 }
 
@@ -122,6 +148,7 @@ static uint32_t texture_sample(const struct toy_texture_view *t,
 }
 
 static long raster_tex(struct toy_renderer *renderer,
+                       struct toy_render_worker *worker,
                        const struct toy_screen_vertex *a,
                        const struct toy_screen_vertex *b,
                        const struct toy_screen_vertex *c,
@@ -134,6 +161,7 @@ static long raster_tex(struct toy_renderer *renderer,
 {
     struct toy_surface *surface = &renderer->surface;
     int y, x, drawn = 0;
+    unsigned long inside = 0;
     for (y = y0; y <= y1; y++) {
         uint32_t *row = (uint32_t *)((unsigned char *)surface->pixels +
                                      y * surface->stride);
@@ -142,6 +170,7 @@ static long raster_tex(struct toy_renderer *renderer,
             long w1 = edge(c, a, x, y);
             long w2 = edge(a, b, x, y);
             if (w0 <= 0 && w1 <= 0 && w2 <= 0) {
+                inside++;
                 long z = (w0 * a->z + w1 * b->z + w2 * c->z) / area;
                 int at = y * surface->width + x;
                 if (z < renderer->depth[at]) {
@@ -162,6 +191,7 @@ static long raster_tex(struct toy_renderer *renderer,
             }
         }
     }
+    worker->inside_px += inside;
     return drawn;
 }
 
@@ -182,14 +212,28 @@ static void rasterize_cmd(struct toy_renderer *renderer,
                           int y0, int y1,
                           struct toy_render_worker *worker)
 {
+    /* 路径段计时：命令类型翻转时才取一次钟（见 renderer_monotonic_us
+     * 注释）；同段内两条带的光栅化都累计进该路径。 */
+    if (cmd->textured != worker->last_path) {
+        if (worker->last_path >= 0) {
+            long dt = renderer_monotonic_us() - worker->path_start;
+            if (worker->last_path) worker->tex_us += dt;
+            else worker->flat_us += dt;
+        }
+        worker->last_path = cmd->textured;
+        worker->path_start = renderer_monotonic_us();
+    }
+    /* 包围盒扫描像素：内层循环的精确迭代数（x 全宽 × 本带裁剪后行数） */
+    worker->bbox_px += (unsigned long)(cmd->bbox_maxx - cmd->bbox_minx + 1) *
+                       (unsigned long)(y1 - y0 + 1);
     if (cmd->textured)
-        worker->pixels += raster_tex(renderer, &cmd->a, &cmd->b, &cmd->c,
+        worker->pixels += raster_tex(renderer, worker, &cmd->a, &cmd->b, &cmd->c,
                                      cmd->area, cmd->bbox_minx, cmd->bbox_maxx,
                                      y0, y1, cmd->texture, cmd->repeat,
                                      cmd->fallback, &worker->textured_pixels,
                                      &worker->texture_fallback_pixels);
     else
-        worker->pixels += raster_flat(renderer, &cmd->a, &cmd->b, &cmd->c,
+        worker->pixels += raster_flat(renderer, worker, &cmd->a, &cmd->b, &cmd->c,
                                       cmd->area, cmd->bbox_minx,
                                       cmd->bbox_maxx, y0, y1, cmd->color);
 }
@@ -367,6 +411,7 @@ static void worker_rasterize(struct toy_renderer *renderer, int id,
             if (y0 <= y1) rasterize_cmd(renderer, cmd, y0, y1, worker);
         }
     }
+    close_runs(worker);
 }
 
 static void *render_worker_main(void *arg)
@@ -393,6 +438,12 @@ static void *render_worker_main(void *arg)
         worker->pixels = 0;
         worker->textured_pixels = 0;
         worker->texture_fallback_pixels = 0;
+        worker->bbox_px = 0;
+        worker->inside_px = 0;
+        worker->flat_us = 0;
+        worker->tex_us = 0;
+        worker->last_path = -1;
+        worker->path_start = 0;
         if (renderer->job_is_clear)
             worker_clear(renderer, worker->id);
         else
@@ -489,6 +540,13 @@ int toy_renderer_begin(struct toy_renderer *renderer,
     renderer->texture_fallback_pixels = 0;
     renderer->submitted_triangles = 0;
     renderer->submitted_vertices = 0;
+    renderer->last_bbox_px = 0;
+    renderer->last_inside_px = 0;
+    renderer->last_tex_px = 0;
+    renderer->last_tex_tris = 0;
+    renderer->tex_tris_mark = 0;
+    renderer->last_flat_us = 0;
+    renderer->last_tex_us = 0;
     /* Keep this self-host friendly: avoid a whole-structure assignment here. */
     renderer->surface.pixels = surface->pixels;
     renderer->surface.width = surface->width;
@@ -504,7 +562,8 @@ int toy_renderer_begin(struct toy_renderer *renderer,
 int toy_renderer_flush(struct toy_renderer *renderer)
 {
     long total = 0;
-    unsigned long tex = 0, fallback = 0;
+    unsigned long tex = 0, fallback = 0, bbox = 0, inside = 0;
+    long flat_us = 0, tex_us = 0;
     if (!renderer) return 0;
     if (renderer->worker_count > 0) {
         renderer_dispatch(renderer, 0, 0);
@@ -515,24 +574,44 @@ int toy_renderer_flush(struct toy_renderer *renderer)
             total += renderer->workers[i].pixels;
             tex += renderer->workers[i].textured_pixels;
             fallback += renderer->workers[i].texture_fallback_pixels;
+            bbox += renderer->workers[i].bbox_px;
+            inside += renderer->workers[i].inside_px;
+            flat_us += renderer->workers[i].flat_us;
+            tex_us += renderer->workers[i].tex_us;
         }
     } else {
         /* 单线程降级：整屏一条带，统计进栈上 worker 壳。 */
         struct toy_render_worker local;
         memset(&local, 0, sizeof(local));
         local.renderer = renderer;
+        local.last_path = -1;
         for (int i = 0; i < renderer->cmd_count; i++) {
             const struct toy_raster_cmd *cmd = &renderer->cmds[i];
             rasterize_cmd(renderer, cmd, cmd->bbox_miny, cmd->bbox_maxy,
                           &local);
         }
+        close_runs(&local);
         total = local.pixels;
         tex = local.textured_pixels;
         fallback = local.texture_fallback_pixels;
+        bbox = local.bbox_px;
+        inside = local.inside_px;
+        flat_us = local.flat_us;
+        tex_us = local.tex_us;
         renderer->cmd_count = 0;
     }
     renderer->textured_pixels += tex;
     renderer->texture_fallback_pixels += fallback;
+    /* 本 flush 的漏斗与路径快照（覆盖式，begin 清零；flat 三角形/像素
+     * 由调用方用 total 与 last_tex_* 相减获得） */
+    renderer->last_bbox_px = bbox;
+    renderer->last_inside_px = inside;
+    renderer->last_tex_px = tex;
+    renderer->last_tex_tris = renderer->textured_triangles -
+                              renderer->tex_tris_mark;
+    renderer->tex_tris_mark = renderer->textured_triangles;
+    renderer->last_flat_us = flat_us;
+    renderer->last_tex_us = tex_us;
     return (int)total;
 }
 

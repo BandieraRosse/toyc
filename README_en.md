@@ -53,10 +53,12 @@ The FPS v0.2 slice loads `assets/generated/wall.ttex` by default and uses neares
 RGB888 sampling on walls, floors, and boxes. Use `--no-textures` for the pure-color
 path and `--texture-stats` for textured triangle/pixel/fallback counters. Every
 5 seconds the app prints frame statistics to the terminal: average FPS, frame
-render time mean/p95/p99/max, and per-stage (logic/begin/scene/enemies/raster/
-overlay/present) per-frame averages of triangle, vertex, pixel and time (with
-time share), with a full-run summary on exit; `--no-stats` disables that
-output. Preview with
+render time mean/p95/p99/max, frame intervals (wall/wait/stall, explaining the
+gap between average FPS and active render time), per-stage (logic/begin/scene/
+enemies/raster/overlay/present) per-frame averages of triangle, vertex, pixel
+and time (with time share), the raster pixel funnel (bbox scan → coverage →
+depth pass) and the flat/textured path split, with a full-run summary on exit;
+`--no-stats` disables that output. Preview with
 `build/wayland_fps --frames 300 --texture-stats` under Wayland; use
 `build/wayland_fps --logic-test` for the headless regression preview.
 

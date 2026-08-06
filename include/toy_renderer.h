@@ -51,6 +51,13 @@ struct toy_render_worker {
     long pixels;
     unsigned long textured_pixels;
     unsigned long texture_fallback_pixels;
+    /* 逐像素漏斗与路径统计（job 开始清零，主线程 flush 后汇总） */
+    unsigned long bbox_px;    /* 包围盒内实际扫描像素（逐条带精确） */
+    unsigned long inside_px;  /* 通过边函数覆盖测试的像素 */
+    long flat_us;             /* 纯色路径光栅化累计耗时（us，路径段计时） */
+    long tex_us;              /* 纹理路径光栅化累计耗时（us） */
+    int last_path;            /* 路径段计时：上一条命令类型（-1=无） */
+    long path_start;          /* 当前路径段起点（us） */
 };
 
 struct toy_renderer {
@@ -64,6 +71,16 @@ struct toy_renderer {
      * toy_renderer_begin 清零；供调用方按阶段做性能统计。 */
     unsigned long submitted_triangles;
     unsigned long submitted_vertices;
+    /* 最近一次 flush 的逐像素漏斗与路径统计；调用方在 flush 返回后读取
+     * （覆盖式写入，非累计），toy_renderer_begin 清零。flat 三角形与像素
+     * 由调用方用本 flush 的总数减去 last_tex_* 获得。 */
+    unsigned long last_bbox_px;
+    unsigned long last_inside_px;
+    unsigned long last_tex_px;
+    unsigned long last_tex_tris;
+    long last_flat_us;
+    long last_tex_us;
+    unsigned long tex_tris_mark;   /* textured_triangles 的 flush 分界点 */
     /* 命令列表（记录阶段） */
     struct toy_raster_cmd *cmds;
     int cmd_count;

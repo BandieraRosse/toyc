@@ -48,8 +48,10 @@ v0.1 不包含压缩、FBX、glTF、骨骼动画或 GUI 编辑器。
 FPS 的 v0.2 纹理切片默认加载 `assets/generated/wall.ttex`，将 nearest RGB888
 采样用于墙、地板和箱体；`--no-textures` 切回纯色，`--texture-stats` 输出纹理
 三角形、像素和占位纹理统计。每 5 秒向终端输出一次性能统计：平均帧率、帧渲染
-时间均值/p95/p99/最长，以及 logic/begin/scene/enemies/raster/overlay/present
-各阶段平均每帧的三角形、顶点、像素与耗时（及占比），退出时再输出全量汇总；
+时间均值/p95/p99/最长、帧间隔（wall/wait/stall，用于解释平均帧率与活跃渲染
+耗时的缺口），以及 logic/begin/scene/enemies/raster/overlay/present 各阶段
+平均每帧的三角形、顶点、像素与耗时（及占比），外加光栅化像素漏斗（包围盒
+扫描→覆盖测试→深度通过）与纯色/纹理路径拆分；退出时再输出全量汇总；
 `--no-stats` 关闭该输出。可用 `build/wayland_fps --frames 300 --texture-stats`
 在 Wayland 环境预览，`build/wayland_fps --logic-test` 为无窗口回归预览。
 

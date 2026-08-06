@@ -279,8 +279,29 @@ int toy_pulse_open(struct toy_pulse *p, unsigned int rate,
     memset(&addr, 0, sizeof(addr));
     addr.sun_family = AF_UNIX;
     strcpy(addr.sun_path, TOYC_PULSE_SOCKET);
-    ret = connect(p->fd, (const struct sockaddr *)&addr, sizeof(addr));
-    if (ret < 0) goto fail;
+    /* WSLg 的 PulseServer 偶发失去响应（accept backlog 占满、不再收
+     * 连接），阻塞 connect 会无限期卡死整个启动；改为非阻塞 + 超时，
+     * 连不上按“音频不可用”降级，窗口照常打开。 */
+    {
+        int saved_flags = __fcntl(p->fd, F_GETFL, 0);
+        if (saved_flags >= 0)
+            __fcntl(p->fd, F_SETFL, (unsigned long)(saved_flags | O_NONBLOCK));
+        /* tlibc 的 syscall 返回裸内核值：错误为负 errno（无 errno 变量） */
+        ret = connect(p->fd, (const struct sockaddr *)&addr, sizeof(addr));
+        if (ret < 0 && ret != -EINPROGRESS)
+            ret = -1;
+        else if (ret < 0) {
+            /* EINPROGRESS：poll 可写即连接完成，1 秒超时按失败降级 */
+            struct pollfd pfd;
+            pfd.fd = p->fd;
+            pfd.events = POLLOUT;
+            pfd.revents = 0;
+            ret = __poll(&pfd, 1, 1000) > 0 ? 0 : -1;
+        }
+        if (saved_flags >= 0)
+            __fcntl(p->fd, F_SETFL, (unsigned long)saved_flags);
+        if (ret < 0) goto fail;
+    }
 
     memset(cookie, 0, sizeof(cookie));
     memset(&b, 0, sizeof(b));
