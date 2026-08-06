@@ -117,22 +117,22 @@ static int run_logic_test(void)
     /* 弹道/粒子渲染冒烟：轴向弹道 + 终点越出右屏的弹道（屏幕裁剪与
      * 偏移线边界） + 远处粒子 */
     {
-        struct tracer *t = &tracers[0];
-        struct particle *p = &particles[0];
+        struct rasterfall_tracer *t = &effects.tracers[0];
+        struct rasterfall_particle *p = &effects.particles[0];
         t->active = 1;
         t->sx = camera.x;
-        t->sy = TRACER_Y;
+        t->sy = RASTERFALL_TRACER_Y;
         t->sz = camera.z;
         t->ex = camera.x;
         t->ez = camera.z - 3000;
         t->life_ms = 100;
-        tracers[1].active = 1;
-        tracers[1].sx = camera.x;
-        tracers[1].sy = TRACER_Y;
-        tracers[1].sz = camera.z;
-        tracers[1].ex = camera.x + 4000;
-        tracers[1].ez = camera.z - 3000;
-        tracers[1].life_ms = 100;
+        effects.tracers[1].active = 1;
+        effects.tracers[1].sx = camera.x;
+        effects.tracers[1].sy = RASTERFALL_TRACER_Y;
+        effects.tracers[1].sz = camera.z;
+        effects.tracers[1].ex = camera.x + 4000;
+        effects.tracers[1].ez = camera.z - 3000;
+        effects.tracers[1].life_ms = 100;
         p->active = 1;
         p->x = camera.x + 200;
         p->y = -350;
@@ -140,8 +140,7 @@ static int run_logic_test(void)
         p->life_ms = 100;
         render_tracers(&renderer, &camera);
         render_particles(&renderer, &camera);
-        memset(tracers, 0, sizeof(tracers));
-        memset(particles, 0, sizeof(particles));
+        rasterfall_effects_reset_fire(&effects);
     }
     /* 开发者区域场景：纹理墙/模型台座渲染 + 真实开火产生弹道与命中
      * 火花（向北穿门洞直达最大射程长弹道，向西命中空气墙 1800）。
@@ -154,18 +153,17 @@ static int run_logic_test(void)
         if (toy_game_equip_weapon(&game, TOY_GAME_WEAPON_SMG) != 1) return 40;
         render_scene(&renderer, &camera);
         toy_renderer_flush(&renderer);
-        last_fire_seq = game.fire_seq;
+        effects.last_fire_seq = game.fire_seq;
         toy_game_fire(&game, 0, 1024);
         sync_fire_effects(&camera);
         toy_game_fire(&game, -1024, 0);
         sync_fire_effects(&camera);
-        update_effects(16);
+        rasterfall_effects_update(&effects, 16);
         render_tracers(&renderer, &camera);
         render_particles(&renderer, &camera);
         /* 第一人称武器模型冒烟：SMG 几何进入光栅器 */
         render_viewmodel(&renderer);
-        memset(tracers, 0, sizeof(tracers));
-        memset(particles, 0, sizeof(particles));
+        rasterfall_effects_reset_fire(&effects);
     }
     toy_renderer_destroy(&renderer);
     tlibc_free(pixels);
@@ -404,4 +402,3 @@ static int run_logic_test(void)
     __printf("rasterfall: logic test passed\n");
     return 0;
 }
-

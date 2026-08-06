@@ -754,11 +754,12 @@ APP_SRCS    := $(shell find $(APP_DIR) -name '*.c' \
                     ! -path '$(APP_DIR)/graphics/rasterfall/rasterfall_map.c' \
                     ! -path '$(APP_DIR)/graphics/rasterfall/rasterfall_hud.c' \
                     ! -path '$(APP_DIR)/graphics/rasterfall/rasterfall_audio.c' \
+                    ! -path '$(APP_DIR)/graphics/rasterfall/rasterfall_effects.c' \
                     ! -path '$(APP_DIR)/graphics/rasterfall/rasterfall_perf.c' | LANG=C sort)
 APP_NAMES   := $(sort $(basename $(notdir $(APP_SRCS))))
 APP_OBJS    := $(foreach src,$(APP_SRCS),$(BUILD)/$(notdir $(basename $(src))).o)
 APP_TARGETS := $(foreach name,$(APP_NAMES),$(BUILD)/$(name))
-APP_EXTRA_OBJS_rasterfall := $(BUILD)/rasterfall_map.o $(BUILD)/rasterfall_hud.o $(BUILD)/rasterfall_audio.o $(BUILD)/rasterfall_perf.o
+APP_EXTRA_OBJS_rasterfall := $(BUILD)/rasterfall_map.o $(BUILD)/rasterfall_hud.o $(BUILD)/rasterfall_audio.o $(BUILD)/rasterfall_effects.o $(BUILD)/rasterfall_perf.o
 
 # ─── 库编译规则 ────────────────────────────────────────────────
 
@@ -776,6 +777,11 @@ $(BUILD)/rasterfall_hud.o: app/graphics/rasterfall/rasterfall_hud.c \
 
 $(BUILD)/rasterfall_audio.o: app/graphics/rasterfall/rasterfall_audio.c \
                              app/graphics/rasterfall/rasterfall_audio.h | $(BUILD)
+	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
+	$(GCC) $(LIBC_CFLAGS) -I app/graphics/rasterfall -c $< -o $@
+
+$(BUILD)/rasterfall_effects.o: app/graphics/rasterfall/rasterfall_effects.c \
+                               app/graphics/rasterfall/rasterfall_effects.h | $(BUILD)
 	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
 	$(GCC) $(LIBC_CFLAGS) -I app/graphics/rasterfall -c $< -o $@
 
@@ -826,6 +832,7 @@ $(foreach src,$(APP_SRCS),$(eval $(call APP_rule,$(src))))
 $(BUILD)/rasterfall.o: app/graphics/rasterfall/rasterfall_hud.h \
                        app/graphics/rasterfall/rasterfall_logic_test.inc \
                        app/graphics/rasterfall/rasterfall_audio.h \
+                       app/graphics/rasterfall/rasterfall_effects.h \
                        app/graphics/rasterfall/rasterfall_perf.h
 
 # ─── 目标 ───────────────────────────────────────────────────────
@@ -855,6 +862,7 @@ clean-app:
 	rm -f $(BUILD)/rasterfall_map.o $(BUILD)/rasterfall_map_self.o \
 	      $(BUILD)/rasterfall_hud.o $(BUILD)/rasterfall_hud_self.o \
       $(BUILD)/rasterfall_audio.o $(BUILD)/rasterfall_audio_self.o \
+      $(BUILD)/rasterfall_effects.o $(BUILD)/rasterfall_effects_self.o \
       $(BUILD)/rasterfall_perf.o $(BUILD)/rasterfall_perf_self.o
 
 # ─── 依赖文件包含 ───────────────────────────────────────────────
@@ -897,7 +905,7 @@ SELF_LIBC_OBJS     := $(SELF_LIBC_C_OBJS) $(SELF_LIBC_ASM_OBJS)
 SELF_APP_NAMES   := $(APP_NAMES)
 SELF_APP_OBJS    := $(foreach name,$(SELF_APP_NAMES),$(BUILD)/$(name)_self.o)
 SELF_APP_TARGETS := $(foreach name,$(SELF_APP_NAMES),$(BUILD)/$(name)_self)
-SELF_APP_EXTRA_OBJS_rasterfall := $(BUILD)/rasterfall_map_self.o $(BUILD)/rasterfall_hud_self.o $(BUILD)/rasterfall_audio_self.o $(BUILD)/rasterfall_perf_self.o
+SELF_APP_EXTRA_OBJS_rasterfall := $(BUILD)/rasterfall_map_self.o $(BUILD)/rasterfall_hud_self.o $(BUILD)/rasterfall_audio_self.o $(BUILD)/rasterfall_effects_self.o $(BUILD)/rasterfall_perf_self.o
 
 # ─── 库编译规则 ────────────────────────────────────────────────
 
@@ -937,6 +945,11 @@ $(BUILD)/rasterfall_hud_self.o: app/graphics/rasterfall/rasterfall_hud.c \
 
 $(BUILD)/rasterfall_audio_self.o: app/graphics/rasterfall/rasterfall_audio.c \
                                   app/graphics/rasterfall/rasterfall_audio.h $(SELF_CC) | $(BUILD)
+	@printf "  $(BLUE)  CC(s)  %s\n" "$<"
+	$(SELF_CC) $(SELF_CFLAGS) -I app/graphics/rasterfall -c $< -o $@
+
+$(BUILD)/rasterfall_effects_self.o: app/graphics/rasterfall/rasterfall_effects.c \
+                                    app/graphics/rasterfall/rasterfall_effects.h $(SELF_CC) | $(BUILD)
 	@printf "  $(BLUE)  CC(s)  %s\n" "$<"
 	$(SELF_CC) $(SELF_CFLAGS) -I app/graphics/rasterfall -c $< -o $@
 

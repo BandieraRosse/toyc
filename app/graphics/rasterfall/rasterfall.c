@@ -73,6 +73,7 @@
 #include "rasterfall_map.h"
 #include "rasterfall_hud.h"
 #include "rasterfall_audio.h"
+#include "rasterfall_effects.h"
 #include "math.h"
 
 #define KEY_ESC   1
@@ -939,7 +940,7 @@ static int render_interactables(struct toy_renderer *renderer,
 
 #define VIEWMODEL_KICK_MAX 110
 
-static int weapon_kick;   /* 开火瞬间置最大，随逻辑步衰减 */
+static struct rasterfall_effects effects;
 
 static int viewmodel_weapon(void)
 {
@@ -1071,9 +1072,9 @@ static int draw_view_box_kick(struct toy_surface *surface,
                               int minz, int maxz, uint32_t color,
                               int skip_back, int skip_top)
 {
-    int kx = weapon_kick / 3;
-    int ky = -weapon_kick / 2;
-    int kz = weapon_kick;
+    int kx = effects.weapon_kick / 3;
+    int ky = -effects.weapon_kick / 2;
+    int kz = effects.weapon_kick;
     return draw_view_box(surface, minx + kx, maxx + kx,
                          miny + ky, maxy + ky,
                          minz + kz, maxz + kz, color,
@@ -1582,54 +1583,6 @@ static int render_enemies(struct toy_renderer *renderer,
 
 /* ── 子弹轨迹与命中粒子（纯视觉；逻辑步进 16ms 推进） ──────────── */
 
-#define TRACER_SLOTS 32
-#define TRACER_LIFE_MS 160
-#define TRACER_Y (-350)         /* 弹道高度：躯干/头部之间，与命中判定同平面 */
-
-struct tracer {
-    int active;
-    int sx, sy, sz;     /* 起点：枪口世界坐标（开火瞬间采样） */
-    int ex, ey, ez;     /* 视觉终点：沿准心方向；命中点另由火花表示 */
-    int life_ms;
-};
-
-#define PARTICLE_SLOTS 96
-#define PARTICLE_LIFE_MS 240
-#define PARTICLE_GRAVITY 4      /* 每 16ms 步重力加速度（世界单位） */
-
-struct particle {
-    int active;
-    int x, y, z;
-    int vx, vy, vz;
-    int life_ms;
-};
-
-static struct tracer tracers[TRACER_SLOTS];
-static int tracer_next;
-static struct particle particles[PARTICLE_SLOTS];
-static int particle_next;
-static unsigned int last_fire_seq;
-
-/* 纯视觉随机源（xorshift32），不占用游戏 PRNG，无需与逻辑同步 */
-static uint32_t effect_rng = 0x243F6A88;
-
-static uint32_t xorshift32(uint32_t *state)
-{
-    uint32_t x = *state;
-    x ^= x << 13;
-    x ^= x >> 17;
-    x ^= x << 5;
-    *state = x;
-    return x;
-}
-
-static int effect_rand(int lo, int hi)
-{
-    uint32_t raw = xorshift32(&effect_rng);
-    int span = hi - lo + 1;
-    return lo + (int)(raw % (uint32_t)span);
-}
-
 /* num/den 线性插值两色（num=den 时取 from，0 时取 to） */
 static uint32_t mix_color(uint32_t from, uint32_t to, int num, int den)
 {
@@ -1730,51 +1683,6 @@ static void draw_sky_features(struct toy_surface *surface,
     }
 }
 
-/* 命中统一火花：弹着点 7 颗，沿弹道方向喷射，随后受重力回落 */
-static void spawn_hit_particles(int x, int y, int z, int sy, int cy)
-{
-    int i;
-    for (i = 0; i < 7; i++) {
-        struct particle *p = &particles[particle_next];
-        particle_next = (particle_next + 1) % PARTICLE_SLOTS;
-        p->active = 1;
-        p->x = x;
-        p->y = y + effect_rand(-10, 10);
-        p->z = z;
-        p->vx = sy * 22 / 1024 + effect_rand(-24, 24);
-        p->vy = effect_rand(8, 30);
-        p->vz = cy * 22 / 1024 + effect_rand(-24, 24);
-        p->life_ms = PARTICLE_LIFE_MS + effect_rand(-40, 40);
-    }
-}
-
-static void update_effects(int dt_ms)
-{
-    int i;
-    if (horde_banner_ms > 0) {
-        horde_banner_ms -= dt_ms;
-        if (horde_banner_ms < 0) horde_banner_ms = 0;
-    }
-    weapon_kick -= dt_ms * 2;
-    if (weapon_kick < 0) weapon_kick = 0;
-    for (i = 0; i < TRACER_SLOTS; i++) {
-        struct tracer *t = &tracers[i];
-        if (!t->active) continue;
-        t->life_ms -= dt_ms;
-        if (t->life_ms <= 0) t->active = 0;
-    }
-    for (i = 0; i < PARTICLE_SLOTS; i++) {
-        struct particle *p = &particles[i];
-        if (!p->active) continue;
-        p->x += p->vx;
-        p->y += p->vy;
-        p->z += p->vz;
-        p->vy -= PARTICLE_GRAVITY;
-        p->life_ms -= dt_ms;
-        if (p->life_ms <= 0 || p->y < -880) p->active = 0;
-    }
-}
-
 /* 把游戏层的水平射线转成从枪口指向屏幕准心的 3D 视觉终点。
  * 游戏命中仍使用水平平面，而 tracer 必须补偿枪口在右下方造成的视差，
  * 否则它会从枪口斜着飞向准心旁边。 */
@@ -1812,41 +1720,37 @@ static void sync_fire_effects(const struct camera *camera)
     int i, ray_count;
     struct vec3 muzzle;
     struct vec3 muzzle_view;
-    if (game.fire_seq < last_fire_seq) {
+    if (game.fire_seq < effects.last_fire_seq) {
         /* 新局（R 重开/死亡重开）：丢弃旧弹道与粒子 */
-        memset(tracers, 0, sizeof(tracers));
-        memset(particles, 0, sizeof(particles));
-        tracer_next = 0;
-        particle_next = 0;
-        last_fire_seq = 0;
-        weapon_kick = 0;
+        rasterfall_effects_reset_fire(&effects);
         return;
     }
-    if (game.fire_seq == last_fire_seq) return;
-    last_fire_seq = game.fire_seq;
+    if (game.fire_seq == effects.last_fire_seq) return;
+    effects.last_fire_seq = game.fire_seq;
     ray_count = game.ray_count;
     if (ray_count < 0) ray_count = 0;
     if (ray_count > TOY_GAME_MAX_RAYS) ray_count = TOY_GAME_MAX_RAYS;
     /* 后坐力 + 枪口世界坐标（开火瞬间采样，含后坐位移） */
-    weapon_kick = VIEWMODEL_KICK_MAX;
-    viewmodel_muzzle_offset(viewmodel_weapon(), weapon_kick, &muzzle_view);
+    effects.weapon_kick = VIEWMODEL_KICK_MAX;
+    viewmodel_muzzle_offset(viewmodel_weapon(), effects.weapon_kick, &muzzle_view);
     muzzle.x = muzzle_view.x;
     muzzle.y = muzzle_view.y;
     muzzle.z = muzzle_view.z;
     view_to_world(camera, &muzzle, &muzzle);
     for (i = 0; i < ray_count; i++) {
         const struct toy_game_ray *r = &game.rays[i];
-        struct tracer *t = &tracers[tracer_next];
-        tracer_next = (tracer_next + 1) % TRACER_SLOTS;
+        struct rasterfall_tracer *t = &effects.tracers[effects.tracer_next];
+        effects.tracer_next = (effects.tracer_next + 1) % RASTERFALL_TRACER_SLOTS;
         t->active = 1;
         t->sx = muzzle.x;
         t->sy = muzzle.y;
         t->sz = muzzle.z;
         tracer_aim_endpoint(camera, r, r->ex, r->ez,
                             &t->ex, &t->ey, &t->ez);
-        t->life_ms = TRACER_LIFE_MS;
+        t->life_ms = RASTERFALL_TRACER_LIFE_MS;
         if (r->hit_enemy || r->hit_world)
-            spawn_hit_particles(r->ex, t->ey, r->ez, r->sy, r->cy);
+            rasterfall_effects_spawn_hit_particles(&effects, r->ex, t->ey,
+                                                   r->ez, r->sy, r->cy);
     }
 }
 
@@ -1945,12 +1849,12 @@ static void draw_tracer_line(struct toy_surface *surface, const struct camera *c
 static int render_tracers(struct toy_renderer *renderer, const struct camera *camera)
 {
     int i, pixels = 0;
-    for (i = 0; i < TRACER_SLOTS; i++) {
-        const struct tracer *t = &tracers[i];
+    for (i = 0; i < RASTERFALL_TRACER_SLOTS; i++) {
+        const struct rasterfall_tracer *t = &effects.tracers[i];
         uint32_t color;
         if (!t->active) continue;
         color = mix_color(0xFFE060, 0x3A2C14,
-                          t->life_ms * 256 / TRACER_LIFE_MS, 256);
+                          t->life_ms * 256 / RASTERFALL_TRACER_LIFE_MS, 256);
         draw_tracer_line(&renderer->surface, camera, t->sx, t->sy, t->sz,
                          t->ex, t->ey, t->ez, color);
         pixels++;
@@ -1961,8 +1865,8 @@ static int render_tracers(struct toy_renderer *renderer, const struct camera *ca
 static int render_particles(struct toy_renderer *renderer, const struct camera *camera)
 {
     int i, pixels = 0;
-    for (i = 0; i < PARTICLE_SLOTS; i++) {
-        const struct particle *p = &particles[i];
+    for (i = 0; i < RASTERFALL_PARTICLE_SLOTS; i++) {
+        const struct rasterfall_particle *p = &effects.particles[i];
         struct vec3 world, view;
         struct toy_screen_vertex screen;
         int k;
@@ -1975,7 +1879,7 @@ static int render_particles(struct toy_renderer *renderer, const struct camera *
         project_vertex(&renderer->surface, &view, &screen);
         if (screen.x < 0 || screen.x + 2 >= renderer->surface.width ||
             screen.y < 0 || screen.y + 2 >= renderer->surface.height) continue;
-        k = p->life_ms * 256 / PARTICLE_LIFE_MS;
+        k = p->life_ms * 256 / RASTERFALL_PARTICLE_LIFE_MS;
         if (k > 256) k = 256;   /* 寿命随机 +40ms 可能超出基准，钳制插值比例 */
         fill_rect(&renderer->surface, screen.x, screen.y, 2, 2,
                   mix_color(0xFFC860, 0x4A2008, k, 256));
@@ -2123,6 +2027,7 @@ int main(int argc, char **argv)
         return 1;
     }
     bake_static_lightmap();
+    rasterfall_effects_init(&effects);
     __printf("rasterfall: baked lightmap %dx%d\n", BAKED_LM_W, BAKED_LM_H);
     prepare_map_rules();
     memset(&scene_texture, 0, sizeof(scene_texture));
@@ -2359,7 +2264,7 @@ int main(int argc, char **argv)
         t_stage = now;
         while (accumulator >= FIXED_STEP_US && logic_steps < MAX_LOGIC_STEPS) {
             if (!paused) {
-                update_effects(FIXED_STEP_US / 1000);
+                rasterfall_effects_update(&effects, FIXED_STEP_US / 1000);
                 if (game.state == TOY_GAME_PLAYING) {
                     update_player(&camera, &input);
                     update_keyboard_look(&camera, &input, &settings);
