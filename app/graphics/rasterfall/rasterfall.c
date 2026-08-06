@@ -74,6 +74,7 @@
 #include "rasterfall_hud.h"
 #include "rasterfall_audio.h"
 #include "rasterfall_effects.h"
+#include "rasterfall_sky.h"
 #include "math.h"
 
 #define KEY_ESC   1
@@ -110,7 +111,6 @@
 
 struct vec3 { int x, y, z; };
 /* 朝向：sy/cy = 偏航 sin/cos，pitch_sy/pitch_cy = 俯仰 sin/cos（均 1024 定点）。 */
-struct camera { int x, z, sy, cy, pitch_sy, pitch_cy; };
 struct box { int minx, maxx, minz, maxz, height; uint32_t color; };
 struct control_settings { int mouse_level, keyboard_level; };
 struct pause_menu { int selected; };
@@ -1136,10 +1136,6 @@ static int render_viewmodel(struct toy_renderer *renderer)
 static void fill_rect(struct toy_surface *surface, int x, int y,
                       int width, int height, uint32_t color);
 static uint32_t mix_color(uint32_t from, uint32_t to, int num, int den);
-static void draw_sky_ground(struct toy_surface *surface,
-                            const struct camera *camera);
-static void draw_sky_features(struct toy_surface *surface,
-                              const struct camera *camera);
 
 /* E 键互动：拾取主武器（替换槽 0 并切出），同武器 = 补充弹药；
  * 弹药盒补满备弹；召唤按钮每次互动触发 15-20 个追踪尸潮。
@@ -1198,7 +1194,7 @@ static int render_scene(struct toy_renderer *renderer, const struct camera *came
     int pixels = 0;
     struct vec3 a, b, c, d;
     /* 自由俯仰下先铺天空/地面：地平线由俯仰角决定，墙面与地板随后覆盖 */
-    draw_sky_ground(&renderer->surface, camera);
+    rasterfall_sky_draw(&renderer->surface, camera);
     for (int z = level_map.minz; z < level_map.maxz; z += 1000) {
         for (int x = level_map.minx; x < level_map.maxx; x += 1000) {
             uint32_t color = (((x + z) / 1000) & 1) ? 0x30343A : 0x272B31;
@@ -1591,96 +1587,6 @@ static uint32_t mix_color(uint32_t from, uint32_t to, int num, int den)
     return (uint32_t)(((fr * num + tr * (den - num)) / den) << 16 |
                       ((fg * num + tg * (den - num)) / den) << 8 |
                       ((fb * num + tb * (den - num)) / den));
-}
-
-/* 视平线以上画渐变天空、以下铺地面色。地平线屏幕位置
- * y = h/2 + focal·tan(pitch)，tan(pitch) = pitch_sy/pitch_cy；
- * 俯仰接近 ±90° 时地平线越出屏幕，整屏填天空或地面。 */
-static void draw_sky_ground(struct toy_surface *surface,
-                            const struct camera *camera)
-{
-    int focal = surface->width * 3 / 4;
-    int horizon = surface->height / 2;
-    int pitch_cy = camera->pitch_cy;
-    int sky_bottom, ground_top;
-    if (pitch_cy < 0) pitch_cy = -pitch_cy;
-    if (pitch_cy >= 64) {
-        long long offset = (long long)focal * camera->pitch_sy / camera->pitch_cy;
-        if (offset > 2LL * surface->height) offset = 2LL * surface->height;
-        if (offset < -2LL * surface->height) offset = -2LL * surface->height;
-        horizon += (int)offset;
-    } else if (camera->pitch_sy > 0) {
-        horizon = -surface->height;      /* 看向正上方：全屏天空 */
-    } else {
-        horizon = surface->height * 2;   /* 看向正下方：全屏地面 */
-    }
-    sky_bottom = horizon < surface->height ? horizon : surface->height;
-    ground_top = horizon > 0 ? horizon : 0;
-    if (sky_bottom > 0) {
-        int band_h = sky_bottom / 8 + 1;
-        int y;
-        for (y = 0; y < sky_bottom; y += band_h) {
-            int band = y / band_h;
-            uint32_t color = mix_color(0x3B82C4, 0xB9E3FF,
-                                       8 - 1 - band, 8);
-            fill_rect(surface, 0, y, surface->width, band_h, color);
-        }
-    }
-    if (ground_top < surface->height)
-        fill_rect(surface, 0, ground_top, surface->width,
-                  surface->height - ground_top, 0x0F1218);
-    /* 固定在天空盒方向上的像素立方体白云。 */
-    draw_sky_features(surface, camera);
-}
-
-/* 把世界方向（1024 定点单位向量）投影到屏幕；在身后返回 0 */
-static int project_sky_dir(const struct camera *camera, const struct toy_surface *surface,
-                           int dx, int dy, int dz, int *sx, int *sy)
-{
-    int vx = (dx * camera->cy - dz * camera->sy) / 1024;
-    int vz0 = (dx * camera->sy + dz * camera->cy) / 1024;
-    int vy2 = (dy * camera->pitch_cy - vz0 * camera->pitch_sy) / 1024;
-    int vz2 = (dy * camera->pitch_sy + vz0 * camera->pitch_cy) / 1024;
-    int focal = surface->width * 3 / 4;
-    if (vz2 <= 64) return 0;
-    *sx = surface->width / 2 + vx * focal / vz2;
-    *sy = surface->height / 2 - vy2 * focal / vz2;
-    return 1;
-}
-
-static void draw_sky_cloud(struct toy_surface *surface, int x, int y, int scale)
-{
-    int unit = scale / 4;
-    if (unit < 2) unit = 2;
-    /* 方块轮廓、顶部高光和底部阴影，保持 Minecraft 式立方体云朵。 */
-    fill_rect(surface, x - unit * 6, y, unit * 12, unit * 3, 0xEAF7FF);
-    fill_rect(surface, x - unit * 3, y - unit * 2, unit * 6, unit * 2,
-              0xFFFFFF);
-    fill_rect(surface, x - unit * 7, y + unit * 2, unit * 14, unit,
-              0xB9D9EC);
-    fill_rect(surface, x - unit * 5, y - unit, unit * 2, unit,
-              0xFFFFFF);
-    fill_rect(surface, x + unit * 3, y - unit, unit * 2, unit,
-              0xFFFFFF);
-}
-
-/* 三朵云的方向固定在天空盒中，转动镜头时只改变观察位置，不随时间漂移。 */
-static void draw_sky_features(struct toy_surface *surface,
-                              const struct camera *camera)
-{
-    static const int cloud_dir[3][3] = {
-        {340, 248, -934},
-        {-872, 172, -512},
-        {-488, 380, -816},
-    };
-    static const int cloud_scale[3] = {16, 12, 10};
-    int cx, cy, i;
-    for (i = 0; i < 3; i++) {
-        if (!project_sky_dir(camera, surface, cloud_dir[i][0],
-                             cloud_dir[i][1], cloud_dir[i][2], &cx, &cy))
-            continue;
-        draw_sky_cloud(surface, cx, cy, cloud_scale[i]);
-    }
 }
 
 /* 把游戏层的水平射线转成从枪口指向屏幕准心的 3D 视觉终点。
