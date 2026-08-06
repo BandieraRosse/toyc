@@ -69,16 +69,19 @@ static void render_network_hud(struct toy_surface *surface,
     uint32_t color;
     if (!net || net->mode == RASTERFALL_NET_OFF) return;
     if (net->mode == RASTERFALL_NET_HOST) {
-        if (net->peer_known)
+        if (net->peer_known && net->connected)
             snprintf(line, sizeof(line), "HOST  PLAYER 2  RTT %d MS", net->rtt_ms);
+        else if (net->peer_known)
+            snprintf(line, sizeof(line), "HOST  PLAYER LOST");
         else
             snprintf(line, sizeof(line), "HOST  WAITING FOR PLAYER");
-        color = net->peer_known ? 0x80E0C0 : 0xFFD070;
+        color = net->peer_known && net->connected ? 0x80E0C0 : 0xFFD070;
     } else if (net->connected) {
         snprintf(line, sizeof(line), "CLIENT  CONNECTED  RTT %d MS", net->rtt_ms);
         color = net->rtt_ms > 150 ? 0xFFB060 : 0x80E0C0;
     } else {
-        snprintf(line, sizeof(line), "CLIENT  CONNECTING...");
+        snprintf(line, sizeof(line), "CLIENT  %s",
+                 net->last_receive_ms ? "DISCONNECTED" : "CONNECTING...");
         color = 0xFFD070;
     }
     width = (int)strlen(line) * FB_FONT_W;

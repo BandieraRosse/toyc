@@ -70,6 +70,12 @@ struct rasterfall_net {
     int enemy_count;
     int remote_event_count;
     unsigned char remote_events[TOY_GAME_MAX_EVENTS];
+    int snapshot_world_wave;
+    int snapshot_world_to_spawn;
+    int snapshot_world_enemies_alive;
+    int snapshot_world_phase;
+    int snapshot_world_phase_timer_ms;
+    int snapshot_world_alarm_timer_ms;
     int snapshot_ready;
     int connected;
     int rtt_ms;

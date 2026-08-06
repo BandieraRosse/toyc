@@ -11,6 +11,7 @@
 #define NET_PLAYER_SIZE 22
 #define NET_ENEMY_SIZE 24
 #define NET_EVENT_SIZE (1 + TOY_GAME_MAX_EVENTS)
+#define NET_WORLD_SIZE 16
 #define NET_SNAPSHOT_BASE 8
 #define NET_INPUT_HOLD_TICKS 15
 
@@ -305,7 +306,7 @@ int rasterfall_net_send_snapshot(struct rasterfall_net *net,
     int peer_weapon = net->peer_slots[net->peer_current_slot].weapon;
     int payload_size = NET_SNAPSHOT_BASE +
                        RASTERFALL_NET_PLAYER_MAX * NET_PLAYER_SIZE + 1 +
-                       TOY_GAME_MAX_ENEMIES * NET_ENEMY_SIZE + NET_EVENT_SIZE;
+                       TOY_GAME_MAX_ENEMIES * NET_ENEMY_SIZE + NET_EVENT_SIZE + NET_WORLD_SIZE;
     int size;
     if (net->mode != RASTERFALL_NET_HOST || !net->peer_known) return -1;
     size = packet_begin(packet, RASTERFALL_NET_SNAPSHOT, payload_size,
@@ -330,6 +331,24 @@ int rasterfall_net_send_snapshot(struct rasterfall_net *net,
     memcpy(p + NET_SNAPSHOT_BASE + RASTERFALL_NET_PLAYER_MAX * NET_PLAYER_SIZE + 2 +
            TOY_GAME_MAX_ENEMIES * NET_ENEMY_SIZE, net->remote_events,
            TOY_GAME_MAX_EVENTS);
+    put_i16(p + NET_SNAPSHOT_BASE + RASTERFALL_NET_PLAYER_MAX * NET_PLAYER_SIZE +
+            2 + TOY_GAME_MAX_ENEMIES * NET_ENEMY_SIZE + TOY_GAME_MAX_EVENTS,
+            game->wave);
+    put_i16(p + NET_SNAPSHOT_BASE + RASTERFALL_NET_PLAYER_MAX * NET_PLAYER_SIZE +
+            4 + TOY_GAME_MAX_ENEMIES * NET_ENEMY_SIZE + TOY_GAME_MAX_EVENTS,
+            game->to_spawn);
+    put_i16(p + NET_SNAPSHOT_BASE + RASTERFALL_NET_PLAYER_MAX * NET_PLAYER_SIZE +
+            6 + TOY_GAME_MAX_ENEMIES * NET_ENEMY_SIZE + TOY_GAME_MAX_EVENTS,
+            game->enemies_alive);
+    put_i16(p + NET_SNAPSHOT_BASE + RASTERFALL_NET_PLAYER_MAX * NET_PLAYER_SIZE +
+            8 + TOY_GAME_MAX_ENEMIES * NET_ENEMY_SIZE + TOY_GAME_MAX_EVENTS,
+            game->campaign_phase);
+    put_i16(p + NET_SNAPSHOT_BASE + RASTERFALL_NET_PLAYER_MAX * NET_PLAYER_SIZE +
+            10 + TOY_GAME_MAX_ENEMIES * NET_ENEMY_SIZE + TOY_GAME_MAX_EVENTS,
+            game->phase_timer_ms);
+    put_i16(p + NET_SNAPSHOT_BASE + RASTERFALL_NET_PLAYER_MAX * NET_PLAYER_SIZE +
+            12 + TOY_GAME_MAX_ENEMIES * NET_ENEMY_SIZE + TOY_GAME_MAX_EVENTS,
+            game->alarm_timer_ms);
     return net_send(net, packet, size);
 }
 
@@ -342,7 +361,7 @@ static int decode_snapshot(const unsigned char *payload, int size,
     if (count < 0 || count > RASTERFALL_NET_PLAYER_MAX ||
         count != RASTERFALL_NET_PLAYER_MAX ||
         size != NET_SNAPSHOT_BASE + count * NET_PLAYER_SIZE + 1 +
-                TOY_GAME_MAX_ENEMIES * NET_ENEMY_SIZE + NET_EVENT_SIZE) return -1;
+                TOY_GAME_MAX_ENEMIES * NET_ENEMY_SIZE + NET_EVENT_SIZE + NET_WORLD_SIZE) return -1;
     for (i = 0; i < RASTERFALL_NET_PLAYER_MAX; i++)
         net->players[i].active = 0;
     for (i = 0; i < count; i++) {
@@ -363,6 +382,18 @@ static int decode_snapshot(const unsigned char *payload, int size,
     memcpy(net->remote_events,
            payload + NET_SNAPSHOT_BASE + count * NET_PLAYER_SIZE + 2 +
            TOY_GAME_MAX_ENEMIES * NET_ENEMY_SIZE, TOY_GAME_MAX_EVENTS);
+    net->snapshot_world_wave = get_i16(payload + NET_SNAPSHOT_BASE + count * NET_PLAYER_SIZE +
+                                       2 + TOY_GAME_MAX_ENEMIES * NET_ENEMY_SIZE + TOY_GAME_MAX_EVENTS);
+    net->snapshot_world_to_spawn = get_i16(payload + NET_SNAPSHOT_BASE + count * NET_PLAYER_SIZE +
+                                           4 + TOY_GAME_MAX_ENEMIES * NET_ENEMY_SIZE + TOY_GAME_MAX_EVENTS);
+    net->snapshot_world_enemies_alive = get_i16(payload + NET_SNAPSHOT_BASE + count * NET_PLAYER_SIZE +
+                                                6 + TOY_GAME_MAX_ENEMIES * NET_ENEMY_SIZE + TOY_GAME_MAX_EVENTS);
+    net->snapshot_world_phase = get_i16(payload + NET_SNAPSHOT_BASE + count * NET_PLAYER_SIZE +
+                                        8 + TOY_GAME_MAX_ENEMIES * NET_ENEMY_SIZE + TOY_GAME_MAX_EVENTS);
+    net->snapshot_world_phase_timer_ms = get_i16(payload + NET_SNAPSHOT_BASE + count * NET_PLAYER_SIZE +
+                                                 10 + TOY_GAME_MAX_ENEMIES * NET_ENEMY_SIZE + TOY_GAME_MAX_EVENTS);
+    net->snapshot_world_alarm_timer_ms = get_i16(payload + NET_SNAPSHOT_BASE + count * NET_PLAYER_SIZE +
+                                                 12 + TOY_GAME_MAX_ENEMIES * NET_ENEMY_SIZE + TOY_GAME_MAX_EVENTS);
     net->snapshot_ready = 1;
     return 0;
 }
@@ -578,6 +609,12 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
     if (session) {
         session->game_state.hp = own->hp;
         session->game_state.state = own->state;
+        session->game_state.wave = net->snapshot_world_wave;
+        session->game_state.to_spawn = net->snapshot_world_to_spawn;
+        session->game_state.enemies_alive = net->snapshot_world_enemies_alive;
+        session->game_state.campaign_phase = net->snapshot_world_phase;
+        session->game_state.phase_timer_ms = net->snapshot_world_phase_timer_ms;
+        session->game_state.alarm_timer_ms = net->snapshot_world_alarm_timer_ms;
     }
     if (session && net->enemy_count >= 0) {
         int i;
