@@ -15,6 +15,9 @@ struct toy_screen_vertex {
     long inv_z;
     long u_over_z;
     long v_over_z;
+    /* Q8.8 lighting and fog factors. 256 means fully lit / no fog. */
+    int light;
+    int fog;
 };
 
 struct toy_texture_view {
@@ -31,6 +34,8 @@ struct toy_raster_cmd {
     int repeat;
     uint32_t color;
     uint32_t fallback;
+    int light;
+    int fog;
     const struct toy_texture_view *texture;
     long area;
     int bbox_minx;
@@ -105,12 +110,24 @@ int toy_renderer_triangle(struct toy_renderer *renderer,
                           const struct toy_screen_vertex *b,
                           const struct toy_screen_vertex *c,
                           uint32_t color);
+int toy_renderer_triangle_lit(struct toy_renderer *renderer,
+                              const struct toy_screen_vertex *a,
+                              const struct toy_screen_vertex *b,
+                              const struct toy_screen_vertex *c,
+                              uint32_t color, int light, int fog);
 int toy_renderer_triangle_textured(struct toy_renderer *renderer,
                                    const struct toy_screen_vertex *a,
                                    const struct toy_screen_vertex *b,
                                    const struct toy_screen_vertex *c,
                                    const struct toy_texture_view *texture,
                                    int repeat, uint32_t fallback_color);
+int toy_renderer_triangle_textured_lit(struct toy_renderer *renderer,
+                                       const struct toy_screen_vertex *a,
+                                       const struct toy_screen_vertex *b,
+                                       const struct toy_screen_vertex *c,
+                                       const struct toy_texture_view *texture,
+                                       int repeat, uint32_t fallback_color,
+                                       int light, int fog);
 /* 把记录阶段的三角形命令并行光栅化到 surface；返回实际写入像素数
  * （接替 toy_renderer_triangle 系列的返回值语义）。 */
 int toy_renderer_flush(struct toy_renderer *renderer);

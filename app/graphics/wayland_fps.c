@@ -59,6 +59,8 @@
 #define PLAYER_RADIUS 180
 #define MOVE_STEP 76
 #define UV_ONE 65536
+#define BAKED_LM_W 32
+#define BAKED_LM_H 24
 #define PITCH_LIMIT_SY 989        /* sin(75°) * 1024 */
 #define PITCH_LIMIT_CY 265        /* cos(75°) * 1024 */
 
@@ -137,6 +139,73 @@ static struct toy_texture_view scene_texture_view;
 static struct toy_texture_view wall_texture_view;
 static struct toy_texture_view *active_texture_view;
 static int textures_enabled = 1;
+static unsigned short baked_lightmap[BAKED_LM_W * BAKED_LM_H];
+
+/* A deliberately tiny offline-style light bake.  The map is static, so this
+ * is generated once when the level is loaded and then only sampled while
+ * recording triangles.  Box proximity gives walls and cover a soft contact
+ * shadow without a runtime shadow map. */
+static void bake_static_lightmap(void)
+{
+    int x, z, i;
+    for (z = 0; z < BAKED_LM_H; z++) for (x = 0; x < BAKED_LM_W; x++) {
+        int wx = level_map.minx + (level_map.maxx - level_map.minx) * (x * 2 + 1) /
+                 (BAKED_LM_W * 2);
+        int wz = level_map.minz + (level_map.maxz - level_map.minz) * (z * 2 + 1) /
+                 (BAKED_LM_H * 2);
+        int light = 270 + (wx - level_map.minx) * 4 /
+                    (level_map.maxx - level_map.minx ? level_map.maxx - level_map.minx : 1);
+        for (i = 0; i < level_map.box_count; i++) {
+            const struct toy_map_box *b = &level_map.boxes[i];
+            int dx = wx < b->minx ? b->minx - wx : wx > b->maxx ? wx - b->maxx : 0;
+            int dz = wz < b->minz ? b->minz - wz : wz > b->maxz ? wz - b->maxz : 0;
+            int dist = dx > dz ? dx : dz;
+            if (!b->air && dist < 900)
+                light -= (900 - dist) * 24 / 900;
+        }
+        /* Warm point light baked from the small lamp in the east corner. */
+        {
+            int ldx = wx - 4000, ldz = wz - 160;
+            int ldist = (int)isqrt((long long)ldx * ldx +
+                                   (long long)ldz * ldz);
+            if (ldist < 2600)
+                light += (2600 - ldist) * 26 / 2600;
+        }
+        if (light < 150) light = 150;
+        if (light > 286) light = 286;
+        baked_lightmap[z * BAKED_LM_W + x] = (unsigned short)light;
+    }
+}
+
+static int baked_light_at(int x, int z)
+{
+    int ix = (x - level_map.minx) * BAKED_LM_W /
+             (level_map.maxx - level_map.minx ? level_map.maxx - level_map.minx : 1);
+    int iz = (z - level_map.minz) * BAKED_LM_H /
+             (level_map.maxz - level_map.minz ? level_map.maxz - level_map.minz : 1);
+    if (ix < 0) ix = 0;
+    if (ix >= BAKED_LM_W) ix = BAKED_LM_W - 1;
+    if (iz < 0) iz = 0;
+    if (iz >= BAKED_LM_H) iz = BAKED_LM_H - 1;
+    return baked_lightmap[iz * BAKED_LM_W + ix];
+}
+
+static int baked_fog_at(int distance)
+{
+    if (distance <= 4500) return 0;
+    if (distance >= 12000) return 210;
+    return (distance - 4500) * 210 / 7500;
+}
+
+static int world_distance(const struct camera *camera, int x, int z)
+{
+    long long dx = (long long)x - camera->x;
+    long long dz = (long long)z - camera->z;
+    return (int)isqrt(dx * dx + dz * dz);
+}
+
+/* Map floor paint is an authored area colour, not a lightmap preview. */
+static int fixed_floor_lighting;
 
 static void prepare_map_rules(void)
 {
@@ -318,6 +387,8 @@ static void project_vertex(const struct toy_surface *surface,
     screen->x = surface->width / 2 + view->x * focal / view->z;
     screen->y = surface->height / 2 - view->y * focal / view->z;
     screen->z = view->z;
+    screen->light = 256;
+    screen->fog = 0;
 }
 
 static void project_uv_vertex(const struct toy_surface *surface,
@@ -360,7 +431,13 @@ static int draw_world_triangle(struct toy_renderer *renderer,
             sb.x = sc.x; sb.y = sc.y; sb.z = sc.z;
             sc.x = swap.x; sc.y = swap.y; sc.z = swap.z;
         }
-        drawn += toy_renderer_triangle(renderer, &sa, &sb, &sc, color);
+        int center_x = (a->x + b->x + c->x) / 3;
+        int center_z = (a->z + b->z + c->z) / 3;
+        int light = fixed_floor_lighting ? 256 : baked_light_at(center_x, center_z);
+        int fog = fixed_floor_lighting ? 0 :
+                  baked_fog_at(world_distance(camera, center_x, center_z));
+        drawn += toy_renderer_triangle_lit(renderer, &sa, &sb, &sc,
+                                           color, light, fog);
     }
     return drawn;
 }
@@ -403,9 +480,15 @@ static int draw_world_triangle_tex(struct toy_renderer *renderer,
             sc.u=swap.u; sc.v=swap.v; sc.inv_z=swap.inv_z;
             sc.u_over_z=swap.u_over_z; sc.v_over_z=swap.v_over_z;
         }
-        drawn += toy_renderer_triangle_textured(renderer, &sa, &sb, &sc,
-                                                 active_texture_view, 1,
-                                                 0xFF202020U);
+        int center_x = (a->p.x + b->p.x + c->p.x) / 3;
+        int center_z = (a->p.z + b->p.z + c->p.z) / 3;
+        int light = fixed_floor_lighting ? 256 : baked_light_at(center_x, center_z);
+        int fog = fixed_floor_lighting ? 0 : baked_fog_at(world_distance(camera, center_x, center_z));
+        sa.light = sb.light = sc.light = light;
+        sa.fog = sb.fog = sc.fog = fog;
+        drawn += toy_renderer_triangle_textured_lit(renderer, &sa, &sb, &sc,
+                                                     active_texture_view, 1,
+                                                     0xFF202020U, light, fog);
     }
     return drawn;
 }
@@ -983,7 +1066,10 @@ static int render_scene(struct toy_renderer *renderer, const struct camera *came
     for (int i=0; i<level_map.draw_count; i++) {
         struct toy_map_draw *x=&level_map.draw[i];
         if (x->type==TOY_MAP_DRAW_FLOOR) {
-            struct toy_game_box zone={x->a,x->b,x->c,x->d}; pixels+=draw_floor_zone(renderer,camera,&zone,x->color);
+            struct toy_game_box zone={x->a,x->b,x->c,x->d};
+            fixed_floor_lighting = 1;
+            pixels+=draw_floor_zone(renderer,camera,&zone,x->color);
+            fixed_floor_lighting = 0;
         } else if (x->type==TOY_MAP_DRAW_BORDER) {
             struct toy_game_box zone={x->a,x->b,x->c,x->d}; pixels+=draw_floor_border(renderer,camera,&zone,x->e,x->color);
         } else if (x->type==TOY_MAP_DRAW_WALL) {
@@ -1272,6 +1358,24 @@ static void render_enemy_alert(struct toy_renderer *renderer,
 }
 
 /* 两种低多边形敌人；受击闪红/命中闪白，倒地时整体纵向压扁。 */
+static int render_blob_shadow(struct toy_renderer *renderer,
+                              const struct camera *camera,
+                              const struct toy_game_enemy *e, int scale)
+{
+    struct vec3 a, b, c, d;
+    int rx = 230 * scale / 1000;
+    int rz = 150 * scale / 1000;
+    int y = -886; /* just above the baked floor */
+    if (rx < 18) rx = 18;
+    if (rz < 12) rz = 12;
+    a.x = e->x - rx; a.y = y; a.z = e->z - rz;
+    b.x = e->x + rx; b.y = y; b.z = e->z - rz;
+    c.x = e->x + rx; c.y = y; c.z = e->z + rz;
+    d.x = e->x - rx; d.y = y; d.z = e->z + rz;
+    /* Two nested, opaque low-alpha-style tones approximate a soft penumbra. */
+    return draw_quad(renderer, camera, &a, &b, &c, &d, 0x17151A);
+}
+
 static int render_enemies(struct toy_renderer *renderer,
                           const struct camera *camera)
 {
@@ -1295,6 +1399,7 @@ static int render_enemies(struct toy_renderer *renderer,
             else if (e->flash > 0) color = 0xDFDFDF;
             else color = 0x4A5D3A;
         }
+        pixels += render_blob_shadow(renderer, camera, e, scale);
         if ((i & 1) == 0)
             pixels += render_block_enemy(renderer, camera, e, scale, color);
         else
@@ -2719,6 +2824,8 @@ int main(int argc, char **argv)
         __fprintf(2, "wayland_fps: cannot load map assets/maps/wayland_fps.map\n");
         return 1;
     }
+    bake_static_lightmap();
+    __printf("wayland_fps: baked lightmap %dx%d\n", BAKED_LM_W, BAKED_LM_H);
     prepare_map_rules();
     memset(&scene_texture, 0, sizeof(scene_texture));
     memset(&scene_texture_view, 0, sizeof(scene_texture_view));

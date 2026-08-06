@@ -20,6 +20,9 @@ box -2000 -1800 3800 5700 1300 477A58
 box 1800 2000 3800 5700 1300 477A58
 box -1800 -600 3800 4000 1300 477A58
 box 600 1800 3800 4000 1300 477A58
+# Safe-room ceilings, spanning the complete rooms and meeting their walls.
+model -1800 1800 -5700 -4000 1300 1500 3F6751 0
+model -1800 1800 4000 5700 1300 1500 477A58 0
 
 safe -1800 1800 -5700 -4000
 safe -1800 1800 4000 5700
@@ -27,6 +30,12 @@ spawn -5200 -3500 -2600 -800 6E2828
 spawn 3500 5200 -500 1400 6E2828
 spawn -3300 -1500 2100 3600 6E2828
 alarm 3300 5200 -3000 -1500
+
+# Horde-area corner ceilings, attached to opposite walls and enlarged.
+model 3500 4400 -500 500 1450 1750 414955 0
+model 4300 5200 500 1400 1450 1750 414955 0
+# Warm lamp hanging from the south-west corner ceiling.
+model 3860 4140 20 300 1260 1450 F6D27A 0
 
 # Presentation and gameplay floor elements
 floor -1800 1800 -5700 -4000 245238

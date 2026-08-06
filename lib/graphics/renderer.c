@@ -158,6 +158,22 @@ static uint32_t texture_sample(const struct toy_texture_view *t,
            ((uint32_t)p[1] << 8) | p[2];
 }
 
+static uint32_t shade_color(uint32_t color, int light, int fog)
+{
+    int r = (int)((color >> 16) & 255), g = (int)((color >> 8) & 255);
+    int b = (int)(color & 255);
+    int fr = 28, fg = 33, fb = 40;
+    if (light < 0) light = 0;
+    if (light > 384) light = 384;
+    r = r * light / 256; g = g * light / 256; b = b * light / 256;
+    if (fog < 0) fog = 0;
+    if (fog > 256) fog = 256;
+    r = (r * (256 - fog) + fr * fog) / 256;
+    g = (g * (256 - fog) + fg * fog) / 256;
+    b = (b * (256 - fog) + fb * fog) / 256;
+    return (uint32_t)(r << 16 | g << 8 | b);
+}
+
 static long raster_tex(struct toy_renderer *renderer,
                        struct toy_render_worker *worker,
                        const struct toy_screen_vertex *a,
@@ -167,6 +183,7 @@ static long raster_tex(struct toy_renderer *renderer,
                        int y0, int y1,
                        const struct toy_texture_view *texture,
                        int repeat, uint32_t fallback_color,
+                       int light_factor, int fog_factor,
                        unsigned long *tex_pixels,
                        unsigned long *fallback_pixels)
 {
@@ -200,6 +217,11 @@ static long raster_tex(struct toy_renderer *renderer,
                     long v = inv ? (voz / inv) : 0;
                     uint32_t color = texture_sample(texture, u, v, repeat,
                                                      fallback_color, &used_fallback);
+                    long light = light_factor >= 0 ? light_factor :
+                        (e0 * a->light + e1 * b->light + e2 * c->light) / area;
+                    long fog = fog_factor >= 0 ? fog_factor :
+                        (e0 * a->fog + e1 * b->fog + e2 * c->fog) / area;
+                    color = shade_color(color, (int)light, (int)fog);
                     depth[at] = (int)z;
                     row[x] = color;
                     (*tex_pixels)++;
@@ -223,6 +245,8 @@ static void copy_vertex(struct toy_screen_vertex *out,
     out->inv_z = in->inv_z;
     out->u_over_z = in->u_over_z;
     out->v_over_z = in->v_over_z;
+    out->light = in->light;
+    out->fog = in->fog;
 }
 
 /* 一条命令，跨两个条带（worker 的 id 带和 id+worker_count 带）光栅化；
@@ -250,12 +274,14 @@ static void rasterize_cmd(struct toy_renderer *renderer,
         worker->pixels += raster_tex(renderer, worker, &cmd->a, &cmd->b, &cmd->c,
                                      cmd->area, cmd->bbox_minx, cmd->bbox_maxx,
                                      y0, y1, cmd->texture, cmd->repeat,
-                                     cmd->fallback, &worker->textured_pixels,
+                                     cmd->fallback, cmd->light, cmd->fog,
+                                     &worker->textured_pixels,
                                      &worker->texture_fallback_pixels);
     else
         worker->pixels += raster_flat(renderer, worker, &cmd->a, &cmd->b, &cmd->c,
                                       cmd->area, cmd->bbox_minx,
-                                      cmd->bbox_maxx, y0, y1, cmd->color);
+                                      cmd->bbox_maxx, y0, y1,
+                                      shade_color(cmd->color, cmd->light, cmd->fog));
 }
 
 static int grow_cmds(struct toy_renderer *renderer)
@@ -281,7 +307,7 @@ static int record_cmd(struct toy_renderer *renderer, int textured,
                       const struct toy_screen_vertex *c,
                       long area, uint32_t color,
                       const struct toy_texture_view *texture,
-                      int repeat, uint32_t fallback)
+                      int repeat, uint32_t fallback, int light, int fog)
 {
     struct toy_raster_cmd *cmd;
     if (renderer->cmd_count >= renderer->cmd_cap) {
@@ -295,6 +321,8 @@ static int record_cmd(struct toy_renderer *renderer, int textured,
     cmd->repeat = repeat;
     cmd->color = color;
     cmd->fallback = fallback;
+    cmd->light = light;
+    cmd->fog = fog;
     cmd->texture = texture;
     cmd->area = area;
     /* 投影坐标已被调用方裁剪过；包围盒缓存进命令，工作线程按带直接跳过。 */
@@ -322,11 +350,21 @@ int toy_renderer_triangle(struct toy_renderer *renderer,
                           const struct toy_screen_vertex *c,
                           uint32_t color)
 {
+    return toy_renderer_triangle_lit(renderer, a, b, c, color, 256, 0);
+}
+
+int toy_renderer_triangle_lit(struct toy_renderer *renderer,
+                              const struct toy_screen_vertex *a,
+                              const struct toy_screen_vertex *b,
+                              const struct toy_screen_vertex *c,
+                              uint32_t color, int light, int fog)
+{
     long area;
     if (!renderer || !renderer->depth || !a || !b || !c) return 0;
     area = edge(a, b, c->x, c->y);
     if (area >= 0) return 0;
-    if (record_cmd(renderer, 0, a, b, c, area, color, NULL, 0, 0)) {
+    if (record_cmd(renderer, 0, a, b, c, area, color, NULL, 0, 0,
+                   light, fog)) {
         renderer->submitted_triangles++;
         renderer->submitted_vertices += 3;
     }
@@ -340,13 +378,25 @@ int toy_renderer_triangle_textured(struct toy_renderer *renderer,
                                    const struct toy_texture_view *texture,
                                    int repeat, uint32_t fallback_color)
 {
+    return toy_renderer_triangle_textured_lit(renderer, a, b, c, texture,
+                                              repeat, fallback_color, 256, 0);
+}
+
+int toy_renderer_triangle_textured_lit(struct toy_renderer *renderer,
+                                       const struct toy_screen_vertex *a,
+                                       const struct toy_screen_vertex *b,
+                                       const struct toy_screen_vertex *c,
+                                       const struct toy_texture_view *texture,
+                                       int repeat, uint32_t fallback_color,
+                                       int light, int fog)
+{
     long area;
     if (!renderer || !renderer->depth || !a || !b || !c) return 0;
     area = edge(a, b, c->x, c->y);
     if (area >= 0) return 0;
     renderer->textured_triangles++;
     if (record_cmd(renderer, 1, a, b, c, area, 0, texture, repeat,
-                   fallback_color)) {
+                   fallback_color, light, fog)) {
         renderer->submitted_triangles++;
         renderer->submitted_vertices += 3;
     }
