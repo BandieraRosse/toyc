@@ -1250,11 +1250,15 @@ static int render_network_teammate(struct toy_renderer *renderer,
                                    const struct rasterfall_net *net)
 {
     const struct camera *remote = NULL;
+    int muzzle_flash = 0;
     int x, z, pixels = 0;
-    if (net->mode == RASTERFALL_NET_HOST && net->peer_known)
+    if (net->mode == RASTERFALL_NET_HOST && net->peer_known) {
         remote = &net->peer_camera;
-    else if (net->mode == RASTERFALL_NET_CLIENT && net->players[0].active)
+        muzzle_flash = net->peer_muzzle_flash_ms;
+    } else if (net->mode == RASTERFALL_NET_CLIENT && net->players[0].active) {
         remote = &net->players[0].camera;
+        muzzle_flash = net->players[0].muzzle_flash_ms;
+    }
     if (!remote) return 0;
     x = remote->x;
     z = remote->z;
@@ -1266,6 +1270,9 @@ static int render_network_teammate(struct toy_renderer *renderer,
                           -620, -100, z - 100, z + 100, 0x386B96);
     pixels += draw_cuboid(renderer, camera, x - 125, x + 125,
                           -90, 190, z - 125, z + 125, 0xD2A878);
+    if (muzzle_flash > 0)
+        pixels += draw_cuboid(renderer, camera, x - 45, x + 45,
+                              -560, -430, z - 120, z + 120, 0xFFD060);
     return pixels;
 }
 

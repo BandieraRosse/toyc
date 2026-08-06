@@ -8,7 +8,7 @@
 #define NET_MAGIC_2 'N'
 #define NET_MAGIC_3 '1'
 #define NET_INPUT_SIZE 24
-#define NET_PLAYER_SIZE 34
+#define NET_PLAYER_SIZE 36
 #define NET_ENEMY_SIZE 24
 #define NET_EVENT_SIZE (1 + TOY_GAME_MAX_EVENTS)
 #define NET_WORLD_SIZE 16
@@ -244,7 +244,8 @@ static void encode_player(unsigned char *p, int id, int active,
                           const struct camera *camera, int hp,
                           int weapon, int state,
                           const struct toy_game_slot *slots,
-                          int current_slot, int reloading, int reload_timer_ms)
+                          int current_slot, int reloading, int reload_timer_ms,
+                          int muzzle_flash_ms)
 {
     p[0] = (unsigned char)(active != 0);
     p[1] = (unsigned char)id;
@@ -264,6 +265,7 @@ static void encode_player(unsigned char *p, int id, int active,
     put_i16(p + 29, slots ? slots[1].reserve : 0);
     p[31] = (unsigned char)(reloading != 0);
     put_i16(p + 32, reload_timer_ms);
+    put_i16(p + 34, muzzle_flash_ms);
 }
 
 static int decode_player(const unsigned char *p,
@@ -284,6 +286,7 @@ static int decode_player(const unsigned char *p,
     player->mag[0] = get_i16(p + 23); player->reserve[0] = get_i16(p + 25);
     player->mag[1] = get_i16(p + 27); player->reserve[1] = get_i16(p + 29);
     player->reloading = p[31] != 0; player->reload_timer_ms = get_i16(p + 32);
+    player->muzzle_flash_ms = get_i16(p + 34);
     return player->id >= 0 && player->id < RASTERFALL_NET_PLAYER_MAX ? 0 : -1;
 }
 
@@ -334,12 +337,13 @@ int rasterfall_net_send_snapshot(struct rasterfall_net *net,
     p[5] = p[6] = p[7] = 0;
     encode_player(p + NET_SNAPSHOT_BASE, 0, 1, host_camera, game->hp,
                   weapon, game->state, game->slots, game->current_slot,
-                  game->reloading, game->reload_timer_ms);
+                  game->reloading, game->reload_timer_ms,
+                  game->muzzle_flash_ms);
     encode_player(p + NET_SNAPSHOT_BASE + NET_PLAYER_SIZE, 1,
                   net->peer_known, &net->peer_camera, net->peer_hp,
                   peer_weapon, net->peer_state, net->peer_slots,
                   net->peer_current_slot, net->peer_reloading,
-                  net->peer_reload_timer_ms);
+                  net->peer_reload_timer_ms, net->peer_muzzle_flash_ms);
     p[NET_SNAPSHOT_BASE + RASTERFALL_NET_PLAYER_MAX * NET_PLAYER_SIZE] =
         TOY_GAME_MAX_ENEMIES;
     for (int i = 0; i < TOY_GAME_MAX_ENEMIES; i++)
@@ -494,6 +498,10 @@ void rasterfall_net_update_connection(struct rasterfall_net *net)
     now = net_monotonic_ms();
     if (net->last_receive_ms && now - net->last_receive_ms > 3000) {
         net->connected = 0;
+        net->last_input_sequence = 0;
+        net->receive_sequence = 0;
+        net->remote_command_ready = 0;
+        net->snapshot_ready = 0;
         if (net->mode == RASTERFALL_NET_HOST) {
             /* 允许另一台主机重新接入，而不是永久锁死旧地址。 */
             net->peer_known = 0;
@@ -726,13 +734,14 @@ int rasterfall_net_self_test(void)
     test_slots[0].mag = 11; test_slots[0].reserve = 37;
     test_slots[1].mag = 6; test_slots[1].reserve = TOY_GAME_AMMO_INFINITE;
     encode_player(packet, 1, 1, &camera, 87, TOY_GAME_WEAPON_SMG,
-                  TOY_GAME_PLAYING, test_slots, 0, 1, 240);
+                  TOY_GAME_PLAYING, test_slots, 0, 1, 240, 60);
     if (decode_player(packet, &net.players[1]) < 0 ||
         net.players[1].camera.x != camera.x ||
         net.players[1].camera.z != camera.z || net.players[1].hp != 87 ||
         net.players[1].weapon != TOY_GAME_WEAPON_SMG ||
         net.players[1].mag[0] != 11 || net.players[1].reserve[0] != 37 ||
-        !net.players[1].reloading || net.players[1].reload_timer_ms != 240) return 6;
+        !net.players[1].reloading || net.players[1].reload_timer_ms != 240 ||
+        net.players[1].muzzle_flash_ms != 60) return 6;
 
     /* 真正经过 localhost UDP socket 的输入与快照回环，覆盖非阻塞
      * sendto/recvfrom、对端锁定和包头校验。逐个尝试测试端口，避免并行

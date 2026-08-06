@@ -35,6 +35,7 @@ struct rasterfall_net_player {
     int reserve[TOY_GAME_WEAPON_SLOTS];
     int reloading;
     int reload_timer_ms;
+    int muzzle_flash_ms;
 };
 
 struct rasterfall_net_enemy {
