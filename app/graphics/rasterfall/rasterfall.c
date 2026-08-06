@@ -2196,7 +2196,7 @@ static void play_game_events(struct audio_ctx *audio)
 
 #include "rasterfall_logic_test.inc"
 
-#include "rasterfall_perf.inc"
+#include "rasterfall_perf.h"
 
 int main(int argc, char **argv)
 {
@@ -2226,7 +2226,7 @@ int main(int argc, char **argv)
     int input_debug = 0, input_event_count = 0, have_last_key = 0;
     int texture_stats = 0;
     int stats_enabled = 1;
-    struct perf_stats stats, stats_total;
+    struct rasterfall_perf_stats stats, stats_total;
     unsigned int last_key = 0;
     int last_key_pressed = 0;
     struct audio_ctx audio;
@@ -2319,8 +2319,8 @@ int main(int argc, char **argv)
     }
     last_time = monotonic_us();
     fps_window_start = last_time;
-    perf_init(&stats);
-    perf_init(&stats_total);
+    rasterfall_perf_init(&stats);
+    rasterfall_perf_init(&stats_total);
     while (running) {
         long now, elapsed, t_frame, t_stage;
         unsigned long prev_tris;
@@ -2538,7 +2538,7 @@ int main(int argc, char **argv)
          * 避免按键被吞。 */
         if (logic_steps > 0)
             memset(pending_key_edges, 0, sizeof(pending_key_edges));
-        perf_end_stage(&stats, &stats_total, STATS_STAGE_LOGIC, &t_stage, 0, 0);
+        rasterfall_perf_end_stage(&stats, &stats_total, RASTERFALL_STATS_LOGIC, &t_stage, 0, 0);
         /* 帧渲染计时从申请缓冲开始；双缓冲占用时的等待计入 stall。
          * 帧间隔：本次 begin_frame 距上次的墙钟时间 wall，与上次渲染
          * 帧的活跃时间相减得到 wait（轮询/逻辑/调度/组合器等待），
@@ -2550,7 +2550,7 @@ int main(int argc, char **argv)
          * 与各阶段统计严格对消。 */
         t_frame = monotonic_us();
         if (prev_begin > 0)
-            perf_add_interval(&stats, &stats_total, t_frame - prev_begin);
+            rasterfall_perf_add_interval(&stats, &stats_total, t_frame - prev_begin);
         prev_begin = t_frame;
         t_stage = t_frame;
         ready = toy_window_begin_frame(window, &surface);
@@ -2564,7 +2564,7 @@ int main(int argc, char **argv)
             if (toy_window_poll(window, &stall_events, 1000) < 0) break;
             /* stall 从申请缓冲计到等回 frame callback（含 poll 等待），
              * 即 wait 中双缓冲背压的部分。 */
-            perf_add_stall(&stats, &stats_total, monotonic_us() - t_frame);
+            rasterfall_perf_add_stall(&stats, &stats_total, monotonic_us() - t_frame);
             toy_input_apply(&input, &stall_events);
             /* 等待批次的按键边沿不能丢，也不能重复：菜单块在迭代顶部已
              * 消费过本迭代的事件，此时 key_pressed 里可能残留旧边沿
@@ -2592,23 +2592,23 @@ int main(int argc, char **argv)
         }
         if (ready > 0) {
             if (toy_renderer_begin(&renderer, &surface, 0x151922) < 0) break;
-            perf_end_stage(&stats, &stats_total, STATS_STAGE_BEGIN,
+            rasterfall_perf_end_stage(&stats, &stats_total, RASTERFALL_STATS_BEGIN,
                            &t_stage, 0, 0);
             prev_tris = renderer.submitted_triangles;
             scene_pixels = render_scene(&renderer, &camera);
-            perf_end_stage(&stats, &stats_total, STATS_STAGE_SCENE, &t_stage,
+            rasterfall_perf_end_stage(&stats, &stats_total, RASTERFALL_STATS_SCENE, &t_stage,
                            renderer.submitted_triangles - prev_tris, 0);
             prev_tris = renderer.submitted_triangles;
             scene_pixels += render_enemies(&renderer, &camera);
-            perf_end_stage(&stats, &stats_total, STATS_STAGE_ENEMIES, &t_stage,
+            rasterfall_perf_end_stage(&stats, &stats_total, RASTERFALL_STATS_ENEMIES, &t_stage,
                            renderer.submitted_triangles - prev_tris, 0);
             /* 世界几何并行光栅化；弹道/粒子/枪模随后直接写屏覆盖 */
             prev_tris = (unsigned long)renderer.cmd_count;
             stage_pixels = toy_renderer_flush(&renderer);
             scene_pixels += stage_pixels;
-            perf_end_stage(&stats, &stats_total, STATS_STAGE_RASTER,
+            rasterfall_perf_end_stage(&stats, &stats_total, RASTERFALL_STATS_RASTER,
                            &t_stage, prev_tris, (unsigned long)stage_pixels);
-            perf_add_raster(&stats, &stats_total, &renderer, prev_tris,
+            rasterfall_perf_add_raster(&stats, &stats_total, &renderer, prev_tris,
                             (unsigned long)stage_pixels);
             /* 直接写屏与第二次光栅化（拾取物）都归入 overlay 阶段 */
             prev_tris = renderer.submitted_triangles;
@@ -2650,17 +2650,17 @@ int main(int argc, char **argv)
                                  input_event_count);
             /* 游戏线程只投递事件，音乐与 SFX 由音频线程持续混音。 */
             if (audio.running) play_game_events(&audio);
-            perf_end_stage(&stats, &stats_total, STATS_STAGE_OVERLAY,
+            rasterfall_perf_end_stage(&stats, &stats_total, RASTERFALL_STATS_OVERLAY,
                            &t_stage, renderer.submitted_triangles - prev_tris,
                            (unsigned long)stage_pixels);
             if (toy_window_present(window) < 0) break;
-            perf_end_stage(&stats, &stats_total, STATS_STAGE_PRESENT,
+            rasterfall_perf_end_stage(&stats, &stats_total, RASTERFALL_STATS_PRESENT,
                            &t_stage, 0, 0);
             rendered_frames++;
             fps_window_frames++;
             now = monotonic_us();
             last_active = now - t_frame;
-            perf_record_frame(&stats, &stats_total, last_active);
+            rasterfall_perf_record_frame(&stats, &stats_total, last_active);
             fps_elapsed = now - fps_window_start;
             if (fps_elapsed >= 1000000) {
                 display_fps = (int)((long long)fps_window_frames * 1000000 /
@@ -2669,15 +2669,15 @@ int main(int argc, char **argv)
                 fps_window_start = now;
             }
             if (stats_enabled &&
-                now - stats.window_start >= STATS_WINDOW_US) {
-                perf_dump(&stats, "window");
-                perf_init(&stats);
+                now - stats.window_start >= RASTERFALL_STATS_WINDOW_US) {
+                rasterfall_perf_dump(&stats, "window");
+                rasterfall_perf_init(&stats);
             }
             if (frame_limit > 0 && rendered_frames >= frame_limit) running = 0;
         }
     }
     if (stats_enabled && stats_total.frames > 0)
-        perf_dump(&stats_total, "total");
+        rasterfall_perf_dump(&stats_total, "total");
     audio_stop(&audio);
     for (int kind = 0; kind <= TOY_SFX_PLAYER_DEATH; kind++)
         if (sfx_assets[kind].blob) toy_sound_unload(&sfx_assets[kind]);

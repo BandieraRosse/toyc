@@ -1,3 +1,14 @@
+#include "tlibc_everything.h"
+#include "core.h"
+#include "rasterfall_perf.h"
+
+static long rasterfall_perf_monotonic_us(void)
+{
+    struct timespec now;
+    if (__clock_gettime(CLOCK_MONOTONIC, &now) < 0) return 0;
+    return now.tv_sec * 1000000L + now.tv_nsec / 1000;
+}
+
 /* ── 性能统计：分阶段三角形/顶点/耗时 + 帧时间分布 ─────────────
  * 每个统计窗口（默认 5 秒）向终端输出一次：窗口平均帧率、帧渲染
  * 时间均值/p95/p99/最长，以及 logic/begin/scene/enemies/raster/
@@ -7,61 +18,23 @@
  * 被组合器占用时的等待单独计入 stall，不算渲染帧。--no-stats 关闭
  * 终端输出（采集仍然进行，开销可忽略）。 */
 
-#define STATS_WINDOW_US   5000000L
-#define STATS_RING_SIZE   1024
-#define STATS_STAGE_MAX   7
-
-enum {
-    STATS_STAGE_LOGIC = 0,
-    STATS_STAGE_BEGIN,
-    STATS_STAGE_SCENE,
-    STATS_STAGE_ENEMIES,
-    STATS_STAGE_RASTER,
-    STATS_STAGE_OVERLAY,
-    STATS_STAGE_PRESENT
-};
-
-static const char *stats_stage_names[STATS_STAGE_MAX] = {
+static const char *stats_stage_names[RASTERFALL_STATS_STAGE_MAX] = {
     "logic", "begin", "scene", "enemies", "raster", "overlay", "present"
 };
 
-struct perf_stats {
-    long window_start;              /* 窗口起点（us） */
-    int frames;                     /* 已渲染帧数 */
-    long stall_us;                  /* 双缓冲占用等待（us，含 poll 等待） */
-    long wall_us;                   /* begin_frame → 下一帧 begin_frame */
-    long stage_us[STATS_STAGE_MAX];
-    unsigned long stage_tris[STATS_STAGE_MAX];
-    unsigned long stage_pixels[STATS_STAGE_MAX];
-    int ring[STATS_RING_SIZE];      /* 帧渲染时间环形缓冲（us） */
-    int ring_count;
-    int ring_head;
-    long frame_sum;                 /* 窗口内帧时间总和 */
-    long frame_max;
-    /* 光栅化像素漏斗与纯色/纹理路径拆分（每帧主 flush 的快照） */
-    unsigned long raster_bbox_px;
-    unsigned long raster_inside_px;
-    unsigned long raster_flat_tris;
-    unsigned long raster_tex_tris;
-    unsigned long raster_flat_px;
-    unsigned long raster_tex_px;
-    long raster_flat_us;
-    long raster_tex_us;
-};
-
-static void perf_init(struct perf_stats *s)
+void rasterfall_perf_init(struct rasterfall_perf_stats *s)
 {
     memset(s, 0, sizeof(*s));
-    s->window_start = monotonic_us();
+    s->window_start = rasterfall_perf_monotonic_us();
 }
 
 /* 阶段结束：把阶段耗时与三角形/像素计数同时累积进窗口与全量两个
  * 结构，stage_start 推进到当前时刻。 */
-static void perf_end_stage(struct perf_stats *window, struct perf_stats *total,
+void rasterfall_perf_end_stage(struct rasterfall_perf_stats *window, struct rasterfall_perf_stats *total,
                            int stage, long *stage_start,
                            unsigned long tris, unsigned long pixels)
 {
-    long now = monotonic_us();
+    long now = rasterfall_perf_monotonic_us();
     window->stage_us[stage] += now - *stage_start;
     total->stage_us[stage] += now - *stage_start;
     window->stage_tris[stage] += tris;
@@ -71,25 +44,25 @@ static void perf_end_stage(struct perf_stats *window, struct perf_stats *total,
     *stage_start = now;
 }
 
-static void ring_add(struct perf_stats *s, long us)
+static void ring_add(struct rasterfall_perf_stats *s, long us)
 {
     s->ring[s->ring_head] = (int)us;
-    s->ring_head = (s->ring_head + 1) % STATS_RING_SIZE;
-    if (s->ring_count < STATS_RING_SIZE) s->ring_count++;
+    s->ring_head = (s->ring_head + 1) % RASTERFALL_STATS_RING_SIZE;
+    if (s->ring_count < RASTERFALL_STATS_RING_SIZE) s->ring_count++;
     s->frame_sum += us;
     if (us > s->frame_max) s->frame_max = us;
     s->frames++;
 }
 
-static void perf_record_frame(struct perf_stats *window,
-                              struct perf_stats *total, long us)
+void rasterfall_perf_record_frame(struct rasterfall_perf_stats *window,
+                              struct rasterfall_perf_stats *total, long us)
 {
     ring_add(window, us);
     ring_add(total, us);
 }
 
-static void perf_add_stall(struct perf_stats *window,
-                           struct perf_stats *total, long us)
+void rasterfall_perf_add_stall(struct rasterfall_perf_stats *window,
+                           struct rasterfall_perf_stats *total, long us)
 {
     window->stall_us += us;
     total->stall_us += us;
@@ -99,7 +72,7 @@ static void perf_add_stall(struct perf_stats *window,
  * 事件轮询、逻辑与调度）。按循环迭代累计（stall 迭代也算），除以渲染帧
  * 数即每渲染帧的均值（应≈1e6/fps）。wait 在 dump 中用 wall − 活跃帧
  * 时间推导，保证恒等对消。 */
-static void perf_add_interval(struct perf_stats *window, struct perf_stats *total,
+void rasterfall_perf_add_interval(struct rasterfall_perf_stats *window, struct rasterfall_perf_stats *total,
                               long wall_us)
 {
     window->wall_us += wall_us;
@@ -109,7 +82,7 @@ static void perf_add_interval(struct perf_stats *window, struct perf_stats *tota
 /* RASTER 阶段结束后读取渲染器最近一次 flush 的漏斗与路径快照。flat
  * 三角形/像素 = 本 flush 总数 − 纹理路径（last_tex_* 为覆盖式快照，
  * overlay 的第二次 flush 不重复计入）。 */
-static void perf_add_raster(struct perf_stats *window, struct perf_stats *total,
+void rasterfall_perf_add_raster(struct rasterfall_perf_stats *window, struct rasterfall_perf_stats *total,
                             const struct toy_renderer *r,
                             unsigned long tris, unsigned long pixels)
 {
@@ -136,9 +109,9 @@ static void perf_add_raster(struct perf_stats *window, struct perf_stats *total,
 }
 
 /* 排序副本上的最近秩百分位（us）：p95 即第 ceil(0.95*n) 个样本。 */
-static long perf_percentile(const struct perf_stats *s, int pct)
+static long perf_percentile(const struct rasterfall_perf_stats *s, int pct)
 {
-    int tmp[STATS_RING_SIZE];
+    int tmp[RASTERFALL_STATS_RING_SIZE];
     int i, j, n = s->ring_count, idx;
     long v;
     if (n <= 0) return 0;
@@ -153,9 +126,9 @@ static long perf_percentile(const struct perf_stats *s, int pct)
     return tmp[idx];
 }
 
-static void perf_dump(const struct perf_stats *s, const char *label)
+void rasterfall_perf_dump(const struct rasterfall_perf_stats *s, const char *label)
 {
-    long elapsed = monotonic_us() - s->window_start;
+    long elapsed = rasterfall_perf_monotonic_us() - s->window_start;
     long fps10, avg_us, total_us, p95, p99;
     unsigned long tris_all = 0, pixels_all = 0;
     int i;
@@ -179,11 +152,11 @@ static void perf_dump(const struct perf_stats *s, const char *label)
                  s->stall_us / 1000);
     }
     total_us = 0;
-    for (i = 0; i < STATS_STAGE_MAX; i++) total_us += s->stage_us[i];
+    for (i = 0; i < RASTERFALL_STATS_STAGE_MAX; i++) total_us += s->stage_us[i];
     if (total_us <= 0) total_us = 1;
     __printf("[stats:%s] %-7s %8s %8s %9s %10s %5s\n", label,
              "stage", "tris/f", "verts/f", "px/f", "us/f", "%time");
-    for (i = 0; i < STATS_STAGE_MAX; i++) {
+    for (i = 0; i < RASTERFALL_STATS_STAGE_MAX; i++) {
         unsigned long tris = s->stage_tris[i] / (unsigned long)s->frames;
         unsigned long px = s->stage_pixels[i] / (unsigned long)s->frames;
         long pct = s->stage_us[i] * 100 / total_us;
@@ -202,7 +175,7 @@ static void perf_dump(const struct perf_stats *s, const char *label)
         unsigned long bbox = s->raster_bbox_px / (unsigned long)s->frames;
         unsigned long inside = s->raster_inside_px / (unsigned long)s->frames;
         unsigned long written =
-            s->stage_pixels[STATS_STAGE_RASTER] / (unsigned long)s->frames;
+            s->stage_pixels[RASTERFALL_STATS_RASTER] / (unsigned long)s->frames;
         long ib10 = bbox > 0 ? (long)(inside * 1000 / bbox) : 0;
         long di10 = inside > 0 ? (long)(written * 1000 / inside) : 0;
         __printf("[stats:%s] funnel px/f bbox=%lu inside=%lu depth=%lu "
@@ -229,4 +202,3 @@ static void perf_dump(const struct perf_stats *s, const char *label)
                  flat_us, tex_us, fpct, 100 - fpct);
     }
 }
-
