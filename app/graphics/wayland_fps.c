@@ -2141,7 +2141,8 @@ static int run_logic_test(void)
         tlibc_free(pixels);
         return 8;
     }
-    count = render_scene(&renderer, &camera);
+    render_scene(&renderer, &camera);
+    count = toy_renderer_flush(&renderer);
     /* 破碎画面曾仍返回正数；完整 320x180 场景应稳定超过此下限。 */
     if (count < 50000) {
         toy_renderer_destroy(&renderer);
@@ -2159,7 +2160,8 @@ static int run_logic_test(void)
     game.enemies[1].z = -2500;
     game.enemies[1].dir_z = -1024;
     game.enemies[1].ai_state = TOY_GAME_ENEMY_ALERT;
-    if (render_enemies(&renderer, &camera) < 1000) {
+    render_enemies(&renderer, &camera);
+    if (toy_renderer_flush(&renderer) < 1000) {
         toy_renderer_destroy(&renderer);
         tlibc_free(pixels);
         return 15;
@@ -2203,6 +2205,7 @@ static int run_logic_test(void)
         game.pz = -6400;
         if (toy_game_equip_weapon(&game, TOY_GAME_WEAPON_SMG) != 1) return 40;
         render_scene(&renderer, &camera);
+        toy_renderer_flush(&renderer);
         last_fire_seq = game.fire_seq;
         toy_game_fire(&game, 0, 1024);
         sync_fire_effects(&camera);
@@ -2535,7 +2538,9 @@ int main(int argc, char **argv)
         int logic_steps = 0;
         int resumed = 0;
         toy_input_begin_frame(&input);
-        if (toy_window_poll(window, &events, 1000) < 0) break;
+        /* 非阻塞收输入：present 后立刻开始下一帧 CPU 工作，组合器处理
+         * 已提交缓冲的时间被渲染流水线掩盖（双缓冲）。 */
+        if (toy_window_poll(window, &events, 0) < 0) break;
         toy_input_apply(&input, &events);
         if (events.key_event_count > 0) {
             int at = events.key_event_count - 1;
@@ -2627,7 +2632,9 @@ int main(int argc, char **argv)
                 if (game.state != TOY_GAME_PLAYING)
                     input.key_pressed[KEY_R] = 1;   /* 死亡重开 */
                 fire_edge = 1;
-                rotate_camera(&camera, 37, 5);      /* 快速扫射 */
+                /* 只在水平面扫射：向上俯仰会让大部分几何体离开视锥，
+                 * 帧数虚高，无法反映真实渲染负载。 */
+                rotate_camera(&camera, 37, 0);
                 idx = rendered_frames / 60;
                 if (rendered_frames % 60 == 0 && idx < 32) {
                     static const int wslot[3] = {TOY_GAME_WEAPON_PISTOL,
@@ -2695,10 +2702,18 @@ int main(int argc, char **argv)
         if (accumulator >= FIXED_STEP_US) accumulator %= FIXED_STEP_US;
         int ready = toy_window_begin_frame(window, &surface);
         if (ready < 0) break;
+        if (ready == 0) {
+            /* 双缓冲都在组合器手里：阻塞等 frame callback 释放，期间
+             * 继续收输入；下一轮重新取缓冲。 */
+            if (toy_window_poll(window, &events, 1000) < 0) break;
+            continue;
+        }
         if (ready > 0) {
             if (toy_renderer_begin(&renderer, &surface, 0x151922) < 0) break;
             scene_pixels = render_scene(&renderer, &camera);
             scene_pixels += render_enemies(&renderer, &camera);
+            /* 世界几何并行光栅化；弹道/粒子/枪模随后直接写屏覆盖 */
+            scene_pixels += toy_renderer_flush(&renderer);
             scene_pixels += render_tracers(&renderer, &camera);
             scene_pixels += render_particles(&renderer, &camera);
             /* 第一人称武器：最后画，叠加在世界之上 */
@@ -2715,6 +2730,8 @@ int main(int argc, char **argv)
             }
             if (game.state == TOY_GAME_PLAYING && !paused) {
                 scene_pixels += render_interactables(&renderer, &camera);
+                /* 拾取物保持画在枪模之上的现状顺序 */
+                scene_pixels += toy_renderer_flush(&renderer);
                 draw_interact_prompt(&renderer);
             }
             render_damage_flash(&surface);

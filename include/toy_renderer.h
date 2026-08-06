@@ -2,6 +2,7 @@
 #define TOYC_TOY_RENDERER_H
 
 #include "toy_window.h"
+#include "pthread.h"
 
 struct toy_screen_vertex {
     int x;
@@ -23,6 +24,35 @@ struct toy_texture_view {
     uint32_t data_size;
 };
 
+/* 一条待光栅化三角形命令。投影/裁剪在记录阶段完成，包围盒与 area 一并
+ * 缓存，工作线程按自己的扫描行带直接消费，无需重算顶点级数据。 */
+struct toy_raster_cmd {
+    int textured;
+    int repeat;
+    uint32_t color;
+    uint32_t fallback;
+    const struct toy_texture_view *texture;
+    long area;
+    int bbox_minx;
+    int bbox_maxx;
+    int bbox_miny;
+    int bbox_maxy;
+    struct toy_screen_vertex a;
+    struct toy_screen_vertex b;
+    struct toy_screen_vertex c;
+};
+
+/* 渲染工作线程。job 期间只写本线程字段，主线程在 job_done_count 到齐后
+ * 汇总，避免逐像素原子操作。 */
+struct toy_render_worker {
+    pthread_t thread;
+    struct toy_renderer *renderer;
+    int id;
+    long pixels;
+    unsigned long textured_pixels;
+    unsigned long texture_fallback_pixels;
+};
+
 struct toy_renderer {
     struct toy_surface surface;
     int *depth;
@@ -30,6 +60,19 @@ struct toy_renderer {
     unsigned long textured_pixels;
     unsigned long textured_triangles;
     unsigned long texture_fallback_pixels;
+    /* 命令列表（记录阶段） */
+    struct toy_raster_cmd *cmds;
+    int cmd_count;
+    int cmd_cap;
+    int cmd_overflow;
+    /* 并行光栅化线程池 */
+    struct toy_render_worker *workers;
+    int worker_count;
+    volatile int job_generation;
+    volatile int job_done_count;
+    volatile int quit;
+    int job_is_clear;
+    uint32_t job_clear_color;
 };
 
 void toy_renderer_init(struct toy_renderer *renderer);
@@ -47,5 +90,8 @@ int toy_renderer_triangle_textured(struct toy_renderer *renderer,
                                    const struct toy_screen_vertex *c,
                                    const struct toy_texture_view *texture,
                                    int repeat, uint32_t fallback_color);
+/* 把记录阶段的三角形命令并行光栅化到 surface；返回实际写入像素数
+ * （接替 toy_renderer_triangle 系列的返回值语义）。 */
+int toy_renderer_flush(struct toy_renderer *renderer);
 
 #endif

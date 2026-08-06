@@ -117,10 +117,12 @@ static int render_cube(struct toy_renderer *renderer, const struct rotation *rot
         projected[i].z = vz;
     }
     for (int i = 0; i < 12; i++) {
-        drawn += toy_renderer_triangle(renderer,
+        toy_renderer_triangle(renderer,
             &projected[cube_faces[i][0]], &projected[cube_faces[i][1]],
             &projected[cube_faces[i][2]], face_colors[i]);
     }
+    /* 三角形并行光栅化完成后，十字线等覆盖层再直接写屏 */
+    drawn += toy_renderer_flush(renderer);
     /* Crosshair and pointer marker also make input/configure errors visible. */
     int cx = surface->width / 2, cy = surface->height / 2;
     uint32_t crosshair_color = shot_flash > 0 ? 0xFFD040 : 0xFFFFFF;
