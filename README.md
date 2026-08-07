@@ -79,12 +79,14 @@ build/rasterfall --host --port 28460
 build/rasterfall --connect 127.0.0.1 --port 28460
 build/rasterfall --net-test              # 无窗口协议与 localhost UDP 回环
 build/rasterfall_punch_server           # 公网房间协调服务，监听 UDP 28461
+# 服务端标准输入：help、rooms、room 1234、reset 1234、reset all、quit
 ```
 
 主菜单中的“创建公网房间”和“加入公网房间”使用硬编码的协调服务器
 `47.82.117.182:28461`，房间号必须是四位数字。协调服务只交换双方的公网 UDP 地址和
 一次性令牌，游戏数据随后直接在两名玩家之间进行 UDP hole punching，当前没有 relay；
-云服务器需要放行 UDP 28461。服务端也可用 `make self-app-rasterfall_punch_server` 验证
+服务端会按租约清理失联 peer，并在新主机会话注册时清空旧 guest。云服务器需要放行 UDP
+28461。服务端也可用 `make self-app-rasterfall_punch_server` 验证
 Toyc 自托管构建。
 
 当前阶段由主机校验远端移动，并在权威敌人世界上执行远端切枪、换弹、射击、命中和

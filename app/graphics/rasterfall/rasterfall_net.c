@@ -8,7 +8,7 @@
 #define NET_MAGIC_2 'N'
 #define NET_MAGIC_3 '1'
 #define NET_INPUT_SIZE 24
-#define NET_PLAYER_BASE_SIZE 38
+#define NET_PLAYER_BASE_SIZE 40
 #define NET_PLAYER_RAY_SIZE 15
 #define NET_PLAYER_SIZE (NET_PLAYER_BASE_SIZE + 4 + 1 + TOY_GAME_MAX_RAYS * NET_PLAYER_RAY_SIZE)
 #define NET_ENEMY_SIZE 26
@@ -110,6 +110,18 @@ static unsigned char put_i8_value(int value)
 static int get_i8_value(unsigned char value)
 {
     return value >= 128 ? (int)value - 256 : (int)value;
+}
+
+/* Weapon slot -1 (empty) must survive the byte-packed snapshot. */
+static unsigned char put_weapon_value(int weapon)
+{
+    return (unsigned char)(weapon < 0 ? 0 : weapon + 1);
+}
+
+static int get_weapon_value(unsigned char value)
+{
+    int weapon = (int)value - 1;
+    return weapon >= -1 && weapon < TOY_GAME_WEAPON_COUNT ? weapon : -1;
 }
 
 static int packet_begin(unsigned char *packet, int type, int payload_size,
@@ -595,7 +607,7 @@ static void encode_player(unsigned char *p, int id, int active,
 {
     p[0] = (unsigned char)(active != 0);
     p[1] = (unsigned char)id;
-    p[2] = (unsigned char)weapon;
+    p[2] = put_weapon_value(weapon);
     p[3] = (unsigned char)state;
     put_u32(p + 4, (uint32_t)camera->x);
     put_u32(p + 8, (uint32_t)camera->z);
@@ -605,14 +617,16 @@ static void encode_player(unsigned char *p, int id, int active,
     put_i16(p + 18, camera->pitch_cy);
     put_i16(p + 20, hp);
     p[22] = (unsigned char)current_slot;
-    put_i16(p + 23, slots ? slots[0].mag : 0);
-    put_i16(p + 25, slots ? slots[0].reserve : 0);
-    put_i16(p + 27, slots ? slots[1].mag : 0);
-    put_i16(p + 29, slots ? slots[1].reserve : 0);
-    p[31] = (unsigned char)(reloading != 0);
-    put_i16(p + 32, reload_timer_ms);
-    put_i16(p + 34, muzzle_flash_ms);
-    put_i16(p + 36, kills);
+    p[23] = put_weapon_value(slots ? slots[0].weapon : -1);
+    p[24] = put_weapon_value(slots ? slots[1].weapon : -1);
+    put_i16(p + 25, slots ? slots[0].mag : 0);
+    put_i16(p + 27, slots ? slots[0].reserve : 0);
+    put_i16(p + 29, slots ? slots[1].mag : 0);
+    put_i16(p + 31, slots ? slots[1].reserve : 0);
+    p[33] = (unsigned char)(reloading != 0);
+    put_i16(p + 34, reload_timer_ms);
+    put_i16(p + 36, muzzle_flash_ms);
+    put_i16(p + 38, kills);
     put_u32(p + NET_PLAYER_BASE_SIZE, fire_seq);
     if (ray_count < 0) ray_count = 0;
     if (ray_count > TOY_GAME_MAX_RAYS) ray_count = TOY_GAME_MAX_RAYS;
@@ -634,7 +648,7 @@ static int decode_player(const unsigned char *p,
 {
     player->active = p[0] != 0;
     player->id = p[1];
-    player->weapon = p[2];
+    player->weapon = get_weapon_value(p[2]);
     player->state = p[3];
     player->camera.x = (int)get_u32(p + 4);
     player->camera.z = (int)get_u32(p + 8);
@@ -644,11 +658,13 @@ static int decode_player(const unsigned char *p,
     player->camera.pitch_cy = get_i16(p + 18);
     player->hp = get_i16(p + 20);
     player->current_slot = p[22] < TOY_GAME_WEAPON_SLOTS ? p[22] : 0;
-    player->mag[0] = get_i16(p + 23); player->reserve[0] = get_i16(p + 25);
-    player->mag[1] = get_i16(p + 27); player->reserve[1] = get_i16(p + 29);
-    player->reloading = p[31] != 0; player->reload_timer_ms = get_i16(p + 32);
-    player->muzzle_flash_ms = get_i16(p + 34);
-    player->kills = get_i16(p + 36);
+    player->slot_weapon[0] = get_weapon_value(p[23]);
+    player->slot_weapon[1] = get_weapon_value(p[24]);
+    player->mag[0] = get_i16(p + 25); player->reserve[0] = get_i16(p + 27);
+    player->mag[1] = get_i16(p + 29); player->reserve[1] = get_i16(p + 31);
+    player->reloading = p[33] != 0; player->reload_timer_ms = get_i16(p + 34);
+    player->muzzle_flash_ms = get_i16(p + 36);
+    player->kills = get_i16(p + 38);
     player->fire_seq = get_u32(p + NET_PLAYER_BASE_SIZE);
     player->ray_count = p[NET_PLAYER_BASE_SIZE + 4];
     if (player->ray_count > TOY_GAME_MAX_RAYS) return -1;
@@ -842,17 +858,41 @@ void rasterfall_net_poll(struct rasterfall_net *net)
             return;
         }
         if (net->public_room && punch_packet(packet, (int)received, PUNCH_MATCH)) {
+            uint32_t match_token;
+            int new_match;
             if (received < 18 || get_u16(packet + 6) != (unsigned int)net->public_room_id)
                 continue;
-            net->public_token = get_u32(packet + 8);
+            match_token = get_u32(packet + 8);
+            new_match = !net->public_matched || net->public_token != match_token;
+            net->public_token = match_token;
             memset(&net->peer, 0, sizeof(net->peer));
             net->peer.sin_family = AF_INET;
             memcpy(&net->peer.sin_addr.s_addr, packet + 12, 4);
             net->peer.sin_port = htons((unsigned short)get_u16(packet + 16));
             net->peer_known = 1;
             net->public_matched = 1;
-            if (net->mode == RASTERFALL_NET_HOST && !net->peer_state_initialized)
+            if (net->mode == RASTERFALL_NET_HOST && new_match) {
+                /* A server-side room reset starts a new session generation.
+                 * Drop the old remote inventory/state before the next input,
+                 * otherwise the host can render a stale player model. */
                 memcpy(&net->peer_camera, &net->peer_spawn, sizeof(net->peer_camera));
+                memset(net->peer_slots, 0, sizeof(net->peer_slots));
+                net->peer_current_slot = 0;
+                net->peer_hp = 0;
+                net->peer_state = TOY_GAME_PLAYING;
+                net->peer_reloading = 0;
+                net->peer_reload_timer_ms = 0;
+                net->peer_fire_cooldown_ms = 0;
+                net->peer_muzzle_flash_ms = 0;
+                net->peer_damage_flash_ms = 0;
+                net->peer_kills = 0;
+                net->peer_fire_seq = 0;
+                net->peer_ray_count = 0;
+                net->peer_state_initialized = 0;
+                net->remote_command_ready = 0;
+                net->last_input_sequence = 0;
+                net->remote_event_queue_count = 0;
+            }
             net->last_public_punch_ms = 0;
             punch_send_probe(net);
             if (net->mode == RASTERFALL_NET_CLIENT) {
@@ -1115,6 +1155,8 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
         session->game_state.kills = own->kills;
         session->game_state.state = own->state;
         session->game_state.current_slot = own->current_slot;
+        session->game_state.slots[0].weapon = own->slot_weapon[0];
+        session->game_state.slots[1].weapon = own->slot_weapon[1];
         session->game_state.slots[0].mag = own->mag[0];
         session->game_state.slots[0].reserve = own->reserve[0];
         session->game_state.slots[1].mag = own->mag[1];
@@ -1222,6 +1264,8 @@ int rasterfall_net_self_test(void)
     camera.pitch_sy = 0;
     camera.pitch_cy = 1024;
     memset(test_slots, 0, sizeof(test_slots));
+    test_slots[0].weapon = TOY_GAME_WEAPON_SMG;
+    test_slots[1].weapon = TOY_GAME_WEAPON_SHOTGUN;
     test_slots[0].mag = 11; test_slots[0].reserve = 37;
     test_slots[1].mag = 6; test_slots[1].reserve = TOY_GAME_AMMO_INFINITE;
     memset(&test_ray, 0, sizeof(test_ray));
@@ -1234,6 +1278,8 @@ int rasterfall_net_self_test(void)
         net.players[1].camera.x != camera.x ||
         net.players[1].camera.z != camera.z || net.players[1].hp != 87 ||
         net.players[1].weapon != TOY_GAME_WEAPON_SMG ||
+        net.players[1].slot_weapon[0] != TOY_GAME_WEAPON_SMG ||
+        net.players[1].slot_weapon[1] != TOY_GAME_WEAPON_SHOTGUN ||
         net.players[1].mag[0] != 11 || net.players[1].reserve[0] != 37 ||
         !net.players[1].reloading || net.players[1].reload_timer_ms != 240 ||
         net.players[1].muzzle_flash_ms != 60 || net.players[1].kills != 4 ||

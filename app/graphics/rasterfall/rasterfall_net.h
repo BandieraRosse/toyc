@@ -8,7 +8,7 @@
 
 #define RASTERFALL_NET_DEFAULT_PORT 28460
 #define RASTERFALL_NET_MAX_PACKET 1400
-#define RASTERFALL_NET_PROTOCOL_VERSION 3
+#define RASTERFALL_NET_PROTOCOL_VERSION 4
 #define RASTERFALL_NET_PLAYER_MAX 2
 #define RASTERFALL_NET_EVENT_QUEUE_MAX 64
 #define RASTERFALL_NET_DISCOVERY_PORT 28459
@@ -61,6 +61,9 @@ struct rasterfall_net_player {
     int weapon;
     int state;
     int current_slot;
+    /* The active weapon is not enough to restore the inventory after a
+     * remote pickup: the other slot may have changed while it was inactive. */
+    int slot_weapon[TOY_GAME_WEAPON_SLOTS];
     int mag[TOY_GAME_WEAPON_SLOTS];
     int reserve[TOY_GAME_WEAPON_SLOTS];
     int reloading;
