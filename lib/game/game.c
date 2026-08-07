@@ -53,6 +53,13 @@ static const char *weapon_names[TOY_GAME_WEAPON_COUNT] = {
     "PISTOL", "SMG", "SHOTGUN"
 };
 
+static const struct toy_game_enemy_info enemy_table[TOY_GAME_ENEMY_TYPE_COUNT] = {
+    /* max hp, speed range, bite damage, model, base color */
+    { 1, 38, 56, 2, 0, 0x4A5D3A },
+    { 1, 66, 82, 2, 1, 0x6A8A42 },
+    { 4, 24, 34, 4, 2, 0x624A3A }
+};
+
 const struct toy_game_weapon_info *toy_game_weapon_info(int weapon)
 {
     if (weapon < 0 || weapon >= TOY_GAME_WEAPON_COUNT)
@@ -64,6 +71,34 @@ const char *toy_game_weapon_name(int weapon)
 {
     if (weapon < 0 || weapon >= TOY_GAME_WEAPON_COUNT) return "UNKNOWN";
     return weapon_names[weapon];
+}
+
+const struct toy_game_enemy_info *toy_game_enemy_info(int type)
+{
+    if (type < 0 || type >= TOY_GAME_ENEMY_TYPE_COUNT)
+        return &enemy_table[TOY_GAME_ENEMY_COMMON];
+    return &enemy_table[type];
+}
+
+struct toy_game_actor *toy_game_actor_by_id(struct toy_game *g, int actor_id)
+{
+    int i;
+    if (!g) return NULL;
+    for (i = 0; i < TOY_GAME_MAX_ACTORS; i++)
+        if (g->actors[i].active && g->actors[i].actor_id == actor_id)
+            return &g->actors[i];
+    return NULL;
+}
+
+const struct toy_game_actor *toy_game_actor_by_id_const(const struct toy_game *g,
+                                                        int actor_id)
+{
+    int i;
+    if (!g) return NULL;
+    for (i = 0; i < TOY_GAME_MAX_ACTORS; i++)
+        if (g->actors[i].active && g->actors[i].actor_id == actor_id)
+            return &g->actors[i];
+    return NULL;
 }
 
 static int segment_hits_box(int px, int pz, int qx, int qz,
@@ -156,6 +191,43 @@ void toy_game_set_ai_teammate(struct toy_game *g, int active, int x, int z,
     g->ai_fire_seq = 0;
     g->ai_ray_count = 0;
     memset(g->ai_rays, 0, sizeof(g->ai_rays));
+    memset(&g->actors[0], 0, sizeof(g->actors[0]));
+    g->actors[0].active = g->ai_active;
+    g->actors[0].actor_id = g->ai_actor_id;
+    g->actors[0].kind = TOY_GAME_ACTOR_AI;
+    g->actors[0].class_id = TOY_GAME_AI_LEVEL_1;
+    g->actors[0].state = TOY_GAME_ACTOR_ALIVE;
+    g->actors[0].x = g->ai_x; g->actors[0].z = g->ai_z;
+    g->actors[0].sy = g->ai_sy; g->actors[0].cy = g->ai_cy;
+    g->actors[0].hp = g->actors[0].max_hp = g->ai_hp;
+    g->actors[0].slots[0] = g->ai_slots[0];
+    g->actors[0].slots[1] = g->ai_slots[1];
+    g->actors[0].current_slot = g->ai_current_slot;
+    g->actors[0].fire_seq = g->ai_fire_seq;
+    g->actors[0].ray_count = g->ai_ray_count;
+    memcpy(g->actors[0].name, g->ai_name, sizeof(g->actors[0].name));
+}
+
+static void sync_ai_actor_from_legacy(struct toy_game *g)
+{
+    struct toy_game_actor *a = &g->actors[0];
+    a->active = g->ai_active;
+    a->actor_id = g->ai_actor_id;
+    a->x = g->ai_x; a->z = g->ai_z;
+    a->sy = g->ai_sy; a->cy = g->ai_cy;
+    a->hp = g->ai_hp;
+    a->state = g->ai_down ? TOY_GAME_ACTOR_DOWNED : TOY_GAME_ACTOR_ALIVE;
+    a->revive_progress_ms = g->ai_revive_progress_ms;
+    memcpy(a->slots, g->ai_slots, sizeof(a->slots));
+    a->current_slot = g->ai_current_slot;
+    a->reloading = g->ai_reloading;
+    a->reload_timer_ms = g->ai_reload_timer_ms;
+    a->fire_cooldown_ms = g->ai_fire_cooldown_ms;
+    a->muzzle_flash_ms = g->ai_muzzle_flash_ms;
+    a->fire_seq = g->ai_fire_seq;
+    a->ray_count = g->ai_ray_count;
+    memcpy(a->rays, g->ai_rays, sizeof(a->rays));
+    memcpy(a->name, g->ai_name, sizeof(a->name));
 }
 
 int toy_game_revive_ai(struct toy_game *g, int dt_ms)
@@ -166,6 +238,7 @@ int toy_game_revive_ai(struct toy_game *g, int dt_ms)
     g->ai_revive_progress_ms = 0;
     g->ai_hp = TOY_GAME_REVIVE_HP;
     g->ai_down = 0;
+    sync_ai_actor_from_legacy(g);
     push_event(g, TOY_GAME_EV_ACTOR_REVIVE);
     return 1;
 }
@@ -296,6 +369,15 @@ static void init_enemy_ai(struct toy_game *g, struct toy_game_enemy *e)
     e->dir_z = enemy_dir_z[direction];
 }
 
+static void init_enemy_stats(struct toy_game *g, struct toy_game_enemy *e,
+                             int type)
+{
+    const struct toy_game_enemy_info *info = toy_game_enemy_info(type);
+    e->type = type >= 0 && type < TOY_GAME_ENEMY_TYPE_COUNT ? type : 0;
+    e->speed = rand_range(g, info->speed_min, info->speed_max);
+    e->hp = info->max_hp;
+}
+
 /* 在矩形区域内随机生成一个追踪型敌人；距玩家过近、压障碍或槽满
  * 返回 0。生成方向直接朝向玩家（追踪态首个逻辑步就会转脸）。 */
 static int spawn_tracking_enemy(struct toy_game *g, int minx, int maxx,
@@ -317,9 +399,8 @@ static int spawn_tracking_enemy(struct toy_game *g, int minx, int maxx,
         g->enemies[slot].active = 1;
         g->enemies[slot].x = x;
         g->enemies[slot].z = z;
-        /* 追踪者比普通僵尸更快、更执拗 */
-        g->enemies[slot].speed = rand_range(g, 58, 70);
-        g->enemies[slot].hp = 1;
+        /* 追踪尸潮使用快速敌人的数值，但保留独立 tracking 行为。 */
+        init_enemy_stats(g, &g->enemies[slot], TOY_GAME_ENEMY_FAST);
         g->enemies[slot].bite_cooldown_ms = 0;
         g->enemies[slot].flash = 0;
         g->enemies[slot].hurt = 0;
@@ -414,8 +495,14 @@ static int try_spawn(struct toy_game *g)
         g->enemies[slot].active = 1;
         g->enemies[slot].x = x;
         g->enemies[slot].z = z;
-        g->enemies[slot].speed = rand_range(g, 38, 56);
-        g->enemies[slot].hp = 1;
+        {
+            /* Keep the old PRNG sequence stable; type selection is derived
+             * from the slot instead of consuming another random value. */
+            int type = slot % 10 == 0 ? TOY_GAME_ENEMY_HEAVY :
+                       slot % 5 == 0 ? TOY_GAME_ENEMY_FAST :
+                       TOY_GAME_ENEMY_COMMON;
+            init_enemy_stats(g, &g->enemies[slot], type);
+        }
         g->enemies[slot].bite_cooldown_ms = 0;
         g->enemies[slot].flash = 0;
         g->enemies[slot].hurt = 0;
@@ -443,8 +530,7 @@ void toy_game_place_enemy(struct toy_game *g, int x, int z)
     g->enemies[slot].active = 1;
     g->enemies[slot].x = x;
     g->enemies[slot].z = z;
-    g->enemies[slot].speed = 50;
-    g->enemies[slot].hp = 1;
+    init_enemy_stats(g, &g->enemies[slot], TOY_GAME_ENEMY_COMMON);
     g->enemies[slot].bite_cooldown_ms = 0;
     g->enemies[slot].flash = 0;
     g->enemies[slot].hurt = 0;
@@ -603,9 +689,10 @@ static void update_campaign(struct toy_game *g, int dt_ms)
 
 static void bite_player(struct toy_game *g, struct toy_game_enemy *e)
 {
+    const struct toy_game_enemy_info *info = toy_game_enemy_info(e->type);
     if (e->bite_cooldown_ms > 0 || g->player_down) return;
     e->bite_cooldown_ms = TOY_GAME_BITE_MS;
-    g->hp -= TOY_GAME_BITE_DAMAGE;
+    g->hp -= info->bite_damage;
     if (g->hp < 0) g->hp = 0;
     g->damage_flash_ms = TOY_GAME_DAMAGE_FLASH_MS;
     e->hurt = 150;
@@ -619,9 +706,10 @@ static void bite_player(struct toy_game *g, struct toy_game_enemy *e)
 
 static void bite_ai(struct toy_game *g, struct toy_game_enemy *e)
 {
+    const struct toy_game_enemy_info *info = toy_game_enemy_info(e->type);
     if (e->bite_cooldown_ms > 0 || !g->ai_active || g->ai_down) return;
     e->bite_cooldown_ms = TOY_GAME_BITE_MS;
-    g->ai_hp -= TOY_GAME_BITE_DAMAGE;
+    g->ai_hp -= info->bite_damage;
     if (g->ai_hp < 0) g->ai_hp = 0;
     e->hurt = 150;
     push_event(g, TOY_GAME_EV_BITE);
@@ -1332,6 +1420,7 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
     int target = -1, best_dist = 0, i;
     int sy = 0, cy = 1024;
     int player_down;
+    sync_ai_actor_from_legacy(g);
     if (!g->ai_active || g->ai_down || g->state != TOY_GAME_PLAYING) return;
 
     /* 与普通敌人察觉距离同量级，且只选择无遮挡目标。 */
@@ -1405,6 +1494,7 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
     g->ray_count = player_ray_count;
     g->fire_seq = player_fire_seq;
     g->player_down = player_down;
+    sync_ai_actor_from_legacy(g);
 }
 
 void toy_game_update_held(struct toy_game *g,

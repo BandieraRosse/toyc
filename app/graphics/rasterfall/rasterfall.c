@@ -1490,14 +1490,16 @@ static int render_enemies(struct toy_renderer *renderer,
             scale = e->dying_ms * 1000 / TOY_GAME_DYING_MS;
             color = 0x5A1A1A;
         } else {
+            const struct toy_game_enemy_info *info = toy_game_enemy_info(e->type);
+            color = info->color;
+            if (e->type == TOY_GAME_ENEMY_HEAVY) scale = 1250;
             if (e->hurt > 0) color = 0xBB3333;
             else if (e->flash > 0) color = 0xDFDFDF;
             else if (e->ai_state == TOY_GAME_ENEMY_TRACKING)
                 color = 0x8A2A2A;   /* 尸潮追踪者：红色，一眼可辨 */
-            else color = 0x4A5D3A;
         }
         pixels += render_blob_shadow(renderer, camera, e, scale);
-        if ((i & 1) == 0)
+        if (e->type == TOY_GAME_ENEMY_HEAVY || (i & 1) == 0)
             pixels += render_block_enemy(renderer, camera, e, scale, color);
         else
             pixels += render_round_enemy(renderer, camera, e, scale, color);

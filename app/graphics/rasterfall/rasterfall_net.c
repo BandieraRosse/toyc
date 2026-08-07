@@ -11,7 +11,7 @@
 #define NET_PLAYER_BASE_SIZE 40
 #define NET_PLAYER_RAY_SIZE 15
 #define NET_PLAYER_SIZE (NET_PLAYER_BASE_SIZE + 4 + 1 + TOY_GAME_MAX_RAYS * NET_PLAYER_RAY_SIZE)
-#define NET_ENEMY_SIZE 26
+#define NET_ENEMY_SIZE 27
 #define NET_EVENT_SIZE (4 + 1 + TOY_GAME_MAX_EVENTS)
 #define NET_WORLD_SIZE 32
 #define NET_SNAPSHOT_BASE 8
@@ -705,24 +705,26 @@ static int decode_player(const unsigned char *p,
 static void encode_enemy(unsigned char *p, const struct toy_game_enemy *e)
 {
     p[0] = (unsigned char)e->active;
-    p[1] = (unsigned char)e->ai_state;
-    put_i16(p + 2, e->hp);
-    put_u32(p + 4, (uint32_t)e->x); put_u32(p + 8, (uint32_t)e->z);
-    put_i16(p + 12, e->speed); put_i16(p + 14, e->bite_cooldown_ms);
-    put_i16(p + 16, e->flash); put_i16(p + 18, e->hurt);
-    put_i16(p + 20, e->dying_ms);
-    put_i16(p + 22, e->dir_x); put_i16(p + 24, e->dir_z);
+    p[1] = (unsigned char)e->type;
+    p[2] = (unsigned char)e->ai_state;
+    put_i16(p + 3, e->hp);
+    put_u32(p + 5, (uint32_t)e->x); put_u32(p + 9, (uint32_t)e->z);
+    put_i16(p + 13, e->speed); put_i16(p + 15, e->bite_cooldown_ms);
+    put_i16(p + 17, e->flash); put_i16(p + 19, e->hurt);
+    put_i16(p + 21, e->dying_ms);
+    put_i16(p + 23, e->dir_x); put_i16(p + 25, e->dir_z);
 }
 
 static void decode_enemy(const unsigned char *p, struct rasterfall_net_enemy *e)
 {
     memset(e, 0, sizeof(*e));
-    e->active = p[0]; e->ai_state = p[1]; e->hp = get_i16(p + 2);
-    e->x = (int)get_u32(p + 4); e->z = (int)get_u32(p + 8);
-    e->speed = get_i16(p + 12); e->bite_cooldown_ms = get_i16(p + 14);
-    e->flash = get_i16(p + 16); e->hurt = get_i16(p + 18);
-    e->dying_ms = get_i16(p + 20);
-    e->dir_x = get_i16(p + 22); e->dir_z = get_i16(p + 24);
+    e->active = p[0]; e->type = p[1]; e->ai_state = p[2];
+    e->hp = get_i16(p + 3);
+    e->x = (int)get_u32(p + 5); e->z = (int)get_u32(p + 9);
+    e->speed = get_i16(p + 13); e->bite_cooldown_ms = get_i16(p + 15);
+    e->flash = get_i16(p + 17); e->hurt = get_i16(p + 19);
+    e->dying_ms = get_i16(p + 21);
+    e->dir_x = get_i16(p + 23); e->dir_z = get_i16(p + 25);
 }
 
 int rasterfall_net_send_snapshot(struct rasterfall_net *net,
@@ -1246,7 +1248,8 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
             struct toy_game_enemy *dst = &session->game_state.enemies[i];
             const struct rasterfall_net_enemy *src = &net->enemies[i];
             int old_active = dst->active;
-            dst->active = src->active; dst->ai_state = src->ai_state;
+            dst->active = src->active; dst->type = src->type;
+            dst->ai_state = src->ai_state;
             dst->hp = src->hp; dst->x = src->x; dst->z = src->z;
             dst->speed = src->speed; dst->bite_cooldown_ms = src->bite_cooldown_ms;
             dst->flash = src->flash; dst->hurt = src->hurt;

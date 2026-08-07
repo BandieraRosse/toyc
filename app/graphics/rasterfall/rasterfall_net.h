@@ -76,7 +76,7 @@ struct rasterfall_net_player {
 };
 
 struct rasterfall_net_enemy {
-    int active, ai_state, hp;
+    int active, type, ai_state, hp;
     int x, z, speed;
     int bite_cooldown_ms, flash, hurt, dying_ms;
     int dir_x, dir_z;

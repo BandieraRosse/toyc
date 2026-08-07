@@ -16,6 +16,7 @@
 #include "tlibc_types.h"
 
 #define TOY_GAME_MAX_ENEMIES    32
+#define TOY_GAME_MAX_ACTORS     4
 #define TOY_GAME_AMMO_INFINITE  (-1)
 #define TOY_GAME_BITE_MS        1000
 #define TOY_GAME_BITE_DAMAGE    2
@@ -97,6 +98,26 @@ enum toy_game_actor_kind {
     TOY_GAME_ACTOR_AI = 1
 };
 
+enum toy_game_actor_state {
+    TOY_GAME_ACTOR_ALIVE,
+    TOY_GAME_ACTOR_DOWNED,
+    TOY_GAME_ACTOR_DEAD
+};
+
+enum toy_game_ai_class {
+    TOY_GAME_AI_LEVEL_1,
+    TOY_GAME_AI_LEVEL_2,
+    TOY_GAME_AI_LEVEL_3,
+    TOY_GAME_AI_CLASS_COUNT
+};
+
+enum toy_game_enemy_type {
+    TOY_GAME_ENEMY_COMMON,
+    TOY_GAME_ENEMY_FAST,
+    TOY_GAME_ENEMY_HEAVY,
+    TOY_GAME_ENEMY_TYPE_COUNT
+};
+
 enum toy_game_event {
     TOY_GAME_EV_SHOOT,
     TOY_GAME_EV_DRY_FIRE,
@@ -138,6 +159,15 @@ struct toy_game_weapon_info {
     int slot;          /* 装备槽：0=主武器，1=副武器 */
 };
 
+struct toy_game_enemy_info {
+    int max_hp;
+    int speed_min;
+    int speed_max;
+    int bite_damage;
+    int model_id;
+    unsigned int color;
+};
+
 /* 弹丸射线记录：宿主据此渲染子弹轨迹（tracer）与命中特效 */
 struct toy_game_ray {
     int sy, cy;        /* 水平弹丸方向（1024 定点，已归一化） */
@@ -155,6 +185,7 @@ struct toy_game_slot {
 
 struct toy_game_enemy {
     int active;         /* 0=空槽 1=存活 2=倒地中 */
+    int type;           /* enum toy_game_enemy_type */
     int x, z;           /* 世界坐标（xz 平面） */
     int speed;          /* 每 16ms 逻辑步移动单位 */
     int hp;
@@ -173,6 +204,29 @@ struct toy_game_enemy {
     int dir_x, dir_z;   /* 面向，1024 基准定点 */
 };
 
+/* 固定容量 actor 容器。旧的 ai_* 字段暂时保留在 toy_game 中作为兼容
+ * 镜像，本结构是后续多 AI 迁移的唯一目标。 */
+struct toy_game_actor {
+    int active;
+    int actor_id;
+    int kind;
+    int class_id;
+    int state;
+    int x, z;
+    int sy, cy;
+    int hp, max_hp;
+    int revive_progress_ms;
+    char name[TOY_GAME_MAX_NAME];
+    struct toy_game_slot slots[TOY_GAME_WEAPON_SLOTS];
+    int current_slot;
+    int reloading, reload_timer_ms;
+    int fire_cooldown_ms;
+    int muzzle_flash_ms;
+    unsigned int fire_seq;
+    int ray_count;
+    struct toy_game_ray rays[TOY_GAME_MAX_RAYS];
+};
+
 struct toy_game {
     /* 玩家 */
     int px, pz;         /* 宿主每帧同步相机位置 */
@@ -188,6 +242,8 @@ struct toy_game {
     int actor_id;
     int actor_kind;
     char player_name[TOY_GAME_MAX_NAME];
+
+    struct toy_game_actor actors[TOY_GAME_MAX_ACTORS];
 
     /* 固定出生的 AI 队友。其武器字段与玩家共用同一套更新/换弹/射击
      * 规则；它不移动，只在索敌范围内选择敌人开火。 */
@@ -297,6 +353,10 @@ int  toy_game_equip_weapon(struct toy_game *g, int weapon); /* 按武器定义�
 int  toy_game_refill_ammo(struct toy_game *g);              /* 弹药盒：补满已拥有武器的备弹，有变化返回 1 */
 const struct toy_game_weapon_info *toy_game_weapon_info(int weapon);
 const char *toy_game_weapon_name(int weapon);
+const struct toy_game_enemy_info *toy_game_enemy_info(int type);
+struct toy_game_actor *toy_game_actor_by_id(struct toy_game *g, int actor_id);
+const struct toy_game_actor *toy_game_actor_by_id_const(const struct toy_game *g,
+                                                        int actor_id);
 int  toy_game_drain_events(struct toy_game *g, unsigned char *out, int max);
 void toy_game_place_enemy(struct toy_game *g, int x, int z); /* 测试钩子 */
 int  toy_game_spawn_horde(struct toy_game *g, int count_min, int count_max,
