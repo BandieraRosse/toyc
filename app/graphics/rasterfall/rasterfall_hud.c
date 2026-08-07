@@ -214,6 +214,10 @@ void rasterfall_hud_draw_interact_prompt(struct toy_renderer *renderer,
         snprintf(label, sizeof(label), "E SUMMON BROWN BRUTES");
     else if (it->kind == TOY_MAP_PICKUP_FAST_HORDE_BUTTON)
         snprintf(label, sizeof(label), "E SUMMON RED RUNNERS");
+    else if (it->kind == TOY_MAP_PICKUP_BASE_1_BUTTON)
+        snprintf(label, sizeof(label), "E OPEN BASE 1 GATE");
+    else if (it->kind == TOY_MAP_PICKUP_BASE_2_BUTTON)
+        snprintf(label, sizeof(label), "E OPEN BASE 2 GATE");
     else if (it->kind == TOY_MAP_PICKUP_AMMO)
         snprintf(label, sizeof(label), "E TAKE AMMO");
     else {

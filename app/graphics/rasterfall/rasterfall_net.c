@@ -888,6 +888,7 @@ int rasterfall_net_send_snapshot(struct rasterfall_net *net,
     put_i16(world_data + 22, game->goal_hold_ms);
     put_i16(world_data + 24, manual_alarm_timer_ms);
     put_i16(world_data + 26, game->alarm_triggered);
+    put_i16(world_data + 28, game->campaign_stage);
     net->remote_event_snapshot_sequence = net->last_snapshot_sequence;
     if (event_count)
         net->remote_event_snapshot_last_id = net->remote_event_ids[event_count - 1];
@@ -962,6 +963,7 @@ static int decode_snapshot(const unsigned char *payload, int size,
     net->snapshot_world_goal_hold_ms = get_i16(world_data + 22);
     net->snapshot_world_manual_alarm_timer_ms = get_i16(world_data + 24);
     net->snapshot_world_alarm_triggered = get_i16(world_data + 26);
+    net->snapshot_world_campaign_stage = get_i16(world_data + 28);
     net->snapshot_ready = 1;
     return 0;
 }
@@ -1428,6 +1430,7 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
         session->game_state.director_encounters = net->snapshot_world_director_encounters;
         session->game_state.goal_hold_ms = net->snapshot_world_goal_hold_ms;
         session->game_state.alarm_triggered = net->snapshot_world_alarm_triggered;
+        session->game_state.campaign_stage = net->snapshot_world_campaign_stage;
         session->air_walls_enabled = net->snapshot_air_walls_enabled;
         session->manual_alarm_on = net->snapshot_manual_alarm_enabled;
         session->manual_alarm_timer = net->snapshot_world_manual_alarm_timer_ms;

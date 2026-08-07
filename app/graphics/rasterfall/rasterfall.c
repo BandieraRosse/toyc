@@ -895,7 +895,9 @@ static int render_interactables(struct toy_renderer *renderer,
                  it->kind == TOY_MAP_PICKUP_AIR_BUTTON ||
                  it->kind == TOY_MAP_PICKUP_ALARM_BUTTON ||
                  it->kind == TOY_MAP_PICKUP_HEAVY_HORDE_BUTTON ||
-                 it->kind == TOY_MAP_PICKUP_FAST_HORDE_BUTTON)
+                 it->kind == TOY_MAP_PICKUP_FAST_HORDE_BUTTON ||
+                 it->kind == TOY_MAP_PICKUP_BASE_1_BUTTON ||
+                 it->kind == TOY_MAP_PICKUP_BASE_2_BUTTON)
             pixels += render_button(renderer, camera, it->x, it->y, it->z, on,
                                     it->x < -10000 ? 1 : it->x > 10000 ? 2 : 0);
         else

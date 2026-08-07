@@ -350,6 +350,25 @@ int toy_game_revive_actor(struct toy_game *g, int actor_index, int dt_ms)
     return 1;
 }
 
+int toy_game_set_campaign_stage(struct toy_game *g, int stage)
+{
+    if (!g || stage < 0 || stage > 2 || stage < g->campaign_stage) return 0;
+    g->campaign_stage = stage;
+    return 1;
+}
+
+int toy_game_move_ai_actor(struct toy_game *g, int actor_index, int x, int z)
+{
+    struct toy_game_actor *a;
+    if (!g || actor_index < 0 || actor_index >= TOY_GAME_MAX_ACTORS)
+        return 0;
+    a = &g->actors[actor_index];
+    if (!a->active || a->kind != TOY_GAME_ACTOR_AI) return 0;
+    a->x = x; a->z = z;
+    if (actor_index == 0) { g->ai_x = x; g->ai_z = z; }
+    return 1;
+}
+
 void toy_game_set_world(struct toy_game *g,
                         const struct toy_game_box *boxes,
                         int box_count, int room_limit)
@@ -377,6 +396,7 @@ void toy_game_set_campaign(struct toy_game *g,
     g->spawn_zone_count = spawn_zone_count;
     g->campaign_mode = safe_room_count >= 2 && spawn_zone_count > 0;
     g->goal_hold_ms = 0;
+    g->campaign_stage = 0;
     g->alarm_spawn_zone = -1;
     if (g->campaign_mode) {
         g->to_spawn = 0;
@@ -682,6 +702,10 @@ static void update_waves(struct toy_game *g, int dt_ms)
 static void update_campaign_goal(struct toy_game *g, int dt_ms)
 {
     const struct toy_game_box *goal;
+    if (g->campaign_stage < 2) {
+        g->goal_hold_ms = 0;
+        return;
+    }
     goal = &g->safe_rooms[g->safe_room_count - 1];
     if (toy_game_point_in_box(g->px, g->pz, goal)) {
         g->goal_hold_ms += dt_ms;

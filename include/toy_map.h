@@ -6,7 +6,7 @@
 #define TOY_MAP_MAX_BOXES 64
 #define TOY_MAP_MAX_ZONES 16
 #define TOY_MAP_MAX_DRAW 128
-#define TOY_MAP_MAX_PICKUPS 8
+#define TOY_MAP_MAX_PICKUPS 16
 #define TOY_MAP_TEXT_SIZE 64
 
 enum toy_map_draw_type {
@@ -31,7 +31,9 @@ enum toy_map_pickup_kind {
     TOY_MAP_PICKUP_AIR_BUTTON,
     TOY_MAP_PICKUP_ALARM_BUTTON,
     TOY_MAP_PICKUP_HEAVY_HORDE_BUTTON,
-    TOY_MAP_PICKUP_FAST_HORDE_BUTTON
+    TOY_MAP_PICKUP_FAST_HORDE_BUTTON,
+    TOY_MAP_PICKUP_BASE_1_BUTTON,
+    TOY_MAP_PICKUP_BASE_2_BUTTON
 };
 struct toy_map_pickup { int kind; int x, z, y; };
 struct toy_map_draw {

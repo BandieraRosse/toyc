@@ -7,8 +7,8 @@
 #include "rasterfall_session.h"
 
 #define RASTERFALL_NET_DEFAULT_PORT 28460
-#define RASTERFALL_NET_MAX_PACKET 1600
-#define RASTERFALL_NET_PROTOCOL_VERSION 8
+#define RASTERFALL_NET_MAX_PACKET 2600
+#define RASTERFALL_NET_PROTOCOL_VERSION 9
 #define RASTERFALL_NET_MAX_ACTORS 8
 #define RASTERFALL_NET_PLAYER_MAX 2
 #define RASTERFALL_NET_EVENT_QUEUE_MAX 64
@@ -159,6 +159,7 @@ struct rasterfall_net {
     int snapshot_world_goal_hold_ms;
     int snapshot_world_manual_alarm_timer_ms;
     int snapshot_world_alarm_triggered;
+    int snapshot_world_campaign_stage;
     int snapshot_air_walls_enabled;
     int snapshot_manual_alarm_enabled;
     int snapshot_ready;

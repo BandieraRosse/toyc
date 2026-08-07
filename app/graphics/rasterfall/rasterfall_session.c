@@ -8,9 +8,70 @@
 #define HORDE_MIN_PLAYER_DIST 700
 #define QUARTER_TURN 1611
 #define SMOOTH_TURN_STEP 128
+#define BASE_1_X (-3000)
+#define BASE_1_Z (-1800)
+#define BASE_2_X (-2500)
+#define BASE_2_Z 3500
 
 static void session_interact(struct rasterfall_session *session,
                              struct rasterfall_interactable *it);
+
+static void session_down_ai(struct rasterfall_session *session, int index,
+                            int x, int z)
+{
+    struct toy_game_actor *actor = &session->game_state.actors[index];
+    toy_game_move_ai_actor(&session->game_state, index, x, z);
+    actor->hp = 0;
+    actor->state = TOY_GAME_ACTOR_DOWNED;
+    actor->revive_progress_ms = 0;
+    if (index == 0) {
+        session->game_state.ai_hp = 0;
+        session->game_state.ai_down = 1;
+        session->game_state.ai_revive_progress_ms = 0;
+    }
+}
+
+static int session_spawn_base_horde(struct rasterfall_session *session,
+                                    int base)
+{
+    struct toy_game *game = &session->game_state;
+    int spawned = 0;
+    if (base == 1) {
+        spawned += toy_game_spawn_horde_type(game, TOY_GAME_ENEMY_COMMON,
+                                             12, 16, session->spawn_zones,
+                                             session->spawn_count, 900);
+        spawned += toy_game_spawn_horde_type(game, TOY_GAME_ENEMY_FAST,
+                                             4, 6, session->spawn_zones,
+                                             session->spawn_count, 900);
+        spawned += toy_game_spawn_horde_type(game, TOY_GAME_ENEMY_HEAVY,
+                                             2, 3, session->spawn_zones,
+                                             session->spawn_count, 900);
+        spawned += toy_game_spawn_horde_type(game, TOY_GAME_ENEMY_PURSUIT_FAST,
+                                             2, 3, session->spawn_zones,
+                                             session->spawn_count, 900);
+    } else {
+        spawned += toy_game_spawn_horde_type(game, TOY_GAME_ENEMY_COMMON,
+                                             20, 26, session->spawn_zones,
+                                             session->spawn_count, 900);
+        spawned += toy_game_spawn_horde_type(game, TOY_GAME_ENEMY_FAST,
+                                             8, 12, session->spawn_zones,
+                                             session->spawn_count, 900);
+        spawned += toy_game_spawn_horde_type(game, TOY_GAME_ENEMY_HEAVY,
+                                             8, 10, session->spawn_zones,
+                                             session->spawn_count, 900);
+        spawned += toy_game_spawn_horde_type(game,
+                                             TOY_GAME_ENEMY_PURSUIT_HEAVY,
+                                             5, 7, session->spawn_zones,
+                                             session->spawn_count, 900);
+        spawned += toy_game_spawn_horde_type(game, TOY_GAME_ENEMY_PURSUIT_FAST,
+                                             6, 9, session->spawn_zones,
+                                             session->spawn_count, 900);
+    }
+    game->campaign_phase = TOY_GAME_PHASE_HORDE;
+    game->phase_timer_ms = base == 1 ? 30000 : 45000;
+    game->spawn_budget = 0;
+    return spawned;
+}
 
 static int session_near_ai(const struct rasterfall_session *session,
                            const struct camera *camera, int *out_index)
@@ -83,11 +144,16 @@ void rasterfall_session_reset(struct rasterfall_session *session,
     toy_game_set_alarm(&session->game_state,
                        session->level.has_alarm ? &session->level.alarm_zone : NULL,
                        session->level.has_alarm ? 1 : -1);
-    /* 三名 AI 沿左侧墙向中间排开，全部位于 z=-5700 空气墙之后。 */
+    /* 三名 AI 分布在两个据点，均以倒地状态等待玩家救援。 */
+    toy_game_set_ai_teammate(&session->game_state, 1,
+                             BASE_2_X, BASE_2_Z, "Jesus");
     toy_game_add_ai(&session->game_state, TOY_GAME_AI_LEVEL_1,
-                    -11300, -5800, "GUARD");
+                    BASE_1_X, BASE_1_Z, "GUARD");
     toy_game_add_ai(&session->game_state, TOY_GAME_AI_LEVEL_3,
-                    -10300, -5800, "ELITE");
+                    BASE_2_X - 700, BASE_2_Z, "ELITE");
+    session_down_ai(session, 0, BASE_2_X, BASE_2_Z);
+    session_down_ai(session, 1, BASE_1_X, BASE_1_Z);
+    session_down_ai(session, 2, BASE_2_X - 700, BASE_2_Z);
     session->game_state.px = camera->x;
     session->game_state.pz = camera->z;
     session->banner_ms = 0;
@@ -221,7 +287,31 @@ int rasterfall_session_compute_highlight(const struct rasterfall_session *sessio
 static void session_interact(struct rasterfall_session *session,
                              struct rasterfall_interactable *it)
 {
-    if (it->kind == TOY_MAP_PICKUP_BUTTON) {
+    if (it->kind == TOY_MAP_PICKUP_BASE_1_BUTTON) {
+        if (session->game_state.campaign_stage != 0) {
+            session->banner_text = "FIRST BASE ALREADY CLEARED";
+            session->banner_ms = 1800;
+            return;
+        }
+        toy_game_set_campaign_stage(&session->game_state, 1);
+        session->banner_text = "BASE 1 OVERRUN - MIXED HORDE INCOMING";
+        session->banner_ms = 3500;
+        __printf("rasterfall: base 1 horde summoned %d\n",
+                  session_spawn_base_horde(session, 1));
+    } else if (it->kind == TOY_MAP_PICKUP_BASE_2_BUTTON) {
+        if (session->game_state.campaign_stage != 1) {
+            session->banner_text = "CLEAR BASE 1 FIRST";
+            session->banner_ms = 1800;
+            return;
+        }
+        toy_game_move_ai_actor(&session->game_state, 1,
+                               BASE_2_X + 700, BASE_2_Z);
+        toy_game_set_campaign_stage(&session->game_state, 2);
+        session->banner_text = "BASE 2 OVERRUN - FINAL HORDE INCOMING";
+        session->banner_ms = 4000;
+        __printf("rasterfall: base 2 horde summoned %d\n",
+                  session_spawn_base_horde(session, 2));
+    } else if (it->kind == TOY_MAP_PICKUP_BUTTON) {
         int n;
         session->banner_ms = 3500;
         session->banner_text = "HORDE SUMMONED - THEY WILL FIND YOU";

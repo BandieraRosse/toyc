@@ -15,7 +15,7 @@
 
 #include "tlibc_types.h"
 
-#define TOY_GAME_MAX_ENEMIES    32
+#define TOY_GAME_MAX_ENEMIES    64
 #define TOY_GAME_MAX_ACTORS     8
 #define TOY_GAME_AMMO_INFINITE  (-1)
 #define TOY_GAME_BITE_MS        1000
@@ -33,7 +33,7 @@
 #define TOY_GAME_ALARM_SPAWN_INTERVAL_MS 1200
 #define TOY_GAME_ALARM_DURATION_MS 20000
 #define TOY_GAME_ALARM_SPAWN_BUDGET 16
-#define TOY_GAME_CAMPAIGN_ACTIVE_LIMIT 20
+#define TOY_GAME_CAMPAIGN_ACTIVE_LIMIT 40
 #define TOY_GAME_CAMPAIGN_RELAX_MS 12000
 #define TOY_GAME_DIRECTOR_MIN_DELAY_MS 7000
 #define TOY_GAME_DIRECTOR_MAX_DELAY_MS 12000
@@ -292,6 +292,7 @@ struct toy_game {
     int active_attackers;
     int director_encounters;
     int goal_hold_ms;
+    int campaign_stage; /* 0=start, 1=first base cleared, 2=second base cleared */
     const struct toy_game_box *alarm_zone;
     int alarm_spawn_zone;
     int alarm_triggered;
@@ -327,6 +328,8 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms);
 void toy_game_update_ai_teammates(struct toy_game *g, int dt_ms);
 int  toy_game_revive_ai(struct toy_game *g, int dt_ms);
 int  toy_game_revive_actor(struct toy_game *g, int actor_index, int dt_ms);
+int  toy_game_set_campaign_stage(struct toy_game *g, int stage);
+int  toy_game_move_ai_actor(struct toy_game *g, int actor_index, int x, int z);
 void toy_game_set_world(struct toy_game *g,
                         const struct toy_game_box *boxes,
                         int box_count, int room_limit);

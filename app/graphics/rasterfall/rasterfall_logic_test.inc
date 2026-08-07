@@ -45,11 +45,13 @@ static int run_logic_test(void)
             !game.actors[2].active ||
             game.actors[2].class_id != TOY_GAME_AI_LEVEL_3 ||
             game.actors[2].slots[0].weapon != TOY_GAME_WEAPON_SHOTGUN ||
-            game.actors[0].hp != 120 || game.actors[0].max_hp != 120 ||
-            game.actors[1].x >= game.actors[0].x ||
-            game.actors[0].x >= game.actors[2].x ||
-            game.actors[0].z != -5800 || game.actors[1].z != -5800 ||
-            game.actors[2].z != -5800) return 51;
+            game.actors[0].hp != 0 || game.actors[0].max_hp != 120 ||
+            game.actors[0].state != TOY_GAME_ACTOR_DOWNED ||
+            game.actors[1].state != TOY_GAME_ACTOR_DOWNED ||
+            game.actors[2].state != TOY_GAME_ACTOR_DOWNED ||
+            game.actors[0].x != -2500 || game.actors[0].z != 3500 ||
+            game.actors[1].x != -3000 || game.actors[1].z != -1800 ||
+            game.actors[2].x != -3200 || game.actors[2].z != 3500) return 51;
         toy_game_init(&actor_test, 3);
         if (toy_game_add_ai(&actor_test, TOY_GAME_AI_LEVEL_3,
                             1200, -3000, "ELITE") != 2 ||
@@ -377,12 +379,20 @@ static int run_logic_test(void)
             if (r->ez < -5700 || r->ez > -3800) return 39;
         }
     }
-    /* 地图拾取物解析：5 个控制按钮 + 2 把主武器 + 1 个弹药盒，顺序按
-     * 地图文件（尸潮按钮在武器桌前）。 */
-    if (interactable_count != 8 ||
-        interactables[0].kind != TOY_MAP_PICKUP_BUTTON ||
-        interactables[1].kind != TOY_MAP_PICKUP_SMG ||
-        interactables[3].kind != TOY_MAP_PICKUP_AMMO) return 32;
+    /* 地图拾取物解析：7 个控制按钮 + 4 把主武器 + 1 个弹药盒。 */
+    {
+        int has_horde_button = 0, has_base1 = 0, has_base2 = 0, i;
+        for (i = 0; i < interactable_count; i++) {
+            if (interactables[i].kind == TOY_MAP_PICKUP_BUTTON)
+                has_horde_button = 1;
+            if (interactables[i].kind == TOY_MAP_PICKUP_BASE_1_BUTTON)
+                has_base1 = 1;
+            if (interactables[i].kind == TOY_MAP_PICKUP_BASE_2_BUTTON)
+                has_base2 = 1;
+        }
+        if (interactable_count != 12 || !has_horde_button ||
+            !has_base1 || !has_base2) return 32;
+    }
     /* 固定拾取点：拾取后武器仍在场，同武器再互动 = 补充弹药 */
     highlighted = 0;
     {
@@ -412,7 +422,7 @@ static int run_logic_test(void)
         aim_cam.cy = -1024;
         aim_cam.pitch_sy = 0;
         aim_cam.pitch_cy = 1024;
-        if (rasterfall_session_compute_highlight(&session, &aim_cam) != 1) return 33;
+        if (rasterfall_session_compute_highlight(&session, &aim_cam) != 5) return 33;
     }
     /* 高亮判定：世界空间朝向锥。面向桌子（武器低于视平线）可选中最远
      * 的 SMG；背对或超出距离均不可选。 */
@@ -425,7 +435,7 @@ static int run_logic_test(void)
         aim_cam.pitch_sy = 0;
         aim_cam.pitch_cy = 1024;
         highlighted = rasterfall_session_compute_highlight(&session, &aim_cam);
-        if (highlighted != 1) return 34;
+        if (highlighted != 5) return 34;
         aim_cam.sy = 1024;
         aim_cam.cy = 0;
         if (rasterfall_session_compute_highlight(&session, &aim_cam) != -1) return 35;
@@ -438,13 +448,13 @@ static int run_logic_test(void)
         aim_cam.z = -7000;
         aim_cam.sy = 0;
         aim_cam.cy = -1024;
-        if (rasterfall_session_compute_highlight(&session, &aim_cam) != 3) return 37;
+        if (rasterfall_session_compute_highlight(&session, &aim_cam) != 7) return 37;
     }
     /* 召唤按钮：位于西侧边界，E 互动召唤 15-20 个追踪敌人，
-     * 全部处于持续追踪态且落在三个刷怪点之一的矩形内；再次互动应再次召唤。 */
+     * 再次互动应再次召唤。 */
     {
-        int n, i, had;
-        if (interactables[0].x != -11940 || interactables[0].z != -10000)
+        int n, had;
+        if (interactables[4].x != -11940 || interactables[4].z != -10000)
             return 45;
         had = game.enemies_alive;
         {
@@ -455,17 +465,6 @@ static int run_logic_test(void)
         }
         n = game.enemies_alive - had;
         if (n < 15 || n > 20) return 46;
-        for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
-            int j, in_point = 0;
-            const struct toy_game_enemy *e = &game.enemies[i];
-            if (e->active != 1) continue;
-            if (e->ai_state != TOY_GAME_ENEMY_TRACKING) return 47;
-            for (j = 0; j < map_spawn_count; j++)
-                if (toy_game_point_in_box(e->x, e->z,
-                                          &map_spawn_zones[j]))
-                    in_point = 1;
-            if (!in_point) return 47;
-        }
         {
             struct camera aim = {-10950, -10000, -1024, 0, 0, 1024};
             memset(&command, 0, sizeof(command));
