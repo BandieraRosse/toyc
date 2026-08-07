@@ -303,6 +303,7 @@ struct toy_game {
     int secondary_px, secondary_pz;
     int player_down;
     int player_revive_progress_ms;
+    int ai_context_actor_index;
 
     /* PRNG（xorshift64*，init 时播种） */
     uint64_t rng;
@@ -316,7 +317,10 @@ void toy_game_init(struct toy_game *g, uint64_t seed);      /* 初始化/重开�
 void toy_game_set_player_name(struct toy_game *g, const char *name);
 void toy_game_set_ai_teammate(struct toy_game *g, int active, int x, int z,
                               const char *name);
+int  toy_game_add_ai(struct toy_game *g, int class_id, int x, int z,
+                     const char *name);
 void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms);
+void toy_game_update_ai_teammates(struct toy_game *g, int dt_ms);
 int  toy_game_revive_ai(struct toy_game *g, int dt_ms);
 void toy_game_set_world(struct toy_game *g,
                         const struct toy_game_box *boxes,

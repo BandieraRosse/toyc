@@ -12,6 +12,7 @@ static int run_logic_test(void)
     toy_input_init(&input);
     rasterfall_session_reset(&session, &camera, 1);
     {
+        struct toy_game actor_test;
         const struct toy_game_actor *actor =
             toy_game_actor_by_id_const(&game, 1);
         const struct toy_game_enemy_info *common =
@@ -25,6 +26,11 @@ static int run_logic_test(void)
             fast->speed_min <= common->speed_max ||
             heavy->max_hp <= common->max_hp ||
             heavy->bite_damage <= common->bite_damage) return 49;
+        toy_game_init(&actor_test, 3);
+        if (toy_game_add_ai(&actor_test, TOY_GAME_AI_LEVEL_3,
+                            1200, -3000, "ELITE") != 2 ||
+            !toy_game_actor_by_id(&actor_test, 2) ||
+            toy_game_actor_by_id(&actor_test, 2)->hp != 160) return 50;
     }
     memset(&command, 0, sizeof(command));
     command.move_forward = 1;

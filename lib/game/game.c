@@ -60,6 +60,18 @@ static const struct toy_game_enemy_info enemy_table[TOY_GAME_ENEMY_TYPE_COUNT] =
     { 4, 24, 34, 4, 2, 0x624A3A }
 };
 
+struct toy_game_ai_info {
+    int max_hp;
+    int weapon;
+    unsigned int body_color;
+};
+
+static const struct toy_game_ai_info ai_table[TOY_GAME_AI_CLASS_COUNT] = {
+    { 80,  TOY_GAME_WEAPON_SMG,     0x386B96 },
+    { 120, TOY_GAME_WEAPON_SHOTGUN, 0x4A8A58 },
+    { 160, TOY_GAME_WEAPON_SMG,     0xA07038 }
+};
+
 const struct toy_game_weapon_info *toy_game_weapon_info(int weapon)
 {
     if (weapon < 0 || weapon >= TOY_GAME_WEAPON_COUNT)
@@ -190,6 +202,7 @@ void toy_game_set_ai_teammate(struct toy_game *g, int active, int x, int z,
     g->ai_muzzle_flash_ms = 0;
     g->ai_fire_seq = 0;
     g->ai_ray_count = 0;
+    g->ai_context_actor_index = 0;
     memset(g->ai_rays, 0, sizeof(g->ai_rays));
     memset(&g->actors[0], 0, sizeof(g->actors[0]));
     g->actors[0].active = g->ai_active;
@@ -210,7 +223,10 @@ void toy_game_set_ai_teammate(struct toy_game *g, int active, int x, int z,
 
 static void sync_ai_actor_from_legacy(struct toy_game *g)
 {
-    struct toy_game_actor *a = &g->actors[0];
+    int index = g->ai_context_actor_index;
+    struct toy_game_actor *a;
+    if (index < 0 || index >= TOY_GAME_MAX_ACTORS) index = 0;
+    a = &g->actors[index];
     a->active = g->ai_active;
     a->actor_id = g->ai_actor_id;
     a->x = g->ai_x; a->z = g->ai_z;
@@ -228,6 +244,59 @@ static void sync_ai_actor_from_legacy(struct toy_game *g)
     a->ray_count = g->ai_ray_count;
     memcpy(a->rays, g->ai_rays, sizeof(a->rays));
     memcpy(a->name, g->ai_name, sizeof(a->name));
+}
+
+static void load_ai_actor_to_legacy(struct toy_game *g,
+                                    const struct toy_game_actor *a)
+{
+    g->ai_active = a->active;
+    g->ai_actor_id = a->actor_id;
+    g->ai_x = a->x; g->ai_z = a->z;
+    g->ai_sy = a->sy; g->ai_cy = a->cy;
+    g->ai_hp = a->hp;
+    g->ai_down = a->state == TOY_GAME_ACTOR_DOWNED;
+    g->ai_revive_progress_ms = a->revive_progress_ms;
+    memcpy(g->ai_slots, a->slots, sizeof(g->ai_slots));
+    g->ai_current_slot = a->current_slot;
+    g->ai_reloading = a->reloading;
+    g->ai_reload_timer_ms = a->reload_timer_ms;
+    g->ai_fire_cooldown_ms = a->fire_cooldown_ms;
+    g->ai_muzzle_flash_ms = a->muzzle_flash_ms;
+    g->ai_fire_seq = a->fire_seq;
+    g->ai_ray_count = a->ray_count;
+    memcpy(g->ai_rays, a->rays, sizeof(g->ai_rays));
+    memcpy(g->ai_name, a->name, sizeof(g->ai_name));
+}
+
+int toy_game_add_ai(struct toy_game *g, int class_id, int x, int z,
+                    const char *name)
+{
+    const struct toy_game_ai_info *info;
+    struct toy_game_actor *a;
+    int i, slot = -1;
+    struct toy_game_weapon_info *weapon;
+    if (class_id < 0 || class_id >= TOY_GAME_AI_CLASS_COUNT) return -1;
+    for (i = 0; i < TOY_GAME_MAX_ACTORS; i++)
+        if (!g->actors[i].active) { slot = i; break; }
+    if (slot < 0) return -1;
+    info = &ai_table[class_id];
+    a = &g->actors[slot];
+    memset(a, 0, sizeof(*a));
+    a->active = 1;
+    a->actor_id = slot + 1;
+    a->kind = TOY_GAME_ACTOR_AI;
+    a->class_id = class_id;
+    a->state = TOY_GAME_ACTOR_ALIVE;
+    a->x = x; a->z = z; a->cy = 1024;
+    a->hp = a->max_hp = info->max_hp;
+    copy_name(a->name, name ? name : "AI");
+    a->slots[0].weapon = info->weapon;
+    weapon = (struct toy_game_weapon_info *)toy_game_weapon_info(info->weapon);
+    a->slots[0].mag = weapon->mag_size;
+    a->slots[0].reserve = weapon->reserve_max;
+    a->slots[1].weapon = -1;
+    a->current_slot = 0;
+    return a->actor_id;
 }
 
 int toy_game_revive_ai(struct toy_game *g, int dt_ms)
@@ -808,6 +877,30 @@ static void enemy_enter_search(struct toy_game_enemy *e)
     e->wander_timer_ms = 0;
 }
 
+static int nearest_ai_position(const struct toy_game *g,
+                               const struct toy_game_enemy *e,
+                               int *out_x, int *out_z,
+                               long long *out_dist2)
+{
+    int i, found = 0;
+    long long best = 0;
+    for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
+        const struct toy_game_actor *a = &g->actors[i];
+        long long dx, dz, d2;
+        if (!a->active || a->kind != TOY_GAME_ACTOR_AI ||
+            a->state != TOY_GAME_ACTOR_ALIVE) continue;
+        dx = (long long)a->x - e->x;
+        dz = (long long)a->z - e->z;
+        d2 = dx * dx + dz * dz;
+        if (!found || d2 < best) {
+            found = 1; best = d2;
+            *out_x = a->x; *out_z = a->z;
+        }
+    }
+    if (out_dist2) *out_dist2 = best;
+    return found;
+}
+
 static void emit_enemy_noise(struct toy_game *g, int x, int z, int range)
 {
     int i;
@@ -912,8 +1005,10 @@ static void update_enemy_ai(struct toy_game *g, struct toy_game_enemy *e,
     int dx, dz;
     long long dist2;
     long long dist;
+    long long ai_dist2 = 0;
+    int ai_x = 0, ai_z = 0;
     int visual;
-    int ai_available = g->ai_active && !g->ai_down;
+    int ai_available = nearest_ai_position(g, e, &ai_x, &ai_z, &ai_dist2);
 
     if (e->retarget_timer_ms > 0) e->retarget_timer_ms -= dt_ms;
     if ((e->target_player == 0 && g->player_down) ||
@@ -933,9 +1028,6 @@ static void update_enemy_ai(struct toy_game *g, struct toy_game_enemy *e,
             target_player = 1;
         }
         if (ai_available) {
-            long long ai_dx = (long long)g->ai_x - e->x;
-            long long ai_dz = (long long)g->ai_z - e->z;
-            long long ai_dist2 = ai_dx * ai_dx + ai_dz * ai_dz;
             if (target_player < 0 ||
                 (target_player == 1 ? ai_dist2 < secondary_dist2 :
                  ai_dist2 < primary_dist2))
@@ -950,7 +1042,7 @@ static void update_enemy_ai(struct toy_game *g, struct toy_game_enemy *e,
     if (target_player == 1) {
         target_x = g->secondary_px; target_z = g->secondary_pz;
     } else if (target_player == 2) {
-        target_x = g->ai_x; target_z = g->ai_z;
+        target_x = ai_x; target_z = ai_z;
     } else {
         target_x = g->px; target_z = g->pz;
     }
@@ -1497,6 +1589,21 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
     sync_ai_actor_from_legacy(g);
 }
 
+void toy_game_update_ai_teammates(struct toy_game *g, int dt_ms)
+{
+    int i, old_context = g->ai_context_actor_index;
+    for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
+        if (!g->actors[i].active || g->actors[i].kind != TOY_GAME_ACTOR_AI)
+            continue;
+        g->ai_context_actor_index = i;
+        load_ai_actor_to_legacy(g, &g->actors[i]);
+        toy_game_update_ai_teammate(g, dt_ms);
+    }
+    g->ai_context_actor_index = old_context;
+    if (g->actors[0].active)
+        load_ai_actor_to_legacy(g, &g->actors[0]);
+}
+
 void toy_game_update_held(struct toy_game *g,
                           const unsigned char *keys_pressed,
                           int fire_pressed, int fire_held,
@@ -1506,7 +1613,7 @@ void toy_game_update_held(struct toy_game *g,
     if (g->state != TOY_GAME_PLAYING) return;
     toy_game_update_weapon_held(g, keys_pressed, fire_pressed, fire_held,
                                 sy, cy, dt_ms);
-    toy_game_update_ai_teammate(g, dt_ms);
+    toy_game_update_ai_teammates(g, dt_ms);
 
     /* 敌人计时器与移动/攻击/倒地 */
     for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
