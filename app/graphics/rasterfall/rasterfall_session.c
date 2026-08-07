@@ -15,11 +15,12 @@ static void session_interact(struct rasterfall_session *session,
 static int session_near_ai(const struct rasterfall_session *session,
                            const struct camera *camera)
 {
+    const struct toy_game_actor *actor = &session->game_state.actors[0];
     long dx, dz;
-    if (!session->game_state.ai_active || !session->game_state.ai_down)
+    if (!actor->active || actor->state != TOY_GAME_ACTOR_DOWNED)
         return 0;
-    dx = (long)camera->x - session->game_state.ai_x;
-    dz = (long)camera->z - session->game_state.ai_z;
+    dx = (long)camera->x - actor->x;
+    dz = (long)camera->z - actor->z;
     return dx * dx + dz * dz <=
            (long)RASTERFALL_INTERACT_RANGE * RASTERFALL_INTERACT_RANGE;
 }

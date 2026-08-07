@@ -1575,24 +1575,28 @@ static int render_player_avatar(struct toy_renderer *renderer,
 static void render_ai_teammate_name(struct toy_renderer *renderer,
                                     const struct camera *camera)
 {
-    if (!game.ai_active) return;
-    render_actor_status(renderer, camera, game.ai_x, game.ai_z,
-                        game.ai_down ? -350 : 700, game.ai_name, game.ai_hp,
-                        game.ai_down, game.ai_revive_progress_ms, 0x70D8FF);
+    const struct toy_game_actor *actor = &game.actors[0];
+    if (!actor->active) return;
+    render_actor_status(renderer, camera, actor->x, actor->z,
+                        actor->state == TOY_GAME_ACTOR_DOWNED ? -350 : 700,
+                        actor->name, actor->hp,
+                        actor->state == TOY_GAME_ACTOR_DOWNED,
+                        actor->revive_progress_ms, 0x70D8FF);
 }
 
 static int render_ai_teammate(struct toy_renderer *renderer,
                               const struct camera *camera)
 {
+    const struct toy_game_actor *actor = &game.actors[0];
     struct vec3 center, view;
-    if (!game.ai_active) return 0;
-    center.x = game.ai_x; center.y = 0; center.z = game.ai_z;
+    if (!actor->active) return 0;
+    center.x = actor->x; center.y = 0; center.z = actor->z;
     world_to_view(camera, &center, &view);
     if (view.z < NEAR_Z || view.z > ENEMY_RENDER_DISTANCE) return 0;
-    return render_player_avatar(renderer, camera, game.ai_x, game.ai_z,
-                                game.ai_sy, game.ai_cy,
-                                game.ai_muzzle_flash_ms, 0x386B96,
-                                game.ai_down);
+    return render_player_avatar(renderer, camera, actor->x, actor->z,
+                                actor->sy, actor->cy,
+                                actor->muzzle_flash_ms, 0x386B96,
+                                actor->state == TOY_GAME_ACTOR_DOWNED);
 }
 
 static int render_player_avatar(struct toy_renderer *renderer,
@@ -1762,20 +1766,21 @@ static void sync_fire_effects(const struct camera *camera)
  * 仍通过当前观察相机投影，因此第一人称玩家和旁观者都能看到完整弹道。 */
 static void sync_ai_fire_effects(const struct camera *camera)
 {
+    const struct toy_game_actor *actor = &game.actors[0];
     int i, ray_count, mx, mz;
-    if (game.ai_fire_seq < effects.last_ai_fire_seq) {
+    if (actor->fire_seq < effects.last_ai_fire_seq) {
         effects.last_ai_fire_seq = 0;
         return;
     }
-    if (game.ai_fire_seq == effects.last_ai_fire_seq) return;
-    effects.last_ai_fire_seq = game.ai_fire_seq;
-    ray_count = game.ai_ray_count;
+    if (actor->fire_seq == effects.last_ai_fire_seq) return;
+    effects.last_ai_fire_seq = actor->fire_seq;
+    ray_count = actor->ray_count;
     if (ray_count < 0) ray_count = 0;
     if (ray_count > TOY_GAME_MAX_RAYS) ray_count = TOY_GAME_MAX_RAYS;
-    mx = game.ai_x + game.ai_sy * 130 / 1024;
-    mz = game.ai_z + game.ai_cy * 130 / 1024;
+    mx = actor->x + actor->sy * 130 / 1024;
+    mz = actor->z + actor->cy * 130 / 1024;
     for (i = 0; i < ray_count; i++) {
-        const struct toy_game_ray *r = &game.ai_rays[i];
+        const struct toy_game_ray *r = &actor->rays[i];
         struct rasterfall_tracer *t = &effects.tracers[effects.tracer_next];
         effects.tracer_next = (effects.tracer_next + 1) % RASTERFALL_TRACER_SLOTS;
         t->active = 1;
