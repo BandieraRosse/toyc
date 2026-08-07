@@ -1,5 +1,5 @@
 /* Rasterfall 公网 UDP 打洞协调服务。
- * 只交换两个客户端的公网 endpoint，不转发任何游戏数据。
+ * 负责房间匹配，并转发两个客户端之间的游戏 UDP 数据。
  * 默认监听 UDP 28461；云服务器上运行：build/rasterfall_punch_server
  *
  * 管理命令（标准输入）：
@@ -17,12 +17,14 @@
 #define PUNCH_MAGIC_1 'F'
 #define PUNCH_MAGIC_2 'P'
 #define PUNCH_MAGIC_3 '2'
-#define PUNCH_VERSION 1
+#define PUNCH_VERSION 2
 #define PUNCH_REGISTER 1
 #define PUNCH_MATCH 2
 #define PUNCH_MAX_ROOMS 128
 #define PUNCH_PORT 28461
 #define PUNCH_PEER_TIMEOUT_MS 12000
+#define PUNCH_RELAY_MATCH 1
+#define PUNCH_MAX_PACKET 1400
 
 struct punch_peer {
     int active;
@@ -200,16 +202,36 @@ static void send_match(int fd, const struct punch_peer *destination,
     put_u32(packet + 8, token);
     memcpy(packet + 12, &peer->address.sin_addr.s_addr, 4);
     put_u16(packet + 16, ntohs(peer->address.sin_port));
-    packet[18] = packet[19] = 0;
+    packet[18] = PUNCH_RELAY_MATCH;
+    packet[19] = 0;
     sendto(fd, packet, sizeof(packet), 0,
            (const struct sockaddr *)&destination->address, sizeof(destination->address));
+}
+
+static void relay_packet(int fd, const struct sockaddr_in *source,
+                         const unsigned char *packet, long size)
+{
+    int i;
+    for (i = 0; i < PUNCH_MAX_ROOMS; i++) {
+        struct punch_room *room = &rooms[i];
+        struct punch_peer *peer = NULL;
+        if (!room->active) continue;
+        if (room->host.active && same_address(&room->host.address, source))
+            peer = &room->guest;
+        else if (room->guest.active && same_address(&room->guest.address, source))
+            peer = &room->host;
+        if (!peer || !peer->active) return;
+        sendto(fd, packet, (size_t)size, 0,
+               (const struct sockaddr *)&peer->address, sizeof(peer->address));
+        return;
+    }
 }
 
 int main(int argc, char **argv)
 {
     int fd, port = PUNCH_PORT, reuse = 1, running = 1;
     struct sockaddr_in local, source;
-    unsigned char packet[64];
+    unsigned char packet[PUNCH_MAX_PACKET];
     char command[256];
     int command_length = 0;
     if (argc > 1) port = atoi(argv[1]);
@@ -252,8 +274,12 @@ int main(int argc, char **argv)
         socklen_t length = sizeof(source);
         long received = recvfrom(fd, packet, sizeof(packet), 0,
                                  (struct sockaddr *)&source, &length);
+        if (received <= 0) continue;
         if (received < 12 || memcmp(packet, "RFP2", 4) != 0 ||
-            packet[4] != PUNCH_VERSION || packet[5] != PUNCH_REGISTER) continue;
+            packet[4] != PUNCH_VERSION || packet[5] != PUNCH_REGISTER) {
+            relay_packet(fd, &source, packet, received);
+            continue;
+        }
         {
             int room_id = (int)get_u16(packet + 6);
             int role = packet[10];

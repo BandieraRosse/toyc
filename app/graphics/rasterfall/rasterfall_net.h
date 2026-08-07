@@ -148,6 +148,7 @@ struct rasterfall_net {
     long last_receive_ms;
     long last_hello_ms;
     int public_room;
+    int relay_mode;
     int public_room_id;
     uint32_t public_token;
     int public_matched;

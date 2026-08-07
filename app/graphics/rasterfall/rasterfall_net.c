@@ -367,7 +367,7 @@ static int net_send(struct rasterfall_net *net, unsigned char *packet, int size)
     return sent == size ? 0 : -1;
 }
 
-#define PUNCH_VERSION 1
+#define PUNCH_VERSION 2
 #define PUNCH_REGISTER 1
 #define PUNCH_MATCH 2
 #define PUNCH_PROBE 3
@@ -865,12 +865,20 @@ void rasterfall_net_poll(struct rasterfall_net *net)
             match_token = get_u32(packet + 8);
             new_match = !net->public_matched || net->public_token != match_token;
             net->public_token = match_token;
-            memset(&net->peer, 0, sizeof(net->peer));
-            net->peer.sin_family = AF_INET;
-            memcpy(&net->peer.sin_addr.s_addr, packet + 12, 4);
-            net->peer.sin_port = htons((unsigned short)get_u16(packet + 16));
+            net->relay_mode = packet[18] != 0;
+            if (net->relay_mode) {
+                /* In relay mode all game packets use the coordinator as the
+                 * stable endpoint; the coordinator forwards them by room. */
+                memcpy(&net->peer, &net->public_server, sizeof(net->peer));
+            } else {
+                memset(&net->peer, 0, sizeof(net->peer));
+                net->peer.sin_family = AF_INET;
+                memcpy(&net->peer.sin_addr.s_addr, packet + 12, 4);
+                net->peer.sin_port = htons((unsigned short)get_u16(packet + 16));
+            }
             net->peer_known = 1;
             net->public_matched = 1;
+            if (net->relay_mode) net->connected = 1;
             if (net->mode == RASTERFALL_NET_HOST && new_match) {
                 /* A server-side room reset starts a new session generation.
                  * Drop the old remote inventory/state before the next input,
@@ -894,7 +902,7 @@ void rasterfall_net_poll(struct rasterfall_net *net)
                 net->remote_event_queue_count = 0;
             }
             net->last_public_punch_ms = 0;
-            punch_send_probe(net);
+            if (!net->relay_mode) punch_send_probe(net);
             if (net->mode == RASTERFALL_NET_CLIENT) {
                 unsigned char hello[NET_HEADER_SIZE];
                 int hello_size = packet_begin(hello, RASTERFALL_NET_HELLO, 0,
