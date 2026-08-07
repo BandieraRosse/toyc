@@ -1575,28 +1575,42 @@ static int render_player_avatar(struct toy_renderer *renderer,
 static void render_ai_teammate_name(struct toy_renderer *renderer,
                                     const struct camera *camera)
 {
-    const struct toy_game_actor *actor = &game.actors[0];
-    if (!actor->active) return;
-    render_actor_status(renderer, camera, actor->x, actor->z,
-                        actor->state == TOY_GAME_ACTOR_DOWNED ? -350 : 700,
-                        actor->name, actor->hp,
-                        actor->state == TOY_GAME_ACTOR_DOWNED,
-                        actor->revive_progress_ms, 0x70D8FF);
+    int i;
+    for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
+        const struct toy_game_actor *actor = &game.actors[i];
+        uint32_t color = actor->class_id == TOY_GAME_AI_LEVEL_3 ? 0xFFD060 :
+                         actor->class_id == TOY_GAME_AI_LEVEL_2 ? 0x80E080 :
+                         0x70D8FF;
+        if (!actor->active || actor->kind != TOY_GAME_ACTOR_AI) continue;
+        render_actor_status(renderer, camera, actor->x, actor->z,
+                            actor->state == TOY_GAME_ACTOR_DOWNED ? -350 : 700,
+                            actor->name, actor->hp,
+                            actor->state == TOY_GAME_ACTOR_DOWNED,
+                            actor->revive_progress_ms, color);
+    }
 }
 
 static int render_ai_teammate(struct toy_renderer *renderer,
                               const struct camera *camera)
 {
-    const struct toy_game_actor *actor = &game.actors[0];
-    struct vec3 center, view;
-    if (!actor->active) return 0;
-    center.x = actor->x; center.y = 0; center.z = actor->z;
-    world_to_view(camera, &center, &view);
-    if (view.z < NEAR_Z || view.z > ENEMY_RENDER_DISTANCE) return 0;
-    return render_player_avatar(renderer, camera, actor->x, actor->z,
-                                actor->sy, actor->cy,
-                                actor->muzzle_flash_ms, 0x386B96,
-                                actor->state == TOY_GAME_ACTOR_DOWNED);
+    int i, pixels = 0;
+    for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
+        const struct toy_game_actor *actor = &game.actors[i];
+        struct vec3 center, view;
+        uint32_t color;
+        if (!actor->active || actor->kind != TOY_GAME_ACTOR_AI) continue;
+        center.x = actor->x; center.y = 0; center.z = actor->z;
+        world_to_view(camera, &center, &view);
+        if (view.z < NEAR_Z || view.z > ENEMY_RENDER_DISTANCE) continue;
+        color = actor->class_id == TOY_GAME_AI_LEVEL_3 ? 0xA07038 :
+                actor->class_id == TOY_GAME_AI_LEVEL_2 ? 0x4A8A58 :
+                0x386B96;
+        pixels += render_player_avatar(renderer, camera, actor->x, actor->z,
+                                       actor->sy, actor->cy,
+                                       actor->muzzle_flash_ms, color,
+                                       actor->state == TOY_GAME_ACTOR_DOWNED);
+    }
+    return pixels;
 }
 
 static int render_player_avatar(struct toy_renderer *renderer,
@@ -1766,33 +1780,36 @@ static void sync_fire_effects(const struct camera *camera)
  * 仍通过当前观察相机投影，因此第一人称玩家和旁观者都能看到完整弹道。 */
 static void sync_ai_fire_effects(const struct camera *camera)
 {
-    const struct toy_game_actor *actor = &game.actors[0];
-    int i, ray_count, mx, mz;
-    if (actor->fire_seq < effects.last_ai_fire_seq) {
-        effects.last_ai_fire_seq = 0;
-        return;
-    }
-    if (actor->fire_seq == effects.last_ai_fire_seq) return;
-    effects.last_ai_fire_seq = actor->fire_seq;
-    ray_count = actor->ray_count;
-    if (ray_count < 0) ray_count = 0;
-    if (ray_count > TOY_GAME_MAX_RAYS) ray_count = TOY_GAME_MAX_RAYS;
-    mx = actor->x + actor->sy * 130 / 1024;
-    mz = actor->z + actor->cy * 130 / 1024;
-    for (i = 0; i < ray_count; i++) {
-        const struct toy_game_ray *r = &actor->rays[i];
-        struct rasterfall_tracer *t = &effects.tracers[effects.tracer_next];
-        effects.tracer_next = (effects.tracer_next + 1) % RASTERFALL_TRACER_SLOTS;
-        t->active = 1;
-        t->sx = mx;
-        t->sy = -430;
-        t->sz = mz;
-        tracer_aim_endpoint(camera, r, r->ex, r->ez,
-                            &t->ex, &t->ey, &t->ez);
-        t->life_ms = RASTERFALL_TRACER_LIFE_MS;
-        if (r->hit_enemy || r->hit_world)
-            rasterfall_effects_spawn_hit_particles(&effects, r->ex, t->ey,
-                                                   r->ez, r->sy, r->cy);
+    int actor_index;
+    for (actor_index = 0; actor_index < TOY_GAME_MAX_ACTORS; actor_index++) {
+        const struct toy_game_actor *actor = &game.actors[actor_index];
+        int i, ray_count, mx, mz;
+        if (!actor->active || actor->kind != TOY_GAME_ACTOR_AI) continue;
+        if (actor->fire_seq < effects.last_actor_fire_seq[actor_index]) {
+            effects.last_actor_fire_seq[actor_index] = 0;
+            continue;
+        }
+        if (actor->fire_seq == effects.last_actor_fire_seq[actor_index]) continue;
+        effects.last_actor_fire_seq[actor_index] = actor->fire_seq;
+        if (actor_index == 0) effects.last_ai_fire_seq = actor->fire_seq;
+        ray_count = actor->ray_count;
+        if (ray_count < 0) ray_count = 0;
+        if (ray_count > TOY_GAME_MAX_RAYS) ray_count = TOY_GAME_MAX_RAYS;
+        mx = actor->x + actor->sy * 130 / 1024;
+        mz = actor->z + actor->cy * 130 / 1024;
+        for (i = 0; i < ray_count; i++) {
+            const struct toy_game_ray *r = &actor->rays[i];
+            struct rasterfall_tracer *t = &effects.tracers[effects.tracer_next];
+            effects.tracer_next = (effects.tracer_next + 1) % RASTERFALL_TRACER_SLOTS;
+            t->active = 1;
+            t->sx = mx; t->sy = -430; t->sz = mz;
+            tracer_aim_endpoint(camera, r, r->ex, r->ez,
+                                &t->ex, &t->ey, &t->ez);
+            t->life_ms = RASTERFALL_TRACER_LIFE_MS;
+            if (r->hit_enemy || r->hit_world)
+                rasterfall_effects_spawn_hit_particles(&effects, r->ex, t->ey,
+                                                       r->ez, r->sy, r->cy);
+        }
     }
 }
 

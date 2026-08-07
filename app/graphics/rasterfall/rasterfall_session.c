@@ -13,16 +13,24 @@ static void session_interact(struct rasterfall_session *session,
                              struct rasterfall_interactable *it);
 
 static int session_near_ai(const struct rasterfall_session *session,
-                           const struct camera *camera)
+                           const struct camera *camera, int *out_index)
 {
-    const struct toy_game_actor *actor = &session->game_state.actors[0];
-    long dx, dz;
-    if (!actor->active || actor->state != TOY_GAME_ACTOR_DOWNED)
-        return 0;
-    dx = (long)camera->x - actor->x;
-    dz = (long)camera->z - actor->z;
-    return dx * dx + dz * dz <=
-           (long)RASTERFALL_INTERACT_RANGE * RASTERFALL_INTERACT_RANGE;
+    int i, best = -1;
+    long best_d2 = 0;
+    for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
+        const struct toy_game_actor *actor = &session->game_state.actors[i];
+        long dx, dz, d2;
+        if (!actor->active || actor->kind != TOY_GAME_ACTOR_AI ||
+            actor->state != TOY_GAME_ACTOR_DOWNED) continue;
+        dx = (long)camera->x - actor->x;
+        dz = (long)camera->z - actor->z;
+        d2 = dx * dx + dz * dz;
+        if (d2 > (long)RASTERFALL_INTERACT_RANGE * RASTERFALL_INTERACT_RANGE)
+            continue;
+        if (best < 0 || d2 < best_d2) { best = i; best_d2 = d2; }
+    }
+    if (out_index) *out_index = best;
+    return best >= 0;
 }
 
 static void session_set_air_walls(struct rasterfall_session *session,
@@ -84,6 +92,7 @@ void rasterfall_session_reset(struct rasterfall_session *session,
     session->highlight_index = -1;
     session->smooth_turn_remaining = 0;
     session->ai_revive_active = 0;
+    session->ai_revive_actor_index = -1;
     session_set_air_walls(session, 1);
     rasterfall_map_reset_interactables(&session->map_ops);
 }
@@ -262,16 +271,18 @@ void rasterfall_session_step(struct rasterfall_session *session,
     session->game_state.pz = camera->z;
     session->highlight_index = rasterfall_session_compute_highlight(session, camera);
     if ((command->buttons & RASTERFALL_CMD_INTERACT) &&
-        session_near_ai(session, camera))
+        session_near_ai(session, camera, &session->ai_revive_actor_index))
         session->ai_revive_active = 1;
     if ((command->buttons & RASTERFALL_CMD_INTERACT) &&
         session->highlight_index >= 0 && !session->game_state.player_down)
         session_interact(session, &session->items[session->highlight_index]);
     if (session->ai_revive_active) {
-        if (!session_near_ai(session, camera) || session->game_state.player_down) {
+        if (!session_near_ai(session, camera, NULL) || session->game_state.player_down) {
             session->ai_revive_active = 0;
             session->game_state.ai_revive_progress_ms = 0;
-        } else if (toy_game_revive_ai(&session->game_state, dt_ms)) {
+        } else if (toy_game_revive_actor(&session->game_state,
+                                         session->ai_revive_actor_index,
+                                         dt_ms)) {
             session->ai_revive_active = 0;
             session->banner_ms = 1800;
             session->banner_text = "JESUS REVIVED";

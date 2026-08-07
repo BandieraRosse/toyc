@@ -2,6 +2,7 @@
 #define RASTERFALL_EFFECTS_H
 
 #include "core.h"
+#include "toy_game.h"
 
 #define RASTERFALL_TRACER_SLOTS 32
 #define RASTERFALL_TRACER_LIFE_MS 160
@@ -32,6 +33,7 @@ struct rasterfall_effects {
     unsigned int last_fire_seq;
     unsigned int last_network_fire_seq;
     unsigned int last_ai_fire_seq;
+    unsigned int last_actor_fire_seq[TOY_GAME_MAX_ACTORS];
     uint32_t rng;
     int weapon_kick;
 };

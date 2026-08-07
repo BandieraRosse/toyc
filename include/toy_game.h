@@ -199,6 +199,7 @@ struct toy_game_enemy {
     int last_seen_x, last_seen_z;
     int lost_sight_ms;
     int target_player;         /* 0=主机，1=客户端，2=AI 队友 */
+    int target_actor_index;    /* target_player=2 时的 actor 数组索引 */
     int retarget_timer_ms;
     int wander_timer_ms;
     int dir_x, dir_z;   /* 面向，1024 基准定点 */
@@ -322,6 +323,7 @@ int  toy_game_add_ai(struct toy_game *g, int class_id, int x, int z,
 void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms);
 void toy_game_update_ai_teammates(struct toy_game *g, int dt_ms);
 int  toy_game_revive_ai(struct toy_game *g, int dt_ms);
+int  toy_game_revive_actor(struct toy_game *g, int actor_index, int dt_ms);
 void toy_game_set_world(struct toy_game *g,
                         const struct toy_game_box *boxes,
                         int box_count, int room_limit);

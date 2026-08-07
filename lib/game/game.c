@@ -312,6 +312,24 @@ int toy_game_revive_ai(struct toy_game *g, int dt_ms)
     return 1;
 }
 
+int toy_game_revive_actor(struct toy_game *g, int actor_index, int dt_ms)
+{
+    struct toy_game_actor *a;
+    if (actor_index == 0) return toy_game_revive_ai(g, dt_ms);
+    if (!g || actor_index < 0 || actor_index >= TOY_GAME_MAX_ACTORS ||
+        dt_ms <= 0) return 0;
+    a = &g->actors[actor_index];
+    if (!a->active || a->kind != TOY_GAME_ACTOR_AI ||
+        a->state != TOY_GAME_ACTOR_DOWNED) return 0;
+    a->revive_progress_ms += dt_ms;
+    if (a->revive_progress_ms < TOY_GAME_REVIVE_MS) return 0;
+    a->revive_progress_ms = 0;
+    a->hp = TOY_GAME_REVIVE_HP;
+    a->state = TOY_GAME_ACTOR_ALIVE;
+    push_event(g, TOY_GAME_EV_ACTOR_REVIVE);
+    return 1;
+}
+
 void toy_game_set_world(struct toy_game *g,
                         const struct toy_game_box *boxes,
                         int box_count, int room_limit)
@@ -776,15 +794,26 @@ static void bite_player(struct toy_game *g, struct toy_game_enemy *e)
 static void bite_ai(struct toy_game *g, struct toy_game_enemy *e)
 {
     const struct toy_game_enemy_info *info = toy_game_enemy_info(e->type);
-    if (e->bite_cooldown_ms > 0 || !g->ai_active || g->ai_down) return;
+    struct toy_game_actor *actor;
+    int index = e->target_actor_index;
+    if (index < 0 || index >= TOY_GAME_MAX_ACTORS) index = 0;
+    actor = &g->actors[index];
+    if (e->bite_cooldown_ms > 0 || !actor->active ||
+        actor->kind != TOY_GAME_ACTOR_AI ||
+        actor->state != TOY_GAME_ACTOR_ALIVE) return;
     e->bite_cooldown_ms = TOY_GAME_BITE_MS;
-    g->ai_hp -= info->bite_damage;
-    if (g->ai_hp < 0) g->ai_hp = 0;
+    actor->hp -= info->bite_damage;
+    if (actor->hp < 0) actor->hp = 0;
     e->hurt = 150;
     push_event(g, TOY_GAME_EV_BITE);
-    if (g->ai_hp <= 0) {
-        g->ai_down = 1;
-        g->ai_revive_progress_ms = 0;
+    if (actor->hp <= 0) {
+        actor->state = TOY_GAME_ACTOR_DOWNED;
+        actor->revive_progress_ms = 0;
+        if (index == 0) {
+            g->ai_hp = 0;
+            g->ai_down = 1;
+            g->ai_revive_progress_ms = 0;
+        }
         push_event(g, TOY_GAME_EV_ACTOR_DOWN);
     }
 }
@@ -880,7 +909,8 @@ static void enemy_enter_search(struct toy_game_enemy *e)
 static int nearest_ai_position(const struct toy_game *g,
                                const struct toy_game_enemy *e,
                                int *out_x, int *out_z,
-                               long long *out_dist2)
+                               long long *out_dist2,
+                               int *out_index)
 {
     int i, found = 0;
     long long best = 0;
@@ -895,6 +925,7 @@ static int nearest_ai_position(const struct toy_game *g,
         if (!found || d2 < best) {
             found = 1; best = d2;
             *out_x = a->x; *out_z = a->z;
+            if (out_index) *out_index = i;
         }
     }
     if (out_dist2) *out_dist2 = best;
@@ -1007,8 +1038,10 @@ static void update_enemy_ai(struct toy_game *g, struct toy_game_enemy *e,
     long long dist;
     long long ai_dist2 = 0;
     int ai_x = 0, ai_z = 0;
+    int ai_index = 0;
     int visual;
-    int ai_available = nearest_ai_position(g, e, &ai_x, &ai_z, &ai_dist2);
+    int ai_available = nearest_ai_position(g, e, &ai_x, &ai_z, &ai_dist2,
+                                           &ai_index);
 
     if (e->retarget_timer_ms > 0) e->retarget_timer_ms -= dt_ms;
     if ((e->target_player == 0 && g->player_down) ||
@@ -1035,6 +1068,7 @@ static void update_enemy_ai(struct toy_game *g, struct toy_game_enemy *e,
         }
         if (target_player < 0) target_player = 0;
         e->target_player = target_player;
+        if (target_player == 2) e->target_actor_index = ai_index;
         e->retarget_timer_ms = TOY_GAME_RETARGET_MS;
     } else {
         target_player = e->target_player;
