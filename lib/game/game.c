@@ -673,8 +673,51 @@ void toy_game_place_enemy(struct toy_game *g, int x, int z)
     g->enemies[slot].flash = 0;
     g->enemies[slot].hurt = 0;
     g->enemies[slot].dying_ms = 0;
+    g->enemies[slot].shove_stun_ms = 0;
     init_enemy_ai(g, &g->enemies[slot]);
     g->enemies_alive++;
+}
+
+/* 推开面前敌人（L4D 式近战）：检测面朝方向（sy,cy，1024 定点）前
+ * 120° 扇形、半径 TOY_GAME_SHOVE_RANGE 内所有存活敌人，沿面朝方向
+ * 击退 TOY_GAME_SHOVE_PUSH 单位（撞到障碍依次退让 3/4、1/2、1/4），
+ * 并让其僵直 TOY_GAME_SHOVE_STUN_MS 不移动不攻击。返回推开的数量。 */
+int toy_game_shove(struct toy_game *g, int sy, int cy)
+{
+    int i, pushed = 0;
+    long long range2 = (long long)TOY_GAME_SHOVE_RANGE * TOY_GAME_SHOVE_RANGE;
+    if (g->state != TOY_GAME_PLAYING) return 0;
+    for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
+        struct toy_game_enemy *e = &g->enemies[i];
+        long long dx, dz, dist2, dist, dot;
+        int push[4], s, nx, nz;
+        if (e->active != 1) continue;
+        dx = e->x - g->px;
+        dz = e->z - g->pz;
+        dist2 = dx * dx + dz * dz;
+        if (dist2 > range2 || dist2 == 0) continue;
+        dist = isqrt(dist2);
+        if (dist <= 0) continue;
+        dot = dx * sy + dz * cy;
+        if (dot * TOY_GAME_SHOVE_CONE < dist * 1024) continue;
+        push[0] = TOY_GAME_SHOVE_PUSH;
+        push[1] = TOY_GAME_SHOVE_PUSH * 3 / 4;
+        push[2] = TOY_GAME_SHOVE_PUSH / 2;
+        push[3] = TOY_GAME_SHOVE_PUSH / 4;
+        for (s = 0; s < 4; s++) {
+            nx = e->x + (int)((long long)sy * push[s] / 1024);
+            nz = e->z + (int)((long long)cy * push[s] / 1024);
+            if (!enemy_position_blocked(g, nx, nz, TOY_GAME_ENEMY_RADIUS)) {
+                e->x = nx;
+                e->z = nz;
+                break;
+            }
+        }
+        e->shove_stun_ms = TOY_GAME_SHOVE_STUN_MS;
+        e->flash = 200;          /* 被推开瞬间闪白 */
+        pushed++;
+    }
+    return pushed;
 }
 
 /* ── 波次状态机 ────────────────────────────────────────────────── */
@@ -1733,6 +1776,11 @@ void toy_game_update_held(struct toy_game *g,
             if (e->hurt > 0) {
                 e->hurt -= dt_ms;
                 if (e->hurt < 0) e->hurt = 0;
+            }
+            if (e->shove_stun_ms > 0) {
+                e->shove_stun_ms -= dt_ms;
+                if (e->shove_stun_ms < 0) e->shove_stun_ms = 0;
+                continue;       /* 僵直中：不移动、不攻击、不换目标 */
             }
             update_enemy_ai(g, e, dt_ms);
         } else if (e->active == 2) {

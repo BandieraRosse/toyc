@@ -8,10 +8,10 @@
 #define HORDE_MIN_PLAYER_DIST 700
 #define QUARTER_TURN 1611
 #define SMOOTH_TURN_STEP 128
-#define BASE_1_X (-3000)
-#define BASE_1_Z (-1800)
-#define BASE_2_X (-2500)
-#define BASE_2_Z 3500
+#define BASE_1_X 0
+#define BASE_1_Z (-2000)
+#define BASE_2_X 0
+#define BASE_2_Z 4200
 
 static void session_interact(struct rasterfall_session *session,
                              struct rasterfall_interactable *it);
@@ -239,6 +239,16 @@ void rasterfall_session_step_remote_player(struct rasterfall_session *session,
         session_move_player(session, camera, command);
     if (command->turn || command->pitch)
         rasterfall_camera_rotate(camera, command->turn, command->pitch);
+    if (command->buttons & RASTERFALL_CMD_SHOVE) {
+        /* 推开以远端玩家自己的位置/朝向为准（主机 px/pz 属本地玩家） */
+        int save_px = session->game_state.px;
+        int save_pz = session->game_state.pz;
+        session->game_state.px = camera->x;
+        session->game_state.pz = camera->z;
+        toy_game_shove(&session->game_state, camera->sy, camera->cy);
+        session->game_state.px = save_px;
+        session->game_state.pz = save_pz;
+    }
 }
 
 void rasterfall_session_interact_remote(struct rasterfall_session *session,
@@ -293,6 +303,12 @@ static void session_interact(struct rasterfall_session *session,
             session->banner_ms = 1800;
             return;
         }
+        /* 据点防守的前提：先救援本据点的 AI，否则尸潮来了没人守。 */
+        if (session->game_state.actors[1].state != TOY_GAME_ACTOR_ALIVE) {
+            session->banner_text = "REVIVE GUARD FIRST";
+            session->banner_ms = 1800;
+            return;
+        }
         toy_game_set_campaign_stage(&session->game_state, 1);
         session->banner_text = "BASE 1 OVERRUN - MIXED HORDE INCOMING";
         session->banner_ms = 3500;
@@ -301,6 +317,11 @@ static void session_interact(struct rasterfall_session *session,
     } else if (it->kind == TOY_MAP_PICKUP_BASE_2_BUTTON) {
         if (session->game_state.campaign_stage != 1) {
             session->banner_text = "CLEAR BASE 1 FIRST";
+            session->banner_ms = 1800;
+            return;
+        }
+        if (session->game_state.actors[0].state != TOY_GAME_ACTOR_ALIVE) {
+            session->banner_text = "REVIVE JESUS FIRST";
             session->banner_ms = 1800;
             return;
         }
@@ -388,6 +409,8 @@ void rasterfall_session_step(struct rasterfall_session *session,
     session->game_state.px = camera->x;
     session->game_state.pz = camera->z;
     session->highlight_index = rasterfall_session_compute_highlight(session, camera);
+    if (command->buttons & RASTERFALL_CMD_SHOVE)
+        toy_game_shove(&session->game_state, camera->sy, camera->cy);
     if ((command->buttons & RASTERFALL_CMD_INTERACT) &&
         session_near_ai(session, camera, &session->ai_revive_actor_index))
         session->ai_revive_active = 1;
@@ -401,9 +424,11 @@ void rasterfall_session_step(struct rasterfall_session *session,
         } else if (toy_game_revive_actor(&session->game_state,
                                          session->ai_revive_actor_index,
                                          dt_ms)) {
+            const struct toy_game_actor *revived =
+                &session->game_state.actors[session->ai_revive_actor_index];
             session->ai_revive_active = 0;
             session->banner_ms = 1800;
-            session->banner_text = "JESUS REVIVED";
+            session->banner_text = revived->name;
         }
     }
     memset(keys, 0, sizeof(keys));

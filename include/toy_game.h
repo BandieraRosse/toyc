@@ -46,6 +46,10 @@
 #define TOY_GAME_ENEMY_RADIUS   100     /* 敌人碰撞半径 */
 #define TOY_GAME_HIT_RADIUS     150     /* 命中判定半径（覆盖渲染 box 半宽） */
 #define TOY_GAME_ATTACK_RANGE   300     /* 敌我距离小于此值开始咬 */
+#define TOY_GAME_SHOVE_RANGE    900     /* 推开检测距离（面前扇形） */
+#define TOY_GAME_SHOVE_PUSH     500     /* 推开位移（沿面朝方向） */
+#define TOY_GAME_SHOVE_STUN_MS  900     /* 推开后僵直时长 */
+#define TOY_GAME_SHOVE_CONE     2       /* 面前扇形 120°：点积*2 >= 距离 */
 #define TOY_GAME_ENEMY_HALF     120     /* 渲染 box 半宽（宿主用） */
 #define TOY_GAME_ENEMY_HEIGHT   350     /* 敌人模型顶部略高于玩家视角 */
 #define TOY_GAME_SPAWN_EDGE     250     /* 生成点距房间边界内缩量 */
@@ -195,6 +199,7 @@ struct toy_game_enemy {
     int bite_cooldown_ms;
     int flash;          /* 命中闪白计时 */
     int hurt;           /* 受击闪红计时 */
+    int shove_stun_ms;  /* 推开后的僵直计时：期间不移动不攻击 */
     int dying_ms;       /* 倒地压扁计时 */
     int ai_state;       /* enum toy_game_enemy_ai */
     int ai_timer_ms;    /* 侦测/警觉阶段倒计时 */
@@ -371,6 +376,7 @@ const struct toy_game_actor *toy_game_actor_by_id_const(const struct toy_game *g
                                                         int actor_id);
 int  toy_game_drain_events(struct toy_game *g, unsigned char *out, int max);
 void toy_game_place_enemy(struct toy_game *g, int x, int z); /* 测试钩子 */
+int  toy_game_shove(struct toy_game *g, int sy, int cy);    /* 推开面前敌人，返回推开的数量 */
 int  toy_game_spawn_horde(struct toy_game *g, int count_min, int count_max,
                           const struct toy_game_box *points, int point_count,
                           int min_player_dist);

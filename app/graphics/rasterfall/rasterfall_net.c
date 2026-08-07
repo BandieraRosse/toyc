@@ -1496,7 +1496,8 @@ int rasterfall_net_self_test(void)
     input.move_strafe = -1;
     input.turn = -321;
     input.pitch = 123;
-    input.buttons = RASTERFALL_CMD_FIRE | RASTERFALL_CMD_INTERACT;
+    input.buttons = RASTERFALL_CMD_FIRE | RASTERFALL_CMD_INTERACT |
+                    RASTERFALL_CMD_SHOVE;
     input.fire_held = 1;
     camera.x = -123456;
     camera.z = 654321;

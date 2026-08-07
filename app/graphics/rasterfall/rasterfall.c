@@ -99,12 +99,14 @@
 #define KEY_SPACE 57
 #define KEY_COMMA 51
 #define KEY_DOT   52
+#define KEY_SLASH 53
 #define KEY_BACKSPACE 14
 #define KEY_UP    103
 #define KEY_LEFT  105
 #define KEY_RIGHT 106
 #define KEY_DOWN  108
 #define BTN_LEFT 0x110
+#define BTN_RIGHT 0x111
 
 #define FIXED_STEP_US 16667
 #define MAX_FRAME_US 250000
@@ -1006,7 +1008,8 @@ static void accumulate_mouse_look(int *pending_turn, int *pending_pitch,
 static void build_game_command(struct rasterfall_command *command,
                                const struct toy_input *input,
                                const struct control_settings *settings,
-                               int fire_edge, int pointer_turn,
+                               int fire_edge, int shove_edge,
+                               int pointer_turn,
                                int pointer_pitch)
 {
     int percent = sensitivity_percent(settings->keyboard_level);
@@ -1023,6 +1026,9 @@ static void build_game_command(struct rasterfall_command *command,
                       toy_input_down(input, KEY_DOWN)) * 16 * percent / 100;
     command->fire_held = toy_input_down(input, KEY_SPACE);
     if (fire_edge) command->buttons |= RASTERFALL_CMD_FIRE;
+    if (shove_edge) command->buttons |= RASTERFALL_CMD_SHOVE;
+    if (toy_input_pressed(input, KEY_SLASH))
+        command->buttons |= RASTERFALL_CMD_SHOVE;
     if (toy_input_pressed(input, KEY_R)) command->buttons |= RASTERFALL_CMD_RELOAD;
     if (toy_input_pressed(input, KEY_1)) command->buttons |= RASTERFALL_CMD_SLOT_1;
     if (toy_input_pressed(input, KEY_2)) command->buttons |= RASTERFALL_CMD_SLOT_2;
@@ -1041,6 +1047,7 @@ static void consume_game_command_edges(struct toy_input *input)
     input->key_pressed[KEY_E] = 0;
     input->key_pressed[KEY_COMMA] = 0;
     input->key_pressed[KEY_DOT] = 0;
+    input->key_pressed[KEY_SLASH] = 0;
 }
 
 static void draw_crosshair(struct toy_surface *surface)
@@ -2108,6 +2115,7 @@ int main(int argc, char **argv)
     int frame_limit = 0, rendered_frames = 0, scene_pixels = 0;
     int display_fps = 0, fps_window_frames = 0;
     int fire_edge = 0;
+    int shove_edge = 0;
     int pointer_turn_pending = 0, pointer_pitch_pending = 0;
     long menu_nav_ready_us = 0;
     /* 按键按压边沿跨帧保留位：逻辑步（E/R/,/. 及切枪换弹）可能因
@@ -2475,6 +2483,9 @@ startup_again:
             fire_edge = 1;
         if (!paused && !resumed && toy_input_pressed(&input, KEY_SPACE))
             fire_edge = 1;
+        /* 推开输入：右键与开火同一套边沿锁存（恢复点击帧不算） */
+        if (!paused && !resumed && events.button_pressed && events.button == BTN_RIGHT)
+            shove_edge = 1;
         if (events.close_requested) running = 0;
         if (!running) break;
         /* --auto：炮弹幕压测（复现崩溃用）。瞬移到关键区域（起点室/
@@ -2544,7 +2555,7 @@ startup_again:
                 if (game.state == TOY_GAME_PLAYING &&
                     !(net.mode == RASTERFALL_NET_CLIENT && !net.connected)) {
                     build_game_command(&command, &input, &settings, fire_edge,
-                                       pointer_turn_pending,
+                                       shove_edge, pointer_turn_pending,
                                        pointer_pitch_pending);
                     if (net.mode == RASTERFALL_NET_CLIENT)
                         rasterfall_session_step_client(&session, &camera,
@@ -2566,6 +2577,7 @@ startup_again:
                     pointer_turn_pending = 0;
                     pointer_pitch_pending = 0;
                     fire_edge = 0;
+                    shove_edge = 0;
                 } else if (toy_input_pressed(&input, KEY_R)) {
                     /* 死亡或通关结算：R 重开 */
                     memset(&command, 0, sizeof(command));
@@ -2576,6 +2588,7 @@ startup_again:
                         rasterfall_net_send_command(&net, &command, &camera);
                     input.key_pressed[KEY_R] = 0;
                     fire_edge = 0;
+                    shove_edge = 0;
                 }
                 if (net.mode == RASTERFALL_NET_HOST) {
                     rasterfall_net_apply_remote(&net, &session, &camera);
@@ -2655,6 +2668,9 @@ startup_again:
             if (!paused && !resumed && stall_events.button_pressed &&
                 stall_events.button == BTN_LEFT)
                 fire_edge = 1;
+            if (!paused && !resumed && stall_events.button_pressed &&
+                stall_events.button == BTN_RIGHT)
+                shove_edge = 1;
             continue;
         }
         if (ready > 0) {
