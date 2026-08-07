@@ -474,7 +474,10 @@ int rasterfall_net_public_host(struct rasterfall_net *net, int room_id,
     net->public_room = 1; net->public_room_id = room_id;
     net->public_token = (uint32_t)net_monotonic_ms();
     net->mode = RASTERFALL_NET_HOST;
-    if (spawn) memcpy(&net->peer_spawn, spawn, sizeof(*spawn));
+    if (spawn) {
+        memcpy(&net->peer_spawn, spawn, sizeof(*spawn));
+        memcpy(&net->peer_camera, spawn, sizeof(*spawn));
+    }
     net->last_public_register_ms = 0;
     return punch_send_register(net);
 }
@@ -846,6 +849,8 @@ void rasterfall_net_poll(struct rasterfall_net *net)
             net->peer.sin_port = htons((unsigned short)get_u16(packet + 16));
             net->peer_known = 1;
             net->public_matched = 1;
+            if (net->mode == RASTERFALL_NET_HOST && !net->peer_state_initialized)
+                memcpy(&net->peer_camera, &net->peer_spawn, sizeof(net->peer_camera));
             net->last_public_punch_ms = 0;
             punch_send_probe(net);
             if (net->mode == RASTERFALL_NET_CLIENT) {
