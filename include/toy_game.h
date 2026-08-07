@@ -22,6 +22,8 @@
 #define TOY_GAME_MUZZLE_FLASH_MS 80
 #define TOY_GAME_DAMAGE_FLASH_MS 250
 #define TOY_GAME_DYING_MS       400
+#define TOY_GAME_REVIVE_MS      3000
+#define TOY_GAME_REVIVE_HP      30
 #define TOY_GAME_WAVE_FIRST_DELAY_MS 1500
 #define TOY_GAME_WAVE_PAUSE_MS  2500
 #define TOY_GAME_SPAWN_INTERVAL_MS 500
@@ -50,6 +52,7 @@
 #define TOY_GAME_GOAL_HOLD_MS   1500    /* 终点安全室内停留多久判定通关 */
 #define TOY_GAME_MAX_RANGE      11500   /* 弹丸最大射程（世界单位，≈地图尺度） */
 #define TOY_GAME_MAX_RAYS       10      /* 单枪最大弹丸数（霰弹枪），弹道记录上限 */
+#define TOY_GAME_MAX_NAME       32      /* 身份显示名（含结尾 NUL） */
 #define TOY_GAME_DETECT_RANGE   5600    /* 视觉最远察觉距离（原值两倍） */
 #define TOY_GAME_RETARGET_MS    500     /* 多玩家目标重新评估间隔 */
 #define TOY_GAME_CLOSE_DETECT_RANGE 600 /* 极近距离无需处于正面视野 */
@@ -87,6 +90,13 @@ enum toy_game_enemy_ai {
     TOY_GAME_ENEMY_TRACKING
 };
 
+/* 可同步的身份类型。AI 使用独立 actor_id，未来接入网络时不必把 AI
+ * 伪装成玩家输入端；名字和类型可以直接作为快照元数据传输。 */
+enum toy_game_actor_kind {
+    TOY_GAME_ACTOR_PLAYER = 0,
+    TOY_GAME_ACTOR_AI = 1
+};
+
 enum toy_game_event {
     TOY_GAME_EV_SHOOT,
     TOY_GAME_EV_DRY_FIRE,
@@ -99,6 +109,8 @@ enum toy_game_event {
     TOY_GAME_EV_LEVEL_WON,
     TOY_GAME_EV_ALARM_TRIGGERED,
     TOY_GAME_EV_ENEMY_ALERT,
+    TOY_GAME_EV_ACTOR_DOWN,
+    TOY_GAME_EV_ACTOR_REVIVE,
 };
 
 /* 碰撞/命中共用的 xz 平面轴对齐盒（与房间障碍物同尺度） */
@@ -155,7 +167,7 @@ struct toy_game_enemy {
     int target_x, target_z; /* 调查目标或最后声源 */
     int last_seen_x, last_seen_z;
     int lost_sight_ms;
-    int target_player;         /* 0=主机，1=客户端 */
+    int target_player;         /* 0=主机，1=客户端，2=AI 队友 */
     int retarget_timer_ms;
     int wander_timer_ms;
     int dir_x, dir_z;   /* 面向，1024 基准定点 */
@@ -173,6 +185,28 @@ struct toy_game {
     int muzzle_flash_ms;
     int damage_flash_ms;
     int kills;
+    int actor_id;
+    int actor_kind;
+    char player_name[TOY_GAME_MAX_NAME];
+
+    /* 固定出生的 AI 队友。其武器字段与玩家共用同一套更新/换弹/射击
+     * 规则；它不移动，只在索敌范围内选择敌人开火。 */
+    int ai_active;
+    int ai_actor_id;
+    int ai_x, ai_z;
+    int ai_sy, ai_cy;
+    int ai_hp;
+    int ai_down;
+    int ai_revive_progress_ms;
+    char ai_name[TOY_GAME_MAX_NAME];
+    struct toy_game_slot ai_slots[TOY_GAME_WEAPON_SLOTS];
+    int ai_current_slot;
+    int ai_reloading, ai_reload_timer_ms;
+    int ai_fire_cooldown_ms;
+    int ai_muzzle_flash_ms;
+    unsigned int ai_fire_seq;
+    int ai_ray_count;
+    struct toy_game_ray ai_rays[TOY_GAME_MAX_RAYS];
 
     /* 弹道记录：最近一次射击产生的弹丸射线（宿主渲染 tracer） */
     unsigned int fire_seq;   /* 每次实际开火 +1；宿主以此检测新弹道 */
@@ -211,6 +245,8 @@ struct toy_game {
     /* 联机主机可提供第二名玩家的位置；单机时保持 inactive。 */
     int secondary_player_active;
     int secondary_px, secondary_pz;
+    int player_down;
+    int player_revive_progress_ms;
 
     /* PRNG（xorshift64*，init 时播种） */
     uint64_t rng;
@@ -221,6 +257,11 @@ struct toy_game {
 };
 
 void toy_game_init(struct toy_game *g, uint64_t seed);      /* 初始化/重开共用 */
+void toy_game_set_player_name(struct toy_game *g, const char *name);
+void toy_game_set_ai_teammate(struct toy_game *g, int active, int x, int z,
+                              const char *name);
+void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms);
+int  toy_game_revive_ai(struct toy_game *g, int dt_ms);
 void toy_game_set_world(struct toy_game *g,
                         const struct toy_game_box *boxes,
                         int box_count, int room_limit);

@@ -128,16 +128,31 @@ void rasterfall_hud_render(struct toy_surface *surface, int fps,
     snprintf(line, sizeof(line), "%d", fps);
     draw_hud_value(surface, x, "FPS ", line, 0x90F090);
     render_network_hud(surface, state->net, state->host_address, state->host_port);
-    n = snprintf(line, sizeof(line), "HP %d  KILLS %d", game->hp, game->kills);
+    n = snprintf(line, sizeof(line), "%s  HP %d  KILLS %d",
+                 state->player_name ? state->player_name : "PLAYER",
+                 game->hp, game->kills);
     if (n > 0)
         fb_draw_string((unsigned char *)surface->pixels, 8, 8 + FB_FONT_H,
-                       line, 0xE7E9EC, surface->stride);
+                       line, game->hp < 10 ? 0xF03030 :
+                       game->hp < 40 ? 0xF0C830 : 0x40D060,
+                       surface->stride);
     render_weapon_hud(surface, 8, 8 + FB_FONT_H * 2, game);
     hint_y = 8 + FB_FONT_H * (game->reloading ? 4 : 3);
     if (game->reloading)
         fb_draw_string((unsigned char *)surface->pixels, 8, 8 + FB_FONT_H * 3,
                        "RELOADING...", 0xD88A32, surface->stride);
-    if (state->map->safe_count > 1 &&
+    if (game->player_down) {
+        fb_draw_string((unsigned char *)surface->pixels, 8, hint_y,
+                       "DOWN - WAIT FOR REVIVE", 0xF03030, surface->stride);
+    } else if (state->ai_revive_active && game->ai_down) {
+        snprintf(line, sizeof(line), "REVIVING JESUS %d%%",
+                 game->ai_revive_progress_ms * 100 / TOY_GAME_REVIVE_MS);
+        fb_draw_string((unsigned char *)surface->pixels, 8, hint_y,
+                       line, 0x70D8FF, surface->stride);
+    } else if (game->ai_down) {
+        fb_draw_string((unsigned char *)surface->pixels, 8, hint_y,
+                       "E REVIVE JESUS", 0x70D8FF, surface->stride);
+    } else if (state->map->safe_count > 1 &&
         toy_game_point_in_box(game->px, game->pz, &state->safe_rooms[1])) {
         snprintf(line, sizeof(line), "EXIT SECURE %d%%",
                  game->goal_hold_ms * 100 / TOY_GAME_GOAL_HOLD_MS);

@@ -11,12 +11,14 @@ struct rasterfall_hud_state {
     const struct toy_game *game;
     const struct toy_map *map;
     const struct toy_game_box *safe_rooms;
+    const char *player_name;
     const struct rasterfall_interactable *interactables;
     int interactable_count;
     int highlighted;
     int air_walls_enabled;
     int manual_alarm_enabled;
     int manual_alarm_timer_ms;
+    int ai_revive_active;
     int horde_banner_ms;
     const char *interaction_banner;
     const struct rasterfall_net *net;

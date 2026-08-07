@@ -294,12 +294,14 @@ static void fill_hud_state(struct rasterfall_hud_state *hud,
     hud->game = &session.game_state;
     hud->map = &level_map;
     hud->safe_rooms = map_safe_rooms;
+    hud->player_name = session.game_state.player_name;
     hud->interactables = session.items;
     hud->interactable_count = session.item_count;
     hud->highlighted = session.highlight_index;
     hud->air_walls_enabled = air_wall_enabled;
     hud->manual_alarm_enabled = session.manual_alarm_on;
     hud->manual_alarm_timer_ms = session.manual_alarm_timer;
+    hud->ai_revive_active = session.ai_revive_active;
     hud->horde_banner_ms = session.banner_ms;
     hud->interaction_banner = session.banner_text;
     hud->net = net_state;
@@ -1504,13 +1506,135 @@ static int render_enemies(struct toy_renderer *renderer,
     return pixels;
 }
 
+static void render_actor_name(struct toy_renderer *renderer,
+                              const struct camera *camera, int x, int z,
+                              int y, const char *name, uint32_t color)
+{
+    struct vec3 world, view;
+    struct toy_screen_vertex screen;
+    int width;
+    if (!name || !*name) return;
+    world.x = x; world.y = y; world.z = z;
+    world_to_view(camera, &world, &view);
+    if (view.z < NEAR_Z || view.z > ENEMY_RENDER_DISTANCE) return;
+    project_vertex(&renderer->surface, &view, &screen);
+    width = (int)strlen(name) * FB_FONT_W;
+    screen.x -= width / 2;
+    if (screen.x < 0 || screen.x + width >= renderer->surface.width ||
+        screen.y < 0 || screen.y + FB_FONT_H >= renderer->surface.height) return;
+    fb_draw_string((unsigned char *)renderer->surface.pixels, screen.x,
+                   screen.y, name, color, renderer->surface.stride);
+}
+
+static void render_actor_status(struct toy_renderer *renderer,
+                                const struct camera *camera, int x, int z,
+                                int y, const char *name, int hp, int downed,
+                                int revive_ms, uint32_t name_color)
+{
+    struct vec3 world, view;
+    struct toy_screen_vertex screen;
+    int width, bar_x, bar_y, fill, progress;
+    uint32_t hp_color;
+    world.x = x; world.y = y; world.z = z;
+    world_to_view(camera, &world, &view);
+    if (view.z < NEAR_Z || view.z > ENEMY_RENDER_DISTANCE) return;
+    project_vertex(&renderer->surface, &view, &screen);
+    width = (int)strlen(name) * FB_FONT_W;
+    screen.x -= width / 2;
+    if (screen.x < 0 || screen.x + width >= renderer->surface.width ||
+        screen.y < 0 || screen.y + FB_FONT_H >= renderer->surface.height) return;
+    render_actor_name(renderer, camera, x, z, y, name, name_color);
+    bar_x = screen.x + (width - 64) / 2;
+    bar_y = screen.y + FB_FONT_H + 2;
+    if (bar_x < 2) bar_x = 2;
+    if (bar_x + 64 >= renderer->surface.width) bar_x = renderer->surface.width - 66;
+    fill_rect(&renderer->surface, bar_x - 2, bar_y - 2, 68, 7, 0x20252B);
+    if (hp < 10) hp_color = 0xF03030;
+    else if (hp < 40) hp_color = 0xF0C830;
+    else hp_color = 0x40D060;
+    fill = hp * 64 / 100;
+    if (fill < 0) fill = 0;
+    if (fill > 64) fill = 64;
+    if (fill > 0) fill_rect(&renderer->surface, bar_x, bar_y, fill, 3, hp_color);
+    if (!downed) return;
+    progress = revive_ms * 64 / TOY_GAME_REVIVE_MS;
+    if (progress < 0) progress = 0;
+    if (progress > 64) progress = 64;
+    fill_rect(&renderer->surface, bar_x - 2, bar_y + 7, 68, 5, 0x20252B);
+    if (progress > 0)
+        fill_rect(&renderer->surface, bar_x, bar_y + 8, progress, 3, 0x70D8FF);
+}
+
+static int render_player_avatar(struct toy_renderer *renderer,
+                                const struct camera *camera, int x, int z,
+                                int sy, int cy, int muzzle_flash,
+                                uint32_t body_color, int downed);
+
+static void render_ai_teammate_name(struct toy_renderer *renderer,
+                                    const struct camera *camera)
+{
+    if (!game.ai_active) return;
+    render_actor_status(renderer, camera, game.ai_x, game.ai_z,
+                        game.ai_down ? -350 : 700, game.ai_name, game.ai_hp,
+                        game.ai_down, game.ai_revive_progress_ms, 0x70D8FF);
+}
+
+static int render_ai_teammate(struct toy_renderer *renderer,
+                              const struct camera *camera)
+{
+    struct vec3 center, view;
+    if (!game.ai_active) return 0;
+    center.x = game.ai_x; center.y = 0; center.z = game.ai_z;
+    world_to_view(camera, &center, &view);
+    if (view.z < NEAR_Z || view.z > ENEMY_RENDER_DISTANCE) return 0;
+    return render_player_avatar(renderer, camera, game.ai_x, game.ai_z,
+                                game.ai_sy, game.ai_cy,
+                                game.ai_muzzle_flash_ms, 0x386B96,
+                                game.ai_down);
+}
+
+static int render_player_avatar(struct toy_renderer *renderer,
+                                const struct camera *camera, int x, int z,
+                                int sy, int cy, int muzzle_flash,
+                                uint32_t body_color, int downed)
+{
+    int pixels = 0, face_y0, face_y1;
+    if (!renderer || !camera) return 0;
+    if (downed) {
+        pixels += draw_cuboid(renderer, camera, x - 170, x + 170,
+                              -850, -650, z - 100, z + 100, body_color);
+        pixels += draw_ellipsoid_head(renderer, camera, x, z,
+                                      -550, 145, 100, 0xD2A878);
+        face_y0 = -650; face_y1 = -470;
+    } else {
+        pixels += draw_cuboid(renderer, camera, x - 95, x - 10,
+                              -900, -610, z - 75, z + 75, 0x25354A);
+        pixels += draw_cuboid(renderer, camera, x + 10, x + 95,
+                              -900, -610, z - 75, z + 75, 0x25354A);
+        pixels += draw_cuboid(renderer, camera, x - 155, x + 155,
+                              -620, -100, z - 100, z + 100, body_color);
+        pixels += draw_ellipsoid_head(renderer, camera, x, z,
+                                      50, 145, 150, 0xD2A878);
+        face_y0 = -35; face_y1 = 185;
+    }
+    pixels += draw_face_rect(renderer, camera, x, z, 145, sy, cy,
+                             -72, 72, face_y0, face_y1, 0x252A30);
+    pixels += draw_face_rect(renderer, camera, x, z, 145, sy, cy,
+                             -16, 16, face_y0 + 40, face_y1 - 40, 0xE8D2A8);
+    pixels += draw_face_rect(renderer, camera, x, z, 145, sy, cy,
+                             -72, 72, face_y0 + 90, face_y0 + 115, 0xE8D2A8);
+    if (muzzle_flash > 0)
+        pixels += draw_cuboid(renderer, camera, x - 45, x + 45,
+                              -560, -430, z - 120, z + 120, 0xFFD060);
+    return pixels;
+}
+
 static int render_network_teammate(struct toy_renderer *renderer,
                                    const struct camera *camera,
                                    const struct rasterfall_net *net)
 {
     const struct camera *remote = NULL;
     int muzzle_flash = 0;
-    int x, z, pixels = 0;
     if (net->mode == RASTERFALL_NET_HOST && net->peer_known) {
         remote = &net->peer_camera;
         muzzle_flash = net->peer_muzzle_flash_ms;
@@ -1519,30 +1643,27 @@ static int render_network_teammate(struct toy_renderer *renderer,
         muzzle_flash = net->players[0].muzzle_flash_ms;
     }
     if (!remote) return 0;
-    x = remote->x;
-    z = remote->z;
-    pixels += draw_cuboid(renderer, camera, x - 95, x - 10,
-                          -900, -610, z - 75, z + 75, 0x25354A);
-    pixels += draw_cuboid(renderer, camera, x + 10, x + 95,
-                          -900, -610, z - 75, z + 75, 0x25354A);
-    pixels += draw_cuboid(renderer, camera, x - 155, x + 155,
-                          -620, -100, z - 100, z + 100, 0x386B96);
-    pixels += draw_cuboid(renderer, camera, x - 125, x + 125,
-                          -90, 190, z - 125, z + 125, 0xD2A878);
-    /* 玩家模型的面朝方向与相机一致；脸上的十字让正面在远处也可辨认。 */
-    pixels += draw_face_rect(renderer, camera, x, z, 128,
-                             remote->sy, remote->cy,
-                             -72, 72, -35, 185, 0x252A30);
-    pixels += draw_face_rect(renderer, camera, x, z, 128,
-                             remote->sy, remote->cy,
-                             -16, 16, 5, 145, 0xE8D2A8);
-    pixels += draw_face_rect(renderer, camera, x, z, 128,
-                             remote->sy, remote->cy,
-                             -72, 72, 55, 80, 0xE8D2A8);
-    if (muzzle_flash > 0)
-        pixels += draw_cuboid(renderer, camera, x - 45, x + 45,
-                              -560, -430, z - 120, z + 120, 0xFFD060);
-    return pixels;
+    return render_player_avatar(renderer, camera, remote->x, remote->z,
+                                remote->sy, remote->cy, muzzle_flash,
+                                0x386B96, 0);
+}
+
+static void render_network_teammate_status(struct toy_renderer *renderer,
+                                           const struct camera *camera,
+                                           const struct rasterfall_net *net)
+{
+    const struct camera *remote = NULL;
+    int hp = 0;
+    if (net->mode == RASTERFALL_NET_HOST && net->peer_known) {
+        remote = &net->peer_camera;
+        hp = net->peer_hp;
+    } else if (net->mode == RASTERFALL_NET_CLIENT && net->players[0].active) {
+        remote = &net->players[0].camera;
+        hp = net->players[0].hp;
+    }
+    if (!remote) return;
+    render_actor_status(renderer, camera, remote->x, remote->z, 700,
+                        "PLAYER 2", hp, hp <= 0, 0, 0x70D8FF);
 }
 
 /* ── 子弹轨迹与命中粒子（纯视觉；逻辑步进 16ms 推进） ──────────── */
@@ -1626,6 +1747,39 @@ static void sync_fire_effects(const struct camera *camera)
         t->sx = muzzle.x;
         t->sy = muzzle.y;
         t->sz = muzzle.z;
+        tracer_aim_endpoint(camera, r, r->ex, r->ez,
+                            &t->ex, &t->ey, &t->ez);
+        t->life_ms = RASTERFALL_TRACER_LIFE_MS;
+        if (r->hit_enemy || r->hit_world)
+            rasterfall_effects_spawn_hit_particles(&effects, r->ex, t->ey,
+                                                   r->ez, r->sy, r->cy);
+    }
+}
+
+/* AI 的弹道同样进入 tracer/命中特效环。起点使用 AI 的世界坐标，终点
+ * 仍通过当前观察相机投影，因此第一人称玩家和旁观者都能看到完整弹道。 */
+static void sync_ai_fire_effects(const struct camera *camera)
+{
+    int i, ray_count, mx, mz;
+    if (game.ai_fire_seq < effects.last_ai_fire_seq) {
+        effects.last_ai_fire_seq = 0;
+        return;
+    }
+    if (game.ai_fire_seq == effects.last_ai_fire_seq) return;
+    effects.last_ai_fire_seq = game.ai_fire_seq;
+    ray_count = game.ai_ray_count;
+    if (ray_count < 0) ray_count = 0;
+    if (ray_count > TOY_GAME_MAX_RAYS) ray_count = TOY_GAME_MAX_RAYS;
+    mx = game.ai_x + game.ai_sy * 130 / 1024;
+    mz = game.ai_z + game.ai_cy * 130 / 1024;
+    for (i = 0; i < ray_count; i++) {
+        const struct toy_game_ray *r = &game.ai_rays[i];
+        struct rasterfall_tracer *t = &effects.tracers[effects.tracer_next];
+        effects.tracer_next = (effects.tracer_next + 1) % RASTERFALL_TRACER_SLOTS;
+        t->active = 1;
+        t->sx = mx;
+        t->sy = -430;
+        t->sz = mz;
         tracer_aim_endpoint(camera, r, r->ex, r->ez,
                             &t->ex, &t->ey, &t->ez);
         t->life_ms = RASTERFALL_TRACER_LIFE_MS;
@@ -2406,7 +2560,10 @@ startup_again:
                                                  TOY_GAME_MAX_EVENTS);
         if (audio.running && game_event_count > 0)
             rasterfall_audio_play_events(&audio, game_events, game_event_count);
-        if (!paused) sync_fire_effects(&camera);
+        if (!paused) {
+            sync_fire_effects(&camera);
+            sync_ai_fire_effects(&camera);
+        }
         if (accumulator >= FIXED_STEP_US) accumulator %= FIXED_STEP_US;
         /* 本帧跑过逻辑步：所有保留边沿都已暴露给消费方，可以清除；
          * 一帧都没跑（accumulator 不足，长 stall 后常见）则留到下一帧，
@@ -2475,6 +2632,7 @@ startup_again:
                            renderer.submitted_triangles - prev_tris, 0);
             prev_tris = renderer.submitted_triangles;
             scene_pixels += render_enemies(&renderer, &camera);
+            scene_pixels += render_ai_teammate(&renderer, &camera);
             scene_pixels += render_network_teammate(&renderer, &camera, &net);
             rasterfall_perf_end_stage(&stats, &stats_total, RASTERFALL_STATS_ENEMIES, &t_stage,
                            renderer.submitted_triangles - prev_tris, 0);
@@ -2518,6 +2676,8 @@ startup_again:
                 }
             }
             scene_pixels += stage_pixels;
+            render_ai_teammate_name(&renderer, &camera);
+            render_network_teammate_status(&renderer, &camera, &net);
             rasterfall_hud_damage_flash(&surface, &game);
             if (input_debug)
                 draw_input_debug(&surface, &input,

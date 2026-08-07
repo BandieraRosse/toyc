@@ -113,6 +113,61 @@ void toy_game_init(struct toy_game *g, uint64_t seed)
     g->wave = 1;
     g->to_spawn = wave_quota(1);
     g->spawn_timer_ms = TOY_GAME_WAVE_FIRST_DELAY_MS;
+    g->actor_id = 0;
+    g->actor_kind = TOY_GAME_ACTOR_PLAYER;
+    toy_game_set_player_name(g, "PLAYER");
+    toy_game_set_ai_teammate(g, 1, -11000, -5800, "Jesus");
+}
+
+static void copy_name(char *dst, const char *src)
+{
+    int i;
+    if (!src || !*src) src = "PLAYER";
+    for (i = 0; i < TOY_GAME_MAX_NAME - 1 && src[i]; i++) dst[i] = src[i];
+    dst[i] = 0;
+}
+
+void toy_game_set_player_name(struct toy_game *g, const char *name)
+{
+    copy_name(g->player_name, name);
+}
+
+void toy_game_set_ai_teammate(struct toy_game *g, int active, int x, int z,
+                              const char *name)
+{
+    const struct toy_game_weapon_info *w;
+    memset(g->ai_slots, 0, sizeof(g->ai_slots));
+    g->ai_active = active != 0;
+    g->ai_actor_id = 1;
+    g->ai_x = x; g->ai_z = z;
+    g->ai_sy = 0; g->ai_cy = 1024;
+    g->ai_hp = 100;
+    copy_name(g->ai_name, name ? name : "Jesus");
+    g->ai_slots[0].weapon = TOY_GAME_WEAPON_SMG;
+    w = toy_game_weapon_info(TOY_GAME_WEAPON_SMG);
+    g->ai_slots[0].mag = w->mag_size;
+    g->ai_slots[0].reserve = TOY_GAME_AMMO_INFINITE;
+    g->ai_slots[1].weapon = -1;
+    g->ai_current_slot = 0;
+    g->ai_reloading = 0;
+    g->ai_reload_timer_ms = 0;
+    g->ai_fire_cooldown_ms = 0;
+    g->ai_muzzle_flash_ms = 0;
+    g->ai_fire_seq = 0;
+    g->ai_ray_count = 0;
+    memset(g->ai_rays, 0, sizeof(g->ai_rays));
+}
+
+int toy_game_revive_ai(struct toy_game *g, int dt_ms)
+{
+    if (!g->ai_active || !g->ai_down || dt_ms <= 0) return 0;
+    g->ai_revive_progress_ms += dt_ms;
+    if (g->ai_revive_progress_ms < TOY_GAME_REVIVE_MS) return 0;
+    g->ai_revive_progress_ms = 0;
+    g->ai_hp = TOY_GAME_REVIVE_HP;
+    g->ai_down = 0;
+    push_event(g, TOY_GAME_EV_ACTOR_REVIVE);
+    return 1;
 }
 
 void toy_game_set_world(struct toy_game *g,
@@ -548,7 +603,7 @@ static void update_campaign(struct toy_game *g, int dt_ms)
 
 static void bite_player(struct toy_game *g, struct toy_game_enemy *e)
 {
-    if (e->bite_cooldown_ms > 0) return;
+    if (e->bite_cooldown_ms > 0 || g->player_down) return;
     e->bite_cooldown_ms = TOY_GAME_BITE_MS;
     g->hp -= TOY_GAME_BITE_DAMAGE;
     if (g->hp < 0) g->hp = 0;
@@ -556,8 +611,24 @@ static void bite_player(struct toy_game *g, struct toy_game_enemy *e)
     e->hurt = 150;
     push_event(g, TOY_GAME_EV_BITE);
     if (g->hp <= 0) {
-        g->state = TOY_GAME_OVER;
-        push_event(g, TOY_GAME_EV_PLAYER_DEATH);
+        g->player_down = 1;
+        g->player_revive_progress_ms = 0;
+        push_event(g, TOY_GAME_EV_ACTOR_DOWN);
+    }
+}
+
+static void bite_ai(struct toy_game *g, struct toy_game_enemy *e)
+{
+    if (e->bite_cooldown_ms > 0 || !g->ai_active || g->ai_down) return;
+    e->bite_cooldown_ms = TOY_GAME_BITE_MS;
+    g->ai_hp -= TOY_GAME_BITE_DAMAGE;
+    if (g->ai_hp < 0) g->ai_hp = 0;
+    e->hurt = 150;
+    push_event(g, TOY_GAME_EV_BITE);
+    if (g->ai_hp <= 0) {
+        g->ai_down = 1;
+        g->ai_revive_progress_ms = 0;
+        push_event(g, TOY_GAME_EV_ACTOR_DOWN);
     }
 }
 
@@ -610,6 +681,7 @@ static void chase_enemy(struct toy_game *g, struct toy_game_enemy *e,
     int nx, nz;
     if (dist < TOY_GAME_ATTACK_RANGE) {
         if (target_player == 0 && !player_in_safe_room(g)) bite_player(g, e);
+        else if (target_player == 2) bite_ai(g, e);
         return;
     }
     if (dist == 0) return;
@@ -753,16 +825,35 @@ static void update_enemy_ai(struct toy_game *g, struct toy_game_enemy *e,
     long long dist2;
     long long dist;
     int visual;
+    int ai_available = g->ai_active && !g->ai_down;
 
     if (e->retarget_timer_ms > 0) e->retarget_timer_ms -= dt_ms;
-    if (!g->secondary_player_active ||
-        (e->retarget_timer_ms > 0 && e->target_player == 1)) {
+    if ((e->target_player == 0 && g->player_down) ||
+        (e->target_player == 1 && !g->secondary_player_active) ||
+        (e->target_player == 2 && !ai_available) ||
+        (e->retarget_timer_ms > 0 && e->target_player != 0 &&
+         e->target_player != 1 && e->target_player != 2)) {
+        e->retarget_timer_ms = 0;
+    }
+    if (e->retarget_timer_ms > 0) {
         target_player = e->target_player;
-        if (target_player == 1 && !g->secondary_player_active)
-            target_player = 0;
     } else if (e->retarget_timer_ms <= 0 || e->target_player < 0) {
-        target_player = g->secondary_player_active &&
-                        secondary_dist2 < primary_dist2 ? 1 : 0;
+        target_player = 0;
+        if (g->player_down) target_player = -1;
+        if (g->secondary_player_active &&
+            (target_player < 0 || secondary_dist2 < primary_dist2)) {
+            target_player = 1;
+        }
+        if (ai_available) {
+            long long ai_dx = (long long)g->ai_x - e->x;
+            long long ai_dz = (long long)g->ai_z - e->z;
+            long long ai_dist2 = ai_dx * ai_dx + ai_dz * ai_dz;
+            if (target_player < 0 ||
+                (target_player == 1 ? ai_dist2 < secondary_dist2 :
+                 ai_dist2 < primary_dist2))
+                target_player = 2;
+        }
+        if (target_player < 0) target_player = 0;
         e->target_player = target_player;
         e->retarget_timer_ms = TOY_GAME_RETARGET_MS;
     } else {
@@ -770,6 +861,8 @@ static void update_enemy_ai(struct toy_game *g, struct toy_game_enemy *e,
     }
     if (target_player == 1) {
         target_x = g->secondary_px; target_z = g->secondary_pz;
+    } else if (target_player == 2) {
+        target_x = g->ai_x; target_z = g->ai_z;
     } else {
         target_x = g->px; target_z = g->pz;
     }
@@ -1173,7 +1266,7 @@ void toy_game_update_weapon_held(struct toy_game *g,
 {
     struct toy_game_slot *s;
     const struct toy_game_weapon_info *w;
-    if (g->state != TOY_GAME_PLAYING) return;
+    if (g->state != TOY_GAME_PLAYING || g->player_down) return;
 
     /* 切枪键（1/2）：先于换弹与射击处理，切换即打断换弹 */
     if (keys_pressed) {
@@ -1225,6 +1318,95 @@ void toy_game_update_weapon_held(struct toy_game *g,
 
 }
 
+/* AI 队友只负责选择目标；实际扣弹、换弹、射线和枪声仍走玩家的
+ * toy_game_update_weapon_held/toy_game_fire。临时切换操作者状态后恢复玩家
+ * 状态，这样两名操作者共享同一套武器规则，同时不会覆盖玩家 tracer。 */
+void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
+{
+    struct toy_game_slot player_slots[TOY_GAME_WEAPON_SLOTS];
+    struct toy_game_ray player_rays[TOY_GAME_MAX_RAYS];
+    int player_px, player_pz, player_current_slot;
+    int player_reloading, player_reload_timer_ms, player_fire_cooldown_ms;
+    int player_muzzle_flash_ms, player_ray_count;
+    unsigned int player_fire_seq;
+    int target = -1, best_dist = 0, i;
+    int sy = 0, cy = 1024;
+    int player_down;
+    if (!g->ai_active || g->ai_down || g->state != TOY_GAME_PLAYING) return;
+
+    /* 与普通敌人察觉距离同量级，且只选择无遮挡目标。 */
+    for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
+        struct toy_game_enemy *e = &g->enemies[i];
+        int dx, dz, dist, j, blocked = 0;
+        long long d2;
+        if (e->active != 1) continue;
+        dx = e->x - g->ai_x;
+        dz = e->z - g->ai_z;
+        d2 = (long long)dx * dx + (long long)dz * dz;
+        if (d2 > (long long)TOY_GAME_DETECT_RANGE * TOY_GAME_DETECT_RANGE)
+            continue;
+        dist = (int)isqrt(d2);
+        if (dist <= 0) continue;
+        for (j = 0; j < g->world_count; j++)
+            if (segment_hits_box(g->ai_x, g->ai_z, e->x, e->z,
+                                 &g->world[j])) { blocked = 1; break; }
+        if (blocked) continue;
+        if (target < 0 || dist < best_dist) {
+            target = i; best_dist = dist;
+            sy = (int)((long long)dx * 1024 / dist);
+            cy = (int)((long long)dz * 1024 / dist);
+        }
+    }
+
+    memcpy(player_slots, g->slots, sizeof(player_slots));
+    memcpy(player_rays, g->rays, sizeof(player_rays));
+    player_px = g->px; player_pz = g->pz;
+    player_current_slot = g->current_slot;
+    player_reloading = g->reloading;
+    player_reload_timer_ms = g->reload_timer_ms;
+    player_fire_cooldown_ms = g->fire_cooldown_ms;
+    player_muzzle_flash_ms = g->muzzle_flash_ms;
+    player_ray_count = g->ray_count;
+    player_fire_seq = g->fire_seq;
+    player_down = g->player_down;
+
+    memcpy(g->slots, g->ai_slots, sizeof(g->slots));
+    g->px = g->ai_x; g->pz = g->ai_z;
+    g->current_slot = g->ai_current_slot;
+    g->reloading = g->ai_reloading;
+    g->reload_timer_ms = g->ai_reload_timer_ms;
+    g->fire_cooldown_ms = g->ai_fire_cooldown_ms;
+    g->muzzle_flash_ms = g->ai_muzzle_flash_ms;
+    g->player_down = 0;
+    toy_game_update_weapon_held(g, NULL, target >= 0, target >= 0,
+                                sy, cy, dt_ms);
+    memcpy(g->ai_slots, g->slots, sizeof(g->ai_slots));
+    g->ai_current_slot = g->current_slot;
+    g->ai_reloading = g->reloading;
+    g->ai_reload_timer_ms = g->reload_timer_ms;
+    g->ai_fire_cooldown_ms = g->fire_cooldown_ms;
+    g->ai_muzzle_flash_ms = g->muzzle_flash_ms;
+    g->ai_sy = target >= 0 ? sy : g->ai_sy;
+    g->ai_cy = target >= 0 ? cy : g->ai_cy;
+    if (g->fire_seq != player_fire_seq) {
+        g->ai_fire_seq++;
+        g->ai_ray_count = g->ray_count;
+        memcpy(g->ai_rays, g->rays, sizeof(g->ai_rays));
+    }
+
+    memcpy(g->slots, player_slots, sizeof(g->slots));
+    memcpy(g->rays, player_rays, sizeof(g->rays));
+    g->px = player_px; g->pz = player_pz;
+    g->current_slot = player_current_slot;
+    g->reloading = player_reloading;
+    g->reload_timer_ms = player_reload_timer_ms;
+    g->fire_cooldown_ms = player_fire_cooldown_ms;
+    g->muzzle_flash_ms = player_muzzle_flash_ms;
+    g->ray_count = player_ray_count;
+    g->fire_seq = player_fire_seq;
+    g->player_down = player_down;
+}
+
 void toy_game_update_held(struct toy_game *g,
                           const unsigned char *keys_pressed,
                           int fire_pressed, int fire_held,
@@ -1234,6 +1416,7 @@ void toy_game_update_held(struct toy_game *g,
     if (g->state != TOY_GAME_PLAYING) return;
     toy_game_update_weapon_held(g, keys_pressed, fire_pressed, fire_held,
                                 sy, cy, dt_ms);
+    toy_game_update_ai_teammate(g, dt_ms);
 
     /* 敌人计时器与移动/攻击/倒地 */
     for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {

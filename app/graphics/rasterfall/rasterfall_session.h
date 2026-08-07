@@ -51,6 +51,7 @@ struct rasterfall_session {
     int banner_ms;
     const char *banner_text;
     int smooth_turn_remaining;
+    int ai_revive_active;
     uint64_t seed;
 };
 

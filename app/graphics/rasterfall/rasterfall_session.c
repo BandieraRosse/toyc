@@ -12,6 +12,18 @@
 static void session_interact(struct rasterfall_session *session,
                              struct rasterfall_interactable *it);
 
+static int session_near_ai(const struct rasterfall_session *session,
+                           const struct camera *camera)
+{
+    long dx, dz;
+    if (!session->game_state.ai_active || !session->game_state.ai_down)
+        return 0;
+    dx = (long)camera->x - session->game_state.ai_x;
+    dz = (long)camera->z - session->game_state.ai_z;
+    return dx * dx + dz * dz <=
+           (long)RASTERFALL_INTERACT_RANGE * RASTERFALL_INTERACT_RANGE;
+}
+
 static void session_set_air_walls(struct rasterfall_session *session,
                                   int enabled)
 {
@@ -49,6 +61,11 @@ void rasterfall_session_reset(struct rasterfall_session *session,
     camera->pitch_cy = 1024;
     session->seed = seed ? seed : 1;
     toy_game_init(&session->game_state, session->seed);
+    /* 环境变量不依赖 libc；HOSTNAME 是最稳定的本机身份来源，缺失时
+     * toy_game_init 的 PLAYER 保底仍可用。名字只用于身份展示/未来快照。 */
+    if (global_envp && get_env_var(global_envp, "HOSTNAME"))
+        toy_game_set_player_name(&session->game_state,
+                                 get_env_var(global_envp, "HOSTNAME"));
     toy_game_set_world(&session->game_state, session->bounds,
                        session->level.box_count, session->level.room_limit);
     toy_game_set_campaign(&session->game_state, session->safe_rooms,
@@ -65,6 +82,7 @@ void rasterfall_session_reset(struct rasterfall_session *session,
     session->manual_alarm_timer = 1000;
     session->highlight_index = -1;
     session->smooth_turn_remaining = 0;
+    session->ai_revive_active = 0;
     session_set_air_walls(session, 1);
     rasterfall_map_reset_interactables(&session->map_ops);
 }
@@ -136,7 +154,8 @@ void rasterfall_session_step_remote_player(struct rasterfall_session *session,
                                            struct camera *camera,
                                            const struct rasterfall_command *command)
 {
-    session_move_player(session, camera, command);
+    if (!session->game_state.player_down)
+        session_move_player(session, camera, command);
     if (command->turn || command->pitch)
         rasterfall_camera_rotate(camera, command->turn, command->pitch);
 }
@@ -229,7 +248,8 @@ void rasterfall_session_step(struct rasterfall_session *session,
         return;
     }
     if (session->game_state.state != TOY_GAME_PLAYING) return;
-    session_move_player(session, camera, command);
+    if (!session->game_state.player_down)
+        session_move_player(session, camera, command);
     if (command->turn || command->pitch)
         rasterfall_camera_rotate(camera, command->turn, command->pitch);
     if (command->buttons & RASTERFALL_CMD_TURN_LEFT)
@@ -241,8 +261,21 @@ void rasterfall_session_step(struct rasterfall_session *session,
     session->game_state.pz = camera->z;
     session->highlight_index = rasterfall_session_compute_highlight(session, camera);
     if ((command->buttons & RASTERFALL_CMD_INTERACT) &&
-        session->highlight_index >= 0)
+        session_near_ai(session, camera))
+        session->ai_revive_active = 1;
+    if ((command->buttons & RASTERFALL_CMD_INTERACT) &&
+        session->highlight_index >= 0 && !session->game_state.player_down)
         session_interact(session, &session->items[session->highlight_index]);
+    if (session->ai_revive_active) {
+        if (!session_near_ai(session, camera) || session->game_state.player_down) {
+            session->ai_revive_active = 0;
+            session->game_state.ai_revive_progress_ms = 0;
+        } else if (toy_game_revive_ai(&session->game_state, dt_ms)) {
+            session->ai_revive_active = 0;
+            session->banner_ms = 1800;
+            session->banner_text = "JESUS REVIVED";
+        }
+    }
     memset(keys, 0, sizeof(keys));
     if (command->buttons & RASTERFALL_CMD_RELOAD) keys[TOY_GAME_KEY_RELOAD] = 1;
     if (command->buttons & RASTERFALL_CMD_SLOT_1) keys[TOY_GAME_KEY_SLOT_1] = 1;

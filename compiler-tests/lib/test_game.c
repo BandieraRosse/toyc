@@ -303,7 +303,7 @@ static int test_fire_rate(void)
     return 0;
 }
 
-/* 13: 血量归零 → GAME_OVER 冻结 */
+/* 13: 血量归零 → 倒地冻结，等待复活 */
 static int test_game_over(void)
 {
     struct toy_game g;
@@ -320,11 +320,11 @@ static int test_game_over(void)
     toy_game_update(&g, NULL, 0, 0, 1024, 16);
     if (g.state != TOY_GAME_PLAYING || g.hp != 3) return 13;
     for (i = 0; i < 126; i++) toy_game_update(&g, NULL, 0, 0, 1024, 16);
-    if (g.state != TOY_GAME_OVER || g.hp != 0) return 13;
+    if (g.state != TOY_GAME_PLAYING || !g.player_down || g.hp != 0) return 13;
     n = toy_game_drain_events(&g, evs, 16);
-    if (!has_event(evs, n, TOY_GAME_EV_PLAYER_DEATH)) return 13;
+    if (!has_event(evs, n, TOY_GAME_EV_ACTOR_DOWN)) return 13;
     for (i = 0; i < 100; i++) toy_game_update(&g, NULL, 0, 0, 1024, 16);
-    if (g.hp != 0 || g.state != TOY_GAME_OVER) return 13;
+    if (g.hp != 0 || !g.player_down || g.state != TOY_GAME_PLAYING) return 13;
     return 0;
 }
 
@@ -859,6 +859,56 @@ static int test_horde_tracking(void)
     return 0;
 }
 
+/* 31: AI 队友固定位置、身份名、同一套 SMG 开火/无限备弹换弹规则。 */
+static int test_ai_teammate(void)
+{
+    struct toy_game g;
+    int i;
+    toy_game_init(&g, 67);
+    toy_game_set_world(&g, NULL, 0, ROOM);
+    if (!g.ai_active || g.ai_x != -11000 || g.ai_z != -5800 ||
+        strcmp(g.ai_name, "Jesus") != 0 ||
+        g.ai_slots[0].weapon != TOY_GAME_WEAPON_SMG ||
+        g.ai_slots[0].reserve != TOY_GAME_AMMO_INFINITE) return 31;
+    g.px = 0; g.pz = 5000;
+    g.enemies[0].active = 1;
+    g.enemies[0].x = 0; g.enemies[0].z = -4500;
+    g.enemies[0].hp = 1;
+    g.enemies_alive = 1;
+    g.ai_slots[0].mag = 1;
+    toy_game_update(&g, NULL, 0, 0, 1024, 16);
+    if (g.enemies[0].active != 2 || !g.ai_reloading) return 31;
+    for (i = 0; i < 130; i++)
+        toy_game_update(&g, NULL, 0, 0, 1024, 16);
+    if (g.ai_reloading || g.ai_slots[0].mag != 50 ||
+        g.px != 0 || g.pz != 5000) return 31;
+
+    /* 敌人也能把 AI 选为目标；倒地后完成 3 秒复活。 */
+    memset(g.enemies, 0, sizeof(g.enemies));
+    g.enemies[0].active = 1;
+    g.enemies[0].x = -10800;
+    g.enemies[0].z = -5800;
+    g.enemies[0].ai_state = TOY_GAME_ENEMY_CHASE;
+    g.enemies[0].bite_cooldown_ms = 0;
+    g.enemies[0].target_player = -1;
+    g.enemies[0].retarget_timer_ms = 0;
+    g.enemies_alive = 1;
+    g.ai_hp = 2;
+    g.ai_down = 0;
+    g.ai_slots[0].mag = 0;
+    g.ai_reloading = 1;
+    g.ai_reload_timer_ms = 2000;
+    toy_game_update(&g, NULL, 0, 0, 1024, 16);
+    if (!g.ai_down || g.ai_hp != 0) return 31;
+    g.enemies[0].active = 0;
+    g.enemies_alive = 0;
+    for (i = 0; i < 188; i++) toy_game_update(&g, NULL, 0, 0, 1024, 16);
+    if (!g.ai_down) return 31;
+    for (i = 0; i < 188; i++) toy_game_revive_ai(&g, 16);
+    if (g.ai_down || g.ai_hp != TOY_GAME_REVIVE_HP) return 31;
+    return 0;
+}
+
 int main(void)
 {
     if (test_prng_determinism()) return 1;
@@ -891,5 +941,6 @@ int main(void)
     if (test_last_seen_and_search()) return 28;
     if (test_weapon_slots()) return 29;
     if (test_horde_tracking()) return 30;
+    if (test_ai_teammate()) return 31;
     return 0;
 }
