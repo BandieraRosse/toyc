@@ -743,18 +743,19 @@ int rasterfall_net_send_snapshot(struct rasterfall_net *net,
                (size_t)event_count);
     put_i16(world_data, game->wave);
     put_i16(world_data + 2, game->to_spawn);
-    put_i16(world_data + 4, game->enemies_alive);
-    put_i16(world_data + 6, game->campaign_phase);
-    put_i16(world_data + 8, game->phase_timer_ms);
-    put_i16(world_data + 10, game->alarm_timer_ms);
+    put_i16(world_data + 4, game->spawn_timer_ms);
+    put_i16(world_data + 6, game->enemies_alive);
+    put_i16(world_data + 8, game->campaign_phase);
+    put_i16(world_data + 10, game->phase_timer_ms);
     world_data[12] = (unsigned char)((air_walls_enabled ? 1 : 0) |
                                      (manual_alarm_enabled ? 2 : 0));
-    put_i16(world_data + 14, game->spawn_budget);
-    put_i16(world_data + 16, game->active_attackers);
-    put_i16(world_data + 18, game->director_encounters);
-    put_i16(world_data + 20, game->goal_hold_ms);
-    put_i16(world_data + 22, manual_alarm_timer_ms);
-    put_i16(world_data + 24, game->alarm_triggered);
+    put_i16(world_data + 14, game->alarm_timer_ms);
+    put_i16(world_data + 16, game->spawn_budget);
+    put_i16(world_data + 18, game->active_attackers);
+    put_i16(world_data + 20, game->director_encounters);
+    put_i16(world_data + 22, game->goal_hold_ms);
+    put_i16(world_data + 24, manual_alarm_timer_ms);
+    put_i16(world_data + 26, game->alarm_triggered);
     net->remote_event_snapshot_sequence = net->last_snapshot_sequence;
     if (event_count)
         net->remote_event_snapshot_last_id = net->remote_event_ids[event_count - 1];
@@ -806,18 +807,19 @@ static int decode_snapshot(const unsigned char *payload, int size,
     }
     net->snapshot_world_wave = get_i16(world_data);
     net->snapshot_world_to_spawn = get_i16(world_data + 2);
-    net->snapshot_world_enemies_alive = get_i16(world_data + 4);
-    net->snapshot_world_phase = get_i16(world_data + 6);
-    net->snapshot_world_phase_timer_ms = get_i16(world_data + 8);
-    net->snapshot_world_alarm_timer_ms = get_i16(world_data + 10);
+    net->snapshot_world_spawn_timer_ms = get_i16(world_data + 4);
+    net->snapshot_world_enemies_alive = get_i16(world_data + 6);
+    net->snapshot_world_phase = get_i16(world_data + 8);
+    net->snapshot_world_phase_timer_ms = get_i16(world_data + 10);
     net->snapshot_air_walls_enabled = world_data[12] & 1;
     net->snapshot_manual_alarm_enabled = (world_data[12] & 2) != 0;
-    net->snapshot_world_spawn_budget = get_i16(world_data + 14);
-    net->snapshot_world_active_attackers = get_i16(world_data + 16);
-    net->snapshot_world_director_encounters = get_i16(world_data + 18);
-    net->snapshot_world_goal_hold_ms = get_i16(world_data + 20);
-    net->snapshot_world_manual_alarm_timer_ms = get_i16(world_data + 22);
-    net->snapshot_world_alarm_triggered = get_i16(world_data + 24);
+    net->snapshot_world_alarm_timer_ms = get_i16(world_data + 14);
+    net->snapshot_world_spawn_budget = get_i16(world_data + 16);
+    net->snapshot_world_active_attackers = get_i16(world_data + 18);
+    net->snapshot_world_director_encounters = get_i16(world_data + 20);
+    net->snapshot_world_goal_hold_ms = get_i16(world_data + 22);
+    net->snapshot_world_manual_alarm_timer_ms = get_i16(world_data + 24);
+    net->snapshot_world_alarm_triggered = get_i16(world_data + 26);
     net->snapshot_ready = 1;
     return 0;
 }
@@ -1121,6 +1123,7 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
         session->game_state.reload_timer_ms = own->reload_timer_ms;
         session->game_state.wave = net->snapshot_world_wave;
         session->game_state.to_spawn = net->snapshot_world_to_spawn;
+        session->game_state.spawn_timer_ms = net->snapshot_world_spawn_timer_ms;
         session->game_state.enemies_alive = net->snapshot_world_enemies_alive;
         session->game_state.campaign_phase = net->snapshot_world_phase;
         session->game_state.phase_timer_ms = net->snapshot_world_phase_timer_ms;
@@ -1158,6 +1161,9 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
                 dst->dir_z += (src->dir_z - dst->dir_z) / 3;
             }
         }
+        for (; i < TOY_GAME_MAX_ENEMIES; i++)
+            memset(&session->game_state.enemies[i], 0,
+                   sizeof(session->game_state.enemies[i]));
     }
     dx = own->camera.x - camera->x;
     dz = own->camera.z - camera->z;

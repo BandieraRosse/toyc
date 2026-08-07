@@ -8,7 +8,7 @@
 
 #define RASTERFALL_NET_DEFAULT_PORT 28460
 #define RASTERFALL_NET_MAX_PACKET 1400
-#define RASTERFALL_NET_PROTOCOL_VERSION 2
+#define RASTERFALL_NET_PROTOCOL_VERSION 3
 #define RASTERFALL_NET_PLAYER_MAX 2
 #define RASTERFALL_NET_EVENT_QUEUE_MAX 64
 #define RASTERFALL_NET_DISCOVERY_PORT 28459
@@ -122,6 +122,7 @@ struct rasterfall_net {
     uint32_t remote_event_snapshot_sequence;
     int snapshot_world_wave;
     int snapshot_world_to_spawn;
+    int snapshot_world_spawn_timer_ms;
     int snapshot_world_enemies_alive;
     int snapshot_world_phase;
     int snapshot_world_phase_timer_ms;

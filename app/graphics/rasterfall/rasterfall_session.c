@@ -284,9 +284,8 @@ void rasterfall_session_step_client(struct rasterfall_session *session,
     session->game_state.px = camera->x;
     session->game_state.pz = camera->z;
     session->highlight_index = rasterfall_session_compute_highlight(session, camera);
-    if ((command->buttons & RASTERFALL_CMD_INTERACT) &&
-        session->highlight_index >= 0)
-        session_interact(session, &session->items[session->highlight_index]);
+    /* 交互由主机权威执行。客户端只计算高亮并发送 INTERACT 命令，
+     * 等待主机快照回传拾取、弹药、空气墙和刷怪结果，避免两端世界分叉。 */
     memset(keys, 0, sizeof(keys));
     if (command->buttons & RASTERFALL_CMD_RELOAD) keys[TOY_GAME_KEY_RELOAD] = 1;
     if (command->buttons & RASTERFALL_CMD_SLOT_1) keys[TOY_GAME_KEY_SLOT_1] = 1;
