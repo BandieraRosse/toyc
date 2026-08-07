@@ -21,17 +21,28 @@ static int run_logic_test(void)
             toy_game_enemy_info(TOY_GAME_ENEMY_FAST);
         const struct toy_game_enemy_info *heavy =
             toy_game_enemy_info(TOY_GAME_ENEMY_HEAVY);
+        const struct toy_game_enemy_info *brute =
+            toy_game_enemy_info(TOY_GAME_ENEMY_PURSUIT_HEAVY);
+        const struct toy_game_enemy_info *runner =
+            toy_game_enemy_info(TOY_GAME_ENEMY_PURSUIT_FAST);
         if (!actor || actor->kind != TOY_GAME_ACTOR_AI ||
             actor->class_id != TOY_GAME_AI_LEVEL_2 ||
             fast->speed_min <= common->speed_max ||
             heavy->max_hp <= common->max_hp ||
-            heavy->bite_damage <= common->bite_damage) return 49;
+            heavy->bite_damage <= common->bite_damage ||
+            brute->max_hp != common->max_hp * 5 ||
+            runner->speed_min <= fast->speed_max) return 49;
         if (!game.actors[1].active ||
             game.actors[1].class_id != TOY_GAME_AI_LEVEL_1 ||
             game.actors[1].slots[0].weapon != TOY_GAME_WEAPON_PISTOL ||
             !game.actors[2].active ||
             game.actors[2].class_id != TOY_GAME_AI_LEVEL_3 ||
-            game.actors[2].slots[0].weapon != TOY_GAME_WEAPON_SHOTGUN) return 51;
+            game.actors[2].slots[0].weapon != TOY_GAME_WEAPON_SHOTGUN ||
+            game.actors[0].hp != 120 || game.actors[0].max_hp != 120 ||
+            game.actors[1].x >= game.actors[0].x ||
+            game.actors[0].x >= game.actors[2].x ||
+            game.actors[0].z != -5800 || game.actors[1].z != -5800 ||
+            game.actors[2].z != -5800) return 51;
         toy_game_init(&actor_test, 3);
         if (toy_game_add_ai(&actor_test, TOY_GAME_AI_LEVEL_3,
                             1200, -3000, "ELITE") != 2 ||
@@ -348,9 +359,9 @@ static int run_logic_test(void)
             if (r->ez < -5700 || r->ez > -3800) return 39;
         }
     }
-    /* 地图拾取物解析：3 个控制按钮 + 2 把主武器 + 1 个弹药盒，顺序按
+    /* 地图拾取物解析：5 个控制按钮 + 2 把主武器 + 1 个弹药盒，顺序按
      * 地图文件（尸潮按钮在武器桌前）。 */
-    if (interactable_count != 6 ||
+    if (interactable_count != 8 ||
         interactables[0].kind != TOY_MAP_PICKUP_BUTTON ||
         interactables[1].kind != TOY_MAP_PICKUP_SMG ||
         interactables[3].kind != TOY_MAP_PICKUP_AMMO) return 32;

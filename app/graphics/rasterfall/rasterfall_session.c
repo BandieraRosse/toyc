@@ -83,10 +83,11 @@ void rasterfall_session_reset(struct rasterfall_session *session,
     toy_game_set_alarm(&session->game_state,
                        session->level.has_alarm ? &session->level.alarm_zone : NULL,
                        session->level.has_alarm ? 1 : -1);
+    /* 三名 AI 沿左侧墙向中间排开，全部位于 z=-5700 空气墙之后。 */
     toy_game_add_ai(&session->game_state, TOY_GAME_AI_LEVEL_1,
-                    -10800, -5800, "GUARD");
+                    -11300, -5800, "GUARD");
     toy_game_add_ai(&session->game_state, TOY_GAME_AI_LEVEL_3,
-                    -11200, -5800, "ELITE");
+                    -10300, -5800, "ELITE");
     session->game_state.px = camera->x;
     session->game_state.pz = camera->z;
     session->banner_ms = 0;
@@ -239,6 +240,20 @@ static void session_interact(struct rasterfall_session *session,
         session->banner_ms = 1800;
         session->banner_text = session->manual_alarm_on ?
             "ALARM ENABLED - 2-3 ENEMIES EACH SECOND" : "ALARM DISABLED";
+    } else if (it->kind == TOY_MAP_PICKUP_HEAVY_HORDE_BUTTON) {
+        int n = toy_game_spawn_horde_type(&session->game_state,
+            TOY_GAME_ENEMY_PURSUIT_HEAVY, 2, 3, session->spawn_zones,
+            session->spawn_count, HORDE_MIN_PLAYER_DIST);
+        session->banner_ms = 3000;
+        session->banner_text = "BROWN BRUTE HORDE SUMMONED";
+        __printf("rasterfall: heavy pursuit enemies summoned %d\n", n);
+    } else if (it->kind == TOY_MAP_PICKUP_FAST_HORDE_BUTTON) {
+        int n = toy_game_spawn_horde_type(&session->game_state,
+            TOY_GAME_ENEMY_PURSUIT_FAST, 2, 3, session->spawn_zones,
+            session->spawn_count, HORDE_MIN_PLAYER_DIST);
+        session->banner_ms = 3000;
+        session->banner_text = "RED RUNNER HORDE SUMMONED";
+        __printf("rasterfall: fast pursuit enemies summoned %d\n", n);
     } else if (it->kind == TOY_MAP_PICKUP_AMMO) {
         toy_game_refill_ammo(&session->game_state);
     } else {

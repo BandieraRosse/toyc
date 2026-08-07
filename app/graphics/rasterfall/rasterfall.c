@@ -893,7 +893,9 @@ static int render_interactables(struct toy_renderer *renderer,
             pixels += render_shotgun(renderer, camera, it->x, it->y, it->z, on);
         else if (it->kind == TOY_MAP_PICKUP_BUTTON ||
                  it->kind == TOY_MAP_PICKUP_AIR_BUTTON ||
-                 it->kind == TOY_MAP_PICKUP_ALARM_BUTTON)
+                 it->kind == TOY_MAP_PICKUP_ALARM_BUTTON ||
+                 it->kind == TOY_MAP_PICKUP_HEAVY_HORDE_BUTTON ||
+                 it->kind == TOY_MAP_PICKUP_FAST_HORDE_BUTTON)
             pixels += render_button(renderer, camera, it->x, it->y, it->z, on,
                                     it->x < -10000 ? 1 : it->x > 10000 ? 2 : 0);
         else
@@ -1492,14 +1494,20 @@ static int render_enemies(struct toy_renderer *renderer,
         } else {
             const struct toy_game_enemy_info *info = toy_game_enemy_info(e->type);
             color = info->color;
-            if (e->type == TOY_GAME_ENEMY_HEAVY) scale = 1250;
+            if (e->type == TOY_GAME_ENEMY_HEAVY ||
+                e->type == TOY_GAME_ENEMY_PURSUIT_HEAVY) scale = 1350;
             if (e->hurt > 0) color = 0xBB3333;
             else if (e->flash > 0) color = 0xDFDFDF;
+            else if (e->type == TOY_GAME_ENEMY_PURSUIT_HEAVY)
+                color = 0x7A4A2A;
+            else if (e->type == TOY_GAME_ENEMY_PURSUIT_FAST)
+                color = 0xB84A32;
             else if (e->ai_state == TOY_GAME_ENEMY_TRACKING)
                 color = 0x8A2A2A;   /* 尸潮追踪者：红色，一眼可辨 */
         }
         pixels += render_blob_shadow(renderer, camera, e, scale);
-        if (e->type == TOY_GAME_ENEMY_HEAVY || (i & 1) == 0)
+        if (e->type == TOY_GAME_ENEMY_HEAVY ||
+            e->type == TOY_GAME_ENEMY_PURSUIT_HEAVY || (i & 1) == 0)
             pixels += render_block_enemy(renderer, camera, e, scale, color);
         else
             pixels += render_round_enemy(renderer, camera, e, scale, color);
@@ -1530,7 +1538,7 @@ static void render_actor_name(struct toy_renderer *renderer,
 
 static void render_actor_status(struct toy_renderer *renderer,
                                 const struct camera *camera, int x, int z,
-                                int y, const char *name, int hp, int downed,
+                                int y, const char *name, int hp, int max_hp, int downed,
                                 int revive_ms, uint32_t name_color)
 {
     struct vec3 world, view;
@@ -1554,7 +1562,8 @@ static void render_actor_status(struct toy_renderer *renderer,
     if (hp < 10) hp_color = 0xF03030;
     else if (hp < 40) hp_color = 0xF0C830;
     else hp_color = 0x40D060;
-    fill = hp * 64 / 100;
+    if (max_hp <= 0) max_hp = 100;
+    fill = hp * 64 / max_hp;
     if (fill < 0) fill = 0;
     if (fill > 64) fill = 64;
     if (fill > 0) fill_rect(&renderer->surface, bar_x, bar_y, fill, 3, hp_color);
@@ -1584,7 +1593,7 @@ static void render_ai_teammate_name(struct toy_renderer *renderer,
         if (!actor->active || actor->kind != TOY_GAME_ACTOR_AI) continue;
         render_actor_status(renderer, camera, actor->x, actor->z,
                             actor->state == TOY_GAME_ACTOR_DOWNED ? -350 : 700,
-                            actor->name, actor->hp,
+                            actor->name, actor->hp, actor->max_hp,
                             actor->state == TOY_GAME_ACTOR_DOWNED,
                             actor->revive_progress_ms, color);
     }
@@ -1683,7 +1692,7 @@ static void render_network_teammate_status(struct toy_renderer *renderer,
     }
     if (!remote) return;
     render_actor_status(renderer, camera, remote->x, remote->z, 700,
-                        "PLAYER 2", hp, hp <= 0, 0, 0x70D8FF);
+                        "PLAYER 2", hp, 100, hp <= 0, 0, 0x70D8FF);
 }
 
 /* ── 子弹轨迹与命中粒子（纯视觉；逻辑步进 16ms 推进） ──────────── */

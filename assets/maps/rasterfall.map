@@ -98,3 +98,5 @@ pickup ammo 880 -7480 -520
 # (E while highlighted activates a reusable control.)
 button_air -11940 -7600 200
 button_alarm -11940 -3000 200
+button_heavy -11940 -8500 200
+button_fast -11940 -9000 200

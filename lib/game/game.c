@@ -57,7 +57,9 @@ static const struct toy_game_enemy_info enemy_table[TOY_GAME_ENEMY_TYPE_COUNT] =
     /* max hp, speed range, bite damage, model, base color */
     { 1, 38, 56, 2, 0, 0x4A5D3A },
     { 1, 66, 82, 2, 1, 0x6A8A42 },
-    { 4, 24, 34, 4, 2, 0x624A3A }
+    { 4, 24, 34, 4, 2, 0x624A3A },
+    { 5, 30, 42, 4, 2, 0x7A4A2A },
+    { 1, 92, 112, 2, 1, 0xB84A32 }
 };
 
 struct toy_game_ai_info {
@@ -467,8 +469,9 @@ static void init_enemy_stats(struct toy_game *g, struct toy_game_enemy *e,
 
 /* 在矩形区域内随机生成一个追踪型敌人；距玩家过近、压障碍或槽满
  * 返回 0。生成方向直接朝向玩家（追踪态首个逻辑步就会转脸）。 */
-static int spawn_tracking_enemy(struct toy_game *g, int minx, int maxx,
-                                int minz, int maxz, int min_dist2)
+static int spawn_tracking_enemy(struct toy_game *g, int enemy_type,
+                                int minx, int maxx, int minz, int maxz,
+                                int min_dist2)
 {
     int i, slot;
     for (i = 0; i < 24; i++) {
@@ -486,8 +489,7 @@ static int spawn_tracking_enemy(struct toy_game *g, int minx, int maxx,
         g->enemies[slot].active = 1;
         g->enemies[slot].x = x;
         g->enemies[slot].z = z;
-        /* 追踪尸潮使用快速敌人的数值，但保留独立 tracking 行为。 */
-        init_enemy_stats(g, &g->enemies[slot], TOY_GAME_ENEMY_FAST);
+        init_enemy_stats(g, &g->enemies[slot], enemy_type);
         g->enemies[slot].bite_cooldown_ms = 0;
         g->enemies[slot].flash = 0;
         g->enemies[slot].hurt = 0;
@@ -512,14 +514,16 @@ static int spawn_tracking_enemy(struct toy_game *g, int minx, int maxx,
 /* 召唤尸潮：从 points 中随机选 1-3 个互异刷怪点（最多 point_count
  * 个），把 [count_min, count_max] 只敌人均摊到各点矩形内，逐只找合法
  * 位置；槽位满则停止。返回实际生成数。 */
-int toy_game_spawn_horde(struct toy_game *g, int count_min, int count_max,
-                         const struct toy_game_box *points, int point_count,
-                         int min_player_dist)
+int toy_game_spawn_horde_type(struct toy_game *g, int enemy_type,
+                              int count_min, int count_max,
+                              const struct toy_game_box *points, int point_count,
+                              int min_player_dist)
 {
     int count, spawned = 0, i, j, n_points, per, extra;
     int min_dist2 = min_player_dist * min_player_dist;
     int order[8];
-    if (g->state != TOY_GAME_PLAYING) return 0;
+    if (g->state != TOY_GAME_PLAYING ||
+        enemy_type < 0 || enemy_type >= TOY_GAME_ENEMY_TYPE_COUNT) return 0;
     if (!points || point_count <= 0) return 0;
     if (point_count > 8) point_count = 8;
     count = rand_range(g, count_min, count_max);
@@ -539,14 +543,23 @@ int toy_game_spawn_horde(struct toy_game *g, int count_min, int count_max,
         const struct toy_game_box *p = &points[order[i]];
         int want = per + (i < extra ? 1 : 0);
         for (j = 0; j < want; j++) {
-            if (spawn_tracking_enemy(g, p->minx, p->maxx, p->minz, p->maxz,
-                                     min_dist2))
+            if (spawn_tracking_enemy(g, enemy_type, p->minx, p->maxx,
+                                     p->minz, p->maxz, min_dist2))
                 spawned++;
             else if (find_free_slot(g) < 0)
                 return spawned;             /* 槽满：本次召唤到此为止 */
         }
     }
     return spawned;
+}
+
+int toy_game_spawn_horde(struct toy_game *g, int count_min, int count_max,
+                         const struct toy_game_box *points, int point_count,
+                         int min_player_dist)
+{
+    return toy_game_spawn_horde_type(g, TOY_GAME_ENEMY_FAST, count_min,
+                                     count_max, points, point_count,
+                                     min_player_dist);
 }
 
 /* 从房间边界带随机选一个合法生成点；找不到返回 0 */

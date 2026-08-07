@@ -115,6 +115,8 @@ enum toy_game_enemy_type {
     TOY_GAME_ENEMY_COMMON,
     TOY_GAME_ENEMY_FAST,
     TOY_GAME_ENEMY_HEAVY,
+    TOY_GAME_ENEMY_PURSUIT_HEAVY,
+    TOY_GAME_ENEMY_PURSUIT_FAST,
     TOY_GAME_ENEMY_TYPE_COUNT
 };
 
@@ -368,6 +370,10 @@ void toy_game_place_enemy(struct toy_game *g, int x, int z); /* 测试钩子 */
 int  toy_game_spawn_horde(struct toy_game *g, int count_min, int count_max,
                           const struct toy_game_box *points, int point_count,
                           int min_player_dist);
+int  toy_game_spawn_horde_type(struct toy_game *g, int enemy_type,
+                               int count_min, int count_max,
+                               const struct toy_game_box *points, int point_count,
+                               int min_player_dist);
     /* 召唤尸潮：从 points 中随机选出 1-3 个互异刷怪点（不超过
      * point_count），把 count_min..count_max 个持续追踪型敌人
      * （TOY_GAME_ENEMY_TRACKING，无视遮挡与丢失目标，永远直扑玩家）
