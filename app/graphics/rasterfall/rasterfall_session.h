@@ -79,6 +79,8 @@ void rasterfall_session_step_remote_player(struct rasterfall_session *session,
 /* 主机验证远端玩家的交互按键，沿用同一视锥/距离判定。 */
 void rasterfall_session_interact_remote(struct rasterfall_session *session,
                                          const struct camera *camera);
+int rasterfall_session_revive_remote(struct rasterfall_session *session,
+                                     const struct camera *camera, int dt_ms);
 void rasterfall_camera_rotate(struct camera *camera, int turn, int pitch);
 int rasterfall_session_compute_highlight(const struct rasterfall_session *session,
                                          const struct camera *camera);

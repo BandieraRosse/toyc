@@ -67,9 +67,9 @@ struct toy_game_ai_info {
 };
 
 static const struct toy_game_ai_info ai_table[TOY_GAME_AI_CLASS_COUNT] = {
-    { 80,  TOY_GAME_WEAPON_SMG,     0x386B96 },
-    { 120, TOY_GAME_WEAPON_SHOTGUN, 0x4A8A58 },
-    { 160, TOY_GAME_WEAPON_SMG,     0xA07038 }
+    { 80,  TOY_GAME_WEAPON_PISTOL,  0x596B3A },
+    { 120, TOY_GAME_WEAPON_SMG,     0x386B96 },
+    { 160, TOY_GAME_WEAPON_SHOTGUN, 0x252A30 }
 };
 
 const struct toy_game_weapon_info *toy_game_weapon_info(int weapon)
@@ -188,7 +188,7 @@ void toy_game_set_ai_teammate(struct toy_game *g, int active, int x, int z,
     g->ai_actor_id = 1;
     g->ai_x = x; g->ai_z = z;
     g->ai_sy = 0; g->ai_cy = 1024;
-    g->ai_hp = 100;
+    g->ai_hp = 120;
     copy_name(g->ai_name, name ? name : "Jesus");
     g->ai_slots[0].weapon = TOY_GAME_WEAPON_SMG;
     w = toy_game_weapon_info(TOY_GAME_WEAPON_SMG);
@@ -208,7 +208,7 @@ void toy_game_set_ai_teammate(struct toy_game *g, int active, int x, int z,
     g->actors[0].active = g->ai_active;
     g->actors[0].actor_id = g->ai_actor_id;
     g->actors[0].kind = TOY_GAME_ACTOR_AI;
-    g->actors[0].class_id = TOY_GAME_AI_LEVEL_1;
+    g->actors[0].class_id = TOY_GAME_AI_LEVEL_2;
     g->actors[0].state = TOY_GAME_ACTOR_ALIVE;
     g->actors[0].x = g->ai_x; g->actors[0].z = g->ai_z;
     g->actors[0].sy = g->ai_sy; g->actors[0].cy = g->ai_cy;

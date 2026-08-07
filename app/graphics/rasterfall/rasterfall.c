@@ -1602,9 +1602,9 @@ static int render_ai_teammate(struct toy_renderer *renderer,
         center.x = actor->x; center.y = 0; center.z = actor->z;
         world_to_view(camera, &center, &view);
         if (view.z < NEAR_Z || view.z > ENEMY_RENDER_DISTANCE) continue;
-        color = actor->class_id == TOY_GAME_AI_LEVEL_3 ? 0xA07038 :
-                actor->class_id == TOY_GAME_AI_LEVEL_2 ? 0x4A8A58 :
-                0x386B96;
+        color = actor->class_id == TOY_GAME_AI_LEVEL_3 ? 0x252A30 :
+                actor->class_id == TOY_GAME_AI_LEVEL_2 ? 0x386B96 :
+                0x596B3A;
         pixels += render_player_avatar(renderer, camera, actor->x, actor->z,
                                        actor->sy, actor->cy,
                                        actor->muzzle_flash_ms, color,

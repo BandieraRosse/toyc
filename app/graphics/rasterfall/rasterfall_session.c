@@ -83,6 +83,10 @@ void rasterfall_session_reset(struct rasterfall_session *session,
     toy_game_set_alarm(&session->game_state,
                        session->level.has_alarm ? &session->level.alarm_zone : NULL,
                        session->level.has_alarm ? 1 : -1);
+    toy_game_add_ai(&session->game_state, TOY_GAME_AI_LEVEL_1,
+                    -10800, -5800, "GUARD");
+    toy_game_add_ai(&session->game_state, TOY_GAME_AI_LEVEL_3,
+                    -11200, -5800, "ELITE");
     session->game_state.px = camera->x;
     session->game_state.pz = camera->z;
     session->banner_ms = 0;
@@ -177,6 +181,15 @@ void rasterfall_session_interact_remote(struct rasterfall_session *session,
     if (session->game_state.state != TOY_GAME_PLAYING) return;
     index = rasterfall_session_compute_highlight(session, camera);
     if (index >= 0) session_interact(session, &session->items[index]);
+}
+
+int rasterfall_session_revive_remote(struct rasterfall_session *session,
+                                     const struct camera *camera, int dt_ms)
+{
+    int actor_index = -1;
+    if (!session || !camera || session->game_state.player_down) return 0;
+    if (!session_near_ai(session, camera, &actor_index)) return 0;
+    return toy_game_revive_actor(&session->game_state, actor_index, dt_ms);
 }
 
 int rasterfall_session_compute_highlight(const struct rasterfall_session *session,

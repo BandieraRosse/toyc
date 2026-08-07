@@ -17,6 +17,7 @@
 #define NET_WORLD_SIZE 32
 #define NET_SNAPSHOT_BASE 8
 #define NET_INPUT_HOLD_TICKS 15
+#define NET_AI_FIRE_BASE 6
 
 static long net_monotonic_ms(void)
 {
@@ -739,8 +740,10 @@ static void encode_actor(unsigned char *p, const struct toy_game_actor *a,
     put_u32(p + 1, (uint32_t)a->x); put_u32(p + 5, (uint32_t)a->z);
     put_i16(p + 9, a->sy); put_i16(p + 11, a->cy);
     put_i16(p + 13, a->hp);
-    p[15] = (unsigned char)(a->muzzle_flash_ms < 0 ? 0 :
-                            a->muzzle_flash_ms > 255 ? 255 : a->muzzle_flash_ms);
+    p[15] = (unsigned char)(a->state == TOY_GAME_ACTOR_DOWNED ?
+                            a->revive_progress_ms / 12 :
+                            (a->muzzle_flash_ms < 0 ? 0 :
+                             a->muzzle_flash_ms > 255 ? 255 : a->muzzle_flash_ms));
     put_u32(p + 16, a->fire_seq);
 }
 
@@ -754,8 +757,50 @@ static void decode_actor(const unsigned char *p, struct rasterfall_net_actor *a)
     a->weapon = get_weapon_value((p[0] >> 6) & 3);
     a->x = (int)get_u32(p + 1); a->z = (int)get_u32(p + 5);
     a->sy = get_i16(p + 9); a->cy = get_i16(p + 11);
-    a->hp = get_i16(p + 13); a->muzzle_flash_ms = p[15];
+    a->hp = get_i16(p + 13);
+    if (a->state == TOY_GAME_ACTOR_DOWNED)
+        a->revive_progress_ms = p[15] * 12;
+    else
+        a->muzzle_flash_ms = p[15];
     a->fire_seq = get_u32(p + 16);
+}
+
+static int send_ai_fire_packets(struct rasterfall_net *net,
+                                const struct toy_game *game)
+{
+    unsigned char packet[RASTERFALL_NET_MAX_PACKET];
+    int actor_index;
+    for (actor_index = 0; actor_index < TOY_GAME_MAX_ACTORS; actor_index++) {
+        const struct toy_game_actor *actor = &game->actors[actor_index];
+        unsigned char *p;
+        int ray_count, i, size;
+        if (!actor->active || actor->kind != TOY_GAME_ACTOR_AI) continue;
+        if (!actor->fire_seq || actor->fire_seq == net->ai_fire_sent_seq[actor_index])
+            continue;
+        ray_count = actor->ray_count;
+        if (ray_count < 0) ray_count = 0;
+        if (ray_count > TOY_GAME_MAX_RAYS) ray_count = TOY_GAME_MAX_RAYS;
+        size = packet_begin(packet, RASTERFALL_NET_AI_FIRE,
+                            NET_AI_FIRE_BASE + ray_count * NET_PLAYER_RAY_SIZE,
+                            ++net->send_sequence, net->receive_sequence);
+        if (size < 0) return -1;
+        p = packet + NET_HEADER_SIZE;
+        p[0] = (unsigned char)actor_index;
+        p[1] = (unsigned char)ray_count;
+        put_u32(p + 2, actor->fire_seq);
+        for (i = 0; i < ray_count; i++) {
+            unsigned char *q = p + NET_AI_FIRE_BASE + i * NET_PLAYER_RAY_SIZE;
+            put_i16(q, actor->rays[i].sy); put_i16(q + 2, actor->rays[i].cy);
+            put_i16(q + 4, actor->rays[i].vy);
+            put_u32(q + 6, (uint32_t)actor->rays[i].ex);
+            put_u32(q + 10, (uint32_t)actor->rays[i].ez);
+            q[14] = (unsigned char)((actor->rays[i].hit_enemy ? 1 : 0) |
+                                    (actor->rays[i].hit_world ? 2 : 0));
+        }
+        if (net_send(net, packet, size) < 0) return -1;
+        net->ai_fire_sent_seq[actor_index] = actor->fire_seq;
+    }
+    return 0;
 }
 
 int rasterfall_net_send_snapshot(struct rasterfall_net *net,
@@ -846,7 +891,8 @@ int rasterfall_net_send_snapshot(struct rasterfall_net *net,
     net->remote_event_snapshot_sequence = net->last_snapshot_sequence;
     if (event_count)
         net->remote_event_snapshot_last_id = net->remote_event_ids[event_count - 1];
-    return net_send(net, packet, size);
+    if (net_send(net, packet, size) < 0) return -1;
+    return send_ai_fire_packets(net, game);
 }
 
 static int decode_snapshot(const unsigned char *payload, int size,
@@ -917,6 +963,45 @@ static int decode_snapshot(const unsigned char *payload, int size,
     net->snapshot_world_manual_alarm_timer_ms = get_i16(world_data + 24);
     net->snapshot_world_alarm_triggered = get_i16(world_data + 26);
     net->snapshot_ready = 1;
+    return 0;
+}
+
+static int decode_ai_fire(const unsigned char *payload, int size,
+                          struct rasterfall_net *net)
+{
+    struct rasterfall_net_actor *actor;
+    int actor_index, ray_count, i;
+    if (size < NET_AI_FIRE_BASE) return -1;
+    actor_index = payload[0];
+    ray_count = payload[1];
+    if (actor_index < 0 || actor_index >= TOY_GAME_MAX_ACTORS ||
+        ray_count < 0 || ray_count > TOY_GAME_MAX_RAYS ||
+        size != NET_AI_FIRE_BASE + ray_count * NET_PLAYER_RAY_SIZE) return -1;
+    actor = NULL;
+    for (i = 0; i < net->actor_count; i++)
+        if (net->actors[i].actor_index == actor_index) {
+            actor = &net->actors[i];
+            break;
+        }
+    if (!actor) {
+        if (net->actor_count >= RASTERFALL_NET_MAX_ACTORS) return -1;
+        actor = &net->actors[net->actor_count++];
+        memset(actor, 0, sizeof(*actor));
+        actor->active = 1;
+        actor->actor_index = actor_index;
+    }
+    actor->fire_seq = get_u32(payload + 2);
+    actor->ray_count = ray_count;
+    for (i = 0; i < ray_count; i++) {
+        const unsigned char *q = payload + NET_AI_FIRE_BASE +
+                                 i * NET_PLAYER_RAY_SIZE;
+        actor->rays[i].sy = get_i16(q); actor->rays[i].cy = get_i16(q + 2);
+        actor->rays[i].vy = get_i16(q + 4);
+        actor->rays[i].ex = (int)get_u32(q + 6);
+        actor->rays[i].ez = (int)get_u32(q + 10);
+        actor->rays[i].hit_enemy = q[14] & 1;
+        actor->rays[i].hit_world = (q[14] & 2) != 0;
+    }
     return 0;
 }
 
@@ -1051,7 +1136,11 @@ void rasterfall_net_poll(struct rasterfall_net *net)
                 memcpy(&net->peer, &source, sizeof(source));
                 net->peer_known = 1;
             } else if (!same_peer(&net->peer, &source)) continue;
-            if (type == RASTERFALL_NET_SNAPSHOT &&
+            if (type == RASTERFALL_NET_AI_FIRE &&
+                decode_ai_fire(packet + NET_HEADER_SIZE, payload_size, net) == 0) {
+                /* AI fire packets are visual companions to snapshots and do
+                 * not participate in snapshot ordering. */
+            } else if (type == RASTERFALL_NET_SNAPSHOT &&
                 sequence > net->receive_sequence &&
                 decode_snapshot(packet + NET_HEADER_SIZE, payload_size, net) == 0)
                 net->receive_sequence = sequence;
@@ -1211,8 +1300,10 @@ void rasterfall_net_apply_remote(struct rasterfall_net *net,
         g->px = net->peer_camera.x; g->pz = net->peer_camera.z;
         /* 交互必须在装载玩家2的武器槽之后执行；否则拾取武器/弹药
          * 会错误地写入主机玩家槽位。世界级交互仍然作用于同一权威世界。 */
-        if (net->remote_command.buttons & RASTERFALL_CMD_INTERACT)
+        if (net->remote_command.buttons & RASTERFALL_CMD_INTERACT) {
+            rasterfall_session_revive_remote(session, &net->peer_camera, 16);
             rasterfall_session_interact_remote(session, &net->peer_camera);
+        }
         memset(keys, 0, sizeof(keys));
         if (net->remote_command.buttons & RASTERFALL_CMD_RELOAD)
             keys[TOY_GAME_KEY_RELOAD] = 1;
@@ -1287,6 +1378,9 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
             dst->hp = src->hp;
             dst->muzzle_flash_ms = src->muzzle_flash_ms;
             dst->fire_seq = src->fire_seq;
+            dst->revive_progress_ms = src->revive_progress_ms;
+            dst->ray_count = src->ray_count;
+            memcpy(dst->rays, src->rays, sizeof(dst->rays));
             if (dst->current_slot < 0 ||
                 dst->current_slot >= TOY_GAME_WEAPON_SLOTS)
                 dst->current_slot = 0;
@@ -1489,6 +1583,10 @@ int rasterfall_net_self_test(void)
         toy_game_add_ai(&test_game, TOY_GAME_AI_LEVEL_3,
                         2400, -1200, "ELITE") < 0)
         transport_result = 14;
+    test_game.actors[0].fire_seq = 4;
+    test_game.actors[0].ray_count = 1;
+    test_game.actors[0].rays[0].ex = 2222;
+    test_game.actors[0].rays[0].ez = -3333;
     if (!transport_result &&
         rasterfall_net_send_snapshot(&host, &camera, &test_game, 1, 0, 0) < 0)
         transport_result = 11;
@@ -1498,7 +1596,10 @@ int rasterfall_net_self_test(void)
         !client.players[0].active || client.players[0].camera.x != camera.x ||
         !client.players[1].active || client.actor_count != 3 ||
         client.actors[1].actor_index != 1 ||
-        client.actors[2].actor_index != 2)) transport_result = 12;
+        client.actors[2].actor_index != 2 ||
+        client.actors[0].ray_count != 1 ||
+        client.actors[0].rays[0].ex != 2222 ||
+        client.actors[0].rays[0].ez != -3333)) transport_result = 12;
     rasterfall_net_close(&client);
     rasterfall_net_close(&host);
     return transport_result;

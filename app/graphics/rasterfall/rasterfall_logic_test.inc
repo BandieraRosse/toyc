@@ -22,10 +22,16 @@ static int run_logic_test(void)
         const struct toy_game_enemy_info *heavy =
             toy_game_enemy_info(TOY_GAME_ENEMY_HEAVY);
         if (!actor || actor->kind != TOY_GAME_ACTOR_AI ||
-            actor->class_id != TOY_GAME_AI_LEVEL_1 ||
+            actor->class_id != TOY_GAME_AI_LEVEL_2 ||
             fast->speed_min <= common->speed_max ||
             heavy->max_hp <= common->max_hp ||
             heavy->bite_damage <= common->bite_damage) return 49;
+        if (!game.actors[1].active ||
+            game.actors[1].class_id != TOY_GAME_AI_LEVEL_1 ||
+            game.actors[1].slots[0].weapon != TOY_GAME_WEAPON_PISTOL ||
+            !game.actors[2].active ||
+            game.actors[2].class_id != TOY_GAME_AI_LEVEL_3 ||
+            game.actors[2].slots[0].weapon != TOY_GAME_WEAPON_SHOTGUN) return 51;
         toy_game_init(&actor_test, 3);
         if (toy_game_add_ai(&actor_test, TOY_GAME_AI_LEVEL_3,
                             1200, -3000, "ELITE") != 2 ||

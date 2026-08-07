@@ -26,7 +26,8 @@ enum rasterfall_net_mode {
 enum rasterfall_net_packet_type {
     RASTERFALL_NET_HELLO = 1,
     RASTERFALL_NET_INPUT,
-    RASTERFALL_NET_SNAPSHOT
+    RASTERFALL_NET_SNAPSHOT,
+    RASTERFALL_NET_AI_FIRE
 };
 
 struct rasterfall_net_room {
@@ -93,7 +94,10 @@ struct rasterfall_net_actor {
     int hp;
     int weapon;
     int muzzle_flash_ms;
+    int revive_progress_ms;
     unsigned int fire_seq;
+    int ray_count;
+    struct toy_game_ray rays[TOY_GAME_MAX_RAYS];
 };
 
 struct rasterfall_net {
@@ -163,6 +167,7 @@ struct rasterfall_net {
     uint32_t last_command_sequence;
     long last_command_sent_ms;
     uint32_t last_snapshot_sequence;
+    unsigned int ai_fire_sent_seq[TOY_GAME_MAX_ACTORS];
     long last_snapshot_sent_ms;
     long last_receive_ms;
     long last_hello_ms;
