@@ -316,7 +316,7 @@ int toy_game_add_ai(struct toy_game *g, int class_id, int x, int z,
     a->slots[0].weapon = info->weapon;
     weapon = (struct toy_game_weapon_info *)toy_game_weapon_info(info->weapon);
     a->slots[0].mag = weapon->mag_size;
-    a->slots[0].reserve = weapon->reserve_max;
+    a->slots[0].reserve = TOY_GAME_AMMO_INFINITE;
     a->slots[1].weapon = -1;
     a->current_slot = 0;
     return a->actor_id;
@@ -324,31 +324,28 @@ int toy_game_add_ai(struct toy_game *g, int class_id, int x, int z,
 
 int toy_game_revive_ai(struct toy_game *g, int dt_ms)
 {
-    if (!g->ai_active || !g->ai_down || dt_ms <= 0) return 0;
-    g->ai_revive_progress_ms += dt_ms;
-    if (g->ai_revive_progress_ms < TOY_GAME_REVIVE_MS) return 0;
-    g->ai_revive_progress_ms = 0;
-    g->ai_hp = TOY_GAME_REVIVE_HP;
-    g->ai_down = 0;
-    sync_ai_actor_from_legacy(g);
-    push_event(g, TOY_GAME_EV_ACTOR_REVIVE);
-    return 1;
+    return toy_game_revive_actor(g, 0, dt_ms);
 }
 
 int toy_game_revive_actor(struct toy_game *g, int actor_index, int dt_ms)
 {
     struct toy_game_actor *a;
-    if (actor_index == 0) return toy_game_revive_ai(g, dt_ms);
     if (!g || actor_index < 0 || actor_index >= TOY_GAME_MAX_ACTORS ||
         dt_ms <= 0) return 0;
     a = &g->actors[actor_index];
     if (!a->active || a->kind != TOY_GAME_ACTOR_AI ||
         a->state != TOY_GAME_ACTOR_DOWNED) return 0;
     a->revive_progress_ms += dt_ms;
+    if (actor_index == 0) g->ai_revive_progress_ms = a->revive_progress_ms;
     if (a->revive_progress_ms < TOY_GAME_REVIVE_MS) return 0;
     a->revive_progress_ms = 0;
     a->hp = TOY_GAME_REVIVE_HP;
     a->state = TOY_GAME_ACTOR_ALIVE;
+    if (actor_index == 0) {
+        g->ai_hp = a->hp;
+        g->ai_down = 0;
+        g->ai_revive_progress_ms = 0;
+    }
     push_event(g, TOY_GAME_EV_ACTOR_REVIVE);
     return 1;
 }
@@ -1583,6 +1580,7 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
     int player_muzzle_flash_ms, player_ray_count;
     unsigned int player_fire_seq;
     int target = -1, best_dist = 0, i;
+    const struct toy_game_weapon_info *ai_weapon;
     int sy = 0, cy = 1024;
     int player_down;
     sync_ai_actor_from_legacy(g);
@@ -1625,6 +1623,9 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
     player_down = g->player_down;
 
     memcpy(g->slots, g->ai_slots, sizeof(g->slots));
+    ai_weapon = toy_game_weapon_info(g->slots[0].weapon);
+    g->slots[0].mag = ai_weapon->mag_size;
+    g->slots[0].reserve = TOY_GAME_AMMO_INFINITE;
     g->px = g->ai_x; g->pz = g->ai_z;
     g->current_slot = g->ai_current_slot;
     g->reloading = g->ai_reloading;
@@ -1634,6 +1635,11 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
     g->player_down = 0;
     toy_game_update_weapon_held(g, NULL, target >= 0, target >= 0,
                                 sy, cy, dt_ms);
+    /* AI 弹药无限：每个逻辑步恢复弹匣，避免进入换弹状态。 */
+    g->slots[0].mag = ai_weapon->mag_size;
+    g->slots[0].reserve = TOY_GAME_AMMO_INFINITE;
+    g->reloading = 0;
+    g->reload_timer_ms = 0;
     memcpy(g->ai_slots, g->slots, sizeof(g->ai_slots));
     g->ai_current_slot = g->current_slot;
     g->ai_reloading = g->reloading;

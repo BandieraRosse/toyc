@@ -16,7 +16,7 @@
 #include "tlibc_types.h"
 
 #define TOY_GAME_MAX_ENEMIES    32
-#define TOY_GAME_MAX_ACTORS     4
+#define TOY_GAME_MAX_ACTORS     8
 #define TOY_GAME_AMMO_INFINITE  (-1)
 #define TOY_GAME_BITE_MS        1000
 #define TOY_GAME_BITE_DAMAGE    2

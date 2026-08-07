@@ -11,7 +11,7 @@
 #define NET_PLAYER_BASE_SIZE 40
 #define NET_PLAYER_RAY_SIZE 15
 #define NET_PLAYER_SIZE (NET_PLAYER_BASE_SIZE + 4 + 1 + TOY_GAME_MAX_RAYS * NET_PLAYER_RAY_SIZE)
-#define NET_ACTOR_SIZE 20
+#define NET_ACTOR_SIZE 21
 #define NET_ENEMY_SIZE 27
 #define NET_EVENT_SIZE (4 + 1 + TOY_GAME_MAX_EVENTS)
 #define NET_WORLD_SIZE 32
@@ -732,37 +732,37 @@ static void decode_enemy(const unsigned char *p, struct rasterfall_net_enemy *e)
 static void encode_actor(unsigned char *p, const struct toy_game_actor *a,
                         int actor_index)
 {
-    p[0] = (unsigned char)(actor_index & 3);
-    p[0] |= (unsigned char)((a->class_id & 3) << 2);
+    p[0] = (unsigned char)((a->class_id & 3) << 2);
     p[0] |= (unsigned char)((a->state & 3) << 4);
     p[0] |= (unsigned char)((put_weapon_value(
         a->slots[a->current_slot].weapon) & 3) << 6);
-    put_u32(p + 1, (uint32_t)a->x); put_u32(p + 5, (uint32_t)a->z);
-    put_i16(p + 9, a->sy); put_i16(p + 11, a->cy);
-    put_i16(p + 13, a->hp);
-    p[15] = (unsigned char)(a->state == TOY_GAME_ACTOR_DOWNED ?
+    p[1] = (unsigned char)actor_index;
+    put_u32(p + 2, (uint32_t)a->x); put_u32(p + 6, (uint32_t)a->z);
+    put_i16(p + 10, a->sy); put_i16(p + 12, a->cy);
+    put_i16(p + 14, a->hp);
+    p[16] = (unsigned char)(a->state == TOY_GAME_ACTOR_DOWNED ?
                             a->revive_progress_ms / 12 :
                             (a->muzzle_flash_ms < 0 ? 0 :
                              a->muzzle_flash_ms > 255 ? 255 : a->muzzle_flash_ms));
-    put_u32(p + 16, a->fire_seq);
+    put_u32(p + 17, a->fire_seq);
 }
 
 static void decode_actor(const unsigned char *p, struct rasterfall_net_actor *a)
 {
     memset(a, 0, sizeof(*a));
     a->active = 1;
-    a->actor_index = p[0] & 3;
+    a->actor_index = p[1];
     a->class_id = (p[0] >> 2) & 3;
     a->state = (p[0] >> 4) & 3;
     a->weapon = get_weapon_value((p[0] >> 6) & 3);
-    a->x = (int)get_u32(p + 1); a->z = (int)get_u32(p + 5);
-    a->sy = get_i16(p + 9); a->cy = get_i16(p + 11);
-    a->hp = get_i16(p + 13);
+    a->x = (int)get_u32(p + 2); a->z = (int)get_u32(p + 6);
+    a->sy = get_i16(p + 10); a->cy = get_i16(p + 12);
+    a->hp = get_i16(p + 14);
     if (a->state == TOY_GAME_ACTOR_DOWNED)
-        a->revive_progress_ms = p[15] * 12;
+        a->revive_progress_ms = p[16] * 12;
     else
-        a->muzzle_flash_ms = p[15];
-    a->fire_seq = get_u32(p + 16);
+        a->muzzle_flash_ms = p[16];
+    a->fire_seq = get_u32(p + 17);
 }
 
 static int send_ai_fire_packets(struct rasterfall_net *net,
@@ -1583,6 +1583,10 @@ int rasterfall_net_self_test(void)
         toy_game_add_ai(&test_game, TOY_GAME_AI_LEVEL_3,
                         2400, -1200, "ELITE") < 0)
         transport_result = 14;
+    for (i = 0; i < 5; i++)
+        if (toy_game_add_ai(&test_game, i % TOY_GAME_AI_CLASS_COUNT,
+                            -1800 + i * 600, 1200, "BACKUP") < 0)
+            transport_result = 14;
     test_game.actors[0].fire_seq = 4;
     test_game.actors[0].ray_count = 1;
     test_game.actors[0].rays[0].ex = 2222;
@@ -1594,12 +1598,15 @@ int rasterfall_net_self_test(void)
         rasterfall_net_poll(&client);
     if (!transport_result && (!client.snapshot_ready ||
         !client.players[0].active || client.players[0].camera.x != camera.x ||
-        !client.players[1].active || client.actor_count != 3 ||
+        !client.players[1].active || client.actor_count != 8 ||
         client.actors[1].actor_index != 1 ||
         client.actors[2].actor_index != 2 ||
+        client.actors[7].actor_index != 7 ||
         client.actors[0].ray_count != 1 ||
         client.actors[0].rays[0].ex != 2222 ||
-        client.actors[0].rays[0].ez != -3333)) transport_result = 12;
+        client.actors[0].rays[0].ez != -3333)) {
+        transport_result = 12;
+    }
     rasterfall_net_close(&client);
     rasterfall_net_close(&host);
     return transport_result;

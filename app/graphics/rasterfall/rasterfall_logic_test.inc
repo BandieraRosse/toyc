@@ -13,6 +13,7 @@ static int run_logic_test(void)
     rasterfall_session_reset(&session, &camera, 1);
     {
         struct toy_game actor_test;
+        int i;
         const struct toy_game_actor *actor =
             toy_game_actor_by_id_const(&game, 1);
         const struct toy_game_enemy_info *common =
@@ -53,7 +54,18 @@ static int run_logic_test(void)
         if (toy_game_add_ai(&actor_test, TOY_GAME_AI_LEVEL_3,
                             1200, -3000, "ELITE") != 2 ||
             !toy_game_actor_by_id(&actor_test, 2) ||
-            toy_game_actor_by_id(&actor_test, 2)->hp != 160) return 50;
+            toy_game_actor_by_id(&actor_test, 2)->hp != 160 ||
+            toy_game_actor_by_id(&actor_test, 2)->slots[0].reserve !=
+                TOY_GAME_AMMO_INFINITE) return 50;
+        actor_test.actors[0].state = TOY_GAME_ACTOR_DOWNED;
+        actor_test.actors[0].hp = 0;
+        actor_test.ai_down = 1;
+        actor_test.ai_hp = 0;
+        for (i = 0; i < (TOY_GAME_REVIVE_MS + 15) / 16; i++)
+            toy_game_revive_actor(&actor_test, 0, 16);
+        if (actor_test.actors[0].state != TOY_GAME_ACTOR_ALIVE ||
+            actor_test.actors[0].hp != TOY_GAME_REVIVE_HP ||
+            actor_test.ai_down) return 52;
     }
     memset(&command, 0, sizeof(command));
     command.move_forward = 1;
