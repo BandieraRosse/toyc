@@ -1430,7 +1430,8 @@ static void render_enemy_alert(struct toy_renderer *renderer,
     struct toy_screen_vertex screen;
     int x, y;
     /* 追踪尸潮也常显红色惊叹号：它们已知晓玩家位置，无需侦测。 */
-    if (e->ai_state != TOY_GAME_ENEMY_ALERT &&
+    if (e->ai_state != TOY_GAME_ENEMY_NOTICE &&
+        e->ai_state != TOY_GAME_ENEMY_ALERT &&
         e->ai_state != TOY_GAME_ENEMY_TRACKING) return;
     world.x = e->x;
     world.y = enemy_y(500, scale);

@@ -96,7 +96,9 @@ struct rasterfall_net {
     int remote_command_ready;
     struct camera peer_camera;
     struct camera peer_spawn;
+    struct camera peer_reported_camera;
     int peer_camera_initialized;
+    int peer_reported_camera_ready;
     /* 主机为第二名玩家保留独立的武器状态；敌人和地图仍由主机唯一推进。 */
     struct toy_game_slot peer_slots[TOY_GAME_WEAPON_SLOTS];
     int peer_current_slot;

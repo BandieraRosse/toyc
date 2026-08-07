@@ -920,6 +920,7 @@ void rasterfall_net_poll(struct rasterfall_net *net)
                 net->peer_ray_count = 0;
                 net->peer_state_initialized = 0;
                 net->peer_camera_initialized = 0;
+                net->peer_reported_camera_ready = 0;
                 net->remote_command_ready = 0;
                 net->last_input_sequence = 0;
                 net->remote_event_queue_count = 0;
@@ -958,6 +959,7 @@ void rasterfall_net_poll(struct rasterfall_net *net)
                 net->connected = 1;
                 memcpy(&net->peer_camera, &net->peer_spawn, sizeof(net->peer_camera));
                 net->peer_camera_initialized = 0;
+                net->peer_reported_camera_ready = 0;
             } else if (!net->public_room && !same_peer(&net->peer, &source)) {
                 continue;
             } else if (net->public_room) {
@@ -973,6 +975,9 @@ void rasterfall_net_poll(struct rasterfall_net *net)
                                           &net->peer_camera);
                     net->peer_camera_initialized = 1;
                 }
+                decode_command_camera(packet + NET_HEADER_SIZE,
+                                      &net->peer_reported_camera);
+                net->peer_reported_camera_ready = 1;
                 if (ack == net->last_snapshot_sequence &&
                     net->last_snapshot_sent_ms) {
                     long elapsed = net_monotonic_ms() - net->last_snapshot_sent_ms;
@@ -1039,6 +1044,7 @@ void rasterfall_net_update_connection(struct rasterfall_net *net)
                 net->peer_known = 0;
                 net->peer_state_initialized = 0;
                 net->peer_camera_initialized = 0;
+                net->peer_reported_camera_ready = 0;
         }
     }
     if (net->mode == RASTERFALL_NET_CLIENT &&
@@ -1074,6 +1080,7 @@ void rasterfall_net_apply_remote(struct rasterfall_net *net,
         memcpy(&net->peer_camera, &net->peer_spawn, sizeof(net->peer_camera));
         net->peer_state_initialized = 0;
         net->peer_camera_initialized = 0;
+        net->peer_reported_camera_ready = 0;
         net->remote_command.buttons = 0;
         net->remote_command.fire_held = 0;
         return;
@@ -1090,6 +1097,16 @@ void rasterfall_net_apply_remote(struct rasterfall_net *net,
         event_start = g->event_count;
         rasterfall_session_step_remote_player(session, &net->peer_camera,
                                               &net->remote_command);
+        /* The command's turn delta is only a prediction hint.  Use the
+         * complete camera reported by the client before authoritative firing
+         * so quick 90-degree turns and accumulated mouse deltas cannot leave
+         * the host's aim behind. */
+        if (net->peer_reported_camera_ready) {
+            net->peer_camera.sy = net->peer_reported_camera.sy;
+            net->peer_camera.cy = net->peer_reported_camera.cy;
+            net->peer_camera.pitch_sy = net->peer_reported_camera.pitch_sy;
+            net->peer_camera.pitch_cy = net->peer_reported_camera.pitch_cy;
+        }
         /* 远端玩家的受伤判定也在主机执行。敌人 AI 的主目标仍是主机玩家，
          * 这里补充远端近战范围判定，避免客户端自行决定血量。 */
         if (net->peer_state == TOY_GAME_PLAYING) {
