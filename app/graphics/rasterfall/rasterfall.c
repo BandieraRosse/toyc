@@ -1638,7 +1638,8 @@ static void sync_network_fire_effects(const struct camera *viewer,
                                       const struct camera *remote,
                                       int weapon, unsigned int fire_seq,
                                       int ray_count,
-                                      const struct toy_game_ray *rays)
+                                      const struct toy_game_ray *rays,
+                                      struct rasterfall_audio *audio)
 {
     struct vec3 muzzle_view, muzzle;
     int i, mx, my, mz;
@@ -1646,6 +1647,10 @@ static void sync_network_fire_effects(const struct camera *viewer,
     if (fire_seq < effects.last_network_fire_seq)
         effects.last_network_fire_seq = 0;
     effects.last_network_fire_seq = fire_seq;
+    if (audio && audio->running) {
+        unsigned char event = TOY_GAME_EV_SHOOT;
+        rasterfall_audio_play_events(audio, &event, 1);
+    }
     if (ray_count < 0) ray_count = 0;
     if (ray_count > TOY_GAME_MAX_RAYS) ray_count = TOY_GAME_MAX_RAYS;
     rasterfall_viewmodel_muzzle_offset(weapon, 0, &mx, &my, &mz);
@@ -2168,13 +2173,13 @@ startup_again:
             sync_network_fire_effects(&camera, &net.peer_camera,
                                       net.peer_slots[net.peer_current_slot].weapon,
                                       net.peer_fire_seq, net.peer_ray_count,
-                                      net.peer_rays);
+                                      net.peer_rays, &audio);
         } else if (net.mode == RASTERFALL_NET_CLIENT && net.players[0].active) {
             sync_network_fire_effects(&camera, &net.players[0].camera,
                                       net.players[0].weapon,
                                       net.players[0].fire_seq,
                                       net.players[0].ray_count,
-                                      net.players[0].rays);
+                                      net.players[0].rays, &audio);
         }
         /* 本帧到达的按压边沿并入保留位，再把保留位全部合入 key_pressed
          * 供顶部消费方（菜单/射击）读取。保留位在逻辑步跑过的那帧末尾

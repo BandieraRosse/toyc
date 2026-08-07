@@ -7,7 +7,7 @@
 #define NET_MAGIC_1 'F'
 #define NET_MAGIC_2 'N'
 #define NET_MAGIC_3 '1'
-#define NET_INPUT_SIZE 24
+#define NET_INPUT_SIZE 32
 #define NET_PLAYER_BASE_SIZE 40
 #define NET_PLAYER_RAY_SIZE 15
 #define NET_PLAYER_SIZE (NET_PLAYER_BASE_SIZE + 4 + 1 + TOY_GAME_MAX_RAYS * NET_PLAYER_RAY_SIZE)
@@ -35,6 +35,9 @@ static void net_queue_remote_events(struct rasterfall_net *net,
 {
     int i;
     for (i = 0; i < count; i++) {
+        /* Fire audio is reconstructed from the reliable fire_seq in the
+         * player snapshot; keeping SHOOT here would play it twice. */
+        if (events[i] == TOY_GAME_EV_SHOOT) continue;
         if (net->remote_event_queue_count >= RASTERFALL_NET_EVENT_QUEUE_MAX)
             break;
         net->remote_event_queue[net->remote_event_queue_count] = events[i];
@@ -564,6 +567,10 @@ static int encode_command(unsigned char *packet, uint32_t sequence,
     put_u16(p + 14, 0);
     put_u32(p + 16, (uint32_t)predicted->x);
     put_u32(p + 20, (uint32_t)predicted->z);
+    put_i16(p + 24, predicted->sy);
+    put_i16(p + 26, predicted->cy);
+    put_i16(p + 28, predicted->pitch_sy);
+    put_i16(p + 30, predicted->pitch_cy);
     return size;
 }
 
@@ -583,6 +590,17 @@ static int decode_command(const unsigned char *payload, int size,
     if (command->turn < -1024 || command->turn > 1024 ||
         command->pitch < -1024 || command->pitch > 1024) return -1;
     return 0;
+}
+
+static void decode_command_camera(const unsigned char *payload,
+                                  struct camera *camera)
+{
+    camera->x = (int)get_u32(payload + 16);
+    camera->z = (int)get_u32(payload + 20);
+    camera->sy = get_i16(payload + 24);
+    camera->cy = get_i16(payload + 26);
+    camera->pitch_sy = get_i16(payload + 28);
+    camera->pitch_cy = get_i16(payload + 30);
 }
 
 int rasterfall_net_send_command(struct rasterfall_net *net,
@@ -901,6 +919,7 @@ void rasterfall_net_poll(struct rasterfall_net *net)
                 net->peer_fire_seq = 0;
                 net->peer_ray_count = 0;
                 net->peer_state_initialized = 0;
+                net->peer_camera_initialized = 0;
                 net->remote_command_ready = 0;
                 net->last_input_sequence = 0;
                 net->remote_event_queue_count = 0;
@@ -938,6 +957,7 @@ void rasterfall_net_poll(struct rasterfall_net *net)
                 net->peer_known = 1;
                 net->connected = 1;
                 memcpy(&net->peer_camera, &net->peer_spawn, sizeof(net->peer_camera));
+                net->peer_camera_initialized = 0;
             } else if (!net->public_room && !same_peer(&net->peer, &source)) {
                 continue;
             } else if (net->public_room) {
@@ -948,6 +968,11 @@ void rasterfall_net_poll(struct rasterfall_net *net)
                 sequence > net->last_input_sequence &&
                 decode_command(packet + NET_HEADER_SIZE, payload_size,
                                &net->remote_command) == 0) {
+                if (!net->peer_camera_initialized) {
+                    decode_command_camera(packet + NET_HEADER_SIZE,
+                                          &net->peer_camera);
+                    net->peer_camera_initialized = 1;
+                }
                 if (ack == net->last_snapshot_sequence &&
                     net->last_snapshot_sent_ms) {
                     long elapsed = net_monotonic_ms() - net->last_snapshot_sent_ms;
@@ -1011,8 +1036,9 @@ void rasterfall_net_update_connection(struct rasterfall_net *net)
         net->remote_event_snapshot_sequence = 0;
         if (net->mode == RASTERFALL_NET_HOST) {
             /* 允许另一台主机重新接入，而不是永久锁死旧地址。 */
-            net->peer_known = 0;
-            net->peer_state_initialized = 0;
+                net->peer_known = 0;
+                net->peer_state_initialized = 0;
+                net->peer_camera_initialized = 0;
         }
     }
     if (net->mode == RASTERFALL_NET_CLIENT &&
@@ -1047,6 +1073,7 @@ void rasterfall_net_apply_remote(struct rasterfall_net *net,
         rasterfall_session_reset(session, host_camera, session->seed);
         memcpy(&net->peer_camera, &net->peer_spawn, sizeof(net->peer_camera));
         net->peer_state_initialized = 0;
+        net->peer_camera_initialized = 0;
         net->remote_command.buttons = 0;
         net->remote_command.fire_held = 0;
         return;

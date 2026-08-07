@@ -8,7 +8,7 @@
 
 #define RASTERFALL_NET_DEFAULT_PORT 28460
 #define RASTERFALL_NET_MAX_PACKET 1400
-#define RASTERFALL_NET_PROTOCOL_VERSION 4
+#define RASTERFALL_NET_PROTOCOL_VERSION 5
 #define RASTERFALL_NET_PLAYER_MAX 2
 #define RASTERFALL_NET_EVENT_QUEUE_MAX 64
 #define RASTERFALL_NET_DISCOVERY_PORT 28459
@@ -96,6 +96,7 @@ struct rasterfall_net {
     int remote_command_ready;
     struct camera peer_camera;
     struct camera peer_spawn;
+    int peer_camera_initialized;
     /* 主机为第二名玩家保留独立的武器状态；敌人和地图仍由主机唯一推进。 */
     struct toy_game_slot peer_slots[TOY_GAME_WEAPON_SLOTS];
     int peer_current_slot;
