@@ -974,8 +974,11 @@ void rasterfall_net_update_connection(struct rasterfall_net *net)
     if (!net || net->fd < 0 || net->mode == RASTERFALL_NET_OFF) return;
     now = net_monotonic_ms();
     if (net->public_room) {
-        if (!net->public_matched &&
-            (!net->last_public_register_ms || now - net->last_public_register_ms >= 1000)) {
+        /* REGISTER is also the room lease heartbeat.  Keep sending it after
+         * MATCH; otherwise the coordinator quite correctly expires a host
+         * that has already entered the game. */
+        if ((!net->last_public_register_ms ||
+             now - net->last_public_register_ms >= 5000)) {
             if (punch_send_register(net) == 0) net->last_public_register_ms = now;
         }
         if (net->public_matched && net->peer_known &&

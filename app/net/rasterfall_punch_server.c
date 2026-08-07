@@ -284,7 +284,9 @@ int main(int argc, char **argv)
                 slot->nonce = nonce;
                 slot->last_seen_ms = now_ms();
                 slot->registrations++;
-                log_peer(role == 1 ? "host register" : "guest register", slot);
+                if (!same_session || slot->registrations == 1 ||
+                    (slot->registrations % 10) == 0)
+                    log_peer(role == 1 ? "host register" : "guest register", slot);
             }
             if (room->host.active && room->guest.active) {
                 __printf("punch-server: match room %04d generation=%lu\n",
