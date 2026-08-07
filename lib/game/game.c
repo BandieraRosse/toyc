@@ -167,6 +167,14 @@ void toy_game_set_alarm(struct toy_game *g,
     g->alarm_timer_ms = 0;
 }
 
+void toy_game_set_secondary_player(struct toy_game *g, int active,
+                                   int px, int pz)
+{
+    g->secondary_player_active = active != 0;
+    g->secondary_px = px;
+    g->secondary_pz = pz;
+}
+
 /* 圆形碰撞体 (x, z, radius) 是否与房间边界或障碍物重叠 */
 int toy_game_position_blocked(const struct toy_game *g,
                               int x, int z, int radius)
@@ -226,6 +234,8 @@ static void init_enemy_ai(struct toy_game *g, struct toy_game_enemy *e)
     e->last_seen_x = e->x;
     e->last_seen_z = e->z;
     e->lost_sight_ms = 0;
+    e->target_player = 0;
+    e->retarget_timer_ms = TOY_GAME_RETARGET_MS;
     e->wander_timer_ms = rand_range(g, 600, 1800);
     e->dir_x = enemy_dir_x[direction];
     e->dir_z = enemy_dir_z[direction];
@@ -595,11 +605,11 @@ static void wander_enemy(struct toy_game *g, struct toy_game_enemy *e, int dt_ms
 }
 
 static void chase_enemy(struct toy_game *g, struct toy_game_enemy *e,
-                        int dx, int dz, long long dist)
+                        int dx, int dz, long long dist, int target_player)
 {
     int nx, nz;
     if (dist < TOY_GAME_ATTACK_RANGE) {
-        if (!player_in_safe_room(g)) bite_player(g, e);
+        if (target_player == 0 && !player_in_safe_room(g)) bite_player(g, e);
         return;
     }
     if (dist == 0) return;
@@ -622,13 +632,12 @@ static void enemy_investigate_noise(struct toy_game_enemy *e, int x, int z)
     e->target_z = z;
 }
 
-static void enemy_remember_player(const struct toy_game *g,
-                                  struct toy_game_enemy *e)
+static void enemy_remember_target(struct toy_game_enemy *e, int x, int z)
 {
-    e->last_seen_x = g->px;
-    e->last_seen_z = g->pz;
-    e->target_x = g->px;
-    e->target_z = g->pz;
+    e->last_seen_x = x;
+    e->last_seen_z = z;
+    e->target_x = x;
+    e->target_z = z;
     e->lost_sight_ms = 0;
 }
 
@@ -692,23 +701,34 @@ static void alert_nearby_enemies(struct toy_game *g,
 }
 
 static int enemy_has_line_of_sight(const struct toy_game *g,
-                                   const struct toy_game_enemy *e)
+                                   const struct toy_game_enemy *e,
+                                   int target_x, int target_z)
 {
     int i;
     for (i = 0; i < g->world_count; i++)
-        if (segment_hits_box(e->x, e->z, g->px, g->pz, &g->world[i]))
+        if (segment_hits_box(e->x, e->z, target_x, target_z, &g->world[i]))
             return 0;
     return 1;
+}
+
+static int player_in_safe_room_at(const struct toy_game *g, int x, int z)
+{
+    int i;
+    for (i = 0; i < g->safe_room_count; i++)
+        if (toy_game_point_in_box(x, z, &g->safe_rooms[i])) return 1;
+    return 0;
 }
 
 /* 0=不可见，1=侧面/边缘视野，2=正面或极近距离。 */
 static int enemy_visual_stimulus(const struct toy_game *g,
                                  const struct toy_game_enemy *e,
+                                 int target_x, int target_z,
                                  int dx, int dz, long long dist)
 {
     long long dot;
-    if (player_in_safe_room(g) || dist > TOY_GAME_DETECT_RANGE) return 0;
-    if (!enemy_has_line_of_sight(g, e)) return 0;
+    if (player_in_safe_room_at(g, target_x, target_z) ||
+        dist > TOY_GAME_DETECT_RANGE) return 0;
+    if (!enemy_has_line_of_sight(g, e, target_x, target_z)) return 0;
     if (dist <= TOY_GAME_CLOSE_DETECT_RANGE) return 2;
     dot = (long long)e->dir_x * dx + (long long)e->dir_z * dz;
     if (dot <= 0) return 0;
@@ -720,18 +740,51 @@ static int enemy_visual_stimulus(const struct toy_game *g,
 static void update_enemy_ai(struct toy_game *g, struct toy_game_enemy *e,
                             int dt_ms)
 {
-    int dx = g->px - e->x;
-    int dz = g->pz - e->z;
-    long long dist2 = (long long)dx * dx + (long long)dz * dz;
-    long long dist = isqrt(dist2);
-    int visual = enemy_visual_stimulus(g, e, dx, dz, dist);
+    int target_x, target_z, target_player;
+    int primary_dx = g->px - e->x;
+    int primary_dz = g->pz - e->z;
+    int secondary_dx = g->secondary_px - e->x;
+    int secondary_dz = g->secondary_pz - e->z;
+    long long primary_dist2 = (long long)primary_dx * primary_dx +
+                              (long long)primary_dz * primary_dz;
+    long long secondary_dist2 = (long long)secondary_dx * secondary_dx +
+                                (long long)secondary_dz * secondary_dz;
+    int dx, dz;
+    long long dist2;
+    long long dist;
+    int visual;
+
+    if (e->retarget_timer_ms > 0) e->retarget_timer_ms -= dt_ms;
+    if (!g->secondary_player_active ||
+        (e->retarget_timer_ms > 0 && e->target_player == 1)) {
+        target_player = e->target_player;
+        if (target_player == 1 && !g->secondary_player_active)
+            target_player = 0;
+    } else if (e->retarget_timer_ms <= 0 || e->target_player < 0) {
+        target_player = g->secondary_player_active &&
+                        secondary_dist2 < primary_dist2 ? 1 : 0;
+        e->target_player = target_player;
+        e->retarget_timer_ms = TOY_GAME_RETARGET_MS;
+    } else {
+        target_player = e->target_player;
+    }
+    if (target_player == 1) {
+        target_x = g->secondary_px; target_z = g->secondary_pz;
+    } else {
+        target_x = g->px; target_z = g->pz;
+    }
+    dx = target_x - e->x;
+    dz = target_z - e->z;
+    dist2 = (long long)dx * dx + (long long)dz * dz;
+    dist = isqrt(dist2);
+    visual = enemy_visual_stimulus(g, e, target_x, target_z, dx, dz, dist);
 
     /* 尸潮追踪者：不走普通 AI 状态机，无视视线遮挡/声源/丢失目标，
      * 每帧直扑玩家当前位置（安全室仍能挡下，作为玩家最后的庇护）。 */
     if (e->ai_state == TOY_GAME_ENEMY_TRACKING) {
-        enemy_remember_player(g, e);
+        enemy_remember_target(e, target_x, target_z);
         turn_enemy_toward(e, dx, dz);
-        chase_enemy(g, e, dx, dz, dist);
+        chase_enemy(g, e, dx, dz, dist, target_player);
         return;
     }
 
@@ -742,7 +795,7 @@ static void update_enemy_ai(struct toy_game *g, struct toy_game_enemy *e,
             e->ai_timer_ms = rand_range(g, TOY_GAME_NOTICE_MIN_MS,
                                         TOY_GAME_NOTICE_MAX_MS);
             if (visual == 1) e->ai_timer_ms = e->ai_timer_ms * 3 / 2;
-            enemy_remember_player(g, e);
+            enemy_remember_target(e, target_x, target_z);
         }
         return;
     }
@@ -754,7 +807,7 @@ static void update_enemy_ai(struct toy_game *g, struct toy_game_enemy *e,
             return;
         }
         turn_enemy_toward(e, dx, dz);
-        enemy_remember_player(g, e);
+        enemy_remember_target(e, target_x, target_z);
         e->ai_timer_ms -= dt_ms;
         if (e->ai_timer_ms <= 0) {
             e->ai_state = TOY_GAME_ENEMY_ALERT;
@@ -770,7 +823,7 @@ static void update_enemy_ai(struct toy_game *g, struct toy_game_enemy *e,
         if (visual) {
             e->ai_state = TOY_GAME_ENEMY_NOTICE;
             e->ai_timer_ms = TOY_GAME_NOTICE_MIN_MS;
-            enemy_remember_player(g, e);
+            enemy_remember_target(e, target_x, target_z);
             return;
         }
         e->ai_timer_ms -= dt_ms;
@@ -781,12 +834,12 @@ static void update_enemy_ai(struct toy_game *g, struct toy_game_enemy *e,
             return;
         }
         turn_enemy_toward(e, tx, tz);
-        chase_enemy(g, e, tx, tz, target_dist);
+        chase_enemy(g, e, tx, tz, target_dist, target_player);
         return;
     }
     if (e->ai_state == TOY_GAME_ENEMY_ALERT) {
         int tx, tz;
-        if (visual) enemy_remember_player(g, e);
+        if (visual) enemy_remember_target(e, target_x, target_z);
         tx = e->target_x - e->x;
         tz = e->target_z - e->z;
         turn_enemy_toward(e, tx, tz);
@@ -800,7 +853,7 @@ static void update_enemy_ai(struct toy_game *g, struct toy_game_enemy *e,
     if (e->ai_state == TOY_GAME_ENEMY_CHASE) {
         int tx, tz;
         long long target_dist;
-        if (visual) enemy_remember_player(g, e);
+        if (visual) enemy_remember_target(e, target_x, target_z);
         else e->lost_sight_ms += dt_ms;
         tx = e->last_seen_x - e->x;
         tz = e->last_seen_z - e->z;
@@ -810,11 +863,11 @@ static void update_enemy_ai(struct toy_game *g, struct toy_game_enemy *e,
             return;
         }
         turn_enemy_toward(e, tx, tz);
-        chase_enemy(g, e, tx, tz, target_dist);
+        chase_enemy(g, e, tx, tz, target_dist, target_player);
         return;
     }
     if (visual) {
-        enemy_remember_player(g, e);
+        enemy_remember_target(e, target_x, target_z);
         e->ai_state = TOY_GAME_ENEMY_CHASE;
         return;
     }

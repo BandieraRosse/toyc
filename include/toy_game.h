@@ -50,7 +50,8 @@
 #define TOY_GAME_GOAL_HOLD_MS   1500    /* 终点安全室内停留多久判定通关 */
 #define TOY_GAME_MAX_RANGE      11500   /* 弹丸最大射程（世界单位，≈地图尺度） */
 #define TOY_GAME_MAX_RAYS       10      /* 单枪最大弹丸数（霰弹枪），弹道记录上限 */
-#define TOY_GAME_DETECT_RANGE   2800    /* 视觉最远察觉距离 */
+#define TOY_GAME_DETECT_RANGE   5600    /* 视觉最远察觉距离（原值两倍） */
+#define TOY_GAME_RETARGET_MS    500     /* 多玩家目标重新评估间隔 */
 #define TOY_GAME_CLOSE_DETECT_RANGE 600 /* 极近距离无需处于正面视野 */
 #define TOY_GAME_NOTICE_MIN_MS  700     /* 进入范围后至少观察多久 */
 #define TOY_GAME_NOTICE_MAX_MS  1400
@@ -154,6 +155,8 @@ struct toy_game_enemy {
     int target_x, target_z; /* 调查目标或最后声源 */
     int last_seen_x, last_seen_z;
     int lost_sight_ms;
+    int target_player;         /* 0=主机，1=客户端 */
+    int retarget_timer_ms;
     int wander_timer_ms;
     int dir_x, dir_z;   /* 面向，1024 基准定点 */
 };
@@ -205,6 +208,10 @@ struct toy_game {
     int world_count;
     int room_limit;
 
+    /* 联机主机可提供第二名玩家的位置；单机时保持 inactive。 */
+    int secondary_player_active;
+    int secondary_px, secondary_pz;
+
     /* PRNG（xorshift64*，init 时播种） */
     uint64_t rng;
 
@@ -225,6 +232,8 @@ void toy_game_set_campaign(struct toy_game *g,
 void toy_game_set_alarm(struct toy_game *g,
                         const struct toy_game_box *alarm_zone,
                         int spawn_zone_index);
+void toy_game_set_secondary_player(struct toy_game *g, int active,
+                                   int px, int pz);
 int  toy_game_point_in_box(int x, int z, const struct toy_game_box *box);
 int  toy_game_position_blocked(const struct toy_game *g,
                                int x, int z, int radius);

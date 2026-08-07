@@ -2360,9 +2360,16 @@ startup_again:
                         rasterfall_session_step_client(&session, &camera,
                                                        &command,
                                                        FIXED_STEP_US / 1000);
-                    else
+                    else {
+                        /* Feed the last authoritative remote position into
+                         * the host AI before this tick chooses its target. */
+                        toy_game_set_secondary_player(&game,
+                            net.mode == RASTERFALL_NET_HOST &&
+                            net.peer_known && net.connected,
+                            net.peer_camera.x, net.peer_camera.z);
                         rasterfall_session_step(&session, &camera, &command,
                                                 FIXED_STEP_US / 1000);
+                    }
                     if (net.mode == RASTERFALL_NET_CLIENT)
                         rasterfall_net_send_command(&net, &command, &camera);
                     consume_game_command_edges(&input);
