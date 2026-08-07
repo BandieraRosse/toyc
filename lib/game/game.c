@@ -40,13 +40,34 @@ static int rand_range(struct toy_game *g, int lo, int hi)
 
 /* ── 武器定义 ─────────────────────────────────────────────────── */
 
+/* ── 战斗平衡配置 ────────────────────────────────────────────────
+ * 改武器伤害、敌人生命或敌人近战伤害时只改这里；下面的规则表不再
+ * 直接散落这些平衡数字。弹匣容量、射速和移动速度仍在各自表中维护。 */
+#define BALANCE_PISTOL_DAMAGE          30
+#define BALANCE_SMG_DAMAGE             25
+#define BALANCE_SHOTGUN_PELLET_DAMAGE  20
+
+#define BALANCE_COMMON_HP              50
+#define BALANCE_FAST_HP                50
+#define BALANCE_HEAVY_HP               200
+#define BALANCE_PURSUIT_HEAVY_HP       200
+#define BALANCE_PURSUIT_FAST_HP        60
+
+#define BALANCE_COMMON_BITE_DAMAGE     2
+#define BALANCE_FAST_BITE_DAMAGE       2
+#define BALANCE_HEAVY_BITE_DAMAGE      4
+#define BALANCE_PURSUIT_HEAVY_BITE_DAMAGE 4
+#define BALANCE_PURSUIT_FAST_BITE_DAMAGE  2
+
 /* 固定散射：每颗弹丸在 [-spread, +spread] 内随机偏转（1024 定点）。
  * 手枪 ±12（≈±0.7°，几乎精准）；SMG ±90（≈±5°，连发略散）；
  * 霰弹枪 ±230（≈±12.7°，近距离密集、远距离发散）。 */
 static const struct toy_game_weapon_info weapon_table[TOY_GAME_WEAPON_COUNT] = {
-    { 30, TOY_GAME_AMMO_INFINITE, 200, 1500, 0, 1, 12, 1 },
-    { 50, 650, 100, 2000, 1, 1, 90, 0 },
-    { 8, 64, 600, 2500, 0, 10, 230, 0 },
+    { 30, TOY_GAME_AMMO_INFINITE, 200, 1500, 0, 1, 12, 1,
+      BALANCE_PISTOL_DAMAGE },
+    { 50, 650, 100, 2000, 1, 1, 90, 0, BALANCE_SMG_DAMAGE },
+    { 8, 64, 600, 2500, 0, 10, 230, 0,
+      BALANCE_SHOTGUN_PELLET_DAMAGE },
 };
 
 static const char *weapon_names[TOY_GAME_WEAPON_COUNT] = {
@@ -55,11 +76,11 @@ static const char *weapon_names[TOY_GAME_WEAPON_COUNT] = {
 
 static const struct toy_game_enemy_info enemy_table[TOY_GAME_ENEMY_TYPE_COUNT] = {
     /* max hp, speed range, bite damage, model, base color */
-    { 1, 38, 56, 2, 0, 0x4A5D3A },
-    { 1, 66, 82, 2, 1, 0x6A8A42 },
-    { 4, 24, 34, 4, 2, 0x624A3A },
-    { 5, 30, 42, 4, 2, 0x7A4A2A },
-    { 1, 92, 112, 2, 1, 0xB84A32 }
+    { BALANCE_COMMON_HP, 38, 56, BALANCE_COMMON_BITE_DAMAGE, 0, 0x4A5D3A },
+    { BALANCE_FAST_HP, 66, 82, BALANCE_FAST_BITE_DAMAGE, 1, 0x6A8A42 },
+    { BALANCE_HEAVY_HP, 24, 34, BALANCE_HEAVY_BITE_DAMAGE, 2, 0x624A3A },
+    { BALANCE_PURSUIT_HEAVY_HP, 30, 42, BALANCE_PURSUIT_HEAVY_BITE_DAMAGE, 2, 0x7A4A2A },
+    { BALANCE_PURSUIT_FAST_HP, 92, 112, BALANCE_PURSUIT_FAST_BITE_DAMAGE, 1, 0xB84A32 }
 };
 
 struct toy_game_ai_info {
@@ -1322,7 +1343,7 @@ static void normalize_dir(int *sy, int *cy)
 
 /* 单发 hitscan：最近且未被障碍遮挡的敌人一枪毙命，命中返回 1。
  * 同时输出射线终点：命中敌人 → 敌人位置；未命中 → 首个墙交点或最大射程。 */
-static int fire_ray(struct toy_game *g, int sy, int cy,
+static int fire_ray(struct toy_game *g, int sy, int cy, int damage,
                     int *out_ex, int *out_ez, int *out_hit_world)
 {
     int best = -1, best_t = 0, i;
@@ -1366,13 +1387,18 @@ static int fire_ray(struct toy_game *g, int sy, int cy,
         *out_ex = g->px + (sy * best_t) / 1024;
         *out_ez = g->pz + (cy * best_t) / 1024;
         *out_hit_world = 0;
-        e->hp = 0;
-        e->active = 2;
-        e->dying_ms = TOY_GAME_DYING_MS;
-        e->flash = 120;
-        g->enemies_alive--;
-        g->kills++;
-        push_event(g, TOY_GAME_EV_KILL);
+        e->hp -= damage;
+        if (e->hp <= 0) {
+            e->hp = 0;
+            e->active = 2;
+            e->dying_ms = TOY_GAME_DYING_MS;
+            e->flash = 120;
+            g->enemies_alive--;
+            g->kills++;
+            push_event(g, TOY_GAME_EV_KILL);
+        } else {
+            e->hurt = 150;
+        }
         return 1;
     }
     {
@@ -1421,7 +1447,7 @@ int toy_game_fire(struct toy_game *g, int sy, int cy)
         ray_cy = (cy * 1024 + sy * off_x) / 1024;
         int ex, ez, hit_world, killed;
         normalize_dir(&ray_sy, &ray_cy);   /* 旋转后长度略偏，归一化保证判定一致 */
-        killed = fire_ray(g, ray_sy, ray_cy, &ex, &ez, &hit_world);
+        killed = fire_ray(g, ray_sy, ray_cy, w->damage, &ex, &ez, &hit_world);
         if (killed) hit = 1;
         g->rays[pellet].sy = ray_sy;
         g->rays[pellet].cy = ray_cy;

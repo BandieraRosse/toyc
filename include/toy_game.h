@@ -159,6 +159,7 @@ struct toy_game_weapon_info {
     int pellets;       /* 每次扣扳机弹丸数（霰弹枪散射） */
     int spread;        /* 每颗弹丸随机偏角上限（1024 定点，[-spread,+spread] 均匀） */
     int slot;          /* 装备槽：0=主武器，1=副武器 */
+    int damage;        /* 单颗弹丸伤害；霰弹枪按每颗弹丸计算 */
 };
 
 struct toy_game_enemy_info {

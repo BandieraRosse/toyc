@@ -25,13 +25,19 @@ static int run_logic_test(void)
             toy_game_enemy_info(TOY_GAME_ENEMY_PURSUIT_HEAVY);
         const struct toy_game_enemy_info *runner =
             toy_game_enemy_info(TOY_GAME_ENEMY_PURSUIT_FAST);
+        const struct toy_game_weapon_info *smg =
+            toy_game_weapon_info(TOY_GAME_WEAPON_SMG);
+        const struct toy_game_weapon_info *shotgun =
+            toy_game_weapon_info(TOY_GAME_WEAPON_SHOTGUN);
         if (!actor || actor->kind != TOY_GAME_ACTOR_AI ||
             actor->class_id != TOY_GAME_AI_LEVEL_2 ||
             fast->speed_min <= common->speed_max ||
             heavy->max_hp <= common->max_hp ||
             heavy->bite_damage <= common->bite_damage ||
-            brute->max_hp != common->max_hp * 5 ||
-            runner->speed_min <= fast->speed_max) return 49;
+            runner->speed_min <= fast->speed_max ||
+            smg->damage != 25 || shotgun->damage != 20 ||
+            common->max_hp != 50 || heavy->max_hp != 200 ||
+            brute->max_hp != 200 || runner->max_hp != 60) return 49;
         if (!game.actors[1].active ||
             game.actors[1].class_id != TOY_GAME_AI_LEVEL_1 ||
             game.actors[1].slots[0].weapon != TOY_GAME_WEAPON_PISTOL ||
