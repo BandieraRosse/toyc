@@ -8,7 +8,7 @@
 
 #define RASTERFALL_NET_DEFAULT_PORT 28460
 #define RASTERFALL_NET_MAX_PACKET 1400
-#define RASTERFALL_NET_PROTOCOL_VERSION 5
+#define RASTERFALL_NET_PROTOCOL_VERSION 6
 #define RASTERFALL_NET_PLAYER_MAX 2
 #define RASTERFALL_NET_EVENT_QUEUE_MAX 64
 #define RASTERFALL_NET_DISCOVERY_PORT 28459
@@ -91,6 +91,10 @@ struct rasterfall_net {
     uint32_t receive_sequence;
     uint32_t tick;
     uint32_t last_input_sequence;
+    uint32_t last_remote_fire_id;
+    uint32_t next_fire_id;
+    uint32_t pending_fire_id;
+    int pending_fire_ticks;
     uint32_t last_input_tick;
     struct rasterfall_command remote_command;
     int remote_command_ready;

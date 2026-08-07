@@ -31,6 +31,7 @@ struct rasterfall_command {
     int pitch;
     unsigned int buttons;
     int fire_held;
+    uint32_t fire_id; /* reliable edge id; 0 means no semi-auto edge */
 };
 
 struct rasterfall_session {

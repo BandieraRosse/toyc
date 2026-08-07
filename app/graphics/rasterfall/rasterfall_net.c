@@ -7,7 +7,7 @@
 #define NET_MAGIC_1 'F'
 #define NET_MAGIC_2 'N'
 #define NET_MAGIC_3 '1'
-#define NET_INPUT_SIZE 32
+#define NET_INPUT_SIZE 36
 #define NET_PLAYER_BASE_SIZE 40
 #define NET_PLAYER_RAY_SIZE 15
 #define NET_PLAYER_SIZE (NET_PLAYER_BASE_SIZE + 4 + 1 + TOY_GAME_MAX_RAYS * NET_PLAYER_RAY_SIZE)
@@ -571,6 +571,7 @@ static int encode_command(unsigned char *packet, uint32_t sequence,
     put_i16(p + 26, predicted->cy);
     put_i16(p + 28, predicted->pitch_sy);
     put_i16(p + 30, predicted->pitch_cy);
+    put_u32(p + 32, command->fire_id);
     return size;
 }
 
@@ -585,6 +586,7 @@ static int decode_command(const unsigned char *payload, int size,
     command->turn = get_i16(payload + 8);
     command->pitch = get_i16(payload + 10);
     command->buttons = get_u16(payload + 12);
+    command->fire_id = get_u32(payload + 32);
     if (command->move_forward < -1 || command->move_forward > 1 ||
         command->move_strafe < -1 || command->move_strafe > 1) return -1;
     if (command->turn < -1024 || command->turn > 1024 ||
@@ -608,11 +610,27 @@ int rasterfall_net_send_command(struct rasterfall_net *net,
                                 const struct camera *predicted)
 {
     unsigned char packet[NET_HEADER_SIZE + NET_INPUT_SIZE];
+    struct rasterfall_command reliable_command;
     int size;
     if (net->mode != RASTERFALL_NET_CLIENT) return -1;
+    memcpy(&reliable_command, command, sizeof(reliable_command));
+    if (command->buttons & RASTERFALL_CMD_FIRE) {
+        if (!net->pending_fire_ticks) {
+            net->next_fire_id++;
+            if (!net->next_fire_id) net->next_fire_id++;
+            net->pending_fire_id = net->next_fire_id;
+            net->pending_fire_ticks = 5;
+        }
+        reliable_command.fire_id = net->pending_fire_id;
+    } else if (net->pending_fire_ticks > 0) {
+        reliable_command.buttons |= RASTERFALL_CMD_FIRE;
+        reliable_command.fire_id = net->pending_fire_id;
+    }
+    if (net->pending_fire_ticks > 0) net->pending_fire_ticks--;
     net->tick++;
     size = encode_command(packet, ++net->send_sequence,
-                          net->receive_sequence, net->tick, command, predicted);
+                          net->receive_sequence, net->tick,
+                          &reliable_command, predicted);
     net->last_command_sequence = net->send_sequence;
     net->last_command_sent_ms = net_monotonic_ms();
     return net_send(net, packet, size);
@@ -923,6 +941,7 @@ void rasterfall_net_poll(struct rasterfall_net *net)
                 net->peer_reported_camera_ready = 0;
                 net->remote_command_ready = 0;
                 net->last_input_sequence = 0;
+                net->last_remote_fire_id = 0;
                 net->remote_event_queue_count = 0;
             }
             net->last_public_punch_ms = 0;
@@ -960,6 +979,7 @@ void rasterfall_net_poll(struct rasterfall_net *net)
                 memcpy(&net->peer_camera, &net->peer_spawn, sizeof(net->peer_camera));
                 net->peer_camera_initialized = 0;
                 net->peer_reported_camera_ready = 0;
+                net->last_remote_fire_id = 0;
             } else if (!net->public_room && !same_peer(&net->peer, &source)) {
                 continue;
             } else if (net->public_room) {
@@ -978,6 +998,11 @@ void rasterfall_net_poll(struct rasterfall_net *net)
                 decode_command_camera(packet + NET_HEADER_SIZE,
                                       &net->peer_reported_camera);
                 net->peer_reported_camera_ready = 1;
+                if (net->remote_command.fire_id &&
+                    net->remote_command.fire_id <= net->last_remote_fire_id)
+                    net->remote_command.buttons &= ~RASTERFALL_CMD_FIRE;
+                else if (net->remote_command.fire_id)
+                    net->last_remote_fire_id = net->remote_command.fire_id;
                 if (ack == net->last_snapshot_sequence &&
                     net->last_snapshot_sent_ms) {
                     long elapsed = net_monotonic_ms() - net->last_snapshot_sent_ms;
@@ -1041,10 +1066,11 @@ void rasterfall_net_update_connection(struct rasterfall_net *net)
         net->remote_event_snapshot_sequence = 0;
         if (net->mode == RASTERFALL_NET_HOST) {
             /* 允许另一台主机重新接入，而不是永久锁死旧地址。 */
-                net->peer_known = 0;
-                net->peer_state_initialized = 0;
-                net->peer_camera_initialized = 0;
-                net->peer_reported_camera_ready = 0;
+            net->peer_known = 0;
+            net->peer_state_initialized = 0;
+            net->peer_camera_initialized = 0;
+            net->peer_reported_camera_ready = 0;
+            net->last_remote_fire_id = 0;
         }
     }
     if (net->mode == RASTERFALL_NET_CLIENT &&
@@ -1081,6 +1107,7 @@ void rasterfall_net_apply_remote(struct rasterfall_net *net,
         net->peer_state_initialized = 0;
         net->peer_camera_initialized = 0;
         net->peer_reported_camera_ready = 0;
+        net->last_remote_fire_id = 0;
         net->remote_command.buttons = 0;
         net->remote_command.fire_held = 0;
         return;
@@ -1300,6 +1327,7 @@ int rasterfall_net_self_test(void)
     input.pitch = 123;
     input.buttons = RASTERFALL_CMD_FIRE | RASTERFALL_CMD_INTERACT;
     input.fire_held = 1;
+    input.fire_id = 0x55667788U;
     camera.x = -123456;
     camera.z = 654321;
     size = encode_command(packet, 0x10203040U, 7, 99, &input, &camera);
@@ -1311,7 +1339,7 @@ int rasterfall_net_self_test(void)
         output.move_forward != input.move_forward ||
         output.move_strafe != input.move_strafe || output.turn != input.turn ||
         output.pitch != input.pitch || output.buttons != input.buttons ||
-        output.fire_held != input.fire_held) return 3;
+        output.fire_held != input.fire_held || output.fire_id != input.fire_id) return 3;
     packet[4]++;
     if (packet_header(packet, size, &type, &payload_size, &sequence, NULL) == 0) return 4;
     packet[4]--;
