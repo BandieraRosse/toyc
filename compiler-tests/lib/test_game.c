@@ -426,6 +426,8 @@ static int test_goal_hold_and_win(void)
     toy_game_init(&g, 35);
     toy_game_set_world(&g, NULL, 0, ROOM);
     toy_game_set_campaign(&g, test_safe_rooms, 2, test_spawn_zones, 2);
+    /* 终点撤离判定要求 campaign_stage >= 2。 */
+    toy_game_set_campaign_stage(&g, 2);
     g.spawn_timer_ms = 1000000;
     g.px = 0;
     g.pz = 4500;
