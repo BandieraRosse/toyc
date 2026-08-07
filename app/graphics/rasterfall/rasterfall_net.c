@@ -355,6 +355,56 @@ static int net_send(struct rasterfall_net *net, unsigned char *packet, int size)
     return sent == size ? 0 : -1;
 }
 
+#define PUNCH_VERSION 1
+#define PUNCH_REGISTER 1
+#define PUNCH_MATCH 2
+#define PUNCH_PROBE 3
+
+static int punch_packet(const unsigned char *p, int size, int type)
+{
+    return size >= 6 && p[0] == 'R' && p[1] == 'F' && p[2] == 'P' &&
+           p[3] == '2' && p[4] == PUNCH_VERSION && p[5] == type;
+}
+
+static int punch_send_register(struct rasterfall_net *net)
+{
+    unsigned char packet[12];
+    uint32_t nonce = net->public_token;
+    packet[0] = 'R'; packet[1] = 'F'; packet[2] = 'P'; packet[3] = '2';
+    packet[4] = PUNCH_VERSION; packet[5] = PUNCH_REGISTER;
+    put_u16(packet + 6, (unsigned int)net->public_room_id);
+    put_u32(packet + 8, nonce);
+    packet[10] = (unsigned char)(net->mode == RASTERFALL_NET_HOST ? 1 : 2);
+    packet[11] = 0;
+    return sendto(net->fd, packet, sizeof(packet), 0,
+                  (const struct sockaddr *)&net->public_server,
+                  sizeof(net->public_server)) == (long)sizeof(packet) ? 0 : -1;
+}
+
+static int punch_send_probe(struct rasterfall_net *net)
+{
+    unsigned char packet[12];
+    packet[0] = 'R'; packet[1] = 'F'; packet[2] = 'P'; packet[3] = '2';
+    packet[4] = PUNCH_VERSION; packet[5] = PUNCH_PROBE;
+    put_u32(packet + 6, net->public_token); packet[10] = packet[11] = 0;
+    return net_send(net, packet, sizeof(packet));
+}
+
+static int public_socket(struct rasterfall_net *net)
+{
+    struct sockaddr_in address;
+    net->fd = socket(AF_INET, SOCK_DGRAM | SOCK_NONBLOCK, 0);
+    if (net->fd < 0) return -1;
+    memset(&address, 0, sizeof(address));
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = 0;
+    address.sin_port = 0;
+    if (bind(net->fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
+        __close(net->fd); net->fd = -1; return -1;
+    }
+    return 0;
+}
+
 void rasterfall_net_init(struct rasterfall_net *net)
 {
     memset(net, 0, sizeof(struct rasterfall_net));
@@ -410,6 +460,38 @@ int rasterfall_net_connect(struct rasterfall_net *net, const char *ip, int port)
                         ++net->send_sequence, 0);
     net_send(net, hello, size);
     return 0;
+}
+
+int rasterfall_net_public_host(struct rasterfall_net *net, int room_id,
+                               const struct camera *spawn)
+{
+    rasterfall_net_init(net);
+    if (public_socket(net) < 0) return -1;
+    memset(&net->public_server, 0, sizeof(net->public_server));
+    net->public_server.sin_family = AF_INET;
+    net->public_server.sin_port = htons(RASTERFALL_NET_PUNCH_PORT);
+    net->public_server.sin_addr.s_addr = inet_addr(RASTERFALL_NET_PUNCH_SERVER);
+    net->public_room = 1; net->public_room_id = room_id;
+    net->public_token = (uint32_t)net_monotonic_ms();
+    net->mode = RASTERFALL_NET_HOST;
+    if (spawn) memcpy(&net->peer_spawn, spawn, sizeof(*spawn));
+    net->last_public_register_ms = 0;
+    return punch_send_register(net);
+}
+
+int rasterfall_net_public_connect(struct rasterfall_net *net, int room_id)
+{
+    rasterfall_net_init(net);
+    if (public_socket(net) < 0) return -1;
+    memset(&net->public_server, 0, sizeof(net->public_server));
+    net->public_server.sin_family = AF_INET;
+    net->public_server.sin_port = htons(RASTERFALL_NET_PUNCH_PORT);
+    net->public_server.sin_addr.s_addr = inet_addr(RASTERFALL_NET_PUNCH_SERVER);
+    net->public_room = 1; net->public_room_id = room_id;
+    net->public_token = (uint32_t)net_monotonic_ms();
+    net->mode = RASTERFALL_NET_CLIENT;
+    net->last_public_register_ms = 0;
+    return punch_send_register(net);
 }
 
 int rasterfall_net_local_address(char *buffer, int buffer_size)
@@ -754,6 +836,37 @@ void rasterfall_net_poll(struct rasterfall_net *net)
             if (received == -EAGAIN) return;
             return;
         }
+        if (net->public_room && punch_packet(packet, (int)received, PUNCH_MATCH)) {
+            if (received < 18 || get_u16(packet + 6) != (unsigned int)net->public_room_id)
+                continue;
+            net->public_token = get_u32(packet + 8);
+            memset(&net->peer, 0, sizeof(net->peer));
+            net->peer.sin_family = AF_INET;
+            memcpy(&net->peer.sin_addr.s_addr, packet + 12, 4);
+            net->peer.sin_port = htons((unsigned short)get_u16(packet + 16));
+            net->peer_known = 1;
+            net->public_matched = 1;
+            net->last_public_punch_ms = 0;
+            punch_send_probe(net);
+            if (net->mode == RASTERFALL_NET_CLIENT) {
+                unsigned char hello[NET_HEADER_SIZE];
+                int hello_size = packet_begin(hello, RASTERFALL_NET_HELLO, 0,
+                                              ++net->send_sequence, 0);
+                net_send(net, hello, hello_size);
+                net->last_hello_ms = net_monotonic_ms();
+            }
+            continue;
+        }
+        if (net->public_room && punch_packet(packet, (int)received, PUNCH_PROBE)) {
+            if (received < 10 || get_u32(packet + 6) != net->public_token) continue;
+            if (!net->peer_known) {
+                memcpy(&net->peer, &source, sizeof(source));
+                net->peer_known = 1;
+            }
+            net->public_matched = 1;
+            net->connected = 1;
+            continue;
+        }
         if (packet_header(packet, (int)received, &type, &payload_size,
                           &sequence, &ack) < 0) continue;
         net->last_receive_ms = net_monotonic_ms();
@@ -806,6 +919,16 @@ void rasterfall_net_update_connection(struct rasterfall_net *net)
     int size;
     if (!net || net->fd < 0 || net->mode == RASTERFALL_NET_OFF) return;
     now = net_monotonic_ms();
+    if (net->public_room) {
+        if (!net->public_matched &&
+            (!net->last_public_register_ms || now - net->last_public_register_ms >= 1000)) {
+            if (punch_send_register(net) == 0) net->last_public_register_ms = now;
+        }
+        if (net->public_matched && net->peer_known &&
+            (!net->last_public_punch_ms || now - net->last_public_punch_ms >= 100)) {
+            if (punch_send_probe(net) == 0) net->last_public_punch_ms = now;
+        }
+    }
     if (net->last_receive_ms && now - net->last_receive_ms > 3000) {
         net->connected = 0;
         net->last_input_sequence = 0;
@@ -823,8 +946,10 @@ void rasterfall_net_update_connection(struct rasterfall_net *net)
             net->peer_state_initialized = 0;
         }
     }
-    if (net->mode == RASTERFALL_NET_CLIENT && !net->connected &&
-        (!net->last_hello_ms || now - net->last_hello_ms >= 1000)) {
+    if (net->mode == RASTERFALL_NET_CLIENT &&
+        ((!net->connected && !net->public_room) ||
+         (net->public_room && net->public_matched)) &&
+        (!net->last_hello_ms || now - net->last_hello_ms >= 500)) {
         size = packet_begin(hello, RASTERFALL_NET_HELLO, 0,
                             ++net->send_sequence, net->receive_sequence);
         if (net_send(net, hello, size) == 0) net->last_hello_ms = now;

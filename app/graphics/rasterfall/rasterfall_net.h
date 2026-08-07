@@ -13,6 +13,8 @@
 #define RASTERFALL_NET_EVENT_QUEUE_MAX 64
 #define RASTERFALL_NET_DISCOVERY_PORT 28459
 #define RASTERFALL_NET_DISCOVERY_MAX_ROOMS 8
+#define RASTERFALL_NET_PUNCH_SERVER "47.82.117.182"
+#define RASTERFALL_NET_PUNCH_PORT 28461
 
 enum rasterfall_net_mode {
     RASTERFALL_NET_OFF,
@@ -141,12 +143,22 @@ struct rasterfall_net {
     long last_snapshot_sent_ms;
     long last_receive_ms;
     long last_hello_ms;
+    int public_room;
+    int public_room_id;
+    uint32_t public_token;
+    int public_matched;
+    struct sockaddr_in public_server;
+    long last_public_register_ms;
+    long last_public_punch_ms;
 };
 
 void rasterfall_net_init(struct rasterfall_net *net);
 int rasterfall_net_host(struct rasterfall_net *net, int port,
                         const struct camera *spawn);
 int rasterfall_net_connect(struct rasterfall_net *net, const char *ip, int port);
+int rasterfall_net_public_host(struct rasterfall_net *net, int room_id,
+                               const struct camera *spawn);
+int rasterfall_net_public_connect(struct rasterfall_net *net, int room_id);
 int rasterfall_net_local_address(char *buffer, int buffer_size);
 void rasterfall_net_close(struct rasterfall_net *net);
 void rasterfall_net_discovery_init(struct rasterfall_net_discovery *discovery);

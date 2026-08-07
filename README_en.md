@@ -91,7 +91,15 @@ Rasterfall's first UDP networking stage can be started with:
 build/rasterfall --host --port 28460
 build/rasterfall --connect 127.0.0.1 --port 28460
 build/rasterfall --net-test              # headless protocol + localhost UDP loopback
+build/rasterfall_punch_server           # public-room coordinator on UDP 28461
 ```
+
+The main menu's “CREATE PUBLIC ROOM” and “JOIN PUBLIC ROOM” use the hard-coded
+coordinator `47.82.117.182:28461` and require a four-digit room ID. The
+coordinator exchanges only public UDP endpoints and a session token; game data
+then uses direct UDP hole punching between the two players. There is no relay
+or room list yet. Open UDP port 28461 on the cloud server. The service can also
+be checked with `make self-app-rasterfall_punch_server`.
 
 At this stage the host validates remote movement and executes remote weapon
 switching, reloads, shooting, hits, and map interactions against the authoritative
@@ -99,8 +107,8 @@ enemy world. Both sides render a teammate model, and the client predicts and
 reconciles its position. Enemy pose, health, and death state are replicated by
 the host snapshot. Remote shooting, reload, and damage events use sequenced pending delivery
 to client audio; campaign progress, director state, and terminal state are also restored from
-snapshots. Reconnect performs a new handshake and receives the host state. Public rooms, NAT
-traversal, and a matchmaking service are not included yet.
+snapshots. Reconnect performs a new handshake and receives the host state. Public rooms
+currently provide UDP hole punching only; relay and matchmaking lists are not included.
 After roughly three seconds without packets the HUD reports a disconnect. The client
 retries with HELLO once per second, and the host releases the stale peer slot.
 
