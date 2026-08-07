@@ -97,9 +97,9 @@ build/rasterfall_punch_server           # public-room coordinator on UDP 28461
 
 The main menu's “CREATE PUBLIC ROOM” and “JOIN PUBLIC ROOM” use the hard-coded
 coordinator `47.82.117.182:28461` and require a four-digit room ID. The
-coordinator exchanges a session token and relays game UDP packets between the
-two players, avoiding NAT paths that cannot be punched directly. There is no
-room list yet. The server expires stale peers and clears the old guest when
+rooms 0000–4999 use direct UDP hole punching; rooms 5000–9999 use the
+coordinator as a UDP relay to avoid NAT paths that cannot be punched directly.
+There is no room list yet. The server expires stale peers and clears the old guest when
 a new host session registers. Open UDP port 28461 on the cloud server. The service can also
 be checked with `make self-app-rasterfall_punch_server`.
 

@@ -25,6 +25,7 @@
 #define PUNCH_PEER_TIMEOUT_MS 12000
 #define PUNCH_RELAY_MATCH 1
 #define PUNCH_MAX_PACKET 1400
+#define PUNCH_RELAY_ROOM_MIN 5000
 
 struct punch_peer {
     int active;
@@ -202,7 +203,7 @@ static void send_match(int fd, const struct punch_peer *destination,
     put_u32(packet + 8, token);
     memcpy(packet + 12, &peer->address.sin_addr.s_addr, 4);
     put_u16(packet + 16, ntohs(peer->address.sin_port));
-    packet[18] = PUNCH_RELAY_MATCH;
+    packet[18] = room_id >= PUNCH_RELAY_ROOM_MIN ? PUNCH_RELAY_MATCH : 0;
     packet[19] = 0;
     sendto(fd, packet, sizeof(packet), 0,
            (const struct sockaddr *)&destination->address, sizeof(destination->address));
@@ -216,6 +217,7 @@ static void relay_packet(int fd, const struct sockaddr_in *source,
         struct punch_room *room = &rooms[i];
         struct punch_peer *peer = NULL;
         if (!room->active) continue;
+        if (room->room_id < PUNCH_RELAY_ROOM_MIN) continue;
         if (room->host.active && same_address(&room->host.address, source))
             peer = &room->guest;
         else if (room->guest.active && same_address(&room->guest.address, source))

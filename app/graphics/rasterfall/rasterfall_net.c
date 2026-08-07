@@ -381,7 +381,7 @@ static int punch_packet(const unsigned char *p, int size, int type)
 static int punch_send_register(struct rasterfall_net *net)
 {
     unsigned char packet[12];
-    uint32_t nonce = net->public_token;
+    uint32_t nonce = net->public_nonce;
     packet[0] = 'R'; packet[1] = 'F'; packet[2] = 'P'; packet[3] = '2';
     packet[4] = PUNCH_VERSION; packet[5] = PUNCH_REGISTER;
     put_u16(packet + 6, (unsigned int)net->public_room_id);
@@ -484,7 +484,9 @@ int rasterfall_net_public_host(struct rasterfall_net *net, int room_id,
     net->public_server.sin_port = htons(RASTERFALL_NET_PUNCH_PORT);
     net->public_server.sin_addr.s_addr = inet_addr(RASTERFALL_NET_PUNCH_SERVER);
     net->public_room = 1; net->public_room_id = room_id;
-    net->public_token = (uint32_t)net_monotonic_ms();
+    net->public_nonce = (uint32_t)net_monotonic_ms();
+    if (!net->public_nonce) net->public_nonce = 1;
+    net->public_token = net->public_nonce;
     net->mode = RASTERFALL_NET_HOST;
     if (spawn) {
         memcpy(&net->peer_spawn, spawn, sizeof(*spawn));
@@ -503,7 +505,9 @@ int rasterfall_net_public_connect(struct rasterfall_net *net, int room_id)
     net->public_server.sin_port = htons(RASTERFALL_NET_PUNCH_PORT);
     net->public_server.sin_addr.s_addr = inet_addr(RASTERFALL_NET_PUNCH_SERVER);
     net->public_room = 1; net->public_room_id = room_id;
-    net->public_token = (uint32_t)net_monotonic_ms();
+    net->public_nonce = (uint32_t)net_monotonic_ms();
+    if (!net->public_nonce) net->public_nonce = 1;
+    net->public_token = net->public_nonce;
     net->mode = RASTERFALL_NET_CLIENT;
     net->last_public_register_ms = 0;
     return punch_send_register(net);
