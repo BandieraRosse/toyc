@@ -859,12 +859,13 @@ void rasterfall_net_poll(struct rasterfall_net *net)
         }
         if (net->public_room && punch_packet(packet, (int)received, PUNCH_PROBE)) {
             if (received < 10 || get_u32(packet + 6) != net->public_token) continue;
-            if (!net->peer_known) {
-                memcpy(&net->peer, &source, sizeof(source));
-                net->peer_known = 1;
-            }
+            /* NAT 可能在从协调服务器切换到对端后重新分配源端口；
+             * 探测包已经带有房间令牌，因此可安全地刷新真实 endpoint。 */
+            memcpy(&net->peer, &source, sizeof(source));
+            net->peer_known = 1;
             net->public_matched = 1;
             net->connected = 1;
+            net->last_receive_ms = net_monotonic_ms();
             continue;
         }
         if (packet_header(packet, (int)received, &type, &payload_size,
@@ -878,8 +879,11 @@ void rasterfall_net_poll(struct rasterfall_net *net)
                 net->peer_known = 1;
                 net->connected = 1;
                 memcpy(&net->peer_camera, &net->peer_spawn, sizeof(net->peer_camera));
-            } else if (!same_peer(&net->peer, &source)) {
+            } else if (!net->public_room && !same_peer(&net->peer, &source)) {
                 continue;
+            } else if (net->public_room) {
+                /* 以已打洞成功的实际来源为准，适配 endpoint-dependent NAT。 */
+                memcpy(&net->peer, &source, sizeof(source));
             }
             if (type == RASTERFALL_NET_INPUT &&
                 sequence > net->last_input_sequence &&
@@ -896,7 +900,10 @@ void rasterfall_net_poll(struct rasterfall_net *net)
                 net_ack_remote_events(net, ack);
             }
         } else if (net->mode == RASTERFALL_NET_CLIENT) {
-            if (!same_peer(&net->peer, &source)) continue;
+            if (net->public_room) {
+                memcpy(&net->peer, &source, sizeof(source));
+                net->peer_known = 1;
+            } else if (!same_peer(&net->peer, &source)) continue;
             if (type == RASTERFALL_NET_SNAPSHOT &&
                 sequence > net->receive_sequence &&
                 decode_snapshot(packet + NET_HEADER_SIZE, payload_size, net) == 0)
