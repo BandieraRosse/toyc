@@ -68,12 +68,12 @@ int main(void)
           tlibc_inet_addr(0) == 0xFFFFFFFFU);
 
     /* ── tlibc_inet_ntoa ──
-     * 测试 s_addr > INT_MAX 的值 */
+     * 通过 inet_addr 生成网络字节序，避免把主机整数表示误当作网络值。 */
     {
         struct in_addr in;
         const char *s;
 
-        in.s_addr = 0x7F000001U;  /* 127.0.0.1 in network byte order */
+        in.s_addr = tlibc_inet_addr("127.0.0.1");
         s = tlibc_inet_ntoa(in);
         check("inet_ntoa 127.0.0.1",
               s[0]=='1' && s[1]=='2' && s[2]=='7' && s[3]=='.' &&

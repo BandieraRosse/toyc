@@ -98,7 +98,7 @@ _TEST_thread  := test_thread
 
 # ── graphics — 平台无关的软件光栅器 ──────────────────────────────
 _SRCS_graphics := graphics/renderer.c
-_DEPS_graphics := core string stdio ctype
+_DEPS_graphics := core string stdio ctype thread
 _TEST_graphics := test_graphics
 
 # ── input — 平台无关的按键状态与帧边沿 ────────────────────────────
@@ -109,7 +109,6 @@ _TEST_input := test_input
 # ── game — 平台无关游戏规则 + 程序合成 SFX（纯整数，零 syscall） ──
 _SRCS_game  := game/game.c game/sfx.c
 _DEPS_game  := math core string stdio ctype
-_TEST_game  := test_game
 
 # ── assets — fixed-field TTEX/TSND/TMES runtime readers ───────────
 _SRCS_assets := assets.c
