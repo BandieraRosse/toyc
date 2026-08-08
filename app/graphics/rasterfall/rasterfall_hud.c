@@ -143,8 +143,21 @@ void rasterfall_hud_render(struct toy_surface *surface, int fps,
         fb_draw_string((unsigned char *)surface->pixels, 8, 8 + FB_FONT_H * 3,
                        "RELOADING...", 0xD88A32, surface->stride);
     if (game->player_down) {
-        fb_draw_string((unsigned char *)surface->pixels, 8, hint_y,
-                       "DOWN - WAIT FOR REVIVE", 0xF03030, surface->stride);
+        if (game->player_revive_progress_ms > 0) {
+            snprintf(line, sizeof(line), "BEING REVIVED %d%%",
+                     game->player_revive_progress_ms * 100 /
+                     TOY_GAME_REVIVE_MS);
+            fb_draw_string((unsigned char *)surface->pixels, 8, hint_y,
+                           line, 0x70D8FF, surface->stride);
+        } else if (state->net && state->net->mode == RASTERFALL_NET_CLIENT &&
+            state->net->players[0].active)
+            fb_draw_string((unsigned char *)surface->pixels, 8, hint_y,
+                           "DOWN - SPECTATING PLAYER 1", 0xF03030,
+                           surface->stride);
+        else
+            fb_draw_string((unsigned char *)surface->pixels, 8, hint_y,
+                           "DOWN - WAIT FOR REVIVE", 0xF03030,
+                           surface->stride);
     } else if (state->ai_revive_active && ai->state == TOY_GAME_ACTOR_DOWNED) {
         snprintf(line, sizeof(line), "REVIVING JESUS %d%%",
                  ai->revive_progress_ms * 100 / TOY_GAME_REVIVE_MS);

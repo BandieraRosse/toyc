@@ -594,6 +594,25 @@ static int run_logic_test(void)
         if (game.goal_hold_ms <= 0) return 61;
         if (game.state != TOY_GAME_PLAYING) return 62;
     }
+    /* 联机胜负由主机统一判定：终点进度必须同时满足第二名玩家，且
+     * 双方倒下才进入失败状态。 */
+    {
+        int goal_x = game.safe_rooms[game.safe_room_count - 1].minx + 100;
+        int goal_z = game.safe_rooms[game.safe_room_count - 1].minz + 100;
+        game.state = TOY_GAME_PLAYING;
+        game.goal_hold_ms = 0;
+        game.px = goal_x; game.pz = goal_z;
+        toy_game_set_secondary_player_state(&game, 1, goal_x + 3000,
+                                            goal_z + 3000, 0);
+        toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
+        if (game.goal_hold_ms != 0) return 70;
+        toy_game_set_secondary_player_state(&game, 1, goal_x, goal_z, 0);
+        game.player_down = 1;
+        toy_game_set_secondary_player_state(&game, 1, goal_x, goal_z, 1);
+        toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
+        if (game.state != TOY_GAME_OVER) return 71;
+        toy_game_set_secondary_player_state(&game, 0, 0, 0, 0);
+    }
     __printf("rasterfall: logic test passed\n");
     return 0;
 }

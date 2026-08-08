@@ -9,7 +9,7 @@
 #define RASTERFALL_NET_DEFAULT_PORT 28460
 #define RASTERFALL_NET_MAX_PACKET 2600
 #define RASTERFALL_NET_MAX_SNAPSHOT 4096
-#define RASTERFALL_NET_PROTOCOL_VERSION 10
+#define RASTERFALL_NET_PROTOCOL_VERSION 11
 #define RASTERFALL_NET_MAX_ACTORS 8
 #define RASTERFALL_NET_PLAYER_MAX 2
 #define RASTERFALL_NET_EVENT_QUEUE_MAX 64
@@ -64,6 +64,8 @@ struct rasterfall_net_player {
     int hp;
     int weapon;
     int state;
+    int downed;
+    int revive_progress_ms;
     int current_slot;
     /* The active weapon is not enough to restore the inventory after a
      * remote pickup: the other slot may have changed while it was inactive. */
@@ -124,6 +126,13 @@ struct rasterfall_net {
     int peer_current_slot;
     int peer_hp;
     int peer_state;
+    int peer_down;
+    int peer_revive_progress_ms;
+    int peer_revive_active;
+    int peer_host_revive_active;
+    int peer_host_revive_progress_ms;
+    int local_revive_peer_active;
+    int local_revive_peer_progress_ms;
     int peer_reloading;
     int peer_reload_timer_ms;
     int peer_fire_cooldown_ms;
@@ -224,6 +233,11 @@ void rasterfall_net_apply_remote(struct rasterfall_net *net,
 void rasterfall_net_reconcile_client(struct rasterfall_net *net,
                                      struct rasterfall_session *session,
                                      struct camera *camera);
+void rasterfall_net_apply_local_rescue(struct rasterfall_net *net,
+                                       struct rasterfall_session *session,
+                                       const struct camera *host_camera,
+                                       int interact_pressed, int dt_ms);
+void rasterfall_net_reset_host(struct rasterfall_net *net);
 int rasterfall_net_self_test(void);
 
 #endif

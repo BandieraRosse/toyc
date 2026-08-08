@@ -264,9 +264,28 @@ int rasterfall_session_revive_remote(struct rasterfall_session *session,
                                      const struct camera *camera, int dt_ms)
 {
     int actor_index = -1;
-    if (!session || !camera || session->game_state.player_down) return 0;
-    if (!session_near_ai(session, camera, &actor_index)) return 0;
+    if (!session || !camera || session->game_state.player_down) return -1;
+    if (!session_near_ai(session, camera, &actor_index)) return -1;
     return toy_game_revive_actor(&session->game_state, actor_index, dt_ms);
+}
+
+int rasterfall_session_revive_player(struct rasterfall_session *session,
+                                     const struct camera *rescuer,
+                                     const struct camera *target,
+                                     int *progress_ms, int dt_ms)
+{
+    long dx, dz;
+    if (!session || !rescuer || !target || !progress_ms || dt_ms <= 0)
+        return -1;
+    dx = (long)rescuer->x - target->x;
+    dz = (long)rescuer->z - target->z;
+    if (dx * dx + dz * dz >
+        (long)RASTERFALL_INTERACT_RANGE * RASTERFALL_INTERACT_RANGE)
+        return -1;
+    *progress_ms += dt_ms;
+    if (*progress_ms < TOY_GAME_REVIVE_MS) return 0;
+    *progress_ms = 0;
+    return 1;
 }
 
 int rasterfall_session_compute_highlight(const struct rasterfall_session *session,

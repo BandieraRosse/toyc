@@ -311,6 +311,7 @@ struct toy_game {
     /* 联机主机可提供第二名玩家的位置；单机时保持 inactive。 */
     int secondary_player_active;
     int secondary_px, secondary_pz;
+    int secondary_player_down;
     int player_down;
     int player_revive_progress_ms;
     int ai_context_actor_index;
@@ -348,6 +349,8 @@ void toy_game_set_alarm(struct toy_game *g,
                         int spawn_zone_index);
 void toy_game_set_secondary_player(struct toy_game *g, int active,
                                    int px, int pz);
+void toy_game_set_secondary_player_state(struct toy_game *g, int active,
+                                         int px, int pz, int down);
 int  toy_game_point_in_box(int x, int z, const struct toy_game_box *box);
 int  toy_game_position_blocked(const struct toy_game *g,
                                int x, int z, int radius);

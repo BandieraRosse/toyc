@@ -82,6 +82,10 @@ void rasterfall_session_interact_remote(struct rasterfall_session *session,
                                          const struct camera *camera);
 int rasterfall_session_revive_remote(struct rasterfall_session *session,
                                      const struct camera *camera, int dt_ms);
+int rasterfall_session_revive_player(struct rasterfall_session *session,
+                                     const struct camera *rescuer,
+                                     const struct camera *target,
+                                     int *progress_ms, int dt_ms);
 void rasterfall_camera_rotate(struct camera *camera, int turn, int pitch);
 int rasterfall_session_compute_highlight(const struct rasterfall_session *session,
                                          const struct camera *camera);

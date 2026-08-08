@@ -425,9 +425,16 @@ void toy_game_set_alarm(struct toy_game *g,
 void toy_game_set_secondary_player(struct toy_game *g, int active,
                                    int px, int pz)
 {
+    toy_game_set_secondary_player_state(g, active, px, pz, 0);
+}
+
+void toy_game_set_secondary_player_state(struct toy_game *g, int active,
+                                         int px, int pz, int down)
+{
     g->secondary_player_active = active != 0;
     g->secondary_px = px;
     g->secondary_pz = pz;
+    g->secondary_player_down = down != 0;
 }
 
 /* 圆形碰撞体 (x, z, radius) 是否与房间边界或障碍物重叠 */
@@ -750,7 +757,9 @@ static void update_campaign_goal(struct toy_game *g, int dt_ms)
         return;
     }
     goal = &g->safe_rooms[g->safe_room_count - 1];
-    if (toy_game_point_in_box(g->px, g->pz, goal)) {
+    if (toy_game_point_in_box(g->px, g->pz, goal) &&
+        (!g->secondary_player_active ||
+         toy_game_point_in_box(g->secondary_px, g->secondary_pz, goal))) {
         g->goal_hold_ms += dt_ms;
         if (g->goal_hold_ms >= TOY_GAME_GOAL_HOLD_MS) {
             g->goal_hold_ms = TOY_GAME_GOAL_HOLD_MS;
@@ -859,6 +868,15 @@ static void update_campaign(struct toy_game *g, int dt_ms)
              e->ai_state == TOY_GAME_ENEMY_CHASE ||
              e->ai_state == TOY_GAME_ENEMY_TRACKING))
             g->active_attackers++;
+    }
+    /* In a network session the host owns the result: one downed player can
+     * still be revived, but the round is lost only when both players are
+     * down.  Offline games retain the existing AI-teammate behaviour. */
+    if (g->secondary_player_active && g->player_down &&
+        g->secondary_player_down) {
+        g->state = TOY_GAME_OVER;
+        push_event(g, TOY_GAME_EV_PLAYER_DEATH);
+        return;
     }
     update_campaign_goal(g, dt_ms);
     if (g->state != TOY_GAME_PLAYING) return;
@@ -1143,7 +1161,8 @@ static void update_enemy_ai(struct toy_game *g, struct toy_game_enemy *e,
 
     if (e->retarget_timer_ms > 0) e->retarget_timer_ms -= dt_ms;
     if ((e->target_player == 0 && g->player_down) ||
-        (e->target_player == 1 && !g->secondary_player_active) ||
+        (e->target_player == 1 &&
+         (!g->secondary_player_active || g->secondary_player_down)) ||
         (e->target_player == 2 && !ai_available) ||
         (e->retarget_timer_ms > 0 && e->target_player != 0 &&
          e->target_player != 1 && e->target_player != 2)) {
@@ -1154,7 +1173,7 @@ static void update_enemy_ai(struct toy_game *g, struct toy_game_enemy *e,
     } else if (e->retarget_timer_ms <= 0 || e->target_player < 0) {
         target_player = 0;
         if (g->player_down) target_player = -1;
-        if (g->secondary_player_active &&
+        if (g->secondary_player_active && !g->secondary_player_down &&
             (target_player < 0 || secondary_dist2 < primary_dist2)) {
             target_player = 1;
         }

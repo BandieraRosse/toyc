@@ -345,6 +345,33 @@ static int clampi(int value, int low, int high)
     return value;
 }
 
+static void set_network_spectator_camera(struct camera *camera,
+                                         const struct rasterfall_net *net)
+{
+    const struct rasterfall_net_player *target;
+    int distance = 1250;
+    if (!camera || !net) return;
+    if (net->mode == RASTERFALL_NET_CLIENT && net->players[1].downed &&
+        net->players[0].active) {
+        target = &net->players[0];
+    } else if (net->mode == RASTERFALL_NET_HOST && game.player_down &&
+               net->peer_known && net->connected && !net->peer_down) {
+        camera->x = net->peer_camera.x - net->peer_camera.sy * distance / 1024;
+        camera->z = net->peer_camera.z - net->peer_camera.cy * distance / 1024;
+        camera->sy = net->peer_camera.sy;
+        camera->cy = net->peer_camera.cy;
+        camera->pitch_sy = net->peer_camera.pitch_sy;
+        camera->pitch_cy = net->peer_camera.pitch_cy;
+        return;
+    } else return;
+    camera->x = target->camera.x - target->camera.sy * distance / 1024;
+    camera->z = target->camera.z - target->camera.cy * distance / 1024;
+    camera->sy = target->camera.sy;
+    camera->cy = target->camera.cy;
+    camera->pitch_sy = target->camera.pitch_sy;
+    camera->pitch_cy = target->camera.pitch_cy;
+}
+
 static void put_pixel(struct toy_surface *surface, int x, int y, uint32_t color)
 {
     uint32_t *row = (uint32_t *)((unsigned char *)surface->pixels +
@@ -1673,17 +1700,20 @@ static int render_network_teammate(struct toy_renderer *renderer,
 {
     const struct camera *remote = NULL;
     int muzzle_flash = 0;
+    int downed = 0;
     if (net->mode == RASTERFALL_NET_HOST && net->peer_known) {
         remote = &net->peer_camera;
         muzzle_flash = net->peer_muzzle_flash_ms;
+        downed = net->peer_down;
     } else if (net->mode == RASTERFALL_NET_CLIENT && net->players[0].active) {
         remote = &net->players[0].camera;
         muzzle_flash = net->players[0].muzzle_flash_ms;
+        downed = net->players[0].downed;
     }
     if (!remote) return 0;
     return render_player_avatar(renderer, camera, remote->x, remote->z,
                                 remote->sy, remote->cy, muzzle_flash,
-                                0x386B96, 0);
+                                0x386B96, downed);
 }
 
 static void render_network_teammate_status(struct toy_renderer *renderer,
@@ -1692,16 +1722,21 @@ static void render_network_teammate_status(struct toy_renderer *renderer,
 {
     const struct camera *remote = NULL;
     int hp = 0;
+    int downed = 0, revive_ms = 0;
     if (net->mode == RASTERFALL_NET_HOST && net->peer_known) {
         remote = &net->peer_camera;
         hp = net->peer_hp;
+        downed = net->peer_down;
+        revive_ms = net->peer_revive_progress_ms;
     } else if (net->mode == RASTERFALL_NET_CLIENT && net->players[0].active) {
         remote = &net->players[0].camera;
         hp = net->players[0].hp;
+        downed = net->players[0].downed;
+        revive_ms = net->players[0].revive_progress_ms;
     }
     if (!remote) return;
     render_actor_status(renderer, camera, remote->x, remote->z, 700,
-                        "PLAYER 2", hp, 100, hp <= 0, 0, 0x70D8FF);
+                        "PLAYER 2", hp, 100, downed, revive_ms, 0x70D8FF);
 }
 
 /* ── 子弹轨迹与命中粒子（纯视觉；逻辑步进 16ms 推进） ──────────── */
@@ -2018,9 +2053,12 @@ static int render_particles(struct toy_renderer *renderer, const struct camera *
     return pixels;
 }
 
-static void draw_game_over_panel(struct toy_surface *surface)
+static void draw_game_over_panel(struct toy_surface *surface, int network_client)
 {
     char line[96];
+    const char *prompt = network_client ?
+                         "WAIT FOR HOST   Esc quit" :
+                         "R restart   Esc quit";
     int panel_w = surface->width / 3;
     int panel_h = surface->height / 3;
     int x = (surface->width - panel_w) / 2;
@@ -2035,13 +2073,16 @@ static void draw_game_over_panel(struct toy_surface *surface)
                    x + (panel_w - FB_FONT_W * (int)strlen(line)) / 2, y + 60,
                    line, 0xE7E9EC, surface->stride);
     fb_draw_string((unsigned char *)surface->pixels,
-                   x + (panel_w - FB_FONT_W * 21) / 2, y + 104,
-                   "R restart   Esc quit", 0xD88A32, surface->stride);
+                   x + (panel_w - FB_FONT_W * (int)strlen(prompt)) / 2,
+                   y + 104, prompt, 0xD88A32, surface->stride);
 }
 
-static void draw_level_won_panel(struct toy_surface *surface)
+static void draw_level_won_panel(struct toy_surface *surface, int network_client)
 {
     char line[96];
+    const char *prompt = network_client ?
+                         "WAIT FOR HOST   Esc quit" :
+                         "R restart   Esc quit";
     int panel_w = surface->width / 3;
     int panel_h = surface->height / 3;
     int x = (surface->width - panel_w) / 2;
@@ -2056,8 +2097,8 @@ static void draw_level_won_panel(struct toy_surface *surface)
                    x + (panel_w - FB_FONT_W * (int)strlen(line)) / 2, y + 60,
                    line, 0xE7E9EC, surface->stride);
     fb_draw_string((unsigned char *)surface->pixels,
-                   x + (panel_w - FB_FONT_W * 21) / 2, y + 104,
-                   "R restart   Esc quit", 0xD88A32, surface->stride);
+                   x + (panel_w - FB_FONT_W * (int)strlen(prompt)) / 2,
+                   y + 104, prompt, 0xD88A32, surface->stride);
 }
 
 static void draw_input_debug(struct toy_surface *surface,
@@ -2552,6 +2593,12 @@ startup_again:
             if (!paused) {
                 struct rasterfall_command command;
                 rasterfall_effects_update(&effects, FIXED_STEP_US / 1000);
+                if (net.mode == RASTERFALL_NET_HOST && game.player_down) {
+                    /* The render-only spectator camera must not become the
+                     * authoritative body position on the next tick. */
+                    camera.x = game.px;
+                    camera.z = game.pz;
+                }
                 if (game.state == TOY_GAME_PLAYING &&
                     !(net.mode == RASTERFALL_NET_CLIENT && !net.connected)) {
                     build_game_command(&command, &input, &settings, fire_edge,
@@ -2564,12 +2611,18 @@ startup_again:
                     else {
                         /* Feed the last authoritative remote position into
                          * the host AI before this tick chooses its target. */
-                        toy_game_set_secondary_player(&game,
+                        toy_game_set_secondary_player_state(&game,
                             net.mode == RASTERFALL_NET_HOST &&
                             net.peer_known && net.connected,
-                            net.peer_camera.x, net.peer_camera.z);
+                            net.peer_camera.x, net.peer_camera.z,
+                            net.peer_down);
                         rasterfall_session_step(&session, &camera, &command,
                                                 FIXED_STEP_US / 1000);
+                        if (net.mode == RASTERFALL_NET_HOST)
+                            rasterfall_net_apply_local_rescue(
+                                &net, &session, &camera,
+                                (command.buttons & RASTERFALL_CMD_INTERACT) != 0,
+                                FIXED_STEP_US / 1000);
                     }
                     if (net.mode == RASTERFALL_NET_CLIENT)
                         rasterfall_net_send_command(&net, &command, &camera);
@@ -2582,10 +2635,15 @@ startup_again:
                     /* 死亡或通关结算：R 重开 */
                     memset(&command, 0, sizeof(command));
                     command.buttons = RASTERFALL_CMD_RESET;
-                    rasterfall_session_step(&session, &camera, &command,
-                                            FIXED_STEP_US / 1000);
-                    if (net.mode == RASTERFALL_NET_CLIENT)
+                    if (net.mode == RASTERFALL_NET_CLIENT) {
+                        /* Reset is host-authoritative; wait for its snapshot. */
                         rasterfall_net_send_command(&net, &command, &camera);
+                    } else {
+                        rasterfall_session_step(&session, &camera, &command,
+                                                FIXED_STEP_US / 1000);
+                        if (net.mode == RASTERFALL_NET_HOST)
+                            rasterfall_net_reset_host(&net);
+                    }
                     input.key_pressed[KEY_R] = 0;
                     fire_edge = 0;
                     shove_edge = 0;
@@ -2678,6 +2736,7 @@ startup_again:
             rasterfall_perf_end_stage(&stats, &stats_total, RASTERFALL_STATS_BEGIN,
                            &t_stage, 0, 0);
             prev_tris = renderer.submitted_triangles;
+            set_network_spectator_camera(&camera, &net);
             scene_pixels = render_scene(&renderer, &camera);
             rasterfall_perf_end_stage(&stats, &stats_total, RASTERFALL_STATS_SCENE, &t_stage,
                            renderer.submitted_triangles - prev_tris, 0);
@@ -2701,11 +2760,15 @@ startup_again:
             stage_pixels += render_tracers(&renderer, &camera);
             stage_pixels += render_particles(&renderer, &camera);
             /* 第一人称武器：最后画，叠加在世界之上 */
-            stage_pixels += rasterfall_viewmodel_render(&renderer, &game, &effects);
+            if (!game.player_down)
+                stage_pixels += rasterfall_viewmodel_render(&renderer, &game,
+                                                            &effects);
             if (game.state == TOY_GAME_OVER) {
-                draw_game_over_panel(&surface);
+                draw_game_over_panel(&surface,
+                                     net.mode == RASTERFALL_NET_CLIENT);
             } else if (game.state == TOY_GAME_WON) {
-                draw_level_won_panel(&surface);
+                draw_level_won_panel(&surface,
+                                     net.mode == RASTERFALL_NET_CLIENT);
             } else if (paused) {
                 draw_pause_overlay(&surface, &pause_menu, &settings);
             } else {
