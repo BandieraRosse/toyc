@@ -8,7 +8,8 @@
 
 #define RASTERFALL_NET_DEFAULT_PORT 28460
 #define RASTERFALL_NET_MAX_PACKET 2600
-#define RASTERFALL_NET_PROTOCOL_VERSION 9
+#define RASTERFALL_NET_MAX_SNAPSHOT 4096
+#define RASTERFALL_NET_PROTOCOL_VERSION 10
 #define RASTERFALL_NET_MAX_ACTORS 8
 #define RASTERFALL_NET_PLAYER_MAX 2
 #define RASTERFALL_NET_EVENT_QUEUE_MAX 64
@@ -27,7 +28,8 @@ enum rasterfall_net_packet_type {
     RASTERFALL_NET_HELLO = 1,
     RASTERFALL_NET_INPUT,
     RASTERFALL_NET_SNAPSHOT,
-    RASTERFALL_NET_AI_FIRE
+    RASTERFALL_NET_AI_FIRE,
+    RASTERFALL_NET_SNAPSHOT_PART
 };
 
 struct rasterfall_net_room {
@@ -163,6 +165,12 @@ struct rasterfall_net {
     int snapshot_air_walls_enabled;
     int snapshot_manual_alarm_enabled;
     int snapshot_ready;
+    /* 快照在应用层分片，避免依赖 IP 分片；下一次完整快照会覆盖未完成的组。 */
+    uint32_t snapshot_part_sequence;
+    int snapshot_part_count;
+    int snapshot_part_total_size;
+    unsigned int snapshot_part_mask;
+    unsigned char snapshot_part_buffer[RASTERFALL_NET_MAX_SNAPSHOT];
     int connected;
     int rtt_ms;
     uint32_t last_command_sequence;

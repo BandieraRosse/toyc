@@ -18,6 +18,8 @@
 #define NET_SNAPSHOT_BASE 8
 #define NET_INPUT_HOLD_TICKS 15
 #define NET_AI_FIRE_BASE 6
+#define NET_SNAPSHOT_PART_BASE 10
+#define NET_SNAPSHOT_FRAGMENT_DATA 1000
 
 static long net_monotonic_ms(void)
 {
@@ -811,7 +813,8 @@ int rasterfall_net_send_snapshot(struct rasterfall_net *net,
                                  int manual_alarm_timer_ms)
 {
     unsigned char packet[RASTERFALL_NET_MAX_PACKET];
-    unsigned char *p = packet + NET_HEADER_SIZE;
+    unsigned char snapshot[RASTERFALL_NET_MAX_SNAPSHOT];
+    unsigned char *p = snapshot;
     int weapon = game->slots[game->current_slot].weapon;
     int peer_weapon = net->peer_slots[net->peer_current_slot].weapon;
     int event_count;
@@ -828,11 +831,10 @@ int rasterfall_net_send_snapshot(struct rasterfall_net *net,
                        RASTERFALL_NET_PLAYER_MAX * NET_PLAYER_SIZE + 1 +
                        actor_count * NET_ACTOR_SIZE +
                        TOY_GAME_MAX_ENEMIES * NET_ENEMY_SIZE + NET_EVENT_SIZE + NET_WORLD_SIZE;
-    int size;
+    int size, offset, part_count, part_index;
     if (net->mode != RASTERFALL_NET_HOST || !net->peer_known) return -1;
-    size = packet_begin(packet, RASTERFALL_NET_SNAPSHOT, payload_size,
-                        ++net->send_sequence, net->receive_sequence);
-    net->last_snapshot_sequence = net->send_sequence;
+    if (payload_size > RASTERFALL_NET_MAX_SNAPSHOT) return -1;
+    net->last_snapshot_sequence = ++net->send_sequence;
     net->last_snapshot_sent_ms = net_monotonic_ms();
     put_u32(p, net->tick);
     p[4] = RASTERFALL_NET_PLAYER_MAX;
@@ -892,7 +894,28 @@ int rasterfall_net_send_snapshot(struct rasterfall_net *net,
     net->remote_event_snapshot_sequence = net->last_snapshot_sequence;
     if (event_count)
         net->remote_event_snapshot_last_id = net->remote_event_ids[event_count - 1];
-    if (net_send(net, packet, size) < 0) return -1;
+    part_count = (payload_size + NET_SNAPSHOT_FRAGMENT_DATA - 1) /
+                 NET_SNAPSHOT_FRAGMENT_DATA;
+    if (part_count <= 0 || part_count > 32) return -1;
+    for (part_index = 0, offset = 0; part_index < part_count;
+         part_index++, offset += NET_SNAPSHOT_FRAGMENT_DATA) {
+        int chunk = payload_size - offset;
+        unsigned char *part;
+        if (chunk > NET_SNAPSHOT_FRAGMENT_DATA) chunk = NET_SNAPSHOT_FRAGMENT_DATA;
+        size = packet_begin(packet, RASTERFALL_NET_SNAPSHOT_PART,
+                            NET_SNAPSHOT_PART_BASE + chunk,
+                            net->last_snapshot_sequence,
+                            net->receive_sequence);
+        if (size < 0) return -1;
+        part = packet + NET_HEADER_SIZE;
+        put_u16(part, (unsigned int)payload_size);
+        put_u16(part + 2, (unsigned int)offset);
+        put_u16(part + 4, (unsigned int)chunk);
+        put_u16(part + 6, (unsigned int)part_index);
+        put_u16(part + 8, (unsigned int)part_count);
+        memcpy(part + NET_SNAPSHOT_PART_BASE, snapshot + offset, (size_t)chunk);
+        if (net_send(net, packet, size) < 0) return -1;
+    }
     return send_ai_fire_packets(net, game);
 }
 
@@ -965,6 +988,48 @@ static int decode_snapshot(const unsigned char *payload, int size,
     net->snapshot_world_alarm_triggered = get_i16(world_data + 26);
     net->snapshot_world_campaign_stage = get_i16(world_data + 28);
     net->snapshot_ready = 1;
+    return 0;
+}
+
+static int decode_snapshot_part(const unsigned char *payload, int size,
+                                uint32_t sequence, struct rasterfall_net *net)
+{
+    int total_size, offset, chunk, part_index, part_count;
+    unsigned int expected_mask;
+    if (size < NET_SNAPSHOT_PART_BASE) return -1;
+    total_size = (int)get_u16(payload);
+    offset = (int)get_u16(payload + 2);
+    chunk = (int)get_u16(payload + 4);
+    part_index = (int)get_u16(payload + 6);
+    part_count = (int)get_u16(payload + 8);
+    if (total_size <= 0 || total_size > RASTERFALL_NET_MAX_SNAPSHOT ||
+        chunk <= 0 || chunk > NET_SNAPSHOT_FRAGMENT_DATA ||
+        size != NET_SNAPSHOT_PART_BASE + chunk || part_count <= 0 ||
+        part_count > 32 || part_index < 0 || part_index >= part_count ||
+        offset != part_index * NET_SNAPSHOT_FRAGMENT_DATA ||
+        offset + chunk > total_size) return -1;
+    if (sequence < net->receive_sequence ||
+        (net->snapshot_part_sequence &&
+         sequence < net->snapshot_part_sequence)) return 0;
+    if (sequence != net->snapshot_part_sequence ||
+        total_size != net->snapshot_part_total_size ||
+        part_count != net->snapshot_part_count) {
+        net->snapshot_part_sequence = sequence;
+        net->snapshot_part_total_size = total_size;
+        net->snapshot_part_count = part_count;
+        net->snapshot_part_mask = 0;
+    }
+    memcpy(net->snapshot_part_buffer + offset, payload + NET_SNAPSHOT_PART_BASE,
+           (size_t)chunk);
+    net->snapshot_part_mask |= 1U << part_index;
+    expected_mask = part_count == 32 ? 0xffffffffU : ((1U << part_count) - 1U);
+    if (net->snapshot_part_mask != expected_mask) return 0;
+    if (decode_snapshot(net->snapshot_part_buffer, total_size, net) < 0) {
+        net->snapshot_part_mask = 0;
+        return -1;
+    }
+    net->receive_sequence = sequence;
+    net->snapshot_part_mask = 0;
     return 0;
 }
 
@@ -1142,11 +1207,17 @@ void rasterfall_net_poll(struct rasterfall_net *net)
                 decode_ai_fire(packet + NET_HEADER_SIZE, payload_size, net) == 0) {
                 /* AI fire packets are visual companions to snapshots and do
                  * not participate in snapshot ordering. */
+            } else if (type == RASTERFALL_NET_SNAPSHOT_PART &&
+                       decode_snapshot_part(packet + NET_HEADER_SIZE,
+                                             payload_size, sequence, net) == 0) {
+                /* A snapshot becomes visible only after every application
+                 * fragment has arrived. */
             } else if (type == RASTERFALL_NET_SNAPSHOT &&
-                sequence > net->receive_sequence &&
-                decode_snapshot(packet + NET_HEADER_SIZE, payload_size, net) == 0)
+                       sequence > net->receive_sequence &&
+                       decode_snapshot(packet + NET_HEADER_SIZE, payload_size, net) == 0)
                 net->receive_sequence = sequence;
-            if (type == RASTERFALL_NET_SNAPSHOT) {
+            if (type == RASTERFALL_NET_SNAPSHOT ||
+                type == RASTERFALL_NET_SNAPSHOT_PART) {
                 net->connected = 1;
                 if (ack == net->last_command_sequence && net->last_command_sent_ms) {
                     long elapsed = net_monotonic_ms() - net->last_command_sent_ms;
