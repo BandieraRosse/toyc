@@ -25,6 +25,8 @@ void rasterfall_render_bake_lightmap(void);
 
 int rasterfall_render_scene(struct toy_renderer *renderer,
                             const struct camera *camera);
+void rasterfall_render_sign_text(struct toy_surface *surface,
+                                 const struct camera *camera);
 int rasterfall_render_interactables(struct toy_renderer *renderer,
                                     const struct camera *camera);
 int rasterfall_render_enemies(struct toy_renderer *renderer,
@@ -45,4 +47,3 @@ int rasterfall_render_particles(struct toy_renderer *renderer,
                                 const struct camera *camera);
 
 #endif
-

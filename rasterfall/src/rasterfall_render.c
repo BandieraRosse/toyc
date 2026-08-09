@@ -471,32 +471,45 @@ static int render_world_sign(struct toy_renderer *renderer,
                              const struct camera *camera,
                              const struct toy_map_draw *sign)
 {
-    const int text_scale = 2;
     int x = (sign->a + sign->b) / 2;
     int z = (sign->c + sign->d) / 2;
     int pixels = 0;
-    struct vec3 world, view;
-    struct toy_screen_vertex screen;
     pixels += draw_cuboid(renderer, camera, x - 18, x + 18,
                           sign->e - 220, sign->e, z - 18, z + 18, 0x4B3526);
     pixels += draw_cuboid(renderer, camera, sign->a, sign->b,
                           sign->e, sign->f, sign->c, sign->d, sign->color);
-    world.x = x; world.y = (sign->e + sign->f) / 2; world.z = z;
-    world_to_view(camera, &world, &view);
-    /* The board faces +Z; print the string only when viewed from that side. */
-    if (view.z >= NEAR_Z && camera->z > z && sign->text[0]) {
-        int width = (int)strlen(sign->text) * FB_FONT_W * text_scale;
-        int height = FB_FONT_H * text_scale;
-        project_vertex(&renderer->surface, &view, &screen);
-        screen.x -= width / 2;
-        screen.y -= height / 2;
-        if (screen.x >= 0 && screen.x + width < renderer->surface.width &&
-            screen.y >= 0 && screen.y + height < renderer->surface.height)
-            fb_draw_string_scaled((unsigned char *)renderer->surface.pixels,
-                                  screen.x, screen.y, sign->text, 0xFFF0C0,
-                                  renderer->surface.stride, text_scale);
-    }
+    /* The label is drawn after the world geometry has flushed.  Drawing it
+     * here writes directly to the framebuffer while the board is still in
+     * the command buffer, so the board overwrites the text. */
     return pixels;
+}
+
+static void render_world_sign_text(struct toy_surface *surface,
+                                   const struct camera *camera,
+                                   const struct toy_map_draw *sign)
+{
+    const int text_scale = 2;
+    int x = (sign->a + sign->b) / 2;
+    int z = (sign->c + sign->d) / 2;
+    struct vec3 world, view;
+    struct toy_screen_vertex screen;
+    int width, height;
+    if (!sign->text[0] || camera->z <= z) return;
+    /* +Z is the board front.  This tiny lift prevents coplanar text from
+     * fighting the board and also makes the intended surface explicit. */
+    world.x = x; world.y = (sign->e + sign->f) / 2; world.z = z + 24;
+    world_to_view(camera, &world, &view);
+    if (view.z < NEAR_Z) return;
+    width = (int)strlen(sign->text) * FB_FONT_W * text_scale;
+    height = FB_FONT_H * text_scale;
+    project_vertex(surface, &view, &screen);
+    screen.x -= width / 2;
+    screen.y -= height / 2;
+    if (screen.x >= 0 && screen.x + width < surface->width &&
+        screen.y >= 0 && screen.y + height < surface->height)
+        fb_draw_string_scaled((unsigned char *)surface->pixels,
+                              screen.x, screen.y, sign->text, 0xFFF0C0,
+                              surface->stride, text_scale);
 }
 
 static int render_block_enemy(struct toy_renderer *, const struct camera *,
@@ -549,6 +562,41 @@ static int draw_cuboid(struct toy_renderer *renderer, const struct camera *camer
     pixels += draw_quad(renderer, camera, &c, &d, &h, &g, color);
     pixels += draw_quad(renderer, camera, &d, &a, &e, &h, color + 0x080808);
     pixels += draw_quad(renderer, camera, &e, &f, &g, &h, color + 0x181818);
+    return pixels;
+}
+
+/* 角色局部坐标的立体盒：local X 为角色右侧，local Z 为面朝方向。
+ * 与 draw_cuboid 不同，它的八个顶点会随 actor 的 sy/cy 一起旋转。 */
+static int draw_actor_box(struct toy_renderer *renderer,
+                          const struct camera *camera, int x, int z,
+                          int sy, int cy, int x0, int x1,
+                          int y0, int y1, int z0, int z1,
+                          uint32_t color)
+{
+    struct vec3 a, b, c, d, e, f, g, h;
+    int pixels = 0;
+    int cx0 = x + (cy * x0 + sy * z0) / 1024;
+    int cz0 = z + (-sy * x0 + cy * z0) / 1024;
+    int cx1 = x + (cy * x1 + sy * z0) / 1024;
+    int cz1 = z + (-sy * x1 + cy * z0) / 1024;
+    int cx2 = x + (cy * x1 + sy * z1) / 1024;
+    int cz2 = z + (-sy * x1 + cy * z1) / 1024;
+    int cx3 = x + (cy * x0 + sy * z1) / 1024;
+    int cz3 = z + (-sy * x0 + cy * z1) / 1024;
+    a.x=cx0; a.y=y0+active_actor_lift; a.z=cz0;
+    b.x=cx1; b.y=y0+active_actor_lift; b.z=cz1;
+    c.x=cx2; c.y=y0+active_actor_lift; c.z=cz2;
+    d.x=cx3; d.y=y0+active_actor_lift; d.z=cz3;
+    e=a; e.y=y1+active_actor_lift;
+    f=b; f.y=y1+active_actor_lift;
+    g=c; g.y=y1+active_actor_lift;
+    h=d; h.y=y1+active_actor_lift;
+    pixels += draw_quad(renderer,camera,&a,&b,&f,&e,color);
+    pixels += draw_quad(renderer,camera,&b,&c,&g,&f,color+0x080808);
+    pixels += draw_quad(renderer,camera,&c,&d,&h,&g,color);
+    pixels += draw_quad(renderer,camera,&d,&a,&e,&h,color+0x080808);
+    pixels += draw_quad(renderer,camera,&e,&f,&g,&h,color+0x181818);
+    pixels += draw_quad(renderer,camera,&a,&b,&c,&d,color-0x0C0C0C);
     return pixels;
 }
 
@@ -1206,8 +1254,35 @@ static void render_actor_status(struct toy_renderer *renderer,
 
 static int render_player_avatar(struct toy_renderer *renderer,
                                 const struct camera *camera, int x, int z,
-                                int sy, int cy, int muzzle_flash,
+                                int sy, int cy, int weapon, int muzzle_flash,
                                 uint32_t body_color, int downed);
+
+static int render_actor_weapon(struct toy_renderer *renderer,
+                               const struct camera *camera, int x, int z,
+                               int sy, int cy, int weapon, int muzzle_flash)
+{
+    int pixels = 0;
+    if (weapon < 0) return 0;
+    /* A weapon is a small assembly of solid boxes in actor-local space. */
+    if (weapon == TOY_GAME_WEAPON_SHOTGUN) {
+        pixels += draw_actor_box(renderer,camera,x,z,sy,cy,145,245,-470,-395,-35,95,0x3A434D);
+        pixels += draw_actor_box(renderer,camera,x,z,sy,cy,175,210,-442,-415,85,345,0x2C3138);
+        pixels += draw_actor_box(renderer,camera,x,z,sy,cy,155,210,-398,-285,-15,55,0x2F343B);
+        pixels += draw_actor_box(renderer,camera,x,z,sy,cy,135,185,-405,-310,0,80,0x4A4438);
+    } else if (weapon == TOY_GAME_WEAPON_SMG) {
+        pixels += draw_actor_box(renderer,camera,x,z,sy,cy,140,240,-470,-395,-35,95,0x3B4148);
+        pixels += draw_actor_box(renderer,camera,x,z,sy,cy,178,212,-445,-418,85,320,0x2F343B);
+        pixels += draw_actor_box(renderer,camera,x,z,sy,cy,155,205,-400,-275,-15,65,0x4A4438);
+        pixels += draw_actor_box(renderer,camera,x,z,sy,cy,135,185,-405,-315,0,80,0x6B4A30);
+    } else {
+        pixels += draw_actor_box(renderer,camera,x,z,sy,cy,150,230,-465,-395,-30,70,0x3E4652);
+        pixels += draw_actor_box(renderer,camera,x,z,sy,cy,180,210,-440,-415,60,245,0x2E343D);
+        pixels += draw_actor_box(renderer,camera,x,z,sy,cy,155,205,-400,-285,-10,55,0x252A30);
+    }
+    if (muzzle_flash > 0)
+        pixels += draw_actor_box(renderer,camera,x,z,sy,cy,178,212,-430,-390,330,405,0xFFD060);
+    return pixels;
+}
 
 static void render_ai_teammate_name(struct toy_renderer *renderer,
                                     const struct camera *camera)
@@ -1252,8 +1327,18 @@ static int render_ai_teammate(struct toy_renderer *renderer,
                 actor->class_id == TOY_GAME_AI_LEVEL_2 ? 0x386B96 :
                 0x596B3A;
         active_actor_lift = actor->airborne_y;
+        for (int p = 0; p < level_map.platform_count; p++) {
+            const struct toy_game_platform *platform = &level_map.platforms[p];
+            if (actor->x >= platform->minx && actor->x <= platform->maxx &&
+                actor->z >= platform->minz && actor->z <= platform->maxz &&
+                platform->height > active_actor_lift)
+                active_actor_lift = platform->height;
+        }
         pixels += render_player_avatar(renderer, camera, actor->x, actor->z,
                                        actor->sy, actor->cy,
+                                       actor->current_slot >= 0 &&
+                                       actor->current_slot < TOY_GAME_WEAPON_SLOTS ?
+                                       actor->slots[actor->current_slot].weapon : -1,
                                        actor->muzzle_flash_ms, color,
                                        actor->state == TOY_GAME_ACTOR_DOWNED);
         active_actor_lift = 0;
@@ -1263,7 +1348,7 @@ static int render_ai_teammate(struct toy_renderer *renderer,
 
 static int render_player_avatar(struct toy_renderer *renderer,
                                 const struct camera *camera, int x, int z,
-                                int sy, int cy, int muzzle_flash,
+                                int sy, int cy, int weapon, int muzzle_flash,
                                 uint32_t body_color, int downed)
 {
     int pixels = 0, face_y0, face_y1;
@@ -1276,18 +1361,19 @@ static int render_player_avatar(struct toy_renderer *renderer,
                                       -550 + active_actor_lift, 145, 100, 0xD2A878);
         face_y0 = -650; face_y1 = -470;
     } else {
-        pixels += draw_cuboid(renderer, camera, x - 95, x - 10,
-                              -900 + active_actor_lift, -610 + active_actor_lift,
-                              z - 75, z + 75, 0x25354A);
-        pixels += draw_cuboid(renderer, camera, x + 10, x + 95,
-                              -900 + active_actor_lift, -610 + active_actor_lift,
-                              z - 75, z + 75, 0x25354A);
-        pixels += draw_cuboid(renderer, camera, x - 155, x + 155,
-                              -620 + active_actor_lift, -100 + active_actor_lift,
-                              z - 100, z + 100, body_color);
+        pixels += draw_actor_box(renderer, camera, x, z, sy, cy,
+                                 -95, -10, -900, -610, -75, 75, 0x25354A);
+        pixels += draw_actor_box(renderer, camera, x, z, sy, cy,
+                                 10, 95, -900, -610, -75, 75, 0x25354A);
+        pixels += draw_actor_box(renderer, camera, x, z, sy, cy,
+                                 -155, 155, -620, -100, -100, 100, body_color);
         pixels += draw_ellipsoid_head(renderer, camera, x, z,
                                       50 + active_actor_lift, 145, 150, 0xD2A878);
         face_y0 = -35; face_y1 = 185;
+    }
+    if (!downed) {
+        pixels += render_actor_weapon(renderer, camera, x, z, sy, cy,
+                                      weapon, muzzle_flash);
     }
     pixels += draw_face_rect(renderer, camera, x, z, 145, sy, cy,
                              -72, 72, face_y0 + active_actor_lift,
@@ -1310,20 +1396,25 @@ static int render_network_teammate(struct toy_renderer *renderer,
                                    const struct rasterfall_net *net)
 {
     const struct camera *remote = NULL;
+    int weapon = -1;
     int muzzle_flash = 0;
     int downed = 0;
     if (net->mode == RASTERFALL_NET_HOST && net->peer_known) {
         remote = &net->peer_camera;
         muzzle_flash = net->peer_muzzle_flash_ms;
         downed = net->peer_down;
+        if (net->peer_current_slot >= 0 &&
+            net->peer_current_slot < TOY_GAME_WEAPON_SLOTS)
+            weapon = net->peer_slots[net->peer_current_slot].weapon;
     } else if (net->mode == RASTERFALL_NET_CLIENT && net->players[0].active) {
         remote = &net->players[0].camera;
         muzzle_flash = net->players[0].muzzle_flash_ms;
         downed = net->players[0].downed;
+        weapon = net->players[0].weapon;
     }
     if (!remote) return 0;
     return render_player_avatar(renderer, camera, remote->x, remote->z,
-                                remote->sy, remote->cy, muzzle_flash,
+                                remote->sy, remote->cy, weapon, muzzle_flash,
                                 0x386B96, downed);
 }
 
@@ -1521,6 +1612,16 @@ int rasterfall_render_scene(struct toy_renderer *renderer,
                             const struct camera *camera)
 {
     return render_scene(renderer, camera);
+}
+
+void rasterfall_render_sign_text(struct toy_surface *surface,
+                                 const struct camera *camera)
+{
+    int i;
+    if (!surface || !camera) return;
+    for (i = 0; i < level_map.draw_count; i++)
+        if (level_map.draw[i].type == TOY_MAP_DRAW_SIGN)
+            render_world_sign_text(surface, camera, &level_map.draw[i]);
 }
 
 int rasterfall_render_interactables(struct toy_renderer *renderer,

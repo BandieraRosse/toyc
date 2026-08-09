@@ -226,7 +226,10 @@ static void view_to_world(const struct camera *camera, const struct vec3 *view,
     int wz = (-vy * camera->pitch_sy + vz * camera->pitch_cy) / 1024;
     world->x = camera->x + (vx * camera->cy + wz * camera->sy) / 1024;
     world->z = camera->z + (-vx * camera->sy + wz * camera->cy) / 1024;
-    world->y = wy;
+    /* View-space Y is relative to the camera.  Omitting camera->y makes a
+     * platform muzzle snap back to ground height while ground-level shots
+     * appear correct because camera->y happens to be zero. */
+    world->y = camera->y + wy;
 }
 
 static void copy_vec3(struct vec3 *out, const struct vec3 *in)
@@ -755,30 +758,24 @@ static int wait_for_network_connection(struct toy_window *window,
 /* 把游戏层的水平射线转成从枪口指向屏幕准心的 3D 视觉终点。
  * 游戏命中仍使用水平平面，而 tracer 必须补偿枪口在右下方造成的视差，
  * 否则它会从枪口斜着飞向准心旁边。 */
-static void tracer_aim_endpoint(const struct camera *camera,
-                                const struct toy_game_ray *ray,
-                                int ex, int ez, int *out_x, int *out_y,
-                                int *out_z)
+static void tracer_world_endpoint(const struct toy_game_ray *ray,
+                                  int origin_x, int origin_y, int origin_z,
+                                  int pitch_sy, int pitch_cy,
+                                  int ex, int ez, int *out_x, int *out_y,
+                                  int *out_z)
 {
-    struct vec3 view_end;
-    int dx = ex - camera->x;
-    int dz = ez - camera->z;
+    int dx = ex - origin_x;
+    int dz = ez - origin_z;
     int distance = isqrt((long long)dx * dx + (long long)dz * dz);
-    int view_x, view_y, view_z;
     if (distance < 1) distance = 1;
-    view_x = (dx * camera->cy - dz * camera->sy) / 1024;
-    view_z = (dx * camera->sy + dz * camera->cy) / 1024;
-    if (view_z < 1) view_z = 1;
-    view_y = ray->vy * distance / 1024;
-    /* 保留游戏层的实际 x/z 命中点，只补上同一颗弹丸的垂直扩散，
-     * 射线和命中粒子因此使用完全一致的落点。 */
-    view_end.x = view_x;
-    view_end.y = view_y;
-    view_end.z = view_z;
-    view_to_world(camera, &view_end, &view_end);
-    *out_x = view_end.x;
-    *out_y = view_end.y;
-    *out_z = view_end.z;
+    if (pitch_cy < 1) pitch_cy = 1;
+    /* Gameplay hit testing remains horizontal XZ, but the visible bullet
+     * follows the shooter's 3D sight line.  The pitch term is based on the
+     * shooter's muzzle, never the observer's camera height. */
+    *out_x = ex;
+    *out_y = origin_y + pitch_sy * distance / pitch_cy +
+             ray->vy * distance / 1024;
+    *out_z = ez;
 }
 
 /* 每次实际开火后同步：把 game 里最新一枪的射线搬进 tracer 环，
@@ -821,7 +818,9 @@ static void sync_fire_effects(const struct camera *camera)
         t->sx = muzzle.x;
         t->sy = muzzle.y;
         t->sz = muzzle.z;
-        tracer_aim_endpoint(camera, r, r->ex, r->ez,
+        tracer_world_endpoint(r, muzzle.x, muzzle.y, muzzle.z,
+                            camera->pitch_sy, camera->pitch_cy,
+                            r->ex, r->ez,
                             &t->ex, &t->ey, &t->ez);
         t->life_ms = RASTERFALL_TRACER_LIFE_MS;
         if (r->hit_enemy || r->hit_world)
@@ -835,9 +834,10 @@ static void sync_fire_effects(const struct camera *camera)
 static void sync_ai_fire_effects(const struct camera *camera)
 {
     int actor_index;
+    (void)camera;
     for (actor_index = 0; actor_index < TOY_GAME_MAX_ACTORS; actor_index++) {
         const struct toy_game_actor *actor = &game.actors[actor_index];
-        int i, ray_count, mx, mz;
+        int i, ray_count, mx, my, mz;
         if (!actor->active || actor->kind != TOY_GAME_ACTOR_AI) continue;
         if (actor->fire_seq < effects.last_actor_fire_seq[actor_index]) {
             effects.last_actor_fire_seq[actor_index] = 0;
@@ -849,15 +849,30 @@ static void sync_ai_fire_effects(const struct camera *camera)
         ray_count = actor->ray_count;
         if (ray_count < 0) ray_count = 0;
         if (ray_count > TOY_GAME_MAX_RAYS) ray_count = TOY_GAME_MAX_RAYS;
-        mx = actor->x + actor->sy * 130 / 1024;
-        mz = actor->z + actor->cy * 130 / 1024;
+        int platform_lift = actor->airborne_y;
+        int p;
+        for (p = 0; p < session.level.platform_count; p++) {
+            const struct toy_game_platform *platform = &session.level.platforms[p];
+            if (actor->x >= platform->minx && actor->x <= platform->maxx &&
+                actor->z >= platform->minz && actor->z <= platform->maxz &&
+                platform->height > platform_lift)
+                platform_lift = platform->height;
+        }
+        rasterfall_viewmodel_actor_muzzle(actor->x, actor->z,
+                                          actor->sy, actor->cy,
+                                          platform_lift,
+                                          actor->current_slot >= 0 &&
+                                          actor->current_slot < TOY_GAME_WEAPON_SLOTS ?
+                                          actor->slots[actor->current_slot].weapon : -1,
+                                          &mx, &my, &mz);
         for (i = 0; i < ray_count; i++) {
             const struct toy_game_ray *r = &actor->rays[i];
             struct rasterfall_tracer *t = &effects.tracers[effects.tracer_next];
             effects.tracer_next = (effects.tracer_next + 1) % RASTERFALL_TRACER_SLOTS;
             t->active = 1;
-            t->sx = mx; t->sy = -430; t->sz = mz;
-            tracer_aim_endpoint(camera, r, r->ex, r->ez,
+            t->sx = mx; t->sy = my; t->sz = mz;
+            tracer_world_endpoint(r, mx, my, mz, 0, 1024,
+                                r->ex, r->ez,
                                 &t->ex, &t->ey, &t->ez);
             t->life_ms = RASTERFALL_TRACER_LIFE_MS;
             if (r->hit_enemy || r->hit_world)
@@ -896,8 +911,10 @@ static void sync_network_fire_effects(const struct camera *viewer,
         effects.tracer_next = (effects.tracer_next + 1) % RASTERFALL_TRACER_SLOTS;
         t->active = 1;
         t->sx = muzzle.x; t->sy = muzzle.y; t->sz = muzzle.z;
-        tracer_aim_endpoint(remote, r, r->ex, r->ez,
-                            &t->ex, &t->ey, &t->ez);
+        tracer_world_endpoint(r, muzzle.x, muzzle.y, muzzle.z,
+                              remote->pitch_sy, remote->pitch_cy,
+                              r->ex, r->ez,
+                              &t->ex, &t->ey, &t->ez);
         t->life_ms = RASTERFALL_TRACER_LIFE_MS;
         if (r->hit_enemy || r->hit_world)
             rasterfall_effects_spawn_hit_particles(&effects, r->ex, t->ey,
@@ -1606,6 +1623,9 @@ startup_again:
             prev_tris = (unsigned long)renderer.cmd_count;
             stage_pixels = toy_renderer_flush(&renderer);
             scene_pixels += stage_pixels;
+            /* Sign lettering is a framebuffer overlay: the board must be
+             * flushed first, otherwise its depth-tested face covers the text. */
+            rasterfall_render_sign_text(&surface, &camera);
             rasterfall_perf_end_stage(&stats, &stats_total, RASTERFALL_STATS_RASTER,
                            &t_stage, prev_tris, (unsigned long)stage_pixels);
             rasterfall_perf_add_raster(&stats, &stats_total, &renderer, prev_tris,

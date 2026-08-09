@@ -26,6 +26,19 @@ void rasterfall_viewmodel_muzzle_offset(int weapon, int kick,
     *z += kick;
 }
 
+void rasterfall_viewmodel_actor_muzzle(int x, int z, int sy, int cy,
+                                       int lift, int weapon,
+                                       int *out_x, int *out_y, int *out_z)
+{
+    /* Third-person weapons use the same forward distance as the avatar's
+     * fixed side mount.  The vertical origin follows airborne lift, so a
+     * platform/jump cannot leave the tracer hanging at ground height. */
+    (void)weapon;
+    *out_x = x + sy * 130 / 1024;
+    *out_y = -430 + lift;
+    *out_z = z + cy * 130 / 1024;
+}
+
 static int fill_triangle_2d(struct toy_surface *surface,
                             int x0, int y0, int x1, int y1, int x2, int y2,
                             uint32_t color)
@@ -121,27 +134,33 @@ static int draw_view_box(struct toy_surface *surface,
 static int render_pistol(struct toy_surface *s, int kick)
 {
     int p=0;
-    p+=draw_view_box(s,90,150,-180,-95,255,305,0x5A4630,1,1,kick);
-    p+=draw_view_box(s,85,160,-115,-45,255,340,0x3E4652,0,0,kick);
-    p+=draw_view_box(s,75,130,-90,-50,300,420,0x2E343D,1,0,kick);
+    p+=draw_view_box(s,58,130,-188,-96,245,315,0x5A4630,1,1,kick);
+    p+=draw_view_box(s,54,140,-118,-40,250,352,0x3E4652,0,0,kick);
+    p+=draw_view_box(s,44,112,-92,-42,312,448,0x2E343D,1,0,kick);
+    p+=draw_view_box(s,80,104,-42,-20,330,392,0x20252B,1,0,kick);
+    p+=draw_view_box(s,62,104,-255,-165,250,330,0xB98B62,1,1,kick);
     return p;
 }
 
 static int render_smg(struct toy_surface *s, int kick)
 {
     int p=0;
-    p+=draw_view_box(s,95,155,-170,-95,275,320,0x4A4438,1,1,kick);
-    p+=draw_view_box(s,90,170,-115,-40,255,345,0x3B4148,0,0,kick);
-    p+=draw_view_box(s,70,140,-85,-40,310,450,0x2F343B,1,0,kick);
+    p+=draw_view_box(s,70,130,-170,-95,275,320,0x4A4438,1,1,kick);
+    p+=draw_view_box(s,65,145,-115,-40,255,345,0x3B4148,0,0,kick);
+    p+=draw_view_box(s,45,115,-85,-40,310,450,0x2F343B,1,0,kick);
+    p+=draw_view_box(s,83,107,-42,-18,318,370,0x252A30,1,0,kick);
+    p+=draw_view_box(s,70,116,-250,-160,255,340,0xB98B62,1,1,kick);
     return p;
 }
 
 static int render_shotgun(struct toy_surface *s, int kick)
 {
     int p=0;
-    p+=draw_view_box(s,95,175,-110,-40,270,355,0x46505A,0,0,kick);
-    p+=draw_view_box(s,70,130,-90,-40,335,560,0x3A434D,1,0,kick);
-    p+=draw_view_box(s,75,140,-100,-45,390,460,0x2C3138,0,0,kick);
+    p+=draw_view_box(s,70,150,-110,-40,270,355,0x46505A,0,0,kick);
+    p+=draw_view_box(s,45,105,-90,-40,335,560,0x3A434D,1,0,kick);
+    p+=draw_view_box(s,50,115,-100,-45,390,460,0x2C3138,0,0,kick);
+    p+=draw_view_box(s,78,112,-38,-18,445,505,0x252A30,1,0,kick);
+    p+=draw_view_box(s,66,118,-245,-155,300,390,0xB98B62,1,1,kick);
     return p;
 }
 

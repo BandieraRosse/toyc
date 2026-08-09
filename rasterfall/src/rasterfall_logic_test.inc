@@ -51,7 +51,10 @@ static int run_logic_test(void)
             game.actors[2].state != TOY_GAME_ACTOR_DOWNED ||
             game.actors[0].x != 0 || game.actors[0].z != 4200 ||
             game.actors[1].x != 0 || game.actors[1].z != -2000 ||
-            game.actors[2].x != -700 || game.actors[2].z != 4200) return 51;
+            game.actors[2].x != -700 || game.actors[2].z != 4200 ||
+            !game.actors[4].active || game.actors[4].x != 0 ||
+            game.actors[4].z != -9900 ||
+            game.actors[4].slots[0].weapon != TOY_GAME_WEAPON_SMG) return 51;
         toy_game_init(&actor_test, 3);
         if (toy_game_add_ai(&actor_test, TOY_GAME_AI_LEVEL_3,
                             1200, -3000, "ELITE") != 2 ||
@@ -805,7 +808,7 @@ static int run_logic_test(void)
     }
     /* 多层地面：跳入悬空平台范围后应落在平台顶部，而不是穿回地面。 */
     {
-        struct toy_game_platform platform = { 280, 2200, -1000, 1000, 800 };
+        struct toy_game_platform platform = { 280, 2200, -1000, 1000, 500 };
         toy_game_init(&game, 47);
         game.world_count = 0;
         game.room_limit = 12000;
@@ -813,7 +816,7 @@ static int run_logic_test(void)
         if (!toy_game_jump_with_velocity(&game, 20, 0)) return 87;
         for (int i = 0; i < 70; i++)
             toy_game_update_player_motion(&game, 16);
-        if (game.player_airborne_ms != 0 || game.player_ground_y != 800 ||
+        if (game.player_airborne_ms != 0 || game.player_ground_y != 500 ||
             game.player_airborne_y != 0) return 88;
         /* 从边缘原地起跳时，碰撞圆仍压着台面就应落回台顶，
          * 不能落到地面高度后卡在平台侧面。 */
@@ -821,18 +824,18 @@ static int run_logic_test(void)
         if (!toy_game_jump(&game)) return 94;
         for (int i = 0; i < 70; i++)
             toy_game_update_player_motion(&game, 16);
-        if (game.player_airborne_ms != 0 || game.player_ground_y != 800 ||
+        if (game.player_airborne_ms != 0 || game.player_ground_y != 500 ||
             game.player_airborne_y != 0) return 95;
         /* 离开平台时，在碰撞圆完全越过边缘前仍保持站立；
          * 越过后从平台高度开始下落，不能直接陷入平台侧面。 */
         game.px = 2300;
         toy_game_update_player_ground(&game);
-        if (game.player_ground_y != 800 || game.player_airborne_ms != 0)
+        if (game.player_ground_y != 500 || game.player_airborne_ms != 0)
             return 89;
         game.px = 2400;
         toy_game_update_player_ground(&game);
         if (game.player_ground_y != 0 || game.player_airborne_ms <= 0 ||
-            game.player_airborne_y != 800) return 90;
+            game.player_airborne_y != 500) return 90;
         for (int i = 0; i < 70; i++)
             toy_game_update_player_motion(&game, 16);
         if (game.player_airborne_ms != 0 || game.player_airborne_y != 0)

@@ -520,6 +520,9 @@ void rasterfall_session_step(struct rasterfall_session *session,
     session->game_state.px = camera->x;
     session->game_state.pz = camera->z;
     toy_game_update_player_ground(&session->game_state);
+    /* Ground/platform resolution must precede weapon simulation: the visual
+     * muzzle is derived from camera->y during this same tick. */
+    session_sync_special_motion(session, camera);
     session->highlight_index = rasterfall_session_compute_highlight(session, camera);
     if (command->buttons & RASTERFALL_CMD_SHOVE)
         toy_game_shove(&session->game_state, camera->sy, camera->cy);
@@ -587,6 +590,7 @@ void rasterfall_session_step_client(struct rasterfall_session *session,
     session->game_state.px = camera->x;
     session->game_state.pz = camera->z;
     toy_game_update_player_ground(&session->game_state);
+    session_sync_special_motion(session, camera);
     session->highlight_index = rasterfall_session_compute_highlight(session, camera);
     /* 交互由主机权威执行。客户端只计算高亮并发送 INTERACT 命令，
      * 等待主机快照回传拾取、弹药、空气墙和刷怪结果，避免两端世界分叉。 */
