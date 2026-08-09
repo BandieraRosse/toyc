@@ -202,19 +202,23 @@ void toy_game_set_player_name(struct toy_game *g, const char *name)
     copy_name(g->player_name, name);
 }
 
-void toy_game_set_ai_teammate(struct toy_game *g, int active, int x, int z,
-                              const char *name)
+void toy_game_set_ai_teammate_class(struct toy_game *g, int active, int class_id,
+                                    int x, int z, const char *name)
 {
     const struct toy_game_weapon_info *w;
+    const struct toy_game_ai_info *info;
+    if (class_id < 0 || class_id >= TOY_GAME_AI_CLASS_COUNT)
+        class_id = TOY_GAME_AI_LEVEL_2;
+    info = &ai_table[class_id];
     memset(g->ai_slots, 0, sizeof(g->ai_slots));
     g->ai_active = active != 0;
     g->ai_actor_id = 1;
     g->ai_x = x; g->ai_z = z;
     g->ai_sy = 0; g->ai_cy = 1024;
-    g->ai_hp = 120;
+    g->ai_hp = info->max_hp;
     copy_name(g->ai_name, name ? name : "Jesus");
-    g->ai_slots[0].weapon = TOY_GAME_WEAPON_SMG;
-    w = toy_game_weapon_info(TOY_GAME_WEAPON_SMG);
+    g->ai_slots[0].weapon = info->weapon;
+    w = toy_game_weapon_info(info->weapon);
     g->ai_slots[0].mag = w->mag_size;
     g->ai_slots[0].reserve = TOY_GAME_AMMO_INFINITE;
     g->ai_slots[1].weapon = -1;
@@ -231,7 +235,7 @@ void toy_game_set_ai_teammate(struct toy_game *g, int active, int x, int z,
     g->actors[0].active = g->ai_active;
     g->actors[0].actor_id = g->ai_actor_id;
     g->actors[0].kind = TOY_GAME_ACTOR_AI;
-    g->actors[0].class_id = TOY_GAME_AI_LEVEL_2;
+    g->actors[0].class_id = class_id;
     g->actors[0].state = TOY_GAME_ACTOR_ALIVE;
     g->actors[0].x = g->ai_x; g->actors[0].z = g->ai_z;
     g->actors[0].sy = g->ai_sy; g->actors[0].cy = g->ai_cy;
@@ -242,6 +246,13 @@ void toy_game_set_ai_teammate(struct toy_game *g, int active, int x, int z,
     g->actors[0].fire_seq = g->ai_fire_seq;
     g->actors[0].ray_count = g->ai_ray_count;
     memcpy(g->actors[0].name, g->ai_name, sizeof(g->actors[0].name));
+}
+
+void toy_game_set_ai_teammate(struct toy_game *g, int active, int x, int z,
+                              const char *name)
+{
+    toy_game_set_ai_teammate_class(g, active, TOY_GAME_AI_LEVEL_2,
+                                   x, z, name);
 }
 
 static void sync_ai_actor_from_legacy(struct toy_game *g)
@@ -392,6 +403,8 @@ void toy_game_set_campaign(struct toy_game *g,
 {
     g->safe_rooms = safe_rooms;
     g->safe_room_count = safe_room_count;
+    g->safe_start_index = safe_room_count > 0 ? 0 : -1;
+    g->safe_goal_index = safe_room_count > 0 ? safe_room_count - 1 : -1;
     g->spawn_zones = spawn_zones;
     g->spawn_zone_count = spawn_zone_count;
     g->campaign_mode = safe_room_count >= 2 && spawn_zone_count > 0;
@@ -407,6 +420,16 @@ void toy_game_set_campaign(struct toy_game *g,
         g->director_encounters = 0;
         g->spawn_timer_ms = 0;
     }
+}
+
+void toy_game_set_campaign_safe_indices(struct toy_game *g,
+                                        int start_index, int goal_index)
+{
+    if (!g) return;
+    if (start_index >= 0 && start_index < g->safe_room_count)
+        g->safe_start_index = start_index;
+    if (goal_index >= 0 && goal_index < g->safe_room_count)
+        g->safe_goal_index = goal_index;
 }
 
 void toy_game_set_alarm(struct toy_game *g,
@@ -756,7 +779,9 @@ static void update_campaign_goal(struct toy_game *g, int dt_ms)
         g->goal_hold_ms = 0;
         return;
     }
-    goal = &g->safe_rooms[g->safe_room_count - 1];
+    if (g->safe_goal_index < 0 || g->safe_goal_index >= g->safe_room_count)
+        return;
+    goal = &g->safe_rooms[g->safe_goal_index];
     if (toy_game_point_in_box(g->px, g->pz, goal) &&
         (!g->secondary_player_active ||
          toy_game_point_in_box(g->secondary_px, g->secondary_pz, goal))) {

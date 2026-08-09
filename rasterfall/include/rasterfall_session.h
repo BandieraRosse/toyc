@@ -41,6 +41,7 @@ struct rasterfall_session {
     struct toy_game_box safe_rooms[TOY_MAP_MAX_ZONES];
     struct toy_game_box spawn_zones[TOY_MAP_MAX_ZONES];
     int spawn_count;
+    int base_actor_indices[TOY_MAP_MAX_BASES];
     struct rasterfall_interactable items[TOY_MAP_MAX_PICKUPS];
     int item_count;
     struct rasterfall_map_state map_ops;

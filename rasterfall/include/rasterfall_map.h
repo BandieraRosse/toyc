@@ -11,7 +11,8 @@ struct rasterfall_map_state {
     struct toy_game_box *safe_rooms;
     struct toy_game_box *spawn_zones;
     int *spawn_count;
-    int air_wall_indices[2];
+    int air_wall_indices[TOY_MAP_MAX_BASES];
+    int air_wall_count;
     int *air_walls_enabled;
     struct rasterfall_interactable *interactables;
     int *interactable_count;

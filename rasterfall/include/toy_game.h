@@ -288,6 +288,8 @@ struct toy_game {
     /* 经典闯关模式：固定刷怪区，安全室对敌人视为禁区。 */
     const struct toy_game_box *safe_rooms;
     int safe_room_count;
+    int safe_start_index;
+    int safe_goal_index;
     const struct toy_game_box *spawn_zones;
     int spawn_zone_count;
     int campaign_mode;
@@ -328,6 +330,8 @@ void toy_game_init(struct toy_game *g, uint64_t seed);      /* 初始化/重开�
 void toy_game_set_player_name(struct toy_game *g, const char *name);
 void toy_game_set_ai_teammate(struct toy_game *g, int active, int x, int z,
                               const char *name);
+void toy_game_set_ai_teammate_class(struct toy_game *g, int active, int class_id,
+                                    int x, int z, const char *name);
 int  toy_game_add_ai(struct toy_game *g, int class_id, int x, int z,
                      const char *name);
 void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms);
@@ -344,6 +348,8 @@ void toy_game_set_campaign(struct toy_game *g,
                            int safe_room_count,
                            const struct toy_game_box *spawn_zones,
                            int spawn_zone_count);
+void toy_game_set_campaign_safe_indices(struct toy_game *g,
+                                        int start_index, int goal_index);
 void toy_game_set_alarm(struct toy_game *g,
                         const struct toy_game_box *alarm_zone,
                         int spawn_zone_index);

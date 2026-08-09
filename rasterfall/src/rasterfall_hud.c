@@ -166,14 +166,16 @@ void rasterfall_hud_render(struct toy_surface *surface, int fps,
     } else if (ai->state == TOY_GAME_ACTOR_DOWNED) {
         fb_draw_string((unsigned char *)surface->pixels, 8, hint_y,
                        "E REVIVE JESUS", 0x70D8FF, surface->stride);
-    } else if (state->map->safe_count > 1 &&
-        toy_game_point_in_box(game->px, game->pz, &state->safe_rooms[1])) {
+    } else if (state->map->goal_safe_index >= 0 &&
+        toy_game_point_in_box(game->px, game->pz,
+                              &state->safe_rooms[state->map->goal_safe_index])) {
         snprintf(line, sizeof(line), "EXIT SECURE %d%%",
                  game->goal_hold_ms * 100 / TOY_GAME_GOAL_HOLD_MS);
         fb_draw_string((unsigned char *)surface->pixels, 8, hint_y,
                        line, 0x80E080, surface->stride);
-    } else if (state->map->safe_count > 0 &&
-               toy_game_point_in_box(game->px, game->pz, &state->safe_rooms[0])) {
+    } else if (state->map->start_safe_index >= 0 &&
+               toy_game_point_in_box(game->px, game->pz,
+                                     &state->safe_rooms[state->map->start_safe_index])) {
         fb_draw_string((unsigned char *)surface->pixels, 8, hint_y,
                        "START SAFE ROOM - REACH GREEN EXIT", 0x80E080,
                        surface->stride);

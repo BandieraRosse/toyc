@@ -1,3 +1,4 @@
+#include "tlibc_everything.h"
 #include "rasterfall_map.h"
 
 void rasterfall_map_bind(struct rasterfall_map_state *map,
@@ -35,16 +36,23 @@ void rasterfall_map_prepare(struct rasterfall_map_state *map)
 {
     int i, gate_count = 0;
     if (!map) return;
-    for (i = 0; i < 2; i++) map->air_wall_indices[i] = -1;
+    for (i = 0; i < TOY_MAP_MAX_BASES; i++) map->air_wall_indices[i] = -1;
+    map->air_wall_count = 0;
     for (i = 0; i < map->level->box_count; i++) {
         map->bounds[i].minx = map->level->boxes[i].minx;
         map->bounds[i].maxx = map->level->boxes[i].maxx;
         map->bounds[i].minz = map->level->boxes[i].minz;
         map->bounds[i].maxz = map->level->boxes[i].maxz;
-        if (map->level->boxes[i].air && map->level->boxes[i].minz == -5700 &&
-            map->level->boxes[i].maxz == -5680 && gate_count < 2)
+        if (!map->level->boxes[i].collision) {
+            map->bounds[i].minx = 1; map->bounds[i].maxx = 0;
+            map->bounds[i].minz = 1; map->bounds[i].maxz = 0;
+        }
+        if ((!strcmp(map->level->boxes[i].role, "air_gate") ||
+             !strncmp(map->level->boxes[i].role, "air_gate_", 9)) &&
+            map->level->boxes[i].collision && gate_count < TOY_MAP_MAX_BASES)
             map->air_wall_indices[gate_count++] = i;
     }
+    map->air_wall_count = gate_count;
     for (i = 0; i < map->level->safe_count; i++)
         map->safe_rooms[i] = map->level->safe_rooms[i];
     *map->spawn_count = map->level->spawn_count;
@@ -58,7 +66,7 @@ void rasterfall_map_set_air_walls(struct rasterfall_map_state *map, int enabled)
     int i, index;
     if (!map) return;
     *map->air_walls_enabled = enabled != 0;
-    for (i = 0; i < 2; i++) {
+    for (i = 0; i < map->air_wall_count; i++) {
         index = map->air_wall_indices[i];
         if (index < 0) continue;
         if (*map->air_walls_enabled) {

@@ -8,13 +8,22 @@
 #define HORDE_MIN_PLAYER_DIST 700
 #define QUARTER_TURN 1611
 #define SMOOTH_TURN_STEP 128
-#define BASE_1_X 0
-#define BASE_1_Z (-2000)
-#define BASE_2_X 0
-#define BASE_2_Z 4200
-
 static void session_interact(struct rasterfall_session *session,
                              struct rasterfall_interactable *it);
+
+static int session_base_center(const struct rasterfall_session *session, int id,
+                               int *x, int *z)
+{
+    int i;
+    for (i = 0; i < session->level.base_count; i++) {
+        const struct toy_map_base *base = &session->level.bases[i];
+        if (base->id != id) continue;
+        if (x) *x = (base->box.minx + base->box.maxx) / 2;
+        if (z) *z = (base->box.minz + base->box.maxz) / 2;
+        return 1;
+    }
+    return 0;
+}
 
 static void session_down_ai(struct rasterfall_session *session, int index,
                             int x, int z)
@@ -123,6 +132,7 @@ void rasterfall_session_unload(struct rasterfall_session *session)
 void rasterfall_session_reset(struct rasterfall_session *session,
                               struct camera *camera, uint64_t seed)
 {
+    int i;
     camera->x = session->level.start_x;
     camera->z = session->level.start_z;
     camera->sy = 0;
@@ -141,19 +151,34 @@ void rasterfall_session_reset(struct rasterfall_session *session,
     toy_game_set_campaign(&session->game_state, session->safe_rooms,
                           session->level.safe_count, session->spawn_zones,
                           session->spawn_count);
+    toy_game_set_campaign_safe_indices(&session->game_state,
+                                       session->level.start_safe_index,
+                                       session->level.goal_safe_index);
     toy_game_set_alarm(&session->game_state,
                        session->level.has_alarm ? &session->level.alarm_zone : NULL,
-                       session->level.has_alarm ? 1 : -1);
-    /* 三名 AI 分布在两个据点，均以倒地状态等待玩家救援。 */
-    toy_game_set_ai_teammate(&session->game_state, 1,
-                             BASE_2_X, BASE_2_Z, "Jesus");
-    toy_game_add_ai(&session->game_state, TOY_GAME_AI_LEVEL_1,
-                    BASE_1_X, BASE_1_Z, "GUARD");
-    toy_game_add_ai(&session->game_state, TOY_GAME_AI_LEVEL_3,
-                    BASE_2_X - 700, BASE_2_Z, "ELITE");
-    session_down_ai(session, 0, BASE_2_X, BASE_2_Z);
-    session_down_ai(session, 1, BASE_1_X, BASE_1_Z);
-    session_down_ai(session, 2, BASE_2_X - 700, BASE_2_Z);
+                       session->level.has_alarm ? session->level.alarm_spawn_zone : -1);
+    for (i = 0; i < TOY_MAP_MAX_BASES; i++) session->base_actor_indices[i] = -1;
+    /* AI 出生点属于地图语义；第一个条目仍占用 actor 0，以兼容旧的
+     * toy_game AI 镜像和现有 HUD/网络协议。 */
+    for (i = 0; i < session->level.ai_spawn_count && i < TOY_GAME_MAX_ACTORS; i++) {
+        const struct toy_map_ai_spawn *spawn = &session->level.ai_spawns[i];
+        int actor_index;
+        if (i == 0) {
+            toy_game_set_ai_teammate_class(&session->game_state, 1,
+                                           spawn->class_id, spawn->x, spawn->z,
+                                           spawn->name);
+            actor_index = 0;
+        } else {
+            int actor_id = toy_game_add_ai(&session->game_state, spawn->class_id,
+                                           spawn->x, spawn->z, spawn->name);
+            actor_index = actor_id > 0 ? actor_id - 1 : -1;
+        }
+        if (actor_index < 0) continue;
+        if (spawn->base_id >= 0 && spawn->base_id < TOY_MAP_MAX_BASES &&
+            session->base_actor_indices[spawn->base_id] < 0)
+            session->base_actor_indices[spawn->base_id] = actor_index;
+        if (spawn->downed) session_down_ai(session, actor_index, spawn->x, spawn->z);
+    }
     session->game_state.px = camera->x;
     session->game_state.pz = camera->z;
     session->banner_ms = 0;
@@ -324,7 +349,9 @@ static void session_interact(struct rasterfall_session *session,
             return;
         }
         /* 据点防守的前提：先救援本据点的 AI，否则尸潮来了没人守。 */
-        if (session->game_state.actors[1].state != TOY_GAME_ACTOR_ALIVE) {
+        if (session->base_actor_indices[1] < 0 ||
+            session->game_state.actors[session->base_actor_indices[1]].state !=
+                TOY_GAME_ACTOR_ALIVE) {
             session->banner_text = "REVIVE GUARD FIRST";
             session->banner_ms = 1800;
             return;
@@ -340,13 +367,21 @@ static void session_interact(struct rasterfall_session *session,
             session->banner_ms = 1800;
             return;
         }
-        if (session->game_state.actors[0].state != TOY_GAME_ACTOR_ALIVE) {
+        if (session->base_actor_indices[2] < 0 ||
+            session->game_state.actors[session->base_actor_indices[2]].state !=
+                TOY_GAME_ACTOR_ALIVE) {
             session->banner_text = "REVIVE JESUS FIRST";
             session->banner_ms = 1800;
             return;
         }
-        toy_game_move_ai_actor(&session->game_state, 1,
-                               BASE_2_X + 700, BASE_2_Z);
+        {
+            int base_x, base_z;
+            if (session_base_center(session, 2, &base_x, &base_z) &&
+                session->base_actor_indices[1] >= 0)
+            toy_game_move_ai_actor(&session->game_state,
+                                   session->base_actor_indices[1],
+                                   base_x + 700, base_z);
+        }
         toy_game_set_campaign_stage(&session->game_state, 2);
         session->banner_text = "BASE 2 OVERRUN - FINAL HORDE INCOMING";
         session->banner_ms = 4000;

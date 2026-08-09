@@ -1008,7 +1008,7 @@ static int render_scene(struct toy_renderer *renderer, const struct camera *came
             struct toy_game_box zone={x->a,x->b,x->c,x->d}; draw_world_label(renderer,camera,&zone,x->text,x->color);
         }
     }
-    for (int i=0; i<level_map.box_count; i++) if (!level_map.boxes[i].air) {
+    for (int i=0; i<level_map.box_count; i++) if (level_map.boxes[i].visible) {
         struct box obstacle={level_map.boxes[i].minx,level_map.boxes[i].maxx,level_map.boxes[i].minz,level_map.boxes[i].maxz,level_map.boxes[i].height,level_map.boxes[i].color};
         pixels+=draw_box(renderer,camera,&obstacle);
     }

@@ -15,6 +15,20 @@ static int get2(char **p, int *a, int *b)
     *a=number(s1,10); *b=number(s2,10); return 0;
 }
 static unsigned int color(char *s) { return s ? (unsigned int)strtol(s, NULL, 16) : 0; }
+static void copy_role(char *out, const char *in, int size)
+{
+    if (!out || size <= 0) return;
+    out[0] = 0;
+    if (in) strncpy(out, in, (size_t)size - 1);
+}
+static int ai_class(char *s)
+{
+    if (!s) return TOY_GAME_AI_LEVEL_1;
+    if (!strcmp(s, "level1")) return TOY_GAME_AI_LEVEL_1;
+    if (!strcmp(s, "level2")) return TOY_GAME_AI_LEVEL_2;
+    if (!strcmp(s, "level3")) return TOY_GAME_AI_LEVEL_3;
+    return number(s, 10);
+}
 static void add_draw(struct toy_map *m, int type, int a, int b, int c, int d,
                      int e, int f, unsigned int col, const char *text)
 {
@@ -30,6 +44,9 @@ int toy_map_load(const char *path, struct toy_map *m)
     int fd, n, got=0; struct stat st; char *line, *save, *kind;
     if (!m || !path) return -1;
     memset(m,0,sizeof(*m));
+    m->start_safe_index = -1;
+    m->goal_safe_index = -1;
+    m->alarm_spawn_zone = -1;
     fd=openat(AT_FDCWD,path,O_RDONLY,0); if(fd<0 || fstat(fd,&st)<0) return -1;
     if(st.st_size<=0 || st.st_size>256*1024){close(fd);return -1;}
     m->blob=(char *)tlibc_malloc((unsigned long)st.st_size+1);
@@ -42,11 +59,50 @@ int toy_map_load(const char *path, struct toy_map *m)
         if(!strcmp(kind,"world") && get4(&p,&a,&b,&c,&d)==0){char *q=word(&p);if(q)m->room_limit=number(q,10);m->minx=a;m->maxx=b;m->minz=c;m->maxz=d;}
         else if(!strcmp(kind,"start") && get2(&p,&m->start_x,&m->start_z)==0){}
         else if(!strcmp(kind,"box") && get4(&p,&a,&b,&c,&d)==0){
-            char *h=word(&p),*co=word(&p),*air=word(&p); if(!h||!co||m->box_count>=TOY_MAP_MAX_BOXES)continue;
-            m->boxes[m->box_count].minx=a;m->boxes[m->box_count].maxx=b;m->boxes[m->box_count].minz=c;m->boxes[m->box_count].maxz=d;m->boxes[m->box_count].height=number(h,10);m->boxes[m->box_count].color=color(co);m->boxes[m->box_count].air=air&&(!strcmp(air,"air"));m->box_count++;
-        } else if(!strcmp(kind,"safe") && get4(&p,&a,&b,&c,&d)==0 && m->safe_count<TOY_MAP_MAX_ZONES){m->safe_rooms[m->safe_count].minx=a;m->safe_rooms[m->safe_count].maxx=b;m->safe_rooms[m->safe_count].minz=c;m->safe_rooms[m->safe_count].maxz=d;m->safe_count++;}
+            char *h=word(&p),*co=word(&p),*opt;
+            struct toy_map_box *box;
+            if(!h||!co||m->box_count>=TOY_MAP_MAX_BOXES)continue;
+            box=&m->boxes[m->box_count++]; memset(box,0,sizeof(*box));
+            box->minx=a; box->maxx=b; box->minz=c; box->maxz=d;
+            box->height=number(h,10); box->color=color(co);
+            box->visible=1; box->collision=1;
+            while ((opt=word(&p)) != NULL) {
+                if (!strcmp(opt,"air")) {
+                    box->air=1; box->visible=0; box->collision=1;
+                    copy_role(box->role, "air_gate", TOY_MAP_ROLE_SIZE);
+                } else if (!strcmp(opt,"visible")) box->visible=1;
+                else if (!strcmp(opt,"hidden")) box->visible=0;
+                else if (!strcmp(opt,"collision")) box->collision=1;
+                else if (!strcmp(opt,"nocollision")) box->collision=0;
+                else if (!strncmp(opt,"role=",5))
+                    copy_role(box->role, opt+5, TOY_MAP_ROLE_SIZE);
+            }
+        } else if(!strcmp(kind,"safe") && get4(&p,&a,&b,&c,&d)==0 && m->safe_count<TOY_MAP_MAX_ZONES){
+            char *role=word(&p); int index=m->safe_count;
+            m->safe_rooms[index].minx=a; m->safe_rooms[index].maxx=b;
+            m->safe_rooms[index].minz=c; m->safe_rooms[index].maxz=d;
+            m->safe_count++;
+            if (role && !strcmp(role,"start")) m->start_safe_index=index;
+            if (role && (!strcmp(role,"goal") || !strcmp(role,"exit")))
+                m->goal_safe_index=index;
+        } else if(!strcmp(kind,"base") && m->base_count<TOY_MAP_MAX_BASES){
+            char *id=word(&p); struct toy_map_base *base;
+            if (!id || get4(&p,&a,&b,&c,&d) < 0) continue;
+            base=&m->bases[m->base_count++]; base->id=number(id,10);
+            base->box.minx=a; base->box.maxx=b; base->box.minz=c; base->box.maxz=d;
+        } else if(!strcmp(kind,"ai_spawn") && m->ai_spawn_count<TOY_MAP_MAX_AI_SPAWNS){
+            char *name=word(&p), *base=word(&p), *class_name=word(&p);
+            char *sx=word(&p), *sz=word(&p), *down=word(&p);
+            struct toy_map_ai_spawn *spawn;
+            if (!name || !base || !class_name || !sx || !sz) continue;
+            spawn=&m->ai_spawns[m->ai_spawn_count++]; memset(spawn,0,sizeof(*spawn));
+            copy_role(spawn->name,name,TOY_MAP_ROLE_SIZE);
+            spawn->base_id=number(base,10); spawn->class_id=ai_class(class_name);
+            spawn->x=number(sx,10); spawn->z=number(sz,10);
+            spawn->downed=down ? number(down,10) != 0 : 1;
+        }
         else if(!strcmp(kind,"spawn") && get4(&p,&a,&b,&c,&d)==0 && m->spawn_count<TOY_MAP_MAX_ZONES){char *co=word(&p);m->spawn_zones[m->spawn_count].box.minx=a;m->spawn_zones[m->spawn_count].box.maxx=b;m->spawn_zones[m->spawn_count].box.minz=c;m->spawn_zones[m->spawn_count].box.maxz=d;m->spawn_zones[m->spawn_count].color=color(co);m->spawn_count++;}
-        else if(!strcmp(kind,"alarm") && get4(&p,&a,&b,&c,&d)==0){m->alarm_zone.minx=a;m->alarm_zone.maxx=b;m->alarm_zone.minz=c;m->alarm_zone.maxz=d;m->has_alarm=1;}
+        else if(!strcmp(kind,"alarm") && get4(&p,&a,&b,&c,&d)==0){char *zone=word(&p);m->alarm_zone.minx=a;m->alarm_zone.maxx=b;m->alarm_zone.minz=c;m->alarm_zone.maxz=d;m->has_alarm=1;if(zone)m->alarm_spawn_zone=number(zone,10);}
         else if(!strcmp(kind,"floor") && get4(&p,&a,&b,&c,&d)==0){char *co=word(&p);add_draw(m,TOY_MAP_DRAW_FLOOR,a,b,c,d,0,0,color(co),NULL);}
         else if(!strcmp(kind,"border") && get4(&p,&a,&b,&c,&d)==0){char *w=word(&p),*co=word(&p);if(w)add_draw(m,TOY_MAP_DRAW_BORDER,a,b,c,d,number(w,10),0,color(co),NULL);}
         else if(!strcmp(kind,"wall") && get4(&p,&a,&b,&c,&d)==0){char *h=word(&p),*co=word(&p);if(h)add_draw(m,TOY_MAP_DRAW_WALL,a,b,c,d,number(h,10),0,color(co),NULL);}
