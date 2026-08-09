@@ -52,12 +52,16 @@ static int rand_range(struct toy_game *g, int lo, int hi)
 #define BALANCE_HEAVY_HP               200
 #define BALANCE_PURSUIT_HEAVY_HP       200
 #define BALANCE_PURSUIT_FAST_HP        60
+#define BALANCE_SMOKER_HP              90
+#define BALANCE_CHARGER_HP             180
 
 #define BALANCE_COMMON_BITE_DAMAGE     2
 #define BALANCE_FAST_BITE_DAMAGE       2
 #define BALANCE_HEAVY_BITE_DAMAGE      4
 #define BALANCE_PURSUIT_HEAVY_BITE_DAMAGE 4
 #define BALANCE_PURSUIT_FAST_BITE_DAMAGE  2
+#define BALANCE_SMOKER_BITE_DAMAGE     0
+#define BALANCE_CHARGER_BITE_DAMAGE    4
 
 /* 固定散射：每颗弹丸在 [-spread, +spread] 内随机偏转（1024 定点）。
  * 手枪 ±12（≈±0.7°，几乎精准）；SMG ±90（≈±5°，连发略散）；
@@ -80,7 +84,9 @@ static const struct toy_game_enemy_info enemy_table[TOY_GAME_ENEMY_TYPE_COUNT] =
     { BALANCE_FAST_HP, 66, 82, BALANCE_FAST_BITE_DAMAGE, 1, 0x6A8A42 },
     { BALANCE_HEAVY_HP, 24, 34, BALANCE_HEAVY_BITE_DAMAGE, 2, 0x624A3A },
     { BALANCE_PURSUIT_HEAVY_HP, 30, 42, BALANCE_PURSUIT_HEAVY_BITE_DAMAGE, 2, 0x7A4A2A },
-    { BALANCE_PURSUIT_FAST_HP, 92, 112, BALANCE_PURSUIT_FAST_BITE_DAMAGE, 1, 0xB84A32 }
+    { BALANCE_PURSUIT_FAST_HP, 92, 112, BALANCE_PURSUIT_FAST_BITE_DAMAGE, 1, 0xB84A32 },
+    { BALANCE_SMOKER_HP, 34, 46, BALANCE_SMOKER_BITE_DAMAGE, 1, 0x6E7A72 },
+    { BALANCE_CHARGER_HP, 42, 58, BALANCE_CHARGER_BITE_DAMAGE, 2, 0xA56A38 }
 };
 
 struct toy_game_ai_info {
@@ -171,6 +177,7 @@ void toy_game_init(struct toy_game *g, uint64_t seed)
     const struct toy_game_weapon_info *w;
     memset(g, 0, sizeof(struct toy_game));
     g->rng = seed ? seed : 0x9E3779B97F4A7C15ULL;
+    g->player_pull_enemy_index = -1;
     g->hp = 100;
     g->state = TOY_GAME_PLAYING;
     /* 槽 0 主武器为空；槽 1 默认为满弹匣手枪，开局出枪。 */
@@ -533,6 +540,9 @@ static void init_enemy_stats(struct toy_game *g, struct toy_game_enemy *e,
     e->type = type >= 0 && type < TOY_GAME_ENEMY_TYPE_COUNT ? type : 0;
     e->speed = rand_range(g, info->speed_min, info->speed_max);
     e->hp = info->max_hp;
+    e->special_timer_ms = 0;
+    e->special_target_active = 0;
+    e->charge_active = 0;
 }
 
 /* 在矩形区域内随机生成一个追踪型敌人；距玩家过近、压障碍或槽满
@@ -666,7 +676,15 @@ static int try_spawn(struct toy_game *g)
         {
             /* Keep the old PRNG sequence stable; type selection is derived
              * from the slot instead of consuming another random value. */
-            int type = slot % 10 == 0 ? TOY_GAME_ENEMY_HEAVY :
+            int type;
+            if (g->campaign_mode && g->director_encounters >= 2 &&
+                slot % 8 == 0)
+                type = TOY_GAME_ENEMY_CHARGER;
+            else if (g->campaign_mode && g->director_encounters >= 1 &&
+                     slot % 6 == 0)
+                type = TOY_GAME_ENEMY_SMOKER;
+            else
+                type = slot % 10 == 0 ? TOY_GAME_ENEMY_HEAVY :
                        slot % 5 == 0 ? TOY_GAME_ENEMY_FAST :
                        TOY_GAME_ENEMY_COMMON;
             init_enemy_stats(g, &g->enemies[slot], type);
@@ -1179,6 +1197,146 @@ static int enemy_visual_stimulus(const struct toy_game *g,
     return 1;
 }
 
+static void release_player_special(struct toy_game *g)
+{
+    g->player_control_disabled = 0;
+    g->player_pull_enemy_index = -1;
+}
+
+static void move_player_forced(struct toy_game *g, int dx, int dz)
+{
+    int nx = g->px + dx;
+    int nz = g->pz + dz;
+    if (!toy_game_position_blocked(g, nx, g->pz, TOY_GAME_PLAYER_RADIUS))
+        g->px = nx;
+    if (!toy_game_position_blocked(g, g->px, nz, TOY_GAME_PLAYER_RADIUS))
+        g->pz = nz;
+}
+
+static void update_player_special_motion(struct toy_game *g, int dt_ms)
+{
+    if (g->player_airborne_ms > 0) {
+        g->player_airborne_ms -= dt_ms;
+        if (g->player_airborne_ms < 0) g->player_airborne_ms = 0;
+        if (g->player_knockback_x || g->player_knockback_z) {
+            move_player_forced(g, g->player_knockback_x,
+                               g->player_knockback_z);
+            g->player_knockback_x = g->player_knockback_x * 3 / 4;
+            g->player_knockback_z = g->player_knockback_z * 3 / 4;
+        }
+        g->player_vertical_velocity -= 24;
+        if (g->player_airborne_ms == 0) {
+            g->player_vertical_velocity = 0;
+            g->player_knockback_x = 0;
+            g->player_knockback_z = 0;
+            if (g->player_pull_enemy_index < 0)
+                g->player_control_disabled = 0;
+        }
+    }
+}
+
+static void update_smoker(struct toy_game *g, struct toy_game_enemy *e,
+                          int index, int target_x, int target_z,
+                          int dx, int dz, long long dist, int visual,
+                          int dt_ms)
+{
+    long long pull_dist;
+    int pull_dx, pull_dz, step;
+    if (e->special_timer_ms > 0) {
+        e->special_timer_ms -= dt_ms;
+        if (e->special_timer_ms < 0) e->special_timer_ms = 0;
+    }
+    if (g->player_pull_enemy_index == index &&
+        g->player_control_disabled) {
+        e->special_target_active = 1;
+        g->player_pull_timer_ms -= dt_ms;
+        pull_dx = e->x - g->px;
+        pull_dz = e->z - g->pz;
+        pull_dist = isqrt((long long)pull_dx * pull_dx +
+                          (long long)pull_dz * pull_dz);
+        if (g->player_pull_timer_ms <= 0 || pull_dist < 420 ||
+            !enemy_has_line_of_sight(g, e, g->px, g->pz)) {
+            e->special_target_active = 0;
+            release_player_special(g);
+            return;
+        }
+        step = TOY_GAME_SMOKER_PULL_STEP;
+        move_player_forced(g, pull_dx * step / (int)pull_dist,
+                           pull_dz * step / (int)pull_dist);
+        e->dir_x = -pull_dx * 1024 / (int)pull_dist;
+        e->dir_z = -pull_dz * 1024 / (int)pull_dist;
+        return;
+    }
+    e->special_target_active = 0;
+    if (e->special_timer_ms > 0 || g->player_down) return;
+    if (visual && dist >= 700 && dist <= TOY_GAME_SMOKER_RANGE) {
+        e->special_target_active = 1;
+        e->special_timer_ms = TOY_GAME_SMOKER_COOLDOWN_MS;
+        g->player_pull_enemy_index = index;
+        g->player_pull_timer_ms = TOY_GAME_SMOKER_PULL_MS;
+        g->player_control_disabled = 1;
+        return;
+    }
+    if (dist > TOY_GAME_SMOKER_RANGE) {
+        turn_enemy_toward(e, dx, dz);
+        chase_enemy(g, e, dx, dz, dist, 0);
+    }
+    (void)target_x;
+    (void)target_z;
+    (void)dt_ms;
+}
+
+static void update_charger(struct toy_game *g, struct toy_game_enemy *e,
+                           int target_x, int target_z, int dx, int dz,
+                           long long dist, int visual, int dt_ms)
+{
+    int nx, nz;
+    if (e->charge_active) {
+        turn_enemy_toward(e, dx, dz);
+        if (e->special_timer_ms > 0) {
+            e->special_timer_ms -= dt_ms;
+            return;
+        }
+        if (dist <= 300) {
+            g->hp -= TOY_GAME_CHARGER_DAMAGE;
+            if (g->hp < 0) g->hp = 0;
+            g->damage_flash_ms = TOY_GAME_DAMAGE_FLASH_MS;
+            g->player_airborne_ms = TOY_GAME_AIRBORNE_MS;
+            g->player_vertical_velocity = TOY_GAME_AIRBORNE_VELOCITY;
+            g->player_control_disabled = 1;
+            g->player_knockback_x = dx * TOY_GAME_CHARGER_KNOCKBACK /
+                                    (dist > 0 ? (int)dist : 1);
+            g->player_knockback_z = dz * TOY_GAME_CHARGER_KNOCKBACK /
+                                    (dist > 0 ? (int)dist : 1);
+            move_player_forced(g, g->player_knockback_x,
+                               g->player_knockback_z);
+            e->charge_active = 0;
+            e->special_timer_ms = TOY_GAME_CHARGER_COOLDOWN_MS;
+            return;
+        }
+        if (dist > 0) {
+            nx = dx * TOY_GAME_CHARGER_SPEED / (int)dist;
+            nz = dz * TOY_GAME_CHARGER_SPEED / (int)dist;
+            if (!enemy_position_blocked(g, e->x + nx, e->z,
+                                        TOY_GAME_ENEMY_RADIUS))
+                e->x += nx;
+            if (!enemy_position_blocked(g, e->x, e->z + nz,
+                                        TOY_GAME_ENEMY_RADIUS))
+                e->z += nz;
+        }
+        return;
+    }
+    if (e->special_timer_ms > 0) return;
+    if (visual && dist >= 700 && dist <= TOY_GAME_CHARGER_RANGE) {
+        e->charge_active = 1;
+        e->special_timer_ms = TOY_GAME_CHARGER_WINDUP_MS;
+        e->target_x = target_x;
+        e->target_z = target_z;
+        return;
+    }
+    if (dist > TOY_GAME_ATTACK_RANGE) chase_enemy(g, e, dx, dz, dist, 0);
+}
+
 static void update_enemy_ai(struct toy_game *g, struct toy_game_enemy *e,
                             int dt_ms)
 {
@@ -1200,6 +1358,21 @@ static void update_enemy_ai(struct toy_game *g, struct toy_game_enemy *e,
     int visual;
     int ai_available = nearest_ai_position(g, e, &ai_x, &ai_z, &ai_dist2,
                                            &ai_index);
+    visual = enemy_visual_stimulus(g, e, g->px, g->pz,
+                                   primary_dx, primary_dz,
+                                   isqrt(primary_dist2));
+
+    if (e->type == TOY_GAME_ENEMY_SMOKER) {
+        update_smoker(g, e, (int)(e - g->enemies), g->px, g->pz,
+                      primary_dx, primary_dz, isqrt(primary_dist2), visual,
+                      dt_ms);
+        return;
+    }
+    if (e->type == TOY_GAME_ENEMY_CHARGER) {
+        update_charger(g, e, g->px, g->pz, primary_dx, primary_dz,
+                       isqrt(primary_dist2), visual, dt_ms);
+        return;
+    }
 
     if (e->retarget_timer_ms > 0) e->retarget_timer_ms -= dt_ms;
     if ((e->target_player == 0 && g->player_down) ||
@@ -1520,6 +1693,8 @@ static int fire_ray(struct toy_game *g, int sy, int cy, int damage,
             e->flash = 120;
             g->enemies_alive--;
             g->kills++;
+            if (g->player_pull_enemy_index == best)
+                release_player_special(g);
             push_event(g, TOY_GAME_EV_KILL);
         } else {
             e->hurt = 150;
@@ -1849,6 +2024,7 @@ void toy_game_update_held(struct toy_game *g,
             if (e->dying_ms <= 0) e->active = 0;
         }
     }
+    update_player_special_motion(g, dt_ms);
     separate_enemies(g);
     if (g->campaign_mode) update_campaign(g, dt_ms);
     else update_waves(g, dt_ms);

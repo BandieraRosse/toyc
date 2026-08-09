@@ -44,6 +44,7 @@
 #define TOY_GAME_MAX_EVENTS     16
 
 #define TOY_GAME_ENEMY_RADIUS   100     /* 敌人碰撞半径 */
+#define TOY_GAME_PLAYER_RADIUS  180
 #define TOY_GAME_HIT_RADIUS     150     /* 命中判定半径（覆盖渲染 box 半宽） */
 #define TOY_GAME_ATTACK_RANGE   300     /* 敌我距离小于此值开始咬 */
 #define TOY_GAME_SHOVE_RANGE    900     /* 推开检测距离（面前扇形） */
@@ -71,6 +72,18 @@
 #define TOY_GAME_PROPAGATED_ALERT_MAX_MS 1100
 #define TOY_GAME_INVESTIGATE_MS 5000
 #define TOY_GAME_SEARCH_MS      4000
+#define TOY_GAME_SMOKER_RANGE   5200
+#define TOY_GAME_SMOKER_PULL_MS 4000
+#define TOY_GAME_SMOKER_COOLDOWN_MS 6500
+#define TOY_GAME_SMOKER_PULL_STEP 92
+#define TOY_GAME_CHARGER_RANGE  3200
+#define TOY_GAME_CHARGER_WINDUP_MS 700
+#define TOY_GAME_CHARGER_COOLDOWN_MS 5000
+#define TOY_GAME_CHARGER_SPEED  190
+#define TOY_GAME_CHARGER_DAMAGE 18
+#define TOY_GAME_CHARGER_KNOCKBACK 1050
+#define TOY_GAME_AIRBORNE_MS    700
+#define TOY_GAME_AIRBORNE_VELOCITY 320
 
 #define TOY_GAME_KEY_RELOAD     19      /* evdev KEY_R */
 #define TOY_GAME_KEY_SLOT_1     2       /* evdev KEY_1：主武器槽 */
@@ -121,6 +134,8 @@ enum toy_game_enemy_type {
     TOY_GAME_ENEMY_HEAVY,
     TOY_GAME_ENEMY_PURSUIT_HEAVY,
     TOY_GAME_ENEMY_PURSUIT_FAST,
+    TOY_GAME_ENEMY_SMOKER,
+    TOY_GAME_ENEMY_CHARGER,
     TOY_GAME_ENEMY_TYPE_COUNT
 };
 
@@ -211,6 +226,9 @@ struct toy_game_enemy {
     int retarget_timer_ms;
     int wander_timer_ms;
     int dir_x, dir_z;   /* 面向，1024 基准定点 */
+    int special_timer_ms;
+    int special_target_active;
+    int charge_active;
 };
 
 /* 固定容量 actor 容器。旧的 ai_* 字段暂时保留在 toy_game 中作为兼容
@@ -316,6 +334,13 @@ struct toy_game {
     int secondary_player_down;
     int player_down;
     int player_revive_progress_ms;
+    int player_control_disabled;
+    int player_pull_enemy_index;
+    int player_pull_timer_ms;
+    int player_airborne_ms;
+    int player_vertical_velocity;
+    int player_knockback_x;
+    int player_knockback_z;
     int ai_context_actor_index;
 
     /* PRNG（xorshift64*，init 时播种） */

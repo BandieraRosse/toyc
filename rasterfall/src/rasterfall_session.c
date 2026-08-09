@@ -240,6 +240,9 @@ static void session_move_player(struct rasterfall_session *session,
                                 struct camera *camera,
                                 const struct rasterfall_command *command)
 {
+    if (session->game_state.player_control_disabled ||
+        session->game_state.player_airborne_ms > 0)
+        return;
     int dx = (camera->sy * command->move_forward +
               camera->cy * command->move_strafe) * RASTERFALL_MOVE_STEP / 1024;
     int dz = (camera->cy * command->move_forward -
@@ -252,6 +255,17 @@ static void session_move_player(struct rasterfall_session *session,
     if (!toy_game_position_blocked(&session->game_state, camera->x, next_z,
                                    RASTERFALL_PLAYER_RADIUS))
         camera->z = next_z;
+}
+
+static void session_sync_special_motion(struct rasterfall_session *session,
+                                        struct camera *camera)
+{
+    if (!session || !camera) return;
+    if (session->game_state.player_control_disabled ||
+        session->game_state.player_airborne_ms > 0) {
+        camera->x = session->game_state.px;
+        camera->z = session->game_state.pz;
+    }
 }
 
 static void session_update_smooth_turn(struct rasterfall_session *session,
@@ -429,6 +443,19 @@ static void session_interact(struct rasterfall_session *session,
         session->banner_ms = 3000;
         session->banner_text = "RED RUNNER HORDE SUMMONED";
         __printf("rasterfall: fast pursuit enemies summoned %d\n", n);
+    } else if (it->kind == TOY_MAP_PICKUP_SMOKER_BUTTON ||
+               it->kind == TOY_MAP_PICKUP_CHARGER_BUTTON) {
+        int type = it->kind == TOY_MAP_PICKUP_SMOKER_BUTTON ?
+                   TOY_GAME_ENEMY_SMOKER : TOY_GAME_ENEMY_CHARGER;
+        int n = toy_game_spawn_horde_type(&session->game_state, type, 1, 1,
+                                          session->spawn_zones,
+                                          session->spawn_count,
+                                          HORDE_MIN_PLAYER_DIST);
+        session->banner_ms = 2500;
+        session->banner_text = it->kind == TOY_MAP_PICKUP_SMOKER_BUTTON ?
+            "SMOKER SUMMONED" : "CHARGER SUMMONED";
+        __printf("rasterfall: special test enemy summoned type %d (%d)\n",
+                  type, n);
     } else if (it->kind == TOY_MAP_PICKUP_AMMO) {
         toy_game_refill_ammo(&session->game_state);
     } else {
@@ -502,6 +529,7 @@ void rasterfall_session_step(struct rasterfall_session *session,
     toy_game_update_held(&session->game_state, keys,
                          (command->buttons & RASTERFALL_CMD_FIRE) != 0,
                          command->fire_held, camera->sy, camera->cy, dt_ms);
+    session_sync_special_motion(session, camera);
     session_update_manual_alarm(session, dt_ms);
     if (session->banner_ms > 0) {
         session->banner_ms -= dt_ms;

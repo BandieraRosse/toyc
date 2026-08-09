@@ -395,9 +395,10 @@ static int run_logic_test(void)
             if (r->ez < -5700 || r->ez > -3800) return 39;
         }
     }
-    /* 地图拾取物解析：7 个控制按钮 + 4 把主武器 + 2 个弹药盒。 */
+    /* 地图拾取物解析：9 个控制按钮 + 4 把主武器 + 2 个弹药盒。 */
     {
-        int has_horde_button = 0, has_base1 = 0, has_base2 = 0, i;
+        int has_horde_button = 0, has_base1 = 0, has_base2 = 0;
+        int has_smoker = 0, has_charger = 0, i;
         for (i = 0; i < interactable_count; i++) {
             if (interactables[i].kind == TOY_MAP_PICKUP_BUTTON)
                 has_horde_button = 1;
@@ -405,9 +406,13 @@ static int run_logic_test(void)
                 has_base1 = 1;
             if (interactables[i].kind == TOY_MAP_PICKUP_BASE_2_BUTTON)
                 has_base2 = 1;
+            if (interactables[i].kind == TOY_MAP_PICKUP_SMOKER_BUTTON)
+                has_smoker = 1;
+            if (interactables[i].kind == TOY_MAP_PICKUP_CHARGER_BUTTON)
+                has_charger = 1;
         }
-        if (interactable_count != 13 || !has_horde_button ||
-            !has_base1 || !has_base2) return 32;
+        if (interactable_count != 15 || !has_horde_button ||
+            !has_base1 || !has_base2 || !has_smoker || !has_charger) return 32;
     }
     /* 固定拾取点：拾取后武器仍在场，同武器再互动 = 补充弹药 */
     highlighted = 0;
@@ -626,6 +631,63 @@ static int run_logic_test(void)
         game.player_revive_progress_ms = 0;
         toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
         if (game.state != TOY_GAME_OVER) return 73;
+    }
+    /* 特感里程碑：Smoker 锁住移动但不锁住武器，持续把玩家拉向自身。 */
+    {
+        int start_z;
+        memset(game.enemies, 0, sizeof(game.enemies));
+        memset(game.actors, 0, sizeof(game.actors));
+        game.ai_active = 0;
+        game.enemies_alive = 1;
+        game.campaign_mode = 0;
+        game.to_spawn = 0;
+        game.safe_room_count = 0;
+        game.world_count = 0;
+        game.state = TOY_GAME_PLAYING;
+        game.player_down = 0;
+        game.player_control_disabled = 0;
+        game.player_pull_enemy_index = -1;
+        game.px = 0; game.pz = 0;
+        game.enemies[0].active = 1;
+        game.enemies[0].type = TOY_GAME_ENEMY_SMOKER;
+        game.enemies[0].x = 0; game.enemies[0].z = 1800;
+        game.enemies[0].hp = 25;
+        game.enemies[0].dir_x = 0; game.enemies[0].dir_z = -1024;
+        toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
+        if (!game.player_control_disabled ||
+            game.player_pull_enemy_index != 0) return 74;
+        start_z = game.pz;
+        toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
+        if (game.pz <= start_z) return 75;
+        if (toy_game_fire(&game, 0, 1024) != 1) return 76;
+        if (game.enemies[0].active != 2 ||
+            game.player_control_disabled) return 77;
+    }
+    /* Charger 里程碑：蓄力后造成伤害，并进入短暂空中/击飞状态。 */
+    {
+        int old_hp;
+        memset(game.enemies, 0, sizeof(game.enemies));
+        memset(game.actors, 0, sizeof(game.actors));
+        game.ai_active = 0;
+        game.enemies_alive = 1;
+        game.campaign_mode = 0;
+        game.to_spawn = 0;
+        game.safe_room_count = 0;
+        game.world_count = 0;
+        game.state = TOY_GAME_PLAYING;
+        game.player_down = 0;
+        game.player_control_disabled = 0;
+        game.player_airborne_ms = 0;
+        game.px = 0; game.pz = 0; old_hp = game.hp;
+        game.enemies[0].active = 1;
+        game.enemies[0].type = TOY_GAME_ENEMY_CHARGER;
+        game.enemies[0].x = 0; game.enemies[0].z = 1800;
+        game.enemies[0].hp = 180;
+        game.enemies[0].dir_x = 0; game.enemies[0].dir_z = -1024;
+        for (int i = 0; i < 60; i++)
+            toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
+        if (game.hp >= old_hp || game.player_airborne_ms <= 0 ||
+            !game.player_control_disabled) return 78;
     }
     __printf("rasterfall: logic test passed\n");
     return 0;

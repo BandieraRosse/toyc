@@ -124,7 +124,8 @@ int toy_map_load(const char *path, struct toy_map *m)
         else if((!strcmp(kind,"button") || !strcmp(kind,"button_air") ||
                  !strcmp(kind,"button_alarm") || !strcmp(kind,"button_heavy") ||
                  !strcmp(kind,"button_fast") || !strcmp(kind,"button_base1") ||
-                 !strcmp(kind,"button_base2")) && m->pickup_count<TOY_MAP_MAX_PICKUPS){
+                 !strcmp(kind,"button_base2") || !strcmp(kind,"button_smoker") ||
+                 !strcmp(kind,"button_charger")) && m->pickup_count<TOY_MAP_MAX_PICKUPS){
             char *sx=word(&p),*sz=word(&p),*sy=word(&p);
             if(sx&&sz&&sy){
                 m->pickups[m->pickup_count].kind=!strcmp(kind,"button_air") ?
@@ -133,7 +134,9 @@ int toy_map_load(const char *path, struct toy_map *m)
                     TOY_MAP_PICKUP_HEAVY_HORDE_BUTTON : !strcmp(kind,"button_fast") ?
                     TOY_MAP_PICKUP_FAST_HORDE_BUTTON : !strcmp(kind,"button_base1") ?
                     TOY_MAP_PICKUP_BASE_1_BUTTON : !strcmp(kind,"button_base2") ?
-                    TOY_MAP_PICKUP_BASE_2_BUTTON : TOY_MAP_PICKUP_BUTTON;
+                    TOY_MAP_PICKUP_BASE_2_BUTTON : !strcmp(kind,"button_smoker") ?
+                    TOY_MAP_PICKUP_SMOKER_BUTTON : !strcmp(kind,"button_charger") ?
+                    TOY_MAP_PICKUP_CHARGER_BUTTON : TOY_MAP_PICKUP_BUTTON;
                 m->pickups[m->pickup_count].x=number(sx,10);
                 m->pickups[m->pickup_count].z=number(sz,10);
                 m->pickups[m->pickup_count].y=number(sy,10);

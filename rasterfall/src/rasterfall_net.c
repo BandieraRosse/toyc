@@ -12,7 +12,7 @@
 #define NET_PLAYER_RAY_SIZE 15
 #define NET_PLAYER_SIZE (NET_PLAYER_BASE_SIZE + 4 + 1 + TOY_GAME_MAX_RAYS * NET_PLAYER_RAY_SIZE)
 #define NET_ACTOR_SIZE 21
-#define NET_ENEMY_SIZE 27
+#define NET_ENEMY_SIZE 29
 #define NET_EVENT_SIZE (4 + 1 + TOY_GAME_MAX_EVENTS)
 #define NET_WORLD_SIZE 32
 #define NET_SNAPSHOT_BASE 8
@@ -753,6 +753,8 @@ static void encode_enemy(unsigned char *p, const struct toy_game_enemy *e)
     put_i16(p + 17, e->flash); put_i16(p + 19, e->hurt);
     put_i16(p + 21, e->dying_ms);
     put_i16(p + 23, e->dir_x); put_i16(p + 25, e->dir_z);
+    p[27] = (unsigned char)(e->special_target_active ? 1 : 0);
+    p[28] = (unsigned char)(e->charge_active ? 1 : 0);
 }
 
 static void decode_enemy(const unsigned char *p, struct rasterfall_net_enemy *e)
@@ -765,6 +767,8 @@ static void decode_enemy(const unsigned char *p, struct rasterfall_net_enemy *e)
     e->flash = get_i16(p + 17); e->hurt = get_i16(p + 19);
     e->dying_ms = get_i16(p + 21);
     e->dir_x = get_i16(p + 23); e->dir_z = get_i16(p + 25);
+    e->special_target_active = p[27] & 1;
+    e->charge_active = p[28] & 1;
 }
 
 static void encode_actor(unsigned char *p, const struct toy_game_actor *a,
@@ -929,6 +933,7 @@ int rasterfall_net_send_snapshot(struct rasterfall_net *net,
     put_i16(world_data + 24, manual_alarm_timer_ms);
     put_i16(world_data + 26, game->alarm_triggered);
     put_i16(world_data + 28, game->campaign_stage);
+    world_data[30] = (unsigned char)(game->player_control_disabled ? 1 : 0);
     net->remote_event_snapshot_sequence = net->last_snapshot_sequence;
     if (event_count)
         net->remote_event_snapshot_last_id = net->remote_event_ids[event_count - 1];
@@ -1025,6 +1030,7 @@ static int decode_snapshot(const unsigned char *payload, int size,
     net->snapshot_world_manual_alarm_timer_ms = get_i16(world_data + 24);
     net->snapshot_world_alarm_triggered = get_i16(world_data + 26);
     net->snapshot_world_campaign_stage = get_i16(world_data + 28);
+    net->snapshot_player_control_disabled = world_data[30] & 1;
     net->snapshot_ready = 1;
     return 0;
 }
@@ -1624,6 +1630,8 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
         session->game_state.goal_hold_ms = net->snapshot_world_goal_hold_ms;
         session->game_state.alarm_triggered = net->snapshot_world_alarm_triggered;
         session->game_state.campaign_stage = net->snapshot_world_campaign_stage;
+        session->game_state.player_control_disabled =
+            net->snapshot_player_control_disabled;
         session->air_walls_enabled = net->snapshot_air_walls_enabled;
         session->manual_alarm_on = net->snapshot_manual_alarm_enabled;
         session->manual_alarm_timer = net->snapshot_world_manual_alarm_timer_ms;
@@ -1642,6 +1650,8 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
             dst->speed = src->speed; dst->bite_cooldown_ms = src->bite_cooldown_ms;
             dst->flash = src->flash; dst->hurt = src->hurt;
             dst->dying_ms = src->dying_ms;
+            dst->special_target_active = src->special_target_active;
+            dst->charge_active = src->charge_active;
             if (old_active != 1 || src->active != 1 ||
                 (dst->dir_x == 0 && dst->dir_z == 0)) {
                 dst->dir_x = src->dir_x;

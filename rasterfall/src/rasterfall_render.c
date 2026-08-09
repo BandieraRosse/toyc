@@ -674,6 +674,22 @@ static int render_button(struct toy_renderer *renderer, const struct camera *cam
     return pixels;
 }
 
+/* 开发者区的特感测试按钮：矮圆柱底座和略低于视线的按键帽，便于连续
+ * 添加新的特感而不再占用墙面按钮。 */
+static int render_special_button(struct toy_renderer *renderer,
+                                 const struct camera *camera,
+                                 int x, int y, int z, int on, int charger)
+{
+    uint32_t color = charger ? 0x9B5528 : 0x3E7462;
+    int pixels = draw_cylinder(renderer, camera, x, z, 190, -900, y, color);
+    pixels += draw_cuboid(renderer, camera, x - 125, x + 125,
+                          y, y + 35, z - 125, z + 125,
+                          highlight_tint(0x252B31, on));
+    pixels += draw_cylinder(renderer, camera, x, z, 62, y + 35, y + 78,
+                            on ? 0xFFE080 : (charger ? 0xD43A28 : 0x38CFA0));
+    return pixels;
+}
+
 static int render_interactables(struct toy_renderer *renderer,
                                 const struct camera *camera)
 {
@@ -694,6 +710,11 @@ static int render_interactables(struct toy_renderer *renderer,
                  it->kind == TOY_MAP_PICKUP_BASE_2_BUTTON)
             pixels += render_button(renderer, camera, it->x, it->y, it->z, on,
                                     it->x < -10000 ? 1 : it->x > 10000 ? 2 : 0);
+        else if (it->kind == TOY_MAP_PICKUP_SMOKER_BUTTON ||
+                 it->kind == TOY_MAP_PICKUP_CHARGER_BUTTON)
+            pixels += render_special_button(renderer, camera, it->x, it->y,
+                                             it->z, on,
+                                             it->kind == TOY_MAP_PICKUP_CHARGER_BUTTON);
         else
             pixels += render_ammo_box(renderer, camera, it->x, it->y, it->z, on);
     }
@@ -912,6 +933,11 @@ static int render_enemies(struct toy_renderer *renderer,
             color = info->color;
             if (e->type == TOY_GAME_ENEMY_HEAVY ||
                 e->type == TOY_GAME_ENEMY_PURSUIT_HEAVY) scale = 1350;
+            if (e->type == TOY_GAME_ENEMY_SMOKER) color = 0x6E7A72;
+            if (e->type == TOY_GAME_ENEMY_CHARGER) {
+                color = e->charge_active ? 0xD06030 : 0xA56A38;
+                scale = 1500;
+            }
             if (e->hurt > 0) color = 0xBB3333;
             else if (e->flash > 0) color = 0xDFDFDF;
             else if (e->type == TOY_GAME_ENEMY_PURSUIT_HEAVY)
@@ -923,6 +949,7 @@ static int render_enemies(struct toy_renderer *renderer,
         }
         pixels += render_blob_shadow(renderer, camera, e, scale);
         if (e->type == TOY_GAME_ENEMY_HEAVY ||
+            e->type == TOY_GAME_ENEMY_CHARGER ||
             e->type == TOY_GAME_ENEMY_PURSUIT_HEAVY || (i & 1) == 0)
             pixels += render_block_enemy(renderer, camera, e, scale, color);
         else
