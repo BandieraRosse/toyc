@@ -45,11 +45,10 @@ make app-rasterfall
 build/rasterfall
 ```
 
-Headless logic and local UDP checks are available with:
+The headless logic check is available with:
 
 ```sh
 build/rasterfall --logic-test
-build/rasterfall --net-test
 build/rasterfall --host --port 28460
 build/rasterfall --connect 127.0.0.1 --port 28460
 ```

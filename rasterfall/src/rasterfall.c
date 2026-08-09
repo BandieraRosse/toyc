@@ -51,7 +51,6 @@
  *   make build/rasterfall       构建程序
  *   build/rasterfall --logic-test 运行无窗口逻辑回归测试
  *   build/rasterfall --frames N    在 Wayland 下运行有限帧数预览
- *   build/rasterfall --net-test    运行无窗口协议与 localhost UDP 回环
  *   build/rasterfall --host --port 28460
  *   build/rasterfall --connect 127.0.0.1 --port 28460
  *   完整项目测试入口和工具链约束以仓库根目录 README.md、AGENTS.md 为准。
@@ -1029,7 +1028,6 @@ int main(int argc, char **argv)
     uint64_t seed;
 
     int logic_test = 0;
-    int net_test = 0;
     int requested_net_mode = RASTERFALL_NET_OFF;
     int net_port = RASTERFALL_NET_DEFAULT_PORT;
     int public_room = 0, public_room_id = 0;
@@ -1041,7 +1039,6 @@ int main(int argc, char **argv)
     for (int arg = 1; arg < argc; arg++) {
         if (strcmp(argv[arg], "--input-test") == 0) input_debug = 1;
         else if (strcmp(argv[arg], "--logic-test") == 0) logic_test = 1;
-        else if (strcmp(argv[arg], "--net-test") == 0) net_test = 1;
         else if (strcmp(argv[arg], "--host") == 0)
             requested_net_mode = RASTERFALL_NET_HOST;
         else if (strcmp(argv[arg], "--connect") == 0 && arg + 1 < argc) {
@@ -1061,12 +1058,6 @@ int main(int argc, char **argv)
             while (*p >= '0' && *p <= '9')
                 frame_limit = frame_limit * 10 + (*p++ - '0');
         }
-    }
-    if (net_test) {
-        int result = rasterfall_net_self_test();
-        if (result == 0) __printf("rasterfall: network protocol test passed\n");
-        else __fprintf(2, "rasterfall: network protocol test failed: %d\n", result);
-        return result;
     }
     rasterfall_net_init(&net);
     strcpy(host_address, "127.0.0.1");

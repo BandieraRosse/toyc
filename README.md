@@ -44,11 +44,10 @@ make app-rasterfall
 build/rasterfall
 ```
 
-无窗口逻辑回归和本地 UDP 测试可使用：
+无窗口逻辑回归可使用：
 
 ```sh
 build/rasterfall --logic-test
-build/rasterfall --net-test
 build/rasterfall --host --port 28460
 build/rasterfall --connect 127.0.0.1 --port 28460
 ```

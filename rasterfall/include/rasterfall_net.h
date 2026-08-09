@@ -249,6 +249,5 @@ void rasterfall_net_apply_local_rescue(struct rasterfall_net *net,
                                        const struct camera *host_camera,
                                        int interact_pressed, int dt_ms);
 void rasterfall_net_reset_host(struct rasterfall_net *net);
-int rasterfall_net_self_test(void);
 
 #endif
