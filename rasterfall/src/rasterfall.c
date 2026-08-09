@@ -366,6 +366,7 @@ static void set_network_spectator_camera(struct camera *camera,
         camera->cy = net->peer_camera.cy;
         camera->pitch_sy = net->peer_camera.pitch_sy;
         camera->pitch_cy = net->peer_camera.pitch_cy;
+        camera->y = net->peer_camera.y;
         return;
     } else return;
     camera->x = target->camera.x - target->camera.sy * distance / 1024;
@@ -374,6 +375,7 @@ static void set_network_spectator_camera(struct camera *camera,
     camera->cy = target->camera.cy;
     camera->pitch_sy = target->camera.pitch_sy;
     camera->pitch_cy = target->camera.pitch_cy;
+    camera->y = target->camera.y;
 }
 
 

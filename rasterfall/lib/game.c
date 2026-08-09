@@ -85,8 +85,8 @@ static const struct toy_game_enemy_info enemy_table[TOY_GAME_ENEMY_TYPE_COUNT] =
     { BALANCE_HEAVY_HP, 24, 34, BALANCE_HEAVY_BITE_DAMAGE, 2, 0x624A3A },
     { BALANCE_PURSUIT_HEAVY_HP, 30, 42, BALANCE_PURSUIT_HEAVY_BITE_DAMAGE, 2, 0x7A4A2A },
     { BALANCE_PURSUIT_FAST_HP, 92, 112, BALANCE_PURSUIT_FAST_BITE_DAMAGE, 1, 0xB84A32 },
-    { BALANCE_SMOKER_HP, 34, 46, BALANCE_SMOKER_BITE_DAMAGE, 1, 0x6E7A72 },
-    { BALANCE_CHARGER_HP, 42, 58, BALANCE_CHARGER_BITE_DAMAGE, 2, 0xA56A38 }
+    { BALANCE_SMOKER_HP, 34, 46, BALANCE_SMOKER_BITE_DAMAGE, 1, 0x76513A },
+    { BALANCE_CHARGER_HP, 42, 58, BALANCE_CHARGER_BITE_DAMAGE, 2, 0x8B5A35 }
 };
 
 struct toy_game_ai_info {
@@ -541,8 +541,14 @@ static void init_enemy_stats(struct toy_game *g, struct toy_game_enemy *e,
     e->speed = rand_range(g, info->speed_min, info->speed_max);
     e->hp = info->max_hp;
     e->special_timer_ms = 0;
+    e->special_windup_ms = 0;
     e->special_target_active = 0;
     e->charge_active = 0;
+    e->airborne_ms = 0;
+    e->vertical_velocity = 0;
+    e->airborne_y = 0;
+    e->knockback_x = 0;
+    e->knockback_z = 0;
 }
 
 /* 在矩形区域内随机生成一个追踪型敌人；距玩家过近、压障碍或槽满
@@ -1197,6 +1203,23 @@ static int enemy_visual_stimulus(const struct toy_game *g,
     return 1;
 }
 
+/* 特感技能拥有独立于普通索敌的远距离视野；普通敌人的察觉距离不能
+ * 意外截断 Smoker/Charger 的技能距离。 */
+static int enemy_special_visual_stimulus(const struct toy_game *g,
+                                         const struct toy_game_enemy *e,
+                                         int target_x, int target_z,
+                                         int dx, int dz, long long dist,
+                                         int range)
+{
+    if (player_in_safe_room_at(g, target_x, target_z) || dist > range ||
+        !enemy_has_line_of_sight(g, e, target_x, target_z)) return 0;
+    /* 技能索敌不受初始朝向影响；进入技能状态后由各自逻辑立即转身。 */
+    (void)e;
+    (void)dx;
+    (void)dz;
+    return dist <= TOY_GAME_CLOSE_DETECT_RANGE ? 2 : 1;
+}
+
 static void release_player_special(struct toy_game *g)
 {
     g->player_control_disabled = 0;
@@ -1213,22 +1236,39 @@ static void move_player_forced(struct toy_game *g, int dx, int dz)
         g->pz = nz;
 }
 
+static void move_enemy_forced(struct toy_game *g, struct toy_game_enemy *e,
+                              int dx, int dz)
+{
+    int nx = e->x + dx;
+    int nz = e->z + dz;
+    if (!enemy_position_blocked(g, nx, e->z, TOY_GAME_ENEMY_RADIUS))
+        e->x = nx;
+    if (!enemy_position_blocked(g, e->x, nz, TOY_GAME_ENEMY_RADIUS))
+        e->z = nz;
+}
+
 static void update_player_special_motion(struct toy_game *g, int dt_ms)
 {
     if (g->player_airborne_ms > 0) {
         g->player_airborne_ms -= dt_ms;
         if (g->player_airborne_ms < 0) g->player_airborne_ms = 0;
+        g->player_airborne_y += g->player_vertical_velocity;
+        g->player_vertical_velocity -= TOY_GAME_AIRBORNE_GRAVITY;
+        if (g->player_airborne_y <= 0 && g->player_vertical_velocity < 0) {
+            g->player_airborne_y = 0;
+            g->player_airborne_ms = 0;
+        }
         if (g->player_knockback_x || g->player_knockback_z) {
             move_player_forced(g, g->player_knockback_x,
                                g->player_knockback_z);
             g->player_knockback_x = g->player_knockback_x * 3 / 4;
             g->player_knockback_z = g->player_knockback_z * 3 / 4;
         }
-        g->player_vertical_velocity -= 24;
         if (g->player_airborne_ms == 0) {
             g->player_vertical_velocity = 0;
             g->player_knockback_x = 0;
             g->player_knockback_z = 0;
+            g->player_airborne_y = 0;
             if (g->player_pull_enemy_index < 0)
                 g->player_control_disabled = 0;
         }
@@ -1254,36 +1294,131 @@ static void update_smoker(struct toy_game *g, struct toy_game_enemy *e,
         pull_dz = e->z - g->pz;
         pull_dist = isqrt((long long)pull_dx * pull_dx +
                           (long long)pull_dz * pull_dz);
-        if (g->player_pull_timer_ms <= 0 || pull_dist < 420 ||
+        if (g->player_pull_timer_ms <= 0 ||
             !enemy_has_line_of_sight(g, e, g->px, g->pz)) {
             e->special_target_active = 0;
             release_player_special(g);
             return;
         }
+        /* 舌头把玩家拉到身边后保持束缚，并按接触间隔造成伤害。 */
+        if (pull_dist < 420 && e->bite_cooldown_ms <= 0) {
+            g->hp -= TOY_GAME_SMOKER_DAMAGE;
+            if (g->hp < 0) g->hp = 0;
+            g->damage_flash_ms = TOY_GAME_DAMAGE_FLASH_MS;
+            e->bite_cooldown_ms = 1000;
+        }
         step = TOY_GAME_SMOKER_PULL_STEP;
-        move_player_forced(g, pull_dx * step / (int)pull_dist,
-                           pull_dz * step / (int)pull_dist);
-        e->dir_x = -pull_dx * 1024 / (int)pull_dist;
-        e->dir_z = -pull_dz * 1024 / (int)pull_dist;
+        if (pull_dist > 420)
+            move_player_forced(g, pull_dx * step / (int)pull_dist,
+                               pull_dz * step / (int)pull_dist);
+        if (pull_dist > 0) {
+            e->dir_x = -pull_dx * 1024 / (int)pull_dist;
+            e->dir_z = -pull_dz * 1024 / (int)pull_dist;
+        }
         return;
     }
     e->special_target_active = 0;
-    if (e->special_timer_ms > 0 || g->player_down) return;
-    if (visual && dist >= 700 && dist <= TOY_GAME_SMOKER_RANGE) {
-        e->special_target_active = 1;
-        e->special_timer_ms = TOY_GAME_SMOKER_COOLDOWN_MS;
-        g->player_pull_enemy_index = index;
-        g->player_pull_timer_ms = TOY_GAME_SMOKER_PULL_MS;
-        g->player_control_disabled = 1;
+    if (g->player_down) return;
+    if (e->special_windup_ms > 0) {
+        e->special_windup_ms -= dt_ms;
+        if (e->special_windup_ms < 0) e->special_windup_ms = 0;
+        if (dist > 0) {
+            e->dir_x = dx * 1024 / (int)dist;
+            e->dir_z = dz * 1024 / (int)dist;
+        }
+        if (e->special_windup_ms == 0) {
+            e->special_target_active = 1;
+            g->player_pull_enemy_index = index;
+            g->player_pull_timer_ms = TOY_GAME_SMOKER_PULL_MS;
+            g->player_control_disabled = 1;
+        }
         return;
     }
-    if (dist > TOY_GAME_SMOKER_RANGE) {
-        turn_enemy_toward(e, dx, dz);
-        chase_enemy(g, e, dx, dz, dist, 0);
+    if (visual && dist >= 700 && dist <= TOY_GAME_SMOKER_RANGE) {
+        if (dist > 0) {
+            e->dir_x = dx * 1024 / (int)dist;
+            e->dir_z = dz * 1024 / (int)dist;
+        }
+        e->special_target_active = 0;
+        e->special_timer_ms = TOY_GAME_SMOKER_COOLDOWN_MS;
+        e->special_windup_ms = TOY_GAME_SPECIAL_WINDUP_MS;
+        return;
     }
+    /* Smoker 会主动靠近以寻找玩家，但永远不调用普通近战攻击。 */
+    if (dist > 0) turn_enemy_toward(e, dx, dz);
+    if (dist > 700 && (!visual || dist > TOY_GAME_SMOKER_RANGE))
+        chase_enemy(g, e, dx, dz, dist, 0);
     (void)target_x;
     (void)target_z;
     (void)dt_ms;
+}
+
+static void launch_enemy_from_charger(struct toy_game *g,
+                                      struct toy_game_enemy *victim,
+                                      int dx, int dz, int damage)
+{
+    long long dist = isqrt((long long)dx * dx + (long long)dz * dz);
+    if (dist <= 0) { dx = 0; dz = 1024; dist = 1024; }
+    victim->hp -= damage;
+    if (victim->hp <= 0) {
+        victim->hp = 0;
+        victim->active = 2;
+        victim->dying_ms = TOY_GAME_DYING_MS;
+        g->enemies_alive--;
+    }
+    victim->special_target_active = 0;
+    victim->special_windup_ms = 0;
+    victim->charge_active = 0;
+    if (g->player_pull_enemy_index == (int)(victim - g->enemies))
+        release_player_special(g);
+    victim->airborne_ms = TOY_GAME_AIRBORNE_MS;
+    victim->vertical_velocity = TOY_GAME_AIRBORNE_VELOCITY;
+    victim->airborne_y = 0;
+    victim->knockback_x = dx * TOY_GAME_CHARGER_KNOCKBACK / (int)dist;
+    victim->knockback_z = dz * TOY_GAME_CHARGER_KNOCKBACK / (int)dist;
+    victim->hurt = 180;
+}
+
+static int charger_hit_enemies(struct toy_game *g,
+                               struct toy_game_enemy *charger)
+{
+    int i, hits = 0;
+    for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
+        struct toy_game_enemy *victim = &g->enemies[i];
+        int dx, dz;
+        long long dist2;
+        if (victim == charger || victim->active != 1 ||
+            victim->airborne_ms > 0) continue;
+        dx = victim->x - charger->x;
+        dz = victim->z - charger->z;
+        dist2 = (long long)dx * dx + (long long)dz * dz;
+        if (dist2 > 300 * 300) continue;
+        launch_enemy_from_charger(g, victim, dx, dz,
+                                  TOY_GAME_CHARGER_IMPACT_DAMAGE);
+        hits++;
+    }
+    return hits;
+}
+
+static void update_enemy_airborne(struct toy_game *g,
+                                  struct toy_game_enemy *e, int dt_ms)
+{
+    e->airborne_ms -= dt_ms;
+    if (e->airborne_ms < 0) e->airborne_ms = 0;
+    e->airborne_y += e->vertical_velocity;
+    e->vertical_velocity -= TOY_GAME_AIRBORNE_GRAVITY;
+    if (e->knockback_x || e->knockback_z) {
+        move_enemy_forced(g, e, e->knockback_x, e->knockback_z);
+        e->knockback_x = e->knockback_x * 3 / 4;
+        e->knockback_z = e->knockback_z * 3 / 4;
+    }
+    if (e->airborne_y <= 0 && e->vertical_velocity < 0) {
+        e->airborne_y = 0;
+        e->airborne_ms = 0;
+        e->vertical_velocity = 0;
+        e->knockback_x = 0;
+        e->knockback_z = 0;
+    }
 }
 
 static void update_charger(struct toy_game *g, struct toy_game_enemy *e,
@@ -1292,9 +1427,17 @@ static void update_charger(struct toy_game *g, struct toy_game_enemy *e,
 {
     int nx, nz;
     if (e->charge_active) {
-        turn_enemy_toward(e, dx, dz);
+        if (dist > 0) {
+            e->dir_x = dx * 1024 / (int)dist;
+            e->dir_z = dz * 1024 / (int)dist;
+        }
         if (e->special_timer_ms > 0) {
             e->special_timer_ms -= dt_ms;
+            return;
+        }
+        if (charger_hit_enemies(g, e) > 0) {
+            e->charge_active = 0;
+            e->special_timer_ms = TOY_GAME_CHARGER_COOLDOWN_MS;
             return;
         }
         if (dist <= 300) {
@@ -1303,6 +1446,7 @@ static void update_charger(struct toy_game *g, struct toy_game_enemy *e,
             g->damage_flash_ms = TOY_GAME_DAMAGE_FLASH_MS;
             g->player_airborne_ms = TOY_GAME_AIRBORNE_MS;
             g->player_vertical_velocity = TOY_GAME_AIRBORNE_VELOCITY;
+            g->player_airborne_y = 0;
             g->player_control_disabled = 1;
             g->player_knockback_x = dx * TOY_GAME_CHARGER_KNOCKBACK /
                                     (dist > 0 ? (int)dist : 1);
@@ -1310,6 +1454,7 @@ static void update_charger(struct toy_game *g, struct toy_game_enemy *e,
                                     (dist > 0 ? (int)dist : 1);
             move_player_forced(g, g->player_knockback_x,
                                g->player_knockback_z);
+            charger_hit_enemies(g, e);
             e->charge_active = 0;
             e->special_timer_ms = TOY_GAME_CHARGER_COOLDOWN_MS;
             return;
@@ -1326,8 +1471,27 @@ static void update_charger(struct toy_game *g, struct toy_game_enemy *e,
         }
         return;
     }
-    if (e->special_timer_ms > 0) return;
-    if (visual && dist >= 700 && dist <= TOY_GAME_CHARGER_RANGE) {
+    if (e->special_timer_ms > 0) {
+        /* 冲锋后的恢复期主动离开玩家，再以低速徘徊等待下一轮。 */
+        if (dist > 0 && dist < 3600) {
+            nx = -dx * (e->speed / 4) / (int)dist;
+            nz = -dz * (e->speed / 4) / (int)dist;
+            if (!enemy_position_blocked(g, e->x + nx, e->z,
+                                        TOY_GAME_ENEMY_RADIUS)) e->x += nx;
+            if (!enemy_position_blocked(g, e->x, e->z + nz,
+                                        TOY_GAME_ENEMY_RADIUS)) e->z += nz;
+        } else {
+            wander_enemy(g, e, dt_ms);
+        }
+        e->special_timer_ms -= dt_ms;
+        if (e->special_timer_ms < 0) e->special_timer_ms = 0;
+        return;
+    }
+    if (visual && dist > 300 && dist <= TOY_GAME_CHARGER_RANGE) {
+        if (dist > 0) {
+            e->dir_x = dx * 1024 / (int)dist;
+            e->dir_z = dz * 1024 / (int)dist;
+        }
         e->charge_active = 1;
         e->special_timer_ms = TOY_GAME_CHARGER_WINDUP_MS;
         e->target_x = target_x;
@@ -1363,12 +1527,20 @@ static void update_enemy_ai(struct toy_game *g, struct toy_game_enemy *e,
                                    isqrt(primary_dist2));
 
     if (e->type == TOY_GAME_ENEMY_SMOKER) {
+        visual = enemy_special_visual_stimulus(g, e, g->px, g->pz,
+                                               primary_dx, primary_dz,
+                                               isqrt(primary_dist2),
+                                               TOY_GAME_SMOKER_RANGE);
         update_smoker(g, e, (int)(e - g->enemies), g->px, g->pz,
                       primary_dx, primary_dz, isqrt(primary_dist2), visual,
                       dt_ms);
         return;
     }
     if (e->type == TOY_GAME_ENEMY_CHARGER) {
+        visual = enemy_special_visual_stimulus(g, e, g->px, g->pz,
+                                               primary_dx, primary_dz,
+                                               isqrt(primary_dist2),
+                                               TOY_GAME_CHARGER_RANGE);
         update_charger(g, e, g->px, g->pz, primary_dx, primary_dz,
                        isqrt(primary_dist2), visual, dt_ms);
         return;
@@ -2001,6 +2173,10 @@ void toy_game_update_held(struct toy_game *g,
     for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
         struct toy_game_enemy *e = &g->enemies[i];
         if (e->active == 1) {
+            if (e->airborne_ms > 0) {
+                update_enemy_airborne(g, e, dt_ms);
+                continue;       /* 空中状态：落地前不执行自身 AI */
+            }
             if (e->bite_cooldown_ms > 0) {
                 e->bite_cooldown_ms -= dt_ms;
                 if (e->bite_cooldown_ms < 0) e->bite_cooldown_ms = 0;

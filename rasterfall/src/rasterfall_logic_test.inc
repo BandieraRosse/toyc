@@ -417,7 +417,7 @@ static int run_logic_test(void)
     /* 固定拾取点：拾取后武器仍在场，同武器再互动 = 补充弹药 */
     highlighted = 0;
     {
-        struct camera aim = {0, -7000, 0, -1024, 0, 1024};
+        struct camera aim = {0, -7000, 0, -1024, 0, 1024, 0};
         memset(&command, 0, sizeof(command));
         command.buttons = RASTERFALL_CMD_INTERACT;
         rasterfall_session_step(&session, &aim, &command, 16);
@@ -428,7 +428,7 @@ static int run_logic_test(void)
     game.slots[0].reserve = 5;
     highlighted = 0;
     {
-        struct camera aim = {0, -7000, 0, -1024, 0, 1024};
+        struct camera aim = {0, -7000, 0, -1024, 0, 1024, 0};
         memset(&command, 0, sizeof(command));
         command.buttons = RASTERFALL_CMD_INTERACT;
         rasterfall_session_step(&session, &aim, &command, 16);
@@ -479,7 +479,7 @@ static int run_logic_test(void)
             return 45;
         had = game.enemies_alive;
         {
-            struct camera aim = {-10950, -10000, -1024, 0, 0, 1024};
+            struct camera aim = {-10950, -10000, -1024, 0, 0, 1024, 0};
             memset(&command, 0, sizeof(command));
             command.buttons = RASTERFALL_CMD_INTERACT;
             rasterfall_session_step(&session, &aim, &command, 16);
@@ -487,7 +487,7 @@ static int run_logic_test(void)
         n = game.enemies_alive - had;
         if (n < 15 || n > 20) return 46;
         {
-            struct camera aim = {-10950, -10000, -1024, 0, 0, 1024};
+            struct camera aim = {-10950, -10000, -1024, 0, 0, 1024, 0};
             memset(&command, 0, sizeof(command));
             command.buttons = RASTERFALL_CMD_INTERACT;
             rasterfall_session_step(&session, &aim, &command, 16);
@@ -500,7 +500,7 @@ static int run_logic_test(void)
     game.enemies_alive = 0;
     game.spawn_budget = 0;
     {
-        struct camera aim = {-500, -2100, 0, 1024, 0, 1024};
+        struct camera aim = {-500, -2100, 0, 1024, 0, 1024, 0};
         int i;
         static const char expect[] = "REVIVE GUARD FIRST";
         memset(&command, 0, sizeof(command));
@@ -515,7 +515,7 @@ static int run_logic_test(void)
     }
     /* 救援 GUARD：靠近倒地 AI 持续互动（中途无需再按键）即可复活。 */
     {
-        struct camera aim = {0, -1500, 0, -1024, 0, 1024};
+        struct camera aim = {0, -1500, 0, -1024, 0, 1024, 0};
         int i;
         memset(&command, 0, sizeof(command));
         command.buttons = RASTERFALL_CMD_INTERACT;
@@ -529,7 +529,7 @@ static int run_logic_test(void)
     }
     /* 复活后按下据点1 按钮：stage 推进到 1 并召唤尸潮。 */
     {
-        struct camera aim = {-500, -2100, 0, 1024, 0, 1024};
+        struct camera aim = {-500, -2100, 0, 1024, 0, 1024, 0};
         memset(&command, 0, sizeof(command));
         command.buttons = RASTERFALL_CMD_INTERACT;
         rasterfall_session_step(&session, &aim, &command, 16);
@@ -540,7 +540,7 @@ static int run_logic_test(void)
      * TOY_GAME_SHOVE_PUSH 并僵直 TOY_GAME_SHOVE_STUN_MS；身后敌人不受
      * 影响。 */
     {
-        struct camera aim = {0, -2100, 0, 1024, 0, 1024};
+        struct camera aim = {0, -2100, 0, 1024, 0, 1024, 0};
         int i, pushed_z;
         int jx = game.actors[0].x, jz = game.actors[0].z;
         int gx = game.actors[1].x, gz = game.actors[1].z;
@@ -589,7 +589,7 @@ static int run_logic_test(void)
     /* 终点撤离：stage 2 后终点安全屋即可正常推进撤离进度（不锁门，
      * 最终尸潮期间玩家也可随时撤离）。 */
     {
-        struct camera aim = {0, 8800, 0, 1024, 0, 1024};
+        struct camera aim = {0, 8800, 0, 1024, 0, 1024, 0};
         int i;
         memset(game.enemies, 0, sizeof(game.enemies));
         game.enemies_alive = 0;
@@ -654,8 +654,12 @@ static int run_logic_test(void)
         game.enemies[0].hp = 25;
         game.enemies[0].dir_x = 0; game.enemies[0].dir_z = -1024;
         toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
-        if (!game.player_control_disabled ||
-            game.player_pull_enemy_index != 0) return 74;
+        if (game.player_control_disabled || game.enemies[0].special_windup_ms <= 0)
+            return 74;
+        for (int i = 0; i < 80; i++)
+            toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
+        if (!game.player_control_disabled || game.player_pull_enemy_index != 0)
+            return 74;
         start_z = game.pz;
         toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
         if (game.pz <= start_z) return 75;
@@ -665,7 +669,7 @@ static int run_logic_test(void)
     }
     /* Charger 里程碑：蓄力后造成伤害，并进入短暂空中/击飞状态。 */
     {
-        int old_hp;
+        int old_hp, saw_airborne_y = 0, saw_control_lock = 0;
         memset(game.enemies, 0, sizeof(game.enemies));
         memset(game.actors, 0, sizeof(game.actors));
         game.ai_active = 0;
@@ -684,10 +688,12 @@ static int run_logic_test(void)
         game.enemies[0].x = 0; game.enemies[0].z = 1800;
         game.enemies[0].hp = 180;
         game.enemies[0].dir_x = 0; game.enemies[0].dir_z = -1024;
-        for (int i = 0; i < 60; i++)
+        for (int i = 0; i < 80; i++) {
             toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
-        if (game.hp >= old_hp || game.player_airborne_ms <= 0 ||
-            !game.player_control_disabled) return 78;
+            if (game.player_airborne_y > 0) saw_airborne_y = 1;
+            if (game.player_control_disabled) saw_control_lock = 1;
+        }
+        if (game.hp >= old_hp || !saw_airborne_y || !saw_control_lock) return 78;
     }
     __printf("rasterfall: logic test passed\n");
     return 0;

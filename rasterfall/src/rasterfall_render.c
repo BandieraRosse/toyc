@@ -30,6 +30,7 @@ static struct toy_texture_view *active_wall_texture;
 static unsigned short *active_lightmap;
 static int active_textures;
 static int active_fixed_floor_lighting;
+static int active_enemy_lift;
 
 #define level_map active_session->level
 #define game active_session->game_state
@@ -159,8 +160,11 @@ static void world_to_view(const struct camera *camera, const struct vec3 *world,
     int wx = (dx * camera->cy - dz * camera->sy) / 1024;
     int wz = (dx * camera->sy + dz * camera->cy) / 1024;
     view->x = wx;
-    view->y = (world->y * camera->pitch_cy - wz * camera->pitch_sy) / 1024;
-    view->z = (world->y * camera->pitch_sy + wz * camera->pitch_cy) / 1024;
+    {
+        int dy = world->y - camera->y;
+        view->y = (dy * camera->pitch_cy - wz * camera->pitch_sy) / 1024;
+        view->z = (dy * camera->pitch_sy + wz * camera->pitch_cy) / 1024;
+    }
 }
 
 static void near_intersection(const struct vec3 *a, const struct vec3 *b,
@@ -533,6 +537,23 @@ static int draw_cylinder(struct toy_renderer *renderer,
     return pixels;
 }
 
+static int draw_tongue_segment(struct toy_renderer *renderer,
+                               const struct camera *camera,
+                               int x0, int y0, int z0,
+                               int x1, int y1, int z1)
+{
+    long dx = x1 - x0, dz = z1 - z0;
+    long len = isqrt(dx * dx + dz * dz);
+    int width = 18;
+    struct vec3 a, b, c, d;
+    if (len <= 0) return 0;
+    a.x = x0 - (int)(dz * width / len); a.y = y0; a.z = z0 + (int)(dx * width / len);
+    b.x = x0 + (int)(dz * width / len); b.y = y0; b.z = z0 - (int)(dx * width / len);
+    c.x = x1 + (int)(dz * width / len); c.y = y1; c.z = z1 - (int)(dx * width / len);
+    d.x = x1 - (int)(dz * width / len); d.y = y1; d.z = z1 + (int)(dx * width / len);
+    return draw_quad(renderer, camera, &a, &b, &c, &d, 0xB98B62);
+}
+
 /* 三圈八边面组成的低多边形椭圆头。 */
 static int draw_ellipsoid_head(struct toy_renderer *renderer,
                                const struct camera *camera, int x, int z,
@@ -787,7 +808,7 @@ static int render_scene(struct toy_renderer *renderer, const struct camera *came
 }
 static int enemy_y(int y, int scale)
 {
-    return -900 + (y + 900) * scale / 1000;
+    return -900 + (y + 900) * scale / 1000 + active_enemy_lift;
 }
 
 /* 偶数槽位：方块人。分离的靴子、腿、躯干和头保持 Minecraft 式轮廓。 */
@@ -863,6 +884,95 @@ static int render_round_enemy(struct toy_renderer *renderer,
     return pixels;
 }
 
+static int render_charger_enemy(struct toy_renderer *renderer,
+                                const struct camera *camera,
+                                const struct toy_game_enemy *e, int scale,
+                                uint32_t color)
+{
+    int x = e->x, z = e->z, pixels = 0;
+    pixels += draw_cuboid(renderer, camera, x - 135, x - 20,
+                          enemy_y(-900, scale), enemy_y(-760, scale),
+                          z - 150, z + 110, 0x30261F);
+    pixels += draw_cuboid(renderer, camera, x + 20, x + 135,
+                          enemy_y(-900, scale), enemy_y(-760, scale),
+                          z - 150, z + 110, 0x30261F);
+    pixels += draw_cuboid(renderer, camera, x - 235, x + 235,
+                          enemy_y(-760, scale), enemy_y(95, scale),
+                          z - 135, z + 135, color);
+    pixels += draw_cuboid(renderer, camera, x - 205, x + 205,
+                          enemy_y(75, scale), enemy_y(360, scale),
+                          z - 145, z + 145, color + 0x18100A);
+    /* Charger 面部是一个粗像素 C。 */
+    pixels += draw_face_rect(renderer, camera, x, z, 150, e->dir_x, e->dir_z,
+                             -120, -82, enemy_y(105, scale), enemy_y(315, scale),
+                             0x2A1710);
+    pixels += draw_face_rect(renderer, camera, x, z, 150, e->dir_x, e->dir_z,
+                             -82, 100, enemy_y(280, scale), enemy_y(315, scale),
+                             0x2A1710);
+    pixels += draw_face_rect(renderer, camera, x, z, 150, e->dir_x, e->dir_z,
+                             -82, 100, enemy_y(105, scale), enemy_y(140, scale),
+                             0x2A1710);
+    return pixels;
+}
+
+static int render_smoker_enemy(struct toy_renderer *renderer,
+                               const struct camera *camera,
+                               const struct toy_game_enemy *e, int scale,
+                               uint32_t color)
+{
+    int x = e->x, z = e->z, pixels = 0;
+    pixels += draw_cuboid(renderer, camera, x - 105, x - 25,
+                          enemy_y(-900, scale), enemy_y(-760, scale),
+                          z - 105, z + 75, 0x30261F);
+    pixels += draw_cuboid(renderer, camera, x + 25, x + 105,
+                          enemy_y(-900, scale), enemy_y(-760, scale),
+                          z - 105, z + 75, 0x30261F);
+    pixels += draw_cylinder(renderer, camera, x, z, 145,
+                            enemy_y(-770, scale), enemy_y(180, scale), color);
+    pixels += draw_ellipsoid_head(renderer, camera, x, z,
+                                  enemy_y(315, scale), 165,
+                                  (enemy_y(560, scale) - enemy_y(130, scale)) / 2,
+                                  color + 0x18100A);
+    /* 5x7 像素字模，保证 SM 在正常体型的脸上仍完整可辨。 */
+    {
+        static const char *letters[2][7] = {
+            { "11111", "10000", "10000", "11111", "00001", "00001", "11111" },
+            { "10001", "11011", "10101", "10101", "10001", "10001", "10001" }
+        };
+        int letter, row, col;
+        for (letter = 0; letter < 2; letter++)
+            for (row = 0; row < 7; row++)
+                for (col = 0; col < 5; col++)
+                    if (letters[letter][row][col] == '1') {
+                        /* 面部平面从外侧看会发生镜像，反向布置列才能让
+                         * 玩家看到正常顺序的 S 和 M。 */
+                        int h0 = 110 - (letter * 6 + col) * 24;
+                        pixels += draw_face_rect(renderer, camera, x, z, 165,
+                                                 e->dir_x, e->dir_z,
+                                                 h0, h0 + 17,
+                                                 enemy_y(170 + row * 38, scale),
+                                                 enemy_y(200 + row * 38, scale),
+                                                 0xFFD070);
+                    }
+    }
+    return pixels;
+}
+
+static int render_smoker_tongue(struct toy_renderer *renderer,
+                                const struct camera *camera,
+                                const struct toy_game_enemy *e)
+{
+    int pixels;
+    pixels = draw_tongue_segment(renderer, camera, e->x, 270, e->z,
+                                 game.px, -360, game.pz);
+    /* 两个水平束缚圈表现舌头在玩家身上的缠绕。 */
+    pixels += draw_cylinder(renderer, camera, game.px, game.pz, 225,
+                            -430, -395, 0xB98B62);
+    pixels += draw_cylinder(renderer, camera, game.px, game.pz, 205,
+                            -280, -245, 0xB98B62);
+    return pixels;
+}
+
 static void render_enemy_alert(struct toy_renderer *renderer,
                                const struct camera *camera,
                                const struct toy_game_enemy *e, int scale)
@@ -933,11 +1043,12 @@ static int render_enemies(struct toy_renderer *renderer,
             color = info->color;
             if (e->type == TOY_GAME_ENEMY_HEAVY ||
                 e->type == TOY_GAME_ENEMY_PURSUIT_HEAVY) scale = 1350;
-            if (e->type == TOY_GAME_ENEMY_SMOKER) color = 0x6E7A72;
+            if (e->type == TOY_GAME_ENEMY_SMOKER) color = 0x76513A;
             if (e->type == TOY_GAME_ENEMY_CHARGER) {
-                color = e->charge_active ? 0xD06030 : 0xA56A38;
-                scale = 1500;
+                color = e->charge_active ? 0xB06A36 : 0x8B5A35;
+                scale = 1120;
             }
+            if (e->type == TOY_GAME_ENEMY_SMOKER) scale = 1000;
             if (e->hurt > 0) color = 0xBB3333;
             else if (e->flash > 0) color = 0xDFDFDF;
             else if (e->type == TOY_GAME_ENEMY_PURSUIT_HEAVY)
@@ -948,12 +1059,21 @@ static int render_enemies(struct toy_renderer *renderer,
                 color = 0x8A2A2A;   /* 尸潮追踪者：红色，一眼可辨 */
         }
         pixels += render_blob_shadow(renderer, camera, e, scale);
-        if (e->type == TOY_GAME_ENEMY_HEAVY ||
-            e->type == TOY_GAME_ENEMY_CHARGER ||
+        if (e->type == TOY_GAME_ENEMY_SMOKER &&
+            e->special_target_active && game.player_pull_enemy_index == i &&
+            game.player_control_disabled)
+            pixels += render_smoker_tongue(renderer, camera, e);
+        active_enemy_lift = e->airborne_y;
+        if (e->type == TOY_GAME_ENEMY_CHARGER)
+            pixels += render_charger_enemy(renderer, camera, e, scale, color);
+        else if (e->type == TOY_GAME_ENEMY_SMOKER)
+            pixels += render_smoker_enemy(renderer, camera, e, scale, color);
+        else if (e->type == TOY_GAME_ENEMY_HEAVY ||
             e->type == TOY_GAME_ENEMY_PURSUIT_HEAVY || (i & 1) == 0)
             pixels += render_block_enemy(renderer, camera, e, scale, color);
         else
             pixels += render_round_enemy(renderer, camera, e, scale, color);
+        active_enemy_lift = 0;
         render_enemy_alert(renderer, camera, e, scale);
     }
     return pixels;

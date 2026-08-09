@@ -72,18 +72,22 @@
 #define TOY_GAME_PROPAGATED_ALERT_MAX_MS 1100
 #define TOY_GAME_INVESTIGATE_MS 5000
 #define TOY_GAME_SEARCH_MS      4000
-#define TOY_GAME_SMOKER_RANGE   5200
+#define TOY_GAME_SMOKER_RANGE   13000
 #define TOY_GAME_SMOKER_PULL_MS 4000
 #define TOY_GAME_SMOKER_COOLDOWN_MS 6500
-#define TOY_GAME_SMOKER_PULL_STEP 92
-#define TOY_GAME_CHARGER_RANGE  3200
+#define TOY_GAME_SMOKER_PULL_STEP 46
+#define TOY_GAME_CHARGER_RANGE  9600
 #define TOY_GAME_CHARGER_WINDUP_MS 700
-#define TOY_GAME_CHARGER_COOLDOWN_MS 5000
-#define TOY_GAME_CHARGER_SPEED  190
-#define TOY_GAME_CHARGER_DAMAGE 18
+#define TOY_GAME_CHARGER_COOLDOWN_MS 15000
+#define TOY_GAME_CHARGER_SPEED  95
+#define TOY_GAME_CHARGER_DAMAGE 6
 #define TOY_GAME_CHARGER_KNOCKBACK 1050
+#define TOY_GAME_SMOKER_DAMAGE     2
+#define TOY_GAME_CHARGER_IMPACT_DAMAGE 6
+#define TOY_GAME_SPECIAL_WINDUP_MS 1200
+#define TOY_GAME_AIRBORNE_GRAVITY  10
 #define TOY_GAME_AIRBORNE_MS    700
-#define TOY_GAME_AIRBORNE_VELOCITY 320
+#define TOY_GAME_AIRBORNE_VELOCITY 220
 
 #define TOY_GAME_KEY_RELOAD     19      /* evdev KEY_R */
 #define TOY_GAME_KEY_SLOT_1     2       /* evdev KEY_1：主武器槽 */
@@ -227,8 +231,13 @@ struct toy_game_enemy {
     int wander_timer_ms;
     int dir_x, dir_z;   /* 面向，1024 基准定点 */
     int special_timer_ms;
+    int special_windup_ms;
     int special_target_active;
     int charge_active;
+    int airborne_ms;
+    int vertical_velocity;
+    int airborne_y;
+    int knockback_x, knockback_z;
 };
 
 /* 固定容量 actor 容器。旧的 ai_* 字段暂时保留在 toy_game 中作为兼容
@@ -243,6 +252,10 @@ struct toy_game_actor {
     int sy, cy;
     int hp, max_hp;
     int revive_progress_ms;
+    int airborne_ms;
+    int vertical_velocity;
+    int airborne_y;
+    int knockback_x, knockback_z;
     char name[TOY_GAME_MAX_NAME];
     struct toy_game_slot slots[TOY_GAME_WEAPON_SLOTS];
     int current_slot;
@@ -338,6 +351,7 @@ struct toy_game {
     int player_pull_enemy_index;
     int player_pull_timer_ms;
     int player_airborne_ms;
+    int player_airborne_y;
     int player_vertical_velocity;
     int player_knockback_x;
     int player_knockback_z;

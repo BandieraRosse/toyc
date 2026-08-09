@@ -12,7 +12,7 @@
 #define NET_PLAYER_RAY_SIZE 15
 #define NET_PLAYER_SIZE (NET_PLAYER_BASE_SIZE + 4 + 1 + TOY_GAME_MAX_RAYS * NET_PLAYER_RAY_SIZE)
 #define NET_ACTOR_SIZE 21
-#define NET_ENEMY_SIZE 29
+#define NET_ENEMY_SIZE 33
 #define NET_EVENT_SIZE (4 + 1 + TOY_GAME_MAX_EVENTS)
 #define NET_WORLD_SIZE 32
 #define NET_SNAPSHOT_BASE 8
@@ -635,6 +635,7 @@ static void decode_command_camera(const unsigned char *payload,
     camera->cy = get_i16(payload + 26);
     camera->pitch_sy = get_i16(payload + 28);
     camera->pitch_cy = get_i16(payload + 30);
+    camera->y = 0;
 }
 
 int rasterfall_net_send_command(struct rasterfall_net *net,
@@ -675,6 +676,7 @@ static void encode_player(unsigned char *p, int id, int active,
     put_i16(p + 14, camera->cy);
     put_i16(p + 16, camera->pitch_sy);
     put_i16(p + 18, camera->pitch_cy);
+    put_i16(p + 43, camera->y);
     put_i16(p + 20, hp);
     p[22] = (unsigned char)current_slot;
     p[23] = put_weapon_value(slots ? slots[0].weapon : -1);
@@ -718,6 +720,7 @@ static int decode_player(const unsigned char *p,
     player->camera.cy = get_i16(p + 14);
     player->camera.pitch_sy = get_i16(p + 16);
     player->camera.pitch_cy = get_i16(p + 18);
+    player->camera.y = get_i16(p + 43);
     player->hp = get_i16(p + 20);
     player->current_slot = p[22] < TOY_GAME_WEAPON_SLOTS ? p[22] : 0;
     player->slot_weapon[0] = get_weapon_value(p[23]);
@@ -755,6 +758,8 @@ static void encode_enemy(unsigned char *p, const struct toy_game_enemy *e)
     put_i16(p + 23, e->dir_x); put_i16(p + 25, e->dir_z);
     p[27] = (unsigned char)(e->special_target_active ? 1 : 0);
     p[28] = (unsigned char)(e->charge_active ? 1 : 0);
+    put_i16(p + 29, e->airborne_ms);
+    put_i16(p + 31, e->airborne_y);
 }
 
 static void decode_enemy(const unsigned char *p, struct rasterfall_net_enemy *e)
@@ -769,6 +774,8 @@ static void decode_enemy(const unsigned char *p, struct rasterfall_net_enemy *e)
     e->dir_x = get_i16(p + 23); e->dir_z = get_i16(p + 25);
     e->special_target_active = p[27] & 1;
     e->charge_active = p[28] & 1;
+    e->airborne_ms = get_i16(p + 29);
+    e->airborne_y = get_i16(p + 31);
 }
 
 static void encode_actor(unsigned char *p, const struct toy_game_actor *a,
@@ -1652,6 +1659,8 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
             dst->dying_ms = src->dying_ms;
             dst->special_target_active = src->special_target_active;
             dst->charge_active = src->charge_active;
+            dst->airborne_ms = src->airborne_ms;
+            dst->airborne_y = src->airborne_y;
             if (old_active != 1 || src->active != 1 ||
                 (dst->dir_x == 0 && dst->dir_z == 0)) {
                 dst->dir_x = src->dir_x;

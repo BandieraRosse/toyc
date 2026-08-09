@@ -269,6 +269,13 @@ void rasterfall_hud_render(struct toy_surface *surface, int fps,
                        banner_y, state->interaction_banner, 0xFF3030,
                        surface->stride);
     }
+    if (game->player_control_disabled && game->player_pull_enemy_index >= 0) {
+        const char *warning = "WARNING: SMOKER PULLING YOU";
+        fb_draw_string((unsigned char *)surface->pixels,
+                       (surface->width - (int)strlen(warning) * FB_FONT_W) / 2,
+                       surface->height / 2 - 48, warning, 0xFF5040,
+                       surface->stride);
+    }
 }
 
 void rasterfall_hud_draw_interact_prompt(struct toy_renderer *renderer,

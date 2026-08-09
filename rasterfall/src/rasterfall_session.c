@@ -148,6 +148,7 @@ void rasterfall_session_reset(struct rasterfall_session *session,
     camera->cy = 1024;
     camera->pitch_sy = 0;
     camera->pitch_cy = 1024;
+    camera->y = 0;
     session->seed = seed ? seed : 1;
     toy_game_init(&session->game_state, session->seed);
     /* 环境变量不依赖 libc；HOSTNAME 是最稳定的本机身份来源，缺失时
@@ -265,6 +266,9 @@ static void session_sync_special_motion(struct rasterfall_session *session,
         session->game_state.player_airborne_ms > 0) {
         camera->x = session->game_state.px;
         camera->z = session->game_state.pz;
+        camera->y = session->game_state.player_airborne_y;
+    } else {
+        camera->y = 0;
     }
 }
 

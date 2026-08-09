@@ -10,6 +10,8 @@ struct camera {
     int x, z;
     int sy, cy;
     int pitch_sy, pitch_cy;
+    /* 玩家被击飞时的世界高度；网络旧字段保持兼容，远端默认落地。 */
+    int y;
 };
 
 #endif
