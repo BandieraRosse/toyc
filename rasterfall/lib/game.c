@@ -178,6 +178,7 @@ void toy_game_init(struct toy_game *g, uint64_t seed)
     memset(g, 0, sizeof(struct toy_game));
     g->rng = seed ? seed : 0x9E3779B97F4A7C15ULL;
     g->player_pull_enemy_index = -1;
+    g->secondary_player_hp = 100;
     g->hp = 100;
     g->state = TOY_GAME_PLAYING;
     /* 槽 0 主武器为空；槽 1 默认为满弹匣手枪，开局出枪。 */
@@ -245,6 +246,8 @@ void toy_game_set_ai_teammate_class(struct toy_game *g, int active, int class_id
     g->actors[0].class_id = class_id;
     g->actors[0].state = TOY_GAME_ACTOR_ALIVE;
     g->actors[0].x = g->ai_x; g->actors[0].z = g->ai_z;
+    g->actors[0].deployment_x = g->ai_x;
+    g->actors[0].deployment_z = g->ai_z;
     g->actors[0].sy = g->ai_sy; g->actors[0].cy = g->ai_cy;
     g->actors[0].hp = g->actors[0].max_hp = g->ai_hp;
     g->actors[0].slots[0] = g->ai_slots[0];
@@ -329,6 +332,7 @@ int toy_game_add_ai(struct toy_game *g, int class_id, int x, int z,
     a->class_id = class_id;
     a->state = TOY_GAME_ACTOR_ALIVE;
     a->x = x; a->z = z; a->cy = 1024;
+    a->deployment_x = x; a->deployment_z = z;
     a->hp = a->max_hp = info->max_hp;
     copy_name(a->name, name ? name : "AI");
     a->slots[0].weapon = info->weapon;
@@ -1292,6 +1296,47 @@ static void move_enemy_forced(struct toy_game *g, struct toy_game_enemy *e,
         e->z = nz;
 }
 
+static void move_actor_forced(struct toy_game *g, struct toy_game_actor *a,
+                              int dx, int dz)
+{
+    int nx = a->x + dx;
+    int nz = a->z + dz;
+    if (!toy_game_position_blocked(g, nx, a->z, TOY_GAME_PLAYER_RADIUS))
+        a->x = nx;
+    if (!toy_game_position_blocked(g, a->x, nz, TOY_GAME_PLAYER_RADIUS))
+        a->z = nz;
+}
+
+static void update_motion_values(struct toy_game *g, int *x, int *z,
+                                 int *airborne_ms, int *airborne_y,
+                                 int *vertical_velocity, int *knockback_x,
+                                 int *knockback_z, int radius, int dt_ms)
+{
+    if (*airborne_ms <= 0) return;
+    *airborne_ms -= dt_ms;
+    if (*airborne_ms < 0) *airborne_ms = 0;
+    *airborne_y += *vertical_velocity;
+    *vertical_velocity -= TOY_GAME_AIRBORNE_GRAVITY;
+    if (*knockback_x || *knockback_z) {
+        int nx = *x + *knockback_x;
+        int nz = *z + *knockback_z;
+        if (!toy_game_position_blocked(g, nx, *z, radius)) *x = nx;
+        if (!toy_game_position_blocked(g, *x, nz, radius)) *z = nz;
+        *knockback_x = *knockback_x * 3 / 4;
+        *knockback_z = *knockback_z * 3 / 4;
+    }
+    if (*airborne_y <= 0 && *vertical_velocity < 0) {
+        *airborne_y = 0;
+        *airborne_ms = 0;
+    }
+    if (*airborne_ms == 0) {
+        *vertical_velocity = 0;
+        *knockback_x = 0;
+        *knockback_z = 0;
+        *airborne_y = 0;
+    }
+}
+
 static void update_player_special_motion(struct toy_game *g, int dt_ms)
 {
     if (g->player_airborne_ms > 0) {
@@ -1430,34 +1475,69 @@ static void update_smoker(struct toy_game *g, struct toy_game_enemy *e,
     (void)dt_ms;
 }
 
-static void launch_enemy_from_charger(struct toy_game *g,
-                                      struct toy_game_enemy *victim,
-                                      int dx, int dz, int damage)
+int toy_game_apply_entity_impact(struct toy_game *g, int kind, int index,
+                                 int dx, int dz, int damage)
 {
     long long dist = isqrt((long long)dx * dx + (long long)dz * dz);
-    if (dist <= 0) { dx = 0; dz = 1024; dist = 1024; }
-    victim->hp -= damage;
-    if (victim->hp <= 0) {
-        victim->hp = 0;
-        victim->active = 2;
-        victim->dying_ms = TOY_GAME_DYING_MS;
-        g->enemies_alive--;
+    if (!g || dist <= 0) { dx = 0; dz = 1024; dist = 1024; }
+    dx = dx * TOY_GAME_CHARGER_KNOCKBACK / (int)dist;
+    dz = dz * TOY_GAME_CHARGER_KNOCKBACK / (int)dist;
+    if (kind == TOY_GAME_ENTITY_PLAYER) {
+        if (g->player_down) return 0;
+        g->hp -= damage; if (g->hp < 0) g->hp = 0;
+        if (g->hp == 0) { g->player_down = 1; g->player_revive_progress_ms = 0; }
+        g->damage_flash_ms = TOY_GAME_DAMAGE_FLASH_MS;
+        g->player_airborne_ms = TOY_GAME_AIRBORNE_MS;
+        g->player_airborne_y = 0;
+        g->player_vertical_velocity = TOY_GAME_AIRBORNE_VELOCITY;
+        g->player_knockback_x = dx; g->player_knockback_z = dz;
+        g->player_control_disabled = 1;
+        return 1;
     }
-    victim->special_target_active = 0;
-    victim->special_windup_ms = 0;
-    victim->charge_active = 0;
-    if (g->player_pull_enemy_index == (int)(victim - g->enemies))
-        release_player_special(g);
-    victim->airborne_ms = TOY_GAME_AIRBORNE_MS;
-    victim->vertical_velocity = TOY_GAME_AIRBORNE_VELOCITY;
-    victim->airborne_y = 0;
-    victim->knockback_x = dx * TOY_GAME_CHARGER_KNOCKBACK / (int)dist;
-    victim->knockback_z = dz * TOY_GAME_CHARGER_KNOCKBACK / (int)dist;
-    victim->hurt = 180;
+    if (kind == TOY_GAME_ENTITY_REMOTE_PLAYER) {
+        if (g->secondary_player_down) return 0;
+        g->secondary_player_hp -= damage;
+        if (g->secondary_player_hp < 0) g->secondary_player_hp = 0;
+        if (g->secondary_player_hp == 0) g->secondary_player_down = 1;
+        g->secondary_player_airborne_ms = TOY_GAME_AIRBORNE_MS;
+        g->secondary_player_airborne_y = 0;
+        g->secondary_player_vertical_velocity = TOY_GAME_AIRBORNE_VELOCITY;
+        g->secondary_player_knockback_x = dx;
+        g->secondary_player_knockback_z = dz;
+        return 1;
+    }
+    if (kind == TOY_GAME_ENTITY_ACTOR) {
+        struct toy_game_actor *a;
+        if (index < 0 || index >= TOY_GAME_MAX_ACTORS) return 0;
+        a = &g->actors[index];
+        if (!a->active || a->state != TOY_GAME_ACTOR_ALIVE) return 0;
+        a->hp -= damage; if (a->hp < 0) a->hp = 0;
+        if (a->hp == 0) { a->state = TOY_GAME_ACTOR_DOWNED; a->revive_progress_ms = 0; }
+        a->airborne_ms = TOY_GAME_AIRBORNE_MS;
+        a->airborne_y = 0; a->vertical_velocity = TOY_GAME_AIRBORNE_VELOCITY;
+        a->knockback_x = dx; a->knockback_z = dz;
+        if (index == 0) load_ai_actor_to_legacy(g, a);
+        return 1;
+    }
+    if (kind == TOY_GAME_ENTITY_ENEMY) {
+        struct toy_game_enemy *e;
+        if (index < 0 || index >= TOY_GAME_MAX_ENEMIES) return 0;
+        e = &g->enemies[index];
+        if (e->active != 1) return 0;
+        e->hp -= damage;
+        if (e->hp <= 0) { e->hp = 0; e->active = 2; e->dying_ms = TOY_GAME_DYING_MS; g->enemies_alive--; }
+        e->special_target_active = 0; e->special_windup_ms = 0; e->charge_active = 0;
+        if (g->player_pull_enemy_index == index) release_player_special(g);
+        e->airborne_ms = TOY_GAME_AIRBORNE_MS;
+        e->vertical_velocity = TOY_GAME_AIRBORNE_VELOCITY; e->airborne_y = 0;
+        e->knockback_x = dx; e->knockback_z = dz; e->hurt = 180;
+        return 1;
+    }
+    return 0;
 }
 
-static int charger_hit_enemies(struct toy_game *g,
-                               struct toy_game_enemy *charger)
+static int charger_hit_entities(struct toy_game *g,
+                                struct toy_game_enemy *charger)
 {
     int i, hits = 0;
     for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
@@ -1470,9 +1550,19 @@ static int charger_hit_enemies(struct toy_game *g,
         dz = victim->z - charger->z;
         dist2 = (long long)dx * dx + (long long)dz * dz;
         if (dist2 > 300 * 300) continue;
-        launch_enemy_from_charger(g, victim, dx, dz,
-                                  TOY_GAME_CHARGER_IMPACT_DAMAGE);
-        hits++;
+        if (toy_game_apply_entity_impact(g, TOY_GAME_ENTITY_ENEMY, i,
+                                         dx, dz, TOY_GAME_CHARGER_IMPACT_DAMAGE)) hits++;
+    }
+    for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
+        struct toy_game_actor *a = &g->actors[i];
+        int dx, dz; long long dist2;
+        if (!a->active || a->kind != TOY_GAME_ACTOR_AI ||
+            a->state != TOY_GAME_ACTOR_ALIVE || a->airborne_ms > 0) continue;
+        dx = a->x - charger->x; dz = a->z - charger->z;
+        dist2 = (long long)dx * dx + (long long)dz * dz;
+        if (dist2 <= 300 * 300 &&
+            toy_game_apply_entity_impact(g, TOY_GAME_ENTITY_ACTOR, i,
+                                          dx, dz, TOY_GAME_CHARGER_IMPACT_DAMAGE)) hits++;
     }
     return hits;
 }
@@ -1504,6 +1594,7 @@ static void update_charger(struct toy_game *g, struct toy_game_enemy *e,
                            long long dist, int visual, int dt_ms)
 {
     int nx, nz;
+    (void)target_actor;
     if (e->charge_active) {
         e->dir_x = e->charge_dir_x;
         e->dir_z = e->charge_dir_z;
@@ -1518,32 +1609,16 @@ static void update_charger(struct toy_game *g, struct toy_game_enemy *e,
             return;
         }
         /* 沿锁定直线持续冲锋；同一轮可连续撞到多个敌人。 */
-        charger_hit_enemies(g, e);
+        charger_hit_entities(g, e);
         if (dist <= 300) {
             if (target_player == 0) {
-                g->hp -= TOY_GAME_CHARGER_DAMAGE;
-                if (g->hp < 0) g->hp = 0;
-                g->damage_flash_ms = TOY_GAME_DAMAGE_FLASH_MS;
-                g->player_airborne_ms = TOY_GAME_AIRBORNE_MS;
-                g->player_vertical_velocity = TOY_GAME_AIRBORNE_VELOCITY;
-                g->player_airborne_y = 0;
-                g->player_control_disabled = 1;
-                g->player_knockback_x = dx * TOY_GAME_CHARGER_KNOCKBACK /
-                                        (dist > 0 ? (int)dist : 1);
-                g->player_knockback_z = dz * TOY_GAME_CHARGER_KNOCKBACK /
-                                        (dist > 0 ? (int)dist : 1);
-                move_player_forced(g, g->player_knockback_x,
-                                   g->player_knockback_z);
-            } else if (target_player == 2 && target_actor >= 0 &&
-                       target_actor < TOY_GAME_MAX_ACTORS) {
-                struct toy_game_actor *a = &g->actors[target_actor];
-                a->hp -= TOY_GAME_CHARGER_DAMAGE;
-                if (a->hp <= 0) {
-                    a->hp = 0; a->state = TOY_GAME_ACTOR_DOWNED;
-                    a->revive_progress_ms = 0;
-                }
+                toy_game_apply_entity_impact(g, TOY_GAME_ENTITY_PLAYER, 0,
+                                             dx, dz, TOY_GAME_CHARGER_DAMAGE);
+            } else if (target_player == 1) {
+                toy_game_apply_entity_impact(g, TOY_GAME_ENTITY_REMOTE_PLAYER, 0,
+                                             dx, dz, TOY_GAME_CHARGER_DAMAGE);
             }
-            charger_hit_enemies(g, e);
+            charger_hit_entities(g, e);
             e->charge_active = 0;
             e->special_timer_ms = TOY_GAME_CHARGER_COOLDOWN_MS;
             return;
@@ -2148,6 +2223,7 @@ void toy_game_update_weapon_held(struct toy_game *g,
  * 状态，这样两名操作者共享同一套武器规则，同时不会覆盖玩家 tracer。 */
 void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
 {
+    struct toy_game_actor *actor;
     struct toy_game_slot player_slots[TOY_GAME_WEAPON_SLOTS];
     struct toy_game_ray player_rays[TOY_GAME_MAX_RAYS];
     int player_px, player_pz, player_current_slot;
@@ -2159,7 +2235,30 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
     int sy = 0, cy = 1024;
     int player_down;
     sync_ai_actor_from_legacy(g);
+    actor = &g->actors[g->ai_context_actor_index];
+    if (actor->airborne_ms > 0) {
+        update_motion_values(g, &actor->x, &actor->z, &actor->airborne_ms,
+                             &actor->airborne_y, &actor->vertical_velocity,
+                             &actor->knockback_x, &actor->knockback_z,
+                             TOY_GAME_PLAYER_RADIUS, dt_ms);
+        load_ai_actor_to_legacy(g, actor);
+        return; /* 被击飞时中断自己的行为，落地后恢复。 */
+    }
     if (!g->ai_active || g->ai_down || g->state != TOY_GAME_PLAYING) return;
+
+    /* 自由状态下向部署点回位；回位只占用移动，不影响索敌和开火。 */
+    {
+        int home_dx = actor->deployment_x - actor->x;
+        int home_dz = actor->deployment_z - actor->z;
+        long long home_dist = isqrt((long long)home_dx * home_dx +
+                                    (long long)home_dz * home_dz);
+        if (home_dist > TOY_GAME_AI_DEPLOY_RADIUS) {
+            int mx = home_dx * TOY_GAME_AI_RETURN_SPEED / (int)home_dist;
+            int mz = home_dz * TOY_GAME_AI_RETURN_SPEED / (int)home_dist;
+            move_actor_forced(g, actor, mx, mz);
+            g->ai_x = actor->x; g->ai_z = actor->z;
+        }
+    }
 
     /* 与普通敌人察觉距离同量级，且只选择无遮挡目标。 */
     for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
@@ -2268,6 +2367,14 @@ void toy_game_update_held(struct toy_game *g,
     toy_game_update_weapon_held(g, keys_pressed, fire_pressed, fire_held,
                                 sy, cy, dt_ms);
     toy_game_update_ai_teammates(g, dt_ms);
+    if (g->secondary_player_active && !g->secondary_player_down)
+        update_motion_values(g, &g->secondary_px, &g->secondary_pz,
+                             &g->secondary_player_airborne_ms,
+                             &g->secondary_player_airborne_y,
+                             &g->secondary_player_vertical_velocity,
+                             &g->secondary_player_knockback_x,
+                             &g->secondary_player_knockback_z,
+                             TOY_GAME_PLAYER_RADIUS, dt_ms);
 
     /* 敌人计时器与移动/攻击/倒地 */
     for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {

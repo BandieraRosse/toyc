@@ -8,10 +8,10 @@
 #define NET_MAGIC_2 'N'
 #define NET_MAGIC_3 '1'
 #define NET_INPUT_SIZE 32
-#define NET_PLAYER_BASE_SIZE 46
+#define NET_PLAYER_BASE_SIZE 52
 #define NET_PLAYER_RAY_SIZE 15
 #define NET_PLAYER_SIZE (NET_PLAYER_BASE_SIZE + 4 + 1 + TOY_GAME_MAX_RAYS * NET_PLAYER_RAY_SIZE)
-#define NET_ACTOR_SIZE 21
+#define NET_ACTOR_SIZE 25
 #define NET_ENEMY_SIZE 33
 #define NET_EVENT_SIZE (4 + 1 + TOY_GAME_MAX_EVENTS)
 #define NET_WORLD_SIZE 32
@@ -661,7 +661,8 @@ static void encode_player(unsigned char *p, int id, int active,
                           int current_slot, int reloading, int reload_timer_ms,
                           int muzzle_flash_ms, int kills,
                           unsigned int fire_seq, int ray_count,
-                          const struct toy_game_ray *rays)
+                          const struct toy_game_ray *rays,
+                          int airborne_ms, int airborne_y)
 {
     p[0] = (unsigned char)(active != 0);
     p[1] = (unsigned char)id;
@@ -677,6 +678,8 @@ static void encode_player(unsigned char *p, int id, int active,
     put_i16(p + 16, camera->pitch_sy);
     put_i16(p + 18, camera->pitch_cy);
     put_i16(p + 43, camera->y);
+    put_i16(p + 46, airborne_ms);
+    put_i16(p + 48, airborne_y);
     put_i16(p + 20, hp);
     p[22] = (unsigned char)current_slot;
     p[23] = put_weapon_value(slots ? slots[0].weapon : -1);
@@ -721,6 +724,8 @@ static int decode_player(const unsigned char *p,
     player->camera.pitch_sy = get_i16(p + 16);
     player->camera.pitch_cy = get_i16(p + 18);
     player->camera.y = get_i16(p + 43);
+    player->airborne_ms = get_i16(p + 46);
+    player->airborne_y = get_i16(p + 48);
     player->hp = get_i16(p + 20);
     player->current_slot = p[22] < TOY_GAME_WEAPON_SLOTS ? p[22] : 0;
     player->slot_weapon[0] = get_weapon_value(p[23]);
@@ -794,6 +799,8 @@ static void encode_actor(unsigned char *p, const struct toy_game_actor *a,
                             (a->muzzle_flash_ms < 0 ? 0 :
                              a->muzzle_flash_ms > 255 ? 255 : a->muzzle_flash_ms));
     put_u32(p + 17, a->fire_seq);
+    put_i16(p + 21, a->airborne_ms);
+    put_i16(p + 23, a->airborne_y);
 }
 
 static void decode_actor(const unsigned char *p, struct rasterfall_net_actor *a)
@@ -807,6 +814,8 @@ static void decode_actor(const unsigned char *p, struct rasterfall_net_actor *a)
     a->x = (int)get_u32(p + 2); a->z = (int)get_u32(p + 6);
     a->sy = get_i16(p + 10); a->cy = get_i16(p + 12);
     a->hp = get_i16(p + 14);
+    a->airborne_ms = get_i16(p + 21);
+    a->airborne_y = get_i16(p + 23);
     if (a->state == TOY_GAME_ACTOR_DOWNED)
         a->revive_progress_ms = p[16] * 12;
     else
@@ -892,7 +901,8 @@ int rasterfall_net_send_snapshot(struct rasterfall_net *net,
                   game->player_revive_progress_ms, game->slots, game->current_slot,
                   game->reloading, game->reload_timer_ms,
                   game->muzzle_flash_ms, game->kills, game->fire_seq,
-                  game->ray_count, game->rays);
+                  game->ray_count, game->rays,
+                  game->player_airborne_ms, game->player_airborne_y);
     encode_player(p + NET_SNAPSHOT_BASE + NET_PLAYER_SIZE, 1,
                   net->peer_known, &net->peer_camera, net->peer_hp,
                   peer_weapon, net->peer_state, net->peer_down,
@@ -900,7 +910,8 @@ int rasterfall_net_send_snapshot(struct rasterfall_net *net,
                   net->peer_current_slot, net->peer_reloading,
                   net->peer_reload_timer_ms, net->peer_muzzle_flash_ms,
                   net->peer_kills, net->peer_fire_seq,
-                  net->peer_ray_count, net->peer_rays);
+                  net->peer_ray_count, net->peer_rays,
+                  net->peer_airborne_ms, net->peer_airborne_y);
     for (actor_i = 0; actor_i < actor_count; actor_i++) {
         encode_actor(p + NET_SNAPSHOT_BASE + RASTERFALL_NET_PLAYER_MAX * NET_PLAYER_SIZE +
                      actor_i * NET_ACTOR_SIZE, &game->actors[actor_indices[actor_i]],
@@ -1344,6 +1355,16 @@ void rasterfall_net_apply_remote(struct rasterfall_net *net,
         net->peer_down = 0;
         net->peer_state_initialized = 1;
     }
+    /* Charger/Smoker 对远端玩家的影响在本地主机规则步中完成，随后写回
+     * 远端玩家的权威状态，确保客户端看到同一套血量与击飞状态。 */
+    if (net->peer_known) {
+        net->peer_camera.x = g->secondary_px;
+        net->peer_camera.z = g->secondary_pz;
+        net->peer_hp = g->secondary_player_hp;
+        net->peer_down = g->secondary_player_down;
+        net->peer_airborne_ms = g->secondary_player_airborne_ms;
+        net->peer_airborne_y = g->secondary_player_airborne_y;
+    }
     if (net->peer_known && net->tick - net->last_input_tick <= NET_INPUT_HOLD_TICKS) {
         net->remote_event_count = 0;
         event_start = g->event_count;
@@ -1584,6 +1605,8 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
             dst->hp = src->hp;
             dst->muzzle_flash_ms = src->muzzle_flash_ms;
             dst->fire_seq = src->fire_seq;
+            dst->airborne_ms = src->airborne_ms;
+            dst->airborne_y = src->airborne_y;
             dst->revive_progress_ms = src->revive_progress_ms;
             dst->ray_count = src->ray_count;
             memcpy(dst->rays, src->rays, sizeof(dst->rays));
@@ -1639,6 +1662,8 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
         session->game_state.campaign_stage = net->snapshot_world_campaign_stage;
         session->game_state.player_control_disabled =
             net->snapshot_player_control_disabled;
+        session->game_state.player_airborne_ms = own->airborne_ms;
+        session->game_state.player_airborne_y = own->airborne_y;
         session->air_walls_enabled = net->snapshot_air_walls_enabled;
         session->manual_alarm_on = net->snapshot_manual_alarm_enabled;
         session->manual_alarm_timer = net->snapshot_world_manual_alarm_timer_ms;
@@ -1743,7 +1768,7 @@ int rasterfall_net_self_test(void)
     test_ray.ex = 1234; test_ray.ez = -5678; test_ray.hit_enemy = 1;
     encode_player(packet, 1, 1, &camera, 87, TOY_GAME_WEAPON_SMG,
                   TOY_GAME_PLAYING, 1, 123, test_slots, 0, 1, 240, 60, 4,
-                  9, 1, &test_ray);
+                  9, 1, &test_ray, 700, 88);
     if (decode_player(packet, &net.players[1]) < 0 ||
         net.players[1].camera.x != camera.x ||
         net.players[1].camera.z != camera.z || net.players[1].hp != 87 ||

@@ -1472,6 +1472,11 @@ startup_again:
                             net.peer_known && net.connected,
                             net.peer_camera.x, net.peer_camera.z,
                             net.peer_down);
+                        if (net.mode == RASTERFALL_NET_HOST && net.peer_known) {
+                            game.secondary_player_hp = net.peer_hp;
+                            game.secondary_player_airborne_ms = net.peer_airborne_ms;
+                            game.secondary_player_airborne_y = net.peer_airborne_y;
+                        }
                         rasterfall_session_step(&session, &camera, &command,
                                                 FIXED_STEP_US / 1000);
                         if (net.mode == RASTERFALL_NET_HOST)

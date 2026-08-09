@@ -697,6 +697,26 @@ static int run_logic_test(void)
         }
         if (game.hp >= old_hp || !saw_airborne_y || !saw_control_lock) return 78;
     }
+    /* 统一实体冲击：AI 队友与普通实体共享击飞状态，落地后回到部署点。 */
+    {
+        toy_game_init(&game, 42);
+        game.world_count = 0;
+        game.room_limit = 12000;
+        game.campaign_mode = 0;
+        game.to_spawn = 0;
+        game.actors[0].x = 1200;
+        game.actors[0].z = 0;
+        game.actors[0].deployment_x = 0;
+        game.actors[0].deployment_z = 0;
+        game.ai_x = 1200; game.ai_z = 0;
+        if (!toy_game_apply_entity_impact(&game, TOY_GAME_ENTITY_ACTOR, 0,
+                                          1000, 0, 1) ||
+            game.actors[0].airborne_ms <= 0) return 79;
+        for (int i = 0; i < 130; i++)
+            toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
+        if (game.actors[0].airborne_ms > 0)
+            return 80;
+    }
     __printf("rasterfall: logic test passed\n");
     return 0;
 }

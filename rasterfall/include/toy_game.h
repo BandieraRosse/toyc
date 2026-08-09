@@ -89,6 +89,8 @@
 #define TOY_GAME_AIRBORNE_GRAVITY  10
 #define TOY_GAME_AIRBORNE_MS    700
 #define TOY_GAME_AIRBORNE_VELOCITY 220
+#define TOY_GAME_AI_RETURN_SPEED 38
+#define TOY_GAME_AI_DEPLOY_RADIUS 180
 
 #define TOY_GAME_KEY_RELOAD     19      /* evdev KEY_R */
 #define TOY_GAME_KEY_SLOT_1     2       /* evdev KEY_1：主武器槽 */
@@ -124,6 +126,14 @@ enum toy_game_actor_state {
     TOY_GAME_ACTOR_ALIVE,
     TOY_GAME_ACTOR_DOWNED,
     TOY_GAME_ACTOR_DEAD
+};
+
+/* 所有可被技能影响的实体都通过这组类型进入通用受迫移动接口。 */
+enum toy_game_entity_kind {
+    TOY_GAME_ENTITY_PLAYER,
+    TOY_GAME_ENTITY_REMOTE_PLAYER,
+    TOY_GAME_ENTITY_ACTOR,
+    TOY_GAME_ENTITY_ENEMY
 };
 
 enum toy_game_ai_class {
@@ -271,6 +281,7 @@ struct toy_game_actor {
     unsigned int fire_seq;
     int ray_count;
     struct toy_game_ray rays[TOY_GAME_MAX_RAYS];
+    int deployment_x, deployment_z;
 };
 
 struct toy_game {
@@ -351,6 +362,12 @@ struct toy_game {
     int secondary_player_active;
     int secondary_px, secondary_pz;
     int secondary_player_down;
+    int secondary_player_hp;
+    int secondary_player_airborne_ms;
+    int secondary_player_airborne_y;
+    int secondary_player_vertical_velocity;
+    int secondary_player_knockback_x;
+    int secondary_player_knockback_z;
     int player_down;
     int player_revive_progress_ms;
     int player_control_disabled;
@@ -385,6 +402,9 @@ int  toy_game_revive_ai(struct toy_game *g, int dt_ms);
 int  toy_game_revive_actor(struct toy_game *g, int actor_index, int dt_ms);
 int  toy_game_set_campaign_stage(struct toy_game *g, int stage);
 int  toy_game_move_ai_actor(struct toy_game *g, int actor_index, int x, int z);
+/* 对指定实体施加统一的伤害、打断和击飞规则。dx/dz 是相对冲击方向。 */
+int  toy_game_apply_entity_impact(struct toy_game *g, int kind, int index,
+                                  int dx, int dz, int damage);
 void toy_game_set_world(struct toy_game *g,
                         const struct toy_game_box *boxes,
                         int box_count, int room_limit);
