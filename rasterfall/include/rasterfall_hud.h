@@ -19,6 +19,9 @@ struct rasterfall_hud_state {
     int manual_alarm_enabled;
     int manual_alarm_timer_ms;
     int ai_revive_active;
+    int ai_revive_available;
+    int ai_revive_progress_ms;
+    const char *ai_revive_name;
     int horde_banner_ms;
     const char *interaction_banner;
     const struct rasterfall_net *net;

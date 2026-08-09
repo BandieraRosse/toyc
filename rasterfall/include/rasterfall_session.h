@@ -88,6 +88,8 @@ int rasterfall_session_revive_player(struct rasterfall_session *session,
                                      const struct camera *rescuer,
                                      const struct camera *target,
                                      int *progress_ms, int dt_ms);
+int rasterfall_session_find_down_ai(const struct rasterfall_session *session,
+                                    const struct camera *camera);
 void rasterfall_camera_rotate(struct camera *camera, int turn, int pitch);
 int rasterfall_session_compute_highlight(const struct rasterfall_session *session,
                                          const struct camera *camera);

@@ -17,47 +17,160 @@ static void hud_fill_rect(struct toy_surface *surface, int x, int y,
     }
 }
 
-static const char *campaign_phase_name(int phase)
+static void draw_weapon_silhouette(struct toy_surface *surface, int weapon,
+                                   int cx, int y, uint32_t color)
 {
-    if (phase == TOY_GAME_PHASE_BUILDUP) return "BUILDUP";
-    if (phase == TOY_GAME_PHASE_HORDE) return "HORDE";
-    if (phase == TOY_GAME_PHASE_RELAX) return "RELAX";
-    return "CALM";
+    /* Small, deliberately abstract silhouettes: they remain recognizable at
+     * the compact HUD scale without introducing another art asset pipeline. */
+    if (weapon == TOY_GAME_WEAPON_PISTOL) {
+        hud_fill_rect(surface, cx - 18, y + 9, 28, 7, color);
+        hud_fill_rect(surface, cx + 9, y + 11, 9, 4, color);
+        hud_fill_rect(surface, cx - 8, y + 16, 8, 12, color);
+        hud_fill_rect(surface, cx - 10, y + 26, 9, 4, color);
+    } else if (weapon == TOY_GAME_WEAPON_SMG) {
+        hud_fill_rect(surface, cx - 23, y + 9, 34, 8, color);
+        hud_fill_rect(surface, cx + 10, y + 11, 18, 4, color);
+        hud_fill_rect(surface, cx - 25, y + 7, 7, 5, color);
+        hud_fill_rect(surface, cx - 4, y + 17, 7, 14, color);
+        hud_fill_rect(surface, cx - 15, y + 17, 7, 8, color);
+    } else if (weapon == TOY_GAME_WEAPON_SHOTGUN) {
+        hud_fill_rect(surface, cx - 25, y + 10, 24, 9, color);
+        hud_fill_rect(surface, cx - 1, y + 12, 29, 5, color);
+        hud_fill_rect(surface, cx - 14, y + 19, 7, 10, color);
+        hud_fill_rect(surface, cx - 25, y + 12, 7, 5, color);
+    } else {
+        hud_fill_rect(surface, cx - 12, y + 17, 24, 3, color);
+    }
 }
 
 static int draw_hud_value(struct toy_surface *surface, int x,
-                          const char *label, const char *value, uint32_t color)
+                          const char *label, const char *value,
+                          uint32_t color)
 {
     int label_w = (int)strlen(label) * FB_FONT_W;
     int value_w = (int)strlen(value) * FB_FONT_W;
     fb_draw_string((unsigned char *)surface->pixels, x, 8,
                    label, 0xAAB4C0, surface->stride);
     x += label_w;
-    hud_fill_rect(surface, x - 1, 6, value_w + 2, FB_FONT_H + 4, 0x26384C);
+    hud_fill_rect(surface, x - 1, 6, value_w + 2, FB_FONT_H + 4,
+                  0x26384C);
     fb_draw_string((unsigned char *)surface->pixels, x, 8,
                    value, color, surface->stride);
     return x + value_w + FB_FONT_W * 2;
 }
 
-static void render_weapon_hud(struct toy_surface *surface, int x, int y,
+static const char *weapon_abbreviation(int weapon)
+{
+    if (weapon == TOY_GAME_WEAPON_SMG) return "SMG";
+    if (weapon == TOY_GAME_WEAPON_SHOTGUN) return "SG";
+    if (weapon == TOY_GAME_WEAPON_PISTOL) return "PG";
+    return "--";
+}
+
+static void render_weapon_card(struct toy_surface *surface, int x, int y,
+                               int slot_index, const struct toy_game_slot *slot,
+                               int selected)
+{
+    char line[24];
+    uint32_t border = selected ? 0xFFD060 : 0x526170;
+    uint32_t text = selected ? 0xFFF0B0 : 0xD0D7DE;
+    int cx = x + 37;
+    hud_fill_rect(surface, x, y, 74, 70, 0x18232D);
+    hud_fill_rect(surface, x, y, 74, 3, border);
+    hud_fill_rect(surface, x, y + 67, 74, 3, border);
+    hud_fill_rect(surface, x, y, 3, 70, border);
+    hud_fill_rect(surface, x + 71, y, 3, 70, border);
+    snprintf(line, sizeof(line), "%d  %s", slot_index + 1,
+             weapon_abbreviation(slot->weapon));
+    fb_draw_string((unsigned char *)surface->pixels, x + 7, y + 6,
+                   line, text, surface->stride);
+    draw_weapon_silhouette(surface, slot->weapon, cx, y + 16,
+                           selected ? 0xE4B84E : 0x8A98A8);
+    if (slot->weapon < 0)
+        snprintf(line, sizeof(line), "-- / --");
+    else if (slot->reserve == TOY_GAME_AMMO_INFINITE)
+        snprintf(line, sizeof(line), "%d / INF", slot->mag);
+    else
+        snprintf(line, sizeof(line), "%d / %d", slot->mag, slot->reserve);
+    fb_draw_string((unsigned char *)surface->pixels, x + 7, y + 52,
+                   line, slot->mag <= 0 ? 0xF03030 : text, surface->stride);
+}
+
+static void render_weapon_hud(struct toy_surface *surface,
                               const struct toy_game *game)
 {
-    char line[48];
-    int i;
-    for (i = 0; i < TOY_GAME_WEAPON_SLOTS; i++) {
-        const struct toy_game_slot *s = &game->slots[i];
-        uint32_t color = i == game->current_slot ? 0xFFD060 : 0x9AA6B4;
-        if (s->weapon < 0)
-            snprintf(line, sizeof(line), "%d[-] ", i + 1);
-        else if (s->reserve == TOY_GAME_AMMO_INFINITE)
-            snprintf(line, sizeof(line), "%d[%s] %d/INF ", i + 1,
-                     toy_game_weapon_name(s->weapon), s->mag);
-        else
-            snprintf(line, sizeof(line), "%d[%s] %d/%d ", i + 1,
-                     toy_game_weapon_name(s->weapon), s->mag, s->reserve);
-        fb_draw_string((unsigned char *)surface->pixels, x, y, line, color,
-                       surface->stride);
-        x += (int)strlen(line) * FB_FONT_W;
+    int x = surface->width - 84;
+    int y = surface->height / 2 - 73;
+    render_weapon_card(surface, x, y, 0, &game->slots[0],
+                       game->current_slot == 0);
+    render_weapon_card(surface, x, y + 78, 1, &game->slots[1],
+                       game->current_slot == 1);
+}
+
+static char hud_upper_ascii(char c)
+{
+    return c >= 'a' && c <= 'z' ? (char)(c - 'a' + 'A') : c;
+}
+
+static void render_player_hud(struct toy_surface *surface,
+                              const struct toy_game *game,
+                              const char *player_name)
+{
+    char name[TOY_GAME_MAX_NAME];
+    char line[32];
+    int i, x = surface->width - 222, y = surface->height - 68;
+    int bar_x = x + 53, bar_y = y + 29, bar_w = 155;
+    uint32_t hp_color = game->hp < 10 ? 0xF03030 :
+                        game->hp < 40 ? 0xF0C830 : 0x40D060;
+    if (!player_name || !*player_name) player_name = "PLAYER";
+    for (i = 0; i < TOY_GAME_MAX_NAME - 1 && player_name[i]; i++)
+        name[i] = hud_upper_ascii(player_name[i]);
+    name[i] = 0;
+    hud_fill_rect(surface, x, y, 42, 42, 0x202B35);
+    hud_fill_rect(surface, x + 3, y + 3, 36, 36, 0x304354);
+    line[0] = name[0] ? name[0] : 'P';
+    line[1] = 0;
+    fb_draw_string((unsigned char *)surface->pixels, x + 14, y + 11,
+                   line, 0xF0F4F8, surface->stride);
+    fb_draw_string((unsigned char *)surface->pixels, bar_x, y + 5,
+                   name, 0xE7E9EC, surface->stride);
+    hud_fill_rect(surface, bar_x, bar_y, bar_w, 10, 0x20252B);
+    hud_fill_rect(surface, bar_x, bar_y,
+                  game->hp * bar_w / 100, 10, hp_color);
+    snprintf(line, sizeof(line), "%d / 100", game->hp);
+    fb_draw_string((unsigned char *)surface->pixels, bar_x + bar_w -
+                   (int)strlen(line) * FB_FONT_W, bar_y + 12,
+                   line, hp_color, surface->stride);
+}
+
+static void render_revive_prompt(struct toy_surface *surface,
+                                 const struct rasterfall_hud_state *state)
+{
+    const struct toy_game *game = state->game;
+    char line[64];
+    int width, x, y = surface->height / 2 + 24;
+    if (game->player_down || (!state->ai_revive_available &&
+                              !state->ai_revive_active)) return;
+    if (state->ai_revive_active) {
+        snprintf(line, sizeof(line), "REVIVING %s  %d%%",
+                 state->ai_revive_name ? state->ai_revive_name : "ALLY",
+                 state->ai_revive_progress_ms * 100 / TOY_GAME_REVIVE_MS);
+    } else {
+        snprintf(line, sizeof(line), "E REVIVE %s",
+                 state->ai_revive_name ? state->ai_revive_name : "ALLY");
+    }
+    width = (int)strlen(line) * FB_FONT_W;
+    x = (surface->width - width) / 2;
+    hud_fill_rect(surface, x - 8, y - 5, width + 16, FB_FONT_H + 10,
+                  0x171B24);
+    fb_draw_string((unsigned char *)surface->pixels, x, y, line,
+                   0x70D8FF, surface->stride);
+    if (state->ai_revive_active) {
+        int bar_x = surface->width / 2 - 64;
+        hud_fill_rect(surface, bar_x, y + FB_FONT_H + 5, 128, 5, 0x20252B);
+        hud_fill_rect(surface, bar_x, y + FB_FONT_H + 5,
+                      state->ai_revive_progress_ms * 128 /
+                      TOY_GAME_REVIVE_MS, 5, 0x70D8FF);
     }
 }
 
@@ -103,102 +216,52 @@ static void render_network_hud(struct toy_surface *surface,
     }
 }
 
+static void render_director_hud(struct toy_surface *surface,
+                                const struct toy_game *game, int fps)
+{
+    char value[32];
+    char next_value[32];
+    int x = 8;
+    const char *phase = game->campaign_phase == TOY_GAME_PHASE_BUILDUP ?
+                        "BUILDUP" :
+                        game->campaign_phase == TOY_GAME_PHASE_HORDE ?
+                        "HORDE" :
+                        game->campaign_phase == TOY_GAME_PHASE_RELAX ?
+                        "RELAX" : "CALM";
+    if (game->phase_timer_ms > 0) {
+        snprintf(next_value, sizeof(next_value), "%dS",
+                 (game->phase_timer_ms + 999) / 1000);
+    } else if (game->campaign_phase == TOY_GAME_PHASE_BUILDUP) {
+        strcpy(next_value, "IN");
+    } else {
+        strcpy(next_value, "READY");
+    }
+    x = draw_hud_value(surface, x, "DIRECTOR ", phase,
+                       game->campaign_phase == TOY_GAME_PHASE_HORDE ?
+                       0xFFD040 : 0x80E0C0);
+    snprintf(value, sizeof(value), "%d", game->spawn_budget);
+    x = draw_hud_value(surface, x, "QUEUE ", value, 0xFFD070);
+    snprintf(value, sizeof(value), "%d", game->enemies_alive);
+    x = draw_hud_value(surface, x, "LIVE ", value, 0xF0F0F0);
+    snprintf(value, sizeof(value), "%d", game->active_attackers);
+    x = draw_hud_value(surface, x, "ACT ", value,
+                       game->active_attackers > 0 ? 0xFF8060 : 0x80E080);
+    x = draw_hud_value(surface, x, "NEXT ", next_value, 0x80C8FF);
+    snprintf(value, sizeof(value), "%d", game->director_encounters);
+    x = draw_hud_value(surface, x, "RUN ", value, 0xC0A0FF);
+    snprintf(value, sizeof(value), "%d", fps);
+    draw_hud_value(surface, x, "FPS ", value, 0x90F090);
+}
+
 void rasterfall_hud_render(struct toy_surface *surface, int fps,
                            const struct rasterfall_hud_state *state)
 {
     const struct toy_game *game = state->game;
-    const struct toy_game_actor *ai = &game->actors[0];
-    char line[96];
-    int n, x = 8, hint_y;
-    uint32_t phase_color = game->campaign_phase == TOY_GAME_PHASE_HORDE ?
-                           0xFFD040 : 0x80E0C0;
-    x = draw_hud_value(surface, x, "DIR ",
-                       campaign_phase_name(game->campaign_phase), phase_color);
-    snprintf(line, sizeof(line), "%d", game->spawn_budget);
-    x = draw_hud_value(surface, x, "BUD ", line, 0xFFD070);
-    snprintf(line, sizeof(line), "%d", game->enemies_alive);
-    x = draw_hud_value(surface, x, "LIVE ", line, 0xF0F0F0);
-    snprintf(line, sizeof(line), "%d", game->active_attackers);
-    x = draw_hud_value(surface, x, "ACT ", line,
-                       game->active_attackers > 0 ? 0xFF8060 : 0x80E080);
-    snprintf(line, sizeof(line), "%dS",
-             game->phase_timer_ms > 0 ? (game->phase_timer_ms + 999) / 1000 : 0);
-    x = draw_hud_value(surface, x, "NEXT ", line, 0x80C8FF);
-    snprintf(line, sizeof(line), "%d", game->director_encounters);
-    x = draw_hud_value(surface, x, "RUN ", line, 0xC0A0FF);
-    snprintf(line, sizeof(line), "%d", fps);
-    draw_hud_value(surface, x, "FPS ", line, 0x90F090);
+    render_director_hud(surface, game, fps);
     render_network_hud(surface, state->net, state->host_address, state->host_port);
-    n = snprintf(line, sizeof(line), "%s  HP %d  KILLS %d",
-                 state->player_name ? state->player_name : "PLAYER",
-                 game->hp, game->kills);
-    if (n > 0)
-        fb_draw_string((unsigned char *)surface->pixels, 8, 8 + FB_FONT_H,
-                       line, game->hp < 10 ? 0xF03030 :
-                       game->hp < 40 ? 0xF0C830 : 0x40D060,
-                       surface->stride);
-    render_weapon_hud(surface, 8, 8 + FB_FONT_H * 2, game);
-    hint_y = 8 + FB_FONT_H * (game->reloading ? 4 : 3);
-    if (game->reloading)
-        fb_draw_string((unsigned char *)surface->pixels, 8, 8 + FB_FONT_H * 3,
-                       "RELOADING...", 0xD88A32, surface->stride);
-    if (game->player_down) {
-        if (game->player_revive_progress_ms > 0) {
-            snprintf(line, sizeof(line), "BEING REVIVED %d%%",
-                     game->player_revive_progress_ms * 100 /
-                     TOY_GAME_REVIVE_MS);
-            fb_draw_string((unsigned char *)surface->pixels, 8, hint_y,
-                           line, 0x70D8FF, surface->stride);
-        } else if (state->net && state->net->mode == RASTERFALL_NET_CLIENT &&
-            state->net->players[0].active)
-            fb_draw_string((unsigned char *)surface->pixels, 8, hint_y,
-                           "DOWN - SPECTATING PLAYER 1", 0xF03030,
-                           surface->stride);
-        else
-            fb_draw_string((unsigned char *)surface->pixels, 8, hint_y,
-                           "DOWN - WAIT FOR REVIVE", 0xF03030,
-                           surface->stride);
-    } else if (state->ai_revive_active && ai->state == TOY_GAME_ACTOR_DOWNED) {
-        snprintf(line, sizeof(line), "REVIVING JESUS %d%%",
-                 ai->revive_progress_ms * 100 / TOY_GAME_REVIVE_MS);
-        fb_draw_string((unsigned char *)surface->pixels, 8, hint_y,
-                       line, 0x70D8FF, surface->stride);
-    } else if (ai->state == TOY_GAME_ACTOR_DOWNED) {
-        fb_draw_string((unsigned char *)surface->pixels, 8, hint_y,
-                       "E REVIVE JESUS", 0x70D8FF, surface->stride);
-    } else if (state->map->goal_safe_index >= 0 &&
-        toy_game_point_in_box(game->px, game->pz,
-                              &state->safe_rooms[state->map->goal_safe_index])) {
-        snprintf(line, sizeof(line), "EXIT SECURE %d%%",
-                 game->goal_hold_ms * 100 / TOY_GAME_GOAL_HOLD_MS);
-        fb_draw_string((unsigned char *)surface->pixels, 8, hint_y,
-                       line, 0x80E080, surface->stride);
-    } else if (state->map->start_safe_index >= 0 &&
-               toy_game_point_in_box(game->px, game->pz,
-                                     &state->safe_rooms[state->map->start_safe_index])) {
-        fb_draw_string((unsigned char *)surface->pixels, 8, hint_y,
-                       "START SAFE ROOM - REACH GREEN EXIT", 0x80E080,
-                       surface->stride);
-    } else if (state->manual_alarm_enabled) {
-        snprintf(line, sizeof(line), "ALARM ACTIVE  NEXT %d SEC",
-                 (state->manual_alarm_timer_ms + 999) / 1000);
-        fb_draw_string((unsigned char *)surface->pixels, 8, hint_y,
-                       line, 0xFF6040, surface->stride);
-    } else if (game->alarm_timer_ms > 0) {
-        snprintf(line, sizeof(line), "ALARM HORDE %d SEC",
-                 (game->alarm_timer_ms + 999) / 1000);
-        fb_draw_string((unsigned char *)surface->pixels, 8, hint_y,
-                       line, 0xFFD040, surface->stride);
-    } else if (game->campaign_phase == TOY_GAME_PHASE_RELAX) {
-        snprintf(line, sizeof(line), "HORDE CLEARED - RELAX %d SEC",
-                 (game->phase_timer_ms + 999) / 1000);
-        fb_draw_string((unsigned char *)surface->pixels, 8, hint_y,
-                       line, 0x80E080, surface->stride);
-    } else {
-        fb_draw_string((unsigned char *)surface->pixels, 8, hint_y,
-                       "ALARM OFF - USE RED PANEL", 0xFFD040,
-                       surface->stride);
-    }
+    render_weapon_hud(surface, game);
+    render_player_hud(surface, game, state->player_name);
+    render_revive_prompt(surface, state);
     if (state->horde_banner_ms > 0 && state->interaction_banner) {
         int banner_y = surface->height / 3;
         fb_draw_string((unsigned char *)surface->pixels,

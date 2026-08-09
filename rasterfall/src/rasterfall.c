@@ -291,8 +291,10 @@ static int fixed_floor_lighting;
 #undef interaction_banner
 static void fill_hud_state(struct rasterfall_hud_state *hud,
                            const struct rasterfall_net *net_state,
-                           const char *host_address, int host_port)
+                           const char *host_address, int host_port,
+                           const struct camera *camera)
 {
+    int revive_index = rasterfall_session_find_down_ai(&session, camera);
     hud->game = &session.game_state;
     hud->map = &level_map;
     hud->safe_rooms = map_safe_rooms;
@@ -304,6 +306,12 @@ static void fill_hud_state(struct rasterfall_hud_state *hud,
     hud->manual_alarm_enabled = session.manual_alarm_on;
     hud->manual_alarm_timer_ms = session.manual_alarm_timer;
     hud->ai_revive_active = session.ai_revive_active;
+    hud->ai_revive_available = revive_index >= 0;
+    hud->ai_revive_progress_ms = session.ai_revive_active &&
+        session.ai_revive_actor_index >= 0 ?
+        session.game_state.actors[session.ai_revive_actor_index].revive_progress_ms : 0;
+    hud->ai_revive_name = revive_index >= 0 ?
+        session.game_state.actors[revive_index].name : NULL;
     hud->horde_banner_ms = session.banner_ms;
     hud->interaction_banner = session.banner_text;
     hud->net = net_state;
@@ -1579,8 +1587,9 @@ static void render_actor_status(struct toy_renderer *renderer,
 {
     struct vec3 world, view;
     struct toy_screen_vertex screen;
-    int width, bar_x, bar_y, fill, progress;
+    int width, bar_x, bar_y, fill;
     uint32_t hp_color;
+    (void)revive_ms;
     world.x = x; world.y = y; world.z = z;
     world_to_view(camera, &world, &view);
     if (view.z < NEAR_Z || view.z > ENEMY_RENDER_DISTANCE) return;
@@ -1603,13 +1612,7 @@ static void render_actor_status(struct toy_renderer *renderer,
     if (fill < 0) fill = 0;
     if (fill > 64) fill = 64;
     if (fill > 0) fill_rect(&renderer->surface, bar_x, bar_y, fill, 3, hp_color);
-    if (!downed) return;
-    progress = revive_ms * 64 / TOY_GAME_REVIVE_MS;
-    if (progress < 0) progress = 0;
-    if (progress > 64) progress = 64;
-    fill_rect(&renderer->surface, bar_x - 2, bar_y + 7, 68, 5, 0x20252B);
-    if (progress > 0)
-        fill_rect(&renderer->surface, bar_x, bar_y + 8, progress, 3, 0x70D8FF);
+    (void)downed;
 }
 
 static int render_player_avatar(struct toy_renderer *renderer,
@@ -1623,10 +1626,19 @@ static void render_ai_teammate_name(struct toy_renderer *renderer,
     int i;
     for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
         const struct toy_game_actor *actor = &game.actors[i];
+        long dx, dz, d2, dist, dot;
         uint32_t color = actor->class_id == TOY_GAME_AI_LEVEL_3 ? 0xFFD060 :
                          actor->class_id == TOY_GAME_AI_LEVEL_2 ? 0x80E080 :
                          0x70D8FF;
         if (!actor->active || actor->kind != TOY_GAME_ACTOR_AI) continue;
+        dx = (long)actor->x - camera->x;
+        dz = (long)actor->z - camera->z;
+        d2 = dx * dx + dz * dz;
+        if (d2 > 10800L * 10800L) continue;
+        dist = isqrt(d2);
+        if (dist <= 0) continue;
+        dot = dx * camera->sy + dz * camera->cy;
+        if (dot < dist * 650) continue;
         render_actor_status(renderer, camera, actor->x, actor->z,
                             actor->state == TOY_GAME_ACTOR_DOWNED ? -350 : 700,
                             actor->name, actor->hp, actor->max_hp,
@@ -2775,7 +2787,7 @@ startup_again:
                 draw_crosshair(&surface);
                 {
                     struct rasterfall_hud_state hud;
-                    fill_hud_state(&hud, &net, host_address, net_port);
+                    fill_hud_state(&hud, &net, host_address, net_port, &camera);
                     rasterfall_hud_render(&surface, display_fps, &hud);
                 }
             }
@@ -2785,7 +2797,7 @@ startup_again:
                 stage_pixels += toy_renderer_flush(&renderer);
                 {
                     struct rasterfall_hud_state hud;
-                    fill_hud_state(&hud, &net, host_address, net_port);
+                    fill_hud_state(&hud, &net, host_address, net_port, &camera);
                     rasterfall_hud_draw_interact_prompt(&renderer, &hud);
                 }
             }
@@ -2841,6 +2853,12 @@ startup_again:
         display_fps = 0;
         fps_window_frames = 0;
         return_to_menu = 0;
+        /* Do not carry the previous pause-menu selection or its pending
+         * Enter edge into the next round.  Otherwise choosing MENU leaves
+         * the next game paused on MENU and Enter immediately returns again. */
+        pause_menu.selected = PAUSE_ITEM_RESUME;
+        memset(pending_key_edges, 0, sizeof(pending_key_edges));
+        memset(input.key_pressed, 0, sizeof(input.key_pressed));
         pointer_lock_requested = 0;
         goto startup_again;
     }

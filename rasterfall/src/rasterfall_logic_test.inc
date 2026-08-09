@@ -619,6 +619,13 @@ static int run_logic_test(void)
         toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
         if (game.state != TOY_GAME_OVER) return 71;
         toy_game_set_secondary_player_state(&game, 0, 0, 0, 0);
+
+        /* 单人状态下主机倒地时没有远端玩家可以救援，应立即失败。 */
+        game.state = TOY_GAME_PLAYING;
+        game.player_down = 1;
+        game.player_revive_progress_ms = 0;
+        toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
+        if (game.state != TOY_GAME_OVER) return 73;
     }
     __printf("rasterfall: logic test passed\n");
     return 0;

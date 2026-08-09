@@ -103,6 +103,15 @@ static int session_near_ai(const struct rasterfall_session *session,
     return best >= 0;
 }
 
+int rasterfall_session_find_down_ai(const struct rasterfall_session *session,
+                                    const struct camera *camera)
+{
+    int index = -1;
+    if (!session || !camera || !session_near_ai(session, camera, &index))
+        return -1;
+    return index;
+}
+
 static void session_set_air_walls(struct rasterfall_session *session,
                                   int enabled)
 {

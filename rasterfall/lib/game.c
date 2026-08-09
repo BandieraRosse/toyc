@@ -839,11 +839,18 @@ static void update_alarm_event(struct toy_game *g, int dt_ms)
 static void update_director(struct toy_game *g, int dt_ms)
 {
     if (g->campaign_phase != TOY_GAME_PHASE_CALM) return;
-    if (player_in_safe_room(g)) return;
-    if (g->enemies_alive > TOY_GAME_DIRECTOR_ALIVE_LOW ||
+    /* The director cooldown is a real clock.  Previously it was decremented
+     * only when spawning was allowed, so a safe room or a busy battlefield
+     * made the HUD countdown appear frozen forever. */
+    if (g->phase_timer_ms > 0) {
+        g->phase_timer_ms -= dt_ms;
+        if (g->phase_timer_ms > 0) return;
+    }
+    /* A ready director still waits for a suitable moment before opening the
+     * next encounter; phase_timer_ms remains zero and the HUD says READY. */
+    if (player_in_safe_room(g) ||
+        g->enemies_alive > TOY_GAME_DIRECTOR_ALIVE_LOW ||
         g->active_attackers > TOY_GAME_DIRECTOR_ATTACKER_LOW) return;
-    g->phase_timer_ms -= dt_ms;
-    if (g->phase_timer_ms > 0) return;
     g->campaign_phase = TOY_GAME_PHASE_BUILDUP;
     g->spawn_budget = rand_range(g, TOY_GAME_DIRECTOR_MIN_GROUP,
                                  TOY_GAME_DIRECTOR_MAX_GROUP);
@@ -854,7 +861,7 @@ static void update_director(struct toy_game *g, int dt_ms)
 
 static void update_campaign_spawning(struct toy_game *g, int dt_ms)
 {
-    int interval;
+    int interval, batch, spawned;
     if (g->campaign_phase != TOY_GAME_PHASE_BUILDUP &&
         g->campaign_phase != TOY_GAME_PHASE_HORDE) return;
     if (g->spawn_budget <= 0) {
@@ -868,11 +875,21 @@ static void update_campaign_spawning(struct toy_game *g, int dt_ms)
         g->enemies_alive >= TOY_GAME_CAMPAIGN_ACTIVE_LIMIT) return;
     g->spawn_timer_ms -= dt_ms;
     if (g->spawn_timer_ms <= 0) {
-        if (try_spawn(g)) g->spawn_budget--;
+        /* Spawn in small bursts.  WAIT therefore describes a real queue of
+         * enemies still waiting for the next burst, not an opaque budget. */
+        batch = 2;
+        spawned = 0;
+        while (spawned < batch && g->spawn_budget > 0) {
+            if (g->campaign_phase == TOY_GAME_PHASE_HORDE &&
+                g->enemies_alive >= TOY_GAME_CAMPAIGN_ACTIVE_LIMIT) break;
+            if (!try_spawn(g)) break;
+            g->spawn_budget--;
+            spawned++;
+        }
         interval = g->campaign_phase == TOY_GAME_PHASE_HORDE ?
                    TOY_GAME_ALARM_SPAWN_INTERVAL_MS :
                    TOY_GAME_CAMPAIGN_AMBIENT_SPAWN_INTERVAL_MS;
-        g->spawn_timer_ms = interval;
+        g->spawn_timer_ms = interval * batch;
         if (g->spawn_budget <= 0) {
             if (g->campaign_phase == TOY_GAME_PHASE_HORDE)
                 campaign_enter_relax(g);
@@ -894,11 +911,11 @@ static void update_campaign(struct toy_game *g, int dt_ms)
              e->ai_state == TOY_GAME_ENEMY_TRACKING))
             g->active_attackers++;
     }
-    /* In a network session the host owns the result: one downed player can
-     * still be revived, but the round is lost only when both players are
-     * down.  Offline games retain the existing AI-teammate behaviour. */
-    if (g->secondary_player_active && g->player_down &&
-        g->secondary_player_down) {
+    /* The host owns the result.  A downed player can wait for a remote
+     * teammate only when that teammate is actually present; in a solo game
+     * (including an empty host room) nobody can perform the rescue. */
+    if (g->player_down && (!g->secondary_player_active ||
+                           g->secondary_player_down)) {
         g->state = TOY_GAME_OVER;
         push_event(g, TOY_GAME_EV_PLAYER_DEATH);
         return;
