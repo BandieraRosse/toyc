@@ -8,11 +8,11 @@
  *   安全室出发，穿过地图中的场景和刷怪区域，前往另一间安全室；核心玩法
  *   是移动、瞄准、射击、换弹、拾取武器以及应对普通尸群和可重复召唤的尸潮。
  *   程序使用 wl_shm 软件帧缓冲和项目自带的 Wayland 最小实现，不依赖 SDL、
- *   OpenGL 或 libc；游戏规则主要位于 lib/game，窗口、输入和渲染在本文件
+ *   OpenGL 或 libc；游戏规则主要位于 rasterfall/lib，窗口、输入和渲染在本文件
  *   中协调完成。
  *
  * 【代码结构】
- *   1. 地图与规则：加载 assets/maps/rasterfall.map，复制地图碰撞箱、
+ *   1. 地图与规则：加载 rasterfall/assets/maps/rasterfall.map，复制地图碰撞箱、
  *      安全室、正式 spawn 区和交互物；toy_game 负责敌人 AI、碰撞、武器、
  *      弹道、波次、伤害和游戏状态。
  *   2. 输入与主循环：Wayland 事件先进入 toy_input，使用固定 16.667ms
@@ -24,7 +24,7 @@
  *   4. 渲染：软件光栅化场景、墙面纹理、地面、模型、敌人、武器视图模型、
  *      交互物、准星和 HUD；支持 --no-textures、--texture-stats、--dump-frame
  *      等调试/性能选项。
- *   5. 音频：启动时加载 assets/generated/sfx_*.tsnd；音频不可用时游戏仍
+ *   5. 音频：启动时加载 rasterfall/assets/audio/sfx_*.tsnd；音频不可用时游戏仍
  *      可运行并静默降级。
  *   6. 联机：版本化 UDP 协议传输语义化输入与玩家快照；当前主机权威校验
  *      远端移动，客户端预测并校正位置，完整战斗权威同步仍在后续阶段。
@@ -152,7 +152,7 @@ static const struct box obstacles[OBSTACLE_COUNT] = {
     {  600,  1800,  3800,  4000, 1300, 0x477A58}
 };
 
-/* 游戏世界（与 obstacles 同 xz 范围，交给 lib/game 做碰撞与遮挡） */
+/* 游戏世界（与 obstacles 同 xz 范围，交给 rasterfall/lib 做碰撞与遮挡） */
 static const struct toy_game_box bounds[OBSTACLE_COUNT] = {
     {-1700, -700,  300, 1700},
     {  600, 1800, -900,  100},
@@ -2218,8 +2218,8 @@ int main(int argc, char **argv)
     }
     rasterfall_net_init(&net);
     strcpy(host_address, "127.0.0.1");
-    if (rasterfall_session_load(&session, "assets/maps/rasterfall.map") < 0) {
-        __fprintf(2, "rasterfall: cannot load map assets/maps/rasterfall.map\n");
+    if (rasterfall_session_load(&session, "rasterfall/assets/maps/rasterfall.map") < 0) {
+        __fprintf(2, "rasterfall: cannot load map rasterfall/assets/maps/rasterfall.map\n");
         return 1;
     }
     bake_static_lightmap();
@@ -2227,7 +2227,7 @@ int main(int argc, char **argv)
     __printf("rasterfall: baked lightmap %dx%d\n", BAKED_LM_W, BAKED_LM_H);
     memset(&scene_texture, 0, sizeof(scene_texture));
     memset(&scene_texture_view, 0, sizeof(scene_texture_view));
-    if (textures_enabled && toy_texture_load("assets/generated/wall.ttex",
+    if (textures_enabled && toy_texture_load("rasterfall/assets/textures/wall.ttex",
                                               &scene_texture) == 0) {
         scene_texture_view.data = scene_texture.data;
         scene_texture_view.width = scene_texture.width;

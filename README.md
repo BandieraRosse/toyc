@@ -35,17 +35,16 @@ make clean              # 删除 build/ 和 tmp/
 
 ### 资产工厂 v0.1
 
-`make validate-assets` 用 GCC 构建离线工具 `build/toyasset`，校验仓库内提交的
-小型 `.ttex`、`.tsnd` 和 `.tmesh` 测试资产。原始 PNG/JPEG/WAV/OBJ 需要离线用
+Rasterfall 的运行时资源统一位于 `rasterfall/assets/`（音频、地图和纹理）。
+原始 PNG/JPEG/WAV/OBJ 需要离线用
 `build/toyasset convert` 转换为运行时专用格式，来源文件和大型中间产物不入库
-（见 `.gitignore`）。rasterfall 的 8 种核心音效（`assets/generated/sfx_*.tsnd`）
-由 `make generate-assets` 链接 `lib/game/sfx.c` 引擎离线渲染，输出确定性可复现，
+（见 `.gitignore`）。rasterfall 的 8 种核心音效（`rasterfall/assets/audio/sfx_*.tsnd`）
+由 `make generate-assets` 链接 `rasterfall/lib/sfx.c` 引擎离线渲染，输出确定性可复现，
 无需外部来源文件；rasterfall 启动时加载播放，缺失时回退程序合成。游戏运行时
-只读取带 magic、版本和显式小端字段的格式，不解析
-PNG/JPEG/WAV/OBJ 容器。格式说明见 [assets/README.md](assets/README.md)。
+只读取带 magic、版本和显式小端字段的格式，不解析 PNG/JPEG/WAV/OBJ 容器。
 v0.1 不包含压缩、FBX、glTF、骨骼动画或 GUI 编辑器。
 
-FPS 的 v0.2 纹理切片默认加载 `assets/generated/wall.ttex`，将 nearest RGB888
+FPS 的 v0.2 纹理切片默认加载 `rasterfall/assets/textures/wall.ttex`，将 nearest RGB888
 采样用于墙、地板和箱体；`--no-textures` 切回纯色，`--texture-stats` 输出纹理
 三角形、像素和占位纹理统计。每 5 秒向终端输出一次性能统计（退出时再输出全量
 汇总，`--no-stats` 关闭），字段含义：

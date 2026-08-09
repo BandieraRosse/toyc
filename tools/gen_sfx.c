@@ -1,9 +1,9 @@
 /*
- * gen_sfx — 把 lib/game/sfx.c 的程序合成音效离线渲染为 TSND 资产。
+ * gen_sfx — 把 rasterfall/lib/sfx.c 的程序合成音效离线渲染为 TSND 资产。
  *
  * Rasterfall 的 8 种核心音效（枪声/空枪/换弹/命中/击杀/被咬/死亡）由
- * lib/game/sfx.c 在运行时程序合成。本工具链接同一引擎，把它们一次性渲染成
- * assets/generated/sfx_*.tsnd（44100Hz 单声道 PCM16，从引擎的立体声输出
+ * rasterfall/lib/sfx.c 在运行时程序合成。本工具链接同一引擎，把它们一次性渲染成
+ * rasterfall/assets/audio/sfx_*.tsnd（44100Hz 单声道 PCM16，从引擎的立体声输出
  * 下混取均值——voice 在左右声道等幅），作为资产库中的离线
  * 表示：可供播放验证、供其他宿主引用，也保证引擎改动时能一键重建资产。
  * 合成参数与引擎逐字节一致（同 seed 的 xorshift 噪声），输出确定性可复现。
@@ -16,7 +16,7 @@
  *
  * 用法（从仓库根目录执行）：
  *   make generate-assets           # 重建全部音效资产并校验
- *   build/gen_sfx                  # 只渲染，默认输出 assets/generated/
+ *   build/gen_sfx                  # 只渲染，默认输出 rasterfall/assets/audio/
  *   build/gen_sfx tmp/sfx          # 自定义输出目录
  * 工具汇总见 tools/README.md。
  *
@@ -36,7 +36,7 @@
 #define BLOCK_FRAMES 512
 #define MAX_FRAMES   44100   /* 上限 1 秒：最长的 PLAYER_DEATH 为 750ms = 33075 帧，含尾块 */
 
-/* 与 enum toy_sfx_kind 一一对应，生成 assets/generated/sfx_<name>.tsnd */
+/* 与 enum toy_sfx_kind 一一对应，生成 rasterfall/assets/audio/sfx_<name>.tsnd */
 static const char *sfx_names[TOY_SFX_PLAYER_DEATH + 1] = {
     "gunshot", "dry_fire", "reload_start", "reload_done",
     "hit_marker", "kill", "bite", "death",
@@ -112,7 +112,7 @@ static void write_tsnd(const char *path, const short *pcm, unsigned long frames)
 
 int main(int argc, char **argv)
 {
-    const char *outdir = argc > 1 ? argv[1] : "assets/generated";
+    const char *outdir = argc > 1 ? argv[1] : "rasterfall/assets/audio";
     static short pcm[MAX_FRAMES];   /* 64KB BSS，避免大栈 */
     struct toy_sfx sfx;
     unsigned long total_bytes = 0;

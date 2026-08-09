@@ -19,7 +19,7 @@ void rasterfall_audio_load_assets(struct rasterfall_audio *audio)
     int kind, loaded = 0;
     for (kind = 0; kind <= TOY_SFX_PLAYER_DEATH; kind++) {
         char path[96];
-        snprintf(path, sizeof(path), "assets/generated/sfx_%s.tsnd",
+        snprintf(path, sizeof(path), "rasterfall/assets/audio/sfx_%s.tsnd",
                  sfx_asset_names[kind]);
         if (toy_sound_load(path, &audio->assets[kind]) == 0) loaded++;
     }

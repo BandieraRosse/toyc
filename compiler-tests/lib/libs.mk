@@ -10,7 +10,7 @@
 #   _TEST_<name>  — 测试驱动名（compiler-tests/lib/test_<name>.c，不含 .c 后缀）
 #                   不定义则跳过功能测试（仅编译检查）
 
-LIBS := math ctype string core stdio time misc net poll tty procfs evdev_kbd evdev_mouse audio thread graphics input game assets
+LIBS := math ctype string core stdio time misc net poll tty procfs evdev_kbd evdev_mouse audio thread graphics input assets
 
 # ── math — 纯数值计算，无系统调用 ──────────────────────────────────
 _SRCS_math    := math/math.c
@@ -106,11 +106,6 @@ _SRCS_input := input/input.c
 _DEPS_input := string stdio ctype
 _TEST_input := test_input
 
-# ── game — 平台无关游戏规则 + 程序合成 SFX（纯整数，零 syscall） ──
-_SRCS_game  := game/game.c game/sfx.c
-_DEPS_game  := math core string stdio ctype
-
 # ── assets — fixed-field TTEX/TSND/TMES runtime readers ───────────
 _SRCS_assets := assets.c
 _DEPS_assets := core stdio string ctype
-_TEST_assets := test_assets
