@@ -18,6 +18,26 @@ Toyc 是面向 Linux x86_64 的小型、自托管 C 工具链：
 - `app/`：示例和自托管应用
 - `llm/`：小型 GPT-2 实现与测试
 
+## 模块简介
+
+- 编译器模块负责词法分析、预处理、语法分析、代码生成和 ELF 目标文件输出。
+- 工具链模块包含 `toyas` 汇编器、`toyld` 静态链接器、`toyar` 归档器和可选的 `toypp` 预处理器。
+- 运行时与 Tinylibc 模块提供 freestanding 系统调用运行时、C 库、平台适配和基础设施。
+- 应用模块包含命令行工具、图形/音频示例、Rasterfall 和自托管构建目标。
+- LLM 模块包含 GPT-2、Qwen2 及共享张量/检查点代码，独立于核心编译器测试。
+
+## 目录简介
+
+- `compiler/`：Toyc 工具链和运行时源码
+- `include/`：公共头文件与 Tinylibc 头文件
+- `lib/`：Tinylibc 和平台库实现
+- `app/`：示例、命令行工具和可自托管应用
+- `rasterfall/`：Rasterfall 游戏及其图形、音频、网络模块
+- `compiler-tests/`：编译器、链接器、归档器、Tinylibc 和诊断测试
+- `llm/`：语言模型实现、测试和模型工具
+- `bootstrap/`：版本控制内的自举种子及说明
+- `build/`、`tmp/`：本地构建和测试生成物，不提交到仓库
+
 ## 构建事实
 
 默认 `make` 使用 GCC、GNU `as` 和 GNU `ld` 构建

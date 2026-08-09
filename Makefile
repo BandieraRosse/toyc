@@ -297,11 +297,11 @@ test-source: $(BUILD)/toyc $(BUILD)/toyld
 #   test-toyld         — 与 test-selfhost 完全重复（同用例同链接器）
 #   test-llm           — 独立 GPT-2 项目，非编译器
 #   test-lib-compile   — 被 test-lib Phase 1 子集完全覆盖
-#   test-toyld-multifile — 单用例，已由 test-toyld-archive 间接覆盖
+#   test-toyld-multifile — 单用例，独立入口保留但不纳入聚合
 # 额外纳入：
 #   test-toyld-self    — 自举收敛验证，工具链可信证明（极快，0.4s）
 
-test-all: test test-selfhost test-source test-lib test-error test-toyar test-toyld-archive test-toyld-self test-self-app
+test-all: test test-selfhost test-source test-lib test-error test-toyar test-toyld-archive test-toyld-self
 	@printf "$(GREEN)✓ 全部测试通过$(RESET)\n"
 
 # ─── Lib 库测试（从 lib/ 源文件编译） ─────────────────────────
@@ -526,7 +526,8 @@ test-toyld-self: $(BUILD)/toyld $(BUILD)/toyc_rt.o $(BUILD)/toyc_rt_start.o
 		printf "\n$(GREEN)✓ toyld 自举验证通过$(RESET)\n"; \
 	else \
 		printf "\n$(RED)✗ toyld 自举验证失败$(RESET)\n"; \
-	fi
+	fi; \
+	[ "$$fail" -eq 0 ]
 
 # ─── 错误报告测试 ───────────────────────────────────────────
 
@@ -1092,7 +1093,7 @@ test-self-app:
 		total=$$((total+1)); \
 		printf "  $(BLUE)%-25s$(RESET) " "$$name"; \
 		if [ ! -f "$$app" ]; then \
-			printf "$(YELLOW)⚠ not built$(RESET)\n"; sk="$${sk}$${sk:+,}$$name"; \
+			printf "$(YELLOW)⚠ not built$(RESET)\n"; skiplist="$${skiplist}$${skiplist:+,}$$name"; \
 			continue; \
 		fi; \
 		timeout 2 "$$app" </dev/null >/dev/null 2>&1; rc=$$?; \

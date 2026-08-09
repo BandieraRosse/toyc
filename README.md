@@ -33,72 +33,25 @@ make clean              # 删除 build/ 和 tmp/
 也可使用 `make lib`、`make app` 或 `make app-<name>` 由 GCC 构建库、全部应用或单个
 应用；`make self-app-<name>` 是对应的自托管构建。
 
-### 资产工厂 v0.1
+### Rasterfall
 
-Rasterfall 的运行时资源统一位于 `rasterfall/assets/`（音频、地图和纹理）。
-原始 PNG/JPEG/WAV/OBJ 需要离线用
-`build/toyasset convert` 转换为运行时专用格式，来源文件和大型中间产物不入库
-（见 `.gitignore`）。rasterfall 的 8 种核心音效（`rasterfall/assets/audio/sfx_*.tsnd`）
-由 `make generate-assets` 链接 `rasterfall/lib/sfx.c` 引擎离线渲染，输出确定性可复现，
-无需外部来源文件；rasterfall 启动时加载播放，缺失时回退程序合成。游戏运行时
-只读取带 magic、版本和显式小端字段的格式，不解析 PNG/JPEG/WAV/OBJ 容器。
-v0.1 不包含压缩、FBX、glTF、骨骼动画或 GUI 编辑器。
-
-FPS 的 v0.2 纹理切片默认加载 `rasterfall/assets/textures/wall.ttex`，将 nearest RGB888
-采样用于墙、地板和箱体；`--no-textures` 切回纯色，`--texture-stats` 输出纹理
-三角形、像素和占位纹理统计。每 5 秒向终端输出一次性能统计（退出时再输出全量
-汇总，`--no-stats` 关闭），字段含义：
-
-- `fps`/`wall_us`：平均帧率与帧间隔。`wall` 是相邻两帧渲染起点（begin_frame）
-  之间的墙钟时间，按循环迭代累计除以渲染帧数，精确等于 1e6/fps；它由活跃渲染
-  时间（`frame_us`）与迭代间开销（`wait_us`）构成，与两者严格对账——平均帧率
-  与渲染耗时的缺口就是 `wait` 的去向（组合器节拍/双缓冲背压/轮询调度）。
-- `frame_us`（均值/p95/p99/max）：单帧渲染流水线活跃时间（begin_frame 到
-  present），分位数反映掉帧风险。
-- `wait_us`：由 `wall − active` 推导的迭代间开销（事件轮询、逻辑调度、双缓冲
-  背压），不直接测量以保证对账严格；`stall_ms` 是其组合器背压部分（等组合器
-  释放 buffer）。
-- 阶段表 `logic/begin/scene/enemies/raster/overlay/present`：各阶段平均每帧的
-  三角形、顶点、像素与耗时（及占比），用于定位热点阶段。
-- 像素漏斗 `funnel`：包围盒扫描像素 → 覆盖测试通过像素（三角形覆盖效率）→
-  深度通过像素（实际写屏量），两段比例揭示覆盖浪费与过度绘制。
-- 路径拆分 `path`：纯色/纹理两条光栅化路径的三角形、像素与耗时，区分两者成本。
-
-可用 `build/rasterfall --frames 300 --texture-stats` 在 Wayland 环境预览，
-`build/rasterfall --logic-test` 为无窗口回归预览。
-
-直接启动 `build/rasterfall` 会进入主菜单，可创建房间或通过手动输入主机 IP 和端口
-加入。创建房间后默认使用游戏端口 `28460`，游戏 HUD 会显示可连接的地址和端口。
-`--host`、`--connect` 参数保留给脚本和调试使用。
-
-Rasterfall 的第一阶段 UDP 联机可用以下命令启动：
+Rasterfall 是一个用 Toyc/Tinylibc 构建的 Linux x86_64 第一人称射击原型，支持本地
+运行和基础 UDP 联机。先构建应用，再启动主程序：
 
 ```sh
-build/rasterfall --host --port 28460
-build/rasterfall --connect 127.0.0.1 --port 28460
-build/rasterfall --net-test              # 无窗口协议与 localhost UDP 回环
-build/rasterfall_punch_server           # 公网房间协调服务，监听 UDP 28461
-# 服务端标准输入：help、rooms、room 1234、reset 1234、reset all、quit
+make generate-assets
+make app-rasterfall
+build/rasterfall
 ```
 
-主菜单中的“创建公网房间”和“加入公网房间”使用硬编码的协调服务器
-`47.82.117.182:28461`，房间号必须是四位数字。协调服务只交换双方的公网 UDP 地址和
-低半段房间号（0000–4999）匹配后继续使用 UDP hole punching；高半段房间号
-（5000–9999）使用协调服务器 relay 转发，避免两端 NAT 无法互通；
-服务端会按租约清理失联 peer，并在新主机会话注册时清空旧 guest。云服务器需要放行 UDP
-28461。服务端也可用 `make self-app-rasterfall_punch_server` 验证
-Toyc 自托管构建。
+无窗口逻辑回归和本地 UDP 测试可使用：
 
-当前阶段由主机校验远端移动，并在权威敌人世界上执行远端切枪、换弹、射击、命中和
-地图互动；双方能够看到队友模型，客户端带有位置预测与校正；敌人位置、生命和死亡
-状态也由主机快照同步；远端射击、换弹、受击等事件使用带序号的待确认队列转发给客户
-端音频，任务进度、警报、导演统计和终局状态也随快照恢复。断线后客户端会重新握手并
-接收主机状态，当前仍属于可实机验证的两人合作原型；公网房间暂不包含大厅列表。
-连接超过约 3 秒没有收到对端包时，HUD 会显示断线；客户端会每秒发送 HELLO 尝试恢复，
-主机会释放失联的客户端槽位以允许重新接入。
-
-联机模式右上角会显示 `HOST`/`CLIENT`、对端连接状态和实时 RTT；主机在等待客户端时
-显示 `WAITING FOR PLAYER`。
+```sh
+build/rasterfall --logic-test
+build/rasterfall --net-test
+build/rasterfall --host --port 28460
+build/rasterfall --connect 127.0.0.1 --port 28460
+```
 
 `bootstrap/` 保存版本控制内的种子二进制。它们用于阶段性的自举检查，不参与默认
 `make`，而且可能落后于源码：
@@ -112,15 +65,15 @@ make update-bootstrap       # 有意更新种子；会修改跟踪的二进制
 ## 测试
 
 ```sh
-make test               # 58 个常规编译/运行测试
-make test-selfhost      # 42 个无 toyc_rt 的自包含测试
-make test-source        # 8 个编译器源码级测试
-make test-error         # 16 个诊断测试
-make test-toyld         # 42 个使用 toyld 的链接/运行测试
-make test-toyar         # 5 个归档器测试
-make test-toyld-archive # 2 个归档链接测试
+make test               # 常规编译/运行测试
+make test-selfhost      # 无 toyc_rt 的自包含测试
+make test-source        # 编译器源码级测试
+make test-error         # 诊断测试
+make test-toyld         # 使用 toyld 的链接/运行测试
+make test-toyar         # 归档器测试
+make test-toyld-archive # 归档链接测试
 make test-toyld-self    # toyld 两阶段字节一致性
-make test-llm           # 29 个 GPT-2 数值/前向传播测试
+make test-llm           # GPT-2 数值/前向传播测试
 make test-llm-qwen2     # Qwen2 算子、checkpoint 和单 token 前向测试
 make test-all           # 核心聚合目标；不包含 test-toyld 和 test-llm
 ```
@@ -150,20 +103,11 @@ byte-level BPE prompt 编码、UTF-8 token 解码、采样和 KV-cache 推理。
 最后位置 logits argmax 和 top-10 完全一致，最大绝对误差约为 `5.01e-5`；greedy
 生成可正常输出中文并连续推进 KV cache。
 
-`make test-self-app` 只测试已经存在的 `build/*_self`，因此应先运行
-`make self-app`；否则缺少的程序会被跳过。
+`make test-self-app` 是独立的自托管 App 冒烟测试；运行前先执行 `make self-app`。
+它只检查已经存在的 `build/*_self`，缺少的程序会被跳过。
 
-### 2026-07-31 实测
-
-在受限容器中，本次运行结果为：
-
-- `make test`：58/58；`make test-source`：8/8；`make test-error`：16/16。
-- `make test-toyar`：5/5；`make test-toyld-archive`：2/2；
-  `make test-toyld-self`：两阶段字节一致。
-- `make test-llm`：29/29。
-- `make test-selfhost` 和 `make test-toyld`：均为 40/42。两个用例调用根目录路径上的
-  `renameat2`，容器返回 `EROFS`，而测试固定期待 `ENOENT`；这是环境相关的断言差异。
-因此本环境的 `make test-all` 会在 `test-selfhost` 处停止，不能标记为全绿。
+部分 syscall 和 procfs 测试依赖运行环境。只读根文件系统可能使 `renameat2` 返回
+`EROFS`，容器中的 `/proc` 字段也可能不同；遇到这类断言时，应区分环境差异和编译器回归。
 
 ## 目录
 
