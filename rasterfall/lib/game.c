@@ -544,6 +544,12 @@ static void init_enemy_stats(struct toy_game *g, struct toy_game_enemy *e,
     e->special_windup_ms = 0;
     e->special_target_active = 0;
     e->charge_active = 0;
+    e->charge_dir_x = 0;
+    e->charge_dir_z = 0;
+    e->charge_elapsed_ms = 0;
+    e->special_target_player = 0;
+    e->special_target_actor_index = -1;
+    e->special_pull_timer_ms = 0;
     e->airborne_ms = 0;
     e->vertical_velocity = 0;
     e->airborne_y = 0;
@@ -1114,6 +1120,45 @@ static int nearest_ai_position(const struct toy_game *g,
     return found;
 }
 
+/* 特感使用同一套轻量目标选择：主玩家、第二玩家和存活 AI 中取最近者。 */
+static int nearest_special_target(const struct toy_game *g,
+                                  const struct toy_game_enemy *e,
+                                  int *out_x, int *out_z,
+                                  int *out_player, int *out_actor)
+{
+    int found = 0, player = 0, actor = -1;
+    long long best = 0, dx, dz, d2;
+    if (!g->player_down) {
+        dx = (long long)g->px - e->x; dz = (long long)g->pz - e->z;
+        best = dx * dx + dz * dz; found = 1;
+    }
+    if (g->secondary_player_active && !g->secondary_player_down) {
+        dx = (long long)g->secondary_px - e->x;
+        dz = (long long)g->secondary_pz - e->z;
+        d2 = dx * dx + dz * dz;
+        if (!found || d2 < best) {
+            best = d2; found = 1; player = 1; actor = -1;
+        }
+    }
+    for (int i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
+        const struct toy_game_actor *a = &g->actors[i];
+        if (!a->active || a->kind != TOY_GAME_ACTOR_AI ||
+            a->state != TOY_GAME_ACTOR_ALIVE) continue;
+        dx = (long long)a->x - e->x; dz = (long long)a->z - e->z;
+        d2 = dx * dx + dz * dz;
+        if (!found || d2 < best) {
+            best = d2; found = 1; player = 2; actor = i;
+        }
+    }
+    if (!found) return 0;
+    if (player == 1) { *out_x = g->secondary_px; *out_z = g->secondary_pz; }
+    else if (player == 2) { *out_x = g->actors[actor].x; *out_z = g->actors[actor].z; }
+    else { *out_x = g->px; *out_z = g->pz; }
+    if (out_player) *out_player = player;
+    if (out_actor) *out_actor = actor;
+    return 1;
+}
+
 static void emit_enemy_noise(struct toy_game *g, int x, int z, int range)
 {
     int i;
@@ -1277,40 +1322,67 @@ static void update_player_special_motion(struct toy_game *g, int dt_ms)
 
 static void update_smoker(struct toy_game *g, struct toy_game_enemy *e,
                           int index, int target_x, int target_z,
+                          int target_player, int target_actor,
                           int dx, int dz, long long dist, int visual,
                           int dt_ms)
 {
     long long pull_dist;
-    int pull_dx, pull_dz, step;
+    int pull_dx, pull_dz, pull_x, pull_z, step;
     if (e->special_timer_ms > 0) {
         e->special_timer_ms -= dt_ms;
         if (e->special_timer_ms < 0) e->special_timer_ms = 0;
     }
-    if (g->player_pull_enemy_index == index &&
-        g->player_control_disabled) {
+    if (e->special_target_active) {
         e->special_target_active = 1;
-        g->player_pull_timer_ms -= dt_ms;
-        pull_dx = e->x - g->px;
-        pull_dz = e->z - g->pz;
+        target_player = e->special_target_player;
+        target_actor = e->special_target_actor_index;
+        if (target_player == 1) {
+            pull_x = g->secondary_px; pull_z = g->secondary_pz;
+        } else if (target_player == 2 && target_actor >= 0 &&
+                   target_actor < TOY_GAME_MAX_ACTORS) {
+            pull_x = g->actors[target_actor].x;
+            pull_z = g->actors[target_actor].z;
+        } else {
+            pull_x = g->px; pull_z = g->pz;
+        }
+        e->special_pull_timer_ms -= dt_ms;
+        pull_dx = e->x - pull_x;
+        pull_dz = e->z - pull_z;
         pull_dist = isqrt((long long)pull_dx * pull_dx +
                           (long long)pull_dz * pull_dz);
-        if (g->player_pull_timer_ms <= 0 ||
-            !enemy_has_line_of_sight(g, e, g->px, g->pz)) {
+        if (e->special_pull_timer_ms <= 0 ||
+            !enemy_has_line_of_sight(g, e, pull_x, pull_z)) {
             e->special_target_active = 0;
-            release_player_special(g);
+            if (target_player == 0) release_player_special(g);
             return;
         }
         /* 舌头把玩家拉到身边后保持束缚，并按接触间隔造成伤害。 */
         if (pull_dist < 420 && e->bite_cooldown_ms <= 0) {
-            g->hp -= TOY_GAME_SMOKER_DAMAGE;
-            if (g->hp < 0) g->hp = 0;
-            g->damage_flash_ms = TOY_GAME_DAMAGE_FLASH_MS;
+            if (target_player == 0) {
+                g->hp -= TOY_GAME_SMOKER_DAMAGE;
+                if (g->hp < 0) g->hp = 0;
+                g->damage_flash_ms = TOY_GAME_DAMAGE_FLASH_MS;
+            } else if (target_player == 2 && target_actor >= 0 &&
+                       target_actor < TOY_GAME_MAX_ACTORS) {
+                struct toy_game_actor *a = &g->actors[target_actor];
+                a->hp -= TOY_GAME_SMOKER_DAMAGE;
+                if (a->hp <= 0) {
+                    a->hp = 0; a->state = TOY_GAME_ACTOR_DOWNED;
+                    a->revive_progress_ms = 0;
+                }
+            }
             e->bite_cooldown_ms = 1000;
         }
         step = TOY_GAME_SMOKER_PULL_STEP;
-        if (pull_dist > 420)
-            move_player_forced(g, pull_dx * step / (int)pull_dist,
-                               pull_dz * step / (int)pull_dist);
+        if (pull_dist > 420) {
+            int mx = pull_dx * step / (int)pull_dist;
+            int mz = pull_dz * step / (int)pull_dist;
+            if (target_player == 0)
+                move_player_forced(g, mx, mz);
+            else if (target_player == 2)
+                toy_game_move_ai_actor(g, target_actor, pull_x + mx,
+                                       pull_z + mz);
+        }
         if (pull_dist > 0) {
             e->dir_x = -pull_dx * 1024 / (int)pull_dist;
             e->dir_z = -pull_dz * 1024 / (int)pull_dist;
@@ -1318,7 +1390,7 @@ static void update_smoker(struct toy_game *g, struct toy_game_enemy *e,
         return;
     }
     e->special_target_active = 0;
-    if (g->player_down) return;
+    if (g->player_down && target_player == 0) return;
     if (e->special_windup_ms > 0) {
         e->special_windup_ms -= dt_ms;
         if (e->special_windup_ms < 0) e->special_windup_ms = 0;
@@ -1328,9 +1400,12 @@ static void update_smoker(struct toy_game *g, struct toy_game_enemy *e,
         }
         if (e->special_windup_ms == 0) {
             e->special_target_active = 1;
-            g->player_pull_enemy_index = index;
-            g->player_pull_timer_ms = TOY_GAME_SMOKER_PULL_MS;
-            g->player_control_disabled = 1;
+            e->special_pull_timer_ms = TOY_GAME_SMOKER_PULL_MS;
+            if (e->special_target_player == 0) {
+                g->player_pull_enemy_index = index;
+                g->player_pull_timer_ms = TOY_GAME_SMOKER_PULL_MS;
+                g->player_control_disabled = 1;
+            }
         }
         return;
     }
@@ -1342,6 +1417,8 @@ static void update_smoker(struct toy_game *g, struct toy_game_enemy *e,
         e->special_target_active = 0;
         e->special_timer_ms = TOY_GAME_SMOKER_COOLDOWN_MS;
         e->special_windup_ms = TOY_GAME_SPECIAL_WINDUP_MS;
+        e->special_target_player = target_player;
+        e->special_target_actor_index = target_actor;
         return;
     }
     /* Smoker 会主动靠近以寻找玩家，但永远不调用普通近战攻击。 */
@@ -1423,45 +1500,57 @@ static void update_enemy_airborne(struct toy_game *g,
 
 static void update_charger(struct toy_game *g, struct toy_game_enemy *e,
                            int target_x, int target_z, int dx, int dz,
+                           int target_player, int target_actor,
                            long long dist, int visual, int dt_ms)
 {
     int nx, nz;
     if (e->charge_active) {
-        if (dist > 0) {
-            e->dir_x = dx * 1024 / (int)dist;
-            e->dir_z = dz * 1024 / (int)dist;
-        }
+        e->dir_x = e->charge_dir_x;
+        e->dir_z = e->charge_dir_z;
         if (e->special_timer_ms > 0) {
             e->special_timer_ms -= dt_ms;
             return;
         }
-        if (charger_hit_enemies(g, e) > 0) {
+        e->charge_elapsed_ms += dt_ms;
+        if (e->charge_elapsed_ms >= TOY_GAME_CHARGER_MAX_CHARGE_MS) {
             e->charge_active = 0;
             e->special_timer_ms = TOY_GAME_CHARGER_COOLDOWN_MS;
             return;
         }
+        /* 沿锁定直线持续冲锋；同一轮可连续撞到多个敌人。 */
+        charger_hit_enemies(g, e);
         if (dist <= 300) {
-            g->hp -= TOY_GAME_CHARGER_DAMAGE;
-            if (g->hp < 0) g->hp = 0;
-            g->damage_flash_ms = TOY_GAME_DAMAGE_FLASH_MS;
-            g->player_airborne_ms = TOY_GAME_AIRBORNE_MS;
-            g->player_vertical_velocity = TOY_GAME_AIRBORNE_VELOCITY;
-            g->player_airborne_y = 0;
-            g->player_control_disabled = 1;
-            g->player_knockback_x = dx * TOY_GAME_CHARGER_KNOCKBACK /
-                                    (dist > 0 ? (int)dist : 1);
-            g->player_knockback_z = dz * TOY_GAME_CHARGER_KNOCKBACK /
-                                    (dist > 0 ? (int)dist : 1);
-            move_player_forced(g, g->player_knockback_x,
-                               g->player_knockback_z);
+            if (target_player == 0) {
+                g->hp -= TOY_GAME_CHARGER_DAMAGE;
+                if (g->hp < 0) g->hp = 0;
+                g->damage_flash_ms = TOY_GAME_DAMAGE_FLASH_MS;
+                g->player_airborne_ms = TOY_GAME_AIRBORNE_MS;
+                g->player_vertical_velocity = TOY_GAME_AIRBORNE_VELOCITY;
+                g->player_airborne_y = 0;
+                g->player_control_disabled = 1;
+                g->player_knockback_x = dx * TOY_GAME_CHARGER_KNOCKBACK /
+                                        (dist > 0 ? (int)dist : 1);
+                g->player_knockback_z = dz * TOY_GAME_CHARGER_KNOCKBACK /
+                                        (dist > 0 ? (int)dist : 1);
+                move_player_forced(g, g->player_knockback_x,
+                                   g->player_knockback_z);
+            } else if (target_player == 2 && target_actor >= 0 &&
+                       target_actor < TOY_GAME_MAX_ACTORS) {
+                struct toy_game_actor *a = &g->actors[target_actor];
+                a->hp -= TOY_GAME_CHARGER_DAMAGE;
+                if (a->hp <= 0) {
+                    a->hp = 0; a->state = TOY_GAME_ACTOR_DOWNED;
+                    a->revive_progress_ms = 0;
+                }
+            }
             charger_hit_enemies(g, e);
             e->charge_active = 0;
             e->special_timer_ms = TOY_GAME_CHARGER_COOLDOWN_MS;
             return;
         }
         if (dist > 0) {
-            nx = dx * TOY_GAME_CHARGER_SPEED / (int)dist;
-            nz = dz * TOY_GAME_CHARGER_SPEED / (int)dist;
+            nx = e->charge_dir_x * TOY_GAME_CHARGER_SPEED / 1024;
+            nz = e->charge_dir_z * TOY_GAME_CHARGER_SPEED / 1024;
             if (!enemy_position_blocked(g, e->x + nx, e->z,
                                         TOY_GAME_ENEMY_RADIUS))
                 e->x += nx;
@@ -1491,9 +1580,12 @@ static void update_charger(struct toy_game *g, struct toy_game_enemy *e,
         if (dist > 0) {
             e->dir_x = dx * 1024 / (int)dist;
             e->dir_z = dz * 1024 / (int)dist;
+            e->charge_dir_x = e->dir_x;
+            e->charge_dir_z = e->dir_z;
         }
         e->charge_active = 1;
         e->special_timer_ms = TOY_GAME_CHARGER_WINDUP_MS;
+        e->charge_elapsed_ms = 0;
         e->target_x = target_x;
         e->target_z = target_z;
         return;
@@ -1519,6 +1611,8 @@ static void update_enemy_ai(struct toy_game *g, struct toy_game_enemy *e,
     long long ai_dist2 = 0;
     int ai_x = 0, ai_z = 0;
     int ai_index = 0;
+    int special_x = g->px, special_z = g->pz;
+    int special_player = 0, special_actor = -1;
     int visual;
     int ai_available = nearest_ai_position(g, e, &ai_x, &ai_z, &ai_dist2,
                                            &ai_index);
@@ -1527,22 +1621,28 @@ static void update_enemy_ai(struct toy_game *g, struct toy_game_enemy *e,
                                    isqrt(primary_dist2));
 
     if (e->type == TOY_GAME_ENEMY_SMOKER) {
-        visual = enemy_special_visual_stimulus(g, e, g->px, g->pz,
-                                               primary_dx, primary_dz,
-                                               isqrt(primary_dist2),
+        nearest_special_target(g, e, &special_x, &special_z,
+                               &special_player, &special_actor);
+        dx = special_x - e->x; dz = special_z - e->z;
+        dist = isqrt((long long)dx * dx + (long long)dz * dz);
+        visual = enemy_special_visual_stimulus(g, e, special_x, special_z,
+                                               dx, dz, dist,
                                                TOY_GAME_SMOKER_RANGE);
-        update_smoker(g, e, (int)(e - g->enemies), g->px, g->pz,
-                      primary_dx, primary_dz, isqrt(primary_dist2), visual,
+        update_smoker(g, e, (int)(e - g->enemies), special_x, special_z,
+                      special_player, special_actor, dx, dz, dist, visual,
                       dt_ms);
         return;
     }
     if (e->type == TOY_GAME_ENEMY_CHARGER) {
-        visual = enemy_special_visual_stimulus(g, e, g->px, g->pz,
-                                               primary_dx, primary_dz,
-                                               isqrt(primary_dist2),
+        nearest_special_target(g, e, &special_x, &special_z,
+                               &special_player, &special_actor);
+        dx = special_x - e->x; dz = special_z - e->z;
+        dist = isqrt((long long)dx * dx + (long long)dz * dz);
+        visual = enemy_special_visual_stimulus(g, e, special_x, special_z,
+                                               dx, dz, dist,
                                                TOY_GAME_CHARGER_RANGE);
-        update_charger(g, e, g->px, g->pz, primary_dx, primary_dz,
-                       isqrt(primary_dist2), visual, dt_ms);
+        update_charger(g, e, special_x, special_z, dx, dz,
+                       special_player, special_actor, dist, visual, dt_ms);
         return;
     }
 

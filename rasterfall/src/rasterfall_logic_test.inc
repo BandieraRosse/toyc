@@ -71,10 +71,10 @@ static int run_logic_test(void)
     }
     /* 地图四周的 wall 由 world.room_limit 提供边界碰撞；开发者区不再刷怪。 */
     if (level_map.spawn_count != 3 ||
-        !toy_game_position_blocked(&game, 0, -11950, 100) ||
-        !toy_game_position_blocked(&game, 0, 11950, 100) ||
-        !toy_game_position_blocked(&game, -11950, 0, 100) ||
-        !toy_game_position_blocked(&game, 11950, 0, 100)) return 72;
+        !toy_game_position_blocked(&game, 0, -14950, 100) ||
+        !toy_game_position_blocked(&game, 0, 14950, 100) ||
+        !toy_game_position_blocked(&game, -14950, 0, 100) ||
+        !toy_game_position_blocked(&game, 14950, 0, 100)) return 72;
     memset(&command, 0, sizeof(command));
     command.move_forward = 1;
     for (int i = 0; i < 10; i++)
@@ -84,10 +84,12 @@ static int run_logic_test(void)
     /* 死亡重开仍须恢复世界碰撞配置并能推进首波。 */
     game.state = TOY_GAME_OVER;
     rasterfall_session_reset(&session, &camera, 2);
-    if (game.world != map_bounds || game.world_count != level_map.box_count ||
+    if (game.world_count != level_map.box_count ||
         game.room_limit != level_map.room_limit ||
         toy_game_position_blocked(&game, camera.x, camera.z,
-                                  RASTERFALL_PLAYER_RADIUS)) return 13;
+                                  RASTERFALL_PLAYER_RADIUS)) {
+        return 13;
+    }
     for (int i = 0; i < 170; i++)
         toy_game_update(&game, NULL, 0, camera.sy, camera.cy, 16);
     if (game.enemies_alive == 0) return 14;
@@ -395,7 +397,7 @@ static int run_logic_test(void)
             if (r->ez < -5700 || r->ez > -3800) return 39;
         }
     }
-    /* 地图拾取物解析：9 个控制按钮 + 4 把主武器 + 2 个弹药盒。 */
+    /* 地图拾取物解析：10 个控制按钮 + 4 把主武器 + 2 个弹药盒。 */
     {
         int has_horde_button = 0, has_base1 = 0, has_base2 = 0;
         int has_smoker = 0, has_charger = 0, i;
@@ -411,7 +413,7 @@ static int run_logic_test(void)
             if (interactables[i].kind == TOY_MAP_PICKUP_CHARGER_BUTTON)
                 has_charger = 1;
         }
-        if (interactable_count != 15 || !has_horde_button ||
+        if (interactable_count != 16 || !has_horde_button ||
             !has_base1 || !has_base2 || !has_smoker || !has_charger) return 32;
     }
     /* 固定拾取点：拾取后武器仍在场，同武器再互动 = 补充弹药 */

@@ -78,6 +78,7 @@
 #define TOY_GAME_SMOKER_PULL_STEP 46
 #define TOY_GAME_CHARGER_RANGE  9600
 #define TOY_GAME_CHARGER_WINDUP_MS 700
+#define TOY_GAME_CHARGER_MAX_CHARGE_MS 7000
 #define TOY_GAME_CHARGER_COOLDOWN_MS 15000
 #define TOY_GAME_CHARGER_SPEED  95
 #define TOY_GAME_CHARGER_DAMAGE 6
@@ -234,6 +235,11 @@ struct toy_game_enemy {
     int special_windup_ms;
     int special_target_active;
     int charge_active;
+    int charge_dir_x, charge_dir_z;
+    int charge_elapsed_ms;
+    int special_target_player;
+    int special_target_actor_index;
+    int special_pull_timer_ms;
     int airborne_ms;
     int vertical_velocity;
     int airborne_y;

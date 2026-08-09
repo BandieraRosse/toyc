@@ -465,6 +465,10 @@ static int render_block_enemy(struct toy_renderer *, const struct camera *,
                               const struct toy_game_enemy *, int, uint32_t);
 static int render_round_enemy(struct toy_renderer *, const struct camera *,
                               const struct toy_game_enemy *, int, uint32_t);
+static int render_smoker_enemy(struct toy_renderer *, const struct camera *,
+                               const struct toy_game_enemy *, int, uint32_t);
+static int render_charger_enemy(struct toy_renderer *, const struct camera *,
+                                const struct toy_game_enemy *, int, uint32_t);
 
 static int draw_box(struct toy_renderer *renderer, const struct camera *camera,
                     const struct box *box)
@@ -788,7 +792,16 @@ static int render_scene(struct toy_renderer *renderer, const struct camera *came
                 memset(&model,0,sizeof(model)); model.active=1;
                 model.x=(x->a+x->b)/2; model.z=(x->c+x->d)/2; model.dir_z=-1024;
                 if (x->style==1) pixels+=render_block_enemy(renderer,camera,&model,1000,x->color);
-                else pixels+=render_round_enemy(renderer,camera,&model,1000,x->color);
+                else if (x->style==2) pixels+=render_round_enemy(renderer,camera,&model,1000,x->color);
+                else if (x->style==3) {
+                    model.type = TOY_GAME_ENEMY_SMOKER;
+                    pixels += render_smoker_enemy(renderer, camera, &model,
+                                                  1000, x->color);
+                } else if (x->style==4) {
+                    model.type = TOY_GAME_ENEMY_CHARGER;
+                    pixels += render_charger_enemy(renderer, camera, &model,
+                                                   1120, x->color);
+                }
             } else {
                 struct box model={x->a,x->b,x->c,x->d,x->f,x->color};
                 pixels+=draw_cuboid(renderer,camera,model.minx,model.maxx,x->e,x->f,model.minz,model.maxz,model.color);
@@ -946,12 +959,12 @@ static int render_smoker_enemy(struct toy_renderer *renderer,
                     if (letters[letter][row][col] == '1') {
                         /* 面部平面从外侧看会发生镜像，反向布置列才能让
                          * 玩家看到正常顺序的 S 和 M。 */
-                        int h0 = 110 - (letter * 6 + col) * 24;
+                        int h0 = -145 + (letter * 6 + col) * 24;
                         pixels += draw_face_rect(renderer, camera, x, z, 165,
                                                  e->dir_x, e->dir_z,
                                                  h0, h0 + 17,
-                                                 enemy_y(170 + row * 38, scale),
-                                                 enemy_y(200 + row * 38, scale),
+                                                 enemy_y(170 + (6 - row) * 38, scale),
+                                                 enemy_y(200 + (6 - row) * 38, scale),
                                                  0xFFD070);
                     }
     }
@@ -1060,8 +1073,7 @@ static int render_enemies(struct toy_renderer *renderer,
         }
         pixels += render_blob_shadow(renderer, camera, e, scale);
         if (e->type == TOY_GAME_ENEMY_SMOKER &&
-            e->special_target_active && game.player_pull_enemy_index == i &&
-            game.player_control_disabled)
+            e->special_target_active && game.player_control_disabled)
             pixels += render_smoker_tongue(renderer, camera, e);
         active_enemy_lift = e->airborne_y;
         if (e->type == TOY_GAME_ENEMY_CHARGER)
