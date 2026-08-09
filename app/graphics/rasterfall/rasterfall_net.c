@@ -1336,7 +1336,8 @@ void rasterfall_net_apply_remote(struct rasterfall_net *net,
         event_start = g->event_count;
         if (!net->peer_down)
             rasterfall_session_step_remote_player(session, &net->peer_camera,
-                                                  &net->remote_command);
+                                                  &net->remote_command,
+                                                  net->peer_down);
         /* The command's turn delta is only a prediction hint.  Use the
          * complete camera reported by the client before authoritative firing
          * so quick 90-degree turns and accumulated mouse deltas cannot leave

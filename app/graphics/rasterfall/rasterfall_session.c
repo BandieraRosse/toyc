@@ -233,9 +233,10 @@ static void session_update_smooth_turn(struct rasterfall_session *session,
 
 void rasterfall_session_step_remote_player(struct rasterfall_session *session,
                                            struct camera *camera,
-                                           const struct rasterfall_command *command)
+                                           const struct rasterfall_command *command,
+                                           int remote_down)
 {
-    if (!session->game_state.player_down)
+    if (!remote_down)
         session_move_player(session, camera, command);
     if (command->turn || command->pitch)
         rasterfall_camera_rotate(camera, command->turn, command->pitch);

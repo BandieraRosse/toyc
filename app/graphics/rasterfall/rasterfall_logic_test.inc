@@ -69,6 +69,12 @@ static int run_logic_test(void)
             actor_test.actors[0].hp != TOY_GAME_REVIVE_HP ||
             actor_test.ai_down) return 52;
     }
+    /* 地图四周的 wall 由 world.room_limit 提供边界碰撞；开发者区不再刷怪。 */
+    if (level_map.spawn_count != 3 ||
+        !toy_game_position_blocked(&game, 0, -11950, 100) ||
+        !toy_game_position_blocked(&game, 0, 11950, 100) ||
+        !toy_game_position_blocked(&game, -11950, 0, 100) ||
+        !toy_game_position_blocked(&game, 11950, 0, 100)) return 72;
     memset(&command, 0, sizeof(command));
     command.move_forward = 1;
     for (int i = 0; i < 10; i++)
@@ -549,9 +555,10 @@ static int run_logic_test(void)
         game.enemies[1].speed = 100;
         game.enemies[1].dir_z = -1024;
         game.enemies_alive = 2;
-        memset(&command, 0, sizeof(command));
-        command.buttons = RASTERFALL_CMD_SHOVE;
-        rasterfall_session_step(&session, &aim, &command, 16);
+        /* 直接验证击退函数，避免本帧敌人 AI 先移动身后敌人。 */
+        game.px = aim.x;
+        game.pz = aim.z;
+        toy_game_shove(&game, aim.sy, aim.cy);
         if (game.enemies[0].z != aim.z + 300 + TOY_GAME_SHOVE_PUSH) return 63;
         if (game.enemies[0].shove_stun_ms <= 0 ||
             game.enemies[0].shove_stun_ms > TOY_GAME_SHOVE_STUN_MS) return 64;

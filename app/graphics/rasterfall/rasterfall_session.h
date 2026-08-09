@@ -76,7 +76,8 @@ void rasterfall_session_step_client(struct rasterfall_session *session,
  * 客户端移动；射击和互动要等多玩家规则状态接入后再由权威会话处理。 */
 void rasterfall_session_step_remote_player(struct rasterfall_session *session,
                                            struct camera *camera,
-                                           const struct rasterfall_command *command);
+                                           const struct rasterfall_command *command,
+                                           int remote_down);
 /* 主机验证远端玩家的交互按键，沿用同一视锥/距离判定。 */
 void rasterfall_session_interact_remote(struct rasterfall_session *session,
                                          const struct camera *camera);
