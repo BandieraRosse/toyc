@@ -754,7 +754,7 @@ APP_SRCS    := $(shell find $(APP_DIR) -name '*.c' | LANG=C sort) \
 APP_NAMES   := $(sort $(basename $(notdir $(APP_SRCS))))
 APP_OBJS    := $(foreach src,$(APP_SRCS),$(BUILD)/$(notdir $(basename $(src))).o)
 APP_TARGETS := $(foreach name,$(APP_NAMES),$(BUILD)/$(name))
-APP_EXTRA_OBJS_rasterfall := $(BUILD)/rasterfall_game.o $(BUILD)/rasterfall_sfx.o $(BUILD)/rasterfall_map_engine.o $(BUILD)/rasterfall_map.o $(BUILD)/rasterfall_session.o $(BUILD)/rasterfall_net.o $(BUILD)/rasterfall_hud.o $(BUILD)/rasterfall_audio.o $(BUILD)/rasterfall_effects.o $(BUILD)/rasterfall_perf.o $(BUILD)/rasterfall_sky.o $(BUILD)/rasterfall_viewmodel.o
+APP_EXTRA_OBJS_rasterfall := $(BUILD)/rasterfall_game.o $(BUILD)/rasterfall_sfx.o $(BUILD)/rasterfall_map_engine.o $(BUILD)/rasterfall_map.o $(BUILD)/rasterfall_session.o $(BUILD)/rasterfall_net.o $(BUILD)/rasterfall_hud.o $(BUILD)/rasterfall_audio.o $(BUILD)/rasterfall_effects.o $(BUILD)/rasterfall_perf.o $(BUILD)/rasterfall_sky.o $(BUILD)/rasterfall_viewmodel.o $(BUILD)/rasterfall_render.o
 
 # ─── 库编译规则 ────────────────────────────────────────────────
 
@@ -823,6 +823,13 @@ $(BUILD)/rasterfall_viewmodel.o: $(RASTERFALL_SRC)/rasterfall_viewmodel.c \
 	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
 	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 
+$(BUILD)/rasterfall_render.o: $(RASTERFALL_SRC)/rasterfall_render.c \
+                              $(RASTERFALL_INC)/rasterfall_render.h \
+                              $(RASTERFALL_INC)/rasterfall_session.h \
+                              $(RASTERFALL_INC)/rasterfall_effects.h | $(BUILD)
+	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
+	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
+
 # 每个 .c 文件 → .o
 define LIBC_C_rule
 $$(BUILD)/libc_$(subst /,_,$(patsubst $(LIBC_DIR)/%.c,%,$(1))).o: $(1) | $$(BUILD)
@@ -864,6 +871,7 @@ $(foreach src,$(APP_SRCS),$(eval $(call APP_rule,$(src))))
 
 # Rasterfall 的内部实现片段属于主编译单元，显式列为依赖以支持增量构建。
 $(BUILD)/rasterfall.o: $(RASTERFALL_INC)/rasterfall_hud.h \
+                       $(RASTERFALL_INC)/rasterfall_render.h \
                        $(RASTERFALL_SRC)/rasterfall_logic_test.inc \
                        $(RASTERFALL_INC)/rasterfall_session.h \
                        $(RASTERFALL_INC)/rasterfall_net.h \
@@ -953,7 +961,7 @@ SELF_LIBC_OBJS     := $(SELF_LIBC_C_OBJS) $(SELF_LIBC_ASM_OBJS)
 SELF_APP_NAMES   := $(APP_NAMES)
 SELF_APP_OBJS    := $(foreach name,$(SELF_APP_NAMES),$(BUILD)/$(name)_self.o)
 SELF_APP_TARGETS := $(foreach name,$(SELF_APP_NAMES),$(BUILD)/$(name)_self)
-SELF_APP_EXTRA_OBJS_rasterfall := $(BUILD)/rasterfall_game_self.o $(BUILD)/rasterfall_sfx_self.o $(BUILD)/rasterfall_map_engine_self.o $(BUILD)/rasterfall_map_self.o $(BUILD)/rasterfall_session_self.o $(BUILD)/rasterfall_net_self.o $(BUILD)/rasterfall_hud_self.o $(BUILD)/rasterfall_audio_self.o $(BUILD)/rasterfall_effects_self.o $(BUILD)/rasterfall_perf_self.o $(BUILD)/rasterfall_sky_self.o $(BUILD)/rasterfall_viewmodel_self.o
+SELF_APP_EXTRA_OBJS_rasterfall := $(BUILD)/rasterfall_game_self.o $(BUILD)/rasterfall_sfx_self.o $(BUILD)/rasterfall_map_engine_self.o $(BUILD)/rasterfall_map_self.o $(BUILD)/rasterfall_session_self.o $(BUILD)/rasterfall_net_self.o $(BUILD)/rasterfall_hud_self.o $(BUILD)/rasterfall_audio_self.o $(BUILD)/rasterfall_effects_self.o $(BUILD)/rasterfall_perf_self.o $(BUILD)/rasterfall_sky_self.o $(BUILD)/rasterfall_viewmodel_self.o $(BUILD)/rasterfall_render_self.o
 
 # ─── 库编译规则 ────────────────────────────────────────────────
 
@@ -1042,6 +1050,13 @@ $(BUILD)/rasterfall_sky_self.o: $(RASTERFALL_SRC)/rasterfall_sky.c \
 $(BUILD)/rasterfall_viewmodel_self.o: $(RASTERFALL_SRC)/rasterfall_viewmodel.c \
                                      $(RASTERFALL_INC)/rasterfall_viewmodel.h \
                                      $(RASTERFALL_INC)/rasterfall_effects.h $(SELF_CC) | $(BUILD)
+	@printf "  $(BLUE)  CC(s)  %s\n" "$<"
+	$(SELF_CC) $(SELF_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
+
+$(BUILD)/rasterfall_render_self.o: $(RASTERFALL_SRC)/rasterfall_render.c \
+                                   $(RASTERFALL_INC)/rasterfall_render.h \
+                                   $(RASTERFALL_INC)/rasterfall_session.h \
+                                   $(RASTERFALL_INC)/rasterfall_effects.h $(SELF_CC) | $(BUILD)
 	@printf "  $(BLUE)  CC(s)  %s\n" "$<"
 	$(SELF_CC) $(SELF_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 

@@ -164,7 +164,7 @@ static int run_logic_test(void)
         tlibc_free(pixels);
         return 8;
     }
-    render_scene(&renderer, &camera);
+    rasterfall_render_scene(&renderer, &camera);
     count = toy_renderer_flush(&renderer);
     /* 破碎画面曾仍返回正数；完整 320x180 场景应稳定超过此下限。 */
     if (count < 50000) {
@@ -183,7 +183,7 @@ static int run_logic_test(void)
     game.enemies[1].z = -2500;
     game.enemies[1].dir_z = -1024;
     game.enemies[1].ai_state = TOY_GAME_ENEMY_ALERT;
-    render_enemies(&renderer, &camera);
+    rasterfall_render_enemies(&renderer, &camera);
     if (toy_renderer_flush(&renderer) < 1000) {
         toy_renderer_destroy(&renderer);
         tlibc_free(pixels);
@@ -213,8 +213,8 @@ static int run_logic_test(void)
         p->y = -350;
         p->z = camera.z - 2000;
         p->life_ms = 100;
-        render_tracers(&renderer, &camera);
-        render_particles(&renderer, &camera);
+        rasterfall_render_tracers(&renderer, &camera);
+        rasterfall_render_particles(&renderer, &camera);
         rasterfall_effects_reset_fire(&effects);
     }
     /* 开发者区域场景：纹理墙/模型台座渲染 + 真实开火产生弹道与命中
@@ -226,7 +226,7 @@ static int run_logic_test(void)
         game.px = 0;
         game.pz = -6400;
         if (toy_game_equip_weapon(&game, TOY_GAME_WEAPON_SMG) != 1) return 40;
-        render_scene(&renderer, &camera);
+        rasterfall_render_scene(&renderer, &camera);
         toy_renderer_flush(&renderer);
         effects.last_fire_seq = game.fire_seq;
         toy_game_fire(&game, 0, 1024);
@@ -234,8 +234,8 @@ static int run_logic_test(void)
         toy_game_fire(&game, -1024, 0);
         sync_fire_effects(&camera);
         rasterfall_effects_update(&effects, 16);
-        render_tracers(&renderer, &camera);
-        render_particles(&renderer, &camera);
+        rasterfall_render_tracers(&renderer, &camera);
+        rasterfall_render_particles(&renderer, &camera);
         /* 第一人称武器模型冒烟：SMG 几何进入光栅器 */
         rasterfall_viewmodel_render(&renderer, &game, &effects);
         rasterfall_effects_reset_fire(&effects);
