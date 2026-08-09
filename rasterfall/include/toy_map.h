@@ -9,6 +9,7 @@
 #define TOY_MAP_MAX_PICKUPS 16
 #define TOY_MAP_MAX_BASES 8
 #define TOY_MAP_MAX_AI_SPAWNS 8
+#define TOY_MAP_MAX_PLATFORMS 16
 #define TOY_MAP_ROLE_SIZE 32
 #define TOY_MAP_TEXT_SIZE 64
 
@@ -17,6 +18,7 @@ enum toy_map_draw_type {
     TOY_MAP_DRAW_BORDER,
     TOY_MAP_DRAW_WALL,
     TOY_MAP_DRAW_LABEL,
+    TOY_MAP_DRAW_SIGN,
     TOY_MAP_DRAW_MODEL,
     TOY_MAP_DRAW_TEXTURE
 };
@@ -79,6 +81,8 @@ struct toy_map {
     int base_count;
     struct toy_map_ai_spawn ai_spawns[TOY_MAP_MAX_AI_SPAWNS];
     int ai_spawn_count;
+    struct toy_game_platform platforms[TOY_MAP_MAX_PLATFORMS];
+    int platform_count;
     struct toy_map_draw draw[TOY_MAP_MAX_DRAW];
     int draw_count;
     struct toy_map_pickup pickups[TOY_MAP_MAX_PICKUPS];

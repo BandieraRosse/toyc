@@ -31,6 +31,7 @@ static unsigned short *active_lightmap;
 static int active_textures;
 static int active_fixed_floor_lighting;
 static int active_enemy_lift;
+static int active_actor_lift;
 
 #define level_map active_session->level
 #define game active_session->game_state
@@ -310,8 +311,8 @@ static int draw_world_triangle(struct toy_renderer *renderer,
          * 插值深度误差会盖过真实差值导致 z-fight；涂色按覆盖层绘制，
          * 依赖"地砖先画、墙后画"的记录顺序保证遮挡正确。 */
         if (fixed_floor_lighting)
-            drawn += toy_renderer_triangle_lit_overlay(renderer, &sa, &sb, &sc,
-                                                       color, light, fog);
+            drawn += toy_renderer_triangle_lit(renderer, &sa, &sb, &sc,
+                                               color, light, fog);
         else
             drawn += toy_renderer_triangle_lit(renderer, &sa, &sb, &sc,
                                                color, light, fog);
@@ -459,6 +460,43 @@ static void draw_world_label(struct toy_renderer *renderer,
         screen.y < 0 || screen.y + FB_FONT_H >= renderer->surface.height) return;
     fb_draw_string((unsigned char *)renderer->surface.pixels,
                    screen.x, screen.y, label, color, renderer->surface.stride);
+}
+
+static int draw_cuboid(struct toy_renderer *renderer,
+                       const struct camera *camera,
+                       int x0, int x1, int y0, int y1,
+                       int z0, int z1, uint32_t color);
+
+static int render_world_sign(struct toy_renderer *renderer,
+                             const struct camera *camera,
+                             const struct toy_map_draw *sign)
+{
+    const int text_scale = 2;
+    int x = (sign->a + sign->b) / 2;
+    int z = (sign->c + sign->d) / 2;
+    int pixels = 0;
+    struct vec3 world, view;
+    struct toy_screen_vertex screen;
+    pixels += draw_cuboid(renderer, camera, x - 18, x + 18,
+                          sign->e - 220, sign->e, z - 18, z + 18, 0x4B3526);
+    pixels += draw_cuboid(renderer, camera, sign->a, sign->b,
+                          sign->e, sign->f, sign->c, sign->d, sign->color);
+    world.x = x; world.y = (sign->e + sign->f) / 2; world.z = z;
+    world_to_view(camera, &world, &view);
+    /* The board faces +Z; print the string only when viewed from that side. */
+    if (view.z >= NEAR_Z && camera->z > z && sign->text[0]) {
+        int width = (int)strlen(sign->text) * FB_FONT_W * text_scale;
+        int height = FB_FONT_H * text_scale;
+        project_vertex(&renderer->surface, &view, &screen);
+        screen.x -= width / 2;
+        screen.y -= height / 2;
+        if (screen.x >= 0 && screen.x + width < renderer->surface.width &&
+            screen.y >= 0 && screen.y + height < renderer->surface.height)
+            fb_draw_string_scaled((unsigned char *)renderer->surface.pixels,
+                                  screen.x, screen.y, sign->text, 0xFFF0C0,
+                                  renderer->surface.stride, text_scale);
+    }
+    return pixels;
 }
 
 static int render_block_enemy(struct toy_renderer *, const struct camera *,
@@ -811,6 +849,8 @@ static int render_scene(struct toy_renderer *renderer, const struct camera *came
             pixels+=draw_position_quad_tex(renderer,camera,&a,&b,&c,&d,x->texture_u*UV_ONE,x->texture_v*UV_ONE,x->color);
         } else if (x->type==TOY_MAP_DRAW_LABEL) {
             struct toy_game_box zone={x->a,x->b,x->c,x->d}; draw_world_label(renderer,camera,&zone,x->text,x->color);
+        } else if (x->type==TOY_MAP_DRAW_SIGN) {
+            pixels += render_world_sign(renderer, camera, x);
         }
     }
     for (int i=0; i<level_map.box_count; i++) if (level_map.boxes[i].visible) {
@@ -903,18 +943,19 @@ static int render_charger_enemy(struct toy_renderer *renderer,
                                 uint32_t color)
 {
     int x = e->x, z = e->z, pixels = 0;
-    pixels += draw_cuboid(renderer, camera, x - 135, x - 20,
+    int sx = scale * 100 / 1120;
+    pixels += draw_cuboid(renderer, camera, x - 135 * sx / 100, x - 20 * sx / 100,
                           enemy_y(-900, scale), enemy_y(-760, scale),
-                          z - 150, z + 110, 0x30261F);
-    pixels += draw_cuboid(renderer, camera, x + 20, x + 135,
+                          z - 150 * sx / 100, z + 110 * sx / 100, 0x30261F);
+    pixels += draw_cuboid(renderer, camera, x + 20 * sx / 100, x + 135 * sx / 100,
                           enemy_y(-900, scale), enemy_y(-760, scale),
-                          z - 150, z + 110, 0x30261F);
-    pixels += draw_cuboid(renderer, camera, x - 235, x + 235,
+                          z - 150 * sx / 100, z + 110 * sx / 100, 0x30261F);
+    pixels += draw_cuboid(renderer, camera, x - 235 * sx / 100, x + 235 * sx / 100,
                           enemy_y(-760, scale), enemy_y(95, scale),
-                          z - 135, z + 135, color);
-    pixels += draw_cuboid(renderer, camera, x - 205, x + 205,
+                          z - 135 * sx / 100, z + 135 * sx / 100, color);
+    pixels += draw_cuboid(renderer, camera, x - 205 * sx / 100, x + 205 * sx / 100,
                           enemy_y(75, scale), enemy_y(360, scale),
-                          z - 145, z + 145, color + 0x18100A);
+                          z - 145 * sx / 100, z + 145 * sx / 100, color + 0x18100A);
     /* Charger 面部是一个粗像素 C。 */
     pixels += draw_face_rect(renderer, camera, x, z, 150, e->dir_x, e->dir_z,
                              -120, -82, enemy_y(105, scale), enemy_y(315, scale),
@@ -975,14 +1016,32 @@ static int render_smoker_tongue(struct toy_renderer *renderer,
                                 const struct camera *camera,
                                 const struct toy_game_enemy *e)
 {
-    int pixels;
+    int target_x, target_z, target_lift = 0, pixels;
+    if (e->special_target_player == 1) {
+        target_x = game.secondary_px;
+        target_z = game.secondary_pz;
+        target_lift = game.secondary_player_airborne_y;
+    } else if (e->special_target_player == 2 &&
+               e->special_target_actor_index >= 0 &&
+               e->special_target_actor_index < TOY_GAME_MAX_ACTORS &&
+               game.actors[e->special_target_actor_index].active) {
+        const struct toy_game_actor *actor =
+            &game.actors[e->special_target_actor_index];
+        target_x = actor->x;
+        target_z = actor->z;
+        target_lift = actor->airborne_y;
+    } else {
+        target_x = game.px;
+        target_z = game.pz;
+        target_lift = game.player_airborne_y;
+    }
     pixels = draw_tongue_segment(renderer, camera, e->x, 270, e->z,
-                                 game.px, -360, game.pz);
-    /* 两个水平束缚圈表现舌头在玩家身上的缠绕。 */
-    pixels += draw_cylinder(renderer, camera, game.px, game.pz, 225,
-                            -430, -395, 0xB98B62);
-    pixels += draw_cylinder(renderer, camera, game.px, game.pz, 205,
-                            -280, -245, 0xB98B62);
+                                 target_x, -360 + target_lift, target_z);
+    /* 两个水平束缚圈表现舌头在目标身上的缠绕。 */
+    pixels += draw_cylinder(renderer, camera, target_x, target_z, 225,
+                            -430 + target_lift, -395 + target_lift, 0xB98B62);
+    pixels += draw_cylinder(renderer, camera, target_x, target_z, 205,
+                            -280 + target_lift, -245 + target_lift, 0xB98B62);
     return pixels;
 }
 
@@ -1059,7 +1118,7 @@ static int render_enemies(struct toy_renderer *renderer,
             if (e->type == TOY_GAME_ENEMY_SMOKER) color = 0x76513A;
             if (e->type == TOY_GAME_ENEMY_CHARGER) {
                 color = e->charge_active ? 0xB06A36 : 0x8B5A35;
-                scale = 1120;
+                scale = 1180;
             }
             if (e->type == TOY_GAME_ENEMY_SMOKER) scale = 1000;
             if (e->hurt > 0) color = 0xBB3333;
@@ -1072,8 +1131,7 @@ static int render_enemies(struct toy_renderer *renderer,
                 color = 0x8A2A2A;   /* 尸潮追踪者：红色，一眼可辨 */
         }
         pixels += render_blob_shadow(renderer, camera, e, scale);
-        if (e->type == TOY_GAME_ENEMY_SMOKER &&
-            e->special_target_active && game.player_control_disabled)
+        if (e->type == TOY_GAME_ENEMY_SMOKER && e->special_target_active)
             pixels += render_smoker_tongue(renderer, camera, e);
         active_enemy_lift = e->airborne_y;
         if (e->type == TOY_GAME_ENEMY_CHARGER)
@@ -1193,10 +1251,12 @@ static int render_ai_teammate(struct toy_renderer *renderer,
         color = actor->class_id == TOY_GAME_AI_LEVEL_3 ? 0x252A30 :
                 actor->class_id == TOY_GAME_AI_LEVEL_2 ? 0x386B96 :
                 0x596B3A;
+        active_actor_lift = actor->airborne_y;
         pixels += render_player_avatar(renderer, camera, actor->x, actor->z,
                                        actor->sy, actor->cy,
                                        actor->muzzle_flash_ms, color,
                                        actor->state == TOY_GAME_ACTOR_DOWNED);
+        active_actor_lift = 0;
     }
     return pixels;
 }
@@ -1210,30 +1270,38 @@ static int render_player_avatar(struct toy_renderer *renderer,
     if (!renderer || !camera) return 0;
     if (downed) {
         pixels += draw_cuboid(renderer, camera, x - 170, x + 170,
-                              -850, -650, z - 100, z + 100, body_color);
+                              -850 + active_actor_lift, -650 + active_actor_lift,
+                              z - 100, z + 100, body_color);
         pixels += draw_ellipsoid_head(renderer, camera, x, z,
-                                      -550, 145, 100, 0xD2A878);
+                                      -550 + active_actor_lift, 145, 100, 0xD2A878);
         face_y0 = -650; face_y1 = -470;
     } else {
         pixels += draw_cuboid(renderer, camera, x - 95, x - 10,
-                              -900, -610, z - 75, z + 75, 0x25354A);
+                              -900 + active_actor_lift, -610 + active_actor_lift,
+                              z - 75, z + 75, 0x25354A);
         pixels += draw_cuboid(renderer, camera, x + 10, x + 95,
-                              -900, -610, z - 75, z + 75, 0x25354A);
+                              -900 + active_actor_lift, -610 + active_actor_lift,
+                              z - 75, z + 75, 0x25354A);
         pixels += draw_cuboid(renderer, camera, x - 155, x + 155,
-                              -620, -100, z - 100, z + 100, body_color);
+                              -620 + active_actor_lift, -100 + active_actor_lift,
+                              z - 100, z + 100, body_color);
         pixels += draw_ellipsoid_head(renderer, camera, x, z,
-                                      50, 145, 150, 0xD2A878);
+                                      50 + active_actor_lift, 145, 150, 0xD2A878);
         face_y0 = -35; face_y1 = 185;
     }
     pixels += draw_face_rect(renderer, camera, x, z, 145, sy, cy,
-                             -72, 72, face_y0, face_y1, 0x252A30);
+                             -72, 72, face_y0 + active_actor_lift,
+                             face_y1 + active_actor_lift, 0x252A30);
     pixels += draw_face_rect(renderer, camera, x, z, 145, sy, cy,
-                             -16, 16, face_y0 + 40, face_y1 - 40, 0xE8D2A8);
+                             -16, 16, face_y0 + 40 + active_actor_lift,
+                             face_y1 - 40 + active_actor_lift, 0xE8D2A8);
     pixels += draw_face_rect(renderer, camera, x, z, 145, sy, cy,
-                             -72, 72, face_y0 + 90, face_y0 + 115, 0xE8D2A8);
+                             -72, 72, face_y0 + 90 + active_actor_lift,
+                             face_y0 + 115 + active_actor_lift, 0xE8D2A8);
     if (muzzle_flash > 0)
         pixels += draw_cuboid(renderer, camera, x - 45, x + 45,
-                              -560, -430, z - 120, z + 120, 0xFFD060);
+                              -560 + active_actor_lift, -430 + active_actor_lift,
+                              z - 120, z + 120, 0xFFD060);
     return pixels;
 }
 

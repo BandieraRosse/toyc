@@ -17,6 +17,7 @@
 
 #define TOY_GAME_MAX_ENEMIES    64
 #define TOY_GAME_MAX_ACTORS     8
+#define TOY_GAME_MAX_PLATFORMS  16
 #define TOY_GAME_AMMO_INFINITE  (-1)
 #define TOY_GAME_BITE_MS        1000
 #define TOY_GAME_BITE_DAMAGE    2
@@ -43,7 +44,8 @@
 #define TOY_GAME_DIRECTOR_ATTACKER_LOW 2
 #define TOY_GAME_MAX_EVENTS     16
 
-#define TOY_GAME_ENEMY_RADIUS   100     /* 敌人碰撞半径 */
+#define TOY_GAME_ENEMY_RADIUS   130     /* 敌人碰撞半径 */
+#define TOY_GAME_CHARGER_RADIUS 145    /* Charger 略大的专用碰撞半径 */
 #define TOY_GAME_PLAYER_RADIUS  180
 #define TOY_GAME_HIT_RADIUS     150     /* 命中判定半径（覆盖渲染 box 半宽） */
 #define TOY_GAME_ATTACK_RANGE   300     /* 敌我距离小于此值开始咬 */
@@ -85,10 +87,13 @@
 #define TOY_GAME_CHARGER_KNOCKBACK 1050
 #define TOY_GAME_SMOKER_DAMAGE     2
 #define TOY_GAME_CHARGER_IMPACT_DAMAGE 6
+#define TOY_GAME_CHARGER_IMPACT_RANGE  320
 #define TOY_GAME_SPECIAL_WINDUP_MS 1200
 #define TOY_GAME_AIRBORNE_GRAVITY  10
 #define TOY_GAME_AIRBORNE_MS    700
 #define TOY_GAME_AIRBORNE_VELOCITY 220
+#define TOY_GAME_JUMP_MS         900
+#define TOY_GAME_JUMP_VELOCITY   220
 #define TOY_GAME_AI_RETURN_SPEED 38
 #define TOY_GAME_AI_DEPLOY_RADIUS 180
 
@@ -172,6 +177,7 @@ enum toy_game_event {
 
 /* 碰撞/命中共用的 xz 平面轴对齐盒（与房间障碍物同尺度） */
 struct toy_game_box { int minx, maxx, minz, maxz; };
+struct toy_game_platform { int minx, maxx, minz, maxz, height; };
 
 /* ── 武器槽：0=主武器（SMG/霰弹枪），1=副武器（手枪）────────── */
 
@@ -357,6 +363,8 @@ struct toy_game {
     const struct toy_game_box *world;
     int world_count;
     int room_limit;
+    const struct toy_game_platform *platforms;
+    int platform_count;
 
     /* 联机主机可提供第二名玩家的位置；单机时保持 inactive。 */
     int secondary_player_active;
@@ -375,7 +383,9 @@ struct toy_game {
     int player_pull_timer_ms;
     int player_airborne_ms;
     int player_airborne_y;
+    int player_ground_y;
     int player_vertical_velocity;
+    int player_air_x, player_air_z;
     int player_knockback_x;
     int player_knockback_z;
     int ai_context_actor_index;
@@ -408,6 +418,15 @@ int  toy_game_apply_entity_impact(struct toy_game *g, int kind, int index,
 void toy_game_set_world(struct toy_game *g,
                         const struct toy_game_box *boxes,
                         int box_count, int room_limit);
+void toy_game_set_platforms(struct toy_game *g,
+                            const struct toy_game_platform *platforms,
+                            int platform_count);
+int  toy_game_ground_height(const struct toy_game *g, int x, int z,
+                            int radius);
+int  toy_game_position_blocked_at_height(const struct toy_game *g,
+                                         int x, int z, int radius,
+                                         int ground_height);
+void toy_game_update_player_ground(struct toy_game *g);
 void toy_game_set_campaign(struct toy_game *g,
                            const struct toy_game_box *safe_rooms,
                            int safe_room_count,
@@ -428,6 +447,9 @@ int  toy_game_position_blocked(const struct toy_game *g,
 void toy_game_update(struct toy_game *g,
                      const unsigned char *keys_pressed,     /* 可 NULL */
                      int fire_pressed, int sy, int cy, int dt_ms);
+int  toy_game_jump(struct toy_game *g);
+int  toy_game_jump_with_velocity(struct toy_game *g, int dx, int dz);
+void toy_game_update_player_motion(struct toy_game *g, int dt_ms);
 void toy_game_update_held(struct toy_game *g,
                           const unsigned char *keys_pressed, /* 可 NULL */
                           int fire_pressed, int fire_held,

@@ -31,7 +31,7 @@
  *
  * 【主要操作】
  *   鼠标左键：捕获指针并射击；Space：射击（按住可使 SMG 连发）
- *   WASD：移动；鼠标/方向键：视角；, / .：连续快速左转/右转 90 度
+ *   WASD：移动；左 Shift：跳跃；鼠标/方向键：视角；, / .：连续快速左转/右转 90 度
  *   R：换弹或在死亡/通关状态重新开始；1/2：切换武器槽
  *   E：与准星高亮的武器、弹药箱或召唤按钮互动
  *   Esc：暂停并释放指针；暂停菜单使用上下键选择、左右键调整灵敏度、
@@ -97,6 +97,7 @@
 #define KEY_S     31
 #define KEY_D     32
 #define KEY_SPACE 57
+#define KEY_LEFTSHIFT 42
 #define KEY_COMMA 51
 #define KEY_DOT   52
 #define KEY_SLASH 53
@@ -417,6 +418,8 @@ static void build_game_command(struct rasterfall_command *command,
     command->fire_held = toy_input_down(input, KEY_SPACE);
     if (fire_edge) command->buttons |= RASTERFALL_CMD_FIRE;
     if (shove_edge) command->buttons |= RASTERFALL_CMD_SHOVE;
+    if (toy_input_pressed(input, KEY_LEFTSHIFT))
+        command->buttons |= RASTERFALL_CMD_JUMP;
     if (toy_input_pressed(input, KEY_SLASH))
         command->buttons |= RASTERFALL_CMD_SHOVE;
     if (toy_input_pressed(input, KEY_R)) command->buttons |= RASTERFALL_CMD_RELOAD;
@@ -438,6 +441,7 @@ static void consume_game_command_edges(struct toy_input *input)
     input->key_pressed[KEY_COMMA] = 0;
     input->key_pressed[KEY_DOT] = 0;
     input->key_pressed[KEY_SLASH] = 0;
+    input->key_pressed[KEY_LEFTSHIFT] = 0;
 }
 
 static void draw_crosshair(struct toy_surface *surface)

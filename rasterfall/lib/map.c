@@ -3,6 +3,19 @@
 
 static int number(const char *s, int base) { return (int)strtol(s, NULL, base); }
 static char *word(char **p) { char *s = strtok_r(*p, " \t\r\n", p); return s; }
+static char *rest_text(char **p)
+{
+    char *s, *end;
+    if (!p || !*p) return NULL;
+    s = *p;
+    while (*s == ' ' || *s == '\t') s++;
+    end = s + strlen(s);
+    while (end > s && (end[-1] == ' ' || end[-1] == '\t' ||
+                       end[-1] == '\r' || end[-1] == '\n'))
+        *--end = 0;
+    *p = end;
+    return *s ? s : NULL;
+}
 static int get4(char **p, int *a, int *b, int *c, int *d)
 {
     char *s1=word(p), *s2=word(p), *s3=word(p), *s4=word(p);
@@ -13,6 +26,13 @@ static int get2(char **p, int *a, int *b)
 {
     char *s1=word(p), *s2=word(p); if(!s1||!s2)return -1;
     *a=number(s1,10); *b=number(s2,10); return 0;
+}
+static int get5(char **p, int *a, int *b, int *c, int *d, int *e)
+{
+    char *s1=word(p), *s2=word(p), *s3=word(p), *s4=word(p), *s5=word(p);
+    if(!s1||!s2||!s3||!s4||!s5)return -1;
+    *a=number(s1,10); *b=number(s2,10); *c=number(s3,10);
+    *d=number(s4,10); *e=number(s5,10); return 0;
 }
 static unsigned int color(char *s) { return s ? (unsigned int)strtol(s, NULL, 16) : 0; }
 static void copy_role(char *out, const char *in, int size)
@@ -36,7 +56,10 @@ static void add_draw(struct toy_map *m, int type, int a, int b, int c, int d,
     if (m->draw_count >= TOY_MAP_MAX_DRAW) return;
     x=&m->draw[m->draw_count++]; x->type=type; x->a=a; x->b=b; x->c=c; x->d=d;
     x->e=e; x->f=f; x->color=col; x->texture_u=0; x->texture_v=0; x->style=0; x->text[0]=0;
-    if (text) strncpy(x->text, text, TOY_MAP_TEXT_SIZE-1);
+    if (text) {
+        strncpy(x->text, text, TOY_MAP_TEXT_SIZE-1);
+        x->text[TOY_MAP_TEXT_SIZE-1] = 0;
+    }
 }
 
 int toy_map_load(const char *path, struct toy_map *m)
@@ -107,7 +130,9 @@ int toy_map_load(const char *path, struct toy_map *m)
         else if(!strcmp(kind,"border") && get4(&p,&a,&b,&c,&d)==0){char *w=word(&p),*co=word(&p);if(w)add_draw(m,TOY_MAP_DRAW_BORDER,a,b,c,d,number(w,10),0,color(co),NULL);}
         else if(!strcmp(kind,"wall") && get4(&p,&a,&b,&c,&d)==0){char *h=word(&p),*co=word(&p);if(h)add_draw(m,TOY_MAP_DRAW_WALL,a,b,c,d,number(h,10),0,color(co),NULL);}
         else if(!strcmp(kind,"label") && get4(&p,&a,&b,&c,&d)==0){char *co=word(&p),*t=word(&p);add_draw(m,TOY_MAP_DRAW_LABEL,a,b,c,d,0,0,color(co),t);}
+        else if(!strcmp(kind,"sign") && get4(&p,&a,&b,&c,&d)==0){char *y0=word(&p),*y1=word(&p),*co=word(&p),*t=rest_text(&p);if(y0&&y1&&co)add_draw(m,TOY_MAP_DRAW_SIGN,a,b,c,d,number(y0,10),number(y1,10),color(co),t);}
         else if(!strcmp(kind,"model") && get4(&p,&a,&b,&c,&d)==0){char *y0=word(&p),*y1=word(&p),*co=word(&p),*st=word(&p);if(y0&&y1){add_draw(m,TOY_MAP_DRAW_MODEL,a,b,c,d,number(y0,10),number(y1,10),color(co),NULL);if(st)m->draw[m->draw_count-1].style=number(st,10);}}
+        else if(!strcmp(kind,"platform") && m->platform_count<TOY_MAP_MAX_PLATFORMS){int h;if(get5(&p,&a,&b,&c,&d,&h)==0){struct toy_game_platform *pl=&m->platforms[m->platform_count++];pl->minx=a;pl->maxx=b;pl->minz=c;pl->maxz=d;pl->height=h;}}
         else if(!strcmp(kind,"texture") && get4(&p,&a,&b,&c,&d)==0){char *y=word(&p),*u=word(&p),*v=word(&p),*co=word(&p);if(y&&u&&v){add_draw(m,TOY_MAP_DRAW_TEXTURE,a,b,c,d,number(y,10),0,color(co),NULL);m->draw[m->draw_count-1].texture_u=number(u,10);m->draw[m->draw_count-1].texture_v=number(v,10);}}
         else if(!strcmp(kind,"pickup") && m->pickup_count<TOY_MAP_MAX_PICKUPS){
             char *k=word(&p),*sx=word(&p),*sz=word(&p),*sy=word(&p);
@@ -144,6 +169,10 @@ int toy_map_load(const char *path, struct toy_map *m)
             }
         }
     }
-    return m->room_limit>0 && m->box_count>0 ? 0 : (toy_map_unload(m),-1);
+    if (!(m->room_limit > 0 && m->box_count > 0)) {
+        toy_map_unload(m);
+        return -1;
+    }
+    return 0;
 }
 void toy_map_unload(struct toy_map *m){if(m&&m->blob)tlibc_free(m->blob);if(m)memset(m,0,sizeof(*m));}

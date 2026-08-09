@@ -386,6 +386,9 @@ int toy_game_move_ai_actor(struct toy_game *g, int actor_index, int x, int z)
         return 0;
     a = &g->actors[actor_index];
     if (!a->active || a->kind != TOY_GAME_ACTOR_AI) return 0;
+    if (toy_game_position_blocked_at_height(g, x, z,
+                                            TOY_GAME_PLAYER_RADIUS, 0))
+        return 0;
     a->x = x; a->z = z;
     if (actor_index == 0) { g->ai_x = x; g->ai_z = z; }
     return 1;
@@ -398,6 +401,93 @@ void toy_game_set_world(struct toy_game *g,
     g->world = boxes;
     g->world_count = box_count;
     g->room_limit = room_limit;
+}
+
+void toy_game_set_platforms(struct toy_game *g,
+                            const struct toy_game_platform *platforms,
+                            int platform_count)
+{
+    g->platforms = platforms;
+    g->platform_count = platform_count;
+    if (g->platform_count < 0) g->platform_count = 0;
+    if (g->platform_count > TOY_GAME_MAX_PLATFORMS)
+        g->platform_count = TOY_GAME_MAX_PLATFORMS;
+}
+
+int toy_game_ground_height(const struct toy_game *g, int x, int z,
+                           int radius)
+{
+    int i, height = 0;
+    if (!g || !g->platforms) return 0;
+    for (i = 0; i < g->platform_count; i++) {
+        const struct toy_game_platform *p = &g->platforms[i];
+        if (x - radius < p->minx || x + radius > p->maxx ||
+            z - radius < p->minz || z + radius > p->maxz) continue;
+        if (p->height > height) height = p->height;
+    }
+    return height;
+}
+
+static int ground_height_overlapping(const struct toy_game *g,
+                                     int x, int z, int radius)
+{
+    int i, height = 0;
+    if (!g || !g->platforms) return 0;
+    for (i = 0; i < g->platform_count; i++) {
+        const struct toy_game_platform *p = &g->platforms[i];
+        if (x + radius <= p->minx || x - radius >= p->maxx ||
+            z + radius <= p->minz || z - radius >= p->maxz) continue;
+        if (p->height > height) height = p->height;
+    }
+    return height;
+}
+
+int toy_game_position_blocked_at_height(const struct toy_game *g,
+                                        int x, int z, int radius,
+                                        int ground_height)
+{
+    int i;
+    if (toy_game_position_blocked(g, x, z, radius)) return 1;
+    for (i = 0; i < g->platform_count; i++) {
+        const struct toy_game_platform *p = &g->platforms[i];
+        if (p->height <= ground_height) continue;
+        if (x + radius > p->minx && x - radius < p->maxx &&
+            z + radius > p->minz && z - radius < p->maxz) return 1;
+    }
+    return 0;
+}
+
+void toy_game_update_player_ground(struct toy_game *g)
+{
+    int i, next_ground;
+    if (!g || g->player_airborne_ms > 0) return;
+    next_ground = toy_game_ground_height(g, g->px, g->pz,
+                                         TOY_GAME_PLAYER_RADIUS);
+    if (next_ground < g->player_ground_y) {
+        /* Keep the current platform as support until the player's collision
+         * circle has completely crossed its edge.  Without this hysteresis,
+         * ground height drops while the circle still intersects the side and
+         * the player becomes trapped inside the platform collision. */
+        for (i = 0; i < g->platform_count; i++) {
+            const struct toy_game_platform *p = &g->platforms[i];
+            if (p->height != g->player_ground_y) continue;
+            if (g->px + TOY_GAME_PLAYER_RADIUS > p->minx &&
+                g->px - TOY_GAME_PLAYER_RADIUS < p->maxx &&
+                g->pz + TOY_GAME_PLAYER_RADIUS > p->minz &&
+                g->pz - TOY_GAME_PLAYER_RADIUS < p->maxz)
+                return;
+        }
+        /* The circle is clear of the ledge: preserve the absolute height and
+         * enter the ordinary airborne path instead of snapping to the floor. */
+        g->player_airborne_y = g->player_ground_y - next_ground;
+        g->player_ground_y = next_ground;
+        g->player_airborne_ms = TOY_GAME_JUMP_MS;
+        g->player_vertical_velocity = 0;
+        g->player_air_x = 0;
+        g->player_air_z = 0;
+        return;
+    }
+    g->player_ground_y = next_ground;
 }
 
 int toy_game_point_in_box(int x, int z, const struct toy_game_box *box)
@@ -490,13 +580,25 @@ static int enemy_position_blocked(const struct toy_game *g,
                                   int x, int z, int radius)
 {
     int i;
-    if (toy_game_position_blocked(g, x, z, radius)) return 1;
+    if (toy_game_position_blocked_at_height(g, x, z, radius, 0)) return 1;
     for (i = 0; i < g->safe_room_count; i++) {
         const struct toy_game_box *b = &g->safe_rooms[i];
         if (x + radius > b->minx && x - radius < b->maxx &&
             z + radius > b->minz && z - radius < b->maxz) return 1;
     }
     return 0;
+}
+
+static int enemy_radius(const struct toy_game_enemy *e)
+{
+    return e->type == TOY_GAME_ENEMY_CHARGER ? TOY_GAME_CHARGER_RADIUS :
+           TOY_GAME_ENEMY_RADIUS;
+}
+
+static int enemy_separation_distance(const struct toy_game_enemy *a,
+                                     const struct toy_game_enemy *b)
+{
+    return enemy_radius(a) + enemy_radius(b) + 20;
 }
 
 static int player_in_safe_room(const struct toy_game *g)
@@ -728,7 +830,8 @@ static int try_spawn(struct toy_game *g)
 void toy_game_place_enemy(struct toy_game *g, int x, int z)
 {
     int slot = find_free_slot(g);
-    if (slot < 0) return;
+    if (slot < 0 || enemy_position_blocked(g, x, z,
+                                           TOY_GAME_ENEMY_RADIUS)) return;
     g->enemies[slot].active = 1;
     g->enemies[slot].x = x;
     g->enemies[slot].z = z;
@@ -1043,11 +1146,11 @@ static void wander_enemy(struct toy_game *g, struct toy_game_enemy *e, int dt_ms
     if (step < 1) step = 1;
     nx = e->dir_x * step / 1024;
     nz = e->dir_z * step / 1024;
-    if (!enemy_position_blocked(g, e->x + nx, e->z, TOY_GAME_ENEMY_RADIUS))
+    if (!enemy_position_blocked(g, e->x + nx, e->z, enemy_radius(e)))
         e->x += nx;
     else
         e->wander_timer_ms = 0;
-    if (!enemy_position_blocked(g, e->x, e->z + nz, TOY_GAME_ENEMY_RADIUS))
+    if (!enemy_position_blocked(g, e->x, e->z + nz, enemy_radius(e)))
         e->z += nz;
     else
         e->wander_timer_ms = 0;
@@ -1065,9 +1168,9 @@ static void chase_enemy(struct toy_game *g, struct toy_game_enemy *e,
     if (dist == 0) return;
     nx = (int)((long long)dx * e->speed / dist);
     nz = (int)((long long)dz * e->speed / dist);
-    if (!enemy_position_blocked(g, e->x + nx, e->z, TOY_GAME_ENEMY_RADIUS))
+    if (!enemy_position_blocked(g, e->x + nx, e->z, enemy_radius(e)))
         e->x += nx;
-    if (!enemy_position_blocked(g, e->x, e->z + nz, TOY_GAME_ENEMY_RADIUS))
+    if (!enemy_position_blocked(g, e->x, e->z + nz, enemy_radius(e)))
         e->z += nz;
 }
 
@@ -1279,9 +1382,12 @@ static void move_player_forced(struct toy_game *g, int dx, int dz)
 {
     int nx = g->px + dx;
     int nz = g->pz + dz;
-    if (!toy_game_position_blocked(g, nx, g->pz, TOY_GAME_PLAYER_RADIUS))
+    int height = g->player_ground_y + g->player_airborne_y;
+    if (!toy_game_position_blocked_at_height(g, nx, g->pz,
+                                             TOY_GAME_PLAYER_RADIUS, height))
         g->px = nx;
-    if (!toy_game_position_blocked(g, g->px, nz, TOY_GAME_PLAYER_RADIUS))
+    if (!toy_game_position_blocked_at_height(g, g->px, nz,
+                                             TOY_GAME_PLAYER_RADIUS, height))
         g->pz = nz;
 }
 
@@ -1290,9 +1396,10 @@ static void move_enemy_forced(struct toy_game *g, struct toy_game_enemy *e,
 {
     int nx = e->x + dx;
     int nz = e->z + dz;
-    if (!enemy_position_blocked(g, nx, e->z, TOY_GAME_ENEMY_RADIUS))
+    int radius = enemy_radius(e);
+    if (!enemy_position_blocked(g, nx, e->z, radius))
         e->x = nx;
-    if (!enemy_position_blocked(g, e->x, nz, TOY_GAME_ENEMY_RADIUS))
+    if (!enemy_position_blocked(g, e->x, nz, radius))
         e->z = nz;
 }
 
@@ -1301,9 +1408,11 @@ static void move_actor_forced(struct toy_game *g, struct toy_game_actor *a,
 {
     int nx = a->x + dx;
     int nz = a->z + dz;
-    if (!toy_game_position_blocked(g, nx, a->z, TOY_GAME_PLAYER_RADIUS))
+    if (!toy_game_position_blocked_at_height(g, nx, a->z,
+                                             TOY_GAME_PLAYER_RADIUS, 0))
         a->x = nx;
-    if (!toy_game_position_blocked(g, a->x, nz, TOY_GAME_PLAYER_RADIUS))
+    if (!toy_game_position_blocked_at_height(g, a->x, nz,
+                                             TOY_GAME_PLAYER_RADIUS, 0))
         a->z = nz;
 }
 
@@ -1320,8 +1429,10 @@ static void update_motion_values(struct toy_game *g, int *x, int *z,
     if (*knockback_x || *knockback_z) {
         int nx = *x + *knockback_x;
         int nz = *z + *knockback_z;
-        if (!toy_game_position_blocked(g, nx, *z, radius)) *x = nx;
-        if (!toy_game_position_blocked(g, *x, nz, radius)) *z = nz;
+        if (!toy_game_position_blocked_at_height(g, nx, *z, radius, 0))
+            *x = nx;
+        if (!toy_game_position_blocked_at_height(g, *x, nz, radius, 0))
+            *z = nz;
         *knockback_x = *knockback_x * 3 / 4;
         *knockback_z = *knockback_z * 3 / 4;
     }
@@ -1340,13 +1451,28 @@ static void update_motion_values(struct toy_game *g, int *x, int *z,
 static void update_player_special_motion(struct toy_game *g, int dt_ms)
 {
     if (g->player_airborne_ms > 0) {
+        int landing_ground;
         g->player_airborne_ms -= dt_ms;
         if (g->player_airborne_ms < 0) g->player_airborne_ms = 0;
         g->player_airborne_y += g->player_vertical_velocity;
         g->player_vertical_velocity -= TOY_GAME_AIRBORNE_GRAVITY;
-        if (g->player_airborne_y <= 0 && g->player_vertical_velocity < 0) {
+        /* Apply horizontal jump momentum before checking the landing surface,
+         * so a jump can reach a platform during this frame. */
+        if (g->player_air_x || g->player_air_z)
+            move_player_forced(g, g->player_air_x, g->player_air_z);
+        /* Descending onto even a partially covered edge must land on the
+         * platform top.  Otherwise the player reaches ground height while the
+         * collision circle still intersects the platform side and gets stuck. */
+        landing_ground = ground_height_overlapping(g, g->px, g->pz,
+                                                   TOY_GAME_PLAYER_RADIUS);
+        if (g->player_vertical_velocity < 0 &&
+            ((landing_ground >= g->player_ground_y &&
+              g->player_airborne_y <= landing_ground - g->player_ground_y) ||
+             (landing_ground < g->player_ground_y &&
+              g->player_airborne_y <= 0))) {
             g->player_airborne_y = 0;
             g->player_airborne_ms = 0;
+            g->player_ground_y = landing_ground;
         }
         if (g->player_knockback_x || g->player_knockback_z) {
             move_player_forced(g, g->player_knockback_x,
@@ -1359,10 +1485,37 @@ static void update_player_special_motion(struct toy_game *g, int dt_ms)
             g->player_knockback_x = 0;
             g->player_knockback_z = 0;
             g->player_airborne_y = 0;
+            g->player_air_x = 0;
+            g->player_air_z = 0;
             if (g->player_pull_enemy_index < 0)
                 g->player_control_disabled = 0;
         }
     }
+}
+
+int toy_game_jump(struct toy_game *g)
+{
+    return toy_game_jump_with_velocity(g, 0, 0);
+}
+
+int toy_game_jump_with_velocity(struct toy_game *g, int dx, int dz)
+{
+    if (!g || g->state != TOY_GAME_PLAYING || g->player_down ||
+        g->player_control_disabled || g->player_airborne_ms > 0)
+        return 0;
+    g->player_airborne_ms = TOY_GAME_JUMP_MS;
+    g->player_airborne_y = 0;
+    g->player_vertical_velocity = TOY_GAME_JUMP_VELOCITY;
+    g->player_air_x = dx;
+    g->player_air_z = dz;
+    g->player_knockback_x = 0;
+    g->player_knockback_z = 0;
+    return 1;
+}
+
+void toy_game_update_player_motion(struct toy_game *g, int dt_ms)
+{
+    if (g) update_player_special_motion(g, dt_ms);
 }
 
 static void update_smoker(struct toy_game *g, struct toy_game_enemy *e,
@@ -1390,12 +1543,17 @@ static void update_smoker(struct toy_game *g, struct toy_game_enemy *e,
         } else {
             pull_x = g->px; pull_z = g->pz;
         }
-        e->special_pull_timer_ms -= dt_ms;
+        if (target_player != 2)
+            e->special_pull_timer_ms -= dt_ms;
         pull_dx = e->x - pull_x;
         pull_dz = e->z - pull_z;
         pull_dist = isqrt((long long)pull_dx * pull_dx +
                           (long long)pull_dz * pull_dz);
-        if (e->special_pull_timer_ms <= 0 ||
+        if ((target_player != 2 && e->special_pull_timer_ms <= 0) ||
+            (target_player == 2 && target_actor >= 0 &&
+             target_actor < TOY_GAME_MAX_ACTORS &&
+             (!g->actors[target_actor].active ||
+              g->actors[target_actor].state != TOY_GAME_ACTOR_ALIVE)) ||
             !enemy_has_line_of_sight(g, e, pull_x, pull_z)) {
             e->special_target_active = 0;
             if (target_player == 0) release_player_special(g);
@@ -1446,6 +1604,8 @@ static void update_smoker(struct toy_game *g, struct toy_game_enemy *e,
         if (e->special_windup_ms == 0) {
             e->special_target_active = 1;
             e->special_pull_timer_ms = TOY_GAME_SMOKER_PULL_MS;
+            if (e->special_target_player == 2)
+                e->special_pull_timer_ms = -1;
             if (e->special_target_player == 0) {
                 g->player_pull_enemy_index = index;
                 g->player_pull_timer_ms = TOY_GAME_SMOKER_PULL_MS;
@@ -1549,7 +1709,8 @@ static int charger_hit_entities(struct toy_game *g,
         dx = victim->x - charger->x;
         dz = victim->z - charger->z;
         dist2 = (long long)dx * dx + (long long)dz * dz;
-        if (dist2 > 300 * 300) continue;
+        if (dist2 > (long long)TOY_GAME_CHARGER_IMPACT_RANGE *
+                    TOY_GAME_CHARGER_IMPACT_RANGE) continue;
         if (toy_game_apply_entity_impact(g, TOY_GAME_ENTITY_ENEMY, i,
                                          dx, dz, TOY_GAME_CHARGER_IMPACT_DAMAGE)) hits++;
     }
@@ -1560,7 +1721,8 @@ static int charger_hit_entities(struct toy_game *g,
             a->state != TOY_GAME_ACTOR_ALIVE || a->airborne_ms > 0) continue;
         dx = a->x - charger->x; dz = a->z - charger->z;
         dist2 = (long long)dx * dx + (long long)dz * dz;
-        if (dist2 <= 300 * 300 &&
+        if (dist2 <= (long long)TOY_GAME_CHARGER_IMPACT_RANGE *
+                    TOY_GAME_CHARGER_IMPACT_RANGE &&
             toy_game_apply_entity_impact(g, TOY_GAME_ENTITY_ACTOR, i,
                                           dx, dz, TOY_GAME_CHARGER_IMPACT_DAMAGE)) hits++;
     }
@@ -1610,7 +1772,7 @@ static void update_charger(struct toy_game *g, struct toy_game_enemy *e,
         }
         /* 沿锁定直线持续冲锋；同一轮可连续撞到多个敌人。 */
         charger_hit_entities(g, e);
-        if (dist <= 300) {
+        if (dist <= TOY_GAME_CHARGER_IMPACT_RANGE) {
             if (target_player == 0) {
                 toy_game_apply_entity_impact(g, TOY_GAME_ENTITY_PLAYER, 0,
                                              dx, dz, TOY_GAME_CHARGER_DAMAGE);
@@ -1627,10 +1789,10 @@ static void update_charger(struct toy_game *g, struct toy_game_enemy *e,
             nx = e->charge_dir_x * TOY_GAME_CHARGER_SPEED / 1024;
             nz = e->charge_dir_z * TOY_GAME_CHARGER_SPEED / 1024;
             if (!enemy_position_blocked(g, e->x + nx, e->z,
-                                        TOY_GAME_ENEMY_RADIUS))
+                                        enemy_radius(e)))
                 e->x += nx;
             if (!enemy_position_blocked(g, e->x, e->z + nz,
-                                        TOY_GAME_ENEMY_RADIUS))
+                                        enemy_radius(e)))
                 e->z += nz;
         }
         return;
@@ -1641,9 +1803,9 @@ static void update_charger(struct toy_game *g, struct toy_game_enemy *e,
             nx = -dx * (e->speed / 4) / (int)dist;
             nz = -dz * (e->speed / 4) / (int)dist;
             if (!enemy_position_blocked(g, e->x + nx, e->z,
-                                        TOY_GAME_ENEMY_RADIUS)) e->x += nx;
+                                        enemy_radius(e))) e->x += nx;
             if (!enemy_position_blocked(g, e->x, e->z + nz,
-                                        TOY_GAME_ENEMY_RADIUS)) e->z += nz;
+                                        enemy_radius(e))) e->z += nz;
         } else {
             wander_enemy(g, e, dt_ms);
         }
@@ -1651,7 +1813,8 @@ static void update_charger(struct toy_game *g, struct toy_game_enemy *e,
         if (e->special_timer_ms < 0) e->special_timer_ms = 0;
         return;
     }
-    if (visual && dist > 300 && dist <= TOY_GAME_CHARGER_RANGE) {
+    if (visual && dist > TOY_GAME_CHARGER_IMPACT_RANGE &&
+        dist <= TOY_GAME_CHARGER_RANGE) {
         if (dist > 0) {
             e->dir_x = dx * 1024 / (int)dist;
             e->dir_z = dz * 1024 / (int)dist;
@@ -1867,7 +2030,7 @@ static void update_enemy_ai(struct toy_game *g, struct toy_game_enemy *e,
     wander_enemy(g, e, dt_ms);
 }
 
-/* 敌人间分离：距离 < 260 时沿连线各推 8 单位 */
+/* 敌人间分离：按两者碰撞半径留出少量余量，避免尸群挤成一团。 */
 static void separate_enemies(struct toy_game *g)
 {
     int i, j;
@@ -1877,23 +2040,26 @@ static void separate_enemies(struct toy_game *g)
         for (j = i + 1; j < TOY_GAME_MAX_ENEMIES; j++) {
             struct toy_game_enemy *b = &g->enemies[j];
             int dx, dz;
+            int separation = enemy_separation_distance(a, b);
             long long dist2, dist;
             if (b->active != 1) continue;
             dx = b->x - a->x;
             dz = b->z - a->z;
             dist2 = (long long)dx * dx + (long long)dz * dz;
-            if (dist2 == 0 || dist2 >= 260 * 260) continue;
+            if (dist2 == 0 || dist2 >= (long long)separation * separation)
+                continue;
             dist = isqrt(dist2);
             if (dist > 0) {
-                int ax = a->x - (int)((long long)dx * 8 / dist);
-                int az = a->z - (int)((long long)dz * 8 / dist);
-                int bx = b->x + (int)((long long)dx * 8 / dist);
-                int bz = b->z + (int)((long long)dz * 8 / dist);
-                if (!enemy_position_blocked(g, ax, az, TOY_GAME_ENEMY_RADIUS)) {
+                int push = 12;
+                int ax = a->x - (int)((long long)dx * push / dist);
+                int az = a->z - (int)((long long)dz * push / dist);
+                int bx = b->x + (int)((long long)dx * push / dist);
+                int bz = b->z + (int)((long long)dz * push / dist);
+                if (!enemy_position_blocked(g, ax, az, enemy_radius(a))) {
                     a->x = ax;
                     a->z = az;
                 }
-                if (!enemy_position_blocked(g, bx, bz, TOY_GAME_ENEMY_RADIUS)) {
+                if (!enemy_position_blocked(g, bx, bz, enemy_radius(b))) {
                     b->x = bx;
                     b->z = bz;
                 }
@@ -1903,7 +2069,7 @@ static void separate_enemies(struct toy_game *g)
     /* 推挤可能越过房间边界，clamp 回界内（障碍重叠留待移动碰撞纠正） */
     for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
         struct toy_game_enemy *e = &g->enemies[i];
-        int limit = g->room_limit - TOY_GAME_ENEMY_RADIUS;
+        int limit = g->room_limit - enemy_radius(e);
         if (e->active != 1) continue;
         if (e->x < -limit) e->x = -limit;
         if (e->x > limit) e->x = limit;

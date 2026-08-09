@@ -772,7 +772,8 @@ $(BUILD)/rasterfall_map_engine.o: $(RASTERFALL_LIB)/map.c $(RASTERFALL_INC)/toy_
 	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 
 $(BUILD)/rasterfall_map.o: $(RASTERFALL_SRC)/rasterfall_map.c \
-                           $(RASTERFALL_INC)/rasterfall_map.h | $(BUILD)
+                           $(RASTERFALL_INC)/rasterfall_map.h \
+                           $(RASTERFALL_INC)/toy_map.h | $(BUILD)
 	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
 	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 
@@ -1002,7 +1003,8 @@ $(BUILD)/rasterfall_map_engine_self.o: $(RASTERFALL_LIB)/map.c $(RASTERFALL_INC)
 	$(SELF_CC) $(SELF_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 
 $(BUILD)/rasterfall_map_self.o: $(RASTERFALL_SRC)/rasterfall_map.c \
-                                $(RASTERFALL_INC)/rasterfall_map.h $(SELF_CC) | $(BUILD)
+                                $(RASTERFALL_INC)/rasterfall_map.h \
+                                $(RASTERFALL_INC)/toy_map.h $(SELF_CC) | $(BUILD)
 	@printf "  $(BLUE)  CC(s)  %s\n" "$<"
 	$(SELF_CC) $(SELF_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 

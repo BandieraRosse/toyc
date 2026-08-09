@@ -20,7 +20,8 @@ enum rasterfall_command_button {
     RASTERFALL_CMD_TURN_LEFT  = 1 << 5,
     RASTERFALL_CMD_TURN_RIGHT = 1 << 6,
     RASTERFALL_CMD_RESET      = 1 << 7,
-    RASTERFALL_CMD_SHOVE      = 1 << 8
+    RASTERFALL_CMD_SHOVE      = 1 << 8,
+    RASTERFALL_CMD_JUMP       = 1 << 9
 };
 
 /* 与窗口系统无关的单个逻辑步输入。以后网络客户端发送的也是这类游戏语义，

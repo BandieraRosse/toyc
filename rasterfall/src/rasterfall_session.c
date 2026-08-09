@@ -158,6 +158,8 @@ void rasterfall_session_reset(struct rasterfall_session *session,
                                  get_env_var(global_envp, "HOSTNAME"));
     toy_game_set_world(&session->game_state, session->bounds,
                        session->level.box_count, session->level.room_limit);
+    toy_game_set_platforms(&session->game_state, session->level.platforms,
+                           session->level.platform_count);
     toy_game_set_campaign(&session->game_state, session->safe_rooms,
                           session->level.safe_count, session->spawn_zones,
                           session->spawn_count);
@@ -250,12 +252,25 @@ static void session_move_player(struct rasterfall_session *session,
               camera->sy * command->move_strafe) * RASTERFALL_MOVE_STEP / 1024;
     int next_x = camera->x + dx;
     int next_z = camera->z + dz;
-    if (!toy_game_position_blocked(&session->game_state, next_x, camera->z,
-                                   RASTERFALL_PLAYER_RADIUS))
+    if (!toy_game_position_blocked_at_height(&session->game_state, next_x,
+                                             camera->z, RASTERFALL_PLAYER_RADIUS,
+                                             session->game_state.player_ground_y))
         camera->x = next_x;
-    if (!toy_game_position_blocked(&session->game_state, camera->x, next_z,
-                                   RASTERFALL_PLAYER_RADIUS))
+    if (!toy_game_position_blocked_at_height(&session->game_state, camera->x,
+                                             next_z, RASTERFALL_PLAYER_RADIUS,
+                                             session->game_state.player_ground_y))
         camera->z = next_z;
+}
+
+static void session_jump_player(struct rasterfall_session *session,
+                                struct camera *camera,
+                                const struct rasterfall_command *command)
+{
+    int dx = (camera->sy * command->move_forward +
+              camera->cy * command->move_strafe) * RASTERFALL_MOVE_STEP / 1024;
+    int dz = (camera->cy * command->move_forward -
+              camera->sy * command->move_strafe) * RASTERFALL_MOVE_STEP / 1024;
+    toy_game_jump_with_velocity(&session->game_state, dx, dz);
 }
 
 static void session_sync_special_motion(struct rasterfall_session *session,
@@ -266,10 +281,9 @@ static void session_sync_special_motion(struct rasterfall_session *session,
         session->game_state.player_airborne_ms > 0) {
         camera->x = session->game_state.px;
         camera->z = session->game_state.pz;
-        camera->y = session->game_state.player_airborne_y;
-    } else {
-        camera->y = 0;
     }
+    camera->y = session->game_state.player_ground_y +
+                session->game_state.player_airborne_y;
 }
 
 static void session_update_smooth_turn(struct rasterfall_session *session,
@@ -492,6 +506,8 @@ void rasterfall_session_step(struct rasterfall_session *session,
         return;
     }
     if (session->game_state.state != TOY_GAME_PLAYING) return;
+    if (command->buttons & RASTERFALL_CMD_JUMP)
+        session_jump_player(session, camera, command);
     if (!session->game_state.player_down)
         session_move_player(session, camera, command);
     if (command->turn || command->pitch)
@@ -503,6 +519,7 @@ void rasterfall_session_step(struct rasterfall_session *session,
     session_update_smooth_turn(session, camera);
     session->game_state.px = camera->x;
     session->game_state.pz = camera->z;
+    toy_game_update_player_ground(&session->game_state);
     session->highlight_index = rasterfall_session_compute_highlight(session, camera);
     if (command->buttons & RASTERFALL_CMD_SHOVE)
         toy_game_shove(&session->game_state, camera->sy, camera->cy);
@@ -557,6 +574,8 @@ void rasterfall_session_step_client(struct rasterfall_session *session,
         return;
     }
     if (session->game_state.state != TOY_GAME_PLAYING) return;
+    if (command->buttons & RASTERFALL_CMD_JUMP)
+        session_jump_player(session, camera, command);
     session_move_player(session, camera, command);
     if (command->turn || command->pitch)
         rasterfall_camera_rotate(camera, command->turn, command->pitch);
@@ -567,6 +586,7 @@ void rasterfall_session_step_client(struct rasterfall_session *session,
     session_update_smooth_turn(session, camera);
     session->game_state.px = camera->x;
     session->game_state.pz = camera->z;
+    toy_game_update_player_ground(&session->game_state);
     session->highlight_index = rasterfall_session_compute_highlight(session, camera);
     /* 交互由主机权威执行。客户端只计算高亮并发送 INTERACT 命令，
      * 等待主机快照回传拾取、弹药、空气墙和刷怪结果，避免两端世界分叉。 */
@@ -582,6 +602,7 @@ void rasterfall_session_step_client(struct rasterfall_session *session,
                                 (command->buttons & RASTERFALL_CMD_FIRE) != 0,
                                 command->fire_held, camera->sy, camera->cy,
                                 dt_ms);
+    toy_game_update_player_motion(&session->game_state, dt_ms);
     memcpy(session->game_state.enemies, enemies, sizeof(enemies));
     session->game_state.enemies_alive = enemy_count;
     session->game_state.kills = kills;

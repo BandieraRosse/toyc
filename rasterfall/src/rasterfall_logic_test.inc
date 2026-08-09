@@ -414,7 +414,9 @@ static int run_logic_test(void)
                 has_charger = 1;
         }
         if (interactable_count != 16 || !has_horde_button ||
-            !has_base1 || !has_base2 || !has_smoker || !has_charger) return 32;
+            !has_base1 || !has_base2 || !has_smoker || !has_charger) {
+            return 32;
+        }
     }
     /* 固定拾取点：拾取后武器仍在场，同武器再互动 = 补充弹药 */
     highlighted = 0;
@@ -669,6 +671,52 @@ static int run_logic_test(void)
         if (game.enemies[0].active != 2 ||
             game.player_control_disabled) return 77;
     }
+    /* Smoker 对 AI 队友的舌头在队友倒地前不因固定时长自动释放。 */
+    {
+        toy_game_init(&game, 43);
+        game.world_count = 0;
+        game.room_limit = 12000;
+        game.px = 10000; game.pz = 0;
+        game.player_down = 0;
+        toy_game_set_ai_teammate(&game, 1, 0, 0, "AI");
+        memset(game.enemies, 0, sizeof(game.enemies));
+        game.enemies_alive = 1;
+        game.enemies[0].active = 1;
+        game.enemies[0].type = TOY_GAME_ENEMY_SMOKER;
+        game.enemies[0].x = 0; game.enemies[0].z = 1800;
+        game.enemies[0].hp = 100000;
+        for (int i = 0; i < 380; i++)
+            toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
+        if (!game.enemies[0].special_target_active ||
+            game.enemies[0].special_target_player != 2 ||
+            game.enemies[0].special_pull_timer_ms != -1) {
+            return 81;
+        }
+        game.actors[0].state = TOY_GAME_ACTOR_DOWNED;
+        game.ai_down = 1;
+        toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
+        if (game.enemies[0].special_target_active) return 82;
+    }
+    /* Charger 撞到 AI 时，AI 也必须进入带垂直速度的空中状态。 */
+    {
+        toy_game_init(&game, 44);
+        game.world_count = 0;
+        game.room_limit = 12000;
+        game.px = 10000; game.pz = 0;
+        toy_game_set_ai_teammate(&game, 1, 0, 300, "AI");
+        memset(game.enemies, 0, sizeof(game.enemies));
+        game.enemies_alive = 1;
+        game.enemies[0].active = 1;
+        game.enemies[0].type = TOY_GAME_ENEMY_CHARGER;
+        game.enemies[0].x = 0; game.enemies[0].z = 1800;
+        game.enemies[0].hp = 100000;
+        for (int i = 0; i < 100; i++) {
+            toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
+            if (game.actors[0].airborne_y > 0) break;
+        }
+        if (game.actors[0].airborne_ms <= 0 ||
+            game.actors[0].vertical_velocity <= 0) return 83;
+    }
     /* Charger 里程碑：蓄力后造成伤害，并进入短暂空中/击飞状态。 */
     {
         int old_hp, saw_airborne_y = 0, saw_control_lock = 0;
@@ -716,6 +764,112 @@ static int run_logic_test(void)
             toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
         if (game.actors[0].airborne_ms > 0)
             return 80;
+    }
+    /* 敌人分离使用碰撞半径，不能长期重叠成一团。 */
+    {
+        long long dx, dz, dist2;
+        toy_game_init(&game, 45);
+        game.world_count = 0;
+        game.room_limit = 12000;
+        game.enemies_alive = 2;
+        game.enemies[0].active = 1;
+        game.enemies[0].type = TOY_GAME_ENEMY_COMMON;
+        game.enemies[0].x = 0; game.enemies[0].z = 0;
+        game.enemies[0].shove_stun_ms = 1000;
+        game.enemies[1].active = 1;
+        game.enemies[1].type = TOY_GAME_ENEMY_COMMON;
+        game.enemies[1].x = 100; game.enemies[1].z = 0;
+        game.enemies[1].shove_stun_ms = 1000;
+        for (int i = 0; i < 12; i++)
+            toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
+        dx = game.enemies[1].x - game.enemies[0].x;
+        dz = game.enemies[1].z - game.enemies[0].z;
+        dist2 = dx * dx + dz * dz;
+        if (dist2 < (long long)TOY_GAME_ENEMY_RADIUS *
+                   TOY_GAME_ENEMY_RADIUS * 4)
+            return 84;
+    }
+    /* 玩家跳跃复用现有空中状态，落地后才能再次起跳。 */
+    {
+        toy_game_init(&game, 46);
+        game.world_count = 0;
+        game.room_limit = 12000;
+        if (!toy_game_jump_with_velocity(&game, 10, 0) ||
+            game.player_airborne_ms <= 0 ||
+            toy_game_jump(&game)) return 85;
+        for (int i = 0; i < 70; i++)
+            toy_game_update_player_motion(&game, 16);
+        if (game.player_airborne_ms != 0 || game.player_airborne_y != 0 ||
+            game.px <= 0 ||
+            !toy_game_jump(&game)) return 86;
+    }
+    /* 多层地面：跳入悬空平台范围后应落在平台顶部，而不是穿回地面。 */
+    {
+        struct toy_game_platform platform = { 280, 2200, -1000, 1000, 800 };
+        toy_game_init(&game, 47);
+        game.world_count = 0;
+        game.room_limit = 12000;
+        toy_game_set_platforms(&game, &platform, 1);
+        if (!toy_game_jump_with_velocity(&game, 20, 0)) return 87;
+        for (int i = 0; i < 70; i++)
+            toy_game_update_player_motion(&game, 16);
+        if (game.player_airborne_ms != 0 || game.player_ground_y != 800 ||
+            game.player_airborne_y != 0) return 88;
+        /* 从边缘原地起跳时，碰撞圆仍压着台面就应落回台顶，
+         * 不能落到地面高度后卡在平台侧面。 */
+        game.px = 2300;
+        if (!toy_game_jump(&game)) return 94;
+        for (int i = 0; i < 70; i++)
+            toy_game_update_player_motion(&game, 16);
+        if (game.player_airborne_ms != 0 || game.player_ground_y != 800 ||
+            game.player_airborne_y != 0) return 95;
+        /* 离开平台时，在碰撞圆完全越过边缘前仍保持站立；
+         * 越过后从平台高度开始下落，不能直接陷入平台侧面。 */
+        game.px = 2300;
+        toy_game_update_player_ground(&game);
+        if (game.player_ground_y != 800 || game.player_airborne_ms != 0)
+            return 89;
+        game.px = 2400;
+        toy_game_update_player_ground(&game);
+        if (game.player_ground_y != 0 || game.player_airborne_ms <= 0 ||
+            game.player_airborne_y != 800) return 90;
+        for (int i = 0; i < 70; i++)
+            toy_game_update_player_motion(&game, 16);
+        if (game.player_airborne_ms != 0 || game.player_airborne_y != 0)
+            return 91;
+    }
+    /* 平台对地面实体是实心障碍：敌人不能生成或追进台体，
+     * AI 队友也不能被直接移入平台。 */
+    {
+        struct toy_game_platform platform = { -500, 500, -500, 500, 800 };
+        int actor_x;
+        toy_game_init(&game, 48);
+        game.world_count = 0;
+        game.room_limit = 12000;
+        game.to_spawn = 0;
+        toy_game_set_platforms(&game, &platform, 1);
+        toy_game_place_enemy(&game, 0, 0);
+        if (game.enemies_alive != 0) return 96;
+        toy_game_place_enemy(&game, -800, 0);
+        if (game.enemies_alive != 1) return 97;
+        game.px = 800; game.pz = 0;
+        for (int i = 0; i < 100; i++)
+            toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
+        if (game.enemies[0].x + TOY_GAME_ENEMY_RADIUS > platform.minx)
+            return 98;
+        actor_x = game.actors[0].x;
+        if (toy_game_move_ai_actor(&game, 0, 0, 0) ||
+            game.actors[0].x != actor_x) return 99;
+    }
+    /* 告示牌文本应保留空格后的完整字符串。 */
+    {
+        int found = 0;
+        for (int i = 0; i < level_map.draw_count; i++) {
+            if (level_map.draw[i].type != TOY_MAP_DRAW_SIGN) continue;
+            found = 1;
+            if (strcmp(level_map.draw[i].text, "FROM HARRAN CITY")) return 92;
+        }
+        if (!found) return 93;
     }
     __printf("rasterfall: logic test passed\n");
     return 0;
