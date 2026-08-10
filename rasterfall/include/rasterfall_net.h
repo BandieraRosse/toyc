@@ -146,6 +146,8 @@ struct rasterfall_net_remote {
     int local_revive_active;
     int local_revive_progress_ms;
     int revive_target_id;
+    int ai_revive_active;
+    int ai_revive_actor_index;
     int reloading, reload_timer_ms;
     int fire_cooldown_ms, muzzle_flash_ms, damage_flash_ms;
     int kills;

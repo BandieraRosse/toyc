@@ -31,7 +31,7 @@ struct rasterfall_effects {
     struct rasterfall_particle particles[RASTERFALL_PARTICLE_SLOTS];
     int particle_next;
     unsigned int last_fire_seq;
-    unsigned int last_network_fire_seq;
+    unsigned int last_network_fire_seq[4];
     unsigned int last_ai_fire_seq;
     unsigned int last_actor_fire_seq[TOY_GAME_MAX_ACTORS];
     uint32_t rng;

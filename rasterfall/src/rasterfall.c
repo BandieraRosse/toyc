@@ -796,6 +796,7 @@ static void sync_ai_fire_effects(const struct camera *camera)
 
 static void sync_network_fire_effects(const struct camera *viewer,
                                       const struct camera *remote,
+                                      int source_id,
                                       int weapon, unsigned int fire_seq,
                                       int ray_count,
                                       const struct toy_game_ray *rays,
@@ -803,10 +804,11 @@ static void sync_network_fire_effects(const struct camera *viewer,
 {
     struct vec3 muzzle_view, muzzle;
     int i, mx, my, mz;
-    if (!fire_seq || fire_seq == effects.last_network_fire_seq) return;
-    if (fire_seq < effects.last_network_fire_seq)
-        effects.last_network_fire_seq = 0;
-    effects.last_network_fire_seq = fire_seq;
+    if (source_id < 0 || source_id >= RASTERFALL_NET_PLAYER_MAX) return;
+    if (!fire_seq || fire_seq == effects.last_network_fire_seq[source_id]) return;
+    if (fire_seq < effects.last_network_fire_seq[source_id])
+        effects.last_network_fire_seq[source_id] = 0;
+    effects.last_network_fire_seq[source_id] = fire_seq;
     if (audio && audio->running) {
         unsigned char event = TOY_GAME_EV_SHOOT;
         rasterfall_audio_play_events(audio, &event, 1);
@@ -1190,15 +1192,40 @@ startup_again:
                 rasterfall_net_reconcile_client(&net, &session, &camera);
         if (net.mode == RASTERFALL_NET_HOST && net.peer_known) {
             sync_network_fire_effects(&camera, &net.peer_camera,
+                                      1,
                                       net.peer_slots[net.peer_current_slot].weapon,
                                       net.peer_fire_seq, net.peer_ray_count,
                                       net.peer_rays, &audio);
         } else if (net.mode == RASTERFALL_NET_CLIENT && net.players[0].active) {
             sync_network_fire_effects(&camera, &net.players[0].camera,
+                                      0,
                                       net.players[0].weapon,
                                       net.players[0].fire_seq,
                                       net.players[0].ray_count,
                                       net.players[0].rays, &audio);
+        }
+        if (net.mode == RASTERFALL_NET_HOST) {
+            for (int i = 0; i < RASTERFALL_NET_REMOTE_MAX; i++) {
+                const struct rasterfall_net_remote *remote = &net.remotes[i];
+                int weapon;
+                if (!remote->active || !remote->connected) continue;
+                weapon = remote->current_slot >= 0 &&
+                         remote->current_slot < TOY_GAME_WEAPON_SLOTS ?
+                         remote->slots[remote->current_slot].weapon : -1;
+                sync_network_fire_effects(&camera, &remote->camera,
+                                          remote->client_id, weapon,
+                                          remote->fire_seq, remote->ray_count,
+                                          remote->rays, &audio);
+            }
+        } else if (net.mode == RASTERFALL_NET_CLIENT) {
+            for (int i = 0; i < RASTERFALL_NET_PLAYER_MAX; i++) {
+                const struct rasterfall_net_player *player = &net.players[i];
+                if (!player->active || i == net.local_player_id) continue;
+                sync_network_fire_effects(&camera, &player->camera, i,
+                                          player->weapon, player->fire_seq,
+                                          player->ray_count, player->rays,
+                                          &audio);
+            }
         }
         /* 本帧到达的按压边沿并入保留位，再把保留位全部合入 key_pressed
          * 供顶部消费方（菜单/射击）读取。保留位在逻辑步跑过的那帧末尾

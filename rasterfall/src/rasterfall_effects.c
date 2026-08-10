@@ -30,7 +30,8 @@ void rasterfall_effects_reset_fire(struct rasterfall_effects *effects)
     effects->tracer_next = 0;
     effects->particle_next = 0;
     effects->last_fire_seq = 0;
-    effects->last_network_fire_seq = 0;
+    memset(effects->last_network_fire_seq, 0,
+           sizeof(effects->last_network_fire_seq));
     effects->last_ai_fire_seq = 0;
     effects->weapon_kick = 0;
 }

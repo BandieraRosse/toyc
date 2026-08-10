@@ -1622,6 +1622,8 @@ static void net_apply_extra_remote(struct rasterfall_net *net,
     int host_current, host_reload, host_reload_timer, host_cooldown;
     int host_muzzle, host_damage, host_kills, host_ray_count;
     unsigned int host_fire_seq;
+    int actor_airborne_ms, actor_airborne_y, actor_vertical_velocity;
+    int actor_knockback_x, actor_knockback_z;
     int event_start, index;
     if (!remote->active || !remote->connected || !remote->command_ready)
         return;
@@ -1646,6 +1648,11 @@ static void net_apply_extra_remote(struct rasterfall_net *net,
     if ((remote->command.buttons & RASTERFALL_CMD_JUMP) &&
         !g->player_down)
         toy_game_jump_actor(g, index);
+    actor_airborne_ms = actor->airborne_ms;
+    actor_airborne_y = actor->airborne_y;
+    actor_vertical_velocity = actor->vertical_velocity;
+    actor_knockback_x = actor->knockback_x;
+    actor_knockback_z = actor->knockback_z;
     memcpy(host_slots, g->slots, sizeof(host_slots));
     memcpy(host_rays, g->rays, sizeof(host_rays));
     host_px = g->px; host_pz = g->pz; host_hp = g->hp;
@@ -1685,8 +1692,13 @@ static void net_apply_extra_remote(struct rasterfall_net *net,
         (remote->command.buttons & RASTERFALL_CMD_FIRE) != 0,
         remote->command.fire_held, remote->camera.sy, remote->camera.cy, 16);
     actor->x = remote->camera.x; actor->z = remote->camera.z;
-    actor->airborne_ms = g->player_airborne_ms;
-    actor->airborne_y = g->player_airborne_y;
+    /* The legacy weapon view above belongs to this player's inventory only;
+     * never copy the host player's vertical state back into this actor. */
+    actor->airborne_ms = actor_airborne_ms;
+    actor->airborne_y = actor_airborne_y;
+    actor->vertical_velocity = actor_vertical_velocity;
+    actor->knockback_x = actor_knockback_x;
+    actor->knockback_z = actor_knockback_z;
     remote->camera.y = actor->airborne_y;
     actor->sy = remote->camera.sy; actor->cy = remote->camera.cy;
     actor->hp = g->hp;
@@ -1833,6 +1845,35 @@ static void net_apply_extra_rescue_actions(struct rasterfall_net *net,
         int revive;
         if (!rescuer->active || !rescuer->connected || rescuer->down ||
             !rescuer->command_ready) continue;
+        if (rescuer->ai_revive_active) {
+            int ai_index = rasterfall_session_find_down_ai(
+                session, &rescuer->camera);
+            if (ai_index < 0 || ai_index != rescuer->ai_revive_actor_index) {
+                rescuer->ai_revive_active = 0;
+                rescuer->ai_revive_actor_index = -1;
+            } else {
+                revive = rasterfall_session_revive_remote(
+                    session, &rescuer->camera, 16);
+                if (revive < 0 || revive > 0) {
+                    rescuer->ai_revive_active = 0;
+                    rescuer->ai_revive_actor_index = -1;
+                }
+            }
+        }
+        if (!rescuer->ai_revive_active &&
+            (rescuer->command.buttons & RASTERFALL_CMD_INTERACT)) {
+            int ai_index = rasterfall_session_find_down_ai(
+                session, &rescuer->camera);
+            if (ai_index >= 0) {
+                rescuer->ai_revive_active = 1;
+                rescuer->ai_revive_actor_index = ai_index;
+                if (rasterfall_session_revive_remote(session,
+                                                     &rescuer->camera, 16)) {
+                    rescuer->ai_revive_active = 0;
+                    rescuer->ai_revive_actor_index = -1;
+                }
+            }
+        }
         target_id = rescuer->revive_target_id;
         if (rescuer->local_revive_active &&
             (!net_target_is_down(net, session, target_id) ||
@@ -1933,7 +1974,6 @@ void rasterfall_net_apply_remote(struct rasterfall_net *net,
     if (net->peer_known && net->tick - net->last_input_tick <= NET_INPUT_HOLD_TICKS) {
         net->remote_event_count = 0;
         event_start = g->event_count;
-        toy_game_update_secondary_player_motion(g, 16);
         if ((net->remote_command.buttons & RASTERFALL_CMD_JUMP) &&
             !net->peer_down)
             toy_game_jump_secondary_player(g);
@@ -2377,8 +2417,10 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
         session->game_state.goal_hold_ms = net->snapshot_world_goal_hold_ms;
         session->game_state.alarm_triggered = net->snapshot_world_alarm_triggered;
         session->game_state.campaign_stage = net->snapshot_world_campaign_stage;
-        session->game_state.player_control_disabled =
-            net->snapshot_player_control_disabled;
+        /* This world flag belongs to the host player's Smoker state.  It is
+         * not a property of every client; copying it here made a client
+         * unable to jump whenever the host was being dragged. */
+        session->game_state.player_control_disabled = 0;
         session->game_state.player_airborne_ms = own->airborne_ms;
         session->game_state.player_airborne_y = own->airborne_y;
         camera->y = own->camera.y;
