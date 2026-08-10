@@ -1438,7 +1438,8 @@ static void render_network_teammate_status(struct toy_renderer *renderer,
     }
     if (!remote) return;
     render_actor_status(renderer, camera, remote->x, remote->z, 700,
-                        "PLAYER 2", hp, 100, downed, revive_ms, 0x70D8FF);
+                                "PLAYER 2", hp, TOY_GAME_SECONDARY_PLAYER_HP,
+                                downed, revive_ms, 0x70D8FF);
 }
 
 /* ── 子弹轨迹与命中粒子（纯视觉；逻辑步进 16ms 推进） ──────────── */

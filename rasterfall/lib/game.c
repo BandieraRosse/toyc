@@ -43,35 +43,24 @@ static int rand_range(struct toy_game *g, int lo, int hi)
 /* ── 战斗平衡配置 ────────────────────────────────────────────────
  * 改武器伤害、敌人生命或敌人近战伤害时只改这里；下面的规则表不再
  * 直接散落这些平衡数字。弹匣容量、射速和移动速度仍在各自表中维护。 */
-#define BALANCE_PISTOL_DAMAGE          30
-#define BALANCE_SMG_DAMAGE             25
-#define BALANCE_SHOTGUN_PELLET_DAMAGE  20
-
-#define BALANCE_COMMON_HP              50
-#define BALANCE_FAST_HP                50
-#define BALANCE_HEAVY_HP               200
-#define BALANCE_PURSUIT_HEAVY_HP       200
-#define BALANCE_PURSUIT_FAST_HP        60
-#define BALANCE_SMOKER_HP              90
-#define BALANCE_CHARGER_HP             180
-
-#define BALANCE_COMMON_BITE_DAMAGE     2
-#define BALANCE_FAST_BITE_DAMAGE       2
-#define BALANCE_HEAVY_BITE_DAMAGE      4
-#define BALANCE_PURSUIT_HEAVY_BITE_DAMAGE 4
-#define BALANCE_PURSUIT_FAST_BITE_DAMAGE  2
-#define BALANCE_SMOKER_BITE_DAMAGE     0
-#define BALANCE_CHARGER_BITE_DAMAGE    4
-
 /* 固定散射：每颗弹丸在 [-spread, +spread] 内随机偏转（1024 定点）。
  * 手枪 ±12（≈±0.7°，几乎精准）；SMG ±90（≈±5°，连发略散）；
  * 霰弹枪 ±230（≈±12.7°，近距离密集、远距离发散）。 */
 static const struct toy_game_weapon_info weapon_table[TOY_GAME_WEAPON_COUNT] = {
-    { 30, TOY_GAME_AMMO_INFINITE, 200, 1500, 0, 1, 12, 1,
-      BALANCE_PISTOL_DAMAGE },
-    { 50, 650, 100, 2000, 1, 1, 90, 0, BALANCE_SMG_DAMAGE },
-    { 8, 64, 600, 2500, 0, 10, 230, 0,
-      BALANCE_SHOTGUN_PELLET_DAMAGE },
+    { TOY_CONFIG_PISTOL_MAG, TOY_CONFIG_PISTOL_RESERVE,
+      TOY_CONFIG_PISTOL_COOLDOWN_MS, TOY_CONFIG_PISTOL_RELOAD_MS,
+      TOY_CONFIG_PISTOL_FULL_AUTO, TOY_CONFIG_PISTOL_PELLETS,
+      TOY_CONFIG_PISTOL_SPREAD, TOY_CONFIG_PISTOL_SLOT,
+      TOY_CONFIG_PISTOL_DAMAGE },
+    { TOY_CONFIG_SMG_MAG, TOY_CONFIG_SMG_RESERVE,
+      TOY_CONFIG_SMG_COOLDOWN_MS, TOY_CONFIG_SMG_RELOAD_MS,
+      TOY_CONFIG_SMG_FULL_AUTO, TOY_CONFIG_SMG_PELLETS,
+      TOY_CONFIG_SMG_SPREAD, TOY_CONFIG_SMG_SLOT, TOY_CONFIG_SMG_DAMAGE },
+    { TOY_CONFIG_SHOTGUN_MAG, TOY_CONFIG_SHOTGUN_RESERVE,
+      TOY_CONFIG_SHOTGUN_COOLDOWN_MS, TOY_CONFIG_SHOTGUN_RELOAD_MS,
+      TOY_CONFIG_SHOTGUN_FULL_AUTO, TOY_CONFIG_SHOTGUN_PELLETS,
+      TOY_CONFIG_SHOTGUN_SPREAD, TOY_CONFIG_SHOTGUN_SLOT,
+      TOY_CONFIG_SHOTGUN_DAMAGE },
 };
 
 static const char *weapon_names[TOY_GAME_WEAPON_COUNT] = {
@@ -80,13 +69,13 @@ static const char *weapon_names[TOY_GAME_WEAPON_COUNT] = {
 
 static const struct toy_game_enemy_info enemy_table[TOY_GAME_ENEMY_TYPE_COUNT] = {
     /* max hp, speed range, bite damage, model, base color */
-    { BALANCE_COMMON_HP, 38, 56, BALANCE_COMMON_BITE_DAMAGE, 0, 0x4A5D3A },
-    { BALANCE_FAST_HP, 66, 82, BALANCE_FAST_BITE_DAMAGE, 1, 0x6A8A42 },
-    { BALANCE_HEAVY_HP, 24, 34, BALANCE_HEAVY_BITE_DAMAGE, 2, 0x624A3A },
-    { BALANCE_PURSUIT_HEAVY_HP, 30, 42, BALANCE_PURSUIT_HEAVY_BITE_DAMAGE, 2, 0x7A4A2A },
-    { BALANCE_PURSUIT_FAST_HP, 92, 112, BALANCE_PURSUIT_FAST_BITE_DAMAGE, 1, 0xB84A32 },
-    { BALANCE_SMOKER_HP, 34, 46, BALANCE_SMOKER_BITE_DAMAGE, 1, 0x76513A },
-    { BALANCE_CHARGER_HP, 42, 58, BALANCE_CHARGER_BITE_DAMAGE, 2, 0x8B5A35 }
+    { TOY_CONFIG_COMMON_HP, TOY_CONFIG_COMMON_SPEED_MIN, TOY_CONFIG_COMMON_SPEED_MAX, TOY_CONFIG_COMMON_BITE_DAMAGE, 0, 0x4A5D3A },
+    { TOY_CONFIG_FAST_HP, TOY_CONFIG_FAST_SPEED_MIN, TOY_CONFIG_FAST_SPEED_MAX, TOY_CONFIG_FAST_BITE_DAMAGE, 1, 0x6A8A42 },
+    { TOY_CONFIG_HEAVY_HP, TOY_CONFIG_HEAVY_SPEED_MIN, TOY_CONFIG_HEAVY_SPEED_MAX, TOY_CONFIG_HEAVY_BITE_DAMAGE, 2, 0x624A3A },
+    { TOY_CONFIG_PURSUIT_HEAVY_HP, TOY_CONFIG_PURSUIT_HEAVY_SPEED_MIN, TOY_CONFIG_PURSUIT_HEAVY_SPEED_MAX, TOY_CONFIG_PURSUIT_HEAVY_BITE_DAMAGE, 2, 0x7A4A2A },
+    { TOY_CONFIG_PURSUIT_FAST_HP, TOY_CONFIG_PURSUIT_FAST_SPEED_MIN, TOY_CONFIG_PURSUIT_FAST_SPEED_MAX, TOY_CONFIG_PURSUIT_FAST_BITE_DAMAGE, 1, 0xB84A32 },
+    { TOY_CONFIG_SMOKER_HP, TOY_CONFIG_SMOKER_SPEED_MIN, TOY_CONFIG_SMOKER_SPEED_MAX, TOY_CONFIG_SMOKER_BITE_DAMAGE, 1, 0x76513A },
+    { TOY_CONFIG_CHARGER_HP, TOY_CONFIG_CHARGER_SPEED_MIN, TOY_CONFIG_CHARGER_SPEED_MAX, TOY_CONFIG_CHARGER_BITE_DAMAGE, 2, 0x8B5A35 }
 };
 
 struct toy_game_ai_info {
@@ -96,9 +85,9 @@ struct toy_game_ai_info {
 };
 
 static const struct toy_game_ai_info ai_table[TOY_GAME_AI_CLASS_COUNT] = {
-    { 80,  TOY_GAME_WEAPON_PISTOL,  0x596B3A },
-    { 120, TOY_GAME_WEAPON_SMG,     0x386B96 },
-    { 160, TOY_GAME_WEAPON_SHOTGUN, 0x252A30 }
+    { TOY_CONFIG_AI_LEVEL_1_HP, TOY_GAME_WEAPON_PISTOL,  0x596B3A },
+    { TOY_CONFIG_AI_LEVEL_2_HP, TOY_GAME_WEAPON_SMG,     0x386B96 },
+    { TOY_CONFIG_AI_LEVEL_3_HP, TOY_GAME_WEAPON_SHOTGUN, 0x252A30 }
 };
 
 const struct toy_game_weapon_info *toy_game_weapon_info(int weapon)
@@ -178,8 +167,8 @@ void toy_game_init(struct toy_game *g, uint64_t seed)
     memset(g, 0, sizeof(struct toy_game));
     g->rng = seed ? seed : 0x9E3779B97F4A7C15ULL;
     g->player_pull_enemy_index = -1;
-    g->secondary_player_hp = 100;
-    g->hp = 100;
+    g->secondary_player_hp = TOY_GAME_SECONDARY_PLAYER_HP;
+    g->hp = TOY_GAME_PLAYER_HP;
     g->state = TOY_GAME_PLAYING;
     /* 槽 0 主武器为空；槽 1 默认为满弹匣手枪，开局出枪。 */
     g->slots[0].weapon = -1;
@@ -1773,28 +1762,27 @@ static void update_charger(struct toy_game *g, struct toy_game_enemy *e,
         /* 沿锁定直线持续冲锋；同一轮可连续撞到多个敌人。 */
         charger_hit_entities(g, e);
         if (dist <= TOY_GAME_CHARGER_IMPACT_RANGE) {
-            if (target_player == 0) {
+            /* A target is launched by the impact, so do not damage the same
+             * player again until they have landed.  The charge itself keeps
+             * moving for its configured duration. */
+            if (target_player == 0 && g->player_airborne_ms <= 0) {
                 toy_game_apply_entity_impact(g, TOY_GAME_ENTITY_PLAYER, 0,
                                              dx, dz, TOY_GAME_CHARGER_DAMAGE);
-            } else if (target_player == 1) {
+            } else if (target_player == 1 &&
+                       g->secondary_player_airborne_ms <= 0) {
                 toy_game_apply_entity_impact(g, TOY_GAME_ENTITY_REMOTE_PLAYER, 0,
                                              dx, dz, TOY_GAME_CHARGER_DAMAGE);
             }
             charger_hit_entities(g, e);
-            e->charge_active = 0;
-            e->special_timer_ms = TOY_GAME_CHARGER_COOLDOWN_MS;
-            return;
         }
-        if (dist > 0) {
-            nx = e->charge_dir_x * TOY_GAME_CHARGER_SPEED / 1024;
-            nz = e->charge_dir_z * TOY_GAME_CHARGER_SPEED / 1024;
-            if (!enemy_position_blocked(g, e->x + nx, e->z,
-                                        enemy_radius(e)))
-                e->x += nx;
-            if (!enemy_position_blocked(g, e->x, e->z + nz,
-                                        enemy_radius(e)))
-                e->z += nz;
-        }
+        nx = e->charge_dir_x * TOY_GAME_CHARGER_SPEED / 1024;
+        nz = e->charge_dir_z * TOY_GAME_CHARGER_SPEED / 1024;
+        if (!enemy_position_blocked(g, e->x + nx, e->z,
+                                    enemy_radius(e)))
+            e->x += nx;
+        if (!enemy_position_blocked(g, e->x, e->z + nz,
+                                    enemy_radius(e)))
+            e->z += nz;
         return;
     }
     if (e->special_timer_ms > 0) {

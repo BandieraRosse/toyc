@@ -8,7 +8,7 @@
 #include "rasterfall_map.h"
 
 #define RASTERFALL_PLAYER_RADIUS 180
-#define RASTERFALL_MOVE_STEP 76
+#define RASTERFALL_MOVE_STEP TOY_CONFIG_PLAYER_MOVE_STEP
 #define RASTERFALL_INTERACT_RANGE 1000
 
 enum rasterfall_command_button {

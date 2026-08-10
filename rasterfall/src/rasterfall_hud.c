@@ -136,8 +136,8 @@ static void render_player_hud(struct toy_surface *surface,
                    name, 0xE7E9EC, surface->stride);
     hud_fill_rect(surface, bar_x, bar_y, bar_w, 10, 0x20252B);
     hud_fill_rect(surface, bar_x, bar_y,
-                  game->hp * bar_w / 100, 10, hp_color);
-    snprintf(line, sizeof(line), "%d / 100", game->hp);
+                  game->hp * bar_w / TOY_GAME_PLAYER_HP, 10, hp_color);
+    snprintf(line, sizeof(line), "%d / %d", game->hp, TOY_GAME_PLAYER_HP);
     fb_draw_string((unsigned char *)surface->pixels, bar_x + bar_w -
                    (int)strlen(line) * FB_FONT_W, bar_y + 12,
                    line, hp_color, surface->stride);

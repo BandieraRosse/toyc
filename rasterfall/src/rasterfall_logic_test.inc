@@ -723,6 +723,7 @@ static int run_logic_test(void)
     /* Charger 里程碑：蓄力后造成伤害，并进入短暂空中/击飞状态。 */
     {
         int old_hp, saw_airborne_y = 0, saw_control_lock = 0;
+        int saw_charge_after_hit = 0;
         memset(game.enemies, 0, sizeof(game.enemies));
         memset(game.actors, 0, sizeof(game.actors));
         game.ai_active = 0;
@@ -745,8 +746,11 @@ static int run_logic_test(void)
             toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
             if (game.player_airborne_y > 0) saw_airborne_y = 1;
             if (game.player_control_disabled) saw_control_lock = 1;
+            if (game.hp < old_hp && game.enemies[0].charge_active)
+                saw_charge_after_hit = 1;
         }
-        if (game.hp >= old_hp || !saw_airborne_y || !saw_control_lock) return 78;
+        if (game.hp >= old_hp || !saw_airborne_y || !saw_control_lock ||
+            !saw_charge_after_hit) return 78;
     }
     /* 统一实体冲击：AI 队友与普通实体共享击飞状态，落地后回到部署点。 */
     {
