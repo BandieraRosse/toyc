@@ -415,6 +415,18 @@ static int net_remote_index(const struct rasterfall_net *net,
     return -1;
 }
 
+static void net_init_player_slots(struct toy_game_slot *slots,
+                                  int *current_slot)
+{
+    if (!slots || !current_slot) return;
+    memset(slots, 0, sizeof(struct toy_game_slot) * TOY_GAME_WEAPON_SLOTS);
+    slots[0].weapon = -1;
+    slots[1].weapon = TOY_GAME_WEAPON_PISTOL;
+    slots[1].mag = toy_game_weapon_info(TOY_GAME_WEAPON_PISTOL)->mag_size;
+    slots[1].reserve = toy_game_weapon_info(TOY_GAME_WEAPON_PISTOL)->reserve_max;
+    *current_slot = 1;
+}
+
 static int net_remote_index_client_id(const struct rasterfall_net *net,
                                       int client_id)
 {
@@ -442,8 +454,7 @@ static int net_alloc_remote(struct rasterfall_net *net,
         memcpy(&remote->camera, &remote->spawn, sizeof(remote->camera));
         remote->hp = TOY_GAME_SECONDARY_PLAYER_HP;
         remote->state = TOY_GAME_PLAYING;
-        remote->slots[0].weapon = -1;
-        remote->slots[1].weapon = TOY_GAME_WEAPON_PISTOL;
+        net_init_player_slots(remote->slots, &remote->current_slot);
         return i;
     }
     return -1;
@@ -519,8 +530,7 @@ void rasterfall_net_init(struct rasterfall_net *net)
 static void net_reset_peer_state(struct rasterfall_net *net)
 {
     memcpy(&net->peer_camera, &net->peer_spawn, sizeof(net->peer_camera));
-    memset(net->peer_slots, 0, sizeof(net->peer_slots));
-    net->peer_current_slot = 0;
+    net_init_player_slots(net->peer_slots, &net->peer_current_slot);
     /* The first snapshot can be sent before the client has delivered its
      * first input.  Keep the remote player alive with the same initial state
      * as toy_game_init instead of exposing the zeroed transport state. */
@@ -1401,6 +1411,13 @@ void rasterfall_net_poll(struct rasterfall_net *net)
                         remote->last_input_sequence = sequence;
                         remote->last_input_tick = net->tick;
                         remote->command_ready = 1;
+                        if (ack == net->last_snapshot_sequence &&
+                            net->last_snapshot_sent_ms) {
+                            long elapsed = net_monotonic_ms() -
+                                           net->last_snapshot_sent_ms;
+                            if (elapsed >= 0 && elapsed < 60000)
+                                remote->rtt_ms = (int)elapsed;
+                        }
                     }
                 }
                 continue;
@@ -1451,6 +1468,13 @@ void rasterfall_net_poll(struct rasterfall_net *net)
                         remote->last_input_sequence = sequence;
                         remote->last_input_tick = net->tick;
                         remote->command_ready = 1;
+                        if (ack == net->last_snapshot_sequence &&
+                            net->last_snapshot_sent_ms) {
+                            long elapsed = net_monotonic_ms() -
+                                           net->last_snapshot_sent_ms;
+                            if (elapsed >= 0 && elapsed < 60000)
+                                remote->rtt_ms = (int)elapsed;
+                        }
                     }
                 }
                 continue;
@@ -1515,6 +1539,9 @@ void rasterfall_net_poll(struct rasterfall_net *net)
                 type == RASTERFALL_NET_SNAPSHOT_PART) {
                 net->connected = 1;
                 if (ack == net->last_command_sequence && net->last_command_sent_ms) {
+                    long elapsed = net_monotonic_ms() - net->last_command_sent_ms;
+                    if (elapsed >= 0 && elapsed < 60000) net->rtt_ms = (int)elapsed;
+                } else if (net->last_command_sent_ms) {
                     long elapsed = net_monotonic_ms() - net->last_command_sent_ms;
                     if (elapsed >= 0 && elapsed < 60000) net->rtt_ms = (int)elapsed;
                 }
@@ -1609,6 +1636,12 @@ static void net_apply_extra_remote(struct rasterfall_net *net,
         remote->camera.pitch_sy = remote->reported_camera.pitch_sy;
         remote->camera.pitch_cy = remote->reported_camera.pitch_cy;
     }
+    /* Smoker/Charger and the vertical simulation run before input application.
+     * Start this player's command from the authoritative actor position so a
+     * pull or launch cannot be overwritten by the stale client position. */
+    remote->camera.x = actor->x;
+    remote->camera.z = actor->z;
+    remote->camera.y = actor->airborne_y;
     toy_game_update_actor_motion(g, index, 16);
     if ((remote->command.buttons & RASTERFALL_CMD_JUMP) &&
         !g->player_down)
@@ -1652,6 +1685,9 @@ static void net_apply_extra_remote(struct rasterfall_net *net,
         (remote->command.buttons & RASTERFALL_CMD_FIRE) != 0,
         remote->command.fire_held, remote->camera.sy, remote->camera.cy, 16);
     actor->x = remote->camera.x; actor->z = remote->camera.z;
+    actor->airborne_ms = g->player_airborne_ms;
+    actor->airborne_y = g->player_airborne_y;
+    remote->camera.y = actor->airborne_y;
     actor->sy = remote->camera.sy; actor->cy = remote->camera.cy;
     actor->hp = g->hp;
     actor->state = g->player_down ? TOY_GAME_ACTOR_DOWNED :
@@ -1874,8 +1910,7 @@ void rasterfall_net_apply_remote(struct rasterfall_net *net,
         return;
     }
     if (net->peer_known && !net->peer_state_initialized) {
-        memcpy(net->peer_slots, g->slots, sizeof(net->peer_slots));
-        net->peer_current_slot = g->current_slot;
+        net_init_player_slots(net->peer_slots, &net->peer_current_slot);
         /* peer_hp belongs to player 2.  Using g->hp here makes the first
          * snapshot inherit the host's health (and used to leave it at zero
          * after the transport state was reset). */
@@ -1889,6 +1924,7 @@ void rasterfall_net_apply_remote(struct rasterfall_net *net,
     if (net->peer_known) {
         net->peer_camera.x = g->secondary_px;
         net->peer_camera.z = g->secondary_pz;
+        net->peer_camera.y = g->secondary_player_airborne_y;
         net->peer_hp = g->secondary_player_hp;
         net->peer_down = g->secondary_player_down;
         net->peer_airborne_ms = g->secondary_player_airborne_ms;
@@ -1906,6 +1942,7 @@ void rasterfall_net_apply_remote(struct rasterfall_net *net,
                                                   &net->remote_command,
                                                   net->peer_down ||
                                                   g->secondary_player_airborne_ms > 0);
+        net->peer_camera.y = g->secondary_player_airborne_y;
         /* The command's turn delta is only a prediction hint.  Use the
          * complete camera reported by the client before authoritative firing
          * so quick 90-degree turns and accumulated mouse deltas cannot leave
@@ -2344,6 +2381,7 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
             net->snapshot_player_control_disabled;
         session->game_state.player_airborne_ms = own->airborne_ms;
         session->game_state.player_airborne_y = own->airborne_y;
+        camera->y = own->camera.y;
         session->air_walls_enabled = net->snapshot_air_walls_enabled;
         session->manual_alarm_on = net->snapshot_manual_alarm_enabled;
         session->manual_alarm_timer = net->snapshot_world_manual_alarm_timer_ms;

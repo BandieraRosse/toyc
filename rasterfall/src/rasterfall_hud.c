@@ -198,7 +198,8 @@ static void render_network_hud(struct toy_surface *surface,
             snprintf(line, sizeof(line), "HOST  WAITING FOR PLAYER");
         color = net->peer_known && net->connected ? RF_COLOR_UI_SECONDARY : 0xFFD070;
     } else if (net->connected) {
-        snprintf(line, sizeof(line), "CLIENT  CONNECTED  RTT %d MS", net->rtt_ms);
+        snprintf(line, sizeof(line), "CLIENT P%d  CONNECTED  RTT %d MS",
+                 net->local_player_id + 1, net->rtt_ms);
         color = net->rtt_ms > 150 ? 0xFFB060 : RF_COLOR_UI_SECONDARY;
     } else {
         snprintf(line, sizeof(line), "CLIENT  %s",
@@ -220,6 +221,26 @@ static void render_network_hud(struct toy_surface *surface,
                       width + 8, FB_FONT_H + 4, 0x182634);
         fb_draw_string((unsigned char *)surface->pixels, x, y + FB_FONT_H,
                        line, RF_COLOR_UI_ACCENT, surface->stride);
+    }
+    if (net->mode == RASTERFALL_NET_HOST) {
+        int line_y = y + FB_FONT_H * 2;
+        int cursor = 0;
+        snprintf(line, sizeof(line), "P2 %dMS", net->peer_known ? net->rtt_ms : 0);
+        cursor = (int)strlen(line);
+        for (int i = 0; i < RASTERFALL_NET_REMOTE_MAX; i++) {
+            const struct rasterfall_net_remote *remote = &net->remotes[i];
+            if (!remote->active || !remote->connected) continue;
+            snprintf(line + cursor, sizeof(line) - (size_t)cursor,
+                     "  P%d %dMS", remote->client_id + 1, remote->rtt_ms);
+            cursor = (int)strlen(line);
+        }
+        width = (int)strlen(line) * FB_FONT_W;
+        x = surface->width - width - 10;
+        if (x < 8) x = 8;
+        hud_fill_rect(surface, x - 4, line_y - 2, width + 8,
+                      FB_FONT_H + 4, 0x182634);
+        fb_draw_string((unsigned char *)surface->pixels, x, line_y, line,
+                       RF_COLOR_UI_SECONDARY, surface->stride);
     }
 }
 

@@ -149,6 +149,7 @@ struct rasterfall_net_remote {
     int reloading, reload_timer_ms;
     int fire_cooldown_ms, muzzle_flash_ms, damage_flash_ms;
     int kills;
+    int rtt_ms;
     unsigned int fire_seq;
     int ray_count;
     struct toy_game_ray rays[TOY_GAME_MAX_RAYS];

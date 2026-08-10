@@ -1715,10 +1715,12 @@ static int render_network_teammate(struct toy_renderer *renderer,
         for (i = 0; i < RASTERFALL_NET_PLAYER_MAX; i++) {
             const struct rasterfall_net_player *player = &net->players[i];
             if (!player->active || i == net->local_player_id) continue;
+            active_actor_lift = player->airborne_y;
             pixels += render_player_avatar(renderer, camera,
                 player->camera.x, player->camera.z, player->camera.sy,
                 player->camera.cy, player->weapon, player->muzzle_flash_ms,
                 colors[i], player->downed);
+            active_actor_lift = 0;
         }
         return pixels;
     }
@@ -1726,9 +1728,11 @@ static int render_network_teammate(struct toy_renderer *renderer,
         int weapon = net->peer_current_slot >= 0 &&
                      net->peer_current_slot < TOY_GAME_WEAPON_SLOTS ?
                      net->peer_slots[net->peer_current_slot].weapon : -1;
+        active_actor_lift = net->peer_airborne_y;
         pixels += render_player_avatar(renderer, camera, net->peer_camera.x,
             net->peer_camera.z, net->peer_camera.sy, net->peer_camera.cy,
             weapon, net->peer_muzzle_flash_ms, colors[1], net->peer_down);
+        active_actor_lift = 0;
     }
     for (i = 0; i < RASTERFALL_NET_REMOTE_MAX; i++) {
         const struct rasterfall_net_remote *remote = &net->remotes[i];
@@ -1737,9 +1741,11 @@ static int render_network_teammate(struct toy_renderer *renderer,
         weapon = remote->current_slot >= 0 &&
                  remote->current_slot < TOY_GAME_WEAPON_SLOTS ?
                  remote->slots[remote->current_slot].weapon : -1;
+        active_actor_lift = remote->airborne_y;
         pixels += render_player_avatar(renderer, camera, remote->camera.x,
             remote->camera.z, remote->camera.sy, remote->camera.cy, weapon,
             remote->muzzle_flash_ms, colors[remote->client_id], remote->down);
+        active_actor_lift = 0;
     }
     return pixels;
 }

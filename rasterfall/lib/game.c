@@ -424,7 +424,8 @@ int toy_game_move_ai_actor(struct toy_game *g, int actor_index, int x, int z)
     if (!g || actor_index < 0 || actor_index >= TOY_GAME_MAX_ACTORS)
         return 0;
     a = &g->actors[actor_index];
-    if (!a->active || a->kind != TOY_GAME_ACTOR_AI) return 0;
+    if (!a->active || (a->kind != TOY_GAME_ACTOR_AI &&
+                       a->kind != TOY_GAME_ACTOR_PLAYER)) return 0;
     if (toy_game_position_blocked_at_height(g, x, z,
                                             TOY_GAME_PLAYER_RADIUS, 0))
         return 0;
@@ -1684,6 +1685,10 @@ static void update_smoker(struct toy_game *g, struct toy_game_enemy *e,
             int mz = pull_dz * step / (int)pull_dist;
             if (target_player == 0)
                 move_player_forced(g, mx, mz);
+            else if (target_player == 1) {
+                g->secondary_px = pull_x + mx;
+                g->secondary_pz = pull_z + mz;
+            }
             else if (target_player == 2)
                 toy_game_move_ai_actor(g, target_actor, pull_x + mx,
                                        pull_z + mz);

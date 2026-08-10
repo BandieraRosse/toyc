@@ -380,6 +380,39 @@ int rasterfall_session_compute_highlight(const struct rasterfall_session *sessio
     return best;
 }
 
+static void session_client_interact_banner(struct rasterfall_session *session)
+{
+    const struct rasterfall_interactable *it;
+    if (session->highlight_index < 0 ||
+        session->highlight_index >= session->item_count) return;
+    it = &session->items[session->highlight_index];
+    session->banner_ms = 1800;
+    if (it->kind == TOY_MAP_PICKUP_AIR_BUTTON)
+        session->banner_text = session->air_walls_enabled ?
+            "AIR WALLS DISABLED" : "AIR WALLS ENABLED";
+    else if (it->kind == TOY_MAP_PICKUP_ALARM_BUTTON)
+        session->banner_text = session->manual_alarm_on ?
+            "ALARM DISABLED" : "ALARM ENABLED - 2-3 ENEMIES EACH SECOND";
+    else if (it->kind == TOY_MAP_PICKUP_BUTTON)
+        session->banner_text = "HORDE SUMMONED - THEY WILL FIND YOU";
+    else if (it->kind == TOY_MAP_PICKUP_HEAVY_HORDE_BUTTON)
+        session->banner_text = "BROWN BRUTE HORDE SUMMONED";
+    else if (it->kind == TOY_MAP_PICKUP_FAST_HORDE_BUTTON)
+        session->banner_text = "RED RUNNER HORDE SUMMONED";
+    else if (it->kind == TOY_MAP_PICKUP_SMOKER_BUTTON)
+        session->banner_text = "SMOKER SUMMONED";
+    else if (it->kind == TOY_MAP_PICKUP_CHARGER_BUTTON)
+        session->banner_text = "CHARGER SUMMONED";
+    else if (it->kind == TOY_MAP_PICKUP_AMMO)
+        session->banner_text = "AMMO REFILLED";
+    else if (it->kind == TOY_MAP_PICKUP_WEAPON ||
+             it->kind == TOY_MAP_PICKUP_SMG ||
+             it->kind == TOY_MAP_PICKUP_SHOTGUN)
+        session->banner_text = "WEAPON PICKED UP";
+    else
+        session->banner_text = "INTERACTION SENT TO HOST";
+}
+
 static void session_interact(struct rasterfall_session *session,
                              struct rasterfall_interactable *it)
 {
@@ -526,6 +559,8 @@ void rasterfall_session_step(struct rasterfall_session *session,
      * muzzle is derived from camera->y during this same tick. */
     session_sync_special_motion(session, camera);
     session->highlight_index = rasterfall_session_compute_highlight(session, camera);
+    if (command->buttons & RASTERFALL_CMD_INTERACT)
+        session_client_interact_banner(session);
     if (command->buttons & RASTERFALL_CMD_SHOVE)
         toy_game_shove(&session->game_state, camera->sy, camera->cy);
     if ((command->buttons & RASTERFALL_CMD_INTERACT) &&
@@ -634,5 +669,11 @@ void rasterfall_session_step_client(struct rasterfall_session *session,
         if (session->game_state.events[i] != TOY_GAME_EV_KILL)
             session->game_state.events[write++] = session->game_state.events[i];
     session->game_state.event_count = write;
-    (void)dt_ms;
+    if (session->banner_ms > 0) {
+        session->banner_ms -= dt_ms;
+        if (session->banner_ms <= 0) {
+            session->banner_ms = 0;
+            session->banner_text = NULL;
+        }
+    }
 }
