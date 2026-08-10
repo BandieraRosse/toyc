@@ -1,5 +1,5 @@
 /* Rasterfall 公网 UDP 打洞协调服务。
- * 负责房间匹配，并转发两个客户端之间的游戏 UDP 数据。
+ * 负责房间匹配，并转发主机与最多三个客户端之间的游戏 UDP 数据。
  * 默认监听 UDP 28461；云服务器上运行：build/rasterfall_punch_server
  *
  * 管理命令（标准输入）：
@@ -24,7 +24,7 @@
 #define PUNCH_PORT 28461
 #define PUNCH_PEER_TIMEOUT_MS 12000
 #define PUNCH_RELAY_MATCH 1
-#define PUNCH_MAX_PACKET 1400
+#define PUNCH_MAX_PACKET 3000
 #define PUNCH_RELAY_ROOM_MIN 5000
 
 struct punch_peer {
@@ -42,6 +42,7 @@ struct punch_room {
     long created_ms;
     struct punch_peer host;
     struct punch_peer guest;
+    struct punch_peer guests[2];
 };
 
 static struct punch_room rooms[PUNCH_MAX_ROOMS];
@@ -138,12 +139,19 @@ static void expire_rooms(long now)
             log_peer("guest timeout", &room->guest);
             memset(&room->guest, 0, sizeof(room->guest));
         }
+        for (int i = 0; i < 2; i++)
+            if (room->guests[i].active &&
+                now - room->guests[i].last_seen_ms > PUNCH_PEER_TIMEOUT_MS) {
+                log_peer("guest timeout", &room->guests[i]);
+                memset(&room->guests[i], 0, sizeof(room->guests[i]));
+            }
     }
 }
 
 static void print_room(const struct punch_room *room)
 {
     char host[64], guest[64];
+    int i;
     if (!room || !room->active) return;
     if (room->host.active) address_text(&room->host.address, host, sizeof(host));
     else strcpy(host, "-");
@@ -152,6 +160,13 @@ static void print_room(const struct punch_room *room)
     __printf("room %04d gen=%lu token=%u host=%s guest=%s\n",
              room->room_id, room->generation, (unsigned int)room->token,
              host, guest);
+    for (i = 0; i < 2; i++) {
+        char extra[64];
+        if (room->guests[i].active)
+            address_text(&room->guests[i].address, extra, sizeof(extra));
+        else strcpy(extra, "-");
+        __printf("room %04d guest%d=%s\n", room->room_id, i + 2, extra);
+    }
 }
 
 static void print_rooms(void)
@@ -194,7 +209,8 @@ static void handle_command(char *line, int *running)
 }
 
 static void send_match(int fd, const struct punch_peer *destination,
-                       const struct punch_peer *peer, int room_id, uint32_t token)
+                       const struct punch_peer *peer, int room_id,
+                       uint32_t token, int player_id)
 {
     unsigned char packet[20];
     memcpy(packet, "RFP2", 4);
@@ -204,7 +220,7 @@ static void send_match(int fd, const struct punch_peer *destination,
     memcpy(packet + 12, &peer->address.sin_addr.s_addr, 4);
     put_u16(packet + 16, ntohs(peer->address.sin_port));
     packet[18] = room_id >= PUNCH_RELAY_ROOM_MIN ? PUNCH_RELAY_MATCH : 0;
-    packet[19] = 0;
+    packet[19] = (unsigned char)player_id;
     sendto(fd, packet, sizeof(packet), 0,
            (const struct sockaddr *)&destination->address, sizeof(destination->address));
 }
@@ -212,19 +228,39 @@ static void send_match(int fd, const struct punch_peer *destination,
 static void relay_packet(int fd, const struct sockaddr_in *source,
                          const unsigned char *packet, long size)
 {
-    int i;
+    int i, source_id = -1;
+    unsigned char wrapped[PUNCH_MAX_PACKET + 5];
     for (i = 0; i < PUNCH_MAX_ROOMS; i++) {
         struct punch_room *room = &rooms[i];
-        struct punch_peer *peer = NULL;
+        int j;
         if (!room->active) continue;
         if (room->room_id < PUNCH_RELAY_ROOM_MIN) continue;
         if (room->host.active && same_address(&room->host.address, source))
-            peer = &room->guest;
+            source_id = 0;
         else if (room->guest.active && same_address(&room->guest.address, source))
-            peer = &room->host;
-        if (!peer || !peer->active) return;
-        sendto(fd, packet, (size_t)size, 0,
-               (const struct sockaddr *)&peer->address, sizeof(peer->address));
+            source_id = 1;
+        else for (j = 0; j < 2; j++)
+            if (room->guests[j].active &&
+                same_address(&room->guests[j].address, source))
+                source_id = j + 2;
+        if (source_id < 0) return;
+        if (size + 5 > (long)sizeof(wrapped)) return;
+        wrapped[0] = 'R'; wrapped[1] = 'F'; wrapped[2] = 'R'; wrapped[3] = '4';
+        wrapped[4] = (unsigned char)source_id;
+        memcpy(wrapped + 5, packet, (size_t)size);
+        if (room->host.active && source_id != 0)
+            sendto(fd, wrapped, (size_t)size + 5, 0,
+                   (const struct sockaddr *)&room->host.address,
+                   sizeof(room->host.address));
+        if (room->guest.active && source_id != 1)
+            sendto(fd, wrapped, (size_t)size + 5, 0,
+                   (const struct sockaddr *)&room->guest.address,
+                   sizeof(room->guest.address));
+        for (j = 0; j < 2; j++)
+            if (room->guests[j].active && source_id != j + 2)
+                sendto(fd, wrapped, (size_t)size + 5, 0,
+                       (const struct sockaddr *)&room->guests[j].address,
+                       sizeof(room->guests[j].address));
         return;
     }
 }
@@ -290,7 +326,24 @@ int main(int argc, char **argv)
             if (room_id < 0 || room_id > 9999 || (role != 1 && role != 2)) continue;
             room = find_room(room_id);
             if (!room) continue;
-            slot = role == 1 ? &room->host : &room->guest;
+            slot = role == 1 ? &room->host : NULL;
+            if (role != 1) {
+                struct punch_peer *candidates[3] = {
+                    &room->guest, &room->guests[0], &room->guests[1]
+                };
+                slot = NULL;
+                for (int i = 0; i < 3; i++)
+                    if (candidates[i]->active &&
+                        same_address(&candidates[i]->address, &source)) {
+                        slot = candidates[i]; break;
+                    }
+                if (!slot)
+                    for (int i = 0; i < 3; i++)
+                        if (!candidates[i]->active) {
+                            slot = candidates[i]; break;
+                        }
+            }
+            if (!slot) continue;
             {
                 uint32_t nonce = get_u32(packet + 8);
                 int same_session = slot->active &&
@@ -305,7 +358,7 @@ int main(int argc, char **argv)
                     room = find_room(room_id);
                     slot = &room->host;
                 }
-                if (role == 2 && slot->active && !same_session)
+                if (role != 1 && slot->active && !same_session)
                     log_peer("guest session replaced", slot);
                 slot->active = 1;
                 memcpy(&slot->address, &source, sizeof(source));
@@ -319,8 +372,16 @@ int main(int argc, char **argv)
             if (room->host.active && room->guest.active) {
                 __printf("punch-server: match room %04d generation=%lu\n",
                          room_id, room->generation);
-                send_match(fd, &room->host, &room->guest, room_id, room->token);
-                send_match(fd, &room->guest, &room->host, room_id, room->token);
+                send_match(fd, &room->host, &room->guest, room_id,
+                           room->token, 1);
+                send_match(fd, &room->guest, &room->host, room_id,
+                           room->token, 1);
+                for (int i = 0; i < 2; i++) if (room->guests[i].active) {
+                    send_match(fd, &room->host, &room->guests[i], room_id,
+                               room->token, i + 2);
+                    send_match(fd, &room->guests[i], &room->host, room_id,
+                               room->token, i + 2);
+                }
             }
         }
     }

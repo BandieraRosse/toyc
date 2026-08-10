@@ -415,6 +415,16 @@ static int net_remote_index(const struct rasterfall_net *net,
     return -1;
 }
 
+static int net_remote_index_client_id(const struct rasterfall_net *net,
+                                      int client_id)
+{
+    int i;
+    for (i = 0; i < RASTERFALL_NET_REMOTE_MAX; i++)
+        if (net->remotes[i].active && net->remotes[i].client_id == client_id)
+            return i;
+    return -1;
+}
+
 static int net_alloc_remote(struct rasterfall_net *net,
                             const struct sockaddr_in *source)
 {
@@ -437,6 +447,17 @@ static int net_alloc_remote(struct rasterfall_net *net,
         return i;
     }
     return -1;
+}
+
+static int net_alloc_remote_client_id(struct rasterfall_net *net,
+                                      const struct sockaddr_in *source,
+                                      int client_id)
+{
+    int i = net_remote_index_client_id(net, client_id);
+    if (i >= 0) return i;
+    i = net_alloc_remote(net, source);
+    if (i >= 0) net->remotes[i].client_id = client_id;
+    return i;
 }
 
 #define PUNCH_VERSION 2
@@ -1085,6 +1106,7 @@ int rasterfall_net_send_snapshot(struct rasterfall_net *net,
         for (int remote_i = 0; remote_i < RASTERFALL_NET_REMOTE_MAX; remote_i++)
             if (net->remotes[remote_i].active &&
                 net->remotes[remote_i].connected &&
+                !net->relay_mode &&
                 net_send_to(net, &net->remotes[remote_i].address,
                             packet, size) < 0) return -1;
     }
@@ -1255,6 +1277,7 @@ void rasterfall_net_poll(struct rasterfall_net *net)
     if (net->fd < 0) return;
     for (;;) {
         int type, payload_size;
+        int relay_client_id = -1;
         uint32_t sequence, ack;
         source_len = sizeof(source);
         received = recvfrom(net->fd, packet, sizeof(packet), 0,
@@ -1277,13 +1300,29 @@ void rasterfall_net_poll(struct rasterfall_net *net)
                  * stable endpoint; the coordinator forwards them by room. */
                 memcpy(&net->peer, &net->public_server, sizeof(net->peer));
             } else {
-                memset(&net->peer, 0, sizeof(net->peer));
-                net->peer.sin_family = AF_INET;
-                memcpy(&net->peer.sin_addr.s_addr, packet + 12, 4);
-                net->peer.sin_port = htons((unsigned short)get_u16(packet + 16));
+                struct sockaddr_in matched_peer;
+                memset(&matched_peer, 0, sizeof(matched_peer));
+                matched_peer.sin_family = AF_INET;
+                memcpy(&matched_peer.sin_addr.s_addr, packet + 12, 4);
+                matched_peer.sin_port = htons((unsigned short)get_u16(packet + 16));
+                if (net->mode == RASTERFALL_NET_HOST && packet[19] >= 2 &&
+                    net->peer_known && !same_peer(&net->peer, &matched_peer)) {
+                    int extra = net_alloc_remote_client_id(
+                        net, &matched_peer, packet[19]);
+                    if (extra >= 0) {
+                        memcpy(&net->remotes[extra].address, &matched_peer,
+                               sizeof(matched_peer));
+                        net->remotes[extra].connected = 1;
+                    }
+                } else {
+                    memcpy(&net->peer, &matched_peer, sizeof(matched_peer));
+                }
             }
             net->peer_known = 1;
             net->public_matched = 1;
+            if (net->mode == RASTERFALL_NET_CLIENT && packet[19] > 0 &&
+                packet[19] < RASTERFALL_NET_PLAYER_MAX)
+                net->local_player_id = packet[19];
             if (net->relay_mode) net->connected = 1;
             if (net->mode == RASTERFALL_NET_HOST && new_match) {
                 /* A server-side room reset starts a new session generation.
@@ -1313,10 +1352,49 @@ void rasterfall_net_poll(struct rasterfall_net *net)
             net->last_receive_ms = net_monotonic_ms();
             continue;
         }
+        if (net->relay_mode && received >= 5 + NET_HEADER_SIZE &&
+            packet[0] == 'R' && packet[1] == 'F' &&
+            packet[2] == 'R' && packet[3] == '4') {
+            relay_client_id = packet[4];
+            memmove(packet, packet + 5, (size_t)received - 5);
+            received -= 5;
+        }
         if (packet_header(packet, (int)received, &type, &payload_size,
                           &sequence, &ack) < 0) continue;
         net->last_receive_ms = net_monotonic_ms();
         if (net->mode == RASTERFALL_NET_HOST) {
+            if (net->relay_mode && relay_client_id >= 2) {
+                int remote_index = net_alloc_remote_client_id(
+                    net, &source, relay_client_id);
+                if (remote_index < 0) continue;
+                {
+                    struct rasterfall_net_remote *remote =
+                        &net->remotes[remote_index];
+                    remote->last_receive_ms = net->last_receive_ms;
+                    if (type == RASTERFALL_NET_HELLO) {
+                        /* Relay clients already received their player ID in
+                         * MATCH; their first input is enough to initialize
+                         * the spawn from the authoritative snapshot. */
+                    } else if (type == RASTERFALL_NET_INPUT &&
+                               sequence > remote->last_input_sequence &&
+                               decode_command(packet + NET_HEADER_SIZE,
+                                              payload_size,
+                                              &remote->command) == 0) {
+                        if (!remote->camera_initialized) {
+                            decode_command_camera(packet + NET_HEADER_SIZE,
+                                                  &remote->camera);
+                            remote->camera_initialized = 1;
+                        }
+                        decode_command_camera(packet + NET_HEADER_SIZE,
+                                              &remote->reported_camera);
+                        remote->reported_camera_ready = 1;
+                        remote->last_input_sequence = sequence;
+                        remote->last_input_tick = net->tick;
+                        remote->command_ready = 1;
+                    }
+                }
+                continue;
+            }
             if (!net->peer_known) {
                 if (type != RASTERFALL_NET_HELLO && type != RASTERFALL_NET_INPUT)
                     continue;
@@ -1327,11 +1405,12 @@ void rasterfall_net_poll(struct rasterfall_net *net)
                 memcpy(&net->peer_camera, &net->peer_spawn, sizeof(net->peer_camera));
                 net->peer_camera_initialized = 0;
                 net->peer_reported_camera_ready = 0;
-            } else if (net->public_room) {
+            } else if (net->public_room &&
+                       net_remote_index(net, &source) < 0) {
                 /* 以已打洞成功的实际来源为准，适配 endpoint-dependent NAT。 */
                 memcpy(&net->peer, &source, sizeof(source));
             }
-            if (!net->public_room && net->peer_known &&
+            if (!net->relay_mode && net->peer_known &&
                 !same_peer(&net->peer, &source)) {
                 int remote_index = net_remote_index(net, &source);
                 if (remote_index < 0 &&
@@ -1368,7 +1447,8 @@ void rasterfall_net_poll(struct rasterfall_net *net)
             }
             net->peer_last_receive_ms = net->last_receive_ms;
             if (type == RASTERFALL_NET_HELLO) {
-                net_send_join_accept(net, &source, 1, &net->peer_spawn);
+                if (!net->relay_mode)
+                    net_send_join_accept(net, &source, 1, &net->peer_spawn);
             } else if (type == RASTERFALL_NET_INPUT &&
                        sequence > net->last_input_sequence &&
                        decode_command(packet + NET_HEADER_SIZE, payload_size,
@@ -1474,6 +1554,8 @@ void rasterfall_net_update_connection(struct rasterfall_net *net)
         net->receive_sequence = 0;
         net->remote_command_ready = 0;
         net->snapshot_ready = 0;
+        net->world_ready = 0;
+        net->spawn_pending = 0;
         net->remote_event_queue_count = 0;
         net->remote_event_next_id = 0;
         net->remote_event_last_id = 0;
