@@ -1588,7 +1588,9 @@ static void net_apply_extra_remote(struct rasterfall_net *net,
     int event_start, index;
     if (!remote->active || !remote->connected || !remote->command_ready)
         return;
-    index = TOY_GAME_REMOTE_ACTOR_BASE + remote->client_id - 2;
+    /* client_id 1 is the legacy peer at actor slot BASE; client_id 2/3
+     * must therefore use BASE+1/BASE+2 rather than reusing slot BASE. */
+    index = TOY_GAME_REMOTE_ACTOR_BASE + remote->client_id - 1;
     if (index < 0 || index >= TOY_GAME_MAX_ACTORS) return;
     actor = &g->actors[index];
     if (remote->reported_camera_ready) {

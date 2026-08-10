@@ -68,6 +68,20 @@ static int run_logic_test(void)
                 TOY_GAME_ACTOR_PLAYER ||
             actor_test.actors[TOY_GAME_REMOTE_ACTOR_BASE].hp !=
                 TOY_GAME_SECONDARY_PLAYER_HP) return 54;
+        if (toy_game_set_remote_player(&actor_test, 2, 1,
+                                       2750, -3000, "REMOTE2") !=
+                TOY_GAME_REMOTE_ACTOR_BASE + 1 ||
+            toy_game_set_remote_player(&actor_test, 3, 1,
+                                       3100, -3000, "REMOTE3") !=
+                TOY_GAME_REMOTE_ACTOR_BASE + 2 ||
+            !actor_test.actors[TOY_GAME_REMOTE_ACTOR_BASE + 1].active ||
+            !actor_test.actors[TOY_GAME_REMOTE_ACTOR_BASE + 2].active)
+            return 55;
+        actor_test.actors[TOY_GAME_REMOTE_ACTOR_BASE].slots[1].mag = 7;
+        actor_test.actors[TOY_GAME_REMOTE_ACTOR_BASE + 1].slots[1].mag = 11;
+        if (actor_test.actors[TOY_GAME_REMOTE_ACTOR_BASE + 2].slots[1].mag == 7 ||
+            actor_test.actors[TOY_GAME_REMOTE_ACTOR_BASE + 2].slots[1].mag == 11)
+            return 56;
         if (toy_game_add_ai(&actor_test, TOY_GAME_AI_LEVEL_3,
                             1200, -3000, "ELITE") != 2 ||
             !toy_game_actor_by_id(&actor_test, 2) ||
