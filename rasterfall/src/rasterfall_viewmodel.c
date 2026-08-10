@@ -1,8 +1,35 @@
 #include "rasterfall_viewmodel.h"
-
-#define VIEW_NEAR_Z 192
+#include "core.h"
+#include "tlibc_everything.h"
+#include "rasterfall_model.h"
 
 struct view_vec3 { int x, y, z; };
+
+#define VIEWMODEL_ORIGIN_X 255
+#define VIEWMODEL_ORIGIN_Y (-160)
+#define VIEWMODEL_ORIGIN_Z 600
+
+static struct rasterfall_model_asset viewmodel_models[3];
+static int viewmodel_models_loaded;
+
+static unsigned int viewmodel_model_u32(const unsigned char *p)
+{
+    return p[0] | p[1] << 8 | p[2] << 16 | p[3] << 24;
+}
+
+static void viewmodel_load_models(void)
+{
+    static const char *paths[3] = {
+        "rasterfall/assets/models/pg_glock1.rmesh",
+        "rasterfall/assets/models/smg_mac10.rmesh",
+        "rasterfall/assets/models/sg_pump_action.rmesh"
+    };
+    if (viewmodel_models_loaded) return;
+    rasterfall_model_load(&viewmodel_models[TOY_GAME_WEAPON_PISTOL], paths[0]);
+    rasterfall_model_load(&viewmodel_models[TOY_GAME_WEAPON_SMG], paths[1]);
+    rasterfall_model_load(&viewmodel_models[TOY_GAME_WEAPON_SHOTGUN], paths[2]);
+    viewmodel_models_loaded = 1;
+}
 
 int rasterfall_viewmodel_weapon(const struct toy_game *game)
 {
@@ -14,12 +41,40 @@ int rasterfall_viewmodel_weapon(const struct toy_game *game)
 void rasterfall_viewmodel_muzzle_offset(int weapon, int kick,
                                         int *x, int *y, int *z)
 {
-    if (weapon == TOY_GAME_WEAPON_SMG) {
-        *x = 105; *y = -65; *z = 450;
-    } else if (weapon == TOY_GAME_WEAPON_SHOTGUN) {
-        *x = 100; *y = -65; *z = 560;
+    struct rasterfall_model_asset *model;
+    int width, height, depth, length, scale, muzzle_distance, muzzle_height;
+    viewmodel_load_models();
+    if (weapon < TOY_GAME_WEAPON_PISTOL ||
+        weapon > TOY_GAME_WEAPON_SHOTGUN ||
+        !(model = &viewmodel_models[weapon])->data) {
+        *x = VIEWMODEL_ORIGIN_X;
+        *y = VIEWMODEL_ORIGIN_Y + 24;
+        *z = VIEWMODEL_ORIGIN_Z;
     } else {
-        *x = 102; *y = -70; *z = 420;
+        width = model->max_x - model->min_x;
+        height = model->max_y - model->min_y;
+        depth = model->max_z - model->min_z;
+        length = width > height ? width : height;
+        if (depth > length) length = depth;
+        scale = (weapon == TOY_GAME_WEAPON_SHOTGUN ? 360000 : 180000) /
+                (length > 0 ? length : 1);
+        if (scale < 1) scale = 1;
+        /* All three imported meshes use their positive forward extreme as
+         * the muzzle: Z for PG/SMG, X for SG.  There is no muzzle marker in
+         * RFM2 yet, so put the origin near the top of the model bounds: this
+         * is a useful empirical approximation for the visible barrel. */
+        muzzle_distance = weapon == TOY_GAME_WEAPON_SHOTGUN ?
+            (model->max_x - model->min_x) / 2 :
+            (model->max_z - model->min_z) / 2;
+        muzzle_distance = muzzle_distance * scale / 1000;
+        muzzle_height = (model->max_y -
+                         (model->min_y + model->max_y) / 2) * scale * 9 /
+                        10 / 1000;
+        *x = VIEWMODEL_ORIGIN_X - muzzle_distance * 3 / 10;
+        /* The mesh muzzle opening sits slightly above its bounding-box
+         * center; use the upper part of the collision box as a heuristic. */
+        *y = VIEWMODEL_ORIGIN_Y + muzzle_height + muzzle_distance * 2 / 10;
+        *z = VIEWMODEL_ORIGIN_Z + muzzle_distance * 9 / 10;
     }
     *x += kick / 3;
     *y -= kick / 2;
@@ -77,91 +132,94 @@ static int fill_triangle_2d(struct toy_surface *surface,
     return drawn;
 }
 
-static int project_view(const struct toy_surface *surface,
-                        const struct view_vec3 *view,
-                        int *x, int *y, int *z)
+static int render_model_weapon(struct toy_surface *surface,
+                               const struct rasterfall_model_asset *model,
+                               int weapon, int kick)
 {
+    int i, drawn = 0, width, height, depth, length, scale;
     int focal = surface->width * 3 / 4;
-    if (view->z < VIEW_NEAR_Z) return 0;
-    *x = surface->width / 2 + view->x * focal / view->z;
-    *y = surface->height / 2 - view->y * focal / view->z;
-    *z = view->z;
-    return 1;
-}
-
-static int draw_view_quad(struct toy_surface *surface,
-                          const struct view_vec3 *p1,
-                          const struct view_vec3 *p2,
-                          const struct view_vec3 *p3,
-                          const struct view_vec3 *p4, uint32_t color)
-{
-    int x1, y1, z1, x2, y2, z2, x3, y3, z3, x4, y4, z4;
-    if (!project_view(surface,p1,&x1,&y1,&z1) ||
-        !project_view(surface,p2,&x2,&y2,&z2) ||
-        !project_view(surface,p3,&x3,&y3,&z3) ||
-        !project_view(surface,p4,&x4,&y4,&z4)) return 0;
-    return fill_triangle_2d(surface,x1,y1,x2,y2,x3,y3,color) +
-           fill_triangle_2d(surface,x1,y1,x3,y3,x4,y4,color);
-}
-
-static int draw_view_box(struct toy_surface *surface,
-                         int minx, int maxx, int miny, int maxy,
-                         int minz, int maxz, uint32_t color,
-                         int skip_back, int skip_top, int kick)
-{
-    struct view_vec3 a, b, c, d, e, f, g, h;
-    a.x=minx; a.y=miny; a.z=minz;
-    b.x=maxx; b.y=miny; b.z=minz;
-    c.x=maxx; c.y=miny; c.z=maxz;
-    d.x=minx; d.y=miny; d.z=maxz;
-    e.x=minx; e.y=maxy; e.z=minz;
-    f.x=maxx; f.y=maxy; f.z=minz;
-    g.x=maxx; g.y=maxy; g.z=maxz;
-    h.x=minx; h.y=maxy; h.z=maxz;
-    int kx=kick/3, ky=-kick/2, kz=kick, pixels=0;
-    a.x+=kx; b.x+=kx; c.x+=kx; d.x+=kx; e.x+=kx; f.x+=kx; g.x+=kx; h.x+=kx;
-    a.y+=ky; b.y+=ky; c.y+=ky; d.y+=ky; e.y+=ky; f.y+=ky; g.y+=ky; h.y+=ky;
-    a.z+=kz; b.z+=kz; c.z+=kz; d.z+=kz; e.z+=kz; f.z+=kz; g.z+=kz; h.z+=kz;
-    pixels += draw_view_quad(surface,&d,&c,&g,&h,color);
-    pixels += draw_view_quad(surface,&b,&c,&g,&f,color+0x0A0A0A);
-    pixels += draw_view_quad(surface,&d,&a,&e,&h,color-0x0A0A0A);
-    if (!skip_top) pixels += draw_view_quad(surface,&e,&f,&g,&h,color+0x141414);
-    if (!skip_back) pixels += draw_view_quad(surface,&a,&b,&f,&e,color-0x141414);
-    pixels += draw_view_quad(surface,&a,&b,&c,&d,color-0x0C0C0C);
-    return pixels;
-}
-
-static int render_pistol(struct toy_surface *s, int kick)
-{
-    int p=0;
-    p+=draw_view_box(s,58,130,-188,-96,245,315,0x5A4630,1,1,kick);
-    p+=draw_view_box(s,54,140,-118,-40,250,352,0x3E4652,0,0,kick);
-    p+=draw_view_box(s,44,112,-92,-42,312,448,0x2E343D,1,0,kick);
-    p+=draw_view_box(s,80,104,-42,-20,330,392,RF_COLOR_UI_PANEL,1,0,kick);
-    p+=draw_view_box(s,62,104,-255,-165,250,330,0xB98B62,1,1,kick);
-    return p;
-}
-
-static int render_smg(struct toy_surface *s, int kick)
-{
-    int p=0;
-    p+=draw_view_box(s,70,130,-170,-95,275,320,0x4A4438,1,1,kick);
-    p+=draw_view_box(s,65,145,-115,-40,255,345,0x3B4148,0,0,kick);
-    p+=draw_view_box(s,45,115,-85,-40,310,450,0x2F343B,1,0,kick);
-    p+=draw_view_box(s,83,107,-42,-18,318,370,RF_COLOR_AI_HEAVY,1,0,kick);
-    p+=draw_view_box(s,70,116,-250,-160,255,340,0xB98B62,1,1,kick);
-    return p;
-}
-
-static int render_shotgun(struct toy_surface *s, int kick)
-{
-    int p=0;
-    p+=draw_view_box(s,70,150,-110,-40,270,355,0x46505A,0,0,kick);
-    p+=draw_view_box(s,45,105,-90,-40,335,560,0x3A434D,1,0,kick);
-    p+=draw_view_box(s,50,115,-100,-45,390,460,0x2C3138,0,0,kick);
-    p+=draw_view_box(s,78,112,-38,-18,445,505,RF_COLOR_AI_HEAVY,1,0,kick);
-    p+=draw_view_box(s,66,118,-245,-155,300,390,0xB98B62,1,1,kick);
-    return p;
+    if (!model || !model->data) return 0;
+    width = model->max_x - model->min_x;
+    height = model->max_y - model->min_y;
+    depth = model->max_z - model->min_z;
+    length = width > height ? width : height;
+    if (depth > length) length = depth;
+    if (length <= 0) return 0;
+    /* Keep the imported model in 3D view space.  The gun starts at the
+     * lower-right and its forward axis travels left/up toward the crosshair. */
+    scale = (weapon == TOY_GAME_WEAPON_SHOTGUN ? 360000 : 180000) / length;
+    if (scale < 1) scale = 1;
+    for (i = 0; i < (int)model->primitive_count; i++) {
+        const unsigned char *primitive = model->primitives +
+            i * RASTERFALL_MODEL_PRIMITIVE_BYTES;
+        const unsigned char *indices = model->indices +
+            viewmodel_model_u32(primitive) * 4;
+        unsigned int index_count = viewmodel_model_u32(primitive + 4);
+        unsigned int material = viewmodel_model_u32(primitive + 8);
+        uint32_t color = material < model->material_count ?
+            viewmodel_model_u32(model->materials +
+                                material * RASTERFALL_MODEL_MATERIAL_BYTES) :
+            0xA0A0A0;
+        unsigned int j;
+        for (j = 0; j + 2 < index_count; j += 3) {
+            unsigned int ids[3] = {
+                viewmodel_model_u32(indices + j * 4),
+                viewmodel_model_u32(indices + (j + 1) * 4),
+                viewmodel_model_u32(indices + (j + 2) * 4)
+            };
+            struct view_vec3 v[3];
+            int k;
+            for (k = 0; k < 3; k++) {
+                const unsigned char *p;
+                int mx, my, mz;
+                if (ids[k] >= model->vertex_count) break;
+                p = model->vertices + ids[k] * RASTERFALL_MODEL_VERTEX_BYTES;
+                mx = *(const int *)(p);
+                my = *(const int *)(p + 4);
+                mz = *(const int *)(p + 8);
+                /* Convert each asset's native axes to: X=right, Y=up,
+                 * Z=forward.  The native forward axis is Z for PG/SMG and X
+                 * for SG. */
+                if (weapon == TOY_GAME_WEAPON_PISTOL) {
+                    v[k].x = mx - (model->min_x + model->max_x) / 2;
+                    v[k].y = my - (model->min_y + model->max_y) / 2;
+                    v[k].z = mz - (model->min_z + model->max_z) / 2;
+                } else if (weapon == TOY_GAME_WEAPON_SHOTGUN) {
+                    v[k].x = mz - (model->min_z + model->max_z) / 2;
+                    v[k].y = my - (model->min_y + model->max_y) / 2;
+                    v[k].z = mx - (model->min_x + model->max_x) / 2;
+                } else {
+                    v[k].x = mx - (model->min_x + model->max_x) / 2;
+                    v[k].y = my - (model->min_y + model->max_y) / 2;
+                    v[k].z = mz - (model->min_z + model->max_z) / 2;
+                }
+                {
+                    int local_x = v[k].x * scale / 1000;
+                    int local_y = v[k].y * scale / 1000;
+                    int local_z = v[k].z * scale / 1000;
+                    /* A forward point moves toward screen center and upward;
+                     * this is a real view-space yaw/pitch, not a flat 2D
+                     * side-profile shear. */
+                    v[k].x = VIEWMODEL_ORIGIN_X + local_x - local_z * 3 / 10 + kick / 3;
+                    v[k].y = VIEWMODEL_ORIGIN_Y + local_y + local_z * 2 / 10 - kick / 2;
+                    v[k].z = VIEWMODEL_ORIGIN_Z + local_z * 9 / 10 + local_x / 8 + kick;
+                }
+            }
+            if (k == 3) {
+                int sx[3], sy[3], n;
+                for (n = 0; n < 3; n++) {
+                    if (v[n].z < 192) break;
+                    sx[n] = surface->width / 2 + v[n].x * focal / v[n].z;
+                    sy[n] = surface->height / 2 - v[n].y * focal / v[n].z;
+                }
+                if (n == 3)
+                    drawn += fill_triangle_2d(surface, sx[0], sy[0],
+                                              sx[1], sy[1], sx[2], sy[2],
+                                              color);
+            }
+        }
+    }
+    return drawn;
 }
 
 int rasterfall_viewmodel_render(struct toy_renderer *renderer,
@@ -170,8 +228,12 @@ int rasterfall_viewmodel_render(struct toy_renderer *renderer,
 {
     int weapon = rasterfall_viewmodel_weapon(game);
     int kick = effects->weapon_kick;
-    if (weapon == TOY_GAME_WEAPON_SMG) return render_smg(&renderer->surface,kick);
-    if (weapon == TOY_GAME_WEAPON_SHOTGUN) return render_shotgun(&renderer->surface,kick);
-    if (weapon == TOY_GAME_WEAPON_PISTOL) return render_pistol(&renderer->surface,kick);
+    viewmodel_load_models();
+    if (weapon >= TOY_GAME_WEAPON_PISTOL &&
+        weapon <= TOY_GAME_WEAPON_SHOTGUN &&
+        viewmodel_models[weapon].data) {
+        return render_model_weapon(&renderer->surface,
+                                   &viewmodel_models[weapon], weapon, kick);
+    }
     return 0;
 }

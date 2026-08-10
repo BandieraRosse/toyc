@@ -118,8 +118,8 @@ static void render_player_hud(struct toy_surface *surface,
 {
     char name[TOY_GAME_MAX_NAME];
     char line[32];
-    int i, x = surface->width - 222, y = surface->height - 68;
-    int bar_x = x + 53, bar_y = y + 29, bar_w = 155;
+    int i, x = 16, y = surface->height - 68;
+    int bar_x = x + 53, bar_y = y + 29, bar_w = 128;
     uint32_t hp_color = game->hp < 10 ? RF_COLOR_UI_DANGER :
                         game->hp < 40 ? RF_COLOR_UI_WARNING : RF_COLOR_UI_SUCCESS;
     if (!player_name || !*player_name) player_name = "PLAYER";

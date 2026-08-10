@@ -154,6 +154,31 @@ static void gallery_load(void)
     gallery_loaded = 1;
 }
 
+static struct rasterfall_model_asset *gallery_model_named(const char *name,
+                                                          const char *fallback)
+{
+    int i;
+    gallery_load();
+    for (i = 0; i < RASTERFALL_MODEL_MAX_GALLERY; i++) {
+        if (!gallery_models[i].data) continue;
+        if (!strcmp(gallery_paths[i], name) ||
+            (fallback && !strcmp(gallery_paths[i], fallback)))
+            return &gallery_models[i];
+    }
+    return NULL;
+}
+
+static int pickup_model_scale(const struct rasterfall_model_asset *model)
+{
+    int width = model->max_x - model->min_x;
+    int height = model->max_y - model->min_y;
+    int depth = model->max_z - model->min_z;
+    int size = width > height ? width : height;
+    if (depth > size) size = depth;
+    if (size <= 0) return 1;
+    return 380000 / size > 1 ? 380000 / size : 1;
+}
+
 static int gallery_model_scale(const struct rasterfall_model_asset *model)
 {
     int width = model->max_x - model->min_x;
@@ -913,6 +938,11 @@ static uint32_t highlight_tint(uint32_t color, int on)
 static int render_smg(struct toy_renderer *renderer, const struct camera *camera,
                       int x, int y, int z, int on)
 {
+    struct rasterfall_model_asset *model = gallery_model_named(
+        "rasterfall/assets/models/smg_mac10.rmesh", NULL);
+    if (model)
+        return render_gallery_model(renderer, camera, model, x, y, z,
+                                     pickup_model_scale(model));
     int pixels = 0;
     pixels += draw_cuboid(renderer, camera, x - 35, x + 35, y - 13, y + 13,
                           z - 60, z + 60, highlight_tint(0x3B4148, on));
@@ -931,6 +961,12 @@ static int render_smg(struct toy_renderer *renderer, const struct camera *camera
 static int render_shotgun(struct toy_renderer *renderer, const struct camera *camera,
                           int x, int y, int z, int on)
 {
+    struct rasterfall_model_asset *model = gallery_model_named(
+        "rasterfall/assets/models/sg_pump_action.rmesh",
+        "rasterfall/assets/models/sg_punp_action.rmesh");
+    if (model)
+        return render_gallery_model(renderer, camera, model, x, y, z,
+                                     pickup_model_scale(model) * 2);
     int pixels = 0;
     pixels += draw_cuboid(renderer, camera, x - 32, x + 32, y - 13, y + 13,
                           z - 45, z + 45, highlight_tint(0x46505A, on));
@@ -1471,31 +1507,92 @@ static int render_player_avatar(struct toy_renderer *renderer,
                                 int sy, int cy, int weapon, int muzzle_flash,
                                 uint32_t body_color, int downed);
 
+static int render_actor_model_weapon(struct toy_renderer *renderer,
+                                     const struct camera *camera, int x, int z,
+                                     int sy, int cy, int weapon,
+                                     int muzzle_flash)
+{
+    const char *path = weapon == TOY_GAME_WEAPON_PISTOL ?
+        "rasterfall/assets/models/pg_glock1.rmesh" :
+        weapon == TOY_GAME_WEAPON_SMG ?
+        "rasterfall/assets/models/smg_mac10.rmesh" :
+        "rasterfall/assets/models/sg_pump_action.rmesh";
+    struct rasterfall_model_asset *model = gallery_model_named(path, NULL);
+    int width, height, depth, length, scale, i, pixels = 0;
+    if (!model) return 0;
+    width = model->max_x - model->min_x;
+    height = model->max_y - model->min_y;
+    depth = model->max_z - model->min_z;
+    length = width > height ? width : height;
+    if (depth > length) length = depth;
+    if (length <= 0) return 0;
+    scale = (weapon == TOY_GAME_WEAPON_SHOTGUN ? 760000 : 380000) / length;
+    if (scale < 1) scale = 1;
+    for (i = 0; i < (int)model->primitive_count; i++) {
+        const unsigned char *primitive = model->primitives +
+            i * RASTERFALL_MODEL_PRIMITIVE_BYTES;
+        const unsigned char *indices = model->indices + model_u32(primitive) * 4;
+        unsigned int index_count = model_u32(primitive + 4);
+        unsigned int material = model_u32(primitive + 8);
+        uint32_t color = material < model->material_count ?
+            model_u32(model->materials + material * RASTERFALL_MODEL_MATERIAL_BYTES) :
+            RF_COLOR_UI_TEXT_MUTED;
+        unsigned int j;
+        for (j = 0; j + 2 < index_count; j += 3) {
+            unsigned int ids[3] = { model_u32(indices + j * 4),
+                                    model_u32(indices + (j + 1) * 4),
+                                    model_u32(indices + (j + 2) * 4) };
+            struct vec3 v[3];
+            int k;
+            for (k = 0; k < 3; k++) {
+                const unsigned char *p;
+                int mx, my, mz, lx, ly, lz;
+                if (ids[k] >= model->vertex_count) break;
+                p = model->vertices + ids[k] * RASTERFALL_MODEL_VERTEX_BYTES;
+                mx = *(const int *)p;
+                my = *(const int *)(p + 4);
+                mz = *(const int *)(p + 8);
+                if (weapon == TOY_GAME_WEAPON_PISTOL) {
+                    lx = mx - (model->min_x + model->max_x) / 2;
+                    ly = my - (model->min_y + model->max_y) / 2;
+                    lz = mz - model->min_z;
+                } else if (weapon == TOY_GAME_WEAPON_SHOTGUN) {
+                    lx = mz - (model->min_z + model->max_z) / 2;
+                    ly = my - (model->min_y + model->max_y) / 2;
+                    lz = mx - model->min_x;
+                } else {
+                    lx = mx - (model->min_x + model->max_x) / 2;
+                    ly = my - (model->min_y + model->max_y) / 2;
+                    lz = mz - (model->min_z + model->max_z) / 2;
+                }
+                /* Local +X is the avatar's right side.  Keep the weapon clear
+                 * of the torso and put its muzzle in front of the body. */
+                lx = lx * scale / 1000 + 210;
+                ly = ly * scale / 1000 - 430;
+                lz = lz * scale / 1000 + 80;
+                v[k].x = x + (lx * cy + lz * sy) / 1024;
+                v[k].y = ly + active_actor_lift;
+                v[k].z = z + (-lx * sy + lz * cy) / 1024;
+            }
+            if (k == 3)
+                pixels += draw_world_triangle(renderer, camera, &v[0], &v[1],
+                                              &v[2], color);
+        }
+    }
+    if (muzzle_flash > 0)
+        pixels += draw_actor_box(renderer, camera, x, z, sy, cy,
+                                 178, 212, -430, -390, 330, 405,
+                                 RF_COLOR_UI_ACCENT);
+    return pixels;
+}
+
 static int render_actor_weapon(struct toy_renderer *renderer,
                                const struct camera *camera, int x, int z,
                                int sy, int cy, int weapon, int muzzle_flash)
 {
-    int pixels = 0;
     if (weapon < 0) return 0;
-    /* A weapon is a small assembly of solid boxes in actor-local space. */
-    if (weapon == TOY_GAME_WEAPON_SHOTGUN) {
-        pixels += draw_actor_box(renderer,camera,x,z,sy,cy,145,245,-470,-395,-35,95,0x3A434D);
-        pixels += draw_actor_box(renderer,camera,x,z,sy,cy,175,210,-442,-415,85,345,0x2C3138);
-        pixels += draw_actor_box(renderer,camera,x,z,sy,cy,155,210,-398,-285,-15,55,0x2F343B);
-        pixels += draw_actor_box(renderer,camera,x,z,sy,cy,135,185,-405,-310,0,80,0x4A4438);
-    } else if (weapon == TOY_GAME_WEAPON_SMG) {
-        pixels += draw_actor_box(renderer,camera,x,z,sy,cy,140,240,-470,-395,-35,95,0x3B4148);
-        pixels += draw_actor_box(renderer,camera,x,z,sy,cy,178,212,-445,-418,85,320,0x2F343B);
-        pixels += draw_actor_box(renderer,camera,x,z,sy,cy,155,205,-400,-275,-15,65,0x4A4438);
-        pixels += draw_actor_box(renderer,camera,x,z,sy,cy,135,185,-405,-315,0,80,0x6B4A30);
-    } else {
-        pixels += draw_actor_box(renderer,camera,x,z,sy,cy,150,230,-465,-395,-30,70,0x3E4652);
-        pixels += draw_actor_box(renderer,camera,x,z,sy,cy,180,210,-440,-415,60,245,0x2E343D);
-        pixels += draw_actor_box(renderer,camera,x,z,sy,cy,155,205,-400,-285,-10,55,RF_COLOR_AI_HEAVY);
-    }
-    if (muzzle_flash > 0)
-        pixels += draw_actor_box(renderer,camera,x,z,sy,cy,178,212,-430,-390,330,405,RF_COLOR_UI_ACCENT);
-    return pixels;
+    return render_actor_model_weapon(renderer, camera, x, z, sy, cy,
+                                     weapon, muzzle_flash);
 }
 
 static void render_ai_teammate_name(struct toy_renderer *renderer,

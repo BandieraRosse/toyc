@@ -49,10 +49,10 @@
 #define TOY_CONFIG_SHOTGUN_COOLDOWN_MS      600
 #define TOY_CONFIG_SHOTGUN_RELOAD_MS       2500
 #define TOY_CONFIG_SHOTGUN_FULL_AUTO          0
-#define TOY_CONFIG_SHOTGUN_PELLETS           10
-#define TOY_CONFIG_SHOTGUN_SPREAD           230
+#define TOY_CONFIG_SHOTGUN_PELLETS           12
+#define TOY_CONFIG_SHOTGUN_SPREAD           150
 #define TOY_CONFIG_SHOTGUN_SLOT                0
-#define TOY_CONFIG_SHOTGUN_DAMAGE             20
+#define TOY_CONFIG_SHOTGUN_DAMAGE             25
 
 /* Enemy: hp, random movement speed range, bite damage. */
 #define TOY_CONFIG_COMMON_HP                 50
