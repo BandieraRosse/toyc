@@ -524,6 +524,7 @@ static void net_reset_peer_state(struct rasterfall_net *net)
     net->peer_state_initialized = 0;
     net->peer_camera_initialized = 0;
     net->peer_reported_camera_ready = 0;
+    net->peer_last_receive_ms = 0;
     net->remote_command_ready = 0;
     net->last_input_sequence = 0;
     net->remote_event_queue_count = 0;
@@ -1322,6 +1323,7 @@ void rasterfall_net_poll(struct rasterfall_net *net)
                 memcpy(&net->peer, &source, sizeof(source));
                 net->peer_known = 1;
                 net->connected = 1;
+                net->peer_last_receive_ms = net->last_receive_ms;
                 memcpy(&net->peer_camera, &net->peer_spawn, sizeof(net->peer_camera));
                 net->peer_camera_initialized = 0;
                 net->peer_reported_camera_ready = 0;
@@ -1364,6 +1366,7 @@ void rasterfall_net_poll(struct rasterfall_net *net)
                 }
                 continue;
             }
+            net->peer_last_receive_ms = net->last_receive_ms;
             if (type == RASTERFALL_NET_HELLO) {
                 net_send_join_accept(net, &source, 1, &net->peer_spawn);
             } else if (type == RASTERFALL_NET_INPUT &&
@@ -1444,6 +1447,12 @@ void rasterfall_net_update_connection(struct rasterfall_net *net)
                 now - remote->last_receive_ms > 3000)
                 memset(remote, 0, sizeof(*remote));
         }
+        if (net->peer_known && net->peer_last_receive_ms &&
+            now - net->peer_last_receive_ms > 3000) {
+            net_reset_peer_state(net);
+            net->peer_known = 0;
+            net->peer_last_receive_ms = 0;
+        }
     }
     if (net->public_room) {
         /* REGISTER is also the room lease heartbeat.  Keep sending it after
@@ -1458,7 +1467,8 @@ void rasterfall_net_update_connection(struct rasterfall_net *net)
             if (punch_send_probe(net) == 0) net->last_public_punch_ms = now;
         }
     }
-    if (net->last_receive_ms && now - net->last_receive_ms > 3000) {
+    if (net->mode == RASTERFALL_NET_CLIENT && net->last_receive_ms &&
+        now - net->last_receive_ms > 3000) {
         net->connected = 0;
         net->last_input_sequence = 0;
         net->receive_sequence = 0;
@@ -1469,13 +1479,6 @@ void rasterfall_net_update_connection(struct rasterfall_net *net)
         net->remote_event_last_id = 0;
         net->remote_event_snapshot_last_id = 0;
         net->remote_event_snapshot_sequence = 0;
-        if (net->mode == RASTERFALL_NET_HOST) {
-            /* 允许另一台主机重新接入，而不是永久锁死旧地址。 */
-                net->peer_known = 0;
-                net->peer_state_initialized = 0;
-                net->peer_camera_initialized = 0;
-                net->peer_reported_camera_ready = 0;
-        }
     }
     if (net->mode == RASTERFALL_NET_CLIENT &&
         ((!net->connected && !net->public_room) ||

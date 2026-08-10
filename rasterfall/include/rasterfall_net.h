@@ -248,6 +248,7 @@ struct rasterfall_net {
     unsigned int ai_fire_sent_seq[TOY_GAME_MAX_ACTORS];
     long last_snapshot_sent_ms;
     long last_receive_ms;
+    long peer_last_receive_ms;
     long last_hello_ms;
     int public_room;
     int relay_mode;
