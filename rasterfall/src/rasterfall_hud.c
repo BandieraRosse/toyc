@@ -72,10 +72,10 @@ static void render_weapon_card(struct toy_surface *surface, int x, int y,
                                int selected)
 {
     char line[24];
-    uint32_t border = selected ? 0xFFD060 : 0x526170;
-    uint32_t text = selected ? 0xFFF0B0 : 0xD0D7DE;
+    uint32_t border = selected ? RF_COLOR_UI_ACCENT : 0x526170;
+    uint32_t text = selected ? RF_COLOR_UI_ACCENT_BRIGHT : 0xD0D7DE;
     int cx = x + 37;
-    hud_fill_rect(surface, x, y, 74, 70, 0x18232D);
+    hud_fill_rect(surface, x, y, 74, 70, RF_COLOR_UI_PANEL_DARK);
     hud_fill_rect(surface, x, y, 74, 3, border);
     hud_fill_rect(surface, x, y + 67, 74, 3, border);
     hud_fill_rect(surface, x, y, 3, 70, border);
@@ -93,7 +93,7 @@ static void render_weapon_card(struct toy_surface *surface, int x, int y,
     else
         snprintf(line, sizeof(line), "%d / %d", slot->mag, slot->reserve);
     fb_draw_string((unsigned char *)surface->pixels, x + 7, y + 52,
-                   line, slot->mag <= 0 ? 0xF03030 : text, surface->stride);
+                   line, slot->mag <= 0 ? RF_COLOR_UI_DANGER : text, surface->stride);
 }
 
 static void render_weapon_hud(struct toy_surface *surface,
@@ -120,8 +120,8 @@ static void render_player_hud(struct toy_surface *surface,
     char line[32];
     int i, x = surface->width - 222, y = surface->height - 68;
     int bar_x = x + 53, bar_y = y + 29, bar_w = 155;
-    uint32_t hp_color = game->hp < 10 ? 0xF03030 :
-                        game->hp < 40 ? 0xF0C830 : 0x40D060;
+    uint32_t hp_color = game->hp < 10 ? RF_COLOR_UI_DANGER :
+                        game->hp < 40 ? RF_COLOR_UI_WARNING : RF_COLOR_UI_SUCCESS;
     if (!player_name || !*player_name) player_name = "PLAYER";
     for (i = 0; i < TOY_GAME_MAX_NAME - 1 && player_name[i]; i++)
         name[i] = hud_upper_ascii(player_name[i]);
@@ -133,8 +133,8 @@ static void render_player_hud(struct toy_surface *surface,
     fb_draw_string((unsigned char *)surface->pixels, x + 14, y + 11,
                    line, 0xF0F4F8, surface->stride);
     fb_draw_string((unsigned char *)surface->pixels, bar_x, y + 5,
-                   name, 0xE7E9EC, surface->stride);
-    hud_fill_rect(surface, bar_x, bar_y, bar_w, 10, 0x20252B);
+                   name, RF_COLOR_UI_TEXT, surface->stride);
+    hud_fill_rect(surface, bar_x, bar_y, bar_w, 10, RF_COLOR_UI_PANEL);
     hud_fill_rect(surface, bar_x, bar_y,
                   game->hp * bar_w / TOY_GAME_PLAYER_HP, 10, hp_color);
     snprintf(line, sizeof(line), "%d / %d", game->hp, TOY_GAME_PLAYER_HP);
@@ -162,15 +162,15 @@ static void render_revive_prompt(struct toy_surface *surface,
     width = (int)strlen(line) * FB_FONT_W;
     x = (surface->width - width) / 2;
     hud_fill_rect(surface, x - 8, y - 5, width + 16, FB_FONT_H + 10,
-                  0x171B24);
+                  RF_COLOR_UI_BACKGROUND);
     fb_draw_string((unsigned char *)surface->pixels, x, y, line,
-                   0x70D8FF, surface->stride);
+                   RF_COLOR_UI_PLAYER, surface->stride);
     if (state->ai_revive_active) {
         int bar_x = surface->width / 2 - 64;
-        hud_fill_rect(surface, bar_x, y + FB_FONT_H + 5, 128, 5, 0x20252B);
+        hud_fill_rect(surface, bar_x, y + FB_FONT_H + 5, 128, 5, RF_COLOR_UI_PANEL);
         hud_fill_rect(surface, bar_x, y + FB_FONT_H + 5,
                       state->ai_revive_progress_ms * 128 /
-                      TOY_GAME_REVIVE_MS, 5, 0x70D8FF);
+                      TOY_GAME_REVIVE_MS, 5, RF_COLOR_UI_PLAYER);
     }
 }
 
@@ -189,10 +189,10 @@ static void render_network_hud(struct toy_surface *surface,
             snprintf(line, sizeof(line), "HOST  PLAYER LOST");
         else
             snprintf(line, sizeof(line), "HOST  WAITING FOR PLAYER");
-        color = net->peer_known && net->connected ? 0x80E0C0 : 0xFFD070;
+        color = net->peer_known && net->connected ? RF_COLOR_UI_SECONDARY : 0xFFD070;
     } else if (net->connected) {
         snprintf(line, sizeof(line), "CLIENT  CONNECTED  RTT %d MS", net->rtt_ms);
-        color = net->rtt_ms > 150 ? 0xFFB060 : 0x80E0C0;
+        color = net->rtt_ms > 150 ? 0xFFB060 : RF_COLOR_UI_SECONDARY;
     } else {
         snprintf(line, sizeof(line), "CLIENT  %s",
                  net->last_receive_ms ? "DISCONNECTED" : "CONNECTING...");
@@ -212,7 +212,7 @@ static void render_network_hud(struct toy_surface *surface,
         hud_fill_rect(surface, x - 4, y + FB_FONT_H,
                       width + 8, FB_FONT_H + 4, 0x182634);
         fb_draw_string((unsigned char *)surface->pixels, x, y + FB_FONT_H,
-                       line, 0xFFD060, surface->stride);
+                       line, RF_COLOR_UI_ACCENT, surface->stride);
     }
 }
 
@@ -238,14 +238,14 @@ static void render_director_hud(struct toy_surface *surface,
     }
     x = draw_hud_value(surface, x, "DIRECTOR ", phase,
                        game->campaign_phase == TOY_GAME_PHASE_HORDE ?
-                       0xFFD040 : 0x80E0C0);
+                       0xFFD040 : RF_COLOR_UI_SECONDARY);
     snprintf(value, sizeof(value), "%d", game->spawn_budget);
     x = draw_hud_value(surface, x, "QUEUE ", value, 0xFFD070);
     snprintf(value, sizeof(value), "%d", game->enemies_alive);
     x = draw_hud_value(surface, x, "LIVE ", value, 0xF0F0F0);
     snprintf(value, sizeof(value), "%d", game->active_attackers);
     x = draw_hud_value(surface, x, "ACT ", value,
-                       game->active_attackers > 0 ? 0xFF8060 : 0x80E080);
+                       game->active_attackers > 0 ? 0xFF8060 : RF_COLOR_UI_AI);
     x = draw_hud_value(surface, x, "NEXT ", next_value, 0x80C8FF);
     snprintf(value, sizeof(value), "%d", game->director_encounters);
     x = draw_hud_value(surface, x, "RUN ", value, 0xC0A0FF);
@@ -328,9 +328,9 @@ void rasterfall_hud_draw_interact_prompt(struct toy_renderer *renderer,
     x = (renderer->surface.width - text_w) / 2;
     y = renderer->surface.height - FB_FONT_H - 18;
     hud_fill_rect(&renderer->surface, x - 5, y - 3, text_w + 10, FB_FONT_H + 6,
-                  0x171B24);
+                  RF_COLOR_UI_BACKGROUND);
     fb_draw_string((unsigned char *)renderer->surface.pixels, x, y,
-                   label, 0xFFD060, renderer->surface.stride);
+                   label, RF_COLOR_UI_ACCENT, renderer->surface.stride);
 }
 
 void rasterfall_hud_dump_frame(const char *path, const struct toy_surface *surface)

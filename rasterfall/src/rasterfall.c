@@ -1,66 +1,19 @@
 /*
  * rasterfall — Toyc 软件渲染第一人称僵尸射击游戏
  *
- * 注释更新时间：2026-08-06
+ * 架构速览：
+ *   rasterfall.c 是协调层，负责 Wayland 窗口、输入、固定逻辑步和主循环。
+ *   rasterfall_session 连接地图、相机与游戏状态；lib/game.c 是无窗口的规则核心，
+ *   处理玩家、武器、碰撞、AI、波次和胜负。lib/map.c 与 rasterfall_map.c 负责地图。
+ *   rasterfall_render.c、rasterfall_hud.c、rasterfall_viewmodel.c 和 effects.c
+ *   负责软件渲染与画面表现；audio.c 负责音效；net.c 负责 UDP 联机。
  *
- * 【程序定位】
- *   这是 Toyc 项目中的 Linux x86_64 / Wayland FPS 示例程序。玩家从起始
- *   安全室出发，穿过地图中的场景和刷怪区域，前往另一间安全室；核心玩法
- *   是移动、瞄准、射击、换弹、拾取武器以及应对普通尸群和可重复召唤的尸潮。
- *   程序使用 wl_shm 软件帧缓冲和项目自带的 Wayland 最小实现，不依赖 SDL、
- *   OpenGL 或 libc；游戏规则主要位于 rasterfall/lib，窗口、输入和渲染在本文件
- *   中协调完成。
+ * 每帧流程：输入事件 → rasterfall_command → session 更新 toy_game → 音频/特效事件
+ * → 场景、敌人、武器和 HUD 渲染。资源位于 assets/；程序保持 freestanding，不依赖
+ * SDL、OpenGL 或宿主 libc。
  *
- * 【代码结构】
- *   1. 地图与规则：加载 rasterfall/assets/maps/rasterfall.map，复制地图碰撞箱、
- *      安全室、正式 spawn 区和交互物；toy_game 负责敌人 AI、碰撞、武器、
- *      弹道、波次、伤害和游戏状态。
- *   2. 输入与主循环：Wayland 事件先进入 toy_input，使用固定 16.667ms
- *      逻辑步；渲染帧和逻辑步解耦，并限制单帧最多推进 MAX_LOGIC_STEPS，
- *      避免窗口卡顿后逻辑无限追赶。
- *   3. 相机与控制：camera 保存位置、偏航/俯仰的 1024 定点 sin/cos；
- *      WASD 移动，鼠标和方向键连续视角控制，逗号/句号分别排队完成快速
- *      左右 90 度转向，而不是瞬时跳转。
- *   4. 渲染：软件光栅化场景、墙面纹理、地面、模型、敌人、武器视图模型、
- *      交互物、准星和 HUD；支持 --no-textures、--texture-stats、--dump-frame
- *      等调试/性能选项。
- *   5. 音频：启动时加载 rasterfall/assets/audio/sfx_*.tsnd；音频不可用时游戏仍
- *      可运行并静默降级。
- *   6. 联机：版本化 UDP 协议传输语义化输入与玩家快照；当前主机权威校验
- *      远端移动，客户端预测并校正位置，完整战斗权威同步仍在后续阶段。
- *
- * 【主要操作】
- *   鼠标左键：捕获指针并射击；Space：射击（按住可使 SMG 连发）
- *   WASD：移动；左 Shift：跳跃；鼠标/方向键：视角；, / .：连续快速左转/右转 90 度
- *   R：换弹或在死亡/通关状态重新开始；1/2：切换武器槽
- *   E：与准星高亮的武器、弹药箱或召唤按钮互动
- *   Esc：暂停并释放指针；暂停菜单使用上下键选择、左右键调整灵敏度、
- *       Enter 确认。
- *
- * 【尸潮与地图约定】
- *   边界侧墙上的控制按钮均可重复使用：召唤按钮每次生成 15-20 个持续追踪
- *   玩家的敌人，空气墙按钮切换两段门控碰撞墙，警报按钮切换持续警报。
- *   警报开启后每秒从地图定义的 spawn 区生成 2-3 个敌人，直到再次关闭。
- *   生成位置不在按钮附近，而是直接从地图定义的 spawn 区
- *   随机选择 1-3 个区域，并避开玩家的最小距离；正式刷怪区统一来自
- *   map_spawn_zones/map_spawn_count，勿在本文件另造一套坐标。
- *   地图中的 pickup/button 坐标由 map 文件决定；按钮位于侧墙时，渲染代码
- *   需要同步处理其朝向和可交互高亮范围。
- *
- * 【构建与验证】
- *   make build/rasterfall       构建程序
- *   build/rasterfall --logic-test 运行无窗口逻辑回归测试
- *   build/rasterfall --frames N    在 Wayland 下运行有限帧数预览
- *   build/rasterfall --host --port 28460
- *   build/rasterfall --connect 127.0.0.1 --port 28460
- *   完整项目测试入口和工具链约束以仓库根目录 README.md、AGENTS.md 为准。
- *   修改本文件的输入、地图交互或公共渲染路径后，至少重新构建本目标并
- *   运行 --logic-test；若影响共享编译器/游戏规则代码，再扩大测试范围。
- *
- * 【实现约束】
- *   保持 freestanding，不引入宿主 libc；避免把 build/、tmp/ 或运行时生成物
- *   当作源码提交。Wayland/音频设备、容器 procfs 和只读文件系统可能造成
- *   环境相关失败，应与游戏逻辑或编译回归区分。
+ * 阅读入口：先看 rasterfall_session.h，再看 lib/game.c、rasterfall_map.c 和
+ * rasterfall_render.c；net.c、audio.c 分别是联机和音频边界。
  */
 
 #include "core.h"
@@ -136,57 +89,6 @@ enum rasterfall_startup_screen {
     RASTERFALL_STARTUP_PUBLIC_ROOM
 };
 
-#if 0
-static const struct box obstacles[OBSTACLE_COUNT] = {
-    {-1700, -700,  300, 1700, 1000, 0x755A47},
-    {  600, 1800, -900,  100, 1450, 0x49677D},
-    { 2300, 3200, 1800, 3000,  750, 0x64704B},
-    /* start room */
-    {-2000, -1800, -5700, -3800, 1300, 0x3F6751},
-    { 1800,  2000, -5700, -3800, 1300, 0x3F6751},
-    {-1800,  -600, -4000, -3800, 1300, 0x3F6751},
-    {  600,  1800, -4000, -3800, 1300, 0x3F6751},
-    /* exit room */
-    {-2000, -1800,  3800,  5700, 1300, 0x477A58},
-    { 1800,  2000,  3800,  5700, 1300, 0x477A58},
-    {-1800,  -600,  3800,  4000, 1300, 0x477A58},
-    {  600,  1800,  3800,  4000, 1300, 0x477A58}
-};
-
-/* 游戏世界（与 obstacles 同 xz 范围，交给 rasterfall/lib 做碰撞与遮挡） */
-static const struct toy_game_box bounds[OBSTACLE_COUNT] = {
-    {-1700, -700,  300, 1700},
-    {  600, 1800, -900,  100},
-    { 2300, 3200, 1800, 3000},
-    {-2000, -1800, -5700, -3800},
-    { 1800,  2000, -5700, -3800},
-    {-1800,  -600, -4000, -3800},
-    {  600,  1800, -4000, -3800},
-    {-2000, -1800,  3800,  5700},
-    { 1800,  2000,  3800,  5700},
-    {-1800,  -600,  3800,  4000},
-    {  600,  1800,  3800,  4000}
-};
-
-/* 经典闯关路线：南侧起点安全室，穿过主体区域后抵达北侧终点安全室。 */
-static const struct toy_game_box safe_rooms[2] = {
-    {-1800, 1800, -5700, -4000},
-    {-1800, 1800,  4000,  5700}
-};
-
-/* 固定刷怪区域；渲染为红色地面，便于玩家识别危险区。 */
-static const struct toy_game_box spawn_zones[3] = {
-    {-5200, -3500, -2600, -800},
-    { 3500,  5200,  -500, 1400},
-    {-3300, -1500,  2100, 3600}
-};
-
-/* 踏入黄框后，右侧 spawn_zones[1] 在有限配额的警报尸潮中开启。 */
-static const struct toy_game_box alarm_zone = {
-    3300, 5200, -3000, -1500
-};
-
-#endif
 static struct rasterfall_session session;
 static struct rasterfall_render_context render_context;
 #define level_map (session.level)
@@ -481,12 +383,12 @@ static void draw_pause_overlay(struct toy_surface *surface,
     int y = (surface->height - panel_h) / 2;
     int row_y = y + 58;
     fill_rect(surface, x - 3, y - 3, panel_w + 6, panel_h + 6, 0xD88A32);
-    fill_rect(surface, x, y, panel_w, panel_h, 0x171B24);
+    fill_rect(surface, x, y, panel_w, panel_h, RF_COLOR_UI_BACKGROUND);
     fb_draw_string((unsigned char *)surface->pixels,
                    x + (panel_w - FB_FONT_W * 6) / 2, y + 28,
-                   "PAUSED", 0xE7E9EC, surface->stride);
+                   "PAUSED", RF_COLOR_UI_TEXT, surface->stride);
     for (int item = 0; item < PAUSE_ITEM_COUNT; item++) {
-        uint32_t color = item == menu->selected ? 0xFFD060 : 0xE7E9EC;
+        uint32_t color = item == menu->selected ? RF_COLOR_UI_ACCENT : RF_COLOR_UI_TEXT;
         if (item == menu->selected)
             fill_rect(surface, x + 30, row_y - 3, panel_w - 60,
                       FB_FONT_H + 6, 0x343B49);
@@ -531,12 +433,12 @@ static void draw_startup_menu(struct toy_surface *surface, int screen,
     char line[96];
     fill_rect(surface, 0, 0, surface->width, surface->height, 0x10151D);
     fb_draw_string((unsigned char *)surface->pixels, 238, 35,
-                   "RASTERFALL", 0xFFD060, surface->stride);
+                   "RASTERFALL", RF_COLOR_UI_ACCENT, surface->stride);
     if (screen == RASTERFALL_STARTUP_MAIN) {
         static const char *items[] = {"CREATE LOCAL ROOM", "CREATE PUBLIC ROOM",
                                       "JOIN PUBLIC ROOM", "JOIN BY ADDRESS", "QUIT"};
         for (i = 0; i < 5; i++) {
-            uint32_t color = i == selected ? 0xFFD060 : 0xE7E9EC;
+            uint32_t color = i == selected ? RF_COLOR_UI_ACCENT : RF_COLOR_UI_TEXT;
             if (i == selected)
                 fill_rect(surface, 180, y + i * 34 - 4, 440, FB_FONT_H + 8,
                           0x293746);
@@ -544,41 +446,41 @@ static void draw_startup_menu(struct toy_surface *surface, int screen,
                            items[i], color, surface->stride);
         }
         fb_draw_string((unsigned char *)surface->pixels, 150, 290,
-                       "UP DOWN SELECT   ENTER CONFIRM", 0x9AA6B4,
+                       "UP DOWN SELECT   ENTER CONFIRM", RF_COLOR_UI_TEXT_MUTED,
                        surface->stride);
         fb_draw_string((unsigned char *)surface->pixels, 260, 315,
-                       "DRAG TITLE AREA TO MOVE", 0x73808D,
+                       "DRAG TITLE AREA TO MOVE", RF_COLOR_UI_TEXT_DIM,
                        surface->stride);
         if (error && error[0])
             fb_draw_string((unsigned char *)surface->pixels, 90, 340,
                            error, 0xFF8060, surface->stride);
     } else if (screen == RASTERFALL_STARTUP_MANUAL_IP) {
         fb_draw_string((unsigned char *)surface->pixels, 220, 78,
-                       "CONNECT TO IP", 0x80E0C0, surface->stride);
+                       "CONNECT TO IP", RF_COLOR_UI_SECONDARY, surface->stride);
         fill_rect(surface, 190, 128, 420, FB_FONT_H + 12,
                   editing_port ? 0x202B35 : 0x293746);
         fb_draw_string((unsigned char *)surface->pixels, 210, 133,
                        address && address[0] ? address : "_",
-                       0xFFD060, surface->stride);
+                       RF_COLOR_UI_ACCENT, surface->stride);
         snprintf(line, sizeof(line), "PORT: %s", port_text && port_text[0] ?
                  port_text : "_");
         fb_draw_string((unsigned char *)surface->pixels, 190, 190,
-                       line, 0xFFD060, surface->stride);
+                       line, RF_COLOR_UI_ACCENT, surface->stride);
         fb_draw_string((unsigned char *)surface->pixels, 190, 225,
-                       "0-9 .  IP   TAB  PORT", 0x9AA6B4, surface->stride);
+                       "0-9 .  IP   TAB  PORT", RF_COLOR_UI_TEXT_MUTED, surface->stride);
         fb_draw_string((unsigned char *)surface->pixels, 190, 250,
-                       "ENTER CONNECT   ESC BACK", 0x9AA6B4, surface->stride);
+                       "ENTER CONNECT   ESC BACK", RF_COLOR_UI_TEXT_MUTED, surface->stride);
     } else {
         fb_draw_string((unsigned char *)surface->pixels, 190, 105,
                        screen == RASTERFALL_STARTUP_PUBLIC_ROOM ?
                        "PUBLIC ROOM ID" : "PUBLIC ROOM ID",
-                       0x80E0C0, surface->stride);
+                       RF_COLOR_UI_SECONDARY, surface->stride);
         fill_rect(surface, 250, 145, 300, FB_FONT_H + 12, 0x293746);
         fb_draw_string((unsigned char *)surface->pixels, 285, 150,
                        room_text && room_text[0] ? room_text : "_",
-                       0xFFD060, surface->stride);
+                       RF_COLOR_UI_ACCENT, surface->stride);
         fb_draw_string((unsigned char *)surface->pixels, 190, 215,
-                       "ENTER CONFIRM   ESC BACK", 0x9AA6B4, surface->stride);
+                       "ENTER CONFIRM   ESC BACK", RF_COLOR_UI_TEXT_MUTED, surface->stride);
         if (!room_text || strlen(room_text) != 4)
             fb_draw_string((unsigned char *)surface->pixels, 190, 255,
                            "ROOM ID MUST BE 4 DIGITS", 0xFF8060,
@@ -739,15 +641,15 @@ static int wait_for_network_connection(struct toy_window *window,
         if (ready == 0) continue;
         if (toy_renderer_begin(renderer, &surface, 0x10151D) < 0) return -2;
         fb_draw_string((unsigned char *)surface.pixels, 226, 92,
-                       "CONNECTING...", 0xFFD060, surface.stride);
+                       "CONNECTING...", RF_COLOR_UI_ACCENT, surface.stride);
         snprintf(line, sizeof(line), "%s:%d", address, port);
         fb_draw_string((unsigned char *)surface.pixels, 238, 132,
-                       line, 0xE7E9EC, surface.stride);
+                       line, RF_COLOR_UI_TEXT, surface.stride);
         fb_draw_string((unsigned char *)surface.pixels, 180, 220,
-                       "WAITING FOR HOST SNAPSHOT", 0x9AA6B4,
+                       "WAITING FOR HOST SNAPSHOT", RF_COLOR_UI_TEXT_MUTED,
                        surface.stride);
         fb_draw_string((unsigned char *)surface.pixels, 220, 260,
-                       "ESC CANCEL", 0x9AA6B4, surface.stride);
+                       "ESC CANCEL", RF_COLOR_UI_TEXT_MUTED, surface.stride);
         if (toy_window_present(window) < 0) return -2;
         memset(input->key_pressed, 0, sizeof(input->key_pressed));
     }
@@ -936,14 +838,14 @@ static void draw_game_over_panel(struct toy_surface *surface, int network_client
     int x = (surface->width - panel_w) / 2;
     int y = (surface->height - panel_h) / 2;
     fill_rect(surface, x - 3, y - 3, panel_w + 6, panel_h + 6, 0xD88A32);
-    fill_rect(surface, x, y, panel_w, panel_h, 0x171B24);
+    fill_rect(surface, x, y, panel_w, panel_h, RF_COLOR_UI_BACKGROUND);
     fb_draw_string((unsigned char *)surface->pixels,
                    x + (panel_w - FB_FONT_W * 8) / 2, y + 28,
-                   "YOU DIED", 0xE7E9EC, surface->stride);
+                   "YOU DIED", RF_COLOR_UI_TEXT, surface->stride);
     snprintf(line, sizeof(line), "WAVE %d  KILLS %d", game.wave, game.kills);
     fb_draw_string((unsigned char *)surface->pixels,
                    x + (panel_w - FB_FONT_W * (int)strlen(line)) / 2, y + 60,
-                   line, 0xE7E9EC, surface->stride);
+                   line, RF_COLOR_UI_TEXT, surface->stride);
     fb_draw_string((unsigned char *)surface->pixels,
                    x + (panel_w - FB_FONT_W * (int)strlen(prompt)) / 2,
                    y + 104, prompt, 0xD88A32, surface->stride);
@@ -960,14 +862,14 @@ static void draw_level_won_panel(struct toy_surface *surface, int network_client
     int x = (surface->width - panel_w) / 2;
     int y = (surface->height - panel_h) / 2;
     fill_rect(surface, x - 3, y - 3, panel_w + 6, panel_h + 6, 0x56B878);
-    fill_rect(surface, x, y, panel_w, panel_h, 0x171B24);
+    fill_rect(surface, x, y, panel_w, panel_h, RF_COLOR_UI_BACKGROUND);
     fb_draw_string((unsigned char *)surface->pixels,
                    x + (panel_w - FB_FONT_W * 17) / 2, y + 28,
-                   "SAFE ROOM REACHED", 0x80E080, surface->stride);
+                   "SAFE ROOM REACHED", RF_COLOR_UI_AI, surface->stride);
     snprintf(line, sizeof(line), "KILLS %d", game.kills);
     fb_draw_string((unsigned char *)surface->pixels,
                    x + (panel_w - FB_FONT_W * (int)strlen(line)) / 2, y + 60,
-                   line, 0xE7E9EC, surface->stride);
+                   line, RF_COLOR_UI_TEXT, surface->stride);
     fb_draw_string((unsigned char *)surface->pixels,
                    x + (panel_w - FB_FONT_W * (int)strlen(prompt)) / 2,
                    y + 104, prompt, 0xD88A32, surface->stride);
@@ -981,8 +883,8 @@ static void draw_input_debug(struct toy_surface *surface,
     char line[96];
     int x = 8;
     int y = surface->height - FB_FONT_H * 4 - 12;
-    unsigned int color = input->keyboard_focused ? 0x80E080 : 0xE08080;
-    fill_rect(surface, x - 4, y - 4, 390, FB_FONT_H * 4 + 8, 0x171B24);
+    unsigned int color = input->keyboard_focused ? RF_COLOR_UI_AI : 0xE08080;
+    fill_rect(surface, x - 4, y - 4, 390, FB_FONT_H * 4 + 8, RF_COLOR_UI_BACKGROUND);
     snprintf(line, sizeof(line), "KEYBOARD %s  EVENTS %d",
              input->keyboard_focused ? "FOCUSED" : "UNFOCUSED", event_count);
     fb_draw_string((unsigned char *)surface->pixels, x, y,
@@ -990,13 +892,13 @@ static void draw_input_debug(struct toy_surface *surface,
     snprintf(line, sizeof(line), "LAST %u %s",
              last_key, last_pressed ? "PRESSED" : "RELEASED");
     fb_draw_string((unsigned char *)surface->pixels, x, y + FB_FONT_H,
-                   line, 0xE7E9EC, surface->stride);
+                   line, RF_COLOR_UI_TEXT, surface->stride);
     snprintf(line, sizeof(line), "DOWN W%d A%d S%d D%d SPC%d ENT%d",
              toy_input_down(input, KEY_W), toy_input_down(input, KEY_A),
              toy_input_down(input, KEY_S), toy_input_down(input, KEY_D),
              toy_input_down(input, KEY_SPACE), toy_input_down(input, KEY_ENTER));
     fb_draw_string((unsigned char *)surface->pixels, x, y + FB_FONT_H * 2,
-                   line, 0xE7E9EC, surface->stride);
+                   line, RF_COLOR_UI_TEXT, surface->stride);
     snprintf(line, sizeof(line), "EDGE SPC P%d R%d  R P%d R%d",
              toy_input_pressed(input, KEY_SPACE),
              toy_input_released(input, KEY_SPACE),

@@ -15,6 +15,7 @@
 
 #include "tlibc_types.h"
 #include "toy_game_config.h"
+#include "rasterfall_colors.h"
 
 #define TOY_GAME_MAX_ENEMIES    64
 #define TOY_GAME_MAX_ACTORS     8

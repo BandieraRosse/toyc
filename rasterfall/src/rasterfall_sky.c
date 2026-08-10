@@ -1,4 +1,5 @@
 #include "rasterfall_sky.h"
+#include "rasterfall_colors.h"
 
 static void sky_fill_rect(struct toy_surface *surface, int x, int y,
                           int width, int height, uint32_t color)

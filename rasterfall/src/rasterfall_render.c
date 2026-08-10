@@ -921,10 +921,10 @@ static int render_block_enemy(struct toy_renderer *renderer,
     int x = e->x, z = e->z, pixels = 0;
     pixels += draw_cuboid(renderer, camera, x - 105, x - 15,
                           enemy_y(-900, scale), enemy_y(-760, scale),
-                          z - 105, z + 105, 0x252A30);
+                          z - 105, z + 105, RF_COLOR_AI_HEAVY);
     pixels += draw_cuboid(renderer, camera, x + 15, x + 105,
                           enemy_y(-900, scale), enemy_y(-760, scale),
-                          z - 105, z + 105, 0x252A30);
+                          z - 105, z + 105, RF_COLOR_AI_HEAVY);
     pixels += draw_cuboid(renderer, camera, x - 100, x - 10,
                           enemy_y(-760, scale), enemy_y(-450, scale),
                           z - 85, z + 85, color - 0x101008);
@@ -1163,18 +1163,18 @@ static int render_enemies(struct toy_renderer *renderer,
             color = info->color;
             if (e->type == TOY_GAME_ENEMY_HEAVY ||
                 e->type == TOY_GAME_ENEMY_PURSUIT_HEAVY) scale = 1350;
-            if (e->type == TOY_GAME_ENEMY_SMOKER) color = 0x76513A;
+            if (e->type == TOY_GAME_ENEMY_SMOKER) color = RF_COLOR_ENEMY_SMOKER;
             if (e->type == TOY_GAME_ENEMY_CHARGER) {
-                color = e->charge_active ? 0xB06A36 : 0x8B5A35;
+                color = e->charge_active ? 0xB06A36 : RF_COLOR_ENEMY_CHARGER;
                 scale = 1180;
             }
             if (e->type == TOY_GAME_ENEMY_SMOKER) scale = 1000;
             if (e->hurt > 0) color = 0xBB3333;
             else if (e->flash > 0) color = 0xDFDFDF;
             else if (e->type == TOY_GAME_ENEMY_PURSUIT_HEAVY)
-                color = 0x7A4A2A;
+                color = RF_COLOR_ENEMY_PURSUIT_HEAVY;
             else if (e->type == TOY_GAME_ENEMY_PURSUIT_FAST)
-                color = 0xB84A32;
+                color = RF_COLOR_ENEMY_PURSUIT_FAST;
             else if (e->ai_state == TOY_GAME_ENEMY_TRACKING)
                 color = 0x8A2A2A;   /* 尸潮追踪者：红色，一眼可辨 */
         }
@@ -1240,10 +1240,10 @@ static void render_actor_status(struct toy_renderer *renderer,
     bar_y = screen.y + FB_FONT_H + 2;
     if (bar_x < 2) bar_x = 2;
     if (bar_x + 64 >= renderer->surface.width) bar_x = renderer->surface.width - 66;
-    fill_rect(&renderer->surface, bar_x - 2, bar_y - 2, 68, 7, 0x20252B);
-    if (hp < 10) hp_color = 0xF03030;
-    else if (hp < 40) hp_color = 0xF0C830;
-    else hp_color = 0x40D060;
+    fill_rect(&renderer->surface, bar_x - 2, bar_y - 2, 68, 7, RF_COLOR_UI_PANEL);
+    if (hp < 10) hp_color = RF_COLOR_UI_DANGER;
+    else if (hp < 40) hp_color = RF_COLOR_UI_WARNING;
+    else hp_color = RF_COLOR_UI_SUCCESS;
     if (max_hp <= 0) max_hp = 100;
     fill = hp * 64 / max_hp;
     if (fill < 0) fill = 0;
@@ -1277,10 +1277,10 @@ static int render_actor_weapon(struct toy_renderer *renderer,
     } else {
         pixels += draw_actor_box(renderer,camera,x,z,sy,cy,150,230,-465,-395,-30,70,0x3E4652);
         pixels += draw_actor_box(renderer,camera,x,z,sy,cy,180,210,-440,-415,60,245,0x2E343D);
-        pixels += draw_actor_box(renderer,camera,x,z,sy,cy,155,205,-400,-285,-10,55,0x252A30);
+        pixels += draw_actor_box(renderer,camera,x,z,sy,cy,155,205,-400,-285,-10,55,RF_COLOR_AI_HEAVY);
     }
     if (muzzle_flash > 0)
-        pixels += draw_actor_box(renderer,camera,x,z,sy,cy,178,212,-430,-390,330,405,0xFFD060);
+        pixels += draw_actor_box(renderer,camera,x,z,sy,cy,178,212,-430,-390,330,405,RF_COLOR_UI_ACCENT);
     return pixels;
 }
 
@@ -1291,9 +1291,9 @@ static void render_ai_teammate_name(struct toy_renderer *renderer,
     for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
         const struct toy_game_actor *actor = &game.actors[i];
         long dx, dz, d2, dist, dot;
-        uint32_t color = actor->class_id == TOY_GAME_AI_LEVEL_3 ? 0xFFD060 :
-                         actor->class_id == TOY_GAME_AI_LEVEL_2 ? 0x80E080 :
-                         0x70D8FF;
+        uint32_t color = actor->class_id == TOY_GAME_AI_LEVEL_3 ? RF_COLOR_UI_ACCENT :
+                         actor->class_id == TOY_GAME_AI_LEVEL_2 ? RF_COLOR_UI_AI :
+                         RF_COLOR_UI_PLAYER;
         if (!actor->active || actor->kind != TOY_GAME_ACTOR_AI) continue;
         dx = (long)actor->x - camera->x;
         dz = (long)actor->z - camera->z;
@@ -1323,9 +1323,9 @@ static int render_ai_teammate(struct toy_renderer *renderer,
         center.x = actor->x; center.y = 0; center.z = actor->z;
         world_to_view(camera, &center, &view);
         if (view.z < NEAR_Z || view.z > ENEMY_RENDER_DISTANCE) continue;
-        color = actor->class_id == TOY_GAME_AI_LEVEL_3 ? 0x252A30 :
-                actor->class_id == TOY_GAME_AI_LEVEL_2 ? 0x386B96 :
-                0x596B3A;
+        color = actor->class_id == TOY_GAME_AI_LEVEL_3 ? RF_COLOR_AI_HEAVY :
+                actor->class_id == TOY_GAME_AI_LEVEL_2 ? RF_COLOR_AI_RIFLE :
+                RF_COLOR_AI_BASIC;
         active_actor_lift = actor->airborne_y;
         for (int p = 0; p < level_map.platform_count; p++) {
             const struct toy_game_platform *platform = &level_map.platforms[p];
@@ -1377,7 +1377,7 @@ static int render_player_avatar(struct toy_renderer *renderer,
     }
     pixels += draw_face_rect(renderer, camera, x, z, 145, sy, cy,
                              -72, 72, face_y0 + active_actor_lift,
-                             face_y1 + active_actor_lift, 0x252A30);
+                             face_y1 + active_actor_lift, RF_COLOR_AI_HEAVY);
     pixels += draw_face_rect(renderer, camera, x, z, 145, sy, cy,
                              -16, 16, face_y0 + 40 + active_actor_lift,
                              face_y1 - 40 + active_actor_lift, 0xE8D2A8);
@@ -1387,7 +1387,7 @@ static int render_player_avatar(struct toy_renderer *renderer,
     if (muzzle_flash > 0)
         pixels += draw_cuboid(renderer, camera, x - 45, x + 45,
                               -560 + active_actor_lift, -430 + active_actor_lift,
-                              z - 120, z + 120, 0xFFD060);
+                              z - 120, z + 120, RF_COLOR_UI_ACCENT);
     return pixels;
 }
 
@@ -1415,7 +1415,7 @@ static int render_network_teammate(struct toy_renderer *renderer,
     if (!remote) return 0;
     return render_player_avatar(renderer, camera, remote->x, remote->z,
                                 remote->sy, remote->cy, weapon, muzzle_flash,
-                                0x386B96, downed);
+                                RF_COLOR_AI_RIFLE, downed);
 }
 
 static void render_network_teammate_status(struct toy_renderer *renderer,
@@ -1439,7 +1439,7 @@ static void render_network_teammate_status(struct toy_renderer *renderer,
     if (!remote) return;
     render_actor_status(renderer, camera, remote->x, remote->z, 700,
                                 "PLAYER 2", hp, TOY_GAME_SECONDARY_PLAYER_HP,
-                                downed, revive_ms, 0x70D8FF);
+                                downed, revive_ms, RF_COLOR_UI_PLAYER);
 }
 
 /* ── 子弹轨迹与命中粒子（纯视觉；逻辑步进 16ms 推进） ──────────── */
