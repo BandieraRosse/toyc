@@ -1539,6 +1539,62 @@ static void update_player_special_motion(struct toy_game *g, int dt_ms)
     }
 }
 
+static void update_remote_player_motion(struct toy_game *g, int *x, int *z,
+                                        int *airborne_ms, int *airborne_y,
+                                        int *ground_y, int *vertical_velocity,
+                                        int *air_x, int *air_z,
+                                        int *knockback_x, int *knockback_z,
+                                        int dt_ms)
+{
+    int landing_ground, nx, nz, height;
+    if (*airborne_ms <= 0) return;
+    *airborne_ms -= dt_ms;
+    if (*airborne_ms < 0) *airborne_ms = 0;
+    *airborne_y += *vertical_velocity;
+    *vertical_velocity -= TOY_GAME_AIRBORNE_GRAVITY;
+    height = *ground_y + *airborne_y;
+    if (*air_x || *air_z) {
+        nx = *x + *air_x;
+        nz = *z + *air_z;
+        if (!toy_game_position_blocked_at_height(g, nx, *z,
+                                                  TOY_GAME_PLAYER_RADIUS,
+                                                  height)) *x = nx;
+        if (!toy_game_position_blocked_at_height(g, *x, nz,
+                                                  TOY_GAME_PLAYER_RADIUS,
+                                                  height)) *z = nz;
+    }
+    landing_ground = ground_height_overlapping(g, *x, *z,
+                                                TOY_GAME_PLAYER_RADIUS);
+    if (*vertical_velocity < 0 &&
+        ((landing_ground >= *ground_y &&
+          *airborne_y <= landing_ground - *ground_y) ||
+         (landing_ground < *ground_y && *airborne_y <= 0))) {
+        *airborne_y = 0;
+        *airborne_ms = 0;
+        *ground_y = landing_ground;
+    }
+    if (*knockback_x || *knockback_z) {
+        nx = *x + *knockback_x;
+        nz = *z + *knockback_z;
+        if (!toy_game_position_blocked_at_height(g, nx, *z,
+                                                  TOY_GAME_PLAYER_RADIUS,
+                                                  height)) *x = nx;
+        if (!toy_game_position_blocked_at_height(g, *x, nz,
+                                                  TOY_GAME_PLAYER_RADIUS,
+                                                  height)) *z = nz;
+        *knockback_x = *knockback_x * 3 / 4;
+        *knockback_z = *knockback_z * 3 / 4;
+    }
+    if (*airborne_ms == 0) {
+        *vertical_velocity = 0;
+        *airborne_y = 0;
+        *air_x = 0;
+        *air_z = 0;
+        *knockback_x = 0;
+        *knockback_z = 0;
+    }
+}
+
 int toy_game_jump(struct toy_game *g)
 {
     return toy_game_jump_with_velocity(g, 0, 0);
@@ -1564,7 +1620,7 @@ void toy_game_update_player_motion(struct toy_game *g, int dt_ms)
     if (g) update_player_special_motion(g, dt_ms);
 }
 
-int toy_game_jump_secondary_player(struct toy_game *g)
+int toy_game_jump_secondary_player(struct toy_game *g, int dx, int dz)
 {
     if (!g || !g->secondary_player_active || g->secondary_player_down ||
         g->secondary_player_airborne_ms > 0)
@@ -1572,6 +1628,8 @@ int toy_game_jump_secondary_player(struct toy_game *g)
     g->secondary_player_airborne_ms = TOY_GAME_JUMP_MS;
     g->secondary_player_airborne_y = 0;
     g->secondary_player_vertical_velocity = TOY_GAME_JUMP_VELOCITY;
+    g->secondary_player_air_x = dx;
+    g->secondary_player_air_z = dz;
     g->secondary_player_knockback_x = 0;
     g->secondary_player_knockback_z = 0;
     return 1;
@@ -1580,16 +1638,45 @@ int toy_game_jump_secondary_player(struct toy_game *g)
 void toy_game_update_secondary_player_motion(struct toy_game *g, int dt_ms)
 {
     if (!g || !g->secondary_player_active || g->secondary_player_down) return;
-    update_motion_values(g, &g->secondary_px, &g->secondary_pz,
-                         &g->secondary_player_airborne_ms,
-                         &g->secondary_player_airborne_y,
-                         &g->secondary_player_vertical_velocity,
-                         &g->secondary_player_knockback_x,
-                         &g->secondary_player_knockback_z,
-                         TOY_GAME_PLAYER_RADIUS, dt_ms);
+    update_remote_player_motion(g, &g->secondary_px, &g->secondary_pz,
+        &g->secondary_player_airborne_ms, &g->secondary_player_airborne_y,
+        &g->secondary_player_ground_y, &g->secondary_player_vertical_velocity,
+        &g->secondary_player_air_x, &g->secondary_player_air_z,
+        &g->secondary_player_knockback_x, &g->secondary_player_knockback_z,
+        dt_ms);
+    if (g->secondary_player_airborne_ms == 0) {
+        g->secondary_player_air_x = 0;
+        g->secondary_player_air_z = 0;
+        toy_game_update_secondary_player_ground(g);
+    }
 }
 
-int toy_game_jump_actor(struct toy_game *g, int actor_index)
+void toy_game_update_secondary_player_ground(struct toy_game *g)
+{
+    int i, next_ground;
+    if (!g || g->secondary_player_airborne_ms > 0) return;
+    next_ground = toy_game_ground_height(
+        g, g->secondary_px, g->secondary_pz, TOY_GAME_PLAYER_RADIUS);
+    if (next_ground < g->secondary_player_ground_y) {
+        for (i = 0; i < g->platform_count; i++) {
+            const struct toy_game_platform *p = &g->platforms[i];
+            if (p->height != g->secondary_player_ground_y) continue;
+            if (g->secondary_px + TOY_GAME_PLAYER_RADIUS > p->minx &&
+                g->secondary_px - TOY_GAME_PLAYER_RADIUS < p->maxx &&
+                g->secondary_pz + TOY_GAME_PLAYER_RADIUS > p->minz &&
+                g->secondary_pz - TOY_GAME_PLAYER_RADIUS < p->maxz) return;
+        }
+        g->secondary_player_airborne_y =
+            g->secondary_player_ground_y - next_ground;
+        g->secondary_player_ground_y = next_ground;
+        g->secondary_player_airborne_ms = TOY_GAME_JUMP_MS;
+        g->secondary_player_vertical_velocity = 0;
+        return;
+    }
+    g->secondary_player_ground_y = next_ground;
+}
+
+int toy_game_jump_actor(struct toy_game *g, int actor_index, int dx, int dz)
 {
     struct toy_game_actor *actor;
     if (!g || actor_index < 0 || actor_index >= TOY_GAME_MAX_ACTORS)
@@ -1601,6 +1688,8 @@ int toy_game_jump_actor(struct toy_game *g, int actor_index)
     actor->airborne_ms = TOY_GAME_JUMP_MS;
     actor->airborne_y = 0;
     actor->vertical_velocity = TOY_GAME_JUMP_VELOCITY;
+    actor->air_x = dx;
+    actor->air_z = dz;
     actor->knockback_x = 0;
     actor->knockback_z = 0;
     return 1;
@@ -1615,10 +1704,42 @@ void toy_game_update_actor_motion(struct toy_game *g, int actor_index, int dt_ms
     if (!actor->active || actor->kind != TOY_GAME_ACTOR_PLAYER ||
         actor->state != TOY_GAME_ACTOR_ALIVE)
         return;
-    update_motion_values(g, &actor->x, &actor->z, &actor->airborne_ms,
-                         &actor->airborne_y, &actor->vertical_velocity,
-                         &actor->knockback_x, &actor->knockback_z,
-                         TOY_GAME_PLAYER_RADIUS, dt_ms);
+    update_remote_player_motion(g, &actor->x, &actor->z,
+        &actor->airborne_ms, &actor->airborne_y, &actor->ground_y,
+        &actor->vertical_velocity, &actor->air_x, &actor->air_z,
+        &actor->knockback_x, &actor->knockback_z, dt_ms);
+    if (actor->airborne_ms == 0) {
+        actor->air_x = 0;
+        actor->air_z = 0;
+        toy_game_update_actor_ground(g, actor_index);
+    }
+}
+
+void toy_game_update_actor_ground(struct toy_game *g, int actor_index)
+{
+    struct toy_game_actor *actor;
+    int i, next_ground;
+    if (!g || actor_index < 0 || actor_index >= TOY_GAME_MAX_ACTORS) return;
+    actor = &g->actors[actor_index];
+    if (actor->airborne_ms > 0) return;
+    next_ground = toy_game_ground_height(g, actor->x, actor->z,
+                                         TOY_GAME_PLAYER_RADIUS);
+    if (next_ground < actor->ground_y) {
+        for (i = 0; i < g->platform_count; i++) {
+            const struct toy_game_platform *p = &g->platforms[i];
+            if (p->height != actor->ground_y) continue;
+            if (actor->x + TOY_GAME_PLAYER_RADIUS > p->minx &&
+                actor->x - TOY_GAME_PLAYER_RADIUS < p->maxx &&
+                actor->z + TOY_GAME_PLAYER_RADIUS > p->minz &&
+                actor->z - TOY_GAME_PLAYER_RADIUS < p->maxz) return;
+        }
+        actor->airborne_y = actor->ground_y - next_ground;
+        actor->ground_y = next_ground;
+        actor->airborne_ms = TOY_GAME_JUMP_MS;
+        actor->vertical_velocity = 0;
+        return;
+    }
+    actor->ground_y = next_ground;
 }
 
 static void update_smoker(struct toy_game *g, struct toy_game_enemy *e,
@@ -2642,13 +2763,7 @@ void toy_game_update_held(struct toy_game *g,
                                 sy, cy, dt_ms);
     toy_game_update_ai_teammates(g, dt_ms);
     if (g->secondary_player_active && !g->secondary_player_down)
-        update_motion_values(g, &g->secondary_px, &g->secondary_pz,
-                             &g->secondary_player_airborne_ms,
-                             &g->secondary_player_airborne_y,
-                             &g->secondary_player_vertical_velocity,
-                             &g->secondary_player_knockback_x,
-                             &g->secondary_player_knockback_z,
-                             TOY_GAME_PLAYER_RADIUS, dt_ms);
+        toy_game_update_secondary_player_motion(g, dt_ms);
 
     /* 敌人计时器与移动/攻击/倒地 */
     for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {

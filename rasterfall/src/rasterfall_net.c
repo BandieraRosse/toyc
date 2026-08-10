@@ -1643,11 +1643,17 @@ static void net_apply_extra_remote(struct rasterfall_net *net,
      * pull or launch cannot be overwritten by the stale client position. */
     remote->camera.x = actor->x;
     remote->camera.z = actor->z;
-    remote->camera.y = actor->airborne_y;
+    remote->camera.y = actor->ground_y + actor->airborne_y;
     toy_game_update_actor_motion(g, index, 16);
     if ((remote->command.buttons & RASTERFALL_CMD_JUMP) &&
         !g->player_down)
-        toy_game_jump_actor(g, index);
+        toy_game_jump_actor(g, index,
+            (remote->camera.sy * remote->command.move_forward +
+             remote->camera.cy * remote->command.move_strafe) *
+                RASTERFALL_MOVE_STEP / 1024,
+            (remote->camera.cy * remote->command.move_forward -
+             remote->camera.sy * remote->command.move_strafe) *
+                RASTERFALL_MOVE_STEP / 1024);
     actor_airborne_ms = actor->airborne_ms;
     actor_airborne_y = actor->airborne_y;
     actor_vertical_velocity = actor->vertical_velocity;
@@ -1676,7 +1682,11 @@ static void net_apply_extra_remote(struct rasterfall_net *net,
     rasterfall_session_step_remote_player(session, &remote->camera,
                                           &remote->command,
                                           g->player_down ||
-                                          actor->airborne_ms > 0);
+                                          actor->airborne_ms > 0,
+                                          actor->ground_y);
+    actor->x = remote->camera.x;
+    actor->z = remote->camera.z;
+    toy_game_update_actor_ground(g, index);
     if ((remote->command.buttons & RASTERFALL_CMD_INTERACT) &&
         !g->player_down)
         rasterfall_session_interact_remote(session, &remote->camera);
@@ -1699,7 +1709,7 @@ static void net_apply_extra_remote(struct rasterfall_net *net,
     actor->vertical_velocity = actor_vertical_velocity;
     actor->knockback_x = actor_knockback_x;
     actor->knockback_z = actor_knockback_z;
-    remote->camera.y = actor->airborne_y;
+    remote->camera.y = actor->ground_y + actor->airborne_y;
     actor->sy = remote->camera.sy; actor->cy = remote->camera.cy;
     actor->hp = g->hp;
     actor->state = g->player_down ? TOY_GAME_ACTOR_DOWNED :
@@ -1712,7 +1722,6 @@ static void net_apply_extra_remote(struct rasterfall_net *net,
     actor->muzzle_flash_ms = g->muzzle_flash_ms;
     actor->fire_seq = g->fire_seq; actor->ray_count = g->ray_count;
     memcpy(actor->rays, g->rays, sizeof(actor->rays));
-    remote->command_ready = 0;
     remote->hp = actor->hp; remote->down = actor->state == TOY_GAME_ACTOR_DOWNED;
     remote->state = g->state;
     remote->kills = g->kills;
@@ -1965,7 +1974,8 @@ void rasterfall_net_apply_remote(struct rasterfall_net *net,
     if (net->peer_known) {
         net->peer_camera.x = g->secondary_px;
         net->peer_camera.z = g->secondary_pz;
-        net->peer_camera.y = g->secondary_player_airborne_y;
+        net->peer_camera.y = g->secondary_player_ground_y +
+                             g->secondary_player_airborne_y;
         net->peer_hp = g->secondary_player_hp;
         net->peer_down = g->secondary_player_down;
         net->peer_airborne_ms = g->secondary_player_airborne_ms;
@@ -1976,13 +1986,24 @@ void rasterfall_net_apply_remote(struct rasterfall_net *net,
         event_start = g->event_count;
         if ((net->remote_command.buttons & RASTERFALL_CMD_JUMP) &&
             !net->peer_down)
-            toy_game_jump_secondary_player(g);
+            toy_game_jump_secondary_player(g,
+                (net->peer_camera.sy * net->remote_command.move_forward +
+                 net->peer_camera.cy * net->remote_command.move_strafe) *
+                    RASTERFALL_MOVE_STEP / 1024,
+                (net->peer_camera.cy * net->remote_command.move_forward -
+                 net->peer_camera.sy * net->remote_command.move_strafe) *
+                    RASTERFALL_MOVE_STEP / 1024);
         if (!net->peer_down)
             rasterfall_session_step_remote_player(session, &net->peer_camera,
                                                   &net->remote_command,
                                                   net->peer_down ||
-                                                  g->secondary_player_airborne_ms > 0);
-        net->peer_camera.y = g->secondary_player_airborne_y;
+                                                  g->secondary_player_airborne_ms > 0,
+                                                  g->secondary_player_ground_y);
+        g->secondary_px = net->peer_camera.x;
+        g->secondary_pz = net->peer_camera.z;
+        toy_game_update_secondary_player_ground(g);
+        net->peer_camera.y = g->secondary_player_ground_y +
+                             g->secondary_player_airborne_y;
         /* The command's turn delta is only a prediction hint.  Use the
          * complete camera reported by the client before authoritative firing
          * so quick 90-degree turns and accumulated mouse deltas cannot leave
@@ -2177,8 +2198,10 @@ void rasterfall_net_apply_remote(struct rasterfall_net *net,
         memcpy(g->rays, host_rays, sizeof(g->rays));
     }
     net_apply_extra_rescue_actions(net, session);
-    for (int remote_i = 0; remote_i < RASTERFALL_NET_REMOTE_MAX; remote_i++)
+    for (int remote_i = 0; remote_i < RASTERFALL_NET_REMOTE_MAX; remote_i++) {
         net_apply_extra_remote(net, session, &net->remotes[remote_i]);
+        net->remotes[remote_i].command_ready = 0;
+    }
     net->remote_command.turn = 0;
     net->remote_command.pitch = 0;
     net->remote_command.buttons = 0;

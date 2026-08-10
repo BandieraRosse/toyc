@@ -283,6 +283,8 @@ struct toy_game_actor {
     int airborne_ms;
     int vertical_velocity;
     int airborne_y;
+    int ground_y;
+    int air_x, air_z;
     int knockback_x, knockback_z;
     char name[TOY_GAME_MAX_NAME];
     struct toy_game_slot slots[TOY_GAME_WEAPON_SLOTS];
@@ -379,7 +381,9 @@ struct toy_game {
     int secondary_player_hp;
     int secondary_player_airborne_ms;
     int secondary_player_airborne_y;
+    int secondary_player_ground_y;
     int secondary_player_vertical_velocity;
+    int secondary_player_air_x, secondary_player_air_z;
     int secondary_player_knockback_x;
     int secondary_player_knockback_z;
     int player_down;
@@ -459,10 +463,12 @@ void toy_game_update(struct toy_game *g,
 int  toy_game_jump(struct toy_game *g);
 int  toy_game_jump_with_velocity(struct toy_game *g, int dx, int dz);
 void toy_game_update_player_motion(struct toy_game *g, int dt_ms);
-int  toy_game_jump_secondary_player(struct toy_game *g);
+int  toy_game_jump_secondary_player(struct toy_game *g, int dx, int dz);
 void toy_game_update_secondary_player_motion(struct toy_game *g, int dt_ms);
-int  toy_game_jump_actor(struct toy_game *g, int actor_index);
+void toy_game_update_secondary_player_ground(struct toy_game *g);
+int  toy_game_jump_actor(struct toy_game *g, int actor_index, int dx, int dz);
 void toy_game_update_actor_motion(struct toy_game *g, int actor_index, int dt_ms);
+void toy_game_update_actor_ground(struct toy_game *g, int actor_index);
 void toy_game_update_held(struct toy_game *g,
                           const unsigned char *keys_pressed, /* 可 NULL */
                           int fire_pressed, int fire_held,

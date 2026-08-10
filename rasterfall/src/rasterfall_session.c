@@ -262,6 +262,27 @@ static void session_move_player(struct rasterfall_session *session,
         camera->z = next_z;
 }
 
+static void session_move_remote_player(struct rasterfall_session *session,
+                                       struct camera *camera,
+                                       const struct rasterfall_command *command,
+                                       int ground_y)
+{
+    int dx = (camera->sy * command->move_forward +
+              camera->cy * command->move_strafe) * RASTERFALL_MOVE_STEP / 1024;
+    int dz = (camera->cy * command->move_forward -
+              camera->sy * command->move_strafe) * RASTERFALL_MOVE_STEP / 1024;
+    int next_x = camera->x + dx;
+    int next_z = camera->z + dz;
+    if (!toy_game_position_blocked_at_height(&session->game_state, next_x,
+                                             camera->z, RASTERFALL_PLAYER_RADIUS,
+                                             ground_y))
+        camera->x = next_x;
+    if (!toy_game_position_blocked_at_height(&session->game_state, camera->x,
+                                             next_z, RASTERFALL_PLAYER_RADIUS,
+                                             ground_y))
+        camera->z = next_z;
+}
+
 static void session_jump_player(struct rasterfall_session *session,
                                 struct camera *camera,
                                 const struct rasterfall_command *command)
@@ -300,10 +321,10 @@ static void session_update_smooth_turn(struct rasterfall_session *session,
 void rasterfall_session_step_remote_player(struct rasterfall_session *session,
                                            struct camera *camera,
                                            const struct rasterfall_command *command,
-                                           int remote_down)
+                                           int remote_down, int ground_y)
 {
     if (!remote_down)
-        session_move_player(session, camera, command);
+        session_move_remote_player(session, camera, command, ground_y);
     if (command->turn || command->pitch)
         rasterfall_camera_rotate(camera, command->turn, command->pitch);
     if (command->buttons & RASTERFALL_CMD_SHOVE) {
@@ -629,6 +650,8 @@ void rasterfall_session_step_client(struct rasterfall_session *session,
     toy_game_update_player_ground(&session->game_state);
     session_sync_special_motion(session, camera);
     session->highlight_index = rasterfall_session_compute_highlight(session, camera);
+    if (command->buttons & RASTERFALL_CMD_INTERACT)
+        session_client_interact_banner(session);
     /* AI rescue remains host-authoritative, but keep the local action state so
      * the client can render the same progress bar while the host advances it.
      * The actor's authoritative progress arrives in the next snapshot. */

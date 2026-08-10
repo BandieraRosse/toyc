@@ -11,6 +11,17 @@ static int run_logic_test(void)
     long long direction_length;
     toy_input_init(&input);
     rasterfall_session_reset(&session, &camera, 1);
+    /* 客户端交互由主机执行，但按下 E 后本地仍必须立即显示反馈。 */
+    if (session.item_count > 0) {
+        memset(&command, 0, sizeof(command));
+        camera.x = session.items[0].x;
+        camera.z = session.items[0].z - 100;
+        camera.sy = 0; camera.cy = 1024;
+        command.buttons = RASTERFALL_CMD_INTERACT;
+        rasterfall_session_step_client(&session, &camera, &command, 16);
+        if (!session.banner_text || session.banner_ms <= 0) return 100;
+        rasterfall_session_reset(&session, &camera, 1);
+    }
     {
         struct toy_game actor_test;
         int i;
@@ -891,6 +902,30 @@ static int run_logic_test(void)
             toy_game_update_player_motion(&game, 16);
         if (game.player_airborne_ms != 0 || game.player_airborne_y != 0)
             return 91;
+    }
+    /* 两种网络远端表示都必须保留跳跃水平动量，并在平台顶落地。 */
+    {
+        struct toy_game_platform platform = { 280, 2200, -1000, 1000, 500 };
+        int actor_index = TOY_GAME_REMOTE_ACTOR_BASE + 1;
+        toy_game_init(&game, 49);
+        game.world_count = 0;
+        game.room_limit = 12000;
+        toy_game_set_platforms(&game, &platform, 1);
+        toy_game_set_secondary_player_state(&game, 1, 0, 0, 0);
+        if (!toy_game_jump_secondary_player(&game, 20, 0)) return 101;
+        for (int i = 0; i < 70; i++)
+            toy_game_update_secondary_player_motion(&game, 16);
+        if (game.secondary_px <= 0 ||
+            game.secondary_player_ground_y != 500 ||
+            game.secondary_player_airborne_ms != 0) return 102;
+        if (toy_game_set_remote_player(&game, 2, 1, 0, 0, "REMOTE") !=
+            actor_index) return 103;
+        if (!toy_game_jump_actor(&game, actor_index, 20, 0)) return 104;
+        for (int i = 0; i < 70; i++)
+            toy_game_update_actor_motion(&game, actor_index, 16);
+        if (game.actors[actor_index].x <= 0 ||
+            game.actors[actor_index].ground_y != 500 ||
+            game.actors[actor_index].airborne_ms != 0) return 105;
     }
     /* 平台对地面实体是实心障碍：敌人不能生成或追进台体，
      * AI 队友也不能被直接移入平台。 */
