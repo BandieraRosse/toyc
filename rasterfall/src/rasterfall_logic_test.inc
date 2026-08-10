@@ -60,6 +60,14 @@ static int run_logic_test(void)
             game.actors[4].z != -9900 ||
             game.actors[4].slots[0].weapon != TOY_GAME_WEAPON_SMG) return 51;
         toy_game_init(&actor_test, 3);
+        if (toy_game_set_remote_player(&actor_test, 1, 1,
+                                       2400, -3000, "REMOTE") !=
+                TOY_GAME_REMOTE_ACTOR_BASE ||
+            !actor_test.actors[TOY_GAME_REMOTE_ACTOR_BASE].active ||
+            actor_test.actors[TOY_GAME_REMOTE_ACTOR_BASE].kind !=
+                TOY_GAME_ACTOR_PLAYER ||
+            actor_test.actors[TOY_GAME_REMOTE_ACTOR_BASE].hp !=
+                TOY_GAME_SECONDARY_PLAYER_HP) return 54;
         if (toy_game_add_ai(&actor_test, TOY_GAME_AI_LEVEL_3,
                             1200, -3000, "ELITE") != 2 ||
             !toy_game_actor_by_id(&actor_test, 2) ||

@@ -18,7 +18,9 @@
 #include "rasterfall_colors.h"
 
 #define TOY_GAME_MAX_ENEMIES    64
-#define TOY_GAME_MAX_ACTORS     8
+#define TOY_GAME_MAX_ACTORS     12
+#define TOY_GAME_MAX_PLAYERS    4
+#define TOY_GAME_REMOTE_ACTOR_BASE 8
 #define TOY_GAME_MAX_PLATFORMS  16
 #define TOY_GAME_AMMO_INFINITE  (-1)
 #define TOY_GAME_BITE_MS        1000
@@ -410,6 +412,9 @@ void toy_game_set_ai_teammate_class(struct toy_game *g, int active, int class_id
                                     int x, int z, const char *name);
 int  toy_game_add_ai(struct toy_game *g, int class_id, int x, int z,
                      const char *name);
+int  toy_game_set_remote_player(struct toy_game *g, int player_id,
+                                int active, int x, int z,
+                                const char *name);
 void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms);
 void toy_game_update_ai_teammates(struct toy_game *g, int dt_ms);
 int  toy_game_revive_ai(struct toy_game *g, int dt_ms);

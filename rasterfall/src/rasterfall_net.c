@@ -1554,6 +1554,54 @@ void rasterfall_net_apply_remote(struct rasterfall_net *net,
     net->remote_command.buttons = 0;
 }
 
+void rasterfall_net_sync_remote_players(struct rasterfall_net *net,
+                                        struct toy_game *game)
+{
+    int i, index;
+    struct toy_game_actor *actor;
+    if (!net || !game || net->mode != RASTERFALL_NET_HOST) return;
+    if (net->peer_known && net->connected) {
+        index = toy_game_set_remote_player(game, 1, 1,
+                                           net->peer_camera.x,
+                                           net->peer_camera.z, "PLAYER 2");
+        if (index >= 0) {
+            actor = &game->actors[index];
+            actor->sy = net->peer_camera.sy;
+            actor->cy = net->peer_camera.cy;
+            actor->hp = net->peer_hp;
+            actor->state = net->peer_down ? TOY_GAME_ACTOR_DOWNED :
+                                            TOY_GAME_ACTOR_ALIVE;
+            actor->airborne_ms = net->peer_airborne_ms;
+            actor->airborne_y = net->peer_airborne_y;
+            memcpy(actor->slots, net->peer_slots, sizeof(actor->slots));
+            actor->current_slot = net->peer_current_slot;
+        }
+    } else {
+        toy_game_set_remote_player(game, 1, 0, 0, 0, NULL);
+    }
+    for (i = 0; i < RASTERFALL_NET_REMOTE_MAX; i++) {
+        struct rasterfall_net_remote *remote = &net->remotes[i];
+        if (!remote->active || !remote->connected) {
+            toy_game_set_remote_player(game, i + 2, 0, 0, 0, NULL);
+            continue;
+        }
+        index = toy_game_set_remote_player(game, i + 2, 1,
+                                           remote->camera.x,
+                                           remote->camera.z, "PLAYER");
+        if (index < 0) continue;
+        actor = &game->actors[index];
+        actor->sy = remote->camera.sy;
+        actor->cy = remote->camera.cy;
+        actor->hp = remote->hp;
+        actor->state = remote->down ? TOY_GAME_ACTOR_DOWNED :
+                                      TOY_GAME_ACTOR_ALIVE;
+        actor->airborne_ms = remote->airborne_ms;
+        actor->airborne_y = remote->airborne_y;
+        memcpy(actor->slots, remote->slots, sizeof(actor->slots));
+        actor->current_slot = remote->current_slot;
+    }
+}
+
 void rasterfall_net_apply_local_rescue(struct rasterfall_net *net,
                                        struct rasterfall_session *session,
                                        const struct camera *host_camera,

@@ -322,7 +322,7 @@ int toy_game_add_ai(struct toy_game *g, int class_id, int x, int z,
     int i, slot = -1;
     struct toy_game_weapon_info *weapon;
     if (class_id < 0 || class_id >= TOY_GAME_AI_CLASS_COUNT) return -1;
-    for (i = 0; i < TOY_GAME_MAX_ACTORS; i++)
+    for (i = 0; i < TOY_GAME_REMOTE_ACTOR_BASE; i++)
         if (!g->actors[i].active) { slot = i; break; }
     if (slot < 0) return -1;
     info = &ai_table[class_id];
@@ -346,6 +346,41 @@ int toy_game_add_ai(struct toy_game *g, int class_id, int x, int z,
     return a->actor_id;
 }
 
+int toy_game_set_remote_player(struct toy_game *g, int player_id,
+                               int active, int x, int z, const char *name)
+{
+    const struct toy_game_weapon_info *w;
+    struct toy_game_actor *a;
+    int index;
+    if (!g || player_id <= 0 || player_id >= TOY_GAME_MAX_PLAYERS)
+        return -1;
+    index = TOY_GAME_REMOTE_ACTOR_BASE + player_id - 1;
+    if (!active) {
+        memset(&g->actors[index], 0, sizeof(g->actors[index]));
+        return index;
+    }
+    a = &g->actors[index];
+    if (!a->active || a->kind != TOY_GAME_ACTOR_PLAYER) {
+        memset(a, 0, sizeof(*a));
+        a->actor_id = 100 + player_id;
+        a->kind = TOY_GAME_ACTOR_PLAYER;
+        a->class_id = TOY_GAME_AI_LEVEL_2;
+        a->state = TOY_GAME_ACTOR_ALIVE;
+        a->hp = a->max_hp = TOY_GAME_SECONDARY_PLAYER_HP;
+        a->slots[0].weapon = -1;
+        a->slots[1].weapon = TOY_GAME_WEAPON_PISTOL;
+        w = toy_game_weapon_info(TOY_GAME_WEAPON_PISTOL);
+        a->slots[1].mag = w->mag_size;
+        a->slots[1].reserve = w->reserve_max;
+        a->current_slot = 1;
+    }
+    a->active = 1;
+    a->x = x; a->z = z;
+    a->sy = 0; a->cy = 1024;
+    copy_name(a->name, name ? name : "PLAYER");
+    return index;
+}
+
 int toy_game_revive_ai(struct toy_game *g, int dt_ms)
 {
     return toy_game_revive_actor(g, 0, dt_ms);
@@ -357,7 +392,9 @@ int toy_game_revive_actor(struct toy_game *g, int actor_index, int dt_ms)
     if (!g || actor_index < 0 || actor_index >= TOY_GAME_MAX_ACTORS ||
         dt_ms <= 0) return 0;
     a = &g->actors[actor_index];
-    if (!a->active || a->kind != TOY_GAME_ACTOR_AI ||
+    if (!a->active ||
+        (a->kind != TOY_GAME_ACTOR_AI &&
+         a->kind != TOY_GAME_ACTOR_PLAYER) ||
         a->state != TOY_GAME_ACTOR_DOWNED) return 0;
     a->revive_progress_ms += dt_ms;
     if (actor_index == 0) g->ai_revive_progress_ms = a->revive_progress_ms;
@@ -1097,7 +1134,8 @@ static void bite_ai(struct toy_game *g, struct toy_game_enemy *e)
     if (index < 0 || index >= TOY_GAME_MAX_ACTORS) index = 0;
     actor = &g->actors[index];
     if (e->bite_cooldown_ms > 0 || !actor->active ||
-        actor->kind != TOY_GAME_ACTOR_AI ||
+        (actor->kind != TOY_GAME_ACTOR_AI &&
+         actor->kind != TOY_GAME_ACTOR_PLAYER) ||
         actor->state != TOY_GAME_ACTOR_ALIVE) return;
     e->bite_cooldown_ms = TOY_GAME_BITE_MS;
     actor->hp -= info->bite_damage;
@@ -1215,7 +1253,9 @@ static int nearest_ai_position(const struct toy_game *g,
     for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
         const struct toy_game_actor *a = &g->actors[i];
         long long dx, dz, d2;
-        if (!a->active || a->kind != TOY_GAME_ACTOR_AI ||
+        if (!a->active ||
+            (a->kind != TOY_GAME_ACTOR_AI &&
+             a->kind != TOY_GAME_ACTOR_PLAYER) ||
             a->state != TOY_GAME_ACTOR_ALIVE) continue;
         dx = (long long)a->x - e->x;
         dz = (long long)a->z - e->z;
@@ -1252,7 +1292,9 @@ static int nearest_special_target(const struct toy_game *g,
     }
     for (int i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
         const struct toy_game_actor *a = &g->actors[i];
-        if (!a->active || a->kind != TOY_GAME_ACTOR_AI ||
+        if (!a->active ||
+            (a->kind != TOY_GAME_ACTOR_AI &&
+             a->kind != TOY_GAME_ACTOR_PLAYER) ||
             a->state != TOY_GAME_ACTOR_ALIVE) continue;
         dx = (long long)a->x - e->x; dz = (long long)a->z - e->z;
         d2 = dx * dx + dz * dz;
@@ -1720,7 +1762,9 @@ static int charger_hit_entities(struct toy_game *g,
     for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
         struct toy_game_actor *a = &g->actors[i];
         int dx, dz; long long dist2;
-        if (!a->active || a->kind != TOY_GAME_ACTOR_AI ||
+        if (!a->active ||
+            (a->kind != TOY_GAME_ACTOR_AI &&
+             a->kind != TOY_GAME_ACTOR_PLAYER) ||
             a->state != TOY_GAME_ACTOR_ALIVE || a->airborne_ms > 0) continue;
         dx = a->x - charger->x; dz = a->z - charger->z;
         dist2 = (long long)dx * dx + (long long)dz * dz;

@@ -10,8 +10,9 @@
 #define RASTERFALL_NET_MAX_PACKET 2600
 #define RASTERFALL_NET_MAX_SNAPSHOT 4096
 #define RASTERFALL_NET_PROTOCOL_VERSION 15
-#define RASTERFALL_NET_MAX_ACTORS 8
+#define RASTERFALL_NET_MAX_ACTORS 12
 #define RASTERFALL_NET_PLAYER_MAX 2
+#define RASTERFALL_NET_REMOTE_MAX 3
 #define RASTERFALL_NET_EVENT_QUEUE_MAX 64
 #define RASTERFALL_NET_DISCOVERY_PORT 28459
 #define RASTERFALL_NET_DISCOVERY_MAX_ROOMS 8
@@ -119,6 +120,39 @@ struct rasterfall_net_actor {
     struct toy_game_ray rays[TOY_GAME_MAX_RAYS];
 };
 
+/* Host-side state for clients beyond the legacy first remote slot.  The
+ * legacy peer fields remain temporarily as slot 1 while simulation is being
+ * migrated; these slots make admission and snapshot migration incremental. */
+struct rasterfall_net_remote {
+    int active;
+    int client_id;
+    int connected;
+    struct sockaddr_in address;
+    struct camera camera;
+    struct camera spawn;
+    struct camera reported_camera;
+    int camera_initialized;
+    int reported_camera_ready;
+    struct rasterfall_command command;
+    int command_ready;
+    uint32_t last_input_sequence;
+    uint32_t last_input_tick;
+    struct toy_game_slot slots[TOY_GAME_WEAPON_SLOTS];
+    int current_slot;
+    int hp;
+    int state;
+    int down;
+    int revive_progress_ms;
+    int reloading, reload_timer_ms;
+    int fire_cooldown_ms, muzzle_flash_ms, damage_flash_ms;
+    int kills;
+    unsigned int fire_seq;
+    int ray_count;
+    struct toy_game_ray rays[TOY_GAME_MAX_RAYS];
+    int airborne_ms, airborne_y;
+    long last_receive_ms;
+};
+
 struct rasterfall_net {
     int mode;
     int fd;
@@ -161,6 +195,8 @@ struct rasterfall_net {
     int peer_airborne_y;
     int peer_state_initialized;
     struct rasterfall_net_player players[RASTERFALL_NET_PLAYER_MAX];
+    struct rasterfall_net_remote remotes[RASTERFALL_NET_REMOTE_MAX];
+    int local_player_id;
     struct rasterfall_net_actor actors[RASTERFALL_NET_MAX_ACTORS];
     int actor_count;
     struct rasterfall_net_enemy enemies[TOY_GAME_MAX_ENEMIES];
@@ -248,6 +284,8 @@ int rasterfall_net_send_snapshot(struct rasterfall_net *net,
 void rasterfall_net_apply_remote(struct rasterfall_net *net,
                                  struct rasterfall_session *session,
                                  struct camera *host_camera);
+void rasterfall_net_sync_remote_players(struct rasterfall_net *net,
+                                        struct toy_game *game);
 void rasterfall_net_reconcile_client(struct rasterfall_net *net,
                                      struct rasterfall_session *session,
                                      struct camera *camera);

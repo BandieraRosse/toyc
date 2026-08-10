@@ -1391,6 +1391,8 @@ startup_again:
                             game.secondary_player_airborne_ms = net.peer_airborne_ms;
                             game.secondary_player_airborne_y = net.peer_airborne_y;
                         }
+                        if (net.mode == RASTERFALL_NET_HOST)
+                            rasterfall_net_sync_remote_players(&net, &game);
                         rasterfall_session_step(&session, &camera, &command,
                                                 FIXED_STEP_US / 1000);
                         if (net.mode == RASTERFALL_NET_HOST)
