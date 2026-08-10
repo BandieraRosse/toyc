@@ -8,6 +8,7 @@
 #define VIEWMODEL_KICK_MAX 110
 
 int rasterfall_viewmodel_weapon(const struct toy_game *game);
+const char *rasterfall_weapon_model_path(int weapon);
 void rasterfall_viewmodel_muzzle_offset(int weapon, int kick,
                                         int *x, int *y, int *z);
 void rasterfall_viewmodel_actor_muzzle(int x, int z, int sy, int cy,

@@ -86,6 +86,7 @@ void rasterfall_map_reset_interactables(struct rasterfall_map_state *map)
     *map->interactable_count = map->level->pickup_count;
     for (i = 0; i < *map->interactable_count; i++) {
         map->interactables[i].kind = map->level->pickups[i].kind;
+        map->interactables[i].weapon = map->level->pickups[i].weapon;
         map->interactables[i].x = map->level->pickups[i].x;
         map->interactables[i].z = map->level->pickups[i].z;
         map->interactables[i].y = map->level->pickups[i].y;

@@ -13,6 +13,7 @@
 #include "rasterfall_sky.h"
 #include "rasterfall_render.h"
 #include "rasterfall_model.h"
+#include "rasterfall_viewmodel.h"
 #include "math.h"
 
 #define NEAR_Z 192
@@ -1057,9 +1058,13 @@ static int render_interactables(struct toy_renderer *renderer,
     for (i = 0; i < interactable_count; i++) {
         const interactable *it = &interactables[i];
         int on = i == highlighted;
-        if (it->kind == TOY_MAP_PICKUP_SMG)
+        if (it->kind == TOY_MAP_PICKUP_SMG ||
+            (it->kind == TOY_MAP_PICKUP_WEAPON &&
+             it->weapon == TOY_GAME_WEAPON_SMG))
             pixels += render_smg(renderer, camera, it->x, it->y, it->z, on);
-        else if (it->kind == TOY_MAP_PICKUP_SHOTGUN)
+        else if (it->kind == TOY_MAP_PICKUP_SHOTGUN ||
+                 (it->kind == TOY_MAP_PICKUP_WEAPON &&
+                  it->weapon == TOY_GAME_WEAPON_SHOTGUN))
             pixels += render_shotgun(renderer, camera, it->x, it->y, it->z, on);
         else if (it->kind == TOY_MAP_PICKUP_BUTTON ||
                  it->kind == TOY_MAP_PICKUP_AIR_BUTTON ||
@@ -1512,11 +1517,7 @@ static int render_actor_model_weapon(struct toy_renderer *renderer,
                                      int sy, int cy, int weapon,
                                      int muzzle_flash)
 {
-    const char *path = weapon == TOY_GAME_WEAPON_PISTOL ?
-        "rasterfall/assets/models/pg_glock1.rmesh" :
-        weapon == TOY_GAME_WEAPON_SMG ?
-        "rasterfall/assets/models/smg_mac10.rmesh" :
-        "rasterfall/assets/models/sg_pump_action.rmesh";
+    const char *path = rasterfall_weapon_model_path(weapon);
     struct rasterfall_model_asset *model = gallery_model_named(path, NULL);
     int width, height, depth, length, scale, i, pixels = 0;
     if (!model) return 0;

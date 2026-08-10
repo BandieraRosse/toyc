@@ -9,7 +9,7 @@ struct view_vec3 { int x, y, z; };
 #define VIEWMODEL_ORIGIN_Y (-160)
 #define VIEWMODEL_ORIGIN_Z 600
 
-static struct rasterfall_model_asset viewmodel_models[3];
+static struct rasterfall_model_asset viewmodel_models[TOY_GAME_WEAPON_COUNT];
 static int viewmodel_models_loaded;
 
 static unsigned int viewmodel_model_u32(const unsigned char *p)
@@ -19,16 +19,27 @@ static unsigned int viewmodel_model_u32(const unsigned char *p)
 
 static void viewmodel_load_models(void)
 {
-    static const char *paths[3] = {
+    static const char *paths[TOY_GAME_WEAPON_COUNT] = {
         "rasterfall/assets/models/pg_glock1.rmesh",
         "rasterfall/assets/models/smg_mac10.rmesh",
         "rasterfall/assets/models/sg_pump_action.rmesh"
     };
+    int i;
     if (viewmodel_models_loaded) return;
-    rasterfall_model_load(&viewmodel_models[TOY_GAME_WEAPON_PISTOL], paths[0]);
-    rasterfall_model_load(&viewmodel_models[TOY_GAME_WEAPON_SMG], paths[1]);
-    rasterfall_model_load(&viewmodel_models[TOY_GAME_WEAPON_SHOTGUN], paths[2]);
+    for (i = 0; i < TOY_GAME_WEAPON_COUNT; i++)
+        if (paths[i]) rasterfall_model_load(&viewmodel_models[i], paths[i]);
     viewmodel_models_loaded = 1;
+}
+
+const char *rasterfall_weapon_model_path(int weapon)
+{
+    static const char *paths[TOY_GAME_WEAPON_COUNT] = {
+        "rasterfall/assets/models/pg_glock1.rmesh",
+        "rasterfall/assets/models/smg_mac10.rmesh",
+        "rasterfall/assets/models/sg_pump_action.rmesh"
+    };
+    if (weapon < 0 || weapon >= TOY_GAME_WEAPON_COUNT) return NULL;
+    return paths[weapon];
 }
 
 int rasterfall_viewmodel_weapon(const struct toy_game *game)

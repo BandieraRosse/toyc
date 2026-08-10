@@ -137,9 +137,12 @@ int toy_map_load(const char *path, struct toy_map *m)
         else if(!strcmp(kind,"pickup") && m->pickup_count<TOY_MAP_MAX_PICKUPS){
             char *k=word(&p),*sx=word(&p),*sz=word(&p),*sy=word(&p);
             if(k&&sx&&sz&&sy){
-                m->pickups[m->pickup_count].kind=
-                    !strcmp(k,"smg")?TOY_MAP_PICKUP_SMG:
-                    !strcmp(k,"shotgun")?TOY_MAP_PICKUP_SHOTGUN:TOY_MAP_PICKUP_AMMO;
+                int weapon = toy_game_weapon_from_name(k);
+                m->pickups[m->pickup_count].kind = weapon >= 0 ?
+                    TOY_MAP_PICKUP_WEAPON :
+                    (!strcmp(k,"ammo") ? TOY_MAP_PICKUP_AMMO :
+                     TOY_MAP_PICKUP_AMMO);
+                m->pickups[m->pickup_count].weapon = weapon;
                 m->pickups[m->pickup_count].x=number(sx,10);
                 m->pickups[m->pickup_count].z=number(sz,10);
                 m->pickups[m->pickup_count].y=number(sy,10);

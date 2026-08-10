@@ -3,7 +3,7 @@
 
 #include "toy_map.h"
 
-struct rasterfall_interactable { int kind; int x, z, y; };
+struct rasterfall_interactable { int kind; int weapon; int x, z, y; };
 
 struct rasterfall_map_state {
     struct toy_map *level;

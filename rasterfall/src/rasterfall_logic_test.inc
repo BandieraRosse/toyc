@@ -39,6 +39,10 @@ static int run_logic_test(void)
             smg->damage != 25 || shotgun->damage != 25 ||
             common->max_hp != 50 || heavy->max_hp != 200 ||
             brute->max_hp != 200 || runner->max_hp != 60) return 49;
+        if (toy_game_weapon_from_name("pistol") != TOY_GAME_WEAPON_PISTOL ||
+            toy_game_weapon_from_name("SMG") != TOY_GAME_WEAPON_SMG ||
+            toy_game_weapon_from_name("shotgun") != TOY_GAME_WEAPON_SHOTGUN ||
+            toy_game_weapon_from_name("missing") >= 0) return 53;
         if (!game.actors[1].active ||
             game.actors[1].class_id != TOY_GAME_AI_LEVEL_1 ||
             game.actors[1].slots[0].weapon != TOY_GAME_WEAPON_PISTOL ||

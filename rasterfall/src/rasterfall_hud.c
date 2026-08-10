@@ -61,10 +61,17 @@ static int draw_hud_value(struct toy_surface *surface, int x,
 
 static const char *weapon_abbreviation(int weapon)
 {
-    if (weapon == TOY_GAME_WEAPON_SMG) return "SMG";
+    static char abbreviation[8];
+    const char *name = toy_game_weapon_name(weapon);
+    int i;
+    if (weapon < 0 || !name || !*name) return "--";
+    for (i = 0; i < 6 && name[i]; i++) abbreviation[i] = name[i];
+    abbreviation[i] = 0;
+    if (i > 3) abbreviation[3] = 0;
     if (weapon == TOY_GAME_WEAPON_SHOTGUN) return "SG";
     if (weapon == TOY_GAME_WEAPON_PISTOL) return "PG";
-    return "--";
+    if (weapon == TOY_GAME_WEAPON_SMG) return "SMG";
+    return abbreviation;
 }
 
 static void render_weapon_card(struct toy_surface *surface, int x, int y,
@@ -317,12 +324,18 @@ void rasterfall_hud_draw_interact_prompt(struct toy_renderer *renderer,
         snprintf(label, sizeof(label), "E OPEN BASE 2 GATE");
     else if (it->kind == TOY_MAP_PICKUP_AMMO)
         snprintf(label, sizeof(label), "E TAKE AMMO");
-    else {
-        int weapon = it->kind == TOY_MAP_PICKUP_SMG ?
-                     TOY_GAME_WEAPON_SMG : TOY_GAME_WEAPON_SHOTGUN;
-        const char *name = it->kind == TOY_MAP_PICKUP_SMG ? "SMG" : "SHOTGUN";
+    else if (it->kind == TOY_MAP_PICKUP_WEAPON ||
+             it->kind == TOY_MAP_PICKUP_SMG ||
+             it->kind == TOY_MAP_PICKUP_SHOTGUN) {
+        int weapon = it->kind == TOY_MAP_PICKUP_WEAPON ? it->weapon :
+                     it->kind == TOY_MAP_PICKUP_SMG ? TOY_GAME_WEAPON_SMG :
+                     TOY_GAME_WEAPON_SHOTGUN;
+        const char *name = toy_game_weapon_name(weapon);
         snprintf(label, sizeof(label), "E %s %s",
-                 state->game->slots[0].weapon == weapon ? "REFILL" : "PICK UP", name);
+                 state->game->slots[0].weapon == weapon ? "REFILL" : "PICK UP",
+                 name);
+    } else {
+        snprintf(label, sizeof(label), "E INTERACT");
     }
     text_w = (int)strlen(label) * FB_FONT_W;
     x = (renderer->surface.width - text_w) / 2;

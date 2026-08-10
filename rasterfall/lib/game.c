@@ -103,6 +103,19 @@ const char *toy_game_weapon_name(int weapon)
     return weapon_names[weapon];
 }
 
+int toy_game_weapon_from_name(const char *name)
+{
+    int i;
+    if (!name) return -1;
+    for (i = 0; i < TOY_GAME_WEAPON_COUNT; i++)
+        if (!strcmp(name, weapon_names[i]) ||
+            (i == TOY_GAME_WEAPON_PISTOL && !strcmp(name, "pistol")) ||
+            (i == TOY_GAME_WEAPON_SMG && !strcmp(name, "smg")) ||
+            (i == TOY_GAME_WEAPON_SHOTGUN && !strcmp(name, "shotgun")))
+            return i;
+    return -1;
+}
+
 const struct toy_game_enemy_info *toy_game_enemy_info(int type)
 {
     if (type < 0 || type >= TOY_GAME_ENEMY_TYPE_COUNT)

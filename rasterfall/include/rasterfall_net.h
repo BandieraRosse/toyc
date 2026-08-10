@@ -9,7 +9,7 @@
 #define RASTERFALL_NET_DEFAULT_PORT 28460
 #define RASTERFALL_NET_MAX_PACKET 2600
 #define RASTERFALL_NET_MAX_SNAPSHOT 4096
-#define RASTERFALL_NET_PROTOCOL_VERSION 14
+#define RASTERFALL_NET_PROTOCOL_VERSION 15
 #define RASTERFALL_NET_MAX_ACTORS 8
 #define RASTERFALL_NET_PLAYER_MAX 2
 #define RASTERFALL_NET_EVENT_QUEUE_MAX 64
@@ -90,6 +90,13 @@ struct rasterfall_net_enemy {
     int dir_x, dir_z;
     int special_target_active;
     int charge_active;
+    int special_timer_ms;
+    int special_windup_ms;
+    int special_target_player;
+    int special_target_actor_index;
+    int special_pull_timer_ms;
+    int charge_dir_x, charge_dir_z;
+    int charge_elapsed_ms;
     int airborne_ms;
     int airborne_y;
 };

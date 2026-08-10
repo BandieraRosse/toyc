@@ -476,6 +476,8 @@ static void session_interact(struct rasterfall_session *session,
                   type, n);
     } else if (it->kind == TOY_MAP_PICKUP_AMMO) {
         toy_game_refill_ammo(&session->game_state);
+    } else if (it->kind == TOY_MAP_PICKUP_WEAPON) {
+        toy_game_equip_weapon(&session->game_state, it->weapon);
     } else {
         toy_game_equip_weapon(&session->game_state,
             it->kind == TOY_MAP_PICKUP_SMG ?
@@ -592,8 +594,24 @@ void rasterfall_session_step_client(struct rasterfall_session *session,
     toy_game_update_player_ground(&session->game_state);
     session_sync_special_motion(session, camera);
     session->highlight_index = rasterfall_session_compute_highlight(session, camera);
-    /* 交互由主机权威执行。客户端只计算高亮并发送 INTERACT 命令，
-     * 等待主机快照回传拾取、弹药、空气墙和刷怪结果，避免两端世界分叉。 */
+    /* AI rescue remains host-authoritative, but keep the local action state so
+     * the client can render the same progress bar while the host advances it.
+     * The actor's authoritative progress arrives in the next snapshot. */
+    if ((command->buttons & RASTERFALL_CMD_INTERACT) &&
+        session_near_ai(session, camera, &session->ai_revive_actor_index))
+        session->ai_revive_active = 1;
+    if (session->ai_revive_active) {
+        int index = session->ai_revive_actor_index;
+        if (index < 0 || index >= TOY_GAME_MAX_ACTORS ||
+            !session_near_ai(session, camera, NULL) ||
+            session->game_state.player_down ||
+            session->game_state.actors[index].state != TOY_GAME_ACTOR_DOWNED) {
+            session->ai_revive_active = 0;
+            session->game_state.ai_revive_progress_ms = 0;
+        }
+    }
+    /* 交互由主机权威执行。客户端只发送 INTERACT 命令，等待主机快照
+     * 回传拾取、救援、弹药、空气墙和刷怪结果，避免两端世界分叉。 */
     memset(keys, 0, sizeof(keys));
     if (command->buttons & RASTERFALL_CMD_RELOAD) keys[TOY_GAME_KEY_RELOAD] = 1;
     if (command->buttons & RASTERFALL_CMD_SLOT_1) keys[TOY_GAME_KEY_SLOT_1] = 1;

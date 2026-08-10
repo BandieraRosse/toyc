@@ -11,8 +11,8 @@
 #define NET_PLAYER_BASE_SIZE 52
 #define NET_PLAYER_RAY_SIZE 15
 #define NET_PLAYER_SIZE (NET_PLAYER_BASE_SIZE + 4 + 1 + TOY_GAME_MAX_RAYS * NET_PLAYER_RAY_SIZE)
-#define NET_ACTOR_SIZE 25
-#define NET_ENEMY_SIZE 33
+#define NET_ACTOR_SIZE 26
+#define NET_ENEMY_SIZE 48
 #define NET_EVENT_SIZE (4 + 1 + TOY_GAME_MAX_EVENTS)
 #define NET_WORLD_SIZE 32
 #define NET_SNAPSHOT_BASE 8
@@ -435,7 +435,10 @@ static void net_reset_peer_state(struct rasterfall_net *net)
     memcpy(&net->peer_camera, &net->peer_spawn, sizeof(net->peer_camera));
     memset(net->peer_slots, 0, sizeof(net->peer_slots));
     net->peer_current_slot = 0;
-    net->peer_hp = 0;
+    /* The first snapshot can be sent before the client has delivered its
+     * first input.  Keep the remote player alive with the same initial state
+     * as toy_game_init instead of exposing the zeroed transport state. */
+    net->peer_hp = TOY_GAME_SECONDARY_PLAYER_HP;
     net->peer_state = TOY_GAME_PLAYING;
     net->peer_down = 0;
     net->peer_revive_progress_ms = 0;
@@ -763,8 +766,16 @@ static void encode_enemy(unsigned char *p, const struct toy_game_enemy *e)
     put_i16(p + 23, e->dir_x); put_i16(p + 25, e->dir_z);
     p[27] = (unsigned char)(e->special_target_active ? 1 : 0);
     p[28] = (unsigned char)(e->charge_active ? 1 : 0);
-    put_i16(p + 29, e->airborne_ms);
-    put_i16(p + 31, e->airborne_y);
+    put_i16(p + 29, e->special_timer_ms);
+    put_i16(p + 31, e->special_windup_ms);
+    p[33] = put_i8_value(e->special_target_player);
+    p[34] = put_i8_value(e->special_target_actor_index);
+    put_i16(p + 35, e->special_pull_timer_ms);
+    put_i16(p + 37, e->charge_dir_x);
+    put_i16(p + 39, e->charge_dir_z);
+    put_i16(p + 41, e->charge_elapsed_ms);
+    put_i16(p + 43, e->airborne_ms);
+    put_i16(p + 45, e->airborne_y);
 }
 
 static void decode_enemy(const unsigned char *p, struct rasterfall_net_enemy *e)
@@ -779,8 +790,16 @@ static void decode_enemy(const unsigned char *p, struct rasterfall_net_enemy *e)
     e->dir_x = get_i16(p + 23); e->dir_z = get_i16(p + 25);
     e->special_target_active = p[27] & 1;
     e->charge_active = p[28] & 1;
-    e->airborne_ms = get_i16(p + 29);
-    e->airborne_y = get_i16(p + 31);
+    e->special_timer_ms = get_i16(p + 29);
+    e->special_windup_ms = get_i16(p + 31);
+    e->special_target_player = get_i8_value(p[33]);
+    e->special_target_actor_index = get_i8_value(p[34]);
+    e->special_pull_timer_ms = get_i16(p + 35);
+    e->charge_dir_x = get_i16(p + 37);
+    e->charge_dir_z = get_i16(p + 39);
+    e->charge_elapsed_ms = get_i16(p + 41);
+    e->airborne_ms = get_i16(p + 43);
+    e->airborne_y = get_i16(p + 45);
 }
 
 static void encode_actor(unsigned char *p, const struct toy_game_actor *a,
@@ -788,19 +807,18 @@ static void encode_actor(unsigned char *p, const struct toy_game_actor *a,
 {
     p[0] = (unsigned char)((a->class_id & 3) << 2);
     p[0] |= (unsigned char)((a->state & 3) << 4);
-    p[0] |= (unsigned char)((put_weapon_value(
-        a->slots[a->current_slot].weapon) & 3) << 6);
     p[1] = (unsigned char)actor_index;
-    put_u32(p + 2, (uint32_t)a->x); put_u32(p + 6, (uint32_t)a->z);
-    put_i16(p + 10, a->sy); put_i16(p + 12, a->cy);
-    put_i16(p + 14, a->hp);
-    p[16] = (unsigned char)(a->state == TOY_GAME_ACTOR_DOWNED ?
+    p[2] = put_weapon_value(a->slots[a->current_slot].weapon);
+    put_u32(p + 3, (uint32_t)a->x); put_u32(p + 7, (uint32_t)a->z);
+    put_i16(p + 11, a->sy); put_i16(p + 13, a->cy);
+    put_i16(p + 15, a->hp);
+    p[17] = (unsigned char)(a->state == TOY_GAME_ACTOR_DOWNED ?
                             a->revive_progress_ms / 12 :
                             (a->muzzle_flash_ms < 0 ? 0 :
                              a->muzzle_flash_ms > 255 ? 255 : a->muzzle_flash_ms));
-    put_u32(p + 17, a->fire_seq);
-    put_i16(p + 21, a->airborne_ms);
-    put_i16(p + 23, a->airborne_y);
+    put_u32(p + 18, a->fire_seq);
+    put_i16(p + 22, a->airborne_ms);
+    put_i16(p + 24, a->airborne_y);
 }
 
 static void decode_actor(const unsigned char *p, struct rasterfall_net_actor *a)
@@ -810,17 +828,17 @@ static void decode_actor(const unsigned char *p, struct rasterfall_net_actor *a)
     a->actor_index = p[1];
     a->class_id = (p[0] >> 2) & 3;
     a->state = (p[0] >> 4) & 3;
-    a->weapon = get_weapon_value((p[0] >> 6) & 3);
-    a->x = (int)get_u32(p + 2); a->z = (int)get_u32(p + 6);
-    a->sy = get_i16(p + 10); a->cy = get_i16(p + 12);
-    a->hp = get_i16(p + 14);
-    a->airborne_ms = get_i16(p + 21);
-    a->airborne_y = get_i16(p + 23);
+    a->weapon = get_weapon_value(p[2]);
+    a->x = (int)get_u32(p + 3); a->z = (int)get_u32(p + 7);
+    a->sy = get_i16(p + 11); a->cy = get_i16(p + 13);
+    a->hp = get_i16(p + 15);
+    a->airborne_ms = get_i16(p + 22);
+    a->airborne_y = get_i16(p + 24);
     if (a->state == TOY_GAME_ACTOR_DOWNED)
-        a->revive_progress_ms = p[16] * 12;
+        a->revive_progress_ms = p[17] * 12;
     else
-        a->muzzle_flash_ms = p[16];
-    a->fire_seq = get_u32(p + 17);
+        a->muzzle_flash_ms = p[17];
+    a->fire_seq = get_u32(p + 18);
 }
 
 static int send_ai_fire_packets(struct rasterfall_net *net,
@@ -1350,9 +1368,12 @@ void rasterfall_net_apply_remote(struct rasterfall_net *net,
     if (net->peer_known && !net->peer_state_initialized) {
         memcpy(net->peer_slots, g->slots, sizeof(net->peer_slots));
         net->peer_current_slot = g->current_slot;
-        net->peer_hp = g->hp;
+        /* peer_hp belongs to player 2.  Using g->hp here makes the first
+         * snapshot inherit the host's health (and used to leave it at zero
+         * after the transport state was reset). */
+        net->peer_hp = g->secondary_player_hp;
         net->peer_state = g->state;
-        net->peer_down = 0;
+        net->peer_down = g->secondary_player_down;
         net->peer_state_initialized = 1;
     }
     /* Charger/Smoker 对远端玩家的影响在本地主机规则步中完成，随后写回
@@ -1555,6 +1576,12 @@ void rasterfall_net_apply_local_rescue(struct rasterfall_net *net,
             net->peer_down = 0;
             net->peer_hp = TOY_GAME_REVIVE_HP;
             net->peer_revive_progress_ms = 0;
+            /* apply_remote() mirrors the secondary player from the game
+             * state at the start of its authoritative pass.  Update that
+             * mirror too, otherwise the completed rescue is immediately
+             * overwritten by the old downed/zero-health state. */
+            session->game_state.secondary_player_down = 0;
+            session->game_state.secondary_player_hp = TOY_GAME_REVIVE_HP;
         }
         if (net->local_revive_peer_active)
             net->peer_revive_progress_ms = net->local_revive_peer_progress_ms;
@@ -1620,6 +1647,14 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
             if (session->game_state.actors[i].kind == TOY_GAME_ACTOR_AI &&
                 !seen[i])
                 session->game_state.actors[i].active = 0;
+        if (session->ai_revive_active) {
+            int index = session->ai_revive_actor_index;
+            if (index < 0 || index >= TOY_GAME_MAX_ACTORS ||
+                !session->game_state.actors[index].active ||
+                session->game_state.actors[index].state !=
+                    TOY_GAME_ACTOR_DOWNED)
+                session->ai_revive_active = 0;
+        }
         if (seen[0]) {
             const struct toy_game_actor *src = &session->game_state.actors[0];
             /* Compatibility mirror for the current HUD and renderer. */
@@ -1684,6 +1719,14 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
             dst->dying_ms = src->dying_ms;
             dst->special_target_active = src->special_target_active;
             dst->charge_active = src->charge_active;
+            dst->special_timer_ms = src->special_timer_ms;
+            dst->special_windup_ms = src->special_windup_ms;
+            dst->special_target_player = src->special_target_player;
+            dst->special_target_actor_index = src->special_target_actor_index;
+            dst->special_pull_timer_ms = src->special_pull_timer_ms;
+            dst->charge_dir_x = src->charge_dir_x;
+            dst->charge_dir_z = src->charge_dir_z;
+            dst->charge_elapsed_ms = src->charge_elapsed_ms;
             dst->airborne_ms = src->airborne_ms;
             dst->airborne_y = src->airborne_y;
             if (old_active != 1 || src->active != 1 ||

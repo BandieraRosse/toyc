@@ -470,6 +470,7 @@ int  toy_game_equip_weapon(struct toy_game *g, int weapon); /* 按武器定义�
 int  toy_game_refill_ammo(struct toy_game *g);              /* 弹药盒：补满已拥有武器的备弹，有变化返回 1 */
 const struct toy_game_weapon_info *toy_game_weapon_info(int weapon);
 const char *toy_game_weapon_name(int weapon);
+int  toy_game_weapon_from_name(const char *name);
 const struct toy_game_enemy_info *toy_game_enemy_info(int type);
 struct toy_game_actor *toy_game_actor_by_id(struct toy_game *g, int actor_id);
 const struct toy_game_actor *toy_game_actor_by_id_const(const struct toy_game *g,
