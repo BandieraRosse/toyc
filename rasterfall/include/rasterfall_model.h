@@ -34,7 +34,7 @@ struct rasterfall_model_header {
     int max_x, max_y, max_z;
 };
 
-#define RASTERFALL_MODEL_MAX_GALLERY 22
+#define RASTERFALL_MODEL_MAX_GALLERY 128
 
 struct rasterfall_model_asset {
     const unsigned char *data;

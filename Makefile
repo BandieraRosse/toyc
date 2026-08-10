@@ -827,7 +827,8 @@ $(BUILD)/rasterfall_viewmodel.o: $(RASTERFALL_SRC)/rasterfall_viewmodel.c \
 $(BUILD)/rasterfall_render.o: $(RASTERFALL_SRC)/rasterfall_render.c \
                               $(RASTERFALL_INC)/rasterfall_render.h \
                               $(RASTERFALL_INC)/rasterfall_session.h \
-                              $(RASTERFALL_INC)/rasterfall_effects.h | $(BUILD)
+                              $(RASTERFALL_INC)/rasterfall_effects.h \
+                              $(RASTERFALL_INC)/rasterfall_model.h | $(BUILD)
 	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
 	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 
@@ -1064,7 +1065,8 @@ $(BUILD)/rasterfall_viewmodel_self.o: $(RASTERFALL_SRC)/rasterfall_viewmodel.c \
 $(BUILD)/rasterfall_render_self.o: $(RASTERFALL_SRC)/rasterfall_render.c \
                                    $(RASTERFALL_INC)/rasterfall_render.h \
                                    $(RASTERFALL_INC)/rasterfall_session.h \
-                                   $(RASTERFALL_INC)/rasterfall_effects.h $(SELF_CC) | $(BUILD)
+                                   $(RASTERFALL_INC)/rasterfall_effects.h \
+                                   $(RASTERFALL_INC)/rasterfall_model.h $(SELF_CC) | $(BUILD)
 	@printf "  $(BLUE)  CC(s)  %s\n" "$<"
 	$(SELF_CC) $(SELF_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 

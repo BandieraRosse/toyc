@@ -53,34 +53,18 @@ static int draw_world_triangle(struct toy_renderer *renderer,
                                const struct camera *camera,
                                const struct vec3 *a, const struct vec3 *b,
                                const struct vec3 *c, uint32_t color);
+static void world_to_view(const struct camera *camera, const struct vec3 *world,
+                          struct vec3 *view);
+static void project_vertex(const struct toy_surface *surface,
+                           const struct vec3 *view,
+                           struct toy_screen_vertex *screen);
 
 static struct rasterfall_model_asset gallery_models[RASTERFALL_MODEL_MAX_GALLERY];
 static int gallery_loaded;
 
-static const char *gallery_paths[RASTERFALL_MODEL_MAX_GALLERY] = {
-    "rasterfall/assets/models/assault_rifle.rmesh",
-    "rasterfall/assets/models/assault_rifle_ammo_box.rmesh",
-    "rasterfall/assets/models/assault_rifle_mdbcte6hh3.rmesh",
-    "rasterfall/assets/models/assault_rifle_xgebgfqxyg.rmesh",
-    "rasterfall/assets/models/pistol.rmesh",
-    "rasterfall/assets/models/pistol_ammo.rmesh",
-    "rasterfall/assets/models/pistol_l1u7kkjzy2.rmesh",
-    "rasterfall/assets/models/pistol_m6rrknpfim.rmesh",
-    "rasterfall/assets/models/revolver.rmesh",
-    "rasterfall/assets/models/revolver_e9wrywgp9d.rmesh",
-    "rasterfall/assets/models/shotgun.rmesh",
-    "rasterfall/assets/models/shotgun_ammo.rmesh",
-    "rasterfall/assets/models/shotgun_f54zsbzz8k.rmesh",
-    "rasterfall/assets/models/smg_ammo_box.rmesh",
-    "rasterfall/assets/models/sniper_ammo_box.rmesh",
-    "rasterfall/assets/models/sniper_rifle.rmesh",
-    "rasterfall/assets/models/sniper_rifle_zkwsiy3jov.rmesh",
-    "rasterfall/assets/models/submachine_gun.rmesh",
-    "rasterfall/assets/models/submachine_gun_e66lwulng4.rmesh",
-    "rasterfall/assets/models/submachine_gun_i9pqb6hwic.rmesh",
-    "rasterfall/assets/models/submachine_gun_thbpaytk5r.rmesh",
-    "rasterfall/assets/models/submachine_gun_wnfec6z9ii.rmesh"
-};
+#define RASTERFALL_MODEL_PATH_BYTES 160
+static char gallery_paths[RASTERFALL_MODEL_MAX_GALLERY]
+                          [RASTERFALL_MODEL_PATH_BYTES];
 
 static int clampi(int value, int low, int high)
 {
@@ -121,9 +105,51 @@ static unsigned int model_u32(const unsigned char *p)
 
 static void gallery_load(void)
 {
-    int i;
+    int fd, i, count = 0;
+    char dent_buf[8192];
+    struct linux_dirent64 *entry;
+    long bytes;
     if (gallery_loaded) return;
-    for (i = 0; i < RASTERFALL_MODEL_MAX_GALLERY; i++)
+
+    fd = __openat(AT_FDCWD, "rasterfall/assets/models",
+                  O_RDONLY | O_DIRECTORY, 0);
+    if (fd >= 0) {
+        while (count < RASTERFALL_MODEL_MAX_GALLERY &&
+               (bytes = __getdents64(fd,
+                                     (struct linux_dirent64 *)dent_buf,
+                                     sizeof(dent_buf))) > 0) {
+            long offset = 0;
+            while (offset < bytes && count < RASTERFALL_MODEL_MAX_GALLERY) {
+                entry = (struct linux_dirent64 *)(dent_buf + offset);
+                if (entry->d_reclen == 0) break;
+                if (entry->d_name[0] != '.' &&
+                    strlen(entry->d_name) >= 6 &&
+                    !strcmp(entry->d_name + strlen(entry->d_name) - 6,
+                            ".rmesh")) {
+                    snprintf(gallery_paths[count],
+                             RASTERFALL_MODEL_PATH_BYTES,
+                             "rasterfall/assets/models/%s", entry->d_name);
+                    count++;
+                }
+                offset += entry->d_reclen;
+            }
+        }
+        __close(fd);
+    }
+
+    /* getdents order is filesystem-dependent; sort paths for a stable
+     * gallery layout and for predictable inventory by the displayed index. */
+    for (i = 1; i < count; i++) {
+        int j = i;
+        char path[RASTERFALL_MODEL_PATH_BYTES];
+        strcpy(path, gallery_paths[i]);
+        while (j > 0 && strcmp(path, gallery_paths[j - 1]) < 0) {
+            strcpy(gallery_paths[j], gallery_paths[j - 1]);
+            j--;
+        }
+        strcpy(gallery_paths[j], path);
+    }
+    for (i = 0; i < count; i++)
         rasterfall_model_load(&gallery_models[i], gallery_paths[i]);
     gallery_loaded = 1;
 }
@@ -205,6 +231,64 @@ static int render_model_gallery(struct toy_renderer *renderer,
     }
     active_gallery_lighting = 0;
     return pixels;
+}
+
+/* The gallery is a fixed developer display rather than an interactable map
+ * object.  Treat the model nearest the crosshair as the selected entry so
+ * its source asset can be inventoried without adding gameplay interaction. */
+static int gallery_selected_model(const struct toy_surface *surface,
+                                  const struct camera *camera)
+{
+    int i, selected = -1, best_distance = 41 * 41;
+    if (!surface || !camera) return -1;
+    gallery_load();
+    for (i = 0; i < RASTERFALL_MODEL_MAX_GALLERY; i++) {
+        struct rasterfall_model_asset *model = &gallery_models[i];
+        struct vec3 center, view;
+        struct toy_screen_vertex screen;
+        int row, column, scale, width, height, dx, dy, distance;
+        if (!model->data) continue;
+        width = model->max_x - model->min_x;
+        height = model->max_y - model->min_y;
+        if (width <= 0 || height <= 0) continue;
+        row = i / 11;
+        column = i % 11;
+        scale = gallery_model_scale(model);
+        center.x = -5000 + column * 1000;
+        center.y = (row ? -800 : -350) + height * scale / 2000;
+        center.z = -13200;
+        world_to_view(camera, &center, &view);
+        if (view.z < NEAR_Z) continue;
+        project_vertex(surface, &view, &screen);
+        dx = screen.x - surface->width / 2;
+        dy = screen.y - surface->height / 2;
+        distance = dx * dx + dy * dy;
+        if (distance < best_distance) {
+            best_distance = distance;
+            selected = i;
+        }
+    }
+    return selected;
+}
+
+static void render_gallery_selection(struct toy_surface *surface,
+                                     const struct camera *camera)
+{
+    int selected, width, x;
+    char line[96];
+    if (!surface || !surface->pixels) return;
+    selected = gallery_selected_model(surface, camera);
+    if (selected < 0) return;
+    snprintf(line, sizeof(line), "MODEL PATH: %s", gallery_paths[selected]);
+    width = (int)strlen(line) * FB_FONT_W;
+    x = (surface->width - width) / 2;
+    if (x < 8) x = 8;
+    fill_rect(surface, x - 8, 10, width + 16, FB_FONT_H + 10,
+              RF_COLOR_UI_BACKGROUND);
+    fill_rect(surface, x - 8, 10, width + 16, 2,
+              RF_COLOR_UI_ACCENT);
+    fb_draw_string((unsigned char *)surface->pixels, x, 15, line,
+                   RF_COLOR_UI_ACCENT_BRIGHT, surface->stride);
 }
 
 static void bake_static_lightmap(void)
@@ -1753,6 +1837,12 @@ void rasterfall_render_sign_text(struct toy_surface *surface,
     for (i = 0; i < level_map.draw_count; i++)
         if (level_map.draw[i].type == TOY_MAP_DRAW_SIGN)
             render_world_sign_text(surface, camera, &level_map.draw[i]);
+}
+
+void rasterfall_render_gallery_selection(struct toy_surface *surface,
+                                         const struct camera *camera)
+{
+    render_gallery_selection(surface, camera);
 }
 
 int rasterfall_render_interactables(struct toy_renderer *renderer,
