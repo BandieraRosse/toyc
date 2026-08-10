@@ -1289,6 +1289,7 @@ void rasterfall_net_poll(struct rasterfall_net *net)
         if (net->public_room && punch_packet(packet, (int)received, PUNCH_MATCH)) {
             uint32_t match_token;
             int new_match;
+            int was_connected = net->connected;
             if (received < 18 || get_u16(packet + 6) != (unsigned int)net->public_room_id)
                 continue;
             match_token = get_u32(packet + 8);
@@ -1320,9 +1321,18 @@ void rasterfall_net_poll(struct rasterfall_net *net)
             }
             net->peer_known = 1;
             net->public_matched = 1;
-            if (net->mode == RASTERFALL_NET_CLIENT && packet[19] > 0 &&
-                packet[19] < RASTERFALL_NET_PLAYER_MAX)
+            if (net->mode == RASTERFALL_NET_CLIENT) {
+                if (packet[19] <= 0 || packet[19] >= RASTERFALL_NET_PLAYER_MAX) {
+                    /* 旧版公网协调器不会分配玩家 ID。继续运行会把
+                     * 第二个客户端静默当成客户端1，表现为“看到别人的
+                     * 画面且自己的输入失效”，必须等待新版服务端。 */
+                    __printf("rasterfall: public server lacks player-id support\n");
+                    net->connected = 0;
+                    net->world_ready = 0;
+                    continue;
+                }
                 net->local_player_id = packet[19];
+            }
             if (net->relay_mode) net->connected = 1;
             if (net->mode == RASTERFALL_NET_HOST && new_match) {
                 /* A server-side room reset starts a new session generation.
@@ -1332,7 +1342,7 @@ void rasterfall_net_poll(struct rasterfall_net *net)
             }
             net->last_public_punch_ms = 0;
             if (!net->relay_mode) punch_send_probe(net);
-            if (net->mode == RASTERFALL_NET_CLIENT) {
+            if (net->mode == RASTERFALL_NET_CLIENT && !was_connected) {
                 unsigned char hello[NET_HEADER_SIZE];
                 int hello_size = packet_begin(hello, RASTERFALL_NET_HELLO, 0,
                                               ++net->send_sequence, 0);
@@ -1599,6 +1609,10 @@ static void net_apply_extra_remote(struct rasterfall_net *net,
         remote->camera.pitch_sy = remote->reported_camera.pitch_sy;
         remote->camera.pitch_cy = remote->reported_camera.pitch_cy;
     }
+    toy_game_update_actor_motion(g, index, 16);
+    if ((remote->command.buttons & RASTERFALL_CMD_JUMP) &&
+        !g->player_down)
+        toy_game_jump_actor(g, index);
     memcpy(host_slots, g->slots, sizeof(host_slots));
     memcpy(host_rays, g->rays, sizeof(host_rays));
     host_px = g->px; host_pz = g->pz; host_hp = g->hp;
@@ -1621,7 +1635,8 @@ static void net_apply_extra_remote(struct rasterfall_net *net,
     g->px = remote->camera.x; g->pz = remote->camera.z;
     rasterfall_session_step_remote_player(session, &remote->camera,
                                           &remote->command,
-                                          g->player_down);
+                                          g->player_down ||
+                                          actor->airborne_ms > 0);
     if ((remote->command.buttons & RASTERFALL_CMD_INTERACT) &&
         !g->player_down)
         rasterfall_session_interact_remote(session, &remote->camera);
@@ -1653,6 +1668,8 @@ static void net_apply_extra_remote(struct rasterfall_net *net,
     remote->hp = actor->hp; remote->down = actor->state == TOY_GAME_ACTOR_DOWNED;
     remote->state = g->state;
     remote->kills = g->kills;
+    remote->airborne_ms = actor->airborne_ms;
+    remote->airborne_y = actor->airborne_y;
     remote->slots[0] = actor->slots[0]; remote->slots[1] = actor->slots[1];
     remote->current_slot = actor->current_slot;
     remote->reloading = actor->reloading;
@@ -1880,10 +1897,15 @@ void rasterfall_net_apply_remote(struct rasterfall_net *net,
     if (net->peer_known && net->tick - net->last_input_tick <= NET_INPUT_HOLD_TICKS) {
         net->remote_event_count = 0;
         event_start = g->event_count;
+        toy_game_update_secondary_player_motion(g, 16);
+        if ((net->remote_command.buttons & RASTERFALL_CMD_JUMP) &&
+            !net->peer_down)
+            toy_game_jump_secondary_player(g);
         if (!net->peer_down)
             rasterfall_session_step_remote_player(session, &net->peer_camera,
                                                   &net->remote_command,
-                                                  net->peer_down);
+                                                  net->peer_down ||
+                                                  g->secondary_player_airborne_ms > 0);
         /* The command's turn delta is only a prediction hint.  Use the
          * complete camera reported by the client before authoritative firing
          * so quick 90-degree turns and accumulated mouse deltas cannot leave

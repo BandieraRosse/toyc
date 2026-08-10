@@ -1563,6 +1563,63 @@ void toy_game_update_player_motion(struct toy_game *g, int dt_ms)
     if (g) update_player_special_motion(g, dt_ms);
 }
 
+int toy_game_jump_secondary_player(struct toy_game *g)
+{
+    if (!g || !g->secondary_player_active || g->secondary_player_down ||
+        g->secondary_player_airborne_ms > 0)
+        return 0;
+    g->secondary_player_airborne_ms = TOY_GAME_JUMP_MS;
+    g->secondary_player_airborne_y = 0;
+    g->secondary_player_vertical_velocity = TOY_GAME_JUMP_VELOCITY;
+    g->secondary_player_knockback_x = 0;
+    g->secondary_player_knockback_z = 0;
+    return 1;
+}
+
+void toy_game_update_secondary_player_motion(struct toy_game *g, int dt_ms)
+{
+    if (!g || !g->secondary_player_active || g->secondary_player_down) return;
+    update_motion_values(g, &g->secondary_px, &g->secondary_pz,
+                         &g->secondary_player_airborne_ms,
+                         &g->secondary_player_airborne_y,
+                         &g->secondary_player_vertical_velocity,
+                         &g->secondary_player_knockback_x,
+                         &g->secondary_player_knockback_z,
+                         TOY_GAME_PLAYER_RADIUS, dt_ms);
+}
+
+int toy_game_jump_actor(struct toy_game *g, int actor_index)
+{
+    struct toy_game_actor *actor;
+    if (!g || actor_index < 0 || actor_index >= TOY_GAME_MAX_ACTORS)
+        return 0;
+    actor = &g->actors[actor_index];
+    if (!actor->active || actor->kind != TOY_GAME_ACTOR_PLAYER ||
+        actor->state != TOY_GAME_ACTOR_ALIVE || actor->airborne_ms > 0)
+        return 0;
+    actor->airborne_ms = TOY_GAME_JUMP_MS;
+    actor->airborne_y = 0;
+    actor->vertical_velocity = TOY_GAME_JUMP_VELOCITY;
+    actor->knockback_x = 0;
+    actor->knockback_z = 0;
+    return 1;
+}
+
+void toy_game_update_actor_motion(struct toy_game *g, int actor_index, int dt_ms)
+{
+    struct toy_game_actor *actor;
+    if (!g || actor_index < 0 || actor_index >= TOY_GAME_MAX_ACTORS)
+        return;
+    actor = &g->actors[actor_index];
+    if (!actor->active || actor->kind != TOY_GAME_ACTOR_PLAYER ||
+        actor->state != TOY_GAME_ACTOR_ALIVE)
+        return;
+    update_motion_values(g, &actor->x, &actor->z, &actor->airborne_ms,
+                         &actor->airborne_y, &actor->vertical_velocity,
+                         &actor->knockback_x, &actor->knockback_z,
+                         TOY_GAME_PLAYER_RADIUS, dt_ms);
+}
+
 static void update_smoker(struct toy_game *g, struct toy_game_enemy *e,
                           int index, int target_x, int target_z,
                           int target_player, int target_actor,

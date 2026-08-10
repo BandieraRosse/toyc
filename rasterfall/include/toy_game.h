@@ -459,6 +459,10 @@ void toy_game_update(struct toy_game *g,
 int  toy_game_jump(struct toy_game *g);
 int  toy_game_jump_with_velocity(struct toy_game *g, int dx, int dz);
 void toy_game_update_player_motion(struct toy_game *g, int dt_ms);
+int  toy_game_jump_secondary_player(struct toy_game *g);
+void toy_game_update_secondary_player_motion(struct toy_game *g, int dt_ms);
+int  toy_game_jump_actor(struct toy_game *g, int actor_index);
+void toy_game_update_actor_motion(struct toy_game *g, int actor_index, int dt_ms);
 void toy_game_update_held(struct toy_game *g,
                           const unsigned char *keys_pressed, /* 可 NULL */
                           int fire_pressed, int fire_held,
