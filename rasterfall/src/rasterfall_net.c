@@ -1531,6 +1531,7 @@ void rasterfall_net_update_connection(struct rasterfall_net *net)
             now - net->peer_last_receive_ms > 3000) {
             net_reset_peer_state(net);
             net->peer_known = 0;
+            net->connected = 0;
             net->peer_last_receive_ms = 0;
         }
     }
@@ -1562,9 +1563,8 @@ void rasterfall_net_update_connection(struct rasterfall_net *net)
         net->remote_event_snapshot_last_id = 0;
         net->remote_event_snapshot_sequence = 0;
     }
-    if (net->mode == RASTERFALL_NET_CLIENT &&
-        ((!net->connected && !net->public_room) ||
-         (net->public_room && net->public_matched)) &&
+    if (net->mode == RASTERFALL_NET_CLIENT && !net->connected &&
+        ((!net->public_room) || net->public_matched) &&
         (!net->last_hello_ms || now - net->last_hello_ms >= 500)) {
         size = packet_begin(hello, RASTERFALL_NET_HELLO, 0,
                             ++net->send_sequence, net->receive_sequence);
