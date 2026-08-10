@@ -12,6 +12,7 @@
 #include "rasterfall_net.h"
 #include "rasterfall_sky.h"
 #include "rasterfall_render.h"
+#include "rasterfall_model.h"
 #include "math.h"
 
 #define NEAR_Z 192
@@ -32,6 +33,7 @@ static int active_textures;
 static int active_fixed_floor_lighting;
 static int active_enemy_lift;
 static int active_actor_lift;
+static int active_gallery_lighting;
 
 #define level_map active_session->level
 #define game active_session->game_state
@@ -46,6 +48,39 @@ static int active_actor_lift;
 #define wall_texture_view active_wall_texture
 #define effects (*active_effects)
 typedef struct rasterfall_interactable interactable;
+
+static int draw_world_triangle(struct toy_renderer *renderer,
+                               const struct camera *camera,
+                               const struct vec3 *a, const struct vec3 *b,
+                               const struct vec3 *c, uint32_t color);
+
+static struct rasterfall_model_asset gallery_models[RASTERFALL_MODEL_MAX_GALLERY];
+static int gallery_loaded;
+
+static const char *gallery_paths[RASTERFALL_MODEL_MAX_GALLERY] = {
+    "rasterfall/assets/models/assault_rifle.rmesh",
+    "rasterfall/assets/models/assault_rifle_ammo_box.rmesh",
+    "rasterfall/assets/models/assault_rifle_mdbcte6hh3.rmesh",
+    "rasterfall/assets/models/assault_rifle_xgebgfqxyg.rmesh",
+    "rasterfall/assets/models/pistol.rmesh",
+    "rasterfall/assets/models/pistol_ammo.rmesh",
+    "rasterfall/assets/models/pistol_l1u7kkjzy2.rmesh",
+    "rasterfall/assets/models/pistol_m6rrknpfim.rmesh",
+    "rasterfall/assets/models/revolver.rmesh",
+    "rasterfall/assets/models/revolver_e9wrywgp9d.rmesh",
+    "rasterfall/assets/models/shotgun.rmesh",
+    "rasterfall/assets/models/shotgun_ammo.rmesh",
+    "rasterfall/assets/models/shotgun_f54zsbzz8k.rmesh",
+    "rasterfall/assets/models/smg_ammo_box.rmesh",
+    "rasterfall/assets/models/sniper_ammo_box.rmesh",
+    "rasterfall/assets/models/sniper_rifle.rmesh",
+    "rasterfall/assets/models/sniper_rifle_zkwsiy3jov.rmesh",
+    "rasterfall/assets/models/submachine_gun.rmesh",
+    "rasterfall/assets/models/submachine_gun_e66lwulng4.rmesh",
+    "rasterfall/assets/models/submachine_gun_i9pqb6hwic.rmesh",
+    "rasterfall/assets/models/submachine_gun_thbpaytk5r.rmesh",
+    "rasterfall/assets/models/submachine_gun_wnfec6z9ii.rmesh"
+};
 
 static int clampi(int value, int low, int high)
 {
@@ -77,6 +112,99 @@ static uint32_t mix_color(uint32_t from, uint32_t to, int num, int den)
     return (uint32_t)(((fr * num + tr * (den - num)) / den) << 16 |
                       ((fg * num + tg * (den - num)) / den) << 8 |
                       ((fb * num + tb * (den - num)) / den));
+}
+
+static unsigned int model_u32(const unsigned char *p)
+{
+    return p[0] | p[1] << 8 | p[2] << 16 | p[3] << 24;
+}
+
+static void gallery_load(void)
+{
+    int i;
+    if (gallery_loaded) return;
+    for (i = 0; i < RASTERFALL_MODEL_MAX_GALLERY; i++)
+        rasterfall_model_load(&gallery_models[i], gallery_paths[i]);
+    gallery_loaded = 1;
+}
+
+static int gallery_model_scale(const struct rasterfall_model_asset *model)
+{
+    int width = model->max_x - model->min_x;
+    int height = model->max_y - model->min_y;
+    int scale = 1000;
+    if (width > 0) scale = 520000 / width;
+    if (height > 0 && 350000 / height < scale) scale = 350000 / height;
+    if (scale < 1) scale = 1;
+    return scale;
+}
+
+static void gallery_vertex(const struct rasterfall_model_asset *model,
+                           unsigned int index, int center_x, int base_y,
+                           int center_z, int scale, struct vec3 *out)
+{
+    const unsigned char *p = model->vertices +
+                             index * RASTERFALL_MODEL_VERTEX_BYTES;
+    out->x = center_x + (int)((long)*(const int *)(p) * scale / 1000);
+    out->y = base_y + (int)((long)(*(const int *)(p + 4) - model->min_y) * scale / 1000);
+    out->z = center_z + (int)((long)*(const int *)(p + 8) * scale / 1000);
+}
+
+static int render_gallery_model(struct toy_renderer *renderer,
+                                const struct camera *camera,
+                                const struct rasterfall_model_asset *model,
+                                int center_x, int base_y, int center_z,
+                                int scale)
+{
+    int drawn = 0, i;
+    for (i = 0; i < (int)model->primitive_count; i++) {
+        const unsigned char *primitive = model->primitives + i * RASTERFALL_MODEL_PRIMITIVE_BYTES;
+        const unsigned char *indices = model->indices + model_u32(primitive) * 4;
+        unsigned int index_count = model_u32(primitive + 4);
+        unsigned int material = model_u32(primitive + 8);
+        uint32_t color = material < model->material_count ?
+                         model_u32(model->materials + material * RASTERFALL_MODEL_MATERIAL_BYTES) :
+                         RF_COLOR_UI_TEXT_MUTED;
+        unsigned int j;
+        for (j = 0; j + 2 < index_count; j += 3) {
+            unsigned int ia = model_u32(indices + j * 4);
+            unsigned int ib = model_u32(indices + (j + 1) * 4);
+            unsigned int ic = model_u32(indices + (j + 2) * 4);
+            struct vec3 a, b, c;
+            if (ia >= model->vertex_count || ib >= model->vertex_count || ic >= model->vertex_count) continue;
+            gallery_vertex(model, ia, center_x, base_y, center_z, scale, &a);
+            gallery_vertex(model, ib, center_x, base_y, center_z, scale, &b);
+            gallery_vertex(model, ic, center_x, base_y, center_z, scale, &c);
+            drawn += draw_world_triangle(renderer, camera, &a, &b, &c, color);
+        }
+    }
+    return drawn;
+}
+
+/* Static developer display: eleven models per row, in front of the north
+ * wall. These assets are visual-only; they never enter map collision or AI. */
+static int render_model_gallery(struct toy_renderer *renderer,
+                                const struct camera *camera)
+{
+    int i, pixels = 0;
+    gallery_load();
+    active_gallery_lighting = 1;
+    for (i = 0; i < RASTERFALL_MODEL_MAX_GALLERY; i++) {
+        struct rasterfall_model_asset *model = &gallery_models[i];
+        int row = i / 11, column = i % 11;
+        int width, height, scale, x, base_y;
+        if (!model->data) continue;
+        width = model->max_x - model->min_x;
+        height = model->max_y - model->min_y;
+        if (width <= 0 || height <= 0) continue;
+        scale = gallery_model_scale(model);
+        x = -5000 + column * 1000;
+        base_y = row ? -800 : -350;
+        pixels += render_gallery_model(renderer, camera, model, x, base_y,
+                                       -13200, scale);
+    }
+    active_gallery_lighting = 0;
+    return pixels;
 }
 
 static void bake_static_lightmap(void)
@@ -304,8 +432,9 @@ static int draw_world_triangle(struct toy_renderer *renderer,
         }
         int center_x = (a->x + b->x + c->x) / 3;
         int center_z = (a->z + b->z + c->z) / 3;
-        int light = fixed_floor_lighting ? 256 : baked_light_at(center_x, center_z);
-        int fog = fixed_floor_lighting ? 0 :
+        int light = active_gallery_lighting ? 280 :
+                    fixed_floor_lighting ? 256 : baked_light_at(center_x, center_z);
+        int fog = active_gallery_lighting ? 0 : fixed_floor_lighting ? 0 :
                   baked_fog_at(world_distance(camera, center_x, center_z));
         /* 区域涂色（fixed_floor_lighting）与地砖仅差 6 个世界单位，掠射角下
          * 插值深度误差会盖过真实差值导致 z-fight；涂色按覆盖层绘制，
@@ -905,6 +1034,7 @@ static int render_scene(struct toy_renderer *renderer, const struct camera *came
         struct box obstacle={level_map.boxes[i].minx,level_map.boxes[i].maxx,level_map.boxes[i].minz,level_map.boxes[i].maxz,level_map.boxes[i].height,level_map.boxes[i].color};
         pixels+=draw_box(renderer,camera,&obstacle);
     }
+    pixels += render_model_gallery(renderer, camera);
     return pixels;
 }
 static int enemy_y(int y, int scale)
