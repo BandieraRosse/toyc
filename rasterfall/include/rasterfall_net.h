@@ -82,6 +82,7 @@ struct rasterfall_net_player {
     struct toy_game_ray rays[TOY_GAME_MAX_RAYS];
     int airborne_ms;
     int airborne_y;
+    uint32_t input_ack;
 };
 
 struct rasterfall_net_enemy {
@@ -246,6 +247,8 @@ struct rasterfall_net {
     int connected;
     int rtt_ms;
     uint32_t last_command_sequence;
+    uint32_t last_jump_command_sequence;
+    uint32_t last_snapshot_input_ack;
     long last_command_sent_ms;
     uint32_t last_snapshot_sequence;
     unsigned int ai_fire_sent_seq[TOY_GAME_MAX_ACTORS];
@@ -296,6 +299,8 @@ void rasterfall_net_apply_remote(struct rasterfall_net *net,
                                  struct camera *host_camera);
 void rasterfall_net_sync_remote_players(struct rasterfall_net *net,
                                         struct toy_game *game);
+void rasterfall_net_prepare_host_step(struct rasterfall_net *net,
+                                      struct toy_game *game);
 void rasterfall_net_reconcile_client(struct rasterfall_net *net,
                                      struct rasterfall_session *session,
                                      struct camera *camera);

@@ -1428,18 +1428,8 @@ startup_again:
                     else {
                         /* Feed the last authoritative remote position into
                          * the host AI before this tick chooses its target. */
-                        toy_game_set_secondary_player_state(&game,
-                            net.mode == RASTERFALL_NET_HOST &&
-                            net.peer_known && net.connected,
-                            net.peer_camera.x, net.peer_camera.z,
-                            net.peer_down);
-                        if (net.mode == RASTERFALL_NET_HOST && net.peer_known) {
-                            game.secondary_player_hp = net.peer_hp;
-                            game.secondary_player_airborne_ms = net.peer_airborne_ms;
-                            game.secondary_player_airborne_y = net.peer_airborne_y;
-                        }
                         if (net.mode == RASTERFALL_NET_HOST)
-                            rasterfall_net_sync_remote_players(&net, &game);
+                            rasterfall_net_prepare_host_step(&net, &game);
                         rasterfall_session_step(&session, &camera, &command,
                                                 FIXED_STEP_US / 1000);
                         if (net.mode == RASTERFALL_NET_HOST)

@@ -386,6 +386,7 @@ struct toy_game {
     int secondary_player_air_x, secondary_player_air_z;
     int secondary_player_knockback_x;
     int secondary_player_knockback_z;
+    int network_rescuer_available;
     int player_down;
     int player_revive_progress_ms;
     int player_control_disabled;
