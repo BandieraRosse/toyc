@@ -374,6 +374,71 @@ static int net_send(struct rasterfall_net *net, unsigned char *packet, int size)
     return sent == size ? 0 : -1;
 }
 
+static int net_send_to(struct rasterfall_net *net,
+                       const struct sockaddr_in *address,
+                       unsigned char *packet, int size)
+{
+    long sent;
+    if (!net || !address || net->fd < 0 || size <= 0) return -1;
+    sent = sendto(net->fd, packet, (size_t)size, 0,
+                  (const struct sockaddr *)address, sizeof(*address));
+    return sent == size ? 0 : -1;
+}
+
+static int net_send_join_accept(struct rasterfall_net *net,
+                                const struct sockaddr_in *address,
+                                int client_id, const struct camera *spawn)
+{
+    unsigned char packet[NET_HEADER_SIZE + 20];
+    int size;
+    size = packet_begin(packet, RASTERFALL_NET_HELLO, 20,
+                        ++net->send_sequence, net->receive_sequence);
+    if (size < 0) return -1;
+    packet[NET_HEADER_SIZE] = (unsigned char)client_id;
+    packet[NET_HEADER_SIZE + 1] = (unsigned char)RASTERFALL_NET_PLAYER_MAX;
+    put_u32(packet + NET_HEADER_SIZE + 4, (uint32_t)spawn->x);
+    put_u32(packet + NET_HEADER_SIZE + 8, (uint32_t)spawn->z);
+    put_i16(packet + NET_HEADER_SIZE + 12, spawn->sy);
+    put_i16(packet + NET_HEADER_SIZE + 14, spawn->cy);
+    put_i16(packet + NET_HEADER_SIZE + 16, spawn->pitch_sy);
+    put_i16(packet + NET_HEADER_SIZE + 18, spawn->pitch_cy);
+    return net_send_to(net, address, packet, size);
+}
+
+static int net_remote_index(const struct rasterfall_net *net,
+                            const struct sockaddr_in *source)
+{
+    int i;
+    for (i = 0; i < RASTERFALL_NET_REMOTE_MAX; i++)
+        if (net->remotes[i].active &&
+            same_peer(&net->remotes[i].address, source)) return i;
+    return -1;
+}
+
+static int net_alloc_remote(struct rasterfall_net *net,
+                            const struct sockaddr_in *source)
+{
+    int i;
+    for (i = 0; i < RASTERFALL_NET_REMOTE_MAX; i++) {
+        struct rasterfall_net_remote *remote = &net->remotes[i];
+        if (remote->active) continue;
+        memset(remote, 0, sizeof(*remote));
+        remote->active = 1;
+        remote->client_id = i + 2;
+        remote->connected = 1;
+        memcpy(&remote->address, source, sizeof(*source));
+        memcpy(&remote->spawn, &net->peer_spawn, sizeof(remote->spawn));
+        remote->spawn.x += remote->client_id * 350;
+        memcpy(&remote->camera, &remote->spawn, sizeof(remote->camera));
+        remote->hp = TOY_GAME_SECONDARY_PLAYER_HP;
+        remote->state = TOY_GAME_PLAYING;
+        remote->slots[0].weapon = -1;
+        remote->slots[1].weapon = TOY_GAME_WEAPON_PISTOL;
+        return i;
+    }
+    return -1;
+}
+
 #define PUNCH_VERSION 2
 #define PUNCH_REGISTER 1
 #define PUNCH_MATCH 2
@@ -445,6 +510,7 @@ static void net_reset_peer_state(struct rasterfall_net *net)
     net->peer_revive_active = 0;
     net->peer_host_revive_active = 0;
     net->peer_host_revive_progress_ms = 0;
+    net->peer_revive_target_id = -1;
     net->local_revive_peer_active = 0;
     net->local_revive_peer_progress_ms = 0;
     net->peer_reloading = 0;
@@ -506,6 +572,7 @@ int rasterfall_net_connect(struct rasterfall_net *net, const char *ip, int port)
         return -1;
     }
     net->peer_known = 1;
+    net->local_player_id = 1;
     net->mode = RASTERFALL_NET_CLIENT;
     net->last_hello_ms = net_monotonic_ms();
     size = packet_begin(hello, RASTERFALL_NET_HELLO, 0,
@@ -906,7 +973,9 @@ int rasterfall_net_send_snapshot(struct rasterfall_net *net,
                        actor_count * NET_ACTOR_SIZE +
                        TOY_GAME_MAX_ENEMIES * NET_ENEMY_SIZE + NET_EVENT_SIZE + NET_WORLD_SIZE;
     int size, offset, part_count, part_index;
-    if (net->mode != RASTERFALL_NET_HOST || !net->peer_known) return -1;
+    if (net->mode != RASTERFALL_NET_HOST ||
+        (!net->peer_known && !net->remotes[0].active &&
+         !net->remotes[1].active)) return -1;
     if (payload_size > RASTERFALL_NET_MAX_SNAPSHOT) return -1;
     net->last_snapshot_sequence = ++net->send_sequence;
     net->last_snapshot_sent_ms = net_monotonic_ms();
@@ -930,6 +999,24 @@ int rasterfall_net_send_snapshot(struct rasterfall_net *net,
                   net->peer_kills, net->peer_fire_seq,
                   net->peer_ray_count, net->peer_rays,
                   net->peer_airborne_ms, net->peer_airborne_y);
+    for (int remote_i = 0; remote_i < RASTERFALL_NET_REMOTE_MAX; remote_i++) {
+        struct rasterfall_net_remote *remote = &net->remotes[remote_i];
+        int player_id = remote_i + 2;
+        int offset = NET_SNAPSHOT_BASE + player_id * NET_PLAYER_SIZE;
+        encode_player(p + offset, player_id,
+                      remote->active && remote->connected,
+                      &remote->camera, remote->hp,
+                      remote->current_slot >= 0 &&
+                              remote->current_slot < TOY_GAME_WEAPON_SLOTS ?
+                          remote->slots[remote->current_slot].weapon : -1,
+                      remote->state, remote->down,
+                      remote->revive_progress_ms, remote->slots,
+                      remote->current_slot, remote->reloading,
+                      remote->reload_timer_ms, remote->muzzle_flash_ms,
+                      remote->kills, remote->fire_seq, remote->ray_count,
+                      remote->rays, remote->airborne_ms,
+                      remote->airborne_y);
+    }
     for (actor_i = 0; actor_i < actor_count; actor_i++) {
         encode_actor(p + NET_SNAPSHOT_BASE + RASTERFALL_NET_PLAYER_MAX * NET_PLAYER_SIZE +
                      actor_i * NET_ACTOR_SIZE, &game->actors[actor_indices[actor_i]],
@@ -993,7 +1080,12 @@ int rasterfall_net_send_snapshot(struct rasterfall_net *net,
         put_u16(part + 6, (unsigned int)part_index);
         put_u16(part + 8, (unsigned int)part_count);
         memcpy(part + NET_SNAPSHOT_PART_BASE, snapshot + offset, (size_t)chunk);
-        if (net_send(net, packet, size) < 0) return -1;
+        if (net->peer_known && net_send(net, packet, size) < 0) return -1;
+        for (int remote_i = 0; remote_i < RASTERFALL_NET_REMOTE_MAX; remote_i++)
+            if (net->remotes[remote_i].active &&
+                net->remotes[remote_i].connected &&
+                net_send_to(net, &net->remotes[remote_i].address,
+                            packet, size) < 0) return -1;
     }
     return send_ai_fire_packets(net, game);
 }
@@ -1068,6 +1160,7 @@ static int decode_snapshot(const unsigned char *payload, int size,
     net->snapshot_world_campaign_stage = get_i16(world_data + 28);
     net->snapshot_player_control_disabled = world_data[30] & 1;
     net->snapshot_ready = 1;
+    net->world_ready = 1;
     return 0;
 }
 
@@ -1232,16 +1325,51 @@ void rasterfall_net_poll(struct rasterfall_net *net)
                 memcpy(&net->peer_camera, &net->peer_spawn, sizeof(net->peer_camera));
                 net->peer_camera_initialized = 0;
                 net->peer_reported_camera_ready = 0;
-            } else if (!net->public_room && !same_peer(&net->peer, &source)) {
-                continue;
             } else if (net->public_room) {
                 /* 以已打洞成功的实际来源为准，适配 endpoint-dependent NAT。 */
                 memcpy(&net->peer, &source, sizeof(source));
             }
-            if (type == RASTERFALL_NET_INPUT &&
-                sequence > net->last_input_sequence &&
-                decode_command(packet + NET_HEADER_SIZE, payload_size,
-                               &net->remote_command) == 0) {
+            if (!net->public_room && net->peer_known &&
+                !same_peer(&net->peer, &source)) {
+                int remote_index = net_remote_index(net, &source);
+                if (remote_index < 0 &&
+                    (type == RASTERFALL_NET_HELLO ||
+                     type == RASTERFALL_NET_INPUT))
+                    remote_index = net_alloc_remote(net, &source);
+                if (remote_index < 0) continue;
+                {
+                    struct rasterfall_net_remote *remote =
+                        &net->remotes[remote_index];
+                    remote->last_receive_ms = net->last_receive_ms;
+                    if (type == RASTERFALL_NET_HELLO) {
+                        net_send_join_accept(net, &source, remote->client_id,
+                                             &remote->spawn);
+                    } else if (type == RASTERFALL_NET_INPUT &&
+                               sequence > remote->last_input_sequence &&
+                               decode_command(packet + NET_HEADER_SIZE,
+                                              payload_size,
+                                              &remote->command) == 0) {
+                        if (!remote->camera_initialized) {
+                            decode_command_camera(packet + NET_HEADER_SIZE,
+                                                  &remote->camera);
+                            remote->camera_initialized = 1;
+                        }
+                        decode_command_camera(packet + NET_HEADER_SIZE,
+                                              &remote->reported_camera);
+                        remote->reported_camera_ready = 1;
+                        remote->last_input_sequence = sequence;
+                        remote->last_input_tick = net->tick;
+                        remote->command_ready = 1;
+                    }
+                }
+                continue;
+            }
+            if (type == RASTERFALL_NET_HELLO) {
+                net_send_join_accept(net, &source, 1, &net->peer_spawn);
+            } else if (type == RASTERFALL_NET_INPUT &&
+                       sequence > net->last_input_sequence &&
+                       decode_command(packet + NET_HEADER_SIZE, payload_size,
+                                      &net->remote_command) == 0) {
                 if (!net->peer_camera_initialized) {
                     decode_command_camera(packet + NET_HEADER_SIZE,
                                           &net->peer_camera);
@@ -1265,7 +1393,19 @@ void rasterfall_net_poll(struct rasterfall_net *net)
                 memcpy(&net->peer, &source, sizeof(source));
                 net->peer_known = 1;
             } else if (!same_peer(&net->peer, &source)) continue;
-            if (type == RASTERFALL_NET_AI_FIRE &&
+            if (type == RASTERFALL_NET_HELLO && payload_size >= 20) {
+                net->local_player_id = packet[NET_HEADER_SIZE];
+                net->peer_spawn.x = (int)get_u32(packet + NET_HEADER_SIZE + 4);
+                net->peer_spawn.z = (int)get_u32(packet + NET_HEADER_SIZE + 8);
+                net->peer_spawn.sy = get_i16(packet + NET_HEADER_SIZE + 12);
+                net->peer_spawn.cy = get_i16(packet + NET_HEADER_SIZE + 14);
+                net->peer_spawn.pitch_sy =
+                    get_i16(packet + NET_HEADER_SIZE + 16);
+                net->peer_spawn.pitch_cy =
+                    get_i16(packet + NET_HEADER_SIZE + 18);
+                net->spawn_pending = 1;
+                net->connected = 1;
+            } else if (type == RASTERFALL_NET_AI_FIRE &&
                 decode_ai_fire(packet + NET_HEADER_SIZE, payload_size, net) == 0) {
                 /* AI fire packets are visual companions to snapshots and do
                  * not participate in snapshot ordering. */
@@ -1294,9 +1434,17 @@ void rasterfall_net_update_connection(struct rasterfall_net *net)
 {
     long now;
     unsigned char hello[NET_HEADER_SIZE];
-    int size;
+    int size, i;
     if (!net || net->fd < 0 || net->mode == RASTERFALL_NET_OFF) return;
     now = net_monotonic_ms();
+    if (net->mode == RASTERFALL_NET_HOST) {
+        for (i = 0; i < RASTERFALL_NET_REMOTE_MAX; i++) {
+            struct rasterfall_net_remote *remote = &net->remotes[i];
+            if (remote->active && remote->last_receive_ms &&
+                now - remote->last_receive_ms > 3000)
+                memset(remote, 0, sizeof(*remote));
+        }
+    }
     if (net->public_room) {
         /* REGISTER is also the room lease heartbeat.  Keep sending it after
          * MATCH; otherwise the coordinator quite correctly expires a host
@@ -1336,6 +1484,262 @@ void rasterfall_net_update_connection(struct rasterfall_net *net)
         size = packet_begin(hello, RASTERFALL_NET_HELLO, 0,
                             ++net->send_sequence, net->receive_sequence);
         if (net_send(net, hello, size) == 0) net->last_hello_ms = now;
+    }
+}
+
+static void net_apply_extra_remote(struct rasterfall_net *net,
+                                   struct rasterfall_session *session,
+                                   struct rasterfall_net_remote *remote)
+{
+    struct toy_game *g = &session->game_state;
+    struct toy_game_slot host_slots[TOY_GAME_WEAPON_SLOTS];
+    struct toy_game_ray host_rays[TOY_GAME_MAX_RAYS];
+    struct toy_game_actor *actor;
+    unsigned char keys[TOY_GAME_KEY_RELOAD + 1];
+    int host_px, host_pz, host_hp, host_down, host_revive;
+    int host_current, host_reload, host_reload_timer, host_cooldown;
+    int host_muzzle, host_damage, host_kills, host_ray_count;
+    unsigned int host_fire_seq;
+    int event_start, index;
+    if (!remote->active || !remote->connected || !remote->command_ready)
+        return;
+    index = TOY_GAME_REMOTE_ACTOR_BASE + remote->client_id - 2;
+    if (index < 0 || index >= TOY_GAME_MAX_ACTORS) return;
+    actor = &g->actors[index];
+    if (remote->reported_camera_ready) {
+        remote->camera.sy = remote->reported_camera.sy;
+        remote->camera.cy = remote->reported_camera.cy;
+        remote->camera.pitch_sy = remote->reported_camera.pitch_sy;
+        remote->camera.pitch_cy = remote->reported_camera.pitch_cy;
+    }
+    memcpy(host_slots, g->slots, sizeof(host_slots));
+    memcpy(host_rays, g->rays, sizeof(host_rays));
+    host_px = g->px; host_pz = g->pz; host_hp = g->hp;
+    host_down = g->player_down;
+    host_revive = g->player_revive_progress_ms;
+    host_current = g->current_slot;
+    host_reload = g->reloading; host_reload_timer = g->reload_timer_ms;
+    host_cooldown = g->fire_cooldown_ms; host_muzzle = g->muzzle_flash_ms;
+    host_damage = g->damage_flash_ms; host_kills = g->kills;
+    host_ray_count = g->ray_count; host_fire_seq = g->fire_seq;
+    memcpy(g->slots, actor->slots, sizeof(g->slots));
+    g->current_slot = actor->current_slot;
+    g->hp = actor->hp; g->player_down = actor->state == TOY_GAME_ACTOR_DOWNED;
+    g->player_revive_progress_ms = actor->revive_progress_ms;
+    g->reloading = actor->reloading; g->reload_timer_ms = actor->reload_timer_ms;
+    g->fire_cooldown_ms = actor->fire_cooldown_ms;
+    g->muzzle_flash_ms = actor->muzzle_flash_ms;
+    g->damage_flash_ms = 0; g->kills = remote->kills;
+    g->fire_seq = actor->fire_seq;
+    g->px = remote->camera.x; g->pz = remote->camera.z;
+    rasterfall_session_step_remote_player(session, &remote->camera,
+                                          &remote->command,
+                                          g->player_down);
+    if ((remote->command.buttons & RASTERFALL_CMD_INTERACT) &&
+        !g->player_down)
+        rasterfall_session_interact_remote(session, &remote->camera);
+    memset(keys, 0, sizeof(keys));
+    if (remote->command.buttons & RASTERFALL_CMD_RELOAD)
+        keys[TOY_GAME_KEY_RELOAD] = 1;
+    if (remote->command.buttons & RASTERFALL_CMD_SLOT_1)
+        keys[TOY_GAME_KEY_SLOT_1] = 1;
+    if (remote->command.buttons & RASTERFALL_CMD_SLOT_2)
+        keys[TOY_GAME_KEY_SLOT_2] = 1;
+    event_start = g->event_count;
+    toy_game_update_weapon_held(g, keys,
+        (remote->command.buttons & RASTERFALL_CMD_FIRE) != 0,
+        remote->command.fire_held, remote->camera.sy, remote->camera.cy, 16);
+    actor->x = remote->camera.x; actor->z = remote->camera.z;
+    actor->sy = remote->camera.sy; actor->cy = remote->camera.cy;
+    actor->hp = g->hp;
+    actor->state = g->player_down ? TOY_GAME_ACTOR_DOWNED :
+                                     TOY_GAME_ACTOR_ALIVE;
+    actor->revive_progress_ms = g->player_revive_progress_ms;
+    memcpy(actor->slots, g->slots, sizeof(actor->slots));
+    actor->current_slot = g->current_slot;
+    actor->reloading = g->reloading; actor->reload_timer_ms = g->reload_timer_ms;
+    actor->fire_cooldown_ms = g->fire_cooldown_ms;
+    actor->muzzle_flash_ms = g->muzzle_flash_ms;
+    actor->fire_seq = g->fire_seq; actor->ray_count = g->ray_count;
+    memcpy(actor->rays, g->rays, sizeof(actor->rays));
+    remote->command_ready = 0;
+    remote->hp = actor->hp; remote->down = actor->state == TOY_GAME_ACTOR_DOWNED;
+    remote->state = g->state;
+    remote->kills = g->kills;
+    remote->slots[0] = actor->slots[0]; remote->slots[1] = actor->slots[1];
+    remote->current_slot = actor->current_slot;
+    remote->reloading = actor->reloading;
+    remote->reload_timer_ms = actor->reload_timer_ms;
+    remote->muzzle_flash_ms = actor->muzzle_flash_ms;
+    remote->fire_seq = actor->fire_seq; remote->ray_count = actor->ray_count;
+    memcpy(remote->rays, actor->rays, sizeof(remote->rays));
+    if (g->event_count > event_start) {
+        int count = g->event_count - event_start;
+        if (count > TOY_GAME_MAX_EVENTS) count = TOY_GAME_MAX_EVENTS;
+        net_queue_remote_events(net, g->events + event_start, count);
+        g->event_count = event_start;
+    }
+    memcpy(g->slots, host_slots, sizeof(g->slots));
+    memcpy(g->rays, host_rays, sizeof(g->rays));
+    g->px = host_px; g->pz = host_pz; g->hp = host_hp;
+    g->player_down = host_down; g->player_revive_progress_ms = host_revive;
+    g->current_slot = host_current; g->reloading = host_reload;
+    g->reload_timer_ms = host_reload_timer; g->fire_cooldown_ms = host_cooldown;
+    g->muzzle_flash_ms = host_muzzle; g->damage_flash_ms = host_damage;
+    g->kills = host_kills; g->ray_count = host_ray_count;
+    g->fire_seq = host_fire_seq;
+}
+
+static int net_find_down_target(struct rasterfall_net *net,
+                                struct rasterfall_session *session,
+                                const struct camera *rescuer,
+                                int rescuer_id)
+{
+    int target = -1;
+    long best = 0;
+    int i;
+    if (rescuer_id != 0 && session->game_state.player_down) {
+        long dx = (long)rescuer->x - session->game_state.px;
+        long dz = (long)rescuer->z - session->game_state.pz;
+        long d2 = dx * dx + dz * dz;
+        if (d2 <= (long)RASTERFALL_INTERACT_RANGE * RASTERFALL_INTERACT_RANGE) {
+            target = 0; best = d2;
+        }
+    }
+    if (rescuer_id != 1 && net->peer_known && net->peer_down) {
+        long dx = (long)rescuer->x - net->peer_camera.x;
+        long dz = (long)rescuer->z - net->peer_camera.z;
+        long d2 = dx * dx + dz * dz;
+        if (d2 <= (long)RASTERFALL_INTERACT_RANGE * RASTERFALL_INTERACT_RANGE &&
+            (target < 0 || d2 < best)) { target = 1; best = d2; }
+    }
+    for (i = 0; i < RASTERFALL_NET_REMOTE_MAX; i++) {
+        struct rasterfall_net_remote *other = &net->remotes[i];
+        long dx, dz, d2;
+        if (other->client_id == rescuer_id || !other->active ||
+            !other->connected || !other->down) continue;
+        dx = (long)rescuer->x - other->camera.x;
+        dz = (long)rescuer->z - other->camera.z;
+        d2 = dx * dx + dz * dz;
+        if (d2 <= (long)RASTERFALL_INTERACT_RANGE * RASTERFALL_INTERACT_RANGE &&
+            (target < 0 || d2 < best)) { target = other->client_id; best = d2; }
+    }
+    return target;
+}
+
+static const struct camera *net_rescue_target_camera(
+    const struct rasterfall_net *net, const struct rasterfall_session *session,
+    int target_id)
+{
+    int i;
+    if (target_id == 0) return NULL;
+    if (target_id == 1) return &net->peer_camera;
+    for (i = 0; i < RASTERFALL_NET_REMOTE_MAX; i++)
+        if (net->remotes[i].client_id == target_id)
+            return &net->remotes[i].camera;
+    (void)session;
+    return NULL;
+}
+
+static int net_target_is_down(const struct rasterfall_net *net,
+                              const struct rasterfall_session *session,
+                              int target_id)
+{
+    int i;
+    if (target_id == 0) return session->game_state.player_down;
+    if (target_id == 1) return net->peer_known && net->peer_down;
+    for (i = 0; i < RASTERFALL_NET_REMOTE_MAX; i++)
+        if (net->remotes[i].client_id == target_id)
+            return net->remotes[i].active && net->remotes[i].connected &&
+                   net->remotes[i].down;
+    return 0;
+}
+
+static void net_finish_rescue(struct rasterfall_net *net,
+                              struct rasterfall_session *session,
+                              int target_id)
+{
+    int i;
+    if (target_id == 0) {
+        session->game_state.player_down = 0;
+        session->game_state.hp = TOY_GAME_REVIVE_HP;
+        session->game_state.player_revive_progress_ms = 0;
+    } else if (target_id == 1) {
+        net->peer_down = 0;
+        net->peer_hp = TOY_GAME_REVIVE_HP;
+        net->peer_revive_progress_ms = 0;
+        session->game_state.secondary_player_down = 0;
+        session->game_state.secondary_player_hp = TOY_GAME_REVIVE_HP;
+    } else for (i = 0; i < RASTERFALL_NET_REMOTE_MAX; i++) {
+        struct rasterfall_net_remote *target = &net->remotes[i];
+        if (target->client_id != target_id) continue;
+        target->down = 0;
+        target->hp = TOY_GAME_REVIVE_HP;
+        target->revive_progress_ms = 0;
+        toy_game_set_remote_player(&session->game_state, target_id, 1,
+                                   target->camera.x, target->camera.z, "PLAYER");
+    }
+    net_push_event(&session->game_state, TOY_GAME_EV_ACTOR_REVIVE);
+}
+
+static void net_apply_extra_rescue_actions(struct rasterfall_net *net,
+                                           struct rasterfall_session *session)
+{
+    int i;
+    for (i = 0; i < RASTERFALL_NET_REMOTE_MAX; i++) {
+        struct rasterfall_net_remote *rescuer = &net->remotes[i];
+        int target_id;
+        const struct camera *target_camera;
+        int revive;
+        if (!rescuer->active || !rescuer->connected || rescuer->down ||
+            !rescuer->command_ready) continue;
+        target_id = rescuer->revive_target_id;
+        if (rescuer->local_revive_active &&
+            (!net_target_is_down(net, session, target_id) ||
+             !(target_camera = net_rescue_target_camera(net, session, target_id)))) {
+            rescuer->local_revive_active = 0;
+            rescuer->local_revive_progress_ms = 0;
+            rescuer->revive_target_id = -1;
+        }
+        if (!rescuer->local_revive_active &&
+            (rescuer->command.buttons & RASTERFALL_CMD_INTERACT)) {
+            target_id = net_find_down_target(net, session, &rescuer->camera,
+                                             rescuer->client_id);
+            target_camera = net_rescue_target_camera(net, session, target_id);
+            if (target_id >= 0 && (target_id == 0 || target_camera)) {
+                rescuer->revive_target_id = target_id;
+                rescuer->local_revive_progress_ms = 0;
+                rescuer->local_revive_active = 1;
+            }
+        }
+        if (!rescuer->local_revive_active) continue;
+        target_id = rescuer->revive_target_id;
+        target_camera = net_rescue_target_camera(net, session, target_id);
+        if (target_id == 0) target_camera = &(struct camera){
+            session->game_state.px, session->game_state.pz,
+            0, 1024, 0, 1024, 0
+        };
+        if (!target_camera) continue;
+        revive = rasterfall_session_revive_player(
+            session, &rescuer->camera, target_camera,
+            &rescuer->local_revive_progress_ms, 16);
+        if (revive < 0) {
+            rescuer->local_revive_active = 0;
+            rescuer->local_revive_progress_ms = 0;
+            rescuer->revive_target_id = -1;
+        } else if (revive > 0) {
+            net_finish_rescue(net, session, target_id);
+            rescuer->local_revive_active = 0;
+            rescuer->local_revive_progress_ms = 0;
+            rescuer->revive_target_id = -1;
+        }
+        if (rescuer->local_revive_active) {
+            rescuer->revive_progress_ms = rescuer->local_revive_progress_ms;
+            if (target_id == 0) session->game_state.player_revive_progress_ms =
+                rescuer->local_revive_progress_ms;
+            else if (target_id == 1) net->peer_revive_progress_ms =
+                rescuer->local_revive_progress_ms;
+        }
     }
 }
 
@@ -1441,6 +1845,43 @@ void rasterfall_net_apply_remote(struct rasterfall_net *net,
             int revive = rasterfall_session_revive_remote(session,
                                                            &net->peer_camera, 16);
             if (revive >= 0) net->peer_revive_active = 1;
+        }
+        /* 玩家2也可以救援后来加入的玩家；目标和进度跨 INPUT 保留。 */
+        if (net->peer_revive_target_id >= 2 &&
+            (!net_target_is_down(net, session, net->peer_revive_target_id) ||
+             !net_rescue_target_camera(net, session, net->peer_revive_target_id))) {
+            net->peer_revive_target_id = -1;
+            net->peer_host_revive_progress_ms = 0;
+        }
+        if (net->peer_revive_target_id < 0 && !net->peer_down &&
+            (net->remote_command.buttons & RASTERFALL_CMD_INTERACT)) {
+            int target_id = net_find_down_target(net, session,
+                                                 &net->peer_camera, 1);
+            if (target_id >= 2) {
+                net->peer_revive_target_id = target_id;
+                net->peer_host_revive_progress_ms = 0;
+            }
+        }
+        if (net->peer_revive_target_id >= 2) {
+            const struct camera *target = net_rescue_target_camera(
+                net, session, net->peer_revive_target_id);
+            int target_id = net->peer_revive_target_id;
+            if (target) {
+                int revive = rasterfall_session_revive_player(
+                    session, &net->peer_camera, target,
+                    &net->peer_host_revive_progress_ms, 16);
+                if (revive < 0) {
+                    net->peer_revive_target_id = -1;
+                    net->peer_host_revive_progress_ms = 0;
+                } else if (revive > 0) {
+                    net_finish_rescue(net, session, target_id);
+                    net->peer_revive_target_id = -1;
+                    net->peer_host_revive_progress_ms = 0;
+                } else {
+                    net->remotes[target_id - 2].revive_progress_ms =
+                        net->peer_host_revive_progress_ms;
+                }
+            }
         }
         /* The remote player can rescue the host player. */
         if (net->peer_host_revive_active) {
@@ -1549,6 +1990,9 @@ void rasterfall_net_apply_remote(struct rasterfall_net *net,
         g->ray_count = host_ray_count; g->fire_seq = host_fire_seq;
         memcpy(g->rays, host_rays, sizeof(g->rays));
     }
+    net_apply_extra_rescue_actions(net, session);
+    for (int remote_i = 0; remote_i < RASTERFALL_NET_REMOTE_MAX; remote_i++)
+        net_apply_extra_remote(net, session, &net->remotes[remote_i]);
     net->remote_command.turn = 0;
     net->remote_command.pitch = 0;
     net->remote_command.buttons = 0;
@@ -1608,8 +2052,15 @@ void rasterfall_net_apply_local_rescue(struct rasterfall_net *net,
                                        int interact_pressed, int dt_ms)
 {
     int revive;
-    if (!net || !session || !host_camera || net->mode != RASTERFALL_NET_HOST ||
-        !net->peer_known || !net->connected || !net->peer_down) return;
+    if (!net || !session || !host_camera || net->mode != RASTERFALL_NET_HOST)
+        return;
+    if ((!net->peer_known || !net->connected || !net->peer_down)) {
+        int any_down = 0;
+        for (int i = 0; i < RASTERFALL_NET_REMOTE_MAX; i++)
+            if (net->remotes[i].active && net->remotes[i].connected &&
+                net->remotes[i].down) any_down = 1;
+        if (!any_down) return;
+    }
     if (net->local_revive_peer_active) {
         revive = rasterfall_session_revive_player(
             session, host_camera, &net->peer_camera,
@@ -1643,6 +2094,38 @@ void rasterfall_net_apply_local_rescue(struct rasterfall_net *net,
         if (net->local_revive_peer_active)
             net->peer_revive_progress_ms = net->local_revive_peer_progress_ms;
     }
+    for (int remote_i = 0; remote_i < RASTERFALL_NET_REMOTE_MAX; remote_i++) {
+        struct rasterfall_net_remote *remote = &net->remotes[remote_i];
+        int revive;
+        if (!remote->active || !remote->connected || !remote->down) continue;
+        if (remote->local_revive_active) {
+            revive = rasterfall_session_revive_player(
+                session, host_camera, &remote->camera,
+                &remote->local_revive_progress_ms, dt_ms);
+            if (revive < 0) {
+                remote->local_revive_active = 0;
+                remote->local_revive_progress_ms = 0;
+            } else if (revive > 0) {
+                remote->local_revive_active = 0;
+                remote->local_revive_progress_ms = 0;
+                remote->down = 0;
+                remote->hp = TOY_GAME_REVIVE_HP;
+                remote->revive_progress_ms = 0;
+                toy_game_set_remote_player(&session->game_state,
+                                            remote->client_id, 1,
+                                            remote->camera.x,
+                                            remote->camera.z, "PLAYER");
+            }
+        }
+        if (remote->down && interact_pressed && !remote->local_revive_active) {
+            revive = rasterfall_session_revive_player(
+                session, host_camera, &remote->camera,
+                &remote->local_revive_progress_ms, dt_ms);
+            if (revive >= 0) remote->local_revive_active = 1;
+        }
+        if (remote->local_revive_active)
+            remote->revive_progress_ms = remote->local_revive_progress_ms;
+    }
 }
 
 void rasterfall_net_reset_host(struct rasterfall_net *net)
@@ -1658,7 +2141,10 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
     const struct rasterfall_net_player *own;
     long dx, dz, dist2;
     if (net->mode != RASTERFALL_NET_CLIENT || !net->snapshot_ready) return;
-    own = &net->players[1];
+    if (net->local_player_id < 0 ||
+        net->local_player_id >= RASTERFALL_NET_PLAYER_MAX)
+        return;
+    own = &net->players[net->local_player_id];
     if (!own->active) return;
     if (session) {
         int seen[TOY_GAME_MAX_ACTORS];
@@ -1672,7 +2158,8 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
             dst = &session->game_state.actors[index];
             dst->actor_id = index + 1;
             dst->active = src->active;
-            dst->kind = TOY_GAME_ACTOR_AI;
+            dst->kind = index >= TOY_GAME_REMOTE_ACTOR_BASE ?
+                        TOY_GAME_ACTOR_PLAYER : TOY_GAME_ACTOR_AI;
             dst->class_id = src->class_id;
             dst->state = src->state;
             dst->x = src->x; dst->z = src->z;
@@ -1692,7 +2179,8 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
             seen[index] = 1;
         }
         for (i = 0; i < TOY_GAME_MAX_ACTORS; i++)
-            if (session->game_state.actors[i].kind == TOY_GAME_ACTOR_AI &&
+            if ((session->game_state.actors[i].kind == TOY_GAME_ACTOR_AI ||
+                 session->game_state.actors[i].kind == TOY_GAME_ACTOR_PLAYER) &&
                 !seen[i])
                 session->game_state.actors[i].active = 0;
         if (session->ai_revive_active) {

@@ -8,11 +8,11 @@
 
 #define RASTERFALL_NET_DEFAULT_PORT 28460
 #define RASTERFALL_NET_MAX_PACKET 2600
-#define RASTERFALL_NET_MAX_SNAPSHOT 4096
+#define RASTERFALL_NET_MAX_SNAPSHOT 8192
 #define RASTERFALL_NET_PROTOCOL_VERSION 15
 #define RASTERFALL_NET_MAX_ACTORS 12
-#define RASTERFALL_NET_PLAYER_MAX 2
-#define RASTERFALL_NET_REMOTE_MAX 3
+#define RASTERFALL_NET_PLAYER_MAX 4
+#define RASTERFALL_NET_REMOTE_MAX 2
 #define RASTERFALL_NET_EVENT_QUEUE_MAX 64
 #define RASTERFALL_NET_DISCOVERY_PORT 28459
 #define RASTERFALL_NET_DISCOVERY_MAX_ROOMS 8
@@ -143,6 +143,9 @@ struct rasterfall_net_remote {
     int state;
     int down;
     int revive_progress_ms;
+    int local_revive_active;
+    int local_revive_progress_ms;
+    int revive_target_id;
     int reloading, reload_timer_ms;
     int fire_cooldown_ms, muzzle_flash_ms, damage_flash_ms;
     int kills;
@@ -180,6 +183,7 @@ struct rasterfall_net {
     int peer_revive_active;
     int peer_host_revive_active;
     int peer_host_revive_progress_ms;
+    int peer_revive_target_id;
     int local_revive_peer_active;
     int local_revive_peer_progress_ms;
     int peer_reloading;
@@ -197,6 +201,8 @@ struct rasterfall_net {
     struct rasterfall_net_player players[RASTERFALL_NET_PLAYER_MAX];
     struct rasterfall_net_remote remotes[RASTERFALL_NET_REMOTE_MAX];
     int local_player_id;
+    int spawn_pending;
+    int world_ready;
     struct rasterfall_net_actor actors[RASTERFALL_NET_MAX_ACTORS];
     int actor_count;
     struct rasterfall_net_enemy enemies[TOY_GAME_MAX_ENEMIES];

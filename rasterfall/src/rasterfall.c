@@ -257,12 +257,22 @@ static int clampi(int value, int low, int high)
 static void set_network_spectator_camera(struct camera *camera,
                                          const struct rasterfall_net *net)
 {
-    const struct rasterfall_net_player *target;
+    const struct rasterfall_net_player *target = NULL;
+    int i;
     int distance = 1250;
     if (!camera || !net) return;
-    if (net->mode == RASTERFALL_NET_CLIENT && net->players[1].downed &&
-        net->players[0].active) {
-        target = &net->players[0];
+    if (net->mode == RASTERFALL_NET_CLIENT &&
+        net->local_player_id >= 0 &&
+        net->local_player_id < RASTERFALL_NET_PLAYER_MAX &&
+        net->players[net->local_player_id].downed) {
+        for (i = 0; i < RASTERFALL_NET_PLAYER_MAX; i++) {
+            if (i != net->local_player_id && net->players[i].active &&
+                !net->players[i].downed) {
+                target = &net->players[i];
+                break;
+            }
+        }
+        if (!target) return;
     } else if (net->mode == RASTERFALL_NET_HOST && game.player_down &&
                net->peer_known && net->connected && !net->peer_down) {
         camera->x = net->peer_camera.x - net->peer_camera.sy * distance / 1024;
@@ -1363,6 +1373,15 @@ startup_again:
             if (!paused) {
                 struct rasterfall_command command;
                 rasterfall_effects_update(&effects, FIXED_STEP_US / 1000);
+                if (net.mode == RASTERFALL_NET_CLIENT && net.spawn_pending) {
+                    camera.x = net.peer_spawn.x;
+                    camera.z = net.peer_spawn.z;
+                    camera.sy = net.peer_spawn.sy;
+                    camera.cy = net.peer_spawn.cy;
+                    camera.pitch_sy = net.peer_spawn.pitch_sy;
+                    camera.pitch_cy = net.peer_spawn.pitch_cy;
+                    net.spawn_pending = 0;
+                }
                 if (net.mode == RASTERFALL_NET_HOST && game.player_down) {
                     /* The render-only spectator camera must not become the
                      * authoritative body position on the next tick. */
@@ -1370,7 +1389,8 @@ startup_again:
                     camera.z = game.pz;
                 }
                 if (game.state == TOY_GAME_PLAYING &&
-                    !(net.mode == RASTERFALL_NET_CLIENT && !net.connected)) {
+                    !(net.mode == RASTERFALL_NET_CLIENT &&
+                      (!net.connected || !net.world_ready))) {
                     build_game_command(&command, &input, &settings, fire_edge,
                                        shove_edge, pointer_turn_pending,
                                        pointer_pitch_pending);

@@ -1707,51 +1707,75 @@ static int render_network_teammate(struct toy_renderer *renderer,
                                    const struct camera *camera,
                                    const struct rasterfall_net *net)
 {
-    const struct camera *remote = NULL;
-    int weapon = -1;
-    int muzzle_flash = 0;
-    int downed = 0;
-    if (net->mode == RASTERFALL_NET_HOST && net->peer_known) {
-        remote = &net->peer_camera;
-        muzzle_flash = net->peer_muzzle_flash_ms;
-        downed = net->peer_down;
-        if (net->peer_current_slot >= 0 &&
-            net->peer_current_slot < TOY_GAME_WEAPON_SLOTS)
-            weapon = net->peer_slots[net->peer_current_slot].weapon;
-    } else if (net->mode == RASTERFALL_NET_CLIENT && net->players[0].active) {
-        remote = &net->players[0].camera;
-        muzzle_flash = net->players[0].muzzle_flash_ms;
-        downed = net->players[0].downed;
-        weapon = net->players[0].weapon;
+    static const uint32_t colors[RASTERFALL_NET_PLAYER_MAX] = {
+        RF_COLOR_AI_RIFLE, RF_COLOR_UI_PLAYER, 0xD59BFF, 0x66D9D9
+    };
+    int pixels = 0, i;
+    if (net->mode == RASTERFALL_NET_CLIENT) {
+        for (i = 0; i < RASTERFALL_NET_PLAYER_MAX; i++) {
+            const struct rasterfall_net_player *player = &net->players[i];
+            if (!player->active || i == net->local_player_id) continue;
+            pixels += render_player_avatar(renderer, camera,
+                player->camera.x, player->camera.z, player->camera.sy,
+                player->camera.cy, player->weapon, player->muzzle_flash_ms,
+                colors[i], player->downed);
+        }
+        return pixels;
     }
-    if (!remote) return 0;
-    return render_player_avatar(renderer, camera, remote->x, remote->z,
-                                remote->sy, remote->cy, weapon, muzzle_flash,
-                                RF_COLOR_AI_RIFLE, downed);
+    if (net->peer_known) {
+        int weapon = net->peer_current_slot >= 0 &&
+                     net->peer_current_slot < TOY_GAME_WEAPON_SLOTS ?
+                     net->peer_slots[net->peer_current_slot].weapon : -1;
+        pixels += render_player_avatar(renderer, camera, net->peer_camera.x,
+            net->peer_camera.z, net->peer_camera.sy, net->peer_camera.cy,
+            weapon, net->peer_muzzle_flash_ms, colors[1], net->peer_down);
+    }
+    for (i = 0; i < RASTERFALL_NET_REMOTE_MAX; i++) {
+        const struct rasterfall_net_remote *remote = &net->remotes[i];
+        int weapon;
+        if (!remote->active || !remote->connected) continue;
+        weapon = remote->current_slot >= 0 &&
+                 remote->current_slot < TOY_GAME_WEAPON_SLOTS ?
+                 remote->slots[remote->current_slot].weapon : -1;
+        pixels += render_player_avatar(renderer, camera, remote->camera.x,
+            remote->camera.z, remote->camera.sy, remote->camera.cy, weapon,
+            remote->muzzle_flash_ms, colors[remote->client_id], remote->down);
+    }
+    return pixels;
 }
 
 static void render_network_teammate_status(struct toy_renderer *renderer,
                                            const struct camera *camera,
                                            const struct rasterfall_net *net)
 {
-    const struct camera *remote = NULL;
-    int hp = 0;
-    int downed = 0, revive_ms = 0;
-    if (net->mode == RASTERFALL_NET_HOST && net->peer_known) {
-        remote = &net->peer_camera;
-        hp = net->peer_hp;
-        downed = net->peer_down;
-        revive_ms = net->peer_revive_progress_ms;
-    } else if (net->mode == RASTERFALL_NET_CLIENT && net->players[0].active) {
-        remote = &net->players[0].camera;
-        hp = net->players[0].hp;
-        downed = net->players[0].downed;
-        revive_ms = net->players[0].revive_progress_ms;
+    int i;
+    char name[16];
+    if (net->mode == RASTERFALL_NET_CLIENT) {
+        for (i = 0; i < RASTERFALL_NET_PLAYER_MAX; i++) {
+            const struct rasterfall_net_player *player = &net->players[i];
+            if (!player->active || i == net->local_player_id) continue;
+            snprintf(name, sizeof(name), "PLAYER %d", i + 1);
+            render_actor_status(renderer, camera, player->camera.x,
+                player->camera.z, 700, name, player->hp,
+                TOY_GAME_SECONDARY_PLAYER_HP, player->downed,
+                player->revive_progress_ms, RF_COLOR_UI_PLAYER);
+        }
+        return;
     }
-    if (!remote) return;
-    render_actor_status(renderer, camera, remote->x, remote->z, 700,
-                                "PLAYER 2", hp, TOY_GAME_SECONDARY_PLAYER_HP,
-                                downed, revive_ms, RF_COLOR_UI_PLAYER);
+    if (net->peer_known)
+        render_actor_status(renderer, camera, net->peer_camera.x,
+            net->peer_camera.z, 700, "PLAYER 2", net->peer_hp,
+            TOY_GAME_SECONDARY_PLAYER_HP, net->peer_down,
+            net->peer_revive_progress_ms, RF_COLOR_UI_PLAYER);
+    for (i = 0; i < RASTERFALL_NET_REMOTE_MAX; i++) {
+        const struct rasterfall_net_remote *remote = &net->remotes[i];
+        if (!remote->active || !remote->connected) continue;
+        snprintf(name, sizeof(name), "PLAYER %d", remote->client_id + 1);
+        render_actor_status(renderer, camera, remote->camera.x,
+            remote->camera.z, 700, name, remote->hp,
+            TOY_GAME_SECONDARY_PLAYER_HP, remote->down,
+            remote->revive_progress_ms, RF_COLOR_UI_PLAYER);
+    }
 }
 
 /* ── 子弹轨迹与命中粒子（纯视觉；逻辑步进 16ms 推进） ──────────── */
