@@ -593,6 +593,27 @@ static int run_logic_test(void)
         game.actors[0].x = jx; game.actors[0].z = jz;
         game.actors[1].x = gx; game.actors[1].z = gz;
     }
+    /* 敌人槽位复用不能继承上一只敌人的推开僵直。 */
+    {
+        struct toy_game reuse_test;
+        struct toy_game_box point = {0, 0, 300, 300};
+        toy_game_init(&reuse_test, 47);
+        reuse_test.world_count = 0;
+        reuse_test.room_limit = 12000;
+        reuse_test.px = 0; reuse_test.pz = 0;
+        if (toy_game_spawn_horde_type(&reuse_test, TOY_GAME_ENEMY_COMMON, 1, 1,
+                                      &point, 1, 0) != 1) return 87;
+        toy_game_shove(&reuse_test, 0, 1024);
+        if (reuse_test.enemies[0].shove_stun_ms <= 0) return 88;
+        if (!toy_game_apply_entity_impact(&reuse_test, TOY_GAME_ENTITY_ENEMY, 0,
+                                          0, 1024, 10000)) return 89;
+        for (int i = 0; i < 100 && reuse_test.enemies[0].active != 0; i++)
+            toy_game_update_held(&reuse_test, NULL, 0, 0, 0, 1024, 16);
+        if (reuse_test.enemies[0].active != 0) return 90;
+        if (toy_game_spawn_horde_type(&reuse_test, TOY_GAME_ENEMY_COMMON, 1, 1,
+                                      &point, 1, 0) != 1) return 91;
+        if (reuse_test.enemies[0].shove_stun_ms != 0) return 92;
+    }
     /* 终点撤离：stage 2 后终点安全屋即可正常推进撤离进度（不锁门，
      * 最终尸潮期间玩家也可随时撤离）。 */
     {

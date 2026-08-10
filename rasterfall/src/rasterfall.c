@@ -1528,7 +1528,9 @@ startup_again:
             /* Sign lettering is a framebuffer overlay: the board must be
              * flushed first, otherwise its depth-tested face covers the text. */
             rasterfall_render_sign_text(&surface, &camera);
+#if TOY_CONFIG_SHOW_MODEL_PATHS
             rasterfall_render_gallery_selection(&surface, &camera);
+#endif
             rasterfall_perf_end_stage(&stats, &stats_total, RASTERFALL_STATS_RASTER,
                            &t_stage, prev_tris, (unsigned long)stage_pixels);
             rasterfall_perf_add_raster(&stats, &stats_total, &renderer, prev_tris,

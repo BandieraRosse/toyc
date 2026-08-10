@@ -645,6 +645,7 @@ static void init_enemy_stats(struct toy_game *g, struct toy_game_enemy *e,
     e->special_target_player = 0;
     e->special_target_actor_index = -1;
     e->special_pull_timer_ms = 0;
+    e->shove_stun_ms = 0;
     e->airborne_ms = 0;
     e->vertical_velocity = 0;
     e->airborne_y = 0;

@@ -767,18 +767,22 @@ $(BUILD)/rasterfall_sfx.o: $(RASTERFALL_LIB)/sfx.c $(RASTERFALL_INC)/toy_game.h 
 	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
 	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 
-$(BUILD)/rasterfall_map_engine.o: $(RASTERFALL_LIB)/map.c $(RASTERFALL_INC)/toy_map.h | $(BUILD)
+$(BUILD)/rasterfall_map_engine.o: $(RASTERFALL_LIB)/map.c \
+                                 $(RASTERFALL_INC)/toy_map.h \
+                                 $(RASTERFALL_INC)/toy_game.h | $(BUILD)
 	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
 	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 
 $(BUILD)/rasterfall_map.o: $(RASTERFALL_SRC)/rasterfall_map.c \
                            $(RASTERFALL_INC)/rasterfall_map.h \
-                           $(RASTERFALL_INC)/toy_map.h | $(BUILD)
+                           $(RASTERFALL_INC)/toy_map.h \
+                           $(RASTERFALL_INC)/toy_game.h | $(BUILD)
 	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
 	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 
 $(BUILD)/rasterfall_session.o: $(RASTERFALL_SRC)/rasterfall_session.c \
                                $(RASTERFALL_INC)/rasterfall_session.h \
+                               $(RASTERFALL_INC)/toy_game.h \
                                $(RASTERFALL_INC)/rasterfall_camera.h \
                                $(RASTERFALL_INC)/rasterfall_map.h | $(BUILD)
 	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
@@ -787,23 +791,27 @@ $(BUILD)/rasterfall_session.o: $(RASTERFALL_SRC)/rasterfall_session.c \
 $(BUILD)/rasterfall_net.o: $(RASTERFALL_SRC)/rasterfall_net.c \
                            $(RASTERFALL_INC)/rasterfall_net.h \
                            $(RASTERFALL_INC)/rasterfall_session.h \
+                           $(RASTERFALL_INC)/toy_game.h \
                            $(RASTERFALL_INC)/rasterfall_camera.h | $(BUILD)
 	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
 	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 
 $(BUILD)/rasterfall_hud.o: $(RASTERFALL_SRC)/rasterfall_hud.c \
                            $(RASTERFALL_INC)/rasterfall_hud.h \
+                           $(RASTERFALL_INC)/toy_game.h \
                            $(RASTERFALL_INC)/rasterfall_map.h | $(BUILD)
 	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
 	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 
 $(BUILD)/rasterfall_audio.o: $(RASTERFALL_SRC)/rasterfall_audio.c \
-                             $(RASTERFALL_INC)/rasterfall_audio.h | $(BUILD)
+                             $(RASTERFALL_INC)/rasterfall_audio.h \
+                             $(RASTERFALL_INC)/toy_game.h | $(BUILD)
 	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
 	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 
 $(BUILD)/rasterfall_effects.o: $(RASTERFALL_SRC)/rasterfall_effects.c \
-                               $(RASTERFALL_INC)/rasterfall_effects.h | $(BUILD)
+                               $(RASTERFALL_INC)/rasterfall_effects.h \
+                               $(RASTERFALL_INC)/toy_game.h | $(BUILD)
 	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
 	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 
@@ -820,6 +828,7 @@ $(BUILD)/rasterfall_sky.o: $(RASTERFALL_SRC)/rasterfall_sky.c \
 
 $(BUILD)/rasterfall_viewmodel.o: $(RASTERFALL_SRC)/rasterfall_viewmodel.c \
                                 $(RASTERFALL_INC)/rasterfall_viewmodel.h \
+                                $(RASTERFALL_INC)/toy_game.h \
                                 $(RASTERFALL_INC)/rasterfall_effects.h \
                                 $(RASTERFALL_INC)/rasterfall_model.h | $(BUILD)
 	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
@@ -827,6 +836,7 @@ $(BUILD)/rasterfall_viewmodel.o: $(RASTERFALL_SRC)/rasterfall_viewmodel.c \
 
 $(BUILD)/rasterfall_render.o: $(RASTERFALL_SRC)/rasterfall_render.c \
                               $(RASTERFALL_INC)/rasterfall_render.h \
+                              $(RASTERFALL_INC)/toy_game.h \
                               $(RASTERFALL_INC)/rasterfall_session.h \
                               $(RASTERFALL_INC)/rasterfall_effects.h \
                               $(RASTERFALL_INC)/rasterfall_model.h | $(BUILD)
@@ -880,6 +890,7 @@ $(foreach src,$(APP_SRCS),$(eval $(call APP_rule,$(src))))
 # Rasterfall 的内部实现片段属于主编译单元，显式列为依赖以支持增量构建。
 $(BUILD)/rasterfall.o: $(RASTERFALL_INC)/rasterfall_hud.h \
                        $(RASTERFALL_INC)/rasterfall_render.h \
+                       $(RASTERFALL_INC)/toy_game.h \
                        $(RASTERFALL_SRC)/rasterfall_logic_test.inc \
                        $(RASTERFALL_INC)/rasterfall_session.h \
                        $(RASTERFALL_INC)/rasterfall_net.h \
@@ -1006,18 +1017,22 @@ $(BUILD)/rasterfall_sfx_self.o: $(RASTERFALL_LIB)/sfx.c $(RASTERFALL_INC)/toy_ga
 	@printf "  $(BLUE)  CC(s)  %s\n" "$<"
 	$(SELF_CC) $(SELF_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 
-$(BUILD)/rasterfall_map_engine_self.o: $(RASTERFALL_LIB)/map.c $(RASTERFALL_INC)/toy_map.h $(SELF_CC) | $(BUILD)
+$(BUILD)/rasterfall_map_engine_self.o: $(RASTERFALL_LIB)/map.c \
+                                      $(RASTERFALL_INC)/toy_map.h \
+                                      $(RASTERFALL_INC)/toy_game.h $(SELF_CC) | $(BUILD)
 	@printf "  $(BLUE)  CC(s)  %s\n" "$<"
 	$(SELF_CC) $(SELF_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 
 $(BUILD)/rasterfall_map_self.o: $(RASTERFALL_SRC)/rasterfall_map.c \
                                 $(RASTERFALL_INC)/rasterfall_map.h \
-                                $(RASTERFALL_INC)/toy_map.h $(SELF_CC) | $(BUILD)
+                                $(RASTERFALL_INC)/toy_map.h \
+                                $(RASTERFALL_INC)/toy_game.h $(SELF_CC) | $(BUILD)
 	@printf "  $(BLUE)  CC(s)  %s\n" "$<"
 	$(SELF_CC) $(SELF_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 
 $(BUILD)/rasterfall_session_self.o: $(RASTERFALL_SRC)/rasterfall_session.c \
                                     $(RASTERFALL_INC)/rasterfall_session.h \
+                                    $(RASTERFALL_INC)/toy_game.h \
                                     $(RASTERFALL_INC)/rasterfall_camera.h \
                                     $(RASTERFALL_INC)/rasterfall_map.h $(SELF_CC) | $(BUILD)
 	@printf "  $(BLUE)  CC(s)  %s\n" "$<"
@@ -1026,23 +1041,27 @@ $(BUILD)/rasterfall_session_self.o: $(RASTERFALL_SRC)/rasterfall_session.c \
 $(BUILD)/rasterfall_net_self.o: $(RASTERFALL_SRC)/rasterfall_net.c \
                                 $(RASTERFALL_INC)/rasterfall_net.h \
                                 $(RASTERFALL_INC)/rasterfall_session.h \
+                                $(RASTERFALL_INC)/toy_game.h \
                                 $(RASTERFALL_INC)/rasterfall_camera.h $(SELF_CC) | $(BUILD)
 	@printf "  $(BLUE)  CC(s)  %s\n" "$<"
 	$(SELF_CC) $(SELF_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 
 $(BUILD)/rasterfall_hud_self.o: $(RASTERFALL_SRC)/rasterfall_hud.c \
                                 $(RASTERFALL_INC)/rasterfall_hud.h \
+                                $(RASTERFALL_INC)/toy_game.h \
                                 $(RASTERFALL_INC)/rasterfall_map.h $(SELF_CC) | $(BUILD)
 	@printf "  $(BLUE)  CC(s)  %s\n" "$<"
 	$(SELF_CC) $(SELF_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 
 $(BUILD)/rasterfall_audio_self.o: $(RASTERFALL_SRC)/rasterfall_audio.c \
-                                  $(RASTERFALL_INC)/rasterfall_audio.h $(SELF_CC) | $(BUILD)
+                                  $(RASTERFALL_INC)/rasterfall_audio.h \
+                                  $(RASTERFALL_INC)/toy_game.h $(SELF_CC) | $(BUILD)
 	@printf "  $(BLUE)  CC(s)  %s\n" "$<"
 	$(SELF_CC) $(SELF_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 
 $(BUILD)/rasterfall_effects_self.o: $(RASTERFALL_SRC)/rasterfall_effects.c \
-                                    $(RASTERFALL_INC)/rasterfall_effects.h $(SELF_CC) | $(BUILD)
+                                    $(RASTERFALL_INC)/rasterfall_effects.h \
+                                    $(RASTERFALL_INC)/toy_game.h $(SELF_CC) | $(BUILD)
 	@printf "  $(BLUE)  CC(s)  %s\n" "$<"
 	$(SELF_CC) $(SELF_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 
@@ -1059,6 +1078,7 @@ $(BUILD)/rasterfall_sky_self.o: $(RASTERFALL_SRC)/rasterfall_sky.c \
 
 $(BUILD)/rasterfall_viewmodel_self.o: $(RASTERFALL_SRC)/rasterfall_viewmodel.c \
                                      $(RASTERFALL_INC)/rasterfall_viewmodel.h \
+                                     $(RASTERFALL_INC)/toy_game.h \
                                      $(RASTERFALL_INC)/rasterfall_effects.h \
                                      $(RASTERFALL_INC)/rasterfall_model.h $(SELF_CC) | $(BUILD)
 	@printf "  $(BLUE)  CC(s)  %s\n" "$<"
@@ -1066,6 +1086,7 @@ $(BUILD)/rasterfall_viewmodel_self.o: $(RASTERFALL_SRC)/rasterfall_viewmodel.c \
 
 $(BUILD)/rasterfall_render_self.o: $(RASTERFALL_SRC)/rasterfall_render.c \
                                    $(RASTERFALL_INC)/rasterfall_render.h \
+                                   $(RASTERFALL_INC)/toy_game.h \
                                    $(RASTERFALL_INC)/rasterfall_session.h \
                                    $(RASTERFALL_INC)/rasterfall_effects.h \
                                    $(RASTERFALL_INC)/rasterfall_model.h $(SELF_CC) | $(BUILD)
