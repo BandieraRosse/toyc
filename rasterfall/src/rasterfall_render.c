@@ -1764,7 +1764,8 @@ static int render_actor_model_weapon(struct toy_renderer *renderer,
     const char *path = rasterfall_weapon_model_path(weapon);
     struct rasterfall_model_asset *model = gallery_model_named(path, NULL);
     struct rasterfall_animation_pose pose;
-    int width, height, depth, length, scale, anchor_scale, i, pixels = 0;
+    int width, height, depth, length, scale, anchor_x, anchor_z;
+    int i, pixels = 0;
     if (!model) return 0;
     rasterfall_animation_sample_duration(
         animation_id, animation_time_ms,
@@ -1784,8 +1785,13 @@ static int render_actor_model_weapon(struct toy_renderer *renderer,
     /* Keep horizontal/depth placement proportional, but preserve the shared
      * vertical grip height.  Scaling the Y anchor moves the rifle down to
      * the floor because actor_world_point already applies actor elevation. */
-    anchor_scale = weapon == TOY_GAME_WEAPON_AK ||
-                   weapon == TOY_GAME_WEAPON_AWP ? 2 : 1;
+    if (weapon == TOY_GAME_WEAPON_AK || weapon == TOY_GAME_WEAPON_AWP) {
+        anchor_x = 170;
+        anchor_z = 260;
+    } else {
+        anchor_x = 195;
+        anchor_z = 170;
+    }
     for (i = 0; i < (int)model->primitive_count; i++) {
         const unsigned char *primitive = model->primitives +
             i * RASTERFALL_MODEL_PRIMITIVE_BYTES;
@@ -1832,9 +1838,9 @@ static int render_actor_model_weapon(struct toy_renderer *renderer,
                  * of the torso and put its muzzle in front of the body. */
                 /* Shared grip-area anchor: right of the torso and slightly
                  * forward, so both wrists can meet around the weapon rear. */
-                lx = lx * scale / 1000 + 195 * anchor_scale;
+                lx = lx * scale / 1000 + anchor_x;
                 ly = ly * scale / 1000 - 395;
-                lz = lz * scale / 1000 + 170 * anchor_scale;
+                lz = lz * scale / 1000 + anchor_z;
                 ly += lz * pose.weapon_pitch / 1000;
                 actor_world_point(x, z, sy, cy, lx, ly, lz, &v[k]);
             }
@@ -2239,12 +2245,44 @@ static void draw_effect_line(struct toy_surface *surface,
     }
 }
 
+static void draw_depth_effect_line(struct toy_renderer *renderer,
+                                   int x0, int y0, long inv0,
+                                   int x1, int y1, long inv1,
+                                   uint32_t color)
+{
+    struct toy_surface *surface = &renderer->surface;
+    int dx = x1 > x0 ? x1 - x0 : x0 - x1;
+    int dy = y1 > y0 ? y0 - y1 : y1 - y0;
+    int sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+    int err = dx - dy, step = 0;
+    int total = dx > dy ? dx : dy;
+    int max_steps = surface->width + surface->height;
+    for (;;) {
+        if (x0 >= 0 && x0 < surface->width && y0 >= 0 && y0 < surface->height) {
+            long inv = total > 0 ? inv0 + (inv1 - inv0) * step / total : inv0;
+            int at = y0 * surface->width + x0;
+            if (!renderer->depth || inv >= renderer->depth[at])
+                put_pixel(surface, x0, y0, color);
+        }
+        if (x0 == x1 && y0 == y1) break;
+        {
+            int e2 = 2 * err;
+            if (e2 > -dy) { err -= dy; x0 += sx; }
+            if (e2 < dx) { err += dx; y0 += sy; }
+        }
+        step++;
+        if (step > max_steps) break;
+    }
+}
+
 /* 弹道投影为屏幕线段：起点（枪口）与终点（命中点）都从世界空间投影，
  * 先裁剪到近平面，再 Liang-Barsky 裁剪到屏幕。 */
-static void draw_tracer_line(struct toy_surface *surface, const struct camera *camera,
+static void draw_tracer_line(struct toy_renderer *renderer,
+                             const struct camera *camera,
                              int sx, int sy, int sz, int ex, int ey, int ez,
-                             uint32_t color)
+                             uint32_t color, int depth_test)
 {
+    struct toy_surface *surface = &renderer->surface;
     struct vec3 a, b, clipped;
     struct toy_screen_vertex pa, pb;
     int x0, y0, x1, y1, t0, t1, t_in, t_out, tmp;
@@ -2295,16 +2333,26 @@ static void draw_tracer_line(struct toy_surface *surface, const struct camera *c
     if (t1 > (1 << 16)) t1 = 1 << 16;
     if (t0 > t1) return;
     if (t0 != 0 || t1 != (1 << 16)) {
+        long old_inv0 = pa.inv_z, old_inv1 = pb.inv_z;
         int nx0 = x0 + (int)((long long)(x1 - x0) * t0 / 65536);
         int ny0 = y0 + (int)((long long)(y1 - y0) * t0 / 65536);
+        pa.inv_z = old_inv0 + (old_inv1 - old_inv0) * t0 / 65536;
+        pb.inv_z = old_inv0 + (old_inv1 - old_inv0) * t1 / 65536;
         x1 = nx0 + (int)((long long)(x1 - x0) * (t1 - t0) / 65536);
         y1 = ny0 + (int)((long long)(y1 - y0) * (t1 - t0) / 65536);
         x0 = nx0;
         y0 = ny0;
     }
     /* 双线 = 2px 粗的射线；偏移像素同色，无需额外混合 */
-    draw_effect_line(surface, x0, y0, x1, y1, color);
-    draw_effect_line(surface, x0 + 1, y0 + 1, x1 + 1, y1 + 1, color);
+    if (depth_test) {
+        draw_depth_effect_line(renderer, x0, y0, pa.inv_z,
+                               x1, y1, pb.inv_z, color);
+        draw_depth_effect_line(renderer, x0 + 1, y0 + 1, pa.inv_z,
+                               x1 + 1, y1 + 1, pb.inv_z, color);
+    } else {
+        draw_effect_line(surface, x0, y0, x1, y1, color);
+        draw_effect_line(surface, x0 + 1, y0 + 1, x1 + 1, y1 + 1, color);
+    }
 }
 
 static int render_tracers(struct toy_renderer *renderer, const struct camera *camera)
@@ -2316,8 +2364,8 @@ static int render_tracers(struct toy_renderer *renderer, const struct camera *ca
         if (!t->active) continue;
         color = mix_color(0xFFE060, 0x3A2C14,
                           t->life_ms * 256 / RASTERFALL_TRACER_LIFE_MS, 256);
-        draw_tracer_line(&renderer->surface, camera, t->sx, t->sy, t->sz,
-                         t->ex, t->ey, t->ez, color);
+        draw_tracer_line(renderer, camera, t->sx, t->sy, t->sz,
+                         t->ex, t->ey, t->ez, color, 0);
         pixels++;
     }
     return pixels;

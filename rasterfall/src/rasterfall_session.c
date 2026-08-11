@@ -606,6 +606,8 @@ void rasterfall_session_step(struct rasterfall_session *session,
     session_update_smooth_turn(session, camera);
     session->game_state.px = camera->x;
     session->game_state.pz = camera->z;
+    toy_game_set_player_moving(&session->game_state,
+                               command->move_forward || command->move_strafe);
     toy_game_update_player_ground(&session->game_state);
     /* Ground/platform resolution must precede weapon simulation: the visual
      * muzzle is derived from camera->y during this same tick. */
@@ -684,6 +686,8 @@ void rasterfall_session_step_client(struct rasterfall_session *session,
     session_update_smooth_turn(session, camera);
     session->game_state.px = camera->x;
     session->game_state.pz = camera->z;
+    toy_game_set_player_moving(&session->game_state,
+                               command->move_forward || command->move_strafe);
     toy_game_update_player_ground(&session->game_state);
     session_sync_special_motion(session, camera);
     session->highlight_index = rasterfall_session_compute_highlight(session, camera);

@@ -272,6 +272,8 @@ struct toy_game_weapon_info {
     const char *name;  /* 调试/配置名称 */
     const char *short_name; /* HUD 名称 */
     int muzzle_profile; /* 表现层使用的枪口布局 */
+    int range;          /* 弹丸最远距离 */
+    int alert_range;    /* AI 持有该武器时的索敌距离 */
 };
 
 struct toy_game_enemy_info {
@@ -367,11 +369,18 @@ struct toy_game_actor {
     int current_slot;
     int reloading, reload_timer_ms;
     int fire_cooldown_ms;
+    int weapon_spread_heat;
+    int moving;
     int muzzle_flash_ms;
     unsigned int fire_seq;
     int ray_count;
     struct toy_game_ray rays[TOY_GAME_MAX_RAYS];
     int deployment_x, deployment_z;
+    int nav_x, nav_z;
+    int nav_active;
+    int awp_aim_ms;
+    int awp_post_fire_ms;
+    int awp_aim_target; /* enemy index + 1; 0 means no locked target */
     int fire_enabled;
     int hit_test_dummy;
     int animation_demo;
@@ -390,6 +399,8 @@ struct toy_game {
     struct toy_game_animation_state animation;
     int reloading, reload_timer_ms;
     int fire_cooldown_ms;
+    int weapon_spread_heat; /* 连射累积，停火后逐渐恢复 */
+    int moving;            /* 宿主每帧同步的移动状态 */
     int muzzle_flash_ms;
     int damage_flash_ms;
     int kills;
@@ -400,7 +411,7 @@ struct toy_game {
     struct toy_game_actor actors[TOY_GAME_MAX_ACTORS];
 
     /* 固定出生的 AI 队友。其武器字段与玩家共用同一套更新/换弹/射击
-     * 规则；它不移动，只在索敌范围内选择敌人开火。 */
+     * 规则；离开部署区后会绕过障碍回位，并在索敌范围内开火。 */
     int ai_active;
     int ai_actor_id;
     int ai_x, ai_z;
@@ -564,6 +575,8 @@ void toy_game_update_weapon_held(struct toy_game *g,
                                  const unsigned char *keys_pressed,
                                  int fire_pressed, int fire_held,
                                  int sy, int cy, int dt_ms);
+void toy_game_set_player_moving(struct toy_game *g, int moving);
+int  toy_game_current_spread(const struct toy_game *g);
 int  toy_game_fire(struct toy_game *g, int sy, int cy);     /* hitscan，命中返回 1 */
 int  toy_game_switch_weapon(struct toy_game *g, int slot);  /* 切枪；空槽/同槽返回 0 */
 int  toy_game_equip_weapon(struct toy_game *g, int weapon); /* 按武器定义装备到对应槽；同武器=补充弹药返回 0，新武器返回 1，非法返回 -1 */

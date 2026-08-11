@@ -53,6 +53,12 @@ static int run_logic_test(void)
             toy_game_weapon_info(TOY_GAME_WEAPON_SMG);
         const struct toy_game_weapon_info *shotgun =
             toy_game_weapon_info(TOY_GAME_WEAPON_SHOTGUN);
+        const struct toy_game_weapon_info *pistol =
+            toy_game_weapon_info(TOY_GAME_WEAPON_PISTOL);
+        const struct toy_game_weapon_info *ak =
+            toy_game_weapon_info(TOY_GAME_WEAPON_AK);
+        const struct toy_game_weapon_info *awp =
+            toy_game_weapon_info(TOY_GAME_WEAPON_AWP);
         if (!actor || actor->kind != TOY_GAME_ACTOR_AI ||
             actor->class_id != TOY_GAME_AI_LEVEL_2 ||
             fast->speed_min <= common->speed_max ||
@@ -86,6 +92,15 @@ static int run_logic_test(void)
             toy_game_weapon_from_content_id(99) >= 0 ||
             strcmp(smg->short_name, "SMG") != 0 ||
             shotgun->muzzle_profile != TOY_GAME_MUZZLE_SHOTGUN) return 55;
+        if (awp->range != TOY_GAME_MAX_RANGE * 2 ||
+            awp->alert_range != TOY_GAME_MAX_RANGE * 2 ||
+            ak->range != TOY_GAME_MAX_RANGE * 3 / 2 ||
+            ak->alert_range != TOY_GAME_MAX_RANGE ||
+            smg->alert_range <= TOY_GAME_DETECT_RANGE ||
+            pistol->alert_range <= TOY_GAME_DETECT_RANGE ||
+            shotgun->alert_range != TOY_GAME_DETECT_RANGE ||
+            TOY_CONFIG_AWP_AI_AIM_MS != 700 ||
+            TOY_CONFIG_AWP_AI_POST_FIRE_MS != 700) return 116;
         toy_game_actor_set_animation(&game.actors[1], TOY_GAME_ANIM_IDLE);
         toy_game_actor_update_animation(&game.actors[1], 160);
         if (game.actors[1].animation.id != TOY_GAME_ANIM_IDLE ||
@@ -1151,6 +1166,35 @@ static int run_logic_test(void)
             if (strcmp(level_map.draw[i].text, "FROM HARRAN CITY")) return 92;
         }
         if (!found) return 93;
+    }
+    /* 动态散布：静止最稳，移动和连射依次扩大，停火后恢复。 */
+    {
+        int still_spread, moving_spread, hot_spread;
+        toy_game_init(&game, 71);
+        still_spread = toy_game_current_spread(&game);
+        toy_game_set_player_moving(&game, 1);
+        moving_spread = toy_game_current_spread(&game);
+        toy_game_fire(&game, 0, 1024);
+        hot_spread = toy_game_current_spread(&game);
+        if (moving_spread <= still_spread || hot_spread <= moving_spread)
+            return 113;
+        toy_game_set_player_moving(&game, 0);
+        toy_game_update_weapon_held(&game, NULL, 0, 0, 0, 1024, 2000);
+        if (game.weapon_spread_heat != 0 ||
+            toy_game_current_spread(&game) != still_spread) return 114;
+    }
+    /* AI 回位需绕过横在路径上的墙，而不是持续顶墙。 */
+    {
+        struct toy_game_box wall = { -500, 500, -900, 900 };
+        toy_game_init(&game, 72);
+        toy_game_set_world(&game, &wall, 1, 5000);
+        game.actors[0].deployment_x = 1400;
+        game.actors[0].deployment_z = 0;
+        game.actors[0].x = game.ai_x = -1400;
+        game.actors[0].z = game.ai_z = 0;
+        game.to_spawn = 0;
+        for (int i = 0; i < 180; i++) toy_game_update_ai_teammates(&game, 16);
+        if (game.actors[0].x < 900) return 115;
     }
     __printf("rasterfall: logic test passed\n");
     return 0;

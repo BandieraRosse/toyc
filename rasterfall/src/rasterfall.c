@@ -422,11 +422,15 @@ static void consume_game_command_edges(struct toy_input *input)
     input->key_pressed[KEY_LEFTSHIFT] = 0;
 }
 
-static void draw_crosshair(struct toy_surface *surface)
+static void draw_crosshair(struct toy_surface *surface,
+                           const struct toy_game *game_state)
 {
     int cx = surface->width / 2, cy = surface->height / 2;
-    for (int d = -6; d <= 6; d++) {
-        if (d < -2 || d > 2) {
+    int gap = toy_game_current_spread(game_state) * 9 / 20 + 2;
+    int length = 5;
+    if (gap > 65) gap = 65;
+    for (int d = -gap - length; d <= gap + length; d++) {
+        if (d < -gap || d > gap) {
             put_pixel(surface, cx + d, cy, 0xF0F0F0);
             put_pixel(surface, cx, cy + d, 0xF0F0F0);
         }
@@ -1690,7 +1694,7 @@ startup_again:
             } else if (paused) {
                 draw_pause_overlay(&surface, &pause_menu, &settings);
             } else {
-                draw_crosshair(&surface);
+                draw_crosshair(&surface, &game);
                 {
                     struct rasterfall_hud_state hud;
                     fill_hud_state(&hud, &net, host_address, net_port, &camera);

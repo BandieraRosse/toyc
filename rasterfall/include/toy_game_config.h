@@ -11,6 +11,11 @@
 /* Weapon switching: duration and whether firing is blocked during it. */
 #define TOY_CONFIG_WEAPON_SWITCH_MS           200  /* 切枪动画/禁射时长 */
 #define TOY_CONFIG_BLOCK_FIRE_DURING_SWITCH    1  /* 切枪期间是否禁射 */
+#define TOY_CONFIG_SPREAD_STILL_PERCENT        45  /* 静止时基础散布系数 */
+#define TOY_CONFIG_SPREAD_MOVE_PERCENT        135  /* 移动时基础散布系数 */
+#define TOY_CONFIG_SPREAD_SHOT_STEP             9  /* 每次开火增加的散布 */
+#define TOY_CONFIG_SPREAD_HEAT_MAX            120  /* 连射散布上限 */
+#define TOY_CONFIG_SPREAD_RECOVER_PER_SEC      70  /* 每秒恢复的散布 */
 #define TOY_CONFIG_SHOVE_ANIMATION_MS        300  /* 推搡动画时长 */
 #define TOY_CONFIG_SHOVE_SWEEP_DEGREES       240  /* 推搡手臂旋转角度 */
 #define TOY_CONFIG_SHOVE_RANGE               900  /* 推搡有效范围 */
@@ -79,6 +84,20 @@
 #define TOY_CONFIG_AWP_SPREAD                    4
 #define TOY_CONFIG_AWP_SLOT                      0
 #define TOY_CONFIG_AWP_DAMAGE                  200
+
+/* Weapon reach and AI awareness.  The legacy common reach is 11500. */
+#define TOY_CONFIG_PISTOL_RANGE              11500
+#define TOY_CONFIG_PISTOL_ALERT_RANGE         8400
+#define TOY_CONFIG_SMG_RANGE                 11500
+#define TOY_CONFIG_SMG_ALERT_RANGE            8400
+#define TOY_CONFIG_SHOTGUN_RANGE             11500
+#define TOY_CONFIG_SHOTGUN_ALERT_RANGE        5600
+#define TOY_CONFIG_AK_RANGE                  17250
+#define TOY_CONFIG_AK_ALERT_RANGE            11500
+#define TOY_CONFIG_AWP_RANGE                 23000
+#define TOY_CONFIG_AWP_ALERT_RANGE           23000
+#define TOY_CONFIG_AWP_AI_AIM_MS               700
+#define TOY_CONFIG_AWP_AI_POST_FIRE_MS         700
 
 /* Common enemy tuning. */
 #define TOY_CONFIG_COMMON_HP                   50  /* 生命值 */
