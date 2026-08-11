@@ -216,6 +216,26 @@ const struct toy_game_actor *toy_game_actor_by_id_const(const struct toy_game *g
     return NULL;
 }
 
+void toy_game_actor_set_animation(struct toy_game_actor *actor, int animation_id)
+{
+    if (!actor) return;
+    if (animation_id < TOY_GAME_ANIM_NONE ||
+        animation_id > TOY_GAME_ANIM_FIRE)
+        animation_id = TOY_GAME_ANIM_NONE;
+    if (actor->animation.id != animation_id) {
+        actor->animation.id = animation_id;
+        actor->animation.time_ms = 0;
+    }
+}
+
+void toy_game_actor_update_animation(struct toy_game_actor *actor, int dt_ms)
+{
+    if (!actor || dt_ms <= 0) return;
+    actor->animation.time_ms += dt_ms;
+    if (actor->animation.time_ms > 60000)
+        actor->animation.time_ms %= 60000;
+}
+
 static int segment_hits_box(int px, int pz, int qx, int qz,
                             const struct toy_game_box *b);
 
@@ -2714,9 +2734,12 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
     const struct toy_game_weapon_info *ai_weapon;
     int sy = 0, cy = 1024;
     int player_down;
+    int ai_idle = 1;
     sync_ai_actor_from_legacy(g);
     actor = &g->actors[g->ai_context_actor_index];
     if (actor->airborne_ms > 0) {
+        toy_game_actor_set_animation(actor, TOY_GAME_ANIM_NONE);
+        toy_game_actor_update_animation(actor, dt_ms);
         update_motion_values(g, &actor->x, &actor->z, &actor->airborne_ms,
                              &actor->airborne_y, &actor->vertical_velocity,
                              &actor->knockback_x, &actor->knockback_z,
@@ -2733,6 +2756,7 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
         long long home_dist = isqrt((long long)home_dx * home_dx +
                                     (long long)home_dz * home_dz);
         if (home_dist > TOY_GAME_AI_DEPLOY_RADIUS) {
+            ai_idle = 0;
             int mx = home_dx * TOY_GAME_AI_RETURN_SPEED / (int)home_dist;
             int mz = home_dz * TOY_GAME_AI_RETURN_SPEED / (int)home_dist;
             move_actor_forced(g, actor, mx, mz);
@@ -2807,6 +2831,11 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
         g->ai_ray_count = g->ray_count;
         memcpy(g->ai_rays, g->rays, sizeof(g->ai_rays));
     }
+
+    if (target >= 0) ai_idle = 0;
+    toy_game_actor_set_animation(actor, ai_idle ? TOY_GAME_ANIM_IDLE :
+                                 TOY_GAME_ANIM_MOVE);
+    toy_game_actor_update_animation(actor, dt_ms);
 
     memcpy(g->slots, player_slots, sizeof(g->slots));
     memcpy(g->rays, player_rays, sizeof(g->rays));

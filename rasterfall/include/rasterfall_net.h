@@ -9,7 +9,7 @@
 #define RASTERFALL_NET_DEFAULT_PORT 28460
 #define RASTERFALL_NET_MAX_PACKET 2700
 #define RASTERFALL_NET_MAX_SNAPSHOT 8192
-#define RASTERFALL_NET_PROTOCOL_VERSION 18
+#define RASTERFALL_NET_PROTOCOL_VERSION 19
 #define RASTERFALL_NET_MAX_ACTORS 12
 #define RASTERFALL_NET_PLAYER_MAX 4
 #define RASTERFALL_NET_REMOTE_MAX 2
@@ -120,6 +120,7 @@ struct rasterfall_net_actor {
     unsigned int fire_seq;
     int airborne_ms;
     int airborne_y;
+    struct toy_game_animation_state animation;
     int ray_count;
     struct toy_game_ray rays[TOY_GAME_MAX_RAYS];
 };

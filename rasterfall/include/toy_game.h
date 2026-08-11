@@ -139,6 +139,18 @@ enum toy_game_actor_state {
     TOY_GAME_ACTOR_DEAD
 };
 
+enum toy_game_animation_id {
+    TOY_GAME_ANIM_NONE,
+    TOY_GAME_ANIM_IDLE,
+    TOY_GAME_ANIM_MOVE,
+    TOY_GAME_ANIM_FIRE
+};
+
+struct toy_game_animation_state {
+    int id;
+    int time_ms;
+};
+
 /* 所有可被技能影响的实体都通过这组类型进入通用受迫移动接口。 */
 enum toy_game_entity_kind {
     TOY_GAME_ENTITY_PLAYER,
@@ -348,6 +360,7 @@ struct toy_game_actor {
     int ray_count;
     struct toy_game_ray rays[TOY_GAME_MAX_RAYS];
     int deployment_x, deployment_z;
+    struct toy_game_animation_state animation;
 };
 
 struct toy_game {
@@ -552,6 +565,8 @@ int  toy_game_enemy_from_content_id(int content_id);
 struct toy_game_actor *toy_game_actor_by_id(struct toy_game *g, int actor_id);
 const struct toy_game_actor *toy_game_actor_by_id_const(const struct toy_game *g,
                                                         int actor_id);
+void toy_game_actor_set_animation(struct toy_game_actor *actor, int animation_id);
+void toy_game_actor_update_animation(struct toy_game_actor *actor, int dt_ms);
 int  toy_game_drain_events(struct toy_game *g, unsigned char *out, int max);
 void toy_game_place_enemy(struct toy_game *g, int x, int z); /* 测试钩子 */
 int  toy_game_shove(struct toy_game *g, int sy, int cy);    /* 推开面前敌人，返回推开的数量 */

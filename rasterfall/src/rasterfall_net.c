@@ -22,7 +22,7 @@
 #define NET_PLAYER_BASE_SIZE 56
 #define NET_PLAYER_RAY_SIZE 15
 #define NET_PLAYER_SIZE (NET_PLAYER_BASE_SIZE + 4 + 1 + TOY_GAME_MAX_RAYS * NET_PLAYER_RAY_SIZE)
-#define NET_ACTOR_SIZE 26
+#define NET_ACTOR_SIZE 29
 #define NET_ENEMY_SIZE 48
 #define NET_EVENT_SIZE (4 + 1 + TOY_GAME_MAX_EVENTS)
 #define NET_WORLD_SIZE 32
@@ -1082,6 +1082,8 @@ static void encode_actor(unsigned char *p, const struct toy_game_actor *a,
     put_u32(p + 18, a->fire_seq);
     put_i16(p + 22, a->airborne_ms);
     put_i16(p + 24, a->airborne_y);
+    p[26] = (unsigned char)a->animation.id;
+    put_i16(p + 27, a->animation.time_ms);
 }
 
 static void decode_actor(const unsigned char *p, struct rasterfall_net_actor *a)
@@ -1097,6 +1099,9 @@ static void decode_actor(const unsigned char *p, struct rasterfall_net_actor *a)
     a->hp = get_i16(p + 15);
     a->airborne_ms = get_i16(p + 22);
     a->airborne_y = get_i16(p + 24);
+    a->animation.id = p[26] <= TOY_GAME_ANIM_FIRE ? p[26] :
+                      TOY_GAME_ANIM_NONE;
+    a->animation.time_ms = get_i16(p + 27);
     if (a->state == TOY_GAME_ACTOR_DOWNED)
         a->revive_progress_ms = p[17] * 12;
     else
@@ -2598,6 +2603,7 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
             dst->fire_seq = src->fire_seq;
             dst->airborne_ms = src->airborne_ms;
             dst->airborne_y = src->airborne_y;
+            dst->animation = src->animation;
             dst->revive_progress_ms = src->revive_progress_ms;
             dst->ray_count = src->ray_count;
             memcpy(dst->rays, src->rays, sizeof(dst->rays));

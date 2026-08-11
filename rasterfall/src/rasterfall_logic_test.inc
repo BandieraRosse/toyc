@@ -84,6 +84,10 @@ static int run_logic_test(void)
             toy_game_weapon_from_content_id(99) >= 0 ||
             strcmp(smg->short_name, "SMG") != 0 ||
             shotgun->muzzle_profile != TOY_GAME_MUZZLE_SHOTGUN) return 55;
+        toy_game_actor_set_animation(&game.actors[1], TOY_GAME_ANIM_IDLE);
+        toy_game_actor_update_animation(&game.actors[1], 160);
+        if (game.actors[1].animation.id != TOY_GAME_ANIM_IDLE ||
+            game.actors[1].animation.time_ms != 160) return 59;
         if (!game.actors[1].active ||
             game.actors[1].class_id != TOY_GAME_AI_LEVEL_1 ||
             game.actors[1].slots[0].weapon != TOY_GAME_WEAPON_PISTOL ||

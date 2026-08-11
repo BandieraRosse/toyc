@@ -1535,7 +1535,8 @@ static void render_actor_status(struct toy_renderer *renderer,
 static int render_player_avatar(struct toy_renderer *renderer,
                                 const struct camera *camera, int x, int z,
                                 int sy, int cy, int weapon, int muzzle_flash,
-                                uint32_t body_color, int downed);
+                                uint32_t body_color, int downed,
+                                int animation_id, int animation_time_ms);
 
 static int render_actor_model_weapon(struct toy_renderer *renderer,
                                      const struct camera *camera, int x, int z,
@@ -1691,7 +1692,9 @@ static int render_ai_teammate(struct toy_renderer *renderer,
                                        actor->current_slot < TOY_GAME_WEAPON_SLOTS ?
                                        actor->slots[actor->current_slot].weapon : -1,
                                        actor->muzzle_flash_ms, color,
-                                       actor->state == TOY_GAME_ACTOR_DOWNED);
+                                       actor->state == TOY_GAME_ACTOR_DOWNED,
+                                       actor->animation.id,
+                                       actor->animation.time_ms);
         active_actor_lift = 0;
     }
     return pixels;
@@ -1700,10 +1703,16 @@ static int render_ai_teammate(struct toy_renderer *renderer,
 static int render_player_avatar(struct toy_renderer *renderer,
                                 const struct camera *camera, int x, int z,
                                 int sy, int cy, int weapon, int muzzle_flash,
-                                uint32_t body_color, int downed)
+                                uint32_t body_color, int downed,
+                                int animation_id, int animation_time_ms)
 {
-    int pixels = 0, face_y0, face_y1;
+    int pixels = 0, face_y0, face_y1, animation_lift = 0;
     if (!renderer || !camera) return 0;
+    if (animation_id == TOY_GAME_ANIM_IDLE) {
+        int phase = (animation_time_ms / 100) % 8;
+        animation_lift = (phase < 4 ? phase : 7 - phase) * 4;
+        active_actor_lift += animation_lift;
+    }
     if (downed) {
         pixels += draw_cuboid(renderer, camera, x - 170, x + 170,
                               -850 + active_actor_lift, -650 + active_actor_lift,
@@ -1739,6 +1748,7 @@ static int render_player_avatar(struct toy_renderer *renderer,
         pixels += draw_cuboid(renderer, camera, x - 45, x + 45,
                               -560 + active_actor_lift, -430 + active_actor_lift,
                               z - 120, z + 120, RF_COLOR_UI_ACCENT);
+    active_actor_lift -= animation_lift;
     return pixels;
 }
 
@@ -1760,7 +1770,7 @@ static int render_network_teammate(struct toy_renderer *renderer,
             pixels += render_player_avatar(renderer, camera,
                 player->camera.x, player->camera.z, player->camera.sy,
                 player->camera.cy, player->weapon, player->muzzle_flash_ms,
-                colors[i], player->downed);
+                colors[i], player->downed, TOY_GAME_ANIM_NONE, 0);
             active_actor_lift = 0;
         }
         return pixels;
@@ -1774,7 +1784,8 @@ static int render_network_teammate(struct toy_renderer *renderer,
                                                net->peer_airborne_y);
         pixels += render_player_avatar(renderer, camera, net->peer_camera.x,
             net->peer_camera.z, net->peer_camera.sy, net->peer_camera.cy,
-            weapon, net->peer_muzzle_flash_ms, colors[1], net->peer_down);
+            weapon, net->peer_muzzle_flash_ms, colors[1], net->peer_down,
+            TOY_GAME_ANIM_NONE, 0);
         active_actor_lift = 0;
     }
     for (i = 0; i < RASTERFALL_NET_REMOTE_MAX; i++) {
@@ -1789,7 +1800,8 @@ static int render_network_teammate(struct toy_renderer *renderer,
                                                remote->airborne_y);
         pixels += render_player_avatar(renderer, camera, remote->camera.x,
             remote->camera.z, remote->camera.sy, remote->camera.cy, weapon,
-            remote->muzzle_flash_ms, colors[remote->client_id], remote->down);
+            remote->muzzle_flash_ms, colors[remote->client_id], remote->down,
+            TOY_GAME_ANIM_NONE, 0);
         active_actor_lift = 0;
     }
     return pixels;
