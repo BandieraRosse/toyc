@@ -372,6 +372,9 @@ struct toy_game_actor {
     int weapon_spread_heat;
     int moving;
     int muzzle_flash_ms;
+    int kills;
+    int special_kills;
+    int damage_dealt;
     unsigned int fire_seq;
     int ray_count;
     struct toy_game_ray rays[TOY_GAME_MAX_RAYS];
@@ -404,6 +407,8 @@ struct toy_game {
     int muzzle_flash_ms;
     int damage_flash_ms;
     int kills;
+    int special_kills;
+    int damage_dealt;
     int actor_id;
     int actor_kind;
     char player_name[TOY_GAME_MAX_NAME];

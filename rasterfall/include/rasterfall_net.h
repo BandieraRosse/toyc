@@ -9,7 +9,7 @@
 #define RASTERFALL_NET_DEFAULT_PORT 28460
 #define RASTERFALL_NET_MAX_PACKET 2700
 #define RASTERFALL_NET_MAX_SNAPSHOT 8192
-#define RASTERFALL_NET_PROTOCOL_VERSION 23
+#define RASTERFALL_NET_PROTOCOL_VERSION 25
 #define RASTERFALL_NET_MAX_ACTORS 32
 #define RASTERFALL_NET_PLAYER_MAX 4
 #define RASTERFALL_NET_REMOTE_MAX 2
@@ -88,6 +88,8 @@ struct rasterfall_net_player {
     int reload_timer_ms;
     int muzzle_flash_ms;
     int kills;
+    int special_kills;
+    int damage_dealt;
     unsigned int fire_seq;
     int ray_count;
     struct toy_game_ray rays[TOY_GAME_MAX_RAYS];
@@ -117,6 +119,9 @@ struct rasterfall_net_actor {
     int sy, cy;
     int hp;
     int weapon;
+    int kills;
+    int special_kills;
+    int damage_dealt;
     int muzzle_flash_ms;
     int revive_progress_ms;
     unsigned int fire_seq;
@@ -158,6 +163,8 @@ struct rasterfall_net_remote {
     int reloading, reload_timer_ms;
     int fire_cooldown_ms, muzzle_flash_ms, damage_flash_ms;
     int kills;
+    int special_kills;
+    int damage_dealt;
     int rtt_ms;
     unsigned int fire_seq;
     int ray_count;
@@ -204,6 +211,8 @@ struct rasterfall_net {
     int peer_muzzle_flash_ms;
     int peer_damage_flash_ms;
     int peer_kills;
+    int peer_special_kills;
+    int peer_damage_dealt;
     unsigned int peer_fire_seq;
     int peer_ray_count;
     struct toy_game_ray peer_rays[TOY_GAME_MAX_RAYS];

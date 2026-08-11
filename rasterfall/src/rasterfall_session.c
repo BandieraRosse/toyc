@@ -668,7 +668,7 @@ void rasterfall_session_step_client(struct rasterfall_session *session,
 {
     unsigned char keys[TOY_GAME_KEY_RELOAD + 1];
     struct toy_game_enemy enemies[TOY_GAME_MAX_ENEMIES];
-    int enemy_count, kills, event_start, write, i;
+    int enemy_count, kills, special_kills, damage_dealt, event_start, write, i;
     if (command->buttons & RASTERFALL_CMD_RESET) {
         rasterfall_session_reset(session, camera, session->seed);
         return;
@@ -723,6 +723,8 @@ void rasterfall_session_step_client(struct rasterfall_session *session,
     memcpy(enemies, session->game_state.enemies, sizeof(enemies));
     enemy_count = session->game_state.enemies_alive;
     kills = session->game_state.kills;
+    special_kills = session->game_state.special_kills;
+    damage_dealt = session->game_state.damage_dealt;
     event_start = session->game_state.event_count;
     toy_game_update_weapon_held(&session->game_state, keys,
                                 (command->buttons & RASTERFALL_CMD_FIRE) != 0,
@@ -748,6 +750,8 @@ void rasterfall_session_step_client(struct rasterfall_session *session,
     memcpy(session->game_state.enemies, enemies, sizeof(enemies));
     session->game_state.enemies_alive = enemy_count;
     session->game_state.kills = kills;
+    session->game_state.special_kills = special_kills;
+    session->game_state.damage_dealt = damage_dealt;
     /* 预测射击仍保留开火/换弹音效，但击杀音效只由主机事件复制。 */
     write = event_start;
     for (i = event_start; i < session->game_state.event_count; i++)

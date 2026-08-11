@@ -19,10 +19,10 @@
 #define NET_MAGIC_2 'N'
 #define NET_MAGIC_3 '1'
 #define NET_INPUT_SIZE 36
-#define NET_PLAYER_BASE_SIZE 59
+#define NET_PLAYER_BASE_SIZE 65
 #define NET_PLAYER_RAY_SIZE 15
 #define NET_PLAYER_SIZE (NET_PLAYER_BASE_SIZE + 4 + 1 + TOY_GAME_MAX_RAYS * NET_PLAYER_RAY_SIZE)
-#define NET_ACTOR_SIZE 29
+#define NET_ACTOR_SIZE 37
 #define NET_ENEMY_SIZE 48
 #define NET_EVENT_SIZE (4 + 1 + TOY_GAME_MAX_EVENTS)
 #define NET_WORLD_SIZE 32
@@ -765,6 +765,8 @@ static void net_reset_peer_state(struct rasterfall_net *net)
     net->peer_muzzle_flash_ms = 0;
     net->peer_damage_flash_ms = 0;
     net->peer_kills = 0;
+    net->peer_special_kills = 0;
+    net->peer_damage_dealt = 0;
     net->peer_fire_seq = 0;
     net->peer_ray_count = 0;
     net->peer_state_initialized = 0;
@@ -980,7 +982,8 @@ static void encode_player(unsigned char *p, int id, int active,
                           int revive_progress_ms,
                           const struct toy_game_slot *slots,
                           int current_slot, int reloading, int reload_timer_ms,
-                          int muzzle_flash_ms, int kills,
+                          int muzzle_flash_ms, int kills, int special_kills,
+                          int damage_dealt,
                           unsigned int fire_seq, int ray_count,
                           const struct toy_game_ray *rays,
                           int airborne_ms, int airborne_y,
@@ -1020,6 +1023,8 @@ static void encode_player(unsigned char *p, int id, int active,
     put_i16(p + 34, reload_timer_ms);
     put_i16(p + 36, muzzle_flash_ms);
     put_i16(p + 38, kills);
+    put_i16(p + 59, special_kills);
+    put_u32(p + 61, (uint32_t)damage_dealt);
     put_u32(p + NET_PLAYER_BASE_SIZE, fire_seq);
     if (ray_count < 0) ray_count = 0;
     if (ray_count > TOY_GAME_MAX_RAYS) ray_count = TOY_GAME_MAX_RAYS;
@@ -1067,6 +1072,8 @@ static int decode_player(const unsigned char *p,
     player->reloading = p[33] != 0; player->reload_timer_ms = get_i16(p + 34);
     player->muzzle_flash_ms = get_i16(p + 36);
     player->kills = get_i16(p + 38);
+    player->special_kills = get_i16(p + 59);
+    player->damage_dealt = (int)get_u32(p + 61);
     player->fire_seq = get_u32(p + NET_PLAYER_BASE_SIZE);
     player->ray_count = p[NET_PLAYER_BASE_SIZE + 4];
     if (player->ray_count > TOY_GAME_MAX_RAYS) return -1;
@@ -1157,6 +1164,9 @@ static void encode_actor(unsigned char *p, const struct toy_game_actor *a,
     put_i16(p + 24, a->airborne_y);
     p[26] = (unsigned char)a->animation.id;
     put_i16(p + 27, a->animation.time_ms);
+    put_i16(p + 29, a->kills);
+    put_i16(p + 31, a->special_kills);
+    put_u32(p + 33, (uint32_t)a->damage_dealt);
 }
 
 static void decode_actor(const unsigned char *p, struct rasterfall_net_actor *a)
@@ -1175,6 +1185,9 @@ static void decode_actor(const unsigned char *p, struct rasterfall_net_actor *a)
     a->animation.id = p[26] < TOY_GAME_ANIM_COUNT ? p[26] :
                       TOY_GAME_ANIM_NONE;
     a->animation.time_ms = get_i16(p + 27);
+    a->kills = get_i16(p + 29);
+    a->special_kills = get_i16(p + 31);
+    a->damage_dealt = (int)get_u32(p + 33);
     if (a->state == TOY_GAME_ACTOR_DOWNED)
         a->revive_progress_ms = p[17] * 12;
     else
@@ -1275,7 +1288,9 @@ int rasterfall_net_send_snapshot(struct rasterfall_net *net,
                   weapon, game->state, game->player_down,
                   game->player_revive_progress_ms, game->slots, game->current_slot,
                   game->reloading, game->reload_timer_ms,
-                  game->muzzle_flash_ms, game->kills, game->fire_seq,
+                  game->muzzle_flash_ms, game->kills, game->special_kills,
+                  game->damage_dealt,
+                  game->fire_seq,
                   game->ray_count, game->rays,
                   game->player_airborne_ms, game->player_airborne_y, 0,
                   &game->animation);
@@ -1285,7 +1300,9 @@ int rasterfall_net_send_snapshot(struct rasterfall_net *net,
                   net->peer_revive_progress_ms, net->peer_slots,
                   net->peer_current_slot, net->peer_reloading,
                   net->peer_reload_timer_ms, net->peer_muzzle_flash_ms,
-                  net->peer_kills, net->peer_fire_seq,
+                  net->peer_kills, net->peer_special_kills,
+                  net->peer_damage_dealt,
+                  net->peer_fire_seq,
                   net->peer_ray_count, net->peer_rays,
                   net->peer_airborne_ms, net->peer_airborne_y,
                   net->last_input_sequence, &net->peer_animation);
@@ -1303,7 +1320,9 @@ int rasterfall_net_send_snapshot(struct rasterfall_net *net,
                       remote->revive_progress_ms, remote->slots,
                       remote->current_slot, remote->reloading,
                       remote->reload_timer_ms, remote->muzzle_flash_ms,
-                      remote->kills, remote->fire_seq, remote->ray_count,
+                      remote->kills, remote->special_kills,
+                      remote->damage_dealt,
+                      remote->fire_seq, remote->ray_count,
                       remote->rays, remote->airborne_ms,
                       remote->airborne_y, remote->last_input_sequence,
                       &remote->animation);
@@ -1890,7 +1909,8 @@ static void net_apply_extra_remote(struct rasterfall_net *net,
     unsigned char keys[TOY_GAME_KEY_RELOAD + 1];
     int host_px, host_pz, host_hp, host_down, host_revive;
     int host_current, host_reload, host_reload_timer, host_cooldown;
-    int host_muzzle, host_damage, host_kills, host_ray_count;
+    int host_muzzle, host_damage, host_kills, host_special_kills;
+    int host_damage_dealt, host_ray_count;
     struct toy_game_animation_state host_animation;
     unsigned int host_fire_seq;
     int actor_airborne_ms, actor_airborne_y, actor_vertical_velocity;
@@ -1939,6 +1959,8 @@ static void net_apply_extra_remote(struct rasterfall_net *net,
     host_reload = g->reloading; host_reload_timer = g->reload_timer_ms;
     host_cooldown = g->fire_cooldown_ms; host_muzzle = g->muzzle_flash_ms;
     host_damage = g->damage_flash_ms; host_kills = g->kills;
+    host_special_kills = g->special_kills;
+    host_damage_dealt = g->damage_dealt;
     host_ray_count = g->ray_count; host_fire_seq = g->fire_seq;
     host_animation = g->animation;
     memcpy(g->slots, actor->slots, sizeof(g->slots));
@@ -1949,6 +1971,13 @@ static void net_apply_extra_remote(struct rasterfall_net *net,
     g->fire_cooldown_ms = actor->fire_cooldown_ms;
     g->muzzle_flash_ms = actor->muzzle_flash_ms;
     g->damage_flash_ms = 0; g->kills = remote->kills;
+    g->special_kills = remote->special_kills;
+    g->damage_dealt = remote->damage_dealt;
+    if (remote->command.buttons & RASTERFALL_CMD_CLEAR_STATS) {
+        g->kills = 0;
+        g->special_kills = 0;
+        g->damage_dealt = 0;
+    }
     g->fire_seq = actor->fire_seq;
     g->px = remote->camera.x; g->pz = remote->camera.z;
     rasterfall_session_step_remote_player(session, &remote->camera,
@@ -1991,6 +2020,9 @@ static void net_apply_extra_remote(struct rasterfall_net *net,
     actor->reloading = g->reloading; actor->reload_timer_ms = g->reload_timer_ms;
     actor->fire_cooldown_ms = g->fire_cooldown_ms;
     actor->muzzle_flash_ms = g->muzzle_flash_ms;
+    actor->kills = g->kills;
+    actor->special_kills = g->special_kills;
+    actor->damage_dealt = g->damage_dealt;
     actor->fire_seq = g->fire_seq; actor->ray_count = g->ray_count;
     memcpy(actor->rays, g->rays, sizeof(actor->rays));
     actor->animation = g->animation;
@@ -1998,6 +2030,8 @@ static void net_apply_extra_remote(struct rasterfall_net *net,
     remote->hp = actor->hp; remote->down = actor->state == TOY_GAME_ACTOR_DOWNED;
     remote->state = g->state;
     remote->kills = g->kills;
+    remote->special_kills = g->special_kills;
+    remote->damage_dealt = g->damage_dealt;
     remote->airborne_ms = actor->airborne_ms;
     remote->airborne_y = actor->airborne_y;
     remote->slots[0] = actor->slots[0]; remote->slots[1] = actor->slots[1];
@@ -2022,7 +2056,9 @@ static void net_apply_extra_remote(struct rasterfall_net *net,
     g->current_slot = host_current; g->reloading = host_reload;
     g->reload_timer_ms = host_reload_timer; g->fire_cooldown_ms = host_cooldown;
     g->muzzle_flash_ms = host_muzzle; g->damage_flash_ms = host_damage;
-    g->kills = host_kills; g->ray_count = host_ray_count;
+    g->kills = host_kills; g->special_kills = host_special_kills;
+    g->damage_dealt = host_damage_dealt;
+    g->ray_count = host_ray_count;
     g->fire_seq = host_fire_seq;
     g->animation = host_animation;
 }
@@ -2237,7 +2273,8 @@ void rasterfall_net_apply_remote(struct rasterfall_net *net,
     int host_px, host_pz, host_hp, host_state, host_current;
     int host_down, host_revive_progress;
     int host_reloading, host_reload_timer, host_cooldown, host_muzzle;
-    int host_damage, host_kills, host_ray_count;
+    int host_damage, host_kills, host_special_kills, host_damage_dealt;
+    int host_ray_count;
     unsigned int host_fire_seq;
     struct toy_game_animation_state host_animation;
     unsigned char keys[TOY_GAME_KEY_RELOAD + 1];
@@ -2430,6 +2467,8 @@ void rasterfall_net_apply_remote(struct rasterfall_net *net,
         host_reloading = g->reloading; host_reload_timer = g->reload_timer_ms;
         host_cooldown = g->fire_cooldown_ms; host_muzzle = g->muzzle_flash_ms;
         host_damage = g->damage_flash_ms; host_kills = g->kills;
+        host_special_kills = g->special_kills;
+        host_damage_dealt = g->damage_dealt;
         host_ray_count = g->ray_count; host_fire_seq = g->fire_seq;
         host_animation = g->animation;
         memcpy(g->slots, net->peer_slots, sizeof(g->slots));
@@ -2443,6 +2482,13 @@ void rasterfall_net_apply_remote(struct rasterfall_net *net,
         g->muzzle_flash_ms = net->peer_muzzle_flash_ms;
         g->damage_flash_ms = net->peer_damage_flash_ms;
         g->kills = net->peer_kills;
+        g->special_kills = net->peer_special_kills;
+        g->damage_dealt = net->peer_damage_dealt;
+        if (net->remote_command.buttons & RASTERFALL_CMD_CLEAR_STATS) {
+            g->kills = 0;
+            g->special_kills = 0;
+            g->damage_dealt = 0;
+        }
         g->fire_seq = net->peer_fire_seq;
         g->px = net->peer_camera.x; g->pz = net->peer_camera.z;
         /* 交互必须在装载玩家2的武器槽之后执行；否则拾取武器/弹药
@@ -2479,7 +2525,10 @@ void rasterfall_net_apply_remote(struct rasterfall_net *net,
         net->peer_fire_cooldown_ms = g->fire_cooldown_ms;
         net->peer_muzzle_flash_ms = g->muzzle_flash_ms;
         net->peer_damage_flash_ms = g->damage_flash_ms;
-        net->peer_kills = g->kills; net->peer_fire_seq = g->fire_seq;
+        net->peer_kills = g->kills;
+        net->peer_special_kills = g->special_kills;
+        net->peer_damage_dealt = g->damage_dealt;
+        net->peer_fire_seq = g->fire_seq;
         net->peer_animation = g->animation;
         net->peer_ray_count = g->ray_count;
         if (net->peer_ray_count < 0) net->peer_ray_count = 0;
@@ -2493,9 +2542,11 @@ void rasterfall_net_apply_remote(struct rasterfall_net *net,
         g->state = host_state; g->current_slot = host_current;
         g->reloading = host_reloading; g->reload_timer_ms = host_reload_timer;
         g->fire_cooldown_ms = host_cooldown; g->muzzle_flash_ms = host_muzzle;
-    g->damage_flash_ms = host_damage; g->kills = host_kills;
-    g->ray_count = host_ray_count; g->fire_seq = host_fire_seq;
-    g->animation = host_animation;
+        g->damage_flash_ms = host_damage; g->kills = host_kills;
+        g->special_kills = host_special_kills;
+        g->damage_dealt = host_damage_dealt;
+        g->ray_count = host_ray_count; g->fire_seq = host_fire_seq;
+        g->animation = host_animation;
         memcpy(g->rays, host_rays, sizeof(g->rays));
     }
     net_apply_extra_rescue_actions(net, session);
@@ -2743,6 +2794,9 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
             dst->x = src->x; dst->z = src->z;
             dst->sy = src->sy; dst->cy = src->cy;
             dst->hp = src->hp;
+            dst->kills = src->kills;
+            dst->special_kills = src->special_kills;
+            dst->damage_dealt = src->damage_dealt;
             dst->muzzle_flash_ms = src->muzzle_flash_ms;
             dst->fire_seq = src->fire_seq;
             dst->airborne_ms = src->airborne_ms;
@@ -2789,6 +2843,8 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
         session->game_state.animation = own->animation;
         session->game_state.player_revive_progress_ms = own->revive_progress_ms;
         session->game_state.kills = own->kills;
+        session->game_state.special_kills = own->special_kills;
+        session->game_state.damage_dealt = own->damage_dealt;
         session->game_state.state = own->state;
         session->game_state.current_slot = own->current_slot;
         session->game_state.slots[0].weapon = own->slot_weapon[0];

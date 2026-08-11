@@ -2724,10 +2724,12 @@ static int fire_ray(struct toy_game *g, int sy, int cy, int damage, int range,
     }
     if (best >= 0) {
         struct toy_game_enemy *e = &g->enemies[best];
+        int inflicted = damage < e->hp ? damage : e->hp;
         *out_ex = g->px + (sy * best_t) / 1024;
         *out_ez = g->pz + (cy * best_t) / 1024;
         *out_hit_world = 0;
         e->hp -= damage;
+        if (inflicted > 0) g->damage_dealt += inflicted;
         if (e->hp <= 0) {
             e->hp = 0;
             e->active = 2;
@@ -2735,6 +2737,9 @@ static int fire_ray(struct toy_game *g, int sy, int cy, int damage, int range,
             e->flash = 120;
             g->enemies_alive--;
             g->kills++;
+            if (toy_game_enemy_info(e->type)->ability !=
+                TOY_GAME_ENEMY_ABILITY_NONE)
+                g->special_kills++;
             if (g->player_pull_enemy_index == best)
                 release_player_special(g);
             push_event(g, TOY_GAME_EV_KILL);
@@ -2987,6 +2992,7 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
     int player_spread_heat, player_moving;
     int player_weapon_switch_timer_ms;
     int player_muzzle_flash_ms, player_ray_count;
+    int player_kills, player_special_kills, player_damage_dealt;
     unsigned int player_fire_seq;
     int target = -1, best_dist = 0, i;
     int sy = 0, cy = 1024;
@@ -3140,6 +3146,9 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
     player_spread_heat = g->weapon_spread_heat;
     player_moving = g->moving;
     player_muzzle_flash_ms = g->muzzle_flash_ms;
+    player_kills = g->kills;
+    player_special_kills = g->special_kills;
+    player_damage_dealt = g->damage_dealt;
     player_ray_count = g->ray_count;
     player_fire_seq = g->fire_seq;
     player_down = g->player_down;
@@ -3156,6 +3165,9 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
     g->weapon_spread_heat = actor->weapon_spread_heat;
     g->moving = !ai_idle;
     g->muzzle_flash_ms = g->ai_muzzle_flash_ms;
+    g->kills = actor->kills;
+    g->special_kills = actor->special_kills;
+    g->damage_dealt = actor->damage_dealt;
     g->player_down = 0;
     toy_game_update_weapon_held(g, NULL,
                                 ai_can_fire, ai_can_fire,
@@ -3170,6 +3182,9 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
     actor->weapon_spread_heat = g->weapon_spread_heat;
     actor->moving = g->moving;
     g->ai_muzzle_flash_ms = g->muzzle_flash_ms;
+    actor->kills = g->kills;
+    actor->special_kills = g->special_kills;
+    actor->damage_dealt = g->damage_dealt;
     g->ai_sy = target >= 0 ? sy : g->ai_sy;
     g->ai_cy = target >= 0 ? cy : g->ai_cy;
     if (g->fire_seq != player_fire_seq) {
@@ -3219,6 +3234,9 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
     g->weapon_spread_heat = player_spread_heat;
     g->moving = player_moving;
     g->muzzle_flash_ms = player_muzzle_flash_ms;
+    g->kills = player_kills;
+    g->special_kills = player_special_kills;
+    g->damage_dealt = player_damage_dealt;
     g->ray_count = player_ray_count;
     g->fire_seq = player_fire_seq;
     g->player_down = player_down;

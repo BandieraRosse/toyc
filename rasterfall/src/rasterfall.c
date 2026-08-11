@@ -438,6 +438,120 @@ static void draw_crosshair(struct toy_surface *surface,
 }
 
 static void fill_rect(struct toy_surface *surface, int x, int y,
+                      int width, int height, uint32_t color);
+
+struct scoreboard_entry {
+    char name[TOY_GAME_MAX_NAME];
+    int kills;
+    int special_kills;
+    int damage_dealt;
+};
+
+static void scoreboard_add(struct scoreboard_entry *entries, int *count,
+                           const char *name, int kills, int special_kills,
+                           int damage_dealt)
+{
+    struct scoreboard_entry *entry;
+    if (*count >= TOY_GAME_MAX_ACTORS) return;
+    entry = &entries[(*count)++];
+    snprintf(entry->name, sizeof(entry->name), "%s", name ? name : "UNKNOWN");
+    entry->kills = kills;
+    entry->special_kills = special_kills;
+    entry->damage_dealt = damage_dealt;
+}
+
+static void scoreboard_sort(struct scoreboard_entry *entries, int count)
+{
+    int i, j;
+    for (i = 0; i < count; i++)
+        for (j = i + 1; j < count; j++)
+            if (entries[j].kills > entries[i].kills) {
+                struct scoreboard_entry tmp = entries[i];
+                entries[i] = entries[j];
+                entries[j] = tmp;
+            }
+}
+
+static void draw_scoreboard_column(struct toy_surface *surface, int x, int y,
+                                   const char *title,
+                                   struct scoreboard_entry *entries, int count)
+{
+    char line[64];
+    int i;
+    fb_draw_string((unsigned char *)surface->pixels, x, y, title,
+                   RF_COLOR_UI_ACCENT, surface->stride);
+    fb_draw_string((unsigned char *)surface->pixels, x, y + 22,
+                   "NAME         NORMAL SPECIAL TOTAL DAMAGE",
+                   RF_COLOR_UI_TEXT_MUTED, surface->stride);
+    for (i = 0; i < count && i < 12; i++) {
+        int normal = entries[i].kills - entries[i].special_kills;
+        if (normal < 0) normal = 0;
+        uint32_t color = i == 0 ? 0xFFD700 :
+                         i == 1 ? 0xC0C0C0 :
+                         i == 2 ? 0xB5A642 : RF_COLOR_UI_TEXT;
+        snprintf(line, sizeof(line), "%-11.11s %6d %7d %5d %6d",
+                 entries[i].name, normal, entries[i].special_kills,
+                 entries[i].kills, entries[i].damage_dealt);
+        fb_draw_string((unsigned char *)surface->pixels, x, y + 44 + i * 18,
+                       line, color, surface->stride);
+    }
+}
+
+static void draw_scoreboard(struct toy_surface *surface,
+                            const struct rasterfall_net *net)
+{
+    struct scoreboard_entry players[RASTERFALL_NET_PLAYER_MAX];
+    struct scoreboard_entry ais[TOY_GAME_MAX_ACTORS];
+    int player_count = 0, ai_count = 0, i;
+    char name[TOY_GAME_MAX_NAME];
+    int x = 20, y = 38, width = surface->width - 40;
+    if (net->mode == RASTERFALL_NET_CLIENT) {
+        for (i = 0; i < RASTERFALL_NET_PLAYER_MAX; i++) {
+            if (!net->players[i].active) continue;
+            snprintf(name, sizeof(name), "PLAYER %d%s", i + 1,
+                     i == net->local_player_id ? " *" : "");
+            scoreboard_add(players, &player_count, name,
+                           net->players[i].kills,
+                           net->players[i].special_kills,
+                           net->players[i].damage_dealt);
+        }
+    } else {
+        scoreboard_add(players, &player_count, "PLAYER 1 *",
+                       game.kills, game.special_kills, game.damage_dealt);
+        if (net->peer_known)
+            scoreboard_add(players, &player_count, "PLAYER 2",
+                           net->peer_kills, net->peer_special_kills,
+                           net->peer_damage_dealt);
+        for (i = 0; i < RASTERFALL_NET_REMOTE_MAX; i++) {
+            if (!net->remotes[i].active || !net->remotes[i].connected) continue;
+            snprintf(name, sizeof(name), "PLAYER %d", net->remotes[i].client_id + 1);
+            scoreboard_add(players, &player_count, name,
+                           net->remotes[i].kills,
+                           net->remotes[i].special_kills,
+                           net->remotes[i].damage_dealt);
+        }
+    }
+    for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
+        const struct toy_game_actor *actor = &game.actors[i];
+        if (!actor->active || actor->kind != TOY_GAME_ACTOR_AI) continue;
+        scoreboard_add(ais, &ai_count, actor->name[0] ? actor->name : "AI",
+                       actor->kills, actor->special_kills,
+                       actor->damage_dealt);
+    }
+    scoreboard_sort(players, player_count);
+    scoreboard_sort(ais, ai_count);
+    fill_rect(surface, x - 3, y - 3, width + 6, 292, RF_COLOR_UI_ACCENT);
+    fill_rect(surface, x, y, width, 286, RF_COLOR_UI_BACKGROUND);
+    draw_scoreboard_column(surface, x + 18, y + 20, "PLAYERS",
+                           players, player_count);
+    draw_scoreboard_column(surface, x + width / 2 + 10, y + 20,
+                           "AI TEAMMATES", ais, ai_count);
+    fb_draw_string((unsigned char *)surface->pixels, x + 18, y + 264,
+                   "HOLD TAB   TAB+R CLEAR YOUR STATS",
+                   RF_COLOR_UI_TEXT_MUTED, surface->stride);
+}
+
+static void fill_rect(struct toy_surface *surface, int x, int y,
                       int width, int height, uint32_t color)
 {
     int right = x + width, bottom = y + height;
@@ -1494,6 +1608,16 @@ startup_again:
                     build_game_command(&command, &input, &settings, fire_edge,
                                        shove_edge, pointer_turn_pending,
                                        pointer_pitch_pending);
+                    if (toy_input_down(&input, KEY_TAB) &&
+                        toy_input_pressed(&input, KEY_R)) {
+                        command.buttons &= ~RASTERFALL_CMD_RELOAD;
+                        command.buttons |= RASTERFALL_CMD_CLEAR_STATS;
+                        if (net.mode != RASTERFALL_NET_CLIENT) {
+                            game.kills = 0;
+                            game.special_kills = 0;
+                            game.damage_dealt = 0;
+                        }
+                    }
                     if (net.mode == RASTERFALL_NET_CLIENT)
                         rasterfall_session_step_client(&session, &camera,
                                                        &command,
@@ -1717,6 +1841,9 @@ startup_again:
             rasterfall_render_ai_teammate_name(&renderer, &camera);
             rasterfall_render_network_teammate_status(&renderer, &camera, &net);
             rasterfall_hud_damage_flash(&surface, &game);
+            if (game.state == TOY_GAME_PLAYING && !paused &&
+                toy_input_down(&input, KEY_TAB))
+                draw_scoreboard(&surface, &net);
             if (input_debug)
                 draw_input_debug(&surface, &input,
                                  have_last_key ? last_key : 0,

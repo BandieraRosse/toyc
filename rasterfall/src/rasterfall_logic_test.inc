@@ -522,6 +522,18 @@ static int run_logic_test(void)
                     r->ez > game.pz + TOY_GAME_MAX_RANGE) return 38;
             }
         }
+        /* 特感击杀单独累计，同时仍计入总击杀。 */
+        memset(game.enemies, 0, sizeof(game.enemies));
+        game.enemies[0].active = 1;
+        game.enemies[0].type = TOY_GAME_ENEMY_SMOKER;
+        game.enemies[0].hp = 1;
+        game.enemies[0].x = game.px;
+        game.enemies[0].z = game.pz + 900;
+        game.enemies_alive = 1;
+        game.fire_cooldown_ms = 0;
+        toy_game_fire(&game, 0, 1024);
+        if (game.kills != 3 || game.special_kills != 1 ||
+            game.damage_dealt != 1) return 117;
         /* 无敌人时射线止于墙：向西命中起点安全室西墙（x=-1800 面）。
          * 弹丸有随机偏转，但终点都应落在该墙面范围内。 */
         game.reloading = 0;
