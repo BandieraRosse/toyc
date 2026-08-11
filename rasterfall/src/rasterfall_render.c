@@ -1709,10 +1709,13 @@ static int render_player_avatar(struct toy_renderer *renderer,
 {
     struct rasterfall_animation_pose pose;
     int pixels = 0, face_y0, face_y1, animation_lift;
+    int pose_x, pose_z;
     int death_progress = 0, body_top, body_bottom, head_y, fall_shift;
     if (!renderer || !camera) return 0;
     rasterfall_animation_sample(animation_id, animation_time_ms, &pose);
     animation_lift = pose.body_lift;
+    pose_x = x + sy * pose.forward_shift / 1024;
+    pose_z = z + cy * pose.forward_shift / 1024;
     active_actor_lift += animation_lift;
     if (downed && animation_id == TOY_GAME_ANIM_DEATH) {
         death_progress = animation_time_ms * 1000 /
@@ -1723,51 +1726,51 @@ static int render_player_avatar(struct toy_renderer *renderer,
         head_y = 50 - 600 * death_progress / 1000;
         fall_shift = 160 * death_progress / 1000;
         pixels += draw_actor_box(renderer, camera,
-                                 x + sy * fall_shift / 1024,
-                                 z + cy * fall_shift / 1024,
+                                 pose_x + sy * fall_shift / 1024,
+                                 pose_z + cy * fall_shift / 1024,
                                  sy, cy, -155, 155, body_bottom, body_top,
                                  -100, 100, body_color);
         pixels += draw_ellipsoid_head(renderer, camera,
-                                      x + sy * fall_shift / 1024,
-                                      z + cy * fall_shift / 1024,
+                                      pose_x + sy * fall_shift / 1024,
+                                      pose_z + cy * fall_shift / 1024,
                                       head_y + active_actor_lift, 145, 150,
                                       0xD2A878);
         face_y0 = head_y - 100; face_y1 = head_y + 80;
     } else if (downed) {
-        pixels += draw_cuboid(renderer, camera, x - 170, x + 170,
+        pixels += draw_cuboid(renderer, camera, pose_x - 170, pose_x + 170,
                               -850 + active_actor_lift, -650 + active_actor_lift,
-                              z - 100, z + 100, body_color);
-        pixels += draw_ellipsoid_head(renderer, camera, x, z,
+                              pose_z - 100, pose_z + 100, body_color);
+        pixels += draw_ellipsoid_head(renderer, camera, pose_x, pose_z,
                                       -550 + active_actor_lift, 145, 100, 0xD2A878);
         face_y0 = -650; face_y1 = -470;
     } else {
-        pixels += draw_actor_box(renderer, camera, x, z, sy, cy,
+        pixels += draw_actor_box(renderer, camera, pose_x, pose_z, sy, cy,
                                  -95, -10, -900, -610, -75, 75, 0x25354A);
-        pixels += draw_actor_box(renderer, camera, x, z, sy, cy,
+        pixels += draw_actor_box(renderer, camera, pose_x, pose_z, sy, cy,
                                  10, 95, -900, -610, -75, 75, 0x25354A);
-        pixels += draw_actor_box(renderer, camera, x, z, sy, cy,
+        pixels += draw_actor_box(renderer, camera, pose_x, pose_z, sy, cy,
                                  -155, 155, -620, -100, -100, 100, body_color);
-        pixels += draw_ellipsoid_head(renderer, camera, x, z,
+        pixels += draw_ellipsoid_head(renderer, camera, pose_x, pose_z,
                                       50 + active_actor_lift, 145, 150, 0xD2A878);
         face_y0 = -35; face_y1 = 185;
     }
     if (!downed) {
-        pixels += render_actor_weapon(renderer, camera, x, z, sy, cy,
+        pixels += render_actor_weapon(renderer, camera, pose_x, pose_z, sy, cy,
                                       weapon, muzzle_flash);
     }
-    pixels += draw_face_rect(renderer, camera, x, z, 145, sy, cy,
+    pixels += draw_face_rect(renderer, camera, pose_x, pose_z, 145, sy, cy,
                              -72, 72, face_y0 + active_actor_lift,
                              face_y1 + active_actor_lift, RF_COLOR_AI_HEAVY);
-    pixels += draw_face_rect(renderer, camera, x, z, 145, sy, cy,
+    pixels += draw_face_rect(renderer, camera, pose_x, pose_z, 145, sy, cy,
                              -16, 16, face_y0 + 40 + active_actor_lift,
                              face_y1 - 40 + active_actor_lift, 0xE8D2A8);
-    pixels += draw_face_rect(renderer, camera, x, z, 145, sy, cy,
+    pixels += draw_face_rect(renderer, camera, pose_x, pose_z, 145, sy, cy,
                              -72, 72, face_y0 + 90 + active_actor_lift,
                              face_y0 + 115 + active_actor_lift, 0xE8D2A8);
     if (muzzle_flash > 0)
-        pixels += draw_cuboid(renderer, camera, x - 45, x + 45,
+        pixels += draw_cuboid(renderer, camera, pose_x - 45, pose_x + 45,
                               -560 + active_actor_lift, -430 + active_actor_lift,
-                              z - 120, z + 120, RF_COLOR_UI_ACCENT);
+                              pose_z - 120, pose_z + 120, RF_COLOR_UI_ACCENT);
     active_actor_lift -= animation_lift;
     return pixels;
 }
