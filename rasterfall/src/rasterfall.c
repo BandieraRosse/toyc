@@ -1269,7 +1269,7 @@ startup_again:
                                       net.players[0].weapon,
                                       net.players[0].fire_seq,
                                       net.players[0].ray_count,
-                                      net.players[0].rays, &audio);
+                                      net.players[0].rays, NULL);
         }
         if (net.mode == RASTERFALL_NET_HOST) {
             for (int i = 0; i < RASTERFALL_NET_REMOTE_MAX; i++) {
@@ -1291,7 +1291,7 @@ startup_again:
                 sync_network_fire_effects(&camera, &player->camera, i,
                                           player->weapon, player->fire_seq,
                                           player->ray_count, player->rays,
-                                          &audio);
+                                          NULL);
             }
         }
         /* 本帧到达的按压边沿并入保留位，再把保留位全部合入 key_pressed
@@ -1531,6 +1531,7 @@ startup_again:
                 }
                 if (net.mode == RASTERFALL_NET_HOST) {
                     rasterfall_net_apply_remote(&net, &session, &camera);
+                    rasterfall_net_capture_events(&net, &game);
                     /* Remote fire state is advanced by apply_remote().  The
                      * pre-step visual pass cannot observe that shot until
                      * the next frame; replay the guarded sequence here so

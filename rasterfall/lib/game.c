@@ -155,6 +155,12 @@ static void push_event(struct toy_game *g, unsigned char event)
         g->events[g->event_count++] = event;
 }
 
+void toy_game_emit_event(struct toy_game *g, int event)
+{
+    if (g && event >= 0 && event <= 255)
+        push_event(g, (unsigned char)event);
+}
+
 int toy_game_drain_events(struct toy_game *g, unsigned char *out, int max)
 {
     int count = g->event_count;
@@ -407,6 +413,7 @@ int toy_game_revive_actor(struct toy_game *g, int actor_index, int dt_ms)
         g->ai_down = 0;
         g->ai_revive_progress_ms = 0;
     }
+    push_event(g, TOY_GAME_EV_REVIVE);
     push_event(g, TOY_GAME_EV_ACTOR_REVIVE);
     return 1;
 }
@@ -415,6 +422,7 @@ int toy_game_set_campaign_stage(struct toy_game *g, int stage)
 {
     if (!g || stage < 0 || stage > 2 || stage < g->campaign_stage) return 0;
     g->campaign_stage = stage;
+    push_event(g, TOY_GAME_EV_OBJECTIVE);
     return 1;
 }
 
@@ -787,6 +795,7 @@ int toy_game_spawn_horde_type(struct toy_game *g, int enemy_type,
                 return spawned;             /* 槽满：本次召唤到此为止 */
         }
     }
+    if (spawned > 0) push_event(g, TOY_GAME_EV_SPAWN);
     return spawned;
 }
 
@@ -2510,6 +2519,7 @@ int toy_game_switch_weapon(struct toy_game *g, int slot)
     g->current_slot = slot;
     g->reloading = 0;
     g->reload_timer_ms = 0;
+    push_event(g, TOY_GAME_EV_WEAPON_SWITCH);
     return 1;
 }
 

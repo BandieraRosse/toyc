@@ -9,11 +9,12 @@
 #define RASTERFALL_NET_DEFAULT_PORT 28460
 #define RASTERFALL_NET_MAX_PACKET 2700
 #define RASTERFALL_NET_MAX_SNAPSHOT 8192
-#define RASTERFALL_NET_PROTOCOL_VERSION 15
+#define RASTERFALL_NET_PROTOCOL_VERSION 16
 #define RASTERFALL_NET_MAX_ACTORS 12
 #define RASTERFALL_NET_PLAYER_MAX 4
 #define RASTERFALL_NET_REMOTE_MAX 2
 #define RASTERFALL_NET_EVENT_QUEUE_MAX 64
+#define RASTERFALL_NET_RELIABLE_EVENT_MAX 64
 #define RASTERFALL_NET_DISCOVERY_PORT 28459
 #define RASTERFALL_NET_DISCOVERY_MAX_ROOMS 8
 #define RASTERFALL_NET_PUNCH_SERVER "47.82.117.182"
@@ -30,7 +31,17 @@ enum rasterfall_net_packet_type {
     RASTERFALL_NET_INPUT,
     RASTERFALL_NET_SNAPSHOT,
     RASTERFALL_NET_AI_FIRE,
-    RASTERFALL_NET_SNAPSHOT_PART
+    RASTERFALL_NET_SNAPSHOT_PART,
+    RASTERFALL_NET_RELIABLE_EVENT
+};
+
+struct rasterfall_net_event {
+    uint32_t id;
+    int type;
+    int source_id;
+    int target_id;
+    int x, z;
+    int value;
 };
 
 struct rasterfall_net_room {
@@ -157,6 +168,7 @@ struct rasterfall_net_remote {
     int ray_count;
     struct toy_game_ray rays[TOY_GAME_MAX_RAYS];
     int airborne_ms, airborne_y;
+    uint32_t reliable_event_ack;
     long last_receive_ms;
 };
 
@@ -202,6 +214,7 @@ struct rasterfall_net {
     int peer_airborne_ms;
     int peer_airborne_y;
     int peer_state_initialized;
+    uint32_t peer_reliable_event_ack;
     struct rasterfall_net_player players[RASTERFALL_NET_PLAYER_MAX];
     struct rasterfall_net_remote remotes[RASTERFALL_NET_REMOTE_MAX];
     int local_player_id;
@@ -218,6 +231,14 @@ struct rasterfall_net {
     int remote_event_queue_count;
     uint32_t remote_event_next_id;
     uint32_t remote_event_last_id;
+    uint32_t reliable_event_ack;
+    struct rasterfall_net_event reliable_events[RASTERFALL_NET_RELIABLE_EVENT_MAX];
+    int reliable_event_count;
+    uint32_t reliable_event_next_id;
+    int local_event_scan_count;
+    long reliable_event_last_send_ms;
+    unsigned char reliable_event_pending[TOY_GAME_MAX_EVENTS];
+    int reliable_event_pending_count;
     uint32_t remote_event_snapshot_last_id;
     uint32_t remote_event_snapshot_sequence;
     int snapshot_world_wave;
@@ -309,5 +330,7 @@ void rasterfall_net_apply_local_rescue(struct rasterfall_net *net,
                                        const struct camera *host_camera,
                                        int interact_pressed, int dt_ms);
 void rasterfall_net_reset_host(struct rasterfall_net *net);
+void rasterfall_net_capture_events(struct rasterfall_net *net,
+                                   const struct toy_game *game);
 
 #endif

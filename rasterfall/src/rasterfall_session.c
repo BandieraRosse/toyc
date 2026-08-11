@@ -438,6 +438,12 @@ static void session_client_interact_banner(struct rasterfall_session *session)
 static void session_interact(struct rasterfall_session *session,
                              struct rasterfall_interactable *it)
 {
+    toy_game_emit_event(&session->game_state, TOY_GAME_EV_BUTTON);
+    if (it->kind == TOY_MAP_PICKUP_SMG ||
+        it->kind == TOY_MAP_PICKUP_SHOTGUN ||
+        it->kind == TOY_MAP_PICKUP_AMMO ||
+        it->kind == TOY_MAP_PICKUP_WEAPON)
+        toy_game_emit_event(&session->game_state, TOY_GAME_EV_PICKUP);
     if (it->kind == TOY_MAP_PICKUP_BASE_1_BUTTON) {
         if (session->game_state.campaign_stage != 0) {
             session->banner_text = "FIRST BASE ALREADY CLEARED";

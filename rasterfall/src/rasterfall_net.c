@@ -7,7 +7,7 @@
 #define NET_MAGIC_1 'F'
 #define NET_MAGIC_2 'N'
 #define NET_MAGIC_3 '1'
-#define NET_INPUT_SIZE 32
+#define NET_INPUT_SIZE 36
 #define NET_PLAYER_BASE_SIZE 56
 #define NET_PLAYER_RAY_SIZE 15
 #define NET_PLAYER_SIZE (NET_PLAYER_BASE_SIZE + 4 + 1 + TOY_GAME_MAX_RAYS * NET_PLAYER_RAY_SIZE)
@@ -20,6 +20,19 @@
 #define NET_AI_FIRE_BASE 6
 #define NET_SNAPSHOT_PART_BASE 10
 #define NET_SNAPSHOT_FRAGMENT_DATA 1000
+#define NET_RELIABLE_EVENT_BASE 5
+#define NET_RELIABLE_EVENT_SIZE 13
+
+static int packet_begin(unsigned char *packet, int type, int payload_size,
+                        uint32_t sequence, uint32_t ack);
+static void put_u32(unsigned char *p, uint32_t value);
+static void put_i16(unsigned char *p, int value);
+static unsigned char put_i8_value(int value);
+static uint32_t get_u32(const unsigned char *p);
+static int net_send(struct rasterfall_net *net, unsigned char *packet, int size);
+static int net_send_to(struct rasterfall_net *net,
+                       const struct sockaddr_in *address,
+                       unsigned char *packet, int size);
 
 static long net_monotonic_ms(void)
 {
@@ -35,19 +48,22 @@ static void net_push_event(struct toy_game *game, unsigned char event)
 }
 
 static void net_queue_remote_events(struct rasterfall_net *net,
-                                    const unsigned char *events, int count)
+                                    const unsigned char *events, int count,
+                                    int source_id, int x, int z)
 {
     int i;
     for (i = 0; i < count; i++) {
-        /* Fire audio is reconstructed from the reliable fire_seq in the
-         * player snapshot; keeping SHOOT here would play it twice. */
-        if (events[i] == TOY_GAME_EV_SHOOT) continue;
-        if (net->remote_event_queue_count >= RASTERFALL_NET_EVENT_QUEUE_MAX)
-            break;
-        net->remote_event_queue[net->remote_event_queue_count] = events[i];
-        net->remote_event_ids[net->remote_event_queue_count] =
-            ++net->remote_event_next_id;
-        net->remote_event_queue_count++;
+        if (net->reliable_event_count < RASTERFALL_NET_RELIABLE_EVENT_MAX) {
+            struct rasterfall_net_event *event =
+                &net->reliable_events[net->reliable_event_count++];
+            event->id = ++net->reliable_event_next_id;
+            event->type = events[i];
+            event->source_id = source_id;
+            event->target_id = -1;
+            event->x = x;
+            event->z = z;
+            event->value = 0;
+        }
     }
 }
 
@@ -71,6 +87,130 @@ static void net_ack_remote_events(struct rasterfall_net *net, uint32_t ack)
                     sizeof(net->remote_event_ids[0]));
     }
     net->remote_event_queue_count -= remove_count;
+}
+
+static void net_drop_reliable_events(struct rasterfall_net *net)
+{
+    uint32_t minimum = 0xffffffffU;
+    int i, remove_count = 0;
+    int consumers = 0;
+    if (net->peer_known && net->connected) {
+        minimum = net->peer_reliable_event_ack;
+        consumers = 1;
+    }
+    for (i = 0; i < RASTERFALL_NET_REMOTE_MAX; i++) {
+        struct rasterfall_net_remote *remote = &net->remotes[i];
+        if (!remote->active || !remote->connected) continue;
+        if (!consumers || remote->reliable_event_ack < minimum)
+            minimum = remote->reliable_event_ack;
+        consumers = 1;
+    }
+    if (!consumers) {
+        net->reliable_event_count = 0;
+        return;
+    }
+    while (remove_count < net->reliable_event_count &&
+           net->reliable_events[remove_count].id <= minimum)
+        remove_count++;
+    if (!remove_count) return;
+    if (remove_count < net->reliable_event_count)
+        memmove(net->reliable_events,
+                net->reliable_events + remove_count,
+                (size_t)(net->reliable_event_count - remove_count) *
+                    sizeof(net->reliable_events[0]));
+    net->reliable_event_count -= remove_count;
+}
+
+static int net_send_reliable_events(struct rasterfall_net *net)
+{
+    unsigned char packet[RASTERFALL_NET_MAX_PACKET];
+    int count, size, i;
+    long now;
+    if (!net || net->mode != RASTERFALL_NET_HOST ||
+        net->reliable_event_count <= 0) return 0;
+    now = net_monotonic_ms();
+    if (net->reliable_event_last_send_ms &&
+        now - net->reliable_event_last_send_ms < 100) return 0;
+    count = net->reliable_event_count;
+    if (count > TOY_GAME_MAX_EVENTS) count = TOY_GAME_MAX_EVENTS;
+    size = packet_begin(packet, RASTERFALL_NET_RELIABLE_EVENT,
+                        NET_RELIABLE_EVENT_BASE + count * NET_RELIABLE_EVENT_SIZE,
+                        ++net->send_sequence, net->receive_sequence);
+    if (size < 0) return -1;
+    put_u32(packet + NET_HEADER_SIZE, net->reliable_events[0].id);
+    packet[NET_HEADER_SIZE + 4] = (unsigned char)count;
+    for (i = 0; i < count; i++) {
+        const struct rasterfall_net_event *event = &net->reliable_events[i];
+        unsigned char *p = packet + NET_HEADER_SIZE + NET_RELIABLE_EVENT_BASE +
+                           i * NET_RELIABLE_EVENT_SIZE;
+        p[0] = (unsigned char)event->type;
+        p[1] = put_i8_value(event->source_id);
+        p[2] = put_i8_value(event->target_id);
+        p[3] = 0;
+        put_i16(p + 4, event->x);
+        put_i16(p + 6, event->z);
+        put_i16(p + 8, event->value);
+        put_u32(p + 9, event->id);
+    }
+    if (net->peer_known && net->connected && net_send(net, packet, size) < 0)
+        return -1;
+    for (i = 0; i < RASTERFALL_NET_REMOTE_MAX; i++)
+        if (net->remotes[i].active && net->remotes[i].connected &&
+            !net->relay_mode)
+            net_send_to(net, &net->remotes[i].address, packet, size);
+    net->reliable_event_last_send_ms = now;
+    return 0;
+}
+
+static int decode_reliable_events(const unsigned char *payload, int size,
+                                  struct rasterfall_net *net)
+{
+    int count, i;
+    uint32_t first_id;
+    if (size < NET_RELIABLE_EVENT_BASE) return -1;
+    first_id = get_u32(payload);
+    count = payload[4];
+    if (count < 0 || count > TOY_GAME_MAX_EVENTS ||
+        size != NET_RELIABLE_EVENT_BASE + count * NET_RELIABLE_EVENT_SIZE)
+        return -1;
+    net->remote_event_count = 0;
+    for (i = 0; i < count; i++) {
+        const unsigned char *p = payload + NET_RELIABLE_EVENT_BASE +
+                                 i * NET_RELIABLE_EVENT_SIZE;
+        uint32_t id = get_u32(p + 9);
+        if (id != first_id + (uint32_t)i) return -1;
+        if (id <= net->remote_event_last_id) continue;
+        if (id != net->remote_event_last_id + 1) break;
+        if (net->remote_event_count < TOY_GAME_MAX_EVENTS)
+            net->remote_events[net->remote_event_count++] = p[0];
+        net->remote_event_last_id = id;
+    }
+    net->reliable_event_ack = net->remote_event_last_id;
+    return 0;
+}
+
+void rasterfall_net_capture_events(struct rasterfall_net *net,
+                                   const struct toy_game *game)
+{
+    int i;
+    if (!net || !game || net->mode != RASTERFALL_NET_HOST) return;
+    if (game->event_count < net->local_event_scan_count)
+        net->local_event_scan_count = 0;
+    for (i = net->local_event_scan_count; i < game->event_count; i++) {
+        if (net->reliable_event_count >= RASTERFALL_NET_RELIABLE_EVENT_MAX)
+            break;
+        net->reliable_events[net->reliable_event_count].id =
+            ++net->reliable_event_next_id;
+        net->reliable_events[net->reliable_event_count].type = game->events[i];
+        net->reliable_events[net->reliable_event_count].source_id = 0;
+        net->reliable_events[net->reliable_event_count].target_id = -1;
+        net->reliable_events[net->reliable_event_count].x = game->px;
+        net->reliable_events[net->reliable_event_count].z = game->pz;
+        net->reliable_events[net->reliable_event_count].value =
+            game->current_slot;
+        net->reliable_event_count++;
+        net->local_event_scan_count = i + 1;
+    }
 }
 
 static void put_u16(unsigned char *p, unsigned int value)
@@ -538,6 +678,7 @@ static void net_reset_peer_state(struct rasterfall_net *net)
     net->peer_state = TOY_GAME_PLAYING;
     net->peer_down = 0;
     net->peer_revive_progress_ms = 0;
+    net->peer_reliable_event_ack = 0;
     net->peer_revive_active = 0;
     net->peer_host_revive_active = 0;
     net->peer_host_revive_progress_ms = 0;
@@ -707,6 +848,7 @@ static int encode_command(unsigned char *packet, uint32_t sequence,
     put_i16(p + 26, predicted->cy);
     put_i16(p + 28, predicted->pitch_sy);
     put_i16(p + 30, predicted->pitch_cy);
+    put_u32(p + 32, 0);
     return size;
 }
 
@@ -750,6 +892,7 @@ int rasterfall_net_send_command(struct rasterfall_net *net,
     net->tick++;
     size = encode_command(packet, ++net->send_sequence,
                           net->receive_sequence, net->tick, command, predicted);
+    put_u32(packet + NET_HEADER_SIZE + 32, net->reliable_event_ack);
     net->last_command_sequence = net->send_sequence;
     if (command->buttons & RASTERFALL_CMD_JUMP)
         net->last_jump_command_sequence = net->send_sequence;
@@ -1070,10 +1213,12 @@ int rasterfall_net_send_snapshot(struct rasterfall_net *net,
     event_data = p + NET_SNAPSHOT_BASE + RASTERFALL_NET_PLAYER_MAX * NET_PLAYER_SIZE +
                  actor_count * NET_ACTOR_SIZE + 1 + TOY_GAME_MAX_ENEMIES * NET_ENEMY_SIZE;
     world_data = event_data + NET_EVENT_SIZE;
-    event_count = net->remote_event_queue_count;
-    if (event_count > TOY_GAME_MAX_EVENTS) event_count = TOY_GAME_MAX_EVENTS;
-    put_u32(event_data, event_count ? net->remote_event_ids[0] : 0);
-    event_data[4] = (unsigned char)event_count;
+    /* Reliable events use their own packet and event-id ACK.  Keep the
+     * legacy snapshot event area empty so a lost snapshot cannot duplicate
+     * or falsely acknowledge an event. */
+    event_count = 0;
+    put_u32(event_data, 0);
+    event_data[4] = 0;
     memset(event_data + 5, 0, TOY_GAME_MAX_EVENTS);
     if (event_count)
         memcpy(event_data + 5, net->remote_event_queue,
@@ -1126,6 +1271,7 @@ int rasterfall_net_send_snapshot(struct rasterfall_net *net,
                 net_send_to(net, &net->remotes[remote_i].address,
                             packet, size) < 0) return -1;
     }
+    net_send_reliable_events(net);
     return send_ai_fire_packets(net, game);
 }
 
@@ -1167,20 +1313,9 @@ static int decode_snapshot(const unsigned char *payload, int size,
         decode_enemy(payload + NET_SNAPSHOT_BASE + count * NET_PLAYER_SIZE +
                      net->actor_count * NET_ACTOR_SIZE + 1 + i * NET_ENEMY_SIZE,
                      &net->enemies[i]);
-    {
-        uint32_t first_id = get_u32(event_data);
-        int event_count = event_data[4];
-        int accepted = 0;
-        if (event_count > TOY_GAME_MAX_EVENTS) return -1;
-        for (i = 0; i < event_count; i++) {
-            uint32_t id = first_id + (uint32_t)i;
-            if (id <= net->remote_event_last_id) continue;
-            net->remote_events[accepted++] =
-                event_data[5 + i];
-            net->remote_event_last_id = id;
-        }
-        net->remote_event_count = accepted;
-    }
+    /* The legacy snapshot event slot is intentionally ignored.  Reliable
+     * events arrive through RASTERFALL_NET_RELIABLE_EVENT and are ACKed by
+     * event ID, independently of snapshot delivery. */
     net->snapshot_world_wave = get_i16(world_data);
     net->snapshot_world_to_spawn = get_i16(world_data + 2);
     net->snapshot_world_spawn_timer_ms = get_i16(world_data + 4);
@@ -1414,6 +1549,8 @@ void rasterfall_net_poll(struct rasterfall_net *net)
                         decode_command_camera(packet + NET_HEADER_SIZE,
                                               &remote->reported_camera);
                         remote->reported_camera_ready = 1;
+                        remote->reliable_event_ack =
+                            get_u32(packet + NET_HEADER_SIZE + 32);
                         remote->last_input_sequence = sequence;
                         remote->last_input_tick = net->tick;
                         remote->command_ready = 1;
@@ -1471,6 +1608,8 @@ void rasterfall_net_poll(struct rasterfall_net *net)
                         decode_command_camera(packet + NET_HEADER_SIZE,
                                               &remote->reported_camera);
                         remote->reported_camera_ready = 1;
+                        remote->reliable_event_ack =
+                            get_u32(packet + NET_HEADER_SIZE + 32);
                         remote->last_input_sequence = sequence;
                         remote->last_input_tick = net->tick;
                         remote->command_ready = 1;
@@ -1501,6 +1640,8 @@ void rasterfall_net_poll(struct rasterfall_net *net)
                 decode_command_camera(packet + NET_HEADER_SIZE,
                                       &net->peer_reported_camera);
                 net->peer_reported_camera_ready = 1;
+                net->peer_reliable_event_ack =
+                    get_u32(packet + NET_HEADER_SIZE + 32);
                 if (ack == net->last_snapshot_sequence &&
                     net->last_snapshot_sent_ms) {
                     long elapsed = net_monotonic_ms() - net->last_snapshot_sent_ms;
@@ -1527,6 +1668,10 @@ void rasterfall_net_poll(struct rasterfall_net *net)
                 net->peer_spawn.pitch_cy =
                     get_i16(packet + NET_HEADER_SIZE + 18);
                 net->spawn_pending = 1;
+                net->connected = 1;
+            } else if (type == RASTERFALL_NET_RELIABLE_EVENT &&
+                       decode_reliable_events(packet + NET_HEADER_SIZE,
+                                              payload_size, net) == 0) {
                 net->connected = 1;
             } else if (type == RASTERFALL_NET_AI_FIRE &&
                 decode_ai_fire(packet + NET_HEADER_SIZE, payload_size, net) == 0) {
@@ -1564,6 +1709,8 @@ void rasterfall_net_update_connection(struct rasterfall_net *net)
     if (!net || net->fd < 0 || net->mode == RASTERFALL_NET_OFF) return;
     now = net_monotonic_ms();
     if (net->mode == RASTERFALL_NET_HOST) {
+        net_drop_reliable_events(net);
+        net_send_reliable_events(net);
         for (i = 0; i < RASTERFALL_NET_REMOTE_MAX; i++) {
             struct rasterfall_net_remote *remote = &net->remotes[i];
             if (remote->active && remote->last_receive_ms &&
@@ -1603,6 +1750,7 @@ void rasterfall_net_update_connection(struct rasterfall_net *net)
         net->remote_event_queue_count = 0;
         net->remote_event_next_id = 0;
         net->remote_event_last_id = 0;
+        net->reliable_event_ack = 0;
         net->remote_event_snapshot_last_id = 0;
         net->remote_event_snapshot_sequence = 0;
     }
@@ -1742,7 +1890,9 @@ static void net_apply_extra_remote(struct rasterfall_net *net,
     if (g->event_count > event_start) {
         int count = g->event_count - event_start;
         if (count > TOY_GAME_MAX_EVENTS) count = TOY_GAME_MAX_EVENTS;
-        net_queue_remote_events(net, g->events + event_start, count);
+        net_queue_remote_events(net, g->events + event_start, count,
+                                remote->client_id, remote->camera.x,
+                                remote->camera.z);
         g->event_count = event_start;
     }
     memcpy(g->slots, host_slots, sizeof(g->slots));
@@ -1853,6 +2003,7 @@ static void net_finish_rescue(struct rasterfall_net *net,
             actor->revive_progress_ms = 0;
         }
     }
+    net_push_event(&session->game_state, TOY_GAME_EV_REVIVE);
     net_push_event(&session->game_state, TOY_GAME_EV_ACTOR_REVIVE);
 }
 
@@ -2125,6 +2276,7 @@ void rasterfall_net_apply_remote(struct rasterfall_net *net,
                 g->player_down = 0;
                 g->player_revive_progress_ms = 0;
                 g->hp = TOY_GAME_REVIVE_HP;
+                net_push_event(g, TOY_GAME_EV_REVIVE);
                 net_push_event(g, TOY_GAME_EV_ACTOR_REVIVE);
             }
             if (net->peer_host_revive_active)
@@ -2188,7 +2340,8 @@ void rasterfall_net_apply_remote(struct rasterfall_net *net,
             int event_count = g->event_count - event_start;
             if (event_count > TOY_GAME_MAX_EVENTS)
                 event_count = TOY_GAME_MAX_EVENTS;
-            net_queue_remote_events(net, g->events + event_start, event_count);
+            net_queue_remote_events(net, g->events + event_start, event_count,
+                                    1, net->peer_camera.x, net->peer_camera.z);
             g->event_count = event_start;
         }
         memcpy(net->peer_slots, g->slots, sizeof(net->peer_slots));
@@ -2387,6 +2540,10 @@ void rasterfall_net_reset_host(struct rasterfall_net *net)
 {
     if (!net || net->mode != RASTERFALL_NET_HOST) return;
     net_reset_peer_state(net);
+    net->reliable_event_count = 0;
+    net->reliable_event_next_id = 0;
+    net->local_event_scan_count = 0;
+    net->reliable_event_last_send_ms = 0;
 }
 
 void rasterfall_net_reconcile_client(struct rasterfall_net *net,

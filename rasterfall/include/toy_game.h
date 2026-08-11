@@ -179,6 +179,12 @@ enum toy_game_event {
     TOY_GAME_EV_ENEMY_ALERT,
     TOY_GAME_EV_ACTOR_DOWN,
     TOY_GAME_EV_ACTOR_REVIVE,
+    TOY_GAME_EV_PICKUP,
+    TOY_GAME_EV_BUTTON,
+    TOY_GAME_EV_REVIVE,
+    TOY_GAME_EV_SPAWN,
+    TOY_GAME_EV_OBJECTIVE,
+    TOY_GAME_EV_WEAPON_SWITCH,
 };
 
 /* 碰撞/命中共用的 xz 平面轴对齐盒（与房间障碍物同尺度） */
@@ -410,6 +416,7 @@ struct toy_game {
 };
 
 void toy_game_init(struct toy_game *g, uint64_t seed);      /* 初始化/重开共用 */
+void toy_game_emit_event(struct toy_game *g, int event);
 void toy_game_set_player_name(struct toy_game *g, const char *name);
 void toy_game_set_ai_teammate(struct toy_game *g, int active, int x, int z,
                               const char *name);
