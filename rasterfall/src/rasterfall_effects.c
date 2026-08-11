@@ -54,6 +54,27 @@ void rasterfall_effects_spawn_hit_particles(struct rasterfall_effects *effects,
     }
 }
 
+void rasterfall_effects_emit(struct rasterfall_effects *effects,
+                             const struct rasterfall_effect_cue *cue)
+{
+    struct rasterfall_tracer *tracer;
+    if (!effects || !cue) return;
+    if (cue->type == RASTERFALL_EFFECT_CUE_TRACER) {
+        tracer = &effects->tracers[effects->tracer_next];
+        effects->tracer_next =
+            (effects->tracer_next + 1) % RASTERFALL_TRACER_SLOTS;
+        tracer->active = 1;
+        tracer->sx = cue->sx; tracer->sy = cue->sy; tracer->sz = cue->sz;
+        tracer->ex = cue->ex; tracer->ey = cue->ey; tracer->ez = cue->ez;
+        tracer->life_ms = cue->life_ms > 0 ? cue->life_ms :
+                          RASTERFALL_TRACER_LIFE_MS;
+    } else if (cue->type == RASTERFALL_EFFECT_CUE_HIT_PARTICLES) {
+        rasterfall_effects_spawn_hit_particles(effects, cue->ex, cue->ey,
+                                                cue->ez, cue->dir_sy,
+                                                cue->dir_cy);
+    }
+}
+
 void rasterfall_effects_update(struct rasterfall_effects *effects, int dt_ms)
 {
     int i;

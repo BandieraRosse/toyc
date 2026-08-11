@@ -283,6 +283,23 @@ static int run_logic_test(void)
         rasterfall_render_particles(&renderer, &camera);
         rasterfall_effects_reset_fire(&effects);
     }
+    {
+        struct rasterfall_effect_cue cue;
+        memset(&cue, 0, sizeof(cue));
+        cue.type = RASTERFALL_EFFECT_CUE_TRACER;
+        cue.sx = 1; cue.sy = 2; cue.sz = 3;
+        cue.ex = 4; cue.ey = 5; cue.ez = 6;
+        cue.life_ms = 77;
+        rasterfall_effects_emit(&effects, &cue);
+        if (!effects.tracers[0].active || effects.tracers[0].sx != 1 ||
+            effects.tracers[0].ey != 5 || effects.tracers[0].life_ms != 77)
+            return 57;
+        cue.type = RASTERFALL_EFFECT_CUE_HIT_PARTICLES;
+        cue.dir_sy = 1024; cue.dir_cy = 0;
+        rasterfall_effects_emit(&effects, &cue);
+        if (effects.particle_next != 7) return 58;
+        rasterfall_effects_reset_fire(&effects);
+    }
     /* 开发者区域场景：纹理墙/模型台座渲染 + 真实开火产生弹道与命中
      * 火花（向北穿门洞直达最大射程长弹道，向西命中空气墙 1800）。
      * 弹道起点取枪口世界坐标；同帧附加枪口粒子。 */

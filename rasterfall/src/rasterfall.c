@@ -753,6 +753,25 @@ static void tracer_world_endpoint(const struct toy_game_ray *ray,
     *out_z = ez;
 }
 
+static void emit_ray_effects(const struct toy_game_ray *ray,
+                             int sx, int sy, int sz,
+                             int ex, int ey, int ez)
+{
+    struct rasterfall_effect_cue cue;
+    memset(&cue, 0, sizeof(cue));
+    cue.type = RASTERFALL_EFFECT_CUE_TRACER;
+    cue.sx = sx; cue.sy = sy; cue.sz = sz;
+    cue.ex = ex; cue.ey = ey; cue.ez = ez;
+    cue.life_ms = RASTERFALL_TRACER_LIFE_MS;
+    rasterfall_effects_emit(&effects, &cue);
+    if (ray->hit_enemy || ray->hit_world) {
+        cue.type = RASTERFALL_EFFECT_CUE_HIT_PARTICLES;
+        cue.dir_sy = ray->sy;
+        cue.dir_cy = ray->cy;
+        rasterfall_effects_emit(&effects, &cue);
+    }
+}
+
 /* 每次实际开火后同步：把 game 里最新一枪的射线搬进 tracer 环，
  * 起点统一取枪口世界坐标；命中（敌人或墙体）的弹丸在弹着点生成
  * 火花，枪口火花则由独立的粒子与闪光绘制。 */
@@ -787,20 +806,13 @@ static void sync_fire_effects(const struct camera *camera)
     view_to_world(camera, &muzzle, &muzzle);
     for (i = 0; i < ray_count; i++) {
         const struct toy_game_ray *r = &game.rays[i];
-        struct rasterfall_tracer *t = &effects.tracers[effects.tracer_next];
-        effects.tracer_next = (effects.tracer_next + 1) % RASTERFALL_TRACER_SLOTS;
-        t->active = 1;
-        t->sx = muzzle.x;
-        t->sy = muzzle.y;
-        t->sz = muzzle.z;
+        int tracer_x, tracer_y, tracer_z;
         tracer_world_endpoint(r, muzzle.x, muzzle.y, muzzle.z,
                             camera->pitch_sy, camera->pitch_cy,
                             r->ex, r->ez,
-                            &t->ex, &t->ey, &t->ez);
-        t->life_ms = RASTERFALL_TRACER_LIFE_MS;
-        if (r->hit_enemy || r->hit_world)
-            rasterfall_effects_spawn_hit_particles(&effects, r->ex, t->ey,
-                                                   r->ez, r->sy, r->cy);
+                            &tracer_x, &tracer_y, &tracer_z);
+        emit_ray_effects(r, muzzle.x, muzzle.y, muzzle.z,
+                         tracer_x, tracer_y, tracer_z);
     }
 }
 
@@ -842,17 +854,12 @@ static void sync_ai_fire_effects(const struct camera *camera)
                                           &mx, &my, &mz);
         for (i = 0; i < ray_count; i++) {
             const struct toy_game_ray *r = &actor->rays[i];
-            struct rasterfall_tracer *t = &effects.tracers[effects.tracer_next];
-            effects.tracer_next = (effects.tracer_next + 1) % RASTERFALL_TRACER_SLOTS;
-            t->active = 1;
-            t->sx = mx; t->sy = my; t->sz = mz;
+            int tracer_x, tracer_y, tracer_z;
             tracer_world_endpoint(r, mx, my, mz, 0, 1024,
                                 r->ex, r->ez,
-                                &t->ex, &t->ey, &t->ez);
-            t->life_ms = RASTERFALL_TRACER_LIFE_MS;
-            if (r->hit_enemy || r->hit_world)
-                rasterfall_effects_spawn_hit_particles(&effects, r->ex, t->ey,
-                                                       r->ez, r->sy, r->cy);
+                                &tracer_x, &tracer_y, &tracer_z);
+            emit_ray_effects(r, mx, my, mz,
+                             tracer_x, tracer_y, tracer_z);
         }
     }
 }
@@ -887,18 +894,13 @@ static void sync_network_fire_effects(const struct camera *viewer,
     muzzle.x = mx; muzzle.y = my; muzzle.z = mz;
     for (i = 0; i < ray_count; i++) {
         const struct toy_game_ray *r = &rays[i];
-        struct rasterfall_tracer *t = &effects.tracers[effects.tracer_next];
-        effects.tracer_next = (effects.tracer_next + 1) % RASTERFALL_TRACER_SLOTS;
-        t->active = 1;
-        t->sx = muzzle.x; t->sy = muzzle.y; t->sz = muzzle.z;
+        int tracer_x, tracer_y, tracer_z;
         tracer_world_endpoint(r, muzzle.x, muzzle.y, muzzle.z,
                               0, 1024,
                               r->ex, r->ez,
-                              &t->ex, &t->ey, &t->ez);
-        t->life_ms = RASTERFALL_TRACER_LIFE_MS;
-        if (r->hit_enemy || r->hit_world)
-            rasterfall_effects_spawn_hit_particles(&effects, r->ex, t->ey,
-                                                   r->ez, r->sy, r->cy);
+                              &tracer_x, &tracer_y, &tracer_z);
+        emit_ray_effects(r, muzzle.x, muzzle.y, muzzle.z,
+                         tracer_x, tracer_y, tracer_z);
     }
     (void)viewer;
 }

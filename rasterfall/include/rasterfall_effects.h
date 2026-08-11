@@ -11,6 +11,22 @@
 #define RASTERFALL_PARTICLE_LIFE_MS 240
 #define RASTERFALL_PARTICLE_GRAVITY 4
 
+/* Gameplay/network code emits these presentation cues; it does not own the
+ * tracer/particle pools.  New weapons and abilities can add cue types here
+ * without duplicating pool management in the main loop. */
+enum rasterfall_effect_cue_type {
+    RASTERFALL_EFFECT_CUE_TRACER,
+    RASTERFALL_EFFECT_CUE_HIT_PARTICLES
+};
+
+struct rasterfall_effect_cue {
+    int type;
+    int sx, sy, sz;
+    int ex, ey, ez;
+    int dir_sy, dir_cy;
+    int life_ms;
+};
+
 struct rasterfall_tracer {
     int active;
     int sx, sy, sz;
@@ -43,5 +59,7 @@ void rasterfall_effects_update(struct rasterfall_effects *effects, int dt_ms);
 void rasterfall_effects_reset_fire(struct rasterfall_effects *effects);
 void rasterfall_effects_spawn_hit_particles(struct rasterfall_effects *effects,
                                             int x, int y, int z, int sy, int cy);
+void rasterfall_effects_emit(struct rasterfall_effects *effects,
+                             const struct rasterfall_effect_cue *cue);
 
 #endif
