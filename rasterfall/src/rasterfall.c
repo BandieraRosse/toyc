@@ -865,7 +865,7 @@ static void sync_network_fire_effects(const struct camera *viewer,
                                       const struct toy_game_ray *rays,
                                       struct rasterfall_audio *audio)
 {
-    struct vec3 muzzle_view, muzzle;
+    struct vec3 muzzle;
     int i, mx, my, mz;
     if (source_id < 0 || source_id >= RASTERFALL_NET_PLAYER_MAX) return;
     if (!fire_seq || fire_seq == effects.last_network_fire_seq[source_id]) return;
@@ -878,10 +878,13 @@ static void sync_network_fire_effects(const struct camera *viewer,
     }
     if (ray_count < 0) ray_count = 0;
     if (ray_count > TOY_GAME_MAX_RAYS) ray_count = TOY_GAME_MAX_RAYS;
-    rasterfall_viewmodel_muzzle_offset(weapon, 0, &mx, &my, &mz);
-    muzzle_view.x = mx; muzzle_view.y = my; muzzle_view.z = mz;
-    muzzle = muzzle_view;
-    view_to_world(remote, &muzzle, &muzzle);
+    /* Remote players are rendered in third person.  Their tracer must start
+     * at the same side-mounted muzzle as the avatar, not at the observer's
+     * first-person weapon offset (which sits visibly too high). */
+    rasterfall_viewmodel_actor_muzzle(remote->x, remote->z,
+                                      remote->sy, remote->cy, remote->y,
+                                      weapon, &mx, &my, &mz);
+    muzzle.x = mx; muzzle.y = my; muzzle.z = mz;
     for (i = 0; i < ray_count; i++) {
         const struct toy_game_ray *r = &rays[i];
         struct rasterfall_tracer *t = &effects.tracers[effects.tracer_next];
@@ -889,7 +892,7 @@ static void sync_network_fire_effects(const struct camera *viewer,
         t->active = 1;
         t->sx = muzzle.x; t->sy = muzzle.y; t->sz = muzzle.z;
         tracer_world_endpoint(r, muzzle.x, muzzle.y, muzzle.z,
-                              remote->pitch_sy, remote->pitch_cy,
+                              0, 1024,
                               r->ex, r->ez,
                               &t->ex, &t->ey, &t->ez);
         t->life_ms = RASTERFALL_TRACER_LIFE_MS;
@@ -1065,6 +1068,7 @@ int main(int argc, char **argv)
     }
     render_context.session = &session;
     render_context.effects = &effects;
+    render_context.net = &net;
     render_context.wall_texture = &wall_texture_view;
     render_context.textures_enabled = textures_enabled;
     rasterfall_render_bind(&render_context);

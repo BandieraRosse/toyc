@@ -28,6 +28,7 @@ struct box { int minx, maxx, minz, maxz, height; uint32_t color; };
 static struct rasterfall_render_context *render_ctx;
 static struct rasterfall_session *active_session;
 static struct rasterfall_effects *active_effects;
+static const struct rasterfall_net *active_net;
 static struct toy_texture_view *active_wall_texture;
 static unsigned short *active_lightmap;
 static int active_textures;
@@ -1320,7 +1321,20 @@ static int render_smoker_tongue(struct toy_renderer *renderer,
                                 const struct toy_game_enemy *e)
 {
     int target_x, target_z, target_lift = 0, pixels;
-    if (e->special_target_player == 1) {
+    if (active_net && active_net->mode == RASTERFALL_NET_CLIENT &&
+        e->special_target_player == 0 && active_net->players[0].active) {
+        target_x = active_net->players[0].camera.x;
+        target_z = active_net->players[0].camera.z;
+        target_lift = active_net->players[0].airborne_y;
+    } else if (active_net && active_net->mode == RASTERFALL_NET_CLIENT &&
+               e->special_target_player == 1 &&
+               active_net->local_player_id >= 0 &&
+               active_net->local_player_id < RASTERFALL_NET_PLAYER_MAX &&
+               active_net->players[active_net->local_player_id].active) {
+        target_x = active_net->players[active_net->local_player_id].camera.x;
+        target_z = active_net->players[active_net->local_player_id].camera.z;
+        target_lift = active_net->players[active_net->local_player_id].airborne_y;
+    } else if (e->special_target_player == 1) {
         target_x = game.secondary_px;
         target_z = game.secondary_pz;
         target_lift = game.secondary_player_airborne_y;
@@ -1960,6 +1974,7 @@ void rasterfall_render_bind(struct rasterfall_render_context *ctx)
     render_ctx = ctx;
     active_session = ctx->session;
     active_effects = ctx->effects;
+    active_net = ctx->net;
     active_wall_texture = ctx->wall_texture;
     active_lightmap = ctx->lightmap;
     active_textures = ctx->textures_enabled;
