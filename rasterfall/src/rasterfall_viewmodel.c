@@ -161,7 +161,7 @@ static int render_model_weapon(struct toy_surface *surface,
     if (length <= 0) return 0;
     if (animation_id == TOY_GAME_ANIM_RELOAD) {
         int phase = animation_time_ms * 1000 /
-                    toy_game_animation_info(TOY_GAME_ANIM_RELOAD)->duration_ms;
+                    toy_game_weapon_info(weapon)->reload_ms;
         int arc = phase < 500 ? phase * 2 : (1000 - phase) * 2;
         if (arc < 0) arc = 0;
         if (arc > 1000) arc = 1000;

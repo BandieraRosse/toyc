@@ -98,7 +98,7 @@ static int run_logic_test(void)
         if (game.animation.id != TOY_GAME_ANIM_RELOAD ||
             game.animation.time_ms != 450) return 60;
         toy_game_animation_update(&game.animation, 600);
-        if (game.animation.time_ms != 900) return 61;
+        if (game.animation.time_ms != 1050) return 61;
         toy_game_animation_set(&game.animation, TOY_GAME_ANIM_NONE);
         toy_game_init(&ai_reload_test, 9);
         ai_id = toy_game_add_ai(&ai_reload_test, TOY_GAME_AI_LEVEL_1,

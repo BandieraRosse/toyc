@@ -187,6 +187,15 @@ void rasterfall_session_reset(struct rasterfall_session *session,
             actor_index = actor_id > 0 ? actor_id - 1 : -1;
         }
         if (actor_index < 0) continue;
+        if (!strcmp(spawn->name, "HIT_TEST"))
+            session->game_state.actors[actor_index].fire_enabled = 0;
+        if (!strcmp(spawn->name, "ANIM_TEST")) {
+            session->game_state.actors[actor_index].fire_enabled = 0;
+            session->game_state.actors[actor_index].animation_demo = 1;
+            toy_game_actor_set_animation(
+                &session->game_state.actors[actor_index],
+                TOY_GAME_ANIM_IDLE);
+        }
         if (spawn->base_id >= 0 && spawn->base_id < TOY_MAP_MAX_BASES &&
             session->base_actor_indices[spawn->base_id] < 0)
             session->base_actor_indices[spawn->base_id] = actor_index;

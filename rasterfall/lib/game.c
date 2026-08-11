@@ -228,11 +228,23 @@ static const struct toy_game_animation_info animation_table[TOY_GAME_ANIM_COUNT]
     { 700, 0 }  /* REVIVE */
 };
 
+static const char *animation_names[TOY_GAME_ANIM_COUNT] = {
+    "NONE", "IDLE", "MOVE", "FIRE", "RELOAD", "DOWNED", "HIT",
+    "DEATH", "REVIVE"
+};
+
 const struct toy_game_animation_info *toy_game_animation_info(int animation_id)
 {
     if (animation_id < 0 || animation_id >= TOY_GAME_ANIM_COUNT)
         return &animation_table[TOY_GAME_ANIM_NONE];
     return &animation_table[animation_id];
+}
+
+const char *toy_game_animation_name(int animation_id)
+{
+    if (animation_id < 0 || animation_id >= TOY_GAME_ANIM_COUNT)
+        return "UNKNOWN";
+    return animation_names[animation_id];
 }
 
 void toy_game_animation_set(struct toy_game_animation_state *state,
@@ -255,7 +267,10 @@ void toy_game_animation_update(struct toy_game_animation_state *state,
     if (!state || dt_ms <= 0) return;
     info = toy_game_animation_info(state->id);
     state->time_ms += dt_ms;
-    if (info->duration_ms > 0 && state->time_ms >= info->duration_ms) {
+    /* Reload duration belongs to the equipped weapon, so the gameplay timer
+     * owns its end instead of clamping this generic animation clock at 900ms. */
+    if (state->id != TOY_GAME_ANIM_RELOAD && info->duration_ms > 0 &&
+        state->time_ms >= info->duration_ms) {
         if (info->loop) state->time_ms %= info->duration_ms;
         else state->time_ms = info->duration_ms;
     } else if (state->time_ms > 60000) {
@@ -421,6 +436,7 @@ static void sync_ai_actor_from_legacy(struct toy_game *g)
     a->reload_timer_ms = g->ai_reload_timer_ms;
     a->fire_cooldown_ms = g->ai_fire_cooldown_ms;
     a->muzzle_flash_ms = g->ai_muzzle_flash_ms;
+    a->fire_enabled = 1;
     a->fire_seq = g->ai_fire_seq;
     a->ray_count = g->ai_ray_count;
     memcpy(a->rays, g->ai_rays, sizeof(a->rays));
@@ -478,6 +494,7 @@ int toy_game_add_ai(struct toy_game *g, int class_id, int x, int z,
     a->slots[0].reserve = TOY_GAME_AMMO_INFINITE;
     a->slots[1].weapon = -1;
     a->current_slot = 0;
+    a->fire_enabled = 1;
     return a->actor_id;
 }
 
@@ -2860,7 +2877,9 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
     g->fire_cooldown_ms = g->ai_fire_cooldown_ms;
     g->muzzle_flash_ms = g->ai_muzzle_flash_ms;
     g->player_down = 0;
-    toy_game_update_weapon_held(g, NULL, target >= 0, target >= 0,
+    toy_game_update_weapon_held(g, NULL,
+                                actor->fire_enabled && target >= 0,
+                                actor->fire_enabled && target >= 0,
                                 sy, cy, dt_ms);
     /* Only reserve ammo is infinite; the current magazine is preserved. */
     g->slots[0].reserve = TOY_GAME_AMMO_INFINITE;
@@ -2912,10 +2931,36 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
 
 void toy_game_update_ai_teammates(struct toy_game *g, int dt_ms)
 {
+    static const int demo_animation_ids[] = {
+        TOY_GAME_ANIM_IDLE, TOY_GAME_ANIM_MOVE, TOY_GAME_ANIM_FIRE,
+        TOY_GAME_ANIM_RELOAD, TOY_GAME_ANIM_HIT, TOY_GAME_ANIM_DEATH,
+        TOY_GAME_ANIM_REVIVE
+    };
     int i, old_context = g->ai_context_actor_index;
     for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
         if (!g->actors[i].active || g->actors[i].kind != TOY_GAME_ACTOR_AI)
             continue;
+        if (g->actors[i].animation_demo) {
+            struct toy_game_actor *demo = &g->actors[i];
+            const struct toy_game_animation_info *info =
+                toy_game_animation_info(demo->animation.id);
+            int demo_index = 0;
+            int j;
+            for (j = 0; j < (int)(sizeof(demo_animation_ids) /
+                                  sizeof(demo_animation_ids[0])); j++)
+                if (demo_animation_ids[j] == demo->animation.id)
+                    demo_index = j;
+            if (info->duration_ms > 0 &&
+                demo->animation.time_ms + dt_ms >= info->duration_ms) {
+                demo_index = (demo_index + 1) %
+                    (int)(sizeof(demo_animation_ids) /
+                          sizeof(demo_animation_ids[0]));
+                toy_game_actor_set_animation(
+                    demo, demo_animation_ids[demo_index]);
+            }
+            toy_game_actor_update_animation(demo, dt_ms);
+            continue;
+        }
         g->ai_context_actor_index = i;
         load_ai_actor_to_legacy(g, &g->actors[i]);
         toy_game_update_ai_teammate(g, dt_ms);

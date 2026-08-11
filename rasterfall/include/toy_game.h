@@ -366,6 +366,8 @@ struct toy_game_actor {
     int ray_count;
     struct toy_game_ray rays[TOY_GAME_MAX_RAYS];
     int deployment_x, deployment_z;
+    int fire_enabled;
+    int animation_demo;
     struct toy_game_animation_state animation;
 };
 
@@ -577,6 +579,7 @@ struct toy_game_animation_info {
     int loop;
 };
 const struct toy_game_animation_info *toy_game_animation_info(int animation_id);
+const char *toy_game_animation_name(int animation_id);
 void toy_game_animation_set(struct toy_game_animation_state *state,
                             int animation_id);
 void toy_game_animation_update(struct toy_game_animation_state *state,
