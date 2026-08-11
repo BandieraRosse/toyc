@@ -1008,6 +1008,10 @@ static uint32_t highlight_tint(uint32_t color, int on)
 }
 
 /* 平放的 SMG：机匣 + 枪管 + 弹匣 + 木托 + 照门，枪口朝 +z */
+static int render_ammo_box(struct toy_renderer *renderer,
+                           const struct camera *camera,
+                           int x, int y, int z, int on);
+
 static int render_smg(struct toy_renderer *renderer, const struct camera *camera,
                       int x, int y, int z, int on)
 {
@@ -1028,6 +1032,18 @@ static int render_smg(struct toy_renderer *renderer, const struct camera *camera
     pixels += draw_cuboid(renderer, camera, x - 3, x + 3, y + 13, y + 21,
                           z - 15, z + 15, highlight_tint(0x2A2E34, on));
     return pixels;
+}
+
+static int render_rifle_pickup(struct toy_renderer *renderer,
+                               const struct camera *camera,
+                               int x, int y, int z, int on,
+                               const char *path)
+{
+    struct rasterfall_model_asset *model = gallery_model_named(path, NULL);
+    (void)on;
+    if (!model) return render_ammo_box(renderer, camera, x, y, z, on);
+    return render_gallery_model(renderer, camera, model, x, y, z,
+                                pickup_model_scale(model) * 2);
 }
 
 /* 平放的霰弹枪：机匣 + 长枪管 + 护木 + 木托，枪口朝 +z */
@@ -1138,6 +1154,16 @@ static int render_interactables(struct toy_renderer *renderer,
                  (it->kind == TOY_MAP_PICKUP_WEAPON &&
                   it->weapon == TOY_GAME_WEAPON_SHOTGUN))
             pixels += render_shotgun(renderer, camera, it->x, it->y, it->z, on);
+        else if (it->kind == TOY_MAP_PICKUP_WEAPON &&
+                 it->weapon == TOY_GAME_WEAPON_AK)
+            pixels += render_rifle_pickup(renderer, camera, it->x, it->y,
+                                          it->z, on,
+                                          "rasterfall/assets/models/ar_ak47.rmesh");
+        else if (it->kind == TOY_MAP_PICKUP_WEAPON &&
+                 it->weapon == TOY_GAME_WEAPON_AWP)
+            pixels += render_rifle_pickup(renderer, camera, it->x, it->y,
+                                          it->z, on,
+                                          "rasterfall/assets/models/rf_AWP.rmesh");
         else if (it->kind == TOY_MAP_PICKUP_BUTTON ||
                  it->kind == TOY_MAP_PICKUP_AIR_BUTTON ||
                  it->kind == TOY_MAP_PICKUP_ALARM_BUTTON ||
@@ -1738,7 +1764,7 @@ static int render_actor_model_weapon(struct toy_renderer *renderer,
     const char *path = rasterfall_weapon_model_path(weapon);
     struct rasterfall_model_asset *model = gallery_model_named(path, NULL);
     struct rasterfall_animation_pose pose;
-    int width, height, depth, length, scale, i, pixels = 0;
+    int width, height, depth, length, scale, anchor_scale, i, pixels = 0;
     if (!model) return 0;
     rasterfall_animation_sample_duration(
         animation_id, animation_time_ms,
@@ -1751,8 +1777,15 @@ static int render_actor_model_weapon(struct toy_renderer *renderer,
     length = width > height ? width : height;
     if (depth > length) length = depth;
     if (length <= 0) return 0;
-    scale = (weapon == TOY_GAME_WEAPON_SHOTGUN ? 760000 : 380000) / length;
+    scale = (weapon == TOY_GAME_WEAPON_SHOTGUN ? 760000 :
+             weapon == TOY_GAME_WEAPON_AWP ? 920000 :
+             weapon == TOY_GAME_WEAPON_AK ? 760000 : 380000) / length;
     if (scale < 1) scale = 1;
+    /* Keep horizontal/depth placement proportional, but preserve the shared
+     * vertical grip height.  Scaling the Y anchor moves the rifle down to
+     * the floor because actor_world_point already applies actor elevation. */
+    anchor_scale = weapon == TOY_GAME_WEAPON_AK ||
+                   weapon == TOY_GAME_WEAPON_AWP ? 2 : 1;
     for (i = 0; i < (int)model->primitive_count; i++) {
         const unsigned char *primitive = model->primitives +
             i * RASTERFALL_MODEL_PRIMITIVE_BYTES;
@@ -1785,6 +1818,11 @@ static int render_actor_model_weapon(struct toy_renderer *renderer,
                     lx = mz - (model->min_z + model->max_z) / 2;
                     ly = my - (model->min_y + model->max_y) / 2;
                     lz = mx - model->min_x;
+                } else if (weapon == TOY_GAME_WEAPON_AK ||
+                           weapon == TOY_GAME_WEAPON_AWP) {
+                    lx = -mx + (model->min_x + model->max_x) / 2;
+                    ly = my - (model->min_y + model->max_y) / 2;
+                    lz = -mz + (model->min_z + model->max_z) / 2;
                 } else {
                     lx = mx - (model->min_x + model->max_x) / 2;
                     ly = my - (model->min_y + model->max_y) / 2;
@@ -1794,9 +1832,9 @@ static int render_actor_model_weapon(struct toy_renderer *renderer,
                  * of the torso and put its muzzle in front of the body. */
                 /* Shared grip-area anchor: right of the torso and slightly
                  * forward, so both wrists can meet around the weapon rear. */
-                lx = lx * scale / 1000 + 195;
+                lx = lx * scale / 1000 + 195 * anchor_scale;
                 ly = ly * scale / 1000 - 395;
-                lz = lz * scale / 1000 + 170;
+                lz = lz * scale / 1000 + 170 * anchor_scale;
                 ly += lz * pose.weapon_pitch / 1000;
                 actor_world_point(x, z, sy, cy, lx, ly, lz, &v[k]);
             }

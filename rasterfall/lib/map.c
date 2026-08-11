@@ -115,14 +115,16 @@ int toy_map_load(const char *path, struct toy_map *m)
             base->box.minx=a; base->box.maxx=b; base->box.minz=c; base->box.maxz=d;
         } else if(!strcmp(kind,"ai_spawn") && m->ai_spawn_count<TOY_MAP_MAX_AI_SPAWNS){
             char *name=word(&p), *base=word(&p), *class_name=word(&p);
-            char *sx=word(&p), *sz=word(&p), *down=word(&p);
+            char *sx=word(&p), *sz=word(&p), *down=word(&p), *weapon_name=word(&p);
             struct toy_map_ai_spawn *spawn;
             if (!name || !base || !class_name || !sx || !sz) continue;
             spawn=&m->ai_spawns[m->ai_spawn_count++]; memset(spawn,0,sizeof(*spawn));
+            spawn->weapon = -1;
             copy_role(spawn->name,name,TOY_MAP_ROLE_SIZE);
             spawn->base_id=number(base,10); spawn->class_id=ai_class(class_name);
             spawn->x=number(sx,10); spawn->z=number(sz,10);
             spawn->downed=down ? number(down,10) != 0 : 1;
+            if (weapon_name) spawn->weapon = toy_game_weapon_from_name(weapon_name);
         }
         else if(!strcmp(kind,"spawn") && get4(&p,&a,&b,&c,&d)==0 && m->spawn_count<TOY_MAP_MAX_ZONES){char *co=word(&p);m->spawn_zones[m->spawn_count].box.minx=a;m->spawn_zones[m->spawn_count].box.maxx=b;m->spawn_zones[m->spawn_count].box.minz=c;m->spawn_zones[m->spawn_count].box.maxz=d;m->spawn_zones[m->spawn_count].color=color(co);m->spawn_count++;}
         else if(!strcmp(kind,"alarm") && get4(&p,&a,&b,&c,&d)==0){char *zone=word(&p);m->alarm_zone.minx=a;m->alarm_zone.maxx=b;m->alarm_zone.minz=c;m->alarm_zone.maxz=d;m->has_alarm=1;if(zone)m->alarm_spawn_zone=number(zone,10);}

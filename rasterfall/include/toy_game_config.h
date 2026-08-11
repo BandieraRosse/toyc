@@ -58,6 +58,28 @@
 #define TOY_CONFIG_SHOTGUN_SLOT                  0  /* 武器槽位 */
 #define TOY_CONFIG_SHOTGUN_DAMAGE               25  /* 单颗伤害 */
 
+/* AK rifle weapon tuning. */
+#define TOY_CONFIG_AK_MAG                       40
+#define TOY_CONFIG_AK_RESERVE                  360
+#define TOY_CONFIG_AK_COOLDOWN_MS              250
+#define TOY_CONFIG_AK_RELOAD_MS              2200
+#define TOY_CONFIG_AK_FULL_AUTO                  1
+#define TOY_CONFIG_AK_PELLETS                    1
+#define TOY_CONFIG_AK_SPREAD                    70
+#define TOY_CONFIG_AK_SLOT                       0
+#define TOY_CONFIG_AK_DAMAGE                    50
+
+/* AWP sniper weapon tuning. */
+#define TOY_CONFIG_AWP_MAG                      10
+#define TOY_CONFIG_AWP_RESERVE                   64
+#define TOY_CONFIG_AWP_COOLDOWN_MS              1200
+#define TOY_CONFIG_AWP_RELOAD_MS              3200
+#define TOY_CONFIG_AWP_FULL_AUTO                 0
+#define TOY_CONFIG_AWP_PELLETS                   1
+#define TOY_CONFIG_AWP_SPREAD                    4
+#define TOY_CONFIG_AWP_SLOT                      0
+#define TOY_CONFIG_AWP_DAMAGE                  200
+
 /* Common enemy tuning. */
 #define TOY_CONFIG_COMMON_HP                   50  /* 生命值 */
 #define TOY_CONFIG_COMMON_SPEED_MIN           38  /* 最低速度 */

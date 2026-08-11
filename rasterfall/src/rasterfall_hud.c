@@ -40,6 +40,16 @@ static void draw_weapon_silhouette(struct toy_surface *surface, int weapon,
         hud_fill_rect(surface, cx - 1, y + 12, 29, 5, color);
         hud_fill_rect(surface, cx - 14, y + 19, 7, 10, color);
         hud_fill_rect(surface, cx - 25, y + 12, 7, 5, color);
+    } else if (weapon == TOY_GAME_WEAPON_AK) {
+        hud_fill_rect(surface, cx - 25, y + 9, 38, 7, color);
+        hud_fill_rect(surface, cx + 12, y + 11, 18, 4, color);
+        hud_fill_rect(surface, cx - 7, y + 16, 8, 12, color);
+        hud_fill_rect(surface, cx - 22, y + 16, 8, 10, color);
+    } else if (weapon == TOY_GAME_WEAPON_AWP) {
+        hud_fill_rect(surface, cx - 30, y + 10, 44, 5, color);
+        hud_fill_rect(surface, cx + 13, y + 11, 21, 3, color);
+        hud_fill_rect(surface, cx - 13, y + 15, 9, 13, color);
+        hud_fill_rect(surface, cx - 25, y + 7, 12, 4, color);
     } else {
         hud_fill_rect(surface, cx - 12, y + 17, 24, 3, color);
     }

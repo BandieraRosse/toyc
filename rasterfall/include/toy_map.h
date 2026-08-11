@@ -8,7 +8,7 @@
 #define TOY_MAP_MAX_DRAW 128
 #define TOY_MAP_MAX_PICKUPS 16
 #define TOY_MAP_MAX_BASES 8
-#define TOY_MAP_MAX_AI_SPAWNS 8
+#define TOY_MAP_MAX_AI_SPAWNS 32
 #define TOY_MAP_MAX_PLATFORMS 16
 #define TOY_MAP_ROLE_SIZE 32
 #define TOY_MAP_TEXT_SIZE 64
@@ -34,7 +34,7 @@ struct toy_map_box {
 struct toy_map_zone { struct toy_game_box box; unsigned int color; };
 struct toy_map_base { int id; struct toy_game_box box; };
 struct toy_map_ai_spawn {
-    int class_id, base_id, x, z, downed;
+    int class_id, base_id, x, z, downed, weapon;
     char name[TOY_MAP_ROLE_SIZE];
 };
 

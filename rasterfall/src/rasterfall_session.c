@@ -187,6 +187,17 @@ void rasterfall_session_reset(struct rasterfall_session *session,
             actor_index = actor_id > 0 ? actor_id - 1 : -1;
         }
         if (actor_index < 0) continue;
+        if (spawn->weapon >= 0 &&
+            spawn->weapon < TOY_GAME_WEAPON_COUNT) {
+            const struct toy_game_weapon_info *weapon =
+                toy_game_weapon_info(spawn->weapon);
+            struct toy_game_actor *actor =
+                &session->game_state.actors[actor_index];
+            actor->slots[0].weapon = spawn->weapon;
+            actor->slots[0].mag = weapon->mag_size;
+            actor->slots[0].reserve = TOY_GAME_AMMO_INFINITE;
+            actor->current_slot = 0;
+        }
         if (!strcmp(spawn->name, "HIT_TEST")) {
             session->game_state.actors[actor_index].fire_enabled = 0;
             session->game_state.actors[actor_index].hit_test_dummy = 1;

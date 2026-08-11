@@ -110,6 +110,8 @@ pickup ammo 880 -7480 -520
 pickup smg 600 -2400 -200
 pickup shotgun 600 4700 -200
 pickup ammo 900 3500 -520
+pickup ak -700 -7450 -235
+pickup awp 700 -7450 -235
 button -11940 -10000 200
 button_air -11940 -7600 200
 button_alarm -11940 -3000 200
@@ -130,3 +132,5 @@ ai_spawn DEV_GUNNER 0 level1 5600 -7600 0
 ai_spawn PLATFORM_GUARD 0 level2 0 -9900 0
 ai_spawn HIT_TEST 0 level1 -9000 -8500 0
 ai_spawn ANIM_TEST 0 level2 600 -9900 0
+ai_spawn AK_TEST 0 level3 -9000 -10800 0 ak
+ai_spawn AWP_TEST 0 level3 -9000 -10000 0 awp

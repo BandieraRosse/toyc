@@ -20,7 +20,8 @@
 #define TOY_GAME_MAX_ENEMIES    64
 #define TOY_GAME_MAX_ACTORS     32
 #define TOY_GAME_MAX_PLAYERS    4
-#define TOY_GAME_REMOTE_ACTOR_BASE 8
+#define TOY_GAME_REMOTE_ACTOR_BASE \
+    (TOY_GAME_MAX_ACTORS - TOY_GAME_MAX_PLAYERS)
 #define TOY_GAME_MAX_PLATFORMS  16
 #define TOY_GAME_AMMO_INFINITE  (-1)
 #define TOY_GAME_BITE_MS        1000
@@ -236,6 +237,8 @@ enum toy_game_weapon {
     TOY_GAME_WEAPON_PISTOL = 0,
     TOY_GAME_WEAPON_SMG,
     TOY_GAME_WEAPON_SHOTGUN,
+    TOY_GAME_WEAPON_AK,
+    TOY_GAME_WEAPON_AWP,
     TOY_GAME_WEAPON_COUNT
 };
 
@@ -245,7 +248,9 @@ enum toy_game_weapon {
 enum toy_game_weapon_id {
     TOY_GAME_WEAPON_ID_PISTOL = 10,
     TOY_GAME_WEAPON_ID_SMG = 20,
-    TOY_GAME_WEAPON_ID_SHOTGUN = 30
+    TOY_GAME_WEAPON_ID_SHOTGUN = 30,
+    TOY_GAME_WEAPON_ID_AK = 40,
+    TOY_GAME_WEAPON_ID_AWP = 50
 };
 
 enum toy_game_weapon_muzzle_profile {

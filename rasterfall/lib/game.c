@@ -80,6 +80,16 @@ static const struct toy_game_weapon_info weapon_table[TOY_GAME_WEAPON_COUNT] = {
       TOY_CONFIG_SHOTGUN_DAMAGE,
       TOY_GAME_WEAPON_ID_SHOTGUN, "SHOTGUN", "SG",
       TOY_GAME_MUZZLE_SHOTGUN },
+    { TOY_CONFIG_AK_MAG, TOY_CONFIG_AK_RESERVE,
+      TOY_CONFIG_AK_COOLDOWN_MS, TOY_CONFIG_AK_RELOAD_MS,
+      TOY_CONFIG_AK_FULL_AUTO, TOY_CONFIG_AK_PELLETS,
+      TOY_CONFIG_AK_SPREAD, TOY_CONFIG_AK_SLOT, TOY_CONFIG_AK_DAMAGE,
+      TOY_GAME_WEAPON_ID_AK, "AK", "AK", TOY_GAME_MUZZLE_STANDARD },
+    { TOY_CONFIG_AWP_MAG, TOY_CONFIG_AWP_RESERVE,
+      TOY_CONFIG_AWP_COOLDOWN_MS, TOY_CONFIG_AWP_RELOAD_MS,
+      TOY_CONFIG_AWP_FULL_AUTO, TOY_CONFIG_AWP_PELLETS,
+      TOY_CONFIG_AWP_SPREAD, TOY_CONFIG_AWP_SLOT, TOY_CONFIG_AWP_DAMAGE,
+      TOY_GAME_WEAPON_ID_AWP, "AWP", "AWP", TOY_GAME_MUZZLE_STANDARD },
 };
 
 static const struct toy_game_enemy_info enemy_table[TOY_GAME_ENEMY_TYPE_COUNT] = {
@@ -155,7 +165,9 @@ int toy_game_weapon_from_name(const char *name)
         if (!strcmp(name, weapon_table[i].name) ||
             (i == TOY_GAME_WEAPON_PISTOL && !strcmp(name, "pistol")) ||
             (i == TOY_GAME_WEAPON_SMG && !strcmp(name, "smg")) ||
-            (i == TOY_GAME_WEAPON_SHOTGUN && !strcmp(name, "shotgun")))
+            (i == TOY_GAME_WEAPON_SHOTGUN && !strcmp(name, "shotgun")) ||
+            (i == TOY_GAME_WEAPON_AK && !strcmp(name, "ak")) ||
+            (i == TOY_GAME_WEAPON_AWP && !strcmp(name, "awp")))
             return i;
     return -1;
 }

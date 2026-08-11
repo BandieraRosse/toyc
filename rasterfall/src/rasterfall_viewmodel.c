@@ -83,7 +83,9 @@ static void viewmodel_load_models(void)
     static const char *paths[TOY_GAME_WEAPON_COUNT] = {
         "rasterfall/assets/models/pg_glock1.rmesh",
         "rasterfall/assets/models/smg_mac10.rmesh",
-        "rasterfall/assets/models/sg_pump_action.rmesh"
+        "rasterfall/assets/models/sg_pump_action.rmesh",
+        "rasterfall/assets/models/ar_ak47.rmesh",
+        "rasterfall/assets/models/rf_AWP.rmesh"
     };
     int i;
     if (viewmodel_models_loaded) return;
@@ -97,7 +99,9 @@ const char *rasterfall_weapon_model_path(int weapon)
     static const char *paths[TOY_GAME_WEAPON_COUNT] = {
         "rasterfall/assets/models/pg_glock1.rmesh",
         "rasterfall/assets/models/smg_mac10.rmesh",
-        "rasterfall/assets/models/sg_pump_action.rmesh"
+        "rasterfall/assets/models/sg_pump_action.rmesh",
+        "rasterfall/assets/models/ar_ak47.rmesh",
+        "rasterfall/assets/models/rf_AWP.rmesh"
     };
     if (weapon < 0 || weapon >= TOY_GAME_WEAPON_COUNT) return NULL;
     return paths[weapon];
@@ -115,12 +119,20 @@ void rasterfall_viewmodel_muzzle_offset(int weapon, int kick,
 {
     struct rasterfall_model_asset *model;
     int width, height, depth, length, scale, muzzle_distance, muzzle_height;
+    int origin_x, origin_y, origin_z, origin_scale;
+    /* The origin is the camera-space anchor, not part of the mesh scale.
+     * Keep it fixed like the existing SMG/SG viewmodel path; moving Z here
+     * changes perspective distance and cancels the visual enlargement. */
+    origin_scale = 1;
+    origin_x = VIEWMODEL_ORIGIN_X * origin_scale;
+    origin_y = VIEWMODEL_ORIGIN_Y * origin_scale;
+    origin_z = VIEWMODEL_ORIGIN_Z * origin_scale;
     viewmodel_load_models();
     if (!toy_game_weapon_is_valid(weapon) ||
         !(model = &viewmodel_models[weapon])->data) {
-        *x = VIEWMODEL_ORIGIN_X;
-        *y = VIEWMODEL_ORIGIN_Y + 24;
-        *z = VIEWMODEL_ORIGIN_Z;
+        *x = origin_x;
+        *y = origin_y + 24 * origin_scale;
+        *z = origin_z;
     } else {
         width = model->max_x - model->min_x;
         height = model->max_y - model->min_y;
@@ -128,7 +140,9 @@ void rasterfall_viewmodel_muzzle_offset(int weapon, int kick,
         length = width > height ? width : height;
         if (depth > length) length = depth;
         scale = (toy_game_weapon_info(weapon)->muzzle_profile ==
-                 TOY_GAME_MUZZLE_SHOTGUN ? 360000 : 180000) /
+                 TOY_GAME_MUZZLE_SHOTGUN ? 360000 :
+                 weapon == TOY_GAME_WEAPON_AWP ? 460000 :
+                 weapon == TOY_GAME_WEAPON_AK ? 360000 : 180000) /
                 (length > 0 ? length : 1);
         if (scale < 1) scale = 1;
         /* All three imported meshes use their positive forward extreme as
@@ -143,11 +157,11 @@ void rasterfall_viewmodel_muzzle_offset(int weapon, int kick,
         muzzle_height = (model->max_y -
                          (model->min_y + model->max_y) / 2) * scale * 9 /
                         10 / 1000;
-        *x = VIEWMODEL_ORIGIN_X - muzzle_distance * 3 / 10;
+        *x = origin_x - muzzle_distance * 3 / 10;
         /* The mesh muzzle opening sits slightly above its bounding-box
          * center; use the upper part of the collision box as a heuristic. */
-        *y = VIEWMODEL_ORIGIN_Y + muzzle_height + muzzle_distance * 2 / 10;
-        *z = VIEWMODEL_ORIGIN_Z + muzzle_distance * 9 / 10;
+        *y = origin_y + muzzle_height + muzzle_distance * 2 / 10;
+        *z = origin_z + muzzle_distance * 9 / 10;
     }
     *x += kick / 3;
     *y -= kick / 2;
@@ -163,6 +177,8 @@ void rasterfall_viewmodel_actor_muzzle(int x, int z, int sy, int cy,
      * renderer, so the tracer begins near the visible barrel rather than at
      * the actor origin. */
     int distance = weapon == TOY_GAME_WEAPON_SHOTGUN ? 620 :
+                   weapon == TOY_GAME_WEAPON_AWP ? 800 :
+                   weapon == TOY_GAME_WEAPON_AK ? 650 :
                    weapon == TOY_GAME_WEAPON_SMG ? 500 : 430;
     *out_x = x + sy * distance / 1024;
     *out_y = -395 + lift;
@@ -394,6 +410,7 @@ static int render_model_weapon(struct toy_surface *surface,
                                int bob_x, int bob_y, int switch_pitch)
 {
     int i, drawn = 0, width, height, depth, length, scale;
+    int origin_x, origin_y, origin_z, origin_scale;
     int reload_pitch = 0;
     int focal = surface->width * 3 / 4;
     if (!model || !model->data) return 0;
@@ -415,8 +432,18 @@ static int render_model_weapon(struct toy_surface *surface,
         reload_pitch = switch_pitch;
     /* Keep the imported model in 3D view space.  The gun starts at the
      * lower-right and its forward axis travels left/up toward the crosshair. */
-    scale = (weapon == TOY_GAME_WEAPON_SHOTGUN ? 360000 : 180000) / length;
+    scale = (weapon == TOY_GAME_WEAPON_SHOTGUN ? 360000 :
+             weapon == TOY_GAME_WEAPON_AWP ? 460000 :
+             weapon == TOY_GAME_WEAPON_AK ? 360000 : 180000) / length;
     if (scale < 1) scale = 1;
+    /* AK/AWP are rendered at twice the normal profile size.  Keep the
+     * hand-tuned viewmodel origin in the same scale, so enlarging the mesh
+     * does not leave its empirical grip offset behind. */
+    /* Keep the camera-space origin fixed while scaling the mesh vertices. */
+    origin_scale = 1;
+    origin_x = VIEWMODEL_ORIGIN_X * origin_scale;
+    origin_y = VIEWMODEL_ORIGIN_Y * origin_scale;
+    origin_z = VIEWMODEL_ORIGIN_Z * origin_scale;
     for (i = 0; i < (int)model->primitive_count; i++) {
         const unsigned char *primitive = model->primitives +
             i * RASTERFALL_MODEL_PRIMITIVE_BYTES;
@@ -456,6 +483,13 @@ static int render_model_weapon(struct toy_surface *surface,
                     v[k].x = mz - (model->min_z + model->max_z) / 2;
                     v[k].y = my - (model->min_y + model->max_y) / 2;
                     v[k].z = mx - (model->min_x + model->max_x) / 2;
+                } else if (weapon == TOY_GAME_WEAPON_AK ||
+                           weapon == TOY_GAME_WEAPON_AWP) {
+                    /* Reverse the asset's forward direction: rotate 180°
+                     * around Y, so X/Z flip while vertical Y stays intact. */
+                    v[k].x = -mx + (model->min_x + model->max_x) / 2;
+                    v[k].y = my - (model->min_y + model->max_y) / 2;
+                    v[k].z = -mz + (model->min_z + model->max_z) / 2;
                 } else {
                     v[k].x = mx - (model->min_x + model->max_x) / 2;
                     v[k].y = my - (model->min_y + model->max_y) / 2;
@@ -468,11 +502,11 @@ static int render_model_weapon(struct toy_surface *surface,
                     /* A forward point moves toward screen center and upward;
                      * this is a real view-space yaw/pitch, not a flat 2D
                      * side-profile shear. */
-                    v[k].x = VIEWMODEL_ORIGIN_X + bob_x + local_x -
+                    v[k].x = origin_x + bob_x + local_x -
                              local_z * 3 / 10 + kick / 3;
-                    v[k].y = VIEWMODEL_ORIGIN_Y + bob_y + local_y +
+                    v[k].y = origin_y + bob_y + local_y +
                              local_z * (2 + reload_pitch) / 10 - kick / 2;
-                    v[k].z = VIEWMODEL_ORIGIN_Z + local_z * 9 / 10 + local_x / 8 + kick;
+                    v[k].z = origin_z + local_z * 9 / 10 + local_x / 8 + kick;
                 }
             }
             if (k == 3) {
@@ -508,7 +542,7 @@ int rasterfall_viewmodel_render(struct toy_renderer *renderer,
                        TOY_CONFIG_WEAPON_SWITCH_MS;
     drawn += render_viewmodel_hands(&renderer->surface, game, kick);
     if (weapon >= TOY_GAME_WEAPON_PISTOL &&
-        weapon <= TOY_GAME_WEAPON_SHOTGUN &&
+        weapon < TOY_GAME_WEAPON_COUNT &&
         viewmodel_models[weapon].data) {
         drawn += render_model_weapon(&renderer->surface,
                                      &viewmodel_models[weapon], weapon, kick,
