@@ -8,6 +8,15 @@
 #define TOY_CONFIG_PLAYER_MOVE_STEP            76  /* 玩家每逻辑步移动量 */
 #define TOY_CONFIG_AI_RETURN_SPEED             38  /* AI 队友回位速度 */
 
+/* Weapon switching: duration and whether firing is blocked during it. */
+#define TOY_CONFIG_WEAPON_SWITCH_MS           200  /* 切枪动画/禁射时长 */
+#define TOY_CONFIG_BLOCK_FIRE_DURING_SWITCH    1  /* 切枪期间是否禁射 */
+#define TOY_CONFIG_SHOVE_ANIMATION_MS        300  /* 推搡动画时长 */
+#define TOY_CONFIG_SHOVE_SWEEP_DEGREES       240  /* 推搡手臂旋转角度 */
+#define TOY_CONFIG_SHOVE_RANGE               900  /* 推搡有效范围 */
+#define TOY_CONFIG_SHOVE_STUN_MS             1500  /* 敌人僵直时长 */
+#define TOY_CONFIG_CHARGER_SHOVE_STUN_MS     400  /* Charger 推搡僵直时长 */
+
 /* Jump and forced motion. */
 #define TOY_CONFIG_JUMP_MS                    900  /* 跳跃持续时间 */
 #define TOY_CONFIG_JUMP_VELOCITY              110  /* 跳跃初速度 */

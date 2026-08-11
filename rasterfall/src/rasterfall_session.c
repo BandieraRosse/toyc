@@ -631,6 +631,14 @@ void rasterfall_session_step(struct rasterfall_session *session,
     toy_game_update_held(&session->game_state, keys,
                          (command->buttons & RASTERFALL_CMD_FIRE) != 0,
                          command->fire_held, camera->sy, camera->cy, dt_ms);
+    if (!session->game_state.reloading &&
+        session->game_state.animation.id != TOY_GAME_ANIM_FIRE &&
+        session->game_state.animation.id != TOY_GAME_ANIM_HIT &&
+        session->game_state.animation.id != TOY_GAME_ANIM_DEATH &&
+        session->game_state.animation.id != TOY_GAME_ANIM_REVIVE)
+        toy_game_animation_set(&session->game_state.animation,
+                               command->move_forward || command->move_strafe ?
+                               TOY_GAME_ANIM_MOVE : TOY_GAME_ANIM_NONE);
     session_sync_special_motion(session, camera);
     session_update_manual_alarm(session, dt_ms);
     if (session->banner_ms > 0) {
@@ -702,6 +710,14 @@ void rasterfall_session_step_client(struct rasterfall_session *session,
                                 (command->buttons & RASTERFALL_CMD_FIRE) != 0,
                                 command->fire_held, camera->sy, camera->cy,
                                 dt_ms);
+    if (!session->game_state.reloading &&
+        session->game_state.animation.id != TOY_GAME_ANIM_FIRE &&
+        session->game_state.animation.id != TOY_GAME_ANIM_HIT &&
+        session->game_state.animation.id != TOY_GAME_ANIM_DEATH &&
+        session->game_state.animation.id != TOY_GAME_ANIM_REVIVE)
+        toy_game_animation_set(&session->game_state.animation,
+                               command->move_forward || command->move_strafe ?
+                               TOY_GAME_ANIM_MOVE : TOY_GAME_ANIM_NONE);
     toy_game_update_player_motion(&session->game_state, dt_ms);
     memcpy(session->game_state.enemies, enemies, sizeof(enemies));
     session->game_state.enemies_alive = enemy_count;

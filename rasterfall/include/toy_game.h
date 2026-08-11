@@ -55,9 +55,7 @@
 #define TOY_GAME_PLAYER_RADIUS  180
 #define TOY_GAME_HIT_RADIUS     150     /* 命中判定半径（覆盖渲染 box 半宽） */
 #define TOY_GAME_ATTACK_RANGE   300     /* 敌我距离小于此值开始咬 */
-#define TOY_GAME_SHOVE_RANGE    900     /* 推开检测距离（面前扇形） */
 #define TOY_GAME_SHOVE_PUSH     500     /* 推开位移（沿面朝方向） */
-#define TOY_GAME_SHOVE_STUN_MS  900     /* 推开后僵直时长 */
 #define TOY_GAME_SHOVE_CONE     2       /* 面前扇形 120°：点积*2 >= 距离 */
 #define TOY_GAME_ENEMY_HALF     120     /* 渲染 box 半宽（宿主用） */
 #define TOY_GAME_ENEMY_HEIGHT   350     /* 敌人模型顶部略高于玩家视角 */
@@ -149,6 +147,7 @@ enum toy_game_animation_id {
     TOY_GAME_ANIM_HIT,
     TOY_GAME_ANIM_DEATH,
     TOY_GAME_ANIM_REVIVE,
+    TOY_GAME_ANIM_SHOVE,
     TOY_GAME_ANIM_COUNT
 };
 
@@ -380,6 +379,7 @@ struct toy_game {
     int state;          /* enum toy_game_state */
     struct toy_game_slot slots[TOY_GAME_WEAPON_SLOTS];
     int current_slot;   /* 当前出枪槽位（0/1） */
+    int weapon_switch_timer_ms; /* 切枪表现/禁射倒计时 */
     struct toy_game_animation_state animation;
     int reloading, reload_timer_ms;
     int fire_cooldown_ms;

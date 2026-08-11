@@ -447,6 +447,9 @@ static int run_logic_test(void)
             return 22;
         if (!toy_game_switch_weapon(&game, 0) ||
             game.slots[0].mag != 50 || game.slots[0].reserve != 650) return 23;
+        /* 切枪动画期间默认禁射；等待其 500ms 表现窗口结束后再测全自动。 */
+        for (i = 0; i < TOY_CONFIG_WEAPON_SWITCH_MS / 16 + 1; i++)
+            toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
         /* 弹药盒补满备弹，不碰弹匣 */
         game.slots[0].mag = 3;
         game.slots[0].reserve = 5;
@@ -670,9 +673,11 @@ static int run_logic_test(void)
         int i, pushed_z;
         int jx = game.actors[0].x, jz = game.actors[0].z;
         int gx = game.actors[1].x, gz = game.actors[1].z;
+        int aix = game.ai_x, aiz = game.ai_z;
         /* 挪开 AI 队友，避免它们射杀测试敌人（DETECT_RANGE 5600）。 */
         game.actors[0].x = 0; game.actors[0].z = 11000;
         game.actors[1].x = 0; game.actors[1].z = 11000;
+        game.ai_x = 0; game.ai_z = 11000;
         memset(game.enemies, 0, sizeof(game.enemies));
         game.enemies_alive = 0;
         game.enemies[0].active = 1;             /* 面前 300：应被推 */
@@ -692,7 +697,7 @@ static int run_logic_test(void)
         toy_game_shove(&game, aim.sy, aim.cy);
         if (game.enemies[0].z != aim.z + 300 + TOY_GAME_SHOVE_PUSH) return 63;
         if (game.enemies[0].shove_stun_ms <= 0 ||
-            game.enemies[0].shove_stun_ms > TOY_GAME_SHOVE_STUN_MS) return 64;
+            game.enemies[0].shove_stun_ms > TOY_CONFIG_SHOVE_STUN_MS) return 64;
         if (game.enemies[1].z != aim.z - 300) return 65;
         if (game.enemies[1].shove_stun_ms != 0) return 66;
         pushed_z = game.enemies[0].z;
@@ -704,13 +709,14 @@ static int run_logic_test(void)
         if (game.enemies[0].z != pushed_z) return 67;
         if (game.enemies[0].shove_stun_ms == 0) return 68;
         /* 僵直结束（900ms ≈ 57 帧）后计时清零、恢复行动。 */
-        for (i = 0; i < 40; i++) {
+        for (i = 0; i < 80; i++) {
             memset(&command, 0, sizeof(command));
             rasterfall_session_step(&session, &aim, &command, 16);
         }
         if (game.enemies[0].shove_stun_ms != 0) return 69;
         game.actors[0].x = jx; game.actors[0].z = jz;
         game.actors[1].x = gx; game.actors[1].z = gz;
+        game.ai_x = aix; game.ai_z = aiz;
     }
     /* 敌人槽位复用不能继承上一只敌人的推开僵直。 */
     {
@@ -907,9 +913,9 @@ static int run_logic_test(void)
         if (!toy_game_apply_entity_impact(&game, TOY_GAME_ENTITY_ACTOR, 0,
                                           1000, 0, 1) ||
             game.actors[0].airborne_ms <= 0 ||
-            game.actors[0].animation.id != TOY_GAME_ANIM_HIT) return 79;
+            game.actors[0].animation.id != TOY_GAME_ANIM_SHOVE) return 79;
         toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
-        if (game.actors[0].animation.id != TOY_GAME_ANIM_HIT) return 79;
+        if (game.actors[0].animation.id != TOY_GAME_ANIM_SHOVE) return 79;
         for (int i = 0; i < 130; i++)
             toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
         if (game.actors[0].airborne_ms > 0)

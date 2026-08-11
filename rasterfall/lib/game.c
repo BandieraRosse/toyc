@@ -225,12 +225,13 @@ static const struct toy_game_animation_info animation_table[TOY_GAME_ANIM_COUNT]
     { 0,   1 }, /* DOWNED */
     { 140, 0 }, /* HIT */
     { 700, 0 }, /* DEATH */
-    { 700, 0 }  /* REVIVE */
+    { 700, 0 }, /* REVIVE */
+    { TOY_CONFIG_SHOVE_ANIMATION_MS, 0 } /* SHOVE */
 };
 
 static const char *animation_names[TOY_GAME_ANIM_COUNT] = {
     "NONE", "IDLE", "MOVE", "FIRE", "RELOAD", "DOWNED", "HIT",
-    "DEATH", "REVIVE"
+    "DEATH", "REVIVE", "SHOVE"
 };
 
 const struct toy_game_animation_info *toy_game_animation_info(int animation_id)
@@ -1044,21 +1045,22 @@ void toy_game_place_enemy(struct toy_game *g, int x, int z)
 }
 
 /* 推开面前敌人（L4D 式近战）：检测面朝方向（sy,cy，1024 定点）前
- * 120° 扇形、半径 TOY_GAME_SHOVE_RANGE 内所有存活敌人，沿面朝方向
+ * 120° 扇形、半径 TOY_CONFIG_SHOVE_RANGE 内所有存活敌人，沿面朝方向
  * 击退 TOY_GAME_SHOVE_PUSH 单位（撞到障碍依次退让 3/4、1/2、1/4），
- * 并让其僵直 TOY_GAME_SHOVE_STUN_MS 不移动不攻击。返回推开的数量。 */
-int toy_game_shove(struct toy_game *g, int sy, int cy)
+ * 并让其僵直 TOY_CONFIG_SHOVE_STUN_MS 不移动不攻击。返回推开的数量。 */
+static int toy_game_shove_at(struct toy_game *g, int origin_x, int origin_z,
+                             int sy, int cy)
 {
     int i, pushed = 0;
-    long long range2 = (long long)TOY_GAME_SHOVE_RANGE * TOY_GAME_SHOVE_RANGE;
+    long long range2 = (long long)TOY_CONFIG_SHOVE_RANGE * TOY_CONFIG_SHOVE_RANGE;
     if (g->state != TOY_GAME_PLAYING) return 0;
     for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
         struct toy_game_enemy *e = &g->enemies[i];
         long long dx, dz, dist2, dist, dot;
         int push[4], s, nx, nz;
         if (e->active != 1) continue;
-        dx = e->x - g->px;
-        dz = e->z - g->pz;
+        dx = e->x - origin_x;
+        dz = e->z - origin_z;
         dist2 = dx * dx + dz * dz;
         if (dist2 > range2 || dist2 == 0) continue;
         dist = isqrt(dist2);
@@ -1078,11 +1080,21 @@ int toy_game_shove(struct toy_game *g, int sy, int cy)
                 break;
             }
         }
-        e->shove_stun_ms = TOY_GAME_SHOVE_STUN_MS;
+        e->shove_stun_ms = e->type == TOY_GAME_ENEMY_CHARGER ?
+                           TOY_CONFIG_CHARGER_SHOVE_STUN_MS :
+                           TOY_CONFIG_SHOVE_STUN_MS;
         e->flash = 200;          /* 被推开瞬间闪白 */
         pushed++;
     }
     return pushed;
+}
+
+int toy_game_shove(struct toy_game *g, int sy, int cy)
+{
+    if (!g || g->state != TOY_GAME_PLAYING || g->player_down) return 0;
+    g->animation.id = TOY_GAME_ANIM_SHOVE;
+    g->animation.time_ms = 0;
+    return toy_game_shove_at(g, g->px, g->pz, sy, cy);
 }
 
 /* ── 波次状态机 ────────────────────────────────────────────────── */
@@ -1311,6 +1323,10 @@ static void bite_ai(struct toy_game *g, struct toy_game_enemy *e)
             g->ai_revive_progress_ms = 0;
         }
         push_event(g, TOY_GAME_EV_ACTOR_DOWN);
+    } else if (actor->kind == TOY_GAME_ACTOR_AI) {
+        toy_game_actor_set_animation(actor, TOY_GAME_ANIM_SHOVE);
+        actor->animation.time_ms = 0;
+        toy_game_shove_at(g, actor->x, actor->z, actor->sy, actor->cy);
     }
 }
 
@@ -2071,6 +2087,10 @@ int toy_game_apply_entity_impact(struct toy_game *g, int kind, int index,
             a->state = TOY_GAME_ACTOR_DOWNED;
             toy_game_actor_set_animation(a, TOY_GAME_ANIM_DEATH);
             a->revive_progress_ms = 0;
+        } else if (a->kind == TOY_GAME_ACTOR_AI) {
+            toy_game_actor_set_animation(a, TOY_GAME_ANIM_SHOVE);
+            a->animation.time_ms = 0;
+            toy_game_shove_at(g, a->x, a->z, a->sy, a->cy);
         } else toy_game_actor_set_animation(a, TOY_GAME_ANIM_HIT);
         if (a->hit_test_dummy) {
             /* The dedicated HIT_TEST actor is a stationary target: keep the
@@ -2642,7 +2662,9 @@ int toy_game_fire(struct toy_game *g, int sy, int cy)
     struct toy_game_slot *s = &g->slots[g->current_slot];
     const struct toy_game_weapon_info *w = toy_game_weapon_info(s->weapon);
     int pellet, hit = 0;
-    if (g->state != TOY_GAME_PLAYING || g->reloading) return 0;
+    if (g->state != TOY_GAME_PLAYING || g->reloading ||
+        (TOY_CONFIG_BLOCK_FIRE_DURING_SWITCH &&
+         g->weapon_switch_timer_ms > 0)) return 0;
     g->fire_cooldown_ms = w->cooldown_ms;
     g->muzzle_flash_ms = TOY_GAME_MUZZLE_FLASH_MS;
     if (s->mag <= 0) {
@@ -2693,6 +2715,7 @@ int toy_game_switch_weapon(struct toy_game *g, int slot)
     if (slot < 0 || slot >= TOY_GAME_WEAPON_SLOTS) return 0;
     if (slot == g->current_slot || g->slots[slot].weapon < 0) return 0;
     g->current_slot = slot;
+    g->weapon_switch_timer_ms = TOY_CONFIG_WEAPON_SWITCH_MS;
     g->reloading = 0;
     g->reload_timer_ms = 0;
     push_event(g, TOY_GAME_EV_WEAPON_SWITCH);
@@ -2748,6 +2771,12 @@ void toy_game_update_weapon_held(struct toy_game *g,
     struct toy_game_slot *s;
     const struct toy_game_weapon_info *w;
     if (g->state != TOY_GAME_PLAYING || g->player_down) return;
+
+    if (g->weapon_switch_timer_ms > 0) {
+        g->weapon_switch_timer_ms -= dt_ms;
+        if (g->weapon_switch_timer_ms < 0)
+            g->weapon_switch_timer_ms = 0;
+    }
 
     /* 切枪键（1/2）：先于换弹与射击处理，切换即打断换弹 */
     if (keys_pressed) {
@@ -2809,6 +2838,7 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
     struct toy_game_ray player_rays[TOY_GAME_MAX_RAYS];
     int player_px, player_pz, player_current_slot;
     int player_reloading, player_reload_timer_ms, player_fire_cooldown_ms;
+    int player_weapon_switch_timer_ms;
     int player_muzzle_flash_ms, player_ray_count;
     unsigned int player_fire_seq;
     int target = -1, best_dist = 0, i;
@@ -2820,8 +2850,37 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
     sync_ai_actor_from_legacy(g);
     actor = &g->actors[g->ai_context_actor_index];
     if (actor->hit_test_dummy) {
-        /* Do not let target acquisition, return-to-deployment, or weapon
-         * simulation replace the HIT pose of the animation test target. */
+        /* The hit-test actor is a stationary melee frontline target: keep
+         * its position and weapon logic frozen, but turn toward the nearest
+         * living enemy so the front-facing hit/shove pose remains readable. */
+        {
+            int nearest_dx = 0, nearest_dz = 0;
+            long long nearest_dist2 = 0;
+            int found_enemy = 0;
+
+            for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
+                struct toy_game_enemy *enemy = &g->enemies[i];
+                int dx, dz;
+                long long dist2;
+                if (enemy->active != 1 || enemy->hp <= 0) continue;
+                dx = enemy->x - actor->x;
+                dz = enemy->z - actor->z;
+                dist2 = (long long)dx * dx + (long long)dz * dz;
+                if (!found_enemy || dist2 < nearest_dist2) {
+                    nearest_dx = dx;
+                    nearest_dz = dz;
+                    nearest_dist2 = dist2;
+                    found_enemy = 1;
+                }
+            }
+            if (found_enemy && (nearest_dx != 0 || nearest_dz != 0)) {
+                int distance = isqrt(nearest_dist2);
+                if (distance > 0) {
+                    actor->sy = (int)((long long)nearest_dx * 1024 / distance);
+                    actor->cy = (int)((long long)nearest_dz * 1024 / distance);
+                }
+            }
+        }
         toy_game_actor_update_animation(actor, dt_ms);
         load_ai_actor_to_legacy(g, actor);
         return;
@@ -2829,6 +2888,7 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
     if (actor->airborne_ms > 0) {
         /* Knockback used to erase HIT immediately on the next AI tick. */
         if (actor->animation.id != TOY_GAME_ANIM_HIT &&
+            actor->animation.id != TOY_GAME_ANIM_SHOVE &&
             actor->animation.id != TOY_GAME_ANIM_DEATH)
             toy_game_actor_set_animation(actor, TOY_GAME_ANIM_NONE);
         toy_game_actor_update_animation(actor, dt_ms);
@@ -2890,6 +2950,7 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
     player_current_slot = g->current_slot;
     player_reloading = g->reloading;
     player_reload_timer_ms = g->reload_timer_ms;
+    player_weapon_switch_timer_ms = g->weapon_switch_timer_ms;
     player_fire_cooldown_ms = g->fire_cooldown_ms;
     player_muzzle_flash_ms = g->muzzle_flash_ms;
     player_ray_count = g->ray_count;
@@ -2938,6 +2999,9 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
         (actor->animation.id == TOY_GAME_ANIM_REVIVE &&
          actor->animation.time_ms <
          toy_game_animation_info(TOY_GAME_ANIM_REVIVE)->duration_ms) ||
+        (actor->animation.id == TOY_GAME_ANIM_SHOVE &&
+         actor->animation.time_ms <
+         toy_game_animation_info(TOY_GAME_ANIM_SHOVE)->duration_ms) ||
         (actor->animation.id == TOY_GAME_ANIM_DEATH &&
          actor->state == TOY_GAME_ACTOR_DOWNED);
     if (g->reloading)
@@ -2956,6 +3020,7 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
     g->current_slot = player_current_slot;
     g->reloading = player_reloading;
     g->reload_timer_ms = player_reload_timer_ms;
+    g->weapon_switch_timer_ms = player_weapon_switch_timer_ms;
     g->fire_cooldown_ms = player_fire_cooldown_ms;
     g->muzzle_flash_ms = player_muzzle_flash_ms;
     g->ray_count = player_ray_count;
@@ -2969,7 +3034,7 @@ void toy_game_update_ai_teammates(struct toy_game *g, int dt_ms)
     static const int demo_animation_ids[] = {
         TOY_GAME_ANIM_IDLE, TOY_GAME_ANIM_MOVE, TOY_GAME_ANIM_FIRE,
         TOY_GAME_ANIM_RELOAD, TOY_GAME_ANIM_HIT, TOY_GAME_ANIM_DEATH,
-        TOY_GAME_ANIM_REVIVE
+        TOY_GAME_ANIM_REVIVE, TOY_GAME_ANIM_SHOVE
     };
     int i, old_context = g->ai_context_actor_index;
     for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
@@ -3038,7 +3103,8 @@ void toy_game_update_held(struct toy_game *g,
                 g->animation.time_ms >=
                 toy_game_animation_info(TOY_GAME_ANIM_HIT)->duration_ms)
                 if (g->animation.id != TOY_GAME_ANIM_DEATH &&
-                    g->animation.id != TOY_GAME_ANIM_REVIVE)
+                    g->animation.id != TOY_GAME_ANIM_REVIVE &&
+                    g->animation.id != TOY_GAME_ANIM_SHOVE)
                     toy_game_animation_set(&g->animation, TOY_GAME_ANIM_NONE);
     toy_game_animation_update(&g->animation, dt_ms);
     toy_game_update_ai_teammates(g, dt_ms);

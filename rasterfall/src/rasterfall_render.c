@@ -1707,6 +1707,27 @@ static void limb_direction(int pitch, int *dy, int *dz)
     else { *dy = 866; *dz = 500; }
 }
 
+/* Coarse fixed-point rotation is sufficient for the low-poly actor arm. */
+static void rotate_arm_xz(int x, int z, int degrees, int *out_x, int *out_z)
+{
+    static const int sin16[16] = {
+        0, 391, 724, 946, 1024, 946, 724, 391,
+        0, -391, -724, -946, -1024, -946, -724, -391
+    };
+    static const int cos16[16] = {
+        1024, 946, 724, 391, 0, -391, -724, -946,
+        -1024, -946, -724, -391, 0, 391, 724, 946
+    };
+    int index = degrees * 16 / 360;
+    int s, c;
+    if (index < 0) index = 0;
+    index &= 15;
+    s = sin16[index];
+    c = cos16[index];
+    *out_x = (x * c - z * s) / 1024;
+    *out_z = (x * s + z * c) / 1024;
+}
+
 static int render_actor_model_weapon(struct toy_renderer *renderer,
                                      const struct camera *camera, int x, int z,
                                      int sy, int cy, int weapon,
@@ -1794,6 +1815,7 @@ static int render_actor_model_weapon(struct toy_renderer *renderer,
         int ruy, ruz, rfy, rfz, luy, luz, lfy, lfz;
         int rex, rey, rez, rwx, rwy, rwz;
         int lex, ley, lez, lwx, lwy, lwz;
+        int lux2, luy2, luz2, lfx2, lfy2, lfz2;
         const int right_shoulder_x = 205, left_shoulder_x = -205;
         const int left_hand_x = 175;
         const int upper_len = 160, forearm_len = 160, overlap = 20;
@@ -1810,14 +1832,27 @@ static int render_actor_model_weapon(struct toy_renderer *renderer,
         rwy = rey + rfy * forearm_len / 1024;
         rwz = rez + rfz * forearm_len / 1024;
         lex = left_shoulder_x;
-        ley = -180 + luy * upper_len / 1024;
-        lez = luz * upper_len / 1024;
+        lux2 = 0;
+        luy2 = luy * upper_len / 1024;
+        luz2 = luz * upper_len / 1024;
+        lfx2 = left_hand_x - left_shoulder_x;
+        lfy2 = lfy * forearm_len / 1024;
+        lfz2 = lfz * forearm_len / 1024;
+        if (pose.left_arm_rotation) {
+            rotate_arm_xz(lux2, luz2, pose.left_arm_rotation,
+                          &lux2, &luz2);
+            rotate_arm_xz(lfx2, lfz2, pose.left_arm_rotation,
+                          &lfx2, &lfz2);
+        }
+        lex = left_shoulder_x + lux2;
+        ley = -180 + luy2;
+        lez = luz2;
         /* The left hand reaches inward toward the rear/receiver area of the
          * weapon; the forearm is therefore the only arm segment that changes
          * local X. */
-        lwx = left_hand_x;
-        lwy = ley + lfy * forearm_len / 1024;
-        lwz = lez + lfz * forearm_len / 1024;
+        lwx = lex + lfx2;
+        lwy = ley + lfy2;
+        lwz = lez + lfz2;
         pixels += draw_limb_segment(renderer, camera, x, z, sy, cy,
                                     right_shoulder_x, -180 + right_recoil, 0,
                                     rex, rey, rez, 40, body_color);
