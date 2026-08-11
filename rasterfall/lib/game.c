@@ -224,7 +224,8 @@ static const struct toy_game_animation_info animation_table[TOY_GAME_ANIM_COUNT]
     { 900, 0 }, /* RELOAD */
     { 0,   1 }, /* DOWNED */
     { 140, 0 }, /* HIT */
-    { 700, 0 }  /* DEATH */
+    { 700, 0 }, /* DEATH */
+    { 700, 0 }  /* REVIVE */
 };
 
 const struct toy_game_animation_info *toy_game_animation_info(int animation_id)
@@ -536,7 +537,7 @@ int toy_game_revive_actor(struct toy_game *g, int actor_index, int dt_ms)
     a->revive_progress_ms = 0;
     a->hp = TOY_GAME_REVIVE_HP;
     a->state = TOY_GAME_ACTOR_ALIVE;
-    toy_game_actor_set_animation(a, TOY_GAME_ANIM_IDLE);
+    toy_game_actor_set_animation(a, TOY_GAME_ANIM_REVIVE);
     if (actor_index == 0) {
         g->ai_hp = a->hp;
         g->ai_down = 0;
@@ -2774,7 +2775,6 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
     int player_muzzle_flash_ms, player_ray_count;
     unsigned int player_fire_seq;
     int target = -1, best_dist = 0, i;
-    const struct toy_game_weapon_info *ai_weapon;
     int sy = 0, cy = 1024;
     int player_down;
     int ai_idle = 1;
@@ -2850,8 +2850,8 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
     player_down = g->player_down;
 
     memcpy(g->slots, g->ai_slots, sizeof(g->slots));
-    ai_weapon = toy_game_weapon_info(g->slots[0].weapon);
-    g->slots[0].mag = ai_weapon->mag_size;
+    /* AI has infinite reserve ammo, but its magazine and reload timer are
+     * real state so it must pause between magazines just like a player. */
     g->slots[0].reserve = TOY_GAME_AMMO_INFINITE;
     g->px = g->ai_x; g->pz = g->ai_z;
     g->current_slot = g->ai_current_slot;
@@ -2862,11 +2862,8 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
     g->player_down = 0;
     toy_game_update_weapon_held(g, NULL, target >= 0, target >= 0,
                                 sy, cy, dt_ms);
-    /* AI 弹药无限：每个逻辑步恢复弹匣，避免进入换弹状态。 */
-    g->slots[0].mag = ai_weapon->mag_size;
+    /* Only reserve ammo is infinite; the current magazine is preserved. */
     g->slots[0].reserve = TOY_GAME_AMMO_INFINITE;
-    g->reloading = 0;
-    g->reload_timer_ms = 0;
     memcpy(g->ai_slots, g->slots, sizeof(g->ai_slots));
     g->ai_current_slot = g->current_slot;
     g->ai_reloading = g->reloading;
@@ -2889,7 +2886,9 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
         (actor->animation.id == TOY_GAME_ANIM_HIT &&
          actor->animation.time_ms <
          toy_game_animation_info(TOY_GAME_ANIM_HIT)->duration_ms);
-    if (fired) toy_game_actor_set_animation(actor, TOY_GAME_ANIM_FIRE);
+    if (g->reloading)
+        toy_game_actor_set_animation(actor, TOY_GAME_ANIM_RELOAD);
+    else if (fired) toy_game_actor_set_animation(actor, TOY_GAME_ANIM_FIRE);
     else if (!keep_animation) {
         if (target >= 0) ai_idle = 0;
         toy_game_actor_set_animation(actor, ai_idle ? TOY_GAME_ANIM_IDLE :

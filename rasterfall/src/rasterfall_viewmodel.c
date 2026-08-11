@@ -150,7 +150,7 @@ static int render_model_weapon(struct toy_surface *surface,
                                int animation_id, int animation_time_ms)
 {
     int i, drawn = 0, width, height, depth, length, scale;
-    int reload_down = 0, reload_pitch = 0;
+    int reload_pitch = 0;
     int focal = surface->width * 3 / 4;
     if (!model || !model->data) return 0;
     width = model->max_x - model->min_x;
@@ -165,7 +165,6 @@ static int render_model_weapon(struct toy_surface *surface,
         int arc = phase < 500 ? phase * 2 : (1000 - phase) * 2;
         if (arc < 0) arc = 0;
         if (arc > 1000) arc = 1000;
-        reload_down = arc * 120 / 1000;
         reload_pitch = arc * 3 / 1000;
     }
     /* Keep the imported model in 3D view space.  The gun starts at the
@@ -225,7 +224,7 @@ static int render_model_weapon(struct toy_surface *surface,
                      * side-profile shear. */
                     v[k].x = VIEWMODEL_ORIGIN_X + local_x - local_z * 3 / 10 + kick / 3;
                     v[k].y = VIEWMODEL_ORIGIN_Y + local_y + local_z * (2 + reload_pitch) / 10 -
-                             kick / 2 - reload_down;
+                             kick / 2;
                     v[k].z = VIEWMODEL_ORIGIN_Z + local_z * 9 / 10 + local_x / 8 + kick;
                 }
             }

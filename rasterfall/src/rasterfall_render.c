@@ -1542,12 +1542,15 @@ static int render_player_avatar(struct toy_renderer *renderer,
 static int render_actor_model_weapon(struct toy_renderer *renderer,
                                      const struct camera *camera, int x, int z,
                                      int sy, int cy, int weapon,
-                                     int muzzle_flash)
+                                     int muzzle_flash, int animation_id,
+                                     int animation_time_ms)
 {
     const char *path = rasterfall_weapon_model_path(weapon);
     struct rasterfall_model_asset *model = gallery_model_named(path, NULL);
+    struct rasterfall_animation_pose pose;
     int width, height, depth, length, scale, i, pixels = 0;
     if (!model) return 0;
+    rasterfall_animation_sample(animation_id, animation_time_ms, &pose);
     width = model->max_x - model->min_x;
     height = model->max_y - model->min_y;
     depth = model->max_z - model->min_z;
@@ -1598,6 +1601,7 @@ static int render_actor_model_weapon(struct toy_renderer *renderer,
                 lx = lx * scale / 1000 + 210;
                 ly = ly * scale / 1000 - 430;
                 lz = lz * scale / 1000 + 80;
+                ly += lz * pose.weapon_pitch / 1000;
                 v[k].x = x + (lx * cy + lz * sy) / 1024;
                 v[k].y = ly + active_actor_lift;
                 v[k].z = z + (-lx * sy + lz * cy) / 1024;
@@ -1611,16 +1615,40 @@ static int render_actor_model_weapon(struct toy_renderer *renderer,
         pixels += draw_actor_box(renderer, camera, x, z, sy, cy,
                                  178, 212, -430, -390, 330, 405,
                                  RF_COLOR_UI_ACCENT);
+    /* Experience-based attachment: both forearms meet the rear third of the
+     * weapon.  They are deliberately simple boxes so the animation layer can
+     * later replace them with arm meshes without changing gameplay state. */
+    {
+        int hand_drop = 0;
+        int right_recoil = 0;
+        if (animation_id == TOY_GAME_ANIM_RELOAD) {
+            int phase = animation_time_ms * 1000 / 900;
+            int arc = phase < 500 ? phase * 2 : (1000 - phase) * 2;
+            if (arc < 0) arc = 0;
+            if (arc > 1000) arc = 1000;
+            hand_drop = arc * 150 / 1000;
+        }
+        if (animation_id == TOY_GAME_ANIM_FIRE && animation_time_ms < 70)
+            right_recoil = -24;
+        pixels += draw_actor_box(renderer, camera, x, z, sy, cy,
+                                 -145, -80, -500 - hand_drop,
+                                 -350 - hand_drop, 50, 190, 0xC08A68);
+        pixels += draw_actor_box(renderer, camera, x, z, sy, cy,
+                                 80, 145, -500 - right_recoil,
+                                 -350 - right_recoil, 50, 190, 0xC08A68);
+    }
     return pixels;
 }
 
 static int render_actor_weapon(struct toy_renderer *renderer,
                                const struct camera *camera, int x, int z,
-                               int sy, int cy, int weapon, int muzzle_flash)
+                               int sy, int cy, int weapon, int muzzle_flash,
+                               int animation_id, int animation_time_ms)
 {
     if (weapon < 0) return 0;
     return render_actor_model_weapon(renderer, camera, x, z, sy, cy,
-                                     weapon, muzzle_flash);
+                                     weapon, muzzle_flash, animation_id,
+                                     animation_time_ms);
 }
 
 static int network_actor_lift(int x, int z, int airborne_y)
@@ -1717,10 +1745,13 @@ static int render_player_avatar(struct toy_renderer *renderer,
     pose_x = x + sy * pose.forward_shift / 1024;
     pose_z = z + cy * pose.forward_shift / 1024;
     active_actor_lift += animation_lift;
-    if (downed && animation_id == TOY_GAME_ANIM_DEATH) {
+    if ((downed && animation_id == TOY_GAME_ANIM_DEATH) ||
+        animation_id == TOY_GAME_ANIM_REVIVE) {
         death_progress = animation_time_ms * 1000 /
                          toy_game_animation_info(TOY_GAME_ANIM_DEATH)->duration_ms;
         if (death_progress > 1000) death_progress = 1000;
+        if (animation_id == TOY_GAME_ANIM_REVIVE)
+            death_progress = 1000 - death_progress;
         body_top = -100 - 550 * death_progress / 1000;
         body_bottom = -620 - 230 * death_progress / 1000;
         head_y = 50 - 600 * death_progress / 1000;
@@ -1756,7 +1787,8 @@ static int render_player_avatar(struct toy_renderer *renderer,
     }
     if (!downed) {
         pixels += render_actor_weapon(renderer, camera, pose_x, pose_z, sy, cy,
-                                      weapon, muzzle_flash);
+                                      weapon, muzzle_flash, animation_id,
+                                      animation_time_ms);
     }
     pixels += draw_face_rect(renderer, camera, pose_x, pose_z, 145, sy, cy,
                              -72, 72, face_y0 + active_actor_lift,

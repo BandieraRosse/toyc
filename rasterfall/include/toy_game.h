@@ -148,6 +148,7 @@ enum toy_game_animation_id {
     TOY_GAME_ANIM_DOWNED,
     TOY_GAME_ANIM_HIT,
     TOY_GAME_ANIM_DEATH,
+    TOY_GAME_ANIM_REVIVE,
     TOY_GAME_ANIM_COUNT
 };
 
