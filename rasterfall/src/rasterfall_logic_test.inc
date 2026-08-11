@@ -1,3 +1,9 @@
+#define special_windup_ms ability.special_windup_ms
+#define special_target_active ability.special_target_active
+#define special_target_player ability.special_target_player
+#define special_pull_timer_ms ability.special_pull_timer_ms
+#define charge_active ability.charge_active
+
 static int run_logic_test(void)
 {
     struct camera camera;

@@ -18,6 +18,19 @@
 #include "math.h"
 #include "tlibc_compat.h"
 
+/* Transitional field aliases keep the AI behavior patch small while the
+ * special state moves behind enemy.ability.  New code should use ability.*. */
+#define special_timer_ms ability.special_timer_ms
+#define special_windup_ms ability.special_windup_ms
+#define special_target_active ability.special_target_active
+#define charge_active ability.charge_active
+#define charge_dir_x ability.charge_dir_x
+#define charge_dir_z ability.charge_dir_z
+#define charge_elapsed_ms ability.charge_elapsed_ms
+#define special_target_player ability.special_target_player
+#define special_target_actor_index ability.special_target_actor_index
+#define special_pull_timer_ms ability.special_pull_timer_ms
+
 /* ── PRNG：xorshift64* ──────────────────────────────────────────── */
 
 static uint64_t xorshift64star(uint64_t *state)

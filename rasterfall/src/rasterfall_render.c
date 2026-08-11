@@ -12,6 +12,11 @@
 #include "rasterfall_net.h"
 #include "rasterfall_sky.h"
 #include "rasterfall_render.h"
+
+#define special_target_active ability.special_target_active
+#define charge_active ability.charge_active
+#define special_target_player ability.special_target_player
+#define special_target_actor_index ability.special_target_actor_index
 #include "rasterfall_model.h"
 #include "rasterfall_viewmodel.h"
 #include "math.h"

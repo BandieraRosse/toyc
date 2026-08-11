@@ -101,15 +101,7 @@ struct rasterfall_net_enemy {
     int x, z, speed;
     int bite_cooldown_ms, flash, hurt, dying_ms;
     int dir_x, dir_z;
-    int special_target_active;
-    int charge_active;
-    int special_timer_ms;
-    int special_windup_ms;
-    int special_target_player;
-    int special_target_actor_index;
-    int special_pull_timer_ms;
-    int charge_dir_x, charge_dir_z;
-    int charge_elapsed_ms;
+    struct toy_game_enemy_ability_state ability;
     int airborne_ms;
     int airborne_y;
 };

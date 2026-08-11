@@ -3,6 +3,8 @@
 #include "fb_draw.h"
 #include "fb_font.h"
 
+#define special_target_active ability.special_target_active
+
 static void hud_fill_rect(struct toy_surface *surface, int x, int y,
                           int width, int height, uint32_t color)
 {

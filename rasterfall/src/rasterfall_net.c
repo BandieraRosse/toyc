@@ -2,6 +2,17 @@
 #include "errno.h"
 #include "rasterfall_net.h"
 
+#define special_timer_ms ability.special_timer_ms
+#define special_windup_ms ability.special_windup_ms
+#define special_target_active ability.special_target_active
+#define charge_active ability.charge_active
+#define charge_dir_x ability.charge_dir_x
+#define charge_dir_z ability.charge_dir_z
+#define charge_elapsed_ms ability.charge_elapsed_ms
+#define special_target_player ability.special_target_player
+#define special_target_actor_index ability.special_target_actor_index
+#define special_pull_timer_ms ability.special_pull_timer_ms
+
 #define NET_HEADER_SIZE 16
 #define NET_MAGIC_0 'R'
 #define NET_MAGIC_1 'F'

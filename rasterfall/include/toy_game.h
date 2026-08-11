@@ -277,6 +277,21 @@ struct toy_game_slot {
     int reserve;
 };
 
+/* Runtime state owned by a special-infected ability.  Keeping this state
+ * together means a new ability can grow without adding another cluster of
+ * fields to the enemy's movement/health core. */
+struct toy_game_enemy_ability_state {
+    int special_timer_ms;
+    int special_windup_ms;
+    int special_target_active;
+    int charge_active;
+    int charge_dir_x, charge_dir_z;
+    int charge_elapsed_ms;
+    int special_target_player;
+    int special_target_actor_index;
+    int special_pull_timer_ms;
+};
+
 struct toy_game_enemy {
     int active;         /* 0=空槽 1=存活 2=倒地中 */
     int type;           /* enum toy_game_enemy_type */
@@ -298,15 +313,7 @@ struct toy_game_enemy {
     int retarget_timer_ms;
     int wander_timer_ms;
     int dir_x, dir_z;   /* 面向，1024 基准定点 */
-    int special_timer_ms;
-    int special_windup_ms;
-    int special_target_active;
-    int charge_active;
-    int charge_dir_x, charge_dir_z;
-    int charge_elapsed_ms;
-    int special_target_player;
-    int special_target_actor_index;
-    int special_pull_timer_ms;
+    struct toy_game_enemy_ability_state ability;
     int airborne_ms;
     int vertical_velocity;
     int airborne_y;
