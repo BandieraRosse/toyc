@@ -41,6 +41,8 @@ static int active_textures;
 static int active_fixed_floor_lighting;
 static int active_enemy_lift;
 static int active_actor_lift;
+static int active_actor_roll_sin;
+static int active_actor_roll_cos = 1024;
 static int active_gallery_lighting;
 
 #define level_map active_session->level
@@ -811,6 +813,18 @@ static int draw_cuboid(struct toy_renderer *renderer, const struct camera *camer
     return pixels;
 }
 
+static void actor_world_point(int x, int z, int sy, int cy,
+                              int lx, int ly, int lz, struct vec3 *out)
+{
+    int ry = -900 + ((ly + 900) * active_actor_roll_cos +
+                     lz * active_actor_roll_sin) / 1024;
+    int rz = (-(ly + 900) * active_actor_roll_sin +
+              lz * active_actor_roll_cos) / 1024;
+    out->x = x + (cy * lx + sy * rz) / 1024;
+    out->y = ry + active_actor_lift;
+    out->z = z + (-sy * lx + cy * rz) / 1024;
+}
+
 /* 角色局部坐标的立体盒：local X 为角色右侧，local Z 为面朝方向。
  * 与 draw_cuboid 不同，它的八个顶点会随 actor 的 sy/cy 一起旋转。 */
 static int draw_actor_box(struct toy_renderer *renderer,
@@ -821,22 +835,14 @@ static int draw_actor_box(struct toy_renderer *renderer,
 {
     struct vec3 a, b, c, d, e, f, g, h;
     int pixels = 0;
-    int cx0 = x + (cy * x0 + sy * z0) / 1024;
-    int cz0 = z + (-sy * x0 + cy * z0) / 1024;
-    int cx1 = x + (cy * x1 + sy * z0) / 1024;
-    int cz1 = z + (-sy * x1 + cy * z0) / 1024;
-    int cx2 = x + (cy * x1 + sy * z1) / 1024;
-    int cz2 = z + (-sy * x1 + cy * z1) / 1024;
-    int cx3 = x + (cy * x0 + sy * z1) / 1024;
-    int cz3 = z + (-sy * x0 + cy * z1) / 1024;
-    a.x=cx0; a.y=y0+active_actor_lift; a.z=cz0;
-    b.x=cx1; b.y=y0+active_actor_lift; b.z=cz1;
-    c.x=cx2; c.y=y0+active_actor_lift; c.z=cz2;
-    d.x=cx3; d.y=y0+active_actor_lift; d.z=cz3;
-    e=a; e.y=y1+active_actor_lift;
-    f=b; f.y=y1+active_actor_lift;
-    g=c; g.y=y1+active_actor_lift;
-    h=d; h.y=y1+active_actor_lift;
+    actor_world_point(x,z,sy,cy,x0,y0,z0,&a);
+    actor_world_point(x,z,sy,cy,x1,y0,z0,&b);
+    actor_world_point(x,z,sy,cy,x1,y0,z1,&c);
+    actor_world_point(x,z,sy,cy,x0,y0,z1,&d);
+    actor_world_point(x,z,sy,cy,x0,y1,z0,&e);
+    actor_world_point(x,z,sy,cy,x1,y1,z0,&f);
+    actor_world_point(x,z,sy,cy,x1,y1,z1,&g);
+    actor_world_point(x,z,sy,cy,x0,y1,z1,&h);
     pixels += draw_quad(renderer,camera,&a,&b,&f,&e,color);
     pixels += draw_quad(renderer,camera,&b,&c,&g,&f,color+0x080808);
     pixels += draw_quad(renderer,camera,&c,&d,&h,&g,color);
@@ -844,6 +850,21 @@ static int draw_actor_box(struct toy_renderer *renderer,
     pixels += draw_quad(renderer,camera,&e,&f,&g,&h,color+0x181818);
     pixels += draw_quad(renderer,camera,&a,&b,&c,&d,color-0x0C0C0C);
     return pixels;
+}
+
+/* Small local-Z shear used for the hit reaction.  It is intentionally a
+ * simple box approximation rather than a new skeletal/body system. */
+static int draw_actor_tilted_box(struct toy_renderer *renderer,
+                                 const struct camera *camera, int x, int z,
+                                 int sy, int cy, int x0, int x1,
+                                 int y0, int y1, int z0, int z1,
+                                 int pitch, uint32_t color)
+{
+    int pivot_y = -620;
+    int tilted_z0 = z0 + (y0 - pivot_y) * pitch / 1024;
+    int tilted_z1 = z1 + (y1 - pivot_y) * pitch / 1024;
+    return draw_actor_box(renderer, camera, x, z, sy, cy,
+                          x0, x1, y0, y1, tilted_z0, tilted_z1, color);
 }
 
 static const int circle_x[8] = {1024, 724, 0, -724, -1024, -724, 0, 724};
@@ -915,6 +936,50 @@ static int draw_ellipsoid_head(struct toy_renderer *renderer,
         }
     }
     return pixels;
+}
+
+/* Avatar heads use the same local frame as the torso.  Keeping the head in
+ * that frame is important during the fall: an upright world-space ellipse
+ * otherwise looks like a long cylinder sliding through the body. */
+static int draw_actor_ellipsoid_head(struct toy_renderer *renderer,
+                                     const struct camera *camera, int x, int z,
+                                     int sy, int cy, int center_y,
+                                     int rx, int ry, uint32_t color)
+{
+    static const int ring_r[5] = {0, 724, 1024, 724, 0};
+    static const int ring_y[5] = {-1024, -724, 0, 724, 1024};
+    struct vec3 ring[5][8];
+    int r, i, pixels = 0;
+    for (r = 0; r < 5; r++) {
+        for (i = 0; i < 8; i++) {
+            int lx = circle_x[i] * rx * ring_r[r] / 1048576;
+            int ly = center_y + ring_y[r] * ry / 1024;
+            int lz = circle_z[i] * rx * ring_r[r] / 1048576;
+            actor_world_point(x, z, sy, cy, lx, ly, lz, &ring[r][i]);
+        }
+    }
+    for (r = 0; r < 4; r++) {
+        for (i = 0; i < 8; i++) {
+            int next = (i + 1) & 7;
+            pixels += draw_quad(renderer, camera, &ring[r][i],
+                                &ring[r][next], &ring[r + 1][next],
+                                &ring[r + 1][i], color + ((i & 3) * 0x030303));
+        }
+    }
+    return pixels;
+}
+
+static int draw_actor_face_rect(struct toy_renderer *renderer,
+                                const struct camera *camera, int x, int z,
+                                int sy, int cy, int radius, int h0, int h1,
+                                int y0, int y1, uint32_t color)
+{
+    struct vec3 a, b, c, d;
+    actor_world_point(x, z, sy, cy, -h0, y0, radius + 3, &a);
+    actor_world_point(x, z, sy, cy, -h1, y0, radius + 3, &b);
+    actor_world_point(x, z, sy, cy, -h1, y1, radius + 3, &c);
+    actor_world_point(x, z, sy, cy, -h0, y1, radius + 3, &d);
+    return draw_quad(renderer, camera, &a, &b, &c, &d, color);
 }
 
 /* 沿敌人当前朝向在头部平面画小矩形，转身过程因此清晰可见。 */
@@ -1539,6 +1604,22 @@ static int render_player_avatar(struct toy_renderer *renderer,
                                 uint32_t body_color, int downed,
                                 int animation_id, int animation_time_ms);
 
+static void sample_actor_fall_roll(int progress, int *out_sin, int *out_cos)
+{
+    int phase;
+    if (progress < 0) progress = 0;
+    if (progress > 1000) progress = 1000;
+    if (progress < 500) {
+        phase = progress * 2;
+        *out_sin = 724 * phase / 1000;
+        *out_cos = 1024 - 300 * phase / 1000;
+    } else {
+        phase = (progress - 500) * 2;
+        *out_sin = 724 + 300 * phase / 1000;
+        *out_cos = 724 - 724 * phase / 1000;
+    }
+}
+
 static int draw_limb_segment(struct toy_renderer *renderer,
                              const struct camera *camera, int x, int z,
                              int sy, int cy,
@@ -1552,27 +1633,26 @@ static int draw_limb_segment(struct toy_renderer *renderer,
         0, 3, 7, 0, 7, 4, 1, 5, 6, 1, 6, 2
     };
     struct vec3 vertices[8];
-    int dy = by - ay, dz = bz - az;
+    int dx = bx - ax, dy = by - ay, dz = bz - az;
     int length = isqrt((long long)dy * dy + (long long)dz * dz);
     int py, pz, i, pixels = 0;
-    (void)ax;
-    (void)bx;
+    (void)dx; /* Arm segments currently stay in the local Y-Z plane. */
     if (length < 1) length = 1;
     py = -dz * radius / length;
     pz = dy * radius / length;
     for (i = 0; i < 8; i++) {
         int endpoint = i >= 4;
         int corner = i & 3;
-        int lx = (corner == 0 || corner == 3) ? -radius : radius;
+        int center_x = endpoint ? bx : ax;
+        int lx = center_x + ((corner == 0 || corner == 3) ?
+                            -radius : radius);
         int ly = endpoint ? by : ay;
         int lz = endpoint ? bz : az;
         if (corner == 0 || corner == 1) ly -= py;
         else ly += py;
         if (corner == 0 || corner == 3) lz -= pz;
         else lz += pz;
-        vertices[i].x = x + (lx * cy + lz * sy) / 1024;
-        vertices[i].y = ly + active_actor_lift;
-        vertices[i].z = z + (-lx * sy + lz * cy) / 1024;
+        actor_world_point(x, z, sy, cy, lx, ly, lz, &vertices[i]);
     }
     for (i = 0; i < 36; i += 3)
         pixels += draw_world_triangle(renderer, camera,
@@ -1582,8 +1662,45 @@ static int draw_limb_segment(struct toy_renderer *renderer,
     return pixels;
 }
 
+/* A leg is a solid local cuboid rotating around its hip.  This is separate
+ * from draw_limb_segment because a line extrusion loses its volume when the
+ * camera sees the leg nearly edge-on. */
+static int draw_actor_leg_box(struct toy_renderer *renderer,
+                              const struct camera *camera, int x, int z,
+                              int sy, int cy, int x0, int x1,
+                              int y0, int y1, int swing_sin,
+                              uint32_t color)
+{
+    struct vec3 v[8];
+    static const int faces[36] = {
+        0, 1, 2, 0, 2, 3, 4, 6, 5, 4, 7, 6,
+        0, 4, 5, 0, 5, 1, 3, 2, 6, 3, 6, 7,
+        0, 3, 7, 0, 7, 4, 1, 5, 6, 1, 6, 2
+    };
+    int swing_cos = 1024 - (swing_sin < 0 ? -swing_sin : swing_sin) *
+                    (swing_sin < 0 ? -swing_sin : swing_sin) / 2048;
+    int i, pixels = 0;
+    int xs[8] = {x0, x1, x1, x0, x0, x1, x1, x0};
+    int ys[8] = {y0, y0, y1, y1, y0, y0, y1, y1};
+    int zs[8] = {-75, -75, -75, -75, 75, 75, 75, 75};
+    const int hip_y = -610;
+    for (i = 0; i < 8; i++) {
+        int dy = ys[i] - hip_y;
+        int ly = hip_y + (dy * swing_cos + zs[i] * swing_sin) / 1024;
+        int lz = (-dy * swing_sin + zs[i] * swing_cos) / 1024;
+        actor_world_point(x, z, sy, cy, xs[i], ly, lz, &v[i]);
+    }
+    for (i = 0; i < 36; i += 3)
+        pixels += draw_world_triangle(renderer, camera, &v[faces[i]],
+                                      &v[faces[i + 1]], &v[faces[i + 2]],
+                                      color + ((i / 3) & 3) * 0x050505);
+    return pixels;
+}
+
 static void limb_direction(int pitch, int *dy, int *dz)
 {
+    /* TODO: replace these compatibility buckets with continuous fixed-point
+     * sin/cos when the animation pose gains arbitrary arm angles. */
     if (pitch <= -45) { *dy = -866; *dz = 500; }
     else if (pitch < 0) { *dy = -500; *dz = 866; }
     else if (pitch < 45) { *dy = 500; *dz = 866; }
@@ -1654,13 +1771,13 @@ static int render_actor_model_weapon(struct toy_renderer *renderer,
                 }
                 /* Local +X is the avatar's right side.  Keep the weapon clear
                  * of the torso and put its muzzle in front of the body. */
-                lx = lx * scale / 1000 + 210;
-                ly = ly * scale / 1000 - 430;
-                lz = lz * scale / 1000 + 80;
+                /* Shared grip-area anchor: right of the torso and slightly
+                 * forward, so both wrists can meet around the weapon rear. */
+                lx = lx * scale / 1000 + 195;
+                ly = ly * scale / 1000 - 395;
+                lz = lz * scale / 1000 + 170;
                 ly += lz * pose.weapon_pitch / 1000;
-                v[k].x = x + (lx * cy + lz * sy) / 1024;
-                v[k].y = ly + active_actor_lift;
-                v[k].z = z + (-lx * sy + lz * cy) / 1024;
+                actor_world_point(x, z, sy, cy, lx, ly, lz, &v[k]);
             }
             if (k == 3)
                 pixels += draw_world_triangle(renderer, camera, &v[0], &v[1],
@@ -1669,63 +1786,54 @@ static int render_actor_model_weapon(struct toy_renderer *renderer,
     }
     if (muzzle_flash > 0)
         pixels += draw_actor_box(renderer, camera, x, z, sy, cy,
-                                 178, 212, -430, -390, 330, 405,
+                                 163, 227, -395, -355, 420, 495,
                                  RF_COLOR_UI_ACCENT);
-    /* Two overlapping cuboids per arm: the upper arm starts at the shoulder,
-     * while the forearm overlaps the elbow.  The upper-arm sleeve is a short
-     * body-colored segment; the remaining arm uses skin color. */
+    /* Two overlapping cuboids per arm.  Both segments remain in the arm's
+     * local Y-Z plane; draw_limb_segment performs the actor yaw transform. */
     {
         int ruy, ruz, rfy, rfz, luy, luz, lfy, lfz;
         int rex, rey, rez, rwx, rwy, rwz;
         int lex, ley, lez, lwx, lwy, lwz;
+        const int right_shoulder_x = 205, left_shoulder_x = -205;
+        const int left_hand_x = 175;
+        const int upper_len = 160, forearm_len = 160, overlap = 20;
         int right_recoil = animation_id == TOY_GAME_ANIM_FIRE &&
                            animation_time_ms < 70 ? -24 : 0;
         limb_direction(pose.right_upper_pitch, &ruy, &ruz);
         limb_direction(pose.right_forearm_pitch, &rfy, &rfz);
         limb_direction(pose.left_upper_pitch, &luy, &luz);
         limb_direction(pose.left_forearm_pitch, &lfy, &lfz);
-        rex = 115 + ruz * 180 / 1024;
-        rey = -180 + ruy * 180 / 1024 + right_recoil;
-        rez = ruz * 180 / 1024;
+        rex = right_shoulder_x;
+        rey = -180 + ruy * upper_len / 1024 + right_recoil;
+        rez = ruz * upper_len / 1024;
         rwx = rex;
-        rwy = rey + rfy * 180 / 1024;
-        rwz = rez + rfz * 180 / 1024;
-        lex = -115 + luz * 180 / 1024;
-        ley = -180 + luy * 180 / 1024;
-        lez = luz * 180 / 1024;
-        lwx = lex;
-        lwy = ley + lfy * 180 / 1024;
-        lwz = lez + lfz * 180 / 1024;
+        rwy = rey + rfy * forearm_len / 1024;
+        rwz = rez + rfz * forearm_len / 1024;
+        lex = left_shoulder_x;
+        ley = -180 + luy * upper_len / 1024;
+        lez = luz * upper_len / 1024;
+        /* The left hand reaches inward toward the rear/receiver area of the
+         * weapon; the forearm is therefore the only arm segment that changes
+         * local X. */
+        lwx = left_hand_x;
+        lwy = ley + lfy * forearm_len / 1024;
+        lwz = lez + lfz * forearm_len / 1024;
         pixels += draw_limb_segment(renderer, camera, x, z, sy, cy,
-                                    115, -180 + right_recoil, 0,
-                                    115 + ruy * 65 / 1024,
-                                    -180 + ruy * 65 / 1024 + right_recoil,
-                                    ruz * 65 / 1024, 38, body_color);
+                                    right_shoulder_x, -180 + right_recoil, 0,
+                                    rex, rey, rez, 40, body_color);
         pixels += draw_limb_segment(renderer, camera, x, z, sy, cy,
-                                    115 + ruy * 45 / 1024,
-                                    -180 + ruy * 45 / 1024 + right_recoil,
-                                    ruz * 45 / 1024, rex, rey, rez, 42,
-                                    0xC08A68);
+                                    rex - rfy * overlap / 1024,
+                                    rey - rfy * overlap / 1024,
+                                    rez - rfz * overlap / 1024,
+                                    rwx, rwy, rwz, 42, 0xC08A68);
         pixels += draw_limb_segment(renderer, camera, x, z, sy, cy,
-                                    rex - rfy * 20 / 1024,
-                                    rey - rfy * 20 / 1024,
-                                    rez - rfz * 20 / 1024, rwx, rwy, rwz,
-                                    42, 0xC08A68);
+                                    left_shoulder_x, -180, 0,
+                                    lex, ley, lez, 40, body_color);
         pixels += draw_limb_segment(renderer, camera, x, z, sy, cy,
-                                    -115, -180, 0,
-                                    -115 + luy * 65 / 1024,
-                                    -180 + luy * 65 / 1024,
-                                    luz * 65 / 1024, 38, body_color);
-        pixels += draw_limb_segment(renderer, camera, x, z, sy, cy,
-                                    -115 + luy * 45 / 1024,
-                                    -180 + luy * 45 / 1024,
-                                    luz * 45 / 1024, lex, ley, lez, 42,
-                                    0xC08A68);
-        pixels += draw_limb_segment(renderer, camera, x, z, sy, cy,
-                                    lex - lfy * 20 / 1024,
-                                    ley - lfy * 20 / 1024,
-                                    lez - lfz * 20 / 1024, lwx, lwy, lwz,
-                                    42, 0xC08A68);
+                                    lex - lfy * overlap / 1024,
+                                    ley - lfy * overlap / 1024,
+                                    lez - lfz * overlap / 1024,
+                                    lwx, lwy, lwz, 42, 0xC08A68);
     }
     return pixels;
 }
@@ -1837,7 +1945,8 @@ static int render_player_avatar(struct toy_renderer *renderer,
     struct rasterfall_animation_pose pose;
     int pixels = 0, face_y0, face_y1, animation_lift;
     int pose_x, pose_z;
-    int death_progress = 0, body_top, body_bottom, head_y, fall_shift;
+    int death_progress = 0;
+    int show_fall_gear = 0;
     if (!renderer || !camera) return 0;
     rasterfall_animation_sample_duration(
         animation_id, animation_time_ms,
@@ -1847,6 +1956,8 @@ static int render_player_avatar(struct toy_renderer *renderer,
     animation_lift = pose.body_lift;
     pose_x = x + sy * pose.forward_shift / 1024;
     pose_z = z + cy * pose.forward_shift / 1024;
+    active_actor_roll_sin = 0;
+    active_actor_roll_cos = 1024;
     active_actor_lift += animation_lift;
     if (animation_id == TOY_GAME_ANIM_DEATH ||
         animation_id == TOY_GAME_ANIM_REVIVE) {
@@ -1855,21 +1966,25 @@ static int render_player_avatar(struct toy_renderer *renderer,
         if (death_progress > 1000) death_progress = 1000;
         if (animation_id == TOY_GAME_ANIM_REVIVE)
             death_progress = 1000 - death_progress;
-        body_top = -100 - 550 * death_progress / 1000;
-        body_bottom = -620 - 230 * death_progress / 1000;
-        head_y = 50 - 600 * death_progress / 1000;
-        fall_shift = 160 * death_progress / 1000;
-        pixels += draw_actor_box(renderer, camera,
-                                 pose_x + sy * fall_shift / 1024,
-                                 pose_z + cy * fall_shift / 1024,
-                                 sy, cy, -155, 155, body_bottom, body_top,
-                                 -100, 100, body_color);
-        pixels += draw_ellipsoid_head(renderer, camera,
-                                      pose_x + sy * fall_shift / 1024,
-                                      pose_z + cy * fall_shift / 1024,
-                                      head_y + active_actor_lift, 145, 150,
-                                      0xD2A878);
-        face_y0 = head_y - 100; face_y1 = head_y + 80;
+        sample_actor_fall_roll(death_progress, &active_actor_roll_sin,
+                               &active_actor_roll_cos);
+        show_fall_gear = animation_time_ms <
+                         toy_game_animation_info(animation_id)->duration_ms;
+        /* The legs are part of the same rigid character.  They are built in
+         * local space first, then receive the body fall rotation below. */
+        pixels += draw_actor_leg_box(renderer, camera, pose_x, pose_z,
+                                     sy, cy, -95, -10, -900, -610,
+                                     0, 0x25354A);
+        pixels += draw_actor_leg_box(renderer, camera, pose_x, pose_z,
+                                     sy, cy, 10, 95, -900, -610,
+                                     0, 0x25354A);
+        pixels += draw_actor_box(renderer, camera, pose_x, pose_z, sy, cy,
+                                 -155, 155, -620, -100, -100, 100,
+                                 body_color);
+        pixels += draw_actor_ellipsoid_head(renderer, camera, pose_x, pose_z,
+                                            sy, cy, 50, 145, 150,
+                                            0xD2A878);
+        face_y0 = -35; face_y1 = 185;
     } else if (downed) {
         pixels += draw_cuboid(renderer, camera, pose_x - 170, pose_x + 170,
                               -850 + active_actor_lift, -650 + active_actor_lift,
@@ -1878,35 +1993,48 @@ static int render_player_avatar(struct toy_renderer *renderer,
                                       -550 + active_actor_lift, 145, 100, 0xD2A878);
         face_y0 = -650; face_y1 = -470;
     } else {
-        pixels += draw_actor_box(renderer, camera, pose_x, pose_z, sy, cy,
-                                 -95, -10, -900, -610, -75, 75, 0x25354A);
-        pixels += draw_actor_box(renderer, camera, pose_x, pose_z, sy, cy,
-                                 10, 95, -900, -610, -75, 75, 0x25354A);
-        pixels += draw_actor_box(renderer, camera, pose_x, pose_z, sy, cy,
-                                 -155, 155, -620, -100, -100, 100, body_color);
-        pixels += draw_ellipsoid_head(renderer, camera, pose_x, pose_z,
-                                      50 + active_actor_lift, 145, 150, 0xD2A878);
+        int left_leg_shift = pose.leg_swing;
+        int right_leg_shift = -left_leg_shift;
+        /* Rotate two solid cuboids around their hips; the roots remain
+         * attached to the torso while the whole volume swings. */
+        pixels += draw_actor_leg_box(renderer, camera, pose_x, pose_z,
+                                     sy, cy, -95, -10, -900, -610,
+                                     left_leg_shift, 0x25354A);
+        pixels += draw_actor_leg_box(renderer, camera, pose_x, pose_z,
+                                     sy, cy, 10, 95, -900, -610,
+                                     right_leg_shift, 0x25354A);
+        pixels += draw_actor_tilted_box(renderer, camera, pose_x, pose_z,
+                                        sy, cy, -155, 155, -620, -100,
+                                        -100, 100, pose.body_pitch,
+                                        body_color);
+        pixels += draw_actor_ellipsoid_head(renderer, camera, pose_x, pose_z,
+                                            sy, cy, 50 + pose.body_pitch * 2 / 3,
+                                            145, 150, 0xD2A878);
         face_y0 = -35; face_y1 = 185;
     }
-    if (!downed && animation_id != TOY_GAME_ANIM_DEATH) {
+    if (!downed || animation_id == TOY_GAME_ANIM_DEATH ||
+        animation_id == TOY_GAME_ANIM_REVIVE) {
         pixels += render_actor_weapon(renderer, camera, pose_x, pose_z, sy, cy,
                                       weapon, muzzle_flash, animation_id,
                                       animation_time_ms, body_color);
     }
-    pixels += draw_face_rect(renderer, camera, pose_x, pose_z, 145, sy, cy,
-                             -72, 72, face_y0 + active_actor_lift,
-                             face_y1 + active_actor_lift, RF_COLOR_AI_HEAVY);
-    pixels += draw_face_rect(renderer, camera, pose_x, pose_z, 145, sy, cy,
-                             -16, 16, face_y0 + 40 + active_actor_lift,
-                             face_y1 - 40 + active_actor_lift, 0xE8D2A8);
-    pixels += draw_face_rect(renderer, camera, pose_x, pose_z, 145, sy, cy,
-                             -72, 72, face_y0 + 90 + active_actor_lift,
-                             face_y0 + 115 + active_actor_lift, 0xE8D2A8);
-    if (muzzle_flash > 0)
+    pixels += draw_actor_face_rect(renderer, camera, pose_x, pose_z, sy, cy, 145,
+                             -72, 72, face_y0, face_y1, RF_COLOR_AI_HEAVY);
+    pixels += draw_actor_face_rect(renderer, camera, pose_x, pose_z, sy, cy, 145,
+                             -16, 16, face_y0 + 40,
+                             face_y1 - 40, 0xE8D2A8);
+    pixels += draw_actor_face_rect(renderer, camera, pose_x, pose_z, sy, cy, 145,
+                             -72, 72, face_y0 + 90,
+                             face_y0 + 115, 0xE8D2A8);
+    if (muzzle_flash > 0 &&
+        ((animation_id != TOY_GAME_ANIM_DEATH &&
+          animation_id != TOY_GAME_ANIM_REVIVE) || show_fall_gear))
         pixels += draw_cuboid(renderer, camera, pose_x - 45, pose_x + 45,
                               -560 + active_actor_lift, -430 + active_actor_lift,
                               pose_z - 120, pose_z + 120, RF_COLOR_UI_ACCENT);
     active_actor_lift -= animation_lift;
+    active_actor_roll_sin = 0;
+    active_actor_roll_cos = 1024;
     return pixels;
 }
 
@@ -1928,7 +2056,8 @@ static int render_network_teammate(struct toy_renderer *renderer,
             pixels += render_player_avatar(renderer, camera,
                 player->camera.x, player->camera.z, player->camera.sy,
                 player->camera.cy, player->weapon, player->muzzle_flash_ms,
-                colors[i], player->downed, TOY_GAME_ANIM_NONE, 0);
+                colors[i], player->downed, player->animation.id,
+                player->animation.time_ms);
             active_actor_lift = 0;
         }
         return pixels;
@@ -1943,7 +2072,7 @@ static int render_network_teammate(struct toy_renderer *renderer,
         pixels += render_player_avatar(renderer, camera, net->peer_camera.x,
             net->peer_camera.z, net->peer_camera.sy, net->peer_camera.cy,
             weapon, net->peer_muzzle_flash_ms, colors[1], net->peer_down,
-            TOY_GAME_ANIM_NONE, 0);
+            net->peer_animation.id, net->peer_animation.time_ms);
         active_actor_lift = 0;
     }
     for (i = 0; i < RASTERFALL_NET_REMOTE_MAX; i++) {
@@ -1959,7 +2088,7 @@ static int render_network_teammate(struct toy_renderer *renderer,
         pixels += render_player_avatar(renderer, camera, remote->camera.x,
             remote->camera.z, remote->camera.sy, remote->camera.cy, weapon,
             remote->muzzle_flash_ms, colors[remote->client_id], remote->down,
-            TOY_GAME_ANIM_NONE, 0);
+            remote->animation.id, remote->animation.time_ms);
         active_actor_lift = 0;
     }
     return pixels;

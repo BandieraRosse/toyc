@@ -9,7 +9,7 @@
 #define RASTERFALL_NET_DEFAULT_PORT 28460
 #define RASTERFALL_NET_MAX_PACKET 2700
 #define RASTERFALL_NET_MAX_SNAPSHOT 8192
-#define RASTERFALL_NET_PROTOCOL_VERSION 21
+#define RASTERFALL_NET_PROTOCOL_VERSION 22
 #define RASTERFALL_NET_MAX_ACTORS 12
 #define RASTERFALL_NET_PLAYER_MAX 4
 #define RASTERFALL_NET_REMOTE_MAX 2
@@ -94,6 +94,7 @@ struct rasterfall_net_player {
     int airborne_ms;
     int airborne_y;
     uint32_t input_ack;
+    struct toy_game_animation_state animation;
 };
 
 struct rasterfall_net_enemy {
@@ -161,6 +162,7 @@ struct rasterfall_net_remote {
     int ray_count;
     struct toy_game_ray rays[TOY_GAME_MAX_RAYS];
     int airborne_ms, airborne_y;
+    struct toy_game_animation_state animation;
     uint32_t reliable_event_ack;
     long last_receive_ms;
 };
@@ -206,6 +208,7 @@ struct rasterfall_net {
     struct toy_game_ray peer_rays[TOY_GAME_MAX_RAYS];
     int peer_airborne_ms;
     int peer_airborne_y;
+    struct toy_game_animation_state peer_animation;
     int peer_state_initialized;
     uint32_t peer_reliable_event_ack;
     struct rasterfall_net_player players[RASTERFALL_NET_PLAYER_MAX];

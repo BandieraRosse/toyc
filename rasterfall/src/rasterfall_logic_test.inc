@@ -906,7 +906,10 @@ static int run_logic_test(void)
         game.ai_x = 1200; game.ai_z = 0;
         if (!toy_game_apply_entity_impact(&game, TOY_GAME_ENTITY_ACTOR, 0,
                                           1000, 0, 1) ||
-            game.actors[0].airborne_ms <= 0) return 79;
+            game.actors[0].airborne_ms <= 0 ||
+            game.actors[0].animation.id != TOY_GAME_ANIM_HIT) return 79;
+        toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
+        if (game.actors[0].animation.id != TOY_GAME_ANIM_HIT) return 79;
         for (int i = 0; i < 130; i++)
             toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
         if (game.actors[0].airborne_ms > 0)

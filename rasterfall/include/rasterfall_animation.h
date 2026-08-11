@@ -3,6 +3,11 @@
 
 #include "toy_game.h"
 
+/* Presentation tuning knobs.  Keep these here so reload and locomotion can
+ * be adjusted without changing gameplay timings or animation state IDs. */
+#define RASTERFALL_RELOAD_WEAPON_PITCH 780
+#define RASTERFALL_MOVE_LEG_SWING 260
+
 /* Presentation-only result of sampling a gameplay animation state.  The
  * renderer can later replace these procedural poses with skeleton channels
  * without changing actor state or network code. */
@@ -11,6 +16,7 @@ struct rasterfall_animation_pose {
     int forward_shift;
     int leg_swing;
     int weapon_pitch;
+    int body_pitch;
     int right_upper_pitch;
     int right_forearm_pitch;
     int left_upper_pitch;
@@ -27,23 +33,33 @@ static void rasterfall_animation_sample_duration(
     pose->forward_shift = 0;
     pose->leg_swing = 0;
     pose->weapon_pitch = 0;
+    pose->body_pitch = 0;
     pose->right_upper_pitch = -60;
-    pose->right_forearm_pitch = 30;
-    pose->left_upper_pitch = -30;
-    pose->left_forearm_pitch = 30;
+    pose->right_forearm_pitch = -30;
+    pose->left_upper_pitch = -45;
+    /* The left forearm drops toward the weapon receiver instead of lifting
+     * away from it in the normal carry pose. */
+    pose->left_forearm_pitch = -30;
     if (time_ms < 0) time_ms = 0;
     if (animation_id == TOY_GAME_ANIM_IDLE) {
         phase = (time_ms / 100) % 8;
         pose->body_lift = (phase < 4 ? phase : 7 - phase) * 4;
     } else if (animation_id == TOY_GAME_ANIM_MOVE) {
-        phase = (time_ms / 50) % 8;
-        pose->body_lift = (phase < 4 ? phase : 7 - phase) * 3;
-        pose->leg_swing = phase < 4 ? 1 : -1;
+        static const int leg_wave[16] = {
+            0, 100, 190, 240, 260, 240, 190, 100,
+            0, -100, -190, -240, -260, -240, -190, -100
+        };
+        phase = (time_ms / 25) % 16;
+        pose->body_lift = phase < 8 ? phase * 3 / 2 : (15 - phase) * 3 / 2;
+        pose->leg_swing = leg_wave[phase];
     } else if (animation_id == TOY_GAME_ANIM_FIRE) {
-        pose->body_lift = time_ms < 60 ? -24 : 0;
+        /* Recoil moves the actor slightly backward, not downward. */
+        pose->body_lift = time_ms < 60 ? -6 : 0;
+        pose->forward_shift = time_ms < 80 ? -55 : 0;
     } else if (animation_id == TOY_GAME_ANIM_HIT) {
-        pose->body_lift = time_ms < 70 ? -18 : 0;
-        pose->forward_shift = time_ms < 140 ? 90 - time_ms * 3 / 5 : 0;
+        /* A hit compresses the torso and tips its upper edge forward. */
+        pose->body_lift = time_ms < 100 ? -32 : 0;
+        pose->body_pitch = time_ms < 140 ? 24 - time_ms * 24 / 140 : 0;
     } else if (animation_id == TOY_GAME_ANIM_RELOAD) {
         if (duration_ms <= 0)
             duration_ms = toy_game_animation_info(TOY_GAME_ANIM_RELOAD)->duration_ms;
@@ -51,11 +67,11 @@ static void rasterfall_animation_sample_duration(
         if (phase > 1000) phase = 1000;
         if (phase < 500) phase *= 2;
         else phase = (1000 - phase) * 2;
-        pose->weapon_pitch = phase * 260 / 1000;
+        pose->weapon_pitch = phase * RASTERFALL_RELOAD_WEAPON_PITCH / 1000;
         /* During the first half the left hand leaves the weapon; during the
          * second half it rises toward the front of the weapon. */
         pose->left_upper_pitch = -30 + phase * 20 / 1000;
-        pose->left_forearm_pitch = 30 + phase * 35 / 1000;
+        pose->left_forearm_pitch = -30 + phase * 65 / 1000;
     }
 }
 

@@ -128,5 +128,5 @@ ai_spawn GUARD 1 level1 0 -2000 1
 ai_spawn ELITE 2 level3 -700 4200 1
 ai_spawn DEV_GUNNER 0 level1 5600 -7600 0
 ai_spawn PLATFORM_GUARD 0 level2 0 -9900 0
-ai_spawn HIT_TEST 0 level1 -2700 -8500 0
+ai_spawn HIT_TEST 0 level1 -9000 -8500 0
 ai_spawn ANIM_TEST 0 level2 600 -9900 0

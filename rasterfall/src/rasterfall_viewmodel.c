@@ -9,6 +9,9 @@ struct view_vec3 { int x, y, z; };
 #define VIEWMODEL_ORIGIN_Y (-160)
 #define VIEWMODEL_ORIGIN_Z 600
 
+/* Adjustable visual-only reload lift; gameplay reload duration is unchanged. */
+#define RASTERFALL_RELOAD_VIEWMODEL_PITCH 9
+
 static struct rasterfall_model_asset viewmodel_models[TOY_GAME_WEAPON_COUNT];
 static int viewmodel_models_loaded;
 
@@ -97,13 +100,15 @@ void rasterfall_viewmodel_actor_muzzle(int x, int z, int sy, int cy,
                                        int lift, int weapon,
                                        int *out_x, int *out_y, int *out_z)
 {
-    /* Third-person weapons use the same forward distance as the avatar's
-     * fixed side mount.  The vertical origin follows airborne lift, so a
-     * platform/jump cannot leave the tracer hanging at ground height. */
-    (void)weapon;
-    *out_x = x + sy * 130 / 1024;
-    *out_y = -430 + lift;
-    *out_z = z + cy * 130 / 1024;
+    /* No muzzle marker exists in the mesh format yet.  These distances are
+     * measured from the weapon model's avatar-space center used by the
+     * renderer, so the tracer begins near the visible barrel rather than at
+     * the actor origin. */
+    int distance = weapon == TOY_GAME_WEAPON_SHOTGUN ? 620 :
+                   weapon == TOY_GAME_WEAPON_SMG ? 500 : 430;
+    *out_x = x + sy * distance / 1024;
+    *out_y = -395 + lift;
+    *out_z = z + cy * distance / 1024;
 }
 
 static int fill_triangle_2d(struct toy_surface *surface,
@@ -165,7 +170,7 @@ static int render_model_weapon(struct toy_surface *surface,
         int arc = phase < 500 ? phase * 2 : (1000 - phase) * 2;
         if (arc < 0) arc = 0;
         if (arc > 1000) arc = 1000;
-        reload_pitch = arc * 3 / 1000;
+        reload_pitch = arc * RASTERFALL_RELOAD_VIEWMODEL_PITCH / 1000;
     }
     /* Keep the imported model in 3D view space.  The gun starts at the
      * lower-right and its forward axis travels left/up toward the crosshair. */

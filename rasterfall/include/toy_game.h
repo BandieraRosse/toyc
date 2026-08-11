@@ -367,7 +367,9 @@ struct toy_game_actor {
     struct toy_game_ray rays[TOY_GAME_MAX_RAYS];
     int deployment_x, deployment_z;
     int fire_enabled;
+    int hit_test_dummy;
     int animation_demo;
+    int animation_demo_elapsed_ms;
     struct toy_game_animation_state animation;
 };
 

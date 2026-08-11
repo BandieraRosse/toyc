@@ -402,6 +402,7 @@ void toy_game_set_ai_teammate_class(struct toy_game *g, int active, int class_id
     g->actors[0].deployment_z = g->ai_z;
     g->actors[0].sy = g->ai_sy; g->actors[0].cy = g->ai_cy;
     g->actors[0].hp = g->actors[0].max_hp = g->ai_hp;
+    g->actors[0].fire_enabled = 1;
     g->actors[0].slots[0] = g->ai_slots[0];
     g->actors[0].slots[1] = g->ai_slots[1];
     g->actors[0].current_slot = g->ai_current_slot;
@@ -436,7 +437,6 @@ static void sync_ai_actor_from_legacy(struct toy_game *g)
     a->reload_timer_ms = g->ai_reload_timer_ms;
     a->fire_cooldown_ms = g->ai_fire_cooldown_ms;
     a->muzzle_flash_ms = g->ai_muzzle_flash_ms;
-    a->fire_enabled = 1;
     a->fire_seq = g->ai_fire_seq;
     a->ray_count = g->ai_ray_count;
     memcpy(a->rays, g->ai_rays, sizeof(a->rays));
@@ -1280,8 +1280,9 @@ static void bite_player(struct toy_game *g, struct toy_game_enemy *e)
     if (g->hp <= 0) {
         g->player_down = 1;
         g->player_revive_progress_ms = 0;
+        toy_game_animation_set(&g->animation, TOY_GAME_ANIM_DEATH);
         push_event(g, TOY_GAME_EV_ACTOR_DOWN);
-    }
+    } else toy_game_animation_set(&g->animation, TOY_GAME_ANIM_HIT);
 }
 
 static void bite_ai(struct toy_game *g, struct toy_game_enemy *e)
@@ -1947,6 +1948,9 @@ static void update_smoker(struct toy_game *g, struct toy_game_enemy *e,
                 g->hp -= TOY_GAME_SMOKER_DAMAGE;
                 if (g->hp < 0) g->hp = 0;
                 g->damage_flash_ms = TOY_GAME_DAMAGE_FLASH_MS;
+                toy_game_animation_set(&g->animation,
+                    g->hp <= 0 ? TOY_GAME_ANIM_DEATH : TOY_GAME_ANIM_HIT);
+                if (g->hp <= 0) g->player_down = 1;
             } else if (target_player == 2 && target_actor >= 0 &&
                        target_actor < TOY_GAME_MAX_ACTORS) {
                 struct toy_game_actor *a = &g->actors[target_actor];
@@ -2032,7 +2036,11 @@ int toy_game_apply_entity_impact(struct toy_game *g, int kind, int index,
     if (kind == TOY_GAME_ENTITY_PLAYER) {
         if (g->player_down) return 0;
         g->hp -= damage; if (g->hp < 0) g->hp = 0;
-        if (g->hp == 0) { g->player_down = 1; g->player_revive_progress_ms = 0; }
+        if (g->hp == 0) {
+            g->player_down = 1;
+            g->player_revive_progress_ms = 0;
+            toy_game_animation_set(&g->animation, TOY_GAME_ANIM_DEATH);
+        } else toy_game_animation_set(&g->animation, TOY_GAME_ANIM_HIT);
         g->damage_flash_ms = TOY_GAME_DAMAGE_FLASH_MS;
         g->player_airborne_ms = TOY_GAME_AIRBORNE_MS;
         g->player_airborne_y = 0;
@@ -2064,9 +2072,21 @@ int toy_game_apply_entity_impact(struct toy_game *g, int kind, int index,
             toy_game_actor_set_animation(a, TOY_GAME_ANIM_DEATH);
             a->revive_progress_ms = 0;
         } else toy_game_actor_set_animation(a, TOY_GAME_ANIM_HIT);
-        a->airborne_ms = TOY_GAME_AIRBORNE_MS;
-        a->airborne_y = 0; a->vertical_velocity = TOY_GAME_AIRBORNE_VELOCITY;
-        a->knockback_x = dx; a->knockback_z = dz;
+        if (a->hit_test_dummy) {
+            /* The dedicated HIT_TEST actor is a stationary target: keep the
+             * hit clip readable instead of hiding it inside knockback. */
+            a->airborne_ms = 0;
+            a->airborne_y = 0;
+            a->vertical_velocity = 0;
+            a->knockback_x = 0;
+            a->knockback_z = 0;
+        } else {
+            a->airborne_ms = TOY_GAME_AIRBORNE_MS;
+            a->airborne_y = 0;
+            a->vertical_velocity = TOY_GAME_AIRBORNE_VELOCITY;
+            a->knockback_x = dx;
+            a->knockback_z = dz;
+        }
         if (index == 0) load_ai_actor_to_legacy(g, a);
         return 1;
     }
@@ -2799,8 +2819,18 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
     int keep_animation = 0;
     sync_ai_actor_from_legacy(g);
     actor = &g->actors[g->ai_context_actor_index];
+    if (actor->hit_test_dummy) {
+        /* Do not let target acquisition, return-to-deployment, or weapon
+         * simulation replace the HIT pose of the animation test target. */
+        toy_game_actor_update_animation(actor, dt_ms);
+        load_ai_actor_to_legacy(g, actor);
+        return;
+    }
     if (actor->airborne_ms > 0) {
-        toy_game_actor_set_animation(actor, TOY_GAME_ANIM_NONE);
+        /* Knockback used to erase HIT immediately on the next AI tick. */
+        if (actor->animation.id != TOY_GAME_ANIM_HIT &&
+            actor->animation.id != TOY_GAME_ANIM_DEATH)
+            toy_game_actor_set_animation(actor, TOY_GAME_ANIM_NONE);
         toy_game_actor_update_animation(actor, dt_ms);
         update_motion_values(g, &actor->x, &actor->z, &actor->airborne_ms,
                              &actor->airborne_y, &actor->vertical_velocity,
@@ -2904,7 +2934,12 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
          toy_game_animation_info(TOY_GAME_ANIM_FIRE)->duration_ms) ||
         (actor->animation.id == TOY_GAME_ANIM_HIT &&
          actor->animation.time_ms <
-         toy_game_animation_info(TOY_GAME_ANIM_HIT)->duration_ms);
+         toy_game_animation_info(TOY_GAME_ANIM_HIT)->duration_ms) ||
+        (actor->animation.id == TOY_GAME_ANIM_REVIVE &&
+         actor->animation.time_ms <
+         toy_game_animation_info(TOY_GAME_ANIM_REVIVE)->duration_ms) ||
+        (actor->animation.id == TOY_GAME_ANIM_DEATH &&
+         actor->state == TOY_GAME_ACTOR_DOWNED);
     if (g->reloading)
         toy_game_actor_set_animation(actor, TOY_GAME_ANIM_RELOAD);
     else if (fired) toy_game_actor_set_animation(actor, TOY_GAME_ANIM_FIRE);
@@ -2944,21 +2979,29 @@ void toy_game_update_ai_teammates(struct toy_game *g, int dt_ms)
             struct toy_game_actor *demo = &g->actors[i];
             const struct toy_game_animation_info *info =
                 toy_game_animation_info(demo->animation.id);
+            const int demo_duration_ms = 2000;
             int demo_index = 0;
             int j;
             for (j = 0; j < (int)(sizeof(demo_animation_ids) /
                                   sizeof(demo_animation_ids[0])); j++)
                 if (demo_animation_ids[j] == demo->animation.id)
                     demo_index = j;
-            if (info->duration_ms > 0 &&
-                demo->animation.time_ms + dt_ms >= info->duration_ms) {
+            demo->animation_demo_elapsed_ms += dt_ms;
+            toy_game_actor_update_animation(demo, dt_ms);
+            /* Repeat short non-looping clips inside the two-second window so
+             * HIT/FIRE/DEATH remain observable instead of freezing early. */
+            if (demo->animation.id != TOY_GAME_ANIM_RELOAD &&
+                info->duration_ms > 0 &&
+                demo->animation.time_ms >= info->duration_ms)
+                demo->animation.time_ms %= info->duration_ms;
+            if (demo->animation_demo_elapsed_ms >= demo_duration_ms) {
                 demo_index = (demo_index + 1) %
                     (int)(sizeof(demo_animation_ids) /
                           sizeof(demo_animation_ids[0]));
                 toy_game_actor_set_animation(
                     demo, demo_animation_ids[demo_index]);
+                demo->animation_demo_elapsed_ms -= demo_duration_ms;
             }
-            toy_game_actor_update_animation(demo, dt_ms);
             continue;
         }
         g->ai_context_actor_index = i;
@@ -2991,7 +3034,12 @@ void toy_game_update_held(struct toy_game *g,
         if (g->animation.id != TOY_GAME_ANIM_FIRE ||
             g->animation.time_ms >=
                 toy_game_animation_info(TOY_GAME_ANIM_FIRE)->duration_ms)
-            toy_game_animation_set(&g->animation, TOY_GAME_ANIM_NONE);
+            if (g->animation.id != TOY_GAME_ANIM_HIT ||
+                g->animation.time_ms >=
+                toy_game_animation_info(TOY_GAME_ANIM_HIT)->duration_ms)
+                if (g->animation.id != TOY_GAME_ANIM_DEATH &&
+                    g->animation.id != TOY_GAME_ANIM_REVIVE)
+                    toy_game_animation_set(&g->animation, TOY_GAME_ANIM_NONE);
     toy_game_animation_update(&g->animation, dt_ms);
     toy_game_update_ai_teammates(g, dt_ms);
     if (g->secondary_player_active && !g->secondary_player_down)
