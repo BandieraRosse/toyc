@@ -537,7 +537,7 @@ static int run_logic_test(void)
             if (r->ez < -5700 || r->ez > -3800) return 39;
         }
     }
-    /* 地图拾取物解析：10 个控制按钮 + 4 把主武器 + 2 个弹药盒。 */
+    /* 地图拾取物解析：10 个控制按钮 + 6 把武器 + 2 个弹药盒。 */
     {
         int has_horde_button = 0, has_base1 = 0, has_base2 = 0;
         int has_smoker = 0, has_charger = 0, i;
@@ -553,7 +553,7 @@ static int run_logic_test(void)
             if (interactables[i].kind == TOY_MAP_PICKUP_CHARGER_BUTTON)
                 has_charger = 1;
         }
-        if (interactable_count != 16 || !has_horde_button ||
+        if (interactable_count != 18 || !has_horde_button ||
             !has_base1 || !has_base2 || !has_smoker || !has_charger) {
             return 32;
         }
@@ -601,8 +601,8 @@ static int run_logic_test(void)
         aim_cam.pitch_cy = 1024;
         highlighted = rasterfall_session_compute_highlight(&session, &aim_cam);
         if (highlighted != 0) return 34;
-        aim_cam.sy = 1024;
-        aim_cam.cy = 0;
+        aim_cam.sy = 0;
+        aim_cam.cy = 1024;
         if (rasterfall_session_compute_highlight(&session, &aim_cam) != -1) return 35;
         aim_cam.sy = 0;
         aim_cam.cy = -1024;
@@ -619,7 +619,7 @@ static int run_logic_test(void)
      * 再次互动应再次召唤。 */
     {
         int n, had;
-        if (interactables[6].x != -11940 || interactables[6].z != -10000)
+        if (interactables[8].x != -11940 || interactables[8].z != -10000)
             return 45;
         had = game.enemies_alive;
         {

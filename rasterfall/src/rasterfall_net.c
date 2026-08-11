@@ -1214,7 +1214,16 @@ static int send_ai_fire_packets(struct rasterfall_net *net,
             q[14] = (unsigned char)((actor->rays[i].hit_enemy ? 1 : 0) |
                                     (actor->rays[i].hit_world ? 2 : 0));
         }
-        if (net_send(net, packet, size) < 0) return -1;
+        /* Use the same sequence for every recipient.  Previously AI fire
+         * packets only went to client 1: later clients missed the effect and
+         * interpreted the resulting sequence hole as packet loss. */
+        if (net->peer_known && net->connected &&
+            net_send(net, packet, size) < 0) return -1;
+        for (i = 0; i < RASTERFALL_NET_REMOTE_MAX; i++)
+            if (net->remotes[i].active && net->remotes[i].connected &&
+                !net->relay_mode &&
+                net_send_to(net, &net->remotes[i].address,
+                            packet, size) < 0) return -1;
         net->ai_fire_sent_seq[actor_index] = actor->fire_seq;
     }
     return 0;
@@ -2665,13 +2674,50 @@ void rasterfall_net_reset_host(struct rasterfall_net *net)
     net->reliable_event_last_send_ms = 0;
 }
 
+static void net_smooth_client_enemies(struct rasterfall_net *net,
+                                      struct rasterfall_session *session)
+{
+    int i;
+    if (!net || !session) return;
+    for (i = 0; i < net->enemy_count; i++) {
+        const struct rasterfall_net_enemy *src = &net->enemies[i];
+        struct toy_game_enemy *dst;
+        int dx, dz;
+        long dist2;
+        if (src->index < 0 || src->index >= TOY_GAME_MAX_ENEMIES) continue;
+        dst = &session->game_state.enemies[src->index];
+        if (!src->active || !dst->active) continue;
+        dx = src->x - dst->x;
+        dz = src->z - dst->z;
+        dist2 = (long)dx * dx + (long)dz * dz;
+        /* Large corrections are teleports/charges and must remain immediate.
+         * Ordinary movement is spread across render frames, hiding both the
+         * 15 Hz snapshot cadence and an occasional missing snapshot. */
+        if (dist2 > 1200L * 1200L) {
+            dst->x = src->x;
+            dst->z = src->z;
+        } else {
+            int step_x = dx / 3;
+            int step_z = dz / 3;
+            if (!step_x && dx) step_x = dx > 0 ? 1 : -1;
+            if (!step_z && dz) step_z = dz > 0 ? 1 : -1;
+            dst->x += step_x;
+            dst->z += step_z;
+        }
+    }
+}
+
 void rasterfall_net_reconcile_client(struct rasterfall_net *net,
                                      struct rasterfall_session *session,
                                      struct camera *camera)
 {
     const struct rasterfall_net_player *own;
     long dx, dz, dist2;
-    if (net->mode != RASTERFALL_NET_CLIENT || !net->snapshot_ready) return;
+    if (net->mode != RASTERFALL_NET_CLIENT) return;
+    if (!net->snapshot_ready) {
+        net_smooth_client_enemies(net, session);
+        return;
+    }
     if (net->local_player_id < 0 ||
         net->local_player_id >= RASTERFALL_NET_PLAYER_MAX)
         return;
@@ -2795,7 +2841,11 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
             int old_active = dst->active;
             dst->active = src->active; dst->type = src->type;
             dst->ai_state = src->ai_state;
-            dst->hp = src->hp; dst->x = src->x; dst->z = src->z;
+            dst->hp = src->hp;
+            if (old_active != 1 || src->active != 1) {
+                dst->x = src->x;
+                dst->z = src->z;
+            }
             dst->speed = src->speed; dst->bite_cooldown_ms = src->bite_cooldown_ms;
             dst->flash = src->flash; dst->hurt = src->hurt;
             dst->dying_ms = src->dying_ms;
@@ -2827,6 +2877,7 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
             if (!seen[i])
                 memset(&session->game_state.enemies[i], 0,
                        sizeof(session->game_state.enemies[i]));
+        net_smooth_client_enemies(net, session);
     }
     if (net->last_jump_command_sequence &&
         net->last_snapshot_input_ack < net->last_jump_command_sequence) {
