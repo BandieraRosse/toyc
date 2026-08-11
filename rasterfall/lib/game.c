@@ -71,13 +71,13 @@ static const struct toy_game_weapon_info weapon_table[TOY_GAME_WEAPON_COUNT] = {
 
 static const struct toy_game_enemy_info enemy_table[TOY_GAME_ENEMY_TYPE_COUNT] = {
     /* max hp, speed range, bite damage, model, base color */
-    { TOY_CONFIG_COMMON_HP, TOY_CONFIG_COMMON_SPEED_MIN, TOY_CONFIG_COMMON_SPEED_MAX, TOY_CONFIG_COMMON_BITE_DAMAGE, 0, RF_COLOR_ENEMY_COMMON },
-    { TOY_CONFIG_FAST_HP, TOY_CONFIG_FAST_SPEED_MIN, TOY_CONFIG_FAST_SPEED_MAX, TOY_CONFIG_FAST_BITE_DAMAGE, 1, RF_COLOR_ENEMY_FAST },
-    { TOY_CONFIG_HEAVY_HP, TOY_CONFIG_HEAVY_SPEED_MIN, TOY_CONFIG_HEAVY_SPEED_MAX, TOY_CONFIG_HEAVY_BITE_DAMAGE, 2, RF_COLOR_ENEMY_HEAVY },
-    { TOY_CONFIG_PURSUIT_HEAVY_HP, TOY_CONFIG_PURSUIT_HEAVY_SPEED_MIN, TOY_CONFIG_PURSUIT_HEAVY_SPEED_MAX, TOY_CONFIG_PURSUIT_HEAVY_BITE_DAMAGE, 2, RF_COLOR_ENEMY_PURSUIT_HEAVY },
-    { TOY_CONFIG_PURSUIT_FAST_HP, TOY_CONFIG_PURSUIT_FAST_SPEED_MIN, TOY_CONFIG_PURSUIT_FAST_SPEED_MAX, TOY_CONFIG_PURSUIT_FAST_BITE_DAMAGE, 1, RF_COLOR_ENEMY_PURSUIT_FAST },
-    { TOY_CONFIG_SMOKER_HP, TOY_CONFIG_SMOKER_SPEED_MIN, TOY_CONFIG_SMOKER_SPEED_MAX, TOY_CONFIG_SMOKER_BITE_DAMAGE, 1, RF_COLOR_ENEMY_SMOKER },
-    { TOY_CONFIG_CHARGER_HP, TOY_CONFIG_CHARGER_SPEED_MIN, TOY_CONFIG_CHARGER_SPEED_MAX, TOY_CONFIG_CHARGER_BITE_DAMAGE, 2, RF_COLOR_ENEMY_CHARGER }
+    { TOY_CONFIG_COMMON_HP, TOY_CONFIG_COMMON_SPEED_MIN, TOY_CONFIG_COMMON_SPEED_MAX, TOY_CONFIG_COMMON_BITE_DAMAGE, 0, RF_COLOR_ENEMY_COMMON, TOY_GAME_ENEMY_ID_COMMON, "COMMON", TOY_GAME_ENEMY_ABILITY_NONE },
+    { TOY_CONFIG_FAST_HP, TOY_CONFIG_FAST_SPEED_MIN, TOY_CONFIG_FAST_SPEED_MAX, TOY_CONFIG_FAST_BITE_DAMAGE, 1, RF_COLOR_ENEMY_FAST, TOY_GAME_ENEMY_ID_FAST, "FAST", TOY_GAME_ENEMY_ABILITY_NONE },
+    { TOY_CONFIG_HEAVY_HP, TOY_CONFIG_HEAVY_SPEED_MIN, TOY_CONFIG_HEAVY_SPEED_MAX, TOY_CONFIG_HEAVY_BITE_DAMAGE, 2, RF_COLOR_ENEMY_HEAVY, TOY_GAME_ENEMY_ID_HEAVY, "HEAVY", TOY_GAME_ENEMY_ABILITY_NONE },
+    { TOY_CONFIG_PURSUIT_HEAVY_HP, TOY_CONFIG_PURSUIT_HEAVY_SPEED_MIN, TOY_CONFIG_PURSUIT_HEAVY_SPEED_MAX, TOY_CONFIG_PURSUIT_HEAVY_BITE_DAMAGE, 2, RF_COLOR_ENEMY_PURSUIT_HEAVY, TOY_GAME_ENEMY_ID_PURSUIT_HEAVY, "PURSUIT_HEAVY", TOY_GAME_ENEMY_ABILITY_NONE },
+    { TOY_CONFIG_PURSUIT_FAST_HP, TOY_CONFIG_PURSUIT_FAST_SPEED_MIN, TOY_CONFIG_PURSUIT_FAST_SPEED_MAX, TOY_CONFIG_PURSUIT_FAST_BITE_DAMAGE, 1, RF_COLOR_ENEMY_PURSUIT_FAST, TOY_GAME_ENEMY_ID_PURSUIT_FAST, "PURSUIT_FAST", TOY_GAME_ENEMY_ABILITY_NONE },
+    { TOY_CONFIG_SMOKER_HP, TOY_CONFIG_SMOKER_SPEED_MIN, TOY_CONFIG_SMOKER_SPEED_MAX, TOY_CONFIG_SMOKER_BITE_DAMAGE, 1, RF_COLOR_ENEMY_SMOKER, TOY_GAME_ENEMY_ID_SMOKER, "SMOKER", TOY_GAME_ENEMY_ABILITY_SMOKER_TONGUE },
+    { TOY_CONFIG_CHARGER_HP, TOY_CONFIG_CHARGER_SPEED_MIN, TOY_CONFIG_CHARGER_SPEED_MAX, TOY_CONFIG_CHARGER_BITE_DAMAGE, 2, RF_COLOR_ENEMY_CHARGER, TOY_GAME_ENEMY_ID_CHARGER, "CHARGER", TOY_GAME_ENEMY_ABILITY_CHARGER_RUSH }
 };
 
 struct toy_game_ai_info {
@@ -149,9 +149,37 @@ int toy_game_weapon_from_name(const char *name)
 
 const struct toy_game_enemy_info *toy_game_enemy_info(int type)
 {
-    if (type < 0 || type >= TOY_GAME_ENEMY_TYPE_COUNT)
+    const struct toy_game_enemy_info *info =
+        toy_game_enemy_info_or_null(type);
+    if (!info)
         return &enemy_table[TOY_GAME_ENEMY_COMMON];
+    return info;
+}
+
+const struct toy_game_enemy_info *toy_game_enemy_info_or_null(int type)
+{
+    if (type < 0 || type >= TOY_GAME_ENEMY_TYPE_COUNT) return NULL;
     return &enemy_table[type];
+}
+
+int toy_game_enemy_type_is_valid(int type)
+{
+    return toy_game_enemy_info_or_null(type) != NULL;
+}
+
+int toy_game_enemy_content_id(int type)
+{
+    const struct toy_game_enemy_info *info =
+        toy_game_enemy_info_or_null(type);
+    return info ? info->content_id : -1;
+}
+
+int toy_game_enemy_from_content_id(int content_id)
+{
+    int i;
+    for (i = 0; i < TOY_GAME_ENEMY_TYPE_COUNT; i++)
+        if (enemy_table[i].content_id == content_id) return i;
+    return -1;
 }
 
 struct toy_game_actor *toy_game_actor_by_id(struct toy_game *g, int actor_id)
@@ -670,7 +698,8 @@ static int enemy_position_blocked(const struct toy_game *g,
 
 static int enemy_radius(const struct toy_game_enemy *e)
 {
-    return e->type == TOY_GAME_ENEMY_CHARGER ? TOY_GAME_CHARGER_RADIUS :
+    return toy_game_enemy_info(e->type)->ability ==
+           TOY_GAME_ENEMY_ABILITY_CHARGER_RUSH ? TOY_GAME_CHARGER_RADIUS :
            TOY_GAME_ENEMY_RADIUS;
 }
 
@@ -2127,7 +2156,8 @@ static void update_enemy_ai(struct toy_game *g, struct toy_game_enemy *e,
                                    primary_dx, primary_dz,
                                    isqrt(primary_dist2));
 
-    if (e->type == TOY_GAME_ENEMY_SMOKER) {
+    if (toy_game_enemy_info(e->type)->ability ==
+            TOY_GAME_ENEMY_ABILITY_SMOKER_TONGUE) {
         nearest_special_target(g, e, &special_x, &special_z,
                                &special_player, &special_actor);
         dx = special_x - e->x; dz = special_z - e->z;
@@ -2140,7 +2170,8 @@ static void update_enemy_ai(struct toy_game *g, struct toy_game_enemy *e,
                       dt_ms);
         return;
     }
-    if (e->type == TOY_GAME_ENEMY_CHARGER) {
+    if (toy_game_enemy_info(e->type)->ability ==
+            TOY_GAME_ENEMY_ABILITY_CHARGER_RUSH) {
         nearest_special_target(g, e, &special_x, &special_z,
                                &special_player, &special_actor);
         dx = special_x - e->x; dz = special_z - e->z;

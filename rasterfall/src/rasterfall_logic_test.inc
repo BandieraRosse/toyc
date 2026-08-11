@@ -37,6 +37,10 @@ static int run_logic_test(void)
             toy_game_enemy_info(TOY_GAME_ENEMY_PURSUIT_HEAVY);
         const struct toy_game_enemy_info *runner =
             toy_game_enemy_info(TOY_GAME_ENEMY_PURSUIT_FAST);
+        const struct toy_game_enemy_info *smoker =
+            toy_game_enemy_info(TOY_GAME_ENEMY_SMOKER);
+        const struct toy_game_enemy_info *charger =
+            toy_game_enemy_info(TOY_GAME_ENEMY_CHARGER);
         const struct toy_game_weapon_info *smg =
             toy_game_weapon_info(TOY_GAME_WEAPON_SMG);
         const struct toy_game_weapon_info *shotgun =
@@ -50,6 +54,15 @@ static int run_logic_test(void)
             smg->damage != 25 || shotgun->damage != 25 ||
             common->max_hp != 50 || heavy->max_hp != 200 ||
             brute->max_hp != 200 || runner->max_hp != 60) return 49;
+        if (!toy_game_enemy_type_is_valid(TOY_GAME_ENEMY_SMOKER) ||
+            toy_game_enemy_type_is_valid(-1) ||
+            toy_game_enemy_content_id(TOY_GAME_ENEMY_SMOKER) !=
+                TOY_GAME_ENEMY_ID_SMOKER ||
+            toy_game_enemy_from_content_id(TOY_GAME_ENEMY_ID_CHARGER) !=
+                TOY_GAME_ENEMY_CHARGER ||
+            toy_game_enemy_from_content_id(99) >= 0 ||
+            smoker->ability != TOY_GAME_ENEMY_ABILITY_SMOKER_TONGUE ||
+            charger->ability != TOY_GAME_ENEMY_ABILITY_CHARGER_RUSH) return 56;
         if (toy_game_weapon_from_name("pistol") != TOY_GAME_WEAPON_PISTOL ||
             toy_game_weapon_from_name("SMG") != TOY_GAME_WEAPON_SMG ||
             toy_game_weapon_from_name("shotgun") != TOY_GAME_WEAPON_SHOTGUN ||

@@ -1432,12 +1432,14 @@ static int render_enemies(struct toy_renderer *renderer,
             color = info->color;
             if (e->type == TOY_GAME_ENEMY_HEAVY ||
                 e->type == TOY_GAME_ENEMY_PURSUIT_HEAVY) scale = 1350;
-            if (e->type == TOY_GAME_ENEMY_SMOKER) color = RF_COLOR_ENEMY_SMOKER;
-            if (e->type == TOY_GAME_ENEMY_CHARGER) {
+            if (info->ability == TOY_GAME_ENEMY_ABILITY_SMOKER_TONGUE)
+                color = RF_COLOR_ENEMY_SMOKER;
+            if (info->ability == TOY_GAME_ENEMY_ABILITY_CHARGER_RUSH) {
                 color = e->charge_active ? 0xB06A36 : RF_COLOR_ENEMY_CHARGER;
                 scale = 1180;
             }
-            if (e->type == TOY_GAME_ENEMY_SMOKER) scale = 1000;
+            if (info->ability == TOY_GAME_ENEMY_ABILITY_SMOKER_TONGUE)
+                scale = 1000;
             if (e->hurt > 0) color = 0xBB3333;
             else if (e->flash > 0) color = 0xDFDFDF;
             else if (e->type == TOY_GAME_ENEMY_PURSUIT_HEAVY)
@@ -1448,12 +1450,16 @@ static int render_enemies(struct toy_renderer *renderer,
                 color = 0x8A2A2A;   /* 尸潮追踪者：红色，一眼可辨 */
         }
         pixels += render_blob_shadow(renderer, camera, e, scale);
-        if (e->type == TOY_GAME_ENEMY_SMOKER && e->special_target_active)
+        if (toy_game_enemy_info(e->type)->ability ==
+                TOY_GAME_ENEMY_ABILITY_SMOKER_TONGUE &&
+            e->special_target_active)
             pixels += render_smoker_tongue(renderer, camera, e);
         active_enemy_lift = e->airborne_y;
-        if (e->type == TOY_GAME_ENEMY_CHARGER)
+        if (toy_game_enemy_info(e->type)->ability ==
+                TOY_GAME_ENEMY_ABILITY_CHARGER_RUSH)
             pixels += render_charger_enemy(renderer, camera, e, scale, color);
-        else if (e->type == TOY_GAME_ENEMY_SMOKER)
+        else if (toy_game_enemy_info(e->type)->ability ==
+                TOY_GAME_ENEMY_ABILITY_SMOKER_TONGUE)
             pixels += render_smoker_enemy(renderer, camera, e, scale, color);
         else if (e->type == TOY_GAME_ENEMY_HEAVY ||
             e->type == TOY_GAME_ENEMY_PURSUIT_HEAVY || (i & 1) == 0)

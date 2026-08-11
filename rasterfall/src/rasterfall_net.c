@@ -1004,7 +1004,8 @@ static int decode_player(const unsigned char *p,
 static void encode_enemy(unsigned char *p, const struct toy_game_enemy *e)
 {
     p[0] = (unsigned char)e->active;
-    p[1] = (unsigned char)e->type;
+    p[1] = (unsigned char)(toy_game_enemy_content_id(e->type) < 0 ? 0 :
+                           toy_game_enemy_content_id(e->type));
     p[2] = (unsigned char)e->ai_state;
     put_i16(p + 3, e->hp);
     put_u32(p + 5, (uint32_t)e->x); put_u32(p + 9, (uint32_t)e->z);
@@ -1029,7 +1030,10 @@ static void encode_enemy(unsigned char *p, const struct toy_game_enemy *e)
 static void decode_enemy(const unsigned char *p, struct rasterfall_net_enemy *e)
 {
     memset(e, 0, sizeof(*e));
-    e->active = p[0]; e->type = p[1]; e->ai_state = p[2];
+    e->active = p[0];
+    e->type = toy_game_enemy_from_content_id((int)p[1]);
+    if (e->type < 0) e->type = TOY_GAME_ENEMY_COMMON;
+    e->ai_state = p[2];
     e->hp = get_i16(p + 3);
     e->x = (int)get_u32(p + 5); e->z = (int)get_u32(p + 9);
     e->speed = get_i16(p + 13); e->bite_cooldown_ms = get_i16(p + 15);

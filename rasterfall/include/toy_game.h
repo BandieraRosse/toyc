@@ -165,6 +165,24 @@ enum toy_game_enemy_type {
     TOY_GAME_ENEMY_TYPE_COUNT
 };
 
+/* Enemy catalog indexes are local implementation details.  These IDs are
+ * stable across map data and network packets. */
+enum toy_game_enemy_id {
+    TOY_GAME_ENEMY_ID_COMMON = 100,
+    TOY_GAME_ENEMY_ID_FAST = 110,
+    TOY_GAME_ENEMY_ID_HEAVY = 120,
+    TOY_GAME_ENEMY_ID_PURSUIT_HEAVY = 130,
+    TOY_GAME_ENEMY_ID_PURSUIT_FAST = 140,
+    TOY_GAME_ENEMY_ID_SMOKER = 200,
+    TOY_GAME_ENEMY_ID_CHARGER = 210
+};
+
+enum toy_game_enemy_ability {
+    TOY_GAME_ENEMY_ABILITY_NONE = 0,
+    TOY_GAME_ENEMY_ABILITY_SMOKER_TONGUE = 10,
+    TOY_GAME_ENEMY_ABILITY_CHARGER_RUSH = 20
+};
+
 enum toy_game_event {
     TOY_GAME_EV_SHOOT,
     TOY_GAME_EV_DRY_FIRE,
@@ -239,6 +257,9 @@ struct toy_game_enemy_info {
     int bite_damage;
     int model_id;
     unsigned int color;
+    int content_id;    /* 稳定内容 ID */
+    const char *name;  /* 调试/配置名称 */
+    int ability;       /* enum toy_game_enemy_ability */
 };
 
 /* 弹丸射线记录：宿主据此渲染子弹轨迹（tracer）与命中特效 */
@@ -517,6 +538,10 @@ int  toy_game_weapon_from_content_id(int content_id);
 const char *toy_game_weapon_name(int weapon);
 int  toy_game_weapon_from_name(const char *name);
 const struct toy_game_enemy_info *toy_game_enemy_info(int type);
+const struct toy_game_enemy_info *toy_game_enemy_info_or_null(int type);
+int  toy_game_enemy_type_is_valid(int type);
+int  toy_game_enemy_content_id(int type);
+int  toy_game_enemy_from_content_id(int content_id);
 struct toy_game_actor *toy_game_actor_by_id(struct toy_game *g, int actor_id);
 const struct toy_game_actor *toy_game_actor_by_id_const(const struct toy_game *g,
                                                         int actor_id);
