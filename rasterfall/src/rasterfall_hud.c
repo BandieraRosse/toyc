@@ -157,8 +157,17 @@ static void render_revive_prompt(struct toy_surface *surface,
     char line[64];
     int width, x, y = surface->height / 2 + 24;
     if (game->player_down || (!state->ai_revive_available &&
-                              !state->ai_revive_active)) return;
-    if (state->ai_revive_active) {
+                              !state->ai_revive_active &&
+                              !state->player_revive_available &&
+                              !state->player_revive_active)) return;
+    if (state->player_revive_active) {
+        snprintf(line, sizeof(line), "REVIVING %s  %d%%",
+                 state->player_revive_name ? state->player_revive_name : "PLAYER",
+                 state->player_revive_progress_ms * 100 / TOY_GAME_REVIVE_MS);
+    } else if (state->player_revive_available) {
+        snprintf(line, sizeof(line), "E REVIVE %s",
+                 state->player_revive_name ? state->player_revive_name : "PLAYER");
+    } else if (state->ai_revive_active) {
         snprintf(line, sizeof(line), "REVIVING %s  %d%%",
                  state->ai_revive_name ? state->ai_revive_name : "ALLY",
                  state->ai_revive_progress_ms * 100 / TOY_GAME_REVIVE_MS);
@@ -172,12 +181,14 @@ static void render_revive_prompt(struct toy_surface *surface,
                   RF_COLOR_UI_BACKGROUND);
     fb_draw_string((unsigned char *)surface->pixels, x, y, line,
                    RF_COLOR_UI_PLAYER, surface->stride);
-    if (state->ai_revive_active) {
+    if (state->player_revive_active || state->ai_revive_active) {
         int bar_x = surface->width / 2 - 64;
+        int progress = state->player_revive_active ?
+            state->player_revive_progress_ms : state->ai_revive_progress_ms;
         hud_fill_rect(surface, bar_x, y + FB_FONT_H + 5, 128, 5, RF_COLOR_UI_PANEL);
         hud_fill_rect(surface, bar_x, y + FB_FONT_H + 5,
-                      state->ai_revive_progress_ms * 128 /
-                      TOY_GAME_REVIVE_MS, 5, RF_COLOR_UI_PLAYER);
+                      progress * 128 / TOY_GAME_REVIVE_MS, 5,
+                      RF_COLOR_UI_PLAYER);
     }
 }
 

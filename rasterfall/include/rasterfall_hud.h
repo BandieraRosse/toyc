@@ -22,6 +22,10 @@ struct rasterfall_hud_state {
     int ai_revive_available;
     int ai_revive_progress_ms;
     const char *ai_revive_name;
+    int player_revive_active;
+    int player_revive_available;
+    int player_revive_progress_ms;
+    const char *player_revive_name;
     int horde_banner_ms;
     const char *interaction_banner;
     const struct rasterfall_net *net;

@@ -266,7 +266,7 @@ static void session_move_player(struct rasterfall_session *session,
 static void session_move_remote_player(struct rasterfall_session *session,
                                        struct camera *camera,
                                        const struct rasterfall_command *command,
-                                       int ground_y)
+                                       int height)
 {
     int dx = (camera->sy * command->move_forward +
               camera->cy * command->move_strafe) * RASTERFALL_MOVE_STEP / 1024;
@@ -276,11 +276,11 @@ static void session_move_remote_player(struct rasterfall_session *session,
     int next_z = camera->z + dz;
     if (!toy_game_position_blocked_at_height(&session->game_state, next_x,
                                              camera->z, RASTERFALL_PLAYER_RADIUS,
-                                             ground_y))
+                                             height))
         camera->x = next_x;
     if (!toy_game_position_blocked_at_height(&session->game_state, camera->x,
                                              next_z, RASTERFALL_PLAYER_RADIUS,
-                                             ground_y))
+                                             height))
         camera->z = next_z;
 }
 

@@ -1687,9 +1687,8 @@ static void net_apply_extra_remote(struct rasterfall_net *net,
     g->px = remote->camera.x; g->pz = remote->camera.z;
     rasterfall_session_step_remote_player(session, &remote->camera,
                                           &remote->command,
-                                          actor->state != TOY_GAME_ACTOR_ALIVE ||
-                                          actor->airborne_ms > 0,
-                                          actor->ground_y);
+                                          actor->state != TOY_GAME_ACTOR_ALIVE,
+                                          actor->ground_y + actor->airborne_y);
     actor->x = remote->camera.x;
     actor->z = remote->camera.z;
     toy_game_update_actor_ground(g, index);
@@ -2018,7 +2017,8 @@ void rasterfall_net_apply_remote(struct rasterfall_net *net,
             rasterfall_session_step_remote_player(session, &net->peer_camera,
                                                   &net->remote_command,
                                                   net->peer_down,
-                                                  g->secondary_player_ground_y);
+                                                  g->secondary_player_ground_y +
+                                                  g->secondary_player_airborne_y);
         g->secondary_px = net->peer_camera.x;
         g->secondary_pz = net->peer_camera.z;
         toy_game_update_secondary_player_ground(g);

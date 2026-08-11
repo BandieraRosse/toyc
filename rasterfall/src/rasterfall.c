@@ -195,7 +195,66 @@ static void fill_hud_state(struct rasterfall_hud_state *hud,
                            const char *host_address, int host_port,
                            const struct camera *camera)
 {
+    int player_target = -1;
+    long player_target_d2 = 0;
+    int player_progress = 0;
+    int player_active = 0;
     int revive_index = rasterfall_session_find_down_ai(&session, camera);
+    int i;
+    memset(hud, 0, sizeof(*hud));
+    if (net_state && net_state->mode != RASTERFALL_NET_OFF) {
+        if (net_state->mode == RASTERFALL_NET_HOST) {
+            if (net_state->peer_known && net_state->connected &&
+                net_state->peer_down) {
+                long dx = (long)camera->x - net_state->peer_camera.x;
+                long dz = (long)camera->z - net_state->peer_camera.z;
+                long d2 = dx * dx + dz * dz;
+                if (d2 <= (long)RASTERFALL_INTERACT_RANGE *
+                          RASTERFALL_INTERACT_RANGE) {
+                    player_target = 1; player_target_d2 = d2;
+                    player_progress = net_state->peer_revive_progress_ms;
+                    player_active = net_state->local_revive_peer_active ||
+                                    player_progress > 0;
+                }
+            }
+            for (i = 0; i < RASTERFALL_NET_REMOTE_MAX; i++) {
+                const struct rasterfall_net_remote *remote =
+                    &net_state->remotes[i];
+                long dx, dz, d2;
+                if (!remote->active || !remote->connected || !remote->down)
+                    continue;
+                dx = (long)camera->x - remote->camera.x;
+                dz = (long)camera->z - remote->camera.z;
+                d2 = dx * dx + dz * dz;
+                if (d2 > (long)RASTERFALL_INTERACT_RANGE *
+                          RASTERFALL_INTERACT_RANGE ||
+                    (player_target >= 0 && d2 >= player_target_d2)) continue;
+                player_target = remote->client_id;
+                player_target_d2 = d2;
+                player_progress = remote->revive_progress_ms;
+                player_active = remote->local_revive_active ||
+                                player_progress > 0;
+            }
+        } else {
+            for (i = 0; i < RASTERFALL_NET_PLAYER_MAX; i++) {
+                const struct rasterfall_net_player *player =
+                    &net_state->players[i];
+                long dx, dz, d2;
+                if (i == net_state->local_player_id || !player->active ||
+                    !player->downed) continue;
+                dx = (long)camera->x - player->camera.x;
+                dz = (long)camera->z - player->camera.z;
+                d2 = dx * dx + dz * dz;
+                if (d2 > (long)RASTERFALL_INTERACT_RANGE *
+                          RASTERFALL_INTERACT_RANGE ||
+                    (player_target >= 0 && d2 >= player_target_d2)) continue;
+                player_target = i;
+                player_target_d2 = d2;
+                player_progress = player->revive_progress_ms;
+                player_active = player_progress > 0;
+            }
+        }
+    }
     hud->game = &session.game_state;
     hud->map = &level_map;
     hud->safe_rooms = map_safe_rooms;
@@ -213,6 +272,10 @@ static void fill_hud_state(struct rasterfall_hud_state *hud,
         session.game_state.actors[session.ai_revive_actor_index].revive_progress_ms : 0;
     hud->ai_revive_name = revive_index >= 0 ?
         session.game_state.actors[revive_index].name : NULL;
+    hud->player_revive_available = player_target >= 0;
+    hud->player_revive_active = player_active;
+    hud->player_revive_progress_ms = player_progress;
+    hud->player_revive_name = player_target >= 0 ? "PLAYER" : NULL;
     hud->horde_banner_ms = session.banner_ms;
     hud->interaction_banner = session.banner_text;
     hud->net = net_state;
