@@ -222,7 +222,9 @@ static const struct toy_game_animation_info animation_table[TOY_GAME_ANIM_COUNT]
     { 400, 1 }, /* MOVE */
     { 180, 0 }, /* FIRE */
     { 900, 0 }, /* RELOAD */
-    { 0,   1 }  /* DOWNED */
+    { 0,   1 }, /* DOWNED */
+    { 140, 0 }, /* HIT */
+    { 700, 0 }  /* DEATH */
 };
 
 const struct toy_game_animation_info *toy_game_animation_info(int animation_id)
@@ -232,30 +234,42 @@ const struct toy_game_animation_info *toy_game_animation_info(int animation_id)
     return &animation_table[animation_id];
 }
 
-void toy_game_actor_set_animation(struct toy_game_actor *actor, int animation_id)
+void toy_game_animation_set(struct toy_game_animation_state *state,
+                            int animation_id)
 {
-    if (!actor) return;
+    if (!state) return;
     if (animation_id < TOY_GAME_ANIM_NONE ||
         animation_id >= TOY_GAME_ANIM_COUNT)
         animation_id = TOY_GAME_ANIM_NONE;
-    if (actor->animation.id != animation_id) {
-        actor->animation.id = animation_id;
-        actor->animation.time_ms = 0;
+    if (state->id != animation_id) {
+        state->id = animation_id;
+        state->time_ms = 0;
     }
+}
+
+void toy_game_animation_update(struct toy_game_animation_state *state,
+                               int dt_ms)
+{
+    const struct toy_game_animation_info *info;
+    if (!state || dt_ms <= 0) return;
+    info = toy_game_animation_info(state->id);
+    state->time_ms += dt_ms;
+    if (info->duration_ms > 0 && state->time_ms >= info->duration_ms) {
+        if (info->loop) state->time_ms %= info->duration_ms;
+        else state->time_ms = info->duration_ms;
+    } else if (state->time_ms > 60000) {
+        state->time_ms %= 60000;
+    }
+}
+
+void toy_game_actor_set_animation(struct toy_game_actor *actor, int animation_id)
+{
+    if (actor) toy_game_animation_set(&actor->animation, animation_id);
 }
 
 void toy_game_actor_update_animation(struct toy_game_actor *actor, int dt_ms)
 {
-    const struct toy_game_animation_info *info;
-    if (!actor || dt_ms <= 0) return;
-    info = toy_game_animation_info(actor->animation.id);
-    actor->animation.time_ms += dt_ms;
-    if (info->duration_ms > 0 && actor->animation.time_ms >= info->duration_ms) {
-        if (info->loop) actor->animation.time_ms %= info->duration_ms;
-        else actor->animation.time_ms = info->duration_ms;
-    } else if (actor->animation.time_ms > 60000) {
-        actor->animation.time_ms %= 60000;
-    }
+    if (actor) toy_game_animation_update(&actor->animation, dt_ms);
 }
 
 static int segment_hits_box(int px, int pz, int qx, int qz,
@@ -522,6 +536,7 @@ int toy_game_revive_actor(struct toy_game *g, int actor_index, int dt_ms)
     a->revive_progress_ms = 0;
     a->hp = TOY_GAME_REVIVE_HP;
     a->state = TOY_GAME_ACTOR_ALIVE;
+    toy_game_actor_set_animation(a, TOY_GAME_ANIM_IDLE);
     if (actor_index == 0) {
         g->ai_hp = a->hp;
         g->ai_down = 0;
@@ -1269,6 +1284,7 @@ static void bite_ai(struct toy_game *g, struct toy_game_enemy *e)
     push_event(g, TOY_GAME_EV_BITE);
     if (actor->hp <= 0) {
         actor->state = TOY_GAME_ACTOR_DOWNED;
+        toy_game_actor_set_animation(actor, TOY_GAME_ANIM_DEATH);
         actor->revive_progress_ms = 0;
         if (index == 0) {
             g->ai_hp = 0;
@@ -1919,8 +1935,9 @@ static void update_smoker(struct toy_game *g, struct toy_game_enemy *e,
                 a->hp -= TOY_GAME_SMOKER_DAMAGE;
                 if (a->hp <= 0) {
                     a->hp = 0; a->state = TOY_GAME_ACTOR_DOWNED;
+                    toy_game_actor_set_animation(a, TOY_GAME_ANIM_DEATH);
                     a->revive_progress_ms = 0;
-                }
+                } else toy_game_actor_set_animation(a, TOY_GAME_ANIM_HIT);
             }
             e->bite_cooldown_ms = 1000;
         }
@@ -2024,7 +2041,11 @@ int toy_game_apply_entity_impact(struct toy_game *g, int kind, int index,
         a = &g->actors[index];
         if (!a->active || a->state != TOY_GAME_ACTOR_ALIVE) return 0;
         a->hp -= damage; if (a->hp < 0) a->hp = 0;
-        if (a->hp == 0) { a->state = TOY_GAME_ACTOR_DOWNED; a->revive_progress_ms = 0; }
+        if (a->hp == 0) {
+            a->state = TOY_GAME_ACTOR_DOWNED;
+            toy_game_actor_set_animation(a, TOY_GAME_ANIM_DEATH);
+            a->revive_progress_ms = 0;
+        } else toy_game_actor_set_animation(a, TOY_GAME_ANIM_HIT);
         a->airborne_ms = TOY_GAME_AIRBORNE_MS;
         a->airborne_y = 0; a->vertical_velocity = TOY_GAME_AIRBORNE_VELOCITY;
         a->knockback_x = dx; a->knockback_z = dz;
@@ -2771,7 +2792,11 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
         load_ai_actor_to_legacy(g, actor);
         return; /* 被击飞时中断自己的行为，落地后恢复。 */
     }
-    if (!g->ai_active || g->ai_down || g->state != TOY_GAME_PLAYING) return;
+    if (!g->ai_active || g->ai_down || g->state != TOY_GAME_PLAYING) {
+        toy_game_actor_update_animation(actor, dt_ms);
+        sync_ai_actor_from_legacy(g);
+        return;
+    }
 
     /* 自由状态下向部署点回位；回位只占用移动，不影响索敌和开火。 */
     {
@@ -2857,9 +2882,13 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
         memcpy(g->ai_rays, g->rays, sizeof(g->ai_rays));
     }
 
-    keep_animation = actor->animation.id == TOY_GAME_ANIM_FIRE &&
-                     actor->animation.time_ms <
-                     toy_game_animation_info(TOY_GAME_ANIM_FIRE)->duration_ms;
+    keep_animation =
+        (actor->animation.id == TOY_GAME_ANIM_FIRE &&
+         actor->animation.time_ms <
+         toy_game_animation_info(TOY_GAME_ANIM_FIRE)->duration_ms) ||
+        (actor->animation.id == TOY_GAME_ANIM_HIT &&
+         actor->animation.time_ms <
+         toy_game_animation_info(TOY_GAME_ANIM_HIT)->duration_ms);
     if (fired) toy_game_actor_set_animation(actor, TOY_GAME_ANIM_FIRE);
     else if (!keep_animation) {
         if (target >= 0) ai_idle = 0;
@@ -2903,9 +2932,23 @@ void toy_game_update_held(struct toy_game *g,
                           int sy, int cy, int dt_ms)
 {
     int i;
+    unsigned int old_fire_seq;
+    int old_reloading;
     if (g->state != TOY_GAME_PLAYING) return;
+    old_fire_seq = g->fire_seq;
+    old_reloading = g->reloading;
     toy_game_update_weapon_held(g, keys_pressed, fire_pressed, fire_held,
                                 sy, cy, dt_ms);
+    if (g->reloading && !old_reloading)
+        toy_game_animation_set(&g->animation, TOY_GAME_ANIM_RELOAD);
+    else if (g->fire_seq != old_fire_seq)
+        toy_game_animation_set(&g->animation, TOY_GAME_ANIM_FIRE);
+    else if (g->animation.id != TOY_GAME_ANIM_RELOAD || !g->reloading)
+        if (g->animation.id != TOY_GAME_ANIM_FIRE ||
+            g->animation.time_ms >=
+                toy_game_animation_info(TOY_GAME_ANIM_FIRE)->duration_ms)
+            toy_game_animation_set(&g->animation, TOY_GAME_ANIM_NONE);
+    toy_game_animation_update(&g->animation, dt_ms);
     toy_game_update_ai_teammates(g, dt_ms);
     if (g->secondary_player_active && !g->secondary_player_down)
         toy_game_update_secondary_player_motion(g, dt_ms);

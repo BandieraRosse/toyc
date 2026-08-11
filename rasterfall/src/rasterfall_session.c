@@ -32,6 +32,7 @@ static void session_down_ai(struct rasterfall_session *session, int index,
     toy_game_move_ai_actor(&session->game_state, index, x, z);
     actor->hp = 0;
     actor->state = TOY_GAME_ACTOR_DOWNED;
+    toy_game_actor_set_animation(actor, TOY_GAME_ANIM_DEATH);
     actor->revive_progress_ms = 0;
     if (index == 0) {
         session->game_state.ai_hp = 0;

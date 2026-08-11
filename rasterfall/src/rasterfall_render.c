@@ -1709,11 +1709,31 @@ static int render_player_avatar(struct toy_renderer *renderer,
 {
     struct rasterfall_animation_pose pose;
     int pixels = 0, face_y0, face_y1, animation_lift;
+    int death_progress = 0, body_top, body_bottom, head_y, fall_shift;
     if (!renderer || !camera) return 0;
     rasterfall_animation_sample(animation_id, animation_time_ms, &pose);
     animation_lift = pose.body_lift;
     active_actor_lift += animation_lift;
-    if (downed) {
+    if (downed && animation_id == TOY_GAME_ANIM_DEATH) {
+        death_progress = animation_time_ms * 1000 /
+                         toy_game_animation_info(TOY_GAME_ANIM_DEATH)->duration_ms;
+        if (death_progress > 1000) death_progress = 1000;
+        body_top = -100 - 550 * death_progress / 1000;
+        body_bottom = -620 - 230 * death_progress / 1000;
+        head_y = 50 - 600 * death_progress / 1000;
+        fall_shift = 160 * death_progress / 1000;
+        pixels += draw_actor_box(renderer, camera,
+                                 x + sy * fall_shift / 1024,
+                                 z + cy * fall_shift / 1024,
+                                 sy, cy, -155, 155, body_bottom, body_top,
+                                 -100, 100, body_color);
+        pixels += draw_ellipsoid_head(renderer, camera,
+                                      x + sy * fall_shift / 1024,
+                                      z + cy * fall_shift / 1024,
+                                      head_y + active_actor_lift, 145, 150,
+                                      0xD2A878);
+        face_y0 = head_y - 100; face_y1 = head_y + 80;
+    } else if (downed) {
         pixels += draw_cuboid(renderer, camera, x - 170, x + 170,
                               -850 + active_actor_lift, -650 + active_actor_lift,
                               z - 100, z + 100, body_color);

@@ -146,6 +146,8 @@ enum toy_game_animation_id {
     TOY_GAME_ANIM_FIRE,
     TOY_GAME_ANIM_RELOAD,
     TOY_GAME_ANIM_DOWNED,
+    TOY_GAME_ANIM_HIT,
+    TOY_GAME_ANIM_DEATH,
     TOY_GAME_ANIM_COUNT
 };
 
@@ -373,6 +375,7 @@ struct toy_game {
     int state;          /* enum toy_game_state */
     struct toy_game_slot slots[TOY_GAME_WEAPON_SLOTS];
     int current_slot;   /* 当前出枪槽位（0/1） */
+    struct toy_game_animation_state animation;
     int reloading, reload_timer_ms;
     int fire_cooldown_ms;
     int muzzle_flash_ms;
@@ -573,6 +576,10 @@ struct toy_game_animation_info {
     int loop;
 };
 const struct toy_game_animation_info *toy_game_animation_info(int animation_id);
+void toy_game_animation_set(struct toy_game_animation_state *state,
+                            int animation_id);
+void toy_game_animation_update(struct toy_game_animation_state *state,
+                               int dt_ms);
 void toy_game_actor_set_animation(struct toy_game_actor *actor, int animation_id);
 void toy_game_actor_update_animation(struct toy_game_actor *actor, int dt_ms);
 int  toy_game_drain_events(struct toy_game *g, unsigned char *out, int max);

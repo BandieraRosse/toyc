@@ -146,9 +146,11 @@ static int fill_triangle_2d(struct toy_surface *surface,
 
 static int render_model_weapon(struct toy_surface *surface,
                                const struct rasterfall_model_asset *model,
-                               int weapon, int kick)
+                               int weapon, int kick,
+                               int animation_id, int animation_time_ms)
 {
     int i, drawn = 0, width, height, depth, length, scale;
+    int reload_down = 0, reload_pitch = 0;
     int focal = surface->width * 3 / 4;
     if (!model || !model->data) return 0;
     width = model->max_x - model->min_x;
@@ -157,6 +159,15 @@ static int render_model_weapon(struct toy_surface *surface,
     length = width > height ? width : height;
     if (depth > length) length = depth;
     if (length <= 0) return 0;
+    if (animation_id == TOY_GAME_ANIM_RELOAD) {
+        int phase = animation_time_ms * 1000 /
+                    toy_game_animation_info(TOY_GAME_ANIM_RELOAD)->duration_ms;
+        int arc = phase < 500 ? phase * 2 : (1000 - phase) * 2;
+        if (arc < 0) arc = 0;
+        if (arc > 1000) arc = 1000;
+        reload_down = arc * 120 / 1000;
+        reload_pitch = arc * 3 / 1000;
+    }
     /* Keep the imported model in 3D view space.  The gun starts at the
      * lower-right and its forward axis travels left/up toward the crosshair. */
     scale = (weapon == TOY_GAME_WEAPON_SHOTGUN ? 360000 : 180000) / length;
@@ -213,7 +224,8 @@ static int render_model_weapon(struct toy_surface *surface,
                      * this is a real view-space yaw/pitch, not a flat 2D
                      * side-profile shear. */
                     v[k].x = VIEWMODEL_ORIGIN_X + local_x - local_z * 3 / 10 + kick / 3;
-                    v[k].y = VIEWMODEL_ORIGIN_Y + local_y + local_z * 2 / 10 - kick / 2;
+                    v[k].y = VIEWMODEL_ORIGIN_Y + local_y + local_z * (2 + reload_pitch) / 10 -
+                             kick / 2 - reload_down;
                     v[k].z = VIEWMODEL_ORIGIN_Z + local_z * 9 / 10 + local_x / 8 + kick;
                 }
             }
@@ -245,7 +257,9 @@ int rasterfall_viewmodel_render(struct toy_renderer *renderer,
         weapon <= TOY_GAME_WEAPON_SHOTGUN &&
         viewmodel_models[weapon].data) {
         return render_model_weapon(&renderer->surface,
-                                   &viewmodel_models[weapon], weapon, kick);
+                                   &viewmodel_models[weapon], weapon, kick,
+                                   game->animation.id,
+                                   game->animation.time_ms);
     }
     return 0;
 }

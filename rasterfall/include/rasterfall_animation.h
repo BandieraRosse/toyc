@@ -8,6 +8,7 @@
  * without changing actor state or network code. */
 struct rasterfall_animation_pose {
     int body_lift;
+    int forward_shift;
     int leg_swing;
 };
 
@@ -17,6 +18,7 @@ static void rasterfall_animation_sample(int animation_id, int time_ms,
     int phase;
     if (!pose) return;
     pose->body_lift = 0;
+    pose->forward_shift = 0;
     pose->leg_swing = 0;
     if (time_ms < 0) time_ms = 0;
     if (animation_id == TOY_GAME_ANIM_IDLE) {
@@ -28,6 +30,9 @@ static void rasterfall_animation_sample(int animation_id, int time_ms,
         pose->leg_swing = phase < 4 ? 1 : -1;
     } else if (animation_id == TOY_GAME_ANIM_FIRE) {
         pose->body_lift = time_ms < 60 ? -24 : 0;
+    } else if (animation_id == TOY_GAME_ANIM_HIT) {
+        pose->body_lift = time_ms < 70 ? -18 : 0;
+        pose->forward_shift = time_ms < 140 ? 90 - time_ms * 3 / 5 : 0;
     }
 }
 
