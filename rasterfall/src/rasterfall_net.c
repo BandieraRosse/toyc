@@ -262,13 +262,14 @@ static int get_i8_value(unsigned char value)
 /* Weapon slot -1 (empty) must survive the byte-packed snapshot. */
 static unsigned char put_weapon_value(int weapon)
 {
-    return (unsigned char)(weapon < 0 ? 0 : weapon + 1);
+    int content_id = toy_game_weapon_content_id(weapon);
+    return (unsigned char)(content_id < 0 ? 0 : content_id);
 }
 
 static int get_weapon_value(unsigned char value)
 {
-    int weapon = (int)value - 1;
-    return weapon >= -1 && weapon < TOY_GAME_WEAPON_COUNT ? weapon : -1;
+    if (value == 0) return -1;
+    return toy_game_weapon_from_content_id((int)value);
 }
 
 static int packet_begin(unsigned char *packet, int type, int payload_size,

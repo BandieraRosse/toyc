@@ -61,17 +61,9 @@ static int draw_hud_value(struct toy_surface *surface, int x,
 
 static const char *weapon_abbreviation(int weapon)
 {
-    static char abbreviation[8];
-    const char *name = toy_game_weapon_name(weapon);
-    int i;
-    if (weapon < 0 || !name || !*name) return "--";
-    for (i = 0; i < 6 && name[i]; i++) abbreviation[i] = name[i];
-    abbreviation[i] = 0;
-    if (i > 3) abbreviation[3] = 0;
-    if (weapon == TOY_GAME_WEAPON_SHOTGUN) return "SG";
-    if (weapon == TOY_GAME_WEAPON_PISTOL) return "PG";
-    if (weapon == TOY_GAME_WEAPON_SMG) return "SMG";
-    return abbreviation;
+    const struct toy_game_weapon_info *info =
+        toy_game_weapon_info_or_null(weapon);
+    return info ? info->short_name : "--";
 }
 
 static void render_weapon_card(struct toy_surface *surface, int x, int y,

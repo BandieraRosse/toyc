@@ -202,6 +202,20 @@ enum toy_game_weapon {
     TOY_GAME_WEAPON_COUNT
 };
 
+/* Stable content IDs are deliberately separate from the local catalog index.
+ * The index is allowed to change when the catalog is reorganised; the ID is
+ * part of save/network/content data and must not be reused. */
+enum toy_game_weapon_id {
+    TOY_GAME_WEAPON_ID_PISTOL = 10,
+    TOY_GAME_WEAPON_ID_SMG = 20,
+    TOY_GAME_WEAPON_ID_SHOTGUN = 30
+};
+
+enum toy_game_weapon_muzzle_profile {
+    TOY_GAME_MUZZLE_STANDARD = 0,
+    TOY_GAME_MUZZLE_SHOTGUN
+};
+
 struct toy_game_weapon_info {
     int mag_size;      /* 弹匣容量 */
     int reserve_max;   /* 备弹上限；TOY_GAME_AMMO_INFINITE = 无限 */
@@ -212,6 +226,10 @@ struct toy_game_weapon_info {
     int spread;        /* 每颗弹丸随机偏角上限（1024 定点，[-spread,+spread] 均匀） */
     int slot;          /* 装备槽：0=主武器，1=副武器 */
     int damage;        /* 单颗弹丸伤害；霰弹枪按每颗弹丸计算 */
+    int content_id;    /* 稳定内容 ID；不要把数组下标当作网络 ID */
+    const char *name;  /* 调试/配置名称 */
+    const char *short_name; /* HUD 名称 */
+    int muzzle_profile; /* 表现层使用的枪口布局 */
 };
 
 struct toy_game_enemy_info {
@@ -492,6 +510,10 @@ int  toy_game_switch_weapon(struct toy_game *g, int slot);  /* 切枪；空槽/�
 int  toy_game_equip_weapon(struct toy_game *g, int weapon); /* 按武器定义装备到对应槽；同武器=补充弹药返回 0，新武器返回 1，非法返回 -1 */
 int  toy_game_refill_ammo(struct toy_game *g);              /* 弹药盒：补满已拥有武器的备弹，有变化返回 1 */
 const struct toy_game_weapon_info *toy_game_weapon_info(int weapon);
+const struct toy_game_weapon_info *toy_game_weapon_info_or_null(int weapon);
+int  toy_game_weapon_is_valid(int weapon);
+int  toy_game_weapon_content_id(int weapon);
+int  toy_game_weapon_from_content_id(int content_id);
 const char *toy_game_weapon_name(int weapon);
 int  toy_game_weapon_from_name(const char *name);
 const struct toy_game_enemy_info *toy_game_enemy_info(int type);

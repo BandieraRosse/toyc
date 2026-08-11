@@ -51,20 +51,22 @@ static const struct toy_game_weapon_info weapon_table[TOY_GAME_WEAPON_COUNT] = {
       TOY_CONFIG_PISTOL_COOLDOWN_MS, TOY_CONFIG_PISTOL_RELOAD_MS,
       TOY_CONFIG_PISTOL_FULL_AUTO, TOY_CONFIG_PISTOL_PELLETS,
       TOY_CONFIG_PISTOL_SPREAD, TOY_CONFIG_PISTOL_SLOT,
-      TOY_CONFIG_PISTOL_DAMAGE },
+      TOY_CONFIG_PISTOL_DAMAGE,
+      TOY_GAME_WEAPON_ID_PISTOL, "PISTOL", "PG",
+      TOY_GAME_MUZZLE_STANDARD },
     { TOY_CONFIG_SMG_MAG, TOY_CONFIG_SMG_RESERVE,
       TOY_CONFIG_SMG_COOLDOWN_MS, TOY_CONFIG_SMG_RELOAD_MS,
       TOY_CONFIG_SMG_FULL_AUTO, TOY_CONFIG_SMG_PELLETS,
-      TOY_CONFIG_SMG_SPREAD, TOY_CONFIG_SMG_SLOT, TOY_CONFIG_SMG_DAMAGE },
+      TOY_CONFIG_SMG_SPREAD, TOY_CONFIG_SMG_SLOT, TOY_CONFIG_SMG_DAMAGE,
+      TOY_GAME_WEAPON_ID_SMG, "SMG", "SMG",
+      TOY_GAME_MUZZLE_STANDARD },
     { TOY_CONFIG_SHOTGUN_MAG, TOY_CONFIG_SHOTGUN_RESERVE,
       TOY_CONFIG_SHOTGUN_COOLDOWN_MS, TOY_CONFIG_SHOTGUN_RELOAD_MS,
       TOY_CONFIG_SHOTGUN_FULL_AUTO, TOY_CONFIG_SHOTGUN_PELLETS,
       TOY_CONFIG_SHOTGUN_SPREAD, TOY_CONFIG_SHOTGUN_SLOT,
-      TOY_CONFIG_SHOTGUN_DAMAGE },
-};
-
-static const char *weapon_names[TOY_GAME_WEAPON_COUNT] = {
-    "PISTOL", "SMG", "SHOTGUN"
+      TOY_CONFIG_SHOTGUN_DAMAGE,
+      TOY_GAME_WEAPON_ID_SHOTGUN, "SHOTGUN", "SG",
+      TOY_GAME_MUZZLE_SHOTGUN },
 };
 
 static const struct toy_game_enemy_info enemy_table[TOY_GAME_ENEMY_TYPE_COUNT] = {
@@ -92,15 +94,44 @@ static const struct toy_game_ai_info ai_table[TOY_GAME_AI_CLASS_COUNT] = {
 
 const struct toy_game_weapon_info *toy_game_weapon_info(int weapon)
 {
-    if (weapon < 0 || weapon >= TOY_GAME_WEAPON_COUNT)
+    const struct toy_game_weapon_info *info =
+        toy_game_weapon_info_or_null(weapon);
+    if (!info)
         return &weapon_table[TOY_GAME_WEAPON_PISTOL];
+    return info;
+}
+
+const struct toy_game_weapon_info *toy_game_weapon_info_or_null(int weapon)
+{
+    if (weapon < 0 || weapon >= TOY_GAME_WEAPON_COUNT) return NULL;
     return &weapon_table[weapon];
+}
+
+int toy_game_weapon_is_valid(int weapon)
+{
+    return toy_game_weapon_info_or_null(weapon) != NULL;
+}
+
+int toy_game_weapon_content_id(int weapon)
+{
+    const struct toy_game_weapon_info *info =
+        toy_game_weapon_info_or_null(weapon);
+    return info ? info->content_id : -1;
+}
+
+int toy_game_weapon_from_content_id(int content_id)
+{
+    int i;
+    for (i = 0; i < TOY_GAME_WEAPON_COUNT; i++)
+        if (weapon_table[i].content_id == content_id) return i;
+    return -1;
 }
 
 const char *toy_game_weapon_name(int weapon)
 {
-    if (weapon < 0 || weapon >= TOY_GAME_WEAPON_COUNT) return "UNKNOWN";
-    return weapon_names[weapon];
+    const struct toy_game_weapon_info *info =
+        toy_game_weapon_info_or_null(weapon);
+    return info ? info->name : "UNKNOWN";
 }
 
 int toy_game_weapon_from_name(const char *name)
@@ -108,7 +139,7 @@ int toy_game_weapon_from_name(const char *name)
     int i;
     if (!name) return -1;
     for (i = 0; i < TOY_GAME_WEAPON_COUNT; i++)
-        if (!strcmp(name, weapon_names[i]) ||
+        if (!strcmp(name, weapon_table[i].name) ||
             (i == TOY_GAME_WEAPON_PISTOL && !strcmp(name, "pistol")) ||
             (i == TOY_GAME_WEAPON_SMG && !strcmp(name, "smg")) ||
             (i == TOY_GAME_WEAPON_SHOTGUN && !strcmp(name, "shotgun")))

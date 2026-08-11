@@ -55,8 +55,7 @@ void rasterfall_viewmodel_muzzle_offset(int weapon, int kick,
     struct rasterfall_model_asset *model;
     int width, height, depth, length, scale, muzzle_distance, muzzle_height;
     viewmodel_load_models();
-    if (weapon < TOY_GAME_WEAPON_PISTOL ||
-        weapon > TOY_GAME_WEAPON_SHOTGUN ||
+    if (!toy_game_weapon_is_valid(weapon) ||
         !(model = &viewmodel_models[weapon])->data) {
         *x = VIEWMODEL_ORIGIN_X;
         *y = VIEWMODEL_ORIGIN_Y + 24;
@@ -67,14 +66,16 @@ void rasterfall_viewmodel_muzzle_offset(int weapon, int kick,
         depth = model->max_z - model->min_z;
         length = width > height ? width : height;
         if (depth > length) length = depth;
-        scale = (weapon == TOY_GAME_WEAPON_SHOTGUN ? 360000 : 180000) /
+        scale = (toy_game_weapon_info(weapon)->muzzle_profile ==
+                 TOY_GAME_MUZZLE_SHOTGUN ? 360000 : 180000) /
                 (length > 0 ? length : 1);
         if (scale < 1) scale = 1;
         /* All three imported meshes use their positive forward extreme as
          * the muzzle: Z for PG/SMG, X for SG.  There is no muzzle marker in
          * RFM2 yet, so put the origin near the top of the model bounds: this
          * is a useful empirical approximation for the visible barrel. */
-        muzzle_distance = weapon == TOY_GAME_WEAPON_SHOTGUN ?
+        muzzle_distance = toy_game_weapon_info(weapon)->muzzle_profile ==
+            TOY_GAME_MUZZLE_SHOTGUN ?
             (model->max_x - model->min_x) / 2 :
             (model->max_z - model->min_z) / 2;
         muzzle_distance = muzzle_distance * scale / 1000;

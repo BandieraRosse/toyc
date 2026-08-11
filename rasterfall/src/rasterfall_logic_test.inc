@@ -54,6 +54,17 @@ static int run_logic_test(void)
             toy_game_weapon_from_name("SMG") != TOY_GAME_WEAPON_SMG ||
             toy_game_weapon_from_name("shotgun") != TOY_GAME_WEAPON_SHOTGUN ||
             toy_game_weapon_from_name("missing") >= 0) return 53;
+        if (!toy_game_weapon_is_valid(TOY_GAME_WEAPON_PISTOL) ||
+            toy_game_weapon_is_valid(-1) ||
+            toy_game_weapon_content_id(TOY_GAME_WEAPON_PISTOL) !=
+                TOY_GAME_WEAPON_ID_PISTOL ||
+            toy_game_weapon_content_id(TOY_GAME_WEAPON_SMG) !=
+                TOY_GAME_WEAPON_ID_SMG ||
+            toy_game_weapon_from_content_id(TOY_GAME_WEAPON_ID_SHOTGUN) !=
+                TOY_GAME_WEAPON_SHOTGUN ||
+            toy_game_weapon_from_content_id(99) >= 0 ||
+            strcmp(smg->short_name, "SMG") != 0 ||
+            shotgun->muzzle_profile != TOY_GAME_MUZZLE_SHOTGUN) return 55;
         if (!game.actors[1].active ||
             game.actors[1].class_id != TOY_GAME_AI_LEVEL_1 ||
             game.actors[1].slots[0].weapon != TOY_GAME_WEAPON_PISTOL ||
