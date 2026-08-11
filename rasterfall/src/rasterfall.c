@@ -1464,6 +1464,34 @@ startup_again:
                 }
                 if (net.mode == RASTERFALL_NET_HOST) {
                     rasterfall_net_apply_remote(&net, &session, &camera);
+                    /* Remote fire state is advanced by apply_remote().  The
+                     * pre-step visual pass cannot observe that shot until
+                     * the next frame; replay the guarded sequence here so
+                     * the host hears it immediately and never loses a burst
+                     * between snapshots. */
+                    if (net.peer_known) {
+                        sync_network_fire_effects(
+                            &camera, &net.peer_camera, 1,
+                            net.peer_current_slot >= 0 &&
+                            net.peer_current_slot < TOY_GAME_WEAPON_SLOTS ?
+                            net.peer_slots[net.peer_current_slot].weapon : -1,
+                            net.peer_fire_seq, net.peer_ray_count,
+                            net.peer_rays, &audio);
+                    }
+                    for (int i = 0; i < RASTERFALL_NET_REMOTE_MAX; i++) {
+                        const struct rasterfall_net_remote *remote =
+                            &net.remotes[i];
+                        int weapon;
+                        if (!remote->active || !remote->connected) continue;
+                        weapon = remote->current_slot >= 0 &&
+                                 remote->current_slot < TOY_GAME_WEAPON_SLOTS ?
+                                 remote->slots[remote->current_slot].weapon : -1;
+                        sync_network_fire_effects(&camera, &remote->camera,
+                                                  remote->client_id, weapon,
+                                                  remote->fire_seq,
+                                                  remote->ray_count, remote->rays,
+                                                  &audio);
+                    }
                     if ((net.tick % 3) == 0)
                         rasterfall_net_send_snapshot(&net, &camera, &game,
                                                      session.air_walls_enabled,

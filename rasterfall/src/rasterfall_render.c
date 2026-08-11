@@ -1596,6 +1596,20 @@ static int render_actor_weapon(struct toy_renderer *renderer,
                                      weapon, muzzle_flash);
 }
 
+static int network_actor_lift(int x, int z, int airborne_y)
+{
+    int lift = airborne_y;
+    int i;
+    for (i = 0; i < level_map.platform_count; i++) {
+        const struct toy_game_platform *platform = &level_map.platforms[i];
+        if (x >= platform->minx && x <= platform->maxx &&
+            z >= platform->minz && z <= platform->maxz &&
+            platform->height > lift)
+            lift = platform->height;
+    }
+    return lift;
+}
+
 static void render_ai_teammate_name(struct toy_renderer *renderer,
                                     const struct camera *camera)
 {
@@ -1715,7 +1729,9 @@ static int render_network_teammate(struct toy_renderer *renderer,
         for (i = 0; i < RASTERFALL_NET_PLAYER_MAX; i++) {
             const struct rasterfall_net_player *player = &net->players[i];
             if (!player->active || i == net->local_player_id) continue;
-            active_actor_lift = player->airborne_y;
+            active_actor_lift = network_actor_lift(player->camera.x,
+                                                   player->camera.z,
+                                                   player->airborne_y);
             pixels += render_player_avatar(renderer, camera,
                 player->camera.x, player->camera.z, player->camera.sy,
                 player->camera.cy, player->weapon, player->muzzle_flash_ms,
@@ -1728,7 +1744,9 @@ static int render_network_teammate(struct toy_renderer *renderer,
         int weapon = net->peer_current_slot >= 0 &&
                      net->peer_current_slot < TOY_GAME_WEAPON_SLOTS ?
                      net->peer_slots[net->peer_current_slot].weapon : -1;
-        active_actor_lift = net->peer_airborne_y;
+        active_actor_lift = network_actor_lift(net->peer_camera.x,
+                                               net->peer_camera.z,
+                                               net->peer_airborne_y);
         pixels += render_player_avatar(renderer, camera, net->peer_camera.x,
             net->peer_camera.z, net->peer_camera.sy, net->peer_camera.cy,
             weapon, net->peer_muzzle_flash_ms, colors[1], net->peer_down);
@@ -1741,7 +1759,9 @@ static int render_network_teammate(struct toy_renderer *renderer,
         weapon = remote->current_slot >= 0 &&
                  remote->current_slot < TOY_GAME_WEAPON_SLOTS ?
                  remote->slots[remote->current_slot].weapon : -1;
-        active_actor_lift = remote->airborne_y;
+        active_actor_lift = network_actor_lift(remote->camera.x,
+                                               remote->camera.z,
+                                               remote->airborne_y);
         pixels += render_player_avatar(renderer, camera, remote->camera.x,
             remote->camera.z, remote->camera.sy, remote->camera.cy, weapon,
             remote->muzzle_flash_ms, colors[remote->client_id], remote->down);

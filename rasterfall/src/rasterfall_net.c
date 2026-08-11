@@ -2017,8 +2017,7 @@ void rasterfall_net_apply_remote(struct rasterfall_net *net,
         if (!net->peer_down)
             rasterfall_session_step_remote_player(session, &net->peer_camera,
                                                   &net->remote_command,
-                                                  net->peer_down ||
-                                                  g->secondary_player_airborne_ms > 0,
+                                                  net->peer_down,
                                                   g->secondary_player_ground_y);
         g->secondary_px = net->peer_camera.x;
         g->secondary_pz = net->peer_camera.z;

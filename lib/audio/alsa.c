@@ -369,9 +369,11 @@ int tlibc_pcm_configure(struct tlibc_pcm *pcm)
     sw.sleep_min        = 0;
     sw.avail_min        = 1;                       /* 有空间即唤醒 */
     sw.xfer_align       = 1;
-    sw.start_threshold  = (pcm->buffer_size > 1)
-                           ? (unsigned long)(pcm->buffer_size / 2)
-                           : 1;                     /* 半满才启动（同 mpg123），防 XRUN */
+    /* Rasterfall and other interactive callers submit continuously from a
+     * producer thread.  Waiting for half the device buffer before starting
+     * makes the first short effect inherit the whole prebuffer as audible
+     * latency (and can be seconds on devices that report a large buffer). */
+    sw.start_threshold  = 1;
     sw.stop_threshold   = 0x7FFFFFFFFFFFFFFFUL;    /* 几乎不自动停止 */
     sw.silence_threshold = 0;
     sw.silence_size     = 0;

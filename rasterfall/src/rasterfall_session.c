@@ -243,8 +243,7 @@ static void session_move_player(struct rasterfall_session *session,
                                 struct camera *camera,
                                 const struct rasterfall_command *command)
 {
-    if (session->game_state.player_control_disabled ||
-        session->game_state.player_airborne_ms > 0)
+    if (session->game_state.player_control_disabled)
         return;
     int dx = (camera->sy * command->move_forward +
               camera->cy * command->move_strafe) * RASTERFALL_MOVE_STEP / 1024;
@@ -254,11 +253,13 @@ static void session_move_player(struct rasterfall_session *session,
     int next_z = camera->z + dz;
     if (!toy_game_position_blocked_at_height(&session->game_state, next_x,
                                              camera->z, RASTERFALL_PLAYER_RADIUS,
-                                             session->game_state.player_ground_y))
+                                             session->game_state.player_ground_y +
+                                             session->game_state.player_airborne_y))
         camera->x = next_x;
     if (!toy_game_position_blocked_at_height(&session->game_state, camera->x,
                                              next_z, RASTERFALL_PLAYER_RADIUS,
-                                             session->game_state.player_ground_y))
+                                             session->game_state.player_ground_y +
+                                             session->game_state.player_airborne_y))
         camera->z = next_z;
 }
 
