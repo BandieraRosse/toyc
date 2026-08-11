@@ -10,7 +10,7 @@
 #define RASTERFALL_NET_MAX_PACKET 2700
 #define RASTERFALL_NET_MAX_SNAPSHOT 8192
 #define RASTERFALL_NET_PROTOCOL_VERSION 22
-#define RASTERFALL_NET_MAX_ACTORS 12
+#define RASTERFALL_NET_MAX_ACTORS 32
 #define RASTERFALL_NET_PLAYER_MAX 4
 #define RASTERFALL_NET_REMOTE_MAX 2
 #define RASTERFALL_NET_EVENT_QUEUE_MAX 64
@@ -98,6 +98,7 @@ struct rasterfall_net_player {
 };
 
 struct rasterfall_net_enemy {
+    int index;
     int active, type, ai_state, hp;
     int x, z, speed;
     int bite_cooldown_ms, flash, hurt, dying_ms;
@@ -282,6 +283,22 @@ struct rasterfall_net {
     struct sockaddr_in public_server;
     long last_public_register_ms;
     long last_public_punch_ms;
+    /* Rolling transport diagnostics.  Loss is estimated from gaps in the
+     * monotonic packet sequence received from the current peer. */
+    long net_stats_window_start_ms;
+    unsigned long net_stats_tx_bytes;
+    unsigned long net_stats_rx_bytes;
+    unsigned long net_stats_tx_packets;
+    unsigned long net_stats_rx_packets;
+    unsigned long net_stats_lost_packets;
+    uint32_t net_stats_last_rx_sequence;
+    int net_stats_have_rx_sequence;
+    int net_stats_tx_bps;
+    int net_stats_rx_bps;
+    int net_stats_loss_permille;
+    int net_stats_avg_rtt_ms;
+    long net_stats_rtt_sum_ms;
+    int net_stats_rtt_samples;
 };
 
 void rasterfall_net_init(struct rasterfall_net *net);

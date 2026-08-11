@@ -248,6 +248,17 @@ const char *toy_game_animation_name(int animation_id)
     return animation_names[animation_id];
 }
 
+/* Locomotion is the only animation family that the session layer may replace
+ * every tick.  Keep this whitelist here so newly added action animations are
+ * not accidentally cleared by movement-state bookkeeping in the host/client
+ * session paths. */
+int toy_game_animation_allows_locomotion(int animation_id)
+{
+    return animation_id == TOY_GAME_ANIM_NONE ||
+           animation_id == TOY_GAME_ANIM_IDLE ||
+           animation_id == TOY_GAME_ANIM_MOVE;
+}
+
 void toy_game_animation_set(struct toy_game_animation_state *state,
                             int animation_id)
 {
@@ -1091,10 +1102,14 @@ static int toy_game_shove_at(struct toy_game *g, int origin_x, int origin_z,
 
 int toy_game_shove(struct toy_game *g, int sy, int cy)
 {
+    int pushed;
     if (!g || g->state != TOY_GAME_PLAYING || g->player_down) return 0;
     g->animation.id = TOY_GAME_ANIM_SHOVE;
     g->animation.time_ms = 0;
-    return toy_game_shove_at(g, g->px, g->pz, sy, cy);
+    push_event(g, TOY_GAME_EV_SHOVE);
+    pushed = toy_game_shove_at(g, g->px, g->pz, sy, cy);
+    if (pushed > 0) push_event(g, TOY_GAME_EV_SHOVE_HIT);
+    return pushed;
 }
 
 /* ── 波次状态机 ────────────────────────────────────────────────── */
@@ -2722,6 +2737,19 @@ int toy_game_switch_weapon(struct toy_game *g, int slot)
     return 1;
 }
 
+static int toy_game_start_empty_reload(
+    struct toy_game *g, struct toy_game_slot *s,
+    const struct toy_game_weapon_info *w)
+{
+    if (!g || !s || !w || g->reloading || s->mag > 0 ||
+        (s->reserve != TOY_GAME_AMMO_INFINITE && s->reserve <= 0))
+        return 0;
+    g->reloading = 1;
+    g->reload_timer_ms = w->reload_ms;
+    push_event(g, TOY_GAME_EV_RELOAD_START);
+    return 1;
+}
+
 /* 拾取主武器（SMG/霰弹枪）。同武器 = 补满弹匣与备弹；新武器替换槽 0 并自动切出。 */
 int toy_game_equip_weapon(struct toy_game *g, int weapon)
 {
@@ -2785,6 +2813,11 @@ void toy_game_update_weapon_held(struct toy_game *g,
     }
     s = &g->slots[g->current_slot];
     w = toy_game_weapon_info(s->weapon);
+
+    /* An empty weapon remains eligible for automatic reload after switching
+     * back to it.  Switching intentionally cancels the old timer, so this
+     * check must happen after the new slot has been selected. */
+    toy_game_start_empty_reload(g, s, w);
 
     if (g->fire_cooldown_ms > 0) {
         g->fire_cooldown_ms -= dt_ms;
@@ -3099,12 +3132,14 @@ void toy_game_update_held(struct toy_game *g,
         if (g->animation.id != TOY_GAME_ANIM_FIRE ||
             g->animation.time_ms >=
                 toy_game_animation_info(TOY_GAME_ANIM_FIRE)->duration_ms)
-            if (g->animation.id != TOY_GAME_ANIM_HIT ||
-                g->animation.time_ms >=
-                toy_game_animation_info(TOY_GAME_ANIM_HIT)->duration_ms)
+                if (g->animation.id != TOY_GAME_ANIM_HIT ||
+                    g->animation.time_ms >=
+                    toy_game_animation_info(TOY_GAME_ANIM_HIT)->duration_ms)
                 if (g->animation.id != TOY_GAME_ANIM_DEATH &&
                     g->animation.id != TOY_GAME_ANIM_REVIVE &&
-                    g->animation.id != TOY_GAME_ANIM_SHOVE)
+                    (g->animation.id != TOY_GAME_ANIM_SHOVE ||
+                     g->animation.time_ms >=
+                     toy_game_animation_info(TOY_GAME_ANIM_SHOVE)->duration_ms))
                     toy_game_animation_set(&g->animation, TOY_GAME_ANIM_NONE);
     toy_game_animation_update(&g->animation, dt_ms);
     toy_game_update_ai_teammates(g, dt_ms);

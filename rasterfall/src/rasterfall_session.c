@@ -632,10 +632,8 @@ void rasterfall_session_step(struct rasterfall_session *session,
                          (command->buttons & RASTERFALL_CMD_FIRE) != 0,
                          command->fire_held, camera->sy, camera->cy, dt_ms);
     if (!session->game_state.reloading &&
-        session->game_state.animation.id != TOY_GAME_ANIM_FIRE &&
-        session->game_state.animation.id != TOY_GAME_ANIM_HIT &&
-        session->game_state.animation.id != TOY_GAME_ANIM_DEATH &&
-        session->game_state.animation.id != TOY_GAME_ANIM_REVIVE)
+        toy_game_animation_allows_locomotion(
+            session->game_state.animation.id))
         toy_game_animation_set(&session->game_state.animation,
                                command->move_forward || command->move_strafe ?
                                TOY_GAME_ANIM_MOVE : TOY_GAME_ANIM_NONE);
@@ -680,6 +678,11 @@ void rasterfall_session_step_client(struct rasterfall_session *session,
     session->highlight_index = rasterfall_session_compute_highlight(session, camera);
     if (command->buttons & RASTERFALL_CMD_INTERACT)
         session_client_interact_banner(session);
+    /* Predict only the local first-person presentation.  The host remains
+     * authoritative for the shove's enemy displacement and stun state. */
+    if (command->buttons & RASTERFALL_CMD_SHOVE)
+        toy_game_animation_set(&session->game_state.animation,
+                               TOY_GAME_ANIM_SHOVE);
     /* AI rescue remains host-authoritative, but keep the local action state so
      * the client can render the same progress bar while the host advances it.
      * The actor's authoritative progress arrives in the next snapshot. */
@@ -710,11 +713,19 @@ void rasterfall_session_step_client(struct rasterfall_session *session,
                                 (command->buttons & RASTERFALL_CMD_FIRE) != 0,
                                 command->fire_held, camera->sy, camera->cy,
                                 dt_ms);
+    /* There is no local gameplay update on the client for the shove, so
+     * advance its presentation clock here until the authoritative snapshot
+     * replaces it. */
+    if (session->game_state.animation.id == TOY_GAME_ANIM_SHOVE) {
+        toy_game_animation_update(&session->game_state.animation, dt_ms);
+        if (session->game_state.animation.time_ms >=
+            toy_game_animation_info(TOY_GAME_ANIM_SHOVE)->duration_ms)
+            toy_game_animation_set(&session->game_state.animation,
+                                   TOY_GAME_ANIM_NONE);
+    }
     if (!session->game_state.reloading &&
-        session->game_state.animation.id != TOY_GAME_ANIM_FIRE &&
-        session->game_state.animation.id != TOY_GAME_ANIM_HIT &&
-        session->game_state.animation.id != TOY_GAME_ANIM_DEATH &&
-        session->game_state.animation.id != TOY_GAME_ANIM_REVIVE)
+        toy_game_animation_allows_locomotion(
+            session->game_state.animation.id))
         toy_game_animation_set(&session->game_state.animation,
                                command->move_forward || command->move_strafe ?
                                TOY_GAME_ANIM_MOVE : TOY_GAME_ANIM_NONE);

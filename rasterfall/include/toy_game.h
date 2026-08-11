@@ -18,7 +18,7 @@
 #include "rasterfall_colors.h"
 
 #define TOY_GAME_MAX_ENEMIES    64
-#define TOY_GAME_MAX_ACTORS     12
+#define TOY_GAME_MAX_ACTORS     32
 #define TOY_GAME_MAX_PLAYERS    4
 #define TOY_GAME_REMOTE_ACTOR_BASE 8
 #define TOY_GAME_MAX_PLATFORMS  16
@@ -220,6 +220,8 @@ enum toy_game_event {
     TOY_GAME_EV_SPAWN,
     TOY_GAME_EV_OBJECTIVE,
     TOY_GAME_EV_WEAPON_SWITCH,
+    TOY_GAME_EV_SHOVE,
+    TOY_GAME_EV_SHOVE_HIT,
 };
 
 /* 碰撞/命中共用的 xz 平面轴对齐盒（与房间障碍物同尺度） */
@@ -582,6 +584,7 @@ struct toy_game_animation_info {
 };
 const struct toy_game_animation_info *toy_game_animation_info(int animation_id);
 const char *toy_game_animation_name(int animation_id);
+int toy_game_animation_allows_locomotion(int animation_id);
 void toy_game_animation_set(struct toy_game_animation_state *state,
                             int animation_id);
 void toy_game_animation_update(struct toy_game_animation_state *state,
@@ -618,6 +621,8 @@ enum toy_sfx_kind {
     TOY_SFX_KILL,
     TOY_SFX_BITE,
     TOY_SFX_PLAYER_DEATH,
+    TOY_SFX_SHOVE,
+    TOY_SFX_SHOVE_HIT,
 };
 
 /* 每个 kind 可注册一段 PCM16 样本（TSND 资产）替代程序合成 */
@@ -646,7 +651,7 @@ struct toy_sfx {
     unsigned int music_pos;
     unsigned int melody_phase;
     unsigned int bass_phase;
-    struct toy_sfx_sample samples[TOY_SFX_PLAYER_DEATH + 1];
+    struct toy_sfx_sample samples[TOY_SFX_SHOVE_HIT + 1];
     struct toy_sfx_voice voices[TOY_SFX_MAX_VOICES];
 };
 

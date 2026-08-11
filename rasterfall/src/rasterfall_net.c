@@ -52,6 +52,58 @@ static long net_monotonic_ms(void)
     return (long)now.tv_sec * 1000L + now.tv_nsec / 1000000L;
 }
 
+static void net_stats_roll(struct rasterfall_net *net)
+{
+    long now, elapsed;
+    if (!net) return;
+    now = net_monotonic_ms();
+    if (!net->net_stats_window_start_ms)
+        net->net_stats_window_start_ms = now;
+    elapsed = now - net->net_stats_window_start_ms;
+    if (elapsed < 1000) return;
+    net->net_stats_tx_bps = (int)(net->net_stats_tx_bytes * 1000 / elapsed);
+    net->net_stats_rx_bps = (int)(net->net_stats_rx_bytes * 1000 / elapsed);
+    if (net->net_stats_rx_packets + net->net_stats_lost_packets > 0)
+        net->net_stats_loss_permille = (int)
+            (net->net_stats_lost_packets * 1000 /
+             (net->net_stats_rx_packets + net->net_stats_lost_packets));
+    if (net->net_stats_rtt_samples > 0)
+        net->net_stats_avg_rtt_ms = (int)(net->net_stats_rtt_sum_ms /
+                                          net->net_stats_rtt_samples);
+    net->net_stats_window_start_ms = now;
+    net->net_stats_tx_bytes = 0;
+    net->net_stats_rx_bytes = 0;
+    net->net_stats_tx_packets = 0;
+    net->net_stats_rx_packets = 0;
+    net->net_stats_lost_packets = 0;
+    net->net_stats_rtt_sum_ms = 0;
+    net->net_stats_rtt_samples = 0;
+}
+
+static void net_stats_note_rtt(struct rasterfall_net *net, long elapsed)
+{
+    if (!net || elapsed < 0 || elapsed >= 60000) return;
+    net->rtt_ms = (int)elapsed;
+    net->net_stats_rtt_sum_ms += elapsed;
+    net->net_stats_rtt_samples++;
+    net_stats_roll(net);
+}
+
+static void net_stats_note_sequence(struct rasterfall_net *net,
+                                     uint32_t sequence)
+{
+    if (!net || !sequence) return;
+    if (net->net_stats_have_rx_sequence &&
+        sequence > net->net_stats_last_rx_sequence + 1)
+        net->net_stats_lost_packets +=
+            sequence - net->net_stats_last_rx_sequence - 1;
+    if (!net->net_stats_have_rx_sequence ||
+        sequence > net->net_stats_last_rx_sequence) {
+        net->net_stats_last_rx_sequence = sequence;
+        net->net_stats_have_rx_sequence = 1;
+    }
+}
+
 static void net_push_event(struct toy_game *game, unsigned char event)
 {
     if (game->event_count < TOY_GAME_MAX_EVENTS)
@@ -523,6 +575,11 @@ static int net_send(struct rasterfall_net *net, unsigned char *packet, int size)
     if (net->fd < 0 || !net->peer_known || size <= 0) return -1;
     sent = sendto(net->fd, packet, (size_t)size, 0,
                   (const struct sockaddr *)&net->peer, sizeof(net->peer));
+    if (sent == size) {
+        net->net_stats_tx_bytes += (unsigned long)size;
+        net->net_stats_tx_packets++;
+        net_stats_roll(net);
+    }
     return sent == size ? 0 : -1;
 }
 
@@ -534,6 +591,11 @@ static int net_send_to(struct rasterfall_net *net,
     if (!net || !address || net->fd < 0 || size <= 0) return -1;
     sent = sendto(net->fd, packet, (size_t)size, 0,
                   (const struct sockaddr *)address, sizeof(*address));
+    if (sent == size) {
+        net->net_stats_tx_bytes += (unsigned long)size;
+        net->net_stats_tx_packets++;
+        net_stats_roll(net);
+    }
     return sent == size ? 0 : -1;
 }
 
@@ -1020,7 +1082,8 @@ static int decode_player(const unsigned char *p,
     return player->id >= 0 && player->id < RASTERFALL_NET_PLAYER_MAX ? 0 : -1;
 }
 
-static void encode_enemy(unsigned char *p, const struct toy_game_enemy *e)
+static void encode_enemy(unsigned char *p, const struct toy_game_enemy *e,
+                         int index)
 {
     p[0] = (unsigned char)e->active;
     p[1] = (unsigned char)(toy_game_enemy_content_id(e->type) < 0 ? 0 :
@@ -1044,11 +1107,13 @@ static void encode_enemy(unsigned char *p, const struct toy_game_enemy *e)
     put_i16(p + 41, e->charge_elapsed_ms);
     put_i16(p + 43, e->airborne_ms);
     put_i16(p + 45, e->airborne_y);
+    p[47] = (unsigned char)index;
 }
 
 static void decode_enemy(const unsigned char *p, struct rasterfall_net_enemy *e)
 {
     memset(e, 0, sizeof(*e));
+    e->index = p[47];
     e->active = p[0];
     e->type = toy_game_enemy_from_content_id((int)p[1]);
     if (e->type < 0) e->type = TOY_GAME_ENEMY_COMMON;
@@ -1172,15 +1237,20 @@ int rasterfall_net_send_snapshot(struct rasterfall_net *net,
     unsigned char *world_data;
     int actor_count = 0;
     int actor_indices[RASTERFALL_NET_MAX_ACTORS];
+    int enemy_count = 0;
+    int enemy_indices[TOY_GAME_MAX_ENEMIES];
     int actor_i;
     for (actor_i = 0; actor_i < TOY_GAME_MAX_ACTORS &&
          actor_count < RASTERFALL_NET_MAX_ACTORS; actor_i++)
         if (game->actors[actor_i].active)
             actor_indices[actor_count++] = actor_i;
+    for (int enemy_i = 0; enemy_i < TOY_GAME_MAX_ENEMIES; enemy_i++)
+        if (game->enemies[enemy_i].active)
+            enemy_indices[enemy_count++] = enemy_i;
     int payload_size = NET_SNAPSHOT_BASE +
                        RASTERFALL_NET_PLAYER_MAX * NET_PLAYER_SIZE + 1 +
                        actor_count * NET_ACTOR_SIZE +
-                       TOY_GAME_MAX_ENEMIES * NET_ENEMY_SIZE + NET_EVENT_SIZE + NET_WORLD_SIZE;
+                       enemy_count * NET_ENEMY_SIZE + NET_EVENT_SIZE + NET_WORLD_SIZE;
     int size, offset, part_count, part_index;
     if (net->mode != RASTERFALL_NET_HOST ||
         (!net->peer_known && !net->remotes[0].active &&
@@ -1235,14 +1305,13 @@ int rasterfall_net_send_snapshot(struct rasterfall_net *net,
                      actor_indices[actor_i]);
     }
     p[NET_SNAPSHOT_BASE + RASTERFALL_NET_PLAYER_MAX * NET_PLAYER_SIZE +
-      actor_count * NET_ACTOR_SIZE] =
-        TOY_GAME_MAX_ENEMIES;
-    for (int i = 0; i < TOY_GAME_MAX_ENEMIES; i++)
+      actor_count * NET_ACTOR_SIZE] = (unsigned char)enemy_count;
+    for (int i = 0; i < enemy_count; i++)
         encode_enemy(p + NET_SNAPSHOT_BASE + RASTERFALL_NET_PLAYER_MAX * NET_PLAYER_SIZE +
                      actor_count * NET_ACTOR_SIZE + 1 + i * NET_ENEMY_SIZE,
-                     &game->enemies[i]);
+                     &game->enemies[enemy_indices[i]], enemy_indices[i]);
     event_data = p + NET_SNAPSHOT_BASE + RASTERFALL_NET_PLAYER_MAX * NET_PLAYER_SIZE +
-                 actor_count * NET_ACTOR_SIZE + 1 + TOY_GAME_MAX_ENEMIES * NET_ENEMY_SIZE;
+                 actor_count * NET_ACTOR_SIZE + 1 + enemy_count * NET_ENEMY_SIZE;
     world_data = event_data + NET_EVENT_SIZE;
     /* Reliable events use their own packet and event-id ACK.  Keep the
      * legacy snapshot event area empty so a lost snapshot cannot duplicate
@@ -1319,7 +1388,9 @@ static int decode_snapshot(const unsigned char *payload, int size,
         payload[7] > RASTERFALL_NET_MAX_ACTORS ||
         size != NET_SNAPSHOT_BASE + count * NET_PLAYER_SIZE +
                 payload[7] * NET_ACTOR_SIZE + 1 +
-                TOY_GAME_MAX_ENEMIES * NET_ENEMY_SIZE + NET_EVENT_SIZE + NET_WORLD_SIZE) return -1;
+                payload[NET_SNAPSHOT_BASE + count * NET_PLAYER_SIZE +
+                        payload[7] * NET_ACTOR_SIZE] * NET_ENEMY_SIZE +
+                NET_EVENT_SIZE + NET_WORLD_SIZE) return -1;
     for (i = 0; i < RASTERFALL_NET_PLAYER_MAX; i++)
         net->players[i].active = 0;
     for (i = 0; i < count; i++) {
@@ -1333,13 +1404,13 @@ static int decode_snapshot(const unsigned char *payload, int size,
     for (i = 0; i < net->actor_count; i++)
         decode_actor(payload + NET_SNAPSHOT_BASE + count * NET_PLAYER_SIZE +
                      i * NET_ACTOR_SIZE, &net->actors[i]);
-    event_data = payload + NET_SNAPSHOT_BASE + count * NET_PLAYER_SIZE +
-                 net->actor_count * NET_ACTOR_SIZE + 1 +
-                 TOY_GAME_MAX_ENEMIES * NET_ENEMY_SIZE;
-    world_data = event_data + NET_EVENT_SIZE;
     net->enemy_count = payload[NET_SNAPSHOT_BASE + count * NET_PLAYER_SIZE +
                                net->actor_count * NET_ACTOR_SIZE];
     if (net->enemy_count > TOY_GAME_MAX_ENEMIES) return -1;
+    event_data = payload + NET_SNAPSHOT_BASE + count * NET_PLAYER_SIZE +
+                 net->actor_count * NET_ACTOR_SIZE + 1 +
+                 net->enemy_count * NET_ENEMY_SIZE;
+    world_data = event_data + NET_EVENT_SIZE;
     for (i = 0; i < net->enemy_count; i++)
         decode_enemy(payload + NET_SNAPSHOT_BASE + count * NET_PLAYER_SIZE +
                      net->actor_count * NET_ACTOR_SIZE + 1 + i * NET_ENEMY_SIZE,
@@ -1468,6 +1539,9 @@ void rasterfall_net_poll(struct rasterfall_net *net)
             if (received == -EAGAIN) return;
             return;
         }
+        net->net_stats_rx_bytes += (unsigned long)received;
+        net->net_stats_rx_packets++;
+        net_stats_roll(net);
         if (net->public_room && punch_packet(packet, (int)received, PUNCH_MATCH)) {
             uint32_t match_token;
             int new_match;
@@ -1553,6 +1627,7 @@ void rasterfall_net_poll(struct rasterfall_net *net)
         }
         if (packet_header(packet, (int)received, &type, &payload_size,
                           &sequence, &ack) < 0) continue;
+        net_stats_note_sequence(net, sequence);
         net->last_receive_ms = net_monotonic_ms();
         if (net->mode == RASTERFALL_NET_HOST) {
             if (net->relay_mode && relay_client_id >= 2) {
@@ -1676,7 +1751,7 @@ void rasterfall_net_poll(struct rasterfall_net *net)
                 if (ack == net->last_snapshot_sequence &&
                     net->last_snapshot_sent_ms) {
                     long elapsed = net_monotonic_ms() - net->last_snapshot_sent_ms;
-                    if (elapsed >= 0 && elapsed < 60000) net->rtt_ms = (int)elapsed;
+                    net_stats_note_rtt(net, elapsed);
                 }
                 net->last_input_sequence = sequence;
                 net->receive_sequence = sequence;
@@ -1722,10 +1797,10 @@ void rasterfall_net_poll(struct rasterfall_net *net)
                 net->connected = 1;
                 if (ack == net->last_command_sequence && net->last_command_sent_ms) {
                     long elapsed = net_monotonic_ms() - net->last_command_sent_ms;
-                    if (elapsed >= 0 && elapsed < 60000) net->rtt_ms = (int)elapsed;
+                    net_stats_note_rtt(net, elapsed);
                 } else if (net->last_command_sent_ms) {
                     long elapsed = net_monotonic_ms() - net->last_command_sent_ms;
-                    if (elapsed >= 0 && elapsed < 60000) net->rtt_ms = (int)elapsed;
+                    net_stats_note_rtt(net, elapsed);
                 }
             }
         }
@@ -1739,6 +1814,7 @@ void rasterfall_net_update_connection(struct rasterfall_net *net)
     int size, i;
     if (!net || net->fd < 0 || net->mode == RASTERFALL_NET_OFF) return;
     now = net_monotonic_ms();
+    net_stats_roll(net);
     if (net->mode == RASTERFALL_NET_HOST) {
         net_drop_reliable_events(net);
         net_send_reliable_events(net);
@@ -2708,9 +2784,14 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
     }
     if (session && net->enemy_count >= 0) {
         int i;
+        int seen[TOY_GAME_MAX_ENEMIES];
+        memset(seen, 0, sizeof(seen));
         for (i = 0; i < net->enemy_count; i++) {
-            struct toy_game_enemy *dst = &session->game_state.enemies[i];
             const struct rasterfall_net_enemy *src = &net->enemies[i];
+            struct toy_game_enemy *dst;
+            int index = src->index;
+            if (index < 0 || index >= TOY_GAME_MAX_ENEMIES) continue;
+            dst = &session->game_state.enemies[index];
             int old_active = dst->active;
             dst->active = src->active; dst->type = src->type;
             dst->ai_state = src->ai_state;
@@ -2740,10 +2821,12 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
                 dst->dir_x += (src->dir_x - dst->dir_x) / 3;
                 dst->dir_z += (src->dir_z - dst->dir_z) / 3;
             }
+            seen[index] = 1;
         }
-        for (; i < TOY_GAME_MAX_ENEMIES; i++)
-            memset(&session->game_state.enemies[i], 0,
-                   sizeof(session->game_state.enemies[i]));
+        for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++)
+            if (!seen[i])
+                memset(&session->game_state.enemies[i], 0,
+                       sizeof(session->game_state.enemies[i]));
     }
     if (net->last_jump_command_sequence &&
         net->last_snapshot_input_ack < net->last_jump_command_sequence) {

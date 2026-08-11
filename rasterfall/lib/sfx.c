@@ -61,7 +61,7 @@ struct sfx_spec {
     int freq1;      /* 扫频终点 Hz（0 = 无扫频） */
 };
 
-static const struct sfx_spec sfx_specs[TOY_SFX_PLAYER_DEATH + 1] = {
+static const struct sfx_spec sfx_specs[TOY_SFX_SHOVE_HIT + 1] = {
     { 130, 22000, 110, 55 },   /* GUNSHOT：噪声 + 平方衰减 + 110→55Hz 低频炮膛声 */
     {  14, 18000, 0,   0   },  /* DRY_FIRE：短噪声 */
     {  40, 18000, 1100, 1100 },/* RELOAD_START：双咔嗒（2ms 噪声 + 1100Hz 方波） */
@@ -70,6 +70,8 @@ static const struct sfx_spec sfx_specs[TOY_SFX_PLAYER_DEATH + 1] = {
     { 220, 20000, 140, 50  },  /* KILL：轻噪声冲击 + 140→50Hz 下扫 */
     { 280, 18000, 150, 55  },  /* BITE：150→55Hz 下扫 + 强二次谐波 */
     { 750, 20000, 380, 45  },  /* PLAYER_DEATH：长下扫 + 淡泛音 */
+    { 150, 19000, 280, 90  },  /* SHOVE：短促挥动噪声 + 低频扫 */
+    { 100, 21000, 95, 35   },  /* SHOVE_HIT：沉闷的命中冲击 */
 };
 
 static int voice_noise_sample(struct toy_sfx_voice *v)
@@ -107,7 +109,7 @@ void toy_sfx_play(struct toy_sfx *sfx, int kind)
     int i, victim = -1, remain = 0x7fffffff;
     const struct sfx_spec *spec;
     if (!sfx || !sfx->enabled) return;
-    if (kind < 0 || kind > TOY_SFX_PLAYER_DEATH) return;
+    if (kind < 0 || kind > TOY_SFX_SHOVE_HIT) return;
     spec = &sfx_specs[kind];
     for (i = 0; i < TOY_SFX_MAX_VOICES; i++) {
         struct toy_sfx_voice *cand = &sfx->voices[i];
@@ -144,7 +146,7 @@ void toy_sfx_play(struct toy_sfx *sfx, int kind)
 void toy_sfx_set_sample(struct toy_sfx *sfx, int kind, const short *pcm,
                         unsigned frames)
 {
-    if (!sfx || kind < 0 || kind > TOY_SFX_PLAYER_DEATH) return;
+    if (!sfx || kind < 0 || kind > TOY_SFX_SHOVE_HIT) return;
     if (pcm && frames > 0) {
         sfx->samples[kind].data = pcm;
         sfx->samples[kind].frames = frames;
@@ -251,6 +253,16 @@ static int render_voice(struct toy_sfx_voice *v)
             else
                 sample += sine_table[index2] * env / 4 / 32768;
         }
+        break;
+    case TOY_SFX_SHOVE:
+        /* A broad whoosh with a short low-frequency body. */
+        sample = voice_noise_sample(v) * env / 32768;
+        sample += voice_sine_step(v) * env / 32768 / 2;
+        break;
+    case TOY_SFX_SHOVE_HIT:
+        /* Dense impact noise, followed by a low thump. */
+        sample = voice_noise_sample(v) * env * 3 / 4 / 32768;
+        sample += voice_sine_step(v) * env * 3 / 4 / 32768;
         break;
     default:
         break;

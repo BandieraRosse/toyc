@@ -247,6 +247,24 @@ static void render_network_hud(struct toy_surface *surface,
         fb_draw_string((unsigned char *)surface->pixels, x, line_y, line,
                        RF_COLOR_UI_SECONDARY, surface->stride);
     }
+    {
+        int line_y = y + FB_FONT_H *
+            (net->mode == RASTERFALL_NET_HOST ? 3 : 2);
+        int loss_major = net->net_stats_loss_permille / 10;
+        int loss_minor = net->net_stats_loss_permille % 10;
+        snprintf(line, sizeof(line), "NET AVG %dMS TX %d RX %dKB/S LOSS %d.%d%%",
+                 net->net_stats_avg_rtt_ms,
+                 net->net_stats_tx_bps / 1024,
+                 net->net_stats_rx_bps / 1024,
+                 loss_major, loss_minor);
+        width = (int)strlen(line) * FB_FONT_W;
+        x = surface->width - width - 10;
+        if (x < 8) x = 8;
+        hud_fill_rect(surface, x - 4, line_y - 2, width + 8,
+                      FB_FONT_H + 4, 0x182634);
+        fb_draw_string((unsigned char *)surface->pixels, x, line_y, line,
+                       RF_COLOR_UI_SECONDARY, surface->stride);
+    }
 }
 
 static void render_director_hud(struct toy_surface *surface,
