@@ -19,6 +19,7 @@
 #define special_target_actor_index ability.special_target_actor_index
 #include "rasterfall_model.h"
 #include "rasterfall_viewmodel.h"
+#include "rasterfall_animation.h"
 #include "math.h"
 
 #define NEAR_Z 192
@@ -1706,13 +1707,12 @@ static int render_player_avatar(struct toy_renderer *renderer,
                                 uint32_t body_color, int downed,
                                 int animation_id, int animation_time_ms)
 {
-    int pixels = 0, face_y0, face_y1, animation_lift = 0;
+    struct rasterfall_animation_pose pose;
+    int pixels = 0, face_y0, face_y1, animation_lift;
     if (!renderer || !camera) return 0;
-    if (animation_id == TOY_GAME_ANIM_IDLE) {
-        int phase = (animation_time_ms / 100) % 8;
-        animation_lift = (phase < 4 ? phase : 7 - phase) * 4;
-        active_actor_lift += animation_lift;
-    }
+    rasterfall_animation_sample(animation_id, animation_time_ms, &pose);
+    animation_lift = pose.body_lift;
+    active_actor_lift += animation_lift;
     if (downed) {
         pixels += draw_cuboid(renderer, camera, x - 170, x + 170,
                               -850 + active_actor_lift, -650 + active_actor_lift,

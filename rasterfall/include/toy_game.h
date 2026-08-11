@@ -143,7 +143,10 @@ enum toy_game_animation_id {
     TOY_GAME_ANIM_NONE,
     TOY_GAME_ANIM_IDLE,
     TOY_GAME_ANIM_MOVE,
-    TOY_GAME_ANIM_FIRE
+    TOY_GAME_ANIM_FIRE,
+    TOY_GAME_ANIM_RELOAD,
+    TOY_GAME_ANIM_DOWNED,
+    TOY_GAME_ANIM_COUNT
 };
 
 struct toy_game_animation_state {
@@ -565,6 +568,11 @@ int  toy_game_enemy_from_content_id(int content_id);
 struct toy_game_actor *toy_game_actor_by_id(struct toy_game *g, int actor_id);
 const struct toy_game_actor *toy_game_actor_by_id_const(const struct toy_game *g,
                                                         int actor_id);
+struct toy_game_animation_info {
+    int duration_ms;
+    int loop;
+};
+const struct toy_game_animation_info *toy_game_animation_info(int animation_id);
 void toy_game_actor_set_animation(struct toy_game_actor *actor, int animation_id);
 void toy_game_actor_update_animation(struct toy_game_actor *actor, int dt_ms);
 int  toy_game_drain_events(struct toy_game *g, unsigned char *out, int max);

@@ -1,0 +1,34 @@
+#ifndef RASTERFALL_ANIMATION_H
+#define RASTERFALL_ANIMATION_H
+
+#include "toy_game.h"
+
+/* Presentation-only result of sampling a gameplay animation state.  The
+ * renderer can later replace these procedural poses with skeleton channels
+ * without changing actor state or network code. */
+struct rasterfall_animation_pose {
+    int body_lift;
+    int leg_swing;
+};
+
+static void rasterfall_animation_sample(int animation_id, int time_ms,
+                                        struct rasterfall_animation_pose *pose)
+{
+    int phase;
+    if (!pose) return;
+    pose->body_lift = 0;
+    pose->leg_swing = 0;
+    if (time_ms < 0) time_ms = 0;
+    if (animation_id == TOY_GAME_ANIM_IDLE) {
+        phase = (time_ms / 100) % 8;
+        pose->body_lift = (phase < 4 ? phase : 7 - phase) * 4;
+    } else if (animation_id == TOY_GAME_ANIM_MOVE) {
+        phase = (time_ms / 50) % 8;
+        pose->body_lift = (phase < 4 ? phase : 7 - phase) * 3;
+        pose->leg_swing = phase < 4 ? 1 : -1;
+    } else if (animation_id == TOY_GAME_ANIM_FIRE) {
+        pose->body_lift = time_ms < 60 ? -24 : 0;
+    }
+}
+
+#endif

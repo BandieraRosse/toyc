@@ -1099,7 +1099,7 @@ static void decode_actor(const unsigned char *p, struct rasterfall_net_actor *a)
     a->hp = get_i16(p + 15);
     a->airborne_ms = get_i16(p + 22);
     a->airborne_y = get_i16(p + 24);
-    a->animation.id = p[26] <= TOY_GAME_ANIM_FIRE ? p[26] :
+    a->animation.id = p[26] < TOY_GAME_ANIM_COUNT ? p[26] :
                       TOY_GAME_ANIM_NONE;
     a->animation.time_ms = get_i16(p + 27);
     if (a->state == TOY_GAME_ACTOR_DOWNED)
@@ -2603,7 +2603,8 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
             dst->fire_seq = src->fire_seq;
             dst->airborne_ms = src->airborne_ms;
             dst->airborne_y = src->airborne_y;
-            dst->animation = src->animation;
+            dst->animation.id = src->animation.id;
+            dst->animation.time_ms = src->animation.time_ms;
             dst->revive_progress_ms = src->revive_progress_ms;
             dst->ray_count = src->ray_count;
             memcpy(dst->rays, src->rays, sizeof(dst->rays));

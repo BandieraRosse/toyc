@@ -216,11 +216,27 @@ const struct toy_game_actor *toy_game_actor_by_id_const(const struct toy_game *g
     return NULL;
 }
 
+static const struct toy_game_animation_info animation_table[TOY_GAME_ANIM_COUNT] = {
+    { 0,   0 }, /* NONE */
+    { 800, 1 }, /* IDLE */
+    { 400, 1 }, /* MOVE */
+    { 180, 0 }, /* FIRE */
+    { 900, 0 }, /* RELOAD */
+    { 0,   1 }  /* DOWNED */
+};
+
+const struct toy_game_animation_info *toy_game_animation_info(int animation_id)
+{
+    if (animation_id < 0 || animation_id >= TOY_GAME_ANIM_COUNT)
+        return &animation_table[TOY_GAME_ANIM_NONE];
+    return &animation_table[animation_id];
+}
+
 void toy_game_actor_set_animation(struct toy_game_actor *actor, int animation_id)
 {
     if (!actor) return;
     if (animation_id < TOY_GAME_ANIM_NONE ||
-        animation_id > TOY_GAME_ANIM_FIRE)
+        animation_id >= TOY_GAME_ANIM_COUNT)
         animation_id = TOY_GAME_ANIM_NONE;
     if (actor->animation.id != animation_id) {
         actor->animation.id = animation_id;
@@ -230,10 +246,16 @@ void toy_game_actor_set_animation(struct toy_game_actor *actor, int animation_id
 
 void toy_game_actor_update_animation(struct toy_game_actor *actor, int dt_ms)
 {
+    const struct toy_game_animation_info *info;
     if (!actor || dt_ms <= 0) return;
+    info = toy_game_animation_info(actor->animation.id);
     actor->animation.time_ms += dt_ms;
-    if (actor->animation.time_ms > 60000)
+    if (info->duration_ms > 0 && actor->animation.time_ms >= info->duration_ms) {
+        if (info->loop) actor->animation.time_ms %= info->duration_ms;
+        else actor->animation.time_ms = info->duration_ms;
+    } else if (actor->animation.time_ms > 60000) {
         actor->animation.time_ms %= 60000;
+    }
 }
 
 static int segment_hits_box(int px, int pz, int qx, int qz,
@@ -2735,6 +2757,8 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
     int sy = 0, cy = 1024;
     int player_down;
     int ai_idle = 1;
+    int fired = 0;
+    int keep_animation = 0;
     sync_ai_actor_from_legacy(g);
     actor = &g->actors[g->ai_context_actor_index];
     if (actor->airborne_ms > 0) {
@@ -2827,14 +2851,21 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
     g->ai_sy = target >= 0 ? sy : g->ai_sy;
     g->ai_cy = target >= 0 ? cy : g->ai_cy;
     if (g->fire_seq != player_fire_seq) {
+        fired = 1;
         g->ai_fire_seq++;
         g->ai_ray_count = g->ray_count;
         memcpy(g->ai_rays, g->rays, sizeof(g->ai_rays));
     }
 
-    if (target >= 0) ai_idle = 0;
-    toy_game_actor_set_animation(actor, ai_idle ? TOY_GAME_ANIM_IDLE :
-                                 TOY_GAME_ANIM_MOVE);
+    keep_animation = actor->animation.id == TOY_GAME_ANIM_FIRE &&
+                     actor->animation.time_ms <
+                     toy_game_animation_info(TOY_GAME_ANIM_FIRE)->duration_ms;
+    if (fired) toy_game_actor_set_animation(actor, TOY_GAME_ANIM_FIRE);
+    else if (!keep_animation) {
+        if (target >= 0) ai_idle = 0;
+        toy_game_actor_set_animation(actor, ai_idle ? TOY_GAME_ANIM_IDLE :
+                                     TOY_GAME_ANIM_MOVE);
+    }
     toy_game_actor_update_animation(actor, dt_ms);
 
     memcpy(g->slots, player_slots, sizeof(g->slots));

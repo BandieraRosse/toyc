@@ -87,7 +87,10 @@ static int run_logic_test(void)
         toy_game_actor_set_animation(&game.actors[1], TOY_GAME_ANIM_IDLE);
         toy_game_actor_update_animation(&game.actors[1], 160);
         if (game.actors[1].animation.id != TOY_GAME_ANIM_IDLE ||
-            game.actors[1].animation.time_ms != 160) return 59;
+            game.actors[1].animation.time_ms != 160 ||
+            toy_game_animation_info(TOY_GAME_ANIM_FIRE)->duration_ms != 180 ||
+            toy_game_animation_info(TOY_GAME_ANIM_FIRE)->loop ||
+            toy_game_animation_info(99)->duration_ms != 0) return 59;
         if (!game.actors[1].active ||
             game.actors[1].class_id != TOY_GAME_AI_LEVEL_1 ||
             game.actors[1].slots[0].weapon != TOY_GAME_WEAPON_PISTOL ||
