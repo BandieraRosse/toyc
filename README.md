@@ -35,8 +35,12 @@ make clean              # 删除 build/ 和 tmp/
 
 ### Rasterfall
 
-Rasterfall 是一个用 Toyc/Tinylibc 构建的 Linux x86_64 第一人称射击原型，支持本地
-运行和基础 UDP 联机。先构建应用，再启动主程序：
+Rasterfall 是一个用 Toyc/Tinylibc 构建的第一人称射击原型，包含软件渲染、程序合成
+音效、本地运行和基础 UDP 联机。Linux 版本使用 Wayland、ALSA/WSLg 音频和仓库内的
+freestanding 运行时；Windows 版本通过独立平台层使用 SDL2、Win32 线程/同步和
+Winsock，不要求 Toyc 输出 PE/COFF。
+
+Linux 构建和运行：
 
 ```sh
 make generate-assets
@@ -51,6 +55,26 @@ build/rasterfall --logic-test
 build/rasterfall --host --port 28460
 build/rasterfall --connect 127.0.0.1 --port 28460
 ```
+
+Windows 版本需要 Linux 主机上的 MinGW-w64、CMake、Ninja 和 SDL2 构建依赖。首次
+构建先安装/准备依赖（SDL2 源码和交叉编译工具会缓存到 `.windows-deps/`），然后生成
+`build/rasterfall.exe`：
+
+```sh
+make win-deps
+make win-rasterfall
+```
+
+如果依赖已经准备好，后续可直接使用增量构建：
+
+```sh
+make win-rasterfall
+```
+
+也可以直接执行 `make -f windows/Makefile`。Windows 构建会把
+`rasterfall/assets/` 复制到 `build/assets/rasterfall/assets/`；运行程序时应保持该
+资源目录与 `rasterfall.exe` 一起分发。修改源文件、头文件或 Rasterfall 资源后，
+Windows Makefile 会按依赖关系增量编译和重新链接。
 
 `bootstrap/` 保存版本控制内的种子二进制。它们用于阶段性的自举检查，不参与默认
 `make`，而且可能落后于源码：

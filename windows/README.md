@@ -20,6 +20,6 @@ it after an interrupted download to resume instead of starting over. If you
 already have the Debian packages installed, it also skips `apt update`.
 
 The Windows layer is selected only by the Windows target and implements the
-existing window, audio, timing, and socket boundaries. The first milestone
-uses one render thread so Linux `clone`/futex/TLS code does not need to be
-ported before the game is playable.
+window, audio, timing, socket, directory enumeration, thread, and synchronization
+boundaries. Rasterfall uses an audio thread and a software-rendering worker pool;
+Linux `clone`/futex/TLS code is not required by this target.

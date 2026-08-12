@@ -36,14 +36,33 @@ all apps, or one app. `make self-app-<name>` is the self-hosted equivalent.
 
 ### Rasterfall
 
-Rasterfall is a Linux x86_64 first-person shooter prototype built with Toyc/Tinylibc.
-It supports local play and basic UDP networking. Build the application, then launch it:
+Rasterfall is a first-person shooter prototype built with Toyc/Tinylibc. It provides
+software rendering, generated sound effects, local play, and basic UDP networking.
+The Linux build uses Wayland, ALSA/WSLg audio, and the repository's freestanding
+runtime. The Windows build is isolated in a platform layer using SDL2, Win32
+threads/synchronization, and Winsock; Toyc does not need to emit PE/COFF.
+
+Linux build and run:
 
 ```sh
 make generate-assets
 make app-rasterfall
 build/rasterfall
 ```
+
+The Windows build requires MinGW-w64, CMake, Ninja, and SDL2 build dependencies on
+the Linux host. Prepare them once, then build `build/rasterfall.exe`:
+
+```sh
+make win-deps
+make win-rasterfall
+```
+
+After dependencies are ready, `make win-rasterfall` or
+`make -f windows/Makefile` performs an incremental build. The Windows target copies
+`rasterfall/assets/` to `build/assets/rasterfall/assets/`; distribute that asset
+directory with `rasterfall.exe`. Source, header, and Rasterfall asset changes are
+tracked by the Windows Makefile dependencies.
 
 The headless logic check is available with:
 
