@@ -1653,6 +1653,7 @@ startup_again:
                 int shop_enter = toy_input_pressed(&input, KEY_ENTER);
                 int shop_page_before = session.shop_page;
                 int shop_selected_before = session.shop_selected;
+                session.shop_request_only = net.mode == RASTERFALL_NET_CLIENT;
                 rasterfall_effects_update(&effects, FIXED_STEP_US / 1000);
                 if (shop_input) {
                     rasterfall_session_shop_input(

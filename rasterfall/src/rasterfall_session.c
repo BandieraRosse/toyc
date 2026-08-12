@@ -298,6 +298,7 @@ void rasterfall_session_reset(struct rasterfall_session *session,
     session->shop_selected = 0;
     session->shop_nav_selected = 0;
     session->shop_scroll = 0;
+    session->shop_request_only = 0;
     session_set_air_walls(session, 1);
     rasterfall_map_reset_interactables(&session->map_ops);
 }
@@ -816,7 +817,9 @@ void rasterfall_session_shop_input(struct rasterfall_session *session,
     }
     if (session->shop_page == 3) {
         if (enter) {
-            int result = session_buy_flag(session);
+            if (session->shop_request_only) return;
+            int result = session->shop_request_only ? 0 :
+                         session_buy_flag(session);
             session->banner_ms = 1600; session->banner_success = result;
             session->banner_text = result ? "FLAG PURCHASED" : "NOT ENOUGH MONEY";
         }
@@ -848,6 +851,7 @@ void rasterfall_session_shop_input(struct rasterfall_session *session,
             session->shop_scroll = session->shop_selected - 5;
         if (enter) {
             struct toy_game_actor *a = &session->game_state.actors[indices[session->shop_selected]];
+            if (session->shop_request_only) return;
             if (a->flag_index == session->assignment_flag) {
                 a->flag_index = -1;
                 session->banner_ms = 1400;
@@ -870,10 +874,12 @@ void rasterfall_session_shop_input(struct rasterfall_session *session,
     if (down) session->shop_selected = session->shop_page == 2 ?
         (session->shop_selected + 1) % 5 : (session->shop_selected + 1) % 4;
     if (enter) {
+        if (session->shop_request_only) return;
         if (session->shop_page == 1) {
             weapon = session->shop_selected + TOY_GAME_WEAPON_SMG;
             {
-                int result = toy_game_buy_weapon(&session->game_state, weapon);
+                int result = session->shop_request_only ? 0 :
+                    toy_game_buy_weapon(&session->game_state, weapon);
                 session->banner_ms = 2000;
                 session->banner_success = result > 0;
                 session->banner_text = result > 0 ?
@@ -883,7 +889,8 @@ void rasterfall_session_shop_input(struct rasterfall_session *session,
         } else {
             weapon = session->shop_selected;
             {
-                int result = session_hire_ai(session, weapon);
+                int result = session->shop_request_only ? 0 :
+                    session_hire_ai(session, weapon);
                 session->banner_ms = 2000;
                 session->banner_success = result > 0;
                 session->banner_text = result > 0 ? "AI HIRED" :

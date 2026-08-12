@@ -37,10 +37,13 @@ static int run_logic_test(void)
         return 134;
     {
         int actor_index = rasterfall_session_shop_actor_at(&session, 0, 0);
+        int was_assigned;
         if (actor_index < 0) return 135;
+        was_assigned = session.game_state.actors[actor_index].flag_index == 0;
         if (rasterfall_session_shop_request(&session, 4, 0,
                                             actor_index) <= 0 ||
-            session.game_state.actors[actor_index].flag_index != 0)
+            session.game_state.actors[actor_index].flag_index !=
+                (was_assigned ? -1 : 0))
             return 136;
     }
     /* 客户端交互由主机执行，但按下 E 后本地仍必须立即显示反馈。 */
@@ -473,41 +476,45 @@ static int run_logic_test(void)
         rasterfall_session_reset(&session, &camera, 7);
         if (game.current_slot != 1 ||
             game.slots[1].weapon != TOY_GAME_WEAPON_PISTOL ||
-            game.slots[1].mag != 30 ||
-            game.slots[1].reserve != TOY_GAME_AMMO_INFINITE ||
+            game.slots[1].mag != TOY_CONFIG_PISTOL_MAG ||
+            game.slots[1].reserve != TOY_CONFIG_PISTOL_RESERVE ||
             game.slots[0].weapon != -1) return 17;
         if (toy_game_switch_weapon(&game, 0)) return 18;
-        /* 拾取 SMG：50/650 并自动切出；同武器再拾取 = 补充弹药 */
+        /* 拾取 SMG：按配置容量并自动切出；同武器再拾取 = 补充弹药 */
         if (toy_game_equip_weapon(&game, TOY_GAME_WEAPON_SMG) != 1) return 19;
-        if (game.current_slot != 0 || game.slots[0].mag != 50 ||
-            game.slots[0].reserve != 650) return 20;
+        if (game.current_slot != 0 || game.slots[0].mag != TOY_CONFIG_SMG_MAG ||
+            game.slots[0].reserve != TOY_CONFIG_SMG_RESERVE) return 20;
         game.slots[0].mag = 7;
         game.slots[0].reserve = 120;
         if (toy_game_equip_weapon(&game, TOY_GAME_WEAPON_SMG) != 0 ||
-            game.slots[0].mag != 50 || game.slots[0].reserve != 650) return 21;
+            game.slots[0].mag != TOY_CONFIG_SMG_MAG ||
+            game.slots[0].reserve != TOY_CONFIG_SMG_RESERVE) return 21;
         /* 切枪保留各自弹药状态 */
-        if (!toy_game_switch_weapon(&game, 1) || game.slots[1].mag != 30)
+        if (!toy_game_switch_weapon(&game, 1) ||
+            game.slots[1].mag != TOY_CONFIG_PISTOL_MAG)
             return 22;
         if (!toy_game_switch_weapon(&game, 0) ||
-            game.slots[0].mag != 50 || game.slots[0].reserve != 650) return 23;
+            game.slots[0].mag != TOY_CONFIG_SMG_MAG ||
+            game.slots[0].reserve != TOY_CONFIG_SMG_RESERVE) return 23;
         /* 切枪动画期间默认禁射；等待其 500ms 表现窗口结束后再测全自动。 */
         for (i = 0; i < TOY_CONFIG_WEAPON_SWITCH_MS / 16 + 1; i++)
             toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
         /* 弹药盒补满备弹，不碰弹匣 */
         game.slots[0].mag = 3;
         game.slots[0].reserve = 5;
-        if (!toy_game_refill_ammo(&game) || game.slots[0].reserve != 650 ||
+        if (!toy_game_refill_ammo(&game) ||
+            game.slots[0].reserve != TOY_CONFIG_SMG_RESERVE ||
             game.slots[0].mag != 3) return 24;
         /* SMG 全自动：按住 10 步（160ms，100ms 冷却）消耗 2 发 */
-        game.slots[0].mag = 50;
+        game.slots[0].mag = TOY_CONFIG_SMG_MAG;
         for (i = 0; i < 10; i++)
             toy_game_update_held(&game, NULL, 0, 1, 0, 1024, 16);
-        if (game.slots[0].mag != 48) return 25;
+        if (game.slots[0].mag != TOY_CONFIG_SMG_MAG - 2) return 25;
         /* 手枪半自动：按住不连发 */
         toy_game_switch_weapon(&game, 1);
         for (i = 0; i < 5; i++)
             toy_game_update_held(&game, NULL, 0, 1, 0, 1024, 16);
-        if (game.slots[1].mag != 30) return 26;
+        if (game.slots[1].mag != TOY_CONFIG_PISTOL_MAG) return 26;
         /* 有限备弹换弹：SMG 2000ms，消耗备弹 */
         memset(keys, 0, sizeof(keys));
         keys[TOY_GAME_KEY_RELOAD] = 1;
@@ -516,11 +523,12 @@ static int run_logic_test(void)
         if (!game.reloading) return 27;
         for (i = 0; i < 125; i++)
             toy_game_update(&game, NULL, 0, 0, 1024, 16);
-        if (game.reloading || game.slots[0].mag != 50 ||
+        if (game.reloading || game.slots[0].mag != TOY_CONFIG_SMG_MAG ||
             game.slots[0].reserve != 648) return 28;
-        /* 霰弹枪 8/64：12 弹丸随机散射，整匣内应放倒并排两敌 */
+        /* 霰弹枪按配置容量：12 弹丸随机散射，整匣内应放倒并排两敌 */
         if (toy_game_equip_weapon(&game, TOY_GAME_WEAPON_SHOTGUN) != 1 ||
-            game.slots[0].mag != 8 || game.slots[0].reserve != 64) return 29;
+            game.slots[0].mag != TOY_CONFIG_SHOTGUN_MAG ||
+            game.slots[0].reserve != TOY_CONFIG_SHOTGUN_RESERVE) return 29;
         memset(game.enemies, 0, sizeof(game.enemies));
         game.enemies[0].active = 1;
         game.enemies[0].x = game.px + 120;
@@ -535,9 +543,9 @@ static int run_logic_test(void)
             for (i = 0; i < 8 && game.kills < 2; i++)
                 toy_game_fire(&game, 0, 1024);
             if (game.kills != 2) return 30;
-            if (game.slots[0].mag != 8 - i) return 31;
-            /* 弹道记录：每枪 12 条射线，方向已归一化，终点不越最大射程 */
-            if (game.ray_count != 12 ||
+            if (game.slots[0].mag != TOY_CONFIG_SHOTGUN_MAG - i) return 31;
+            /* 弹道记录：射线数量跟随霰弹枪配置 */
+            if (game.ray_count != TOY_CONFIG_SHOTGUN_PELLETS ||
                 game.fire_seq != seq_before + (unsigned int)i) return 38;
             for (i = 0; i < game.ray_count; i++) {
                 const struct toy_game_ray *r = &game.rays[i];
@@ -568,7 +576,7 @@ static int run_logic_test(void)
         memset(game.enemies, 0, sizeof(game.enemies));
         game.enemies_alive = 0;
         toy_game_fire(&game, -1024, 0);
-        if (game.ray_count != 12) return 39;
+        if (game.ray_count != TOY_CONFIG_SHOTGUN_PELLETS) return 39;
         for (i = 0; i < game.ray_count; i++) {
             const struct toy_game_ray *r = &game.rays[i];
             if (r->hit_enemy) return 39;
@@ -578,9 +586,9 @@ static int run_logic_test(void)
      * 是基地防守队伍，尸潮由普通波次自动开始。 */
     if (game.campaign_mode || game.campaign_stage != 0 ||
         game.actors[1].active == 0 || game.actors[2].active == 0 ||
-        game.actors[0].x != 1000 || game.actors[0].z != 0 ||
-        game.actors[1].x != 0 || game.actors[1].z != -900 ||
-        game.actors[2].x != -1000 || game.actors[2].z != 0)
+        game.actors[0].flag_index != 0 ||
+        game.actors[1].flag_index != 0 ||
+        game.actors[2].flag_index != 0)
         return 32;
     {
         struct toy_game base_test;

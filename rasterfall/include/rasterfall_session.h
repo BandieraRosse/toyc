@@ -50,6 +50,7 @@ struct rasterfall_command {
     int shop_action;
     int shop_item;
     int shop_arg;
+    unsigned int shop_request_id;
 };
 
 struct rasterfall_session {
@@ -78,6 +79,7 @@ struct rasterfall_session {
     int shop_selected;
     int shop_nav_selected;
     int shop_scroll;
+    int shop_request_only;
     struct rasterfall_flag flags[RASTERFALL_MAX_FLAGS];
     int flag_count;
     int carried_flag;

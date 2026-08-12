@@ -122,6 +122,7 @@ struct rasterfall_net_actor {
     int kills;
     int special_kills;
     int damage_dealt;
+    int hired;
     int muzzle_flash_ms;
     int revive_progress_ms;
     unsigned int fire_seq;
@@ -172,6 +173,7 @@ struct rasterfall_net_remote {
     int airborne_ms, airborne_y;
     struct toy_game_animation_state animation;
     uint32_t reliable_event_ack;
+    unsigned int shop_request_id;
     long last_receive_ms;
 };
 
@@ -221,6 +223,7 @@ struct rasterfall_net {
     struct toy_game_animation_state peer_animation;
     int peer_state_initialized;
     uint32_t peer_reliable_event_ack;
+    unsigned int peer_shop_request_id;
     struct rasterfall_net_player players[RASTERFALL_NET_PLAYER_MAX];
     struct rasterfall_net_remote remotes[RASTERFALL_NET_REMOTE_MAX];
     int local_player_id;
@@ -262,6 +265,7 @@ struct rasterfall_net {
     int snapshot_world_alarm_triggered;
     int snapshot_world_campaign_stage;
     int snapshot_money;
+    unsigned int snapshot_unlocked_weapons;
     int snapshot_flag_count;
     struct rasterfall_flag snapshot_flags[RASTERFALL_MAX_FLAGS];
     int snapshot_actor_flag_index[TOY_GAME_MAX_ACTORS];
@@ -281,6 +285,13 @@ struct rasterfall_net {
     uint32_t last_jump_command_sequence;
     uint32_t last_snapshot_input_ack;
     long last_command_sent_ms;
+    unsigned int shop_request_next_id;
+    unsigned int pending_shop_request_id;
+    int pending_shop_action;
+    int pending_shop_item;
+    int pending_shop_arg;
+    unsigned int pending_action_buttons;
+    long pending_shop_until_ms;
     uint32_t last_snapshot_sequence;
     unsigned int ai_fire_sent_seq[TOY_GAME_MAX_ACTORS];
     long last_snapshot_sent_ms;
