@@ -24,7 +24,10 @@ box -12000 -1800 -5700 -5680 1800 000000 hidden collision role=air_gate_left
 出生点。旧的 `air` box 语法仍兼容，但新地图应使用显式的
 `visible/collision/role` 选项。
 
-从仓库根目录执行 `make rasterfall` 或 `make app-rasterfall` 构建游戏。
+从仓库根目录执行 `make rasterfall` 或 `make app-rasterfall` 构建游戏。默认 Linux
+构建会把本目录下的全部资源嵌入 `build/rasterfall`；Windows 使用
+`make win-rasterfall`，生成同样自包含的 `build/rasterfall.exe`。发布时不需要携带
+`assets/`，程序也不要求从仓库根目录启动。
 
 ## 外部模型导入
 

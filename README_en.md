@@ -59,10 +59,11 @@ make win-rasterfall
 ```
 
 After dependencies are ready, `make win-rasterfall` or
-`make -f windows/Makefile` performs an incremental build. The Windows target copies
-`rasterfall/assets/` to `build/assets/rasterfall/assets/`; distribute that asset
-directory with `rasterfall.exe`. Source, header, and Rasterfall asset changes are
-tracked by the Windows Makefile dependencies.
+`make -f windows/Makefile` performs an incremental build. Both Linux and Windows
+builds generate an embedded asset table and link it into the executable. Distribute
+only `build/rasterfall` or `build/rasterfall.exe`; no asset directory or working
+directory layout is required. Source, header, and Rasterfall asset changes are
+tracked by the Makefiles.
 
 The headless logic check is available with:
 

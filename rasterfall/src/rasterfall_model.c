@@ -1,5 +1,6 @@
 #include "core.h"
 #include "tlibc_everything.h"
+#include "toy_assets.h"
 #include "rasterfall_model.h"
 
 static unsigned int model_u32(const unsigned char *p)
@@ -10,20 +11,13 @@ static unsigned int model_u32(const unsigned char *p)
 int rasterfall_model_load(struct rasterfall_model_asset *asset,
                           const char *path)
 {
-    int fd, size;
-    struct stat st;
-    const unsigned char *data;
+    uint32_t size;
+    unsigned char *data;
     if (!asset || !path) return -1;
     __memset(asset, 0, sizeof(*asset));
-    fd = __openat(AT_FDCWD, path, O_RDONLY, 0);
-    if (fd < 0 || __fstat(fd, &st) < 0 || st.st_size < RASTERFALL_MODEL_HEADER_BYTES) {
-        if (fd >= 0) __close(fd);
-        return -1;
-    }
-    size = (int)st.st_size;
-    data = (const unsigned char *)__mmap(0, size, PROT_READ, MAP_PRIVATE, fd, 0);
-    __close(fd);
-    if (data == MAP_FAILED || model_u32(data) != RASTERFALL_MODEL_MAGIC ||
+    data = toy_asset_load_file(path, &size);
+    if (!data || size < RASTERFALL_MODEL_HEADER_BYTES ||
+        model_u32(data) != RASTERFALL_MODEL_MAGIC ||
         model_u32(data + 4) != RASTERFALL_MODEL_VERSION ||
         model_u32(data + 8) > 1000000 || model_u32(data + 12) > 3000000 ||
         model_u32(data + 44) > 32 || model_u32(data + 48) > 32 ||
@@ -33,8 +27,8 @@ int rasterfall_model_load(struct rasterfall_model_asset *asset,
         (long)model_u32(data + 56) +
             (long)model_u32(data + 48) * RASTERFALL_MODEL_MATERIAL_BYTES +
             (long)model_u32(data + 8) * RASTERFALL_MODEL_VERTEX_BYTES +
-            (long)model_u32(data + 12) * 4 != size) {
-        if (data != MAP_FAILED) __munmap((void *)data, size);
+            (unsigned long)model_u32(data + 12) * 4 != (unsigned long)size) {
+        if (data) tlibc_free(data);
         return -1;
     }
     asset->data = data;
@@ -59,6 +53,6 @@ int rasterfall_model_load(struct rasterfall_model_asset *asset,
 void rasterfall_model_unload(struct rasterfall_model_asset *asset)
 {
     if (!asset || !asset->data) return;
-    __munmap((void *)asset->data, asset->data_size);
+    tlibc_free((void *)asset->data);
     __memset(asset, 0, sizeof(*asset));
 }

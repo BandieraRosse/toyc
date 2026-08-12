@@ -762,7 +762,10 @@ APP_SRCS    := $(shell find $(APP_DIR) -name '*.c' | LANG=C sort) \
 APP_NAMES   := $(sort $(basename $(notdir $(APP_SRCS))))
 APP_OBJS    := $(foreach src,$(APP_SRCS),$(BUILD)/$(notdir $(basename $(src))).o)
 APP_TARGETS := $(foreach name,$(APP_NAMES),$(BUILD)/$(name))
-APP_EXTRA_OBJS_rasterfall := $(BUILD)/rasterfall_game.o $(BUILD)/rasterfall_sfx.o $(BUILD)/rasterfall_map_engine.o $(BUILD)/rasterfall_map.o $(BUILD)/rasterfall_session.o $(BUILD)/rasterfall_net.o $(BUILD)/rasterfall_hud.o $(BUILD)/rasterfall_audio.o $(BUILD)/rasterfall_effects.o $(BUILD)/rasterfall_perf.o $(BUILD)/rasterfall_sky.o $(BUILD)/rasterfall_viewmodel.o $(BUILD)/rasterfall_render.o $(BUILD)/rasterfall_model.o
+RASTERFALL_ASSET_FILES := $(shell find $(RASTERFALL_DIR)/assets -type f -print)
+RASTERFALL_ASSET_SRC := $(BUILD)/rasterfall_assets.c
+RASTERFALL_ASSET_OBJ := $(BUILD)/rasterfall_assets.o
+APP_EXTRA_OBJS_rasterfall := $(BUILD)/rasterfall_game.o $(BUILD)/rasterfall_sfx.o $(BUILD)/rasterfall_map_engine.o $(BUILD)/rasterfall_map.o $(BUILD)/rasterfall_session.o $(BUILD)/rasterfall_net.o $(BUILD)/rasterfall_hud.o $(BUILD)/rasterfall_audio.o $(BUILD)/rasterfall_effects.o $(BUILD)/rasterfall_perf.o $(BUILD)/rasterfall_sky.o $(BUILD)/rasterfall_viewmodel.o $(BUILD)/rasterfall_render.o $(BUILD)/rasterfall_model.o $(RASTERFALL_ASSET_OBJ)
 
 # ─── 库编译规则 ────────────────────────────────────────────────
 
@@ -775,9 +778,16 @@ $(BUILD)/rasterfall_sfx.o: $(RASTERFALL_LIB)/sfx.c $(RASTERFALL_INC)/toy_game.h 
 	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
 	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 
+$(RASTERFALL_ASSET_SRC): scripts/embed-assets.py $(RASTERFALL_ASSET_FILES) | $(BUILD)
+	@python3 scripts/embed-assets.py $(RASTERFALL_DIR)/assets $@
+
+$(RASTERFALL_ASSET_OBJ): $(RASTERFALL_ASSET_SRC) $(INC)/toy_assets.h | $(BUILD)
+	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
+	$(GCC) $(LIBC_CFLAGS) -c $< -o $@
+
 $(BUILD)/rasterfall_map_engine.o: $(RASTERFALL_LIB)/map.c \
                                  $(RASTERFALL_INC)/toy_map.h \
-                                 $(RASTERFALL_INC)/toy_game.h | $(BUILD)
+                                 $(RASTERFALL_INC)/toy_game.h $(INC)/toy_assets.h | $(BUILD)
 	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
 	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 
@@ -853,7 +863,7 @@ $(BUILD)/rasterfall_render.o: $(RASTERFALL_SRC)/rasterfall_render.c \
 	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 
 $(BUILD)/rasterfall_model.o: $(RASTERFALL_SRC)/rasterfall_model.c \
-                             $(RASTERFALL_INC)/rasterfall_model.h | $(BUILD)
+                             $(RASTERFALL_INC)/rasterfall_model.h $(INC)/toy_assets.h | $(BUILD)
 	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
 	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 
@@ -946,7 +956,8 @@ clean-app:
       $(BUILD)/rasterfall_perf.o $(BUILD)/rasterfall_perf_self.o \
       $(BUILD)/rasterfall_sky.o $(BUILD)/rasterfall_sky_self.o \
       $(BUILD)/rasterfall_viewmodel.o $(BUILD)/rasterfall_viewmodel_self.o \
-      $(BUILD)/rasterfall_model.o $(BUILD)/rasterfall_model_self.o
+      $(BUILD)/rasterfall_model.o $(BUILD)/rasterfall_model_self.o \
+      $(RASTERFALL_ASSET_SRC) $(RASTERFALL_ASSET_OBJ) $(RASTERFALL_ASSET_OBJ:.o=.d)
 
 # ─── 依赖文件包含 ───────────────────────────────────────────────
 

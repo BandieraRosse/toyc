@@ -61,6 +61,10 @@ make app-rasterfall
 build/rasterfall
 ```
 
+Rasterfall 的默认 Linux/Windows 发布构建会把 `rasterfall/assets/` 编译为内嵌资源并
+链接进游戏程序；发布时只需分发 `build/rasterfall` 或 `build/rasterfall.exe`，不需要
+资源目录，也不依赖当前工作目录。资源文件变化会触发生成资源对象的增量重建。
+
 Windows Rasterfall 使用独立的 MinGW-w64 + SDL2 平台构建，不需要 Toyc 输出 PE/COFF：
 
 ```sh
@@ -70,7 +74,7 @@ make win-rasterfall # 生成 build/rasterfall.exe
 
 依赖准备完成后可直接运行 `make win-rasterfall`，或在仓库根目录运行
 `make -f windows/Makefile`。该 Makefile 支持 `.c`、头文件和 Rasterfall 资源的增量
-依赖；Windows 运行时需要与程序一起分发 `build/assets/rasterfall/assets/`。
+依赖；Windows 程序无需额外资源目录即可运行。
 
 `bootstrap/` 内是版本控制跟踪的种子二进制，仅用于阶段性收敛检查。不要在普通修改中
 运行 `make update-bootstrap`；只有明确需要更新种子时才运行，并随后验证：

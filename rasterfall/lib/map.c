@@ -1,5 +1,6 @@
 #include "tlibc_everything.h"
 #include "toy_map.h"
+#include "toy_assets.h"
 
 static int number(const char *s, int base) { return (int)strtol(s, NULL, base); }
 static char *word(char **p) { char *s = strtok_r(*p, " \t\r\n", p); return s; }
@@ -64,18 +65,22 @@ static void add_draw(struct toy_map *m, int type, int a, int b, int c, int d,
 
 int toy_map_load(const char *path, struct toy_map *m)
 {
-    int fd, n, got=0; struct stat st; char *line, *save, *kind;
+    uint32_t size; unsigned char *data; char *line, *save, *kind;
     if (!m || !path) return -1;
     memset(m,0,sizeof(*m));
     m->start_safe_index = -1;
     m->goal_safe_index = -1;
     m->alarm_spawn_zone = -1;
-    fd=openat(AT_FDCWD,path,O_RDONLY,0); if(fd<0 || fstat(fd,&st)<0) return -1;
-    if(st.st_size<=0 || st.st_size>256*1024){close(fd);return -1;}
-    m->blob=(char *)tlibc_malloc((unsigned long)st.st_size+1);
-    if(!m->blob){close(fd);return -1;}
-    while(got<st.st_size){n=read(fd,m->blob+got,(int)st.st_size-got);if(n<=0){toy_map_unload(m);close(fd);return -1;}got+=n;}
-    close(fd); m->blob[got]=0;
+    data = toy_asset_load_file(path, &size);
+    if (!data || size == 0 || size > 256 * 1024) {
+        if (data) tlibc_free(data);
+        return -1;
+    }
+    m->blob = (char *)tlibc_malloc(size + 1);
+    if (!m->blob) { tlibc_free(data); return -1; }
+    memcpy(m->blob, data, size);
+    tlibc_free(data);
+    m->blob[size] = 0;
     for(line=strtok_r(m->blob,"\n",&save);line;line=strtok_r(NULL,"\n",&save)){
         char *p=line,*s; int a,b,c,d;
         s=strchr(line,'#'); if(s)*s=0; kind=word(&p); if(!kind)continue;

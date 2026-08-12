@@ -71,10 +71,10 @@ make win-rasterfall
 make win-rasterfall
 ```
 
-也可以直接执行 `make -f windows/Makefile`。Windows 构建会把
-`rasterfall/assets/` 复制到 `build/assets/rasterfall/assets/`；运行程序时应保持该
-资源目录与 `rasterfall.exe` 一起分发。修改源文件、头文件或 Rasterfall 资源后，
-Windows Makefile 会按依赖关系增量编译和重新链接。
+也可以直接执行 `make -f windows/Makefile`。Linux 和 Windows 构建都会在编译时将
+`rasterfall/assets/` 生成资源表并链接进游戏程序；发布时只需分发
+`build/rasterfall` 或 `build/rasterfall.exe`，不需要资源目录，也不依赖当前工作目录。
+修改源文件、头文件或 Rasterfall 资源后，Makefile 会按依赖关系增量编译和重新链接。
 
 `bootstrap/` 保存版本控制内的种子二进制。它们用于阶段性的自举检查，不参与默认
 `make`，而且可能落后于源码：

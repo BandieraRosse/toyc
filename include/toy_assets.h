@@ -10,6 +10,11 @@ struct toy_sound_asset { const unsigned char *blob, *data; uint32_t rate, channe
 struct toy_mesh_vertex { int32_t x, y, z; uint32_t color; };
 struct toy_mesh_asset { const unsigned char *blob, *vertices, *indices; uint32_t vertex_count, index_count; };
 
+const unsigned char *toy_embedded_asset_find(const char *path, uint32_t *size);
+int toy_embedded_asset_count(void);
+const char *toy_embedded_asset_path(int index);
+unsigned char *toy_asset_load_file(const char *path, uint32_t *size);
+
 int toy_texture_load(const char *path, struct toy_texture_asset *out);
 int toy_sound_load(const char *path, struct toy_sound_asset *out);
 int toy_mesh_load(const char *path, struct toy_mesh_asset *out);

@@ -23,6 +23,21 @@ static int range_valid(uint32_t offset, uint32_t length, uint32_t total)
     return offset <= total && length <= total - offset;
 }
 
+/* Rasterfall 的生成资源对象会提供强定义；其他程序继续使用磁盘资源。 */
+__attribute__((weak)) const unsigned char *toy_embedded_asset_find(const char *path,
+                                                                    uint32_t *size)
+{
+    (void)path;
+    if (size) *size = 0;
+    return NULL;
+}
+__attribute__((weak)) int toy_embedded_asset_count(void) { return 0; }
+__attribute__((weak)) const char *toy_embedded_asset_path(int index)
+{
+    (void)index;
+    return NULL;
+}
+
 /* 读取整个资产文件。返回的缓冲区由对应的 unload 函数释放。 */
 static unsigned char *read_file(const char *path, uint32_t *size)
 {
@@ -63,6 +78,24 @@ static unsigned char *read_file(const char *path, uint32_t *size)
     close(fd);
     *size = (uint32_t)received;
     return data;
+}
+
+unsigned char *toy_asset_load_file(const char *path, uint32_t *size)
+{
+    const unsigned char *embedded;
+    unsigned char *copy;
+    uint32_t embedded_size = 0;
+
+    if (!path || !size) return NULL;
+    embedded = toy_embedded_asset_find(path, &embedded_size);
+    if (embedded && embedded_size > 0 && embedded_size <= TOY_ASSET_MAX_SIZE) {
+        copy = (unsigned char *)tlibc_malloc(embedded_size);
+        if (!copy) return NULL;
+        memcpy(copy, embedded, embedded_size);
+        *size = embedded_size;
+        return copy;
+    }
+    return read_file(path, size);
 }
 
 /* 校验 magic、版本和头部大小，并返回头部长度。 */
