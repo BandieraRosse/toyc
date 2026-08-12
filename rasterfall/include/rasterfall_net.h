@@ -9,7 +9,7 @@
 #define RASTERFALL_NET_DEFAULT_PORT 28460
 #define RASTERFALL_NET_MAX_PACKET 2700
 #define RASTERFALL_NET_MAX_SNAPSHOT 8192
-#define RASTERFALL_NET_PROTOCOL_VERSION 26
+#define RASTERFALL_NET_PROTOCOL_VERSION 27
 #define RASTERFALL_NET_MAX_ACTORS 32
 #define RASTERFALL_NET_PLAYER_MAX 4
 #define RASTERFALL_NET_REMOTE_MAX 2
@@ -123,6 +123,7 @@ struct rasterfall_net_actor {
     int special_kills;
     int damage_dealt;
     int hired;
+    char name[TOY_GAME_MAX_NAME];
     int muzzle_flash_ms;
     int revive_progress_ms;
     unsigned int fire_seq;

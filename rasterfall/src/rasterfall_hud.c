@@ -445,12 +445,18 @@ static void render_network_hud(struct toy_surface *surface,
     {
         int line_y = y + FB_FONT_H *
             (net->mode == RASTERFALL_NET_HOST ? 3 : 2);
+        int avg_rtt = net->net_stats_avg_rtt_ms > 0 ?
+                      net->net_stats_avg_rtt_ms : net->rtt_ms;
+        int tx_kbps = net->net_stats_tx_bps / 1024;
+        int rx_kbps = net->net_stats_rx_bps / 1024;
+        /* Small client packets can be below 1 KiB/s. Keep an active link
+         * visibly non-zero instead of making the client look unconnected. */
+        if (net->net_stats_tx_bps > 0 && tx_kbps == 0) tx_kbps = 1;
+        if (net->net_stats_rx_bps > 0 && rx_kbps == 0) rx_kbps = 1;
         int loss_major = net->net_stats_loss_permille / 10;
         int loss_minor = net->net_stats_loss_permille % 10;
         snprintf(line, sizeof(line), "NET AVG %dMS TX %d RX %dKB/S LOSS %d.%d%%",
-                 net->net_stats_avg_rtt_ms,
-                 net->net_stats_tx_bps / 1024,
-                 net->net_stats_rx_bps / 1024,
+                 avg_rtt, tx_kbps, rx_kbps,
                  loss_major, loss_minor);
         width = (int)strlen(line) * FB_FONT_W;
         x = surface->width - width - 10;

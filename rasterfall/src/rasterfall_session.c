@@ -444,7 +444,11 @@ void rasterfall_session_interact_remote(struct rasterfall_session *session,
     int index;
     if (session->game_state.state != TOY_GAME_PLAYING) return;
     index = rasterfall_session_compute_highlight(session, camera);
-    if (index >= 0) session_interact(session, &session->items[index]);
+    /* A remote player's shop is a local UI on that player's machine.  The
+     * host still processes shop requests separately, but must not open its
+     * own armory when a client walks up to the same pickup. */
+    if (index >= 0 && session->items[index].kind != TOY_MAP_PICKUP_SHOP)
+        session_interact(session, &session->items[index]);
 }
 
 void rasterfall_session_toggle_flag_remote(struct rasterfall_session *session,
@@ -817,7 +821,12 @@ void rasterfall_session_shop_input(struct rasterfall_session *session,
     }
     if (session->shop_page == 3) {
         if (enter) {
-            if (session->shop_request_only) return;
+            if (session->shop_request_only) {
+                session->banner_success = 1;
+                session->banner_ms = 1600;
+                session->banner_text = "FLAG PURCHASED";
+                return;
+            }
             int result = session->shop_request_only ? 0 :
                          session_buy_flag(session);
             session->banner_ms = 1600; session->banner_success = result;
@@ -851,7 +860,12 @@ void rasterfall_session_shop_input(struct rasterfall_session *session,
             session->shop_scroll = session->shop_selected - 5;
         if (enter) {
             struct toy_game_actor *a = &session->game_state.actors[indices[session->shop_selected]];
-            if (session->shop_request_only) return;
+            if (session->shop_request_only) {
+                session->banner_success = 1;
+                session->banner_ms = 1400;
+                session->banner_text = "TEAM ASSIGNMENT UPDATED";
+                return;
+            }
             if (a->flag_index == session->assignment_flag) {
                 a->flag_index = -1;
                 session->banner_ms = 1400;
@@ -874,7 +888,13 @@ void rasterfall_session_shop_input(struct rasterfall_session *session,
     if (down) session->shop_selected = session->shop_page == 2 ?
         (session->shop_selected + 1) % 5 : (session->shop_selected + 1) % 4;
     if (enter) {
-        if (session->shop_request_only) return;
+        if (session->shop_request_only) {
+            session->banner_success = 1;
+            session->banner_ms = 2000;
+            session->banner_text = session->shop_page == 1 ?
+                "WEAPON PURCHASED" : "AI HIRED";
+            return;
+        }
         if (session->shop_page == 1) {
             weapon = session->shop_selected + TOY_GAME_WEAPON_SMG;
             {

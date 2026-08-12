@@ -28,7 +28,7 @@ static void net_windows_log(const char *message) { (void)message; }
 #define NET_PLAYER_BASE_SIZE 65
 #define NET_PLAYER_RAY_SIZE 15
 #define NET_PLAYER_SIZE (NET_PLAYER_BASE_SIZE + 4 + 1 + TOY_GAME_MAX_RAYS * NET_PLAYER_RAY_SIZE)
-#define NET_ACTOR_SIZE 38
+#define NET_ACTOR_SIZE (38 + TOY_GAME_MAX_NAME)
 #define NET_ENEMY_SIZE 48
 #define NET_EVENT_SIZE (4 + 1 + TOY_GAME_MAX_EVENTS)
 #define NET_WORLD_BASE_SIZE 32
@@ -1221,6 +1221,7 @@ static void encode_actor(unsigned char *p, const struct toy_game_actor *a,
     put_i16(p + 31, a->special_kills);
     put_u32(p + 33, (uint32_t)a->damage_dealt);
     p[37] = (unsigned char)(a->hired != 0);
+    memcpy(p + 38, a->name, TOY_GAME_MAX_NAME);
 }
 
 static void decode_actor(const unsigned char *p, struct rasterfall_net_actor *a)
@@ -1243,6 +1244,8 @@ static void decode_actor(const unsigned char *p, struct rasterfall_net_actor *a)
     a->special_kills = get_i16(p + 31);
     a->damage_dealt = (int)get_u32(p + 33);
     a->hired = p[37] != 0;
+    memcpy(a->name, p + 38, TOY_GAME_MAX_NAME);
+    a->name[TOY_GAME_MAX_NAME - 1] = 0;
     if (a->state == TOY_GAME_ACTOR_DOWNED)
         a->revive_progress_ms = p[17] * 12;
     else
@@ -2928,6 +2931,7 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
             dst->special_kills = src->special_kills;
             dst->damage_dealt = src->damage_dealt;
             dst->hired = src->hired;
+            memcpy(dst->name, src->name, TOY_GAME_MAX_NAME);
             dst->muzzle_flash_ms = src->muzzle_flash_ms;
             dst->fire_seq = src->fire_seq;
             dst->airborne_ms = src->airborne_ms;
