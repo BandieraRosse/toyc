@@ -65,10 +65,9 @@ static void poll_windows_key_edges(const struct toy_window_events *events,
     mutable_events->key_event_count++;
 }
 
-/* SDL's keyboard snapshot is more reliable than GetAsyncKeyState for a
- * foreground window (especially when the game is started from Explorer).
- * Keep the edge synthesis inside the Windows backend so menus and gameplay
- * consume the same platform-neutral key events. */
+/* SDL's keyboard snapshot is the reliable source for menu edge events.  It
+ * is updated by SDL_PumpEvents and remains tied to the same event queue that
+ * produced the platform-neutral key events. */
 static void poll_sdl_key_edge(const struct toy_window_events *events,
                               unsigned int key, SDL_Scancode scancode,
                               int *previous)
@@ -241,6 +240,10 @@ int toy_window_poll(struct toy_window *window, struct toy_window_events *events,
     static int previous_up, previous_down, previous_enter, previous_escape;
     clear_events(events);
     if (!window) return -1;
+    /* Refresh the keyboard snapshot before synthesizing edges.  SDL updates
+     * this state while pumping the native message queue; relying on the
+     * previous frame's snapshot can lose a short menu key press. */
+    SDL_PumpEvents();
     if (timeout_ms > 0 && !SDL_WaitEventTimeout(&event, timeout_ms)) return 0;
     if (timeout_ms > 0) {
         have_event = 1;
@@ -302,8 +305,7 @@ dispatch:
         if (timeout_ms > 0) break;
     }
     if (events) {
-        /* SDL normally supplies these events. The Win32 fallback handles
-         * keyboard layouts/drivers that expose only virtual-key state. */
+        /* Menu navigation uses SDL's pumped keyboard snapshot. */
         poll_sdl_key_edge(events, KEY_UP, SDL_SCANCODE_UP, &previous_up);
         poll_sdl_key_edge(events, KEY_DOWN, SDL_SCANCODE_DOWN, &previous_down);
         poll_sdl_key_edge(events, KEY_ENTER, SDL_SCANCODE_RETURN, &previous_enter);
