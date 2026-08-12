@@ -1153,6 +1153,11 @@ static int render_interactables(struct toy_renderer *renderer,
                                              it->kind == TOY_MAP_PICKUP_CHARGER_BUTTON);
         else if (it->kind == TOY_MAP_PICKUP_SHOP)
             pixels += render_button(renderer, camera, it->x, it->y, it->z, on, 2);
+        else if (it->kind == TOY_MAP_PICKUP_MONEY_BUTTON ||
+                 it->kind == TOY_MAP_PICKUP_CLEAR_HIRED_BUTTON)
+            pixels += render_special_button(renderer, camera, it->x, it->y,
+                                             it->z, on,
+                                             it->kind == TOY_MAP_PICKUP_CLEAR_HIRED_BUTTON);
         else
             pixels += render_ammo_box(renderer, camera, it->x, it->y, it->z, on);
     }

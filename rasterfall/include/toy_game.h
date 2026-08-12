@@ -115,6 +115,12 @@
 #define TOY_GAME_PRICE_SHOTGUN 50
 #define TOY_GAME_PRICE_AK 100
 #define TOY_GAME_PRICE_AWP 200
+#define TOY_GAME_INITIAL_MONEY 50
+#define TOY_GAME_HIRE_PRICE_PISTOL 200
+#define TOY_GAME_HIRE_PRICE_SMG 500
+#define TOY_GAME_HIRE_PRICE_SHOTGUN 500
+#define TOY_GAME_HIRE_PRICE_AK 1000
+#define TOY_GAME_HIRE_PRICE_AWP 2000
 
 enum toy_game_state { TOY_GAME_PLAYING, TOY_GAME_OVER, TOY_GAME_WON };
 
@@ -371,6 +377,7 @@ struct toy_game_actor {
     int kind;
     int class_id;
     int base_core;              /* BASE: fixed defense objective */
+    int hired;                  /* 雇佣 AI：可由商店/开发者按钮清除 */
     int state;
     int x, z;
     int sy, cy;
@@ -545,6 +552,9 @@ void toy_game_set_ai_teammate_class(struct toy_game *g, int active, int class_id
                                     int x, int z, const char *name);
 int  toy_game_add_ai(struct toy_game *g, int class_id, int x, int z,
                      const char *name);
+int  toy_game_add_hired_ai(struct toy_game *g, int weapon, int x, int z,
+                           const char *name);
+int  toy_game_clear_hired_ai(struct toy_game *g);
 int  toy_game_set_remote_player(struct toy_game *g, int player_id,
                                 int active, int x, int z,
                                 const char *name);

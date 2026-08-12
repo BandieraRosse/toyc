@@ -54,7 +54,9 @@ enum toy_map_pickup_kind {
     TOY_MAP_PICKUP_SMOKER_BUTTON,
     TOY_MAP_PICKUP_CHARGER_BUTTON,
     TOY_MAP_PICKUP_WEAPON,
-    TOY_MAP_PICKUP_SHOP
+    TOY_MAP_PICKUP_SHOP,
+    TOY_MAP_PICKUP_MONEY_BUTTON,
+    TOY_MAP_PICKUP_CLEAR_HIRED_BUTTON
 };
 struct toy_map_pickup { int kind; int weapon; int x, z, y; };
 struct toy_map_draw {

@@ -90,13 +90,15 @@ button_fast -11940 -9000 200
 # 开发者区域东侧：特感测试按钮共用圆柱底座，按东西紧密排列。
 button_smoker 4200 -7600 -250
 button_charger 4700 -7600 -250
+button_money 5600 -8600 -250
+button_clear_hired 5600 -9200 -250
 button_air 5200 -7600 -250
 # 三名原据点 AI 保持普通队友规则；BASE 是基地核心目标。
 ai_spawn Jesus 2 level2 1000 0 0
 ai_spawn GUARD 1 level1 0 -900 0
 ai_spawn ELITE 2 level3 -1000 0 0
 ai_spawn BASE 0 level1 0 900 0 pistol
-ai_spawn DEV_GUNNER 0 level1 5600 -7600 0
+ai_spawn DEV_GUNNER 0 level1 5600 -7400 0
 ai_spawn PLATFORM_GUARD 0 level2 0 -9900 0
 ai_spawn HIT_TEST 0 level1 -9000 -8500 0
 ai_spawn ANIM_TEST 0 level2 600 -9900 0

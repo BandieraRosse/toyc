@@ -53,12 +53,14 @@ struct rasterfall_session {
     int highlight_index;
     int banner_ms;
     const char *banner_text;
+    int banner_success;
     int smooth_turn_remaining;
     int ai_revive_active;
     int ai_revive_actor_index;
     int shop_open;
     int shop_page;
     int shop_selected;
+    int shop_nav_selected;
     uint64_t seed;
 };
 

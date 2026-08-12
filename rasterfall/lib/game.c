@@ -383,6 +383,7 @@ void toy_game_init(struct toy_game *g, uint64_t seed)
     g->slots[1].mag = w->mag_size;
     g->slots[1].reserve = w->reserve_max;
     g->current_slot = 1;
+    g->money = TOY_GAME_INITIAL_MONEY;
     /* 手枪是基础装备；所有可购买主武器初始锁定。 */
     g->unlocked_weapons = 1u << TOY_GAME_WEAPON_PISTOL;
     g->wave = 1;
@@ -541,6 +542,49 @@ int toy_game_add_ai(struct toy_game *g, int class_id, int x, int z,
     a->current_slot = 0;
     a->fire_enabled = 1;
     return a->actor_id;
+}
+
+int toy_game_add_hired_ai(struct toy_game *g, int weapon, int x, int z,
+                          const char *name)
+{
+    const struct toy_game_weapon_info *info;
+    struct toy_game_actor *a;
+    int actor_id, slot;
+    if (!g || !toy_game_weapon_is_valid(weapon)) return -1;
+    info = toy_game_weapon_info(weapon);
+    actor_id = toy_game_add_ai(g, TOY_GAME_AI_LEVEL_2, x, z, name);
+    if (actor_id < 0) return -1;
+    a = toy_game_actor_by_id(g, actor_id);
+    if (!a) return -1;
+    a->hired = 1;
+    slot = info->slot;
+    a->slots[0].weapon = -1;
+    a->slots[0].mag = 0;
+    a->slots[0].reserve = 0;
+    a->slots[1].weapon = -1;
+    a->slots[1].mag = 0;
+    a->slots[1].reserve = 0;
+    a->slots[slot].weapon = weapon;
+    a->slots[slot].mag = info->mag_size;
+    a->slots[slot].reserve = info->reserve_max;
+    a->current_slot = slot;
+    return actor_id;
+}
+
+int toy_game_clear_hired_ai(struct toy_game *g)
+{
+    int i, count = 0;
+    if (!g) return 0;
+    for (i = 0; i < TOY_GAME_REMOTE_ACTOR_BASE; i++) {
+        if (!g->actors[i].active || !g->actors[i].hired) continue;
+        memset(&g->actors[i], 0, sizeof(g->actors[i]));
+        count++;
+    }
+    if (g->ai_context_actor_index >= 0 &&
+        g->ai_context_actor_index < TOY_GAME_MAX_ACTORS &&
+        !g->actors[g->ai_context_actor_index].active)
+        g->ai_context_actor_index = 0;
+    return count;
 }
 
 int toy_game_set_remote_player(struct toy_game *g, int player_id,

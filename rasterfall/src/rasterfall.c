@@ -284,12 +284,14 @@ static void fill_hud_state(struct rasterfall_hud_state *hud,
     hud->player_revive_name = player_target >= 0 ? "PLAYER" : NULL;
     hud->horde_banner_ms = session.banner_ms;
     hud->interaction_banner = session.banner_text;
+    hud->interaction_banner_success = session.banner_success;
     hud->net = net_state;
     hud->host_address = host_address;
     hud->host_port = host_port;
     hud->shop_open = session.shop_open;
     hud->shop_page = session.shop_page;
     hud->shop_selected = session.shop_selected;
+    hud->shop_nav_selected = session.shop_nav_selected;
 }
 #define game (session.game_state)
 #define interactables (session.items)

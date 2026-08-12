@@ -28,12 +28,14 @@ struct rasterfall_hud_state {
     const char *player_revive_name;
     int horde_banner_ms;
     const char *interaction_banner;
+    int interaction_banner_success;
     const struct rasterfall_net *net;
     const char *host_address;
     int host_port;
     int shop_open;
     int shop_page;
     int shop_selected;
+    int shop_nav_selected;
 };
 
 void rasterfall_hud_draw_interact_prompt(struct toy_renderer *renderer,
