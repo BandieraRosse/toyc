@@ -2832,6 +2832,14 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
                  session->game_state.actors[i].kind == TOY_GAME_ACTOR_PLAYER) &&
                 !seen[i])
                 session->game_state.actors[i].active = 0;
+        if (session->game_state.base_actor_index >= 0 &&
+            session->game_state.base_actor_index < TOY_GAME_MAX_ACTORS) {
+            const struct toy_game_actor *base =
+                &session->game_state.actors[session->game_state.base_actor_index];
+            if (base->active &&
+                (base->state != TOY_GAME_ACTOR_ALIVE || base->hp <= 0))
+                session->game_state.state = TOY_GAME_OVER;
+        }
         if (session->ai_revive_active) {
             int index = session->ai_revive_actor_index;
             if (index < 0 || index >= TOY_GAME_MAX_ACTORS ||

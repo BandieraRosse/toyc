@@ -1570,23 +1570,33 @@ static void render_actor_status(struct toy_renderer *renderer,
     struct vec3 world, view;
     struct toy_screen_vertex screen;
     int width, bar_x, bar_y, fill;
+    int is_base = name && !strcmp(name, "BASE");
     uint32_t hp_color;
     (void)revive_ms;
     world.x = x; world.y = y; world.z = z;
     world_to_view(camera, &world, &view);
     if (view.z < NEAR_Z || view.z > ENEMY_RENDER_DISTANCE) return;
     project_vertex(&renderer->surface, &view, &screen);
-    width = (int)strlen(name) * FB_FONT_W;
+    if (is_base) screen.y -= 6;
+    width = (int)strlen(name) * FB_FONT_W * (is_base ? 2 : 1);
     screen.x -= width / 2;
     if (screen.x < 0 || screen.x + width >= renderer->surface.width ||
-        screen.y < 0 || screen.y + FB_FONT_H >= renderer->surface.height) return;
-    render_actor_name(renderer, camera, x, z, y, name, name_color);
+        screen.y < 0 || screen.y + FB_FONT_H * (is_base ? 2 : 1) >=
+        renderer->surface.height) return;
+    if (is_base) {
+        fb_draw_string_scaled((unsigned char *)renderer->surface.pixels,
+                              screen.x, screen.y, name, 0xFF2020,
+                              renderer->surface.stride, 2);
+    } else {
+        render_actor_name(renderer, camera, x, z, y, name, name_color);
+    }
     bar_x = screen.x + (width - 64) / 2;
-    bar_y = screen.y + FB_FONT_H + 2;
+    bar_y = screen.y + FB_FONT_H * (is_base ? 2 : 1) + 4;
     if (bar_x < 2) bar_x = 2;
     if (bar_x + 64 >= renderer->surface.width) bar_x = renderer->surface.width - 66;
     fill_rect(&renderer->surface, bar_x - 2, bar_y - 2, 68, 7, RF_COLOR_UI_PANEL);
-    if (hp < 10) hp_color = RF_COLOR_UI_DANGER;
+    if (is_base) hp_color = 0xFF2020;
+    else if (hp < 10) hp_color = RF_COLOR_UI_DANGER;
     else if (hp < 40) hp_color = RF_COLOR_UI_WARNING;
     else hp_color = RF_COLOR_UI_SUCCESS;
     if (max_hp <= 0) max_hp = 100;
@@ -1594,6 +1604,16 @@ static void render_actor_status(struct toy_renderer *renderer,
     if (fill < 0) fill = 0;
     if (fill > 64) fill = 64;
     if (fill > 0) fill_rect(&renderer->surface, bar_x, bar_y, fill, 3, hp_color);
+    if (is_base) {
+        char hp_text[16];
+        int hp_width;
+        snprintf(hp_text, sizeof(hp_text), "%d", hp);
+        hp_width = (int)strlen(hp_text) * FB_FONT_W * 2;
+        if (bar_y + FB_FONT_H * 2 + 8 < renderer->surface.height)
+            fb_draw_string_scaled((unsigned char *)renderer->surface.pixels,
+                                  bar_x + (64 - hp_width) / 2, bar_y + 7,
+                                  hp_text, hp_color, renderer->surface.stride, 2);
+    }
     (void)downed;
 }
 

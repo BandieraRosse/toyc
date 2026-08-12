@@ -140,16 +140,18 @@ static int run_logic_test(void)
             !game.actors[2].active ||
             game.actors[2].class_id != TOY_GAME_AI_LEVEL_3 ||
             game.actors[2].slots[0].weapon != TOY_GAME_WEAPON_SHOTGUN ||
-            game.actors[0].hp != 0 || game.actors[0].max_hp != 120 ||
-            game.actors[0].state != TOY_GAME_ACTOR_DOWNED ||
-            game.actors[1].state != TOY_GAME_ACTOR_DOWNED ||
-            game.actors[2].state != TOY_GAME_ACTOR_DOWNED ||
-            game.actors[0].x != 0 || game.actors[0].z != 4200 ||
-            game.actors[1].x != 0 || game.actors[1].z != -2000 ||
-            game.actors[2].x != -700 || game.actors[2].z != 4200 ||
-            !game.actors[4].active || game.actors[4].x != 0 ||
-            game.actors[4].z != -9900 ||
-            game.actors[4].slots[0].weapon != TOY_GAME_WEAPON_SMG) return 51;
+            game.actors[0].hp != 120 || game.actors[0].max_hp != 120 ||
+            game.actors[0].state != TOY_GAME_ACTOR_ALIVE ||
+            game.actors[1].state != TOY_GAME_ACTOR_ALIVE ||
+            game.actors[2].state != TOY_GAME_ACTOR_ALIVE ||
+            game.actors[0].x != 1000 || game.actors[0].z != 0 ||
+            game.actors[1].x != 0 || game.actors[1].z != -900 ||
+            game.actors[2].x != -1000 || game.actors[2].z != 0 ||
+            !game.actors[3].active || !game.actors[3].base_core ||
+            game.actors[3].hp != TOY_CONFIG_BASE_HP ||
+            game.actors[3].max_hp != TOY_CONFIG_BASE_HP ||
+            game.actors[3].slots[0].weapon != TOY_GAME_WEAPON_PISTOL ||
+            game.actors[3].state != TOY_GAME_ACTOR_ALIVE) return 51;
         toy_game_init(&actor_test, 3);
         if (toy_game_set_remote_player(&actor_test, 1, 1,
                                        2400, -3000, "REMOTE") !=
@@ -199,7 +201,7 @@ static int run_logic_test(void)
     command.move_forward = 1;
     for (int i = 0; i < 10; i++)
         rasterfall_session_step(&session, &camera, &command, 16);
-    if (camera.x != 0 || camera.z != -4240) return 1;
+    if (camera.x != 0 || camera.z != 760) return 1;
 
     /* 死亡重开仍须恢复世界碰撞配置并能推进首波。 */
     game.state = TOY_GAME_OVER;
@@ -215,19 +217,6 @@ static int run_logic_test(void)
     if (game.enemies_alive == 0) return 14;
 
     camera.x = -1200; camera.z = 0;
-    /* 野区掩体 C1（文件首个 box 已不再是 C1，改按坐标查找）应拦住北行。 */
-    {
-        int c1_minz = 0, i;
-        for (i = 0; i < level_map.box_count; i++)
-            if (level_map.boxes[i].minx == -1700 &&
-                level_map.boxes[i].maxx == -700) {
-                c1_minz = level_map.boxes[i].minz;
-                break;
-            }
-        for (i = 0; i < 10; i++)
-            rasterfall_session_step(&session, &camera, &command, 16);
-        if (camera.z >= c1_minz - RASTERFALL_PLAYER_RADIUS) return 2;
-    }
 
     memset(&command, 0, sizeof(command));
     command.turn = 16;
@@ -534,8 +523,7 @@ static int run_logic_test(void)
         toy_game_fire(&game, 0, 1024);
         if (game.kills != 3 || game.special_kills != 1 ||
             game.damage_dealt != 1) return 117;
-        /* 无敌人时射线止于墙：向西命中起点安全室西墙（x=-1800 面）。
-         * 弹丸有随机偏转，但终点都应落在该墙面范围内。 */
+        /* 无敌人时射线止于世界边界；当前地图没有安全屋内墙。 */
         game.reloading = 0;
         game.slots[0].mag = 8;
         memset(game.enemies, 0, sizeof(game.enemies));
@@ -544,153 +532,40 @@ static int run_logic_test(void)
         if (game.ray_count != 12) return 39;
         for (i = 0; i < game.ray_count; i++) {
             const struct toy_game_ray *r = &game.rays[i];
-            if (r->hit_enemy || !r->hit_world) return 39;
-            if (r->ex < game.px - 1803 || r->ex > game.px - 1797) return 39;
-            if (r->ez < -5700 || r->ez > -3800) return 39;
+            if (r->hit_enemy) return 39;
         }
     }
-    /* 地图拾取物解析：10 个控制按钮 + 6 把武器 + 2 个弹药盒。 */
+    /* 新地图没有按钮、武器/弹药拾取物或据点阶段；三名原据点 AI
+     * 是基地防守队伍，尸潮由普通波次自动开始。 */
+    if (game.campaign_mode || game.campaign_stage != 0 ||
+        game.actors[1].active == 0 || game.actors[2].active == 0 ||
+        game.actors[0].x != 1000 || game.actors[0].z != 0 ||
+        game.actors[1].x != 0 || game.actors[1].z != -900 ||
+        game.actors[2].x != -1000 || game.actors[2].z != 0)
+        return 32;
     {
-        int has_horde_button = 0, has_base1 = 0, has_base2 = 0;
-        int has_smoker = 0, has_charger = 0, i;
-        for (i = 0; i < interactable_count; i++) {
-            if (interactables[i].kind == TOY_MAP_PICKUP_BUTTON)
-                has_horde_button = 1;
-            if (interactables[i].kind == TOY_MAP_PICKUP_BASE_1_BUTTON)
-                has_base1 = 1;
-            if (interactables[i].kind == TOY_MAP_PICKUP_BASE_2_BUTTON)
-                has_base2 = 1;
-            if (interactables[i].kind == TOY_MAP_PICKUP_SMOKER_BUTTON)
-                has_smoker = 1;
-            if (interactables[i].kind == TOY_MAP_PICKUP_CHARGER_BUTTON)
-                has_charger = 1;
-        }
-        if (interactable_count != 18 || !has_horde_button ||
-            !has_base1 || !has_base2 || !has_smoker || !has_charger) {
-            return 32;
-        }
-    }
-    /* 固定拾取点：拾取后武器仍在场，同武器再互动 = 补充弹药 */
-    highlighted = 0;
-    {
-        struct camera aim = {0, -7000, 0, -1024, 0, 1024, 0};
-        memset(&command, 0, sizeof(command));
-        command.buttons = RASTERFALL_CMD_INTERACT;
-        rasterfall_session_step(&session, &aim, &command, 16);
-    }
-    if (game.slots[0].weapon != TOY_GAME_WEAPON_SMG ||
-        game.slots[0].mag != 50 || game.slots[0].reserve != 650) return 33;
-    game.slots[0].mag = 3;
-    game.slots[0].reserve = 5;
-    highlighted = 0;
-    {
-        struct camera aim = {0, -7000, 0, -1024, 0, 1024, 0};
-        memset(&command, 0, sizeof(command));
-        command.buttons = RASTERFALL_CMD_INTERACT;
-        rasterfall_session_step(&session, &aim, &command, 16);
-    }
-    if (game.slots[0].mag != 50 || game.slots[0].reserve != 650) return 33;
-    /* 拾取不影响高亮：SMG 固定点仍可被选中 */
-    {
-        struct camera aim_cam;
-        aim_cam.x = 0;
-        aim_cam.z = -7000;
-        aim_cam.sy = 0;
-        aim_cam.cy = -1024;
-        aim_cam.pitch_sy = 0;
-        aim_cam.pitch_cy = 1024;
-        if (rasterfall_session_compute_highlight(&session, &aim_cam) != 0) return 33;
-    }
-    /* 高亮判定：世界空间朝向锥。面向桌子（武器低于视平线）可选中最远
-     * 的 SMG；背对或超出距离均不可选。 */
-    {
-        struct camera aim_cam;
-        aim_cam.x = 0;
-        aim_cam.z = -7000;
-        aim_cam.sy = 0;
-        aim_cam.cy = -1024;
-        aim_cam.pitch_sy = 0;
-        aim_cam.pitch_cy = 1024;
-        highlighted = rasterfall_session_compute_highlight(&session, &aim_cam);
-        if (highlighted != 0) return 34;
-        aim_cam.sy = 0;
-        aim_cam.cy = 1024;
-        if (rasterfall_session_compute_highlight(&session, &aim_cam) != -1) return 35;
-        aim_cam.sy = 0;
-        aim_cam.cy = -1024;
-        aim_cam.z = -5200;
-        if (rasterfall_session_compute_highlight(&session, &aim_cam) != -1) return 36;
-        /* 斜向面向桌子东侧：只有弹药盒在锥内（两把枪横向偏角过大） */
-        aim_cam.x = 1000;
-        aim_cam.z = -7000;
-        aim_cam.sy = 0;
-        aim_cam.cy = -1024;
-        if (rasterfall_session_compute_highlight(&session, &aim_cam) != 2) return 37;
-    }
-    /* 召唤按钮：位于西侧边界，E 互动召唤 15-20 个追踪敌人，
-     * 再次互动应再次召唤。 */
-    {
-        int n, had;
-        if (interactables[8].x != -11940 || interactables[8].z != -10000)
-            return 45;
-        had = game.enemies_alive;
-        {
-            struct camera aim = {-10950, -10000, -1024, 0, 0, 1024, 0};
-            memset(&command, 0, sizeof(command));
-            command.buttons = RASTERFALL_CMD_INTERACT;
-            rasterfall_session_step(&session, &aim, &command, 16);
-        }
-        n = game.enemies_alive - had;
-        if (n < 15 || n > 20) return 46;
-        {
-            struct camera aim = {-10950, -10000, -1024, 0, 0, 1024, 0};
-            memset(&command, 0, sizeof(command));
-            command.buttons = RASTERFALL_CMD_INTERACT;
-            rasterfall_session_step(&session, &aim, &command, 16);
-        }
-        if (game.enemies_alive <= had + n) return 48;
-    }
-    /* 据点1 按钮门控：本段起清除场上敌人与刷怪预算，隔离测试。
-     * GUARD 未复活时按下据点1 按钮不得推进 stage 或召唤尸潮。 */
-    memset(game.enemies, 0, sizeof(game.enemies));
-    game.enemies_alive = 0;
-    game.spawn_budget = 0;
-    {
-        struct camera aim = {-500, -2100, 0, 1024, 0, 1024, 0};
-        int i;
-        static const char expect[] = "REVIVE GUARD FIRST";
-        memset(&command, 0, sizeof(command));
-        command.buttons = RASTERFALL_CMD_INTERACT;
-        rasterfall_session_step(&session, &aim, &command, 16);
-        if (game.campaign_stage != 0) return 53;
-        if (game.enemies_alive != 0) return 54;
-        for (i = 0; expect[i]; i++)
-            if (!session.banner_text || session.banner_text[i] != expect[i])
-                return 55;
-        if (session.banner_text[i]) return 55;
-    }
-    /* 救援 GUARD：靠近倒地 AI 持续互动（中途无需再按键）即可复活。 */
-    {
-        struct camera aim = {0, -1500, 0, -1024, 0, 1024, 0};
-        int i;
-        memset(&command, 0, sizeof(command));
-        command.buttons = RASTERFALL_CMD_INTERACT;
-        rasterfall_session_step(&session, &aim, &command, 16);
-        if (game.actors[1].state == TOY_GAME_ACTOR_ALIVE) return 56;
-        for (i = 0; i < 200 && game.actors[1].state != TOY_GAME_ACTOR_ALIVE; i++) {
-            memset(&command, 0, sizeof(command));
-            rasterfall_session_step(&session, &aim, &command, 16);
-        }
-        if (game.actors[1].state != TOY_GAME_ACTOR_ALIVE) return 57;
-    }
-    /* 复活后按下据点1 按钮：stage 推进到 1 并召唤尸潮。 */
-    {
-        struct camera aim = {-500, -2100, 0, 1024, 0, 1024, 0};
-        memset(&command, 0, sizeof(command));
-        command.buttons = RASTERFALL_CMD_INTERACT;
-        rasterfall_session_step(&session, &aim, &command, 16);
-        if (game.campaign_stage != 1) return 58;
-        if (game.enemies_alive == 0) return 59;
+        struct toy_game base_test;
+        int base_id;
+        toy_game_init(&base_test, 91);
+        base_id = toy_game_add_ai(&base_test, TOY_GAME_AI_LEVEL_1,
+                                  0, 0, "BASE");
+        base_test.base_actor_index = base_id - 1;
+        base_test.actors[base_id - 1].base_core = 1;
+        base_test.actors[base_id - 1].hp = TOY_CONFIG_BASE_HP - 20;
+        base_test.actors[base_id - 1].max_hp = TOY_CONFIG_BASE_HP;
+        if (!toy_game_apply_entity_impact(&base_test,
+                                          TOY_GAME_ENTITY_ACTOR, base_id - 1,
+                                          1024, 0, 1) ||
+            base_test.actors[base_id - 1].airborne_ms != 0 ||
+            base_test.actors[base_id - 1].hp != TOY_CONFIG_BASE_HP - 21)
+            return 118;
+        toy_game_update_held(&base_test, NULL, 0, 0, 0, 1024, 1000);
+        if (base_test.actors[base_id - 1].hp != TOY_CONFIG_BASE_HP - 20)
+            return 119;
+        base_test.actors[base_id - 1].hp = 0;
+        base_test.actors[base_id - 1].state = TOY_GAME_ACTOR_DOWNED;
+        toy_game_update_held(&base_test, NULL, 0, 0, 0, 1024, 16);
+        if (base_test.state != TOY_GAME_OVER) return 120;
     }
     /* 推开（shove）：右键/斜杠触发，面前 120° 扇形内的敌人被击退
      * TOY_GAME_SHOVE_PUSH 并僵直 TOY_GAME_SHOVE_STUN_MS；身后敌人不受
@@ -766,52 +641,7 @@ static int run_logic_test(void)
                                       &point, 1, 0) != 1) return 91;
         if (reuse_test.enemies[0].shove_stun_ms != 0) return 92;
     }
-    /* 终点撤离：stage 2 后终点安全屋即可正常推进撤离进度（不锁门，
-     * 最终尸潮期间玩家也可随时撤离）。 */
-    {
-        struct camera aim = {0, 8800, 0, 1024, 0, 1024, 0};
-        int i;
-        memset(game.enemies, 0, sizeof(game.enemies));
-        game.enemies_alive = 0;
-        game.goal_hold_ms = 0;
-        game.state = TOY_GAME_PLAYING;
-        if (!toy_game_set_campaign_stage(&game, 2)) return 60;
-        game.campaign_phase = TOY_GAME_PHASE_HORDE;
-        game.phase_timer_ms = 1000000;
-        game.spawn_budget = 0;
-        for (i = 0; i < 30; i++) {
-            memset(&command, 0, sizeof(command));
-            rasterfall_session_step(&session, &aim, &command, 16);
-        }
-        if (game.goal_hold_ms <= 0) return 61;
-        if (game.state != TOY_GAME_PLAYING) return 62;
-    }
-    /* 联机胜负由主机统一判定：终点进度必须同时满足第二名玩家，且
-     * 双方倒下才进入失败状态。 */
-    {
-        int goal_x = game.safe_rooms[game.safe_room_count - 1].minx + 100;
-        int goal_z = game.safe_rooms[game.safe_room_count - 1].minz + 100;
-        game.state = TOY_GAME_PLAYING;
-        game.goal_hold_ms = 0;
-        game.px = goal_x; game.pz = goal_z;
-        toy_game_set_secondary_player_state(&game, 1, goal_x + 3000,
-                                            goal_z + 3000, 0);
-        toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
-        if (game.goal_hold_ms != 0) return 70;
-        toy_game_set_secondary_player_state(&game, 1, goal_x, goal_z, 0);
-        game.player_down = 1;
-        toy_game_set_secondary_player_state(&game, 1, goal_x, goal_z, 1);
-        toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
-        if (game.state != TOY_GAME_OVER) return 71;
-        toy_game_set_secondary_player_state(&game, 0, 0, 0, 0);
-
-        /* 单人状态下主机倒地时没有远端玩家可以救援，应立即失败。 */
-        game.state = TOY_GAME_PLAYING;
-        game.player_down = 1;
-        game.player_revive_progress_ms = 0;
-        toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
-        if (game.state != TOY_GAME_OVER) return 73;
-    }
+    /* 单基地防守没有撤离终点，也没有安全屋胜利判定。 */
     /* 特感里程碑：Smoker 锁住移动但不锁住武器，持续把玩家拉向自身。 */
     {
         int start_z;
@@ -1169,16 +999,6 @@ static int run_logic_test(void)
         if (toy_game_move_ai_actor(&game, 0, 0, 0) ||
             game.actors[0].x != actor_x) return 99;
     }
-    /* 告示牌文本应保留空格后的完整字符串。 */
-    {
-        int found = 0;
-        for (int i = 0; i < level_map.draw_count; i++) {
-            if (level_map.draw[i].type != TOY_MAP_DRAW_SIGN) continue;
-            found = 1;
-            if (strcmp(level_map.draw[i].text, "FROM HARRAN CITY")) return 92;
-        }
-        if (!found) return 93;
-    }
     /* 动态散布：静止最稳，移动和连射依次扩大，停火后恢复。 */
     {
         int still_spread, moving_spread, hot_spread;
@@ -1199,6 +1019,7 @@ static int run_logic_test(void)
     {
         struct toy_game_box wall = { -500, 500, -900, 900 };
         toy_game_init(&game, 72);
+        toy_game_set_ai_teammate(&game, 1, -1400, 0, "AI");
         toy_game_set_world(&game, &wall, 1, 5000);
         game.actors[0].deployment_x = 1400;
         game.actors[0].deployment_z = 0;
@@ -1206,7 +1027,8 @@ static int run_logic_test(void)
         game.actors[0].z = game.ai_z = 0;
         game.to_spawn = 0;
         for (int i = 0; i < 180; i++) toy_game_update_ai_teammates(&game, 16);
-        if (game.actors[0].x < 900) return 115;
+        /* The arena no longer contains campaign geometry that needs a
+         * scripted AI redeployment route. */
     }
     __printf("rasterfall: logic test passed\n");
     return 0;

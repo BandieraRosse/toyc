@@ -11,20 +11,6 @@
 static void session_interact(struct rasterfall_session *session,
                              struct rasterfall_interactable *it);
 
-static int session_base_center(const struct rasterfall_session *session, int id,
-                               int *x, int *z)
-{
-    int i;
-    for (i = 0; i < session->level.base_count; i++) {
-        const struct toy_map_base *base = &session->level.bases[i];
-        if (base->id != id) continue;
-        if (x) *x = (base->box.minx + base->box.maxx) / 2;
-        if (z) *z = (base->box.minz + base->box.maxz) / 2;
-        return 1;
-    }
-    return 0;
-}
-
 static void session_down_ai(struct rasterfall_session *session, int index,
                             int x, int z)
 {
@@ -41,48 +27,6 @@ static void session_down_ai(struct rasterfall_session *session, int index,
     }
 }
 
-static int session_spawn_base_horde(struct rasterfall_session *session,
-                                    int base)
-{
-    struct toy_game *game = &session->game_state;
-    int spawned = 0;
-    if (base == 1) {
-        spawned += toy_game_spawn_horde_type(game, TOY_GAME_ENEMY_COMMON,
-                                             12, 16, session->spawn_zones,
-                                             session->spawn_count, 900);
-        spawned += toy_game_spawn_horde_type(game, TOY_GAME_ENEMY_FAST,
-                                             4, 6, session->spawn_zones,
-                                             session->spawn_count, 900);
-        spawned += toy_game_spawn_horde_type(game, TOY_GAME_ENEMY_HEAVY,
-                                             2, 3, session->spawn_zones,
-                                             session->spawn_count, 900);
-        spawned += toy_game_spawn_horde_type(game, TOY_GAME_ENEMY_PURSUIT_FAST,
-                                             2, 3, session->spawn_zones,
-                                             session->spawn_count, 900);
-    } else {
-        spawned += toy_game_spawn_horde_type(game, TOY_GAME_ENEMY_COMMON,
-                                             20, 26, session->spawn_zones,
-                                             session->spawn_count, 900);
-        spawned += toy_game_spawn_horde_type(game, TOY_GAME_ENEMY_FAST,
-                                             8, 12, session->spawn_zones,
-                                             session->spawn_count, 900);
-        spawned += toy_game_spawn_horde_type(game, TOY_GAME_ENEMY_HEAVY,
-                                             8, 10, session->spawn_zones,
-                                             session->spawn_count, 900);
-        spawned += toy_game_spawn_horde_type(game,
-                                             TOY_GAME_ENEMY_PURSUIT_HEAVY,
-                                             5, 7, session->spawn_zones,
-                                             session->spawn_count, 900);
-        spawned += toy_game_spawn_horde_type(game, TOY_GAME_ENEMY_PURSUIT_FAST,
-                                             6, 9, session->spawn_zones,
-                                             session->spawn_count, 900);
-    }
-    game->campaign_phase = TOY_GAME_PHASE_HORDE;
-    game->phase_timer_ms = base == 1 ? 30000 : 45000;
-    game->spawn_budget = 0;
-    return spawned;
-}
-
 static int session_near_ai(const struct rasterfall_session *session,
                            const struct camera *camera, int *out_index)
 {
@@ -92,6 +36,7 @@ static int session_near_ai(const struct rasterfall_session *session,
         const struct toy_game_actor *actor = &session->game_state.actors[i];
         long dx, dz, d2;
         if (!actor->active || actor->kind != TOY_GAME_ACTOR_AI ||
+            actor->base_core ||
             actor->state != TOY_GAME_ACTOR_DOWNED) continue;
         dx = (long)camera->x - actor->x;
         dz = (long)camera->z - actor->z;
@@ -161,16 +106,8 @@ void rasterfall_session_reset(struct rasterfall_session *session,
                        session->level.box_count, session->level.room_limit);
     toy_game_set_platforms(&session->game_state, session->level.platforms,
                            session->level.platform_count);
-    toy_game_set_campaign(&session->game_state, session->safe_rooms,
-                          session->level.safe_count, session->spawn_zones,
-                          session->spawn_count);
-    toy_game_set_campaign_safe_indices(&session->game_state,
-                                       session->level.start_safe_index,
-                                       session->level.goal_safe_index);
-    toy_game_set_alarm(&session->game_state,
-                       session->level.has_alarm ? &session->level.alarm_zone : NULL,
-                       session->level.has_alarm ? session->level.alarm_spawn_zone : -1);
-    for (i = 0; i < TOY_MAP_MAX_BASES; i++) session->base_actor_indices[i] = -1;
+    /* The game starts directly in the ordinary endless wave director.  There
+     * are no safe rooms, capture stages, alarms, or objective transitions. */
     /* AI 出生点属于地图语义；第一个条目仍占用 actor 0，以兼容旧的
      * toy_game AI 镜像和现有 HUD/网络协议。 */
     for (i = 0; i < session->level.ai_spawn_count && i < TOY_GAME_MAX_ACTORS; i++) {
@@ -198,6 +135,23 @@ void rasterfall_session_reset(struct rasterfall_session *session,
             actor->slots[0].reserve = TOY_GAME_AMMO_INFINITE;
             actor->current_slot = 0;
         }
+        if (!strcmp(spawn->name, "BASE")) {
+            struct toy_game_actor *base =
+                &session->game_state.actors[actor_index];
+            const struct toy_game_weapon_info *pistol =
+                toy_game_weapon_info(TOY_GAME_WEAPON_PISTOL);
+            base->base_core = 1;
+            base->max_hp = TOY_CONFIG_BASE_HP;
+            base->hp = TOY_CONFIG_BASE_HP;
+            base->state = TOY_GAME_ACTOR_ALIVE;
+            base->slots[0].weapon = TOY_GAME_WEAPON_PISTOL;
+            base->slots[0].mag = pistol->mag_size;
+            base->slots[0].reserve = TOY_GAME_AMMO_INFINITE;
+            base->current_slot = 0;
+            session->game_state.base_actor_index = actor_index;
+            session->game_state.base_regen_timer_ms =
+                TOY_CONFIG_BASE_REGEN_MS;
+        }
         if (!strcmp(spawn->name, "HIT_TEST")) {
             session->game_state.actors[actor_index].fire_enabled = 0;
             session->game_state.actors[actor_index].hit_test_dummy = 1;
@@ -210,9 +164,6 @@ void rasterfall_session_reset(struct rasterfall_session *session,
                 &session->game_state.actors[actor_index],
                 TOY_GAME_ANIM_IDLE);
         }
-        if (spawn->base_id >= 0 && spawn->base_id < TOY_MAP_MAX_BASES &&
-            session->base_actor_indices[spawn->base_id] < 0)
-            session->base_actor_indices[spawn->base_id] = actor_index;
         if (spawn->downed) session_down_ai(session, actor_index, spawn->x, spawn->z);
     }
     session->game_state.px = camera->x;
@@ -468,52 +419,7 @@ static void session_interact(struct rasterfall_session *session,
         it->kind == TOY_MAP_PICKUP_AMMO ||
         it->kind == TOY_MAP_PICKUP_WEAPON)
         toy_game_emit_event(&session->game_state, TOY_GAME_EV_PICKUP);
-    if (it->kind == TOY_MAP_PICKUP_BASE_1_BUTTON) {
-        if (session->game_state.campaign_stage != 0) {
-            session->banner_text = "FIRST BASE ALREADY CLEARED";
-            session->banner_ms = 1800;
-            return;
-        }
-        /* 据点防守的前提：先救援本据点的 AI，否则尸潮来了没人守。 */
-        if (session->base_actor_indices[1] < 0 ||
-            session->game_state.actors[session->base_actor_indices[1]].state !=
-                TOY_GAME_ACTOR_ALIVE) {
-            session->banner_text = "REVIVE GUARD FIRST";
-            session->banner_ms = 1800;
-            return;
-        }
-        toy_game_set_campaign_stage(&session->game_state, 1);
-        session->banner_text = "BASE 1 OVERRUN - MIXED HORDE INCOMING";
-        session->banner_ms = 3500;
-        __printf("rasterfall: base 1 horde summoned %d\n",
-                  session_spawn_base_horde(session, 1));
-    } else if (it->kind == TOY_MAP_PICKUP_BASE_2_BUTTON) {
-        if (session->game_state.campaign_stage != 1) {
-            session->banner_text = "CLEAR BASE 1 FIRST";
-            session->banner_ms = 1800;
-            return;
-        }
-        if (session->base_actor_indices[2] < 0 ||
-            session->game_state.actors[session->base_actor_indices[2]].state !=
-                TOY_GAME_ACTOR_ALIVE) {
-            session->banner_text = "REVIVE JESUS FIRST";
-            session->banner_ms = 1800;
-            return;
-        }
-        {
-            int base_x, base_z;
-            if (session_base_center(session, 2, &base_x, &base_z) &&
-                session->base_actor_indices[1] >= 0)
-            toy_game_move_ai_actor(&session->game_state,
-                                   session->base_actor_indices[1],
-                                   base_x + 700, base_z);
-        }
-        toy_game_set_campaign_stage(&session->game_state, 2);
-        session->banner_text = "BASE 2 OVERRUN - FINAL HORDE INCOMING";
-        session->banner_ms = 4000;
-        __printf("rasterfall: base 2 horde summoned %d\n",
-                  session_spawn_base_horde(session, 2));
-    } else if (it->kind == TOY_MAP_PICKUP_BUTTON) {
+    if (it->kind == TOY_MAP_PICKUP_BUTTON) {
         int n;
         session->banner_ms = 3500;
         session->banner_text = "HORDE SUMMONED - THEY WILL FIND YOU";

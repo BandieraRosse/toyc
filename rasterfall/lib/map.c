@@ -179,7 +179,9 @@ int toy_map_load(const char *path, struct toy_map *m)
             }
         }
     }
-    if (!(m->room_limit > 0 && m->box_count > 0)) {
+    /* A defense arena may intentionally have no interior collision boxes;
+     * room_limit still supplies the outer gameplay boundary. */
+    if (!(m->room_limit > 0)) {
         toy_map_unload(m);
         return -1;
     }

@@ -27,9 +27,14 @@
 #define charge_dir_x ability.charge_dir_x
 #define charge_dir_z ability.charge_dir_z
 #define charge_elapsed_ms ability.charge_elapsed_ms
+#define charge_hit_base ability.charge_hit_base
 #define special_target_player ability.special_target_player
 #define special_target_actor_index ability.special_target_actor_index
 #define special_pull_timer_ms ability.special_pull_timer_ms
+
+static int enemy_target_reachable(const struct toy_game *g,
+                                  const struct toy_game_enemy *e,
+                                  int x, int z);
 
 /* ── PRNG：xorshift64* ──────────────────────────────────────────── */
 
@@ -357,6 +362,8 @@ void toy_game_init(struct toy_game *g, uint64_t seed)
 {
     const struct toy_game_weapon_info *w;
     memset(g, 0, sizeof(struct toy_game));
+    g->base_actor_index = -1;
+    g->base_regen_timer_ms = TOY_CONFIG_BASE_REGEN_MS;
     g->rng = seed ? seed : 0x9E3779B97F4A7C15ULL;
     g->player_pull_enemy_index = -1;
     g->secondary_player_hp = TOY_GAME_SECONDARY_PLAYER_HP;
@@ -577,6 +584,7 @@ int toy_game_revive_actor(struct toy_game *g, int actor_index, int dt_ms)
         (a->kind != TOY_GAME_ACTOR_AI &&
          a->kind != TOY_GAME_ACTOR_PLAYER) ||
         a->state != TOY_GAME_ACTOR_DOWNED) return 0;
+    if (a->base_core) return 0;
     a->revive_progress_ms += dt_ms;
     if (actor_index == 0) g->ai_revive_progress_ms = a->revive_progress_ms;
     if (a->revive_progress_ms < TOY_GAME_REVIVE_MS) return 0;
@@ -878,6 +886,7 @@ static void init_enemy_stats(struct toy_game *g, struct toy_game_enemy *e,
     e->charge_dir_x = 0;
     e->charge_dir_z = 0;
     e->charge_elapsed_ms = 0;
+    e->charge_hit_base = 0;
     e->special_target_player = 0;
     e->special_target_actor_index = -1;
     e->special_pull_timer_ms = 0;
@@ -1362,6 +1371,35 @@ static void bite_ai(struct toy_game *g, struct toy_game_enemy *e)
     }
 }
 
+static struct toy_game_actor *base_core_actor(struct toy_game *g)
+{
+    if (!g || g->base_actor_index < 0 ||
+        g->base_actor_index >= TOY_GAME_MAX_ACTORS)
+        return NULL;
+    if (!g->actors[g->base_actor_index].active)
+        return NULL;
+    return &g->actors[g->base_actor_index];
+}
+
+static void update_base_core(struct toy_game *g, int dt_ms)
+{
+    struct toy_game_actor *base = base_core_actor(g);
+    if (!base) return;
+    if (base->state == TOY_GAME_ACTOR_ALIVE && base->hp > 0) {
+        g->base_regen_timer_ms -= dt_ms;
+        while (g->base_regen_timer_ms <= 0) {
+            if (base->hp < base->max_hp) base->hp++;
+            g->base_regen_timer_ms += TOY_CONFIG_BASE_REGEN_MS;
+        }
+    }
+    if (base->hp <= 0 || base->state != TOY_GAME_ACTOR_ALIVE) {
+        base->hp = 0;
+        base->state = TOY_GAME_ACTOR_DOWNED;
+        g->state = TOY_GAME_OVER;
+        push_event(g, TOY_GAME_EV_PLAYER_DEATH);
+    }
+}
+
 static void turn_enemy_toward(struct toy_game_enemy *e, int dx, int dz)
 {
     long long dist2 = (long long)dx * dx + (long long)dz * dz;
@@ -1464,7 +1502,8 @@ static int nearest_ai_position(const struct toy_game *g,
         if (!a->active ||
             (a->kind != TOY_GAME_ACTOR_AI &&
              a->kind != TOY_GAME_ACTOR_PLAYER) ||
-            a->state != TOY_GAME_ACTOR_ALIVE) continue;
+            a->state != TOY_GAME_ACTOR_ALIVE ||
+            !enemy_target_reachable(g, e, a->x, a->z)) continue;
         dx = (long long)a->x - e->x;
         dz = (long long)a->z - e->z;
         d2 = dx * dx + dz * dz;
@@ -1486,11 +1525,12 @@ static int nearest_special_target(const struct toy_game *g,
 {
     int found = 0, player = 0, actor = -1;
     long long best = 0, dx, dz, d2;
-    if (!g->player_down) {
+    if (!g->player_down && enemy_target_reachable(g, e, g->px, g->pz)) {
         dx = (long long)g->px - e->x; dz = (long long)g->pz - e->z;
         best = dx * dx + dz * dz; found = 1;
     }
-    if (g->secondary_player_active && !g->secondary_player_down) {
+    if (g->secondary_player_active && !g->secondary_player_down &&
+        enemy_target_reachable(g, e, g->secondary_px, g->secondary_pz)) {
         dx = (long long)g->secondary_px - e->x;
         dz = (long long)g->secondary_pz - e->z;
         d2 = dx * dx + dz * dz;
@@ -1503,7 +1543,8 @@ static int nearest_special_target(const struct toy_game *g,
         if (!a->active ||
             (a->kind != TOY_GAME_ACTOR_AI &&
              a->kind != TOY_GAME_ACTOR_PLAYER) ||
-            a->state != TOY_GAME_ACTOR_ALIVE) continue;
+            a->state != TOY_GAME_ACTOR_ALIVE ||
+            !enemy_target_reachable(g, e, a->x, a->z)) continue;
         dx = (long long)a->x - e->x; dz = (long long)a->z - e->z;
         d2 = dx * dx + dz * dz;
         if (!found || d2 < best) {
@@ -1580,6 +1621,15 @@ static int enemy_has_line_of_sight(const struct toy_game *g,
         if (segment_hits_box(e->x, e->z, target_x, target_z, &g->world[i]))
             return 0;
     return 1;
+}
+
+/* Air gates are full-width barriers on this map.  A blocked segment therefore
+ * means the target is not reachable from the current gameplay region. */
+static int enemy_target_reachable(const struct toy_game *g,
+                                  const struct toy_game_enemy *e,
+                                  int x, int z)
+{
+    return enemy_has_line_of_sight(g, e, x, z);
 }
 
 static int player_in_safe_room_at(const struct toy_game *g, int x, int z)
@@ -2084,7 +2134,8 @@ static void update_smoker(struct toy_game *g, struct toy_game_enemy *e,
                 g->secondary_px = pull_x + mx;
                 g->secondary_pz = pull_z + mz;
             }
-            else if (target_player == 2)
+            else if (target_player == 2 &&
+                     !g->actors[target_actor].base_core)
                 toy_game_move_ai_actor(g, target_actor, pull_x + mx,
                                        pull_z + mz);
         }
@@ -2182,12 +2233,12 @@ int toy_game_apply_entity_impact(struct toy_game *g, int kind, int index,
             a->state = TOY_GAME_ACTOR_DOWNED;
             toy_game_actor_set_animation(a, TOY_GAME_ANIM_DEATH);
             a->revive_progress_ms = 0;
-        } else if (a->kind == TOY_GAME_ACTOR_AI) {
+        } else if (a->kind == TOY_GAME_ACTOR_AI && !a->base_core) {
             toy_game_actor_set_animation(a, TOY_GAME_ANIM_SHOVE);
             a->animation.time_ms = 0;
             toy_game_shove_at(g, a->x, a->z, a->sy, a->cy);
         } else toy_game_actor_set_animation(a, TOY_GAME_ANIM_HIT);
-        if (a->hit_test_dummy) {
+        if (a->base_core || a->hit_test_dummy) {
             /* The dedicated HIT_TEST actor is a stationary target: keep the
              * hit clip readable instead of hiding it inside knockback. */
             a->airborne_ms = 0;
@@ -2251,8 +2302,13 @@ static int charger_hit_entities(struct toy_game *g,
         dist2 = (long long)dx * dx + (long long)dz * dz;
         if (dist2 <= (long long)TOY_GAME_CHARGER_IMPACT_RANGE *
                     TOY_GAME_CHARGER_IMPACT_RANGE &&
+            (!a->base_core || !charger->charge_hit_base) &&
             toy_game_apply_entity_impact(g, TOY_GAME_ENTITY_ACTOR, i,
                                           dx, dz, TOY_GAME_CHARGER_IMPACT_DAMAGE)) hits++;
+        if (a->base_core && a->active &&
+            dist2 <= (long long)TOY_GAME_CHARGER_IMPACT_RANGE *
+                     TOY_GAME_CHARGER_IMPACT_RANGE)
+            charger->charge_hit_base = 1;
     }
     return hits;
 }
@@ -2349,6 +2405,7 @@ static void update_charger(struct toy_game *g, struct toy_game_enemy *e,
             e->charge_dir_z = e->dir_z;
         }
         e->charge_active = 1;
+        e->charge_hit_base = 0;
         e->special_timer_ms = TOY_GAME_CHARGER_WINDUP_MS;
         e->charge_elapsed_ms = 0;
         e->target_x = target_x;
@@ -3360,6 +3417,7 @@ void toy_game_update_held(struct toy_game *g,
     }
     update_player_special_motion(g, dt_ms);
     separate_enemies(g);
+    update_base_core(g, dt_ms);
     if (g->campaign_mode) update_campaign(g, dt_ms);
     else update_waves(g, dt_ms);
 }

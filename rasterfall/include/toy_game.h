@@ -313,6 +313,7 @@ struct toy_game_enemy_ability_state {
     int charge_active;
     int charge_dir_x, charge_dir_z;
     int charge_elapsed_ms;
+    int charge_hit_base;
     int special_target_player;
     int special_target_actor_index;
     int special_pull_timer_ms;
@@ -353,6 +354,7 @@ struct toy_game_actor {
     int actor_id;
     int kind;
     int class_id;
+    int base_core;              /* BASE: fixed defense objective */
     int state;
     int x, z;
     int sy, cy;
@@ -414,6 +416,8 @@ struct toy_game {
     char player_name[TOY_GAME_MAX_NAME];
 
     struct toy_game_actor actors[TOY_GAME_MAX_ACTORS];
+    int base_actor_index;
+    int base_regen_timer_ms;
 
     /* 固定出生的 AI 队友。其武器字段与玩家共用同一套更新/换弹/射击
      * 规则；离开部署区后会绕过障碍回位，并在索敌范围内开火。 */
