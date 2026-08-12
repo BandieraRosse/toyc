@@ -1703,6 +1703,12 @@ startup_again:
                         } else if (shop_page_before == 3) {
                             command.shop_action = 3;
                             command.shop_item = 0;
+                        } else if (shop_page_before == 5) {
+                            command.shop_action = 4;
+                            command.shop_item = session.assignment_flag;
+                            command.shop_arg = rasterfall_session_shop_actor_at(
+                                &session, session.assignment_flag,
+                                shop_selected_before);
                         }
                     }
                     if (toy_input_down(&input, KEY_TAB) &&

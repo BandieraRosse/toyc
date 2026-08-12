@@ -49,6 +49,7 @@ struct rasterfall_command {
     int fire_held;
     int shop_action;
     int shop_item;
+    int shop_arg;
 };
 
 struct rasterfall_session {
@@ -128,6 +129,8 @@ int rasterfall_session_compute_highlight(const struct rasterfall_session *sessio
 void rasterfall_session_shop_input(struct rasterfall_session *session,
                                    int up, int down, int enter, int esc);
 int rasterfall_session_shop_request(struct rasterfall_session *session,
-                                    int action, int item);
+                                    int action, int item, int arg);
+int rasterfall_session_shop_actor_at(const struct rasterfall_session *session,
+                                     int flag_index, int selection);
 
 #endif

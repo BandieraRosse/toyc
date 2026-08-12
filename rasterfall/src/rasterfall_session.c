@@ -895,7 +895,7 @@ void rasterfall_session_shop_input(struct rasterfall_session *session,
 }
 
 int rasterfall_session_shop_request(struct rasterfall_session *session,
-                                    int action, int item)
+                                    int action, int item, int arg)
 {
     int result = 0;
     if (!session || session->game_state.state != TOY_GAME_PLAYING) return 0;
@@ -905,6 +905,24 @@ int rasterfall_session_shop_request(struct rasterfall_session *session,
         result = session_hire_ai(session, item);
     } else if (action == 3) {
         result = session_buy_flag(session);
+    } else if (action == 4) {
+        int old_flag;
+        struct toy_game_actor *actor;
+        if (item < 0 || item >= session->flag_count ||
+            arg < 0 || arg >= TOY_GAME_MAX_ACTORS) return 0;
+        actor = &session->game_state.actors[arg];
+        if (!actor->active || actor->kind != TOY_GAME_ACTOR_AI ||
+            actor->base_core || actor->developer_only) return 0;
+        old_flag = actor->flag_index;
+        if (old_flag == item) {
+            actor->flag_index = -1;
+            result = 1;
+        } else {
+            result = session_assign_actor_to_flag(session, arg, item);
+            if (result && old_flag >= 0)
+                actor->flag_index = item;
+        }
+        if (result) session_set_flag_assignments(session, item);
     }
     if (result > 0) {
         session->banner_success = 1;
@@ -913,6 +931,16 @@ int rasterfall_session_shop_request(struct rasterfall_session *session,
             action == 2 ? "AI HIRED" : "WEAPON PURCHASED";
     }
     return result;
+}
+
+int rasterfall_session_shop_actor_at(const struct rasterfall_session *session,
+                                     int flag_index, int selection)
+{
+    int indices[TOY_GAME_MAX_ACTORS];
+    int count;
+    if (!session || selection < 0) return -1;
+    count = session_collect_assignable(session, flag_index, indices);
+    return selection < count ? indices[selection] : -1;
 }
 
 static void session_update_manual_alarm(struct rasterfall_session *session,

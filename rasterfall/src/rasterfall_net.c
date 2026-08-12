@@ -24,7 +24,7 @@ static void net_windows_log(const char *message) { (void)message; }
 #define NET_MAGIC_1 'F'
 #define NET_MAGIC_2 'N'
 #define NET_MAGIC_3 '1'
-#define NET_INPUT_SIZE 36
+#define NET_INPUT_SIZE 40
 #define NET_PLAYER_BASE_SIZE 65
 #define NET_PLAYER_RAY_SIZE 15
 #define NET_PLAYER_SIZE (NET_PLAYER_BASE_SIZE + 4 + 1 + TOY_GAME_MAX_RAYS * NET_PLAYER_RAY_SIZE)
@@ -946,6 +946,7 @@ static int encode_command(unsigned char *packet, uint32_t sequence,
     put_u32(p + 32, 0);
     p[7] = (unsigned char)(command->shop_item < 0 ? 0 : command->shop_item);
     put_u16(p + 14, (unsigned int)command->shop_action);
+    put_u16(p + 36, (unsigned int)command->shop_arg);
     return size;
 }
 
@@ -962,6 +963,7 @@ static int decode_command(const unsigned char *payload, int size,
     command->buttons = get_u16(payload + 12);
     command->shop_item = payload[7];
     command->shop_action = get_u16(payload + 14);
+    command->shop_arg = get_u16(payload + 36);
     if (command->move_forward < -1 || command->move_forward > 1 ||
         command->move_strafe < -1 || command->move_strafe > 1) return -1;
     if (command->turn < -1024 || command->turn > 1024 ||
@@ -2061,7 +2063,8 @@ static void net_apply_extra_remote(struct rasterfall_net *net,
                                           remote->client_id);
     if (remote->command.buttons & RASTERFALL_CMD_SHOP)
         rasterfall_session_shop_request(session, remote->command.shop_action,
-                                        remote->command.shop_item);
+                                        remote->command.shop_item,
+                                        remote->command.shop_arg);
     memset(keys, 0, sizeof(keys));
     if (remote->command.buttons & RASTERFALL_CMD_RELOAD)
         keys[TOY_GAME_KEY_RELOAD] = 1;
@@ -2573,7 +2576,8 @@ void rasterfall_net_apply_remote(struct rasterfall_net *net,
             rasterfall_session_toggle_flag_remote(session, &net->peer_camera, 1);
         if (net->remote_command.buttons & RASTERFALL_CMD_SHOP)
             rasterfall_session_shop_request(session, net->remote_command.shop_action,
-                                            net->remote_command.shop_item);
+                                            net->remote_command.shop_item,
+                                            net->remote_command.shop_arg);
         rasterfall_session_update_flag_remote(session, &net->peer_camera, 1);
         memset(keys, 0, sizeof(keys));
         if (net->remote_command.buttons & RASTERFALL_CMD_RELOAD)

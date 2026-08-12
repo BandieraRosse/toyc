@@ -35,6 +35,14 @@ static int run_logic_test(void)
     rasterfall_session_toggle_flag_remote(&session, &camera, 1);
     if (session.flags[0].carried || session.flags[0].carrier_id != -1)
         return 134;
+    {
+        int actor_index = rasterfall_session_shop_actor_at(&session, 0, 0);
+        if (actor_index < 0) return 135;
+        if (rasterfall_session_shop_request(&session, 4, 0,
+                                            actor_index) <= 0 ||
+            session.game_state.actors[actor_index].flag_index != 0)
+            return 136;
+    }
     /* 客户端交互由主机执行，但按下 E 后本地仍必须立即显示反馈。 */
     if (session.item_count > 0) {
         memset(&command, 0, sizeof(command));
