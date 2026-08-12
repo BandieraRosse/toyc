@@ -16,6 +16,7 @@
 
 #define special_target_active ability.special_target_active
 #define charge_active ability.charge_active
+#define charge_elapsed_ms ability.charge_elapsed_ms
 #define special_target_player ability.special_target_player
 #define special_target_actor_index ability.special_target_actor_index
 #include "rasterfall_model.h"
@@ -1152,15 +1153,18 @@ static int render_button(struct toy_renderer *renderer, const struct camera *cam
  * 添加新的特感而不再占用墙面按钮。 */
 static int render_special_button(struct toy_renderer *renderer,
                                  const struct camera *camera,
-                                 int x, int y, int z, int on, int charger)
+                                 int x, int y, int z, int on, int special)
 {
-    uint32_t color = charger ? 0x9B5528 : 0x3E7462;
+    uint32_t color = special == 2 ? 0x65713D :
+                     special == 1 ? 0x9B5528 : 0x3E7462;
     int pixels = draw_cylinder(renderer, camera, x, z, 190, -900, y, color);
     pixels += draw_cuboid(renderer, camera, x - 125, x + 125,
                           y, y + 35, z - 125, z + 125,
                           highlight_tint(0x252B31, on));
     pixels += draw_cylinder(renderer, camera, x, z, 62, y + 35, y + 78,
-                            on ? 0xFFE080 : (charger ? 0xD43A28 : 0x38CFA0));
+                            on ? 0xFFE080 :
+                            (special == 2 ? 0x91A54C :
+                             special == 1 ? 0xD43A28 : 0x38CFA0));
     return pixels;
 }
 
@@ -1199,9 +1203,11 @@ static int render_interactables(struct toy_renderer *renderer,
             pixels += render_button(renderer, camera, it->x, it->y, it->z, on,
                                     it->x < -10000 ? 1 : it->x > 10000 ? 2 : 0);
         else if (it->kind == TOY_MAP_PICKUP_SMOKER_BUTTON ||
-                 it->kind == TOY_MAP_PICKUP_CHARGER_BUTTON)
+                 it->kind == TOY_MAP_PICKUP_CHARGER_BUTTON ||
+                 it->kind == TOY_MAP_PICKUP_TANK_BUTTON)
             pixels += render_special_button(renderer, camera, it->x, it->y,
                                              it->z, on,
+                                             it->kind == TOY_MAP_PICKUP_TANK_BUTTON ? 2 :
                                              it->kind == TOY_MAP_PICKUP_CHARGER_BUTTON);
         else if (it->kind == TOY_MAP_PICKUP_SHOP)
             pixels += render_button(renderer, camera, it->x, it->y, it->z, on, 2);
@@ -1402,6 +1408,97 @@ static int render_charger_enemy(struct toy_renderer *renderer,
     return pixels;
 }
 
+static int draw_tank_arm_box(struct toy_renderer *renderer,
+                             const struct camera *camera, int x, int z,
+                             int sy, int cy, int side_x,
+                             int shoulder_y, int shoulder_z,
+                             int fist_y, int fist_z, uint32_t color)
+{
+    static const int faces[36] = {
+        0,1,2, 0,2,3, 4,6,5, 4,7,6,
+        0,4,5, 0,5,1, 3,2,6, 3,6,7,
+        0,3,7, 0,7,4, 1,5,6, 1,6,2
+    };
+    struct vec3 vertices[8];
+    int local_x[8], local_y[8], local_z[8];
+    int dy = fist_y - shoulder_y, dz = fist_z - shoulder_z;
+    int length = isqrt((long long)dy * dy + (long long)dz * dz);
+    int py, pz, i, pixels = 0;
+    const int half_width = 165, half_thickness = 150;
+    if (length < 1) length = 1;
+    py = -dz * half_thickness / length;
+    pz = dy * half_thickness / length;
+    for (i = 0; i < 8; i++) {
+        int endpoint = i >= 4;
+        int corner = i & 3;
+        int center_y = endpoint ? fist_y : shoulder_y;
+        int center_z = endpoint ? fist_z : shoulder_z;
+        local_x[i] = side_x +
+            ((corner == 0 || corner == 3) ? -half_width : half_width);
+        local_y[i] = center_y + (corner < 2 ? -py : py);
+        local_z[i] = center_z + (corner < 2 ? -pz : pz);
+        actor_world_point(x, z, sy, cy, local_x[i], local_y[i], local_z[i],
+                          &vertices[i]);
+    }
+    for (i = 0; i < 36; i += 3)
+        pixels += draw_world_triangle(renderer, camera,
+                                      &vertices[faces[i]],
+                                      &vertices[faces[i + 1]],
+                                      &vertices[faces[i + 2]], color);
+    return pixels;
+}
+
+static int render_tank_enemy(struct toy_renderer *renderer,
+                             const struct camera *camera,
+                             const struct toy_game_enemy *e, int scale,
+                             uint32_t color)
+{
+    int x = e->x, z = e->z, pixels = 0;
+    int swing = 0, fist_y, fist_z;
+    if (e->charge_active) {
+        swing = e->charge_elapsed_ms * 1000 / TOY_CONFIG_TANK_WINDUP_MS;
+        if (swing > 1000) swing = 1000;
+    }
+    fist_y = -500 + swing * 800 / 1000;
+    fist_z = 80 + swing * 720 / 1000;
+    /* A broad torso, high shoulders and two oversized arms distinguish the
+     * boss even at long range.  During windup each arm rotates from a hanging
+     * pose into the facing direction; its height rises instead of translating
+     * the whole rectangular arm downward. */
+    pixels += draw_cuboid(renderer, camera, x - 150, x - 35,
+                          enemy_y(-900, scale), enemy_y(-700, scale),
+                          z - 175, z + 120, 0x29291F);
+    pixels += draw_cuboid(renderer, camera, x + 35, x + 150,
+                          enemy_y(-900, scale), enemy_y(-700, scale),
+                          z - 175, z + 120, 0x29291F);
+    pixels += draw_cuboid(renderer, camera, x - 285, x + 285,
+                          enemy_y(-720, scale), enemy_y(170, scale),
+                          z - 210, z + 210, color);
+    active_actor_lift = active_enemy_lift;
+    pixels += draw_tank_arm_box(renderer, camera, x, z,
+                                e->dir_x, e->dir_z, -390,
+                                450, 0, fist_y, fist_z,
+                                color + 0x101008);
+    pixels += draw_tank_arm_box(renderer, camera, x, z,
+                                e->dir_x, e->dir_z, 390,
+                                450, 0, fist_y, fist_z,
+                                color + 0x101008);
+    active_actor_lift = 0;
+    pixels += draw_ellipsoid_head(renderer, camera, x, z,
+                                  enemy_y(330, scale), 225,
+                                  (enemy_y(570, scale) -
+                                   enemy_y(140, scale)) / 2,
+                                  color + 0x18180C);
+    /* Pixel T on the face. */
+    pixels += draw_face_rect(renderer, camera, x, z, 225, e->dir_x, e->dir_z,
+                             -125, 125, enemy_y(360, scale),
+                             enemy_y(410, scale), 0x202016);
+    pixels += draw_face_rect(renderer, camera, x, z, 225, e->dir_x, e->dir_z,
+                             -28, 28, enemy_y(180, scale),
+                             enemy_y(410, scale), 0x202016);
+    return pixels;
+}
+
 static int render_smoker_enemy(struct toy_renderer *renderer,
                                const struct camera *camera,
                                const struct toy_game_enemy *e, int scale,
@@ -1567,6 +1664,10 @@ static int render_enemies(struct toy_renderer *renderer,
                 color = e->charge_active ? 0xB06A36 : RF_COLOR_ENEMY_CHARGER;
                 scale = 1180;
             }
+            if (info->ability == TOY_GAME_ENEMY_ABILITY_TANK_SWEEP) {
+                color = RF_COLOR_ENEMY_TANK;
+                scale = 1600;
+            }
             if (info->ability == TOY_GAME_ENEMY_ABILITY_SMOKER_TONGUE)
                 scale = 1000;
             if (e->hurt > 0) color = 0xBB3333;
@@ -1585,6 +1686,9 @@ static int render_enemies(struct toy_renderer *renderer,
             pixels += render_smoker_tongue(renderer, camera, e);
         active_enemy_lift = e->airborne_y;
         if (toy_game_enemy_info(e->type)->ability ==
+                TOY_GAME_ENEMY_ABILITY_TANK_SWEEP)
+            pixels += render_tank_enemy(renderer, camera, e, scale, color);
+        else if (toy_game_enemy_info(e->type)->ability ==
                 TOY_GAME_ENEMY_ABILITY_CHARGER_RUSH)
             pixels += render_charger_enemy(renderer, camera, e, scale, color);
         else if (toy_game_enemy_info(e->type)->ability ==

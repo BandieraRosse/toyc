@@ -521,6 +521,8 @@ static void session_client_interact_banner(struct rasterfall_session *session)
         session->banner_text = "SMOKER SUMMONED";
     else if (it->kind == TOY_MAP_PICKUP_CHARGER_BUTTON)
         session->banner_text = "CHARGER SUMMONED";
+    else if (it->kind == TOY_MAP_PICKUP_TANK_BUTTON)
+        session->banner_text = "TANK SUMMONED";
     else if (it->kind == TOY_MAP_PICKUP_AMMO)
         session->banner_text = "AMMO REFILLED";
     else if (it->kind == TOY_MAP_PICKUP_WEAPON ||
@@ -584,16 +586,21 @@ static void session_interact(struct rasterfall_session *session,
         session->banner_text = "RED RUNNER HORDE SUMMONED";
         __printf("rasterfall: fast pursuit enemies summoned %d\n", n);
     } else if (it->kind == TOY_MAP_PICKUP_SMOKER_BUTTON ||
-               it->kind == TOY_MAP_PICKUP_CHARGER_BUTTON) {
+               it->kind == TOY_MAP_PICKUP_CHARGER_BUTTON ||
+               it->kind == TOY_MAP_PICKUP_TANK_BUTTON) {
         int type = it->kind == TOY_MAP_PICKUP_SMOKER_BUTTON ?
-                   TOY_GAME_ENEMY_SMOKER : TOY_GAME_ENEMY_CHARGER;
+                   TOY_GAME_ENEMY_SMOKER :
+                   it->kind == TOY_MAP_PICKUP_CHARGER_BUTTON ?
+                   TOY_GAME_ENEMY_CHARGER : TOY_GAME_ENEMY_TANK;
         int n = toy_game_spawn_horde_type(&session->game_state, type, 1, 1,
                                           session->spawn_zones,
                                           session->spawn_count,
                                           HORDE_MIN_PLAYER_DIST);
         session->banner_ms = 2500;
         session->banner_text = it->kind == TOY_MAP_PICKUP_SMOKER_BUTTON ?
-            "SMOKER SUMMONED" : "CHARGER SUMMONED";
+            "SMOKER SUMMONED" :
+            it->kind == TOY_MAP_PICKUP_CHARGER_BUTTON ?
+            "CHARGER SUMMONED" : "TANK SUMMONED";
         __printf("rasterfall: special test enemy summoned type %d (%d)\n",
                   type, n);
     } else if (it->kind == TOY_MAP_PICKUP_AMMO) {

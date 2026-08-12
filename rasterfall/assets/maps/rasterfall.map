@@ -90,9 +90,10 @@ button_fast -11940 -9000 200
 # 开发者区域东侧：特感测试按钮共用圆柱底座，按东西紧密排列。
 button_smoker 4200 -7600 -250
 button_charger 4700 -7600 -250
+button_tank 5200 -7600 -250
 button_money 5600 -8600 -250
 button_clear_hired 5600 -9200 -250
-button_air 5200 -7600 -250
+button_air 5700 -7600 -250
 # 三名原据点 AI 保持普通队友规则；BASE 是基地核心目标。
 ai_spawn Jesus 2 level2 1000 0 0
 ai_spawn GUARD 1 level1 0 -900 0

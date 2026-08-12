@@ -117,7 +117,8 @@ static const struct toy_game_enemy_info enemy_table[TOY_GAME_ENEMY_TYPE_COUNT] =
     { TOY_CONFIG_PURSUIT_HEAVY_HP, TOY_CONFIG_PURSUIT_HEAVY_SPEED_MIN, TOY_CONFIG_PURSUIT_HEAVY_SPEED_MAX, TOY_CONFIG_PURSUIT_HEAVY_BITE_DAMAGE, 2, RF_COLOR_ENEMY_PURSUIT_HEAVY, TOY_GAME_ENEMY_ID_PURSUIT_HEAVY, "PURSUIT_HEAVY", TOY_GAME_ENEMY_ABILITY_NONE },
     { TOY_CONFIG_PURSUIT_FAST_HP, TOY_CONFIG_PURSUIT_FAST_SPEED_MIN, TOY_CONFIG_PURSUIT_FAST_SPEED_MAX, TOY_CONFIG_PURSUIT_FAST_BITE_DAMAGE, 1, RF_COLOR_ENEMY_PURSUIT_FAST, TOY_GAME_ENEMY_ID_PURSUIT_FAST, "PURSUIT_FAST", TOY_GAME_ENEMY_ABILITY_NONE },
     { TOY_CONFIG_SMOKER_HP, TOY_CONFIG_SMOKER_SPEED_MIN, TOY_CONFIG_SMOKER_SPEED_MAX, TOY_CONFIG_SMOKER_BITE_DAMAGE, 1, RF_COLOR_ENEMY_SMOKER, TOY_GAME_ENEMY_ID_SMOKER, "SMOKER", TOY_GAME_ENEMY_ABILITY_SMOKER_TONGUE },
-    { TOY_CONFIG_CHARGER_HP, TOY_CONFIG_CHARGER_SPEED_MIN, TOY_CONFIG_CHARGER_SPEED_MAX, TOY_CONFIG_CHARGER_BITE_DAMAGE, 2, RF_COLOR_ENEMY_CHARGER, TOY_GAME_ENEMY_ID_CHARGER, "CHARGER", TOY_GAME_ENEMY_ABILITY_CHARGER_RUSH }
+    { TOY_CONFIG_CHARGER_HP, TOY_CONFIG_CHARGER_SPEED_MIN, TOY_CONFIG_CHARGER_SPEED_MAX, TOY_CONFIG_CHARGER_BITE_DAMAGE, 2, RF_COLOR_ENEMY_CHARGER, TOY_GAME_ENEMY_ID_CHARGER, "CHARGER", TOY_GAME_ENEMY_ABILITY_CHARGER_RUSH },
+    { TOY_CONFIG_TANK_HP, TOY_CONFIG_TANK_SPEED_MIN, TOY_CONFIG_TANK_SPEED_MAX, TOY_CONFIG_TANK_BITE_DAMAGE, 2, RF_COLOR_ENEMY_TANK, TOY_GAME_ENEMY_ID_TANK, "TANK", TOY_GAME_ENEMY_ABILITY_TANK_SWEEP }
 };
 
 struct toy_game_ai_info {
@@ -1023,9 +1024,10 @@ static int enemy_position_blocked(const struct toy_game *g,
 
 static int enemy_radius(const struct toy_game_enemy *e)
 {
-    return toy_game_enemy_info(e->type)->ability ==
-           TOY_GAME_ENEMY_ABILITY_CHARGER_RUSH ? TOY_GAME_CHARGER_RADIUS :
-           TOY_GAME_ENEMY_RADIUS;
+    int ability = toy_game_enemy_info(e->type)->ability;
+    return ability == TOY_GAME_ENEMY_ABILITY_TANK_SWEEP ? TOY_GAME_TANK_RADIUS :
+           ability == TOY_GAME_ENEMY_ABILITY_CHARGER_RUSH ?
+           TOY_GAME_CHARGER_RADIUS : TOY_GAME_ENEMY_RADIUS;
 }
 
 static int enemy_separation_distance(const struct toy_game_enemy *a,
@@ -1296,6 +1298,9 @@ static int toy_game_shove_at(struct toy_game *g, int origin_x, int origin_z,
         long long dx, dz, dist2, dist, dot;
         int push[4], s, nx, nz;
         if (e->active != 1) continue;
+        if (toy_game_enemy_info(e->type)->ability ==
+                TOY_GAME_ENEMY_ABILITY_TANK_SWEEP)
+            continue; /* Boss mass: player/AI shove cannot move or stun Tank. */
         dx = e->x - origin_x;
         dz = e->z - origin_z;
         dist2 = dx * dx + dz * dz;
@@ -2424,13 +2429,14 @@ static void update_smoker(struct toy_game *g, struct toy_game_enemy *e,
     (void)dt_ms;
 }
 
-int toy_game_apply_entity_impact(struct toy_game *g, int kind, int index,
-                                 int dx, int dz, int damage)
+static int apply_entity_impact_with_knockback(struct toy_game *g, int kind,
+                                              int index, int dx, int dz,
+                                              int damage, int knockback)
 {
     long long dist = isqrt((long long)dx * dx + (long long)dz * dz);
     if (!g || dist <= 0) { dx = 0; dz = 1024; dist = 1024; }
-    dx = dx * TOY_GAME_CHARGER_KNOCKBACK / (int)dist;
-    dz = dz * TOY_GAME_CHARGER_KNOCKBACK / (int)dist;
+    dx = dx * knockback / (int)dist;
+    dz = dz * knockback / (int)dist;
     if (kind == TOY_GAME_ENTITY_PLAYER) {
         if (g->player_down) return 0;
         g->hp -= damage; if (g->hp < 0) g->hp = 0;
@@ -2507,6 +2513,14 @@ int toy_game_apply_entity_impact(struct toy_game *g, int kind, int index,
         return 1;
     }
     return 0;
+}
+
+int toy_game_apply_entity_impact(struct toy_game *g, int kind, int index,
+                                 int dx, int dz, int damage)
+{
+    return apply_entity_impact_with_knockback(g, kind, index, dx, dz,
+                                               damage,
+                                               TOY_GAME_CHARGER_KNOCKBACK);
 }
 
 static int charger_hit_entities(struct toy_game *g,
@@ -2651,6 +2665,102 @@ static void update_charger(struct toy_game *g, struct toy_game_enemy *e,
     if (dist > TOY_GAME_ATTACK_RANGE) chase_enemy(g, e, dx, dz, dist, 0);
 }
 
+static int tank_target_in_sweep(const struct toy_game_enemy *tank,
+                                int x, int z)
+{
+    int dx = x - tank->x, dz = z - tank->z;
+    long long dist2 = (long long)dx * dx + (long long)dz * dz;
+    long long dot;
+    long long dist;
+    if (dist2 > (long long)TOY_CONFIG_TANK_ATTACK_RANGE *
+                TOY_CONFIG_TANK_ATTACK_RANGE) return 0;
+    if (dist2 == 0) return 1;
+    dist = isqrt(dist2);
+    dot = (long long)dx * tank->dir_x + (long long)dz * tank->dir_z;
+    return dot > 0 && dot * TOY_CONFIG_TANK_ATTACK_CONE >= dist * 1024;
+}
+
+static void tank_sweep_entities(struct toy_game *g,
+                                struct toy_game_enemy *tank)
+{
+    int i, dx, dz;
+    int actor_hit[TOY_GAME_MAX_ACTORS];
+    int actor_dx[TOY_GAME_MAX_ACTORS], actor_dz[TOY_GAME_MAX_ACTORS];
+    if (!g->player_down && tank_target_in_sweep(tank, g->px, g->pz)) {
+        dx = g->px - tank->x; dz = g->pz - tank->z;
+        apply_entity_impact_with_knockback(g, TOY_GAME_ENTITY_PLAYER, 0,
+                                           dx, dz, TOY_CONFIG_TANK_DAMAGE,
+                                           TOY_CONFIG_TANK_KNOCKBACK);
+    }
+    if (g->secondary_player_active && !g->secondary_player_down &&
+        tank_target_in_sweep(tank, g->secondary_px, g->secondary_pz)) {
+        dx = g->secondary_px - tank->x; dz = g->secondary_pz - tank->z;
+        apply_entity_impact_with_knockback(g, TOY_GAME_ENTITY_REMOTE_PLAYER, 0,
+                                           dx, dz, TOY_CONFIG_TANK_DAMAGE,
+                                           TOY_CONFIG_TANK_KNOCKBACK);
+    }
+    /* Freeze the cone result before applying any hit.  An AI hit reaction can
+     * shove the attacker, but that must not change who was inside this one
+     * simultaneous sweep. */
+    for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
+        struct toy_game_actor *a = &g->actors[i];
+        actor_hit[i] = a->active && a->state == TOY_GAME_ACTOR_ALIVE &&
+            (a->kind == TOY_GAME_ACTOR_AI ||
+             a->kind == TOY_GAME_ACTOR_PLAYER) &&
+            tank_target_in_sweep(tank, a->x, a->z);
+        actor_dx[i] = a->x - tank->x;
+        actor_dz[i] = a->z - tank->z;
+    }
+    for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
+        struct toy_game_actor *a = &g->actors[i];
+        int damage;
+        if (!actor_hit[i] || !a->active ||
+            a->state != TOY_GAME_ACTOR_ALIVE ||
+            (a->kind != TOY_GAME_ACTOR_AI &&
+             a->kind != TOY_GAME_ACTOR_PLAYER)) continue;
+        damage = a->base_core ? TOY_CONFIG_TANK_BASE_DAMAGE :
+                                TOY_CONFIG_TANK_DAMAGE;
+        apply_entity_impact_with_knockback(g, TOY_GAME_ENTITY_ACTOR, i,
+                                           actor_dx[i], actor_dz[i], damage,
+                                           TOY_CONFIG_TANK_KNOCKBACK);
+    }
+}
+
+static void update_tank(struct toy_game *g, struct toy_game_enemy *e,
+                        int dx, int dz, long long dist, int dt_ms)
+{
+    if (e->charge_active) {
+        e->charge_elapsed_ms += dt_ms;
+        if (!e->charge_hit_base &&
+            e->charge_elapsed_ms >= TOY_CONFIG_TANK_IMPACT_MS) {
+            tank_sweep_entities(g, e);
+            e->charge_hit_base = 1; /* shared one-shot marker */
+        }
+        if (e->charge_elapsed_ms >= TOY_CONFIG_TANK_WINDUP_MS) {
+            e->charge_active = 0;
+            e->charge_elapsed_ms = 0;
+            e->special_timer_ms = TOY_CONFIG_TANK_COOLDOWN_MS;
+        }
+        return;
+    }
+    if (e->special_timer_ms > 0) {
+        e->special_timer_ms -= dt_ms;
+        if (e->special_timer_ms < 0) e->special_timer_ms = 0;
+        return;
+    }
+    if (dist <= TOY_CONFIG_TANK_ATTACK_START_RANGE) {
+        if (dist > 0) {
+            e->dir_x = dx * 1024 / (int)dist;
+            e->dir_z = dz * 1024 / (int)dist;
+        }
+        e->charge_active = 1;
+        e->charge_elapsed_ms = 0;
+        e->charge_hit_base = 0;
+        return;
+    }
+    chase_enemy(g, e, dx, dz, dist, 0);
+}
+
 static void update_enemy_ai(struct toy_game *g, struct toy_game_enemy *e,
                             int dt_ms)
 {
@@ -2711,6 +2821,18 @@ static void update_enemy_ai(struct toy_game *g, struct toy_game_enemy *e,
                                                TOY_GAME_CHARGER_RANGE);
         update_charger(g, e, special_x, special_z, dx, dz,
                        special_player, special_actor, dist, visual, dt_ms);
+        return;
+    }
+    if (toy_game_enemy_info(e->type)->ability ==
+            TOY_GAME_ENEMY_ABILITY_TANK_SWEEP) {
+        if (!nearest_special_target(g, e, &special_x, &special_z,
+                                    &special_player, &special_actor)) {
+            e->charge_active = 0;
+            return;
+        }
+        dx = special_x - e->x; dz = special_z - e->z;
+        dist = isqrt((long long)dx * dx + (long long)dz * dz);
+        update_tank(g, e, dx, dz, dist, dt_ms);
         return;
     }
 
@@ -3038,8 +3160,10 @@ static int fire_ray(struct toy_game *g, int sy, int cy, int damage, int range,
             e->flash = 120;
             g->enemies_alive--;
             g->kills++;
-            if (e->type == TOY_GAME_ENEMY_SMOKER ||
-                e->type == TOY_GAME_ENEMY_CHARGER)
+            if (e->type == TOY_GAME_ENEMY_TANK)
+                g->money += TOY_CONFIG_MONEY_TANK;
+            else if (e->type == TOY_GAME_ENEMY_SMOKER ||
+                     e->type == TOY_GAME_ENEMY_CHARGER)
                 g->money += TOY_CONFIG_MONEY_SPECIAL;
             else if (e->type == TOY_GAME_ENEMY_HEAVY ||
                      e->type == TOY_GAME_ENEMY_PURSUIT_HEAVY)

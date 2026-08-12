@@ -52,6 +52,8 @@ static int run_logic_test(void)
             toy_game_enemy_info(TOY_GAME_ENEMY_SMOKER);
         const struct toy_game_enemy_info *charger =
             toy_game_enemy_info(TOY_GAME_ENEMY_CHARGER);
+        const struct toy_game_enemy_info *tank =
+            toy_game_enemy_info(TOY_GAME_ENEMY_TANK);
         const struct toy_game_weapon_info *smg =
             toy_game_weapon_info(TOY_GAME_WEAPON_SMG);
         const struct toy_game_weapon_info *shotgun =
@@ -77,9 +79,20 @@ static int run_logic_test(void)
                 TOY_GAME_ENEMY_ID_SMOKER ||
             toy_game_enemy_from_content_id(TOY_GAME_ENEMY_ID_CHARGER) !=
                 TOY_GAME_ENEMY_CHARGER ||
+            toy_game_enemy_from_content_id(TOY_GAME_ENEMY_ID_TANK) !=
+                TOY_GAME_ENEMY_TANK ||
             toy_game_enemy_from_content_id(99) >= 0 ||
             smoker->ability != TOY_GAME_ENEMY_ABILITY_SMOKER_TONGUE ||
-            charger->ability != TOY_GAME_ENEMY_ABILITY_CHARGER_RUSH) return 56;
+            charger->ability != TOY_GAME_ENEMY_ABILITY_CHARGER_RUSH ||
+            tank->ability != TOY_GAME_ENEMY_ABILITY_TANK_SWEEP ||
+            tank->max_hp != 4000 ||
+            tank->speed_min != common->speed_min ||
+            tank->speed_max != common->speed_max ||
+            TOY_CONFIG_TANK_ATTACK_RANGE != 2850 ||
+            TOY_CONFIG_TANK_ATTACK_START_DIVISOR != 2 ||
+            TOY_CONFIG_TANK_ATTACK_START_RANGE != 1425 ||
+            TOY_CONFIG_TANK_WINDUP_MS != 750 ||
+            TOY_CONFIG_TANK_IMPACT_MS != 625) return 56;
         if (toy_game_weapon_from_name("pistol") != TOY_GAME_WEAPON_PISTOL ||
             toy_game_weapon_from_name("SMG") != TOY_GAME_WEAPON_SMG ||
             toy_game_weapon_from_name("shotgun") != TOY_GAME_WEAPON_SHOTGUN ||
@@ -1082,6 +1095,87 @@ static int run_logic_test(void)
         toy_game_rebuild_navigation(&game);
         toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
         if (game.enemies[0].target_player != 0) return 125;
+    }
+    /* Tank 在慢前摇末段同时命中前方单位；基地受 24 伤害但不击飞。 */
+    {
+        int i, player_hp, ai_hp, base_hp, behind_hp;
+        toy_game_init(&game, 84);
+        game.world_count = 0; game.room_limit = 12000; game.to_spawn = 0;
+        game.px = 0; game.pz = 1200; /* 新起手距离内，旧 712 距离外 */
+        memset(game.actors, 0, sizeof(game.actors));
+        game.ai_active = 0;
+        for (i = 0; i < 3; i++) {
+            game.actors[i].active = 1;
+            game.actors[i].kind = TOY_GAME_ACTOR_AI;
+            game.actors[i].state = TOY_GAME_ACTOR_ALIVE;
+            game.actors[i].hp = game.actors[i].max_hp = 100;
+        }
+        game.actors[0].x = 300; game.actors[0].z = 1200;
+        game.actors[1].x = -300; game.actors[1].z = 1200;
+        game.actors[1].base_core = 1;
+        game.actors[2].x = 0; game.actors[2].z = -1200;
+        for (i = 0; i < 3; i++) {
+            game.actors[i].deployment_x = game.actors[i].x;
+            game.actors[i].deployment_z = game.actors[i].z;
+        }
+        game.base_actor_index = 1;
+        memset(game.enemies, 0, sizeof(game.enemies));
+        game.enemies_alive = 1;
+        game.enemies[0].active = 1;
+        game.enemies[0].type = TOY_GAME_ENEMY_TANK;
+        game.enemies[0].hp = 4000;
+        game.enemies[0].speed = TOY_CONFIG_TANK_SPEED_MIN;
+        game.enemies[0].dir_z = 1024;
+        player_hp = game.hp; ai_hp = game.actors[0].hp;
+        base_hp = game.actors[1].hp; behind_hp = game.actors[2].hp;
+        toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
+        for (i = 0; i < 39; i++)
+            toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
+        if (game.hp != player_hp || game.actors[0].hp != ai_hp ||
+            game.actors[1].hp != base_hp) return 126;
+        toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
+        if (game.hp != player_hp - 8 || game.player_airborne_ms <= 0 ||
+            game.actors[0].hp != ai_hp - 8 ||
+            game.actors[0].airborne_ms <= 0 ||
+            game.actors[1].hp != base_hp - 24 ||
+            game.actors[1].airborne_ms != 0 ||
+            game.actors[2].hp != behind_hp) return 127;
+        game.enemies[0].shove_stun_ms = 0;
+        for (i = 0; i < 8; i++)
+            toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
+        if (game.enemies[0].charge_active ||
+            game.enemies[0].ability.special_timer_ms < 900) return 128;
+    }
+    /* Tank 的 Boss 质量使其完全免疫玩家和 AI 共用的推搜。 */
+    {
+        int old_z;
+        toy_game_init(&game, 86);
+        game.world_count = 0; game.room_limit = 12000; game.to_spawn = 0;
+        game.px = 0; game.pz = 0;
+        memset(game.enemies, 0, sizeof(game.enemies));
+        game.enemies_alive = 1;
+        game.enemies[0].active = 1;
+        game.enemies[0].type = TOY_GAME_ENEMY_TANK;
+        game.enemies[0].hp = 4000;
+        game.enemies[0].x = 0; game.enemies[0].z = 500;
+        old_z = game.enemies[0].z;
+        if (toy_game_shove(&game, 0, 1024) != 0 ||
+            game.enemies[0].z != old_z ||
+            game.enemies[0].shove_stun_ms != 0) return 130;
+    }
+    /* Tank 击杀奖励独立于普通特感，固定为 50。 */
+    {
+        toy_game_init(&game, 85);
+        game.world_count = 0; game.room_limit = 12000; game.to_spawn = 0;
+        memset(game.enemies, 0, sizeof(game.enemies));
+        game.enemies_alive = 1;
+        game.enemies[0].active = 1;
+        game.enemies[0].type = TOY_GAME_ENEMY_TANK;
+        game.enemies[0].hp = 1;
+        game.enemies[0].x = 0; game.enemies[0].z = 1000;
+        game.money = 0;
+        toy_game_fire(&game, 0, 1024);
+        if (game.money != 50 || game.special_kills != 1) return 129;
     }
     __printf("rasterfall: logic test passed\n");
     return 0;

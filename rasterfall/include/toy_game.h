@@ -53,6 +53,7 @@
 
 #define TOY_GAME_ENEMY_RADIUS   130     /* 敌人碰撞半径 */
 #define TOY_GAME_CHARGER_RADIUS 145    /* Charger 略大的专用碰撞半径 */
+#define TOY_GAME_TANK_RADIUS    210    /* Tank 宽大的专用碰撞半径 */
 #define TOY_GAME_PLAYER_RADIUS  180
 #define TOY_GAME_HIT_RADIUS     150     /* 命中判定半径（覆盖渲染 box 半宽） */
 #define TOY_GAME_ATTACK_RANGE   300     /* 敌我距离小于此值开始咬 */
@@ -193,6 +194,7 @@ enum toy_game_enemy_type {
     TOY_GAME_ENEMY_PURSUIT_FAST,
     TOY_GAME_ENEMY_SMOKER,
     TOY_GAME_ENEMY_CHARGER,
+    TOY_GAME_ENEMY_TANK,
     TOY_GAME_ENEMY_TYPE_COUNT
 };
 
@@ -205,13 +207,15 @@ enum toy_game_enemy_id {
     TOY_GAME_ENEMY_ID_PURSUIT_HEAVY = 130,
     TOY_GAME_ENEMY_ID_PURSUIT_FAST = 140,
     TOY_GAME_ENEMY_ID_SMOKER = 200,
-    TOY_GAME_ENEMY_ID_CHARGER = 210
+    TOY_GAME_ENEMY_ID_CHARGER = 210,
+    TOY_GAME_ENEMY_ID_TANK = 220
 };
 
 enum toy_game_enemy_ability {
     TOY_GAME_ENEMY_ABILITY_NONE = 0,
     TOY_GAME_ENEMY_ABILITY_SMOKER_TONGUE = 10,
-    TOY_GAME_ENEMY_ABILITY_CHARGER_RUSH = 20
+    TOY_GAME_ENEMY_ABILITY_CHARGER_RUSH = 20,
+    TOY_GAME_ENEMY_ABILITY_TANK_SWEEP = 30
 };
 
 enum toy_game_event {

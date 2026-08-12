@@ -26,6 +26,7 @@
 #define RF_COLOR_ENEMY_PURSUIT_FAST  0xB84A32 /* 快速追击者：赤橙 */
 #define RF_COLOR_ENEMY_SMOKER        0x76513A /* Smoker：烟棕色 */
 #define RF_COLOR_ENEMY_CHARGER      0x8B5A35 /* Charger：棕色 */
+#define RF_COLOR_ENEMY_TANK         0x65713D /* Tank：暗橄榄绿 */
 #define RF_COLOR_AI_BASIC            0x596B3A /* 基础 AI：暗橄榄绿 */
 #define RF_COLOR_AI_RIFLE            0x386B96 /* 步枪 AI：蓝色 */
 #define RF_COLOR_AI_HEAVY            0x252A30 /* 重型 AI：近黑灰 */

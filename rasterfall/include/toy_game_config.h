@@ -44,7 +44,7 @@
 #define TOY_CONFIG_PISTOL_DAMAGE               20  /* 单颗伤害 */
 
 /* SMG weapon tuning. */
-#define TOY_CONFIG_SMG_MAG                     50  /* 弹匣容量 */
+#define TOY_CONFIG_SMG_MAG                     40  /* 弹匣容量 */
 #define TOY_CONFIG_SMG_RESERVE                650  /* 备弹上限 */
 #define TOY_CONFIG_SMG_COOLDOWN_MS            100  /* 射击间隔 */
 #define TOY_CONFIG_SMG_RELOAD_MS             2000  /* 换弹时间 */
@@ -57,7 +57,7 @@
 /* Shotgun weapon tuning. */
 #define TOY_CONFIG_SHOTGUN_MAG                  8  /* 弹匣容量 */
 #define TOY_CONFIG_SHOTGUN_RESERVE             64  /* 备弹上限 */
-#define TOY_CONFIG_SHOTGUN_COOLDOWN_MS        600  /* 射击间隔 */
+#define TOY_CONFIG_SHOTGUN_COOLDOWN_MS        800  /* 射击间隔 */
 #define TOY_CONFIG_SHOTGUN_RELOAD_MS         2500  /* 换弹时间 */
 #define TOY_CONFIG_SHOTGUN_FULL_AUTO            0  /* 是否全自动 */
 #define TOY_CONFIG_SHOTGUN_PELLETS             10  /* 每次弹丸数 */
@@ -74,7 +74,7 @@
 #define TOY_CONFIG_AK_PELLETS                    1  /* 每次弹丸数 */
 #define TOY_CONFIG_AK_SPREAD                    50  /* 散布范围 */
 #define TOY_CONFIG_AK_SLOT                       0  /* 武器槽位 */
-#define TOY_CONFIG_AK_DAMAGE                    50  /* 单颗伤害 */
+#define TOY_CONFIG_AK_DAMAGE                    60  /* 单颗伤害 */
 
 /* AWP sniper weapon tuning. */
 #define TOY_CONFIG_AWP_MAG                      10  /* 弹匣容量 */
@@ -130,12 +130,17 @@
 #define TOY_CONFIG_CHARGER_SPEED_MIN          42  /* 最低速度 */
 #define TOY_CONFIG_CHARGER_SPEED_MAX          58  /* 最高速度 */
 #define TOY_CONFIG_CHARGER_BITE_DAMAGE         4  /* 咬伤 */
+#define TOY_CONFIG_TANK_HP                   4000  /* Boss 生命值 */
+#define TOY_CONFIG_TANK_SPEED_MIN              38  /* 与普通感染者一致 */
+#define TOY_CONFIG_TANK_SPEED_MAX              56
+#define TOY_CONFIG_TANK_BITE_DAMAGE             0  /* Tank 只使用范围挥击 */
 
 /* Money rewards for killing enemies. */
 #define TOY_CONFIG_MONEY_COMMON                1  /* 普通敌人击杀奖励 */
 #define TOY_CONFIG_MONEY_HEAVY                 2  /* 重型敌人击杀奖励 */
 #define TOY_CONFIG_MONEY_FAST                  2  /* 快速敌人击杀奖励 */
 #define TOY_CONFIG_MONEY_SPECIAL               5  /* 特殊敌人击杀奖励 */
+#define TOY_CONFIG_MONEY_TANK                  50  /* Tank 击杀奖励 */
 
 /* Charger special tuning. */
 #define TOY_CONFIG_CHARGER_WINDUP_MS         700  /* 蓄力时间 */
@@ -145,6 +150,20 @@
 #define TOY_CONFIG_CHARGER_DAMAGE              6  /* 撞击伤害 */
 #define TOY_CONFIG_CHARGER_IMPACT_DAMAGE       6  /* 范围撞击伤害 */
 #define TOY_CONFIG_CHARGER_IMPACT_RANGE      320  /* 撞击范围 */
+
+/* Tank arm-sweep tuning.  Impact occurs near the end of the windup. */
+#define TOY_CONFIG_TANK_ATTACK_RANGE         2850  /* 挥击伤害扇形半径 */
+#define TOY_CONFIG_TANK_ATTACK_START_DIVISOR    2  /* 走到伤害半径的 1/2 后出手 */
+#define TOY_CONFIG_TANK_ATTACK_CONE             2  /* 120°：dot*2 >= distance */
+#define TOY_CONFIG_TANK_WINDUP_MS             750  /* 抬手/挥臂时间缩短一半 */
+#define TOY_CONFIG_TANK_IMPACT_MS             625  /* 仍在动画即将结束时结算 */
+#define TOY_CONFIG_TANK_COOLDOWN_MS          1000  /* 出手后冷却 */
+#define TOY_CONFIG_TANK_DAMAGE                  8
+#define TOY_CONFIG_TANK_BASE_DAMAGE            24
+#define TOY_CONFIG_TANK_KNOCKBACK             1050 /* 普通单位击飞强度 */
+#define TOY_CONFIG_TANK_ATTACK_START_RANGE \
+    (TOY_CONFIG_TANK_ATTACK_RANGE / \
+     TOY_CONFIG_TANK_ATTACK_START_DIVISOR)         /* 进入指定比例后出手 */
 
 /* AI teammate health by class. */
 #define TOY_CONFIG_AI_LEVEL_1_HP              80  /* 一级生命值 */
