@@ -12,8 +12,24 @@
 static const int hired_ai_positions[][2] = {
     { 1000, 0 }, { 0, -900 }, { -1000, 0 },
     { 1200, 900 }, { -1200, 900 }, { 0, 2100 },
-    { 0, -300 }, { 1800, 900 }
+    { 0, -300 }, { 1800, 900 }, { -1800, 900 }, { 2400, 0 },
+    { -2400, 0 }, { 3000, 900 }, { -3000, 900 }, { 3600, 0 },
+    { -3600, 0 }, { 4200, 900 }, { -4200, 900 }, { 4800, 0 },
+    { -4800, 0 }, { 5400, 900 }, { -5400, 900 }, { 6000, 0 },
+    { -6000, 0 }, { 6600, 900 }, { -6600, 900 }, { 7200, 0 },
+    { -7200, 0 }, { 7800, 900 }, { -7800, 900 }, { 8400, 0 },
+    { -8400, 0 }, { 9000, 900 }, { -9000, 900 }, { 9600, 0 }
 };
+static const int flag_colors[] = { 0x173A70, 0x9E302B, 0xC78A24, 0x2B765B,
+                                   0x704A91, 0xB75A2C };
+static const char *flag_names[] = { "TOYC", "GNU", "LLVM", "GCC", "NASA", "UNIX" };
+static int session_is_developer_ai(const char *name)
+{
+    return name && (!strcmp(name, "DEV_GUNNER") ||
+                    !strcmp(name, "PLATFORM_GUARD") ||
+                    !strcmp(name, "HIT_TEST") || !strcmp(name, "ANIM_TEST") ||
+                    !strcmp(name, "AK_TEST") || !strcmp(name, "AWP_TEST"));
+}
 static void session_interact(struct rasterfall_session *session,
                              struct rasterfall_interactable *it);
 
@@ -31,6 +47,79 @@ static void session_down_ai(struct rasterfall_session *session, int index,
         session->game_state.ai_down = 1;
         session->game_state.ai_revive_progress_ms = 0;
     }
+}
+
+static void session_set_flag_assignments(struct rasterfall_session *s, int fi)
+{
+    int i, n = 0;
+    struct rasterfall_flag *f;
+    if (fi < 0 || fi >= s->flag_count) return;
+    f = &s->flags[fi];
+    for (i = 0; i < TOY_GAME_MAX_ACTORS && n < 4; i++) {
+        struct toy_game_actor *a = &s->game_state.actors[i];
+        if (!a->active || a->kind != TOY_GAME_ACTOR_AI || a->base_core ||
+            a->developer_only) continue;
+        if (a->flag_index == fi)
+            toy_game_assign_actor_deployment(&s->game_state, i,
+                f->x + f->slot_offsets[n][0], f->z + f->slot_offsets[n][1], fi), n++;
+    }
+}
+
+static int session_flag_assigned_count(const struct rasterfall_session *s, int fi)
+{
+    int i, count = 0;
+    for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
+        const struct toy_game_actor *a = &s->game_state.actors[i];
+        if (a->active && a->kind == TOY_GAME_ACTOR_AI && !a->base_core &&
+            !a->developer_only && a->flag_index == fi) count++;
+    }
+    return count;
+}
+
+static int session_assign_actor_to_flag(struct rasterfall_session *s,
+                                        int actor_index, int fi)
+{
+    int slot;
+    if (fi < 0 || fi >= s->flag_count) return 0;
+    slot = session_flag_assigned_count(s, fi);
+    if (slot >= 4) return 0;
+    return toy_game_assign_actor_deployment(&s->game_state, actor_index,
+        s->flags[fi].x + s->flags[fi].slot_offsets[slot][0],
+        s->flags[fi].z + s->flags[fi].slot_offsets[slot][1], fi);
+}
+
+/* The assignment list is deliberately stable: assigned actors first, then
+ * available actors.  This also makes a long list easy to scan while flags
+ * are being configured. */
+static int session_collect_assignable(const struct rasterfall_session *s,
+                                      int fi, int *indices)
+{
+    int pass, i, count = 0;
+    for (pass = 0; pass < 2; pass++)
+        for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
+            const struct toy_game_actor *a = &s->game_state.actors[i];
+            int assigned = a->flag_index == fi;
+            int assigned_elsewhere = a->flag_index >= 0 && !assigned;
+            if (!a->active || a->kind != TOY_GAME_ACTOR_AI || a->base_core ||
+                a->developer_only || assigned_elsewhere ||
+                (pass == 0 ? !assigned : assigned)) continue;
+            indices[count++] = i;
+        }
+    return count;
+}
+
+static void session_init_flag(struct rasterfall_session *s, int fi, int x, int z)
+{
+    struct rasterfall_flag *f = &s->flags[fi];
+    memset(f, 0, sizeof(*f)); f->active = 1; f->x = x; f->z = z;
+    f->color = flag_colors[fi % (int)(sizeof(flag_colors)/sizeof(flag_colors[0]))];
+    strncpy(f->label, flag_names[fi % (int)(sizeof(flag_names)/sizeof(flag_names[0]))], 4);
+    f->label[4] = 0;
+    /* Four corners of a deliberately compact, adjustable square. */
+    f->slot_offsets[0][0] = 420;  f->slot_offsets[0][1] = 420;
+    f->slot_offsets[1][0] = -420; f->slot_offsets[1][1] = 420;
+    f->slot_offsets[2][0] = -420; f->slot_offsets[2][1] = -420;
+    f->slot_offsets[3][0] = 420;  f->slot_offsets[3][1] = -420;
 }
 
 static int session_near_ai(const struct rasterfall_session *session,
@@ -137,6 +226,8 @@ void rasterfall_session_reset(struct rasterfall_session *session,
             actor_index = actor_id > 0 ? actor_id - 1 : -1;
         }
         if (actor_index < 0) continue;
+        session->game_state.actors[actor_index].developer_only =
+            session_is_developer_ai(spawn->name);
         if (spawn->weapon >= 0 &&
             spawn->weapon < TOY_GAME_WEAPON_COUNT) {
             const struct toy_game_weapon_info *weapon =
@@ -179,6 +270,16 @@ void rasterfall_session_reset(struct rasterfall_session *session,
         }
         if (spawn->downed) session_down_ai(session, actor_index, spawn->x, spawn->z);
     }
+    session->flag_count = 1;
+    session->carried_flag = -1;
+    session->assignment_flag = 0;
+    session_init_flag(session, 0, camera->x, camera->z);
+    for (i = 0; i < 3; i++)
+        if (session->game_state.actors[i].active &&
+            session->game_state.actors[i].kind == TOY_GAME_ACTOR_AI)
+            toy_game_assign_actor_deployment(&session->game_state, i,
+                camera->x + session->flags[0].slot_offsets[i][0],
+                camera->z + session->flags[0].slot_offsets[i][1], 0);
     session->game_state.px = camera->x;
     session->game_state.pz = camera->z;
     session->banner_ms = 0;
@@ -193,6 +294,7 @@ void rasterfall_session_reset(struct rasterfall_session *session,
     session->shop_page = 0;
     session->shop_selected = 0;
     session->shop_nav_selected = 0;
+    session->shop_scroll = 0;
     session_set_air_walls(session, 1);
     rasterfall_map_reset_interactables(&session->map_ops);
 }
@@ -527,6 +629,42 @@ static void session_interact(struct rasterfall_session *session,
     }
 }
 
+static int session_near_flag(const struct rasterfall_session *s,
+                             const struct camera *camera)
+{
+    int i, best = -1;
+    long best_d2 = 0;
+    for (i = 0; i < s->flag_count; i++) {
+        long dx, dz, d2;
+        if (!s->flags[i].active || s->flags[i].carried) continue;
+        dx = (long)camera->x - s->flags[i].x;
+        dz = (long)camera->z - s->flags[i].z;
+        d2 = dx * dx + dz * dz;
+        if (d2 <= (long)RASTERFALL_INTERACT_RANGE * RASTERFALL_INTERACT_RANGE &&
+            (best < 0 || d2 < best_d2)) { best = i; best_d2 = d2; }
+    }
+    return best;
+}
+
+static void session_toggle_flag(struct rasterfall_session *s,
+                                struct camera *camera)
+{
+    int i = s->carried_flag;
+    if (i >= 0) {
+        s->flags[i].carried = 0;
+        s->flags[i].x = camera->x;
+        s->flags[i].z = camera->z;
+        s->carried_flag = -1;
+        session_set_flag_assignments(s, i);
+        s->banner_text = "FLAG PLANTED"; s->banner_ms = 1400;
+        return;
+    }
+    i = session_near_flag(s, camera);
+    if (i < 0) return;
+    s->flags[i].carried = 1; s->carried_flag = i;
+    s->banner_text = "FLAG CARRIED"; s->banner_ms = 1400;
+}
+
 static int session_hire_price(int weapon)
 {
     switch (weapon) {
@@ -570,6 +708,24 @@ static int session_hire_ai(struct rasterfall_session *session, int weapon)
                                      hired_ai_positions[position][1], name);
     if (actor_id < 0) return -1;
     session->game_state.money -= price;
+    /* A newly hired teammate immediately occupies the first free flag slot. */
+    {
+        int fi;
+        for (fi = 0; fi < session->flag_count; fi++)
+            if (session_assign_actor_to_flag(session, actor_id - 1, fi)) break;
+    }
+    return 1;
+}
+
+static int session_buy_flag(struct rasterfall_session *s)
+{
+    const int price = 250;
+    int fi;
+    if (s->flag_count >= RASTERFALL_MAX_FLAGS || s->game_state.money < price)
+        return 0;
+    fi = s->flag_count++;
+    session_init_flag(s, fi, s->game_state.px, s->game_state.pz);
+    s->game_state.money -= price;
     return 1;
 }
 
@@ -579,26 +735,81 @@ void rasterfall_session_shop_input(struct rasterfall_session *session,
     int weapon;
     if (!session || !session->shop_open) return;
     if (esc) {
-        session->shop_open = 0;
-        session->shop_page = 0;
-        session->game_state.player_control_disabled = 0;
+        if (session->shop_page) {
+            session->shop_page = 0;
+            session->shop_selected = 0;
+        } else {
+            session->shop_open = 0;
+            session->game_state.player_control_disabled = 0;
+        }
         return;
     }
     if (!session->shop_page) {
-        if (up || down) session->shop_nav_selected =
-            1 - session->shop_nav_selected;
+        if (up) session->shop_nav_selected =
+            (session->shop_nav_selected + 3) % 4;
+        if (down) session->shop_nav_selected =
+            (session->shop_nav_selected + 1) % 4;
         if (enter) {
             session->shop_page = session->shop_nav_selected + 1;
             session->shop_selected = 0;
         }
         return;
     }
+    if (session->shop_page == 3) {
+        if (enter) {
+            int result = session_buy_flag(session);
+            session->banner_ms = 1600; session->banner_success = result;
+            session->banner_text = result ? "FLAG PURCHASED" : "NOT ENOUGH MONEY";
+        }
+        return;
+    }
+    if (session->shop_page == 4) {
+        if (session->flag_count <= 0) return;
+        if (up) session->shop_selected =
+            (session->shop_selected + session->flag_count - 1) % session->flag_count;
+        if (down) session->shop_selected =
+            (session->shop_selected + 1) % session->flag_count;
+        if (enter) {
+            session->assignment_flag = session->shop_selected;
+            session->shop_page = 5;
+            session->shop_selected = 0;
+            session->shop_scroll = 0;
+        }
+        return;
+    }
+    if (session->shop_page == 5) {
+        int count, indices[TOY_GAME_MAX_ACTORS];
+        count = session_collect_assignable(session, session->assignment_flag, indices);
+        if (count <= 0) return;
+        if (up) session->shop_selected = (session->shop_selected + count - 1) % count;
+        if (down) session->shop_selected = (session->shop_selected + 1) % count;
+        if (session->shop_selected < session->shop_scroll)
+            session->shop_scroll = session->shop_selected;
+        if (session->shop_selected >= session->shop_scroll + 6)
+            session->shop_scroll = session->shop_selected - 5;
+        if (enter) {
+            struct toy_game_actor *a = &session->game_state.actors[indices[session->shop_selected]];
+            if (a->flag_index == session->assignment_flag) {
+                a->flag_index = -1;
+                session->banner_ms = 1400;
+                session->banner_text = "TEAMMATE REMOVED";
+            } else if (!session_assign_actor_to_flag(session, indices[session->shop_selected],
+                                                     session->assignment_flag)) {
+                session->banner_ms = 1800;
+                session->banner_success = 0;
+                session->banner_text = "FLAG LIMIT: 4 AI";
+            } else {
+                session->banner_ms = 1400;
+                session->banner_success = 1;
+                session->banner_text = "TEAM ASSIGNMENT UPDATED";
+            }
+        }
+        return;
+    }
     if (up) session->shop_selected = session->shop_page == 2 ?
-        (session->shop_selected + 4) % 5 :
-        (session->shop_selected + 3) % 4;
+        (session->shop_selected + 4) % 5 : (session->shop_selected + 3) % 4;
     if (down) session->shop_selected = session->shop_page == 2 ?
-        (session->shop_selected + 1) % 5 :
-        (session->shop_selected + 1) % 4;
+        (session->shop_selected + 1) % 5 : (session->shop_selected + 1) % 4;
     if (enter) {
         if (session->shop_page == 1) {
             weapon = session->shop_selected + TOY_GAME_WEAPON_SMG;
@@ -647,6 +858,13 @@ void rasterfall_session_step(struct rasterfall_session *session,
         return;
     }
     if (session->game_state.state != TOY_GAME_PLAYING) return;
+    if (command->buttons & RASTERFALL_CMD_FLAG)
+        session_toggle_flag(session, camera);
+    if (session->carried_flag >= 0) {
+        int fi = session->carried_flag;
+        session->flags[fi].x = camera->x; session->flags[fi].z = camera->z;
+        session_set_flag_assignments(session, fi);
+    }
     if (command->buttons & RASTERFALL_CMD_JUMP)
         session_jump_player(session, camera, command);
     if (!session->game_state.player_down)

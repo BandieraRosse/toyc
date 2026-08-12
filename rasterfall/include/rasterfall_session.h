@@ -10,6 +10,16 @@
 #define RASTERFALL_PLAYER_RADIUS 180
 #define RASTERFALL_MOVE_STEP TOY_CONFIG_PLAYER_MOVE_STEP
 #define RASTERFALL_INTERACT_RANGE 1000
+#define RASTERFALL_MAX_FLAGS 8
+
+struct rasterfall_flag {
+    int active;
+    int x, z;
+    int carried;
+    int color;
+    char label[5];
+    int slot_offsets[4][2];
+};
 
 enum rasterfall_command_button {
     RASTERFALL_CMD_FIRE       = 1 << 0,
@@ -22,7 +32,8 @@ enum rasterfall_command_button {
     RASTERFALL_CMD_RESET      = 1 << 7,
     RASTERFALL_CMD_SHOVE      = 1 << 8,
     RASTERFALL_CMD_JUMP       = 1 << 9,
-    RASTERFALL_CMD_CLEAR_STATS = 1 << 10
+    RASTERFALL_CMD_CLEAR_STATS = 1 << 10,
+    RASTERFALL_CMD_FLAG       = 1 << 11
 };
 
 /* 与窗口系统无关的单个逻辑步输入。以后网络客户端发送的也是这类游戏语义，
@@ -61,6 +72,11 @@ struct rasterfall_session {
     int shop_page;
     int shop_selected;
     int shop_nav_selected;
+    int shop_scroll;
+    struct rasterfall_flag flags[RASTERFALL_MAX_FLAGS];
+    int flag_count;
+    int carried_flag;
+    int assignment_flag;
     uint64_t seed;
 };
 

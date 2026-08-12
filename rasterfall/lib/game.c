@@ -532,6 +532,7 @@ int toy_game_add_ai(struct toy_game *g, int class_id, int x, int z,
     a->state = TOY_GAME_ACTOR_ALIVE;
     a->x = x; a->z = z; a->cy = 1024;
     a->deployment_x = x; a->deployment_z = z;
+    a->flag_index = -1;
     a->hp = a->max_hp = info->max_hp;
     copy_name(a->name, name ? name : "AI");
     a->slots[0].weapon = info->weapon;
@@ -542,6 +543,21 @@ int toy_game_add_ai(struct toy_game *g, int class_id, int x, int z,
     a->current_slot = 0;
     a->fire_enabled = 1;
     return a->actor_id;
+}
+
+int toy_game_assign_actor_deployment(struct toy_game *g, int actor_index,
+                                     int x, int z, int flag_index)
+{
+    struct toy_game_actor *a;
+    if (!g || actor_index < 0 || actor_index >= TOY_GAME_MAX_ACTORS)
+        return 0;
+    a = &g->actors[actor_index];
+    if (!a->active || a->kind != TOY_GAME_ACTOR_AI) return 0;
+    a->deployment_x = x;
+    a->deployment_z = z;
+    a->flag_index = flag_index;
+    a->nav_active = 0;
+    return 1;
 }
 
 int toy_game_add_hired_ai(struct toy_game *g, int weapon, int x, int z,

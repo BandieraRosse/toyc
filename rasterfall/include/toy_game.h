@@ -18,7 +18,7 @@
 #include "rasterfall_colors.h"
 
 #define TOY_GAME_MAX_ENEMIES    64
-#define TOY_GAME_MAX_ACTORS     32
+#define TOY_GAME_MAX_ACTORS     64
 #define TOY_GAME_MAX_PLAYERS    4
 #define TOY_GAME_REMOTE_ACTOR_BASE \
     (TOY_GAME_MAX_ACTORS - TOY_GAME_MAX_PLAYERS)
@@ -101,6 +101,7 @@
 #define TOY_GAME_JUMP_VELOCITY   TOY_CONFIG_JUMP_VELOCITY
 #define TOY_GAME_AI_RETURN_SPEED TOY_CONFIG_AI_RETURN_SPEED
 #define TOY_GAME_AI_DEPLOY_RADIUS 180
+#define TOY_GAME_MAX_FLAG_SLOTS 4
 
 #define TOY_GAME_KEY_RELOAD     19      /* evdev KEY_R */
 #define TOY_GAME_KEY_SLOT_1     2       /* evdev KEY_1：主武器槽 */
@@ -378,6 +379,7 @@ struct toy_game_actor {
     int class_id;
     int base_core;              /* BASE: fixed defense objective */
     int hired;                  /* 雇佣 AI：可由商店/开发者按钮清除 */
+    int developer_only;         /* 开发者展示/测试角色，不可分配旗帜 */
     int state;
     int x, z;
     int sy, cy;
@@ -404,6 +406,7 @@ struct toy_game_actor {
     int ray_count;
     struct toy_game_ray rays[TOY_GAME_MAX_RAYS];
     int deployment_x, deployment_z;
+    int flag_index;
     int nav_x, nav_z;
     int nav_active;
     int awp_aim_ms;
@@ -560,6 +563,8 @@ int  toy_game_set_remote_player(struct toy_game *g, int player_id,
                                 const char *name);
 void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms);
 void toy_game_update_ai_teammates(struct toy_game *g, int dt_ms);
+int  toy_game_assign_actor_deployment(struct toy_game *g, int actor_index,
+                                      int x, int z, int flag_index);
 int  toy_game_revive_ai(struct toy_game *g, int dt_ms);
 int  toy_game_revive_actor(struct toy_game *g, int actor_index, int dt_ms);
 int  toy_game_set_campaign_stage(struct toy_game *g, int stage);

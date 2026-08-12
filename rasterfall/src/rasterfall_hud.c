@@ -152,8 +152,102 @@ static void render_shop(struct toy_surface *surface,
         fb_draw_string((unsigned char *)surface->pixels, x + 20, y + 102,
                        state->shop_nav_selected == 1 ? "> HIRE AI TEAMMATE" : "  HIRE AI TEAMMATE",
                        state->shop_nav_selected == 1 ? RF_COLOR_UI_ACCENT_BRIGHT : RF_COLOR_UI_TEXT, surface->stride);
-        fb_draw_string((unsigned char *)surface->pixels, x + 20, y + 142,
-                       "ENTER  OPEN    ESC  CLOSE", RF_COLOR_UI_TEXT, surface->stride);
+        fb_draw_string((unsigned char *)surface->pixels, x + 20, y + 126,
+                       state->shop_nav_selected == 2 ? "> BUY FLAGS" : "  BUY FLAGS",
+                       state->shop_nav_selected == 2 ? RF_COLOR_UI_ACCENT_BRIGHT : RF_COLOR_UI_TEXT, surface->stride);
+        fb_draw_string((unsigned char *)surface->pixels, x + 20, y + 150,
+                       state->shop_nav_selected == 3 ? "> ASSIGN AI" : "  ASSIGN AI",
+                       state->shop_nav_selected == 3 ? RF_COLOR_UI_ACCENT_BRIGHT : RF_COLOR_UI_TEXT, surface->stride);
+        fb_draw_string((unsigned char *)surface->pixels, x + 20, y + 178,
+                       "ENTER OPEN    ESC CLOSE", RF_COLOR_UI_TEXT, surface->stride);
+        return;
+    }
+    if (state->shop_page == 3) {
+        fb_draw_string((unsigned char *)surface->pixels, x + 20, y + 70,
+                       "BUY A NEW FLAG", RF_COLOR_UI_ACCENT_BRIGHT, surface->stride);
+        fb_draw_string((unsigned char *)surface->pixels, x + 20, y + 104,
+                       "ENTER  PURCHASE       $250", RF_COLOR_UI_TEXT, surface->stride);
+        fb_draw_string((unsigned char *)surface->pixels, x + 16, y + 286,
+                       "ENTER BUY  ESC NAVIGATION", RF_COLOR_UI_TEXT, surface->stride);
+        return;
+    }
+    if (state->shop_page == 4) {
+        fb_draw_string((unsigned char *)surface->pixels, x + 20, y + 58,
+                       "SELECT FLAG TO ASSIGN", RF_COLOR_UI_ACCENT_BRIGHT, surface->stride);
+        for (i = 0; i < state->flag_count && i < 8; i++) {
+            snprintf(line, sizeof(line), "%sFLAG %d  ENTER SELECT",
+                     i == state->shop_selected ? "> " : "  ", i + 1);
+            fb_draw_string((unsigned char *)surface->pixels, x + 24, y + 88 + i * 28,
+                           line, i == state->shop_selected ?
+                           RF_COLOR_UI_ACCENT_BRIGHT : RF_COLOR_UI_TEXT,
+                           surface->stride);
+        }
+        fb_draw_string((unsigned char *)surface->pixels, x + 16, y + 286,
+                       "UP/DOWN SELECT  ENTER OPEN  ESC NAVIGATION", RF_COLOR_UI_TEXT, surface->stride);
+        return;
+    }
+    if (state->shop_page == 5) {
+        char assigned[256];
+        int assigned_count = 0, pass, n = 0;
+        assigned[0] = 0;
+        fb_draw_string((unsigned char *)surface->pixels, x + 20, y + 48,
+                       "ASSIGNED TO THIS FLAG", RF_COLOR_UI_SUCCESS, surface->stride);
+        for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
+            const struct toy_game_actor *a = &state->game->actors[i];
+            if (!a->active || a->kind != TOY_GAME_ACTOR_AI || a->base_core ||
+                a->developer_only || a->flag_index != state->assignment_flag) continue;
+            if (assigned_count) strcat(assigned, "  ");
+            strcat(assigned, a->name);
+            assigned_count++;
+        }
+        fb_draw_string((unsigned char *)surface->pixels, x + 20, y + 70,
+                       assigned_count ? assigned : "NONE",
+                       RF_COLOR_UI_SUCCESS, surface->stride);
+        fb_draw_string((unsigned char *)surface->pixels, x + 20, y + 104,
+                       "ENTER ON ASSIGNED AI TO REMOVE", RF_COLOR_UI_TEXT, surface->stride);
+        for (pass = 0; pass < 2; pass++) {
+            for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
+                const struct toy_game_actor *a = &state->game->actors[i];
+                int assigned = a->flag_index == state->assignment_flag;
+                int assigned_elsewhere = a->flag_index >= 0 && !assigned;
+                if (!a->active || a->kind != TOY_GAME_ACTOR_AI || a->base_core ||
+                    a->developer_only || assigned_elsewhere ||
+                    (pass == 0 ? !assigned : assigned)) continue;
+                if (n >= state->shop_scroll && n < state->shop_scroll + 6) {
+                    int row = n - state->shop_scroll;
+                    const char *level = a->class_id == TOY_GAME_AI_LEVEL_1 ? "LV1" :
+                                        a->class_id == TOY_GAME_AI_LEVEL_3 ? "LV3" : "LV2";
+                    const char *weapon = "NONE";
+                    if (a->current_slot >= 0 && a->current_slot < TOY_GAME_WEAPON_SLOTS &&
+                        a->slots[a->current_slot].weapon >= 0)
+                        weapon = toy_game_weapon_name(a->slots[a->current_slot].weapon);
+                    snprintf(line, sizeof(line), "%s  %s", a->name,
+                             assigned ? "ASSIGNED" : "AVAILABLE");
+                    if (n == state->shop_selected)
+                        fb_draw_string((unsigned char *)surface->pixels, x + 24,
+                                       y + 132 + row * 24, ">", 0xFFFFFF, surface->stride);
+                    fb_draw_string((unsigned char *)surface->pixels, x + 40,
+                                   y + 132 + row * 24, line,
+                                   assigned ? RF_COLOR_UI_SUCCESS : 0xD0A05A,
+                                   surface->stride);
+                    fb_draw_string((unsigned char *)surface->pixels, x + 220,
+                                   y + 132 + row * 24, level,
+                                   0x76B7FF, surface->stride);
+                    fb_draw_string((unsigned char *)surface->pixels, x + 270,
+                                   y + 132 + row * 24, weapon,
+                                   0xF0C674, surface->stride);
+                }
+                n++;
+            }
+        }
+        if (state->shop_scroll > 0)
+            fb_draw_string((unsigned char *)surface->pixels, x + 490, y + 132,
+                           "^", RF_COLOR_UI_TEXT, surface->stride);
+        if (n > state->shop_scroll + 6)
+            fb_draw_string((unsigned char *)surface->pixels, x + 490, y + 264,
+                           "v", RF_COLOR_UI_TEXT, surface->stride);
+        fb_draw_string((unsigned char *)surface->pixels, x + 16, y + 286,
+                       "UP/DOWN SELECT  ENTER TOGGLE  ESC FLAGS", RF_COLOR_UI_TEXT, surface->stride);
         return;
     }
     if (state->shop_page == 2) {
@@ -447,6 +541,18 @@ void rasterfall_hud_draw_interact_prompt(struct toy_renderer *renderer,
     const struct rasterfall_interactable *it;
     char label[48];
     int text_w, x, y;
+    if (state->flag_carried || state->flag_near) {
+        snprintf(label, sizeof(label), "F %s FLAG",
+                 state->flag_carried ? "PLANT" : "CARRY");
+        text_w = (int)strlen(label) * FB_FONT_W;
+        x = (renderer->surface.width - text_w) / 2;
+        y = renderer->surface.height - FB_FONT_H - 18;
+        hud_fill_rect(&renderer->surface, x - 5, y - 3, text_w + 10,
+                      FB_FONT_H + 6, RF_COLOR_UI_BACKGROUND);
+        fb_draw_string((unsigned char *)renderer->surface.pixels, x, y,
+                       label, RF_COLOR_UI_ACCENT, renderer->surface.stride);
+        return;
+    }
     if (state->highlighted < 0 || state->highlighted >= state->interactable_count)
         return;
     it = &state->interactables[state->highlighted];

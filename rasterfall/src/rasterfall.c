@@ -42,6 +42,7 @@
 #define KEY_1     2
 #define KEY_2     3
 #define KEY_E     18
+#define KEY_F     33
 #define KEY_R     19
 #define KEY_ENTER 28
 #define KEY_TAB   15
@@ -292,6 +293,21 @@ static void fill_hud_state(struct rasterfall_hud_state *hud,
     hud->shop_page = session.shop_page;
     hud->shop_selected = session.shop_selected;
     hud->shop_nav_selected = session.shop_nav_selected;
+    hud->shop_scroll = session.shop_scroll;
+    hud->flag_count = session.flag_count;
+    hud->assignment_flag = session.assignment_flag;
+    hud->flag_carried = session.carried_flag >= 0;
+    for (i = 0; i < session.flag_count && i < 8; i++)
+        hud->flag_colors[i] = session.flags[i].color;
+    hud->flag_near = 0;
+    for (i = 0; i < session.flag_count; i++) {
+        long dx = (long)camera->x - session.flags[i].x;
+        long dz = (long)camera->z - session.flags[i].z;
+        if (!session.flags[i].carried &&
+            dx * dx + dz * dz <= (long)RASTERFALL_INTERACT_RANGE *
+                                  RASTERFALL_INTERACT_RANGE)
+            hud->flag_near = 1;
+    }
 }
 #define game (session.game_state)
 #define interactables (session.items)
@@ -430,6 +446,7 @@ static void build_game_command(struct rasterfall_command *command,
     if (toy_input_pressed(input, KEY_1)) command->buttons |= RASTERFALL_CMD_SLOT_1;
     if (toy_input_pressed(input, KEY_2)) command->buttons |= RASTERFALL_CMD_SLOT_2;
     if (toy_input_pressed(input, KEY_E)) command->buttons |= RASTERFALL_CMD_INTERACT;
+    if (toy_input_pressed(input, KEY_F)) command->buttons |= RASTERFALL_CMD_FLAG;
     if (toy_input_pressed(input, KEY_COMMA))
         command->buttons |= RASTERFALL_CMD_TURN_LEFT;
     if (toy_input_pressed(input, KEY_DOT))
@@ -442,6 +459,7 @@ static void consume_game_command_edges(struct toy_input *input)
     input->key_pressed[KEY_1] = 0;
     input->key_pressed[KEY_2] = 0;
     input->key_pressed[KEY_E] = 0;
+    input->key_pressed[KEY_F] = 0;
     input->key_pressed[KEY_COMMA] = 0;
     input->key_pressed[KEY_DOT] = 0;
     input->key_pressed[KEY_SLASH] = 0;
@@ -1544,7 +1562,8 @@ startup_again:
                      pointer_lock_requested ? "requested" : "unavailable");
             }
         }
-        if (!paused && !resumed && toy_input_pressed(&input, KEY_ESC)) {
+        if (!paused && !resumed && !session.shop_open &&
+            toy_input_pressed(&input, KEY_ESC)) {
             if (game.state == TOY_GAME_OVER || game.state == TOY_GAME_WON)
                 running = 0;
             else {
@@ -1848,6 +1867,7 @@ startup_again:
             prev_tris = renderer.submitted_triangles;
             set_network_spectator_camera(&camera, &net);
             scene_pixels = rasterfall_render_scene(&renderer, &camera);
+            scene_pixels += rasterfall_render_flags(&renderer, &camera);
             rasterfall_perf_end_stage(&stats, &stats_total, RASTERFALL_STATS_SCENE, &t_stage,
                            renderer.submitted_triangles - prev_tris, 0);
             prev_tris = renderer.submitted_triangles;
@@ -1863,6 +1883,7 @@ startup_again:
             /* Sign lettering is a framebuffer overlay: the board must be
              * flushed first, otherwise its depth-tested face covers the text. */
             rasterfall_render_sign_text(&surface, &camera);
+            rasterfall_render_flag_text(&surface, &camera);
 #if TOY_CONFIG_SHOW_MODEL_PATHS
             rasterfall_render_gallery_selection(&surface, &camera);
 #endif

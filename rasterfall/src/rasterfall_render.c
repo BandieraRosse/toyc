@@ -786,6 +786,58 @@ static int draw_cuboid(struct toy_renderer *renderer, const struct camera *camer
     return pixels;
 }
 
+static int render_flag_one(struct toy_renderer *renderer,
+                           const struct camera *camera,
+                           const struct rasterfall_flag *flag, int selected)
+{
+    int pixels = 0;
+    uint32_t cloth = (uint32_t)flag->color;
+    if (selected) cloth += 0x202020;
+    /* 3600 world units is approximately four player heights in Rasterfall. */
+    pixels += draw_cuboid(renderer, camera, flag->x - 16, flag->x + 16,
+                          -900, 2700, flag->z - 16, flag->z + 16, 0x5A6470);
+    /* Keep the cloth's vertical band compact; the extra size is horizontal. */
+    pixels += draw_cuboid(renderer, camera, flag->x + 12, flag->x + 700,
+                          1950, 2450, flag->z - 10, flag->z + 10, cloth);
+    return pixels;
+}
+
+int rasterfall_render_flags(struct toy_renderer *renderer,
+                            const struct camera *camera)
+{
+    int i, pixels = 0;
+    if (!active_session) return 0;
+    for (i = 0; i < active_session->flag_count; i++)
+        if (active_session->flags[i].active)
+            pixels += render_flag_one(renderer, camera, &active_session->flags[i],
+                                      i == active_session->carried_flag);
+    return pixels;
+}
+
+void rasterfall_render_flag_text(struct toy_surface *surface,
+                                 const struct camera *camera)
+{
+    int i;
+    if (!active_session) return;
+    for (i = 0; i < active_session->flag_count; i++) {
+        struct vec3 world, view;
+        struct toy_screen_vertex screen;
+        const struct rasterfall_flag *f = &active_session->flags[i];
+        int width;
+        if (!f->active || !f->label[0]) continue;
+        world.x = f->x + 350; world.y = 2200; world.z = f->z + 24;
+        world_to_view(camera, &world, &view);
+        if (view.z < NEAR_Z) continue;
+        project_vertex(surface, &view, &screen);
+        width = (int)strlen(f->label) * FB_FONT_W * 2;
+        if (screen.x - width / 2 >= 0 && screen.x + width / 2 < surface->width &&
+            screen.y - FB_FONT_H >= 0 && screen.y + FB_FONT_H < surface->height)
+            fb_draw_string_scaled((unsigned char *)surface->pixels,
+                screen.x - width / 2, screen.y - FB_FONT_H / 2,
+                f->label, 0xFFF0C0, surface->stride, 2);
+    }
+}
+
 static void actor_world_point(int x, int z, int sy, int cy,
                               int lx, int ly, int lz, struct vec3 *out)
 {

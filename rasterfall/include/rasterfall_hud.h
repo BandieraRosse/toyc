@@ -36,6 +36,12 @@ struct rasterfall_hud_state {
     int shop_page;
     int shop_selected;
     int shop_nav_selected;
+    int shop_scroll;
+    int flag_count;
+    int assignment_flag;
+    int flag_near;
+    int flag_carried;
+    int flag_colors[8];
 };
 
 void rasterfall_hud_draw_interact_prompt(struct toy_renderer *renderer,
