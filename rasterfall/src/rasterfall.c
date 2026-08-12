@@ -287,6 +287,9 @@ static void fill_hud_state(struct rasterfall_hud_state *hud,
     hud->net = net_state;
     hud->host_address = host_address;
     hud->host_port = host_port;
+    hud->shop_open = session.shop_open;
+    hud->shop_page = session.shop_page;
+    hud->shop_selected = session.shop_selected;
 }
 #define game (session.game_state)
 #define interactables (session.items)
@@ -1625,7 +1628,20 @@ startup_again:
         while (accumulator >= FIXED_STEP_US && logic_steps < MAX_LOGIC_STEPS) {
             if (!paused) {
                 struct rasterfall_command command;
+                int shop_input = session.shop_open;
                 rasterfall_effects_update(&effects, FIXED_STEP_US / 1000);
+                if (shop_input) {
+                    rasterfall_session_shop_input(
+                        &session,
+                        toy_input_pressed(&input, KEY_UP),
+                        toy_input_pressed(&input, KEY_DOWN),
+                        toy_input_pressed(&input, KEY_ENTER),
+                        toy_input_pressed(&input, KEY_ESC));
+                    input.key_pressed[KEY_UP] = 0;
+                    input.key_pressed[KEY_DOWN] = 0;
+                    input.key_pressed[KEY_ENTER] = 0;
+                    input.key_pressed[KEY_ESC] = 0;
+                }
                 if (net.mode == RASTERFALL_NET_CLIENT && net.spawn_pending) {
                     camera.x = net.peer_spawn.x;
                     camera.z = net.peer_spawn.z;
@@ -1644,9 +1660,12 @@ startup_again:
                 if (game.state == TOY_GAME_PLAYING &&
                     !(net.mode == RASTERFALL_NET_CLIENT &&
                       (!net.connected || !net.world_ready))) {
-                    build_game_command(&command, &input, &settings, fire_edge,
-                                       shove_edge, pointer_turn_pending,
-                                       pointer_pitch_pending);
+                    if (shop_input)
+                        memset(&command, 0, sizeof(command));
+                    else
+                        build_game_command(&command, &input, &settings, fire_edge,
+                                           shove_edge, pointer_turn_pending,
+                                           pointer_pitch_pending);
                     if (toy_input_down(&input, KEY_TAB) &&
                         toy_input_pressed(&input, KEY_R)) {
                         command.buttons &= ~RASTERFALL_CMD_RELOAD;
@@ -1874,7 +1893,8 @@ startup_again:
                     rasterfall_hud_render(&surface, display_fps, &hud);
                 }
             }
-            if (game.state == TOY_GAME_PLAYING && !paused) {
+            if (game.state == TOY_GAME_PLAYING && !paused &&
+                !session.shop_open) {
                 stage_pixels += rasterfall_render_interactables(&renderer, &camera);
                 /* 拾取物保持画在枪模之上的现状顺序 */
                 stage_pixels += toy_renderer_flush(&renderer);

@@ -183,6 +183,9 @@ void rasterfall_session_reset(struct rasterfall_session *session,
     session->smooth_turn_remaining = 0;
     session->ai_revive_active = 0;
     session->ai_revive_actor_index = -1;
+    session->shop_open = 0;
+    session->shop_page = 0;
+    session->shop_selected = 0;
     session_set_air_walls(session, 1);
     rasterfall_map_reset_interactables(&session->map_ops);
 }
@@ -390,6 +393,7 @@ static void session_client_interact_banner(struct rasterfall_session *session)
     if (session->highlight_index < 0 ||
         session->highlight_index >= session->item_count) return;
     it = &session->items[session->highlight_index];
+    if (it->kind == TOY_MAP_PICKUP_SHOP) return;
     session->banner_ms = 1800;
     if (it->kind == TOY_MAP_PICKUP_AIR_BUTTON)
         session->banner_text = session->air_walls_enabled ?
@@ -426,6 +430,15 @@ static void session_interact(struct rasterfall_session *session,
         it->kind == TOY_MAP_PICKUP_AMMO ||
         it->kind == TOY_MAP_PICKUP_WEAPON)
         toy_game_emit_event(&session->game_state, TOY_GAME_EV_PICKUP);
+    if (it->kind == TOY_MAP_PICKUP_SHOP) {
+        session->shop_open = 1;
+        session->shop_page = 0;
+        session->shop_selected = 0;
+        session->banner_ms = 0;
+        session->banner_text = NULL;
+        session->game_state.player_control_disabled = 1;
+        return;
+    }
     if (it->kind == TOY_MAP_PICKUP_BUTTON) {
         int n;
         session->banner_ms = 3500;
@@ -475,11 +488,44 @@ static void session_interact(struct rasterfall_session *session,
     } else if (it->kind == TOY_MAP_PICKUP_AMMO) {
         toy_game_refill_ammo(&session->game_state);
     } else if (it->kind == TOY_MAP_PICKUP_WEAPON) {
-        toy_game_equip_weapon(&session->game_state, it->weapon);
+        if (toy_game_weapon_unlocked(&session->game_state, it->weapon))
+            toy_game_equip_weapon(&session->game_state, it->weapon);
+        else {
+            session->banner_ms = 1800;
+            session->banner_text = "LOCKED - BUY IT IN THE ARMORY";
+        }
     } else {
-        toy_game_equip_weapon(&session->game_state,
-            it->kind == TOY_MAP_PICKUP_SMG ?
-            TOY_GAME_WEAPON_SMG : TOY_GAME_WEAPON_SHOTGUN);
+        int weapon = it->kind == TOY_MAP_PICKUP_SMG ?
+            TOY_GAME_WEAPON_SMG : TOY_GAME_WEAPON_SHOTGUN;
+        if (toy_game_weapon_unlocked(&session->game_state, weapon))
+            toy_game_equip_weapon(&session->game_state, weapon);
+        else {
+            session->banner_ms = 1800;
+            session->banner_text = "LOCKED - BUY IT IN THE ARMORY";
+        }
+    }
+}
+
+void rasterfall_session_shop_input(struct rasterfall_session *session,
+                                   int up, int down, int enter, int esc)
+{
+    int weapon;
+    if (!session || !session->shop_open) return;
+    if (esc) {
+        session->shop_open = 0;
+        session->shop_page = 0;
+        session->game_state.player_control_disabled = 0;
+        return;
+    }
+    if (!session->shop_page) {
+        if (enter) session->shop_page = 1;
+        return;
+    }
+    if (up) session->shop_selected = (session->shop_selected + 3) % 4;
+    if (down) session->shop_selected = (session->shop_selected + 1) % 4;
+    if (enter) {
+        weapon = session->shop_selected + TOY_GAME_WEAPON_SMG;
+        toy_game_buy_weapon(&session->game_state, weapon);
     }
 }
 

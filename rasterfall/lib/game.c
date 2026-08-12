@@ -383,6 +383,8 @@ void toy_game_init(struct toy_game *g, uint64_t seed)
     g->slots[1].mag = w->mag_size;
     g->slots[1].reserve = w->reserve_max;
     g->current_slot = 1;
+    /* 手枪是基础装备；所有可购买主武器初始锁定。 */
+    g->unlocked_weapons = 1u << TOY_GAME_WEAPON_PISTOL;
     g->wave = 1;
     g->to_spawn = wave_quota(1);
     g->spawn_timer_ms = TOY_GAME_WAVE_FIRST_DELAY_MS;
@@ -2976,6 +2978,16 @@ static int fire_ray(struct toy_game *g, int sy, int cy, int damage, int range,
             e->flash = 120;
             g->enemies_alive--;
             g->kills++;
+            if (e->type == TOY_GAME_ENEMY_SMOKER ||
+                e->type == TOY_GAME_ENEMY_CHARGER)
+                g->money += TOY_GAME_MONEY_SPECIAL;
+            else if (e->type == TOY_GAME_ENEMY_HEAVY ||
+                     e->type == TOY_GAME_ENEMY_PURSUIT_HEAVY)
+                g->money += TOY_GAME_MONEY_HEAVY;
+            else if (e->type == TOY_GAME_ENEMY_PURSUIT_FAST)
+                g->money += TOY_GAME_MONEY_FAST;
+            else
+                g->money += TOY_GAME_MONEY_COMMON;
             if (toy_game_enemy_info(e->type)->ability !=
                 TOY_GAME_ENEMY_ABILITY_NONE)
                 g->special_kills++;
@@ -3099,6 +3111,37 @@ int toy_game_equip_weapon(struct toy_game *g, int weapon)
     g->slots[slot].reserve = w->reserve_max;
     toy_game_switch_weapon(g, slot);
     return 1;
+}
+
+int toy_game_weapon_price(int weapon)
+{
+    switch (weapon) {
+    case TOY_GAME_WEAPON_SMG: return TOY_GAME_PRICE_SMG;
+    case TOY_GAME_WEAPON_SHOTGUN: return TOY_GAME_PRICE_SHOTGUN;
+    case TOY_GAME_WEAPON_AK: return TOY_GAME_PRICE_AK;
+    case TOY_GAME_WEAPON_AWP: return TOY_GAME_PRICE_AWP;
+    default: return 0;
+    }
+}
+
+int toy_game_weapon_unlocked(const struct toy_game *g, int weapon)
+{
+    if (!g || weapon < 0 || weapon >= TOY_GAME_WEAPON_COUNT) return 0;
+    return (g->unlocked_weapons & (1u << weapon)) != 0;
+}
+
+int toy_game_buy_weapon(struct toy_game *g, int weapon)
+{
+    int price;
+    if (!g || weapon <= TOY_GAME_WEAPON_PISTOL ||
+        weapon >= TOY_GAME_WEAPON_COUNT) return -1;
+    if (toy_game_weapon_unlocked(g, weapon))
+        return toy_game_equip_weapon(g, weapon);
+    price = toy_game_weapon_price(weapon);
+    if (g->money < price) return 0;
+    g->money -= price;
+    g->unlocked_weapons |= 1u << weapon;
+    return toy_game_equip_weapon(g, weapon) ? 2 : 1;
 }
 
 /* 弹药盒：补满已拥有武器的备弹（手枪无限备弹跳过），有变化返回 1 */

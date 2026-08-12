@@ -31,6 +31,9 @@ struct rasterfall_hud_state {
     const struct rasterfall_net *net;
     const char *host_address;
     int host_port;
+    int shop_open;
+    int shop_page;
+    int shop_selected;
 };
 
 void rasterfall_hud_draw_interact_prompt(struct toy_renderer *renderer,

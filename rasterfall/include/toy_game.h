@@ -106,6 +106,16 @@
 #define TOY_GAME_KEY_SLOT_1     2       /* evdev KEY_1：主武器槽 */
 #define TOY_GAME_KEY_SLOT_2     3       /* evdev KEY_2：副武器（手枪）槽 */
 
+/* 商店价格与击杀奖励集中配置，便于后续调平衡。 */
+#define TOY_GAME_MONEY_COMMON 1
+#define TOY_GAME_MONEY_HEAVY 2
+#define TOY_GAME_MONEY_FAST 2
+#define TOY_GAME_MONEY_SPECIAL 5
+#define TOY_GAME_PRICE_SMG 50
+#define TOY_GAME_PRICE_SHOTGUN 50
+#define TOY_GAME_PRICE_AK 100
+#define TOY_GAME_PRICE_AWP 200
+
 enum toy_game_state { TOY_GAME_PLAYING, TOY_GAME_OVER, TOY_GAME_WON };
 
 enum toy_game_campaign_phase {
@@ -417,6 +427,8 @@ struct toy_game {
     int kills;
     int special_kills;
     int damage_dealt;
+    int money;
+    unsigned int unlocked_weapons;
     int actor_id;
     int actor_kind;
     char player_name[TOY_GAME_MAX_NAME];
@@ -603,6 +615,9 @@ int  toy_game_fire(struct toy_game *g, int sy, int cy);     /* hitscan，命中�
 int  toy_game_switch_weapon(struct toy_game *g, int slot);  /* 切枪；空槽/同槽返回 0 */
 int  toy_game_equip_weapon(struct toy_game *g, int weapon); /* 按武器定义装备到对应槽；同武器=补充弹药返回 0，新武器返回 1，非法返回 -1 */
 int  toy_game_refill_ammo(struct toy_game *g);              /* 弹药盒：补满已拥有武器的备弹，有变化返回 1 */
+int  toy_game_weapon_price(int weapon);
+int  toy_game_weapon_unlocked(const struct toy_game *g, int weapon);
+int  toy_game_buy_weapon(struct toy_game *g, int weapon);
 const struct toy_game_weapon_info *toy_game_weapon_info(int weapon);
 const struct toy_game_weapon_info *toy_game_weapon_info_or_null(int weapon);
 int  toy_game_weapon_is_valid(int weapon);

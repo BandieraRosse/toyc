@@ -78,6 +78,8 @@ wall 15000 15000 -15000 12000 1800 56515D
 pickup smg -250 -7450 -235
 pickup shotgun 250 -7450 -235
 pickup ammo 880 -7480 -520
+pickup ammo 450 900 -500
+pickup shop 1740 -4800 0
 pickup ak -700 -7450 -235
 pickup awp 700 -7450 -235
 button -11940 -10000 200

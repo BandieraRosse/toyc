@@ -145,7 +145,8 @@ int toy_map_load(const char *path, struct toy_map *m)
             char *k=word(&p),*sx=word(&p),*sz=word(&p),*sy=word(&p);
             if(k&&sx&&sz&&sy){
                 int weapon = toy_game_weapon_from_name(k);
-                m->pickups[m->pickup_count].kind = weapon >= 0 ?
+                m->pickups[m->pickup_count].kind = !strcmp(k,"shop") ?
+                    TOY_MAP_PICKUP_SHOP : weapon >= 0 ?
                     TOY_MAP_PICKUP_WEAPON :
                     (!strcmp(k,"ammo") ? TOY_MAP_PICKUP_AMMO :
                      TOY_MAP_PICKUP_AMMO);

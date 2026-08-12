@@ -56,6 +56,9 @@ struct rasterfall_session {
     int smooth_turn_remaining;
     int ai_revive_active;
     int ai_revive_actor_index;
+    int shop_open;
+    int shop_page;
+    int shop_selected;
     uint64_t seed;
 };
 
@@ -94,5 +97,7 @@ int rasterfall_session_find_down_ai(const struct rasterfall_session *session,
 void rasterfall_camera_rotate(struct camera *camera, int turn, int pitch);
 int rasterfall_session_compute_highlight(const struct rasterfall_session *session,
                                          const struct camera *camera);
+void rasterfall_session_shop_input(struct rasterfall_session *session,
+                                   int up, int down, int enter, int esc);
 
 #endif

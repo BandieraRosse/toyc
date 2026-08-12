@@ -118,6 +118,60 @@ static void render_weapon_hud(struct toy_surface *surface,
                        game->current_slot == 1);
 }
 
+static void render_money(struct toy_surface *surface, const struct toy_game *game)
+{
+    char line[24];
+    int x = surface->width - 150, y = surface->height / 2 - 112;
+    snprintf(line, sizeof(line), "$ %d", game->money);
+    hud_fill_rect(surface, x, y, 134, 28, 0x26384C);
+    hud_fill_rect(surface, x, y, 3, 28, RF_COLOR_UI_ACCENT);
+    fb_draw_string((unsigned char *)surface->pixels, x + 10, y + 6,
+                   line, RF_COLOR_UI_ACCENT_BRIGHT, surface->stride);
+}
+
+static void render_shop(struct toy_surface *surface,
+                        const struct rasterfall_hud_state *state)
+{
+    static const int weapons[] = { TOY_GAME_WEAPON_SMG,
+        TOY_GAME_WEAPON_SHOTGUN, TOY_GAME_WEAPON_AK, TOY_GAME_WEAPON_AWP };
+    static const char *names[] = { "SMG", "SG", "AK", "AWP" };
+    char line[64];
+    int i, x = surface->width / 2 - 260, y = surface->height / 2 - 150;
+    hud_fill_rect(surface, 0, 0, surface->width, surface->height, 0xD010151D);
+    hud_fill_rect(surface, x, y, 520, 42, RF_COLOR_UI_PANEL_DARK);
+    fb_draw_string((unsigned char *)surface->pixels, x + 18, y + 13,
+                   "ARMORY", RF_COLOR_UI_ACCENT_BRIGHT, surface->stride);
+    if (!state->shop_page) {
+        fb_draw_string((unsigned char *)surface->pixels, x + 20, y + 86,
+                       "PLAYER WEAPONS", RF_COLOR_UI_ACCENT_BRIGHT, surface->stride);
+        fb_draw_string((unsigned char *)surface->pixels, x + 20, y + 118,
+                       "ENTER  OPEN    ESC  CLOSE", RF_COLOR_UI_TEXT, surface->stride);
+        return;
+    }
+    for (i = 0; i < 4; i++) {
+        int cy = y + 58 + i * 52;
+        int selected = i == state->shop_selected;
+        int unlocked = toy_game_weapon_unlocked(state->game, weapons[i]);
+        hud_fill_rect(surface, x + 16, cy, 488, 42,
+                      selected ? 0x3C4E5B : RF_COLOR_UI_PANEL_DARK);
+        snprintf(line, sizeof(line), "%s    %s    %s", names[i],
+                 unlocked ? "UNLOCKED" : "LOCKED",
+                 unlocked ? "ENTER EQUIP" : "$" );
+        if (!unlocked) {
+            char price[16];
+            snprintf(price, sizeof(price), "%d", toy_game_weapon_price(weapons[i]));
+            strcat(line, price);
+        }
+        fb_draw_string((unsigned char *)surface->pixels, x + 30, cy + 13,
+                       line, selected ? RF_COLOR_UI_ACCENT_BRIGHT : RF_COLOR_UI_TEXT,
+                       surface->stride);
+    }
+    snprintf(line, sizeof(line), "MONEY $ %d    UP/DOWN SELECT  ENTER BUY/EQUIP  ESC CLOSE",
+             state->game->money);
+    fb_draw_string((unsigned char *)surface->pixels, x + 16,
+                   y + 286, line, RF_COLOR_UI_TEXT, surface->stride);
+}
+
 static char hud_upper_ascii(char c)
 {
     return c >= 'a' && c <= 'z' ? (char)(c - 'a' + 'A') : c;
@@ -321,8 +375,10 @@ void rasterfall_hud_render(struct toy_surface *surface, int fps,
     render_director_hud(surface, game, fps);
     render_network_hud(surface, state->net, state->host_address, state->host_port);
     render_weapon_hud(surface, game);
+    render_money(surface, game);
     render_player_hud(surface, game, state->player_name);
     render_revive_prompt(surface, state);
+    if (state->shop_open) render_shop(surface, state);
     if (state->horde_banner_ms > 0 && state->interaction_banner) {
         int banner_y = surface->height / 3;
         fb_draw_string((unsigned char *)surface->pixels,
@@ -378,6 +434,8 @@ void rasterfall_hud_draw_interact_prompt(struct toy_renderer *renderer,
         snprintf(label, sizeof(label), "E OPEN BASE 2 GATE");
     else if (it->kind == TOY_MAP_PICKUP_AMMO)
         snprintf(label, sizeof(label), "E TAKE AMMO");
+    else if (it->kind == TOY_MAP_PICKUP_SHOP)
+        snprintf(label, sizeof(label), "E OPEN ARMORY");
     else if (it->kind == TOY_MAP_PICKUP_WEAPON ||
              it->kind == TOY_MAP_PICKUP_SMG ||
              it->kind == TOY_MAP_PICKUP_SHOTGUN) {
