@@ -33,7 +33,7 @@
 #define TOY_CONFIG_CHARGER_KNOCKBACK         1050  /* Charger 击退强度 */
 
 /* Pistol: magazine, reserve, cooldown, reload, automatic, pellets, spread, slot, damage. */
-#define TOY_CONFIG_PISTOL_MAG                  30  /* 弹匣容量 */
+#define TOY_CONFIG_PISTOL_MAG                  15  /* 弹匣容量 */
 #define TOY_CONFIG_PISTOL_RESERVE              (-1) /* 备弹上限 */
 #define TOY_CONFIG_PISTOL_COOLDOWN_MS         200  /* 射击间隔 */
 #define TOY_CONFIG_PISTOL_RELOAD_MS          1500  /* 换弹时间 */
@@ -41,7 +41,7 @@
 #define TOY_CONFIG_PISTOL_PELLETS               1  /* 每次弹丸数 */
 #define TOY_CONFIG_PISTOL_SPREAD               12  /* 散布范围 */
 #define TOY_CONFIG_PISTOL_SLOT                  1  /* 武器槽位 */
-#define TOY_CONFIG_PISTOL_DAMAGE               30  /* 单颗伤害 */
+#define TOY_CONFIG_PISTOL_DAMAGE               20  /* 单颗伤害 */
 
 /* SMG weapon tuning. */
 #define TOY_CONFIG_SMG_MAG                     50  /* 弹匣容量 */
@@ -60,7 +60,7 @@
 #define TOY_CONFIG_SHOTGUN_COOLDOWN_MS        600  /* 射击间隔 */
 #define TOY_CONFIG_SHOTGUN_RELOAD_MS         2500  /* 换弹时间 */
 #define TOY_CONFIG_SHOTGUN_FULL_AUTO            0  /* 是否全自动 */
-#define TOY_CONFIG_SHOTGUN_PELLETS             12  /* 每次弹丸数 */
+#define TOY_CONFIG_SHOTGUN_PELLETS             10  /* 每次弹丸数 */
 #define TOY_CONFIG_SHOTGUN_SPREAD             150  /* 散布范围 */
 #define TOY_CONFIG_SHOTGUN_SLOT                  0  /* 武器槽位 */
 #define TOY_CONFIG_SHOTGUN_DAMAGE               25  /* 单颗伤害 */
@@ -68,11 +68,11 @@
 /* AK rifle weapon tuning. */
 #define TOY_CONFIG_AK_MAG                       40
 #define TOY_CONFIG_AK_RESERVE                  360
-#define TOY_CONFIG_AK_COOLDOWN_MS              250
+#define TOY_CONFIG_AK_COOLDOWN_MS              180
 #define TOY_CONFIG_AK_RELOAD_MS              2200
 #define TOY_CONFIG_AK_FULL_AUTO                  1
 #define TOY_CONFIG_AK_PELLETS                    1
-#define TOY_CONFIG_AK_SPREAD                    70
+#define TOY_CONFIG_AK_SPREAD                    50
 #define TOY_CONFIG_AK_SLOT                       0
 #define TOY_CONFIG_AK_DAMAGE                    50
 
@@ -106,10 +106,10 @@
 #define TOY_CONFIG_COMMON_SPEED_MIN           38  /* 最低速度 */
 #define TOY_CONFIG_COMMON_SPEED_MAX           56  /* 最高速度 */
 #define TOY_CONFIG_COMMON_BITE_DAMAGE          2  /* 咬伤 */
-#define TOY_CONFIG_FAST_HP                     50  /* 生命值 */
-#define TOY_CONFIG_FAST_SPEED_MIN             66  /* 最低速度 */
-#define TOY_CONFIG_FAST_SPEED_MAX             82  /* 最高速度 */
-#define TOY_CONFIG_FAST_BITE_DAMAGE            2  /* 咬伤 */
+#define TOY_CONFIG_PURSUIT_COMMON_HP           50  /* 生命值 */
+#define TOY_CONFIG_PURSUIT_COMMON_SPEED_MIN   66  /* 最低速度 */
+#define TOY_CONFIG_PURSUIT_COMMON_SPEED_MAX   82  /* 最高速度 */
+#define TOY_CONFIG_PURSUIT_COMMON_BITE_DAMAGE  2  /* 咬伤 */
 #define TOY_CONFIG_HEAVY_HP                  200  /* 生命值 */
 #define TOY_CONFIG_HEAVY_SPEED_MIN            24  /* 最低速度 */
 #define TOY_CONFIG_HEAVY_SPEED_MAX            34  /* 最高速度 */
@@ -122,11 +122,11 @@
 #define TOY_CONFIG_PURSUIT_FAST_SPEED_MIN     92  /* 最低速度 */
 #define TOY_CONFIG_PURSUIT_FAST_SPEED_MAX    112  /* 最高速度 */
 #define TOY_CONFIG_PURSUIT_FAST_BITE_DAMAGE    2  /* 咬伤 */
-#define TOY_CONFIG_SMOKER_HP                  90  /* 生命值 */
+#define TOY_CONFIG_SMOKER_HP                 100  /* 生命值 */
 #define TOY_CONFIG_SMOKER_SPEED_MIN           34  /* 最低速度 */
 #define TOY_CONFIG_SMOKER_SPEED_MAX           46  /* 最高速度 */
 #define TOY_CONFIG_SMOKER_BITE_DAMAGE          0  /* 咬伤 */
-#define TOY_CONFIG_CHARGER_HP                180  /* 生命值 */
+#define TOY_CONFIG_CHARGER_HP                300  /* 生命值 */
 #define TOY_CONFIG_CHARGER_SPEED_MIN          42  /* 最低速度 */
 #define TOY_CONFIG_CHARGER_SPEED_MAX          58  /* 最高速度 */
 #define TOY_CONFIG_CHARGER_BITE_DAMAGE         4  /* 咬伤 */

@@ -174,7 +174,7 @@ enum toy_game_ai_class {
 
 enum toy_game_enemy_type {
     TOY_GAME_ENEMY_COMMON,
-    TOY_GAME_ENEMY_FAST,
+    TOY_GAME_ENEMY_PURSUIT_COMMON,   /* PURSUIT_COMMON */
     TOY_GAME_ENEMY_HEAVY,
     TOY_GAME_ENEMY_PURSUIT_HEAVY,
     TOY_GAME_ENEMY_PURSUIT_FAST,
@@ -187,7 +187,7 @@ enum toy_game_enemy_type {
  * stable across map data and network packets. */
 enum toy_game_enemy_id {
     TOY_GAME_ENEMY_ID_COMMON = 100,
-    TOY_GAME_ENEMY_ID_FAST = 110,
+    TOY_GAME_ENEMY_ID_PURSUIT_COMMON = 110,
     TOY_GAME_ENEMY_ID_HEAVY = 120,
     TOY_GAME_ENEMY_ID_PURSUIT_HEAVY = 130,
     TOY_GAME_ENEMY_ID_PURSUIT_FAST = 140,

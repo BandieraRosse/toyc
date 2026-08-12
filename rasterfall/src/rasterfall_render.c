@@ -1517,7 +1517,7 @@ static int render_enemies(struct toy_renderer *renderer,
             else if (e->type == TOY_GAME_ENEMY_PURSUIT_FAST)
                 color = RF_COLOR_ENEMY_PURSUIT_FAST;
             else if (e->ai_state == TOY_GAME_ENEMY_TRACKING)
-                color = 0x8A2A2A;   /* 尸潮追踪者：红色，一眼可辨 */
+                color = RF_COLOR_ENEMY_COMMON; /* PURSUIT_COMMON：沿用普通敌人颜色 */
         }
         pixels += render_blob_shadow(renderer, camera, e, scale);
         if (toy_game_enemy_info(e->type)->ability ==

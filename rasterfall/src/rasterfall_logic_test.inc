@@ -40,8 +40,8 @@ static int run_logic_test(void)
             toy_game_actor_by_id_const(&game, 1);
         const struct toy_game_enemy_info *common =
             toy_game_enemy_info(TOY_GAME_ENEMY_COMMON);
-        const struct toy_game_enemy_info *fast =
-            toy_game_enemy_info(TOY_GAME_ENEMY_FAST);
+        const struct toy_game_enemy_info *pursuit_common =
+            toy_game_enemy_info(TOY_GAME_ENEMY_PURSUIT_COMMON);
         const struct toy_game_enemy_info *heavy =
             toy_game_enemy_info(TOY_GAME_ENEMY_HEAVY);
         const struct toy_game_enemy_info *brute =
@@ -64,10 +64,10 @@ static int run_logic_test(void)
             toy_game_weapon_info(TOY_GAME_WEAPON_AWP);
         if (!actor || actor->kind != TOY_GAME_ACTOR_AI ||
             actor->class_id != TOY_GAME_AI_LEVEL_2 ||
-            fast->speed_min <= common->speed_max ||
+            pursuit_common->speed_min <= common->speed_max ||
             heavy->max_hp <= common->max_hp ||
             heavy->bite_damage <= common->bite_damage ||
-            runner->speed_min <= fast->speed_max ||
+            runner->speed_min <= pursuit_common->speed_max ||
             smg->damage != 25 || shotgun->damage != 25 ||
             common->max_hp != 50 || heavy->max_hp != 200 ||
             brute->max_hp != 200 || runner->max_hp != 60) return 49;

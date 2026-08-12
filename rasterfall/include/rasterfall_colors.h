@@ -20,7 +20,7 @@
 
 /* Gameplay identity colors. */
 #define RF_COLOR_ENEMY_COMMON        0x4A5D3A /* 普通敌人：橄榄绿 */
-#define RF_COLOR_ENEMY_FAST          0x6A8A42 /* 快速敌人：黄绿色 */
+#define RF_COLOR_ENEMY_PURSUIT_COMMON RF_COLOR_ENEMY_COMMON /* PURSUIT_COMMON：沿用普通敌人颜色 */
 #define RF_COLOR_ENEMY_HEAVY         0x624A3A /* 重型敌人：棕灰 */
 #define RF_COLOR_ENEMY_PURSUIT_HEAVY 0x7A4A2A /* 重型追击者：深橙棕 */
 #define RF_COLOR_ENEMY_PURSUIT_FAST  0xB84A32 /* 快速追击者：赤橙 */

@@ -109,7 +109,10 @@ static const struct toy_game_weapon_info weapon_table[TOY_GAME_WEAPON_COUNT] = {
 static const struct toy_game_enemy_info enemy_table[TOY_GAME_ENEMY_TYPE_COUNT] = {
     /* max hp, speed range, bite damage, model, base color */
     { TOY_CONFIG_COMMON_HP, TOY_CONFIG_COMMON_SPEED_MIN, TOY_CONFIG_COMMON_SPEED_MAX, TOY_CONFIG_COMMON_BITE_DAMAGE, 0, RF_COLOR_ENEMY_COMMON, TOY_GAME_ENEMY_ID_COMMON, "COMMON", TOY_GAME_ENEMY_ABILITY_NONE },
-    { TOY_CONFIG_FAST_HP, TOY_CONFIG_FAST_SPEED_MIN, TOY_CONFIG_FAST_SPEED_MAX, TOY_CONFIG_FAST_BITE_DAMAGE, 1, RF_COLOR_ENEMY_FAST, TOY_GAME_ENEMY_ID_FAST, "FAST", TOY_GAME_ENEMY_ABILITY_NONE },
+    /* PURSUIT_COMMON is the ordinary tracking zombie.  Its numeric content
+     * ID remains 110 for save/network compatibility; PURSUIT_FAST is the
+     * faster red variant. */
+    { TOY_CONFIG_PURSUIT_COMMON_HP, TOY_CONFIG_PURSUIT_COMMON_SPEED_MIN, TOY_CONFIG_PURSUIT_COMMON_SPEED_MAX, TOY_CONFIG_PURSUIT_COMMON_BITE_DAMAGE, 1, RF_COLOR_ENEMY_PURSUIT_COMMON, TOY_GAME_ENEMY_ID_PURSUIT_COMMON, "PURSUIT_COMMON", TOY_GAME_ENEMY_ABILITY_NONE },
     { TOY_CONFIG_HEAVY_HP, TOY_CONFIG_HEAVY_SPEED_MIN, TOY_CONFIG_HEAVY_SPEED_MAX, TOY_CONFIG_HEAVY_BITE_DAMAGE, 2, RF_COLOR_ENEMY_HEAVY, TOY_GAME_ENEMY_ID_HEAVY, "HEAVY", TOY_GAME_ENEMY_ABILITY_NONE },
     { TOY_CONFIG_PURSUIT_HEAVY_HP, TOY_CONFIG_PURSUIT_HEAVY_SPEED_MIN, TOY_CONFIG_PURSUIT_HEAVY_SPEED_MAX, TOY_CONFIG_PURSUIT_HEAVY_BITE_DAMAGE, 2, RF_COLOR_ENEMY_PURSUIT_HEAVY, TOY_GAME_ENEMY_ID_PURSUIT_HEAVY, "PURSUIT_HEAVY", TOY_GAME_ENEMY_ABILITY_NONE },
     { TOY_CONFIG_PURSUIT_FAST_HP, TOY_CONFIG_PURSUIT_FAST_SPEED_MIN, TOY_CONFIG_PURSUIT_FAST_SPEED_MAX, TOY_CONFIG_PURSUIT_FAST_BITE_DAMAGE, 1, RF_COLOR_ENEMY_PURSUIT_FAST, TOY_GAME_ENEMY_ID_PURSUIT_FAST, "PURSUIT_FAST", TOY_GAME_ENEMY_ABILITY_NONE },
@@ -1124,7 +1127,7 @@ int toy_game_spawn_horde(struct toy_game *g, int count_min, int count_max,
                          const struct toy_game_box *points, int point_count,
                          int min_player_dist)
 {
-    return toy_game_spawn_horde_type(g, TOY_GAME_ENEMY_FAST, count_min,
+    return toy_game_spawn_horde_type(g, TOY_GAME_ENEMY_PURSUIT_COMMON, count_min,
                                      count_max, points, point_count,
                                      min_player_dist);
 }
@@ -1174,7 +1177,7 @@ static int try_spawn(struct toy_game *g)
                 type = TOY_GAME_ENEMY_SMOKER;
             else
                 type = slot % 10 == 0 ? TOY_GAME_ENEMY_HEAVY :
-                       slot % 5 == 0 ? TOY_GAME_ENEMY_FAST :
+                       slot % 5 == 0 ? TOY_GAME_ENEMY_PURSUIT_COMMON :
                        TOY_GAME_ENEMY_COMMON;
             init_enemy_stats(g, &g->enemies[slot], type);
         }
