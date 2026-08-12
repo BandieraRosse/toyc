@@ -17,6 +17,9 @@ static int run_logic_test(void)
     long long direction_length;
     toy_input_init(&input);
     rasterfall_session_reset(&session, &camera, 1);
+    if (session.level.safe_count > 0 &&
+        session.game_state.safe_room_count != session.level.safe_count)
+        return 126;
     /* 客户端交互由主机执行，但按下 E 后本地仍必须立即显示反馈。 */
     if (session.item_count > 0) {
         memset(&command, 0, sizeof(command));
@@ -1029,6 +1032,56 @@ static int run_logic_test(void)
         for (int i = 0; i < 180; i++) toy_game_update_ai_teammates(&game, 16);
         /* The arena no longer contains campaign geometry that needs a
          * scripted AI redeployment route. */
+    }
+    /* 导航目标选择：不可达的主玩家不能成为隐式默认目标；可达的
+     * 第二目标即使更远也应优先于不可达目标。 */
+    {
+        struct toy_game_box wall = { -100, 100, -6000, 6000 };
+        toy_game_init(&game, 81);
+        game.to_spawn = 0;
+        game.px = 3000; game.pz = 0;
+        toy_game_set_world(&game, &wall, 1, 6000);
+        toy_game_place_enemy(&game, -3000, 0);
+        toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
+        if (game.enemies[0].target_player != -1) return 120;
+
+        toy_game_set_secondary_player(&game, 1, -1800, 0);
+        toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
+        if (game.enemies[0].target_player != 1) return 121;
+    }
+    /* TRACKING 只忽略 LOS，不忽略 component；绕过有限障碍后仍可追踪。 */
+    {
+        struct toy_game_box wall = { -100, 100, -600, 600 };
+        toy_game_init(&game, 82);
+        game.to_spawn = 0;
+        game.px = 3000; game.pz = 2000;
+        toy_game_set_world(&game, &wall, 1, 6000);
+        toy_game_place_enemy(&game, -3000, 0);
+        game.enemies[0].ai_state = TOY_GAME_ENEMY_TRACKING;
+        game.enemies[0].type = TOY_GAME_ENEMY_COMMON;
+        toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
+        if (game.enemies[0].target_player != 0) return 122;
+
+        game.px = 3000; game.pz = 0;
+        game.world_count = 1;
+        wall.minz = -6000; wall.maxz = 6000;
+        toy_game_rebuild_navigation(&game);
+        toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
+        if (game.enemies[0].target_player != -1) return 123;
+    }
+    /* 空气墙拓扑变化后，关闭墙体必须重新合并 component。 */
+    {
+        struct toy_game_box wall = { -100, 100, -6000, 6000 };
+        toy_game_init(&game, 83);
+        game.to_spawn = 0; game.px = 3000; game.pz = 0;
+        toy_game_set_world(&game, &wall, 1, 6000);
+        toy_game_place_enemy(&game, -3000, 0);
+        toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
+        if (game.enemies[0].target_player != -1) return 124;
+        wall.minx = 7000; wall.maxx = 8000;
+        toy_game_rebuild_navigation(&game);
+        toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
+        if (game.enemies[0].target_player != 0) return 125;
     }
     __printf("rasterfall: logic test passed\n");
     return 0;

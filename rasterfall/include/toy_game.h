@@ -229,6 +229,12 @@ enum toy_game_event {
 struct toy_game_box { int minx, maxx, minz, maxz; };
 struct toy_game_platform { int minx, maxx, minz, maxz, height; };
 
+/* The world is small enough for a fixed connectivity grid.  This is
+ * deliberately a component map, not a path-finding data structure. */
+#define TOY_GAME_NAV_CELL_SIZE 300
+#define TOY_GAME_NAV_MAX_SIDE 128
+#define TOY_GAME_NAV_MAX_CELLS (TOY_GAME_NAV_MAX_SIDE * TOY_GAME_NAV_MAX_SIDE)
+
 /* ── 武器槽：0=主武器（SMG/霰弹枪），1=副武器（手枪）────────── */
 
 #define TOY_GAME_WEAPON_SLOTS 2
@@ -477,6 +483,12 @@ struct toy_game {
     const struct toy_game_platform *platforms;
     int platform_count;
 
+    int nav_origin;
+    int nav_width;
+    int nav_height;
+    unsigned char nav_walkable[TOY_GAME_NAV_MAX_CELLS];
+    unsigned short nav_component[TOY_GAME_NAV_MAX_CELLS];
+
     /* 联机主机可提供第二名玩家的位置；单机时保持 inactive。 */
     int secondary_player_active;
     int secondary_px, secondary_pz;
@@ -536,6 +548,7 @@ int  toy_game_apply_entity_impact(struct toy_game *g, int kind, int index,
 void toy_game_set_world(struct toy_game *g,
                         const struct toy_game_box *boxes,
                         int box_count, int room_limit);
+void toy_game_rebuild_navigation(struct toy_game *g);
 void toy_game_set_platforms(struct toy_game *g,
                             const struct toy_game_platform *platforms,
                             int platform_count);

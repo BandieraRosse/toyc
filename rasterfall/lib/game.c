@@ -35,6 +35,10 @@
 static int enemy_target_reachable(const struct toy_game *g,
                                   const struct toy_game_enemy *e,
                                   int x, int z);
+static int enemy_target_valid(const struct toy_game *g,
+                              const struct toy_game_enemy *e,
+                              int target_player, int target_actor,
+                              int *out_x, int *out_z);
 
 /* ── PRNG：xorshift64* ──────────────────────────────────────────── */
 
@@ -633,6 +637,7 @@ void toy_game_set_world(struct toy_game *g,
     g->world = boxes;
     g->world_count = box_count;
     g->room_limit = room_limit;
+    toy_game_rebuild_navigation(g);
 }
 
 void toy_game_set_platforms(struct toy_game *g,
@@ -744,6 +749,7 @@ void toy_game_set_campaign(struct toy_game *g,
     g->goal_hold_ms = 0;
     g->campaign_stage = 0;
     g->alarm_spawn_zone = -1;
+    toy_game_rebuild_navigation(g);
     if (g->campaign_mode) {
         g->to_spawn = 0;
         g->campaign_phase = TOY_GAME_PHASE_BUILDUP;
@@ -808,6 +814,135 @@ int toy_game_position_blocked(const struct toy_game *g,
     return 0;
 }
 
+static int nav_position_blocked(const struct toy_game *g, int x, int z)
+{
+    int i;
+    /* A cell stands for the whole square, not just its center.  Expanding by
+     * half a cell prevents a thin wall that falls between two sample points
+     * from becoming an artificial bridge in the component map. */
+    int radius = TOY_GAME_CHARGER_RADIUS + TOY_GAME_NAV_CELL_SIZE / 2;
+    if (toy_game_position_blocked(g, x, z, radius)) return 1;
+    for (i = 0; i < g->safe_room_count; i++) {
+        const struct toy_game_box *b = &g->safe_rooms[i];
+        if (x + radius > b->minx && x - radius < b->maxx &&
+            z + radius > b->minz && z - radius < b->maxz) return 1;
+    }
+    return 0;
+}
+
+static int nav_cell_index(const struct toy_game *g, int x, int z)
+{
+    int cx = (x - g->nav_origin) / TOY_GAME_NAV_CELL_SIZE;
+    int cz = (z - g->nav_origin) / TOY_GAME_NAV_CELL_SIZE;
+    if (cx < 0 || cz < 0 || cx >= g->nav_width || cz >= g->nav_height)
+        return -1;
+    return cz * g->nav_width + cx;
+}
+
+/* The cell mask is intentionally conservative (it includes half a cell),
+ * so an enemy standing close to a wall can be inside a blocked sample cell
+ * even though its actual collision circle is valid.  Resolve such positions
+ * to the nearest walkable sample instead of treating the actor as outside
+ * the navigation graph. */
+static int nav_component_at_position(const struct toy_game *g, int x, int z)
+{
+    int base = nav_cell_index(g, x, z);
+    int base_x, base_z, dx, dz, cx, cz, index, best = 0;
+    long long best_dist = 0, dist;
+    if (base < 0) return 0;
+    base_x = base % g->nav_width;
+    base_z = base / g->nav_width;
+    for (dz = -2; dz <= 2; dz++) {
+        for (dx = -2; dx <= 2; dx++) {
+            cx = base_x + dx; cz = base_z + dz;
+            if (cx < 0 || cz < 0 || cx >= g->nav_width ||
+                cz >= g->nav_height) continue;
+            index = cz * g->nav_width + cx;
+            if (!g->nav_walkable[index] || !g->nav_component[index]) continue;
+            dist = (long long)(g->nav_origin +
+                               cx * TOY_GAME_NAV_CELL_SIZE +
+                               TOY_GAME_NAV_CELL_SIZE / 2 - x);
+            dist *= dist;
+            dist += (long long)(g->nav_origin +
+                                cz * TOY_GAME_NAV_CELL_SIZE +
+                                TOY_GAME_NAV_CELL_SIZE / 2 - z) *
+                    (g->nav_origin + cz * TOY_GAME_NAV_CELL_SIZE +
+                     TOY_GAME_NAV_CELL_SIZE / 2 - z);
+            if (!best || dist < best_dist) {
+                best = index;
+                best_dist = dist;
+            }
+        }
+    }
+    return best ? g->nav_component[best] : 0;
+}
+
+static int nav_step_allowed(const struct toy_game *g, int cx, int cz,
+                            int nx, int nz)
+{
+    int dx = nx - cx, dz = nz - cz;
+    int index;
+    if (nx < 0 || nz < 0 || nx >= g->nav_width || nz >= g->nav_height)
+        return 0;
+    index = nz * g->nav_width + nx;
+    if (!g->nav_walkable[index]) return 0;
+    if (dx != 0 && dz != 0) {
+        if (!g->nav_walkable[cz * g->nav_width + nx] ||
+            !g->nav_walkable[nz * g->nav_width + cx]) return 0;
+    }
+    return 1;
+}
+
+void toy_game_rebuild_navigation(struct toy_game *g)
+{
+    int i, x, z, index, component = 0;
+    int queue[TOY_GAME_NAV_MAX_CELLS];
+    int head, tail, cx, cz, nx, nz, dx, dz;
+    if (!g || g->room_limit <= 0) return;
+    g->nav_origin = -g->room_limit;
+    g->nav_width = (g->room_limit * 2 + TOY_GAME_NAV_CELL_SIZE - 1) /
+                   TOY_GAME_NAV_CELL_SIZE;
+    g->nav_height = g->nav_width;
+    if (g->nav_width > TOY_GAME_NAV_MAX_SIDE) {
+        g->nav_width = TOY_GAME_NAV_MAX_SIDE;
+        g->nav_height = TOY_GAME_NAV_MAX_SIDE;
+    }
+    for (z = 0; z < g->nav_height; z++) {
+        for (x = 0; x < g->nav_width; x++) {
+            int px = g->nav_origin + x * TOY_GAME_NAV_CELL_SIZE +
+                     TOY_GAME_NAV_CELL_SIZE / 2;
+            int pz = g->nav_origin + z * TOY_GAME_NAV_CELL_SIZE +
+                     TOY_GAME_NAV_CELL_SIZE / 2;
+            index = z * g->nav_width + x;
+            g->nav_walkable[index] = !nav_position_blocked(g, px, pz);
+            g->nav_component[index] = 0;
+        }
+    }
+    for (i = 0; i < g->nav_width * g->nav_height; i++) {
+        if (!g->nav_walkable[i] || g->nav_component[i]) continue;
+        component++;
+        if (component > 65535) component = 65535;
+        head = 0; tail = 0; queue[tail++] = i;
+        g->nav_component[i] = (unsigned short)component;
+        while (head < tail) {
+            index = queue[head++];
+            cx = index % g->nav_width;
+            cz = index / g->nav_width;
+            for (dz = -1; dz <= 1; dz++) {
+                for (dx = -1; dx <= 1; dx++) {
+                    if (!dx && !dz) continue;
+                    nx = cx + dx; nz = cz + dz;
+                    if (!nav_step_allowed(g, cx, cz, nx, nz)) continue;
+                    index = nz * g->nav_width + nx;
+                    if (g->nav_component[index]) continue;
+                    g->nav_component[index] = (unsigned short)component;
+                    if (tail < TOY_GAME_NAV_MAX_CELLS) queue[tail++] = index;
+                }
+            }
+        }
+    }
+}
+
 static int enemy_position_blocked(const struct toy_game *g,
                                   int x, int z, int radius)
 {
@@ -865,7 +1000,7 @@ static void init_enemy_ai(struct toy_game *g, struct toy_game_enemy *e)
     e->last_seen_x = e->x;
     e->last_seen_z = e->z;
     e->lost_sight_ms = 0;
-    e->target_player = 0;
+    e->target_player = -1;
     e->retarget_timer_ms = TOY_GAME_RETARGET_MS;
     e->wander_timer_ms = rand_range(g, 600, 1800);
     e->dir_x = enemy_dir_x[direction];
@@ -887,7 +1022,7 @@ static void init_enemy_stats(struct toy_game *g, struct toy_game_enemy *e,
     e->charge_dir_z = 0;
     e->charge_elapsed_ms = 0;
     e->charge_hit_base = 0;
-    e->special_target_player = 0;
+    e->special_target_player = -1;
     e->special_target_actor_index = -1;
     e->special_pull_timer_ms = 0;
     e->shove_stun_ms = 0;
@@ -1499,11 +1634,7 @@ static int nearest_ai_position(const struct toy_game *g,
     for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
         const struct toy_game_actor *a = &g->actors[i];
         long long dx, dz, d2;
-        if (!a->active ||
-            (a->kind != TOY_GAME_ACTOR_AI &&
-             a->kind != TOY_GAME_ACTOR_PLAYER) ||
-            a->state != TOY_GAME_ACTOR_ALIVE ||
-            !enemy_target_reachable(g, e, a->x, a->z)) continue;
+        if (!enemy_target_valid(g, e, 2, i, NULL, NULL)) continue;
         dx = (long long)a->x - e->x;
         dz = (long long)a->z - e->z;
         d2 = dx * dx + dz * dz;
@@ -1523,14 +1654,13 @@ static int nearest_special_target(const struct toy_game *g,
                                   int *out_x, int *out_z,
                                   int *out_player, int *out_actor)
 {
-    int found = 0, player = 0, actor = -1;
+    int found = 0, player = -1, actor = -1;
     long long best = 0, dx, dz, d2;
-    if (!g->player_down && enemy_target_reachable(g, e, g->px, g->pz)) {
+    if (enemy_target_valid(g, e, 0, -1, NULL, NULL)) {
         dx = (long long)g->px - e->x; dz = (long long)g->pz - e->z;
-        best = dx * dx + dz * dz; found = 1;
+        best = dx * dx + dz * dz; found = 1; player = 0;
     }
-    if (g->secondary_player_active && !g->secondary_player_down &&
-        enemy_target_reachable(g, e, g->secondary_px, g->secondary_pz)) {
+    if (enemy_target_valid(g, e, 1, -1, NULL, NULL)) {
         dx = (long long)g->secondary_px - e->x;
         dz = (long long)g->secondary_pz - e->z;
         d2 = dx * dx + dz * dz;
@@ -1540,18 +1670,18 @@ static int nearest_special_target(const struct toy_game *g,
     }
     for (int i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
         const struct toy_game_actor *a = &g->actors[i];
-        if (!a->active ||
-            (a->kind != TOY_GAME_ACTOR_AI &&
-             a->kind != TOY_GAME_ACTOR_PLAYER) ||
-            a->state != TOY_GAME_ACTOR_ALIVE ||
-            !enemy_target_reachable(g, e, a->x, a->z)) continue;
+        if (!enemy_target_valid(g, e, 2, i, NULL, NULL)) continue;
         dx = (long long)a->x - e->x; dz = (long long)a->z - e->z;
         d2 = dx * dx + dz * dz;
         if (!found || d2 < best) {
             best = d2; found = 1; player = 2; actor = i;
         }
     }
-    if (!found) return 0;
+    if (!found) {
+        if (out_player) *out_player = -1;
+        if (out_actor) *out_actor = -1;
+        return 0;
+    }
     if (player == 1) { *out_x = g->secondary_px; *out_z = g->secondary_pz; }
     else if (player == 2) { *out_x = g->actors[actor].x; *out_z = g->actors[actor].z; }
     else { *out_x = g->px; *out_z = g->pz; }
@@ -1623,13 +1753,48 @@ static int enemy_has_line_of_sight(const struct toy_game *g,
     return 1;
 }
 
-/* Air gates are full-width barriers on this map.  A blocked segment therefore
- * means the target is not reachable from the current gameplay region. */
 static int enemy_target_reachable(const struct toy_game *g,
                                   const struct toy_game_enemy *e,
                                   int x, int z)
 {
-    return enemy_has_line_of_sight(g, e, x, z);
+    int from, to;
+    /* A few legacy unit cases construct a world by directly clearing
+     * world_count.  Keep those freestanding fixtures correct while normal
+     * gameplay uses explicit topology rebuilds on state changes. */
+    if (g->nav_width <= 0 || g->world_count == 0)
+        toy_game_rebuild_navigation((struct toy_game *)g);
+    from = nav_component_at_position(g, e->x, e->z);
+    to = nav_component_at_position(g, x, z);
+    return from != 0 && from == to;
+}
+
+/* Target validity is deliberately independent of LOS.  LOS belongs to
+ * perception and special attacks; this rule answers whether an actor may be
+ * retained as a navigation target at all. */
+static int enemy_target_valid(const struct toy_game *g,
+                              const struct toy_game_enemy *e,
+                              int target_player, int target_actor,
+                              int *out_x, int *out_z)
+{
+    int x, z;
+    if (target_player == 0) {
+        if (g->player_down) return 0;
+        x = g->px; z = g->pz;
+    } else if (target_player == 1) {
+        if (!g->secondary_player_active || g->secondary_player_down) return 0;
+        x = g->secondary_px; z = g->secondary_pz;
+    } else if (target_player == 2 && target_actor >= 0 &&
+               target_actor < TOY_GAME_MAX_ACTORS) {
+        const struct toy_game_actor *a = &g->actors[target_actor];
+        if (!a->active || (a->kind != TOY_GAME_ACTOR_AI &&
+                           a->kind != TOY_GAME_ACTOR_PLAYER) ||
+            a->state != TOY_GAME_ACTOR_ALIVE || a->hp <= 0) return 0;
+        x = a->x; z = a->z;
+    } else return 0;
+    if (!enemy_target_reachable(g, e, x, z)) return 0;
+    if (out_x) *out_x = x;
+    if (out_z) *out_z = z;
+    return 1;
 }
 
 static int player_in_safe_room_at(const struct toy_game *g, int x, int z)
@@ -2087,6 +2252,12 @@ static void update_smoker(struct toy_game *g, struct toy_game_enemy *e,
         } else {
             pull_x = g->px; pull_z = g->pz;
         }
+        if (!enemy_target_valid(g, e, target_player, target_actor,
+                                &pull_x, &pull_z)) {
+            e->special_target_active = 0;
+            if (target_player == 0) release_player_special(g);
+            return;
+        }
         if (target_player != 2)
             e->special_pull_timer_ms -= dt_ms;
         pull_dx = e->x - pull_x;
@@ -2182,7 +2353,7 @@ static void update_smoker(struct toy_game *g, struct toy_game_enemy *e,
     /* Smoker 会主动靠近以寻找玩家，但永远不调用普通近战攻击。 */
     if (dist > 0) turn_enemy_toward(e, dx, dz);
     if (dist > 700 && (!visual || dist > TOY_GAME_SMOKER_RANGE))
-        chase_enemy(g, e, dx, dz, dist, 0);
+        chase_enemy(g, e, dx, dz, dist, target_player);
     (void)target_x;
     (void)target_z;
     (void)dt_ms;
@@ -2434,18 +2605,23 @@ static void update_enemy_ai(struct toy_game *g, struct toy_game_enemy *e,
     int ai_x = 0, ai_z = 0;
     int ai_index = 0;
     int special_x = g->px, special_z = g->pz;
-    int special_player = 0, special_actor = -1;
+    int special_player = -1, special_actor = -1;
     int visual;
+    int primary_valid;
     int ai_available = nearest_ai_position(g, e, &ai_x, &ai_z, &ai_dist2,
                                            &ai_index);
+    primary_valid = enemy_target_valid(g, e, 0, -1, NULL, NULL);
     visual = enemy_visual_stimulus(g, e, g->px, g->pz,
                                    primary_dx, primary_dz,
                                    isqrt(primary_dist2));
 
     if (toy_game_enemy_info(e->type)->ability ==
             TOY_GAME_ENEMY_ABILITY_SMOKER_TONGUE) {
-        nearest_special_target(g, e, &special_x, &special_z,
-                               &special_player, &special_actor);
+        if (!nearest_special_target(g, e, &special_x, &special_z,
+                                    &special_player, &special_actor)) {
+            e->special_target_active = 0;
+            return;
+        }
         dx = special_x - e->x; dz = special_z - e->z;
         dist = isqrt((long long)dx * dx + (long long)dz * dz);
         visual = enemy_special_visual_stimulus(g, e, special_x, special_z,
@@ -2458,8 +2634,11 @@ static void update_enemy_ai(struct toy_game *g, struct toy_game_enemy *e,
     }
     if (toy_game_enemy_info(e->type)->ability ==
             TOY_GAME_ENEMY_ABILITY_CHARGER_RUSH) {
-        nearest_special_target(g, e, &special_x, &special_z,
-                               &special_player, &special_actor);
+        if (!nearest_special_target(g, e, &special_x, &special_z,
+                                    &special_player, &special_actor)) {
+            e->charge_active = 0;
+            return;
+        }
         dx = special_x - e->x; dz = special_z - e->z;
         dist = isqrt((long long)dx * dx + (long long)dz * dz);
         visual = enemy_special_visual_stimulus(g, e, special_x, special_z,
@@ -2471,20 +2650,17 @@ static void update_enemy_ai(struct toy_game *g, struct toy_game_enemy *e,
     }
 
     if (e->retarget_timer_ms > 0) e->retarget_timer_ms -= dt_ms;
-    if ((e->target_player == 0 && g->player_down) ||
-        (e->target_player == 1 &&
-         (!g->secondary_player_active || g->secondary_player_down)) ||
-        (e->target_player == 2 && !ai_available) ||
-        (e->retarget_timer_ms > 0 && e->target_player != 0 &&
-         e->target_player != 1 && e->target_player != 2)) {
+    if (!enemy_target_valid(g, e, e->target_player,
+                            e->target_actor_index, NULL, NULL)) {
         e->retarget_timer_ms = 0;
     }
-    if (e->retarget_timer_ms > 0) {
+    if (e->retarget_timer_ms > 0 &&
+        enemy_target_valid(g, e, e->target_player,
+                           e->target_actor_index, &target_x, &target_z)) {
         target_player = e->target_player;
     } else if (e->retarget_timer_ms <= 0 || e->target_player < 0) {
-        target_player = 0;
-        if (g->player_down) target_player = -1;
-        if (g->secondary_player_active && !g->secondary_player_down &&
+        target_player = primary_valid ? 0 : -1;
+        if (enemy_target_valid(g, e, 1, -1, NULL, NULL) &&
             (target_player < 0 || secondary_dist2 < primary_dist2)) {
             target_player = 1;
         }
@@ -2494,19 +2670,22 @@ static void update_enemy_ai(struct toy_game *g, struct toy_game_enemy *e,
                  ai_dist2 < primary_dist2))
                 target_player = 2;
         }
-        if (target_player < 0) target_player = 0;
         e->target_player = target_player;
         if (target_player == 2) e->target_actor_index = ai_index;
+        else e->target_actor_index = -1;
         e->retarget_timer_ms = TOY_GAME_RETARGET_MS;
     } else {
         target_player = e->target_player;
     }
-    if (target_player == 1) {
-        target_x = g->secondary_px; target_z = g->secondary_pz;
-    } else if (target_player == 2) {
-        target_x = ai_x; target_z = ai_z;
-    } else {
-        target_x = g->px; target_z = g->pz;
+    if (target_player < 0 ||
+        !enemy_target_valid(g, e, target_player, e->target_actor_index,
+                            &target_x, &target_z)) {
+        e->target_player = -1;
+        e->target_actor_index = -1;
+        e->retarget_timer_ms = 0;
+        if (e->ai_state != TOY_GAME_ENEMY_TRACKING)
+            wander_enemy(g, e, dt_ms);
+        return;
     }
     dx = target_x - e->x;
     dz = target_z - e->z;

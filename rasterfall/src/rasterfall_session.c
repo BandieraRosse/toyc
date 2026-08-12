@@ -62,6 +62,7 @@ static void session_set_air_walls(struct rasterfall_session *session,
                                   int enabled)
 {
     rasterfall_map_set_air_walls(&session->map_ops, enabled);
+    toy_game_rebuild_navigation(&session->game_state);
 }
 
 int rasterfall_session_load(struct rasterfall_session *session,
@@ -106,6 +107,12 @@ void rasterfall_session_reset(struct rasterfall_session *session,
                        session->level.box_count, session->level.room_limit);
     toy_game_set_platforms(&session->game_state, session->level.platforms,
                            session->level.platform_count);
+    /* The safe room is open to the player through its doorway, but its whole
+     * footprint is an enemy-forbidden area.  Register it even in the endless
+     * director mode; toy_game_set_campaign also rebuilds navigation. */
+    toy_game_set_campaign(&session->game_state, session->safe_rooms,
+                          session->level.safe_count, session->spawn_zones,
+                          session->spawn_count);
     /* The game starts directly in the ordinary endless wave director.  There
      * are no safe rooms, capture stages, alarms, or objective transitions. */
     /* AI 出生点属于地图语义；第一个条目仍占用 actor 0，以兼容旧的
