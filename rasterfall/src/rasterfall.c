@@ -1650,6 +1650,9 @@ startup_again:
             if (!paused) {
                 struct rasterfall_command command;
                 int shop_input = session.shop_open;
+                int shop_enter = toy_input_pressed(&input, KEY_ENTER);
+                int shop_page_before = session.shop_page;
+                int shop_selected_before = session.shop_selected;
                 rasterfall_effects_update(&effects, FIXED_STEP_US / 1000);
                 if (shop_input) {
                     rasterfall_session_shop_input(
@@ -1687,6 +1690,21 @@ startup_again:
                         build_game_command(&command, &input, &settings, fire_edge,
                                            shove_edge, pointer_turn_pending,
                                            pointer_pitch_pending);
+                    if (net.mode == RASTERFALL_NET_CLIENT && shop_input &&
+                        shop_enter && shop_page_before > 0) {
+                        command.buttons |= RASTERFALL_CMD_SHOP;
+                        if (shop_page_before == 1) {
+                            command.shop_action = 1;
+                            command.shop_item = shop_selected_before +
+                                TOY_GAME_WEAPON_SMG;
+                        } else if (shop_page_before == 2) {
+                            command.shop_action = 2;
+                            command.shop_item = shop_selected_before;
+                        } else if (shop_page_before == 3) {
+                            command.shop_action = 3;
+                            command.shop_item = 0;
+                        }
+                    }
                     if (toy_input_down(&input, KEY_TAB) &&
                         toy_input_pressed(&input, KEY_R)) {
                         command.buttons &= ~RASTERFALL_CMD_RELOAD;

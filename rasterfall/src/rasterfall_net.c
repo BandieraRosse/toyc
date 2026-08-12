@@ -944,6 +944,8 @@ static int encode_command(unsigned char *packet, uint32_t sequence,
     put_i16(p + 28, predicted->pitch_sy);
     put_i16(p + 30, predicted->pitch_cy);
     put_u32(p + 32, 0);
+    p[7] = (unsigned char)(command->shop_item < 0 ? 0 : command->shop_item);
+    put_u16(p + 14, (unsigned int)command->shop_action);
     return size;
 }
 
@@ -958,6 +960,8 @@ static int decode_command(const unsigned char *payload, int size,
     command->turn = get_i16(payload + 8);
     command->pitch = get_i16(payload + 10);
     command->buttons = get_u16(payload + 12);
+    command->shop_item = payload[7];
+    command->shop_action = get_u16(payload + 14);
     if (command->move_forward < -1 || command->move_forward > 1 ||
         command->move_strafe < -1 || command->move_strafe > 1) return -1;
     if (command->turn < -1024 || command->turn > 1024 ||
@@ -2055,6 +2059,9 @@ static void net_apply_extra_remote(struct rasterfall_net *net,
                                                remote->client_id);
     rasterfall_session_update_flag_remote(session, &remote->camera,
                                           remote->client_id);
+    if (remote->command.buttons & RASTERFALL_CMD_SHOP)
+        rasterfall_session_shop_request(session, remote->command.shop_action,
+                                        remote->command.shop_item);
     memset(keys, 0, sizeof(keys));
     if (remote->command.buttons & RASTERFALL_CMD_RELOAD)
         keys[TOY_GAME_KEY_RELOAD] = 1;
@@ -2564,6 +2571,9 @@ void rasterfall_net_apply_remote(struct rasterfall_net *net,
         }
         if (net->remote_command.buttons & RASTERFALL_CMD_FLAG)
             rasterfall_session_toggle_flag_remote(session, &net->peer_camera, 1);
+        if (net->remote_command.buttons & RASTERFALL_CMD_SHOP)
+            rasterfall_session_shop_request(session, net->remote_command.shop_action,
+                                            net->remote_command.shop_item);
         rasterfall_session_update_flag_remote(session, &net->peer_camera, 1);
         memset(keys, 0, sizeof(keys));
         if (net->remote_command.buttons & RASTERFALL_CMD_RELOAD)

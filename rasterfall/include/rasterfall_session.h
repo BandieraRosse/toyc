@@ -34,7 +34,8 @@ enum rasterfall_command_button {
     RASTERFALL_CMD_SHOVE      = 1 << 8,
     RASTERFALL_CMD_JUMP       = 1 << 9,
     RASTERFALL_CMD_CLEAR_STATS = 1 << 10,
-    RASTERFALL_CMD_FLAG       = 1 << 11
+    RASTERFALL_CMD_FLAG       = 1 << 11,
+    RASTERFALL_CMD_SHOP       = 1 << 12
 };
 
 /* 与窗口系统无关的单个逻辑步输入。以后网络客户端发送的也是这类游戏语义，
@@ -46,6 +47,8 @@ struct rasterfall_command {
     int pitch;
     unsigned int buttons;
     int fire_held;
+    int shop_action;
+    int shop_item;
 };
 
 struct rasterfall_session {
@@ -124,5 +127,7 @@ int rasterfall_session_compute_highlight(const struct rasterfall_session *sessio
                                          const struct camera *camera);
 void rasterfall_session_shop_input(struct rasterfall_session *session,
                                    int up, int down, int enter, int esc);
+int rasterfall_session_shop_request(struct rasterfall_session *session,
+                                    int action, int item);
 
 #endif

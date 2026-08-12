@@ -543,7 +543,16 @@ static void session_client_interact_banner(struct rasterfall_session *session)
     if (session->highlight_index < 0 ||
         session->highlight_index >= session->item_count) return;
     it = &session->items[session->highlight_index];
-    if (it->kind == TOY_MAP_PICKUP_SHOP) return;
+    if (it->kind == TOY_MAP_PICKUP_SHOP) {
+        session->shop_open = 1;
+        session->shop_page = 0;
+        session->shop_selected = 0;
+        session->shop_nav_selected = 0;
+        session->game_state.player_control_disabled = 1;
+        session->banner_ms = 0;
+        session->banner_text = NULL;
+        return;
+    }
     session->banner_success = 1;
     session->banner_ms = 1800;
     if (it->kind == TOY_MAP_PICKUP_AIR_BUTTON)
@@ -883,6 +892,27 @@ void rasterfall_session_shop_input(struct rasterfall_session *session,
             }
         }
     }
+}
+
+int rasterfall_session_shop_request(struct rasterfall_session *session,
+                                    int action, int item)
+{
+    int result = 0;
+    if (!session || session->game_state.state != TOY_GAME_PLAYING) return 0;
+    if (action == 1) {
+        result = toy_game_buy_weapon(&session->game_state, item);
+    } else if (action == 2) {
+        result = session_hire_ai(session, item);
+    } else if (action == 3) {
+        result = session_buy_flag(session);
+    }
+    if (result > 0) {
+        session->banner_success = 1;
+        session->banner_ms = 1600;
+        session->banner_text = action == 3 ? "FLAG PURCHASED" :
+            action == 2 ? "AI HIRED" : "WEAPON PURCHASED";
+    }
+    return result;
 }
 
 static void session_update_manual_alarm(struct rasterfall_session *session,
