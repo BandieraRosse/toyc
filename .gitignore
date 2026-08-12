@@ -1,5 +1,7 @@
 build/**
 build-self/**
+build-windows/**
+.windows-deps/**
 .vscode/*
 tmp/**
 .claude/**

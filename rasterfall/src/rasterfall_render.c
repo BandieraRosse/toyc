@@ -115,12 +115,34 @@ static unsigned int model_u32(const unsigned char *p)
 
 static void gallery_load(void)
 {
-    int fd, i, count = 0;
+    int i, count = 0;
+#ifdef TOYC_WINDOWS
+    static const char *paths[] = {
+        "ar_ak47.rmesh", "ar_ammo.rmesh", "ar_aug.rmesh",
+        "assault_rifle_ammo_box.rmesh", "pg_desert_eagle.rmesh",
+        "pg_glock1.rmesh", "pg_glock2.rmesh", "pistol_ammo.rmesh",
+        "revolver.rmesh", "revolver_snub_nose.rmesh", "rf_AWP.rmesh",
+        "rf_hunting.rmesh", "sg_double_barrel.rmesh",
+        "sg_pump_action.rmesh", "shotgun_ammo.rmesh", "smg_ammo_box.rmesh",
+        "smg_bizon.rmesh", "smg_mac10.rmesh", "smg_mp5.rmesh",
+        "smg_p90.rmesh", "smg_skorpion.rmesh", "sniper_ammo_box.rmesh"
+    };
+#else
+    int fd;
+#endif
     char dent_buf[8192];
     struct linux_dirent64 *entry;
     long bytes;
     if (gallery_loaded) return;
 
+#ifdef TOYC_WINDOWS
+    for (i = 0; i < (int)(sizeof(paths) / sizeof(paths[0])) &&
+                i < RASTERFALL_MODEL_MAX_GALLERY; i++) {
+        snprintf(gallery_paths[count], RASTERFALL_MODEL_PATH_BYTES,
+                 "rasterfall/assets/models/%s", paths[i]);
+        count++;
+    }
+#else
     fd = __openat(AT_FDCWD, "rasterfall/assets/models",
                   O_RDONLY | O_DIRECTORY, 0);
     if (fd >= 0) {
@@ -146,6 +168,7 @@ static void gallery_load(void)
         }
         __close(fd);
     }
+#endif
 
     /* getdents order is filesystem-dependent; sort paths for a stable
      * gallery layout and for predictable inventory by the displayed index. */
@@ -532,14 +555,14 @@ static int draw_world_triangle(struct toy_renderer *renderer,
     count = clip_near(input, 3, clipped);
     for (int i = 1; i + 1 < count; i++) {
         struct toy_screen_vertex sa, sb, sc;
-        long area;
+        long long area;
         project_vertex(&renderer->surface, &clipped[0], &sa);
         project_vertex(&renderer->surface, &clipped[i], &sb);
         project_vertex(&renderer->surface, &clipped[i + 1], &sc);
         /* Projected coordinates are bounded here, so 32-bit area is safe and
          * avoids Toyc's signed int-to-long promotion bug. */
-        area = ((long)sc.x - sa.x) * ((long)sb.y - sa.y) -
-               ((long)sc.y - sa.y) * ((long)sb.x - sa.x);
+        area = ((long long)sc.x - sa.x) * ((long long)sb.y - sa.y) -
+               ((long long)sc.y - sa.y) * ((long long)sb.x - sa.x);
         if (area >= 0) {
             struct toy_screen_vertex swap;
             swap.x = sb.x; swap.y = sb.y; swap.z = sb.z;
@@ -585,15 +608,15 @@ static int draw_world_triangle_tex(struct toy_renderer *renderer,
     count = clip_near_uv(input, 3, clipped);
     for (int i = 1; i + 1 < count; i++) {
         struct toy_screen_vertex sa, sb, sc;
-        long area;
+        long long area;
         project_uv_vertex(&renderer->surface, &clipped[0].p,
                           clipped[0].u, clipped[0].v, &sa);
         project_uv_vertex(&renderer->surface, &clipped[i].p,
                           clipped[i].u, clipped[i].v, &sb);
         project_uv_vertex(&renderer->surface, &clipped[i + 1].p,
                           clipped[i + 1].u, clipped[i + 1].v, &sc);
-        area = ((long)sc.x - sa.x) * ((long)sb.y - sa.y) -
-               ((long)sc.y - sa.y) * ((long)sb.x - sa.x);
+        area = ((long long)sc.x - sa.x) * ((long long)sb.y - sa.y) -
+               ((long long)sc.y - sa.y) * ((long long)sb.x - sa.x);
         if (area >= 0) {
             struct toy_screen_vertex swap;
             swap.x=sb.x; swap.y=sb.y; swap.z=sb.z;

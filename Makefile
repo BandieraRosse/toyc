@@ -66,10 +66,18 @@ HEADERS  := $(TOYC_NEED) $(ELF_H) $(ELF_W_H)
 # ─── 默认目标 ──────────────────────────────────────────────────
 
 .PHONY: all clean update-bootstrap test test-selfhost test-source test-all \
-        test-toyar
+        test-toyar win-deps win-rasterfall
 
 all: $(BUILD)/toyc $(BUILD)/toyas $(BUILD)/toyld $(BUILD)/toyar
 	@printf "$(GREEN)✓ 构建完成$(RESET)\n"
+
+# ─── Windows Rasterfall 交叉构建（与默认 Linux 构建隔离） ───────
+
+win-deps:
+	@bash scripts/setup-windows-build.sh
+
+win-rasterfall:
+	@$(MAKE) -f windows/Makefile WINDOWS_DEPS="$(if $(WINDOWS_DEPS),$(WINDOWS_DEPS),$(CURDIR)/.windows-deps)"
 
 $(BUILD)/gen_sfx: tools/gen_sfx.c rasterfall/lib/sfx.c rasterfall/include/toy_game.h | $(BUILD)
 	@printf "  $(BLUE)  GCC$(RESET)  $<\n"

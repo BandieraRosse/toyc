@@ -2,6 +2,12 @@
 #include "errno.h"
 #include "rasterfall_net.h"
 
+#ifdef TOYC_WINDOWS
+#define net_windows_log toy_windows_log
+#else
+static void net_windows_log(const char *message) { (void)message; }
+#endif
+
 #define special_timer_ms ability.special_timer_ms
 #define special_windup_ms ability.special_windup_ms
 #define special_target_active ability.special_target_active
@@ -783,19 +789,25 @@ int rasterfall_net_host(struct rasterfall_net *net, int port,
 {
     struct sockaddr_in address;
     int reuse = 1;
+    net_windows_log("net host: init");
     rasterfall_net_init(net);
+    net_windows_log("net host: socket");
     net->fd = socket(AF_INET, SOCK_DGRAM | SOCK_NONBLOCK, 0);
     if (net->fd < 0) return -1;
+    net_windows_log("net host: socket ready");
     memset(&address, 0, sizeof(address));
     address.sin_family = AF_INET;
     address.sin_port = htons((unsigned short)port);
     address.sin_addr.s_addr = INADDR_ANY;
+    net_windows_log("net host: setsockopt");
     setsockopt(net->fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+    net_windows_log("net host: bind");
     if (bind(net->fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
         __close(net->fd);
         net->fd = -1;
         return -1;
     }
+    net_windows_log("net host: bind ready");
     net->mode = RASTERFALL_NET_HOST;
     if (spawn) {
         memcpy(&net->peer_camera, spawn, sizeof(struct camera));
@@ -877,8 +889,10 @@ int rasterfall_net_local_address(char *buffer, int buffer_size)
     char *address;
     if (!buffer || buffer_size < 16) return -1;
     strcpy(buffer, "127.0.0.1");
+    net_windows_log("net address: socket");
     fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (fd < 0) return 0;
+    net_windows_log("net address: connect");
     memset(&target, 0, sizeof(target));
     target.sin_family = AF_INET;
     target.sin_port = htons(53);
@@ -890,6 +904,7 @@ int rasterfall_net_local_address(char *buffer, int buffer_size)
             strcpy(buffer, address);
         }
     }
+    net_windows_log("net address: close");
     __close(fd);
     return 0;
 }

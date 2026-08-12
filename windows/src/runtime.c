@@ -1,0 +1,192 @@
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <winsock2.h>
+#include <io.h>
+#include <fcntl.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <stdarg.h>
+#include <string.h>
+
+#include "core.h"
+
+int toy_socket_close(int fd);
+
+static int win_flags(int flags)
+{
+    int out = 0;
+    if ((flags & 3) == O_WRONLY) out |= _O_WRONLY;
+    else if ((flags & 3) == O_RDWR) out |= _O_RDWR;
+    else out |= _O_RDONLY;
+    if (flags & O_CREAT) out |= _O_CREAT;
+    if (flags & O_TRUNC) out |= _O_TRUNC;
+    if (flags & O_APPEND) out |= _O_APPEND;
+    return out | _O_BINARY;
+}
+
+static FILE *windows_log;
+
+static void windows_log_init(void)
+{
+    if (!windows_log)
+        windows_log = fopen("rasterfall-windows.log", "a");
+}
+
+void toy_windows_log(const char *message)
+{
+    windows_log_init();
+    if (windows_log && message) {
+        fputs(message, windows_log);
+        fputc('\n', windows_log);
+        fflush(windows_log);
+    }
+}
+
+long __write(int fd, const void *buf, size_t len)
+{
+    return _write(fd, buf, (unsigned int)len);
+}
+
+long __read(int fd, void *buf, size_t len)
+{
+    return _read(fd, buf, (unsigned int)len);
+}
+
+int __openat(int dirfd, const char *path, int flags, int mode)
+{
+    char line[256];
+    int fd;
+    (void)dirfd;
+    fd = _open(path, win_flags(flags), mode);
+    if (fd < 0) {
+        snprintf(line, sizeof(line), "open failed: %s", path ? path : "(null)");
+        toy_windows_log(line);
+    }
+    return fd;
+}
+
+int __creat(const char *path, int mode)
+{
+    return _open(path, _O_WRONLY | _O_CREAT | _O_TRUNC | _O_BINARY, mode);
+}
+
+int __close(int fd)
+{
+    if (toy_socket_close(fd) == 0) return 0;
+    return _close(fd);
+}
+
+int __fstat(int fd, struct stat *st)
+{
+    long long saved, end;
+    if (!st) return -1;
+    saved = _lseeki64(fd, 0, SEEK_CUR);
+    end = _lseeki64(fd, 0, SEEK_END);
+    if (saved < 0 || end < 0 || _lseeki64(fd, saved, SEEK_SET) < 0) return -1;
+    st->st_size = end;
+    return 0;
+}
+
+void *__mmap(void *addr, size_t length, int prot, int flags, int fd, off_t off)
+{
+    unsigned char *data;
+    long long end;
+    size_t got = 0;
+    (void)addr; (void)prot; (void)flags;
+    if (fd < 0) return calloc(1, (size_t)length);
+    end = _lseeki64(fd, 0, SEEK_END);
+    if (end < 0 || off < 0 || off > end || length > (size_t)(end - off))
+        return MAP_FAILED;
+    data = (unsigned char *)malloc((size_t)length);
+    if (!data || _lseeki64(fd, off, SEEK_SET) < 0) {
+        free(data); return MAP_FAILED;
+    }
+    while (got < length) {
+        int n = _read(fd, data + got, (unsigned int)(length - got));
+        if (n <= 0) { free(data); return MAP_FAILED; }
+        got += (size_t)n;
+    }
+    return data;
+}
+
+int __munmap(void *addr, size_t length)
+{
+    (void)length;
+    free(addr);
+    return 0;
+}
+
+void *__memset(void *dst, int value, size_t n) { return memset(dst, value, (size_t)n); }
+void *__memmove(void *dst, const void *src, size_t n) { return memmove(dst, src, (size_t)n); }
+
+void *tlibc_malloc(size_t size) { return calloc(1, (size_t)(size ? size : 1)); }
+void tlibc_free(void *ptr) { free(ptr); }
+
+static LARGE_INTEGER qpc_frequency;
+
+static void init_clock(void)
+{
+    if (!qpc_frequency.QuadPart) QueryPerformanceFrequency(&qpc_frequency);
+}
+
+int __clock_gettime(clockid_t id, struct timespec *ts)
+{
+    LARGE_INTEGER now;
+    (void)id;
+    if (!ts) return -1;
+    init_clock();
+    QueryPerformanceCounter(&now);
+    ts->tv_sec = (time_t)(now.QuadPart / qpc_frequency.QuadPart);
+    ts->tv_nsec = (long)(((now.QuadPart % qpc_frequency.QuadPart) * 1000000000LL) /
+                         qpc_frequency.QuadPart);
+    return 0;
+}
+
+int __nanosleep(const struct timespec *req, struct timespec *remain)
+{
+    (void)remain;
+    if (!req) return -1;
+    Sleep((DWORD)(req->tv_sec * 1000 + req->tv_nsec / 1000000));
+    return 0;
+}
+
+int __clock_nanosleep(clockid_t id, int flags, const struct timespec *req,
+                      struct timespec *remain)
+{
+    (void)id; (void)flags;
+    return __nanosleep(req, remain);
+}
+
+int __getrandom(void *buf, size_t len, unsigned int flags)
+{
+    unsigned char *p = (unsigned char *)buf;
+    (void)flags;
+    for (size_t i = 0; i < len; i++) p[i] = (unsigned char)(rand() & 255);
+    return 0;
+}
+
+void __printf(const char *fmt, ...)
+{
+    va_list ap; va_start(ap, fmt); vfprintf(stdout, fmt, ap); va_end(ap);
+}
+
+void __fprintf(int fd, const char *fmt, ...)
+{
+    va_list ap; va_start(ap, fmt);
+    vfprintf(fd == STDERR ? stderr : stdout, fmt, ap);
+    va_end(ap);
+}
+
+void __exit(int status) { ExitProcess((UINT)status); }
+void __exit_group(int status) { ExitProcess((UINT)status); }
+int tlibc_sigaction(int signum, void (*handler)(int))
+{ (void)signum; (void)handler; return 0; }
+int __ioctl(int fd, unsigned long request, void *argp)
+{ (void)fd; (void)request; (void)argp; return -1; }
+long __getdents64(unsigned int fd, struct linux_dirent64 *dirp, unsigned int count)
+{ (void)fd; (void)dirp; (void)count; return -1; }
+long __futex(unsigned int *uaddr, int op, unsigned int value,
+             const struct timespec *timeout, unsigned int *uaddr2,
+             unsigned int value3)
+{ (void)uaddr; (void)op; (void)value; (void)timeout; (void)uaddr2; (void)value3; return 0; }

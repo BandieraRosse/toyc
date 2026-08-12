@@ -41,7 +41,7 @@ struct toy_raster_cmd {
     int light;
     int fog;
     const struct toy_texture_view *texture;
-    long area;
+    long long area;
     int bbox_minx;
     int bbox_maxx;
     int bbox_miny;

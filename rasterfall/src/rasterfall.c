@@ -77,6 +77,12 @@ struct box { int minx, maxx, minz, maxz, height; uint32_t color; };
 struct control_settings { int mouse_level, keyboard_level; };
 struct pause_menu { int selected; };
 
+#ifdef TOYC_WINDOWS
+static void rf_windows_log(const char *message) { toy_windows_log(message); }
+#else
+static void rf_windows_log(const char *message) { (void)message; }
+#endif
+
 #define PAUSE_ITEM_RESUME   0
 #define PAUSE_ITEM_MOUSE    1
 #define PAUSE_ITEM_KEYBOARD 2
@@ -310,6 +316,20 @@ static int parse_positive_int(const char *text, int fallback)
     return value;
 }
 
+/* Menu navigation is edge-triggered and should consume the platform event
+ * directly. This avoids losing a short key press when a frame boundary or
+ * focus notification clears the general gameplay input state. */
+static int window_key_pressed(const struct toy_window_events *events,
+                              unsigned int key)
+{
+    if (!events) return 0;
+    for (int i = 0; i < events->key_event_count; i++) {
+        if (events->key_events[i].pressed && events->key_events[i].key == key)
+            return 1;
+    }
+    return 0;
+}
+
 static int clampi(int value, int low, int high)
 {
     if (value < low) return low;
@@ -368,8 +388,8 @@ static void accumulate_mouse_look(int *pending_turn, int *pending_pitch,
 {
     int percent = sensitivity_percent(settings->mouse_level);
     /* 水平/垂直同一倍率，避免方向手感不一致 */
-    int turn = relative_x * 3 * percent / 100;
-    int pitch = -relative_y * 3 * percent / 100;
+    int turn = relative_x * 9 * percent / 100;
+    int pitch = -relative_y * 9 * percent / 100;
     *pending_turn += clampi(turn, -256, 256);
     *pending_pitch += pitch;
 }
@@ -393,7 +413,8 @@ static void build_game_command(struct rasterfall_command *command,
     command->pitch = pointer_pitch +
                      (toy_input_down(input, KEY_UP) -
                       toy_input_down(input, KEY_DOWN)) * 16 * percent / 100;
-    command->fire_held = toy_input_down(input, KEY_SPACE);
+    command->fire_held = toy_input_down(input, KEY_SPACE) ||
+                         (input->mouse_buttons & 1) != 0;
     if (fire_edge) command->buttons |= RASTERFALL_CMD_FIRE;
     if (shove_edge) command->buttons |= RASTERFALL_CMD_SHOVE;
     if (toy_input_pressed(input, KEY_LEFTSHIFT))
@@ -764,8 +785,8 @@ static int run_startup_menu(struct toy_window *window, struct toy_renderer *rend
                 }
             }
         } else {
-            int up = toy_input_pressed(input, KEY_UP);
-            int down = toy_input_pressed(input, KEY_DOWN);
+            int up = window_key_pressed(events, KEY_UP);
+            int down = window_key_pressed(events, KEY_DOWN);
             if ((up || down) && now >= nav_ready) {
                 int limit = 5;
                 selected += down ? 1 : -1;
@@ -773,11 +794,11 @@ static int run_startup_menu(struct toy_window *window, struct toy_renderer *rend
                 if (selected >= limit) selected = 0;
                 nav_ready = now + 160000;
             }
-            if (toy_input_pressed(input, KEY_ESC)) {
+            if (window_key_pressed(events, KEY_ESC)) {
                 if (screen == RASTERFALL_STARTUP_MAIN) break;
                 screen = RASTERFALL_STARTUP_MAIN;
                 selected = 1;
-            } else if (toy_input_pressed(input, KEY_ENTER)) {
+            } else if (window_key_pressed(events, KEY_ENTER)) {
                 if (screen == RASTERFALL_STARTUP_MAIN) {
                     if (selected == 0) {
                         *net_mode = RASTERFALL_NET_HOST;
@@ -1181,6 +1202,7 @@ int main(int argc, char **argv)
         }
     }
     rasterfall_net_init(&net);
+    rf_windows_log("startup: loading map");
     strcpy(host_address, "127.0.0.1");
     if (rasterfall_session_load(&session, "rasterfall/assets/maps/rasterfall.map") < 0) {
         __fprintf(2, "rasterfall: cannot load map rasterfall/assets/maps/rasterfall.map\n");
@@ -1191,8 +1213,10 @@ int main(int argc, char **argv)
     render_context.net = &net;
     render_context.wall_texture = &wall_texture_view;
     render_context.textures_enabled = textures_enabled;
+    rf_windows_log("startup: map loaded, binding renderer");
     rasterfall_render_bind(&render_context);
     rasterfall_render_bake_lightmap();
+    rf_windows_log("startup: lightmap baked");
     rasterfall_effects_init(&effects);
     __printf("rasterfall: baked lightmap %dx%d\n", BAKED_LM_W, BAKED_LM_H);
     memset(&scene_texture, 0, sizeof(scene_texture));
@@ -1227,13 +1251,14 @@ int main(int argc, char **argv)
     toy_input_init(&input);
     memset(pending_key_edges, 0, sizeof(pending_key_edges));
     toy_renderer_init(&renderer);
-    settings.mouse_level = 5;
+    settings.mouse_level = 3;
     settings.keyboard_level = 5;
     pause_menu.selected = PAUSE_ITEM_RESUME;
     if (__getrandom(&seed, sizeof(seed), 0) < 0)
         seed = (uint64_t)monotonic_us();
     if (seed == 0) seed = 1;
     rasterfall_session_reset(&session, &camera, seed);
+    rf_windows_log("startup: session reset");
     window = toy_window_open("Rasterfall", 800, 450);
     if (!window) {
         __fprintf(2, "rasterfall: cannot create Wayland window\n");
@@ -1243,6 +1268,7 @@ int main(int argc, char **argv)
         toy_renderer_destroy(&renderer);
         return 1;
     }
+    rf_windows_log("startup: window opened");
 startup_again:
     {
         int menu_selected = requested_net_mode != RASTERFALL_NET_OFF ||
@@ -1261,6 +1287,7 @@ startup_again:
             toy_renderer_destroy(&renderer);
             return 0;
         }
+        rf_windows_log("startup: menu completed");
         net_address = selected_address;
         startup_error = NULL;
     }
@@ -1302,6 +1329,7 @@ startup_again:
             }
         }
     } else if (requested_net_mode == RASTERFALL_NET_HOST) {
+        rf_windows_log("startup: creating local room");
         struct camera peer_spawn;
         memcpy(&peer_spawn, &camera, sizeof(peer_spawn));
         peer_spawn.x += 350;
@@ -1315,6 +1343,7 @@ startup_again:
         }
         rasterfall_net_local_address(host_address, sizeof(host_address));
         __printf("rasterfall: hosting UDP port %d\n", net_port);
+        rf_windows_log("startup: local room ready");
         __printf("rasterfall: players can join %s:%d\n", host_address, net_port);
     } else if (requested_net_mode == RASTERFALL_NET_CLIENT) {
         if (!net_address || rasterfall_net_connect(&net, net_address, net_port) < 0) {
@@ -1348,6 +1377,9 @@ startup_again:
     rasterfall_audio_load_assets(&audio);
     if (rasterfall_audio_start(&audio) < 0) {
         __printf("rasterfall: audio unavailable, playing silent\n");
+        rf_windows_log("startup: audio unavailable");
+    } else {
+        rf_windows_log("startup: audio ready");
     }
     last_time = monotonic_us();
     fps_window_start = last_time;
@@ -1360,6 +1392,7 @@ startup_again:
         int resumed = 0;
         int stage_pixels;
         int ready;
+        static int logged_first_frame;
         unsigned char game_events[TOY_GAME_MAX_EVENTS];
         int game_event_count;
         toy_input_begin_frame(&input);
@@ -1442,8 +1475,10 @@ startup_again:
             int resume_requested = 0;
             /* 菜单导航使用独立节流；Wayland/键盘自动重复可能在一帧内
              * 送来多次边沿，不能让选项随帧率飞快滚动。 */
-            int up = toy_input_pressed(&input, KEY_UP);
-            int down = toy_input_pressed(&input, KEY_DOWN);
+            int up = window_key_pressed(&events, KEY_UP) ||
+                     toy_input_pressed(&input, KEY_UP);
+            int down = window_key_pressed(&events, KEY_DOWN) ||
+                       toy_input_pressed(&input, KEY_DOWN);
             if (up > 0 || down > 0) {
                 long menu_now = monotonic_us();
                 if (menu_now >= menu_nav_ready_us) {
@@ -1466,8 +1501,10 @@ startup_again:
                 pending_key_edges[KEY_DOWN] = 0;
             }
             {
-                int change = toy_input_pressed(&input, KEY_RIGHT) -
-                             toy_input_pressed(&input, KEY_LEFT);
+                int change = (window_key_pressed(&events, KEY_RIGHT) ||
+                              toy_input_pressed(&input, KEY_RIGHT)) -
+                             (window_key_pressed(&events, KEY_LEFT) ||
+                              toy_input_pressed(&input, KEY_LEFT));
                 if (change != 0) {
                     if (pause_menu.selected == PAUSE_ITEM_MOUSE)
                         settings.mouse_level = clampi(settings.mouse_level + change, 0, 15);
@@ -1475,7 +1512,8 @@ startup_again:
                         settings.keyboard_level = clampi(settings.keyboard_level + change, 0, 15);
                 }
             }
-            if (toy_input_pressed(&input, KEY_ENTER)) {
+            if (window_key_pressed(&events, KEY_ENTER) ||
+                toy_input_pressed(&input, KEY_ENTER)) {
                 if (pause_menu.selected == PAUSE_ITEM_RESUME)
                     resume_requested = 1;
                 else if (pause_menu.selected == PAUSE_ITEM_MENU) {
@@ -1483,7 +1521,8 @@ startup_again:
                     running = 0;
                 }
             }
-            if (toy_input_pressed(&input, KEY_ESC)) {
+            if (window_key_pressed(&events, KEY_ESC) ||
+                toy_input_pressed(&input, KEY_ESC)) {
                 resume_requested = 1;
             }
             if (resume_requested) {
@@ -1706,7 +1745,11 @@ startup_again:
          * 音频不可用时仍清空本 tick 事件，避免单消费者队列永久塞满。 */
         game_event_count = toy_game_drain_events(&game, game_events,
                                                  TOY_GAME_MAX_EVENTS);
-        if (audio.running && game_event_count > 0)
+        if (audio.running && (game_event_count > 0
+#ifdef TOYC_WINDOWS_SINGLE_THREAD
+                              || 1
+#endif
+                              ))
             rasterfall_audio_play_events(&audio, game_events, game_event_count);
         if (!paused) {
             sync_fire_effects(&camera);
@@ -1774,6 +1817,10 @@ startup_again:
             continue;
         }
         if (ready > 0) {
+            if (!logged_first_frame) {
+                rf_windows_log("startup: first frame begin");
+                logged_first_frame = 1;
+            }
             if (toy_renderer_begin(&renderer, &surface, 0x151922) < 0) break;
             rasterfall_perf_end_stage(&stats, &stats_total, RASTERFALL_STATS_BEGIN,
                            &t_stage, 0, 0);
@@ -1897,7 +1944,9 @@ startup_again:
          * the next game paused on MENU and Enter immediately returns again. */
         pause_menu.selected = PAUSE_ITEM_RESUME;
         memset(pending_key_edges, 0, sizeof(pending_key_edges));
-        memset(input.key_pressed, 0, sizeof(input.key_pressed));
+        memset(&input, 0, sizeof(input));
+        toy_input_init(&input);
+        toy_window_set_pointer_lock(window, 0);
         pointer_lock_requested = 0;
         goto startup_again;
     }

@@ -35,6 +35,7 @@ struct toy_window_events {
     int pointer_locked;
     unsigned int button;
     int button_pressed;
+    unsigned int mouse_buttons;
     uint32_t button_serial;
     int keyboard_focus_changed;
     int keyboard_focused;

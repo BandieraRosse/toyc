@@ -14,6 +14,7 @@ struct toy_input {
     int relative_x;
     int relative_y;
     int pointer_locked;
+    unsigned int mouse_buttons;
 };
 
 void toy_input_init(struct toy_input *input);

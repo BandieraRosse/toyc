@@ -25,11 +25,11 @@
 #define TOY_FUTEX_WAIT 0
 #define TOY_FUTEX_WAKE 1
 
-static long edge(const struct toy_screen_vertex *a,
+static long long edge(const struct toy_screen_vertex *a,
                  const struct toy_screen_vertex *b, int px, int py)
 {
-    return ((long)px - a->x) * ((long)b->y - a->y) -
-           ((long)py - a->y) * ((long)b->x - a->x);
+    return ((long long)px - a->x) * ((long long)b->y - a->y) -
+           ((long long)py - a->y) * ((long long)b->x - a->x);
 }
 
 static int clampi(int value, int low, int high)
@@ -73,7 +73,7 @@ static long raster_flat(struct toy_renderer *renderer,
                         const struct toy_screen_vertex *a,
                         const struct toy_screen_vertex *b,
                         const struct toy_screen_vertex *c,
-                        long area, int minx, int maxx,
+                        long long area, int minx, int maxx,
                         int y0, int y1, uint32_t color, int overlay)
 {
     struct toy_surface *surface = &renderer->surface;
@@ -101,7 +101,9 @@ static long raster_flat(struct toy_renderer *renderer,
                  * 掠射角下有显著误差，会让近共面（墙脚与地板）判错深度。
                  * 除 area 归一化到 ≤ max(inv_z)，防止大三角形（近平
                  * 面裁剪产生的巨屏外三角形）加权和在 int 截断时溢出。 */
-                long inv = (e0 * a->inv_z + e1 * b->inv_z + e2 * c->inv_z) / area;
+                long long inv = ((long long)e0 * a->inv_z +
+                                 (long long)e1 * b->inv_z +
+                                 (long long)e2 * c->inv_z) / area;
                 int at = base + x;
                 /* 覆盖层不做深度比较与深度写入；深度保持底层值，
                  * 后画的更近面仍能正常通过测试。 */
@@ -187,7 +189,7 @@ static long raster_tex(struct toy_renderer *renderer,
                        const struct toy_screen_vertex *a,
                        const struct toy_screen_vertex *b,
                        const struct toy_screen_vertex *c,
-                       long area, int minx, int maxx,
+                       long long area, int minx, int maxx,
                        int y0, int y1,
                        const struct toy_texture_view *texture,
                        int repeat, uint32_t fallback_color,
@@ -220,7 +222,7 @@ static long raster_tex(struct toy_renderer *renderer,
                 long long inv64 = (long long)e0 * a->inv_z +
                                   (long long)e1 * b->inv_z +
                                   (long long)e2 * c->inv_z;
-                long inv_norm = (long)(inv64 / area);
+                long long inv_norm = inv64 / area;
                 int at = base + x;
                 /* 与 flat 路径相同：平局（≥）判给后画者。 */
                 if (inv_norm >= depth[at]) {
@@ -325,7 +327,7 @@ static int record_cmd(struct toy_renderer *renderer, int textured,
                       const struct toy_screen_vertex *a,
                       const struct toy_screen_vertex *b,
                       const struct toy_screen_vertex *c,
-                      long area, uint32_t color,
+                      long long area, uint32_t color,
                       const struct toy_texture_view *texture,
                       int repeat, uint32_t fallback, int light, int fog,
                       int overlay)
@@ -381,7 +383,7 @@ int toy_renderer_triangle_lit(struct toy_renderer *renderer,
                               const struct toy_screen_vertex *c,
                               uint32_t color, int light, int fog)
 {
-    long area;
+    long long area;
     if (!renderer || !renderer->depth || !a || !b || !c) return 0;
     area = edge(a, b, c->x, c->y);
     if (area >= 0) return 0;
@@ -399,7 +401,7 @@ int toy_renderer_triangle_lit_overlay(struct toy_renderer *renderer,
                                       const struct toy_screen_vertex *c,
                                       uint32_t color, int light, int fog)
 {
-    long area;
+    long long area;
     if (!renderer || !renderer->depth || !a || !b || !c) return 0;
     area = edge(a, b, c->x, c->y);
     if (area >= 0) return 0;
@@ -430,7 +432,7 @@ int toy_renderer_triangle_textured_lit(struct toy_renderer *renderer,
                                        int repeat, uint32_t fallback_color,
                                        int light, int fog)
 {
-    long area;
+    long long area;
     if (!renderer || !renderer->depth || !a || !b || !c) return 0;
     area = edge(a, b, c->x, c->y);
     if (area >= 0) return 0;
@@ -566,6 +568,10 @@ static void *render_worker_main(void *arg)
 
 static int ensure_workers(struct toy_renderer *renderer)
 {
+#ifdef TOYC_WINDOWS_SINGLE_THREAD
+    (void)renderer;
+    return -1;
+#else
     int n, i;
     if (renderer->workers) return 0;
     n = count_processors();
@@ -593,6 +599,7 @@ static int ensure_workers(struct toy_renderer *renderer)
     while (renderer->job_done_count != renderer->worker_count)
         __sync_synchronize();
     return 0;
+#endif
 }
 
 /* 分发一个 job 并等待全部 worker 完成。任务字段只在上一 job 全部结束后

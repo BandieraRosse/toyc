@@ -56,6 +56,7 @@ void toy_input_apply(struct toy_input *input,
     }
     if (events->pointer_lock_changed)
         input->pointer_locked = events->pointer_locked;
+    input->mouse_buttons = events->mouse_buttons;
 }
 
 int toy_input_down(const struct toy_input *input, unsigned int key)
