@@ -107,11 +107,7 @@
 #define TOY_GAME_KEY_SLOT_1     2       /* evdev KEY_1：主武器槽 */
 #define TOY_GAME_KEY_SLOT_2     3       /* evdev KEY_2：副武器（手枪）槽 */
 
-/* 商店价格与击杀奖励集中配置，便于后续调平衡。 */
-#define TOY_GAME_MONEY_COMMON 1
-#define TOY_GAME_MONEY_HEAVY 2
-#define TOY_GAME_MONEY_FAST 2
-#define TOY_GAME_MONEY_SPECIAL 5
+/* 商店价格集中配置，便于后续调平衡。 */
 #define TOY_GAME_PRICE_SMG 50
 #define TOY_GAME_PRICE_SHOTGUN 50
 #define TOY_GAME_PRICE_AK 100

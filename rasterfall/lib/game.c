@@ -3040,14 +3040,14 @@ static int fire_ray(struct toy_game *g, int sy, int cy, int damage, int range,
             g->kills++;
             if (e->type == TOY_GAME_ENEMY_SMOKER ||
                 e->type == TOY_GAME_ENEMY_CHARGER)
-                g->money += TOY_GAME_MONEY_SPECIAL;
+                g->money += TOY_CONFIG_MONEY_SPECIAL;
             else if (e->type == TOY_GAME_ENEMY_HEAVY ||
                      e->type == TOY_GAME_ENEMY_PURSUIT_HEAVY)
-                g->money += TOY_GAME_MONEY_HEAVY;
+                g->money += TOY_CONFIG_MONEY_HEAVY;
             else if (e->type == TOY_GAME_ENEMY_PURSUIT_FAST)
-                g->money += TOY_GAME_MONEY_FAST;
+                g->money += TOY_CONFIG_MONEY_FAST;
             else
-                g->money += TOY_GAME_MONEY_COMMON;
+                g->money += TOY_CONFIG_MONEY_COMMON;
             if (toy_game_enemy_info(e->type)->ability !=
                 TOY_GAME_ENEMY_ABILITY_NONE)
                 g->special_kills++;

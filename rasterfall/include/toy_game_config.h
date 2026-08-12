@@ -66,40 +66,40 @@
 #define TOY_CONFIG_SHOTGUN_DAMAGE               25  /* 单颗伤害 */
 
 /* AK rifle weapon tuning. */
-#define TOY_CONFIG_AK_MAG                       40
-#define TOY_CONFIG_AK_RESERVE                  360
-#define TOY_CONFIG_AK_COOLDOWN_MS              180
-#define TOY_CONFIG_AK_RELOAD_MS              2200
-#define TOY_CONFIG_AK_FULL_AUTO                  1
-#define TOY_CONFIG_AK_PELLETS                    1
-#define TOY_CONFIG_AK_SPREAD                    50
-#define TOY_CONFIG_AK_SLOT                       0
-#define TOY_CONFIG_AK_DAMAGE                    50
+#define TOY_CONFIG_AK_MAG                       40  /* 弹匣容量 */
+#define TOY_CONFIG_AK_RESERVE                  360  /* 备弹上限 */
+#define TOY_CONFIG_AK_COOLDOWN_MS              180  /* 射击间隔 */
+#define TOY_CONFIG_AK_RELOAD_MS              2200  /* 换弹时间 */
+#define TOY_CONFIG_AK_FULL_AUTO                  1  /* 是否全自动 */
+#define TOY_CONFIG_AK_PELLETS                    1  /* 每次弹丸数 */
+#define TOY_CONFIG_AK_SPREAD                    50  /* 散布范围 */
+#define TOY_CONFIG_AK_SLOT                       0  /* 武器槽位 */
+#define TOY_CONFIG_AK_DAMAGE                    50  /* 单颗伤害 */
 
 /* AWP sniper weapon tuning. */
-#define TOY_CONFIG_AWP_MAG                      10
-#define TOY_CONFIG_AWP_RESERVE                   64
-#define TOY_CONFIG_AWP_COOLDOWN_MS              1200
-#define TOY_CONFIG_AWP_RELOAD_MS              3200
-#define TOY_CONFIG_AWP_FULL_AUTO                 0
-#define TOY_CONFIG_AWP_PELLETS                   1
-#define TOY_CONFIG_AWP_SPREAD                    4
-#define TOY_CONFIG_AWP_SLOT                      0
-#define TOY_CONFIG_AWP_DAMAGE                  200
+#define TOY_CONFIG_AWP_MAG                      10  /* 弹匣容量 */
+#define TOY_CONFIG_AWP_RESERVE                   64  /* 备弹上限 */
+#define TOY_CONFIG_AWP_COOLDOWN_MS              1200  /* 射击间隔 */
+#define TOY_CONFIG_AWP_RELOAD_MS              3200  /* 换弹时间 */
+#define TOY_CONFIG_AWP_FULL_AUTO                 0  /* 是否全自动 */
+#define TOY_CONFIG_AWP_PELLETS                   1  /* 每次弹丸数 */
+#define TOY_CONFIG_AWP_SPREAD                    4  /* 散布范围 */
+#define TOY_CONFIG_AWP_SLOT                      0  /* 武器槽位 */
+#define TOY_CONFIG_AWP_DAMAGE                  200  /* 单颗伤害 */
 
 /* Weapon reach and AI awareness.  The legacy common reach is 11500. */
-#define TOY_CONFIG_PISTOL_RANGE              11500
-#define TOY_CONFIG_PISTOL_ALERT_RANGE         8400
-#define TOY_CONFIG_SMG_RANGE                 11500
-#define TOY_CONFIG_SMG_ALERT_RANGE            8400
-#define TOY_CONFIG_SHOTGUN_RANGE             11500
-#define TOY_CONFIG_SHOTGUN_ALERT_RANGE        5600
-#define TOY_CONFIG_AK_RANGE                  17250
-#define TOY_CONFIG_AK_ALERT_RANGE            11500
-#define TOY_CONFIG_AWP_RANGE                 23000
-#define TOY_CONFIG_AWP_ALERT_RANGE           23000
-#define TOY_CONFIG_AWP_AI_AIM_MS               700
-#define TOY_CONFIG_AWP_AI_POST_FIRE_MS         700
+#define TOY_CONFIG_PISTOL_RANGE              11500  /* 最大射程 */
+#define TOY_CONFIG_PISTOL_ALERT_RANGE         8400  /* AI 警觉范围 */
+#define TOY_CONFIG_SMG_RANGE                 11500  /* 最大射程 */
+#define TOY_CONFIG_SMG_ALERT_RANGE            8400  /* AI 警觉范围 */
+#define TOY_CONFIG_SHOTGUN_RANGE             11500  /* 最大射程 */
+#define TOY_CONFIG_SHOTGUN_ALERT_RANGE        5600  /* AI 警觉范围 */
+#define TOY_CONFIG_AK_RANGE                  17250  /* 最大射程 */
+#define TOY_CONFIG_AK_ALERT_RANGE            11500  /* AI 警觉范围 */
+#define TOY_CONFIG_AWP_RANGE                 23000  /* 最大射程 */
+#define TOY_CONFIG_AWP_ALERT_RANGE           23000  /* AI 警觉范围 */
+#define TOY_CONFIG_AWP_AI_AIM_MS               700  /* AI 瞄准时间 */
+#define TOY_CONFIG_AWP_AI_POST_FIRE_MS         700  /* AI 射击后硬直 */
 
 /* Common enemy tuning. */
 #define TOY_CONFIG_COMMON_HP                   50  /* 生命值 */
@@ -130,6 +130,12 @@
 #define TOY_CONFIG_CHARGER_SPEED_MIN          42  /* 最低速度 */
 #define TOY_CONFIG_CHARGER_SPEED_MAX          58  /* 最高速度 */
 #define TOY_CONFIG_CHARGER_BITE_DAMAGE         4  /* 咬伤 */
+
+/* Money rewards for killing enemies. */
+#define TOY_CONFIG_MONEY_COMMON                1  /* 普通敌人击杀奖励 */
+#define TOY_CONFIG_MONEY_HEAVY                 2  /* 重型敌人击杀奖励 */
+#define TOY_CONFIG_MONEY_FAST                  2  /* 快速敌人击杀奖励 */
+#define TOY_CONFIG_MONEY_SPECIAL               5  /* 特殊敌人击杀奖励 */
 
 /* Charger special tuning. */
 #define TOY_CONFIG_CHARGER_WINDUP_MS         700  /* 蓄力时间 */
