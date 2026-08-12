@@ -186,7 +186,39 @@ int __ioctl(int fd, unsigned long request, void *argp)
 { (void)fd; (void)request; (void)argp; return -1; }
 long __getdents64(unsigned int fd, struct linux_dirent64 *dirp, unsigned int count)
 { (void)fd; (void)dirp; (void)count; return -1; }
+static INIT_ONCE futex_once = INIT_ONCE_STATIC_INIT;
+static CRITICAL_SECTION futex_lock;
+static CONDITION_VARIABLE futex_condition;
+
+static BOOL WINAPI init_futex(PINIT_ONCE once, PVOID parameter, LPVOID *context)
+{
+    (void)once; (void)parameter; (void)context;
+    InitializeCriticalSection(&futex_lock);
+    InitializeConditionVariable(&futex_condition);
+    return TRUE;
+}
+
 long __futex(unsigned int *uaddr, int op, unsigned int value,
              const struct timespec *timeout, unsigned int *uaddr2,
              unsigned int value3)
-{ (void)uaddr; (void)op; (void)value; (void)timeout; (void)uaddr2; (void)value3; return 0; }
+{
+    DWORD milliseconds = INFINITE;
+    (void)uaddr2; (void)value3;
+    if (!uaddr) return -1;
+    if (InitOnceExecuteOnce(&futex_once, init_futex, NULL, NULL) == FALSE)
+        return -1;
+    if (timeout)
+        milliseconds = (DWORD)(timeout->tv_sec * 1000 + timeout->tv_nsec / 1000000);
+    if (op == 0) {
+        EnterCriticalSection(&futex_lock);
+        while (*uaddr == value &&
+               SleepConditionVariableCS(&futex_condition, &futex_lock, milliseconds))
+            milliseconds = INFINITE;
+        LeaveCriticalSection(&futex_lock);
+        return 0;
+    }
+    EnterCriticalSection(&futex_lock);
+    WakeAllConditionVariable(&futex_condition);
+    LeaveCriticalSection(&futex_lock);
+    return 0;
+}

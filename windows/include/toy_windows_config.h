@@ -2,6 +2,5 @@
 #define TOYC_WINDOWS_CONFIG_H
 
 #define TOYC_WINDOWS 1
-#define TOYC_WINDOWS_SINGLE_THREAD 1
 
 #endif

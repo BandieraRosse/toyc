@@ -17,7 +17,8 @@ struct rasterfall_audio {
     pthread_t thread;
     volatile int quit;
     int running;
-    struct toy_sound_asset assets[TOY_SFX_PLAYER_DEATH + 1];
+    /* Include the two melee effects as well as the original eight clips. */
+    struct toy_sound_asset assets[TOY_SFX_SHOVE_HIT + 1];
 };
 
 void rasterfall_audio_load_assets(struct rasterfall_audio *audio);

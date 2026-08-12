@@ -65,6 +65,30 @@ static void poll_windows_key_edges(const struct toy_window_events *events,
     mutable_events->key_event_count++;
 }
 
+/* SDL's keyboard snapshot is more reliable than GetAsyncKeyState for a
+ * foreground window (especially when the game is started from Explorer).
+ * Keep the edge synthesis inside the Windows backend so menus and gameplay
+ * consume the same platform-neutral key events. */
+static void poll_sdl_key_edge(const struct toy_window_events *events,
+                              unsigned int key, SDL_Scancode scancode,
+                              int *previous)
+{
+    int count = 0;
+    const Uint8 *state = SDL_GetKeyboardState(&count);
+    int pressed = state && (int)scancode >= 0 && (int)scancode < count &&
+                  state[scancode];
+    struct toy_window_events *mutable_events =
+        (struct toy_window_events *)events;
+    if (pressed == *previous) return;
+    *previous = pressed;
+    if (has_key_event(events, key, pressed) ||
+        mutable_events->key_event_count >= TOY_WINDOW_MAX_KEY_EVENTS)
+        return;
+    mutable_events->key_events[mutable_events->key_event_count].key = key;
+    mutable_events->key_events[mutable_events->key_event_count].pressed = pressed;
+    mutable_events->key_event_count++;
+}
+
 static void poll_windows_keys(struct toy_window_events *events)
 {
     static const struct {
@@ -280,10 +304,10 @@ dispatch:
     if (events) {
         /* SDL normally supplies these events. The Win32 fallback handles
          * keyboard layouts/drivers that expose only virtual-key state. */
-        poll_windows_key_edges(events, KEY_UP, VK_UP, &previous_up);
-        poll_windows_key_edges(events, KEY_DOWN, VK_DOWN, &previous_down);
-        poll_windows_key_edges(events, KEY_ENTER, VK_RETURN, &previous_enter);
-        poll_windows_key_edges(events, KEY_ESC, VK_ESCAPE, &previous_escape);
+        poll_sdl_key_edge(events, KEY_UP, SDL_SCANCODE_UP, &previous_up);
+        poll_sdl_key_edge(events, KEY_DOWN, SDL_SCANCODE_DOWN, &previous_down);
+        poll_sdl_key_edge(events, KEY_ENTER, SDL_SCANCODE_RETURN, &previous_enter);
+        poll_sdl_key_edge(events, KEY_ESC, SDL_SCANCODE_ESCAPE, &previous_escape);
         poll_windows_keys(events);
         {
             Uint32 buttons = SDL_GetMouseState(NULL, NULL);

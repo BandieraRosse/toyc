@@ -452,10 +452,10 @@ static int count_processors(void)
     char buf[16384];
     int fd, n, count = 0, i;
     fd = __openat(AT_FDCWD, "/proc/cpuinfo", O_RDONLY, 0);
-    if (fd < 0) return 0;
+    if (fd < 0) return 4;
     n = (int)__read(fd, buf, (int)sizeof(buf));
     __close(fd);
-    if (n <= 0) return 0;
+    if (n <= 0) return 4;
     for (i = 0; i + 8 < n; i++)
         if (buf[i] == 'p' && buf[i + 1] == 'r' && buf[i + 2] == 'o' &&
             buf[i + 3] == 'c' && buf[i + 4] == 'e' && buf[i + 5] == 's' &&
@@ -568,10 +568,6 @@ static void *render_worker_main(void *arg)
 
 static int ensure_workers(struct toy_renderer *renderer)
 {
-#ifdef TOYC_WINDOWS_SINGLE_THREAD
-    (void)renderer;
-    return -1;
-#else
     int n, i;
     if (renderer->workers) return 0;
     n = count_processors();
@@ -599,7 +595,6 @@ static int ensure_workers(struct toy_renderer *renderer)
     while (renderer->job_done_count != renderer->worker_count)
         __sync_synchronize();
     return 0;
-#endif
 }
 
 /* 分发一个 job 并等待全部 worker 完成。任务字段只在上一 job 全部结束后

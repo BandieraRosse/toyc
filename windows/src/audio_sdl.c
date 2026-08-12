@@ -42,6 +42,13 @@ long toy_audio_write(struct toy_audio *audio, const void *pcm, unsigned long fra
     Uint32 bytes;
     if (!audio || audio->backend != TOY_AUDIO_SDL || !pcm) return -1;
     bytes = (Uint32)(frames * audio->channels * sizeof(short));
+    /* SDL_QueueAudio is non-blocking. Without a bound the mixer thread can
+     * generate audio much faster than the device consumes it, putting every
+     * later gunshot behind an ever-growing music queue. Keep latency below
+     * roughly four mixer blocks. */
+    while (SDL_GetQueuedAudioSize(audio->device) >
+           (Uint32)(audio->rate / 10 * audio->channels * sizeof(short)))
+        SDL_Delay(1);
     if (SDL_AudioStreamPut((SDL_AudioStream *)audio->stream, pcm, (int)bytes) < 0)
         return -1;
     while (SDL_AudioStreamAvailable((SDL_AudioStream *)audio->stream) > 0) {

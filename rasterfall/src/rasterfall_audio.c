@@ -1,19 +1,11 @@
 #include "tlibc_everything.h"
 #include "core.h"
-#include "linux_audio.h"
 #include "toy_audio.h"
 #include "toy_assets.h"
 #include "toy_game.h"
 #include "rasterfall_audio.h"
-#include "errno.h"
 
-#ifdef TOYC_WINDOWS_SINGLE_THREAD
-/* The main loop supplies audio at 60 Hz. 735 frames keeps the 44.1 kHz
- * device fed without the old event-only starvation. */
-#define SFX_BLOCK_FRAMES 735
-#else
 #define SFX_BLOCK_FRAMES 512
-#endif
 
 static const char *sfx_asset_names[TOY_SFX_SHOVE_HIT + 1] = {
     "gunshot", "dry_fire", "reload_start", "reload_done",
@@ -54,7 +46,6 @@ static void audio_drain_events(struct rasterfall_audio *audio)
     }
 }
 
-#ifndef TOYC_WINDOWS_SINGLE_THREAD
 static void *audio_thread_func(void *arg)
 {
     struct rasterfall_audio *audio = (struct rasterfall_audio *)arg;
@@ -64,19 +55,15 @@ static void *audio_thread_func(void *arg)
         audio_drain_events(audio);
         toy_sfx_render(&audio->sfx, play_buf, SFX_BLOCK_FRAMES);
         ret = toy_audio_write(&audio->output, play_buf, SFX_BLOCK_FRAMES);
-        if (ret == -EPIPE && audio->output.backend == TOY_AUDIO_ALSA) {
-            __ioctl(audio->output.alsa.fd, SNDRV_PCM_IOCTL_PREPARE, 0);
-            continue;
-        }
         if (ret < 0) break;
     }
     return NULL;
 }
-#endif
 
 int rasterfall_audio_start(struct rasterfall_audio *audio)
 {
     int kind;
+    audio->quit = 0;
     if (toy_audio_open(&audio->output, TOY_SFX_RATE, 2) < 0) return -1;
     toy_sfx_init(&audio->sfx, TOY_SFX_RATE);
     for (kind = 0; kind <= TOY_SFX_SHOVE_HIT; kind++)
@@ -85,12 +72,6 @@ int rasterfall_audio_start(struct rasterfall_audio *audio)
                                (const short *)audio->assets[kind].data,
                                audio->assets[kind].frames);
     toy_sfx_music(&audio->sfx, 1);
-#ifdef TOYC_WINDOWS_SINGLE_THREAD
-    audio->running = 1;
-    __printf("rasterfall: audio backend: %s\n",
-             toy_audio_backend_name(&audio->output));
-    return 0;
-#else
     if (pthread_create(&audio->thread, NULL, audio_thread_func, audio) != 0) {
         toy_audio_close(&audio->output);
         return -1;
@@ -99,31 +80,21 @@ int rasterfall_audio_start(struct rasterfall_audio *audio)
     __printf("rasterfall: audio backend: %s\n",
              toy_audio_backend_name(&audio->output));
     return 0;
-#endif
 }
 
 void rasterfall_audio_stop(struct rasterfall_audio *audio)
 {
     if (!audio->running) return;
-#ifdef TOYC_WINDOWS_SINGLE_THREAD
-    toy_audio_drain(&audio->output);
-    toy_audio_close(&audio->output);
-    audio->running = 0;
-#else
     audio->quit = 1;
     pthread_join(audio->thread, NULL);
     toy_audio_close(&audio->output);
     audio->running = 0;
-#endif
 }
 
 void rasterfall_audio_play_events(struct rasterfall_audio *audio,
                                   const unsigned char *events, int count)
 {
     int i;
-#ifdef TOYC_WINDOWS_SINGLE_THREAD
-    short play_buf[SFX_BLOCK_FRAMES * 2];
-#endif
     if (count > 4) count = 4;
     for (i = 0; i < count; i++) {
         switch (events[i]) {
@@ -139,11 +110,6 @@ void rasterfall_audio_play_events(struct rasterfall_audio *audio,
         default: break;
         }
     }
-#ifdef TOYC_WINDOWS_SINGLE_THREAD
-    audio_drain_events(audio);
-    toy_sfx_render(&audio->sfx, play_buf, SFX_BLOCK_FRAMES);
-    toy_audio_write(&audio->output, play_buf, SFX_BLOCK_FRAMES);
-#endif
 }
 
 void rasterfall_audio_unload_assets(struct rasterfall_audio *audio)

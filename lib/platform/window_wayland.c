@@ -28,6 +28,7 @@ int toy_window_poll(struct toy_window *window, struct toy_window_events *events,
     struct toywl_input input;
     int result;
     if (!window) return -1;
+    if (events) memset(events, 0, sizeof(*events));
     memset(&input, 0, sizeof(input));
     result = toywl_dispatch(window->wayland, &input, timeout_ms);
     if (events) {

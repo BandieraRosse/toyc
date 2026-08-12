@@ -3,6 +3,7 @@
 #include "tlibc_everything.h"
 #include "toy_renderer.h"
 #include "toy_assets.h"
+#include "toy_platform.h"
 #include "fb_draw.h"
 #include "fb_font.h"
 #include "toy_map.h"
@@ -115,60 +116,9 @@ static unsigned int model_u32(const unsigned char *p)
 
 static void gallery_load(void)
 {
-    int i, count = 0;
-#ifdef TOYC_WINDOWS
-    static const char *paths[] = {
-        "ar_ak47.rmesh", "ar_ammo.rmesh", "ar_aug.rmesh",
-        "assault_rifle_ammo_box.rmesh", "pg_desert_eagle.rmesh",
-        "pg_glock1.rmesh", "pg_glock2.rmesh", "pistol_ammo.rmesh",
-        "revolver.rmesh", "revolver_snub_nose.rmesh", "rf_AWP.rmesh",
-        "rf_hunting.rmesh", "sg_double_barrel.rmesh",
-        "sg_pump_action.rmesh", "shotgun_ammo.rmesh", "smg_ammo_box.rmesh",
-        "smg_bizon.rmesh", "smg_mac10.rmesh", "smg_mp5.rmesh",
-        "smg_p90.rmesh", "smg_skorpion.rmesh", "sniper_ammo_box.rmesh"
-    };
-#else
-    int fd;
-#endif
-    char dent_buf[8192];
-    struct linux_dirent64 *entry;
-    long bytes;
+    int i, count;
     if (gallery_loaded) return;
-
-#ifdef TOYC_WINDOWS
-    for (i = 0; i < (int)(sizeof(paths) / sizeof(paths[0])) &&
-                i < RASTERFALL_MODEL_MAX_GALLERY; i++) {
-        snprintf(gallery_paths[count], RASTERFALL_MODEL_PATH_BYTES,
-                 "rasterfall/assets/models/%s", paths[i]);
-        count++;
-    }
-#else
-    fd = __openat(AT_FDCWD, "rasterfall/assets/models",
-                  O_RDONLY | O_DIRECTORY, 0);
-    if (fd >= 0) {
-        while (count < RASTERFALL_MODEL_MAX_GALLERY &&
-               (bytes = __getdents64(fd,
-                                     (struct linux_dirent64 *)dent_buf,
-                                     sizeof(dent_buf))) > 0) {
-            long offset = 0;
-            while (offset < bytes && count < RASTERFALL_MODEL_MAX_GALLERY) {
-                entry = (struct linux_dirent64 *)(dent_buf + offset);
-                if (entry->d_reclen == 0) break;
-                if (entry->d_name[0] != '.' &&
-                    strlen(entry->d_name) >= 6 &&
-                    !strcmp(entry->d_name + strlen(entry->d_name) - 6,
-                            ".rmesh")) {
-                    snprintf(gallery_paths[count],
-                             RASTERFALL_MODEL_PATH_BYTES,
-                             "rasterfall/assets/models/%s", entry->d_name);
-                    count++;
-                }
-                offset += entry->d_reclen;
-            }
-        }
-        __close(fd);
-    }
-#endif
+    count = toy_platform_list_models(gallery_paths, RASTERFALL_MODEL_MAX_GALLERY);
 
     /* getdents order is filesystem-dependent; sort paths for a stable
      * gallery layout and for predictable inventory by the displayed index. */
