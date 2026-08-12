@@ -30,8 +30,8 @@ GAME_SRCS := rasterfall/src/rasterfall.c \
              rasterfall/src/rasterfall_viewmodel.c
 GAME_LIB_SRCS := rasterfall/lib/game.c rasterfall/lib/map.c rasterfall/lib/sfx.c
 PLATFORM_SRCS := windows/src/runtime.c windows/src/socket_winsock.c windows/src/window_sdl.c \
-             windows/src/audio_sdl.c windows/src/pthread_win32.c windows/src/winmain.c \
-                 windows/src/env.c windows/src/string.c lib/platform.c
+                 windows/src/audio_sdl.c windows/src/pthread_win32.c windows/src/winmain.c \
+                 windows/src/env.c windows/src/string.c windows/src/platform.c
 LIB_SRCS := lib/assets.c lib/graphics/fb_draw.c lib/graphics/fb_font.c \
             lib/graphics/renderer.c lib/input/input.c lib/net/dns.c \
             lib/math/math.c

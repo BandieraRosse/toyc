@@ -1,21 +1,21 @@
 #define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#include <stdio.h>
 #include "toy_platform.h"
+#include "toy_assets.h"
 
 int toy_platform_list_models(char paths[][TOY_PLATFORM_PATH_MAX], int max)
 {
-    WIN32_FIND_DATAA data;
-    HANDLE handle;
-    int count = 0;
+    int i, count = 0;
+    const char *path;
+    const char prefix[] = "rasterfall/assets/models/";
+
     if (!paths || max <= 0) return 0;
-    handle = FindFirstFileA("rasterfall\\assets\\models\\*.rmesh", &data);
-    if (handle == INVALID_HANDLE_VALUE) return 0;
-    do {
-        if (!(data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) && count < max)
-            snprintf(paths[count++], TOY_PLATFORM_PATH_MAX,
-                     "rasterfall/assets/models/%s", data.cFileName);
-    } while (FindNextFileA(handle, &data));
-    FindClose(handle);
+    for (i = 0; i < toy_embedded_asset_count() && count < max; i++) {
+        path = toy_embedded_asset_path(i);
+        if (path && !strncmp(path, prefix, sizeof(prefix) - 1) &&
+            strstr(path, ".rmesh")) {
+            strncpy(paths[count], path, TOY_PLATFORM_PATH_MAX - 1);
+            paths[count++][TOY_PLATFORM_PATH_MAX - 1] = 0;
+        }
+    }
     return count;
 }

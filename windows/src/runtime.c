@@ -25,22 +25,9 @@ static int win_flags(int flags)
     return out | _O_BINARY;
 }
 
-static FILE *windows_log;
-
-static void windows_log_init(void)
-{
-    if (!windows_log)
-        windows_log = fopen("rasterfall-windows.log", "a");
-}
-
 void toy_windows_log(const char *message)
 {
-    windows_log_init();
-    if (windows_log && message) {
-        fputs(message, windows_log);
-        fputc('\n', windows_log);
-        fflush(windows_log);
-    }
+    (void)message;
 }
 
 long __write(int fd, const void *buf, size_t len)
@@ -55,15 +42,8 @@ long __read(int fd, void *buf, size_t len)
 
 int __openat(int dirfd, const char *path, int flags, int mode)
 {
-    char line[256];
-    int fd;
     (void)dirfd;
-    fd = _open(path, win_flags(flags), mode);
-    if (fd < 0) {
-        snprintf(line, sizeof(line), "open failed: %s", path ? path : "(null)");
-        toy_windows_log(line);
-    }
-    return fd;
+    return _open(path, win_flags(flags), mode);
 }
 
 int __creat(const char *path, int mode)
