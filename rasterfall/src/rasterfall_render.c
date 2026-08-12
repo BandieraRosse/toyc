@@ -742,6 +742,8 @@ static int render_smoker_enemy(struct toy_renderer *, const struct camera *,
                                const struct toy_game_enemy *, int, uint32_t);
 static int render_charger_enemy(struct toy_renderer *, const struct camera *,
                                 const struct toy_game_enemy *, int, uint32_t);
+static int render_tank_enemy(struct toy_renderer *, const struct camera *,
+                             const struct toy_game_enemy *, int, uint32_t);
 
 static int draw_box(struct toy_renderer *renderer, const struct camera *camera,
                     const struct box *box)
@@ -1277,6 +1279,10 @@ static int render_scene(struct toy_renderer *renderer, const struct camera *came
                     model.type = TOY_GAME_ENEMY_CHARGER;
                     pixels += render_charger_enemy(renderer, camera, &model,
                                                    1120, x->color);
+                } else if (x->style==5) {
+                    model.type = TOY_GAME_ENEMY_TANK;
+                    pixels += render_tank_enemy(renderer, camera, &model,
+                                                1600, x->color);
                 }
             } else {
                 struct box model={x->a,x->b,x->c,x->d,x->f,x->color};
