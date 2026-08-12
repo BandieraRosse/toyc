@@ -32,6 +32,8 @@ static int session_is_developer_ai(const char *name)
 }
 static void session_interact(struct rasterfall_session *session,
                              struct rasterfall_interactable *it);
+static int session_near_flag(const struct rasterfall_session *session,
+                             const struct camera *camera);
 
 static void session_down_ai(struct rasterfall_session *session, int index,
                             int x, int z)
@@ -113,6 +115,7 @@ static void session_init_flag(struct rasterfall_session *s, int fi, int x, int z
     struct rasterfall_flag *f = &s->flags[fi];
     memset(f, 0, sizeof(*f)); f->active = 1; f->x = x; f->z = z;
     f->color = flag_colors[fi % (int)(sizeof(flag_colors)/sizeof(flag_colors[0]))];
+    f->carrier_id = -1;
     strncpy(f->label, flag_names[fi % (int)(sizeof(flag_names)/sizeof(flag_names[0]))], 4);
     f->label[4] = 0;
     /* Four corners of a deliberately compact, adjustable square. */
@@ -443,6 +446,44 @@ void rasterfall_session_interact_remote(struct rasterfall_session *session,
     if (index >= 0) session_interact(session, &session->items[index]);
 }
 
+void rasterfall_session_toggle_flag_remote(struct rasterfall_session *session,
+                                           const struct camera *camera,
+                                           int player_id)
+{
+    int i;
+    if (!session || !camera || session->game_state.state != TOY_GAME_PLAYING)
+        return;
+    for (i = 0; i < session->flag_count; i++) {
+        if (!session->flags[i].carried ||
+            session->flags[i].carrier_id != player_id) continue;
+        session->flags[i].carried = 0;
+        session->flags[i].carrier_id = -1;
+        session->flags[i].x = camera->x;
+        session->flags[i].z = camera->z;
+        session_set_flag_assignments(session, i);
+        return;
+    }
+    i = session_near_flag(session, camera);
+    if (i < 0 || session->flags[i].carried) return;
+    session->flags[i].carried = 1;
+    session->flags[i].carrier_id = player_id;
+}
+
+void rasterfall_session_update_flag_remote(struct rasterfall_session *session,
+                                           const struct camera *camera,
+                                           int player_id)
+{
+    int i;
+    if (!session || !camera) return;
+    for (i = 0; i < session->flag_count; i++)
+        if (session->flags[i].carried &&
+            session->flags[i].carrier_id == player_id) {
+            session->flags[i].x = camera->x;
+            session->flags[i].z = camera->z;
+            session_set_flag_assignments(session, i);
+        }
+}
+
 int rasterfall_session_revive_remote(struct rasterfall_session *session,
                                      const struct camera *camera, int dt_ms)
 {
@@ -659,6 +700,7 @@ static void session_toggle_flag(struct rasterfall_session *s,
     int i = s->carried_flag;
     if (i >= 0) {
         s->flags[i].carried = 0;
+        s->flags[i].carrier_id = -1;
         s->flags[i].x = camera->x;
         s->flags[i].z = camera->z;
         s->carried_flag = -1;
@@ -668,7 +710,8 @@ static void session_toggle_flag(struct rasterfall_session *s,
     }
     i = session_near_flag(s, camera);
     if (i < 0) return;
-    s->flags[i].carried = 1; s->carried_flag = i;
+    s->flags[i].carried = 1; s->flags[i].carrier_id = 0;
+    s->carried_flag = i;
     s->banner_text = "FLAG CARRIED"; s->banner_ms = 1400;
 }
 

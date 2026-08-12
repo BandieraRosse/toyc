@@ -16,6 +16,7 @@ struct rasterfall_flag {
     int active;
     int x, z;
     int carried;
+    int carrier_id;
     int color;
     char label[5];
     int slot_offsets[4][2];
@@ -104,6 +105,12 @@ void rasterfall_session_step_remote_player(struct rasterfall_session *session,
 /* 主机验证远端玩家的交互按键，沿用同一视锥/距离判定。 */
 void rasterfall_session_interact_remote(struct rasterfall_session *session,
                                          const struct camera *camera);
+void rasterfall_session_toggle_flag_remote(struct rasterfall_session *session,
+                                           const struct camera *camera,
+                                           int player_id);
+void rasterfall_session_update_flag_remote(struct rasterfall_session *session,
+                                           const struct camera *camera,
+                                           int player_id);
 int rasterfall_session_revive_remote(struct rasterfall_session *session,
                                      const struct camera *camera, int dt_ms);
 int rasterfall_session_revive_player(struct rasterfall_session *session,

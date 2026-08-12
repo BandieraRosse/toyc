@@ -31,7 +31,11 @@ static void net_windows_log(const char *message) { (void)message; }
 #define NET_ACTOR_SIZE 37
 #define NET_ENEMY_SIZE 48
 #define NET_EVENT_SIZE (4 + 1 + TOY_GAME_MAX_EVENTS)
-#define NET_WORLD_SIZE 32
+#define NET_WORLD_BASE_SIZE 32
+#define NET_WORLD_FLAG_SIZE 12
+#define NET_WORLD_SIZE (NET_WORLD_BASE_SIZE + 4 + 4 + \
+                        RASTERFALL_MAX_FLAGS * NET_WORLD_FLAG_SIZE + \
+                        TOY_GAME_MAX_ACTORS * 2)
 #define NET_SNAPSHOT_BASE 8
 #define NET_INPUT_HOLD_TICKS 15
 #define NET_AI_FIRE_BASE 6
@@ -1258,6 +1262,7 @@ static int send_ai_fire_packets(struct rasterfall_net *net,
 }
 
 int rasterfall_net_send_snapshot(struct rasterfall_net *net,
+                                 const struct rasterfall_session *session,
                                  const struct camera *host_camera,
                                  const struct toy_game *game,
                                  int air_walls_enabled,
@@ -1383,6 +1388,27 @@ int rasterfall_net_send_snapshot(struct rasterfall_net *net,
     put_i16(world_data + 26, game->alarm_triggered);
     put_i16(world_data + 28, game->campaign_stage);
     world_data[30] = (unsigned char)(game->player_control_disabled ? 1 : 0);
+    put_u32(world_data + NET_WORLD_BASE_SIZE, (uint32_t)game->money);
+    put_i16(world_data + NET_WORLD_BASE_SIZE + 4,
+            session ? session->flag_count : 0);
+    for (int flag_i = 0; flag_i < RASTERFALL_MAX_FLAGS; flag_i++) {
+        const struct rasterfall_flag *flag = session &&
+            flag_i < session->flag_count ? &session->flags[flag_i] : 0;
+        unsigned char *fp = world_data + NET_WORLD_BASE_SIZE + 8 +
+                            flag_i * NET_WORLD_FLAG_SIZE;
+        put_u32(fp, flag ? (uint32_t)flag->x : 0);
+        put_u32(fp + 4, flag ? (uint32_t)flag->z : 0);
+        fp[8] = flag && flag->active ? 1 : 0;
+        fp[9] = flag && flag->carried ? 1 : 0;
+        fp[10] = put_i8_value(flag ? flag->carrier_id : -1);
+        fp[11] = 0;
+    }
+    for (int actor_i = 0; actor_i < TOY_GAME_MAX_ACTORS; actor_i++)
+        put_i16(world_data + NET_WORLD_BASE_SIZE + 8 +
+                RASTERFALL_MAX_FLAGS * NET_WORLD_FLAG_SIZE + actor_i * 2,
+                session && actor_i < TOY_GAME_MAX_ACTORS &&
+                session->game_state.actors[actor_i].active ?
+                    session->game_state.actors[actor_i].flag_index : -1);
     net->remote_event_snapshot_sequence = net->last_snapshot_sequence;
     if (event_count)
         net->remote_event_snapshot_last_id = net->remote_event_ids[event_count - 1];
@@ -1477,6 +1503,25 @@ static int decode_snapshot(const unsigned char *payload, int size,
     net->snapshot_world_manual_alarm_timer_ms = get_i16(world_data + 24);
     net->snapshot_world_alarm_triggered = get_i16(world_data + 26);
     net->snapshot_world_campaign_stage = get_i16(world_data + 28);
+    net->snapshot_money = (int)get_u32(world_data + NET_WORLD_BASE_SIZE);
+    net->snapshot_flag_count = get_i16(world_data + NET_WORLD_BASE_SIZE + 4);
+    if (net->snapshot_flag_count < 0 ||
+        net->snapshot_flag_count > RASTERFALL_MAX_FLAGS) return -1;
+    for (i = 0; i < RASTERFALL_MAX_FLAGS; i++) {
+        const unsigned char *fp = world_data + NET_WORLD_BASE_SIZE + 8 +
+                                  i * NET_WORLD_FLAG_SIZE;
+        struct rasterfall_flag *flag = &net->snapshot_flags[i];
+        memset(flag, 0, sizeof(*flag));
+        flag->x = (int)get_u32(fp);
+        flag->z = (int)get_u32(fp + 4);
+        flag->active = fp[8] != 0;
+        flag->carried = fp[9] != 0;
+        flag->carrier_id = get_i8_value(fp[10]);
+    }
+    for (i = 0; i < TOY_GAME_MAX_ACTORS; i++)
+        net->snapshot_actor_flag_index[i] = get_i16(
+            world_data + NET_WORLD_BASE_SIZE + 8 +
+            RASTERFALL_MAX_FLAGS * NET_WORLD_FLAG_SIZE + i * 2);
     net->snapshot_player_control_disabled = world_data[30] & 1;
     net->snapshot_ready = 1;
     net->world_ready = 1;
@@ -2005,6 +2050,11 @@ static void net_apply_extra_remote(struct rasterfall_net *net,
     if ((remote->command.buttons & RASTERFALL_CMD_INTERACT) &&
         !g->player_down)
         rasterfall_session_interact_remote(session, &remote->camera);
+    if (remote->command.buttons & RASTERFALL_CMD_FLAG)
+        rasterfall_session_toggle_flag_remote(session, &remote->camera,
+                                               remote->client_id);
+    rasterfall_session_update_flag_remote(session, &remote->camera,
+                                          remote->client_id);
     memset(keys, 0, sizeof(keys));
     if (remote->command.buttons & RASTERFALL_CMD_RELOAD)
         keys[TOY_GAME_KEY_RELOAD] = 1;
@@ -2512,6 +2562,9 @@ void rasterfall_net_apply_remote(struct rasterfall_net *net,
             !net->peer_down) {
             rasterfall_session_interact_remote(session, &net->peer_camera);
         }
+        if (net->remote_command.buttons & RASTERFALL_CMD_FLAG)
+            rasterfall_session_toggle_flag_remote(session, &net->peer_camera, 1);
+        rasterfall_session_update_flag_remote(session, &net->peer_camera, 1);
         memset(keys, 0, sizeof(keys));
         if (net->remote_command.buttons & RASTERFALL_CMD_RELOAD)
             keys[TOY_GAME_KEY_RELOAD] = 1;
@@ -2891,6 +2944,32 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
         session->game_state.goal_hold_ms = net->snapshot_world_goal_hold_ms;
         session->game_state.alarm_triggered = net->snapshot_world_alarm_triggered;
         session->game_state.campaign_stage = net->snapshot_world_campaign_stage;
+        session->game_state.money = net->snapshot_money;
+        if (net->snapshot_flag_count <= RASTERFALL_MAX_FLAGS) {
+            session->flag_count = net->snapshot_flag_count;
+            for (i = 0; i < RASTERFALL_MAX_FLAGS; i++) {
+                struct rasterfall_flag *dst = &session->flags[i];
+                const struct rasterfall_flag *src = &net->snapshot_flags[i];
+                int color = dst->color;
+                char label[5];
+                memcpy(label, dst->label, sizeof(label));
+                dst->active = src->active;
+                dst->x = src->x;
+                dst->z = src->z;
+                dst->carried = src->carried;
+                dst->carrier_id = src->carrier_id;
+                dst->color = color;
+                memcpy(dst->label, label, sizeof(dst->label));
+            }
+            session->carried_flag = -1;
+            for (i = 0; i < session->flag_count; i++)
+                if (session->flags[i].carried &&
+                    session->flags[i].carrier_id == net->local_player_id)
+                    session->carried_flag = i;
+            for (i = 0; i < TOY_GAME_MAX_ACTORS; i++)
+                session->game_state.actors[i].flag_index =
+                    net->snapshot_actor_flag_index[i];
+        }
         /* This world flag belongs to the host player's Smoker state.  It is
          * not a property of every client; copying it here made a client
          * unable to jump whenever the host was being dragged. */

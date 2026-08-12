@@ -20,6 +20,21 @@ static int run_logic_test(void)
     if (session.level.safe_count > 0 &&
         session.game_state.safe_room_count != session.level.safe_count)
         return 126;
+    /* 远端旗帜操作必须由主机状态承接，并跟随远端玩家移动。 */
+    if (session.flag_count != 1) return 131;
+    camera.x = session.flags[0].x;
+    camera.z = session.flags[0].z;
+    rasterfall_session_toggle_flag_remote(&session, &camera, 1);
+    if (!session.flags[0].carried || session.flags[0].carrier_id != 1)
+        return 132;
+    camera.x += 240;
+    camera.z -= 120;
+    rasterfall_session_update_flag_remote(&session, &camera, 1);
+    if (session.flags[0].x != camera.x || session.flags[0].z != camera.z)
+        return 133;
+    rasterfall_session_toggle_flag_remote(&session, &camera, 1);
+    if (session.flags[0].carried || session.flags[0].carrier_id != -1)
+        return 134;
     /* 客户端交互由主机执行，但按下 E 后本地仍必须立即显示反馈。 */
     if (session.item_count > 0) {
         memset(&command, 0, sizeof(command));

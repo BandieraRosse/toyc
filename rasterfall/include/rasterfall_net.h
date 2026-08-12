@@ -9,7 +9,7 @@
 #define RASTERFALL_NET_DEFAULT_PORT 28460
 #define RASTERFALL_NET_MAX_PACKET 2700
 #define RASTERFALL_NET_MAX_SNAPSHOT 8192
-#define RASTERFALL_NET_PROTOCOL_VERSION 25
+#define RASTERFALL_NET_PROTOCOL_VERSION 26
 #define RASTERFALL_NET_MAX_ACTORS 32
 #define RASTERFALL_NET_PLAYER_MAX 4
 #define RASTERFALL_NET_REMOTE_MAX 2
@@ -261,6 +261,10 @@ struct rasterfall_net {
     int snapshot_world_manual_alarm_timer_ms;
     int snapshot_world_alarm_triggered;
     int snapshot_world_campaign_stage;
+    int snapshot_money;
+    int snapshot_flag_count;
+    struct rasterfall_flag snapshot_flags[RASTERFALL_MAX_FLAGS];
+    int snapshot_actor_flag_index[TOY_GAME_MAX_ACTORS];
     int snapshot_player_control_disabled;
     int snapshot_air_walls_enabled;
     int snapshot_manual_alarm_enabled;
@@ -332,6 +336,7 @@ int rasterfall_net_send_command(struct rasterfall_net *net,
                                 const struct rasterfall_command *command,
                                 const struct camera *predicted);
 int rasterfall_net_send_snapshot(struct rasterfall_net *net,
+                                 const struct rasterfall_session *session,
                                  const struct camera *host_camera,
                                  const struct toy_game *game,
                                  int air_walls_enabled,

@@ -1772,7 +1772,7 @@ startup_again:
                     /* 15 Hz authoritative snapshots are sufficient once
                      * clients interpolate enemy positions between updates. */
                     if ((net.tick % 4) == 0)
-                        rasterfall_net_send_snapshot(&net, &camera, &game,
+                        rasterfall_net_send_snapshot(&net, &session, &camera, &game,
                                                      session.air_walls_enabled,
                                                      session.manual_alarm_on,
                                                      session.manual_alarm_timer);
