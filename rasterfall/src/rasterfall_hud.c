@@ -569,8 +569,10 @@ static void render_network_hud(struct toy_surface *surface,
             const struct rasterfall_net_client *client = &net->clients[i];
             if (!client->active || !client->connected) continue;
             snprintf(line + cursor, sizeof(line) - (size_t)cursor,
-                     "%sP%d %dMS", cursor ? "  " : "",
-                     client->client_id + 1, client->rtt_ms);
+                     "%sP%d %dMS %d.%d%%", cursor ? "  " : "",
+                     client->client_id + 1, client->rtt_ms,
+                     client->loss_permille / 10,
+                     client->loss_permille % 10);
             cursor = (int)strlen(line);
         }
         width = (int)strlen(line) * FB_FONT_W;

@@ -12,7 +12,7 @@
 /* v29 uses one uniform host-side client layout.  Keep protocol
  * changes explicit: clients with a different snapshot layout must fail during
  * discovery/handshake instead of decoding shifted world data. */
-#define RASTERFALL_NET_PROTOCOL_VERSION 29
+#define RASTERFALL_NET_PROTOCOL_VERSION 30
 #define RASTERFALL_NET_MAX_ACTORS 32
 #define RASTERFALL_NET_PLAYER_MAX 4
 #define RASTERFALL_NET_CLIENT_MAX (RASTERFALL_NET_PLAYER_MAX - 1)
@@ -178,6 +178,10 @@ struct rasterfall_net_client {
     int special_kills;
     int damage_dealt;
     int rtt_ms;
+    uint32_t stats_last_rx_sequence;
+    unsigned long stats_rx_packets;
+    unsigned long stats_lost_packets;
+    int loss_permille;
     unsigned int fire_seq;
     int ray_count;
     struct toy_game_ray rays[TOY_GAME_MAX_RAYS];
@@ -213,10 +217,6 @@ struct rasterfall_net {
     int enemy_count;
     int remote_event_count;
     unsigned char remote_events[TOY_GAME_MAX_EVENTS];
-    unsigned char remote_event_queue[RASTERFALL_NET_EVENT_QUEUE_MAX];
-    uint32_t remote_event_ids[RASTERFALL_NET_EVENT_QUEUE_MAX];
-    int remote_event_queue_count;
-    uint32_t remote_event_next_id;
     uint32_t remote_event_last_id;
     uint32_t reliable_event_ack;
     struct rasterfall_net_event reliable_events[RASTERFALL_NET_RELIABLE_EVENT_MAX];
@@ -224,10 +224,6 @@ struct rasterfall_net {
     uint32_t reliable_event_next_id;
     int local_event_scan_count;
     long reliable_event_last_send_ms;
-    unsigned char reliable_event_pending[TOY_GAME_MAX_EVENTS];
-    int reliable_event_pending_count;
-    uint32_t remote_event_snapshot_last_id;
-    uint32_t remote_event_snapshot_sequence;
     int snapshot_world_wave;
     int snapshot_world_to_spawn;
     int snapshot_world_spawn_timer_ms;

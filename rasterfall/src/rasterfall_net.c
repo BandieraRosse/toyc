@@ -20,7 +20,6 @@ static void net_windows_log(const char *message) { (void)message; }
 #define NET_PLAYER_SIZE (NET_PLAYER_BASE_SIZE + 4 + 1 + TOY_GAME_MAX_RAYS * NET_PLAYER_RAY_SIZE)
 #define NET_ACTOR_SIZE (38 + TOY_GAME_MAX_NAME)
 #define NET_ENEMY_SIZE 48
-#define NET_EVENT_SIZE (4 + 1 + TOY_GAME_MAX_EVENTS)
 #define NET_WORLD_BASE_SIZE 44
 #define NET_WORLD_FLAG_SIZE 12
 #define NET_WORLD_SIZE (NET_WORLD_BASE_SIZE + 4 + 4 + \
@@ -111,6 +110,24 @@ static void net_stats_note_sequence(struct rasterfall_net *net,
     }
 }
 
+static void net_client_note_sequence(struct rasterfall_net_client *client,
+                                     uint32_t sequence)
+{
+    if (!client || !sequence) return;
+    if (client->stats_last_rx_sequence &&
+        sequence > client->stats_last_rx_sequence + 1)
+        client->stats_lost_packets +=
+            sequence - client->stats_last_rx_sequence - 1;
+    if (!client->stats_last_rx_sequence ||
+        sequence > client->stats_last_rx_sequence) {
+        client->stats_last_rx_sequence = sequence;
+        client->stats_rx_packets++;
+    }
+    if (client->stats_rx_packets + client->stats_lost_packets)
+        client->loss_permille = (int)(client->stats_lost_packets * 1000 /
+            (client->stats_rx_packets + client->stats_lost_packets));
+}
+
 static void net_push_event(struct toy_game *game, unsigned char event)
 {
     if (game->event_count < TOY_GAME_MAX_EVENTS)
@@ -135,28 +152,6 @@ static void net_queue_remote_events(struct rasterfall_net *net,
             event->value = 0;
         }
     }
-}
-
-static void net_ack_remote_events(struct rasterfall_net *net, uint32_t ack)
-{
-    int remove_count = 0;
-    if (!net->remote_event_snapshot_sequence ||
-        ack < net->remote_event_snapshot_sequence)
-        return;
-    while (remove_count < net->remote_event_queue_count &&
-           net->remote_event_ids[remove_count] <= net->remote_event_snapshot_last_id)
-        remove_count++;
-    if (!remove_count) return;
-    if (remove_count < net->remote_event_queue_count) {
-        memmove(net->remote_event_queue,
-                net->remote_event_queue + remove_count,
-                (size_t)(net->remote_event_queue_count - remove_count));
-        memmove(net->remote_event_ids,
-                net->remote_event_ids + remove_count,
-                (size_t)(net->remote_event_queue_count - remove_count) *
-                    sizeof(net->remote_event_ids[0]));
-    }
-    net->remote_event_queue_count -= remove_count;
 }
 
 static void net_drop_reliable_events(struct rasterfall_net *net)
@@ -802,7 +797,6 @@ void rasterfall_net_init(struct rasterfall_net *net)
 static void net_reset_clients(struct rasterfall_net *net)
 {
     memset(net->clients, 0, sizeof(net->clients));
-    net->remote_event_queue_count = 0;
 }
 
 int rasterfall_net_host(struct rasterfall_net *net, int port,
@@ -1317,8 +1311,6 @@ int rasterfall_net_send_snapshot(struct rasterfall_net *net,
     unsigned char snapshot[RASTERFALL_NET_MAX_SNAPSHOT];
     unsigned char *p = snapshot;
     int weapon = game->slots[game->current_slot].weapon;
-    int event_count;
-    unsigned char *event_data;
     unsigned char *world_data;
     int actor_count = 0;
     int actor_indices[RASTERFALL_NET_MAX_ACTORS];
@@ -1335,7 +1327,7 @@ int rasterfall_net_send_snapshot(struct rasterfall_net *net,
     int payload_size = NET_SNAPSHOT_BASE +
                        RASTERFALL_NET_PLAYER_MAX * NET_PLAYER_SIZE + 1 +
                        actor_count * NET_ACTOR_SIZE +
-                       enemy_count * NET_ENEMY_SIZE + NET_EVENT_SIZE + NET_WORLD_SIZE;
+                       enemy_count * NET_ENEMY_SIZE + NET_WORLD_SIZE;
     int size, offset, part_count, part_index;
     if (net->mode != RASTERFALL_NET_HOST) return -1;
     for (actor_i = 0; actor_i < RASTERFALL_NET_CLIENT_MAX; actor_i++)
@@ -1391,19 +1383,10 @@ int rasterfall_net_send_snapshot(struct rasterfall_net *net,
         encode_enemy(p + NET_SNAPSHOT_BASE + RASTERFALL_NET_PLAYER_MAX * NET_PLAYER_SIZE +
                      actor_count * NET_ACTOR_SIZE + 1 + i * NET_ENEMY_SIZE,
                      &game->enemies[enemy_indices[i]], enemy_indices[i]);
-    event_data = p + NET_SNAPSHOT_BASE + RASTERFALL_NET_PLAYER_MAX * NET_PLAYER_SIZE +
-                 actor_count * NET_ACTOR_SIZE + 1 + enemy_count * NET_ENEMY_SIZE;
-    world_data = event_data + NET_EVENT_SIZE;
-    /* Reliable events use their own packet and event-id ACK.  Keep the
-     * legacy snapshot event area empty so a lost snapshot cannot duplicate
-     * or falsely acknowledge an event. */
-    event_count = 0;
-    put_u32(event_data, 0);
-    event_data[4] = 0;
-    memset(event_data + 5, 0, TOY_GAME_MAX_EVENTS);
-    if (event_count)
-        memcpy(event_data + 5, net->remote_event_queue,
-               (size_t)event_count);
+    world_data = p + NET_SNAPSHOT_BASE +
+                 RASTERFALL_NET_PLAYER_MAX * NET_PLAYER_SIZE +
+                 actor_count * NET_ACTOR_SIZE + 1 +
+                 enemy_count * NET_ENEMY_SIZE;
     put_i16(world_data, game->wave);
     put_i16(world_data + 2, game->to_spawn);
     put_i16(world_data + 4, game->spawn_timer_ms);
@@ -1450,9 +1433,6 @@ int rasterfall_net_send_snapshot(struct rasterfall_net *net,
                 session && actor_i < TOY_GAME_MAX_ACTORS &&
                 session->game_state.actors[actor_i].active ?
                     session->game_state.actors[actor_i].flag_index : -1);
-    net->remote_event_snapshot_sequence = net->last_snapshot_sequence;
-    if (event_count)
-        net->remote_event_snapshot_last_id = net->remote_event_ids[event_count - 1];
     part_count = (payload_size + NET_SNAPSHOT_FRAGMENT_DATA - 1) /
                  NET_SNAPSHOT_FRAGMENT_DATA;
     if (part_count <= 0 || part_count > 32) return -1;
@@ -1483,7 +1463,6 @@ static int decode_snapshot(const unsigned char *payload, int size,
                            struct rasterfall_net *net)
 {
     int count, i;
-    const unsigned char *event_data;
     const unsigned char *world_data;
     if (size < NET_SNAPSHOT_BASE + RASTERFALL_NET_PLAYER_MAX * NET_PLAYER_SIZE + 1) return -1;
     count = payload[4];
@@ -1494,7 +1473,7 @@ static int decode_snapshot(const unsigned char *payload, int size,
                 payload[7] * NET_ACTOR_SIZE + 1 +
                 payload[NET_SNAPSHOT_BASE + count * NET_PLAYER_SIZE +
                         payload[7] * NET_ACTOR_SIZE] * NET_ENEMY_SIZE +
-                NET_EVENT_SIZE + NET_WORLD_SIZE) return -1;
+                NET_WORLD_SIZE) return -1;
     for (i = 0; i < RASTERFALL_NET_PLAYER_MAX; i++)
         net->players[i].active = 0;
     for (i = 0; i < count; i++) {
@@ -1511,17 +1490,13 @@ static int decode_snapshot(const unsigned char *payload, int size,
     net->enemy_count = payload[NET_SNAPSHOT_BASE + count * NET_PLAYER_SIZE +
                                net->actor_count * NET_ACTOR_SIZE];
     if (net->enemy_count > TOY_GAME_MAX_ENEMIES) return -1;
-    event_data = payload + NET_SNAPSHOT_BASE + count * NET_PLAYER_SIZE +
+    world_data = payload + NET_SNAPSHOT_BASE + count * NET_PLAYER_SIZE +
                  net->actor_count * NET_ACTOR_SIZE + 1 +
                  net->enemy_count * NET_ENEMY_SIZE;
-    world_data = event_data + NET_EVENT_SIZE;
     for (i = 0; i < net->enemy_count; i++)
         decode_enemy(payload + NET_SNAPSHOT_BASE + count * NET_PLAYER_SIZE +
                      net->actor_count * NET_ACTOR_SIZE + 1 + i * NET_ENEMY_SIZE,
                      &net->enemies[i]);
-    /* The legacy snapshot event slot is intentionally ignored.  Reliable
-     * events arrive through RASTERFALL_NET_RELIABLE_EVENT and are ACKed by
-     * event ID, independently of snapshot delivery. */
     net->snapshot_world_wave = get_i16(world_data);
     net->snapshot_world_to_spawn = get_i16(world_data + 2);
     net->snapshot_world_spawn_timer_ms = get_i16(world_data + 4);
@@ -1722,7 +1697,7 @@ int rasterfall_net_snapshot_fragment_test(void)
     int i;
 
     total_size = enemy_count_offset + 1 + enemy_count * NET_ENEMY_SIZE +
-                 NET_EVENT_SIZE + NET_WORLD_SIZE;
+                 NET_WORLD_SIZE;
     if (total_size > RASTERFALL_NET_MAX_SNAPSHOT) return -1;
     memset(snapshot, 0, sizeof(snapshot));
     snapshot[4] = RASTERFALL_NET_PLAYER_MAX;
@@ -1846,6 +1821,7 @@ static void net_receive_client_packet(struct rasterfall_net *net,
                                       uint32_t ack)
 {
     if (!client) return;
+    net_client_note_sequence(client, sequence);
     client->last_receive_ms = net->last_receive_ms;
     if (type == RASTERFALL_NET_HELLO) {
         if (!net->relay_mode)
@@ -1871,7 +1847,6 @@ static void net_receive_client_packet(struct rasterfall_net *net,
         long elapsed = net_monotonic_ms() - net->last_snapshot_sent_ms;
         if (elapsed >= 0 && elapsed < 60000) client->rtt_ms = (int)elapsed;
     }
-    net_ack_remote_events(net, ack);
 }
 
 void rasterfall_net_poll(struct rasterfall_net *net)
@@ -1981,7 +1956,6 @@ void rasterfall_net_poll(struct rasterfall_net *net)
         }
         if (packet_header(packet, (int)received, &type, &payload_size,
                           &sequence, &ack) < 0) continue;
-        net_stats_note_sequence(net, sequence);
         net->last_receive_ms = net_monotonic_ms();
         if (net->mode == RASTERFALL_NET_HOST) {
             int client_index;
@@ -2006,6 +1980,7 @@ void rasterfall_net_poll(struct rasterfall_net *net)
             net_receive_client_packet(net, client, packet, type, payload_size,
                                       sequence, ack);
         } else if (net->mode == RASTERFALL_NET_CLIENT) {
+            net_stats_note_sequence(net, sequence);
             if (net->public_room) {
                 memcpy(&net->server_address, &source, sizeof(source));
                 net->server_known = 1;
@@ -2092,12 +2067,8 @@ void rasterfall_net_update_connection(struct rasterfall_net *net)
         net->snapshot_ready = 0;
         net->world_ready = 0;
         net->spawn_pending = 0;
-        net->remote_event_queue_count = 0;
-        net->remote_event_next_id = 0;
         net->remote_event_last_id = 0;
         net->reliable_event_ack = 0;
-        net->remote_event_snapshot_last_id = 0;
-        net->remote_event_snapshot_sequence = 0;
     }
     if (net->mode == RASTERFALL_NET_CLIENT && !net->connected &&
         ((!net->public_room) || net->public_matched) &&
