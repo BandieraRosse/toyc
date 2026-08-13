@@ -121,6 +121,15 @@ struct rasterfall_net_enemy {
     int airborne_y;
 };
 
+/* Keep the predicted position associated with each input until the host
+ * acknowledges it.  Reconciliation must compare positions from the same
+ * input point instead of pulling the current prediction toward an older
+ * snapshot. */
+struct rasterfall_net_prediction {
+    uint32_t sequence;
+    int x, z;
+};
+
 struct rasterfall_net_actor {
     int active;
     int actor_index;
@@ -262,6 +271,7 @@ struct rasterfall_net {
     uint32_t last_command_sequence;
     uint32_t last_jump_command_sequence;
     uint32_t last_snapshot_input_ack;
+    struct rasterfall_net_prediction prediction_history[64];
     long last_command_sent_ms;
     unsigned int shop_request_next_id;
     unsigned int pending_shop_request_id;

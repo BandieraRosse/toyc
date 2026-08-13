@@ -797,12 +797,37 @@ static void decode_command_camera(const unsigned char *payload,
     camera->y = 0;
 }
 
+static void net_record_prediction(struct rasterfall_net *net,
+                                  uint32_t sequence,
+                                  const struct camera *predicted)
+{
+    struct rasterfall_net_prediction *entry;
+    if (!net || !predicted) return;
+    entry = &net->prediction_history[sequence % 64U];
+    entry->sequence = sequence;
+    entry->x = predicted->x;
+    entry->z = predicted->z;
+}
+
+static int net_prediction_at(const struct rasterfall_net *net,
+                             uint32_t sequence, int *x, int *z)
+{
+    const struct rasterfall_net_prediction *entry;
+    if (!net || !sequence || !x || !z) return 0;
+    entry = &net->prediction_history[sequence % 64U];
+    if (entry->sequence != sequence) return 0;
+    *x = entry->x;
+    *z = entry->z;
+    return 1;
+}
+
 int rasterfall_net_send_command(struct rasterfall_net *net,
                                 const struct rasterfall_command *command,
                                 const struct camera *predicted)
 {
     unsigned char packet[NET_HEADER_SIZE + NET_INPUT_SIZE];
-    int size;
+    int size, result;
+    uint32_t sequence;
     struct rasterfall_command wire;
     if (net->mode != RASTERFALL_NET_CLIENT) return -1;
     wire = *command;
@@ -831,14 +856,18 @@ int rasterfall_net_send_command(struct rasterfall_net *net,
         net->pending_shop_request_id = 0;
     }
     net->tick++;
-    size = encode_command(packet, ++net->send_sequence,
+    sequence = ++net->send_sequence;
+    size = encode_command(packet, sequence,
                           net->receive_sequence, net->tick, &wire, predicted);
     put_u32(packet + NET_HEADER_SIZE + 32, net->reliable_event_ack);
     net->last_command_sequence = net->send_sequence;
     if (command->buttons & RASTERFALL_CMD_JUMP)
-        net->last_jump_command_sequence = net->send_sequence;
+        net->last_jump_command_sequence = sequence;
     net->last_command_sent_ms = net_monotonic_ms();
-    return net_send(net, packet, size);
+    result = net_send(net, packet, size);
+    if (result == 0)
+        net_record_prediction(net, sequence, predicted);
+    return result;
 }
 
 static void encode_player(unsigned char *p, int id, int active,
@@ -2421,6 +2450,7 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
 {
     const struct rasterfall_net_player *own;
     long dx, dz, dist2;
+    int predicted_x, predicted_z;
     if (net->mode != RASTERFALL_NET_CLIENT) return;
     if (!net->snapshot_ready) {
         net_smooth_client_enemies(net, session);
@@ -2640,15 +2670,28 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
         net->snapshot_ready = 0;
         return;
     }
-    dx = own->camera.x - camera->x;
-    dz = own->camera.z - camera->z;
-    dist2 = dx * dx + dz * dz;
-    if (dist2 > 400L * 400L) {
-        camera->x = own->camera.x;
-        camera->z = own->camera.z;
+    /* Compare the authoritative position with the prediction made when the
+     * acknowledged input was sent.  The old code compared it with the
+     * current camera, which already included newer local inputs; every
+     * snapshot therefore pulled the player backwards by one network delay. */
+    if (net_prediction_at(net, own->input_ack, &predicted_x, &predicted_z)) {
+        dx = (long)own->camera.x - predicted_x;
+        dz = (long)own->camera.z - predicted_z;
+        /* This is now an error correction, rather than a move toward an old
+         * snapshot.  Small deterministic errors disappear without visible
+         * oscillation; large corrections cover launch/pull/teleport states. */
+        camera->x += (int)dx;
+        camera->z += (int)dz;
     } else {
-        camera->x += (int)(dx / 4);
-        camera->z += (int)(dz / 4);
+        /* Startup or a long packet gap can leave no matching prediction.
+         * Keep the old conservative fallback for that exceptional case. */
+        dx = (long)own->camera.x - camera->x;
+        dz = (long)own->camera.z - camera->z;
+        dist2 = dx * dx + dz * dz;
+        if (dist2 > 400L * 400L) {
+            camera->x = own->camera.x;
+            camera->z = own->camera.z;
+        }
     }
     net->snapshot_ready = 0;
 }

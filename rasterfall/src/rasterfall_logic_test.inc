@@ -975,6 +975,30 @@ static int run_logic_test(void)
                 camera.z != old_z) return 109;
         }
     }
+    /* Reconcile against the prediction at the acknowledged input, not the
+     * newer camera position that already includes later local inputs. */
+    {
+        struct rasterfall_net net_test;
+        struct rasterfall_net_prediction *prediction;
+        rasterfall_session_reset(&session, &camera, 511);
+        rasterfall_net_init(&net_test);
+        net_test.mode = RASTERFALL_NET_CLIENT;
+        net_test.local_player_id = 1;
+        net_test.snapshot_ready = 1;
+        net_test.players[1].active = 1;
+        net_test.players[1].state = TOY_GAME_PLAYING;
+        net_test.players[1].input_ack = 9;
+        net_test.players[1].camera.x = 900;
+        net_test.players[1].camera.z = 1900;
+        prediction = &net_test.prediction_history[9 % 64];
+        prediction->sequence = 9;
+        prediction->x = 800;
+        prediction->z = 1800;
+        camera.x = 1000;
+        camera.z = 2000;
+        rasterfall_net_reconcile_client(&net_test, &session, &camera);
+        if (camera.x != 1100 || camera.z != 2100) return 111;
+    }
     /* 玩家互救必须同时更新网络槽和 actor，且主机倒地不能禁用远端移动。 */
     {
         struct rasterfall_net net_test;
