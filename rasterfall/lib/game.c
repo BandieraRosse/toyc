@@ -20,24 +20,13 @@
 
 /* Transitional field aliases keep the AI behavior patch small while the
  * special state moves behind enemy.ability.  New code should use ability.*. */
-#define special_timer_ms ability.special_timer_ms
-#define special_windup_ms ability.special_windup_ms
-#define special_target_active ability.special_target_active
-#define charge_active ability.charge_active
-#define charge_dir_x ability.charge_dir_x
-#define charge_dir_z ability.charge_dir_z
-#define charge_elapsed_ms ability.charge_elapsed_ms
-#define charge_hit_base ability.charge_hit_base
-#define special_target_player ability.special_target_player
-#define special_target_actor_index ability.special_target_actor_index
-#define special_pull_timer_ms ability.special_pull_timer_ms
 
 static int enemy_target_reachable(const struct toy_game *g,
                                   const struct toy_game_enemy *e,
                                   int x, int z);
 static int enemy_target_valid(const struct toy_game *g,
                               const struct toy_game_enemy *e,
-                              int target_player, int target_actor,
+                              int target_kind, int target_index,
                               int *out_x, int *out_z);
 static int ai_try_shove(struct toy_game *g, struct toy_game_actor *actor);
 
@@ -504,7 +493,6 @@ void toy_game_init(struct toy_game *g, uint64_t seed)
     g->base_regen_timer_ms = TOY_CONFIG_BASE_REGEN_MS;
     g->rng = seed ? seed : 0x9E3779B97F4A7C15ULL;
     g->player_pull_enemy_index = -1;
-    g->secondary_player_hp = TOY_GAME_SECONDARY_PLAYER_HP;
     g->hp = TOY_GAME_PLAYER_HP;
     g->state = TOY_GAME_PLAYING;
     /* 槽 0 主武器为空；槽 1 默认为满弹匣手枪，开局出枪。 */
@@ -999,21 +987,6 @@ void toy_game_set_alarm(struct toy_game *g,
     g->alarm_timer_ms = 0;
 }
 
-void toy_game_set_secondary_player(struct toy_game *g, int active,
-                                   int px, int pz)
-{
-    toy_game_set_secondary_player_state(g, active, px, pz, 0);
-}
-
-void toy_game_set_secondary_player_state(struct toy_game *g, int active,
-                                         int px, int pz, int down)
-{
-    g->secondary_player_active = active != 0;
-    g->secondary_px = px;
-    g->secondary_pz = pz;
-    g->secondary_player_down = down != 0;
-}
-
 /* 圆形碰撞体 (x, z, radius) 是否与房间边界或障碍物重叠 */
 int toy_game_position_blocked(const struct toy_game *g,
                               int x, int z, int radius)
@@ -1216,7 +1189,7 @@ static void init_enemy_ai(struct toy_game *g, struct toy_game_enemy *e)
     e->last_seen_x = e->x;
     e->last_seen_z = e->z;
     e->lost_sight_ms = 0;
-    e->target_player = -1;
+    e->target_kind = -1;
     e->retarget_timer_ms = TOY_GAME_RETARGET_MS;
     e->wander_timer_ms = rand_range(g, 600, 1800);
     e->dir_x = enemy_dir_x[direction];
@@ -1230,17 +1203,17 @@ static void init_enemy_stats(struct toy_game *g, struct toy_game_enemy *e,
     e->type = type >= 0 && type < TOY_GAME_ENEMY_TYPE_COUNT ? type : 0;
     e->speed = rand_range(g, info->speed_min, info->speed_max);
     e->hp = info->max_hp;
-    e->special_timer_ms = 0;
-    e->special_windup_ms = 0;
-    e->special_target_active = 0;
-    e->charge_active = 0;
-    e->charge_dir_x = 0;
-    e->charge_dir_z = 0;
-    e->charge_elapsed_ms = 0;
-    e->charge_hit_base = 0;
-    e->special_target_player = -1;
-    e->special_target_actor_index = -1;
-    e->special_pull_timer_ms = 0;
+    e->ability.special_timer_ms = 0;
+    e->ability.special_windup_ms = 0;
+    e->ability.special_target_active = 0;
+    e->ability.charge_active = 0;
+    e->ability.charge_dir_x = 0;
+    e->ability.charge_dir_z = 0;
+    e->ability.charge_elapsed_ms = 0;
+    e->ability.charge_hit_base = 0;
+    e->ability.special_target_kind = -1;
+    e->ability.special_target_index = -1;
+    e->ability.special_pull_timer_ms = 0;
     e->shove_stun_ms = 0;
     e->airborne_ms = 0;
     e->vertical_velocity = 0;
@@ -1579,9 +1552,7 @@ static void update_campaign_goal(struct toy_game *g, int dt_ms)
     if (g->safe_goal_index < 0 || g->safe_goal_index >= g->safe_room_count)
         return;
     goal = &g->safe_rooms[g->safe_goal_index];
-    if (toy_game_point_in_box(g->px, g->pz, goal) &&
-        (!g->secondary_player_active ||
-         toy_game_point_in_box(g->secondary_px, g->secondary_pz, goal))) {
+    if (toy_game_point_in_box(g->px, g->pz, goal)) {
         g->goal_hold_ms += dt_ms;
         if (g->goal_hold_ms >= TOY_GAME_GOAL_HOLD_MS) {
             g->goal_hold_ms = TOY_GAME_GOAL_HOLD_MS;
@@ -1748,7 +1719,7 @@ static void bite_ai(struct toy_game *g, struct toy_game_enemy *e)
 {
     const struct toy_game_enemy_info *info = toy_game_enemy_info(e->type);
     struct toy_game_actor *actor;
-    int index = e->target_actor_index;
+    int index = e->target_index;
     if (index < 0 || index >= TOY_GAME_MAX_ACTORS) index = 0;
     actor = &g->actors[index];
     if (e->bite_cooldown_ms > 0 || !actor->active ||
@@ -1919,12 +1890,12 @@ static void wander_enemy(struct toy_game *g, struct toy_game_enemy *e, int dt_ms
 }
 
 static void chase_enemy(struct toy_game *g, struct toy_game_enemy *e,
-                        int dx, int dz, long long dist, int target_player)
+                        int dx, int dz, long long dist, int target_kind)
 {
     int nx, nz;
     if (dist < TOY_GAME_ATTACK_RANGE) {
-        if (target_player == 0 && !player_in_safe_room(g)) bite_player(g, e);
-        else if (target_player == 2) bite_ai(g, e);
+        if (target_kind == 0 && !player_in_safe_room(g)) bite_player(g, e);
+        else if (target_kind == TOY_GAME_TARGET_ACTOR) bite_ai(g, e);
         return;
     }
     if (dist == 0) return;
@@ -1974,7 +1945,7 @@ static int nearest_ai_position(const struct toy_game *g,
     for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
         const struct toy_game_actor *a = &g->actors[i];
         long long dx, dz, d2;
-        if (!enemy_target_valid(g, e, 2, i, NULL, NULL)) continue;
+        if (!enemy_target_valid(g, e, 1, i, NULL, NULL)) continue;
         dx = (long long)a->x - e->x;
         dz = (long long)a->z - e->z;
         d2 = dx * dx + dz * dz;
@@ -1988,7 +1959,7 @@ static int nearest_ai_position(const struct toy_game *g,
     return found;
 }
 
-/* 特感使用同一套轻量目标选择：主玩家、第二玩家和存活 AI 中取最近者。 */
+/* 特感在主机玩家和所有存活 actor 中选择最近目标。 */
 static int nearest_special_target(const struct toy_game *g,
                                   const struct toy_game_enemy *e,
                                   int *out_x, int *out_z,
@@ -2000,21 +1971,13 @@ static int nearest_special_target(const struct toy_game *g,
         dx = (long long)g->px - e->x; dz = (long long)g->pz - e->z;
         best = dx * dx + dz * dz; found = 1; player = 0;
     }
-    if (enemy_target_valid(g, e, 1, -1, NULL, NULL)) {
-        dx = (long long)g->secondary_px - e->x;
-        dz = (long long)g->secondary_pz - e->z;
-        d2 = dx * dx + dz * dz;
-        if (!found || d2 < best) {
-            best = d2; found = 1; player = 1; actor = -1;
-        }
-    }
     for (int i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
         const struct toy_game_actor *a = &g->actors[i];
-        if (!enemy_target_valid(g, e, 2, i, NULL, NULL)) continue;
+        if (!enemy_target_valid(g, e, 1, i, NULL, NULL)) continue;
         dx = (long long)a->x - e->x; dz = (long long)a->z - e->z;
         d2 = dx * dx + dz * dz;
         if (!found || d2 < best) {
-            best = d2; found = 1; player = 2; actor = i;
+            best = d2; found = 1; player = 1; actor = i;
         }
     }
     if (!found) {
@@ -2022,8 +1985,7 @@ static int nearest_special_target(const struct toy_game *g,
         if (out_actor) *out_actor = -1;
         return 0;
     }
-    if (player == 1) { *out_x = g->secondary_px; *out_z = g->secondary_pz; }
-    else if (player == 2) { *out_x = g->actors[actor].x; *out_z = g->actors[actor].z; }
+    if (player == 1) { *out_x = g->actors[actor].x; *out_z = g->actors[actor].z; }
     else { *out_x = g->px; *out_z = g->pz; }
     if (out_player) *out_player = player;
     if (out_actor) *out_actor = actor;
@@ -2113,19 +2075,16 @@ static int enemy_target_reachable(const struct toy_game *g,
  * retained as a navigation target at all. */
 static int enemy_target_valid(const struct toy_game *g,
                               const struct toy_game_enemy *e,
-                              int target_player, int target_actor,
+                              int target_kind, int target_index,
                               int *out_x, int *out_z)
 {
     int x, z;
-    if (target_player == 0) {
+    if (target_kind == 0) {
         if (g->player_down) return 0;
         x = g->px; z = g->pz;
-    } else if (target_player == 1) {
-        if (!g->secondary_player_active || g->secondary_player_down) return 0;
-        x = g->secondary_px; z = g->secondary_pz;
-    } else if (target_player == 2 && target_actor >= 0 &&
-               target_actor < TOY_GAME_MAX_ACTORS) {
-        const struct toy_game_actor *a = &g->actors[target_actor];
+    } else if (target_kind == 1 && target_index >= 0 &&
+               target_index < TOY_GAME_MAX_ACTORS) {
+        const struct toy_game_actor *a = &g->actors[target_index];
         if (!a->active || (a->kind != TOY_GAME_ACTOR_AI &&
                            a->kind != TOY_GAME_ACTOR_PLAYER) ||
             a->state != TOY_GAME_ACTOR_ALIVE || a->hp <= 0) return 0;
@@ -2445,62 +2404,6 @@ void toy_game_update_player_motion(struct toy_game *g, int dt_ms)
     if (g) update_player_special_motion(g, dt_ms);
 }
 
-int toy_game_jump_secondary_player(struct toy_game *g, int dx, int dz)
-{
-    if (!g || !g->secondary_player_active || g->secondary_player_down ||
-        g->secondary_player_airborne_ms > 0)
-        return 0;
-    g->secondary_player_airborne_ms = TOY_GAME_JUMP_MS;
-    g->secondary_player_airborne_y = 0;
-    g->secondary_player_vertical_velocity = TOY_GAME_JUMP_VELOCITY;
-    g->secondary_player_air_x = dx;
-    g->secondary_player_air_z = dz;
-    g->secondary_player_knockback_x = 0;
-    g->secondary_player_knockback_z = 0;
-    return 1;
-}
-
-void toy_game_update_secondary_player_motion(struct toy_game *g, int dt_ms)
-{
-    if (!g || !g->secondary_player_active || g->secondary_player_down) return;
-    update_remote_player_motion(g, &g->secondary_px, &g->secondary_pz,
-        &g->secondary_player_airborne_ms, &g->secondary_player_airborne_y,
-        &g->secondary_player_ground_y, &g->secondary_player_vertical_velocity,
-        &g->secondary_player_air_x, &g->secondary_player_air_z,
-        &g->secondary_player_knockback_x, &g->secondary_player_knockback_z,
-        dt_ms);
-    if (g->secondary_player_airborne_ms == 0) {
-        g->secondary_player_air_x = 0;
-        g->secondary_player_air_z = 0;
-        toy_game_update_secondary_player_ground(g);
-    }
-}
-
-void toy_game_update_secondary_player_ground(struct toy_game *g)
-{
-    int i, next_ground;
-    if (!g || g->secondary_player_airborne_ms > 0) return;
-    next_ground = toy_game_ground_height(
-        g, g->secondary_px, g->secondary_pz, TOY_GAME_PLAYER_RADIUS);
-    if (next_ground < g->secondary_player_ground_y) {
-        for (i = 0; i < g->platform_count; i++) {
-            const struct toy_game_platform *p = &g->platforms[i];
-            if (p->height != g->secondary_player_ground_y) continue;
-            if (g->secondary_px + TOY_GAME_PLAYER_RADIUS > p->minx &&
-                g->secondary_px - TOY_GAME_PLAYER_RADIUS < p->maxx &&
-                g->secondary_pz + TOY_GAME_PLAYER_RADIUS > p->minz &&
-                g->secondary_pz - TOY_GAME_PLAYER_RADIUS < p->maxz) return;
-        }
-        g->secondary_player_airborne_y =
-            g->secondary_player_ground_y - next_ground;
-        g->secondary_player_ground_y = next_ground;
-        g->secondary_player_airborne_ms = TOY_GAME_JUMP_MS;
-        g->secondary_player_vertical_velocity = 0;
-        return;
-    }
-    g->secondary_player_ground_y = next_ground;
-}
-
 int toy_game_jump_actor(struct toy_game *g, int actor_index, int dx, int dz)
 {
     struct toy_game_actor *actor;
@@ -2569,63 +2472,61 @@ void toy_game_update_actor_ground(struct toy_game *g, int actor_index)
 
 static void update_smoker(struct toy_game *g, struct toy_game_enemy *e,
                           int index, int target_x, int target_z,
-                          int target_player, int target_actor,
+                          int target_kind, int target_index,
                           int dx, int dz, long long dist, int visual,
                           int dt_ms)
 {
     long long pull_dist;
     int pull_dx, pull_dz, pull_x, pull_z, step;
-    if (e->special_timer_ms > 0) {
-        e->special_timer_ms -= dt_ms;
-        if (e->special_timer_ms < 0) e->special_timer_ms = 0;
+    if (e->ability.special_timer_ms > 0) {
+        e->ability.special_timer_ms -= dt_ms;
+        if (e->ability.special_timer_ms < 0) e->ability.special_timer_ms = 0;
     }
-    if (e->special_target_active) {
-        e->special_target_active = 1;
-        target_player = e->special_target_player;
-        target_actor = e->special_target_actor_index;
-        if (target_player == 1) {
-            pull_x = g->secondary_px; pull_z = g->secondary_pz;
-        } else if (target_player == 2 && target_actor >= 0 &&
-                   target_actor < TOY_GAME_MAX_ACTORS) {
-            pull_x = g->actors[target_actor].x;
-            pull_z = g->actors[target_actor].z;
+    if (e->ability.special_target_active) {
+        e->ability.special_target_active = 1;
+        target_kind = e->ability.special_target_kind;
+        target_index = e->ability.special_target_index;
+        if (target_kind == 1 && target_index >= 0 &&
+                   target_index < TOY_GAME_MAX_ACTORS) {
+            pull_x = g->actors[target_index].x;
+            pull_z = g->actors[target_index].z;
         } else {
             pull_x = g->px; pull_z = g->pz;
         }
-        if (!enemy_target_valid(g, e, target_player, target_actor,
+        if (!enemy_target_valid(g, e, target_kind, target_index,
                                 &pull_x, &pull_z)) {
-            e->special_target_active = 0;
-            if (target_player == 0) release_player_special(g);
+            e->ability.special_target_active = 0;
+            if (target_kind == 0) release_player_special(g);
             return;
         }
-        if (target_player != 2)
-            e->special_pull_timer_ms -= dt_ms;
+        if (target_kind == 0)
+            e->ability.special_pull_timer_ms -= dt_ms;
         pull_dx = e->x - pull_x;
         pull_dz = e->z - pull_z;
         pull_dist = isqrt((long long)pull_dx * pull_dx +
                           (long long)pull_dz * pull_dz);
-        if ((target_player != 2 && e->special_pull_timer_ms <= 0) ||
-            (target_player == 2 && target_actor >= 0 &&
-             target_actor < TOY_GAME_MAX_ACTORS &&
-             (!g->actors[target_actor].active ||
-              g->actors[target_actor].state != TOY_GAME_ACTOR_ALIVE)) ||
+        if ((target_kind == 0 && e->ability.special_pull_timer_ms <= 0) ||
+            (target_kind == 1 && target_index >= 0 &&
+             target_index < TOY_GAME_MAX_ACTORS &&
+             (!g->actors[target_index].active ||
+              g->actors[target_index].state != TOY_GAME_ACTOR_ALIVE)) ||
             !enemy_has_line_of_sight(g, e, pull_x, pull_z)) {
-            e->special_target_active = 0;
-            if (target_player == 0) release_player_special(g);
+            e->ability.special_target_active = 0;
+            if (target_kind == 0) release_player_special(g);
             return;
         }
         /* 舌头把玩家拉到身边后保持束缚，并按接触间隔造成伤害。 */
         if (pull_dist < 420 && e->bite_cooldown_ms <= 0) {
-            if (target_player == 0) {
+            if (target_kind == 0) {
                 g->hp -= TOY_GAME_SMOKER_DAMAGE;
                 if (g->hp < 0) g->hp = 0;
                 g->damage_flash_ms = TOY_GAME_DAMAGE_FLASH_MS;
                 toy_game_animation_set(&g->animation,
                     g->hp <= 0 ? TOY_GAME_ANIM_DEATH : TOY_GAME_ANIM_HIT);
                 if (g->hp <= 0) g->player_down = 1;
-            } else if (target_player == 2 && target_actor >= 0 &&
-                       target_actor < TOY_GAME_MAX_ACTORS) {
-                struct toy_game_actor *a = &g->actors[target_actor];
+            } else if (target_kind == 1 && target_index >= 0 &&
+                       target_index < TOY_GAME_MAX_ACTORS) {
+                struct toy_game_actor *a = &g->actors[target_index];
                 a->hp -= TOY_GAME_SMOKER_DAMAGE;
                 if (a->hp <= 0) {
                     a->hp = 0; a->state = TOY_GAME_ACTOR_DOWNED;
@@ -2639,15 +2540,11 @@ static void update_smoker(struct toy_game *g, struct toy_game_enemy *e,
         if (pull_dist > 420) {
             int mx = pull_dx * step / (int)pull_dist;
             int mz = pull_dz * step / (int)pull_dist;
-            if (target_player == 0)
+            if (target_kind == 0)
                 move_player_forced(g, mx, mz);
-            else if (target_player == 1) {
-                g->secondary_px = pull_x + mx;
-                g->secondary_pz = pull_z + mz;
-            }
-            else if (target_player == 2 &&
-                     !g->actors[target_actor].base_core)
-                toy_game_move_ai_actor(g, target_actor, pull_x + mx,
+            else if (target_kind == 1 &&
+                     !g->actors[target_index].base_core)
+                toy_game_move_ai_actor(g, target_index, pull_x + mx,
                                        pull_z + mz);
         }
         if (pull_dist > 0) {
@@ -2656,21 +2553,21 @@ static void update_smoker(struct toy_game *g, struct toy_game_enemy *e,
         }
         return;
     }
-    e->special_target_active = 0;
-    if (g->player_down && target_player == 0) return;
-    if (e->special_windup_ms > 0) {
-        e->special_windup_ms -= dt_ms;
-        if (e->special_windup_ms < 0) e->special_windup_ms = 0;
+    e->ability.special_target_active = 0;
+    if (g->player_down && target_kind == 0) return;
+    if (e->ability.special_windup_ms > 0) {
+        e->ability.special_windup_ms -= dt_ms;
+        if (e->ability.special_windup_ms < 0) e->ability.special_windup_ms = 0;
         if (dist > 0) {
             e->dir_x = dx * 1024 / (int)dist;
             e->dir_z = dz * 1024 / (int)dist;
         }
-        if (e->special_windup_ms == 0) {
-            e->special_target_active = 1;
-            e->special_pull_timer_ms = TOY_GAME_SMOKER_PULL_MS;
-            if (e->special_target_player == 2)
-                e->special_pull_timer_ms = -1;
-            if (e->special_target_player == 0) {
+        if (e->ability.special_windup_ms == 0) {
+            e->ability.special_target_active = 1;
+            e->ability.special_pull_timer_ms = TOY_GAME_SMOKER_PULL_MS;
+            if (e->ability.special_target_kind == 1)
+                e->ability.special_pull_timer_ms = -1;
+            if (e->ability.special_target_kind == 0) {
                 g->player_pull_enemy_index = index;
                 g->player_pull_timer_ms = TOY_GAME_SMOKER_PULL_MS;
                 g->player_control_disabled = 1;
@@ -2683,17 +2580,17 @@ static void update_smoker(struct toy_game *g, struct toy_game_enemy *e,
             e->dir_x = dx * 1024 / (int)dist;
             e->dir_z = dz * 1024 / (int)dist;
         }
-        e->special_target_active = 0;
-        e->special_timer_ms = TOY_GAME_SMOKER_COOLDOWN_MS;
-        e->special_windup_ms = TOY_GAME_SPECIAL_WINDUP_MS;
-        e->special_target_player = target_player;
-        e->special_target_actor_index = target_actor;
+        e->ability.special_target_active = 0;
+        e->ability.special_timer_ms = TOY_GAME_SMOKER_COOLDOWN_MS;
+        e->ability.special_windup_ms = TOY_GAME_SPECIAL_WINDUP_MS;
+        e->ability.special_target_kind = target_kind;
+        e->ability.special_target_index = target_index;
         return;
     }
     /* Smoker 会主动靠近以寻找玩家，但永远不调用普通近战攻击。 */
     if (dist > 0) turn_enemy_toward(e, dx, dz);
     if (dist > 700 && (!visual || dist > TOY_GAME_SMOKER_RANGE))
-        chase_enemy(g, e, dx, dz, dist, target_player);
+        chase_enemy(g, e, dx, dz, dist, target_kind);
     (void)target_x;
     (void)target_z;
     (void)dt_ms;
@@ -2721,18 +2618,6 @@ static int apply_entity_impact_with_knockback(struct toy_game *g, int kind,
         g->player_vertical_velocity = TOY_GAME_AIRBORNE_VELOCITY;
         g->player_knockback_x = dx; g->player_knockback_z = dz;
         g->player_control_disabled = 1;
-        return 1;
-    }
-    if (kind == TOY_GAME_ENTITY_REMOTE_PLAYER) {
-        if (g->secondary_player_down) return 0;
-        g->secondary_player_hp -= damage;
-        if (g->secondary_player_hp < 0) g->secondary_player_hp = 0;
-        if (g->secondary_player_hp == 0) g->secondary_player_down = 1;
-        g->secondary_player_airborne_ms = TOY_GAME_AIRBORNE_MS;
-        g->secondary_player_airborne_y = 0;
-        g->secondary_player_vertical_velocity = TOY_GAME_AIRBORNE_VELOCITY;
-        g->secondary_player_knockback_x = dx;
-        g->secondary_player_knockback_z = dz;
         return 1;
     }
     if (kind == TOY_GAME_ENTITY_ACTOR) {
@@ -2775,7 +2660,7 @@ static int apply_entity_impact_with_knockback(struct toy_game *g, int kind,
         if (e->active != 1) return 0;
         e->hp -= damage;
         if (e->hp <= 0) { e->hp = 0; e->active = 2; e->dying_ms = TOY_GAME_DYING_MS; g->enemies_alive--; }
-        e->special_target_active = 0; e->special_windup_ms = 0; e->charge_active = 0;
+        e->ability.special_target_active = 0; e->ability.special_windup_ms = 0; e->ability.charge_active = 0;
         if (g->player_pull_enemy_index == index) release_player_special(g);
         e->airborne_ms = TOY_GAME_AIRBORNE_MS;
         e->vertical_velocity = TOY_GAME_AIRBORNE_VELOCITY; e->airborne_y = 0;
@@ -2822,13 +2707,13 @@ static int charger_hit_entities(struct toy_game *g,
         dist2 = (long long)dx * dx + (long long)dz * dz;
         if (dist2 <= (long long)TOY_GAME_CHARGER_IMPACT_RANGE *
                     TOY_GAME_CHARGER_IMPACT_RANGE &&
-            (!a->base_core || !charger->charge_hit_base) &&
+            (!a->base_core || !charger->ability.charge_hit_base) &&
             toy_game_apply_entity_impact(g, TOY_GAME_ENTITY_ACTOR, i,
                                           dx, dz, TOY_GAME_CHARGER_IMPACT_DAMAGE)) hits++;
         if (a->base_core && a->active &&
             dist2 <= (long long)TOY_GAME_CHARGER_IMPACT_RANGE *
                      TOY_GAME_CHARGER_IMPACT_RANGE)
-            charger->charge_hit_base = 1;
+            charger->ability.charge_hit_base = 1;
     }
     return hits;
 }
@@ -2856,22 +2741,22 @@ static void update_enemy_airborne(struct toy_game *g,
 
 static void update_charger(struct toy_game *g, struct toy_game_enemy *e,
                            int target_x, int target_z, int dx, int dz,
-                           int target_player, int target_actor,
+                           int target_kind, int target_index,
                            long long dist, int visual, int dt_ms)
 {
     int nx, nz;
-    (void)target_actor;
-    if (e->charge_active) {
-        e->dir_x = e->charge_dir_x;
-        e->dir_z = e->charge_dir_z;
-        if (e->special_timer_ms > 0) {
-            e->special_timer_ms -= dt_ms;
+    (void)target_index;
+    if (e->ability.charge_active) {
+        e->dir_x = e->ability.charge_dir_x;
+        e->dir_z = e->ability.charge_dir_z;
+        if (e->ability.special_timer_ms > 0) {
+            e->ability.special_timer_ms -= dt_ms;
             return;
         }
-        e->charge_elapsed_ms += dt_ms;
-        if (e->charge_elapsed_ms >= TOY_GAME_CHARGER_MAX_CHARGE_MS) {
-            e->charge_active = 0;
-            e->special_timer_ms = TOY_GAME_CHARGER_COOLDOWN_MS;
+        e->ability.charge_elapsed_ms += dt_ms;
+        if (e->ability.charge_elapsed_ms >= TOY_GAME_CHARGER_MAX_CHARGE_MS) {
+            e->ability.charge_active = 0;
+            e->ability.special_timer_ms = TOY_GAME_CHARGER_COOLDOWN_MS;
             return;
         }
         /* 沿锁定直线持续冲锋；同一轮可连续撞到多个敌人。 */
@@ -2880,18 +2765,20 @@ static void update_charger(struct toy_game *g, struct toy_game_enemy *e,
             /* A target is launched by the impact, so do not damage the same
              * player again until they have landed.  The charge itself keeps
              * moving for its configured duration. */
-            if (target_player == 0 && g->player_airborne_ms <= 0) {
+            if (target_kind == 0 && g->player_airborne_ms <= 0) {
                 toy_game_apply_entity_impact(g, TOY_GAME_ENTITY_PLAYER, 0,
                                              dx, dz, TOY_GAME_CHARGER_DAMAGE);
-            } else if (target_player == 1 &&
-                       g->secondary_player_airborne_ms <= 0) {
-                toy_game_apply_entity_impact(g, TOY_GAME_ENTITY_REMOTE_PLAYER, 0,
-                                             dx, dz, TOY_GAME_CHARGER_DAMAGE);
+            } else if (target_kind == 1 && target_index >= 0 &&
+                       target_index < TOY_GAME_MAX_ACTORS &&
+                       g->actors[target_index].airborne_ms <= 0) {
+                toy_game_apply_entity_impact(g, TOY_GAME_ENTITY_ACTOR,
+                                             target_index, dx, dz,
+                                             TOY_GAME_CHARGER_DAMAGE);
             }
             charger_hit_entities(g, e);
         }
-        nx = e->charge_dir_x * TOY_GAME_CHARGER_SPEED / 1024;
-        nz = e->charge_dir_z * TOY_GAME_CHARGER_SPEED / 1024;
+        nx = e->ability.charge_dir_x * TOY_GAME_CHARGER_SPEED / 1024;
+        nz = e->ability.charge_dir_z * TOY_GAME_CHARGER_SPEED / 1024;
         if (!enemy_position_blocked(g, e->x + nx, e->z,
                                     enemy_radius(e)))
             e->x += nx;
@@ -2900,7 +2787,7 @@ static void update_charger(struct toy_game *g, struct toy_game_enemy *e,
             e->z += nz;
         return;
     }
-    if (e->special_timer_ms > 0) {
+    if (e->ability.special_timer_ms > 0) {
         /* 冲锋后的恢复期主动离开玩家，再以低速徘徊等待下一轮。 */
         if (dist > 0 && dist < 3600) {
             nx = -dx * (e->speed / 4) / (int)dist;
@@ -2912,8 +2799,8 @@ static void update_charger(struct toy_game *g, struct toy_game_enemy *e,
         } else {
             wander_enemy(g, e, dt_ms);
         }
-        e->special_timer_ms -= dt_ms;
-        if (e->special_timer_ms < 0) e->special_timer_ms = 0;
+        e->ability.special_timer_ms -= dt_ms;
+        if (e->ability.special_timer_ms < 0) e->ability.special_timer_ms = 0;
         return;
     }
     if (visual && dist > TOY_GAME_CHARGER_IMPACT_RANGE &&
@@ -2921,13 +2808,13 @@ static void update_charger(struct toy_game *g, struct toy_game_enemy *e,
         if (dist > 0) {
             e->dir_x = dx * 1024 / (int)dist;
             e->dir_z = dz * 1024 / (int)dist;
-            e->charge_dir_x = e->dir_x;
-            e->charge_dir_z = e->dir_z;
+            e->ability.charge_dir_x = e->dir_x;
+            e->ability.charge_dir_z = e->dir_z;
         }
-        e->charge_active = 1;
-        e->charge_hit_base = 0;
-        e->special_timer_ms = TOY_GAME_CHARGER_WINDUP_MS;
-        e->charge_elapsed_ms = 0;
+        e->ability.charge_active = 1;
+        e->ability.charge_hit_base = 0;
+        e->ability.special_timer_ms = TOY_GAME_CHARGER_WINDUP_MS;
+        e->ability.charge_elapsed_ms = 0;
         e->target_x = target_x;
         e->target_z = target_z;
         return;
@@ -2962,13 +2849,6 @@ static void tank_sweep_entities(struct toy_game *g,
                                            dx, dz, TOY_CONFIG_TANK_DAMAGE,
                                            TOY_CONFIG_TANK_KNOCKBACK);
     }
-    if (g->secondary_player_active && !g->secondary_player_down &&
-        tank_target_in_sweep(tank, g->secondary_px, g->secondary_pz)) {
-        dx = g->secondary_px - tank->x; dz = g->secondary_pz - tank->z;
-        apply_entity_impact_with_knockback(g, TOY_GAME_ENTITY_REMOTE_PLAYER, 0,
-                                           dx, dz, TOY_CONFIG_TANK_DAMAGE,
-                                           TOY_CONFIG_TANK_KNOCKBACK);
-    }
     /* Freeze the cone result before applying any hit.  An AI hit reaction can
      * shove the attacker, but that must not change who was inside this one
      * simultaneous sweep. */
@@ -2999,23 +2879,23 @@ static void tank_sweep_entities(struct toy_game *g,
 static void update_tank(struct toy_game *g, struct toy_game_enemy *e,
                         int dx, int dz, long long dist, int dt_ms)
 {
-    if (e->charge_active) {
-        e->charge_elapsed_ms += dt_ms;
-        if (!e->charge_hit_base &&
-            e->charge_elapsed_ms >= TOY_CONFIG_TANK_IMPACT_MS) {
+    if (e->ability.charge_active) {
+        e->ability.charge_elapsed_ms += dt_ms;
+        if (!e->ability.charge_hit_base &&
+            e->ability.charge_elapsed_ms >= TOY_CONFIG_TANK_IMPACT_MS) {
             tank_sweep_entities(g, e);
-            e->charge_hit_base = 1; /* shared one-shot marker */
+            e->ability.charge_hit_base = 1; /* shared one-shot marker */
         }
-        if (e->charge_elapsed_ms >= TOY_CONFIG_TANK_WINDUP_MS) {
-            e->charge_active = 0;
-            e->charge_elapsed_ms = 0;
-            e->special_timer_ms = TOY_CONFIG_TANK_COOLDOWN_MS;
+        if (e->ability.charge_elapsed_ms >= TOY_CONFIG_TANK_WINDUP_MS) {
+            e->ability.charge_active = 0;
+            e->ability.charge_elapsed_ms = 0;
+            e->ability.special_timer_ms = TOY_CONFIG_TANK_COOLDOWN_MS;
         }
         return;
     }
-    if (e->special_timer_ms > 0) {
-        e->special_timer_ms -= dt_ms;
-        if (e->special_timer_ms < 0) e->special_timer_ms = 0;
+    if (e->ability.special_timer_ms > 0) {
+        e->ability.special_timer_ms -= dt_ms;
+        if (e->ability.special_timer_ms < 0) e->ability.special_timer_ms = 0;
         return;
     }
     if (dist <= TOY_CONFIG_TANK_ATTACK_START_RANGE) {
@@ -3023,9 +2903,9 @@ static void update_tank(struct toy_game *g, struct toy_game_enemy *e,
             e->dir_x = dx * 1024 / (int)dist;
             e->dir_z = dz * 1024 / (int)dist;
         }
-        e->charge_active = 1;
-        e->charge_elapsed_ms = 0;
-        e->charge_hit_base = 0;
+        e->ability.charge_active = 1;
+        e->ability.charge_elapsed_ms = 0;
+        e->ability.charge_hit_base = 0;
         return;
     }
     chase_enemy(g, e, dx, dz, dist, 0);
@@ -3034,15 +2914,11 @@ static void update_tank(struct toy_game *g, struct toy_game_enemy *e,
 static void update_enemy_ai(struct toy_game *g, struct toy_game_enemy *e,
                             int dt_ms)
 {
-    int target_x, target_z, target_player;
+    int target_x, target_z, target_kind;
     int primary_dx = g->px - e->x;
     int primary_dz = g->pz - e->z;
-    int secondary_dx = g->secondary_px - e->x;
-    int secondary_dz = g->secondary_pz - e->z;
     long long primary_dist2 = (long long)primary_dx * primary_dx +
                               (long long)primary_dz * primary_dz;
-    long long secondary_dist2 = (long long)secondary_dx * secondary_dx +
-                                (long long)secondary_dz * secondary_dz;
     int dx, dz;
     long long dist2;
     long long dist;
@@ -3064,7 +2940,7 @@ static void update_enemy_ai(struct toy_game *g, struct toy_game_enemy *e,
             TOY_GAME_ENEMY_ABILITY_SMOKER_TONGUE) {
         if (!nearest_special_target(g, e, &special_x, &special_z,
                                     &special_player, &special_actor)) {
-            e->special_target_active = 0;
+            e->ability.special_target_active = 0;
             return;
         }
         dx = special_x - e->x; dz = special_z - e->z;
@@ -3081,7 +2957,7 @@ static void update_enemy_ai(struct toy_game *g, struct toy_game_enemy *e,
             TOY_GAME_ENEMY_ABILITY_CHARGER_RUSH) {
         if (!nearest_special_target(g, e, &special_x, &special_z,
                                     &special_player, &special_actor)) {
-            e->charge_active = 0;
+            e->ability.charge_active = 0;
             return;
         }
         dx = special_x - e->x; dz = special_z - e->z;
@@ -3097,7 +2973,7 @@ static void update_enemy_ai(struct toy_game *g, struct toy_game_enemy *e,
             TOY_GAME_ENEMY_ABILITY_TANK_SWEEP) {
         if (!nearest_special_target(g, e, &special_x, &special_z,
                                     &special_player, &special_actor)) {
-            e->charge_active = 0;
+            e->ability.charge_active = 0;
             return;
         }
         dx = special_x - e->x; dz = special_z - e->z;
@@ -3107,38 +2983,32 @@ static void update_enemy_ai(struct toy_game *g, struct toy_game_enemy *e,
     }
 
     if (e->retarget_timer_ms > 0) e->retarget_timer_ms -= dt_ms;
-    if (!enemy_target_valid(g, e, e->target_player,
-                            e->target_actor_index, NULL, NULL)) {
+    if (!enemy_target_valid(g, e, e->target_kind,
+                            e->target_index, NULL, NULL)) {
         e->retarget_timer_ms = 0;
     }
     if (e->retarget_timer_ms > 0 &&
-        enemy_target_valid(g, e, e->target_player,
-                           e->target_actor_index, &target_x, &target_z)) {
-        target_player = e->target_player;
-    } else if (e->retarget_timer_ms <= 0 || e->target_player < 0) {
-        target_player = primary_valid ? 0 : -1;
-        if (enemy_target_valid(g, e, 1, -1, NULL, NULL) &&
-            (target_player < 0 || secondary_dist2 < primary_dist2)) {
-            target_player = 1;
-        }
+        enemy_target_valid(g, e, e->target_kind,
+                           e->target_index, &target_x, &target_z)) {
+        target_kind = e->target_kind;
+    } else if (e->retarget_timer_ms <= 0 || e->target_kind < 0) {
+        target_kind = primary_valid ? 0 : -1;
         if (ai_available) {
-            if (target_player < 0 ||
-                (target_player == 1 ? ai_dist2 < secondary_dist2 :
-                 ai_dist2 < primary_dist2))
-                target_player = 2;
+            if (target_kind < 0 || ai_dist2 < primary_dist2)
+                target_kind = 1;
         }
-        e->target_player = target_player;
-        if (target_player == 2) e->target_actor_index = ai_index;
-        else e->target_actor_index = -1;
+        e->target_kind = target_kind;
+        if (target_kind == 1) e->target_index = ai_index;
+        else e->target_index = -1;
         e->retarget_timer_ms = TOY_GAME_RETARGET_MS;
     } else {
-        target_player = e->target_player;
+        target_kind = e->target_kind;
     }
-    if (target_player < 0 ||
-        !enemy_target_valid(g, e, target_player, e->target_actor_index,
+    if (target_kind < 0 ||
+        !enemy_target_valid(g, e, target_kind, e->target_index,
                             &target_x, &target_z)) {
-        e->target_player = -1;
-        e->target_actor_index = -1;
+        e->target_kind = -1;
+        e->target_index = -1;
         e->retarget_timer_ms = 0;
         if (e->ai_state != TOY_GAME_ENEMY_TRACKING)
             wander_enemy(g, e, dt_ms);
@@ -3155,7 +3025,7 @@ static void update_enemy_ai(struct toy_game *g, struct toy_game_enemy *e,
     if (e->ai_state == TOY_GAME_ENEMY_TRACKING) {
         enemy_remember_target(e, target_x, target_z);
         turn_enemy_toward(e, dx, dz);
-        chase_enemy(g, e, dx, dz, dist, target_player);
+        chase_enemy(g, e, dx, dz, dist, target_kind);
         return;
     }
 
@@ -3205,7 +3075,7 @@ static void update_enemy_ai(struct toy_game *g, struct toy_game_enemy *e,
             return;
         }
         turn_enemy_toward(e, tx, tz);
-        chase_enemy(g, e, tx, tz, target_dist, target_player);
+        chase_enemy(g, e, tx, tz, target_dist, target_kind);
         return;
     }
     if (e->ai_state == TOY_GAME_ENEMY_ALERT) {
@@ -3234,7 +3104,7 @@ static void update_enemy_ai(struct toy_game *g, struct toy_game_enemy *e,
             return;
         }
         turn_enemy_toward(e, tx, tz);
-        chase_enemy(g, e, tx, tz, target_dist, target_player);
+        chase_enemy(g, e, tx, tz, target_dist, target_kind);
         return;
     }
     if (visual) {
@@ -4146,9 +4016,6 @@ void toy_game_update_held(struct toy_game *g,
                     toy_game_animation_set(&g->animation, TOY_GAME_ANIM_NONE);
     toy_game_animation_update(&g->animation, dt_ms);
     toy_game_update_ai_teammates(g, dt_ms);
-    if (g->secondary_player_active && !g->secondary_player_down)
-        toy_game_update_secondary_player_motion(g, dt_ms);
-
     /* 敌人计时器与移动/攻击/倒地 */
     for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
         struct toy_game_enemy *e = &g->enemies[i];

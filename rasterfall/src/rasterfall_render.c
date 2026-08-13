@@ -17,8 +17,8 @@
 #define special_target_active ability.special_target_active
 #define charge_active ability.charge_active
 #define charge_elapsed_ms ability.charge_elapsed_ms
-#define special_target_player ability.special_target_player
-#define special_target_actor_index ability.special_target_actor_index
+#define special_target_kind ability.special_target_kind
+#define special_target_index ability.special_target_index
 #include "rasterfall_model.h"
 #include "rasterfall_viewmodel.h"
 #include "rasterfall_animation.h"
@@ -1682,28 +1682,16 @@ static int render_smoker_tongue(struct toy_renderer *renderer,
 {
     int target_x, target_z, target_lift = 0, pixels;
     if (active_net && active_net->mode == RASTERFALL_NET_CLIENT &&
-        e->special_target_player == 0 && active_net->players[0].active) {
+        e->special_target_kind == 0 && active_net->players[0].active) {
         target_x = active_net->players[0].camera.x;
         target_z = active_net->players[0].camera.z;
         target_lift = active_net->players[0].airborne_y;
-    } else if (active_net && active_net->mode == RASTERFALL_NET_CLIENT &&
-               e->special_target_player == 1 &&
-               active_net->local_player_id >= 0 &&
-               active_net->local_player_id < RASTERFALL_NET_PLAYER_MAX &&
-               active_net->players[active_net->local_player_id].active) {
-        target_x = active_net->players[active_net->local_player_id].camera.x;
-        target_z = active_net->players[active_net->local_player_id].camera.z;
-        target_lift = active_net->players[active_net->local_player_id].airborne_y;
-    } else if (e->special_target_player == 1) {
-        target_x = game.secondary_px;
-        target_z = game.secondary_pz;
-        target_lift = game.secondary_player_airborne_y;
-    } else if (e->special_target_player == 2 &&
-               e->special_target_actor_index >= 0 &&
-               e->special_target_actor_index < TOY_GAME_MAX_ACTORS &&
-               game.actors[e->special_target_actor_index].active) {
+    } else if (e->special_target_kind == 1 &&
+               e->special_target_index >= 0 &&
+               e->special_target_index < TOY_GAME_MAX_ACTORS &&
+               game.actors[e->special_target_index].active) {
         const struct toy_game_actor *actor =
-            &game.actors[e->special_target_actor_index];
+            &game.actors[e->special_target_index];
         target_x = actor->x;
         target_z = actor->z;
         target_lift = actor->airborne_y;

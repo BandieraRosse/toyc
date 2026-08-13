@@ -1,6 +1,6 @@
 #define special_windup_ms ability.special_windup_ms
 #define special_target_active ability.special_target_active
-#define special_target_player ability.special_target_player
+#define special_target_kind ability.special_target_kind
 #define special_pull_timer_ms ability.special_pull_timer_ms
 #define charge_active ability.charge_active
 
@@ -750,7 +750,7 @@ static int run_logic_test(void)
         for (int i = 0; i < 380; i++)
             toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
         if (!game.enemies[0].special_target_active ||
-            game.enemies[0].special_target_player != 2 ||
+            game.enemies[0].special_target_kind != TOY_GAME_TARGET_ACTOR ||
             game.enemies[0].special_pull_timer_ms != -1) {
             return 81;
         }
@@ -907,7 +907,7 @@ static int run_logic_test(void)
         if (game.player_airborne_ms != 0 || game.player_airborne_y != 0)
             return 91;
     }
-    /* 两种网络远端表示都必须保留跳跃水平动量，并在平台顶落地。 */
+    /* 网络玩家 actor 必须保留跳跃水平动量，并在平台顶落地。 */
     {
         struct toy_game_platform platform = { 280, 2200, -1000, 1000, 500 };
         int actor_index = TOY_GAME_REMOTE_ACTOR_BASE + 1;
@@ -915,13 +915,6 @@ static int run_logic_test(void)
         game.world_count = 0;
         game.room_limit = 12000;
         toy_game_set_platforms(&game, &platform, 1);
-        toy_game_set_secondary_player_state(&game, 1, 0, 0, 0);
-        if (!toy_game_jump_secondary_player(&game, 20, 0)) return 101;
-        for (int i = 0; i < 70; i++)
-            toy_game_update_secondary_player_motion(&game, 16);
-        if (game.secondary_px <= 0 ||
-            game.secondary_player_ground_y != 500 ||
-            game.secondary_player_airborne_ms != 0) return 102;
         if (toy_game_set_remote_player(&game, 2, 1, 0, 0, "REMOTE") !=
             actor_index) return 103;
         if (!toy_game_jump_actor(&game, actor_index, 20, 0)) return 104;
@@ -1087,11 +1080,13 @@ static int run_logic_test(void)
         toy_game_set_world(&game, &wall, 1, 6000);
         toy_game_place_enemy(&game, -3000, 0);
         toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
-        if (game.enemies[0].target_player != -1) return 120;
+        if (game.enemies[0].target_kind != -1) return 120;
 
-        toy_game_set_secondary_player(&game, 1, -1800, 0);
+        toy_game_set_remote_player(&game, 1, 1, -1800, 0, "PLAYER");
         toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
-        if (game.enemies[0].target_player != 1) return 121;
+        if (game.enemies[0].target_kind != 1 ||
+            game.enemies[0].target_index != TOY_GAME_REMOTE_ACTOR_BASE)
+            return 121;
     }
     /* TRACKING 只忽略 LOS，不忽略 component；绕过有限障碍后仍可追踪。 */
     {
@@ -1104,14 +1099,14 @@ static int run_logic_test(void)
         game.enemies[0].ai_state = TOY_GAME_ENEMY_TRACKING;
         game.enemies[0].type = TOY_GAME_ENEMY_COMMON;
         toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
-        if (game.enemies[0].target_player != 0) return 122;
+        if (game.enemies[0].target_kind != 0) return 122;
 
         game.px = 3000; game.pz = 0;
         game.world_count = 1;
         wall.minz = -6000; wall.maxz = 6000;
         toy_game_rebuild_navigation(&game);
         toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
-        if (game.enemies[0].target_player != -1) return 123;
+        if (game.enemies[0].target_kind != -1) return 123;
     }
     /* 空气墙拓扑变化后，关闭墙体必须重新合并 component。 */
     {
@@ -1121,11 +1116,11 @@ static int run_logic_test(void)
         toy_game_set_world(&game, &wall, 1, 6000);
         toy_game_place_enemy(&game, -3000, 0);
         toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
-        if (game.enemies[0].target_player != -1) return 124;
+        if (game.enemies[0].target_kind != -1) return 124;
         wall.minx = 7000; wall.maxx = 8000;
         toy_game_rebuild_navigation(&game);
         toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
-        if (game.enemies[0].target_player != 0) return 125;
+        if (game.enemies[0].target_kind != 0) return 125;
     }
     /* Tank 在慢前摇末段同时命中前方单位；基地受 24 伤害但不击飞。 */
     {

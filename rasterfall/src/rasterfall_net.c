@@ -1170,8 +1170,8 @@ static void encode_enemy(unsigned char *p, const struct toy_game_enemy *e,
     p[28] = (unsigned char)(e->ability.charge_active ? 1 : 0);
     put_i16(p + 29, e->ability.special_timer_ms);
     put_i16(p + 31, e->ability.special_windup_ms);
-    p[33] = put_i8_value(e->ability.special_target_player);
-    p[34] = put_i8_value(e->ability.special_target_actor_index);
+    p[33] = put_i8_value(e->ability.special_target_kind);
+    p[34] = put_i8_value(e->ability.special_target_index);
     put_i16(p + 35, e->ability.special_pull_timer_ms);
     put_i16(p + 37, e->ability.charge_dir_x);
     put_i16(p + 39, e->ability.charge_dir_z);
@@ -1199,8 +1199,8 @@ static void decode_enemy(const unsigned char *p, struct rasterfall_net_enemy *e)
     e->ability.charge_active = p[28] & 1;
     e->ability.special_timer_ms = get_i16(p + 29);
     e->ability.special_windup_ms = get_i16(p + 31);
-    e->ability.special_target_player = get_i8_value(p[33]);
-    e->ability.special_target_actor_index = get_i8_value(p[34]);
+    e->ability.special_target_kind = get_i8_value(p[33]);
+    e->ability.special_target_index = get_i8_value(p[34]);
     e->ability.special_pull_timer_ms = get_i16(p + 35);
     e->ability.charge_dir_x = get_i16(p + 37);
     e->ability.charge_dir_z = get_i16(p + 39);
@@ -2540,7 +2540,6 @@ void rasterfall_net_prepare_host_step(struct rasterfall_net *net,
 {
     int i;
     if (!net || !game || net->mode != RASTERFALL_NET_HOST) return;
-    toy_game_set_secondary_player_state(game, 0, 0, 0, 0);
     game->network_rescuer_available = 0;
     for (i = 0; i < RASTERFALL_NET_CLIENT_MAX; i++)
         if (net->clients[i].active && net->clients[i].connected &&
@@ -2832,8 +2831,8 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
             dst->ability.charge_active = src->ability.charge_active;
             dst->ability.special_timer_ms = src->ability.special_timer_ms;
             dst->ability.special_windup_ms = src->ability.special_windup_ms;
-            dst->ability.special_target_player = src->ability.special_target_player;
-            dst->ability.special_target_actor_index = src->ability.special_target_actor_index;
+            dst->ability.special_target_kind = src->ability.special_target_kind;
+            dst->ability.special_target_index = src->ability.special_target_index;
             dst->ability.special_pull_timer_ms = src->ability.special_pull_timer_ms;
             dst->ability.charge_dir_x = src->ability.charge_dir_x;
             dst->ability.charge_dir_z = src->ability.charge_dir_z;

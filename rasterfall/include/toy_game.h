@@ -172,9 +172,14 @@ struct toy_game_animation_state {
 /* 所有可被技能影响的实体都通过这组类型进入通用受迫移动接口。 */
 enum toy_game_entity_kind {
     TOY_GAME_ENTITY_PLAYER,
-    TOY_GAME_ENTITY_REMOTE_PLAYER,
     TOY_GAME_ENTITY_ACTOR,
     TOY_GAME_ENTITY_ENEMY
+};
+
+enum toy_game_target_kind {
+    TOY_GAME_TARGET_NONE = -1,
+    TOY_GAME_TARGET_HOST,
+    TOY_GAME_TARGET_ACTOR
 };
 
 enum toy_game_ai_class {
@@ -336,8 +341,8 @@ struct toy_game_enemy_ability_state {
     int charge_dir_x, charge_dir_z;
     int charge_elapsed_ms;
     int charge_hit_base;
-    int special_target_player;
-    int special_target_actor_index;
+    int special_target_kind;
+    int special_target_index;
     int special_pull_timer_ms;
 };
 
@@ -357,8 +362,8 @@ struct toy_game_enemy {
     int target_x, target_z; /* 调查目标或最后声源 */
     int last_seen_x, last_seen_z;
     int lost_sight_ms;
-    int target_player;         /* 0=主机，1=客户端，2=AI 队友 */
-    int target_actor_index;    /* target_player=2 时的 actor 数组索引 */
+    int target_kind;         /* 0=主机，1=客户端，2=AI 队友 */
+    int target_index;    /* target_kind=2 时的 actor 数组索引 */
     int retarget_timer_ms;
     int wander_timer_ms;
     int dir_x, dir_z;   /* 面向，1024 基准定点 */
@@ -521,18 +526,6 @@ struct toy_game {
     unsigned char nav_walkable[TOY_GAME_NAV_MAX_CELLS];
     unsigned short nav_component[TOY_GAME_NAV_MAX_CELLS];
 
-    /* 联机主机可提供第二名玩家的位置；单机时保持 inactive。 */
-    int secondary_player_active;
-    int secondary_px, secondary_pz;
-    int secondary_player_down;
-    int secondary_player_hp;
-    int secondary_player_airborne_ms;
-    int secondary_player_airborne_y;
-    int secondary_player_ground_y;
-    int secondary_player_vertical_velocity;
-    int secondary_player_air_x, secondary_player_air_z;
-    int secondary_player_knockback_x;
-    int secondary_player_knockback_z;
     int network_rescuer_available;
     int player_down;
     int player_revive_progress_ms;
@@ -608,10 +601,6 @@ void toy_game_set_campaign_safe_indices(struct toy_game *g,
 void toy_game_set_alarm(struct toy_game *g,
                         const struct toy_game_box *alarm_zone,
                         int spawn_zone_index);
-void toy_game_set_secondary_player(struct toy_game *g, int active,
-                                   int px, int pz);
-void toy_game_set_secondary_player_state(struct toy_game *g, int active,
-                                         int px, int pz, int down);
 int  toy_game_point_in_box(int x, int z, const struct toy_game_box *box);
 int  toy_game_position_blocked(const struct toy_game *g,
                                int x, int z, int radius);
@@ -621,9 +610,6 @@ void toy_game_update(struct toy_game *g,
 int  toy_game_jump(struct toy_game *g);
 int  toy_game_jump_with_velocity(struct toy_game *g, int dx, int dz);
 void toy_game_update_player_motion(struct toy_game *g, int dt_ms);
-int  toy_game_jump_secondary_player(struct toy_game *g, int dx, int dz);
-void toy_game_update_secondary_player_motion(struct toy_game *g, int dt_ms);
-void toy_game_update_secondary_player_ground(struct toy_game *g);
 int  toy_game_jump_actor(struct toy_game *g, int actor_index, int dx, int dz);
 void toy_game_update_actor_motion(struct toy_game *g, int actor_index, int dt_ms);
 void toy_game_update_actor_ground(struct toy_game *g, int actor_index);
