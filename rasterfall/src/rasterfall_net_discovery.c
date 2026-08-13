@@ -63,6 +63,8 @@ void rasterfall_net_discovery_init(struct rasterfall_net_discovery *discovery)
 int rasterfall_net_discovery_browser_start(struct rasterfall_net_discovery *discovery)
 {
     int broadcast = 1;
+    if (!discovery) return -1;
+    if (discovery->fd >= 0) rasterfall_net_discovery_close(discovery);
     rasterfall_net_discovery_init(discovery);
     discovery->fd = discovery_socket(0);
     if (discovery->fd < 0) return -1;
@@ -74,6 +76,8 @@ int rasterfall_net_discovery_browser_start(struct rasterfall_net_discovery *disc
 
 int rasterfall_net_discovery_host_start(struct rasterfall_net_discovery *discovery)
 {
+    if (!discovery) return -1;
+    if (discovery->fd >= 0) rasterfall_net_discovery_close(discovery);
     rasterfall_net_discovery_init(discovery);
     discovery->fd = discovery_socket(1);
     if (discovery->fd < 0) return -1;
@@ -162,8 +166,16 @@ static void discovery_store_room(struct rasterfall_net_discovery *discovery,
     }
     if (slot < 0) return;
     if (!discovery->rooms[slot].active) discovery->room_count++;
+    /* A local response is a better endpoint than the broadcast source for
+     * same-machine games.  Do not let a later broadcast response replace it. */
+    if (discovery->rooms[slot].active &&
+        discovery->rooms[slot].address.sin_addr.s_addr == inet_addr("127.0.0.1") &&
+        source->sin_addr.s_addr != inet_addr("127.0.0.1")) {
+        /* Keep the existing loopback endpoint. */
+    } else {
+        memcpy(&discovery->rooms[slot].address, source, sizeof(*source));
+    }
     discovery->rooms[slot].active = 1;
-    memcpy(&discovery->rooms[slot].address, source, sizeof(*source));
     memcpy(discovery->rooms[slot].name, packet + 11, 31);
     discovery->rooms[slot].name[31] = 0;
     discovery->rooms[slot].game_port = (int)discovery_get_u16(packet + 6);
@@ -171,6 +183,43 @@ static void discovery_store_room(struct rasterfall_net_discovery *discovery,
     discovery->rooms[slot].max_players = packet[9];
     discovery->rooms[slot].state = packet[10];
     discovery->rooms[slot].last_seen_ms = now;
+}
+
+int rasterfall_net_discovery_test(void)
+{
+    struct rasterfall_net_discovery discovery;
+    struct sockaddr_in broadcast_source, loopback_source;
+    unsigned char packet[DISCOVERY_PACKET_SIZE];
+    rasterfall_net_discovery_init(&discovery);
+    memset(packet, 0, sizeof(packet));
+    packet[0] = DISCOVERY_MAGIC_0; packet[1] = DISCOVERY_MAGIC_1;
+    packet[2] = DISCOVERY_MAGIC_2; packet[3] = DISCOVERY_MAGIC_3;
+    packet[4] = DISCOVERY_RESPONSE;
+    packet[5] = RASTERFALL_NET_PROTOCOL_VERSION;
+    discovery_put_u16(packet + 6, RASTERFALL_NET_DEFAULT_PORT);
+    packet[8] = 1; packet[9] = RASTERFALL_NET_PLAYER_MAX;
+    memcpy(packet + 11, "LOCAL", 5);
+    memset(&broadcast_source, 0, sizeof(broadcast_source));
+    broadcast_source.sin_family = AF_INET;
+    broadcast_source.sin_port = htons(RASTERFALL_NET_DEFAULT_PORT);
+    broadcast_source.sin_addr.s_addr = inet_addr("192.0.2.1");
+    memset(&loopback_source, 0, sizeof(loopback_source));
+    loopback_source.sin_family = AF_INET;
+    loopback_source.sin_port = htons(RASTERFALL_NET_DEFAULT_PORT);
+    loopback_source.sin_addr.s_addr = inet_addr("127.0.0.1");
+    discovery_store_room(&discovery, &broadcast_source, packet);
+    discovery_store_room(&discovery, &loopback_source, packet);
+    if (discovery.room_count != 1 || !discovery.rooms[0].active ||
+        discovery.rooms[0].address.sin_addr.s_addr !=
+            loopback_source.sin_addr.s_addr ||
+        discovery.rooms[0].game_port != RASTERFALL_NET_DEFAULT_PORT)
+        return 1;
+    discovery_store_room(&discovery, &broadcast_source, packet);
+    if (discovery.room_count != 1 ||
+        discovery.rooms[0].address.sin_addr.s_addr !=
+            loopback_source.sin_addr.s_addr)
+        return 2;
+    return 0;
 }
 
 void rasterfall_net_discovery_poll(struct rasterfall_net_discovery *discovery,

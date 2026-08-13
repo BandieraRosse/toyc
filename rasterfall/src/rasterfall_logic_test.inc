@@ -1205,6 +1205,7 @@ static int run_logic_test(void)
     }
     if (rasterfall_net_snapshot_fragment_test() != 0) return 139;
     if (rasterfall_net_client_slot_test() != 0) return 140;
+    if (rasterfall_net_discovery_test() != 0) return 141;
     /* Combat Power 使用武器真实参数计算，并输出完整拆分，方便调平衡。 */
     {
         int weapon;

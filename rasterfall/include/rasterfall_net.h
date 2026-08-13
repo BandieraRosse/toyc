@@ -9,7 +9,7 @@
 #define RASTERFALL_NET_DEFAULT_PORT 28460
 #define RASTERFALL_NET_MAX_PACKET 2700
 #define RASTERFALL_NET_MAX_SNAPSHOT 8192
-/* v29 uses one uniform host-side client layout.  Keep protocol
+/* v30 uses one uniform host-side client layout.  Keep protocol
  * changes explicit: clients with a different snapshot layout must fail during
  * discovery/handshake instead of decoding shifted world data. */
 #define RASTERFALL_NET_PROTOCOL_VERSION 30
@@ -326,6 +326,7 @@ void rasterfall_net_discovery_close(struct rasterfall_net_discovery *discovery);
 void rasterfall_net_discovery_poll(struct rasterfall_net_discovery *discovery,
                                    const char *room_name, int game_port,
                                    int players, int max_players, int state);
+int rasterfall_net_discovery_test(void);
 void rasterfall_net_poll(struct rasterfall_net *net);
 void rasterfall_net_update_connection(struct rasterfall_net *net);
 /* Used by --logic-test to exercise the fixed-size snapshot assembler without

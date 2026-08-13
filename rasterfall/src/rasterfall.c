@@ -93,7 +93,8 @@ static void rf_windows_log(const char *message) { (void)message; }
 enum rasterfall_startup_screen {
     RASTERFALL_STARTUP_MAIN,
     RASTERFALL_STARTUP_MANUAL_IP,
-    RASTERFALL_STARTUP_PUBLIC_ROOM
+    RASTERFALL_STARTUP_PUBLIC_ROOM,
+    RASTERFALL_STARTUP_LAN_ROOMS
 };
 
 static struct rasterfall_session session;
@@ -639,7 +640,8 @@ static void draw_startup_menu(struct toy_surface *surface, int screen,
                               int selected, const char *address,
                               const char *port_text, int editing_port,
                               const char *room_text,
-                              const char *error)
+                              const char *error,
+                              const struct rasterfall_net_discovery *discovery)
 {
     int i, y = 92;
     char line[96];
@@ -648,8 +650,9 @@ static void draw_startup_menu(struct toy_surface *surface, int screen,
                    "RASTERFALL", RF_COLOR_UI_ACCENT, surface->stride);
     if (screen == RASTERFALL_STARTUP_MAIN) {
         static const char *items[] = {"CREATE LOCAL ROOM", "CREATE PUBLIC ROOM",
-                                      "JOIN PUBLIC ROOM", "JOIN BY ADDRESS", "QUIT"};
-        for (i = 0; i < 5; i++) {
+                                      "JOIN PUBLIC ROOM", "JOIN LAN ROOM",
+                                      "JOIN BY ADDRESS", "QUIT"};
+        for (i = 0; i < 6; i++) {
             uint32_t color = i == selected ? RF_COLOR_UI_ACCENT : RF_COLOR_UI_TEXT;
             if (i == selected)
                 fill_rect(surface, 180, y + i * 34 - 4, 440, FB_FONT_H + 8,
@@ -657,15 +660,44 @@ static void draw_startup_menu(struct toy_surface *surface, int screen,
             fb_draw_string((unsigned char *)surface->pixels, 205, y + i * 34,
                            items[i], color, surface->stride);
         }
-        fb_draw_string((unsigned char *)surface->pixels, 150, 290,
+        fb_draw_string((unsigned char *)surface->pixels, 150, 325,
                        "UP DOWN SELECT   ENTER CONFIRM", RF_COLOR_UI_TEXT_MUTED,
                        surface->stride);
-        fb_draw_string((unsigned char *)surface->pixels, 260, 315,
+        fb_draw_string((unsigned char *)surface->pixels, 260, 350,
                        "DRAG TITLE AREA TO MOVE", RF_COLOR_UI_TEXT_DIM,
                        surface->stride);
         if (error && error[0])
-            fb_draw_string((unsigned char *)surface->pixels, 90, 340,
+            fb_draw_string((unsigned char *)surface->pixels, 90, 375,
                            error, 0xFF8060, surface->stride);
+    } else if (screen == RASTERFALL_STARTUP_LAN_ROOMS) {
+        int row = 0;
+        fb_draw_string((unsigned char *)surface->pixels, 205, 78,
+                       "LOCAL ROOMS", RF_COLOR_UI_SECONDARY, surface->stride);
+        if (!discovery || discovery->room_count == 0) {
+            fb_draw_string((unsigned char *)surface->pixels, 220, 140,
+                           "SEARCHING FOR ROOMS...", RF_COLOR_UI_TEXT_MUTED,
+                           surface->stride);
+        } else {
+            for (i = 0; i < RASTERFALL_NET_DISCOVERY_MAX_ROOMS; i++) {
+                const struct rasterfall_net_room *room = &discovery->rooms[i];
+                char room_line[96];
+                if (!room->active) continue;
+                snprintf(room_line, sizeof(room_line), "%s  %d/%d  :%d",
+                         room->name[0] ? room->name : "ROOM",
+                         room->players, room->max_players, room->game_port);
+                if (row == selected)
+                    fill_rect(surface, 150, y + row * 30 - 4, 500,
+                              FB_FONT_H + 8, 0x293746);
+                fb_draw_string((unsigned char *)surface->pixels, 175,
+                               y + row * 30, room_line,
+                               row == selected ? RF_COLOR_UI_ACCENT :
+                               RF_COLOR_UI_TEXT, surface->stride);
+                row++;
+            }
+        }
+        fb_draw_string((unsigned char *)surface->pixels, 205, 370,
+                       "UP DOWN SELECT   ENTER JOIN   ESC BACK",
+                       RF_COLOR_UI_TEXT_MUTED, surface->stride);
     } else if (screen == RASTERFALL_STARTUP_MANUAL_IP) {
         fb_draw_string((unsigned char *)surface->pixels, 220, 78,
                        "CONNECT TO IP", RF_COLOR_UI_SECONDARY, surface->stride);
@@ -705,10 +737,12 @@ static int run_startup_menu(struct toy_window *window, struct toy_renderer *rend
                             struct toy_window_events *events,
                             int *net_mode, char *address, int address_size,
                             int *port, int *public_room, int *room_id,
-                            const char *error)
+                            const char *error,
+                            struct rasterfall_net_discovery *discovery)
 {
     int screen = RASTERFALL_STARTUP_MAIN, selected = 0, running = 1;
     int editing_port = 0;
+    int discovery_active = 0;
     char port_text[8];
     char room_text[8];
     int64_t nav_ready = 0;
@@ -736,6 +770,8 @@ static int run_startup_menu(struct toy_window *window, struct toy_renderer *rend
             events->button_serial && events->pointer_y < 70)
             toy_window_move(window, events->button_serial);
         if (events->close_requested) break;
+        if (screen == RASTERFALL_STARTUP_LAN_ROOMS && discovery_active)
+            rasterfall_net_discovery_poll(discovery, NULL, 0, 0, 0, 0);
         if (screen == RASTERFALL_STARTUP_PUBLIC_ROOM) {
             for (int i = 0; i < events->key_event_count; i++) {
                 unsigned int key = events->key_events[i].key;
@@ -757,13 +793,49 @@ static int run_startup_menu(struct toy_window *window, struct toy_renderer *rend
                     }
                 }
             }
+        } else if (screen == RASTERFALL_STARTUP_LAN_ROOMS) {
+            int room_count = discovery ? discovery->room_count : 0;
+            int room_index = 0;
+            for (int i = 0; i < events->key_event_count; i++) {
+                unsigned int key = events->key_events[i].key;
+                int active_count = discovery ? discovery->room_count : 0;
+                if (!events->key_events[i].pressed) continue;
+                if (key == KEY_ESC) {
+                    rasterfall_net_discovery_close(discovery);
+                    discovery_active = 0;
+                    screen = RASTERFALL_STARTUP_MAIN;
+                    selected = 3;
+                } else if (key == KEY_ENTER && active_count > 0) {
+                    for (int room_slot = 0;
+                         room_slot < RASTERFALL_NET_DISCOVERY_MAX_ROOMS;
+                         room_slot++) {
+                        if (!discovery->rooms[room_slot].active) continue;
+                        if (room_index++ != selected) continue;
+                        {
+                            char *room_address = inet_ntoa(
+                                discovery->rooms[room_slot].address.sin_addr);
+                            if (room_address) strcpy(address, room_address);
+                            *port = discovery->rooms[room_slot].game_port;
+                            *public_room = 0;
+                            *net_mode = RASTERFALL_NET_CLIENT;
+                            rasterfall_net_discovery_close(discovery);
+                            discovery_active = 0;
+                            return 1;
+                        }
+                    }
+                } else if ((key == KEY_UP || key == KEY_DOWN) && room_count > 0) {
+                    selected += key == KEY_DOWN ? 1 : -1;
+                    if (selected < 0) selected = room_count - 1;
+                    if (selected >= room_count) selected = 0;
+                }
+            }
         } else if (screen == RASTERFALL_STARTUP_MANUAL_IP) {
             for (int i = 0; i < events->key_event_count; i++) {
                 unsigned int key = events->key_events[i].key;
                 if (!events->key_events[i].pressed) continue;
                 if (key == KEY_ESC) {
                     screen = RASTERFALL_STARTUP_MAIN;
-                    selected = 1;
+                    selected = 4;
                     editing_port = 0;
                 } else if (key == KEY_TAB) {
                     editing_port = !editing_port;
@@ -797,7 +869,7 @@ static int run_startup_menu(struct toy_window *window, struct toy_renderer *rend
             int up = pending_key_edges[KEY_UP];
             int down = pending_key_edges[KEY_DOWN];
             if ((up || down) && now >= nav_ready) {
-                int limit = 5;
+                int limit = 6;
                 selected += down ? 1 : -1;
                 if (selected < 0) selected = limit - 1;
                 if (selected >= limit) selected = 0;
@@ -824,10 +896,16 @@ static int run_startup_menu(struct toy_window *window, struct toy_renderer *rend
                         screen = RASTERFALL_STARTUP_PUBLIC_ROOM;
                         room_text[0] = 0;
                     } else if (selected == 3) {
+                        if (rasterfall_net_discovery_browser_start(discovery) == 0) {
+                            discovery_active = 1;
+                            screen = RASTERFALL_STARTUP_LAN_ROOMS;
+                            selected = 0;
+                        }
+                    } else if (selected == 4) {
                         screen = RASTERFALL_STARTUP_MANUAL_IP;
                         address[0] = 0;
                         editing_port = 0;
-                    } else if (selected == 4) break;
+                    } else if (selected == 5) break;
                 }
             }
         }
@@ -836,11 +914,12 @@ static int run_startup_menu(struct toy_window *window, struct toy_renderer *rend
         if (ready > 0) {
             if (toy_renderer_begin(renderer, &surface, 0x10151D) < 0) break;
             draw_startup_menu(&surface, screen, selected, address, port_text,
-                              editing_port, room_text, error);
+                              editing_port, room_text, error, discovery);
             if (toy_window_present(window) < 0) break;
         }
         memset(input->key_pressed, 0, sizeof(input->key_pressed));
     }
+    if (discovery_active) rasterfall_net_discovery_close(discovery);
     return 0;
 }
 
@@ -1183,6 +1262,7 @@ int main(int argc, char **argv)
     int last_key_pressed = 0;
     struct rasterfall_audio audio;
     struct rasterfall_net net;
+    struct rasterfall_net_discovery discovery;
     char host_address[16];
     uint64_t seed;
 
@@ -1219,6 +1299,7 @@ int main(int argc, char **argv)
         }
     }
     rasterfall_net_init(&net);
+    rasterfall_net_discovery_init(&discovery);
     rf_windows_log("startup: loading map");
     strcpy(host_address, "127.0.0.1");
     if (rasterfall_session_load(&session, "rasterfall/assets/maps/rasterfall.map") < 0) {
@@ -1297,7 +1378,8 @@ startup_again:
                                                 selected_address,
                                                 sizeof(selected_address),
                                                 &net_port, &public_room,
-                                                &public_room_id, startup_error)) {
+                                                &public_room_id, startup_error,
+                                                &discovery)) {
             toy_window_close(window);
             if (scene_texture.blob) toy_texture_unload(&scene_texture);
             rasterfall_session_unload(&session);
@@ -1359,6 +1441,8 @@ startup_again:
             return 1;
         }
         rasterfall_net_local_address(host_address, sizeof(host_address));
+        if (rasterfall_net_discovery_host_start(&discovery) < 0)
+            __printf("rasterfall: LAN discovery unavailable\n");
         __printf("rasterfall: hosting UDP port %d\n", net_port);
         rf_windows_log("startup: local room ready");
         __printf("rasterfall: players can join %s:%d\n", host_address, net_port);
@@ -1418,6 +1502,16 @@ startup_again:
         if (toy_window_poll(window, &events, 0) < 0) break;
         toy_input_apply(&input, &events);
         rasterfall_net_poll(&net);
+        if (net.mode == RASTERFALL_NET_HOST && discovery.fd >= 0) {
+            int players = 1;
+            for (int discovery_i = 0;
+                 discovery_i < RASTERFALL_NET_CLIENT_MAX; discovery_i++)
+                if (net.clients[discovery_i].active &&
+                    net.clients[discovery_i].connected)
+                    players++;
+            rasterfall_net_discovery_poll(&discovery, "LOCAL ROOM", net_port,
+                                          players, RASTERFALL_NET_PLAYER_MAX, 0);
+        }
         rasterfall_net_update_connection(&net);
         if (net.mode == RASTERFALL_NET_CLIENT && net.remote_event_count > 0) {
             if (audio.running)
@@ -1990,6 +2084,7 @@ startup_again:
     if (return_to_menu) {
         rasterfall_audio_stop(&audio);
         rasterfall_audio_unload_assets(&audio);
+        rasterfall_net_discovery_close(&discovery);
         rasterfall_net_close(&net);
         rasterfall_session_reset(&session, &camera, seed);
         rasterfall_effects_init(&effects);
@@ -2019,6 +2114,7 @@ startup_again:
         rasterfall_perf_dump(&stats_total, "total");
     rasterfall_audio_stop(&audio);
     rasterfall_audio_unload_assets(&audio);
+    rasterfall_net_discovery_close(&discovery);
     if (scene_texture.blob) toy_texture_unload(&scene_texture);
     if (dump_path) rasterfall_hud_dump_frame(dump_path, &surface);
     rasterfall_net_close(&net);
