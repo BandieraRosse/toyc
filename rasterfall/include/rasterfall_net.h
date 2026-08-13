@@ -7,17 +7,19 @@
 #include "rasterfall_session.h"
 
 #define RASTERFALL_NET_DEFAULT_PORT 28460
-#define RASTERFALL_NET_MAX_PACKET 2700
+#define RASTERFALL_NET_MAX_PACKET 1200
 #define RASTERFALL_NET_MAX_SNAPSHOT 8192
 /* v30 uses one uniform host-side client layout.  Keep protocol
  * changes explicit: clients with a different snapshot layout must fail during
  * discovery/handshake instead of decoding shifted world data. */
-#define RASTERFALL_NET_PROTOCOL_VERSION 30
+#define RASTERFALL_NET_PROTOCOL_VERSION 31
 #define RASTERFALL_NET_MAX_ACTORS 32
 #define RASTERFALL_NET_PLAYER_MAX 4
 #define RASTERFALL_NET_CLIENT_MAX (RASTERFALL_NET_PLAYER_MAX - 1)
 #define RASTERFALL_NET_EVENT_QUEUE_MAX 64
 #define RASTERFALL_NET_RELIABLE_EVENT_MAX 64
+#define RASTERFALL_NET_INPUT_HISTORY 128
+#define RASTERFALL_NET_INPUT_REDUNDANCY 3
 #define RASTERFALL_NET_DISCOVERY_PORT 28459
 #define RASTERFALL_NET_DISCOVERY_MAX_ROOMS 8
 #define RASTERFALL_NET_PUNCH_SERVER "47.82.117.182"
@@ -35,7 +37,17 @@ enum rasterfall_net_packet_type {
     RASTERFALL_NET_SNAPSHOT,
     RASTERFALL_NET_AI_FIRE,
     RASTERFALL_NET_SNAPSHOT_PART,
-    RASTERFALL_NET_RELIABLE_EVENT
+    RASTERFALL_NET_RELIABLE_EVENT,
+    RASTERFALL_NET_PLAYER_SNAPSHOT,
+    RASTERFALL_NET_ENTITY_SNAPSHOT,
+    RASTERFALL_NET_WORLD_SNAPSHOT
+};
+
+struct rasterfall_net_input {
+    uint32_t sequence;
+    uint32_t tick;
+    struct rasterfall_command command;
+    int valid;
 };
 
 struct rasterfall_net_event {
@@ -107,6 +119,7 @@ struct rasterfall_net_player {
     int airborne_ms;
     int airborne_y;
     uint32_t input_ack;
+    int special_motion;
     struct toy_game_animation_state animation;
 };
 
@@ -128,6 +141,13 @@ struct rasterfall_net_enemy {
 struct rasterfall_net_prediction {
     uint32_t sequence;
     int x, z;
+};
+
+struct rasterfall_net_remote_sample {
+    int valid;
+    long received_ms;
+    struct camera camera;
+    int airborne_y;
 };
 
 struct rasterfall_net_actor {
@@ -169,6 +189,11 @@ struct rasterfall_net_client {
     struct rasterfall_command command;
     int command_ready;
     uint32_t last_input_sequence;
+    uint32_t last_processed_input_sequence;
+    struct rasterfall_net_input input_queue[RASTERFALL_NET_INPUT_HISTORY];
+    int input_queue_depth;
+    int input_queue_max_depth;
+    int input_gap_ticks;
     uint32_t last_input_tick;
     struct toy_game_slot slots[TOY_GAME_WEAPON_SLOTS];
     int current_slot;
@@ -262,6 +287,9 @@ struct rasterfall_net {
     int snapshot_air_walls_enabled;
     int snapshot_manual_alarm_enabled;
     int snapshot_ready;
+    uint32_t player_snapshot_sequence;
+    uint32_t entity_snapshot_sequence;
+    uint32_t world_snapshot_sequence;
     /* 快照在应用层分片，避免依赖 IP 分片；保留当前和上一代未完成组，
      * 允许轻微乱序补齐上一代快照。 */
     struct rasterfall_snapshot_assembly snapshot_current;
@@ -272,6 +300,13 @@ struct rasterfall_net {
     uint32_t last_jump_command_sequence;
     uint32_t last_snapshot_input_ack;
     struct rasterfall_net_prediction prediction_history[64];
+    struct rasterfall_net_input input_history[RASTERFALL_NET_INPUT_HISTORY];
+    struct rasterfall_net_remote_sample remote_samples[RASTERFALL_NET_PLAYER_MAX][3];
+    int remote_sample_count[RASTERFALL_NET_PLAYER_MAX];
+    struct camera remote_render_camera[RASTERFALL_NET_PLAYER_MAX];
+    int remote_render_airborne_y[RASTERFALL_NET_PLAYER_MAX];
+    int correction_x, correction_z, correction_y;
+    int correction_remaining_ms;
     long last_command_sent_ms;
     unsigned int shop_request_next_id;
     unsigned int pending_shop_request_id;
@@ -318,6 +353,17 @@ struct rasterfall_net {
     int snapshot_parts_duplicate;
     int snapshot_completed;
     int snapshot_abandoned;
+    unsigned long input_packets_sent, input_packets_received;
+    unsigned long input_entries_received, input_duplicates;
+    unsigned long input_out_of_order, input_recovered;
+    unsigned long input_synthesized;
+    unsigned long player_snapshots_received, entity_snapshots_received;
+    unsigned long world_snapshots_received;
+    unsigned long reconciliation_count, reconciliation_total;
+    unsigned long reconciliation_max;
+    unsigned long reconciliation_hard_snaps;
+    unsigned long interpolation_underruns, extrapolation_count;
+    int net_loss_percent;
 };
 
 void rasterfall_net_init(struct rasterfall_net *net);
@@ -343,6 +389,7 @@ void rasterfall_net_update_connection(struct rasterfall_net *net);
  * changing the wire format or opening a socket. */
 int rasterfall_net_snapshot_fragment_test(void);
 int rasterfall_net_client_slot_test(void);
+int rasterfall_net_pipeline_test(void);
 int rasterfall_net_send_command(struct rasterfall_net *net,
                                 const struct rasterfall_command *command,
                                 const struct camera *predicted);
@@ -363,6 +410,10 @@ void rasterfall_net_prepare_host_step(struct rasterfall_net *net,
 void rasterfall_net_reconcile_client(struct rasterfall_net *net,
                                      struct rasterfall_session *session,
                                      struct camera *camera);
+void rasterfall_net_update_presentation(struct rasterfall_net *net, int dt_ms);
+const struct camera *rasterfall_net_remote_render_camera(
+    const struct rasterfall_net *net, int player_id, int *airborne_y);
+void rasterfall_net_set_loss(struct rasterfall_net *net, int percent);
 void rasterfall_net_apply_local_rescue(struct rasterfall_net *net,
                                        struct rasterfall_session *session,
                                        const struct camera *host_camera,

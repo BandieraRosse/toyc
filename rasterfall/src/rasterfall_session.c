@@ -1195,16 +1195,24 @@ void rasterfall_session_step(struct rasterfall_session *session,
     }
 }
 
-void rasterfall_session_step_client(struct rasterfall_session *session,
-                                    struct camera *camera,
-                                    const struct rasterfall_command *command,
-                                    int dt_ms)
+static void session_step_client_mode(struct rasterfall_session *session,
+                                     struct camera *camera,
+                                     const struct rasterfall_command *command,
+                                     int dt_ms, int suppress_presentation)
 {
     unsigned char keys[TOY_GAME_KEY_RELOAD + 1];
     struct toy_game_enemy enemies[TOY_GAME_MAX_ENEMIES];
     int enemy_count, kills, special_kills, damage_dealt, event_start, write, i;
     int old_reloading;
     unsigned int old_fire_seq;
+    struct toy_game_animation_state saved_animation =
+        session->game_state.animation;
+    struct toy_game_ray saved_rays[TOY_GAME_MAX_RAYS];
+    int saved_events = session->game_state.event_count;
+    int saved_muzzle = session->game_state.muzzle_flash_ms;
+    int saved_ray_count = session->game_state.ray_count;
+    unsigned int saved_fire_seq = session->game_state.fire_seq;
+    memcpy(saved_rays, session->game_state.rays, sizeof(saved_rays));
     if (command->buttons & RASTERFALL_CMD_RESET) {
         rasterfall_session_reset(session, camera, session->seed);
         return;
@@ -1328,4 +1336,28 @@ void rasterfall_session_step_client(struct rasterfall_session *session,
             session->banner_text = NULL;
         }
     }
+    if (suppress_presentation) {
+        session->game_state.animation = saved_animation;
+        session->game_state.event_count = saved_events;
+        session->game_state.muzzle_flash_ms = saved_muzzle;
+        session->game_state.fire_seq = saved_fire_seq;
+        session->game_state.ray_count = saved_ray_count;
+        memcpy(session->game_state.rays, saved_rays, sizeof(saved_rays));
+    }
+}
+
+void rasterfall_session_step_client(struct rasterfall_session *session,
+                                    struct camera *camera,
+                                    const struct rasterfall_command *command,
+                                    int dt_ms)
+{
+    session_step_client_mode(session, camera, command, dt_ms, 0);
+}
+
+void rasterfall_session_replay_client(struct rasterfall_session *session,
+                                      struct camera *camera,
+                                      const struct rasterfall_command *command,
+                                      int dt_ms)
+{
+    session_step_client_mode(session, camera, command, dt_ms, 1);
 }

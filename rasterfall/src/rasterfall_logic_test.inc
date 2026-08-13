@@ -959,24 +959,32 @@ static int run_logic_test(void)
         net_test.local_player_id = 1;
         net_test.snapshot_ready = 1;
         net_test.last_jump_command_sequence = 10;
+        net_test.last_command_sequence = 10;
         net_test.last_snapshot_input_ack = 9;
         net_test.players[1].active = 1;
         net_test.players[1].input_ack = 9;
         net_test.players[1].state = TOY_GAME_PLAYING;
-        net_test.players[1].camera.x = camera.x - 1000;
-        net_test.players[1].camera.z = camera.z - 1000;
+        net_test.players[1].camera = camera;
+        net_test.players[1].camera.x -= 1000;
+        net_test.players[1].camera.z -= 1000;
+        net_test.input_history[10 % RASTERFALL_NET_INPUT_HISTORY].valid = 1;
+        net_test.input_history[10 % RASTERFALL_NET_INPUT_HISTORY].sequence = 10;
+        net_test.input_history[10 % RASTERFALL_NET_INPUT_HISTORY].command.buttons =
+            RASTERFALL_CMD_JUMP;
+        net_test.input_history[10 % RASTERFALL_NET_INPUT_HISTORY].command.move_forward = 1;
         game.player_airborne_ms = 600;
         game.player_airborne_y = 180;
         {
             int old_x = camera.x, old_z = camera.z;
             rasterfall_net_reconcile_client(&net_test, &session, &camera);
-            if (game.player_airborne_ms != 600 ||
-                game.player_airborne_y != 180 || camera.x != old_x ||
-                camera.z != old_z) return 109;
+            if (game.player_airborne_ms <= 0) return 109;
+            if (camera.x == net_test.players[1].camera.x &&
+                camera.z == net_test.players[1].camera.z) return 142;
+            if (camera.x == old_x && camera.z == old_z) return 143;
         }
     }
-    /* Reconcile against the prediction at the acknowledged input, not the
-     * newer camera position that already includes later local inputs. */
+    /* Without unacked commands, authoritative restore is exact; the old
+     * sequence->position delta shortcut is no longer used. */
     {
         struct rasterfall_net net_test;
         struct rasterfall_net_prediction *prediction;
@@ -997,8 +1005,59 @@ static int run_logic_test(void)
         camera.x = 1000;
         camera.z = 2000;
         rasterfall_net_reconcile_client(&net_test, &session, &camera);
-        if (camera.x != 1100 || camera.z != 2100) return 111;
+        if (camera.x != 900 || camera.z != 1900) return 111;
     }
+    /* 玩家互救必须同时更新网络槽和 actor，且主机倒地不能禁用远端移动。 */
+    /* 标准客户端 reconciliation：从 authoritative @100 恢复，仅重放
+     * 101..105；FIRE 的展示动画和事件不能在 replay 中重新触发。 */
+    {
+        struct rasterfall_net net_test;
+        struct rasterfall_session expected_session;
+        struct camera authoritative, expected_camera;
+        struct rasterfall_command replay_command;
+        rasterfall_session_reset(&session, &camera, 512);
+        authoritative = camera; expected_camera = authoritative;
+        expected_session = session;
+        memset(&replay_command, 0, sizeof(replay_command));
+        replay_command.move_forward = 1;
+        for (int i = 0; i < 5; i++)
+            rasterfall_session_replay_client(&expected_session,
+                &expected_camera, &replay_command, 16);
+        rasterfall_net_init(&net_test);
+        net_test.mode = RASTERFALL_NET_CLIENT;
+        net_test.local_player_id = 1;
+        net_test.last_command_sequence = 105;
+        net_test.snapshot_ready = 1;
+        net_test.players[1].active = 1;
+        net_test.players[1].state = TOY_GAME_PLAYING;
+        net_test.players[1].hp = session.game_state.hp;
+        net_test.players[1].camera = authoritative;
+        net_test.players[1].input_ack = 100;
+        net_test.players[1].current_slot = session.game_state.current_slot;
+        for (int slot = 0; slot < TOY_GAME_WEAPON_SLOTS; slot++) {
+            net_test.players[1].slot_weapon[slot] =
+                session.game_state.slots[slot].weapon;
+            net_test.players[1].mag[slot] = session.game_state.slots[slot].mag;
+            net_test.players[1].reserve[slot] =
+                session.game_state.slots[slot].reserve;
+        }
+        for (uint32_t sequence = 101; sequence <= 105; sequence++) {
+            struct rasterfall_net_input *entry = &net_test.input_history[
+                sequence % RASTERFALL_NET_INPUT_HISTORY];
+            entry->valid = 1; entry->sequence = sequence;
+            entry->command = replay_command;
+        }
+        session.game_state.animation.id = TOY_GAME_ANIM_FIRE;
+        session.game_state.animation.time_ms = 77;
+        session.game_state.event_count = 1;
+        session.game_state.events[0] = TOY_GAME_EV_SHOOT;
+        rasterfall_net_reconcile_client(&net_test, &session, &camera);
+        if (camera.x != expected_camera.x || camera.z != expected_camera.z ||
+            session.game_state.animation.id != TOY_GAME_ANIM_FIRE ||
+            session.game_state.animation.time_ms != 77 ||
+            session.game_state.event_count != 1) return 141;
+    }
+
     /* 玩家互救必须同时更新网络槽和 actor，且主机倒地不能禁用远端移动。 */
     {
         struct rasterfall_net net_test;
@@ -1228,6 +1287,7 @@ static int run_logic_test(void)
         if (game.money != 50 || game.special_kills != 1) return 129;
     }
     if (rasterfall_net_snapshot_fragment_test() != 0) return 139;
+    if (rasterfall_net_pipeline_test() != 0) return 140;
     if (rasterfall_net_client_slot_test() != 0) return 140;
     if (rasterfall_net_discovery_test() != 0) return 141;
     /* Combat Power 使用武器真实参数计算，并输出完整拆分，方便调平衡。 */

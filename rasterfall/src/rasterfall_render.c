@@ -2406,13 +2406,17 @@ static int render_network_teammate(struct toy_renderer *renderer,
     if (net->mode == RASTERFALL_NET_CLIENT) {
         for (i = 0; i < RASTERFALL_NET_PLAYER_MAX; i++) {
             const struct rasterfall_net_player *player = &net->players[i];
+            const struct camera *render_camera;
+            int render_airborne;
             if (!player->active || i == net->local_player_id) continue;
-            active_actor_lift = network_actor_lift(player->camera.x,
-                                                   player->camera.z,
-                                                   player->airborne_y);
+            render_camera = rasterfall_net_remote_render_camera(
+                net, i, &render_airborne);
+            active_actor_lift = network_actor_lift(render_camera->x,
+                                                   render_camera->z,
+                                                   render_airborne);
             pixels += render_player_avatar(renderer, camera,
-                player->camera.x, player->camera.z, player->camera.sy,
-                player->camera.cy, player->weapon, player->muzzle_flash_ms,
+                render_camera->x, render_camera->z, render_camera->sy,
+                render_camera->cy, player->weapon, player->muzzle_flash_ms,
                 colors[i], player->downed, player->animation.id,
                 player->animation.time_ms);
             active_actor_lift = 0;
@@ -2447,10 +2451,12 @@ static void render_network_teammate_status(struct toy_renderer *renderer,
     if (net->mode == RASTERFALL_NET_CLIENT) {
         for (i = 0; i < RASTERFALL_NET_PLAYER_MAX; i++) {
             const struct rasterfall_net_player *player = &net->players[i];
+            const struct camera *render_camera;
             if (!player->active || i == net->local_player_id) continue;
+            render_camera = rasterfall_net_remote_render_camera(net, i, NULL);
             snprintf(name, sizeof(name), "PLAYER %d", i + 1);
-            render_actor_status(renderer, camera, player->camera.x,
-                player->camera.z, 700, name, player->hp,
+            render_actor_status(renderer, camera, render_camera->x,
+                render_camera->z, 700, name, player->hp,
                 TOY_GAME_SECONDARY_PLAYER_HP, player->downed,
                 player->revive_progress_ms, RF_COLOR_UI_PLAYER);
         }

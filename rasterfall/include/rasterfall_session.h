@@ -104,6 +104,10 @@ void rasterfall_session_step_client(struct rasterfall_session *session,
                                      struct camera *camera,
                                      const struct rasterfall_command *command,
                                      int dt_ms);
+void rasterfall_session_replay_client(struct rasterfall_session *session,
+                                      struct camera *camera,
+                                      const struct rasterfall_command *command,
+                                      int dt_ms);
 /* 只推进远端玩家的移动与朝向，不重复推进敌人/director。主机用它验证
  * 客户端移动；射击和互动要等多玩家规则状态接入后再由权威会话处理。 */
 void rasterfall_session_step_remote_player(struct rasterfall_session *session,

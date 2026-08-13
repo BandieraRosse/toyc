@@ -1270,6 +1270,7 @@ int main(int argc, char **argv)
     int requested_net_mode = RASTERFALL_NET_OFF;
     int net_port = RASTERFALL_NET_DEFAULT_PORT;
     int public_room = 0, public_room_id = 0;
+    int net_loss_percent = 0;
     const char *net_address = NULL;
     const char *startup_error = NULL;
     char selected_address[64];
@@ -1277,7 +1278,8 @@ int main(int argc, char **argv)
     const char *dump_path = 0;
     for (int arg = 1; arg < argc; arg++) {
         if (strcmp(argv[arg], "--input-test") == 0) input_debug = 1;
-        else if (strcmp(argv[arg], "--logic-test") == 0) logic_test = 1;
+        else if (strcmp(argv[arg], "--logic-test") == 0 ||
+                 strcmp(argv[arg], "--net-test") == 0) logic_test = 1;
         else if (strcmp(argv[arg], "--host") == 0)
             requested_net_mode = RASTERFALL_NET_HOST;
         else if (strcmp(argv[arg], "--connect") == 0 && arg + 1 < argc) {
@@ -1285,6 +1287,8 @@ int main(int argc, char **argv)
             net_address = argv[++arg];
         } else if (strcmp(argv[arg], "--port") == 0 && arg + 1 < argc)
             net_port = parse_positive_int(argv[++arg], RASTERFALL_NET_DEFAULT_PORT);
+        else if (strcmp(argv[arg], "--net-loss") == 0 && arg + 1 < argc)
+            net_loss_percent = parse_positive_int(argv[++arg], 0);
         else if (strcmp(argv[arg], "--auto") == 0) auto_mode = 1;
         else if (strcmp(argv[arg], "--textures") == 0) textures_enabled = 1;
         else if (strcmp(argv[arg], "--no-textures") == 0) textures_enabled = 0;
@@ -1299,6 +1303,7 @@ int main(int argc, char **argv)
         }
     }
     rasterfall_net_init(&net);
+    rasterfall_net_set_loss(&net, net_loss_percent);
     rasterfall_net_discovery_init(&discovery);
     rf_windows_log("startup: loading map");
     strcpy(host_address, "127.0.0.1");
@@ -1469,6 +1474,10 @@ startup_again:
             }
         }
     }
+    rasterfall_net_set_loss(&net, net_loss_percent);
+    if (net_loss_percent > 0)
+        __printf("rasterfall: gameplay packet loss simulation %d%%\n",
+                 net_loss_percent);
     __printf("rasterfall: pause menu uses arrows + Enter; mouse/arrows look, "
              "WASD moves, click/Space fire (hold for SMG), R reload, "
              "1/2 weapons, E interact, ,/. turn 90, Esc pauses/resumes\n");
@@ -1519,8 +1528,10 @@ startup_again:
                                              net.remote_event_count);
             net.remote_event_count = 0;
         }
-        if (net.mode == RASTERFALL_NET_CLIENT)
-                rasterfall_net_reconcile_client(&net, &session, &camera);
+        if (net.mode == RASTERFALL_NET_CLIENT) {
+            rasterfall_net_reconcile_client(&net, &session, &camera);
+            rasterfall_net_update_presentation(&net, 16);
+        }
         if (net.mode == RASTERFALL_NET_CLIENT && net.players[0].active) {
             sync_network_fire_effects(&camera, &net.players[0].camera,
                                       0,
@@ -1973,6 +1984,16 @@ startup_again:
             continue;
         }
         if (ready > 0) {
+            int render_correction_x = net.mode == RASTERFALL_NET_CLIENT ?
+                                      net.correction_x : 0;
+            int render_correction_z = net.mode == RASTERFALL_NET_CLIENT ?
+                                      net.correction_z : 0;
+            int render_correction_y = net.mode == RASTERFALL_NET_CLIENT ?
+                                      net.correction_y : 0;
+            int present_result;
+            camera.x += render_correction_x;
+            camera.z += render_correction_z;
+            camera.y += render_correction_y;
             if (!logged_first_frame) {
                 rf_windows_log("startup: first frame begin");
                 logged_first_frame = 1;
@@ -2058,7 +2079,11 @@ startup_again:
             rasterfall_perf_end_stage(&stats, &stats_total, RASTERFALL_STATS_OVERLAY,
                            &t_stage, renderer.submitted_triangles - prev_tris,
                            (unsigned long)stage_pixels);
-            if (toy_window_present(window) < 0) break;
+            present_result = toy_window_present(window);
+            camera.x -= render_correction_x;
+            camera.z -= render_correction_z;
+            camera.y -= render_correction_y;
+            if (present_result < 0) break;
             rasterfall_perf_end_stage(&stats, &stats_total, RASTERFALL_STATS_PRESENT,
                            &t_stage, 0, 0);
             rendered_frames++;
