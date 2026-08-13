@@ -1711,12 +1711,9 @@ static void update_campaign(struct toy_game *g, int dt_ms)
     /* The host owns the result.  A downed player can wait for a remote
      * teammate only when that teammate is actually present; in a solo game
      * (including an empty host room) nobody can perform the rescue. */
-    if (g->player_down && !g->network_rescuer_available &&
-        (!g->secondary_player_active || g->secondary_player_down)) {
-        g->state = TOY_GAME_OVER;
-        push_event(g, TOY_GAME_EV_PLAYER_DEATH);
-        return;
-    }
+    /* Downed players remain in the world while waiting for a teammate or
+     * choosing the paid respawn option.  The latter is handled by the
+     * session layer, so a solo player must not be forced into Game Over. */
     update_campaign_goal(g, dt_ms);
     if (g->state != TOY_GAME_PLAYING) return;
     phase_before = g->campaign_phase;

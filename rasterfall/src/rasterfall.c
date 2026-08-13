@@ -1692,6 +1692,11 @@ startup_again:
                         build_game_command(&command, &input, &settings, fire_edge,
                                            shove_edge, pointer_turn_pending,
                                            pointer_pitch_pending);
+                    if (game.player_down &&
+                        (command.buttons & RASTERFALL_CMD_FLAG)) {
+                        command.buttons &= ~RASTERFALL_CMD_FLAG;
+                        command.buttons |= RASTERFALL_CMD_REVIVE;
+                    }
                     if (net.mode == RASTERFALL_NET_CLIENT && shop_input &&
                         shop_enter && shop_page_before > 0) {
                         command.buttons |= RASTERFALL_CMD_SHOP;

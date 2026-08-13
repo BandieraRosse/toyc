@@ -23,7 +23,7 @@ struct toy_window {
  * the values local here so this Windows file does not include Linux headers. */
 enum {
     KEY_ESC = 1, KEY_1 = 2, KEY_2 = 3, KEY_BACKSPACE = 14, KEY_TAB = 15,
-    KEY_Q = 16, KEY_W = 17, KEY_E = 18, KEY_R = 19,
+    KEY_Q = 16, KEY_W = 17, KEY_E = 18, KEY_R = 19, KEY_F = 33,
     KEY_A = 30, KEY_S = 31, KEY_D = 32, KEY_ENTER = 28,
     KEY_LEFTSHIFT = 42, KEY_COMMA = 51, KEY_DOT = 52,
     KEY_SLASH = 53, KEY_SPACE = 57,
@@ -99,6 +99,7 @@ static void poll_windows_keys(struct toy_window_events *events)
         {KEY_D, 'D', NULL}, {KEY_SPACE, VK_SPACE, NULL},
         {KEY_LEFTSHIFT, VK_LSHIFT, NULL}, {KEY_TAB, VK_TAB, NULL},
         {KEY_R, 'R', NULL}, {KEY_E, 'E', NULL},
+        {KEY_F, 'F', NULL},
         {KEY_1, '1', NULL}, {KEY_2, '2', NULL},
         {KEY_LEFT, VK_LEFT, NULL}, {KEY_RIGHT, VK_RIGHT, NULL},
         {KEY_SLASH, VK_OEM_2, NULL},
@@ -132,6 +133,7 @@ static unsigned int key_code(SDL_Scancode code, SDL_Keycode sym)
     case SDLK_PERIOD: return KEY_DOT;
     case SDLK_r: return KEY_R;
     case SDLK_e: return KEY_E;
+    case SDLK_f: return KEY_F;
     case SDLK_TAB: return KEY_TAB;
     case SDLK_BACKSPACE: return KEY_BACKSPACE;
     case SDLK_1: return KEY_1;
@@ -178,6 +180,7 @@ static unsigned int key_code(SDL_Scancode code, SDL_Keycode sym)
     case SDL_SCANCODE_PERIOD: return KEY_DOT;
     case SDL_SCANCODE_R: return KEY_R;
     case SDL_SCANCODE_E: return KEY_E;
+    case SDL_SCANCODE_F: return KEY_F;
     case SDL_SCANCODE_TAB: return KEY_TAB;
     case SDL_SCANCODE_BACKSPACE: return KEY_BACKSPACE;
     case SDL_SCANCODE_1: return KEY_1;

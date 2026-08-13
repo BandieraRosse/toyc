@@ -11,6 +11,7 @@
 #define RASTERFALL_MOVE_STEP TOY_CONFIG_PLAYER_MOVE_STEP
 #define RASTERFALL_INTERACT_RANGE 1000
 #define RASTERFALL_MAX_FLAGS 8
+#define RASTERFALL_PAID_REVIVE_COST 20
 
 struct rasterfall_flag {
     int active;
@@ -35,7 +36,8 @@ enum rasterfall_command_button {
     RASTERFALL_CMD_JUMP       = 1 << 9,
     RASTERFALL_CMD_CLEAR_STATS = 1 << 10,
     RASTERFALL_CMD_FLAG       = 1 << 11,
-    RASTERFALL_CMD_SHOP       = 1 << 12
+    RASTERFALL_CMD_SHOP       = 1 << 12,
+    RASTERFALL_CMD_REVIVE     = 1 << 13
 };
 
 /* 与窗口系统无关的单个逻辑步输入。以后网络客户端发送的也是这类游戏语义，
@@ -123,6 +125,8 @@ int rasterfall_session_revive_player(struct rasterfall_session *session,
                                      const struct camera *rescuer,
                                      const struct camera *target,
                                      int *progress_ms, int dt_ms);
+int rasterfall_session_paid_revive(struct rasterfall_session *session,
+                                   struct camera *camera);
 int rasterfall_session_find_down_ai(const struct rasterfall_session *session,
                                     const struct camera *camera);
 void rasterfall_camera_rotate(struct camera *camera, int turn, int pitch);

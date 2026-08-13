@@ -482,11 +482,14 @@ static void render_revive_prompt(struct toy_surface *surface,
     const struct toy_game *game = state->game;
     char line[64];
     int width, x, y = surface->height / 2 + 24;
-    if (game->player_down || (!state->ai_revive_available &&
+    if (game->player_down) {
+        snprintf(line, sizeof(line), "F REVIVE $%d   WAIT FOR RESCUE",
+                 RASTERFALL_PAID_REVIVE_COST);
+    } else if (!state->ai_revive_available &&
                               !state->ai_revive_active &&
                               !state->player_revive_available &&
-                              !state->player_revive_active)) return;
-    if (state->player_revive_active) {
+                              !state->player_revive_active) return;
+    else if (state->player_revive_active) {
         snprintf(line, sizeof(line), "REVIVING %s  %d%%",
                  state->player_revive_name ? state->player_revive_name : "PLAYER",
                  state->player_revive_progress_ms * 100 / TOY_GAME_REVIVE_MS);

@@ -511,6 +511,38 @@ int rasterfall_session_revive_player(struct rasterfall_session *session,
     return 1;
 }
 
+int rasterfall_session_paid_revive(struct rasterfall_session *session,
+                                   struct camera *camera)
+{
+    struct toy_game *game;
+    if (!session || !camera) return 0;
+    game = &session->game_state;
+    if (game->state != TOY_GAME_PLAYING || !game->player_down ||
+        game->money < RASTERFALL_PAID_REVIVE_COST)
+        return 0;
+    game->money -= RASTERFALL_PAID_REVIVE_COST;
+    game->player_down = 0;
+    game->hp = TOY_GAME_REVIVE_HP;
+    game->player_revive_progress_ms = 0;
+    game->player_control_disabled = 0;
+    camera->x = session->level.start_x;
+    camera->z = session->level.start_z;
+    camera->sy = 0;
+    camera->cy = 1024;
+    camera->pitch_sy = 0;
+    camera->pitch_cy = 1024;
+    camera->y = 0;
+    game->px = camera->x;
+    game->pz = camera->z;
+    toy_game_animation_set(&game->animation, TOY_GAME_ANIM_REVIVE);
+    toy_game_emit_event(game, TOY_GAME_EV_REVIVE);
+    toy_game_emit_event(game, TOY_GAME_EV_ACTOR_REVIVE);
+    session->banner_ms = 1800;
+    session->banner_success = 1;
+    session->banner_text = "REVIVED -$20";
+    return 1;
+}
+
 int rasterfall_session_compute_highlight(const struct rasterfall_session *session,
                                          const struct camera *camera)
 {
@@ -1073,6 +1105,9 @@ void rasterfall_session_step(struct rasterfall_session *session,
         rasterfall_session_reset(session, camera, session->seed);
         return;
     }
+    if ((command->buttons & RASTERFALL_CMD_REVIVE) &&
+        rasterfall_session_paid_revive(session, camera))
+        return;
     if (session->game_state.state != TOY_GAME_PLAYING) return;
     if (command->buttons & RASTERFALL_CMD_FLAG)
         session_toggle_flag(session, camera);
@@ -1172,6 +1207,9 @@ void rasterfall_session_step_client(struct rasterfall_session *session,
         rasterfall_session_reset(session, camera, session->seed);
         return;
     }
+    if ((command->buttons & RASTERFALL_CMD_REVIVE) &&
+        rasterfall_session_paid_revive(session, camera))
+        return;
     if (session->game_state.state != TOY_GAME_PLAYING) return;
     if (command->buttons & RASTERFALL_CMD_JUMP)
         session_jump_player(session, camera, command);
