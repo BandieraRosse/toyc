@@ -1203,6 +1203,8 @@ void rasterfall_session_step_client(struct rasterfall_session *session,
     unsigned char keys[TOY_GAME_KEY_RELOAD + 1];
     struct toy_game_enemy enemies[TOY_GAME_MAX_ENEMIES];
     int enemy_count, kills, special_kills, damage_dealt, event_start, write, i;
+    int old_reloading;
+    unsigned int old_fire_seq;
     if (command->buttons & RASTERFALL_CMD_RESET) {
         rasterfall_session_reset(session, camera, session->seed);
         return;
@@ -1263,10 +1265,34 @@ void rasterfall_session_step_client(struct rasterfall_session *session,
     special_kills = session->game_state.special_kills;
     damage_dealt = session->game_state.damage_dealt;
     event_start = session->game_state.event_count;
+    old_reloading = session->game_state.reloading;
+    old_fire_seq = session->game_state.fire_seq;
     toy_game_update_weapon_held(&session->game_state, keys,
                                 (command->buttons & RASTERFALL_CMD_FIRE) != 0,
                                 command->fire_held, camera->sy, camera->cy,
                                 dt_ms);
+    /* The client predicts its own weapon state, so it must also predict the
+     * presentation transition.  The host path uses toy_game_update_held,
+     * which owns this transition; the client deliberately calls the lower
+     * level weapon update to avoid simulating the shared world. */
+    if (session->game_state.reloading && !old_reloading)
+        toy_game_animation_set(&session->game_state.animation,
+                               TOY_GAME_ANIM_RELOAD);
+    else if (session->game_state.fire_seq != old_fire_seq)
+        toy_game_animation_set(&session->game_state.animation,
+                               TOY_GAME_ANIM_FIRE);
+    if (session->game_state.animation.id == TOY_GAME_ANIM_RELOAD) {
+        toy_game_animation_update(&session->game_state.animation, dt_ms);
+        if (!session->game_state.reloading)
+            toy_game_animation_set(&session->game_state.animation,
+                                   TOY_GAME_ANIM_NONE);
+    } else if (session->game_state.animation.id == TOY_GAME_ANIM_FIRE) {
+        toy_game_animation_update(&session->game_state.animation, dt_ms);
+        if (session->game_state.animation.time_ms >=
+            toy_game_animation_info(TOY_GAME_ANIM_FIRE)->duration_ms)
+            toy_game_animation_set(&session->game_state.animation,
+                                   TOY_GAME_ANIM_NONE);
+    }
     /* There is no local gameplay update on the client for the shove, so
      * advance its presentation clock here until the authoritative snapshot
      * replaces it. */
