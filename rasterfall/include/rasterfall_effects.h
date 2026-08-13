@@ -21,6 +21,7 @@ enum rasterfall_effect_cue_type {
 
 struct rasterfall_effect_cue {
     int type;
+    int depth_test;
     int sx, sy, sz;
     int ex, ey, ez;
     int dir_sy, dir_cy;
@@ -29,6 +30,7 @@ struct rasterfall_effect_cue {
 
 struct rasterfall_tracer {
     int active;
+    int depth_test;
     int sx, sy, sz;
     int ex, ey, ez;
     int life_ms;

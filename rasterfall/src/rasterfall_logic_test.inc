@@ -376,12 +376,14 @@ static int run_logic_test(void)
         struct rasterfall_effect_cue cue;
         memset(&cue, 0, sizeof(cue));
         cue.type = RASTERFALL_EFFECT_CUE_TRACER;
+        cue.depth_test = 1;
         cue.sx = 1; cue.sy = 2; cue.sz = 3;
         cue.ex = 4; cue.ey = 5; cue.ez = 6;
         cue.life_ms = 77;
         rasterfall_effects_emit(&effects, &cue);
         if (!effects.tracers[0].active || effects.tracers[0].sx != 1 ||
-            effects.tracers[0].ey != 5 || effects.tracers[0].life_ms != 77)
+            effects.tracers[0].ey != 5 || effects.tracers[0].life_ms != 77 ||
+            !effects.tracers[0].depth_test)
             return 57;
         cue.type = RASTERFALL_EFFECT_CUE_HIT_PARTICLES;
         cue.dir_sy = 1024; cue.dir_cy = 0;

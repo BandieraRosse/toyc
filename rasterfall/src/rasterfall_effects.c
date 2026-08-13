@@ -64,6 +64,7 @@ void rasterfall_effects_emit(struct rasterfall_effects *effects,
         effects->tracer_next =
             (effects->tracer_next + 1) % RASTERFALL_TRACER_SLOTS;
         tracer->active = 1;
+        tracer->depth_test = cue->depth_test;
         tracer->sx = cue->sx; tracer->sy = cue->sy; tracer->sz = cue->sz;
         tracer->ex = cue->ex; tracer->ey = cue->ey; tracer->ez = cue->ez;
         tracer->life_ms = cue->life_ms > 0 ? cue->life_ms :

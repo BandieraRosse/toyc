@@ -2654,7 +2654,7 @@ static int render_tracers(struct toy_renderer *renderer, const struct camera *ca
         color = mix_color(0xFFE060, 0x3A2C14,
                           t->life_ms * 256 / RASTERFALL_TRACER_LIFE_MS, 256);
         draw_tracer_line(renderer, camera, t->sx, t->sy, t->sz,
-                         t->ex, t->ey, t->ez, color, 0);
+                         t->ex, t->ey, t->ez, color, t->depth_test);
         pixels++;
     }
     return pixels;

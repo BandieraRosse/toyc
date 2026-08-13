@@ -917,11 +917,12 @@ static void tracer_world_endpoint(const struct toy_game_ray *ray,
 
 static void emit_ray_effects(const struct toy_game_ray *ray,
                              int sx, int sy, int sz,
-                             int ex, int ey, int ez)
+                             int ex, int ey, int ez, int depth_test)
 {
     struct rasterfall_effect_cue cue;
     memset(&cue, 0, sizeof(cue));
     cue.type = RASTERFALL_EFFECT_CUE_TRACER;
+    cue.depth_test = depth_test;
     cue.sx = sx; cue.sy = sy; cue.sz = sz;
     cue.ex = ex; cue.ey = ey; cue.ez = ez;
     cue.life_ms = RASTERFALL_TRACER_LIFE_MS;
@@ -974,7 +975,7 @@ static void sync_fire_effects(const struct camera *camera)
                             r->ex, r->ez,
                             &tracer_x, &tracer_y, &tracer_z);
         emit_ray_effects(r, muzzle.x, muzzle.y, muzzle.z,
-                         tracer_x, tracer_y, tracer_z);
+                         tracer_x, tracer_y, tracer_z, 0);
     }
 }
 
@@ -1021,7 +1022,7 @@ static void sync_ai_fire_effects(const struct camera *camera)
                                 r->ex, r->ez,
                                 &tracer_x, &tracer_y, &tracer_z);
             emit_ray_effects(r, mx, my, mz,
-                             tracer_x, tracer_y, tracer_z);
+                             tracer_x, tracer_y, tracer_z, 1);
         }
     }
 }
@@ -1062,7 +1063,7 @@ static void sync_network_fire_effects(const struct camera *viewer,
                               r->ex, r->ez,
                               &tracer_x, &tracer_y, &tracer_z);
         emit_ray_effects(r, muzzle.x, muzzle.y, muzzle.z,
-                         tracer_x, tracer_y, tracer_z);
+                         tracer_x, tracer_y, tracer_z, 0);
     }
     (void)viewer;
 }
