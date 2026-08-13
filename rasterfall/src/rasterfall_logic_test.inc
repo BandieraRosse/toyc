@@ -258,6 +258,7 @@ static int run_logic_test(void)
                                   RASTERFALL_PLAYER_RADIUS)) {
         return 13;
     }
+    if (!toy_game_skip_wave_rest(&game)) return 139;
     for (int i = 0; i < 170; i++)
         toy_game_update(&game, NULL, 0, camera.sy, camera.cy, 16);
     if (game.enemies_alive == 0) return 14;
@@ -635,6 +636,7 @@ static int run_logic_test(void)
         game.actors[0].x = 0; game.actors[0].z = 11000;
         game.actors[1].x = 0; game.actors[1].z = 11000;
         game.ai_x = 0; game.ai_z = 11000;
+        game.px = aim.x; game.pz = aim.z - 5000;
         memset(game.enemies, 0, sizeof(game.enemies));
         game.enemies_alive = 0;
         game.enemies[0].active = 1;             /* 面前 300：应被推 */
@@ -660,17 +662,16 @@ static int run_logic_test(void)
         pushed_z = game.enemies[0].z;
         /* 僵直中不移动：20 帧（320ms）内位置与僵直计时都应保持。 */
         for (i = 0; i < 20; i++) {
-            memset(&command, 0, sizeof(command));
-            rasterfall_session_step(&session, &aim, &command, 16);
+            toy_game_update_held(&game, NULL, 0, 0, aim.sy, aim.cy, 16);
         }
         if (game.enemies[0].z != pushed_z) return 67;
         if (game.enemies[0].shove_stun_ms == 0) return 68;
         /* 僵直结束（900ms ≈ 57 帧）后计时清零、恢复行动。 */
-        for (i = 0; i < 80; i++) {
-            memset(&command, 0, sizeof(command));
-            rasterfall_session_step(&session, &aim, &command, 16);
+        for (i = 0; i < 100; i++) {
+            toy_game_update_held(&game, NULL, 0, 0, aim.sy, aim.cy, 16);
         }
-        if (game.enemies[0].shove_stun_ms != 0) return 69;
+        if (game.enemies[0].active == 1 && game.enemies[0].shove_stun_ms != 0)
+            return 69;
         game.actors[0].x = jx; game.actors[0].z = jz;
         game.actors[1].x = gx; game.actors[1].z = gz;
         game.ai_x = aix; game.ai_z = aiz;

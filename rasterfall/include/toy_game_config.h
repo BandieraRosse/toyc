@@ -10,6 +10,12 @@
 #define TOY_CONFIG_BASE_REGEN_MS               1000 /* 基地核心每秒回复 */
 #define TOY_CONFIG_AI_RETURN_SPEED             38  /* AI 队友回位速度 */
 
+/* Wave spawning: the planned enemies are distributed evenly across this
+ * duration.  Keep this as a tuning value so wave pacing can change without
+ * touching the wave state machine. */
+#define TOY_CONFIG_WAVE_SPAWN_DURATION_MS   20000  /* 每波刷怪持续时间 */
+#define TOY_CONFIG_WAVE_ENEMY_COST_MULTIPLIER 2   /* 袭击点数/击杀奖励倍率 */
+
 /* Weapon switching: duration and whether firing is blocked during it. */
 #define TOY_CONFIG_WEAPON_SWITCH_MS           200  /* 切枪动画/禁射时长 */
 #define TOY_CONFIG_BLOCK_FIRE_DURING_SWITCH    1  /* 切枪期间是否禁射 */

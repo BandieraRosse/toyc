@@ -55,18 +55,20 @@ static void draw_weapon_silhouette(struct toy_surface *surface, int weapon,
     }
 }
 
+static int hud_value_y = 8;
+
 static int draw_hud_value(struct toy_surface *surface, int x,
                           const char *label, const char *value,
                           uint32_t color)
 {
     int label_w = (int)strlen(label) * FB_FONT_W;
     int value_w = (int)strlen(value) * FB_FONT_W;
-    fb_draw_string((unsigned char *)surface->pixels, x, 8,
+    fb_draw_string((unsigned char *)surface->pixels, x, hud_value_y,
                    label, 0xAAB4C0, surface->stride);
     x += label_w;
-    hud_fill_rect(surface, x - 1, 6, value_w + 2, FB_FONT_H + 4,
+    hud_fill_rect(surface, x - 1, hud_value_y - 2, value_w + 2, FB_FONT_H + 4,
                   0x26384C);
-    fb_draw_string((unsigned char *)surface->pixels, x, 8,
+    fb_draw_string((unsigned char *)surface->pixels, x, hud_value_y,
                    value, color, surface->stride);
     return x + value_w + FB_FONT_W * 2;
 }
@@ -603,48 +605,68 @@ static void render_network_hud(struct toy_surface *surface,
     }
 }
 
-static void render_director_hud(struct toy_surface *surface,
-                                const struct toy_game *game, int fps)
+static void render_wave_hud(struct toy_surface *surface,
+                            const struct toy_game *game, int fps)
 {
     char value[32];
-    char next_value[32];
     int x = 8;
-    const char *phase = game->campaign_phase == TOY_GAME_PHASE_BUILDUP ?
-                        "BUILDUP" :
-                        game->campaign_phase == TOY_GAME_PHASE_HORDE ?
-                        "HORDE" :
-                        game->campaign_phase == TOY_GAME_PHASE_RELAX ?
-                        "RELAX" : "CALM";
-    if (game->phase_timer_ms > 0) {
-        snprintf(next_value, sizeof(next_value), "%dS",
-                 (game->phase_timer_ms + 999) / 1000);
-    } else if (game->campaign_phase == TOY_GAME_PHASE_BUILDUP) {
-        strcpy(next_value, "IN");
-    } else {
-        strcpy(next_value, "READY");
-    }
-    x = draw_hud_value(surface, x, "DIRECTOR ", phase,
+    const char *status;
+    if (game->campaign_phase == TOY_GAME_PHASE_HORDE)
+        status = "ACTIVE";
+    else if (game->campaign_phase == TOY_GAME_PHASE_BUILDUP)
+        status = "STARTING";
+    else
+        status = game->wave >= TOY_GAME_WAVE_MAX ? "COMPLETE" : "REST";
+    hud_value_y = 8;
+    x = draw_hud_value(surface, x, "WAVE ", status,
                        game->campaign_phase == TOY_GAME_PHASE_HORDE ?
                        0xFFD040 : RF_COLOR_UI_SECONDARY);
-    snprintf(value, sizeof(value), "%d", game->spawn_budget);
-    x = draw_hud_value(surface, x, "QUEUE ", value, 0xFFD070);
+    snprintf(value, sizeof(value), "%d/%d", game->wave, TOY_GAME_WAVE_MAX);
+    x = draw_hud_value(surface, x, "NUMBER ", value, 0xFFD070);
+    if (game->campaign_phase == TOY_GAME_PHASE_HORDE ||
+        game->campaign_phase == TOY_GAME_PHASE_BUILDUP) {
+        snprintf(value, sizeof(value), "%d", game->wave_attack_points);
+        x = draw_hud_value(surface, x, "ATTACK ", value, 0xFFD070);
+    }
     snprintf(value, sizeof(value), "%d", game->enemies_alive);
     x = draw_hud_value(surface, x, "LIVE ", value, 0xF0F0F0);
-    snprintf(value, sizeof(value), "%d", game->active_attackers);
-    x = draw_hud_value(surface, x, "ACT ", value,
-                       game->active_attackers > 0 ? 0xFF8060 : RF_COLOR_UI_AI);
-    x = draw_hud_value(surface, x, "NEXT ", next_value, 0x80C8FF);
-    snprintf(value, sizeof(value), "%d", game->director_encounters);
-    x = draw_hud_value(surface, x, "RUN ", value, 0xC0A0FF);
+    if ((game->campaign_phase == TOY_GAME_PHASE_CALM &&
+         game->spawn_timer_ms > 0) || game->phase_timer_ms > 0) {
+        snprintf(value, sizeof(value), "%dS",
+                 ((game->campaign_phase == TOY_GAME_PHASE_CALM ?
+                   game->spawn_timer_ms : game->phase_timer_ms) + 999) / 1000);
+        x = draw_hud_value(surface, x,
+                           game->campaign_phase == TOY_GAME_PHASE_BUILDUP ?
+                           "BEGIN " : "NEXT ", value, 0x80C8FF);
+    }
     snprintf(value, sizeof(value), "%d", fps);
     draw_hud_value(surface, x, "FPS ", value, 0x90F090);
+
+    /* Detailed queue counts occupy their own row so they do not run into
+     * the network/weapon HUD on the right side of the screen. */
+    if (game->campaign_phase == TOY_GAME_PHASE_HORDE ||
+        game->campaign_phase == TOY_GAME_PHASE_BUILDUP) {
+        hud_value_y = 30;
+        x = 8;
+        snprintf(value, sizeof(value), "%d", game->wave_waiting_common);
+        x = draw_hud_value(surface, x, "COMMON ", value, 0xD0D0D0);
+        snprintf(value, sizeof(value), "%d", game->wave_waiting_fast);
+        x = draw_hud_value(surface, x, "FAST ", value, 0xFF8060);
+        snprintf(value, sizeof(value), "%d", game->wave_waiting_heavy);
+        x = draw_hud_value(surface, x, "HEAVY ", value, 0xC89070);
+        snprintf(value, sizeof(value), "%d", game->wave_waiting_special);
+        x = draw_hud_value(surface, x, "SPECIAL ", value, 0xD080FF);
+        snprintf(value, sizeof(value), "%d", game->wave_waiting_tank);
+        x = draw_hud_value(surface, x, "TANK ", value, 0xFF4040);
+    }
+    hud_value_y = 8;
 }
 
 void rasterfall_hud_render(struct toy_surface *surface, int fps,
                            const struct rasterfall_hud_state *state)
 {
     const struct toy_game *game = state->game;
-    render_director_hud(surface, game, fps);
+    render_wave_hud(surface, game, fps);
     render_network_hud(surface, state->net, state->host_address, state->host_port);
     render_weapon_hud(surface, game);
     render_money(surface, game);

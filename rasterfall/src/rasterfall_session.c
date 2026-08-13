@@ -609,6 +609,10 @@ static void session_interact(struct rasterfall_session *session,
                                  HORDE_COUNT_MAX, session->spawn_zones,
                                  session->spawn_count, HORDE_MIN_PLAYER_DIST);
         __printf("rasterfall: horde summoned %d tracking enemies\n", n);
+    } else if (it->kind == TOY_MAP_PICKUP_WAVE_SKIP_BUTTON) {
+        session->banner_ms = 1200;
+        session->banner_text = toy_game_skip_wave_rest(&session->game_state) ?
+            "NEXT WAVE STARTING" : "WAVE ALREADY STARTED";
     } else if (it->kind == TOY_MAP_PICKUP_AIR_BUTTON) {
         session_set_air_walls(session, !session->air_walls_enabled);
         session->banner_ms = 1800;
@@ -1128,6 +1132,16 @@ void rasterfall_session_step(struct rasterfall_session *session,
     toy_game_update_held(&session->game_state, keys,
                          (command->buttons & RASTERFALL_CMD_FIRE) != 0,
                          command->fire_held, camera->sy, camera->cy, dt_ms);
+    {
+        int i;
+        for (i = 0; i < session->game_state.event_count; i++)
+            if (session->game_state.events[i] == TOY_GAME_EV_WAVE_START) {
+                session->banner_ms = TOY_GAME_WAVE_ANNOUNCE_MS;
+                session->banner_success = 1;
+                session->banner_text = "WAVE STARTING";
+                break;
+            }
+    }
     if (!session->game_state.reloading &&
         toy_game_animation_allows_locomotion(
             session->game_state.animation.id))

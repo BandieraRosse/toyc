@@ -31,7 +31,7 @@ static void net_windows_log(const char *message) { (void)message; }
 #define NET_ACTOR_SIZE (38 + TOY_GAME_MAX_NAME)
 #define NET_ENEMY_SIZE 48
 #define NET_EVENT_SIZE (4 + 1 + TOY_GAME_MAX_EVENTS)
-#define NET_WORLD_BASE_SIZE 32
+#define NET_WORLD_BASE_SIZE 44
 #define NET_WORLD_FLAG_SIZE 12
 #define NET_WORLD_SIZE (NET_WORLD_BASE_SIZE + 4 + 4 + \
                         RASTERFALL_MAX_FLAGS * NET_WORLD_FLAG_SIZE + \
@@ -1427,6 +1427,12 @@ int rasterfall_net_send_snapshot(struct rasterfall_net *net,
     put_i16(world_data + 26, game->alarm_triggered);
     put_i16(world_data + 28, game->campaign_stage);
     world_data[30] = (unsigned char)(game->player_control_disabled ? 1 : 0);
+    put_i16(world_data + 32, game->wave_attack_points);
+    put_i16(world_data + 34, game->wave_waiting_common);
+    put_i16(world_data + 36, game->wave_waiting_fast);
+    put_i16(world_data + 38, game->wave_waiting_heavy);
+    put_i16(world_data + 40, game->wave_waiting_special);
+    put_i16(world_data + 42, game->wave_waiting_tank);
     put_u32(world_data + NET_WORLD_BASE_SIZE, (uint32_t)game->money);
     put_u32(world_data + NET_WORLD_BASE_SIZE + 4,
             (uint32_t)game->unlocked_weapons);
@@ -1544,6 +1550,12 @@ static int decode_snapshot(const unsigned char *payload, int size,
     net->snapshot_world_manual_alarm_timer_ms = get_i16(world_data + 24);
     net->snapshot_world_alarm_triggered = get_i16(world_data + 26);
     net->snapshot_world_campaign_stage = get_i16(world_data + 28);
+    net->snapshot_world_wave_attack_points = get_i16(world_data + 32);
+    net->snapshot_world_wave_waiting_common = get_i16(world_data + 34);
+    net->snapshot_world_wave_waiting_fast = get_i16(world_data + 36);
+    net->snapshot_world_wave_waiting_heavy = get_i16(world_data + 38);
+    net->snapshot_world_wave_waiting_special = get_i16(world_data + 40);
+    net->snapshot_world_wave_waiting_tank = get_i16(world_data + 42);
     net->snapshot_money = (int)get_u32(world_data + NET_WORLD_BASE_SIZE);
     net->snapshot_unlocked_weapons = get_u32(world_data + NET_WORLD_BASE_SIZE + 4);
     net->snapshot_flag_count = get_i16(world_data + NET_WORLD_BASE_SIZE + 8);
@@ -3011,6 +3023,12 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
         session->game_state.goal_hold_ms = net->snapshot_world_goal_hold_ms;
         session->game_state.alarm_triggered = net->snapshot_world_alarm_triggered;
         session->game_state.campaign_stage = net->snapshot_world_campaign_stage;
+        session->game_state.wave_attack_points = net->snapshot_world_wave_attack_points;
+        session->game_state.wave_waiting_common = net->snapshot_world_wave_waiting_common;
+        session->game_state.wave_waiting_fast = net->snapshot_world_wave_waiting_fast;
+        session->game_state.wave_waiting_heavy = net->snapshot_world_wave_waiting_heavy;
+        session->game_state.wave_waiting_special = net->snapshot_world_wave_waiting_special;
+        session->game_state.wave_waiting_tank = net->snapshot_world_wave_waiting_tank;
         session->game_state.money = net->snapshot_money;
         session->game_state.unlocked_weapons = net->snapshot_unlocked_weapons;
         if (net->snapshot_flag_count <= RASTERFALL_MAX_FLAGS) {

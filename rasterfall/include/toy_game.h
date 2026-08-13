@@ -18,6 +18,7 @@
 #include "rasterfall_colors.h"
 
 #define TOY_GAME_MAX_ENEMIES    64
+#define TOY_GAME_MAX_WAVE_QUEUE 512
 #define TOY_GAME_MAX_ACTORS     64
 #define TOY_GAME_MAX_PLAYERS    4
 #define TOY_GAME_REMOTE_ACTOR_BASE \
@@ -31,9 +32,11 @@
 #define TOY_GAME_DYING_MS       400
 #define TOY_GAME_REVIVE_MS      3000
 #define TOY_GAME_REVIVE_HP      30
-#define TOY_GAME_WAVE_FIRST_DELAY_MS 1500
-#define TOY_GAME_WAVE_PAUSE_MS  2500
-#define TOY_GAME_SPAWN_INTERVAL_MS 500
+#define TOY_GAME_WAVE_FIRST_DELAY_MS 60000
+#define TOY_GAME_WAVE_PAUSE_MS  60000
+#define TOY_GAME_WAVE_ANNOUNCE_MS 2000
+#define TOY_GAME_WAVE_MAX 10
+#define TOY_GAME_WAVE_SCALE_PERCENT 100 /* 袭击规模：100%=1 倍 */
 #define TOY_GAME_CAMPAIGN_AMBIENT_BUDGET 10
 #define TOY_GAME_CAMPAIGN_AMBIENT_SPAWN_INTERVAL_MS 100
 #define TOY_GAME_ALARM_SPAWN_INTERVAL_MS 1200
@@ -475,6 +478,15 @@ struct toy_game {
     int to_spawn;       /* 本波待生成配额 */
     int spawn_timer_ms;
     int enemies_alive;
+    int wave_attack_points;
+    int wave_spawn_index;
+    int wave_spawn_interval_ms;
+    int wave_spawn_types[TOY_GAME_MAX_WAVE_QUEUE];
+    int wave_waiting_common;
+    int wave_waiting_fast;
+    int wave_waiting_heavy;
+    int wave_waiting_special;
+    int wave_waiting_tank;
 
     /* 经典闯关模式：固定刷怪区，安全室对敌人视为禁区。 */
     const struct toy_game_box *safe_rooms;
@@ -649,6 +661,7 @@ int  toy_game_weapon_from_name(const char *name);
 const struct toy_game_enemy_info *toy_game_enemy_info(int type);
 const struct toy_game_enemy_info *toy_game_enemy_info_or_null(int type);
 int  toy_game_enemy_type_is_valid(int type);
+int  toy_game_skip_wave_rest(struct toy_game *g);
 int  toy_game_enemy_content_id(int type);
 int  toy_game_enemy_from_content_id(int content_id);
 struct toy_game_actor *toy_game_actor_by_id(struct toy_game *g, int actor_id);

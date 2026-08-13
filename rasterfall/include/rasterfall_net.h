@@ -265,6 +265,12 @@ struct rasterfall_net {
     int snapshot_world_manual_alarm_timer_ms;
     int snapshot_world_alarm_triggered;
     int snapshot_world_campaign_stage;
+    int snapshot_world_wave_attack_points;
+    int snapshot_world_wave_waiting_common;
+    int snapshot_world_wave_waiting_fast;
+    int snapshot_world_wave_waiting_heavy;
+    int snapshot_world_wave_waiting_special;
+    int snapshot_world_wave_waiting_tank;
     int snapshot_money;
     unsigned int snapshot_unlocked_weapons;
     int snapshot_flag_count;

@@ -407,11 +407,93 @@ int toy_game_drain_events(struct toy_game *g, unsigned char *out, int max)
 
 /* ── 初始化 / 世界 ─────────────────────────────────────────────── */
 
-static int wave_quota(int wave)
+static int wave_combat_power(const struct toy_game *g)
 {
-    int quota = 5 + (wave - 1) * 2;
-    if (quota > TOY_GAME_MAX_ENEMIES) quota = TOY_GAME_MAX_ENEMIES;
-    return quota;
+    int i, power = 50; /* 玩家和基地自身的基础战斗力 */
+    for (i = 0; i < TOY_GAME_MAX_ACTORS; i++)
+        if (g->actors[i].active && g->actors[i].hired)
+            power += toy_game_actor_combat_power(&g->actors[i]);
+    return power;
+}
+
+static int wave_enemy_cost(int type)
+{
+    switch (type) {
+    case TOY_GAME_ENEMY_TANK: return TOY_CONFIG_MONEY_TANK *
+        TOY_CONFIG_WAVE_ENEMY_COST_MULTIPLIER;
+    case TOY_GAME_ENEMY_SMOKER:
+    case TOY_GAME_ENEMY_CHARGER: return TOY_CONFIG_MONEY_SPECIAL *
+        TOY_CONFIG_WAVE_ENEMY_COST_MULTIPLIER;
+    case TOY_GAME_ENEMY_PURSUIT_FAST: return TOY_CONFIG_MONEY_FAST *
+        TOY_CONFIG_WAVE_ENEMY_COST_MULTIPLIER;
+    case TOY_GAME_ENEMY_PURSUIT_HEAVY: return TOY_CONFIG_MONEY_HEAVY *
+        TOY_CONFIG_WAVE_ENEMY_COST_MULTIPLIER;
+    default: return TOY_CONFIG_MONEY_COMMON *
+        TOY_CONFIG_WAVE_ENEMY_COST_MULTIPLIER;
+    }
+}
+
+static void wave_build_plan(struct toy_game *g)
+{
+    int points = (g->wave * 50 + wave_combat_power(g)) *
+                 TOY_GAME_WAVE_SCALE_PERCENT / 100;
+    int remaining = points, i, count = 0, bucket;
+    int common = 0, fast = 0, heavy = 0, special = 0, tank = 0;
+    int tank_count = points > 1000 ? 2 : points >= 500 ? 1 : 0;
+    g->wave_attack_points = points;
+    for (i = 0; i < tank_count && remaining >= wave_enemy_cost(TOY_GAME_ENEMY_TANK); i++) {
+        tank++;
+        remaining -= wave_enemy_cost(TOY_GAME_ENEMY_TANK);
+    }
+    bucket = remaining * 50 / 100;
+    while (bucket >= wave_enemy_cost(TOY_GAME_ENEMY_PURSUIT_COMMON)) {
+        common++;
+        bucket -= wave_enemy_cost(TOY_GAME_ENEMY_PURSUIT_COMMON);
+    }
+    if (points >= 200) {
+        bucket = remaining * 20 / 100;
+        while (bucket >= wave_enemy_cost(TOY_GAME_ENEMY_SMOKER)) {
+            special++;
+            bucket -= wave_enemy_cost(TOY_GAME_ENEMY_SMOKER);
+        }
+    }
+    bucket = remaining * 15 / 100;
+    while (bucket >= wave_enemy_cost(TOY_GAME_ENEMY_PURSUIT_FAST)) {
+        fast++;
+        bucket -= wave_enemy_cost(TOY_GAME_ENEMY_PURSUIT_FAST);
+    }
+    bucket = remaining * 15 / 100;
+    while (bucket >= wave_enemy_cost(TOY_GAME_ENEMY_PURSUIT_HEAVY)) {
+        heavy++;
+        bucket -= wave_enemy_cost(TOY_GAME_ENEMY_PURSUIT_HEAVY);
+    }
+    /* The 64 enemy slots limit simultaneous actors only.  Do not scale this
+     * plan down: excess enemies remain queued and spawn as slots are freed. */
+    for (i = 0; i < tank && count < TOY_GAME_MAX_WAVE_QUEUE; i++)
+        g->wave_spawn_types[count++] = TOY_GAME_ENEMY_TANK;
+    for (i = 0; i < common && count < TOY_GAME_MAX_WAVE_QUEUE; i++)
+        g->wave_spawn_types[count++] = TOY_GAME_ENEMY_PURSUIT_COMMON;
+    for (i = 0; i < special && count < TOY_GAME_MAX_WAVE_QUEUE; i++)
+        g->wave_spawn_types[count++] = rand_range(g, 0, 1) == 0 ?
+            TOY_GAME_ENEMY_SMOKER : TOY_GAME_ENEMY_CHARGER;
+    for (i = 0; i < fast && count < TOY_GAME_MAX_WAVE_QUEUE; i++)
+        g->wave_spawn_types[count++] = TOY_GAME_ENEMY_PURSUIT_FAST;
+    for (i = 0; i < heavy && count < TOY_GAME_MAX_WAVE_QUEUE; i++)
+        g->wave_spawn_types[count++] = TOY_GAME_ENEMY_PURSUIT_HEAVY;
+    for (i = count - 1; i > 0; i--) {
+        int j = rand_range(g, 0, i), t = g->wave_spawn_types[i];
+        g->wave_spawn_types[i] = g->wave_spawn_types[j];
+        g->wave_spawn_types[j] = t;
+    }
+    g->to_spawn = count;
+    g->wave_spawn_index = 0;
+    g->wave_waiting_common = common;
+    g->wave_waiting_fast = fast;
+    g->wave_waiting_heavy = heavy;
+    g->wave_waiting_special = special;
+    g->wave_waiting_tank = tank;
+    g->wave_spawn_interval_ms = count > 0 ?
+        TOY_CONFIG_WAVE_SPAWN_DURATION_MS / count : 0;
 }
 
 void toy_game_init(struct toy_game *g, uint64_t seed)
@@ -435,9 +517,10 @@ void toy_game_init(struct toy_game *g, uint64_t seed)
     g->money = TOY_GAME_INITIAL_MONEY;
     /* 手枪是基础装备；所有可购买主武器初始锁定。 */
     g->unlocked_weapons = 1u << TOY_GAME_WEAPON_PISTOL;
-    g->wave = 1;
-    g->to_spawn = wave_quota(1);
+    g->wave = 0;
+    g->to_spawn = 0;
     g->spawn_timer_ms = TOY_GAME_WAVE_FIRST_DELAY_MS;
+    g->campaign_phase = TOY_GAME_PHASE_CALM;
     g->actor_id = 0;
     g->actor_kind = TOY_GAME_ACTOR_PLAYER;
     toy_game_set_player_name(g, "PLAYER");
@@ -1324,7 +1407,6 @@ static int try_spawn(struct toy_game *g)
             g->enemies[slot].last_seen_x = g->px;
             g->enemies[slot].last_seen_z = g->pz;
         }
-        if (!g->campaign_mode) g->to_spawn--;
         g->enemies_alive++;
         return 1;
     }
@@ -1427,22 +1509,64 @@ int toy_game_shove(struct toy_game *g, int sy, int cy)
 
 static void update_waves(struct toy_game *g, int dt_ms)
 {
-    if (g->to_spawn == 0 && g->enemies_alive == 0) {
-        /* 本波清空：进入波间间隔 */
+    if (g->campaign_phase == TOY_GAME_PHASE_CALM) {
         g->spawn_timer_ms -= dt_ms;
         if (g->spawn_timer_ms <= 0) {
+            if (g->wave >= TOY_GAME_WAVE_MAX) return;
             g->wave++;
-            g->to_spawn = wave_quota(g->wave);
-            g->spawn_timer_ms = 0;
+            wave_build_plan(g);
+            g->campaign_phase = TOY_GAME_PHASE_BUILDUP;
+            g->phase_timer_ms = TOY_GAME_WAVE_ANNOUNCE_MS;
             push_event(g, TOY_GAME_EV_WAVE_START);
         }
-    } else if (g->to_spawn > 0) {
+    } else if (g->campaign_phase == TOY_GAME_PHASE_BUILDUP) {
+        g->phase_timer_ms -= dt_ms;
+        if (g->phase_timer_ms <= 0) {
+            g->campaign_phase = TOY_GAME_PHASE_HORDE;
+            g->spawn_timer_ms = 0;
+        }
+    } else if (g->campaign_phase == TOY_GAME_PHASE_HORDE && g->to_spawn > 0) {
         g->spawn_timer_ms -= dt_ms;
         if (g->spawn_timer_ms <= 0) {
-            try_spawn(g);
-            g->spawn_timer_ms = TOY_GAME_SPAWN_INTERVAL_MS;
+            int type = g->wave_spawn_types[g->wave_spawn_index];
+            int zone_index = g->spawn_zone_count > 0 ?
+                rand_range(g, 0, g->spawn_zone_count - 1) : -1;
+            const struct toy_game_box *zone = zone_index >= 0 ?
+                &g->spawn_zones[zone_index] : NULL;
+            if (zone && spawn_tracking_enemy(g, type, zone->minx, zone->maxx,
+                                              zone->minz, zone->maxz,
+                                              TOY_GAME_MIN_SPAWN_DIST *
+                                              TOY_GAME_MIN_SPAWN_DIST)) {
+                g->wave_spawn_index++;
+                g->to_spawn--;
+                if (type == TOY_GAME_ENEMY_PURSUIT_COMMON) g->wave_waiting_common--;
+                else if (type == TOY_GAME_ENEMY_PURSUIT_FAST) g->wave_waiting_fast--;
+                else if (type == TOY_GAME_ENEMY_PURSUIT_HEAVY) g->wave_waiting_heavy--;
+                else if (type == TOY_GAME_ENEMY_TANK) g->wave_waiting_tank--;
+                else g->wave_waiting_special--;
+            }
+            g->spawn_timer_ms = g->wave_spawn_interval_ms > 0 ?
+                g->wave_spawn_interval_ms : 1;
+        }
+    } else if (g->campaign_phase == TOY_GAME_PHASE_HORDE && g->enemies_alive == 0) {
+        g->money += g->wave * 100;
+        if (g->wave >= TOY_GAME_WAVE_MAX) {
+            g->state = TOY_GAME_WON;
+            push_event(g, TOY_GAME_EV_LEVEL_WON);
+        } else {
+            g->campaign_phase = TOY_GAME_PHASE_CALM;
+            g->spawn_timer_ms = TOY_GAME_WAVE_PAUSE_MS;
         }
     }
+}
+
+int toy_game_skip_wave_rest(struct toy_game *g)
+{
+    if (!g || g->state != TOY_GAME_PLAYING ||
+        g->campaign_mode || g->campaign_phase != TOY_GAME_PHASE_CALM ||
+        g->spawn_timer_ms <= 0) return 0;
+    g->spawn_timer_ms = 0;
+    return 1;
 }
 
 static void update_campaign_goal(struct toy_game *g, int dt_ms)
