@@ -9,13 +9,13 @@
 #define RASTERFALL_NET_DEFAULT_PORT 28460
 #define RASTERFALL_NET_MAX_PACKET 2700
 #define RASTERFALL_NET_MAX_SNAPSHOT 8192
-/* v28 extends the world snapshot with wave-plan HUD fields.  Keep protocol
- * changes explicit: peers with a different snapshot layout must fail during
+/* v29 uses one uniform host-side client layout.  Keep protocol
+ * changes explicit: clients with a different snapshot layout must fail during
  * discovery/handshake instead of decoding shifted world data. */
-#define RASTERFALL_NET_PROTOCOL_VERSION 28
+#define RASTERFALL_NET_PROTOCOL_VERSION 29
 #define RASTERFALL_NET_MAX_ACTORS 32
 #define RASTERFALL_NET_PLAYER_MAX 4
-#define RASTERFALL_NET_REMOTE_MAX 2
+#define RASTERFALL_NET_CLIENT_MAX (RASTERFALL_NET_PLAYER_MAX - 1)
 #define RASTERFALL_NET_EVENT_QUEUE_MAX 64
 #define RASTERFALL_NET_RELIABLE_EVENT_MAX 64
 #define RASTERFALL_NET_DISCOVERY_PORT 28459
@@ -91,7 +91,7 @@ struct rasterfall_net_player {
     int revive_progress_ms;
     int current_slot;
     /* The active weapon is not enough to restore the inventory after a
-     * remote pickup: the other slot may have changed while it was inactive. */
+     * network pickup: the other slot may have changed while it was inactive. */
     int slot_weapon[TOY_GAME_WEAPON_SLOTS];
     int mag[TOY_GAME_WEAPON_SLOTS];
     int reserve[TOY_GAME_WEAPON_SLOTS];
@@ -145,10 +145,9 @@ struct rasterfall_net_actor {
     struct toy_game_ray rays[TOY_GAME_MAX_RAYS];
 };
 
-/* Host-side state for clients beyond the legacy first remote slot.  The
- * legacy peer fields remain temporarily as slot 1 while simulation is being
- * migrated; these slots make admission and snapshot migration incremental. */
-struct rasterfall_net_remote {
+/* Host-authoritative state for one network client.  Every client uses the
+ * same slot and simulation path; player id is slot index + 1. */
+struct rasterfall_net_client {
     int active;
     int client_id;
     int connected;
@@ -192,52 +191,19 @@ struct rasterfall_net_remote {
 struct rasterfall_net {
     int mode;
     int fd;
-    struct sockaddr_in peer;
-    int peer_known;
+    /* Client-side transport endpoint.  Host-side clients live exclusively in
+     * clients[] and never share this address/state. */
+    struct sockaddr_in server_address;
+    int server_known;
+    struct camera client_spawn_base;
     uint32_t send_sequence;
     uint32_t receive_sequence;
     uint32_t tick;
-    uint32_t last_input_sequence;
-    uint32_t last_input_tick;
-    struct rasterfall_command remote_command;
-    int remote_command_ready;
-    struct camera peer_camera;
-    struct camera peer_spawn;
-    struct camera peer_reported_camera;
-    int peer_camera_initialized;
-    int peer_reported_camera_ready;
-    /* 主机为第二名玩家保留独立的武器状态；敌人和地图仍由主机唯一推进。 */
-    struct toy_game_slot peer_slots[TOY_GAME_WEAPON_SLOTS];
-    int peer_current_slot;
-    int peer_hp;
-    int peer_state;
-    int peer_down;
-    int peer_revive_progress_ms;
-    int peer_revive_active;
-    int peer_host_revive_active;
-    int peer_host_revive_progress_ms;
-    int peer_revive_target_id;
-    int local_revive_peer_active;
-    int local_revive_peer_progress_ms;
-    int peer_reloading;
-    int peer_reload_timer_ms;
-    int peer_fire_cooldown_ms;
-    int peer_muzzle_flash_ms;
-    int peer_damage_flash_ms;
-    int peer_kills;
-    int peer_special_kills;
-    int peer_damage_dealt;
-    unsigned int peer_fire_seq;
-    int peer_ray_count;
-    struct toy_game_ray peer_rays[TOY_GAME_MAX_RAYS];
-    int peer_airborne_ms;
-    int peer_airborne_y;
-    struct toy_game_animation_state peer_animation;
-    int peer_state_initialized;
-    uint32_t peer_reliable_event_ack;
-    unsigned int peer_shop_request_id;
     struct rasterfall_net_player players[RASTERFALL_NET_PLAYER_MAX];
-    struct rasterfall_net_remote remotes[RASTERFALL_NET_REMOTE_MAX];
+    struct rasterfall_net_client clients[RASTERFALL_NET_CLIENT_MAX];
+    int host_revive_active;
+    int host_revive_target_id;
+    int host_revive_progress_ms;
     int local_player_id;
     int spawn_pending;
     int world_ready;
@@ -312,7 +278,6 @@ struct rasterfall_net {
     unsigned int ai_fire_sent_seq[TOY_GAME_MAX_ACTORS];
     long last_snapshot_sent_ms;
     long last_receive_ms;
-    long peer_last_receive_ms;
     long last_hello_ms;
     int public_room;
     int relay_mode;
@@ -324,7 +289,7 @@ struct rasterfall_net {
     long last_public_register_ms;
     long last_public_punch_ms;
     /* Rolling transport diagnostics.  Loss is estimated from gaps in the
-     * monotonic packet sequence received from the current peer. */
+     * monotonic packet sequence received from the current server. */
     long net_stats_window_start_ms;
     unsigned long net_stats_tx_bytes;
     unsigned long net_stats_rx_bytes;
@@ -370,6 +335,7 @@ void rasterfall_net_update_connection(struct rasterfall_net *net);
 /* Used by --logic-test to exercise the fixed-size snapshot assembler without
  * changing the wire format or opening a socket. */
 int rasterfall_net_snapshot_fragment_test(void);
+int rasterfall_net_client_slot_test(void);
 int rasterfall_net_send_command(struct rasterfall_net *net,
                                 const struct rasterfall_command *command,
                                 const struct camera *predicted);
@@ -380,11 +346,11 @@ int rasterfall_net_send_snapshot(struct rasterfall_net *net,
                                  int air_walls_enabled,
                                  int manual_alarm_enabled,
                                  int manual_alarm_timer_ms);
-void rasterfall_net_apply_remote(struct rasterfall_net *net,
-                                 struct rasterfall_session *session,
-                                 struct camera *host_camera);
-void rasterfall_net_sync_remote_players(struct rasterfall_net *net,
-                                        struct toy_game *game);
+void rasterfall_net_apply_clients(struct rasterfall_net *net,
+                                  struct rasterfall_session *session,
+                                  struct camera *host_camera);
+void rasterfall_net_sync_clients(struct rasterfall_net *net,
+                                 struct toy_game *game);
 void rasterfall_net_prepare_host_step(struct rasterfall_net *net,
                                       struct toy_game *game);
 void rasterfall_net_reconcile_client(struct rasterfall_net *net,

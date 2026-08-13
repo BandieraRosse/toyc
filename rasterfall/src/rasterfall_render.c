@@ -2431,33 +2431,20 @@ static int render_network_teammate(struct toy_renderer *renderer,
         }
         return pixels;
     }
-    if (net->peer_known) {
-        int weapon = net->peer_current_slot >= 0 &&
-                     net->peer_current_slot < TOY_GAME_WEAPON_SLOTS ?
-                     net->peer_slots[net->peer_current_slot].weapon : -1;
-        active_actor_lift = network_actor_lift(net->peer_camera.x,
-                                               net->peer_camera.z,
-                                               net->peer_airborne_y);
-        pixels += render_player_avatar(renderer, camera, net->peer_camera.x,
-            net->peer_camera.z, net->peer_camera.sy, net->peer_camera.cy,
-            weapon, net->peer_muzzle_flash_ms, colors[1], net->peer_down,
-            net->peer_animation.id, net->peer_animation.time_ms);
-        active_actor_lift = 0;
-    }
-    for (i = 0; i < RASTERFALL_NET_REMOTE_MAX; i++) {
-        const struct rasterfall_net_remote *remote = &net->remotes[i];
+    for (i = 0; i < RASTERFALL_NET_CLIENT_MAX; i++) {
+        const struct rasterfall_net_client *client = &net->clients[i];
         int weapon;
-        if (!remote->active || !remote->connected) continue;
-        weapon = remote->current_slot >= 0 &&
-                 remote->current_slot < TOY_GAME_WEAPON_SLOTS ?
-                 remote->slots[remote->current_slot].weapon : -1;
-        active_actor_lift = network_actor_lift(remote->camera.x,
-                                               remote->camera.z,
-                                               remote->airborne_y);
-        pixels += render_player_avatar(renderer, camera, remote->camera.x,
-            remote->camera.z, remote->camera.sy, remote->camera.cy, weapon,
-            remote->muzzle_flash_ms, colors[remote->client_id], remote->down,
-            remote->animation.id, remote->animation.time_ms);
+        if (!client->active || !client->connected) continue;
+        weapon = client->current_slot >= 0 &&
+                 client->current_slot < TOY_GAME_WEAPON_SLOTS ?
+                 client->slots[client->current_slot].weapon : -1;
+        active_actor_lift = network_actor_lift(client->camera.x,
+                                               client->camera.z,
+                                               client->airborne_y);
+        pixels += render_player_avatar(renderer, camera, client->camera.x,
+            client->camera.z, client->camera.sy, client->camera.cy, weapon,
+            client->muzzle_flash_ms, colors[client->client_id], client->down,
+            client->animation.id, client->animation.time_ms);
         active_actor_lift = 0;
     }
     return pixels;
@@ -2481,19 +2468,14 @@ static void render_network_teammate_status(struct toy_renderer *renderer,
         }
         return;
     }
-    if (net->peer_known)
-        render_actor_status(renderer, camera, net->peer_camera.x,
-            net->peer_camera.z, 700, "PLAYER 2", net->peer_hp,
-            TOY_GAME_SECONDARY_PLAYER_HP, net->peer_down,
-            net->peer_revive_progress_ms, RF_COLOR_UI_PLAYER);
-    for (i = 0; i < RASTERFALL_NET_REMOTE_MAX; i++) {
-        const struct rasterfall_net_remote *remote = &net->remotes[i];
-        if (!remote->active || !remote->connected) continue;
-        snprintf(name, sizeof(name), "PLAYER %d", remote->client_id + 1);
-        render_actor_status(renderer, camera, remote->camera.x,
-            remote->camera.z, 700, name, remote->hp,
-            TOY_GAME_SECONDARY_PLAYER_HP, remote->down,
-            remote->revive_progress_ms, RF_COLOR_UI_PLAYER);
+    for (i = 0; i < RASTERFALL_NET_CLIENT_MAX; i++) {
+        const struct rasterfall_net_client *client = &net->clients[i];
+        if (!client->active || !client->connected) continue;
+        snprintf(name, sizeof(name), "PLAYER %d", client->client_id + 1);
+        render_actor_status(renderer, camera, client->camera.x,
+            client->camera.z, 700, name, client->hp,
+            TOY_GAME_SECONDARY_PLAYER_HP, client->down,
+            client->revive_progress_ms, RF_COLOR_UI_PLAYER);
     }
 }
 

@@ -931,40 +931,31 @@ static int run_logic_test(void)
             game.actors[actor_index].ground_y != 500 ||
             game.actors[actor_index].airborne_ms != 0) return 105;
     }
-    /* 主机帧准备不能用上一份网络镜像抹掉玩家 2 的权威跳跃状态。 */
+    /* 所有客户端都通过统一的网络 actor 执行权威移动。 */
     {
         struct rasterfall_net net_test;
+        int actor_index = TOY_GAME_REMOTE_ACTOR_BASE;
         rasterfall_session_reset(&session, &camera, 50);
         rasterfall_net_init(&net_test);
         net_test.mode = RASTERFALL_NET_HOST;
-        net_test.peer_known = 1;
-        net_test.connected = 1;
-        net_test.peer_hp = TOY_GAME_SECONDARY_PLAYER_HP;
-        net_test.peer_camera = camera;
-        game.secondary_player_airborne_ms = 700;
-        game.secondary_player_airborne_y = 120;
-        game.secondary_player_vertical_velocity = 18;
-        game.secondary_player_air_z = 20;
+        net_test.clients[0].active = 1;
+        net_test.clients[0].connected = 1;
+        net_test.clients[0].client_id = 1;
+        net_test.clients[0].hp = TOY_GAME_SECONDARY_PLAYER_HP;
+        net_test.clients[0].camera = camera;
         rasterfall_net_prepare_host_step(&net_test, &game);
-        if (game.secondary_player_airborne_ms != 700 ||
-            game.secondary_player_airborne_y != 120 ||
-            game.secondary_player_vertical_velocity != 18 ||
-            game.secondary_player_air_z != 20) return 106;
-
-        game.secondary_player_airborne_ms = 0;
-        game.secondary_player_airborne_y = 0;
-        game.secondary_player_vertical_velocity = 0;
-        game.secondary_player_air_z = 0;
-        net_test.remote_command_ready = 1;
-        net_test.remote_command.move_forward = 1;
-        net_test.remote_command.buttons = RASTERFALL_CMD_JUMP;
-        rasterfall_net_apply_remote(&net_test, &session, &camera);
-        if (game.secondary_player_airborne_ms <= 0 ||
-            game.secondary_player_air_z == 0) return 107;
+        if (!game.actors[actor_index].active ||
+            game.actors[actor_index].hp != TOY_GAME_SECONDARY_PLAYER_HP)
+            return 106;
+        net_test.clients[0].command_ready = 1;
+        net_test.clients[0].command.move_forward = 1;
+        net_test.clients[0].command.buttons = RASTERFALL_CMD_JUMP;
+        rasterfall_net_apply_clients(&net_test, &session, &camera);
+        if (game.actors[actor_index].airborne_ms <= 0) return 107;
         rasterfall_net_prepare_host_step(&net_test, &game);
-        toy_game_update_secondary_player_motion(&game, 16);
-        if (game.secondary_player_airborne_ms <= 0 ||
-            game.secondary_pz == net_test.peer_camera.z) return 108;
+        if (game.actors[actor_index].airborne_ms <= 0 ||
+            game.actors[actor_index].z != net_test.clients[0].camera.z)
+            return 108;
     }
     /* 未确认跳跃输入之前，旧快照不能取消客户端预测或拉回水平位置。 */
     {
@@ -994,41 +985,41 @@ static int run_logic_test(void)
     /* 玩家互救必须同时更新网络槽和 actor，且主机倒地不能禁用远端移动。 */
     {
         struct rasterfall_net net_test;
-        int actor_index = TOY_GAME_REMOTE_ACTOR_BASE + 1;
+        int actor_index = TOY_GAME_REMOTE_ACTOR_BASE;
         rasterfall_session_reset(&session, &camera, 52);
         rasterfall_net_init(&net_test);
         net_test.mode = RASTERFALL_NET_HOST;
-        net_test.remotes[0].active = 1;
-        net_test.remotes[0].connected = 1;
-        net_test.remotes[0].client_id = 2;
-        net_test.remotes[0].camera = camera;
-        net_test.remotes[0].hp = 0;
-        net_test.remotes[0].down = 1;
+        net_test.clients[0].active = 1;
+        net_test.clients[0].connected = 1;
+        net_test.clients[0].client_id = 1;
+        net_test.clients[0].camera = camera;
+        net_test.clients[0].hp = 0;
+        net_test.clients[0].down = 1;
         rasterfall_net_prepare_host_step(&net_test, &game);
         game.actors[actor_index].hp = 0;
         game.actors[actor_index].state = TOY_GAME_ACTOR_DOWNED;
         for (int i = 0; i < (TOY_GAME_REVIVE_MS + 15) / 16; i++)
             rasterfall_net_apply_local_rescue(&net_test, &session, &camera,
                                                i == 0, 16);
-        if (net_test.remotes[0].down ||
+        if (net_test.clients[0].down ||
             game.actors[actor_index].state != TOY_GAME_ACTOR_ALIVE ||
             game.actors[actor_index].hp != TOY_GAME_REVIVE_HP) return 110;
 
         game.player_down = 1;
         game.hp = 0;
-        net_test.remotes[0].command_ready = 1;
-        net_test.remotes[0].command.move_forward = 1;
-        net_test.remotes[0].command.buttons = RASTERFALL_CMD_JUMP;
-        rasterfall_net_apply_remote(&net_test, &session, &camera);
+        net_test.clients[0].command_ready = 1;
+        net_test.clients[0].command.move_forward = 1;
+        net_test.clients[0].command.buttons = RASTERFALL_CMD_JUMP;
+        rasterfall_net_apply_clients(&net_test, &session, &camera);
         if (game.actors[actor_index].airborne_ms <= 0) return 111;
 
         game.actors[actor_index].airborne_ms = 0;
-        net_test.remotes[0].airborne_ms = 0;
-        net_test.remotes[0].command.move_forward = 0;
-        net_test.remotes[0].command.buttons = RASTERFALL_CMD_INTERACT;
+        net_test.clients[0].airborne_ms = 0;
+        net_test.clients[0].command.move_forward = 0;
+        net_test.clients[0].command.buttons = RASTERFALL_CMD_INTERACT;
         for (int i = 0; i < (TOY_GAME_REVIVE_MS + 15) / 16; i++) {
-            net_test.remotes[0].command_ready = 1;
-            rasterfall_net_apply_remote(&net_test, &session, &camera);
+            net_test.clients[0].command_ready = 1;
+            rasterfall_net_apply_clients(&net_test, &session, &camera);
         }
         if (game.player_down || game.hp != TOY_GAME_REVIVE_HP) return 112;
     }
@@ -1218,6 +1209,7 @@ static int run_logic_test(void)
         if (game.money != 50 || game.special_kills != 1) return 129;
     }
     if (rasterfall_net_snapshot_fragment_test() != 0) return 139;
+    if (rasterfall_net_client_slot_test() != 0) return 140;
     /* Combat Power 使用武器真实参数计算，并输出完整拆分，方便调平衡。 */
     {
         int weapon;

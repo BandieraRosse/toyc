@@ -530,13 +530,12 @@ static void render_network_hud(struct toy_surface *surface,
     uint32_t color;
     if (!net || net->mode == RASTERFALL_NET_OFF) return;
     if (net->mode == RASTERFALL_NET_HOST) {
-        if (net->peer_known && net->connected)
-            snprintf(line, sizeof(line), "HOST  PLAYER 2  RTT %d MS", net->rtt_ms);
-        else if (net->peer_known)
-            snprintf(line, sizeof(line), "HOST  PLAYER LOST");
-        else
-            snprintf(line, sizeof(line), "HOST  WAITING FOR PLAYER");
-        color = net->peer_known && net->connected ? RF_COLOR_UI_SECONDARY : 0xFFD070;
+        int connected = 0;
+        for (int i = 0; i < RASTERFALL_NET_CLIENT_MAX; i++)
+            if (net->clients[i].active && net->clients[i].connected) connected++;
+        snprintf(line, sizeof(line), "HOST  %d/%d CLIENTS", connected,
+                 RASTERFALL_NET_CLIENT_MAX);
+        color = connected ? RF_COLOR_UI_SECONDARY : 0xFFD070;
     } else if (net->connected) {
         snprintf(line, sizeof(line), "CLIENT P%d  CONNECTED  RTT %d MS",
                  net->local_player_id + 1, net->rtt_ms);
@@ -565,13 +564,13 @@ static void render_network_hud(struct toy_surface *surface,
     if (net->mode == RASTERFALL_NET_HOST) {
         int line_y = y + FB_FONT_H * 2;
         int cursor = 0;
-        snprintf(line, sizeof(line), "P2 %dMS", net->peer_known ? net->rtt_ms : 0);
-        cursor = (int)strlen(line);
-        for (int i = 0; i < RASTERFALL_NET_REMOTE_MAX; i++) {
-            const struct rasterfall_net_remote *remote = &net->remotes[i];
-            if (!remote->active || !remote->connected) continue;
+        line[0] = 0;
+        for (int i = 0; i < RASTERFALL_NET_CLIENT_MAX; i++) {
+            const struct rasterfall_net_client *client = &net->clients[i];
+            if (!client->active || !client->connected) continue;
             snprintf(line + cursor, sizeof(line) - (size_t)cursor,
-                     "  P%d %dMS", remote->client_id + 1, remote->rtt_ms);
+                     "%sP%d %dMS", cursor ? "  " : "",
+                     client->client_id + 1, client->rtt_ms);
             cursor = (int)strlen(line);
         }
         width = (int)strlen(line) * FB_FONT_W;
