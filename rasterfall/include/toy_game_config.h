@@ -192,6 +192,25 @@
 #define TOY_CONFIG_AI_LEVEL_2_PRICE                 400  /* 1→2 升级价 */
 #define TOY_CONFIG_AI_LEVEL_3_PRICE                 800  /* 2→3 升级价 */
 
+/* 粗略战斗力（Combat Power）评分。CP 不使用经济价格，也不试图模拟
+ * 实战中的走位和目标选择，只给导演系统一个稳定的相对强度指标。 */
+#define TOY_CONFIG_COMBAT_DPS_SCALE                 20
+#define TOY_CONFIG_COMBAT_SPREAD_LOW_MAX             50
+#define TOY_CONFIG_COMBAT_SPREAD_MEDIUM_MAX         100
+#define TOY_CONFIG_COMBAT_SPREAD_HIGH_MAX           150
+#define TOY_CONFIG_COMBAT_SPREAD_PENALTY_LOW          0
+#define TOY_CONFIG_COMBAT_SPREAD_PENALTY_MEDIUM       1
+#define TOY_CONFIG_COMBAT_SPREAD_PENALTY_HIGH         2
+#define TOY_CONFIG_COMBAT_SPREAD_PENALTY_EXTREME      3
+#define TOY_CONFIG_COMBAT_WEAPON_POWER_MIN            1
+#define TOY_CONFIG_COMBAT_WEAPON_POWER_MAX           16
+#define TOY_CONFIG_COMBAT_AI_LEVEL_1_POINTS          10
+#define TOY_CONFIG_COMBAT_AI_LEVEL_2_POINTS          18
+#define TOY_CONFIG_COMBAT_AI_LEVEL_3_POINTS          28
+/* AWP 的低射速已被 DPS 计入；该小偏置只补偿其精准远程单发价值，
+ * 未来特感/Tank 优先索敌可继续在这里调整。 */
+#define TOY_CONFIG_COMBAT_AWP_POWER_BIAS              5
+
 /* Developer display options. */
 #define TOY_CONFIG_SHOW_MODEL_PATHS            0  /* 是否显示开发者模型路径 */
 

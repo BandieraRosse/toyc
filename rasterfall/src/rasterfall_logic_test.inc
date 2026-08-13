@@ -1216,6 +1216,25 @@ static int run_logic_test(void)
         toy_game_fire(&game, 0, 1024);
         if (game.money != 50 || game.special_kills != 1) return 129;
     }
+    /* Combat Power 使用武器真实参数计算，并输出完整拆分，方便调平衡。 */
+    {
+        int weapon;
+        static const int expected_power[TOY_GAME_WEAPON_COUNT] = { 3, 7, 9, 12, 11 };
+        for (weapon = 0; weapon < TOY_GAME_WEAPON_COUNT; weapon++) {
+            int dps = toy_game_weapon_combat_dps(weapon);
+            int penalty = toy_game_weapon_spread_penalty(weapon);
+            int power = toy_game_weapon_combat_power(weapon);
+            __printf("rasterfall: CP %s dps=%d spread_penalty=%d bias=%d weapon=%d lv3_total=%d\n",
+                     toy_game_weapon_name(weapon), dps, penalty,
+                     toy_game_weapon_info(weapon)->power_bias, power,
+                     TOY_CONFIG_COMBAT_AI_LEVEL_3_POINTS + power);
+            if (power != expected_power[weapon]) return 137;
+        }
+        if (toy_game_ai_level_combat_power(TOY_GAME_AI_LEVEL_1) != 10 ||
+            toy_game_ai_level_combat_power(TOY_GAME_AI_LEVEL_2) != 18 ||
+            toy_game_ai_level_combat_power(TOY_GAME_AI_LEVEL_3) != 28 ||
+            toy_game_ai_level_combat_power(-1) != 0) return 138;
+    }
     __printf("rasterfall: logic test passed\n");
     return 0;
 }

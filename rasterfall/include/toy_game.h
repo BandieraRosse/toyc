@@ -292,6 +292,7 @@ struct toy_game_weapon_info {
     int muzzle_profile; /* 表现层使用的枪口布局 */
     int range;          /* 弹丸最远距离 */
     int alert_range;    /* AI 持有该武器时的索敌距离 */
+    int power_bias;     /* CP 特殊修正；通常为 0 */
 };
 
 struct toy_game_enemy_info {
@@ -631,6 +632,11 @@ int  toy_game_switch_weapon(struct toy_game *g, int slot);  /* 切枪；空槽/�
 int  toy_game_equip_weapon(struct toy_game *g, int weapon); /* 按武器定义装备到对应槽；同武器=补充弹药返回 0，新武器返回 1，非法返回 -1 */
 int  toy_game_refill_ammo(struct toy_game *g);              /* 弹药盒：补满已拥有武器的备弹，有变化返回 1 */
 int  toy_game_weapon_price(int weapon);
+int  toy_game_weapon_combat_dps(int weapon);
+int  toy_game_weapon_spread_penalty(int weapon);
+int  toy_game_weapon_combat_power(int weapon);
+int  toy_game_ai_level_combat_power(int class_id);
+int  toy_game_actor_combat_power(const struct toy_game_actor *actor);
 int  toy_game_weapon_unlocked(const struct toy_game *g, int weapon);
 int  toy_game_buy_weapon(struct toy_game *g, int weapon);
 const struct toy_game_weapon_info *toy_game_weapon_info(int weapon);

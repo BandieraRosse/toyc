@@ -77,14 +77,14 @@ static const struct toy_game_weapon_info weapon_table[TOY_GAME_WEAPON_COUNT] = {
       TOY_CONFIG_PISTOL_DAMAGE,
       TOY_GAME_WEAPON_ID_PISTOL, "PISTOL", "PG",
       TOY_GAME_MUZZLE_STANDARD, TOY_CONFIG_PISTOL_RANGE,
-      TOY_CONFIG_PISTOL_ALERT_RANGE },
+      TOY_CONFIG_PISTOL_ALERT_RANGE, 0 },
     { TOY_CONFIG_SMG_MAG, TOY_CONFIG_SMG_RESERVE,
       TOY_CONFIG_SMG_COOLDOWN_MS, TOY_CONFIG_SMG_RELOAD_MS,
       TOY_CONFIG_SMG_FULL_AUTO, TOY_CONFIG_SMG_PELLETS,
       TOY_CONFIG_SMG_SPREAD, TOY_CONFIG_SMG_SLOT, TOY_CONFIG_SMG_DAMAGE,
       TOY_GAME_WEAPON_ID_SMG, "SMG", "SMG",
       TOY_GAME_MUZZLE_STANDARD, TOY_CONFIG_SMG_RANGE,
-      TOY_CONFIG_SMG_ALERT_RANGE },
+      TOY_CONFIG_SMG_ALERT_RANGE, 0 },
     { TOY_CONFIG_SHOTGUN_MAG, TOY_CONFIG_SHOTGUN_RESERVE,
       TOY_CONFIG_SHOTGUN_COOLDOWN_MS, TOY_CONFIG_SHOTGUN_RELOAD_MS,
       TOY_CONFIG_SHOTGUN_FULL_AUTO, TOY_CONFIG_SHOTGUN_PELLETS,
@@ -92,19 +92,20 @@ static const struct toy_game_weapon_info weapon_table[TOY_GAME_WEAPON_COUNT] = {
       TOY_CONFIG_SHOTGUN_DAMAGE,
       TOY_GAME_WEAPON_ID_SHOTGUN, "SHOTGUN", "SG",
       TOY_GAME_MUZZLE_SHOTGUN, TOY_CONFIG_SHOTGUN_RANGE,
-      TOY_CONFIG_SHOTGUN_ALERT_RANGE },
+      TOY_CONFIG_SHOTGUN_ALERT_RANGE, 0 },
     { TOY_CONFIG_AK_MAG, TOY_CONFIG_AK_RESERVE,
       TOY_CONFIG_AK_COOLDOWN_MS, TOY_CONFIG_AK_RELOAD_MS,
       TOY_CONFIG_AK_FULL_AUTO, TOY_CONFIG_AK_PELLETS,
       TOY_CONFIG_AK_SPREAD, TOY_CONFIG_AK_SLOT, TOY_CONFIG_AK_DAMAGE,
       TOY_GAME_WEAPON_ID_AK, "AK", "AK", TOY_GAME_MUZZLE_STANDARD,
-      TOY_CONFIG_AK_RANGE, TOY_CONFIG_AK_ALERT_RANGE },
+      TOY_CONFIG_AK_RANGE, TOY_CONFIG_AK_ALERT_RANGE, 0 },
     { TOY_CONFIG_AWP_MAG, TOY_CONFIG_AWP_RESERVE,
       TOY_CONFIG_AWP_COOLDOWN_MS, TOY_CONFIG_AWP_RELOAD_MS,
       TOY_CONFIG_AWP_FULL_AUTO, TOY_CONFIG_AWP_PELLETS,
       TOY_CONFIG_AWP_SPREAD, TOY_CONFIG_AWP_SLOT, TOY_CONFIG_AWP_DAMAGE,
       TOY_GAME_WEAPON_ID_AWP, "AWP", "AWP", TOY_GAME_MUZZLE_STANDARD,
-      TOY_CONFIG_AWP_RANGE, TOY_CONFIG_AWP_ALERT_RANGE },
+      TOY_CONFIG_AWP_RANGE, TOY_CONFIG_AWP_ALERT_RANGE,
+      TOY_CONFIG_COMBAT_AWP_POWER_BIAS },
 };
 
 static const struct toy_game_enemy_info enemy_table[TOY_GAME_ENEMY_TYPE_COUNT] = {
@@ -3454,6 +3455,71 @@ int toy_game_weapon_price(int weapon)
     case TOY_GAME_WEAPON_AWP: return TOY_GAME_PRICE_AWP;
     default: return 0;
     }
+}
+
+int toy_game_weapon_combat_dps(int weapon)
+{
+    const struct toy_game_weapon_info *w;
+    long long numerator;
+    long long denominator;
+    if (!toy_game_weapon_is_valid(weapon)) return 0;
+    w = toy_game_weapon_info(weapon);
+    numerator = (long long)w->damage * w->pellets * w->mag_size * 1000;
+    denominator = (long long)w->mag_size * w->cooldown_ms + w->reload_ms;
+    if (denominator <= 0) return 0;
+    return (int)(numerator / denominator);
+}
+
+int toy_game_weapon_spread_penalty(int weapon)
+{
+    int spread;
+    if (!toy_game_weapon_is_valid(weapon)) return 0;
+    spread = toy_game_weapon_info(weapon)->spread;
+    if (spread <= TOY_CONFIG_COMBAT_SPREAD_LOW_MAX)
+        return TOY_CONFIG_COMBAT_SPREAD_PENALTY_LOW;
+    if (spread <= TOY_CONFIG_COMBAT_SPREAD_MEDIUM_MAX)
+        return TOY_CONFIG_COMBAT_SPREAD_PENALTY_MEDIUM;
+    if (spread <= TOY_CONFIG_COMBAT_SPREAD_HIGH_MAX)
+        return TOY_CONFIG_COMBAT_SPREAD_PENALTY_HIGH;
+    return TOY_CONFIG_COMBAT_SPREAD_PENALTY_EXTREME;
+}
+
+int toy_game_weapon_combat_power(int weapon)
+{
+    const struct toy_game_weapon_info *w;
+    int power;
+    if (!toy_game_weapon_is_valid(weapon)) return 0;
+    w = toy_game_weapon_info(weapon);
+    power = toy_game_weapon_combat_dps(weapon) /
+            TOY_CONFIG_COMBAT_DPS_SCALE;
+    power -= toy_game_weapon_spread_penalty(weapon);
+    power += w->power_bias;
+    if (power < TOY_CONFIG_COMBAT_WEAPON_POWER_MIN)
+        power = TOY_CONFIG_COMBAT_WEAPON_POWER_MIN;
+    if (power > TOY_CONFIG_COMBAT_WEAPON_POWER_MAX)
+        power = TOY_CONFIG_COMBAT_WEAPON_POWER_MAX;
+    return power;
+}
+
+int toy_game_ai_level_combat_power(int class_id)
+{
+    switch (class_id) {
+    case TOY_GAME_AI_LEVEL_1: return TOY_CONFIG_COMBAT_AI_LEVEL_1_POINTS;
+    case TOY_GAME_AI_LEVEL_2: return TOY_CONFIG_COMBAT_AI_LEVEL_2_POINTS;
+    case TOY_GAME_AI_LEVEL_3: return TOY_CONFIG_COMBAT_AI_LEVEL_3_POINTS;
+    default: return 0;
+    }
+}
+
+int toy_game_actor_combat_power(const struct toy_game_actor *actor)
+{
+    int weapon;
+    if (!actor) return 0;
+    weapon = actor->current_slot >= 0 &&
+             actor->current_slot < TOY_GAME_WEAPON_SLOTS ?
+             actor->slots[actor->current_slot].weapon : -1;
+    return toy_game_ai_level_combat_power(actor->class_id) +
+           toy_game_weapon_combat_power(weapon);
 }
 
 int toy_game_weapon_unlocked(const struct toy_game *g, int weapon)

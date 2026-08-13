@@ -167,6 +167,9 @@ static void render_shop(struct toy_surface *surface,
         fb_draw_string((unsigned char *)surface->pixels, x + 20, y + 198,
                        state->shop_nav_selected == 5 ? "> CHANGE AI WEAPON" : "  CHANGE AI WEAPON",
                        state->shop_nav_selected == 5 ? RF_COLOR_UI_ACCENT_BRIGHT : RF_COLOR_UI_TEXT, surface->stride);
+        fb_draw_string((unsigned char *)surface->pixels, x + 20, y + 222,
+                       state->shop_nav_selected == 6 ? "> BASE COMBAT POWER" : "  BASE COMBAT POWER",
+                       state->shop_nav_selected == 6 ? RF_COLOR_UI_ACCENT_BRIGHT : RF_COLOR_UI_TEXT, surface->stride);
         fb_draw_string((unsigned char *)surface->pixels, x + 16, y + 286,
                        "ENTER OPEN    ESC CLOSE", RF_COLOR_UI_TEXT, surface->stride);
         return;
@@ -365,6 +368,42 @@ static void render_shop(struct toy_surface *surface,
         fb_draw_string((unsigned char *)surface->pixels, x + 16, y + 286,
                        "UP/DOWN SELECT  ENTER CHANGE  ESC AI LIST",
                        RF_COLOR_UI_TEXT, surface->stride);
+        return;
+    }
+    if (state->shop_page == 9) {
+        int total_power = 0, n = 0;
+        fb_draw_string((unsigned char *)surface->pixels, x + 20, y + 58,
+                       "BASE COMBAT POWER", RF_COLOR_UI_ACCENT_BRIGHT, surface->stride);
+        for (i = 0; i < TOY_GAME_REMOTE_ACTOR_BASE; i++) {
+            const struct toy_game_actor *a = &state->game->actors[i];
+            const char *weapon = "NONE";
+            const char *level;
+            int power;
+            if (!a->active || a->kind != TOY_GAME_ACTOR_AI || !a->hired) continue;
+            level = a->class_id == TOY_GAME_AI_LEVEL_1 ? "LV1" :
+                    a->class_id == TOY_GAME_AI_LEVEL_3 ? "LV3" : "LV2";
+            if (a->current_slot >= 0 && a->current_slot < TOY_GAME_WEAPON_SLOTS &&
+                a->slots[a->current_slot].weapon >= 0)
+                weapon = toy_game_weapon_name(a->slots[a->current_slot].weapon);
+            power = toy_game_actor_combat_power(a);
+            total_power += power;
+            if (n < 6) {
+                snprintf(line, sizeof(line), "%s  %s  %s  CP %d",
+                         a->name, level, weapon, power);
+                fb_draw_string((unsigned char *)surface->pixels, x + 24,
+                               y + 92 + n * 28, line,
+                               RF_COLOR_UI_TEXT, surface->stride);
+            }
+            n++;
+        }
+        if (!n)
+            fb_draw_string((unsigned char *)surface->pixels, x + 24, y + 96,
+                           "NO HIRED AI", RF_COLOR_UI_TEXT, surface->stride);
+        snprintf(line, sizeof(line), "TOTAL CP  %d", total_power);
+        fb_draw_string((unsigned char *)surface->pixels, x + 300, y + 258,
+                       line, RF_COLOR_UI_ACCENT_BRIGHT, surface->stride);
+        fb_draw_string((unsigned char *)surface->pixels, x + 16, y + 286,
+                       "ESC NAVIGATION", RF_COLOR_UI_TEXT, surface->stride);
         return;
     }
     for (i = 0; i < 4; i++) {

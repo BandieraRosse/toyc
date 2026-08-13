@@ -831,17 +831,19 @@ void rasterfall_session_shop_input(struct rasterfall_session *session,
     }
     if (!session->shop_page) {
         if (up) session->shop_nav_selected =
-            (session->shop_nav_selected + 5) % 6;
+            (session->shop_nav_selected + 6) % 7;
         if (down) session->shop_nav_selected =
-            (session->shop_nav_selected + 1) % 6;
+            (session->shop_nav_selected + 1) % 7;
         if (enter) {
             session->shop_page = session->shop_nav_selected == 4 ? 6 :
                                  session->shop_nav_selected == 5 ? 7 :
+                                 session->shop_nav_selected == 6 ? 9 :
                                  session->shop_nav_selected + 1;
             session->shop_selected = 0;
         }
         return;
     }
+    if (session->shop_page == 9) return;
     if (session->shop_page == 3) {
         if (enter) {
             if (session->shop_request_only) {
