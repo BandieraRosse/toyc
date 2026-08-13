@@ -66,6 +66,14 @@ struct rasterfall_net_discovery {
     struct rasterfall_net_room rooms[RASTERFALL_NET_DISCOVERY_MAX_ROOMS];
 };
 
+struct rasterfall_snapshot_assembly {
+    uint32_t sequence;
+    int total_size;
+    int part_count;
+    unsigned int mask;
+    unsigned char buffer[RASTERFALL_NET_MAX_SNAPSHOT];
+};
+
 enum rasterfall_net_discovery_mode {
     RASTERFALL_NET_DISCOVERY_OFF,
     RASTERFALL_NET_DISCOVERY_BROWSER,
@@ -283,12 +291,10 @@ struct rasterfall_net {
     int snapshot_air_walls_enabled;
     int snapshot_manual_alarm_enabled;
     int snapshot_ready;
-    /* 快照在应用层分片，避免依赖 IP 分片；下一次完整快照会覆盖未完成的组。 */
-    uint32_t snapshot_part_sequence;
-    int snapshot_part_count;
-    int snapshot_part_total_size;
-    unsigned int snapshot_part_mask;
-    unsigned char snapshot_part_buffer[RASTERFALL_NET_MAX_SNAPSHOT];
+    /* 快照在应用层分片，避免依赖 IP 分片；保留当前和上一代未完成组，
+     * 允许轻微乱序补齐上一代快照。 */
+    struct rasterfall_snapshot_assembly snapshot_current;
+    struct rasterfall_snapshot_assembly snapshot_previous;
     int connected;
     int rtt_ms;
     uint32_t last_command_sequence;
@@ -333,6 +339,14 @@ struct rasterfall_net {
     int net_stats_avg_rtt_ms;
     long net_stats_rtt_sum_ms;
     int net_stats_rtt_samples;
+    /* Snapshot-fragment statistics are a separate signal from packet
+     * sequence gaps: all fragments of one snapshot intentionally share a
+     * sequence number.  These are rolling one-second counters. */
+    int snapshot_parts_received;
+    int snapshot_parts_missing;
+    int snapshot_parts_duplicate;
+    int snapshot_completed;
+    int snapshot_abandoned;
 };
 
 void rasterfall_net_init(struct rasterfall_net *net);
@@ -353,6 +367,9 @@ void rasterfall_net_discovery_poll(struct rasterfall_net_discovery *discovery,
                                    int players, int max_players, int state);
 void rasterfall_net_poll(struct rasterfall_net *net);
 void rasterfall_net_update_connection(struct rasterfall_net *net);
+/* Used by --logic-test to exercise the fixed-size snapshot assembler without
+ * changing the wire format or opening a socket. */
+int rasterfall_net_snapshot_fragment_test(void);
 int rasterfall_net_send_command(struct rasterfall_net *net,
                                 const struct rasterfall_command *command,
                                 const struct camera *predicted);

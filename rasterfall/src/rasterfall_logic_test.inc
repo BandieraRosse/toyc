@@ -1217,6 +1217,7 @@ static int run_logic_test(void)
         toy_game_fire(&game, 0, 1024);
         if (game.money != 50 || game.special_kills != 1) return 129;
     }
+    if (rasterfall_net_snapshot_fragment_test() != 0) return 139;
     /* Combat Power 使用武器真实参数计算，并输出完整拆分，方便调平衡。 */
     {
         int weapon;

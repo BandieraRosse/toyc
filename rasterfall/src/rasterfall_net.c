@@ -88,6 +88,11 @@ static void net_stats_roll(struct rasterfall_net *net)
     net->net_stats_lost_packets = 0;
     net->net_stats_rtt_sum_ms = 0;
     net->net_stats_rtt_samples = 0;
+    net->snapshot_parts_received = 0;
+    net->snapshot_parts_missing = 0;
+    net->snapshot_parts_duplicate = 0;
+    net->snapshot_completed = 0;
+    net->snapshot_abandoned = 0;
 }
 
 static void net_stats_note_rtt(struct rasterfall_net *net, long elapsed)
@@ -309,6 +314,16 @@ static uint32_t get_u32(const unsigned char *p)
 {
     return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) |
            ((uint32_t)p[2] << 8) | p[3];
+}
+
+static int snapshot_popcount(unsigned int mask)
+{
+    int count = 0;
+    while (mask) {
+        mask &= mask - 1;
+        count++;
+    }
+    return count;
 }
 
 static void put_i16(unsigned char *p, int value)
@@ -1582,11 +1597,62 @@ static int decode_snapshot(const unsigned char *payload, int size,
     return 0;
 }
 
+static unsigned int snapshot_expected_mask(int part_count)
+{
+    return part_count == 32 ? 0xffffffffU : ((1U << part_count) - 1U);
+}
+
+static void snapshot_clear_assembly(struct rasterfall_snapshot_assembly *assembly)
+{
+    if (!assembly) return;
+    assembly->sequence = 0;
+    assembly->total_size = 0;
+    assembly->part_count = 0;
+    assembly->mask = 0;
+}
+
+static int snapshot_assembly_complete(
+    const struct rasterfall_snapshot_assembly *assembly)
+{
+    return assembly && assembly->part_count > 0 &&
+           assembly->mask == snapshot_expected_mask(assembly->part_count);
+}
+
+static void snapshot_abandon(struct rasterfall_net *net,
+                             struct rasterfall_snapshot_assembly *assembly)
+{
+    int missing;
+    if (!net || !assembly || assembly->part_count <= 0 ||
+        snapshot_assembly_complete(assembly)) return;
+    missing = assembly->part_count - snapshot_popcount(assembly->mask);
+    if (missing > 0) net->snapshot_parts_missing += missing;
+    net->snapshot_abandoned++;
+    snapshot_clear_assembly(assembly);
+}
+
+static int snapshot_try_decode(struct rasterfall_net *net,
+                               struct rasterfall_snapshot_assembly *assembly)
+{
+    if (!net || !assembly || !snapshot_assembly_complete(assembly)) return 0;
+    if (assembly->sequence <= net->receive_sequence) {
+        snapshot_clear_assembly(assembly);
+        return 0;
+    }
+    if (decode_snapshot(assembly->buffer, assembly->total_size, net) < 0) {
+        snapshot_clear_assembly(assembly);
+        return -1;
+    }
+    net->receive_sequence = assembly->sequence;
+    net->snapshot_completed++;
+    snapshot_clear_assembly(assembly);
+    return 1;
+}
+
 static int decode_snapshot_part(const unsigned char *payload, int size,
                                 uint32_t sequence, struct rasterfall_net *net)
 {
     int total_size, offset, chunk, part_index, part_count;
-    unsigned int expected_mask;
+    struct rasterfall_snapshot_assembly *assembly = NULL;
     if (size < NET_SNAPSHOT_PART_BASE) return -1;
     total_size = (int)get_u16(payload);
     offset = (int)get_u16(payload + 2);
@@ -1599,28 +1665,165 @@ static int decode_snapshot_part(const unsigned char *payload, int size,
         part_count > 32 || part_index < 0 || part_index >= part_count ||
         offset != part_index * NET_SNAPSHOT_FRAGMENT_DATA ||
         offset + chunk > total_size) return -1;
-    if (sequence < net->receive_sequence ||
-        (net->snapshot_part_sequence &&
-         sequence < net->snapshot_part_sequence)) return 0;
-    if (sequence != net->snapshot_part_sequence ||
-        total_size != net->snapshot_part_total_size ||
-        part_count != net->snapshot_part_count) {
-        net->snapshot_part_sequence = sequence;
-        net->snapshot_part_total_size = total_size;
-        net->snapshot_part_count = part_count;
-        net->snapshot_part_mask = 0;
+    if (sequence <= net->receive_sequence) return 0;
+
+    if (net->snapshot_current.part_count > 0 &&
+        sequence == net->snapshot_current.sequence) {
+        assembly = &net->snapshot_current;
+    } else if (net->snapshot_previous.part_count > 0 &&
+               sequence == net->snapshot_previous.sequence) {
+        assembly = &net->snapshot_previous;
+    } else if (net->snapshot_current.part_count <= 0) {
+        assembly = &net->snapshot_current;
+        snapshot_clear_assembly(assembly);
+        assembly->sequence = sequence;
+        assembly->total_size = total_size;
+        assembly->part_count = part_count;
+    } else if (sequence > net->snapshot_current.sequence) {
+        /* Keep one incomplete generation alive for late fragments.  If both
+         * slots are occupied, the older one is the first one we can abandon. */
+        if (net->snapshot_previous.part_count > 0)
+            snapshot_abandon(net, &net->snapshot_previous);
+        net->snapshot_previous = net->snapshot_current;
+        snapshot_clear_assembly(&net->snapshot_current);
+        net->snapshot_current.sequence = sequence;
+        net->snapshot_current.total_size = total_size;
+        net->snapshot_current.part_count = part_count;
+        assembly = &net->snapshot_current;
+    } else {
+        /* Older than current and not the retained previous generation. */
+        return 0;
     }
-    memcpy(net->snapshot_part_buffer + offset, payload + NET_SNAPSHOT_PART_BASE,
-           (size_t)chunk);
-    net->snapshot_part_mask |= 1U << part_index;
-    expected_mask = part_count == 32 ? 0xffffffffU : ((1U << part_count) - 1U);
-    if (net->snapshot_part_mask != expected_mask) return 0;
-    if (decode_snapshot(net->snapshot_part_buffer, total_size, net) < 0) {
-        net->snapshot_part_mask = 0;
+
+    /* A sequence has one fixed layout.  Do not let a malformed variant
+     * overwrite an existing assembly slot. */
+    if (assembly->total_size != total_size || assembly->part_count != part_count)
         return -1;
+    net->snapshot_parts_received++;
+    if (assembly->mask & (1U << part_index)) {
+        net->snapshot_parts_duplicate++;
+        return 0;
     }
-    net->receive_sequence = sequence;
-    net->snapshot_part_mask = 0;
+    memcpy(assembly->buffer + offset, payload + NET_SNAPSHOT_PART_BASE,
+           (size_t)chunk);
+    assembly->mask |= 1U << part_index;
+
+    if (snapshot_try_decode(net, assembly) < 0) return -1;
+    if (net->snapshot_previous.part_count > 0 &&
+        net->snapshot_previous.sequence <= net->receive_sequence)
+        snapshot_clear_assembly(&net->snapshot_previous);
+    return 0;
+}
+
+static int snapshot_test_feed(struct rasterfall_net *net,
+                              const unsigned char *snapshot, int total_size,
+                              uint32_t sequence, int part_index, int part_count)
+{
+    unsigned char payload[NET_SNAPSHOT_PART_BASE + NET_SNAPSHOT_FRAGMENT_DATA];
+    int offset = part_index * NET_SNAPSHOT_FRAGMENT_DATA;
+    int chunk = total_size - offset;
+    if (chunk > NET_SNAPSHOT_FRAGMENT_DATA) chunk = NET_SNAPSHOT_FRAGMENT_DATA;
+    if (offset < 0 || chunk <= 0 || part_index < 0 ||
+        part_index >= part_count || chunk > NET_SNAPSHOT_FRAGMENT_DATA)
+        return -1;
+    put_u16(payload, (unsigned int)total_size);
+    put_u16(payload + 2, (unsigned int)offset);
+    put_u16(payload + 4, (unsigned int)chunk);
+    put_u16(payload + 6, (unsigned int)part_index);
+    put_u16(payload + 8, (unsigned int)part_count);
+    memcpy(payload + NET_SNAPSHOT_PART_BASE, snapshot + offset, (size_t)chunk);
+    return decode_snapshot_part(payload, NET_SNAPSHOT_PART_BASE + chunk,
+                                sequence, net);
+}
+
+int rasterfall_net_snapshot_fragment_test(void)
+{
+    unsigned char snapshot[RASTERFALL_NET_MAX_SNAPSHOT];
+    struct rasterfall_net net;
+    int total_size;
+    int actor_count = 4;
+    int enemy_count = 32;
+    int actor_base = NET_SNAPSHOT_BASE +
+                     RASTERFALL_NET_PLAYER_MAX * NET_PLAYER_SIZE;
+    int enemy_count_offset = actor_base + actor_count * NET_ACTOR_SIZE;
+    int i;
+
+    total_size = enemy_count_offset + 1 + enemy_count * NET_ENEMY_SIZE +
+                 NET_EVENT_SIZE + NET_WORLD_SIZE;
+    if (total_size > RASTERFALL_NET_MAX_SNAPSHOT) return -1;
+    memset(snapshot, 0, sizeof(snapshot));
+    snapshot[4] = RASTERFALL_NET_PLAYER_MAX;
+    snapshot[7] = (unsigned char)actor_count;
+    for (i = 0; i < actor_count; i++)
+        snapshot[actor_base + i * NET_ACTOR_SIZE + 1] = (unsigned char)i;
+    snapshot[enemy_count_offset] = (unsigned char)enemy_count;
+    for (i = 0; i < enemy_count; i++)
+        snapshot[enemy_count_offset + 1 + i * NET_ENEMY_SIZE + 47] =
+            (unsigned char)i;
+
+    /* Complete in order. */
+    rasterfall_net_init(&net);
+    for (i = 0; i < 4; i++)
+        if (snapshot_test_feed(&net, snapshot, total_size, 100, i, 4) < 0)
+            return -1;
+    if (net.snapshot_completed != 1 || net.receive_sequence != 100)
+        return -2;
+
+    /* Complete with arbitrary fragment order. */
+    rasterfall_net_init(&net);
+    for (i = 0; i < 4; i++) {
+        static const int order[4] = {2, 0, 3, 1};
+        if (snapshot_test_feed(&net, snapshot, total_size, 100,
+                               order[i], 4) < 0) return -3;
+    }
+    if (net.snapshot_completed != 1 || net.receive_sequence != 100)
+        return -4;
+
+    /* A late fragment can complete the previous generation. */
+    rasterfall_net_init(&net);
+    if (snapshot_test_feed(&net, snapshot, total_size, 100, 0, 4) < 0 ||
+        snapshot_test_feed(&net, snapshot, total_size, 100, 1, 4) < 0 ||
+        snapshot_test_feed(&net, snapshot, total_size, 100, 3, 4) < 0 ||
+        snapshot_test_feed(&net, snapshot, total_size, 101, 0, 4) < 0 ||
+        snapshot_test_feed(&net, snapshot, total_size, 100, 2, 4) < 0)
+        return -5;
+    if (net.snapshot_completed != 1 || net.receive_sequence != 100 ||
+        net.snapshot_previous.part_count != 0)
+        return -6;
+
+    /* A third incomplete generation abandons only the oldest one. */
+    rasterfall_net_init(&net);
+    if (snapshot_test_feed(&net, snapshot, total_size, 100, 0, 4) < 0 ||
+        snapshot_test_feed(&net, snapshot, total_size, 101, 0, 4) < 0 ||
+        snapshot_test_feed(&net, snapshot, total_size, 102, 0, 4) < 0)
+        return -7;
+    if (net.snapshot_abandoned != 1 || net.snapshot_parts_missing != 3)
+        return -8;
+
+    /* Duplicate fragments do not alter the assembly mask or receive count. */
+    rasterfall_net_init(&net);
+    if (snapshot_test_feed(&net, snapshot, total_size, 100, 0, 4) < 0 ||
+        snapshot_test_feed(&net, snapshot, total_size, 100, 0, 4) < 0)
+        return -9;
+    if (net.snapshot_parts_received != 2 ||
+        net.snapshot_parts_duplicate != 1)
+        return -10;
+
+    /* An older complete snapshot cannot roll back an applied newer one. */
+    rasterfall_net_init(&net);
+    for (i = 0; i < 4; i++)
+        if (snapshot_test_feed(&net, snapshot, total_size, 101, i, 4) < 0)
+            return -11;
+    for (i = 0; i < 4; i++)
+        if (snapshot_test_feed(&net, snapshot, total_size, 100, i, 4) < 0)
+            return -12;
+    if (net.snapshot_completed != 1 || net.receive_sequence != 101)
+        return -13;
+
+    /* Complete assembly state is cleared after decode. */
+    if (net.snapshot_current.part_count != 0 &&
+        net.snapshot_previous.part_count != 0)
+        return -14;
     return 0;
 }
 
