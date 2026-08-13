@@ -636,30 +636,144 @@ static int draw_floor_zone(struct toy_renderer *renderer,
                            const struct toy_game_box *zone, uint32_t color)
 {
     struct vec3 a, b, c, d;
-    a.x = zone->minx; a.y = -894; a.z = zone->minz;
-    b.x = zone->maxx; b.y = -894; b.z = zone->minz;
-    c.x = zone->maxx; c.y = -894; c.z = zone->maxz;
-    d.x = zone->minx; d.y = -894; d.z = zone->maxz;
+    a.x = zone->minx; a.y = -900; a.z = zone->minz;
+    b.x = zone->maxx; b.y = -900; b.z = zone->minz;
+    c.x = zone->maxx; c.y = -900; c.z = zone->maxz;
+    d.x = zone->minx; d.y = -900; d.z = zone->maxz;
     return draw_quad(renderer, camera, &a, &b, &c, &d, color);
 }
 
-static int draw_floor_border(struct toy_renderer *renderer,
-                             const struct camera *camera,
-                             const struct toy_game_box *zone, int width,
-                             uint32_t color)
+#define FLOOR_SPLIT_MAX 48
+
+static void floor_split_add(int *values, int *count, int value,
+                            int min_value, int max_value)
 {
-    struct toy_game_box edge;
-    int pixels = 0;
-    edge.minx = zone->minx; edge.maxx = zone->maxx;
-    edge.minz = zone->minz; edge.maxz = zone->minz + width;
-    pixels += draw_floor_zone(renderer, camera, &edge, color);
-    edge.minz = zone->maxz - width; edge.maxz = zone->maxz;
-    pixels += draw_floor_zone(renderer, camera, &edge, color);
-    edge.minx = zone->minx; edge.maxx = zone->minx + width;
-    edge.minz = zone->minz + width; edge.maxz = zone->maxz - width;
-    pixels += draw_floor_zone(renderer, camera, &edge, color);
-    edge.minx = zone->maxx - width; edge.maxx = zone->maxx;
-    pixels += draw_floor_zone(renderer, camera, &edge, color);
+    int i;
+    if (value <= min_value || value >= max_value) return;
+    for (i = 0; i < *count; i++)
+        if (values[i] == value) return;
+    if (*count >= FLOOR_SPLIT_MAX) return;
+    values[(*count)++] = value;
+}
+
+static void floor_split_sort(int *values, int count)
+{
+    int i, j, value;
+    for (i = 1; i < count; i++) {
+        value = values[i];
+        j = i - 1;
+        while (j >= 0 && values[j] > value) {
+            values[j + 1] = values[j];
+            j--;
+        }
+        values[j + 1] = value;
+    }
+}
+
+static int floor_contains(const struct toy_game_box *box, int x, int z)
+{
+    return x >= box->minx && x < box->maxx &&
+           z >= box->minz && z < box->maxz;
+}
+
+static int floor_draw_contains(const struct toy_map_draw *draw, int x, int z)
+{
+    struct toy_game_box outer;
+    outer.minx = draw->a; outer.maxx = draw->b;
+    outer.minz = draw->c; outer.maxz = draw->d;
+    if (!floor_contains(&outer, x, z)) return 0;
+    if (draw->type != TOY_MAP_DRAW_BORDER || draw->e <= 0) return 1;
+    return x < draw->a + draw->e || x >= draw->b - draw->e ||
+           z < draw->c + draw->e || z >= draw->d - draw->e;
+}
+
+/* Render the checkerboard and authored floor colours as one tessellated
+ * plane.  A colour region changes the colour of the affected sub-rectangles;
+ * it never creates a second, nearly coplanar surface. */
+static int draw_partitioned_floor(struct toy_renderer *renderer,
+                                  const struct camera *camera)
+{
+    int base_x, base_z, i, j, k, pixels = 0;
+    int xs[FLOOR_SPLIT_MAX], zs[FLOOR_SPLIT_MAX];
+    for (base_z = level_map.minz; base_z < level_map.maxz; base_z += 1000) {
+        for (base_x = level_map.minx; base_x < level_map.maxx; base_x += 1000) {
+            int x_count = 0, z_count = 0;
+            xs[x_count++] = base_x;
+            xs[x_count++] = base_x + 1000;
+            zs[z_count++] = base_z;
+            zs[z_count++] = base_z + 1000;
+            for (i = 0; i < level_map.draw_count; i++) {
+                struct toy_map_draw *draw = &level_map.draw[i];
+                if (draw->type != TOY_MAP_DRAW_FLOOR &&
+                    draw->type != TOY_MAP_DRAW_BORDER) continue;
+                if (draw->b <= base_x || draw->a >= base_x + 1000 ||
+                    draw->d <= base_z || draw->c >= base_z + 1000) continue;
+                floor_split_add(xs, &x_count, draw->a, base_x, base_x + 1000);
+                floor_split_add(xs, &x_count, draw->b, base_x, base_x + 1000);
+                floor_split_add(zs, &z_count, draw->c, base_z, base_z + 1000);
+                floor_split_add(zs, &z_count, draw->d, base_z, base_z + 1000);
+                if (draw->type == TOY_MAP_DRAW_BORDER) {
+                    floor_split_add(xs, &x_count, draw->a + draw->e,
+                                    base_x, base_x + 1000);
+                    floor_split_add(xs, &x_count, draw->b - draw->e,
+                                    base_x, base_x + 1000);
+                    floor_split_add(zs, &z_count, draw->c + draw->e,
+                                    base_z, base_z + 1000);
+                    floor_split_add(zs, &z_count, draw->d - draw->e,
+                                    base_z, base_z + 1000);
+                }
+            }
+            for (i = 0; i < level_map.spawn_count; i++) {
+                struct toy_game_box *spawn = &level_map.spawn_zones[i].box;
+                if (spawn->maxx <= base_x || spawn->minx >= base_x + 1000 ||
+                    spawn->maxz <= base_z || spawn->minz >= base_z + 1000) continue;
+                floor_split_add(xs, &x_count, spawn->minx, base_x, base_x + 1000);
+                floor_split_add(xs, &x_count, spawn->maxx, base_x, base_x + 1000);
+                floor_split_add(zs, &z_count, spawn->minz, base_z, base_z + 1000);
+                floor_split_add(zs, &z_count, spawn->maxz, base_z, base_z + 1000);
+            }
+            floor_split_sort(xs, x_count);
+            floor_split_sort(zs, z_count);
+            for (i = 0; i + 1 < x_count; i++) {
+                for (j = 0; j + 1 < z_count; j++) {
+                    int minx = xs[i], maxx = xs[i + 1];
+                    int minz = zs[j], maxz = zs[j + 1];
+                    int center_x = (minx + maxx) / 2;
+                    int center_z = (minz + maxz) / 2;
+                    int has_spawn = 0;
+                    uint32_t base_color = (((base_x + base_z) / 1000) & 1) ?
+                                           0x30343A : 0x272B31;
+                    uint32_t color = base_color;
+                    /* Spawn zones are the strongest authored region. */
+                    for (k = 0; k < level_map.spawn_count; k++) {
+                        struct toy_map_zone *spawn = &level_map.spawn_zones[k];
+                        if (floor_contains(&spawn->box, center_x, center_z)) {
+                            color = spawn->color;
+                            has_spawn = 1;
+                            break;
+                        }
+                    }
+                    if (!has_spawn) {
+                        for (k = 0; k < level_map.draw_count; k++) {
+                            struct toy_map_draw *draw = &level_map.draw[k];
+                            if (draw->type != TOY_MAP_DRAW_FLOOR &&
+                                draw->type != TOY_MAP_DRAW_BORDER) continue;
+                            if (floor_draw_contains(draw, center_x, center_z)) {
+                                color = draw->color;
+                                break;
+                            }
+                        }
+                    }
+                    {
+                        struct toy_game_box patch;
+                        patch.minx = minx; patch.maxx = maxx;
+                        patch.minz = minz; patch.maxz = maxz;
+                        pixels += draw_floor_zone(renderer, camera, &patch, color);
+                    }
+                }
+            }
+        }
+    }
     return pixels;
 }
 
@@ -706,32 +820,64 @@ static int render_world_sign(struct toy_renderer *renderer,
     return pixels;
 }
 
-static void render_world_sign_text(struct toy_surface *surface,
+/* Submit bitmap-font pixels as tiny world-space quads.  This deliberately
+ * uses the existing depth-tested flat-triangle path: the text is part of the
+ * board/flag plane instead of a framebuffer billboard. */
+static int render_world_text_plane(struct toy_renderer *renderer,
                                    const struct camera *camera,
-                                   const struct toy_map_draw *sign)
+                                   int x, int y, int z,
+                                   int width, int height,
+                                   const char *text, uint32_t color,
+                                   int mirror)
 {
-    const int text_scale = 2;
-    int x = (sign->a + sign->b) / 2;
-    int z = (sign->c + sign->d) / 2;
-    struct vec3 world, view;
-    struct toy_screen_vertex screen;
-    int width, height;
-    if (!sign->text[0] || camera->z <= z) return;
-    /* +Z is the board front.  This tiny lift prevents coplanar text from
-     * fighting the board and also makes the intended surface explicit. */
-    world.x = x; world.y = (sign->e + sign->f) / 2; world.z = z + 24;
-    world_to_view(camera, &world, &view);
-    if (view.z < NEAR_Z) return;
-    width = (int)strlen(sign->text) * FB_FONT_W * text_scale;
-    height = FB_FONT_H * text_scale;
-    project_vertex(surface, &view, &screen);
-    screen.x -= width / 2;
-    screen.y -= height / 2;
-    if (screen.x >= 0 && screen.x + width < surface->width &&
-        screen.y >= 0 && screen.y + height < surface->height)
-        fb_draw_string_scaled((unsigned char *)surface->pixels,
-                              screen.x, screen.y, sign->text, 0xFFF0C0,
-                              surface->stride, text_scale);
+    int chars, cell, start_x, start_y, i, row, col, run, px, total_px;
+    int drawn = 0;
+    struct vec3 a, b, c, d;
+    if (!renderer || !camera || !text || !text[0]) return 0;
+    chars = (int)strlen(text);
+    if (chars <= 0) return 0;
+    cell = width / (chars * FB_FONT_W);
+    if (height / FB_FONT_H < cell) cell = height / FB_FONT_H;
+    if (cell < 1) return 0;
+    start_x = x + (width - chars * FB_FONT_W * cell) / 2;
+    start_y = y - (height - FB_FONT_H * cell) / 2;
+    total_px = chars * FB_FONT_W;
+    for (i = 0; i < chars; i++) {
+        unsigned char ch = (unsigned char)text[i];
+        for (row = 0; row < FB_FONT_H; row++) {
+            unsigned char bits = fb_font_glyph_row(ch, row);
+            for (col = 0; col < FB_FONT_W; col++) {
+                if (!(bits & (unsigned char)(0x80 >> col))) continue;
+                run = col;
+                while (run + 1 < FB_FONT_W &&
+                       (bits & (unsigned char)(0x80 >> (run + 1)))) run++;
+                /* The original screen-space implementation happened to
+                 * display these world planes with a reversed horizontal
+                 * orientation.  Keep the correction explicit here; the
+                 * reverse-side copy uses the opposite orientation naturally
+                 * when viewed from behind the plane. */
+                if (mirror)
+                    px = total_px - (i * FB_FONT_W + run + 1);
+                else
+                    px = i * FB_FONT_W + col;
+                a.x = start_x + px * cell;
+                a.y = start_y - row * cell;
+                a.z = z;
+                if (mirror)
+                    b.x = start_x +
+                          (total_px - (i * FB_FONT_W + col)) * cell;
+                else
+                    b.x = start_x + (i * FB_FONT_W + run + 1) * cell;
+                b.y = a.y; b.z = z;
+                c.x = b.x; c.y = a.y - cell; c.z = z;
+                d.x = a.x; d.y = c.y; d.z = z;
+                drawn += draw_world_triangle(renderer, camera, &a, &b, &c, color);
+                drawn += draw_world_triangle(renderer, camera, &a, &c, &d, color);
+                col = run;
+            }
+        }
+    }
+    return drawn;
 }
 
 static int render_block_enemy(struct toy_renderer *, const struct camera *,
@@ -817,28 +963,24 @@ int rasterfall_render_flags(struct toy_renderer *renderer,
     return pixels;
 }
 
-void rasterfall_render_flag_text(struct toy_surface *surface,
-                                 const struct camera *camera)
+int rasterfall_render_flag_text(struct toy_renderer *renderer,
+                                const struct camera *camera)
 {
-    int i;
-    if (!active_session) return;
+    int i, drawn = 0;
+    if (!renderer || !active_session) return 0;
     for (i = 0; i < active_session->flag_count; i++) {
-        struct vec3 world, view;
-        struct toy_screen_vertex screen;
         const struct rasterfall_flag *f = &active_session->flags[i];
-        int width;
         if (!f->active || !f->label[0]) continue;
-        world.x = f->x + 350; world.y = 2200; world.z = f->z + 24;
-        world_to_view(camera, &world, &view);
-        if (view.z < NEAR_Z) continue;
-        project_vertex(surface, &view, &screen);
-        width = (int)strlen(f->label) * FB_FONT_W * 2;
-        if (screen.x - width / 2 >= 0 && screen.x + width / 2 < surface->width &&
-            screen.y - FB_FONT_H >= 0 && screen.y + FB_FONT_H < surface->height)
-            fb_draw_string_scaled((unsigned char *)surface->pixels,
-                screen.x - width / 2, screen.y - FB_FONT_H / 2,
-                f->label, 0xFFF0C0, surface->stride, 2);
+        /* The flag cloth spans x+12..x+700 and y=1950..2450.  Its visible
+         * face is +Z, matching the sign convention below. */
+        drawn += render_world_text_plane(renderer, camera,
+                                          f->x + 32, 2418, f->z + 14,
+                                          640, 430, f->label, 0xFFF0C0, 1);
+        drawn += render_world_text_plane(renderer, camera,
+                                          f->x + 32, 2418, f->z - 14,
+                                          640, 430, f->label, 0xFFF0C0, 0);
     }
+    return drawn;
 }
 
 static void actor_world_point(int x, int z, int sy, int cy,
@@ -1236,30 +1378,15 @@ static int render_scene(struct toy_renderer *renderer, const struct camera *came
     struct vec3 a, b, c, d;
     /* 自由俯仰下先铺天空/地面：地平线由俯仰角决定，墙面与地板随后覆盖 */
     rasterfall_sky_draw(&renderer->surface, camera);
-    for (int z = level_map.minz; z < level_map.maxz; z += 1000) {
-        for (int x = level_map.minx; x < level_map.maxx; x += 1000) {
-            uint32_t color = (((x + z) / 1000) & 1) ? 0x30343A : 0x272B31;
-            a.x = x;        a.y = -900; a.z = z;
-            b.x = x + 1000; b.y = -900; b.z = z;
-            c.x = x + 1000; c.y = -900; c.z = z + 1000;
-            d.x = x;        d.y = -900; d.z = z + 1000;
-            pixels += draw_quad(renderer, camera, &a, &b, &c, &d, color);
-        }
-    }
+    fixed_floor_lighting = 1;
+    pixels += draw_partitioned_floor(renderer, camera);
+    fixed_floor_lighting = 0;
     for (int i=0; i<level_map.draw_count; i++) {
         struct toy_map_draw *x=&level_map.draw[i];
-        if (x->type==TOY_MAP_DRAW_FLOOR) {
-            struct toy_game_box zone={x->a,x->b,x->c,x->d};
-            fixed_floor_lighting = 1;
-            pixels+=draw_floor_zone(renderer,camera,&zone,x->color);
-            fixed_floor_lighting = 0;
-        } else if (x->type==TOY_MAP_DRAW_BORDER) {
-            struct toy_game_box zone={x->a,x->b,x->c,x->d};
-            /* 边框与涂色同层：同样走无深度覆盖绘制，颜色也是作者指定的
-             * 固定色（不参与烘焙光照/雾）。 */
-            fixed_floor_lighting = 1;
-            pixels+=draw_floor_border(renderer,camera,&zone,x->e,x->color);
-            fixed_floor_lighting = 0;
+        if (x->type==TOY_MAP_DRAW_FLOOR || x->type==TOY_MAP_DRAW_BORDER) {
+            /* Floor colours are already part of the tessellated base plane.
+             * Keeping a second floor command here would reintroduce the
+             * coplanar depth competition this pass is designed to remove. */
         } else if (x->type==TOY_MAP_DRAW_WALL) {
             if (x->c==x->d) { a.x=x->a;a.y=-900;a.z=x->c;b.x=x->b;b.y=-900;b.z=x->c;c.x=x->b;c.y=x->e;c.z=x->c;d.x=x->a;d.y=x->e;d.z=x->c; }
             else { a.x=x->a;a.y=-900;a.z=x->c;b.x=x->a;b.y=-900;b.z=x->d;c.x=x->a;c.y=x->e;c.z=x->d;d.x=x->a;d.y=x->e;d.z=x->c; }
@@ -2585,14 +2712,30 @@ int rasterfall_render_scene(struct toy_renderer *renderer,
     return render_scene(renderer, camera);
 }
 
-void rasterfall_render_sign_text(struct toy_surface *surface,
-                                 const struct camera *camera)
+int rasterfall_render_sign_text(struct toy_renderer *renderer,
+                                const struct camera *camera)
 {
-    int i;
-    if (!surface || !camera) return;
-    for (i = 0; i < level_map.draw_count; i++)
-        if (level_map.draw[i].type == TOY_MAP_DRAW_SIGN)
-            render_world_sign_text(surface, camera, &level_map.draw[i]);
+    int i, drawn = 0;
+    if (!renderer || !camera) return 0;
+    for (i = 0; i < level_map.draw_count; i++) {
+        if (level_map.draw[i].type == TOY_MAP_DRAW_SIGN) {
+            drawn += render_world_text_plane(renderer, camera,
+                level_map.draw[i].a + 40,
+                level_map.draw[i].f - 24,
+                level_map.draw[i].d + 24,
+                level_map.draw[i].b - level_map.draw[i].a - 80,
+                level_map.draw[i].f - level_map.draw[i].e - 48,
+                level_map.draw[i].text, 0xFFF0C0, 1);
+            drawn += render_world_text_plane(renderer, camera,
+                level_map.draw[i].a + 40,
+                level_map.draw[i].f - 24,
+                level_map.draw[i].c - 24,
+                level_map.draw[i].b - level_map.draw[i].a - 80,
+                level_map.draw[i].f - level_map.draw[i].e - 48,
+                level_map.draw[i].text, 0xFFF0C0, 0);
+        }
+    }
+    return drawn;
 }
 
 void rasterfall_render_gallery_selection(struct toy_surface *surface,

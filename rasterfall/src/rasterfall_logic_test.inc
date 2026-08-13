@@ -319,8 +319,10 @@ static int run_logic_test(void)
     }
     rasterfall_render_scene(&renderer, &camera);
     count = toy_renderer_flush(&renderer);
-    /* 破碎画面曾仍返回正数；完整 320x180 场景应稳定超过此下限。 */
-    if (count < 50000) {
+    /* The floor is now a single tessellated plane, so authored colour areas
+     * no longer overdraw the checkerboard and the visible-pixel count is
+     * lower than the old two-plane implementation. */
+    if (count < 40000) {
         toy_renderer_destroy(&renderer);
         tlibc_free(pixels);
         return 8;

@@ -65,6 +65,11 @@ void fb_draw_string_scaled(unsigned char *fbp, int x, int y,
                            const char *str, uint32_t color,
                            int line_length, int scale);
 
+/* Return one row of the built-in 8x16 glyph.  Bit 7 is the leftmost pixel.
+ * World-space renderers can use the same font without first drawing it to the
+ * framebuffer. */
+unsigned char fb_font_glyph_row(unsigned char ch, int row);
+
 /* ── 查询函数 ── */
 
 /* 返回字符串像素宽度（不处理 \n，仅计算水平像素和） */

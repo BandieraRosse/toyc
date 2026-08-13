@@ -1901,14 +1901,14 @@ startup_again:
             scene_pixels += rasterfall_render_network_teammate(&renderer, &camera, &net);
             rasterfall_perf_end_stage(&stats, &stats_total, RASTERFALL_STATS_ENEMIES, &t_stage,
                            renderer.submitted_triangles - prev_tris, 0);
+            /* World lettering is submitted before the flush, so it follows
+             * the sign/flag plane and participates in depth testing. */
+            scene_pixels += rasterfall_render_sign_text(&renderer, &camera);
+            scene_pixels += rasterfall_render_flag_text(&renderer, &camera);
             /* 世界几何并行光栅化；弹道/粒子/枪模随后直接写屏覆盖 */
             prev_tris = (unsigned long)renderer.cmd_count;
             stage_pixels = toy_renderer_flush(&renderer);
             scene_pixels += stage_pixels;
-            /* Sign lettering is a framebuffer overlay: the board must be
-             * flushed first, otherwise its depth-tested face covers the text. */
-            rasterfall_render_sign_text(&surface, &camera);
-            rasterfall_render_flag_text(&surface, &camera);
 #if TOY_CONFIG_SHOW_MODEL_PATHS
             rasterfall_render_gallery_selection(&surface, &camera);
 #endif

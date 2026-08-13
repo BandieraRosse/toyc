@@ -224,6 +224,12 @@ static const unsigned char font_vga8x16[95][16] = {
                       0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00 },
 };
 
+unsigned char fb_font_glyph_row(unsigned char ch, int row)
+{
+    if (ch < 0x20 || ch > 0x7E || row < 0 || row >= 16) return 0;
+    return font_vga8x16[ch - 0x20][row];
+}
+
 /* ════════════════════════════════════════════════
  * 公用查询
  * ════════════════════════════════════════════════ */
