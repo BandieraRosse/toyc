@@ -318,11 +318,11 @@ static void fill_hud_state(struct rasterfall_hud_state *hud,
 #define horde_banner_ms (session.banner_ms)
 #define interaction_banner (session.banner_text)
 
-static long monotonic_us(void)
+static int64_t monotonic_us(void)
 {
     struct timespec now;
     if (__clock_gettime(CLOCK_MONOTONIC, &now) < 0) return 0;
-    return now.tv_sec * 1000000L + now.tv_nsec / 1000;
+    return (int64_t)now.tv_sec * 1000000 + now.tv_nsec / 1000;
 }
 
 static int parse_positive_int(const char *text, int fallback)
@@ -335,20 +335,6 @@ static int parse_positive_int(const char *text, int fallback)
     }
     if (*text || value <= 0 || value > 65535) return fallback;
     return value;
-}
-
-/* Menu navigation is edge-triggered and should consume the platform event
- * directly. This avoids losing a short key press when a frame boundary or
- * focus notification clears the general gameplay input state. */
-static int window_key_pressed(const struct toy_window_events *events,
-                              unsigned int key)
-{
-    if (!events) return 0;
-    for (int i = 0; i < events->key_event_count; i++) {
-        if (events->key_events[i].pressed && events->key_events[i].key == key)
-            return 1;
-    }
-    return 0;
 }
 
 static int clampi(int value, int low, int high)
@@ -734,16 +720,25 @@ static int run_startup_menu(struct toy_window *window, struct toy_renderer *rend
     int editing_port = 0;
     char port_text[8];
     char room_text[8];
-    long nav_ready = 0;
+    int64_t nav_ready = 0;
+    unsigned char pending_key_edges[TOY_INPUT_KEY_COUNT];
     strcpy(address, "127.0.0.1");
     strcpy(port_text, "28460");
     room_text[0] = 0;
+    memset(pending_key_edges, 0, sizeof(pending_key_edges));
     while (running) {
         struct toy_surface surface;
-        long now = monotonic_us();
+        int64_t now = monotonic_us();
         toy_input_begin_frame(input);
         if (toy_window_poll(window, events, 0) < 0) break;
         toy_input_apply(input, events);
+        if (events->keyboard_focus_changed && !events->keyboard_focused)
+            memset(pending_key_edges, 0, sizeof(pending_key_edges));
+        for (int i = 0; i < events->key_event_count; i++) {
+            unsigned int key = events->key_events[i].key;
+            if (events->key_events[i].pressed && key < TOY_INPUT_KEY_COUNT)
+                pending_key_edges[key] = 1;
+        }
         /* Wayland 的 xdg_toplevel.move 必须使用鼠标按下事件的 serial。
          * 菜单顶部保留为可拖拽区域，不影响下方按钮操作。 */
         if (events->button_pressed && events->button == BTN_LEFT &&
@@ -808,8 +803,8 @@ static int run_startup_menu(struct toy_window *window, struct toy_renderer *rend
                 }
             }
         } else {
-            int up = window_key_pressed(events, KEY_UP);
-            int down = window_key_pressed(events, KEY_DOWN);
+            int up = pending_key_edges[KEY_UP];
+            int down = pending_key_edges[KEY_DOWN];
             if ((up || down) && now >= nav_ready) {
                 int limit = 5;
                 selected += down ? 1 : -1;
@@ -817,11 +812,18 @@ static int run_startup_menu(struct toy_window *window, struct toy_renderer *rend
                 if (selected >= limit) selected = 0;
                 nav_ready = now + 160000;
             }
-            if (window_key_pressed(events, KEY_ESC)) {
+            /* Navigation is edge-triggered.  An edge arriving during the
+             * debounce window is discarded instead of queued, otherwise a
+             * single physical press can move again after the key is up. */
+            pending_key_edges[KEY_UP] = 0;
+            pending_key_edges[KEY_DOWN] = 0;
+            if (pending_key_edges[KEY_ESC]) {
+                pending_key_edges[KEY_ESC] = 0;
                 if (screen == RASTERFALL_STARTUP_MAIN) break;
                 screen = RASTERFALL_STARTUP_MAIN;
                 selected = 1;
-            } else if (window_key_pressed(events, KEY_ENTER)) {
+            } else if (pending_key_edges[KEY_ENTER]) {
+                pending_key_edges[KEY_ENTER] = 0;
                 if (screen == RASTERFALL_STARTUP_MAIN) {
                     if (selected == 0) {
                         *net_mode = RASTERFALL_NET_HOST;
@@ -858,7 +860,7 @@ static int wait_for_network_connection(struct toy_window *window,
                                        struct rasterfall_net *net,
                                        const char *address, int port)
 {
-    long deadline = monotonic_us() + 6000000L;
+    int64_t deadline = monotonic_us() + 6000000;
     while (monotonic_us() < deadline) {
         struct toy_surface surface;
         char line[96];
@@ -1165,8 +1167,8 @@ int main(int argc, char **argv)
     struct camera camera;
     struct control_settings settings;
     struct pause_menu pause_menu;
-    long last_time, accumulator = 0, fps_window_start, fps_elapsed;
-    long prev_begin = 0, last_active = 0;   /* 帧间隔统计 */
+    int64_t last_time, accumulator = 0, fps_window_start, fps_elapsed;
+    int64_t prev_begin = 0, last_active = 0;   /* 帧间隔统计 */
     int running = 1, pointer_lock_requested = 0, paused = 1;
     int return_to_menu = 0;
     int last_pointer_x = 0, last_pointer_y = 0, have_pointer_position = 0;
@@ -1175,7 +1177,7 @@ int main(int argc, char **argv)
     int fire_edge = 0;
     int shove_edge = 0;
     int pointer_turn_pending = 0, pointer_pitch_pending = 0;
-    long menu_nav_ready_us = 0;
+    int64_t menu_nav_ready_us = 0;
     /* 按键按压边沿跨帧保留位：逻辑步（E/R/,/. 及切枪换弹）可能因
      * accumulator 不足而整帧不跑（长 stall 后连续几帧都不跑），边沿若
      * 只在 key_pressed 里会被下一轮 begin_frame 清掉。这里逐键记录
@@ -1410,7 +1412,7 @@ startup_again:
     rasterfall_perf_init(&stats);
     rasterfall_perf_init(&stats_total);
     while (running) {
-        long now, elapsed, t_frame, t_stage;
+        int64_t now, elapsed, t_frame, t_stage;
         unsigned long prev_tris;
         int logic_steps = 0;
         int resumed = 0;
@@ -1499,12 +1501,10 @@ startup_again:
             int resume_requested = 0;
             /* 菜单导航使用独立节流；Wayland/键盘自动重复可能在一帧内
              * 送来多次边沿，不能让选项随帧率飞快滚动。 */
-            int up = window_key_pressed(&events, KEY_UP) ||
-                     toy_input_pressed(&input, KEY_UP);
-            int down = window_key_pressed(&events, KEY_DOWN) ||
-                       toy_input_pressed(&input, KEY_DOWN);
+            int up = pending_key_edges[KEY_UP];
+            int down = pending_key_edges[KEY_DOWN];
             if (up > 0 || down > 0) {
-                long menu_now = monotonic_us();
+                int64_t menu_now = monotonic_us();
                 if (menu_now >= menu_nav_ready_us) {
                     if (up > 0) {
                         pause_menu.selected--;
@@ -1517,27 +1517,23 @@ startup_again:
                     }
                     menu_nav_ready_us = menu_now + 180000;
                 }
-                /* 无论本次是否因节流被接受，都消费这个边沿；释放后
-                 * 再按才会产生下一次导航。 */
-                input.key_pressed[KEY_UP] = 0;
-                input.key_pressed[KEY_DOWN] = 0;
                 pending_key_edges[KEY_UP] = 0;
                 pending_key_edges[KEY_DOWN] = 0;
             }
             {
-                int change = (window_key_pressed(&events, KEY_RIGHT) ||
-                              toy_input_pressed(&input, KEY_RIGHT)) -
-                             (window_key_pressed(&events, KEY_LEFT) ||
-                              toy_input_pressed(&input, KEY_LEFT));
+                int change = pending_key_edges[KEY_RIGHT] -
+                             pending_key_edges[KEY_LEFT];
                 if (change != 0) {
                     if (pause_menu.selected == PAUSE_ITEM_MOUSE)
                         settings.mouse_level = clampi(settings.mouse_level + change, 0, 15);
                     else if (pause_menu.selected == PAUSE_ITEM_KEYBOARD)
                         settings.keyboard_level = clampi(settings.keyboard_level + change, 0, 15);
+                    pending_key_edges[KEY_RIGHT] = 0;
+                    pending_key_edges[KEY_LEFT] = 0;
                 }
             }
-            if (window_key_pressed(&events, KEY_ENTER) ||
-                toy_input_pressed(&input, KEY_ENTER)) {
+            if (pending_key_edges[KEY_ENTER]) {
+                pending_key_edges[KEY_ENTER] = 0;
                 if (pause_menu.selected == PAUSE_ITEM_RESUME)
                     resume_requested = 1;
                 else if (pause_menu.selected == PAUSE_ITEM_MENU) {
@@ -1545,8 +1541,8 @@ startup_again:
                     running = 0;
                 }
             }
-            if (window_key_pressed(&events, KEY_ESC) ||
-                toy_input_pressed(&input, KEY_ESC)) {
+            if (pending_key_edges[KEY_ESC]) {
+                pending_key_edges[KEY_ESC] = 0;
                 resume_requested = 1;
             }
             if (resume_requested) {
@@ -1574,6 +1570,7 @@ startup_again:
                 pointer_turn_pending = 0;
                 pointer_pitch_pending = 0;
                 pause_menu.selected = PAUSE_ITEM_RESUME;
+                pending_key_edges[KEY_ESC] = 0;
                 __printf("rasterfall: paused, pointer released\n");
             }
         }

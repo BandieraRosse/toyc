@@ -42,40 +42,20 @@ static void clear_events(struct toy_window_events *events)
 static int has_key_event(const struct toy_window_events *events,
                          unsigned int key, int pressed)
 {
-    for (int i = 0; i < events->key_event_count; i++) {
+    for (int i = 0; i < events->key_event_count; i++)
         if (events->key_events[i].key == key &&
             events->key_events[i].pressed == pressed)
             return 1;
-    }
     return 0;
 }
 
-static void poll_windows_key_edges(const struct toy_window_events *events,
-                                   unsigned int key, int vk, int *previous)
+/* SDL supplies the normal event stream.  Keep a native snapshot as an edge
+ * fallback for Windows focus/message-queue paths, without turning held keys
+ * into repeated presses. */
+static void poll_windows_key_edge(const struct toy_window_events *events,
+                                  unsigned int key, int vk, int *previous)
 {
     int pressed = (GetAsyncKeyState(vk) & 0x8000) != 0;
-    struct toy_window_events *mutable_events = (struct toy_window_events *)events;
-    if (pressed == *previous) return;
-    *previous = pressed;
-    if (has_key_event(events, key, pressed) ||
-        mutable_events->key_event_count >= TOY_WINDOW_MAX_KEY_EVENTS)
-        return;
-    mutable_events->key_events[mutable_events->key_event_count].key = key;
-    mutable_events->key_events[mutable_events->key_event_count].pressed = pressed;
-    mutable_events->key_event_count++;
-}
-
-/* SDL's keyboard snapshot is the reliable source for menu edge events.  It
- * is updated by SDL_PumpEvents and remains tied to the same event queue that
- * produced the platform-neutral key events. */
-static void poll_sdl_key_edge(const struct toy_window_events *events,
-                              unsigned int key, SDL_Scancode scancode,
-                              int *previous)
-{
-    int count = 0;
-    const Uint8 *state = SDL_GetKeyboardState(&count);
-    int pressed = state && (int)scancode >= 0 && (int)scancode < count &&
-                  state[scancode];
     struct toy_window_events *mutable_events =
         (struct toy_window_events *)events;
     if (pressed == *previous) return;
@@ -90,24 +70,16 @@ static void poll_sdl_key_edge(const struct toy_window_events *events,
 
 static void poll_windows_keys(struct toy_window_events *events)
 {
-    static const struct {
-        unsigned int key;
-        int vk;
-        int *previous;
-    } keys[] = {
-        {KEY_W, 'W', NULL}, {KEY_A, 'A', NULL}, {KEY_S, 'S', NULL},
-        {KEY_D, 'D', NULL}, {KEY_SPACE, VK_SPACE, NULL},
-        {KEY_LEFTSHIFT, VK_LSHIFT, NULL}, {KEY_TAB, VK_TAB, NULL},
-        {KEY_R, 'R', NULL}, {KEY_E, 'E', NULL},
-        {KEY_F, 'F', NULL},
-        {KEY_1, '1', NULL}, {KEY_2, '2', NULL},
-        {KEY_LEFT, VK_LEFT, NULL}, {KEY_RIGHT, VK_RIGHT, NULL},
-        {KEY_SLASH, VK_OEM_2, NULL},
+    static const struct { unsigned int key; int vk; } keys[] = {
+        {KEY_W, 'W'}, {KEY_A, 'A'}, {KEY_S, 'S'}, {KEY_D, 'D'},
+        {KEY_SPACE, VK_SPACE}, {KEY_LEFTSHIFT, VK_LSHIFT},
+        {KEY_TAB, VK_TAB}, {KEY_R, 'R'}, {KEY_E, 'E'}, {KEY_F, 'F'},
+        {KEY_1, '1'}, {KEY_2, '2'}, {KEY_UP, VK_UP}, {KEY_DOWN, VK_DOWN},
+        {KEY_LEFT, VK_LEFT}, {KEY_RIGHT, VK_RIGHT}, {KEY_SLASH, VK_OEM_2}
     };
     static int previous[sizeof(keys) / sizeof(keys[0])];
-    size_t i;
-    for (i = 0; i < sizeof(keys) / sizeof(keys[0]); i++)
-        poll_windows_key_edges(events, keys[i].key, keys[i].vk, &previous[i]);
+    for (unsigned int i = 0; i < sizeof(keys) / sizeof(keys[0]); i++)
+        poll_windows_key_edge(events, keys[i].key, keys[i].vk, &previous[i]);
 }
 
 static unsigned int key_code(SDL_Scancode code, SDL_Keycode sym)
@@ -240,12 +212,10 @@ int toy_window_poll(struct toy_window *window, struct toy_window_events *events,
 {
     SDL_Event event;
     int have_event = 0;
-    static int previous_up, previous_down, previous_enter, previous_escape;
     clear_events(events);
     if (!window) return -1;
-    /* Refresh the keyboard snapshot before synthesizing edges.  SDL updates
-     * this state while pumping the native message queue; relying on the
-     * previous frame's snapshot can lose a short menu key press. */
+    /* Pump SDL first, then merge the native snapshot only when it contributes
+     * an edge SDL did not deliver.  has_key_event() prevents duplicates. */
     SDL_PumpEvents();
     if (timeout_ms > 0 && !SDL_WaitEventTimeout(&event, timeout_ms)) return 0;
     if (timeout_ms > 0) {
@@ -308,11 +278,6 @@ dispatch:
         if (timeout_ms > 0) break;
     }
     if (events) {
-        /* Menu navigation uses SDL's pumped keyboard snapshot. */
-        poll_sdl_key_edge(events, KEY_UP, SDL_SCANCODE_UP, &previous_up);
-        poll_sdl_key_edge(events, KEY_DOWN, SDL_SCANCODE_DOWN, &previous_down);
-        poll_sdl_key_edge(events, KEY_ENTER, SDL_SCANCODE_RETURN, &previous_enter);
-        poll_sdl_key_edge(events, KEY_ESC, SDL_SCANCODE_ESCAPE, &previous_escape);
         poll_windows_keys(events);
         {
             Uint32 buttons = SDL_GetMouseState(NULL, NULL);

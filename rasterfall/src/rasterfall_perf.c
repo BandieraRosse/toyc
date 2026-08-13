@@ -2,11 +2,11 @@
 #include "core.h"
 #include "rasterfall_perf.h"
 
-static long rasterfall_perf_monotonic_us(void)
+static int64_t rasterfall_perf_monotonic_us(void)
 {
     struct timespec now;
     if (__clock_gettime(CLOCK_MONOTONIC, &now) < 0) return 0;
-    return now.tv_sec * 1000000L + now.tv_nsec / 1000;
+    return (int64_t)now.tv_sec * 1000000 + now.tv_nsec / 1000;
 }
 
 /* ── 性能统计：分阶段三角形/顶点/耗时 + 帧时间分布 ─────────────
@@ -31,10 +31,10 @@ void rasterfall_perf_init(struct rasterfall_perf_stats *s)
 /* 阶段结束：把阶段耗时与三角形/像素计数同时累积进窗口与全量两个
  * 结构，stage_start 推进到当前时刻。 */
 void rasterfall_perf_end_stage(struct rasterfall_perf_stats *window, struct rasterfall_perf_stats *total,
-                           int stage, long *stage_start,
+                           int stage, int64_t *stage_start,
                            unsigned long tris, unsigned long pixels)
 {
-    long now = rasterfall_perf_monotonic_us();
+    int64_t now = rasterfall_perf_monotonic_us();
     window->stage_us[stage] += now - *stage_start;
     total->stage_us[stage] += now - *stage_start;
     window->stage_tris[stage] += tris;
@@ -44,7 +44,7 @@ void rasterfall_perf_end_stage(struct rasterfall_perf_stats *window, struct rast
     *stage_start = now;
 }
 
-static void ring_add(struct rasterfall_perf_stats *s, long us)
+static void ring_add(struct rasterfall_perf_stats *s, int64_t us)
 {
     s->ring[s->ring_head] = (int)us;
     s->ring_head = (s->ring_head + 1) % RASTERFALL_STATS_RING_SIZE;
@@ -55,14 +55,14 @@ static void ring_add(struct rasterfall_perf_stats *s, long us)
 }
 
 void rasterfall_perf_record_frame(struct rasterfall_perf_stats *window,
-                              struct rasterfall_perf_stats *total, long us)
+                              struct rasterfall_perf_stats *total, int64_t us)
 {
     ring_add(window, us);
     ring_add(total, us);
 }
 
 void rasterfall_perf_add_stall(struct rasterfall_perf_stats *window,
-                           struct rasterfall_perf_stats *total, long us)
+                           struct rasterfall_perf_stats *total, int64_t us)
 {
     window->stall_us += us;
     total->stall_us += us;
@@ -73,7 +73,7 @@ void rasterfall_perf_add_stall(struct rasterfall_perf_stats *window,
  * 数即每渲染帧的均值（应≈1e6/fps）。wait 在 dump 中用 wall − 活跃帧
  * 时间推导，保证恒等对消。 */
 void rasterfall_perf_add_interval(struct rasterfall_perf_stats *window, struct rasterfall_perf_stats *total,
-                              long wall_us)
+                              int64_t wall_us)
 {
     window->wall_us += wall_us;
     total->wall_us += wall_us;
@@ -128,8 +128,9 @@ static long perf_percentile(const struct rasterfall_perf_stats *s, int pct)
 
 void rasterfall_perf_dump(const struct rasterfall_perf_stats *s, const char *label)
 {
-    long elapsed = rasterfall_perf_monotonic_us() - s->window_start;
-    long fps10, avg_us, total_us, p95, p99;
+    int64_t elapsed = rasterfall_perf_monotonic_us() - s->window_start;
+    int64_t fps10, avg_us, total_us;
+    long p95, p99;
     unsigned long tris_all = 0, pixels_all = 0;
     int i;
     if (s->frames <= 0 || elapsed <= 0) return;
@@ -140,16 +141,18 @@ void rasterfall_perf_dump(const struct rasterfall_perf_stats *s, const char *lab
     /* wait = wall − 活跃帧时间：present 到下一次 begin 的间隔（轮询/
      * 逻辑/调度/组合器背压），由对消恒等式推导，与各阶段统计严格一致 */
     {
-        long wall_avg = s->wall_us / s->frames;
-        long wait_avg = wall_avg - avg_us;
+        int64_t wall_avg = s->wall_us / s->frames;
+        int64_t wait_avg = wall_avg - avg_us;
         if (wait_avg < 0) wait_avg = 0;
-        __printf("[stats:%s] window=%ld.%03lds frames=%d fps=%ld.%ld "
-                 "frame_us avg=%ld p95=%ld p99=%ld max=%ld "
-                 "wall_us avg=%ld wait_us avg=%ld stall_ms=%ld\n",
-                 label, elapsed / 1000000L, (elapsed % 1000000L) / 1000L,
-                 s->frames, fps10 / 10, fps10 % 10,
-                 avg_us, p95, p99, s->frame_max, wall_avg, wait_avg,
-                 s->stall_us / 1000);
+        __printf("[stats:%s] window=%lld.%03llds frames=%d fps=%lld.%lld "
+                 "frame_us avg=%lld p95=%ld p99=%ld max=%lld "
+                 "wall_us avg=%lld wait_us avg=%lld stall_ms=%lld\n",
+                 label, (long long)(elapsed / 1000000),
+                 (long long)((elapsed % 1000000) / 1000),
+                 s->frames, (long long)(fps10 / 10), (long long)(fps10 % 10),
+                 (long long)avg_us, p95, p99, (long long)s->frame_max,
+                 (long long)wall_avg, (long long)wait_avg,
+                 (long long)(s->stall_us / 1000));
     }
     total_us = 0;
     for (i = 0; i < RASTERFALL_STATS_STAGE_MAX; i++) total_us += s->stage_us[i];
@@ -159,12 +162,12 @@ void rasterfall_perf_dump(const struct rasterfall_perf_stats *s, const char *lab
     for (i = 0; i < RASTERFALL_STATS_STAGE_MAX; i++) {
         unsigned long tris = s->stage_tris[i] / (unsigned long)s->frames;
         unsigned long px = s->stage_pixels[i] / (unsigned long)s->frames;
-        long pct = s->stage_us[i] * 100 / total_us;
+        int64_t pct = s->stage_us[i] * 100 / total_us;
         tris_all += tris;
         pixels_all += px;
-        __printf("[stats:%s] %-7s %8lu %8lu %9lu %10ld %4ld%%\n", label,
+        __printf("[stats:%s] %-7s %8lu %8lu %9lu %10lld %4lld%%\n", label,
                  stats_stage_names[i], tris, tris * 3UL, px,
-                 s->stage_us[i] / s->frames, pct);
+                 (long long)(s->stage_us[i] / s->frames), (long long)pct);
     }
     __printf("[stats:%s] per-frame total tris=%lu verts=%lu pixels=%lu\n",
              label, tris_all, tris_all * 3UL, pixels_all);
@@ -192,13 +195,14 @@ void rasterfall_perf_dump(const struct rasterfall_perf_stats *s, const char *lab
         unsigned long tex_tris = s->raster_tex_tris / (unsigned long)s->frames;
         unsigned long flat_px = s->raster_flat_px / (unsigned long)s->frames;
         unsigned long tex_px = s->raster_tex_px / (unsigned long)s->frames;
-        long flat_us = s->raster_flat_us / s->frames;
-        long tex_us = s->raster_tex_us / s->frames;
-        long path_us = flat_us + tex_us;
-        long fpct = path_us > 0 ? flat_us * 100 / path_us : 0;
+        int64_t flat_us = s->raster_flat_us / s->frames;
+        int64_t tex_us = s->raster_tex_us / s->frames;
+        int64_t path_us = flat_us + tex_us;
+        int64_t fpct = path_us > 0 ? flat_us * 100 / path_us : 0;
         __printf("[stats:%s] path tris/f flat=%lu tex=%lu px/f flat=%lu "
-                 "tex=%lu us/f flat=%ld tex=%ld time flat=%ld%% tex=%ld%%\n",
+                 "tex=%lu us/f flat=%lld tex=%lld time flat=%lld%% tex=%lld%%\n",
                  label, flat_tris, tex_tris, flat_px, tex_px,
-                 flat_us, tex_us, fpct, 100 - fpct);
+                 (long long)flat_us, (long long)tex_us, (long long)fpct,
+                 (long long)(100 - fpct));
     }
 }

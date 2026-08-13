@@ -9,7 +9,10 @@
 #define RASTERFALL_NET_DEFAULT_PORT 28460
 #define RASTERFALL_NET_MAX_PACKET 2700
 #define RASTERFALL_NET_MAX_SNAPSHOT 8192
-#define RASTERFALL_NET_PROTOCOL_VERSION 27
+/* v28 extends the world snapshot with wave-plan HUD fields.  Keep protocol
+ * changes explicit: peers with a different snapshot layout must fail during
+ * discovery/handshake instead of decoding shifted world data. */
+#define RASTERFALL_NET_PROTOCOL_VERSION 28
 #define RASTERFALL_NET_MAX_ACTORS 32
 #define RASTERFALL_NET_PLAYER_MAX 4
 #define RASTERFALL_NET_REMOTE_MAX 2
