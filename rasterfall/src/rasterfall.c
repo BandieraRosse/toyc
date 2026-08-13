@@ -1711,6 +1711,24 @@ startup_again:
                             command.shop_arg = rasterfall_session_shop_actor_at(
                                 &session, session.assignment_flag,
                                 shop_selected_before);
+                        } else if (shop_page_before == 6) {
+                            int upgrade_indices[TOY_GAME_MAX_ACTORS];
+                            int upgrade_count = 0;
+                            for (int ai = 0; ai < TOY_GAME_REMOTE_ACTOR_BASE; ai++)
+                                if (session.game_state.actors[ai].active &&
+                                    session.game_state.actors[ai].kind == TOY_GAME_ACTOR_AI &&
+                                    session.game_state.actors[ai].hired)
+                                    upgrade_indices[upgrade_count++] = ai;
+                            command.shop_action = 5;
+                            command.shop_item = shop_selected_before < upgrade_count ?
+                                upgrade_indices[shop_selected_before] : -1;
+                        } else if (shop_page_before == 8) {
+                            static const int ai_weapons[] = { TOY_GAME_WEAPON_PISTOL,
+                                TOY_GAME_WEAPON_SMG, TOY_GAME_WEAPON_SHOTGUN,
+                                TOY_GAME_WEAPON_AK, TOY_GAME_WEAPON_AWP };
+                            command.shop_action = 6;
+                            command.shop_item = session.assignment_flag;
+                            command.shop_arg = ai_weapons[shop_selected_before];
                         }
                     }
                     if (toy_input_down(&input, KEY_TAB) &&

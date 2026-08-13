@@ -39,6 +39,7 @@ static int enemy_target_valid(const struct toy_game *g,
                               const struct toy_game_enemy *e,
                               int target_player, int target_actor,
                               int *out_x, int *out_z);
+static int ai_try_shove(struct toy_game *g, struct toy_game_actor *actor);
 
 /* ── PRNG：xorshift64* ──────────────────────────────────────────── */
 
@@ -123,15 +124,61 @@ static const struct toy_game_enemy_info enemy_table[TOY_GAME_ENEMY_TYPE_COUNT] =
 
 struct toy_game_ai_info {
     int max_hp;
-    int weapon;
     unsigned int body_color;
+    int fire_interval_percent;
+    int turn_speed_degree;
+    int shove_cooldown_ms;
+    int move_speed;
+    int spread_percent;
 };
 
 static const struct toy_game_ai_info ai_table[TOY_GAME_AI_CLASS_COUNT] = {
-    { TOY_CONFIG_AI_LEVEL_1_HP, TOY_GAME_WEAPON_PISTOL,  RF_COLOR_AI_BASIC },
-    { TOY_CONFIG_AI_LEVEL_2_HP, TOY_GAME_WEAPON_SMG,     RF_COLOR_AI_RIFLE },
-    { TOY_CONFIG_AI_LEVEL_3_HP, TOY_GAME_WEAPON_SHOTGUN, RF_COLOR_AI_HEAVY }
+    { TOY_CONFIG_AI_LEVEL_1_HP, RF_COLOR_AI_BASIC,
+      TOY_CONFIG_AI_LEVEL_1_FIRE_INTERVAL_PERCENT,
+      TOY_CONFIG_AI_LEVEL_1_TURN_SPEED_DEGREE,
+      TOY_CONFIG_AI_LEVEL_1_SHOVE_COOLDOWN_MS,
+      TOY_CONFIG_AI_LEVEL_1_MOVE_SPEED,
+      TOY_CONFIG_AI_LEVEL_1_SPREAD_PERCENT },
+    { TOY_CONFIG_AI_LEVEL_2_HP, RF_COLOR_AI_RIFLE,
+      TOY_CONFIG_AI_LEVEL_2_FIRE_INTERVAL_PERCENT,
+      TOY_CONFIG_AI_LEVEL_2_TURN_SPEED_DEGREE,
+      TOY_CONFIG_AI_LEVEL_2_SHOVE_COOLDOWN_MS,
+      TOY_CONFIG_AI_LEVEL_2_MOVE_SPEED,
+      TOY_CONFIG_AI_LEVEL_2_SPREAD_PERCENT },
+    { TOY_CONFIG_AI_LEVEL_3_HP, RF_COLOR_AI_HEAVY,
+      TOY_CONFIG_AI_LEVEL_3_FIRE_INTERVAL_PERCENT,
+      TOY_CONFIG_AI_LEVEL_3_TURN_SPEED_DEGREE,
+      TOY_CONFIG_AI_LEVEL_3_SHOVE_COOLDOWN_MS,
+      TOY_CONFIG_AI_LEVEL_3_MOVE_SPEED,
+      TOY_CONFIG_AI_LEVEL_3_SPREAD_PERCENT }
 };
+
+static int ai_random_weapon(struct toy_game *g, int class_id)
+{
+    if (class_id == TOY_GAME_AI_LEVEL_1) return TOY_GAME_WEAPON_PISTOL;
+    if (class_id == TOY_GAME_AI_LEVEL_2)
+        return rand_range(g, TOY_GAME_WEAPON_SMG, TOY_GAME_WEAPON_SHOTGUN);
+    return rand_range(g, TOY_GAME_WEAPON_AK, TOY_GAME_WEAPON_AWP);
+}
+
+static void actor_clear_weapons(struct toy_game_actor *a)
+{
+    memset(a->slots, 0, sizeof(a->slots));
+    a->slots[0].weapon = -1;
+    a->slots[1].weapon = -1;
+    a->current_slot = 0;
+}
+
+static void actor_set_weapon(struct toy_game_actor *a, int weapon)
+{
+    const struct toy_game_weapon_info *info = toy_game_weapon_info(weapon);
+    int slot = info->slot;
+    actor_clear_weapons(a);
+    a->slots[slot].weapon = weapon;
+    a->slots[slot].mag = info->mag_size;
+    a->slots[slot].reserve = TOY_GAME_AMMO_INFINITE;
+    a->current_slot = slot;
+}
 
 const struct toy_game_weapon_info *toy_game_weapon_info(int weapon)
 {
@@ -414,6 +461,7 @@ void toy_game_set_ai_teammate_class(struct toy_game *g, int active, int class_id
 {
     const struct toy_game_weapon_info *w;
     const struct toy_game_ai_info *info;
+    int ai_weapon;
     if (class_id < 0 || class_id >= TOY_GAME_AI_CLASS_COUNT)
         class_id = TOY_GAME_AI_LEVEL_2;
     info = &ai_table[class_id];
@@ -424,12 +472,13 @@ void toy_game_set_ai_teammate_class(struct toy_game *g, int active, int class_id
     g->ai_sy = 0; g->ai_cy = 1024;
     g->ai_hp = info->max_hp;
     copy_name(g->ai_name, name ? name : "Jesus");
-    g->ai_slots[0].weapon = info->weapon;
-    w = toy_game_weapon_info(info->weapon);
-    g->ai_slots[0].mag = w->mag_size;
-    g->ai_slots[0].reserve = TOY_GAME_AMMO_INFINITE;
-    g->ai_slots[1].weapon = -1;
-    g->ai_current_slot = 0;
+    ai_weapon = ai_random_weapon(g, class_id);
+    w = toy_game_weapon_info(ai_weapon);
+    g->ai_slots[w->slot].weapon = ai_weapon;
+    g->ai_slots[w->slot].mag = w->mag_size;
+    g->ai_slots[w->slot].reserve = TOY_GAME_AMMO_INFINITE;
+    g->ai_slots[1 - w->slot].weapon = -1;
+    g->ai_current_slot = w->slot;
     g->ai_reloading = 0;
     g->ai_reload_timer_ms = 0;
     g->ai_fire_cooldown_ms = 0;
@@ -518,7 +567,6 @@ int toy_game_add_ai(struct toy_game *g, int class_id, int x, int z,
     const struct toy_game_ai_info *info;
     struct toy_game_actor *a;
     int i, slot = -1;
-    struct toy_game_weapon_info *weapon;
     if (class_id < 0 || class_id >= TOY_GAME_AI_CLASS_COUNT) return -1;
     for (i = 0; i < TOY_GAME_REMOTE_ACTOR_BASE; i++)
         if (!g->actors[i].active) { slot = i; break; }
@@ -536,12 +584,7 @@ int toy_game_add_ai(struct toy_game *g, int class_id, int x, int z,
     a->flag_index = -1;
     a->hp = a->max_hp = info->max_hp;
     copy_name(a->name, name ? name : "AI");
-    a->slots[0].weapon = info->weapon;
-    weapon = (struct toy_game_weapon_info *)toy_game_weapon_info(info->weapon);
-    a->slots[0].mag = weapon->mag_size;
-    a->slots[0].reserve = TOY_GAME_AMMO_INFINITE;
-    a->slots[1].weapon = -1;
-    a->current_slot = 0;
+    actor_set_weapon(a, ai_random_weapon(g, class_id));
     a->fire_enabled = 1;
     return a->actor_id;
 }
@@ -564,28 +607,31 @@ int toy_game_assign_actor_deployment(struct toy_game *g, int actor_index,
 int toy_game_add_hired_ai(struct toy_game *g, int weapon, int x, int z,
                           const char *name)
 {
-    const struct toy_game_weapon_info *info;
     struct toy_game_actor *a;
-    int actor_id, slot;
+    int actor_id;
     if (!g || !toy_game_weapon_is_valid(weapon)) return -1;
-    info = toy_game_weapon_info(weapon);
-    actor_id = toy_game_add_ai(g, TOY_GAME_AI_LEVEL_2, x, z, name);
+    actor_id = toy_game_add_ai(g, TOY_GAME_AI_LEVEL_1, x, z, name);
     if (actor_id < 0) return -1;
     a = toy_game_actor_by_id(g, actor_id);
     if (!a) return -1;
     a->hired = 1;
-    slot = info->slot;
-    a->slots[0].weapon = -1;
-    a->slots[0].mag = 0;
-    a->slots[0].reserve = 0;
-    a->slots[1].weapon = -1;
-    a->slots[1].mag = 0;
-    a->slots[1].reserve = 0;
-    a->slots[slot].weapon = weapon;
-    a->slots[slot].mag = info->mag_size;
-    a->slots[slot].reserve = info->reserve_max;
-    a->current_slot = slot;
+    actor_set_weapon(a, weapon);
     return actor_id;
+}
+
+int toy_game_set_ai_weapon(struct toy_game *g, int actor_index, int weapon)
+{
+    struct toy_game_actor *a;
+    if (!g || actor_index < 0 || actor_index >= TOY_GAME_MAX_ACTORS ||
+        !toy_game_weapon_is_valid(weapon)) return 0;
+    a = &g->actors[actor_index];
+    if (!a->active || a->kind != TOY_GAME_ACTOR_AI || a->base_core) return 0;
+    actor_set_weapon(a, weapon);
+    if (actor_index == 0) {
+        memcpy(g->ai_slots, a->slots, sizeof(g->ai_slots));
+        g->ai_current_slot = a->current_slot;
+    }
+    return 1;
 }
 
 int toy_game_clear_hired_ai(struct toy_game *g)
@@ -602,6 +648,25 @@ int toy_game_clear_hired_ai(struct toy_game *g)
         !g->actors[g->ai_context_actor_index].active)
         g->ai_context_actor_index = 0;
     return count;
+}
+
+int toy_game_upgrade_ai(struct toy_game *g, int actor_index)
+{
+    struct toy_game_actor *a;
+    int price;
+    if (!g || actor_index < 0 || actor_index >= TOY_GAME_MAX_ACTORS)
+        return 0;
+    a = &g->actors[actor_index];
+    if (!a->active || a->kind != TOY_GAME_ACTOR_AI || !a->hired ||
+        a->class_id >= TOY_GAME_AI_LEVEL_3) return 0;
+    price = a->class_id == TOY_GAME_AI_LEVEL_1 ?
+            TOY_CONFIG_AI_LEVEL_2_PRICE : TOY_CONFIG_AI_LEVEL_3_PRICE;
+    if (g->money < price) return 0;
+    g->money -= price;
+    a->class_id++;
+    a->max_hp = ai_table[a->class_id].max_hp;
+    if (a->hp > 0) a->hp = a->max_hp;
+    return 1;
 }
 
 int toy_game_set_remote_player(struct toy_game *g, int player_id,
@@ -1331,6 +1396,20 @@ static int toy_game_shove_at(struct toy_game *g, int origin_x, int origin_z,
     return pushed;
 }
 
+static int ai_try_shove(struct toy_game *g, struct toy_game_actor *actor)
+{
+    const struct toy_game_ai_info *info;
+    int pushed;
+    if (!g || !actor || actor->kind != TOY_GAME_ACTOR_AI) return 0;
+    if (actor->class_id < 0 || actor->class_id >= TOY_GAME_AI_CLASS_COUNT)
+        return 0;
+    if (actor->ai_shove_cooldown_ms > 0) return 0;
+    info = &ai_table[actor->class_id];
+    pushed = toy_game_shove_at(g, actor->x, actor->z, actor->sy, actor->cy);
+    actor->ai_shove_cooldown_ms = info->shove_cooldown_ms;
+    return pushed;
+}
+
 int toy_game_shove(struct toy_game *g, int sy, int cy)
 {
     int pushed;
@@ -1572,7 +1651,7 @@ static void bite_ai(struct toy_game *g, struct toy_game_enemy *e)
     } else if (actor->kind == TOY_GAME_ACTOR_AI) {
         toy_game_actor_set_animation(actor, TOY_GAME_ANIM_SHOVE);
         actor->animation.time_ms = 0;
-        toy_game_shove_at(g, actor->x, actor->z, actor->sy, actor->cy);
+        ai_try_shove(g, actor);
     }
 }
 
@@ -1603,6 +1682,75 @@ static void update_base_core(struct toy_game *g, int dt_ms)
         g->state = TOY_GAME_OVER;
         push_event(g, TOY_GAME_EV_PLAYER_DEATH);
     }
+}
+
+/* AI 朝向使用整数单位向量。用叉积/点积估算夹角，避免 freestanding
+ * 运行时依赖三角函数；实际转动只需处理每帧几度的小角度。 */
+static int ai_angle_error(const struct toy_game_actor *a, int dx, int dz)
+{
+    long long dist2 = (long long)dx * dx + (long long)dz * dz;
+    long long dist = isqrt(dist2);
+    long long dot, cross, abs_cross;
+    int ratio, angle;
+    if (!a || dist <= 0) return 0;
+    dx = (int)((long long)dx * 1024 / dist);
+    dz = (int)((long long)dz * 1024 / dist);
+    dot = (long long)a->sy * dx + (long long)a->cy * dz;
+    cross = (long long)a->sy * dz - (long long)a->cy * dx;
+    abs_cross = cross < 0 ? -cross : cross;
+    if (dot >= 0) {
+        ratio = dot > 0 ? (int)(abs_cross * 1024 / dot) : 1024;
+        if (ratio > 1024) ratio = 1024;
+        angle = ratio * (45 + 14 * (1024 - ratio) / 1024) / 1024;
+    } else {
+        ratio = -dot > 0 ? (int)(abs_cross * 1024 / -dot) : 1024;
+        if (ratio > 1024) ratio = 1024;
+        angle = 180 - ratio * (45 + 14 * (1024 - ratio) / 1024) / 1024;
+    }
+    return angle;
+}
+
+static int ai_turn_toward(struct toy_game_actor *a, int dx, int dz,
+                          int speed_degree, int dt_ms)
+{
+    long long dist2 = (long long)dx * dx + (long long)dz * dz;
+    long long dist = isqrt(dist2);
+    long long cross, facing_len;
+    int target_x, target_z, angle, step, radians, radians2;
+    int sin_step, cos_step, next_x, next_z;
+    if (!a || dist <= 0) return 0;
+    target_x = (int)((long long)dx * 1024 / dist);
+    target_z = (int)((long long)dz * 1024 / dist);
+    if (a->sy == 0 && a->cy == 0) {
+        a->sy = target_x;
+        a->cy = target_z;
+        return 0;
+    }
+    angle = ai_angle_error(a, dx, dz);
+    cross = (long long)a->sy * target_z - (long long)a->cy * target_x;
+    step = (speed_degree * dt_ms + a->ai_turn_remainder) / 1000;
+    a->ai_turn_remainder = (speed_degree * dt_ms +
+                            a->ai_turn_remainder) % 1000;
+    if (step < 1) step = 1;
+    if (step > angle) step = angle;
+    if (step > 0) {
+        radians = step * 179 * 1024 / (180 * 100);
+        radians2 = radians * radians / 1024;
+        sin_step = radians - radians2 * radians / (6 * 1024);
+        cos_step = 1024 - radians2 / 2 + radians2 * radians2 / (24 * 1024);
+        if (cross < 0) sin_step = -sin_step;
+        next_x = (a->sy * cos_step - a->cy * sin_step) / 1024;
+        next_z = (a->sy * sin_step + a->cy * cos_step) / 1024;
+        /* 定点乘法每帧都会截断；不重新归一化时，sy/cy 的长度会
+         * 逐渐小于 1024，渲染器把它们当旋转基向量后模型就会变扁。 */
+        facing_len = isqrt((long long)next_x * next_x +
+                           (long long)next_z * next_z);
+        if (facing_len > 0) {
+            a->sy = (int)((long long)next_x * 1024 / facing_len);
+            a->cy = (int)((long long)next_z * 1024 / facing_len);
+        }
+    }
+    return ai_angle_error(a, dx, dz);
 }
 
 static void turn_enemy_toward(struct toy_game_enemy *e, int dx, int dz)
@@ -2478,7 +2626,7 @@ static int apply_entity_impact_with_knockback(struct toy_game *g, int kind,
         } else if (a->kind == TOY_GAME_ACTOR_AI && !a->base_core) {
             toy_game_actor_set_animation(a, TOY_GAME_ANIM_SHOVE);
             a->animation.time_ms = 0;
-            toy_game_shove_at(g, a->x, a->z, a->sy, a->cy);
+            ai_try_shove(g, a);
         } else toy_game_actor_set_animation(a, TOY_GAME_ANIM_HIT);
         if (a->base_core || a->hit_test_dummy) {
             /* The dedicated HIT_TEST actor is a stationary target: keep the
@@ -3365,6 +3513,8 @@ int toy_game_current_spread(const struct toy_game *g)
     if (!weapon) return 0;
     spread = weapon->spread * (g->moving ? TOY_CONFIG_SPREAD_MOVE_PERCENT :
                                TOY_CONFIG_SPREAD_STILL_PERCENT) / 100;
+    if (g->ai_spread_percent > 0)
+        spread = spread * g->ai_spread_percent / 100;
     spread += g->weapon_spread_heat;
     return spread < 1 ? 1 : spread;
 }
@@ -3450,6 +3600,7 @@ void toy_game_update_weapon_held(struct toy_game *g,
  * 状态，这样两名操作者共享同一套武器规则，同时不会覆盖玩家 tracer。 */
 void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
 {
+    const struct toy_game_ai_info *ai_info;
     struct toy_game_actor *actor;
     struct toy_game_slot player_slots[TOY_GAME_WEAPON_SLOTS];
     struct toy_game_ray player_rays[TOY_GAME_MAX_RAYS];
@@ -3469,8 +3620,15 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
     int alert_range;
     int actor_weapon;
     int ai_can_fire;
+    int facing_error = 180;
     sync_ai_actor_from_legacy(g);
     actor = &g->actors[g->ai_context_actor_index];
+    ai_info = actor->class_id >= 0 && actor->class_id < TOY_GAME_AI_CLASS_COUNT ?
+              &ai_table[actor->class_id] : &ai_table[TOY_GAME_AI_LEVEL_2];
+    if (actor->ai_shove_cooldown_ms > 0) {
+        actor->ai_shove_cooldown_ms -= dt_ms;
+        if (actor->ai_shove_cooldown_ms < 0) actor->ai_shove_cooldown_ms = 0;
+    }
     actor_weapon = actor->current_slot >= 0 &&
                    actor->current_slot < TOY_GAME_WEAPON_SLOTS ?
                    actor->slots[actor->current_slot].weapon : -1;
@@ -3540,7 +3698,7 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
         if (home_dist > TOY_GAME_AI_DEPLOY_RADIUS) {
             ai_idle = 0;
             actor_path_toward(g, actor, actor->deployment_x,
-                              actor->deployment_z, TOY_GAME_AI_RETURN_SPEED);
+                              actor->deployment_z, ai_info->move_speed);
             g->ai_x = actor->x; g->ai_z = actor->z;
         } else {
             actor->nav_active = 0;
@@ -3571,7 +3729,13 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
         }
     }
 
-    ai_can_fire = actor->fire_enabled && target >= 0;
+    if (target >= 0) {
+        facing_error = ai_turn_toward(actor, sy, cy,
+                                      ai_info->turn_speed_degree, dt_ms);
+        sy = actor->sy;
+        cy = actor->cy;
+    }
+    ai_can_fire = actor->fire_enabled && target >= 0 && facing_error <= 6;
     if (actor_weapon == TOY_GAME_WEAPON_AWP) {
         ai_can_fire = 0;
         if (target < 0) {
@@ -3635,9 +3799,13 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
     g->special_kills = actor->special_kills;
     g->damage_dealt = actor->damage_dealt;
     g->player_down = 0;
+    g->ai_spread_percent = ai_info->spread_percent;
     toy_game_update_weapon_held(g, NULL,
                                 ai_can_fire, ai_can_fire,
                                 sy, cy, dt_ms);
+    if (g->fire_seq != player_fire_seq && ai_info->fire_interval_percent != 100)
+        g->fire_cooldown_ms = g->fire_cooldown_ms *
+                              ai_info->fire_interval_percent / 100;
     /* Only reserve ammo is infinite; the current magazine is preserved. */
     g->slots[0].reserve = TOY_GAME_AMMO_INFINITE;
     memcpy(g->ai_slots, g->slots, sizeof(g->ai_slots));
@@ -3706,6 +3874,7 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
     g->ray_count = player_ray_count;
     g->fire_seq = player_fire_seq;
     g->player_down = player_down;
+    g->ai_spread_percent = 0;
     sync_ai_actor_from_legacy(g);
 }
 

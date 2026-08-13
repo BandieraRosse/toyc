@@ -170,6 +170,28 @@
 #define TOY_CONFIG_AI_LEVEL_2_HP             120  /* 二级生命值 */
 #define TOY_CONFIG_AI_LEVEL_3_HP             160  /* 三级生命值 */
 
+/* AI 强度：射击间隔倍率以百分比表示，转身速度为角度/秒。 */
+#define TOY_CONFIG_AI_LEVEL_1_FIRE_INTERVAL_PERCENT 150
+#define TOY_CONFIG_AI_LEVEL_2_FIRE_INTERVAL_PERCENT 100
+#define TOY_CONFIG_AI_LEVEL_3_FIRE_INTERVAL_PERCENT 80
+#define TOY_CONFIG_AI_LEVEL_1_TURN_SPEED_DEGREE      240
+#define TOY_CONFIG_AI_LEVEL_2_TURN_SPEED_DEGREE      380
+#define TOY_CONFIG_AI_LEVEL_3_TURN_SPEED_DEGREE      720
+#define TOY_CONFIG_AI_LEVEL_1_SHOVE_COOLDOWN_MS     2000
+#define TOY_CONFIG_AI_LEVEL_2_SHOVE_COOLDOWN_MS     1000
+#define TOY_CONFIG_AI_LEVEL_3_SHOVE_COOLDOWN_MS        0
+#define TOY_CONFIG_AI_LEVEL_1_MOVE_SPEED              30  /* 一级移动速度 */
+#define TOY_CONFIG_AI_LEVEL_2_MOVE_SPEED              38  /* 二级移动速度 */
+#define TOY_CONFIG_AI_LEVEL_3_MOVE_SPEED              46  /* 三级移动速度 */
+#define TOY_CONFIG_AI_LEVEL_1_SPREAD_PERCENT         160  /* 一级散布系数 */
+#define TOY_CONFIG_AI_LEVEL_2_SPREAD_PERCENT         125  /* 二级散布系数 */
+#define TOY_CONFIG_AI_LEVEL_3_SPREAD_PERCENT         100  /* 三级散布系数 */
+#define TOY_CONFIG_AI_HIRE_PRICE                    100  /* 一级 AI 雇佣价 */
+#define TOY_CONFIG_AI_HIRE_PISTOL_WEAPON_PRICE      100  /* AI 手枪价 */
+#define TOY_CONFIG_AI_HIRE_WEAPON_PRICE_MULTIPLIER    10  /* AI 武器价倍率 */
+#define TOY_CONFIG_AI_LEVEL_2_PRICE                 400  /* 1→2 升级价 */
+#define TOY_CONFIG_AI_LEVEL_3_PRICE                 800  /* 2→3 升级价 */
+
 /* Developer display options. */
 #define TOY_CONFIG_SHOW_MODEL_PATHS            0  /* 是否显示开发者模型路径 */
 

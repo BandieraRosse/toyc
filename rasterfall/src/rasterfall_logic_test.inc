@@ -160,7 +160,8 @@ static int run_logic_test(void)
         toy_game_init(&ai_reload_test, 9);
         ai_id = toy_game_add_ai(&ai_reload_test, TOY_GAME_AI_LEVEL_1,
                                 0, 0, "RELOAD TEST");
-        ai_reload_test.actors[ai_id - 1].slots[0].mag = 1;
+        ai_reload_test.actors[ai_id - 1].slots[
+            ai_reload_test.actors[ai_id - 1].current_slot].mag = 1;
         ai_reload_test.enemies[0].active = 1;
         ai_reload_test.enemies[0].type = TOY_GAME_ENEMY_HEAVY;
         ai_reload_test.enemies[0].x = 0;
@@ -173,15 +174,18 @@ static int run_logic_test(void)
         toy_game_update_ai_teammates(&ai_reload_test,
                                      toy_game_weapon_info(TOY_GAME_WEAPON_PISTOL)->reload_ms + 100);
         if (ai_reload_test.actors[ai_id - 1].reloading ||
-            ai_reload_test.actors[ai_id - 1].slots[0].reserve !=
+            ai_reload_test.actors[ai_id - 1].slots[
+                ai_reload_test.actors[ai_id - 1].current_slot].reserve !=
                 TOY_GAME_AMMO_INFINITE ||
-            ai_reload_test.actors[ai_id - 1].slots[0].mag <= 0) return 63;
+            ai_reload_test.actors[ai_id - 1].slots[
+                ai_reload_test.actors[ai_id - 1].current_slot].mag <= 0) return 63;
         if (!game.actors[1].active ||
             game.actors[1].class_id != TOY_GAME_AI_LEVEL_1 ||
-            game.actors[1].slots[0].weapon != TOY_GAME_WEAPON_PISTOL ||
+            game.actors[1].slots[game.actors[1].current_slot].weapon != TOY_GAME_WEAPON_PISTOL ||
             !game.actors[2].active ||
             game.actors[2].class_id != TOY_GAME_AI_LEVEL_3 ||
-            game.actors[2].slots[0].weapon != TOY_GAME_WEAPON_SHOTGUN ||
+            (game.actors[2].slots[game.actors[2].current_slot].weapon != TOY_GAME_WEAPON_AK &&
+             game.actors[2].slots[game.actors[2].current_slot].weapon != TOY_GAME_WEAPON_AWP) ||
             game.actors[0].hp != 120 || game.actors[0].max_hp != 120 ||
             game.actors[0].state != TOY_GAME_ACTOR_ALIVE ||
             game.actors[1].state != TOY_GAME_ACTOR_ALIVE ||

@@ -114,11 +114,6 @@
 #define TOY_GAME_PRICE_AK 100
 #define TOY_GAME_PRICE_AWP 200
 #define TOY_GAME_INITIAL_MONEY 50
-#define TOY_GAME_HIRE_PRICE_PISTOL 200
-#define TOY_GAME_HIRE_PRICE_SMG 500
-#define TOY_GAME_HIRE_PRICE_SHOTGUN 500
-#define TOY_GAME_HIRE_PRICE_AK 1000
-#define TOY_GAME_HIRE_PRICE_AWP 2000
 
 enum toy_game_state { TOY_GAME_PLAYING, TOY_GAME_OVER, TOY_GAME_WON };
 
@@ -396,6 +391,8 @@ struct toy_game_actor {
     int current_slot;
     int reloading, reload_timer_ms;
     int fire_cooldown_ms;
+    int ai_shove_cooldown_ms;
+    int ai_turn_remainder;
     int weapon_spread_heat;
     int moving;
     int muzzle_flash_ms;
@@ -529,6 +526,7 @@ struct toy_game {
     int player_control_disabled;
     int player_pull_enemy_index;
     int player_pull_timer_ms;
+    int ai_spread_percent;
     int player_airborne_ms;
     int player_airborne_y;
     int player_ground_y;
@@ -557,7 +555,9 @@ int  toy_game_add_ai(struct toy_game *g, int class_id, int x, int z,
                      const char *name);
 int  toy_game_add_hired_ai(struct toy_game *g, int weapon, int x, int z,
                            const char *name);
+int  toy_game_set_ai_weapon(struct toy_game *g, int actor_index, int weapon);
 int  toy_game_clear_hired_ai(struct toy_game *g);
+int  toy_game_upgrade_ai(struct toy_game *g, int actor_index);
 int  toy_game_set_remote_player(struct toy_game *g, int player_id,
                                 int active, int x, int z,
                                 const char *name);

@@ -134,17 +134,20 @@ static void render_shop(struct toy_surface *surface,
 {
     static const int weapons[] = { TOY_GAME_WEAPON_SMG,
         TOY_GAME_WEAPON_SHOTGUN, TOY_GAME_WEAPON_AK, TOY_GAME_WEAPON_AWP };
+    static const int hire_weapons[] = { TOY_GAME_WEAPON_PISTOL,
+        TOY_GAME_WEAPON_SMG, TOY_GAME_WEAPON_SHOTGUN, TOY_GAME_WEAPON_AK,
+        TOY_GAME_WEAPON_AWP };
     static const char *hire_names[] = { "PISTOL", "SMG", "SG", "AK", "AWP" };
     static const char *player_names[] = { "SMG", "SG", "AK", "AWP" };
-    static const int hire_prices[] = { TOY_GAME_HIRE_PRICE_PISTOL,
-        TOY_GAME_HIRE_PRICE_SMG, TOY_GAME_HIRE_PRICE_SHOTGUN,
-        TOY_GAME_HIRE_PRICE_AK, TOY_GAME_HIRE_PRICE_AWP };
     char line[64];
     int i, x = surface->width / 2 - 260, y = surface->height / 2 - 150;
     hud_fill_rect(surface, 0, 0, surface->width, surface->height, 0xD010151D);
     hud_fill_rect(surface, x, y, 520, 42, RF_COLOR_UI_PANEL_DARK);
     fb_draw_string((unsigned char *)surface->pixels, x + 18, y + 13,
                    "ARMORY", RF_COLOR_UI_ACCENT_BRIGHT, surface->stride);
+    snprintf(line, sizeof(line), "$ %d", state->game->money);
+    fb_draw_string((unsigned char *)surface->pixels, x + 400, y + 13,
+                   line, RF_COLOR_UI_ACCENT_BRIGHT, surface->stride);
     if (!state->shop_page) {
         fb_draw_string((unsigned char *)surface->pixels, x + 20, y + 78,
                        state->shop_nav_selected == 0 ? "> PLAYER WEAPONS" : "  PLAYER WEAPONS",
@@ -158,7 +161,13 @@ static void render_shop(struct toy_surface *surface,
         fb_draw_string((unsigned char *)surface->pixels, x + 20, y + 150,
                        state->shop_nav_selected == 3 ? "> ASSIGN AI" : "  ASSIGN AI",
                        state->shop_nav_selected == 3 ? RF_COLOR_UI_ACCENT_BRIGHT : RF_COLOR_UI_TEXT, surface->stride);
-        fb_draw_string((unsigned char *)surface->pixels, x + 20, y + 178,
+        fb_draw_string((unsigned char *)surface->pixels, x + 20, y + 174,
+                       state->shop_nav_selected == 4 ? "> UPGRADE AI" : "  UPGRADE AI",
+                       state->shop_nav_selected == 4 ? RF_COLOR_UI_ACCENT_BRIGHT : RF_COLOR_UI_TEXT, surface->stride);
+        fb_draw_string((unsigned char *)surface->pixels, x + 20, y + 198,
+                       state->shop_nav_selected == 5 ? "> CHANGE AI WEAPON" : "  CHANGE AI WEAPON",
+                       state->shop_nav_selected == 5 ? RF_COLOR_UI_ACCENT_BRIGHT : RF_COLOR_UI_TEXT, surface->stride);
+        fb_draw_string((unsigned char *)surface->pixels, x + 16, y + 286,
                        "ENTER OPEN    ESC CLOSE", RF_COLOR_UI_TEXT, surface->stride);
         return;
     }
@@ -253,14 +262,19 @@ static void render_shop(struct toy_surface *surface,
     if (state->shop_page == 2) {
         for (i = 0; i < 5; i++) {
             int cy = y + 58 + i * 45;
+            int price = TOY_CONFIG_AI_HIRE_PRICE +
+                        (hire_weapons[i] == TOY_GAME_WEAPON_PISTOL ?
+                         TOY_CONFIG_AI_HIRE_PISTOL_WEAPON_PRICE :
+                         toy_game_weapon_price(hire_weapons[i]) *
+                         TOY_CONFIG_AI_HIRE_WEAPON_PRICE_MULTIPLIER);
             hud_fill_rect(surface, x + 16, cy, 488, 36,
                           i == state->shop_selected ? 0x3C4E5B : RF_COLOR_UI_PANEL_DARK);
+            snprintf(line, sizeof(line), "%sLV1  %s  $%d",
+                     i == state->shop_selected ? "> " : "  ",
+                     hire_names[i], price);
             fb_draw_string((unsigned char *)surface->pixels, x + 30, cy + 10,
-                           hire_names[i], i == state->shop_selected ? RF_COLOR_UI_ACCENT_BRIGHT : RF_COLOR_UI_TEXT,
+                           line, i == state->shop_selected ? RF_COLOR_UI_ACCENT_BRIGHT : RF_COLOR_UI_TEXT,
                            surface->stride);
-            snprintf(line, sizeof(line), "HIRE  $%d", hire_prices[i]);
-            fb_draw_string((unsigned char *)surface->pixels, x + 190, cy + 10,
-                           line, RF_COLOR_UI_ACCENT, surface->stride);
         }
         fb_draw_string((unsigned char *)surface->pixels, x + 16, y + 286,
                        "MONEY", RF_COLOR_UI_ACCENT, surface->stride);
@@ -268,7 +282,89 @@ static void render_shop(struct toy_surface *surface,
         fb_draw_string((unsigned char *)surface->pixels, x + 68, y + 286,
                        line, RF_COLOR_UI_ACCENT_BRIGHT, surface->stride);
         fb_draw_string((unsigned char *)surface->pixels, x + 160, y + 286,
-                       "UP/DOWN SELECT  ENTER HIRE  ESC CLOSE", RF_COLOR_UI_TEXT, surface->stride);
+                       "UP/DOWN SELECT  ENTER HIRE  ESC NAVIGATION", RF_COLOR_UI_TEXT, surface->stride);
+        return;
+    }
+    if (state->shop_page == 6) {
+        int n = 0;
+        fb_draw_string((unsigned char *)surface->pixels, x + 20, y + 58,
+                       "UPGRADE HIRED AI", RF_COLOR_UI_ACCENT_BRIGHT, surface->stride);
+        for (i = 0; i < TOY_GAME_REMOTE_ACTOR_BASE; i++) {
+            const struct toy_game_actor *a = &state->game->actors[i];
+            int price, selected;
+            if (!a->active || a->kind != TOY_GAME_ACTOR_AI || !a->hired) continue;
+            selected = n == state->shop_selected;
+            price = a->class_id == TOY_GAME_AI_LEVEL_1 ? TOY_CONFIG_AI_LEVEL_2_PRICE :
+                    a->class_id == TOY_GAME_AI_LEVEL_2 ? TOY_CONFIG_AI_LEVEL_3_PRICE : 0;
+            snprintf(line, sizeof(line), "%s%s  LV%d  %s",
+                     selected ? "> " : "  ", a->name, a->class_id + 1,
+                     price ? "UPGRADE" : "MAX LEVEL");
+            fb_draw_string((unsigned char *)surface->pixels, x + 24, y + 90 + n * 28,
+                           line, selected ? RF_COLOR_UI_ACCENT_BRIGHT : RF_COLOR_UI_TEXT,
+                           surface->stride);
+            if (price) {
+                snprintf(line, sizeof(line), "$%d", price);
+                fb_draw_string((unsigned char *)surface->pixels, x + 390,
+                               y + 90 + n * 28, line, RF_COLOR_UI_ACCENT, surface->stride);
+            }
+            n++;
+        }
+        if (!n) fb_draw_string((unsigned char *)surface->pixels, x + 24, y + 96,
+                               "NO HIRED AI", RF_COLOR_UI_TEXT, surface->stride);
+        fb_draw_string((unsigned char *)surface->pixels, x + 16, y + 286,
+                       "UP/DOWN SELECT  ENTER UPGRADE  ESC NAVIGATION",
+                       RF_COLOR_UI_TEXT, surface->stride);
+        return;
+    }
+    if (state->shop_page == 7) {
+        int n = 0;
+        fb_draw_string((unsigned char *)surface->pixels, x + 20, y + 58,
+                       "SELECT AI", RF_COLOR_UI_ACCENT_BRIGHT, surface->stride);
+        for (i = 0; i < TOY_GAME_REMOTE_ACTOR_BASE; i++) {
+            const struct toy_game_actor *a = &state->game->actors[i];
+            const char *weapon;
+            if (!a->active || a->kind != TOY_GAME_ACTOR_AI || !a->hired) continue;
+            weapon = a->current_slot >= 0 &&
+                     a->current_slot < TOY_GAME_WEAPON_SLOTS &&
+                     a->slots[a->current_slot].weapon >= 0 ?
+                     toy_game_weapon_name(a->slots[a->current_slot].weapon) : "NONE";
+            snprintf(line, sizeof(line), "%s%s  LV%d  %s",
+                     n == state->shop_selected ? "> " : "  ", a->name,
+                     a->class_id + 1, weapon);
+            fb_draw_string((unsigned char *)surface->pixels, x + 24,
+                           y + 90 + n * 28, line,
+                           n == state->shop_selected ? RF_COLOR_UI_ACCENT_BRIGHT : RF_COLOR_UI_TEXT,
+                           surface->stride);
+            n++;
+        }
+        if (!n) fb_draw_string((unsigned char *)surface->pixels, x + 24, y + 96,
+                               "NO HIRED AI", RF_COLOR_UI_TEXT, surface->stride);
+        fb_draw_string((unsigned char *)surface->pixels, x + 16, y + 286,
+                       "UP/DOWN SELECT  ENTER WEAPONS  ESC NAVIGATION",
+                       RF_COLOR_UI_TEXT, surface->stride);
+        return;
+    }
+    if (state->shop_page == 8) {
+        static const int ai_weapons[] = { TOY_GAME_WEAPON_PISTOL,
+            TOY_GAME_WEAPON_SMG, TOY_GAME_WEAPON_SHOTGUN,
+            TOY_GAME_WEAPON_AK, TOY_GAME_WEAPON_AWP };
+        static const char *ai_weapon_names[] = { "PISTOL", "SMG", "SG", "AK", "AWP" };
+        for (i = 0; i < 5; i++) {
+            int cy = y + 58 + i * 45;
+            int price = ai_weapons[i] == TOY_GAME_WEAPON_PISTOL ? 0 :
+                        toy_game_weapon_price(ai_weapons[i]) *
+                        TOY_CONFIG_AI_HIRE_WEAPON_PRICE_MULTIPLIER;
+            hud_fill_rect(surface, x + 16, cy, 488, 36,
+                          i == state->shop_selected ? 0x3C4E5B : RF_COLOR_UI_PANEL_DARK);
+            snprintf(line, sizeof(line), "%s%s  $%d", i == state->shop_selected ? "> " : "  ",
+                     ai_weapon_names[i], price);
+            fb_draw_string((unsigned char *)surface->pixels, x + 30, cy + 10,
+                           line, i == state->shop_selected ? RF_COLOR_UI_ACCENT_BRIGHT : RF_COLOR_UI_TEXT,
+                           surface->stride);
+        }
+        fb_draw_string((unsigned char *)surface->pixels, x + 16, y + 286,
+                       "UP/DOWN SELECT  ENTER CHANGE  ESC AI LIST",
+                       RF_COLOR_UI_TEXT, surface->stride);
         return;
     }
     for (i = 0; i < 4; i++) {
