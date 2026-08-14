@@ -413,6 +413,49 @@ int toy_game_drain_events(struct toy_game *g, unsigned char *out, int max)
     return count;
 }
 
+int toy_game_drain_player_impulses(
+    struct toy_game *g, struct toy_game_player_impulse_event *out, int max)
+{
+    int count;
+    if (!g || max <= 0) return 0;
+    count = g->player_impulse_event_count;
+    if (count > max) count = max;
+    if (out && count > 0)
+        memcpy(out, g->player_impulse_events,
+               (unsigned long)count * sizeof(*out));
+    if (count < g->player_impulse_event_count)
+        memmove(g->player_impulse_events,
+                g->player_impulse_events + count,
+                (unsigned long)(g->player_impulse_event_count - count) *
+                    sizeof(*out));
+    g->player_impulse_event_count -= count;
+    return count;
+}
+
+static void push_player_impulse_event(struct toy_game *g,
+                                      const struct toy_game_actor *actor,
+                                      int impulse_x, int impulse_z,
+                                      int vertical_velocity,
+                                      int airborne_ms, int airborne_y)
+{
+    struct toy_game_player_impulse_event *event;
+    int target_id;
+    if (!g || !actor || g->player_impulse_event_count >= TOY_GAME_MAX_EVENTS)
+        return;
+    /* Remote player actors use the stable 101..103 actor ids. */
+    target_id = actor->actor_id - 100;
+    if (actor->kind != TOY_GAME_ACTOR_PLAYER || target_id <= 0 ||
+        target_id >= TOY_GAME_MAX_PLAYERS)
+        return;
+    event = &g->player_impulse_events[g->player_impulse_event_count++];
+    event->target_id = target_id;
+    event->impulse_x = impulse_x;
+    event->impulse_z = impulse_z;
+    event->vertical_velocity = vertical_velocity;
+    event->airborne_ms = airborne_ms;
+    event->airborne_y = airborne_y;
+}
+
 /* ── 初始化 / 世界 ─────────────────────────────────────────────── */
 
 static int wave_combat_power(const struct toy_game *g)
@@ -2785,6 +2828,9 @@ static int apply_entity_impact_with_knockback(struct toy_game *g, int kind,
             a->vertical_velocity = TOY_GAME_AIRBORNE_VELOCITY;
             a->knockback_x = dx;
             a->knockback_z = dz;
+            push_player_impulse_event(g, a, dx, dz,
+                                      a->vertical_velocity, a->airborne_ms,
+                                      a->airborne_y);
         }
         if (index == 0) load_ai_actor_to_legacy(g, a);
         return 1;

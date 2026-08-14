@@ -268,6 +268,15 @@ enum toy_game_event {
     TOY_GAME_EV_MOLOTOV_BREAK,
 };
 
+/* Gameplay-owned one-shot event.  This captures the hit-time values instead
+ * of asking a later network pass to infer them from actor motion state. */
+struct toy_game_player_impulse_event {
+    int target_id;
+    int impulse_x, impulse_z;
+    int vertical_velocity;
+    int airborne_ms, airborne_y;
+};
+
 /* 碰撞/命中共用的 xz 平面轴对齐盒（与房间障碍物同尺度） */
 struct toy_game_box { int minx, maxx, minz, maxz; };
 struct toy_game_platform { int minx, maxx, minz, maxz, height; };
@@ -616,6 +625,9 @@ struct toy_game {
     /* 本帧事件队列（宿主每帧 drain） */
     int event_count;
     unsigned char events[TOY_GAME_MAX_EVENTS];
+    int player_impulse_event_count;
+    struct toy_game_player_impulse_event
+        player_impulse_events[TOY_GAME_MAX_EVENTS];
 };
 
 void toy_game_init(struct toy_game *g, uint64_t seed);      /* 初始化/重开共用 */
@@ -747,6 +759,8 @@ void toy_game_animation_update(struct toy_game_animation_state *state,
 void toy_game_actor_set_animation(struct toy_game_actor *actor, int animation_id);
 void toy_game_actor_update_animation(struct toy_game_actor *actor, int dt_ms);
 int  toy_game_drain_events(struct toy_game *g, unsigned char *out, int max);
+int  toy_game_drain_player_impulses(
+    struct toy_game *g, struct toy_game_player_impulse_event *out, int max);
 void toy_game_place_enemy(struct toy_game *g, int x, int z); /* 测试钩子 */
 int  toy_game_shove(struct toy_game *g, int sy, int cy);    /* 推开面前敌人，返回推开的数量 */
 int  toy_game_use_pill(struct toy_game *g);

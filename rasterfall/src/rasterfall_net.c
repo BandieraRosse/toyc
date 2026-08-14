@@ -337,9 +337,10 @@ static void net_apply_remote_special_events(struct rasterfall_net *net,
 }
 
 void rasterfall_net_capture_events(struct rasterfall_net *net,
-                                   const struct toy_game *game)
+                                   struct toy_game *game)
 {
-    int i;
+    int i, capacity, count;
+    struct toy_game_player_impulse_event impulses[TOY_GAME_MAX_EVENTS];
     if (!net || !game || net->mode != RASTERFALL_NET_HOST) return;
     if (game->event_count < net->local_event_scan_count)
         net->local_event_scan_count = 0;
@@ -360,6 +361,28 @@ void rasterfall_net_capture_events(struct rasterfall_net *net,
         net->reliable_events[net->reliable_event_count].control_id = 0;
         net->reliable_event_count++;
         net->local_event_scan_count = i + 1;
+    }
+    /* Impulses are gameplay events with hit-time payloads.  Consume them
+     * independently of actor snapshots/state; a PLAYER_STATE can therefore
+     * arrive before or after this capture without deleting the event. */
+    capacity = RASTERFALL_NET_RELIABLE_EVENT_MAX -
+               net->reliable_event_count;
+    if (capacity <= 0) return;
+    if (capacity > TOY_GAME_MAX_EVENTS) capacity = TOY_GAME_MAX_EVENTS;
+    count = toy_game_drain_player_impulses(game, impulses, capacity);
+    for (i = 0; i < count; i++) {
+        struct toy_game_player_impulse_event *impulse = &impulses[i];
+        struct rasterfall_net_event *event =
+            &net->reliable_events[net->reliable_event_count++];
+        memset(event, 0, sizeof(*event));
+        event->id = ++net->reliable_event_next_id;
+        event->type = RASTERFALL_NET_EVENT_PLAYER_IMPULSE;
+        event->target_id = impulse->target_id;
+        event->x = impulse->impulse_x;
+        event->z = impulse->impulse_z;
+        event->value = impulse->vertical_velocity;
+        event->value2 = impulse->airborne_ms;
+        event->value3 = impulse->airborne_y;
     }
 }
 
@@ -3193,21 +3216,17 @@ static void net_capture_remote_special_events(struct rasterfall_net *net,
     if (!net || !game || net->mode != RASTERFALL_NET_HOST) return;
     for (i = 0; i < RASTERFALL_NET_CLIENT_MAX; i++) {
         const struct rasterfall_net_client *client = &net->clients[i];
-        struct toy_game_actor *actor;
         int actor_index, smoker;
         uint32_t control_id;
-        int emitted_impulse = 0;
         if (!client->active || !client->connected) {
             net->active_special_control_id[i] = 0;
-            net->impulse_latched[i] = 0;
             continue;
         }
         actor_index = TOY_GAME_REMOTE_ACTOR_BASE + client->client_id - 1;
         if (actor_index < 0 || actor_index >= TOY_GAME_MAX_ACTORS) continue;
-        actor = &game->actors[actor_index];
         smoker = net_smoker_targeting_actor(game, actor_index);
         control_id = net->active_special_control_id[i];
-        if (actor->control_disabled && smoker >= 0) {
+        if (game->actors[actor_index].control_disabled && smoker >= 0) {
             if (!control_id) {
                 control_id = ++net->special_control_next_id;
                 if (!control_id) control_id = ++net->special_control_next_id;
@@ -3223,29 +3242,6 @@ static void net_capture_remote_special_events(struct rasterfall_net *net,
                 client->client_id, -1, 0, 0, 0, 0, 0, control_id);
             net->active_special_control_id[i] = 0;
         }
-        /* The actor control marker is a gameplay/presentation flag and can
-         * be overwritten by the next client PLAYER_STATE before this
-         * capture point.  The actual knockback vector is the durable signal
-         * that this airborne state came from a special hit.  Normal jumps
-         * keep both knockback components at zero. */
-        if (actor->airborne_ms > 0 &&
-            (actor->knockback_x || actor->knockback_z) &&
-            !net->impulse_latched[i]) {
-            net_queue_special_event(net,
-                RASTERFALL_NET_EVENT_PLAYER_IMPULSE,
-                client->client_id, -1,
-                actor->knockback_x, actor->knockback_z,
-                actor->vertical_velocity, actor->airborne_ms,
-                actor->airborne_y, 0);
-            net->impulse_latched[i] = 1;
-            /* The impulse is a one-shot event.  Do not leave the old
-             * control-disabled marker active after emitting it; otherwise a
-             * later PLAYER_STATE would look like a new takeover. */
-            actor->control_disabled = 0;
-            emitted_impulse = 1;
-        }
-        if (!actor->control_disabled && !emitted_impulse)
-            net->impulse_latched[i] = 0;
     }
 }
 
@@ -3516,6 +3512,60 @@ int rasterfall_net_pipeline_test(void)
         net_apply_remote_special_events(&net, &event_session);
         if (event_session.game_state.player_control_disabled) return 16;
     }
+    /* Impulse payloads are created by gameplay and survive later actor-state
+     * updates.  A normal airborne state without that payload is not an
+     * impulse event. */
+    {
+        struct toy_game impulse_game;
+        struct rasterfall_session target_session;
+        struct toy_game_actor *actor;
+        struct rasterfall_net_event *event;
+        int actor_index;
+        toy_game_init(&impulse_game, 154);
+        memset(&target_session, 0, sizeof(target_session));
+        toy_game_init(&target_session.game_state, 155);
+        actor_index = toy_game_set_remote_player(&impulse_game, 1, 1,
+                                                 100, 200, "A");
+        if (actor_index < 0 ||
+            !toy_game_apply_entity_impact(&impulse_game,
+                                          TOY_GAME_ENTITY_ACTOR, actor_index,
+                                          300, 400, 7) ||
+            impulse_game.player_impulse_event_count != 1)
+            return 17;
+        actor = &impulse_game.actors[actor_index];
+        actor->x = 9999; actor->z = -9999;
+        actor->airborne_ms = 0; actor->airborne_y = 77;
+        actor->vertical_velocity = 0; actor->knockback_x = 0;
+        actor->knockback_z = 0; actor->control_disabled = 0;
+        net.mode = RASTERFALL_NET_HOST;
+        net.reliable_event_count = 0;
+        rasterfall_net_capture_events(&net, &impulse_game);
+        if (net.reliable_event_count != 1) return 18;
+        event = &net.reliable_events[0];
+        if (event->type != RASTERFALL_NET_EVENT_PLAYER_IMPULSE ||
+            event->target_id != 1 || event->x != 630 || event->z != 840 ||
+            event->value != TOY_GAME_AIRBORNE_VELOCITY ||
+            event->value2 != TOY_GAME_AIRBORNE_MS || event->value3 != 0)
+            return 19;
+        net.reliable_event_count = 0;
+        actor->airborne_ms = TOY_GAME_JUMP_MS;
+        actor->knockback_x = 321; actor->knockback_z = 654;
+        rasterfall_net_capture_events(&net, &impulse_game);
+        if (net.reliable_event_count != 0) return 20;
+        /* Delivery is target-isolated: client B must not apply A's event. */
+        net.mode = RASTERFALL_NET_CLIENT;
+        net.local_player_id = 2;
+        net.remote_event_count = 1;
+        net.remote_event_data[0] = *event;
+        net_apply_remote_special_events(&net, &target_session);
+        if (target_session.game_state.player_airborne_ms != 0) return 21;
+        net.local_player_id = 1;
+        net.remote_event_count = 1;
+        net_apply_remote_special_events(&net, &target_session);
+        if (target_session.game_state.player_airborne_ms !=
+                TOY_GAME_AIRBORNE_MS)
+            return 22;
+    }
     return 0;
 }
 
@@ -3618,7 +3668,6 @@ void rasterfall_net_reset_host(struct rasterfall_net *net)
     net->special_control_next_id = 0;
     memset(net->active_special_control_id, 0,
            sizeof(net->active_special_control_id));
-    memset(net->impulse_latched, 0, sizeof(net->impulse_latched));
     net->reliable_event_count = 0;
     net->reliable_event_next_id = 0;
     net->local_event_scan_count = 0;

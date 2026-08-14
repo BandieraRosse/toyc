@@ -265,7 +265,6 @@ struct rasterfall_net {
     int host_revive_progress_ms;
     uint32_t special_control_next_id;
     uint32_t active_special_control_id[RASTERFALL_NET_CLIENT_MAX];
-    int impulse_latched[RASTERFALL_NET_CLIENT_MAX];
     int local_player_id;
     int spawn_pending;
     int world_ready;
@@ -462,6 +461,6 @@ void rasterfall_net_apply_local_rescue(struct rasterfall_net *net,
                                        int interact_pressed, int dt_ms);
 void rasterfall_net_reset_host(struct rasterfall_net *net);
 void rasterfall_net_capture_events(struct rasterfall_net *net,
-                                   const struct toy_game *game);
+                                   struct toy_game *game);
 
 #endif
