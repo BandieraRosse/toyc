@@ -292,6 +292,7 @@ struct rasterfall_net {
     int snapshot_world_alarm_triggered;
     int snapshot_world_campaign_stage;
     int snapshot_world_wave_attack_points;
+    int snapshot_world_wave_attack_multiplier;
     int snapshot_world_wave_waiting_common;
     int snapshot_world_wave_waiting_fast;
     int snapshot_world_wave_waiting_heavy;

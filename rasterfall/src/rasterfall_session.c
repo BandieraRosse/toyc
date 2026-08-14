@@ -606,6 +606,12 @@ static void session_client_interact_banner(struct rasterfall_session *session)
         session->banner_text = "CHARGER SUMMONED";
     else if (it->kind == TOY_MAP_PICKUP_TANK_BUTTON)
         session->banner_text = "TANK SUMMONED";
+    else if (it->kind == TOY_MAP_PICKUP_ATTACK_X2_BUTTON)
+        session->banner_text = "ATTACK POINTS X2";
+    else if (it->kind == TOY_MAP_PICKUP_ATTACK_X3_BUTTON)
+        session->banner_text = "ATTACK POINTS X3";
+    else if (it->kind == TOY_MAP_PICKUP_ATTACK_X4_BUTTON)
+        session->banner_text = "ATTACK POINTS X4";
     else if (it->kind == TOY_MAP_PICKUP_AMMO)
         session->banner_text = "AMMO REFILLED";
     else if (it->kind == TOY_MAP_PICKUP_WEAPON ||
@@ -694,6 +700,15 @@ static void session_interact(struct rasterfall_session *session,
             "CHARGER SUMMONED" : "TANK SUMMONED";
         __printf("rasterfall: special test enemy summoned type %d (%d)\n",
                   type, n);
+    } else if (it->kind == TOY_MAP_PICKUP_ATTACK_X2_BUTTON ||
+               it->kind == TOY_MAP_PICKUP_ATTACK_X3_BUTTON ||
+               it->kind == TOY_MAP_PICKUP_ATTACK_X4_BUTTON) {
+        int multiplier = it->kind == TOY_MAP_PICKUP_ATTACK_X2_BUTTON ? 2 :
+                         it->kind == TOY_MAP_PICKUP_ATTACK_X3_BUTTON ? 3 : 4;
+        toy_game_set_wave_attack_multiplier(&session->game_state, multiplier);
+        session->banner_ms = 2000;
+        session->banner_text = multiplier == 2 ? "ATTACK POINTS X2" :
+            multiplier == 3 ? "ATTACK POINTS X3" : "ATTACK POINTS X4";
     } else if (it->kind == TOY_MAP_PICKUP_AMMO) {
         toy_game_refill_ammo(&session->game_state);
     } else if (it->kind == TOY_MAP_PICKUP_MONEY_BUTTON) {

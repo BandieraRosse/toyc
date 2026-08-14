@@ -445,6 +445,7 @@ static void wave_build_plan(struct toy_game *g)
 {
     int points = (g->wave * 50 + wave_combat_power(g)) *
                  TOY_GAME_WAVE_SCALE_PERCENT / 100;
+    points *= g->wave_attack_multiplier > 0 ? g->wave_attack_multiplier : 1;
     int remaining = points, i, count = 0, bucket;
     int common = 0, fast = 0, heavy = 0, special = 0, tank = 0;
     int tank_count = points > 1000 ? 2 : points >= 500 ? 1 : 0;
@@ -530,10 +531,18 @@ void toy_game_init(struct toy_game *g, uint64_t seed)
     g->to_spawn = 0;
     g->spawn_timer_ms = TOY_GAME_WAVE_FIRST_DELAY_MS;
     g->campaign_phase = TOY_GAME_PHASE_CALM;
+    g->wave_attack_multiplier = 1;
     g->actor_id = 0;
     g->actor_kind = TOY_GAME_ACTOR_PLAYER;
     toy_game_set_player_name(g, "PLAYER");
     toy_game_set_ai_teammate(g, 1, -11000, -5800, "Jesus");
+}
+
+void toy_game_set_wave_attack_multiplier(struct toy_game *g, int multiplier)
+{
+    if (multiplier < 1) multiplier = 1;
+    if (multiplier > 4) multiplier = 4;
+    g->wave_attack_multiplier = multiplier;
 }
 
 static void copy_name(char *dst, const char *src)

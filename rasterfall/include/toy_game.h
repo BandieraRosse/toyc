@@ -538,6 +538,7 @@ struct toy_game {
     int spawn_timer_ms;
     int enemies_alive;
     int wave_attack_points;
+    int wave_attack_multiplier;
     int wave_spawn_index;
     int wave_spawn_interval_ms;
     int wave_spawn_types[TOY_GAME_MAX_WAVE_QUEUE];
@@ -705,6 +706,7 @@ const struct toy_game_enemy_info *toy_game_enemy_info(int type);
 const struct toy_game_enemy_info *toy_game_enemy_info_or_null(int type);
 int  toy_game_enemy_type_is_valid(int type);
 int  toy_game_skip_wave_rest(struct toy_game *g);
+void toy_game_set_wave_attack_multiplier(struct toy_game *g, int multiplier);
 int  toy_game_enemy_content_id(int type);
 int  toy_game_enemy_from_content_id(int content_id);
 struct toy_game_actor *toy_game_actor_by_id(struct toy_game *g, int actor_id);

@@ -1452,6 +1452,7 @@ static int net_send_world_snapshot(struct rasterfall_net *net,
     put_i16(w + 24, manual_alarm_timer_ms); put_i16(w + 26, game->alarm_triggered);
     put_i16(w + 28, game->campaign_stage);
     w[30] = (unsigned char)(game->player_control_disabled != 0);
+    w[31] = (unsigned char)game->wave_attack_multiplier;
     put_i16(w + 32, game->wave_attack_points);
     put_i16(w + 34, game->wave_waiting_common);
     put_i16(w + 36, game->wave_waiting_fast);
@@ -1580,6 +1581,7 @@ int rasterfall_net_send_snapshot(struct rasterfall_net *net,
     put_i16(world_data + 26, game->alarm_triggered);
     put_i16(world_data + 28, game->campaign_stage);
     world_data[30] = (unsigned char)(game->player_control_disabled ? 1 : 0);
+    world_data[31] = (unsigned char)game->wave_attack_multiplier;
     put_i16(world_data + 32, game->wave_attack_points);
     put_i16(world_data + 34, game->wave_waiting_common);
     put_i16(world_data + 36, game->wave_waiting_fast);
@@ -1750,6 +1752,7 @@ static int decode_world_snapshot(const unsigned char *payload, int size,
     net->snapshot_world_alarm_triggered = get_i16(w + 26);
     net->snapshot_world_campaign_stage = get_i16(w + 28);
     net->snapshot_player_control_disabled = w[30] & 1;
+    net->snapshot_world_wave_attack_multiplier = w[31] ? w[31] : 1;
     net->snapshot_world_wave_attack_points = get_i16(w + 32);
     net->snapshot_world_wave_waiting_common = get_i16(w + 34);
     net->snapshot_world_wave_waiting_fast = get_i16(w + 36);
@@ -1833,6 +1836,7 @@ static int decode_snapshot(const unsigned char *payload, int size,
     net->snapshot_world_alarm_triggered = get_i16(world_data + 26);
     net->snapshot_world_campaign_stage = get_i16(world_data + 28);
     net->snapshot_world_wave_attack_points = get_i16(world_data + 32);
+    net->snapshot_world_wave_attack_multiplier = world_data[31] ? world_data[31] : 1;
     net->snapshot_world_wave_waiting_common = get_i16(world_data + 34);
     net->snapshot_world_wave_waiting_fast = get_i16(world_data + 36);
     net->snapshot_world_wave_waiting_heavy = get_i16(world_data + 38);
@@ -3283,6 +3287,8 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
         session->game_state.alarm_triggered = net->snapshot_world_alarm_triggered;
         session->game_state.campaign_stage = net->snapshot_world_campaign_stage;
         session->game_state.wave_attack_points = net->snapshot_world_wave_attack_points;
+        session->game_state.wave_attack_multiplier =
+            net->snapshot_world_wave_attack_multiplier;
         session->game_state.wave_waiting_common = net->snapshot_world_wave_waiting_common;
         session->game_state.wave_waiting_fast = net->snapshot_world_wave_waiting_fast;
         session->game_state.wave_waiting_heavy = net->snapshot_world_wave_waiting_heavy;
