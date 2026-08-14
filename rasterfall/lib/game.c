@@ -104,6 +104,9 @@ static const struct toy_game_weapon_info weapon_table[TOY_GAME_WEAPON_COUNT] = {
     { 1, 0, TOY_CONFIG_THROW_COOLDOWN_MS, TOY_CONFIG_THROW_HANDOFF_MS, 0, 1,
       0, 2, 0, TOY_GAME_WEAPON_ID_MOLOTOV, "MOLOTOV", "FIRE",
       TOY_GAME_MUZZLE_STANDARD, 0, 0, 0 },
+    { 1, TOY_GAME_AMMO_INFINITE, 250, 250, 0, 1,
+      0, 3, 0, TOY_GAME_WEAPON_ID_PILL, "PILL", "+",
+      TOY_GAME_MUZZLE_STANDARD, 0, 0, 0 },
 };
 
 static const struct toy_game_enemy_info enemy_table[TOY_GAME_ENEMY_TYPE_COUNT] = {
@@ -235,7 +238,8 @@ int toy_game_weapon_from_name(const char *name)
             (i == TOY_GAME_WEAPON_AWP && !strcmp(name, "awp")) ||
             (i == TOY_GAME_WEAPON_AXE && !strcmp(name, "axe")) ||
             (i == TOY_GAME_WEAPON_BOMB && !strcmp(name, "bomb")) ||
-            (i == TOY_GAME_WEAPON_MOLOTOV && !strcmp(name, "molotov")))
+            (i == TOY_GAME_WEAPON_MOLOTOV && !strcmp(name, "molotov")) ||
+            (i == TOY_GAME_WEAPON_PILL && !strcmp(name, "pill")))
             return i;
     return -1;
 }
@@ -1496,7 +1500,42 @@ int toy_game_shove(struct toy_game *g, int sy, int cy)
     push_event(g, TOY_GAME_EV_SHOVE);
     pushed = toy_game_shove_at(g, g->px, g->pz, sy, cy);
     if (pushed > 0) push_event(g, TOY_GAME_EV_SHOVE_HIT);
+    if (g->current_slot == 3 && g->slots[3].weapon == TOY_GAME_WEAPON_PILL &&
+        g->slots[3].mag > 0) {
+        int i, best = -1, best_d2 = 0;
+        long long range2 = (long long)TOY_CONFIG_SHOVE_RANGE * TOY_CONFIG_SHOVE_RANGE;
+        for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
+            struct toy_game_actor *a = &g->actors[i];
+            long long dx, dz, d2, dist, dot;
+            if (!a->active || a->state != TOY_GAME_ACTOR_ALIVE || a->base_core) continue;
+            dx = a->x - g->px; dz = a->z - g->pz; d2 = dx * dx + dz * dz;
+            if (!d2 || d2 > range2 || a->hp >= a->max_hp) continue;
+            dist = isqrt(d2); dot = dx * sy + dz * cy;
+            if (dot * TOY_GAME_SHOVE_CONE < dist * 1024) continue;
+            if (best < 0 || d2 < best_d2) { best = i; best_d2 = (int)d2; }
+        }
+        if (best >= 0) { g->actors[best].hp = g->actors[best].max_hp; g->slots[3].mag--; }
+        else {
+            struct toy_game_actor *base = NULL;
+            for (i = 0; i < TOY_GAME_MAX_ACTORS; i++)
+                if (g->actors[i].active && g->actors[i].base_core) { base = &g->actors[i]; break; }
+            if (base && base->hp > 0 && base->hp < base->max_hp) {
+                base->hp += 100; if (base->hp > base->max_hp) base->hp = base->max_hp;
+                g->slots[3].mag--;
+            }
+        }
+    }
     return pushed;
+}
+
+int toy_game_use_pill(struct toy_game *g)
+{
+    if (!g || g->state != TOY_GAME_PLAYING || g->current_slot != 3 ||
+        g->slots[3].weapon != TOY_GAME_WEAPON_PILL || g->slots[3].mag <= 0 ||
+        g->hp >= TOY_GAME_PLAYER_HP) return 0;
+    g->hp = TOY_GAME_PLAYER_HP;
+    g->slots[3].mag--;
+    return 1;
 }
 
 /* ── 波次状态机 ────────────────────────────────────────────────── */
@@ -3646,6 +3685,8 @@ int toy_game_fire(struct toy_game *g, int sy, int cy)
     int spread;
     if (s->weapon == TOY_GAME_WEAPON_AXE)
         return toy_game_melee(g, sy, cy);
+    if (s->weapon == TOY_GAME_WEAPON_PILL)
+        return toy_game_use_pill(g);
     if (s->weapon == TOY_GAME_WEAPON_BOMB ||
         s->weapon == TOY_GAME_WEAPON_MOLOTOV)
         return toy_game_throw(g, sy, cy);
@@ -3719,6 +3760,8 @@ int toy_game_switch_weapon(struct toy_game *g, int slot)
         ((g->slots[slot].weapon != TOY_GAME_WEAPON_BOMB &&
           g->slots[slot].weapon != TOY_GAME_WEAPON_MOLOTOV) ||
          g->slots[slot].mag <= 0)) return 0;
+    if (slot == 3 && (g->slots[slot].weapon != TOY_GAME_WEAPON_PILL ||
+                      g->slots[slot].mag <= 0)) return 0;
     g->current_slot = slot;
     g->weapon_switch_timer_ms = TOY_CONFIG_WEAPON_SWITCH_MS;
     g->reloading = 0;
@@ -3759,6 +3802,14 @@ int toy_game_equip_weapon(struct toy_game *g, int weapon)
     slot = w->slot;
     if (slot < 0 || slot >= TOY_GAME_WEAPON_SLOTS) return -1;
     if (g->slots[slot].weapon == weapon) {
+        if (weapon == TOY_GAME_WEAPON_PILL) {
+            if (g->slots[slot].mag < TOY_GAME_PILL_MAX) g->slots[slot].mag++;
+            return 0;
+        }
+        if (weapon == TOY_GAME_WEAPON_BOMB || weapon == TOY_GAME_WEAPON_MOLOTOV) {
+            if (g->slots[slot].mag < TOY_GAME_THROWABLE_MAX) g->slots[slot].mag++;
+            return 0;
+        }
         g->slots[slot].mag = w->mag_size;
         g->slots[slot].reserve = w->reserve_max;
         return 0;
@@ -3778,6 +3829,9 @@ int toy_game_weapon_price(int weapon)
     case TOY_GAME_WEAPON_AK: return TOY_GAME_PRICE_AK;
     case TOY_GAME_WEAPON_AWP: return TOY_GAME_PRICE_AWP;
     case TOY_GAME_WEAPON_AXE: return 100;
+    case TOY_GAME_WEAPON_BOMB: return TOY_GAME_PRICE_BOMB;
+    case TOY_GAME_WEAPON_MOLOTOV: return TOY_GAME_PRICE_MOLOTOV;
+    case TOY_GAME_WEAPON_PILL: return TOY_GAME_PRICE_PILL;
     default: return 0;
     }
 }
@@ -3855,12 +3909,30 @@ int toy_game_weapon_unlocked(const struct toy_game *g, int weapon)
 
 int toy_game_buy_weapon(struct toy_game *g, int weapon)
 {
-    int price;
+    int price, consumable;
     if (!g || weapon <= TOY_GAME_WEAPON_PISTOL ||
         weapon >= TOY_GAME_WEAPON_COUNT) return -1;
-    if (toy_game_weapon_unlocked(g, weapon))
-        return toy_game_equip_weapon(g, weapon);
+    if ((weapon == TOY_GAME_WEAPON_BOMB || weapon == TOY_GAME_WEAPON_MOLOTOV) &&
+        toy_game_weapon_unlocked(g, weapon == TOY_GAME_WEAPON_BOMB ?
+                                 TOY_GAME_WEAPON_MOLOTOV : TOY_GAME_WEAPON_BOMB) &&
+        g->slots[2].weapon == (weapon == TOY_GAME_WEAPON_BOMB ?
+                               TOY_GAME_WEAPON_MOLOTOV : TOY_GAME_WEAPON_BOMB) &&
+        g->slots[2].mag > 0) return -1;
+    consumable = weapon == TOY_GAME_WEAPON_BOMB ||
+                 weapon == TOY_GAME_WEAPON_MOLOTOV ||
+                 weapon == TOY_GAME_WEAPON_PILL;
     price = toy_game_weapon_price(weapon);
+    if (toy_game_weapon_unlocked(g, weapon))
+    {
+        if (!consumable) return toy_game_equip_weapon(g, weapon);
+        if (g->money < price) return 0;
+        if ((weapon == TOY_GAME_WEAPON_PILL && g->slots[3].mag >= TOY_GAME_PILL_MAX) ||
+            ((weapon == TOY_GAME_WEAPON_BOMB || weapon == TOY_GAME_WEAPON_MOLOTOV) &&
+             g->slots[2].mag >= TOY_GAME_THROWABLE_MAX)) return -1;
+        g->money -= price;
+        toy_game_equip_weapon(g, weapon);
+        return 1;
+    }
     if (g->money < price) return 0;
     g->money -= price;
     g->unlocked_weapons |= 1u << weapon;
@@ -3944,6 +4016,7 @@ void toy_game_update_weapon_held(struct toy_game *g,
         if (keys_pressed[TOY_GAME_KEY_SLOT_1]) toy_game_switch_weapon(g, 0);
         if (keys_pressed[TOY_GAME_KEY_SLOT_2]) toy_game_switch_weapon(g, 1);
         if (keys_pressed[TOY_GAME_KEY_SLOT_3]) toy_game_switch_weapon(g, 2);
+        if (keys_pressed[TOY_GAME_KEY_SLOT_4]) toy_game_switch_weapon(g, 3);
     }
     s = &g->slots[g->current_slot];
     w = toy_game_weapon_info(s->weapon);
@@ -3951,7 +4024,8 @@ void toy_game_update_weapon_held(struct toy_game *g,
     /* An empty weapon remains eligible for automatic reload after switching
      * back to it.  Switching intentionally cancels the old timer, so this
      * check must happen after the new slot has been selected. */
-    toy_game_start_empty_reload(g, s, w);
+    if (s->weapon != TOY_GAME_WEAPON_PILL)
+        toy_game_start_empty_reload(g, s, w);
 
     if (g->fire_cooldown_ms > 0) {
         g->fire_cooldown_ms -= dt_ms;

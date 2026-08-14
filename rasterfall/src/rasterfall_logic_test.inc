@@ -1327,10 +1327,12 @@ static int run_logic_test(void)
     /* Combat Power 使用武器真实参数计算，并输出完整拆分，方便调平衡。 */
     {
         int weapon;
-        static const int expected_power[TOY_GAME_WEAPON_COUNT] = {
-            3, 7, 9, 12, 11, 7, 1, 1
+        static const int expected_power[TOY_GAME_WEAPON_BOMB] = {
+            3, 7, 9, 12, 11, 5
         };
-        for (weapon = 0; weapon < TOY_GAME_WEAPON_COUNT; weapon++) {
+        /* Consumables do not contribute combat power; keep this legacy
+         * balance assertion limited to combat weapons. */
+        for (weapon = 0; weapon < TOY_GAME_WEAPON_BOMB; weapon++) {
             int dps = toy_game_weapon_combat_dps(weapon);
             int penalty = toy_game_weapon_spread_penalty(weapon);
             int power = toy_game_weapon_combat_power(weapon);
@@ -1344,6 +1346,33 @@ static int run_logic_test(void)
             toy_game_ai_level_combat_power(TOY_GAME_AI_LEVEL_2) != 18 ||
             toy_game_ai_level_combat_power(TOY_GAME_AI_LEVEL_3) != 28 ||
             toy_game_ai_level_combat_power(-1) != 0) return 138;
+    }
+    /* Consumable shop items charge per purchase and stop at their inventory
+     * caps; the two throwable types remain mutually exclusive. */
+    {
+        int i;
+        toy_game_init(&game, 141);
+        game.money = 1000;
+        if (toy_game_buy_weapon(&game, TOY_GAME_WEAPON_BOMB) <= 0 ||
+            game.slots[2].mag != 1) return 142;
+        for (i = 0; i < TOY_GAME_THROWABLE_MAX - 1; i++)
+            if (toy_game_buy_weapon(&game, TOY_GAME_WEAPON_BOMB) <= 0) return 143;
+        if (game.slots[2].mag != TOY_GAME_THROWABLE_MAX ||
+            toy_game_buy_weapon(&game, TOY_GAME_WEAPON_BOMB) != -1 ||
+            toy_game_buy_weapon(&game, TOY_GAME_WEAPON_MOLOTOV) != -1) return 144;
+        game.slots[2].mag = 0;
+        if (toy_game_buy_weapon(&game, TOY_GAME_WEAPON_MOLOTOV) <= 0 ||
+            game.slots[2].weapon != TOY_GAME_WEAPON_MOLOTOV ||
+            game.slots[2].mag != 1) return 148;
+        if (toy_game_buy_weapon(&game, TOY_GAME_WEAPON_MOLOTOV) <= 0 ||
+            game.slots[2].mag != 2) return 149;
+        toy_game_init(&game, 142);
+        game.money = 1000;
+        if (toy_game_buy_weapon(&game, TOY_GAME_WEAPON_PILL) <= 0) return 145;
+        for (i = 1; i < TOY_GAME_PILL_MAX; i++)
+            if (toy_game_buy_weapon(&game, TOY_GAME_WEAPON_PILL) <= 0) return 146;
+        if (game.slots[3].mag != TOY_GAME_PILL_MAX ||
+            toy_game_buy_weapon(&game, TOY_GAME_WEAPON_PILL) != -1) return 147;
     }
     __printf("rasterfall: logic test passed\n");
     return 0;

@@ -42,6 +42,7 @@
 #define KEY_1     2
 #define KEY_2     3
 #define KEY_3     4
+#define KEY_4     5
 #define KEY_E     18
 #define KEY_F     33
 #define KEY_R     19
@@ -431,6 +432,7 @@ static void build_game_command(struct rasterfall_command *command,
     if (toy_input_pressed(input, KEY_1)) command->buttons |= RASTERFALL_CMD_SLOT_1;
     if (toy_input_pressed(input, KEY_2)) command->buttons |= RASTERFALL_CMD_SLOT_2;
     if (toy_input_pressed(input, KEY_3)) command->buttons |= RASTERFALL_CMD_SLOT_3;
+    if (toy_input_pressed(input, KEY_4)) command->buttons |= RASTERFALL_CMD_SLOT_4;
     if (toy_input_pressed(input, KEY_E)) command->buttons |= RASTERFALL_CMD_INTERACT;
     if (toy_input_pressed(input, KEY_F)) command->buttons |= RASTERFALL_CMD_FLAG;
 }
@@ -441,6 +443,7 @@ static void consume_game_command_edges(struct toy_input *input)
     input->key_pressed[KEY_1] = 0;
     input->key_pressed[KEY_2] = 0;
     input->key_pressed[KEY_3] = 0;
+    input->key_pressed[KEY_4] = 0;
     input->key_pressed[KEY_E] = 0;
     input->key_pressed[KEY_F] = 0;
     input->key_pressed[KEY_SLASH] = 0;
@@ -1815,7 +1818,8 @@ startup_again:
                             static const int shop_weapons[] = {
                                 TOY_GAME_WEAPON_SMG, TOY_GAME_WEAPON_SHOTGUN,
                                 TOY_GAME_WEAPON_AK, TOY_GAME_WEAPON_AWP,
-                                TOY_GAME_WEAPON_AXE };
+                                TOY_GAME_WEAPON_AXE, TOY_GAME_WEAPON_BOMB,
+                                TOY_GAME_WEAPON_MOLOTOV, TOY_GAME_WEAPON_PILL };
                             command.shop_action = 1;
                             command.shop_item = shop_weapons[shop_selected_before];
                         } else if (shop_page_before == 2) {

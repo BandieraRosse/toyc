@@ -111,12 +111,18 @@
 #define TOY_GAME_KEY_SLOT_1     2       /* evdev KEY_1：主武器槽 */
 #define TOY_GAME_KEY_SLOT_2     3       /* evdev KEY_2：副武器（手枪）槽 */
 #define TOY_GAME_KEY_SLOT_3     4       /* evdev KEY_3：投掷物槽 */
+#define TOY_GAME_KEY_SLOT_4     5       /* evdev KEY_4：药丸槽 */
 
 /* 商店价格集中配置，便于后续调平衡。 */
 #define TOY_GAME_PRICE_SMG 50
 #define TOY_GAME_PRICE_SHOTGUN 50
 #define TOY_GAME_PRICE_AK 100
 #define TOY_GAME_PRICE_AWP 200
+#define TOY_GAME_PRICE_BOMB 20
+#define TOY_GAME_PRICE_MOLOTOV 50
+#define TOY_GAME_PRICE_PILL 10
+#define TOY_GAME_THROWABLE_MAX 5
+#define TOY_GAME_PILL_MAX 10
 #define TOY_GAME_INITIAL_MONEY 50
 
 enum toy_game_state { TOY_GAME_PLAYING, TOY_GAME_OVER, TOY_GAME_WON };
@@ -269,7 +275,7 @@ struct toy_game_platform { int minx, maxx, minz, maxz, height; };
 
 /* ── 武器槽：0=主武器，1=副武器/近战，2=投掷物 ─────────────── */
 
-#define TOY_GAME_WEAPON_SLOTS 3
+#define TOY_GAME_WEAPON_SLOTS 4
 
 enum toy_game_weapon {
     TOY_GAME_WEAPON_PISTOL = 0,
@@ -280,6 +286,7 @@ enum toy_game_weapon {
     TOY_GAME_WEAPON_AXE,
     TOY_GAME_WEAPON_BOMB,
     TOY_GAME_WEAPON_MOLOTOV,
+    TOY_GAME_WEAPON_PILL,
     TOY_GAME_WEAPON_COUNT
 };
 
@@ -295,6 +302,7 @@ enum toy_game_weapon_id {
     ,TOY_GAME_WEAPON_ID_AXE = 60
     ,TOY_GAME_WEAPON_ID_BOMB = 70
     ,TOY_GAME_WEAPON_ID_MOLOTOV = 80
+    ,TOY_GAME_WEAPON_ID_PILL = 90
 };
 
 enum toy_game_weapon_muzzle_profile {
@@ -718,6 +726,7 @@ void toy_game_actor_update_animation(struct toy_game_actor *actor, int dt_ms);
 int  toy_game_drain_events(struct toy_game *g, unsigned char *out, int max);
 void toy_game_place_enemy(struct toy_game *g, int x, int z); /* 测试钩子 */
 int  toy_game_shove(struct toy_game *g, int sy, int cy);    /* 推开面前敌人，返回推开的数量 */
+int  toy_game_use_pill(struct toy_game *g);
 int  toy_game_spawn_horde(struct toy_game *g, int count_min, int count_max,
                           const struct toy_game_box *points, int point_count,
                           int min_player_dist);

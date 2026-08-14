@@ -29,6 +29,7 @@ enum rasterfall_command_button {
     RASTERFALL_CMD_SLOT_1     = 1 << 2,
     RASTERFALL_CMD_SLOT_2     = 1 << 3,
     RASTERFALL_CMD_SLOT_3     = 1 << 14,
+    RASTERFALL_CMD_SLOT_4     = 1 << 15,
     RASTERFALL_CMD_INTERACT   = 1 << 4,
     RASTERFALL_CMD_TURN_LEFT  = 1 << 5,
     RASTERFALL_CMD_TURN_RIGHT = 1 << 6,

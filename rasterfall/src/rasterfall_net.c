@@ -2577,6 +2577,8 @@ static void net_apply_client(struct rasterfall_net *net,
         keys[TOY_GAME_KEY_SLOT_1] = 1;
     if (client->command.buttons & RASTERFALL_CMD_SLOT_2)
         keys[TOY_GAME_KEY_SLOT_2] = 1;
+    if (client->command.buttons & RASTERFALL_CMD_SLOT_4)
+        keys[TOY_GAME_KEY_SLOT_4] = 1;
     event_start = g->event_count;
     old_reloading = g->reloading;
     old_fire_seq = g->fire_seq;

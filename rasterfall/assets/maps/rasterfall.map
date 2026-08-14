@@ -87,6 +87,7 @@ pickup awp 700 -7450 -235
 pickup axe -1050 -7450 -235
 pickup bomb 1050 -7450 -235
 pickup molotov 1350 -7450 -235
+pickup pill 1650 -7450 -235
 button -11940 -10000 200
 button_air -11940 -7600 200
 button_alarm -11940 -3000 200

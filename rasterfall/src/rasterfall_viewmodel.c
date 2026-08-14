@@ -86,6 +86,19 @@ static void rotate_view_xz(int x, int z, int degrees, int *out_x, int *out_z)
     *out_z = (x * s + z * c) / 1024;
 }
 
+static void viewmodel_fill_rect(struct toy_surface *surface, int x, int y,
+                                int width, int height, uint32_t color)
+{
+    int yy, xx;
+    for (yy = y; yy < y + height; yy++) {
+        if (yy < 0 || yy >= surface->height) continue;
+        for (xx = x; xx < x + width; xx++)
+            if (xx >= 0 && xx < surface->width)
+                ((uint32_t *)((unsigned char *)surface->pixels +
+                              yy * surface->stride))[xx] = color;
+    }
+}
+
 static void viewmodel_load_models(void)
 {
     static const char *paths[TOY_GAME_WEAPON_COUNT] = {
@@ -96,7 +109,8 @@ static void viewmodel_load_models(void)
         "rasterfall/assets/models/rf_AWP.rmesh",
         "rasterfall/assets/models/axe.rmesh",
         "rasterfall/assets/models/bomb.rmesh",
-        "rasterfall/assets/models/molotov.rmesh"
+        "rasterfall/assets/models/molotov.rmesh",
+        NULL
     };
     int i;
     if (viewmodel_models_loaded) return;
@@ -115,7 +129,8 @@ const char *rasterfall_weapon_model_path(int weapon)
         "rasterfall/assets/models/rf_AWP.rmesh",
         "rasterfall/assets/models/axe.rmesh",
         "rasterfall/assets/models/bomb.rmesh",
-        "rasterfall/assets/models/molotov.rmesh"
+        "rasterfall/assets/models/molotov.rmesh",
+        NULL
     };
     if (weapon < 0 || weapon >= TOY_GAME_WEAPON_COUNT) return NULL;
     return paths[weapon];
@@ -597,6 +612,26 @@ static int render_model_weapon(struct toy_renderer *renderer,
     return drawn;
 }
 
+/* The pill is intentionally procedural: it remains readable even without an
+ * extra raster asset, with a white cylinder silhouette and a green medical
+ * cross facing the player. */
+static int render_pill_viewmodel(struct toy_surface *surface, int bob_x,
+                                 int bob_y, int kick)
+{
+    int x = surface->width - 190 + bob_x + kick / 3;
+    int y = surface->height - 185 + bob_y - kick / 2;
+    int w = 105, h = 72, i, drawn = 0;
+    for (i = 0; i < h; i++) {
+        int inset = i < 8 ? 8 - i : i >= h - 8 ? i - (h - 9) : 0;
+        viewmodel_fill_rect(surface, x + inset, y + i, w - inset * 2, 1,
+                            i < 10 || i >= h - 10 ? 0xA8B8A8 : 0xE9F1E9);
+        drawn += w - inset * 2;
+    }
+    viewmodel_fill_rect(surface, x + 47, y + 14, 12, 44, 0x20B84B);
+    viewmodel_fill_rect(surface, x + 31, y + 30, 44, 12, 0x20B84B);
+    return drawn + 56 * 2;
+}
+
 int rasterfall_viewmodel_render(struct toy_renderer *renderer,
                                 const struct toy_game *game,
                                 const struct rasterfall_effects *effects)
@@ -612,8 +647,11 @@ int rasterfall_viewmodel_render(struct toy_renderer *renderer,
                        RASTERFALL_RELOAD_VIEWMODEL_PITCH /
                        TOY_CONFIG_WEAPON_SWITCH_MS;
     drawn += render_viewmodel_hands(&renderer->surface, game, kick);
+    if (weapon == TOY_GAME_WEAPON_PILL)
+        drawn += render_pill_viewmodel(&renderer->surface, bob_x, bob_y, kick);
     if (weapon >= TOY_GAME_WEAPON_PISTOL &&
         weapon < TOY_GAME_WEAPON_COUNT &&
+        weapon != TOY_GAME_WEAPON_PILL &&
         viewmodel_models[weapon].data) {
         drawn += render_model_weapon(renderer,
                                      &viewmodel_models[weapon], weapon, kick,

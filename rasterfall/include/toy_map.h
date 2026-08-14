@@ -60,6 +60,7 @@ enum toy_map_pickup_kind {
     TOY_MAP_PICKUP_CLEAR_HIRED_BUTTON
     ,TOY_MAP_PICKUP_WAVE_SKIP_BUTTON
     ,TOY_MAP_PICKUP_THROWABLE
+    ,TOY_MAP_PICKUP_PILL
 };
 struct toy_map_pickup { int kind; int weapon; int x, z, y; };
 struct toy_map_draw {

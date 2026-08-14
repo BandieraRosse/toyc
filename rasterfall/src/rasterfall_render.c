@@ -1378,6 +1378,19 @@ static int render_special_button(struct toy_renderer *renderer,
     return pixels;
 }
 
+static int render_pill_pickup(struct toy_renderer *renderer,
+                              const struct camera *camera,
+                              int x, int y, int z, int on)
+{
+    int pixels = draw_cylinder(renderer, camera, x, z, 135, y, y + 250,
+                               on ? 0xD8E8D8 : 0xB7C7B7);
+    pixels += draw_cuboid(renderer, camera, x - 8, x + 8, y + 90, y + 160,
+                          z - 142, z - 132, 0x20B84B);
+    pixels += draw_cuboid(renderer, camera, x - 42, x + 42, y + 120, y + 135,
+                          z - 142, z - 132, 0x20B84B);
+    return pixels;
+}
+
 static int render_interactables(struct toy_renderer *renderer,
                                 const struct camera *camera)
 {
@@ -1414,6 +1427,9 @@ static int render_interactables(struct toy_renderer *renderer,
                                           it->weapon == TOY_GAME_WEAPON_BOMB ?
                                           "rasterfall/assets/models/bomb.rmesh" :
                                           "rasterfall/assets/models/molotov.rmesh");
+        else if (it->kind == TOY_MAP_PICKUP_PILL)
+            pixels += render_pill_pickup(renderer, camera, it->x, it->y,
+                                         it->z, on);
         else if (it->kind == TOY_MAP_PICKUP_BUTTON ||
                  it->kind == TOY_MAP_PICKUP_AIR_BUTTON ||
                  it->kind == TOY_MAP_PICKUP_ALARM_BUTTON ||

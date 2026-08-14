@@ -611,8 +611,10 @@ static void session_client_interact_banner(struct rasterfall_session *session)
     else if (it->kind == TOY_MAP_PICKUP_WEAPON ||
              it->kind == TOY_MAP_PICKUP_SMG ||
              it->kind == TOY_MAP_PICKUP_SHOTGUN ||
-             it->kind == TOY_MAP_PICKUP_THROWABLE)
+        it->kind == TOY_MAP_PICKUP_THROWABLE)
         session->banner_text = "WEAPON PICKED UP";
+    else if (it->kind == TOY_MAP_PICKUP_PILL)
+        session->banner_text = "PILL PICKED UP";
     else
         session->banner_text = "INTERACTION SENT TO HOST";
 }
@@ -705,8 +707,10 @@ static void session_interact(struct rasterfall_session *session,
             "HIRED AI CLEARED" : "NO HIRED AI";
         session->banner_success = cleared > 0;
     } else if (it->kind == TOY_MAP_PICKUP_WEAPON ||
-               it->kind == TOY_MAP_PICKUP_THROWABLE) {
-        if (it->kind == TOY_MAP_PICKUP_THROWABLE) {
+        it->kind == TOY_MAP_PICKUP_THROWABLE ||
+        it->kind == TOY_MAP_PICKUP_PILL) {
+        if (it->kind == TOY_MAP_PICKUP_THROWABLE ||
+            it->kind == TOY_MAP_PICKUP_PILL) {
             toy_game_equip_weapon(&session->game_state, it->weapon);
             return;
         }
@@ -1002,17 +1006,10 @@ void rasterfall_session_shop_input(struct rasterfall_session *session,
         return;
     }
     if (session->shop_page == 1) {
-        int count = 5, selected = session->shop_selected;
-        if (left && selected % 2) selected--;
-        if (right && !(selected % 2) && selected + 1 < count) selected++;
-        if (up) {
-            if (selected >= 2) selected -= 2;
-            else selected = selected % 2 ? 3 : 4;
-        }
-        if (down) {
-            if (selected + 2 < count) selected += 2;
-            else selected = selected % 2 ? 0 : 1;
-        }
+        int count = 8, selected = session->shop_selected;
+        (void)left; (void)right;
+        if (up) selected = (selected + count - 1) % count;
+        if (down) selected = (selected + 1) % count;
         session->shop_selected = selected;
     } else {
         if (up) session->shop_selected = (session->shop_selected + 4) % 5;
@@ -1029,7 +1026,9 @@ void rasterfall_session_shop_input(struct rasterfall_session *session,
         if (session->shop_page == 1) {
             static const int weapons[] = { TOY_GAME_WEAPON_SMG,
                 TOY_GAME_WEAPON_SHOTGUN, TOY_GAME_WEAPON_AK,
-                TOY_GAME_WEAPON_AWP, TOY_GAME_WEAPON_AXE };
+                TOY_GAME_WEAPON_AWP, TOY_GAME_WEAPON_AXE,
+                TOY_GAME_WEAPON_BOMB, TOY_GAME_WEAPON_MOLOTOV,
+                TOY_GAME_WEAPON_PILL };
             weapon = weapons[session->shop_selected];
             {
                 int result = session->shop_request_only ? 0 :
@@ -1189,6 +1188,7 @@ void rasterfall_session_step(struct rasterfall_session *session,
     if (command->buttons & RASTERFALL_CMD_SLOT_1) keys[TOY_GAME_KEY_SLOT_1] = 1;
     if (command->buttons & RASTERFALL_CMD_SLOT_2) keys[TOY_GAME_KEY_SLOT_2] = 1;
     if (command->buttons & RASTERFALL_CMD_SLOT_3) keys[TOY_GAME_KEY_SLOT_3] = 1;
+    if (command->buttons & RASTERFALL_CMD_SLOT_4) keys[TOY_GAME_KEY_SLOT_4] = 1;
     toy_game_update_held(&session->game_state, keys,
                          (command->buttons & RASTERFALL_CMD_FIRE) != 0,
                          command->fire_held, camera->sy, camera->cy, dt_ms);
@@ -1295,6 +1295,7 @@ static void session_step_client_mode(struct rasterfall_session *session,
     if (command->buttons & RASTERFALL_CMD_SLOT_1) keys[TOY_GAME_KEY_SLOT_1] = 1;
     if (command->buttons & RASTERFALL_CMD_SLOT_2) keys[TOY_GAME_KEY_SLOT_2] = 1;
     if (command->buttons & RASTERFALL_CMD_SLOT_3) keys[TOY_GAME_KEY_SLOT_3] = 1;
+    if (command->buttons & RASTERFALL_CMD_SLOT_4) keys[TOY_GAME_KEY_SLOT_4] = 1;
     /* Weapon prediction can only mutate the enemy hit fields.  Saving the
      * complete 64-entry enemy array here made every client tick (and every
      * replay tick) pay for a world-sized memcpy. */
