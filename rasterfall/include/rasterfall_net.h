@@ -12,7 +12,7 @@
 /* v30 uses one uniform host-side client layout.  Keep protocol
  * changes explicit: clients with a different snapshot layout must fail during
  * discovery/handshake instead of decoding shifted world data. */
-#define RASTERFALL_NET_PROTOCOL_VERSION 32
+#define RASTERFALL_NET_PROTOCOL_VERSION 33
 #define RASTERFALL_NET_MAX_ACTORS 32
 #define RASTERFALL_NET_PLAYER_MAX 4
 #define RASTERFALL_NET_CLIENT_MAX (RASTERFALL_NET_PLAYER_MAX - 1)
@@ -109,6 +109,7 @@ struct rasterfall_net_player {
     int reserve[TOY_GAME_WEAPON_SLOTS];
     int reloading;
     int reload_timer_ms;
+    int weapon_switch_timer_ms;
     int muzzle_flash_ms;
     int kills;
     int special_kills;
@@ -169,6 +170,7 @@ struct rasterfall_net_actor {
     int muzzle_flash_ms;
     int revive_progress_ms;
     unsigned int fire_seq;
+    int weapon_switch_timer_ms;
     int airborne_ms;
     int airborne_y;
     struct toy_game_animation_state animation;
@@ -208,7 +210,7 @@ struct rasterfall_net_client {
     int revive_target_id;
     int ai_revive_active;
     int ai_revive_actor_index;
-    int reloading, reload_timer_ms;
+    int reloading, reload_timer_ms, weapon_switch_timer_ms;
     int fire_cooldown_ms, muzzle_flash_ms, damage_flash_ms;
     int kills;
     int special_kills;
