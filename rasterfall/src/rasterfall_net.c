@@ -15,7 +15,7 @@ static void net_windows_log(const char *message) { (void)message; }
 #define NET_MAGIC_2 'N'
 #define NET_MAGIC_3 '1'
 #define NET_INPUT_ENTRY_SIZE 32
-#define NET_INPUT_META_SIZE 24
+#define NET_INPUT_META_SIZE 40
 #define NET_INPUT_SIZE (NET_INPUT_META_SIZE + \
                         RASTERFALL_NET_INPUT_REDUNDANCY * NET_INPUT_ENTRY_SIZE)
 #define NET_PLAYER_BASE_SIZE 85
@@ -907,6 +907,7 @@ static const struct rasterfall_net_prediction *net_prediction_for_ack(
 int rasterfall_net_send_command(struct rasterfall_net *net,
                                 const struct rasterfall_command *command,
                                 const struct camera *predicted,
+                                const struct toy_game *local_game,
                                 int jump_dx, int jump_dz)
 {
     unsigned char packet[NET_HEADER_SIZE + NET_INPUT_SIZE];
@@ -959,6 +960,15 @@ int rasterfall_net_send_command(struct rasterfall_net *net,
     put_i16(p + 12, predicted->sy); put_i16(p + 14, predicted->cy);
     put_i16(p + 16, predicted->pitch_sy); put_i16(p + 18, predicted->pitch_cy);
     put_u32(p + 20, net->reliable_event_ack);
+    /* The local player owns locomotion.  Keep the input packet as the wire
+     * carrier, but report the complete post-tick motion state as well. */
+    put_i16(p + 24, predicted->y);
+    put_i16(p + 26, local_game ? local_game->player_airborne_ms : 0);
+    put_i16(p + 28, local_game ? local_game->player_airborne_y : 0);
+    put_i16(p + 30, local_game ? local_game->player_vertical_velocity : 0);
+    put_i16(p + 32, local_game ? local_game->player_air_x : 0);
+    put_i16(p + 34, local_game ? local_game->player_air_z : 0);
+    put_i16(p + 36, local_game ? local_game->player_ground_y : 0);
     for (i = 0; i < RASTERFALL_NET_INPUT_REDUNDANCY; i++) {
         uint32_t s = sequence - (uint32_t)i;
         struct rasterfall_net_input *entry =
@@ -2318,6 +2328,14 @@ static void net_receive_client_packet(struct rasterfall_net *net,
         client->camera_initialized = 1;
     }
     decode_command_camera(payload, &client->reported_camera);
+    client->reported_camera.y = get_i16(payload + 24);
+    client->airborne_ms = get_i16(payload + 26);
+    client->airborne_y = get_i16(payload + 28);
+    client->airborne_velocity = get_i16(payload + 30);
+    client->air_x = get_i16(payload + 32);
+    client->air_z = get_i16(payload + 34);
+    client->reported_camera.y = get_i16(payload + 36) + client->airborne_y;
+    client->camera = client->reported_camera;
     client->reported_camera_ready = 1;
     client->reliable_event_ack = get_u32(payload + 20);
     for (i = 0; i < count; i++) {
@@ -2642,21 +2660,21 @@ static void net_apply_client(struct rasterfall_net *net,
     index = TOY_GAME_REMOTE_ACTOR_BASE + client->client_id - 1;
     if (index < 0 || index >= TOY_GAME_MAX_ACTORS) return;
     actor = &g->actors[index];
-    /* Start from the host's last camera state.  The reported camera is already
-     * predicted by the client, so using it here and then applying command.turn
-     * or command.pitch would rotate the same input twice. */
-    /* Smoker/Charger and the vertical simulation are applied after this
-     * command, matching the local client's jump/motion tick order. */
-    client->camera.x = actor->x;
-    client->camera.z = actor->z;
-    client->camera.y = actor->ground_y + actor->airborne_y;
+    /* Client locomotion is authoritative.  The report is already the
+     * post-tick result of input, turning, collision and jump simulation, so
+     * do not apply movement, jump, turn or vertical simulation again here. */
+    if (client->reported_camera_ready)
+        client->camera = client->reported_camera;
+    actor->x = client->camera.x;
+    actor->z = client->camera.z;
+    actor->airborne_ms = client->airborne_ms;
+    actor->airborne_y = client->airborne_y;
+    actor->vertical_velocity = client->airborne_velocity;
+    actor->air_x = client->air_x;
+    actor->air_z = client->air_z;
+    toy_game_update_actor_ground(g, index);
     if (client->command.buttons & RASTERFALL_CMD_REVIVE)
         net_paid_revive_client(net, session, client);
-    if ((client->command.buttons & RASTERFALL_CMD_JUMP) &&
-        actor->state == TOY_GAME_ACTOR_ALIVE)
-        toy_game_jump_actor(g, index,
-                            client->command.jump_dx,
-                            client->command.jump_dz);
     memcpy(host_slots, g->slots, sizeof(host_slots));
     memcpy(host_rays, g->rays, sizeof(host_rays));
     host_px = g->px; host_pz = g->pz; host_hp = g->hp;
@@ -2696,16 +2714,30 @@ static void net_apply_client(struct rasterfall_net *net,
      * must not inherit the host player or a previously processed client. */
     g->animation = actor->animation;
     g->px = client->camera.x; g->pz = client->camera.z;
-    rasterfall_session_step_remote_player(session, &client->camera,
-                                          &client->command,
-                                          actor->state != TOY_GAME_ACTOR_ALIVE,
-                                          actor->ground_y + actor->airborne_y);
+    {
+        struct rasterfall_command gameplay_command = client->command;
+        /* Keep remote gameplay hooks (shove/interact/flag), but never let
+         * the old remote movement helper simulate this client's locomotion. */
+        gameplay_command.move_forward = 0;
+        gameplay_command.move_strafe = 0;
+        gameplay_command.turn = 0;
+        gameplay_command.pitch = 0;
+        gameplay_command.buttons &= ~RASTERFALL_CMD_JUMP;
+        rasterfall_session_step_remote_player(
+            session, &client->camera, &gameplay_command,
+            actor->state != TOY_GAME_ACTOR_ALIVE,
+            actor->ground_y + actor->airborne_y);
+    }
     actor->x = client->camera.x;
     actor->z = client->camera.z;
-    toy_game_update_actor_ground(g, index);
-    toy_game_update_actor_motion(g, index, 16);
-    client->camera.x = actor->x;
-    client->camera.z = actor->z;
+    /* A host gameplay effect may move the remote actor; the next client
+     * report owns ordinary locomotion again.  Preserve the reported motion
+     * fields unless the effect explicitly updates gameplay state. */
+    actor->airborne_ms = client->airborne_ms;
+    actor->airborne_y = client->airborne_y;
+    actor->vertical_velocity = client->airborne_velocity;
+    actor->air_x = client->air_x;
+    actor->air_z = client->air_z;
     g->px = client->camera.x;
     g->pz = client->camera.z;
     if ((client->command.buttons & RASTERFALL_CMD_INTERACT) &&
@@ -2751,7 +2783,7 @@ static void net_apply_client(struct rasterfall_net *net,
     actor->x = client->camera.x; actor->z = client->camera.z;
     /* The temporary weapon view above belongs to this player's inventory only;
      * never copy the host player's vertical state back into this actor. */
-    client->camera.y = actor->ground_y + actor->airborne_y;
+    client->camera.y = client->reported_camera.y;
     actor->sy = client->camera.sy; actor->cy = client->camera.cy;
     actor->hp = g->hp;
     actor->state = g->player_down ? TOY_GAME_ACTOR_DOWNED :
@@ -3378,10 +3410,7 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
                                      struct camera *camera)
 {
     const struct rasterfall_net_player *own;
-    long dx, dz, dist2;
-    int old_x, old_z, old_y, old_down, old_airborne;
-    struct toy_game_animation_state presentation_animation;
-    int presentation_muzzle;
+    (void)camera;
     if (net->mode != RASTERFALL_NET_CLIENT) return;
     if (!net->snapshot_ready) {
         net_smooth_client_enemies(net, session);
@@ -3392,11 +3421,6 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
         return;
     own = &net->players[net->local_player_id];
     if (!own->active) return;
-    old_x = camera->x; old_z = camera->z; old_y = camera->y;
-    old_down = session ? session->game_state.player_down : 0;
-    old_airborne = session ? session->game_state.player_airborne_ms : 0;
-    presentation_animation = session ? session->game_state.animation : own->animation;
-    presentation_muzzle = session ? session->game_state.muzzle_flash_ms : 0;
     net->last_snapshot_input_ack = own->input_ack;
     if (session) {
         int seen[TOY_GAME_MAX_ACTORS];
@@ -3553,15 +3577,6 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
          * not a property of every client; copying it here made a client
          * unable to jump whenever the host was being dragged. */
         session->game_state.player_control_disabled = 0;
-        session->game_state.player_airborne_ms = own->airborne_ms;
-        session->game_state.player_airborne_y = own->airborne_y;
-        session->game_state.player_ground_y = own->camera.y -
-                                               own->airborne_y;
-        session->game_state.player_vertical_velocity =
-            own->airborne_velocity;
-        session->game_state.player_air_x = own->air_x;
-        session->game_state.player_air_z = own->air_z;
-        camera->y = own->camera.y;
         session->air_walls_enabled = net->snapshot_air_walls_enabled;
         session->manual_alarm_on = net->snapshot_manual_alarm_enabled;
         session->manual_alarm_timer = net->snapshot_world_manual_alarm_timer_ms;
@@ -3618,60 +3633,17 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
         /* Do not clear unseen ranges: an entity chunk may have been lost. */
         net_smooth_client_enemies(net, session);
     }
-    /* Restore the authoritative local state at input_ack, then replay only
-     * this player's still-unacknowledged commands in sequence order. */
-    camera->x = own->camera.x; camera->z = own->camera.z;
-    camera->y = own->camera.y; camera->sy = own->camera.sy;
-    camera->cy = own->camera.cy; camera->pitch_sy = own->camera.pitch_sy;
-    camera->pitch_cy = own->camera.pitch_cy;
-    if (session) {
-        /* smooth_turn_remaining is local prediction state, not part of the
-         * authoritative camera.  Replaying with the pre-reconcile remainder
-         * applies each 90-degree edge a second time. */
-        session->smooth_turn_remaining = 0;
-        uint32_t s = own->input_ack + 1U;
-        int replayed = 0;
-        session->game_state.px = camera->x;
-        session->game_state.pz = camera->z;
-        while (sequence_before_or_equal(s, net->last_command_sequence) &&
-               replayed < RASTERFALL_NET_INPUT_HISTORY) {
-            struct rasterfall_net_input *entry =
-                &net->input_history[s % RASTERFALL_NET_INPUT_HISTORY];
-            if (!entry->valid || entry->sequence != s) break;
-            rasterfall_session_replay_client(session, camera,
-                                              &entry->command, 16);
-            replayed++; s++;
-        }
-        session->game_state.animation = presentation_animation;
-        session->game_state.muzzle_flash_ms = presentation_muzzle;
-        for (int i = 0; i < RASTERFALL_NET_INPUT_HISTORY; i++)
-            if (net->input_history[i].valid &&
-                sequence_before_or_equal(net->input_history[i].sequence,
-                                         own->input_ack))
-                net->input_history[i].valid = 0;
-    }
-    dx = (long)old_x - camera->x; dz = (long)old_z - camera->z;
-    dist2 = dx * dx + dz * dz;
-    net->reconciliation_count++;
-    {
-        unsigned long magnitude = (unsigned long)(dx < 0 ? -dx : dx) +
-                                  (unsigned long)(dz < 0 ? -dz : dz);
-        net->reconciliation_total += magnitude;
-        if (magnitude > net->reconciliation_max)
-            net->reconciliation_max = magnitude;
-    }
-    if (dist2 > 900L * 900L || old_down != own->downed ||
-        (old_airborne == 0) != (own->airborne_ms == 0) ||
-        own->special_motion) {
-        net->correction_x = net->correction_z = net->correction_y = 0;
-        net->correction_remaining_ms = 0;
-        net->reconciliation_hard_snaps++;
-    } else if (dist2 > 8L * 8L) {
-        net->correction_x += (int)dx;
-        net->correction_z += (int)dz;
-        net->correction_y += old_y - camera->y;
-        net->correction_remaining_ms = 120;
-    }
+    /* The local camera/game_state remains the result of local movement,
+     * jump, air control, collision and facing simulation.  The own player
+     * snapshot still supplies host-authoritative gameplay state (health,
+     * inventory, downed/revive and world state), but never position or
+     * locomotion state.  Prediction history/acks stay intact for protocol
+     * compatibility and diagnostics; no replay or correction is performed. */
+    for (int i = 0; i < RASTERFALL_NET_INPUT_HISTORY; i++)
+        if (net->input_history[i].valid &&
+            sequence_before_or_equal(net->input_history[i].sequence,
+                                     own->input_ack))
+            net->input_history[i].valid = 0;
     net->snapshot_ready = 0;
 }
 

@@ -12,7 +12,7 @@
 /* v30 uses one uniform host-side client layout.  Keep protocol
  * changes explicit: clients with a different snapshot layout must fail during
  * discovery/handshake instead of decoding shifted world data. */
-#define RASTERFALL_NET_PROTOCOL_VERSION 35
+#define RASTERFALL_NET_PROTOCOL_VERSION 36
 #define RASTERFALL_NET_MAX_ACTORS 32
 #define RASTERFALL_NET_PLAYER_MAX 4
 #define RASTERFALL_NET_CLIENT_MAX (RASTERFALL_NET_PLAYER_MAX - 1)
@@ -419,6 +419,7 @@ int rasterfall_net_pipeline_test(void);
 int rasterfall_net_send_command(struct rasterfall_net *net,
                                 const struct rasterfall_command *command,
                                 const struct camera *predicted,
+                                const struct toy_game *local_game,
                                 int jump_dx, int jump_dz);
 int rasterfall_net_send_snapshot(struct rasterfall_net *net,
                                  const struct rasterfall_session *session,

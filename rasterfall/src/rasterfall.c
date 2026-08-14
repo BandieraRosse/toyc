@@ -1915,7 +1915,7 @@ startup_again:
                     }
                     if (net.mode == RASTERFALL_NET_CLIENT)
                         rasterfall_net_send_command(
-                            &net, &command, &camera,
+                            &net, &command, &camera, &game,
                             command.jump_dx,
                             command.jump_dz);
                     consume_game_command_edges(&input);
@@ -1929,7 +1929,7 @@ startup_again:
                     command.buttons = RASTERFALL_CMD_RESET;
                     if (net.mode == RASTERFALL_NET_CLIENT) {
                         /* Reset is host-authoritative; wait for its snapshot. */
-                        rasterfall_net_send_command(&net, &command, &camera,
+                        rasterfall_net_send_command(&net, &command, &camera, &game,
                                                     0, 0);
                     } else {
                         rasterfall_session_step(&session, &camera, &command,
@@ -2051,16 +2051,9 @@ startup_again:
             continue;
         }
         if (ready > 0) {
-            int render_correction_x = net.mode == RASTERFALL_NET_CLIENT ?
-                                      net.correction_x : 0;
-            int render_correction_z = net.mode == RASTERFALL_NET_CLIENT ?
-                                      net.correction_z : 0;
-            int render_correction_y = net.mode == RASTERFALL_NET_CLIENT ?
-                                      net.correction_y : 0;
             int present_result;
-            camera.x += render_correction_x;
-            camera.z += render_correction_z;
-            camera.y += render_correction_y;
+            /* Local movement is client-authoritative; host position
+             * corrections are intentionally not applied to the camera. */
             if (!logged_first_frame) {
                 rf_windows_log("startup: first frame begin");
                 logged_first_frame = 1;
@@ -2147,9 +2140,6 @@ startup_again:
                            &t_stage, renderer.submitted_triangles - prev_tris,
                            (unsigned long)stage_pixels);
             present_result = toy_window_present(window);
-            camera.x -= render_correction_x;
-            camera.z -= render_correction_z;
-            camera.y -= render_correction_y;
             if (present_result < 0) break;
             rasterfall_perf_end_stage(&stats, &stats_total, RASTERFALL_STATS_PRESENT,
                            &t_stage, 0, 0);

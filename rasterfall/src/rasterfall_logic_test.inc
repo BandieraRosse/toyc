@@ -918,7 +918,7 @@ static int run_logic_test(void)
             game.actors[actor_index].ground_y != 500 ||
             game.actors[actor_index].airborne_ms != 0) return 105;
     }
-    /* 所有客户端都通过统一的网络 actor 执行权威移动。 */
+    /* 客户端本地执行移动，主机只接受其报告的运动状态。 */
     {
         struct rasterfall_net net_test;
         int actor_index = TOY_GAME_REMOTE_ACTOR_BASE;
@@ -930,6 +930,11 @@ static int run_logic_test(void)
         net_test.clients[0].client_id = 1;
         net_test.clients[0].hp = TOY_GAME_SECONDARY_PLAYER_HP;
         net_test.clients[0].camera = camera;
+        net_test.clients[0].reported_camera = camera;
+        net_test.clients[0].reported_camera_ready = 1;
+        net_test.clients[0].airborne_ms = 600;
+        net_test.clients[0].airborne_y = 180;
+        net_test.clients[0].airborne_velocity = 20;
         rasterfall_net_prepare_host_step(&net_test, &game);
         if (!game.actors[actor_index].active ||
             game.actors[actor_index].hp != TOY_GAME_SECONDARY_PLAYER_HP)
@@ -938,9 +943,10 @@ static int run_logic_test(void)
         net_test.clients[0].command.move_forward = 1;
         net_test.clients[0].command.buttons = RASTERFALL_CMD_JUMP;
         rasterfall_net_apply_clients(&net_test, &session, &camera);
-        if (game.actors[actor_index].airborne_ms <= 0) return 107;
+        if (game.actors[actor_index].airborne_ms != 600 ||
+            game.actors[actor_index].airborne_y != 180) return 107;
         rasterfall_net_prepare_host_step(&net_test, &game);
-        if (game.actors[actor_index].airborne_ms <= 0 ||
+        if (game.actors[actor_index].airborne_ms != 600 ||
             game.actors[actor_index].z != net_test.clients[0].camera.z)
             return 108;
     }
@@ -972,12 +978,12 @@ static int run_logic_test(void)
             int old_x = camera.x, old_z = camera.z;
             rasterfall_net_reconcile_client(&net_test, &session, &camera);
             if (game.player_airborne_ms <= 0) return 109;
+            if (camera.x != old_x || camera.z != old_z) return 142;
             if (camera.x == net_test.players[1].camera.x &&
-                camera.z == net_test.players[1].camera.z) return 142;
-            if (camera.x == old_x && camera.z == old_z) return 143;
+                camera.z == net_test.players[1].camera.z) return 143;
         }
     }
-    /* Without unacked commands, authoritative restore is exact. */
+    /* Even an acknowledged snapshot never restores the local position. */
     {
         struct rasterfall_net net_test;
         struct rasterfall_net_prediction *prediction;
@@ -998,88 +1004,51 @@ static int run_logic_test(void)
         camera.x = 1000;
         camera.z = 2000;
         rasterfall_net_reconcile_client(&net_test, &session, &camera);
-        if (camera.x != 900 || camera.z != 1900) return 111;
+        if (camera.x != 1000 || camera.z != 2000) return 111;
     }
-    /* 玩家互救必须同时更新网络槽和 actor，且主机倒地不能禁用远端移动。 */
-    /* 标准客户端 reconciliation：从 authoritative @100 恢复，仅重放
-     * 101..105；FIRE 的展示动画和事件不能在 replay 中重新触发。 */
+    /* Legacy replay data remains allocated, but snapshots do not execute it. */
     {
         struct rasterfall_net net_test;
-        struct rasterfall_session expected_session;
-        struct camera authoritative, expected_camera;
-        struct rasterfall_command replay_command;
+        struct camera authoritative;
         rasterfall_session_reset(&session, &camera, 512);
-        authoritative = camera; expected_camera = authoritative;
-        expected_session = session;
-        memset(&replay_command, 0, sizeof(replay_command));
-        replay_command.move_forward = 1;
-        for (int i = 0; i < 5; i++)
-            rasterfall_session_replay_client(&expected_session,
-                &expected_camera, &replay_command, 16);
+        authoritative = camera;
         rasterfall_net_init(&net_test);
         net_test.mode = RASTERFALL_NET_CLIENT;
         net_test.local_player_id = 1;
-        net_test.last_command_sequence = 105;
         net_test.snapshot_ready = 1;
         net_test.players[1].active = 1;
         net_test.players[1].state = TOY_GAME_PLAYING;
         net_test.players[1].hp = session.game_state.hp;
         net_test.players[1].camera = authoritative;
         net_test.players[1].input_ack = 100;
-        net_test.players[1].current_slot = session.game_state.current_slot;
-        for (int slot = 0; slot < TOY_GAME_WEAPON_SLOTS; slot++) {
-            net_test.players[1].slot_weapon[slot] =
-                session.game_state.slots[slot].weapon;
-            net_test.players[1].mag[slot] = session.game_state.slots[slot].mag;
-            net_test.players[1].reserve[slot] =
-                session.game_state.slots[slot].reserve;
-        }
-        for (uint32_t sequence = 101; sequence <= 105; sequence++) {
-            struct rasterfall_net_input *entry = &net_test.input_history[
-                sequence % RASTERFALL_NET_INPUT_HISTORY];
-            entry->valid = 1; entry->sequence = sequence;
-            entry->command = replay_command;
-        }
         session.game_state.animation.id = TOY_GAME_ANIM_FIRE;
         session.game_state.animation.time_ms = 77;
         session.game_state.event_count = 1;
         session.game_state.events[0] = TOY_GAME_EV_SHOOT;
         rasterfall_net_reconcile_client(&net_test, &session, &camera);
-        if (camera.x != expected_camera.x || camera.z != expected_camera.z ||
+        if (camera.x != authoritative.x || camera.z != authoritative.z ||
             session.game_state.animation.id != TOY_GAME_ANIM_FIRE ||
             session.game_state.animation.time_ms != 77 ||
             session.game_state.event_count != 1) return 141;
     }
-    /* Reconciliation must discard the predicted smooth-turn remainder before
-     * replay.  Otherwise this one historical edge is added twice. */
+    /* Local facing remains untouched by an authoritative snapshot. */
     {
         struct rasterfall_net net_test;
-        struct rasterfall_session expected_session;
-        struct camera authoritative, expected_camera;
-        struct rasterfall_command turn_command;
+        struct camera authoritative;
         rasterfall_session_reset(&session, &camera, 513);
-        authoritative = camera; expected_camera = authoritative;
-        expected_session = session;
-        memset(&turn_command, 0, sizeof(turn_command));
-        turn_command.buttons = RASTERFALL_CMD_TURN_RIGHT;
-        rasterfall_session_replay_client(&expected_session, &expected_camera,
-                                         &turn_command, 16);
+        authoritative = camera;
         rasterfall_net_init(&net_test);
         net_test.mode = RASTERFALL_NET_CLIENT;
         net_test.local_player_id = 1;
-        net_test.last_command_sequence = 101;
         net_test.snapshot_ready = 1;
         net_test.players[1].active = 1;
         net_test.players[1].state = TOY_GAME_PLAYING;
         net_test.players[1].hp = session.game_state.hp;
         net_test.players[1].camera = authoritative;
         net_test.players[1].input_ack = 100;
-        net_test.input_history[101 % RASTERFALL_NET_INPUT_HISTORY].valid = 1;
-        net_test.input_history[101 % RASTERFALL_NET_INPUT_HISTORY].sequence = 101;
-        net_test.input_history[101 % RASTERFALL_NET_INPUT_HISTORY].command = turn_command;
         session.smooth_turn_remaining = 1611;
         rasterfall_net_reconcile_client(&net_test, &session, &camera);
-        if (camera.sy != expected_camera.sy || camera.cy != expected_camera.cy)
+        if (camera.sy != authoritative.sy || camera.cy != authoritative.cy)
             return 144;
     }
     /* A replayed jump uses the vector captured by its command, even when the
@@ -1089,6 +1058,7 @@ static int run_logic_test(void)
         struct rasterfall_session replay_session;
         struct camera live_camera, replay_camera;
         struct rasterfall_command jump_command;
+        live_session = session;
         rasterfall_session_reset(&live_session, &live_camera, 514);
         replay_session = live_session;
         replay_camera = live_camera;
@@ -1138,8 +1108,12 @@ static int run_logic_test(void)
         net_test.clients[0].command_ready = 1;
         net_test.clients[0].command.move_forward = 1;
         net_test.clients[0].command.buttons = RASTERFALL_CMD_JUMP;
+        net_test.clients[0].reported_camera = camera;
+        net_test.clients[0].reported_camera_ready = 1;
+        net_test.clients[0].airborne_ms = 600;
+        net_test.clients[0].airborne_y = 180;
         rasterfall_net_apply_clients(&net_test, &session, &camera);
-        if (game.actors[actor_index].airborne_ms <= 0) return 111;
+        if (game.actors[actor_index].airborne_ms != 600) return 111;
 
         game.actors[actor_index].airborne_ms = 0;
         net_test.clients[0].airborne_ms = 0;
