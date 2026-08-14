@@ -3360,7 +3360,7 @@ static int toy_game_melee(struct toy_game *g, int sy, int cy)
         return 0;
     g->melee_timer_ms = TOY_CONFIG_MELEE_SWING_MS;
     toy_game_animation_set(&g->animation, TOY_GAME_ANIM_MELEE);
-    push_event(g, TOY_GAME_EV_SHOVE);
+    push_event(g, TOY_GAME_EV_MELEE);
     for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
         struct toy_game_enemy *e = &g->enemies[i];
         long long dx, dz, dist2, dist, dot;
@@ -3386,7 +3386,7 @@ static int toy_game_melee(struct toy_game *g, int sy, int cy)
         }
     }
     toy_game_shove_at(g, g->px, g->pz, sy, cy);
-    if (hit) push_event(g, TOY_GAME_EV_SHOVE_HIT);
+    if (hit) push_event(g, TOY_GAME_EV_MELEE_HIT);
     return hit;
 }
 
@@ -3555,7 +3555,16 @@ int toy_game_fire(struct toy_game *g, int sy, int cy)
     g->weapon_spread_heat += TOY_CONFIG_SPREAD_SHOT_STEP;
     if (g->weapon_spread_heat > TOY_CONFIG_SPREAD_HEAT_MAX)
         g->weapon_spread_heat = TOY_CONFIG_SPREAD_HEAT_MAX;
-    push_event(g, TOY_GAME_EV_SHOOT);
+    if (s->weapon == TOY_GAME_WEAPON_SMG)
+        push_event(g, TOY_GAME_EV_SHOOT_SMG);
+    else if (s->weapon == TOY_GAME_WEAPON_SHOTGUN)
+        push_event(g, TOY_GAME_EV_SHOOT_SHOTGUN);
+    else if (s->weapon == TOY_GAME_WEAPON_AK)
+        push_event(g, TOY_GAME_EV_SHOOT_AK);
+    else if (s->weapon == TOY_GAME_WEAPON_AWP)
+        push_event(g, TOY_GAME_EV_SHOOT_AWP);
+    else
+        push_event(g, TOY_GAME_EV_SHOOT);
     emit_enemy_noise(g, g->px, g->pz, TOY_GAME_GUNSHOT_RANGE);
     if (s->mag == 0) {
         g->reloading = 1;

@@ -28,7 +28,7 @@
 #define TOY_CONFIG_SHOVE_SWEEP_DEGREES       240  /* 推搡手臂旋转角度 */
 #define TOY_CONFIG_SHOVE_RANGE               900  /* 推搡有效范围 */
 #define TOY_CONFIG_SHOVE_STUN_MS             1500  /* 敌人僵直时长 */
-#define TOY_CONFIG_MELEE_SWING_MS            350   /* 近战挥舞时间 */
+#define TOY_CONFIG_MELEE_SWING_MS            500   /* 近战挥舞时间 */
 #define TOY_CONFIG_MELEE_RANGE               TOY_CONFIG_SHOVE_RANGE
 #define TOY_CONFIG_MELEE_DAMAGE              100
 #define TOY_CONFIG_THROW_HANDOFF_MS          300   /* 投掷出手/第一人称动作 */

@@ -246,6 +246,12 @@ enum toy_game_event {
     TOY_GAME_EV_WEAPON_SWITCH,
     TOY_GAME_EV_SHOVE,
     TOY_GAME_EV_SHOVE_HIT,
+    TOY_GAME_EV_MELEE,
+    TOY_GAME_EV_MELEE_HIT,
+    TOY_GAME_EV_SHOOT_SMG,
+    TOY_GAME_EV_SHOOT_SHOTGUN,
+    TOY_GAME_EV_SHOOT_AK,
+    TOY_GAME_EV_SHOOT_AWP,
 };
 
 /* 碰撞/命中共用的 xz 平面轴对齐盒（与房间障碍物同尺度） */
@@ -724,6 +730,12 @@ enum toy_sfx_kind {
     TOY_SFX_PLAYER_DEATH,
     TOY_SFX_SHOVE,
     TOY_SFX_SHOVE_HIT,
+    TOY_SFX_MELEE,
+    TOY_SFX_MELEE_HIT,
+    TOY_SFX_SMG,
+    TOY_SFX_SHOTGUN,
+    TOY_SFX_AK,
+    TOY_SFX_AWP,
 };
 
 /* 每个 kind 可注册一段 PCM16 样本（TSND 资产）替代程序合成 */
@@ -752,7 +764,7 @@ struct toy_sfx {
     unsigned int music_pos;
     unsigned int melody_phase;
     unsigned int bass_phase;
-    struct toy_sfx_sample samples[TOY_SFX_SHOVE_HIT + 1];
+    struct toy_sfx_sample samples[TOY_SFX_AWP + 1];
     struct toy_sfx_voice voices[TOY_SFX_MAX_VOICES];
 };
 
