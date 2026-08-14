@@ -1266,10 +1266,16 @@ static int render_rifle_pickup(struct toy_renderer *renderer,
                                const char *path)
 {
     struct rasterfall_model_asset *model = gallery_model_named(path, NULL);
+    int scale;
     (void)on;
     if (!model) return render_ammo_box(renderer, camera, x, y, z, on);
+    scale = pickup_model_scale(model) * 2;
+    if (!strcmp(path, "rasterfall/assets/models/bomb.rmesh") ||
+        !strcmp(path, "rasterfall/assets/models/molotov.rmesh"))
+        scale = pickup_model_scale(model) / 2;
+    if (scale < 1) scale = 1;
     return render_gallery_model(renderer, camera, model, x, y, z,
-                                pickup_model_scale(model) * 2);
+                                scale);
 }
 
 /* 平放的霰弹枪：机匣 + 长枪管 + 护木 + 木托，枪口朝 +z */
@@ -1393,6 +1399,17 @@ static int render_interactables(struct toy_renderer *renderer,
             pixels += render_rifle_pickup(renderer, camera, it->x, it->y,
                                           it->z, on,
                                           "rasterfall/assets/models/rf_AWP.rmesh");
+        else if (it->kind == TOY_MAP_PICKUP_WEAPON &&
+                 it->weapon == TOY_GAME_WEAPON_AXE)
+            pixels += render_rifle_pickup(renderer, camera, it->x, it->y,
+                                          it->z, on,
+                                          "rasterfall/assets/models/axe.rmesh");
+        else if (it->kind == TOY_MAP_PICKUP_THROWABLE)
+            pixels += render_rifle_pickup(renderer, camera, it->x, it->y,
+                                          it->z, on,
+                                          it->weapon == TOY_GAME_WEAPON_BOMB ?
+                                          "rasterfall/assets/models/bomb.rmesh" :
+                                          "rasterfall/assets/models/molotov.rmesh");
         else if (it->kind == TOY_MAP_PICKUP_BUTTON ||
                  it->kind == TOY_MAP_PICKUP_AIR_BUTTON ||
                  it->kind == TOY_MAP_PICKUP_ALARM_BUTTON ||

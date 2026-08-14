@@ -18,7 +18,7 @@ static void net_windows_log(const char *message) { (void)message; }
 #define NET_INPUT_META_SIZE 24
 #define NET_INPUT_SIZE (NET_INPUT_META_SIZE + \
                         RASTERFALL_NET_INPUT_REDUNDANCY * NET_INPUT_ENTRY_SIZE)
-#define NET_PLAYER_BASE_SIZE 69
+#define NET_PLAYER_BASE_SIZE 73
 #define NET_PLAYER_RAY_SIZE 15
 #define NET_PLAYER_SIZE (NET_PLAYER_BASE_SIZE + 4 + 1 + TOY_GAME_MAX_RAYS * NET_PLAYER_RAY_SIZE)
 #define NET_ACTOR_SIZE (38 + TOY_GAME_MAX_NAME)
@@ -532,6 +532,7 @@ static void net_init_player_slots(struct toy_game_slot *slots,
     if (!slots || !current_slot) return;
     memset(slots, 0, sizeof(struct toy_game_slot) * TOY_GAME_WEAPON_SLOTS);
     slots[0].weapon = -1;
+    slots[2].weapon = -1;
     slots[1].weapon = TOY_GAME_WEAPON_PISTOL;
     slots[1].mag = toy_game_weapon_info(TOY_GAME_WEAPON_PISTOL)->mag_size;
     slots[1].reserve = toy_game_weapon_info(TOY_GAME_WEAPON_PISTOL)->reserve_max;
@@ -1006,10 +1007,13 @@ static void encode_player(unsigned char *p, int id, int active,
     p[22] = (unsigned char)current_slot;
     p[23] = put_weapon_value(slots ? slots[0].weapon : -1);
     p[24] = put_weapon_value(slots ? slots[1].weapon : -1);
+    p[68] = put_weapon_value(slots ? slots[2].weapon : -1);
     put_i16(p + 25, slots ? slots[0].mag : 0);
     put_i16(p + 27, slots ? slots[0].reserve : 0);
     put_i16(p + 29, slots ? slots[1].mag : 0);
     put_i16(p + 31, slots ? slots[1].reserve : 0);
+    put_i16(p + 69, slots ? slots[2].mag : 0);
+    put_i16(p + 71, slots ? slots[2].reserve : 0);
     p[33] = (unsigned char)(reloading != 0);
     put_i16(p + 34, reload_timer_ms);
     put_i16(p + 36, muzzle_flash_ms);
@@ -1062,8 +1066,10 @@ static int decode_player(const unsigned char *p,
     player->current_slot = p[22] < TOY_GAME_WEAPON_SLOTS ? p[22] : 0;
     player->slot_weapon[0] = get_weapon_value(p[23]);
     player->slot_weapon[1] = get_weapon_value(p[24]);
+    player->slot_weapon[2] = get_weapon_value(p[68]);
     player->mag[0] = get_i16(p + 25); player->reserve[0] = get_i16(p + 27);
     player->mag[1] = get_i16(p + 29); player->reserve[1] = get_i16(p + 31);
+    player->mag[2] = get_i16(p + 69); player->reserve[2] = get_i16(p + 71);
     player->reloading = p[33] != 0; player->reload_timer_ms = get_i16(p + 34);
     player->muzzle_flash_ms = get_i16(p + 36);
     player->kills = get_i16(p + 38);
@@ -3236,10 +3242,13 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
         session->game_state.current_slot = own->current_slot;
         session->game_state.slots[0].weapon = own->slot_weapon[0];
         session->game_state.slots[1].weapon = own->slot_weapon[1];
+        session->game_state.slots[2].weapon = own->slot_weapon[2];
         session->game_state.slots[0].mag = own->mag[0];
         session->game_state.slots[0].reserve = own->reserve[0];
         session->game_state.slots[1].mag = own->mag[1];
         session->game_state.slots[1].reserve = own->reserve[1];
+        session->game_state.slots[2].mag = own->mag[2];
+        session->game_state.slots[2].reserve = own->reserve[2];
         session->game_state.reloading = own->reloading;
         session->game_state.reload_timer_ms = own->reload_timer_ms;
         session->game_state.wave = net->snapshot_world_wave;

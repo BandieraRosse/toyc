@@ -608,7 +608,8 @@ static void session_client_interact_banner(struct rasterfall_session *session)
         session->banner_text = "AMMO REFILLED";
     else if (it->kind == TOY_MAP_PICKUP_WEAPON ||
              it->kind == TOY_MAP_PICKUP_SMG ||
-             it->kind == TOY_MAP_PICKUP_SHOTGUN)
+             it->kind == TOY_MAP_PICKUP_SHOTGUN ||
+             it->kind == TOY_MAP_PICKUP_THROWABLE)
         session->banner_text = "WEAPON PICKED UP";
     else
         session->banner_text = "INTERACTION SENT TO HOST";
@@ -622,7 +623,8 @@ static void session_interact(struct rasterfall_session *session,
     if (it->kind == TOY_MAP_PICKUP_SMG ||
         it->kind == TOY_MAP_PICKUP_SHOTGUN ||
         it->kind == TOY_MAP_PICKUP_AMMO ||
-        it->kind == TOY_MAP_PICKUP_WEAPON)
+        it->kind == TOY_MAP_PICKUP_WEAPON ||
+        it->kind == TOY_MAP_PICKUP_THROWABLE)
         toy_game_emit_event(&session->game_state, TOY_GAME_EV_PICKUP);
     if (it->kind == TOY_MAP_PICKUP_SHOP) {
         session->shop_open = 1;
@@ -700,7 +702,12 @@ static void session_interact(struct rasterfall_session *session,
         session->banner_text = cleared > 0 ?
             "HIRED AI CLEARED" : "NO HIRED AI";
         session->banner_success = cleared > 0;
-    } else if (it->kind == TOY_MAP_PICKUP_WEAPON) {
+    } else if (it->kind == TOY_MAP_PICKUP_WEAPON ||
+               it->kind == TOY_MAP_PICKUP_THROWABLE) {
+        if (it->kind == TOY_MAP_PICKUP_THROWABLE) {
+            toy_game_equip_weapon(&session->game_state, it->weapon);
+            return;
+        }
         if (toy_game_weapon_unlocked(&session->game_state, it->weapon))
             toy_game_equip_weapon(&session->game_state, it->weapon);
         else {
@@ -848,7 +855,8 @@ static int session_buy_flag(struct rasterfall_session *s)
 }
 
 void rasterfall_session_shop_input(struct rasterfall_session *session,
-                                   int up, int down, int enter, int esc)
+                                   int up, int down, int left, int right,
+                                   int enter, int esc)
 {
     int weapon;
     if (!session || !session->shop_open) return;
@@ -991,10 +999,23 @@ void rasterfall_session_shop_input(struct rasterfall_session *session,
         }
         return;
     }
-    if (up) session->shop_selected = session->shop_page == 2 ?
-        (session->shop_selected + 4) % 5 : (session->shop_selected + 3) % 4;
-    if (down) session->shop_selected = session->shop_page == 2 ?
-        (session->shop_selected + 1) % 5 : (session->shop_selected + 1) % 4;
+    if (session->shop_page == 1) {
+        int count = 5, selected = session->shop_selected;
+        if (left && selected % 2) selected--;
+        if (right && !(selected % 2) && selected + 1 < count) selected++;
+        if (up) {
+            if (selected >= 2) selected -= 2;
+            else selected = selected % 2 ? 3 : 4;
+        }
+        if (down) {
+            if (selected + 2 < count) selected += 2;
+            else selected = selected % 2 ? 0 : 1;
+        }
+        session->shop_selected = selected;
+    } else {
+        if (up) session->shop_selected = (session->shop_selected + 4) % 5;
+        if (down) session->shop_selected = (session->shop_selected + 1) % 5;
+    }
     if (enter) {
         if (session->shop_request_only) {
             session->banner_success = 1;
@@ -1004,7 +1025,10 @@ void rasterfall_session_shop_input(struct rasterfall_session *session,
             return;
         }
         if (session->shop_page == 1) {
-            weapon = session->shop_selected + TOY_GAME_WEAPON_SMG;
+            static const int weapons[] = { TOY_GAME_WEAPON_SMG,
+                TOY_GAME_WEAPON_SHOTGUN, TOY_GAME_WEAPON_AK,
+                TOY_GAME_WEAPON_AWP, TOY_GAME_WEAPON_AXE };
+            weapon = weapons[session->shop_selected];
             {
                 int result = session->shop_request_only ? 0 :
                     toy_game_buy_weapon(&session->game_state, weapon);
@@ -1160,6 +1184,7 @@ void rasterfall_session_step(struct rasterfall_session *session,
     if (command->buttons & RASTERFALL_CMD_RELOAD) keys[TOY_GAME_KEY_RELOAD] = 1;
     if (command->buttons & RASTERFALL_CMD_SLOT_1) keys[TOY_GAME_KEY_SLOT_1] = 1;
     if (command->buttons & RASTERFALL_CMD_SLOT_2) keys[TOY_GAME_KEY_SLOT_2] = 1;
+    if (command->buttons & RASTERFALL_CMD_SLOT_3) keys[TOY_GAME_KEY_SLOT_3] = 1;
     toy_game_update_held(&session->game_state, keys,
                          (command->buttons & RASTERFALL_CMD_FIRE) != 0,
                          command->fire_held, camera->sy, camera->cy, dt_ms);
@@ -1262,6 +1287,7 @@ static void session_step_client_mode(struct rasterfall_session *session,
     if (command->buttons & RASTERFALL_CMD_RELOAD) keys[TOY_GAME_KEY_RELOAD] = 1;
     if (command->buttons & RASTERFALL_CMD_SLOT_1) keys[TOY_GAME_KEY_SLOT_1] = 1;
     if (command->buttons & RASTERFALL_CMD_SLOT_2) keys[TOY_GAME_KEY_SLOT_2] = 1;
+    if (command->buttons & RASTERFALL_CMD_SLOT_3) keys[TOY_GAME_KEY_SLOT_3] = 1;
     /* Weapon prediction can only mutate the enemy hit fields.  Saving the
      * complete 64-entry enemy array here made every client tick (and every
      * replay tick) pay for a world-sized memcpy. */
@@ -1316,6 +1342,14 @@ static void session_step_client_mode(struct rasterfall_session *session,
         toy_game_animation_update(&session->game_state.animation, dt_ms);
         if (session->game_state.animation.time_ms >=
             toy_game_animation_info(TOY_GAME_ANIM_SHOVE)->duration_ms)
+            toy_game_animation_set(&session->game_state.animation,
+                                   TOY_GAME_ANIM_NONE);
+    }
+    if (session->game_state.animation.id == TOY_GAME_ANIM_MELEE ||
+        session->game_state.animation.id == TOY_GAME_ANIM_THROW) {
+        toy_game_animation_update(&session->game_state.animation, dt_ms);
+        if (session->game_state.animation.time_ms >=
+            toy_game_animation_info(session->game_state.animation.id)->duration_ms)
             toy_game_animation_set(&session->game_state.animation,
                                    TOY_GAME_ANIM_NONE);
     }

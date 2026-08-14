@@ -30,6 +30,12 @@ struct rasterfall_viewmodel_hand_pose {
 
 static struct rasterfall_model_asset viewmodel_models[TOY_GAME_WEAPON_COUNT];
 static int viewmodel_models_loaded;
+static const struct toy_texture_view *viewmodel_texture;
+
+void rasterfall_viewmodel_set_texture(const struct toy_texture_view *texture)
+{
+    viewmodel_texture = texture;
+}
 
 static unsigned int viewmodel_model_u32(const unsigned char *p)
 {
@@ -85,7 +91,10 @@ static void viewmodel_load_models(void)
         "rasterfall/assets/models/smg_mac10.rmesh",
         "rasterfall/assets/models/sg_pump_action.rmesh",
         "rasterfall/assets/models/ar_ak47.rmesh",
-        "rasterfall/assets/models/rf_AWP.rmesh"
+        "rasterfall/assets/models/rf_AWP.rmesh",
+        "rasterfall/assets/models/axe.rmesh",
+        "rasterfall/assets/models/bomb.rmesh",
+        "rasterfall/assets/models/molotov.rmesh"
     };
     int i;
     if (viewmodel_models_loaded) return;
@@ -101,7 +110,10 @@ const char *rasterfall_weapon_model_path(int weapon)
         "rasterfall/assets/models/smg_mac10.rmesh",
         "rasterfall/assets/models/sg_pump_action.rmesh",
         "rasterfall/assets/models/ar_ak47.rmesh",
-        "rasterfall/assets/models/rf_AWP.rmesh"
+        "rasterfall/assets/models/rf_AWP.rmesh",
+        "rasterfall/assets/models/axe.rmesh",
+        "rasterfall/assets/models/bomb.rmesh",
+        "rasterfall/assets/models/molotov.rmesh"
     };
     if (weapon < 0 || weapon >= TOY_GAME_WEAPON_COUNT) return NULL;
     return paths[weapon];
@@ -333,6 +345,23 @@ static int render_viewmodel_hands(struct toy_surface *surface,
         rotate_view_xz(dx, dz, angle, &dx, &dz);
         l_wrist_x = l_elbow_x + dx;
         l_wrist_z = l_elbow_z + dz;
+    } else if (game->animation.id == TOY_GAME_ANIM_MELEE) {
+        int phase = game->animation.time_ms * 1000 /
+                    TOY_CONFIG_MELEE_SWING_MS;
+        if (phase > 1000) phase = 1000;
+        r_wrist_x -= phase * 180 / 1000;
+        r_wrist_y += phase * 130 / 1000;
+        r_wrist_z += phase * 360 / 1000;
+        l_wrist_x -= phase * 100 / 1000;
+        l_wrist_y += phase * 100 / 1000;
+        l_wrist_z += phase * 260 / 1000;
+    } else if (game->animation.id == TOY_GAME_ANIM_THROW) {
+        int phase = game->animation.time_ms * 1000 /
+                    TOY_CONFIG_THROW_HANDOFF_MS;
+        if (phase > 1000) phase = 1000;
+        r_wrist_y += phase * 240 / 1000;
+        r_wrist_z += phase * 260 / 1000;
+        r_elbow_y += phase * 120 / 1000;
     } else if (game->animation.id == TOY_GAME_ANIM_RELOAD) {
         if (weapon >= 0) reload_ms = toy_game_weapon_info(weapon)->reload_ms;
         reload = game->animation.time_ms * 1000 / reload_ms;
@@ -403,7 +432,7 @@ static int render_viewmodel_hands(struct toy_surface *surface,
     return drawn;
 }
 
-static int render_model_weapon(struct toy_surface *surface,
+static int render_model_weapon(struct toy_renderer *renderer,
                                const struct rasterfall_model_asset *model,
                                int weapon, int kick,
                                int animation_id, int animation_time_ms,
@@ -412,6 +441,7 @@ static int render_model_weapon(struct toy_surface *surface,
     int i, drawn = 0, width, height, depth, length, scale;
     int origin_x, origin_y, origin_z, origin_scale;
     int reload_pitch = 0;
+    struct toy_surface *surface = &renderer->surface;
     int focal = surface->width * 3 / 4;
     if (!model || !model->data) return 0;
     width = model->max_x - model->min_x;
@@ -511,15 +541,32 @@ static int render_model_weapon(struct toy_surface *surface,
             }
             if (k == 3) {
                 int sx[3], sy[3], n;
+                struct toy_screen_vertex sv[3];
                 for (n = 0; n < 3; n++) {
                     if (v[n].z < 192) break;
                     sx[n] = surface->width / 2 + v[n].x * focal / v[n].z;
                     sy[n] = surface->height / 2 - v[n].y * focal / v[n].z;
+                    sv[n].x = sx[n]; sv[n].y = sy[n]; sv[n].z = v[n].z;
+                    sv[n].u = *(const unsigned short *)(model->vertices +
+                                      ids[n] * RASTERFALL_MODEL_VERTEX_BYTES + 18);
+                    sv[n].v = *(const unsigned short *)(model->vertices +
+                                      ids[n] * RASTERFALL_MODEL_VERTEX_BYTES + 20);
+                    sv[n].inv_z = (long)1048576 / v[n].z;
+                    sv[n].u_over_z = (long)sv[n].u * 1048576L / v[n].z;
+                    sv[n].v_over_z = (long)sv[n].v * 1048576L / v[n].z;
+                    sv[n].light = 256; sv[n].fog = 0;
                 }
-                if (n == 3)
-                    drawn += fill_triangle_2d(surface, sx[0], sy[0],
-                                              sx[1], sy[1], sx[2], sy[2],
-                                              color);
+                if (n == 3) {
+                    if (weapon >= TOY_GAME_WEAPON_AXE && viewmodel_texture &&
+                        viewmodel_texture->data)
+                        drawn += toy_renderer_triangle_textured_lit(
+                            renderer, &sv[0], &sv[1], &sv[2],
+                            viewmodel_texture, 1, color, 256, 0);
+                    else
+                        drawn += fill_triangle_2d(surface, sx[0], sy[0],
+                                                  sx[1], sy[1], sx[2], sy[2],
+                                                  color);
+                }
             }
         }
     }
@@ -544,7 +591,7 @@ int rasterfall_viewmodel_render(struct toy_renderer *renderer,
     if (weapon >= TOY_GAME_WEAPON_PISTOL &&
         weapon < TOY_GAME_WEAPON_COUNT &&
         viewmodel_models[weapon].data) {
-        drawn += render_model_weapon(&renderer->surface,
+        drawn += render_model_weapon(renderer,
                                      &viewmodel_models[weapon], weapon, kick,
                                      game->animation.id,
                                      game->animation.time_ms, bob_x, bob_y,

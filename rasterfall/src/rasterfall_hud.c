@@ -118,6 +118,8 @@ static void render_weapon_hud(struct toy_surface *surface,
                        game->current_slot == 0);
     render_weapon_card(surface, x, y + 78, 1, &game->slots[1],
                        game->current_slot == 1);
+    render_weapon_card(surface, x, y + 156, 2, &game->slots[2],
+                       game->current_slot == 2);
 }
 
 static void render_money(struct toy_surface *surface, const struct toy_game *game)
@@ -135,12 +137,13 @@ static void render_shop(struct toy_surface *surface,
                         const struct rasterfall_hud_state *state)
 {
     static const int weapons[] = { TOY_GAME_WEAPON_SMG,
-        TOY_GAME_WEAPON_SHOTGUN, TOY_GAME_WEAPON_AK, TOY_GAME_WEAPON_AWP };
+        TOY_GAME_WEAPON_SHOTGUN, TOY_GAME_WEAPON_AK, TOY_GAME_WEAPON_AWP,
+        TOY_GAME_WEAPON_AXE };
     static const int hire_weapons[] = { TOY_GAME_WEAPON_PISTOL,
         TOY_GAME_WEAPON_SMG, TOY_GAME_WEAPON_SHOTGUN, TOY_GAME_WEAPON_AK,
         TOY_GAME_WEAPON_AWP };
     static const char *hire_names[] = { "PISTOL", "SMG", "SG", "AK", "AWP" };
-    static const char *player_names[] = { "SMG", "SG", "AK", "AWP" };
+    static const char *player_names[] = { "SMG", "SG", "AK", "AWP", "AXE" };
     char line[64];
     int i, x = surface->width / 2 - 260, y = surface->height / 2 - 150;
     hud_fill_rect(surface, 0, 0, surface->width, surface->height, 0xD010151D);
@@ -408,25 +411,27 @@ static void render_shop(struct toy_surface *surface,
                        "ESC NAVIGATION", RF_COLOR_UI_TEXT, surface->stride);
         return;
     }
-    for (i = 0; i < 4; i++) {
-        int cy = y + 58 + i * 52;
+    for (i = 0; i < 5; i++) {
+        int col = i % 2, row = i / 2;
+        int cx = x + 16 + col * 246;
+        int cy = y + 58 + row * 64;
         int selected = i == state->shop_selected;
         int unlocked = toy_game_weapon_unlocked(state->game, weapons[i]);
-        hud_fill_rect(surface, x + 16, cy, 488, 42,
+        hud_fill_rect(surface, cx, cy, 238, 52,
                       selected ? 0x3C4E5B : RF_COLOR_UI_PANEL_DARK);
-        fb_draw_string((unsigned char *)surface->pixels, x + 30, cy + 13,
+        fb_draw_string((unsigned char *)surface->pixels, cx + 12, cy + 8,
                        player_names[i], selected ? RF_COLOR_UI_ACCENT_BRIGHT : RF_COLOR_UI_TEXT,
                        surface->stride);
-        fb_draw_string((unsigned char *)surface->pixels, x + 120, cy + 13,
+        fb_draw_string((unsigned char *)surface->pixels, cx + 12, cy + 28,
                        unlocked ? "UNLOCKED" : "LOCKED",
                        unlocked ? RF_COLOR_UI_SUCCESS : RF_COLOR_UI_DANGER,
                        surface->stride);
         if (unlocked)
-            fb_draw_string((unsigned char *)surface->pixels, x + 260, cy + 13,
+            fb_draw_string((unsigned char *)surface->pixels, cx + 125, cy + 28,
                            "ENTER EQUIP", RF_COLOR_UI_ACCENT, surface->stride);
         else {
             snprintf(line, sizeof(line), "$%d", toy_game_weapon_price(weapons[i]));
-            fb_draw_string((unsigned char *)surface->pixels, x + 260, cy + 13,
+            fb_draw_string((unsigned char *)surface->pixels, cx + 125, cy + 28,
                            line, RF_COLOR_UI_ACCENT, surface->stride);
         }
     }
@@ -436,7 +441,7 @@ static void render_shop(struct toy_surface *surface,
     fb_draw_string((unsigned char *)surface->pixels, x + 68, y + 286,
                    line, RF_COLOR_UI_ACCENT_BRIGHT, surface->stride);
     fb_draw_string((unsigned char *)surface->pixels, x + 160, y + 286,
-                   "UP/DOWN SELECT  ENTER BUY/EQUIP  ESC CLOSE", RF_COLOR_UI_TEXT,
+                   "ARROWS MOVE  ENTER BUY/EQUIP  ESC CLOSE", RF_COLOR_UI_TEXT,
                    surface->stride);
 }
 

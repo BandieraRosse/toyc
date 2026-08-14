@@ -71,6 +71,7 @@ struct toy_render_worker {
 
 struct toy_renderer {
     struct toy_surface surface;
+    const struct toy_texture_view *model_texture;
     /* 逆深度缓冲：存屏幕空间线性插值的 1/z（越大越近），0 为清除值。
      * 透视校正，避免仿射插值在掠射角下对近共面判错遮挡。 */
     int *depth;

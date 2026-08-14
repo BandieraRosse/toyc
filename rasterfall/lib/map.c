@@ -147,7 +147,9 @@ int toy_map_load(const char *path, struct toy_map *m)
                 int weapon = toy_game_weapon_from_name(k);
                 m->pickups[m->pickup_count].kind = !strcmp(k,"shop") ?
                     TOY_MAP_PICKUP_SHOP : weapon >= 0 ?
-                    TOY_MAP_PICKUP_WEAPON :
+                    ((weapon == TOY_GAME_WEAPON_BOMB ||
+                      weapon == TOY_GAME_WEAPON_MOLOTOV) ?
+                     TOY_MAP_PICKUP_THROWABLE : TOY_MAP_PICKUP_WEAPON) :
                     (!strcmp(k,"ammo") ? TOY_MAP_PICKUP_AMMO :
                      TOY_MAP_PICKUP_AMMO);
                 m->pickups[m->pickup_count].weapon = weapon;

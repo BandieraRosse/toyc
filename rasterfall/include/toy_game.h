@@ -110,6 +110,7 @@
 #define TOY_GAME_KEY_RELOAD     19      /* evdev KEY_R */
 #define TOY_GAME_KEY_SLOT_1     2       /* evdev KEY_1：主武器槽 */
 #define TOY_GAME_KEY_SLOT_2     3       /* evdev KEY_2：副武器（手枪）槽 */
+#define TOY_GAME_KEY_SLOT_3     4       /* evdev KEY_3：投掷物槽 */
 
 /* 商店价格集中配置，便于后续调平衡。 */
 #define TOY_GAME_PRICE_SMG 50
@@ -161,6 +162,8 @@ enum toy_game_animation_id {
     TOY_GAME_ANIM_DEATH,
     TOY_GAME_ANIM_REVIVE,
     TOY_GAME_ANIM_SHOVE,
+    TOY_GAME_ANIM_MELEE,
+    TOY_GAME_ANIM_THROW,
     TOY_GAME_ANIM_COUNT
 };
 
@@ -255,9 +258,9 @@ struct toy_game_platform { int minx, maxx, minz, maxz, height; };
 #define TOY_GAME_NAV_MAX_SIDE 128
 #define TOY_GAME_NAV_MAX_CELLS (TOY_GAME_NAV_MAX_SIDE * TOY_GAME_NAV_MAX_SIDE)
 
-/* ── 武器槽：0=主武器（SMG/霰弹枪），1=副武器（手枪）────────── */
+/* ── 武器槽：0=主武器，1=副武器/近战，2=投掷物 ─────────────── */
 
-#define TOY_GAME_WEAPON_SLOTS 2
+#define TOY_GAME_WEAPON_SLOTS 3
 
 enum toy_game_weapon {
     TOY_GAME_WEAPON_PISTOL = 0,
@@ -265,6 +268,9 @@ enum toy_game_weapon {
     TOY_GAME_WEAPON_SHOTGUN,
     TOY_GAME_WEAPON_AK,
     TOY_GAME_WEAPON_AWP,
+    TOY_GAME_WEAPON_AXE,
+    TOY_GAME_WEAPON_BOMB,
+    TOY_GAME_WEAPON_MOLOTOV,
     TOY_GAME_WEAPON_COUNT
 };
 
@@ -277,6 +283,9 @@ enum toy_game_weapon_id {
     TOY_GAME_WEAPON_ID_SHOTGUN = 30,
     TOY_GAME_WEAPON_ID_AK = 40,
     TOY_GAME_WEAPON_ID_AWP = 50
+    ,TOY_GAME_WEAPON_ID_AXE = 60
+    ,TOY_GAME_WEAPON_ID_BOMB = 70
+    ,TOY_GAME_WEAPON_ID_MOLOTOV = 80
 };
 
 enum toy_game_weapon_muzzle_profile {
@@ -328,6 +337,13 @@ struct toy_game_slot {
     int weapon;        /* enum toy_game_weapon；-1 = 空槽 */
     int mag;
     int reserve;
+};
+
+#define TOY_GAME_MAX_PROJECTILES 16
+struct toy_game_projectile {
+    int active, kind;
+    int x, z, vx, vz;
+    int airborne_ms, fuse_ms;
 };
 
 /* Runtime state owned by a special-infected ability.  Keeping this state
@@ -433,6 +449,9 @@ struct toy_game {
     struct toy_game_slot slots[TOY_GAME_WEAPON_SLOTS];
     int current_slot;   /* 当前出枪槽位（0/1） */
     int weapon_switch_timer_ms; /* 切枪表现/禁射倒计时 */
+    int melee_timer_ms;
+    int throw_timer_ms;
+    struct toy_game_projectile projectiles[TOY_GAME_MAX_PROJECTILES];
     struct toy_game_animation_state animation;
     int reloading, reload_timer_ms;
     int fire_cooldown_ms;

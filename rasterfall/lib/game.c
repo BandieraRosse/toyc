@@ -95,6 +95,15 @@ static const struct toy_game_weapon_info weapon_table[TOY_GAME_WEAPON_COUNT] = {
       TOY_GAME_WEAPON_ID_AWP, "AWP", "AWP", TOY_GAME_MUZZLE_STANDARD,
       TOY_CONFIG_AWP_RANGE, TOY_CONFIG_AWP_ALERT_RANGE,
       TOY_CONFIG_COMBAT_AWP_POWER_BIAS },
+    { 1, 0, TOY_CONFIG_MELEE_SWING_MS, TOY_CONFIG_MELEE_SWING_MS, 0, 1,
+      0, 1, TOY_CONFIG_MELEE_DAMAGE, TOY_GAME_WEAPON_ID_AXE, "AXE", "AXE",
+      TOY_GAME_MUZZLE_STANDARD, TOY_CONFIG_MELEE_RANGE, 0, 0 },
+    { 1, 0, TOY_CONFIG_THROW_COOLDOWN_MS, TOY_CONFIG_THROW_HANDOFF_MS, 0, 1,
+      0, 2, 0, TOY_GAME_WEAPON_ID_BOMB, "BOMB", "BOMB",
+      TOY_GAME_MUZZLE_STANDARD, 0, 0, 0 },
+    { 1, 0, TOY_CONFIG_THROW_COOLDOWN_MS, TOY_CONFIG_THROW_HANDOFF_MS, 0, 1,
+      0, 2, 0, TOY_GAME_WEAPON_ID_MOLOTOV, "MOLOTOV", "FIRE",
+      TOY_GAME_MUZZLE_STANDARD, 0, 0, 0 },
 };
 
 static const struct toy_game_enemy_info enemy_table[TOY_GAME_ENEMY_TYPE_COUNT] = {
@@ -156,6 +165,7 @@ static void actor_clear_weapons(struct toy_game_actor *a)
     memset(a->slots, 0, sizeof(a->slots));
     a->slots[0].weapon = -1;
     a->slots[1].weapon = -1;
+    a->slots[2].weapon = -1;
     a->current_slot = 0;
 }
 
@@ -222,7 +232,10 @@ int toy_game_weapon_from_name(const char *name)
             (i == TOY_GAME_WEAPON_SMG && !strcmp(name, "smg")) ||
             (i == TOY_GAME_WEAPON_SHOTGUN && !strcmp(name, "shotgun")) ||
             (i == TOY_GAME_WEAPON_AK && !strcmp(name, "ak")) ||
-            (i == TOY_GAME_WEAPON_AWP && !strcmp(name, "awp")))
+            (i == TOY_GAME_WEAPON_AWP && !strcmp(name, "awp")) ||
+            (i == TOY_GAME_WEAPON_AXE && !strcmp(name, "axe")) ||
+            (i == TOY_GAME_WEAPON_BOMB && !strcmp(name, "bomb")) ||
+            (i == TOY_GAME_WEAPON_MOLOTOV && !strcmp(name, "molotov")))
             return i;
     return -1;
 }
@@ -293,12 +306,14 @@ static const struct toy_game_animation_info animation_table[TOY_GAME_ANIM_COUNT]
     { 140, 0 }, /* HIT */
     { 700, 0 }, /* DEATH */
     { 700, 0 }, /* REVIVE */
-    { TOY_CONFIG_SHOVE_ANIMATION_MS, 0 } /* SHOVE */
+    { TOY_CONFIG_SHOVE_ANIMATION_MS, 0 }, /* SHOVE */
+    { TOY_CONFIG_MELEE_SWING_MS, 0 }, /* MELEE */
+    { TOY_CONFIG_THROW_HANDOFF_MS, 0 } /* THROW */
 };
 
 static const char *animation_names[TOY_GAME_ANIM_COUNT] = {
     "NONE", "IDLE", "MOVE", "FIRE", "RELOAD", "DOWNED", "HIT",
-    "DEATH", "REVIVE", "SHOVE"
+    "DEATH", "REVIVE", "SHOVE", "MELEE", "THROW"
 };
 
 const struct toy_game_animation_info *toy_game_animation_info(int animation_id)
@@ -497,6 +512,7 @@ void toy_game_init(struct toy_game *g, uint64_t seed)
     g->state = TOY_GAME_PLAYING;
     /* 槽 0 主武器为空；槽 1 默认为满弹匣手枪，开局出枪。 */
     g->slots[0].weapon = -1;
+    g->slots[2].weapon = -1;
     g->slots[1].weapon = TOY_GAME_WEAPON_PISTOL;
     w = toy_game_weapon_info(TOY_GAME_WEAPON_PISTOL);
     g->slots[1].mag = w->mag_size;
@@ -763,6 +779,7 @@ int toy_game_set_remote_player(struct toy_game *g, int player_id,
         a->state = TOY_GAME_ACTOR_ALIVE;
         a->hp = a->max_hp = TOY_GAME_SECONDARY_PLAYER_HP;
         a->slots[0].weapon = -1;
+        a->slots[2].weapon = -1;
         a->slots[1].weapon = TOY_GAME_WEAPON_PISTOL;
         w = toy_game_weapon_info(TOY_GAME_WEAPON_PISTOL);
         a->slots[1].mag = w->mag_size;
@@ -3332,12 +3349,134 @@ static int fire_ray(struct toy_game *g, int sy, int cy, int damage, int range,
     return 0;
 }
 
+static int toy_game_melee(struct toy_game *g, int sy, int cy)
+{
+    int i, hit = 0;
+    long long range2 = (long long)TOY_CONFIG_MELEE_RANGE *
+                       TOY_CONFIG_MELEE_RANGE;
+    if (!g || g->state != TOY_GAME_PLAYING || g->reloading ||
+        g->weapon_switch_timer_ms > 0 || g->melee_timer_ms > 0)
+        return 0;
+    g->melee_timer_ms = TOY_CONFIG_MELEE_SWING_MS;
+    toy_game_animation_set(&g->animation, TOY_GAME_ANIM_MELEE);
+    push_event(g, TOY_GAME_EV_SHOVE);
+    for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
+        struct toy_game_enemy *e = &g->enemies[i];
+        long long dx, dz, dist2, dist, dot;
+        if (e->active != 1) continue;
+        dx = e->x - g->px; dz = e->z - g->pz;
+        dist2 = dx * dx + dz * dz;
+        if (!dist2 || dist2 > range2) continue;
+        dist = isqrt(dist2);
+        dot = dx * sy + dz * cy;
+        if (dot * TOY_GAME_SHOVE_CONE < dist * 1024) continue;
+        {
+            int inflicted = TOY_CONFIG_MELEE_DAMAGE < e->hp ?
+                TOY_CONFIG_MELEE_DAMAGE : e->hp;
+            e->hp -= TOY_CONFIG_MELEE_DAMAGE;
+            g->damage_dealt += inflicted;
+        }
+        e->hurt = 150;
+        hit = 1;
+        if (e->hp <= 0) {
+            e->hp = 0; e->active = 2; e->dying_ms = TOY_GAME_DYING_MS;
+            g->enemies_alive--; g->kills++;
+            push_event(g, TOY_GAME_EV_KILL);
+        }
+    }
+    toy_game_shove_at(g, g->px, g->pz, sy, cy);
+    if (hit) push_event(g, TOY_GAME_EV_SHOVE_HIT);
+    return hit;
+}
+
+static void toy_game_explode(struct toy_game *g, int x, int z)
+{
+    int i;
+    long long radius2 = (long long)TOY_CONFIG_EXPLOSIVE_RADIUS *
+                        TOY_CONFIG_EXPLOSIVE_RADIUS;
+    for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
+        struct toy_game_enemy *e = &g->enemies[i];
+        long long dx, dz;
+        if (e->active != 1) continue;
+        dx = e->x - x; dz = e->z - z;
+        if (dx * dx + dz * dz > radius2) continue;
+        e->hp -= TOY_CONFIG_MELEE_DAMAGE;
+        e->hurt = 180;
+        g->damage_dealt += TOY_CONFIG_MELEE_DAMAGE;
+        if (e->hp <= 0) {
+            e->hp = 0; e->active = 2; e->dying_ms = TOY_GAME_DYING_MS;
+            g->enemies_alive--; g->kills++;
+            push_event(g, TOY_GAME_EV_KILL);
+        }
+    }
+    push_event(g, TOY_GAME_EV_SHOVE_HIT);
+}
+
+static void toy_game_update_projectiles(struct toy_game *g, int dt_ms)
+{
+    int i;
+    for (i = 0; i < TOY_GAME_MAX_PROJECTILES; i++) {
+        struct toy_game_projectile *p = &g->projectiles[i];
+        if (!p->active) continue;
+        if (p->airborne_ms > 0) {
+            p->x += p->vx * dt_ms / 1000;
+            p->z += p->vz * dt_ms / 1000;
+            p->airborne_ms -= dt_ms;
+            if (p->airborne_ms > 0) continue;
+            p->fuse_ms = p->kind == TOY_GAME_WEAPON_BOMB ?
+                TOY_CONFIG_BOMB_FUSE_MS : 0;
+        }
+        if (p->fuse_ms > 0) {
+            p->fuse_ms -= dt_ms;
+            if (p->fuse_ms > 0) continue;
+        }
+        toy_game_explode(g, p->x, p->z);
+        p->active = 0;
+    }
+}
+
+static int toy_game_throw(struct toy_game *g, int sy, int cy)
+{
+    struct toy_game_slot *s;
+    int i;
+    if (!g || g->current_slot < 0 || g->current_slot >= TOY_GAME_WEAPON_SLOTS)
+        return 0;
+    s = &g->slots[g->current_slot];
+    if ((s->weapon != TOY_GAME_WEAPON_BOMB &&
+         s->weapon != TOY_GAME_WEAPON_MOLOTOV) || s->mag <= 0 ||
+        g->throw_timer_ms > 0 || g->weapon_switch_timer_ms > 0) return 0;
+    for (i = 0; i < TOY_GAME_MAX_PROJECTILES; i++)
+        if (!g->projectiles[i].active) break;
+    if (i == TOY_GAME_MAX_PROJECTILES) return 0;
+    s->mag--;
+    g->throw_timer_ms = TOY_CONFIG_THROW_COOLDOWN_MS;
+    g->projectiles[i].active = 1;
+    g->projectiles[i].kind = s->weapon;
+    g->projectiles[i].x = g->px + sy * 250 / 1024;
+    g->projectiles[i].z = g->pz + cy * 250 / 1024;
+    g->projectiles[i].vx = sy * TOY_CONFIG_THROW_SPEED / 1024;
+    g->projectiles[i].vz = cy * TOY_CONFIG_THROW_SPEED / 1024;
+    g->projectiles[i].airborne_ms = 400;
+    g->projectiles[i].fuse_ms = 0;
+    toy_game_animation_set(&g->animation, TOY_GAME_ANIM_THROW);
+    push_event(g, TOY_GAME_EV_SHOOT);
+    /* A consumed throwable is never left selected. */
+    if (g->slots[0].weapon >= 0) toy_game_switch_weapon(g, 0);
+    else if (g->slots[1].weapon >= 0) toy_game_switch_weapon(g, 1);
+    return 1;
+}
+
 int toy_game_fire(struct toy_game *g, int sy, int cy)
 {
     struct toy_game_slot *s = &g->slots[g->current_slot];
     const struct toy_game_weapon_info *w = toy_game_weapon_info(s->weapon);
     int pellet, hit = 0;
     int spread;
+    if (s->weapon == TOY_GAME_WEAPON_AXE)
+        return toy_game_melee(g, sy, cy);
+    if (s->weapon == TOY_GAME_WEAPON_BOMB ||
+        s->weapon == TOY_GAME_WEAPON_MOLOTOV)
+        return toy_game_throw(g, sy, cy);
     if (g->state != TOY_GAME_PLAYING || g->reloading ||
         (TOY_CONFIG_BLOCK_FIRE_DURING_SWITCH &&
          g->weapon_switch_timer_ms > 0)) return 0;
@@ -3444,6 +3583,7 @@ int toy_game_weapon_price(int weapon)
     case TOY_GAME_WEAPON_SHOTGUN: return TOY_GAME_PRICE_SHOTGUN;
     case TOY_GAME_WEAPON_AK: return TOY_GAME_PRICE_AK;
     case TOY_GAME_WEAPON_AWP: return TOY_GAME_PRICE_AWP;
+    case TOY_GAME_WEAPON_AXE: return 100;
     default: return 0;
     }
 }
@@ -3596,11 +3736,20 @@ void toy_game_update_weapon_held(struct toy_game *g,
         if (g->weapon_switch_timer_ms < 0)
             g->weapon_switch_timer_ms = 0;
     }
+    if (g->melee_timer_ms > 0) {
+        g->melee_timer_ms -= dt_ms;
+        if (g->melee_timer_ms < 0) g->melee_timer_ms = 0;
+    }
+    if (g->throw_timer_ms > 0) {
+        g->throw_timer_ms -= dt_ms;
+        if (g->throw_timer_ms < 0) g->throw_timer_ms = 0;
+    }
 
     /* 切枪键（1/2）：先于换弹与射击处理，切换即打断换弹 */
     if (keys_pressed) {
         if (keys_pressed[TOY_GAME_KEY_SLOT_1]) toy_game_switch_weapon(g, 0);
         if (keys_pressed[TOY_GAME_KEY_SLOT_2]) toy_game_switch_weapon(g, 1);
+        if (keys_pressed[TOY_GAME_KEY_SLOT_3]) toy_game_switch_weapon(g, 2);
     }
     s = &g->slots[g->current_slot];
     w = toy_game_weapon_info(s->weapon);
@@ -4012,9 +4161,16 @@ void toy_game_update_held(struct toy_game *g,
                     g->animation.id != TOY_GAME_ANIM_REVIVE &&
                     (g->animation.id != TOY_GAME_ANIM_SHOVE ||
                      g->animation.time_ms >=
-                     toy_game_animation_info(TOY_GAME_ANIM_SHOVE)->duration_ms))
+                     toy_game_animation_info(TOY_GAME_ANIM_SHOVE)->duration_ms) &&
+                    (g->animation.id != TOY_GAME_ANIM_MELEE ||
+                     g->animation.time_ms >=
+                     toy_game_animation_info(TOY_GAME_ANIM_MELEE)->duration_ms) &&
+                    (g->animation.id != TOY_GAME_ANIM_THROW ||
+                     g->animation.time_ms >=
+                     toy_game_animation_info(TOY_GAME_ANIM_THROW)->duration_ms))
                     toy_game_animation_set(&g->animation, TOY_GAME_ANIM_NONE);
     toy_game_animation_update(&g->animation, dt_ms);
+    toy_game_update_projectiles(g, dt_ms);
     toy_game_update_ai_teammates(g, dt_ms);
     /* 敌人计时器与移动/攻击/倒地 */
     for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {

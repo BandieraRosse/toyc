@@ -1325,7 +1325,9 @@ static int run_logic_test(void)
     /* Combat Power 使用武器真实参数计算，并输出完整拆分，方便调平衡。 */
     {
         int weapon;
-        static const int expected_power[TOY_GAME_WEAPON_COUNT] = { 3, 7, 9, 12, 11 };
+        static const int expected_power[TOY_GAME_WEAPON_COUNT] = {
+            3, 7, 9, 12, 11, 7, 1, 1
+        };
         for (weapon = 0; weapon < TOY_GAME_WEAPON_COUNT; weapon++) {
             int dps = toy_game_weapon_combat_dps(weapon);
             int penalty = toy_game_weapon_spread_penalty(weapon);

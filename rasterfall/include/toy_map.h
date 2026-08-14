@@ -38,8 +38,8 @@ struct toy_map_ai_spawn {
     char name[TOY_MAP_ROLE_SIZE];
 };
 
-/* 可交互拾取物：smg/shotgun（主武器）、ammo（弹药盒）与 button（墙上
- * 召唤按钮），x/z/y 为锚点坐标 */
+/* 可交互拾取物：武器、投掷物、ammo（弹药盒）与 button（墙上召唤按钮），
+ * x/z/y 为锚点坐标 */
 enum toy_map_pickup_kind {
     TOY_MAP_PICKUP_SMG,
     TOY_MAP_PICKUP_SHOTGUN,
@@ -59,6 +59,7 @@ enum toy_map_pickup_kind {
     TOY_MAP_PICKUP_MONEY_BUTTON,
     TOY_MAP_PICKUP_CLEAR_HIRED_BUTTON
     ,TOY_MAP_PICKUP_WAVE_SKIP_BUTTON
+    ,TOY_MAP_PICKUP_THROWABLE
 };
 struct toy_map_pickup { int kind; int weapon; int x, z, y; };
 struct toy_map_draw {

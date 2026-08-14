@@ -17,5 +17,6 @@ void rasterfall_viewmodel_actor_muzzle(int x, int z, int sy, int cy,
 int rasterfall_viewmodel_render(struct toy_renderer *renderer,
                                 const struct toy_game *game,
                                 const struct rasterfall_effects *effects);
+void rasterfall_viewmodel_set_texture(const struct toy_texture_view *texture);
 
 #endif

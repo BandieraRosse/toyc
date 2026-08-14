@@ -84,6 +84,9 @@ pickup ammo 450 900 -500
 pickup shop 1740 -4800 0
 pickup ak -700 -7450 -235
 pickup awp 700 -7450 -235
+pickup axe -1050 -7450 -235
+pickup bomb 1050 -7450 -235
+pickup molotov 1350 -7450 -235
 button -11940 -10000 200
 button_air -11940 -7600 200
 button_alarm -11940 -3000 200
