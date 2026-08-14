@@ -2052,6 +2052,7 @@ startup_again:
         }
         if (ready > 0) {
             int present_result;
+            struct camera render_camera;
             /* Local movement is client-authoritative; host position
              * corrections are intentionally not applied to the camera. */
             if (!logged_first_frame) {
@@ -2062,27 +2063,31 @@ startup_again:
             rasterfall_perf_end_stage(&stats, &stats_total, RASTERFALL_STATS_BEGIN,
                            &t_stage, 0, 0);
             prev_tris = renderer.submitted_triangles;
-            set_network_spectator_camera(&camera, &net);
-            scene_pixels = rasterfall_render_scene(&renderer, &camera);
-            scene_pixels += rasterfall_render_flags(&renderer, &camera);
+            /* Spectating after a network death is render-only.  Never mutate
+             * the authoritative body camera: it is reported to the host on
+             * the next input packet and must remain at the death position. */
+            render_camera = camera;
+            set_network_spectator_camera(&render_camera, &net);
+            scene_pixels = rasterfall_render_scene(&renderer, &render_camera);
+            scene_pixels += rasterfall_render_flags(&renderer, &render_camera);
             rasterfall_perf_end_stage(&stats, &stats_total, RASTERFALL_STATS_SCENE, &t_stage,
                            renderer.submitted_triangles - prev_tris, 0);
             prev_tris = renderer.submitted_triangles;
-            scene_pixels += rasterfall_render_enemies(&renderer, &camera);
-            scene_pixels += rasterfall_render_ai_teammate(&renderer, &camera);
-            scene_pixels += rasterfall_render_network_teammate(&renderer, &camera, &net);
+            scene_pixels += rasterfall_render_enemies(&renderer, &render_camera);
+            scene_pixels += rasterfall_render_ai_teammate(&renderer, &render_camera);
+            scene_pixels += rasterfall_render_network_teammate(&renderer, &render_camera, &net);
             rasterfall_perf_end_stage(&stats, &stats_total, RASTERFALL_STATS_ENEMIES, &t_stage,
                            renderer.submitted_triangles - prev_tris, 0);
             /* World lettering is submitted before the flush, so it follows
              * the sign/flag plane and participates in depth testing. */
-            scene_pixels += rasterfall_render_sign_text(&renderer, &camera);
-            scene_pixels += rasterfall_render_flag_text(&renderer, &camera);
+            scene_pixels += rasterfall_render_sign_text(&renderer, &render_camera);
+            scene_pixels += rasterfall_render_flag_text(&renderer, &render_camera);
             /* 世界几何并行光栅化；弹道/粒子/枪模随后直接写屏覆盖 */
             prev_tris = (unsigned long)renderer.cmd_count;
             stage_pixels = toy_renderer_flush(&renderer);
             scene_pixels += stage_pixels;
 #if TOY_CONFIG_SHOW_MODEL_PATHS
-            rasterfall_render_gallery_selection(&surface, &camera);
+            rasterfall_render_gallery_selection(&surface, &render_camera);
 #endif
             rasterfall_perf_end_stage(&stats, &stats_total, RASTERFALL_STATS_RASTER,
                            &t_stage, prev_tris, (unsigned long)stage_pixels);
@@ -2091,8 +2096,8 @@ startup_again:
             /* 直接写屏与第二次光栅化（拾取物）都归入 overlay 阶段 */
             prev_tris = renderer.submitted_triangles;
             stage_pixels = 0;
-            stage_pixels += rasterfall_render_tracers(&renderer, &camera);
-            stage_pixels += rasterfall_render_particles(&renderer, &camera);
+            stage_pixels += rasterfall_render_tracers(&renderer, &render_camera);
+            stage_pixels += rasterfall_render_particles(&renderer, &render_camera);
             /* 第一人称武器：最后画，叠加在世界之上 */
             if (!game.player_down)
                 stage_pixels += rasterfall_viewmodel_render(&renderer, &game,
@@ -2115,7 +2120,7 @@ startup_again:
             }
             if (game.state == TOY_GAME_PLAYING && !paused &&
                 !session.shop_open) {
-                stage_pixels += rasterfall_render_interactables(&renderer, &camera);
+                stage_pixels += rasterfall_render_interactables(&renderer, &render_camera);
                 /* 拾取物保持画在枪模之上的现状顺序 */
                 stage_pixels += toy_renderer_flush(&renderer);
                 {
@@ -2125,8 +2130,8 @@ startup_again:
                 }
             }
             scene_pixels += stage_pixels;
-            rasterfall_render_ai_teammate_name(&renderer, &camera);
-            rasterfall_render_network_teammate_status(&renderer, &camera, &net);
+            rasterfall_render_ai_teammate_name(&renderer, &render_camera);
+            rasterfall_render_network_teammate_status(&renderer, &render_camera, &net);
             rasterfall_hud_damage_flash(&surface, &game);
             if (game.state == TOY_GAME_PLAYING && !paused &&
                 toy_input_down(&input, KEY_TAB))

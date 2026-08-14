@@ -112,6 +112,7 @@ struct rasterfall_net_player {
     int reloading;
     int reload_timer_ms;
     int weapon_switch_timer_ms;
+    int throw_timer_ms;
     int muzzle_flash_ms;
     int kills;
     int special_kills;
@@ -216,6 +217,7 @@ struct rasterfall_net_client {
     int ai_revive_active;
     int ai_revive_actor_index;
     int reloading, reload_timer_ms, weapon_switch_timer_ms;
+    int throw_timer_ms;
     int fire_cooldown_ms, muzzle_flash_ms, damage_flash_ms;
     int kills;
     int special_kills;

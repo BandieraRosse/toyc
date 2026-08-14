@@ -60,8 +60,10 @@ static int run_logic_test(void)
     {
         struct toy_game actor_test;
         struct toy_game ai_reload_test;
+        struct toy_game throwable_test;
         int i;
         int ai_id;
+        struct toy_game_actor *throwable_ai;
         const struct toy_game_actor *actor =
             toy_game_actor_by_id_const(&game, 1);
         const struct toy_game_enemy_info *common =
@@ -216,6 +218,45 @@ static int run_logic_test(void)
             !actor_test.actors[TOY_GAME_REMOTE_ACTOR_BASE + 1].active ||
             !actor_test.actors[TOY_GAME_REMOTE_ACTOR_BASE + 2].active)
             return 55;
+        toy_game_init(&throwable_test, 4);
+        throwable_test.money = 200;
+        if (toy_game_buy_weapon(&throwable_test, TOY_GAME_WEAPON_BOMB) <= 0 ||
+            throwable_test.slots[2].weapon != TOY_GAME_WEAPON_BOMB ||
+            toy_game_buy_weapon(&throwable_test, TOY_GAME_WEAPON_MOLOTOV) <= 0 ||
+            throwable_test.slots[2].weapon != TOY_GAME_WEAPON_MOLOTOV)
+            return 137;
+        throwable_test.current_slot = 3;
+        throwable_test.slots[3].weapon = TOY_GAME_WEAPON_PILL;
+        throwable_test.slots[3].mag = 2;
+        throwable_test.hp = 50;
+        if (!toy_game_use_pill(&throwable_test) ||
+            throwable_test.hp != TOY_GAME_PLAYER_HP ||
+            throwable_test.slots[3].mag != 1)
+            return 138;
+        throwable_ai = &throwable_test.actors[0];
+        throwable_ai->hp = throwable_ai->max_hp - 40;
+        throwable_test.px = throwable_ai->x;
+        throwable_test.pz = throwable_ai->z - 500;
+        toy_game_shove(&throwable_test, 0, 1024);
+        if (throwable_ai->hp != throwable_ai->max_hp ||
+            throwable_test.slots[3].mag != 0)
+            return 139;
+        if (toy_game_set_remote_player(&throwable_test, 1, 1,
+                                       throwable_test.px + 100,
+                                       throwable_test.pz, "REMOTE") < 0)
+            return 140;
+        throwable_test.hp = TOY_GAME_PLAYER_HP;
+        throwable_test.projectiles[0].active = 1;
+        throwable_test.projectiles[0].kind = TOY_GAME_WEAPON_BOMB;
+        throwable_test.projectiles[0].landed = 1;
+        throwable_test.projectiles[0].fuse_ms = 1;
+        throwable_test.projectiles[0].x = throwable_test.px;
+        throwable_test.projectiles[0].z = throwable_test.pz;
+        toy_game_update(&throwable_test, NULL, 0, 0, 1024, 16);
+        if (throwable_test.hp >= TOY_GAME_PLAYER_HP ||
+            throwable_test.actors[TOY_GAME_REMOTE_ACTOR_BASE].hp >=
+                TOY_GAME_SECONDARY_PLAYER_HP)
+            return 141;
         actor_test.actors[TOY_GAME_REMOTE_ACTOR_BASE].slots[1].mag = 7;
         actor_test.actors[TOY_GAME_REMOTE_ACTOR_BASE + 1].slots[1].mag = 11;
         if (actor_test.actors[TOY_GAME_REMOTE_ACTOR_BASE + 2].slots[1].mag == 7 ||
@@ -1355,7 +1396,7 @@ static int run_logic_test(void)
             toy_game_ai_level_combat_power(-1) != 0) return 138;
     }
     /* Consumable shop items charge per purchase and stop at their inventory
-     * caps; the two throwable types remain mutually exclusive. */
+     * caps; buying the other throwable replaces the current throwable. */
     {
         int i;
         toy_game_init(&game, 141);
@@ -1365,9 +1406,7 @@ static int run_logic_test(void)
         for (i = 0; i < TOY_GAME_THROWABLE_MAX - 1; i++)
             if (toy_game_buy_weapon(&game, TOY_GAME_WEAPON_BOMB) <= 0) return 143;
         if (game.slots[2].mag != TOY_GAME_THROWABLE_MAX ||
-            toy_game_buy_weapon(&game, TOY_GAME_WEAPON_BOMB) != -1 ||
-            toy_game_buy_weapon(&game, TOY_GAME_WEAPON_MOLOTOV) != -1) return 144;
-        game.slots[2].mag = 0;
+            toy_game_buy_weapon(&game, TOY_GAME_WEAPON_BOMB) != -1) return 144;
         if (toy_game_buy_weapon(&game, TOY_GAME_WEAPON_MOLOTOV) <= 0 ||
             game.slots[2].weapon != TOY_GAME_WEAPON_MOLOTOV ||
             game.slots[2].mag != 1) return 148;

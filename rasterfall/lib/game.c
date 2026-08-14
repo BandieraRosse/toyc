@@ -794,6 +794,7 @@ int toy_game_set_remote_player(struct toy_game *g, int player_id,
         a->hp = a->max_hp = TOY_GAME_SECONDARY_PLAYER_HP;
         a->slots[0].weapon = -1;
         a->slots[2].weapon = -1;
+        a->slots[3].weapon = -1;
         a->slots[1].weapon = TOY_GAME_WEAPON_PISTOL;
         w = toy_game_weapon_info(TOY_GAME_WEAPON_PISTOL);
         a->slots[1].mag = w->mag_size;
@@ -3524,8 +3525,8 @@ static void toy_game_explode(struct toy_game *g, int x, int z, int bomb)
             g->enemies_alive--; g->kills++;
         }
     }
-    /* Bombs are player throwables: friendlies are thrown back, but take no
-     * damage.  The local player is stored outside the actor array. */
+    /* Bombs damage players and knock friendly AI away; the local player is
+     * stored outside the actor array. */
     for (i = 0; bomb && i < TOY_GAME_MAX_ACTORS; i++) {
         struct toy_game_actor *a = &g->actors[i];
         long long dx, dz;
@@ -3534,13 +3535,15 @@ static void toy_game_explode(struct toy_game *g, int x, int z, int bomb)
         dx = a->x - x; dz = a->z - z;
         if (dx * dx + dz * dz > radius2) continue;
         toy_game_apply_entity_impact(g, TOY_GAME_ENTITY_ACTOR, i,
-                                     (int)dx, (int)dz, 0);
+                                     (int)dx, (int)dz,
+                                     a->kind == TOY_GAME_ACTOR_PLAYER ?
+                                         damage : 0);
     }
     {
         long long dx = g->px - x, dz = g->pz - z;
         if (bomb && dx * dx + dz * dz <= radius2)
             toy_game_apply_entity_impact(g, TOY_GAME_ENTITY_PLAYER, 0,
-                                         (int)dx, (int)dz, 0);
+                                         (int)dx, (int)dz, damage);
     }
     if (bomb) {
         push_event(g, TOY_GAME_EV_SHOVE_HIT);
@@ -3937,12 +3940,6 @@ int toy_game_buy_weapon(struct toy_game *g, int weapon)
     int price, consumable;
     if (!g || weapon <= TOY_GAME_WEAPON_PISTOL ||
         weapon >= TOY_GAME_WEAPON_COUNT) return -1;
-    if ((weapon == TOY_GAME_WEAPON_BOMB || weapon == TOY_GAME_WEAPON_MOLOTOV) &&
-        toy_game_weapon_unlocked(g, weapon == TOY_GAME_WEAPON_BOMB ?
-                                 TOY_GAME_WEAPON_MOLOTOV : TOY_GAME_WEAPON_BOMB) &&
-        g->slots[2].weapon == (weapon == TOY_GAME_WEAPON_BOMB ?
-                               TOY_GAME_WEAPON_MOLOTOV : TOY_GAME_WEAPON_BOMB) &&
-        g->slots[2].mag > 0) return -1;
     consumable = weapon == TOY_GAME_WEAPON_BOMB ||
                  weapon == TOY_GAME_WEAPON_MOLOTOV ||
                  weapon == TOY_GAME_WEAPON_PILL;

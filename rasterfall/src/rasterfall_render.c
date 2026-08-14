@@ -2237,10 +2237,12 @@ static int render_actor_model_weapon(struct toy_renderer *renderer,
                                      uint32_t body_color)
 {
     const char *path = rasterfall_weapon_model_path(weapon);
-    struct rasterfall_model_asset *model = gallery_model_named(path, NULL);
+    struct rasterfall_model_asset *model;
     struct rasterfall_animation_pose pose;
     int width, height, depth, length, scale, anchor_x, anchor_z;
     int i, pixels = 0;
+    if (!path) return 0;
+    model = gallery_model_named(path, NULL);
     if (!model) return 0;
     rasterfall_animation_sample_duration(
         animation_id, animation_time_ms,
@@ -2606,8 +2608,15 @@ static int render_network_teammate(struct toy_renderer *renderer,
             const struct camera *render_camera;
             int render_airborne;
             if (!player->active || i == net->local_player_id) continue;
-            render_camera = rasterfall_net_remote_render_camera(
-                net, i, &render_airborne);
+            /* Keep a downed body at its authoritative death position;
+             * extrapolation can otherwise move it away from rescue range. */
+            if (player->downed) {
+                render_camera = &player->camera;
+                render_airborne = 0;
+            } else {
+                render_camera = rasterfall_net_remote_render_camera(
+                    net, i, &render_airborne);
+            }
             active_actor_lift = network_actor_lift(render_camera->x,
                                                    render_camera->z,
                                                    render_airborne);
@@ -2650,7 +2659,8 @@ static void render_network_teammate_status(struct toy_renderer *renderer,
             const struct rasterfall_net_player *player = &net->players[i];
             const struct camera *render_camera;
             if (!player->active || i == net->local_player_id) continue;
-            render_camera = rasterfall_net_remote_render_camera(net, i, NULL);
+            render_camera = player->downed ? &player->camera :
+                rasterfall_net_remote_render_camera(net, i, NULL);
             snprintf(name, sizeof(name), "PLAYER %d", i + 1);
             render_actor_status(renderer, camera, render_camera->x,
                 render_camera->z, 700, name, player->hp,

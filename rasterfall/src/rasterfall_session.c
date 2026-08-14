@@ -1073,6 +1073,9 @@ int rasterfall_session_shop_request(struct rasterfall_session *session,
     int result = 0;
     if (!session || session->game_state.state != TOY_GAME_PLAYING) return 0;
     if (action == 1) {
+        if (!toy_game_weapon_is_valid(item) ||
+            item == TOY_GAME_WEAPON_PISTOL)
+            return 0;
         result = toy_game_buy_weapon(&session->game_state, item);
     } else if (action == 2) {
         result = session_hire_ai(session, item);
@@ -1246,6 +1249,7 @@ static void session_step_client_mode(struct rasterfall_session *session,
     int saved_enemy_count = 0;
     int enemy_count, kills, special_kills, damage_dealt;
     int throwable_damage_dealt, event_start, write, i;
+    int saved_throw_timer;
     int old_reloading;
     unsigned int old_fire_seq;
     struct toy_game_animation_state saved_animation =
@@ -1254,6 +1258,7 @@ static void session_step_client_mode(struct rasterfall_session *session,
     int saved_events = session->game_state.event_count;
     int saved_muzzle = session->game_state.muzzle_flash_ms;
     int saved_ray_count = session->game_state.ray_count;
+    saved_throw_timer = session->game_state.throw_timer_ms;
     unsigned int saved_fire_seq = session->game_state.fire_seq;
     memcpy(saved_rays, session->game_state.rays, sizeof(saved_rays));
     if (command->buttons & RASTERFALL_CMD_RESET) {
@@ -1410,6 +1415,7 @@ static void session_step_client_mode(struct rasterfall_session *session,
     session->game_state.special_kills = special_kills;
     session->game_state.damage_dealt = damage_dealt;
     session->game_state.throwable_damage_dealt = throwable_damage_dealt;
+    session->game_state.throw_timer_ms = saved_throw_timer;
     /* 预测射击仍保留开火/换弹音效，但击杀音效只由主机事件复制。 */
     write = event_start;
     for (i = event_start; i < session->game_state.event_count; i++)
