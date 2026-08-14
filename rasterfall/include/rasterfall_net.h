@@ -114,6 +114,7 @@ struct rasterfall_net_player {
     int kills;
     int special_kills;
     int damage_dealt;
+    int throwable_damage_dealt;
     unsigned int fire_seq;
     int ray_count;
     struct toy_game_ray rays[TOY_GAME_MAX_RAYS];
@@ -165,6 +166,7 @@ struct rasterfall_net_actor {
     int kills;
     int special_kills;
     int damage_dealt;
+    int throwable_damage_dealt;
     int hired;
     char name[TOY_GAME_MAX_NAME];
     int muzzle_flash_ms;
@@ -215,6 +217,7 @@ struct rasterfall_net_client {
     int kills;
     int special_kills;
     int damage_dealt;
+    int throwable_damage_dealt;
     int rtt_ms;
     uint32_t stats_last_rx_sequence;
     unsigned long stats_rx_packets;

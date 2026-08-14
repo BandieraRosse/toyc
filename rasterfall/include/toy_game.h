@@ -254,6 +254,7 @@ enum toy_game_event {
     TOY_GAME_EV_SHOOT_AWP,
     TOY_GAME_EV_BOMB_BEEP,
     TOY_GAME_EV_BOMB_EXPLODE,
+    TOY_GAME_EV_MOLOTOV_BREAK,
 };
 
 /* 碰撞/命中共用的 xz 平面轴对齐盒（与房间障碍物同尺度） */
@@ -359,6 +360,14 @@ struct toy_game_projectile {
     int bounces, landed;
 };
 
+struct toy_game_burn_zone {
+    int active;
+    int x, z;
+    int remaining_ms;
+    int tick_ms;
+    int elapsed_ms;
+};
+
 /* Runtime state owned by a special-infected ability.  Keeping this state
  * together means a new ability can grow without adding another cluster of
  * fields to the enemy's movement/health core. */
@@ -437,6 +446,7 @@ struct toy_game_actor {
     int kills;
     int special_kills;
     int damage_dealt;
+    int throwable_damage_dealt;
     unsigned int fire_seq;
     int ray_count;
     struct toy_game_ray rays[TOY_GAME_MAX_RAYS];
@@ -467,6 +477,7 @@ struct toy_game {
     int melee_timer_ms;
     int throw_timer_ms;
     struct toy_game_projectile projectiles[TOY_GAME_MAX_PROJECTILES];
+    struct toy_game_burn_zone burn_zones[TOY_CONFIG_MAX_BURN_ZONES];
     struct toy_game_animation_state animation;
     int reloading, reload_timer_ms;
     int fire_cooldown_ms;
@@ -477,6 +488,7 @@ struct toy_game {
     int kills;
     int special_kills;
     int damage_dealt;
+    int throwable_damage_dealt;
     int money;
     unsigned int unlocked_weapons;
     int actor_id;
@@ -743,6 +755,7 @@ enum toy_sfx_kind {
     TOY_SFX_AWP,
     TOY_SFX_BOMB_BEEP,
     TOY_SFX_BOMB_EXPLODE,
+    TOY_SFX_MOLOTOV_BREAK,
 };
 
 /* 每个 kind 可注册一段 PCM16 样本（TSND 资产）替代程序合成 */
@@ -771,7 +784,7 @@ struct toy_sfx {
     unsigned int music_pos;
     unsigned int melody_phase;
     unsigned int bass_phase;
-    struct toy_sfx_sample samples[TOY_SFX_BOMB_EXPLODE + 1];
+    struct toy_sfx_sample samples[TOY_SFX_MOLOTOV_BREAK + 1];
     struct toy_sfx_voice voices[TOY_SFX_MAX_VOICES];
 };
 

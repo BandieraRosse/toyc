@@ -35,6 +35,11 @@
 #define TOY_CONFIG_THROW_COOLDOWN_MS         450
 #define TOY_CONFIG_EXPLOSIVE_RADIUS          3000  /* Bomb 爆炸半径 */
 #define TOY_CONFIG_MOLOTOV_RADIUS            1100
+#define TOY_CONFIG_MOLOTOV_BURN_RADIUS       2500  /* Molotov 燃烧半径 */
+#define TOY_CONFIG_MOLOTOV_BURN_MS           8000  /* 燃烧持续时间 */
+#define TOY_CONFIG_MOLOTOV_TICK_MS           1000  /* 燃烧伤害间隔 */
+#define TOY_CONFIG_MOLOTOV_DAMAGE              40  /* 每次燃烧伤害 */
+#define TOY_CONFIG_MAX_BURN_ZONES              16
 #define TOY_CONFIG_BOMB_DAMAGE               100   /* Bomb 对敌方单位的伤害 */
 #define TOY_CONFIG_BOMB_FUSE_MS              4000
 #define TOY_CONFIG_THROW_SPEED               15200  /* 投掷速度，影响距离 */

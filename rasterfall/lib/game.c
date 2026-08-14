@@ -3393,6 +3393,63 @@ static int toy_game_melee(struct toy_game *g, int sy, int cy)
     return hit;
 }
 
+static void toy_game_start_burn(struct toy_game *g, int x, int z)
+{
+    int i;
+    struct toy_game_burn_zone *zone = NULL;
+    for (i = 0; i < TOY_CONFIG_MAX_BURN_ZONES; i++) {
+        if (!g->burn_zones[i].active) {
+            zone = &g->burn_zones[i];
+            break;
+        }
+    }
+    if (!zone) zone = &g->burn_zones[0];
+    zone->active = 1;
+    zone->x = x; zone->z = z;
+    zone->remaining_ms = TOY_CONFIG_MOLOTOV_BURN_MS;
+    zone->tick_ms = TOY_CONFIG_MOLOTOV_TICK_MS;
+    zone->elapsed_ms = 0;
+}
+
+static void toy_game_update_burn_zones(struct toy_game *g, int dt_ms)
+{
+    int i, j;
+    long long radius2 = (long long)TOY_CONFIG_MOLOTOV_BURN_RADIUS *
+                        TOY_CONFIG_MOLOTOV_BURN_RADIUS;
+    for (i = 0; i < TOY_CONFIG_MAX_BURN_ZONES; i++) {
+        struct toy_game_burn_zone *zone = &g->burn_zones[i];
+        if (!zone->active) continue;
+        zone->remaining_ms -= dt_ms;
+        zone->tick_ms -= dt_ms;
+        zone->elapsed_ms += dt_ms;
+        while (zone->tick_ms <= 0 && zone->remaining_ms >= 0) {
+            for (j = 0; j < TOY_GAME_MAX_ENEMIES; j++) {
+                struct toy_game_enemy *e = &g->enemies[j];
+                long long dx, dz;
+                int inflicted;
+                if (e->active != 1) continue;
+                dx = e->x - zone->x; dz = e->z - zone->z;
+                if (dx * dx + dz * dz > radius2) continue;
+                inflicted = e->hp < TOY_CONFIG_MOLOTOV_DAMAGE ?
+                            e->hp : TOY_CONFIG_MOLOTOV_DAMAGE;
+                e->hp -= TOY_CONFIG_MOLOTOV_DAMAGE;
+                e->hurt = 180;
+                g->throwable_damage_dealt += inflicted;
+                if (e->hp <= 0) {
+                    e->hp = 0;
+                    e->active = 2;
+                    e->dying_ms = TOY_GAME_DYING_MS;
+                    g->enemies_alive--;
+                    g->kills++;
+                    push_event(g, TOY_GAME_EV_KILL);
+                }
+            }
+            zone->tick_ms += TOY_CONFIG_MOLOTOV_TICK_MS;
+        }
+        if (zone->remaining_ms <= 0) zone->active = 0;
+    }
+}
+
 static void toy_game_explode(struct toy_game *g, int x, int z, int bomb)
 {
     int i;
@@ -3404,26 +3461,17 @@ static void toy_game_explode(struct toy_game *g, int x, int z, int bomb)
         struct toy_game_enemy *e = &g->enemies[i];
         long long dx, dz;
         if (e->active != 1) continue;
+        if (!bomb) continue; /* Molotov damage is applied by its burn ticks. */
         dx = e->x - x; dz = e->z - z;
         if (dx * dx + dz * dz > radius2) continue;
         {
             int inflicted = e->hp < damage ? e->hp : damage;
             if (bomb && toy_game_apply_entity_impact(g, TOY_GAME_ENTITY_ENEMY, i,
                                                      (int)dx, (int)dz, damage)) {
-                g->damage_dealt += inflicted;
-            } else if (!bomb) {
-                e->hp -= damage;
-                e->hurt = 180;
-                g->damage_dealt += inflicted;
-                if (e->hp <= 0) {
-                    e->hp = 0; e->active = 2; e->dying_ms = TOY_GAME_DYING_MS;
-                }
+                g->throwable_damage_dealt += inflicted;
             }
         }
-        if (e->active == 2 && !bomb) {
-            g->enemies_alive--; g->kills++;
-            push_event(g, TOY_GAME_EV_KILL);
-        } else if (e->active == 2) {
+        if (e->active == 2) {
             push_event(g, TOY_GAME_EV_KILL);
             g->enemies_alive--; g->kills++;
         }
@@ -3446,8 +3494,13 @@ static void toy_game_explode(struct toy_game *g, int x, int z, int bomb)
             toy_game_apply_entity_impact(g, TOY_GAME_ENTITY_PLAYER, 0,
                                          (int)dx, (int)dz, 0);
     }
-    push_event(g, TOY_GAME_EV_SHOVE_HIT);
-    if (bomb) push_event(g, TOY_GAME_EV_BOMB_EXPLODE);
+    if (bomb) {
+        push_event(g, TOY_GAME_EV_SHOVE_HIT);
+        push_event(g, TOY_GAME_EV_BOMB_EXPLODE);
+    } else {
+        toy_game_start_burn(g, x, z);
+        push_event(g, TOY_GAME_EV_MOLOTOV_BREAK);
+    }
 }
 
 static int toy_game_projectile_blocked(const struct toy_game *g, int x, int z)
@@ -3957,6 +4010,7 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
     int player_weapon_switch_timer_ms;
     int player_muzzle_flash_ms, player_ray_count;
     int player_kills, player_special_kills, player_damage_dealt;
+    int player_throwable_damage_dealt;
     unsigned int player_fire_seq;
     int target = -1, best_dist = 0, i;
     int sy = 0, cy = 1024;
@@ -4126,6 +4180,7 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
     player_kills = g->kills;
     player_special_kills = g->special_kills;
     player_damage_dealt = g->damage_dealt;
+    player_throwable_damage_dealt = g->throwable_damage_dealt;
     player_ray_count = g->ray_count;
     player_fire_seq = g->fire_seq;
     player_down = g->player_down;
@@ -4145,6 +4200,7 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
     g->kills = actor->kills;
     g->special_kills = actor->special_kills;
     g->damage_dealt = actor->damage_dealt;
+    g->throwable_damage_dealt = actor->throwable_damage_dealt;
     g->player_down = 0;
     g->ai_spread_percent = ai_info->spread_percent;
     toy_game_update_weapon_held(g, NULL,
@@ -4166,6 +4222,7 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
     actor->kills = g->kills;
     actor->special_kills = g->special_kills;
     actor->damage_dealt = g->damage_dealt;
+    actor->throwable_damage_dealt = g->throwable_damage_dealt;
     g->ai_sy = target >= 0 ? sy : g->ai_sy;
     g->ai_cy = target >= 0 ? cy : g->ai_cy;
     if (g->fire_seq != player_fire_seq) {
@@ -4218,6 +4275,7 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
     g->kills = player_kills;
     g->special_kills = player_special_kills;
     g->damage_dealt = player_damage_dealt;
+    g->throwable_damage_dealt = player_throwable_damage_dealt;
     g->ray_count = player_ray_count;
     g->fire_seq = player_fire_seq;
     g->player_down = player_down;
@@ -4312,6 +4370,7 @@ void toy_game_update_held(struct toy_game *g,
                     toy_game_animation_set(&g->animation, TOY_GAME_ANIM_NONE);
     toy_game_animation_update(&g->animation, dt_ms);
     toy_game_update_projectiles(g, dt_ms);
+    toy_game_update_burn_zones(g, dt_ms);
     toy_game_update_ai_teammates(g, dt_ms);
     /* 敌人计时器与移动/攻击/倒地 */
     for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {

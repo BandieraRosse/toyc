@@ -2811,6 +2811,69 @@ static int render_tracers(struct toy_renderer *renderer, const struct camera *ca
     return pixels;
 }
 
+static int render_fire_point(struct toy_renderer *renderer,
+                             const struct camera *camera,
+                             int x, int y, int z, int size, uint32_t color)
+{
+    struct vec3 world, view;
+    struct toy_screen_vertex screen;
+    world.x = x; world.y = y; world.z = z;
+    world_to_view(camera, &world, &view);
+    if (view.z < NEAR_Z) return 0;
+    project_vertex(&renderer->surface, &view, &screen);
+    if (screen.x < -size || screen.x >= renderer->surface.width ||
+        screen.y < -size || screen.y >= renderer->surface.height) return 0;
+    fill_rect(&renderer->surface, screen.x - size / 2, screen.y - size,
+              size, size * 2, color);
+    return 1;
+}
+
+/* Molotov flames are deliberately drawn as a small procedural billboard
+ * field.  This keeps the effect freestanding and gives the whole burn zone
+ * a readable footprint without adding a texture asset. */
+static int render_fire_zones(struct toy_renderer *renderer,
+                             const struct camera *camera)
+{
+    static const int ring[16][2] = {
+        { 2500, 0 }, { 2310, 956 }, { 1768, 1768 }, { 956, 2310 },
+        { 0, 2500 }, { -956, 2310 }, { -1768, 1768 }, { -2310, 956 },
+        { -2500, 0 }, { -2310, -956 }, { -1768, -1768 }, { -956, -2310 },
+        { 0, -2500 }, { 956, -2310 }, { 1768, -1768 }, { 2310, -956 }
+    };
+    int i, j, pixels = 0;
+    for (i = 0; i < TOY_CONFIG_MAX_BURN_ZONES; i++) {
+        const struct toy_game_burn_zone *zone = &game.burn_zones[i];
+        if (!zone->active) continue;
+        for (j = 0; j < 16; j++) {
+            int density;
+            for (density = 0; density < 3; density++) {
+                int pulse = (zone->elapsed_ms / 90 + j * 37 + density * 11) % 5;
+                int x = zone->x + ring[j][0] + (density - 1) * 90;
+                int z = zone->z + ring[j][1] + (density - 1) * 70;
+                int height = 180 + pulse * 55;
+                pixels += render_fire_point(renderer, camera, x, -890, z,
+                                            3 + pulse / 2, 0xD84A08);
+                if ((j + density + zone->elapsed_ms / 120) % 3 == 0)
+                    pixels += render_fire_point(renderer, camera,
+                                                x - ring[j][1] / 20,
+                                                -890 + height,
+                                                z + ring[j][0] / 20,
+                                                3 + pulse / 2, 0xFFB51A);
+            }
+        }
+        for (j = 0; j < 24; j++) {
+            int pulse = (zone->elapsed_ms / 75 + j * 19) % 6;
+            int ox = (j * 733 % 1500) - 750;
+            int oz = (j * 947 % 1500) - 750;
+            pixels += render_fire_point(renderer, camera,
+                                        zone->x + ox, -890 + 100 + pulse * 45,
+                                        zone->z + oz, 4 + pulse / 2,
+                                        j & 1 ? 0xFFB51A : 0xFF6A08);
+        }
+    }
+    return pixels;
+}
+
 static int render_particles(struct toy_renderer *renderer, const struct camera *camera)
 {
     int i, pixels = 0;
@@ -2943,5 +3006,6 @@ int rasterfall_render_tracers(struct toy_renderer *renderer,
 int rasterfall_render_particles(struct toy_renderer *renderer,
                                 const struct camera *camera)
 {
-    return render_particles(renderer, camera);
+    return render_fire_zones(renderer, camera) +
+           render_particles(renderer, camera);
 }

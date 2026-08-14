@@ -470,11 +470,12 @@ struct scoreboard_entry {
     int kills;
     int special_kills;
     int damage_dealt;
+    int throwable_damage_dealt;
 };
 
 static void scoreboard_add(struct scoreboard_entry *entries, int *count,
                            const char *name, int kills, int special_kills,
-                           int damage_dealt)
+                           int damage_dealt, int throwable_damage_dealt)
 {
     struct scoreboard_entry *entry;
     if (*count >= TOY_GAME_MAX_ACTORS) return;
@@ -483,6 +484,7 @@ static void scoreboard_add(struct scoreboard_entry *entries, int *count,
     entry->kills = kills;
     entry->special_kills = special_kills;
     entry->damage_dealt = damage_dealt;
+    entry->throwable_damage_dealt = throwable_damage_dealt;
 }
 
 static void scoreboard_sort(struct scoreboard_entry *entries, int count)
@@ -506,7 +508,7 @@ static void draw_scoreboard_column(struct toy_surface *surface, int x, int y,
     fb_draw_string((unsigned char *)surface->pixels, x, y, title,
                    RF_COLOR_UI_ACCENT, surface->stride);
     fb_draw_string((unsigned char *)surface->pixels, x, y + 22,
-                   "NAME         NORMAL SPECIAL TOTAL DAMAGE",
+                   "NAME         NORMAL SPECIAL TOTAL ITEM DAMAGE",
                    RF_COLOR_UI_TEXT_MUTED, surface->stride);
     for (i = 0; i < count && i < 12; i++) {
         int normal = entries[i].kills - entries[i].special_kills;
@@ -514,9 +516,10 @@ static void draw_scoreboard_column(struct toy_surface *surface, int x, int y,
         uint32_t color = i == 0 ? 0xFFD700 :
                          i == 1 ? 0xC0C0C0 :
                          i == 2 ? 0xB5A642 : RF_COLOR_UI_TEXT;
-        snprintf(line, sizeof(line), "%-11.11s %6d %7d %5d %6d",
+        snprintf(line, sizeof(line), "%-11.11s %6d %7d %5d %4d %6d",
                  entries[i].name, normal, entries[i].special_kills,
-                 entries[i].kills, entries[i].damage_dealt);
+                 entries[i].kills, entries[i].throwable_damage_dealt,
+                 entries[i].damage_dealt);
         fb_draw_string((unsigned char *)surface->pixels, x, y + 44 + i * 18,
                        line, color, surface->stride);
     }
@@ -538,18 +541,21 @@ static void draw_scoreboard(struct toy_surface *surface,
             scoreboard_add(players, &player_count, name,
                            net->players[i].kills,
                            net->players[i].special_kills,
-                           net->players[i].damage_dealt);
+                           net->players[i].damage_dealt,
+                           net->players[i].throwable_damage_dealt);
         }
     } else {
         scoreboard_add(players, &player_count, "PLAYER 1 *",
-                       game.kills, game.special_kills, game.damage_dealt);
+                       game.kills, game.special_kills, game.damage_dealt,
+                       game.throwable_damage_dealt);
         for (i = 0; i < RASTERFALL_NET_CLIENT_MAX; i++) {
             if (!net->clients[i].active || !net->clients[i].connected) continue;
             snprintf(name, sizeof(name), "PLAYER %d", net->clients[i].client_id + 1);
             scoreboard_add(players, &player_count, name,
                            net->clients[i].kills,
                            net->clients[i].special_kills,
-                           net->clients[i].damage_dealt);
+                           net->clients[i].damage_dealt,
+                           net->clients[i].throwable_damage_dealt);
         }
     }
     for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
@@ -557,7 +563,7 @@ static void draw_scoreboard(struct toy_surface *surface,
         if (!actor->active || actor->kind != TOY_GAME_ACTOR_AI) continue;
         scoreboard_add(ais, &ai_count, actor->name[0] ? actor->name : "AI",
                        actor->kills, actor->special_kills,
-                       actor->damage_dealt);
+                       actor->damage_dealt, actor->throwable_damage_dealt);
     }
     scoreboard_sort(players, player_count);
     scoreboard_sort(ais, ai_count);
@@ -1852,6 +1858,7 @@ startup_again:
                             game.kills = 0;
                             game.special_kills = 0;
                             game.damage_dealt = 0;
+                            game.throwable_damage_dealt = 0;
                         }
                     }
                     if (net.mode == RASTERFALL_NET_CLIENT)

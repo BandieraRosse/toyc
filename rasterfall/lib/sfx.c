@@ -61,7 +61,7 @@ struct sfx_spec {
     int freq1;      /* 扫频终点 Hz（0 = 无扫频） */
 };
 
-static const struct sfx_spec sfx_specs[TOY_SFX_BOMB_EXPLODE + 1] = {
+static const struct sfx_spec sfx_specs[TOY_SFX_MOLOTOV_BREAK + 1] = {
     { 130, 22000, 110, 55 },   /* GUNSHOT：噪声 + 平方衰减 + 110→55Hz 低频炮膛声 */
     {  14, 18000, 0,   0   },  /* DRY_FIRE：短噪声 */
     {  40, 18000, 1100, 1100 },/* RELOAD_START：双咔嗒（2ms 噪声 + 1100Hz 方波） */
@@ -80,6 +80,7 @@ static const struct sfx_spec sfx_specs[TOY_SFX_BOMB_EXPLODE + 1] = {
     { 260, 29000, 2400, 650 },  /* AWP：响亮、高亢、穿透力强的狙击声 */
     {  85, 32767, 3000, 2200 }, /* BOMB_BEEP：清脆、响亮的滴声 */
     { 360, 32767, 115, 35   }, /* BOMB_EXPLODE：低频冲击爆炸声 */
+    { 180, 26000, 1800, 420 },  /* MOLOTOV_BREAK：玻璃破裂后带火焰的短促冲击 */
 };
 
 static int voice_noise_sample(struct toy_sfx_voice *v)
@@ -117,7 +118,7 @@ void toy_sfx_play(struct toy_sfx *sfx, int kind)
     int i, victim = -1, remain = 0x7fffffff;
     const struct sfx_spec *spec;
     if (!sfx || !sfx->enabled) return;
-    if (kind < 0 || kind > TOY_SFX_BOMB_EXPLODE) return;
+    if (kind < 0 || kind > TOY_SFX_MOLOTOV_BREAK) return;
     spec = &sfx_specs[kind];
     for (i = 0; i < TOY_SFX_MAX_VOICES; i++) {
         struct toy_sfx_voice *cand = &sfx->voices[i];
@@ -154,7 +155,7 @@ void toy_sfx_play(struct toy_sfx *sfx, int kind)
 void toy_sfx_set_sample(struct toy_sfx *sfx, int kind, const short *pcm,
                         unsigned frames)
 {
-    if (!sfx || kind < 0 || kind > TOY_SFX_BOMB_EXPLODE) return;
+    if (!sfx || kind < 0 || kind > TOY_SFX_MOLOTOV_BREAK) return;
     if (pcm && frames > 0) {
         sfx->samples[kind].data = pcm;
         sfx->samples[kind].frames = frames;

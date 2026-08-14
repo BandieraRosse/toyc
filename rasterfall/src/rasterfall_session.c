@@ -1231,7 +1231,8 @@ static void session_step_client_mode(struct rasterfall_session *session,
         int hp, active, dying_ms, flash, hurt;
     } saved_enemy_hits[TOY_GAME_MAX_ENEMIES];
     int saved_enemy_count = 0;
-    int enemy_count, kills, special_kills, damage_dealt, event_start, write, i;
+    int enemy_count, kills, special_kills, damage_dealt;
+    int throwable_damage_dealt, event_start, write, i;
     int old_reloading;
     unsigned int old_fire_seq;
     struct toy_game_animation_state saved_animation =
@@ -1312,6 +1313,7 @@ static void session_step_client_mode(struct rasterfall_session *session,
     kills = session->game_state.kills;
     special_kills = session->game_state.special_kills;
     damage_dealt = session->game_state.damage_dealt;
+    throwable_damage_dealt = session->game_state.throwable_damage_dealt;
     event_start = session->game_state.event_count;
     old_reloading = session->game_state.reloading;
     old_fire_seq = session->game_state.fire_seq;
@@ -1393,6 +1395,7 @@ static void session_step_client_mode(struct rasterfall_session *session,
     session->game_state.kills = kills;
     session->game_state.special_kills = special_kills;
     session->game_state.damage_dealt = damage_dealt;
+    session->game_state.throwable_damage_dealt = throwable_damage_dealt;
     /* 预测射击仍保留开火/换弹音效，但击杀音效只由主机事件复制。 */
     write = event_start;
     for (i = event_start; i < session->game_state.event_count; i++)
