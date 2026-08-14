@@ -37,7 +37,8 @@ static struct rasterfall_render_context *render_ctx;
 static struct rasterfall_session *active_session;
 static struct rasterfall_effects *active_effects;
 static const struct rasterfall_net *active_net;
-static struct toy_texture_view *active_wall_texture;
+static const struct toy_texture_view *active_wall_texture;
+static const struct toy_texture_view *active_model_texture;
 static unsigned short *active_lightmap;
 static int active_textures;
 static int active_fixed_floor_lighting;
@@ -70,13 +71,25 @@ static void world_to_view(const struct camera *camera, const struct vec3 *world,
 static void project_vertex(const struct toy_surface *surface,
                            const struct vec3 *view,
                            struct toy_screen_vertex *screen);
+struct world_uv_vertex;
+static int draw_world_triangle_tex(struct toy_renderer *renderer,
+                                   const struct camera *camera,
+                                   const struct world_uv_vertex *a,
+                                   const struct world_uv_vertex *b,
+                                   const struct world_uv_vertex *c);
 
 static struct rasterfall_model_asset gallery_models[RASTERFALL_MODEL_MAX_GALLERY];
 static int gallery_loaded;
 
 #define RASTERFALL_MODEL_PATH_BYTES 160
+#define RASTERFALL_GALLERY_COLUMNS 9
+#define RASTERFALL_GALLERY_SLOT_X 1300
+#define RASTERFALL_GALLERY_ROW_Y 700
+#define RASTERFALL_GALLERY_BASE_Y 500
 static char gallery_paths[RASTERFALL_MODEL_MAX_GALLERY]
                           [RASTERFALL_MODEL_PATH_BYTES];
+
+struct world_uv_vertex { struct vec3 p; int u, v; };
 
 static int clampi(int value, int low, int high)
 {
@@ -152,6 +165,25 @@ static struct rasterfall_model_asset *gallery_model_named(const char *name,
     return NULL;
 }
 
+/* Only the three imported GLBs share the extracted diffuse palette.  The
+ * older RFM2 assets keep their original material-color gallery appearance. */
+static int gallery_model_has_texture(const struct rasterfall_model_asset *model)
+{
+    int i;
+    if (!model || !active_model_texture || !active_model_texture->data)
+        return 0;
+    for (i = 0; i < RASTERFALL_MODEL_MAX_GALLERY; i++) {
+        if (model != &gallery_models[i]) continue;
+        return !strcmp(gallery_paths[i],
+                       "rasterfall/assets/models/axe.rmesh") ||
+               !strcmp(gallery_paths[i],
+                       "rasterfall/assets/models/bomb.rmesh") ||
+               !strcmp(gallery_paths[i],
+                       "rasterfall/assets/models/molotov.rmesh");
+    }
+    return 0;
+}
+
 static int pickup_model_scale(const struct rasterfall_model_asset *model)
 {
     int width = model->max_x - model->min_x;
@@ -185,6 +217,18 @@ static void gallery_vertex(const struct rasterfall_model_asset *model,
     out->z = center_z + (int)((long)*(const int *)(p + 8) * scale / 1000);
 }
 
+static void gallery_uv_vertex(const struct rasterfall_model_asset *model,
+                              unsigned int index, int center_x, int base_y,
+                              int center_z, int scale,
+                              struct world_uv_vertex *out)
+{
+    const unsigned char *p = model->vertices +
+                             index * RASTERFALL_MODEL_VERTEX_BYTES;
+    gallery_vertex(model, index, center_x, base_y, center_z, scale, &out->p);
+    out->u = *(const unsigned short *)(p + 18);
+    out->v = *(const unsigned short *)(p + 20);
+}
+
 static int render_gallery_model(struct toy_renderer *renderer,
                                 const struct camera *camera,
                                 const struct rasterfall_model_asset *model,
@@ -192,6 +236,10 @@ static int render_gallery_model(struct toy_renderer *renderer,
                                 int scale)
 {
     int drawn = 0, i;
+    const struct toy_texture_view *previous_texture = active_texture_view;
+    int use_texture = gallery_model_has_texture(model);
+    if (use_texture)
+        active_texture_view = active_model_texture;
     for (i = 0; i < (int)model->primitive_count; i++) {
         const unsigned char *primitive = model->primitives + i * RASTERFALL_MODEL_PRIMITIVE_BYTES;
         const unsigned char *indices = model->indices + model_u32(primitive) * 4;
@@ -206,17 +254,26 @@ static int render_gallery_model(struct toy_renderer *renderer,
             unsigned int ib = model_u32(indices + (j + 1) * 4);
             unsigned int ic = model_u32(indices + (j + 2) * 4);
             struct vec3 a, b, c;
+            struct world_uv_vertex ta, tb, tc;
             if (ia >= model->vertex_count || ib >= model->vertex_count || ic >= model->vertex_count) continue;
             gallery_vertex(model, ia, center_x, base_y, center_z, scale, &a);
             gallery_vertex(model, ib, center_x, base_y, center_z, scale, &b);
             gallery_vertex(model, ic, center_x, base_y, center_z, scale, &c);
-            drawn += draw_world_triangle(renderer, camera, &a, &b, &c, color);
+            if (use_texture) {
+                gallery_uv_vertex(model, ia, center_x, base_y, center_z, scale, &ta);
+                gallery_uv_vertex(model, ib, center_x, base_y, center_z, scale, &tb);
+                gallery_uv_vertex(model, ic, center_x, base_y, center_z, scale, &tc);
+                drawn += draw_world_triangle_tex(renderer, camera, &ta, &tb, &tc);
+            } else {
+                drawn += draw_world_triangle(renderer, camera, &a, &b, &c, color);
+            }
         }
     }
+    active_texture_view = previous_texture;
     return drawn;
 }
 
-/* Static developer display: eleven models per row, in front of the north
+/* Static developer display: nine models per row, in front of the north
  * wall. These assets are visual-only; they never enter map collision or AI. */
 static int render_model_gallery(struct toy_renderer *renderer,
                                 const struct camera *camera)
@@ -226,15 +283,16 @@ static int render_model_gallery(struct toy_renderer *renderer,
     active_gallery_lighting = 1;
     for (i = 0; i < RASTERFALL_MODEL_MAX_GALLERY; i++) {
         struct rasterfall_model_asset *model = &gallery_models[i];
-        int row = i / 11, column = i % 11;
+        int row = i / RASTERFALL_GALLERY_COLUMNS;
+        int column = i % RASTERFALL_GALLERY_COLUMNS;
         int width, height, scale, x, base_y;
         if (!model->data) continue;
         width = model->max_x - model->min_x;
         height = model->max_y - model->min_y;
         if (width <= 0 || height <= 0) continue;
         scale = gallery_model_scale(model);
-        x = -5000 + column * 1000;
-        base_y = row ? -800 : -350;
+        x = -5200 + column * RASTERFALL_GALLERY_SLOT_X;
+        base_y = RASTERFALL_GALLERY_BASE_Y - row * RASTERFALL_GALLERY_ROW_Y;
         pixels += render_gallery_model(renderer, camera, model, x, base_y,
                                        -13200, scale);
     }
@@ -260,11 +318,11 @@ static int gallery_selected_model(const struct toy_surface *surface,
         width = model->max_x - model->min_x;
         height = model->max_y - model->min_y;
         if (width <= 0 || height <= 0) continue;
-        row = i / 11;
-        column = i % 11;
+        row = i / RASTERFALL_GALLERY_COLUMNS;
+        column = i % RASTERFALL_GALLERY_COLUMNS;
         scale = gallery_model_scale(model);
-        center.x = -5000 + column * 1000;
-        center.y = (row ? -800 : -350) + height * scale / 2000;
+        center.x = -5200 + column * RASTERFALL_GALLERY_SLOT_X;
+        center.y = RASTERFALL_GALLERY_BASE_Y - row * RASTERFALL_GALLERY_ROW_Y + height * scale / 2000;
         center.z = -13200;
         world_to_view(camera, &center, &view);
         if (view.z < NEAR_Z) continue;
@@ -421,8 +479,6 @@ static int clip_near(const struct vec3 *input, int count, struct vec3 *output)
     }
     return out_count;
 }
-
-struct world_uv_vertex { struct vec3 p; int u, v; };
 
 static void copy_world_uv(struct world_uv_vertex *out,
                           const struct world_uv_vertex *in)
@@ -2673,6 +2729,7 @@ void rasterfall_render_bind(struct rasterfall_render_context *ctx)
     active_effects = ctx->effects;
     active_net = ctx->net;
     active_wall_texture = ctx->wall_texture;
+    active_model_texture = ctx->model_texture;
     active_lightmap = ctx->lightmap;
     active_textures = ctx->textures_enabled;
     active_fixed_floor_lighting = ctx->fixed_floor_lighting;

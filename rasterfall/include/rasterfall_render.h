@@ -15,6 +15,7 @@ struct rasterfall_render_context {
     struct rasterfall_effects *effects;
     const struct rasterfall_net *net;
     struct toy_texture_view *wall_texture;
+    const struct toy_texture_view *model_texture;
     unsigned short lightmap[RASTERFALL_BAKED_LM_W *
                             RASTERFALL_BAKED_LM_H];
     int textures_enabled;

@@ -114,6 +114,8 @@ typedef struct rasterfall_interactable interactable;
 static struct toy_texture_asset scene_texture;
 static struct toy_texture_view scene_texture_view;
 static struct toy_texture_view wall_texture_view;
+static struct toy_texture_asset model_texture;
+static struct toy_texture_view model_texture_view;
 /* Toyc 自托管版的纹理光栅化仍有运行时崩溃风险；纯色路径作为稳定默认值。
  * 调试纹理渲染时可显式传入 --textures。 */
 static int textures_enabled = 0;
@@ -1309,6 +1311,7 @@ int main(int argc, char **argv)
     render_context.effects = &effects;
     render_context.net = &net;
     render_context.wall_texture = &wall_texture_view;
+    render_context.model_texture = &model_texture_view;
     render_context.textures_enabled = textures_enabled;
     rf_windows_log("startup: map loaded, binding renderer");
     rasterfall_render_bind(&render_context);
@@ -1318,6 +1321,17 @@ int main(int argc, char **argv)
     __printf("rasterfall: baked lightmap %dx%d\n", BAKED_LM_W, BAKED_LM_H);
     memset(&scene_texture, 0, sizeof(scene_texture));
     memset(&scene_texture_view, 0, sizeof(scene_texture_view));
+    memset(&model_texture, 0, sizeof(model_texture));
+    memset(&model_texture_view, 0, sizeof(model_texture_view));
+    if (toy_texture_load("rasterfall/assets/textures/model_diffuse.ttex",
+                         &model_texture) == 0) {
+        model_texture_view.data = model_texture.data;
+        model_texture_view.width = model_texture.width;
+        model_texture_view.height = model_texture.height;
+        model_texture_view.data_size = model_texture.data_size;
+        __printf("rasterfall: model texture loaded (%u x %u)\n",
+                 model_texture.width, model_texture.height);
+    }
     if (textures_enabled && toy_texture_load("rasterfall/assets/textures/wall.ttex",
                                               &scene_texture) == 0) {
         scene_texture_view.data = scene_texture.data;
@@ -1338,6 +1352,7 @@ int main(int argc, char **argv)
     if (logic_test) {
         int result = run_logic_test();
         if (scene_texture.blob) toy_texture_unload(&scene_texture);
+        if (model_texture.blob) toy_texture_unload(&model_texture);
         rasterfall_session_unload(&session);
         return result;
     }
@@ -1360,6 +1375,7 @@ int main(int argc, char **argv)
     if (!window) {
         __fprintf(2, "rasterfall: cannot create Wayland window\n");
         if (scene_texture.blob) toy_texture_unload(&scene_texture);
+        if (model_texture.blob) toy_texture_unload(&model_texture);
         rasterfall_net_close(&net);
         rasterfall_session_unload(&session);
         toy_renderer_destroy(&renderer);
@@ -1381,6 +1397,7 @@ startup_again:
                                                 &discovery)) {
             toy_window_close(window);
             if (scene_texture.blob) toy_texture_unload(&scene_texture);
+            if (model_texture.blob) toy_texture_unload(&model_texture);
             rasterfall_session_unload(&session);
             toy_renderer_destroy(&renderer);
             return 0;
@@ -1435,6 +1452,7 @@ startup_again:
             __fprintf(2, "rasterfall: cannot host UDP port %d\n", net_port);
             toy_window_close(window);
             if (scene_texture.blob) toy_texture_unload(&scene_texture);
+            if (model_texture.blob) toy_texture_unload(&model_texture);
             rasterfall_session_unload(&session);
             toy_renderer_destroy(&renderer);
             return 1;
@@ -2135,6 +2153,7 @@ startup_again:
     rasterfall_audio_unload_assets(&audio);
     rasterfall_net_discovery_close(&discovery);
     if (scene_texture.blob) toy_texture_unload(&scene_texture);
+    if (model_texture.blob) toy_texture_unload(&model_texture);
     if (dump_path) rasterfall_hud_dump_frame(dump_path, &surface);
     rasterfall_net_close(&net);
     rasterfall_session_unload(&session);
