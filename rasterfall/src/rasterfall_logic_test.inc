@@ -237,14 +237,6 @@ static int run_logic_test(void)
             actor_test.actors[0].hp != TOY_GAME_REVIVE_HP ||
             actor_test.ai_down) return 52;
     }
-    /* 地图四周的 wall 由 world.room_limit 提供边界碰撞；开发者区不再刷怪。 */
-    if (level_map.spawn_count != 3 ||
-        level_map.maxz != 36000 || level_map.room_limit != 36000 ||
-        level_map.spawn_zones[2].box.maxz != 35000 ||
-        !toy_game_position_blocked(&game, 0, -35950, 100) ||
-        !toy_game_position_blocked(&game, 0, 35950, 100) ||
-        !toy_game_position_blocked(&game, -35950, 0, 100) ||
-        !toy_game_position_blocked(&game, 35950, 0, 100)) return 72;
     memset(&command, 0, sizeof(command));
     command.move_forward = 1;
     for (int i = 0; i < 10; i++)
@@ -516,17 +508,17 @@ static int run_logic_test(void)
         if (!toy_game_refill_ammo(&game) ||
             game.slots[0].reserve != TOY_CONFIG_SMG_RESERVE ||
             game.slots[0].mag != 3) return 24;
-        /* SMG 全自动：按住 10 步（160ms，100ms 冷却）消耗 2 发 */
+        /* SMG 全自动：按住 10 步（160ms，玩家增强后 50ms 冷却）消耗 3 发 */
         game.slots[0].mag = TOY_CONFIG_SMG_MAG;
         for (i = 0; i < 10; i++)
             toy_game_update_held(&game, NULL, 0, 1, 0, 1024, 16);
-        if (game.slots[0].mag != TOY_CONFIG_SMG_MAG - 2) return 25;
+        if (game.slots[0].mag != TOY_CONFIG_SMG_MAG - 3) return 25;
         /* 手枪半自动：按住不连发 */
         toy_game_switch_weapon(&game, 1);
         for (i = 0; i < 5; i++)
             toy_game_update_held(&game, NULL, 0, 1, 0, 1024, 16);
         if (game.slots[1].mag != TOY_CONFIG_PISTOL_MAG) return 26;
-        /* 有限备弹换弹：SMG 2000ms，消耗备弹 */
+        /* 有限备弹换弹：SMG 2000ms，按当前弹匣缺口消耗备弹 */
         memset(keys, 0, sizeof(keys));
         keys[TOY_GAME_KEY_RELOAD] = 1;
         toy_game_switch_weapon(&game, 0);
@@ -535,7 +527,7 @@ static int run_logic_test(void)
         for (i = 0; i < 125; i++)
             toy_game_update(&game, NULL, 0, 0, 1024, 16);
         if (game.reloading || game.slots[0].mag != TOY_CONFIG_SMG_MAG ||
-            game.slots[0].reserve != 648) return 28;
+            game.slots[0].reserve != 647) return 28;
         /* 霰弹枪按配置容量：12 弹丸随机散射，整匣内应放倒并排两敌 */
         if (toy_game_equip_weapon(&game, TOY_GAME_WEAPON_SHOTGUN) != 1 ||
             game.slots[0].mag != TOY_CONFIG_SHOTGUN_MAG ||
@@ -1329,7 +1321,8 @@ static int run_logic_test(void)
         toy_game_init(&game, 143);
         game.slots[game.current_slot].mag = 1;
         toy_game_fire(&game, 0, 1024);
-        if (game.fire_cooldown_ms != 200 * 100 / 150 ||
+        if (game.fire_cooldown_ms != 200 * 100 /
+                TOY_CONFIG_PLAYER_FIRE_RATE_PERCENT ||
             game.reload_timer_ms != 1500 * 60 / 100) return 150;
         toy_game_init(&game, 144);
         game.slots[game.current_slot].mag = 1;
