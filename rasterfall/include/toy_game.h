@@ -555,6 +555,7 @@ struct toy_game {
     int platform_count;
 
     int nav_origin;
+    int nav_cell_size;
     int nav_width;
     int nav_height;
     unsigned char nav_walkable[TOY_GAME_NAV_MAX_CELLS];

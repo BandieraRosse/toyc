@@ -1026,7 +1026,7 @@ static int nav_position_blocked(const struct toy_game *g, int x, int z)
     /* A cell stands for the whole square, not just its center.  Expanding by
      * half a cell prevents a thin wall that falls between two sample points
      * from becoming an artificial bridge in the component map. */
-    int radius = TOY_GAME_CHARGER_RADIUS + TOY_GAME_NAV_CELL_SIZE / 2;
+    int radius = TOY_GAME_CHARGER_RADIUS + g->nav_cell_size / 2;
     if (toy_game_position_blocked(g, x, z, radius)) return 1;
     for (i = 0; i < g->safe_room_count; i++) {
         const struct toy_game_box *b = &g->safe_rooms[i];
@@ -1038,8 +1038,8 @@ static int nav_position_blocked(const struct toy_game *g, int x, int z)
 
 static int nav_cell_index(const struct toy_game *g, int x, int z)
 {
-    int cx = (x - g->nav_origin) / TOY_GAME_NAV_CELL_SIZE;
-    int cz = (z - g->nav_origin) / TOY_GAME_NAV_CELL_SIZE;
+    int cx = (x - g->nav_origin) / g->nav_cell_size;
+    int cz = (z - g->nav_origin) / g->nav_cell_size;
     if (cx < 0 || cz < 0 || cx >= g->nav_width || cz >= g->nav_height)
         return -1;
     return cz * g->nav_width + cx;
@@ -1065,15 +1065,13 @@ static int nav_component_at_position(const struct toy_game *g, int x, int z)
                 cz >= g->nav_height) continue;
             index = cz * g->nav_width + cx;
             if (!g->nav_walkable[index] || !g->nav_component[index]) continue;
-            dist = (long long)(g->nav_origin +
-                               cx * TOY_GAME_NAV_CELL_SIZE +
-                               TOY_GAME_NAV_CELL_SIZE / 2 - x);
+            dist = (long long)(g->nav_origin + cx * g->nav_cell_size +
+                               g->nav_cell_size / 2 - x);
             dist *= dist;
-            dist += (long long)(g->nav_origin +
-                                cz * TOY_GAME_NAV_CELL_SIZE +
-                                TOY_GAME_NAV_CELL_SIZE / 2 - z) *
-                    (g->nav_origin + cz * TOY_GAME_NAV_CELL_SIZE +
-                     TOY_GAME_NAV_CELL_SIZE / 2 - z);
+            dist += (long long)(g->nav_origin + cz * g->nav_cell_size +
+                                g->nav_cell_size / 2 - z) *
+                    (g->nav_origin + cz * g->nav_cell_size +
+                     g->nav_cell_size / 2 - z);
             if (!best || dist < best_dist) {
                 best = index;
                 best_dist = dist;
@@ -1101,24 +1099,29 @@ static int nav_step_allowed(const struct toy_game *g, int cx, int cz,
 
 void toy_game_rebuild_navigation(struct toy_game *g)
 {
-    int i, x, z, index, component = 0;
+    int i, x, z, index, component = 0, span;
     int queue[TOY_GAME_NAV_MAX_CELLS];
     int head, tail, cx, cz, nx, nz, dx, dz;
     if (!g || g->room_limit <= 0) return;
     g->nav_origin = -g->room_limit;
-    g->nav_width = (g->room_limit * 2 + TOY_GAME_NAV_CELL_SIZE - 1) /
-                   TOY_GAME_NAV_CELL_SIZE;
+    span = g->room_limit * 2;
+    g->nav_cell_size = TOY_GAME_NAV_CELL_SIZE;
+    g->nav_width = (span + g->nav_cell_size - 1) / g->nav_cell_size;
     g->nav_height = g->nav_width;
     if (g->nav_width > TOY_GAME_NAV_MAX_SIDE) {
+        g->nav_cell_size = (span + TOY_GAME_NAV_MAX_SIDE - 1) /
+                           TOY_GAME_NAV_MAX_SIDE;
+        g->nav_width = (span + g->nav_cell_size - 1) /
+                       g->nav_cell_size;
         g->nav_width = TOY_GAME_NAV_MAX_SIDE;
         g->nav_height = TOY_GAME_NAV_MAX_SIDE;
     }
     for (z = 0; z < g->nav_height; z++) {
         for (x = 0; x < g->nav_width; x++) {
-            int px = g->nav_origin + x * TOY_GAME_NAV_CELL_SIZE +
-                     TOY_GAME_NAV_CELL_SIZE / 2;
-            int pz = g->nav_origin + z * TOY_GAME_NAV_CELL_SIZE +
-                     TOY_GAME_NAV_CELL_SIZE / 2;
+            int px = g->nav_origin + x * g->nav_cell_size +
+                     g->nav_cell_size / 2;
+            int pz = g->nav_origin + z * g->nav_cell_size +
+                     g->nav_cell_size / 2;
             index = z * g->nav_width + x;
             g->nav_walkable[index] = !nav_position_blocked(g, px, pz);
             g->nav_component[index] = 0;

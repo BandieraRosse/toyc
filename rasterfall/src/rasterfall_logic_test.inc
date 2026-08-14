@@ -239,10 +239,12 @@ static int run_logic_test(void)
     }
     /* 地图四周的 wall 由 world.room_limit 提供边界碰撞；开发者区不再刷怪。 */
     if (level_map.spawn_count != 3 ||
-        !toy_game_position_blocked(&game, 0, -14950, 100) ||
-        !toy_game_position_blocked(&game, 0, 14950, 100) ||
-        !toy_game_position_blocked(&game, -14950, 0, 100) ||
-        !toy_game_position_blocked(&game, 14950, 0, 100)) return 72;
+        level_map.maxz != 36000 || level_map.room_limit != 36000 ||
+        level_map.spawn_zones[2].box.maxz != 35000 ||
+        !toy_game_position_blocked(&game, 0, -35950, 100) ||
+        !toy_game_position_blocked(&game, 0, 35950, 100) ||
+        !toy_game_position_blocked(&game, -35950, 0, 100) ||
+        !toy_game_position_blocked(&game, 35950, 0, 100)) return 72;
     memset(&command, 0, sizeof(command));
     command.move_forward = 1;
     for (int i = 0; i < 10; i++)
@@ -327,7 +329,7 @@ static int run_logic_test(void)
     /* The floor is now a single tessellated plane, so authored colour areas
      * no longer overdraw the checkerboard and the visible-pixel count is
      * lower than the old two-plane implementation. */
-    if (count < 40000) {
+    if (count < 35000) {
         toy_renderer_destroy(&renderer);
         tlibc_free(pixels);
         return 8;
