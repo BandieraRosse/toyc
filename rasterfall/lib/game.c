@@ -3686,6 +3686,22 @@ static int toy_game_throw(struct toy_game *g, int sy, int cy)
     return 1;
 }
 
+static int toy_game_fire_cooldown_ms(const struct toy_game *g,
+                                     const struct toy_game_weapon_info *w)
+{
+    if (!g->weapon_update_is_ai)
+        return w->cooldown_ms * 100 / TOY_CONFIG_PLAYER_FIRE_RATE_PERCENT;
+    return w->cooldown_ms;
+}
+
+static int toy_game_reload_ms(const struct toy_game *g,
+                              const struct toy_game_weapon_info *w)
+{
+    if (!g->weapon_update_is_ai)
+        return w->reload_ms * TOY_CONFIG_PLAYER_RELOAD_TIME_PERCENT / 100;
+    return w->reload_ms;
+}
+
 int toy_game_fire(struct toy_game *g, int sy, int cy)
 {
     struct toy_game_slot *s = &g->slots[g->current_slot];
@@ -3702,7 +3718,7 @@ int toy_game_fire(struct toy_game *g, int sy, int cy)
     if (g->state != TOY_GAME_PLAYING || g->reloading ||
         (TOY_CONFIG_BLOCK_FIRE_DURING_SWITCH &&
          g->weapon_switch_timer_ms > 0)) return 0;
-    g->fire_cooldown_ms = w->cooldown_ms;
+    g->fire_cooldown_ms = toy_game_fire_cooldown_ms(g, w);
     g->muzzle_flash_ms = TOY_GAME_MUZZLE_FLASH_MS;
     if (s->mag <= 0) {
         push_event(g, TOY_GAME_EV_DRY_FIRE);
@@ -3725,7 +3741,7 @@ int toy_game_fire(struct toy_game *g, int sy, int cy)
     emit_enemy_noise(g, g->px, g->pz, TOY_GAME_GUNSHOT_RANGE);
     if (s->mag == 0) {
         g->reloading = 1;
-        g->reload_timer_ms = w->reload_ms;
+        g->reload_timer_ms = toy_game_reload_ms(g, w);
         push_event(g, TOY_GAME_EV_RELOAD_START);
     }
     /* 每颗弹丸在 [-spread, +spread] 内随机偏转（1024 定点）：霰弹枪
@@ -3796,7 +3812,7 @@ static int toy_game_start_empty_reload(
         (s->reserve != TOY_GAME_AMMO_INFINITE && s->reserve <= 0))
         return 0;
     g->reloading = 1;
-    g->reload_timer_ms = w->reload_ms;
+    g->reload_timer_ms = toy_game_reload_ms(g, w);
     push_event(g, TOY_GAME_EV_RELOAD_START);
     return 1;
 }
@@ -4066,7 +4082,7 @@ void toy_game_update_weapon_held(struct toy_game *g,
                s->mag < w->mag_size &&
                (s->reserve > 0 || s->reserve == TOY_GAME_AMMO_INFINITE)) {
         g->reloading = 1;
-        g->reload_timer_ms = w->reload_ms;
+        g->reload_timer_ms = toy_game_reload_ms(g, w);
         push_event(g, TOY_GAME_EV_RELOAD_START);
     }
 
@@ -4279,6 +4295,7 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
     g->fire_cooldown_ms = g->ai_fire_cooldown_ms;
     g->weapon_spread_heat = actor->weapon_spread_heat;
     g->moving = !ai_idle;
+    g->weapon_update_is_ai = 1;
     g->muzzle_flash_ms = g->ai_muzzle_flash_ms;
     g->kills = actor->kills;
     g->special_kills = actor->special_kills;
@@ -4289,6 +4306,7 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
     toy_game_update_weapon_held(g, NULL,
                                 ai_can_fire, ai_can_fire,
                                 sy, cy, dt_ms);
+    g->weapon_update_is_ai = 0;
     if (g->fire_seq != player_fire_seq && ai_info->fire_interval_percent != 100)
         g->fire_cooldown_ms = g->fire_cooldown_ms *
                               ai_info->fire_interval_percent / 100;

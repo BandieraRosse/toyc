@@ -522,6 +522,7 @@ struct toy_game {
     int ai_reloading, ai_reload_timer_ms;
     int ai_fire_cooldown_ms;
     int ai_muzzle_flash_ms;
+    int weapon_update_is_ai; /* 临时复用玩家武器逻辑时标记 AI 操作者 */
     unsigned int ai_fire_seq;
     int ai_ray_count;
     struct toy_game_ray ai_rays[TOY_GAME_MAX_RAYS];

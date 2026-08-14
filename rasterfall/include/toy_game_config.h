@@ -24,6 +24,9 @@
 #define TOY_CONFIG_SPREAD_SHOT_STEP             9  /* 每次开火增加的散布 */
 #define TOY_CONFIG_SPREAD_HEAT_MAX            120  /* 连射散布上限 */
 #define TOY_CONFIG_SPREAD_RECOVER_PER_SEC      70  /* 每秒恢复的散布 */
+/* 玩家专属武器增强；武器定义仍保留标准参数，AI 与平衡计算不变。 */
+#define TOY_CONFIG_PLAYER_FIRE_RATE_PERCENT   150  /* 玩家射速倍率 */
+#define TOY_CONFIG_PLAYER_RELOAD_TIME_PERCENT  60  /* 玩家换弹时间倍率 */
 #define TOY_CONFIG_SHOVE_ANIMATION_MS        300  /* 推搡动画时长 */
 #define TOY_CONFIG_SHOVE_SWEEP_DEGREES       240  /* 推搡手臂旋转角度 */
 #define TOY_CONFIG_SHOVE_RANGE               900  /* 推搡有效范围 */
@@ -83,7 +86,7 @@
 /* Shotgun weapon tuning. */
 #define TOY_CONFIG_SHOTGUN_MAG                  8  /* 弹匣容量 */
 #define TOY_CONFIG_SHOTGUN_RESERVE             64  /* 备弹上限 */
-#define TOY_CONFIG_SHOTGUN_COOLDOWN_MS        800  /* 射击间隔 */
+#define TOY_CONFIG_SHOTGUN_COOLDOWN_MS        600  /* 射击间隔 */
 #define TOY_CONFIG_SHOTGUN_RELOAD_MS         2500  /* 换弹时间 */
 #define TOY_CONFIG_SHOTGUN_FULL_AUTO            0  /* 是否全自动 */
 #define TOY_CONFIG_SHOTGUN_PELLETS             10  /* 每次弹丸数 */

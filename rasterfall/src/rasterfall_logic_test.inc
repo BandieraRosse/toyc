@@ -1324,6 +1324,20 @@ static int run_logic_test(void)
     if (rasterfall_net_pipeline_test() != 0) return 140;
     if (rasterfall_net_client_slot_test() != 0) return 140;
     if (rasterfall_net_discovery_test() != 0) return 141;
+    /* 玩家武器增强只影响玩家操作者，AI 仍使用武器标准计时。 */
+    {
+        toy_game_init(&game, 143);
+        game.slots[game.current_slot].mag = 1;
+        toy_game_fire(&game, 0, 1024);
+        if (game.fire_cooldown_ms != 200 * 100 / 150 ||
+            game.reload_timer_ms != 1500 * 60 / 100) return 150;
+        toy_game_init(&game, 144);
+        game.slots[game.current_slot].mag = 1;
+        game.weapon_update_is_ai = 1;
+        toy_game_fire(&game, 0, 1024);
+        if (game.fire_cooldown_ms != 200 || game.reload_timer_ms != 1500)
+            return 151;
+    }
     /* Combat Power 使用武器真实参数计算，并输出完整拆分，方便调平衡。 */
     {
         int weapon;
