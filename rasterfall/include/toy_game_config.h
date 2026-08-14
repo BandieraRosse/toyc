@@ -33,7 +33,9 @@
 #define TOY_CONFIG_MELEE_DAMAGE              100
 #define TOY_CONFIG_THROW_HANDOFF_MS          300   /* 投掷出手/第一人称动作 */
 #define TOY_CONFIG_THROW_COOLDOWN_MS         450
-#define TOY_CONFIG_EXPLOSIVE_RADIUS          1100
+#define TOY_CONFIG_EXPLOSIVE_RADIUS          3000  /* Bomb 爆炸半径 */
+#define TOY_CONFIG_MOLOTOV_RADIUS            1100
+#define TOY_CONFIG_BOMB_DAMAGE               100   /* Bomb 对敌方单位的伤害 */
 #define TOY_CONFIG_BOMB_FUSE_MS              4000
 #define TOY_CONFIG_THROW_SPEED               15200  /* 投掷速度，影响距离 */
 #define TOY_CONFIG_THROW_GRAVITY             6000  /* 投掷物重力 */

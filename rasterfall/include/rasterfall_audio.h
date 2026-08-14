@@ -18,7 +18,7 @@ struct rasterfall_audio {
     volatile int quit;
     int running;
     /* Include shove and melee effects as well as the original clips. */
-    struct toy_sound_asset assets[TOY_SFX_AWP + 1];
+    struct toy_sound_asset assets[TOY_SFX_BOMB_EXPLODE + 1];
 };
 
 void rasterfall_audio_load_assets(struct rasterfall_audio *audio);

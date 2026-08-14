@@ -3390,27 +3390,61 @@ static int toy_game_melee(struct toy_game *g, int sy, int cy)
     return hit;
 }
 
-static void toy_game_explode(struct toy_game *g, int x, int z)
+static void toy_game_explode(struct toy_game *g, int x, int z, int bomb)
 {
     int i;
-    long long radius2 = (long long)TOY_CONFIG_EXPLOSIVE_RADIUS *
-                        TOY_CONFIG_EXPLOSIVE_RADIUS;
+    int damage = bomb ? TOY_CONFIG_BOMB_DAMAGE : TOY_CONFIG_MELEE_DAMAGE;
+    int radius = bomb ? TOY_CONFIG_EXPLOSIVE_RADIUS :
+                       TOY_CONFIG_MOLOTOV_RADIUS;
+    long long radius2 = (long long)radius * radius;
     for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
         struct toy_game_enemy *e = &g->enemies[i];
         long long dx, dz;
         if (e->active != 1) continue;
         dx = e->x - x; dz = e->z - z;
         if (dx * dx + dz * dz > radius2) continue;
-        e->hp -= TOY_CONFIG_MELEE_DAMAGE;
-        e->hurt = 180;
-        g->damage_dealt += TOY_CONFIG_MELEE_DAMAGE;
-        if (e->hp <= 0) {
-            e->hp = 0; e->active = 2; e->dying_ms = TOY_GAME_DYING_MS;
+        {
+            int inflicted = e->hp < damage ? e->hp : damage;
+            if (bomb && toy_game_apply_entity_impact(g, TOY_GAME_ENTITY_ENEMY, i,
+                                                     (int)dx, (int)dz, damage)) {
+                g->damage_dealt += inflicted;
+            } else if (!bomb) {
+                e->hp -= damage;
+                e->hurt = 180;
+                g->damage_dealt += inflicted;
+                if (e->hp <= 0) {
+                    e->hp = 0; e->active = 2; e->dying_ms = TOY_GAME_DYING_MS;
+                }
+            }
+        }
+        if (e->active == 2 && !bomb) {
             g->enemies_alive--; g->kills++;
             push_event(g, TOY_GAME_EV_KILL);
+        } else if (e->active == 2) {
+            push_event(g, TOY_GAME_EV_KILL);
+            g->enemies_alive--; g->kills++;
         }
     }
+    /* Bombs are player throwables: friendlies are thrown back, but take no
+     * damage.  The local player is stored outside the actor array. */
+    for (i = 0; bomb && i < TOY_GAME_MAX_ACTORS; i++) {
+        struct toy_game_actor *a = &g->actors[i];
+        long long dx, dz;
+        if (!a->active || a->state != TOY_GAME_ACTOR_ALIVE || a->base_core)
+            continue;
+        dx = a->x - x; dz = a->z - z;
+        if (dx * dx + dz * dz > radius2) continue;
+        toy_game_apply_entity_impact(g, TOY_GAME_ENTITY_ACTOR, i,
+                                     (int)dx, (int)dz, 0);
+    }
+    {
+        long long dx = g->px - x, dz = g->pz - z;
+        if (bomb && dx * dx + dz * dz <= radius2)
+            toy_game_apply_entity_impact(g, TOY_GAME_ENTITY_PLAYER, 0,
+                                         (int)dx, (int)dz, 0);
+    }
     push_event(g, TOY_GAME_EV_SHOVE_HIT);
+    if (bomb) push_event(g, TOY_GAME_EV_BOMB_EXPLODE);
 }
 
 static int toy_game_projectile_blocked(const struct toy_game *g, int x, int z)
@@ -3479,12 +3513,27 @@ static void toy_game_update_projectiles(struct toy_game *g, int dt_ms)
             p->landed = 1;
             p->fuse_ms = p->kind == TOY_GAME_WEAPON_BOMB ?
                 TOY_CONFIG_BOMB_FUSE_MS : 0;
+            p->blink_timer_ms = 500;
+            p->flash_ms = 0;
         }
         if (p->fuse_ms > 0) {
+            if (p->kind == TOY_GAME_WEAPON_BOMB) {
+                p->blink_timer_ms -= dt_ms;
+                while (p->blink_timer_ms <= 0 && p->fuse_ms > 0) {
+                    p->flash_ms = 100;
+                    push_event(g, TOY_GAME_EV_BOMB_BEEP);
+                    p->blink_timer_ms += p->fuse_ms - dt_ms <= 1000 ? 100 : 500;
+                }
+                if (p->flash_ms > 0) {
+                    p->flash_ms -= dt_ms;
+                    if (p->flash_ms < 0) p->flash_ms = 0;
+                }
+            }
             p->fuse_ms -= dt_ms;
             if (p->fuse_ms > 0) continue;
         }
-        toy_game_explode(g, p->x, p->z);
+        toy_game_explode(g, p->x, p->z,
+                         p->kind == TOY_GAME_WEAPON_BOMB);
         p->active = 0;
     }
 }
@@ -3518,6 +3567,8 @@ static int toy_game_throw(struct toy_game *g, int sy, int cy)
     g->projectiles[i].vy = (int)((long long)g->pitch_sy *
                                  TOY_CONFIG_THROW_SPEED / 1024);
     g->projectiles[i].fuse_ms = 0;
+    g->projectiles[i].blink_timer_ms = 0;
+    g->projectiles[i].flash_ms = 0;
     g->projectiles[i].age_ms = 0;
     g->projectiles[i].y = g->view_y + 900 +
                           g->pitch_sy * 250 / 1024;

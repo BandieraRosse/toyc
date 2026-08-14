@@ -252,6 +252,8 @@ enum toy_game_event {
     TOY_GAME_EV_SHOOT_SHOTGUN,
     TOY_GAME_EV_SHOOT_AK,
     TOY_GAME_EV_SHOOT_AWP,
+    TOY_GAME_EV_BOMB_BEEP,
+    TOY_GAME_EV_BOMB_EXPLODE,
 };
 
 /* 碰撞/命中共用的 xz 平面轴对齐盒（与房间障碍物同尺度） */
@@ -350,6 +352,8 @@ struct toy_game_projectile {
     int active, kind;
     int x, z, vx, vz, vy;
     int fuse_ms;
+    int blink_timer_ms;             /* 距离下一次红灯/滴声 */
+    int flash_ms;                   /* 当前红灯脉冲 */
     int age_ms;                    /* 已飞行时间，仅用于模型自转 */
     int y;                         /* 相对地面的高度 */
     int bounces, landed;
@@ -736,6 +740,8 @@ enum toy_sfx_kind {
     TOY_SFX_SHOTGUN,
     TOY_SFX_AK,
     TOY_SFX_AWP,
+    TOY_SFX_BOMB_BEEP,
+    TOY_SFX_BOMB_EXPLODE,
 };
 
 /* 每个 kind 可注册一段 PCM16 样本（TSND 资产）替代程序合成 */
@@ -764,7 +770,7 @@ struct toy_sfx {
     unsigned int music_pos;
     unsigned int melody_phase;
     unsigned int bass_phase;
-    struct toy_sfx_sample samples[TOY_SFX_AWP + 1];
+    struct toy_sfx_sample samples[TOY_SFX_BOMB_EXPLODE + 1];
     struct toy_sfx_voice voices[TOY_SFX_MAX_VOICES];
 };
 

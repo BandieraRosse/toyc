@@ -176,6 +176,13 @@ static uint32_t shade_color(uint32_t color, int light, int fog)
     if (light < 0) light = 0;
     if (light > 384) light = 384;
     r = r * light / 256; g = g * light / 256; b = b * light / 256;
+    /* Overbright materials (for example Bomb's emissive warning light) may
+     * legitimately use a light factor above 256.  Clamp each channel before
+     * packing it; otherwise values above 255 spill into adjacent channels
+     * and turn bright red into a darker magenta. */
+    if (r > 255) r = 255;
+    if (g > 255) g = 255;
+    if (b > 255) b = 255;
     if (fog < 0) fog = 0;
     if (fog > 256) fog = 256;
     r = (r * (256 - fog) + fr * fog) / 256;

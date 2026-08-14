@@ -61,7 +61,7 @@ struct sfx_spec {
     int freq1;      /* 扫频终点 Hz（0 = 无扫频） */
 };
 
-static const struct sfx_spec sfx_specs[TOY_SFX_AWP + 1] = {
+static const struct sfx_spec sfx_specs[TOY_SFX_BOMB_EXPLODE + 1] = {
     { 130, 22000, 110, 55 },   /* GUNSHOT：噪声 + 平方衰减 + 110→55Hz 低频炮膛声 */
     {  14, 18000, 0,   0   },  /* DRY_FIRE：短噪声 */
     {  40, 18000, 1100, 1100 },/* RELOAD_START：双咔嗒（2ms 噪声 + 1100Hz 方波） */
@@ -78,6 +78,8 @@ static const struct sfx_spec sfx_specs[TOY_SFX_AWP + 1] = {
     { 190, 24000, 75,  28  },  /* SHOTGUN：宽厚的低频爆发 */
     { 125, 22500, 210, 65  },  /* AK：中低频、带明显冲击的步枪声 */
     { 260, 29000, 2400, 650 },  /* AWP：响亮、高亢、穿透力强的狙击声 */
+    {  85, 32767, 3000, 2200 }, /* BOMB_BEEP：清脆、响亮的滴声 */
+    { 360, 32767, 115, 35   }, /* BOMB_EXPLODE：低频冲击爆炸声 */
 };
 
 static int voice_noise_sample(struct toy_sfx_voice *v)
@@ -115,7 +117,7 @@ void toy_sfx_play(struct toy_sfx *sfx, int kind)
     int i, victim = -1, remain = 0x7fffffff;
     const struct sfx_spec *spec;
     if (!sfx || !sfx->enabled) return;
-    if (kind < 0 || kind > TOY_SFX_AWP) return;
+    if (kind < 0 || kind > TOY_SFX_BOMB_EXPLODE) return;
     spec = &sfx_specs[kind];
     for (i = 0; i < TOY_SFX_MAX_VOICES; i++) {
         struct toy_sfx_voice *cand = &sfx->voices[i];
@@ -152,7 +154,7 @@ void toy_sfx_play(struct toy_sfx *sfx, int kind)
 void toy_sfx_set_sample(struct toy_sfx *sfx, int kind, const short *pcm,
                         unsigned frames)
 {
-    if (!sfx || kind < 0 || kind > TOY_SFX_AWP) return;
+    if (!sfx || kind < 0 || kind > TOY_SFX_BOMB_EXPLODE) return;
     if (pcm && frames > 0) {
         sfx->samples[kind].data = pcm;
         sfx->samples[kind].frames = frames;
@@ -299,6 +301,25 @@ static int render_voice(struct toy_sfx_voice *v)
         /* A harder, lower axe impact than the hand-shove hit. */
         sample = voice_noise_sample(v) * env / 32768;
         sample += voice_sine_step(v) * env * 5 / 4 / 32768;
+        break;
+    case TOY_SFX_BOMB_BEEP:
+        /* Clear electronic tick: a strong square-like tone with a short
+         * noisy edge, so it remains audible over music and gameplay. */
+        sample = (v->phase & 0x8000) ? env : -env;
+        v->phase += v->step0;
+        if (v->pos < v->len / 12)
+            sample += voice_noise_sample(v) * env / 3 / 32768;
+        break;
+    case TOY_SFX_BOMB_EXPLODE:
+        /* Layered low impact: broadband blast plus a descending sub-bass
+         * body and a second harmonic for a heavy, physical explosion. */
+        sample = voice_noise_sample(v) * env * 3 / 2 / 32768;
+        sample += voice_sine_step(v) * env * 3 / 2 / 32768;
+        {
+            unsigned phase2 = (unsigned)v->phase / 2;
+            int index2 = (int)((phase2 >> 6) & (SIN_TABLE_SIZE - 1));
+            sample += sine_table[index2] * env * 3 / 4 / 32768;
+        }
         break;
     default:
         break;

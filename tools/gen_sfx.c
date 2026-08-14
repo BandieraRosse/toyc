@@ -37,9 +37,11 @@
 #define MAX_FRAMES   44100   /* 上限 1 秒：最长的 PLAYER_DEATH 为 750ms = 33075 帧，含尾块 */
 
 /* 与 enum toy_sfx_kind 一一对应，生成 rasterfall/assets/audio/sfx_<name>.tsnd */
-static const char *sfx_names[TOY_SFX_PLAYER_DEATH + 1] = {
+static const char *sfx_names[TOY_SFX_BOMB_EXPLODE + 1] = {
     "gunshot", "dry_fire", "reload_start", "reload_done",
-    "hit_marker", "kill", "bite", "death",
+    "hit_marker", "kill", "bite", "death", "shove", "shove_hit",
+    "melee", "melee_hit", "smg", "shotgun", "ak", "awp", "bomb_beep",
+    "bomb_explode",
 };
 
 static void p16(FILE *f, unsigned v)
@@ -130,6 +132,6 @@ int main(int argc, char **argv)
         total_bytes += frames * 2;
     }
     printf("gen_sfx: wrote %d sounds to %s, %lu bytes total\n",
-           TOY_SFX_PLAYER_DEATH + 1, outdir, total_bytes);
+           TOY_SFX_BOMB_EXPLODE + 1, outdir, total_bytes);
     return 0;
 }

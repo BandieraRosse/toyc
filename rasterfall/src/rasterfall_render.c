@@ -47,6 +47,7 @@ static int active_actor_lift;
 static int active_actor_roll_sin;
 static int active_actor_roll_cos = 1024;
 static int active_gallery_lighting;
+static int active_emissive_projectile;
 
 #define level_map active_session->level
 #define game active_session->game_state
@@ -582,9 +583,11 @@ static int draw_world_triangle(struct toy_renderer *renderer,
         }
         int center_x = (a->x + b->x + c->x) / 3;
         int center_z = (a->z + b->z + c->z) / 3;
-        int light = active_gallery_lighting ? 280 :
+        int light = active_emissive_projectile ? 384 :
+                    active_gallery_lighting ? 280 :
                     fixed_floor_lighting ? 256 : baked_light_at(center_x, center_z);
-        int fog = active_gallery_lighting ? 0 : fixed_floor_lighting ? 0 :
+        int fog = active_emissive_projectile ? 0 :
+                  active_gallery_lighting ? 0 : fixed_floor_lighting ? 0 :
                   baked_fog_at(world_distance(camera, center_x, center_z));
         /* 区域涂色（fixed_floor_lighting）与地砖仅差 6 个世界单位，掠射角下
          * 插值深度误差会盖过真实差值导致 z-fight；涂色按覆盖层绘制，
@@ -1459,6 +1462,8 @@ static int render_projectiles(struct toy_renderer *renderer,
         struct rasterfall_model_asset *model;
         int width, height, depth, length, scale, j;
         if (!p->active) continue;
+        active_emissive_projectile =
+            p->flash_ms && p->kind == TOY_GAME_WEAPON_BOMB;
         path = p->kind == TOY_GAME_WEAPON_BOMB ?
                "rasterfall/assets/models/bomb.rmesh" :
                "rasterfall/assets/models/molotov.rmesh";
@@ -1505,7 +1510,7 @@ static int render_projectiles(struct toy_renderer *renderer,
                     v[n].z = p->z + rotated_z;
                 }
                 if (n == 3) {
-                    if (gallery_model_has_texture(model) &&
+                    if (gallery_model_has_texture(model) && !p->flash_ms &&
                         active_model_texture && active_model_texture->data) {
                         struct world_uv_vertex uv[3];
                         int m;
@@ -1520,6 +1525,8 @@ static int render_projectiles(struct toy_renderer *renderer,
                                                           &uv[0], &uv[1],
                                                           &uv[2]);
                     } else {
+                        if (p->flash_ms && p->kind == TOY_GAME_WEAPON_BOMB)
+                            color = 0xFF0000;
                         pixels += draw_world_triangle(renderer, camera,
                                                       &v[0], &v[1], &v[2],
                                                       color);
@@ -1528,6 +1535,7 @@ static int render_projectiles(struct toy_renderer *renderer,
             }
         }
     }
+    active_emissive_projectile = 0;
     active_texture_view = previous_texture;
     return pixels;
 }
