@@ -429,10 +429,6 @@ static void build_game_command(struct rasterfall_command *command,
     if (toy_input_pressed(input, KEY_2)) command->buttons |= RASTERFALL_CMD_SLOT_2;
     if (toy_input_pressed(input, KEY_E)) command->buttons |= RASTERFALL_CMD_INTERACT;
     if (toy_input_pressed(input, KEY_F)) command->buttons |= RASTERFALL_CMD_FLAG;
-    if (toy_input_pressed(input, KEY_COMMA))
-        command->buttons |= RASTERFALL_CMD_TURN_LEFT;
-    if (toy_input_pressed(input, KEY_DOT))
-        command->buttons |= RASTERFALL_CMD_TURN_RIGHT;
 }
 
 static void consume_game_command_edges(struct toy_input *input)
@@ -442,8 +438,6 @@ static void consume_game_command_edges(struct toy_input *input)
     input->key_pressed[KEY_2] = 0;
     input->key_pressed[KEY_E] = 0;
     input->key_pressed[KEY_F] = 0;
-    input->key_pressed[KEY_COMMA] = 0;
-    input->key_pressed[KEY_DOT] = 0;
     input->key_pressed[KEY_SLASH] = 0;
     input->key_pressed[KEY_LEFTSHIFT] = 0;
 }
@@ -1248,7 +1242,7 @@ int main(int argc, char **argv)
     int shove_edge = 0;
     int pointer_turn_pending = 0, pointer_pitch_pending = 0;
     int64_t menu_nav_ready_us = 0;
-    /* 按键按压边沿跨帧保留位：逻辑步（E/R/,/. 及切枪换弹）可能因
+    /* 按键按压边沿跨帧保留位：逻辑步（E/R 及切枪换弹）可能因
      * accumulator 不足而整帧不跑（长 stall 后连续几帧都不跑），边沿若
      * 只在 key_pressed 里会被下一轮 begin_frame 清掉。这里逐键记录
      * 到达的按压，每帧合入 key_pressed 供消费方读取；逻辑步跑过的那
@@ -1480,7 +1474,7 @@ startup_again:
                  net_loss_percent);
     __printf("rasterfall: pause menu uses arrows + Enter; mouse/arrows look, "
              "WASD moves, click/Space fire (hold for SMG), R reload, "
-             "1/2 weapons, E interact, ,/. turn 90, Esc pauses/resumes\n");
+             "1/2 weapons, E interact, Esc pauses/resumes\n");
     if (input_debug)
         __printf("rasterfall: input debug HUD enabled; test chords and focus changes\n");
     memset(&audio, 0, sizeof(audio));
@@ -1565,7 +1559,7 @@ startup_again:
         }
         /* 本帧到达的按压边沿并入保留位，再把保留位全部合入 key_pressed
          * 供顶部消费方（菜单/射击）读取。保留位在逻辑步跑过的那帧末尾
-         * 才清除，因此不跑逻辑步的帧不会吞掉 E/R/,/. 等按键。 */
+         * 才清除，因此不跑逻辑步的帧不会吞掉 E/R 等按键。 */
         for (int k = 0; k < TOY_INPUT_KEY_COUNT; k++) {
             if (input.key_pressed[k]) pending_key_edges[k] = 1;
             if (pending_key_edges[k]) input.key_pressed[k] = 1;

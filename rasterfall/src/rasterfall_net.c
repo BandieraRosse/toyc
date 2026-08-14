@@ -909,8 +909,15 @@ int rasterfall_net_send_command(struct rasterfall_net *net,
     net->last_command_sent_ms = net_monotonic_ms();
     result = net_send(net, packet, size);
     net->input_packets_sent++;
-    if (result == 0)
+    if (result == 0) {
         net_record_prediction(net, sequence, predicted);
+        /* The current packet plus its redundancy copies are the reliable
+         * delivery window for an edge action.  Keeping the request alive for
+         * two seconds used to put the same shop command in every subsequent
+         * input packet and delayed the ordinary navigation inputs behind it. */
+        if (wire.shop_request_id == net->pending_shop_request_id)
+            net->pending_shop_request_id = 0;
+    }
     return result;
 }
 
@@ -2774,6 +2781,9 @@ void rasterfall_net_apply_clients(struct rasterfall_net *net,
              * state, stripping every edge action, then continue in order. */
             client->command.turn = 0;
             client->command.pitch = 0;
+            client->command.move_forward = 0;
+            client->command.move_strafe = 0;
+            client->command.fire_held = 0;
             client->command.buttons = 0;
             client->command.shop_action = 0;
             client->command.shop_request_id = 0;
@@ -2789,6 +2799,13 @@ void rasterfall_net_apply_clients(struct rasterfall_net *net,
         }
         if (net->tick - client->last_input_tick <= NET_INPUT_HOLD_TICKS)
             net_apply_client(net, session, client);
+        else {
+            /* A disconnected/stalled client must not keep walking using the
+             * last command while still receiving authoritative damage. */
+            client->command.move_forward = 0;
+            client->command.move_strafe = 0;
+            client->command.fire_held = 0;
+        }
         if (client->command_ready)
             client->last_processed_input_sequence = next_sequence;
     }

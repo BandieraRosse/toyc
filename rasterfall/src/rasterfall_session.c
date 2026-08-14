@@ -1122,10 +1122,6 @@ void rasterfall_session_step(struct rasterfall_session *session,
         session_move_player(session, camera, command);
     if (command->turn || command->pitch)
         rasterfall_camera_rotate(camera, command->turn, command->pitch);
-    if (command->buttons & RASTERFALL_CMD_TURN_LEFT)
-        session->smooth_turn_remaining -= QUARTER_TURN;
-    if (command->buttons & RASTERFALL_CMD_TURN_RIGHT)
-        session->smooth_turn_remaining += QUARTER_TURN;
     session_update_smooth_turn(session, camera);
     session->game_state.px = camera->x;
     session->game_state.pz = camera->z;
@@ -1230,11 +1226,6 @@ static void session_step_client_mode(struct rasterfall_session *session,
     session_move_player(session, camera, command);
     if (command->turn || command->pitch)
         rasterfall_camera_rotate(camera, command->turn, command->pitch);
-    if (command->buttons & RASTERFALL_CMD_TURN_LEFT)
-        session->smooth_turn_remaining -= QUARTER_TURN;
-    if (command->buttons & RASTERFALL_CMD_TURN_RIGHT)
-        session->smooth_turn_remaining += QUARTER_TURN;
-    session_update_smooth_turn(session, camera);
     session->game_state.px = camera->x;
     session->game_state.pz = camera->z;
     toy_game_set_player_moving(&session->game_state,
@@ -1347,6 +1338,16 @@ static void session_step_client_mode(struct rasterfall_session *session,
         enemy->dying_ms = saved_enemy_hits[i].dying_ms;
         enemy->flash = saved_enemy_hits[i].flash;
         enemy->hurt = saved_enemy_hits[i].hurt;
+    }
+    /* Clients do not run the authoritative enemy simulation.  Still advance
+     * the short death presentation locally so a lost final entity snapshot
+     * cannot leave a flattened corpse rendered forever. */
+    for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
+        struct toy_game_enemy *enemy = &session->game_state.enemies[i];
+        if (enemy->active == 2) {
+            enemy->dying_ms -= dt_ms;
+            if (enemy->dying_ms <= 0) enemy->active = 0;
+        }
     }
     session->game_state.enemies_alive = enemy_count;
     session->game_state.kills = kills;
