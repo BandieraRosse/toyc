@@ -20,17 +20,20 @@ static void net_windows_log(const char *message) { (void)message; }
                         RASTERFALL_NET_INPUT_REDUNDANCY * NET_INPUT_ENTRY_SIZE)
 #define NET_PLAYER_BASE_SIZE 85
 #define NET_PLAYER_RAY_SIZE 15
-#define NET_PLAYER_SIZE (NET_PLAYER_BASE_SIZE + 4 + 1 + TOY_GAME_MAX_RAYS * NET_PLAYER_RAY_SIZE)
+/* Ray traces are event data, not player state.  They are sent only when a
+ * player fires; keeping them out of the periodic player snapshot saves 180
+ * bytes per player even when nobody is shooting. */
+#define NET_PLAYER_SIZE (NET_PLAYER_BASE_SIZE + 4)
 #define NET_ACTOR_SIZE (42 + TOY_GAME_MAX_NAME)
 #define NET_ENEMY_SIZE 48
 #define NET_WORLD_BASE_SIZE 44
 #define NET_WORLD_FLAG_SIZE 12
-#define NET_WORLD_ENTITY_BASE (NET_WORLD_BASE_SIZE + 4 + 4 + \
+#define NET_WORLD_FIXED_SIZE (NET_WORLD_BASE_SIZE + 4 + 4 + \
                         RASTERFALL_MAX_FLAGS * NET_WORLD_FLAG_SIZE + \
                         TOY_GAME_MAX_ACTORS * 2)
-#define NET_WORLD_PROJECTILE_SIZE 32
-#define NET_WORLD_BURN_ZONE_SIZE 20
-#define NET_WORLD_SIZE (NET_WORLD_ENTITY_BASE + \
+#define NET_WORLD_PROJECTILE_SIZE 28
+#define NET_WORLD_BURN_ZONE_SIZE 16
+#define NET_WORLD_SIZE (NET_WORLD_FIXED_SIZE + 2 + \
                         TOY_GAME_MAX_PROJECTILES * NET_WORLD_PROJECTILE_SIZE + \
                         TOY_CONFIG_MAX_BURN_ZONES * NET_WORLD_BURN_ZONE_SIZE)
 #define NET_SNAPSHOT_BASE 8
@@ -42,6 +45,7 @@ static void net_windows_log(const char *message) { (void)message; }
 #define NET_SNAPSHOT_FRAGMENT_DATA 1000
 #define NET_RELIABLE_EVENT_BASE 5
 #define NET_RELIABLE_EVENT_SIZE 13
+#define NET_PLAYER_FIRE_BASE 6
 
 static int packet_begin(unsigned char *packet, int type, int payload_size,
                         uint32_t sequence, uint32_t ack);
@@ -1033,17 +1037,8 @@ static void encode_player(unsigned char *p, int id, int active,
     put_u32(p + NET_PLAYER_BASE_SIZE, fire_seq);
     if (ray_count < 0) ray_count = 0;
     if (ray_count > TOY_GAME_MAX_RAYS) ray_count = TOY_GAME_MAX_RAYS;
-    p[NET_PLAYER_BASE_SIZE + 4] = (unsigned char)ray_count;
-    memset(p + NET_PLAYER_BASE_SIZE + 5, 0,
-           TOY_GAME_MAX_RAYS * NET_PLAYER_RAY_SIZE);
-    for (int i = 0; i < ray_count; i++) {
-        unsigned char *q = p + NET_PLAYER_BASE_SIZE + 5 + i * NET_PLAYER_RAY_SIZE;
-        put_i16(q, rays[i].sy); put_i16(q + 2, rays[i].cy);
-        put_i16(q + 4, rays[i].vy); put_u32(q + 6, (uint32_t)rays[i].ex);
-        put_u32(q + 10, (uint32_t)rays[i].ez);
-        q[14] = (unsigned char)((rays[i].hit_enemy ? 1 : 0) |
-                                (rays[i].hit_world ? 2 : 0));
-    }
+    /* Ray traces are carried by NET_PLAYER_FIRE. */
+    (void)ray_count; (void)rays;
 }
 
 static int decode_player(const unsigned char *p,
@@ -1089,17 +1084,7 @@ static int decode_player(const unsigned char *p,
     player->damage_dealt = (int)get_u32(p + 61);
     player->throwable_damage_dealt = (int)get_u32(p + 73);
     player->fire_seq = get_u32(p + NET_PLAYER_BASE_SIZE);
-    player->ray_count = p[NET_PLAYER_BASE_SIZE + 4];
-    if (player->ray_count > TOY_GAME_MAX_RAYS) return -1;
-    for (int i = 0; i < player->ray_count; i++) {
-        const unsigned char *q = p + NET_PLAYER_BASE_SIZE + 5 + i * NET_PLAYER_RAY_SIZE;
-        player->rays[i].sy = get_i16(q); player->rays[i].cy = get_i16(q + 2);
-        player->rays[i].vy = get_i16(q + 4);
-        player->rays[i].ex = (int)get_u32(q + 6);
-        player->rays[i].ez = (int)get_u32(q + 10);
-        player->rays[i].hit_enemy = q[14] & 1;
-        player->rays[i].hit_world = (q[14] & 2) != 0;
-    }
+    player->ray_count = 0;
     return player->id >= 0 && player->id < RASTERFALL_NET_PLAYER_MAX ? 0 : -1;
 }
 
@@ -1280,6 +1265,43 @@ static int send_ai_fire_packets(struct rasterfall_net *net,
     return 0;
 }
 
+static int send_player_fire_packets(struct rasterfall_net *net)
+{
+    unsigned char packet[RASTERFALL_NET_MAX_PACKET];
+    int client_i;
+    for (client_i = 0; client_i < RASTERFALL_NET_CLIENT_MAX; client_i++) {
+        const struct rasterfall_net_client *client = &net->clients[client_i];
+        unsigned char *p;
+        int ray_count, i, size;
+        if (!client->active || !client->connected || !client->fire_seq ||
+            client->fire_seq == net->player_fire_sent_seq[client_i]) continue;
+        ray_count = client->ray_count;
+        if (ray_count < 0) ray_count = 0;
+        if (ray_count > TOY_GAME_MAX_RAYS) ray_count = TOY_GAME_MAX_RAYS;
+        size = packet_begin(packet, RASTERFALL_NET_PLAYER_FIRE,
+                            NET_PLAYER_FIRE_BASE + ray_count * NET_PLAYER_RAY_SIZE,
+                            ++net->send_sequence, net->receive_sequence);
+        if (size < 0) return -1;
+        p = packet + NET_HEADER_SIZE;
+        p[0] = (unsigned char)client->client_id;
+        p[1] = (unsigned char)ray_count;
+        put_u32(p + 2, client->fire_seq);
+        for (i = 0; i < ray_count; i++) {
+            unsigned char *q = p + NET_PLAYER_FIRE_BASE +
+                               i * NET_PLAYER_RAY_SIZE;
+            put_i16(q, client->rays[i].sy); put_i16(q + 2, client->rays[i].cy);
+            put_i16(q + 4, client->rays[i].vy);
+            put_u32(q + 6, (uint32_t)client->rays[i].ex);
+            put_u32(q + 10, (uint32_t)client->rays[i].ez);
+            q[14] = (unsigned char)((client->rays[i].hit_enemy ? 1 : 0) |
+                                    (client->rays[i].hit_world ? 2 : 0));
+        }
+        if (net_send_clients(net, packet, size) < 0) return -1;
+        net->player_fire_sent_seq[client_i] = client->fire_seq;
+    }
+    return 0;
+}
+
 #define NET_PLAYER_COMPACT_SIZE (NET_PLAYER_SIZE + 1)
 #define NET_PLAYER_SNAPSHOT_BASE 8
 #define NET_ENTITY_CHUNK_BASE 8
@@ -1445,12 +1467,7 @@ static int net_send_world_snapshot(struct rasterfall_net *net,
 {
     unsigned char packet[NET_HEADER_SIZE + 4 + NET_WORLD_SIZE];
     unsigned char *w = packet + NET_HEADER_SIZE + 4;
-    int size, i;
-    size = packet_begin(packet, RASTERFALL_NET_WORLD_SNAPSHOT,
-                        4 + NET_WORLD_SIZE, ++net->send_sequence,
-                        net->receive_sequence);
-    if (size < 0) return -1;
-    put_u32(packet + NET_HEADER_SIZE, snapshot_sequence);
+    int size, i, cursor, world_size;
     memset(w, 0, NET_WORLD_SIZE);
     put_i16(w, game->wave); put_i16(w + 2, game->to_spawn);
     put_i16(w + 4, game->spawn_timer_ms); put_i16(w + 6, game->enemies_alive);
@@ -1487,31 +1504,45 @@ static int net_send_world_snapshot(struct rasterfall_net *net,
                 RASTERFALL_MAX_FLAGS * NET_WORLD_FLAG_SIZE + i * 2,
                 session && session->game_state.actors[i].active ?
                     session->game_state.actors[i].flag_index : -1);
-    for (i = 0; i < TOY_GAME_MAX_PROJECTILES; i++) {
-        const struct toy_game_projectile *p = game->projectiles + i;
-        unsigned char *pp = w + NET_WORLD_ENTITY_BASE +
-                            i * NET_WORLD_PROJECTILE_SIZE;
-        memset(pp, 0, NET_WORLD_PROJECTILE_SIZE);
-        pp[0] = (unsigned char)(p->active != 0);
-        pp[1] = (unsigned char)p->kind;
-        put_u32(pp + 2, (uint32_t)p->x); put_u32(pp + 6, (uint32_t)p->z);
-        put_i16(pp + 10, p->vx); put_i16(pp + 12, p->vz);
-        put_i16(pp + 14, p->vy); put_i16(pp + 16, p->fuse_ms);
-        put_i16(pp + 18, p->blink_timer_ms); put_i16(pp + 20, p->flash_ms);
-        put_i16(pp + 22, p->age_ms); put_i16(pp + 24, p->y);
-        put_i16(pp + 26, p->bounces); pp[28] = (unsigned char)(p->landed != 0);
+    cursor = NET_WORLD_FIXED_SIZE;
+    {
+        int projectile_count = 0, burn_count = 0;
+        unsigned char *projectile_count_ptr = w + cursor++;
+        for (i = 0; i < TOY_GAME_MAX_PROJECTILES; i++) {
+            const struct toy_game_projectile *p = game->projectiles + i;
+            unsigned char *pp;
+            if (!p->active) continue;
+            pp = w + cursor; pp[0] = (unsigned char)i; pp[1] = (unsigned char)p->kind;
+            pp[2] = (unsigned char)(p->landed ? 1 : 0); pp[3] = 0;
+            put_u32(pp + 4, (uint32_t)p->x); put_u32(pp + 8, (uint32_t)p->z);
+            put_i16(pp + 12, p->vx); put_i16(pp + 14, p->vz);
+            put_i16(pp + 16, p->vy); put_i16(pp + 18, p->y);
+            put_i16(pp + 20, p->fuse_ms); put_i16(pp + 22, p->flash_ms);
+            put_i16(pp + 24, p->age_ms); put_i16(pp + 26, p->bounces);
+            projectile_count++; cursor += NET_WORLD_PROJECTILE_SIZE;
+        }
+        *projectile_count_ptr = (unsigned char)projectile_count;
+        {
+            unsigned char *burn_count_ptr = w + cursor++;
+            for (i = 0; i < TOY_CONFIG_MAX_BURN_ZONES; i++) {
+                const struct toy_game_burn_zone *zone = game->burn_zones + i;
+                unsigned char *bp;
+                if (!zone->active) continue;
+                bp = w + cursor; bp[0] = (unsigned char)i; bp[1] = 1;
+                put_u32(bp + 2, (uint32_t)zone->x); put_u32(bp + 6, (uint32_t)zone->z);
+                put_i16(bp + 10, zone->remaining_ms);
+                put_i16(bp + 12, zone->tick_ms); put_i16(bp + 14, zone->elapsed_ms);
+                burn_count++; cursor += NET_WORLD_BURN_ZONE_SIZE;
+            }
+            *burn_count_ptr = (unsigned char)burn_count;
+        }
     }
-    for (i = 0; i < TOY_CONFIG_MAX_BURN_ZONES; i++) {
-        const struct toy_game_burn_zone *zone = game->burn_zones + i;
-        unsigned char *bp = w + NET_WORLD_ENTITY_BASE +
-                            TOY_GAME_MAX_PROJECTILES * NET_WORLD_PROJECTILE_SIZE +
-                            i * NET_WORLD_BURN_ZONE_SIZE;
-        memset(bp, 0, NET_WORLD_BURN_ZONE_SIZE);
-        bp[0] = (unsigned char)(zone->active != 0);
-        put_u32(bp + 2, (uint32_t)zone->x); put_u32(bp + 6, (uint32_t)zone->z);
-        put_i16(bp + 10, zone->remaining_ms); put_i16(bp + 12, zone->tick_ms);
-        put_i16(bp + 14, zone->elapsed_ms);
-    }
+    world_size = cursor;
+    size = packet_begin(packet, RASTERFALL_NET_WORLD_SNAPSHOT,
+                        4 + world_size, ++net->send_sequence,
+                        net->receive_sequence);
+    if (size < 0) return -1;
+    put_u32(packet + NET_HEADER_SIZE, snapshot_sequence);
     return net_send_clients(net, packet, size);
 }
 
@@ -1540,6 +1571,7 @@ int rasterfall_net_send_snapshot(struct rasterfall_net *net,
                                     manual_alarm_timer_ms,
                                     snapshot_sequence) < 0) return -1;
         net_send_reliable_events(net);
+        if (send_player_fire_packets(net) < 0) return -1;
         return send_ai_fire_packets(net, game);
     }
 #if 0 /* Protocol v30 monolithic snapshot sender; kept beside its decoder only
@@ -1765,7 +1797,8 @@ static int decode_world_snapshot(const unsigned char *payload, int size,
     const unsigned char *w;
     uint32_t sequence;
     int i;
-    if (size != 4 + NET_WORLD_SIZE) return -1;
+    if (size < 4 + NET_WORLD_FIXED_SIZE + 2 || size > 4 + NET_WORLD_SIZE)
+        return -1;
     sequence = get_u32(payload);
     if (net->world_snapshot_sequence &&
         !sequence_after(sequence, net->world_snapshot_sequence)) return 0;
@@ -1810,30 +1843,48 @@ static int decode_world_snapshot(const unsigned char *payload, int size,
     for (i = 0; i < TOY_GAME_MAX_ACTORS; i++)
         net->snapshot_actor_flag_index[i] = get_i16(w + NET_WORLD_BASE_SIZE +
             12 + RASTERFALL_MAX_FLAGS * NET_WORLD_FLAG_SIZE + i * 2);
-    for (i = 0; i < TOY_GAME_MAX_PROJECTILES; i++) {
-        const unsigned char *pp = w + NET_WORLD_ENTITY_BASE +
-                                  i * NET_WORLD_PROJECTILE_SIZE;
-        struct toy_game_projectile *p = &net->snapshot_projectiles[i];
-        memset(p, 0, sizeof(*p));
-        p->active = pp[0] != 0; p->kind = pp[1];
-        p->x = (int)get_u32(pp + 2); p->z = (int)get_u32(pp + 6);
-        p->vx = get_i16(pp + 10); p->vz = get_i16(pp + 12);
-        p->vy = get_i16(pp + 14); p->fuse_ms = get_i16(pp + 16);
-        p->blink_timer_ms = get_i16(pp + 18); p->flash_ms = get_i16(pp + 20);
-        p->age_ms = get_i16(pp + 22); p->y = get_i16(pp + 24);
-        p->bounces = get_i16(pp + 26); p->landed = pp[28] != 0;
-    }
-    for (i = 0; i < TOY_CONFIG_MAX_BURN_ZONES; i++) {
-        const unsigned char *bp = w + NET_WORLD_ENTITY_BASE +
-                                  TOY_GAME_MAX_PROJECTILES * NET_WORLD_PROJECTILE_SIZE +
-                                  i * NET_WORLD_BURN_ZONE_SIZE;
-        struct toy_game_burn_zone *zone = &net->snapshot_burn_zones[i];
-        memset(zone, 0, sizeof(*zone));
-        zone->active = bp[0] != 0;
-        zone->x = (int)get_u32(bp + 2); zone->z = (int)get_u32(bp + 6);
-        zone->remaining_ms = get_i16(bp + 10);
-        zone->tick_ms = get_i16(bp + 12);
-        zone->elapsed_ms = get_i16(bp + 14);
+    {
+        int cursor = NET_WORLD_FIXED_SIZE;
+        int projectile_count, burn_count;
+        memset(net->snapshot_projectiles, 0,
+               sizeof(net->snapshot_projectiles));
+        memset(net->snapshot_burn_zones, 0,
+               sizeof(net->snapshot_burn_zones));
+        projectile_count = w[cursor++];
+        if (projectile_count > TOY_GAME_MAX_PROJECTILES ||
+            cursor + projectile_count * NET_WORLD_PROJECTILE_SIZE + 1 > size - 4)
+            return -1;
+        for (i = 0; i < projectile_count; i++) {
+            const unsigned char *pp = w + cursor;
+            int id = pp[0];
+            struct toy_game_projectile *p;
+            if (id >= TOY_GAME_MAX_PROJECTILES) return -1;
+            p = &net->snapshot_projectiles[id];
+            p->active = 1; p->kind = pp[1]; p->landed = pp[2] & 1;
+            p->x = (int)get_u32(pp + 4); p->z = (int)get_u32(pp + 8);
+            p->vx = get_i16(pp + 12); p->vz = get_i16(pp + 14);
+            p->vy = get_i16(pp + 16); p->y = get_i16(pp + 18);
+            p->fuse_ms = get_i16(pp + 20); p->flash_ms = get_i16(pp + 22);
+            p->age_ms = get_i16(pp + 24); p->bounces = get_i16(pp + 26);
+            cursor += NET_WORLD_PROJECTILE_SIZE;
+        }
+        burn_count = w[cursor++];
+        if (burn_count > TOY_CONFIG_MAX_BURN_ZONES ||
+            cursor + burn_count * NET_WORLD_BURN_ZONE_SIZE != size - 4)
+            return -1;
+        for (i = 0; i < burn_count; i++) {
+            const unsigned char *bp = w + cursor;
+            int id = bp[0];
+            struct toy_game_burn_zone *zone;
+            if (id >= TOY_CONFIG_MAX_BURN_ZONES) return -1;
+            zone = &net->snapshot_burn_zones[id];
+            zone->active = 1;
+            zone->x = (int)get_u32(bp + 2); zone->z = (int)get_u32(bp + 6);
+            zone->remaining_ms = get_i16(bp + 10);
+            zone->tick_ms = get_i16(bp + 12);
+            zone->elapsed_ms = get_i16(bp + 14);
+            cursor += NET_WORLD_BURN_ZONE_SIZE;
+        }
     }
     net->world_snapshot_sequence = sequence;
     net->world_snapshots_received++;
@@ -2197,6 +2248,34 @@ static int decode_ai_fire(const unsigned char *payload, int size,
     return 0;
 }
 
+static int decode_player_fire(const unsigned char *payload, int size,
+                              struct rasterfall_net *net)
+{
+    int player_id, ray_count, i;
+    struct rasterfall_net_player *player;
+    if (size < NET_PLAYER_FIRE_BASE) return -1;
+    player_id = payload[0];
+    ray_count = payload[1];
+    if (player_id <= 0 || player_id > RASTERFALL_NET_CLIENT_MAX ||
+        ray_count > TOY_GAME_MAX_RAYS ||
+        size != NET_PLAYER_FIRE_BASE + ray_count * NET_PLAYER_RAY_SIZE)
+        return -1;
+    player = &net->players[player_id];
+    player->fire_seq = get_u32(payload + 2);
+    player->ray_count = ray_count;
+    for (i = 0; i < ray_count; i++) {
+        const unsigned char *q = payload + NET_PLAYER_FIRE_BASE +
+                                 i * NET_PLAYER_RAY_SIZE;
+        player->rays[i].sy = get_i16(q); player->rays[i].cy = get_i16(q + 2);
+        player->rays[i].vy = get_i16(q + 4);
+        player->rays[i].ex = (int)get_u32(q + 6);
+        player->rays[i].ez = (int)get_u32(q + 10);
+        player->rays[i].hit_enemy = q[14] & 1;
+        player->rays[i].hit_world = (q[14] & 2) != 0;
+    }
+    return 0;
+}
+
 static void net_receive_client_packet(struct rasterfall_net *net,
                                       struct rasterfall_net_client *client,
                                       const unsigned char *packet, int type,
@@ -2421,6 +2500,11 @@ void rasterfall_net_poll(struct rasterfall_net *net)
                 decode_ai_fire(packet + NET_HEADER_SIZE, payload_size, net) == 0) {
                 /* AI fire packets are visual companions to snapshots and do
                  * not participate in snapshot ordering. */
+            } else if (type == RASTERFALL_NET_PLAYER_FIRE &&
+                       decode_player_fire(packet + NET_HEADER_SIZE,
+                                          payload_size, net) == 0) {
+                /* Player ray traces are event data and are not part of the
+                 * periodic player state snapshot. */
             } else if (type == RASTERFALL_NET_PLAYER_SNAPSHOT &&
                        decode_player_snapshot(packet + NET_HEADER_SIZE,
                                               payload_size, net) == 0) {
@@ -3053,15 +3137,51 @@ int rasterfall_net_pipeline_test(void)
                               0, 0, 0, 0, 0, 0, 0, &animation);
         if (decode_player_compact(player_packet + NET_PLAYER_SNAPSHOT_BASE,
                                   &decoded) < 0 ||
-            decoded.ray_count != 1 ||
-            decoded.rays[0].ex != 1234 || decoded.rays[0].ez != -5678 ||
-            decoded.slot_weapon[3] != TOY_GAME_WEAPON_PILL ||
+            decoded.ray_count != 0 || decoded.slot_weapon[3] != TOY_GAME_WEAPON_PILL ||
             decoded.mag[3] != 7)
             return 7;
+        {
+            unsigned char fire_payload[NET_PLAYER_FIRE_BASE + NET_PLAYER_RAY_SIZE];
+            memset(fire_payload, 0, sizeof(fire_payload));
+            fire_payload[0] = 1; fire_payload[1] = 1;
+            put_u32(fire_payload + 2, 77);
+            put_i16(fire_payload + NET_PLAYER_FIRE_BASE, 12);
+            put_i16(fire_payload + NET_PLAYER_FIRE_BASE + 2, 1012);
+            put_u32(fire_payload + NET_PLAYER_FIRE_BASE + 6, 1234);
+            put_u32(fire_payload + NET_PLAYER_FIRE_BASE + 10, (uint32_t)-5678);
+            if (decode_player_fire(fire_payload, sizeof(fire_payload), &net) < 0 ||
+                net.players[1].fire_seq != 77 || net.players[1].ray_count != 1 ||
+                net.players[1].rays[0].ex != 1234 ||
+                net.players[1].rays[0].ez != -5678)
+                return 8;
+        }
         net.local_player_id = 1; net.snapshot_ready = 0;
         if (decode_player_snapshot(player_packet, sizeof(player_packet),
                                    &net) < 0 || !net.snapshot_ready ||
-            net.players[1].input_ack != 102) return 8;
+            net.players[1].input_ack != 102) return 9;
+    }
+    /* World entities use active-only lists. */
+    {
+        unsigned char world_packet[4 + NET_WORLD_SIZE];
+        unsigned char *w = world_packet + 4;
+        int cursor = NET_WORLD_FIXED_SIZE;
+        memset(world_packet, 0, sizeof(world_packet));
+        put_u32(world_packet, 12);
+        w[cursor++] = 1;
+        w[cursor + 0] = 3; w[cursor + 1] = TOY_GAME_WEAPON_BOMB;
+        put_u32(w + cursor + 4, 4321); put_u32(w + cursor + 8, (uint32_t)-8765);
+        put_i16(w + cursor + 20, 900); cursor += NET_WORLD_PROJECTILE_SIZE;
+        w[cursor++] = 1;
+        w[cursor + 0] = 5;
+        put_u32(w + cursor + 2, 111); put_u32(w + cursor + 6, 222);
+        put_i16(w + cursor + 10, 3000); cursor += NET_WORLD_BURN_ZONE_SIZE;
+        if (decode_world_snapshot(world_packet, cursor + 4, &net) < 0 ||
+            !net.snapshot_projectiles[3].active ||
+            net.snapshot_projectiles[3].x != 4321 ||
+            net.snapshot_projectiles[3].z != -8765 ||
+            !net.snapshot_burn_zones[5].active ||
+            net.snapshot_burn_zones[5].remaining_ms != 3000)
+            return 10;
     }
     /* Fixed-delay interpolation is render-only and does not alter the latest
      * authoritative player camera. */
@@ -3077,7 +3197,7 @@ int rasterfall_net_pipeline_test(void)
         rasterfall_net_update_presentation(&net, 0);
         if (net.remote_render_camera[2].x < 40 ||
             net.remote_render_camera[2].x > 60 ||
-            net.players[2].camera.x != 100) return 9;
+            net.players[2].camera.x != 100) return 11;
     }
     return 0;
 }

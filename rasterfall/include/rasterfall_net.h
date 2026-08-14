@@ -12,7 +12,7 @@
 /* v30 uses one uniform host-side client layout.  Keep protocol
  * changes explicit: clients with a different snapshot layout must fail during
  * discovery/handshake instead of decoding shifted world data. */
-#define RASTERFALL_NET_PROTOCOL_VERSION 33
+#define RASTERFALL_NET_PROTOCOL_VERSION 34
 #define RASTERFALL_NET_MAX_ACTORS 32
 #define RASTERFALL_NET_PLAYER_MAX 4
 #define RASTERFALL_NET_CLIENT_MAX (RASTERFALL_NET_PLAYER_MAX - 1)
@@ -40,7 +40,8 @@ enum rasterfall_net_packet_type {
     RASTERFALL_NET_RELIABLE_EVENT,
     RASTERFALL_NET_PLAYER_SNAPSHOT,
     RASTERFALL_NET_ENTITY_SNAPSHOT,
-    RASTERFALL_NET_WORLD_SNAPSHOT
+    RASTERFALL_NET_WORLD_SNAPSHOT,
+    RASTERFALL_NET_PLAYER_FIRE
 };
 
 struct rasterfall_net_input {
@@ -339,6 +340,7 @@ struct rasterfall_net {
     long pending_shop_until_ms;
     uint32_t last_snapshot_sequence;
     unsigned int ai_fire_sent_seq[TOY_GAME_MAX_ACTORS];
+    unsigned int player_fire_sent_seq[RASTERFALL_NET_CLIENT_MAX];
     long last_snapshot_sent_ms;
     long last_receive_ms;
     long last_hello_ms;
