@@ -455,6 +455,47 @@ static int net_send_to(struct rasterfall_net *net,
     return sent == size ? 0 : -1;
 }
 
+/* A paid revive is a player action, not a rescue interaction.  The client
+ * predicts it for responsiveness, but the shared money balance and the
+ * remote player's downed state must be changed here on the host. */
+static int net_paid_revive_client(struct rasterfall_net *net,
+                                  struct rasterfall_session *session,
+                                  struct rasterfall_net_client *client)
+{
+    struct toy_game *game;
+    struct toy_game_actor *actor;
+    int actor_index;
+    if (!net || !session || !client || !client->active || !client->connected ||
+        !client->down || session->game_state.state != TOY_GAME_PLAYING)
+        return 0;
+    game = &session->game_state;
+    if (game->money < RASTERFALL_PAID_REVIVE_COST) return 0;
+    actor_index = TOY_GAME_REMOTE_ACTOR_BASE + client->client_id - 1;
+    if (actor_index < 0 || actor_index >= TOY_GAME_MAX_ACTORS) return 0;
+    actor = &game->actors[actor_index];
+    game->money -= RASTERFALL_PAID_REVIVE_COST;
+    client->camera = client->spawn;
+    client->reported_camera = client->spawn;
+    client->down = 0;
+    client->hp = TOY_GAME_REVIVE_HP;
+    client->revive_progress_ms = 0;
+    actor->x = client->camera.x;
+    actor->z = client->camera.z;
+    actor->hp = TOY_GAME_REVIVE_HP;
+    actor->state = TOY_GAME_ACTOR_ALIVE;
+    actor->revive_progress_ms = 0;
+    actor->airborne_ms = 0;
+    actor->airborne_y = 0;
+    actor->vertical_velocity = 0;
+    actor->air_x = actor->x;
+    actor->air_z = actor->z;
+    toy_game_animation_set(&actor->animation, TOY_GAME_ANIM_REVIVE);
+    client->animation = actor->animation;
+    toy_game_emit_event(game, TOY_GAME_EV_REVIVE);
+    toy_game_emit_event(game, TOY_GAME_EV_ACTOR_REVIVE);
+    return 1;
+}
+
 static int net_send_join_accept(struct rasterfall_net *net,
                                 const struct sockaddr_in *address,
                                 int client_id, const struct camera *spawn)
@@ -2433,6 +2474,8 @@ static void net_apply_client(struct rasterfall_net *net,
     client->camera.x = actor->x;
     client->camera.z = actor->z;
     client->camera.y = actor->ground_y + actor->airborne_y;
+    if (client->command.buttons & RASTERFALL_CMD_REVIVE)
+        net_paid_revive_client(net, session, client);
     if ((client->command.buttons & RASTERFALL_CMD_JUMP) &&
         actor->state == TOY_GAME_ACTOR_ALIVE)
         toy_game_jump_actor(g, index,
