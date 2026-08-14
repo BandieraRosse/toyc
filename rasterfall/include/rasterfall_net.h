@@ -12,7 +12,7 @@
 /* v30 uses one uniform host-side client layout.  Keep protocol
  * changes explicit: clients with a different snapshot layout must fail during
  * discovery/handshake instead of decoding shifted world data. */
-#define RASTERFALL_NET_PROTOCOL_VERSION 31
+#define RASTERFALL_NET_PROTOCOL_VERSION 32
 #define RASTERFALL_NET_MAX_ACTORS 32
 #define RASTERFALL_NET_PLAYER_MAX 4
 #define RASTERFALL_NET_CLIENT_MAX (RASTERFALL_NET_PLAYER_MAX - 1)
@@ -119,6 +119,7 @@ struct rasterfall_net_player {
     int airborne_ms;
     int airborne_y;
     int airborne_velocity;
+    int air_x, air_z;
     uint32_t input_ack;
     int special_motion;
     struct toy_game_animation_state animation;
@@ -221,6 +222,7 @@ struct rasterfall_net_client {
     int ray_count;
     struct toy_game_ray rays[TOY_GAME_MAX_RAYS];
     int airborne_ms, airborne_y, airborne_velocity;
+    int air_x, air_z;
     struct toy_game_animation_state animation;
     uint32_t reliable_event_ack;
     unsigned int shop_request_id;

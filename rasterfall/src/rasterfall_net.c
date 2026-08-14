@@ -18,7 +18,7 @@ static void net_windows_log(const char *message) { (void)message; }
 #define NET_INPUT_META_SIZE 24
 #define NET_INPUT_SIZE (NET_INPUT_META_SIZE + \
                         RASTERFALL_NET_INPUT_REDUNDANCY * NET_INPUT_ENTRY_SIZE)
-#define NET_PLAYER_BASE_SIZE 65
+#define NET_PLAYER_BASE_SIZE 69
 #define NET_PLAYER_RAY_SIZE 15
 #define NET_PLAYER_SIZE (NET_PLAYER_BASE_SIZE + 4 + 1 + TOY_GAME_MAX_RAYS * NET_PLAYER_RAY_SIZE)
 #define NET_ACTOR_SIZE (38 + TOY_GAME_MAX_NAME)
@@ -926,6 +926,7 @@ static void encode_player(unsigned char *p, int id, int active,
                           const struct toy_game_ray *rays,
                           int airborne_ms, int airborne_y,
                           int airborne_velocity,
+                          int air_x, int air_z,
                           uint32_t input_ack,
                           const struct toy_game_animation_state *animation)
 {
@@ -946,6 +947,8 @@ static void encode_player(unsigned char *p, int id, int active,
     put_i16(p + 46, airborne_ms);
     put_i16(p + 48, airborne_y);
     put_i16(p + 50, airborne_velocity);
+    put_i16(p + 65, air_x);
+    put_i16(p + 67, air_z);
     put_u32(p + 52, input_ack);
     p[56] = animation && animation->id >= 0 &&
             animation->id < TOY_GAME_ANIM_COUNT ?
@@ -1000,6 +1003,8 @@ static int decode_player(const unsigned char *p,
     player->airborne_ms = get_i16(p + 46);
     player->airborne_y = get_i16(p + 48);
     player->airborne_velocity = get_i16(p + 50);
+    player->air_x = get_i16(p + 65);
+    player->air_z = get_i16(p + 67);
     player->input_ack = get_u32(p + 52);
     player->animation.id = p[56] < TOY_GAME_ANIM_COUNT ? p[56] :
                            TOY_GAME_ANIM_NONE;
@@ -1220,6 +1225,7 @@ static void encode_player_compact(unsigned char *p, int id, int active,
                                   int damage_dealt, unsigned int fire_seq,
                                   int airborne_ms, int airborne_y,
                                   int airborne_velocity,
+                                  int air_x, int air_z,
                                   uint32_t input_ack,
                                   int special_motion,
                                   const struct toy_game_animation_state *animation)
@@ -1231,6 +1237,7 @@ static void encode_player_compact(unsigned char *p, int id, int active,
                   reload_timer_ms, muzzle_flash_ms, kills, special_kills,
                   damage_dealt, fire_seq, 0, NULL, airborne_ms, airborne_y,
                   airborne_velocity,
+                  air_x, air_z,
                   input_ack, animation);
     memcpy(p, full, NET_PLAYER_COMPACT_SIZE);
     p[NET_PLAYER_BASE_SIZE + 4] = (unsigned char)(special_motion != 0);
@@ -1272,6 +1279,7 @@ static int net_send_player_snapshot(struct rasterfall_net *net,
         game->muzzle_flash_ms, game->kills, game->special_kills,
         game->damage_dealt, game->fire_seq, game->player_airborne_ms,
         game->player_airborne_y, game->player_vertical_velocity, 0,
+        game->player_air_x, game->player_air_z,
         game->player_control_disabled || game->player_airborne_ms > 0,
         &game->animation);
     for (i = 0; i < RASTERFALL_NET_CLIENT_MAX; i++) {
@@ -1287,6 +1295,7 @@ static int net_send_player_snapshot(struct rasterfall_net *net,
             c->muzzle_flash_ms, c->kills, c->special_kills, c->damage_dealt,
             c->fire_seq, c->airborne_ms, c->airborne_y,
             c->airborne_velocity,
+            c->air_x, c->air_z,
             c->last_processed_input_sequence, c->airborne_ms > 0,
             &c->animation);
     }
@@ -2517,6 +2526,8 @@ static void net_apply_client(struct rasterfall_net *net,
     client->airborne_ms = actor->airborne_ms;
     client->airborne_y = actor->airborne_y;
     client->airborne_velocity = actor->vertical_velocity;
+    client->air_x = actor->air_x;
+    client->air_z = actor->air_z;
     client->slots[0] = actor->slots[0]; client->slots[1] = actor->slots[1];
     client->current_slot = actor->current_slot;
     client->reloading = actor->reloading;
@@ -2852,7 +2863,7 @@ int rasterfall_net_pipeline_test(void)
             encode_player_compact(player_packet + NET_PLAYER_SNAPSHOT_BASE +
                 i * NET_PLAYER_COMPACT_SIZE, i, 1, &camera, 100, -1,
                 TOY_GAME_PLAYING, 0, 0, slots, 0, 0, 0, 0, 0, 0, 0,
-                0, 0, 0, 0, i == 1 ? 102 : 0, 0, &animation);
+                0, 0, 0, 0, 0, 0, i == 1 ? 102 : 0, 0, &animation);
         net.local_player_id = 1; net.snapshot_ready = 0;
         if (decode_player_snapshot(player_packet, sizeof(player_packet),
                                    &net) < 0 || !net.snapshot_ready ||
@@ -2901,6 +2912,9 @@ void rasterfall_net_sync_clients(struct rasterfall_net *net,
                                       TOY_GAME_ACTOR_ALIVE;
         actor->airborne_ms = client->airborne_ms;
         actor->airborne_y = client->airborne_y;
+        actor->vertical_velocity = client->airborne_velocity;
+        actor->air_x = client->air_x;
+        actor->air_z = client->air_z;
         memcpy(actor->slots, client->slots, sizeof(actor->slots));
         actor->current_slot = client->current_slot;
     }
@@ -3180,6 +3194,8 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
                                                own->airborne_y;
         session->game_state.player_vertical_velocity =
             own->airborne_velocity;
+        session->game_state.player_air_x = own->air_x;
+        session->game_state.player_air_z = own->air_z;
         camera->y = own->camera.y;
         session->air_walls_enabled = net->snapshot_air_walls_enabled;
         session->manual_alarm_on = net->snapshot_manual_alarm_enabled;
