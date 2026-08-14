@@ -1137,6 +1137,17 @@ static void sync_ai_fire_effects(const struct camera *camera)
     }
 }
 
+static unsigned char network_weapon_fire_event(int weapon)
+{
+    switch (weapon) {
+    case TOY_GAME_WEAPON_SMG: return TOY_GAME_EV_SHOOT_SMG;
+    case TOY_GAME_WEAPON_SHOTGUN: return TOY_GAME_EV_SHOOT_SHOTGUN;
+    case TOY_GAME_WEAPON_AK: return TOY_GAME_EV_SHOOT_AK;
+    case TOY_GAME_WEAPON_AWP: return TOY_GAME_EV_SHOOT_AWP;
+    default: return TOY_GAME_EV_SHOOT;
+    }
+}
+
 static void sync_network_fire_effects(const struct camera *viewer,
                                       const struct camera *client,
                                       int source_id,
@@ -1153,7 +1164,7 @@ static void sync_network_fire_effects(const struct camera *viewer,
         effects.last_network_fire_seq[source_id] = 0;
     effects.last_network_fire_seq[source_id] = fire_seq;
     if (audio && audio->running) {
-        unsigned char event = TOY_GAME_EV_SHOOT;
+        unsigned char event = network_weapon_fire_event(weapon);
         rasterfall_audio_play_events(audio, &event, 1);
     }
     if (ray_count < 0) ray_count = 0;

@@ -3223,7 +3223,13 @@ static void net_capture_remote_special_events(struct rasterfall_net *net,
                 client->client_id, -1, 0, 0, 0, 0, 0, control_id);
             net->active_special_control_id[i] = 0;
         }
-        if (actor->control_disabled && actor->airborne_ms > 0 &&
+        /* The actor control marker is a gameplay/presentation flag and can
+         * be overwritten by the next client PLAYER_STATE before this
+         * capture point.  The actual knockback vector is the durable signal
+         * that this airborne state came from a special hit.  Normal jumps
+         * keep both knockback components at zero. */
+        if (actor->airborne_ms > 0 &&
+            (actor->knockback_x || actor->knockback_z) &&
             !net->impulse_latched[i]) {
             net_queue_special_event(net,
                 RASTERFALL_NET_EVENT_PLAYER_IMPULSE,
