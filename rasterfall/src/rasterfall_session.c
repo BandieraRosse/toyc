@@ -279,6 +279,8 @@ void rasterfall_session_reset(struct rasterfall_session *session,
                 camera->z + session->flags[0].slot_offsets[i][1], 0);
     session->game_state.px = camera->x;
     session->game_state.pz = camera->z;
+    toy_game_set_player_pitch(&session->game_state, camera->pitch_sy,
+                              camera->pitch_cy, camera->y);
     session->banner_ms = 0;
     session->banner_text = NULL;
     session->manual_alarm_on = 0;
@@ -1149,6 +1151,8 @@ void rasterfall_session_step(struct rasterfall_session *session,
     session_update_smooth_turn(session, camera);
     session->game_state.px = camera->x;
     session->game_state.pz = camera->z;
+    toy_game_set_player_pitch(&session->game_state, camera->pitch_sy,
+                              camera->pitch_cy, camera->y);
     toy_game_set_player_moving(&session->game_state,
                                command->move_forward || command->move_strafe);
     toy_game_update_player_ground(&session->game_state);
@@ -1253,6 +1257,8 @@ static void session_step_client_mode(struct rasterfall_session *session,
         rasterfall_camera_rotate(camera, command->turn, command->pitch);
     session->game_state.px = camera->x;
     session->game_state.pz = camera->z;
+    toy_game_set_player_pitch(&session->game_state, camera->pitch_sy,
+                              camera->pitch_cy, camera->y);
     toy_game_set_player_moving(&session->game_state,
                                command->move_forward || command->move_strafe);
     toy_game_update_player_ground(&session->game_state);

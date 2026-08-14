@@ -46,7 +46,9 @@ static const struct rasterfall_viewmodel_hand_pose *viewmodel_hand_pose(int weap
 {
     static const struct rasterfall_viewmodel_hand_pose pistol_pose =
         { 155, -120, 500, 80, -130, 500, 190, -85 };
-    (void)weapon;
+    static const struct rasterfall_viewmodel_hand_pose axe_pose =
+        { 115, -150, 505, -35, -185, 510, 185, -105 };
+    if (weapon == TOY_GAME_WEAPON_AXE) return &axe_pose;
     return &pistol_pose;
 }
 
@@ -349,12 +351,12 @@ static int render_viewmodel_hands(struct toy_surface *surface,
         int phase = game->animation.time_ms * 1000 /
                     TOY_CONFIG_MELEE_SWING_MS;
         if (phase > 1000) phase = 1000;
-        r_wrist_x -= phase * 180 / 1000;
-        r_wrist_y += phase * 130 / 1000;
-        r_wrist_z += phase * 360 / 1000;
-        l_wrist_x -= phase * 100 / 1000;
-        l_wrist_y += phase * 100 / 1000;
-        l_wrist_z += phase * 260 / 1000;
+        r_wrist_x -= phase * 230 / 1000;
+        r_wrist_y += phase * 150 / 1000;
+        r_wrist_z += phase * 410 / 1000;
+        l_wrist_x -= phase * 145 / 1000;
+        l_wrist_y += phase * 115 / 1000;
+        l_wrist_z += phase * 300 / 1000;
     } else if (game->animation.id == TOY_GAME_ANIM_THROW) {
         int phase = game->animation.time_ms * 1000 /
                     TOY_CONFIG_THROW_HANDOFF_MS;
@@ -441,6 +443,8 @@ static int render_model_weapon(struct toy_renderer *renderer,
     int i, drawn = 0, width, height, depth, length, scale;
     int origin_x, origin_y, origin_z, origin_scale;
     int reload_pitch = 0;
+    int axe_rotation = 0;
+    int axe_swing_x = 0, axe_swing_z = 0;
     struct toy_surface *surface = &renderer->surface;
     int focal = surface->width * 3 / 4;
     if (!model || !model->data) return 0;
@@ -458,11 +462,24 @@ static int render_model_weapon(struct toy_renderer *renderer,
         if (arc > 1000) arc = 1000;
         reload_pitch = arc * RASTERFALL_RELOAD_VIEWMODEL_PITCH / 1000;
     }
+    if (weapon == TOY_GAME_WEAPON_AXE) {
+        /* Present the axe handle across the chest; during the swing it
+         * advances and turns left to read as a real slash. */
+        axe_rotation = 90;
+        if (animation_id == TOY_GAME_ANIM_MELEE) {
+            int phase = animation_time_ms * 1000 / TOY_CONFIG_MELEE_SWING_MS;
+            if (phase > 1000) phase = 1000;
+            axe_rotation += phase * 70 / 1000;
+            axe_swing_x = -phase * 190 / 1000;
+            axe_swing_z = phase * 300 / 1000;
+        }
+    }
     if (switch_pitch > reload_pitch)
         reload_pitch = switch_pitch;
     /* Keep the imported model in 3D view space.  The gun starts at the
      * lower-right and its forward axis travels left/up toward the crosshair. */
-    scale = (weapon == TOY_GAME_WEAPON_SHOTGUN ? 360000 :
+    scale = (weapon == TOY_GAME_WEAPON_AXE ? 450000 :
+             weapon == TOY_GAME_WEAPON_SHOTGUN ? 360000 :
              weapon == TOY_GAME_WEAPON_AWP ? 460000 :
              weapon == TOY_GAME_WEAPON_AK ? 360000 : 180000) / length;
     if (scale < 1) scale = 1;
@@ -471,7 +488,8 @@ static int render_model_weapon(struct toy_renderer *renderer,
      * does not leave its empirical grip offset behind. */
     /* Keep the camera-space origin fixed while scaling the mesh vertices. */
     origin_scale = 1;
-    origin_x = VIEWMODEL_ORIGIN_X * origin_scale;
+    origin_x = (weapon == TOY_GAME_WEAPON_AXE ? 120 : VIEWMODEL_ORIGIN_X) *
+               origin_scale;
     origin_y = VIEWMODEL_ORIGIN_Y * origin_scale;
     origin_z = VIEWMODEL_ORIGIN_Z * origin_scale;
     for (i = 0; i < (int)model->primitive_count; i++) {
@@ -529,6 +547,12 @@ static int render_model_weapon(struct toy_renderer *renderer,
                     int local_x = v[k].x * scale / 1000;
                     int local_y = v[k].y * scale / 1000;
                     int local_z = v[k].z * scale / 1000;
+                    if (weapon == TOY_GAME_WEAPON_AXE) {
+                        rotate_view_xz(local_x, local_z, axe_rotation,
+                                       &local_x, &local_z);
+                        local_x += axe_swing_x;
+                        local_z += axe_swing_z;
+                    }
                     /* A forward point moves toward screen center and upward;
                      * this is a real view-space yaw/pitch, not a flat 2D
                      * side-profile shear. */

@@ -518,6 +518,7 @@ void toy_game_init(struct toy_game *g, uint64_t seed)
     g->slots[1].mag = w->mag_size;
     g->slots[1].reserve = w->reserve_max;
     g->current_slot = 1;
+    g->pitch_cy = 1024;
     g->money = TOY_GAME_INITIAL_MONEY;
     /* 手枪是基础装备；所有可购买主武器初始锁定。 */
     g->unlocked_weapons = 1u << TOY_GAME_WEAPON_PISTOL;
@@ -3412,17 +3413,70 @@ static void toy_game_explode(struct toy_game *g, int x, int z)
     push_event(g, TOY_GAME_EV_SHOVE_HIT);
 }
 
+static int toy_game_projectile_blocked(const struct toy_game *g, int x, int z)
+{
+    return toy_game_position_blocked(g, x, z,
+                                     TOY_CONFIG_THROW_COLLISION_RADIUS);
+}
+
+static int toy_game_projectile_move(struct toy_game *g,
+                                     struct toy_game_projectile *p,
+                                     int dt_ms)
+{
+    int dx = p->vx * dt_ms / 1000;
+    int dz = p->vz * dt_ms / 1000;
+    int distance = (dx < 0 ? -dx : dx) > (dz < 0 ? -dz : dz) ?
+                   (dx < 0 ? -dx : dx) : (dz < 0 ? -dz : dz);
+    int steps = distance / 100 + 1;
+    int sx = dx / steps, sz = dz / steps;
+    int i;
+    for (i = 0; i < steps; i++) {
+        int old_x = p->x, old_z = p->z;
+        int next_x = old_x + sx, next_z = old_z + sz;
+        int can_x = !toy_game_projectile_blocked(g, next_x, old_z);
+        int can_z = !toy_game_projectile_blocked(g, old_x, next_z);
+        if (!toy_game_projectile_blocked(g, next_x, next_z)) {
+            p->x = next_x;
+            p->z = next_z;
+            continue;
+        }
+        if (!can_x) {
+            p->vx = -p->vx * TOY_CONFIG_THROW_BOUNCE_RESTITUTION / 1000;
+            p->x = old_x;
+        } else {
+            p->x = next_x;
+        }
+        if (!can_z) {
+            p->vz = -p->vz * TOY_CONFIG_THROW_BOUNCE_RESTITUTION / 1000;
+            p->z = old_z;
+        } else {
+            p->z = next_z;
+        }
+        p->bounces++;
+        if (p->bounces >= TOY_CONFIG_THROW_MAX_BOUNCES) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static void toy_game_update_projectiles(struct toy_game *g, int dt_ms)
 {
     int i;
     for (i = 0; i < TOY_GAME_MAX_PROJECTILES; i++) {
         struct toy_game_projectile *p = &g->projectiles[i];
         if (!p->active) continue;
-        if (p->airborne_ms > 0) {
-            p->x += p->vx * dt_ms / 1000;
-            p->z += p->vz * dt_ms / 1000;
-            p->airborne_ms -= dt_ms;
-            if (p->airborne_ms > 0) continue;
+        if (!p->landed) {
+            if (toy_game_projectile_move(g, p, dt_ms)) {
+                p->y = 0;
+            } else {
+                p->y += p->vy * dt_ms / 1000;
+                p->vy -= TOY_CONFIG_THROW_GRAVITY * dt_ms / 1000;
+                p->age_ms += dt_ms;
+                if (p->y > 0) continue;
+                p->y = 0;
+            }
+            p->landed = 1;
             p->fuse_ms = p->kind == TOY_GAME_WEAPON_BOMB ?
                 TOY_CONFIG_BOMB_FUSE_MS : 0;
         }
@@ -3452,12 +3506,23 @@ static int toy_game_throw(struct toy_game *g, int sy, int cy)
     g->throw_timer_ms = TOY_CONFIG_THROW_COOLDOWN_MS;
     g->projectiles[i].active = 1;
     g->projectiles[i].kind = s->weapon;
-    g->projectiles[i].x = g->px + sy * 250 / 1024;
-    g->projectiles[i].z = g->pz + cy * 250 / 1024;
-    g->projectiles[i].vx = sy * TOY_CONFIG_THROW_SPEED / 1024;
-    g->projectiles[i].vz = cy * TOY_CONFIG_THROW_SPEED / 1024;
-    g->projectiles[i].airborne_ms = 400;
+    /* One normalized 3D direction: the projectile leaves along the crosshair. */
+    g->projectiles[i].x = g->px + (long long)sy * g->pitch_cy * 250 /
+                          (1024 * 1024);
+    g->projectiles[i].z = g->pz + (long long)cy * g->pitch_cy * 250 /
+                          (1024 * 1024);
+    g->projectiles[i].vx = (int)((long long)sy * g->pitch_cy *
+                                 TOY_CONFIG_THROW_SPEED / (1024 * 1024));
+    g->projectiles[i].vz = (int)((long long)cy * g->pitch_cy *
+                                 TOY_CONFIG_THROW_SPEED / (1024 * 1024));
+    g->projectiles[i].vy = (int)((long long)g->pitch_sy *
+                                 TOY_CONFIG_THROW_SPEED / 1024);
     g->projectiles[i].fuse_ms = 0;
+    g->projectiles[i].age_ms = 0;
+    g->projectiles[i].y = g->view_y + 900 +
+                          g->pitch_sy * 250 / 1024;
+    g->projectiles[i].bounces = 0;
+    g->projectiles[i].landed = 0;
     toy_game_animation_set(&g->animation, TOY_GAME_ANIM_THROW);
     push_event(g, TOY_GAME_EV_SHOOT);
     /* A consumed throwable is never left selected. */
@@ -3534,12 +3599,25 @@ int toy_game_switch_weapon(struct toy_game *g, int slot)
 {
     if (slot < 0 || slot >= TOY_GAME_WEAPON_SLOTS) return 0;
     if (slot == g->current_slot || g->slots[slot].weapon < 0) return 0;
+    if (slot == 2 &&
+        ((g->slots[slot].weapon != TOY_GAME_WEAPON_BOMB &&
+          g->slots[slot].weapon != TOY_GAME_WEAPON_MOLOTOV) ||
+         g->slots[slot].mag <= 0)) return 0;
     g->current_slot = slot;
     g->weapon_switch_timer_ms = TOY_CONFIG_WEAPON_SWITCH_MS;
     g->reloading = 0;
     g->reload_timer_ms = 0;
     push_event(g, TOY_GAME_EV_WEAPON_SWITCH);
     return 1;
+}
+
+void toy_game_set_player_pitch(struct toy_game *g, int pitch_sy, int pitch_cy,
+                               int view_y)
+{
+    if (!g) return;
+    g->pitch_sy = pitch_sy;
+    g->pitch_cy = pitch_cy > 0 ? pitch_cy : 1;
+    g->view_y = view_y;
 }
 
 static int toy_game_start_empty_reload(

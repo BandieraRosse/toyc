@@ -342,8 +342,11 @@ struct toy_game_slot {
 #define TOY_GAME_MAX_PROJECTILES 16
 struct toy_game_projectile {
     int active, kind;
-    int x, z, vx, vz;
-    int airborne_ms, fuse_ms;
+    int x, z, vx, vz, vy;
+    int fuse_ms;
+    int age_ms;                    /* 已飞行时间，仅用于模型自转 */
+    int y;                         /* 相对地面的高度 */
+    int bounces, landed;
 };
 
 /* Runtime state owned by a special-infected ability.  Keeping this state
@@ -447,7 +450,9 @@ struct toy_game {
     int hp;
     int state;          /* enum toy_game_state */
     struct toy_game_slot slots[TOY_GAME_WEAPON_SLOTS];
-    int current_slot;   /* 当前出枪槽位（0/1） */
+    int current_slot;   /* 当前武器槽位 */
+    int pitch_sy, pitch_cy; /* 玩家当前俯仰方向（1024 定点） */
+    int view_y;         /* 玩家视角世界高度 */
     int weapon_switch_timer_ms; /* 切枪表现/禁射倒计时 */
     int melee_timer_ms;
     int throw_timer_ms;
@@ -642,6 +647,8 @@ void toy_game_update_weapon_held(struct toy_game *g,
                                  const unsigned char *keys_pressed,
                                  int fire_pressed, int fire_held,
                                  int sy, int cy, int dt_ms);
+void toy_game_set_player_pitch(struct toy_game *g, int pitch_sy, int pitch_cy,
+                               int view_y);
 void toy_game_set_player_moving(struct toy_game *g, int moving);
 int  toy_game_current_spread(const struct toy_game *g);
 int  toy_game_fire(struct toy_game *g, int sy, int cy);     /* hitscan，命中返回 1 */

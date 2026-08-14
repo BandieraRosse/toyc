@@ -35,7 +35,12 @@
 #define TOY_CONFIG_THROW_COOLDOWN_MS         450
 #define TOY_CONFIG_EXPLOSIVE_RADIUS          1100
 #define TOY_CONFIG_BOMB_FUSE_MS              4000
-#define TOY_CONFIG_THROW_SPEED               1250
+#define TOY_CONFIG_THROW_SPEED               15200  /* 投掷速度，影响距离 */
+#define TOY_CONFIG_THROW_GRAVITY             6000  /* 投掷物重力 */
+#define TOY_CONFIG_THROW_BOUNCE_RESTITUTION   700  /* 反弹后速度保留比例 */
+#define TOY_CONFIG_THROW_MAX_BOUNCES            3  /* 最大墙体反弹次数 */
+#define TOY_CONFIG_THROW_COLLISION_RADIUS      55  /* 投掷物碰撞半径 */
+#define TOY_CONFIG_THROW_MODEL_SCALE         2000  /* 投掷物模型缩放：1000=100% */
 #define TOY_CONFIG_CHARGER_SHOVE_STUN_MS     400  /* Charger 推搡僵直时长 */
 
 /* Jump and forced motion. */

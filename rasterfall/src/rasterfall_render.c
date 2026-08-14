@@ -77,6 +77,7 @@ static int draw_world_triangle_tex(struct toy_renderer *renderer,
                                    const struct world_uv_vertex *a,
                                    const struct world_uv_vertex *b,
                                    const struct world_uv_vertex *c);
+static void rotate_arm_xz(int x, int z, int degrees, int *out_x, int *out_z);
 
 static struct rasterfall_model_asset gallery_models[RASTERFALL_MODEL_MAX_GALLERY];
 static int gallery_loaded;
@@ -1440,6 +1441,97 @@ static int render_interactables(struct toy_renderer *renderer,
     return pixels;
 }
 
+/* Thrown items are world geometry rather than HUD sprites, so walls and
+ * enemies can occlude them naturally through the normal depth buffer. */
+static int render_projectiles(struct toy_renderer *renderer,
+                              const struct camera *camera)
+{
+    const struct toy_texture_view *previous_texture = active_texture_view;
+    int i, pixels = 0;
+    /* World gallery rendering temporarily selects the model texture.  This
+     * pass runs later, so select it explicitly before submitting projectile
+     * triangles; otherwise the UV path would sample the wall texture. */
+    if (active_model_texture && active_model_texture->data)
+        active_texture_view = active_model_texture;
+    for (i = 0; i < TOY_GAME_MAX_PROJECTILES; i++) {
+        const struct toy_game_projectile *p = &game.projectiles[i];
+        const char *path;
+        struct rasterfall_model_asset *model;
+        int width, height, depth, length, scale, j;
+        if (!p->active) continue;
+        path = p->kind == TOY_GAME_WEAPON_BOMB ?
+               "rasterfall/assets/models/bomb.rmesh" :
+               "rasterfall/assets/models/molotov.rmesh";
+        model = gallery_model_named(path, NULL);
+        if (!model) continue;
+        width = model->max_x - model->min_x;
+        height = model->max_y - model->min_y;
+        depth = model->max_z - model->min_z;
+        length = width > height ? width : height;
+        if (depth > length) length = depth;
+        scale = 240000 * TOY_CONFIG_THROW_MODEL_SCALE / 1000 /
+                (length > 0 ? length : 1);
+        if (scale < 1) scale = 1;
+        for (j = 0; j < (int)model->primitive_count; j++) {
+            const unsigned char *primitive = model->primitives +
+                j * RASTERFALL_MODEL_PRIMITIVE_BYTES;
+            const unsigned char *indices = model->indices +
+                model_u32(primitive) * 4;
+            unsigned int index_count = model_u32(primitive + 4);
+            unsigned int material = model_u32(primitive + 8);
+            uint32_t color = material < model->material_count ?
+                model_u32(model->materials +
+                          material * RASTERFALL_MODEL_MATERIAL_BYTES) :
+                RF_COLOR_UI_TEXT_MUTED;
+            unsigned int k;
+            for (k = 0; k + 2 < index_count; k += 3) {
+                unsigned int ids[3] = { model_u32(indices + k * 4),
+                                        model_u32(indices + (k + 1) * 4),
+                                        model_u32(indices + (k + 2) * 4) };
+                struct vec3 v[3];
+                int n;
+                for (n = 0; n < 3; n++) {
+                    const unsigned char *q;
+                    int x, y, z, rotated_x, rotated_z;
+                    if (ids[n] >= model->vertex_count) break;
+                    q = model->vertices + ids[n] * RASTERFALL_MODEL_VERTEX_BYTES;
+                    x = (*(const int *)q - (model->min_x + model->max_x) / 2) * scale / 1000;
+                    y = (*(const int *)(q + 4) - (model->min_y + model->max_y) / 2) * scale / 1000;
+                    z = (*(const int *)(q + 8) - (model->min_z + model->max_z) / 2) * scale / 1000;
+                    rotate_arm_xz(x, z, p->age_ms / 5,
+                                  &rotated_x, &rotated_z);
+                    v[n].x = p->x + rotated_x;
+                    v[n].y = -900 + p->y + 120 + y;
+                    v[n].z = p->z + rotated_z;
+                }
+                if (n == 3) {
+                    if (gallery_model_has_texture(model) &&
+                        active_model_texture && active_model_texture->data) {
+                        struct world_uv_vertex uv[3];
+                        int m;
+                        for (m = 0; m < 3; m++) {
+                            const unsigned char *q = model->vertices +
+                                ids[m] * RASTERFALL_MODEL_VERTEX_BYTES;
+                            uv[m].p = v[m];
+                            uv[m].u = *(const unsigned short *)(q + 18);
+                            uv[m].v = *(const unsigned short *)(q + 20);
+                        }
+                        pixels += draw_world_triangle_tex(renderer, camera,
+                                                          &uv[0], &uv[1],
+                                                          &uv[2]);
+                    } else {
+                        pixels += draw_world_triangle(renderer, camera,
+                                                      &v[0], &v[1], &v[2],
+                                                      color);
+                    }
+                }
+            }
+        }
+    }
+    active_texture_view = previous_texture;
+    return pixels;
+}
+
 /* ── 第一人称武器模型：视图空间盒体固定在镜头右下方，开火后坐后移 ── */
 
 static void fill_rect(struct toy_surface *surface, int x, int y,
@@ -1503,6 +1595,7 @@ static int render_scene(struct toy_renderer *renderer, const struct camera *came
         pixels+=draw_box(renderer,camera,&obstacle);
     }
     pixels += render_model_gallery(renderer, camera);
+    pixels += render_projectiles(renderer, camera);
     return pixels;
 }
 static int enemy_y(int y, int scale)
