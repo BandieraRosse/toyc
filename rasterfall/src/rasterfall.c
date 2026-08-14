@@ -14,6 +14,20 @@
  *
  * 阅读入口：先看 rasterfall_session.h，再看 lib/game.c、rasterfall_map.c 和
  * rasterfall_render.c；net.c、audio.c 分别是联机和音频边界。
+ *
+ * 命令行选项：
+ *   --host                         创建主机房间
+ *   --connect <ip>                 连接指定主机
+ *   --port <port>                  使用指定 UDP 端口
+ *   --net-loss <percent>           模拟网络丢包
+ *   --auto                         自动化压测模式
+ *   --textures / --no-textures     开启/关闭纹理渲染
+ *   --no-stats                     关闭性能统计
+ *   --texture-stats                显示纹理统计
+ *   --dump-frame <path>            导出帧图像
+ *   --frames <count>               运行指定帧数后退出
+ *   --input-test                   输入调试测试
+ *   --logic-test / --net-test      运行逻辑测试
  */
 
 #include "core.h"
@@ -435,6 +449,22 @@ static void build_game_command(struct rasterfall_command *command,
     if (toy_input_pressed(input, KEY_4)) command->buttons |= RASTERFALL_CMD_SLOT_4;
     if (toy_input_pressed(input, KEY_E)) command->buttons |= RASTERFALL_CMD_INTERACT;
     if (toy_input_pressed(input, KEY_F)) command->buttons |= RASTERFALL_CMD_FLAG;
+}
+
+static void capture_jump_vector(struct rasterfall_command *command,
+                                const struct camera *camera)
+{
+    if (!(command->buttons & RASTERFALL_CMD_JUMP)) {
+        command->jump_dx = 0;
+        command->jump_dz = 0;
+        return;
+    }
+    command->jump_dx = (camera->sy * command->move_forward +
+                        camera->cy * command->move_strafe) *
+                       RASTERFALL_MOVE_STEP / 1024;
+    command->jump_dz = (camera->cy * command->move_forward -
+                        camera->sy * command->move_strafe) *
+                       RASTERFALL_MOVE_STEP / 1024;
 }
 
 static void consume_game_command_edges(struct toy_input *input)
@@ -1865,6 +1895,7 @@ startup_again:
                             game.throwable_damage_dealt = 0;
                         }
                     }
+                    capture_jump_vector(&command, &camera);
                     if (net.mode == RASTERFALL_NET_CLIENT)
                         rasterfall_session_step_client(&session, &camera,
                                                        &command,
@@ -1883,7 +1914,10 @@ startup_again:
                                 FIXED_STEP_US / 1000);
                     }
                     if (net.mode == RASTERFALL_NET_CLIENT)
-                        rasterfall_net_send_command(&net, &command, &camera);
+                        rasterfall_net_send_command(
+                            &net, &command, &camera,
+                            command.jump_dx,
+                            command.jump_dz);
                     consume_game_command_edges(&input);
                     pointer_turn_pending = 0;
                     pointer_pitch_pending = 0;
@@ -1895,7 +1929,8 @@ startup_again:
                     command.buttons = RASTERFALL_CMD_RESET;
                     if (net.mode == RASTERFALL_NET_CLIENT) {
                         /* Reset is host-authoritative; wait for its snapshot. */
-                        rasterfall_net_send_command(&net, &command, &camera);
+                        rasterfall_net_send_command(&net, &command, &camera,
+                                                    0, 0);
                     } else {
                         rasterfall_session_step(&session, &camera, &command,
                                                 FIXED_STEP_US / 1000);

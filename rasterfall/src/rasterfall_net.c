@@ -14,7 +14,7 @@ static void net_windows_log(const char *message) { (void)message; }
 #define NET_MAGIC_1 'F'
 #define NET_MAGIC_2 'N'
 #define NET_MAGIC_3 '1'
-#define NET_INPUT_ENTRY_SIZE 28
+#define NET_INPUT_ENTRY_SIZE 32
 #define NET_INPUT_META_SIZE 24
 #define NET_INPUT_SIZE (NET_INPUT_META_SIZE + \
                         RASTERFALL_NET_INPUT_REDUNDANCY * NET_INPUT_ENTRY_SIZE)
@@ -848,6 +848,7 @@ static void encode_input_entry(unsigned char *p,
     put_i16(p + 12, c->turn); put_i16(p + 14, c->pitch);
     put_u16(p + 16, c->buttons); put_u16(p + 18, c->shop_action);
     put_i16(p + 20, c->shop_arg); put_u32(p + 24, c->shop_request_id);
+    put_i16(p + 28, input->jump_dx); put_i16(p + 30, input->jump_dz);
 }
 
 static int decode_input_entry(const unsigned char *p,
@@ -861,6 +862,8 @@ static int decode_input_entry(const unsigned char *p,
     c->turn = get_i16(p + 12); c->pitch = get_i16(p + 14);
     c->buttons = get_u16(p + 16); c->shop_action = get_u16(p + 18);
     c->shop_arg = get_i16(p + 20); c->shop_request_id = get_u32(p + 24);
+    input->jump_dx = get_i16(p + 28); input->jump_dz = get_i16(p + 30);
+    c->jump_dx = input->jump_dx; c->jump_dz = input->jump_dz;
     if (!input->sequence || c->move_forward < -1 || c->move_forward > 1 ||
         c->move_strafe < -1 || c->move_strafe > 1 || c->turn < -1024 ||
         c->turn > 1024 || c->pitch < -1024 || c->pitch > 1024) return -1;
@@ -892,9 +895,19 @@ static void net_record_prediction(struct rasterfall_net *net,
     entry->z = predicted->z;
 }
 
+static const struct rasterfall_net_prediction *net_prediction_for_ack(
+    const struct rasterfall_net *net, uint32_t sequence)
+{
+    const struct rasterfall_net_prediction *entry;
+    if (!net || !sequence) return NULL;
+    entry = &net->prediction_history[sequence % 64U];
+    return entry->sequence == sequence ? entry : NULL;
+}
+
 int rasterfall_net_send_command(struct rasterfall_net *net,
                                 const struct rasterfall_command *command,
-                                const struct camera *predicted)
+                                const struct camera *predicted,
+                                int jump_dx, int jump_dz)
 {
     unsigned char packet[NET_HEADER_SIZE + NET_INPUT_SIZE];
     unsigned char *p = packet + NET_HEADER_SIZE;
@@ -936,6 +949,7 @@ int rasterfall_net_send_command(struct rasterfall_net *net,
         memset(entry, 0, sizeof(*entry)); entry->valid = 1;
         entry->sequence = sequence; entry->tick = net->tick;
         entry->command = wire;
+        entry->jump_dx = jump_dx; entry->jump_dz = jump_dz;
     }
     size = packet_begin(packet, RASTERFALL_NET_INPUT, NET_INPUT_SIZE,
                         sequence, net->receive_sequence);
@@ -2641,12 +2655,8 @@ static void net_apply_client(struct rasterfall_net *net,
     if ((client->command.buttons & RASTERFALL_CMD_JUMP) &&
         actor->state == TOY_GAME_ACTOR_ALIVE)
         toy_game_jump_actor(g, index,
-            (client->camera.sy * client->command.move_forward +
-             client->camera.cy * client->command.move_strafe) *
-                RASTERFALL_MOVE_STEP / 1024,
-            (client->camera.cy * client->command.move_forward -
-             client->camera.sy * client->command.move_strafe) *
-                RASTERFALL_MOVE_STEP / 1024);
+                            client->command.jump_dx,
+                            client->command.jump_dz);
     memcpy(host_slots, g->slots, sizeof(host_slots));
     memcpy(host_rays, g->rays, sizeof(host_rays));
     host_px = g->px; host_pz = g->pz; host_hp = g->hp;
@@ -3010,6 +3020,10 @@ void rasterfall_net_apply_clients(struct rasterfall_net *net,
             next_sequence % RASTERFALL_NET_INPUT_HISTORY];
         if (next->valid && next->sequence == next_sequence) {
             client->command = next->command;
+            client->input_jump_dx = next->jump_dx;
+            client->input_jump_dz = next->jump_dz;
+            client->command.jump_dx = next->jump_dx;
+            client->command.jump_dz = next->jump_dz;
             client->command_ready = 1;
             next->valid = 0;
             if (client->input_queue_depth > 0) client->input_queue_depth--;
@@ -3028,6 +3042,10 @@ void rasterfall_net_apply_clients(struct rasterfall_net *net,
             client->command.buttons = 0;
             client->command.shop_action = 0;
             client->command.shop_request_id = 0;
+            client->input_jump_dx = 0;
+            client->input_jump_dz = 0;
+            client->command.jump_dx = 0;
+            client->command.jump_dz = 0;
             client->command_ready = 1;
             client->input_gap_ticks = 0;
             net->input_synthesized++;
@@ -3076,8 +3094,12 @@ int rasterfall_net_pipeline_test(void)
         inputs[i].valid = 1; inputs[i].sequence = 102U - (uint32_t)i;
         inputs[i].tick = inputs[i].sequence;
         inputs[i].command.move_forward = 1;
-        if (inputs[i].sequence == 101) inputs[i].command.buttons =
-            RASTERFALL_CMD_FIRE | RASTERFALL_CMD_JUMP;
+        if (inputs[i].sequence == 101) {
+            inputs[i].command.buttons =
+                RASTERFALL_CMD_FIRE | RASTERFALL_CMD_JUMP;
+            inputs[i].jump_dx = -53;
+            inputs[i].jump_dz = 41;
+        }
     }
     memset(packet, 0, sizeof(packet));
     if (packet_begin(packet, RASTERFALL_NET_INPUT, NET_INPUT_SIZE, 102, 0) < 0)
@@ -3098,6 +3120,8 @@ int rasterfall_net_pipeline_test(void)
         if (!entry->valid || entry->sequence != expected) return 3;
         if (expected == 101 && entry->command.buttons !=
             (RASTERFALL_CMD_FIRE | RASTERFALL_CMD_JUMP)) return 4;
+        if (expected == 101 &&
+            (entry->jump_dx != -53 || entry->jump_dz != 41)) return 13;
         entry->valid = 0; client->input_queue_depth--;
         client->last_processed_input_sequence = expected;
     }
@@ -3198,6 +3222,19 @@ int rasterfall_net_pipeline_test(void)
         if (net.remote_render_camera[2].x < 40 ||
             net.remote_render_camera[2].x > 60 ||
             net.players[2].camera.x != 100) return 11;
+    }
+    /* Reconciliation may only treat positions as matching when they belong
+     * to the exact input acknowledged by the snapshot. */
+    {
+        struct camera predicted;
+        memset(&predicted, 0, sizeof(predicted));
+        predicted.x = 1200; predicted.z = -300;
+        net_record_prediction(&net, 77, &predicted);
+        if (!net_prediction_for_ack(&net, 77) ||
+            net_prediction_for_ack(&net, 76) ||
+            net_prediction_for_ack(&net, 77)->x != 1200 ||
+            net_prediction_for_ack(&net, 77)->z != -300)
+            return 12;
     }
     return 0;
 }

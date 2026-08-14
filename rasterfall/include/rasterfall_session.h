@@ -55,6 +55,9 @@ struct rasterfall_command {
     int shop_item;
     int shop_arg;
     unsigned int shop_request_id;
+    /* Captured once when a jump command is built. */
+    int jump_dx;
+    int jump_dz;
 };
 
 struct rasterfall_session {

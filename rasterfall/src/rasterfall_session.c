@@ -382,11 +382,9 @@ static void session_jump_player(struct rasterfall_session *session,
                                 struct camera *camera,
                                 const struct rasterfall_command *command)
 {
-    int dx = (camera->sy * command->move_forward +
-              camera->cy * command->move_strafe) * RASTERFALL_MOVE_STEP / 1024;
-    int dz = (camera->cy * command->move_forward -
-              camera->sy * command->move_strafe) * RASTERFALL_MOVE_STEP / 1024;
-    toy_game_jump_with_velocity(&session->game_state, dx, dz);
+    (void)camera;
+    toy_game_jump_with_velocity(&session->game_state,
+                                command->jump_dx, command->jump_dz);
 }
 
 static void session_sync_special_motion(struct rasterfall_session *session,

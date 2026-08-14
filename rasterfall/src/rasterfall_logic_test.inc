@@ -977,8 +977,7 @@ static int run_logic_test(void)
             if (camera.x == old_x && camera.z == old_z) return 143;
         }
     }
-    /* Without unacked commands, authoritative restore is exact; the old
-     * sequence->position delta shortcut is no longer used. */
+    /* Without unacked commands, authoritative restore is exact. */
     {
         struct rasterfall_net net_test;
         struct rasterfall_net_prediction *prediction;
@@ -1082,6 +1081,33 @@ static int run_logic_test(void)
         rasterfall_net_reconcile_client(&net_test, &session, &camera);
         if (camera.sy != expected_camera.sy || camera.cy != expected_camera.cy)
             return 144;
+    }
+    /* A replayed jump uses the vector captured by its command, even when the
+     * camera restored from the snapshot has a different orientation. */
+    {
+        struct rasterfall_session live_session;
+        struct rasterfall_session replay_session;
+        struct camera live_camera, replay_camera;
+        struct rasterfall_command jump_command;
+        rasterfall_session_reset(&live_session, &live_camera, 514);
+        replay_session = live_session;
+        replay_camera = live_camera;
+        memset(&jump_command, 0, sizeof(jump_command));
+        jump_command.buttons = RASTERFALL_CMD_JUMP;
+        jump_command.move_forward = 1;
+        jump_command.jump_dx = 37;
+        jump_command.jump_dz = -29;
+        live_camera.sy = 0; live_camera.cy = 1024;
+        replay_camera.sy = 1024; replay_camera.cy = 0;
+        rasterfall_session_step_client(&live_session, &live_camera,
+                                       &jump_command, 16);
+        rasterfall_session_replay_client(&replay_session, &replay_camera,
+                                         &jump_command, 16);
+        if (live_session.game_state.player_air_x != 37 ||
+            live_session.game_state.player_air_z != -29 ||
+            replay_session.game_state.player_air_x != 37 ||
+            replay_session.game_state.player_air_z != -29)
+            return 145;
     }
 
     /* 玩家互救必须同时更新网络槽和 actor，且主机倒地不能禁用远端移动。 */
