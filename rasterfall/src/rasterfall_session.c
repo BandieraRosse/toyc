@@ -1201,7 +1201,11 @@ static void session_step_client_mode(struct rasterfall_session *session,
                                      int dt_ms, int suppress_presentation)
 {
     unsigned char keys[TOY_GAME_KEY_RELOAD + 1];
-    struct toy_game_enemy enemies[TOY_GAME_MAX_ENEMIES];
+    struct {
+        int index;
+        int hp, active, dying_ms, flash, hurt;
+    } saved_enemy_hits[TOY_GAME_MAX_ENEMIES];
+    int saved_enemy_count = 0;
     int enemy_count, kills, special_kills, damage_dealt, event_start, write, i;
     int old_reloading;
     unsigned int old_fire_seq;
@@ -1267,7 +1271,20 @@ static void session_step_client_mode(struct rasterfall_session *session,
     if (command->buttons & RASTERFALL_CMD_RELOAD) keys[TOY_GAME_KEY_RELOAD] = 1;
     if (command->buttons & RASTERFALL_CMD_SLOT_1) keys[TOY_GAME_KEY_SLOT_1] = 1;
     if (command->buttons & RASTERFALL_CMD_SLOT_2) keys[TOY_GAME_KEY_SLOT_2] = 1;
-    memcpy(enemies, session->game_state.enemies, sizeof(enemies));
+    /* Weapon prediction can only mutate the enemy hit fields.  Saving the
+     * complete 64-entry enemy array here made every client tick (and every
+     * replay tick) pay for a world-sized memcpy. */
+    for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
+        struct toy_game_enemy *enemy = &session->game_state.enemies[i];
+        if (!enemy->active) continue;
+        saved_enemy_hits[saved_enemy_count].index = i;
+        saved_enemy_hits[saved_enemy_count].hp = enemy->hp;
+        saved_enemy_hits[saved_enemy_count].active = enemy->active;
+        saved_enemy_hits[saved_enemy_count].dying_ms = enemy->dying_ms;
+        saved_enemy_hits[saved_enemy_count].flash = enemy->flash;
+        saved_enemy_hits[saved_enemy_count].hurt = enemy->hurt;
+        saved_enemy_count++;
+    }
     enemy_count = session->game_state.enemies_alive;
     kills = session->game_state.kills;
     special_kills = session->game_state.special_kills;
@@ -1318,7 +1335,19 @@ static void session_step_client_mode(struct rasterfall_session *session,
                                command->move_forward || command->move_strafe ?
                                TOY_GAME_ANIM_MOVE : TOY_GAME_ANIM_NONE);
     toy_game_update_player_motion(&session->game_state, dt_ms);
-    memcpy(session->game_state.enemies, enemies, sizeof(enemies));
+    /* Motion changes airborne_y (and may move the player horizontally).  Keep
+     * the predicted first-person camera in the same post-tick state as the
+     * host camera instead of waiting for the next snapshot to move camera.y. */
+    session_sync_special_motion(session, camera);
+    for (i = 0; i < saved_enemy_count; i++) {
+        struct toy_game_enemy *enemy = &session->game_state.enemies[
+            saved_enemy_hits[i].index];
+        enemy->hp = saved_enemy_hits[i].hp;
+        enemy->active = saved_enemy_hits[i].active;
+        enemy->dying_ms = saved_enemy_hits[i].dying_ms;
+        enemy->flash = saved_enemy_hits[i].flash;
+        enemy->hurt = saved_enemy_hits[i].hurt;
+    }
     session->game_state.enemies_alive = enemy_count;
     session->game_state.kills = kills;
     session->game_state.special_kills = special_kills;

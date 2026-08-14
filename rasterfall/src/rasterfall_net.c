@@ -925,6 +925,7 @@ static void encode_player(unsigned char *p, int id, int active,
                           unsigned int fire_seq, int ray_count,
                           const struct toy_game_ray *rays,
                           int airborne_ms, int airborne_y,
+                          int airborne_velocity,
                           uint32_t input_ack,
                           const struct toy_game_animation_state *animation)
 {
@@ -944,6 +945,7 @@ static void encode_player(unsigned char *p, int id, int active,
     put_i16(p + 43, camera->y);
     put_i16(p + 46, airborne_ms);
     put_i16(p + 48, airborne_y);
+    put_i16(p + 50, airborne_velocity);
     put_u32(p + 52, input_ack);
     p[56] = animation && animation->id >= 0 &&
             animation->id < TOY_GAME_ANIM_COUNT ?
@@ -997,6 +999,7 @@ static int decode_player(const unsigned char *p,
     player->camera.y = get_i16(p + 43);
     player->airborne_ms = get_i16(p + 46);
     player->airborne_y = get_i16(p + 48);
+    player->airborne_velocity = get_i16(p + 50);
     player->input_ack = get_u32(p + 52);
     player->animation.id = p[56] < TOY_GAME_ANIM_COUNT ? p[56] :
                            TOY_GAME_ANIM_NONE;
@@ -1216,6 +1219,7 @@ static void encode_player_compact(unsigned char *p, int id, int active,
                                   int kills, int special_kills,
                                   int damage_dealt, unsigned int fire_seq,
                                   int airborne_ms, int airborne_y,
+                                  int airborne_velocity,
                                   uint32_t input_ack,
                                   int special_motion,
                                   const struct toy_game_animation_state *animation)
@@ -1226,6 +1230,7 @@ static void encode_player_compact(unsigned char *p, int id, int active,
                   revive_progress_ms, slots, current_slot, reloading,
                   reload_timer_ms, muzzle_flash_ms, kills, special_kills,
                   damage_dealt, fire_seq, 0, NULL, airborne_ms, airborne_y,
+                  airborne_velocity,
                   input_ack, animation);
     memcpy(p, full, NET_PLAYER_COMPACT_SIZE);
     p[NET_PLAYER_BASE_SIZE + 4] = (unsigned char)(special_motion != 0);
@@ -1266,7 +1271,7 @@ static int net_send_player_snapshot(struct rasterfall_net *net,
         game->current_slot, game->reloading, game->reload_timer_ms,
         game->muzzle_flash_ms, game->kills, game->special_kills,
         game->damage_dealt, game->fire_seq, game->player_airborne_ms,
-        game->player_airborne_y, 0,
+        game->player_airborne_y, game->player_vertical_velocity, 0,
         game->player_control_disabled || game->player_airborne_ms > 0,
         &game->animation);
     for (i = 0; i < RASTERFALL_NET_CLIENT_MAX; i++) {
@@ -1281,6 +1286,7 @@ static int net_send_player_snapshot(struct rasterfall_net *net,
             c->current_slot, c->reloading, c->reload_timer_ms,
             c->muzzle_flash_ms, c->kills, c->special_kills, c->damage_dealt,
             c->fire_seq, c->airborne_ms, c->airborne_y,
+            c->airborne_velocity,
             c->last_processed_input_sequence, c->airborne_ms > 0,
             &c->animation);
     }
@@ -1300,10 +1306,18 @@ static int net_send_entity_chunks(struct rasterfall_net *net,
         int max_entries = (RASTERFALL_NET_MAX_PACKET - NET_HEADER_SIZE -
                            NET_ENTITY_CHUNK_BASE) / entry_size;
         int limit = kind == 0 ? TOY_GAME_MAX_ACTORS : TOY_GAME_MAX_ENEMIES;
-        /* Include inactive tombstones.  Each independently received chunk can
-         * therefore deactivate its own range, while a lost chunk leaves only
-         * that range at its previous usable state. */
-        for (int i = 0; i < limit; i++) indices[count++] = i;
+        /* Inactive slots carry no useful state.  Omitting them is important:
+         * at 15 Hz the old fixed-size snapshot made clients decode several
+         * chunks of tombstones on every update.  The receiver clears omitted
+         * slots only after all chunks of this kind arrived, so a lost UDP
+         * chunk still leaves the previous state usable. */
+        for (int i = 0; i < limit; i++) {
+            int active = kind == 0 ? game->actors[i].active :
+                                     game->enemies[i].active;
+            if (active) indices[count++] = i;
+        }
+        /* Always send one empty chunk: it is the completion marker for a
+         * snapshot in which this entity kind has no active entries. */
         do {
             int n = count - cursor, size;
             unsigned char *p = packet + NET_HEADER_SIZE;
@@ -1574,10 +1588,13 @@ static int decode_entity_snapshot(const unsigned char *payload, int size,
                                   struct rasterfall_net *net)
 {
     uint32_t snapshot_sequence;
-    int kind, count, entry_size, i;
+    int kind, count, entry_size, i, chunk_index, parts_total;
     if (size < NET_ENTITY_CHUNK_BASE) return -1;
-    snapshot_sequence = get_u32(payload); kind = payload[4]; count = payload[6];
+    snapshot_sequence = get_u32(payload); kind = payload[4];
+    chunk_index = payload[5]; count = payload[6]; parts_total = payload[7];
     if (kind > 1) return -1;
+    if (parts_total <= 0 || chunk_index < 0 || chunk_index >= parts_total ||
+        parts_total > 32) return -1;
     entry_size = kind == 0 ? NET_ACTOR_SIZE : NET_ENEMY_SIZE;
     if (size != NET_ENTITY_CHUNK_BASE + count * entry_size) return -1;
     if (net->entity_snapshot_sequence != snapshot_sequence) {
@@ -1586,15 +1603,42 @@ static int decode_entity_snapshot(const unsigned char *payload, int size,
             return 0;
         net->entity_snapshot_sequence = snapshot_sequence;
         net->actor_count = net->enemy_count = 0;
+        net->entity_actor_seen = net->entity_enemy_seen = 0;
+        net->entity_actor_parts_seen = net->entity_enemy_parts_seen = 0;
+        net->entity_actor_complete = net->entity_enemy_complete = 0;
+    }
+    if (kind == 0) {
+        if (net->entity_actor_parts_total != parts_total) {
+            net->entity_actor_parts_total = parts_total;
+            net->entity_actor_parts_seen = 0;
+        }
+        if (net->entity_actor_parts_seen & (1U << chunk_index)) return 0;
+        net->entity_actor_parts_seen |= 1U << chunk_index;
+    } else {
+        if (net->entity_enemy_parts_total != parts_total) {
+            net->entity_enemy_parts_total = parts_total;
+            net->entity_enemy_parts_seen = 0;
+        }
+        if (net->entity_enemy_parts_seen & (1U << chunk_index)) return 0;
+        net->entity_enemy_parts_seen |= 1U << chunk_index;
     }
     for (i = 0; i < count; i++) {
-        if (kind == 0 && net->actor_count < RASTERFALL_NET_MAX_ACTORS)
+        if (kind == 0 && net->actor_count < RASTERFALL_NET_MAX_ACTORS) {
             decode_actor(payload + NET_ENTITY_CHUNK_BASE + i * entry_size,
                          &net->actors[net->actor_count++]);
-        else if (kind == 1 && net->enemy_count < TOY_GAME_MAX_ENEMIES)
+            net->entity_actor_seen |= 1ULL << net->actors[net->actor_count - 1].actor_index;
+        } else if (kind == 1 && net->enemy_count < TOY_GAME_MAX_ENEMIES) {
             decode_enemy(payload + NET_ENTITY_CHUNK_BASE + i * entry_size,
                          &net->enemies[net->enemy_count++]);
+            net->entity_enemy_seen |= 1ULL << net->enemies[net->enemy_count - 1].index;
+        }
     }
+    if (kind == 0 && net->entity_actor_parts_seen ==
+        ((1U << net->entity_actor_parts_total) - 1U))
+        net->entity_actor_complete = 1;
+    if (kind == 1 && net->entity_enemy_parts_seen ==
+        ((1U << net->entity_enemy_parts_total) - 1U))
+        net->entity_enemy_complete = 1;
     net->entity_snapshots_received++;
     return 0;
 }
@@ -2347,8 +2391,6 @@ static void net_apply_client(struct rasterfall_net *net,
     int host_damage_dealt, host_ray_count;
     struct toy_game_animation_state host_animation;
     unsigned int host_fire_seq;
-    int actor_airborne_ms, actor_airborne_y, actor_vertical_velocity;
-    int actor_knockback_x, actor_knockback_z;
     int event_start, index;
     if (!client->active || !client->connected || !client->command_ready)
         return;
@@ -2356,19 +2398,14 @@ static void net_apply_client(struct rasterfall_net *net,
     index = TOY_GAME_REMOTE_ACTOR_BASE + client->client_id - 1;
     if (index < 0 || index >= TOY_GAME_MAX_ACTORS) return;
     actor = &g->actors[index];
-    if (client->reported_camera_ready) {
-        client->camera.sy = client->reported_camera.sy;
-        client->camera.cy = client->reported_camera.cy;
-        client->camera.pitch_sy = client->reported_camera.pitch_sy;
-        client->camera.pitch_cy = client->reported_camera.pitch_cy;
-    }
-    /* Smoker/Charger and the vertical simulation run before input application.
-     * Start this player's command from the authoritative actor position so a
-     * pull or launch cannot be overwritten by the stale client position. */
+    /* Start from the host's last camera state.  The reported camera is already
+     * predicted by the client, so using it here and then applying command.turn
+     * or command.pitch would rotate the same input twice. */
+    /* Smoker/Charger and the vertical simulation are applied after this
+     * command, matching the local client's jump/motion tick order. */
     client->camera.x = actor->x;
     client->camera.z = actor->z;
     client->camera.y = actor->ground_y + actor->airborne_y;
-    toy_game_update_actor_motion(g, index, 16);
     if ((client->command.buttons & RASTERFALL_CMD_JUMP) &&
         actor->state == TOY_GAME_ACTOR_ALIVE)
         toy_game_jump_actor(g, index,
@@ -2378,11 +2415,6 @@ static void net_apply_client(struct rasterfall_net *net,
             (client->camera.cy * client->command.move_forward -
              client->camera.sy * client->command.move_strafe) *
                 RASTERFALL_MOVE_STEP / 1024);
-    actor_airborne_ms = actor->airborne_ms;
-    actor_airborne_y = actor->airborne_y;
-    actor_vertical_velocity = actor->vertical_velocity;
-    actor_knockback_x = actor->knockback_x;
-    actor_knockback_z = actor->knockback_z;
     memcpy(host_slots, g->slots, sizeof(host_slots));
     memcpy(host_rays, g->rays, sizeof(host_rays));
     host_px = g->px; host_pz = g->pz; host_hp = g->hp;
@@ -2420,6 +2452,11 @@ static void net_apply_client(struct rasterfall_net *net,
     actor->x = client->camera.x;
     actor->z = client->camera.z;
     toy_game_update_actor_ground(g, index);
+    toy_game_update_actor_motion(g, index, 16);
+    client->camera.x = actor->x;
+    client->camera.z = actor->z;
+    g->px = client->camera.x;
+    g->pz = client->camera.z;
     if ((client->command.buttons & RASTERFALL_CMD_INTERACT) &&
         client->command.shop_request_id != client->shop_request_id &&
         !g->player_down)
@@ -2454,11 +2491,6 @@ static void net_apply_client(struct rasterfall_net *net,
     actor->x = client->camera.x; actor->z = client->camera.z;
     /* The temporary weapon view above belongs to this player's inventory only;
      * never copy the host player's vertical state back into this actor. */
-    actor->airborne_ms = actor_airborne_ms;
-    actor->airborne_y = actor_airborne_y;
-    actor->vertical_velocity = actor_vertical_velocity;
-    actor->knockback_x = actor_knockback_x;
-    actor->knockback_z = actor_knockback_z;
     client->camera.y = actor->ground_y + actor->airborne_y;
     actor->sy = client->camera.sy; actor->cy = client->camera.cy;
     actor->hp = g->hp;
@@ -2484,6 +2516,7 @@ static void net_apply_client(struct rasterfall_net *net,
     client->damage_dealt = g->damage_dealt;
     client->airborne_ms = actor->airborne_ms;
     client->airborne_y = actor->airborne_y;
+    client->airborne_velocity = actor->vertical_velocity;
     client->slots[0] = actor->slots[0]; client->slots[1] = actor->slots[1];
     client->current_slot = actor->current_slot;
     client->reloading = actor->reloading;
@@ -2819,7 +2852,7 @@ int rasterfall_net_pipeline_test(void)
             encode_player_compact(player_packet + NET_PLAYER_SNAPSHOT_BASE +
                 i * NET_PLAYER_COMPACT_SIZE, i, 1, &camera, 100, -1,
                 TOY_GAME_PLAYING, 0, 0, slots, 0, 0, 0, 0, 0, 0, 0,
-                0, 0, 0, i == 1 ? 102 : 0, 0, &animation);
+                0, 0, 0, 0, i == 1 ? 102 : 0, 0, &animation);
         net.local_player_id = 1; net.snapshot_ready = 0;
         if (decode_player_snapshot(player_packet, sizeof(player_packet),
                                    &net) < 0 || !net.snapshot_ready ||
@@ -3039,6 +3072,9 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
             dst->slots[dst->current_slot].weapon = src->weapon;
             seen[index] = 1;
         }
+        if (net->entity_actor_complete)
+            for (i = 0; i < TOY_GAME_MAX_ACTORS; i++)
+                if (!seen[i]) session->game_state.actors[i].active = 0;
         /* Missing independent entity chunks retain their last usable values;
          * explicit inactive tombstones in a later chunk clear them. */
         if (session->game_state.base_actor_index >= 0 &&
@@ -3140,6 +3176,10 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
         session->game_state.player_control_disabled = 0;
         session->game_state.player_airborne_ms = own->airborne_ms;
         session->game_state.player_airborne_y = own->airborne_y;
+        session->game_state.player_ground_y = own->camera.y -
+                                               own->airborne_y;
+        session->game_state.player_vertical_velocity =
+            own->airborne_velocity;
         camera->y = own->camera.y;
         session->air_walls_enabled = net->snapshot_air_walls_enabled;
         session->manual_alarm_on = net->snapshot_manual_alarm_enabled;
@@ -3149,6 +3189,7 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
     }
     if (session && net->enemy_count >= 0) {
         int i;
+        uint64_t seen = net->entity_enemy_seen;
         for (i = 0; i < net->enemy_count; i++) {
             const struct rasterfall_net_enemy *src = &net->enemies[i];
             struct toy_game_enemy *dst;
@@ -3189,6 +3230,10 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
                 dst->dir_z += (src->dir_z - dst->dir_z) / 3;
             }
         }
+        if (net->entity_enemy_complete)
+            for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++)
+                if (!(seen & (1ULL << i)))
+                    session->game_state.enemies[i].active = 0;
         /* Do not clear unseen ranges: an entity chunk may have been lost. */
         net_smooth_client_enemies(net, session);
     }
@@ -3199,6 +3244,10 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
     camera->cy = own->camera.cy; camera->pitch_sy = own->camera.pitch_sy;
     camera->pitch_cy = own->camera.pitch_cy;
     if (session) {
+        /* smooth_turn_remaining is local prediction state, not part of the
+         * authoritative camera.  Replaying with the pre-reconcile remainder
+         * applies each 90-degree edge a second time. */
+        session->smooth_turn_remaining = 0;
         uint32_t s = own->input_ack + 1U;
         int replayed = 0;
         session->game_state.px = camera->x;

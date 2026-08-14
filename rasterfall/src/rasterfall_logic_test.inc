@@ -1057,6 +1057,38 @@ static int run_logic_test(void)
             session.game_state.animation.time_ms != 77 ||
             session.game_state.event_count != 1) return 141;
     }
+    /* Reconciliation must discard the predicted smooth-turn remainder before
+     * replay.  Otherwise this one historical edge is added twice. */
+    {
+        struct rasterfall_net net_test;
+        struct rasterfall_session expected_session;
+        struct camera authoritative, expected_camera;
+        struct rasterfall_command turn_command;
+        rasterfall_session_reset(&session, &camera, 513);
+        authoritative = camera; expected_camera = authoritative;
+        expected_session = session;
+        memset(&turn_command, 0, sizeof(turn_command));
+        turn_command.buttons = RASTERFALL_CMD_TURN_RIGHT;
+        rasterfall_session_replay_client(&expected_session, &expected_camera,
+                                         &turn_command, 16);
+        rasterfall_net_init(&net_test);
+        net_test.mode = RASTERFALL_NET_CLIENT;
+        net_test.local_player_id = 1;
+        net_test.last_command_sequence = 101;
+        net_test.snapshot_ready = 1;
+        net_test.players[1].active = 1;
+        net_test.players[1].state = TOY_GAME_PLAYING;
+        net_test.players[1].hp = session.game_state.hp;
+        net_test.players[1].camera = authoritative;
+        net_test.players[1].input_ack = 100;
+        net_test.input_history[101 % RASTERFALL_NET_INPUT_HISTORY].valid = 1;
+        net_test.input_history[101 % RASTERFALL_NET_INPUT_HISTORY].sequence = 101;
+        net_test.input_history[101 % RASTERFALL_NET_INPUT_HISTORY].command = turn_command;
+        session.smooth_turn_remaining = 1611;
+        rasterfall_net_reconcile_client(&net_test, &session, &camera);
+        if (camera.sy != expected_camera.sy || camera.cy != expected_camera.cy)
+            return 144;
+    }
 
     /* 玩家互救必须同时更新网络槽和 actor，且主机倒地不能禁用远端移动。 */
     {

@@ -118,6 +118,7 @@ struct rasterfall_net_player {
     struct toy_game_ray rays[TOY_GAME_MAX_RAYS];
     int airborne_ms;
     int airborne_y;
+    int airborne_velocity;
     uint32_t input_ack;
     int special_motion;
     struct toy_game_animation_state animation;
@@ -219,7 +220,7 @@ struct rasterfall_net_client {
     unsigned int fire_seq;
     int ray_count;
     struct toy_game_ray rays[TOY_GAME_MAX_RAYS];
-    int airborne_ms, airborne_y;
+    int airborne_ms, airborne_y, airborne_velocity;
     struct toy_game_animation_state animation;
     uint32_t reliable_event_ack;
     unsigned int shop_request_id;
@@ -249,6 +250,17 @@ struct rasterfall_net {
     int actor_count;
     struct rasterfall_net_enemy enemies[TOY_GAME_MAX_ENEMIES];
     int enemy_count;
+    /* Active-only entity snapshots use the chunk bitmap to distinguish a
+     * missing UDP chunk from an entity that disappeared in a complete
+     * snapshot. */
+    uint64_t entity_actor_seen;
+    uint64_t entity_enemy_seen;
+    unsigned int entity_actor_parts_seen;
+    unsigned int entity_enemy_parts_seen;
+    int entity_actor_parts_total;
+    int entity_enemy_parts_total;
+    int entity_actor_complete;
+    int entity_enemy_complete;
     int remote_event_count;
     unsigned char remote_events[TOY_GAME_MAX_EVENTS];
     uint32_t remote_event_last_id;
