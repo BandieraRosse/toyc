@@ -303,6 +303,8 @@ struct rasterfall_net {
     int snapshot_flag_count;
     struct rasterfall_flag snapshot_flags[RASTERFALL_MAX_FLAGS];
     int snapshot_actor_flag_index[TOY_GAME_MAX_ACTORS];
+    struct toy_game_projectile snapshot_projectiles[TOY_GAME_MAX_PROJECTILES];
+    struct toy_game_burn_zone snapshot_burn_zones[TOY_CONFIG_MAX_BURN_ZONES];
     int snapshot_player_control_disabled;
     int snapshot_air_walls_enabled;
     int snapshot_manual_alarm_enabled;
