@@ -1357,6 +1357,44 @@ static int run_logic_test(void)
     if (rasterfall_net_pipeline_test() != 0) return 140;
     if (rasterfall_net_client_slot_test() != 0) return 140;
     if (rasterfall_net_discovery_test() != 0) return 141;
+    /* 特感击飞通过一次冲量进入玩家本地运动状态，落地后恢复自主移动。 */
+    {
+        int actor_index;
+        toy_game_init(&game, 152);
+        game.world_count = 0;
+        actor_index = toy_game_set_remote_player(&game, 1, 1, 0, 0,
+                                                 "REMOTE");
+        if (actor_index < 0 || !toy_game_apply_entity_impact(
+                &game, TOY_GAME_ENTITY_ACTOR, actor_index, 0, 1024, 1) ||
+            !game.actors[actor_index].control_disabled ||
+            game.actors[actor_index].airborne_ms <= 0)
+            return 152;
+        while (game.actors[actor_index].airborne_ms > 0)
+            toy_game_update_actor_motion(&game, actor_index, 16);
+        if (game.actors[actor_index].control_disabled) return 153;
+    }
+    /* Smoker 控制使用 generation：旧 END 不能清掉更新后的控制。 */
+    {
+        toy_game_init(&game, 154);
+        game.world_count = 0;
+        game.room_limit = 12000;
+        game.enemies[0].active = 1;
+        game.enemies[0].x = 500;
+        game.enemies[0].z = 0;
+        game.px = 0;
+        game.pz = 0;
+        toy_game_set_player_special_control(
+            &game, TOY_GAME_SPECIAL_CONTROL_SMOKER, 37, 0, 20);
+        toy_game_clear_player_special_control(&game, 36);
+        if (!game.player_control_disabled ||
+            game.player_special_control_id != 37) return 154;
+        toy_game_update_player_special_control(&game, 16);
+        if (game.px <= 0) return 155;
+        toy_game_clear_player_special_control(&game, 37);
+        if (game.player_control_disabled ||
+            game.player_special_control != TOY_GAME_SPECIAL_CONTROL_NONE)
+            return 156;
+    }
     /* 玩家武器增强只影响玩家操作者，AI 仍使用武器标准计时。 */
     {
         toy_game_init(&game, 143);

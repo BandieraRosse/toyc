@@ -185,6 +185,11 @@ enum toy_game_entity_kind {
     TOY_GAME_ENTITY_ENEMY
 };
 
+enum toy_game_special_control {
+    TOY_GAME_SPECIAL_CONTROL_NONE = 0,
+    TOY_GAME_SPECIAL_CONTROL_SMOKER = 1
+};
+
 enum toy_game_target_kind {
     TOY_GAME_TARGET_NONE = -1,
     TOY_GAME_TARGET_HOST,
@@ -387,6 +392,7 @@ struct toy_game_enemy_ability_state {
     int charge_dir_x, charge_dir_z;
     int charge_elapsed_ms;
     int charge_hit_base;
+    uint64_t charge_hit_actor_mask;
     int special_target_kind;
     int special_target_index;
     int special_pull_timer_ms;
@@ -441,6 +447,7 @@ struct toy_game_actor {
     int ground_y;
     int air_x, air_z;
     int knockback_x, knockback_z;
+    int control_disabled;       /* special attack currently owns movement */
     char name[TOY_GAME_MAX_NAME];
     struct toy_game_slot slots[TOY_GAME_WEAPON_SLOTS];
     int current_slot;
@@ -589,6 +596,10 @@ struct toy_game {
     int player_control_disabled;
     int player_pull_enemy_index;
     int player_pull_timer_ms;
+    int player_special_control;
+    uint32_t player_special_control_id;
+    int player_special_source;
+    int player_special_pull_step;
     int ai_spread_percent;
     int player_airborne_ms;
     int player_airborne_y;
@@ -632,6 +643,15 @@ int  toy_game_revive_ai(struct toy_game *g, int dt_ms);
 int  toy_game_revive_actor(struct toy_game *g, int actor_index, int dt_ms);
 int  toy_game_set_campaign_stage(struct toy_game *g, int stage);
 int  toy_game_move_ai_actor(struct toy_game *g, int actor_index, int x, int z);
+void toy_game_set_player_special_control(struct toy_game *g, int type,
+                                         uint32_t control_id,
+                                         int source_enemy, int pull_step);
+void toy_game_clear_player_special_control(struct toy_game *g,
+                                           uint32_t control_id);
+void toy_game_update_player_special_control(struct toy_game *g, int dt_ms);
+void toy_game_apply_player_impulse(struct toy_game *g, int impulse_x,
+                                   int impulse_z, int vertical_velocity,
+                                   int airborne_ms, int airborne_y);
 /* 对指定实体施加统一的伤害、打断和击飞规则。dx/dz 是相对冲击方向。 */
 int  toy_game_apply_entity_impact(struct toy_game *g, int kind, int index,
                                   int dx, int dz, int damage);

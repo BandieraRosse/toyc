@@ -1581,7 +1581,6 @@ startup_again:
             if (audio.running)
                 rasterfall_audio_play_events(&audio, net.remote_events,
                                              net.remote_event_count);
-            net.remote_event_count = 0;
         }
         if (net.mode == RASTERFALL_NET_CLIENT) {
             rasterfall_net_reconcile_client(&net, &session, &camera);

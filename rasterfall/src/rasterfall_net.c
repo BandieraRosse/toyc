@@ -44,7 +44,7 @@ static void net_windows_log(const char *message) { (void)message; }
 #define NET_SNAPSHOT_PART_BASE 10
 #define NET_SNAPSHOT_FRAGMENT_DATA 1000
 #define NET_RELIABLE_EVENT_BASE 5
-#define NET_RELIABLE_EVENT_SIZE 13
+#define NET_RELIABLE_EVENT_SIZE 22
 #define NET_PLAYER_FIRE_BASE 6
 
 static int packet_begin(unsigned char *packet, int type, int payload_size,
@@ -53,6 +53,8 @@ static void put_u32(unsigned char *p, uint32_t value);
 static void put_i16(unsigned char *p, int value);
 static unsigned char put_i8_value(int value);
 static uint32_t get_u32(const unsigned char *p);
+static int get_i16(const unsigned char *p);
+static int get_i8_value(unsigned char value);
 static int net_send(struct rasterfall_net *net, unsigned char *packet, int size);
 static int net_send_to(struct rasterfall_net *net,
                        const struct sockaddr_in *address,
@@ -161,11 +163,37 @@ static void net_queue_remote_events(struct rasterfall_net *net,
             event->type = events[i];
             event->source_id = source_id;
             event->target_id = -1;
-            event->x = x;
-            event->z = z;
-            event->value = 0;
+        event->x = x;
+        event->z = z;
+        event->value = 0;
+            event->value2 = 0;
+            event->value3 = 0;
+            event->control_id = 0;
         }
     }
+}
+
+static void net_queue_special_event(struct rasterfall_net *net, int type,
+                                    int target_id, int source_id,
+                                    int x, int z, int value,
+                                    int value2, int value3,
+                                    uint32_t control_id)
+{
+    struct rasterfall_net_event *event;
+    if (!net || net->reliable_event_count >=
+                   RASTERFALL_NET_RELIABLE_EVENT_MAX) return;
+    event = &net->reliable_events[net->reliable_event_count++];
+    memset(event, 0, sizeof(*event));
+    event->id = ++net->reliable_event_next_id;
+    event->type = type;
+    event->source_id = source_id;
+    event->target_id = target_id;
+    event->x = x;
+    event->z = z;
+    event->value = value;
+    event->value2 = value2;
+    event->value3 = value3;
+    event->control_id = control_id;
 }
 
 static void net_drop_reliable_events(struct rasterfall_net *net)
@@ -225,7 +253,10 @@ static int net_send_reliable_events(struct rasterfall_net *net)
         put_i16(p + 4, event->x);
         put_i16(p + 6, event->z);
         put_i16(p + 8, event->value);
-        put_u32(p + 9, event->id);
+        put_i16(p + 10, event->value2);
+        put_i16(p + 12, event->value3);
+        put_u32(p + 14, event->control_id);
+        put_u32(p + 18, event->id);
     }
     if (net_send_clients(net, packet, size) < 0) return -1;
     net->reliable_event_last_send_ms = now;
@@ -247,16 +278,62 @@ static int decode_reliable_events(const unsigned char *payload, int size,
     for (i = 0; i < count; i++) {
         const unsigned char *p = payload + NET_RELIABLE_EVENT_BASE +
                                  i * NET_RELIABLE_EVENT_SIZE;
-        uint32_t id = get_u32(p + 9);
+        uint32_t id = get_u32(p + 18);
         if (id != first_id + (uint32_t)i) return -1;
         if (id <= net->remote_event_last_id) continue;
         if (id != net->remote_event_last_id + 1) break;
-        if (net->remote_event_count < TOY_GAME_MAX_EVENTS)
-            net->remote_events[net->remote_event_count++] = p[0];
+        if (net->remote_event_count < TOY_GAME_MAX_EVENTS) {
+            net->remote_events[net->remote_event_count] = p[0];
+            net->remote_event_data[net->remote_event_count].id = id;
+            net->remote_event_data[net->remote_event_count].type = p[0];
+            net->remote_event_data[net->remote_event_count].source_id =
+                get_i8_value(p[1]);
+            net->remote_event_data[net->remote_event_count].target_id =
+                get_i8_value(p[2]);
+            net->remote_event_data[net->remote_event_count].x = get_i16(p + 4);
+            net->remote_event_data[net->remote_event_count].z = get_i16(p + 6);
+            net->remote_event_data[net->remote_event_count].value = get_i16(p + 8);
+            net->remote_event_data[net->remote_event_count].value2 = get_i16(p + 10);
+            net->remote_event_data[net->remote_event_count].value3 = get_i16(p + 12);
+            net->remote_event_data[net->remote_event_count].control_id =
+                get_u32(p + 14);
+            net->remote_event_count++;
+        }
         net->remote_event_last_id = id;
     }
     net->reliable_event_ack = net->remote_event_last_id;
     return 0;
+}
+
+static void net_apply_remote_special_events(struct rasterfall_net *net,
+                                            struct rasterfall_session *session)
+{
+    struct toy_game *game;
+    int i;
+    if (!net || !session || net->mode != RASTERFALL_NET_CLIENT) return;
+    game = &session->game_state;
+    for (i = 0; i < net->remote_event_count; i++) {
+        const struct rasterfall_net_event *event =
+            &net->remote_event_data[i];
+        if (event->target_id != net->local_player_id) continue;
+        if (event->type == RASTERFALL_NET_EVENT_PLAYER_IMPULSE) {
+            toy_game_apply_player_impulse(game, event->x, event->z,
+                                          event->value, event->value2,
+                                          event->value3);
+        } else if (event->type ==
+                   RASTERFALL_NET_EVENT_PLAYER_CONTROL_START) {
+            if (game->player_special_control !=
+                    TOY_GAME_SPECIAL_CONTROL_NONE &&
+                game->player_special_control_id >= event->control_id)
+                continue;
+            toy_game_set_player_special_control(
+                game, TOY_GAME_SPECIAL_CONTROL_SMOKER, event->control_id,
+                event->source_id, event->value);
+        } else if (event->type == RASTERFALL_NET_EVENT_PLAYER_CONTROL_END) {
+            toy_game_clear_player_special_control(game, event->control_id);
+        }
+    }
+    net->remote_event_count = 0;
 }
 
 void rasterfall_net_capture_events(struct rasterfall_net *net,
@@ -278,6 +355,9 @@ void rasterfall_net_capture_events(struct rasterfall_net *net,
         net->reliable_events[net->reliable_event_count].z = game->pz;
         net->reliable_events[net->reliable_event_count].value =
             game->current_slot;
+        net->reliable_events[net->reliable_event_count].value2 = 0;
+        net->reliable_events[net->reliable_event_count].value3 = 0;
+        net->reliable_events[net->reliable_event_count].control_id = 0;
         net->reliable_event_count++;
         net->local_event_scan_count = i + 1;
     }
@@ -1421,11 +1501,8 @@ static int net_send_player_snapshot(struct rasterfall_net *net,
             &game->actors[TOY_GAME_REMOTE_ACTOR_BASE + i];
         if (actor->active) {
             /* World damage is applied to the actor before this snapshot is
-             * emitted.  Mirror it back to the client record so downed state,
-             * HP and the exact body position remain usable for rendering and
-             * rescue selection. */
-            c->camera.x = actor->x;
-            c->camera.z = actor->z;
+             * emitted.  Mirror only gameplay state; camera remains the
+             * client's final reported position. */
             c->hp = actor->hp;
             c->down = actor->state == TOY_GAME_ACTOR_DOWNED;
             c->revive_progress_ms = actor->revive_progress_ms;
@@ -1447,7 +1524,8 @@ static int net_send_player_snapshot(struct rasterfall_net *net,
             c->airborne_ms, c->airborne_y,
             c->airborne_velocity,
             c->air_x, c->air_z,
-            c->last_processed_input_sequence, c->airborne_ms > 0,
+            c->last_processed_input_sequence,
+            0,
             &c->animation);
     }
     return net_send_clients(net, packet, size);
@@ -2685,9 +2763,8 @@ static void net_apply_client(struct rasterfall_net *net,
     index = TOY_GAME_REMOTE_ACTOR_BASE + client->client_id - 1;
     if (index < 0 || index >= TOY_GAME_MAX_ACTORS) return;
     actor = &g->actors[index];
-    /* Client locomotion is authoritative.  The report is already the
-     * post-tick result of input, turning, collision and jump simulation, so
-     * do not apply movement, jump, turn or vertical simulation again here. */
+    /* Client locomotion is always authoritative.  Special attacks arrive as
+     * impulses/control events and never switch this path to host position. */
     if (client->reported_camera_ready)
         client->camera = client->reported_camera;
     actor->x = client->camera.x;
@@ -2761,14 +2838,6 @@ static void net_apply_client(struct rasterfall_net *net,
     }
     actor->x = client->camera.x;
     actor->z = client->camera.z;
-    /* A host gameplay effect may move the remote actor; the next client
-     * report owns ordinary locomotion again.  Preserve the reported motion
-     * fields unless the effect explicitly updates gameplay state. */
-    actor->airborne_ms = client->airborne_ms;
-    actor->airborne_y = client->airborne_y;
-    actor->vertical_velocity = client->airborne_velocity;
-    actor->air_x = client->air_x;
-    actor->air_z = client->air_z;
     g->px = client->camera.x;
     g->pz = client->camera.z;
     if ((client->command.buttons & RASTERFALL_CMD_INTERACT) &&
@@ -2926,8 +2995,6 @@ static void net_refresh_client_actor_views(struct rasterfall_net *net,
         const struct toy_game_actor *actor =
             &game->actors[TOY_GAME_REMOTE_ACTOR_BASE + i];
         if (!client->active || !client->connected || !actor->active) continue;
-        client->camera.x = actor->x;
-        client->camera.z = actor->z;
         client->hp = actor->hp;
         client->down = actor->state == TOY_GAME_ACTOR_DOWNED;
         client->revive_progress_ms = actor->revive_progress_ms;
@@ -2986,6 +3053,12 @@ static void net_finish_rescue(struct rasterfall_net *net,
             actor = &session->game_state.actors[actor_index];
             actor->state = TOY_GAME_ACTOR_ALIVE;
             actor->hp = TOY_GAME_REVIVE_HP;
+            actor->control_disabled = 0;
+            actor->airborne_ms = 0;
+            actor->airborne_y = 0;
+            actor->vertical_velocity = 0;
+            actor->air_x = 0;
+            actor->air_z = 0;
             actor->revive_progress_ms = 0;
         }
     }
@@ -3092,6 +3165,84 @@ static void net_apply_extra_rescue_actions(struct rasterfall_net *net,
     }
 }
 
+static int net_smoker_targeting_actor(const struct toy_game *game,
+                                      int actor_index)
+{
+    int i;
+    if (!game) return -1;
+    for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
+        const struct toy_game_enemy *enemy = &game->enemies[i];
+        if (enemy->active == 1 &&
+            toy_game_enemy_info(enemy->type)->ability ==
+                TOY_GAME_ENEMY_ABILITY_SMOKER_TONGUE &&
+            enemy->ability.special_target_active &&
+            enemy->ability.special_target_kind == 1 &&
+            enemy->ability.special_target_index == actor_index)
+            return i;
+    }
+    return -1;
+}
+
+/* Convert one host-side special-attack transition into a reliable event.
+ * Actor position is deliberately not copied here: it remains the client's
+ * own simulation result. */
+static void net_capture_remote_special_events(struct rasterfall_net *net,
+                                              struct toy_game *game)
+{
+    int i;
+    if (!net || !game || net->mode != RASTERFALL_NET_HOST) return;
+    for (i = 0; i < RASTERFALL_NET_CLIENT_MAX; i++) {
+        const struct rasterfall_net_client *client = &net->clients[i];
+        struct toy_game_actor *actor;
+        int actor_index, smoker;
+        uint32_t control_id;
+        int emitted_impulse = 0;
+        if (!client->active || !client->connected) {
+            net->active_special_control_id[i] = 0;
+            net->impulse_latched[i] = 0;
+            continue;
+        }
+        actor_index = TOY_GAME_REMOTE_ACTOR_BASE + client->client_id - 1;
+        if (actor_index < 0 || actor_index >= TOY_GAME_MAX_ACTORS) continue;
+        actor = &game->actors[actor_index];
+        smoker = net_smoker_targeting_actor(game, actor_index);
+        control_id = net->active_special_control_id[i];
+        if (actor->control_disabled && smoker >= 0) {
+            if (!control_id) {
+                control_id = ++net->special_control_next_id;
+                if (!control_id) control_id = ++net->special_control_next_id;
+                net->active_special_control_id[i] = control_id;
+                net_queue_special_event(net,
+                    RASTERFALL_NET_EVENT_PLAYER_CONTROL_START,
+                    client->client_id, smoker,
+                    0, 0, TOY_GAME_SMOKER_PULL_STEP, 0, 0, control_id);
+            }
+        } else if (control_id) {
+            net_queue_special_event(net,
+                RASTERFALL_NET_EVENT_PLAYER_CONTROL_END,
+                client->client_id, -1, 0, 0, 0, 0, 0, control_id);
+            net->active_special_control_id[i] = 0;
+        }
+        if (actor->control_disabled && actor->airborne_ms > 0 &&
+            !net->impulse_latched[i]) {
+            net_queue_special_event(net,
+                RASTERFALL_NET_EVENT_PLAYER_IMPULSE,
+                client->client_id, -1,
+                actor->knockback_x, actor->knockback_z,
+                actor->vertical_velocity, actor->airborne_ms,
+                actor->airborne_y, 0);
+            net->impulse_latched[i] = 1;
+            /* The impulse is a one-shot event.  Do not leave the old
+             * control-disabled marker active after emitting it; otherwise a
+             * later PLAYER_STATE would look like a new takeover. */
+            actor->control_disabled = 0;
+            emitted_impulse = 1;
+        }
+        if (!actor->control_disabled && !emitted_impulse)
+            net->impulse_latched[i] = 0;
+    }
+}
+
 void rasterfall_net_apply_clients(struct rasterfall_net *net,
                                   struct rasterfall_session *session,
                                   struct camera *host_camera)
@@ -3100,6 +3251,7 @@ void rasterfall_net_apply_clients(struct rasterfall_net *net,
     if (!net || !session || net->mode != RASTERFALL_NET_HOST) return;
     (void)host_camera;
     net->tick++;
+    net_capture_remote_special_events(net, &session->game_state);
     for (i = 0; i < RASTERFALL_NET_CLIENT_MAX; i++) {
         struct rasterfall_net_client *client = &net->clients[i];
         struct rasterfall_net_input *next;
@@ -3327,6 +3479,37 @@ int rasterfall_net_pipeline_test(void)
             net_prediction_for_ack(&net, 77)->z != -300)
             return 12;
     }
+    /* Reliable special events apply locally and stale CONTROL_END is ignored. */
+    {
+        struct rasterfall_session event_session;
+        memset(&event_session, 0, sizeof(event_session));
+        toy_game_init(&event_session.game_state, 153);
+        memset(&net.remote_event_data[0], 0,
+               sizeof(net.remote_event_data[0]));
+        net.mode = RASTERFALL_NET_CLIENT;
+        net.local_player_id = 1;
+        net.remote_event_count = 1;
+        net.remote_event_data[0].type =
+            RASTERFALL_NET_EVENT_PLAYER_CONTROL_START;
+        net.remote_event_data[0].target_id = 1;
+        net.remote_event_data[0].source_id = 0;
+        net.remote_event_data[0].value = 20;
+        net.remote_event_data[0].control_id = 37;
+        net_apply_remote_special_events(&net, &event_session);
+        if (!event_session.game_state.player_control_disabled ||
+            event_session.game_state.player_special_control_id != 37)
+            return 14;
+        net.remote_event_count = 1;
+        net.remote_event_data[0].type =
+            RASTERFALL_NET_EVENT_PLAYER_CONTROL_END;
+        net.remote_event_data[0].control_id = 36;
+        net_apply_remote_special_events(&net, &event_session);
+        if (!event_session.game_state.player_control_disabled) return 15;
+        net.remote_event_count = 1;
+        net.remote_event_data[0].control_id = 37;
+        net_apply_remote_special_events(&net, &event_session);
+        if (event_session.game_state.player_control_disabled) return 16;
+    }
     return 0;
 }
 
@@ -3426,6 +3609,10 @@ void rasterfall_net_reset_host(struct rasterfall_net *net)
 {
     if (!net || net->mode != RASTERFALL_NET_HOST) return;
     net_reset_clients(net);
+    net->special_control_next_id = 0;
+    memset(net->active_special_control_id, 0,
+           sizeof(net->active_special_control_id));
+    memset(net->impulse_latched, 0, sizeof(net->impulse_latched));
     net->reliable_event_count = 0;
     net->reliable_event_next_id = 0;
     net->local_event_scan_count = 0;
@@ -3472,6 +3659,9 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
     const struct rasterfall_net_player *own;
     (void)camera;
     if (net->mode != RASTERFALL_NET_CLIENT) return;
+    if (!net->connected && session)
+        toy_game_clear_player_special_control(&session->game_state, 0);
+    net_apply_remote_special_events(net, session);
     if (!net->snapshot_ready) {
         net_smooth_client_enemies(net, session);
         return;
@@ -3634,10 +3824,10 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
                 session->game_state.actors[i].flag_index =
                     net->snapshot_actor_flag_index[i];
         }
-        /* This world flag belongs to the host player's Smoker state.  It is
-         * not a property of every client; copying it here made a client
-         * unable to jump whenever the host was being dragged. */
-        session->game_state.player_control_disabled = 0;
+        /* PLAYER_STATE remains client-authoritative for all position and
+         * motion.  Impulses/control are applied only through the reliable
+         * special-event queue above; never overwrite the local camera from a
+         * periodic player snapshot. */
         session->air_walls_enabled = net->snapshot_air_walls_enabled;
         session->manual_alarm_on = net->snapshot_manual_alarm_enabled;
         session->manual_alarm_timer = net->snapshot_world_manual_alarm_timer_ms;

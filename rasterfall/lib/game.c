@@ -2228,6 +2228,63 @@ static void move_player_forced(struct toy_game *g, int dx, int dz)
         g->pz = nz;
 }
 
+void toy_game_set_player_special_control(struct toy_game *g, int type,
+                                         uint32_t control_id,
+                                         int source_enemy, int pull_step)
+{
+    if (!g) return;
+    g->player_special_control = type;
+    g->player_special_control_id = control_id;
+    g->player_special_source = source_enemy;
+    g->player_special_pull_step = pull_step > 0 ? pull_step : 1;
+    g->player_control_disabled = type != TOY_GAME_SPECIAL_CONTROL_NONE;
+}
+
+void toy_game_clear_player_special_control(struct toy_game *g,
+                                           uint32_t control_id)
+{
+    if (!g || g->player_special_control == TOY_GAME_SPECIAL_CONTROL_NONE ||
+        (control_id && g->player_special_control_id != control_id)) return;
+    g->player_special_control = TOY_GAME_SPECIAL_CONTROL_NONE;
+    g->player_special_control_id = 0;
+    g->player_special_source = -1;
+    g->player_special_pull_step = 0;
+    g->player_control_disabled = 0;
+}
+
+void toy_game_update_player_special_control(struct toy_game *g, int dt_ms)
+{
+    struct toy_game_enemy *e;
+    int dx, dz, distance, step;
+    (void)dt_ms;
+    if (!g || g->player_special_control != TOY_GAME_SPECIAL_CONTROL_SMOKER)
+        return;
+    if (g->player_special_source < 0 ||
+        g->player_special_source >= TOY_GAME_MAX_ENEMIES) return;
+    e = &g->enemies[g->player_special_source];
+    if (e->active != 1) return;
+    dx = e->x - g->px;
+    dz = e->z - g->pz;
+    distance = isqrt((long long)dx * dx + (long long)dz * dz);
+    if (distance <= 420) return;
+    step = g->player_special_pull_step;
+    move_player_forced(g, dx * step / distance, dz * step / distance);
+}
+
+void toy_game_apply_player_impulse(struct toy_game *g, int impulse_x,
+                                   int impulse_z, int vertical_velocity,
+                                   int airborne_ms, int airborne_y)
+{
+    if (!g || g->player_down) return;
+    g->player_airborne_ms = airborne_ms > 0 ? airborne_ms : TOY_GAME_AIRBORNE_MS;
+    g->player_airborne_y = airborne_y;
+    g->player_vertical_velocity = vertical_velocity;
+    g->player_air_x = 0;
+    g->player_air_z = 0;
+    g->player_knockback_x = impulse_x;
+    g->player_knockback_z = impulse_z;
+}
+
 static void move_enemy_forced(struct toy_game *g, struct toy_game_enemy *e,
                               int dx, int dz)
 {
@@ -2509,6 +2566,7 @@ void toy_game_update_actor_motion(struct toy_game *g, int actor_index, int dt_ms
     if (actor->airborne_ms == 0) {
         actor->air_x = 0;
         actor->air_z = 0;
+        actor->control_disabled = 0;
         toy_game_update_actor_ground(g, actor_index);
     }
 }
@@ -2567,8 +2625,13 @@ static void update_smoker(struct toy_game *g, struct toy_game_enemy *e,
                                 &pull_x, &pull_z)) {
             e->ability.special_target_active = 0;
             if (target_kind == 0) release_player_special(g);
+            else if (target_index >= 0 && target_index < TOY_GAME_MAX_ACTORS)
+                g->actors[target_index].control_disabled = 0;
             return;
         }
+        if (target_kind == 1 && target_index >= 0 &&
+            target_index < TOY_GAME_MAX_ACTORS)
+            g->actors[target_index].control_disabled = 1;
         if (target_kind == 0)
             e->ability.special_pull_timer_ms -= dt_ms;
         pull_dx = e->x - pull_x;
@@ -2583,6 +2646,8 @@ static void update_smoker(struct toy_game *g, struct toy_game_enemy *e,
             !enemy_has_line_of_sight(g, e, pull_x, pull_z)) {
             e->ability.special_target_active = 0;
             if (target_kind == 0) release_player_special(g);
+            else if (target_index >= 0 && target_index < TOY_GAME_MAX_ACTORS)
+                g->actors[target_index].control_disabled = 0;
             return;
         }
         /* 舌头把玩家拉到身边后保持束缚，并按接触间隔造成伤害。 */
@@ -2612,10 +2677,8 @@ static void update_smoker(struct toy_game *g, struct toy_game_enemy *e,
             int mz = pull_dz * step / (int)pull_dist;
             if (target_kind == 0)
                 move_player_forced(g, mx, mz);
-            else if (target_kind == 1 &&
-                     !g->actors[target_index].base_core)
-                toy_game_move_ai_actor(g, target_index, pull_x + mx,
-                                       pull_z + mz);
+            /* Remote players execute the pull locally from PLAYER_CONTROL;
+             * the host only maintains the control state and damage. */
         }
         if (pull_dist > 0) {
             e->dir_x = -pull_dx * 1024 / (int)pull_dist;
@@ -2641,7 +2704,9 @@ static void update_smoker(struct toy_game *g, struct toy_game_enemy *e,
                 g->player_pull_enemy_index = index;
                 g->player_pull_timer_ms = TOY_GAME_SMOKER_PULL_MS;
                 g->player_control_disabled = 1;
-            }
+            } else if (e->ability.special_target_index >= 0 &&
+                       e->ability.special_target_index < TOY_GAME_MAX_ACTORS)
+                g->actors[e->ability.special_target_index].control_disabled = 1;
         }
         return;
     }
@@ -2714,6 +2779,7 @@ static int apply_entity_impact_with_knockback(struct toy_game *g, int kind,
             a->knockback_x = 0;
             a->knockback_z = 0;
         } else {
+            a->control_disabled = 1;
             a->airborne_ms = TOY_GAME_AIRBORNE_MS;
             a->airborne_y = 0;
             a->vertical_velocity = TOY_GAME_AIRBORNE_VELOCITY;
@@ -2732,6 +2798,10 @@ static int apply_entity_impact_with_knockback(struct toy_game *g, int kind,
         if (e->hp <= 0) { e->hp = 0; e->active = 2; e->dying_ms = TOY_GAME_DYING_MS; g->enemies_alive--; }
         e->ability.special_target_active = 0; e->ability.special_windup_ms = 0; e->ability.charge_active = 0;
         if (g->player_pull_enemy_index == index) release_player_special(g);
+        if (e->ability.special_target_kind == 1 &&
+            e->ability.special_target_index >= 0 &&
+            e->ability.special_target_index < TOY_GAME_MAX_ACTORS)
+            g->actors[e->ability.special_target_index].control_disabled = 0;
         e->airborne_ms = TOY_GAME_AIRBORNE_MS;
         e->vertical_velocity = TOY_GAME_AIRBORNE_VELOCITY; e->airborne_y = 0;
         e->knockback_x = dx; e->knockback_z = dz; e->hurt = 180;
@@ -2772,14 +2842,18 @@ static int charger_hit_entities(struct toy_game *g,
         if (!a->active ||
             (a->kind != TOY_GAME_ACTOR_AI &&
              a->kind != TOY_GAME_ACTOR_PLAYER) ||
-            a->state != TOY_GAME_ACTOR_ALIVE || a->airborne_ms > 0) continue;
+            a->state != TOY_GAME_ACTOR_ALIVE || a->airborne_ms > 0 ||
+            (charger->ability.charge_hit_actor_mask & (1ULL << i))) continue;
         dx = a->x - charger->x; dz = a->z - charger->z;
         dist2 = (long long)dx * dx + (long long)dz * dz;
         if (dist2 <= (long long)TOY_GAME_CHARGER_IMPACT_RANGE *
                     TOY_GAME_CHARGER_IMPACT_RANGE &&
             (!a->base_core || !charger->ability.charge_hit_base) &&
             toy_game_apply_entity_impact(g, TOY_GAME_ENTITY_ACTOR, i,
-                                          dx, dz, TOY_GAME_CHARGER_IMPACT_DAMAGE)) hits++;
+                                          dx, dz, TOY_GAME_CHARGER_IMPACT_DAMAGE)) {
+            charger->ability.charge_hit_actor_mask |= 1ULL << i;
+            hits++;
+        }
         if (a->base_core && a->active &&
             dist2 <= (long long)TOY_GAME_CHARGER_IMPACT_RANGE *
                      TOY_GAME_CHARGER_IMPACT_RANGE)
@@ -2840,10 +2914,12 @@ static void update_charger(struct toy_game *g, struct toy_game_enemy *e,
                                              dx, dz, TOY_GAME_CHARGER_DAMAGE);
             } else if (target_kind == 1 && target_index >= 0 &&
                        target_index < TOY_GAME_MAX_ACTORS &&
-                       g->actors[target_index].airborne_ms <= 0) {
+                       !(e->ability.charge_hit_actor_mask &
+                         (1ULL << target_index))) {
                 toy_game_apply_entity_impact(g, TOY_GAME_ENTITY_ACTOR,
                                              target_index, dx, dz,
                                              TOY_GAME_CHARGER_DAMAGE);
+                e->ability.charge_hit_actor_mask |= 1ULL << target_index;
             }
             charger_hit_entities(g, e);
         }
@@ -2883,6 +2959,7 @@ static void update_charger(struct toy_game *g, struct toy_game_enemy *e,
         }
         e->ability.charge_active = 1;
         e->ability.charge_hit_base = 0;
+        e->ability.charge_hit_actor_mask = 0;
         e->ability.special_timer_ms = TOY_GAME_CHARGER_WINDUP_MS;
         e->ability.charge_elapsed_ms = 0;
         e->target_x = target_x;
@@ -2940,9 +3017,11 @@ static void tank_sweep_entities(struct toy_game *g,
              a->kind != TOY_GAME_ACTOR_PLAYER)) continue;
         damage = a->base_core ? TOY_CONFIG_TANK_BASE_DAMAGE :
                                 TOY_CONFIG_TANK_DAMAGE;
-        apply_entity_impact_with_knockback(g, TOY_GAME_ENTITY_ACTOR, i,
+        if (tank->ability.charge_hit_actor_mask & (1ULL << i)) continue;
+        if (apply_entity_impact_with_knockback(g, TOY_GAME_ENTITY_ACTOR, i,
                                            actor_dx[i], actor_dz[i], damage,
-                                           TOY_CONFIG_TANK_KNOCKBACK);
+                                           TOY_CONFIG_TANK_KNOCKBACK))
+            tank->ability.charge_hit_actor_mask |= 1ULL << i;
     }
 }
 
@@ -2976,6 +3055,7 @@ static void update_tank(struct toy_game *g, struct toy_game_enemy *e,
         e->ability.charge_active = 1;
         e->ability.charge_elapsed_ms = 0;
         e->ability.charge_hit_base = 0;
+        e->ability.charge_hit_actor_mask = 0;
         return;
     }
     chase_enemy(g, e, dx, dz, dist, 0);

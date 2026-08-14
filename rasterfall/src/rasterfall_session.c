@@ -521,6 +521,7 @@ int rasterfall_session_paid_revive(struct rasterfall_session *session,
         game->money < RASTERFALL_PAID_REVIVE_COST)
         return 0;
     game->money -= RASTERFALL_PAID_REVIVE_COST;
+    toy_game_clear_player_special_control(game, 0);
     game->player_down = 0;
     game->hp = TOY_GAME_REVIVE_HP;
     game->player_revive_progress_ms = 0;
@@ -1276,6 +1277,9 @@ static void session_step_client_mode(struct rasterfall_session *session,
         rasterfall_camera_rotate(camera, command->turn, command->pitch);
     session->game_state.px = camera->x;
     session->game_state.pz = camera->z;
+    toy_game_update_player_special_control(&session->game_state, dt_ms);
+    camera->x = session->game_state.px;
+    camera->z = session->game_state.pz;
     toy_game_set_player_pitch(&session->game_state, camera->pitch_sy,
                               camera->pitch_cy, camera->y);
     toy_game_set_player_moving(&session->game_state,

@@ -44,6 +44,12 @@ enum rasterfall_net_packet_type {
     RASTERFALL_NET_PLAYER_FIRE
 };
 
+enum rasterfall_net_special_event {
+    RASTERFALL_NET_EVENT_PLAYER_IMPULSE = 64,
+    RASTERFALL_NET_EVENT_PLAYER_CONTROL_START,
+    RASTERFALL_NET_EVENT_PLAYER_CONTROL_END
+};
+
 struct rasterfall_net_input {
     uint32_t sequence;
     uint32_t tick;
@@ -59,6 +65,8 @@ struct rasterfall_net_event {
     int target_id;
     int x, z;
     int value;
+    int value2, value3;
+    uint32_t control_id;
 };
 
 struct rasterfall_net_room {
@@ -255,6 +263,9 @@ struct rasterfall_net {
     int host_revive_active;
     int host_revive_target_id;
     int host_revive_progress_ms;
+    uint32_t special_control_next_id;
+    uint32_t active_special_control_id[RASTERFALL_NET_CLIENT_MAX];
+    int impulse_latched[RASTERFALL_NET_CLIENT_MAX];
     int local_player_id;
     int spawn_pending;
     int world_ready;
@@ -275,6 +286,7 @@ struct rasterfall_net {
     int entity_enemy_complete;
     int remote_event_count;
     unsigned char remote_events[TOY_GAME_MAX_EVENTS];
+    struct rasterfall_net_event remote_event_data[TOY_GAME_MAX_EVENTS];
     uint32_t remote_event_last_id;
     uint32_t reliable_event_ack;
     struct rasterfall_net_event reliable_events[RASTERFALL_NET_RELIABLE_EVENT_MAX];
