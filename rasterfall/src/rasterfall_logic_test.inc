@@ -94,10 +94,13 @@ static int run_logic_test(void)
         if (wave_item < 0 ||
             !rasterfall_session_set_managed_ai(&session, 1)) return 160;
         session.game_state.campaign_phase = TOY_GAME_PHASE_CALM;
-        session.game_state.spawn_timer_ms = 1000;
-        camera.x = session.items[wave_item].x - 200;
-        camera.z = session.items[wave_item].z;
-        rasterfall_session_step(&session, &camera, &command, 16);
+        session.game_state.spawn_timer_ms = 100000;
+        camera.x = 0;
+        camera.z = 0;
+        camera.sy = 0; camera.cy = 1024;
+        for (i = 0; i < 300 &&
+             session.game_state.campaign_phase == TOY_GAME_PHASE_CALM; i++)
+            rasterfall_session_step(&session, &camera, &command, 16);
         if (session.game_state.campaign_phase == TOY_GAME_PHASE_CALM)
             return 161;
         session.game_state.player_down = 1;

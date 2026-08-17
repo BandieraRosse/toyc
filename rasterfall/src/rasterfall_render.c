@@ -3014,14 +3014,10 @@ int rasterfall_render_managed_player(struct toy_renderer *renderer,
                                      const struct camera *viewer,
                                      const struct camera *body_camera)
 {
-    int weapon;
     if (!renderer || !viewer || !body_camera || game.player_down) return 0;
-    weapon = game.current_slot >= 0 &&
-             game.current_slot < TOY_GAME_WEAPON_SLOTS ?
-             game.slots[game.current_slot].weapon : -1;
     return render_player_avatar(renderer, viewer, body_camera->x, body_camera->z,
-                                 body_camera->sy, body_camera->cy, weapon,
-                                 game.muzzle_flash_ms, RF_COLOR_UI_PLAYER, 0,
+                                 body_camera->sy, body_camera->cy, -1, 0,
+                                 RF_COLOR_UI_PLAYER, 0,
                                  game.animation.id, game.animation.time_ms);
 }
 

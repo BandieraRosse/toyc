@@ -294,6 +294,7 @@ void rasterfall_session_reset(struct rasterfall_session *session,
     session->smooth_turn_remaining = 0;
     session->ai_revive_active = 0;
     session->ai_revive_actor_index = -1;
+    session->managed_ai_route_phase = 0;
     session->shop_open = 0;
     session->shop_page = 0;
     session->shop_selected = 0;
@@ -1302,6 +1303,9 @@ static void session_build_managed_ai_command(
     struct toy_game_ai_observation observation;
     int target_x = camera->x, target_z = camera->z;
     int target_found = 0, target_is_wave_button = 0;
+    int target_stop_distance = 900;
+    int route_phase;
+    const struct toy_game_box *safe_room = NULL;
     int dx, dz, distance, i;
     memset(command, 0, sizeof(*command));
     if (session->game_state.player_down) {
@@ -1310,27 +1314,86 @@ static void session_build_managed_ai_command(
         return;
     }
     if (session->game_state.state != TOY_GAME_PLAYING) return;
+    memset(&observation, 0, sizeof(observation));
+    observation.nearest_enemy_index = -1;
+    toy_game_ai_observe(&session->game_state, TOY_GAME_PLAYER_ACTOR_INDEX,
+                        &observation);
+    if (session->game_state.safe_room_count > 0)
+        safe_room = &session->safe_rooms[0];
+
     if (session->game_state.campaign_phase == TOY_GAME_PHASE_CALM &&
-        session->game_state.spawn_timer_ms > 0) {
-        for (i = 0; i < session->item_count; i++) {
-            if (session->items[i].kind != TOY_MAP_PICKUP_WAVE_SKIP_BUTTON)
-                continue;
-            target_x = session->items[i].x;
-            target_z = session->items[i].z;
-            target_found = 1;
-            target_is_wave_button = 1;
-            break;
+        session->game_state.spawn_timer_ms > 0 && safe_room) {
+        if (session->managed_ai_route_phase >= 3)
+            session->managed_ai_route_phase = 0;
+        route_phase = session->managed_ai_route_phase;
+        if (route_phase == 0) {
+            target_x = (safe_room->minx + safe_room->maxx) / 2;
+            target_z = safe_room->maxz + 500;
+            if (isqrt((long long)(target_x - camera->x) *
+                      (target_x - camera->x) +
+                      (long long)(target_z - camera->z) *
+                      (target_z - camera->z)) <= 350)
+                session->managed_ai_route_phase = route_phase = 1;
         }
-    } else if (toy_game_ai_observe(&session->game_state,
-                                   TOY_GAME_PLAYER_ACTOR_INDEX,
-                                   &observation) &&
-               observation.nearest_enemy_index >= 0) {
+        if (route_phase == 1) {
+            target_x = (safe_room->minx + safe_room->maxx) / 2;
+            target_z = (safe_room->minz + safe_room->maxz) / 2;
+            if (isqrt((long long)(target_x - camera->x) *
+                      (target_x - camera->x) +
+                      (long long)(target_z - camera->z) *
+                      (target_z - camera->z)) <= 350)
+                session->managed_ai_route_phase = route_phase = 2;
+        }
+        if (route_phase == 2) {
+            for (i = 0; i < session->item_count; i++) {
+                if (session->items[i].kind != TOY_MAP_PICKUP_WAVE_SKIP_BUTTON)
+                    continue;
+                target_x = session->items[i].x;
+                target_z = session->items[i].z;
+                target_found = 1;
+                target_is_wave_button = 1;
+                break;
+            }
+        } else {
+            target_found = 1;
+        }
+    } else {
+        if (session->managed_ai_route_phase >= 0 &&
+            session->managed_ai_route_phase < 3)
+            session->managed_ai_route_phase = 3;
+        if (session->managed_ai_route_phase == 3 && safe_room) {
+            /* Leave through the room center, the exact reverse of entry. */
+            target_x = (safe_room->minx + safe_room->maxx) / 2;
+            target_z = (safe_room->minz + safe_room->maxz) / 2;
+            target_found = 1;
+            if (isqrt((long long)(target_x - camera->x) *
+                      (target_x - camera->x) +
+                      (long long)(target_z - camera->z) *
+                      (target_z - camera->z)) <= 350) {
+                session->managed_ai_route_phase = 4;
+                target_found = 0;
+            }
+        }
+        if (session->managed_ai_route_phase == 4 && safe_room) {
+            target_x = (safe_room->minx + safe_room->maxx) / 2;
+            target_z = safe_room->maxz + 500;
+            target_found = 1;
+            if (isqrt((long long)(target_x - camera->x) *
+                      (target_x - camera->x) +
+                      (long long)(target_z - camera->z) *
+                      (target_z - camera->z)) <= 350) {
+                session->managed_ai_route_phase = 5;
+                target_found = 0;
+            }
+        }
+    }
+    if (!target_found && observation.nearest_enemy_index >= 0) {
         target_x = session->game_state.enemies[
             observation.nearest_enemy_index].x;
         target_z = session->game_state.enemies[
             observation.nearest_enemy_index].z;
         target_found = 1;
-    } else if (session->game_state.base_actor_index >= 0 &&
+    } else if (!target_found && session->game_state.base_actor_index >= 0 &&
                session->game_state.base_actor_index < TOY_GAME_MAX_ACTORS &&
                session->game_state.actors[
                    session->game_state.base_actor_index].active) {
@@ -1341,6 +1404,9 @@ static void session_build_managed_ai_command(
         target_found = 1;
     }
     if (!target_found) return;
+    if (session->managed_ai_route_phase >= 0 &&
+        session->managed_ai_route_phase < 5)
+        target_stop_distance = 200;
     session_managed_ai_face(camera, target_x, target_z);
     dx = target_x - camera->x;
     dz = target_z - camera->z;
@@ -1348,9 +1414,11 @@ static void session_build_managed_ai_command(
     if (target_is_wave_button && distance <= RASTERFALL_INTERACT_RANGE)
         command->buttons |= RASTERFALL_CMD_INTERACT;
     else if (distance > (target_is_wave_button ?
-                         RASTERFALL_INTERACT_RANGE / 2 : 900))
+                         RASTERFALL_INTERACT_RANGE / 2 :
+                         target_stop_distance))
         command->move_forward = 1;
-    if (!target_is_wave_button && observation.nearest_enemy_index >= 0) {
+    if (!target_is_wave_button && session->game_state.campaign_phase ==
+        TOY_GAME_PHASE_HORDE && observation.nearest_enemy_index >= 0) {
         command->buttons |= RASTERFALL_CMD_FIRE;
         command->fire_held = 1;
     }

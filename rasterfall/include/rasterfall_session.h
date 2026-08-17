@@ -101,6 +101,7 @@ struct rasterfall_session {
     struct rasterfall_map_state map_ops;
     struct rasterfall_ai_registry ai_registry;
     int managed_ai_enabled;
+    int managed_ai_route_phase;
 
     int air_walls_enabled;
     int manual_alarm_on;
