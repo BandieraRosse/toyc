@@ -106,6 +106,9 @@ static int run_logic_test(void)
             toy_game_enemy_info(TOY_GAME_ENEMY_CHARGER);
         const struct toy_game_enemy_info *tank =
             toy_game_enemy_info(TOY_GAME_ENEMY_TANK);
+        struct toy_game_ai_observation ai_observation;
+        struct toy_game_ai_decision ai_decision;
+        struct toy_game ai_observe_test;
         const struct toy_game_weapon_info *smg =
             toy_game_weapon_info(TOY_GAME_WEAPON_SMG);
         const struct toy_game_weapon_info *shotgun =
@@ -116,6 +119,19 @@ static int run_logic_test(void)
             toy_game_weapon_info(TOY_GAME_WEAPON_AK);
         const struct toy_game_weapon_info *awp =
             toy_game_weapon_info(TOY_GAME_WEAPON_AWP);
+        toy_game_init(&ai_observe_test, 151);
+        if (toy_game_add_ai(&ai_observe_test, TOY_GAME_AI_LEVEL_2,
+                            0, 0, "OBSERVE") < 0 ||
+            !toy_game_ai_observe(&ai_observe_test, 0, &ai_observation) ||
+            ai_observation.actor_id != ai_observe_test.actors[0].actor_id ||
+            ai_observation.health_percent <= 0 ||
+            ai_observation.current_weapon < 0 ||
+            ai_observation.nearest_enemy_index != -1 ||
+            !ai_observation.at_deployment) return 144;
+        toy_game_ai_decision_clear(&ai_decision);
+        if (ai_decision.target_enemy != -1 ||
+            ai_decision.switch_weapon != -1 ||
+            ai_decision.shop_action != 0) return 145;
         if (!actor || actor->kind != TOY_GAME_ACTOR_AI ||
             actor->class_id != TOY_GAME_AI_LEVEL_2 ||
             pursuit_common->speed_min <= common->speed_max ||

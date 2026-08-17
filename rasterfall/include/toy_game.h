@@ -488,6 +488,45 @@ struct toy_game_actor {
     struct toy_game_animation_state animation;
 };
 
+/* AI policy boundary.  The observation is a read-only snapshot assembled by
+ * the rules layer; policy code can make decisions without touching renderer,
+ * input, or the actor's mutable fields directly. */
+struct toy_game_ai_observation {
+    int actor_index;
+    int actor_id;
+    int state;
+    int hp, max_hp;
+    int health_percent;
+    int current_weapon;
+    int ammo_percent;
+    int enemies_alive;
+    int downed_actors;
+    int nearest_enemy_index;
+    int nearest_enemy_distance;
+    int nearest_enemy_dx, nearest_enemy_dz;
+    int wave;
+    int money;
+    int at_deployment;
+};
+
+/* A policy writes intent here.  The executor decides how much of it is legal
+ * for the controlled actor and applies the normal game rules.  shop_* fields
+ * intentionally use semantic values but remain independent of the session's
+ * UI and network representations. */
+struct toy_game_ai_decision {
+    int target_enemy;
+    int aim_sy, aim_cy;
+    int move_x, move_z;
+    int fire;
+    int reload;
+    int switch_weapon;
+    int use_pill;
+    int shop_action;
+    int shop_item;
+    int shop_target_actor;
+    int shop_arg;
+};
+
 struct toy_game {
     /* 玩家 */
     int px, pz;         /* 宿主每帧同步相机位置 */
@@ -633,6 +672,9 @@ struct toy_game {
 void toy_game_init(struct toy_game *g, uint64_t seed);      /* 初始化/重开共用 */
 void toy_game_emit_event(struct toy_game *g, int event);
 void toy_game_set_player_name(struct toy_game *g, const char *name);
+int  toy_game_ai_observe(const struct toy_game *g, int actor_index,
+                         struct toy_game_ai_observation *out);
+void toy_game_ai_decision_clear(struct toy_game_ai_decision *decision);
 void toy_game_set_ai_teammate(struct toy_game *g, int active, int x, int z,
                               const char *name);
 void toy_game_set_ai_teammate_class(struct toy_game *g, int active, int class_id,

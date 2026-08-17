@@ -601,6 +601,65 @@ void toy_game_set_player_name(struct toy_game *g, const char *name)
     copy_name(g->player_name, name);
 }
 
+int toy_game_ai_observe(const struct toy_game *g, int actor_index,
+                        struct toy_game_ai_observation *out)
+{
+    const struct toy_game_actor *actor;
+    int i, best = -1;
+    long long best_d2 = 0;
+    if (!g || !out || actor_index < 0 ||
+        actor_index >= TOY_GAME_MAX_ACTORS) return 0;
+    actor = &g->actors[actor_index];
+    if (!actor->active || actor->kind != TOY_GAME_ACTOR_AI) return 0;
+    memset(out, 0, sizeof(*out));
+    out->actor_index = actor_index;
+    out->actor_id = actor->actor_id;
+    out->state = actor->state;
+    out->hp = actor->hp;
+    out->max_hp = actor->max_hp;
+    out->health_percent = toy_game_actor_health_percent(actor);
+    out->current_weapon = toy_game_actor_current_weapon(actor);
+    out->ammo_percent = toy_game_actor_ammo_percent(actor);
+    out->enemies_alive = toy_game_count_active_enemies(g);
+    out->downed_actors = toy_game_count_downed_actors(g);
+    out->nearest_enemy_index = -1;
+    out->nearest_enemy_distance = -1;
+    out->wave = g->wave;
+    out->money = g->money;
+    {
+        long long dx = (long long)actor->deployment_x - actor->x;
+        long long dz = (long long)actor->deployment_z - actor->z;
+        out->at_deployment = dx * dx + dz * dz <=
+            (long long)TOY_GAME_AI_DEPLOY_RADIUS * TOY_GAME_AI_DEPLOY_RADIUS;
+    }
+    for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
+        long long dx, dz, d2;
+        if (g->enemies[i].active != 1 || g->enemies[i].hp <= 0) continue;
+        dx = (long long)g->enemies[i].x - actor->x;
+        dz = (long long)g->enemies[i].z - actor->z;
+        d2 = dx * dx + dz * dz;
+        if (best < 0 || d2 < best_d2) {
+            best = i;
+            best_d2 = d2;
+            out->nearest_enemy_dx = (int)dx;
+            out->nearest_enemy_dz = (int)dz;
+        }
+    }
+    if (best >= 0) {
+        out->nearest_enemy_index = best;
+        out->nearest_enemy_distance = (int)isqrt(best_d2);
+    }
+    return 1;
+}
+
+void toy_game_ai_decision_clear(struct toy_game_ai_decision *decision)
+{
+    if (!decision) return;
+    memset(decision, 0, sizeof(*decision));
+    decision->target_enemy = -1;
+    decision->switch_weapon = -1;
+}
+
 void toy_game_set_ai_teammate_class(struct toy_game *g, int active, int class_id,
                                     int x, int z, const char *name)
 {
@@ -4322,8 +4381,11 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
     int actor_weapon;
     int ai_can_fire;
     int facing_error = 180;
+    struct toy_game_ai_observation observation;
     sync_ai_actor_from_legacy(g);
     actor = &g->actors[g->ai_context_actor_index];
+    if (!toy_game_ai_observe(g, g->ai_context_actor_index, &observation))
+        return;
     ai_info = actor->class_id >= 0 && actor->class_id < TOY_GAME_AI_CLASS_COUNT ?
               &ai_table[actor->class_id] : &ai_table[TOY_GAME_AI_LEVEL_2];
     if (actor->ai_shove_cooldown_ms > 0) {
@@ -4392,11 +4454,7 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
 
     /* 自由状态下向部署点回位；回位只占用移动，不影响索敌和开火。 */
     {
-        int home_dx = actor->deployment_x - actor->x;
-        int home_dz = actor->deployment_z - actor->z;
-        long long home_dist = isqrt((long long)home_dx * home_dx +
-                                    (long long)home_dz * home_dz);
-        if (home_dist > TOY_GAME_AI_DEPLOY_RADIUS) {
+        if (!observation.at_deployment) {
             ai_idle = 0;
             actor_path_toward(g, actor, actor->deployment_x,
                               actor->deployment_z, ai_info->move_speed);
