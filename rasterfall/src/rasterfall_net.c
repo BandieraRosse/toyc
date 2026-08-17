@@ -3788,19 +3788,6 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
                     TOY_GAME_ACTOR_DOWNED)
                 session->ai_revive_active = 0;
         }
-        if (seen[0]) {
-            const struct toy_game_actor *src = &session->game_state.actors[0];
-            /* Compatibility mirror for the current HUD and renderer. */
-            session->game_state.ai_active = src->active;
-            session->game_state.ai_x = src->x;
-            session->game_state.ai_z = src->z;
-            session->game_state.ai_sy = src->sy;
-            session->game_state.ai_cy = src->cy;
-            session->game_state.ai_hp = src->hp;
-            session->game_state.ai_down = src->state == TOY_GAME_ACTOR_DOWNED;
-            session->game_state.ai_muzzle_flash_ms = src->muzzle_flash_ms;
-            session->game_state.ai_fire_seq = src->fire_seq;
-        }
         session->game_state.hp = own->hp;
         session->game_state.player_down = own->downed;
         /* Local viewmodel presentation is immediate and is not rewound by a

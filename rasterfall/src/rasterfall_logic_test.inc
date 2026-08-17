@@ -195,9 +195,7 @@ static int run_logic_test(void)
             ak->alert_range != TOY_GAME_MAX_RANGE ||
             smg->alert_range <= TOY_GAME_DETECT_RANGE ||
             pistol->alert_range <= TOY_GAME_DETECT_RANGE ||
-            shotgun->alert_range != TOY_GAME_DETECT_RANGE ||
-            TOY_CONFIG_AWP_AI_AIM_MS != 700 ||
-            TOY_CONFIG_AWP_AI_POST_FIRE_MS != 700) return 116;
+            shotgun->alert_range != TOY_GAME_DETECT_RANGE) return 116;
         toy_game_actor_set_animation(&game.actors[1], TOY_GAME_ANIM_IDLE);
         toy_game_actor_update_animation(&game.actors[1], 160);
         if (game.actors[1].animation.id != TOY_GAME_ANIM_IDLE ||
@@ -217,17 +215,12 @@ static int run_logic_test(void)
                                 0, 0, "RELOAD TEST");
         ai_reload_test.actors[ai_id - 1].slots[
             ai_reload_test.actors[ai_id - 1].current_slot].mag = 1;
-        /* Legacy ai_* fields must not overwrite the actor source of truth. */
-        ai_reload_test.ai_x = 9000;
-        ai_reload_test.ai_z = 9000;
         ai_reload_test.enemies[0].active = 1;
         ai_reload_test.enemies[0].type = TOY_GAME_ENEMY_HEAVY;
         ai_reload_test.enemies[0].x = 0;
         ai_reload_test.enemies[0].z = 1000;
         ai_reload_test.enemies[0].hp = 200;
         toy_game_update_ai_teammates(&ai_reload_test, 16);
-        if (ai_reload_test.actors[ai_id - 1].x != 0 ||
-            ai_reload_test.actors[ai_id - 1].z != 0) return 150;
         if (!ai_reload_test.actors[ai_id - 1].reloading ||
             ai_reload_test.actors[ai_id - 1].animation.id !=
                 TOY_GAME_ANIM_RELOAD) return 62;
@@ -328,13 +321,10 @@ static int run_logic_test(void)
                 TOY_GAME_AMMO_INFINITE) return 50;
         actor_test.actors[0].state = TOY_GAME_ACTOR_DOWNED;
         actor_test.actors[0].hp = 0;
-        actor_test.ai_down = 1;
-        actor_test.ai_hp = 0;
         for (i = 0; i < (TOY_GAME_REVIVE_MS + 15) / 16; i++)
             toy_game_revive_actor(&actor_test, 0, 16);
         if (actor_test.actors[0].state != TOY_GAME_ACTOR_ALIVE ||
-            actor_test.actors[0].hp != TOY_GAME_REVIVE_HP ||
-            actor_test.ai_down) return 52;
+            actor_test.actors[0].hp != TOY_GAME_REVIVE_HP) return 52;
     }
     memset(&command, 0, sizeof(command));
     command.move_forward = 1;
@@ -724,11 +714,10 @@ static int run_logic_test(void)
         int i, pushed_z;
         int jx = game.actors[0].x, jz = game.actors[0].z;
         int gx = game.actors[1].x, gz = game.actors[1].z;
-        int aix = game.ai_x, aiz = game.ai_z;
+        int aix = game.actors[0].x, aiz = game.actors[0].z;
         /* 挪开 AI 队友，避免它们射杀测试敌人（DETECT_RANGE 5600）。 */
         game.actors[0].x = 0; game.actors[0].z = 11000;
         game.actors[1].x = 0; game.actors[1].z = 11000;
-        game.ai_x = 0; game.ai_z = 11000;
         game.px = aim.x; game.pz = aim.z - 5000;
         memset(game.enemies, 0, sizeof(game.enemies));
         game.enemies_alive = 0;
@@ -767,7 +756,7 @@ static int run_logic_test(void)
             return 69;
         game.actors[0].x = jx; game.actors[0].z = jz;
         game.actors[1].x = gx; game.actors[1].z = gz;
-        game.ai_x = aix; game.ai_z = aiz;
+        game.actors[0].x = aix; game.actors[0].z = aiz;
     }
     /* 敌人槽位复用不能继承上一只敌人的推开僵直。 */
     {
@@ -796,7 +785,7 @@ static int run_logic_test(void)
         int start_z;
         memset(game.enemies, 0, sizeof(game.enemies));
         memset(game.actors, 0, sizeof(game.actors));
-        game.ai_active = 0;
+        game.actors[0].active = 0;
         game.enemies_alive = 1;
         game.campaign_mode = 0;
         game.to_spawn = 0;
@@ -848,7 +837,6 @@ static int run_logic_test(void)
             return 81;
         }
         game.actors[0].state = TOY_GAME_ACTOR_DOWNED;
-        game.ai_down = 1;
         toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
         if (game.enemies[0].special_target_active) return 82;
     }
@@ -878,7 +866,7 @@ static int run_logic_test(void)
         int saw_charge_after_hit = 0;
         memset(game.enemies, 0, sizeof(game.enemies));
         memset(game.actors, 0, sizeof(game.actors));
-        game.ai_active = 0;
+        game.actors[0].active = 0;
         game.enemies_alive = 1;
         game.campaign_mode = 0;
         game.to_spawn = 0;
@@ -915,7 +903,6 @@ static int run_logic_test(void)
         game.actors[0].z = 0;
         game.actors[0].deployment_x = 0;
         game.actors[0].deployment_z = 0;
-        game.ai_x = 1200; game.ai_z = 0;
         if (!toy_game_apply_entity_impact(&game, TOY_GAME_ENTITY_ACTOR, 0,
                                           1000, 0, 1) ||
             game.actors[0].airborne_ms <= 0 ||
@@ -1271,8 +1258,8 @@ static int run_logic_test(void)
         toy_game_set_world(&game, &wall, 1, 5000);
         game.actors[0].deployment_x = 1400;
         game.actors[0].deployment_z = 0;
-        game.actors[0].x = game.ai_x = -1400;
-        game.actors[0].z = game.ai_z = 0;
+        game.actors[0].x = -1400;
+        game.actors[0].z = 0;
         game.to_spawn = 0;
         for (int i = 0; i < 180; i++) toy_game_update_ai_teammates(&game, 16);
         /* The arena no longer contains campaign geometry that needs a
@@ -1337,7 +1324,7 @@ static int run_logic_test(void)
         game.world_count = 0; game.room_limit = 12000; game.to_spawn = 0;
         game.px = 0; game.pz = 1200; /* 新起手距离内，旧 712 距离外 */
         memset(game.actors, 0, sizeof(game.actors));
-        game.ai_active = 0;
+        game.actors[0].active = 0;
         for (i = 0; i < 3; i++) {
             game.actors[i].active = 1;
             game.actors[i].kind = TOY_GAME_ACTOR_AI;
@@ -1461,12 +1448,6 @@ static int run_logic_test(void)
         if (game.fire_cooldown_ms != 200 * 100 /
                 TOY_CONFIG_PLAYER_FIRE_RATE_PERCENT ||
             game.reload_timer_ms != 1500 * 60 / 100) return 150;
-        toy_game_init(&game, 144);
-        game.slots[game.current_slot].mag = 1;
-        game.weapon_update_is_ai = 1;
-        toy_game_fire(&game, 0, 1024);
-        if (game.fire_cooldown_ms != 200 || game.reload_timer_ms != 1500)
-            return 151;
     }
     /* Combat Power 使用武器真实参数计算，并输出完整拆分，方便调平衡。 */
     {

@@ -127,8 +127,6 @@
 #define TOY_CONFIG_AK_ALERT_RANGE            11500  /* AI 警觉范围 */
 #define TOY_CONFIG_AWP_RANGE                 23000  /* 最大射程 */
 #define TOY_CONFIG_AWP_ALERT_RANGE           23000  /* AI 警觉范围 */
-#define TOY_CONFIG_AWP_AI_AIM_MS               700  /* AI 瞄准时间 */
-#define TOY_CONFIG_AWP_AI_POST_FIRE_MS         700  /* AI 射击后硬直 */
 
 /* Common enemy tuning. */
 #define TOY_CONFIG_COMMON_HP                   50  /* 生命值 */

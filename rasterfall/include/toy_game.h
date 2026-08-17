@@ -483,9 +483,6 @@ struct toy_game_actor {
     int flag_index;
     int nav_x, nav_z;
     int nav_active;
-    int awp_aim_ms;
-    int awp_post_fire_ms;
-    int awp_aim_target; /* enemy index + 1; 0 means no locked target */
     int fire_enabled;
     int hit_test_dummy;
     int animation_demo;
@@ -581,25 +578,6 @@ struct toy_game {
     int base_actor_index;
     int base_regen_timer_ms;
 
-    /* 固定出生的 AI 队友。其武器字段与玩家共用同一套更新/换弹/射击
-     * 规则；离开部署区后会绕过障碍回位，并在索敌范围内开火。 */
-    int ai_active;
-    int ai_actor_id;
-    int ai_x, ai_z;
-    int ai_sy, ai_cy;
-    int ai_hp;
-    int ai_down;
-    int ai_revive_progress_ms;
-    char ai_name[TOY_GAME_MAX_NAME];
-    struct toy_game_slot ai_slots[TOY_GAME_WEAPON_SLOTS];
-    int ai_current_slot;
-    int ai_reloading, ai_reload_timer_ms;
-    int ai_fire_cooldown_ms;
-    int ai_muzzle_flash_ms;
-    int weapon_update_is_ai; /* 临时复用玩家武器逻辑时标记 AI 操作者 */
-    unsigned int ai_fire_seq;
-    int ai_ray_count;
-    struct toy_game_ray ai_rays[TOY_GAME_MAX_RAYS];
 
     /* 弹道记录：最近一次射击产生的弹丸射线（宿主渲染 tracer） */
     unsigned int fire_seq;   /* 每次实际开火 +1；宿主以此检测新弹道 */
@@ -667,7 +645,6 @@ struct toy_game {
     uint32_t player_special_control_id;
     int player_special_source;
     int player_special_pull_step;
-    int ai_spread_percent;
     int player_airborne_ms;
     int player_airborne_y;
     int player_ground_y;

@@ -44,11 +44,6 @@ static void session_down_ai(struct rasterfall_session *session, int index,
     actor->state = TOY_GAME_ACTOR_DOWNED;
     toy_game_actor_set_animation(actor, TOY_GAME_ANIM_DEATH);
     actor->revive_progress_ms = 0;
-    if (index == 0) {
-        session->game_state.ai_hp = 0;
-        session->game_state.ai_down = 1;
-        session->game_state.ai_revive_progress_ms = 0;
-    }
 }
 
 static void session_set_flag_assignments(struct rasterfall_session *s, int fi)
@@ -1305,7 +1300,6 @@ void rasterfall_session_step(struct rasterfall_session *session,
     if (session->ai_revive_active) {
         if (!session_near_ai(session, camera, NULL) || session->game_state.player_down) {
             session->ai_revive_active = 0;
-            session->game_state.ai_revive_progress_ms = 0;
         } else if (toy_game_revive_actor(&session->game_state,
                                          session->ai_revive_actor_index,
                                          dt_ms)) {
@@ -1423,7 +1417,6 @@ static void session_step_client_mode(struct rasterfall_session *session,
             session->game_state.player_down ||
             session->game_state.actors[index].state != TOY_GAME_ACTOR_DOWNED) {
             session->ai_revive_active = 0;
-            session->game_state.ai_revive_progress_ms = 0;
         }
     }
     /* 交互由主机权威执行。客户端只发送 INTERACT 命令，等待主机快照
