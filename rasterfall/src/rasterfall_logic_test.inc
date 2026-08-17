@@ -109,6 +109,7 @@ static int run_logic_test(void)
         struct toy_game_ai_observation ai_observation;
         struct toy_game_ai_decision ai_decision;
         struct toy_game ai_observe_test;
+        struct rasterfall_ai_registry ai_registry;
         const struct toy_game_weapon_info *smg =
             toy_game_weapon_info(TOY_GAME_WEAPON_SMG);
         const struct toy_game_weapon_info *shotgun =
@@ -132,6 +133,18 @@ static int run_logic_test(void)
         if (ai_decision.target_enemy != -1 ||
             ai_decision.switch_weapon != -1 ||
             ai_decision.shop_action != 0) return 145;
+        rasterfall_ai_registry_init(&ai_registry);
+        rasterfall_ai_registry_sync(&ai_registry, &ai_observe_test);
+        if (ai_registry.count != 2 ||
+            rasterfall_ai_registry_add(
+                &ai_registry, TOY_GAME_PLAYER_ACTOR_INDEX,
+                RASTERFALL_AI_CONTROLLER_MANAGED_PLAYER, 1,
+                RASTERFALL_AI_POLICY_IDLE) < 0 ||
+            ai_registry.count != 3) return 146;
+        rasterfall_ai_registry_think(&ai_registry, &ai_observe_test, 1);
+        if (ai_registry.agents[2].controller !=
+                RASTERFALL_AI_CONTROLLER_MANAGED_PLAYER ||
+            ai_registry.agents[2].decision.target_enemy != -1) return 147;
         if (!actor || actor->kind != TOY_GAME_ACTOR_AI ||
             actor->class_id != TOY_GAME_AI_LEVEL_2 ||
             pursuit_common->speed_min <= common->speed_max ||

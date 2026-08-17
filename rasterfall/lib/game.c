@@ -605,12 +605,29 @@ int toy_game_ai_observe(const struct toy_game *g, int actor_index,
                         struct toy_game_ai_observation *out)
 {
     const struct toy_game_actor *actor;
+    struct toy_game_actor player_view;
     int i, best = -1;
     long long best_d2 = 0;
-    if (!g || !out || actor_index < 0 ||
+    if (!g || !out || actor_index < TOY_GAME_PLAYER_ACTOR_INDEX ||
         actor_index >= TOY_GAME_MAX_ACTORS) return 0;
-    actor = &g->actors[actor_index];
-    if (!actor->active || actor->kind != TOY_GAME_ACTOR_AI) return 0;
+    if (actor_index == TOY_GAME_PLAYER_ACTOR_INDEX) {
+        memset(&player_view, 0, sizeof(player_view));
+        player_view.active = 1;
+        player_view.actor_id = g->actor_id;
+        player_view.kind = TOY_GAME_ACTOR_PLAYER;
+        player_view.state = g->player_down ? TOY_GAME_ACTOR_DOWNED :
+                             TOY_GAME_ACTOR_ALIVE;
+        player_view.x = g->px; player_view.z = g->pz;
+        player_view.hp = g->hp; player_view.max_hp = TOY_GAME_PLAYER_HP;
+        memcpy(player_view.slots, g->slots, sizeof(player_view.slots));
+        player_view.current_slot = g->current_slot;
+        player_view.deployment_x = g->px;
+        player_view.deployment_z = g->pz;
+        actor = &player_view;
+    } else {
+        actor = &g->actors[actor_index];
+        if (!actor->active || actor->kind != TOY_GAME_ACTOR_AI) return 0;
+    }
     memset(out, 0, sizeof(*out));
     out->actor_index = actor_index;
     out->actor_id = actor->actor_id;

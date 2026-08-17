@@ -106,6 +106,7 @@
 #define TOY_GAME_AI_RETURN_SPEED TOY_CONFIG_AI_RETURN_SPEED
 #define TOY_GAME_AI_DEPLOY_RADIUS 180
 #define TOY_GAME_MAX_FLAG_SLOTS 4
+#define TOY_GAME_PLAYER_ACTOR_INDEX (-1)
 
 #define TOY_GAME_KEY_RELOAD     19      /* evdev KEY_R */
 #define TOY_GAME_KEY_SLOT_1     2       /* evdev KEY_1：主武器槽 */

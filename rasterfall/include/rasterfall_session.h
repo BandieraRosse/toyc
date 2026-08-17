@@ -6,6 +6,7 @@
 #include "toy_map.h"
 #include "rasterfall_camera.h"
 #include "rasterfall_map.h"
+#include "rasterfall_ai.h"
 
 #define RASTERFALL_PLAYER_RADIUS 180
 #define RASTERFALL_MOVE_STEP TOY_CONFIG_PLAYER_MOVE_STEP
@@ -98,6 +99,7 @@ struct rasterfall_session {
     struct rasterfall_interactable items[TOY_MAP_MAX_PICKUPS];
     int item_count;
     struct rasterfall_map_state map_ops;
+    struct rasterfall_ai_registry ai_registry;
 
     int air_walls_enabled;
     int manual_alarm_on;

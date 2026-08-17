@@ -267,6 +267,11 @@ void rasterfall_session_reset(struct rasterfall_session *session,
         }
         if (spawn->downed) session_down_ai(session, actor_index, spawn->x, spawn->z);
     }
+    /* Registration is separate from simulation: the existing teammate
+     * executor remains authoritative while policies are introduced. */
+    rasterfall_ai_registry_init(&session->ai_registry);
+    rasterfall_ai_registry_sync(&session->ai_registry,
+                                &session->game_state);
     session->flag_count = 1;
     session->carried_flag = -1;
     session->assignment_flag = 0;
