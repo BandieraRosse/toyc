@@ -295,6 +295,9 @@ void rasterfall_session_reset(struct rasterfall_session *session,
     session->ai_revive_active = 0;
     session->ai_revive_actor_index = -1;
     session->managed_ai_route_phase = 0;
+    session->managed_ai_target_index = -1;
+    session->managed_ai_retarget_ms = 0;
+    session->managed_ai_fire_cooldown_ms = 0;
     session->shop_open = 0;
     session->shop_page = 0;
     session->shop_selected = 0;
@@ -1274,6 +1277,9 @@ int rasterfall_session_set_managed_ai(struct rasterfall_session *session,
     if (!session) return 0;
     session->managed_ai_enabled = active != 0;
     if (!active) {
+        session->managed_ai_target_index = -1;
+        session->managed_ai_retarget_ms = 0;
+        session->managed_ai_fire_cooldown_ms = 0;
         rasterfall_ai_registry_remove(
             &session->ai_registry, TOY_GAME_PLAYER_ACTOR_INDEX);
         return 1;
@@ -1298,12 +1304,15 @@ static void session_managed_ai_face(struct camera *camera, int x, int z)
 
 static void session_build_managed_ai_command(
     struct rasterfall_session *session, struct camera *camera,
-    struct rasterfall_command *command)
+    struct rasterfall_command *command, int dt_ms)
 {
     struct toy_game_ai_observation observation;
     int target_x = camera->x, target_z = camera->z;
     int target_found = 0, target_is_wave_button = 0;
     int target_stop_distance = 900;
+    int target_enemy_index = -1;
+    int weapon_range = TOY_GAME_MAX_RANGE;
+    int attack_min_distance, attack_max_distance;
     int route_phase;
     const struct toy_game_box *safe_room = NULL;
     int dx, dz, distance, i;
@@ -1314,10 +1323,28 @@ static void session_build_managed_ai_command(
         return;
     }
     if (session->game_state.state != TOY_GAME_PLAYING) return;
+    if (session->managed_ai_retarget_ms > 0)
+        session->managed_ai_retarget_ms -= dt_ms;
+    if (session->managed_ai_fire_cooldown_ms > 0)
+        session->managed_ai_fire_cooldown_ms -= dt_ms;
     memset(&observation, 0, sizeof(observation));
     observation.nearest_enemy_index = -1;
     toy_game_ai_observe(&session->game_state, TOY_GAME_PLAYER_ACTOR_INDEX,
                         &observation);
+    if (observation.current_weapon >= 0 &&
+        observation.current_weapon < TOY_GAME_WEAPON_COUNT)
+        weapon_range = toy_game_weapon_info(observation.current_weapon)->range;
+    attack_min_distance = weapon_range * 60 / 100;
+    attack_max_distance = weapon_range * 80 / 100;
+    if (session->managed_ai_retarget_ms <= 0 ||
+        session->managed_ai_target_index < 0 ||
+        session->managed_ai_target_index >= TOY_GAME_MAX_ENEMIES ||
+        session->game_state.enemies[session->managed_ai_target_index].active != 1 ||
+        session->game_state.enemies[session->managed_ai_target_index].hp <= 0) {
+        session->managed_ai_target_index = observation.nearest_enemy_index;
+        session->managed_ai_retarget_ms = 900;
+    }
+    target_enemy_index = session->managed_ai_target_index;
     if (session->game_state.safe_room_count > 0)
         safe_room = &session->safe_rooms[0];
 
@@ -1387,11 +1414,9 @@ static void session_build_managed_ai_command(
             }
         }
     }
-    if (!target_found && observation.nearest_enemy_index >= 0) {
-        target_x = session->game_state.enemies[
-            observation.nearest_enemy_index].x;
-        target_z = session->game_state.enemies[
-            observation.nearest_enemy_index].z;
+    if (!target_found && target_enemy_index >= 0) {
+        target_x = session->game_state.enemies[target_enemy_index].x;
+        target_z = session->game_state.enemies[target_enemy_index].z;
         target_found = 1;
     } else if (!target_found && session->game_state.base_actor_index >= 0 &&
                session->game_state.base_actor_index < TOY_GAME_MAX_ACTORS &&
@@ -1413,14 +1438,23 @@ static void session_build_managed_ai_command(
     distance = isqrt((long long)dx * dx + (long long)dz * dz);
     if (target_is_wave_button && distance <= RASTERFALL_INTERACT_RANGE)
         command->buttons |= RASTERFALL_CMD_INTERACT;
+    else if (!target_is_wave_button && target_enemy_index >= 0 &&
+             distance > attack_max_distance)
+        command->move_forward = 1;
+    else if (!target_is_wave_button && target_enemy_index >= 0 &&
+             distance < attack_min_distance)
+        command->move_forward = -1;
     else if (distance > (target_is_wave_button ?
                          RASTERFALL_INTERACT_RANGE / 2 :
                          target_stop_distance))
         command->move_forward = 1;
-    if (!target_is_wave_button && session->game_state.campaign_phase ==
-        TOY_GAME_PHASE_HORDE && observation.nearest_enemy_index >= 0) {
+    if (!target_is_wave_button && target_enemy_index >= 0 &&
+        session->game_state.campaign_phase == TOY_GAME_PHASE_HORDE &&
+        distance >= attack_min_distance && distance <= attack_max_distance &&
+        session->managed_ai_fire_cooldown_ms <= 0) {
         command->buttons |= RASTERFALL_CMD_FIRE;
         command->fire_held = 1;
+        session->managed_ai_fire_cooldown_ms = 300;
     }
 }
 
@@ -1436,7 +1470,8 @@ void rasterfall_session_step(struct rasterfall_session *session,
         return;
     }
     if (session_managed_ai_active(session)) {
-        session_build_managed_ai_command(session, camera, &managed_command);
+        session_build_managed_ai_command(session, camera, &managed_command,
+                                         dt_ms);
         command = &managed_command;
     }
     if ((command->buttons & RASTERFALL_CMD_REVIVE) &&

@@ -102,6 +102,9 @@ struct rasterfall_session {
     struct rasterfall_ai_registry ai_registry;
     int managed_ai_enabled;
     int managed_ai_route_phase;
+    int managed_ai_target_index;
+    int managed_ai_retarget_ms;
+    int managed_ai_fire_cooldown_ms;
 
     int air_walls_enabled;
     int manual_alarm_on;

@@ -1809,6 +1809,26 @@ static void update_campaign(struct toy_game *g, int dt_ms)
 
 /* ── 僵尸 AI ───────────────────────────────────────────────────── */
 
+/* A close enemy that damages the player is briefly launched away from the
+ * player as well.  This keeps the hit reaction directional and gives the
+ * managed player a small amount of breathing room without changing damage. */
+static void push_enemy_from_player(struct toy_game *g,
+                                   struct toy_game_enemy *e, int knockback)
+{
+    int dx, dz, distance;
+    if (!g || !e || e->active != 1 || e->airborne_ms > 0) return;
+    dx = e->x - g->px;
+    dz = e->z - g->pz;
+    distance = isqrt((long long)dx * dx + (long long)dz * dz);
+    if (distance <= 0) return;
+    e->airborne_ms = TOY_GAME_AIRBORNE_MS;
+    e->airborne_y = 0;
+    e->vertical_velocity = TOY_GAME_AIRBORNE_VELOCITY;
+    e->knockback_x = dx * knockback / distance;
+    e->knockback_z = dz * knockback / distance;
+    e->hurt = 180;
+}
+
 static void bite_player(struct toy_game *g, struct toy_game_enemy *e)
 {
     const struct toy_game_enemy_info *info = toy_game_enemy_info(e->type);
@@ -1818,6 +1838,7 @@ static void bite_player(struct toy_game *g, struct toy_game_enemy *e)
     if (g->hp < 0) g->hp = 0;
     g->damage_flash_ms = TOY_GAME_DAMAGE_FLASH_MS;
     e->hurt = 150;
+    push_enemy_from_player(g, e, TOY_GAME_CHARGER_KNOCKBACK);
     push_event(g, TOY_GAME_EV_BITE);
     if (g->hp <= 0) {
         g->player_down = 1;
@@ -2949,8 +2970,10 @@ static void update_charger(struct toy_game *g, struct toy_game_enemy *e,
              * player again until they have landed.  The charge itself keeps
              * moving for its configured duration. */
             if (target_kind == 0 && g->player_airborne_ms <= 0) {
-                toy_game_apply_entity_impact(g, TOY_GAME_ENTITY_PLAYER, 0,
-                                             dx, dz, TOY_GAME_CHARGER_DAMAGE);
+                if (toy_game_apply_entity_impact(
+                        g, TOY_GAME_ENTITY_PLAYER, 0,
+                        dx, dz, TOY_GAME_CHARGER_DAMAGE))
+                    push_enemy_from_player(g, e, TOY_GAME_CHARGER_KNOCKBACK);
             } else if (target_kind == 1 && target_index >= 0 &&
                        target_index < TOY_GAME_MAX_ACTORS &&
                        !(e->ability.charge_hit_actor_mask &
@@ -3031,9 +3054,9 @@ static void tank_sweep_entities(struct toy_game *g,
     int actor_dx[TOY_GAME_MAX_ACTORS], actor_dz[TOY_GAME_MAX_ACTORS];
     if (!g->player_down && tank_target_in_sweep(tank, g->px, g->pz)) {
         dx = g->px - tank->x; dz = g->pz - tank->z;
-        apply_entity_impact_with_knockback(g, TOY_GAME_ENTITY_PLAYER, 0,
-                                           dx, dz, TOY_CONFIG_TANK_DAMAGE,
-                                           TOY_CONFIG_TANK_KNOCKBACK);
+        apply_entity_impact_with_knockback(
+            g, TOY_GAME_ENTITY_PLAYER, 0, dx, dz,
+            TOY_CONFIG_TANK_DAMAGE, TOY_CONFIG_TANK_KNOCKBACK);
     }
     /* Freeze the cone result before applying any hit.  An AI hit reaction can
      * shove the attacker, but that must not change who was inside this one
