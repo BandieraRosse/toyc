@@ -397,6 +397,21 @@ static void set_network_spectator_camera(struct camera *camera,
     camera->y = target->camera.y;
 }
 
+static void set_managed_spectator_camera(struct camera *render_camera,
+                                         const struct camera *body_camera,
+                                         int third_person)
+{
+    if (!render_camera || !body_camera || !third_person) return;
+    render_camera->x = body_camera->x - body_camera->sy * 1100 / 1024;
+    render_camera->z = body_camera->z - body_camera->cy * 1100 / 1024;
+    render_camera->sy = body_camera->sy;
+    render_camera->cy = body_camera->cy;
+    render_camera->y = body_camera->y + 650;
+    /* Keep the body in view from slightly above; positive pitch looks down. */
+    render_camera->pitch_sy = 230;
+    render_camera->pitch_cy = 998;
+}
+
 
 static int sensitivity_percent(int level)
 {
@@ -687,10 +702,10 @@ static void draw_startup_menu(struct toy_surface *surface, int screen,
     fb_draw_string((unsigned char *)surface->pixels, 238, 35,
                    "RASTERFALL", RF_COLOR_UI_ACCENT, surface->stride);
     if (screen == RASTERFALL_STARTUP_MAIN) {
-        static const char *items[] = {"CREATE LOCAL ROOM", "CREATE PUBLIC ROOM",
-                                      "JOIN PUBLIC ROOM", "JOIN LAN ROOM",
-                                      "JOIN BY ADDRESS", "QUIT"};
-        for (i = 0; i < 6; i++) {
+        static const char *items[] = {"CREATE LOCAL ROOM", "WATCH MANAGED AI",
+                                      "CREATE PUBLIC ROOM", "JOIN PUBLIC ROOM",
+                                      "JOIN LAN ROOM", "JOIN BY ADDRESS", "QUIT"};
+        for (i = 0; i < 7; i++) {
             uint32_t color = i == selected ? RF_COLOR_UI_ACCENT : RF_COLOR_UI_TEXT;
             if (i == selected)
                 fill_rect(surface, 180, y + i * 34 - 4, 440, FB_FONT_H + 8,
@@ -775,6 +790,7 @@ static int run_startup_menu(struct toy_window *window, struct toy_renderer *rend
                             struct toy_window_events *events,
                             int *net_mode, char *address, int address_size,
                             int *port, int *public_room, int *room_id,
+                            int *managed_spectator,
                             const char *error,
                             struct rasterfall_net_discovery *discovery)
 {
@@ -842,7 +858,7 @@ static int run_startup_menu(struct toy_window *window, struct toy_renderer *rend
                     rasterfall_net_discovery_close(discovery);
                     discovery_active = 0;
                     screen = RASTERFALL_STARTUP_MAIN;
-                    selected = 3;
+                    selected = 4;
                 } else if (key == KEY_ENTER && active_count > 0) {
                     for (int room_slot = 0;
                          room_slot < RASTERFALL_NET_DISCOVERY_MAX_ROOMS;
@@ -873,7 +889,7 @@ static int run_startup_menu(struct toy_window *window, struct toy_renderer *rend
                 if (!events->key_events[i].pressed) continue;
                 if (key == KEY_ESC) {
                     screen = RASTERFALL_STARTUP_MAIN;
-                    selected = 4;
+                    selected = 5;
                     editing_port = 0;
                 } else if (key == KEY_TAB) {
                     editing_port = !editing_port;
@@ -907,7 +923,7 @@ static int run_startup_menu(struct toy_window *window, struct toy_renderer *rend
             int up = pending_key_edges[KEY_UP];
             int down = pending_key_edges[KEY_DOWN];
             if ((up || down) && now >= nav_ready) {
-                int limit = 6;
+                int limit = 7;
                 selected += down ? 1 : -1;
                 if (selected < 0) selected = limit - 1;
                 if (selected >= limit) selected = 0;
@@ -930,20 +946,25 @@ static int run_startup_menu(struct toy_window *window, struct toy_renderer *rend
                         *net_mode = RASTERFALL_NET_HOST;
                         *public_room = 0;
                         return 1;
-                    } else if (selected == 1 || selected == 2) {
+                    } else if (selected == 1) {
+                        *net_mode = RASTERFALL_NET_OFF;
+                        *public_room = 0;
+                        if (managed_spectator) *managed_spectator = 1;
+                        return 1;
+                    } else if (selected == 2 || selected == 3) {
                         screen = RASTERFALL_STARTUP_PUBLIC_ROOM;
                         room_text[0] = 0;
-                    } else if (selected == 3) {
+                    } else if (selected == 4) {
                         if (rasterfall_net_discovery_browser_start(discovery) == 0) {
                             discovery_active = 1;
                             screen = RASTERFALL_STARTUP_LAN_ROOMS;
                             selected = 0;
                         }
-                    } else if (selected == 4) {
+                    } else if (selected == 5) {
                         screen = RASTERFALL_STARTUP_MANUAL_IP;
                         address[0] = 0;
                         editing_port = 0;
-                    } else if (selected == 5) break;
+                    } else if (selected == 6) break;
                 }
             }
         }
@@ -1324,6 +1345,8 @@ int main(int argc, char **argv)
     const char *startup_error = NULL;
     char selected_address[64];
     int auto_mode = 0;
+    int managed_spectator = 0;
+    int managed_third_person = 0;
     const char *dump_path = 0;
     for (int arg = 1; arg < argc; arg++) {
         if (strcmp(argv[arg], "--input-test") == 0) input_debug = 1;
@@ -1447,7 +1470,8 @@ startup_again:
                                                 selected_address,
                                                 sizeof(selected_address),
                                                 &net_port, &public_room,
-                                                &public_room_id, startup_error,
+                                                &public_room_id, &managed_spectator,
+                                                startup_error,
                                                 &discovery)) {
             toy_window_close(window);
             if (scene_texture.blob) toy_texture_unload(&scene_texture);
@@ -1460,6 +1484,9 @@ startup_again:
         net_address = selected_address;
         startup_error = NULL;
     }
+    rasterfall_session_set_managed_ai(&session,
+                                      managed_spectator &&
+                                      requested_net_mode == RASTERFALL_NET_OFF);
     if (requested_net_mode == RASTERFALL_NET_HOST && public_room) {
         struct camera client_spawn;
         memcpy(&client_spawn, &camera, sizeof(client_spawn));
@@ -1732,8 +1759,12 @@ startup_again:
         /* 射击输入：每帧只取一次边沿（恢复点击帧不开火） */
         if (!paused && !resumed && events.button_pressed && events.button == BTN_LEFT)
             fire_edge = 1;
-        if (!paused && !resumed && toy_input_pressed(&input, KEY_SPACE))
-            fire_edge = 1;
+        if (!paused && !resumed && toy_input_pressed(&input, KEY_SPACE)) {
+            if (managed_spectator)
+                managed_third_person = !managed_third_person;
+            else
+                fire_edge = 1;
+        }
         /* 推开输入：右键与开火同一套边沿锁存（恢复点击帧不算） */
         if (!paused && !resumed && events.button_pressed && events.button == BTN_RIGHT)
             shove_edge = 1;
@@ -2078,6 +2109,9 @@ startup_again:
              * the next input packet and must remain at the death position. */
             render_camera = camera;
             set_network_spectator_camera(&render_camera, &net);
+            if (managed_spectator)
+                set_managed_spectator_camera(&render_camera, &camera,
+                                             managed_third_person);
             scene_pixels = rasterfall_render_scene(&renderer, &render_camera);
             scene_pixels += rasterfall_render_flags(&renderer, &render_camera);
             rasterfall_perf_end_stage(&stats, &stats_total, RASTERFALL_STATS_SCENE, &t_stage,
@@ -2085,6 +2119,9 @@ startup_again:
             prev_tris = renderer.submitted_triangles;
             scene_pixels += rasterfall_render_enemies(&renderer, &render_camera);
             scene_pixels += rasterfall_render_ai_teammate(&renderer, &render_camera);
+            if (managed_spectator && managed_third_person)
+                scene_pixels += rasterfall_render_managed_player(
+                    &renderer, &render_camera, &camera);
             scene_pixels += rasterfall_render_network_teammate(&renderer, &render_camera, &net);
             rasterfall_perf_end_stage(&stats, &stats_total, RASTERFALL_STATS_ENEMIES, &t_stage,
                            renderer.submitted_triangles - prev_tris, 0);
@@ -2179,6 +2216,9 @@ startup_again:
         }
     }
     if (return_to_menu) {
+        rasterfall_session_set_managed_ai(&session, 0);
+        managed_spectator = 0;
+        managed_third_person = 0;
         rasterfall_audio_stop(&audio);
         rasterfall_audio_unload_assets(&audio);
         rasterfall_net_discovery_close(&discovery);

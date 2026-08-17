@@ -41,6 +41,9 @@ int rasterfall_render_enemies(struct toy_renderer *renderer,
                               const struct camera *camera);
 int rasterfall_render_ai_teammate(struct toy_renderer *renderer,
                                   const struct camera *camera);
+int rasterfall_render_managed_player(struct toy_renderer *renderer,
+                                     const struct camera *viewer,
+                                     const struct camera *body_camera);
 int rasterfall_render_network_teammate(struct toy_renderer *renderer,
                                        const struct camera *camera,
                                        const struct rasterfall_net *net);
