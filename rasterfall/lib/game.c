@@ -4055,6 +4055,84 @@ int toy_game_actor_combat_power(const struct toy_game_actor *actor)
            toy_game_weapon_combat_power(weapon);
 }
 
+int toy_game_actor_health_percent(const struct toy_game_actor *actor)
+{
+    if (!actor || actor->max_hp <= 0) return 0;
+    if (actor->hp <= 0) return 0;
+    if (actor->hp >= actor->max_hp) return 100;
+    return actor->hp * 100 / actor->max_hp;
+}
+
+int toy_game_actor_current_weapon(const struct toy_game_actor *actor)
+{
+    if (!actor || actor->current_slot < 0 ||
+        actor->current_slot >= TOY_GAME_WEAPON_SLOTS) return -1;
+    return actor->slots[actor->current_slot].weapon;
+}
+
+int toy_game_actor_has_weapon(const struct toy_game_actor *actor, int weapon)
+{
+    int i;
+    if (!actor || !toy_game_weapon_is_valid(weapon)) return 0;
+    for (i = 0; i < TOY_GAME_WEAPON_SLOTS; i++)
+        if (actor->slots[i].weapon == weapon) return 1;
+    return 0;
+}
+
+int toy_game_actor_ammo_percent(const struct toy_game_actor *actor)
+{
+    const struct toy_game_weapon_info *info;
+    int weapon, mag;
+    if (!actor) return 0;
+    weapon = toy_game_actor_current_weapon(actor);
+    if (!toy_game_weapon_is_valid(weapon)) return 0;
+    info = toy_game_weapon_info(weapon);
+    if (!info || info->mag_size <= 0) return 100;
+    mag = actor->slots[actor->current_slot].mag;
+    if (mag <= 0) return 0;
+    if (mag >= info->mag_size) return 100;
+    return mag * 100 / info->mag_size;
+}
+
+int toy_game_count_active_enemies(const struct toy_game *g)
+{
+    int i, count = 0;
+    if (!g) return 0;
+    for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++)
+        if (g->enemies[i].active == 1 && g->enemies[i].hp > 0) count++;
+    return count;
+}
+
+int toy_game_count_downed_actors(const struct toy_game *g)
+{
+    int i, count = 0;
+    if (!g) return 0;
+    for (i = 0; i < TOY_GAME_MAX_ACTORS; i++)
+        if (g->actors[i].active &&
+            g->actors[i].state == TOY_GAME_ACTOR_DOWNED) count++;
+    return count;
+}
+
+int toy_game_nearest_enemy_distance(const struct toy_game *g,
+                                    const struct toy_game_actor *actor)
+{
+    int i, best = -1;
+    long long best_d2 = 0;
+    if (!g || !actor) return -1;
+    for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
+        long long dx, dz, d2;
+        if (g->enemies[i].active != 1 || g->enemies[i].hp <= 0) continue;
+        dx = (long long)g->enemies[i].x - actor->x;
+        dz = (long long)g->enemies[i].z - actor->z;
+        d2 = dx * dx + dz * dz;
+        if (best < 0 || d2 < best_d2) {
+            best = i;
+            best_d2 = d2;
+        }
+    }
+    return best < 0 ? -1 : (int)isqrt(best_d2);
+}
+
 int toy_game_weapon_unlocked(const struct toy_game *g, int weapon)
 {
     if (!g || weapon < 0 || weapon >= TOY_GAME_WEAPON_COUNT) return 0;

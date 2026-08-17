@@ -726,6 +726,15 @@ int  toy_game_weapon_spread_penalty(int weapon);
 int  toy_game_weapon_combat_power(int weapon);
 int  toy_game_ai_level_combat_power(int class_id);
 int  toy_game_actor_combat_power(const struct toy_game_actor *actor);
+/* Side-effect-free predicates for AI policy code. */
+int  toy_game_actor_health_percent(const struct toy_game_actor *actor);
+int  toy_game_actor_current_weapon(const struct toy_game_actor *actor);
+int  toy_game_actor_has_weapon(const struct toy_game_actor *actor, int weapon);
+int  toy_game_actor_ammo_percent(const struct toy_game_actor *actor);
+int  toy_game_count_active_enemies(const struct toy_game *g);
+int  toy_game_count_downed_actors(const struct toy_game *g);
+int  toy_game_nearest_enemy_distance(const struct toy_game *g,
+                                     const struct toy_game_actor *actor);
 int  toy_game_weapon_unlocked(const struct toy_game *g, int weapon);
 int  toy_game_buy_weapon(struct toy_game *g, int weapon);
 const struct toy_game_weapon_info *toy_game_weapon_info(int weapon);

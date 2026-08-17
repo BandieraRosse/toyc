@@ -35,6 +35,30 @@ static int run_logic_test(void)
     rasterfall_session_toggle_flag_remote(&session, &camera, 1);
     if (session.flags[0].carried || session.flags[0].carrier_id != -1)
         return 134;
+    /* 单人商店 API：查询与执行必须使用同一套价格/合法性规则；AI
+     * 条件查询只读游戏状态，不能偷偷改变经济或库存。 */
+    {
+        struct rasterfall_shop_request shop = {
+            RASTERFALL_SHOP_BUY_WEAPON, TOY_GAME_WEAPON_SMG, -1, 0
+        };
+        int price = 0;
+        const struct toy_game_actor *ai = &session.game_state.actors[0];
+        if (!rasterfall_session_shop_can(&session, &shop, &price) ||
+            price != TOY_GAME_PRICE_SMG ||
+            toy_game_actor_health_percent(ai) <= 0 ||
+            toy_game_actor_ammo_percent(ai) < 0 ||
+            toy_game_count_active_enemies(&session.game_state) != 0 ||
+            toy_game_count_downed_actors(&session.game_state) != 0 ||
+            toy_game_nearest_enemy_distance(&session.game_state, ai) != -1)
+            return 142;
+        if (rasterfall_session_shop_execute(&session, &shop) != 2 ||
+            session.game_state.money != 0 ||
+            !toy_game_weapon_unlocked(&session.game_state,
+                                      TOY_GAME_WEAPON_SMG)) return 143;
+        shop.item = TOY_GAME_WEAPON_AWP;
+        if (rasterfall_session_shop_can(&session, &shop, &price)) return 143;
+        rasterfall_session_reset(&session, &camera, 1);
+    }
     {
         int actor_index = rasterfall_session_shop_actor_at(&session, 0, 0);
         int was_assigned;
