@@ -100,6 +100,7 @@ struct rasterfall_session {
     int item_count;
     struct rasterfall_map_state map_ops;
     struct rasterfall_ai_registry ai_registry;
+    int managed_ai_enabled;
 
     int air_walls_enabled;
     int manual_alarm_on;
@@ -129,6 +130,9 @@ int rasterfall_session_load(struct rasterfall_session *session,
 void rasterfall_session_unload(struct rasterfall_session *session);
 void rasterfall_session_reset(struct rasterfall_session *session,
                               struct camera *camera, uint64_t seed);
+/* 单人托管玩家开关。启用后，step 会用最小托管策略生成玩家命令。 */
+int rasterfall_session_set_managed_ai(struct rasterfall_session *session,
+                                      int active);
 void rasterfall_session_step(struct rasterfall_session *session,
                              struct camera *camera,
                              const struct rasterfall_command *command,

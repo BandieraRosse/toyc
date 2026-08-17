@@ -12,7 +12,8 @@ enum rasterfall_ai_controller {
 };
 
 enum rasterfall_ai_policy {
-    RASTERFALL_AI_POLICY_IDLE = 0
+    RASTERFALL_AI_POLICY_IDLE = 0,
+    RASTERFALL_AI_POLICY_MANAGED_SIMPLE = 1
 };
 
 struct rasterfall_ai_agent {

@@ -81,6 +81,33 @@ static int run_logic_test(void)
         if (!session.banner_text || session.banner_ms <= 0) return 100;
         rasterfall_session_reset(&session, &camera, 1);
     }
+    /* 最小托管闭环：休息阶段走到波次按钮并跳波，死亡后自动付费复活。 */
+    {
+        int wave_item = -1;
+        int i;
+        rasterfall_session_reset(&session, &camera, 3);
+        for (i = 0; i < session.item_count; i++)
+            if (session.items[i].kind == TOY_MAP_PICKUP_WAVE_SKIP_BUTTON) {
+                wave_item = i;
+                break;
+            }
+        if (wave_item < 0 ||
+            !rasterfall_session_set_managed_ai(&session, 1)) return 160;
+        session.game_state.campaign_phase = TOY_GAME_PHASE_CALM;
+        session.game_state.spawn_timer_ms = 1000;
+        camera.x = session.items[wave_item].x - 200;
+        camera.z = session.items[wave_item].z;
+        rasterfall_session_step(&session, &camera, &command, 16);
+        if (session.game_state.campaign_phase == TOY_GAME_PHASE_CALM)
+            return 161;
+        session.game_state.player_down = 1;
+        session.game_state.money = RASTERFALL_PAID_REVIVE_COST + 1;
+        rasterfall_session_step(&session, &camera, &command, 16);
+        if (session.game_state.player_down ||
+            session.game_state.money != 1) return 162;
+        rasterfall_session_set_managed_ai(&session, 0);
+        rasterfall_session_reset(&session, &camera, 3);
+    }
     {
         struct toy_game actor_test;
         struct toy_game ai_reload_test;
