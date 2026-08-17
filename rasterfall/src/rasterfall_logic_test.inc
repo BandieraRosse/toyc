@@ -217,12 +217,17 @@ static int run_logic_test(void)
                                 0, 0, "RELOAD TEST");
         ai_reload_test.actors[ai_id - 1].slots[
             ai_reload_test.actors[ai_id - 1].current_slot].mag = 1;
+        /* Legacy ai_* fields must not overwrite the actor source of truth. */
+        ai_reload_test.ai_x = 9000;
+        ai_reload_test.ai_z = 9000;
         ai_reload_test.enemies[0].active = 1;
         ai_reload_test.enemies[0].type = TOY_GAME_ENEMY_HEAVY;
         ai_reload_test.enemies[0].x = 0;
         ai_reload_test.enemies[0].z = 1000;
         ai_reload_test.enemies[0].hp = 200;
         toy_game_update_ai_teammates(&ai_reload_test, 16);
+        if (ai_reload_test.actors[ai_id - 1].x != 0 ||
+            ai_reload_test.actors[ai_id - 1].z != 0) return 150;
         if (!ai_reload_test.actors[ai_id - 1].reloading ||
             ai_reload_test.actors[ai_id - 1].animation.id !=
                 TOY_GAME_ANIM_RELOAD) return 62;

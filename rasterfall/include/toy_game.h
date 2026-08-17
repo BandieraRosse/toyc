@@ -462,6 +462,10 @@ struct toy_game_actor {
     struct toy_game_slot slots[TOY_GAME_WEAPON_SLOTS];
     int current_slot;
     int reloading, reload_timer_ms;
+    int weapon_switch_timer_ms;
+    int melee_timer_ms;
+    int throw_timer_ms;
+    int damage_flash_ms;
     int fire_cooldown_ms;
     int ai_shove_cooldown_ms;
     int ai_turn_remainder;
@@ -487,6 +491,20 @@ struct toy_game_actor {
     int animation_demo;
     int animation_demo_elapsed_ms;
     struct toy_game_animation_state animation;
+};
+
+/* 一个 actor 在单帧中的可执行意图。决策层只填写这份值，规则层负责
+ * 移动、换武器、换弹和射击；托管玩家和普通 AI 共用此入口。 */
+struct toy_game_actor_command {
+    int move_target_active;
+    int move_x, move_z;
+    int move_speed;
+    int aim_active;
+    int aim_sy, aim_cy;
+    int fire_pressed;
+    int fire_held;
+    int reload;
+    int switch_slot;           /* -1 表示不切枪 */
 };
 
 /* AI policy boundary.  The observation is a read-only snapshot assembled by
@@ -755,6 +773,17 @@ void toy_game_update_weapon_held(struct toy_game *g,
                                  const unsigned char *keys_pressed,
                                  int fire_pressed, int fire_held,
                                  int sy, int cy, int dt_ms);
+/* Execute one actor's weapon intent through the same weapon/fire rules as the
+ * local player.  The actor is the source of truth; player fields are only a
+ * temporary compatibility context for the existing hitscan implementation. */
+int  toy_game_update_actor_weapon_held(
+    struct toy_game *g, struct toy_game_actor *actor,
+    const unsigned char *keys_pressed, int fire_pressed, int fire_held,
+    int sy, int cy, int dt_ms, int spread_percent);
+int  toy_game_execute_actor_command(
+    struct toy_game *g, struct toy_game_actor *actor,
+    const struct toy_game_actor_command *command,
+    int dt_ms, int spread_percent);
 void toy_game_set_player_pitch(struct toy_game *g, int pitch_sy, int pitch_cy,
                                int view_y);
 void toy_game_set_player_moving(struct toy_game *g, int moving);
