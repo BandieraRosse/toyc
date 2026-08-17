@@ -297,7 +297,6 @@ void rasterfall_session_reset(struct rasterfall_session *session,
     session->managed_ai_route_phase = 0;
     session->managed_ai_target_index = -1;
     session->managed_ai_retarget_ms = 0;
-    session->managed_ai_fire_cooldown_ms = 0;
     session->shop_open = 0;
     session->shop_page = 0;
     session->shop_selected = 0;
@@ -1279,7 +1278,6 @@ int rasterfall_session_set_managed_ai(struct rasterfall_session *session,
     if (!active) {
         session->managed_ai_target_index = -1;
         session->managed_ai_retarget_ms = 0;
-        session->managed_ai_fire_cooldown_ms = 0;
         rasterfall_ai_registry_remove(
             &session->ai_registry, TOY_GAME_PLAYER_ACTOR_INDEX);
         return 1;
@@ -1309,6 +1307,7 @@ static void session_build_managed_ai_command(
     struct toy_game_ai_observation observation;
     int target_x = camera->x, target_z = camera->z;
     int target_found = 0, target_is_wave_button = 0;
+    int target_is_ai_revive = 0;
     int target_stop_distance = 900;
     int target_enemy_index = -1;
     int weapon_range = TOY_GAME_MAX_RANGE;
@@ -1325,8 +1324,6 @@ static void session_build_managed_ai_command(
     if (session->game_state.state != TOY_GAME_PLAYING) return;
     if (session->managed_ai_retarget_ms > 0)
         session->managed_ai_retarget_ms -= dt_ms;
-    if (session->managed_ai_fire_cooldown_ms > 0)
-        session->managed_ai_fire_cooldown_ms -= dt_ms;
     memset(&observation, 0, sizeof(observation));
     observation.nearest_enemy_index = -1;
     toy_game_ai_observe(&session->game_state, TOY_GAME_PLAYER_ACTOR_INDEX,
@@ -1349,7 +1346,33 @@ static void session_build_managed_ai_command(
         safe_room = &session->safe_rooms[0];
 
     if (session->game_state.campaign_phase == TOY_GAME_PHASE_CALM &&
-        session->game_state.spawn_timer_ms > 0 && safe_room) {
+        safe_room) {
+        /* Rest-phase priority: rescue every downed teammate before entering
+         * the safe-room route and pressing the next-wave button. */
+        for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
+            const struct toy_game_actor *actor =
+                &session->game_state.actors[i];
+            if (!actor->active || actor->kind != TOY_GAME_ACTOR_AI ||
+                actor->base_core || actor->state != TOY_GAME_ACTOR_DOWNED)
+                continue;
+            target_x = actor->x;
+            target_z = actor->z;
+            target_found = 1;
+            target_is_ai_revive = 1;
+            break;
+        }
+        if (target_is_ai_revive) {
+            /* The normal interaction executor owns revive progress. */
+            if (isqrt((long long)(target_x - camera->x) *
+                      (target_x - camera->x) +
+                      (long long)(target_z - camera->z) *
+                      (target_z - camera->z)) <= RASTERFALL_INTERACT_RANGE)
+                command->buttons |= RASTERFALL_CMD_INTERACT;
+        }
+        if (target_is_ai_revive)
+            goto managed_ai_target_ready;
+        if (session->game_state.spawn_timer_ms <= 0)
+            return;
         if (session->managed_ai_route_phase >= 3)
             session->managed_ai_route_phase = 0;
         route_phase = session->managed_ai_route_phase;
@@ -1429,6 +1452,8 @@ static void session_build_managed_ai_command(
         target_found = 1;
     }
     if (!target_found) return;
+managed_ai_target_ready:
+    if (!target_found) return;
     if (session->managed_ai_route_phase >= 0 &&
         session->managed_ai_route_phase < 5)
         target_stop_distance = 200;
@@ -1438,23 +1463,28 @@ static void session_build_managed_ai_command(
     distance = isqrt((long long)dx * dx + (long long)dz * dz);
     if (target_is_wave_button && distance <= RASTERFALL_INTERACT_RANGE)
         command->buttons |= RASTERFALL_CMD_INTERACT;
-    else if (!target_is_wave_button && target_enemy_index >= 0 &&
+    else if (target_is_ai_revive && distance <= RASTERFALL_INTERACT_RANGE)
+        command->buttons |= RASTERFALL_CMD_INTERACT;
+    else if (!target_is_wave_button && !target_is_ai_revive &&
+             target_enemy_index >= 0 &&
              distance > attack_max_distance)
         command->move_forward = 1;
-    else if (!target_is_wave_button && target_enemy_index >= 0 &&
+    else if (!target_is_wave_button && !target_is_ai_revive &&
+             target_enemy_index >= 0 &&
              distance < attack_min_distance)
         command->move_forward = -1;
-    else if (distance > (target_is_wave_button ?
+    else if (distance > (target_is_wave_button || target_is_ai_revive ?
                          RASTERFALL_INTERACT_RANGE / 2 :
                          target_stop_distance))
         command->move_forward = 1;
-    if (!target_is_wave_button && target_enemy_index >= 0 &&
+    /* Managed-player combat intentionally fires at full rate.  The distance
+     * band is the limiter; there is no artificial trigger cooldown here. */
+    if (!target_is_wave_button && !target_is_ai_revive &&
+        target_enemy_index >= 0 &&
         session->game_state.campaign_phase == TOY_GAME_PHASE_HORDE &&
-        distance >= attack_min_distance && distance <= attack_max_distance &&
-        session->managed_ai_fire_cooldown_ms <= 0) {
+        distance >= attack_min_distance && distance <= attack_max_distance) {
         command->buttons |= RASTERFALL_CMD_FIRE;
         command->fire_held = 1;
-        session->managed_ai_fire_cooldown_ms = 300;
     }
 }
 
