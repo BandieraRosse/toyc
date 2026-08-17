@@ -297,6 +297,7 @@ void rasterfall_session_reset(struct rasterfall_session *session,
     session->managed_ai_route_phase = 0;
     session->managed_ai_target_index = -1;
     session->managed_ai_retarget_ms = 0;
+    session->managed_ai_escape_phase = -1;
     session->shop_open = 0;
     session->shop_page = 0;
     session->shop_selected = 0;
@@ -1278,6 +1279,7 @@ int rasterfall_session_set_managed_ai(struct rasterfall_session *session,
     if (!active) {
         session->managed_ai_target_index = -1;
         session->managed_ai_retarget_ms = 0;
+        session->managed_ai_escape_phase = -1;
         rasterfall_ai_registry_remove(
             &session->ai_registry, TOY_GAME_PLAYER_ACTOR_INDEX);
         return 1;
@@ -1308,6 +1310,7 @@ static void session_build_managed_ai_command(
     int target_x = camera->x, target_z = camera->z;
     int target_found = 0, target_is_wave_button = 0;
     int target_is_ai_revive = 0;
+    int target_is_escape = 0;
     int target_stop_distance = 900;
     int target_enemy_index = -1;
     int weapon_range = TOY_GAME_MAX_RANGE;
@@ -1345,7 +1348,87 @@ static void session_build_managed_ai_command(
     if (session->game_state.safe_room_count > 0)
         safe_room = &session->safe_rooms[0];
 
-    if (session->game_state.campaign_phase == TOY_GAME_PHASE_CALM &&
+    if (session->managed_ai_escape_phase < 0 &&
+        camera->z < -5700 &&
+        !(safe_room && toy_game_point_in_box(camera->x, camera->z,
+                                             safe_room)))
+        session->managed_ai_escape_phase = 0;
+    /* A safe-room visit during the deliberate wave-button route is expected.
+     * Outside that route, treat it as an abnormal mobility state and recover
+     * to the main base instead of allowing the player to remain trapped. */
+    if (session->managed_ai_escape_phase < 0 && safe_room &&
+        toy_game_point_in_box(camera->x, camera->z, safe_room) &&
+        (session->managed_ai_route_phase < 0 ||
+         session->managed_ai_route_phase >= 5))
+        session->managed_ai_escape_phase = 4;
+
+    if (session->managed_ai_escape_phase >= 0) {
+        /* Fixed recovery path: developer side corridor -> air-gate opening
+         * -> safe-room door -> main base.  It avoids the table/platform lanes
+         * and never asks the generic combat steering to solve this escape. */
+        target_is_escape = 1;
+        if (toy_game_position_blocked_at_height(
+                &session->game_state, camera->x, camera->z,
+                RASTERFALL_PLAYER_RADIUS,
+                session->game_state.player_ground_y +
+                session->game_state.player_airborne_y)) {
+            /* A Charger can leave us inside a prop.  Relocate to the known
+             * clear side corridor before continuing the fixed route. */
+            camera->x = 2000;
+            camera->z = -6500;
+        }
+        if (session->managed_ai_escape_phase == 0) {
+            target_x = camera->x >= 0 ? 2000 : -2000;
+            target_z = -6500;
+            if (isqrt((long long)(target_x - camera->x) *
+                      (target_x - camera->x) +
+                      (long long)(target_z - camera->z) *
+                      (target_z - camera->z)) <= 350)
+                session->managed_ai_escape_phase = 1;
+        }
+        if (session->managed_ai_escape_phase == 1) {
+            target_x = 0;
+            target_z = -6500;
+            if (isqrt((long long)(target_x - camera->x) *
+                      (target_x - camera->x) +
+                      (long long)(target_z - camera->z) *
+                      (target_z - camera->z)) <= 350)
+                session->managed_ai_escape_phase = 2;
+        }
+        if (session->managed_ai_escape_phase == 2) {
+            target_x = 0;
+            target_z = -3500;
+            if (isqrt((long long)(target_x - camera->x) *
+                      (target_x - camera->x) +
+                      (long long)(target_z - camera->z) *
+                      (target_z - camera->z)) <= 350)
+                session->managed_ai_escape_phase = 3;
+        }
+        if (session->managed_ai_escape_phase == 3) {
+            target_x = 0;
+            target_z = 0;
+            if (isqrt((long long)(target_x - camera->x) *
+                      (target_x - camera->x) +
+                      (long long)(target_z - camera->z) *
+                      (target_z - camera->z)) <= 350) {
+                session->managed_ai_escape_phase = -1;
+                target_found = 0;
+            }
+        }
+        if (session->managed_ai_escape_phase == 4) {
+            /* Safe-room recovery first crosses its center, then uses the
+             * same door/base segment as the normal exit route. */
+            target_x = (safe_room->minx + safe_room->maxx) / 2;
+            target_z = (safe_room->minz + safe_room->maxz) / 2;
+            if (isqrt((long long)(target_x - camera->x) *
+                      (target_x - camera->x) +
+                      (long long)(target_z - camera->z) *
+                      (target_z - camera->z)) <= 350)
+                session->managed_ai_escape_phase = 2;
+        }
+        if (session->managed_ai_escape_phase >= 0)
+            target_found = 1;
+    } else if (session->game_state.campaign_phase == TOY_GAME_PHASE_CALM &&
         safe_room) {
         /* Rest-phase priority: rescue every downed teammate before entering
          * the safe-room route and pressing the next-wave button. */
@@ -1457,11 +1540,15 @@ managed_ai_target_ready:
     if (session->managed_ai_route_phase >= 0 &&
         session->managed_ai_route_phase < 5)
         target_stop_distance = 200;
+    if (target_is_escape)
+        target_stop_distance = 200;
     session_managed_ai_face(camera, target_x, target_z);
     dx = target_x - camera->x;
     dz = target_z - camera->z;
     distance = isqrt((long long)dx * dx + (long long)dz * dz);
-    if (target_is_wave_button && distance <= RASTERFALL_INTERACT_RANGE)
+    if (target_is_escape)
+        command->move_forward = distance > target_stop_distance ? 1 : 0;
+    else if (target_is_wave_button && distance <= RASTERFALL_INTERACT_RANGE)
         command->buttons |= RASTERFALL_CMD_INTERACT;
     else if (target_is_ai_revive && distance <= RASTERFALL_INTERACT_RANGE)
         command->buttons |= RASTERFALL_CMD_INTERACT;
@@ -1479,12 +1566,28 @@ managed_ai_target_ready:
         command->move_forward = 1;
     /* Managed-player combat intentionally fires at full rate.  The distance
      * band is the limiter; there is no artificial trigger cooldown here. */
-    if (!target_is_wave_button && !target_is_ai_revive &&
-        target_enemy_index >= 0 &&
-        session->game_state.campaign_phase == TOY_GAME_PHASE_HORDE &&
-        distance >= attack_min_distance && distance <= attack_max_distance) {
-        command->buttons |= RASTERFALL_CMD_FIRE;
-        command->fire_held = 1;
+    {
+        int enemy_distance = -1;
+        if (target_enemy_index >= 0 &&
+            session->game_state.enemies[target_enemy_index].active == 1) {
+            int enemy_dx = session->game_state.enemies[target_enemy_index].x -
+                           camera->x;
+            int enemy_dz = session->game_state.enemies[target_enemy_index].z -
+                           camera->z;
+            enemy_distance = isqrt((long long)enemy_dx * enemy_dx +
+                                   (long long)enemy_dz * enemy_dz);
+        }
+        /* During recovery, any target within the weapon range may be fired at
+         * while the fixed route owns movement.  In normal combat, entering
+         * range is enough to fire; 60%--80% only controls distance. */
+        if (!target_is_wave_button && !target_is_ai_revive &&
+            target_enemy_index >= 0 && enemy_distance >= 0 &&
+            enemy_distance <= weapon_range &&
+            (target_is_escape ||
+             session->game_state.campaign_phase == TOY_GAME_PHASE_HORDE)) {
+            command->buttons |= RASTERFALL_CMD_FIRE;
+            command->fire_held = 1;
+        }
     }
 }
 

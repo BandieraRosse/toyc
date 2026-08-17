@@ -93,6 +93,21 @@ static int run_logic_test(void)
             }
         if (wave_item < 0 ||
             !rasterfall_session_set_managed_ai(&session, 1)) return 160;
+        /* Charger recovery: a player dropped into the developer table area
+         * must be returned to the base corridor by the fixed escape route. */
+        session.game_state.campaign_phase = TOY_GAME_PHASE_HORDE;
+        camera.x = 0;
+        camera.z = -7450;
+        camera.sy = 0; camera.cy = 1024;
+        for (i = 0; i < 300; i++) {
+            rasterfall_session_step(&session, &camera, &command, 16);
+            if (session.managed_ai_escape_phase < 0) break;
+        }
+        if (camera.x < -500 || camera.x > 500 ||
+            camera.z < -500 || camera.z > 500)
+            return 163;
+        rasterfall_session_reset(&session, &camera, 3);
+        rasterfall_session_set_managed_ai(&session, 1);
         session.game_state.campaign_phase = TOY_GAME_PHASE_CALM;
         session.game_state.spawn_timer_ms = 100000;
         camera.x = 0;
