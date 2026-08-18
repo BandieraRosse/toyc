@@ -75,6 +75,7 @@ static int draw_world_triangle(struct toy_renderer *renderer,
                                const struct vec3 *c, uint32_t color);
 static void world_to_view(const struct camera *camera, const struct vec3 *world,
                           struct vec3 *view);
+static int world_distance(const struct camera *camera, int x, int z);
 static void project_vertex(const struct toy_surface *surface,
                            const struct vec3 *view,
                            struct toy_screen_vertex *screen);
@@ -88,6 +89,8 @@ static void rotate_arm_xz(int x, int z, int degrees, int *out_x, int *out_z);
 
 static struct rasterfall_model_asset gallery_models[RASTERFALL_MODEL_MAX_GALLERY];
 static int gallery_loaded;
+static struct rasterfall_model_asset private_character_model;
+static int private_character_loaded;
 
 #define RASTERFALL_MODEL_PATH_BYTES 160
 #define RASTERFALL_GALLERY_COLUMNS 9
@@ -306,6 +309,26 @@ static int render_model_gallery(struct toy_renderer *renderer,
     }
     active_gallery_lighting = 0;
     return pixels;
+}
+
+/* Local-only copyright-restricted character sample.  It is deliberately
+ * outside the public asset gallery and is never embedded into release builds. */
+static int render_private_character(struct toy_renderer *renderer,
+                                    const struct camera *camera)
+{
+    const char path[] = "rasterfall/private-assets/models/yola.rmesh";
+    int scale;
+    if (!private_character_loaded) {
+        rasterfall_model_load(&private_character_model, path);
+        private_character_loaded = 1;
+    }
+    if (!private_character_model.data ||
+        world_distance(camera, -13000, -10000) > ENEMY_RENDER_DISTANCE)
+        return 0;
+    scale = gallery_model_scale(&private_character_model) * 3;
+    if (scale < 1) scale = 1;
+    return render_gallery_model(renderer, camera, &private_character_model,
+                                -13000, -900, -10000, scale);
 }
 
 /* The gallery is a fixed developer display rather than an interactable map
@@ -1741,6 +1764,7 @@ static int render_scene(struct toy_renderer *renderer, const struct camera *came
         pixels+=draw_box(renderer,camera,&obstacle);
     }
     pixels += render_model_gallery(renderer, camera);
+    pixels += render_private_character(renderer, camera);
     pixels += render_projectiles(renderer, camera);
     return pixels;
 }

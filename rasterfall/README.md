@@ -50,3 +50,22 @@ build/glb2rmesh Zombie.glb rasterfall/assets/models/zombie.rmesh
 
 `.claude/glb/` 中的武器和弹药箱资源已经转换到 `assets/models/*.rmesh`，
 文件名使用小写下划线命名，并保留同名变体的来源后缀。
+
+## PMX 静态模型导入
+
+对于 MMD/PMX 模型，可以不经过 Blender，直接提取 Rasterfall 当前静态
+渲染所需的数据：
+
+```sh
+make app-pmx2rmesh
+build/pmx2rmesh character.pmx rasterfall/assets/models/character.rmesh
+```
+
+`pmx2rmesh` 读取 PMX 2.0/2.1 的顶点位置、法线、UV、三角形索引和材质漫
+反射色，输出现有 RFM2 格式。骨骼、Morph、刚体、关节、toon/sphere 贴图
+和原始图片纹理当前只跳过，不会写入 RFM2；因此输出模型是固定静态网格，
+使用 Rasterfall 当前的纯色材质路径渲染。
+
+版权受限的本地测试模型应放在 `private-assets/` 下；该目录已被 Git 忽略，
+不会参与公开资源或嵌入式发布构建。当前本地角色样本位于
+`private-assets/models/yola.rmesh`，游戏会将其绘制在 `(-13000, -900, -10000)`。
