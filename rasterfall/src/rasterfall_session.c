@@ -9,6 +9,7 @@
 #define HORDE_MIN_PLAYER_DIST 700
 #define QUARTER_TURN 1611
 #define SMOOTH_TURN_STEP 128
+#define MANAGED_AI_TURN_DEG_PER_SEC 480
 static const int hired_ai_positions[][2] = {
     { 1000, 0 }, { 0, -900 }, { -1000, 0 },
     { 1200, 900 }, { -1200, 900 }, { 0, 2100 },
@@ -295,9 +296,12 @@ void rasterfall_session_reset(struct rasterfall_session *session,
     session->ai_revive_active = 0;
     session->ai_revive_actor_index = -1;
     session->managed_ai_route_phase = 0;
+    session->managed_ai_weapon_master_target = 0;
+    session->managed_ai_weapon_master_route = 0;
+    session->managed_ai_ammo_rest_wave = -1;
     session->managed_ai_target_index = -1;
     session->managed_ai_retarget_ms = 0;
-    session->managed_ai_escape_phase = -1;
+                session->managed_ai_escape_phase = -1;
     session->shop_open = 0;
     session->shop_page = 0;
     session->shop_selected = 0;
@@ -1325,16 +1329,262 @@ int rasterfall_session_recover_managed_player(
     return 1;
 }
 
-static void session_managed_ai_face(struct camera *camera, int x, int z)
+static int session_managed_ai_face(struct camera *camera, int x, int z,
+                                   int dt_ms)
 {
-    int dx, dz, distance;
-    if (!camera) return;
+    int dx, dz, distance, turn, aligned;
+    long long cross, dot, cross_abs;
+    if (!camera) return 0;
     dx = x - camera->x;
     dz = z - camera->z;
     distance = isqrt((long long)dx * dx + (long long)dz * dz);
-    if (distance <= 0) return;
-    camera->sy = (int)((long long)dx * 1024 / distance);
-    camera->cy = (int)((long long)dz * 1024 / distance);
+    if (distance <= 0) return 1;
+    /* camera_rotate's turn argument is tan(angle) * 1024 for small angles.
+     * Use a bounded per-tick delta so managed AI turns at 480 degrees/sec. */
+    turn = MANAGED_AI_TURN_DEG_PER_SEC * dt_ms * 1024 / (1000 * 57);
+    if (turn < 1) turn = 1;
+    cross = (long long)camera->sy * dz - (long long)camera->cy * dx;
+    dot = (long long)camera->sy * dx + (long long)camera->cy * dz;
+    cross_abs = cross < 0 ? -cross : cross;
+    aligned = dot > 0 && cross_abs <= dot * turn / 1024;
+    if (aligned) {
+        camera->sy = (int)((long long)dx * 1024 / distance);
+        camera->cy = (int)((long long)dz * 1024 / distance);
+        return 1;
+    }
+    /* Positive camera turn rotates toward +X.  The cross-product sign is
+     * reversed for this coordinate convention. */
+    rasterfall_camera_rotate(camera, cross < 0 ? turn : -turn, 0);
+    return 0;
+}
+
+static int session_managed_ai_pistol_defense(
+    struct rasterfall_session *session, struct camera *camera,
+    struct rasterfall_command *command, int dt_ms)
+{
+    int enemy_index, dx, dz, distance;
+    struct toy_game_enemy *enemy;
+    if (!session || !camera || !command ||
+        session->game_state.current_slot != 1 ||
+        session->game_state.player_special_control !=
+            TOY_GAME_SPECIAL_CONTROL_SMOKER)
+        return 0;
+    enemy_index = session->game_state.player_special_source;
+    if (enemy_index < 0 || enemy_index >= TOY_GAME_MAX_ENEMIES)
+        return 0;
+    enemy = &session->game_state.enemies[enemy_index];
+    if (enemy->active != 1 || enemy->hp <= 0) return 0;
+    dx = enemy->x - camera->x;
+    dz = enemy->z - camera->z;
+    distance = isqrt((long long)dx * dx + (long long)dz * dz);
+    if (distance > toy_game_weapon_info(TOY_GAME_WEAPON_PISTOL)->range)
+        return 0;
+    if (!session_managed_ai_face(camera, enemy->x, enemy->z, dt_ms))
+        return 1;
+    command->buttons |= RASTERFALL_CMD_FIRE;
+    command->fire_held = 1;
+    return 1;
+}
+
+static int session_managed_ai_weapon_master(
+    struct rasterfall_session *session, struct camera *camera,
+    struct rasterfall_command *command, int dt_ms)
+{
+    static const int weapons[] = {
+        TOY_GAME_WEAPON_SMG, TOY_GAME_WEAPON_SHOTGUN,
+        TOY_GAME_WEAPON_AK, TOY_GAME_WEAPON_AWP
+    };
+    int target_weapon, shop = -1, ammo = -1, i;
+    int dx, dz, distance;
+    const struct toy_game_weapon_info *info;
+
+    int primary_empty = 0;
+    if (!session || !camera || !command || session->game_state.player_down ||
+        session->game_state.state != TOY_GAME_PLAYING)
+        return 0;
+    if (session->game_state.slots[0].weapon >= TOY_GAME_WEAPON_SMG &&
+        session->game_state.slots[0].weapon <= TOY_GAME_WEAPON_AWP) {
+        const struct toy_game_weapon_info *primary = toy_game_weapon_info(
+            session->game_state.slots[0].weapon);
+        if (primary->reserve_max != TOY_GAME_AMMO_INFINITE)
+            primary_empty = session->game_state.slots[0].reserve <= 0;
+    }
+    /* Horde completion starts a new rest period even though the wave number
+     * has not advanced yet. */
+    if (session->game_state.campaign_phase == TOY_GAME_PHASE_HORDE)
+        session->managed_ai_ammo_rest_wave = -1;
+    /* Empty reserve is an unconditional emergency, regardless of the route
+     * state in which the last magazine ended. */
+    if (primary_empty && session->game_state.campaign_phase == TOY_GAME_PHASE_HORDE &&
+        session->managed_ai_weapon_master_route != 7 &&
+        session->managed_ai_weapon_master_route != 8) {
+        /* Pistol has infinite reserve ammo and remains usable while a
+         * smoker disables ordinary movement.  The next normal weapon is
+         * restored after the ammo-box trip. */
+        if (session->game_state.current_slot != 1)
+            toy_game_switch_weapon(&session->game_state, 1);
+        session->managed_ai_weapon_master_route = 7;
+    }
+    /* Every rest period starts with a mandatory ammo-box visit. */
+    if (session->game_state.campaign_phase == TOY_GAME_PHASE_CALM &&
+        session->managed_ai_ammo_rest_wave != session->game_state.wave &&
+        (session->managed_ai_weapon_master_route <= 2 ||
+         session->managed_ai_weapon_master_route == 6))
+        session->managed_ai_weapon_master_route = 7;
+    if (session->managed_ai_weapon_master_route == 7) {
+        int route_x = 0, route_z = -3500;
+        if (session_managed_ai_pistol_defense(session, camera, command,
+                                              dt_ms))
+            return 1;
+        int route_distance = isqrt((long long)(route_x - camera->x) *
+                                   (route_x - camera->x) +
+                                   (long long)(route_z - camera->z) *
+                                   (route_z - camera->z));
+        if (!session_managed_ai_face(camera, route_x, route_z, dt_ms))
+            return 1;
+        if (route_distance > 350) {
+            command->move_forward = 1;
+            return 1;
+        }
+        session->managed_ai_weapon_master_route = 8;
+    }
+    if (session->managed_ai_weapon_master_route == 8) {
+        int dx, dz, route_distance;
+        int ammo_index = -1, i;
+        if (session_managed_ai_pistol_defense(session, camera, command,
+                                              dt_ms))
+            return 1;
+        for (i = 0; i < session->item_count; i++)
+            if (session->items[i].kind == TOY_MAP_PICKUP_AMMO &&
+                session->items[i].x > 0 && session->items[i].z > -2000)
+                ammo_index = i;
+        if (ammo_index < 0) return 0;
+        dx = session->items[ammo_index].x - camera->x;
+        dz = session->items[ammo_index].z - camera->z;
+        route_distance = isqrt((long long)dx * dx + (long long)dz * dz);
+        if (!session_managed_ai_face(camera, session->items[ammo_index].x,
+                                     session->items[ammo_index].z, dt_ms))
+            return 1;
+        if (route_distance > 350) {
+            command->move_forward = 1;
+            return 1;
+        }
+        toy_game_refill_ammo(&session->game_state);
+        if (session->game_state.slots[0].weapon >= TOY_GAME_WEAPON_SMG &&
+            session->game_state.slots[0].weapon <= TOY_GAME_WEAPON_AWP)
+            toy_game_switch_weapon(&session->game_state, 0);
+        if (session->game_state.campaign_phase == TOY_GAME_PHASE_CALM)
+            session->managed_ai_ammo_rest_wave = session->game_state.wave;
+        session->managed_ai_weapon_master_route = 6;
+        return 0;
+    }
+    if (session->game_state.campaign_phase != TOY_GAME_PHASE_CALM)
+        return 0;
+    /* The wave number advances when a wave starts.  Therefore the first
+     * preparation is target 0, and the next calm phase advances to target 1. */
+    if (session->managed_ai_weapon_master_target < session->game_state.wave) {
+        session->managed_ai_weapon_master_target = session->game_state.wave;
+        session->managed_ai_weapon_master_route = 0;
+    }
+    if (session->managed_ai_weapon_master_target > 4)
+        return 0;
+    target_weapon = session->managed_ai_weapon_master_target < 4 ?
+        weapons[session->managed_ai_weapon_master_target] : TOY_GAME_WEAPON_AK;
+    info = toy_game_weapon_info(target_weapon);
+
+    for (i = 0; i < session->item_count; i++) {
+        if (session->items[i].kind == TOY_MAP_PICKUP_SHOP) shop = i;
+        else if (session->items[i].kind == TOY_MAP_PICKUP_AMMO &&
+                 /* This is the ammo box beside the central base. */
+                 session->items[i].x > 0 && session->items[i].z > -2000)
+            ammo = i;
+    }
+    if (shop < 0 || ammo < 0 || !info) return 0;
+
+    if (session->managed_ai_weapon_master_route <= 2) {
+        int route_x = session->managed_ai_weapon_master_route == 0 ? 0 :
+                      session->managed_ai_weapon_master_route == 1 ? 0 :
+                      session->items[shop].x;
+        int route_z = session->managed_ai_weapon_master_route == 0 ? -3500 :
+                      session->managed_ai_weapon_master_route == 1 ? -4500 :
+                      session->items[shop].z;
+        dx = session->items[shop].x - camera->x;
+        dz = session->items[shop].z - camera->z;
+        distance = isqrt((long long)dx * dx + (long long)dz * dz);
+        distance = isqrt((long long)(route_x - camera->x) *
+                         (route_x - camera->x) +
+                         (long long)(route_z - camera->z) *
+                         (route_z - camera->z));
+        if (distance <= 350) {
+            if (session->managed_ai_weapon_master_route < 2) {
+                session->managed_ai_weapon_master_route++;
+            } else if (toy_game_weapon_unlocked(&session->game_state,
+                                                 target_weapon)) {
+                toy_game_equip_weapon(&session->game_state, target_weapon);
+                session->managed_ai_weapon_master_route = 3;
+            } else if (session->game_state.money >=
+                       toy_game_weapon_price(target_weapon)) {
+                /* Deliberately bypass the shop UI: range and money are
+                 * checked here, then the authoritative purchase function. */
+                if (toy_game_buy_weapon(&session->game_state, target_weapon) > 0) {
+                    session->managed_ai_weapon_master_route = 3;
+                    session->banner_ms = 1200;
+                    session->banner_text = "MANAGED AI BOUGHT WEAPON";
+                }
+            }
+        }
+        if (!session_managed_ai_face(camera, route_x, route_z, dt_ms))
+            return 1;
+        if (session->managed_ai_weapon_master_route <= 2) {
+            command->move_forward = distance > 350 ? 1 : 0;
+            return 1;
+        }
+    }
+    if (session->managed_ai_weapon_master_route == 3) {
+        int route_x = 0, route_z = -4500;
+        distance = isqrt((long long)(route_x - camera->x) *
+                         (route_x - camera->x) +
+                         (long long)(route_z - camera->z) *
+                         (route_z - camera->z));
+        if (!session_managed_ai_face(camera, route_x, route_z, dt_ms))
+            return 1;
+        if (distance > 350) {
+            command->move_forward = 1;
+            return 1;
+        }
+        session->managed_ai_weapon_master_route = 4;
+    }
+    if (session->managed_ai_weapon_master_route == 4) {
+        int route_x = 0, route_z = -3500;
+        distance = isqrt((long long)(route_x - camera->x) *
+                         (route_x - camera->x) +
+                         (long long)(route_z - camera->z) *
+                         (route_z - camera->z));
+        if (!session_managed_ai_face(camera, route_x, route_z, dt_ms))
+            return 1;
+        if (distance > 350) {
+            command->move_forward = 1;
+            return 1;
+        }
+        session->managed_ai_weapon_master_route = 5;
+    }
+    if (session->managed_ai_weapon_master_route == 5) {
+        dx = session->items[ammo].x - camera->x;
+        dz = session->items[ammo].z - camera->z;
+        distance = isqrt((long long)dx * dx + (long long)dz * dz);
+        if (!session_managed_ai_face(camera, session->items[ammo].x,
+                                     session->items[ammo].z, dt_ms))
+            return 1;
+        if (distance > 350) {
+            command->move_forward = 1;
+            return 1;
+        }
+        toy_game_refill_ammo(&session->game_state);
+        toy_game_equip_weapon(&session->game_state, target_weapon);
+        session->managed_ai_ammo_rest_wave = session->game_state.wave;
+        session->managed_ai_weapon_master_route = 6;
+    }
+    return 0;
 }
 
 static void session_build_managed_ai_command(
@@ -1371,13 +1621,28 @@ static void session_build_managed_ai_command(
         weapon_range = toy_game_weapon_info(observation.current_weapon)->range;
     attack_min_distance = weapon_range * 60 / 100;
     attack_max_distance = weapon_range * 80 / 100;
+    if (observation.current_weapon == TOY_GAME_WEAPON_SHOTGUN) {
+        attack_min_distance = 2000;
+        attack_max_distance = 3000;
+    } else if (observation.current_weapon == TOY_GAME_WEAPON_SMG) {
+        attack_min_distance = 2000;
+        attack_max_distance = 4000;
+    } else if (observation.current_weapon == TOY_GAME_WEAPON_AK) {
+        attack_min_distance = 3000;
+        attack_max_distance = 5000;
+    } else if (observation.current_weapon == TOY_GAME_WEAPON_AWP) {
+        /* Keep the sniper at long range instead of letting the generic
+         * fallback steering pull it toward every visible target. */
+        attack_min_distance = 6000;
+        attack_max_distance = weapon_range;
+    }
     if (session->managed_ai_retarget_ms <= 0 ||
         session->managed_ai_target_index < 0 ||
         session->managed_ai_target_index >= TOY_GAME_MAX_ENEMIES ||
         session->game_state.enemies[session->managed_ai_target_index].active != 1 ||
         session->game_state.enemies[session->managed_ai_target_index].hp <= 0) {
         session->managed_ai_target_index = observation.nearest_enemy_index;
-        session->managed_ai_retarget_ms = 900;
+        session->managed_ai_retarget_ms = 1000;
     }
     target_enemy_index = session->managed_ai_target_index;
     if (session->game_state.safe_room_count > 0)
@@ -1578,7 +1843,10 @@ managed_ai_target_ready:
         target_stop_distance = 200;
     if (target_is_escape)
         target_stop_distance = 200;
-    session_managed_ai_face(camera, target_x, target_z);
+    if (!session_managed_ai_face(camera, target_x, target_z, dt_ms)) {
+        command->move_forward = 0;
+        return;
+    }
     dx = target_x - camera->x;
     dz = target_z - camera->z;
     distance = isqrt((long long)dx * dx + (long long)dz * dz);
@@ -1596,7 +1864,10 @@ managed_ai_target_ready:
              target_enemy_index >= 0 &&
              distance < attack_min_distance)
         command->move_forward = -1;
-    else if (distance > (target_is_wave_button || target_is_ai_revive ?
+    else if ((target_enemy_index < 0 ||
+              distance > attack_max_distance ||
+              distance < attack_min_distance) &&
+             distance > (target_is_wave_button || target_is_ai_revive ?
                          RASTERFALL_INTERACT_RANGE / 2 :
                          target_stop_distance))
         command->move_forward = 1;
@@ -1621,8 +1892,17 @@ managed_ai_target_ready:
             enemy_distance <= weapon_range &&
             (target_is_escape ||
              session->game_state.campaign_phase == TOY_GAME_PHASE_HORDE)) {
-            command->buttons |= RASTERFALL_CMD_FIRE;
-            command->fire_held = 1;
+            /* Keep the primary weapon usable for the whole wave.  The
+             * refill box replenishes reserve ammo during preparation; this
+             * command performs the ordinary magazine reload while fighting. */
+            if (observation.current_weapon >= TOY_GAME_WEAPON_SMG &&
+                observation.current_weapon <= TOY_GAME_WEAPON_AWP &&
+                observation.ammo_percent == 0) {
+                command->buttons |= RASTERFALL_CMD_RELOAD;
+            } else {
+                command->buttons |= RASTERFALL_CMD_FIRE;
+                command->fire_held = 1;
+            }
         }
     }
 }
@@ -1639,8 +1919,14 @@ void rasterfall_session_step(struct rasterfall_session *session,
         return;
     }
     if (session_managed_ai_active(session)) {
-        session_build_managed_ai_command(session, camera, &managed_command,
-                                         dt_ms);
+        memset(&managed_command, 0, sizeof(managed_command));
+        /* Weapon-master preparation owns the command while it is travelling
+         * through the shop route.  The generic calm route must not retarget
+         * or rotate the player in the middle of that fixed path. */
+        if (!session_managed_ai_weapon_master(session, camera,
+                                              &managed_command, dt_ms))
+            session_build_managed_ai_command(session, camera, &managed_command,
+                                             dt_ms);
         command = &managed_command;
     }
     if ((command->buttons & RASTERFALL_CMD_REVIVE) &&

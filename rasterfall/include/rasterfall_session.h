@@ -105,6 +105,10 @@ struct rasterfall_session {
     int managed_ai_target_index;
     int managed_ai_retarget_ms;
     int managed_ai_escape_phase;
+    /* 托管玩家的武器大师：0..3 依次对应 SMG/SG/AK/AWP，4 表示最终回到 AK。 */
+    int managed_ai_weapon_master_target;
+    int managed_ai_weapon_master_route;
+    int managed_ai_ammo_rest_wave;
 
     int air_walls_enabled;
     int manual_alarm_on;
