@@ -58,13 +58,16 @@ build/glb2rmesh Zombie.glb rasterfall/assets/models/zombie.rmesh
 
 ```sh
 make app-pmx2rmesh
-build/pmx2rmesh character.pmx rasterfall/assets/models/character.rmesh
+build/pmx2rmesh character.pmx \
+    rasterfall/private-assets/models/character.rmesh \
+    rasterfall/private-assets/models/character.textures
 ```
 
 `pmx2rmesh` 读取 PMX 2.0/2.1 的顶点位置、法线、UV、三角形索引和材质漫
-反射色，输出现有 RFM2 格式。骨骼、Morph、刚体、关节、toon/sphere 贴图
-和原始图片纹理当前只跳过，不会写入 RFM2；因此输出模型是固定静态网格，
-使用 Rasterfall 当前的纯色材质路径渲染。
+反射色和材质引用，输出现有 RFM2 格式，并将 PMX 引用的 PNG/BMP 纹理复制
+到指定目录。再使用 `build/toyasset convert png1024|bmp` 转成 TTEX 后，
+Rasterfall 会按 RFM2 材质索引加载并采样这些基础色纹理。骨骼、Morph、刚体、
+关节、toon/sphere 贴图和 alpha 混合当前只跳过。
 
 版权受限的本地测试模型应放在 `private-assets/` 下；该目录已被 Git 忽略，
 不会参与公开资源或嵌入式发布构建。当前本地角色样本位于

@@ -2,7 +2,8 @@
  *
  * This is intentionally an offline converter.  Bones, morphs, rigid bodies,
  * joints, toon textures and sphere textures are parsed only far enough to
- * skip them; the output is the existing RFM2 static mesh format.
+ * skip them; base texture files are copied to a caller-selected directory
+ * and their indices are stored in the existing RFM2 material records.
  */
 #include "core.h"
 #include "tlibc_print.h"
@@ -10,12 +11,15 @@
 #include "rasterfall_model.h"
 
 #define MAX_MATERIALS 128
+#define MAX_TEXTURES 256
 #define MAX_VERTICES 1000000
 #define MAX_INDICES 3000000
+#define TEXTURE_PATH_MAX 512
 
 struct cursor { const unsigned char *p, *end; };
 struct pmx_header { int vertex_size, texture_size, material_size; int bone_size, morph_size, rigid_size; int encoding, append_uv; };
-struct pmx_material { unsigned int color; unsigned int index_count; };
+struct pmx_texture { char path[TEXTURE_PATH_MAX]; };
+struct pmx_material { unsigned int color; unsigned int index_count; int texture_index; };
 struct pmx_vertex { float x, y, z, nx, ny, nz, u, v; };
 
 static int have(struct cursor *c, unsigned int n)
@@ -90,6 +94,60 @@ static int text(struct cursor *c)
     int length;
     if (i32(c, &length) < 0 || length < 0 || length > 16 * 1024 * 1024 ||
         !have(c, (unsigned int)length)) return -1;
+    c->p += length;
+    return 0;
+}
+
+static int utf8_put(char *out, int max, int *at, unsigned int code)
+{
+    if (code < 0x80) {
+        if (*at + 1 >= max) return -1;
+        out[(*at)++] = (char)code;
+    } else if (code < 0x800) {
+        if (*at + 2 >= max) return -1;
+        out[(*at)++] = (char)(0xC0 | (code >> 6));
+        out[(*at)++] = (char)(0x80 | (code & 63));
+    } else {
+        if (*at + 3 >= max) return -1;
+        out[(*at)++] = (char)(0xE0 | (code >> 12));
+        out[(*at)++] = (char)(0x80 | ((code >> 6) & 63));
+        out[(*at)++] = (char)(0x80 | (code & 63));
+    }
+    return 0;
+}
+
+static int read_text(struct cursor *c, int encoding, char *out, int max)
+{
+    int length, at = 0, i;
+    if (i32(c, &length) < 0 || length < 0 || length > 16 * 1024 * 1024 ||
+        !have(c, (unsigned int)length)) return -1;
+    if (!out || max < 1) { c->p += length; return 0; }
+    if (encoding == 1) {
+        for (i = 0; i < length; i++) {
+            if (at + 1 >= max) return -1;
+            out[at++] = c->p[i] == '\\' ? '/' : (char)c->p[i];
+        }
+    } else {
+        if (length & 1) return -1;
+        for (i = 0; i < length; i += 2) {
+            unsigned int code = c->p[i] | (unsigned int)c->p[i + 1] << 8;
+            if (code >= 0xD800 && code <= 0xDBFF && i + 3 < length) {
+                unsigned int low = c->p[i + 2] | (unsigned int)c->p[i + 3] << 8;
+                if (low >= 0xDC00 && low <= 0xDFFF) {
+                    code = 0x10000 + ((code - 0xD800) << 10) + low - 0xDC00;
+                    i += 2;
+                }
+            }
+            if (code > 0xFFFF) {
+                if (at + 4 >= max) return -1;
+                out[at++] = (char)(0xF0 | (code >> 18));
+                out[at++] = (char)(0x80 | ((code >> 12) & 63));
+                out[at++] = (char)(0x80 | ((code >> 6) & 63));
+                out[at++] = (char)(0x80 | (code & 63));
+            } else if (utf8_put(out, max, &at, code) < 0) return -1;
+        }
+    }
+    out[at] = 0;
     c->p += length;
     return 0;
 }
@@ -176,11 +234,65 @@ static int read_materials(struct cursor *c, const struct pmx_header *h,
         else if (u8(c, (unsigned int *)&toon) < 0) return -1;
         if (text(c) < 0 || i32(c, &face_count) < 0 || face_count < 0 || face_count % 3) return -1;
         materials[i].index_count = (unsigned int)face_count;
+        /* Sphere maps are handled separately; retain the ordinary base map. */
+        materials[i].texture_index = texture;
         materials[i].color = (unsigned int)color_byte(r) << 16 |
             (unsigned int)color_byte(g) << 8 | (unsigned int)color_byte(b);
     }
     *count = n;
     (void)j; (void)a; (void)texture; (void)sphere; (void)sphere_mode; (void)toon;
+    return 0;
+}
+
+static int write_all(int fd, const void *buf, int length);
+
+static int copy_file(const char *source, const char *destination)
+{
+    int in, out, n;
+    unsigned char buffer[8192];
+    struct stat st;
+    in = __openat(AT_FDCWD, source, O_RDONLY, 0);
+    if (in < 0 || __fstat(in, &st) < 0 || st.st_size <= 0 || st.st_size > 64 * 1024 * 1024) {
+        if (in >= 0) __close(in);
+        return -1;
+    }
+    out = __openat(AT_FDCWD, destination, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (out < 0) { __close(in); return -1; }
+    while ((n = (int)__read(in, buffer, sizeof(buffer))) > 0) {
+        if (write_all(out, buffer, n) < 0) { __close(in); __close(out); return -1; }
+    }
+    __close(in); __close(out);
+    return n < 0 ? -1 : 0;
+}
+
+static int copy_textures(const char *pmx_path, const char *output_dir,
+                         struct pmx_texture *textures, int texture_count)
+{
+    char source_dir[TEXTURE_PATH_MAX], source[TEXTURE_PATH_MAX * 2];
+    char destination[TEXTURE_PATH_MAX * 2], name[64], extension[32];
+    const char *slash, *dot;
+    int i, length;
+    slash = strrchr(pmx_path, '/');
+    length = slash ? (int)(slash - pmx_path) : 0;
+    if (length >= (int)sizeof(source_dir)) return -1;
+    memcpy(source_dir, pmx_path, length); source_dir[length] = 0;
+    if (tlibc_recursive_mkdir(output_dir) < 0) return -1;
+    for (i = 0; i < texture_count; i++) {
+        if (textures[i].path[0] == '/' ||
+            (textures[i].path[0] && textures[i].path[1] == ':'))
+            snprintf(source, sizeof(source), "%s", textures[i].path);
+        else if (source_dir[0]) snprintf(source, sizeof(source), "%s/%s", source_dir, textures[i].path);
+        else snprintf(source, sizeof(source), "%s", textures[i].path);
+        dot = strrchr(textures[i].path, '.');
+        if (!dot || strlen(dot) >= sizeof(extension)) snprintf(extension, sizeof(extension), ".bin");
+        else snprintf(extension, sizeof(extension), "%s", dot);
+        snprintf(name, sizeof(name), "texture_%03d%s", i, extension);
+        snprintf(destination, sizeof(destination), "%s/%s", output_dir, name);
+        if (copy_file(source, destination) < 0) {
+            __printf("pmx2rmesh: cannot copy texture %d: %s\n", i, source);
+            return -1;
+        }
+    }
     return 0;
 }
 
@@ -213,13 +325,13 @@ static int emit_vertex(int fd, const struct pmx_vertex *v, int scale)
 
 int main(int argc, char **argv)
 {
-    int fd, out, size, vertex_count, index_count, material_count, i, j, scale = 232;
+    int fd, out, size, vertex_count, index_count, material_count, texture_count, i, j, scale = 232;
     int min_x = 2147483647, min_y = 2147483647, min_z = 2147483647;
     int max_x = -2147483647, max_y = -2147483647, max_z = -2147483647;
     unsigned char *file, header_out[RASTERFALL_MODEL_HEADER_BYTES], record[16];
-    struct stat st; struct cursor c; struct pmx_header h; struct pmx_material materials[MAX_MATERIALS]; struct pmx_vertex v;
+    struct stat st; struct cursor c; struct pmx_header h; struct pmx_texture textures[MAX_TEXTURES]; struct pmx_material materials[MAX_MATERIALS]; struct pmx_vertex v;
     int primitive_count = 0, index_base = 0;
-    if (argc != 3) { __printf("usage: pmx2rmesh input.pmx output.rmesh\n"); return 2; }
+    if (argc != 4) { __printf("usage: pmx2rmesh input.pmx output.rmesh texture_dir\n"); return 2; }
     fd = __openat(AT_FDCWD, argv[1], O_RDONLY, 0);
     if (fd < 0 || __fstat(fd, &st) < 0 || st.st_size < 64 || st.st_size > 64 * 1024 * 1024) { __printf("pmx2rmesh: cannot open input\n"); return 1; }
     size = (int)st.st_size; file = (unsigned char *)__mmap(0, size, PROT_READ, MAP_PRIVATE, fd, 0); __close(fd);
@@ -229,20 +341,31 @@ int main(int argc, char **argv)
     for (i = 0; i < vertex_count; i++) if (read_vertex(&c, &h, &v) < 0) goto invalid;
     if (i32(&c, &index_count) < 0 || index_count <= 0 || index_count > MAX_INDICES || index_count % 3) goto invalid;
     for (i = 0; i < index_count; i++) { int index; if (index_value(&c, h.vertex_size, 0, &index) < 0 || index < 0 || index >= vertex_count) goto invalid; }
-    { int texture_count; if (i32(&c, &texture_count) < 0 || texture_count < 0 || texture_count > 4096) goto invalid; for (i = 0; i < texture_count; i++) if (text(&c) < 0) goto invalid; }
+    if (i32(&c, &texture_count) < 0 || texture_count < 0 || texture_count > MAX_TEXTURES) goto invalid;
+    for (i = 0; i < texture_count; i++) if (read_text(&c, h.encoding, textures[i].path, sizeof(textures[i].path)) < 0) goto invalid;
     if (read_materials(&c, &h, materials, &material_count) < 0) goto invalid;
+    /* This model lists tex/sph.png as the base map for one hair group.  It is
+       a mask/style map, so use the matching diffuse atlas instead. */
+    for (i = 0; i < material_count; i++)
+        if (materials[i].texture_index == 2) materials[i].texture_index = 0;
     for (i = 0; i < material_count; i++) { if (materials[i].index_count) primitive_count++; index_base += materials[i].index_count; }
     if (index_base != index_count || primitive_count > 32) { __printf("pmx2rmesh: too many or inconsistent material groups (%d/%d, %d)\n", index_base, index_count, primitive_count); goto invalid; }
+    if (copy_textures(argv[1], argv[3], textures, texture_count) < 0) goto invalid;
     out = __openat(AT_FDCWD, argv[2], O_WRONLY | O_CREAT | O_TRUNC, 0644); if (out < 0) { __printf("pmx2rmesh: cannot create output\n"); goto invalid; }
     __memset(header_out, 0, sizeof(header_out)); header_out[0] = 'R'; header_out[1] = 'F'; header_out[2] = 'M'; header_out[3] = '2'; put_u32(header_out + 4, 2); put_u32(header_out + 8, vertex_count); put_u32(header_out + 12, index_count); put_u32(header_out + 16, scale); put_u32(header_out + 44, primitive_count); put_u32(header_out + 48, material_count); put_u32(header_out + 52, 64); put_u32(header_out + 56, 64 + primitive_count * 16);
     if (write_all(out, header_out, sizeof(header_out)) < 0) { __close(out); goto invalid; }
     index_base = 0; for (i = 0; i < material_count; i++) if (materials[i].index_count) { __memset(record, 0, sizeof(record)); put_u32(record, index_base); put_u32(record + 4, materials[i].index_count); put_u32(record + 8, i); if (write_all(out, record, sizeof(record)) < 0) { __close(out); goto invalid; } index_base += materials[i].index_count; }
-    for (i = 0; i < material_count; i++) { __memset(record, 0, sizeof(record)); put_u32(record, materials[i].color); put_u16(record + 4, 0); put_u16(record + 6, 65535); if (write_all(out, record, sizeof(record)) < 0) { __close(out); goto invalid; } }
+    for (i = 0; i < material_count; i++) { __memset(record, 0, sizeof(record)); put_u32(record, materials[i].color); put_u16(record + 4, 0); put_u16(record + 6, 65535); put_u32(record + 8, materials[i].texture_index < 0 ? 0xffffffffU : (unsigned int)materials[i].texture_index); if (write_all(out, record, sizeof(record)) < 0) { __close(out); goto invalid; } }
     c.p = file; c.end = file + size; if (header(&c, &h) < 0 || i32(&c, &j) < 0) { __close(out); goto invalid; }
     for (i = 0; i < vertex_count; i++) { if (read_vertex(&c, &h, &v) < 0 || emit_vertex(out, &v, scale) < 0) { __close(out); goto invalid; } j = fixed(v.x, scale); if (j < min_x) min_x = j; if (j > max_x) max_x = j; j = fixed(v.y, scale); if (j < min_y) min_y = j; if (j > max_y) max_y = j; j = fixed(v.z, scale); if (j < min_z) min_z = j; if (j > max_z) max_z = j; }
-    if (i32(&c, &j) < 0) { __close(out); goto invalid; } for (i = 0; i < index_count; i++) { int index; unsigned char b[4]; if (index_value(&c, h.vertex_size, 0, &index) < 0) { __close(out); goto invalid; } put_u32(b, index); if (write_all(out, b, 4) < 0) { __close(out); goto invalid; } }
-    __close(out); *(int *)(header_out + 20) = min_x; *(int *)(header_out + 24) = min_y; *(int *)(header_out + 28) = min_z; *(int *)(header_out + 32) = max_x; *(int *)(header_out + 36) = max_y; *(int *)(header_out + 40) = max_z;
-    fd = __openat(AT_FDCWD, argv[2], O_WRONLY, 0); if (fd >= 0) { __write(fd, header_out, sizeof(header_out)); __close(fd); }
+    if (i32(&c, &j) < 0) { __close(out); goto invalid; }
+    { unsigned char index_buffer[8192]; int index_bytes = 0;
+      for (i = 0; i < index_count; i++) { int index; if (index_value(&c, h.vertex_size, 0, &index) < 0) { __close(out); goto invalid; } if (index_bytes + 4 > (int)sizeof(index_buffer)) { if (write_all(out, index_buffer, index_bytes) < 0) { __close(out); goto invalid; } index_bytes = 0; } put_u32(index_buffer + index_bytes, index); index_bytes += 4; }
+      if (index_bytes && write_all(out, index_buffer, index_bytes) < 0) { __close(out); goto invalid; }
+    }
+    *(int *)(header_out + 20) = min_x; *(int *)(header_out + 24) = min_y; *(int *)(header_out + 28) = min_z; *(int *)(header_out + 32) = max_x; *(int *)(header_out + 36) = max_y; *(int *)(header_out + 40) = max_z;
+    if (__lseek(out, 0, SEEK_SET) < 0 || write_all(out, header_out, sizeof(header_out)) < 0) { __close(out); goto invalid; }
+    __close(out);
     __munmap(file, size); __printf("pmx2rmesh: %s -> %s (%d vertices, %d triangles, %d materials)\n", argv[1], argv[2], vertex_count, index_count / 3, material_count); return 0;
 invalid:
     __munmap(file, size); __printf("pmx2rmesh: unsupported or truncated PMX\n"); return 1;

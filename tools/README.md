@@ -13,7 +13,7 @@
 ## toyasset — 资产转换
 
 ```sh
-build/toyasset convert <png|jpg|jpg128|wav|obj> <输入> <输出>
+build/toyasset convert <png|png1024|bmp|jpg|jpg128|wav|obj> <输入> <输出>
 build/toyasset inspect <文件>
 ```
 

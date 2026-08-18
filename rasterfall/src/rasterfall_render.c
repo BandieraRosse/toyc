@@ -248,18 +248,27 @@ static int render_gallery_model(struct toy_renderer *renderer,
 {
     int drawn = 0, i;
     const struct toy_texture_view *previous_texture = active_texture_view;
-    int use_texture = gallery_model_has_texture(model);
-    if (use_texture)
+    int shared_texture = gallery_model_has_texture(model);
+    if (shared_texture)
         active_texture_view = active_model_texture;
     for (i = 0; i < (int)model->primitive_count; i++) {
         const unsigned char *primitive = model->primitives + i * RASTERFALL_MODEL_PRIMITIVE_BYTES;
         const unsigned char *indices = model->indices + model_u32(primitive) * 4;
         unsigned int index_count = model_u32(primitive + 4);
         unsigned int material = model_u32(primitive + 8);
+        const struct toy_texture_view *texture = 0;
         uint32_t color = material < model->material_count ?
                          model_u32(model->materials + material * RASTERFALL_MODEL_MATERIAL_BYTES) :
                          RF_COLOR_UI_TEXT_MUTED;
         unsigned int j;
+        if (material < model->material_count && model->texture_assets) {
+            unsigned int texture_index = model_u32(model->materials + material * RASTERFALL_MODEL_MATERIAL_BYTES + 8);
+            if (texture_index < model->texture_count && model->texture_assets[texture_index].data) {
+                texture = &model->texture_views[texture_index];
+                active_texture_view = texture;
+            }
+        }
+        if (!texture && shared_texture) active_texture_view = active_model_texture;
         for (j = 0; j + 2 < index_count; j += 3) {
             unsigned int ia = model_u32(indices + j * 4);
             unsigned int ib = model_u32(indices + (j + 1) * 4);
@@ -270,7 +279,7 @@ static int render_gallery_model(struct toy_renderer *renderer,
             gallery_vertex(model, ia, center_x, base_y, center_z, scale, &a);
             gallery_vertex(model, ib, center_x, base_y, center_z, scale, &b);
             gallery_vertex(model, ic, center_x, base_y, center_z, scale, &c);
-            if (use_texture) {
+            if (texture || shared_texture) {
                 gallery_uv_vertex(model, ia, center_x, base_y, center_z, scale, &ta);
                 gallery_uv_vertex(model, ib, center_x, base_y, center_z, scale, &tb);
                 gallery_uv_vertex(model, ic, center_x, base_y, center_z, scale, &tc);
@@ -613,7 +622,7 @@ static int draw_world_triangle(struct toy_renderer *renderer,
         int center_x = (a->x + b->x + c->x) / 3;
         int center_z = (a->z + b->z + c->z) / 3;
         int light = active_emissive_projectile ? 384 :
-                    active_gallery_lighting ? 280 :
+                    active_gallery_lighting ? 256 :
                     fixed_floor_lighting ? 256 : baked_light_at(center_x, center_z);
         int fog = active_emissive_projectile ? 0 :
                   active_gallery_lighting ? 0 : fixed_floor_lighting ? 0 :
