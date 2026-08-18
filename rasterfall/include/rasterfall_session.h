@@ -137,6 +137,9 @@ void rasterfall_session_reset(struct rasterfall_session *session,
 /* 单人托管玩家开关。启用后，step 会用最小托管策略生成玩家命令。 */
 int rasterfall_session_set_managed_ai(struct rasterfall_session *session,
                                       int active);
+/* 旁观者的托管 AI 脱困命令：同步重置相机、逻辑位置和击飞状态。 */
+int rasterfall_session_recover_managed_player(
+    struct rasterfall_session *session, struct camera *camera);
 void rasterfall_session_step(struct rasterfall_session *session,
                              struct camera *camera,
                              const struct rasterfall_command *command,

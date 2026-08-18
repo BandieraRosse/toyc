@@ -59,7 +59,26 @@
 #define KEY_4     5
 #define KEY_E     18
 #define KEY_F     33
+#define KEY_B     48
+#define KEY_C     46
+#define KEY_G     34
+#define KEY_H     35
+#define KEY_I     23
+#define KEY_J     36
+#define KEY_K     37
+#define KEY_L     38
+#define KEY_M     50
+#define KEY_N     49
+#define KEY_O     24
+#define KEY_P     25
+#define KEY_Q     16
 #define KEY_R     19
+#define KEY_T     20
+#define KEY_U     22
+#define KEY_V     47
+#define KEY_X     45
+#define KEY_Y     21
+#define KEY_Z     44
 #define KEY_ENTER 28
 #define KEY_TAB   15
 #define KEY_W     17
@@ -72,6 +91,7 @@
 #define KEY_DOT   52
 #define KEY_SLASH 53
 #define KEY_BACKSPACE 14
+#define KEY_F2      60
 #define KEY_UP    103
 #define KEY_LEFT  105
 #define KEY_RIGHT 106
@@ -93,6 +113,11 @@ struct vec3 { int x, y, z; };
 struct box { int minx, maxx, minz, maxz, height; uint32_t color; };
 struct control_settings { int mouse_level, keyboard_level; };
 struct pause_menu { int selected; };
+struct managed_terminal {
+    int open;
+    char line[32];
+    char message[96];
+};
 
 #ifdef TOYC_WINDOWS
 static void rf_windows_log(const char *message) { toy_windows_log(message); }
@@ -680,6 +705,115 @@ static void draw_pause_overlay(struct toy_surface *surface,
                    surface->stride);
     fb_draw_string((unsigned char *)surface->pixels, x + 42, y + panel_h - 38,
                    "ENTER CONFIRM  ESC RESUME", 0xD88A32, surface->stride);
+}
+
+static void draw_managed_terminal(struct toy_surface *surface,
+                                  const struct managed_terminal *terminal)
+{
+    int panel_w = surface->width * 3 / 5;
+    int panel_h = 170;
+    int x = (surface->width - panel_w) / 2;
+    int y = (surface->height - panel_h) / 2;
+    char prompt[64];
+    fill_rect(surface, x - 3, y - 3, panel_w + 6, panel_h + 6, 0xD88A32);
+    fill_rect(surface, x, y, panel_w, panel_h, RF_COLOR_UI_BACKGROUND);
+    fb_draw_string((unsigned char *)surface->pixels, x + 24, y + 18,
+                   "MANAGED AI TERMINAL", RF_COLOR_UI_ACCENT,
+                   surface->stride);
+    snprintf(prompt, sizeof(prompt), "> %s_", terminal->line);
+    fb_draw_string((unsigned char *)surface->pixels, x + 24, y + 52,
+                   prompt, RF_COLOR_UI_TEXT, surface->stride);
+    fb_draw_string((unsigned char *)surface->pixels, x + 24, y + 78,
+                   terminal->message[0] ? terminal->message : "TYPE HELP",
+                   RF_COLOR_UI_TEXT_MUTED, surface->stride);
+    fb_draw_string((unsigned char *)surface->pixels, x + 24, y + 116,
+                   "HELP STATUS UNSTUCK RETURN", 0xAEB6C2, surface->stride);
+    fb_draw_string((unsigned char *)surface->pixels, x + 24, y + 140,
+                   "ENTER EXECUTE  ESC CLOSE  F2 CLOSE", 0xD88A32,
+                   surface->stride);
+}
+
+static int managed_terminal_key_char(unsigned int key)
+{
+    static const int keys[] = {
+        KEY_A, KEY_B, KEY_C, KEY_D, KEY_E, KEY_F, KEY_G, KEY_H, KEY_I,
+        KEY_J, KEY_K, KEY_L, KEY_M, KEY_N, KEY_O, KEY_P, KEY_Q, KEY_R,
+        KEY_S, KEY_T, KEY_U, KEY_V, KEY_W, KEY_X, KEY_Y, KEY_Z
+    };
+    static const char chars[] = "abcdefghijklmnopqrstuvwxyz";
+    for (int i = 0; i < 26; i++)
+        if (key == (unsigned int)keys[i]) return chars[i];
+    return 0;
+}
+
+static int managed_terminal_take_key(struct toy_input *input,
+                                     unsigned char *pending,
+                                     unsigned int key)
+{
+    int pressed = pending[key] || toy_input_pressed(input, key);
+    if (pressed) {
+        pending[key] = 0;
+        input->key_pressed[key] = 0;
+    }
+    return pressed;
+}
+
+static void managed_terminal_execute(struct managed_terminal *terminal,
+                                     struct rasterfall_session *session,
+                                     struct camera *camera)
+{
+    if (!strcmp(terminal->line, "help"))
+        strcpy(terminal->message, "STATUS UNSTUCK RETURN");
+    else if (!strcmp(terminal->line, "status"))
+        snprintf(terminal->message, sizeof(terminal->message),
+                 "POS %d,%d AIR %d ESC %d",
+                 camera->x, camera->z,
+                 session->game_state.player_airborne_ms,
+                 session->managed_ai_escape_phase);
+    else if (!strcmp(terminal->line, "unstuck") ||
+             !strcmp(terminal->line, "return")) {
+        if (rasterfall_session_recover_managed_player(session, camera))
+            strcpy(terminal->message, "AI RETURNED TO BASE");
+        else
+            strcpy(terminal->message, "RECOVERY UNAVAILABLE");
+    } else if (terminal->line[0])
+        strcpy(terminal->message, "UNKNOWN COMMAND: TYPE HELP");
+    else
+        strcpy(terminal->message, "TYPE HELP");
+    terminal->line[0] = 0;
+}
+
+static void managed_terminal_input(struct managed_terminal *terminal,
+                                   struct toy_input *input,
+                                   unsigned char *pending,
+                                   struct rasterfall_session *session,
+                                   struct camera *camera)
+{
+    if (managed_terminal_take_key(input, pending, KEY_ESC) ||
+        managed_terminal_take_key(input, pending, KEY_F2)) {
+        terminal->open = 0;
+        return;
+    }
+    if (managed_terminal_take_key(input, pending, KEY_ENTER)) {
+        managed_terminal_execute(terminal, session, camera);
+        return;
+    }
+    if (managed_terminal_take_key(input, pending, KEY_BACKSPACE)) {
+        int length = (int)strlen(terminal->line);
+        if (length > 0) terminal->line[length - 1] = 0;
+        return;
+    }
+    for (unsigned int key = 0; key < TOY_INPUT_KEY_COUNT; key++) {
+        int ch = managed_terminal_key_char(key);
+        int length;
+        if (!ch || !managed_terminal_take_key(input, pending, key)) continue;
+        length = (int)strlen(terminal->line);
+        if (length < (int)sizeof(terminal->line) - 1) {
+            terminal->line[length] = (char)ch;
+            terminal->line[length + 1] = 0;
+        }
+        break;
+    }
 }
 
 static int startup_digit(unsigned int key)
@@ -1307,6 +1441,7 @@ int main(int argc, char **argv)
     struct camera camera;
     struct control_settings settings;
     struct pause_menu pause_menu;
+    struct managed_terminal managed_terminal;
     int64_t last_time, accumulator = 0, fps_window_start, fps_elapsed;
     int64_t prev_begin = 0, last_active = 0;   /* 帧间隔统计 */
     int running = 1, pointer_lock_requested = 0, paused = 1;
@@ -1437,6 +1572,7 @@ int main(int argc, char **argv)
      * 静默停声、wayland 发送失败则主循环干净退出）。SIG_IGN 值为 1。 */
     tlibc_sigaction(SIGPIPE, (void (*)(int))1);
     toy_input_init(&input);
+    memset(&managed_terminal, 0, sizeof(managed_terminal));
     memset(pending_key_edges, 0, sizeof(pending_key_edges));
     toy_renderer_init(&renderer);
     rasterfall_viewmodel_set_texture(&model_texture_view);
@@ -1679,7 +1815,30 @@ startup_again:
                 pointer_lock_requested = 0;
             }
         }
-        if (paused && game.state == TOY_GAME_PLAYING) {
+        if (managed_spectator && !managed_terminal.open && !paused &&
+            managed_terminal_take_key(&input, pending_key_edges, KEY_F2)) {
+            managed_terminal.open = 1;
+            managed_terminal.line[0] = 0;
+            strcpy(managed_terminal.message, "TYPE HELP");
+            toy_window_set_pointer_lock(window, 0);
+            pointer_lock_requested = 0;
+            paused = 1;
+        }
+        {
+            int terminal_was_open = managed_terminal.open;
+            if (managed_terminal.open)
+                managed_terminal_input(&managed_terminal, &input,
+                                       pending_key_edges, &session, &camera);
+            if (terminal_was_open && !managed_terminal.open) {
+                int capture_result = toy_window_set_pointer_lock(window, 1);
+                pointer_lock_requested = capture_result > 0;
+                paused = 0;
+                pointer_turn_pending = 0;
+                pointer_pitch_pending = 0;
+            }
+        }
+        if (!managed_terminal.open && paused &&
+            game.state == TOY_GAME_PLAYING) {
             int resume_requested = 0;
             /* 菜单导航使用独立节流；Wayland/键盘自动重复可能在一帧内
              * 送来多次边沿，不能让选项随帧率飞快滚动。 */
@@ -1831,7 +1990,7 @@ startup_again:
         accumulator += elapsed;
         t_stage = now;
         while (accumulator >= FIXED_STEP_US && logic_steps < MAX_LOGIC_STEPS) {
-            if (!paused) {
+            if (!paused && !managed_terminal.open) {
                 struct rasterfall_command command;
                 int shop_input = session.shop_open;
                 int shop_enter = toy_input_pressed(&input, KEY_ENTER);
@@ -2155,6 +2314,8 @@ startup_again:
             } else if (game.state == TOY_GAME_WON) {
                 draw_level_won_panel(&surface,
                                      net.mode == RASTERFALL_NET_CLIENT);
+            } else if (managed_terminal.open) {
+                draw_managed_terminal(&surface, &managed_terminal);
             } else if (paused) {
                 draw_pause_overlay(&surface, &pause_menu, &settings);
             } else {
@@ -2219,6 +2380,7 @@ startup_again:
         rasterfall_session_set_managed_ai(&session, 0);
         managed_spectator = 0;
         managed_third_person = 0;
+        memset(&managed_terminal, 0, sizeof(managed_terminal));
         rasterfall_audio_stop(&audio);
         rasterfall_audio_unload_assets(&audio);
         rasterfall_net_discovery_close(&discovery);

@@ -93,6 +93,22 @@ static int run_logic_test(void)
             }
         if (wave_item < 0 ||
             !rasterfall_session_set_managed_ai(&session, 1)) return 160;
+        session.game_state.px = -200;
+        session.game_state.pz = -7450;
+        session.game_state.player_airborne_ms = 400;
+        session.game_state.player_knockback_x = 900;
+        session.game_state.player_knockback_z = -700;
+        camera.x = session.game_state.px;
+        camera.z = session.game_state.pz;
+        if (!rasterfall_session_recover_managed_player(&session, &camera) ||
+            camera.x != session.level.start_x ||
+            camera.z != session.level.start_z ||
+            session.game_state.px != camera.x ||
+            session.game_state.pz != camera.z ||
+            session.game_state.player_airborne_ms != 0 ||
+            session.game_state.player_knockback_x != 0 ||
+            session.game_state.player_knockback_z != 0)
+            return 164;
         /* Charger recovery: a player dropped into the developer table area
          * must be returned to the base corridor by the fixed escape route. */
         session.game_state.campaign_phase = TOY_GAME_PHASE_HORDE;

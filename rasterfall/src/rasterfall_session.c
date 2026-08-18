@@ -1290,6 +1290,41 @@ int rasterfall_session_set_managed_ai(struct rasterfall_session *session,
         RASTERFALL_AI_POLICY_MANAGED_SIMPLE) >= 0;
 }
 
+int rasterfall_session_recover_managed_player(
+    struct rasterfall_session *session, struct camera *camera)
+{
+    int x, z;
+    if (!session || !camera || !session->managed_ai_enabled ||
+        session->game_state.state != TOY_GAME_PLAYING)
+        return 0;
+    x = session->level.start_x;
+    z = session->level.start_z;
+    camera->x = x;
+    camera->z = z;
+    camera->sy = 0;
+    camera->cy = 1024;
+    camera->pitch_sy = 0;
+    camera->pitch_cy = 1024;
+    camera->y = 0;
+    session->game_state.px = x;
+    session->game_state.pz = z;
+    session->game_state.player_ground_y = toy_game_ground_height(
+        &session->game_state, x, z, RASTERFALL_PLAYER_RADIUS);
+    session->game_state.player_airborne_ms = 0;
+    session->game_state.player_airborne_y = 0;
+    session->game_state.player_vertical_velocity = 0;
+    session->game_state.player_air_x = 0;
+    session->game_state.player_air_z = 0;
+    session->game_state.player_knockback_x = 0;
+    session->game_state.player_knockback_z = 0;
+    toy_game_clear_player_special_control(&session->game_state, 0);
+    session->managed_ai_escape_phase = -1;
+    session->managed_ai_route_phase = 5;
+    session->managed_ai_target_index = -1;
+    session->managed_ai_retarget_ms = 0;
+    return 1;
+}
+
 static void session_managed_ai_face(struct camera *camera, int x, int z)
 {
     int dx, dz, distance;
@@ -1372,10 +1407,11 @@ static void session_build_managed_ai_command(
                 RASTERFALL_PLAYER_RADIUS,
                 session->game_state.player_ground_y +
                 session->game_state.player_airborne_y)) {
-            /* A Charger can leave us inside a prop.  Relocate to the known
-             * clear side corridor before continuing the fixed route. */
-            camera->x = 2000;
-            camera->z = -6500;
+            /* A Charger can leave us inside a prop.  This is the terminal's
+             * same authoritative recovery operation: synchronize px/pz and
+             * clear the old airborne impulse before the next game tick. */
+            if (rasterfall_session_recover_managed_player(session, camera))
+                return;
         }
         if (session->managed_ai_escape_phase == 0) {
             target_x = camera->x >= 0 ? 2000 : -2000;
