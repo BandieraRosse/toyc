@@ -40,13 +40,15 @@ Rasterfall 是一个用 Toyc/Tinylibc 构建的第一人称射击原型，包含
 freestanding 运行时；Windows 版本通过独立平台层使用 SDL2、Win32 线程/同步和
 Winsock，不要求 Toyc 输出 PE/COFF。
 
-Linux 构建和运行：
+Linux 构建和运行（从项目资源目录读取）：
 
 ```sh
-make generate-assets
 make app-rasterfall
 build/rasterfall
 ```
+
+旧的单文件内嵌方式仍可使用 `make rasterfall-embedded` 或
+`make app-rasterfall-embedded`，输出为 `build/rasterfall-embedded`。
 
 无窗口逻辑回归可使用：
 
@@ -71,9 +73,10 @@ make win-rasterfall
 make win-rasterfall
 ```
 
-也可以直接执行 `make -f windows/Makefile`。Linux 和 Windows 构建都会在编译时将
-`rasterfall/assets/` 生成资源表并链接进游戏程序；发布时只需分发
-`build/rasterfall` 或 `build/rasterfall.exe`，不需要资源目录，也不依赖当前工作目录。
+也可以直接执行 `make -f windows/Makefile`。Windows 构建会在编译时将
+`rasterfall/assets/` 生成资源表并链接进游戏程序，发布时只需分发
+`build/rasterfall.exe`。Linux 默认程序需要从仓库根目录启动并读取
+`rasterfall/assets/`；Linux 内嵌兼容目标仍可生成不依赖资源目录的单文件程序。
 修改源文件、头文件或 Rasterfall 资源后，Makefile 会按依赖关系增量编译和重新链接。
 
 `bootstrap/` 保存版本控制内的种子二进制。它们用于阶段性的自举检查，不参与默认

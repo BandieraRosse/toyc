@@ -11,6 +11,7 @@
 #     make lib                    构建 libtlibc.a（gcc 编译的 Tinylibc 库）
 #     make app                    用 gcc 编译所有 app（shell, tmake）
 #     make app-<name>             用 gcc 编译单个 app
+#     make rasterfall-embedded    生成带内嵌资源的 Linux Rasterfall 兼容版本
 #     make self-lib               自托管 libtlibc.a（toyc 编译）
 #     make self-app               用 toyc 编译所有 app
 #     make self-app-<name>        用 toyc 编译单个 app
@@ -765,7 +766,7 @@ APP_TARGETS := $(foreach name,$(APP_NAMES),$(BUILD)/$(name))
 RASTERFALL_ASSET_FILES := $(shell find $(RASTERFALL_DIR)/assets -type f -print)
 RASTERFALL_ASSET_SRC := $(BUILD)/rasterfall_assets.c
 RASTERFALL_ASSET_OBJ := $(BUILD)/rasterfall_assets.o
-APP_EXTRA_OBJS_rasterfall := $(BUILD)/rasterfall_game.o $(BUILD)/rasterfall_sfx.o $(BUILD)/rasterfall_map_engine.o $(BUILD)/rasterfall_map.o $(BUILD)/rasterfall_session.o $(BUILD)/rasterfall_ai.o $(BUILD)/rasterfall_net.o $(BUILD)/rasterfall_net_discovery.o $(BUILD)/rasterfall_hud.o $(BUILD)/rasterfall_audio.o $(BUILD)/rasterfall_effects.o $(BUILD)/rasterfall_perf.o $(BUILD)/rasterfall_sky.o $(BUILD)/rasterfall_viewmodel.o $(BUILD)/rasterfall_render.o $(BUILD)/rasterfall_model.o $(RASTERFALL_ASSET_OBJ)
+APP_EXTRA_OBJS_rasterfall := $(BUILD)/rasterfall_game.o $(BUILD)/rasterfall_sfx.o $(BUILD)/rasterfall_map_engine.o $(BUILD)/rasterfall_map.o $(BUILD)/rasterfall_session.o $(BUILD)/rasterfall_ai.o $(BUILD)/rasterfall_net.o $(BUILD)/rasterfall_net_discovery.o $(BUILD)/rasterfall_hud.o $(BUILD)/rasterfall_audio.o $(BUILD)/rasterfall_effects.o $(BUILD)/rasterfall_perf.o $(BUILD)/rasterfall_sky.o $(BUILD)/rasterfall_viewmodel.o $(BUILD)/rasterfall_render.o $(BUILD)/rasterfall_model.o
 
 # ─── 库编译规则 ────────────────────────────────────────────────
 
@@ -939,12 +940,18 @@ lib: $(LIBC_A)
 
 app: $(APP_TARGETS)
 
+# Linux 默认从 rasterfall/assets 读取资源；内嵌打包保留为显式目标。
+$(BUILD)/rasterfall-embedded: $(BUILD)/rasterfall.o $(LIBC_A) $(APP_EXTRA_OBJS_rasterfall) $(RASTERFALL_ASSET_OBJ)
+	@printf "$(BLUE)  LD$(RESET)  rasterfall-embedded\n"
+	$(GCC) $(LIBC_CFLAGS) $< $(APP_EXTRA_OBJS_rasterfall) $(RASTERFALL_ASSET_OBJ) -Wl,--whole-archive $(LIBC_A) -Wl,--no-whole-archive -Wl,-e,__tlibc_start -o $@
+
 # Rasterfall 的正式名称；保留旧目标作为兼容别名，避免已有脚本失效。
 $(BUILD)/wayland_fps: $(BUILD)/rasterfall
 	@ln -sf rasterfall $@
 
-.PHONY: rasterfall wayland_fps
+.PHONY: rasterfall rasterfall-embedded wayland_fps app-rasterfall-embedded
 rasterfall: $(BUILD)/rasterfall
+rasterfall-embedded app-rasterfall-embedded: $(BUILD)/rasterfall-embedded
 wayland_fps: $(BUILD)/wayland_fps
 
 # 单个 app：make app-echo
@@ -954,7 +961,7 @@ $(foreach name,$(APP_NAMES),$(eval app-$(name): $(BUILD)/$(name)))
 
 clean-app:
 	rm -f $(LIBC_OBJS) $(LIBC_OBJS:.o=.d) $(LIBC_A)
-	rm -f $(APP_OBJS) $(APP_OBJS:.o=.d) $(APP_TARGETS)
+	rm -f $(APP_OBJS) $(APP_OBJS:.o=.d) $(APP_TARGETS) $(BUILD)/rasterfall-embedded
 	rm -f $(BUILD)/rasterfall_game.o $(BUILD)/rasterfall_sfx.o \
 	      $(BUILD)/rasterfall_map_engine.o $(BUILD)/rasterfall_game_self.o \
 	      $(BUILD)/rasterfall_sfx_self.o $(BUILD)/rasterfall_map_engine_self.o \

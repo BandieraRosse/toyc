@@ -45,10 +45,13 @@ threads/synchronization, and Winsock; Toyc does not need to emit PE/COFF.
 Linux build and run:
 
 ```sh
-make generate-assets
 make app-rasterfall
 build/rasterfall
 ```
+
+The Linux program reads assets from `rasterfall/assets/`. The previous single-file
+packaging mode remains available as `make rasterfall-embedded` or
+`make app-rasterfall-embedded`, producing `build/rasterfall-embedded`.
 
 The Windows build requires MinGW-w64, CMake, Ninja, and SDL2 build dependencies on
 the Linux host. Prepare them once, then build `build/rasterfall.exe`:
@@ -59,11 +62,11 @@ make win-rasterfall
 ```
 
 After dependencies are ready, `make win-rasterfall` or
-`make -f windows/Makefile` performs an incremental build. Both Linux and Windows
-builds generate an embedded asset table and link it into the executable. Distribute
-only `build/rasterfall` or `build/rasterfall.exe`; no asset directory or working
-directory layout is required. Source, header, and Rasterfall asset changes are
-tracked by the Makefiles.
+`make -f windows/Makefile` performs an incremental build. The Windows build generates
+an embedded asset table and links it into the executable, so no asset directory or
+working directory layout is required. Linux's default build reads from the project
+asset directory; its embedded compatibility target is documented above. Source,
+header, and Rasterfall asset changes are tracked by the Makefiles.
 
 The headless logic check is available with:
 
