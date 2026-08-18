@@ -48,6 +48,7 @@ static int active_actor_roll_sin;
 static int active_actor_roll_cos = 1024;
 static int active_gallery_lighting;
 static int active_emissive_projectile;
+static int active_coordinate_axes;
 
 #define level_map active_session->level
 #define game active_session->game_state
@@ -62,6 +63,11 @@ static int active_emissive_projectile;
 #define wall_texture_view active_wall_texture
 #define effects (*active_effects)
 typedef struct rasterfall_interactable interactable;
+
+#define RULER_STEP 1000
+#define RULER_GROUND_Y -900
+#define RULER_AXIS_HALF 18
+#define RULER_TICK_HALF 28
 
 static int draw_world_triangle(struct toy_renderer *renderer,
                                const struct camera *camera,
@@ -858,6 +864,64 @@ static void draw_world_label(struct toy_renderer *renderer,
                    screen.x, screen.y, label, color, renderer->surface.stride);
 }
 
+static void draw_coordinate_label(struct toy_surface *surface,
+                                  const struct camera *camera,
+                                  const struct vec3 *world,
+                                  const char *label, uint32_t color)
+{
+    struct vec3 view;
+    struct toy_screen_vertex screen;
+    int width;
+    if (!surface || !surface->pixels || !camera || !world || !label) return;
+    world_to_view(camera, world, &view);
+    if (view.z < NEAR_Z) return;
+    project_vertex(surface, &view, &screen);
+    width = (int)strlen(label) * FB_FONT_W;
+    screen.x -= width / 2;
+    if (screen.x < 2 || screen.x + width >= surface->width - 2 ||
+        screen.y < 2 || screen.y + FB_FONT_H >= surface->height - 2) return;
+    /* A small shadow keeps labels readable over the authored floor. */
+    fb_draw_string((unsigned char *)surface->pixels, screen.x + 1,
+                   screen.y + 1, label, 0x10151D, surface->stride);
+    fb_draw_string((unsigned char *)surface->pixels, screen.x, screen.y,
+                   label, color, surface->stride);
+}
+
+/* Labels are drawn after the world flush so the ruler remains readable even
+ * when its thin ticks are over a similarly coloured floor tile. */
+void rasterfall_render_coordinate_labels(struct toy_surface *surface,
+                                         const struct camera *camera)
+{
+    int i;
+    char label[32];
+    struct vec3 world;
+    if (!surface || !camera) return;
+
+    for (i = level_map.minx / RULER_STEP * RULER_STEP;
+         i <= level_map.maxx; i += RULER_STEP) {
+        snprintf(label, sizeof(label), "X=%d", i);
+        world.x = i; world.y = -790; world.z = -100;
+        draw_coordinate_label(surface, camera, &world, label, 0xFFB0B0);
+    }
+    for (i = level_map.minz / RULER_STEP * RULER_STEP;
+         i <= level_map.maxz; i += RULER_STEP) {
+        snprintf(label, sizeof(label), "Z=%d", i);
+        world.x = -100; world.y = -790; world.z = i;
+        draw_coordinate_label(surface, camera, &world, label, 0xB0D8FF);
+    }
+    for (i = -2000; i <= 5000; i += RULER_STEP) {
+        snprintf(label, sizeof(label), "Y=%d", i);
+        world.x = 90; world.y = i; world.z = 0;
+        draw_coordinate_label(surface, camera, &world, label, 0xB0FFB8);
+    }
+    world.x = 120; world.y = 0; world.z = 0;
+    draw_coordinate_label(surface, camera, &world, "ORIGIN (0,0,0)",
+                          0xFFF0B0);
+    world.x = 120; world.y = RULER_GROUND_Y; world.z = 0;
+    draw_coordinate_label(surface, camera, &world, "CROSS Y=-900",
+                          0xFFF0B0);
+}
+
 static int draw_cuboid(struct toy_renderer *renderer,
                        const struct camera *camera,
                        int x0, int x1, int y0, int y1,
@@ -992,6 +1056,55 @@ static int draw_cuboid(struct toy_renderer *renderer, const struct camera *camer
     pixels += draw_quad(renderer, camera, &c, &d, &h, &g, color);
     pixels += draw_quad(renderer, camera, &d, &a, &e, &h, color + 0x080808);
     pixels += draw_quad(renderer, camera, &e, &f, &g, &h, color + 0x181818);
+    return pixels;
+}
+
+    /* Developer coordinate ruler.  Keep it in world space so it follows the
+     * map, is depth-tested against walls, and remains useful while spectating.
+     * All three axes intersect at the world origin (0,0,0). */
+static int render_coordinate_ruler(struct toy_renderer *renderer,
+                                   const struct camera *camera)
+{
+    int i, pixels = 0;
+    const uint32_t x_color = 0xE06060;
+    const uint32_t y_color = 0x60D080;
+    const uint32_t z_color = 0x60A8E0;
+
+    if (!renderer || !camera) return 0;
+
+    /* Main X and Z axes sit on the authored map floor for a readable visual
+     * reference.  The vertical Y axis still carries the true world heights. */
+    pixels += draw_cuboid(renderer, camera, level_map.minx, level_map.maxx,
+                          RULER_GROUND_Y - RULER_AXIS_HALF,
+                          RULER_GROUND_Y + RULER_AXIS_HALF,
+                          -RULER_AXIS_HALF, RULER_AXIS_HALF, x_color);
+    pixels += draw_cuboid(renderer, camera, -RULER_AXIS_HALF, RULER_AXIS_HALF,
+                          RULER_GROUND_Y - RULER_AXIS_HALF,
+                          RULER_GROUND_Y + RULER_AXIS_HALF,
+                          level_map.minz, level_map.maxz, z_color);
+
+    /* Y is vertical and deliberately extends above the normal map geometry. */
+    pixels += draw_cuboid(renderer, camera, -RULER_AXIS_HALF, RULER_AXIS_HALF,
+                          -2000, 5000, -RULER_AXIS_HALF, RULER_AXIS_HALF,
+                          y_color);
+
+    for (i = level_map.minx / RULER_STEP * RULER_STEP;
+         i <= level_map.maxx; i += RULER_STEP)
+        pixels += draw_cuboid(renderer, camera, i - RULER_TICK_HALF,
+                              i + RULER_TICK_HALF,
+                              RULER_GROUND_Y - RULER_TICK_HALF,
+                              RULER_GROUND_Y + RULER_TICK_HALF, -70, 70,
+                              x_color);
+    for (i = level_map.minz / RULER_STEP * RULER_STEP;
+         i <= level_map.maxz; i += RULER_STEP)
+        pixels += draw_cuboid(renderer, camera, -70, 70,
+                              RULER_GROUND_Y - RULER_TICK_HALF,
+                              RULER_GROUND_Y + RULER_TICK_HALF,
+                              i - RULER_TICK_HALF,
+                              i + RULER_TICK_HALF, z_color);
+    for (i = -2000; i <= 5000; i += RULER_STEP)
+        pixels += draw_cuboid(renderer, camera, -70, 70, i - RULER_TICK_HALF,
+                              i + RULER_TICK_HALF, -70, 70, y_color);
     return pixels;
 }
 
@@ -1578,6 +1691,8 @@ static int render_scene(struct toy_renderer *renderer, const struct camera *came
     fixed_floor_lighting = 1;
     pixels += draw_partitioned_floor(renderer, camera);
     fixed_floor_lighting = 0;
+    if (active_coordinate_axes)
+        pixels += render_coordinate_ruler(renderer, camera);
     for (int i=0; i<level_map.draw_count; i++) {
         struct toy_map_draw *x=&level_map.draw[i];
         if (x->type==TOY_MAP_DRAW_FLOOR || x->type==TOY_MAP_DRAW_BORDER) {
@@ -2947,6 +3062,11 @@ void rasterfall_render_bind(struct rasterfall_render_context *ctx)
     active_lightmap = ctx->lightmap;
     active_textures = ctx->textures_enabled;
     active_fixed_floor_lighting = ctx->fixed_floor_lighting;
+}
+
+void rasterfall_render_set_coordinate_axes(int enabled)
+{
+    active_coordinate_axes = enabled != 0;
 }
 
 void rasterfall_render_bake_lightmap(void)

@@ -127,9 +127,10 @@ static void rf_windows_log(const char *message) { (void)message; }
 
 #define PAUSE_ITEM_RESUME   0
 #define PAUSE_ITEM_MOUSE    1
-#define PAUSE_ITEM_KEYBOARD 2
-#define PAUSE_ITEM_MENU     3
-#define PAUSE_ITEM_COUNT    4
+#define PAUSE_ITEM_COORDS   2
+#define PAUSE_ITEM_KEYBOARD 3
+#define PAUSE_ITEM_MENU     4
+#define PAUSE_ITEM_COUNT    5
 
 enum rasterfall_startup_screen {
     RASTERFALL_STARTUP_MAIN,
@@ -665,7 +666,8 @@ static void fill_rect(struct toy_surface *surface, int x, int y,
 
 static void draw_pause_overlay(struct toy_surface *surface,
                                const struct pause_menu *menu,
-                               const struct control_settings *settings)
+                               const struct control_settings *settings,
+                               int coordinate_axes)
 {
     char line[64];
     int panel_w = surface->width * 3 / 5;
@@ -689,6 +691,10 @@ static void draw_pause_overlay(struct toy_surface *surface,
             snprintf(line, sizeof(line), "%c MOUSE SENS  < %d%% >",
                      item == menu->selected ? '>' : ' ',
                      sensitivity_percent(settings->mouse_level));
+        else if (item == PAUSE_ITEM_COORDS)
+            snprintf(line, sizeof(line), "%c COORDINATE AXES < %s >",
+                     item == menu->selected ? '>' : ' ',
+                     coordinate_axes ? "ON" : "OFF");
         else if (item == PAUSE_ITEM_KEYBOARD)
             snprintf(line, sizeof(line), "%c KEYBOARD SENS < %d%% >",
                      item == menu->selected ? '>' : ' ',
@@ -1445,6 +1451,7 @@ int main(int argc, char **argv)
     int64_t last_time, accumulator = 0, fps_window_start, fps_elapsed;
     int64_t prev_begin = 0, last_active = 0;   /* 帧间隔统计 */
     int running = 1, pointer_lock_requested = 0, paused = 1;
+    int coordinate_axes = 0;
     int return_to_menu = 0;
     int last_pointer_x = 0, last_pointer_y = 0, have_pointer_position = 0;
     int frame_limit = 0, rendered_frames = 0, scene_pixels = 0;
@@ -1578,6 +1585,7 @@ int main(int argc, char **argv)
     rasterfall_viewmodel_set_texture(&model_texture_view);
     settings.mouse_level = 3;
     settings.keyboard_level = 5;
+    rasterfall_render_set_coordinate_axes(coordinate_axes);
     pause_menu.selected = PAUSE_ITEM_RESUME;
     if (__getrandom(&seed, sizeof(seed), 0) < 0)
         seed = (uint64_t)monotonic_us();
@@ -1867,6 +1875,10 @@ startup_again:
                 if (change != 0) {
                     if (pause_menu.selected == PAUSE_ITEM_MOUSE)
                         settings.mouse_level = clampi(settings.mouse_level + change, 0, 15);
+                    else if (pause_menu.selected == PAUSE_ITEM_COORDS) {
+                        coordinate_axes = change > 0 ? 1 : 0;
+                        rasterfall_render_set_coordinate_axes(coordinate_axes);
+                    }
                     else if (pause_menu.selected == PAUSE_ITEM_KEYBOARD)
                         settings.keyboard_level = clampi(settings.keyboard_level + change, 0, 15);
                     pending_key_edges[KEY_RIGHT] = 0;
@@ -1877,6 +1889,10 @@ startup_again:
                 pending_key_edges[KEY_ENTER] = 0;
                 if (pause_menu.selected == PAUSE_ITEM_RESUME)
                     resume_requested = 1;
+                else if (pause_menu.selected == PAUSE_ITEM_COORDS) {
+                    coordinate_axes = !coordinate_axes;
+                    rasterfall_render_set_coordinate_axes(coordinate_axes);
+                }
                 else if (pause_menu.selected == PAUSE_ITEM_MENU) {
                     return_to_menu = 1;
                     running = 0;
@@ -2292,6 +2308,8 @@ startup_again:
             prev_tris = (unsigned long)renderer.cmd_count;
             stage_pixels = toy_renderer_flush(&renderer);
             scene_pixels += stage_pixels;
+            if (coordinate_axes)
+                rasterfall_render_coordinate_labels(&surface, &render_camera);
 #if TOY_CONFIG_SHOW_MODEL_PATHS
             rasterfall_render_gallery_selection(&surface, &render_camera);
 #endif
@@ -2317,7 +2335,8 @@ startup_again:
             } else if (managed_terminal.open) {
                 draw_managed_terminal(&surface, &managed_terminal);
             } else if (paused) {
-                draw_pause_overlay(&surface, &pause_menu, &settings);
+                draw_pause_overlay(&surface, &pause_menu, &settings,
+                                   coordinate_axes);
             } else {
                 draw_crosshair(&surface, &game);
                 {

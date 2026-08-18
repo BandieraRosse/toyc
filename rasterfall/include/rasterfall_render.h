@@ -24,9 +24,12 @@ struct rasterfall_render_context {
 
 void rasterfall_render_bind(struct rasterfall_render_context *ctx);
 void rasterfall_render_bake_lightmap(void);
+void rasterfall_render_set_coordinate_axes(int enabled);
 
 int rasterfall_render_scene(struct toy_renderer *renderer,
                             const struct camera *camera);
+void rasterfall_render_coordinate_labels(struct toy_surface *surface,
+                                         const struct camera *camera);
 int rasterfall_render_sign_text(struct toy_renderer *renderer,
                                  const struct camera *camera);
 void rasterfall_render_gallery_selection(struct toy_surface *surface,
