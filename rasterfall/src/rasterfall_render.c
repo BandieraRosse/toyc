@@ -56,6 +56,7 @@ static int active_actor_roll_cos = 1024;
 static int active_gallery_lighting;
 static int active_disable_sphere;
 static int active_disable_toon;
+static int active_disable_edge;
 static int active_emissive_projectile;
 static int active_coordinate_axes;
 
@@ -237,6 +238,21 @@ static void gallery_vertex(const struct rasterfall_model_asset *model,
     out->z = center_z + (int)((long)*(const int *)(p + 8) * scale / 1000);
 }
 
+static void gallery_edge_vertex(const struct rasterfall_model_asset *model,
+                                unsigned int index, int center_x, int base_y,
+                                int center_z, int scale, int edge_size,
+                                struct vec3 *out)
+{
+    const unsigned char *p = model->vertices + index * model->vertex_bytes;
+    gallery_vertex(model, index, center_x, base_y, center_z, scale, out);
+    out->x += (int)((long long)*(const short *)(p + 12) * edge_size * scale /
+                        (32767LL * 1000));
+    out->y += (int)((long long)*(const short *)(p + 14) * edge_size * scale /
+                        (32767LL * 1000));
+    out->z += (int)((long long)*(const short *)(p + 16) * edge_size * scale /
+                        (32767LL * 1000));
+}
+
 static void gallery_uv_vertex(const struct rasterfall_model_asset *model,
                               const struct camera *camera,
                               unsigned int index, int center_x, int base_y,
@@ -319,22 +335,62 @@ static int render_gallery_model(struct toy_renderer *renderer,
         active_toon_shared = -1;
         active_material_alpha = material < model->material_count &&
             model->format_version >= 4 ?
-            model->materials[material * RASTERFALL_MODEL_MATERIAL_BYTES + 4] : 255;
+            model->materials[material * model->material_bytes + 4] : 255;
         active_material_double_sided = material < model->material_count &&
             model->format_version >= 7 ?
-            (model->materials[material * RASTERFALL_MODEL_MATERIAL_BYTES + 7] & 1) != 0 : 1;
+            (model->materials[material * model->material_bytes + 7] & 1) != 0 : 1;
         uint32_t color = material < model->material_count ?
-                         model_u32(model->materials + material * RASTERFALL_MODEL_MATERIAL_BYTES) :
+                         model_u32(model->materials + material * model->material_bytes) :
                          RF_COLOR_UI_TEXT_MUTED;
         unsigned int j;
+        if (!active_disable_edge && material < model->material_count &&
+            model->format_version >= 8) {
+            const unsigned char *material_data = model->materials +
+                material * model->material_bytes;
+            unsigned int edge = model_u32(material_data + 16);
+            int edge_size = (int)model_u32(material_data + 20);
+            if ((material_data[7] & 0x10) && edge_size > 0 && (edge >> 24)) {
+                const struct toy_texture_view *saved_texture = active_texture_view;
+                const struct toy_texture_view *saved_sphere = active_sphere_texture;
+                const struct toy_texture_view *saved_toon = active_toon_texture;
+                int saved_alpha = active_material_alpha;
+                int saved_double_sided = active_material_double_sided;
+                active_texture_view = 0;
+                active_sphere_texture = 0;
+                active_toon_texture = 0;
+                active_material_alpha = (int)(edge >> 24);
+                active_material_double_sided = 0;
+                for (j = 0; j + 2 < index_count; j += 3) {
+                    unsigned int ia = model_u32(indices + j * 4);
+                    unsigned int ib = model_u32(indices + (j + 1) * 4);
+                    unsigned int ic = model_u32(indices + (j + 2) * 4);
+                    struct vec3 a, b, c;
+                    if (ia >= model->vertex_count || ib >= model->vertex_count ||
+                        ic >= model->vertex_count) continue;
+                    gallery_edge_vertex(model, ia, center_x, base_y, center_z,
+                                        scale, edge_size, &a);
+                    gallery_edge_vertex(model, ic, center_x, base_y, center_z,
+                                        scale, edge_size, &b);
+                    gallery_edge_vertex(model, ib, center_x, base_y, center_z,
+                                        scale, edge_size, &c);
+                    drawn += draw_world_triangle(renderer, camera, &a, &b, &c,
+                                                 edge & 0xffffffU);
+                }
+                active_texture_view = saved_texture;
+                active_sphere_texture = saved_sphere;
+                active_toon_texture = saved_toon;
+                active_material_alpha = saved_alpha;
+                active_material_double_sided = saved_double_sided;
+            }
+        }
         if (material < model->material_count && model->texture_assets) {
-            unsigned int texture_index = model_u32(model->materials + material * RASTERFALL_MODEL_MATERIAL_BYTES + 8);
+            unsigned int texture_index = model_u32(model->materials + material * model->material_bytes + 8);
             if (texture_index < model->texture_count && model->texture_assets[texture_index].data) {
                 texture = &model->texture_views[texture_index];
                 active_texture_view = texture;
             }
             if (model->format_version >= 3) {
-                unsigned int packed = model_u32(model->materials + material * RASTERFALL_MODEL_MATERIAL_BYTES + 12);
+                unsigned int packed = model_u32(model->materials + material * model->material_bytes + 12);
                 unsigned int sphere_index = packed & 0xffffU;
                 unsigned int sphere_mode = (packed >> 16) & 3;
                 /* PMX modes 1/2 are multiplicative/additive environment maps.
@@ -352,8 +408,8 @@ static int render_gallery_model(struct toy_renderer *renderer,
                 } else active_sphere_texture = 0;
             }
             if (model->format_version >= 5 && !active_disable_toon) {
-                unsigned int toon_index = model->materials[material * RASTERFALL_MODEL_MATERIAL_BYTES + 5];
-                unsigned int toon_kind = model->materials[material * RASTERFALL_MODEL_MATERIAL_BYTES + 6];
+                unsigned int toon_index = model->materials[material * model->material_bytes + 5];
+                unsigned int toon_kind = model->materials[material * model->material_bytes + 6];
                 if (toon_kind == 1 && toon_index < model->texture_count &&
                     model->texture_assets[toon_index].data) {
                     toon_texture = &model->texture_views[toon_index];
@@ -411,7 +467,7 @@ static int render_gallery_model(struct toy_renderer *renderer,
 int rasterfall_render_model_preview(struct toy_renderer *renderer,
                                     const struct camera *camera,
                                     const struct rasterfall_model_asset *model,
-                                    int use_sphere, int use_toon)
+                                    int use_sphere, int use_toon, int use_edge)
 {
     int width, height, depth, size, scale;
     int center_x, center_z, base_y, pixels;
@@ -434,10 +490,12 @@ int rasterfall_render_model_preview(struct toy_renderer *renderer,
     active_gallery_lighting = 1;
     active_disable_sphere = !use_sphere;
     active_disable_toon = !use_toon;
+    active_disable_edge = !use_edge;
     pixels = render_gallery_model(renderer, camera, model, center_x, base_y,
                                   center_z, scale);
     active_disable_sphere = 0;
     active_disable_toon = 0;
+    active_disable_edge = 0;
     active_gallery_lighting = 0;
     return pixels;
 }
@@ -1830,7 +1888,7 @@ static int render_projectiles(struct toy_renderer *renderer,
             unsigned int material = model_u32(primitive + 8);
             uint32_t color = material < model->material_count ?
                 model_u32(model->materials +
-                          material * RASTERFALL_MODEL_MATERIAL_BYTES) :
+                          material * model->material_bytes) :
                 RF_COLOR_UI_TEXT_MUTED;
             unsigned int k;
             for (k = 0; k + 2 < index_count; k += 3) {
@@ -2600,7 +2658,7 @@ static int render_actor_model_weapon(struct toy_renderer *renderer,
         unsigned int index_count = model_u32(primitive + 4);
         unsigned int material = model_u32(primitive + 8);
         uint32_t color = material < model->material_count ?
-            model_u32(model->materials + material * RASTERFALL_MODEL_MATERIAL_BYTES) :
+            model_u32(model->materials + material * model->material_bytes) :
             RF_COLOR_UI_TEXT_MUTED;
         unsigned int j;
         for (j = 0; j + 2 < index_count; j += 3) {

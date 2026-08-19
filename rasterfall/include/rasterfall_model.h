@@ -10,7 +10,8 @@
  *
  *   header[64]                 magic/version/counts/scale/bounds/offsets
  *   primitive_count * 16       first index/count/material index
- *   material_count * 16        base color/metallic/roughness/texture index
+ *   material_count * 16/24     base/sphere/toon material data;
+ *                              v8 adds edge color and size at 16..23
  *   vertex_count * 24/32 bytes x,y,z: int32; nx,ny,nz: int16; u,v: uint16;
  *                              v6 adds signed Q16 additional u,v at 24..31
  *   index_count * 4 bytes      uint32 triangle indices
@@ -27,12 +28,13 @@
  * Texture files are kept beside the mesh by the offline importer.
  */
 #define RASTERFALL_MODEL_MAGIC 0x324d4652U /* "RFM2" in little-endian */
-#define RASTERFALL_MODEL_VERSION 7
+#define RASTERFALL_MODEL_VERSION 8
 #define RASTERFALL_MODEL_VERTEX_BYTES 24
 #define RASTERFALL_MODEL_VERTEX_BYTES_ADDITIONAL_UV 32
 #define RASTERFALL_MODEL_HEADER_BYTES 64
 #define RASTERFALL_MODEL_PRIMITIVE_BYTES 16
-#define RASTERFALL_MODEL_MATERIAL_BYTES 16
+#define RASTERFALL_MODEL_MATERIAL_BYTES_LEGACY 16
+#define RASTERFALL_MODEL_MATERIAL_BYTES 24
 
 struct rasterfall_model_header {
     unsigned int magic;
@@ -54,6 +56,7 @@ struct rasterfall_model_asset {
     unsigned int index_count;
     unsigned int primitive_count;
     unsigned int material_count;
+    unsigned int material_bytes;
     unsigned int vertex_bytes;
     const unsigned char *primitives;
     const unsigned char *materials;

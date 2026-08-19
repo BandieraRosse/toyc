@@ -19,7 +19,7 @@
 struct cursor { const unsigned char *p, *end; };
 struct pmx_header { int vertex_size, texture_size, material_size; int bone_size, morph_size, rigid_size; int encoding, append_uv; };
 struct pmx_texture { char path[TEXTURE_PATH_MAX]; };
-struct pmx_material { unsigned int color; unsigned int index_count; int texture_index; int sphere_index; int sphere_mode; int alpha; int toon_index; int toon_shared; int draw_flags; };
+struct pmx_material { unsigned int color; unsigned int index_count; int texture_index; int sphere_index; int sphere_mode; int alpha; int toon_index; int toon_shared; int draw_flags; unsigned int edge_color; int edge_size; };
 struct pmx_vertex { float x, y, z, nx, ny, nz, u, v, au, av; };
 
 static int have(struct cursor *c, unsigned int n)
@@ -225,15 +225,15 @@ static int read_materials(struct cursor *c, const struct pmx_header *h,
                           struct pmx_material *materials, int *count)
 {
     int n, i, j, texture, sphere, sphere_mode, toon_flag, toon, face_count;
-    float r, g, b, a;
+    float r, g, b, a, er, eg, eb, ea, edge_size;
     if (i32(c, &n) < 0 || n <= 0 || n > MAX_MATERIALS) return -1;
     for (i = 0; i < n; i++) {
         if (text(c) < 0 || text(c) < 0 || f32(c, &r) < 0 || f32(c, &g) < 0 ||
             f32(c, &b) < 0 || f32(c, &a) < 0 || !have(c, 12 + 4 + 12 + 1 + 16 + 4)) return -1;
         c->p += 12 + 4 + 12;
         if (u8(c, (unsigned int *)&materials[i].draw_flags) < 0 ||
-            !have(c, 16 + 4)) return -1;
-        c->p += 16 + 4;
+            f32(c, &er) < 0 || f32(c, &eg) < 0 || f32(c, &eb) < 0 ||
+            f32(c, &ea) < 0 || f32(c, &edge_size) < 0) return -1;
         if (index_value(c, h->texture_size, 1, &texture) < 0 ||
             index_value(c, h->texture_size, 1, &sphere) < 0 ||
             u8(c, (unsigned int *)&sphere_mode) < 0 ||
@@ -249,6 +249,16 @@ static int read_materials(struct cursor *c, const struct pmx_header *h,
         materials[i].alpha = color_byte(a);
         materials[i].toon_index = toon;
         materials[i].toon_shared = toon_flag != 0;
+        materials[i].edge_color = (unsigned int)color_byte(ea) << 24 |
+            (unsigned int)color_byte(er) << 16 |
+            (unsigned int)color_byte(eg) << 8 | (unsigned int)color_byte(eb);
+        /* Rasterfall's integer world/projection path needs a few world units
+         * before an outline reaches one screen pixel.  A 1/16 model-unit
+         * shell keeps the result narrow after gallery scaling. */
+        materials[i].edge_size = edge_size <= 0.0f ? 0 :
+            (int)(edge_size * 232.0f / 16.0f + 0.5f);
+        if (edge_size > 0.0f && materials[i].edge_size < 1)
+            materials[i].edge_size = 1;
         materials[i].color = (unsigned int)color_byte(r) << 16 |
             (unsigned int)color_byte(g) << 8 | (unsigned int)color_byte(b);
     }
@@ -343,7 +353,7 @@ int main(int argc, char **argv)
     int fd, out, size, vertex_count, index_count, material_count, texture_count, i, j, scale = 232;
     int min_x = 2147483647, min_y = 2147483647, min_z = 2147483647;
     int max_x = -2147483647, max_y = -2147483647, max_z = -2147483647;
-    unsigned char *file, header_out[RASTERFALL_MODEL_HEADER_BYTES], record[16];
+    unsigned char *file, header_out[RASTERFALL_MODEL_HEADER_BYTES], record[RASTERFALL_MODEL_MATERIAL_BYTES];
     struct stat st; struct cursor c; struct pmx_header h; struct pmx_texture textures[MAX_TEXTURES]; struct pmx_material materials[MAX_MATERIALS]; struct pmx_vertex v;
     int primitive_count = 0, index_base = 0;
     if (argc != 4) { __printf("usage: pmx2rmesh input.pmx output.rmesh texture_dir\n"); return 2; }
@@ -363,9 +373,9 @@ int main(int argc, char **argv)
     if (index_base != index_count || primitive_count > 32) { __printf("pmx2rmesh: too many or inconsistent material groups (%d/%d, %d)\n", index_base, index_count, primitive_count); goto invalid; }
     if (copy_textures(argv[1], argv[3], textures, texture_count) < 0) goto invalid;
     out = __openat(AT_FDCWD, argv[2], O_WRONLY | O_CREAT | O_TRUNC, 0644); if (out < 0) { __printf("pmx2rmesh: cannot create output\n"); goto invalid; }
-    __memset(header_out, 0, sizeof(header_out)); header_out[0] = 'R'; header_out[1] = 'F'; header_out[2] = 'M'; header_out[3] = '2'; put_u32(header_out + 4, 7); put_u32(header_out + 8, vertex_count); put_u32(header_out + 12, index_count); put_u32(header_out + 16, scale); put_u32(header_out + 44, primitive_count); put_u32(header_out + 48, material_count); put_u32(header_out + 52, 64); put_u32(header_out + 56, 64 + primitive_count * 16);
+    __memset(header_out, 0, sizeof(header_out)); header_out[0] = 'R'; header_out[1] = 'F'; header_out[2] = 'M'; header_out[3] = '2'; put_u32(header_out + 4, 8); put_u32(header_out + 8, vertex_count); put_u32(header_out + 12, index_count); put_u32(header_out + 16, scale); put_u32(header_out + 44, primitive_count); put_u32(header_out + 48, material_count); put_u32(header_out + 52, 64); put_u32(header_out + 56, 64 + primitive_count * 16);
     if (write_all(out, header_out, sizeof(header_out)) < 0) { __close(out); goto invalid; }
-    index_base = 0; for (i = 0; i < material_count; i++) if (materials[i].index_count) { __memset(record, 0, sizeof(record)); put_u32(record, index_base); put_u32(record + 4, materials[i].index_count); put_u32(record + 8, i); if (write_all(out, record, sizeof(record)) < 0) { __close(out); goto invalid; } index_base += materials[i].index_count; }
+    index_base = 0; for (i = 0; i < material_count; i++) if (materials[i].index_count) { __memset(record, 0, sizeof(record)); put_u32(record, index_base); put_u32(record + 4, materials[i].index_count); put_u32(record + 8, i); if (write_all(out, record, RASTERFALL_MODEL_PRIMITIVE_BYTES) < 0) { __close(out); goto invalid; } index_base += materials[i].index_count; }
     for (i = 0; i < material_count; i++) {
         unsigned int sphere = materials[i].sphere_index < 0 ? 0xffffffffU :
             ((unsigned int)materials[i].sphere_index & 0xffffU) |
@@ -379,6 +389,8 @@ int main(int argc, char **argv)
         record[7] = (unsigned char)materials[i].draw_flags;
         put_u32(record + 8, materials[i].texture_index < 0 ? 0xffffffffU : (unsigned int)materials[i].texture_index);
         put_u32(record + 12, sphere);
+        put_u32(record + 16, materials[i].edge_color);
+        put_u32(record + 20, (unsigned int)materials[i].edge_size);
         if (write_all(out, record, sizeof(record)) < 0) { __close(out); goto invalid; }
     }
     c.p = file; c.end = file + size; if (header(&c, &h) < 0 || i32(&c, &j) < 0) { __close(out); goto invalid; }

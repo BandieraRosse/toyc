@@ -516,7 +516,7 @@ static int render_model_weapon(struct toy_renderer *renderer,
         unsigned int material = viewmodel_model_u32(primitive + 8);
         uint32_t color = material < model->material_count ?
             viewmodel_model_u32(model->materials +
-                                material * RASTERFALL_MODEL_MATERIAL_BYTES) :
+                                material * model->material_bytes) :
             0xA0A0A0;
         unsigned int j;
         for (j = 0; j + 2 < index_count; j += 3) {

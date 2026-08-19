@@ -28,7 +28,7 @@ int rasterfall_model_load(struct rasterfall_model_asset *asset,
                           const char *path)
 {
     uint32_t size;
-    uint32_t version, vertex_bytes;
+    uint32_t version, vertex_bytes, material_bytes;
     unsigned char *data;
     if (!asset || !path) return -1;
     __memset(asset, 0, sizeof(*asset));
@@ -36,6 +36,8 @@ int rasterfall_model_load(struct rasterfall_model_asset *asset,
     version = data && size >= 8 ? model_u32(data + 4) : 0;
     vertex_bytes = version >= 6 ? RASTERFALL_MODEL_VERTEX_BYTES_ADDITIONAL_UV :
                                   RASTERFALL_MODEL_VERTEX_BYTES;
+    material_bytes = version >= 8 ? RASTERFALL_MODEL_MATERIAL_BYTES :
+                                    RASTERFALL_MODEL_MATERIAL_BYTES_LEGACY;
     if (!data || size < RASTERFALL_MODEL_HEADER_BYTES ||
         model_u32(data) != RASTERFALL_MODEL_MAGIC ||
         (version < 2 || version > RASTERFALL_MODEL_VERSION) ||
@@ -45,7 +47,7 @@ int rasterfall_model_load(struct rasterfall_model_asset *asset,
         model_u32(data + 56) != RASTERFALL_MODEL_HEADER_BYTES +
             model_u32(data + 44) * RASTERFALL_MODEL_PRIMITIVE_BYTES ||
         (long)model_u32(data + 56) +
-            (long)model_u32(data + 48) * RASTERFALL_MODEL_MATERIAL_BYTES +
+            (long)model_u32(data + 48) * material_bytes +
             (long)model_u32(data + 8) * vertex_bytes +
             (unsigned long)model_u32(data + 12) * 4 != (unsigned long)size) {
         if (data) tlibc_free(data);
@@ -59,9 +61,10 @@ int rasterfall_model_load(struct rasterfall_model_asset *asset,
     asset->index_count = model_u32(data + 12);
     asset->primitive_count = model_u32(data + 44);
     asset->material_count = model_u32(data + 48);
+    asset->material_bytes = material_bytes;
     asset->primitives = data + model_u32(data + 52);
     asset->materials = data + model_u32(data + 56);
-    asset->vertices = asset->materials + asset->material_count * RASTERFALL_MODEL_MATERIAL_BYTES;
+    asset->vertices = asset->materials + asset->material_count * asset->material_bytes;
     asset->indices = asset->vertices + asset->vertex_count * asset->vertex_bytes;
     asset->min_x = *(const int *)(data + 20);
     asset->min_y = *(const int *)(data + 24);
@@ -73,12 +76,12 @@ int rasterfall_model_load(struct rasterfall_model_asset *asset,
         unsigned int i, max_texture = 0;
         int found = 0;
         if (asset->material_count) for (i = 0; i < asset->material_count; i++) {
-            unsigned int texture = model_u32(asset->materials + i * RASTERFALL_MODEL_MATERIAL_BYTES + 8);
+            unsigned int texture = model_u32(asset->materials + i * asset->material_bytes + 8);
             unsigned int sphere = asset->format_version >= 3 ?
-                model_u32(asset->materials + i * RASTERFALL_MODEL_MATERIAL_BYTES + 12) & 0xffffU : 0xffffU;
+                model_u32(asset->materials + i * asset->material_bytes + 12) & 0xffffU : 0xffffU;
             unsigned int toon = asset->format_version >= 5 &&
-                asset->materials[i * RASTERFALL_MODEL_MATERIAL_BYTES + 6] == 1 ?
-                asset->materials[i * RASTERFALL_MODEL_MATERIAL_BYTES + 5] : 0xffU;
+                asset->materials[i * asset->material_bytes + 6] == 1 ?
+                asset->materials[i * asset->material_bytes + 5] : 0xffU;
             if (texture != 0xffffffffU && texture < 256 && (!found || texture > max_texture)) { max_texture = texture; found = 1; }
             if (sphere != 0xffffU && sphere < 256 && (!found || sphere > max_texture)) { max_texture = sphere; found = 1; }
             if (toon != 0xffU && (!found || toon > max_texture)) { max_texture = toon; found = 1; }
@@ -103,8 +106,8 @@ int rasterfall_model_load(struct rasterfall_model_asset *asset,
             }
         }
         if (asset->format_version >= 3) for (i = 0; i < asset->material_count; i++) {
-            unsigned int base = model_u32(asset->materials + i * RASTERFALL_MODEL_MATERIAL_BYTES + 8);
-            unsigned int packed = model_u32(asset->materials + i * RASTERFALL_MODEL_MATERIAL_BYTES + 12);
+            unsigned int base = model_u32(asset->materials + i * asset->material_bytes + 8);
+            unsigned int packed = model_u32(asset->materials + i * asset->material_bytes + 12);
             unsigned int sphere = packed & 0xffffU;
             unsigned int mode = (packed >> 16) & 3U;
             if (sphere != 0xffffU)

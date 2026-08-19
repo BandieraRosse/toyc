@@ -74,8 +74,9 @@ PNG/BMP 纹理复制到指定目录。再使用 `build/toyasset convert png1024|
 全透明像素不写入颜色和深度，纹理 alpha 与 PMX 材质 alpha 相乘。包含透明度
 的三角形在不透明命令之后按相机深度由远到近进行 source-over 混合。PMX 材质
 alpha、toon 引用和第一组附加 UV 从 RFM2 v6 起保存；v7 还保存材质 drawing
-flags，并按 bit 0 区分双面绘制与背面剔除。加载器仍兼容 v2 到 v5 的 24 字节旧
-顶点记录，旧格式继续按双面材质渲染。
+flags，并按 bit 0 区分双面绘制与背面剔除；v8 将材质记录扩展为 24 字节，保存
+edge RGBA 和宽度，并用外扩背面壳绘制轮廓。加载器仍兼容 v2 到 v5 的 24 字节旧
+顶点记录及 v2 到 v7 的 16 字节旧材质记录，旧格式继续按双面材质渲染。
 
 可以通过无窗口的离屏渲染输出模型正面、侧面和背面验证图。输出目录会自动
 创建，图片采用无需额外编码库的 BMP 格式；该命令走与游戏内相同的材质、
@@ -108,6 +109,16 @@ build/rasterfall --model-views-toon-compare \
 
 该命令分别在 `with-toon/` 和 `without-toon/` 中生成三张同机位图片；两组都
 保留基础纹理、透明混合和 sphere，只切换 toon 色阶。
+
+Edge 轮廓对照使用：
+
+```sh
+build/rasterfall --model-views-edge-compare \
+    rasterfall/private-assets/models/yola.rmesh tmp/yola-edge-compare
+```
+
+该命令分别在 `with-edge/` 和 `without-edge/` 中生成三张同机位图片，其余材质、
+相机和缩放设置保持一致。
 
 完整材质回归使用：
 
