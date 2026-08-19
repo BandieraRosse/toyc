@@ -210,6 +210,7 @@ static long raster_tex(struct toy_renderer *renderer,
                        int blend_mode,
                        const struct toy_texture_view *texture3,
                        int toon_shared, int toon_level,
+                       int material_alpha,
                        int repeat, uint32_t fallback_color,
                        int light_factor, int fog_factor,
                        unsigned long *tex_pixels,
@@ -313,7 +314,7 @@ static long raster_tex(struct toy_renderer *renderer,
                     long fog = fog_factor >= 0 ? fog_factor :
                         (e0 * a->fog + e1 * b->fog + e2 * c->fog) / area;
                     {
-                    int alpha = (int)(color >> 24);
+                    int alpha = (int)(color >> 24) * material_alpha / 255;
                     if (alpha > 0) {
                         color = shade_color(color, (int)light, (int)fog);
                         if (alpha == 255) {
@@ -389,6 +390,7 @@ static void rasterize_cmd(struct toy_renderer *renderer,
                                      y0, y1, cmd->texture, cmd->texture2,
                                      cmd->blend_mode, cmd->texture3,
                                      cmd->toon_shared, cmd->toon_level,
+                                     cmd->material_alpha,
                                      cmd->repeat,
                                      cmd->fallback, cmd->light, cmd->fog,
                                      &worker->textured_pixels,
@@ -405,16 +407,21 @@ static int grow_cmds(struct toy_renderer *renderer)
 {
     int new_cap = renderer->cmd_cap > 0 ? renderer->cmd_cap * 2
                                         : TOY_RENDER_CMD_INIT;
-    struct toy_raster_cmd *new_cmds;
+    struct toy_raster_cmd *new_cmds, *new_sort_cmds;
     if (new_cap > TOY_RENDER_CMD_MAX) return 0;
     new_cmds = tlibc_malloc((size_t)new_cap * sizeof(struct toy_raster_cmd));
     if (!new_cmds) return 0;
+    new_sort_cmds = tlibc_malloc((size_t)new_cap * sizeof(struct toy_raster_cmd));
+    if (!new_sort_cmds) { tlibc_free(new_cmds); return 0; }
     if (renderer->cmd_count > 0)
         memcpy(new_cmds, renderer->cmds,
                (size_t)renderer->cmd_count * sizeof(struct toy_raster_cmd));
     if (renderer->cmds) tlibc_free(renderer->cmds);
+    if (renderer->sort_cmds) tlibc_free(renderer->sort_cmds);
     renderer->cmds = new_cmds;
+    renderer->sort_cmds = new_sort_cmds;
     renderer->cmd_cap = new_cap;
+    renderer->sort_cmd_cap = new_cap;
     return 1;
 }
 
@@ -448,6 +455,8 @@ static int record_cmd(struct toy_renderer *renderer, int textured,
     cmd->blend_mode = 0;
     cmd->toon_shared = -1;
     cmd->toon_level = 255;
+    cmd->material_alpha = 255;
+    cmd->transparent = textured && texture && texture->has_transparency;
     cmd->area = area;
     /* 投影坐标已被调用方裁剪过；包围盒缓存进命令，工作线程按带直接跳过。 */
     cmd->bbox_minx = clampi(a->x < b->x ? (a->x < c->x ? a->x : c->x) :
@@ -580,7 +589,7 @@ int toy_renderer_triangle_textured_material_lit(
     const struct toy_texture_view *sphere_texture,
     int sphere_mode,
     const struct toy_texture_view *toon_texture,
-    int toon_shared, int toon_level,
+    int toon_shared, int toon_level, int material_alpha,
     int repeat, uint32_t fallback_color, int light, int fog)
 {
     long long area;
@@ -597,6 +606,11 @@ int toy_renderer_triangle_textured_material_lit(
     cmd->texture3 = toon_texture;
     cmd->toon_shared = toon_shared;
     cmd->toon_level = toon_level;
+    if (material_alpha < 0) material_alpha = 0;
+    if (material_alpha > 255) material_alpha = 255;
+    cmd->material_alpha = material_alpha;
+    cmd->transparent = material_alpha < 255 ||
+                       (texture && texture->has_transparency);
     renderer->submitted_triangles++;
     renderer->submitted_vertices += 3;
     return 0;
@@ -831,12 +845,54 @@ int toy_renderer_begin(struct toy_renderer *renderer,
     return 0;
 }
 
+static long transparent_depth_key(const struct toy_raster_cmd *cmd)
+{
+    return cmd->a.inv_z + cmd->b.inv_z + cmd->c.inv_z;
+}
+
+static void sort_transparent_commands(struct toy_raster_cmd *commands,
+                                      struct toy_raster_cmd *temporary,
+                                      int begin, int end)
+{
+    int middle, left, right, out;
+    if (end - begin < 2) return;
+    middle = begin + (end - begin) / 2;
+    sort_transparent_commands(commands, temporary, begin, middle);
+    sort_transparent_commands(commands, temporary, middle, end);
+    left = begin; right = middle; out = begin;
+    while (left < middle && right < end) {
+        if (transparent_depth_key(&commands[left]) <=
+            transparent_depth_key(&commands[right]))
+            temporary[out++] = commands[left++];
+        else temporary[out++] = commands[right++];
+    }
+    while (left < middle) temporary[out++] = commands[left++];
+    while (right < end) temporary[out++] = commands[right++];
+    for (out = begin; out < end; out++) commands[out] = temporary[out];
+}
+
 int toy_renderer_flush(struct toy_renderer *renderer)
 {
     long total = 0;
     unsigned long tex = 0, fallback = 0, bbox = 0, inside = 0;
     long flat_us = 0, tex_us = 0;
     if (!renderer) return 0;
+    if (renderer->cmd_count > 1 && renderer->sort_cmds) {
+        int opaque = 0, transparent, i;
+        for (i = 0; i < renderer->cmd_count; i++)
+            if (!renderer->cmds[i].transparent)
+                renderer->sort_cmds[opaque++] = renderer->cmds[i];
+        transparent = opaque;
+        for (i = 0; i < renderer->cmd_count; i++)
+            if (renderer->cmds[i].transparent)
+                renderer->sort_cmds[transparent++] = renderer->cmds[i];
+        /* Transparent commands use stable painter order. inv_z is larger
+         * when nearer, so ascending average inverse depth is back-to-front. */
+        sort_transparent_commands(renderer->sort_cmds, renderer->cmds,
+                                  opaque, transparent);
+        memcpy(renderer->cmds, renderer->sort_cmds,
+               (size_t)renderer->cmd_count * sizeof(struct toy_raster_cmd));
+    }
     if (renderer->worker_count > 0) {
         renderer_dispatch(renderer, 0, 0);
         /* 命令已被本次 flush 消费：清零后下一条记录从空列表开始，
@@ -905,6 +961,8 @@ void toy_renderer_destroy(struct toy_renderer *renderer)
     }
     if (renderer->cmds) tlibc_free(renderer->cmds);
     renderer->cmds = NULL;
+    if (renderer->sort_cmds) tlibc_free(renderer->sort_cmds);
+    renderer->sort_cmds = NULL;
     if (renderer->depth) tlibc_free(renderer->depth);
     memset(renderer, 0, sizeof(struct toy_renderer));
 }

@@ -30,6 +30,7 @@ struct toy_texture_view {
     uint32_t height;
     uint32_t data_size;
     uint32_t channels;
+    uint32_t has_transparency;
 };
 
 /* 一条待光栅化三角形命令。投影/裁剪在记录阶段完成，包围盒与 area 一并
@@ -51,6 +52,8 @@ struct toy_raster_cmd {
     int blend_mode;
     int toon_shared;
     int toon_level;
+    int material_alpha;
+    int transparent;
     long long area;
     int bbox_minx;
     int bbox_maxx;
@@ -105,8 +108,10 @@ struct toy_renderer {
     unsigned long tex_tris_mark;   /* textured_triangles 的 flush 分界点 */
     /* 命令列表（记录阶段） */
     struct toy_raster_cmd *cmds;
+    struct toy_raster_cmd *sort_cmds;
     int cmd_count;
     int cmd_cap;
+    int sort_cmd_cap;
     int cmd_overflow;
     /* 并行光栅化线程池 */
     struct toy_render_worker *workers;
@@ -171,7 +176,7 @@ int toy_renderer_triangle_textured_material_lit(
     const struct toy_texture_view *sphere_texture,
     int sphere_mode,
     const struct toy_texture_view *toon_texture,
-    int toon_shared, int toon_level,
+    int toon_shared, int toon_level, int material_alpha,
     int repeat, uint32_t fallback_color, int light, int fog);
 /* 把记录阶段的三角形命令并行光栅化到 surface；返回实际写入像素数
  * （接替 toy_renderer_triangle 系列的返回值语义）。 */

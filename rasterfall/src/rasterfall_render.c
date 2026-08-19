@@ -44,6 +44,7 @@ static int active_sphere_mode;
 static const struct toy_texture_view *active_toon_texture;
 static int active_toon_shared = -1;
 static int active_toon_level = 255;
+static int active_material_alpha = 255;
 static unsigned short *active_lightmap;
 static int active_textures;
 static int active_fixed_floor_lighting;
@@ -293,6 +294,7 @@ static int render_gallery_model(struct toy_renderer *renderer,
     int previous_sphere_mode = active_sphere_mode;
     int previous_toon_shared = active_toon_shared;
     int previous_toon_level = active_toon_level;
+    int previous_material_alpha = active_material_alpha;
     int shared_texture = gallery_model_has_texture(model);
     active_sphere_texture = 0;
     active_sphere_mode = 0;
@@ -313,13 +315,13 @@ static int render_gallery_model(struct toy_renderer *renderer,
         active_sphere_mode = 0;
         active_toon_texture = 0;
         active_toon_shared = -1;
+        active_material_alpha = material < model->material_count &&
+            model->format_version >= 4 ?
+            model->materials[material * RASTERFALL_MODEL_MATERIAL_BYTES + 4] : 255;
         uint32_t color = material < model->material_count ?
                          model_u32(model->materials + material * RASTERFALL_MODEL_MATERIAL_BYTES) :
                          RF_COLOR_UI_TEXT_MUTED;
         unsigned int j;
-        if (material < model->material_count && model->format_version >= 4 &&
-            model->materials[material * RASTERFALL_MODEL_MATERIAL_BYTES + 4] < 128)
-            continue;
         if (material < model->material_count && model->texture_assets) {
             unsigned int texture_index = model_u32(model->materials + material * RASTERFALL_MODEL_MATERIAL_BYTES + 8);
             if (texture_index < model->texture_count && model->texture_assets[texture_index].data) {
@@ -397,6 +399,7 @@ static int render_gallery_model(struct toy_renderer *renderer,
     active_toon_texture = previous_toon;
     active_toon_shared = previous_toon_shared;
     active_toon_level = previous_toon_level;
+    active_material_alpha = previous_material_alpha;
     return drawn;
 }
 
@@ -848,7 +851,7 @@ static int draw_world_triangle_tex(struct toy_renderer *renderer,
                 renderer, &sa, &sb, &sc, active_texture_view,
                 active_sphere_texture, active_sphere_mode,
                 active_toon_texture, active_toon_shared, active_toon_level,
-                1, 0xFF202020U, light, fog);
+                active_material_alpha, 1, 0xFF202020U, light, fog);
         else
             drawn += toy_renderer_triangle_textured_lit(renderer, &sa, &sb, &sc,
                                                          active_texture_view, 1,

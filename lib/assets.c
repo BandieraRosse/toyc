@@ -158,6 +158,14 @@ int toy_texture_load(const char *path, struct toy_texture_asset *asset)
     asset->height = height;
     asset->data_size = length;
     asset->channels = channels;
+    if (channels == 4) {
+        uint32_t i, pixels = width * height;
+        for (i = 0; i < pixels; i++)
+            if (asset->data[i * 4 + 3] != 255) {
+                asset->has_transparency = 1;
+                break;
+            }
+    }
     return 0;
 }
 

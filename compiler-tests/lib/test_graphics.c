@@ -24,17 +24,21 @@ int main(void)
     static const unsigned char subtexture_texels[6] = {
         128, 128, 128, 255, 255, 255
     };
-    struct toy_texture_view texture = {texels, 2, 2, 12, 3};
-    struct toy_texture_view base_texture = {base_texel, 1, 1, 3, 3};
-    struct toy_texture_view sphere_texture = {sphere_texel, 1, 1, 3, 3};
+    static const unsigned char translucent_red[4] = {255, 0, 0, 128};
+    static const unsigned char translucent_blue[4] = {0, 0, 255, 128};
+    struct toy_texture_view texture = {texels, 2, 2, 12, 3, 0};
+    struct toy_texture_view base_texture = {base_texel, 1, 1, 3, 3, 0};
+    struct toy_texture_view sphere_texture = {sphere_texel, 1, 1, 3, 3, 0};
     struct toy_texture_view transparent_texture = {
-        transparent_texel, 1, 1, 4, 4
+        transparent_texel, 1, 1, 4, 4, 1
     };
     struct toy_texture_view translucent_texture = {
-        translucent_texel, 1, 1, 4, 4
+        translucent_texel, 1, 1, 4, 4, 1
     };
-    struct toy_texture_view toon_texture = {toon_texels, 1, 2, 6, 3};
-    struct toy_texture_view subtexture = {subtexture_texels, 2, 1, 6, 3};
+    struct toy_texture_view toon_texture = {toon_texels, 1, 2, 6, 3, 0};
+    struct toy_texture_view subtexture = {subtexture_texels, 2, 1, 6, 3, 0};
+    struct toy_texture_view red_texture = {translucent_red, 1, 1, 4, 4, 1};
+    struct toy_texture_view blue_texture = {translucent_blue, 1, 1, 4, 4, 1};
     int near_drawn, far_drawn;
 
     surface.pixels = pixels;
@@ -108,16 +112,35 @@ int main(void)
     toy_renderer_begin(&renderer, &surface, 0);
     toy_renderer_triangle_textured_material_lit(
         &renderer, &a, &b, &c, &base_texture, 0, 0,
-        &toon_texture, -1, 0, 0, 0, 256, 0);
+        &toon_texture, -1, 0, 255, 0, 0, 256, 0);
     toy_renderer_flush(&renderer);
     if (pixels[2 * 8 + 2] != 0x323232) return 10;
 
     toy_renderer_begin(&renderer, &surface, 0);
     toy_renderer_triangle_textured_material_lit(
         &renderer, &a, &b, &c, &base_texture, &subtexture, 3,
-        0, -1, 255, 0, 0, 256, 0);
+        0, -1, 255, 255, 0, 0, 256, 0);
     toy_renderer_flush(&renderer);
     if (pixels[2 * 8 + 2] != 0x323232) return 11;
+
+    toy_renderer_begin(&renderer, &surface, 0x102030);
+    toy_renderer_triangle_textured_material_lit(
+        &renderer, &a, &b, &c, &base_texture, 0, 0,
+        0, -1, 255, 128, 0, 0, 256, 0);
+    toy_renderer_flush(&renderer);
+    if (pixels[2 * 8 + 2] != 0x3A424A) return 12;
+
+    toy_renderer_begin(&renderer, &surface, 0);
+    a.z = b.z = c.z = 10;
+    a.inv_z = b.inv_z = c.inv_z = 104857;
+    toy_renderer_triangle_textured_lit(&renderer, &a, &b, &c,
+                                       &red_texture, 0, 0, 256, 0);
+    a.z = b.z = c.z = 20;
+    a.inv_z = b.inv_z = c.inv_z = 52428;
+    toy_renderer_triangle_textured_lit(&renderer, &a, &b, &c,
+                                       &blue_texture, 0, 0, 256, 0);
+    toy_renderer_flush(&renderer);
+    if (pixels[2 * 8 + 2] != 0x80003F) return 13;
 
     toy_renderer_destroy(&renderer);
     return 0;

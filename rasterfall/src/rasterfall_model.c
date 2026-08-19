@@ -99,6 +99,7 @@ int rasterfall_model_load(struct rasterfall_model_asset *asset,
                 asset->texture_views[i].height = asset->texture_assets[i].height;
                 asset->texture_views[i].data_size = asset->texture_assets[i].data_size;
                 asset->texture_views[i].channels = asset->texture_assets[i].channels;
+                asset->texture_views[i].has_transparency = asset->texture_assets[i].has_transparency;
             }
         }
         if (asset->format_version >= 3) for (i = 0; i < asset->material_count; i++) {

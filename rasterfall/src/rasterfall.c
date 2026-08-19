@@ -1665,6 +1665,7 @@ int main(int argc, char **argv)
         model_texture_view.height = model_texture.height;
         model_texture_view.data_size = model_texture.data_size;
         model_texture_view.channels = model_texture.channels;
+        model_texture_view.has_transparency = model_texture.has_transparency;
         __printf("rasterfall: model texture loaded (%u x %u)\n",
                  model_texture.width, model_texture.height);
     }
@@ -1675,11 +1676,13 @@ int main(int argc, char **argv)
         scene_texture_view.height = scene_texture.height;
         scene_texture_view.data_size = scene_texture.data_size;
         scene_texture_view.channels = scene_texture.channels;
+        scene_texture_view.has_transparency = scene_texture.has_transparency;
         wall_texture_view.data = scene_texture_view.data;
         wall_texture_view.width = scene_texture_view.width;
         wall_texture_view.height = scene_texture_view.height;
         wall_texture_view.data_size = scene_texture_view.data_size;
         wall_texture_view.channels = scene_texture_view.channels;
+        wall_texture_view.has_transparency = scene_texture_view.has_transparency;
         __printf("rasterfall: UV texture loaded (%u x %u)\n",
                  scene_texture.width, scene_texture.height);
     } else if (textures_enabled) {
