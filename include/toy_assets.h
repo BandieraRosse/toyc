@@ -5,7 +5,7 @@
 
 #define TOY_ASSET_VERSION 1
 
-struct toy_texture_asset { const unsigned char *blob, *data; uint32_t width, height; uint32_t data_size; };
+struct toy_texture_asset { const unsigned char *blob, *data; uint32_t width, height; uint32_t data_size, channels; };
 struct toy_sound_asset { const unsigned char *blob, *data; uint32_t rate, channels, frames, data_size; };
 struct toy_mesh_vertex { int32_t x, y, z; uint32_t color; };
 struct toy_mesh_asset { const unsigned char *blob, *vertices, *indices; uint32_t vertex_count, index_count; };

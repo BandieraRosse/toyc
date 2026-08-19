@@ -29,6 +29,7 @@ struct toy_texture_view {
     uint32_t width;
     uint32_t height;
     uint32_t data_size;
+    uint32_t channels;
 };
 
 /* 一条待光栅化三角形命令。投影/裁剪在记录阶段完成，包围盒与 area 一并

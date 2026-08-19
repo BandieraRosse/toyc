@@ -123,6 +123,7 @@ int toy_texture_load(const char *path, struct toy_texture_asset *asset)
     uint32_t length;
     uint32_t width;
     uint32_t height;
+    uint32_t channels;
     uint16_t header_size;
 
     if (!asset) return -1;
@@ -137,14 +138,15 @@ int toy_texture_load(const char *path, struct toy_texture_asset *asset)
 
     width = read_u32(data + 8);
     height = read_u32(data + 12);
+    channels = read_u16(data + 16);
     offset = read_u32(data + 20);
     length = read_u32(data + 24);
 
-    /* 当前纹理格式固定为 RGB888、单层数据。 */
-    if (!width || !height || read_u16(data + 16) != 3 ||
+    /* TTEX v1 supports tightly packed RGB888 and RGBA8888. */
+    if (!width || !height || (channels != 3 && channels != 4) ||
         read_u16(data + 18) != 1 || width > 8192 || height > 8192 ||
-        width > 0xffffffffu / (height * 3u) ||
-        length != width * height * 3u || offset < header_size ||
+        width > 0xffffffffu / (height * channels) ||
+        length != width * height * channels || offset < header_size ||
         !range_valid(offset, length, size)) {
         tlibc_free(data);
         return -1;
@@ -155,6 +157,7 @@ int toy_texture_load(const char *path, struct toy_texture_asset *asset)
     asset->width = width;
     asset->height = height;
     asset->data_size = length;
+    asset->channels = channels;
     return 0;
 }
 

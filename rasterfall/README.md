@@ -69,7 +69,9 @@ PNG/BMP 纹理复制到指定目录。再使用 `build/toyasset convert png1024|
 转成 TTEX 后，Rasterfall 会按 RFM2 材质索引加载基础色和 sphere 纹理；sphere
 贴图的乘算（mode 1）与加算（mode 2）模式会按顶点法线生成的 sphere UV
 进行混合。依赖附加 UV 的 mode 3 暂不应用；骨骼、Morph、刚体、toon 贴图和
-alpha 混合当前只跳过。
+完整的透明三角形排序当前只跳过。PNG 转换为 RGBA TTEX 时会保留 alpha；
+全透明像素不写入颜色和深度，半透明像素按 PMX 材质顺序进行 source-over
+混合。PMX 材质 alpha 保存在 RFM2 v4 材质记录中。
 
 可以通过无窗口的离屏渲染输出模型正面、侧面和背面验证图。输出目录会自动
 创建，图片采用无需额外编码库的 BMP 格式；该命令走与游戏内相同的材质、

@@ -127,11 +127,14 @@ static long raster_flat(struct toy_renderer *renderer,
 
 static int texture_valid(const struct toy_texture_view *t)
 {
-    unsigned long pixels;
+    unsigned long pixels, channels;
     if (!t || !t->data || !t->width || !t->height) return 0;
     if (t->width > 8192 || t->height > 8192) return 0;
     pixels = (unsigned long)t->width * t->height;
-    return pixels <= 0xffffffffUL / 3UL && t->data_size == pixels * 3UL;
+    channels = t->channels ? t->channels : 3;
+    return (channels == 3 || channels == 4) &&
+           pixels <= 0xffffffffUL / channels &&
+           t->data_size == pixels * channels;
 }
 
 static uint32_t texture_sample(const struct toy_texture_view *t,
@@ -162,10 +165,14 @@ static uint32_t texture_sample(const struct toy_texture_view *t,
     }
     x = (u * t->width) / TOY_UV_ONE;
     y = (v * t->height) / TOY_UV_ONE;
-    at = (y * t->width + x) * 3;
+    {
+    long channels = t->channels ? t->channels : 3;
+    at = (y * t->width + x) * channels;
     p = t->data + at;
-    return 0xFF000000U | ((uint32_t)p[0] << 16) |
+    return (channels == 4 ? (uint32_t)p[3] << 24 : 0xFF000000U) |
+           ((uint32_t)p[0] << 16) |
            ((uint32_t)p[1] << 8) | p[2];
+    }
 }
 
 static uint32_t shade_color(uint32_t color, int light, int fog)
@@ -275,19 +282,37 @@ static long raster_tex(struct toy_renderer *renderer,
                         if (g > 255) g = 255;
                         if (b < 0) b = 0;
                         if (b > 255) b = 255;
-                        color = 0xff000000U | (uint32_t)r << 16 |
+                        color = (color & 0xff000000U) | (uint32_t)r << 16 |
                                 (uint32_t)g << 8 | (uint32_t)b;
                     }
                     long light = light_factor >= 0 ? light_factor :
                         (e0 * a->light + e1 * b->light + e2 * c->light) / area;
                     long fog = fog_factor >= 0 ? fog_factor :
                         (e0 * a->fog + e1 * b->fog + e2 * c->fog) / area;
-                    color = shade_color(color, (int)light, (int)fog);
-                    depth[at] = (int)inv_norm;
-                    row[x] = color;
-                    (*tex_pixels)++;
-                    if (used_fallback) (*fallback_pixels)++;
-                    drawn++;
+                    {
+                    int alpha = (int)(color >> 24);
+                    if (alpha > 0) {
+                        color = shade_color(color, (int)light, (int)fog);
+                        if (alpha == 255) {
+                            depth[at] = (int)inv_norm;
+                            row[x] = color;
+                        } else {
+                            uint32_t under = row[x];
+                            int ur = (under >> 16) & 255;
+                            int ug = (under >> 8) & 255;
+                            int ub = under & 255;
+                            int sr = (color >> 16) & 255;
+                            int sg = (color >> 8) & 255;
+                            int sb = color & 255;
+                            row[x] = (uint32_t)((sr * alpha + ur * (255 - alpha)) / 255) << 16 |
+                                     (uint32_t)((sg * alpha + ug * (255 - alpha)) / 255) << 8 |
+                                     (uint32_t)((sb * alpha + ub * (255 - alpha)) / 255);
+                        }
+                        (*tex_pixels)++;
+                        if (used_fallback) (*fallback_pixels)++;
+                        drawn++;
+                    }
+                    }
                 }
             }
             e0 += dEx0; e1 += dEx1; e2 += dEx2;

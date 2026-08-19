@@ -16,9 +16,17 @@ int main(void)
     };
     static const unsigned char base_texel[3] = {100, 100, 100};
     static const unsigned char sphere_texel[3] = {10, 20, 30};
-    struct toy_texture_view texture = {texels, 2, 2, 12};
-    struct toy_texture_view base_texture = {base_texel, 1, 1, 3};
-    struct toy_texture_view sphere_texture = {sphere_texel, 1, 1, 3};
+    static const unsigned char transparent_texel[4] = {255, 0, 0, 0};
+    static const unsigned char translucent_texel[4] = {255, 0, 0, 128};
+    struct toy_texture_view texture = {texels, 2, 2, 12, 3};
+    struct toy_texture_view base_texture = {base_texel, 1, 1, 3, 3};
+    struct toy_texture_view sphere_texture = {sphere_texel, 1, 1, 3, 3};
+    struct toy_texture_view transparent_texture = {
+        transparent_texel, 1, 1, 4, 4
+    };
+    struct toy_texture_view translucent_texture = {
+        translucent_texel, 1, 1, 4, 4
+    };
     int near_drawn, far_drawn;
 
     surface.pixels = pixels;
@@ -74,6 +82,20 @@ int main(void)
         2, 0, 0, 256, 0);
     toy_renderer_flush(&renderer);
     if (pixels[2 * 8 + 2] != 0x006E7882) return 7;
+
+    toy_renderer_begin(&renderer, &surface, 0x123456);
+    toy_renderer_triangle_textured_lit(&renderer, &a, &b, &c,
+                                       &transparent_texture, 0, 0,
+                                       256, 0);
+    toy_renderer_flush(&renderer);
+    if (pixels[2 * 8 + 2] != 0x123456) return 8;
+
+    toy_renderer_begin(&renderer, &surface, 0x102030);
+    toy_renderer_triangle_textured_lit(&renderer, &a, &b, &c,
+                                       &translucent_texture, 0, 0,
+                                       256, 0);
+    toy_renderer_flush(&renderer);
+    if (pixels[2 * 8 + 2] != 0x870F17) return 9;
 
     toy_renderer_destroy(&renderer);
     return 0;

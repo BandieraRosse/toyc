@@ -301,6 +301,9 @@ static int render_gallery_model(struct toy_renderer *renderer,
                          model_u32(model->materials + material * RASTERFALL_MODEL_MATERIAL_BYTES) :
                          RF_COLOR_UI_TEXT_MUTED;
         unsigned int j;
+        if (material < model->material_count && model->format_version >= 4 &&
+            model->materials[material * RASTERFALL_MODEL_MATERIAL_BYTES + 4] < 128)
+            continue;
         if (material < model->material_count && model->texture_assets) {
             unsigned int texture_index = model_u32(model->materials + material * RASTERFALL_MODEL_MATERIAL_BYTES + 8);
             if (texture_index < model->texture_count && model->texture_assets[texture_index].data) {

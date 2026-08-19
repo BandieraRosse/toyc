@@ -34,7 +34,7 @@ int rasterfall_model_load(struct rasterfall_model_asset *asset,
     data = toy_asset_load_file(path, &size);
     if (!data || size < RASTERFALL_MODEL_HEADER_BYTES ||
         model_u32(data) != RASTERFALL_MODEL_MAGIC ||
-        (model_u32(data + 4) != 2 && model_u32(data + 4) != RASTERFALL_MODEL_VERSION) ||
+        (model_u32(data + 4) < 2 || model_u32(data + 4) > RASTERFALL_MODEL_VERSION) ||
         model_u32(data + 8) > 1000000 || model_u32(data + 12) > 3000000 ||
         model_u32(data + 44) > 32 || model_u32(data + 48) > 32 ||
         model_u32(data + 52) != RASTERFALL_MODEL_HEADER_BYTES ||
@@ -89,6 +89,7 @@ int rasterfall_model_load(struct rasterfall_model_asset *asset,
                 asset->texture_views[i].width = asset->texture_assets[i].width;
                 asset->texture_views[i].height = asset->texture_assets[i].height;
                 asset->texture_views[i].data_size = asset->texture_assets[i].data_size;
+                asset->texture_views[i].channels = asset->texture_assets[i].channels;
             }
         }
         if (asset->format_version >= 3) for (i = 0; i < asset->material_count; i++) {
