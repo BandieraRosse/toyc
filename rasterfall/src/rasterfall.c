@@ -30,6 +30,8 @@
  *                                   同时导出启用/禁用 sphere 的三视图
  *   --model-views-toon-compare <model> <dir>
  *                                   同时导出启用/禁用 toon 的三视图
+ *   --model-material-regression <model> <dir>
+ *                                   导出四组材质基线和像素统计清单
  *   --frames <count>               运行指定帧数后退出
  *   --input-test                   输入调试测试
  *   --logic-test / --net-test      运行逻辑测试
@@ -1442,8 +1444,40 @@ static void draw_input_debug(struct toy_surface *surface,
 
 #include "rasterfall_perf.h"
 
+struct model_view_stats {
+    unsigned long hash;
+    unsigned long foreground;
+    unsigned long luminance_sum;
+    unsigned long near_black;
+};
+
+static void measure_model_view(const struct toy_surface *surface,
+                               struct model_view_stats *stats)
+{
+    int x, y;
+    memset(stats, 0, sizeof(*stats));
+    stats->hash = 1469598103934665603UL;
+    for (y = 0; y < surface->height; y++) {
+        const uint32_t *row = (const uint32_t *)((const unsigned char *)surface->pixels +
+                                                 y * surface->stride);
+        for (x = 0; x < surface->width; x++) {
+            uint32_t color = row[x] & 0xffffffU;
+            int r = (color >> 16) & 255, g = (color >> 8) & 255, b = color & 255;
+            int luminance;
+            stats->hash ^= color;
+            stats->hash *= 1099511628211UL;
+            if (color == 0x30343bU) continue;
+            luminance = (r * 299 + g * 587 + b * 114) / 1000;
+            stats->foreground++;
+            stats->luminance_sum += (unsigned long)luminance;
+            if (luminance < 20) stats->near_black++;
+        }
+    }
+}
+
 static int dump_model_views(const char *model_path, const char *output_dir,
-                            int use_sphere, int use_toon)
+                            int use_sphere, int use_toon,
+                            struct model_view_stats *stats)
 {
     static const char *names[3] = {"front", "side", "back"};
     struct camera cameras[3];
@@ -1491,6 +1525,7 @@ static int dump_model_views(const char *model_path, const char *output_dir,
             break;
         }
         toy_renderer_flush(&renderer);
+        if (stats) measure_model_view(&surface, &stats[i]);
         if (snprintf(path, sizeof(path), "%s/%s.bmp", output_dir, names[i]) >=
                 (int)sizeof(path) ||
             rasterfall_hud_dump_bmp(path, &surface) < 0) {
@@ -1513,8 +1548,8 @@ static int dump_model_view_comparison(const char *model_path,
                  output_dir) >= (int)sizeof(with_sphere) ||
         snprintf(without_sphere, sizeof(without_sphere), "%s/without-sphere",
                  output_dir) >= (int)sizeof(without_sphere)) return 1;
-    if (dump_model_views(model_path, with_sphere, 1, 1) != 0) return 1;
-    return dump_model_views(model_path, without_sphere, 0, 1);
+    if (dump_model_views(model_path, with_sphere, 1, 1, 0) != 0) return 1;
+    return dump_model_views(model_path, without_sphere, 0, 1, 0);
 }
 
 static int dump_model_toon_comparison(const char *model_path,
@@ -1525,8 +1560,44 @@ static int dump_model_toon_comparison(const char *model_path,
                  output_dir) >= (int)sizeof(with_toon) ||
         snprintf(without_toon, sizeof(without_toon), "%s/without-toon",
                  output_dir) >= (int)sizeof(without_toon)) return 1;
-    if (dump_model_views(model_path, with_toon, 1, 1) != 0) return 1;
-    return dump_model_views(model_path, without_toon, 1, 0);
+    if (dump_model_views(model_path, with_toon, 1, 1, 0) != 0) return 1;
+    return dump_model_views(model_path, without_toon, 1, 0, 0);
+}
+
+static int dump_model_material_regression(const char *model_path,
+                                          const char *output_dir)
+{
+    static const char *groups[4] = {"base", "sphere", "toon", "full"};
+    static const char *views[3] = {"front", "side", "back"};
+    static const unsigned char sphere[4] = {0, 1, 0, 1};
+    static const unsigned char toon[4] = {0, 0, 1, 1};
+    struct model_view_stats stats[4][3];
+    char directory[512], manifest_path[512], line[256];
+    int group, view, fd;
+    if (tlibc_recursive_mkdir(output_dir) < 0) return 1;
+    for (group = 0; group < 4; group++) {
+        if (snprintf(directory, sizeof(directory), "%s/%s", output_dir,
+                     groups[group]) >= (int)sizeof(directory) ||
+            dump_model_views(model_path, directory, sphere[group], toon[group],
+                             stats[group]) != 0) return 1;
+    }
+    if (snprintf(manifest_path, sizeof(manifest_path), "%s/manifest.txt",
+                 output_dir) >= (int)sizeof(manifest_path)) return 1;
+    fd = __creat(manifest_path, 0644);
+    if (fd < 0) return 1;
+    for (group = 0; group < 4; group++) for (view = 0; view < 3; view++) {
+        unsigned long mean = stats[group][view].foreground ?
+            stats[group][view].luminance_sum / stats[group][view].foreground : 0;
+        int length = snprintf(line, sizeof(line),
+            "%s/%s.bmp hash=%016lx foreground=%lu mean_luminance=%lu near_black=%lu\n",
+            groups[group], views[view], stats[group][view].hash,
+            stats[group][view].foreground, mean, stats[group][view].near_black);
+        if (length <= 0 || length >= (int)sizeof(line) ||
+            __write(fd, line, length) != length) { __close(fd); return 1; }
+    }
+    __close(fd);
+    __printf("rasterfall: material regression manifest %s\n", manifest_path);
+    return 0;
 }
 
 int main(int argc, char **argv)
@@ -1586,6 +1657,7 @@ int main(int argc, char **argv)
     const char *view_output_dir = 0;
     int compare_model_views = 0;
     int compare_model_toon = 0;
+    int material_regression = 0;
     for (int arg = 1; arg < argc; arg++) {
         if (strcmp(argv[arg], "--input-test") == 0) input_debug = 1;
         else if (strcmp(argv[arg], "--logic-test") == 0 ||
@@ -1619,6 +1691,11 @@ int main(int argc, char **argv)
             view_model_path = argv[++arg];
             view_output_dir = argv[++arg];
             compare_model_toon = 1;
+        } else if (strcmp(argv[arg], "--model-material-regression") == 0 &&
+                   arg + 2 < argc) {
+            view_model_path = argv[++arg];
+            view_output_dir = argv[++arg];
+            material_regression = 1;
         }
         else if (strcmp(argv[arg], "--frames") == 0 && arg + 1 < argc) {
             const char *p = argv[++arg];
@@ -1627,11 +1704,14 @@ int main(int argc, char **argv)
         }
     }
     if (view_model_path) {
+        if (material_regression)
+            return dump_model_material_regression(view_model_path,
+                                                  view_output_dir);
         if (compare_model_views)
             return dump_model_view_comparison(view_model_path, view_output_dir);
         if (compare_model_toon)
             return dump_model_toon_comparison(view_model_path, view_output_dir);
-        return dump_model_views(view_model_path, view_output_dir, 1, 1);
+        return dump_model_views(view_model_path, view_output_dir, 1, 1, 0);
     }
     rasterfall_net_init(&net);
     rasterfall_net_set_loss(&net, net_loss_percent);
