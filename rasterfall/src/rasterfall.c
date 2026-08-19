@@ -32,6 +32,8 @@
  *                                   同时导出启用/禁用 toon 的三视图
  *   --model-views-edge-compare <model> <dir>
  *                                   同时导出启用/禁用 edge 的三视图
+ *   --model-views-lighting-compare <model> <dir>
+ *                                   同时导出启用/禁用材质光照的三视图
  *   --model-material-regression <model> <dir>
  *                                   导出四组材质基线和像素统计清单
  *   --frames <count>               运行指定帧数后退出
@@ -1479,6 +1481,7 @@ static void measure_model_view(const struct toy_surface *surface,
 
 static int dump_model_views(const char *model_path, const char *output_dir,
                             int use_sphere, int use_toon, int use_edge,
+                            int use_material_light,
                             struct model_view_stats *stats)
 {
     static const char *names[3] = {"front", "side", "back"};
@@ -1522,7 +1525,8 @@ static int dump_model_views(const char *model_path, const char *output_dir,
     for (i = 0; i < 3; i++) {
         if (toy_renderer_begin(&renderer, &surface, 0x30343B) < 0 ||
             rasterfall_render_model_preview(&renderer, &cameras[i], &model,
-                                             use_sphere, use_toon, use_edge) < 0) {
+                                             use_sphere, use_toon, use_edge,
+                                             use_material_light) < 0) {
             result = 1;
             break;
         }
@@ -1550,8 +1554,8 @@ static int dump_model_view_comparison(const char *model_path,
                  output_dir) >= (int)sizeof(with_sphere) ||
         snprintf(without_sphere, sizeof(without_sphere), "%s/without-sphere",
                  output_dir) >= (int)sizeof(without_sphere)) return 1;
-    if (dump_model_views(model_path, with_sphere, 1, 1, 1, 0) != 0) return 1;
-    return dump_model_views(model_path, without_sphere, 0, 1, 1, 0);
+    if (dump_model_views(model_path, with_sphere, 1, 1, 1, 1, 0) != 0) return 1;
+    return dump_model_views(model_path, without_sphere, 0, 1, 1, 1, 0);
 }
 
 static int dump_model_toon_comparison(const char *model_path,
@@ -1562,8 +1566,8 @@ static int dump_model_toon_comparison(const char *model_path,
                  output_dir) >= (int)sizeof(with_toon) ||
         snprintf(without_toon, sizeof(without_toon), "%s/without-toon",
                  output_dir) >= (int)sizeof(without_toon)) return 1;
-    if (dump_model_views(model_path, with_toon, 1, 1, 1, 0) != 0) return 1;
-    return dump_model_views(model_path, without_toon, 1, 0, 1, 0);
+    if (dump_model_views(model_path, with_toon, 1, 1, 1, 1, 0) != 0) return 1;
+    return dump_model_views(model_path, without_toon, 1, 0, 1, 1, 0);
 }
 
 static int dump_model_edge_comparison(const char *model_path,
@@ -1574,8 +1578,22 @@ static int dump_model_edge_comparison(const char *model_path,
             (int)sizeof(with_edge) ||
         snprintf(without_edge, sizeof(without_edge), "%s/without-edge",
                  output_dir) >= (int)sizeof(without_edge)) return 1;
-    if (dump_model_views(model_path, with_edge, 1, 1, 1, 0) != 0) return 1;
-    return dump_model_views(model_path, without_edge, 1, 1, 0, 0);
+    if (dump_model_views(model_path, with_edge, 1, 1, 1, 1, 0) != 0) return 1;
+    return dump_model_views(model_path, without_edge, 1, 1, 0, 1, 0);
+}
+
+static int dump_model_lighting_comparison(const char *model_path,
+                                          const char *output_dir)
+{
+    char with_lighting[512], without_lighting[512];
+    if (snprintf(with_lighting, sizeof(with_lighting), "%s/with-lighting",
+                 output_dir) >= (int)sizeof(with_lighting) ||
+        snprintf(without_lighting, sizeof(without_lighting),
+                 "%s/without-lighting", output_dir) >=
+                 (int)sizeof(without_lighting)) return 1;
+    if (dump_model_views(model_path, with_lighting, 1, 1, 1, 1, 0) != 0)
+        return 1;
+    return dump_model_views(model_path, without_lighting, 1, 1, 1, 0, 0);
 }
 
 static int dump_model_material_regression(const char *model_path,
@@ -1595,7 +1613,7 @@ static int dump_model_material_regression(const char *model_path,
         if (snprintf(directory, sizeof(directory), "%s/%s", output_dir,
                      groups[group]) >= (int)sizeof(directory) ||
             dump_model_views(model_path, directory, sphere[group], toon[group],
-                             1, stats[group]) != 0) return 1;
+                             1, 1, stats[group]) != 0) return 1;
     }
     if (snprintf(manifest_path, sizeof(manifest_path), "%s/manifest.txt",
                  output_dir) >= (int)sizeof(manifest_path)) return 1;
@@ -1688,6 +1706,7 @@ int main(int argc, char **argv)
     int compare_model_views = 0;
     int compare_model_toon = 0;
     int compare_model_edge = 0;
+    int compare_model_lighting = 0;
     int material_regression = 0;
     for (int arg = 1; arg < argc; arg++) {
         if (strcmp(argv[arg], "--input-test") == 0) input_debug = 1;
@@ -1727,6 +1746,11 @@ int main(int argc, char **argv)
             view_model_path = argv[++arg];
             view_output_dir = argv[++arg];
             compare_model_edge = 1;
+        } else if (strcmp(argv[arg], "--model-views-lighting-compare") == 0 &&
+                   arg + 2 < argc) {
+            view_model_path = argv[++arg];
+            view_output_dir = argv[++arg];
+            compare_model_lighting = 1;
         } else if (strcmp(argv[arg], "--model-material-regression") == 0 &&
                    arg + 2 < argc) {
             view_model_path = argv[++arg];
@@ -1749,7 +1773,11 @@ int main(int argc, char **argv)
             return dump_model_toon_comparison(view_model_path, view_output_dir);
         if (compare_model_edge)
             return dump_model_edge_comparison(view_model_path, view_output_dir);
-        return dump_model_views(view_model_path, view_output_dir, 1, 1, 1, 0);
+        if (compare_model_lighting)
+            return dump_model_lighting_comparison(view_model_path,
+                                                  view_output_dir);
+        return dump_model_views(view_model_path, view_output_dir,
+                                1, 1, 1, 1, 0);
     }
     rasterfall_net_init(&net);
     rasterfall_net_set_loss(&net, net_loss_percent);

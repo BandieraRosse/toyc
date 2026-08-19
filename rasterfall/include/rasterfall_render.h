@@ -29,7 +29,8 @@ void rasterfall_render_set_coordinate_axes(int enabled);
 int rasterfall_render_model_preview(struct toy_renderer *renderer,
                                     const struct camera *camera,
                                     const struct rasterfall_model_asset *model,
-                                    int use_sphere, int use_toon, int use_edge);
+                                    int use_sphere, int use_toon, int use_edge,
+                                    int use_material_light);
 
 int rasterfall_render_scene(struct toy_renderer *renderer,
                             const struct camera *camera);

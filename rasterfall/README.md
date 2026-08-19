@@ -76,7 +76,8 @@ PNG/BMP 纹理复制到指定目录。再使用 `build/toyasset convert png1024|
 alpha、toon 引用和第一组附加 UV 从 RFM2 v6 起保存；v7 还保存材质 drawing
 flags，并按 bit 0 区分双面绘制与背面剔除；v8 将材质记录扩展为 24 字节，保存
 edge RGBA 和宽度，并用外扩背面壳绘制轮廓。加载器仍兼容 v2 到 v5 的 24 字节旧
-顶点记录及 v2 到 v7 的 16 字节旧材质记录，旧格式继续按双面材质渲染。
+顶点记录及 v2 到 v7 的 16 字节旧材质记录。v9 保存环境色、镜面色和镜面指数，
+在纹理合成后加入低强度环境光与随指数收窄的镜面高光；旧格式继续按双面材质渲染。
 
 可以通过无窗口的离屏渲染输出模型正面、侧面和背面验证图。输出目录会自动
 创建，图片采用无需额外编码库的 BMP 格式；该命令走与游戏内相同的材质、
@@ -119,6 +120,16 @@ build/rasterfall --model-views-edge-compare \
 
 该命令分别在 `with-edge/` 和 `without-edge/` 中生成三张同机位图片，其余材质、
 相机和缩放设置保持一致。
+
+环境光与镜面高光对照使用：
+
+```sh
+build/rasterfall --model-views-lighting-compare \
+    rasterfall/private-assets/models/yola.rmesh tmp/yola-lighting-compare
+```
+
+该命令分别输出 `with-lighting/` 和 `without-lighting/`，只切换 RFM2 v9 保存的
+ambient/specular 材质参数。
 
 完整材质回归使用：
 

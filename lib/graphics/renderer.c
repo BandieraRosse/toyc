@@ -211,6 +211,9 @@ static long raster_tex(struct toy_renderer *renderer,
                        const struct toy_texture_view *texture3,
                        int toon_shared, int toon_level,
                        int material_alpha,
+                       uint32_t material_ambient,
+                       uint32_t material_specular,
+                       int material_specular_level,
                        int repeat, uint32_t fallback_color,
                        int light_factor, int fog_factor,
                        unsigned long *tex_pixels,
@@ -316,6 +319,21 @@ static long raster_tex(struct toy_renderer *renderer,
                     {
                     int alpha = (int)(color >> 24) * material_alpha / 255;
                     if (alpha > 0) {
+                        {
+                            int r = (color >> 16) & 255;
+                            int g = (color >> 8) & 255;
+                            int b = color & 255;
+                            r += ((material_ambient >> 16) & 255) * 16 / 255 +
+                                 ((material_specular >> 16) & 255) * material_specular_level / 255;
+                            g += ((material_ambient >> 8) & 255) * 16 / 255 +
+                                 ((material_specular >> 8) & 255) * material_specular_level / 255;
+                            b += (material_ambient & 255) * 16 / 255 +
+                                 (material_specular & 255) * material_specular_level / 255;
+                            color = (color & 0xff000000U) |
+                                (uint32_t)clampi(r, 0, 255) << 16 |
+                                (uint32_t)clampi(g, 0, 255) << 8 |
+                                (uint32_t)clampi(b, 0, 255);
+                        }
                         color = shade_color(color, (int)light, (int)fog);
                         if (alpha == 255) {
                             depth[at] = (int)inv_norm;
@@ -391,6 +409,9 @@ static void rasterize_cmd(struct toy_renderer *renderer,
                                      cmd->blend_mode, cmd->texture3,
                                      cmd->toon_shared, cmd->toon_level,
                                      cmd->material_alpha,
+                                     cmd->material_ambient,
+                                     cmd->material_specular,
+                                     cmd->material_specular_level,
                                      cmd->repeat,
                                      cmd->fallback, cmd->light, cmd->fog,
                                      &worker->textured_pixels,
@@ -456,6 +477,9 @@ static int record_cmd(struct toy_renderer *renderer, int textured,
     cmd->toon_shared = -1;
     cmd->toon_level = 255;
     cmd->material_alpha = 255;
+    cmd->material_ambient = 0;
+    cmd->material_specular = 0;
+    cmd->material_specular_level = 0;
     cmd->transparent = textured && texture && texture->has_transparency;
     cmd->area = area;
     /* 投影坐标已被调用方裁剪过；包围盒缓存进命令，工作线程按带直接跳过。 */
@@ -590,6 +614,8 @@ int toy_renderer_triangle_textured_material_lit(
     int sphere_mode,
     const struct toy_texture_view *toon_texture,
     int toon_shared, int toon_level, int material_alpha,
+    uint32_t material_ambient, uint32_t material_specular,
+    int material_specular_level,
     int repeat, uint32_t fallback_color, int light, int fog)
 {
     long long area;
@@ -609,6 +635,9 @@ int toy_renderer_triangle_textured_material_lit(
     if (material_alpha < 0) material_alpha = 0;
     if (material_alpha > 255) material_alpha = 255;
     cmd->material_alpha = material_alpha;
+    cmd->material_ambient = material_ambient;
+    cmd->material_specular = material_specular;
+    cmd->material_specular_level = clampi(material_specular_level, 0, 255);
     cmd->transparent = material_alpha < 255 ||
                        (texture && texture->has_transparency);
     renderer->submitted_triangles++;

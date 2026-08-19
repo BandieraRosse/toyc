@@ -112,23 +112,31 @@ int main(void)
     toy_renderer_begin(&renderer, &surface, 0);
     toy_renderer_triangle_textured_material_lit(
         &renderer, &a, &b, &c, &base_texture, 0, 0,
-        &toon_texture, -1, 0, 255, 0, 0, 256, 0);
+        &toon_texture, -1, 0, 255, 0, 0, 0, 0, 0, 256, 0);
     toy_renderer_flush(&renderer);
     if (pixels[2 * 8 + 2] != 0x323232) return 10;
 
     toy_renderer_begin(&renderer, &surface, 0);
     toy_renderer_triangle_textured_material_lit(
         &renderer, &a, &b, &c, &base_texture, &subtexture, 3,
-        0, -1, 255, 255, 0, 0, 256, 0);
+        0, -1, 255, 255, 0, 0, 0, 0, 0, 256, 0);
     toy_renderer_flush(&renderer);
     if (pixels[2 * 8 + 2] != 0x323232) return 11;
 
     toy_renderer_begin(&renderer, &surface, 0x102030);
     toy_renderer_triangle_textured_material_lit(
         &renderer, &a, &b, &c, &base_texture, 0, 0,
-        0, -1, 255, 128, 0, 0, 256, 0);
+        0, -1, 255, 128, 0, 0, 0, 0, 0, 256, 0);
     toy_renderer_flush(&renderer);
     if (pixels[2 * 8 + 2] != 0x3A424A) return 12;
+
+    toy_renderer_begin(&renderer, &surface, 0);
+    toy_renderer_triangle_textured_material_lit(
+        &renderer, &a, &b, &c, &base_texture, 0, 0,
+        0, -1, 255, 255, 0x202020, 0x404040, 128,
+        0, 0, 256, 0);
+    toy_renderer_flush(&renderer);
+    if (pixels[2 * 8 + 2] != 0x868686) return 13;
 
     toy_renderer_begin(&renderer, &surface, 0);
     a.z = b.z = c.z = 10;
@@ -140,7 +148,7 @@ int main(void)
     toy_renderer_triangle_textured_lit(&renderer, &a, &b, &c,
                                        &blue_texture, 0, 0, 256, 0);
     toy_renderer_flush(&renderer);
-    if (pixels[2 * 8 + 2] != 0x80003F) return 13;
+    if (pixels[2 * 8 + 2] != 0x80003F) return 14;
 
     toy_renderer_destroy(&renderer);
     return 0;

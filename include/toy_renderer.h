@@ -53,6 +53,9 @@ struct toy_raster_cmd {
     int toon_shared;
     int toon_level;
     int material_alpha;
+    uint32_t material_ambient;
+    uint32_t material_specular;
+    int material_specular_level;
     int transparent;
     long long area;
     int bbox_minx;
@@ -177,6 +180,8 @@ int toy_renderer_triangle_textured_material_lit(
     int sphere_mode,
     const struct toy_texture_view *toon_texture,
     int toon_shared, int toon_level, int material_alpha,
+    uint32_t material_ambient, uint32_t material_specular,
+    int material_specular_level,
     int repeat, uint32_t fallback_color, int light, int fog);
 /* 把记录阶段的三角形命令并行光栅化到 surface；返回实际写入像素数
  * （接替 toy_renderer_triangle 系列的返回值语义）。 */

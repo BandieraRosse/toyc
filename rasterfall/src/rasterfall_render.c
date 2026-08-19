@@ -46,6 +46,10 @@ static int active_toon_shared = -1;
 static int active_toon_level = 255;
 static int active_material_alpha = 255;
 static int active_material_double_sided = 1;
+static uint32_t active_material_ambient;
+static uint32_t active_material_specular;
+static int active_material_specular_power;
+static int active_material_specular_level;
 static unsigned short *active_lightmap;
 static int active_textures;
 static int active_fixed_floor_lighting;
@@ -57,6 +61,7 @@ static int active_gallery_lighting;
 static int active_disable_sphere;
 static int active_disable_toon;
 static int active_disable_edge;
+static int active_disable_material_light;
 static int active_emissive_projectile;
 static int active_coordinate_axes;
 
@@ -313,6 +318,10 @@ static int render_gallery_model(struct toy_renderer *renderer,
     int previous_toon_level = active_toon_level;
     int previous_material_alpha = active_material_alpha;
     int previous_material_double_sided = active_material_double_sided;
+    uint32_t previous_material_ambient = active_material_ambient;
+    uint32_t previous_material_specular = active_material_specular;
+    int previous_material_specular_power = active_material_specular_power;
+    int previous_material_specular_level = active_material_specular_level;
     int shared_texture = gallery_model_has_texture(model);
     active_sphere_texture = 0;
     active_sphere_mode = 0;
@@ -339,6 +348,17 @@ static int render_gallery_model(struct toy_renderer *renderer,
         active_material_double_sided = material < model->material_count &&
             model->format_version >= 7 ?
             (model->materials[material * model->material_bytes + 7] & 1) != 0 : 1;
+        active_material_ambient = !active_disable_material_light &&
+            material < model->material_count &&
+            model->format_version >= 9 ?
+            model_u32(model->materials + material * model->material_bytes + 24) : 0;
+        active_material_specular = !active_disable_material_light &&
+            material < model->material_count &&
+            model->format_version >= 9 ?
+            model_u32(model->materials + material * model->material_bytes + 28) : 0;
+        active_material_specular_power = material < model->material_count &&
+            model->format_version >= 9 ?
+            (int)model_u32(model->materials + material * model->material_bytes + 32) : 0;
         uint32_t color = material < model->material_count ?
                          model_u32(model->materials + material * model->material_bytes) :
                          RF_COLOR_UI_TEXT_MUTED;
@@ -436,6 +456,19 @@ static int render_gallery_model(struct toy_renderer *renderer,
                 active_toon_level = 160 + dot * 95 / 32767;
                 if (active_toon_level < 0) active_toon_level = 0;
                 if (active_toon_level > 255) active_toon_level = 255;
+                active_material_specular_level = dot > 0 ? dot * 255 / 32767 : 0;
+                if (active_material_specular_power > 512)
+                    active_material_specular_level = active_material_specular_level *
+                        active_material_specular_level / 255;
+                if (active_material_specular_power > 1024)
+                    active_material_specular_level = active_material_specular_level *
+                        active_material_specular_level / 255;
+                if (active_material_specular_power > 2048)
+                    active_material_specular_level = active_material_specular_level *
+                        active_material_specular_level / 255;
+                if (active_material_specular_power > 4096)
+                    active_material_specular_level = active_material_specular_level *
+                        active_material_specular_level / 255;
             }
             gallery_vertex(model, ia, center_x, base_y, center_z, scale, &a);
             gallery_vertex(model, ib, center_x, base_y, center_z, scale, &b);
@@ -461,13 +494,18 @@ static int render_gallery_model(struct toy_renderer *renderer,
     active_toon_level = previous_toon_level;
     active_material_alpha = previous_material_alpha;
     active_material_double_sided = previous_material_double_sided;
+    active_material_ambient = previous_material_ambient;
+    active_material_specular = previous_material_specular;
+    active_material_specular_power = previous_material_specular_power;
+    active_material_specular_level = previous_material_specular_level;
     return drawn;
 }
 
 int rasterfall_render_model_preview(struct toy_renderer *renderer,
                                     const struct camera *camera,
                                     const struct rasterfall_model_asset *model,
-                                    int use_sphere, int use_toon, int use_edge)
+                                    int use_sphere, int use_toon, int use_edge,
+                                    int use_material_light)
 {
     int width, height, depth, size, scale;
     int center_x, center_z, base_y, pixels;
@@ -491,11 +529,13 @@ int rasterfall_render_model_preview(struct toy_renderer *renderer,
     active_disable_sphere = !use_sphere;
     active_disable_toon = !use_toon;
     active_disable_edge = !use_edge;
+    active_disable_material_light = !use_material_light;
     pixels = render_gallery_model(renderer, camera, model, center_x, base_y,
                                   center_z, scale);
     active_disable_sphere = 0;
     active_disable_toon = 0;
     active_disable_edge = 0;
+    active_disable_material_light = 0;
     active_gallery_lighting = 0;
     return pixels;
 }
@@ -911,12 +951,16 @@ static int draw_world_triangle_tex(struct toy_renderer *renderer,
                   fixed_floor_lighting ? 0 : baked_fog_at(world_distance(camera, center_x, center_z));
         sa.light = sb.light = sc.light = light;
         sa.fog = sb.fog = sc.fog = fog;
-        if (active_sphere_texture || active_toon_texture || active_toon_shared >= 0)
+        if (active_sphere_texture || active_toon_texture ||
+            active_toon_shared >= 0 || active_material_ambient ||
+            active_material_specular)
             drawn += toy_renderer_triangle_textured_material_lit(
                 renderer, &sa, &sb, &sc, active_texture_view,
                 active_sphere_texture, active_sphere_mode,
                 active_toon_texture, active_toon_shared, active_toon_level,
-                active_material_alpha, 1, 0xFF202020U, light, fog);
+                active_material_alpha, active_material_ambient,
+                active_material_specular, active_material_specular_level,
+                1, 0xFF202020U, light, fog);
         else
             drawn += toy_renderer_triangle_textured_lit(renderer, &sa, &sb, &sc,
                                                          active_texture_view, 1,

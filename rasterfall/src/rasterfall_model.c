@@ -36,7 +36,8 @@ int rasterfall_model_load(struct rasterfall_model_asset *asset,
     version = data && size >= 8 ? model_u32(data + 4) : 0;
     vertex_bytes = version >= 6 ? RASTERFALL_MODEL_VERTEX_BYTES_ADDITIONAL_UV :
                                   RASTERFALL_MODEL_VERTEX_BYTES;
-    material_bytes = version >= 8 ? RASTERFALL_MODEL_MATERIAL_BYTES :
+    material_bytes = version >= 9 ? RASTERFALL_MODEL_MATERIAL_BYTES :
+                     version >= 8 ? RASTERFALL_MODEL_MATERIAL_BYTES_EDGE :
                                     RASTERFALL_MODEL_MATERIAL_BYTES_LEGACY;
     if (!data || size < RASTERFALL_MODEL_HEADER_BYTES ||
         model_u32(data) != RASTERFALL_MODEL_MAGIC ||
