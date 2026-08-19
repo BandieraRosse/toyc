@@ -19,7 +19,7 @@
 struct cursor { const unsigned char *p, *end; };
 struct pmx_header { int vertex_size, texture_size, material_size; int bone_size, morph_size, rigid_size; int encoding, append_uv; };
 struct pmx_texture { char path[TEXTURE_PATH_MAX]; };
-struct pmx_material { unsigned int color; unsigned int index_count; int texture_index; int sphere_index; int sphere_mode; int alpha; };
+struct pmx_material { unsigned int color; unsigned int index_count; int texture_index; int sphere_index; int sphere_mode; int alpha; int toon_index; int toon_shared; };
 struct pmx_vertex { float x, y, z, nx, ny, nz, u, v; };
 
 static int have(struct cursor *c, unsigned int n)
@@ -239,6 +239,8 @@ static int read_materials(struct cursor *c, const struct pmx_header *h,
         materials[i].sphere_index = sphere;
         materials[i].sphere_mode = sphere_mode;
         materials[i].alpha = color_byte(a);
+        materials[i].toon_index = toon;
+        materials[i].toon_shared = toon_flag != 0;
         materials[i].color = (unsigned int)color_byte(r) << 16 |
             (unsigned int)color_byte(g) << 8 | (unsigned int)color_byte(b);
     }
@@ -351,7 +353,7 @@ int main(int argc, char **argv)
     if (index_base != index_count || primitive_count > 32) { __printf("pmx2rmesh: too many or inconsistent material groups (%d/%d, %d)\n", index_base, index_count, primitive_count); goto invalid; }
     if (copy_textures(argv[1], argv[3], textures, texture_count) < 0) goto invalid;
     out = __openat(AT_FDCWD, argv[2], O_WRONLY | O_CREAT | O_TRUNC, 0644); if (out < 0) { __printf("pmx2rmesh: cannot create output\n"); goto invalid; }
-    __memset(header_out, 0, sizeof(header_out)); header_out[0] = 'R'; header_out[1] = 'F'; header_out[2] = 'M'; header_out[3] = '2'; put_u32(header_out + 4, 4); put_u32(header_out + 8, vertex_count); put_u32(header_out + 12, index_count); put_u32(header_out + 16, scale); put_u32(header_out + 44, primitive_count); put_u32(header_out + 48, material_count); put_u32(header_out + 52, 64); put_u32(header_out + 56, 64 + primitive_count * 16);
+    __memset(header_out, 0, sizeof(header_out)); header_out[0] = 'R'; header_out[1] = 'F'; header_out[2] = 'M'; header_out[3] = '2'; put_u32(header_out + 4, 5); put_u32(header_out + 8, vertex_count); put_u32(header_out + 12, index_count); put_u32(header_out + 16, scale); put_u32(header_out + 44, primitive_count); put_u32(header_out + 48, material_count); put_u32(header_out + 52, 64); put_u32(header_out + 56, 64 + primitive_count * 16);
     if (write_all(out, header_out, sizeof(header_out)) < 0) { __close(out); goto invalid; }
     index_base = 0; for (i = 0; i < material_count; i++) if (materials[i].index_count) { __memset(record, 0, sizeof(record)); put_u32(record, index_base); put_u32(record + 4, materials[i].index_count); put_u32(record + 8, i); if (write_all(out, record, sizeof(record)) < 0) { __close(out); goto invalid; } index_base += materials[i].index_count; }
     for (i = 0; i < material_count; i++) {
@@ -360,7 +362,11 @@ int main(int argc, char **argv)
             (((unsigned int)materials[i].sphere_mode & 3U) << 16);
         __memset(record, 0, sizeof(record)); put_u32(record, materials[i].color);
         put_u16(record + 4, (unsigned int)materials[i].alpha);
-        put_u16(record + 6, 65535);
+        record[5] = materials[i].toon_index < 0 ? 255 :
+                    (unsigned char)materials[i].toon_index;
+        record[6] = materials[i].toon_index < 0 ? 0 :
+                    materials[i].toon_shared ? 2 : 1;
+        record[7] = 0;
         put_u32(record + 8, materials[i].texture_index < 0 ? 0xffffffffU : (unsigned int)materials[i].texture_index);
         put_u32(record + 12, sphere);
         if (write_all(out, record, sizeof(record)) < 0) { __close(out); goto invalid; }

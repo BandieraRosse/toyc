@@ -64,14 +64,15 @@ build/pmx2rmesh character.pmx \
 ```
 
 `pmx2rmesh` 读取 PMX 2.0/2.1 的顶点位置、法线、UV、三角形索引和材质漫
-反射色、基础纹理和 sphere 纹理引用，输出现有 RFM2 格式，并将 PMX 引用的
+反射色、基础纹理、sphere 和 toon 纹理引用，输出现有 RFM2 格式，并将 PMX 引用的
 PNG/BMP 纹理复制到指定目录。再使用 `build/toyasset convert png1024|bmp`
-转成 TTEX 后，Rasterfall 会按 RFM2 材质索引加载基础色和 sphere 纹理；sphere
+转成 TTEX 后，Rasterfall 会按 RFM2 材质索引加载基础色、sphere 和 toon 纹理；sphere
 贴图的乘算（mode 1）与加算（mode 2）模式会按顶点法线生成的 sphere UV
-进行混合。依赖附加 UV 的 mode 3 暂不应用；骨骼、Morph、刚体、toon 贴图和
-完整的透明三角形排序当前只跳过。PNG 转换为 RGBA TTEX 时会保留 alpha；
+进行混合。独立 toon 纹理按模型法线生成的光照色阶采样；共享 toon 使用内置
+色阶。依赖附加 UV 的 mode 3 暂不应用；骨骼、Morph、刚体和完整的透明三角形
+排序当前只跳过。PNG 转换为 RGBA TTEX 时会保留 alpha；
 全透明像素不写入颜色和深度，半透明像素按 PMX 材质顺序进行 source-over
-混合。PMX 材质 alpha 保存在 RFM2 v4 材质记录中。
+混合。PMX 材质 alpha 与 toon 引用保存在 RFM2 v5 材质记录中。
 
 可以通过无窗口的离屏渲染输出模型正面、侧面和背面验证图。输出目录会自动
 创建，图片采用无需额外编码库的 BMP 格式；该命令走与游戏内相同的材质、
@@ -94,6 +95,16 @@ build/rasterfall --model-views-compare \
 
 该命令分别在 `with-sphere/` 和 `without-sphere/` 中生成三张同机位图片；
 禁用版本只关闭 sphere 辅助纹理，基础纹理、缩放、相机和光照保持不变。
+
+Toon 对照使用：
+
+```sh
+build/rasterfall --model-views-toon-compare \
+    rasterfall/private-assets/models/yola.rmesh tmp/yola-toon-compare
+```
+
+该命令分别在 `with-toon/` 和 `without-toon/` 中生成三张同机位图片；两组都
+保留基础纹理、透明混合和 sphere，只切换 toon 色阶。
 
 版权受限的本地测试模型应放在 `private-assets/` 下；该目录已被 Git 忽略，
 不会参与公开资源或嵌入式发布构建。当前本地角色样本位于

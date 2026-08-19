@@ -71,8 +71,12 @@ int rasterfall_model_load(struct rasterfall_model_asset *asset,
             unsigned int texture = model_u32(asset->materials + i * RASTERFALL_MODEL_MATERIAL_BYTES + 8);
             unsigned int sphere = asset->format_version >= 3 ?
                 model_u32(asset->materials + i * RASTERFALL_MODEL_MATERIAL_BYTES + 12) & 0xffffU : 0xffffU;
+            unsigned int toon = asset->format_version >= 5 &&
+                asset->materials[i * RASTERFALL_MODEL_MATERIAL_BYTES + 6] == 1 ?
+                asset->materials[i * RASTERFALL_MODEL_MATERIAL_BYTES + 5] : 0xffU;
             if (texture != 0xffffffffU && texture < 256 && (!found || texture > max_texture)) { max_texture = texture; found = 1; }
             if (sphere != 0xffffU && sphere < 256 && (!found || sphere > max_texture)) { max_texture = sphere; found = 1; }
+            if (toon != 0xffU && (!found || toon > max_texture)) { max_texture = toon; found = 1; }
         }
         if (found) {
             char texture_path[256];

@@ -208,6 +208,8 @@ static long raster_tex(struct toy_renderer *renderer,
                        const struct toy_texture_view *texture,
                        const struct toy_texture_view *texture2,
                        int blend_mode,
+                       const struct toy_texture_view *texture3,
+                       int toon_shared, int toon_level,
                        int repeat, uint32_t fallback_color,
                        int light_factor, int fog_factor,
                        unsigned long *tex_pixels,
@@ -284,6 +286,27 @@ static long raster_tex(struct toy_renderer *renderer,
                         if (b > 255) b = 255;
                         color = (color & 0xff000000U) | (uint32_t)r << 16 |
                                 (uint32_t)g << 8 | (uint32_t)b;
+                    }
+                    if (texture3 || toon_shared >= 0) {
+                        int tr, tg, tb;
+                        if (toon_level < 0) toon_level = 0;
+                        if (toon_level > 255) toon_level = 255;
+                        if (texture3) {
+                            int toon_fallback = 0;
+                            uint32_t toon = texture_sample(
+                                texture3, 32768, (255 - toon_level) * 257L,
+                                0, 0xffffffffU, &toon_fallback);
+                            tr = (toon >> 16) & 255;
+                            tg = (toon >> 8) & 255;
+                            tb = toon & 255;
+                        } else {
+                            int dark = 150 + (toon_shared & 7) * 6;
+                            tr = tg = tb = toon_level >= 144 ? 255 : dark;
+                        }
+                        color = (color & 0xff000000U) |
+                            (uint32_t)(((color >> 16) & 255) * tr / 255) << 16 |
+                            (uint32_t)(((color >> 8) & 255) * tg / 255) << 8 |
+                            (uint32_t)((color & 255) * tb / 255);
                     }
                     long light = light_factor >= 0 ? light_factor :
                         (e0 * a->light + e1 * b->light + e2 * c->light) / area;
@@ -364,7 +387,9 @@ static void rasterize_cmd(struct toy_renderer *renderer,
         worker->pixels += raster_tex(renderer, worker, &cmd->a, &cmd->b, &cmd->c,
                                      cmd->area, cmd->bbox_minx, cmd->bbox_maxx,
                                      y0, y1, cmd->texture, cmd->texture2,
-                                     cmd->blend_mode, cmd->repeat,
+                                     cmd->blend_mode, cmd->texture3,
+                                     cmd->toon_shared, cmd->toon_level,
+                                     cmd->repeat,
                                      cmd->fallback, cmd->light, cmd->fog,
                                      &worker->textured_pixels,
                                      &worker->texture_fallback_pixels);
@@ -419,7 +444,10 @@ static int record_cmd(struct toy_renderer *renderer, int textured,
     cmd->fog = fog;
     cmd->texture = texture;
     cmd->texture2 = 0;
+    cmd->texture3 = 0;
     cmd->blend_mode = 0;
+    cmd->toon_shared = -1;
+    cmd->toon_level = 255;
     cmd->area = area;
     /* 投影坐标已被调用方裁剪过；包围盒缓存进命令，工作线程按带直接跳过。 */
     cmd->bbox_minx = clampi(a->x < b->x ? (a->x < c->x ? a->x : c->x) :
@@ -538,6 +566,37 @@ int toy_renderer_triangle_textured_dual_lit(struct toy_renderer *renderer,
     cmd = &renderer->cmds[renderer->cmd_count - 1];
     cmd->texture2 = texture2;
     cmd->blend_mode = blend_mode;
+    renderer->submitted_triangles++;
+    renderer->submitted_vertices += 3;
+    return 0;
+}
+
+int toy_renderer_triangle_textured_material_lit(
+    struct toy_renderer *renderer,
+    const struct toy_screen_vertex *a,
+    const struct toy_screen_vertex *b,
+    const struct toy_screen_vertex *c,
+    const struct toy_texture_view *texture,
+    const struct toy_texture_view *sphere_texture,
+    int sphere_mode,
+    const struct toy_texture_view *toon_texture,
+    int toon_shared, int toon_level,
+    int repeat, uint32_t fallback_color, int light, int fog)
+{
+    long long area;
+    struct toy_raster_cmd *cmd;
+    if (!renderer || !renderer->depth || !a || !b || !c) return 0;
+    area = edge(a, b, c->x, c->y);
+    if (area >= 0) return 0;
+    renderer->textured_triangles++;
+    if (!record_cmd(renderer, 1, a, b, c, area, 0, texture, repeat,
+                    fallback_color, light, fog, 0)) return 0;
+    cmd = &renderer->cmds[renderer->cmd_count - 1];
+    cmd->texture2 = sphere_texture;
+    cmd->blend_mode = sphere_mode;
+    cmd->texture3 = toon_texture;
+    cmd->toon_shared = toon_shared;
+    cmd->toon_level = toon_level;
     renderer->submitted_triangles++;
     renderer->submitted_vertices += 3;
     return 0;

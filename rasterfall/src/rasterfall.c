@@ -28,6 +28,8 @@
  *   --model-views <model> <dir>     离屏导出模型正面/侧面/背面图
  *   --model-views-compare <model> <dir>
  *                                   同时导出启用/禁用 sphere 的三视图
+ *   --model-views-toon-compare <model> <dir>
+ *                                   同时导出启用/禁用 toon 的三视图
  *   --frames <count>               运行指定帧数后退出
  *   --input-test                   输入调试测试
  *   --logic-test / --net-test      运行逻辑测试
@@ -1441,7 +1443,7 @@ static void draw_input_debug(struct toy_surface *surface,
 #include "rasterfall_perf.h"
 
 static int dump_model_views(const char *model_path, const char *output_dir,
-                            int use_sphere)
+                            int use_sphere, int use_toon)
 {
     static const char *names[3] = {"front", "side", "back"};
     struct camera cameras[3];
@@ -1484,7 +1486,7 @@ static int dump_model_views(const char *model_path, const char *output_dir,
     for (i = 0; i < 3; i++) {
         if (toy_renderer_begin(&renderer, &surface, 0x30343B) < 0 ||
             rasterfall_render_model_preview(&renderer, &cameras[i], &model,
-                                             use_sphere) < 0) {
+                                             use_sphere, use_toon) < 0) {
             result = 1;
             break;
         }
@@ -1511,8 +1513,20 @@ static int dump_model_view_comparison(const char *model_path,
                  output_dir) >= (int)sizeof(with_sphere) ||
         snprintf(without_sphere, sizeof(without_sphere), "%s/without-sphere",
                  output_dir) >= (int)sizeof(without_sphere)) return 1;
-    if (dump_model_views(model_path, with_sphere, 1) != 0) return 1;
-    return dump_model_views(model_path, without_sphere, 0);
+    if (dump_model_views(model_path, with_sphere, 1, 1) != 0) return 1;
+    return dump_model_views(model_path, without_sphere, 0, 1);
+}
+
+static int dump_model_toon_comparison(const char *model_path,
+                                      const char *output_dir)
+{
+    char with_toon[512], without_toon[512];
+    if (snprintf(with_toon, sizeof(with_toon), "%s/with-toon",
+                 output_dir) >= (int)sizeof(with_toon) ||
+        snprintf(without_toon, sizeof(without_toon), "%s/without-toon",
+                 output_dir) >= (int)sizeof(without_toon)) return 1;
+    if (dump_model_views(model_path, with_toon, 1, 1) != 0) return 1;
+    return dump_model_views(model_path, without_toon, 1, 0);
 }
 
 int main(int argc, char **argv)
@@ -1571,6 +1585,7 @@ int main(int argc, char **argv)
     const char *view_model_path = 0;
     const char *view_output_dir = 0;
     int compare_model_views = 0;
+    int compare_model_toon = 0;
     for (int arg = 1; arg < argc; arg++) {
         if (strcmp(argv[arg], "--input-test") == 0) input_debug = 1;
         else if (strcmp(argv[arg], "--logic-test") == 0 ||
@@ -1599,6 +1614,11 @@ int main(int argc, char **argv)
             view_model_path = argv[++arg];
             view_output_dir = argv[++arg];
             compare_model_views = 1;
+        } else if (strcmp(argv[arg], "--model-views-toon-compare") == 0 &&
+                   arg + 2 < argc) {
+            view_model_path = argv[++arg];
+            view_output_dir = argv[++arg];
+            compare_model_toon = 1;
         }
         else if (strcmp(argv[arg], "--frames") == 0 && arg + 1 < argc) {
             const char *p = argv[++arg];
@@ -1609,7 +1629,9 @@ int main(int argc, char **argv)
     if (view_model_path) {
         if (compare_model_views)
             return dump_model_view_comparison(view_model_path, view_output_dir);
-        return dump_model_views(view_model_path, view_output_dir, 1);
+        if (compare_model_toon)
+            return dump_model_toon_comparison(view_model_path, view_output_dir);
+        return dump_model_views(view_model_path, view_output_dir, 1, 1);
     }
     rasterfall_net_init(&net);
     rasterfall_net_set_loss(&net, net_loss_percent);

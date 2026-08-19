@@ -19,12 +19,13 @@
  * are concatenated into one RFM2 mesh; their material assignments are stored
  * and rendered by Rasterfall's material path. Material bytes 8..11 hold a
  * texture-table index (0xffffffff means no texture). Version 4 stores PMX
- * material alpha in byte 4 (0..255). Bytes 12..15 contain a
+ * material alpha in byte 4 (0..255). Version 5 stores the toon index in byte
+ * 5 and its kind in byte 6 (0 none, 1 texture-table, 2 shared). Bytes 12..15 contain a
  * packed sphere-table index in bits 0..15 and PMX sphere mode in bits 16..17.
  * Texture files are kept beside the mesh by the offline importer.
  */
 #define RASTERFALL_MODEL_MAGIC 0x324d4652U /* "RFM2" in little-endian */
-#define RASTERFALL_MODEL_VERSION 4
+#define RASTERFALL_MODEL_VERSION 5
 #define RASTERFALL_MODEL_VERTEX_BYTES 24
 #define RASTERFALL_MODEL_HEADER_BYTES 64
 #define RASTERFALL_MODEL_PRIMITIVE_BYTES 16

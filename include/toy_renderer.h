@@ -47,7 +47,10 @@ struct toy_raster_cmd {
     int fog;
     const struct toy_texture_view *texture;
     const struct toy_texture_view *texture2;
+    const struct toy_texture_view *texture3;
     int blend_mode;
+    int toon_shared;
+    int toon_level;
     long long area;
     int bbox_minx;
     int bbox_maxx;
@@ -159,6 +162,17 @@ int toy_renderer_triangle_textured_dual_lit(struct toy_renderer *renderer,
                                             int blend_mode, int repeat,
                                             uint32_t fallback_color,
                                             int light, int fog);
+int toy_renderer_triangle_textured_material_lit(
+    struct toy_renderer *renderer,
+    const struct toy_screen_vertex *a,
+    const struct toy_screen_vertex *b,
+    const struct toy_screen_vertex *c,
+    const struct toy_texture_view *texture,
+    const struct toy_texture_view *sphere_texture,
+    int sphere_mode,
+    const struct toy_texture_view *toon_texture,
+    int toon_shared, int toon_level,
+    int repeat, uint32_t fallback_color, int light, int fog);
 /* 把记录阶段的三角形命令并行光栅化到 surface；返回实际写入像素数
  * （接替 toy_renderer_triangle 系列的返回值语义）。 */
 int toy_renderer_flush(struct toy_renderer *renderer);

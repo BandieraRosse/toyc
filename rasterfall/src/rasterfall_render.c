@@ -41,6 +41,9 @@ static const struct toy_texture_view *active_wall_texture;
 static const struct toy_texture_view *active_model_texture;
 static const struct toy_texture_view *active_sphere_texture;
 static int active_sphere_mode;
+static const struct toy_texture_view *active_toon_texture;
+static int active_toon_shared = -1;
+static int active_toon_level = 255;
 static unsigned short *active_lightmap;
 static int active_textures;
 static int active_fixed_floor_lighting;
@@ -50,6 +53,7 @@ static int active_actor_roll_sin;
 static int active_actor_roll_cos = 1024;
 static int active_gallery_lighting;
 static int active_disable_sphere;
+static int active_disable_toon;
 static int active_emissive_projectile;
 static int active_coordinate_axes;
 
@@ -281,10 +285,15 @@ static int render_gallery_model(struct toy_renderer *renderer,
     int drawn = 0, i;
     const struct toy_texture_view *previous_texture = active_texture_view;
     const struct toy_texture_view *previous_sphere = active_sphere_texture;
+    const struct toy_texture_view *previous_toon = active_toon_texture;
     int previous_sphere_mode = active_sphere_mode;
+    int previous_toon_shared = active_toon_shared;
+    int previous_toon_level = active_toon_level;
     int shared_texture = gallery_model_has_texture(model);
     active_sphere_texture = 0;
     active_sphere_mode = 0;
+    active_toon_texture = 0;
+    active_toon_shared = -1;
     if (shared_texture)
         active_texture_view = active_model_texture;
     for (i = 0; i < (int)model->primitive_count; i++) {
@@ -294,9 +303,12 @@ static int render_gallery_model(struct toy_renderer *renderer,
         unsigned int material = model_u32(primitive + 8);
         const struct toy_texture_view *texture = 0;
         const struct toy_texture_view *sphere_texture = 0;
+        const struct toy_texture_view *toon_texture = 0;
         active_texture_view = 0;
         active_sphere_texture = 0;
         active_sphere_mode = 0;
+        active_toon_texture = 0;
+        active_toon_shared = -1;
         uint32_t color = material < model->material_count ?
                          model_u32(model->materials + material * RASTERFALL_MODEL_MATERIAL_BYTES) :
                          RF_COLOR_UI_TEXT_MUTED;
@@ -327,6 +339,15 @@ static int render_gallery_model(struct toy_renderer *renderer,
                     active_sphere_mode = sphere_mode;
                 } else active_sphere_texture = 0;
             }
+            if (model->format_version >= 5 && !active_disable_toon) {
+                unsigned int toon_index = model->materials[material * RASTERFALL_MODEL_MATERIAL_BYTES + 5];
+                unsigned int toon_kind = model->materials[material * RASTERFALL_MODEL_MATERIAL_BYTES + 6];
+                if (toon_kind == 1 && toon_index < model->texture_count &&
+                    model->texture_assets[toon_index].data) {
+                    toon_texture = &model->texture_views[toon_index];
+                    active_toon_texture = toon_texture;
+                } else if (toon_kind == 2) active_toon_shared = (int)toon_index;
+            }
         }
         if (!texture && shared_texture) active_texture_view = active_model_texture;
         for (j = 0; j + 2 < index_count; j += 3) {
@@ -336,6 +357,18 @@ static int render_gallery_model(struct toy_renderer *renderer,
             struct vec3 a, b, c;
             struct world_uv_vertex ta, tb, tc;
             if (ia >= model->vertex_count || ib >= model->vertex_count || ic >= model->vertex_count) continue;
+            {
+                const unsigned char *na = model->vertices + ia * RASTERFALL_MODEL_VERTEX_BYTES + 12;
+                const unsigned char *nb = model->vertices + ib * RASTERFALL_MODEL_VERTEX_BYTES + 12;
+                const unsigned char *nc = model->vertices + ic * RASTERFALL_MODEL_VERTEX_BYTES + 12;
+                int nx = *(const short *)na + *(const short *)nb + *(const short *)nc;
+                int ny = *(const short *)(na + 2) + *(const short *)(nb + 2) + *(const short *)(nc + 2);
+                int nz = *(const short *)(na + 4) + *(const short *)(nb + 4) + *(const short *)(nc + 4);
+                int dot = (-nx + ny * 2 - nz) / 12;
+                active_toon_level = 160 + dot * 95 / 32767;
+                if (active_toon_level < 0) active_toon_level = 0;
+                if (active_toon_level > 255) active_toon_level = 255;
+            }
             gallery_vertex(model, ia, center_x, base_y, center_z, scale, &a);
             gallery_vertex(model, ib, center_x, base_y, center_z, scale, &b);
             gallery_vertex(model, ic, center_x, base_y, center_z, scale, &c);
@@ -355,13 +388,16 @@ static int render_gallery_model(struct toy_renderer *renderer,
     active_texture_view = previous_texture;
     active_sphere_texture = previous_sphere;
     active_sphere_mode = previous_sphere_mode;
+    active_toon_texture = previous_toon;
+    active_toon_shared = previous_toon_shared;
+    active_toon_level = previous_toon_level;
     return drawn;
 }
 
 int rasterfall_render_model_preview(struct toy_renderer *renderer,
                                     const struct camera *camera,
                                     const struct rasterfall_model_asset *model,
-                                    int use_sphere)
+                                    int use_sphere, int use_toon)
 {
     int width, height, depth, size, scale;
     int center_x, center_z, base_y, pixels;
@@ -383,9 +419,11 @@ int rasterfall_render_model_preview(struct toy_renderer *renderer,
     base_y = -(int)((long)height * scale / 2000);
     active_gallery_lighting = 1;
     active_disable_sphere = !use_sphere;
+    active_disable_toon = !use_toon;
     pixels = render_gallery_model(renderer, camera, model, center_x, base_y,
                                   center_z, scale);
     active_disable_sphere = 0;
+    active_disable_toon = 0;
     active_gallery_lighting = 0;
     return pixels;
 }
@@ -799,11 +837,12 @@ static int draw_world_triangle_tex(struct toy_renderer *renderer,
                   fixed_floor_lighting ? 0 : baked_fog_at(world_distance(camera, center_x, center_z));
         sa.light = sb.light = sc.light = light;
         sa.fog = sb.fog = sc.fog = fog;
-        if (active_sphere_texture)
-            drawn += toy_renderer_triangle_textured_dual_lit(
+        if (active_sphere_texture || active_toon_texture || active_toon_shared >= 0)
+            drawn += toy_renderer_triangle_textured_material_lit(
                 renderer, &sa, &sb, &sc, active_texture_view,
-                active_sphere_texture, active_sphere_mode, 1,
-                0xFF202020U, light, fog);
+                active_sphere_texture, active_sphere_mode,
+                active_toon_texture, active_toon_shared, active_toon_level,
+                1, 0xFF202020U, light, fog);
         else
             drawn += toy_renderer_triangle_textured_lit(renderer, &sa, &sb, &sc,
                                                          active_texture_view, 1,
