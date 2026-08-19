@@ -21,6 +21,9 @@ int main(void)
     static const unsigned char toon_texels[6] = {
         255, 255, 255, 128, 128, 128
     };
+    static const unsigned char subtexture_texels[6] = {
+        128, 128, 128, 255, 255, 255
+    };
     struct toy_texture_view texture = {texels, 2, 2, 12, 3};
     struct toy_texture_view base_texture = {base_texel, 1, 1, 3, 3};
     struct toy_texture_view sphere_texture = {sphere_texel, 1, 1, 3, 3};
@@ -31,6 +34,7 @@ int main(void)
         translucent_texel, 1, 1, 4, 4
     };
     struct toy_texture_view toon_texture = {toon_texels, 1, 2, 6, 3};
+    struct toy_texture_view subtexture = {subtexture_texels, 2, 1, 6, 3};
     int near_drawn, far_drawn;
 
     surface.pixels = pixels;
@@ -107,6 +111,13 @@ int main(void)
         &toon_texture, -1, 0, 0, 0, 256, 0);
     toy_renderer_flush(&renderer);
     if (pixels[2 * 8 + 2] != 0x323232) return 10;
+
+    toy_renderer_begin(&renderer, &surface, 0);
+    toy_renderer_triangle_textured_material_lit(
+        &renderer, &a, &b, &c, &base_texture, &subtexture, 3,
+        0, -1, 255, 0, 0, 256, 0);
+    toy_renderer_flush(&renderer);
+    if (pixels[2 * 8 + 2] != 0x323232) return 11;
 
     toy_renderer_destroy(&renderer);
     return 0;

@@ -28,13 +28,17 @@ int rasterfall_model_load(struct rasterfall_model_asset *asset,
                           const char *path)
 {
     uint32_t size;
+    uint32_t version, vertex_bytes;
     unsigned char *data;
     if (!asset || !path) return -1;
     __memset(asset, 0, sizeof(*asset));
     data = toy_asset_load_file(path, &size);
+    version = data && size >= 8 ? model_u32(data + 4) : 0;
+    vertex_bytes = version >= 6 ? RASTERFALL_MODEL_VERTEX_BYTES_ADDITIONAL_UV :
+                                  RASTERFALL_MODEL_VERTEX_BYTES;
     if (!data || size < RASTERFALL_MODEL_HEADER_BYTES ||
         model_u32(data) != RASTERFALL_MODEL_MAGIC ||
-        (model_u32(data + 4) < 2 || model_u32(data + 4) > RASTERFALL_MODEL_VERSION) ||
+        (version < 2 || version > RASTERFALL_MODEL_VERSION) ||
         model_u32(data + 8) > 1000000 || model_u32(data + 12) > 3000000 ||
         model_u32(data + 44) > 32 || model_u32(data + 48) > 32 ||
         model_u32(data + 52) != RASTERFALL_MODEL_HEADER_BYTES ||
@@ -42,14 +46,15 @@ int rasterfall_model_load(struct rasterfall_model_asset *asset,
             model_u32(data + 44) * RASTERFALL_MODEL_PRIMITIVE_BYTES ||
         (long)model_u32(data + 56) +
             (long)model_u32(data + 48) * RASTERFALL_MODEL_MATERIAL_BYTES +
-            (long)model_u32(data + 8) * RASTERFALL_MODEL_VERTEX_BYTES +
+            (long)model_u32(data + 8) * vertex_bytes +
             (unsigned long)model_u32(data + 12) * 4 != (unsigned long)size) {
         if (data) tlibc_free(data);
         return -1;
     }
     asset->data = data;
     asset->data_size = size;
-    asset->format_version = model_u32(data + 4);
+    asset->format_version = version;
+    asset->vertex_bytes = vertex_bytes;
     asset->vertex_count = model_u32(data + 8);
     asset->index_count = model_u32(data + 12);
     asset->primitive_count = model_u32(data + 44);
@@ -57,7 +62,7 @@ int rasterfall_model_load(struct rasterfall_model_asset *asset,
     asset->primitives = data + model_u32(data + 52);
     asset->materials = data + model_u32(data + 56);
     asset->vertices = asset->materials + asset->material_count * RASTERFALL_MODEL_MATERIAL_BYTES;
-    asset->indices = asset->vertices + asset->vertex_count * RASTERFALL_MODEL_VERTEX_BYTES;
+    asset->indices = asset->vertices + asset->vertex_count * asset->vertex_bytes;
     asset->min_x = *(const int *)(data + 20);
     asset->min_y = *(const int *)(data + 24);
     asset->min_z = *(const int *)(data + 28);
@@ -104,7 +109,7 @@ int rasterfall_model_load(struct rasterfall_model_asset *asset,
             if (sphere != 0xffffU)
                 __printf("rasterfall: material=%u base_texture_index=%u sphere_texture_index=%u sphere_mode=%u uv_source=%s\n",
                          i, base, sphere, mode,
-                         mode == 3 ? "ADDITIONAL_UV_UNSUPPORTED" :
+                         mode == 3 ? "ADDITIONAL_UV" :
                          mode == 0 ? "DISABLED" : "SPHERE_UV");
         }
     }

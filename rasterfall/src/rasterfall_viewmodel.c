@@ -531,7 +531,7 @@ static int render_model_weapon(struct toy_renderer *renderer,
                 const unsigned char *p;
                 int mx, my, mz;
                 if (ids[k] >= model->vertex_count) break;
-                p = model->vertices + ids[k] * RASTERFALL_MODEL_VERTEX_BYTES;
+                p = model->vertices + ids[k] * model->vertex_bytes;
                 mx = *(const int *)(p);
                 my = *(const int *)(p + 4);
                 mz = *(const int *)(p + 8);
@@ -587,9 +587,9 @@ static int render_model_weapon(struct toy_renderer *renderer,
                     sy[n] = surface->height / 2 - v[n].y * focal / v[n].z;
                     sv[n].x = sx[n]; sv[n].y = sy[n]; sv[n].z = v[n].z;
                     sv[n].u = *(const unsigned short *)(model->vertices +
-                                      ids[n] * RASTERFALL_MODEL_VERTEX_BYTES + 18);
+                                      ids[n] * model->vertex_bytes + 18);
                     sv[n].v = *(const unsigned short *)(model->vertices +
-                                      ids[n] * RASTERFALL_MODEL_VERTEX_BYTES + 20);
+                                      ids[n] * model->vertex_bytes + 20);
                     sv[n].inv_z = (long)1048576 / v[n].z;
                     sv[n].u_over_z = (long)sv[n].u * 1048576L / v[n].z;
                     sv[n].v_over_z = (long)sv[n].v * 1048576L / v[n].z;

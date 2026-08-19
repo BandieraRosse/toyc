@@ -229,7 +229,7 @@ static void gallery_vertex(const struct rasterfall_model_asset *model,
                            int center_z, int scale, struct vec3 *out)
 {
     const unsigned char *p = model->vertices +
-                             index * RASTERFALL_MODEL_VERTEX_BYTES;
+                             index * model->vertex_bytes;
     out->x = center_x + (int)((long)*(const int *)(p) * scale / 1000);
     out->y = base_y + (int)((long)(*(const int *)(p + 4) - model->min_y) * scale / 1000);
     out->z = center_z + (int)((long)*(const int *)(p + 8) * scale / 1000);
@@ -239,15 +239,19 @@ static void gallery_uv_vertex(const struct rasterfall_model_asset *model,
                               const struct camera *camera,
                               unsigned int index, int center_x, int base_y,
                               int center_z, int scale,
-                              int use_sphere_uv,
+                              int sphere_mode,
                               struct world_uv_vertex *out)
 {
     const unsigned char *p = model->vertices +
-                             index * RASTERFALL_MODEL_VERTEX_BYTES;
+                             index * model->vertex_bytes;
     gallery_vertex(model, index, center_x, base_y, center_z, scale, &out->p);
     out->u = *(const unsigned short *)(p + 18);
     out->v = *(const unsigned short *)(p + 20);
-    if (use_sphere_uv) {
+    if (sphere_mode == 3 && model->vertex_bytes >=
+                            RASTERFALL_MODEL_VERTEX_BYTES_ADDITIONAL_UV) {
+        out->su = *(const int *)(p + 24);
+        out->sv = *(const int *)(p + 28);
+    } else if (sphere_mode == 1 || sphere_mode == 2) {
         int nx = *(const short *)(p + 12);
         int ny = *(const short *)(p + 14);
         int nz = *(const short *)(p + 16);
@@ -331,7 +335,9 @@ static int render_gallery_model(struct toy_renderer *renderer,
                  * mode 3 needs an additional UV channel, which RFM2 does not
                  * currently retain. */
                 if (!active_disable_sphere &&
-                    (sphere_mode == 1 || sphere_mode == 2) &&
+                    (sphere_mode == 1 || sphere_mode == 2 ||
+                     (sphere_mode == 3 && model->vertex_bytes >=
+                      RASTERFALL_MODEL_VERTEX_BYTES_ADDITIONAL_UV)) &&
                     sphere_index != 0xffffU && sphere_index < model->texture_count &&
                     model->texture_assets[sphere_index].data) {
                     sphere_texture = &model->texture_views[sphere_index];
@@ -358,9 +364,9 @@ static int render_gallery_model(struct toy_renderer *renderer,
             struct world_uv_vertex ta, tb, tc;
             if (ia >= model->vertex_count || ib >= model->vertex_count || ic >= model->vertex_count) continue;
             {
-                const unsigned char *na = model->vertices + ia * RASTERFALL_MODEL_VERTEX_BYTES + 12;
-                const unsigned char *nb = model->vertices + ib * RASTERFALL_MODEL_VERTEX_BYTES + 12;
-                const unsigned char *nc = model->vertices + ic * RASTERFALL_MODEL_VERTEX_BYTES + 12;
+                const unsigned char *na = model->vertices + ia * model->vertex_bytes + 12;
+                const unsigned char *nb = model->vertices + ib * model->vertex_bytes + 12;
+                const unsigned char *nc = model->vertices + ic * model->vertex_bytes + 12;
                 int nx = *(const short *)na + *(const short *)nb + *(const short *)nc;
                 int ny = *(const short *)(na + 2) + *(const short *)(nb + 2) + *(const short *)(nc + 2);
                 int nz = *(const short *)(na + 4) + *(const short *)(nb + 4) + *(const short *)(nc + 4);
@@ -374,11 +380,11 @@ static int render_gallery_model(struct toy_renderer *renderer,
             gallery_vertex(model, ic, center_x, base_y, center_z, scale, &c);
             if (texture || shared_texture) {
                 gallery_uv_vertex(model, camera, ia, center_x, base_y, center_z, scale,
-                                  active_sphere_texture != 0, &ta);
+                                  active_sphere_texture ? active_sphere_mode : 0, &ta);
                 gallery_uv_vertex(model, camera, ib, center_x, base_y, center_z, scale,
-                                  active_sphere_texture != 0, &tb);
+                                  active_sphere_texture ? active_sphere_mode : 0, &tb);
                 gallery_uv_vertex(model, camera, ic, center_x, base_y, center_z, scale,
-                                  active_sphere_texture != 0, &tc);
+                                  active_sphere_texture ? active_sphere_mode : 0, &tc);
                 drawn += draw_world_triangle_tex(renderer, camera, &ta, &tb, &tc);
             } else {
                 drawn += draw_world_triangle(renderer, camera, &a, &b, &c, color);
@@ -1827,7 +1833,7 @@ static int render_projectiles(struct toy_renderer *renderer,
                     const unsigned char *q;
                     int x, y, z, rotated_x, rotated_z;
                     if (ids[n] >= model->vertex_count) break;
-                    q = model->vertices + ids[n] * RASTERFALL_MODEL_VERTEX_BYTES;
+                    q = model->vertices + ids[n] * model->vertex_bytes;
                     x = (*(const int *)q - (model->min_x + model->max_x) / 2) * scale / 1000;
                     y = (*(const int *)(q + 4) - (model->min_y + model->max_y) / 2) * scale / 1000;
                     z = (*(const int *)(q + 8) - (model->min_z + model->max_z) / 2) * scale / 1000;
@@ -1844,7 +1850,7 @@ static int render_projectiles(struct toy_renderer *renderer,
                         int m;
                         for (m = 0; m < 3; m++) {
                             const unsigned char *q = model->vertices +
-                                ids[m] * RASTERFALL_MODEL_VERTEX_BYTES;
+                                ids[m] * model->vertex_bytes;
                             uv[m].p = v[m];
                             uv[m].u = *(const unsigned short *)(q + 18);
                             uv[m].v = *(const unsigned short *)(q + 20);
@@ -2597,7 +2603,7 @@ static int render_actor_model_weapon(struct toy_renderer *renderer,
                 const unsigned char *p;
                 int mx, my, mz, lx, ly, lz;
                 if (ids[k] >= model->vertex_count) break;
-                p = model->vertices + ids[k] * RASTERFALL_MODEL_VERTEX_BYTES;
+                p = model->vertices + ids[k] * model->vertex_bytes;
                 mx = *(const int *)p;
                 my = *(const int *)(p + 4);
                 mz = *(const int *)(p + 8);

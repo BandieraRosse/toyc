@@ -20,7 +20,7 @@ struct cursor { const unsigned char *p, *end; };
 struct pmx_header { int vertex_size, texture_size, material_size; int bone_size, morph_size, rigid_size; int encoding, append_uv; };
 struct pmx_texture { char path[TEXTURE_PATH_MAX]; };
 struct pmx_material { unsigned int color; unsigned int index_count; int texture_index; int sphere_index; int sphere_mode; int alpha; int toon_index; int toon_shared; };
-struct pmx_vertex { float x, y, z, nx, ny, nz, u, v; };
+struct pmx_vertex { float x, y, z, nx, ny, nz, u, v, au, av; };
 
 static int have(struct cursor *c, unsigned int n)
 { return c->p <= c->end && n <= (unsigned int)(c->end - c->p); }
@@ -203,7 +203,12 @@ static int read_vertex(struct cursor *c, const struct pmx_header *h,
     if (f32(c, &v->x) < 0 || f32(c, &v->y) < 0 || f32(c, &v->z) < 0 ||
         f32(c, &v->nx) < 0 || f32(c, &v->ny) < 0 || f32(c, &v->nz) < 0 ||
         f32(c, &v->u) < 0 || f32(c, &v->v) < 0) return -1;
-    if (!have(c, h->append_uv * 16U) || (c->p += h->append_uv * 16U,
+    v->au = 0.0f; v->av = 0.0f;
+    if (h->append_uv > 0 &&
+        (f32(c, &v->au) < 0 || f32(c, &v->av) < 0 ||
+         !have(c, 8) || (c->p += 8, 0))) return -1;
+    if (!have(c, (h->append_uv > 0 ? h->append_uv - 1 : 0) * 16U) ||
+        (c->p += (h->append_uv > 0 ? h->append_uv - 1 : 0) * 16U,
         u8(c, &weight_type) < 0) || skip_weight(c, h, weight_type) < 0 ||
         f32(c, 0) < 0) return -1;
     (void)i;
@@ -319,12 +324,14 @@ static int fixed(float value, int scale)
 
 static int emit_vertex(int fd, const struct pmx_vertex *v, int scale)
 {
-    unsigned char out[RASTERFALL_MODEL_VERTEX_BYTES];
+    unsigned char out[RASTERFALL_MODEL_VERTEX_BYTES_ADDITIONAL_UV];
     __memset(out, 0, sizeof(out));
     *(int *)(out + 0) = fixed(v->x, scale); *(int *)(out + 4) = fixed(v->y, scale); *(int *)(out + 8) = fixed(v->z, scale);
     *(short *)(out + 12) = (short)fixed(v->nx, 32767); *(short *)(out + 14) = (short)fixed(v->ny, 32767); *(short *)(out + 16) = (short)fixed(v->nz, 32767);
     put_u16(out + 18, (unsigned int)(v->u < 0 ? 0 : v->u > 1 ? 65535 : v->u * 65535.0f));
     put_u16(out + 20, (unsigned int)(v->v < 0 ? 0 : v->v > 1 ? 65535 : v->v * 65535.0f));
+    *(int *)(out + 24) = fixed(v->au, 65536);
+    *(int *)(out + 28) = fixed(v->av, 65536);
     return write_all(fd, out, sizeof(out));
 }
 
@@ -353,7 +360,7 @@ int main(int argc, char **argv)
     if (index_base != index_count || primitive_count > 32) { __printf("pmx2rmesh: too many or inconsistent material groups (%d/%d, %d)\n", index_base, index_count, primitive_count); goto invalid; }
     if (copy_textures(argv[1], argv[3], textures, texture_count) < 0) goto invalid;
     out = __openat(AT_FDCWD, argv[2], O_WRONLY | O_CREAT | O_TRUNC, 0644); if (out < 0) { __printf("pmx2rmesh: cannot create output\n"); goto invalid; }
-    __memset(header_out, 0, sizeof(header_out)); header_out[0] = 'R'; header_out[1] = 'F'; header_out[2] = 'M'; header_out[3] = '2'; put_u32(header_out + 4, 5); put_u32(header_out + 8, vertex_count); put_u32(header_out + 12, index_count); put_u32(header_out + 16, scale); put_u32(header_out + 44, primitive_count); put_u32(header_out + 48, material_count); put_u32(header_out + 52, 64); put_u32(header_out + 56, 64 + primitive_count * 16);
+    __memset(header_out, 0, sizeof(header_out)); header_out[0] = 'R'; header_out[1] = 'F'; header_out[2] = 'M'; header_out[3] = '2'; put_u32(header_out + 4, 6); put_u32(header_out + 8, vertex_count); put_u32(header_out + 12, index_count); put_u32(header_out + 16, scale); put_u32(header_out + 44, primitive_count); put_u32(header_out + 48, material_count); put_u32(header_out + 52, 64); put_u32(header_out + 56, 64 + primitive_count * 16);
     if (write_all(out, header_out, sizeof(header_out)) < 0) { __close(out); goto invalid; }
     index_base = 0; for (i = 0; i < material_count; i++) if (materials[i].index_count) { __memset(record, 0, sizeof(record)); put_u32(record, index_base); put_u32(record + 4, materials[i].index_count); put_u32(record + 8, i); if (write_all(out, record, sizeof(record)) < 0) { __close(out); goto invalid; } index_base += materials[i].index_count; }
     for (i = 0; i < material_count; i++) {
