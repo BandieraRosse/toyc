@@ -1572,8 +1572,10 @@ static int dump_model_material_regression(const char *model_path,
     static const unsigned char sphere[4] = {0, 1, 0, 1};
     static const unsigned char toon[4] = {0, 0, 1, 1};
     struct model_view_stats stats[4][3];
+    struct rasterfall_model_asset model;
     char directory[512], manifest_path[512], line[256];
-    int group, view, fd;
+    unsigned int double_sided = 0, single_sided = 0;
+    int group, view, fd, length;
     if (tlibc_recursive_mkdir(output_dir) < 0) return 1;
     for (group = 0; group < 4; group++) {
         if (snprintf(directory, sizeof(directory), "%s/%s", output_dir,
@@ -1583,12 +1585,26 @@ static int dump_model_material_regression(const char *model_path,
     }
     if (snprintf(manifest_path, sizeof(manifest_path), "%s/manifest.txt",
                  output_dir) >= (int)sizeof(manifest_path)) return 1;
+    memset(&model, 0, sizeof(model));
+    if (rasterfall_model_load(&model, model_path) < 0) return 1;
+    for (view = 0; view < (int)model.material_count; view++) {
+        if (model.format_version < 7 ||
+            (model.materials[view * RASTERFALL_MODEL_MATERIAL_BYTES + 7] & 1))
+            double_sided++;
+        else single_sided++;
+    }
     fd = __creat(manifest_path, 0644);
-    if (fd < 0) return 1;
+    if (fd < 0) { rasterfall_model_unload(&model); return 1; }
+    length = snprintf(line, sizeof(line),
+        "rfm_version=%u materials=%u double_sided=%u single_sided=%u\n",
+        model.format_version, model.material_count, double_sided, single_sided);
+    rasterfall_model_unload(&model);
+    if (length <= 0 || length >= (int)sizeof(line) ||
+        __write(fd, line, length) != length) { __close(fd); return 1; }
     for (group = 0; group < 4; group++) for (view = 0; view < 3; view++) {
         unsigned long mean = stats[group][view].foreground ?
             stats[group][view].luminance_sum / stats[group][view].foreground : 0;
-        int length = snprintf(line, sizeof(line),
+        length = snprintf(line, sizeof(line),
             "%s/%s.bmp hash=%016lx foreground=%lu mean_luminance=%lu near_black=%lu\n",
             groups[group], views[view], stats[group][view].hash,
             stats[group][view].foreground, mean, stats[group][view].near_black);

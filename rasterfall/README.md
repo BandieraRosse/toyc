@@ -73,8 +73,9 @@ PNG/BMP 纹理复制到指定目录。再使用 `build/toyasset convert png1024|
 当前只跳过。PNG 转换为 RGBA TTEX 时会保留 alpha；
 全透明像素不写入颜色和深度，纹理 alpha 与 PMX 材质 alpha 相乘。包含透明度
 的三角形在不透明命令之后按相机深度由远到近进行 source-over 混合。PMX 材质
-alpha、toon 引用和第一组附加 UV 保存在 RFM2 v6 中；加载器
-仍兼容 v2 到 v5 的 24 字节旧顶点记录。
+alpha、toon 引用和第一组附加 UV 从 RFM2 v6 起保存；v7 还保存材质 drawing
+flags，并按 bit 0 区分双面绘制与背面剔除。加载器仍兼容 v2 到 v5 的 24 字节旧
+顶点记录，旧格式继续按双面材质渲染。
 
 可以通过无窗口的离屏渲染输出模型正面、侧面和背面验证图。输出目录会自动
 创建，图片采用无需额外编码库的 BMP 格式；该命令走与游戏内相同的材质、

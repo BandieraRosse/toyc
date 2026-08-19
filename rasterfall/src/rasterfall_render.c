@@ -45,6 +45,7 @@ static const struct toy_texture_view *active_toon_texture;
 static int active_toon_shared = -1;
 static int active_toon_level = 255;
 static int active_material_alpha = 255;
+static int active_material_double_sided = 1;
 static unsigned short *active_lightmap;
 static int active_textures;
 static int active_fixed_floor_lighting;
@@ -295,6 +296,7 @@ static int render_gallery_model(struct toy_renderer *renderer,
     int previous_toon_shared = active_toon_shared;
     int previous_toon_level = active_toon_level;
     int previous_material_alpha = active_material_alpha;
+    int previous_material_double_sided = active_material_double_sided;
     int shared_texture = gallery_model_has_texture(model);
     active_sphere_texture = 0;
     active_sphere_mode = 0;
@@ -318,6 +320,9 @@ static int render_gallery_model(struct toy_renderer *renderer,
         active_material_alpha = material < model->material_count &&
             model->format_version >= 4 ?
             model->materials[material * RASTERFALL_MODEL_MATERIAL_BYTES + 4] : 255;
+        active_material_double_sided = material < model->material_count &&
+            model->format_version >= 7 ?
+            (model->materials[material * RASTERFALL_MODEL_MATERIAL_BYTES + 7] & 1) != 0 : 1;
         uint32_t color = material < model->material_count ?
                          model_u32(model->materials + material * RASTERFALL_MODEL_MATERIAL_BYTES) :
                          RF_COLOR_UI_TEXT_MUTED;
@@ -332,10 +337,9 @@ static int render_gallery_model(struct toy_renderer *renderer,
                 unsigned int packed = model_u32(model->materials + material * RASTERFALL_MODEL_MATERIAL_BYTES + 12);
                 unsigned int sphere_index = packed & 0xffffU;
                 unsigned int sphere_mode = (packed >> 16) & 3;
-                /* PMX modes 1/2 are the multiplicative/additive environment
-                 * maps supported here.  Mode 0 disables sphere mapping;
-                 * mode 3 needs an additional UV channel, which RFM2 does not
-                 * currently retain. */
+                /* PMX modes 1/2 are multiplicative/additive environment maps.
+                 * Mode 0 disables sphere mapping; mode 3 uses the first
+                 * additional UV channel retained by RFM2 v6 and newer. */
                 if (!active_disable_sphere &&
                     (sphere_mode == 1 || sphere_mode == 2 ||
                      (sphere_mode == 3 && model->vertex_bytes >=
@@ -400,6 +404,7 @@ static int render_gallery_model(struct toy_renderer *renderer,
     active_toon_shared = previous_toon_shared;
     active_toon_level = previous_toon_level;
     active_material_alpha = previous_material_alpha;
+    active_material_double_sided = previous_material_double_sided;
     return drawn;
 }
 
@@ -763,6 +768,7 @@ static int draw_world_triangle(struct toy_renderer *renderer,
                ((long long)sc.y - sa.y) * ((long long)sb.x - sa.x);
         if (area >= 0) {
             struct toy_screen_vertex swap;
+            if (!active_material_double_sided) continue;
             swap.x = sb.x; swap.y = sb.y; swap.z = sb.z;
             swap.inv_z = sb.inv_z;
             sb.x = sc.x; sb.y = sc.y; sb.z = sc.z;
@@ -825,6 +831,7 @@ static int draw_world_triangle_tex(struct toy_renderer *renderer,
                ((long long)sc.y - sa.y) * ((long long)sb.x - sa.x);
         if (area >= 0) {
             struct toy_screen_vertex swap;
+            if (!active_material_double_sided) continue;
             swap.x=sb.x; swap.y=sb.y; swap.z=sb.z;
             swap.u=sb.u; swap.v=sb.v; swap.inv_z=sb.inv_z;
             swap.u_over_z=sb.u_over_z; swap.v_over_z=sb.v_over_z;
