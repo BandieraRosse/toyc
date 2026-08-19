@@ -25,6 +25,9 @@
  *   --no-stats                     关闭性能统计
  *   --texture-stats                显示纹理统计
  *   --dump-frame <path>            导出帧图像
+ *   --model-views <model> <dir>     离屏导出模型正面/侧面/背面图
+ *   --model-views-compare <model> <dir>
+ *                                   同时导出启用/禁用 sphere 的三视图
  *   --frames <count>               运行指定帧数后退出
  *   --input-test                   输入调试测试
  *   --logic-test / --net-test      运行逻辑测试
@@ -1437,6 +1440,81 @@ static void draw_input_debug(struct toy_surface *surface,
 
 #include "rasterfall_perf.h"
 
+static int dump_model_views(const char *model_path, const char *output_dir,
+                            int use_sphere)
+{
+    static const char *names[3] = {"front", "side", "back"};
+    struct camera cameras[3];
+    struct rasterfall_model_asset model;
+    struct toy_surface surface;
+    struct toy_renderer renderer;
+    uint32_t *pixels;
+    char path[512];
+    int i, result = 0;
+
+    memset(&model, 0, sizeof(model));
+    memset(cameras, 0, sizeof(cameras));
+    if (rasterfall_model_load(&model, model_path) < 0) {
+        __fprintf(2, "rasterfall: cannot load preview model %s\n", model_path);
+        return 1;
+    }
+    if (tlibc_recursive_mkdir(output_dir) < 0) {
+        __fprintf(2, "rasterfall: cannot create preview directory %s\n",
+                  output_dir);
+        rasterfall_model_unload(&model);
+        return 1;
+    }
+    surface.width = 800;
+    surface.height = 800;
+    surface.stride = surface.width * (int)sizeof(uint32_t);
+    pixels = tlibc_malloc((size_t)surface.stride * surface.height);
+    if (!pixels) {
+        rasterfall_model_unload(&model);
+        return 1;
+    }
+    surface.pixels = pixels;
+    toy_renderer_init(&renderer);
+
+    /* Front and back look along the model Z axis; side looks along +X. */
+    cameras[0].z = -800; cameras[0].cy = 1024;
+    cameras[1].x = -800; cameras[1].sy = 1024;
+    cameras[2].z = 800; cameras[2].cy = -1024;
+    for (i = 0; i < 3; i++) cameras[i].pitch_cy = 1024;
+
+    for (i = 0; i < 3; i++) {
+        if (toy_renderer_begin(&renderer, &surface, 0x30343B) < 0 ||
+            rasterfall_render_model_preview(&renderer, &cameras[i], &model,
+                                             use_sphere) < 0) {
+            result = 1;
+            break;
+        }
+        toy_renderer_flush(&renderer);
+        if (snprintf(path, sizeof(path), "%s/%s.bmp", output_dir, names[i]) >=
+                (int)sizeof(path) ||
+            rasterfall_hud_dump_bmp(path, &surface) < 0) {
+            __fprintf(2, "rasterfall: cannot write model preview %s\n", names[i]);
+            result = 1;
+            break;
+        }
+    }
+    toy_renderer_destroy(&renderer);
+    tlibc_free(pixels);
+    rasterfall_model_unload(&model);
+    return result;
+}
+
+static int dump_model_view_comparison(const char *model_path,
+                                      const char *output_dir)
+{
+    char with_sphere[512], without_sphere[512];
+    if (snprintf(with_sphere, sizeof(with_sphere), "%s/with-sphere",
+                 output_dir) >= (int)sizeof(with_sphere) ||
+        snprintf(without_sphere, sizeof(without_sphere), "%s/without-sphere",
+                 output_dir) >= (int)sizeof(without_sphere)) return 1;
+    if (dump_model_views(model_path, with_sphere, 1) != 0) return 1;
+    return dump_model_views(model_path, without_sphere, 0);
+}
+
 int main(int argc, char **argv)
 {
     struct toy_window *window;
@@ -1490,6 +1568,9 @@ int main(int argc, char **argv)
     int managed_spectator = 0;
     int managed_third_person = 0;
     const char *dump_path = 0;
+    const char *view_model_path = 0;
+    const char *view_output_dir = 0;
+    int compare_model_views = 0;
     for (int arg = 1; arg < argc; arg++) {
         if (strcmp(argv[arg], "--input-test") == 0) input_debug = 1;
         else if (strcmp(argv[arg], "--logic-test") == 0 ||
@@ -1510,11 +1591,25 @@ int main(int argc, char **argv)
         else if (strcmp(argv[arg], "--texture-stats") == 0) texture_stats = 1;
         else if (strcmp(argv[arg], "--dump-frame") == 0 && arg + 1 < argc)
             dump_path = argv[++arg];
+        else if (strcmp(argv[arg], "--model-views") == 0 && arg + 2 < argc) {
+            view_model_path = argv[++arg];
+            view_output_dir = argv[++arg];
+        } else if (strcmp(argv[arg], "--model-views-compare") == 0 &&
+                   arg + 2 < argc) {
+            view_model_path = argv[++arg];
+            view_output_dir = argv[++arg];
+            compare_model_views = 1;
+        }
         else if (strcmp(argv[arg], "--frames") == 0 && arg + 1 < argc) {
             const char *p = argv[++arg];
             while (*p >= '0' && *p <= '9')
                 frame_limit = frame_limit * 10 + (*p++ - '0');
         }
+    }
+    if (view_model_path) {
+        if (compare_model_views)
+            return dump_model_view_comparison(view_model_path, view_output_dir);
+        return dump_model_views(view_model_path, view_output_dir, 1);
     }
     rasterfall_net_init(&net);
     rasterfall_net_set_loss(&net, net_loss_percent);

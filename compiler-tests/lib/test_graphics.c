@@ -14,7 +14,11 @@ int main(void)
         255, 0, 0,  0, 255, 0,
         0, 0, 255, 255, 255, 255
     };
+    static const unsigned char base_texel[3] = {100, 100, 100};
+    static const unsigned char sphere_texel[3] = {10, 20, 30};
     struct toy_texture_view texture = {texels, 2, 2, 12};
+    struct toy_texture_view base_texture = {base_texel, 1, 1, 3};
+    struct toy_texture_view sphere_texture = {sphere_texel, 1, 1, 3};
     int near_drawn, far_drawn;
 
     surface.pixels = pixels;
@@ -57,6 +61,19 @@ int main(void)
                                    &texture, 1, 0x123456);
     if (renderer.textured_triangles != 1 || renderer.submitted_triangles != 1)
         return 6;
+
+    toy_renderer_begin(&renderer, &surface, 0);
+    a.u = b.u = c.u = a.v = b.v = c.v = 0;
+    a.u2 = b.u2 = c.u2 = a.v2 = b.v2 = c.v2 = 0;
+    a.u_over_z = b.u_over_z = c.u_over_z = 0;
+    a.v_over_z = b.v_over_z = c.v_over_z = 0;
+    a.u2_over_z = b.u2_over_z = c.u2_over_z = 0;
+    a.v2_over_z = b.v2_over_z = c.v2_over_z = 0;
+    toy_renderer_triangle_textured_dual_lit(
+        &renderer, &a, &b, &c, &base_texture, &sphere_texture,
+        2, 0, 0, 256, 0);
+    toy_renderer_flush(&renderer);
+    if (pixels[2 * 8 + 2] != 0x006E7882) return 7;
 
     toy_renderer_destroy(&renderer);
     return 0;

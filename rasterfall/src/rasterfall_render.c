@@ -39,6 +39,8 @@ static struct rasterfall_effects *active_effects;
 static const struct rasterfall_net *active_net;
 static const struct toy_texture_view *active_wall_texture;
 static const struct toy_texture_view *active_model_texture;
+static const struct toy_texture_view *active_sphere_texture;
+static int active_sphere_mode;
 static unsigned short *active_lightmap;
 static int active_textures;
 static int active_fixed_floor_lighting;
@@ -47,6 +49,7 @@ static int active_actor_lift;
 static int active_actor_roll_sin;
 static int active_actor_roll_cos = 1024;
 static int active_gallery_lighting;
+static int active_disable_sphere;
 static int active_emissive_projectile;
 static int active_coordinate_axes;
 
@@ -100,7 +103,7 @@ static int private_character_loaded;
 static char gallery_paths[RASTERFALL_MODEL_MAX_GALLERY]
                           [RASTERFALL_MODEL_PATH_BYTES];
 
-struct world_uv_vertex { struct vec3 p; int u, v; };
+struct world_uv_vertex { struct vec3 p; int u, v; int su, sv; };
 
 static int clampi(int value, int low, int high)
 {
@@ -229,8 +232,10 @@ static void gallery_vertex(const struct rasterfall_model_asset *model,
 }
 
 static void gallery_uv_vertex(const struct rasterfall_model_asset *model,
+                              const struct camera *camera,
                               unsigned int index, int center_x, int base_y,
                               int center_z, int scale,
+                              int use_sphere_uv,
                               struct world_uv_vertex *out)
 {
     const unsigned char *p = model->vertices +
@@ -238,6 +243,33 @@ static void gallery_uv_vertex(const struct rasterfall_model_asset *model,
     gallery_vertex(model, index, center_x, base_y, center_z, scale, &out->p);
     out->u = *(const unsigned short *)(p + 18);
     out->v = *(const unsigned short *)(p + 20);
+    if (use_sphere_uv) {
+        int nx = *(const short *)(p + 12);
+        int ny = *(const short *)(p + 14);
+        int nz = *(const short *)(p + 16);
+        int view_nx = (nx * camera->cy - nz * camera->sy) / 1024;
+        int view_nz = (nx * camera->sy + nz * camera->cy) / 1024;
+        int view_ny = (ny * camera->pitch_cy - view_nz * camera->pitch_sy) / 1024;
+        long long sphere_length = isqrt((long long)view_nx * view_nx +
+                                        (long long)view_ny * view_ny +
+                                        (long long)(view_nz + 32767) *
+                                        (view_nz + 32767));
+        if (sphere_length > 0) {
+            out->su = 32768 + (int)((long long)view_nx * 32768 / sphere_length);
+            /* Texture images use a top-down V axis. */
+            out->sv = 32768 - (int)((long long)view_ny * 32768 / sphere_length);
+        } else {
+            out->su = 32768;
+            out->sv = 32768;
+        }
+        if (out->su < 0) out->su = 0;
+        if (out->su > 65535) out->su = 65535;
+        if (out->sv < 0) out->sv = 0;
+        if (out->sv > 65535) out->sv = 65535;
+    } else {
+        out->su = 0;
+        out->sv = 0;
+    }
 }
 
 static int render_gallery_model(struct toy_renderer *renderer,
@@ -248,7 +280,11 @@ static int render_gallery_model(struct toy_renderer *renderer,
 {
     int drawn = 0, i;
     const struct toy_texture_view *previous_texture = active_texture_view;
+    const struct toy_texture_view *previous_sphere = active_sphere_texture;
+    int previous_sphere_mode = active_sphere_mode;
     int shared_texture = gallery_model_has_texture(model);
+    active_sphere_texture = 0;
+    active_sphere_mode = 0;
     if (shared_texture)
         active_texture_view = active_model_texture;
     for (i = 0; i < (int)model->primitive_count; i++) {
@@ -257,6 +293,10 @@ static int render_gallery_model(struct toy_renderer *renderer,
         unsigned int index_count = model_u32(primitive + 4);
         unsigned int material = model_u32(primitive + 8);
         const struct toy_texture_view *texture = 0;
+        const struct toy_texture_view *sphere_texture = 0;
+        active_texture_view = 0;
+        active_sphere_texture = 0;
+        active_sphere_mode = 0;
         uint32_t color = material < model->material_count ?
                          model_u32(model->materials + material * RASTERFALL_MODEL_MATERIAL_BYTES) :
                          RF_COLOR_UI_TEXT_MUTED;
@@ -266,6 +306,23 @@ static int render_gallery_model(struct toy_renderer *renderer,
             if (texture_index < model->texture_count && model->texture_assets[texture_index].data) {
                 texture = &model->texture_views[texture_index];
                 active_texture_view = texture;
+            }
+            if (model->format_version >= 3) {
+                unsigned int packed = model_u32(model->materials + material * RASTERFALL_MODEL_MATERIAL_BYTES + 12);
+                unsigned int sphere_index = packed & 0xffffU;
+                unsigned int sphere_mode = (packed >> 16) & 3;
+                /* PMX modes 1/2 are the multiplicative/additive environment
+                 * maps supported here.  Mode 0 disables sphere mapping;
+                 * mode 3 needs an additional UV channel, which RFM2 does not
+                 * currently retain. */
+                if (!active_disable_sphere &&
+                    (sphere_mode == 1 || sphere_mode == 2) &&
+                    sphere_index != 0xffffU && sphere_index < model->texture_count &&
+                    model->texture_assets[sphere_index].data) {
+                    sphere_texture = &model->texture_views[sphere_index];
+                    active_sphere_texture = sphere_texture;
+                    active_sphere_mode = sphere_mode;
+                } else active_sphere_texture = 0;
             }
         }
         if (!texture && shared_texture) active_texture_view = active_model_texture;
@@ -280,9 +337,12 @@ static int render_gallery_model(struct toy_renderer *renderer,
             gallery_vertex(model, ib, center_x, base_y, center_z, scale, &b);
             gallery_vertex(model, ic, center_x, base_y, center_z, scale, &c);
             if (texture || shared_texture) {
-                gallery_uv_vertex(model, ia, center_x, base_y, center_z, scale, &ta);
-                gallery_uv_vertex(model, ib, center_x, base_y, center_z, scale, &tb);
-                gallery_uv_vertex(model, ic, center_x, base_y, center_z, scale, &tc);
+                gallery_uv_vertex(model, camera, ia, center_x, base_y, center_z, scale,
+                                  active_sphere_texture != 0, &ta);
+                gallery_uv_vertex(model, camera, ib, center_x, base_y, center_z, scale,
+                                  active_sphere_texture != 0, &tb);
+                gallery_uv_vertex(model, camera, ic, center_x, base_y, center_z, scale,
+                                  active_sphere_texture != 0, &tc);
                 drawn += draw_world_triangle_tex(renderer, camera, &ta, &tb, &tc);
             } else {
                 drawn += draw_world_triangle(renderer, camera, &a, &b, &c, color);
@@ -290,7 +350,41 @@ static int render_gallery_model(struct toy_renderer *renderer,
         }
     }
     active_texture_view = previous_texture;
+    active_sphere_texture = previous_sphere;
+    active_sphere_mode = previous_sphere_mode;
     return drawn;
+}
+
+int rasterfall_render_model_preview(struct toy_renderer *renderer,
+                                    const struct camera *camera,
+                                    const struct rasterfall_model_asset *model,
+                                    int use_sphere)
+{
+    int width, height, depth, size, scale;
+    int center_x, center_z, base_y, pixels;
+    if (!renderer || !camera || !model || !model->data) return -1;
+    width = model->max_x - model->min_x;
+    height = model->max_y - model->min_y;
+    depth = model->max_z - model->min_z;
+    size = width > height ? width : height;
+    if (depth > size) size = depth;
+    if (size <= 0) return -1;
+
+    /* Fit every model into the same 900-unit inspection volume and center
+     * its bounds at the origin.  A fixed camera distance then makes views
+     * directly comparable across future imported character models. */
+    scale = 900000 / size;
+    if (scale < 1) scale = 1;
+    center_x = -(int)((long)(model->min_x + model->max_x) * scale / 2000);
+    center_z = -(int)((long)(model->min_z + model->max_z) * scale / 2000);
+    base_y = -(int)((long)height * scale / 2000);
+    active_gallery_lighting = 1;
+    active_disable_sphere = !use_sphere;
+    pixels = render_gallery_model(renderer, camera, model, center_x, base_y,
+                                  center_z, scale);
+    active_disable_sphere = 0;
+    active_gallery_lighting = 0;
+    return pixels;
 }
 
 /* Static developer display: nine models per row, in front of the north
@@ -525,6 +619,7 @@ static void copy_world_uv(struct world_uv_vertex *out,
 {
     copy_vec3(&out->p, &in->p);
     out->u = in->u; out->v = in->v;
+    out->su = in->su; out->sv = in->sv;
 }
 
 static void near_intersection_uv(const struct world_uv_vertex *a,
@@ -536,6 +631,8 @@ static void near_intersection_uv(const struct world_uv_vertex *a,
     near_intersection(&a->p, &b->p, &out->p);
     out->u = a->u + (int)(((long)b->u - a->u) * numerator / denominator);
     out->v = a->v + (int)(((long)b->v - a->v) * numerator / denominator);
+    out->su = a->su + (int)(((long)b->su - a->su) * numerator / denominator);
+    out->sv = a->sv + (int)(((long)b->sv - a->sv) * numerator / denominator);
 }
 
 static int clip_near_uv(const struct world_uv_vertex *input, int count,
@@ -578,6 +675,7 @@ static void project_vertex(const struct toy_surface *surface,
 static void project_uv_vertex(const struct toy_surface *surface,
                               const struct vec3 *view,
                               int u, int v,
+                              int su, int sv,
                               struct toy_screen_vertex *screen)
 {
     int z = view->z < NEAR_Z ? NEAR_Z : view->z;
@@ -586,6 +684,9 @@ static void project_uv_vertex(const struct toy_surface *surface,
     screen->inv_z = (long)1048576 / z;
     screen->u_over_z = (long)u * 1048576L / z;
     screen->v_over_z = (long)v * 1048576L / z;
+    screen->u2 = su; screen->v2 = sv;
+    screen->u2_over_z = (long)su * 1048576L / z;
+    screen->v2_over_z = (long)sv * 1048576L / z;
 }
 
 static int draw_world_triangle(struct toy_renderer *renderer,
@@ -654,16 +755,22 @@ static int draw_world_triangle_tex(struct toy_renderer *renderer,
     input[0].u = a->u; input[0].v = a->v;
     input[1].u = b->u; input[1].v = b->v;
     input[2].u = c->u; input[2].v = c->v;
+    input[0].su = a->su; input[0].sv = a->sv;
+    input[1].su = b->su; input[1].sv = b->sv;
+    input[2].su = c->su; input[2].sv = c->sv;
     count = clip_near_uv(input, 3, clipped);
     for (int i = 1; i + 1 < count; i++) {
         struct toy_screen_vertex sa, sb, sc;
         long long area;
         project_uv_vertex(&renderer->surface, &clipped[0].p,
-                          clipped[0].u, clipped[0].v, &sa);
+                          clipped[0].u, clipped[0].v,
+                          clipped[0].su, clipped[0].sv, &sa);
         project_uv_vertex(&renderer->surface, &clipped[i].p,
-                          clipped[i].u, clipped[i].v, &sb);
+                          clipped[i].u, clipped[i].v,
+                          clipped[i].su, clipped[i].sv, &sb);
         project_uv_vertex(&renderer->surface, &clipped[i + 1].p,
-                          clipped[i + 1].u, clipped[i + 1].v, &sc);
+                          clipped[i + 1].u, clipped[i + 1].v,
+                          clipped[i + 1].su, clipped[i + 1].sv, &sc);
         area = ((long long)sc.x - sa.x) * ((long long)sb.y - sa.y) -
                ((long long)sc.y - sa.y) * ((long long)sb.x - sa.x);
         if (area >= 0) {
@@ -671,22 +778,33 @@ static int draw_world_triangle_tex(struct toy_renderer *renderer,
             swap.x=sb.x; swap.y=sb.y; swap.z=sb.z;
             swap.u=sb.u; swap.v=sb.v; swap.inv_z=sb.inv_z;
             swap.u_over_z=sb.u_over_z; swap.v_over_z=sb.v_over_z;
+            swap.u2=sb.u2; swap.v2=sb.v2; swap.u2_over_z=sb.u2_over_z; swap.v2_over_z=sb.v2_over_z;
             sb.x=sc.x; sb.y=sc.y; sb.z=sc.z;
             sb.u=sc.u; sb.v=sc.v; sb.inv_z=sc.inv_z;
             sb.u_over_z=sc.u_over_z; sb.v_over_z=sc.v_over_z;
+            sb.u2=sc.u2; sb.v2=sc.v2; sb.u2_over_z=sc.u2_over_z; sb.v2_over_z=sc.v2_over_z;
             sc.x=swap.x; sc.y=swap.y; sc.z=swap.z;
             sc.u=swap.u; sc.v=swap.v; sc.inv_z=swap.inv_z;
             sc.u_over_z=swap.u_over_z; sc.v_over_z=swap.v_over_z;
+            sc.u2=swap.u2; sc.v2=swap.v2; sc.u2_over_z=swap.u2_over_z; sc.v2_over_z=swap.v2_over_z;
         }
         int center_x = (a->p.x + b->p.x + c->p.x) / 3;
         int center_z = (a->p.z + b->p.z + c->p.z) / 3;
-        int light = fixed_floor_lighting ? 256 : baked_light_at(center_x, center_z);
-        int fog = fixed_floor_lighting ? 0 : baked_fog_at(world_distance(camera, center_x, center_z));
+        int light = active_gallery_lighting ? 256 :
+                    fixed_floor_lighting ? 256 : baked_light_at(center_x, center_z);
+        int fog = active_gallery_lighting ? 0 :
+                  fixed_floor_lighting ? 0 : baked_fog_at(world_distance(camera, center_x, center_z));
         sa.light = sb.light = sc.light = light;
         sa.fog = sb.fog = sc.fog = fog;
-        drawn += toy_renderer_triangle_textured_lit(renderer, &sa, &sb, &sc,
-                                                     active_texture_view, 1,
-                                                     0xFF202020U, light, fog);
+        if (active_sphere_texture)
+            drawn += toy_renderer_triangle_textured_dual_lit(
+                renderer, &sa, &sb, &sc, active_texture_view,
+                active_sphere_texture, active_sphere_mode, 1,
+                0xFF202020U, light, fog);
+        else
+            drawn += toy_renderer_triangle_textured_lit(renderer, &sa, &sb, &sc,
+                                                         active_texture_view, 1,
+                                                         0xFF202020U, light, fog);
     }
     return drawn;
 }

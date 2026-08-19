@@ -64,10 +64,34 @@ build/pmx2rmesh character.pmx \
 ```
 
 `pmx2rmesh` 读取 PMX 2.0/2.1 的顶点位置、法线、UV、三角形索引和材质漫
-反射色和材质引用，输出现有 RFM2 格式，并将 PMX 引用的 PNG/BMP 纹理复制
-到指定目录。再使用 `build/toyasset convert png1024|bmp` 转成 TTEX 后，
-Rasterfall 会按 RFM2 材质索引加载并采样这些基础色纹理。骨骼、Morph、刚体、
-关节、toon/sphere 贴图和 alpha 混合当前只跳过。
+反射色、基础纹理和 sphere 纹理引用，输出现有 RFM2 格式，并将 PMX 引用的
+PNG/BMP 纹理复制到指定目录。再使用 `build/toyasset convert png1024|bmp`
+转成 TTEX 后，Rasterfall 会按 RFM2 材质索引加载基础色和 sphere 纹理；sphere
+贴图的乘算（mode 1）与加算（mode 2）模式会按顶点法线生成的 sphere UV
+进行混合。依赖附加 UV 的 mode 3 暂不应用；骨骼、Morph、刚体、toon 贴图和
+alpha 混合当前只跳过。
+
+可以通过无窗口的离屏渲染输出模型正面、侧面和背面验证图。输出目录会自动
+创建，图片采用无需额外编码库的 BMP 格式；该命令走与游戏内相同的材质、
+基础纹理和 sphere 混合路径：
+
+```sh
+build/rasterfall --model-views \
+    rasterfall/private-assets/models/yola.rmesh tmp/yola-views
+```
+
+输出为 `front.bmp`、`side.bmp` 和 `back.bmp`。模型会按包围盒自动居中和缩放，
+因此以后可以直接替换 RFM2 路径验证其他动漫模型。
+
+需要严格对比 sphere 效果时，使用：
+
+```sh
+build/rasterfall --model-views-compare \
+    rasterfall/private-assets/models/yola.rmesh tmp/yola-compare
+```
+
+该命令分别在 `with-sphere/` 和 `without-sphere/` 中生成三张同机位图片；
+禁用版本只关闭 sphere 辅助纹理，基础纹理、缩放、相机和光照保持不变。
 
 版权受限的本地测试模型应放在 `private-assets/` 下；该目录已被 Git 忽略，
 不会参与公开资源或嵌入式发布构建。当前本地角色样本位于

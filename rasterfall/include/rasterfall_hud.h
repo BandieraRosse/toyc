@@ -48,7 +48,8 @@ void rasterfall_hud_draw_interact_prompt(struct toy_renderer *renderer,
                                          const struct rasterfall_hud_state *state);
 void rasterfall_hud_render(struct toy_surface *surface, int fps,
                            const struct rasterfall_hud_state *state);
-void rasterfall_hud_dump_frame(const char *path, const struct toy_surface *surface);
+int rasterfall_hud_dump_frame(const char *path, const struct toy_surface *surface);
+int rasterfall_hud_dump_bmp(const char *path, const struct toy_surface *surface);
 void rasterfall_hud_damage_flash(struct toy_surface *surface,
                                  const struct toy_game *game);
 

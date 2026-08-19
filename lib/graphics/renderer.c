@@ -199,6 +199,8 @@ static long raster_tex(struct toy_renderer *renderer,
                        long long area, int minx, int maxx,
                        int y0, int y1,
                        const struct toy_texture_view *texture,
+                       const struct toy_texture_view *texture2,
+                       int blend_mode,
                        int repeat, uint32_t fallback_color,
                        int light_factor, int fog_factor,
                        unsigned long *tex_pixels,
@@ -239,11 +241,43 @@ static long raster_tex(struct toy_renderer *renderer,
                     long long voz = (long long)e0 * a->v_over_z +
                                     (long long)e1 * b->v_over_z +
                                     (long long)e2 * c->v_over_z;
+                    long long u2oz = (long long)e0 * a->u2_over_z +
+                                     (long long)e1 * b->u2_over_z +
+                                     (long long)e2 * c->u2_over_z;
+                    long long v2oz = (long long)e0 * a->v2_over_z +
+                                     (long long)e1 * b->v2_over_z +
+                                     (long long)e2 * c->v2_over_z;
                     int used_fallback = 0;
                     long u = inv64 ? (long)(uoz / inv64) : 0;
                     long v = inv64 ? (long)(voz / inv64) : 0;
                     uint32_t color = texture_sample(texture, u, v, repeat,
                                                      fallback_color, &used_fallback);
+                    if (texture2) {
+                        int sphere_fallback = 0;
+                        long u2, v2;
+                        u2 = inv64 ? (long)(u2oz / inv64) : 0;
+                        v2 = inv64 ? (long)(v2oz / inv64) : 0;
+                        uint32_t sphere = texture_sample(texture2, u2, v2,
+                                                          repeat, 0xffffffffU,
+                                                          &sphere_fallback);
+                        int r = (color >> 16) & 255, g = (color >> 8) & 255, b = color & 255;
+                        int sr = (sphere >> 16) & 255, sg = (sphere >> 8) & 255, sb = sphere & 255;
+                        if (blend_mode == 2) {
+                            r += sr; g += sg; b += sb;
+                        } else {
+                            /* PMX mode 1 is multiplicative.  Mode 2 is an
+                             * additive sphere map, handled above. */
+                            r = r * sr / 255; g = g * sg / 255; b = b * sb / 255;
+                        }
+                        if (r < 0) r = 0;
+                        if (r > 255) r = 255;
+                        if (g < 0) g = 0;
+                        if (g > 255) g = 255;
+                        if (b < 0) b = 0;
+                        if (b > 255) b = 255;
+                        color = 0xff000000U | (uint32_t)r << 16 |
+                                (uint32_t)g << 8 | (uint32_t)b;
+                    }
                     long light = light_factor >= 0 ? light_factor :
                         (e0 * a->light + e1 * b->light + e2 * c->light) / area;
                     long fog = fog_factor >= 0 ? fog_factor :
@@ -272,6 +306,9 @@ static void copy_vertex(struct toy_screen_vertex *out,
     out->inv_z = in->inv_z;
     out->u_over_z = in->u_over_z;
     out->v_over_z = in->v_over_z;
+    out->u2 = in->u2; out->v2 = in->v2;
+    out->u2_over_z = in->u2_over_z;
+    out->v2_over_z = in->v2_over_z;
     out->light = in->light;
     out->fog = in->fog;
 }
@@ -301,7 +338,8 @@ static void rasterize_cmd(struct toy_renderer *renderer,
     if (cmd->textured)
         worker->pixels += raster_tex(renderer, worker, &cmd->a, &cmd->b, &cmd->c,
                                      cmd->area, cmd->bbox_minx, cmd->bbox_maxx,
-                                     y0, y1, cmd->texture, cmd->repeat,
+                                     y0, y1, cmd->texture, cmd->texture2,
+                                     cmd->blend_mode, cmd->repeat,
                                      cmd->fallback, cmd->light, cmd->fog,
                                      &worker->textured_pixels,
                                      &worker->texture_fallback_pixels);
@@ -355,6 +393,8 @@ static int record_cmd(struct toy_renderer *renderer, int textured,
     cmd->light = light;
     cmd->fog = fog;
     cmd->texture = texture;
+    cmd->texture2 = 0;
+    cmd->blend_mode = 0;
     cmd->area = area;
     /* 投影坐标已被调用方裁剪过；包围盒缓存进命令，工作线程按带直接跳过。 */
     cmd->bbox_minx = clampi(a->x < b->x ? (a->x < c->x ? a->x : c->x) :
@@ -449,6 +489,32 @@ int toy_renderer_triangle_textured_lit(struct toy_renderer *renderer,
         renderer->submitted_triangles++;
         renderer->submitted_vertices += 3;
     }
+    return 0;
+}
+
+int toy_renderer_triangle_textured_dual_lit(struct toy_renderer *renderer,
+                                            const struct toy_screen_vertex *a,
+                                            const struct toy_screen_vertex *b,
+                                            const struct toy_screen_vertex *c,
+                                            const struct toy_texture_view *texture,
+                                            const struct toy_texture_view *texture2,
+                                            int blend_mode, int repeat,
+                                            uint32_t fallback_color,
+                                            int light, int fog)
+{
+    long long area;
+    struct toy_raster_cmd *cmd;
+    if (!renderer || !renderer->depth || !a || !b || !c) return 0;
+    area = edge(a, b, c->x, c->y);
+    if (area >= 0) return 0;
+    renderer->textured_triangles++;
+    if (!record_cmd(renderer, 1, a, b, c, area, 0, texture, repeat,
+                    fallback_color, light, fog, 0)) return 0;
+    cmd = &renderer->cmds[renderer->cmd_count - 1];
+    cmd->texture2 = texture2;
+    cmd->blend_mode = blend_mode;
+    renderer->submitted_triangles++;
+    renderer->submitted_vertices += 3;
     return 0;
 }
 

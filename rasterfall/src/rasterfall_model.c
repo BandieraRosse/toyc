@@ -34,7 +34,7 @@ int rasterfall_model_load(struct rasterfall_model_asset *asset,
     data = toy_asset_load_file(path, &size);
     if (!data || size < RASTERFALL_MODEL_HEADER_BYTES ||
         model_u32(data) != RASTERFALL_MODEL_MAGIC ||
-        model_u32(data + 4) != RASTERFALL_MODEL_VERSION ||
+        (model_u32(data + 4) != 2 && model_u32(data + 4) != RASTERFALL_MODEL_VERSION) ||
         model_u32(data + 8) > 1000000 || model_u32(data + 12) > 3000000 ||
         model_u32(data + 44) > 32 || model_u32(data + 48) > 32 ||
         model_u32(data + 52) != RASTERFALL_MODEL_HEADER_BYTES ||
@@ -49,6 +49,7 @@ int rasterfall_model_load(struct rasterfall_model_asset *asset,
     }
     asset->data = data;
     asset->data_size = size;
+    asset->format_version = model_u32(data + 4);
     asset->vertex_count = model_u32(data + 8);
     asset->index_count = model_u32(data + 12);
     asset->primitive_count = model_u32(data + 44);
@@ -68,7 +69,10 @@ int rasterfall_model_load(struct rasterfall_model_asset *asset,
         int found = 0;
         if (asset->material_count) for (i = 0; i < asset->material_count; i++) {
             unsigned int texture = model_u32(asset->materials + i * RASTERFALL_MODEL_MATERIAL_BYTES + 8);
+            unsigned int sphere = asset->format_version >= 3 ?
+                model_u32(asset->materials + i * RASTERFALL_MODEL_MATERIAL_BYTES + 12) & 0xffffU : 0xffffU;
             if (texture != 0xffffffffU && texture < 256 && (!found || texture > max_texture)) { max_texture = texture; found = 1; }
+            if (sphere != 0xffffU && sphere < 256 && (!found || sphere > max_texture)) { max_texture = sphere; found = 1; }
         }
         if (found) {
             char texture_path[256];
@@ -86,6 +90,17 @@ int rasterfall_model_load(struct rasterfall_model_asset *asset,
                 asset->texture_views[i].height = asset->texture_assets[i].height;
                 asset->texture_views[i].data_size = asset->texture_assets[i].data_size;
             }
+        }
+        if (asset->format_version >= 3) for (i = 0; i < asset->material_count; i++) {
+            unsigned int base = model_u32(asset->materials + i * RASTERFALL_MODEL_MATERIAL_BYTES + 8);
+            unsigned int packed = model_u32(asset->materials + i * RASTERFALL_MODEL_MATERIAL_BYTES + 12);
+            unsigned int sphere = packed & 0xffffU;
+            unsigned int mode = (packed >> 16) & 3U;
+            if (sphere != 0xffffU)
+                __printf("rasterfall: material=%u base_texture_index=%u sphere_texture_index=%u sphere_mode=%u uv_source=%s\n",
+                         i, base, sphere, mode,
+                         mode == 3 ? "ADDITIONAL_UV_UNSUPPORTED" :
+                         mode == 0 ? "DISABLED" : "SPHERE_UV");
         }
     }
     return 0;

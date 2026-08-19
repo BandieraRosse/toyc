@@ -1,9 +1,9 @@
 /* Extract the static mesh data needed by Rasterfall from a PMX 2.0/2.1 file.
  *
  * This is intentionally an offline converter.  Bones, morphs, rigid bodies,
- * joints, toon textures and sphere textures are parsed only far enough to
- * skip them; base texture files are copied to a caller-selected directory
- * and their indices are stored in the existing RFM2 material records.
+ * joints and toon textures are parsed only far enough to skip them. Base and
+ * sphere texture references are retained in the existing RFM2 material
+ * records; source texture files are copied to a caller-selected directory.
  */
 #include "core.h"
 #include "tlibc_print.h"
@@ -19,7 +19,7 @@
 struct cursor { const unsigned char *p, *end; };
 struct pmx_header { int vertex_size, texture_size, material_size; int bone_size, morph_size, rigid_size; int encoding, append_uv; };
 struct pmx_texture { char path[TEXTURE_PATH_MAX]; };
-struct pmx_material { unsigned int color; unsigned int index_count; int texture_index; };
+struct pmx_material { unsigned int color; unsigned int index_count; int texture_index; int sphere_index; int sphere_mode; };
 struct pmx_vertex { float x, y, z, nx, ny, nz, u, v; };
 
 static int have(struct cursor *c, unsigned int n)
@@ -236,6 +236,8 @@ static int read_materials(struct cursor *c, const struct pmx_header *h,
         materials[i].index_count = (unsigned int)face_count;
         /* Sphere maps are handled separately; retain the ordinary base map. */
         materials[i].texture_index = texture;
+        materials[i].sphere_index = sphere;
+        materials[i].sphere_mode = sphere_mode;
         materials[i].color = (unsigned int)color_byte(r) << 16 |
             (unsigned int)color_byte(g) << 8 | (unsigned int)color_byte(b);
     }
@@ -263,6 +265,13 @@ static int copy_file(const char *source, const char *destination)
     }
     __close(in); __close(out);
     return n < 0 ? -1 : 0;
+}
+
+static int path_suffix(const char *path, const char *suffix)
+{
+    int path_length = (int)strlen(path), suffix_length = (int)strlen(suffix);
+    return path_length >= suffix_length &&
+        !strcmp(path + path_length - suffix_length, suffix);
 }
 
 static int copy_textures(const char *pmx_path, const char *output_dir,
@@ -344,18 +353,38 @@ int main(int argc, char **argv)
     if (i32(&c, &texture_count) < 0 || texture_count < 0 || texture_count > MAX_TEXTURES) goto invalid;
     for (i = 0; i < texture_count; i++) if (read_text(&c, h.encoding, textures[i].path, sizeof(textures[i].path)) < 0) goto invalid;
     if (read_materials(&c, &h, materials, &material_count) < 0) goto invalid;
-    /* This model lists tex/sph.png as the base map for one hair group.  It is
-       a mask/style map, so use the matching diffuse atlas instead. */
-    for (i = 0; i < material_count; i++)
-        if (materials[i].texture_index == 2) materials[i].texture_index = 0;
+    /* This model names the hair sphere map as a base texture too.  Match by
+       filename, rather than by unstable PMX table index, and use its diffuse
+       atlas as Base Color while retaining the real sphere reference. */
+    for (i = 0; i < material_count; i++) {
+        if (materials[i].texture_index >= 0 &&
+            materials[i].texture_index < texture_count &&
+            path_suffix(textures[materials[i].texture_index].path, "sph.png")) {
+            int j;
+            for (j = 0; j < texture_count; j++)
+                if (path_suffix(textures[j].path, "发.png")) {
+                    materials[i].texture_index = j;
+                    break;
+                }
+        }
+    }
     for (i = 0; i < material_count; i++) { if (materials[i].index_count) primitive_count++; index_base += materials[i].index_count; }
     if (index_base != index_count || primitive_count > 32) { __printf("pmx2rmesh: too many or inconsistent material groups (%d/%d, %d)\n", index_base, index_count, primitive_count); goto invalid; }
     if (copy_textures(argv[1], argv[3], textures, texture_count) < 0) goto invalid;
     out = __openat(AT_FDCWD, argv[2], O_WRONLY | O_CREAT | O_TRUNC, 0644); if (out < 0) { __printf("pmx2rmesh: cannot create output\n"); goto invalid; }
-    __memset(header_out, 0, sizeof(header_out)); header_out[0] = 'R'; header_out[1] = 'F'; header_out[2] = 'M'; header_out[3] = '2'; put_u32(header_out + 4, 2); put_u32(header_out + 8, vertex_count); put_u32(header_out + 12, index_count); put_u32(header_out + 16, scale); put_u32(header_out + 44, primitive_count); put_u32(header_out + 48, material_count); put_u32(header_out + 52, 64); put_u32(header_out + 56, 64 + primitive_count * 16);
+    __memset(header_out, 0, sizeof(header_out)); header_out[0] = 'R'; header_out[1] = 'F'; header_out[2] = 'M'; header_out[3] = '2'; put_u32(header_out + 4, 3); put_u32(header_out + 8, vertex_count); put_u32(header_out + 12, index_count); put_u32(header_out + 16, scale); put_u32(header_out + 44, primitive_count); put_u32(header_out + 48, material_count); put_u32(header_out + 52, 64); put_u32(header_out + 56, 64 + primitive_count * 16);
     if (write_all(out, header_out, sizeof(header_out)) < 0) { __close(out); goto invalid; }
     index_base = 0; for (i = 0; i < material_count; i++) if (materials[i].index_count) { __memset(record, 0, sizeof(record)); put_u32(record, index_base); put_u32(record + 4, materials[i].index_count); put_u32(record + 8, i); if (write_all(out, record, sizeof(record)) < 0) { __close(out); goto invalid; } index_base += materials[i].index_count; }
-    for (i = 0; i < material_count; i++) { __memset(record, 0, sizeof(record)); put_u32(record, materials[i].color); put_u16(record + 4, 0); put_u16(record + 6, 65535); put_u32(record + 8, materials[i].texture_index < 0 ? 0xffffffffU : (unsigned int)materials[i].texture_index); if (write_all(out, record, sizeof(record)) < 0) { __close(out); goto invalid; } }
+    for (i = 0; i < material_count; i++) {
+        unsigned int sphere = materials[i].sphere_index < 0 ? 0xffffffffU :
+            ((unsigned int)materials[i].sphere_index & 0xffffU) |
+            (((unsigned int)materials[i].sphere_mode & 3U) << 16);
+        __memset(record, 0, sizeof(record)); put_u32(record, materials[i].color);
+        put_u16(record + 4, 0); put_u16(record + 6, 65535);
+        put_u32(record + 8, materials[i].texture_index < 0 ? 0xffffffffU : (unsigned int)materials[i].texture_index);
+        put_u32(record + 12, sphere);
+        if (write_all(out, record, sizeof(record)) < 0) { __close(out); goto invalid; }
+    }
     c.p = file; c.end = file + size; if (header(&c, &h) < 0 || i32(&c, &j) < 0) { __close(out); goto invalid; }
     for (i = 0; i < vertex_count; i++) { if (read_vertex(&c, &h, &v) < 0 || emit_vertex(out, &v, scale) < 0) { __close(out); goto invalid; } j = fixed(v.x, scale); if (j < min_x) min_x = j; if (j > max_x) max_x = j; j = fixed(v.y, scale); if (j < min_y) min_y = j; if (j > max_y) max_y = j; j = fixed(v.z, scale); if (j < min_z) min_z = j; if (j > max_z) max_z = j; }
     if (i32(&c, &j) < 0) { __close(out); goto invalid; }

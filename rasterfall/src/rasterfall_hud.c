@@ -813,22 +813,22 @@ void rasterfall_hud_draw_interact_prompt(struct toy_renderer *renderer,
                    label, RF_COLOR_UI_ACCENT, renderer->surface.stride);
 }
 
-void rasterfall_hud_dump_frame(const char *path, const struct toy_surface *surface)
+int rasterfall_hud_dump_frame(const char *path, const struct toy_surface *surface)
 {
     char header[48];
     unsigned char *rgb;
     int hlen, fd, i;
     if (!surface || !surface->pixels || surface->width <= 0 || surface->height <= 0)
-        return;
+        return -1;
     hlen = snprintf(header, sizeof(header), "P6\n%d %d\n255\n",
                     surface->width, surface->height);
     rgb = tlibc_malloc((size_t)surface->width * surface->height * 3);
-    if (!rgb) return;
+    if (!rgb) return -1;
     for (i = 0; i < surface->width * surface->height; i++) {
         uint32_t p = ((uint32_t *)surface->pixels)[i];
-        rgb[i * 3 + 0] = (unsigned char)(p & 0xFF);
+        rgb[i * 3 + 0] = (unsigned char)((p >> 16) & 0xFF);
         rgb[i * 3 + 1] = (unsigned char)((p >> 8) & 0xFF);
-        rgb[i * 3 + 2] = (unsigned char)((p >> 16) & 0xFF);
+        rgb[i * 3 + 2] = (unsigned char)(p & 0xFF);
     }
     fd = __creat(path, 0644);
     if (fd >= 0) {
@@ -836,8 +836,73 @@ void rasterfall_hud_dump_frame(const char *path, const struct toy_surface *surfa
         __write(fd, rgb, surface->width * surface->height * 3);
         __close(fd);
         __printf("rasterfall: dumped frame to %s\n", path);
+    } else {
+        tlibc_free(rgb);
+        return -1;
     }
     tlibc_free(rgb);
+    return 0;
+}
+
+static void dump_put_u16(unsigned char *p, unsigned int value)
+{
+    p[0] = (unsigned char)value;
+    p[1] = (unsigned char)(value >> 8);
+}
+
+static void dump_put_u32(unsigned char *p, unsigned int value)
+{
+    p[0] = (unsigned char)value;
+    p[1] = (unsigned char)(value >> 8);
+    p[2] = (unsigned char)(value >> 16);
+    p[3] = (unsigned char)(value >> 24);
+}
+
+int rasterfall_hud_dump_bmp(const char *path, const struct toy_surface *surface)
+{
+    unsigned char header[54];
+    unsigned char *data;
+    unsigned int row_bytes, data_size;
+    int fd, x, y;
+    if (!surface || !surface->pixels || surface->width <= 0 ||
+        surface->height <= 0) return -1;
+    row_bytes = ((unsigned int)surface->width * 3U + 3U) & ~3U;
+    if (row_bytes > 0xffffffffU / (unsigned int)surface->height) return -1;
+    data_size = row_bytes * (unsigned int)surface->height;
+    data = tlibc_malloc(data_size);
+    if (!data) return -1;
+    memset(data, 0, data_size);
+    for (y = 0; y < surface->height; y++) {
+        unsigned char *out = data + (surface->height - 1 - y) * row_bytes;
+        const uint32_t *in = (const uint32_t *)((const unsigned char *)surface->pixels +
+                                                y * surface->stride);
+        for (x = 0; x < surface->width; x++) {
+            out[x * 3 + 0] = (unsigned char)(in[x] & 0xff);
+            out[x * 3 + 1] = (unsigned char)((in[x] >> 8) & 0xff);
+            out[x * 3 + 2] = (unsigned char)((in[x] >> 16) & 0xff);
+        }
+    }
+    memset(header, 0, sizeof(header));
+    header[0] = 'B'; header[1] = 'M';
+    dump_put_u32(header + 2, 54U + data_size);
+    dump_put_u32(header + 10, 54);
+    dump_put_u32(header + 14, 40);
+    dump_put_u32(header + 18, (unsigned int)surface->width);
+    dump_put_u32(header + 22, (unsigned int)surface->height);
+    dump_put_u16(header + 26, 1);
+    dump_put_u16(header + 28, 24);
+    dump_put_u32(header + 34, data_size);
+    fd = __creat(path, 0644);
+    if (fd < 0 || __write(fd, header, sizeof(header)) != (int)sizeof(header) ||
+        __write(fd, data, data_size) != (int)data_size) {
+        if (fd >= 0) __close(fd);
+        tlibc_free(data);
+        return -1;
+    }
+    __close(fd);
+    tlibc_free(data);
+    __printf("rasterfall: dumped model view to %s\n", path);
+    return 0;
 }
 
 void rasterfall_hud_damage_flash(struct toy_surface *surface,

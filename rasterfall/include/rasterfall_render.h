@@ -6,6 +6,7 @@
 #include "rasterfall_session.h"
 #include "rasterfall_effects.h"
 #include "rasterfall_net.h"
+#include "rasterfall_model.h"
 
 #define RASTERFALL_BAKED_LM_W 32
 #define RASTERFALL_BAKED_LM_H 24
@@ -25,6 +26,10 @@ struct rasterfall_render_context {
 void rasterfall_render_bind(struct rasterfall_render_context *ctx);
 void rasterfall_render_bake_lightmap(void);
 void rasterfall_render_set_coordinate_axes(int enabled);
+int rasterfall_render_model_preview(struct toy_renderer *renderer,
+                                    const struct camera *camera,
+                                    const struct rasterfall_model_asset *model,
+                                    int use_sphere);
 
 int rasterfall_render_scene(struct toy_renderer *renderer,
                             const struct camera *camera);
