@@ -40,6 +40,7 @@
  *                                   固定视角模型功能与 worker 负载基准
  *   --model-humanoid <model>        输出通用 Humanoid 骨骼映射诊断
  *   --model-humanoid-basis <model>  输出 canonical rest basis
+ *   --model-retarget-test <model> <right-arm|left-arm|right-leg|chest>
  *   --frames <count>               运行指定帧数后退出
  *   --input-test                   输入调试测试
  *   --logic-test / --net-test      运行逻辑测试
@@ -65,6 +66,7 @@
 #include "rasterfall_render.h"
 #include "rasterfall_session.h"
 #include "rasterfall_net.h"
+#include "rasterfall_humanoid_retarget.h"
 #include "math.h"
 
 #define KEY_ESC   1
@@ -2187,6 +2189,8 @@ int main(int argc, char **argv)
     const char *bone_search = 0;
     const char *humanoid_model_path = 0;
     const char *humanoid_basis_model_path = 0;
+    const char *retarget_model_path = 0;
+    const char *retarget_action = 0;
     int performance_iterations = 5;
     int performance_workers = 0;
     for (int arg = 1; arg < argc; arg++) {
@@ -2260,6 +2264,9 @@ int main(int argc, char **argv)
         } else if (strcmp(argv[arg], "--model-humanoid-basis") == 0 &&
                    arg + 1 < argc) {
             humanoid_basis_model_path = argv[++arg];
+        } else if (strcmp(argv[arg], "--model-retarget-test") == 0 &&
+                   arg + 2 < argc) {
+            retarget_model_path = argv[++arg]; retarget_action = argv[++arg];
         } else if (strcmp(argv[arg], "--model-material-regression") == 0 &&
                    arg + 2 < argc) {
             view_model_path = argv[++arg];
@@ -2282,6 +2289,17 @@ int main(int argc, char **argv)
             while (*p >= '0' && *p <= '9')
                 frame_limit = frame_limit * 10 + (*p++ - '0');
         }
+    }
+    if (retarget_model_path) {
+        struct rasterfall_model_asset retarget_model;
+        memset(&retarget_model,0,sizeof(retarget_model));
+        if(rasterfall_model_load(&retarget_model,retarget_model_path)<0){
+            __fprintf(2,"rasterfall: cannot load retarget model %s\n",retarget_model_path);return 1;
+        }
+        if(rasterfall_model_retarget_synthetic_test(&retarget_model,retarget_action)<0){
+            __fprintf(2,"rasterfall: invalid retarget synthetic action %s\n",retarget_action);rasterfall_model_unload(&retarget_model);return 1;
+        }
+        rasterfall_model_unload(&retarget_model);return 0;
     }
     if (humanoid_basis_model_path) {
         struct rasterfall_model_asset basis_model;

@@ -3,6 +3,7 @@
 #include "toy_assets.h"
 #include "rasterfall_model.h"
 #include "math.h"
+#include "rasterfall_humanoid_retarget.h"
 
 static unsigned int model_u32(const unsigned char *p)
 {
@@ -831,6 +832,62 @@ void rasterfall_model_dump_humanoid_bases(const struct rasterfall_model_asset *a
     __printf("humanoid basis: valid=%s anatomy=%s max_error=", rasterfall_humanoid_validate_rest_bases(bases,&error)==0?"yes":"no",
              rasterfall_humanoid_validate_anatomy(bases)==0?"yes":"no");
     model_print_basis_number(error); __printf("\n");
+}
+
+static void model_quat_multiply(const double *a,const double *b,double *out)
+{
+    double q[4];q[0]=a[3]*b[0]+a[0]*b[3]+a[1]*b[2]-a[2]*b[1];
+    q[1]=a[3]*b[1]-a[0]*b[2]+a[1]*b[3]+a[2]*b[0];
+    q[2]=a[3]*b[2]+a[0]*b[1]-a[1]*b[0]+a[2]*b[3];
+    q[3]=a[3]*b[3]-a[0]*b[0]-a[1]*b[1]-a[2]*b[2];memcpy(out,q,sizeof(q));
+}
+static void model_quat_rotate(const double *q,const double *v,double *out)
+{
+    double vector[4]={v[0],v[1],v[2],0},inverse[4]={-q[0],-q[1],-q[2],q[3]},temp[4],result[4];
+    model_quat_multiply(q,vector,temp);model_quat_multiply(temp,inverse,result);
+    out[0]=result[0];out[1]=result[1];out[2]=result[2];
+}
+
+int rasterfall_model_retarget_synthetic_test(
+    const struct rasterfall_model_asset *asset,const char *action)
+{
+    struct rasterfall_humanoid_rest_basis target_basis[RASTERFALL_HUMANOID_BONE_COUNT];
+    struct rasterfall_humanoid_rest_basis source_basis[RASTERFALL_HUMANOID_BONE_COUNT];
+    struct rasterfall_humanoid_rotation_skeleton source,target;
+    struct rasterfall_humanoid_rotation_pose pose;
+    struct rasterfall_humanoid_retarget_result result;
+    struct rasterfall_humanoid_mapping mapping;
+    int bone,degrees,i;double delta[4],new_direction[3];const double *display_direction;
+    if(!strcmp(action,"right-arm")){bone=RASTERFALL_HUMANOID_RIGHT_UPPER_ARM;degrees=-35;}
+    else if(!strcmp(action,"left-arm")){bone=RASTERFALL_HUMANOID_LEFT_UPPER_ARM;degrees=35;}
+    else if(!strcmp(action,"right-leg")){bone=RASTERFALL_HUMANOID_RIGHT_UPPER_LEG;degrees=30;}
+    else if(!strcmp(action,"chest")){bone=RASTERFALL_HUMANOID_CHEST;degrees=30;}
+    else return -1;
+    if(rasterfall_model_build_humanoid_bases(asset,target_basis)<0)return -1;
+    __memset(source_basis,0,sizeof(source_basis));
+    for(i=0;i<RASTERFALL_HUMANOID_BONE_COUNT;i++){
+        source_basis[i].rotation[3]=1.0;source_basis[i].valid=1;
+    }
+    rasterfall_humanoid_rotation_skeleton_identity(&source);
+    rasterfall_humanoid_rotation_skeleton_identity(&target);
+    rasterfall_humanoid_rotation_pose_bind(&source,&pose);
+    rasterfall_humanoid_synthetic_delta(bone,degrees,delta);
+    memcpy(pose.global[bone],delta,sizeof(delta));
+    if(rasterfall_humanoid_retarget_rotations(&source,&pose,source_basis,
+                                               &target,target_basis,&result)<0)return -1;
+    display_direction=bone==RASTERFALL_HUMANOID_CHEST?target_basis[bone].secondary:target_basis[bone].primary;
+    model_quat_rotate(result.global_rotation[bone],display_direction,new_direction);
+    rasterfall_humanoid_map_eula(asset,&mapping);
+    __printf("retarget synthetic: action=%s semantic=%s target=%s/index%d degrees=%d canonical_axis=%s\n",
+             action,humanoid_names[bone],asset->bones[mapping.bone_indices[bone]].name,
+             mapping.bone_indices[bone],degrees,
+             bone==RASTERFALL_HUMANOID_CHEST?"primary":
+             bone==RASTERFALL_HUMANOID_RIGHT_UPPER_LEG?"third":"secondary");
+    __printf("  source canonical delta=(");for(i=0;i<4;i++){if(i)__printf(",");model_print_basis_number(delta[i]);}
+    __printf(")\n  target local quaternion=(");for(i=0;i<4;i++){if(i)__printf(",");model_print_basis_number(result.local_rotation[bone][i]);}
+    __printf(")\n  target bind %s=(",bone==RASTERFALL_HUMANOID_CHEST?"secondary":"primary");for(i=0;i<3;i++){if(i)__printf(",");model_print_basis_number(display_direction[i]);}
+    __printf(") resulting global %s=(",bone==RASTERFALL_HUMANOID_CHEST?"secondary":"primary");for(i=0;i<3;i++){if(i)__printf(",");model_print_basis_number(new_direction[i]);}
+    __printf(") normalized=yes\n");return 0;
 }
 
 int rasterfall_model_skinning_logic_test(void)

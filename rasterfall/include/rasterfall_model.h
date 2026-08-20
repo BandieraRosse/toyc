@@ -156,6 +156,8 @@ int rasterfall_model_build_humanoid_bases(
     struct rasterfall_humanoid_rest_basis *bases);
 void rasterfall_model_dump_humanoid_bases(
     const struct rasterfall_model_asset *asset);
+int rasterfall_model_retarget_synthetic_test(
+    const struct rasterfall_model_asset *asset, const char *action);
 int rasterfall_humanoid_logic_test(void);
 int rasterfall_model_skinning_logic_test(void);
 
