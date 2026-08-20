@@ -34,6 +34,14 @@ struct vec3 { int x, y, z; };
 struct box { int minx, maxx, minz, maxz, height; uint32_t color; };
 
 static struct rasterfall_render_context *render_ctx;
+static struct rasterfall_model_setup_timing model_setup_timing;
+
+static long render_monotonic_us(void)
+{
+    struct timespec now;
+    if (__clock_gettime(CLOCK_MONOTONIC, &now) < 0) return 0;
+    return now.tv_sec * 1000000L + now.tv_nsec / 1000;
+}
 static struct rasterfall_session *active_session;
 static struct rasterfall_effects *active_effects;
 static const struct rasterfall_net *active_net;
@@ -396,6 +404,8 @@ static int render_gallery_model(struct toy_renderer *renderer,
                                 int center_x, int base_y, int center_z,
                                 int scale)
 {
+    long render_start = render_monotonic_us();
+    long phase_start;
     int drawn = 0, i;
     int command_overflow_before = renderer->cmd_overflow;
     const struct toy_texture_view *previous_texture = active_texture_view;
@@ -411,9 +421,11 @@ static int render_gallery_model(struct toy_renderer *renderer,
     int previous_material_specular_power = active_material_specular_power;
     int previous_material_specular_level = active_material_specular_level;
     int shared_texture = gallery_model_has_texture(model);
+    phase_start = render_monotonic_us();
     if (prepare_gallery_vertex_cache(model, camera, center_x, base_y,
                                      center_z, scale) < 0)
         return 0;
+    model_setup_timing.vertex_cache_us += render_monotonic_us() - phase_start;
     active_sphere_texture = 0;
     active_sphere_mode = 0;
     active_toon_texture = 0;
@@ -421,6 +433,8 @@ static int render_gallery_model(struct toy_renderer *renderer,
     if (shared_texture)
         active_texture_view = active_model_texture;
     for (i = 0; i < (int)model->primitive_count; i++) {
+        long material_start = render_monotonic_us();
+        long edge_us = 0, body_us;
         const unsigned char *primitive = model->primitives + i * RASTERFALL_MODEL_PRIMITIVE_BYTES;
         const unsigned char *indices = model->indices + model_u32(primitive) * 4;
         unsigned int index_count = model_u32(primitive + 4);
@@ -454,6 +468,7 @@ static int render_gallery_model(struct toy_renderer *renderer,
                          model_u32(model->materials + material * model->material_bytes) :
                          RF_COLOR_UI_TEXT_MUTED;
         unsigned int j;
+        phase_start = render_monotonic_us();
         if (!active_disable_edge && material < model->material_count &&
             model->format_version >= 8) {
             const unsigned char *material_data = model->materials +
@@ -498,6 +513,8 @@ static int render_gallery_model(struct toy_renderer *renderer,
                 toy_renderer_set_recording_edge(renderer, 0);
             }
         }
+        edge_us = render_monotonic_us() - phase_start;
+        model_setup_timing.edge_triangles_us += edge_us;
         active_model_triangle_stats = collect_model_render_stats ?
             &model_render_stats.body : 0;
         if (material < model->material_count && model->texture_assets) {
@@ -535,6 +552,7 @@ static int render_gallery_model(struct toy_renderer *renderer,
             }
         }
         if (!texture && shared_texture) active_texture_view = active_model_texture;
+        phase_start = render_monotonic_us();
         for (j = 0; j + 2 < index_count; j += 3) {
             unsigned int ia = model_u32(indices + j * 4);
             unsigned int ib = model_u32(indices + (j + 1) * 4);
@@ -588,6 +606,10 @@ static int render_gallery_model(struct toy_renderer *renderer,
                     &gallery_vertex_cache[ic].view, color);
             }
         }
+        body_us = render_monotonic_us() - phase_start;
+        model_setup_timing.body_triangles_us += body_us;
+        model_setup_timing.material_us += render_monotonic_us() -
+            material_start - edge_us - body_us;
     }
     active_texture_view = previous_texture;
     active_sphere_texture = previous_sphere;
@@ -605,6 +627,7 @@ static int render_gallery_model(struct toy_renderer *renderer,
     if (collect_model_render_stats)
         model_render_stats.command_overflow += renderer->cmd_overflow -
                                                command_overflow_before;
+    model_setup_timing.total_us += render_monotonic_us() - render_start;
     return drawn;
 }
 
@@ -624,6 +647,7 @@ int rasterfall_render_model_preview(struct toy_renderer *renderer,
     if (depth > size) size = depth;
     if (size <= 0) return -1;
     __memset(&model_render_stats, 0, sizeof(model_render_stats));
+    __memset(&model_setup_timing, 0, sizeof(model_setup_timing));
     collect_model_render_stats = 1;
 
     /* Fit every model into the same 900-unit inspection volume and center
@@ -653,6 +677,12 @@ int rasterfall_render_model_preview(struct toy_renderer *renderer,
 void rasterfall_render_model_stats(struct rasterfall_model_render_stats *out)
 {
     if (out) memcpy(out, &model_render_stats, sizeof(*out));
+}
+
+void rasterfall_render_model_setup_timing(
+    struct rasterfall_model_setup_timing *out)
+{
+    if (out) memcpy(out, &model_setup_timing, sizeof(*out));
 }
 
 /* Static developer display: nine models per row, in front of the north

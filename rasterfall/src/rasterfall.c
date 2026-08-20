@@ -1696,6 +1696,20 @@ struct model_performance_result {
     unsigned long worker_texture_pixels[8];
     unsigned long alpha_blended_pixels;
     unsigned long alpha_zero_pixels;
+    unsigned long depth_divisions;
+    unsigned long base_perspective_divisions;
+    unsigned long sphere_perspective_divisions;
+    unsigned long texture_address_divisions;
+    unsigned long material_color_divisions;
+    unsigned long alpha_divisions;
+    unsigned long blend_divisions;
+    unsigned long material_path_pixels[4];
+    unsigned long material_path_divisions[4];
+    long setup_model_total_us;
+    long setup_vertex_cache_us;
+    long setup_material_us;
+    long setup_body_triangles_us;
+    long setup_edge_triangles_us;
     long worker_wait_us;
     int worker_count;
     int frames;
@@ -1769,6 +1783,7 @@ static int benchmark_model_features(const char *model_path, int iterations,
         for (step = 0; step < 10; step++) {
             configuration = iteration & 1 ? 9 - step : step;
             for (view = 0; view < 3; view++) {
+                struct rasterfall_model_setup_timing setup_timing;
                 int64_t start = monotonic_us();
                 int64_t after_begin, after_setup, after_flush;
                 if (toy_renderer_begin(&renderer, &surface, 0x30343B) < 0)
@@ -1782,11 +1797,24 @@ static int benchmark_model_features(const char *model_path, int iterations,
                         edge[configuration], lighting[configuration]) < 0)
                     goto fail;
                 after_setup = monotonic_us();
+                memset(&setup_timing, 0, sizeof(setup_timing));
+                if (model_enabled[configuration])
+                    rasterfall_render_model_setup_timing(&setup_timing);
                 toy_renderer_flush(&renderer);
                 after_flush = monotonic_us();
                 results[configuration].wall_us += after_flush - start;
                 results[configuration].begin_us += after_begin - start;
                 results[configuration].setup_us += after_setup - after_begin;
+                results[configuration].setup_model_total_us +=
+                    setup_timing.total_us;
+                results[configuration].setup_vertex_cache_us +=
+                    setup_timing.vertex_cache_us;
+                results[configuration].setup_material_us +=
+                    setup_timing.material_us;
+                results[configuration].setup_body_triangles_us +=
+                    setup_timing.body_triangles_us;
+                results[configuration].setup_edge_triangles_us +=
+                    setup_timing.edge_triangles_us;
                 results[configuration].flush_us += after_flush - after_setup;
                 results[configuration].sort_us += renderer.last_sort_us;
                 results[configuration].classify_us +=
@@ -1833,6 +1861,26 @@ static int benchmark_model_features(const char *model_path, int iterations,
                         w->alpha_blended_pixels;
                     results[configuration].alpha_zero_pixels +=
                         w->alpha_zero_pixels;
+                    results[configuration].depth_divisions +=
+                        w->depth_divisions;
+                    results[configuration].base_perspective_divisions +=
+                        w->base_perspective_divisions;
+                    results[configuration].sphere_perspective_divisions +=
+                        w->sphere_perspective_divisions;
+                    results[configuration].texture_address_divisions +=
+                        w->texture_address_divisions;
+                    results[configuration].material_color_divisions +=
+                        w->material_color_divisions;
+                    results[configuration].alpha_divisions +=
+                        w->alpha_divisions;
+                    results[configuration].blend_divisions +=
+                        w->blend_divisions;
+                    for (int path = 0; path < 4; path++) {
+                        results[configuration].material_path_pixels[path] +=
+                            w->material_path_pixels[path];
+                        results[configuration].material_path_divisions[path] +=
+                            w->material_path_divisions[path];
+                    }
                 }
                 results[configuration].frames++;
             }
@@ -1917,6 +1965,52 @@ static int benchmark_model_features(const char *model_path, int iterations,
                      r->worker_written_pixels[worker] / (unsigned long)frames,
                      r->worker_flat_pixels[worker] / (unsigned long)frames,
                      r->worker_texture_pixels[worker] / (unsigned long)frames);
+        if (configuration == 0 || configuration == 3) {
+            unsigned long total_divisions = r->depth_divisions;
+            for (int path = 0; path < 4; path++)
+                total_divisions += r->material_path_divisions[path];
+            __printf("rasterfall: model divisions mode=%s depth_per_frame=%lu total_per_frame=%lu base_pixels=%lu base_divisions_per_pixel=%lu toon_pixels=%lu toon_divisions_per_pixel=%lu sphere_pixels=%lu sphere_divisions_per_pixel=%lu toon_sphere_pixels=%lu toon_sphere_divisions_per_pixel=%lu\n",
+                     names[configuration],
+                     r->depth_divisions / (unsigned long)frames,
+                     total_divisions / (unsigned long)frames,
+                     r->material_path_pixels[0] / (unsigned long)frames,
+                     r->material_path_pixels[0] ?
+                        r->material_path_divisions[0] /
+                        r->material_path_pixels[0] : 0,
+                     r->material_path_pixels[1] / (unsigned long)frames,
+                     r->material_path_pixels[1] ?
+                        r->material_path_divisions[1] /
+                        r->material_path_pixels[1] : 0,
+                     r->material_path_pixels[2] / (unsigned long)frames,
+                     r->material_path_pixels[2] ?
+                        r->material_path_divisions[2] /
+                        r->material_path_pixels[2] : 0,
+                     r->material_path_pixels[3] / (unsigned long)frames,
+                     r->material_path_pixels[3] ?
+                        r->material_path_divisions[3] /
+                        r->material_path_pixels[3] : 0);
+            __printf("rasterfall: model division kinds mode=%s depth=%lu base_perspective=%lu sphere_perspective=%lu texture_address=%lu material_color=%lu alpha=%lu blend=%lu per_frame=yes\n",
+                     names[configuration],
+                     r->depth_divisions / (unsigned long)frames,
+                     r->base_perspective_divisions / (unsigned long)frames,
+                     r->sphere_perspective_divisions / (unsigned long)frames,
+                     r->texture_address_divisions / (unsigned long)frames,
+                     r->material_color_divisions / (unsigned long)frames,
+                     r->alpha_divisions / (unsigned long)frames,
+                     r->blend_divisions / (unsigned long)frames);
+        }
+        if (configuration == 0) {
+            long accounted = r->setup_vertex_cache_us + r->setup_material_us +
+                r->setup_body_triangles_us + r->setup_edge_triangles_us;
+            __printf("rasterfall: model setup mode=full model_total_us_per_frame=%ld vertex_cache_us_per_frame=%ld material_us_per_frame=%ld body_triangle_pipeline_us_per_frame=%ld edge_triangle_pipeline_us_per_frame=%ld model_unaccounted_us_per_frame=%ld outer_setup_us_per_frame=%ld\n",
+                     r->setup_model_total_us / frames,
+                     r->setup_vertex_cache_us / frames,
+                     r->setup_material_us / frames,
+                     r->setup_body_triangles_us / frames,
+                     r->setup_edge_triangles_us / frames,
+                     (r->setup_model_total_us - accounted) / frames,
+                     (long)(r->setup_us / frames));
+        }
     }
     toy_renderer_destroy(&renderer);
     tlibc_free(pixels);

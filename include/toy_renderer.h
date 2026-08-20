@@ -52,6 +52,11 @@ struct toy_raster_cmd {
     int blend_mode;
     int toon_shared;
     int toon_level;
+    int has_toon;
+    uint32_t toon_multiplier;
+    int material_features;
+    int base_texture_valid;
+    int sphere_texture_valid;
     int material_alpha;
     uint32_t material_ambient;
     uint32_t material_specular;
@@ -85,6 +90,15 @@ struct toy_render_worker {
     unsigned long flat_pixels;
     unsigned long alpha_blended_pixels;
     unsigned long alpha_zero_pixels;
+    unsigned long depth_divisions;
+    unsigned long base_perspective_divisions;
+    unsigned long sphere_perspective_divisions;
+    unsigned long texture_address_divisions;
+    unsigned long material_color_divisions;
+    unsigned long alpha_divisions;
+    unsigned long blend_divisions;
+    unsigned long material_path_pixels[4];
+    unsigned long material_path_divisions[4];
     /* 逐像素漏斗与路径统计（job 开始清零，主线程 flush 后汇总） */
     unsigned long bbox_px;    /* 包围盒内实际扫描像素（逐条带精确） */
     unsigned long inside_px;  /* 通过边函数覆盖测试的像素 */
@@ -140,6 +154,11 @@ struct toy_renderer {
     int requested_worker_count;
     int detected_cpu_count;
     int texture_diagnostic_flags;
+    const struct toy_texture_view *toon_cache_texture;
+    int toon_cache_shared;
+    int toon_cache_level;
+    int toon_cache_valid;
+    uint32_t toon_cache_multiplier;
     /* 并行光栅化线程池 */
     struct toy_render_worker *workers;
     int worker_count;

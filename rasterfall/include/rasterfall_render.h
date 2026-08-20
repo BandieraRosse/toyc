@@ -38,6 +38,14 @@ struct rasterfall_model_render_stats {
     int command_overflow;
 };
 
+struct rasterfall_model_setup_timing {
+    long total_us;
+    long vertex_cache_us;
+    long material_us;
+    long body_triangles_us;
+    long edge_triangles_us;
+};
+
 void rasterfall_render_bind(struct rasterfall_render_context *ctx);
 void rasterfall_render_bake_lightmap(void);
 void rasterfall_render_set_coordinate_axes(int enabled);
@@ -47,6 +55,8 @@ int rasterfall_render_model_preview(struct toy_renderer *renderer,
                                     int use_sphere, int use_toon, int use_edge,
                                     int use_material_light);
 void rasterfall_render_model_stats(struct rasterfall_model_render_stats *out);
+void rasterfall_render_model_setup_timing(
+    struct rasterfall_model_setup_timing *out);
 int rasterfall_render_near_clip_test(void);
 
 int rasterfall_render_scene(struct toy_renderer *renderer,

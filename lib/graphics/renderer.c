@@ -29,6 +29,16 @@
 #define TOY_RENDER_CMD_MAX 65536
 #define TOY_FUTEX_WAIT 0
 #define TOY_FUTEX_WAKE 1
+#define TOY_MATERIAL_TOON   1
+#define TOY_MATERIAL_SPHERE 2
+
+struct toy_raster_sampler {
+    const unsigned char *data;
+    uint32_t width;
+    uint32_t height;
+    uint32_t channels;
+    int valid;
+};
 
 static long long edge(const struct toy_screen_vertex *a,
                  const struct toy_screen_vertex *b, int px, int py)
@@ -216,6 +226,47 @@ static uint32_t texture_sample_simple(const struct toy_texture_view *t,
            ((uint32_t)p[0] << 16) | ((uint32_t)p[1] << 8) | p[2];
 }
 
+static void prepare_sampler(struct toy_raster_sampler *out,
+                            const struct toy_texture_view *texture,
+                            int valid)
+{
+    out->data = texture ? texture->data : 0;
+    out->width = texture ? texture->width : 0;
+    out->height = texture ? texture->height : 0;
+    out->channels = texture && texture->channels ? texture->channels : 3;
+    out->valid = valid;
+}
+
+static uint32_t texture_sample_prepared(const struct toy_raster_sampler *s,
+                                        long u, long v, int repeat,
+                                        uint32_t fallback,
+                                        int *used_fallback)
+{
+    long x, y, at;
+    const unsigned char *p;
+    if (!s->valid) {
+        long cx = (u / TOY_UV_ONE) & 1;
+        long cy = (v / TOY_UV_ONE) & 1;
+        *used_fallback = 1;
+        return (cx ^ cy) ? 0xFFFF00FFU : fallback;
+    }
+    if (repeat) {
+        u &= TOY_UV_ONE - 1;
+        v &= TOY_UV_ONE - 1;
+    } else {
+        if (u < 0) u = 0;
+        if (v < 0) v = 0;
+        if (u >= TOY_UV_ONE) u = TOY_UV_ONE - 1;
+        if (v >= TOY_UV_ONE) v = TOY_UV_ONE - 1;
+    }
+    x = (u * s->width) / TOY_UV_ONE;
+    y = (v * s->height) / TOY_UV_ONE;
+    at = (y * s->width + x) * s->channels;
+    p = s->data + at;
+    return (s->channels == 4 ? (uint32_t)p[3] << 24 : 0xFF000000U) |
+           ((uint32_t)p[0] << 16) | ((uint32_t)p[1] << 8) | p[2];
+}
+
 static uint32_t shade_color(uint32_t color, int light, int fog)
 {
     int r = (int)((color >> 16) & 255), g = (int)((color >> 8) & 255);
@@ -249,8 +300,9 @@ static long raster_tex(struct toy_renderer *renderer,
                        const struct toy_texture_view *texture,
                        const struct toy_texture_view *texture2,
                        int blend_mode,
-                       const struct toy_texture_view *texture3,
-                       int toon_shared, int toon_level,
+                       int has_toon, uint32_t toon_multiplier,
+                       int material_features,
+                       int base_texture_valid, int sphere_texture_valid,
                        int material_alpha,
                        uint32_t material_ambient,
                        uint32_t material_specular,
@@ -265,6 +317,11 @@ static long raster_tex(struct toy_renderer *renderer,
     int width = surface->width;
     int y, x, drawn = 0;
     int diagnostic = renderer->texture_diagnostic_flags;
+    int has_sphere = (material_features & TOY_MATERIAL_SPHERE) != 0;
+    struct toy_raster_sampler base_sampler, sphere_sampler;
+    prepare_sampler(&base_sampler, texture, base_texture_valid);
+    prepare_sampler(&sphere_sampler, has_sphere ? texture2 : 0,
+                    sphere_texture_valid);
     unsigned long inside = 0;
     /* 与 raster_flat 相同的增量边函数（行首边值按行增量更新）。 */
     long dEx0 = c->y - b->y, dEx1 = a->y - c->y, dEx2 = b->y - a->y;
@@ -285,10 +342,10 @@ static long raster_tex(struct toy_renderer *renderer,
         affine_v_row = (long)(((long long)w0 * a->v +
                                (long long)w1 * b->v +
                                (long long)w2 * c->v) / area);
-        affine_u2_row = (long)(((long long)w0 * a->u2 +
+        if (has_sphere) affine_u2_row = (long)(((long long)w0 * a->u2 +
                                 (long long)w1 * b->u2 +
                                 (long long)w2 * c->u2) / area);
-        affine_v2_row = (long)(((long long)w0 * a->v2 +
+        if (has_sphere) affine_v2_row = (long)(((long long)w0 * a->v2 +
                                 (long long)w1 * b->v2 +
                                 (long long)w2 * c->v2) / area);
         affine_du_dx = (long)(((long long)dEx0 * a->u +
@@ -297,10 +354,10 @@ static long raster_tex(struct toy_renderer *renderer,
         affine_dv_dx = (long)(((long long)dEx0 * a->v +
                                (long long)dEx1 * b->v +
                                (long long)dEx2 * c->v) / area);
-        affine_du2_dx = (long)(((long long)dEx0 * a->u2 +
+        if (has_sphere) affine_du2_dx = (long)(((long long)dEx0 * a->u2 +
                                 (long long)dEx1 * b->u2 +
                                 (long long)dEx2 * c->u2) / area);
-        affine_dv2_dx = (long)(((long long)dEx0 * a->v2 +
+        if (has_sphere) affine_dv2_dx = (long)(((long long)dEx0 * a->v2 +
                                 (long long)dEx1 * b->v2 +
                                 (long long)dEx2 * c->v2) / area);
         affine_du_dy = (long)(((long long)dEy0 * a->u +
@@ -309,10 +366,10 @@ static long raster_tex(struct toy_renderer *renderer,
         affine_dv_dy = (long)(((long long)dEy0 * a->v +
                                (long long)dEy1 * b->v +
                                (long long)dEy2 * c->v) / area);
-        affine_du2_dy = (long)(((long long)dEy0 * a->u2 +
+        if (has_sphere) affine_du2_dy = (long)(((long long)dEy0 * a->u2 +
                                 (long long)dEy1 * b->u2 +
                                 (long long)dEy2 * c->u2) / area);
-        affine_dv2_dy = (long)(((long long)dEy0 * a->v2 +
+        if (has_sphere) affine_dv2_dy = (long)(((long long)dEy0 * a->v2 +
                                 (long long)dEy1 * b->v2 +
                                 (long long)dEy2 * c->v2) / area);
     }
@@ -326,6 +383,7 @@ static long raster_tex(struct toy_renderer *renderer,
         for (x = minx; x <= maxx; x++) {
             if (e0 <= 0 && e1 <= 0 && e2 <= 0) {
                 inside++;
+                worker->depth_divisions++;
                 /* 与 flat 路径相同的逆深度比较（透视校正，无仿射误差）；
                  * inv 未归一化仅用于 UV 比值，深度用归一化后的 inv_norm
                  * 避免大三角形加权和溢出 int 截断。 */
@@ -336,7 +394,11 @@ static long raster_tex(struct toy_renderer *renderer,
                 int at = base + x;
                 /* 与 flat 路径相同：平局（≥）判给后画者。 */
                 if (inv_norm >= depth[at]) {
+                    int path = material_features &
+                               (TOY_MATERIAL_TOON | TOY_MATERIAL_SPHERE);
+                    unsigned long pixel_divisions = 0;
                     worker->depth_pass_px++;
+                    worker->material_path_pixels[path]++;
                     long long uoz = 0, voz = 0, u2oz = 0, v2oz = 0;
                     if (!(diagnostic & TOY_RENDER_DIAG_AFFINE_UV)) {
                         uoz = (long long)e0 * a->u_over_z +
@@ -345,40 +407,59 @@ static long raster_tex(struct toy_renderer *renderer,
                         voz = (long long)e0 * a->v_over_z +
                               (long long)e1 * b->v_over_z +
                               (long long)e2 * c->v_over_z;
-                        u2oz = (long long)e0 * a->u2_over_z +
-                               (long long)e1 * b->u2_over_z +
-                               (long long)e2 * c->u2_over_z;
-                        v2oz = (long long)e0 * a->v2_over_z +
-                               (long long)e1 * b->v2_over_z +
-                               (long long)e2 * c->v2_over_z;
+                        if (has_sphere) {
+                            u2oz = (long long)e0 * a->u2_over_z +
+                                   (long long)e1 * b->u2_over_z +
+                                   (long long)e2 * c->u2_over_z;
+                            v2oz = (long long)e0 * a->v2_over_z +
+                                   (long long)e1 * b->v2_over_z +
+                                   (long long)e2 * c->v2_over_z;
+                        }
                     }
                     int used_fallback = 0;
                     long u = diagnostic & TOY_RENDER_DIAG_AFFINE_UV ?
                              affine_u : inv64 ? (long)(uoz / inv64) : 0;
                     long v = diagnostic & TOY_RENDER_DIAG_AFFINE_UV ?
                              affine_v : inv64 ? (long)(voz / inv64) : 0;
+                    if (!(diagnostic & TOY_RENDER_DIAG_AFFINE_UV))
+                    {
+                        pixel_divisions += 2;
+                        worker->base_perspective_divisions += 2;
+                    }
+                    pixel_divisions += 2; /* base Q16 address conversion */
+                    worker->texture_address_divisions += 2;
                     uint32_t color;
                     if ((diagnostic & TOY_RENDER_DIAG_SIMPLE_ADDRESS) &&
                         texture_valid(texture))
                         color = texture_sample_simple(texture, u, v, repeat);
                     else
-                        color = texture_sample(texture, u, v, repeat,
-                                               fallback_color, &used_fallback);
-                    if (texture2) {
+                        color = texture_sample_prepared(
+                            &base_sampler, u, v, repeat, fallback_color,
+                            &used_fallback);
+                    if (has_sphere) {
                         int sphere_fallback = 0;
                         long u2, v2;
                         u2 = diagnostic & TOY_RENDER_DIAG_AFFINE_UV ?
                              affine_u2 : inv64 ? (long)(u2oz / inv64) : 0;
                         v2 = diagnostic & TOY_RENDER_DIAG_AFFINE_UV ?
                              affine_v2 : inv64 ? (long)(v2oz / inv64) : 0;
-                        uint32_t sphere = texture_sample(texture2, u2, v2,
-                                                          repeat, 0xffffffffU,
-                                                          &sphere_fallback);
+                        if (!(diagnostic & TOY_RENDER_DIAG_AFFINE_UV))
+                        {
+                            pixel_divisions += 2;
+                            worker->sphere_perspective_divisions += 2;
+                        }
+                        pixel_divisions += 2; /* sphere address conversion */
+                        worker->texture_address_divisions += 2;
+                        uint32_t sphere = texture_sample_prepared(
+                            &sphere_sampler, u2, v2, repeat, 0xffffffffU,
+                            &sphere_fallback);
                         int r = (color >> 16) & 255, g = (color >> 8) & 255, b = color & 255;
                         int sr = (sphere >> 16) & 255, sg = (sphere >> 8) & 255, sb = sphere & 255;
                         if (blend_mode == 2) {
                             r += sr; g += sg; b += sb;
                         } else {
+                            pixel_divisions += 3;
+                            worker->material_color_divisions += 3;
                             /* PMX mode 1 is multiplicative.  Mode 2 is an
                              * additive sphere map, handled above. */
                             r = r * sr / 255; g = g * sg / 255; b = b * sb / 255;
@@ -392,22 +473,12 @@ static long raster_tex(struct toy_renderer *renderer,
                         color = (color & 0xff000000U) | (uint32_t)r << 16 |
                                 (uint32_t)g << 8 | (uint32_t)b;
                     }
-                    if (texture3 || toon_shared >= 0) {
-                        int tr, tg, tb;
-                        if (toon_level < 0) toon_level = 0;
-                        if (toon_level > 255) toon_level = 255;
-                        if (texture3) {
-                            int toon_fallback = 0;
-                            uint32_t toon = texture_sample(
-                                texture3, 32768, (255 - toon_level) * 257L,
-                                0, 0xffffffffU, &toon_fallback);
-                            tr = (toon >> 16) & 255;
-                            tg = (toon >> 8) & 255;
-                            tb = toon & 255;
-                        } else {
-                            int dark = 150 + (toon_shared & 7) * 6;
-                            tr = tg = tb = toon_level >= 144 ? 255 : dark;
-                        }
+                    if (has_toon) {
+                        pixel_divisions += 3;
+                        worker->material_color_divisions += 3;
+                        int tr = (toon_multiplier >> 16) & 255;
+                        int tg = (toon_multiplier >> 8) & 255;
+                        int tb = toon_multiplier & 255;
                         color = (color & 0xff000000U) |
                             (uint32_t)(((color >> 16) & 255) * tr / 255) << 16 |
                             (uint32_t)(((color >> 8) & 255) * tg / 255) << 8 |
@@ -417,11 +488,22 @@ static long raster_tex(struct toy_renderer *renderer,
                         (e0 * a->light + e1 * b->light + e2 * c->light) / area;
                     long fog = fog_factor >= 0 ? fog_factor :
                         (e0 * a->fog + e1 * b->fog + e2 * c->fog) / area;
+                    if (light_factor < 0) pixel_divisions++;
+                    if (fog_factor < 0) pixel_divisions++;
+                    if (light_factor < 0) worker->material_color_divisions++;
+                    if (fog_factor < 0) worker->material_color_divisions++;
                     {
                     int alpha = diagnostic & TOY_RENDER_DIAG_FORCE_OPAQUE ?
                                 255 :
                                 (int)(color >> 24) * material_alpha / 255;
+                    if (!(diagnostic & TOY_RENDER_DIAG_FORCE_OPAQUE))
+                    {
+                        pixel_divisions++;
+                        worker->alpha_divisions++;
+                    }
                     if (alpha > 0) {
+                        pixel_divisions += 12; /* material 6 + light/fog 6 */
+                        worker->material_color_divisions += 12;
                         worker->shaded_px++;
                         {
                             int r = (color >> 16) & 255;
@@ -443,6 +525,8 @@ static long raster_tex(struct toy_renderer *renderer,
                             depth[at] = (int)inv_norm;
                             row[x] = color;
                         } else {
+                            pixel_divisions += 3;
+                            worker->blend_divisions += 3;
                             worker->alpha_blended_pixels++;
                             uint32_t under = row[x];
                             int ur = (under >> 16) & 255;
@@ -461,6 +545,7 @@ static long raster_tex(struct toy_renderer *renderer,
                         drawn++;
                     }
                     else worker->alpha_zero_pixels++;
+                    worker->material_path_divisions[path] += pixel_divisions;
                     }
                 }
             }
@@ -521,8 +606,11 @@ static void rasterize_cmd(struct toy_renderer *renderer,
         worker->pixels += raster_tex(renderer, worker, &cmd->a, &cmd->b, &cmd->c,
                                      cmd->area, cmd->bbox_minx, cmd->bbox_maxx,
                                      y0, y1, cmd->texture, cmd->texture2,
-                                     cmd->blend_mode, cmd->texture3,
-                                     cmd->toon_shared, cmd->toon_level,
+                                     cmd->blend_mode, cmd->has_toon,
+                                     cmd->toon_multiplier,
+                                     cmd->material_features,
+                                     cmd->base_texture_valid,
+                                     cmd->sphere_texture_valid,
                                      cmd->material_alpha,
                                      cmd->material_ambient,
                                      cmd->material_specular,
@@ -591,6 +679,11 @@ static int record_cmd(struct toy_renderer *renderer, int textured,
     cmd->blend_mode = 0;
     cmd->toon_shared = -1;
     cmd->toon_level = 255;
+    cmd->has_toon = 0;
+    cmd->toon_multiplier = 0xffffffffU;
+    cmd->material_features = 0;
+    cmd->base_texture_valid = texture_valid(texture);
+    cmd->sphere_texture_valid = 0;
     cmd->material_alpha = 255;
     cmd->material_ambient = 0;
     cmd->material_specular = 0;
@@ -715,6 +808,8 @@ int toy_renderer_triangle_textured_dual_lit(struct toy_renderer *renderer,
     cmd = &renderer->cmds[renderer->cmd_count - 1];
     cmd->texture2 = texture2;
     cmd->blend_mode = blend_mode;
+    if (texture2) cmd->material_features |= TOY_MATERIAL_SPHERE;
+    cmd->sphere_texture_valid = texture_valid(texture2);
     renderer->submitted_triangles++;
     renderer->submitted_vertices += 3;
     return 0;
@@ -748,6 +843,34 @@ int toy_renderer_triangle_textured_material_lit(
     cmd->texture3 = toon_texture;
     cmd->toon_shared = toon_shared;
     cmd->toon_level = toon_level;
+    cmd->has_toon = toon_texture != 0 || toon_shared >= 0;
+    if (cmd->has_toon) cmd->material_features |= TOY_MATERIAL_TOON;
+    if (sphere_texture) cmd->material_features |= TOY_MATERIAL_SPHERE;
+    cmd->sphere_texture_valid = texture_valid(sphere_texture);
+    if (cmd->has_toon) {
+        int level = clampi(toon_level, 0, 255);
+        if (renderer->toon_cache_valid &&
+            renderer->toon_cache_texture == toon_texture &&
+            renderer->toon_cache_shared == toon_shared &&
+            renderer->toon_cache_level == level) {
+            cmd->toon_multiplier = renderer->toon_cache_multiplier;
+        } else if (toon_texture) {
+            int toon_fallback = 0;
+            cmd->toon_multiplier = texture_sample(
+                toon_texture, 32768, (255 - level) * 257L,
+                0, 0xffffffffU, &toon_fallback);
+        } else {
+            int dark = 150 + (toon_shared & 7) * 6;
+            int value = level >= 144 ? 255 : dark;
+            cmd->toon_multiplier = 0xff000000U | (uint32_t)value << 16 |
+                                   (uint32_t)value << 8 | (uint32_t)value;
+        }
+        renderer->toon_cache_texture = toon_texture;
+        renderer->toon_cache_shared = toon_shared;
+        renderer->toon_cache_level = level;
+        renderer->toon_cache_multiplier = cmd->toon_multiplier;
+        renderer->toon_cache_valid = 1;
+    }
     if (material_alpha < 0) material_alpha = 0;
     if (material_alpha > 255) material_alpha = 255;
     cmd->material_alpha = material_alpha;
@@ -940,6 +1063,17 @@ static void *render_worker_main(void *arg)
         worker->flat_pixels = 0;
         worker->alpha_blended_pixels = 0;
         worker->alpha_zero_pixels = 0;
+        worker->depth_divisions = 0;
+        worker->base_perspective_divisions = 0;
+        worker->sphere_perspective_divisions = 0;
+        worker->texture_address_divisions = 0;
+        worker->material_color_divisions = 0;
+        worker->alpha_divisions = 0;
+        worker->blend_divisions = 0;
+        for (int path = 0; path < 4; path++) {
+            worker->material_path_pixels[path] = 0;
+            worker->material_path_divisions[path] = 0;
+        }
         worker->bbox_px = 0;
         worker->inside_px = 0;
         worker->flat_us = 0;
@@ -1070,6 +1204,7 @@ int toy_renderer_begin(struct toy_renderer *renderer,
     renderer->last_sorted_cmds = 0;
     renderer->last_worker_wait_us = 0;
     renderer->recording_edge = 0;
+    renderer->toon_cache_valid = 0;
     /* Keep this self-host friendly: avoid a whole-structure assignment here. */
     renderer->surface.pixels = surface->pixels;
     renderer->surface.width = surface->width;
