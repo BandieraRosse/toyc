@@ -3,6 +3,7 @@
 
 #include "toy_assets.h"
 #include "toy_renderer.h"
+#include "rasterfall_animation.h"
 
 /*
  * RFM2 is the deliberately small runtime mesh format produced by
@@ -111,6 +112,10 @@ struct rasterfall_model_asset {
     int demo_right_arm;
     int demo_left_arm;
     int demo_body;
+    struct rasterfall_animation_rotation *animation_rotations;
+    struct rasterfall_animation_clip demo_clips[3];
+    struct rasterfall_animation_track demo_tracks[3][2];
+    struct rasterfall_animation_keyframe demo_keys[3][6];
     struct toy_texture_asset *texture_assets;
     struct toy_texture_view *texture_views;
     unsigned int texture_count;
@@ -124,6 +129,10 @@ void rasterfall_model_unload(struct rasterfall_model_asset *asset);
 int rasterfall_model_set_skinning(struct rasterfall_model_asset *asset,
                                   int enabled);
 int rasterfall_model_set_pose(struct rasterfall_model_asset *asset, int pose);
+int rasterfall_model_build_demo_clips(struct rasterfall_model_asset *asset);
+int rasterfall_model_sample_clip(struct rasterfall_model_asset *asset,
+                                 const struct rasterfall_animation_clip *clip,
+                                 int time_ms);
 int rasterfall_model_update_bones(struct rasterfall_model_asset *asset);
 int rasterfall_model_skin_vertex(const struct rasterfall_model_asset *asset,
                                  unsigned int index, int position[3],

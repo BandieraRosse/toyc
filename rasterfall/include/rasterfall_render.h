@@ -40,6 +40,7 @@ struct rasterfall_model_render_stats {
 
 struct rasterfall_model_setup_timing {
     long total_us;
+    long animation_sample_us;
     long bone_hierarchy_us;
     long skinning_us;
     long vertex_cache_us;

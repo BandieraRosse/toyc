@@ -7,6 +7,7 @@
 #include "rasterfall_camera.h"
 #include "rasterfall_map.h"
 #include "rasterfall_ai.h"
+#include "rasterfall_animation.h"
 
 #define RASTERFALL_PLAYER_RADIUS 180
 #define RASTERFALL_MOVE_STEP TOY_CONFIG_PLAYER_MOVE_STEP
@@ -131,6 +132,7 @@ struct rasterfall_session {
     int carried_flag;
     int assignment_flag;
     int skeletal_demo_pose;
+    struct rasterfall_animation_player skeletal_demo_player;
     uint64_t seed;
 };
 

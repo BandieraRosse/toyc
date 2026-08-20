@@ -812,10 +812,22 @@ static int render_private_character(struct toy_renderer *renderer,
         rasterfall_model_load(&private_character_model, path);
         private_character_loaded = 1;
     }
-    if (private_character_model.data && active_session &&
-        private_character_model.pose != active_session->skeletal_demo_pose)
-        rasterfall_model_set_pose(&private_character_model,
-                                  active_session->skeletal_demo_pose);
+    if (private_character_model.data && active_session) {
+        struct rasterfall_animation_player *player =
+            &active_session->skeletal_demo_player;
+        long sample_start = render_monotonic_us();
+        if (player->clip_id >= 0 && player->clip_id < 3) {
+            player->clip = &private_character_model.demo_clips[player->clip_id];
+            player->loop = player->clip->loop;
+            rasterfall_model_sample_clip(&private_character_model, player->clip,
+                                         player->time_ms);
+        } else {
+            player->clip = NULL;
+            rasterfall_model_sample_clip(&private_character_model, NULL, 0);
+        }
+        model_setup_timing.animation_sample_us +=
+            render_monotonic_us() - sample_start;
+    }
     if (!private_character_model.data ||
         world_distance(camera, -13000, -10000) > ENEMY_RENDER_DISTANCE)
         return 0;

@@ -1832,6 +1832,26 @@ static int benchmark_model_features(const char *model_path, int iterations,
                      raster_us[skin_mode] / count,
                      full_us[skin_mode] / count);
         }
+        {
+            static const char *animation_names[4] = {
+                "Bind/static", "ARM RAISE", "ARMS LOOP", "BODY TURN"
+            };
+            long animation_us[4] = {0, 0, 0, 0};
+            int animation_id, sample, sample_count = iterations * 100;
+            for (animation_id = 0; animation_id < 4; animation_id++) {
+                const struct rasterfall_animation_clip *clip =
+                    animation_id == 0 ? NULL : &model.demo_clips[animation_id-1];
+                for (sample = 0; sample < sample_count; sample++) {
+                    long start = monotonic_us();
+                    rasterfall_model_sample_clip(&model, clip,
+                        clip ? (sample * 17) % clip->duration_ms : 0);
+                    animation_us[animation_id] += monotonic_us() - start;
+                }
+                __printf("rasterfall: animation benchmark clip=%s samples=%d animation_sample_us_per_sample=%ld\n",
+                         animation_names[animation_id], sample_count,
+                         animation_us[animation_id] / (sample_count ? sample_count : 1));
+            }
+        }
         rasterfall_model_set_skinning(&model, 1);
         rasterfall_model_set_pose(&model, RASTERFALL_MODEL_POSE_BIND);
     }

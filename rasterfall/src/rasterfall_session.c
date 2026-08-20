@@ -193,6 +193,11 @@ void rasterfall_session_reset(struct rasterfall_session *session,
     camera->y = 0;
     session->seed = seed ? seed : 1;
     session->skeletal_demo_pose = RASTERFALL_MODEL_POSE_BIND;
+    session->skeletal_demo_player.clip = NULL;
+    session->skeletal_demo_player.clip_id = -1;
+    session->skeletal_demo_player.time_ms = 0;
+    session->skeletal_demo_player.playing = 0;
+    session->skeletal_demo_player.speed_milli = 1000;
     toy_game_init(&session->game_state, session->seed);
     /* 环境变量不依赖 libc；HOSTNAME 是最稳定的本机身份来源，缺失时
      * toy_game_init 的 PLAYER 保底仍可用。名字只用于身份展示/未来快照。 */
@@ -740,6 +745,16 @@ static void session_interact(struct rasterfall_session *session,
                 RASTERFALL_MODEL_POSE_RIGHT_ARM :
             it->kind == TOY_MAP_PICKUP_POSE_ARMS_BUTTON ?
                 RASTERFALL_MODEL_POSE_ARMS : RASTERFALL_MODEL_POSE_BODY_TURN;
+        session->skeletal_demo_player.clip = NULL;
+        session->skeletal_demo_player.clip_id =
+            it->kind == TOY_MAP_PICKUP_POSE_RESET_BUTTON ? -1 :
+            it->kind == TOY_MAP_PICKUP_POSE_RIGHT_ARM_BUTTON ? 0 :
+            it->kind == TOY_MAP_PICKUP_POSE_ARMS_BUTTON ? 1 : 2;
+        session->skeletal_demo_player.time_ms = 0;
+        session->skeletal_demo_player.playing =
+            session->skeletal_demo_player.clip_id >= 0;
+        session->skeletal_demo_player.loop =
+            session->skeletal_demo_player.clip_id == 1;
         session->banner_ms = 1800;
         session->banner_text =
             session->skeletal_demo_pose == RASTERFALL_MODEL_POSE_BIND ?
@@ -1943,6 +1958,7 @@ void rasterfall_session_step(struct rasterfall_session *session,
         rasterfall_session_reset(session, camera, session->seed);
         return;
     }
+    rasterfall_animation_player_update(&session->skeletal_demo_player, dt_ms);
     if (session_managed_ai_active(session)) {
         memset(&managed_command, 0, sizeof(managed_command));
         /* Weapon-master preparation owns the command while it is travelling

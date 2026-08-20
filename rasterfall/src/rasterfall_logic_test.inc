@@ -16,6 +16,7 @@ static int run_logic_test(void)
     int count;
     long long direction_length;
     if (rasterfall_model_skinning_logic_test() != 0) return 157;
+    if (rasterfall_animation_logic_test() != 0) return 161;
     toy_input_init(&input);
     rasterfall_session_reset(&session, &camera, 1);
     {
@@ -42,6 +43,16 @@ static int run_logic_test(void)
             camera.sy = 0; camera.cy = -1024;
             rasterfall_session_interact_remote(&session, &camera);
             if (session.skeletal_demo_pose != poses[button]) return 159;
+            if (button == 0 && (session.skeletal_demo_player.playing ||
+                                session.skeletal_demo_player.clip_id != -1))
+                return 162;
+            if (button == 1 && (!session.skeletal_demo_player.playing ||
+                                session.skeletal_demo_player.clip_id != 0))
+                return 163;
+            if (button == 2 && (!session.skeletal_demo_player.playing ||
+                                session.skeletal_demo_player.clip_id != 1 ||
+                                !session.skeletal_demo_player.loop))
+                return 164;
             found++;
         }
         if (found != 4) return 158;

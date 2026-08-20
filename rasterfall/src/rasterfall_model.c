@@ -163,7 +163,10 @@ static int model_load_skin(struct rasterfall_model_asset *asset,
     asset->bones = tlibc_malloc((size_t)bone_count * sizeof(*asset->bones));
     asset->bone_transforms = tlibc_malloc((size_t)bone_count *
                                           sizeof(*asset->bone_transforms));
-    if (!asset->bones || !asset->bone_transforms) return -1;
+    asset->animation_rotations = tlibc_malloc((size_t)bone_count *
+                                              sizeof(*asset->animation_rotations));
+    if (!asset->bones || !asset->bone_transforms || !asset->animation_rotations)
+        return -1;
     __memset(asset->bones, 0, bone_count * sizeof(*asset->bones));
     asset->bone_count = bone_count;
     asset->skin_vertices = skin_vertices;
@@ -208,6 +211,7 @@ static int model_load_skin(struct rasterfall_model_asset *asset,
     asset->demo_body = model_find_first_bone(asset, "上半身2", "upper body 2", "UpperBody2");
     if (asset->demo_body < 0)
         asset->demo_body = model_find_first_bone(asset, "上半身", "upper body", "UpperBody");
+    rasterfall_model_build_demo_clips(asset);
     asset->skinning_enabled = 1;
     asset->pose = RASTERFALL_MODEL_POSE_BIND;
     if (rasterfall_model_update_bones(asset) < 0) return -1;
@@ -364,6 +368,7 @@ void rasterfall_model_unload(struct rasterfall_model_asset *asset)
     if (asset->texture_views) tlibc_free(asset->texture_views);
     if (asset->bones) tlibc_free(asset->bones);
     if (asset->bone_transforms) tlibc_free(asset->bone_transforms);
+    if (asset->animation_rotations) tlibc_free(asset->animation_rotations);
     if (asset->bone_order) tlibc_free(asset->bone_order);
     tlibc_free((void *)asset->data);
     __memset(asset, 0, sizeof(*asset));
@@ -400,6 +405,65 @@ int rasterfall_model_set_pose(struct rasterfall_model_asset *asset, int pose)
     }
     asset->pose = pose;
     return rasterfall_model_update_bones(asset);
+}
+
+int rasterfall_model_build_demo_clips(struct rasterfall_model_asset *asset)
+{
+    int right, left, body;
+    if (!asset) return -1;
+    right = asset->demo_right_arm; left = asset->demo_left_arm;
+    body = asset->demo_body;
+    __memset(asset->demo_clips, 0, sizeof(asset->demo_clips));
+    __memset(asset->demo_tracks, 0, sizeof(asset->demo_tracks));
+    __memset(asset->demo_keys, 0, sizeof(asset->demo_keys));
+    /* ARM RAISE: 0 -> -38 -> 0, one-shot. */
+    asset->demo_keys[0][0].time_ms=0;
+    asset->demo_keys[0][1].time_ms=400;
+    asset->demo_keys[0][2].time_ms=800;
+    asset->demo_keys[0][0].rotation=rasterfall_animation_quat_from_euler(0,0,0);
+    asset->demo_keys[0][1].rotation=rasterfall_animation_quat_from_euler(0,0,-38);
+    asset->demo_keys[0][2].rotation=rasterfall_animation_quat_from_euler(0,0,0);
+    asset->demo_tracks[0][0]=(struct rasterfall_animation_track){right,asset->demo_keys[0],3};
+    asset->demo_clips[0]=(struct rasterfall_animation_clip){800,0,asset->demo_tracks[0],1};
+    /* ARMS LOOP: two tracks, symmetric and continuous at the endpoints. */
+    asset->demo_keys[1][0].time_ms=0; asset->demo_keys[1][1].time_ms=750;
+    asset->demo_keys[1][2].time_ms=1500; asset->demo_keys[1][3].time_ms=0;
+    asset->demo_keys[1][4].time_ms=750; asset->demo_keys[1][5].time_ms=1500;
+    asset->demo_keys[1][0].rotation=rasterfall_animation_quat_from_euler(0,0,0);
+    asset->demo_keys[1][1].rotation=rasterfall_animation_quat_from_euler(0,0,-42);
+    asset->demo_keys[1][2].rotation=rasterfall_animation_quat_from_euler(0,0,0);
+    asset->demo_keys[1][3].rotation=rasterfall_animation_quat_from_euler(0,0,0);
+    asset->demo_keys[1][4].rotation=rasterfall_animation_quat_from_euler(0,0,42);
+    asset->demo_keys[1][5].rotation=rasterfall_animation_quat_from_euler(0,0,0);
+    asset->demo_tracks[1][0]=(struct rasterfall_animation_track){right,asset->demo_keys[1],3};
+    asset->demo_tracks[1][1]=(struct rasterfall_animation_track){left,asset->demo_keys[1]+3,3};
+    asset->demo_clips[1]=(struct rasterfall_animation_clip){1500,1,asset->demo_tracks[1],2};
+    /* BODY TURN: parent track, so the existing hierarchy propagates it. */
+    asset->demo_keys[2][0].time_ms=0; asset->demo_keys[2][1].time_ms=500;
+    asset->demo_keys[2][2].time_ms=1000;
+    asset->demo_keys[2][0].rotation=rasterfall_animation_quat_from_euler(0,0,0);
+    asset->demo_keys[2][1].rotation=rasterfall_animation_quat_from_euler(0,24,0);
+    asset->demo_keys[2][2].rotation=rasterfall_animation_quat_from_euler(0,0,0);
+    asset->demo_tracks[2][0]=(struct rasterfall_animation_track){body,asset->demo_keys[2],3};
+    asset->demo_clips[2]=(struct rasterfall_animation_clip){1000,0,asset->demo_tracks[2],1};
+    return right >= 0 && (left >= 0) && body >= 0 ? 0 : -1;
+}
+
+int rasterfall_model_sample_clip(struct rasterfall_model_asset *asset,
+                                 const struct rasterfall_animation_clip *clip,
+                                 int time_ms)
+{
+    unsigned int i;
+    if (!asset || !asset->animation_rotations || !asset->bone_count) return -1;
+    rasterfall_animation_sample(clip, time_ms, asset->animation_rotations,
+                                asset->bone_count);
+    for (i = 0; i < asset->bone_count; i++) {
+        asset->bones[i].rotate_x = asset->animation_rotations[i].x;
+        asset->bones[i].rotate_y = asset->animation_rotations[i].y;
+        asset->bones[i].rotate_z = asset->animation_rotations[i].z;
+    }
+    asset->pose = RASTERFALL_MODEL_POSE_BIND;
+    return 0;
 }
 
 int rasterfall_model_update_bones(struct rasterfall_model_asset *asset)
