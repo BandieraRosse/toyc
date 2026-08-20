@@ -5,6 +5,7 @@
 #include "toy_renderer.h"
 #include "rasterfall_animation.h"
 #include "rasterfall_humanoid.h"
+#include "rasterfall_humanoid_basis.h"
 
 /*
  * RFM2 is the deliberately small runtime mesh format produced by
@@ -150,6 +151,11 @@ void rasterfall_humanoid_validate(const struct rasterfall_model_asset *asset,
                                   const struct rasterfall_humanoid_mapping *mapping,
                                   struct rasterfall_humanoid_diagnostics *diagnostics);
 void rasterfall_model_dump_humanoid(const struct rasterfall_model_asset *asset);
+int rasterfall_model_build_humanoid_bases(
+    const struct rasterfall_model_asset *asset,
+    struct rasterfall_humanoid_rest_basis *bases);
+void rasterfall_model_dump_humanoid_bases(
+    const struct rasterfall_model_asset *asset);
 int rasterfall_humanoid_logic_test(void);
 int rasterfall_model_skinning_logic_test(void);
 

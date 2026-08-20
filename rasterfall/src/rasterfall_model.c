@@ -767,6 +767,72 @@ int rasterfall_humanoid_logic_test(void)
     return 0;
 }
 
+static void model_basis_point(const struct rasterfall_model_asset *asset,
+                              int index, struct rasterfall_humanoid_point *point)
+{
+    if (index < 0 || index >= (int)asset->bone_count) return;
+    point->value[0] = asset->bones[index].rest_x;
+    point->value[1] = asset->bones[index].rest_y;
+    point->value[2] = asset->bones[index].rest_z;
+    point->valid = 1;
+}
+
+int rasterfall_model_build_humanoid_bases(
+    const struct rasterfall_model_asset *asset,
+    struct rasterfall_humanoid_rest_basis *bases)
+{
+    struct rasterfall_humanoid_mapping mapping;
+    struct rasterfall_humanoid_basis_input input;
+    int i;
+    if (!asset || !bases) return -1;
+    __memset(&input, 0, sizeof(input));
+    rasterfall_humanoid_map_eula(asset, &mapping);
+    for (i = 0; i < RASTERFALL_HUMANOID_BONE_COUNT; i++)
+        model_basis_point(asset, mapping.bone_indices[i], &input.bones[i]);
+    model_basis_point(asset, model_find_exact_bone(asset, "左つま先", 0), &input.left_toe);
+    model_basis_point(asset, model_find_exact_bone(asset, "右つま先", 0), &input.right_toe);
+    model_basis_point(asset, model_find_exact_bone(asset, "左中指１", 0), &input.left_middle);
+    model_basis_point(asset, model_find_exact_bone(asset, "右中指１", 0), &input.right_middle);
+    model_basis_point(asset, model_find_exact_bone(asset, "左親指０", 0), &input.left_thumb);
+    model_basis_point(asset, model_find_exact_bone(asset, "右親指０", 0), &input.right_thumb);
+    input.model_up[1] = 1.0;
+    input.model_forward[2] = 1.0;
+    return rasterfall_humanoid_build_rest_bases(&input, bases);
+}
+
+static void model_print_basis_number(double value)
+{
+    int scaled = (int)(value * 1000000.0);
+    __printf("%s%d.%06d", scaled < 0 ? "-" : "", abs(scaled) / 1000000,
+             abs(scaled) % 1000000);
+}
+
+void rasterfall_model_dump_humanoid_bases(const struct rasterfall_model_asset *asset)
+{
+    struct rasterfall_humanoid_mapping mapping;
+    struct rasterfall_humanoid_rest_basis bases[RASTERFALL_HUMANOID_BONE_COUNT];
+    double error = 0.0; int i, j;
+    rasterfall_humanoid_map_eula(asset, &mapping);
+    if (rasterfall_model_build_humanoid_bases(asset, bases) < 0) {
+        __printf("humanoid basis: construction failed\n"); return;
+    }
+    for (i = 0; i < RASTERFALL_HUMANOID_BONE_COUNT; i++) {
+        __printf("%s -> %s / index %d primary=(", humanoid_names[i],
+                 mapping.bone_indices[i] >= 0 ? asset->bones[mapping.bone_indices[i]].name : "MISSING",
+                 mapping.bone_indices[i]);
+        for (j=0;j<3;j++){if(j)__printf(",");model_print_basis_number(bases[i].primary[j]);}
+        __printf(") secondary=(");for(j=0;j<3;j++){if(j)__printf(",");model_print_basis_number(bases[i].secondary[j]);}
+        __printf(") third=(");for(j=0;j<3;j++){if(j)__printf(",");model_print_basis_number(bases[i].third[j]);}
+        __printf(") quaternion=(");for(j=0;j<4;j++){if(j)__printf(",");model_print_basis_number(bases[i].rotation[j]);}
+        __printf(") source=\"%s\" confidence=%s%s\n", bases[i].source,
+                 rasterfall_humanoid_basis_confidence_name(bases[i].confidence),
+                 bases[i].confidence == RASTERFALL_HUMANOID_BASIS_LOW ? " warning=fallback" : "");
+    }
+    __printf("humanoid basis: valid=%s anatomy=%s max_error=", rasterfall_humanoid_validate_rest_bases(bases,&error)==0?"yes":"no",
+             rasterfall_humanoid_validate_anatomy(bases)==0?"yes":"no");
+    model_print_basis_number(error); __printf("\n");
+}
+
 int rasterfall_model_skinning_logic_test(void)
 {
     struct rasterfall_model_asset asset;

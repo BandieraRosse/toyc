@@ -24,7 +24,11 @@ struct pmx_header { int vertex_size, texture_size, material_size; int bone_size,
 struct pmx_texture { char path[TEXTURE_PATH_MAX]; };
 struct pmx_material { char name[MATERIAL_NAME_MAX], name_en[MATERIAL_NAME_MAX]; unsigned int color; unsigned int index_count; int texture_index; int sphere_index; int sphere_mode; int alpha; int toon_index; int toon_shared; int draw_flags; unsigned int edge_color; int edge_size; unsigned int ambient_color; unsigned int specular_color; int specular_power; };
 struct pmx_vertex { float x, y, z, nx, ny, nz, u, v, au, av, edge_scale, weight; unsigned int weight_type; int bone0, bone1; };
-struct pmx_bone { char name[BONE_NAME_MAX]; int parent; float x, y, z; unsigned int flags; int depth; };
+struct pmx_bone {
+    char name[BONE_NAME_MAX]; int parent; float x, y, z; unsigned int flags; int depth;
+    int tail_index, append_parent; float tail[3], append_ratio;
+    float fixed_axis[3], local_x[3], local_z[3];
+};
 struct pmx_diagnostics { unsigned int weights[5]; int bone_count, root_count, max_depth; unsigned int advanced_flags; };
 
 static int have(struct cursor *c, unsigned int n)
@@ -246,6 +250,7 @@ static int read_bones(struct cursor *c, const struct pmx_header *h,
     for (i = 0; i < count; i++) {
         unsigned int flags, flag;
         int ignored;
+        bones[i].tail_index = bones[i].append_parent = -1;
         if (read_text(c, h->encoding, bones[i].name, sizeof(bones[i].name)) < 0 ||
             text(c) < 0 || f32(c, &bones[i].x) < 0 ||
             f32(c, &bones[i].y) < 0 || f32(c, &bones[i].z) < 0 ||
@@ -253,19 +258,26 @@ static int read_bones(struct cursor *c, const struct pmx_header *h,
             i32(c, &ignored) < 0 || u16(c, &flags) < 0) goto fail;
         bones[i].flags = flags;
         if (flags & 0x0001) {
-            if (index_value(c, h->bone_size, 1, &ignored) < 0) goto fail;
-        } else if (!have(c, 12)) goto fail; else c->p += 12;
+            if (index_value(c, h->bone_size, 1, &bones[i].tail_index) < 0) goto fail;
+        } else if (f32(c, &bones[i].tail[0]) < 0 ||
+                   f32(c, &bones[i].tail[1]) < 0 ||
+                   f32(c, &bones[i].tail[2]) < 0) goto fail;
         if (flags & (0x0100 | 0x0200)) {
-            if (index_value(c, h->bone_size, 1, &ignored) < 0 ||
-                f32(c, 0) < 0) goto fail;
+            if (index_value(c, h->bone_size, 1, &bones[i].append_parent) < 0 ||
+                f32(c, &bones[i].append_ratio) < 0) goto fail;
         }
         if (flags & 0x0400) {
-            if (!have(c, 12)) goto fail;
-            c->p += 12;
+            if (f32(c, &bones[i].fixed_axis[0]) < 0 ||
+                f32(c, &bones[i].fixed_axis[1]) < 0 ||
+                f32(c, &bones[i].fixed_axis[2]) < 0) goto fail;
         }
         if (flags & 0x0800) {
-            if (!have(c, 24)) goto fail;
-            c->p += 24;
+            if (f32(c, &bones[i].local_x[0]) < 0 ||
+                f32(c, &bones[i].local_x[1]) < 0 ||
+                f32(c, &bones[i].local_x[2]) < 0 ||
+                f32(c, &bones[i].local_z[0]) < 0 ||
+                f32(c, &bones[i].local_z[1]) < 0 ||
+                f32(c, &bones[i].local_z[2]) < 0) goto fail;
         }
         if (flags & 0x2000) {
             if (i32(c, &ignored) < 0) goto fail;
@@ -612,8 +624,10 @@ int main(int argc, char **argv)
     struct pmx_diagnostics diagnostics;
     struct pmx_bone *bones = NULL;
     unsigned int invalid_bone_references = 0;
-    if (argc != 4) { __printf("usage: pmx2rmesh input.pmx output.rmesh texture_dir\n"); return 2; }
-    fd = __openat(AT_FDCWD, argv[1], O_RDONLY, 0);
+    int humanoid_bones = argc == 3 && !strcmp(argv[1], "--humanoid-bones");
+    const char *input_path = humanoid_bones ? argv[2] : argv[1];
+    if (!humanoid_bones && argc != 4) { __printf("usage: pmx2rmesh input.pmx output.rmesh texture_dir\n       pmx2rmesh --humanoid-bones input.pmx\n"); return 2; }
+    fd = __openat(AT_FDCWD, input_path, O_RDONLY, 0);
     if (fd < 0 || __fstat(fd, &st) < 0 || st.st_size < 64 || st.st_size > 64 * 1024 * 1024) { __printf("pmx2rmesh: cannot open input\n"); return 1; }
     size = (int)st.st_size; file = (unsigned char *)__mmap(0, size, PROT_READ, MAP_PRIVATE, fd, 0); __close(fd);
     if (file == MAP_FAILED) { __printf("pmx2rmesh: cannot map input\n"); return 1; }
@@ -632,6 +646,57 @@ int main(int argc, char **argv)
     if (read_bones(&c, &h, &bones, &diagnostics) < 0) {
         __printf("pmx2rmesh: invalid bone hierarchy or truncated bone data\n");
         goto invalid;
+    }
+    if (humanoid_bones) {
+        static const char *semantic[] = {
+            "ROOT","HIPS","SPINE","CHEST","UPPER_CHEST","NECK","HEAD",
+            "LEFT_SHOULDER","LEFT_UPPER_ARM","LEFT_FOREARM","LEFT_HAND",
+            "RIGHT_SHOULDER","RIGHT_UPPER_ARM","RIGHT_FOREARM","RIGHT_HAND",
+            "LEFT_UPPER_LEG","LEFT_LOWER_LEG","LEFT_FOOT",
+            "RIGHT_UPPER_LEG","RIGHT_LOWER_LEG","RIGHT_FOOT"
+        };
+        static const char *wanted[] = {
+            "全ての親","腰","上半身","上半身3","上半身2","首","頭",
+            "左肩","左腕","左ひじ","左手首","右肩","右腕","右ひじ","右手首",
+            "左足","左ひざ","左足首","右足","右ひざ","右足首"
+        };
+        int semantic_index;
+        for (semantic_index = 0; semantic_index < 21; semantic_index++) {
+            int bone_index;
+            for (bone_index = 0; bone_index < diagnostics.bone_count; bone_index++)
+                if (!strcmp(bones[bone_index].name, wanted[semantic_index])) break;
+            if (bone_index == diagnostics.bone_count) continue;
+            {
+                struct pmx_bone *bone = &bones[bone_index];
+                __printf("%s name=\"%s\" index=%d parent=%d/\"%s\" position=(%d.%06d,%d.%06d,%d.%06d) flags=0x%x tail=",
+                         semantic[semantic_index], bone->name, bone_index, bone->parent,
+                         bone->parent >= 0 ? bones[bone->parent].name : "NONE",
+                         (int)bone->x, abs((int)(bone->x*1000000))%1000000,
+                         (int)bone->y, abs((int)(bone->y*1000000))%1000000,
+                         (int)bone->z, abs((int)(bone->z*1000000))%1000000,
+                         bone->flags);
+                if (bone->flags & 1) __printf("bone:%d/\"%s\"", bone->tail_index,
+                    bone->tail_index >= 0 ? bones[bone->tail_index].name : "NONE");
+                else __printf("offset=(%d.%06d,%d.%06d,%d.%06d)",
+                    (int)bone->tail[0],abs((int)(bone->tail[0]*1000000))%1000000,
+                    (int)bone->tail[1],abs((int)(bone->tail[1]*1000000))%1000000,
+                    (int)bone->tail[2],abs((int)(bone->tail[2]*1000000))%1000000);
+                __printf(" local_axis=%s", bone->flags & 0x0800 ? "yes" : "no");
+                if (bone->flags & 0x0800) __printf(" X=(%d.%06d,%d.%06d,%d.%06d) Z=(%d.%06d,%d.%06d,%d.%06d)",
+                    (int)bone->local_x[0],abs((int)(bone->local_x[0]*1000000))%1000000,(int)bone->local_x[1],abs((int)(bone->local_x[1]*1000000))%1000000,(int)bone->local_x[2],abs((int)(bone->local_x[2]*1000000))%1000000,
+                    (int)bone->local_z[0],abs((int)(bone->local_z[0]*1000000))%1000000,(int)bone->local_z[1],abs((int)(bone->local_z[1]*1000000))%1000000,(int)bone->local_z[2],abs((int)(bone->local_z[2]*1000000))%1000000);
+                __printf(" fixed_axis=%s", bone->flags & 0x0400 ? "yes" : "no");
+                if (bone->flags & 0x0400) __printf(" axis=(%d.%06d,%d.%06d,%d.%06d)",
+                    (int)bone->fixed_axis[0],abs((int)(bone->fixed_axis[0]*1000000))%1000000,(int)bone->fixed_axis[1],abs((int)(bone->fixed_axis[1]*1000000))%1000000,(int)bone->fixed_axis[2],abs((int)(bone->fixed_axis[2]*1000000))%1000000);
+                __printf(" append_rotation=%s append_translation=%s append_parent=%d ratio=%d.%06d IK=%s after_physics=%s external_parent=%s rotatable=%s translatable=%s\n",
+                    bone->flags&0x0100?"yes":"no",bone->flags&0x0200?"yes":"no",bone->append_parent,
+                    (int)bone->append_ratio,abs((int)(bone->append_ratio*1000000))%1000000,
+                    bone->flags&0x0020?"yes":"no",bone->flags&0x1000?"yes":"no",
+                    bone->flags&0x2000?"yes":"no",bone->flags&0x0002?"yes":"no",
+                    bone->flags&0x0004?"yes":"no");
+            }
+        }
+        tlibc_free(bones); __munmap(file, size); return 0;
     }
     if (diagnostics.weights[2] || diagnostics.weights[3] || diagnostics.weights[4]) {
         __printf("pmx2rmesh: stage1 supports only BDEF1/BDEF2 (BDEF4=%u SDEF=%u QDEF=%u)\n",

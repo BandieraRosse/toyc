@@ -766,7 +766,8 @@ APP_TARGETS := $(foreach name,$(APP_NAMES),$(BUILD)/$(name))
 RASTERFALL_ASSET_FILES := $(shell find $(RASTERFALL_DIR)/assets -type f -print)
 RASTERFALL_ASSET_SRC := $(BUILD)/rasterfall_assets.c
 RASTERFALL_ASSET_OBJ := $(BUILD)/rasterfall_assets.o
-APP_EXTRA_OBJS_rasterfall := $(BUILD)/rasterfall_game.o $(BUILD)/rasterfall_sfx.o $(BUILD)/rasterfall_map_engine.o $(BUILD)/rasterfall_map.o $(BUILD)/rasterfall_session.o $(BUILD)/rasterfall_ai.o $(BUILD)/rasterfall_net.o $(BUILD)/rasterfall_net_discovery.o $(BUILD)/rasterfall_hud.o $(BUILD)/rasterfall_audio.o $(BUILD)/rasterfall_effects.o $(BUILD)/rasterfall_perf.o $(BUILD)/rasterfall_sky.o $(BUILD)/rasterfall_viewmodel.o $(BUILD)/rasterfall_render.o $(BUILD)/rasterfall_model.o
+APP_EXTRA_OBJS_rasterfall := $(BUILD)/rasterfall_game.o $(BUILD)/rasterfall_sfx.o $(BUILD)/rasterfall_map_engine.o $(BUILD)/rasterfall_map.o $(BUILD)/rasterfall_session.o $(BUILD)/rasterfall_ai.o $(BUILD)/rasterfall_net.o $(BUILD)/rasterfall_net_discovery.o $(BUILD)/rasterfall_hud.o $(BUILD)/rasterfall_audio.o $(BUILD)/rasterfall_effects.o $(BUILD)/rasterfall_perf.o $(BUILD)/rasterfall_sky.o $(BUILD)/rasterfall_viewmodel.o $(BUILD)/rasterfall_render.o $(BUILD)/rasterfall_model.o $(BUILD)/rasterfall_humanoid_basis.o
+APP_EXTRA_OBJS_glb_inspect := $(BUILD)/rasterfall_humanoid_basis.o
 
 # ─── 库编译规则 ────────────────────────────────────────────────
 
@@ -877,6 +878,11 @@ $(BUILD)/rasterfall_render.o: $(RASTERFALL_SRC)/rasterfall_render.c \
 
 $(BUILD)/rasterfall_model.o: $(RASTERFALL_SRC)/rasterfall_model.c \
                              $(RASTERFALL_INC)/rasterfall_model.h $(INC)/toy_assets.h | $(BUILD)
+	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
+	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
+
+$(BUILD)/rasterfall_humanoid_basis.o: $(RASTERFALL_SRC)/rasterfall_humanoid_basis.c \
+                                      $(RASTERFALL_INC)/rasterfall_humanoid_basis.h | $(BUILD)
 	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
 	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 
@@ -1028,7 +1034,8 @@ SELF_LIBC_OBJS     := $(SELF_LIBC_C_OBJS) $(SELF_LIBC_ASM_OBJS)
 SELF_APP_NAMES   := $(APP_NAMES)
 SELF_APP_OBJS    := $(foreach name,$(SELF_APP_NAMES),$(BUILD)/$(name)_self.o)
 SELF_APP_TARGETS := $(foreach name,$(SELF_APP_NAMES),$(BUILD)/$(name)_self)
-SELF_APP_EXTRA_OBJS_rasterfall := $(BUILD)/rasterfall_game_self.o $(BUILD)/rasterfall_sfx_self.o $(BUILD)/rasterfall_map_engine_self.o $(BUILD)/rasterfall_map_self.o $(BUILD)/rasterfall_session_self.o $(BUILD)/rasterfall_ai_self.o $(BUILD)/rasterfall_net_self.o $(BUILD)/rasterfall_net_discovery_self.o $(BUILD)/rasterfall_hud_self.o $(BUILD)/rasterfall_audio_self.o $(BUILD)/rasterfall_effects_self.o $(BUILD)/rasterfall_perf_self.o $(BUILD)/rasterfall_sky_self.o $(BUILD)/rasterfall_viewmodel_self.o $(BUILD)/rasterfall_render_self.o $(BUILD)/rasterfall_model_self.o
+SELF_APP_EXTRA_OBJS_rasterfall := $(BUILD)/rasterfall_game_self.o $(BUILD)/rasterfall_sfx_self.o $(BUILD)/rasterfall_map_engine_self.o $(BUILD)/rasterfall_map_self.o $(BUILD)/rasterfall_session_self.o $(BUILD)/rasterfall_ai_self.o $(BUILD)/rasterfall_net_self.o $(BUILD)/rasterfall_net_discovery_self.o $(BUILD)/rasterfall_hud_self.o $(BUILD)/rasterfall_audio_self.o $(BUILD)/rasterfall_effects_self.o $(BUILD)/rasterfall_perf_self.o $(BUILD)/rasterfall_sky_self.o $(BUILD)/rasterfall_viewmodel_self.o $(BUILD)/rasterfall_render_self.o $(BUILD)/rasterfall_model_self.o $(BUILD)/rasterfall_humanoid_basis_self.o
+SELF_APP_EXTRA_OBJS_glb_inspect := $(BUILD)/rasterfall_humanoid_basis_self.o
 
 # ─── 库编译规则 ────────────────────────────────────────────────
 
@@ -1156,6 +1163,11 @@ $(BUILD)/rasterfall_render_self.o: $(RASTERFALL_SRC)/rasterfall_render.c \
 
 $(BUILD)/rasterfall_model_self.o: $(RASTERFALL_SRC)/rasterfall_model.c \
                                   $(RASTERFALL_INC)/rasterfall_model.h $(SELF_CC) | $(BUILD)
+	@printf "  $(BLUE)  CC(s)  %s\n" "$<"
+	$(SELF_CC) $(SELF_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
+
+$(BUILD)/rasterfall_humanoid_basis_self.o: $(RASTERFALL_SRC)/rasterfall_humanoid_basis.c \
+                                           $(RASTERFALL_INC)/rasterfall_humanoid_basis.h $(SELF_CC) | $(BUILD)
 	@printf "  $(BLUE)  CC(s)  %s\n" "$<"
 	$(SELF_CC) $(SELF_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 

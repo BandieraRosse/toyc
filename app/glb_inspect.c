@@ -5,6 +5,7 @@
 #include "tlibc_print.h"
 #include "tlibc_everything.h"
 #include "rasterfall_humanoid.h"
+#include "rasterfall_humanoid_basis.h"
 
 #define GLB_MAGIC 0x46546c67U
 #define GLB_JSON  0x4e4f534aU
@@ -516,6 +517,219 @@ static int inspect_doc(const struct glb_doc *doc, int humanoid_only)
     return inspect_animations(doc, mapping, humanoid_only);
 }
 
+static float absolute_float(float value) { return value < 0.0f ? -value : value; }
+
+static float accessor_max_delta(const struct glb_doc *doc, int index,
+                                const float *reference, int use_reference)
+{
+    struct accessor_info accessor; const unsigned char *data;
+    int stride, sample, component; float maximum = 0.0f;
+    if (read_accessor_info(doc, index, &accessor) < 0 || accessor.component != 5126)
+        return -1.0f;
+    data = accessor_data(doc, &accessor, &stride);
+    for (sample = 0; sample < accessor.count; sample++)
+        for (component = 0; component < accessor.components; component++) {
+            float base = use_reference ? reference[component] : read_f32(data + component * 4);
+            float delta = absolute_float(read_f32(data + sample * stride + component * 4) - base);
+            if (delta > maximum) maximum = delta;
+        }
+    return maximum;
+}
+
+static void matrix_identity(double *matrix)
+{
+    int i; for (i = 0; i < 16; i++) matrix[i] = 0.0;
+    matrix[0] = matrix[5] = matrix[10] = matrix[15] = 1.0;
+}
+static void matrix_multiply4(const double *a, const double *b, double *out)
+{
+    double result[16]; int row, column, k;
+    for (column = 0; column < 4; column++) for (row = 0; row < 4; row++) {
+        result[column * 4 + row] = 0.0;
+        for (k = 0; k < 4; k++)
+            result[column * 4 + row] += a[k * 4 + row] * b[column * 4 + k];
+    }
+    memcpy(out, result, sizeof(result));
+}
+static void node_local_matrix(struct slice node, double *matrix)
+{
+    struct slice translation = object_value(node, "translation");
+    struct slice rotation = object_value(node, "rotation");
+    struct slice scale = object_value(node, "scale");
+    double x = json_number(array_value(rotation, 0), 0.0);
+    double y = json_number(array_value(rotation, 1), 0.0);
+    double z = json_number(array_value(rotation, 2), 0.0);
+    double w = json_number(array_value(rotation, 3), 1.0);
+    double sx = json_number(array_value(scale, 0), 1.0);
+    double sy = json_number(array_value(scale, 1), 1.0);
+    double sz = json_number(array_value(scale, 2), 1.0);
+    matrix_identity(matrix);
+    matrix[0] = (1.0 - 2.0 * (y*y + z*z)) * sx;
+    matrix[1] = (2.0 * (x*y + z*w)) * sx;
+    matrix[2] = (2.0 * (x*z - y*w)) * sx;
+    matrix[4] = (2.0 * (x*y - z*w)) * sy;
+    matrix[5] = (1.0 - 2.0 * (x*x + z*z)) * sy;
+    matrix[6] = (2.0 * (y*z + x*w)) * sy;
+    matrix[8] = (2.0 * (x*z + y*w)) * sz;
+    matrix[9] = (2.0 * (y*z - x*w)) * sz;
+    matrix[10] = (1.0 - 2.0 * (x*x + y*y)) * sz;
+    matrix[12] = json_number(array_value(translation, 0), 0.0);
+    matrix[13] = json_number(array_value(translation, 1), 0.0);
+    matrix[14] = json_number(array_value(translation, 2), 0.0);
+}
+static int build_global_matrix(const struct glb_doc *doc, int node,
+                               double *globals, unsigned char *ready)
+{
+    double local[16]; int parent;
+    if (node < 0 || node >= doc->nodes.count) return -1;
+    if (ready[node]) return 0;
+    parent = doc->parents[node]; node_local_matrix(doc->nodes.items[node], local);
+    if (parent >= 0) {
+        if (build_global_matrix(doc, parent, globals, ready) < 0) return -1;
+        matrix_multiply4(globals + parent * 16, local, globals + node * 16);
+    } else memcpy(globals + node * 16, local, sizeof(local));
+    ready[node] = 1; return 0;
+}
+
+static int bind_consistency(const struct glb_doc *doc)
+{
+    double *globals; unsigned char *ready; int skin_index, checked = 0;
+    double maximum = 0.0;
+    globals = tlibc_malloc(doc->nodes.count * 16 * sizeof(double));
+    ready = tlibc_malloc(doc->nodes.count);
+    if (!globals || !ready) return -1;
+    __memset(ready, 0, doc->nodes.count);
+    for (skin_index = 0; skin_index < doc->skins.count; skin_index++) {
+        struct slice skin = doc->skins.items[skin_index];
+        struct slice joints = object_value(skin, "joints"), item;
+        int inverse_index = json_int(object_value(skin, "inverseBindMatrices"), -1);
+        struct accessor_info inverse; const unsigned char *data; int stride, joint = 0;
+        if (read_accessor_info(doc, inverse_index, &inverse) < 0 ||
+            inverse.component != 5126 || inverse.components != 16) continue;
+        data = accessor_data(doc, &inverse, &stride);
+        while ((item = array_value(joints, joint)).p && joint < inverse.count) {
+            double inverse_matrix[16], product[16]; int node = json_int(item, -1), i;
+            if (build_global_matrix(doc, node, globals, ready) < 0) { tlibc_free(globals); tlibc_free(ready); return -1; }
+            for (i = 0; i < 16; i++) inverse_matrix[i] = read_f32(data + joint * stride + i * 4);
+            matrix_multiply4(globals + node * 16, inverse_matrix, product);
+            for (i = 0; i < 16; i++) {
+                double wanted = i == 0 || i == 5 || i == 10 || i == 15 ? 1.0 : 0.0;
+                double error = product[i] - wanted; if (error < 0.0) error = -error;
+                if (error > maximum) maximum = error;
+            }
+            checked++; joint++;
+        }
+    }
+    __printf("bind_check: joints=%d max_abs_identity_error=%d.%09d status=%s\n",
+             checked, (int)maximum, abs((int)(maximum * 1000000000.0)) % 1000000000,
+             maximum < 0.0001 ? "consistent" : "MISMATCH");
+    tlibc_free(globals); tlibc_free(ready); return maximum < 0.0001 ? 0 : 1;
+}
+
+static void glb_basis_point(const struct glb_doc *doc, int node,
+                            double *globals, unsigned char *ready,
+                            struct rasterfall_humanoid_point *point)
+{
+    if (node < 0 || node >= doc->nodes.count ||
+        build_global_matrix(doc, node, globals, ready) < 0) return;
+    point->value[0] = globals[node * 16 + 12];
+    point->value[1] = globals[node * 16 + 13];
+    point->value[2] = globals[node * 16 + 14];
+    point->valid = 1;
+}
+
+static void print_basis_number(double value)
+{
+    int scaled = (int)(value * 1000000.0);
+    __printf("%s%d.%06d", scaled < 0 ? "-" : "", abs(scaled)/1000000,
+             abs(scaled)%1000000);
+}
+
+static int inspect_humanoid_bases(const struct glb_doc *doc)
+{
+    struct rasterfall_humanoid_basis_input input;
+    struct rasterfall_humanoid_rest_basis bases[RASTERFALL_HUMANOID_BONE_COUNT];
+    double *globals, error = 0.0; unsigned char *ready;
+    int mapping[RASTERFALL_HUMANOID_BONE_COUNT], i, j; char name[128];
+    __memset(&input, 0, sizeof(input)); map_quaternius(doc, mapping);
+    globals=tlibc_malloc(doc->nodes.count*16*sizeof(double));ready=tlibc_malloc(doc->nodes.count);
+    if(!globals||!ready)return -1;
+    __memset(ready,0,doc->nodes.count);
+    for(i=0;i<RASTERFALL_HUMANOID_BONE_COUNT;i++)glb_basis_point(doc,mapping[i],globals,ready,&input.bones[i]);
+    glb_basis_point(doc,find_node_exact(doc,"ball_l","Ball_L"),globals,ready,&input.left_toe);
+    glb_basis_point(doc,find_node_exact(doc,"ball_r","Ball_R"),globals,ready,&input.right_toe);
+    glb_basis_point(doc,find_node_exact(doc,"middle_01_l","Middle1_L"),globals,ready,&input.left_middle);
+    glb_basis_point(doc,find_node_exact(doc,"middle_01_r","Middle1_R"),globals,ready,&input.right_middle);
+    glb_basis_point(doc,find_node_exact(doc,"thumb_01_l","Thumb1_L"),globals,ready,&input.left_thumb);
+    glb_basis_point(doc,find_node_exact(doc,"thumb_01_r","Thumb1_R"),globals,ready,&input.right_thumb);
+    input.model_up[1]=1.0;input.model_forward[2]=1.0;
+    if(rasterfall_humanoid_build_rest_bases(&input,bases)<0)return -1;
+    for(i=0;i<RASTERFALL_HUMANOID_BONE_COUNT;i++){
+        node_name(doc,mapping[i],name,sizeof(name));__printf("%s -> %s / node %d primary=(",semantic_names[i],name,mapping[i]);
+        for(j=0;j<3;j++){if(j)__printf(",");print_basis_number(bases[i].primary[j]);}
+        __printf(") secondary=(");for(j=0;j<3;j++){if(j)__printf(",");print_basis_number(bases[i].secondary[j]);}
+        __printf(") third=(");for(j=0;j<3;j++){if(j)__printf(",");print_basis_number(bases[i].third[j]);}
+        __printf(") quaternion=(");for(j=0;j<4;j++){if(j)__printf(",");print_basis_number(bases[i].rotation[j]);}
+        __printf(") source=\"%s\" confidence=%s%s\n",bases[i].source,
+            rasterfall_humanoid_basis_confidence_name(bases[i].confidence),
+            bases[i].confidence==RASTERFALL_HUMANOID_BASIS_LOW?" warning=fallback":"");
+    }
+    __printf("humanoid basis: valid=%s anatomy=%s max_error=",rasterfall_humanoid_validate_rest_bases(bases,&error)==0?"yes":"no",
+             rasterfall_humanoid_validate_anatomy(bases)==0?"yes":"no");print_basis_number(error);__printf("\n");
+    tlibc_free(globals);tlibc_free(ready);return 0;
+}
+
+static int wanted_fact_clip(const char *name)
+{
+    return !strcmp(name, "Idle_Loop") || !strcmp(name, "Walk_Loop") ||
+           !strcmp(name, "Jog_Fwd_Loop");
+}
+static int inspect_facts(const struct glb_doc *doc)
+{
+    int animation_index, scale_channels = 0, scale_non_identity = 0;
+    int scale_varying = 0; float maximum_identity = 0.0f, maximum_temporal = 0.0f;
+    const float identity_scale[4] = {1,1,1,1};
+    for (animation_index = 0; animation_index < doc->animations.count; animation_index++) {
+        struct slice animation = doc->animations.items[animation_index];
+        struct table samplers, channels; char animation_name[128]; int channel_index;
+        if (table_build(object_value(animation, "samplers"), &samplers) < 0 ||
+            table_build(object_value(animation, "channels"), &channels) < 0) return -1;
+        string_copy(object_value(animation, "name"), animation_name, sizeof(animation_name));
+        if (wanted_fact_clip(animation_name)) __printf("clip_changes: %s\n", animation_name);
+        for (channel_index = 0; channel_index < channels.count; channel_index++) {
+            struct slice channel = channels.items[channel_index];
+            struct slice target = object_value(channel, "target");
+            int sampler_index = json_int(object_value(channel, "sampler"), -1);
+            int node = json_int(object_value(target, "node"), -1), output;
+            char path[20], name[128]; float temporal, identity;
+            if (sampler_index < 0 || sampler_index >= samplers.count) return -1;
+            output = json_int(object_value(samplers.items[sampler_index], "output"), -1);
+            string_copy(object_value(target, "path"), path, sizeof(path));
+            temporal = accessor_max_delta(doc, output, 0, 0);
+            if (!strcmp(path, "scale")) {
+                identity = accessor_max_delta(doc, output, identity_scale, 1);
+                scale_channels++; if (identity > 0.00001f) scale_non_identity++;
+                if (temporal > 0.00001f) scale_varying++;
+                if (identity > maximum_identity) maximum_identity = identity;
+                if (temporal > maximum_temporal) maximum_temporal = temporal;
+            }
+            if (wanted_fact_clip(animation_name) && temporal > 0.00001f &&
+                (!strcmp(path, "translation") || !strcmp(path, "rotation"))) {
+                node_name(doc, node, name, sizeof(name));
+                __printf("  %s %s max_component_delta=%d.%07d%s\n", path, name,
+                         (int)temporal, abs((int)(temporal * 10000000.0f)) % 10000000,
+                         !strcmp(name, "root") ? " [ROOT]" : !strcmp(name, "pelvis") ? " [PELVIS]" : "");
+            }
+        }
+        table_free(&samplers); table_free(&channels);
+    }
+    __printf("scale_facts: channels=%d non_identity=%d temporally_varying=%d max_identity_delta=%d.%09d max_temporal_delta=%d.%09d threshold=0.00001\n",
+             scale_channels, scale_non_identity, scale_varying,
+             (int)maximum_identity, abs((int)(maximum_identity * 1000000000.0f)) % 1000000000,
+             (int)maximum_temporal, abs((int)(maximum_temporal * 1000000000.0f)) % 1000000000);
+    return bind_consistency(doc);
+}
+
 static void put_u32(unsigned char *p, unsigned int value)
 { p[0] = value; p[1] = value >> 8; p[2] = value >> 16; p[3] = value >> 24; }
 
@@ -570,14 +784,16 @@ static int self_test(void)
 
 int main(int argc, char **argv)
 {
-    struct glb_doc doc; int humanoid_only = 0, result;
+    struct glb_doc doc; int humanoid_only = 0, facts = 0, basis = 0, result;
     if (argc == 2 && !strcmp(argv[1], "--self-test")) return self_test();
-    if (argc < 2 || argc > 3 || (argc == 3 && strcmp(argv[2], "humanoid"))) {
-        __printf("usage: glb-inspect file.glb [humanoid]\n       glb-inspect --self-test\n"); return 2;
+    if (argc < 2 || argc > 3 || (argc == 3 && strcmp(argv[2], "humanoid") && strcmp(argv[2], "facts") && strcmp(argv[2], "basis"))) {
+        __printf("usage: glb-inspect file.glb [humanoid|basis|facts]\n       glb-inspect --self-test\n"); return 2;
     }
-    humanoid_only = argc == 3;
+    humanoid_only = argc == 3 && !strcmp(argv[2], "humanoid");
+    facts = argc == 3 && !strcmp(argv[2], "facts");
+    basis = argc == 3 && !strcmp(argv[2], "basis");
     if (doc_load(&doc, argv[1]) < 0) { __fprintf(2, "glb-inspect: invalid or unsupported GLB: %s\n", argv[1]); return 1; }
-    result = inspect_doc(&doc, humanoid_only);
+    result = facts ? inspect_facts(&doc) : basis ? inspect_humanoid_bases(&doc) : inspect_doc(&doc, humanoid_only);
     doc_free(&doc);
     return result < 0 ? 1 : 0;
 }

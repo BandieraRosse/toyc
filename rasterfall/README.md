@@ -107,6 +107,7 @@ build/rasterfall --model-views \
 ```sh
 build/rasterfall --model-bones rasterfall/private-assets/models/yola.rmesh 腕
 build/rasterfall --model-humanoid rasterfall/private-assets/models/yola.rmesh
+build/rasterfall --model-humanoid-basis rasterfall/private-assets/models/yola.rmesh
 build/rasterfall --model-static-views rasterfall/private-assets/models/yola.rmesh tmp/yola-static
 build/rasterfall --model-pose-views rasterfall/private-assets/models/yola.rmesh tmp/yola-bind bind
 build/rasterfall --model-pose-views rasterfall/private-assets/models/yola.rmesh tmp/yola-arm right-arm
@@ -122,12 +123,15 @@ BDEF 蒙皮或 AnimationClip 的运行方式。
 make app-glb-inspect
 build/glb-inspect animation.glb
 build/glb-inspect animation.glb humanoid
+build/glb-inspect animation.glb basis
 build/glb-inspect --self-test
 ```
 
 工具只解析 GLB 容器及 glTF 的 node、skin、accessor 和 animation 元数据，不导入
 mesh/material，也不生成 Rasterfall 动画。`humanoid` 模式将 Quaternius 的明确骨名
 映射到通用 Humanoid 语义，并省略手指等非核心 joint 和逐 channel 明细。
+`basis` 模式使用与 RFM2 相同的 Humanoid 规则输出 canonical global rest basis；
+它只进行诊断，不转换或播放动画。
 
 游戏地图在优菈前方提供 RESET、RIGHT ARM、ARMS 和 BODY TURN 四个 E 互动按钮；
 默认单人出生点位于模型正面并朝向模型。这些 pose 仅为本地程序化演示，不进入网络同步。
