@@ -165,6 +165,8 @@ int rasterfall_model_retarget_synthetic_test(
     const struct rasterfall_model_asset *asset, const char *action);
 int rasterfall_model_glb_animation_test(struct rasterfall_model_asset *asset,
                                         const char *glb_path,const char *clip_name);
+int rasterfall_model_glb_motion_diagnostic(struct rasterfall_model_asset *asset,
+                                           const char *glb_path);
 int rasterfall_humanoid_logic_test(void);
 int rasterfall_model_skinning_logic_test(void);
 
