@@ -191,6 +191,31 @@ static uint32_t texture_sample(const struct toy_texture_view *t,
     }
 }
 
+/* Benchmark-only addressing specialization: callers guarantee a valid TTEX
+ * view, so this isolates validation/fallback and generic call overhead while
+ * retaining the same Q16 clamp/wrap and texel selection. */
+static uint32_t texture_sample_simple(const struct toy_texture_view *t,
+                                      long u, long v, int repeat)
+{
+    long x, y, at, channels = t->channels ? t->channels : 3;
+    const unsigned char *p;
+    if (repeat) {
+        u &= TOY_UV_ONE - 1;
+        v &= TOY_UV_ONE - 1;
+    } else {
+        if (u < 0) u = 0;
+        if (v < 0) v = 0;
+        if (u >= TOY_UV_ONE) u = TOY_UV_ONE - 1;
+        if (v >= TOY_UV_ONE) v = TOY_UV_ONE - 1;
+    }
+    x = (u * t->width) / TOY_UV_ONE;
+    y = (v * t->height) / TOY_UV_ONE;
+    at = (y * t->width + x) * channels;
+    p = t->data + at;
+    return (channels == 4 ? (uint32_t)p[3] << 24 : 0xFF000000U) |
+           ((uint32_t)p[0] << 16) | ((uint32_t)p[1] << 8) | p[2];
+}
+
 static uint32_t shade_color(uint32_t color, int light, int fog)
 {
     int r = (int)((color >> 16) & 255), g = (int)((color >> 8) & 255);
@@ -239,6 +264,7 @@ static long raster_tex(struct toy_renderer *renderer,
     int *depth = renderer->depth;
     int width = surface->width;
     int y, x, drawn = 0;
+    int diagnostic = renderer->texture_diagnostic_flags;
     unsigned long inside = 0;
     /* 与 raster_flat 相同的增量边函数（行首边值按行增量更新）。 */
     long dEx0 = c->y - b->y, dEx1 = a->y - c->y, dEx2 = b->y - a->y;
@@ -246,11 +272,57 @@ static long raster_tex(struct toy_renderer *renderer,
     long w0 = edge(b, c, minx, y0);
     long w1 = edge(c, a, minx, y0);
     long w2 = edge(a, b, minx, y0);
+    long affine_u_row = 0, affine_v_row = 0;
+    long affine_u2_row = 0, affine_v2_row = 0;
+    long affine_du_dx = 0, affine_dv_dx = 0;
+    long affine_du2_dx = 0, affine_dv2_dx = 0;
+    long affine_du_dy = 0, affine_dv_dy = 0;
+    long affine_du2_dy = 0, affine_dv2_dy = 0;
+    if (diagnostic & TOY_RENDER_DIAG_AFFINE_UV) {
+        affine_u_row = (long)(((long long)w0 * a->u +
+                               (long long)w1 * b->u +
+                               (long long)w2 * c->u) / area);
+        affine_v_row = (long)(((long long)w0 * a->v +
+                               (long long)w1 * b->v +
+                               (long long)w2 * c->v) / area);
+        affine_u2_row = (long)(((long long)w0 * a->u2 +
+                                (long long)w1 * b->u2 +
+                                (long long)w2 * c->u2) / area);
+        affine_v2_row = (long)(((long long)w0 * a->v2 +
+                                (long long)w1 * b->v2 +
+                                (long long)w2 * c->v2) / area);
+        affine_du_dx = (long)(((long long)dEx0 * a->u +
+                               (long long)dEx1 * b->u +
+                               (long long)dEx2 * c->u) / area);
+        affine_dv_dx = (long)(((long long)dEx0 * a->v +
+                               (long long)dEx1 * b->v +
+                               (long long)dEx2 * c->v) / area);
+        affine_du2_dx = (long)(((long long)dEx0 * a->u2 +
+                                (long long)dEx1 * b->u2 +
+                                (long long)dEx2 * c->u2) / area);
+        affine_dv2_dx = (long)(((long long)dEx0 * a->v2 +
+                                (long long)dEx1 * b->v2 +
+                                (long long)dEx2 * c->v2) / area);
+        affine_du_dy = (long)(((long long)dEy0 * a->u +
+                               (long long)dEy1 * b->u +
+                               (long long)dEy2 * c->u) / area);
+        affine_dv_dy = (long)(((long long)dEy0 * a->v +
+                               (long long)dEy1 * b->v +
+                               (long long)dEy2 * c->v) / area);
+        affine_du2_dy = (long)(((long long)dEy0 * a->u2 +
+                                (long long)dEy1 * b->u2 +
+                                (long long)dEy2 * c->u2) / area);
+        affine_dv2_dy = (long)(((long long)dEy0 * a->v2 +
+                                (long long)dEy1 * b->v2 +
+                                (long long)dEy2 * c->v2) / area);
+    }
     for (y = y0; y <= y1; y++) {
         uint32_t *row = (uint32_t *)((unsigned char *)surface->pixels +
                                      y * surface->stride);
         int base = y * width;
         long e0 = w0, e1 = w1, e2 = w2;
+        long affine_u = affine_u_row, affine_v = affine_v_row;
+        long affine_u2 = affine_u2_row, affine_v2 = affine_v2_row;
         for (x = minx; x <= maxx; x++) {
             if (e0 <= 0 && e1 <= 0 && e2 <= 0) {
                 inside++;
@@ -265,28 +337,40 @@ static long raster_tex(struct toy_renderer *renderer,
                 /* 与 flat 路径相同：平局（≥）判给后画者。 */
                 if (inv_norm >= depth[at]) {
                     worker->depth_pass_px++;
-                    long long uoz = (long long)e0 * a->u_over_z +
-                                    (long long)e1 * b->u_over_z +
-                                    (long long)e2 * c->u_over_z;
-                    long long voz = (long long)e0 * a->v_over_z +
-                                    (long long)e1 * b->v_over_z +
-                                    (long long)e2 * c->v_over_z;
-                    long long u2oz = (long long)e0 * a->u2_over_z +
-                                     (long long)e1 * b->u2_over_z +
-                                     (long long)e2 * c->u2_over_z;
-                    long long v2oz = (long long)e0 * a->v2_over_z +
-                                     (long long)e1 * b->v2_over_z +
-                                     (long long)e2 * c->v2_over_z;
+                    long long uoz = 0, voz = 0, u2oz = 0, v2oz = 0;
+                    if (!(diagnostic & TOY_RENDER_DIAG_AFFINE_UV)) {
+                        uoz = (long long)e0 * a->u_over_z +
+                              (long long)e1 * b->u_over_z +
+                              (long long)e2 * c->u_over_z;
+                        voz = (long long)e0 * a->v_over_z +
+                              (long long)e1 * b->v_over_z +
+                              (long long)e2 * c->v_over_z;
+                        u2oz = (long long)e0 * a->u2_over_z +
+                               (long long)e1 * b->u2_over_z +
+                               (long long)e2 * c->u2_over_z;
+                        v2oz = (long long)e0 * a->v2_over_z +
+                               (long long)e1 * b->v2_over_z +
+                               (long long)e2 * c->v2_over_z;
+                    }
                     int used_fallback = 0;
-                    long u = inv64 ? (long)(uoz / inv64) : 0;
-                    long v = inv64 ? (long)(voz / inv64) : 0;
-                    uint32_t color = texture_sample(texture, u, v, repeat,
-                                                     fallback_color, &used_fallback);
+                    long u = diagnostic & TOY_RENDER_DIAG_AFFINE_UV ?
+                             affine_u : inv64 ? (long)(uoz / inv64) : 0;
+                    long v = diagnostic & TOY_RENDER_DIAG_AFFINE_UV ?
+                             affine_v : inv64 ? (long)(voz / inv64) : 0;
+                    uint32_t color;
+                    if ((diagnostic & TOY_RENDER_DIAG_SIMPLE_ADDRESS) &&
+                        texture_valid(texture))
+                        color = texture_sample_simple(texture, u, v, repeat);
+                    else
+                        color = texture_sample(texture, u, v, repeat,
+                                               fallback_color, &used_fallback);
                     if (texture2) {
                         int sphere_fallback = 0;
                         long u2, v2;
-                        u2 = inv64 ? (long)(u2oz / inv64) : 0;
-                        v2 = inv64 ? (long)(v2oz / inv64) : 0;
+                        u2 = diagnostic & TOY_RENDER_DIAG_AFFINE_UV ?
+                             affine_u2 : inv64 ? (long)(u2oz / inv64) : 0;
+                        v2 = diagnostic & TOY_RENDER_DIAG_AFFINE_UV ?
+                             affine_v2 : inv64 ? (long)(v2oz / inv64) : 0;
                         uint32_t sphere = texture_sample(texture2, u2, v2,
                                                           repeat, 0xffffffffU,
                                                           &sphere_fallback);
@@ -334,7 +418,9 @@ static long raster_tex(struct toy_renderer *renderer,
                     long fog = fog_factor >= 0 ? fog_factor :
                         (e0 * a->fog + e1 * b->fog + e2 * c->fog) / area;
                     {
-                    int alpha = (int)(color >> 24) * material_alpha / 255;
+                    int alpha = diagnostic & TOY_RENDER_DIAG_FORCE_OPAQUE ?
+                                255 :
+                                (int)(color >> 24) * material_alpha / 255;
                     if (alpha > 0) {
                         worker->shaded_px++;
                         {
@@ -357,6 +443,7 @@ static long raster_tex(struct toy_renderer *renderer,
                             depth[at] = (int)inv_norm;
                             row[x] = color;
                         } else {
+                            worker->alpha_blended_pixels++;
                             uint32_t under = row[x];
                             int ur = (under >> 16) & 255;
                             int ug = (under >> 8) & 255;
@@ -373,12 +460,21 @@ static long raster_tex(struct toy_renderer *renderer,
                         if (used_fallback) (*fallback_pixels)++;
                         drawn++;
                     }
+                    else worker->alpha_zero_pixels++;
                     }
                 }
             }
             e0 += dEx0; e1 += dEx1; e2 += dEx2;
+            if (diagnostic & TOY_RENDER_DIAG_AFFINE_UV) {
+                affine_u += affine_du_dx; affine_v += affine_dv_dx;
+                affine_u2 += affine_du2_dx; affine_v2 += affine_dv2_dx;
+            }
         }
         w0 += dEy0; w1 += dEy1; w2 += dEy2;
+        if (diagnostic & TOY_RENDER_DIAG_AFFINE_UV) {
+            affine_u_row += affine_du_dy; affine_v_row += affine_dv_dy;
+            affine_u2_row += affine_du2_dy; affine_v2_row += affine_dv2_dy;
+        }
     }
     worker->inside_px += inside;
     return drawn;
@@ -678,24 +774,73 @@ void toy_renderer_set_worker_count(struct toy_renderer *renderer, int count)
     renderer->requested_worker_count = count;
 }
 
+void toy_renderer_set_texture_diagnostics(struct toy_renderer *renderer,
+                                          int flags)
+{
+    if (renderer) renderer->texture_diagnostic_flags = flags;
+}
+
 /* ── 工作线程池：futex 等待 job_generation，主线程分发后自旋等 done ── */
+
+static int parse_cpu_online(const char *text, int length)
+{
+    int at = 0, count = 0;
+    while (at < length) {
+        int first = 0, last;
+        if (text[at] < '0' || text[at] > '9') break;
+        while (at < length && text[at] >= '0' && text[at] <= '9')
+            first = first * 10 + text[at++] - '0';
+        last = first;
+        if (at < length && text[at] == '-') {
+            at++;
+            if (at >= length || text[at] < '0' || text[at] > '9') return 0;
+            last = 0;
+            while (at < length && text[at] >= '0' && text[at] <= '9')
+                last = last * 10 + text[at++] - '0';
+        }
+        if (last < first || last - first > 4096) return 0;
+        count += last - first + 1;
+        if (at >= length || text[at] == '\n') break;
+        if (text[at++] != ',') return 0;
+    }
+    return count;
+}
 
 static int count_processors(void)
 {
-    char buf[16384];
-    int fd, n, count = 0, i;
-    fd = __openat(AT_FDCWD, "/proc/cpuinfo", O_RDONLY, 0);
-    if (fd < 0) return 4;
-    n = (int)__read(fd, buf, (int)sizeof(buf));
-    __close(fd);
-    if (n <= 0) return 4;
-    for (i = 0; i + 8 < n; i++)
-        if (buf[i] == 'p' && buf[i + 1] == 'r' && buf[i + 2] == 'o' &&
-            buf[i + 3] == 'c' && buf[i + 4] == 'e' && buf[i + 5] == 's' &&
-            buf[i + 6] == 's' && buf[i + 7] == 'o' && buf[i + 8] == 'r')
-            count++;
-    if (count < 1) count = 4;   /* 解析失败按 4 核降级 */
-    if (count > TOY_RENDER_MAX_WORKERS) count = TOY_RENDER_MAX_WORKERS;
+    static const char processor[] = "processor";
+    char buf[4096];
+    int fd, n, count = 0, match = 0;
+    /* This compact Linux list (for example 0-15,32-47) avoids a libc
+     * sysconf dependency and cannot be truncated by a large cpuinfo file. */
+    fd = __openat(AT_FDCWD, "/sys/devices/system/cpu/online", O_RDONLY, 0);
+    if (fd >= 0) {
+        n = (int)__read(fd, buf, (int)sizeof(buf));
+        __close(fd);
+        if (n > 0) count = parse_cpu_online(buf, n);
+    }
+    /* Container/sysfs fallback: parse every cpuinfo chunk and retain line
+     * matching state across read boundaries. */
+    if (count < 1) {
+        fd = __openat(AT_FDCWD, "/proc/cpuinfo", O_RDONLY, 0);
+        if (fd >= 0) {
+            count = 0;
+            for (;;) {
+                n = (int)__read(fd, buf, (int)sizeof(buf));
+                if (n <= 0) break;
+                for (int i = 0; i < n; i++) {
+                    if (buf[i] == '\n') match = 0;
+                    else if (match >= 0 && match < 9 &&
+                             buf[i] == processor[match]) {
+                        match++;
+                        if (match == 9) count++;
+                    } else match = -1;
+                }
+            }
+            __close(fd);
+        }
+    }
+    if (count < 1) count = 4;
     return count;
 }
 
@@ -793,6 +938,8 @@ static void *render_worker_main(void *arg)
         worker->shaded_px = 0;
         worker->written_px = 0;
         worker->flat_pixels = 0;
+        worker->alpha_blended_pixels = 0;
+        worker->alpha_zero_pixels = 0;
         worker->bbox_px = 0;
         worker->inside_px = 0;
         worker->flat_us = 0;
@@ -819,8 +966,10 @@ static int ensure_workers(struct toy_renderer *renderer)
 {
     int n, i;
     if (renderer->workers) return 0;
+    renderer->detected_cpu_count = count_processors();
     n = renderer->requested_worker_count > 0 ?
-        renderer->requested_worker_count : count_processors();
+        renderer->requested_worker_count : renderer->detected_cpu_count;
+    if (n > TOY_RENDER_MAX_WORKERS) n = TOY_RENDER_MAX_WORKERS;
     if (n < 1) return -1;
     renderer->workers = tlibc_malloc((size_t)n *
                                      sizeof(struct toy_render_worker));

@@ -165,6 +165,8 @@ build/rasterfall --model-performance \
 工作线程累计 CPU 时间、三角形数和像素漏斗也会一并输出；不包含模型加载、
 纹理解码或图片写盘。Full 模式还会逐 worker 输出活跃/CPU 时间、检查命令数、
 相交三角形数以及 bbox、inside、depth-pass、shaded/written、flat/texture 像素。
+基准同时包含 base-texture-only、强制 opaque、仿射 UV 和简化纹理寻址等诊断
+消融；其中标记 `intentionally_changed=yes` 的模式只用于归因，不代表默认画质。
 
 版权受限的本地测试模型应放在 `private-assets/` 下；该目录已被 Git 忽略，
 不会参与公开资源或嵌入式发布构建。当前本地角色样本位于

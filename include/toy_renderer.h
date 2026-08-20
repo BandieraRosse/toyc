@@ -83,6 +83,8 @@ struct toy_render_worker {
     unsigned long shaded_px;
     unsigned long written_px;
     unsigned long flat_pixels;
+    unsigned long alpha_blended_pixels;
+    unsigned long alpha_zero_pixels;
     /* 逐像素漏斗与路径统计（job 开始清零，主线程 flush 后汇总） */
     unsigned long bbox_px;    /* 包围盒内实际扫描像素（逐条带精确） */
     unsigned long inside_px;  /* 通过边函数覆盖测试的像素 */
@@ -136,6 +138,8 @@ struct toy_renderer {
     int cmd_overflow;
     int recording_edge;
     int requested_worker_count;
+    int detected_cpu_count;
+    int texture_diagnostic_flags;
     /* 并行光栅化线程池 */
     struct toy_render_worker *workers;
     int worker_count;
@@ -207,6 +211,12 @@ int toy_renderer_triangle_textured_material_lit(
 void toy_renderer_set_recording_edge(struct toy_renderer *renderer, int edge);
 /* 仅在 worker 池创建前生效；0 使用自动 CPU 数，诊断可固定为 1..8。 */
 void toy_renderer_set_worker_count(struct toy_renderer *renderer, int count);
+/* 仅供离线性能消融；默认 0 保持正常渲染。 */
+#define TOY_RENDER_DIAG_FORCE_OPAQUE    1
+#define TOY_RENDER_DIAG_AFFINE_UV       2
+#define TOY_RENDER_DIAG_SIMPLE_ADDRESS  4
+void toy_renderer_set_texture_diagnostics(struct toy_renderer *renderer,
+                                          int flags);
 /* 把记录阶段的三角形命令并行光栅化到 surface；返回实际写入像素数
  * （接替 toy_renderer_triangle 系列的返回值语义）。 */
 int toy_renderer_flush(struct toy_renderer *renderer);

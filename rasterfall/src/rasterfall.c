@@ -1694,6 +1694,8 @@ struct model_performance_result {
     unsigned long worker_written_pixels[8];
     unsigned long worker_flat_pixels[8];
     unsigned long worker_texture_pixels[8];
+    unsigned long alpha_blended_pixels;
+    unsigned long alpha_zero_pixels;
     long worker_wait_us;
     int worker_count;
     int frames;
@@ -1702,16 +1704,24 @@ struct model_performance_result {
 static int benchmark_model_features(const char *model_path, int iterations,
                                     int requested_workers)
 {
-    static const char *names[6] = {
-        "full", "edge_off", "toon_off", "sphere_off", "lighting_off",
-        "model_off"
+    static const char *names[10] = {
+        "full", "base_texture_only", "opaque_texture_diag",
+        "affine_uv_diag", "simple_address_diag", "edge_off", "toon_off",
+        "sphere_off", "lighting_off", "model_off"
     };
-    static const unsigned char sphere[6] = {1, 1, 1, 0, 1, 0};
-    static const unsigned char toon[6] = {1, 1, 0, 1, 1, 0};
-    static const unsigned char edge[6] = {1, 0, 1, 1, 1, 0};
-    static const unsigned char lighting[6] = {1, 1, 1, 1, 0, 0};
-    static const unsigned char model_enabled[6] = {1, 1, 1, 1, 1, 0};
-    struct model_performance_result results[6];
+    static const unsigned char sphere[10] = {1, 0, 1, 1, 1, 1, 1, 0, 1, 0};
+    static const unsigned char toon[10] = {1, 0, 1, 1, 1, 1, 0, 1, 1, 0};
+    static const unsigned char edge[10] = {1, 1, 1, 1, 1, 0, 1, 1, 1, 0};
+    static const unsigned char lighting[10] = {1, 0, 1, 1, 1, 1, 1, 1, 0, 0};
+    static const unsigned char model_enabled[10] = {1, 1, 1, 1, 1, 1, 1, 1, 1, 0};
+    static const int diagnostic[10] = {
+        0, 0, TOY_RENDER_DIAG_FORCE_OPAQUE, TOY_RENDER_DIAG_AFFINE_UV,
+        TOY_RENDER_DIAG_SIMPLE_ADDRESS, 0, 0, 0, 0, 0
+    };
+    static const unsigned char intentionally_changed[10] = {
+        0, 1, 1, 1, 0, 1, 1, 1, 1, 1
+    };
+    struct model_performance_result results[10];
     struct rasterfall_model_asset model;
     struct toy_surface surface;
     struct toy_renderer renderer;
@@ -1743,7 +1753,9 @@ static int benchmark_model_features(const char *model_path, int iterations,
     for (view = 0; view < 3; view++) cameras[view].pitch_cy = 1024;
 
     /* Populate renderer buffers and texture/model caches before measuring. */
-    for (configuration = 0; configuration < 6; configuration++) {
+    for (configuration = 0; configuration < 10; configuration++) {
+        toy_renderer_set_texture_diagnostics(&renderer,
+                                             diagnostic[configuration]);
         if (toy_renderer_begin(&renderer, &surface, 0x30343B) < 0) goto fail;
         if (model_enabled[configuration] &&
             rasterfall_render_model_preview(&renderer, &cameras[0], &model,
@@ -1754,14 +1766,16 @@ static int benchmark_model_features(const char *model_path, int iterations,
     for (iteration = 0; iteration < iterations; iteration++) {
         /* Alternate direction so thermal/scheduler drift does not always
          * penalize the same late configuration. */
-        for (step = 0; step < 6; step++) {
-            configuration = iteration & 1 ? 5 - step : step;
+        for (step = 0; step < 10; step++) {
+            configuration = iteration & 1 ? 9 - step : step;
             for (view = 0; view < 3; view++) {
                 int64_t start = monotonic_us();
                 int64_t after_begin, after_setup, after_flush;
                 if (toy_renderer_begin(&renderer, &surface, 0x30343B) < 0)
                     goto fail;
                 after_begin = monotonic_us();
+                toy_renderer_set_texture_diagnostics(
+                    &renderer, diagnostic[configuration]);
                 if (model_enabled[configuration] &&
                     rasterfall_render_model_preview(&renderer, &cameras[view],
                         &model, sphere[configuration], toon[configuration],
@@ -1815,14 +1829,19 @@ static int benchmark_model_features(const char *model_path, int iterations,
                     results[configuration].worker_flat_pixels[worker] += w->flat_pixels;
                     results[configuration].worker_texture_pixels[worker] +=
                         w->textured_pixels;
+                    results[configuration].alpha_blended_pixels +=
+                        w->alpha_blended_pixels;
+                    results[configuration].alpha_zero_pixels +=
+                        w->alpha_zero_pixels;
                 }
                 results[configuration].frames++;
             }
         }
     }
-    __printf("rasterfall: model performance path=%s iterations=%d views=3 size=800x800 workers=%d\n",
-             model_path, iterations, renderer.worker_count);
-    for (configuration = 0; configuration < 6; configuration++) {
+    __printf("rasterfall: model performance path=%s iterations=%d views=3 size=800x800 detected_cpus=%d selected_workers=%d\n",
+             model_path, iterations, renderer.detected_cpu_count,
+             renderer.worker_count);
+    for (configuration = 0; configuration < 10; configuration++) {
         const struct model_performance_result *r = &results[configuration];
         int frames = r->frames ? r->frames : 1;
         long sort_us = r->sort_us / frames;
@@ -1848,8 +1867,13 @@ static int benchmark_model_features(const char *model_path, int iterations,
             bbox_sum += worker_bbox;
         }
         long worker_avg = r->worker_count ? worker_sum / r->worker_count : 0;
-        __printf("rasterfall: model performance mode=%s frames=%d wall_us_per_frame=%ld clear_us_per_frame=%ld triangle_setup_us_per_frame=%ld sort_us_per_frame=%ld classify_us_per_frame=%ld merge_copy_us_per_frame=%ld actual_sort_us_per_frame=%ld pixel_raster_wall_us_per_frame=%ld worker_count=%d worker_wait_us_per_frame=%ld worker_total_cpu_us_per_frame=%ld worker_us_min=%ld worker_us_max=%ld worker_us_avg=%ld worker_max_avg_permille=%ld worker_spread_us=%ld texture_pixels_min=%lu texture_pixels_max=%lu texture_pixels_avg=%lu worker_bbox_min=%lu worker_bbox_max=%lu worker_bbox_avg=%lu opaque_commands_per_frame=%lu transparent_commands_per_frame=%lu edge_commands_per_frame=%lu sorted_elements_per_frame=%lu flat_raster_cpu_us_per_frame=%ld texture_raster_cpu_us_per_frame=%ld triangles_per_frame=%lu bbox_pixels_per_frame=%lu inside_pixels_per_frame=%lu textured_pixels_per_frame=%lu\n",
-                 names[configuration], r->frames,
+        unsigned long texture_pixels = r->textured_pixels /
+                                       (unsigned long)frames;
+        long texture_cpu = r->texture_raster_cpu_us / frames;
+        __printf("rasterfall: model performance mode=%s intentionally_changed=%s frames=%d wall_us_per_frame=%ld clear_us_per_frame=%ld triangle_setup_us_per_frame=%ld sort_us_per_frame=%ld classify_us_per_frame=%ld merge_copy_us_per_frame=%ld actual_sort_us_per_frame=%ld pixel_raster_wall_us_per_frame=%ld worker_count=%d worker_wait_us_per_frame=%ld worker_total_cpu_us_per_frame=%ld worker_us_min=%ld worker_us_max=%ld worker_us_avg=%ld worker_max_avg_permille=%ld worker_spread_us=%ld texture_pixels_min=%lu texture_pixels_max=%lu texture_pixels_avg=%lu worker_bbox_min=%lu worker_bbox_max=%lu worker_bbox_avg=%lu opaque_commands_per_frame=%lu transparent_commands_per_frame=%lu edge_commands_per_frame=%lu sorted_elements_per_frame=%lu flat_raster_cpu_us_per_frame=%ld texture_raster_cpu_us_per_frame=%ld texture_cpu_ns_per_pixel=%ld alpha_blended_pixels_per_frame=%lu alpha_zero_pixels_per_frame=%lu triangles_per_frame=%lu bbox_pixels_per_frame=%lu inside_pixels_per_frame=%lu textured_pixels_per_frame=%lu\n",
+                 names[configuration],
+                 intentionally_changed[configuration] ? "yes" : "no",
+                 r->frames,
                  (long)(r->wall_us / frames),
                  (long)(r->begin_us / frames),
                  (long)(r->setup_us / frames), sort_us,
@@ -1870,7 +1894,10 @@ static int benchmark_model_features(const char *model_path, int iterations,
                  r->edge_commands / (unsigned long)frames,
                  r->sorted_commands / (unsigned long)frames,
                  r->flat_raster_cpu_us / frames,
-                 r->texture_raster_cpu_us / frames,
+                 texture_cpu,
+                 texture_pixels ? texture_cpu * 1000 / (long)texture_pixels : 0,
+                 r->alpha_blended_pixels / (unsigned long)frames,
+                 r->alpha_zero_pixels / (unsigned long)frames,
                  r->triangles / (unsigned long)frames,
                  r->bbox_pixels / (unsigned long)frames,
                  r->inside_pixels / (unsigned long)frames,
