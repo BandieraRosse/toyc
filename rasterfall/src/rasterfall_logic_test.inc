@@ -446,13 +446,22 @@ static int run_logic_test(void)
     camera.pitch_sy = 0;
     camera.pitch_cy = 1024;
 
-    triangle[0].x = -100; triangle[0].y = 0; triangle[0].z = 100;
-    triangle[1].x =  100; triangle[1].y = 0; triangle[1].z = 400;
-    triangle[2].x =    0; triangle[2].y = 100; triangle[2].z = 400;
+    triangle[0].x = -100; triangle[0].y = 0; triangle[0].z = 20;
+    triangle[1].x =  100; triangle[1].y = 0; triangle[1].z = 200;
+    triangle[2].x =    0; triangle[2].y = 100; triangle[2].z = 200;
     count = clip_near(triangle, 3, clipped);
     if (count != 4) return 5;
     for (int i = 0; i < count; i++)
-        if (clipped[i].z < NEAR_Z) return 6;
+        if (clipped[i].z < RASTERFALL_NEAR_Z) return 6;
+    /* Two vertices behind become one triangle; all three behind reject it. */
+    triangle[1].z = 20;
+    count = clip_near(triangle, 3, clipped);
+    if (count != 3) return 165;
+    for (int i = 0; i < count; i++)
+        if (clipped[i].z < RASTERFALL_NEAR_Z) return 166;
+    triangle[2].z = 20;
+    if (clip_near(triangle, 3, clipped) != 0) return 167;
+    if (rasterfall_render_near_clip_test() != 0) return 168;
     pixels = tlibc_malloc(320 * 180 * sizeof(uint32_t));
     if (!pixels) return 7;
     surface.pixels = pixels;

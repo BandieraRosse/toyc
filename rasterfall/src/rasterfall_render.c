@@ -24,7 +24,7 @@
 #include "rasterfall_animation.h"
 #include "math.h"
 
-#define NEAR_Z 192
+#define NEAR_Z RASTERFALL_NEAR_Z
 #define ENEMY_RENDER_DISTANCE 24000
 #define UV_ONE 65536
 #define BAKED_LM_W 32
@@ -64,6 +64,9 @@ static int active_disable_edge;
 static int active_disable_material_light;
 static int active_emissive_projectile;
 static int active_coordinate_axes;
+static struct rasterfall_model_render_stats model_render_stats;
+static struct rasterfall_model_triangle_stats *active_model_triangle_stats;
+static int collect_model_render_stats;
 
 #define level_map active_session->level
 #define game active_session->game_state
@@ -312,6 +315,7 @@ static int render_gallery_model(struct toy_renderer *renderer,
                                 int scale)
 {
     int drawn = 0, i;
+    int command_overflow_before = renderer->cmd_overflow;
     const struct toy_texture_view *previous_texture = active_texture_view;
     const struct toy_texture_view *previous_sphere = active_sphere_texture;
     const struct toy_texture_view *previous_toon = active_toon_texture;
@@ -382,6 +386,8 @@ static int render_gallery_model(struct toy_renderer *renderer,
                 active_toon_texture = 0;
                 active_material_alpha = (int)(edge >> 24);
                 active_material_double_sided = 0;
+                active_model_triangle_stats = collect_model_render_stats ?
+                    &model_render_stats.edge : 0;
                 for (j = 0; j + 2 < index_count; j += 3) {
                     unsigned int ia = model_u32(indices + j * 4);
                     unsigned int ib = model_u32(indices + (j + 1) * 4);
@@ -405,6 +411,8 @@ static int render_gallery_model(struct toy_renderer *renderer,
                 active_material_double_sided = saved_double_sided;
             }
         }
+        active_model_triangle_stats = collect_model_render_stats ?
+            &model_render_stats.body : 0;
         if (material < model->material_count && model->texture_assets) {
             unsigned int texture_index = model_u32(model->materials + material * model->material_bytes + 8);
             if (texture_index < model->texture_count && model->texture_assets[texture_index].data) {
@@ -500,6 +508,10 @@ static int render_gallery_model(struct toy_renderer *renderer,
     active_material_specular = previous_material_specular;
     active_material_specular_power = previous_material_specular_power;
     active_material_specular_level = previous_material_specular_level;
+    active_model_triangle_stats = 0;
+    if (collect_model_render_stats)
+        model_render_stats.command_overflow += renderer->cmd_overflow -
+                                               command_overflow_before;
     return drawn;
 }
 
@@ -518,6 +530,8 @@ int rasterfall_render_model_preview(struct toy_renderer *renderer,
     size = width > height ? width : height;
     if (depth > size) size = depth;
     if (size <= 0) return -1;
+    __memset(&model_render_stats, 0, sizeof(model_render_stats));
+    collect_model_render_stats = 1;
 
     /* Fit every model into the same 900-unit inspection volume and center
      * its bounds at the origin.  A fixed camera distance then makes views
@@ -534,12 +548,18 @@ int rasterfall_render_model_preview(struct toy_renderer *renderer,
     active_disable_material_light = !use_material_light;
     pixels = render_gallery_model(renderer, camera, model, center_x, base_y,
                                   center_z, scale);
+    collect_model_render_stats = 0;
     active_disable_sphere = 0;
     active_disable_toon = 0;
     active_disable_edge = 0;
     active_disable_material_light = 0;
     active_gallery_lighting = 0;
     return pixels;
+}
+
+void rasterfall_render_model_stats(struct rasterfall_model_render_stats *out)
+{
+    if (out) memcpy(out, &model_render_stats, sizeof(*out));
 }
 
 /* Static developer display: nine models per row, in front of the north
@@ -810,6 +830,40 @@ static int clip_near_uv(const struct world_uv_vertex *input, int count,
     return out_count;
 }
 
+int rasterfall_render_near_clip_test(void)
+{
+    struct world_uv_vertex input[3], output[4];
+    int count, i, intersections = 0;
+    __memset(input, 0, sizeof(input));
+    input[0].p.z = 20;
+    input[1].p.z = input[2].p.z = 200;
+    input[0].u = 0; input[0].v = 1000;
+    input[0].su = 2000; input[0].sv = 3000;
+    input[1].u = input[2].u = 30000;
+    input[1].v = input[2].v = 31000;
+    input[1].su = input[2].su = 32000;
+    input[1].sv = input[2].sv = 33000;
+    count = clip_near_uv(input, 3, output);
+    if (count != 4) return 1;
+    for (i = 0; i < count; i++) {
+        if (output[i].p.z < NEAR_Z) return 2;
+        if (output[i].p.z == NEAR_Z) {
+            intersections++;
+            if (output[i].u <= input[0].u || output[i].u >= input[1].u ||
+                output[i].v <= input[0].v || output[i].v >= input[1].v ||
+                output[i].su <= input[0].su || output[i].su >= input[1].su ||
+                output[i].sv <= input[0].sv || output[i].sv >= input[1].sv)
+                return 3;
+        }
+    }
+    if (intersections != 2) return 4;
+    input[1].p.z = 20;
+    if (clip_near_uv(input, 3, output) != 3) return 5;
+    input[2].p.z = 20;
+    if (clip_near_uv(input, 3, output) != 0) return 6;
+    return 0;
+}
+
 static void project_vertex(const struct toy_surface *surface,
                            const struct vec3 *view,
                            struct toy_screen_vertex *screen)
@@ -856,6 +910,13 @@ static int draw_world_triangle(struct toy_renderer *renderer,
     world_to_view(camera, b, &input[1]);
     world_to_view(camera, c, &input[2]);
     count = clip_near(input, 3, clipped);
+    if (active_model_triangle_stats) {
+        active_model_triangle_stats->total_triangles++;
+        if (count < 3) active_model_triangle_stats->near_rejected_triangles++;
+        else if (input[0].z < NEAR_Z || input[1].z < NEAR_Z ||
+                 input[2].z < NEAR_Z)
+            active_model_triangle_stats->near_clipped_triangles++;
+    }
     for (int i = 1; i + 1 < count; i++) {
         struct toy_screen_vertex sa, sb, sc;
         long long area;
@@ -868,7 +929,11 @@ static int draw_world_triangle(struct toy_renderer *renderer,
                ((long long)sc.y - sa.y) * ((long long)sb.x - sa.x);
         if (area >= 0) {
             struct toy_screen_vertex swap;
-            if (!active_material_double_sided) continue;
+            if (!active_material_double_sided) {
+                if (active_model_triangle_stats)
+                    active_model_triangle_stats->backface_culled_triangles++;
+                continue;
+            }
             swap.x = sb.x; swap.y = sb.y; swap.z = sb.z;
             swap.inv_z = sb.inv_z;
             sb.x = sc.x; sb.y = sc.y; sb.z = sc.z;
@@ -893,6 +958,8 @@ static int draw_world_triangle(struct toy_renderer *renderer,
         else
             drawn += toy_renderer_triangle_lit(renderer, &sa, &sb, &sc,
                                                color, light, fog);
+        if (active_model_triangle_stats)
+            active_model_triangle_stats->emitted_triangles++;
     }
     return drawn;
 }
@@ -915,6 +982,13 @@ static int draw_world_triangle_tex(struct toy_renderer *renderer,
     input[1].su = b->su; input[1].sv = b->sv;
     input[2].su = c->su; input[2].sv = c->sv;
     count = clip_near_uv(input, 3, clipped);
+    if (active_model_triangle_stats) {
+        active_model_triangle_stats->total_triangles++;
+        if (count < 3) active_model_triangle_stats->near_rejected_triangles++;
+        else if (input[0].p.z < NEAR_Z || input[1].p.z < NEAR_Z ||
+                 input[2].p.z < NEAR_Z)
+            active_model_triangle_stats->near_clipped_triangles++;
+    }
     for (int i = 1; i + 1 < count; i++) {
         struct toy_screen_vertex sa, sb, sc;
         long long area;
@@ -931,7 +1005,11 @@ static int draw_world_triangle_tex(struct toy_renderer *renderer,
                ((long long)sc.y - sa.y) * ((long long)sb.x - sa.x);
         if (area >= 0) {
             struct toy_screen_vertex swap;
-            if (!active_material_double_sided) continue;
+            if (!active_material_double_sided) {
+                if (active_model_triangle_stats)
+                    active_model_triangle_stats->backface_culled_triangles++;
+                continue;
+            }
             swap.x=sb.x; swap.y=sb.y; swap.z=sb.z;
             swap.u=sb.u; swap.v=sb.v; swap.inv_z=sb.inv_z;
             swap.u_over_z=sb.u_over_z; swap.v_over_z=sb.v_over_z;
@@ -967,6 +1045,8 @@ static int draw_world_triangle_tex(struct toy_renderer *renderer,
             drawn += toy_renderer_triangle_textured_lit(renderer, &sa, &sb, &sc,
                                                          active_texture_view, 1,
                                                          0xFF202020U, light, fog);
+        if (active_model_triangle_stats)
+            active_model_triangle_stats->emitted_triangles++;
     }
     return drawn;
 }

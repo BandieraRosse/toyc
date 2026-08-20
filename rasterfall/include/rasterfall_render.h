@@ -10,6 +10,7 @@
 
 #define RASTERFALL_BAKED_LM_W 32
 #define RASTERFALL_BAKED_LM_H 24
+#define RASTERFALL_NEAR_Z 64
 
 struct rasterfall_render_context {
     struct rasterfall_session *session;
@@ -23,6 +24,20 @@ struct rasterfall_render_context {
     int fixed_floor_lighting;
 };
 
+struct rasterfall_model_triangle_stats {
+    unsigned long total_triangles;
+    unsigned long near_rejected_triangles;
+    unsigned long near_clipped_triangles;
+    unsigned long backface_culled_triangles;
+    unsigned long emitted_triangles;
+};
+
+struct rasterfall_model_render_stats {
+    struct rasterfall_model_triangle_stats body;
+    struct rasterfall_model_triangle_stats edge;
+    int command_overflow;
+};
+
 void rasterfall_render_bind(struct rasterfall_render_context *ctx);
 void rasterfall_render_bake_lightmap(void);
 void rasterfall_render_set_coordinate_axes(int enabled);
@@ -31,6 +46,8 @@ int rasterfall_render_model_preview(struct toy_renderer *renderer,
                                     const struct rasterfall_model_asset *model,
                                     int use_sphere, int use_toon, int use_edge,
                                     int use_material_light);
+void rasterfall_render_model_stats(struct rasterfall_model_render_stats *out);
+int rasterfall_render_near_clip_test(void);
 
 int rasterfall_render_scene(struct toy_renderer *renderer,
                             const struct camera *camera);

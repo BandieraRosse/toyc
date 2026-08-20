@@ -205,13 +205,13 @@ static void copy_vec3(struct vec3 *out, const struct vec3 *in)
 static void near_intersection(const struct vec3 *a, const struct vec3 *b,
                               struct vec3 *out)
 {
-    long numerator = 192 - a->z;
+    long numerator = RASTERFALL_NEAR_Z - a->z;
     long denominator = b->z - a->z;
     out->x = a->x + (int)(((long)b->x - (long)a->x) *
                           numerator / denominator);
     out->y = a->y + (int)(((long)b->y - (long)a->y) *
                           numerator / denominator);
-    out->z = 192;
+    out->z = RASTERFALL_NEAR_Z;
 }
 
 static int clip_near(const struct vec3 *input, int count,
@@ -220,11 +220,11 @@ static int clip_near(const struct vec3 *input, int count,
     int out_count = 0;
     struct vec3 previous;
     copy_vec3(&previous, &input[count - 1]);
-    int previous_inside = previous.z >= 192;
+    int previous_inside = previous.z >= RASTERFALL_NEAR_Z;
     for (int i = 0; i < count; i++) {
         struct vec3 current;
         copy_vec3(&current, &input[i]);
-        int current_inside = current.z >= 192;
+        int current_inside = current.z >= RASTERFALL_NEAR_Z;
         if (current_inside != previous_inside)
             near_intersection(&previous, &current, &output[out_count++]);
         if (current_inside) copy_vec3(&output[out_count++], &current);
@@ -1523,6 +1523,7 @@ static int dump_model_views(const char *model_path, const char *output_dir,
     for (i = 0; i < 3; i++) cameras[i].pitch_cy = 1024;
 
     for (i = 0; i < 3; i++) {
+        struct rasterfall_model_render_stats render_stats;
         if (toy_renderer_begin(&renderer, &surface, 0x30343B) < 0 ||
             rasterfall_render_model_preview(&renderer, &cameras[i], &model,
                                              use_sphere, use_toon, use_edge,
@@ -1530,6 +1531,19 @@ static int dump_model_views(const char *model_path, const char *output_dir,
             result = 1;
             break;
         }
+        rasterfall_render_model_stats(&render_stats);
+        __printf("rasterfall: model triangles view=%s body={total=%lu near_rejected=%lu near_clipped=%lu backface_culled=%lu emitted=%lu} edge={total=%lu near_rejected=%lu near_clipped=%lu backface_culled=%lu emitted=%lu} command_overflow=%d\n",
+                 names[i], render_stats.body.total_triangles,
+                 render_stats.body.near_rejected_triangles,
+                 render_stats.body.near_clipped_triangles,
+                 render_stats.body.backface_culled_triangles,
+                 render_stats.body.emitted_triangles,
+                 render_stats.edge.total_triangles,
+                 render_stats.edge.near_rejected_triangles,
+                 render_stats.edge.near_clipped_triangles,
+                 render_stats.edge.backface_culled_triangles,
+                 render_stats.edge.emitted_triangles,
+                 render_stats.command_overflow);
         toy_renderer_flush(&renderer);
         if (stats) measure_model_view(&surface, &stats[i]);
         if (snprintf(path, sizeof(path), "%s/%s.bmp", output_dir, names[i]) >=

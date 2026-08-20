@@ -21,7 +21,12 @@
 #define TOY_INV_Z_SCALE 1048576L
 #define TOY_RENDER_MAX_WORKERS 8
 #define TOY_RENDER_CMD_INIT 4096
-#define TOY_RENDER_CMD_MAX 32768
+/* A detailed PMX character can submit roughly 25k body triangles plus its
+ * outline shell after the world has already populated the deferred list.
+ * Near-plane clipping can also split one input triangle into two commands.
+ * Keep the existing grow-on-demand policy, but leave enough headroom so a
+ * late material is not silently truncated while its earlier Edge survives. */
+#define TOY_RENDER_CMD_MAX 65536
 #define TOY_FUTEX_WAIT 0
 #define TOY_FUTEX_WAKE 1
 

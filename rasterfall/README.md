@@ -147,6 +147,8 @@ build/rasterfall --model-material-regression \
 输出目录包含 `base/`、`sphere/`、`toon/`、`full/` 四组三视图和
 `manifest.txt`。清单记录每张图片的确定性像素哈希、非背景像素数、平均亮度
 与近黑像素数，可用于提交前比较材质或光栅器修改是否造成视觉回退。
+模型三视图命令还会逐视角输出主体与 Edge 的三角形统计，包括 near reject、
+near clip、背面剔除、实际输出和延迟渲染命令溢出数量。
 
 版权受限的本地测试模型应放在 `private-assets/` 下；该目录已被 Git 忽略，
 不会参与公开资源或嵌入式发布构建。当前本地角色样本位于
