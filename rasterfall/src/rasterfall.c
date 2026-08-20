@@ -1662,6 +1662,116 @@ static int dump_model_material_regression(const char *model_path,
     return 0;
 }
 
+struct model_performance_result {
+    int64_t wall_us;
+    long raster_us;
+    unsigned long triangles;
+    unsigned long bbox_pixels;
+    unsigned long inside_pixels;
+    unsigned long textured_pixels;
+    int frames;
+};
+
+static int benchmark_model_features(const char *model_path, int iterations)
+{
+    static const char *names[6] = {
+        "full", "edge_off", "toon_off", "sphere_off", "lighting_off",
+        "model_off"
+    };
+    static const unsigned char sphere[6] = {1, 1, 1, 0, 1, 0};
+    static const unsigned char toon[6] = {1, 1, 0, 1, 1, 0};
+    static const unsigned char edge[6] = {1, 0, 1, 1, 1, 0};
+    static const unsigned char lighting[6] = {1, 1, 1, 1, 0, 0};
+    static const unsigned char model_enabled[6] = {1, 1, 1, 1, 1, 0};
+    struct model_performance_result results[6];
+    struct rasterfall_model_asset model;
+    struct toy_surface surface;
+    struct toy_renderer renderer;
+    struct camera cameras[3];
+    uint32_t *pixels;
+    int configuration, iteration, view, step;
+
+    if (iterations < 1) iterations = 1;
+    if (iterations > 100) iterations = 100;
+    memset(&model, 0, sizeof(model));
+    memset(cameras, 0, sizeof(cameras));
+    memset(results, 0, sizeof(results));
+    if (rasterfall_model_load(&model, model_path) < 0) {
+        __fprintf(2, "rasterfall: cannot load performance model %s\n",
+                  model_path);
+        return 1;
+    }
+    surface.width = 800;
+    surface.height = 800;
+    surface.stride = surface.width * (int)sizeof(uint32_t);
+    pixels = tlibc_malloc((size_t)surface.stride * surface.height);
+    if (!pixels) { rasterfall_model_unload(&model); return 1; }
+    surface.pixels = pixels;
+    toy_renderer_init(&renderer);
+    cameras[0].z = -800; cameras[0].cy = 1024;
+    cameras[1].x = -800; cameras[1].sy = 1024;
+    cameras[2].z = 800; cameras[2].cy = -1024;
+    for (view = 0; view < 3; view++) cameras[view].pitch_cy = 1024;
+
+    /* Populate renderer buffers and texture/model caches before measuring. */
+    for (configuration = 0; configuration < 6; configuration++) {
+        if (toy_renderer_begin(&renderer, &surface, 0x30343B) < 0) goto fail;
+        if (model_enabled[configuration] &&
+            rasterfall_render_model_preview(&renderer, &cameras[0], &model,
+                sphere[configuration], toon[configuration], edge[configuration],
+                lighting[configuration]) < 0) goto fail;
+        toy_renderer_flush(&renderer);
+    }
+    for (iteration = 0; iteration < iterations; iteration++) {
+        /* Alternate direction so thermal/scheduler drift does not always
+         * penalize the same late configuration. */
+        for (step = 0; step < 6; step++) {
+            configuration = iteration & 1 ? 5 - step : step;
+            for (view = 0; view < 3; view++) {
+                int64_t start = monotonic_us();
+                if (toy_renderer_begin(&renderer, &surface, 0x30343B) < 0)
+                    goto fail;
+                if (model_enabled[configuration] &&
+                    rasterfall_render_model_preview(&renderer, &cameras[view],
+                        &model, sphere[configuration], toon[configuration],
+                        edge[configuration], lighting[configuration]) < 0)
+                    goto fail;
+                toy_renderer_flush(&renderer);
+                results[configuration].wall_us += monotonic_us() - start;
+                results[configuration].raster_us += renderer.last_flat_us +
+                                                    renderer.last_tex_us;
+                results[configuration].triangles += renderer.submitted_triangles;
+                results[configuration].bbox_pixels += renderer.last_bbox_px;
+                results[configuration].inside_pixels += renderer.last_inside_px;
+                results[configuration].textured_pixels += renderer.last_tex_px;
+                results[configuration].frames++;
+            }
+        }
+    }
+    __printf("rasterfall: model performance path=%s iterations=%d views=3 size=800x800\n",
+             model_path, iterations);
+    for (configuration = 0; configuration < 6; configuration++) {
+        const struct model_performance_result *r = &results[configuration];
+        int frames = r->frames ? r->frames : 1;
+        __printf("rasterfall: model performance mode=%s frames=%d wall_us_per_frame=%ld raster_cpu_us_per_frame=%ld triangles_per_frame=%lu bbox_pixels_per_frame=%lu inside_pixels_per_frame=%lu textured_pixels_per_frame=%lu\n",
+                 names[configuration], r->frames,
+                 (long)(r->wall_us / frames), r->raster_us / frames,
+                 r->triangles / (unsigned long)frames,
+                 r->bbox_pixels / (unsigned long)frames,
+                 r->inside_pixels / (unsigned long)frames,
+                 r->textured_pixels / (unsigned long)frames);
+    }
+    toy_renderer_destroy(&renderer);
+    tlibc_free(pixels);
+    rasterfall_model_unload(&model);
+    return 0;
+fail:
+    toy_renderer_destroy(&renderer);
+    tlibc_free(pixels);
+    rasterfall_model_unload(&model);
+    return 1;
+}
+
 int main(int argc, char **argv)
 {
     struct toy_window *window;
@@ -1722,6 +1832,8 @@ int main(int argc, char **argv)
     int compare_model_edge = 0;
     int compare_model_lighting = 0;
     int material_regression = 0;
+    const char *performance_model_path = 0;
+    int performance_iterations = 5;
     for (int arg = 1; arg < argc; arg++) {
         if (strcmp(argv[arg], "--input-test") == 0) input_debug = 1;
         else if (strcmp(argv[arg], "--logic-test") == 0 ||
@@ -1770,6 +1882,13 @@ int main(int argc, char **argv)
             view_model_path = argv[++arg];
             view_output_dir = argv[++arg];
             material_regression = 1;
+        } else if (strcmp(argv[arg], "--model-performance") == 0 &&
+                   arg + 1 < argc) {
+            performance_model_path = argv[++arg];
+            if (arg + 1 < argc && argv[arg + 1][0] >= '0' &&
+                argv[arg + 1][0] <= '9')
+                performance_iterations =
+                    parse_positive_int(argv[++arg], performance_iterations);
         }
         else if (strcmp(argv[arg], "--frames") == 0 && arg + 1 < argc) {
             const char *p = argv[++arg];
@@ -1777,6 +1896,9 @@ int main(int argc, char **argv)
                 frame_limit = frame_limit * 10 + (*p++ - '0');
         }
     }
+    if (performance_model_path)
+        return benchmark_model_features(performance_model_path,
+                                        performance_iterations);
     if (view_model_path) {
         if (material_regression)
             return dump_model_material_regression(view_model_path,

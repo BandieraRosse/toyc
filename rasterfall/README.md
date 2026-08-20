@@ -150,6 +150,17 @@ build/rasterfall --model-material-regression \
 模型三视图命令还会逐视角输出主体与 Edge 的三角形统计，包括 near reject、
 near clip、背面剔除、实际输出和延迟渲染命令溢出数量。
 
+模型功能性能基准会预加载一次资源，并在固定的 800×800 正/侧/后三视图下比较
+Full、Edge off、Toon off、Sphere off、lighting off 和 model off：
+
+```sh
+build/rasterfall --model-performance \
+    rasterfall/private-assets/models/yola.rmesh 5
+```
+
+最后一个参数是每个视角的迭代次数；输出包含平均墙钟时间、光栅 CPU 时间、
+三角形数和像素漏斗统计，不包含模型加载、纹理解码或图片写盘。
+
 版权受限的本地测试模型应放在 `private-assets/` 下；该目录已被 Git 忽略，
 不会参与公开资源或嵌入式发布构建。当前本地角色样本位于
 `private-assets/models/yola.rmesh`，游戏会将其绘制在 `(-13000, -900, -10000)`。
