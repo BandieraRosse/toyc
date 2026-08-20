@@ -1008,17 +1008,22 @@ static void project_uv_vertex(const struct toy_surface *surface,
                               const struct vec3 *view,
                               int u, int v,
                               int su, int sv,
+                              int use_secondary_uv,
                               struct toy_screen_vertex *screen)
 {
     int z = view->z < NEAR_Z ? NEAR_Z : view->z;
     project_vertex(surface, view, screen);
     screen->u = u; screen->v = v;
-    screen->inv_z = (long)1048576 / z;
     screen->u_over_z = (long)u * 1048576L / z;
     screen->v_over_z = (long)v * 1048576L / z;
-    screen->u2 = su; screen->v2 = sv;
-    screen->u2_over_z = (long)su * 1048576L / z;
-    screen->v2_over_z = (long)sv * 1048576L / z;
+    if (use_secondary_uv) {
+        screen->u2 = su; screen->v2 = sv;
+        screen->u2_over_z = (long)su * 1048576L / z;
+        screen->v2_over_z = (long)sv * 1048576L / z;
+    } else {
+        screen->u2 = screen->v2 = 0;
+        screen->u2_over_z = screen->v2_over_z = 0;
+    }
 }
 
 static int draw_world_triangle_views(struct toy_renderer *renderer,
@@ -1037,7 +1042,11 @@ static int draw_world_triangle_views(struct toy_renderer *renderer,
         world_to_view(camera, b, &input[1]);
         world_to_view(camera, c, &input[2]);
     }
-    count = clip_near(input, 3, clipped);
+    if (input[0].z >= NEAR_Z && input[1].z >= NEAR_Z &&
+        input[2].z >= NEAR_Z) {
+        clipped[0] = input[0]; clipped[1] = input[1]; clipped[2] = input[2];
+        count = 3;
+    } else count = clip_near(input, 3, clipped);
     if (active_model_triangle_stats) {
         active_model_triangle_stats->total_triangles++;
         if (count < 3) active_model_triangle_stats->near_rejected_triangles++;
@@ -1125,7 +1134,11 @@ static int draw_world_triangle_tex_views(struct toy_renderer *renderer,
     input[0].su = a->su; input[0].sv = a->sv;
     input[1].su = b->su; input[1].sv = b->sv;
     input[2].su = c->su; input[2].sv = c->sv;
-    count = clip_near_uv(input, 3, clipped);
+    if (input[0].p.z >= NEAR_Z && input[1].p.z >= NEAR_Z &&
+        input[2].p.z >= NEAR_Z) {
+        clipped[0] = input[0]; clipped[1] = input[1]; clipped[2] = input[2];
+        count = 3;
+    } else count = clip_near_uv(input, 3, clipped);
     if (active_model_triangle_stats) {
         active_model_triangle_stats->total_triangles++;
         if (count < 3) active_model_triangle_stats->near_rejected_triangles++;
@@ -1138,13 +1151,16 @@ static int draw_world_triangle_tex_views(struct toy_renderer *renderer,
         long long area;
         project_uv_vertex(&renderer->surface, &clipped[0].p,
                           clipped[0].u, clipped[0].v,
-                          clipped[0].su, clipped[0].sv, &sa);
+                          clipped[0].su, clipped[0].sv,
+                          active_sphere_texture != 0, &sa);
         project_uv_vertex(&renderer->surface, &clipped[i].p,
                           clipped[i].u, clipped[i].v,
-                          clipped[i].su, clipped[i].sv, &sb);
+                          clipped[i].su, clipped[i].sv,
+                          active_sphere_texture != 0, &sb);
         project_uv_vertex(&renderer->surface, &clipped[i + 1].p,
                           clipped[i + 1].u, clipped[i + 1].v,
-                          clipped[i + 1].su, clipped[i + 1].sv, &sc);
+                          clipped[i + 1].su, clipped[i + 1].sv,
+                          active_sphere_texture != 0, &sc);
         area = ((long long)sc.x - sa.x) * ((long long)sb.y - sa.y) -
                ((long long)sc.y - sa.y) * ((long long)sb.x - sa.x);
         if (area >= 0) {
