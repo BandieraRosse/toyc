@@ -2,6 +2,7 @@
 #include "math.h"
 #include "rasterfall_ai_names.h"
 #include "rasterfall_session.h"
+#include "rasterfall_model.h"
 
 #define INTERACT_AIM_CONE 784
 #define HORDE_COUNT_MIN 15
@@ -185,12 +186,13 @@ void rasterfall_session_reset(struct rasterfall_session *session,
     int i;
     camera->x = session->level.start_x;
     camera->z = session->level.start_z;
-    camera->sy = 0;
-    camera->cy = 1024;
+    camera->sy = session->level.start_sy;
+    camera->cy = session->level.start_cy;
     camera->pitch_sy = 0;
     camera->pitch_cy = 1024;
     camera->y = 0;
     session->seed = seed ? seed : 1;
+    session->skeletal_demo_pose = RASTERFALL_MODEL_POSE_BIND;
     toy_game_init(&session->game_state, session->seed);
     /* 环境变量不依赖 libc；HOSTNAME 是最稳定的本机身份来源，缺失时
      * toy_game_init 的 PLAYER 保底仍可用。名字只用于身份展示/未来快照。 */
@@ -541,8 +543,8 @@ int rasterfall_session_paid_revive(struct rasterfall_session *session,
     game->player_control_disabled = 0;
     camera->x = session->level.start_x;
     camera->z = session->level.start_z;
-    camera->sy = 0;
-    camera->cy = 1024;
+    camera->sy = session->level.start_sy;
+    camera->cy = session->level.start_cy;
     camera->pitch_sy = 0;
     camera->pitch_cy = 1024;
     camera->y = 0;
@@ -624,6 +626,14 @@ static void session_client_interact_banner(struct rasterfall_session *session)
         session->banner_text = "ATTACK POINTS X3";
     else if (it->kind == TOY_MAP_PICKUP_ATTACK_X4_BUTTON)
         session->banner_text = "ATTACK POINTS X4";
+    else if (it->kind == TOY_MAP_PICKUP_POSE_RESET_BUTTON)
+        session->banner_text = "POSE RESET";
+    else if (it->kind == TOY_MAP_PICKUP_POSE_RIGHT_ARM_BUTTON)
+        session->banner_text = "RIGHT ARM POSE";
+    else if (it->kind == TOY_MAP_PICKUP_POSE_ARMS_BUTTON)
+        session->banner_text = "ARMS POSE";
+    else if (it->kind == TOY_MAP_PICKUP_POSE_BODY_BUTTON)
+        session->banner_text = "BODY TURN POSE";
     else if (it->kind == TOY_MAP_PICKUP_AMMO)
         session->banner_text = "AMMO REFILLED";
     else if (it->kind == TOY_MAP_PICKUP_WEAPON ||
@@ -721,6 +731,25 @@ static void session_interact(struct rasterfall_session *session,
         session->banner_ms = 2000;
         session->banner_text = multiplier == 2 ? "ATTACK POINTS X2" :
             multiplier == 3 ? "ATTACK POINTS X3" : "ATTACK POINTS X4";
+    } else if (it->kind == TOY_MAP_PICKUP_POSE_RESET_BUTTON ||
+               it->kind == TOY_MAP_PICKUP_POSE_RIGHT_ARM_BUTTON ||
+               it->kind == TOY_MAP_PICKUP_POSE_ARMS_BUTTON ||
+               it->kind == TOY_MAP_PICKUP_POSE_BODY_BUTTON) {
+        session->skeletal_demo_pose =
+            it->kind == TOY_MAP_PICKUP_POSE_RESET_BUTTON ?
+                RASTERFALL_MODEL_POSE_BIND :
+            it->kind == TOY_MAP_PICKUP_POSE_RIGHT_ARM_BUTTON ?
+                RASTERFALL_MODEL_POSE_RIGHT_ARM :
+            it->kind == TOY_MAP_PICKUP_POSE_ARMS_BUTTON ?
+                RASTERFALL_MODEL_POSE_ARMS : RASTERFALL_MODEL_POSE_BODY_TURN;
+        session->banner_ms = 1800;
+        session->banner_text =
+            session->skeletal_demo_pose == RASTERFALL_MODEL_POSE_BIND ?
+                "POSE RESET" :
+            session->skeletal_demo_pose == RASTERFALL_MODEL_POSE_RIGHT_ARM ?
+                "RIGHT ARM POSE" :
+            session->skeletal_demo_pose == RASTERFALL_MODEL_POSE_ARMS ?
+                "ARMS POSE" : "BODY TURN POSE";
     } else if (it->kind == TOY_MAP_PICKUP_AMMO) {
         toy_game_refill_ammo(&session->game_state);
     } else if (it->kind == TOY_MAP_PICKUP_MONEY_BUTTON) {
@@ -1305,8 +1334,8 @@ int rasterfall_session_recover_managed_player(
     z = session->level.start_z;
     camera->x = x;
     camera->z = z;
-    camera->sy = 0;
-    camera->cy = 1024;
+    camera->sy = session->level.start_sy;
+    camera->cy = session->level.start_cy;
     camera->pitch_sy = 0;
     camera->pitch_cy = 1024;
     camera->y = 0;

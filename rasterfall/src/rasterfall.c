@@ -1457,6 +1457,9 @@ struct model_view_stats {
     unsigned long near_black;
 };
 
+static int requested_model_pose = RASTERFALL_MODEL_POSE_BIND;
+static int requested_model_skinning = -1;
+
 static void measure_model_view(const struct toy_surface *surface,
                                struct model_view_stats *stats)
 {
@@ -1501,6 +1504,10 @@ static int dump_model_views(const char *model_path, const char *output_dir,
         __fprintf(2, "rasterfall: cannot load preview model %s\n", model_path);
         return 1;
     }
+    if (requested_model_skinning >= 0)
+        rasterfall_model_set_skinning(&model, requested_model_skinning);
+    if (model.bone_count)
+        rasterfall_model_set_pose(&model, requested_model_pose);
     if (tlibc_recursive_mkdir(output_dir) < 0) {
         __fprintf(2, "rasterfall: cannot create preview directory %s\n",
                   output_dir);
@@ -1552,6 +1559,13 @@ static int dump_model_views(const char *model_path, const char *output_dir,
                 (int)sizeof(path) ||
             rasterfall_hud_dump_bmp(path, &surface) < 0) {
             __fprintf(2, "rasterfall: cannot write model preview %s\n", names[i]);
+            result = 1;
+            break;
+        }
+        if (snprintf(path, sizeof(path), "%s/%s.ppm", output_dir, names[i]) >=
+                (int)sizeof(path) ||
+            rasterfall_hud_dump_frame(path, &surface) < 0) {
+            __fprintf(2, "rasterfall: cannot write model PPM %s\n", names[i]);
             result = 1;
             break;
         }
@@ -1706,6 +1720,8 @@ struct model_performance_result {
     unsigned long material_path_pixels[4];
     unsigned long material_path_divisions[4];
     long setup_model_total_us;
+    long setup_bone_hierarchy_us;
+    long setup_skinning_us;
     long setup_vertex_cache_us;
     long setup_material_us;
     long setup_body_triangles_us;
@@ -1766,6 +1782,60 @@ static int benchmark_model_features(const char *model_path, int iterations,
     cameras[2].z = 800; cameras[2].cy = -1024;
     for (view = 0; view < 3; view++) cameras[view].pitch_cy = 1024;
 
+    if (model.bone_count) {
+        static const char *skin_names[3] = {
+            "static_old_path", "bind_pose_skinning", "right_arm_pose"
+        };
+        int skin_mode;
+        long full_us[3] = {0, 0, 0}, hierarchy_us[3] = {0, 0, 0};
+        long skinning_us[3] = {0, 0, 0}, cache_us[3] = {0, 0, 0};
+        long triangles_us[3] = {0, 0, 0}, raster_us[3] = {0, 0, 0};
+        int frames[3] = {0, 0, 0};
+        for (skin_mode = 0; skin_mode < 3; skin_mode++) {
+            rasterfall_model_set_skinning(&model, skin_mode != 0);
+            rasterfall_model_set_pose(&model,
+                skin_mode == 2 ? RASTERFALL_MODEL_POSE_RIGHT_ARM :
+                                 RASTERFALL_MODEL_POSE_BIND);
+            if (toy_renderer_begin(&renderer, &surface, 0x30343B) < 0 ||
+                rasterfall_render_model_preview(&renderer, &cameras[0], &model,
+                                                1, 1, 1, 1) < 0) goto fail;
+            toy_renderer_flush(&renderer);
+            for (iteration = 0; iteration < iterations; iteration++)
+                for (view = 0; view < 3; view++) {
+                    struct rasterfall_model_setup_timing timing;
+                    int64_t start = monotonic_us(), after_setup, after_flush;
+                    if (toy_renderer_begin(&renderer, &surface, 0x30343B) < 0 ||
+                        rasterfall_render_model_preview(&renderer, &cameras[view],
+                            &model, 1, 1, 1, 1) < 0) goto fail;
+                    after_setup = monotonic_us();
+                    rasterfall_render_model_setup_timing(&timing);
+                    toy_renderer_flush(&renderer);
+                    after_flush = monotonic_us();
+                    full_us[skin_mode] += after_flush - start;
+                    hierarchy_us[skin_mode] += timing.bone_hierarchy_us;
+                    skinning_us[skin_mode] += timing.skinning_us;
+                    cache_us[skin_mode] += timing.vertex_cache_us;
+                    triangles_us[skin_mode] += timing.material_us +
+                        timing.body_triangles_us + timing.edge_triangles_us;
+                    raster_us[skin_mode] += after_flush - after_setup;
+                    frames[skin_mode]++;
+                }
+        }
+        for (skin_mode = 0; skin_mode < 3; skin_mode++) {
+            int count = frames[skin_mode] ? frames[skin_mode] : 1;
+            __printf("rasterfall: skeletal benchmark mode=%s frames=%d bone_hierarchy_us_per_frame=%ld skinning_us_per_frame=%ld vertex_cache_us_per_frame=%ld triangle_setup_us_per_frame=%ld pixel_raster_us_per_frame=%ld full_us_per_frame=%ld\n",
+                     skin_names[skin_mode], frames[skin_mode],
+                     hierarchy_us[skin_mode] / count,
+                     skinning_us[skin_mode] / count,
+                     cache_us[skin_mode] / count,
+                     triangles_us[skin_mode] / count,
+                     raster_us[skin_mode] / count,
+                     full_us[skin_mode] / count);
+        }
+        rasterfall_model_set_skinning(&model, 1);
+        rasterfall_model_set_pose(&model, RASTERFALL_MODEL_POSE_BIND);
+    }
+
     /* Populate renderer buffers and texture/model caches before measuring. */
     for (configuration = 0; configuration < 10; configuration++) {
         toy_renderer_set_texture_diagnostics(&renderer,
@@ -1807,6 +1877,10 @@ static int benchmark_model_features(const char *model_path, int iterations,
                 results[configuration].setup_us += after_setup - after_begin;
                 results[configuration].setup_model_total_us +=
                     setup_timing.total_us;
+                results[configuration].setup_bone_hierarchy_us +=
+                    setup_timing.bone_hierarchy_us;
+                results[configuration].setup_skinning_us +=
+                    setup_timing.skinning_us;
                 results[configuration].setup_vertex_cache_us +=
                     setup_timing.vertex_cache_us;
                 results[configuration].setup_material_us +=
@@ -2000,10 +2074,13 @@ static int benchmark_model_features(const char *model_path, int iterations,
                      r->blend_divisions / (unsigned long)frames);
         }
         if (configuration == 0) {
-            long accounted = r->setup_vertex_cache_us + r->setup_material_us +
+            long accounted = r->setup_bone_hierarchy_us +
+                r->setup_skinning_us + r->setup_vertex_cache_us + r->setup_material_us +
                 r->setup_body_triangles_us + r->setup_edge_triangles_us;
-            __printf("rasterfall: model setup mode=full model_total_us_per_frame=%ld vertex_cache_us_per_frame=%ld material_us_per_frame=%ld body_triangle_pipeline_us_per_frame=%ld edge_triangle_pipeline_us_per_frame=%ld model_unaccounted_us_per_frame=%ld outer_setup_us_per_frame=%ld\n",
+            __printf("rasterfall: model setup mode=full model_total_us_per_frame=%ld bone_hierarchy_us_per_frame=%ld skinning_us_per_frame=%ld vertex_cache_us_per_frame=%ld material_us_per_frame=%ld body_triangle_pipeline_us_per_frame=%ld edge_triangle_pipeline_us_per_frame=%ld model_unaccounted_us_per_frame=%ld outer_setup_us_per_frame=%ld\n",
                      r->setup_model_total_us / frames,
+                     r->setup_bone_hierarchy_us / frames,
+                     r->setup_skinning_us / frames,
                      r->setup_vertex_cache_us / frames,
                      r->setup_material_us / frames,
                      r->setup_body_triangles_us / frames,
@@ -2084,6 +2161,8 @@ int main(int argc, char **argv)
     int compare_model_lighting = 0;
     int material_regression = 0;
     const char *performance_model_path = 0;
+    const char *bone_model_path = 0;
+    const char *bone_search = 0;
     int performance_iterations = 5;
     int performance_workers = 0;
     for (int arg = 1; arg < argc; arg++) {
@@ -2129,6 +2208,28 @@ int main(int argc, char **argv)
             view_model_path = argv[++arg];
             view_output_dir = argv[++arg];
             compare_model_lighting = 1;
+        } else if (strcmp(argv[arg], "--model-static-views") == 0 &&
+                   arg + 2 < argc) {
+            view_model_path = argv[++arg];
+            view_output_dir = argv[++arg];
+            requested_model_skinning = 0;
+        } else if (strcmp(argv[arg], "--model-pose-views") == 0 &&
+                   arg + 3 < argc) {
+            const char *pose_name;
+            view_model_path = argv[++arg];
+            view_output_dir = argv[++arg];
+            pose_name = argv[++arg];
+            requested_model_skinning = 1;
+            requested_model_pose = !strcmp(pose_name, "right-arm") ?
+                RASTERFALL_MODEL_POSE_RIGHT_ARM :
+                !strcmp(pose_name, "arms") ? RASTERFALL_MODEL_POSE_ARMS :
+                !strcmp(pose_name, "body") ? RASTERFALL_MODEL_POSE_BODY_TURN :
+                RASTERFALL_MODEL_POSE_BIND;
+        } else if (strcmp(argv[arg], "--model-bones") == 0 &&
+                   arg + 1 < argc) {
+            bone_model_path = argv[++arg];
+            if (arg + 1 < argc && argv[arg + 1][0] != '-')
+                bone_search = argv[++arg];
         } else if (strcmp(argv[arg], "--model-material-regression") == 0 &&
                    arg + 2 < argc) {
             view_model_path = argv[++arg];
@@ -2151,6 +2252,20 @@ int main(int argc, char **argv)
             while (*p >= '0' && *p <= '9')
                 frame_limit = frame_limit * 10 + (*p++ - '0');
         }
+    }
+    if (bone_model_path) {
+        struct rasterfall_model_asset bone_model;
+        int result;
+        memset(&bone_model, 0, sizeof(bone_model));
+        result = rasterfall_model_load(&bone_model, bone_model_path);
+        if (result < 0) {
+            __fprintf(2, "rasterfall: cannot load bone model %s\n",
+                      bone_model_path);
+            return 1;
+        }
+        rasterfall_model_dump_bones(&bone_model, bone_search);
+        rasterfall_model_unload(&bone_model);
+        return 0;
     }
     if (performance_model_path)
         return benchmark_model_features(performance_model_path,

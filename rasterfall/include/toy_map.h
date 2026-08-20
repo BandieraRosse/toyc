@@ -64,6 +64,10 @@ enum toy_map_pickup_kind {
     ,TOY_MAP_PICKUP_ATTACK_X4_BUTTON
     ,TOY_MAP_PICKUP_THROWABLE
     ,TOY_MAP_PICKUP_PILL
+    ,TOY_MAP_PICKUP_POSE_RESET_BUTTON
+    ,TOY_MAP_PICKUP_POSE_RIGHT_ARM_BUTTON
+    ,TOY_MAP_PICKUP_POSE_ARMS_BUTTON
+    ,TOY_MAP_PICKUP_POSE_BODY_BUTTON
 };
 struct toy_map_pickup { int kind; int weapon; int x, z, y; };
 struct toy_map_draw {
@@ -77,7 +81,7 @@ struct toy_map_draw {
 
 struct toy_map {
     int minx, maxx, minz, maxz, room_limit;
-    int start_x, start_z;
+    int start_x, start_z, start_sy, start_cy;
     struct toy_map_box boxes[TOY_MAP_MAX_BOXES];
     int box_count;
     struct toy_game_box safe_rooms[TOY_MAP_MAX_ZONES];

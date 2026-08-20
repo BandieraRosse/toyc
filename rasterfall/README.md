@@ -51,10 +51,10 @@ build/glb2rmesh Zombie.glb rasterfall/assets/models/zombie.rmesh
 `.claude/glb/` 中的武器和弹药箱资源已经转换到 `assets/models/*.rmesh`，
 文件名使用小写下划线命名，并保留同名变体的来源后缀。
 
-## PMX 静态模型导入
+## PMX 模型导入与第一阶段骨骼蒙皮
 
-对于 MMD/PMX 模型，可以不经过 Blender，直接提取 Rasterfall 当前静态
-渲染所需的数据：
+对于 MMD/PMX 模型，可以不经过 Blender，直接提取 Rasterfall 的材质、网格和
+第一阶段骨骼蒙皮数据：
 
 ```sh
 tools/import-pmx-model.sh path/to/character-folder character
@@ -69,21 +69,26 @@ PNG/BMP 纹理复制到指定目录。再使用 `build/toyasset convert png1024|
 转成 TTEX 后，Rasterfall 会按 RFM2 材质索引加载基础色、sphere 和 toon 纹理；sphere
 贴图的乘算（mode 1）与加算（mode 2）模式会按顶点法线生成的 sphere UV
 进行混合；mode 3 使用第一组 PMX 附加 UV 作为 SubTexture 乘算。独立 toon
-纹理按模型法线生成的光照色阶采样；共享 toon 使用内置色阶。骨骼、Morph 和刚体
-当前只跳过。PNG 转换为 RGBA TTEX 时会保留 alpha；
+纹理按模型法线生成的光照色阶采样；共享 toon 使用内置色阶。RFM2 v11 在旧网格
+尾部追加可选 `SKN1` 段，保存 bone name、parent、rest position、flags 和每顶点
+BDEF1/BDEF2；旧 v2～v10 模型没有该段时继续按静态网格渲染。当前不会求值
+BDEF4/SDEF/QDEF、IK、append transform、Morph、刚体或关节。PNG 转换为 RGBA TTEX
+时会保留 alpha；
 全透明像素不写入颜色和深度，纹理 alpha 与 PMX 材质 alpha 相乘。包含透明度
 的三角形在不透明命令之后按相机深度由远到近进行 source-over 混合。PMX 材质
 alpha、toon 引用和第一组附加 UV 从 RFM2 v6 起保存；v7 还保存材质 drawing
 flags，并按 bit 0 区分双面绘制与背面剔除；v8 将材质记录扩展为 24 字节，保存
 edge RGBA 和宽度，并用外扩背面壳绘制轮廓；v9 保存环境色、镜面色和镜面指数，
 在纹理合成后加入低强度环境光与随指数收窄的镜面高光；v10 在顶点记录中保存
-PMX Edge Scale，使材质轮廓宽度可按顶点缩放。加载器仍兼容 v2 到 v5 的 24 字节旧
+PMX Edge Scale，使材质轮廓宽度可按顶点缩放；v11 增加可选骨骼/蒙皮尾段。加载器
+仍兼容 v2 到 v5 的 24 字节旧
 顶点记录及 v2 到 v7 的 16 字节旧材质记录，旧格式继续按双面材质渲染。
 
 转换时会输出导入诊断：逐材质列出中英文名称、基础/sphere/toon 纹理、模式、
 透明度、drawing flags 及各标志位语义、edge、环境光和镜面参数，并输出模型级
-feature summary，汇总几何、纹理和各材质特性的使用数量。当前未导入的蒙皮、骨骼、
-Morph、刚体等数据也会列出；多于一组的附加 UV 会明确报告为未保留。
+feature summary，汇总几何、纹理、BDEF1/BDEF2 数量、root 数、最大层级深度和异常
+bone reference，并列出每根骨骼的 index、name、parent、rest position、flags。高级
+骨骼 flags 会解析并报告，但不执行其语义；多于一组的附加 UV 会明确报告为未保留。
 
 可以通过无窗口的离屏渲染输出模型正面、侧面和背面验证图。输出目录会自动
 创建，图片采用无需额外编码库的 BMP 格式；该命令走与游戏内相同的材质、
@@ -94,8 +99,20 @@ build/rasterfall --model-views \
     rasterfall/private-assets/models/yola.rmesh tmp/yola-views
 ```
 
-输出为 `front.bmp`、`side.bmp` 和 `back.bmp`。模型会按包围盒自动居中和缩放，
+输出为 `front.bmp`、`side.bmp`、`back.bmp` 及对应的 PPM。模型会按包围盒自动居中和缩放，
 因此以后可以直接替换 RFM2 路径验证其他动漫模型。
+
+骨骼诊断和程序化 pose 回归可使用：
+
+```sh
+build/rasterfall --model-bones rasterfall/private-assets/models/yola.rmesh 腕
+build/rasterfall --model-static-views rasterfall/private-assets/models/yola.rmesh tmp/yola-static
+build/rasterfall --model-pose-views rasterfall/private-assets/models/yola.rmesh tmp/yola-bind bind
+build/rasterfall --model-pose-views rasterfall/private-assets/models/yola.rmesh tmp/yola-arm right-arm
+```
+
+游戏地图在优菈前方提供 RESET、RIGHT ARM、ARMS 和 BODY TURN 四个 E 互动按钮；
+默认单人出生点位于模型正面并朝向模型。这些 pose 仅为本地程序化演示，不进入网络同步。
 
 需要严格对比 sphere 效果时，使用：
 

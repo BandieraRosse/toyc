@@ -71,6 +71,7 @@ int toy_map_load(const char *path, struct toy_map *m)
     m->start_safe_index = -1;
     m->goal_safe_index = -1;
     m->alarm_spawn_zone = -1;
+    m->start_cy = 1024;
     data = toy_asset_load_file(path, &size);
     if (!data || size == 0 || size > 256 * 1024) {
         if (data) tlibc_free(data);
@@ -85,7 +86,7 @@ int toy_map_load(const char *path, struct toy_map *m)
         char *p=line,*s; int a,b,c,d;
         s=strchr(line,'#'); if(s)*s=0; kind=word(&p); if(!kind)continue;
         if(!strcmp(kind,"world") && get4(&p,&a,&b,&c,&d)==0){char *q=word(&p);if(q)m->room_limit=number(q,10);m->minx=a;m->maxx=b;m->minz=c;m->maxz=d;}
-        else if(!strcmp(kind,"start") && get2(&p,&m->start_x,&m->start_z)==0){}
+        else if(!strcmp(kind,"start") && get2(&p,&m->start_x,&m->start_z)==0){char *sy=word(&p),*cy=word(&p);if(sy&&cy){m->start_sy=number(sy,10);m->start_cy=number(cy,10);}}
         else if(!strcmp(kind,"box") && get4(&p,&a,&b,&c,&d)==0){
             char *h=word(&p),*co=word(&p),*opt;
             struct toy_map_box *box;
@@ -170,7 +171,11 @@ int toy_map_load(const char *path, struct toy_map *m)
                  !strcmp(kind,"button_wave_skip") ||
                  !strcmp(kind,"button_attack_x2") ||
                  !strcmp(kind,"button_attack_x3") ||
-                 !strcmp(kind,"button_attack_x4")) && m->pickup_count<TOY_MAP_MAX_PICKUPS){
+                 !strcmp(kind,"button_attack_x4") ||
+                 !strcmp(kind,"button_pose_reset") ||
+                 !strcmp(kind,"button_pose_right_arm") ||
+                 !strcmp(kind,"button_pose_arms") ||
+                 !strcmp(kind,"button_pose_body")) && m->pickup_count<TOY_MAP_MAX_PICKUPS){
             char *sx=word(&p),*sz=word(&p),*sy=word(&p);
             if(sx&&sz&&sy){
                 m->pickups[m->pickup_count].kind=!strcmp(kind,"button_air") ?
@@ -195,6 +200,14 @@ int toy_map_load(const char *path, struct toy_map *m)
                     m->pickups[m->pickup_count].kind = TOY_MAP_PICKUP_ATTACK_X3_BUTTON;
                 else if (!strcmp(kind,"button_attack_x4"))
                     m->pickups[m->pickup_count].kind = TOY_MAP_PICKUP_ATTACK_X4_BUTTON;
+                else if (!strcmp(kind,"button_pose_reset"))
+                    m->pickups[m->pickup_count].kind = TOY_MAP_PICKUP_POSE_RESET_BUTTON;
+                else if (!strcmp(kind,"button_pose_right_arm"))
+                    m->pickups[m->pickup_count].kind = TOY_MAP_PICKUP_POSE_RIGHT_ARM_BUTTON;
+                else if (!strcmp(kind,"button_pose_arms"))
+                    m->pickups[m->pickup_count].kind = TOY_MAP_PICKUP_POSE_ARMS_BUTTON;
+                else if (!strcmp(kind,"button_pose_body"))
+                    m->pickups[m->pickup_count].kind = TOY_MAP_PICKUP_POSE_BODY_BUTTON;
                 m->pickups[m->pickup_count].x=number(sx,10);
                 m->pickups[m->pickup_count].z=number(sz,10);
                 m->pickups[m->pickup_count].y=number(sy,10);

@@ -15,8 +15,38 @@ static int run_logic_test(void)
     uint32_t *pixels;
     int count;
     long long direction_length;
+    if (rasterfall_model_skinning_logic_test() != 0) return 157;
     toy_input_init(&input);
     rasterfall_session_reset(&session, &camera, 1);
+    {
+        static const int kinds[4] = {
+            TOY_MAP_PICKUP_POSE_RESET_BUTTON,
+            TOY_MAP_PICKUP_POSE_RIGHT_ARM_BUTTON,
+            TOY_MAP_PICKUP_POSE_ARMS_BUTTON,
+            TOY_MAP_PICKUP_POSE_BODY_BUTTON
+        };
+        static const int poses[4] = {
+            RASTERFALL_MODEL_POSE_BIND,
+            RASTERFALL_MODEL_POSE_RIGHT_ARM,
+            RASTERFALL_MODEL_POSE_ARMS,
+            RASTERFALL_MODEL_POSE_BODY_TURN
+        };
+        int button, found = 0;
+        for (button = 0; button < 4; button++) {
+            int item;
+            for (item = 0; item < session.item_count; item++)
+                if (session.items[item].kind == kinds[button]) break;
+            if (item >= session.item_count) return 158;
+            camera.x = session.items[item].x;
+            camera.z = session.items[item].z + 500;
+            camera.sy = 0; camera.cy = -1024;
+            rasterfall_session_interact_remote(&session, &camera);
+            if (session.skeletal_demo_pose != poses[button]) return 159;
+            found++;
+        }
+        if (found != 4) return 158;
+        rasterfall_session_reset(&session, &camera, 1);
+    }
     if (session.level.safe_count > 0 &&
         session.game_state.safe_room_count != session.level.safe_count)
         return 126;
@@ -114,13 +144,17 @@ static int run_logic_test(void)
         session.game_state.campaign_phase = TOY_GAME_PHASE_HORDE;
         camera.x = 0;
         camera.z = -7450;
+        session.game_state.px = camera.x;
+        session.game_state.pz = camera.z;
         camera.sy = 0; camera.cy = 1024;
         for (i = 0; i < 300; i++) {
             rasterfall_session_step(&session, &camera, &command, 16);
             if (session.managed_ai_escape_phase < 0) break;
         }
-        if (camera.x < -500 || camera.x > 500 ||
-            camera.z < -500 || camera.z > 500)
+        if (!((camera.x >= -500 && camera.x <= 500 &&
+               camera.z >= -500 && camera.z <= 500) ||
+              (camera.x == session.level.start_x &&
+               camera.z == session.level.start_z)))
             return 163;
         rasterfall_session_reset(&session, &camera, 3);
         rasterfall_session_set_managed_ai(&session, 1);
@@ -391,7 +425,9 @@ static int run_logic_test(void)
     command.move_forward = 1;
     for (int i = 0; i < 10; i++)
         rasterfall_session_step(&session, &camera, &command, 16);
-    if (camera.x != 0 || camera.z != 760) return 1;
+    if (camera.x != session.level.start_x + session.level.start_sy * 760 / 1024 ||
+        camera.z != session.level.start_z + session.level.start_cy * 760 / 1024)
+        return 1;
 
     /* 死亡重开仍须恢复世界碰撞配置并能推进首波。 */
     game.state = TOY_GAME_OVER;
@@ -407,7 +443,7 @@ static int run_logic_test(void)
         toy_game_update(&game, NULL, 0, camera.sy, camera.cy, 16);
     if (game.enemies_alive == 0) return 14;
 
-    camera.x = -1200; camera.z = 0;
+    camera.x = -1200; camera.z = 0; camera.sy = 0; camera.cy = 1024;
 
     memset(&command, 0, sizeof(command));
     command.turn = 16;

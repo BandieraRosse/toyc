@@ -801,6 +801,7 @@ $(BUILD)/rasterfall_map.o: $(RASTERFALL_SRC)/rasterfall_map.c \
 
 $(BUILD)/rasterfall_session.o: $(RASTERFALL_SRC)/rasterfall_session.c \
                                $(RASTERFALL_INC)/rasterfall_session.h \
+                               $(RASTERFALL_INC)/rasterfall_model.h \
                                $(RASTERFALL_INC)/toy_game.h \
                                $(RASTERFALL_INC)/rasterfall_camera.h \
                                $(RASTERFALL_INC)/rasterfall_map.h | $(BUILD)
@@ -1072,6 +1073,7 @@ $(BUILD)/rasterfall_map_self.o: $(RASTERFALL_SRC)/rasterfall_map.c \
 
 $(BUILD)/rasterfall_session_self.o: $(RASTERFALL_SRC)/rasterfall_session.c \
                                     $(RASTERFALL_INC)/rasterfall_session.h \
+                                    $(RASTERFALL_INC)/rasterfall_model.h \
                                     $(RASTERFALL_INC)/toy_game.h \
                                     $(RASTERFALL_INC)/rasterfall_camera.h \
                                     $(RASTERFALL_INC)/rasterfall_map.h $(SELF_CC) | $(BUILD)

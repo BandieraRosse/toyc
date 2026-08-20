@@ -6,7 +6,8 @@
 
 /*
  * RFM2 is the deliberately small runtime mesh format produced by
- * app/glb2rmesh.  All integers are little-endian.  The file layout is:
+ * the offline model converters.  All integers are little-endian.  The file
+ * layout is:
  *
  *   header[64]                 magic/version/counts/scale/bounds/offsets
  *   primitive_count * 16       first index/count/material index
@@ -16,6 +17,13 @@
  *                              v6 adds signed Q16 additional u,v at 24..31;
  *                              v10 adds unsigned Q16 edge scale at 32..35
  *   index_count * 4 bytes      uint32 triangle indices
+ *   optional SKN1 section      v11 bone hierarchy + BDEF1/BDEF2 records
+ *
+ * Header byte 60 is the SKN1 offset in v11.  SKN1 has a 32-byte header
+ * (total bytes, bone count/stride, vertex count/stride, name-table bytes),
+ * followed by 24-byte bones (parent, flags, absolute rest position, name
+ * offset), 8-byte vertex weights (bone0, bone1, Q16 weight0, BDEF type), and
+ * a NUL-terminated UTF-8 name table.  Earlier versions end after indices.
  *
  * Positions are Rasterfall world units.  Normals are signed Q15 and UVs are
  * unsigned Q16 (the exporter clamps UVs to [0, 1]). Multiple glTF primitives
@@ -29,7 +37,7 @@
  * Texture files are kept beside the mesh by the offline importer.
  */
 #define RASTERFALL_MODEL_MAGIC 0x324d4652U /* "RFM2" in little-endian */
-#define RASTERFALL_MODEL_VERSION 10
+#define RASTERFALL_MODEL_VERSION 11
 #define RASTERFALL_MODEL_VERTEX_BYTES 24
 #define RASTERFALL_MODEL_VERTEX_BYTES_ADDITIONAL_UV 32
 #define RASTERFALL_MODEL_VERTEX_BYTES_EDGE_SCALE 36
@@ -38,6 +46,32 @@
 #define RASTERFALL_MODEL_MATERIAL_BYTES_LEGACY 16
 #define RASTERFALL_MODEL_MATERIAL_BYTES_EDGE 24
 #define RASTERFALL_MODEL_MATERIAL_BYTES 40
+#define RASTERFALL_MODEL_SKIN_MAGIC 0x314e4b53U /* "SKN1" */
+#define RASTERFALL_MODEL_SKIN_HEADER_BYTES 32
+#define RASTERFALL_MODEL_BONE_BYTES 24
+#define RASTERFALL_MODEL_SKIN_VERTEX_BYTES 8
+#define RASTERFALL_MODEL_MAX_BONES 4096
+#define RASTERFALL_MODEL_MAX_BONE_DEPTH 512
+
+enum rasterfall_model_pose {
+    RASTERFALL_MODEL_POSE_BIND,
+    RASTERFALL_MODEL_POSE_RIGHT_ARM,
+    RASTERFALL_MODEL_POSE_ARMS,
+    RASTERFALL_MODEL_POSE_BODY_TURN
+};
+
+struct rasterfall_model_bone {
+    int parent;
+    int rest_x, rest_y, rest_z;
+    unsigned int flags;
+    const char *name;
+    int rotate_x, rotate_y, rotate_z;
+};
+
+struct rasterfall_model_bone_transform {
+    double rotation[9];
+    double position[3];
+};
 
 struct rasterfall_model_header {
     unsigned int magic;
@@ -65,6 +99,18 @@ struct rasterfall_model_asset {
     const unsigned char *materials;
     const unsigned char *vertices;
     const unsigned char *indices;
+    const unsigned char *skin_vertices;
+    struct rasterfall_model_bone *bones;
+    struct rasterfall_model_bone_transform *bone_transforms;
+    unsigned int *bone_order;
+    unsigned int bone_count;
+    unsigned int root_bone_count;
+    unsigned int max_bone_depth;
+    int skinning_enabled;
+    int pose;
+    int demo_right_arm;
+    int demo_left_arm;
+    int demo_body;
     struct toy_texture_asset *texture_assets;
     struct toy_texture_view *texture_views;
     unsigned int texture_count;
@@ -75,5 +121,17 @@ struct rasterfall_model_asset {
 int rasterfall_model_load(struct rasterfall_model_asset *asset,
                            const char *path);
 void rasterfall_model_unload(struct rasterfall_model_asset *asset);
+int rasterfall_model_set_skinning(struct rasterfall_model_asset *asset,
+                                  int enabled);
+int rasterfall_model_set_pose(struct rasterfall_model_asset *asset, int pose);
+int rasterfall_model_update_bones(struct rasterfall_model_asset *asset);
+int rasterfall_model_skin_vertex(const struct rasterfall_model_asset *asset,
+                                 unsigned int index, int position[3],
+                                 int normal[3]);
+int rasterfall_model_find_bone(const struct rasterfall_model_asset *asset,
+                               const char *name);
+void rasterfall_model_dump_bones(const struct rasterfall_model_asset *asset,
+                                 const char *search);
+int rasterfall_model_skinning_logic_test(void);
 
 #endif

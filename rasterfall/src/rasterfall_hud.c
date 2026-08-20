@@ -791,6 +791,14 @@ void rasterfall_hud_draw_interact_prompt(struct toy_renderer *renderer,
         snprintf(label, sizeof(label), "E ADD $500");
     else if (it->kind == TOY_MAP_PICKUP_CLEAR_HIRED_BUTTON)
         snprintf(label, sizeof(label), "E CLEAR HIRED AI");
+    else if (it->kind == TOY_MAP_PICKUP_POSE_RESET_BUTTON)
+        snprintf(label, sizeof(label), "E: RESET POSE");
+    else if (it->kind == TOY_MAP_PICKUP_POSE_RIGHT_ARM_BUTTON)
+        snprintf(label, sizeof(label), "E: RIGHT ARM");
+    else if (it->kind == TOY_MAP_PICKUP_POSE_ARMS_BUTTON)
+        snprintf(label, sizeof(label), "E: ARMS");
+    else if (it->kind == TOY_MAP_PICKUP_POSE_BODY_BUTTON)
+        snprintf(label, sizeof(label), "E: BODY TURN");
     else if (it->kind == TOY_MAP_PICKUP_WEAPON ||
              it->kind == TOY_MAP_PICKUP_SMG ||
              it->kind == TOY_MAP_PICKUP_SHOTGUN) {

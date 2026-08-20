@@ -130,6 +130,7 @@ struct rasterfall_session {
     int flag_count;
     int carried_flag;
     int assignment_flag;
+    int skeletal_demo_pose;
     uint64_t seed;
 };
 

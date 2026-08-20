@@ -150,6 +150,8 @@ struct gallery_cached_vertex {
     struct vec3 edge_world, edge_view;
     int edge_size;
     int edge_ready;
+    int model_position[3];
+    int normal[3];
 };
 static struct gallery_cached_vertex *gallery_vertex_cache;
 static unsigned int gallery_vertex_cache_capacity;
@@ -269,22 +271,12 @@ static int gallery_model_scale(const struct rasterfall_model_asset *model)
     return scale;
 }
 
-static void gallery_vertex(const struct rasterfall_model_asset *model,
-                           unsigned int index, int center_x, int base_y,
-                           int center_z, int scale, struct vec3 *out)
-{
-    const unsigned char *p = model->vertices +
-                             index * model->vertex_bytes;
-    out->x = center_x + (int)((long)*(const int *)(p) * scale / 1000);
-    out->y = base_y + (int)((long)(*(const int *)(p + 4) - model->min_y) * scale / 1000);
-    out->z = center_z + (int)((long)*(const int *)(p + 8) * scale / 1000);
-}
-
 static int prepare_gallery_vertex_cache(
     const struct rasterfall_model_asset *model, const struct camera *camera,
     int center_x, int base_y, int center_z, int scale)
 {
     unsigned int i;
+    long phase_start;
     if (gallery_vertex_cache_capacity < model->vertex_count) {
         struct gallery_cached_vertex *vertices =
             tlibc_malloc((size_t)model->vertex_count * sizeof(*vertices));
@@ -293,11 +285,39 @@ static int prepare_gallery_vertex_cache(
         gallery_vertex_cache = vertices;
         gallery_vertex_cache_capacity = model->vertex_count;
     }
+    if (model->skinning_enabled && model->bone_count) {
+        phase_start = render_monotonic_us();
+        if (rasterfall_model_update_bones(
+                (struct rasterfall_model_asset *)model) < 0) return -1;
+        model_setup_timing.bone_hierarchy_us +=
+            render_monotonic_us() - phase_start;
+    }
+    if (model->skinning_enabled && model->bone_count) {
+        phase_start = render_monotonic_us();
+        for (i = 0; i < model->vertex_count; i++)
+            if (rasterfall_model_skin_vertex(model, i,
+                    gallery_vertex_cache[i].model_position,
+                    gallery_vertex_cache[i].normal) < 0) return -1;
+        model_setup_timing.skinning_us += render_monotonic_us() - phase_start;
+    }
     for (i = 0; i < model->vertex_count; i++) {
         const unsigned char *p = model->vertices + i * model->vertex_bytes;
         struct gallery_cached_vertex *cached = &gallery_vertex_cache[i];
-        gallery_vertex(model, i, center_x, base_y, center_z, scale,
-                       &cached->uv.p);
+        int *position = cached->model_position;
+        if (!model->skinning_enabled || !model->bone_count) {
+            position[0] = *(const int *)p;
+            position[1] = *(const int *)(p + 4);
+            position[2] = *(const int *)(p + 8);
+            cached->normal[0] = *(const short *)(p + 12);
+            cached->normal[1] = *(const short *)(p + 14);
+            cached->normal[2] = *(const short *)(p + 16);
+        }
+        cached->uv.p.x = center_x +
+            (int)((long)position[0] * scale / 1000);
+        cached->uv.p.y = base_y +
+            (int)((long)(position[1] - model->min_y) * scale / 1000);
+        cached->uv.p.z = center_z +
+            (int)((long)position[2] * scale / 1000);
         world_to_view(camera, &cached->uv.p, &cached->view);
         cached->uv.u = *(const unsigned short *)(p + 18);
         cached->uv.v = *(const unsigned short *)(p + 20);
@@ -332,13 +352,21 @@ static int gallery_model_visible(const struct toy_surface *surface,
     int half_height = surface->height / 2 + 32;
     int all_left = 1, all_right = 1, all_above = 1, all_below = 1;
     int crosses_near = 0, max_z = -2147483647;
-    xs[0] = center_x + (int)((long)model->min_x * scale / 1000);
-    xs[1] = center_x + (int)((long)model->max_x * scale / 1000);
-    ys[0] = base_y;
-    ys[1] = base_y + (int)((long)(model->max_y - model->min_y) *
-                           scale / 1000);
-    zs[0] = center_z + (int)((long)model->min_z * scale / 1000);
-    zs[1] = center_z + (int)((long)model->max_z * scale / 1000);
+    {
+        int margin_x = model->skinning_enabled ?
+            (model->max_x - model->min_x) / 2 : 0;
+        int margin_y = model->skinning_enabled ?
+            (model->max_y - model->min_y) / 4 : 0;
+        int margin_z = model->skinning_enabled ?
+            (model->max_z - model->min_z) / 2 : 0;
+        xs[0] = center_x + (int)((long)(model->min_x - margin_x) * scale / 1000);
+        xs[1] = center_x + (int)((long)(model->max_x + margin_x) * scale / 1000);
+        ys[0] = base_y - (int)((long)margin_y * scale / 1000);
+        ys[1] = base_y + (int)((long)(model->max_y - model->min_y + margin_y) *
+                               scale / 1000);
+        zs[0] = center_z + (int)((long)(model->min_z - margin_z) * scale / 1000);
+        zs[1] = center_z + (int)((long)(model->max_z + margin_z) * scale / 1000);
+    }
     for (int xi = 0; xi < 2; xi++) for (int yi = 0; yi < 2; yi++)
         for (int zi = 0; zi < 2; zi++) {
             struct vec3 world = {xs[xi], ys[yi], zs[zi]};
@@ -379,11 +407,11 @@ static void gallery_edge_vertex(const struct rasterfall_model_asset *model,
         return;
     }
     cached->edge_world = cached->uv.p;
-    cached->edge_world.x += (int)((long long)*(const short *)(p + 12) * edge_size * scale *
+    cached->edge_world.x += (int)((long long)cached->normal[0] * edge_size * scale *
                         vertex_edge_scale / (32767LL * 1000 * 65536));
-    cached->edge_world.y += (int)((long long)*(const short *)(p + 14) * edge_size * scale *
+    cached->edge_world.y += (int)((long long)cached->normal[1] * edge_size * scale *
                         vertex_edge_scale / (32767LL * 1000 * 65536));
-    cached->edge_world.z += (int)((long long)*(const short *)(p + 16) * edge_size * scale *
+    cached->edge_world.z += (int)((long long)cached->normal[2] * edge_size * scale *
                         vertex_edge_scale / (32767LL * 1000 * 65536));
     world_to_view(camera, &cached->edge_world, &cached->edge_view);
     cached->edge_size = edge_size;
@@ -399,8 +427,6 @@ static void gallery_uv_vertex(const struct rasterfall_model_asset *model,
                               int sphere_mode,
                               struct world_uv_vertex *out)
 {
-    const unsigned char *p = model->vertices +
-                             index * model->vertex_bytes;
     (void)center_x; (void)base_y; (void)center_z; (void)scale;
     out->p = gallery_vertex_cache[index].uv.p;
     out->u = gallery_vertex_cache[index].uv.u;
@@ -412,9 +438,9 @@ static void gallery_uv_vertex(const struct rasterfall_model_asset *model,
     } else if (sphere_mode == 1 || sphere_mode == 2) {
         struct gallery_cached_vertex *cached = &gallery_vertex_cache[index];
         if (!cached->sphere_ready) {
-            int nx = *(const short *)(p + 12);
-            int ny = *(const short *)(p + 14);
-            int nz = *(const short *)(p + 16);
+            int nx = cached->normal[0];
+            int ny = cached->normal[1];
+            int nz = cached->normal[2];
             int view_nx = (nx * camera->cy - nz * camera->sy) / 1024;
             int view_nz = (nx * camera->sy + nz * camera->cy) / 1024;
             int view_ny = (ny * camera->pitch_cy -
@@ -478,10 +504,14 @@ static int render_gallery_model(struct toy_renderer *renderer,
     int previous_material_specular_level = active_material_specular_level;
     int shared_texture = gallery_model_has_texture(model);
     phase_start = render_monotonic_us();
+    long bone_before = model_setup_timing.bone_hierarchy_us;
+    long skin_before = model_setup_timing.skinning_us;
     if (prepare_gallery_vertex_cache(model, camera, center_x, base_y,
                                      center_z, scale) < 0)
         return 0;
-    model_setup_timing.vertex_cache_us += render_monotonic_us() - phase_start;
+    model_setup_timing.vertex_cache_us += render_monotonic_us() - phase_start -
+        (model_setup_timing.bone_hierarchy_us - bone_before) -
+        (model_setup_timing.skinning_us - skin_before);
     active_sphere_texture = 0;
     active_sphere_mode = 0;
     active_toon_texture = 0;
@@ -617,12 +647,15 @@ static int render_gallery_model(struct toy_renderer *renderer,
             struct world_uv_vertex ta, tb, tc;
             if (ia >= model->vertex_count || ib >= model->vertex_count || ic >= model->vertex_count) continue;
             {
-                const unsigned char *na = model->vertices + ia * model->vertex_bytes + 12;
-                const unsigned char *nb = model->vertices + ib * model->vertex_bytes + 12;
-                const unsigned char *nc = model->vertices + ic * model->vertex_bytes + 12;
-                int nx = *(const short *)na + *(const short *)nb + *(const short *)nc;
-                int ny = *(const short *)(na + 2) + *(const short *)(nb + 2) + *(const short *)(nc + 2);
-                int nz = *(const short *)(na + 4) + *(const short *)(nb + 4) + *(const short *)(nc + 4);
+                int nx = gallery_vertex_cache[ia].normal[0] +
+                         gallery_vertex_cache[ib].normal[0] +
+                         gallery_vertex_cache[ic].normal[0];
+                int ny = gallery_vertex_cache[ia].normal[1] +
+                         gallery_vertex_cache[ib].normal[1] +
+                         gallery_vertex_cache[ic].normal[1];
+                int nz = gallery_vertex_cache[ia].normal[2] +
+                         gallery_vertex_cache[ib].normal[2] +
+                         gallery_vertex_cache[ic].normal[2];
                 int dot = (-nx + ny * 2 - nz) / 12;
                 active_toon_level = 160 + dot * 95 / 32767;
                 if (active_toon_level < 0) active_toon_level = 0;
@@ -779,6 +812,10 @@ static int render_private_character(struct toy_renderer *renderer,
         rasterfall_model_load(&private_character_model, path);
         private_character_loaded = 1;
     }
+    if (private_character_model.data && active_session &&
+        private_character_model.pose != active_session->skeletal_demo_pose)
+        rasterfall_model_set_pose(&private_character_model,
+                                  active_session->skeletal_demo_pose);
     if (!private_character_model.data ||
         world_distance(camera, -13000, -10000) > ENEMY_RENDER_DISTANCE)
         return 0;
@@ -2184,6 +2221,14 @@ static int render_interactables(struct toy_renderer *renderer,
                                              it->z, on,
                                              it->kind == TOY_MAP_PICKUP_ATTACK_X4_BUTTON ? 2 :
                                              it->kind == TOY_MAP_PICKUP_ATTACK_X3_BUTTON);
+        else if (it->kind == TOY_MAP_PICKUP_POSE_RESET_BUTTON ||
+                 it->kind == TOY_MAP_PICKUP_POSE_RIGHT_ARM_BUTTON ||
+                 it->kind == TOY_MAP_PICKUP_POSE_ARMS_BUTTON ||
+                 it->kind == TOY_MAP_PICKUP_POSE_BODY_BUTTON)
+            pixels += render_special_button(renderer, camera, it->x, it->y,
+                                             it->z, on,
+                                             it->kind == TOY_MAP_PICKUP_POSE_BODY_BUTTON ? 2 :
+                                             it->kind == TOY_MAP_PICKUP_POSE_ARMS_BUTTON);
         else if (it->kind == TOY_MAP_PICKUP_SHOP)
             pixels += render_button(renderer, camera, it->x, it->y, it->z, on, 2);
         else if (it->kind == TOY_MAP_PICKUP_MONEY_BUTTON ||
