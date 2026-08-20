@@ -77,11 +77,19 @@ struct toy_render_worker {
     long pixels;
     unsigned long textured_pixels;
     unsigned long texture_fallback_pixels;
+    unsigned long commands;
+    unsigned long triangles;
+    unsigned long depth_pass_px;
+    unsigned long shaded_px;
+    unsigned long written_px;
+    unsigned long flat_pixels;
     /* 逐像素漏斗与路径统计（job 开始清零，主线程 flush 后汇总） */
     unsigned long bbox_px;    /* 包围盒内实际扫描像素（逐条带精确） */
     unsigned long inside_px;  /* 通过边函数覆盖测试的像素 */
     long flat_us;             /* 纯色路径光栅化累计耗时（us，路径段计时） */
     long tex_us;              /* 纹理路径光栅化累计耗时（us） */
+    long active_us;           /* 完整 raster job 墙钟活跃时间 */
+    long cpu_us;              /* CLOCK_THREAD_CPUTIME_ID */
     int last_path;            /* 路径段计时：上一条命令类型（-1=无） */
     long path_start;          /* 当前路径段起点（us） */
 };
@@ -117,6 +125,7 @@ struct toy_renderer {
     unsigned long last_transparent_cmds;
     unsigned long last_edge_cmds;
     unsigned long last_sorted_cmds;
+    long last_worker_wait_us;
     unsigned long tex_tris_mark;   /* textured_triangles 的 flush 分界点 */
     /* 命令列表（记录阶段） */
     struct toy_raster_cmd *cmds;
@@ -126,6 +135,7 @@ struct toy_renderer {
     int sort_cmd_cap;
     int cmd_overflow;
     int recording_edge;
+    int requested_worker_count;
     /* 并行光栅化线程池 */
     struct toy_render_worker *workers;
     int worker_count;
@@ -195,6 +205,8 @@ int toy_renderer_triangle_textured_material_lit(
     int repeat, uint32_t fallback_color, int light, int fog);
 /* 给性能诊断标记随后记录的命令是否来自模型 Edge 壳；不改变渲染行为。 */
 void toy_renderer_set_recording_edge(struct toy_renderer *renderer, int edge);
+/* 仅在 worker 池创建前生效；0 使用自动 CPU 数，诊断可固定为 1..8。 */
+void toy_renderer_set_worker_count(struct toy_renderer *renderer, int count);
 /* 把记录阶段的三角形命令并行光栅化到 surface；返回实际写入像素数
  * （接替 toy_renderer_triangle 系列的返回值语义）。 */
 int toy_renderer_flush(struct toy_renderer *renderer);

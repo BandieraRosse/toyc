@@ -54,6 +54,13 @@ static long renderer_monotonic_us(void)
     return now.tv_sec * 1000000L + now.tv_nsec / 1000;
 }
 
+static long renderer_thread_cpu_us(void)
+{
+    struct timespec now;
+    if (__clock_gettime(CLOCK_THREAD_CPUTIME_ID, &now) < 0) return 0;
+    return now.tv_sec * 1000000L + now.tv_nsec / 1000;
+}
+
 /* 收拢当前路径段的计时（worker_rasterize 与单线程降级路径在命令循环
  * 结束后调用）。 */
 static void close_runs(struct toy_render_worker *worker)
@@ -117,8 +124,12 @@ static long raster_flat(struct toy_renderer *renderer,
                  * 赢与"可见面在后、按绘制顺序叠加"的意图一致。调用方顶点
                  * 交换必须携带 inv_z，否则深度插值错配。 */
                 if (overlay || inv >= depth[at]) {
+                    worker->depth_pass_px++;
+                    worker->shaded_px++;
                     if (!overlay) depth[at] = (int)inv;
                     row[x] = color;
+                    worker->written_px++;
+                    worker->flat_pixels++;
                     drawn++;
                 }
             }
@@ -253,6 +264,7 @@ static long raster_tex(struct toy_renderer *renderer,
                 int at = base + x;
                 /* 与 flat 路径相同：平局（≥）判给后画者。 */
                 if (inv_norm >= depth[at]) {
+                    worker->depth_pass_px++;
                     long long uoz = (long long)e0 * a->u_over_z +
                                     (long long)e1 * b->u_over_z +
                                     (long long)e2 * c->u_over_z;
@@ -324,6 +336,7 @@ static long raster_tex(struct toy_renderer *renderer,
                     {
                     int alpha = (int)(color >> 24) * material_alpha / 255;
                     if (alpha > 0) {
+                        worker->shaded_px++;
                         {
                             int r = (color >> 16) & 255;
                             int g = (color >> 8) & 255;
@@ -356,6 +369,7 @@ static long raster_tex(struct toy_renderer *renderer,
                                      (uint32_t)((sb * alpha + ub * (255 - alpha)) / 255);
                         }
                         (*tex_pixels)++;
+                        worker->written_px++;
                         if (used_fallback) (*fallback_pixels)++;
                         drawn++;
                     }
@@ -656,6 +670,14 @@ void toy_renderer_set_recording_edge(struct toy_renderer *renderer, int edge)
     if (renderer) renderer->recording_edge = edge != 0;
 }
 
+void toy_renderer_set_worker_count(struct toy_renderer *renderer, int count)
+{
+    if (!renderer || renderer->workers) return;
+    if (count < 0) count = 0;
+    if (count > TOY_RENDER_MAX_WORKERS) count = TOY_RENDER_MAX_WORKERS;
+    renderer->requested_worker_count = count;
+}
+
 /* ── 工作线程池：futex 等待 job_generation，主线程分发后自旋等 done ── */
 
 static int count_processors(void)
@@ -721,14 +743,18 @@ static void worker_rasterize(struct toy_renderer *renderer, int id,
     int bot0 = (int)((long)(band_a + 1) * height / band_count) - 1;
     int top1 = (int)((long)band_b * height / band_count);
     int bot1 = (int)((long)(band_b + 1) * height / band_count) - 1;
+    worker->commands = (unsigned long)renderer->cmd_count;
     for (int i = 0; i < renderer->cmd_count; i++) {
         const struct toy_raster_cmd *cmd = &renderer->cmds[i];
-        if (cmd->bbox_maxy >= top0 && cmd->bbox_miny <= bot0) {
+        int hit0 = cmd->bbox_maxy >= top0 && cmd->bbox_miny <= bot0;
+        int hit1 = cmd->bbox_maxy >= top1 && cmd->bbox_miny <= bot1;
+        if (hit0 || hit1) worker->triangles++;
+        if (hit0) {
             int y0 = cmd->bbox_miny > top0 ? cmd->bbox_miny : top0;
             int y1 = cmd->bbox_maxy < bot0 ? cmd->bbox_maxy : bot0;
             if (y0 <= y1) rasterize_cmd(renderer, cmd, y0, y1, worker);
         }
-        if (cmd->bbox_maxy >= top1 && cmd->bbox_miny <= bot1) {
+        if (hit1) {
             int y0 = cmd->bbox_miny > top1 ? cmd->bbox_miny : top1;
             int y1 = cmd->bbox_maxy < bot1 ? cmd->bbox_maxy : bot1;
             if (y0 <= y1) rasterize_cmd(renderer, cmd, y0, y1, worker);
@@ -761,16 +787,28 @@ static void *render_worker_main(void *arg)
         worker->pixels = 0;
         worker->textured_pixels = 0;
         worker->texture_fallback_pixels = 0;
+        worker->commands = 0;
+        worker->triangles = 0;
+        worker->depth_pass_px = 0;
+        worker->shaded_px = 0;
+        worker->written_px = 0;
+        worker->flat_pixels = 0;
         worker->bbox_px = 0;
         worker->inside_px = 0;
         worker->flat_us = 0;
         worker->tex_us = 0;
+        worker->active_us = 0;
+        worker->cpu_us = 0;
         worker->last_path = -1;
         worker->path_start = 0;
+        long active_start = renderer_monotonic_us();
+        long cpu_start = renderer_thread_cpu_us();
         if (renderer->job_is_clear)
             worker_clear(renderer, worker->id);
         else
             worker_rasterize(renderer, worker->id, worker);
+        worker->cpu_us = renderer_thread_cpu_us() - cpu_start;
+        worker->active_us = renderer_monotonic_us() - active_start;
         __sync_synchronize();
         atomic_fetch_add_u32((volatile uint32_t *)&renderer->job_done_count, 1);
     }
@@ -781,7 +819,8 @@ static int ensure_workers(struct toy_renderer *renderer)
 {
     int n, i;
     if (renderer->workers) return 0;
-    n = count_processors();
+    n = renderer->requested_worker_count > 0 ?
+        renderer->requested_worker_count : count_processors();
     if (n < 1) return -1;
     renderer->workers = tlibc_malloc((size_t)n *
                                      sizeof(struct toy_render_worker));
@@ -813,6 +852,7 @@ static int ensure_workers(struct toy_renderer *renderer)
 static void renderer_dispatch(struct toy_renderer *renderer, int is_clear,
                               uint32_t clear_color)
 {
+    long wait_start = renderer_monotonic_us();
     renderer->job_is_clear = is_clear;
     renderer->job_clear_color = clear_color;
     renderer->job_done_count = 0;
@@ -823,6 +863,7 @@ static void renderer_dispatch(struct toy_renderer *renderer, int is_clear,
             0x7fffffff, NULL, NULL, 0);
     while (renderer->job_done_count != renderer->worker_count)
         __sync_synchronize();
+    renderer->last_worker_wait_us = renderer_monotonic_us() - wait_start;
 }
 
 static void clear_single(struct toy_renderer *renderer, uint32_t clear_color)
@@ -878,6 +919,7 @@ int toy_renderer_begin(struct toy_renderer *renderer,
     renderer->last_transparent_cmds = 0;
     renderer->last_edge_cmds = 0;
     renderer->last_sorted_cmds = 0;
+    renderer->last_worker_wait_us = 0;
     renderer->recording_edge = 0;
     /* Keep this self-host friendly: avoid a whole-structure assignment here. */
     renderer->surface.pixels = surface->pixels;

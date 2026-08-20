@@ -36,6 +36,8 @@
  *                                   同时导出启用/禁用材质光照的三视图
  *   --model-material-regression <model> <dir>
  *                                   导出四组材质基线和像素统计清单
+ *   --model-performance <model> [iterations] [workers]
+ *                                   固定视角模型功能与 worker 负载基准
  *   --frames <count>               运行指定帧数后退出
  *   --input-test                   输入调试测试
  *   --logic-test / --net-test      运行逻辑测试
@@ -1681,10 +1683,24 @@ struct model_performance_result {
     unsigned long transparent_commands;
     unsigned long edge_commands;
     unsigned long sorted_commands;
+    long worker_active_us[8];
+    long worker_cpu_us[8];
+    unsigned long worker_commands[8];
+    unsigned long worker_triangles[8];
+    unsigned long worker_bbox_pixels[8];
+    unsigned long worker_inside_pixels[8];
+    unsigned long worker_depth_pass_pixels[8];
+    unsigned long worker_shaded_pixels[8];
+    unsigned long worker_written_pixels[8];
+    unsigned long worker_flat_pixels[8];
+    unsigned long worker_texture_pixels[8];
+    long worker_wait_us;
+    int worker_count;
     int frames;
 };
 
-static int benchmark_model_features(const char *model_path, int iterations)
+static int benchmark_model_features(const char *model_path, int iterations,
+                                    int requested_workers)
 {
     static const char *names[6] = {
         "full", "edge_off", "toon_off", "sphere_off", "lighting_off",
@@ -1720,6 +1736,7 @@ static int benchmark_model_features(const char *model_path, int iterations)
     if (!pixels) { rasterfall_model_unload(&model); return 1; }
     surface.pixels = pixels;
     toy_renderer_init(&renderer);
+    toy_renderer_set_worker_count(&renderer, requested_workers);
     cameras[0].z = -800; cameras[0].cy = 1024;
     cameras[1].x = -800; cameras[1].sy = 1024;
     cameras[2].z = 800; cameras[2].cy = -1024;
@@ -1780,18 +1797,58 @@ static int benchmark_model_features(const char *model_path, int iterations)
                     renderer.last_edge_cmds;
                 results[configuration].sorted_commands +=
                     renderer.last_sorted_cmds;
+                results[configuration].worker_wait_us +=
+                    renderer.last_worker_wait_us;
+                results[configuration].worker_count = renderer.worker_count;
+                for (int worker = 0; worker < renderer.worker_count; worker++) {
+                    const struct toy_render_worker *w = &renderer.workers[worker];
+                    results[configuration].worker_active_us[worker] += w->active_us;
+                    results[configuration].worker_cpu_us[worker] += w->cpu_us;
+                    results[configuration].worker_commands[worker] += w->commands;
+                    results[configuration].worker_triangles[worker] += w->triangles;
+                    results[configuration].worker_bbox_pixels[worker] += w->bbox_px;
+                    results[configuration].worker_inside_pixels[worker] += w->inside_px;
+                    results[configuration].worker_depth_pass_pixels[worker] +=
+                        w->depth_pass_px;
+                    results[configuration].worker_shaded_pixels[worker] += w->shaded_px;
+                    results[configuration].worker_written_pixels[worker] += w->written_px;
+                    results[configuration].worker_flat_pixels[worker] += w->flat_pixels;
+                    results[configuration].worker_texture_pixels[worker] +=
+                        w->textured_pixels;
+                }
                 results[configuration].frames++;
             }
         }
     }
-    __printf("rasterfall: model performance path=%s iterations=%d views=3 size=800x800\n",
-             model_path, iterations);
+    __printf("rasterfall: model performance path=%s iterations=%d views=3 size=800x800 workers=%d\n",
+             model_path, iterations, renderer.worker_count);
     for (configuration = 0; configuration < 6; configuration++) {
         const struct model_performance_result *r = &results[configuration];
         int frames = r->frames ? r->frames : 1;
         long sort_us = r->sort_us / frames;
         long flush_us = (long)(r->flush_us / frames);
-        __printf("rasterfall: model performance mode=%s frames=%d wall_us_per_frame=%ld clear_us_per_frame=%ld triangle_setup_us_per_frame=%ld sort_us_per_frame=%ld classify_us_per_frame=%ld merge_copy_us_per_frame=%ld actual_sort_us_per_frame=%ld pixel_raster_wall_us_per_frame=%ld opaque_commands_per_frame=%lu transparent_commands_per_frame=%lu edge_commands_per_frame=%lu sorted_elements_per_frame=%lu flat_raster_cpu_us_per_frame=%ld texture_raster_cpu_us_per_frame=%ld triangles_per_frame=%lu bbox_pixels_per_frame=%lu inside_pixels_per_frame=%lu textured_pixels_per_frame=%lu\n",
+        long worker_min = 0, worker_max = 0, worker_sum = 0, worker_cpu_sum = 0;
+        unsigned long tex_min = 0, tex_max = 0, tex_sum = 0;
+        unsigned long bbox_min = 0, bbox_max = 0, bbox_sum = 0;
+        for (int worker = 0; worker < r->worker_count; worker++) {
+            long active = r->worker_active_us[worker] / frames;
+            unsigned long tex = r->worker_texture_pixels[worker] /
+                                (unsigned long)frames;
+            unsigned long worker_bbox = r->worker_bbox_pixels[worker] /
+                                        (unsigned long)frames;
+            if (worker == 0 || active < worker_min) worker_min = active;
+            if (worker == 0 || active > worker_max) worker_max = active;
+            if (worker == 0 || tex < tex_min) tex_min = tex;
+            if (worker == 0 || tex > tex_max) tex_max = tex;
+            if (worker == 0 || worker_bbox < bbox_min) bbox_min = worker_bbox;
+            if (worker == 0 || worker_bbox > bbox_max) bbox_max = worker_bbox;
+            worker_sum += active;
+            worker_cpu_sum += r->worker_cpu_us[worker] / frames;
+            tex_sum += tex;
+            bbox_sum += worker_bbox;
+        }
+        long worker_avg = r->worker_count ? worker_sum / r->worker_count : 0;
+        __printf("rasterfall: model performance mode=%s frames=%d wall_us_per_frame=%ld clear_us_per_frame=%ld triangle_setup_us_per_frame=%ld sort_us_per_frame=%ld classify_us_per_frame=%ld merge_copy_us_per_frame=%ld actual_sort_us_per_frame=%ld pixel_raster_wall_us_per_frame=%ld worker_count=%d worker_wait_us_per_frame=%ld worker_total_cpu_us_per_frame=%ld worker_us_min=%ld worker_us_max=%ld worker_us_avg=%ld worker_max_avg_permille=%ld worker_spread_us=%ld texture_pixels_min=%lu texture_pixels_max=%lu texture_pixels_avg=%lu worker_bbox_min=%lu worker_bbox_max=%lu worker_bbox_avg=%lu opaque_commands_per_frame=%lu transparent_commands_per_frame=%lu edge_commands_per_frame=%lu sorted_elements_per_frame=%lu flat_raster_cpu_us_per_frame=%ld texture_raster_cpu_us_per_frame=%ld triangles_per_frame=%lu bbox_pixels_per_frame=%lu inside_pixels_per_frame=%lu textured_pixels_per_frame=%lu\n",
                  names[configuration], r->frames,
                  (long)(r->wall_us / frames),
                  (long)(r->begin_us / frames),
@@ -1800,6 +1857,14 @@ static int benchmark_model_features(const char *model_path, int iterations)
                  r->merge_copy_us / frames,
                  r->actual_sort_us / frames,
                  flush_us > sort_us ? flush_us - sort_us : 0,
+                 r->worker_count, r->worker_wait_us / frames,
+                 worker_cpu_sum, worker_min, worker_max, worker_avg,
+                 worker_avg ? worker_max * 1000 / worker_avg : 0,
+                 worker_max - worker_min,
+                 tex_min, tex_max,
+                 r->worker_count ? tex_sum / (unsigned long)r->worker_count : 0,
+                 bbox_min, bbox_max,
+                 r->worker_count ? bbox_sum / (unsigned long)r->worker_count : 0,
                  r->opaque_commands / (unsigned long)frames,
                  r->transparent_commands / (unsigned long)frames,
                  r->edge_commands / (unsigned long)frames,
@@ -1810,6 +1875,21 @@ static int benchmark_model_features(const char *model_path, int iterations)
                  r->bbox_pixels / (unsigned long)frames,
                  r->inside_pixels / (unsigned long)frames,
                  r->textured_pixels / (unsigned long)frames);
+        if (configuration == 0) for (int worker = 0;
+                                      worker < r->worker_count; worker++)
+            __printf("rasterfall: model performance worker=%d active_us_per_frame=%ld cpu_us_per_frame=%ld commands_per_frame=%lu triangles_per_frame=%lu bbox_pixels_per_frame=%lu inside_pixels_per_frame=%lu depth_pass_pixels_per_frame=%lu shaded_pixels_per_frame=%lu written_pixels_per_frame=%lu flat_pixels_per_frame=%lu texture_pixels_per_frame=%lu\n",
+                     worker,
+                     r->worker_active_us[worker] / frames,
+                     r->worker_cpu_us[worker] / frames,
+                     r->worker_commands[worker] / (unsigned long)frames,
+                     r->worker_triangles[worker] / (unsigned long)frames,
+                     r->worker_bbox_pixels[worker] / (unsigned long)frames,
+                     r->worker_inside_pixels[worker] / (unsigned long)frames,
+                     r->worker_depth_pass_pixels[worker] / (unsigned long)frames,
+                     r->worker_shaded_pixels[worker] / (unsigned long)frames,
+                     r->worker_written_pixels[worker] / (unsigned long)frames,
+                     r->worker_flat_pixels[worker] / (unsigned long)frames,
+                     r->worker_texture_pixels[worker] / (unsigned long)frames);
     }
     toy_renderer_destroy(&renderer);
     tlibc_free(pixels);
@@ -1884,6 +1964,7 @@ int main(int argc, char **argv)
     int material_regression = 0;
     const char *performance_model_path = 0;
     int performance_iterations = 5;
+    int performance_workers = 0;
     for (int arg = 1; arg < argc; arg++) {
         if (strcmp(argv[arg], "--input-test") == 0) input_debug = 1;
         else if (strcmp(argv[arg], "--logic-test") == 0 ||
@@ -1939,6 +2020,10 @@ int main(int argc, char **argv)
                 argv[arg + 1][0] <= '9')
                 performance_iterations =
                     parse_positive_int(argv[++arg], performance_iterations);
+            if (arg + 1 < argc && argv[arg + 1][0] >= '0' &&
+                argv[arg + 1][0] <= '9')
+                performance_workers =
+                    parse_positive_int(argv[++arg], performance_workers);
         }
         else if (strcmp(argv[arg], "--frames") == 0 && arg + 1 < argc) {
             const char *p = argv[++arg];
@@ -1948,7 +2033,8 @@ int main(int argc, char **argv)
     }
     if (performance_model_path)
         return benchmark_model_features(performance_model_path,
-                                        performance_iterations);
+                                        performance_iterations,
+                                        performance_workers);
     if (view_model_path) {
         if (material_regression)
             return dump_model_material_regression(view_model_path,

@@ -155,14 +155,16 @@ Full、Edge off、Toon off、Sphere off、lighting off 和 model off：
 
 ```sh
 build/rasterfall --model-performance \
-    rasterfall/private-assets/models/yola.rmesh 5
+    rasterfall/private-assets/models/yola.rmesh 5 8
 ```
 
-最后一个参数是每个视角的迭代次数；输出将墙钟时间拆为 clear、triangle setup、
+第二个参数是每个视角的迭代次数，可选第三个参数固定 worker 数量（1–8，省略时
+自动取可用 CPU 数并限制为 8）；输出将墙钟时间拆为 clear、triangle setup、
 透明命令准备和 pixel raster；透明阶段进一步拆出分类、归并/复制、实际排序，
 并输出 opaque、transparent、Edge 命令数和真实排序元素数。纯色/纹理光栅的
 工作线程累计 CPU 时间、三角形数和像素漏斗也会一并输出；不包含模型加载、
-纹理解码或图片写盘。
+纹理解码或图片写盘。Full 模式还会逐 worker 输出活跃/CPU 时间、检查命令数、
+相交三角形数以及 bbox、inside、depth-pass、shaded/written、flat/texture 像素。
 
 版权受限的本地测试模型应放在 `private-assets/` 下；该目录已被 Git 忽略，
 不会参与公开资源或嵌入式发布构建。当前本地角色样本位于
