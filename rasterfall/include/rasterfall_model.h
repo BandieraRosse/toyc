@@ -4,6 +4,7 @@
 #include "toy_assets.h"
 #include "toy_renderer.h"
 #include "rasterfall_animation.h"
+#include "rasterfall_humanoid.h"
 
 /*
  * RFM2 is the deliberately small runtime mesh format produced by
@@ -141,6 +142,15 @@ int rasterfall_model_find_bone(const struct rasterfall_model_asset *asset,
                                const char *name);
 void rasterfall_model_dump_bones(const struct rasterfall_model_asset *asset,
                                  const char *search);
+const char *rasterfall_humanoid_bone_name(enum rasterfall_humanoid_bone bone);
+void rasterfall_humanoid_mapping_init(struct rasterfall_humanoid_mapping *mapping);
+void rasterfall_humanoid_map_eula(const struct rasterfall_model_asset *asset,
+                                  struct rasterfall_humanoid_mapping *mapping);
+void rasterfall_humanoid_validate(const struct rasterfall_model_asset *asset,
+                                  const struct rasterfall_humanoid_mapping *mapping,
+                                  struct rasterfall_humanoid_diagnostics *diagnostics);
+void rasterfall_model_dump_humanoid(const struct rasterfall_model_asset *asset);
+int rasterfall_humanoid_logic_test(void);
 int rasterfall_model_skinning_logic_test(void);
 
 #endif

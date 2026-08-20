@@ -958,6 +958,12 @@ wayland_fps: $(BUILD)/wayland_fps
 # 单个 app：make app-echo
 $(foreach name,$(APP_NAMES),$(eval app-$(name): $(BUILD)/$(name)))
 
+# Friendly spelling for the offline GLB skeleton/animation inspector.
+.PHONY: app-glb-inspect
+app-glb-inspect: $(BUILD)/glb-inspect
+$(BUILD)/glb-inspect: $(BUILD)/glb_inspect | $(BUILD)
+	ln -f $< $@
+
 # ─── 清理 ───────────────────────────────────────────────────────
 
 clean-app:

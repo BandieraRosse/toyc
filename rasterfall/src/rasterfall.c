@@ -38,6 +38,7 @@
  *                                   导出四组材质基线和像素统计清单
  *   --model-performance <model> [iterations] [workers]
  *                                   固定视角模型功能与 worker 负载基准
+ *   --model-humanoid <model>        输出通用 Humanoid 骨骼映射诊断
  *   --frames <count>               运行指定帧数后退出
  *   --input-test                   输入调试测试
  *   --logic-test / --net-test      运行逻辑测试
@@ -2183,6 +2184,7 @@ int main(int argc, char **argv)
     const char *performance_model_path = 0;
     const char *bone_model_path = 0;
     const char *bone_search = 0;
+    const char *humanoid_model_path = 0;
     int performance_iterations = 5;
     int performance_workers = 0;
     for (int arg = 1; arg < argc; arg++) {
@@ -2250,6 +2252,9 @@ int main(int argc, char **argv)
             bone_model_path = argv[++arg];
             if (arg + 1 < argc && argv[arg + 1][0] != '-')
                 bone_search = argv[++arg];
+        } else if (strcmp(argv[arg], "--model-humanoid") == 0 &&
+                   arg + 1 < argc) {
+            humanoid_model_path = argv[++arg];
         } else if (strcmp(argv[arg], "--model-material-regression") == 0 &&
                    arg + 2 < argc) {
             view_model_path = argv[++arg];
@@ -2272,6 +2277,18 @@ int main(int argc, char **argv)
             while (*p >= '0' && *p <= '9')
                 frame_limit = frame_limit * 10 + (*p++ - '0');
         }
+    }
+    if (humanoid_model_path) {
+        struct rasterfall_model_asset humanoid_model;
+        memset(&humanoid_model, 0, sizeof(humanoid_model));
+        if (rasterfall_model_load(&humanoid_model, humanoid_model_path) < 0) {
+            __fprintf(2, "rasterfall: cannot load humanoid model %s\n",
+                      humanoid_model_path);
+            return 1;
+        }
+        rasterfall_model_dump_humanoid(&humanoid_model);
+        rasterfall_model_unload(&humanoid_model);
+        return 0;
     }
     if (bone_model_path) {
         struct rasterfall_model_asset bone_model;

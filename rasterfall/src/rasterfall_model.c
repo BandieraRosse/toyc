@@ -599,6 +599,174 @@ void rasterfall_model_dump_bones(const struct rasterfall_model_asset *asset,
              found, asset->bone_count, search ? search : "");
 }
 
+static const char *humanoid_names[RASTERFALL_HUMANOID_BONE_COUNT] = {
+    "ROOT", "HIPS", "SPINE", "CHEST", "UPPER_CHEST", "NECK", "HEAD",
+    "LEFT_SHOULDER", "LEFT_UPPER_ARM", "LEFT_FOREARM", "LEFT_HAND",
+    "RIGHT_SHOULDER", "RIGHT_UPPER_ARM", "RIGHT_FOREARM", "RIGHT_HAND",
+    "LEFT_UPPER_LEG", "LEFT_LOWER_LEG", "LEFT_FOOT",
+    "RIGHT_UPPER_LEG", "RIGHT_LOWER_LEG", "RIGHT_FOOT"
+};
+
+const char *rasterfall_humanoid_bone_name(enum rasterfall_humanoid_bone bone)
+{
+    if (bone < 0 || bone >= RASTERFALL_HUMANOID_BONE_COUNT) return "INVALID";
+    return humanoid_names[bone];
+}
+
+void rasterfall_humanoid_mapping_init(struct rasterfall_humanoid_mapping *mapping)
+{
+    int i;
+    if (!mapping) return;
+    for (i = 0; i < RASTERFALL_HUMANOID_BONE_COUNT; i++)
+        mapping->bone_indices[i] = -1;
+}
+
+static int model_find_exact_bone(const struct rasterfall_model_asset *asset,
+                                 const char *a, const char *b)
+{
+    unsigned int i;
+    if (!asset) return -1;
+    for (i = 0; i < asset->bone_count; i++)
+        if (asset->bones[i].name && !strcmp(asset->bones[i].name, a))
+            return (int)i;
+    if (b) for (i = 0; i < asset->bone_count; i++)
+        if (asset->bones[i].name && !strcmp(asset->bones[i].name, b))
+            return (int)i;
+    return -1;
+}
+
+void rasterfall_humanoid_map_eula(const struct rasterfall_model_asset *asset,
+                                  struct rasterfall_humanoid_mapping *mapping)
+{
+    static const char *names[RASTERFALL_HUMANOID_BONE_COUNT][2] = {
+        {"全ての親", "操作中心"}, {"腰", "下半身"},
+        {"上半身", "upper body"}, {"上半身3", "upper body 3"},
+        {"上半身2", "upper body 2"}, {"首", "neck"}, {"頭", "head"},
+        {"左肩", "left shoulder"}, {"左腕", "left arm"},
+        {"左ひじ", "left elbow"}, {"左手首", "left wrist"},
+        {"右肩", "right shoulder"}, {"右腕", "right arm"},
+        {"右ひじ", "right elbow"}, {"右手首", "right wrist"},
+        {"左足", "left leg"}, {"左ひざ", "left knee"},
+        {"左足首", "left ankle"}, {"右足", "right leg"},
+        {"右ひざ", "right knee"}, {"右足首", "right ankle"}
+    };
+    int i;
+    rasterfall_humanoid_mapping_init(mapping);
+    if (!asset || !mapping) return;
+    for (i = 0; i < RASTERFALL_HUMANOID_BONE_COUNT; i++)
+        mapping->bone_indices[i] = model_find_exact_bone(asset, names[i][0], names[i][1]);
+}
+
+static int model_bone_is_descendant(const struct rasterfall_model_asset *asset,
+                                    int child, int ancestor)
+{
+    unsigned int steps = 0;
+    if (!asset || child < 0 || ancestor < 0) return 1; /* Missing is separate. */
+    while (child >= 0 && steps++ <= asset->bone_count) {
+        if (child == ancestor) return 1;
+        child = asset->bones[child].parent;
+    }
+    return 0;
+}
+
+static const unsigned char humanoid_chains[][2] = {
+    {0,1}, {1,2}, {2,3}, {3,4}, {4,5}, {5,6},
+    {4,7}, {7,8}, {8,9}, {9,10}, {4,11}, {11,12}, {12,13}, {13,14},
+    {1,15}, {15,16}, {16,17}, {1,18}, {18,19}, {19,20}
+};
+
+void rasterfall_humanoid_validate(const struct rasterfall_model_asset *asset,
+                                  const struct rasterfall_humanoid_mapping *mapping,
+                                  struct rasterfall_humanoid_diagnostics *diagnostics)
+{
+    int i, j;
+    __memset(diagnostics, 0, sizeof(*diagnostics));
+    if (!mapping) return;
+    for (i = 0; i < RASTERFALL_HUMANOID_BONE_COUNT; i++) {
+        int index = mapping->bone_indices[i];
+        if (index < 0 || !asset || index >= (int)asset->bone_count) {
+            diagnostics->missing_count++;
+            continue;
+        }
+        diagnostics->mapped_count++;
+        for (j = 0; j < i; j++)
+            if (mapping->bone_indices[j] == index) {
+                diagnostics->duplicate_count++;
+                break;
+            }
+    }
+    if (!asset) return;
+    for (i = 0; i < (int)(sizeof(humanoid_chains) / sizeof(humanoid_chains[0])); i++)
+        if (!model_bone_is_descendant(asset,
+                mapping->bone_indices[humanoid_chains[i][1]],
+                mapping->bone_indices[humanoid_chains[i][0]]))
+            diagnostics->parent_chain_error_count++;
+}
+
+void rasterfall_model_dump_humanoid(const struct rasterfall_model_asset *asset)
+{
+    struct rasterfall_humanoid_mapping mapping;
+    struct rasterfall_humanoid_diagnostics diagnostics;
+    int i, j;
+    rasterfall_humanoid_map_eula(asset, &mapping);
+    rasterfall_humanoid_validate(asset, &mapping, &diagnostics);
+    for (i = 0; i < RASTERFALL_HUMANOID_BONE_COUNT; i++) {
+        int index = mapping.bone_indices[i];
+        if (index >= 0)
+            __printf("%s -> %s / index %d\n", humanoid_names[i],
+                     asset->bones[index].name, index);
+        else __printf("%s -> MISSING\n", humanoid_names[i]);
+    }
+    for (i = 0; i < RASTERFALL_HUMANOID_BONE_COUNT; i++)
+        if (mapping.bone_indices[i] >= 0) for (j = 0; j < i; j++)
+            if (mapping.bone_indices[j] == mapping.bone_indices[i]) {
+                __printf("humanoid: duplicate %s and %s -> %s / index %d\n",
+                         humanoid_names[j], humanoid_names[i],
+                         asset->bones[mapping.bone_indices[i]].name,
+                         mapping.bone_indices[i]);
+                break;
+            }
+    for (i = 0; i < (int)(sizeof(humanoid_chains) / sizeof(humanoid_chains[0])); i++) {
+        int parent = humanoid_chains[i][0], child = humanoid_chains[i][1];
+        if (!model_bone_is_descendant(asset, mapping.bone_indices[child],
+                                      mapping.bone_indices[parent]))
+            __printf("humanoid: abnormal parent chain %s is not below %s\n",
+                     humanoid_names[child], humanoid_names[parent]);
+    }
+    __printf("humanoid: mapped=%u/%u missing_core_bones=%u duplicate_bone_mappings=%u parent_chain_errors=%u\n",
+             diagnostics.mapped_count, RASTERFALL_HUMANOID_BONE_COUNT,
+             diagnostics.missing_count, diagnostics.duplicate_count,
+             diagnostics.parent_chain_error_count);
+}
+
+int rasterfall_humanoid_logic_test(void)
+{
+    struct rasterfall_model_asset asset;
+    struct rasterfall_model_bone bones[4];
+    struct rasterfall_humanoid_mapping mapping;
+    struct rasterfall_humanoid_diagnostics diagnostics;
+    __memset(&asset, 0, sizeof(asset)); __memset(bones, 0, sizeof(bones));
+    asset.bones = bones; asset.bone_count = 4;
+    bones[0].name = "全ての親"; bones[0].parent = -1;
+    bones[1].name = "腰"; bones[1].parent = 0;
+    bones[2].name = "上半身"; bones[2].parent = 1;
+    bones[3].name = "右腕"; bones[3].parent = 2;
+    rasterfall_humanoid_map_eula(&asset, &mapping);
+    if (mapping.bone_indices[RASTERFALL_HUMANOID_ROOT] != 0 ||
+        mapping.bone_indices[RASTERFALL_HUMANOID_HIPS] != 1 ||
+        mapping.bone_indices[RASTERFALL_HUMANOID_SPINE] != 2 ||
+        mapping.bone_indices[RASTERFALL_HUMANOID_RIGHT_UPPER_ARM] != 3 ||
+        mapping.bone_indices[RASTERFALL_HUMANOID_HEAD] != -1) return 1;
+    rasterfall_humanoid_validate(&asset, &mapping, &diagnostics);
+    if (diagnostics.mapped_count != 4 || diagnostics.missing_count != 17 ||
+        diagnostics.duplicate_count != 0) return 2;
+    mapping.bone_indices[RASTERFALL_HUMANOID_HEAD] = 3;
+    rasterfall_humanoid_validate(&asset, &mapping, &diagnostics);
+    if (diagnostics.duplicate_count != 1 || diagnostics.missing_count != 16)
+        return 3;
+    return 0;
+}
+
 int rasterfall_model_skinning_logic_test(void)
 {
     struct rasterfall_model_asset asset;

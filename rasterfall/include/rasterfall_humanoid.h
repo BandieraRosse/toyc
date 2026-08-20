@@ -1,0 +1,42 @@
+#ifndef TOYC_RASTERFALL_HUMANOID_H
+#define TOYC_RASTERFALL_HUMANOID_H
+
+/* Import-format-independent roles.  Mapping entries are indices in the
+ * source skeleton and -1 means that the role is absent. */
+enum rasterfall_humanoid_bone {
+    RASTERFALL_HUMANOID_ROOT,
+    RASTERFALL_HUMANOID_HIPS,
+    RASTERFALL_HUMANOID_SPINE,
+    RASTERFALL_HUMANOID_CHEST,
+    RASTERFALL_HUMANOID_UPPER_CHEST,
+    RASTERFALL_HUMANOID_NECK,
+    RASTERFALL_HUMANOID_HEAD,
+    RASTERFALL_HUMANOID_LEFT_SHOULDER,
+    RASTERFALL_HUMANOID_LEFT_UPPER_ARM,
+    RASTERFALL_HUMANOID_LEFT_FOREARM,
+    RASTERFALL_HUMANOID_LEFT_HAND,
+    RASTERFALL_HUMANOID_RIGHT_SHOULDER,
+    RASTERFALL_HUMANOID_RIGHT_UPPER_ARM,
+    RASTERFALL_HUMANOID_RIGHT_FOREARM,
+    RASTERFALL_HUMANOID_RIGHT_HAND,
+    RASTERFALL_HUMANOID_LEFT_UPPER_LEG,
+    RASTERFALL_HUMANOID_LEFT_LOWER_LEG,
+    RASTERFALL_HUMANOID_LEFT_FOOT,
+    RASTERFALL_HUMANOID_RIGHT_UPPER_LEG,
+    RASTERFALL_HUMANOID_RIGHT_LOWER_LEG,
+    RASTERFALL_HUMANOID_RIGHT_FOOT,
+    RASTERFALL_HUMANOID_BONE_COUNT
+};
+
+struct rasterfall_humanoid_mapping {
+    int bone_indices[RASTERFALL_HUMANOID_BONE_COUNT];
+};
+
+struct rasterfall_humanoid_diagnostics {
+    unsigned int mapped_count;
+    unsigned int missing_count;
+    unsigned int duplicate_count;
+    unsigned int parent_chain_error_count;
+};
+
+#endif

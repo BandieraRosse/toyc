@@ -16,6 +16,7 @@ static int run_logic_test(void)
     int count;
     long long direction_length;
     if (rasterfall_model_skinning_logic_test() != 0) return 157;
+    if (rasterfall_humanoid_logic_test() != 0) return 162;
     if (rasterfall_animation_logic_test() != 0) return 161;
     toy_input_init(&input);
     rasterfall_session_reset(&session, &camera, 1);
