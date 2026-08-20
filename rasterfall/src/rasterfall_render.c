@@ -91,6 +91,12 @@ static int draw_world_triangle(struct toy_renderer *renderer,
                                const struct camera *camera,
                                const struct vec3 *a, const struct vec3 *b,
                                const struct vec3 *c, uint32_t color);
+static int draw_world_triangle_views(struct toy_renderer *renderer,
+                               const struct camera *camera,
+                               const struct vec3 *a, const struct vec3 *b,
+                               const struct vec3 *c,
+                               const struct vec3 *va, const struct vec3 *vb,
+                               const struct vec3 *vc, uint32_t color);
 static void world_to_view(const struct camera *camera, const struct vec3 *world,
                           struct vec3 *view);
 static int world_distance(const struct camera *camera, int x, int z);
@@ -103,6 +109,14 @@ static int draw_world_triangle_tex(struct toy_renderer *renderer,
                                    const struct world_uv_vertex *a,
                                    const struct world_uv_vertex *b,
                                    const struct world_uv_vertex *c);
+static int draw_world_triangle_tex_views(struct toy_renderer *renderer,
+                                   const struct camera *camera,
+                                   const struct world_uv_vertex *a,
+                                   const struct world_uv_vertex *b,
+                                   const struct world_uv_vertex *c,
+                                   const struct vec3 *va,
+                                   const struct vec3 *vb,
+                                   const struct vec3 *vc);
 static void rotate_arm_xz(int x, int z, int degrees, int *out_x, int *out_z);
 
 static struct rasterfall_model_asset gallery_models[RASTERFALL_MODEL_MAX_GALLERY];
@@ -119,6 +133,17 @@ static char gallery_paths[RASTERFALL_MODEL_MAX_GALLERY]
                           [RASTERFALL_MODEL_PATH_BYTES];
 
 struct world_uv_vertex { struct vec3 p; int u, v; int su, sv; };
+struct gallery_cached_vertex {
+    struct world_uv_vertex uv;
+    struct vec3 view;
+    int sphere_u, sphere_v;
+    int sphere_ready;
+    struct vec3 edge_world, edge_view;
+    int edge_size;
+    int edge_ready;
+};
+static struct gallery_cached_vertex *gallery_vertex_cache;
+static unsigned int gallery_vertex_cache_capacity;
 
 static int clampi(int value, int low, int high)
 {
@@ -246,21 +271,68 @@ static void gallery_vertex(const struct rasterfall_model_asset *model,
     out->z = center_z + (int)((long)*(const int *)(p + 8) * scale / 1000);
 }
 
+static int prepare_gallery_vertex_cache(
+    const struct rasterfall_model_asset *model, const struct camera *camera,
+    int center_x, int base_y, int center_z, int scale)
+{
+    unsigned int i;
+    if (gallery_vertex_cache_capacity < model->vertex_count) {
+        struct gallery_cached_vertex *vertices =
+            tlibc_malloc((size_t)model->vertex_count * sizeof(*vertices));
+        if (!vertices) return -1;
+        if (gallery_vertex_cache) tlibc_free(gallery_vertex_cache);
+        gallery_vertex_cache = vertices;
+        gallery_vertex_cache_capacity = model->vertex_count;
+    }
+    for (i = 0; i < model->vertex_count; i++) {
+        const unsigned char *p = model->vertices + i * model->vertex_bytes;
+        struct gallery_cached_vertex *cached = &gallery_vertex_cache[i];
+        gallery_vertex(model, i, center_x, base_y, center_z, scale,
+                       &cached->uv.p);
+        world_to_view(camera, &cached->uv.p, &cached->view);
+        cached->uv.u = *(const unsigned short *)(p + 18);
+        cached->uv.v = *(const unsigned short *)(p + 20);
+        if (model->vertex_bytes >= RASTERFALL_MODEL_VERTEX_BYTES_ADDITIONAL_UV) {
+            cached->uv.su = *(const int *)(p + 24);
+            cached->uv.sv = *(const int *)(p + 28);
+        } else {
+            cached->uv.su = 0;
+            cached->uv.sv = 0;
+        }
+        cached->sphere_ready = 0;
+        cached->edge_ready = 0;
+    }
+    return 0;
+}
+
 static void gallery_edge_vertex(const struct rasterfall_model_asset *model,
+                                const struct camera *camera,
                                 unsigned int index, int center_x, int base_y,
                                 int center_z, int scale, int edge_size,
-                                struct vec3 *out)
+                                struct vec3 *out, struct vec3 *view_out)
 {
     const unsigned char *p = model->vertices + index * model->vertex_bytes;
+    struct gallery_cached_vertex *cached = &gallery_vertex_cache[index];
     unsigned int vertex_edge_scale = model->format_version >= 10 ?
         model_u32(p + 32) : 65536U;
-    gallery_vertex(model, index, center_x, base_y, center_z, scale, out);
-    out->x += (int)((long long)*(const short *)(p + 12) * edge_size * scale *
+    (void)center_x; (void)base_y; (void)center_z;
+    if (cached->edge_ready && cached->edge_size == edge_size) {
+        *out = cached->edge_world;
+        *view_out = cached->edge_view;
+        return;
+    }
+    cached->edge_world = cached->uv.p;
+    cached->edge_world.x += (int)((long long)*(const short *)(p + 12) * edge_size * scale *
                         vertex_edge_scale / (32767LL * 1000 * 65536));
-    out->y += (int)((long long)*(const short *)(p + 14) * edge_size * scale *
+    cached->edge_world.y += (int)((long long)*(const short *)(p + 14) * edge_size * scale *
                         vertex_edge_scale / (32767LL * 1000 * 65536));
-    out->z += (int)((long long)*(const short *)(p + 16) * edge_size * scale *
+    cached->edge_world.z += (int)((long long)*(const short *)(p + 16) * edge_size * scale *
                         vertex_edge_scale / (32767LL * 1000 * 65536));
+    world_to_view(camera, &cached->edge_world, &cached->edge_view);
+    cached->edge_size = edge_size;
+    cached->edge_ready = 1;
+    *out = cached->edge_world;
+    *view_out = cached->edge_view;
 }
 
 static void gallery_uv_vertex(const struct rasterfall_model_asset *model,
@@ -272,36 +344,46 @@ static void gallery_uv_vertex(const struct rasterfall_model_asset *model,
 {
     const unsigned char *p = model->vertices +
                              index * model->vertex_bytes;
-    gallery_vertex(model, index, center_x, base_y, center_z, scale, &out->p);
-    out->u = *(const unsigned short *)(p + 18);
-    out->v = *(const unsigned short *)(p + 20);
+    (void)center_x; (void)base_y; (void)center_z; (void)scale;
+    out->p = gallery_vertex_cache[index].uv.p;
+    out->u = gallery_vertex_cache[index].uv.u;
+    out->v = gallery_vertex_cache[index].uv.v;
     if (sphere_mode == 3 && model->vertex_bytes >=
                             RASTERFALL_MODEL_VERTEX_BYTES_ADDITIONAL_UV) {
-        out->su = *(const int *)(p + 24);
-        out->sv = *(const int *)(p + 28);
+        out->su = gallery_vertex_cache[index].uv.su;
+        out->sv = gallery_vertex_cache[index].uv.sv;
     } else if (sphere_mode == 1 || sphere_mode == 2) {
-        int nx = *(const short *)(p + 12);
-        int ny = *(const short *)(p + 14);
-        int nz = *(const short *)(p + 16);
-        int view_nx = (nx * camera->cy - nz * camera->sy) / 1024;
-        int view_nz = (nx * camera->sy + nz * camera->cy) / 1024;
-        int view_ny = (ny * camera->pitch_cy - view_nz * camera->pitch_sy) / 1024;
-        long long sphere_length = isqrt((long long)view_nx * view_nx +
-                                        (long long)view_ny * view_ny +
-                                        (long long)(view_nz + 32767) *
-                                        (view_nz + 32767));
-        if (sphere_length > 0) {
-            out->su = 32768 + (int)((long long)view_nx * 32768 / sphere_length);
-            /* Texture images use a top-down V axis. */
-            out->sv = 32768 - (int)((long long)view_ny * 32768 / sphere_length);
-        } else {
-            out->su = 32768;
-            out->sv = 32768;
+        struct gallery_cached_vertex *cached = &gallery_vertex_cache[index];
+        if (!cached->sphere_ready) {
+            int nx = *(const short *)(p + 12);
+            int ny = *(const short *)(p + 14);
+            int nz = *(const short *)(p + 16);
+            int view_nx = (nx * camera->cy - nz * camera->sy) / 1024;
+            int view_nz = (nx * camera->sy + nz * camera->cy) / 1024;
+            int view_ny = (ny * camera->pitch_cy -
+                           view_nz * camera->pitch_sy) / 1024;
+            long long sphere_length = isqrt((long long)view_nx * view_nx +
+                                            (long long)view_ny * view_ny +
+                                            (long long)(view_nz + 32767) *
+                                            (view_nz + 32767));
+            if (sphere_length > 0) {
+                cached->sphere_u = 32768 +
+                    (int)((long long)view_nx * 32768 / sphere_length);
+                /* Texture images use a top-down V axis. */
+                cached->sphere_v = 32768 -
+                    (int)((long long)view_ny * 32768 / sphere_length);
+            } else {
+                cached->sphere_u = 32768;
+                cached->sphere_v = 32768;
+            }
+            if (cached->sphere_u < 0) cached->sphere_u = 0;
+            if (cached->sphere_u > 65535) cached->sphere_u = 65535;
+            if (cached->sphere_v < 0) cached->sphere_v = 0;
+            if (cached->sphere_v > 65535) cached->sphere_v = 65535;
+            cached->sphere_ready = 1;
         }
-        if (out->su < 0) out->su = 0;
-        if (out->su > 65535) out->su = 65535;
-        if (out->sv < 0) out->sv = 0;
-        if (out->sv > 65535) out->sv = 65535;
+        out->su = cached->sphere_u;
+        out->sv = cached->sphere_v;
     } else {
         out->su = 0;
         out->sv = 0;
@@ -329,6 +411,9 @@ static int render_gallery_model(struct toy_renderer *renderer,
     int previous_material_specular_power = active_material_specular_power;
     int previous_material_specular_level = active_material_specular_level;
     int shared_texture = gallery_model_has_texture(model);
+    if (prepare_gallery_vertex_cache(model, camera, center_x, base_y,
+                                     center_z, scale) < 0)
+        return 0;
     active_sphere_texture = 0;
     active_sphere_mode = 0;
     active_toon_texture = 0;
@@ -392,17 +477,17 @@ static int render_gallery_model(struct toy_renderer *renderer,
                     unsigned int ia = model_u32(indices + j * 4);
                     unsigned int ib = model_u32(indices + (j + 1) * 4);
                     unsigned int ic = model_u32(indices + (j + 2) * 4);
-                    struct vec3 a, b, c;
+                    struct vec3 a, b, c, va, vb, vc;
                     if (ia >= model->vertex_count || ib >= model->vertex_count ||
                         ic >= model->vertex_count) continue;
-                    gallery_edge_vertex(model, ia, center_x, base_y, center_z,
-                                        scale, edge_size, &a);
-                    gallery_edge_vertex(model, ic, center_x, base_y, center_z,
-                                        scale, edge_size, &b);
-                    gallery_edge_vertex(model, ib, center_x, base_y, center_z,
-                                        scale, edge_size, &c);
-                    drawn += draw_world_triangle(renderer, camera, &a, &b, &c,
-                                                 edge & 0xffffffU);
+                    gallery_edge_vertex(model, camera, ia, center_x, base_y,
+                                        center_z, scale, edge_size, &a, &va);
+                    gallery_edge_vertex(model, camera, ic, center_x, base_y,
+                                        center_z, scale, edge_size, &b, &vb);
+                    gallery_edge_vertex(model, camera, ib, center_x, base_y,
+                                        center_z, scale, edge_size, &c, &vc);
+                    drawn += draw_world_triangle_views(renderer, camera,
+                        &a, &b, &c, &va, &vb, &vc, edge & 0xffffffU);
                 }
                 active_texture_view = saved_texture;
                 active_sphere_texture = saved_sphere;
@@ -480,9 +565,6 @@ static int render_gallery_model(struct toy_renderer *renderer,
                     active_material_specular_level = active_material_specular_level *
                         active_material_specular_level / 255;
             }
-            gallery_vertex(model, ia, center_x, base_y, center_z, scale, &a);
-            gallery_vertex(model, ib, center_x, base_y, center_z, scale, &b);
-            gallery_vertex(model, ic, center_x, base_y, center_z, scale, &c);
             if (texture || shared_texture) {
                 gallery_uv_vertex(model, camera, ia, center_x, base_y, center_z, scale,
                                   active_sphere_texture ? active_sphere_mode : 0, &ta);
@@ -490,9 +572,18 @@ static int render_gallery_model(struct toy_renderer *renderer,
                                   active_sphere_texture ? active_sphere_mode : 0, &tb);
                 gallery_uv_vertex(model, camera, ic, center_x, base_y, center_z, scale,
                                   active_sphere_texture ? active_sphere_mode : 0, &tc);
-                drawn += draw_world_triangle_tex(renderer, camera, &ta, &tb, &tc);
+                drawn += draw_world_triangle_tex_views(renderer, camera,
+                    &ta, &tb, &tc, &gallery_vertex_cache[ia].view,
+                    &gallery_vertex_cache[ib].view,
+                    &gallery_vertex_cache[ic].view);
             } else {
-                drawn += draw_world_triangle(renderer, camera, &a, &b, &c, color);
+                a = gallery_vertex_cache[ia].uv.p;
+                b = gallery_vertex_cache[ib].uv.p;
+                c = gallery_vertex_cache[ic].uv.p;
+                drawn += draw_world_triangle_views(renderer, camera,
+                    &a, &b, &c, &gallery_vertex_cache[ia].view,
+                    &gallery_vertex_cache[ib].view,
+                    &gallery_vertex_cache[ic].view, color);
             }
         }
     }
@@ -898,17 +989,22 @@ static void project_uv_vertex(const struct toy_surface *surface,
     screen->v2_over_z = (long)sv * 1048576L / z;
 }
 
-static int draw_world_triangle(struct toy_renderer *renderer,
+static int draw_world_triangle_views(struct toy_renderer *renderer,
                                const struct camera *camera,
                                const struct vec3 *a, const struct vec3 *b,
                                const struct vec3 *c,
-                               uint32_t color)
+                               const struct vec3 *va, const struct vec3 *vb,
+                               const struct vec3 *vc, uint32_t color)
 {
     struct vec3 input[3], clipped[4];
     int count, drawn = 0;
-    world_to_view(camera, a, &input[0]);
-    world_to_view(camera, b, &input[1]);
-    world_to_view(camera, c, &input[2]);
+    if (va && vb && vc) {
+        input[0] = *va; input[1] = *vb; input[2] = *vc;
+    } else {
+        world_to_view(camera, a, &input[0]);
+        world_to_view(camera, b, &input[1]);
+        world_to_view(camera, c, &input[2]);
+    }
     count = clip_near(input, 3, clipped);
     if (active_model_triangle_stats) {
         active_model_triangle_stats->total_triangles++;
@@ -964,17 +1060,33 @@ static int draw_world_triangle(struct toy_renderer *renderer,
     return drawn;
 }
 
-static int draw_world_triangle_tex(struct toy_renderer *renderer,
+static int draw_world_triangle(struct toy_renderer *renderer,
+                               const struct camera *camera,
+                               const struct vec3 *a, const struct vec3 *b,
+                               const struct vec3 *c, uint32_t color)
+{
+    return draw_world_triangle_views(renderer, camera, a, b, c, 0, 0, 0,
+                                     color);
+}
+
+static int draw_world_triangle_tex_views(struct toy_renderer *renderer,
                                     const struct camera *camera,
                                     const struct world_uv_vertex *a,
                                     const struct world_uv_vertex *b,
-                                    const struct world_uv_vertex *c)
+                                    const struct world_uv_vertex *c,
+                                    const struct vec3 *va,
+                                    const struct vec3 *vb,
+                                    const struct vec3 *vc)
 {
     struct world_uv_vertex input[3], clipped[4];
     int count, drawn = 0;
-    world_to_view(camera, &a->p, &input[0].p);
-    world_to_view(camera, &b->p, &input[1].p);
-    world_to_view(camera, &c->p, &input[2].p);
+    if (va && vb && vc) {
+        input[0].p = *va; input[1].p = *vb; input[2].p = *vc;
+    } else {
+        world_to_view(camera, &a->p, &input[0].p);
+        world_to_view(camera, &b->p, &input[1].p);
+        world_to_view(camera, &c->p, &input[2].p);
+    }
     input[0].u = a->u; input[0].v = a->v;
     input[1].u = b->u; input[1].v = b->v;
     input[2].u = c->u; input[2].v = c->v;
@@ -1049,6 +1161,15 @@ static int draw_world_triangle_tex(struct toy_renderer *renderer,
             active_model_triangle_stats->emitted_triangles++;
     }
     return drawn;
+}
+
+static int draw_world_triangle_tex(struct toy_renderer *renderer,
+                                    const struct camera *camera,
+                                    const struct world_uv_vertex *a,
+                                    const struct world_uv_vertex *b,
+                                    const struct world_uv_vertex *c)
+{
+    return draw_world_triangle_tex_views(renderer, camera, a, b, c, 0, 0, 0);
 }
 
 static int draw_quad_tex(struct toy_renderer *renderer,
