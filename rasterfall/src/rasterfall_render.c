@@ -22,6 +22,7 @@
 #include "rasterfall_model.h"
 #include "rasterfall_viewmodel.h"
 #include "rasterfall_animation.h"
+#include "rasterfall_glb_animation.h"
 #include "math.h"
 
 #define NEAR_Z RASTERFALL_NEAR_Z
@@ -131,6 +132,37 @@ static void rotate_arm_xz(int x, int z, int degrees, int *out_x, int *out_z);
 static struct rasterfall_model_asset gallery_models[RASTERFALL_MODEL_MAX_GALLERY];
 static int gallery_loaded;
 static struct rasterfall_model_asset private_character_model;
+static struct rasterfall_glb_rotation_clip private_character_glb[3];
+static struct rasterfall_animation_clip private_character_timing[3];
+static int private_character_glb_loaded[3];
+
+static const char *private_character_clip_names[3] = {
+    "Idle_Loop", "Walk_Loop", "Jog_Fwd_Loop"
+};
+
+static int private_character_load_glb_clip(int index)
+{
+    static const char *paths[] = {
+        "rasterfall/private-assets/models/UAL1_Standard.glb",
+        "rasterfall/private-assets/UAL1_Standard.glb"
+    };
+    int path;
+    if (index < 0 || index >= 3) return -1;
+    if (private_character_glb_loaded[index])
+        return private_character_glb[index].duration_ms > 0 ? 0 : -1;
+    private_character_glb_loaded[index] = 1;
+    for (path = 0; path < 2; path++)
+        if (rasterfall_glb_rotation_clip_load(&private_character_glb[index],
+                                              paths[path],
+                                              private_character_clip_names[index]) == 0)
+            break;
+    if (path == 2) return -1;
+    private_character_timing[index].duration_ms = private_character_glb[index].duration_ms;
+    private_character_timing[index].loop = 1;
+    private_character_timing[index].tracks = NULL;
+    private_character_timing[index].track_count = 0;
+    return 0;
+}
 static int private_character_loaded;
 
 #define RASTERFALL_MODEL_PATH_BYTES 160
@@ -821,6 +853,14 @@ static int render_private_character(struct toy_renderer *renderer,
             player->loop = player->clip->loop;
             rasterfall_model_sample_clip(&private_character_model, player->clip,
                                          player->time_ms);
+        } else if (player->clip_id >= 3 && player->clip_id <= 5 &&
+                   private_character_load_glb_clip(player->clip_id - 3) == 0) {
+            int clip_index = player->clip_id - 3;
+            player->clip = &private_character_timing[clip_index];
+            player->loop = 1;
+            rasterfall_model_sample_glb_rotation_clip(
+                &private_character_model, &private_character_glb[clip_index],
+                player->time_ms);
         } else {
             player->clip = NULL;
             rasterfall_model_sample_clip(&private_character_model, NULL, 0);
@@ -2241,6 +2281,13 @@ static int render_interactables(struct toy_renderer *renderer,
                                              it->z, on,
                                              it->kind == TOY_MAP_PICKUP_POSE_BODY_BUTTON ? 2 :
                                              it->kind == TOY_MAP_PICKUP_POSE_ARMS_BUTTON);
+        else if (it->kind == TOY_MAP_PICKUP_ANIM_IDLE_BUTTON ||
+                 it->kind == TOY_MAP_PICKUP_ANIM_WALK_BUTTON ||
+                 it->kind == TOY_MAP_PICKUP_ANIM_JOG_BUTTON)
+            pixels += render_special_button(renderer, camera, it->x, it->y,
+                                             it->z, on,
+                                             it->kind == TOY_MAP_PICKUP_ANIM_JOG_BUTTON ? 2 :
+                                             it->kind == TOY_MAP_PICKUP_ANIM_WALK_BUTTON);
         else if (it->kind == TOY_MAP_PICKUP_SHOP)
             pixels += render_button(renderer, camera, it->x, it->y, it->z, on, 2);
         else if (it->kind == TOY_MAP_PICKUP_MONEY_BUTTON ||

@@ -637,6 +637,12 @@ static void session_client_interact_banner(struct rasterfall_session *session)
         session->banner_text = "ARMS POSE";
     else if (it->kind == TOY_MAP_PICKUP_POSE_BODY_BUTTON)
         session->banner_text = "BODY TURN POSE";
+    else if (it->kind == TOY_MAP_PICKUP_ANIM_IDLE_BUTTON)
+        session->banner_text = "EULA IDLE_LOOP";
+    else if (it->kind == TOY_MAP_PICKUP_ANIM_WALK_BUTTON)
+        session->banner_text = "EULA WALK";
+    else if (it->kind == TOY_MAP_PICKUP_ANIM_JOG_BUTTON)
+        session->banner_text = "EULA JOG_FWD";
     else if (it->kind == TOY_MAP_PICKUP_AMMO)
         session->banner_text = "AMMO REFILLED";
     else if (it->kind == TOY_MAP_PICKUP_WEAPON ||
@@ -763,6 +769,21 @@ static void session_interact(struct rasterfall_session *session,
                 "RIGHT ARM POSE" :
             session->skeletal_demo_pose == RASTERFALL_MODEL_POSE_ARMS ?
                 "ARMS POSE" : "BODY TURN POSE";
+    } else if (it->kind == TOY_MAP_PICKUP_ANIM_IDLE_BUTTON ||
+               it->kind == TOY_MAP_PICKUP_ANIM_WALK_BUTTON ||
+               it->kind == TOY_MAP_PICKUP_ANIM_JOG_BUTTON) {
+        session->skeletal_demo_pose = RASTERFALL_MODEL_POSE_BIND;
+        session->skeletal_demo_player.clip = NULL;
+        session->skeletal_demo_player.clip_id =
+            it->kind == TOY_MAP_PICKUP_ANIM_IDLE_BUTTON ? 3 :
+            it->kind == TOY_MAP_PICKUP_ANIM_WALK_BUTTON ? 4 : 5;
+        session->skeletal_demo_player.time_ms = 0;
+        session->skeletal_demo_player.playing = 1;
+        session->skeletal_demo_player.loop = 1;
+        session->banner_ms = 1800;
+        session->banner_text = it->kind == TOY_MAP_PICKUP_ANIM_IDLE_BUTTON ?
+            "EULA IDLE_LOOP" : it->kind == TOY_MAP_PICKUP_ANIM_WALK_BUTTON ?
+            "EULA WALK" : "EULA JOG_FWD";
     } else if (it->kind == TOY_MAP_PICKUP_AMMO) {
         toy_game_refill_ammo(&session->game_state);
     } else if (it->kind == TOY_MAP_PICKUP_MONEY_BUTTON) {

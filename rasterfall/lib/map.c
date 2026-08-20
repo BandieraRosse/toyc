@@ -175,7 +175,10 @@ int toy_map_load(const char *path, struct toy_map *m)
                  !strcmp(kind,"button_pose_reset") ||
                  !strcmp(kind,"button_pose_right_arm") ||
                  !strcmp(kind,"button_pose_arms") ||
-                 !strcmp(kind,"button_pose_body")) && m->pickup_count<TOY_MAP_MAX_PICKUPS){
+                 !strcmp(kind,"button_pose_body") ||
+                 !strcmp(kind,"button_anim_idle") ||
+                 !strcmp(kind,"button_anim_walk") ||
+                 !strcmp(kind,"button_anim_jog")) && m->pickup_count<TOY_MAP_MAX_PICKUPS){
             char *sx=word(&p),*sz=word(&p),*sy=word(&p);
             if(sx&&sz&&sy){
                 m->pickups[m->pickup_count].kind=!strcmp(kind,"button_air") ?
@@ -208,6 +211,12 @@ int toy_map_load(const char *path, struct toy_map *m)
                     m->pickups[m->pickup_count].kind = TOY_MAP_PICKUP_POSE_ARMS_BUTTON;
                 else if (!strcmp(kind,"button_pose_body"))
                     m->pickups[m->pickup_count].kind = TOY_MAP_PICKUP_POSE_BODY_BUTTON;
+                else if (!strcmp(kind,"button_anim_idle"))
+                    m->pickups[m->pickup_count].kind = TOY_MAP_PICKUP_ANIM_IDLE_BUTTON;
+                else if (!strcmp(kind,"button_anim_walk"))
+                    m->pickups[m->pickup_count].kind = TOY_MAP_PICKUP_ANIM_WALK_BUTTON;
+                else if (!strcmp(kind,"button_anim_jog"))
+                    m->pickups[m->pickup_count].kind = TOY_MAP_PICKUP_ANIM_JOG_BUTTON;
                 m->pickups[m->pickup_count].x=number(sx,10);
                 m->pickups[m->pickup_count].z=number(sz,10);
                 m->pickups[m->pickup_count].y=number(sy,10);

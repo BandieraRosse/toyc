@@ -468,6 +468,45 @@ int rasterfall_model_sample_clip(struct rasterfall_model_asset *asset,
     return 0;
 }
 
+int rasterfall_model_sample_glb_rotation_clip(
+    struct rasterfall_model_asset *asset,
+    const struct rasterfall_glb_rotation_clip *clip, int time_ms)
+{
+    struct rasterfall_humanoid_rest_basis source_basis[RASTERFALL_HUMANOID_BONE_COUNT];
+    struct rasterfall_humanoid_rest_basis target_basis[RASTERFALL_HUMANOID_BONE_COUNT];
+    struct rasterfall_humanoid_rotation_skeleton source, target;
+    struct rasterfall_humanoid_rotation_pose pose;
+    struct rasterfall_humanoid_mapping mapping;
+    struct rasterfall_humanoid_retarget_result result;
+    int sampled, humanoid, bone;
+    if (!asset || !clip || rasterfall_model_build_humanoid_bases(asset, target_basis) < 0)
+        return -1;
+    rasterfall_humanoid_rotation_skeleton_identity(&target);
+    rasterfall_humanoid_map_eula(asset, &mapping);
+    if (rasterfall_glb_rotation_clip_source(clip, time_ms, &source, &pose,
+                                            source_basis, &sampled) < 0 ||
+        rasterfall_humanoid_retarget_rotations(&source, &pose, source_basis,
+                                               &target, target_basis, &result) < 0)
+        return -1;
+    for (bone = 0; bone < (int)asset->bone_count; bone++)
+        asset->bones[bone].rotate_x = asset->bones[bone].rotate_y =
+            asset->bones[bone].rotate_z = 0;
+    for (humanoid = 0; humanoid < RASTERFALL_HUMANOID_BONE_COUNT; humanoid++) {
+        struct rasterfall_animation_quaternion q = {
+            result.local_rotation[humanoid][0], result.local_rotation[humanoid][1],
+            result.local_rotation[humanoid][2], result.local_rotation[humanoid][3]};
+        struct rasterfall_animation_rotation rotation;
+        bone = mapping.bone_indices[humanoid];
+        if (bone < 0 || bone >= (int)asset->bone_count) continue;
+        rasterfall_animation_quat_to_euler(q, &rotation);
+        asset->bones[bone].rotate_x = rotation.x;
+        asset->bones[bone].rotate_y = rotation.y;
+        asset->bones[bone].rotate_z = rotation.z;
+    }
+    asset->pose = RASTERFALL_MODEL_POSE_BIND;
+    return rasterfall_model_update_bones(asset);
+}
+
 int rasterfall_model_update_bones(struct rasterfall_model_asset *asset)
 {
     unsigned int order;

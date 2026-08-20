@@ -799,6 +799,12 @@ void rasterfall_hud_draw_interact_prompt(struct toy_renderer *renderer,
         snprintf(label, sizeof(label), "E: ARMS");
     else if (it->kind == TOY_MAP_PICKUP_POSE_BODY_BUTTON)
         snprintf(label, sizeof(label), "E: BODY TURN");
+    else if (it->kind == TOY_MAP_PICKUP_ANIM_IDLE_BUTTON)
+        snprintf(label, sizeof(label), "E: EULA IDLE_LOOP");
+    else if (it->kind == TOY_MAP_PICKUP_ANIM_WALK_BUTTON)
+        snprintf(label, sizeof(label), "E: EULA WALK");
+    else if (it->kind == TOY_MAP_PICKUP_ANIM_JOG_BUTTON)
+        snprintf(label, sizeof(label), "E: EULA JOG_FWD");
     else if (it->kind == TOY_MAP_PICKUP_WEAPON ||
              it->kind == TOY_MAP_PICKUP_SMG ||
              it->kind == TOY_MAP_PICKUP_SHOTGUN) {

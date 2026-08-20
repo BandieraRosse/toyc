@@ -6,7 +6,7 @@
 #define TOY_MAP_MAX_BOXES 64
 #define TOY_MAP_MAX_ZONES 16
 #define TOY_MAP_MAX_DRAW 128
-#define TOY_MAP_MAX_PICKUPS 32
+#define TOY_MAP_MAX_PICKUPS 48
 #define TOY_MAP_MAX_BASES 8
 #define TOY_MAP_MAX_AI_SPAWNS 32
 #define TOY_MAP_MAX_PLATFORMS 16
@@ -68,6 +68,9 @@ enum toy_map_pickup_kind {
     ,TOY_MAP_PICKUP_POSE_RIGHT_ARM_BUTTON
     ,TOY_MAP_PICKUP_POSE_ARMS_BUTTON
     ,TOY_MAP_PICKUP_POSE_BODY_BUTTON
+    ,TOY_MAP_PICKUP_ANIM_IDLE_BUTTON
+    ,TOY_MAP_PICKUP_ANIM_WALK_BUTTON
+    ,TOY_MAP_PICKUP_ANIM_JOG_BUTTON
 };
 struct toy_map_pickup { int kind; int weapon; int x, z, y; };
 struct toy_map_draw {

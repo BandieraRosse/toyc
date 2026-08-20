@@ -7,6 +7,8 @@
 #include "rasterfall_humanoid.h"
 #include "rasterfall_humanoid_basis.h"
 
+struct rasterfall_glb_rotation_clip;
+
 /*
  * RFM2 is the deliberately small runtime mesh format produced by
  * the offline model converters.  All integers are little-endian.  The file
@@ -135,6 +137,9 @@ int rasterfall_model_build_demo_clips(struct rasterfall_model_asset *asset);
 int rasterfall_model_sample_clip(struct rasterfall_model_asset *asset,
                                  const struct rasterfall_animation_clip *clip,
                                  int time_ms);
+int rasterfall_model_sample_glb_rotation_clip(
+    struct rasterfall_model_asset *asset,
+    const struct rasterfall_glb_rotation_clip *clip, int time_ms);
 int rasterfall_model_update_bones(struct rasterfall_model_asset *asset);
 int rasterfall_model_skin_vertex(const struct rasterfall_model_asset *asset,
                                  unsigned int index, int position[3],
