@@ -109,6 +109,7 @@ build/rasterfall --model-bones rasterfall/private-assets/models/yola.rmesh 腕
 build/rasterfall --model-humanoid rasterfall/private-assets/models/yola.rmesh
 build/rasterfall --model-humanoid-basis rasterfall/private-assets/models/yola.rmesh
 build/rasterfall --model-retarget-test rasterfall/private-assets/models/yola.rmesh right-arm
+build/rasterfall --model-glb-animation rasterfall/private-assets/models/yola.rmesh UAL1_Standard.glb Idle_Loop
 build/rasterfall --model-static-views rasterfall/private-assets/models/yola.rmesh tmp/yola-static
 build/rasterfall --model-pose-views rasterfall/private-assets/models/yola.rmesh tmp/yola-bind bind
 build/rasterfall --model-pose-views rasterfall/private-assets/models/yola.rmesh tmp/yola-arm right-arm

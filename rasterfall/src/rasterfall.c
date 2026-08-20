@@ -41,6 +41,7 @@
  *   --model-humanoid <model>        输出通用 Humanoid 骨骼映射诊断
  *   --model-humanoid-basis <model>  输出 canonical rest basis
  *   --model-retarget-test <model> <right-arm|left-arm|right-leg|chest>
+ *   --model-glb-animation <model> <glb> <clip>
  *   --frames <count>               运行指定帧数后退出
  *   --input-test                   输入调试测试
  *   --logic-test / --net-test      运行逻辑测试
@@ -2191,6 +2192,8 @@ int main(int argc, char **argv)
     const char *humanoid_basis_model_path = 0;
     const char *retarget_model_path = 0;
     const char *retarget_action = 0;
+    const char *glb_animation_model = 0, *glb_animation_path = 0;
+    const char *glb_animation_name = 0;
     int performance_iterations = 5;
     int performance_workers = 0;
     for (int arg = 1; arg < argc; arg++) {
@@ -2267,6 +2270,10 @@ int main(int argc, char **argv)
         } else if (strcmp(argv[arg], "--model-retarget-test") == 0 &&
                    arg + 2 < argc) {
             retarget_model_path = argv[++arg]; retarget_action = argv[++arg];
+        } else if (strcmp(argv[arg], "--model-glb-animation") == 0 &&
+                   arg + 3 < argc) {
+            glb_animation_model=argv[++arg];glb_animation_path=argv[++arg];
+            glb_animation_name=argv[++arg];
         } else if (strcmp(argv[arg], "--model-material-regression") == 0 &&
                    arg + 2 < argc) {
             view_model_path = argv[++arg];
@@ -2289,6 +2296,14 @@ int main(int argc, char **argv)
             while (*p >= '0' && *p <= '9')
                 frame_limit = frame_limit * 10 + (*p++ - '0');
         }
+    }
+    if(glb_animation_model){
+        struct rasterfall_model_asset animation_model;memset(&animation_model,0,sizeof(animation_model));
+        if(rasterfall_model_load(&animation_model,glb_animation_model)<0||
+           rasterfall_model_glb_animation_test(&animation_model,glb_animation_path,glb_animation_name)<0){
+            __fprintf(2,"rasterfall: GLB animation test failed\n");rasterfall_model_unload(&animation_model);return 1;
+        }
+        rasterfall_model_unload(&animation_model);return 0;
     }
     if (retarget_model_path) {
         struct rasterfall_model_asset retarget_model;

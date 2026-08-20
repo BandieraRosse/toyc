@@ -6,6 +6,8 @@
 #include "tlibc_everything.h"
 #include "rasterfall_humanoid.h"
 #include "rasterfall_humanoid_basis.h"
+#include "rasterfall_glb_animation.h"
+#include "math.h"
 
 #define GLB_MAGIC 0x46546c67U
 #define GLB_JSON  0x4e4f534aU
@@ -782,6 +784,84 @@ static int self_test(void)
     return 0;
 }
 
+struct glb_rotation_implementation { struct glb_doc doc; int animation; };
+static void slice_quaternion(struct slice node,double *q)
+{
+    struct slice r=object_value(node,"rotation");
+    q[0]=json_number(array_value(r,0),0);q[1]=json_number(array_value(r,1),0);
+    q[2]=json_number(array_value(r,2),0);q[3]=json_number(array_value(r,3),1);
+}
+static void glb_quat_multiply(const double *a,const double *b,double *o)
+{
+    double q[4];q[0]=a[3]*b[0]+a[0]*b[3]+a[1]*b[2]-a[2]*b[1];q[1]=a[3]*b[1]-a[0]*b[2]+a[1]*b[3]+a[2]*b[0];q[2]=a[3]*b[2]+a[0]*b[1]-a[1]*b[0]+a[2]*b[3];q[3]=a[3]*b[3]-a[0]*b[0]-a[1]*b[1]-a[2]*b[2];memcpy(o,q,sizeof(q));
+}
+static void glb_quat_normalize(double *q)
+{
+    double n=sqrt(q[0]*q[0]+q[1]*q[1]+q[2]*q[2]+q[3]*q[3]);
+    if(n<0.0000001){q[0]=q[1]=q[2]=0;q[3]=1;}else{q[0]/=n;q[1]/=n;q[2]/=n;q[3]/=n;}
+}
+static int glb_global_rotation(const struct glb_doc *doc,int node,double (*local)[4],double (*global)[4],unsigned char *ready)
+{
+    int parent;if(ready[node])return 0;parent=doc->parents[node];
+    if(parent>=0){if(glb_global_rotation(doc,parent,local,global,ready)<0)return -1;glb_quat_multiply(global[parent],local[node],global[node]);}
+    else memcpy(global[node],local[node],4*sizeof(double));
+    glb_quat_normalize(global[node]);ready[node]=1;return 0;
+}
+static int sample_rotation_accessor(const struct glb_doc *doc,int input_index,int output_index,int time_ms,double *q)
+{
+    struct accessor_info ti,ro;const unsigned char *times,*rotations;int ts,rs,k=0,next;double seconds=time_ms/1000.0,factor,dot;
+    if(read_accessor_info(doc,input_index,&ti)<0||read_accessor_info(doc,output_index,&ro)<0||ti.component!=5126||ti.components!=1||ro.component!=5126||ro.components!=4||ti.count!=ro.count||ti.count<1)return -1;
+    times=accessor_data(doc,&ti,&ts);rotations=accessor_data(doc,&ro,&rs);
+    while(k+1<ti.count&&read_f32(times+(k+1)*ts)<=seconds)k++;
+    next=k+1<ti.count?k+1:k;
+    factor=next==k?0:(seconds-read_f32(times+k*ts))/(read_f32(times+next*ts)-read_f32(times+k*ts));if(factor<0)factor=0;if(factor>1)factor=1;
+    for(int i=0;i<4;i++){double a=read_f32(rotations+k*rs+i*4),b=read_f32(rotations+next*rs+i*4);q[i]=a+(b-a)*factor;}
+    dot=0;for(int i=0;i<4;i++)dot+=read_f32(rotations+k*rs+i*4)*read_f32(rotations+next*rs+i*4);
+    if(dot<0)for(int i=0;i<4;i++){double a=read_f32(rotations+k*rs+i*4),b=-read_f32(rotations+next*rs+i*4);q[i]=a+(b-a)*factor;}
+    glb_quat_normalize(q);return 0;
+}
+
+int rasterfall_glb_rotation_clip_load(struct rasterfall_glb_rotation_clip *clip,const char *path,const char *name)
+{
+    struct glb_rotation_implementation *impl;struct table samplers,channels;int a;
+    if(!clip||!path||!name)return -1;
+    __memset(clip,0,sizeof(*clip));impl=tlibc_malloc(sizeof(*impl));if(!impl)return -1;__memset(impl,0,sizeof(*impl));
+    if(doc_load(&impl->doc,path)<0){tlibc_free(impl);return -1;}
+    impl->animation=-1;
+    for(a=0;a<impl->doc.animations.count;a++){char n[128];string_copy(object_value(impl->doc.animations.items[a],"name"),n,sizeof(n));if(!strcmp(n,name)){impl->animation=a;break;}}
+    if(impl->animation<0){doc_free(&impl->doc);tlibc_free(impl);return -1;}
+    {
+        struct slice animation=impl->doc.animations.items[a];int c;
+        table_build(object_value(animation,"samplers"),&samplers);table_build(object_value(animation,"channels"),&channels);
+        for(c=0;c<channels.count;c++){struct slice channel=channels.items[c],target=object_value(channel,"target");char path_name[20],interpolation[20];int si,input,output,keys;string_copy(object_value(target,"path"),path_name,sizeof(path_name));if(strcmp(path_name,"rotation"))continue;clip->rotation_channels++;si=json_int(object_value(channel,"sampler"),-1);if(si<0||si>=samplers.count)goto load_fail;string_copy(object_value(samplers.items[si],"interpolation"),interpolation,sizeof(interpolation));if(interpolation[0]&&strcmp(interpolation,"LINEAR"))goto load_fail;input=json_int(object_value(samplers.items[si],"input"),-1);output=json_int(object_value(samplers.items[si],"output"),-1);if(input<0||input>=impl->doc.accessors.count||output<0||output>=impl->doc.accessors.count)goto load_fail;keys=json_int(object_value(impl->doc.accessors.items[input],"count"),0);if(!clip->min_rotation_keys||keys<clip->min_rotation_keys)clip->min_rotation_keys=keys;if(keys>clip->max_rotation_keys)clip->max_rotation_keys=keys;if(accessor_max_delta(&impl->doc,output,0,0)>0.00001f)clip->active_rotation_bones++;{double end=json_number(array_value(object_value(impl->doc.accessors.items[input],"max"),0),0);if((int)(end*1000+.5)>clip->duration_ms)clip->duration_ms=(int)(end*1000+.5);}}
+        table_free(&samplers);table_free(&channels);
+    }
+    clip->implementation=impl;return 0;
+load_fail:
+    table_free(&samplers);table_free(&channels);doc_free(&impl->doc);tlibc_free(impl);return -1;
+}
+void rasterfall_glb_rotation_clip_unload(struct rasterfall_glb_rotation_clip *clip)
+{
+    struct glb_rotation_implementation *impl=clip?(struct glb_rotation_implementation*)clip->implementation:0;if(!impl)return;doc_free(&impl->doc);tlibc_free(impl);__memset(clip,0,sizeof(*clip));
+}
+int rasterfall_glb_rotation_clip_source(const struct rasterfall_glb_rotation_clip *clip,int time_ms,struct rasterfall_humanoid_rotation_skeleton *skeleton,struct rasterfall_humanoid_rotation_pose *pose,struct rasterfall_humanoid_rest_basis *basis,int *sampled_time_ms)
+{
+    struct glb_rotation_implementation *impl=clip?(struct glb_rotation_implementation*)clip->implementation:0;struct glb_doc *doc;double (*rest_local)[4],(*pose_local)[4],(*rest_global)[4],(*pose_global)[4],*matrices;unsigned char *rr,*pr,*mr;int mapping[RASTERFALL_HUMANOID_BONE_COUNT],i,c,t;
+    struct rasterfall_humanoid_basis_input input;struct table samplers,channels;
+    if(!impl||!skeleton||!pose||!basis)return -1;
+    doc=&impl->doc;t=clip->duration_ms>0?time_ms%clip->duration_ms:0;if(t<0)t+=clip->duration_ms;if(sampled_time_ms)*sampled_time_ms=t;
+    rest_local=tlibc_malloc(doc->nodes.count*4*sizeof(double));pose_local=tlibc_malloc(doc->nodes.count*4*sizeof(double));rest_global=tlibc_malloc(doc->nodes.count*4*sizeof(double));pose_global=tlibc_malloc(doc->nodes.count*4*sizeof(double));rr=tlibc_malloc(doc->nodes.count);pr=tlibc_malloc(doc->nodes.count);matrices=tlibc_malloc(doc->nodes.count*16*sizeof(double));mr=tlibc_malloc(doc->nodes.count);
+    if(!rest_local||!pose_local||!rest_global||!pose_global||!rr||!pr||!matrices||!mr)return -1;
+    for(i=0;i<doc->nodes.count;i++){slice_quaternion(doc->nodes.items[i],rest_local[i]);memcpy(pose_local[i],rest_local[i],4*sizeof(double));}__memset(rr,0,doc->nodes.count);__memset(pr,0,doc->nodes.count);
+    table_build(object_value(doc->animations.items[impl->animation],"samplers"),&samplers);table_build(object_value(doc->animations.items[impl->animation],"channels"),&channels);
+    for(c=0;c<channels.count;c++){struct slice channel=channels.items[c],target=object_value(channel,"target");char path[20];int si,node,input_index,output_index;string_copy(object_value(target,"path"),path,sizeof(path));if(strcmp(path,"rotation"))continue;si=json_int(object_value(channel,"sampler"),-1);node=json_int(object_value(target,"node"),-1);input_index=json_int(object_value(samplers.items[si],"input"),-1);output_index=json_int(object_value(samplers.items[si],"output"),-1);if(sample_rotation_accessor(doc,input_index,output_index,t,pose_local[node])<0)return -1;}
+    for(i=0;i<doc->nodes.count;i++){glb_global_rotation(doc,i,rest_local,rest_global,rr);glb_global_rotation(doc,i,pose_local,pose_global,pr);}map_quaternius(doc,mapping);rasterfall_humanoid_rotation_skeleton_identity(skeleton);
+    for(i=0;i<RASTERFALL_HUMANOID_BONE_COUNT;i++){memcpy(skeleton->rest_global[i],rest_global[mapping[i]],4*sizeof(double));memcpy(pose->global[i],pose_global[mapping[i]],4*sizeof(double));}
+    __memset(&input,0,sizeof(input));__memset(mr,0,doc->nodes.count);for(i=0;i<RASTERFALL_HUMANOID_BONE_COUNT;i++)glb_basis_point(doc,mapping[i],matrices,mr,&input.bones[i]);glb_basis_point(doc,find_node_exact(doc,"ball_l","Ball_L"),matrices,mr,&input.left_toe);glb_basis_point(doc,find_node_exact(doc,"ball_r","Ball_R"),matrices,mr,&input.right_toe);glb_basis_point(doc,find_node_exact(doc,"middle_01_l","Middle1_L"),matrices,mr,&input.left_middle);glb_basis_point(doc,find_node_exact(doc,"middle_01_r","Middle1_R"),matrices,mr,&input.right_middle);glb_basis_point(doc,find_node_exact(doc,"thumb_01_l","Thumb1_L"),matrices,mr,&input.left_thumb);glb_basis_point(doc,find_node_exact(doc,"thumb_01_r","Thumb1_R"),matrices,mr,&input.right_thumb);input.model_up[1]=1;input.model_forward[2]=1;rasterfall_humanoid_build_rest_bases(&input,basis);
+    table_free(&samplers);table_free(&channels);tlibc_free(rest_local);tlibc_free(pose_local);tlibc_free(rest_global);tlibc_free(pose_global);tlibc_free(rr);tlibc_free(pr);tlibc_free(matrices);tlibc_free(mr);return 0;
+}
+
+#ifndef RASTERFALL_GLB_LIBRARY
 int main(int argc, char **argv)
 {
     struct glb_doc doc; int humanoid_only = 0, facts = 0, basis = 0, result;
@@ -797,3 +877,4 @@ int main(int argc, char **argv)
     doc_free(&doc);
     return result < 0 ? 1 : 0;
 }
+#endif

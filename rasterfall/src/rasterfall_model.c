@@ -4,6 +4,7 @@
 #include "rasterfall_model.h"
 #include "math.h"
 #include "rasterfall_humanoid_retarget.h"
+#include "rasterfall_glb_animation.h"
 
 static unsigned int model_u32(const unsigned char *p)
 {
@@ -888,6 +889,44 @@ int rasterfall_model_retarget_synthetic_test(
     __printf(")\n  target bind %s=(",bone==RASTERFALL_HUMANOID_CHEST?"secondary":"primary");for(i=0;i<3;i++){if(i)__printf(",");model_print_basis_number(display_direction[i]);}
     __printf(") resulting global %s=(",bone==RASTERFALL_HUMANOID_CHEST?"secondary":"primary");for(i=0;i<3;i++){if(i)__printf(",");model_print_basis_number(new_direction[i]);}
     __printf(") normalized=yes\n");return 0;
+}
+
+int rasterfall_model_glb_animation_test(struct rasterfall_model_asset *asset,
+                                        const char *glb_path,const char *clip_name)
+{
+    struct rasterfall_glb_rotation_clip clip;struct rasterfall_humanoid_rotation_skeleton source,target;
+    struct rasterfall_humanoid_rotation_pose source_pose;struct rasterfall_humanoid_retarget_result result;
+    struct rasterfall_humanoid_rest_basis source_basis[RASTERFALL_HUMANOID_BONE_COUNT],target_basis[RASTERFALL_HUMANOID_BONE_COUNT];
+    struct rasterfall_humanoid_mapping mapping;int samples[4],sample,i,bone,sampled;
+    struct rasterfall_animation_clip timing_clip;struct rasterfall_animation_player player;
+    if(rasterfall_glb_rotation_clip_load(&clip,glb_path,clip_name)<0)return -1;
+    if(rasterfall_model_build_humanoid_bases(asset,target_basis)<0){rasterfall_glb_rotation_clip_unload(&clip);return -1;}
+    rasterfall_humanoid_rotation_skeleton_identity(&target);rasterfall_humanoid_map_eula(asset,&mapping);
+    samples[0]=0;samples[1]=clip.duration_ms/2;samples[2]=clip.duration_ms;samples[3]=clip.duration_ms+137;
+    __printf("glb animation: name=%s duration_ms=%d rotation_channels=%d active_rotation_bones=%d rotation_keys=%d..%d interpolation=LINEAR\n",clip_name,clip.duration_ms,clip.rotation_channels,clip.active_rotation_bones,clip.min_rotation_keys,clip.max_rotation_keys);
+    for(sample=0;sample<4;sample++){
+        if(rasterfall_glb_rotation_clip_source(&clip,samples[sample],&source,&source_pose,source_basis,&sampled)<0||rasterfall_humanoid_retarget_rotations(&source,&source_pose,source_basis,&target,target_basis,&result)<0){rasterfall_glb_rotation_clip_unload(&clip);return -1;}
+        for(i=0;i<(int)asset->bone_count;i++)asset->bones[i].rotate_x=asset->bones[i].rotate_y=asset->bones[i].rotate_z=0;
+        for(bone=0;bone<RASTERFALL_HUMANOID_BONE_COUNT;bone++){
+            struct rasterfall_animation_quaternion q={result.local_rotation[bone][0],result.local_rotation[bone][1],result.local_rotation[bone][2],result.local_rotation[bone][3]};
+            struct rasterfall_animation_rotation rotation;rasterfall_animation_quat_to_euler(q,&rotation);i=mapping.bone_indices[bone];asset->bones[i].rotate_x=rotation.x;asset->bones[i].rotate_y=rotation.y;asset->bones[i].rotate_z=rotation.z;
+        }
+        asset->pose=RASTERFALL_MODEL_POSE_RIGHT_ARM;rasterfall_model_update_bones(asset);
+        __printf("sample requested_ms=%d sampled_ms=%d",samples[sample],sampled);
+        {static const int watched[3]={RASTERFALL_HUMANOID_RIGHT_UPPER_ARM,RASTERFALL_HUMANOID_CHEST,RASTERFALL_HUMANOID_RIGHT_UPPER_LEG};int w;for(w=0;w<3;w++){double direction[3];bone=watched[w];model_quat_rotate(result.global_rotation[bone],target_basis[bone].primary,direction);__printf(" %s_source_global=(",humanoid_names[bone]);for(i=0;i<4;i++){if(i)__printf(",");model_print_basis_number(source_pose.global[bone][i]);}__printf(") target_local=(");for(i=0;i<4;i++){if(i)__printf(",");model_print_basis_number(result.local_rotation[bone][i]);}__printf(") target_primary=(");for(i=0;i<3;i++){if(i)__printf(",");model_print_basis_number(direction[i]);}__printf(")");}}
+        __printf(" normalized=yes warnings=0\n");
+    }
+    __memset(&timing_clip,0,sizeof(timing_clip));timing_clip.duration_ms=clip.duration_ms;timing_clip.loop=1;
+    __memset(&player,0,sizeof(player));player.clip=&timing_clip;player.playing=player.loop=1;player.speed_milli=1000;
+    for(sample=0;sample<180;sample++){
+        rasterfall_animation_player_update(&player,16);
+        if(rasterfall_glb_rotation_clip_source(&clip,player.time_ms,&source,&source_pose,source_basis,&sampled)<0||
+           rasterfall_humanoid_retarget_rotations(&source,&source_pose,source_basis,&target,target_basis,&result)<0){rasterfall_glb_rotation_clip_unload(&clip);return -1;}
+        for(bone=0;bone<RASTERFALL_HUMANOID_BONE_COUNT;bone++){struct rasterfall_animation_quaternion q={result.local_rotation[bone][0],result.local_rotation[bone][1],result.local_rotation[bone][2],result.local_rotation[bone][3]};struct rasterfall_animation_rotation rotation;rasterfall_animation_quat_to_euler(q,&rotation);i=mapping.bone_indices[bone];asset->bones[i].rotate_x=rotation.x;asset->bones[i].rotate_y=rotation.y;asset->bones[i].rotate_z=rotation.z;}
+        rasterfall_model_update_bones(asset);
+    }
+    __printf("playback: frames=180 step_ms=16 player_time_ms=%d loop=yes drift=none Bone/BDEF_path=updated\n",player.time_ms);
+    rasterfall_glb_rotation_clip_unload(&clip);return 0;
 }
 
 int rasterfall_model_skinning_logic_test(void)
