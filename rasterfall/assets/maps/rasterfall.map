@@ -115,6 +115,10 @@ button_pose_body -11750 -11300 -250
 button_anim_idle -10900 -11300 -250
 button_anim_walk -10050 -11300 -250
 button_anim_jog -9200 -11300 -250
+# Quaternius 原始 GLB 预览按钮，与 Eula retarget 按钮分开。
+button_glb_idle -10900 -12100 -250
+button_glb_walk -10050 -12100 -250
+button_glb_jog -9200 -12100 -250
 # 三名原据点 AI 保持普通队友规则；BASE 是基地核心目标。
 ai_spawn Jesus 2 level2 1000 0 0
 ai_spawn GUARD 1 level1 0 -900 0

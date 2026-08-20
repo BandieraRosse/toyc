@@ -893,7 +893,8 @@ $(BUILD)/rasterfall_humanoid_retarget.o: $(RASTERFALL_SRC)/rasterfall_humanoid_r
 	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 
 $(BUILD)/rasterfall_glb_animation.o: $(APP_DIR)/glb_inspect.c \
-                                      $(RASTERFALL_INC)/rasterfall_glb_animation.h | $(BUILD)
+                                      $(RASTERFALL_INC)/rasterfall_glb_animation.h \
+                                      $(RASTERFALL_INC)/rasterfall_glb_preview.h | $(BUILD)
 	@printf "  $(BLUE)  GCC$(RESET)  %s (library)\n" "$<"
 	$(GCC) $(LIBC_CFLAGS) -DRASTERFALL_GLB_LIBRARY=1 -I $(RASTERFALL_INC) -c $< -o $@
 

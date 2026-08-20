@@ -216,3 +216,6 @@ build/rasterfall --model-performance \
 版权受限的本地测试模型应放在 `private-assets/` 下；该目录已被 Git 忽略，
 不会参与公开资源或嵌入式发布构建。当前本地角色样本位于
 `private-assets/models/yola.rmesh`，游戏会将其绘制在 `(-13000, -900, -10000)`。
+同目录存在 `UAL1_Standard.glb` 时，游戏会在旁边绘制一个直接使用 GLB 原骨架
+和 skin 的 Quaternius 模型。第二排 GLB Idle/Walk/Jog 按钮播放原始 local TRS
+动画，不经过 Humanoid retarget，用于和第一排优菈 retarget 结果同场对照。

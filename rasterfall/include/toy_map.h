@@ -71,6 +71,9 @@ enum toy_map_pickup_kind {
     ,TOY_MAP_PICKUP_ANIM_IDLE_BUTTON
     ,TOY_MAP_PICKUP_ANIM_WALK_BUTTON
     ,TOY_MAP_PICKUP_ANIM_JOG_BUTTON
+    ,TOY_MAP_PICKUP_GLB_IDLE_BUTTON
+    ,TOY_MAP_PICKUP_GLB_WALK_BUTTON
+    ,TOY_MAP_PICKUP_GLB_JOG_BUTTON
 };
 struct toy_map_pickup { int kind; int weapon; int x, z, y; };
 struct toy_map_draw {

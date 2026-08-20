@@ -23,6 +23,7 @@
 #include "rasterfall_viewmodel.h"
 #include "rasterfall_animation.h"
 #include "rasterfall_glb_animation.h"
+#include "rasterfall_glb_preview.h"
 #include "math.h"
 
 #define NEAR_Z RASTERFALL_NEAR_Z
@@ -135,6 +136,9 @@ static struct rasterfall_model_asset private_character_model;
 static struct rasterfall_glb_rotation_clip private_character_glb[3];
 static struct rasterfall_animation_clip private_character_timing[3];
 static int private_character_glb_loaded[3];
+static struct rasterfall_glb_preview quaternius_preview;
+static int quaternius_preview_loaded;
+static int quaternius_preview_clip = -1;
 
 static const char *private_character_clip_names[3] = {
     "Idle_Loop", "Walk_Loop", "Jog_Fwd_Loop"
@@ -164,6 +168,34 @@ static int private_character_load_glb_clip(int index)
     return 0;
 }
 static int private_character_loaded;
+
+static int render_quaternius_preview(struct toy_renderer *renderer,
+                                     const struct camera *camera,int clip_id,
+                                     int time_ms)
+{
+    const char path[]="rasterfall/private-assets/models/UAL1_Standard.glb";
+    int i,pixels=0,scale=520,origin_x=-14500,origin_y=-900,origin_z=-10000;
+    if(!quaternius_preview_loaded){
+        quaternius_preview_loaded=1;
+        if(rasterfall_glb_preview_load(&quaternius_preview,path)<0)return 0;
+    }
+    if(clip_id>=0&&clip_id<3&&quaternius_preview_clip!=clip_id){
+        if(rasterfall_glb_preview_select_animation(&quaternius_preview,
+           private_character_clip_names[clip_id])<0)return 0;
+        quaternius_preview_clip=clip_id;
+    }
+    if(rasterfall_glb_preview_sample(&quaternius_preview,
+       clip_id>=0&&clip_id<3?time_ms:0)<0)return 0;
+    for(i=0;i+2<quaternius_preview.index_count;i+=3){
+        unsigned int ia=quaternius_preview.indices[i],ib=quaternius_preview.indices[i+1],ic=quaternius_preview.indices[i+2];
+        struct vec3 a,b,c;if(ia>=(unsigned)quaternius_preview.vertex_count||ib>=(unsigned)quaternius_preview.vertex_count||ic>=(unsigned)quaternius_preview.vertex_count)continue;
+        a.x=origin_x+(int)(quaternius_preview.positions[ia*3]*scale);a.y=origin_y+(int)(quaternius_preview.positions[ia*3+1]*scale);a.z=origin_z+(int)(quaternius_preview.positions[ia*3+2]*scale);
+        b.x=origin_x+(int)(quaternius_preview.positions[ib*3]*scale);b.y=origin_y+(int)(quaternius_preview.positions[ib*3+1]*scale);b.z=origin_z+(int)(quaternius_preview.positions[ib*3+2]*scale);
+        c.x=origin_x+(int)(quaternius_preview.positions[ic*3]*scale);c.y=origin_y+(int)(quaternius_preview.positions[ic*3+1]*scale);c.z=origin_z+(int)(quaternius_preview.positions[ic*3+2]*scale);
+        pixels+=draw_world_triangle(renderer,camera,&a,&b,&c,0xff68a8d8u);
+    }
+    return pixels;
+}
 
 #define RASTERFALL_MODEL_PATH_BYTES 160
 #define RASTERFALL_GALLERY_COLUMNS 9
@@ -861,6 +893,11 @@ static int render_private_character(struct toy_renderer *renderer,
             rasterfall_model_sample_glb_rotation_clip(
                 &private_character_model, &private_character_glb[clip_index],
                 player->time_ms);
+        } else if (player->clip_id >= 6 && player->clip_id <= 8 &&
+                   private_character_load_glb_clip(player->clip_id - 6) == 0) {
+            int clip_index=player->clip_id-6;
+            player->clip=&private_character_timing[clip_index];player->loop=1;
+            rasterfall_model_sample_clip(&private_character_model,NULL,0);
         } else {
             player->clip = NULL;
             rasterfall_model_sample_clip(&private_character_model, NULL, 0);
@@ -873,8 +910,15 @@ static int render_private_character(struct toy_renderer *renderer,
         return 0;
     scale = gallery_model_scale(&private_character_model) * 3;
     if (scale < 1) scale = 1;
-    return render_gallery_model(renderer, camera, &private_character_model,
-                                -13000, -900, -10000, scale);
+    {
+        int pixels=render_gallery_model(renderer,camera,&private_character_model,
+                                        -13000,-900,-10000,scale);
+        {int clip_id=active_session?active_session->skeletal_demo_player.clip_id:-1;
+         pixels+=render_quaternius_preview(renderer,camera,
+                clip_id>=6&&clip_id<=8?clip_id-6:-1,
+                active_session?active_session->skeletal_demo_player.time_ms:0);}
+        return pixels;
+    }
 }
 
 /* The gallery is a fixed developer display rather than an interactable map
@@ -2288,6 +2332,12 @@ static int render_interactables(struct toy_renderer *renderer,
                                              it->z, on,
                                              it->kind == TOY_MAP_PICKUP_ANIM_JOG_BUTTON ? 2 :
                                              it->kind == TOY_MAP_PICKUP_ANIM_WALK_BUTTON);
+        else if (it->kind == TOY_MAP_PICKUP_GLB_IDLE_BUTTON ||
+                 it->kind == TOY_MAP_PICKUP_GLB_WALK_BUTTON ||
+                 it->kind == TOY_MAP_PICKUP_GLB_JOG_BUTTON)
+            pixels += render_special_button(renderer,camera,it->x,it->y,it->z,on,
+                                             it->kind==TOY_MAP_PICKUP_GLB_JOG_BUTTON?2:
+                                             it->kind==TOY_MAP_PICKUP_GLB_WALK_BUTTON);
         else if (it->kind == TOY_MAP_PICKUP_SHOP)
             pixels += render_button(renderer, camera, it->x, it->y, it->z, on, 2);
         else if (it->kind == TOY_MAP_PICKUP_MONEY_BUTTON ||

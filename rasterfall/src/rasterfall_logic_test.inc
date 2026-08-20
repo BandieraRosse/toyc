@@ -23,26 +23,32 @@ static int run_logic_test(void)
     toy_input_init(&input);
     rasterfall_session_reset(&session, &camera, 1);
     {
-        static const int kinds[7] = {
+        static const int kinds[10] = {
             TOY_MAP_PICKUP_POSE_RESET_BUTTON,
             TOY_MAP_PICKUP_POSE_RIGHT_ARM_BUTTON,
             TOY_MAP_PICKUP_POSE_ARMS_BUTTON,
             TOY_MAP_PICKUP_POSE_BODY_BUTTON,
             TOY_MAP_PICKUP_ANIM_IDLE_BUTTON,
             TOY_MAP_PICKUP_ANIM_WALK_BUTTON,
-            TOY_MAP_PICKUP_ANIM_JOG_BUTTON
+            TOY_MAP_PICKUP_ANIM_JOG_BUTTON,
+            TOY_MAP_PICKUP_GLB_IDLE_BUTTON,
+            TOY_MAP_PICKUP_GLB_WALK_BUTTON,
+            TOY_MAP_PICKUP_GLB_JOG_BUTTON
         };
-        static const int poses[7] = {
+        static const int poses[10] = {
             RASTERFALL_MODEL_POSE_BIND,
             RASTERFALL_MODEL_POSE_RIGHT_ARM,
             RASTERFALL_MODEL_POSE_ARMS,
             RASTERFALL_MODEL_POSE_BODY_TURN,
             RASTERFALL_MODEL_POSE_BIND,
             RASTERFALL_MODEL_POSE_BIND,
+            RASTERFALL_MODEL_POSE_BIND,
+            RASTERFALL_MODEL_POSE_BIND,
+            RASTERFALL_MODEL_POSE_BIND,
             RASTERFALL_MODEL_POSE_BIND
         };
         int button, found = 0;
-        for (button = 0; button < 7; button++) {
+        for (button = 0; button < 10; button++) {
             int item;
             for (item = 0; item < session.item_count; item++)
                 if (session.items[item].kind == kinds[button]) break;
@@ -68,7 +74,7 @@ static int run_logic_test(void)
                 return 165;
             found++;
         }
-        if (found != 7) return 158;
+        if (found != 10) return 158;
         rasterfall_session_reset(&session, &camera, 1);
     }
     if (session.level.safe_count > 0 &&

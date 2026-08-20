@@ -59,11 +59,14 @@ void rasterfall_humanoid_rotation_pose_bind(
     int i;for(i=0;i<RASTERFALL_HUMANOID_BONE_COUNT;i++)quat_copy(skeleton->rest_global[i],pose->global[i]);
 }
 
-int rasterfall_humanoid_retarget_rotations(
+int rasterfall_humanoid_retarget_rotations_from_reference(
     const struct rasterfall_humanoid_rotation_skeleton *source,
     const struct rasterfall_humanoid_rotation_pose *source_pose,
+    const struct rasterfall_humanoid_rotation_pose *source_reference,
+    unsigned int reference_mask,
     const struct rasterfall_humanoid_rest_basis *source_basis,
     const struct rasterfall_humanoid_rotation_skeleton *target,
+    const struct rasterfall_humanoid_rotation_pose *target_reference,
     const struct rasterfall_humanoid_rest_basis *target_basis,
     struct rasterfall_humanoid_retarget_result *result)
 {
@@ -73,12 +76,18 @@ int rasterfall_humanoid_retarget_rotations(
         double inverse_rest[4],source_delta[4],canonical_delta[4];
         double target_delta[4],target_global[4],parent_inverse[4];int parent=target->parent[bone];
         if(!source_basis[bone].valid||!target_basis[bone].valid||parent>=bone||parent<-1)return -1;
-        quat_inverse(source->rest_global[bone],inverse_rest);
-        /* Active global delta: animated global followed by inverse rest. */
+        const double *source_origin=((reference_mask&(1u<<bone))&&source_reference)?
+            source_reference->global[bone]:source->rest_global[bone];
+        const double *target_origin=((reference_mask&(1u<<bone))&&target_reference)?
+            target_reference->global[bone]:target->rest_global[bone];
+        /* Reference-aligned bones remove the source clip's static relaxed
+         * pose instead of treating bind-to-reference as animation motion. */
+        quat_inverse(source_origin,inverse_rest);
+        /* Active global delta: animated global followed by inverse origin. */
         quat_multiply(source_pose->global[bone],inverse_rest,source_delta);
         quat_to_canonical(source_basis[bone].rotation,source_delta,canonical_delta);
         quat_conjugate_by(target_basis[bone].rotation,canonical_delta,target_delta);
-        quat_multiply(target_delta,target->rest_global[bone],target_global);
+        quat_multiply(target_delta,target_origin,target_global);
         if(quat_normalize(target_global)<0)return -1;
         quat_copy(target_global,result->global_rotation[bone]);
         if(parent<0)quat_copy(target_global,result->local_rotation[bone]);
@@ -89,6 +98,18 @@ int rasterfall_humanoid_retarget_rotations(
         if(quat_normalize(result->local_rotation[bone])<0)return -1;
     }
     return 0;
+}
+
+int rasterfall_humanoid_retarget_rotations(
+    const struct rasterfall_humanoid_rotation_skeleton *source,
+    const struct rasterfall_humanoid_rotation_pose *source_pose,
+    const struct rasterfall_humanoid_rest_basis *source_basis,
+    const struct rasterfall_humanoid_rotation_skeleton *target,
+    const struct rasterfall_humanoid_rest_basis *target_basis,
+    struct rasterfall_humanoid_retarget_result *result)
+{
+    return rasterfall_humanoid_retarget_rotations_from_reference(
+        source,source_pose,0,0,source_basis,target,0,target_basis,result);
 }
 
 void rasterfall_humanoid_synthetic_delta(int bone,int degrees,double delta[4])
@@ -115,7 +136,7 @@ static double quat_difference(const double *a,const double *b)
 int rasterfall_humanoid_retarget_logic_test(void)
 {
     struct rasterfall_humanoid_rotation_skeleton source,target;
-    struct rasterfall_humanoid_rotation_pose pose;
+    struct rasterfall_humanoid_rotation_pose pose,reference,target_reference;
     struct rasterfall_humanoid_retarget_result result,second;
     struct rasterfall_humanoid_rest_basis sb[RASTERFALL_HUMANOID_BONE_COUNT],tb[RASTERFALL_HUMANOID_BONE_COUNT];
     double identity[4]={0,0,0,1},delta[4],global_delta[4],expected[4],inverse[4],roundtrip[4];int i,bone;
@@ -155,5 +176,17 @@ int rasterfall_humanoid_retarget_logic_test(void)
     if(quat_difference(roundtrip,result.global_rotation[RASTERFALL_HUMANOID_UPPER_CHEST])>0.000000001)return 9;
     if(rasterfall_humanoid_retarget_rotations(&source,&pose,sb,&target,tb,&second)<0||
        quat_difference(second.local_rotation[bone],result.local_rotation[bone])>0.000000001)return 10;
+    /* A non-bind source reference maps exactly to the target reference at t=0. */
+    rasterfall_humanoid_rotation_pose_bind(&source,&reference);
+    rasterfall_humanoid_rotation_pose_bind(&target,&target_reference);
+    for(bone=1;bone<RASTERFALL_HUMANOID_BONE_COUNT;bone++){
+        rasterfall_humanoid_synthetic_delta(bone,20+bone,delta);
+        quat_conjugate_by(sb[bone].rotation,delta,global_delta);
+        quat_copy(global_delta,reference.global[bone]);quat_copy(global_delta,pose.global[bone]);
+    }
+    if(rasterfall_humanoid_retarget_rotations_from_reference(&source,&pose,&reference,
+       ((1u<<RASTERFALL_HUMANOID_BONE_COUNT)-1u)&~1u,sb,&target,&target_reference,tb,&result)<0)return 23;
+    for(bone=0;bone<RASTERFALL_HUMANOID_BONE_COUNT;bone++)
+        if(quat_difference(result.global_rotation[bone],identity)>0.000000001)return 24;
     return 0;
 }
