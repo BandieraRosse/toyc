@@ -788,11 +788,7 @@ static int self_test(void)
 }
 
 struct glb_rotation_implementation {
-    struct glb_doc doc;int animation,reference_valid,building_reference;
-    double (*reference_local_nodes)[4];
-    struct rasterfall_humanoid_rotation_skeleton reference_skeleton;
-    struct rasterfall_humanoid_rotation_pose reference_pose;
-    struct rasterfall_humanoid_rest_basis reference_basis[RASTERFALL_HUMANOID_BONE_COUNT];
+    struct glb_doc doc;int animation;
 };
 static void slice_quaternion(struct slice node,double *q)
 {
@@ -845,20 +841,13 @@ int rasterfall_glb_rotation_clip_load(struct rasterfall_glb_rotation_clip *clip,
         for(c=0;c<channels.count;c++){struct slice channel=channels.items[c],target=object_value(channel,"target");char path_name[20],interpolation[20];int si,input,output,keys;string_copy(object_value(target,"path"),path_name,sizeof(path_name));if(strcmp(path_name,"rotation"))continue;clip->rotation_channels++;si=json_int(object_value(channel,"sampler"),-1);if(si<0||si>=samplers.count)goto load_fail;string_copy(object_value(samplers.items[si],"interpolation"),interpolation,sizeof(interpolation));if(interpolation[0]&&strcmp(interpolation,"LINEAR"))goto load_fail;input=json_int(object_value(samplers.items[si],"input"),-1);output=json_int(object_value(samplers.items[si],"output"),-1);if(input<0||input>=impl->doc.accessors.count||output<0||output>=impl->doc.accessors.count)goto load_fail;keys=json_int(object_value(impl->doc.accessors.items[input],"count"),0);if(!clip->min_rotation_keys||keys<clip->min_rotation_keys)clip->min_rotation_keys=keys;if(keys>clip->max_rotation_keys)clip->max_rotation_keys=keys;if(accessor_max_delta(&impl->doc,output,0,0)>0.00001f)clip->active_rotation_bones++;{double end=json_number(array_value(object_value(impl->doc.accessors.items[input],"max"),0),0);if((int)(end*1000+.5)>clip->duration_ms)clip->duration_ms=(int)(end*1000+.5);}}
         table_free(&samplers);table_free(&channels);
     }
-    impl->reference_local_nodes=tlibc_malloc(impl->doc.nodes.count*4*sizeof(double));
-    if(!impl->reference_local_nodes)goto reference_fail;
-    clip->implementation=impl;impl->building_reference=1;
-    if(rasterfall_glb_rotation_clip_source(clip,0,&impl->reference_skeleton,
-       &impl->reference_pose,impl->reference_basis,0)<0)goto reference_fail;
-    impl->building_reference=0;impl->reference_valid=1;return 0;
-reference_fail:
-    clip->implementation=0;tlibc_free(impl->reference_local_nodes);doc_free(&impl->doc);tlibc_free(impl);return -1;
+    clip->implementation=impl;return 0;
 load_fail:
     table_free(&samplers);table_free(&channels);doc_free(&impl->doc);tlibc_free(impl);return -1;
 }
 void rasterfall_glb_rotation_clip_unload(struct rasterfall_glb_rotation_clip *clip)
 {
-    struct glb_rotation_implementation *impl=clip?(struct glb_rotation_implementation*)clip->implementation:0;if(!impl)return;tlibc_free(impl->reference_local_nodes);doc_free(&impl->doc);tlibc_free(impl);__memset(clip,0,sizeof(*clip));
+    struct glb_rotation_implementation *impl=clip?(struct glb_rotation_implementation*)clip->implementation:0;if(!impl)return;doc_free(&impl->doc);tlibc_free(impl);__memset(clip,0,sizeof(*clip));
 }
 int rasterfall_glb_rotation_clip_trace(const struct rasterfall_glb_rotation_clip *clip,int time_ms,struct rasterfall_humanoid_rotation_skeleton *skeleton,struct rasterfall_humanoid_rotation_pose *pose,struct rasterfall_humanoid_rest_basis *basis,struct rasterfall_glb_rotation_trace *trace,int *sampled_time_ms)
 {
@@ -871,7 +860,6 @@ int rasterfall_glb_rotation_clip_trace(const struct rasterfall_glb_rotation_clip
     for(i=0;i<doc->nodes.count;i++){slice_quaternion(doc->nodes.items[i],rest_local[i]);memcpy(pose_local[i],rest_local[i],4*sizeof(double));}__memset(rr,0,doc->nodes.count);__memset(pr,0,doc->nodes.count);
     table_build(object_value(doc->animations.items[impl->animation],"samplers"),&samplers);table_build(object_value(doc->animations.items[impl->animation],"channels"),&channels);
     for(c=0;c<channels.count;c++){struct slice channel=channels.items[c],target=object_value(channel,"target");char path[20];int si,node,input_index,output_index;string_copy(object_value(target,"path"),path,sizeof(path));if(strcmp(path,"rotation"))continue;si=json_int(object_value(channel,"sampler"),-1);node=json_int(object_value(target,"node"),-1);input_index=json_int(object_value(samplers.items[si],"input"),-1);output_index=json_int(object_value(samplers.items[si],"output"),-1);if(sample_rotation_accessor(doc,input_index,output_index,t,pose_local[node])<0)return -1;}
-    if(impl->building_reference)memcpy(impl->reference_local_nodes,pose_local,doc->nodes.count*4*sizeof(double));
     for(i=0;i<doc->nodes.count;i++){glb_global_rotation(doc,i,rest_local,rest_global,rr);glb_global_rotation(doc,i,pose_local,pose_global,pr);}map_quaternius(doc,mapping);rasterfall_humanoid_rotation_skeleton_identity(skeleton);
     for(i=0;i<RASTERFALL_HUMANOID_BONE_COUNT;i++){memcpy(skeleton->rest_global[i],rest_global[mapping[i]],4*sizeof(double));memcpy(pose->global[i],pose_global[mapping[i]],4*sizeof(double));if(trace){memcpy(trace->rest_local[i],rest_local[mapping[i]],4*sizeof(double));memcpy(trace->animated_local[i],pose_local[mapping[i]],4*sizeof(double));memcpy(trace->rest_global[i],rest_global[mapping[i]],4*sizeof(double));memcpy(trace->animated_global[i],pose_global[mapping[i]],4*sizeof(double));}}
     __memset(&input,0,sizeof(input));__memset(mr,0,doc->nodes.count);for(i=0;i<RASTERFALL_HUMANOID_BONE_COUNT;i++)glb_basis_point(doc,mapping[i],matrices,mr,&input.bones[i]);glb_basis_point(doc,find_node_exact(doc,"ball_l","Ball_L"),matrices,mr,&input.left_toe);glb_basis_point(doc,find_node_exact(doc,"ball_r","Ball_R"),matrices,mr,&input.right_toe);glb_basis_point(doc,find_node_exact(doc,"middle_01_l","Middle1_L"),matrices,mr,&input.left_middle);glb_basis_point(doc,find_node_exact(doc,"middle_01_r","Middle1_R"),matrices,mr,&input.right_middle);glb_basis_point(doc,find_node_exact(doc,"thumb_01_l","Thumb1_L"),matrices,mr,&input.left_thumb);glb_basis_point(doc,find_node_exact(doc,"thumb_01_r","Thumb1_R"),matrices,mr,&input.right_thumb);input.model_up[1]=1;input.model_forward[2]=1;rasterfall_humanoid_build_rest_bases(&input,basis);
@@ -882,11 +870,13 @@ int rasterfall_glb_rotation_clip_source(const struct rasterfall_glb_rotation_cli
 {
     return rasterfall_glb_rotation_clip_trace(clip,time_ms,skeleton,pose,basis,0,sampled_time_ms);
 }
-int rasterfall_glb_rotation_clip_reference(const struct rasterfall_glb_rotation_clip *clip,struct rasterfall_humanoid_rotation_skeleton *skeleton,struct rasterfall_humanoid_rotation_pose *pose,struct rasterfall_humanoid_rest_basis *basis)
+int rasterfall_glb_rotation_reference_build(const struct rasterfall_glb_rotation_clip *clip,struct rasterfall_glb_rotation_reference *reference)
 {
-    struct glb_rotation_implementation *impl=clip?(struct glb_rotation_implementation*)clip->implementation:0;
-    if(!impl||!impl->reference_valid||!skeleton||!pose||!basis)return -1;
-    memcpy(skeleton,&impl->reference_skeleton,sizeof(*skeleton));memcpy(pose,&impl->reference_pose,sizeof(*pose));memcpy(basis,impl->reference_basis,sizeof(impl->reference_basis));return 0;
+    struct rasterfall_glb_rotation_trace trace;int i;
+    if(!reference)return -1;
+    if(rasterfall_glb_rotation_clip_trace(clip,0,&reference->skeleton,&reference->pose,reference->basis,&trace,0)<0)return -1;
+    for(i=0;i<RASTERFALL_HUMANOID_BONE_COUNT;i++)memcpy(reference->local[i],trace.animated_local[i],4*sizeof(double));
+    return 0;
 }
 
 struct glb_preview_implementation {

@@ -19,6 +19,13 @@ struct rasterfall_glb_rotation_trace {
     double animated_global[RASTERFALL_HUMANOID_BONE_COUNT][4];
 };
 
+struct rasterfall_glb_rotation_reference {
+    double local[RASTERFALL_HUMANOID_BONE_COUNT][4];
+    struct rasterfall_humanoid_rotation_skeleton skeleton;
+    struct rasterfall_humanoid_rotation_pose pose;
+    struct rasterfall_humanoid_rest_basis basis[RASTERFALL_HUMANOID_BONE_COUNT];
+};
+
 int rasterfall_glb_rotation_clip_load(struct rasterfall_glb_rotation_clip *clip,
                                       const char *path,const char *name);
 void rasterfall_glb_rotation_clip_unload(struct rasterfall_glb_rotation_clip *clip);
@@ -28,11 +35,9 @@ int rasterfall_glb_rotation_clip_source(
     struct rasterfall_humanoid_rotation_pose *pose,
     struct rasterfall_humanoid_rest_basis *basis,
     int *sampled_time_ms);
-int rasterfall_glb_rotation_clip_reference(
+int rasterfall_glb_rotation_reference_build(
     const struct rasterfall_glb_rotation_clip *clip,
-    struct rasterfall_humanoid_rotation_skeleton *skeleton,
-    struct rasterfall_humanoid_rotation_pose *pose,
-    struct rasterfall_humanoid_rest_basis *basis);
+    struct rasterfall_glb_rotation_reference *reference);
 int rasterfall_glb_rotation_clip_trace(
     const struct rasterfall_glb_rotation_clip *clip,int time_ms,
     struct rasterfall_humanoid_rotation_skeleton *skeleton,

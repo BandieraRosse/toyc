@@ -8,6 +8,7 @@
 #include "rasterfall_humanoid_basis.h"
 
 struct rasterfall_glb_rotation_clip;
+struct rasterfall_glb_rotation_reference;
 
 /*
  * RFM2 is the deliberately small runtime mesh format produced by
@@ -139,7 +140,9 @@ int rasterfall_model_sample_clip(struct rasterfall_model_asset *asset,
                                  int time_ms);
 int rasterfall_model_sample_glb_rotation_clip(
     struct rasterfall_model_asset *asset,
-    const struct rasterfall_glb_rotation_clip *clip, int time_ms);
+    const struct rasterfall_glb_rotation_clip *clip,
+    const struct rasterfall_glb_rotation_reference *source_reference,
+    int time_ms);
 int rasterfall_model_update_bones(struct rasterfall_model_asset *asset);
 int rasterfall_model_skin_vertex(const struct rasterfall_model_asset *asset,
                                  unsigned int index, int position[3],

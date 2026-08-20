@@ -134,6 +134,7 @@ static struct rasterfall_model_asset gallery_models[RASTERFALL_MODEL_MAX_GALLERY
 static int gallery_loaded;
 static struct rasterfall_model_asset private_character_model;
 static struct rasterfall_glb_rotation_clip private_character_glb[3];
+static struct rasterfall_glb_rotation_reference private_character_glb_reference;
 static struct rasterfall_animation_clip private_character_timing[3];
 static int private_character_glb_loaded[3];
 static struct rasterfall_glb_preview quaternius_preview;
@@ -161,6 +162,9 @@ static int private_character_load_glb_clip(int index)
                                               private_character_clip_names[index]) == 0)
             break;
     if (path == 2) return -1;
+    if (index == 0 && rasterfall_glb_rotation_reference_build(
+            &private_character_glb[0],&private_character_glb_reference) < 0)
+        return -1;
     private_character_timing[index].duration_ms = private_character_glb[index].duration_ms;
     private_character_timing[index].loop = 1;
     private_character_timing[index].tracks = NULL;
@@ -886,13 +890,14 @@ static int render_private_character(struct toy_renderer *renderer,
             rasterfall_model_sample_clip(&private_character_model, player->clip,
                                          player->time_ms);
         } else if (player->clip_id >= 3 && player->clip_id <= 5 &&
+                   private_character_load_glb_clip(0) == 0 &&
                    private_character_load_glb_clip(player->clip_id - 3) == 0) {
             int clip_index = player->clip_id - 3;
             player->clip = &private_character_timing[clip_index];
             player->loop = 1;
             rasterfall_model_sample_glb_rotation_clip(
                 &private_character_model, &private_character_glb[clip_index],
-                player->time_ms);
+                &private_character_glb_reference, player->time_ms);
         } else if (player->clip_id >= 6 && player->clip_id <= 8 &&
                    private_character_load_glb_clip(player->clip_id - 6) == 0) {
             int clip_index=player->clip_id-6;
