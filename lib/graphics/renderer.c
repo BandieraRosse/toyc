@@ -486,6 +486,7 @@ static int record_cmd(struct toy_renderer *renderer, int textured,
     cmd->material_specular = 0;
     cmd->material_specular_level = 0;
     cmd->transparent = textured && texture && texture->has_transparency;
+    cmd->edge = renderer->recording_edge;
     cmd->area = area;
     /* 投影坐标已被调用方裁剪过；包围盒缓存进命令，工作线程按带直接跳过。 */
     cmd->bbox_minx = clampi(a->x < b->x ? (a->x < c->x ? a->x : c->x) :
@@ -648,6 +649,11 @@ int toy_renderer_triangle_textured_material_lit(
     renderer->submitted_triangles++;
     renderer->submitted_vertices += 3;
     return 0;
+}
+
+void toy_renderer_set_recording_edge(struct toy_renderer *renderer, int edge)
+{
+    if (renderer) renderer->recording_edge = edge != 0;
 }
 
 /* ── 工作线程池：futex 等待 job_generation，主线程分发后自旋等 done ── */
@@ -864,6 +870,15 @@ int toy_renderer_begin(struct toy_renderer *renderer,
     renderer->tex_tris_mark = 0;
     renderer->last_flat_us = 0;
     renderer->last_tex_us = 0;
+    renderer->last_sort_us = 0;
+    renderer->last_classify_us = 0;
+    renderer->last_merge_copy_us = 0;
+    renderer->last_actual_sort_us = 0;
+    renderer->last_opaque_cmds = 0;
+    renderer->last_transparent_cmds = 0;
+    renderer->last_edge_cmds = 0;
+    renderer->last_sorted_cmds = 0;
+    renderer->recording_edge = 0;
     /* Keep this self-host friendly: avoid a whole-structure assignment here. */
     renderer->surface.pixels = surface->pixels;
     renderer->surface.width = surface->width;
@@ -910,23 +925,59 @@ int toy_renderer_flush(struct toy_renderer *renderer)
     long total = 0;
     unsigned long tex = 0, fallback = 0, bbox = 0, inside = 0;
     long flat_us = 0, tex_us = 0;
+    long sort_start, phase_start;
     if (!renderer) return 0;
-    if (renderer->cmd_count > 1 && renderer->sort_cmds) {
-        int opaque = 0, transparent, i;
-        for (i = 0; i < renderer->cmd_count; i++)
-            if (!renderer->cmds[i].transparent)
-                renderer->sort_cmds[opaque++] = renderer->cmds[i];
-        transparent = opaque;
-        for (i = 0; i < renderer->cmd_count; i++)
+    renderer->last_classify_us = 0;
+    renderer->last_merge_copy_us = 0;
+    renderer->last_actual_sort_us = 0;
+    renderer->last_opaque_cmds = 0;
+    renderer->last_transparent_cmds = 0;
+    renderer->last_edge_cmds = 0;
+    renderer->last_sorted_cmds = 0;
+    sort_start = renderer_monotonic_us();
+    phase_start = sort_start;
+    if (renderer->cmd_count > 0) {
+        int i;
+        for (i = 0; i < renderer->cmd_count; i++) {
+            if (renderer->cmds[i].transparent)
+                renderer->last_transparent_cmds++;
+            else
+                renderer->last_opaque_cmds++;
+            if (renderer->cmds[i].edge) renderer->last_edge_cmds++;
+        }
+    }
+    renderer->last_classify_us = renderer_monotonic_us() - phase_start;
+    /* 常见的全不透明场景直接保持记录顺序，避免为了空透明列表复制整个
+     * 大型命令池。确有透明命令时才沿用稳定的 opaque + transparent 布局。 */
+    if (renderer->last_transparent_cmds > 0 && renderer->cmd_count > 1 &&
+        renderer->sort_cmds) {
+        int opaque = 0, transparent = 0, i;
+        phase_start = renderer_monotonic_us();
+        /* Stable-partition without copying the opaque pool out and back:
+         * compact opaque commands in place and collect only transparent ones
+         * in sort_cmds. Edge commands are opaque and therefore never sorted. */
+        for (i = 0; i < renderer->cmd_count; i++) {
             if (renderer->cmds[i].transparent)
                 renderer->sort_cmds[transparent++] = renderer->cmds[i];
+            else {
+                if (opaque != i) renderer->cmds[opaque] = renderer->cmds[i];
+                opaque++;
+            }
+        }
+        renderer->last_merge_copy_us += renderer_monotonic_us() - phase_start;
         /* Transparent commands use stable painter order. inv_z is larger
          * when nearer, so ascending average inverse depth is back-to-front. */
-        sort_transparent_commands(renderer->sort_cmds, renderer->cmds,
-                                  opaque, transparent);
-        memcpy(renderer->cmds, renderer->sort_cmds,
-               (size_t)renderer->cmd_count * sizeof(struct toy_raster_cmd));
+        phase_start = renderer_monotonic_us();
+        sort_transparent_commands(renderer->sort_cmds, renderer->cmds + opaque,
+                                  0, transparent);
+        renderer->last_actual_sort_us = renderer_monotonic_us() - phase_start;
+        renderer->last_sorted_cmds = (unsigned long)transparent;
+        phase_start = renderer_monotonic_us();
+        memcpy(renderer->cmds + opaque, renderer->sort_cmds,
+               (size_t)transparent * sizeof(struct toy_raster_cmd));
+        renderer->last_merge_copy_us += renderer_monotonic_us() - phase_start;
     }
+    renderer->last_sort_us = renderer_monotonic_us() - sort_start;
     if (renderer->worker_count > 0) {
         renderer_dispatch(renderer, 0, 0);
         /* 命令已被本次 flush 消费：清零后下一条记录从空列表开始，

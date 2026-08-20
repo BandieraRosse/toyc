@@ -471,6 +471,7 @@ static int render_gallery_model(struct toy_renderer *renderer,
                 active_toon_texture = 0;
                 active_material_alpha = (int)(edge >> 24);
                 active_material_double_sided = 0;
+                toy_renderer_set_recording_edge(renderer, 1);
                 active_model_triangle_stats = collect_model_render_stats ?
                     &model_render_stats.edge : 0;
                 for (j = 0; j + 2 < index_count; j += 3) {
@@ -494,6 +495,7 @@ static int render_gallery_model(struct toy_renderer *renderer,
                 active_toon_texture = saved_toon;
                 active_material_alpha = saved_alpha;
                 active_material_double_sided = saved_double_sided;
+                toy_renderer_set_recording_edge(renderer, 0);
             }
         }
         active_model_triangle_stats = collect_model_render_stats ?

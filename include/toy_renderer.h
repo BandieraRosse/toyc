@@ -57,6 +57,7 @@ struct toy_raster_cmd {
     uint32_t material_specular;
     int material_specular_level;
     int transparent;
+    int edge;
     long long area;
     int bbox_minx;
     int bbox_maxx;
@@ -108,6 +109,14 @@ struct toy_renderer {
     unsigned long last_tex_tris;
     long last_flat_us;
     long last_tex_us;
+    long last_sort_us;
+    long last_classify_us;
+    long last_merge_copy_us;
+    long last_actual_sort_us;
+    unsigned long last_opaque_cmds;
+    unsigned long last_transparent_cmds;
+    unsigned long last_edge_cmds;
+    unsigned long last_sorted_cmds;
     unsigned long tex_tris_mark;   /* textured_triangles 的 flush 分界点 */
     /* 命令列表（记录阶段） */
     struct toy_raster_cmd *cmds;
@@ -116,6 +125,7 @@ struct toy_renderer {
     int cmd_cap;
     int sort_cmd_cap;
     int cmd_overflow;
+    int recording_edge;
     /* 并行光栅化线程池 */
     struct toy_render_worker *workers;
     int worker_count;
@@ -183,6 +193,8 @@ int toy_renderer_triangle_textured_material_lit(
     uint32_t material_ambient, uint32_t material_specular,
     int material_specular_level,
     int repeat, uint32_t fallback_color, int light, int fog);
+/* 给性能诊断标记随后记录的命令是否来自模型 Edge 壳；不改变渲染行为。 */
+void toy_renderer_set_recording_edge(struct toy_renderer *renderer, int edge);
 /* 把记录阶段的三角形命令并行光栅化到 surface；返回实际写入像素数
  * （接替 toy_renderer_triangle 系列的返回值语义）。 */
 int toy_renderer_flush(struct toy_renderer *renderer);

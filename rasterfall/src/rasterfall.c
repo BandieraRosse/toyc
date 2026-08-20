@@ -1664,11 +1664,23 @@ static int dump_model_material_regression(const char *model_path,
 
 struct model_performance_result {
     int64_t wall_us;
-    long raster_us;
+    int64_t begin_us;
+    int64_t setup_us;
+    int64_t flush_us;
+    long sort_us;
+    long classify_us;
+    long merge_copy_us;
+    long actual_sort_us;
+    long flat_raster_cpu_us;
+    long texture_raster_cpu_us;
     unsigned long triangles;
     unsigned long bbox_pixels;
     unsigned long inside_pixels;
     unsigned long textured_pixels;
+    unsigned long opaque_commands;
+    unsigned long transparent_commands;
+    unsigned long edge_commands;
+    unsigned long sorted_commands;
     int frames;
 };
 
@@ -1729,21 +1741,45 @@ static int benchmark_model_features(const char *model_path, int iterations)
             configuration = iteration & 1 ? 5 - step : step;
             for (view = 0; view < 3; view++) {
                 int64_t start = monotonic_us();
+                int64_t after_begin, after_setup, after_flush;
                 if (toy_renderer_begin(&renderer, &surface, 0x30343B) < 0)
                     goto fail;
+                after_begin = monotonic_us();
                 if (model_enabled[configuration] &&
                     rasterfall_render_model_preview(&renderer, &cameras[view],
                         &model, sphere[configuration], toon[configuration],
                         edge[configuration], lighting[configuration]) < 0)
                     goto fail;
+                after_setup = monotonic_us();
                 toy_renderer_flush(&renderer);
-                results[configuration].wall_us += monotonic_us() - start;
-                results[configuration].raster_us += renderer.last_flat_us +
-                                                    renderer.last_tex_us;
+                after_flush = monotonic_us();
+                results[configuration].wall_us += after_flush - start;
+                results[configuration].begin_us += after_begin - start;
+                results[configuration].setup_us += after_setup - after_begin;
+                results[configuration].flush_us += after_flush - after_setup;
+                results[configuration].sort_us += renderer.last_sort_us;
+                results[configuration].classify_us +=
+                    renderer.last_classify_us;
+                results[configuration].merge_copy_us +=
+                    renderer.last_merge_copy_us;
+                results[configuration].actual_sort_us +=
+                    renderer.last_actual_sort_us;
+                results[configuration].flat_raster_cpu_us +=
+                    renderer.last_flat_us;
+                results[configuration].texture_raster_cpu_us +=
+                    renderer.last_tex_us;
                 results[configuration].triangles += renderer.submitted_triangles;
                 results[configuration].bbox_pixels += renderer.last_bbox_px;
                 results[configuration].inside_pixels += renderer.last_inside_px;
                 results[configuration].textured_pixels += renderer.last_tex_px;
+                results[configuration].opaque_commands +=
+                    renderer.last_opaque_cmds;
+                results[configuration].transparent_commands +=
+                    renderer.last_transparent_cmds;
+                results[configuration].edge_commands +=
+                    renderer.last_edge_cmds;
+                results[configuration].sorted_commands +=
+                    renderer.last_sorted_cmds;
                 results[configuration].frames++;
             }
         }
@@ -1753,9 +1789,23 @@ static int benchmark_model_features(const char *model_path, int iterations)
     for (configuration = 0; configuration < 6; configuration++) {
         const struct model_performance_result *r = &results[configuration];
         int frames = r->frames ? r->frames : 1;
-        __printf("rasterfall: model performance mode=%s frames=%d wall_us_per_frame=%ld raster_cpu_us_per_frame=%ld triangles_per_frame=%lu bbox_pixels_per_frame=%lu inside_pixels_per_frame=%lu textured_pixels_per_frame=%lu\n",
+        long sort_us = r->sort_us / frames;
+        long flush_us = (long)(r->flush_us / frames);
+        __printf("rasterfall: model performance mode=%s frames=%d wall_us_per_frame=%ld clear_us_per_frame=%ld triangle_setup_us_per_frame=%ld sort_us_per_frame=%ld classify_us_per_frame=%ld merge_copy_us_per_frame=%ld actual_sort_us_per_frame=%ld pixel_raster_wall_us_per_frame=%ld opaque_commands_per_frame=%lu transparent_commands_per_frame=%lu edge_commands_per_frame=%lu sorted_elements_per_frame=%lu flat_raster_cpu_us_per_frame=%ld texture_raster_cpu_us_per_frame=%ld triangles_per_frame=%lu bbox_pixels_per_frame=%lu inside_pixels_per_frame=%lu textured_pixels_per_frame=%lu\n",
                  names[configuration], r->frames,
-                 (long)(r->wall_us / frames), r->raster_us / frames,
+                 (long)(r->wall_us / frames),
+                 (long)(r->begin_us / frames),
+                 (long)(r->setup_us / frames), sort_us,
+                 r->classify_us / frames,
+                 r->merge_copy_us / frames,
+                 r->actual_sort_us / frames,
+                 flush_us > sort_us ? flush_us - sort_us : 0,
+                 r->opaque_commands / (unsigned long)frames,
+                 r->transparent_commands / (unsigned long)frames,
+                 r->edge_commands / (unsigned long)frames,
+                 r->sorted_commands / (unsigned long)frames,
+                 r->flat_raster_cpu_us / frames,
+                 r->texture_raster_cpu_us / frames,
                  r->triangles / (unsigned long)frames,
                  r->bbox_pixels / (unsigned long)frames,
                  r->inside_pixels / (unsigned long)frames,

@@ -158,8 +158,11 @@ build/rasterfall --model-performance \
     rasterfall/private-assets/models/yola.rmesh 5
 ```
 
-最后一个参数是每个视角的迭代次数；输出包含平均墙钟时间、光栅 CPU 时间、
-三角形数和像素漏斗统计，不包含模型加载、纹理解码或图片写盘。
+最后一个参数是每个视角的迭代次数；输出将墙钟时间拆为 clear、triangle setup、
+透明命令准备和 pixel raster；透明阶段进一步拆出分类、归并/复制、实际排序，
+并输出 opaque、transparent、Edge 命令数和真实排序元素数。纯色/纹理光栅的
+工作线程累计 CPU 时间、三角形数和像素漏斗也会一并输出；不包含模型加载、
+纹理解码或图片写盘。
 
 版权受限的本地测试模型应放在 `private-assets/` 下；该目录已被 Git 忽略，
 不会参与公开资源或嵌入式发布构建。当前本地角色样本位于
