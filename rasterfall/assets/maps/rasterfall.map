@@ -3,7 +3,7 @@
 # 单一基地防守地图：玩家、三名原据点 AI 和 BASE 核心在中央区域守住尸潮。
 # 刷怪区贴近世界四边，尸潮从远方边缘涌来。
 world -24000 24000 -24000 24000 24000
-start -13000 -13000 0 1024
+start -13000 -12000 0 1024
 
 # ── 单一基地防守区 ────────────────────────────────────────────────
 floor -3000 3000 -3000 3000 294B45
@@ -108,10 +108,10 @@ button_money 5600 -8600 -250
 button_clear_hired 5600 -9200 -250
 button_air 23940 -7600 -250
 # 优菈骨骼蒙皮第一阶段：模型正前方四个本地程序化 pose 按钮。
-button_pose_reset -14250 -11800 -250
-button_pose_right_arm -13400 -11800 -250
-button_pose_arms -12600 -11800 -250
-button_pose_body -11750 -11800 -250
+button_pose_reset -14250 -11300 -250
+button_pose_right_arm -13400 -11300 -250
+button_pose_arms -12600 -11300 -250
+button_pose_body -11750 -11300 -250
 # 三名原据点 AI 保持普通队友规则；BASE 是基地核心目标。
 ai_spawn Jesus 2 level2 1000 0 0
 ai_spawn GUARD 1 level1 0 -900 0

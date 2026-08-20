@@ -278,13 +278,15 @@ void rasterfall_session_reset(struct rasterfall_session *session,
     session->flag_count = 1;
     session->carried_flag = -1;
     session->assignment_flag = 0;
-    session_init_flag(session, 0, camera->x, camera->z);
+    /* Keep the initial flag at the world origin while the player starts
+     * 500 units closer to the Yola display. */
+    session_init_flag(session, 0, 0, 0);
     for (i = 0; i < 3; i++)
         if (session->game_state.actors[i].active &&
             session->game_state.actors[i].kind == TOY_GAME_ACTOR_AI)
             toy_game_assign_actor_deployment(&session->game_state, i,
-                camera->x + session->flags[0].slot_offsets[i][0],
-                camera->z + session->flags[0].slot_offsets[i][1], 0);
+                session->flags[0].x + session->flags[0].slot_offsets[i][0],
+                session->flags[0].z + session->flags[0].slot_offsets[i][1], 0);
     session->game_state.px = camera->x;
     session->game_state.pz = camera->z;
     toy_game_set_player_pitch(&session->game_state, camera->pitch_sy,
@@ -472,8 +474,6 @@ void rasterfall_session_toggle_flag_remote(struct rasterfall_session *session,
             session->flags[i].carrier_id != player_id) continue;
         session->flags[i].carried = 0;
         session->flags[i].carrier_id = -1;
-        session->flags[i].x = camera->x;
-        session->flags[i].z = camera->z;
         session_set_flag_assignments(session, i);
         return;
     }
@@ -492,8 +492,6 @@ void rasterfall_session_update_flag_remote(struct rasterfall_session *session,
     for (i = 0; i < session->flag_count; i++)
         if (session->flags[i].carried &&
             session->flags[i].carrier_id == player_id) {
-            session->flags[i].x = camera->x;
-            session->flags[i].z = camera->z;
             session_set_flag_assignments(session, i);
         }
 }
@@ -814,8 +812,6 @@ static void session_toggle_flag(struct rasterfall_session *s,
     if (i >= 0) {
         s->flags[i].carried = 0;
         s->flags[i].carrier_id = -1;
-        s->flags[i].x = camera->x;
-        s->flags[i].z = camera->z;
         s->carried_flag = -1;
         session_set_flag_assignments(s, i);
         s->banner_text = "FLAG PLANTED"; s->banner_ms = 1400;
@@ -1964,11 +1960,6 @@ void rasterfall_session_step(struct rasterfall_session *session,
     if (session->game_state.state != TOY_GAME_PLAYING) return;
     if (command->buttons & RASTERFALL_CMD_FLAG)
         session_toggle_flag(session, camera);
-    if (session->carried_flag >= 0) {
-        int fi = session->carried_flag;
-        session->flags[fi].x = camera->x; session->flags[fi].z = camera->z;
-        session_set_flag_assignments(session, fi);
-    }
     if (command->buttons & RASTERFALL_CMD_JUMP)
         session_jump_player(session, camera, command);
     if (!session->game_state.player_down)

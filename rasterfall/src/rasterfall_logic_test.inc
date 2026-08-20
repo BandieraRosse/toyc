@@ -50,7 +50,7 @@ static int run_logic_test(void)
     if (session.level.safe_count > 0 &&
         session.game_state.safe_room_count != session.level.safe_count)
         return 126;
-    /* 远端旗帜操作必须由主机状态承接，并跟随远端玩家移动。 */
+    /* 远端旗帜操作必须由主机状态承接，旗帜位置保持在初始点。 */
     if (session.flag_count != 1) return 131;
     camera.x = session.flags[0].x;
     camera.z = session.flags[0].z;
@@ -60,7 +60,7 @@ static int run_logic_test(void)
     camera.x += 240;
     camera.z -= 120;
     rasterfall_session_update_flag_remote(&session, &camera, 1);
-    if (session.flags[0].x != camera.x || session.flags[0].z != camera.z)
+    if (session.flags[0].x != 0 || session.flags[0].z != 0)
         return 133;
     rasterfall_session_toggle_flag_remote(&session, &camera, 1);
     if (session.flags[0].carried || session.flags[0].carrier_id != -1)
