@@ -38,7 +38,17 @@ struct rasterfall_perf_stats {
     unsigned long raster_tex_px;
     int64_t raster_flat_us;
     int64_t raster_tex_us;
+    int64_t scene_sky_floor_us;
+    int64_t scene_map_us;
+    int64_t scene_gallery_us;
+    int64_t scene_private_model_us;
+    int64_t scene_projectiles_us;
+    unsigned long scene_models_tested;
+    unsigned long scene_models_culled;
+    unsigned long scene_model_triangles_culled;
 };
+
+struct rasterfall_scene_stats;
 
 void rasterfall_perf_init(struct rasterfall_perf_stats *stats);
 void rasterfall_perf_end_stage(struct rasterfall_perf_stats *window,
@@ -56,6 +66,9 @@ void rasterfall_perf_add_raster(struct rasterfall_perf_stats *window,
                                 struct rasterfall_perf_stats *total,
                                 const struct toy_renderer *renderer,
                                 unsigned long tris, unsigned long pixels);
+void rasterfall_perf_add_scene(struct rasterfall_perf_stats *window,
+                               struct rasterfall_perf_stats *total,
+                               const struct rasterfall_scene_stats *scene);
 void rasterfall_perf_dump(const struct rasterfall_perf_stats *stats,
                           const char *label);
 

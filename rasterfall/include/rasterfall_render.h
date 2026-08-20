@@ -46,6 +46,17 @@ struct rasterfall_model_setup_timing {
     long edge_triangles_us;
 };
 
+struct rasterfall_scene_stats {
+    long sky_floor_us;
+    long map_us;
+    long gallery_us;
+    long private_model_us;
+    long projectiles_us;
+    unsigned long models_tested;
+    unsigned long models_culled;
+    unsigned long model_triangles_culled;
+};
+
 void rasterfall_render_bind(struct rasterfall_render_context *ctx);
 void rasterfall_render_bake_lightmap(void);
 void rasterfall_render_set_coordinate_axes(int enabled);
@@ -57,6 +68,7 @@ int rasterfall_render_model_preview(struct toy_renderer *renderer,
 void rasterfall_render_model_stats(struct rasterfall_model_render_stats *out);
 void rasterfall_render_model_setup_timing(
     struct rasterfall_model_setup_timing *out);
+void rasterfall_render_scene_stats(struct rasterfall_scene_stats *out);
 int rasterfall_render_near_clip_test(void);
 
 int rasterfall_render_scene(struct toy_renderer *renderer,

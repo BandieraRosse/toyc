@@ -2892,13 +2892,14 @@ startup_again:
         if (ready < 0) break;
         if (ready == 0) {
             struct toy_window_events stall_events;
-            /* 双缓冲都在组合器手里：阻塞等 frame callback 释放，期间
+            /* 双缓冲都在组合器手里：阻塞等 buffer release，期间
              * 继续收输入。等待批次必须立即并入输入状态——若沿用共用
              * events，下一轮 poll 会覆盖这批事件，按键释放事件丢失后
              * key_down 无法清零，角色会持续移动不受控制（粘键）。 */
             if (toy_window_poll(window, &stall_events, 1000) < 0) break;
-            /* stall 从申请缓冲计到等回 frame callback（含 poll 等待），
-             * 即 wait 中双缓冲背压的部分。 */
+            /* stall 从申请缓冲计到等回 buffer release（含 poll 等待），
+             * 即 wait 中双缓冲背压的部分。frame callback 只作为组合器
+             * 节奏提示，不再阻止 CPU 使用另一个空闲 shm buffer。 */
             rasterfall_perf_add_stall(&stats, &stats_total, monotonic_us() - t_frame);
             toy_input_apply(&input, &stall_events);
             /* 等待批次的按键边沿不能丢，也不能重复：菜单块在迭代顶部已
@@ -2931,6 +2932,7 @@ startup_again:
         if (ready > 0) {
             int present_result;
             struct camera render_camera;
+            struct rasterfall_scene_stats scene_detail;
             /* Local movement is client-authoritative; host position
              * corrections are intentionally not applied to the camera. */
             if (!logged_first_frame) {
@@ -2950,6 +2952,8 @@ startup_again:
                 set_managed_spectator_camera(&render_camera, &camera,
                                              managed_third_person);
             scene_pixels = rasterfall_render_scene(&renderer, &render_camera);
+            rasterfall_render_scene_stats(&scene_detail);
+            rasterfall_perf_add_scene(&stats, &stats_total, &scene_detail);
             scene_pixels += rasterfall_render_flags(&renderer, &render_camera);
             rasterfall_perf_end_stage(&stats, &stats_total, RASTERFALL_STATS_SCENE, &t_stage,
                            renderer.submitted_triangles - prev_tris, 0);

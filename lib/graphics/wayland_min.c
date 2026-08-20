@@ -693,7 +693,7 @@ int toywl_dispatch(struct toywl *wl, struct toywl_input *input, int timeout_ms)
 
 int toywl_begin_frame(struct toywl *wl, struct toywl_frame *frame)
 {
-    if (!wl || !frame || !wl->frame_ready) return 0;
+    if (!wl || !frame) return 0;
     if (wl->wanted_width != wl->width || wl->wanted_height != wl->height) {
         if (wl->buffers[0].busy || wl->buffers[1].busy) return 0;
         destroy_buffers(wl);
@@ -722,9 +722,14 @@ int toywl_present(struct toywl *wl)
     mb_init(&m, wl->surface, 9); mb_u32(&m, 0); mb_u32(&m, 0);
     mb_u32(&m, (uint32_t)wl->width); mb_u32(&m, (uint32_t)wl->height);
     if (send_request(wl, &m, -1) < 0) return -1;
-    wl->frame_callback = new_object(wl, OBJ_CALLBACK);
-    mb_init(&m, wl->surface, 3); mb_u32(&m, wl->frame_callback);
-    if (send_request(wl, &m, -1) < 0) return -1;
+    /* Keep one callback outstanding for compositor pacing diagnostics, but
+     * do not overwrite its object id when the second shm buffer is submitted
+     * before it fires.  Buffer release remains the hard back-pressure limit. */
+    if (!wl->frame_callback) {
+        wl->frame_callback = new_object(wl, OBJ_CALLBACK);
+        mb_init(&m, wl->surface, 3); mb_u32(&m, wl->frame_callback);
+        if (send_request(wl, &m, -1) < 0) return -1;
+    }
     if (request0(wl, wl->surface, 6) < 0) return -1;
     b->busy = 1; wl->draw_index = -1; wl->frame_ready = 0;
     return 0;

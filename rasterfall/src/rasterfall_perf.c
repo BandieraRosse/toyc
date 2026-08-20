@@ -1,6 +1,7 @@
 #include "tlibc_everything.h"
 #include "core.h"
 #include "rasterfall_perf.h"
+#include "rasterfall_render.h"
 
 static int64_t rasterfall_perf_monotonic_us(void)
 {
@@ -108,6 +109,28 @@ void rasterfall_perf_add_raster(struct rasterfall_perf_stats *window, struct ras
     total->raster_tex_us += r->last_tex_us;
 }
 
+void rasterfall_perf_add_scene(struct rasterfall_perf_stats *window,
+                           struct rasterfall_perf_stats *total,
+                           const struct rasterfall_scene_stats *scene)
+{
+    window->scene_sky_floor_us += scene->sky_floor_us;
+    total->scene_sky_floor_us += scene->sky_floor_us;
+    window->scene_map_us += scene->map_us;
+    total->scene_map_us += scene->map_us;
+    window->scene_gallery_us += scene->gallery_us;
+    total->scene_gallery_us += scene->gallery_us;
+    window->scene_private_model_us += scene->private_model_us;
+    total->scene_private_model_us += scene->private_model_us;
+    window->scene_projectiles_us += scene->projectiles_us;
+    total->scene_projectiles_us += scene->projectiles_us;
+    window->scene_models_tested += scene->models_tested;
+    total->scene_models_tested += scene->models_tested;
+    window->scene_models_culled += scene->models_culled;
+    total->scene_models_culled += scene->models_culled;
+    window->scene_model_triangles_culled += scene->model_triangles_culled;
+    total->scene_model_triangles_culled += scene->model_triangles_culled;
+}
+
 /* 排序副本上的最近秩百分位（us）：p95 即第 ceil(0.95*n) 个样本。 */
 static long perf_percentile(const struct rasterfall_perf_stats *s, int pct)
 {
@@ -205,4 +228,14 @@ void rasterfall_perf_dump(const struct rasterfall_perf_stats *s, const char *lab
                  (long long)flat_us, (long long)tex_us, (long long)fpct,
                  (long long)(100 - fpct));
     }
+    __printf("[stats:%s] scene detail us/f sky_floor=%lld map=%lld gallery=%lld yola=%lld projectiles=%lld models tested=%lu culled=%lu triangles_culled/f=%lu\n",
+             label,
+             (long long)(s->scene_sky_floor_us / s->frames),
+             (long long)(s->scene_map_us / s->frames),
+             (long long)(s->scene_gallery_us / s->frames),
+             (long long)(s->scene_private_model_us / s->frames),
+             (long long)(s->scene_projectiles_us / s->frames),
+             s->scene_models_tested / (unsigned long)s->frames,
+             s->scene_models_culled / (unsigned long)s->frames,
+             s->scene_model_triangles_culled / (unsigned long)s->frames);
 }

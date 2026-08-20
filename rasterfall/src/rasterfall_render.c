@@ -35,6 +35,7 @@ struct box { int minx, maxx, minz, maxz, height; uint32_t color; };
 
 static struct rasterfall_render_context *render_ctx;
 static struct rasterfall_model_setup_timing model_setup_timing;
+static struct rasterfall_scene_stats scene_stats;
 
 static long render_monotonic_us(void)
 {
@@ -313,6 +314,54 @@ static int prepare_gallery_vertex_cache(
     return 0;
 }
 
+/* Conservative model-level frustum test.  The eight transformed AABB corners
+ * are tested against the same projection planes as project_vertex().  A box
+ * crossing the near plane is retained so near clipping remains authoritative. */
+static int gallery_model_visible(const struct toy_surface *surface,
+                                 const struct camera *camera,
+                                 const struct rasterfall_model_asset *model,
+                                 int center_x, int base_y, int center_z,
+                                 int scale)
+{
+    struct vec3 view[8];
+    int xs[2], ys[2], zs[2], n = 0;
+    int focal = surface->width * 3 / 4;
+    /* Keep a small screen-space guard for PMX Edge shell expansion and
+     * integer projection rounding at the viewport boundary. */
+    int half_width = surface->width / 2 + 32;
+    int half_height = surface->height / 2 + 32;
+    int all_left = 1, all_right = 1, all_above = 1, all_below = 1;
+    int crosses_near = 0, max_z = -2147483647;
+    xs[0] = center_x + (int)((long)model->min_x * scale / 1000);
+    xs[1] = center_x + (int)((long)model->max_x * scale / 1000);
+    ys[0] = base_y;
+    ys[1] = base_y + (int)((long)(model->max_y - model->min_y) *
+                           scale / 1000);
+    zs[0] = center_z + (int)((long)model->min_z * scale / 1000);
+    zs[1] = center_z + (int)((long)model->max_z * scale / 1000);
+    for (int xi = 0; xi < 2; xi++) for (int yi = 0; yi < 2; yi++)
+        for (int zi = 0; zi < 2; zi++) {
+            struct vec3 world = {xs[xi], ys[yi], zs[zi]};
+            world_to_view(camera, &world, &view[n]);
+            if (view[n].z < NEAR_Z) crosses_near = 1;
+            if (view[n].z > max_z) max_z = view[n].z;
+            n++;
+        }
+    if (max_z < NEAR_Z) return 0;
+    if (crosses_near) return 1;
+    for (n = 0; n < 8; n++) {
+        long xf = (long)view[n].x * focal;
+        long yf = (long)view[n].y * focal;
+        long x_limit = (long)view[n].z * half_width;
+        long y_limit = (long)view[n].z * half_height;
+        if (xf >= -x_limit) all_left = 0;
+        if (xf <= x_limit) all_right = 0;
+        if (yf <= y_limit) all_above = 0;
+        if (yf >= -y_limit) all_below = 0;
+    }
+    return !(all_left || all_right || all_above || all_below);
+}
+
 static void gallery_edge_vertex(const struct rasterfall_model_asset *model,
                                 const struct camera *camera,
                                 unsigned int index, int center_x, int base_y,
@@ -404,6 +453,13 @@ static int render_gallery_model(struct toy_renderer *renderer,
                                 int center_x, int base_y, int center_z,
                                 int scale)
 {
+    scene_stats.models_tested++;
+    if (!gallery_model_visible(&renderer->surface, camera, model, center_x,
+                               base_y, center_z, scale)) {
+        scene_stats.models_culled++;
+        scene_stats.model_triangles_culled += model->index_count / 3;
+        return 0;
+    }
     long render_start = render_monotonic_us();
     long phase_start;
     int drawn = 0, i;
@@ -2246,7 +2302,10 @@ static uint32_t mix_color(uint32_t from, uint32_t to, int num, int den);
 static int render_scene(struct toy_renderer *renderer, const struct camera *camera)
 {
     int pixels = 0;
+    long phase_start;
     struct vec3 a, b, c, d;
+    __memset(&scene_stats, 0, sizeof(scene_stats));
+    phase_start = render_monotonic_us();
     /* 自由俯仰下先铺天空/地面：地平线由俯仰角决定，墙面与地板随后覆盖 */
     rasterfall_sky_draw(&renderer->surface, camera);
     fixed_floor_lighting = 1;
@@ -2254,6 +2313,8 @@ static int render_scene(struct toy_renderer *renderer, const struct camera *came
     fixed_floor_lighting = 0;
     if (active_coordinate_axes)
         pixels += render_coordinate_ruler(renderer, camera);
+    scene_stats.sky_floor_us = render_monotonic_us() - phase_start;
+    phase_start = render_monotonic_us();
     for (int i=0; i<level_map.draw_count; i++) {
         struct toy_map_draw *x=&level_map.draw[i];
         if (x->type==TOY_MAP_DRAW_FLOOR || x->type==TOY_MAP_DRAW_BORDER) {
@@ -2301,9 +2362,16 @@ static int render_scene(struct toy_renderer *renderer, const struct camera *came
         struct box obstacle={level_map.boxes[i].minx,level_map.boxes[i].maxx,level_map.boxes[i].minz,level_map.boxes[i].maxz,level_map.boxes[i].height,level_map.boxes[i].color};
         pixels+=draw_box(renderer,camera,&obstacle);
     }
+    scene_stats.map_us = render_monotonic_us() - phase_start;
+    phase_start = render_monotonic_us();
     pixels += render_model_gallery(renderer, camera);
+    scene_stats.gallery_us = render_monotonic_us() - phase_start;
+    phase_start = render_monotonic_us();
     pixels += render_private_character(renderer, camera);
+    scene_stats.private_model_us = render_monotonic_us() - phase_start;
+    phase_start = render_monotonic_us();
     pixels += render_projectiles(renderer, camera);
+    scene_stats.projectiles_us = render_monotonic_us() - phase_start;
     return pixels;
 }
 static int enemy_y(int y, int scale)
@@ -3640,6 +3708,11 @@ int rasterfall_render_scene(struct toy_renderer *renderer,
                             const struct camera *camera)
 {
     return render_scene(renderer, camera);
+}
+
+void rasterfall_render_scene_stats(struct rasterfall_scene_stats *out)
+{
+    if (out) memcpy(out, &scene_stats, sizeof(*out));
 }
 
 int rasterfall_render_sign_text(struct toy_renderer *renderer,
