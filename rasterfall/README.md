@@ -57,11 +57,11 @@ build/glb2rmesh Zombie.glb rasterfall/assets/models/zombie.rmesh
 渲染所需的数据：
 
 ```sh
-make app-pmx2rmesh
-build/pmx2rmesh character.pmx \
-    rasterfall/private-assets/models/character.rmesh \
-    rasterfall/private-assets/models/character.textures
+tools/import-pmx-model.sh path/to/character-folder character
 ```
+
+目录中应只有一个 `.pmx`；脚本会构建转换器、复制 PMX 引用的纹理并自动生成
+TTEX。重新导入已有名称时显式添加 `--force`。
 
 `pmx2rmesh` 读取 PMX 2.0/2.1 的顶点位置、法线、UV、三角形索引和材质漫
 反射色、基础纹理、sphere 和 toon 纹理引用，输出现有 RFM2 格式，并将 PMX 引用的
@@ -75,9 +75,15 @@ PNG/BMP 纹理复制到指定目录。再使用 `build/toyasset convert png1024|
 的三角形在不透明命令之后按相机深度由远到近进行 source-over 混合。PMX 材质
 alpha、toon 引用和第一组附加 UV 从 RFM2 v6 起保存；v7 还保存材质 drawing
 flags，并按 bit 0 区分双面绘制与背面剔除；v8 将材质记录扩展为 24 字节，保存
-edge RGBA 和宽度，并用外扩背面壳绘制轮廓。加载器仍兼容 v2 到 v5 的 24 字节旧
-顶点记录及 v2 到 v7 的 16 字节旧材质记录。v9 保存环境色、镜面色和镜面指数，
-在纹理合成后加入低强度环境光与随指数收窄的镜面高光；旧格式继续按双面材质渲染。
+edge RGBA 和宽度，并用外扩背面壳绘制轮廓；v9 保存环境色、镜面色和镜面指数，
+在纹理合成后加入低强度环境光与随指数收窄的镜面高光；v10 在顶点记录中保存
+PMX Edge Scale，使材质轮廓宽度可按顶点缩放。加载器仍兼容 v2 到 v5 的 24 字节旧
+顶点记录及 v2 到 v7 的 16 字节旧材质记录，旧格式继续按双面材质渲染。
+
+转换时会输出导入诊断：逐材质列出中英文名称、基础/sphere/toon 纹理、模式、
+透明度、drawing flags 及各标志位语义、edge、环境光和镜面参数，并输出模型级
+feature summary，汇总几何、纹理和各材质特性的使用数量。当前未导入的蒙皮、骨骼、
+Morph、刚体等数据也会列出；多于一组的附加 UV 会明确报告为未保留。
 
 可以通过无窗口的离屏渲染输出模型正面、侧面和背面验证图。输出目录会自动
 创建，图片采用无需额外编码库的 BMP 格式；该命令走与游戏内相同的材质、

@@ -8,6 +8,19 @@
 | toyasset | `tools/toyasset.c` + `jpg_decode.c` | `make build/toyasset` | 离线格式转换 |
 | gen_sfx | `tools/gen_sfx.c` + `rasterfall/lib/sfx.c` | `make build/gen_sfx` | 程序合成音效 → TSND |
 
+## PMX 模型一键导入
+
+```sh
+tools/import-pmx-model.sh <模型目录> [模型名]
+tools/import-pmx-model.sh --force <模型目录> [模型名]
+```
+
+脚本递归查找目录中唯一的 `.pmx`，使用 `make -j` 构建转换工具，然后生成
+`rasterfall/private-assets/models/<模型名>.rmesh` 和同名 `.textures/` 目录。
+PNG、BMP、SPA/SPH、JPG/JPEG 纹理会自动转为 TTEX。默认模型名来自 PMX 文件名；已有输出
+不会被覆盖，除非显式指定 `--force`。导入日志会逐材质解码 drawing flags，并输出
+几何、纹理、透明度、sphere、toon、edge、光照及蒙皮数据的 feature summary。
+
 `jpg_decode.{c,h}` 是 toyasset 的 JPEG 解码依赖，不是独立程序。
 
 ## toyasset — 资产转换

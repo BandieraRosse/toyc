@@ -249,13 +249,15 @@ static void gallery_edge_vertex(const struct rasterfall_model_asset *model,
                                 struct vec3 *out)
 {
     const unsigned char *p = model->vertices + index * model->vertex_bytes;
+    unsigned int vertex_edge_scale = model->format_version >= 10 ?
+        model_u32(p + 32) : 65536U;
     gallery_vertex(model, index, center_x, base_y, center_z, scale, out);
-    out->x += (int)((long long)*(const short *)(p + 12) * edge_size * scale /
-                        (32767LL * 1000));
-    out->y += (int)((long long)*(const short *)(p + 14) * edge_size * scale /
-                        (32767LL * 1000));
-    out->z += (int)((long long)*(const short *)(p + 16) * edge_size * scale /
-                        (32767LL * 1000));
+    out->x += (int)((long long)*(const short *)(p + 12) * edge_size * scale *
+                        vertex_edge_scale / (32767LL * 1000 * 65536));
+    out->y += (int)((long long)*(const short *)(p + 14) * edge_size * scale *
+                        vertex_edge_scale / (32767LL * 1000 * 65536));
+    out->z += (int)((long long)*(const short *)(p + 16) * edge_size * scale *
+                        vertex_edge_scale / (32767LL * 1000 * 65536));
 }
 
 static void gallery_uv_vertex(const struct rasterfall_model_asset *model,

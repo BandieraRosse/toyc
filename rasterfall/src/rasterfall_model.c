@@ -34,7 +34,8 @@ int rasterfall_model_load(struct rasterfall_model_asset *asset,
     __memset(asset, 0, sizeof(*asset));
     data = toy_asset_load_file(path, &size);
     version = data && size >= 8 ? model_u32(data + 4) : 0;
-    vertex_bytes = version >= 6 ? RASTERFALL_MODEL_VERTEX_BYTES_ADDITIONAL_UV :
+    vertex_bytes = version >= 10 ? RASTERFALL_MODEL_VERTEX_BYTES_EDGE_SCALE :
+                   version >= 6 ? RASTERFALL_MODEL_VERTEX_BYTES_ADDITIONAL_UV :
                                   RASTERFALL_MODEL_VERTEX_BYTES;
     material_bytes = version >= 9 ? RASTERFALL_MODEL_MATERIAL_BYTES :
                      version >= 8 ? RASTERFALL_MODEL_MATERIAL_BYTES_EDGE :
