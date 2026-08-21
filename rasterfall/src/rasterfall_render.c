@@ -987,7 +987,10 @@ static int render_private_character(struct toy_renderer *renderer,
     if (!private_character_model.data ||
         world_distance(camera, -13000, -10000) > ENEMY_RENDER_DISTANCE)
         return 0;
-    scale = gallery_model_scale(&private_character_model) * 3;
+    /* Use the same bounds-fit scale as the gallery.  The Eula RFM2 is already
+     * in Rasterfall world units; the old extra x3 made the private preview
+     * dwarf the scene and was unrelated to VMD animation. */
+    scale = gallery_model_scale(&private_character_model);
     if (scale < 1) scale = 1;
     {
         int pixels=render_gallery_model(renderer,camera,&private_character_model,
