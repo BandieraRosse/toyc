@@ -670,6 +670,163 @@ static double inspect_position_delta(const double a[3], const double b[3])
     return sqrt(x*x+y*y+z*z);
 }
 
+static double inspect_rotation_delta(const int a[3], const int b[3]);
+
+static void inspect_ccd_metric(const char *name, double *v, int n)
+{
+    static double sorted[20000];
+    double sum=0.0;
+    int i;
+    for(i=0;i<n;i++)sum+=v[i];
+    if (n > 20000) n = 20000;
+    memcpy(sorted, v, (unsigned long)n * sizeof(double));
+    __printf("ccd motion metric=%s count=%d avg=%.3f p50=%.3f p90=%.3f p95=%.3f p99=%.3f max=%.3f\n",
+             name,n,n?sum/n:0.0,
+             n?inspect_handoff_percentile(sorted,n,.50):0.0,n?inspect_handoff_percentile(sorted,n,.90):0.0,
+             n?inspect_handoff_percentile(sorted,n,.95):0.0,n?inspect_handoff_percentile(sorted,n,.99):0.0,
+             n?inspect_handoff_percentile(sorted,n,1.0):0.0);
+}
+
+static void inspect_ccd_motion(struct rasterfall_model_asset *m,
+                               const struct rasterfall_vmd_clip *v,
+                               const struct rasterfall_animation_clip *clip,
+                               int best_mode)
+{
+    enum { MAX_SAMPLES=20000 };
+    static double values[2][7][MAX_SAMPLES];
+    static double best_errors[2][MAX_SAMPLES], final_errors[2][MAX_SAMPLES];
+    static unsigned int iteration_counts[2][MAX_SAMPLES];
+    static int times[2][MAX_SAMPLES];
+    static double alignment[2][5][MAX_SAMPLES];
+    static double thigh_moves[2][MAX_SAMPLES], knee_moves[2][MAX_SAMPLES];
+    static unsigned int best_iterations[2][MAX_SAMPLES];
+    double previous_target[2][3];
+    int have_target[2]={0,0}, count[2]={0,0};
+    int previous_state[2]={0,0};
+    int type_count[2][4]={{0}}, best_worse[2][3]={{0}};
+    int side,time,step=16;
+    int best_c0_count[2]={0,0}, ratio_105[2]={0,0}, ratio_125[2]={0,0};
+    int ratio_150[2]={0,0}, ratio_200[2]={0,0};
+    int best_hist[2][7]={{0}};
+    double restore_diffs[2][MAX_SAMPLES];
+    const char *mode_name = best_mode ? "best-retain" : "baseline";
+    m->ik_analytical_inherit_diagnostic=1;
+    m->ik_best_iteration_enabled=best_mode ? 1 : 0;
+    memset(m->ik_analytical_cache_valid,0,sizeof(m->ik_analytical_cache_valid));
+    m->ik_last_leg_solver[0]=m->ik_last_leg_solver[1]=0;
+    for(time=0;time<v->duration_ms;time+=step){
+        m->ik_handoff_trace_time_ms=time;
+        m->ik_handoff_trace_side=-1;
+        m->ik_handoff_snapshot_valid=0;
+        m->ik_iteration_trace_time_ms = -1;
+        prepare_vmd_skeleton_translation(m,v,time,0);
+        rasterfall_model_sample_clip(m,clip,time);
+        for(side=0;side<2;side++){
+            const char *name=side?"右足ＩＫ":"左足ＩＫ";
+            int controller=rasterfall_model_find_bone(m,name), t[3];
+            double target[3], sampled_target[3];
+            if(controller<0)continue;
+            rasterfall_vmd_sample_bone_translation(v,name,time,t);
+            sampled_target[0]=m->bone_transforms[controller].position[0]+t[0];
+            sampled_target[1]=m->bone_transforms[controller].position[1]+t[1];
+            sampled_target[2]=m->bone_transforms[controller].position[2]+t[2];
+            target[0]=m->ik_ccd_diag_target[side][0];
+            target[1]=m->ik_ccd_diag_target[side][1];
+            target[2]=m->ik_ccd_diag_target[side][2];
+            if (!m->ik_ccd_diag_valid[side]) {
+                target[0]=sampled_target[0];target[1]=sampled_target[1];target[2]=sampled_target[2];
+            }
+            if(previous_state[side]==1 && m->ik_last_leg_solver[side]==2 &&
+               (m->ik_handoff_snapshot_valid&(1<<side)) && m->ik_ccd_diag_valid[side] && count[side]<MAX_SAMPLES){
+                double e0=m->ik_ccd_diag_initial_error[side];
+                double e1=m->ik_c1_error[side];
+                double move=inspect_position_delta(m->ik_ccd_diag_initial_ankle[side],m->ik_ccd_diag_final_ankle[side]);
+                double td=have_target[side]?inspect_position_delta(previous_target[side],target):0.0;
+                double improve=e0-e1, rel=e0>0.000001?improve/e0:0.0;
+                double efficiency=move>0.000001?improve/move:0.0;
+                double regret=m->ik_c1_error[side]-m->ik_ccd_diag_best_error[side];
+                int n=count[side];
+                values[side][0][n]=e0;values[side][1][n]=move;values[side][2][n]=e1;
+                values[side][3][n]=td;values[side][4][n]=rel;values[side][5][n]=efficiency;values[side][6][n]=regret;times[side][n]=time;count[side]++;
+                thigh_moves[side][n] = inspect_rotation_delta(
+                    m->ik_handoff_c0_thigh[side], m->ik_handoff_c1_thigh[side]);
+                knee_moves[side][n] = fabs((double)m->ik_handoff_c0_knee[side] -
+                                           (double)m->ik_handoff_c1_knee[side]);
+                best_iterations[side][n] = m->ik_ccd_diag_best_is_c0[side] ?
+                    (unsigned int)-1 : m->ik_ccd_diag_best_iteration[side];
+                restore_diffs[side][n] = fabs(m->ik_c1_error[side] -
+                                              m->ik_ccd_diag_best_error[side]);
+                if (m->ik_ccd_diag_best_is_c0[side]) best_c0_count[side]++;
+                if (best_iterations[side][n] == (unsigned int)-1) best_hist[side][0]++;
+                else if (best_iterations[side][n] <= 1) best_hist[side][1]++;
+                else if (best_iterations[side][n] <= 3) best_hist[side][2]++;
+                else if (best_iterations[side][n] <= 7) best_hist[side][3]++;
+                else if (best_iterations[side][n] <= 15) best_hist[side][4]++;
+                else if (best_iterations[side][n] <= 31) best_hist[side][5]++;
+                else best_hist[side][6]++;
+                if (m->ik_ccd_diag_best_error[side] > 0.000001) {
+                    double ratio = m->ik_c1_error[side] / m->ik_ccd_diag_best_error[side];
+                    if (ratio > 1.05) ratio_105[side]++;
+                    if (ratio > 1.25) ratio_125[side]++;
+                    if (ratio > 1.50) ratio_150[side]++;
+                    if (ratio > 2.00) ratio_200[side]++;
+                }
+                alignment[side][0][n] = inspect_rotation_delta(
+                    m->ik_solver_return_thigh[side], m->ik_handoff_c1_thigh[side]);
+                alignment[side][1][n] = fabs((double)m->ik_solver_return_knee[side] -
+                                             (double)m->ik_handoff_c1_knee[side]);
+                alignment[side][2][n] = inspect_position_delta(
+                    m->ik_solver_return_ankle[side], m->ik_handoff_c1_ankle[side]);
+                alignment[side][3][n] = inspect_position_delta(
+                    m->ik_solver_return_target[side], m->ik_c1_target[side]);
+                alignment[side][4][n] = fabs(m->ik_solver_return_error[side] -
+                                             m->ik_c1_error[side]);
+                best_errors[side][n]=m->ik_ccd_diag_best_error[side];
+                final_errors[side][n]=m->ik_c1_error[side];
+                iteration_counts[side][n]=m->ik_ccd_diag_iterations[side];
+                if(e1>e0){type_count[side][2]++;}
+                else if(rel>=0.5)type_count[side][0]++;
+                else type_count[side][1]++;
+                if(td>e0*0.5 && td>move*0.5)type_count[side][3]++;
+                if(regret>0.05)best_worse[side][0]++;
+                if(regret>m->ik_ccd_diag_best_error[side]*0.25)best_worse[side][1]++;
+                if(regret>m->ik_ccd_diag_best_error[side]*0.50)best_worse[side][2]++;
+            }
+            memcpy(previous_target[side],sampled_target,sizeof(sampled_target));have_target[side]=1;
+            previous_state[side]=m->ik_last_leg_solver[side];
+        }
+    }
+    for(side=0;side<2;side++){
+        int i,j;
+        __printf("ccd motion mode=%s side=%s transition=AtoC count=%d typeA_high_improvement=%d typeB_low_efficiency=%d typeC_error_worsened=%d typeD_target_dominant=%d\n",mode_name,side?"right":"left",count[side],type_count[side][0],type_count[side][1],type_count[side][2],type_count[side][3]);
+        inspect_ccd_metric("E0",values[side][0],count[side]);
+        inspect_ccd_metric("M",values[side][1],count[side]);
+        inspect_ccd_metric("E1",values[side][2],count[side]);
+        inspect_ccd_metric("target_delta",values[side][3],count[side]);
+        inspect_ccd_metric("relative_improvement",values[side][4],count[side]);
+        inspect_ccd_metric("movement_efficiency",values[side][5],count[side]);
+        inspect_ccd_metric("final_minus_best_error",values[side][6],count[side]);
+        inspect_ccd_metric("solver_to_c1_thigh_deg",alignment[side][0],count[side]);
+        inspect_ccd_metric("solver_to_c1_knee_deg",alignment[side][1],count[side]);
+        inspect_ccd_metric("solver_to_c1_ankle",alignment[side][2],count[side]);
+        inspect_ccd_metric("solver_to_c1_target",alignment[side][3],count[side]);
+        inspect_ccd_metric("solver_to_c1_error",alignment[side][4],count[side]);
+        inspect_ccd_metric("restore_best_error_diff",restore_diffs[side],count[side]);
+        inspect_ccd_metric("C0_to_C1_thigh_deg",thigh_moves[side],count[side]);
+        inspect_ccd_metric("C0_to_C1_knee_deg",knee_moves[side],count[side]);
+        __printf("ccd best audit mode=%s side=%s final_worse_0.05=%d final_worse_25pct=%d final_worse_50pct=%d ratio_gt_1.05=%d ratio_gt_1.25=%d ratio_gt_1.50=%d ratio_gt_2.00=%d best_eq_C0=%d %.2f%% hist=C0:%d iter0-1:%d iter2-3:%d iter4-7:%d iter8-15:%d iter16-31:%d iter32-39:%d\n",mode_name,side?"right":"left",best_worse[side][0],best_worse[side][1],best_worse[side][2],ratio_105[side],ratio_125[side],ratio_150[side],ratio_200[side],best_c0_count[side],count[side]?100.0*best_c0_count[side]/count[side]:0.0,best_hist[side][0],best_hist[side][1],best_hist[side][2],best_hist[side][3],best_hist[side][4],best_hist[side][5],best_hist[side][6]);
+        for(j=0;j<5;j++){
+            int best=-1;
+            for(i=0;i<count[side];i++) if(values[side][1][i]>=0 && (best<0||values[side][1][i]>values[side][1][best])) best=i;
+            if(best<0)break;
+            __printf("ccd top movement side=%s rank=%d time=%d E0=%.3f M=%.3f E1=%.3f target_delta=%.3f best=%.3f final=%.3f iterations=%u\n",side?"right":"left",j+1,times[side][best],values[side][0][best],values[side][1][best],values[side][2][best],values[side][3][best],best_errors[side][best],final_errors[side][best],iteration_counts[side][best]);
+            values[side][1][best]=-1.0;
+        }
+    }
+    m->ik_analytical_inherit_diagnostic=0;
+    m->ik_best_iteration_enabled=1;
+}
+
 static void inspect_vmd_leg_trace(struct rasterfall_model_asset *m,
                                   const struct rasterfall_vmd_clip *v,
                                   const struct rasterfall_animation_clip *clip)
@@ -872,7 +1029,7 @@ int main(int argc, char **argv)
                  "[--vmd-legacy-root-offset] "
                  "[--leg-static-rotation-test] [--vmd-leg-trace] "
                  "[--vmd-knee-diagnostic] [--vmd-legacy-leg-ccd] "
-                 "[--vmd-handoff-only]\n");
+                 "[--vmd-handoff-only] [--vmd-ccd-motion-only]\n");
         return 2;
     }
     if (rasterfall_vmd_load(&v, argv[1]) < 0) {
@@ -891,7 +1048,8 @@ int main(int argc, char **argv)
     if (have) {
         int phase = v.duration_ms / 4;
         int disable = 0, disable_grant = 0, legacy = 0, static_leg_test = 0;
-        int leg_trace = 0, knee_diagnostic = 0, legacy_knee = 0, handoff_only = 0;
+        int leg_trace = 0, knee_diagnostic = 0, legacy_knee = 0;
+        int handoff_only = 0, ccd_motion_only = 0;
         for (i = 3; i < argc; i++) {
             if (!strcmp(argv[i], "--vmd-disable-ik")) disable = 1;
             if (!strcmp(argv[i], "--vmd-disable-grant")) disable_grant = 1;
@@ -902,6 +1060,7 @@ int main(int argc, char **argv)
             if (!strcmp(argv[i], "--vmd-legacy-knee-ccd") ||
                 !strcmp(argv[i], "--vmd-legacy-leg-ccd")) legacy_knee = 1;
             if (!strcmp(argv[i], "--vmd-handoff-only")) handoff_only = 1;
+            if (!strcmp(argv[i], "--vmd-ccd-motion-only")) ccd_motion_only = 1;
         }
         if (disable) rasterfall_model_set_ik_enabled(&m, 0);
         if (disable_grant) rasterfall_model_set_grant_enabled(&m, 0);
@@ -912,9 +1071,17 @@ int main(int argc, char **argv)
         rasterfall_model_dump_ik_hierarchy(&m);
         if (rasterfall_vmd_build_animation(&v, &clip, tracks,
                                            RASTERFALL_VMD_MAX_BONES) >= 0) {
+            if (ccd_motion_only) {
+                inspect_ccd_motion(&m, &v, &clip, 0);
+                inspect_ccd_motion(&m, &v, &clip, 1);
+                rasterfall_vmd_unload(&v);
+                return 0;
+            }
             if (handoff_only) {
                 inspect_solver_handoff(&m, &v, &clip, 0);
                 inspect_solver_handoff(&m, &v, &clip, 1);
+                inspect_ccd_motion(&m, &v, &clip, 0);
+                inspect_ccd_motion(&m, &v, &clip, 1);
                 inspect_continuity_ab(&m, &v, &clip, 1, 0);
                 inspect_continuity_ab(&m, &v, &clip, 1, 1);
                 rasterfall_vmd_unload(&v);
