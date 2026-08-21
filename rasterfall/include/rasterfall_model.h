@@ -23,7 +23,8 @@ struct rasterfall_glb_rotation_reference;
  *                              v6 adds signed Q16 additional u,v at 24..31;
  *                              v10 adds unsigned Q16 edge scale at 32..35
  *   index_count * 4 bytes      uint32 triangle indices
- *   optional SKN1 section      v11 bone hierarchy + BDEF1/BDEF2 records
+ *   optional SKN1 section      v11 bone hierarchy + BDEF1/BDEF2 records;
+ *                              v12 appends an IK2 metadata section
  *
  * Header byte 60 is the SKN1 offset in v11.  SKN1 has a 32-byte header
  * (total bytes, bone count/stride, vertex count/stride, name-table bytes),
@@ -43,7 +44,7 @@ struct rasterfall_glb_rotation_reference;
  * Texture files are kept beside the mesh by the offline importer.
  */
 #define RASTERFALL_MODEL_MAGIC 0x324d4652U /* "RFM2" in little-endian */
-#define RASTERFALL_MODEL_VERSION 11
+#define RASTERFALL_MODEL_VERSION 12
 #define RASTERFALL_MODEL_VERTEX_BYTES 24
 #define RASTERFALL_MODEL_VERTEX_BYTES_ADDITIONAL_UV 32
 #define RASTERFALL_MODEL_VERTEX_BYTES_EDGE_SCALE 36
@@ -56,6 +57,10 @@ struct rasterfall_glb_rotation_reference;
 #define RASTERFALL_MODEL_SKIN_HEADER_BYTES 32
 #define RASTERFALL_MODEL_BONE_BYTES 24
 #define RASTERFALL_MODEL_SKIN_VERTEX_BYTES 8
+#define RASTERFALL_MODEL_IK_MAGIC 0x324b4932U /* "2IK2" */
+#define RASTERFALL_MODEL_IK_HEADER_BYTES 24
+#define RASTERFALL_MODEL_IK_RECORD_BYTES 24
+#define RASTERFALL_MODEL_IK_LINK_BYTES 32
 #define RASTERFALL_MODEL_MAX_BONES 4096
 #define RASTERFALL_MODEL_MAX_BONE_DEPTH 512
 
@@ -77,6 +82,22 @@ struct rasterfall_model_bone {
 struct rasterfall_model_bone_transform {
     double rotation[9];
     double position[3];
+};
+
+struct rasterfall_model_ik_link {
+    int bone;
+    int limited;
+    float lower[3];
+    float upper[3];
+};
+
+struct rasterfall_model_ik {
+    int controller;
+    int target;
+    int iterations;
+    float angle;
+    unsigned int link_count;
+    struct rasterfall_model_ik_link *links;
 };
 
 struct rasterfall_model_header {
@@ -110,6 +131,8 @@ struct rasterfall_model_asset {
     struct rasterfall_model_bone_transform *bone_transforms;
     unsigned int *bone_order;
     unsigned int bone_count;
+    struct rasterfall_model_ik *iks;
+    unsigned int ik_count;
     unsigned int root_bone_count;
     unsigned int max_bone_depth;
     int skinning_enabled;
@@ -153,6 +176,7 @@ int rasterfall_model_find_bone(const struct rasterfall_model_asset *asset,
                                const char *name);
 void rasterfall_model_dump_bones(const struct rasterfall_model_asset *asset,
                                  const char *search);
+void rasterfall_model_dump_ik(const struct rasterfall_model_asset *asset);
 const char *rasterfall_humanoid_bone_name(enum rasterfall_humanoid_bone bone);
 void rasterfall_humanoid_mapping_init(struct rasterfall_humanoid_mapping *mapping);
 void rasterfall_humanoid_map_eula(const struct rasterfall_model_asset *asset,

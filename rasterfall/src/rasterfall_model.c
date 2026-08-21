@@ -21,6 +21,13 @@ static int model_i32(const unsigned char *p)
     return (int)model_u32(p);
 }
 
+static float model_f32(const unsigned char *p)
+{
+    union { unsigned int u; float f; } value;
+    value.u = model_u32(p);
+    return value.f;
+}
+
 static void matrix_multiply(const double *a, const double *b, double *out)
 {
     double r[9];
@@ -143,6 +150,7 @@ static int model_load_skin(struct rasterfall_model_asset *asset,
     const unsigned char *bone_data, *skin_vertices, *names;
     unsigned long required;
     unsigned int i, invalid_references = 0, bdef1 = 0, bdef2 = 0;
+    unsigned int j;
     if (bytes < RASTERFALL_MODEL_SKIN_HEADER_BYTES ||
         model_u32(skin) != RASTERFALL_MODEL_SKIN_MAGIC) return -1;
     bone_count = model_u32(skin + 8);
@@ -153,7 +161,7 @@ static int model_load_skin(struct rasterfall_model_asset *asset,
     required = RASTERFALL_MODEL_SKIN_HEADER_BYTES +
         (unsigned long)bone_count * bone_bytes +
         (unsigned long)vertex_count * vertex_bytes + names_bytes;
-    if (model_u32(skin + 4) != bytes || required != bytes ||
+    if (model_u32(skin + 4) != bytes || required > bytes ||
         bone_count == 0 || bone_count > RASTERFALL_MODEL_MAX_BONES ||
         bone_bytes != RASTERFALL_MODEL_BONE_BYTES ||
         vertex_count != asset->vertex_count ||
@@ -187,6 +195,64 @@ static int model_load_skin(struct rasterfall_model_asset *asset,
         asset->bones[i].rest_y = model_i32(record + 12);
         asset->bones[i].rest_z = model_i32(record + 16);
         asset->bones[i].name = (const char *)(names + name_offset);
+    }
+    {
+        unsigned long used = (unsigned long)(names - skin) + names_bytes;
+        unsigned long remaining = bytes >= used ? bytes - used : 0;
+        if (remaining) {
+            const unsigned char *section = skin + used;
+            unsigned int ik_count, record_bytes, link_bytes, total_links;
+            unsigned long records_end;
+            if (remaining < RASTERFALL_MODEL_IK_HEADER_BYTES ||
+                model_u32(section) != RASTERFALL_MODEL_IK_MAGIC ||
+                model_u32(section + 4) != remaining ||
+                (ik_count = model_u32(section + 8)) > bone_count ||
+                (record_bytes = model_u32(section + 12)) != RASTERFALL_MODEL_IK_RECORD_BYTES ||
+                (link_bytes = model_u32(section + 16)) != RASTERFALL_MODEL_IK_LINK_BYTES)
+                return -1;
+            records_end = RASTERFALL_MODEL_IK_HEADER_BYTES +
+                (unsigned long)ik_count * record_bytes;
+            if (records_end > remaining ||
+                (remaining - records_end) % link_bytes) return -1;
+            total_links = (unsigned int)((remaining - records_end) / link_bytes);
+            asset->iks = ik_count ? tlibc_malloc(ik_count * sizeof(*asset->iks)) : 0;
+            if (ik_count && !asset->iks) return -1;
+            if (ik_count) __memset(asset->iks, 0, ik_count * sizeof(*asset->iks));
+            asset->ik_count = ik_count;
+            for (i = 0; i < ik_count; i++) {
+                const unsigned char *record = section + RASTERFALL_MODEL_IK_HEADER_BYTES + i * record_bytes;
+                unsigned int controller = model_u32(record), target = model_u32(record + 4);
+                unsigned int count = model_u32(record + 16), start = model_u32(record + 20);
+                if (controller >= bone_count || target >= bone_count ||
+                    count > bone_count || start > total_links || count > total_links - start)
+                    return -1;
+                asset->iks[i].controller = (int)controller;
+                asset->iks[i].target = (int)target;
+                asset->iks[i].iterations = (int)model_u32(record + 8);
+                asset->iks[i].angle = model_f32(record + 12);
+                asset->iks[i].link_count = count;
+                if (count) {
+                    asset->iks[i].links = tlibc_malloc(count * sizeof(*asset->iks[i].links));
+                    if (!asset->iks[i].links) return -1;
+                    __memset(asset->iks[i].links, 0, count * sizeof(*asset->iks[i].links));
+                }
+                for (j = 0; j < count; j++) {
+                    const unsigned char *link = section + records_end +
+                        (start + j) * link_bytes;
+                    unsigned int bone = model_u32(link), limited = model_u32(link + 4);
+                    if (bone >= bone_count || limited > 1) return -1;
+                    asset->iks[i].links[j].bone = (int)bone;
+                    asset->iks[i].links[j].limited = (int)limited;
+                    if (limited) {
+                        int axis;
+                        for (axis = 0; axis < 3; axis++) {
+                            asset->iks[i].links[j].lower[axis] = model_f32(link + 8 + axis * 4);
+                            asset->iks[i].links[j].upper[axis] = model_f32(link + 20 + axis * 4);
+                        }
+                    }
+                }
+            }
+        }
     }
     if (model_validate_hierarchy(asset) < 0) return -1;
     for (i = 0; i < vertex_count; i++) {
@@ -372,6 +438,12 @@ void rasterfall_model_unload(struct rasterfall_model_asset *asset)
     if (asset->bone_transforms) tlibc_free(asset->bone_transforms);
     if (asset->animation_rotations) tlibc_free(asset->animation_rotations);
     if (asset->bone_order) tlibc_free(asset->bone_order);
+    if (asset->iks) {
+        unsigned int i;
+        for (i = 0; i < asset->ik_count; i++) if (asset->iks[i].links)
+            tlibc_free(asset->iks[i].links);
+        tlibc_free(asset->iks);
+    }
     tlibc_free((void *)asset->data);
     __memset(asset, 0, sizeof(*asset));
 }
@@ -653,6 +725,36 @@ void rasterfall_model_dump_bones(const struct rasterfall_model_asset *asset,
     }
     __printf("rasterfall: bone list matches=%u total=%u search=\"%s\"\n",
              found, asset->bone_count, search ? search : "");
+}
+
+void rasterfall_model_dump_ik(const struct rasterfall_model_asset *asset)
+{
+    unsigned int i, j;
+    if (!asset) return;
+    __printf("rasterfall: IK metadata version=%u controllers=%u\n",
+             asset->format_version, asset->ik_count);
+    for (i = 0; i < asset->ik_count; i++) {
+        const struct rasterfall_model_ik *ik = &asset->iks[i];
+        __printf("  controller[%d] %s target[%d] %s iterations=%d angle_limit_rad=%.6f angle_limit_deg=%.3f links=%u\n",
+                 ik->controller, asset->bones[ik->controller].name,
+                 ik->target, asset->bones[ik->target].name, ik->iterations,
+                 ik->angle, ik->angle * 180.0 / M_PI, ik->link_count);
+        for (j = 0; j < ik->link_count; j++) {
+            const struct rasterfall_model_ik_link *link = &ik->links[j];
+            __printf("    link[%u] bone[%d] %s limited=%s",
+                     j, link->bone, asset->bones[link->bone].name,
+                     link->limited ? "yes" : "no");
+            if (link->limited)
+                __printf(" lower=(%.3f,%.3f,%.3f) upper=(%.3f,%.3f,%.3f) deg",
+                    link->lower[0] * 180.0 / M_PI,
+                    link->lower[1] * 180.0 / M_PI,
+                    link->lower[2] * 180.0 / M_PI,
+                    link->upper[0] * 180.0 / M_PI,
+                    link->upper[1] * 180.0 / M_PI,
+                    link->upper[2] * 180.0 / M_PI);
+            __printf("\n");
+        }
+    }
 }
 
 static const char *humanoid_names[RASTERFALL_HUMANOID_BONE_COUNT] = {

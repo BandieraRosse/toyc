@@ -24,10 +24,14 @@ struct pmx_header { int vertex_size, texture_size, material_size; int bone_size,
 struct pmx_texture { char path[TEXTURE_PATH_MAX]; };
 struct pmx_material { char name[MATERIAL_NAME_MAX], name_en[MATERIAL_NAME_MAX]; unsigned int color; unsigned int index_count; int texture_index; int sphere_index; int sphere_mode; int alpha; int toon_index; int toon_shared; int draw_flags; unsigned int edge_color; int edge_size; unsigned int ambient_color; unsigned int specular_color; int specular_power; };
 struct pmx_vertex { float x, y, z, nx, ny, nz, u, v, au, av, edge_scale, weight; unsigned int weight_type; int bone0, bone1; };
+struct pmx_ik_link { int bone, limited; float lower[3], upper[3]; };
 struct pmx_bone {
     char name[BONE_NAME_MAX]; int parent; float x, y, z; unsigned int flags; int depth;
     int tail_index, append_parent; float tail[3], append_ratio;
     float fixed_axis[3], local_x[3], local_z[3];
+    int ik_target, ik_iterations, ik_link_count;
+    float ik_angle;
+    struct pmx_ik_link *ik_links;
 };
 struct pmx_diagnostics { unsigned int weights[5]; int bone_count, root_count, max_depth; unsigned int advanced_flags; };
 
@@ -283,17 +287,34 @@ static int read_bones(struct cursor *c, const struct pmx_header *h,
             if (i32(c, &ignored) < 0) goto fail;
         }
         if (flags & 0x0020) {
-            int links, link;
-            if (index_value(c, h->bone_size, 1, &ignored) < 0 ||
-                i32(c, &ignored) < 0 || f32(c, 0) < 0 ||
-                i32(c, &links) < 0 || links < 0 || links > count) goto fail;
-            for (link = 0; link < links; link++) {
-                if (index_value(c, h->bone_size, 1, &ignored) < 0 ||
+            int link;
+            if (index_value(c, h->bone_size, 1, &bones[i].ik_target) < 0 ||
+                i32(c, &bones[i].ik_iterations) < 0 ||
+                f32(c, &bones[i].ik_angle) < 0 ||
+                i32(c, &bones[i].ik_link_count) < 0 ||
+                bones[i].ik_target < 0 || bones[i].ik_target >= count ||
+                bones[i].ik_iterations < 0 || bones[i].ik_link_count < 0 ||
+                bones[i].ik_link_count > count) goto fail;
+            if (bones[i].ik_link_count) {
+                bones[i].ik_links = tlibc_malloc((size_t)bones[i].ik_link_count *
+                                                  sizeof(*bones[i].ik_links));
+                if (!bones[i].ik_links) goto fail;
+                __memset(bones[i].ik_links, 0,
+                         bones[i].ik_link_count * sizeof(*bones[i].ik_links));
+            }
+            for (link = 0; link < bones[i].ik_link_count; link++) {
+                if (index_value(c, h->bone_size, 1,
+                                &bones[i].ik_links[link].bone) < 0 ||
+                    bones[i].ik_links[link].bone < 0 ||
+                    bones[i].ik_links[link].bone >= count ||
                     u8(c, &flag) < 0 || flag > 1) goto fail;
-                if (flag) {
-                    if (!have(c, 24)) goto fail;
-                    c->p += 24;
-                }
+                bones[i].ik_links[link].limited = (int)flag;
+                if (flag && (f32(c, &bones[i].ik_links[link].lower[0]) < 0 ||
+                             f32(c, &bones[i].ik_links[link].lower[1]) < 0 ||
+                             f32(c, &bones[i].ik_links[link].lower[2]) < 0 ||
+                             f32(c, &bones[i].ik_links[link].upper[0]) < 0 ||
+                             f32(c, &bones[i].ik_links[link].upper[1]) < 0 ||
+                             f32(c, &bones[i].ik_links[link].upper[2]) < 0)) goto fail;
             }
         }
         diagnostics->advanced_flags |= flags &
@@ -320,6 +341,7 @@ static int read_bones(struct cursor *c, const struct pmx_header *h,
     *bones_out = bones;
     return 0;
 fail:
+    for (i = 0; i < count; i++) if (bones[i].ik_links) tlibc_free(bones[i].ik_links);
     tlibc_free(bones);
     return -1;
 }
@@ -501,12 +523,19 @@ static int emit_skin_section(int fd, const unsigned char *file, int size,
     unsigned char skin_header[RASTERFALL_MODEL_SKIN_HEADER_BYTES];
     unsigned char record[RASTERFALL_MODEL_BONE_BYTES];
     unsigned int names_bytes = 0, total_bytes, name_offset = 0;
+    unsigned int ik_count = 0, link_count = 0, link_start = 0;
     int i, ignored;
     for (i = 0; i < bone_count; i++)
         names_bytes += (unsigned int)strlen(bones[i].name) + 1;
+    for (i = 0; i < bone_count; i++) if (bones[i].flags & 0x0020) {
+        ik_count++; link_count += (unsigned int)bones[i].ik_link_count;
+    }
     total_bytes = RASTERFALL_MODEL_SKIN_HEADER_BYTES +
         bone_count * RASTERFALL_MODEL_BONE_BYTES +
         vertex_count * RASTERFALL_MODEL_SKIN_VERTEX_BYTES + names_bytes;
+    if (ik_count) total_bytes += RASTERFALL_MODEL_IK_HEADER_BYTES +
+        ik_count * RASTERFALL_MODEL_IK_RECORD_BYTES +
+        link_count * RASTERFALL_MODEL_IK_LINK_BYTES;
     __memset(skin_header, 0, sizeof(skin_header));
     put_u32(skin_header, RASTERFALL_MODEL_SKIN_MAGIC);
     put_u32(skin_header + 4, total_bytes);
@@ -535,7 +564,49 @@ static int emit_skin_section(int fd, const unsigned char *file, int size,
     for (i = 0; i < bone_count; i++)
         if (write_all(fd, bones[i].name, (int)strlen(bones[i].name) + 1) < 0)
             return -1;
+    if (ik_count) {
+        unsigned char section[RASTERFALL_MODEL_IK_HEADER_BYTES];
+        __memset(section, 0, sizeof(section));
+        put_u32(section, RASTERFALL_MODEL_IK_MAGIC);
+        put_u32(section + 4, RASTERFALL_MODEL_IK_HEADER_BYTES +
+                ik_count * RASTERFALL_MODEL_IK_RECORD_BYTES +
+                link_count * RASTERFALL_MODEL_IK_LINK_BYTES);
+        put_u32(section + 8, ik_count);
+        put_u32(section + 12, RASTERFALL_MODEL_IK_RECORD_BYTES);
+        put_u32(section + 16, RASTERFALL_MODEL_IK_LINK_BYTES);
+        if (write_all(fd, section, sizeof(section)) < 0) return -1;
+        for (i = 0; i < bone_count; i++) if (bones[i].flags & 0x0020) {
+            unsigned char r[RASTERFALL_MODEL_IK_RECORD_BYTES];
+            __memset(r, 0, sizeof(r));
+            put_u32(r, (unsigned int)i); put_u32(r + 4, (unsigned int)bones[i].ik_target);
+            put_u32(r + 8, (unsigned int)bones[i].ik_iterations);
+            memcpy(r + 12, &bones[i].ik_angle, sizeof(float));
+            put_u32(r + 16, (unsigned int)bones[i].ik_link_count);
+            put_u32(r + 20, link_start);
+            if (write_all(fd, r, sizeof(r)) < 0) return -1;
+            link_start += (unsigned int)bones[i].ik_link_count;
+        }
+        for (i = 0; i < bone_count; i++) if (bones[i].flags & 0x0020) {
+            int j;
+            for (j = 0; j < bones[i].ik_link_count; j++) {
+                unsigned char r[RASTERFALL_MODEL_IK_LINK_BYTES];
+                struct pmx_ik_link *l = &bones[i].ik_links[j];
+                __memset(r, 0, sizeof(r)); put_u32(r, (unsigned int)l->bone);
+                put_u32(r + 4, (unsigned int)l->limited);
+                memcpy(r + 8, l->lower, 12); memcpy(r + 20, l->upper, 12);
+                if (write_all(fd, r, sizeof(r)) < 0) return -1;
+            }
+        }
+    }
     return 0;
+}
+
+static void free_bones(struct pmx_bone *bones, int count)
+{
+    int i;
+    if (!bones) return;
+    for (i = 0; i < count; i++) if (bones[i].ik_links) tlibc_free(bones[i].ik_links);
+    tlibc_free(bones);
 }
 
 static const char *texture_name(const struct pmx_texture *textures,
@@ -696,7 +767,7 @@ int main(int argc, char **argv)
                     bone->flags&0x0004?"yes":"no");
             }
         }
-        tlibc_free(bones); __munmap(file, size); return 0;
+        free_bones(bones, diagnostics.bone_count); __munmap(file, size); return 0;
     }
     if (diagnostics.weights[2] || diagnostics.weights[3] || diagnostics.weights[4]) {
         __printf("pmx2rmesh: stage1 supports only BDEF1/BDEF2 (BDEF4=%u SDEF=%u QDEF=%u)\n",
@@ -769,9 +840,9 @@ int main(int argc, char **argv)
     *(int *)(header_out + 20) = min_x; *(int *)(header_out + 24) = min_y; *(int *)(header_out + 28) = min_z; *(int *)(header_out + 32) = max_x; *(int *)(header_out + 36) = max_y; *(int *)(header_out + 40) = max_z;
     if (__lseek(out, 0, SEEK_SET) < 0 || write_all(out, header_out, sizeof(header_out)) < 0) { __close(out); goto invalid; }
     __close(out);
-    tlibc_free(bones);
+    free_bones(bones, diagnostics.bone_count);
     __munmap(file, size); __printf("pmx2rmesh: %s -> %s (%d vertices, %d triangles, %d materials, %d bones, RFM2 v%d)\n", argv[1], argv[2], vertex_count, index_count / 3, material_count, diagnostics.bone_count, RASTERFALL_MODEL_VERSION); return 0;
 invalid:
-    if (bones) tlibc_free(bones);
+    if (bones) free_bones(bones, diagnostics.bone_count);
     __munmap(file, size); __printf("pmx2rmesh: unsupported or truncated PMX\n"); return 1;
 }

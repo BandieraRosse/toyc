@@ -7,6 +7,7 @@ int main(int argc,char**argv){struct rasterfall_vmd_clip v;struct rasterfall_mod
  if(argc<2){__printf("usage: vmd-inspect <motion.vmd> [eula.rmesh]\n");return 2;}
  if(rasterfall_vmd_load(&v,argv[1])<0){__fprintf(2,"vmd-inspect: malformed or truncated VMD\n");return 1;}
  memset(&m,0,sizeof(m));if(argc>2){if(rasterfall_model_load(&m,argv[2])<0){rasterfall_vmd_unload(&v);return 1;}have=1;rasterfall_vmd_map_eula(&v,&m);}
+ if(have)rasterfall_model_dump_ik(&m);
  rasterfall_vmd_dump(&v,have?&m:0);
  rasterfall_vmd_dump_motion_diagnostic(&v,have?&m:0);
  rasterfall_vmd_dump_translation_diagnostic(&v);
