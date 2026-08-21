@@ -92,7 +92,7 @@ static void rasterfall_animation_sample(
     for (i = 0; i < out_count; i++) out[i].x = out[i].y = out[i].z = 0;
     if (!clip || clip->duration_ms < 0) return;
     if (time_ms < 0) time_ms = 0;
-    if (clip->loop && clip->duration_ms > 0 && time_ms > clip->duration_ms)
+    if (clip->loop && clip->duration_ms > 0 && time_ms >= clip->duration_ms)
         time_ms %= clip->duration_ms;
     for (i = 0; i < clip->track_count; i++) {
         const struct rasterfall_animation_track *track = &clip->tracks[i];
@@ -107,6 +107,21 @@ static void rasterfall_animation_sample(
         }
         if (b != a && b->time_ms > a->time_ms)
             factor = (time_ms-a->time_ms)*1000/(b->time_ms-a->time_ms);
+        /* VMD tracks often end before the clip duration.  Holding the last
+         * key until the modulo wrap creates a visible discontinuity at every
+         * loop.  For a looped track, connect its last key to its first key in
+         * the next cycle.  Existing demo clips start/end at the duration, so
+         * this is a no-op for them. */
+        if (clip->loop && clip->duration_ms > 0 &&
+            a == &track->keys[track->key_count - 1] &&
+            track->key_count > 1 && time_ms > a->time_ms &&
+            track->keys[0].time_ms < clip->duration_ms) {
+            int next_time = clip->duration_ms;
+            if (next_time > a->time_ms)
+                factor = (time_ms-a->time_ms)*1000 /
+                         (next_time-a->time_ms);
+            b = &track->keys[0];
+        }
         if (factor < 0) factor = 0;
         if (factor > 1000) factor = 1000;
         rasterfall_animation_quat_to_euler(
@@ -155,6 +170,14 @@ static int rasterfall_animation_logic_test(void)
     if (out[0].z || out[1].z || out[2].z) return 6;
     rasterfall_animation_player_update(&player, 20);
     if (player.time_ms != 100 || player.playing) return 7;
+    /* A looped VMD track may end before the clip duration.  It must blend
+     * toward its first key instead of holding the last pose until wrap. */
+    k[0].time_ms = 10; k[0].rotation = rasterfall_animation_quat_from_euler(0,0,0);
+    k[1].time_ms = 20; k[1].rotation = rasterfall_animation_quat_from_euler(0,0,30);
+    t[0].target_bone = 0; t[0].keys = k; t[0].key_count = 2;
+    c.duration_ms = 30; c.loop = 1; c.tracks = t; c.track_count = 1;
+    rasterfall_animation_sample(&c, 29, out, 3);
+    if (out[0].z < 1 || out[0].z > 5) return 8;
     return 0;
 }
 

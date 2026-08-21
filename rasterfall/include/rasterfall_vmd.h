@@ -44,6 +44,9 @@ int rasterfall_vmd_map_eula(struct rasterfall_vmd_clip *clip,
                             const struct rasterfall_model_asset *asset);
 void rasterfall_vmd_dump(const struct rasterfall_vmd_clip *clip,
                          const struct rasterfall_model_asset *asset);
+void rasterfall_vmd_dump_motion_diagnostic(
+    const struct rasterfall_vmd_clip *clip,
+    const struct rasterfall_model_asset *asset);
 int rasterfall_vmd_build_animation(const struct rasterfall_vmd_clip *vmd,
                                    struct rasterfall_animation_clip *clip,
                                    struct rasterfall_animation_track *tracks,

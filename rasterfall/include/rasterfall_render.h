@@ -62,6 +62,7 @@ struct rasterfall_scene_stats {
 
 void rasterfall_render_bind(struct rasterfall_render_context *ctx);
 int rasterfall_render_set_vmd_walk(const char *model_path, const char *vmd_path);
+void rasterfall_render_set_vmd_freeze(int freeze_head, int freeze_torso);
 void rasterfall_render_bake_lightmap(void);
 void rasterfall_render_set_coordinate_axes(int enabled);
 int rasterfall_render_model_preview(struct toy_renderer *renderer,

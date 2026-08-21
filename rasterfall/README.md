@@ -161,6 +161,16 @@ gameplay world position。VMD interpolation bytes 会报告为 present，但当�
 开发者区域第二排新增 `VMD WALK (EULA)` 按钮，使用
 `.claude/walk/walk04_loop5.vmd`，不改变同排的三个 GLB 预览按钮。
 
+VMD inspector 还会输出腿部普通轨道/IK 轨道、Eula leg basis、头部采样角速度和
+loop boundary。实机定位可使用：
+
+```sh
+build/rasterfall --vmd-eula-walk <eula.rmesh> .claude/walk/walk04_loop5.vmd --vmd-freeze-head
+build/rasterfall --vmd-eula-walk <eula.rmesh> .claude/walk/walk04_loop5.vmd --vmd-freeze-torso
+```
+
+这两个选项只冻结诊断用的头/颈或上半身 tracks，不改变默认播放。
+
 `--model-retarget-test` 只把固定角度的 canonical Humanoid rotation delta
 换基为目标骨的 parent-local quaternion，用于验证 rotation retarget 数学顺序；它不读取
 GLB animation keyframe，也不改变 AnimationClip、root motion 或游戏动画状态。

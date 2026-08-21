@@ -140,6 +140,8 @@ static struct rasterfall_animation_track private_character_vmd_tracks[RASTERFALL
 static const char *private_character_override_path;
 static const char *private_character_vmd_path;
 static int private_character_vmd_forced;
+static int private_character_vmd_freeze_head;
+static int private_character_vmd_freeze_torso;
 static int private_character_vmd_loaded;
 static struct rasterfall_glb_rotation_clip private_character_glb[3];
 static struct rasterfall_glb_rotation_reference private_character_glb_reference;
@@ -187,6 +189,12 @@ int rasterfall_render_set_vmd_walk(const char *model_path, const char *vmd_path)
     private_character_vmd_path = vmd_path;
     private_character_vmd_forced = 1;
     return 0;
+}
+
+void rasterfall_render_set_vmd_freeze(int freeze_head, int freeze_torso)
+{
+    private_character_vmd_freeze_head = freeze_head;
+    private_character_vmd_freeze_torso = freeze_torso;
 }
 
 static int render_quaternius_preview(struct toy_renderer *renderer,
@@ -909,6 +917,19 @@ static int render_private_character(struct toy_renderer *renderer,
             rasterfall_vmd_build_animation(&private_character_vmd,
                 &private_character_vmd_clip, private_character_vmd_tracks,
                 RASTERFALL_VMD_MAX_BONES);
+            {
+                int i;
+                for (i = 0; i < private_character_vmd_clip.track_count; i++) {
+                    int bone = private_character_vmd_tracks[i].target_bone;
+                    const char *name = bone >= 0 ?
+                        private_character_model.bones[bone].name : "";
+                    if ((private_character_vmd_freeze_head &&
+                         (!strcmp(name, "頭") || !strcmp(name, "首"))) ||
+                        (private_character_vmd_freeze_torso &&
+                         (!strcmp(name, "上半身") || !strcmp(name, "上半身2"))))
+                        private_character_vmd_tracks[i].target_bone = -1;
+                }
+            }
             private_character_vmd_loaded = 1;
             __printf("rasterfall: VMD walk loaded directly on Eula: %s\n",
                      private_character_vmd_path);

@@ -44,6 +44,8 @@
  *   --model-glb-animation <model> <glb> <clip>
  *   --model-glb-motion-diagnostic <model> <glb>
  *   --vmd-eula-walk <model> <vmd>  direct VMD rotation playback on PMX/RFM2
+ *   --vmd-freeze-head            diagnostic: freeze head/neck VMD tracks
+ *   --vmd-freeze-torso           diagnostic: freeze upper-body VMD tracks
  *   --frames <count>               运行指定帧数后退出
  *   --input-test                   输入调试测试
  *   --logic-test / --net-test      运行逻辑测试
@@ -2197,6 +2199,7 @@ int main(int argc, char **argv)
     const char *glb_animation_model = 0, *glb_animation_path = 0;
     const char *glb_animation_name = 0,*glb_motion_model=0,*glb_motion_path=0;
     const char *vmd_walk_model=0,*vmd_walk_path=0;
+    int vmd_freeze_head = 0, vmd_freeze_torso = 0;
     int performance_iterations = 5;
     int performance_workers = 0;
     for (int arg = 1; arg < argc; arg++) {
@@ -2281,6 +2284,10 @@ int main(int argc, char **argv)
             glb_motion_model=argv[++arg];glb_motion_path=argv[++arg];
         } else if (strcmp(argv[arg], "--vmd-eula-walk") == 0 && arg + 2 < argc) {
             vmd_walk_model = argv[++arg]; vmd_walk_path = argv[++arg];
+        } else if (strcmp(argv[arg], "--vmd-freeze-head") == 0) {
+            vmd_freeze_head = 1;
+        } else if (strcmp(argv[arg], "--vmd-freeze-torso") == 0) {
+            vmd_freeze_torso = 1;
         } else if (strcmp(argv[arg], "--model-material-regression") == 0 &&
                    arg + 2 < argc) {
             view_model_path = argv[++arg];
@@ -2403,6 +2410,7 @@ int main(int argc, char **argv)
     rasterfall_render_bind(&render_context);
     if (vmd_walk_model && vmd_walk_path)
         rasterfall_render_set_vmd_walk(vmd_walk_model, vmd_walk_path);
+    rasterfall_render_set_vmd_freeze(vmd_freeze_head, vmd_freeze_torso);
     rasterfall_render_bake_lightmap();
     rf_windows_log("startup: lightmap baked");
     rasterfall_effects_init(&effects);
