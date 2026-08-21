@@ -553,6 +553,9 @@ static int emit_skin_section(int fd, const unsigned char *file, int size,
         *(int *)(record + 12) = fixed(bones[i].y, scale);
         *(int *)(record + 16) = fixed(bones[i].z, scale);
         put_u32(record + 20, name_offset);
+        put_u32(record + 24, bones[i].append_parent < 0 ? 0xffffffffU :
+                (unsigned int)bones[i].append_parent);
+        memcpy(record + 28, &bones[i].append_ratio, sizeof(float));
         if (write_all(fd, record, sizeof(record)) < 0) return -1;
         name_offset += (unsigned int)strlen(bones[i].name) + 1;
     }
@@ -696,8 +699,9 @@ int main(int argc, char **argv)
     struct pmx_bone *bones = NULL;
     unsigned int invalid_bone_references = 0;
     int humanoid_bones = argc == 3 && !strcmp(argv[1], "--humanoid-bones");
-    const char *input_path = humanoid_bones ? argv[2] : argv[1];
-    if (!humanoid_bones && argc != 4) { __printf("usage: pmx2rmesh input.pmx output.rmesh texture_dir\n       pmx2rmesh --humanoid-bones input.pmx\n"); return 2; }
+    int bone_audit = argc == 3 && !strcmp(argv[1], "--bone-audit");
+    const char *input_path = humanoid_bones || bone_audit ? argv[2] : argv[1];
+    if (!humanoid_bones && !bone_audit && argc != 4) { __printf("usage: pmx2rmesh input.pmx output.rmesh texture_dir\n       pmx2rmesh --humanoid-bones input.pmx\n       pmx2rmesh --bone-audit input.pmx\n"); return 2; }
     fd = __openat(AT_FDCWD, input_path, O_RDONLY, 0);
     if (fd < 0 || __fstat(fd, &st) < 0 || st.st_size < 64 || st.st_size > 64 * 1024 * 1024) { __printf("pmx2rmesh: cannot open input\n"); return 1; }
     size = (int)st.st_size; file = (unsigned char *)__mmap(0, size, PROT_READ, MAP_PRIVATE, fd, 0); __close(fd);
@@ -716,6 +720,55 @@ int main(int argc, char **argv)
     if (read_materials(&c, &h, materials, &material_count) < 0) goto invalid;
     if (read_bones(&c, &h, &bones, &diagnostics) < 0) {
         __printf("pmx2rmesh: invalid bone hierarchy or truncated bone data\n");
+        goto invalid;
+    }
+    if (bone_audit) {
+        unsigned int *influenced = tlibc_malloc((size_t)diagnostics.bone_count * sizeof(*influenced));
+        double *weight_sum = tlibc_malloc((size_t)diagnostics.bone_count * sizeof(*weight_sum));
+        float *max_weight = tlibc_malloc((size_t)diagnostics.bone_count * sizeof(*max_weight));
+        if (!influenced || !weight_sum || !max_weight) goto invalid;
+        __memset(influenced, 0, diagnostics.bone_count * sizeof(*influenced));
+        __memset(weight_sum, 0, diagnostics.bone_count * sizeof(*weight_sum));
+        __memset(max_weight, 0, diagnostics.bone_count * sizeof(*max_weight));
+        c.p = file; c.end = file + size;
+        if (header(&c, &h) < 0 || i32(&c, &j) < 0 || j != vertex_count) goto audit_fail;
+        for (i = 0; i < vertex_count; i++) {
+            if (read_vertex(&c, &h, &v) < 0) goto audit_fail;
+            if (v.bone0 >= 0 && v.bone0 < diagnostics.bone_count) {
+                float w = v.weight_type == 1 ? v.weight : 1.0f;
+                influenced[v.bone0]++; weight_sum[v.bone0] += w;
+                if (w > max_weight[v.bone0]) max_weight[v.bone0] = w;
+            }
+            if (v.weight_type == 1 && v.bone1 >= 0 && v.bone1 < diagnostics.bone_count) {
+                float w = 1.0f - v.weight;
+                influenced[v.bone1]++; weight_sum[v.bone1] += w;
+                if (w > max_weight[v.bone1]) max_weight[v.bone1] = w;
+            }
+        }
+        __printf("pmx2rmesh: bone audit input=%s bones=%d vertices=%d\n",
+                 input_path, diagnostics.bone_count, vertex_count);
+        for (i = 0; i < diagnostics.bone_count; i++) {
+            if (!strstr(bones[i].name, "足") && !strstr(bones[i].name, "ひざ") &&
+                !strstr(bones[i].name, "足首")) continue;
+            __printf("  bone[%d] name=\"%s\" parent=%d/\"%s\" flags=0x%x rest=(%.3f,%.3f,%.3f) ",
+                     i, bones[i].name, bones[i].parent,
+                     bones[i].parent >= 0 ? bones[bones[i].parent].name : "<root>",
+                     bones[i].flags, bones[i].x, bones[i].y, bones[i].z);
+            __printf("grant_rot=%s grant_trans=%s grant_parent=%d/\"%s\" ratio=%.6f ",
+                     bones[i].flags & 0x0100 ? "yes" : "no",
+                     bones[i].flags & 0x0200 ? "yes" : "no",
+                     bones[i].append_parent,
+                     bones[i].append_parent >= 0 ? bones[bones[i].append_parent].name : "<none>",
+                     bones[i].append_ratio);
+            __printf("influenced_vertex_count=%u sum_weights=%.6f max_weight=%.6f\n",
+                     influenced[i], weight_sum[i], max_weight[i]);
+        }
+        __printf("pmx2rmesh: RFM2 grant metadata status=saved (SKN1 v13 bone bytes=%d)\n",
+                 RASTERFALL_MODEL_BONE_BYTES);
+        tlibc_free(influenced); tlibc_free(weight_sum); tlibc_free(max_weight);
+        free_bones(bones, diagnostics.bone_count); __munmap(file, size); return 0;
+audit_fail:
+        tlibc_free(influenced); tlibc_free(weight_sum); tlibc_free(max_weight);
         goto invalid;
     }
     if (humanoid_bones) {

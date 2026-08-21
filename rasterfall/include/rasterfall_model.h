@@ -25,13 +25,16 @@ struct rasterfall_vmd_clip;
  *                              v10 adds unsigned Q16 edge scale at 32..35
  *   index_count * 4 bytes      uint32 triangle indices
  *   optional SKN1 section      v11 bone hierarchy + BDEF1/BDEF2 records;
- *                              v12 appends an IK2 metadata section
+ *                              v12 appends an IK2 metadata section;
+ *                              v13 appends grant parent/ratio to bone records
  *
  * Header byte 60 is the SKN1 offset in v11.  SKN1 has a 32-byte header
  * (total bytes, bone count/stride, vertex count/stride, name-table bytes),
- * followed by 24-byte bones (parent, flags, absolute rest position, name
- * offset), 8-byte vertex weights (bone0, bone1, Q16 weight0, BDEF type), and
- * a NUL-terminated UTF-8 name table.  Earlier versions end after indices.
+ * followed by v11/v12 24-byte bones (parent, flags, absolute rest position,
+ * name offset), or v13 32-byte bones with grant parent (int32, -1 sentinel)
+ * and grant ratio (float32) at bytes 24..31; then 8-byte vertex weights
+ * (bone0, bone1, Q16 weight0, BDEF type), and a NUL-terminated UTF-8 name
+ * table. Earlier versions end after indices.
  *
  * Positions are Rasterfall world units.  Normals are signed Q15 and UVs are
  * unsigned Q16 (the exporter clamps UVs to [0, 1]). Multiple glTF primitives
@@ -45,7 +48,7 @@ struct rasterfall_vmd_clip;
  * Texture files are kept beside the mesh by the offline importer.
  */
 #define RASTERFALL_MODEL_MAGIC 0x324d4652U /* "RFM2" in little-endian */
-#define RASTERFALL_MODEL_VERSION 12
+#define RASTERFALL_MODEL_VERSION 13
 #define RASTERFALL_MODEL_VERTEX_BYTES 24
 #define RASTERFALL_MODEL_VERTEX_BYTES_ADDITIONAL_UV 32
 #define RASTERFALL_MODEL_VERTEX_BYTES_EDGE_SCALE 36
@@ -56,7 +59,8 @@ struct rasterfall_vmd_clip;
 #define RASTERFALL_MODEL_MATERIAL_BYTES 40
 #define RASTERFALL_MODEL_SKIN_MAGIC 0x314e4b53U /* "SKN1" */
 #define RASTERFALL_MODEL_SKIN_HEADER_BYTES 32
-#define RASTERFALL_MODEL_BONE_BYTES 24
+#define RASTERFALL_MODEL_BONE_BYTES_LEGACY 24
+#define RASTERFALL_MODEL_BONE_BYTES 32
 #define RASTERFALL_MODEL_SKIN_VERTEX_BYTES 8
 #define RASTERFALL_MODEL_IK_MAGIC 0x324b4932U /* "2IK2" */
 #define RASTERFALL_MODEL_IK_HEADER_BYTES 24
@@ -79,6 +83,10 @@ struct rasterfall_model_bone {
     const char *name;
     int rotate_x, rotate_y, rotate_z;
     int animation_x, animation_y, animation_z;
+    int grant_parent;
+    float grant_ratio;
+    int grant_rotation_enabled;
+    int grant_translation_enabled;
 };
 
 struct rasterfall_model_bone_transform {
@@ -136,6 +144,8 @@ struct rasterfall_model_asset {
     struct rasterfall_model_ik *iks;
     unsigned int ik_count;
     int ik_enabled;
+    int grant_enabled;
+    int grant_pose_applied;
     int ik_limits_enabled;
     int ik_synthetic_target;
     int ik_diagnostic_dump;
@@ -208,6 +218,9 @@ void rasterfall_model_print_center_ab_diagnostic(
     const struct rasterfall_model_asset *asset);
 void rasterfall_model_set_ik_enabled(struct rasterfall_model_asset *asset,
                                      int enabled);
+void rasterfall_model_set_grant_enabled(struct rasterfall_model_asset *asset,
+                                        int enabled);
+int rasterfall_model_apply_rotation_grants(struct rasterfall_model_asset *asset);
 void rasterfall_model_set_vmd_skeleton_translation(
     struct rasterfall_model_asset *asset, const int center[3],
     const int groove[3], int enabled);

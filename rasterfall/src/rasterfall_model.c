@@ -152,6 +152,7 @@ static int model_load_skin(struct rasterfall_model_asset *asset,
     unsigned long required;
     unsigned int i, invalid_references = 0, bdef1 = 0, bdef2 = 0;
     unsigned int j;
+    unsigned int expected_bone_bytes;
     if (bytes < RASTERFALL_MODEL_SKIN_HEADER_BYTES ||
         model_u32(skin) != RASTERFALL_MODEL_SKIN_MAGIC) return -1;
     bone_count = model_u32(skin + 8);
@@ -159,12 +160,14 @@ static int model_load_skin(struct rasterfall_model_asset *asset,
     vertex_count = model_u32(skin + 16);
     vertex_bytes = model_u32(skin + 20);
     names_bytes = model_u32(skin + 24);
+    expected_bone_bytes = asset->format_version >= 13 ?
+        RASTERFALL_MODEL_BONE_BYTES : RASTERFALL_MODEL_BONE_BYTES_LEGACY;
     required = RASTERFALL_MODEL_SKIN_HEADER_BYTES +
         (unsigned long)bone_count * bone_bytes +
         (unsigned long)vertex_count * vertex_bytes + names_bytes;
     if (model_u32(skin + 4) != bytes || required > bytes ||
         bone_count == 0 || bone_count > RASTERFALL_MODEL_MAX_BONES ||
-        bone_bytes != RASTERFALL_MODEL_BONE_BYTES ||
+        bone_bytes != expected_bone_bytes ||
         vertex_count != asset->vertex_count ||
         vertex_bytes != RASTERFALL_MODEL_SKIN_VERTEX_BYTES || !names_bytes)
         return -1;
@@ -196,6 +199,23 @@ static int model_load_skin(struct rasterfall_model_asset *asset,
         asset->bones[i].rest_y = model_i32(record + 12);
         asset->bones[i].rest_z = model_i32(record + 16);
         asset->bones[i].name = (const char *)(names + name_offset);
+        asset->bones[i].grant_parent = -1;
+        asset->bones[i].grant_ratio = 0.0f;
+        asset->bones[i].grant_rotation_enabled =
+            (asset->bones[i].flags & 0x0100) != 0;
+        asset->bones[i].grant_translation_enabled =
+            (asset->bones[i].flags & 0x0200) != 0;
+        if (bone_bytes >= RASTERFALL_MODEL_BONE_BYTES) {
+            unsigned int grant_parent = model_u32(record + 24);
+            float ratio = model_f32(record + 28);
+            if (grant_parent != 0xffffffffU && grant_parent >= bone_count)
+                return -1;
+            if (ratio != ratio || ratio < -1000000.0f || ratio > 1000000.0f)
+                return -1;
+            asset->bones[i].grant_parent = grant_parent == 0xffffffffU ?
+                -1 : (int)grant_parent;
+            asset->bones[i].grant_ratio = ratio;
+        }
     }
     {
         unsigned long used = (unsigned long)(names - skin) + names_bytes;
@@ -358,6 +378,7 @@ int rasterfall_model_load(struct rasterfall_model_asset *asset,
     asset->data = data;
     asset->data_size = size;
     asset->format_version = version;
+    asset->grant_enabled = version >= 13 ? 1 : 0;
     asset->vertex_bytes = vertex_bytes;
     asset->vertex_count = model_u32(data + 8);
     asset->index_count = model_u32(data + 12);
@@ -906,6 +927,104 @@ void rasterfall_model_set_ik_enabled(struct rasterfall_model_asset *asset,
     if (asset) asset->ik_enabled = enabled ? 1 : 0;
 }
 
+void rasterfall_model_set_grant_enabled(struct rasterfall_model_asset *asset,
+                                        int enabled)
+{
+    if (asset) {
+        asset->grant_enabled = enabled ? 1 : 0;
+        asset->grant_pose_applied = 0;
+    }
+}
+
+static struct rasterfall_animation_quaternion model_matrix_to_quaternion(
+    const double *m)
+{
+    struct rasterfall_animation_quaternion q;
+    double trace = m[0] + m[4] + m[8], scale;
+    if (trace > 0.0) {
+        scale = sqrt(trace + 1.0) * 2.0;
+        q.w = scale / 4.0;
+        q.x = (m[7] - m[5]) / scale;
+        q.y = (m[2] - m[6]) / scale;
+        q.z = (m[3] - m[1]) / scale;
+    } else if (m[0] > m[4] && m[0] > m[8]) {
+        scale = sqrt(1.0 + m[0] - m[4] - m[8]) * 2.0;
+        q.w = (m[7] - m[5]) / scale;
+        q.x = scale / 4.0;
+        q.y = (m[1] + m[3]) / scale;
+        q.z = (m[2] + m[6]) / scale;
+    } else if (m[4] > m[8]) {
+        scale = sqrt(1.0 + m[4] - m[0] - m[8]) * 2.0;
+        q.w = (m[2] - m[6]) / scale;
+        q.x = (m[1] + m[3]) / scale;
+        q.y = scale / 4.0;
+        q.z = (m[5] + m[7]) / scale;
+    } else {
+        scale = sqrt(1.0 + m[8] - m[0] - m[4]) * 2.0;
+        q.w = (m[3] - m[1]) / scale;
+        q.x = (m[2] + m[6]) / scale;
+        q.y = (m[5] + m[7]) / scale;
+        q.z = scale / 4.0;
+    }
+    return rasterfall_animation_quat_normalize(q);
+}
+
+static struct rasterfall_animation_quaternion model_quaternion_multiply(
+    struct rasterfall_animation_quaternion a,
+    struct rasterfall_animation_quaternion b)
+{
+    struct rasterfall_animation_quaternion q;
+    q.w = a.w*b.w - a.x*b.x - a.y*b.y - a.z*b.z;
+    q.x = a.w*b.x + a.x*b.w + a.y*b.z - a.z*b.y;
+    q.y = a.w*b.y - a.x*b.z + a.y*b.w + a.z*b.x;
+    q.z = a.w*b.z + a.x*b.y - a.y*b.x + a.z*b.w;
+    return rasterfall_animation_quat_normalize(q);
+}
+
+int rasterfall_model_apply_rotation_grants(struct rasterfall_model_asset *asset)
+{
+    unsigned int i;
+    static const struct rasterfall_animation_quaternion identity = {0,0,0,1};
+    if (!asset || !asset->bone_count || !asset->grant_enabled ||
+        asset->grant_pose_applied) return 0;
+    for (i = 0; i < asset->bone_count; i++) {
+        struct rasterfall_model_bone *bone = &asset->bones[i];
+        struct rasterfall_animation_quaternion base, source, inherited, result;
+        struct rasterfall_animation_rotation euler;
+        double base_matrix[9], source_matrix[9];
+        int ratio_milli;
+        if (!bone->grant_rotation_enabled || bone->grant_parent < 0) continue;
+        if (bone->grant_parent >= (int)asset->bone_count ||
+            bone->grant_parent == (int)i) return -1;
+        if (bone->grant_ratio <= 0.0f) continue;
+        if (bone->grant_ratio > 1.0f) {
+            __printf("rasterfall: grant ratio clamped bone[%u]=%.6f\n",
+                     i, bone->grant_ratio);
+            ratio_milli = 1000;
+        } else ratio_milli = (int)(bone->grant_ratio * 1000.0f + 0.5f);
+        matrix_rotate_xyz(bone->rotate_x, bone->rotate_y, bone->rotate_z,
+                          base_matrix);
+        matrix_rotate_xyz(asset->bones[bone->grant_parent].rotate_x,
+                          asset->bones[bone->grant_parent].rotate_y,
+                          asset->bones[bone->grant_parent].rotate_z,
+                          source_matrix);
+        base = model_matrix_to_quaternion(base_matrix);
+        source = model_matrix_to_quaternion(source_matrix);
+        inherited = rasterfall_animation_quat_nlerp(identity, source,
+                                                    ratio_milli);
+        /* PMX append rotation is composed in the bone's local pose.  The
+         * D-bone keeps its own parent/rest hierarchy; only its local
+         * rotation receives the grant parent's rotation. */
+        result = model_quaternion_multiply(base, inherited);
+        rasterfall_animation_quat_to_euler(result, &euler);
+        bone->rotate_x = euler.x;
+        bone->rotate_y = euler.y;
+        bone->rotate_z = euler.z;
+    }
+    asset->grant_pose_applied = 1;
+    return rasterfall_model_update_bones(asset);
+}
+
 void rasterfall_model_set_vmd_skeleton_translation(
     struct rasterfall_model_asset *asset, const int center[3],
     const int groove[3], int enabled)
@@ -926,6 +1045,7 @@ int rasterfall_model_sample_clip(struct rasterfall_model_asset *asset,
 {
     unsigned int i;
     if (!asset || !asset->animation_rotations || !asset->bone_count) return -1;
+    asset->grant_pose_applied = 0;
     for (i = 0; i < asset->bone_count; i++) {
         asset->bones[i].animation_x = 0;
         asset->bones[i].animation_y = 0;
@@ -955,6 +1075,8 @@ int rasterfall_model_sample_clip(struct rasterfall_model_asset *asset,
     asset->pose = RASTERFALL_MODEL_POSE_BIND;
     if (asset->ik_enabled && clip && asset->ik_count)
         rasterfall_model_solve_leg_ik(asset, clip, time_ms);
+    if (asset->grant_enabled)
+        rasterfall_model_apply_rotation_grants(asset);
     return 0;
 }
 
@@ -1351,9 +1473,11 @@ void rasterfall_model_dump_bones(const struct rasterfall_model_asset *asset,
     for (i = 0; i < asset->bone_count; i++) {
         const struct rasterfall_model_bone *bone = &asset->bones[i];
         if (search && *search && !strstr(bone->name, search)) continue;
-        __printf("rasterfall: bone[%u] name=\"%s\" parent=%d rest=(%d,%d,%d) flags=0x%x\n",
+        __printf("rasterfall: bone[%u] name=\"%s\" parent=%d rest=(%d,%d,%d) flags=0x%x grant_parent=%d grant_ratio=%.6f grant_rotation=%s grant_translation=%s\n",
                  i, bone->name, bone->parent, bone->rest_x, bone->rest_y,
-                 bone->rest_z, bone->flags);
+                 bone->rest_z, bone->flags, bone->grant_parent,
+                 bone->grant_ratio, bone->grant_rotation_enabled ? "yes" : "no",
+                 bone->grant_translation_enabled ? "yes" : "no");
         found++;
     }
     __printf("rasterfall: bone list matches=%u total=%u search=\"%s\"\n",

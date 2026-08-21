@@ -59,6 +59,114 @@ static void prepare_vmd_skeleton_translation(struct rasterfall_model_asset *m,
     m->animation_offset_z = legacy ? center[2] + groove[2] : 0;
 }
 
+static int inspect_bone_index(const struct rasterfall_model_asset *m,
+                              const char *name)
+{
+    int i;
+    for (i = 0; i < (int)m->bone_count; i++)
+        if (!strcmp(m->bones[i].name, name)) return i;
+    return -1;
+}
+
+static void inspect_leg_pair(const struct rasterfall_model_asset *m,
+                             const char *name, const char *side)
+{
+    int i = inspect_bone_index(m, name);
+    if (i < 0) {
+        __printf("  %s bone=%s MISSING\n", side, name);
+        return;
+    }
+    __printf("  %s bone=%s index=%d local_euler=(%d,%d,%d) global=(%.3f,%.3f,%.3f)\n",
+             side, name, i, m->bones[i].rotate_x, m->bones[i].rotate_y,
+             m->bones[i].rotate_z, m->bone_transforms[i].position[0],
+             m->bone_transforms[i].position[1], m->bone_transforms[i].position[2]);
+}
+
+static void inspect_leg_transforms(struct rasterfall_model_asset *m,
+                                   const char *label)
+{
+    static const char *names[] = {
+        "左足", "左足D", "左ひざ", "左ひざD", "左足首", "左足首D",
+        "右足", "右足D", "右ひざ", "右ひざD", "右足首", "右足首D"
+    };
+    int i;
+    __printf("leg transform diagnostic: %s\n", label);
+    for (i = 0; i < (int)(sizeof(names) / sizeof(names[0])); i++)
+        inspect_leg_pair(m, names[i], i < 6 ? "L" : "R");
+}
+
+static void inspect_static_leg_rotation(struct rasterfall_model_asset *m)
+{
+    int knee = inspect_bone_index(m, "左ひざ");
+    int knee_d = inspect_bone_index(m, "左ひざD");
+    int foot = inspect_bone_index(m, "左足");
+    int foot_d = inspect_bone_index(m, "左足D");
+    int grant_was_enabled = m->grant_enabled;
+    __printf("leg static rotation diagnostic: pose=bind angle_x=35deg\n");
+    m->grant_enabled = 0;
+    rasterfall_model_sample_clip(m, NULL, 0);
+    inspect_leg_transforms(m, "bind");
+    if (knee >= 0) {
+        m->bones[knee].rotate_x = 35;
+        rasterfall_model_update_bones(m);
+        inspect_leg_transforms(m, "only left knee forced grant=off");
+    }
+    if (knee >= 0) {
+        m->grant_enabled = 1;
+        rasterfall_model_sample_clip(m, NULL, 0);
+        m->bones[knee].rotate_x = 35;
+        rasterfall_model_update_bones(m);
+        m->grant_pose_applied = 0;
+        rasterfall_model_apply_rotation_grants(m);
+        inspect_leg_transforms(m, "only left knee forced grant=on");
+    }
+    if (knee_d >= 0) {
+        m->grant_enabled = 0;
+        rasterfall_model_sample_clip(m, NULL, 0);
+        m->bones[knee_d].rotate_x = 35;
+        rasterfall_model_update_bones(m);
+        inspect_leg_transforms(m, "only left kneeD forced grant=off");
+        m->grant_enabled = 1;
+        rasterfall_model_sample_clip(m, NULL, 0);
+        m->bones[knee_d].rotate_x = 35;
+        rasterfall_model_update_bones(m);
+        m->grant_pose_applied = 0;
+        rasterfall_model_apply_rotation_grants(m);
+        inspect_leg_transforms(m, "only left kneeD forced grant=on");
+    }
+    if (foot >= 0) {
+        m->grant_enabled = 0;
+        rasterfall_model_sample_clip(m, NULL, 0);
+        m->bones[foot].rotate_x = 35;
+        rasterfall_model_update_bones(m);
+        inspect_leg_transforms(m, "only left foot forced grant=off");
+        m->grant_enabled = 1;
+        rasterfall_model_sample_clip(m, NULL, 0);
+        m->bones[foot].rotate_x = 35;
+        rasterfall_model_update_bones(m);
+        m->grant_pose_applied = 0;
+        rasterfall_model_apply_rotation_grants(m);
+        inspect_leg_transforms(m, "only left foot forced grant=on");
+    }
+    if (foot_d >= 0) {
+        m->grant_enabled = 0;
+        rasterfall_model_sample_clip(m, NULL, 0);
+        m->bones[foot_d].rotate_x = 35;
+        rasterfall_model_update_bones(m);
+        inspect_leg_transforms(m, "only left footD forced grant=off");
+        m->grant_enabled = 1;
+        rasterfall_model_sample_clip(m, NULL, 0);
+        m->bones[foot_d].rotate_x = 35;
+        rasterfall_model_update_bones(m);
+        m->grant_pose_applied = 0;
+        rasterfall_model_apply_rotation_grants(m);
+        inspect_leg_transforms(m, "only left footD forced grant=on");
+    }
+    m->grant_enabled = grant_was_enabled;
+    rasterfall_model_sample_clip(m, NULL, 0);
+    rasterfall_model_update_bones(m);
+}
+
 int main(int argc, char **argv)
 {
     struct rasterfall_vmd_clip v;
@@ -70,7 +178,9 @@ int main(int argc, char **argv)
 
     if (argc < 2) {
         __printf("usage: vmd-inspect <motion.vmd> [eula.rmesh] "
-                 "[--vmd-disable-ik] [--vmd-legacy-root-offset]\n");
+                 "[--vmd-disable-ik] [--vmd-disable-grant] "
+                 "[--vmd-legacy-root-offset] "
+                 "[--leg-static-rotation-test]\n");
         return 2;
     }
     if (rasterfall_vmd_load(&v, argv[1]) < 0) {
@@ -88,13 +198,18 @@ int main(int argc, char **argv)
     }
     if (have) {
         int phase = v.duration_ms / 4;
-        int disable = 0, legacy = 0;
+        int disable = 0, disable_grant = 0, legacy = 0, static_leg_test = 0;
         for (i = 3; i < argc; i++) {
             if (!strcmp(argv[i], "--vmd-disable-ik")) disable = 1;
+            if (!strcmp(argv[i], "--vmd-disable-grant")) disable_grant = 1;
             if (!strcmp(argv[i], "--vmd-legacy-root-offset")) legacy = 1;
+            if (!strcmp(argv[i], "--leg-static-rotation-test")) static_leg_test = 1;
         }
         if (disable) rasterfall_model_set_ik_enabled(&m, 0);
+        if (disable_grant) rasterfall_model_set_grant_enabled(&m, 0);
+        if (static_leg_test) inspect_static_leg_rotation(&m);
         rasterfall_model_dump_ik(&m);
+        rasterfall_model_dump_bones(&m, "D");
         rasterfall_model_dump_ik_hierarchy(&m);
         if (rasterfall_vmd_build_animation(&v, &clip, tracks,
                                            RASTERFALL_VMD_MAX_BONES) >= 0) {
@@ -130,6 +245,15 @@ int main(int argc, char **argv)
                 prepare_vmd_skeleton_translation(&m, &v, phase, legacy);
                 rasterfall_model_sample_clip(&m, &clip, phase);
                 m.ik_diagnostic_dump = 0;
+                m.ik_limits_enabled = 1;
+                rasterfall_model_set_ik_enabled(&m, 0);
+                prepare_vmd_skeleton_translation(&m, &v, phase, legacy);
+                rasterfall_model_sample_clip(&m, &clip, phase);
+                inspect_leg_transforms(&m, "phase=25% IK OFF");
+                rasterfall_model_set_ik_enabled(&m, 1);
+                prepare_vmd_skeleton_translation(&m, &v, phase, legacy);
+                rasterfall_model_sample_clip(&m, &clip, phase);
+                inspect_leg_transforms(&m, "phase=25% IK ON");
 
                 m.ik_synthetic_target = 1;
                 m.ik_synthetic_offset[0] = 0.0;

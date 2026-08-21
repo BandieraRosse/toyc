@@ -144,6 +144,7 @@ static int private_character_vmd_forced;
 static int private_character_vmd_freeze_head;
 static int private_character_vmd_freeze_torso;
 static int private_character_vmd_ik_enabled = 1;
+static int private_character_vmd_grant_enabled = 1;
 static int private_character_vmd_legacy_root_offset;
 static int private_character_vmd_loaded;
 static struct rasterfall_glb_rotation_clip private_character_glb[3];
@@ -203,6 +204,11 @@ void rasterfall_render_set_vmd_freeze(int freeze_head, int freeze_torso)
 void rasterfall_render_set_vmd_ik_enabled(int enabled)
 {
     private_character_vmd_ik_enabled = enabled ? 1 : 0;
+}
+
+void rasterfall_render_set_vmd_grant_enabled(int enabled)
+{
+    private_character_vmd_grant_enabled = enabled ? 1 : 0;
 }
 
 void rasterfall_render_set_vmd_legacy_root_offset(int enabled)
@@ -981,6 +987,8 @@ static int render_private_character(struct toy_renderer *renderer,
              (private_character_vmd_forced && player->clip_id < 0))) {
             rasterfall_model_set_ik_enabled(&private_character_model,
                                             private_character_vmd_ik_enabled);
+            rasterfall_model_set_grant_enabled(&private_character_model,
+                                               private_character_vmd_grant_enabled);
             player->clip = &private_character_vmd_clip;
             player->loop = 1;
             {

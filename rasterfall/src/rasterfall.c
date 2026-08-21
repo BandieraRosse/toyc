@@ -47,6 +47,7 @@
  *   --vmd-freeze-head            diagnostic: freeze head/neck VMD tracks
  *   --vmd-freeze-torso           diagnostic: freeze upper-body VMD tracks
  *   --vmd-disable-ik             diagnostic: disable PMX leg IK solving
+ *   --vmd-disable-grant          diagnostic: disable PMX rotation grants
  *   --vmd-legacy-root-offset     diagnostic: use legacy Center/Groove root offset
  *   --frames <count>               运行指定帧数后退出
  *   --input-test                   输入调试测试
@@ -2202,6 +2203,7 @@ int main(int argc, char **argv)
     const char *glb_animation_name = 0,*glb_motion_model=0,*glb_motion_path=0;
     const char *vmd_walk_model=0,*vmd_walk_path=0;
     int vmd_freeze_head = 0, vmd_freeze_torso = 0, vmd_disable_ik = 0;
+    int vmd_disable_grant = 0;
     int vmd_legacy_root_offset = 0;
     int performance_iterations = 5;
     int performance_workers = 0;
@@ -2293,6 +2295,8 @@ int main(int argc, char **argv)
             vmd_freeze_torso = 1;
         } else if (strcmp(argv[arg], "--vmd-disable-ik") == 0) {
             vmd_disable_ik = 1;
+        } else if (strcmp(argv[arg], "--vmd-disable-grant") == 0) {
+            vmd_disable_grant = 1;
         } else if (strcmp(argv[arg], "--vmd-legacy-root-offset") == 0) {
             vmd_legacy_root_offset = 1;
         } else if (strcmp(argv[arg], "--model-material-regression") == 0 &&
@@ -2423,6 +2427,7 @@ int main(int argc, char **argv)
         rasterfall_render_set_vmd_walk(vmd_walk_model, vmd_walk_path);
     rasterfall_render_set_vmd_freeze(vmd_freeze_head, vmd_freeze_torso);
     rasterfall_render_set_vmd_ik_enabled(!vmd_disable_ik);
+    rasterfall_render_set_vmd_grant_enabled(!vmd_disable_grant);
     rasterfall_render_set_vmd_legacy_root_offset(vmd_legacy_root_offset);
     rasterfall_render_bake_lightmap();
     rf_windows_log("startup: lightmap baked");
