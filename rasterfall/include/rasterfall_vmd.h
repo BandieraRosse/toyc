@@ -53,6 +53,9 @@ int rasterfall_vmd_build_animation(const struct rasterfall_vmd_clip *vmd,
                                    int track_capacity);
 void rasterfall_vmd_sample_translation(const struct rasterfall_vmd_clip *vmd,
                                        int time_ms, int out[3]);
+void rasterfall_vmd_sample_bone_translation(
+    const struct rasterfall_vmd_clip *vmd, const char *name, int time_ms,
+    int out[3]);
 void rasterfall_vmd_dump_translation_diagnostic(
     const struct rasterfall_vmd_clip *vmd);
 int rasterfall_vmd_logic_test(void);

@@ -9,6 +9,7 @@
 
 struct rasterfall_glb_rotation_clip;
 struct rasterfall_glb_rotation_reference;
+struct rasterfall_vmd_clip;
 
 /*
  * RFM2 is the deliberately small runtime mesh format produced by
@@ -77,6 +78,7 @@ struct rasterfall_model_bone {
     unsigned int flags;
     const char *name;
     int rotate_x, rotate_y, rotate_z;
+    int animation_x, animation_y, animation_z;
 };
 
 struct rasterfall_model_bone_transform {
@@ -134,6 +136,11 @@ struct rasterfall_model_asset {
     struct rasterfall_model_ik *iks;
     unsigned int ik_count;
     int ik_enabled;
+    int ik_limits_enabled;
+    int ik_synthetic_target;
+    int ik_diagnostic_dump;
+    int ik_target_space_diagnostic;
+    double ik_synthetic_offset[3];
     unsigned long ik_sample_count;
     unsigned long ik_controller_sample_count;
     unsigned long ik_iteration_total;
@@ -142,6 +149,23 @@ struct rasterfall_model_asset {
     double ik_error_after_total;
     double ik_error_before_max;
     double ik_error_after_max;
+    unsigned long ik_reach_sample_count;
+    unsigned long ik_unreachable_count;
+    double ik_reach_distance_total;
+    double ik_reach_ratio_total;
+    double ik_reach_distance_max;
+    double ik_reach_ratio_max;
+    unsigned long center_ab_samples;
+    unsigned long center_ab_a_unreachable;
+    unsigned long center_ab_b_unreachable;
+    double center_ab_a_ratio_total;
+    double center_ab_b_ratio_total;
+    double center_ab_a_ratio_max;
+    double center_ab_b_ratio_max;
+    double center_ab_a_excess_total;
+    double center_ab_b_excess_total;
+    double center_ab_a_excess_max;
+    double center_ab_b_excess_max;
     unsigned int root_bone_count;
     unsigned int max_bone_depth;
     int skinning_enabled;
@@ -160,6 +184,9 @@ struct rasterfall_model_asset {
     int max_x, max_y, max_z;
     /* Presentation-only Center/Groove offset, in RFM2 units. */
     int animation_offset_x, animation_offset_y, animation_offset_z;
+    int vmd_skeleton_translation_enabled;
+    int vmd_center_translation[3];
+    int vmd_groove_translation[3];
 };
 
 int rasterfall_model_load(struct rasterfall_model_asset *asset,
@@ -172,8 +199,18 @@ int rasterfall_model_build_demo_clips(struct rasterfall_model_asset *asset);
 int rasterfall_model_sample_clip(struct rasterfall_model_asset *asset,
                                  const struct rasterfall_animation_clip *clip,
                                  int time_ms);
+void rasterfall_model_dump_ik_hierarchy(const struct rasterfall_model_asset *asset);
+void rasterfall_model_reset_center_ab_diagnostic(struct rasterfall_model_asset *asset);
+void rasterfall_model_center_ab_diagnostic(struct rasterfall_model_asset *asset,
+                                           const struct rasterfall_vmd_clip *vmd,
+                                           int time_ms, int print_sample);
+void rasterfall_model_print_center_ab_diagnostic(
+    const struct rasterfall_model_asset *asset);
 void rasterfall_model_set_ik_enabled(struct rasterfall_model_asset *asset,
                                      int enabled);
+void rasterfall_model_set_vmd_skeleton_translation(
+    struct rasterfall_model_asset *asset, const int center[3],
+    const int groove[3], int enabled);
 int rasterfall_model_sample_glb_rotation_clip(
     struct rasterfall_model_asset *asset,
     const struct rasterfall_glb_rotation_clip *clip,

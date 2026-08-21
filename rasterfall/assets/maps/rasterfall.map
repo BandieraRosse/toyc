@@ -121,6 +121,7 @@ button_glb_walk -10050 -12100 -250
 button_glb_jog -9200 -12100 -250
 # MMD 原生 VMD 直连 Eula PMX/RFM2；与 GLB 预览按钮同排。
 button_vmd_walk -8350 -12100 -250
+button_vmd_manjusaka -7500 -12100 -250
 # 三名原据点 AI 保持普通队友规则；BASE 是基地核心目标。
 ai_spawn Jesus 2 level2 1000 0 0
 ai_spawn GUARD 1 level1 0 -900 0

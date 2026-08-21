@@ -814,6 +814,15 @@ static void session_interact(struct rasterfall_session *session,
         session->skeletal_demo_player.loop = 1;
         session->banner_ms = 1800;
         session->banner_text = "VMD WALK (EULA DIRECT)";
+    } else if (it->kind == TOY_MAP_PICKUP_VMD_MANJUSAKA_BUTTON) {
+        session->skeletal_demo_pose = RASTERFALL_MODEL_POSE_BIND;
+        session->skeletal_demo_player.clip = NULL;
+        session->skeletal_demo_player.clip_id = 10;
+        session->skeletal_demo_player.time_ms = 0;
+        session->skeletal_demo_player.playing = 1;
+        session->skeletal_demo_player.loop = 1;
+        session->banner_ms = 1800;
+        session->banner_text = "VMD MANJUSAKA (EULA DIRECT)";
     } else if (it->kind == TOY_MAP_PICKUP_AMMO) {
         toy_game_refill_ammo(&session->game_state);
     } else if (it->kind == TOY_MAP_PICKUP_MONEY_BUTTON) {

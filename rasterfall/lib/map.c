@@ -182,7 +182,8 @@ int toy_map_load(const char *path, struct toy_map *m)
                  !strcmp(kind,"button_glb_idle") ||
                  !strcmp(kind,"button_glb_walk") ||
                  !strcmp(kind,"button_glb_jog") ||
-                 !strcmp(kind,"button_vmd_walk")) && m->pickup_count<TOY_MAP_MAX_PICKUPS){
+                 !strcmp(kind,"button_vmd_walk") ||
+                 !strcmp(kind,"button_vmd_manjusaka")) && m->pickup_count<TOY_MAP_MAX_PICKUPS){
             char *sx=word(&p),*sz=word(&p),*sy=word(&p);
             if(sx&&sz&&sy){
                 m->pickups[m->pickup_count].kind=!strcmp(kind,"button_air") ?
@@ -229,6 +230,8 @@ int toy_map_load(const char *path, struct toy_map *m)
                     m->pickups[m->pickup_count].kind = TOY_MAP_PICKUP_GLB_JOG_BUTTON;
                 else if (!strcmp(kind,"button_vmd_walk"))
                     m->pickups[m->pickup_count].kind = TOY_MAP_PICKUP_VMD_WALK_BUTTON;
+                else if (!strcmp(kind,"button_vmd_manjusaka"))
+                    m->pickups[m->pickup_count].kind = TOY_MAP_PICKUP_VMD_MANJUSAKA_BUTTON;
                 m->pickups[m->pickup_count].x=number(sx,10);
                 m->pickups[m->pickup_count].z=number(sz,10);
                 m->pickups[m->pickup_count].y=number(sy,10);

@@ -139,10 +139,12 @@ static struct rasterfall_animation_clip private_character_vmd_clip;
 static struct rasterfall_animation_track private_character_vmd_tracks[RASTERFALL_VMD_MAX_BONES];
 static const char *private_character_override_path;
 static const char *private_character_vmd_path;
+static char private_character_vmd_loaded_path[512];
 static int private_character_vmd_forced;
 static int private_character_vmd_freeze_head;
 static int private_character_vmd_freeze_torso;
 static int private_character_vmd_ik_enabled = 1;
+static int private_character_vmd_legacy_root_offset;
 static int private_character_vmd_loaded;
 static struct rasterfall_glb_rotation_clip private_character_glb[3];
 static struct rasterfall_glb_rotation_reference private_character_glb_reference;
@@ -201,6 +203,11 @@ void rasterfall_render_set_vmd_freeze(int freeze_head, int freeze_torso)
 void rasterfall_render_set_vmd_ik_enabled(int enabled)
 {
     private_character_vmd_ik_enabled = enabled ? 1 : 0;
+}
+
+void rasterfall_render_set_vmd_legacy_root_offset(int enabled)
+{
+    private_character_vmd_legacy_root_offset = enabled ? 1 : 0;
 }
 
 static int render_quaternius_preview(struct toy_renderer *renderer,
@@ -911,13 +918,20 @@ static int render_private_character(struct toy_renderer *renderer,
         rasterfall_model_load(&private_character_model, path);
         private_character_loaded = 1;
     }
-    if (active_session && active_session->skeletal_demo_player.clip_id == 9 &&
-        !private_character_vmd_path)
-        private_character_vmd_path = ".claude/walk/walk04_loop5.vmd";
-    if (private_character_vmd_path && !private_character_vmd_loaded &&
+    {
+        const char *requested_vmd = private_character_vmd_path;
+        if (active_session && active_session->skeletal_demo_player.clip_id == 10)
+            requested_vmd = "rasterfall/private-assets/animations/曼珠沙華.vmd";
+        if (private_character_vmd_loaded && requested_vmd &&
+            strcmp(private_character_vmd_loaded_path, requested_vmd)) {
+            rasterfall_vmd_unload(&private_character_vmd);
+            private_character_vmd_loaded = 0;
+            private_character_vmd_loaded_path[0] = 0;
+        }
+        if (requested_vmd && !private_character_vmd_loaded &&
         private_character_model.data) {
-        if (rasterfall_vmd_load(&private_character_vmd,
-                                private_character_vmd_path) == 0) {
+            if (rasterfall_vmd_load(&private_character_vmd,
+                                requested_vmd) == 0) {
             rasterfall_vmd_map_eula(&private_character_vmd,
                                     &private_character_model);
             rasterfall_vmd_build_animation(&private_character_vmd,
@@ -937,26 +951,58 @@ static int render_private_character(struct toy_renderer *renderer,
                 }
             }
             private_character_vmd_loaded = 1;
+            snprintf(private_character_vmd_loaded_path,
+                     sizeof(private_character_vmd_loaded_path), "%s",
+                     requested_vmd);
             __printf("rasterfall: VMD walk loaded directly on Eula: %s\n",
-                     private_character_vmd_path);
+                     requested_vmd);
         } else __fprintf(2, "rasterfall: cannot load VMD walk %s\n",
-                         private_character_vmd_path);
+                         requested_vmd);
+    }
     }
     if (private_character_model.data && active_session) {
         struct rasterfall_animation_player *player =
             &active_session->skeletal_demo_player;
+        {
+            int zero[3] = {0, 0, 0};
+            rasterfall_model_set_vmd_skeleton_translation(
+                &private_character_model, zero, zero, 0);
+            private_character_model.animation_offset_x = 0;
+            private_character_model.animation_offset_y = 0;
+            private_character_model.animation_offset_z = 0;
+        }
         long sample_start = render_monotonic_us();
+        /* The no-argument VMD demo starts with clip_id == -1.  Once the
+         * player selects one of the regular/GLB buttons, that selection must
+         * own the model pose; the VMD path is only active for its two
+         * explicit clips (or the initial forced demo state). */
         if (private_character_vmd_loaded &&
-            (player->clip_id == 9 || private_character_vmd_forced)) {
+            (player->clip_id == 9 || player->clip_id == 10 ||
+             (private_character_vmd_forced && player->clip_id < 0))) {
             rasterfall_model_set_ik_enabled(&private_character_model,
                                             private_character_vmd_ik_enabled);
             player->clip = &private_character_vmd_clip;
             player->loop = 1;
+            {
+                int center[3], groove[3];
+                rasterfall_vmd_sample_bone_translation(&private_character_vmd,
+                    "センター", player->time_ms, center);
+                rasterfall_vmd_sample_bone_translation(&private_character_vmd,
+                    "グルーブ", player->time_ms, groove);
+                rasterfall_model_set_vmd_skeleton_translation(
+                    &private_character_model, center, groove,
+                    !private_character_vmd_legacy_root_offset);
+                private_character_model.animation_offset_x = 0;
+                private_character_model.animation_offset_y = 0;
+                private_character_model.animation_offset_z = 0;
+                if (private_character_vmd_legacy_root_offset) {
+                    private_character_model.animation_offset_x = center[0] + groove[0];
+                    private_character_model.animation_offset_y = center[1] + groove[1];
+                    private_character_model.animation_offset_z = center[2] + groove[2];
+                }
+            }
             rasterfall_model_sample_clip(&private_character_model,
                                          player->clip, player->time_ms);
-            { int offset[3]; rasterfall_vmd_sample_translation(&private_character_vmd,
-                    player->time_ms, offset); private_character_model.animation_offset_x=offset[0];
-              private_character_model.animation_offset_y=offset[1]; private_character_model.animation_offset_z=offset[2]; }
         } else if (player->clip_id >= 0 && player->clip_id < 3) {
             player->clip = &private_character_model.demo_clips[player->clip_id];
             player->loop = player->clip->loop;
@@ -2416,7 +2462,8 @@ static int render_interactables(struct toy_renderer *renderer,
             pixels += render_special_button(renderer,camera,it->x,it->y,it->z,on,
                                              it->kind==TOY_MAP_PICKUP_GLB_JOG_BUTTON?2:
                                              it->kind==TOY_MAP_PICKUP_GLB_WALK_BUTTON);
-        else if (it->kind == TOY_MAP_PICKUP_VMD_WALK_BUTTON)
+        else if (it->kind == TOY_MAP_PICKUP_VMD_WALK_BUTTON ||
+                 it->kind == TOY_MAP_PICKUP_VMD_MANJUSAKA_BUTTON)
             pixels += render_special_button(renderer, camera, it->x, it->y,
                                              it->z, on, 1);
         else if (it->kind == TOY_MAP_PICKUP_SHOP)

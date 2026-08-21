@@ -5,6 +5,7 @@
 #include "math.h"
 #include "rasterfall_humanoid_retarget.h"
 #include "rasterfall_glb_animation.h"
+#include "rasterfall_vmd.h"
 
 static unsigned int model_u32(const unsigned char *p)
 {
@@ -323,6 +324,7 @@ int rasterfall_model_load(struct rasterfall_model_asset *asset,
     if (!asset || !path) return -1;
     __memset(asset, 0, sizeof(*asset));
     asset->ik_enabled = 1;
+    asset->ik_limits_enabled = 1;
     data = toy_asset_load_file(path, &size);
     version = data && size >= 8 ? model_u32(data + 4) : 0;
     vertex_bytes = version >= 10 ? RASTERFALL_MODEL_VERTEX_BYTES_EDGE_SCALE :
@@ -632,7 +634,12 @@ static int model_solve_one_leg_ik(struct rasterfall_model_asset *asset,
      * the resulting global link rotation is converted back with the inverse
      * parent rotation before Euler/local PMX limits are applied. */
     const struct rasterfall_animation_track *track;
-    double target[3], current[3], offset[3];
+    double target[3], controller_global[3], current[3], offset[3], raw_translation[3];
+    double target_parent_local[3], target_hierarchy[3];
+    double before_target[3], before_knee[3], before_thigh[3], before_ankle[3];
+    double after_target[3], after_knee[3], after_thigh[3];
+    double after_ankle[3];
+    int before_knee_rot[3], before_thigh_rot[3];
     unsigned int iteration;
     int link_index;
     if (!asset || !ik || !clip || !attempts || !before || !after ||
@@ -642,22 +649,134 @@ static int model_solve_one_leg_ik(struct rasterfall_model_asset *asset,
     if (strcmp(asset->bones[ik->controller].name, "左足ＩＫ") &&
         strcmp(asset->bones[ik->controller].name, "右足ＩＫ")) return 0;
     track = model_find_clip_track(clip, ik->controller);
-    if (!track) return 0;
+    if (asset->ik_synthetic_target &&
+        strcmp(asset->bones[ik->controller].name, "左足ＩＫ")) return 0;
+    if (!asset->ik_synthetic_target && !track) return 0;
     rasterfall_model_update_bones(asset);
-    target[0] = asset->bone_transforms[ik->controller].position[0];
-    target[1] = asset->bone_transforms[ik->controller].position[1];
-    target[2] = asset->bone_transforms[ik->controller].position[2];
-    model_sample_track_translation(track, time_ms, clip->duration_ms, offset);
-    target[0] += offset[0] * 232.0;
-    target[1] += offset[1] * 232.0;
-    target[2] += offset[2] * 232.0;
+    controller_global[0] = asset->bone_transforms[ik->controller].position[0];
+    controller_global[1] = asset->bone_transforms[ik->controller].position[1];
+    controller_global[2] = asset->bone_transforms[ik->controller].position[2];
+    target[0] = controller_global[0];
+    target[1] = controller_global[1];
+    target[2] = controller_global[2];
+    raw_translation[0] = raw_translation[1] = raw_translation[2] = 0.0;
+    if (asset->ik_synthetic_target) {
+        target[0] += asset->ik_synthetic_offset[0];
+        target[1] += asset->ik_synthetic_offset[1];
+        target[2] += asset->ik_synthetic_offset[2];
+    } else {
+        model_sample_track_translation(track, time_ms, clip->duration_ms,
+                                       raw_translation);
+        target[0] += raw_translation[0] * 232.0;
+        target[1] += raw_translation[1] * 232.0;
+        target[2] += raw_translation[2] * 232.0;
+    }
+    if (asset->ik_target_space_diagnostic && !asset->ik_synthetic_target) {
+        int parent = asset->bones[ik->controller].parent;
+        double scaled[3], rotated[3];
+        scaled[0] = raw_translation[0] * 232.0;
+        scaled[1] = raw_translation[1] * 232.0;
+        scaled[2] = raw_translation[2] * 232.0;
+        target_parent_local[0] = asset->bones[ik->controller].rest_x -
+                                 (parent >= 0 ? asset->bones[parent].rest_x : 0);
+        target_parent_local[1] = asset->bones[ik->controller].rest_y -
+                                 (parent >= 0 ? asset->bones[parent].rest_y : 0);
+        target_parent_local[2] = asset->bones[ik->controller].rest_z -
+                                 (parent >= 0 ? asset->bones[parent].rest_z : 0);
+        target_parent_local[0] += scaled[0];
+        target_parent_local[1] += scaled[1];
+        target_parent_local[2] += scaled[2];
+        if (parent >= 0) {
+            matrix_vector(asset->bone_transforms[parent].rotation,
+                          target_parent_local[0], target_parent_local[1],
+                          target_parent_local[2], &rotated[0], &rotated[1],
+                          &rotated[2]);
+            target_hierarchy[0] = asset->bone_transforms[parent].position[0] + rotated[0];
+            target_hierarchy[1] = asset->bone_transforms[parent].position[1] + rotated[1];
+            target_hierarchy[2] = asset->bone_transforms[parent].position[2] + rotated[2];
+        } else {
+            target_hierarchy[0] = target_parent_local[0];
+            target_hierarchy[1] = target_parent_local[1];
+            target_hierarchy[2] = target_parent_local[2];
+        }
+        {
+            int thigh = ik->links[ik->link_count - 1].bone;
+            double upper[3], lower[3], max_reach;
+            upper[0] = asset->bone_transforms[thigh].position[0] - asset->bone_transforms[ik->links[0].bone].position[0];
+            upper[1] = asset->bone_transforms[thigh].position[1] - asset->bone_transforms[ik->links[0].bone].position[1];
+            upper[2] = asset->bone_transforms[thigh].position[2] - asset->bone_transforms[ik->links[0].bone].position[2];
+            lower[0] = asset->bone_transforms[ik->links[0].bone].position[0] - asset->bone_transforms[ik->target].position[0];
+            lower[1] = asset->bone_transforms[ik->links[0].bone].position[1] - asset->bone_transforms[ik->target].position[1];
+            lower[2] = asset->bone_transforms[ik->links[0].bone].position[2] - asset->bone_transforms[ik->target].position[2];
+            max_reach = model_vec_length(upper) + model_vec_length(lower);
+            __printf("ik target-space phase_ms=%d controller=%s parent=%s parent_parent=%s\n",
+                     time_ms, asset->bones[ik->controller].name,
+                     parent >= 0 ? asset->bones[parent].name : "<root>",
+                     parent >= 0 && asset->bones[parent].parent >= 0 ?
+                         asset->bones[asset->bones[parent].parent].name : "<root>");
+            __printf("  rest_local=(%d,%d,%d) parent_global_pos=(%.3f,%.3f,%.3f)\n",
+                     asset->bones[ik->controller].rest_x - (parent >= 0 ? asset->bones[parent].rest_x : 0),
+                     asset->bones[ik->controller].rest_y - (parent >= 0 ? asset->bones[parent].rest_y : 0),
+                     asset->bones[ik->controller].rest_z - (parent >= 0 ? asset->bones[parent].rest_z : 0),
+                     parent >= 0 ? asset->bone_transforms[parent].position[0] : 0.0,
+                     parent >= 0 ? asset->bone_transforms[parent].position[1] : 0.0,
+                     parent >= 0 ? asset->bone_transforms[parent].position[2] : 0.0);
+            if (parent >= 0)
+                __printf("  parent_global_rot=[%.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f]\n",
+                         asset->bone_transforms[parent].rotation[0], asset->bone_transforms[parent].rotation[1], asset->bone_transforms[parent].rotation[2], asset->bone_transforms[parent].rotation[3], asset->bone_transforms[parent].rotation[4], asset->bone_transforms[parent].rotation[5], asset->bone_transforms[parent].rotation[6], asset->bone_transforms[parent].rotation[7], asset->bone_transforms[parent].rotation[8]);
+            __printf("  vmd=(%.3f,%.3f,%.3f) A=(%.3f,%.3f,%.3f) B=(%.3f,%.3f,%.3f)\n",
+                     raw_translation[0], raw_translation[1], raw_translation[2],
+                     target[0], target[1], target[2], target_hierarchy[0],
+                     target_hierarchy[1], target_hierarchy[2]);
+            __printf("  A_hip_distance=%.3f B_hip_distance=%.3f max_reach=%.3f A_reachable=%s B_reachable=%s\n",
+                     model_vec_length((double[3]){target[0] - asset->bone_transforms[thigh].position[0], target[1] - asset->bone_transforms[thigh].position[1], target[2] - asset->bone_transforms[thigh].position[2]}),
+                     model_vec_length((double[3]){target_hierarchy[0] - asset->bone_transforms[thigh].position[0], target_hierarchy[1] - asset->bone_transforms[thigh].position[1], target_hierarchy[2] - asset->bone_transforms[thigh].position[2]}),
+                     max_reach,
+                     model_vec_length((double[3]){target[0] - asset->bone_transforms[thigh].position[0], target[1] - asset->bone_transforms[thigh].position[1], target[2] - asset->bone_transforms[thigh].position[2]}) <= max_reach ? "yes" : "no",
+                     model_vec_length((double[3]){target_hierarchy[0] - asset->bone_transforms[thigh].position[0], target_hierarchy[1] - asset->bone_transforms[thigh].position[1], target_hierarchy[2] - asset->bone_transforms[thigh].position[2]}) <= max_reach ? "yes" : "no");
+        }
+    }
     current[0] = asset->bone_transforms[ik->target].position[0];
     current[1] = asset->bone_transforms[ik->target].position[1];
     current[2] = asset->bone_transforms[ik->target].position[2];
     offset[0] = current[0] - target[0]; offset[1] = current[1] - target[1];
     offset[2] = current[2] - target[2];
     *before = model_vec_length(offset);
+    {
+        int knee = ik->links[0].bone;
+        int thigh = ik->links[ik->link_count - 1].bone;
+        double upper[3], lower[3], reach_distance, max_reach, ratio;
+        upper[0] = asset->bone_transforms[thigh].position[0] - asset->bone_transforms[knee].position[0];
+        upper[1] = asset->bone_transforms[thigh].position[1] - asset->bone_transforms[knee].position[1];
+        upper[2] = asset->bone_transforms[thigh].position[2] - asset->bone_transforms[knee].position[2];
+        lower[0] = asset->bone_transforms[knee].position[0] - asset->bone_transforms[ik->target].position[0];
+        lower[1] = asset->bone_transforms[knee].position[1] - asset->bone_transforms[ik->target].position[1];
+        lower[2] = asset->bone_transforms[knee].position[2] - asset->bone_transforms[ik->target].position[2];
+        max_reach = model_vec_length(upper) + model_vec_length(lower);
+        reach_distance = model_vec_length((double[3]){
+            target[0] - asset->bone_transforms[thigh].position[0],
+            target[1] - asset->bone_transforms[thigh].position[1],
+            target[2] - asset->bone_transforms[thigh].position[2]});
+        ratio = max_reach > 0.0 ? reach_distance / max_reach : 0.0;
+        asset->ik_reach_sample_count++;
+        asset->ik_reach_distance_total += reach_distance;
+        asset->ik_reach_ratio_total += ratio;
+        if (reach_distance > asset->ik_reach_distance_max)
+            asset->ik_reach_distance_max = reach_distance;
+        if (ratio > asset->ik_reach_ratio_max) asset->ik_reach_ratio_max = ratio;
+        if (reach_distance > max_reach) asset->ik_unreachable_count++;
+    }
     *after = *before;
+    before_target[0] = target[0]; before_target[1] = target[1]; before_target[2] = target[2];
+    before_ankle[0] = current[0]; before_ankle[1] = current[1]; before_ankle[2] = current[2];
+    memcpy(before_knee, asset->bone_transforms[ik->links[0].bone].position, sizeof(before_knee));
+    memcpy(before_thigh, asset->bone_transforms[ik->links[ik->link_count-1].bone].position, sizeof(before_thigh));
+    before_knee_rot[0] = asset->bones[ik->links[0].bone].rotate_x;
+    before_knee_rot[1] = asset->bones[ik->links[0].bone].rotate_y;
+    before_knee_rot[2] = asset->bones[ik->links[0].bone].rotate_z;
+    before_thigh_rot[0] = asset->bones[ik->links[ik->link_count-1].bone].rotate_x;
+    before_thigh_rot[1] = asset->bones[ik->links[ik->link_count-1].bone].rotate_y;
+    before_thigh_rot[2] = asset->bones[ik->links[ik->link_count-1].bone].rotate_z;
     for (iteration = 0; iteration < (unsigned int)ik->iterations; iteration++) {
         int changed = 0;
         (*attempts)++;
@@ -699,7 +818,7 @@ static int model_solve_one_leg_ik(struct rasterfall_model_asset *asset,
                 matrix_multiply(parent_inverse, next_global, local);
             }
             model_matrix_to_euler(local, &x, &y, &z);
-            if (link->limited) {
+            if (link->limited && asset->ik_limits_enabled) {
                 x = model_clamp_angle(x, link->lower[0], link->upper[0]);
                 y = model_clamp_angle(y, link->lower[1], link->upper[1]);
                 z = model_clamp_angle(z, link->lower[2], link->upper[2]);
@@ -726,6 +845,28 @@ static int model_solve_one_leg_ik(struct rasterfall_model_asset *asset,
     offset[0] = current[0] - target[0]; offset[1] = current[1] - target[1];
     offset[2] = current[2] - target[2];
     *after = model_vec_length(offset);
+    if (asset->ik_diagnostic_dump) {
+        int knee = ik->links[0].bone;
+        int thigh = ik->links[ik->link_count - 1].bone;
+        memcpy(after_target, target, sizeof(after_target));
+        memcpy(after_ankle, asset->bone_transforms[ik->target].position, sizeof(after_ankle));
+        memcpy(after_knee, asset->bone_transforms[knee].position, sizeof(after_knee));
+        memcpy(after_thigh, asset->bone_transforms[thigh].position, sizeof(after_thigh));
+        __printf("ik pose diagnostic controller=%s phase_ms=%d limits=%s synthetic=%s\n",
+                 asset->bones[ik->controller].name, time_ms,
+                 asset->ik_limits_enabled ? "on" : "off",
+                 asset->ik_synthetic_target ? "yes" : "no");
+        __printf("  controller_global=(%.3f,%.3f,%.3f) vmd_translation=(%.3f,%.3f,%.3f) desired_global=(%.3f,%.3f,%.3f)\n",
+                 controller_global[0], controller_global[1], controller_global[2],
+                 raw_translation[0], raw_translation[1], raw_translation[2],
+                 after_target[0], after_target[1], after_target[2]);
+        __printf("  solve_before upper_leg=(%.3f,%.3f,%.3f) knee=(%.3f,%.3f,%.3f) ankle=(%.3f,%.3f,%.3f) thigh_local=(%d,%d,%d) knee_local=(%d,%d,%d)\n",
+                 before_thigh[0],before_thigh[1],before_thigh[2],before_knee[0],before_knee[1],before_knee[2],before_ankle[0],before_ankle[1],before_ankle[2],before_thigh_rot[0],before_thigh_rot[1],before_thigh_rot[2],before_knee_rot[0],before_knee_rot[1],before_knee_rot[2]);
+        __printf("  solve_after  upper_leg=(%.3f,%.3f,%.3f) knee=(%.3f,%.3f,%.3f) ankle=(%.3f,%.3f,%.3f) thigh_local=(%d,%d,%d) knee_local=(%d,%d,%d)\n",
+                 after_thigh[0],after_thigh[1],after_thigh[2],after_knee[0],after_knee[1],after_knee[2],after_ankle[0],after_ankle[1],after_ankle[2],asset->bones[thigh].rotate_x,asset->bones[thigh].rotate_y,asset->bones[thigh].rotate_z,asset->bones[knee].rotate_x,asset->bones[knee].rotate_y,asset->bones[knee].rotate_z);
+        __printf("  error_before=%.3f error_after=%.3f hip_to_target_before=%.3f hip_to_target_after=%.3f upper_length=%.3f lower_length=%.3f max_reach=%.3f final_update_bones_pose=(%d,%d,%d)/(%d,%d,%d)\n",
+                 *before,*after,model_vec_length((double[3]){before_target[0]-before_thigh[0],before_target[1]-before_thigh[1],before_target[2]-before_thigh[2]}),model_vec_length((double[3]){after_target[0]-after_thigh[0],after_target[1]-after_thigh[1],after_target[2]-after_thigh[2]}),sqrt((before_thigh[0]-before_knee[0])*(before_thigh[0]-before_knee[0])+(before_thigh[1]-before_knee[1])*(before_thigh[1]-before_knee[1])+(before_thigh[2]-before_knee[2])*(before_thigh[2]-before_knee[2])),sqrt((before_knee[0]-before_ankle[0])*(before_knee[0]-before_ankle[0])+(before_knee[1]-before_ankle[1])*(before_knee[1]-before_ankle[1])+(before_knee[2]-before_ankle[2])*(before_knee[2]-before_ankle[2])),sqrt((before_thigh[0]-before_knee[0])*(before_thigh[0]-before_knee[0])+(before_thigh[1]-before_knee[1])*(before_thigh[1]-before_knee[1])+(before_thigh[2]-before_knee[2])*(before_thigh[2]-before_knee[2]))+sqrt((before_knee[0]-before_ankle[0])*(before_knee[0]-before_ankle[0])+(before_knee[1]-before_ankle[1])*(before_knee[1]-before_ankle[1])+(before_knee[2]-before_ankle[2])*(before_knee[2]-before_ankle[2])),asset->bones[thigh].rotate_x,asset->bones[thigh].rotate_y,asset->bones[thigh].rotate_z,asset->bones[knee].rotate_x,asset->bones[knee].rotate_y,asset->bones[knee].rotate_z);
+    }
     return 1;
 }
 
@@ -765,12 +906,45 @@ void rasterfall_model_set_ik_enabled(struct rasterfall_model_asset *asset,
     if (asset) asset->ik_enabled = enabled ? 1 : 0;
 }
 
+void rasterfall_model_set_vmd_skeleton_translation(
+    struct rasterfall_model_asset *asset, const int center[3],
+    const int groove[3], int enabled)
+{
+    if (!asset) return;
+    asset->vmd_skeleton_translation_enabled = enabled ? 1 : 0;
+    asset->vmd_center_translation[0] = center ? center[0] : 0;
+    asset->vmd_center_translation[1] = center ? center[1] : 0;
+    asset->vmd_center_translation[2] = center ? center[2] : 0;
+    asset->vmd_groove_translation[0] = groove ? groove[0] : 0;
+    asset->vmd_groove_translation[1] = groove ? groove[1] : 0;
+    asset->vmd_groove_translation[2] = groove ? groove[2] : 0;
+}
+
 int rasterfall_model_sample_clip(struct rasterfall_model_asset *asset,
                                  const struct rasterfall_animation_clip *clip,
                                  int time_ms)
 {
     unsigned int i;
     if (!asset || !asset->animation_rotations || !asset->bone_count) return -1;
+    for (i = 0; i < asset->bone_count; i++) {
+        asset->bones[i].animation_x = 0;
+        asset->bones[i].animation_y = 0;
+        asset->bones[i].animation_z = 0;
+    }
+    if (asset->vmd_skeleton_translation_enabled) {
+        int center = rasterfall_model_find_bone(asset, "センター");
+        int groove = rasterfall_model_find_bone(asset, "グルーブ");
+        if (center >= 0) {
+            asset->bones[center].animation_x = asset->vmd_center_translation[0];
+            asset->bones[center].animation_y = asset->vmd_center_translation[1];
+            asset->bones[center].animation_z = asset->vmd_center_translation[2];
+        }
+        if (groove >= 0) {
+            asset->bones[groove].animation_x = asset->vmd_groove_translation[0];
+            asset->bones[groove].animation_y = asset->vmd_groove_translation[1];
+            asset->bones[groove].animation_z = asset->vmd_groove_translation[2];
+        }
+    }
     rasterfall_animation_sample(clip, time_ms, asset->animation_rotations,
                                 asset->bone_count);
     for (i = 0; i < asset->bone_count; i++) {
@@ -855,6 +1029,9 @@ int rasterfall_model_update_bones(struct rasterfall_model_asset *asset)
             transform->position[0] = bone->rest_x;
             transform->position[1] = bone->rest_y;
             transform->position[2] = bone->rest_z;
+            transform->position[0] += bone->animation_x;
+            transform->position[1] += bone->animation_y;
+            transform->position[2] += bone->animation_z;
             transform->position[0] += asset->animation_offset_x;
             transform->position[1] += asset->animation_offset_y;
             transform->position[2] += asset->animation_offset_z;
@@ -866,15 +1043,227 @@ int rasterfall_model_update_bones(struct rasterfall_model_asset *asset)
             matrix_multiply(parent_transform->rotation, local,
                             transform->rotation);
             matrix_vector(parent_transform->rotation,
-                bone->rest_x - parent_bone->rest_x,
-                bone->rest_y - parent_bone->rest_y,
-                bone->rest_z - parent_bone->rest_z, &x, &y, &z);
+                bone->rest_x - parent_bone->rest_x + bone->animation_x,
+                bone->rest_y - parent_bone->rest_y + bone->animation_y,
+                bone->rest_z - parent_bone->rest_z + bone->animation_z,
+                &x, &y, &z);
             transform->position[0] = parent_transform->position[0] + x;
             transform->position[1] = parent_transform->position[1] + y;
             transform->position[2] = parent_transform->position[2] + z;
         }
     }
     return 0;
+}
+
+static const struct rasterfall_vmd_bone_track *model_vmd_track(
+    const struct rasterfall_vmd_clip *vmd, const char *name)
+{
+    int i;
+    if (!vmd || !name) return 0;
+    for (i = 0; i < vmd->track_count; i++)
+        if (!strcmp(vmd->tracks[i].name, name)) return &vmd->tracks[i];
+    return 0;
+}
+
+static void model_vmd_translation(const struct rasterfall_vmd_clip *vmd,
+                                  const char *name, int time_ms, double out[3])
+{
+    const struct rasterfall_vmd_bone_track *track = model_vmd_track(vmd, name);
+    const struct rasterfall_vmd_keyframe *a, *b;
+    int i, at, next, factor = 0;
+    if (!out) return;
+    out[0] = out[1] = out[2] = 0.0;
+    if (!track || !track->key_count) return;
+    at = vmd->duration_ms > 0 ? time_ms % vmd->duration_ms : time_ms;
+    a = b = &track->keys[0];
+    for (i = 1; i < track->key_count; i++) {
+        if (at < track->keys[i].frame * 1000 / 30) {
+            b = &track->keys[i];
+            break;
+        }
+        a = &track->keys[i];
+    }
+    if (a != b && b->frame > a->frame) {
+        next = b->frame * 1000 / 30;
+        factor = (at - a->frame * 1000 / 30) * 1000 /
+                 (next - a->frame * 1000 / 30);
+    }
+    if (factor < 0) factor = 0;
+    if (factor > 1000) factor = 1000;
+    out[0] = (a->tx + (b->tx - a->tx) * factor / 1000.0) * 232.0;
+    out[1] = (a->ty + (b->ty - a->ty) * factor / 1000.0) * 232.0;
+    out[2] = (a->tz + (b->tz - a->tz) * factor / 1000.0) * 232.0;
+}
+
+static void model_update_center_diagnostic(
+    const struct rasterfall_model_asset *asset,
+    const double center_offset[3], const double groove_offset[3],
+    struct rasterfall_model_bone_transform *transforms)
+{
+    unsigned int order;
+    int center = rasterfall_model_find_bone(asset, "センター");
+    int groove = rasterfall_model_find_bone(asset, "グルーブ");
+    for (order = 0; order < asset->bone_count; order++) {
+        unsigned int i = asset->bone_order[order];
+        const struct rasterfall_model_bone *bone = &asset->bones[i];
+        double local[9], x, y, z;
+        int parent = bone->parent;
+        matrix_rotate_xyz(bone->rotate_x, bone->rotate_y, bone->rotate_z,
+                          local);
+        if (parent < 0) {
+            memcpy(transforms[i].rotation, local, sizeof(local));
+            transforms[i].position[0] = bone->rest_x;
+            transforms[i].position[1] = bone->rest_y;
+            transforms[i].position[2] = bone->rest_z;
+        } else {
+            double local_x = bone->rest_x - asset->bones[parent].rest_x;
+            double local_y = bone->rest_y - asset->bones[parent].rest_y;
+            double local_z = bone->rest_z - asset->bones[parent].rest_z;
+            if ((int)i == center) {
+                local_x += center_offset[0]; local_y += center_offset[1];
+                local_z += center_offset[2];
+            }
+            if ((int)i == groove) {
+                local_x += groove_offset[0]; local_y += groove_offset[1];
+                local_z += groove_offset[2];
+            }
+            matrix_multiply(transforms[parent].rotation, local, transforms[i].rotation);
+            matrix_vector(transforms[parent].rotation, local_x, local_y, local_z,
+                          &x, &y, &z);
+            transforms[i].position[0] = transforms[parent].position[0] + x;
+            transforms[i].position[1] = transforms[parent].position[1] + y;
+            transforms[i].position[2] = transforms[parent].position[2] + z;
+        }
+    }
+}
+
+static double model_distance3(const double a[3], const double b[3])
+{
+    double x = a[0] - b[0], y = a[1] - b[1], z = a[2] - b[2];
+    return sqrt(x * x + y * y + z * z);
+}
+
+void rasterfall_model_dump_ik_hierarchy(const struct rasterfall_model_asset *asset)
+{
+    static const char *names[] = {"全ての親", "センター", "センター2", "グルーブ", "腰", "下半身",
+                                  "左足", "右足", "左足IK親", "右足IK親",
+                                  "左足ＩＫ", "右足ＩＫ"};
+    int i;
+    if (!asset) return;
+    __printf("eula IK hierarchy (child -> parent):\n");
+    for (i = 0; i < (int)(sizeof(names) / sizeof(names[0])); i++) {
+        int bone = rasterfall_model_find_bone(asset, names[i]);
+        int parent;
+        __printf("  %s: ", names[i]);
+        if (bone < 0) { __printf("missing\n"); continue; }
+        parent = asset->bones[bone].parent;
+        __printf("index=%d parent=%s(%d) rest=(%d,%d,%d)\n", bone,
+                 parent >= 0 ? asset->bones[parent].name : "<root>", parent,
+                 asset->bones[bone].rest_x, asset->bones[bone].rest_y,
+                 asset->bones[bone].rest_z);
+    }
+}
+
+void rasterfall_model_reset_center_ab_diagnostic(struct rasterfall_model_asset *asset)
+{
+    if (!asset) return;
+    asset->center_ab_samples = asset->center_ab_a_unreachable =
+        asset->center_ab_b_unreachable = 0;
+    asset->center_ab_a_ratio_total = asset->center_ab_b_ratio_total = 0.0;
+    asset->center_ab_a_ratio_max = asset->center_ab_b_ratio_max = 0.0;
+    asset->center_ab_a_excess_total = asset->center_ab_b_excess_total = 0.0;
+    asset->center_ab_a_excess_max = asset->center_ab_b_excess_max = 0.0;
+}
+
+void rasterfall_model_center_ab_diagnostic(struct rasterfall_model_asset *asset,
+                                           const struct rasterfall_vmd_clip *vmd,
+                                           int time_ms, int print_sample)
+{
+    struct rasterfall_model_bone_transform *b;
+    double center[3], groove[3];
+    unsigned int i;
+    if (!asset || !vmd || !asset->bone_count) return;
+    b = tlibc_malloc(asset->bone_count * sizeof(*b));
+    if (!b) return;
+    model_vmd_translation(vmd, "センター", time_ms, center);
+    model_vmd_translation(vmd, "グルーブ", time_ms, groove);
+    memcpy(b, asset->bone_transforms, asset->bone_count * sizeof(*b));
+    model_update_center_diagnostic(asset, center, groove, b);
+    if (print_sample)
+        __printf("center AB phase_ms=%d center_local=(%.3f,%.3f,%.3f) groove_local=(%.3f,%.3f,%.3f)\n",
+                 time_ms, center[0], center[1], center[2], groove[0], groove[1], groove[2]);
+    for (i = 0; i < asset->ik_count; i++) {
+        const struct rasterfall_model_ik *ik = &asset->iks[i];
+        int thigh, knee, parent;
+        double desired_a[3], desired_b[3], upper[3], lower[3];
+        double max_reach, distance_a, distance_b, ratio_a, ratio_b;
+        if (strcmp(asset->bones[ik->controller].name, "左足ＩＫ") &&
+            strcmp(asset->bones[ik->controller].name, "右足ＩＫ")) continue;
+        if (!model_vmd_track(vmd, asset->bones[ik->controller].name)) continue;
+        thigh = ik->links[ik->link_count - 1].bone;
+        knee = ik->links[0].bone;
+        parent = asset->bones[ik->controller].parent;
+        model_vmd_translation(vmd, asset->bones[ik->controller].name,
+                              time_ms, desired_a);
+        desired_a[0] += asset->bone_transforms[ik->controller].position[0];
+        desired_a[1] += asset->bone_transforms[ik->controller].position[1];
+        desired_a[2] += asset->bone_transforms[ik->controller].position[2];
+        desired_b[0] = b[ik->controller].position[0] +
+                       (desired_a[0] - asset->bone_transforms[ik->controller].position[0]);
+        desired_b[1] = b[ik->controller].position[1] +
+                       (desired_a[1] - asset->bone_transforms[ik->controller].position[1]);
+        desired_b[2] = b[ik->controller].position[2] +
+                       (desired_a[2] - asset->bone_transforms[ik->controller].position[2]);
+        upper[0] = asset->bone_transforms[thigh].position[0] - asset->bone_transforms[knee].position[0];
+        upper[1] = asset->bone_transforms[thigh].position[1] - asset->bone_transforms[knee].position[1];
+        upper[2] = asset->bone_transforms[thigh].position[2] - asset->bone_transforms[knee].position[2];
+        lower[0] = asset->bone_transforms[knee].position[0] - asset->bone_transforms[ik->target].position[0];
+        lower[1] = asset->bone_transforms[knee].position[1] - asset->bone_transforms[ik->target].position[1];
+        lower[2] = asset->bone_transforms[knee].position[2] - asset->bone_transforms[ik->target].position[2];
+        max_reach = model_vec_length(upper) + model_vec_length(lower);
+        distance_a = model_distance3(asset->bone_transforms[thigh].position, desired_a);
+        distance_b = model_distance3(b[thigh].position, desired_b);
+        ratio_a = max_reach > 0.0 ? distance_a / max_reach : 0.0;
+        ratio_b = max_reach > 0.0 ? distance_b / max_reach : 0.0;
+        asset->center_ab_samples++;
+        asset->center_ab_a_ratio_total += ratio_a;
+        asset->center_ab_b_ratio_total += ratio_b;
+        if (ratio_a > asset->center_ab_a_ratio_max) asset->center_ab_a_ratio_max = ratio_a;
+        if (ratio_b > asset->center_ab_b_ratio_max) asset->center_ab_b_ratio_max = ratio_b;
+        if (distance_a > max_reach) asset->center_ab_a_unreachable++;
+        if (distance_b > max_reach) asset->center_ab_b_unreachable++;
+        if (distance_a > max_reach) asset->center_ab_a_excess_total += distance_a - max_reach;
+        if (distance_b > max_reach) asset->center_ab_b_excess_total += distance_b - max_reach;
+        if (distance_a > max_reach && distance_a - max_reach > asset->center_ab_a_excess_max)
+            asset->center_ab_a_excess_max = distance_a - max_reach;
+        if (distance_b > max_reach && distance_b - max_reach > asset->center_ab_b_excess_max)
+            asset->center_ab_b_excess_max = distance_b - max_reach;
+        if (print_sample)
+            __printf("  %s hip_A=(%.3f,%.3f,%.3f) hip_B=(%.3f,%.3f,%.3f) target_A=(%.3f,%.3f,%.3f) target_B=(%.3f,%.3f,%.3f) distance_A/B=%.3f/%.3f max_reach=%.3f\n",
+                     asset->bones[ik->controller].name,
+                     asset->bone_transforms[thigh].position[0], asset->bone_transforms[thigh].position[1], asset->bone_transforms[thigh].position[2],
+                     b[thigh].position[0], b[thigh].position[1], b[thigh].position[2],
+                     desired_a[0], desired_a[1], desired_a[2], desired_b[0], desired_b[1], desired_b[2],
+                     distance_a, distance_b, max_reach);
+        (void)parent;
+    }
+    tlibc_free(b);
+}
+
+void rasterfall_model_print_center_ab_diagnostic(
+    const struct rasterfall_model_asset *asset)
+{
+    if (!asset) return;
+    __printf("center AB reachability: controller_samples=%lu A_unreachable=%.2f%% B_unreachable=%.2f%% A_avg_ratio=%.4f B_avg_ratio=%.4f A_max_ratio=%.4f B_max_ratio=%.4f A_avg_excess=%.3f B_avg_excess=%.3f A_max_excess=%.3f B_max_excess=%.3f\n",
+             asset->center_ab_samples,
+             asset->center_ab_samples ? 100.0 * asset->center_ab_a_unreachable / asset->center_ab_samples : 0.0,
+             asset->center_ab_samples ? 100.0 * asset->center_ab_b_unreachable / asset->center_ab_samples : 0.0,
+             asset->center_ab_samples ? asset->center_ab_a_ratio_total / asset->center_ab_samples : 0.0,
+             asset->center_ab_samples ? asset->center_ab_b_ratio_total / asset->center_ab_samples : 0.0,
+             asset->center_ab_a_ratio_max, asset->center_ab_b_ratio_max,
+             asset->center_ab_samples ? asset->center_ab_a_excess_total / asset->center_ab_samples : 0.0,
+             asset->center_ab_samples ? asset->center_ab_b_excess_total / asset->center_ab_samples : 0.0,
+             asset->center_ab_a_excess_max, asset->center_ab_b_excess_max);
 }
 
 static void model_transform_vertex(const struct rasterfall_model_asset *asset,

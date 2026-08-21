@@ -813,6 +813,8 @@ void rasterfall_hud_draw_interact_prompt(struct toy_renderer *renderer,
         snprintf(label, sizeof(label), "E: GLB JOG_FWD");
     else if (it->kind == TOY_MAP_PICKUP_VMD_WALK_BUTTON)
         snprintf(label, sizeof(label), "E: VMD WALK (EULA)");
+    else if (it->kind == TOY_MAP_PICKUP_VMD_MANJUSAKA_BUTTON)
+        snprintf(label, sizeof(label), "E: VMD MANJUSAKA (EULA)");
     else if (it->kind == TOY_MAP_PICKUP_WEAPON ||
              it->kind == TOY_MAP_PICKUP_SMG ||
              it->kind == TOY_MAP_PICKUP_SHOTGUN) {
