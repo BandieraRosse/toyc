@@ -142,8 +142,6 @@ static const char *private_character_vmd_path;
 static int private_character_vmd_forced;
 static int private_character_vmd_freeze_head;
 static int private_character_vmd_freeze_torso;
-static int private_character_vmd_linear_interpolation;
-static int private_character_vmd_no_root_translation;
 static int private_character_vmd_loaded;
 static struct rasterfall_glb_rotation_clip private_character_glb[3];
 static struct rasterfall_glb_rotation_reference private_character_glb_reference;
@@ -197,16 +195,6 @@ void rasterfall_render_set_vmd_freeze(int freeze_head, int freeze_torso)
 {
     private_character_vmd_freeze_head = freeze_head;
     private_character_vmd_freeze_torso = freeze_torso;
-}
-
-void rasterfall_render_set_vmd_linear_interpolation(int linear)
-{
-    private_character_vmd_linear_interpolation = linear;
-}
-
-void rasterfall_render_set_vmd_no_root_translation(int no_translation)
-{
-    private_character_vmd_no_root_translation = no_translation;
 }
 
 static int render_quaternius_preview(struct toy_renderer *renderer,
@@ -924,12 +912,8 @@ static int render_private_character(struct toy_renderer *renderer,
         private_character_model.data) {
         if (rasterfall_vmd_load(&private_character_vmd,
                                 private_character_vmd_path) == 0) {
-            rasterfall_vmd_set_linear_interpolation(
-                &private_character_vmd,
-                private_character_vmd_linear_interpolation);
             rasterfall_vmd_map_eula(&private_character_vmd,
                                     &private_character_model);
-            rasterfall_vmd_dump_translation_diagnostic(&private_character_vmd);
             rasterfall_vmd_build_animation(&private_character_vmd,
                 &private_character_vmd_clip, private_character_vmd_tracks,
                 RASTERFALL_VMD_MAX_BONES);
@@ -962,14 +946,9 @@ static int render_private_character(struct toy_renderer *renderer,
             player->loop = 1;
             rasterfall_model_sample_clip(&private_character_model,
                                          player->clip, player->time_ms);
-            { int offset[3];
-              rasterfall_vmd_sample_translation(&private_character_vmd,
-                    player->time_ms, offset);
-              if (private_character_vmd_no_root_translation)
-                  offset[0] = offset[1] = offset[2] = 0;
-              private_character_model.animation_offset_x=offset[0];
-              private_character_model.animation_offset_y=offset[1];
-              private_character_model.animation_offset_z=offset[2]; }
+            { int offset[3]; rasterfall_vmd_sample_translation(&private_character_vmd,
+                    player->time_ms, offset); private_character_model.animation_offset_x=offset[0];
+              private_character_model.animation_offset_y=offset[1]; private_character_model.animation_offset_z=offset[2]; }
         } else if (player->clip_id >= 0 && player->clip_id < 3) {
             player->clip = &private_character_model.demo_clips[player->clip_id];
             player->loop = player->clip->loop;
@@ -999,10 +978,7 @@ static int render_private_character(struct toy_renderer *renderer,
     if (!private_character_model.data ||
         world_distance(camera, -13000, -10000) > ENEMY_RENDER_DISTANCE)
         return 0;
-    /* Use the same bounds-fit scale as the gallery.  The Eula RFM2 is already
-     * in Rasterfall world units; the old extra x3 made the private preview
-     * dwarf the scene and was unrelated to VMD animation. */
-    scale = gallery_model_scale(&private_character_model);
+    scale = gallery_model_scale(&private_character_model) * 3;
     if (scale < 1) scale = 1;
     {
         int pixels=render_gallery_model(renderer,camera,&private_character_model,

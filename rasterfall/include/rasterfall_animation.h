@@ -10,8 +10,6 @@ struct rasterfall_animation_quaternion { double x, y, z, w; };
 struct rasterfall_animation_keyframe {
     int time_ms;
     struct rasterfall_animation_quaternion rotation;
-    /* Optional VMD interpolation bytes; NULL means ordinary linear timing. */
-    const unsigned char *interpolation;
 };
 struct rasterfall_animation_track {
     int target_bone;
@@ -23,7 +21,6 @@ struct rasterfall_animation_clip {
     int loop;
     const struct rasterfall_animation_track *tracks;
     int track_count;
-    int use_vmd_bezier;
 };
 struct rasterfall_animation_rotation { int x, y, z; };
 struct rasterfall_animation_player {
@@ -65,40 +62,6 @@ rasterfall_animation_quat_nlerp(struct rasterfall_animation_quaternion a,
     a.x += (b.x-a.x)*t; a.y += (b.y-a.y)*t;
     a.z += (b.z-a.z)*t; a.w += (b.w-a.w)*t;
     return rasterfall_animation_quat_normalize(a);
-}
-
-/* VMD stores four cubic Bezier curves in a 64-byte table with four channels
- * interleaved.  Rotation is channel 3: x1/y1/x2/y2 are bytes 3,7,11,15.
- * Solve x(u)=t and return y(u), which is the MMD timing interpolation. */
-static int rasterfall_animation_vmd_bezier_factor(
-    const unsigned char *data, int linear_factor)
-{
-    double x1, y1, x2, y2, t, lo, hi, u, x, y;
-    int i;
-    if (!data || linear_factor <= 0 || linear_factor >= 1000)
-        return linear_factor;
-    if (data[3] > 127 || data[7] > 127 ||
-        data[11] > 127 || data[15] > 127)
-        return linear_factor;
-    x1 = data[3] / 127.0; y1 = data[7] / 127.0;
-    x2 = data[11] / 127.0; y2 = data[15] / 127.0;
-    if ((x1 == 0.0 && y1 == 0.0 && x2 == 0.0 && y2 == 0.0) ||
-        x1 > x2)
-        return linear_factor;
-    t = linear_factor / 1000.0;
-    lo = 0.0; hi = 1.0;
-    for (i = 0; i < 18; i++) {
-        u = (lo + hi) * 0.5;
-        x = 3.0*(1.0-u)*(1.0-u)*u*x1 +
-            3.0*(1.0-u)*u*u*x2 + u*u*u;
-        if (x < t) lo = u; else hi = u;
-    }
-    u = (lo + hi) * 0.5;
-    y = 3.0*(1.0-u)*(1.0-u)*u*y1 +
-        3.0*(1.0-u)*u*u*y2 + u*u*u;
-    if (y < 0.0) y = 0.0;
-    if (y > 1.0) y = 1.0;
-    return (int)(y * 1000.0 + 0.5);
 }
 
 static void rasterfall_animation_quat_to_euler(
@@ -161,9 +124,6 @@ static void rasterfall_animation_sample(
         }
         if (factor < 0) factor = 0;
         if (factor > 1000) factor = 1000;
-        if (clip->use_vmd_bezier && b != a && a->interpolation)
-            factor = rasterfall_animation_vmd_bezier_factor(
-                a->interpolation, factor);
         rasterfall_animation_quat_to_euler(
             rasterfall_animation_quat_nlerp(a->rotation, b->rotation, factor),
             &out[track->target_bone]);
@@ -196,7 +156,6 @@ static int rasterfall_animation_logic_test(void)
     t[0].target_bone=0; t[0].keys=k; t[0].key_count=3;
     t[1].target_bone=1; t[1].keys=k; t[1].key_count=3;
     c.duration_ms=100; c.loop=1; c.tracks=t; c.track_count=2;
-    c.use_vmd_bezier=0;
     rasterfall_animation_sample(&c,0,out,3); if (out[0].z || out[1].z || out[2].z) return 1;
     rasterfall_animation_sample(&c,50,out,3); if (out[0].z != 30 || out[1].z != 30) return 2;
     rasterfall_animation_sample(&c,100,out,3); if (out[0].z || out[1].z) return 3;
