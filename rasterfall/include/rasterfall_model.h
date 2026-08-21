@@ -148,11 +148,32 @@ struct rasterfall_model_asset {
     int grant_pose_applied;
     int ik_limits_enabled;
     int ik_synthetic_target;
+    int ik_synthetic_side;
+    int ik_analytic_geometry_dump;
+    int ik_analytic_pole_override;
+    double ik_analytic_pole[3];
+    int ik_analytic_probe_ran;
+    int ik_analytic_probe_raw_knee_x;
+    int ik_analytic_probe_knee_valid;
+    double ik_analytic_probe_ankle_error;
     int ik_diagnostic_dump;
     int ik_target_space_diagnostic;
+    /* Inspector-only solver diagnostics.  These remain disabled in runtime. */
+    int ik_warm_start_diagnostic;
+    int ik_legacy_knee_ccd;
+    int ik_diagnostic_reverse_order;
+    int ik_diagnostic_knee_scale_milli;
+    int ik_diagnostic_thigh_scale_milli;
+    int ik_iteration_trace_time_ms;
+    int ik_warm_start_valid[2];
+    int ik_warm_start_thigh[2][3];
+    int ik_warm_start_knee[2][3];
     double ik_synthetic_offset[3];
     unsigned long ik_sample_count;
     unsigned long ik_controller_sample_count;
+    unsigned long ik_analytic_solved_count;
+    unsigned long ik_analytic_clamped_count;
+    unsigned long ik_analytic_rejected_count;
     unsigned long ik_iteration_total;
     unsigned int ik_iteration_max;
     double ik_error_before_total;
@@ -220,6 +241,8 @@ void rasterfall_model_set_ik_enabled(struct rasterfall_model_asset *asset,
                                      int enabled);
 void rasterfall_model_set_grant_enabled(struct rasterfall_model_asset *asset,
                                         int enabled);
+void rasterfall_model_set_legacy_knee_ccd(struct rasterfall_model_asset *asset,
+                                           int enabled);
 int rasterfall_model_apply_rotation_grants(struct rasterfall_model_asset *asset);
 void rasterfall_model_set_vmd_skeleton_translation(
     struct rasterfall_model_asset *asset, const int center[3],

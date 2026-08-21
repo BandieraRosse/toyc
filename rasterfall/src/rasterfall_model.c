@@ -604,6 +604,13 @@ static int model_clamp_angle(int value, float lower, float upper)
     return value < lo ? lo : value > hi ? hi : value;
 }
 
+static int model_is_x_hinge(const struct rasterfall_model_ik_link *link)
+{
+    if (!link || !link->limited) return 0;
+    return fabs(link->lower[1]) < 0.0001f && fabs(link->upper[1]) < 0.0001f &&
+           fabs(link->lower[2]) < 0.0001f && fabs(link->upper[2]) < 0.0001f;
+}
+
 static void model_sample_track_translation(
     const struct rasterfall_animation_track *track, int time_ms, int duration,
     double out[3])
@@ -643,6 +650,349 @@ static const struct rasterfall_animation_track *model_find_clip_track(
     return 0;
 }
 
+static struct rasterfall_animation_quaternion model_matrix_to_quaternion(
+    const double *m);
+
+static int model_rotation_between(const double from_in[3],
+                                  const double to_in[3],
+                                  const double pole[3], double out[9])
+{
+    double from[3], to[3], axis[3], len_from, len_to, cross_len, dot, angle;
+    int i;
+    len_from = model_vec_length(from_in); len_to = model_vec_length(to_in);
+    if (len_from < 0.000001 || len_to < 0.000001) return -1;
+    for (i=0;i<3;i++) { from[i]=from_in[i]/len_from; to[i]=to_in[i]/len_to; }
+    model_vec_cross(from, to, axis);
+    cross_len = model_vec_length(axis);
+    dot = from[0]*to[0] + from[1]*to[1] + from[2]*to[2];
+    if (dot > 1.0) dot = 1.0;
+    if (dot < -1.0) dot = -1.0;
+    if (cross_len < 0.000001) {
+        if (dot > 0.0) {
+            out[0]=out[4]=out[8]=1.0; out[1]=out[2]=out[3]=out[5]=out[6]=out[7]=0.0;
+            return 0;
+        }
+        memcpy(axis, pole, sizeof(axis));
+        cross_len = model_vec_length(axis);
+        if (cross_len < 0.000001) return -1;
+        axis[0]/=cross_len; axis[1]/=cross_len; axis[2]/=cross_len;
+        model_matrix_axis_angle(axis, M_PI, out);
+        return 0;
+    }
+    axis[0]/=cross_len; axis[1]/=cross_len; axis[2]/=cross_len;
+    angle = atan2(cross_len, dot);
+    model_matrix_axis_angle(axis, angle, out);
+    return 0;
+}
+
+static void model_probe_analytic_candidate(
+    struct rasterfall_model_asset *asset, const struct rasterfall_model_ik *ik,
+    const double h[3], const double from[3], const double kd[3],
+    const double target[3], const double pole[3], const int base_thigh[3],
+    const int base_knee[3], const char *label)
+{
+    double delta[9], desired_global[9], parent_inverse[9], local[9];
+    double e0[3], e1[3], h0[3], h1[3], z0[3], z1[3], lower[3];
+    double base_frame[9], desired_frame[9], base_transpose[9], frame_tmp[9];
+    double hinge_axis[3], a[3], b[3], cross[3], dot, alen, blen, signed_angle;
+    double ankle[3], error, thigh_error;
+    int thigh = ik->links[1].bone, knee = ik->links[0].bone;
+    int parent, x, y, z, raw_x, clamped_x, valid;
+    e0[0]=from[0]/model_vec_length(from);e0[1]=from[1]/model_vec_length(from);e0[2]=from[2]/model_vec_length(from);
+    lower[0]=target[0]-kd[0];lower[1]=target[1]-kd[1];lower[2]=target[2]-kd[2];
+    alen=model_vec_length(lower);if(alen<0.000001)return;lower[0]/=alen;lower[1]/=alen;lower[2]/=alen;
+    e1[0]=(kd[0]-h[0])/model_vec_length((double[3]){kd[0]-h[0],kd[1]-h[1],kd[2]-h[2]});
+    e1[1]=(kd[1]-h[1])/model_vec_length((double[3]){kd[0]-h[0],kd[1]-h[1],kd[2]-h[2]});
+    e1[2]=(kd[2]-h[2])/model_vec_length((double[3]){kd[0]-h[0],kd[1]-h[1],kd[2]-h[2]});
+    parent=asset->bones[knee].parent;
+    if(parent>=0)matrix_vector(asset->bone_transforms[parent].rotation,1.0,0.0,0.0,&h0[0],&h0[1],&h0[2]);else{h0[0]=1.0;h0[1]=0.0;h0[2]=0.0;}
+    dot=h0[0]*e0[0]+h0[1]*e0[1]+h0[2]*e0[2];h0[0]-=dot*e0[0];h0[1]-=dot*e0[1];h0[2]-=dot*e0[2];alen=model_vec_length(h0);if(alen<0.000001)return;h0[0]/=alen;h0[1]/=alen;h0[2]/=alen;
+    model_vec_cross(e0,h0,z0);model_vec_cross(e1,lower,h1);alen=model_vec_length(h1);if(alen<0.000001)return;h1[0]/=alen;h1[1]/=alen;h1[2]/=alen;
+    if(model_rotation_between(e0,e1,pole,delta)<0)return;
+    matrix_vector(delta,h0[0],h0[1],h0[2],&hinge_axis[0],&hinge_axis[1],&hinge_axis[2]);
+    if(hinge_axis[0]*h1[0]+hinge_axis[1]*h1[1]+hinge_axis[2]*h1[2]<0.0){h1[0]=-h1[0];h1[1]=-h1[1];h1[2]=-h1[2];}
+    model_vec_cross(e1,h1,z1);
+    base_frame[0]=e0[0];base_frame[1]=h0[0];base_frame[2]=z0[0];base_frame[3]=e0[1];base_frame[4]=h0[1];base_frame[5]=z0[1];base_frame[6]=e0[2];base_frame[7]=h0[2];base_frame[8]=z0[2];
+    desired_frame[0]=e1[0];desired_frame[1]=h1[0];desired_frame[2]=z1[0];desired_frame[3]=e1[1];desired_frame[4]=h1[1];desired_frame[5]=z1[1];desired_frame[6]=e1[2];desired_frame[7]=h1[2];desired_frame[8]=z1[2];
+    model_matrix_transpose(base_frame,base_transpose);matrix_multiply(desired_frame,base_transpose,frame_tmp);memcpy(delta,frame_tmp,sizeof(delta));
+    matrix_multiply(delta,asset->bone_transforms[thigh].rotation,desired_global);
+    parent=asset->bones[thigh].parent;
+    if(parent>=0){model_matrix_transpose(asset->bone_transforms[parent].rotation,parent_inverse);matrix_multiply(parent_inverse,desired_global,local);}else memcpy(local,desired_global,sizeof(local));
+    model_matrix_to_euler(local,&x,&y,&z);
+    asset->bones[thigh].rotate_x=x;asset->bones[thigh].rotate_y=y;asset->bones[thigh].rotate_z=z;
+    rasterfall_model_update_bones(asset);
+    thigh_error=model_vec_length((double[3]){
+        asset->bone_transforms[knee].position[0]-kd[0],
+        asset->bone_transforms[knee].position[1]-kd[1],
+        asset->bone_transforms[knee].position[2]-kd[2]});
+    parent=asset->bones[knee].parent;
+    if(parent>=0)matrix_vector(asset->bone_transforms[parent].rotation,1.0,0.0,0.0,&hinge_axis[0],&hinge_axis[1],&hinge_axis[2]);
+    else {hinge_axis[0]=1.0;hinge_axis[1]=0.0;hinge_axis[2]=0.0;}
+    a[0]=asset->bone_transforms[ik->target].position[0]-asset->bone_transforms[knee].position[0];
+    a[1]=asset->bone_transforms[ik->target].position[1]-asset->bone_transforms[knee].position[1];
+    a[2]=asset->bone_transforms[ik->target].position[2]-asset->bone_transforms[knee].position[2];
+    b[0]=target[0]-asset->bone_transforms[knee].position[0];
+    b[1]=target[1]-asset->bone_transforms[knee].position[1];
+    b[2]=target[2]-asset->bone_transforms[knee].position[2];
+    dot=a[0]*hinge_axis[0]+a[1]*hinge_axis[1]+a[2]*hinge_axis[2];a[0]-=dot*hinge_axis[0];a[1]-=dot*hinge_axis[1];a[2]-=dot*hinge_axis[2];
+    dot=b[0]*hinge_axis[0]+b[1]*hinge_axis[1]+b[2]*hinge_axis[2];b[0]-=dot*hinge_axis[0];b[1]-=dot*hinge_axis[1];b[2]-=dot*hinge_axis[2];
+    alen=model_vec_length(a);blen=model_vec_length(b);
+    if(alen<0.000001||blen<0.000001)goto restore;
+    a[0]/=alen;a[1]/=alen;a[2]/=alen;b[0]/=blen;b[1]/=blen;b[2]/=blen;model_vec_cross(a,b,cross);
+    signed_angle=atan2(hinge_axis[0]*cross[0]+hinge_axis[1]*cross[1]+hinge_axis[2]*cross[2],a[0]*b[0]+a[1]*b[1]+a[2]*b[2]);
+    raw_x=base_knee[0]+rounded(signed_angle*180.0/M_PI);
+    clamped_x=asset->ik_limits_enabled?model_clamp_angle(raw_x,ik->links[0].lower[0],ik->links[0].upper[0]):raw_x;
+    valid=raw_x==clamped_x;
+    asset->bones[knee].rotate_x=clamped_x;asset->bones[knee].rotate_y=0;asset->bones[knee].rotate_z=0;rasterfall_model_update_bones(asset);
+    ankle[0]=asset->bone_transforms[ik->target].position[0];ankle[1]=asset->bone_transforms[ik->target].position[1];ankle[2]=asset->bone_transforms[ik->target].position[2];
+    error=model_vec_length((double[3]){ankle[0]-target[0],ankle[1]-target[1],ankle[2]-target[2]});
+    __printf("analytic candidate=%s K=(%.3f,%.3f,%.3f) thigh_error=%.6f signed_knee=%.6fdeg raw_x=%d clamped_x=%d valid=%s ankle_error=%.6f A=(%.3f,%.3f,%.3f)\n",label,kd[0],kd[1],kd[2],thigh_error,signed_angle*180.0/M_PI,raw_x,clamped_x,valid?"yes":"no",error,ankle[0],ankle[1],ankle[2]);
+restore:
+    asset->bones[thigh].rotate_x=base_thigh[0];asset->bones[thigh].rotate_y=base_thigh[1];asset->bones[thigh].rotate_z=base_thigh[2];
+    asset->bones[knee].rotate_x=base_knee[0];asset->bones[knee].rotate_y=base_knee[1];asset->bones[knee].rotate_z=base_knee[2];
+    rasterfall_model_update_bones(asset);
+}
+
+static int model_solve_one_leg_analytic(
+    struct rasterfall_model_asset *asset, const struct rasterfall_model_ik *ik,
+    const struct rasterfall_animation_clip *clip, int time_ms,
+    unsigned int *attempts, double *before, double *after)
+{
+    const struct rasterfall_animation_track *track;
+    double target[3], raw[3], h[3], k0[3], a0[3], u[3], pole[3], v[3], kd[3];
+    double l1, l2, d, dc, min_d, max_d, cos_h, bend, current_lower[3];
+    double from[3], delta[9], desired_global[9], parent_inverse[9], local[9];
+    double axis_dot, v_len, current[3], offset[3];
+    double hinge_axis[3], aa[3], bb[3], cross2[3], aa_len, bb_len, dot2, signed2;
+    double bind_pole[3];
+    double e0[3], e1[3], h0[3], h1[3], z0[3], z1[3], ldesired[3], candidate_b[3];
+    double base_frame[9], desired_frame[9], base_transpose[9], frame_tmp[9];
+    int knee, thigh, parent, x, y, z, clamped = 0;
+    int base_knee_x, base_thigh[3], base_knee[3];
+    if (!asset || !ik || !clip || ik->link_count != 2 || !model_is_x_hinge(&ik->links[0]) ||
+        ik->controller < 0 || ik->target < 0 ||
+        (strcmp(asset->bones[ik->controller].name, "左足ＩＫ") &&
+         strcmp(asset->bones[ik->controller].name, "右足ＩＫ"))) return 0;
+    track = model_find_clip_track(clip, ik->controller);
+    if (!track && !asset->ik_synthetic_target) return 0;
+    knee = ik->links[0].bone; thigh = ik->links[1].bone;
+    if (knee < 0 || thigh < 0 || ik->target >= (int)asset->bone_count) return 0;
+    rasterfall_model_update_bones(asset);
+    if (asset->ik_synthetic_target && asset->ik_synthetic_side >= 0 &&
+        ((asset->ik_synthetic_side == 0 && strcmp(asset->bones[ik->controller].name, "左足ＩＫ")) ||
+         (asset->ik_synthetic_side == 1 && strcmp(asset->bones[ik->controller].name, "右足ＩＫ")))) return 0;
+    target[0]=asset->bone_transforms[ik->controller].position[0];
+    target[1]=asset->bone_transforms[ik->controller].position[1];
+    target[2]=asset->bone_transforms[ik->controller].position[2];
+    raw[0]=raw[1]=raw[2]=0.0;
+    if (asset->ik_synthetic_target) {
+        target[0]+=asset->ik_synthetic_offset[0]; target[1]+=asset->ik_synthetic_offset[1]; target[2]+=asset->ik_synthetic_offset[2];
+    } else {
+        model_sample_track_translation(track,time_ms,clip->duration_ms,raw);
+        target[0]+=raw[0]*232.0; target[1]+=raw[1]*232.0; target[2]+=raw[2]*232.0;
+    }
+    h[0]=asset->bone_transforms[thigh].position[0]; h[1]=asset->bone_transforms[thigh].position[1]; h[2]=asset->bone_transforms[thigh].position[2];
+    k0[0]=asset->bone_transforms[knee].position[0]; k0[1]=asset->bone_transforms[knee].position[1]; k0[2]=asset->bone_transforms[knee].position[2];
+    a0[0]=asset->bone_transforms[ik->target].position[0]; a0[1]=asset->bone_transforms[ik->target].position[1]; a0[2]=asset->bone_transforms[ik->target].position[2];
+    current[0]=a0[0]; current[1]=a0[1]; current[2]=a0[2];
+    offset[0]=current[0]-target[0]; offset[1]=current[1]-target[1]; offset[2]=current[2]-target[2];
+    *before=model_vec_length(offset); *after=*before; if (attempts) *attempts=0;
+    from[0]=k0[0]-h[0]; from[1]=k0[1]-h[1]; from[2]=k0[2]-h[2];
+    current_lower[0]=a0[0]-k0[0]; current_lower[1]=a0[1]-k0[1]; current_lower[2]=a0[2]-k0[2];
+    l1=model_vec_length(from); l2=model_vec_length(current_lower);
+    u[0]=target[0]-h[0]; u[1]=target[1]-h[1]; u[2]=target[2]-h[2]; d=model_vec_length(u);
+    if (l1 < 0.000001 || l2 < 0.000001) return 0;
+    min_d=fabs(l1-l2)+0.001; max_d=l1+l2-0.001;
+    if (max_d < min_d) max_d=min_d;
+    dc=d; if (dc < min_d) {dc=min_d;clamped=1;} if (dc > max_d) {dc=max_d;clamped=1;}
+    {
+        double ratio=d/(l1+l2);
+        asset->ik_reach_sample_count++;
+        asset->ik_reach_distance_total+=d;
+        asset->ik_reach_ratio_total+=ratio;
+        if(d>asset->ik_reach_distance_max)asset->ik_reach_distance_max=d;
+        if(ratio>asset->ik_reach_ratio_max)asset->ik_reach_ratio_max=ratio;
+        if(d>l1+l2)asset->ik_unreachable_count++;
+    }
+    if (d < 0.000001) { u[0]=from[0];u[1]=from[1];u[2]=from[2];d=model_vec_length(u); }
+    u[0]/=d;u[1]/=d;u[2]/=d;
+    /* The bend reference is taken from this leg's FK/bind H-K-A plane, not
+     * from a shared left/right sign or from the animated target direction. */
+    pole[0]=a0[0]-h[0];pole[1]=a0[1]-h[1];pole[2]=a0[2]-h[2];
+    axis_dot=pole[0]*from[0]+pole[1]*from[1]+pole[2]*from[2];
+    pole[0]=from[0]-pole[0]*(axis_dot/(l2*l2));
+    pole[1]=from[1]-pole[1]*(axis_dot/(l2*l2));
+    pole[2]=from[2]-pole[2]*(axis_dot/(l2*l2));
+    aa_len=model_vec_length(pole);
+    if (aa_len < 0.000001) return 0;
+    bind_pole[0]=pole[0]/aa_len;bind_pole[1]=pole[1]/aa_len;bind_pole[2]=pole[2]/aa_len;
+    axis_dot=pole[0]*u[0]+pole[1]*u[1]+pole[2]*u[2];
+    v[0]=pole[0]-u[0]*axis_dot;v[1]=pole[1]-u[1]*axis_dot;v[2]=pole[2]-u[2]*axis_dot;
+    v_len=model_vec_length(v);
+    if (v_len < 0.000001) {
+        v[0]=current_lower[0];v[1]=current_lower[1];v[2]=current_lower[2];
+        axis_dot=v[0]*u[0]+v[1]*u[1]+v[2]*u[2];
+        v[0]-=u[0]*axis_dot;v[1]-=u[1]*axis_dot;v[2]-=u[2]*axis_dot;v_len=model_vec_length(v);
+    }
+    if (v_len < 0.000001) return 0;
+    v[0]/=v_len;v[1]/=v_len;v[2]/=v_len;
+    if (asset->ik_analytic_pole_override) {
+        v[0]=asset->ik_analytic_pole[0];
+        v[1]=asset->ik_analytic_pole[1];
+        v[2]=asset->ik_analytic_pole[2];
+        v_len=model_vec_length(v);
+        if (v_len < 0.000001) return 0;
+        v[0]/=v_len;v[1]/=v_len;v[2]/=v_len;
+    }
+    cos_h=(l1*l1+dc*dc-l2*l2)/(2.0*l1*dc);
+    if (cos_h > 1.0) cos_h = 1.0;
+    if (cos_h < -1.0) cos_h = -1.0;
+    bend=1.0-cos_h*cos_h;if(bend<0.0)bend=0.0;bend=sqrt(bend);
+    kd[0]=h[0]+u[0]*(l1*cos_h)+v[0]*(l1*bend);
+    kd[1]=h[1]+u[1]*(l1*cos_h)+v[1]*(l1*bend);
+    kd[2]=h[2]+u[2]*(l1*cos_h)+v[2]*(l1*bend);
+    base_thigh[0]=asset->bones[thigh].rotate_x;base_thigh[1]=asset->bones[thigh].rotate_y;base_thigh[2]=asset->bones[thigh].rotate_z;
+    base_knee[0]=asset->bones[knee].rotate_x;base_knee[1]=asset->bones[knee].rotate_y;base_knee[2]=asset->bones[knee].rotate_z;
+    candidate_b[0]=h[0]+u[0]*(l1*cos_h)-v[0]*(l1*bend);
+    candidate_b[1]=h[1]+u[1]*(l1*cos_h)-v[1]*(l1*bend);
+    candidate_b[2]=h[2]+u[2]*(l1*cos_h)-v[2]*(l1*bend);
+    if (asset->ik_analytic_geometry_dump) {
+        model_probe_analytic_candidate(asset,ik,h,from,kd,target,v,base_thigh,base_knee,"A");
+        model_probe_analytic_candidate(asset,ik,h,from,candidate_b,target,v,base_thigh,base_knee,"B");
+    }
+    e0[0]=from[0]/l1;e0[1]=from[1]/l1;e0[2]=from[2]/l1;
+    e1[0]=(kd[0]-h[0])/l1;e1[1]=(kd[1]-h[1])/l1;e1[2]=(kd[2]-h[2])/l1;
+    ldesired[0]=(target[0]-kd[0])/l2;ldesired[1]=(target[1]-kd[1])/l2;ldesired[2]=(target[2]-kd[2])/l2;
+    parent=asset->bones[knee].parent;
+    if (parent >= 0) matrix_vector(asset->bone_transforms[parent].rotation,1.0,0.0,0.0,&h0[0],&h0[1],&h0[2]);
+    else { h0[0]=1.0; h0[1]=0.0; h0[2]=0.0; }
+    dot2=h0[0]*e0[0]+h0[1]*e0[1]+h0[2]*e0[2];
+    h0[0]-=dot2*e0[0];h0[1]-=dot2*e0[1];h0[2]-=dot2*e0[2];
+    aa_len=model_vec_length(h0);
+    if (aa_len < 0.000001) return 0;
+    h0[0]/=aa_len;h0[1]/=aa_len;h0[2]/=aa_len;
+    model_vec_cross(e0,h0,z0);
+    model_vec_cross(e1,ldesired,h1);
+    aa_len=model_vec_length(h1);
+    if (aa_len < 0.000001) return 0;
+    h1[0]/=aa_len;h1[1]/=aa_len;h1[2]/=aa_len;
+    if (model_rotation_between(e0,e1,v,delta)<0) return 0;
+    matrix_vector(delta,h0[0],h0[1],h0[2],&hinge_axis[0],&hinge_axis[1],&hinge_axis[2]);
+    if (hinge_axis[0]*h1[0]+hinge_axis[1]*h1[1]+hinge_axis[2]*h1[2] < 0.0) {
+        h1[0]=-h1[0];h1[1]=-h1[1];h1[2]=-h1[2];
+    }
+    model_vec_cross(e1,h1,z1);
+    base_frame[0]=e0[0];base_frame[1]=h0[0];base_frame[2]=z0[0];
+    base_frame[3]=e0[1];base_frame[4]=h0[1];base_frame[5]=z0[1];
+    base_frame[6]=e0[2];base_frame[7]=h0[2];base_frame[8]=z0[2];
+    desired_frame[0]=e1[0];desired_frame[1]=h1[0];desired_frame[2]=z1[0];
+    desired_frame[3]=e1[1];desired_frame[4]=h1[1];desired_frame[5]=z1[1];
+    desired_frame[6]=e1[2];desired_frame[7]=h1[2];desired_frame[8]=z1[2];
+    model_matrix_transpose(base_frame,base_transpose);
+    matrix_multiply(desired_frame,base_transpose,frame_tmp);
+    memcpy(delta,frame_tmp,sizeof(delta));
+    matrix_multiply(delta,asset->bone_transforms[thigh].rotation,desired_global);
+    parent=asset->bones[thigh].parent;
+    if(parent>=0){model_matrix_transpose(asset->bone_transforms[parent].rotation,parent_inverse);matrix_multiply(parent_inverse,desired_global,local);}else memcpy(local,desired_global,sizeof(local));
+    model_matrix_to_euler(local,&x,&y,&z);
+    asset->bones[thigh].rotate_x=x;asset->bones[thigh].rotate_y=y;asset->bones[thigh].rotate_z=z;
+    rasterfall_model_update_bones(asset);
+    if (asset->ik_analytic_geometry_dump)
+        __printf("analytic thigh controller=%s Kdesired=(%.3f,%.3f,%.3f) Kactual=(%.3f,%.3f,%.3f) error=%.6f\n",
+                 asset->bones[ik->controller].name,kd[0],kd[1],kd[2],
+                 asset->bone_transforms[knee].position[0],
+                 asset->bone_transforms[knee].position[1],
+                 asset->bone_transforms[knee].position[2],
+                 model_vec_length((double[3]){
+                     asset->bone_transforms[knee].position[0]-kd[0],
+                     asset->bone_transforms[knee].position[1]-kd[1],
+                     asset->bone_transforms[knee].position[2]-kd[2]}));
+    parent=asset->bones[knee].parent;
+    if(parent>=0) matrix_vector(asset->bone_transforms[parent].rotation,1.0,0.0,0.0,&hinge_axis[0],&hinge_axis[1],&hinge_axis[2]);
+    else {hinge_axis[0]=1.0;hinge_axis[1]=0.0;hinge_axis[2]=0.0;}
+    aa[0]=asset->bone_transforms[ik->target].position[0]-asset->bone_transforms[knee].position[0];
+    aa[1]=asset->bone_transforms[ik->target].position[1]-asset->bone_transforms[knee].position[1];
+    aa[2]=asset->bone_transforms[ik->target].position[2]-asset->bone_transforms[knee].position[2];
+    bb[0]=target[0]-asset->bone_transforms[knee].position[0];
+    bb[1]=target[1]-asset->bone_transforms[knee].position[1];
+    bb[2]=target[2]-asset->bone_transforms[knee].position[2];
+    dot2=aa[0]*hinge_axis[0]+aa[1]*hinge_axis[1]+aa[2]*hinge_axis[2];
+    aa[0]-=hinge_axis[0]*dot2;aa[1]-=hinge_axis[1]*dot2;aa[2]-=hinge_axis[2]*dot2;
+    dot2=bb[0]*hinge_axis[0]+bb[1]*hinge_axis[1]+bb[2]*hinge_axis[2];
+    bb[0]-=hinge_axis[0]*dot2;bb[1]-=hinge_axis[1]*dot2;bb[2]-=hinge_axis[2]*dot2;
+    aa_len=model_vec_length(aa);bb_len=model_vec_length(bb);
+    if(aa_len<0.000001||bb_len<0.000001)return 0;
+    aa[0]/=aa_len;aa[1]/=aa_len;aa[2]/=aa_len;bb[0]/=bb_len;bb[1]/=bb_len;bb[2]/=bb_len;
+    model_vec_cross(aa,bb,cross2);
+    signed2=atan2(hinge_axis[0]*cross2[0]+hinge_axis[1]*cross2[1]+hinge_axis[2]*cross2[2],aa[0]*bb[0]+aa[1]*bb[1]+aa[2]*bb[2]);
+    base_knee_x = base_knee[0];
+    if (asset->ik_analytic_geometry_dump) {
+        double finite_error[3], finite_ankle[3][3];
+        int finite_angle[3] = {base_knee_x, base_knee_x + 5, base_knee_x - 5};
+        int finite_i;
+        for (finite_i = 0; finite_i < 3; finite_i++) {
+            asset->bones[knee].rotate_x = finite_angle[finite_i];
+            asset->bones[knee].rotate_y = 0;
+            asset->bones[knee].rotate_z = 0;
+            rasterfall_model_update_bones(asset);
+            finite_ankle[finite_i][0] = asset->bone_transforms[ik->target].position[0];
+            finite_ankle[finite_i][1] = asset->bone_transforms[ik->target].position[1];
+            finite_ankle[finite_i][2] = asset->bone_transforms[ik->target].position[2];
+            finite_error[finite_i] = model_vec_length((double[3]){
+                finite_ankle[finite_i][0] - target[0],
+                finite_ankle[finite_i][1] - target[1],
+                finite_ankle[finite_i][2] - target[2]});
+        }
+        asset->bones[knee].rotate_x = base_knee_x;
+        asset->bones[knee].rotate_y = 0;
+        asset->bones[knee].rotate_z = 0;
+        rasterfall_model_update_bones(asset);
+        __printf("analytic hinge finite-diff controller=%s base_x=%d predicted_correction=%.6fdeg hinge_axis=(%.6f,%.6f,%.6f) current_vec=(%.3f,%.3f,%.3f) desired_vec=(%.3f,%.3f,%.3f)\n",
+                 asset->bones[ik->controller].name,base_knee_x,signed2*180.0/M_PI,
+                 hinge_axis[0],hinge_axis[1],hinge_axis[2],
+                 aa[0],aa[1],aa[2],bb[0],bb[1],bb[2]);
+        __printf("analytic hinge finite-diff controller=%s angle=%d ankle=(%.3f,%.3f,%.3f) error=%.6f\n",
+                 asset->bones[ik->controller].name,finite_angle[0],finite_ankle[0][0],finite_ankle[0][1],finite_ankle[0][2],finite_error[0]);
+        __printf("analytic hinge finite-diff controller=%s angle=%d ankle=(%.3f,%.3f,%.3f) error=%.6f\n",
+                 asset->bones[ik->controller].name,finite_angle[1],finite_ankle[1][0],finite_ankle[1][1],finite_ankle[1][2],finite_error[1]);
+        __printf("analytic hinge finite-diff controller=%s angle=%d ankle=(%.3f,%.3f,%.3f) error=%.6f\n",
+                 asset->bones[ik->controller].name,finite_angle[2],finite_ankle[2][0],finite_ankle[2][1],finite_ankle[2][2],finite_error[2]);
+    }
+    x=base_knee_x+rounded(signed2*180.0/M_PI);
+    {
+        int raw_knee_x=x;
+        asset->ik_analytic_probe_ran=1;
+        asset->ik_analytic_probe_raw_knee_x=raw_knee_x;
+        asset->ik_analytic_probe_knee_valid=1;
+        asset->ik_analytic_probe_ankle_error=0.0;
+        if(asset->ik_limits_enabled &&
+           model_clamp_angle(raw_knee_x,ik->links[0].lower[0],ik->links[0].upper[0]) != raw_knee_x)
+            asset->ik_analytic_probe_knee_valid=0;
+    }
+    if(asset->ik_limits_enabled)x=model_clamp_angle(x,ik->links[0].lower[0],ik->links[0].upper[0]);
+    asset->bones[knee].rotate_x=x;asset->bones[knee].rotate_y=0;asset->bones[knee].rotate_z=0;
+    rasterfall_model_update_bones(asset);
+    current[0]=asset->bone_transforms[ik->target].position[0];current[1]=asset->bone_transforms[ik->target].position[1];current[2]=asset->bone_transforms[ik->target].position[2];
+    offset[0]=current[0]-target[0];offset[1]=current[1]-target[1];offset[2]=current[2]-target[2];*after=model_vec_length(offset);
+    asset->ik_analytic_probe_ankle_error=*after;
+    if (asset->ik_analytic_geometry_dump)
+        __printf("analytic knee controller=%s hinge_axis=(%.6f,%.6f,%.6f) knee_x=%d Adesired=(%.3f,%.3f,%.3f) Aactual=(%.3f,%.3f,%.3f) knee_error=%.6f ankle_error=%.6f\n",
+                 asset->bones[ik->controller].name,hinge_axis[0],hinge_axis[1],hinge_axis[2],x,
+                 target[0],target[1],target[2],current[0],current[1],current[2],
+                 model_vec_length((double[3]){
+                     asset->bone_transforms[knee].position[0]-kd[0],
+                     asset->bone_transforms[knee].position[1]-kd[1],
+                     asset->bone_transforms[knee].position[2]-kd[2]}),*after);
+    if (asset->ik_analytic_geometry_dump)
+        __printf("analytic geometry controller=%s H=(%.3f,%.3f,%.3f) Kbind=(%.3f,%.3f,%.3f) Abind=(%.3f,%.3f,%.3f) bind_pole=(%.6f,%.6f,%.6f) target_pole=(%.6f,%.6f,%.6f) Kdesired=(%.3f,%.3f,%.3f) Kdistance=%.6f Adistance=%.6f\n",
+                 asset->bones[ik->controller].name,h[0],h[1],h[2],k0[0],k0[1],k0[2],a0[0],a0[1],a0[2],bind_pole[0],bind_pole[1],bind_pole[2],v[0],v[1],v[2],kd[0],kd[1],kd[2],fabs(model_vec_length((double[3]){kd[0]-h[0],kd[1]-h[1],kd[2]-h[2]})-l1),fabs(model_vec_length((double[3]){target[0]-kd[0],target[1]-kd[1],target[2]-kd[2]})-l2));
+    if (asset->ik_diagnostic_dump)
+        __printf("analytic leg controller=%s time=%d H=(%.3f,%.3f,%.3f) Kdesired=(%.3f,%.3f,%.3f) Kactual=(%.3f,%.3f,%.3f) T=(%.3f,%.3f,%.3f) L1=%.3f L2=%.3f d=%.3f dc=%.3f knee_angle=%d thigh_local=(%d,%d,%d) ankle=(%.3f,%.3f,%.3f) error_before=%.3f error_after=%.3f clamped=%s\n",
+                 asset->bones[ik->controller].name,time_ms,h[0],h[1],h[2],kd[0],kd[1],kd[2],asset->bone_transforms[knee].position[0],asset->bone_transforms[knee].position[1],asset->bone_transforms[knee].position[2],target[0],target[1],target[2],l1,l2,d,dc,x,asset->bones[thigh].rotate_x,asset->bones[thigh].rotate_y,asset->bones[thigh].rotate_z,current[0],current[1],current[2],*before,*after,clamped?"yes":"no");
+    asset->ik_analytic_solved_count++;if(clamped)asset->ik_analytic_clamped_count++;
+    return 1;
+}
+
 static int model_solve_one_leg_ik(struct rasterfall_model_asset *asset,
                                   const struct rasterfall_model_ik *ik,
                                   const struct rasterfall_animation_clip *clip,
@@ -661,6 +1011,7 @@ static int model_solve_one_leg_ik(struct rasterfall_model_asset *asset,
     double after_target[3], after_knee[3], after_thigh[3];
     double after_ankle[3];
     int before_knee_rot[3], before_thigh_rot[3];
+    unsigned long trace_improving = 0, trace_worsening = 0, trace_unchanged = 0;
     unsigned int iteration;
     int link_index;
     if (!asset || !ik || !clip || !attempts || !before || !after ||
@@ -674,6 +1025,21 @@ static int model_solve_one_leg_ik(struct rasterfall_model_asset *asset,
         strcmp(asset->bones[ik->controller].name, "左足ＩＫ")) return 0;
     if (!asset->ik_synthetic_target && !track) return 0;
     rasterfall_model_update_bones(asset);
+    {
+        int warm_side = !strcmp(asset->bones[ik->controller].name, "左足ＩＫ") ? 0 : 1;
+        int warm_knee = ik->links[0].bone;
+        int warm_thigh = ik->links[ik->link_count - 1].bone;
+        if (asset->ik_warm_start_diagnostic && warm_side >= 0 &&
+            warm_side < 2 && asset->ik_warm_start_valid[warm_side]) {
+            asset->bones[warm_knee].rotate_x = asset->ik_warm_start_knee[warm_side][0];
+            asset->bones[warm_knee].rotate_y = asset->ik_warm_start_knee[warm_side][1];
+            asset->bones[warm_knee].rotate_z = asset->ik_warm_start_knee[warm_side][2];
+            asset->bones[warm_thigh].rotate_x = asset->ik_warm_start_thigh[warm_side][0];
+            asset->bones[warm_thigh].rotate_y = asset->ik_warm_start_thigh[warm_side][1];
+            asset->bones[warm_thigh].rotate_z = asset->ik_warm_start_thigh[warm_side][2];
+            rasterfall_model_update_bones(asset);
+        }
+    }
     controller_global[0] = asset->bone_transforms[ik->controller].position[0];
     controller_global[1] = asset->bone_transforms[ik->controller].position[1];
     controller_global[2] = asset->bone_transforms[ik->controller].position[2];
@@ -799,14 +1165,17 @@ static int model_solve_one_leg_ik(struct rasterfall_model_asset *asset,
     before_thigh_rot[1] = asset->bones[ik->links[ik->link_count-1].bone].rotate_y;
     before_thigh_rot[2] = asset->bones[ik->links[ik->link_count-1].bone].rotate_z;
     for (iteration = 0; iteration < (unsigned int)ik->iterations; iteration++) {
-        int changed = 0;
+        int changed = 0, update_order;
         (*attempts)++;
-        for (link_index = 0; link_index < (int)ik->link_count; link_index++) {
+        for (update_order = 0; update_order < (int)ik->link_count; update_order++) {
+            link_index = asset->ik_diagnostic_reverse_order ?
+                (int)ik->link_count - 1 - update_order : update_order;
             const struct rasterfall_model_ik_link *link = &ik->links[link_index];
             struct rasterfall_model_bone_transform *lt;
             double from[3], to[3], axis[3], cross_len, dot, angle;
             double delta[9], global[9], next_global[9], parent_inverse[9], local[9];
-            int x, y, z, parent;
+            double error_before_link, hinge_correction = 0.0;
+            int x, y, z, parent, hinge_path;
             if (link->bone < 0 || link->bone >= (int)asset->bone_count) return 0;
             lt = &asset->bone_transforms[link->bone];
             from[0] = asset->bone_transforms[ik->target].position[0] - lt->position[0];
@@ -817,6 +1186,56 @@ static int model_solve_one_leg_ik(struct rasterfall_model_asset *asset,
             to[2] = target[2] - lt->position[2];
             if (model_vec_length(from) < 0.000001 || model_vec_length(to) < 0.000001)
                 continue;
+            error_before_link = *after;
+            hinge_path = !asset->ik_legacy_knee_ccd && link_index == 0 &&
+                         model_is_x_hinge(link);
+            if (hinge_path) {
+                double hinge_axis[3], a[3], b[3], cross[3];
+                double a_len, b_len, signed_angle, current_angle, next_angle;
+                parent = asset->bones[link->bone].parent;
+                if (parent < 0) {
+                    hinge_axis[0] = 1.0; hinge_axis[1] = 0.0; hinge_axis[2] = 0.0;
+                } else {
+                    matrix_vector(asset->bone_transforms[parent].rotation,
+                                  1.0, 0.0, 0.0, &hinge_axis[0],
+                                  &hinge_axis[1], &hinge_axis[2]);
+                }
+                a[0] = from[0]; a[1] = from[1]; a[2] = from[2];
+                b[0] = to[0]; b[1] = to[1]; b[2] = to[2];
+                a[0] -= hinge_axis[0] * (a[0]*hinge_axis[0] + a[1]*hinge_axis[1] + a[2]*hinge_axis[2]);
+                a[1] -= hinge_axis[1] * (from[0]*hinge_axis[0] + from[1]*hinge_axis[1] + from[2]*hinge_axis[2]);
+                a[2] -= hinge_axis[2] * (from[0]*hinge_axis[0] + from[1]*hinge_axis[1] + from[2]*hinge_axis[2]);
+                b[0] -= hinge_axis[0] * (to[0]*hinge_axis[0] + to[1]*hinge_axis[1] + to[2]*hinge_axis[2]);
+                b[1] -= hinge_axis[1] * (to[0]*hinge_axis[0] + to[1]*hinge_axis[1] + to[2]*hinge_axis[2]);
+                b[2] -= hinge_axis[2] * (to[0]*hinge_axis[0] + to[1]*hinge_axis[1] + to[2]*hinge_axis[2]);
+                a_len = model_vec_length(a); b_len = model_vec_length(b);
+                if (a_len < 0.000001 || b_len < 0.000001) continue;
+                a[0]/=a_len; a[1]/=a_len; a[2]/=a_len;
+                b[0]/=b_len; b[1]/=b_len; b[2]/=b_len;
+                model_vec_cross(a,b,cross);
+                signed_angle = atan2(hinge_axis[0]*cross[0] + hinge_axis[1]*cross[1] + hinge_axis[2]*cross[2],
+                                     a[0]*b[0] + a[1]*b[1] + a[2]*b[2]);
+                if (ik->angle > 0.0f && fabs(signed_angle) > ik->angle)
+                    signed_angle = signed_angle < 0.0 ? -ik->angle : ik->angle;
+                if (fabs(signed_angle) > 0.25)
+                    signed_angle = signed_angle < 0.0 ? -0.25 : 0.25;
+                signed_angle *= (asset->ik_diagnostic_knee_scale_milli > 0 ?
+                                 asset->ik_diagnostic_knee_scale_milli : 1000) / 1000.0;
+                current_angle = asset->bones[link->bone].rotate_x * M_PI / 180.0;
+                next_angle = current_angle + signed_angle;
+                x = asset->ik_limits_enabled ?
+                    model_clamp_angle(rounded(next_angle * 180.0 / M_PI),
+                                      link->lower[0], link->upper[0]) :
+                    rounded(next_angle * 180.0 / M_PI);
+                y = z = 0;
+                hinge_correction = signed_angle * 180.0 / M_PI;
+                axis[0] = signed_angle < 0.0 ? -hinge_axis[0] : hinge_axis[0];
+                axis[1] = signed_angle < 0.0 ? -hinge_axis[1] : hinge_axis[1];
+                axis[2] = signed_angle < 0.0 ? -hinge_axis[2] : hinge_axis[2];
+                angle = fabs(signed_angle);
+                memcpy(global, lt->rotation, sizeof(global));
+                matrix_rotate_xyz(x, y, z, local);
+            } else {
             model_vec_cross(from, to, axis); cross_len = model_vec_length(axis);
             dot = (from[0]*to[0] + from[1]*to[1] + from[2]*to[2]) /
                   (model_vec_length(from) * model_vec_length(to));
@@ -827,6 +1246,9 @@ static int model_solve_one_leg_ik(struct rasterfall_model_asset *asset,
             angle = atan2(cross_len, dot);
             if (ik->angle > 0.0f && angle > ik->angle) angle = ik->angle;
             if (angle > 0.25) angle = 0.25;
+            if (link_index == (int)ik->link_count - 1)
+                angle *= (asset->ik_diagnostic_thigh_scale_milli > 0 ?
+                          asset->ik_diagnostic_thigh_scale_milli : 1000) / 1000.0;
             if (angle < 0.000001) continue;
             model_matrix_axis_angle(axis, angle, delta);
             memcpy(global, lt->rotation, sizeof(global));
@@ -839,10 +1261,49 @@ static int model_solve_one_leg_ik(struct rasterfall_model_asset *asset,
                 matrix_multiply(parent_inverse, next_global, local);
             }
             model_matrix_to_euler(local, &x, &y, &z);
+            }
+            if (asset->ik_iteration_trace_time_ms == time_ms) {
+                struct rasterfall_animation_quaternion correction = {
+                    axis[0] * sin(angle / 2.0), axis[1] * sin(angle / 2.0),
+                    axis[2] * sin(angle / 2.0), cos(angle / 2.0)};
+                struct rasterfall_animation_quaternion global_q =
+                    model_matrix_to_quaternion(global);
+                struct rasterfall_animation_quaternion parent_q =
+                    parent >= 0 ? model_matrix_to_quaternion(
+                        asset->bone_transforms[parent].rotation) :
+                        (struct rasterfall_animation_quaternion){0,0,0,1};
+                struct rasterfall_animation_quaternion local_q =
+                    model_matrix_to_quaternion(local);
+                __printf("ik iteration trace controller=%s time=%d iteration=%u "
+                         "knee_global_before_q=(%.6f,%.6f,%.6f,%.6f) "
+                         "correction_axis_angle=(%.6f,%.6f,%.6f,%.6f) "
+                         "correction_q=(%.6f,%.6f,%.6f,%.6f) "
+                         "parent_global_q=(%.6f,%.6f,%.6f,%.6f) "
+                         "local_before_clamp_q=(%.6f,%.6f,%.6f,%.6f) "
+                         "local_euler_before_clamp=(%d,%d,%d)\n",
+                         asset->bones[ik->controller].name, time_ms, iteration,
+                         global_q.x,global_q.y,global_q.z,global_q.w,
+                         axis[0],axis[1],axis[2],
+                         hinge_path ? hinge_correction : angle*180.0/M_PI,
+                         correction.x,correction.y,correction.z,correction.w,
+                         parent_q.x,parent_q.y,parent_q.z,parent_q.w,
+                         local_q.x,local_q.y,local_q.z,local_q.w,x,y,z);
+            }
             if (link->limited && asset->ik_limits_enabled) {
                 x = model_clamp_angle(x, link->lower[0], link->upper[0]);
                 y = model_clamp_angle(y, link->lower[1], link->upper[1]);
                 z = model_clamp_angle(z, link->lower[2], link->upper[2]);
+            }
+            if (asset->ik_iteration_trace_time_ms == time_ms) {
+                double clamped_local[9];
+                struct rasterfall_animation_quaternion final_q;
+                matrix_rotate_xyz(x,y,z,clamped_local);
+                final_q = model_matrix_to_quaternion(clamped_local);
+                __printf("ik iteration trace controller=%s time=%d iteration=%u "
+                         "local_euler_after_clamp=(%d,%d,%d) "
+                         "final_local_q=(%.6f,%.6f,%.6f,%.6f)\n",
+                         asset->bones[ik->controller].name, time_ms, iteration,
+                         x,y,z,final_q.x,final_q.y,final_q.z,final_q.w);
             }
             asset->bones[link->bone].rotate_x = x;
             asset->bones[link->bone].rotate_y = y;
@@ -855,11 +1316,47 @@ static int model_solve_one_leg_ik(struct rasterfall_model_asset *asset,
             offset[0] = current[0] - target[0]; offset[1] = current[1] - target[1];
             offset[2] = current[2] - target[2];
             *after = model_vec_length(offset);
+            if (asset->ik_iteration_trace_time_ms == time_ms) {
+                if (*after < error_before_link) trace_improving++;
+                else if (*after > error_before_link) trace_worsening++;
+                else trace_unchanged++;
+                __printf("ik iteration error controller=%s time=%d iteration=%u "
+                         "joint=%s path=%s error_before_joint=%.3f "
+                         "error_after_joint=%.3f %s knee_angle=%d thigh=(%d,%d,%d)\n",
+                         asset->bones[ik->controller].name,time_ms,iteration,
+                         link_index == 0 ? "knee" : "thigh",
+                         hinge_path ? "hinge" : "3d",error_before_link,*after,
+                         *after < error_before_link ? "improving" :
+                         *after > error_before_link ? "worsening" : "unchanged",
+                         asset->bones[ik->links[0].bone].rotate_x,
+                         asset->bones[ik->links[ik->link_count-1].bone].rotate_x,
+                         asset->bones[ik->links[ik->link_count-1].bone].rotate_y,
+                         asset->bones[ik->links[ik->link_count-1].bone].rotate_z);
+            }
             if (*after < 8.0) break;
         }
         if (!changed || *after < 8.0) break;
     }
     rasterfall_model_update_bones(asset);
+    if (asset->ik_iteration_trace_time_ms == time_ms)
+        __printf("ik iteration summary controller=%s time=%d improving=%lu "
+                 "worsening=%lu unchanged=%lu\n",
+                 asset->bones[ik->controller].name,time_ms,
+                 trace_improving,trace_worsening,trace_unchanged);
+    {
+        int warm_side = !strcmp(asset->bones[ik->controller].name, "左足ＩＫ") ? 0 : 1;
+        int warm_knee = ik->links[0].bone;
+        int warm_thigh = ik->links[ik->link_count - 1].bone;
+        if (asset->ik_warm_start_diagnostic && warm_side >= 0 && warm_side < 2) {
+            asset->ik_warm_start_knee[warm_side][0] = asset->bones[warm_knee].rotate_x;
+            asset->ik_warm_start_knee[warm_side][1] = asset->bones[warm_knee].rotate_y;
+            asset->ik_warm_start_knee[warm_side][2] = asset->bones[warm_knee].rotate_z;
+            asset->ik_warm_start_thigh[warm_side][0] = asset->bones[warm_thigh].rotate_x;
+            asset->ik_warm_start_thigh[warm_side][1] = asset->bones[warm_thigh].rotate_y;
+            asset->ik_warm_start_thigh[warm_side][2] = asset->bones[warm_thigh].rotate_z;
+            asset->ik_warm_start_valid[warm_side] = 1;
+        }
+    }
     current[0] = asset->bone_transforms[ik->target].position[0];
     current[1] = asset->bone_transforms[ik->target].position[1];
     current[2] = asset->bone_transforms[ik->target].position[2];
@@ -901,6 +1398,44 @@ static void rasterfall_model_solve_leg_ik(
     int solved = 0;
     for (i = 0; i < asset->ik_count; i++) {
         unsigned int one_attempts = 0;
+        int analytic_thigh[3], analytic_knee[3];
+        int analytic_ok;
+        analytic_thigh[0]=analytic_thigh[1]=analytic_thigh[2]=0;
+        analytic_knee[0]=analytic_knee[1]=analytic_knee[2]=0;
+        if (asset->iks[i].link_count >= 2 &&
+            asset->iks[i].links[0].bone >= 0 &&
+            asset->iks[i].links[asset->iks[i].link_count-1].bone >= 0) {
+            int thigh0 = asset->iks[i].links[asset->iks[i].link_count-1].bone;
+            int knee0 = asset->iks[i].links[0].bone;
+            if (thigh0 < (int)asset->bone_count && knee0 < (int)asset->bone_count) {
+                analytic_thigh[0]=asset->bones[thigh0].rotate_x;
+                analytic_thigh[1]=asset->bones[thigh0].rotate_y;
+                analytic_thigh[2]=asset->bones[thigh0].rotate_z;
+                analytic_knee[0]=asset->bones[knee0].rotate_x;
+                analytic_knee[1]=asset->bones[knee0].rotate_y;
+                analytic_knee[2]=asset->bones[knee0].rotate_z;
+            }
+        }
+        if (!asset->ik_legacy_knee_ccd &&
+            (analytic_ok=model_solve_one_leg_analytic(asset, &asset->iks[i], clip, time_ms,
+                                         &one_attempts, &before, &after))) {
+            if (after > before) {
+                int thigh=asset->iks[i].links[asset->iks[i].link_count-1].bone;
+                int knee=asset->iks[i].links[0].bone;
+                asset->bones[thigh].rotate_x=analytic_thigh[0];asset->bones[thigh].rotate_y=analytic_thigh[1];asset->bones[thigh].rotate_z=analytic_thigh[2];
+                asset->bones[knee].rotate_x=analytic_knee[0];asset->bones[knee].rotate_y=analytic_knee[1];asset->bones[knee].rotate_z=analytic_knee[2];
+                rasterfall_model_update_bones(asset);
+                asset->ik_analytic_rejected_count++;
+                asset->ik_analytic_solved_count--;
+                (void)analytic_ok;
+            } else {
+            solved++;
+            before_total += before; after_total += after;
+            if (before > before_max) before_max = before;
+            if (after > after_max) after_max = after;
+            continue;
+            }
+        }
         if (!model_solve_one_leg_ik(asset, &asset->iks[i], clip, time_ms,
                                     &one_attempts, &before, &after)) continue;
         solved++;
@@ -934,6 +1469,12 @@ void rasterfall_model_set_grant_enabled(struct rasterfall_model_asset *asset,
         asset->grant_enabled = enabled ? 1 : 0;
         asset->grant_pose_applied = 0;
     }
+}
+
+void rasterfall_model_set_legacy_knee_ccd(struct rasterfall_model_asset *asset,
+                                           int enabled)
+{
+    if (asset) asset->ik_legacy_knee_ccd = enabled ? 1 : 0;
 }
 
 static struct rasterfall_animation_quaternion model_matrix_to_quaternion(

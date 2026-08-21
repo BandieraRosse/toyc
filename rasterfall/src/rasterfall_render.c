@@ -146,6 +146,7 @@ static int private_character_vmd_freeze_torso;
 static int private_character_vmd_ik_enabled = 1;
 static int private_character_vmd_grant_enabled = 1;
 static int private_character_vmd_legacy_root_offset;
+static int private_character_vmd_legacy_knee_ccd;
 static int private_character_vmd_loaded;
 static struct rasterfall_glb_rotation_clip private_character_glb[3];
 static struct rasterfall_glb_rotation_reference private_character_glb_reference;
@@ -214,6 +215,11 @@ void rasterfall_render_set_vmd_grant_enabled(int enabled)
 void rasterfall_render_set_vmd_legacy_root_offset(int enabled)
 {
     private_character_vmd_legacy_root_offset = enabled ? 1 : 0;
+}
+
+void rasterfall_render_set_vmd_legacy_knee_ccd(int enabled)
+{
+    private_character_vmd_legacy_knee_ccd = enabled ? 1 : 0;
 }
 
 static int render_quaternius_preview(struct toy_renderer *renderer,
@@ -989,6 +995,8 @@ static int render_private_character(struct toy_renderer *renderer,
                                             private_character_vmd_ik_enabled);
             rasterfall_model_set_grant_enabled(&private_character_model,
                                                private_character_vmd_grant_enabled);
+            rasterfall_model_set_legacy_knee_ccd(
+                &private_character_model, private_character_vmd_legacy_knee_ccd);
             player->clip = &private_character_vmd_clip;
             player->loop = 1;
             {

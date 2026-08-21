@@ -66,6 +66,7 @@ void rasterfall_render_set_vmd_freeze(int freeze_head, int freeze_torso);
 void rasterfall_render_set_vmd_ik_enabled(int enabled);
 void rasterfall_render_set_vmd_grant_enabled(int enabled);
 void rasterfall_render_set_vmd_legacy_root_offset(int enabled);
+void rasterfall_render_set_vmd_legacy_knee_ccd(int enabled);
 void rasterfall_render_bake_lightmap(void);
 void rasterfall_render_set_coordinate_axes(int enabled);
 int rasterfall_render_model_preview(struct toy_renderer *renderer,
