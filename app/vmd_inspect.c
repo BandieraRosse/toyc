@@ -10,6 +10,10 @@ static void reset_ik_stats(struct rasterfall_model_asset *m)
     m->ik_analytic_solved_count = 0;
     m->ik_analytic_clamped_count = 0;
     m->ik_analytic_rejected_count = 0;
+    m->ik_analytic_accept_count[0] = m->ik_analytic_accept_count[1] = 0;
+    m->ik_analytic_reject_count[0] = m->ik_analytic_reject_count[1] = 0;
+    memset(m->ik_analytic_reject_reason, 0, sizeof(m->ik_analytic_reject_reason));
+    m->ik_last_leg_solver[0] = m->ik_last_leg_solver[1] = 0;
     m->ik_iteration_total = 0;
     m->ik_iteration_max = 0;
     m->ik_error_before_total = m->ik_error_after_total = 0.0;
@@ -277,7 +281,8 @@ static void inspect_analytic_pole_sweep(struct rasterfall_model_asset *m,
             axis[0]=t[0]-h[0];axis[1]=t[1]-h[1];axis[2]=t[2]-h[2];len=model_vec_length(axis);if(len<0.000001)continue;axis[0]/=len;axis[1]/=len;axis[2]/=len;
             bind[0]=m->bone_transforms[knee].position[0]-h[0];bind[1]=m->bone_transforms[knee].position[1]-h[1];bind[2]=m->bone_transforms[knee].position[2]-h[2];
             dot=bind[0]*axis[0]+bind[1]*axis[1]+bind[2]*axis[2];bind[0]-=dot*axis[0];bind[1]-=dot*axis[1];bind[2]-=dot*axis[2];len=model_vec_length(bind);
-            if(len<0.000001)continue;bind[0]/=len;bind[1]/=len;bind[2]/=len;
+            if(len<0.000001)continue;
+            bind[0]/=len;bind[1]/=len;bind[2]/=len;
             u[0]=bind[0];u[1]=bind[1];u[2]=bind[2];
             w[0]=axis[1]*u[2]-axis[2]*u[1];w[1]=axis[2]*u[0]-axis[0]*u[2];w[2]=axis[0]*u[1]-axis[1]*u[0];len=sqrt(w[0]*w[0]+w[1]*w[1]+w[2]*w[2]);if(len<0.000001)continue;w[0]/=len;w[1]/=len;w[2]/=len;
             bind_phi=atan2(bind[0]*w[0]+bind[1]*w[1]+bind[2]*w[2],bind[0]*u[0]+bind[1]*u[1]+bind[2]*u[2])*180.0/M_PI;
@@ -297,6 +302,95 @@ static void inspect_analytic_pole_sweep(struct rasterfall_model_asset *m,
     m->ik_analytic_pole_override=0;m->ik_synthetic_target=old_synthetic;m->ik_synthetic_side=-1;m->ik_enabled=old_ik;
 }
 #undef model_vec_length
+
+struct inspect_leg_sequence_stats {
+    unsigned long frames, analytical, fallback, switches, a_to_c, c_to_a;
+    unsigned long switch_samples, a_runs, c_runs, a_run_total, c_run_total;
+    unsigned long current_run;
+    int previous_state;
+    double max_switch_knee, sum_switch_knee, max_switch_ankle, sum_switch_ankle;
+    unsigned long switch_delta_count;
+    double max_a_knee, sum_a_knee, max_a_thigh, sum_a_thigh;
+    double max_a_ankle, sum_a_ankle, sum_a_error, max_a_error;
+    unsigned long a_delta_count;
+    double max_c_knee, sum_c_knee, max_c_ankle, sum_c_ankle;
+    unsigned long c_delta_count;
+    double max_all_knee, sum_all_knee, max_all_ankle, sum_all_ankle;
+    double sum_all_error, max_all_error;
+    unsigned long all_delta_count;
+};
+
+static double inspect_position_delta(const double a[3], const double b[3]);
+static double inspect_rotation_delta(const int a[3], const int b[3]);
+
+static double inspect_leg_error(struct rasterfall_model_asset *m,
+                                const struct rasterfall_vmd_clip *v,
+                                int side, int time)
+{
+    const char *name = side ? "右足ＩＫ" : "左足ＩＫ";
+    int controller = rasterfall_model_find_bone(m, name), target[3];
+    int ankle = -1, i;
+    double desired[3], actual[3];
+    if (controller < 0) return 0.0;
+    for (i=0;i<(int)m->ik_count;i++) if (m->iks[i].controller == controller) { ankle=m->iks[i].target; break; }
+    if (ankle < 0) return 0.0;
+    rasterfall_vmd_sample_bone_translation(v,name,time,target);
+    desired[0]=m->bone_transforms[controller].position[0]+target[0];
+    desired[1]=m->bone_transforms[controller].position[1]+target[1];
+    desired[2]=m->bone_transforms[controller].position[2]+target[2];
+    actual[0]=m->bone_transforms[ankle].position[0];
+    actual[1]=m->bone_transforms[ankle].position[1];
+    actual[2]=m->bone_transforms[ankle].position[2];
+    return inspect_position_delta(desired,actual);
+}
+
+static void inspect_leg_sequence(struct rasterfall_model_asset *m,
+                                 const struct rasterfall_vmd_clip *v,
+                                 const struct rasterfall_animation_clip *clip,
+                                 int legacy)
+{
+    struct inspect_leg_sequence_stats s[2];
+    int prev_knee[2][3], prev_thigh[2][3];
+    double prev_ankle[2][3];
+    int time, side, step=16;
+    memset(s,0,sizeof(s));memset(prev_knee,0,sizeof(prev_knee));memset(prev_thigh,0,sizeof(prev_thigh));memset(prev_ankle,0,sizeof(prev_ankle));
+    reset_ik_stats(m);m->ik_legacy_knee_ccd=legacy;m->ik_enabled=1;
+    for(time=0;time<v->duration_ms;time+=step) {
+        prepare_vmd_skeleton_translation(m,v,time,0);rasterfall_model_sample_clip(m,clip,time);
+        for(side=0;side<2;side++) {
+            int knee=rasterfall_model_find_bone(m,side?"右ひざ":"左ひざ");
+            int thigh=rasterfall_model_find_bone(m,side?"右足":"左足");
+            int ankle=-1, controller=rasterfall_model_find_bone(m,side?"右足ＩＫ":"左足ＩＫ"), i;
+            int state=m->ik_last_leg_solver[side], knee_now[3], thigh_now[3];
+            double ankle_now[3], knee_delta=0.0, thigh_delta=0.0, ankle_delta=0.0, error;
+            if(knee<0||thigh<0||controller<0||state==0)continue;
+            for(i=0;i<(int)m->ik_count;i++)if(m->iks[i].controller==controller){ankle=m->iks[i].target;break;}
+            if(ankle<0)continue;
+            knee_now[0]=m->bones[knee].rotate_x;knee_now[1]=m->bones[knee].rotate_y;knee_now[2]=m->bones[knee].rotate_z;
+            thigh_now[0]=m->bones[thigh].rotate_x;thigh_now[1]=m->bones[thigh].rotate_y;thigh_now[2]=m->bones[thigh].rotate_z;
+            ankle_now[0]=m->bone_transforms[ankle].position[0];ankle_now[1]=m->bone_transforms[ankle].position[1];ankle_now[2]=m->bone_transforms[ankle].position[2];
+            error=inspect_leg_error(m,v,side,time);s[side].frames++;if(state==1)s[side].analytical++;else s[side].fallback++;
+            if(s[side].previous_state) {
+                knee_delta=inspect_rotation_delta(prev_knee[side],knee_now);thigh_delta=inspect_rotation_delta(prev_thigh[side],thigh_now);ankle_delta=inspect_position_delta(prev_ankle[side],ankle_now);
+                s[side].sum_all_knee+=knee_delta;s[side].sum_all_ankle+=ankle_delta;s[side].all_delta_count++;if(knee_delta>s[side].max_all_knee)s[side].max_all_knee=knee_delta;if(ankle_delta>s[side].max_all_ankle)s[side].max_all_ankle=ankle_delta;
+                if(state==1 && s[side].previous_state==1){s[side].sum_a_knee+=knee_delta;s[side].sum_a_thigh+=thigh_delta;s[side].sum_a_ankle+=ankle_delta;s[side].a_delta_count++;if(knee_delta>s[side].max_a_knee)s[side].max_a_knee=knee_delta;if(thigh_delta>s[side].max_a_thigh)s[side].max_a_thigh=thigh_delta;if(ankle_delta>s[side].max_a_ankle)s[side].max_a_ankle=ankle_delta;}
+                if(state==2 && s[side].previous_state==2){s[side].sum_c_knee+=knee_delta;s[side].sum_c_ankle+=ankle_delta;s[side].c_delta_count++;if(knee_delta>s[side].max_c_knee)s[side].max_c_knee=knee_delta;if(ankle_delta>s[side].max_c_ankle)s[side].max_c_ankle=ankle_delta;}
+                if(state!=s[side].previous_state){s[side].switches++;if(s[side].previous_state==1)s[side].a_to_c++;else s[side].c_to_a++;s[side].sum_switch_knee+=knee_delta;s[side].sum_switch_ankle+=ankle_delta;s[side].switch_delta_count++;if(knee_delta>s[side].max_switch_knee)s[side].max_switch_knee=knee_delta;if(ankle_delta>s[side].max_switch_ankle)s[side].max_switch_ankle=ankle_delta;}
+            }
+            if(state!=s[side].previous_state){if(s[side].previous_state==1){s[side].a_runs++;s[side].a_run_total+=s[side].current_run;}if(s[side].previous_state==2){s[side].c_runs++;s[side].c_run_total+=s[side].current_run;}s[side].current_run=1;}else s[side].current_run++;
+            s[side].previous_state=state;s[side].sum_all_error+=error;if(error>s[side].max_all_error)s[side].max_all_error=error;if(state==1){s[side].sum_a_error+=error;if(error>s[side].max_a_error)s[side].max_a_error=error;}
+            memcpy(prev_knee[side],knee_now,sizeof(knee_now));memcpy(prev_thigh[side],thigh_now,sizeof(thigh_now));memcpy(prev_ankle[side],ankle_now,sizeof(ankle_now));
+        }
+    }
+    for(side=0;side<2;side++){if(s[side].previous_state==1){s[side].a_runs++;s[side].a_run_total+=s[side].current_run;}if(s[side].previous_state==2){s[side].c_runs++;s[side].c_run_total+=s[side].current_run;}}
+    for(side=0;side<2;side++) {
+        double minutes=v->duration_ms/60000.0;
+        __printf("leg coverage mode=%s side=%s frames=%lu analytical=%lu %.2f%% fallback=%lu %.2f%% AtoC=%lu CtoA=%lu switches=%lu switches_per_min=%.2f\n",legacy?"legacy":"hybrid",side?"right":"left",s[side].frames,s[side].analytical,s[side].frames?100.0*s[side].analytical/s[side].frames:0.0,s[side].fallback,s[side].frames?100.0*s[side].fallback/s[side].frames:0.0,s[side].a_to_c,s[side].c_to_a,s[side].switches,minutes>0?s[side].switches/minutes:0.0);
+        if(!legacy) __printf("leg rejects side=%s geometry_unreachable=%lu no_valid_knee=%lu reconstruction=%lu numerical=%lu\n",side?"right":"left",m->ik_analytic_reject_reason[side][0],m->ik_analytic_reject_reason[side][1],m->ik_analytic_reject_reason[side][2],m->ik_analytic_reject_reason[side][3]);
+        __printf("leg runs side=%s longest_analytical=%lu avg_analytical=%.2f longest_fallback=%lu avg_fallback=%.2f switch_knee_max=%.3f avg=%.3f switch_ankle_max=%.3f avg=%.3f\n",side?"right":"left",s[side].a_runs?s[side].a_run_total/s[side].a_runs:0,s[side].a_runs?(double)s[side].a_run_total/s[side].a_runs:0.0,s[side].c_runs?s[side].c_run_total/s[side].c_runs:0,s[side].c_runs?(double)s[side].c_run_total/s[side].c_runs:0.0,s[side].switch_delta_count?s[side].max_switch_knee:0.0,s[side].switch_delta_count?s[side].sum_switch_knee/s[side].switch_delta_count:0.0,s[side].switch_delta_count?s[side].max_switch_ankle:0.0,s[side].switch_delta_count?s[side].sum_switch_ankle/s[side].switch_delta_count:0.0);
+        __printf("leg continuity mode=%s side=%s all_knee_max=%.3f all_ankle_max=%.3f analytical_knee_max=%.3f avg=%.3f analytical_thigh_max=%.3f analytical_ankle_max=%.3f avg=%.3f analytical_error_avg=%.3f max=%.3f ccd_knee_max=%.3f avg=%.3f ccd_ankle_max=%.3f avg=%.3f avg_error=%.3f max_error=%.3f\n",legacy?"legacy":"hybrid",side?"right":"left",s[side].max_all_knee,s[side].max_all_ankle,s[side].max_a_knee,s[side].a_delta_count?s[side].sum_a_knee/s[side].a_delta_count:0.0,s[side].max_a_thigh,s[side].max_a_ankle,s[side].a_delta_count?s[side].sum_a_ankle/s[side].a_delta_count:0.0,s[side].analytical?s[side].sum_a_error/s[side].analytical:0.0,s[side].max_a_error,s[side].max_c_knee,s[side].c_delta_count?s[side].sum_c_knee/s[side].c_delta_count:0.0,s[side].max_c_ankle,s[side].c_delta_count?s[side].sum_c_ankle/s[side].c_delta_count:0.0,s[side].frames?s[side].sum_all_error/s[side].frames:0.0,s[side].max_all_error);
+    }
+}
 
 static double inspect_rotation_delta(const int a[3], const int b[3])
 {
@@ -627,6 +721,9 @@ int main(int argc, char **argv)
                 }
             }
             print_ik_runtime(&m);
+            inspect_leg_sequence(&m, &v, &clip, 0);
+            inspect_leg_sequence(&m, &v, &clip, 1);
+            m.ik_legacy_knee_ccd = legacy_knee;
             if (leg_trace) {
                 m.ik_iteration_trace_time_ms = -1;
                 inspect_vmd_leg_trace(&m, &v, &clip);

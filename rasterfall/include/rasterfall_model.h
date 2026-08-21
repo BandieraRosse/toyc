@@ -156,6 +156,11 @@ struct rasterfall_model_asset {
     int ik_analytic_probe_raw_knee_x;
     int ik_analytic_probe_knee_valid;
     double ik_analytic_probe_ankle_error;
+    int ik_analytic_last_reason;
+    int ik_last_leg_solver[2];
+    unsigned long ik_analytic_accept_count[2];
+    unsigned long ik_analytic_reject_count[2];
+    unsigned long ik_analytic_reject_reason[2][4];
     int ik_diagnostic_dump;
     int ik_target_space_diagnostic;
     /* Inspector-only solver diagnostics.  These remain disabled in runtime. */

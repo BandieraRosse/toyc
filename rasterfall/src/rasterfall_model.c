@@ -769,12 +769,14 @@ static int model_solve_one_leg_analytic(
     double base_frame[9], desired_frame[9], base_transpose[9], frame_tmp[9];
     int knee, thigh, parent, x, y, z, clamped = 0;
     int base_knee_x, base_thigh[3], base_knee[3];
+    if (asset) asset->ik_analytic_last_reason=4;
     if (!asset || !ik || !clip || ik->link_count != 2 || !model_is_x_hinge(&ik->links[0]) ||
         ik->controller < 0 || ik->target < 0 ||
         (strcmp(asset->bones[ik->controller].name, "左足ＩＫ") &&
          strcmp(asset->bones[ik->controller].name, "右足ＩＫ"))) return 0;
     track = model_find_clip_track(clip, ik->controller);
     if (!track && !asset->ik_synthetic_target) return 0;
+    asset->ik_analytic_last_reason=0;
     knee = ik->links[0].bone; thigh = ik->links[1].bone;
     if (knee < 0 || thigh < 0 || ik->target >= (int)asset->bone_count) return 0;
     rasterfall_model_update_bones(asset);
@@ -805,6 +807,7 @@ static int model_solve_one_leg_analytic(
     min_d=fabs(l1-l2)+0.001; max_d=l1+l2-0.001;
     if (max_d < min_d) max_d=min_d;
     dc=d; if (dc < min_d) {dc=min_d;clamped=1;} if (dc > max_d) {dc=max_d;clamped=1;}
+    if (clamped) asset->ik_analytic_last_reason=1;
     {
         double ratio=d/(l1+l2);
         asset->ik_reach_sample_count++;
@@ -968,6 +971,7 @@ static int model_solve_one_leg_analytic(
         if(asset->ik_limits_enabled &&
            model_clamp_angle(raw_knee_x,ik->links[0].lower[0],ik->links[0].upper[0]) != raw_knee_x)
             asset->ik_analytic_probe_knee_valid=0;
+        if (!asset->ik_analytic_probe_knee_valid) asset->ik_analytic_last_reason=2;
     }
     if(asset->ik_limits_enabled)x=model_clamp_angle(x,ik->links[0].lower[0],ik->links[0].upper[0]);
     asset->bones[knee].rotate_x=x;asset->bones[knee].rotate_y=0;asset->bones[knee].rotate_z=0;
@@ -975,6 +979,8 @@ static int model_solve_one_leg_analytic(
     current[0]=asset->bone_transforms[ik->target].position[0];current[1]=asset->bone_transforms[ik->target].position[1];current[2]=asset->bone_transforms[ik->target].position[2];
     offset[0]=current[0]-target[0];offset[1]=current[1]-target[1];offset[2]=current[2]-target[2];*after=model_vec_length(offset);
     asset->ik_analytic_probe_ankle_error=*after;
+    if (*after > *before && asset->ik_analytic_last_reason == 0)
+        asset->ik_analytic_last_reason=3;
     if (asset->ik_analytic_geometry_dump)
         __printf("analytic knee controller=%s hinge_axis=(%.6f,%.6f,%.6f) knee_x=%d Adesired=(%.3f,%.3f,%.3f) Aactual=(%.3f,%.3f,%.3f) knee_error=%.6f ankle_error=%.6f\n",
                  asset->bones[ik->controller].name,hinge_axis[0],hinge_axis[1],hinge_axis[2],x,
@@ -1400,6 +1406,12 @@ static void rasterfall_model_solve_leg_ik(
         unsigned int one_attempts = 0;
         int analytic_thigh[3], analytic_knee[3];
         int analytic_ok;
+        int leg_side = -1;
+        if (asset->iks[i].controller >= 0 &&
+            asset->iks[i].controller < (int)asset->bone_count) {
+            if (!strcmp(asset->bones[asset->iks[i].controller].name, "左足ＩＫ")) leg_side=0;
+            if (!strcmp(asset->bones[asset->iks[i].controller].name, "右足ＩＫ")) leg_side=1;
+        }
         analytic_thigh[0]=analytic_thigh[1]=analytic_thigh[2]=0;
         analytic_knee[0]=analytic_knee[1]=analytic_knee[2]=0;
         if (asset->iks[i].link_count >= 2 &&
@@ -1429,12 +1441,25 @@ static void rasterfall_model_solve_leg_ik(
                 asset->ik_analytic_solved_count--;
                 (void)analytic_ok;
             } else {
+            if (leg_side >= 0) {
+                asset->ik_last_leg_solver[leg_side]=1;
+                asset->ik_analytic_accept_count[leg_side]++;
+            }
             solved++;
             before_total += before; after_total += after;
             if (before > before_max) before_max = before;
             if (after > after_max) after_max = after;
             continue;
             }
+        }
+        if (asset->ik_legacy_knee_ccd && leg_side >= 0)
+            asset->ik_last_leg_solver[leg_side]=2;
+        if (!asset->ik_legacy_knee_ccd && leg_side >= 0) {
+            int reason=asset->ik_analytic_last_reason;
+            asset->ik_last_leg_solver[leg_side]=2;
+            asset->ik_analytic_reject_count[leg_side]++;
+            if (reason < 1 || reason > 4) reason=3;
+            asset->ik_analytic_reject_reason[leg_side][reason-1]++;
         }
         if (!model_solve_one_leg_ik(asset, &asset->iks[i], clip, time_ms,
                                     &one_attempts, &before, &after)) continue;
