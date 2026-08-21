@@ -767,6 +767,7 @@ static int model_solve_one_leg_analytic(
     double bind_pole[3];
     double e0[3], e1[3], h0[3], h1[3], z0[3], z1[3], ldesired[3], candidate_b[3];
     double base_frame[9], desired_frame[9], base_transpose[9], frame_tmp[9];
+    double from_to_delta[9], thigh_before_global[9], thigh_local_trace[9];
     int knee, thigh, parent, x, y, z, clamped = 0;
     int base_knee_x, base_thigh[3], base_knee[3];
     if (asset) asset->ik_analytic_last_reason=4;
@@ -879,8 +880,9 @@ static int model_solve_one_leg_analytic(
     aa_len=model_vec_length(h1);
     if (aa_len < 0.000001) return 0;
     h1[0]/=aa_len;h1[1]/=aa_len;h1[2]/=aa_len;
-    if (model_rotation_between(e0,e1,v,delta)<0) return 0;
-    matrix_vector(delta,h0[0],h0[1],h0[2],&hinge_axis[0],&hinge_axis[1],&hinge_axis[2]);
+    memcpy(thigh_before_global,asset->bone_transforms[thigh].rotation,sizeof(thigh_before_global));
+    if (model_rotation_between(e0,e1,v,from_to_delta)<0) return 0;
+    matrix_vector(from_to_delta,h0[0],h0[1],h0[2],&hinge_axis[0],&hinge_axis[1],&hinge_axis[2]);
     if (hinge_axis[0]*h1[0]+hinge_axis[1]*h1[1]+hinge_axis[2]*h1[2] < 0.0) {
         h1[0]=-h1[0];h1[1]=-h1[1];h1[2]=-h1[2];
     }
@@ -897,9 +899,55 @@ static int model_solve_one_leg_analytic(
     matrix_multiply(delta,asset->bone_transforms[thigh].rotation,desired_global);
     parent=asset->bones[thigh].parent;
     if(parent>=0){model_matrix_transpose(asset->bone_transforms[parent].rotation,parent_inverse);matrix_multiply(parent_inverse,desired_global,local);}else memcpy(local,desired_global,sizeof(local));
+    memcpy(thigh_local_trace,local,sizeof(thigh_local_trace));
     model_matrix_to_euler(local,&x,&y,&z);
     asset->bones[thigh].rotate_x=x;asset->bones[thigh].rotate_y=y;asset->bones[thigh].rotate_z=z;
     rasterfall_model_update_bones(asset);
+    {
+        int trace_side = !strcmp(asset->bones[ik->controller].name,"左足ＩＫ") ? 0 : 1;
+        if (asset->ik_analytic_trace_time_ms == time_ms && asset->ik_analytic_trace_side == trace_side) {
+            double tc[3], tl, td, ta, bn[3], bl;
+            double basis[3][3], primary[3], secondary[3], tertiary[3];
+            double diag_base[9], diag_desired[9], diag_transpose[9];
+            double diag_delta[9], diag_global[9];
+            struct rasterfall_animation_quaternion qdiag;
+            int primary_axis, secondary_axis, third_axis, i;
+            double best, value, projection;
+            struct rasterfall_animation_quaternion qb=model_matrix_to_quaternion(thigh_before_global);
+            struct rasterfall_animation_quaternion qa=model_matrix_to_quaternion(asset->bone_transforms[thigh].rotation);
+            struct rasterfall_animation_quaternion ql=model_matrix_to_quaternion(thigh_local_trace);
+            model_vec_cross(e0,e1,tc);tl=model_vec_length(tc);td=e0[0]*e1[0]+e0[1]*e1[1]+e0[2]*e1[2];if(td>1.0)td=1.0;if(td<-1.0)td=-1.0;ta=atan2(tl,td)*180.0/M_PI;
+            bn[0]=e1[1]*v[2]-e1[2]*v[1];bn[1]=e1[2]*v[0]-e1[0]*v[2];bn[2]=e1[0]*v[1]-e1[1]*v[0];bl=model_vec_length(bn);if(bl>0.000001){bn[0]/=bl;bn[1]/=bl;bn[2]/=bl;}
+            __printf("analytic thigh trace side=%s time=%d H=(%.3f,%.3f,%.3f) T=(%.3f,%.3f,%.3f) Kd=(%.3f,%.3f,%.3f) pole=(%.6f,%.6f,%.6f) bend_normal=(%.6f,%.6f,%.6f)\n",trace_side?"right":"left",time_ms,h[0],h[1],h[2],target[0],target[1],target[2],kd[0],kd[1],kd[2],v[0],v[1],v[2],bn[0],bn[1],bn[2]);
+            __printf("analytic thigh trace side=%s time=%d current_dir=(%.6f,%.6f,%.6f) desired_dir=(%.6f,%.6f,%.6f) dir_dot=%.6f from_to_axis=(%.6f,%.6f,%.6f) from_to_angle=%.6f\n",trace_side?"right":"left",time_ms,e0[0],e0[1],e0[2],e1[0],e1[1],e1[2],td,tl>0.000001?tc[0]/tl:0.0,tl>0.000001?tc[1]/tl:0.0,tl>0.000001?tc[2]/tl:0.0,ta);
+            __printf("analytic thigh trace side=%s time=%d global_before_q=(%.6f,%.6f,%.6f,%.6f) global_after_q=(%.6f,%.6f,%.6f,%.6f) local_q=(%.6f,%.6f,%.6f,%.6f)\n",trace_side?"right":"left",time_ms,qb.x,qb.y,qb.z,qb.w,qa.x,qa.y,qa.z,qa.w,ql.x,ql.y,ql.z,ql.w);
+            __printf("analytic thigh trace side=%s time=%d before_basis=(%.6f,%.6f,%.6f|%.6f,%.6f,%.6f|%.6f,%.6f,%.6f) after_basis=(%.6f,%.6f,%.6f|%.6f,%.6f,%.6f|%.6f,%.6f,%.6f)\n",trace_side?"right":"left",time_ms,thigh_before_global[0],thigh_before_global[3],thigh_before_global[6],thigh_before_global[1],thigh_before_global[4],thigh_before_global[7],thigh_before_global[2],thigh_before_global[5],thigh_before_global[8],asset->bone_transforms[thigh].rotation[0],asset->bone_transforms[thigh].rotation[3],asset->bone_transforms[thigh].rotation[6],asset->bone_transforms[thigh].rotation[1],asset->bone_transforms[thigh].rotation[4],asset->bone_transforms[thigh].rotation[7],asset->bone_transforms[thigh].rotation[2],asset->bone_transforms[thigh].rotation[5],asset->bone_transforms[thigh].rotation[8]);
+
+            /* Diagnostic only: retain the current thigh's complete frame while
+             * changing its primary axis to e1.  The runtime path above uses a
+             * parent-X frame, so this candidate exposes whether its secondary
+             * basis is the source of the apparent half-turn. */
+            basis[0][0]=thigh_before_global[0];basis[0][1]=thigh_before_global[3];basis[0][2]=thigh_before_global[6];
+            basis[1][0]=thigh_before_global[1];basis[1][1]=thigh_before_global[4];basis[1][2]=thigh_before_global[7];
+            basis[2][0]=thigh_before_global[2];basis[2][1]=thigh_before_global[5];basis[2][2]=thigh_before_global[8];
+            primary_axis=0;best=-1.0;
+            for(i=0;i<3;i++){value=fabs(basis[i][0]*e0[0]+basis[i][1]*e0[1]+basis[i][2]*e0[2]);if(value>best){best=value;primary_axis=i;}}
+            primary[0]=e0[0];primary[1]=e0[1];primary[2]=e0[2];
+            secondary_axis=(primary_axis+1)%3;if(secondary_axis==primary_axis)secondary_axis=(primary_axis+2)%3;
+            third_axis=3-primary_axis-secondary_axis;
+            projection=basis[secondary_axis][0]*primary[0]+basis[secondary_axis][1]*primary[1]+basis[secondary_axis][2]*primary[2];
+            secondary[0]=basis[secondary_axis][0]-projection*primary[0];secondary[1]=basis[secondary_axis][1]-projection*primary[1];secondary[2]=basis[secondary_axis][2]-projection*primary[2];
+            projection=model_vec_length(secondary);
+            if(projection>0.000001){secondary[0]/=projection;secondary[1]/=projection;secondary[2]/=projection;}
+            model_vec_cross(primary,secondary,tertiary);
+            if(tertiary[0]*basis[third_axis][0]+tertiary[1]*basis[third_axis][1]+tertiary[2]*basis[third_axis][2]<0.0){secondary[0]=-secondary[0];secondary[1]=-secondary[1];secondary[2]=-secondary[2];model_vec_cross(primary,secondary,tertiary);}
+            if(secondary[0]*h1[0]+secondary[1]*h1[1]+secondary[2]*h1[2]<0.0){h1[0]=-h1[0];h1[1]=-h1[1];h1[2]=-h1[2];}
+            diag_base[0]=primary[0];diag_base[1]=secondary[0];diag_base[2]=tertiary[0];diag_base[3]=primary[1];diag_base[4]=secondary[1];diag_base[5]=tertiary[1];diag_base[6]=primary[2];diag_base[7]=secondary[2];diag_base[8]=tertiary[2];
+            diag_desired[0]=e1[0];diag_desired[1]=h1[0];diag_desired[2]=z1[0];diag_desired[3]=e1[1];diag_desired[4]=h1[1];diag_desired[5]=z1[1];diag_desired[6]=e1[2];diag_desired[7]=h1[2];diag_desired[8]=z1[2];
+            model_matrix_transpose(diag_base,diag_transpose);matrix_multiply(diag_desired,diag_transpose,diag_delta);matrix_multiply(diag_delta,thigh_before_global,diag_global);qdiag=model_matrix_to_quaternion(diag_global);
+            __printf("analytic thigh fullframe candidate side=%s time=%d primary_axis=%d secondary_axis=%d q=(%.6f,%.6f,%.6f,%.6f) secondary=(%.6f,%.6f,%.6f)\n",trace_side?"right":"left",time_ms,primary_axis,secondary_axis,qdiag.x,qdiag.y,qdiag.z,qdiag.w,secondary[0],secondary[1],secondary[2]);
+        }
+    }
     if (asset->ik_analytic_geometry_dump)
         __printf("analytic thigh controller=%s Kdesired=(%.3f,%.3f,%.3f) Kactual=(%.3f,%.3f,%.3f) error=%.6f\n",
                  asset->bones[ik->controller].name,kd[0],kd[1],kd[2],

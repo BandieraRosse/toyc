@@ -392,6 +392,34 @@ static void inspect_leg_sequence(struct rasterfall_model_asset *m,
     }
 }
 
+static void inspect_analytic_thigh_jumps(struct rasterfall_model_asset *m,
+                                         const struct rasterfall_vmd_clip *v,
+                                         const struct rasterfall_animation_clip *clip)
+{
+    int time, side, step=16, max_time[2]={-1,-1};
+    double max_jump[2]={0.0,0.0};
+    int previous_state[2]={0,0}, previous_thigh[2][3]={{0,0,0},{0,0,0}};
+    reset_ik_stats(m);m->ik_legacy_knee_ccd=0;m->ik_analytic_trace_time_ms=-1;
+    for(time=0;time<v->duration_ms;time+=step) {
+        prepare_vmd_skeleton_translation(m,v,time,0);rasterfall_model_sample_clip(m,clip,time);
+        for(side=0;side<2;side++) {
+            int thigh=rasterfall_model_find_bone(m,side?"右足":"左足"), state=m->ik_last_leg_solver[side];
+            int now[3];double delta;
+            if(thigh<0)continue;
+            now[0]=m->bones[thigh].rotate_x;now[1]=m->bones[thigh].rotate_y;now[2]=m->bones[thigh].rotate_z;
+            if(previous_state[side]==1 && state==1){delta=inspect_rotation_delta(previous_thigh[side],now);if(delta>max_jump[side]){max_jump[side]=delta;max_time[side]=time;}}
+            previous_state[side]=state;memcpy(previous_thigh[side],now,sizeof(now));
+        }
+    }
+    for(side=0;side<2;side++) {
+        __printf("analytical-only thigh maximum side=%s time=%dms previous=%dms current=%dms delta=%.6fdeg window=±3frames\n",side?"right":"left",max_time[side],max_time[side]-step,max_time[side],max_jump[side]);
+        if(max_time[side]<0)continue;
+        m->ik_analytic_trace_side=side;
+        for(time=max_time[side]-3*step;time<=max_time[side]+3*step;time+=step){if(time<0||time>=v->duration_ms)continue;m->ik_analytic_trace_time_ms=time;prepare_vmd_skeleton_translation(m,v,time,0);rasterfall_model_sample_clip(m,clip,time);}
+    }
+    m->ik_analytic_trace_time_ms=-1;m->ik_analytic_trace_side=-1;
+}
+
 static double inspect_rotation_delta(const int a[3], const int b[3])
 {
     struct rasterfall_animation_quaternion qa = rasterfall_animation_quat_from_euler(a[0],a[1],a[2]);
@@ -721,6 +749,7 @@ int main(int argc, char **argv)
                 }
             }
             print_ik_runtime(&m);
+            inspect_analytic_thigh_jumps(&m, &v, &clip);
             inspect_leg_sequence(&m, &v, &clip, 0);
             inspect_leg_sequence(&m, &v, &clip, 1);
             m.ik_legacy_knee_ccd = legacy_knee;
