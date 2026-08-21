@@ -576,6 +576,9 @@ static void model_matrix_axis_angle(const double axis[3], double angle,
     out[6] = t*x*z-s*y; out[7] = t*y*z+s*x; out[8] = t*z*z+c;
 }
 
+static struct rasterfall_animation_quaternion model_matrix_to_quaternion(
+    const double *m);
+
 static void model_matrix_to_euler(const double *m, int *x, int *y, int *z)
 {
     double sy = -m[6], pitch, roll, yaw;
@@ -592,6 +595,41 @@ static void model_matrix_to_euler(const double *m, int *x, int *y, int *z)
     *x = rounded(roll * 180.0 / M_PI);
     *y = rounded(pitch * 180.0 / M_PI);
     *z = rounded(yaw * 180.0 / M_PI);
+}
+
+static int model_angle_wrap(int value)
+{
+    while (value > 180) value -= 360;
+    while (value < -180) value += 360;
+    return value;
+}
+
+/* XYZ has two equivalent Euler representations away from gimbal lock.  The
+ * model pose currently stores integer Euler values, so choose the branch
+ * nearest the FK local pose instead of allowing the matrix extractor to
+ * switch branches at an arbitrary frame. */
+static void model_matrix_to_euler_near(const double *m, const int reference[3],
+                                       int *x, int *y, int *z)
+{
+    int candidates[2][3], i, best=0;
+    double ref_matrix[9], candidate_matrix[9], best_distance=2.0;
+    struct rasterfall_animation_quaternion ref_q, candidate_q;
+    model_matrix_to_euler(m,&candidates[0][0],&candidates[0][1],&candidates[0][2]);
+    candidates[1][0]=model_angle_wrap(candidates[0][0]+180);
+    candidates[1][1]=model_angle_wrap(180-candidates[0][1]);
+    candidates[1][2]=model_angle_wrap(candidates[0][2]+180);
+    matrix_rotate_xyz(reference[0],reference[1],reference[2],ref_matrix);
+    ref_q=model_matrix_to_quaternion(ref_matrix);
+    for(i=0;i<2;i++){
+        double dot;
+        matrix_rotate_xyz(candidates[i][0],candidates[i][1],candidates[i][2],candidate_matrix);
+        candidate_q=model_matrix_to_quaternion(candidate_matrix);
+        dot=ref_q.x*candidate_q.x+ref_q.y*candidate_q.y+ref_q.z*candidate_q.z+ref_q.w*candidate_q.w;
+        if(dot<0.0)dot=-dot;
+        if(dot>1.0)dot=1.0;
+        if(1.0-dot<best_distance){best_distance=1.0-dot;best=i;}
+    }
+    *x=candidates[best][0];*y=candidates[best][1];*z=candidates[best][2];
 }
 
 static int model_clamp_angle(int value, float lower, float upper)
@@ -753,6 +791,31 @@ restore:
     rasterfall_model_update_bones(asset);
 }
 
+/* Build a deterministic bind frame from the PMX rest H/K/A geometry. */
+static int model_build_thigh_bind_frame(
+    const struct rasterfall_model_asset *asset, int thigh, int knee, int ankle,
+    double out[9])
+{
+    double h[3], k[3], a[3], axis[3], secondary[3], third[3];
+    double axis_len, secondary_len, dot;
+    h[0]=asset->bones[thigh].rest_x; h[1]=asset->bones[thigh].rest_y; h[2]=asset->bones[thigh].rest_z;
+    k[0]=asset->bones[knee].rest_x; k[1]=asset->bones[knee].rest_y; k[2]=asset->bones[knee].rest_z;
+    a[0]=asset->bones[ankle].rest_x; a[1]=asset->bones[ankle].rest_y; a[2]=asset->bones[ankle].rest_z;
+    axis[0]=a[0]-h[0]; axis[1]=a[1]-h[1]; axis[2]=a[2]-h[2];
+    axis_len=model_vec_length(axis); if(axis_len<0.000001)return -1;
+    axis[0]/=axis_len; axis[1]/=axis_len; axis[2]/=axis_len;
+    secondary[0]=k[0]-h[0]; secondary[1]=k[1]-h[1]; secondary[2]=k[2]-h[2];
+    dot=secondary[0]*axis[0]+secondary[1]*axis[1]+secondary[2]*axis[2];
+    secondary[0]-=dot*axis[0]; secondary[1]-=dot*axis[1]; secondary[2]-=dot*axis[2];
+    secondary_len=model_vec_length(secondary); if(secondary_len<0.000001)return -1;
+    secondary[0]/=secondary_len; secondary[1]/=secondary_len; secondary[2]/=secondary_len;
+    model_vec_cross(axis,secondary,third);
+    out[0]=axis[0]; out[1]=secondary[0]; out[2]=third[0];
+    out[3]=axis[1]; out[4]=secondary[1]; out[5]=third[1];
+    out[6]=axis[2]; out[7]=secondary[2]; out[8]=third[2];
+    return 0;
+}
+
 static int model_solve_one_leg_analytic(
     struct rasterfall_model_asset *asset, const struct rasterfall_model_ik *ik,
     const struct rasterfall_animation_clip *clip, int time_ms,
@@ -761,13 +824,17 @@ static int model_solve_one_leg_analytic(
     const struct rasterfall_animation_track *track;
     double target[3], raw[3], h[3], k0[3], a0[3], u[3], pole[3], v[3], kd[3];
     double l1, l2, d, dc, min_d, max_d, cos_h, bend, current_lower[3];
-    double from[3], delta[9], desired_global[9], parent_inverse[9], local[9];
+    double from[3], desired_global[9], parent_inverse[9], local[9];
     double axis_dot, v_len, current[3], offset[3];
+    double pole_source[3], pole_projected[3], v_projected[3];
+    double stable_bind_frame[9], stable_bind_secondary[3], bind_projected[3];
+    double dynamic_ratio, bind_ratio, first_projection_dot, post_projection_dot;
+    int pole_source_kind, pole_side;
     double hinge_axis[3], aa[3], bb[3], cross2[3], aa_len, bb_len, dot2, signed2;
     double bind_pole[3];
-    double e0[3], e1[3], h0[3], h1[3], z0[3], z1[3], ldesired[3], candidate_b[3];
-    double base_frame[9], desired_frame[9], base_transpose[9], frame_tmp[9];
-    double from_to_delta[9], thigh_before_global[9], thigh_local_trace[9];
+    double e0[3], e1[3], h1[3], z1[3], ldesired[3], candidate_b[3];
+    double desired_frame[9];
+    double thigh_before_global[9], thigh_local_trace[9];
     int knee, thigh, parent, x, y, z, clamped = 0;
     int base_knee_x, base_thigh[3], base_knee[3];
     if (asset) asset->ik_analytic_last_reason=4;
@@ -778,6 +845,16 @@ static int model_solve_one_leg_analytic(
     track = model_find_clip_track(clip, ik->controller);
     if (!track && !asset->ik_synthetic_target) return 0;
     asset->ik_analytic_last_reason=0;
+    pole_side=!strcmp(asset->bones[ik->controller].name,"右足ＩＫ")?1:0;
+    if (asset) {
+        asset->ik_analytic_last_dynamic_pole_ratio[pole_side]=0.0;
+        asset->ik_analytic_last_bind_pole_ratio[pole_side]=0.0;
+        asset->ik_analytic_last_selected_pole[pole_side][0]=0.0;
+        asset->ik_analytic_last_selected_pole[pole_side][1]=0.0;
+        asset->ik_analytic_last_selected_pole[pole_side][2]=0.0;
+        asset->ik_analytic_last_pole_source[pole_side]=0;
+        asset->ik_analytic_last_pole_override[pole_side]=0;
+    }
     knee = ik->links[0].bone; thigh = ik->links[1].bone;
     if (knee < 0 || thigh < 0 || ik->target >= (int)asset->bone_count) return 0;
     rasterfall_model_update_bones(asset);
@@ -805,6 +882,10 @@ static int model_solve_one_leg_analytic(
     l1=model_vec_length(from); l2=model_vec_length(current_lower);
     u[0]=target[0]-h[0]; u[1]=target[1]-h[1]; u[2]=target[2]-h[2]; d=model_vec_length(u);
     if (l1 < 0.000001 || l2 < 0.000001) return 0;
+    if (model_build_thigh_bind_frame(asset,thigh,knee,ik->target,stable_bind_frame)<0) return 0;
+    stable_bind_secondary[0]=stable_bind_frame[1];
+    stable_bind_secondary[1]=stable_bind_frame[4];
+    stable_bind_secondary[2]=stable_bind_frame[7];
     min_d=fabs(l1-l2)+0.001; max_d=l1+l2-0.001;
     if (max_d < min_d) max_d=min_d;
     dc=d; if (dc < min_d) {dc=min_d;clamped=1;} if (dc > max_d) {dc=max_d;clamped=1;}
@@ -822,16 +903,70 @@ static int model_solve_one_leg_analytic(
     u[0]/=d;u[1]/=d;u[2]/=d;
     /* The bend reference is taken from this leg's FK/bind H-K-A plane, not
      * from a shared left/right sign or from the animated target direction. */
-    pole[0]=a0[0]-h[0];pole[1]=a0[1]-h[1];pole[2]=a0[2]-h[2];
-    axis_dot=pole[0]*from[0]+pole[1]*from[1]+pole[2]*from[2];
-    pole[0]=from[0]-pole[0]*(axis_dot/(l2*l2));
-    pole[1]=from[1]-pole[1]*(axis_dot/(l2*l2));
-    pole[2]=from[2]-pole[2]*(axis_dot/(l2*l2));
+    /* The dynamic bend reference is the current hip-to-knee vector.  Using
+     * hip-to-ankle here lets the lower leg trajectory redefine the bend plane
+     * and can reverse the oriented pole while H->T remains continuous. */
+    pole_source[0]=k0[0]-h[0];pole_source[1]=k0[1]-h[1];pole_source[2]=k0[2]-h[2];
+    pole[0]=pole_source[0];pole[1]=pole_source[1];pole[2]=pole_source[2];
+    /* Project the reference itself onto the plane perpendicular to H->T.
+     * The previous code projected the axis using the reference dot product;
+     * that is not an orthogonal projection and can reverse the subsequent
+     * normalized pole even when the inputs move continuously. */
+    axis_dot=pole[0]*u[0]+pole[1]*u[1]+pole[2]*u[2];
+    first_projection_dot=axis_dot;
+    /* u is already unit length here, so the orthogonal projection is
+     * reference - u * dot(reference,u). */
+    pole[0]-=u[0]*axis_dot;
+    pole[1]-=u[1]*axis_dot;
+    pole[2]-=u[2]*axis_dot;
+    post_projection_dot=pole[0]*u[0]+pole[1]*u[1]+pole[2]*u[2];
+    pole_projected[0]=pole[0];pole_projected[1]=pole[1];pole_projected[2]=pole[2];
     aa_len=model_vec_length(pole);
     if (aa_len < 0.000001) return 0;
     bind_pole[0]=pole[0]/aa_len;bind_pole[1]=pole[1]/aa_len;bind_pole[2]=pole[2]/aa_len;
     axis_dot=pole[0]*u[0]+pole[1]*u[1]+pole[2]*u[2];
     v[0]=pole[0]-u[0]*axis_dot;v[1]=pole[1]-u[1]*axis_dot;v[2]=pole[2]-u[2]*axis_dot;
+    v_projected[0]=v[0];v_projected[1]=v[1];v_projected[2]=v[2];
+    dynamic_ratio=model_vec_length(pole_projected)/model_vec_length(pole_source);
+    bind_projected[0]=stable_bind_secondary[0]-u[0]*(stable_bind_secondary[0]*u[0]+stable_bind_secondary[1]*u[1]+stable_bind_secondary[2]*u[2]);
+    bind_projected[1]=stable_bind_secondary[1]-u[1]*(stable_bind_secondary[0]*u[0]+stable_bind_secondary[1]*u[1]+stable_bind_secondary[2]*u[2]);
+    bind_projected[2]=stable_bind_secondary[2]-u[2]*(stable_bind_secondary[0]*u[0]+stable_bind_secondary[1]*u[1]+stable_bind_secondary[2]*u[2]);
+    bind_ratio=model_vec_length(bind_projected);
+    /* A well-conditioned dynamic pole has its own oriented FK meaning.  Do
+     * not force it into the bind-pole hemisphere: that would turn a valid
+     * dynamic direction into a 180-degree branch jump. */
+    v[0]=v_projected[0];v[1]=v_projected[1];v[2]=v_projected[2];
+    pole_source_kind=0;
+    /* Below roughly sin(8.6 degrees), the dynamic reference has poor
+     * conditioning.  Blend toward the non-degenerate rest-frame reference
+     * over this dimensionless interval instead of hard-switching sources. */
+    if (dynamic_ratio < 0.15) {
+        if (bind_ratio < 0.05) { asset->ik_analytic_last_reason=4; return 0; }
+        {
+            double w=dynamic_ratio/0.15;
+            double bx=bind_projected[0]/bind_ratio;
+            double by=bind_projected[1]/bind_ratio;
+            double bz=bind_projected[2]/bind_ratio;
+            v[0]=bx*(1.0-w)+v_projected[0]*w;
+            v[1]=by*(1.0-w)+v_projected[1]*w;
+            v[2]=bz*(1.0-w)+v_projected[2]*w;
+            v_len=model_vec_length(v);
+            if (v_len < 0.000001) { asset->ik_analytic_last_reason=4; return 0; }
+            v[0]/=v_len;v[1]/=v_len;v[2]/=v_len;
+        }
+        pole_source_kind=dynamic_ratio < 0.000001 ? 1 : 2;
+    }
+    /* A blended pole is not a proven PMX branch: its two inputs may represent
+     * opposite knee sides.  Keep analytical acceptance conservative until a
+     * candidate-level branch comparison establishes a unique valid solution. */
+    if (pole_source_kind == 2) {
+        asset->ik_analytic_last_reason=4;
+        return 0;
+    }
+    if (asset) {
+        asset->ik_analytic_last_dynamic_pole_ratio[pole_side]=dynamic_ratio;
+        asset->ik_analytic_last_bind_pole_ratio[pole_side]=bind_ratio;
+    }
     v_len=model_vec_length(v);
     if (v_len < 0.000001) {
         v[0]=current_lower[0];v[1]=current_lower[1];v[2]=current_lower[2];
@@ -847,6 +982,14 @@ static int model_solve_one_leg_analytic(
         v_len=model_vec_length(v);
         if (v_len < 0.000001) return 0;
         v[0]/=v_len;v[1]/=v_len;v[2]/=v_len;
+        pole_source_kind=3;
+    }
+    if (asset) {
+        asset->ik_analytic_last_pole_source[pole_side]=pole_source_kind;
+        asset->ik_analytic_last_pole_override[pole_side]=pole_source_kind==3;
+        asset->ik_analytic_last_selected_pole[pole_side][0]=v[0];
+        asset->ik_analytic_last_selected_pole[pole_side][1]=v[1];
+        asset->ik_analytic_last_selected_pole[pole_side][2]=v[2];
     }
     cos_h=(l1*l1+dc*dc-l2*l2)/(2.0*l1*dc);
     if (cos_h > 1.0) cos_h = 1.0;
@@ -867,40 +1010,38 @@ static int model_solve_one_leg_analytic(
     e0[0]=from[0]/l1;e0[1]=from[1]/l1;e0[2]=from[2]/l1;
     e1[0]=(kd[0]-h[0])/l1;e1[1]=(kd[1]-h[1])/l1;e1[2]=(kd[2]-h[2])/l1;
     ldesired[0]=(target[0]-kd[0])/l2;ldesired[1]=(target[1]-kd[1])/l2;ldesired[2]=(target[2]-kd[2])/l2;
-    parent=asset->bones[knee].parent;
-    if (parent >= 0) matrix_vector(asset->bone_transforms[parent].rotation,1.0,0.0,0.0,&h0[0],&h0[1],&h0[2]);
-    else { h0[0]=1.0; h0[1]=0.0; h0[2]=0.0; }
-    dot2=h0[0]*e0[0]+h0[1]*e0[1]+h0[2]*e0[2];
-    h0[0]-=dot2*e0[0];h0[1]-=dot2*e0[1];h0[2]-=dot2*e0[2];
-    aa_len=model_vec_length(h0);
-    if (aa_len < 0.000001) return 0;
-    h0[0]/=aa_len;h0[1]/=aa_len;h0[2]/=aa_len;
-    model_vec_cross(e0,h0,z0);
-    model_vec_cross(e1,ldesired,h1);
-    aa_len=model_vec_length(h1);
+    {
+        double bind_frame[9], bind_transpose[9];
+        double desired_secondary[3], desired_third[3], desired_dot;
+        if (model_build_thigh_bind_frame(asset,thigh,knee,ik->target,bind_frame)<0) return 0;
+        desired_secondary[0]=v[0];desired_secondary[1]=v[1];desired_secondary[2]=v[2];
+        desired_dot=desired_secondary[0]*e1[0]+desired_secondary[1]*e1[1]+desired_secondary[2]*e1[2];
+        desired_secondary[0]-=desired_dot*e1[0];desired_secondary[1]-=desired_dot*e1[1];desired_secondary[2]-=desired_dot*e1[2];
+        aa_len=model_vec_length(desired_secondary);
+        if (aa_len < 0.000001) {
+            model_vec_cross(e1,ldesired,h1); aa_len=model_vec_length(h1);
+            if (aa_len < 0.000001) return 0;
+            desired_secondary[0]=h1[0]/aa_len;desired_secondary[1]=h1[1]/aa_len;desired_secondary[2]=h1[2]/aa_len;
+        } else { desired_secondary[0]/=aa_len;desired_secondary[1]/=aa_len;desired_secondary[2]/=aa_len; }
+        /* The pole projection carries the branch choice.  Do not compare it
+         * with a bind-frame axis here: a per-frame sign flip would itself
+         * reintroduce the half-turn this full frame is meant to remove. */
+        model_vec_cross(e1,desired_secondary,desired_third);
+        desired_frame[0]=e1[0];desired_frame[1]=desired_secondary[0];desired_frame[2]=desired_third[0];
+        desired_frame[3]=e1[1];desired_frame[4]=desired_secondary[1];desired_frame[5]=desired_third[1];
+        desired_frame[6]=e1[2];desired_frame[7]=desired_secondary[2];desired_frame[8]=desired_third[2];
+        model_matrix_transpose(bind_frame,bind_transpose);
+        matrix_multiply(desired_frame,bind_transpose,desired_global);
+    }
+    memcpy(thigh_before_global,asset->bone_transforms[thigh].rotation,sizeof(thigh_before_global));
+    model_vec_cross(e1,ldesired,h1); aa_len=model_vec_length(h1);
     if (aa_len < 0.000001) return 0;
     h1[0]/=aa_len;h1[1]/=aa_len;h1[2]/=aa_len;
-    memcpy(thigh_before_global,asset->bone_transforms[thigh].rotation,sizeof(thigh_before_global));
-    if (model_rotation_between(e0,e1,v,from_to_delta)<0) return 0;
-    matrix_vector(from_to_delta,h0[0],h0[1],h0[2],&hinge_axis[0],&hinge_axis[1],&hinge_axis[2]);
-    if (hinge_axis[0]*h1[0]+hinge_axis[1]*h1[1]+hinge_axis[2]*h1[2] < 0.0) {
-        h1[0]=-h1[0];h1[1]=-h1[1];h1[2]=-h1[2];
-    }
     model_vec_cross(e1,h1,z1);
-    base_frame[0]=e0[0];base_frame[1]=h0[0];base_frame[2]=z0[0];
-    base_frame[3]=e0[1];base_frame[4]=h0[1];base_frame[5]=z0[1];
-    base_frame[6]=e0[2];base_frame[7]=h0[2];base_frame[8]=z0[2];
-    desired_frame[0]=e1[0];desired_frame[1]=h1[0];desired_frame[2]=z1[0];
-    desired_frame[3]=e1[1];desired_frame[4]=h1[1];desired_frame[5]=z1[1];
-    desired_frame[6]=e1[2];desired_frame[7]=h1[2];desired_frame[8]=z1[2];
-    model_matrix_transpose(base_frame,base_transpose);
-    matrix_multiply(desired_frame,base_transpose,frame_tmp);
-    memcpy(delta,frame_tmp,sizeof(delta));
-    matrix_multiply(delta,asset->bone_transforms[thigh].rotation,desired_global);
     parent=asset->bones[thigh].parent;
     if(parent>=0){model_matrix_transpose(asset->bone_transforms[parent].rotation,parent_inverse);matrix_multiply(parent_inverse,desired_global,local);}else memcpy(local,desired_global,sizeof(local));
     memcpy(thigh_local_trace,local,sizeof(thigh_local_trace));
-    model_matrix_to_euler(local,&x,&y,&z);
+    model_matrix_to_euler_near(local,base_thigh,&x,&y,&z);
     asset->bones[thigh].rotate_x=x;asset->bones[thigh].rotate_y=y;asset->bones[thigh].rotate_z=z;
     rasterfall_model_update_bones(asset);
     {
@@ -908,6 +1049,8 @@ static int model_solve_one_leg_analytic(
         if (asset->ik_analytic_trace_time_ms == time_ms && asset->ik_analytic_trace_side == trace_side) {
             double tc[3], tl, td, ta, bn[3], bl;
             double basis[3][3], primary[3], secondary[3], tertiary[3];
+            double bind_unit[3], dynamic_unit[3], blend_pre[3], blend_len, bind_dynamic_dot;
+            double bind_kd_plus[3], bind_kd_minus[3];
             double diag_base[9], diag_desired[9], diag_transpose[9];
             double diag_delta[9], diag_global[9];
             struct rasterfall_animation_quaternion qdiag;
@@ -916,11 +1059,39 @@ static int model_solve_one_leg_analytic(
             struct rasterfall_animation_quaternion qb=model_matrix_to_quaternion(thigh_before_global);
             struct rasterfall_animation_quaternion qa=model_matrix_to_quaternion(asset->bone_transforms[thigh].rotation);
             struct rasterfall_animation_quaternion ql=model_matrix_to_quaternion(thigh_local_trace);
+            struct rasterfall_animation_quaternion qd=model_matrix_to_quaternion(desired_global);
+            bind_unit[0]=bind_projected[0]/bind_ratio;bind_unit[1]=bind_projected[1]/bind_ratio;bind_unit[2]=bind_projected[2]/bind_ratio;
+            dynamic_unit[0]=v_projected[0]/model_vec_length(v_projected);dynamic_unit[1]=v_projected[1]/model_vec_length(v_projected);dynamic_unit[2]=v_projected[2]/model_vec_length(v_projected);
+            bind_dynamic_dot=bind_unit[0]*dynamic_unit[0]+bind_unit[1]*dynamic_unit[1]+bind_unit[2]*dynamic_unit[2];
+            blend_pre[0]=bind_unit[0];blend_pre[1]=bind_unit[1];blend_pre[2]=bind_unit[2];
+            if (dynamic_ratio < 0.15) {
+                double bw=dynamic_ratio/0.15;
+                blend_pre[0]=bind_unit[0]*(1.0-bw)+dynamic_unit[0]*bw;
+                blend_pre[1]=bind_unit[1]*(1.0-bw)+dynamic_unit[1]*bw;
+                blend_pre[2]=bind_unit[2]*(1.0-bw)+dynamic_unit[2]*bw;
+            }
+            blend_len=model_vec_length(blend_pre);
+            bind_kd_plus[0]=h[0]+u[0]*(l1*cos_h)+bind_unit[0]*(l1*bend);
+            bind_kd_plus[1]=h[1]+u[1]*(l1*cos_h)+bind_unit[1]*(l1*bend);
+            bind_kd_plus[2]=h[2]+u[2]*(l1*cos_h)+bind_unit[2]*(l1*bend);
+            bind_kd_minus[0]=h[0]+u[0]*(l1*cos_h)-bind_unit[0]*(l1*bend);
+            bind_kd_minus[1]=h[1]+u[1]*(l1*cos_h)-bind_unit[1]*(l1*bend);
+            bind_kd_minus[2]=h[2]+u[2]*(l1*cos_h)-bind_unit[2]*(l1*bend);
             model_vec_cross(e0,e1,tc);tl=model_vec_length(tc);td=e0[0]*e1[0]+e0[1]*e1[1]+e0[2]*e1[2];if(td>1.0)td=1.0;if(td<-1.0)td=-1.0;ta=atan2(tl,td)*180.0/M_PI;
             bn[0]=e1[1]*v[2]-e1[2]*v[1];bn[1]=e1[2]*v[0]-e1[0]*v[2];bn[2]=e1[0]*v[1]-e1[1]*v[0];bl=model_vec_length(bn);if(bl>0.000001){bn[0]/=bl;bn[1]/=bl;bn[2]/=bl;}
             __printf("analytic thigh trace side=%s time=%d H=(%.3f,%.3f,%.3f) T=(%.3f,%.3f,%.3f) Kd=(%.3f,%.3f,%.3f) pole=(%.6f,%.6f,%.6f) bend_normal=(%.6f,%.6f,%.6f)\n",trace_side?"right":"left",time_ms,h[0],h[1],h[2],target[0],target[1],target[2],kd[0],kd[1],kd[2],v[0],v[1],v[2],bn[0],bn[1],bn[2]);
+            __printf("analytic pole chain side=%s time=%d source=(%.6f,%.6f,%.6f) source_len=%.6f source_dot_HK=%.6f first_dot=%.6f post_dot=%.6f projected=(%.6f,%.6f,%.6f) projected_len=%.6f axis_projected=(%.6f,%.6f,%.6f) axis_projected_len=%.6f normalized=(%.6f,%.6f,%.6f)\n",trace_side?"right":"left",time_ms,pole_source[0],pole_source[1],pole_source[2],model_vec_length(pole_source),pole_source[0]*from[0]+pole_source[1]*from[1]+pole_source[2]*from[2],first_projection_dot,post_projection_dot,pole_projected[0],pole_projected[1],pole_projected[2],model_vec_length(pole_projected),v_projected[0],v_projected[1],v_projected[2],model_vec_length(v_projected),v[0],v[1],v[2]);
+            __printf("analytic pole conditioning side=%s time=%d dynamic_ratio=%.9f bind_ratio=%.9f bind_projected=(%.6f,%.6f,%.6f) selected_source=%s selected=(%.6f,%.6f,%.6f)\n",trace_side?"right":"left",time_ms,dynamic_ratio,bind_ratio,bind_projected[0],bind_projected[1],bind_projected[2],pole_source_kind==1?"bind":(pole_source_kind==2?"blend":(pole_source_kind==3?"override":"dynamic")),v[0],v[1],v[2]);
+            __printf("analytic pole canonical side=%s time=%d source=%s override=%d selected=(%.6f,%.6f,%.6f) kd=(%.6f,%.6f,%.6f) fullframe_secondary=(%.6f,%.6f,%.6f)\n",trace_side?"right":"left",time_ms,pole_source_kind==1?"bind":(pole_source_kind==2?"blend":(pole_source_kind==3?"override":"dynamic")),asset->ik_analytic_last_pole_override[trace_side],asset->ik_analytic_last_selected_pole[trace_side][0],asset->ik_analytic_last_selected_pole[trace_side][1],asset->ik_analytic_last_selected_pole[trace_side][2],kd[0],kd[1],kd[2],v[0],v[1],v[2]);
+            __printf("analytic pole transition side=%s time=%d Pd=(%.6f,%.6f,%.6f) Pb=(%.6f,%.6f,%.6f) dot=%.6f ratio=%.6f blend_pre=(%.6f,%.6f,%.6f) blend_len=%.6f\n",trace_side?"right":"left",time_ms,dynamic_unit[0],dynamic_unit[1],dynamic_unit[2],bind_unit[0],bind_unit[1],bind_unit[2],bind_dynamic_dot,dynamic_ratio,blend_pre[0],blend_pre[1],blend_pre[2],blend_len);
+            if (asset->ik_analytic_trace_time_ms == time_ms) {
+                model_probe_analytic_candidate(asset,ik,h,from,bind_kd_plus,target,bind_unit,base_thigh,base_knee,"bind+");
+                bind_unit[0]=-bind_unit[0];bind_unit[1]=-bind_unit[1];bind_unit[2]=-bind_unit[2];
+                model_probe_analytic_candidate(asset,ik,h,from,bind_kd_minus,target,bind_unit,base_thigh,base_knee,"bind-");
+            }
+            __printf("analytic pole refs side=%s time=%d dynamic_pole=(%.6f,%.6f,%.6f) target_axis=(%.6f,%.6f,%.6f) candidate_A=(%.6f,%.6f,%.6f) candidate_B=(%.6f,%.6f,%.6f)\n",trace_side?"right":"left",time_ms,bind_pole[0],bind_pole[1],bind_pole[2],u[0],u[1],u[2],kd[0],kd[1],kd[2],candidate_b[0],candidate_b[1],candidate_b[2]);
             __printf("analytic thigh trace side=%s time=%d current_dir=(%.6f,%.6f,%.6f) desired_dir=(%.6f,%.6f,%.6f) dir_dot=%.6f from_to_axis=(%.6f,%.6f,%.6f) from_to_angle=%.6f\n",trace_side?"right":"left",time_ms,e0[0],e0[1],e0[2],e1[0],e1[1],e1[2],td,tl>0.000001?tc[0]/tl:0.0,tl>0.000001?tc[1]/tl:0.0,tl>0.000001?tc[2]/tl:0.0,ta);
-            __printf("analytic thigh trace side=%s time=%d global_before_q=(%.6f,%.6f,%.6f,%.6f) global_after_q=(%.6f,%.6f,%.6f,%.6f) local_q=(%.6f,%.6f,%.6f,%.6f)\n",trace_side?"right":"left",time_ms,qb.x,qb.y,qb.z,qb.w,qa.x,qa.y,qa.z,qa.w,ql.x,ql.y,ql.z,ql.w);
+            __printf("analytic thigh trace side=%s time=%d desired_global_q=(%.6f,%.6f,%.6f,%.6f) global_before_q=(%.6f,%.6f,%.6f,%.6f) global_after_q=(%.6f,%.6f,%.6f,%.6f) local_q=(%.6f,%.6f,%.6f,%.6f) local_euler=(%d,%d,%d) base_euler=(%d,%d,%d)\n",trace_side?"right":"left",time_ms,qd.x,qd.y,qd.z,qd.w,qb.x,qb.y,qb.z,qb.w,qa.x,qa.y,qa.z,qa.w,ql.x,ql.y,ql.z,ql.w,x,y,z,base_thigh[0],base_thigh[1],base_thigh[2]);
             __printf("analytic thigh trace side=%s time=%d before_basis=(%.6f,%.6f,%.6f|%.6f,%.6f,%.6f|%.6f,%.6f,%.6f) after_basis=(%.6f,%.6f,%.6f|%.6f,%.6f,%.6f|%.6f,%.6f,%.6f)\n",trace_side?"right":"left",time_ms,thigh_before_global[0],thigh_before_global[3],thigh_before_global[6],thigh_before_global[1],thigh_before_global[4],thigh_before_global[7],thigh_before_global[2],thigh_before_global[5],thigh_before_global[8],asset->bone_transforms[thigh].rotation[0],asset->bone_transforms[thigh].rotation[3],asset->bone_transforms[thigh].rotation[6],asset->bone_transforms[thigh].rotation[1],asset->bone_transforms[thigh].rotation[4],asset->bone_transforms[thigh].rotation[7],asset->bone_transforms[thigh].rotation[2],asset->bone_transforms[thigh].rotation[5],asset->bone_transforms[thigh].rotation[8]);
 
             /* Diagnostic only: retain the current thigh's complete frame while
@@ -1020,6 +1191,12 @@ static int model_solve_one_leg_analytic(
            model_clamp_angle(raw_knee_x,ik->links[0].lower[0],ik->links[0].upper[0]) != raw_knee_x)
             asset->ik_analytic_probe_knee_valid=0;
         if (!asset->ik_analytic_probe_knee_valid) asset->ik_analytic_last_reason=2;
+        if (!asset->ik_analytic_probe_knee_valid) {
+            asset->bones[thigh].rotate_x=base_thigh[0];asset->bones[thigh].rotate_y=base_thigh[1];asset->bones[thigh].rotate_z=base_thigh[2];
+            asset->bones[knee].rotate_x=base_knee[0];asset->bones[knee].rotate_y=base_knee[1];asset->bones[knee].rotate_z=base_knee[2];
+            rasterfall_model_update_bones(asset);
+            return 0;
+        }
     }
     if(asset->ik_limits_enabled)x=model_clamp_angle(x,ik->links[0].lower[0],ik->links[0].upper[0]);
     asset->bones[knee].rotate_x=x;asset->bones[knee].rotate_y=0;asset->bones[knee].rotate_z=0;
@@ -1027,6 +1204,19 @@ static int model_solve_one_leg_analytic(
     current[0]=asset->bone_transforms[ik->target].position[0];current[1]=asset->bone_transforms[ik->target].position[1];current[2]=asset->bone_transforms[ik->target].position[2];
     offset[0]=current[0]-target[0];offset[1]=current[1]-target[1];offset[2]=current[2]-target[2];*after=model_vec_length(offset);
     asset->ik_analytic_probe_ankle_error=*after;
+    {
+        double normalized_error=*after/(l1+l2>0.000001?l1+l2:1.0);
+        int bucket=9;
+        if(normalized_error<0.005)bucket=0;else if(normalized_error<0.01)bucket=1;else if(normalized_error<0.02)bucket=2;else if(normalized_error<0.05)bucket=3;else if(normalized_error<0.10)bucket=4;else if(normalized_error<0.20)bucket=5;else if(normalized_error<0.30)bucket=6;else if(normalized_error<0.50)bucket=7;else if(normalized_error<1.0)bucket=8;
+        asset->ik_analytic_error_hist[pole_side][bucket]++;
+        if (normalized_error > 0.05) {
+            asset->ik_analytic_last_reason=3;
+            asset->bones[thigh].rotate_x=base_thigh[0];asset->bones[thigh].rotate_y=base_thigh[1];asset->bones[thigh].rotate_z=base_thigh[2];
+            asset->bones[knee].rotate_x=base_knee[0];asset->bones[knee].rotate_y=base_knee[1];asset->bones[knee].rotate_z=base_knee[2];
+            rasterfall_model_update_bones(asset);
+            return 0;
+        }
+    }
     if (*after > *before && asset->ik_analytic_last_reason == 0)
         asset->ik_analytic_last_reason=3;
     if (asset->ik_analytic_geometry_dump)

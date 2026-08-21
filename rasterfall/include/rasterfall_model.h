@@ -161,8 +161,14 @@ struct rasterfall_model_asset {
     unsigned long ik_analytic_accept_count[2];
     unsigned long ik_analytic_reject_count[2];
     unsigned long ik_analytic_reject_reason[2][4];
+    unsigned long ik_analytic_error_hist[2][10];
     int ik_analytic_trace_time_ms;
     int ik_analytic_trace_side;
+    double ik_analytic_last_dynamic_pole_ratio[2];
+    double ik_analytic_last_bind_pole_ratio[2];
+    double ik_analytic_last_selected_pole[2][3];
+    int ik_analytic_last_pole_source[2];
+    int ik_analytic_last_pole_override[2];
     int ik_diagnostic_dump;
     int ik_target_space_diagnostic;
     /* Inspector-only solver diagnostics.  These remain disabled in runtime. */

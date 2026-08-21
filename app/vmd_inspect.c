@@ -13,6 +13,7 @@ static void reset_ik_stats(struct rasterfall_model_asset *m)
     m->ik_analytic_accept_count[0] = m->ik_analytic_accept_count[1] = 0;
     m->ik_analytic_reject_count[0] = m->ik_analytic_reject_count[1] = 0;
     memset(m->ik_analytic_reject_reason, 0, sizeof(m->ik_analytic_reject_reason));
+    memset(m->ik_analytic_error_hist, 0, sizeof(m->ik_analytic_error_hist));
     m->ik_last_leg_solver[0] = m->ik_last_leg_solver[1] = 0;
     m->ik_iteration_total = 0;
     m->ik_iteration_max = 0;
@@ -28,6 +29,9 @@ static void print_ik_runtime(const struct rasterfall_model_asset *m)
     __printf("analytic leg IK: solved=%lu clamped_targets=%lu rejected=%lu\n",
              m->ik_analytic_solved_count, m->ik_analytic_clamped_count,
              m->ik_analytic_rejected_count);
+    __printf("analytic normalized ankle error bins (<.005,.01,.02,.05,.10,.20,.30,.50,1.0,>=1): left=%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu right=%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu\n",
+             m->ik_analytic_error_hist[0][0],m->ik_analytic_error_hist[0][1],m->ik_analytic_error_hist[0][2],m->ik_analytic_error_hist[0][3],m->ik_analytic_error_hist[0][4],m->ik_analytic_error_hist[0][5],m->ik_analytic_error_hist[0][6],m->ik_analytic_error_hist[0][7],m->ik_analytic_error_hist[0][8],m->ik_analytic_error_hist[0][9],
+             m->ik_analytic_error_hist[1][0],m->ik_analytic_error_hist[1][1],m->ik_analytic_error_hist[1][2],m->ik_analytic_error_hist[1][3],m->ik_analytic_error_hist[1][4],m->ik_analytic_error_hist[1][5],m->ik_analytic_error_hist[1][6],m->ik_analytic_error_hist[1][7],m->ik_analytic_error_hist[1][8],m->ik_analytic_error_hist[1][9]);
     __printf("ik runtime diagnostic: samples=%lu avg_iterations_per_leg=%.2f "
              "max_iterations_per_leg=%u avg_error_before=%.3f "
              "avg_error_after=%.3f max_error_before=%.3f "
@@ -386,7 +390,7 @@ static void inspect_leg_sequence(struct rasterfall_model_asset *m,
     for(side=0;side<2;side++) {
         double minutes=v->duration_ms/60000.0;
         __printf("leg coverage mode=%s side=%s frames=%lu analytical=%lu %.2f%% fallback=%lu %.2f%% AtoC=%lu CtoA=%lu switches=%lu switches_per_min=%.2f\n",legacy?"legacy":"hybrid",side?"right":"left",s[side].frames,s[side].analytical,s[side].frames?100.0*s[side].analytical/s[side].frames:0.0,s[side].fallback,s[side].frames?100.0*s[side].fallback/s[side].frames:0.0,s[side].a_to_c,s[side].c_to_a,s[side].switches,minutes>0?s[side].switches/minutes:0.0);
-        if(!legacy) __printf("leg rejects side=%s geometry_unreachable=%lu no_valid_knee=%lu reconstruction=%lu numerical=%lu\n",side?"right":"left",m->ik_analytic_reject_reason[side][0],m->ik_analytic_reject_reason[side][1],m->ik_analytic_reject_reason[side][2],m->ik_analytic_reject_reason[side][3]);
+        if(!legacy) __printf("leg rejects side=%s geometry_unreachable=%lu no_valid_knee=%lu reconstruction=%lu ambiguous_or_degenerate=%lu\n",side?"right":"left",m->ik_analytic_reject_reason[side][0],m->ik_analytic_reject_reason[side][1],m->ik_analytic_reject_reason[side][2],m->ik_analytic_reject_reason[side][3]);
         __printf("leg runs side=%s longest_analytical=%lu avg_analytical=%.2f longest_fallback=%lu avg_fallback=%.2f switch_knee_max=%.3f avg=%.3f switch_ankle_max=%.3f avg=%.3f\n",side?"right":"left",s[side].a_runs?s[side].a_run_total/s[side].a_runs:0,s[side].a_runs?(double)s[side].a_run_total/s[side].a_runs:0.0,s[side].c_runs?s[side].c_run_total/s[side].c_runs:0,s[side].c_runs?(double)s[side].c_run_total/s[side].c_runs:0.0,s[side].switch_delta_count?s[side].max_switch_knee:0.0,s[side].switch_delta_count?s[side].sum_switch_knee/s[side].switch_delta_count:0.0,s[side].switch_delta_count?s[side].max_switch_ankle:0.0,s[side].switch_delta_count?s[side].sum_switch_ankle/s[side].switch_delta_count:0.0);
         __printf("leg continuity mode=%s side=%s all_knee_max=%.3f all_ankle_max=%.3f analytical_knee_max=%.3f avg=%.3f analytical_thigh_max=%.3f analytical_ankle_max=%.3f avg=%.3f analytical_error_avg=%.3f max=%.3f ccd_knee_max=%.3f avg=%.3f ccd_ankle_max=%.3f avg=%.3f avg_error=%.3f max_error=%.3f\n",legacy?"legacy":"hybrid",side?"right":"left",s[side].max_all_knee,s[side].max_all_ankle,s[side].max_a_knee,s[side].a_delta_count?s[side].sum_a_knee/s[side].a_delta_count:0.0,s[side].max_a_thigh,s[side].max_a_ankle,s[side].a_delta_count?s[side].sum_a_ankle/s[side].a_delta_count:0.0,s[side].analytical?s[side].sum_a_error/s[side].analytical:0.0,s[side].max_a_error,s[side].max_c_knee,s[side].c_delta_count?s[side].sum_c_knee/s[side].c_delta_count:0.0,s[side].max_c_ankle,s[side].c_delta_count?s[side].sum_c_ankle/s[side].c_delta_count:0.0,s[side].frames?s[side].sum_all_error/s[side].frames:0.0,s[side].max_all_error);
     }
@@ -398,6 +402,9 @@ static void inspect_analytic_thigh_jumps(struct rasterfall_model_asset *m,
 {
     int time, side, step=16, max_time[2]={-1,-1};
     double max_jump[2]={0.0,0.0};
+    unsigned long pole_hist[2][101]={{0}};
+    unsigned long pole_count[2]={0,0};
+    double pole_min[2]={2.0,2.0}, pole_max[2]={0.0,0.0};
     int previous_state[2]={0,0}, previous_thigh[2][3]={{0,0,0},{0,0,0}};
     reset_ik_stats(m);m->ik_legacy_knee_ccd=0;m->ik_analytic_trace_time_ms=-1;
     for(time=0;time<v->duration_ms;time+=step) {
@@ -405,17 +412,36 @@ static void inspect_analytic_thigh_jumps(struct rasterfall_model_asset *m,
         for(side=0;side<2;side++) {
             int thigh=rasterfall_model_find_bone(m,side?"右足":"左足"), state=m->ik_last_leg_solver[side];
             int now[3];double delta;
+            double ratio=m->ik_analytic_last_dynamic_pole_ratio[side];
             if(thigh<0)continue;
+            if(ratio<0.0)ratio=0.0;
+            if(ratio>1.0)ratio=1.0;
+            pole_count[side]++;if(ratio<pole_min[side])pole_min[side]=ratio;if(ratio>pole_max[side])pole_max[side]=ratio;
+            pole_hist[side][(int)(ratio*100.0+0.5)]++;
             now[0]=m->bones[thigh].rotate_x;now[1]=m->bones[thigh].rotate_y;now[2]=m->bones[thigh].rotate_z;
             if(previous_state[side]==1 && state==1){delta=inspect_rotation_delta(previous_thigh[side],now);if(delta>max_jump[side]){max_jump[side]=delta;max_time[side]=time;}}
             previous_state[side]=state;memcpy(previous_thigh[side],now,sizeof(now));
         }
     }
     for(side=0;side<2;side++) {
-        __printf("analytical-only thigh maximum side=%s time=%dms previous=%dms current=%dms delta=%.6fdeg window=±3frames\n",side?"right":"left",max_time[side],max_time[side]-step,max_time[side],max_jump[side]);
+        unsigned long target01=(unsigned long)(pole_count[side]*1/100), target50=(unsigned long)(pole_count[side]*50/100), target99=(unsigned long)(pole_count[side]*99/100), cumulative=0;
+        int p01=0,p50=0,p99=0,i;
+        for(i=0;i<=100;i++){cumulative+=pole_hist[side][i];if(!p01&&cumulative>target01)p01=i;if(!p50&&cumulative>target50)p50=i;if(!p99&&cumulative>target99)p99=i;}
+        __printf("pole conditioning side=%s samples=%lu min=%.6f p01=%.6f p50=%.6f p99=%.6f max=%.6f blend_ratio_lt=0.150000\n",side?"right":"left",pole_count[side],pole_count[side]?pole_min[side]:0.0,p01/100.0,p50/100.0,p99/100.0,pole_count[side]?pole_max[side]:0.0);
+        __printf("analytical-only thigh maximum side=%s time=%dms previous=%dms current=%dms delta=%.6fdeg window=±10frames\n",side?"right":"left",max_time[side],max_time[side]-step,max_time[side],max_jump[side]);
         if(max_time[side]<0)continue;
         m->ik_analytic_trace_side=side;
-        for(time=max_time[side]-3*step;time<=max_time[side]+3*step;time+=step){if(time<0||time>=v->duration_ms)continue;m->ik_analytic_trace_time_ms=time;prepare_vmd_skeleton_translation(m,v,time,0);rasterfall_model_sample_clip(m,clip,time);}
+        for(time=max_time[side]-10*step;time<=max_time[side]+10*step;time+=step){if(time<0||time>=v->duration_ms)continue;m->ik_analytic_trace_time_ms=time;prepare_vmd_skeleton_translation(m,v,time,0);rasterfall_model_sample_clip(m,clip,time);}
+    }
+    {
+        static const int history[] = {70080,102480,227680,159008};
+        int hi;
+        for (hi=0;hi<4;hi++) {
+            if (history[hi] >= v->duration_ms) continue;
+            prepare_vmd_skeleton_translation(m,v,history[hi],0);
+            rasterfall_model_sample_clip(m,clip,history[hi]);
+            __printf("analytical history time=%d left=%s right=%s\n",history[hi],m->ik_last_leg_solver[0]==1?"accepted":"rejected/fallback",m->ik_last_leg_solver[1]==1?"accepted":"rejected/fallback");
+        }
     }
     m->ik_analytic_trace_time_ms=-1;m->ik_analytic_trace_side=-1;
 }
@@ -738,6 +764,10 @@ int main(int argc, char **argv)
             }
             inspect_analytic_synthetic(&m, &v, &clip);
             inspect_analytic_pole_sweep(&m, &v, &clip);
+            /* Pole sweep is diagnostic-only; never let its override leak into
+             * the subsequent real-animation continuity scan. */
+            m.ik_analytic_pole_override = 0;
+            m.ik_synthetic_target = 0;
             {
                 int sample_step = v.duration_ms > 30000 ? 100 : 16;
                 reset_ik_stats(&m);
