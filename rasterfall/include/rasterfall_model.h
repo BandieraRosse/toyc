@@ -204,6 +204,17 @@ struct rasterfall_model_asset {
     int ik_ccd_diag_best_is_c0[2];
     int ik_ccd_diag_best_thigh[2][3];
     int ik_ccd_diag_best_knee[2];
+    int ik_ccd_diag_c0_branch_sign[2];
+    int ik_ccd_diag_best_branch_sign[2];
+    double ik_ccd_diag_best_same_error[2];
+    double ik_ccd_diag_best_mirror_error[2];
+    unsigned int ik_ccd_diag_best_same_iteration[2];
+    unsigned int ik_ccd_diag_best_mirror_iteration[2];
+    unsigned int ik_ccd_diag_first_mirror_iteration[2];
+    int ik_previous_final_enabled;
+    int ik_previous_final_valid[2];
+    int ik_previous_final_thigh[2][3];
+    int ik_previous_final_knee[2];
     int ik_solver_return_thigh[2][3];
     int ik_solver_return_knee[2];
     double ik_solver_return_thigh_global_q[2][4];

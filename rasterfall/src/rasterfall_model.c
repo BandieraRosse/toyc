@@ -380,6 +380,7 @@ int rasterfall_model_load(struct rasterfall_model_asset *asset,
     asset->format_version = version;
     asset->grant_enabled = version >= 13 ? 1 : 0;
     asset->ik_best_iteration_enabled = 1;
+    asset->ik_previous_final_enabled = 1;
     asset->vertex_bytes = vertex_bytes;
     asset->vertex_count = model_u32(data + 8);
     asset->index_count = model_u32(data + 12);
@@ -551,6 +552,41 @@ int rasterfall_model_build_demo_clips(struct rasterfall_model_asset *asset)
 static double model_vec_length(const double v[3])
 {
     return sqrt(v[0]*v[0] + v[1]*v[1] + v[2]*v[2]);
+}
+
+/* Inspector-only bend branch classification.  This mirrors the diagnostic
+ * definition used by vmd_inspect: it is never used to choose a solver pose. */
+static int model_ccd_branch_sign(const struct rasterfall_model_asset *asset,
+                                 const struct rasterfall_model_ik *ik,
+                                 const double target[3])
+{
+    int knee=ik->links[0].bone;
+    int thigh=ik->links[ik->link_count-1].bone;
+    double axis[3], perp[3], ref[3], refp[3];
+    double axis_len, perp_len, ref_len, projection, dot;
+    int i;
+    for(i=0;i<3;i++) {
+        axis[i]=target[i]-asset->bone_transforms[thigh].position[i];
+        perp[i]=asset->bone_transforms[knee].position[i]-asset->bone_transforms[thigh].position[i];
+        ref[i]=(i==0 ? asset->bones[knee].rest_x-asset->bones[thigh].rest_x :
+                i==1 ? asset->bones[knee].rest_y-asset->bones[thigh].rest_y :
+                       asset->bones[knee].rest_z-asset->bones[thigh].rest_z) * 232.0;
+    }
+    axis_len=model_vec_length(axis);
+    if(axis_len<0.000001)return 0;
+    for(i=0;i<3;i++)axis[i]/=axis_len;
+    projection=perp[0]*axis[0]+perp[1]*axis[1]+perp[2]*axis[2];
+    ref_len=model_vec_length(ref);
+    for(i=0;i<3;i++) { perp[i]-=projection*axis[i]; refp[i]=ref[i]; }
+    projection=refp[0]*axis[0]+refp[1]*axis[1]+refp[2]*axis[2];
+    for(i=0;i<3;i++)refp[i]-=projection*axis[i];
+    perp_len=model_vec_length(perp); ref_len=model_vec_length(refp);
+    if(perp_len<0.000001 || ref_len<0.000001)return 0;
+    for(i=0;i<3;i++){perp[i]/=perp_len;refp[i]/=ref_len;}
+    dot=perp[0]*refp[0]+perp[1]*refp[1]+perp[2]*refp[2];
+    if(dot>0.15)return 1;
+    if(dot<-0.15)return -1;
+    return 0;
 }
 
 static void model_vec_cross(const double a[3], const double b[3], double out[3])
@@ -1412,6 +1448,16 @@ static int model_solve_one_leg_ik(struct rasterfall_model_asset *asset,
         asset->ik_ccd_diag_best_iteration[ccd_side] = 0;
         asset->ik_ccd_diag_iterations[ccd_side] = 0;
         asset->ik_ccd_diag_best_is_c0[ccd_side] = 1;
+        asset->ik_ccd_diag_c0_branch_sign[ccd_side] =
+            model_ccd_branch_sign(asset, ik, target);
+        asset->ik_ccd_diag_best_branch_sign[ccd_side] =
+            asset->ik_ccd_diag_c0_branch_sign[ccd_side];
+        asset->ik_ccd_diag_best_same_error[ccd_side] =
+            asset->ik_ccd_diag_c0_branch_sign[ccd_side] ? *before : 1.0e30;
+        asset->ik_ccd_diag_best_mirror_error[ccd_side] = 1.0e30;
+        asset->ik_ccd_diag_best_same_iteration[ccd_side] = (unsigned int)-1;
+        asset->ik_ccd_diag_best_mirror_iteration[ccd_side] = (unsigned int)-1;
+        asset->ik_ccd_diag_first_mirror_iteration[ccd_side] = (unsigned int)-1;
         asset->ik_ccd_diag_target[ccd_side][0] = target[0];
         asset->ik_ccd_diag_target[ccd_side][1] = target[1];
         asset->ik_ccd_diag_target[ccd_side][2] = target[2];
@@ -1637,11 +1683,27 @@ static int model_solve_one_leg_ik(struct rasterfall_model_asset *asset,
             int ccd_side = !strcmp(asset->bones[ik->controller].name, "左足ＩＫ") ? 0 : 1;
             int knee = ik->links[0].bone;
             int thigh = ik->links[ik->link_count - 1].bone;
+            int branch_sign = model_ccd_branch_sign(asset, ik, target);
             asset->ik_ccd_diag_iterations[ccd_side] = iteration + 1;
+            if (branch_sign && branch_sign == asset->ik_ccd_diag_c0_branch_sign[ccd_side]) {
+                if (*after < asset->ik_ccd_diag_best_same_error[ccd_side]) {
+                    asset->ik_ccd_diag_best_same_error[ccd_side] = *after;
+                    asset->ik_ccd_diag_best_same_iteration[ccd_side] = iteration;
+                }
+            } else if (branch_sign && asset->ik_ccd_diag_c0_branch_sign[ccd_side] &&
+                       branch_sign != asset->ik_ccd_diag_c0_branch_sign[ccd_side]) {
+                if (asset->ik_ccd_diag_first_mirror_iteration[ccd_side] == (unsigned int)-1)
+                    asset->ik_ccd_diag_first_mirror_iteration[ccd_side] = iteration;
+                if (*after < asset->ik_ccd_diag_best_mirror_error[ccd_side]) {
+                    asset->ik_ccd_diag_best_mirror_error[ccd_side] = *after;
+                    asset->ik_ccd_diag_best_mirror_iteration[ccd_side] = iteration;
+                }
+            }
             if (*after < asset->ik_ccd_diag_best_error[ccd_side]) {
                 asset->ik_ccd_diag_best_error[ccd_side] = *after;
                 asset->ik_ccd_diag_best_iteration[ccd_side] = iteration;
                 asset->ik_ccd_diag_best_is_c0[ccd_side] = 0;
+                asset->ik_ccd_diag_best_branch_sign[ccd_side] = branch_sign;
                 asset->ik_ccd_diag_best_thigh[ccd_side][0] = asset->bones[thigh].rotate_x;
                 asset->ik_ccd_diag_best_thigh[ccd_side][1] = asset->bones[thigh].rotate_y;
                 asset->ik_ccd_diag_best_thigh[ccd_side][2] = asset->bones[thigh].rotate_z;
@@ -1662,6 +1724,16 @@ static int model_solve_one_leg_ik(struct rasterfall_model_asset *asset,
         asset->bones[knee].rotate_z = 0;
     }
     rasterfall_model_update_bones(asset);
+    if (asset->ik_previous_final_enabled) {
+        int final_side = !strcmp(asset->bones[ik->controller].name, "左足ＩＫ") ? 0 : 1;
+        int final_knee = ik->links[0].bone;
+        int final_thigh = ik->links[ik->link_count - 1].bone;
+        asset->ik_previous_final_thigh[final_side][0] = asset->bones[final_thigh].rotate_x;
+        asset->ik_previous_final_thigh[final_side][1] = asset->bones[final_thigh].rotate_y;
+        asset->ik_previous_final_thigh[final_side][2] = asset->bones[final_thigh].rotate_z;
+        asset->ik_previous_final_knee[final_side] = asset->bones[final_knee].rotate_x;
+        asset->ik_previous_final_valid[final_side] = 1;
+    }
     if (asset->ik_iteration_trace_time_ms == time_ms)
         {
             int trace_side = !strcmp(asset->bones[ik->controller].name, "左足ＩＫ") ? 0 : 1;
@@ -1824,6 +1896,15 @@ static void rasterfall_model_solve_leg_ik(
                 (void)analytic_ok;
             } else {
             if (leg_side >= 0) {
+                if (asset->ik_previous_final_enabled) {
+                    int final_thigh = asset->iks[i].links[asset->iks[i].link_count-1].bone;
+                    int final_knee = asset->iks[i].links[0].bone;
+                    asset->ik_previous_final_thigh[leg_side][0] = asset->bones[final_thigh].rotate_x;
+                    asset->ik_previous_final_thigh[leg_side][1] = asset->bones[final_thigh].rotate_y;
+                    asset->ik_previous_final_thigh[leg_side][2] = asset->bones[final_thigh].rotate_z;
+                    asset->ik_previous_final_knee[leg_side] = asset->bones[final_knee].rotate_x;
+                    asset->ik_previous_final_valid[leg_side] = 1;
+                }
                 if (leg_side < 2 &&
                     asset->ik_analytical_inherit_diagnostic) {
                     int thigh = asset->iks[i].links[asset->iks[i].link_count-1].bone;
@@ -1845,6 +1926,18 @@ static void rasterfall_model_solve_leg_ik(
             if (after > after_max) after_max = after;
             continue;
             }
+        }
+        if (leg_side >= 0 && leg_side < 2 && asset->ik_previous_final_enabled &&
+            asset->ik_previous_final_valid[leg_side]) {
+            int restore_thigh = asset->iks[i].links[asset->iks[i].link_count-1].bone;
+            int restore_knee = asset->iks[i].links[0].bone;
+            asset->bones[restore_thigh].rotate_x = asset->ik_previous_final_thigh[leg_side][0];
+            asset->bones[restore_thigh].rotate_y = asset->ik_previous_final_thigh[leg_side][1];
+            asset->bones[restore_thigh].rotate_z = asset->ik_previous_final_thigh[leg_side][2];
+            asset->bones[restore_knee].rotate_x = asset->ik_previous_final_knee[leg_side];
+            asset->bones[restore_knee].rotate_y = 0;
+            asset->bones[restore_knee].rotate_z = 0;
+            rasterfall_model_update_bones(asset);
         }
         if (leg_side >= 0 && leg_side < 2 &&
             asset->ik_analytical_inherit_diagnostic &&
