@@ -47,6 +47,7 @@
  *   --vmd-freeze-head            diagnostic: freeze head/neck VMD tracks
  *   --vmd-freeze-torso           diagnostic: freeze upper-body VMD tracks
  *   --vmd-linear-interpolation   diagnostic: disable VMD Bezier timing
+ *   --vmd-no-root-translation    diagnostic: ignore Center/Groove translation
  *   --frames <count>               运行指定帧数后退出
  *   --input-test                   输入调试测试
  *   --logic-test / --net-test      运行逻辑测试
@@ -2202,6 +2203,7 @@ int main(int argc, char **argv)
     const char *vmd_walk_model=0,*vmd_walk_path=0;
     int vmd_freeze_head = 0, vmd_freeze_torso = 0;
     int vmd_linear_interpolation = 0;
+    int vmd_no_root_translation = 0;
     int performance_iterations = 5;
     int performance_workers = 0;
     for (int arg = 1; arg < argc; arg++) {
@@ -2292,6 +2294,8 @@ int main(int argc, char **argv)
             vmd_freeze_torso = 1;
         } else if (strcmp(argv[arg], "--vmd-linear-interpolation") == 0) {
             vmd_linear_interpolation = 1;
+        } else if (strcmp(argv[arg], "--vmd-no-root-translation") == 0) {
+            vmd_no_root_translation = 1;
         } else if (strcmp(argv[arg], "--model-material-regression") == 0 &&
                    arg + 2 < argc) {
             view_model_path = argv[++arg];
@@ -2416,6 +2420,7 @@ int main(int argc, char **argv)
         rasterfall_render_set_vmd_walk(vmd_walk_model, vmd_walk_path);
     rasterfall_render_set_vmd_freeze(vmd_freeze_head, vmd_freeze_torso);
     rasterfall_render_set_vmd_linear_interpolation(vmd_linear_interpolation);
+    rasterfall_render_set_vmd_no_root_translation(vmd_no_root_translation);
     rasterfall_render_bake_lightmap();
     rf_windows_log("startup: lightmap baked");
     rasterfall_effects_init(&effects);

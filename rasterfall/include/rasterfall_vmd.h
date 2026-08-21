@@ -56,6 +56,8 @@ void rasterfall_vmd_set_linear_interpolation(struct rasterfall_vmd_clip *vmd,
                                              int linear);
 void rasterfall_vmd_sample_translation(const struct rasterfall_vmd_clip *vmd,
                                        int time_ms, int out[3]);
+void rasterfall_vmd_dump_translation_diagnostic(
+    const struct rasterfall_vmd_clip *vmd);
 int rasterfall_vmd_logic_test(void);
 
 #endif
