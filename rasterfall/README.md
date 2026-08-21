@@ -135,6 +135,32 @@ mesh/material，也不生成 Rasterfall 动画。`humanoid` 模式将 Quaternius
 `basis` 模式使用与 RFM2 相同的 Humanoid 规则输出 canonical global rest basis；
 它只进行诊断，不转换或播放动画。
 
+## VMD→Eula 兼容性实验
+
+本轮 VMD spike 保持 MMD/PMX bone local rotation 直连，不经过 GLB Humanoid
+retarget。先使用独立 inspector 查看 CP932 bone names、帧范围、平移/旋转、IK
+和 mapping：
+
+```sh
+make app-vmd-inspect
+build/vmd_inspect .claude/walk/walk04_loop5.vmd [eula.rmesh]
+```
+
+`walk04_loop5.vmd` 是 `walk04.vmd` 的循环拼接版本，适合作为主循环样本。运行时
+实验入口为：
+
+```sh
+build/rasterfall --vmd-eula-walk <eula.rmesh> .claude/walk/walk04_loop5.vmd
+```
+
+v1 只把非 IK bone rotation 转成现有 `AnimationClip`；Center/Groove translation
+作为 presentation-only root offset（按 PMX 导入的 232 倍单位缩放），不修改
+gameplay world position。VMD interpolation bytes 会报告为 present，但当前采样明确
+使用 linear/nlerp；IK tracks 会诊断并忽略，PMX IK solver 仍未执行。
+
+开发者区域第二排新增 `VMD WALK (EULA)` 按钮，使用
+`.claude/walk/walk04_loop5.vmd`，不改变同排的三个 GLB 预览按钮。
+
 `--model-retarget-test` 只把固定角度的 canonical Humanoid rotation delta
 换基为目标骨的 parent-local quaternion，用于验证 rotation retarget 数学顺序；它不读取
 GLB animation keyframe，也不改变 AnimationClip、root motion 或游戏动画状态。

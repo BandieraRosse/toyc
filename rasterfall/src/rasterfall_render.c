@@ -24,6 +24,7 @@
 #include "rasterfall_animation.h"
 #include "rasterfall_glb_animation.h"
 #include "rasterfall_glb_preview.h"
+#include "rasterfall_vmd.h"
 #include "math.h"
 
 #define NEAR_Z RASTERFALL_NEAR_Z
@@ -133,6 +134,13 @@ static void rotate_arm_xz(int x, int z, int degrees, int *out_x, int *out_z);
 static struct rasterfall_model_asset gallery_models[RASTERFALL_MODEL_MAX_GALLERY];
 static int gallery_loaded;
 static struct rasterfall_model_asset private_character_model;
+static struct rasterfall_vmd_clip private_character_vmd;
+static struct rasterfall_animation_clip private_character_vmd_clip;
+static struct rasterfall_animation_track private_character_vmd_tracks[RASTERFALL_VMD_MAX_BONES];
+static const char *private_character_override_path;
+static const char *private_character_vmd_path;
+static int private_character_vmd_forced;
+static int private_character_vmd_loaded;
 static struct rasterfall_glb_rotation_clip private_character_glb[3];
 static struct rasterfall_glb_rotation_reference private_character_glb_reference;
 static struct rasterfall_animation_clip private_character_timing[3];
@@ -172,6 +180,14 @@ static int private_character_load_glb_clip(int index)
     return 0;
 }
 static int private_character_loaded;
+
+int rasterfall_render_set_vmd_walk(const char *model_path, const char *vmd_path)
+{
+    private_character_override_path = model_path;
+    private_character_vmd_path = vmd_path;
+    private_character_vmd_forced = 1;
+    return 0;
+}
 
 static int render_quaternius_preview(struct toy_renderer *renderer,
                                      const struct camera *camera,int clip_id,
@@ -874,17 +890,45 @@ static int render_model_gallery(struct toy_renderer *renderer,
 static int render_private_character(struct toy_renderer *renderer,
                                     const struct camera *camera)
 {
-    const char path[] = "rasterfall/private-assets/models/yola.rmesh";
+    const char *path = private_character_override_path ?
+        private_character_override_path : "rasterfall/private-assets/models/yola.rmesh";
     int scale;
     if (!private_character_loaded) {
         rasterfall_model_load(&private_character_model, path);
         private_character_loaded = 1;
     }
+    if (active_session && active_session->skeletal_demo_player.clip_id == 9 &&
+        !private_character_vmd_path)
+        private_character_vmd_path = ".claude/walk/walk04_loop5.vmd";
+    if (private_character_vmd_path && !private_character_vmd_loaded &&
+        private_character_model.data) {
+        if (rasterfall_vmd_load(&private_character_vmd,
+                                private_character_vmd_path) == 0) {
+            rasterfall_vmd_map_eula(&private_character_vmd,
+                                    &private_character_model);
+            rasterfall_vmd_build_animation(&private_character_vmd,
+                &private_character_vmd_clip, private_character_vmd_tracks,
+                RASTERFALL_VMD_MAX_BONES);
+            private_character_vmd_loaded = 1;
+            __printf("rasterfall: VMD walk loaded directly on Eula: %s\n",
+                     private_character_vmd_path);
+        } else __fprintf(2, "rasterfall: cannot load VMD walk %s\n",
+                         private_character_vmd_path);
+    }
     if (private_character_model.data && active_session) {
         struct rasterfall_animation_player *player =
             &active_session->skeletal_demo_player;
         long sample_start = render_monotonic_us();
-        if (player->clip_id >= 0 && player->clip_id < 3) {
+        if (private_character_vmd_loaded &&
+            (player->clip_id == 9 || private_character_vmd_forced)) {
+            player->clip = &private_character_vmd_clip;
+            player->loop = 1;
+            rasterfall_model_sample_clip(&private_character_model,
+                                         player->clip, player->time_ms);
+            { int offset[3]; rasterfall_vmd_sample_translation(&private_character_vmd,
+                    player->time_ms, offset); private_character_model.animation_offset_x=offset[0];
+              private_character_model.animation_offset_y=offset[1]; private_character_model.animation_offset_z=offset[2]; }
+        } else if (player->clip_id >= 0 && player->clip_id < 3) {
             player->clip = &private_character_model.demo_clips[player->clip_id];
             player->loop = player->clip->loop;
             rasterfall_model_sample_clip(&private_character_model, player->clip,
@@ -2343,6 +2387,9 @@ static int render_interactables(struct toy_renderer *renderer,
             pixels += render_special_button(renderer,camera,it->x,it->y,it->z,on,
                                              it->kind==TOY_MAP_PICKUP_GLB_JOG_BUTTON?2:
                                              it->kind==TOY_MAP_PICKUP_GLB_WALK_BUTTON);
+        else if (it->kind == TOY_MAP_PICKUP_VMD_WALK_BUTTON)
+            pixels += render_special_button(renderer, camera, it->x, it->y,
+                                             it->z, on, 1);
         else if (it->kind == TOY_MAP_PICKUP_SHOP)
             pixels += render_button(renderer, camera, it->x, it->y, it->z, on, 2);
         else if (it->kind == TOY_MAP_PICKUP_MONEY_BUTTON ||

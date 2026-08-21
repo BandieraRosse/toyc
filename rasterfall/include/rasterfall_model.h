@@ -126,6 +126,8 @@ struct rasterfall_model_asset {
     unsigned int texture_count;
     int min_x, min_y, min_z;
     int max_x, max_y, max_z;
+    /* Presentation-only Center/Groove offset, in RFM2 units. */
+    int animation_offset_x, animation_offset_y, animation_offset_z;
 };
 
 int rasterfall_model_load(struct rasterfall_model_asset *asset,

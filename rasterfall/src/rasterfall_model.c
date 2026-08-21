@@ -539,6 +539,9 @@ int rasterfall_model_update_bones(struct rasterfall_model_asset *asset)
             transform->position[0] = bone->rest_x;
             transform->position[1] = bone->rest_y;
             transform->position[2] = bone->rest_z;
+            transform->position[0] += asset->animation_offset_x;
+            transform->position[1] += asset->animation_offset_y;
+            transform->position[2] += asset->animation_offset_z;
         } else {
             struct rasterfall_model_bone *parent_bone = &asset->bones[parent];
             struct rasterfall_model_bone_transform *parent_transform =
