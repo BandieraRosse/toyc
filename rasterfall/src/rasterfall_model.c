@@ -322,6 +322,7 @@ int rasterfall_model_load(struct rasterfall_model_asset *asset,
     unsigned char *data;
     if (!asset || !path) return -1;
     __memset(asset, 0, sizeof(*asset));
+    asset->ik_enabled = 1;
     data = toy_asset_load_file(path, &size);
     version = data && size >= 8 ? model_u32(data + 4) : 0;
     vertex_bytes = version >= 10 ? RASTERFALL_MODEL_VERTEX_BYTES_EDGE_SCALE :
@@ -523,6 +524,247 @@ int rasterfall_model_build_demo_clips(struct rasterfall_model_asset *asset)
     return right >= 0 && (left >= 0) && body >= 0 ? 0 : -1;
 }
 
+static double model_vec_length(const double v[3])
+{
+    return sqrt(v[0]*v[0] + v[1]*v[1] + v[2]*v[2]);
+}
+
+static void model_vec_cross(const double a[3], const double b[3], double out[3])
+{
+    out[0] = a[1]*b[2] - a[2]*b[1];
+    out[1] = a[2]*b[0] - a[0]*b[2];
+    out[2] = a[0]*b[1] - a[1]*b[0];
+}
+
+static void model_matrix_transpose(const double *m, double *out)
+{
+    int r, c;
+    for (r = 0; r < 3; r++) for (c = 0; c < 3; c++)
+        out[r*3+c] = m[c*3+r];
+}
+
+static void model_matrix_axis_angle(const double axis[3], double angle,
+                                    double *out)
+{
+    double x = axis[0], y = axis[1], z = axis[2];
+    double s = sin(angle), c = cos(angle), t = 1.0 - c;
+    out[0] = t*x*x+c;   out[1] = t*x*y-s*z; out[2] = t*x*z+s*y;
+    out[3] = t*x*y+s*z; out[4] = t*y*y+c;   out[5] = t*y*z-s*x;
+    out[6] = t*x*z-s*y; out[7] = t*y*z+s*x; out[8] = t*z*z+c;
+}
+
+static void model_matrix_to_euler(const double *m, int *x, int *y, int *z)
+{
+    double sy = -m[6], pitch, roll, yaw;
+    if (sy > 1.0) sy = 1.0;
+    if (sy < -1.0) sy = -1.0;
+    pitch = atan2(sy, sqrt(1.0 - sy*sy));
+    if (fabs(cos(pitch)) > 0.000001) {
+        roll = atan2(m[7], m[8]);
+        yaw = atan2(m[3], m[0]);
+    } else {
+        roll = atan2(-m[5], m[4]);
+        yaw = 0.0;
+    }
+    *x = rounded(roll * 180.0 / M_PI);
+    *y = rounded(pitch * 180.0 / M_PI);
+    *z = rounded(yaw * 180.0 / M_PI);
+}
+
+static int model_clamp_angle(int value, float lower, float upper)
+{
+    int lo = rounded(lower * 180.0 / M_PI);
+    int hi = rounded(upper * 180.0 / M_PI);
+    if (lower < 0.0f && lo == 0) lo = -1;
+    if (upper < 0.0f && hi == 0) hi = -1;
+    if (lo > hi) { int swap = lo; lo = hi; hi = swap; }
+    return value < lo ? lo : value > hi ? hi : value;
+}
+
+static void model_sample_track_translation(
+    const struct rasterfall_animation_track *track, int time_ms, int duration,
+    double out[3])
+{
+    const struct rasterfall_animation_keyframe *a, *b;
+    int i, factor = 0;
+    out[0] = out[1] = out[2] = 0.0;
+    if (!track || !track->keys || track->key_count <= 0) return;
+    if (duration > 0) time_ms %= duration;
+    a = b = &track->keys[0];
+    for (i = 1; i < track->key_count; i++) {
+        if (time_ms < track->keys[i].time_ms) { b = &track->keys[i]; break; }
+        a = &track->keys[i];
+    }
+    if (b != a && b->time_ms > a->time_ms)
+        factor = (time_ms - a->time_ms) * 1000 / (b->time_ms - a->time_ms);
+    if (duration > 0 && track->key_count > 1 &&
+        a == &track->keys[track->key_count - 1] && time_ms > a->time_ms &&
+        track->keys[0].time_ms < duration) {
+        factor = (time_ms - a->time_ms) * 1000 / (duration - a->time_ms);
+        b = &track->keys[0];
+    }
+    if (factor < 0) factor = 0;
+    if (factor > 1000) factor = 1000;
+    out[0] = a->tx + (b->tx - a->tx) * factor / 1000.0;
+    out[1] = a->ty + (b->ty - a->ty) * factor / 1000.0;
+    out[2] = a->tz + (b->tz - a->tz) * factor / 1000.0;
+}
+
+static const struct rasterfall_animation_track *model_find_clip_track(
+    const struct rasterfall_animation_clip *clip, int bone)
+{
+    int i;
+    if (!clip) return 0;
+    for (i = 0; i < clip->track_count; i++)
+        if (clip->tracks[i].target_bone == bone) return &clip->tracks[i];
+    return 0;
+}
+
+static int model_solve_one_leg_ik(struct rasterfall_model_asset *asset,
+                                  const struct rasterfall_model_ik *ik,
+                                  const struct rasterfall_animation_clip *clip,
+                                  int time_ms, unsigned int *attempts,
+                                  double *before, double *after)
+{
+    /* PMX stores the controller target in model coordinates.  The current
+     * RFM2 skin uses 232 units per PMX unit, while bone transforms remain in
+     * global column-vector space.  CCD is therefore done on global positions;
+     * the resulting global link rotation is converted back with the inverse
+     * parent rotation before Euler/local PMX limits are applied. */
+    const struct rasterfall_animation_track *track;
+    double target[3], current[3], offset[3];
+    unsigned int iteration;
+    int link_index;
+    if (!asset || !ik || !clip || !attempts || !before || !after ||
+        ik->controller < 0 || ik->target < 0 || ik->target >= (int)asset->bone_count ||
+        ik->controller >= (int)asset->bone_count || !ik->link_count)
+        return 0;
+    if (strcmp(asset->bones[ik->controller].name, "左足ＩＫ") &&
+        strcmp(asset->bones[ik->controller].name, "右足ＩＫ")) return 0;
+    track = model_find_clip_track(clip, ik->controller);
+    if (!track) return 0;
+    rasterfall_model_update_bones(asset);
+    target[0] = asset->bone_transforms[ik->controller].position[0];
+    target[1] = asset->bone_transforms[ik->controller].position[1];
+    target[2] = asset->bone_transforms[ik->controller].position[2];
+    model_sample_track_translation(track, time_ms, clip->duration_ms, offset);
+    target[0] += offset[0] * 232.0;
+    target[1] += offset[1] * 232.0;
+    target[2] += offset[2] * 232.0;
+    current[0] = asset->bone_transforms[ik->target].position[0];
+    current[1] = asset->bone_transforms[ik->target].position[1];
+    current[2] = asset->bone_transforms[ik->target].position[2];
+    offset[0] = current[0] - target[0]; offset[1] = current[1] - target[1];
+    offset[2] = current[2] - target[2];
+    *before = model_vec_length(offset);
+    *after = *before;
+    for (iteration = 0; iteration < (unsigned int)ik->iterations; iteration++) {
+        int changed = 0;
+        (*attempts)++;
+        for (link_index = 0; link_index < (int)ik->link_count; link_index++) {
+            const struct rasterfall_model_ik_link *link = &ik->links[link_index];
+            struct rasterfall_model_bone_transform *lt;
+            double from[3], to[3], axis[3], cross_len, dot, angle;
+            double delta[9], global[9], next_global[9], parent_inverse[9], local[9];
+            int x, y, z, parent;
+            if (link->bone < 0 || link->bone >= (int)asset->bone_count) return 0;
+            lt = &asset->bone_transforms[link->bone];
+            from[0] = asset->bone_transforms[ik->target].position[0] - lt->position[0];
+            from[1] = asset->bone_transforms[ik->target].position[1] - lt->position[1];
+            from[2] = asset->bone_transforms[ik->target].position[2] - lt->position[2];
+            to[0] = target[0] - lt->position[0];
+            to[1] = target[1] - lt->position[1];
+            to[2] = target[2] - lt->position[2];
+            if (model_vec_length(from) < 0.000001 || model_vec_length(to) < 0.000001)
+                continue;
+            model_vec_cross(from, to, axis); cross_len = model_vec_length(axis);
+            dot = (from[0]*to[0] + from[1]*to[1] + from[2]*to[2]) /
+                  (model_vec_length(from) * model_vec_length(to));
+            if (dot > 1.0) dot = 1.0;
+            if (dot < -1.0) dot = -1.0;
+            if (cross_len < 0.000001) continue;
+            axis[0] /= cross_len; axis[1] /= cross_len; axis[2] /= cross_len;
+            angle = atan2(cross_len, dot);
+            if (ik->angle > 0.0f && angle > ik->angle) angle = ik->angle;
+            if (angle > 0.25) angle = 0.25;
+            if (angle < 0.000001) continue;
+            model_matrix_axis_angle(axis, angle, delta);
+            memcpy(global, lt->rotation, sizeof(global));
+            matrix_multiply(delta, global, next_global);
+            parent = asset->bones[link->bone].parent;
+            if (parent < 0) memcpy(local, next_global, sizeof(local));
+            else {
+                model_matrix_transpose(asset->bone_transforms[parent].rotation,
+                                       parent_inverse);
+                matrix_multiply(parent_inverse, next_global, local);
+            }
+            model_matrix_to_euler(local, &x, &y, &z);
+            if (link->limited) {
+                x = model_clamp_angle(x, link->lower[0], link->upper[0]);
+                y = model_clamp_angle(y, link->lower[1], link->upper[1]);
+                z = model_clamp_angle(z, link->lower[2], link->upper[2]);
+            }
+            asset->bones[link->bone].rotate_x = x;
+            asset->bones[link->bone].rotate_y = y;
+            asset->bones[link->bone].rotate_z = z;
+            rasterfall_model_update_bones(asset);
+            changed = 1;
+            current[0] = asset->bone_transforms[ik->target].position[0];
+            current[1] = asset->bone_transforms[ik->target].position[1];
+            current[2] = asset->bone_transforms[ik->target].position[2];
+            offset[0] = current[0] - target[0]; offset[1] = current[1] - target[1];
+            offset[2] = current[2] - target[2];
+            *after = model_vec_length(offset);
+            if (*after < 8.0) break;
+        }
+        if (!changed || *after < 8.0) break;
+    }
+    rasterfall_model_update_bones(asset);
+    current[0] = asset->bone_transforms[ik->target].position[0];
+    current[1] = asset->bone_transforms[ik->target].position[1];
+    current[2] = asset->bone_transforms[ik->target].position[2];
+    offset[0] = current[0] - target[0]; offset[1] = current[1] - target[1];
+    offset[2] = current[2] - target[2];
+    *after = model_vec_length(offset);
+    return 1;
+}
+
+static void rasterfall_model_solve_leg_ik(
+    struct rasterfall_model_asset *asset,
+    const struct rasterfall_animation_clip *clip, int time_ms)
+{
+    unsigned int i, attempts = 0, max_attempts = 0;
+    double before_total = 0.0, after_total = 0.0;
+    double before_max = 0.0, after_max = 0.0, before, after;
+    int solved = 0;
+    for (i = 0; i < asset->ik_count; i++) {
+        unsigned int one_attempts = 0;
+        if (!model_solve_one_leg_ik(asset, &asset->iks[i], clip, time_ms,
+                                    &one_attempts, &before, &after)) continue;
+        solved++;
+        attempts += one_attempts;
+        if (one_attempts > max_attempts) max_attempts = one_attempts;
+        before_total += before; after_total += after;
+        if (before > before_max) before_max = before;
+        if (after > after_max) after_max = after;
+    }
+    if (!solved) return;
+    asset->ik_sample_count++;
+    asset->ik_controller_sample_count += (unsigned long)solved;
+    asset->ik_iteration_total += attempts;
+    if (max_attempts > asset->ik_iteration_max) asset->ik_iteration_max = max_attempts;
+    asset->ik_error_before_total += before_total;
+    asset->ik_error_after_total += after_total;
+    if (before_max > asset->ik_error_before_max) asset->ik_error_before_max = before_max;
+    if (after_max > asset->ik_error_after_max) asset->ik_error_after_max = after_max;
+}
+
+void rasterfall_model_set_ik_enabled(struct rasterfall_model_asset *asset,
+                                     int enabled)
+{
+    if (asset) asset->ik_enabled = enabled ? 1 : 0;
+}
+
 int rasterfall_model_sample_clip(struct rasterfall_model_asset *asset,
                                  const struct rasterfall_animation_clip *clip,
                                  int time_ms)
@@ -537,6 +779,8 @@ int rasterfall_model_sample_clip(struct rasterfall_model_asset *asset,
         asset->bones[i].rotate_z = asset->animation_rotations[i].z;
     }
     asset->pose = RASTERFALL_MODEL_POSE_BIND;
+    if (asset->ik_enabled && clip && asset->ik_count)
+        rasterfall_model_solve_leg_ik(asset, clip, time_ms);
     return 0;
 }
 

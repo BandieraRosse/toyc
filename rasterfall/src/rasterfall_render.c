@@ -142,6 +142,7 @@ static const char *private_character_vmd_path;
 static int private_character_vmd_forced;
 static int private_character_vmd_freeze_head;
 static int private_character_vmd_freeze_torso;
+static int private_character_vmd_ik_enabled = 1;
 static int private_character_vmd_loaded;
 static struct rasterfall_glb_rotation_clip private_character_glb[3];
 static struct rasterfall_glb_rotation_reference private_character_glb_reference;
@@ -195,6 +196,11 @@ void rasterfall_render_set_vmd_freeze(int freeze_head, int freeze_torso)
 {
     private_character_vmd_freeze_head = freeze_head;
     private_character_vmd_freeze_torso = freeze_torso;
+}
+
+void rasterfall_render_set_vmd_ik_enabled(int enabled)
+{
+    private_character_vmd_ik_enabled = enabled ? 1 : 0;
 }
 
 static int render_quaternius_preview(struct toy_renderer *renderer,
@@ -942,6 +948,8 @@ static int render_private_character(struct toy_renderer *renderer,
         long sample_start = render_monotonic_us();
         if (private_character_vmd_loaded &&
             (player->clip_id == 9 || private_character_vmd_forced)) {
+            rasterfall_model_set_ik_enabled(&private_character_model,
+                                            private_character_vmd_ik_enabled);
             player->clip = &private_character_vmd_clip;
             player->loop = 1;
             rasterfall_model_sample_clip(&private_character_model,

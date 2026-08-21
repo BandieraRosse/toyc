@@ -10,6 +10,7 @@ struct rasterfall_animation_quaternion { double x, y, z, w; };
 struct rasterfall_animation_keyframe {
     int time_ms;
     struct rasterfall_animation_quaternion rotation;
+    float tx, ty, tz;
 };
 struct rasterfall_animation_track {
     int target_bone;

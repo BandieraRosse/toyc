@@ -133,6 +133,15 @@ struct rasterfall_model_asset {
     unsigned int bone_count;
     struct rasterfall_model_ik *iks;
     unsigned int ik_count;
+    int ik_enabled;
+    unsigned long ik_sample_count;
+    unsigned long ik_controller_sample_count;
+    unsigned long ik_iteration_total;
+    unsigned int ik_iteration_max;
+    double ik_error_before_total;
+    double ik_error_after_total;
+    double ik_error_before_max;
+    double ik_error_after_max;
     unsigned int root_bone_count;
     unsigned int max_bone_depth;
     int skinning_enabled;
@@ -163,6 +172,8 @@ int rasterfall_model_build_demo_clips(struct rasterfall_model_asset *asset);
 int rasterfall_model_sample_clip(struct rasterfall_model_asset *asset,
                                  const struct rasterfall_animation_clip *clip,
                                  int time_ms);
+void rasterfall_model_set_ik_enabled(struct rasterfall_model_asset *asset,
+                                     int enabled);
 int rasterfall_model_sample_glb_rotation_clip(
     struct rasterfall_model_asset *asset,
     const struct rasterfall_glb_rotation_clip *clip,
