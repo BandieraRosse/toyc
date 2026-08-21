@@ -456,6 +456,214 @@ static double inspect_rotation_delta(const int a[3], const int b[3])
     return 2.0 * atan2(sqrt(1.0-dot*dot), dot) * 180.0 / M_PI;
 }
 
+static double inspect_handoff_percentile(double *values, int count, double p)
+{
+    int i, j, index;
+    double value;
+    for (i=1;i<count;i++) {
+        value=values[i];j=i-1;
+        while(j>=0 && values[j]>value){values[j+1]=values[j];j--;}
+        values[j+1]=value;
+    }
+    if(!count)return 0.0;
+    index=(int)((count-1)*p);if(index<0)index=0;if(index>=count)index=count-1;
+    return values[index];
+}
+
+static void inspect_solver_handoff(struct rasterfall_model_asset *m,
+                                   const struct rasterfall_vmd_clip *v,
+                                   const struct rasterfall_animation_clip *clip,
+                                   int inherit)
+{
+    enum { MAX_HANDOFF=2048, MAX_RUN=2048 };
+    static double thigh[2][2][MAX_HANDOFF], knee[2][2][MAX_HANDOFF], ankle[2][2][MAX_HANDOFF];
+    static double handoff_pose[2][3][3][MAX_HANDOFF];
+    static int run_lengths[2][2][MAX_RUN];
+    unsigned long counts[2][2]={{0,0},{0,0}}, transitions[2][2]={{0,0},{0,0}};
+    unsigned long same[2][2]={{0,0},{0,0}};
+    double sums[2][2][3]={{0}}, maxima[2][2][3]={{0}};
+    double pose_sums[2][3][3]={{0}}, pose_maxima[2][3][3]={{0}};
+    double top_pose_ankle[2][3][5]={{0}}, top_pose_thigh[2][3][5]={{0}};
+    int top_pose_time[2][3][5]={{0}};
+    unsigned long runs[2][2]={{0,0},{0,0}}, single[2][2]={{0,0},{0,0}};
+    int previous_state[2]={0,0}, previous_thigh[2][3]={{0,0,0},{0,0,0}};
+    int previous_knee[2]={0,0}, previous_ankle[2][3]={{0,0,0},{0,0,0}};
+    int run_state[2]={0,0}, run_length[2]={0,0};
+    int side, time, step=16;
+    m->ik_iteration_trace_time_ms=-1;
+    m->ik_analytic_trace_time_ms=-1;
+    m->ik_analytic_trace_side=-1;
+    m->ik_diagnostic_dump=0;
+    m->ik_analytical_inherit_diagnostic = inherit;
+    memset(m->ik_analytical_cache_valid, 0, sizeof(m->ik_analytical_cache_valid));
+    m->ik_last_leg_solver[0] = m->ik_last_leg_solver[1] = 0;
+    __printf("handoff diagnostic begin mode=%s\n", inherit ? "analytical-inherit" : "baseline");
+    double top_ankle[2][2][5]={{0}}, top_thigh[2][2][5]={{0}};
+    int top_time[2][2][5]={{0}};
+    memset(counts,0,sizeof(counts));memset(runs,0,sizeof(runs));memset(single,0,sizeof(single));
+    for(time=0;time<v->duration_ms;time+=step){
+        int current_thigh[2][3], current_knee[2], current_ankle[2][3];
+        m->ik_handoff_trace_time_ms = time;
+        m->ik_handoff_trace_side = -1;
+        m->ik_handoff_snapshot_valid = 0;
+        prepare_vmd_skeleton_translation(m,v,time,0);rasterfall_model_sample_clip(m,clip,time);
+        for(side=0;side<2;side++){
+            int thigh_b=rasterfall_model_find_bone(m,side?"右足":"左足");
+            int knee_b=rasterfall_model_find_bone(m,side?"右ひざ":"左ひざ");
+            int ankle_b=rasterfall_model_find_bone(m,side?"右足首":"左足首");
+            int state=m->ik_last_leg_solver[side];
+            if(thigh_b<0 || knee_b<0 || ankle_b<0)continue;
+            if(state!=1 && state!=2)continue;
+            current_thigh[side][0]=m->bones[thigh_b].rotate_x;current_thigh[side][1]=m->bones[thigh_b].rotate_y;current_thigh[side][2]=m->bones[thigh_b].rotate_z;
+            current_knee[side]=m->bones[knee_b].rotate_x;
+            current_ankle[side][0]=(int)m->bone_transforms[ankle_b].position[0];current_ankle[side][1]=(int)m->bone_transforms[ankle_b].position[1];current_ankle[side][2]=(int)m->bone_transforms[ankle_b].position[2];
+            counts[side][state==1?0:1]++;
+            if(run_state[side]==state)run_length[side]++;
+            else{
+                if(run_state[side] && runs[side][run_state[side]==1?0:1]<MAX_RUN){int ri=run_state[side]==1?0:1;run_lengths[side][ri][runs[side][ri]++]=run_length[side];if(run_length[side]==1)single[side][ri]++;}
+                run_state[side]=state;run_length[side]=1;
+            }
+            if(previous_state[side] && previous_state[side]!=state){
+                int type=previous_state[side]==1?0:1, n;
+                double td=inspect_rotation_delta(previous_thigh[side],current_thigh[side]);
+                double kd=fabs((double)(current_knee[side]-previous_knee[side]));
+                double ad=sqrt((double)(current_ankle[side][0]-previous_ankle[side][0])*(current_ankle[side][0]-previous_ankle[side][0])+(double)(current_ankle[side][1]-previous_ankle[side][1])*(current_ankle[side][1]-previous_ankle[side][1])+(double)(current_ankle[side][2]-previous_ankle[side][2])*(current_ankle[side][2]-previous_ankle[side][2]));
+                int index=(int)(transitions[side][type]%MAX_HANDOFF);
+                thigh[side][type][index]=td;knee[side][type][index]=kd;ankle[side][type][index]=ad;
+                sums[side][type][0]+=td;sums[side][type][1]+=kd;sums[side][type][2]+=ad;
+                if(td>maxima[side][type][0])maxima[side][type][0]=td;if(kd>maxima[side][type][1])maxima[side][type][1]=kd;if(ad>maxima[side][type][2])maxima[side][type][2]=ad;
+                {int j;for(j=0;j<5;j++)if(ad>top_ankle[side][type][j]){int k;for(k=4;k>j;k--){top_ankle[side][type][k]=top_ankle[side][type][k-1];top_thigh[side][type][k]=top_thigh[side][type][k-1];top_time[side][type][k]=top_time[side][type][k-1];}top_ankle[side][type][j]=ad;top_thigh[side][type][j]=td;top_time[side][type][j]=time;break;}}
+                transitions[side][type]++;
+                if (type == 0 && (m->ik_handoff_snapshot_valid & (1 << side))) {
+                    int c0_thigh[3], c1_thigh[3];
+                    int c0_knee[3], c1_knee[3];
+                    double c0_ankle[3], c1_ankle[3];
+                    double previous_ankle_double[3];
+                    int i, seg;
+                    for (i=0;i<3;i++) {
+                        c0_thigh[i]=m->ik_handoff_c0_thigh[side][i];
+                        c1_thigh[i]=m->ik_handoff_c1_thigh[side][i];
+                        c0_ankle[i]=m->ik_handoff_c0_ankle[side][i];
+                        c1_ankle[i]=m->ik_handoff_c1_ankle[side][i];
+                        previous_ankle_double[i]=previous_ankle[side][i];
+                    }
+                    c0_knee[0]=m->ik_handoff_c0_knee[side];c0_knee[1]=c0_knee[2]=0;
+                    c1_knee[0]=m->ik_handoff_c1_knee[side];c1_knee[1]=c1_knee[2]=0;
+                    {
+                        double td[3], kd[3], ad[3];
+                        td[0]=inspect_rotation_delta(previous_thigh[side],c0_thigh);
+                        td[1]=inspect_rotation_delta(c0_thigh,c1_thigh);
+                        td[2]=inspect_rotation_delta(previous_thigh[side],c1_thigh);
+                        kd[0]=fabs((double)previous_knee[side]-c0_knee[0]);
+                        kd[1]=fabs(c0_knee[0]-c1_knee[0]);
+                        kd[2]=fabs((double)previous_knee[side]-c1_knee[0]);
+                        ad[0]=inspect_position_delta(previous_ankle_double,c0_ankle);
+                        ad[1]=inspect_position_delta(c0_ankle,c1_ankle);
+                        ad[2]=inspect_position_delta(previous_ankle_double,c1_ankle);
+                        if (inherit && !side && td[0] > 30.0)
+                            __printf("left inheritance outlier time=%d "
+                                     "state_prev=%d state_now=%d "
+                                     "cache_valid_before=%d cache_valid=%d write=%d write_time=%d read=%d read_time=%d "
+                                     "P_A_thigh=(%d,%d,%d) cache_thigh=(%d,%d,%d) C0_thigh=(%d,%d,%d) "
+                                     "P_A_knee=%d cache_knee=%d C0_knee=%d "
+                                     "deltas_thigh=(P-A/cache=%.3f cache/C0=%.3f P-A/C0=%.3f) "
+                                     "deltas_knee=(P-A/cache=%d cache/C0=%d P-A/C0=%d) ankle=%.3f\n",
+                                     time,previous_state[side],state,
+                                     m->ik_analytical_cache_valid_before[side],m->ik_analytical_cache_valid[side],
+                                     m->ik_analytical_cache_write[side],m->ik_analytical_cache_write_time[side],
+                                     m->ik_analytical_cache_read[side],m->ik_analytical_cache_read_time[side],
+                                     previous_thigh[side][0],previous_thigh[side][1],previous_thigh[side][2],
+                                     m->ik_analytical_cache_thigh[side][0],m->ik_analytical_cache_thigh[side][1],m->ik_analytical_cache_thigh[side][2],
+                                     m->ik_handoff_c0_thigh[side][0],m->ik_handoff_c0_thigh[side][1],m->ik_handoff_c0_thigh[side][2],
+                                     previous_knee[side],m->ik_analytical_cache_knee[side],m->ik_handoff_c0_knee[side],
+                                     inspect_rotation_delta(previous_thigh[side],m->ik_analytical_cache_thigh[side]),
+                                     inspect_rotation_delta(m->ik_analytical_cache_thigh[side],m->ik_handoff_c0_thigh[side]),td[0],
+                                     abs(previous_knee[side]-m->ik_analytical_cache_knee[side]),abs(m->ik_analytical_cache_knee[side]-m->ik_handoff_c0_knee[side]),abs(previous_knee[side]-m->ik_handoff_c0_knee[side]),ad[0]);
+                        if (time==210400 || time==206512 || time==211376 || time==211328)
+                            __printf("handoff paired mode=%s side=%s time=%d "
+                                     "AtoC0=(%.3f,%.3f,%.3f) C0toC1=(%.3f,%.3f,%.3f) AtoC1=(%.3f,%.3f,%.3f)\n",
+                                     inherit?"analytical-inherit":"baseline",side?"right":"left",time,
+                                     td[0],kd[0],ad[0],td[1],kd[1],ad[1],td[2],kd[2],ad[2]);
+                        n=(int)(transitions[side][0]-1); if(n>=MAX_HANDOFF)n=MAX_HANDOFF-1;
+                        for(seg=0;seg<3;seg++) {
+                            handoff_pose[side][seg][0][n]=td[seg];
+                            handoff_pose[side][seg][1][n]=kd[seg];
+                            handoff_pose[side][seg][2][n]=ad[seg];
+                            for(i=0;i<3;i++) {
+                                pose_sums[side][seg][i]+=handoff_pose[side][seg][i][n];
+                                if(handoff_pose[side][seg][i][n]>pose_maxima[side][seg][i])
+                                    pose_maxima[side][seg][i]=handoff_pose[side][seg][i][n];
+                            }
+                            {
+                                int rank, k;
+                                for (rank=0;rank<5;rank++) {
+                                    if (handoff_pose[side][seg][2][n] > top_pose_ankle[side][seg][rank]) {
+                                        for (k=4;k>rank;k--) {
+                                            top_pose_ankle[side][seg][k]=top_pose_ankle[side][seg][k-1];
+                                            top_pose_thigh[side][seg][k]=top_pose_thigh[side][seg][k-1];
+                                            top_pose_time[side][seg][k]=top_pose_time[side][seg][k-1];
+                                        }
+                                        top_pose_ankle[side][seg][rank]=handoff_pose[side][seg][2][n];
+                                        top_pose_thigh[side][seg][rank]=handoff_pose[side][seg][0][n];
+                                        top_pose_time[side][seg][rank]=time;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            else if(previous_state[side])same[side][state==1?0:1]++;
+            previous_state[side]=state;memcpy(previous_thigh[side],current_thigh[side],sizeof(previous_thigh[side]));previous_knee[side]=current_knee[side];memcpy(previous_ankle[side],current_ankle[side],sizeof(previous_ankle[side]));
+        }
+    }
+    for(side=0;side<2;side++){
+        if(run_state[side] && runs[side][run_state[side]==1?0:1]<MAX_RUN){int ri=run_state[side]==1?0:1;run_lengths[side][ri][runs[side][ri]++]=run_length[side];if(run_length[side]==1)single[side][ri]++;}
+        __printf("handoff counts side=%s AtoA=%lu AtoC=%lu CtoC=%lu CtoA=%lu switches_per_min=%.2f\n",side?"right":"left",same[side][0],transitions[side][0],same[side][1],transitions[side][1],v->duration_ms>0?(double)(transitions[side][0]+transitions[side][1])*60000.0/v->duration_ms:0.0);
+        {
+            int type,n=0,i;double minutes=v->duration_ms/60000.0;
+            for(type=0;type<2;type++){
+                n=(int)transitions[side][type];if(n>MAX_HANDOFF)n=MAX_HANDOFF;
+                __printf("handoff side=%s transition=%s count=%d per_min=%.2f thigh(avg/p50/p95/p99/max)=%.3f/%.3f/%.3f/%.3f/%.3f knee(avg/p50/p95/p99/max)=%.3f/%.3f/%.3f/%.3f/%.3f ankle(avg/p50/p95/p99/max)=%.3f/%.3f/%.3f/%.3f/%.3f\n",side?"right":"left",type?"CtoA":"AtoC",n,minutes>0?n/minutes:0.0,n?sums[side][type][0]/n:0.0,n?inspect_handoff_percentile(thigh[side][type],n,0.5):0.0,n?inspect_handoff_percentile(thigh[side][type],n,0.95):0.0,n?inspect_handoff_percentile(thigh[side][type],n,0.99):0.0,maxima[side][type][0],n?sums[side][type][1]/n:0.0,n?inspect_handoff_percentile(knee[side][type],n,0.5):0.0,n?inspect_handoff_percentile(knee[side][type],n,0.95):0.0,n?inspect_handoff_percentile(knee[side][type],n,0.99):0.0,maxima[side][type][1],n?sums[side][type][2]/n:0.0,n?inspect_handoff_percentile(ankle[side][type],n,0.5):0.0,n?inspect_handoff_percentile(ankle[side][type],n,0.95):0.0,n?inspect_handoff_percentile(ankle[side][type],n,0.99):0.0,maxima[side][type][2]);
+                for(i=0;i<5;i++)if(top_time[side][type][i])__printf("handoff top side=%s transition=%s rank=%d time=%d thigh=%.3f ankle=%.3f\n",side?"right":"left",type?"CtoA":"AtoC",i+1,top_time[side][type][i],top_thigh[side][type][i],top_ankle[side][type][i]);
+            }
+        }
+        {
+            int ri,i,max_run;for(ri=0;ri<2;ri++){max_run=0;for(i=0;i<(int)runs[side][ri];i++)if(run_lengths[side][ri][i]>max_run)max_run=run_lengths[side][ri][i];__printf("solver runs side=%s solver=%s total=%lu single_frame_runs=%lu max=%d\n",side?"right":"left",ri?"CCD":"analytical",runs[side][ri],single[side][ri],max_run);}
+        }
+        {
+            int seg, i, n=(int)transitions[side][0];
+            if(n>MAX_HANDOFF)n=MAX_HANDOFF;
+            for(seg=0;seg<3;seg++) {
+                const char *label=seg==0?"AtoC0":seg==1?"C0toC1":"AtoC1";
+                __printf("handoff pose side=%s segment=%s count=%d "
+                         "thigh(avg/p50/p90/p95/p99/max)=%.3f/%.3f/%.3f/%.3f/%.3f/%.3f "
+                         "knee(avg/p50/p90/p95/p99/max)=%.3f/%.3f/%.3f/%.3f/%.3f/%.3f "
+                         "ankle(avg/p50/p90/p95/p99/max)=%.3f/%.3f/%.3f/%.3f/%.3f/%.3f\n",
+                         side?"right":"left",label,n,
+                         n?pose_sums[side][seg][0]/n:0.0,n?inspect_handoff_percentile(handoff_pose[side][seg][0],n,.50):0.0,
+                         n?inspect_handoff_percentile(handoff_pose[side][seg][0],n,.90):0.0,n?inspect_handoff_percentile(handoff_pose[side][seg][0],n,.95):0.0,
+                         n?inspect_handoff_percentile(handoff_pose[side][seg][0],n,.99):0.0,pose_maxima[side][seg][0],
+                         n?pose_sums[side][seg][1]/n:0.0,n?inspect_handoff_percentile(handoff_pose[side][seg][1],n,.50):0.0,
+                         n?inspect_handoff_percentile(handoff_pose[side][seg][1],n,.90):0.0,n?inspect_handoff_percentile(handoff_pose[side][seg][1],n,.95):0.0,
+                         n?inspect_handoff_percentile(handoff_pose[side][seg][1],n,.99):0.0,pose_maxima[side][seg][1],
+                         n?pose_sums[side][seg][2]/n:0.0,n?inspect_handoff_percentile(handoff_pose[side][seg][2],n,.50):0.0,
+                         n?inspect_handoff_percentile(handoff_pose[side][seg][2],n,.90):0.0,n?inspect_handoff_percentile(handoff_pose[side][seg][2],n,.95):0.0,
+                         n?inspect_handoff_percentile(handoff_pose[side][seg][2],n,.99):0.0,pose_maxima[side][seg][2]);
+                for (i=0;i<5;i++) if (top_pose_time[side][seg][i])
+                    __printf("handoff pose top side=%s segment=%s rank=%d time=%d thigh=%.3f ankle=%.3f\n",
+                             side?"right":"left",label,i+1,top_pose_time[side][seg][i],
+                             top_pose_thigh[side][seg][i],top_pose_ankle[side][seg][i]);
+            }
+        }
+    }
+    m->ik_handoff_trace_time_ms=-1;
+    m->ik_handoff_trace_side=-1;
+    m->ik_handoff_snapshot_valid=0;
+    m->ik_analytical_inherit_diagnostic=0;
+}
+
 static double inspect_position_delta(const double a[3], const double b[3])
 {
     double x=a[0]-b[0], y=a[1]-b[1], z=a[2]-b[2];
@@ -663,7 +871,8 @@ int main(int argc, char **argv)
                  "[--vmd-disable-ik] [--vmd-disable-grant] "
                  "[--vmd-legacy-root-offset] "
                  "[--leg-static-rotation-test] [--vmd-leg-trace] "
-                 "[--vmd-knee-diagnostic] [--vmd-legacy-leg-ccd]\n");
+                 "[--vmd-knee-diagnostic] [--vmd-legacy-leg-ccd] "
+                 "[--vmd-handoff-only]\n");
         return 2;
     }
     if (rasterfall_vmd_load(&v, argv[1]) < 0) {
@@ -682,7 +891,7 @@ int main(int argc, char **argv)
     if (have) {
         int phase = v.duration_ms / 4;
         int disable = 0, disable_grant = 0, legacy = 0, static_leg_test = 0;
-        int leg_trace = 0, knee_diagnostic = 0, legacy_knee = 0;
+        int leg_trace = 0, knee_diagnostic = 0, legacy_knee = 0, handoff_only = 0;
         for (i = 3; i < argc; i++) {
             if (!strcmp(argv[i], "--vmd-disable-ik")) disable = 1;
             if (!strcmp(argv[i], "--vmd-disable-grant")) disable_grant = 1;
@@ -692,6 +901,7 @@ int main(int argc, char **argv)
             if (!strcmp(argv[i], "--vmd-knee-diagnostic")) knee_diagnostic = 1;
             if (!strcmp(argv[i], "--vmd-legacy-knee-ccd") ||
                 !strcmp(argv[i], "--vmd-legacy-leg-ccd")) legacy_knee = 1;
+            if (!strcmp(argv[i], "--vmd-handoff-only")) handoff_only = 1;
         }
         if (disable) rasterfall_model_set_ik_enabled(&m, 0);
         if (disable_grant) rasterfall_model_set_grant_enabled(&m, 0);
@@ -702,6 +912,14 @@ int main(int argc, char **argv)
         rasterfall_model_dump_ik_hierarchy(&m);
         if (rasterfall_vmd_build_animation(&v, &clip, tracks,
                                            RASTERFALL_VMD_MAX_BONES) >= 0) {
+            if (handoff_only) {
+                inspect_solver_handoff(&m, &v, &clip, 0);
+                inspect_solver_handoff(&m, &v, &clip, 1);
+                inspect_continuity_ab(&m, &v, &clip, 1, 0);
+                inspect_continuity_ab(&m, &v, &clip, 1, 1);
+                rasterfall_vmd_unload(&v);
+                return 0;
+            }
             {
                 int was_ik_enabled = m.ik_enabled;
                 int target_phase, sample_step = v.duration_ms > 30000 ? 100 : 16;
@@ -782,6 +1000,7 @@ int main(int argc, char **argv)
             inspect_analytic_thigh_jumps(&m, &v, &clip);
             inspect_leg_sequence(&m, &v, &clip, 0);
             inspect_leg_sequence(&m, &v, &clip, 1);
+            inspect_solver_handoff(&m, &v, &clip, 0);
             m.ik_legacy_knee_ccd = legacy_knee;
             if (leg_trace) {
                 m.ik_iteration_trace_time_ms = -1;

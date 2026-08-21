@@ -1270,6 +1270,35 @@ static int model_solve_one_leg_ik(struct rasterfall_model_asset *asset,
     if (!asset->ik_synthetic_target && !track) return 0;
     rasterfall_model_update_bones(asset);
     {
+        int handoff_side = !strcmp(asset->bones[ik->controller].name, "左足ＩＫ") ? 0 : 1;
+        int handoff_knee = ik->links[0].bone;
+        int handoff_thigh = ik->links[ik->link_count - 1].bone;
+        if (asset->ik_handoff_trace_time_ms == time_ms &&
+            (asset->ik_handoff_trace_side < 0 ||
+             asset->ik_handoff_trace_side == handoff_side)) {
+            struct rasterfall_animation_quaternion tq =
+                model_matrix_to_quaternion(asset->bone_transforms[handoff_thigh].rotation);
+            struct rasterfall_animation_quaternion kq =
+                model_matrix_to_quaternion(asset->bone_transforms[handoff_knee].rotation);
+            asset->ik_handoff_snapshot_valid |= 1 << handoff_side;
+            asset->ik_handoff_c0_thigh[handoff_side][0] = asset->bones[handoff_thigh].rotate_x;
+            asset->ik_handoff_c0_thigh[handoff_side][1] = asset->bones[handoff_thigh].rotate_y;
+            asset->ik_handoff_c0_thigh[handoff_side][2] = asset->bones[handoff_thigh].rotate_z;
+            asset->ik_handoff_c0_knee[handoff_side] = asset->bones[handoff_knee].rotate_x;
+            asset->ik_handoff_c0_thigh_global_q[handoff_side][0] = tq.x;
+            asset->ik_handoff_c0_thigh_global_q[handoff_side][1] = tq.y;
+            asset->ik_handoff_c0_thigh_global_q[handoff_side][2] = tq.z;
+            asset->ik_handoff_c0_thigh_global_q[handoff_side][3] = tq.w;
+            asset->ik_handoff_c0_knee_global_q[handoff_side][0] = kq.x;
+            asset->ik_handoff_c0_knee_global_q[handoff_side][1] = kq.y;
+            asset->ik_handoff_c0_knee_global_q[handoff_side][2] = kq.z;
+            asset->ik_handoff_c0_knee_global_q[handoff_side][3] = kq.w;
+            asset->ik_handoff_c0_ankle[handoff_side][0] = asset->bone_transforms[ik->target].position[0];
+            asset->ik_handoff_c0_ankle[handoff_side][1] = asset->bone_transforms[ik->target].position[1];
+            asset->ik_handoff_c0_ankle[handoff_side][2] = asset->bone_transforms[ik->target].position[2];
+        }
+    }
+    {
         int warm_side = !strcmp(asset->bones[ik->controller].name, "左足ＩＫ") ? 0 : 1;
         int warm_knee = ik->links[0].bone;
         int warm_thigh = ik->links[ik->link_count - 1].bone;
@@ -1607,6 +1636,33 @@ static int model_solve_one_leg_ik(struct rasterfall_model_asset *asset,
     offset[0] = current[0] - target[0]; offset[1] = current[1] - target[1];
     offset[2] = current[2] - target[2];
     *after = model_vec_length(offset);
+    if (asset->ik_handoff_trace_time_ms == time_ms) {
+        int handoff_side = !strcmp(asset->bones[ik->controller].name, "左足ＩＫ") ? 0 : 1;
+        if (asset->ik_handoff_trace_side < 0 ||
+            asset->ik_handoff_trace_side == handoff_side) {
+            int handoff_knee = ik->links[0].bone;
+            int handoff_thigh = ik->links[ik->link_count - 1].bone;
+            struct rasterfall_animation_quaternion tq =
+                model_matrix_to_quaternion(asset->bone_transforms[handoff_thigh].rotation);
+            struct rasterfall_animation_quaternion kq =
+                model_matrix_to_quaternion(asset->bone_transforms[handoff_knee].rotation);
+            asset->ik_handoff_c1_thigh[handoff_side][0] = asset->bones[handoff_thigh].rotate_x;
+            asset->ik_handoff_c1_thigh[handoff_side][1] = asset->bones[handoff_thigh].rotate_y;
+            asset->ik_handoff_c1_thigh[handoff_side][2] = asset->bones[handoff_thigh].rotate_z;
+            asset->ik_handoff_c1_knee[handoff_side] = asset->bones[handoff_knee].rotate_x;
+            asset->ik_handoff_c1_thigh_global_q[handoff_side][0] = tq.x;
+            asset->ik_handoff_c1_thigh_global_q[handoff_side][1] = tq.y;
+            asset->ik_handoff_c1_thigh_global_q[handoff_side][2] = tq.z;
+            asset->ik_handoff_c1_thigh_global_q[handoff_side][3] = tq.w;
+            asset->ik_handoff_c1_knee_global_q[handoff_side][0] = kq.x;
+            asset->ik_handoff_c1_knee_global_q[handoff_side][1] = kq.y;
+            asset->ik_handoff_c1_knee_global_q[handoff_side][2] = kq.z;
+            asset->ik_handoff_c1_knee_global_q[handoff_side][3] = kq.w;
+            asset->ik_handoff_c1_ankle[handoff_side][0] = asset->bone_transforms[ik->target].position[0];
+            asset->ik_handoff_c1_ankle[handoff_side][1] = asset->bone_transforms[ik->target].position[1];
+            asset->ik_handoff_c1_ankle[handoff_side][2] = asset->bone_transforms[ik->target].position[2];
+        }
+    }
     if (asset->ik_diagnostic_dump) {
         int knee = ik->links[0].bone;
         int thigh = ik->links[ik->link_count - 1].bone;
@@ -1680,6 +1736,18 @@ static void rasterfall_model_solve_leg_ik(
                 (void)analytic_ok;
             } else {
             if (leg_side >= 0) {
+                if (leg_side < 2 &&
+                    asset->ik_analytical_inherit_diagnostic) {
+                    int thigh = asset->iks[i].links[asset->iks[i].link_count-1].bone;
+                    int knee = asset->iks[i].links[0].bone;
+                    asset->ik_analytical_cache_thigh[leg_side][0] = asset->bones[thigh].rotate_x;
+                    asset->ik_analytical_cache_thigh[leg_side][1] = asset->bones[thigh].rotate_y;
+                    asset->ik_analytical_cache_thigh[leg_side][2] = asset->bones[thigh].rotate_z;
+                    asset->ik_analytical_cache_knee[leg_side] = asset->bones[knee].rotate_x;
+                    asset->ik_analytical_cache_valid[leg_side] = 1;
+                    asset->ik_analytical_cache_write[leg_side] = 1;
+                    asset->ik_analytical_cache_write_time[leg_side] = time_ms;
+                }
                 asset->ik_last_leg_solver[leg_side]=1;
                 asset->ik_analytic_accept_count[leg_side]++;
             }
@@ -1689,6 +1757,22 @@ static void rasterfall_model_solve_leg_ik(
             if (after > after_max) after_max = after;
             continue;
             }
+        }
+        if (leg_side >= 0 && leg_side < 2 &&
+            asset->ik_analytical_inherit_diagnostic &&
+            asset->ik_last_leg_solver[leg_side] == 1 &&
+            asset->ik_analytical_cache_valid[leg_side]) {
+            int thigh = asset->iks[i].links[asset->iks[i].link_count-1].bone;
+            int knee = asset->iks[i].links[0].bone;
+            asset->bones[thigh].rotate_x = asset->ik_analytical_cache_thigh[leg_side][0];
+            asset->bones[thigh].rotate_y = asset->ik_analytical_cache_thigh[leg_side][1];
+            asset->bones[thigh].rotate_z = asset->ik_analytical_cache_thigh[leg_side][2];
+            asset->bones[knee].rotate_x = asset->ik_analytical_cache_knee[leg_side];
+            asset->bones[knee].rotate_y = 0;
+            asset->bones[knee].rotate_z = 0;
+            rasterfall_model_update_bones(asset);
+            asset->ik_analytical_cache_read[leg_side] = 1;
+            asset->ik_analytical_cache_read_time[leg_side] = time_ms;
         }
         if (asset->ik_legacy_knee_ccd && leg_side >= 0)
             asset->ik_last_leg_solver[leg_side]=2;
@@ -1850,6 +1934,13 @@ int rasterfall_model_sample_clip(struct rasterfall_model_asset *asset,
     unsigned int i;
     if (!asset || !asset->animation_rotations || !asset->bone_count) return -1;
     asset->grant_pose_applied = 0;
+    for (i = 0; i < 2; i++) {
+        asset->ik_analytical_cache_valid_before[i] = asset->ik_analytical_cache_valid[i];
+        asset->ik_analytical_cache_write[i] = 0;
+        asset->ik_analytical_cache_read[i] = 0;
+        asset->ik_analytical_cache_write_time[i] = -1;
+        asset->ik_analytical_cache_read_time[i] = -1;
+    }
     for (i = 0; i < asset->bone_count; i++) {
         asset->bones[i].animation_x = 0;
         asset->bones[i].animation_y = 0;
