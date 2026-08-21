@@ -34,6 +34,7 @@ struct rasterfall_vmd_clip {
     int max_frame;
     int duration_ms;
     int interpolation_tracks;
+    int use_bezier_interpolation;
     int ignored_ik_tracks;
     struct rasterfall_vmd_bone_track *tracks;
 };
@@ -51,6 +52,8 @@ int rasterfall_vmd_build_animation(const struct rasterfall_vmd_clip *vmd,
                                    struct rasterfall_animation_clip *clip,
                                    struct rasterfall_animation_track *tracks,
                                    int track_capacity);
+void rasterfall_vmd_set_linear_interpolation(struct rasterfall_vmd_clip *vmd,
+                                             int linear);
 void rasterfall_vmd_sample_translation(const struct rasterfall_vmd_clip *vmd,
                                        int time_ms, int out[3]);
 int rasterfall_vmd_logic_test(void);

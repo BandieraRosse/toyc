@@ -153,10 +153,12 @@ build/vmd_inspect .claude/walk/walk04_loop5.vmd [eula.rmesh]
 build/rasterfall --vmd-eula-walk <eula.rmesh> .claude/walk/walk04_loop5.vmd
 ```
 
-v1 只把非 IK bone rotation 转成现有 `AnimationClip`；Center/Groove translation
+v1 只把非 IK bone rotation 转成现有 `AnimationClip`；默认使用 VMD rotation Bezier
+timing 后进行 shortest-path nlerp，`--vmd-linear-interpolation` 可恢复旧的线性 timing。
+Center/Groove translation
 作为 presentation-only root offset（按 PMX 导入的 232 倍单位缩放），不修改
-gameplay world position。VMD interpolation bytes 会报告为 present，但当前采样明确
-使用 linear/nlerp；IK tracks 会诊断并忽略，PMX IK solver 仍未执行。
+gameplay world position。Bezier 数据非法时安全回退 linear；IK tracks 会诊断并忽略，
+PMX IK solver 仍未执行。
 
 开发者区域第二排新增 `VMD WALK (EULA)` 按钮，使用
 `.claude/walk/walk04_loop5.vmd`，不改变同排的三个 GLB 预览按钮。
@@ -167,6 +169,8 @@ loop boundary。实机定位可使用：
 ```sh
 build/rasterfall --vmd-eula-walk <eula.rmesh> .claude/walk/walk04_loop5.vmd --vmd-freeze-head
 build/rasterfall --vmd-eula-walk <eula.rmesh> .claude/walk/walk04_loop5.vmd --vmd-freeze-torso
+# A/B：最后一个命令加此开关可禁用 Bezier timing
+build/rasterfall --vmd-eula-walk <eula.rmesh> .claude/walk/walk04_loop5.vmd --vmd-linear-interpolation
 ```
 
 这两个选项只冻结诊断用的头/颈或上半身 tracks，不改变默认播放。
