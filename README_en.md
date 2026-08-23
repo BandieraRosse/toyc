@@ -65,11 +65,12 @@ make win-rasterfall
 ```
 
 After dependencies are ready, `make win-rasterfall` or
-`make -f windows/Makefile` performs an incremental build. The Windows build generates
-an embedded asset table and links it into the executable, so no asset directory or
-working directory layout is required. Linux's default build reads from the project
-asset directory; its embedded compatibility target is documented above. Source,
-header, and Rasterfall asset changes are tracked by the Makefiles.
+`make -f windows/Makefile` performs the Windows single-file package build. It
+links `rasterfall/assets/` and any runtime files under
+`rasterfall/private-assets/` into `build/rasterfall.exe`, so no external asset
+directory is required. Linux keeps its default directory-based build and the
+optional `rasterfall-embedded` compatibility target. Source, header, and
+Rasterfall asset changes are tracked by the Makefiles.
 
 The headless logic check is available with:
 

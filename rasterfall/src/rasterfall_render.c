@@ -524,7 +524,7 @@ static struct rasterfall_skin_trace_frame skin_trace_frames[
     RASTERFALL_SKIN_TRACE_FRAMES];
 static unsigned long skin_trace_serial;
 static int skin_trace_have_previous;
-static long skin_trace_model;
+static const struct rasterfall_model_asset *skin_trace_model;
 static int skin_trace_bones[RASTERFALL_SKIN_TRACE_BONES];
 static int skin_trace_vertices[RASTERFALL_SKIN_TRACE_VERTICES];
 static unsigned long skin_trace_pending[RASTERFALL_SKIN_TRACE_PENDING];
@@ -640,7 +640,7 @@ static void skin_trace_find_layout(const struct rasterfall_model_asset *model)
         "左足", "左ひざ", "左足D", "右足", "右ひざ", "右足D"
     };
     int i, v;
-    skin_trace_model = (long)model;
+    skin_trace_model = model;
     for (i = 0; i < RASTERFALL_SKIN_TRACE_BONES; i++)
         skin_trace_bones[i] = rasterfall_model_find_bone(model, names[i]);
     for (i = 0; i < RASTERFALL_SKIN_TRACE_VERTICES; i++)
@@ -841,7 +841,7 @@ static void skin_trace_capture(const struct rasterfall_model_asset *model)
     double max_matrix_jump = 0.0, max_vertex_jump = 0.0;
     if (!private_character_vmd_skin_trace || model != &private_character_model ||
         !model->bone_transforms || !model->skin_vertices) return;
-    if (skin_trace_model != (long)model)
+    if (skin_trace_model != model)
         skin_trace_find_layout(model);
     if (active_session)
         time_ms = active_session->skeletal_demo_player.time_ms;

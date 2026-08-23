@@ -8,6 +8,7 @@
 #include "rasterfall_humanoid_basis.h"
 #include "rasterfall_glb_animation.h"
 #include "rasterfall_glb_preview.h"
+#include "toy_assets.h"
 #include "math.h"
 
 #define GLB_MAGIC 0x46546c67U
@@ -254,16 +255,13 @@ static int doc_parse_memory(struct glb_doc *doc, unsigned char *file, int size,
 
 static int doc_load(struct glb_doc *doc, const char *path)
 {
-    int fd, size, got = 0, n;
+    int size;
     unsigned char *file;
-    struct stat st;
-    fd = __openat(AT_FDCWD, path, O_RDONLY, 0);
-    if (fd < 0 || __fstat(fd, &st) < 0 || st.st_size < 20 || st.st_size > GLB_MAX_FILE) { if (fd >= 0) __close(fd); return -1; }
-    size = (int)st.st_size; file = tlibc_malloc(size);
-    if (!file) { __close(fd); return -1; }
-    while (got < size && (n = __read(fd, file + got, size - got)) > 0) got += n;
-    __close(fd);
-    if (got != size || doc_parse_memory(doc, file, size, 1) < 0) { tlibc_free(file); return -1; }
+    uint32_t asset_size = 0;
+    file = toy_asset_load_file(path, &asset_size);
+    size = (int)asset_size;
+    if (!file || size < 20 || size > GLB_MAX_FILE ||
+        doc_parse_memory(doc, file, size, 1) < 0) { if (file) tlibc_free(file); return -1; }
     return 0;
 }
 

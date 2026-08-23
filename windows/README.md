@@ -15,6 +15,11 @@ make win-rasterfall WINDOWS_DEPS="$PWD/.windows-deps"
 The result will be `build/rasterfall.exe`. Existing `make`, `make
 self-*`, and test targets continue to use `build/` and are unaffected.
 
+The Windows target is the single-file package build. It embeds
+`rasterfall/assets/` and, when present, runtime files from
+`rasterfall/private-assets/` into `build/rasterfall.exe`; no external resource
+directory or particular working directory is required.
+
 The installer caches the SDL2 archive and build under `.windows-deps`; rerun
 it after an interrupted download to resume instead of starting over. If you
 already have the Debian packages installed, it also skips `apt update`.

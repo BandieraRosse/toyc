@@ -22,6 +22,9 @@ GAME_SRCS := rasterfall/src/rasterfall.c \
              rasterfall/src/rasterfall_hud.c \
              rasterfall/src/rasterfall_map.c \
              rasterfall/src/rasterfall_model.c \
+             rasterfall/src/rasterfall_humanoid_basis.c \
+             rasterfall/src/rasterfall_humanoid_retarget.c \
+             rasterfall/src/rasterfall_ai.c \
              rasterfall/src/rasterfall_net.c \
              rasterfall/src/rasterfall_net_discovery.c \
              rasterfall/src/rasterfall_perf.c \
@@ -29,6 +32,7 @@ GAME_SRCS := rasterfall/src/rasterfall.c \
              rasterfall/src/rasterfall_session.c \
              rasterfall/src/rasterfall_sky.c \
              rasterfall/src/rasterfall_viewmodel.c
+ANIMATION_SRCS := app/glb_inspect.c rasterfall/src/rasterfall_vmd.c
 GAME_LIB_SRCS := rasterfall/lib/game.c rasterfall/lib/map.c rasterfall/lib/sfx.c
 PLATFORM_SRCS := windows/src/runtime.c windows/src/socket_winsock.c windows/src/window_sdl.c \
                  windows/src/audio_sdl.c windows/src/pthread_win32.c windows/src/winmain.c \
@@ -36,13 +40,14 @@ PLATFORM_SRCS := windows/src/runtime.c windows/src/socket_winsock.c windows/src/
 LIB_SRCS := lib/assets.c lib/graphics/fb_draw.c lib/graphics/fb_font.c \
             lib/graphics/renderer.c lib/input/input.c lib/net/dns.c \
             lib/math/math.c
-SRCS := $(GAME_SRCS) $(GAME_LIB_SRCS) $(PLATFORM_SRCS) $(LIB_SRCS)
+SRCS := $(GAME_SRCS) $(ANIMATION_SRCS) $(GAME_LIB_SRCS) $(PLATFORM_SRCS) $(LIB_SRCS)
 OBJS := $(patsubst %.c,$(BUILD)/win/%.o,$(SRCS))
 DEPS := $(OBJS:.o=.d)
-ASSET_FILES := $(shell find rasterfall/assets -type f -print)
-ASSET_SRC := $(BUILD)/rasterfall_assets.c
-ASSET_OBJ := $(BUILD)/win/rasterfall_assets.o
 TARGET := $(BUILD)/rasterfall.exe
+ASSET_FILES := $(shell find rasterfall/assets rasterfall/private-assets -type f \
+                       ! -path '*/source/*' ! -name 'UAL1_Standard_RM.glb' -print 2>/dev/null)
+ASSET_SRC := $(BUILD)/rasterfall_windows_assets.c
+ASSET_OBJ := $(BUILD)/win/rasterfall_windows_assets.o
 
 .PHONY: all clean
 
@@ -53,12 +58,17 @@ $(TARGET): $(OBJS) $(ASSET_OBJ) | $(BUILD)
 	$(WIN_CC) $(LDFLAGS) -o $@ $(OBJS) $(ASSET_OBJ) $(LDLIBS)
 
 $(ASSET_SRC): scripts/embed-assets.py $(ASSET_FILES) | $(BUILD)
-	@python3 scripts/embed-assets.py rasterfall/assets $@
+	@python3 scripts/embed-assets.py rasterfall $@
 
 $(ASSET_OBJ): $(ASSET_SRC) windows/Makefile | $(BUILD)
 	@mkdir -p "$(dir $@)"
 	@printf '  WIN-CC  %s\n' "$<"
 	$(WIN_CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
+
+$(BUILD)/win/app/glb_inspect.o: app/glb_inspect.c windows/Makefile | $(BUILD)
+	@mkdir -p "$(dir $@)"
+	@printf '  WIN-CC  %s (library)\n' "$<"
+	$(WIN_CC) $(CPPFLAGS) $(CFLAGS) -DRASTERFALL_GLB_LIBRARY=1 -c $< -o $@
 
 $(BUILD):
 	mkdir -p $@

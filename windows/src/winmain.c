@@ -1,5 +1,4 @@
 #include <windows.h>
-#include <string.h>
 
 int main(int argc, char **argv);
 void toy_windows_log(const char *message);
@@ -28,17 +27,5 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPSTR command_line,
     (void)previous;
     (void)command_line;
     (void)show_command;
-    {
-        char path[MAX_PATH];
-        DWORD length = GetModuleFileNameA(NULL, path, sizeof(path));
-        if (length > 0 && length < sizeof(path)) {
-            char *slash = strrchr(path, '\\');
-            if (slash) {
-                *slash = 0;
-                strcat(path, "\\assets");
-                SetCurrentDirectoryA(path);
-            }
-        }
-    }
     return main(__argc, __argv);
 }

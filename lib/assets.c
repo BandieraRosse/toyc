@@ -129,7 +129,7 @@ int toy_texture_load(const char *path, struct toy_texture_asset *asset)
     if (!asset) return -1;
     memset(asset, 0, sizeof(*asset));
 
-    data = read_file(path, &size);
+    data = toy_asset_load_file(path, &size);
     if (!data || read_header(data, size, "TTEX", &header_size) < 0 ||
         header_size < 32 || size < 32) {
         if (data) tlibc_free(data);
@@ -184,7 +184,7 @@ int toy_sound_load(const char *path, struct toy_sound_asset *asset)
     if (!asset) return -1;
     memset(asset, 0, sizeof(*asset));
 
-    data = read_file(path, &size);
+    data = toy_asset_load_file(path, &size);
     if (!data || read_header(data, size, "TSND", &header_size) < 0 ||
         header_size < 32 || size < 32) {
         if (data) tlibc_free(data);
@@ -233,7 +233,7 @@ int toy_mesh_load(const char *path, struct toy_mesh_asset *asset)
     if (!asset) return -1;
     memset(asset, 0, sizeof(*asset));
 
-    data = read_file(path, &size);
+    data = toy_asset_load_file(path, &size);
     if (!data || read_header(data, size, "TMES", &header_size) < 0 ||
         header_size < 40 || size < 40) {
         if (data) tlibc_free(data);

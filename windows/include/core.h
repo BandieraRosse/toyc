@@ -36,6 +36,7 @@ long __getdents64(unsigned int fd, struct linux_dirent64 *dirp, unsigned int cou
 
 void *tlibc_malloc(size_t size);
 void tlibc_free(void *ptr);
+int tlibc_recursive_mkdir(const char *path);
 long __futex(unsigned int *uaddr, int op, unsigned int value,
              const struct timespec *timeout, unsigned int *uaddr2,
              unsigned int value3);

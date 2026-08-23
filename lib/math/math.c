@@ -251,30 +251,21 @@ static double atan_poly(double x)
 
 double atan(double x)
 {
-    double r, s, result;
-
-    if (x < 0.0) return -atan(-x);
-
-    if (x > 1.0) return M_PI_2 - atan(1.0 / x);
-
-    /* |x| ≤ 1: 用二倍角归约到小范围后泰勒 */
-    /* atan(x) = 2·atan(x / (1 + √(1+x²)))  —— 每次约减半 */
-    r = x;
-    result = 0.0;  /* 仅用于抑制假告警 */
-
-    {
-        int k = 0;
-        while (r > 0.2) {
-            s = 1.0 + sqrt(1.0 + r * r);
-            /* 防止除以 0（不会发生，因为 s ≥ 1） */
-            r = r / s;
-            k++;
-        }
-
-        result = atan_poly(r);
-        while (k-- > 0) result *= 2.0;
-    }
-    return result;
+    double r, result;
+    int negative = x < 0.0;
+    int reciprocal;
+    if (negative) x = -x;
+    reciprocal = x > 1.0;
+    if (reciprocal) x = 1.0 / x;
+    /* Three fixed half-angle reductions put [0,1] below 0.1, where the
+     * degree-17 polynomial retains the existing ~1e-10 accuracy.  Fixed
+     * runtime also avoids the old Windows non-converging loop. */
+    r = x / (1.0 + sqrt(1.0 + x * x));
+    r = r / (1.0 + sqrt(1.0 + r * r));
+    r = r / (1.0 + sqrt(1.0 + r * r));
+    result = 8.0 * atan_poly(r);
+    if (reciprocal) result = M_PI_2 - result;
+    return negative ? -result : result;
 }
 
 double atan2(double y, double x)

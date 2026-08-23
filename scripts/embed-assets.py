@@ -8,7 +8,18 @@ if len(sys.argv) != 3:
 
 root = pathlib.Path(sys.argv[1])
 out = pathlib.Path(sys.argv[2])
-files = sorted(p for p in root.rglob("*") if p.is_file())
+if root.name == "rasterfall":
+    roots = [root / "assets", root / "private-assets"]
+    files = sorted(
+        p for asset_root in roots if asset_root.is_dir()
+        for p in asset_root.rglob("*")
+        if p.is_file() and "source" not in p.relative_to(root).parts and
+        p.name != "UAL1_Standard_RM.glb"
+    )
+    logical_prefix = "rasterfall"
+else:
+    files = sorted(p for p in root.rglob("*") if p.is_file())
+    logical_prefix = "rasterfall/assets"
 
 with out.open("w", encoding="utf-8") as f:
     f.write("/* generated; do not edit */\n#include <toy_assets.h>\n\n")
@@ -22,7 +33,7 @@ with out.open("w", encoding="utf-8") as f:
         f.write("};\n")
     f.write("\nstatic const struct rasterfall_embedded_asset rasterfall_embedded_assets[] = {\n")
     for index, path in enumerate(files):
-        name = "rasterfall/assets/" + path.relative_to(root).as_posix()
+        name = logical_prefix + "/" + path.relative_to(root).as_posix()
         f.write('    { "%s", asset_%d, sizeof(asset_%d) },\n' %
                 (name.replace('"', '\\"'), index, index))
     f.write("};\n\n")

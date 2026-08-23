@@ -1212,11 +1212,15 @@ int toy_renderer_begin(struct toy_renderer *renderer,
     renderer->surface.stride = surface->stride;
     /* Tiny in-memory probes gain nothing from the worker pool and should not
      * require thread/TLS setup merely to exercise rasterization math. */
+#if defined(TOYC_WINDOWS)
+    clear_single(renderer, clear_color);
+#else
     if ((long)surface->width * surface->height >= 320 * 180 &&
         ensure_workers(renderer) == 0)
         renderer_dispatch(renderer, 1, clear_color);
     else
         clear_single(renderer, clear_color);
+#endif
     return 0;
 }
 

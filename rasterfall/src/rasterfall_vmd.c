@@ -3,6 +3,7 @@
 #include "tlibc_everything.h"
 #include "rasterfall_model.h"
 #include "rasterfall_vmd.h"
+#include "toy_assets.h"
 #include "math.h"
 
 static unsigned int u32(const unsigned char *p){return p[0]|p[1]<<8|p[2]<<16|p[3]<<24;}
@@ -45,11 +46,10 @@ static int track_find(const struct rasterfall_vmd_clip*c,const char*n){int i;for
 static int ms(int frame){return frame*1000/30;}
 
 int rasterfall_vmd_load(struct rasterfall_vmd_clip*c,const char*path){
- int fd,size,got=0,n,i,j,t;unsigned char*b;struct stat st;
- if(!c||!path)return -1;memset(c,0,sizeof(*c));fd=__openat(AT_FDCWD,path,O_RDONLY,0);
- if(fd<0||__fstat(fd,&st)<0||st.st_size<54||st.st_size>64*1024*1024){if(fd>=0)__close(fd);return -1;}
- size=(int)st.st_size;b=tlibc_malloc(size);if(!b){__close(fd);return -1;}while(got<size&&(n=__read(fd,b+got,size-got))>0)got+=n;__close(fd);
- if(got!=size||memcmp(b,"Vocaloid Motion Data 0002",24)!=0||54+(long)u32(b+50)*111>size){tlibc_free(b);return -1;}
+ int size,i,j,t;unsigned char*b;uint32_t asset_size=0;
+ if(!c||!path)return -1;memset(c,0,sizeof(*c));
+ b=toy_asset_load_file(path,&asset_size);size=(int)asset_size;
+ if(!b||size<54||size>64*1024*1024||memcmp(b,"Vocaloid Motion Data 0002",24)!=0||54+(long)u32(b+50)*111>size){if(b)tlibc_free(b);return -1;}
  c->version=2;decode_name(b+30,c->model_name);c->motion_count=(int)u32(b+50);c->tracks=tlibc_malloc(RASTERFALL_VMD_MAX_BONES*sizeof(*c->tracks));if(!c->tracks){tlibc_free(b);return -1;}memset(c->tracks,0,RASTERFALL_VMD_MAX_BONES*sizeof(*c->tracks));
  /* Pass 1: names and per-track counts. */
  for(i=0;i<c->motion_count;i++){char name[RASTERFALL_VMD_MAX_NAME];const unsigned char*p=b+54+i*111;decode_name(p,name);t=track_find(c,name);if(t<0){if(c->track_count==RASTERFALL_VMD_MAX_BONES){tlibc_free(b);rasterfall_vmd_unload(c);return -1;}t=c->track_count++;strcpy(c->tracks[t].name,name);c->tracks[t].first_frame=0x7fffffff;c->tracks[t].target_bone=-1;c->tracks[t].is_ik=strstr(name,"ＩＫ")!=0;c->tracks[t].is_leg_ik=!strcmp(name,"左足ＩＫ")||!strcmp(name,"右足ＩＫ");c->tracks[t].is_center=!strcmp(name,"センター");c->tracks[t].is_groove=!strcmp(name,"グルーブ");if(c->tracks[t].is_ik&&!c->tracks[t].is_leg_ik)c->ignored_ik_tracks++;}c->tracks[t].key_count++;}

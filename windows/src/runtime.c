@@ -27,7 +27,20 @@ static int win_flags(int flags)
 
 void toy_windows_log(const char *message)
 {
-    (void)message;
+    char path[MAX_PATH];
+    DWORD length;
+    FILE *file;
+    if (!message) return;
+    length = GetModuleFileNameA(NULL, path, sizeof(path));
+    if (!length || length >= sizeof(path)) return;
+    while (length > 0 && path[length - 1] != '\\' && path[length - 1] != '/')
+        path[--length] = 0;
+    if (length + 16 >= sizeof(path)) return;
+    strcpy(path + length, "rasterfall.log");
+    file = fopen(path, "ab");
+    if (!file) return;
+    fprintf(file, "%s\r\n", message);
+    fclose(file);
 }
 
 long __write(int fd, const void *buf, size_t len)
@@ -102,6 +115,26 @@ void *__memmove(void *dst, const void *src, size_t n) { return memmove(dst, src,
 
 void *tlibc_malloc(size_t size) { return calloc(1, (size_t)(size ? size : 1)); }
 void tlibc_free(void *ptr) { free(ptr); }
+
+int tlibc_recursive_mkdir(const char *path)
+{
+    char buffer[MAX_PATH];
+    char *p;
+    DWORD attributes;
+    if (!path || !*path || strlen(path) >= sizeof(buffer)) return -1;
+    strcpy(buffer, path);
+    for (p = buffer; *p; p++) {
+        if (*p != '\\' && *p != '/') continue;
+        if (p == buffer || (p == buffer + 2 && buffer[1] == ':')) continue;
+        *p = 0;
+        CreateDirectoryA(buffer, NULL);
+        *p = '\\';
+    }
+    CreateDirectoryA(buffer, NULL);
+    attributes = GetFileAttributesA(buffer);
+    return attributes != INVALID_FILE_ATTRIBUTES &&
+           (attributes & FILE_ATTRIBUTE_DIRECTORY) ? 0 : -1;
+}
 
 static LARGE_INTEGER qpc_frequency;
 
