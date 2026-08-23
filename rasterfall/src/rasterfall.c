@@ -2207,6 +2207,7 @@ int main(int argc, char **argv)
     int vmd_disable_grant = 0;
     int vmd_legacy_root_offset = 0;
     int vmd_legacy_knee_ccd = 0;
+    int vmd_skin_trace = 0;
     int performance_iterations = 5;
     int performance_workers = 0;
     for (int arg = 1; arg < argc; arg++) {
@@ -2304,6 +2305,8 @@ int main(int argc, char **argv)
         } else if (strcmp(argv[arg], "--vmd-legacy-knee-ccd") == 0 ||
                    strcmp(argv[arg], "--vmd-legacy-leg-ccd") == 0) {
             vmd_legacy_knee_ccd = 1;
+        } else if (strcmp(argv[arg], "--vmd-skin-trace") == 0) {
+            vmd_skin_trace = 1;
         } else if (strcmp(argv[arg], "--model-material-regression") == 0 &&
                    arg + 2 < argc) {
             view_model_path = argv[++arg];
@@ -2428,13 +2431,24 @@ int main(int argc, char **argv)
         vmd_walk_model = "rasterfall/private-assets/models/eula.rmesh";
         vmd_walk_path = "rasterfall/private-assets/animations/walk04_loop5.vmd";
     }
-    if (vmd_walk_model && vmd_walk_path)
+    if (vmd_walk_model && vmd_walk_path) {
         rasterfall_render_set_vmd_walk(vmd_walk_model, vmd_walk_path);
+        /* The direct VMD preview is a real skeletal animation, so start its
+         * player explicitly.  Without this, the session remains at the
+         * default clip_id=-1/playing=0 state and the renderer samples time 0
+         * forever. */
+        session.skeletal_demo_player.clip = NULL;
+        session.skeletal_demo_player.clip_id = 9;
+        session.skeletal_demo_player.time_ms = 0;
+        session.skeletal_demo_player.playing = 1;
+        session.skeletal_demo_player.loop = 1;
+    }
     rasterfall_render_set_vmd_freeze(vmd_freeze_head, vmd_freeze_torso);
     rasterfall_render_set_vmd_ik_enabled(!vmd_disable_ik);
     rasterfall_render_set_vmd_grant_enabled(!vmd_disable_grant);
     rasterfall_render_set_vmd_legacy_root_offset(vmd_legacy_root_offset);
     rasterfall_render_set_vmd_legacy_knee_ccd(vmd_legacy_knee_ccd);
+    rasterfall_render_set_vmd_skin_trace(vmd_skin_trace);
     rasterfall_render_bake_lightmap();
     rf_windows_log("startup: lightmap baked");
     rasterfall_effects_init(&effects);
