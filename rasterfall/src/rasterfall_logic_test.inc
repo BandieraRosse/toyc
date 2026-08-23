@@ -529,7 +529,14 @@ static int run_logic_test(void)
         if (clipped[i].z < RASTERFALL_NEAR_Z) return 166;
     triangle[2].z = 20;
     if (clip_near(triangle, 3, clipped) != 0) return 167;
-    if (rasterfall_render_near_clip_test() != 0) return 168;
+    {
+        int near_clip_result = rasterfall_render_near_clip_test();
+        if (near_clip_result != 0) {
+            __printf("rasterfall logic: render near-clip test failed: %d\n",
+                     near_clip_result);
+            return 168;
+        }
+    }
     pixels = tlibc_malloc(320 * 180 * sizeof(uint32_t));
     if (!pixels) return 7;
     surface.pixels = pixels;

@@ -1777,9 +1777,9 @@ static void near_intersection(const struct vec3 *a, const struct vec3 *b,
     long denominator = b->z - a->z;
     /* Toyc-safe widening: cast operands before subtraction so a negative
      * signed-int delta is sign-extended instead of zero-extended. */
-    out->x = a->x + (int)(((long)b->x - (long)a->x) *
+    out->x = a->x + (int)(((long long)b->x - (long long)a->x) *
                           numerator / denominator);
-    out->y = a->y + (int)(((long)b->y - (long)a->y) *
+    out->y = a->y + (int)(((long long)b->y - (long long)a->y) *
                           numerator / denominator);
     out->z = NEAR_Z;
 }
@@ -1818,10 +1818,19 @@ static void near_intersection_uv(const struct world_uv_vertex *a,
     long numerator = NEAR_Z - a->p.z;
     long denominator = b->p.z - a->p.z;
     near_intersection(&a->p, &b->p, &out->p);
-    out->u = a->u + (int)(((long)b->u - a->u) * numerator / denominator);
-    out->v = a->v + (int)(((long)b->v - a->v) * numerator / denominator);
-    out->su = a->su + (int)(((long)b->su - a->su) * numerator / denominator);
-    out->sv = a->sv + (int)(((long)b->sv - a->sv) * numerator / denominator);
+    out->u = a->u + (int)(((long long)b->u - a->u) * numerator / denominator);
+    out->v = a->v + (int)(((long long)b->v - a->v) * numerator / denominator);
+    out->su = a->su + (int)(((long long)b->su - a->su) * numerator / denominator);
+    out->sv = a->sv + (int)(((long long)b->sv - a->sv) * numerator / denominator);
+}
+
+/* Windows x86_64 follows LLP64, where long remains 32-bit.  A Q16 UV near
+ * 65535 multiplied by the inverse-depth scale is roughly 68 billion, so the
+ * product must be widened before division even though the final term fits in
+ * long on every supported target. */
+static long perspective_uv_term(int uv, int z)
+{
+    return (long)((long long)uv * 1048576LL / z);
 }
 
 static int clip_near_uv(const struct world_uv_vertex *input, int count,
@@ -1875,6 +1884,8 @@ int rasterfall_render_near_clip_test(void)
     if (clip_near_uv(input, 3, output) != 3) return 5;
     input[2].p.z = 20;
     if (clip_near_uv(input, 3, output) != 0) return 6;
+    if (perspective_uv_term(65535, NEAR_Z) != 1073725440L) return 7;
+    if (perspective_uv_term(-65535, NEAR_Z) != -1073725440L) return 8;
     return 0;
 }
 
@@ -1905,12 +1916,12 @@ static void project_uv_vertex(const struct toy_surface *surface,
     int z = view->z < NEAR_Z ? NEAR_Z : view->z;
     project_vertex(surface, view, screen);
     screen->u = u; screen->v = v;
-    screen->u_over_z = (long)u * 1048576L / z;
-    screen->v_over_z = (long)v * 1048576L / z;
+    screen->u_over_z = perspective_uv_term(u, z);
+    screen->v_over_z = perspective_uv_term(v, z);
     if (use_secondary_uv) {
         screen->u2 = su; screen->v2 = sv;
-        screen->u2_over_z = (long)su * 1048576L / z;
-        screen->v2_over_z = (long)sv * 1048576L / z;
+        screen->u2_over_z = perspective_uv_term(su, z);
+        screen->v2_over_z = perspective_uv_term(sv, z);
     } else {
         screen->u2 = screen->v2 = 0;
         screen->u2_over_z = screen->v2_over_z = 0;
