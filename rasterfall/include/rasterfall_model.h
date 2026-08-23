@@ -110,6 +110,65 @@ struct rasterfall_model_ik {
     struct rasterfall_model_ik_link *links;
 };
 
+struct rasterfall_model_root_motion_state {
+    int enabled;
+    int primary_bone;
+    int secondary_bone;
+    int primary[3];
+    int secondary[3];
+};
+
+/* Cold counters and inspector aggregates are grouped away from pose data.
+ * This keeps the runtime model layout extensible and avoids spending a top-
+ * level struct member for every new metric. */
+struct rasterfall_model_solver_metrics {
+    unsigned long ik_sample_count;
+    unsigned long ik_controller_sample_count;
+    unsigned long ik_analytic_solved_count;
+    unsigned long ik_analytic_clamped_count;
+    unsigned long ik_analytic_rejected_count;
+    unsigned long ik_iteration_total;
+    unsigned int ik_iteration_max;
+    double ik_error_before_total;
+    double ik_error_after_total;
+    double ik_error_before_max;
+    double ik_error_after_max;
+    unsigned long ik_reach_sample_count;
+    unsigned long ik_unreachable_count;
+    double ik_reach_distance_total;
+    double ik_reach_ratio_total;
+    double ik_reach_distance_max;
+    double ik_reach_ratio_max;
+    unsigned long center_ab_samples;
+    unsigned long center_ab_a_unreachable;
+    unsigned long center_ab_b_unreachable;
+    double center_ab_a_ratio_total;
+    double center_ab_b_ratio_total;
+    double center_ab_a_ratio_max;
+    double center_ab_b_ratio_max;
+    double center_ab_a_excess_total;
+    double center_ab_b_excess_total;
+    double center_ab_a_excess_max;
+    double center_ab_b_excess_max;
+};
+
+struct rasterfall_model_animation_state {
+    int pose;
+    int demo_right_arm;
+    int demo_left_arm;
+    int demo_body;
+    struct rasterfall_animation_rotation *rotations;
+    struct rasterfall_animation_clip demo_clips[3];
+    struct rasterfall_animation_track demo_tracks[3][2];
+    struct rasterfall_animation_keyframe demo_keys[3][6];
+};
+
+struct rasterfall_model_texture_state {
+    struct toy_texture_asset *assets;
+    struct toy_texture_view *views;
+    unsigned int count;
+};
+
 struct rasterfall_model_header {
     unsigned int magic;
     unsigned int version;
@@ -299,7 +358,7 @@ struct rasterfall_model_asset {
     int ik_final_thigh_global_q_valid[2];
     double ik_final_dthigh_global_q[2][4];
     int ik_final_dthigh_global_q_valid[2];
-    /* Render provenance for the four Eula leg control bones:
+    /* Render provenance for the four MMD leg control bones:
      * left thigh/knee, right thigh/knee.  These are snapshots only. */
     int render_trace_sampled_local[4][3];
     int render_trace_pre_ik_local[4][3];
@@ -369,55 +428,17 @@ struct rasterfall_model_asset {
     unsigned long ik_near_degenerate_ca_active_count[2];
     unsigned long ik_near_degenerate_ca_reconciled_count[2];
     unsigned long ik_near_degenerate_ca_unavailable_count[2];
-    unsigned long ik_sample_count;
-    unsigned long ik_controller_sample_count;
-    unsigned long ik_analytic_solved_count;
-    unsigned long ik_analytic_clamped_count;
-    unsigned long ik_analytic_rejected_count;
-    unsigned long ik_iteration_total;
-    unsigned int ik_iteration_max;
-    double ik_error_before_total;
-    double ik_error_after_total;
-    double ik_error_before_max;
-    double ik_error_after_max;
-    unsigned long ik_reach_sample_count;
-    unsigned long ik_unreachable_count;
-    double ik_reach_distance_total;
-    double ik_reach_ratio_total;
-    double ik_reach_distance_max;
-    double ik_reach_ratio_max;
-    unsigned long center_ab_samples;
-    unsigned long center_ab_a_unreachable;
-    unsigned long center_ab_b_unreachable;
-    double center_ab_a_ratio_total;
-    double center_ab_b_ratio_total;
-    double center_ab_a_ratio_max;
-    double center_ab_b_ratio_max;
-    double center_ab_a_excess_total;
-    double center_ab_b_excess_total;
-    double center_ab_a_excess_max;
-    double center_ab_b_excess_max;
+    struct rasterfall_model_solver_metrics solver_metrics;
     unsigned int root_bone_count;
     unsigned int max_bone_depth;
     int skinning_enabled;
-    int pose;
-    int demo_right_arm;
-    int demo_left_arm;
-    int demo_body;
-    struct rasterfall_animation_rotation *animation_rotations;
-    struct rasterfall_animation_clip demo_clips[3];
-    struct rasterfall_animation_track demo_tracks[3][2];
-    struct rasterfall_animation_keyframe demo_keys[3][6];
-    struct toy_texture_asset *texture_assets;
-    struct toy_texture_view *texture_views;
-    unsigned int texture_count;
+    struct rasterfall_model_animation_state animation;
+    struct rasterfall_model_texture_state textures;
     int min_x, min_y, min_z;
     int max_x, max_y, max_z;
     /* Presentation-only Center/Groove offset, in RFM2 units. */
-    int animation_offset_x, animation_offset_y, animation_offset_z;
-    int vmd_skeleton_translation_enabled;
-    int vmd_center_translation[3];
-    int vmd_groove_translation[3];
+    int animation_offset[3];
+    struct rasterfall_model_root_motion_state root_motion;
 };
 
 /* Compatibility aliases for inspector diagnostics kept in one-line traces. */
@@ -448,9 +469,12 @@ void rasterfall_model_set_grant_enabled(struct rasterfall_model_asset *asset,
 void rasterfall_model_set_legacy_knee_ccd(struct rasterfall_model_asset *asset,
                                            int enabled);
 int rasterfall_model_apply_rotation_grants(struct rasterfall_model_asset *asset);
-void rasterfall_model_set_vmd_skeleton_translation(
-    struct rasterfall_model_asset *asset, const int center[3],
-    const int groove[3], int enabled);
+void rasterfall_model_bind_root_motion(struct rasterfall_model_asset *asset,
+                                       int primary_bone,
+                                       int secondary_bone);
+void rasterfall_model_set_root_motion(
+    struct rasterfall_model_asset *asset, const int primary[3],
+    const int secondary[3], int enabled);
 int rasterfall_model_sample_glb_rotation_clip(
     struct rasterfall_model_asset *asset,
     const struct rasterfall_glb_rotation_clip *clip,
@@ -467,8 +491,8 @@ void rasterfall_model_dump_bones(const struct rasterfall_model_asset *asset,
 void rasterfall_model_dump_ik(const struct rasterfall_model_asset *asset);
 const char *rasterfall_humanoid_bone_name(enum rasterfall_humanoid_bone bone);
 void rasterfall_humanoid_mapping_init(struct rasterfall_humanoid_mapping *mapping);
-void rasterfall_humanoid_map_eula(const struct rasterfall_model_asset *asset,
-                                  struct rasterfall_humanoid_mapping *mapping);
+void rasterfall_model_map_humanoid(const struct rasterfall_model_asset *asset,
+                                   struct rasterfall_humanoid_mapping *mapping);
 void rasterfall_humanoid_validate(const struct rasterfall_model_asset *asset,
                                   const struct rasterfall_humanoid_mapping *mapping,
                                   struct rasterfall_humanoid_diagnostics *diagnostics);

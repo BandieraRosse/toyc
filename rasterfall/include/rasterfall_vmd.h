@@ -6,6 +6,7 @@ struct rasterfall_model_asset;
 
 #define RASTERFALL_VMD_MAX_BONES 256
 #define RASTERFALL_VMD_MAX_NAME 64
+#define RASTERFALL_VMD_TRANSLATION_SCALE 232.0f
 
 struct rasterfall_vmd_keyframe {
     int frame;
@@ -23,7 +24,7 @@ struct rasterfall_vmd_bone_track {
     int translation_changed, rotation_changed;
     int target_bone;
     int mapping_status; /* 0 missing, 1 exact, 2 ignored, 3 duplicate */
-    int is_ik, is_center, is_groove;
+    int is_ik, is_leg_ik, is_center, is_groove;
 };
 
 struct rasterfall_vmd_clip {
@@ -40,8 +41,15 @@ struct rasterfall_vmd_clip {
 
 int rasterfall_vmd_load(struct rasterfall_vmd_clip *clip, const char *path);
 void rasterfall_vmd_unload(struct rasterfall_vmd_clip *clip);
-int rasterfall_vmd_map_eula(struct rasterfall_vmd_clip *clip,
-                            const struct rasterfall_model_asset *asset);
+typedef int (*rasterfall_vmd_bone_resolver)(void *context, const char *name);
+
+/* Format-level mapping accepts any skeleton resolver.  The model wrapper is
+ * the common exact-name policy; aliases or humanoid-role mapping can be added
+ * without teaching the VMD parser about a particular character. */
+int rasterfall_vmd_map(struct rasterfall_vmd_clip *clip,
+                       rasterfall_vmd_bone_resolver resolve, void *context);
+int rasterfall_vmd_map_model(struct rasterfall_vmd_clip *clip,
+                             const struct rasterfall_model_asset *asset);
 void rasterfall_vmd_dump(const struct rasterfall_vmd_clip *clip,
                          const struct rasterfall_model_asset *asset);
 void rasterfall_vmd_dump_motion_diagnostic(

@@ -177,9 +177,9 @@ static int model_load_skin(struct rasterfall_model_asset *asset,
     asset->bones = tlibc_malloc((size_t)bone_count * sizeof(*asset->bones));
     asset->bone_transforms = tlibc_malloc((size_t)bone_count *
                                           sizeof(*asset->bone_transforms));
-    asset->animation_rotations = tlibc_malloc((size_t)bone_count *
-                                              sizeof(*asset->animation_rotations));
-    if (!asset->bones || !asset->bone_transforms || !asset->animation_rotations)
+    asset->animation.rotations = tlibc_malloc((size_t)bone_count *
+                                              sizeof(*asset->animation.rotations));
+    if (!asset->bones || !asset->bone_transforms || !asset->animation.rotations)
         return -1;
     __memset(asset->bones, 0, bone_count * sizeof(*asset->bones));
     asset->bone_count = bone_count;
@@ -295,25 +295,25 @@ static int model_load_skin(struct rasterfall_model_asset *asset,
                   invalid_references);
         return -1;
     }
-    asset->demo_right_arm = model_find_first_bone(asset, "右腕", "right arm", "RightArm");
-    asset->demo_left_arm = model_find_first_bone(asset, "左腕", "left arm", "LeftArm");
-    asset->demo_body = model_find_first_bone(asset, "上半身2", "upper body 2", "UpperBody2");
-    if (asset->demo_body < 0)
-        asset->demo_body = model_find_first_bone(asset, "上半身", "upper body", "UpperBody");
+    asset->animation.demo_right_arm = model_find_first_bone(asset, "右腕", "right arm", "RightArm");
+    asset->animation.demo_left_arm = model_find_first_bone(asset, "左腕", "left arm", "LeftArm");
+    asset->animation.demo_body = model_find_first_bone(asset, "上半身2", "upper body 2", "UpperBody2");
+    if (asset->animation.demo_body < 0)
+        asset->animation.demo_body = model_find_first_bone(asset, "上半身", "upper body", "UpperBody");
     rasterfall_model_build_demo_clips(asset);
     asset->skinning_enabled = 1;
-    asset->pose = RASTERFALL_MODEL_POSE_BIND;
+    asset->animation.pose = RASTERFALL_MODEL_POSE_BIND;
     if (rasterfall_model_update_bones(asset) < 0) return -1;
     __printf("rasterfall: skeleton bones=%u roots=%u max_depth=%u BDEF1=%u BDEF2=%u invalid_bone_references=0\n",
              bone_count, asset->root_bone_count, asset->max_bone_depth,
              bdef1, bdef2);
     __printf("rasterfall: demo bones right_arm={index=%d,name=\"%s\"} left_arm={index=%d,name=\"%s\"} body={index=%d,name=\"%s\"}\n",
-             asset->demo_right_arm,
-             asset->demo_right_arm >= 0 ? asset->bones[asset->demo_right_arm].name : "not found",
-             asset->demo_left_arm,
-             asset->demo_left_arm >= 0 ? asset->bones[asset->demo_left_arm].name : "not found",
-             asset->demo_body,
-             asset->demo_body >= 0 ? asset->bones[asset->demo_body].name : "not found");
+             asset->animation.demo_right_arm,
+             asset->animation.demo_right_arm >= 0 ? asset->bones[asset->animation.demo_right_arm].name : "not found",
+             asset->animation.demo_left_arm,
+             asset->animation.demo_left_arm >= 0 ? asset->bones[asset->animation.demo_left_arm].name : "not found",
+             asset->animation.demo_body,
+             asset->animation.demo_body >= 0 ? asset->bones[asset->animation.demo_body].name : "not found");
     return 0;
 }
 
@@ -345,6 +345,8 @@ int rasterfall_model_load(struct rasterfall_model_asset *asset,
     __memset(asset, 0, sizeof(*asset));
     asset->ik_enabled = 1;
     asset->ik_limits_enabled = 1;
+    asset->root_motion.primary_bone = -1;
+    asset->root_motion.secondary_bone = -1;
     data = toy_asset_load_file(path, &size);
     version = data && size >= 8 ? model_u32(data + 4) : 0;
     vertex_bytes = version >= 10 ? RASTERFALL_MODEL_VERTEX_BYTES_EDGE_SCALE :
@@ -426,21 +428,21 @@ int rasterfall_model_load(struct rasterfall_model_asset *asset,
         }
         if (found) {
             char texture_path[256];
-            asset->texture_count = max_texture + 1;
-            asset->texture_assets = (struct toy_texture_asset *)tlibc_malloc(asset->texture_count * sizeof(*asset->texture_assets));
-            asset->texture_views = (struct toy_texture_view *)tlibc_malloc(asset->texture_count * sizeof(*asset->texture_views));
-            if (!asset->texture_assets || !asset->texture_views) { rasterfall_model_unload(asset); return -1; }
-            __memset(asset->texture_assets, 0, asset->texture_count * sizeof(*asset->texture_assets));
-            __memset(asset->texture_views, 0, asset->texture_count * sizeof(*asset->texture_views));
-            for (i = 0; i < asset->texture_count; i++) {
+            asset->textures.count = max_texture + 1;
+            asset->textures.assets = (struct toy_texture_asset *)tlibc_malloc(asset->textures.count * sizeof(*asset->textures.assets));
+            asset->textures.views = (struct toy_texture_view *)tlibc_malloc(asset->textures.count * sizeof(*asset->textures.views));
+            if (!asset->textures.assets || !asset->textures.views) { rasterfall_model_unload(asset); return -1; }
+            __memset(asset->textures.assets, 0, asset->textures.count * sizeof(*asset->textures.assets));
+            __memset(asset->textures.views, 0, asset->textures.count * sizeof(*asset->textures.views));
+            for (i = 0; i < asset->textures.count; i++) {
                 if (model_texture_path(path, (int)i, texture_path, sizeof(texture_path)) == 0)
-                    toy_texture_load(texture_path, &asset->texture_assets[i]);
-                asset->texture_views[i].data = asset->texture_assets[i].data;
-                asset->texture_views[i].width = asset->texture_assets[i].width;
-                asset->texture_views[i].height = asset->texture_assets[i].height;
-                asset->texture_views[i].data_size = asset->texture_assets[i].data_size;
-                asset->texture_views[i].channels = asset->texture_assets[i].channels;
-                asset->texture_views[i].has_transparency = asset->texture_assets[i].has_transparency;
+                    toy_texture_load(texture_path, &asset->textures.assets[i]);
+                asset->textures.views[i].data = asset->textures.assets[i].data;
+                asset->textures.views[i].width = asset->textures.assets[i].width;
+                asset->textures.views[i].height = asset->textures.assets[i].height;
+                asset->textures.views[i].data_size = asset->textures.assets[i].data_size;
+                asset->textures.views[i].channels = asset->textures.assets[i].channels;
+                asset->textures.views[i].has_transparency = asset->textures.assets[i].has_transparency;
             }
         }
         if (asset->format_version >= 3) for (i = 0; i < asset->material_count; i++) {
@@ -461,15 +463,15 @@ int rasterfall_model_load(struct rasterfall_model_asset *asset,
 void rasterfall_model_unload(struct rasterfall_model_asset *asset)
 {
     if (!asset || !asset->data) return;
-    if (asset->texture_assets) {
+    if (asset->textures.assets) {
         unsigned int i;
-        for (i = 0; i < asset->texture_count; i++) toy_texture_unload(&asset->texture_assets[i]);
-        tlibc_free(asset->texture_assets);
+        for (i = 0; i < asset->textures.count; i++) toy_texture_unload(&asset->textures.assets[i]);
+        tlibc_free(asset->textures.assets);
     }
-    if (asset->texture_views) tlibc_free(asset->texture_views);
+    if (asset->textures.views) tlibc_free(asset->textures.views);
     if (asset->bones) tlibc_free(asset->bones);
     if (asset->bone_transforms) tlibc_free(asset->bone_transforms);
-    if (asset->animation_rotations) tlibc_free(asset->animation_rotations);
+    if (asset->animation.rotations) tlibc_free(asset->animation.rotations);
     if (asset->bone_order) tlibc_free(asset->bone_order);
     if (asset->iks) {
         unsigned int i;
@@ -500,17 +502,17 @@ int rasterfall_model_set_pose(struct rasterfall_model_asset *asset, int pose)
         asset->bones[i].rotate_z = 0;
     }
     if (pose == RASTERFALL_MODEL_POSE_RIGHT_ARM) {
-        if (asset->demo_right_arm < 0) return -1;
-        asset->bones[asset->demo_right_arm].rotate_z = -38;
+        if (asset->animation.demo_right_arm < 0) return -1;
+        asset->bones[asset->animation.demo_right_arm].rotate_z = -38;
     } else if (pose == RASTERFALL_MODEL_POSE_ARMS) {
-        if (asset->demo_right_arm < 0 || asset->demo_left_arm < 0) return -1;
-        asset->bones[asset->demo_right_arm].rotate_z = -42;
-        asset->bones[asset->demo_left_arm].rotate_z = 42;
+        if (asset->animation.demo_right_arm < 0 || asset->animation.demo_left_arm < 0) return -1;
+        asset->bones[asset->animation.demo_right_arm].rotate_z = -42;
+        asset->bones[asset->animation.demo_left_arm].rotate_z = 42;
     } else if (pose == RASTERFALL_MODEL_POSE_BODY_TURN) {
-        if (asset->demo_body < 0) return -1;
-        asset->bones[asset->demo_body].rotate_y = 24;
+        if (asset->animation.demo_body < 0) return -1;
+        asset->bones[asset->animation.demo_body].rotate_y = 24;
     }
-    asset->pose = pose;
+    asset->animation.pose = pose;
     return rasterfall_model_update_bones(asset);
 }
 
@@ -518,41 +520,41 @@ int rasterfall_model_build_demo_clips(struct rasterfall_model_asset *asset)
 {
     int right, left, body;
     if (!asset) return -1;
-    right = asset->demo_right_arm; left = asset->demo_left_arm;
-    body = asset->demo_body;
-    __memset(asset->demo_clips, 0, sizeof(asset->demo_clips));
-    __memset(asset->demo_tracks, 0, sizeof(asset->demo_tracks));
-    __memset(asset->demo_keys, 0, sizeof(asset->demo_keys));
+    right = asset->animation.demo_right_arm; left = asset->animation.demo_left_arm;
+    body = asset->animation.demo_body;
+    __memset(asset->animation.demo_clips, 0, sizeof(asset->animation.demo_clips));
+    __memset(asset->animation.demo_tracks, 0, sizeof(asset->animation.demo_tracks));
+    __memset(asset->animation.demo_keys, 0, sizeof(asset->animation.demo_keys));
     /* ARM RAISE: 0 -> -38 -> 0, one-shot. */
-    asset->demo_keys[0][0].time_ms=0;
-    asset->demo_keys[0][1].time_ms=400;
-    asset->demo_keys[0][2].time_ms=800;
-    asset->demo_keys[0][0].rotation=rasterfall_animation_quat_from_euler(0,0,0);
-    asset->demo_keys[0][1].rotation=rasterfall_animation_quat_from_euler(0,0,-38);
-    asset->demo_keys[0][2].rotation=rasterfall_animation_quat_from_euler(0,0,0);
-    asset->demo_tracks[0][0]=(struct rasterfall_animation_track){right,asset->demo_keys[0],3};
-    asset->demo_clips[0]=(struct rasterfall_animation_clip){800,0,asset->demo_tracks[0],1};
+    asset->animation.demo_keys[0][0].time_ms=0;
+    asset->animation.demo_keys[0][1].time_ms=400;
+    asset->animation.demo_keys[0][2].time_ms=800;
+    asset->animation.demo_keys[0][0].rotation=rasterfall_animation_quat_from_euler(0,0,0);
+    asset->animation.demo_keys[0][1].rotation=rasterfall_animation_quat_from_euler(0,0,-38);
+    asset->animation.demo_keys[0][2].rotation=rasterfall_animation_quat_from_euler(0,0,0);
+    asset->animation.demo_tracks[0][0]=(struct rasterfall_animation_track){right,asset->animation.demo_keys[0],3};
+    asset->animation.demo_clips[0]=(struct rasterfall_animation_clip){800,0,asset->animation.demo_tracks[0],1,1.0f};
     /* ARMS LOOP: two tracks, symmetric and continuous at the endpoints. */
-    asset->demo_keys[1][0].time_ms=0; asset->demo_keys[1][1].time_ms=750;
-    asset->demo_keys[1][2].time_ms=1500; asset->demo_keys[1][3].time_ms=0;
-    asset->demo_keys[1][4].time_ms=750; asset->demo_keys[1][5].time_ms=1500;
-    asset->demo_keys[1][0].rotation=rasterfall_animation_quat_from_euler(0,0,0);
-    asset->demo_keys[1][1].rotation=rasterfall_animation_quat_from_euler(0,0,-42);
-    asset->demo_keys[1][2].rotation=rasterfall_animation_quat_from_euler(0,0,0);
-    asset->demo_keys[1][3].rotation=rasterfall_animation_quat_from_euler(0,0,0);
-    asset->demo_keys[1][4].rotation=rasterfall_animation_quat_from_euler(0,0,42);
-    asset->demo_keys[1][5].rotation=rasterfall_animation_quat_from_euler(0,0,0);
-    asset->demo_tracks[1][0]=(struct rasterfall_animation_track){right,asset->demo_keys[1],3};
-    asset->demo_tracks[1][1]=(struct rasterfall_animation_track){left,asset->demo_keys[1]+3,3};
-    asset->demo_clips[1]=(struct rasterfall_animation_clip){1500,1,asset->demo_tracks[1],2};
+    asset->animation.demo_keys[1][0].time_ms=0; asset->animation.demo_keys[1][1].time_ms=750;
+    asset->animation.demo_keys[1][2].time_ms=1500; asset->animation.demo_keys[1][3].time_ms=0;
+    asset->animation.demo_keys[1][4].time_ms=750; asset->animation.demo_keys[1][5].time_ms=1500;
+    asset->animation.demo_keys[1][0].rotation=rasterfall_animation_quat_from_euler(0,0,0);
+    asset->animation.demo_keys[1][1].rotation=rasterfall_animation_quat_from_euler(0,0,-42);
+    asset->animation.demo_keys[1][2].rotation=rasterfall_animation_quat_from_euler(0,0,0);
+    asset->animation.demo_keys[1][3].rotation=rasterfall_animation_quat_from_euler(0,0,0);
+    asset->animation.demo_keys[1][4].rotation=rasterfall_animation_quat_from_euler(0,0,42);
+    asset->animation.demo_keys[1][5].rotation=rasterfall_animation_quat_from_euler(0,0,0);
+    asset->animation.demo_tracks[1][0]=(struct rasterfall_animation_track){right,asset->animation.demo_keys[1],3};
+    asset->animation.demo_tracks[1][1]=(struct rasterfall_animation_track){left,asset->animation.demo_keys[1]+3,3};
+    asset->animation.demo_clips[1]=(struct rasterfall_animation_clip){1500,1,asset->animation.demo_tracks[1],2,1.0f};
     /* BODY TURN: parent track, so the existing hierarchy propagates it. */
-    asset->demo_keys[2][0].time_ms=0; asset->demo_keys[2][1].time_ms=500;
-    asset->demo_keys[2][2].time_ms=1000;
-    asset->demo_keys[2][0].rotation=rasterfall_animation_quat_from_euler(0,0,0);
-    asset->demo_keys[2][1].rotation=rasterfall_animation_quat_from_euler(0,24,0);
-    asset->demo_keys[2][2].rotation=rasterfall_animation_quat_from_euler(0,0,0);
-    asset->demo_tracks[2][0]=(struct rasterfall_animation_track){body,asset->demo_keys[2],3};
-    asset->demo_clips[2]=(struct rasterfall_animation_clip){1000,0,asset->demo_tracks[2],1};
+    asset->animation.demo_keys[2][0].time_ms=0; asset->animation.demo_keys[2][1].time_ms=500;
+    asset->animation.demo_keys[2][2].time_ms=1000;
+    asset->animation.demo_keys[2][0].rotation=rasterfall_animation_quat_from_euler(0,0,0);
+    asset->animation.demo_keys[2][1].rotation=rasterfall_animation_quat_from_euler(0,24,0);
+    asset->animation.demo_keys[2][2].rotation=rasterfall_animation_quat_from_euler(0,0,0);
+    asset->animation.demo_tracks[2][0]=(struct rasterfall_animation_track){body,asset->animation.demo_keys[2],3};
+    asset->animation.demo_clips[2]=(struct rasterfall_animation_clip){1000,0,asset->animation.demo_tracks[2],1,1.0f};
     return right >= 0 && (left >= 0) && body >= 0 ? 0 : -1;
 }
 
@@ -577,7 +579,8 @@ static int model_ccd_branch_sign(const struct rasterfall_model_asset *asset,
         perp[i]=asset->bone_transforms[knee].position[i]-asset->bone_transforms[thigh].position[i];
         ref[i]=(i==0 ? asset->bones[knee].rest_x-asset->bones[thigh].rest_x :
                 i==1 ? asset->bones[knee].rest_y-asset->bones[thigh].rest_y :
-                       asset->bones[knee].rest_z-asset->bones[thigh].rest_z) * 232.0;
+                       asset->bones[knee].rest_z-asset->bones[thigh].rest_z) *
+                      RASTERFALL_VMD_TRANSLATION_SCALE;
     }
     axis_len=model_vec_length(axis);
     if(axis_len<0.000001)return 0;
@@ -722,6 +725,13 @@ static void model_sample_track_translation(
     out[2] = a->tz + (b->tz - a->tz) * factor / 1000.0;
 }
 
+static double model_clip_translation_scale(
+    const struct rasterfall_animation_clip *clip)
+{
+    return clip && clip->translation_scale > 0.0f ?
+        clip->translation_scale : 1.0;
+}
+
 static const struct rasterfall_animation_track *model_find_clip_track(
     const struct rasterfall_animation_clip *clip, int bone)
 {
@@ -764,7 +774,8 @@ static int model_analytic_target(const struct rasterfall_model_asset *asset,
         target[0]+=asset->ik_synthetic_offset[0];target[1]+=asset->ik_synthetic_offset[1];target[2]+=asset->ik_synthetic_offset[2];
     } else {
         model_sample_track_translation(track,time_ms,clip->duration_ms,raw);
-        target[0]+=raw[0]*232.0;target[1]+=raw[1]*232.0;target[2]+=raw[2]*232.0;
+        double scale=model_clip_translation_scale(clip);
+        target[0]+=raw[0]*scale;target[1]+=raw[1]*scale;target[2]+=raw[2]*scale;
     }
     return 1;
 }
@@ -1081,7 +1092,8 @@ static int model_solve_one_leg_analytic(
         target[0]+=asset->ik_synthetic_offset[0]; target[1]+=asset->ik_synthetic_offset[1]; target[2]+=asset->ik_synthetic_offset[2];
     } else {
         model_sample_track_translation(track,time_ms,clip->duration_ms,raw);
-        target[0]+=raw[0]*232.0; target[1]+=raw[1]*232.0; target[2]+=raw[2]*232.0;
+        double scale=model_clip_translation_scale(clip);
+        target[0]+=raw[0]*scale; target[1]+=raw[1]*scale; target[2]+=raw[2]*scale;
     }
     h[0]=asset->bone_transforms[thigh].position[0]; h[1]=asset->bone_transforms[thigh].position[1]; h[2]=asset->bone_transforms[thigh].position[2];
     k0[0]=asset->bone_transforms[knee].position[0]; k0[1]=asset->bone_transforms[knee].position[1]; k0[2]=asset->bone_transforms[knee].position[2];
@@ -1104,12 +1116,12 @@ static int model_solve_one_leg_analytic(
     if (clamped) asset->ik_analytic_last_reason=1;
     {
         double ratio=d/(l1+l2);
-        asset->ik_reach_sample_count++;
-        asset->ik_reach_distance_total+=d;
-        asset->ik_reach_ratio_total+=ratio;
-        if(d>asset->ik_reach_distance_max)asset->ik_reach_distance_max=d;
-        if(ratio>asset->ik_reach_ratio_max)asset->ik_reach_ratio_max=ratio;
-        if(d>l1+l2)asset->ik_unreachable_count++;
+        asset->solver_metrics.ik_reach_sample_count++;
+        asset->solver_metrics.ik_reach_distance_total+=d;
+        asset->solver_metrics.ik_reach_ratio_total+=ratio;
+        if(d>asset->solver_metrics.ik_reach_distance_max)asset->solver_metrics.ik_reach_distance_max=d;
+        if(ratio>asset->solver_metrics.ik_reach_ratio_max)asset->solver_metrics.ik_reach_ratio_max=ratio;
+        if(d>l1+l2)asset->solver_metrics.ik_unreachable_count++;
     }
     if (d < 0.000001) { u[0]=from[0];u[1]=from[1];u[2]=from[2];d=model_vec_length(u); }
     u[0]/=d;u[1]/=d;u[2]/=d;
@@ -1556,8 +1568,8 @@ static int model_solve_one_leg_analytic(
         __printf("analytic leg controller=%s time=%d H=(%.3f,%.3f,%.3f) Kdesired=(%.3f,%.3f,%.3f) Kactual=(%.3f,%.3f,%.3f) T=(%.3f,%.3f,%.3f) L1=%.3f L2=%.3f d=%.3f dc=%.3f knee_angle=%d thigh_local=(%d,%d,%d) ankle=(%.3f,%.3f,%.3f) error_before=%.3f error_after=%.3f clamped=%s\n",
                  asset->bones[ik->controller].name,time_ms,h[0],h[1],h[2],kd[0],kd[1],kd[2],asset->bone_transforms[knee].position[0],asset->bone_transforms[knee].position[1],asset->bone_transforms[knee].position[2],target[0],target[1],target[2],l1,l2,d,dc,x,asset->bones[thigh].rotate_x,asset->bones[thigh].rotate_y,asset->bones[thigh].rotate_z,current[0],current[1],current[2],*before,*after,clamped?"yes":"no");
     if (!asset->ik_analytic_candidate_probe) {
-        asset->ik_analytic_solved_count++;
-        if(clamped)asset->ik_analytic_clamped_count++;
+        asset->solver_metrics.ik_analytic_solved_count++;
+        if(clamped)asset->solver_metrics.ik_analytic_clamped_count++;
     }
     return 1;
 }
@@ -1568,9 +1580,8 @@ static int model_solve_leg_ccd(struct rasterfall_model_asset *asset,
                                int time_ms, unsigned int *attempts,
                                double *before, double *after)
 {
-    /* PMX stores the controller target in model coordinates.  The current
-     * RFM2 skin uses 232 units per PMX unit, while bone transforms remain in
-     * global column-vector space.  CCD is therefore done on global positions;
+    /* The importer declares its source-to-model translation scale on the
+     * format-neutral clip.  CCD is done on global positions;
      * the resulting global link rotation is converted back with the inverse
      * parent rotation before Euler/local PMX limits are applied. */
     const struct rasterfall_animation_track *track;
@@ -1654,16 +1665,17 @@ static int model_solve_leg_ccd(struct rasterfall_model_asset *asset,
     } else {
         model_sample_track_translation(track, time_ms, clip->duration_ms,
                                        raw_translation);
-        target[0] += raw_translation[0] * 232.0;
-        target[1] += raw_translation[1] * 232.0;
-        target[2] += raw_translation[2] * 232.0;
+        double scale=model_clip_translation_scale(clip);
+        target[0] += raw_translation[0] * scale;
+        target[1] += raw_translation[1] * scale;
+        target[2] += raw_translation[2] * scale;
     }
     if (asset->ik_target_space_diagnostic && !asset->ik_synthetic_target) {
         int parent = asset->bones[ik->controller].parent;
         double scaled[3], rotated[3];
-        scaled[0] = raw_translation[0] * 232.0;
-        scaled[1] = raw_translation[1] * 232.0;
-        scaled[2] = raw_translation[2] * 232.0;
+        scaled[0] = raw_translation[0] * model_clip_translation_scale(clip);
+        scaled[1] = raw_translation[1] * model_clip_translation_scale(clip);
+        scaled[2] = raw_translation[2] * model_clip_translation_scale(clip);
         target_parent_local[0] = asset->bones[ik->controller].rest_x -
                                  (parent >= 0 ? asset->bones[parent].rest_x : 0);
         target_parent_local[1] = asset->bones[ik->controller].rest_y -
@@ -1787,13 +1799,13 @@ static int model_solve_leg_ccd(struct rasterfall_model_asset *asset,
             target[1] - asset->bone_transforms[thigh].position[1],
             target[2] - asset->bone_transforms[thigh].position[2]});
         ratio = max_reach > 0.0 ? reach_distance / max_reach : 0.0;
-        asset->ik_reach_sample_count++;
-        asset->ik_reach_distance_total += reach_distance;
-        asset->ik_reach_ratio_total += ratio;
-        if (reach_distance > asset->ik_reach_distance_max)
-            asset->ik_reach_distance_max = reach_distance;
-        if (ratio > asset->ik_reach_ratio_max) asset->ik_reach_ratio_max = ratio;
-        if (reach_distance > max_reach) asset->ik_unreachable_count++;
+        asset->solver_metrics.ik_reach_sample_count++;
+        asset->solver_metrics.ik_reach_distance_total += reach_distance;
+        asset->solver_metrics.ik_reach_ratio_total += ratio;
+        if (reach_distance > asset->solver_metrics.ik_reach_distance_max)
+            asset->solver_metrics.ik_reach_distance_max = reach_distance;
+        if (ratio > asset->solver_metrics.ik_reach_ratio_max) asset->solver_metrics.ik_reach_ratio_max = ratio;
+        if (reach_distance > max_reach) asset->solver_metrics.ik_unreachable_count++;
     }
     *after = *before;
     before_target[0] = target[0]; before_target[1] = target[1]; before_target[2] = target[2];
@@ -2558,8 +2570,8 @@ static void model_solve_leg_iks(
                 asset->bones[thigh].rotate_x=analytic_thigh[0];asset->bones[thigh].rotate_y=analytic_thigh[1];asset->bones[thigh].rotate_z=analytic_thigh[2];
                 asset->bones[knee].rotate_x=analytic_knee[0];asset->bones[knee].rotate_y=analytic_knee[1];asset->bones[knee].rotate_z=analytic_knee[2];
                 rasterfall_model_update_bones(asset);
-                asset->ik_analytic_rejected_count++;
-                asset->ik_analytic_solved_count--;
+                asset->solver_metrics.ik_analytic_rejected_count++;
+                asset->solver_metrics.ik_analytic_solved_count--;
                 (void)analytic_ok;
             } else {
             if (leg_side >= 0) {
@@ -2728,14 +2740,14 @@ static void model_solve_leg_iks(
         if (after > after_max) after_max = after;
     }
     if (!solved) return;
-    asset->ik_sample_count++;
-    asset->ik_controller_sample_count += (unsigned long)solved;
-    asset->ik_iteration_total += attempts;
-    if (max_attempts > asset->ik_iteration_max) asset->ik_iteration_max = max_attempts;
-    asset->ik_error_before_total += before_total;
-    asset->ik_error_after_total += after_total;
-    if (before_max > asset->ik_error_before_max) asset->ik_error_before_max = before_max;
-    if (after_max > asset->ik_error_after_max) asset->ik_error_after_max = after_max;
+    asset->solver_metrics.ik_sample_count++;
+    asset->solver_metrics.ik_controller_sample_count += (unsigned long)solved;
+    asset->solver_metrics.ik_iteration_total += attempts;
+    if (max_attempts > asset->solver_metrics.ik_iteration_max) asset->solver_metrics.ik_iteration_max = max_attempts;
+    asset->solver_metrics.ik_error_before_total += before_total;
+    asset->solver_metrics.ik_error_after_total += after_total;
+    if (before_max > asset->solver_metrics.ik_error_before_max) asset->solver_metrics.ik_error_before_max = before_max;
+    if (after_max > asset->solver_metrics.ik_error_after_max) asset->solver_metrics.ik_error_after_max = after_max;
 }
 
 void rasterfall_model_set_ik_enabled(struct rasterfall_model_asset *asset,
@@ -2848,18 +2860,27 @@ int rasterfall_model_apply_rotation_grants(struct rasterfall_model_asset *asset)
     return rasterfall_model_update_bones(asset);
 }
 
-void rasterfall_model_set_vmd_skeleton_translation(
-    struct rasterfall_model_asset *asset, const int center[3],
-    const int groove[3], int enabled)
+void rasterfall_model_bind_root_motion(struct rasterfall_model_asset *asset,
+                                       int primary_bone,
+                                       int secondary_bone)
 {
     if (!asset) return;
-    asset->vmd_skeleton_translation_enabled = enabled ? 1 : 0;
-    asset->vmd_center_translation[0] = center ? center[0] : 0;
-    asset->vmd_center_translation[1] = center ? center[1] : 0;
-    asset->vmd_center_translation[2] = center ? center[2] : 0;
-    asset->vmd_groove_translation[0] = groove ? groove[0] : 0;
-    asset->vmd_groove_translation[1] = groove ? groove[1] : 0;
-    asset->vmd_groove_translation[2] = groove ? groove[2] : 0;
+    asset->root_motion.primary_bone = primary_bone;
+    asset->root_motion.secondary_bone = secondary_bone;
+}
+
+void rasterfall_model_set_root_motion(
+    struct rasterfall_model_asset *asset, const int primary[3],
+    const int secondary[3], int enabled)
+{
+    if (!asset) return;
+    asset->root_motion.enabled = enabled ? 1 : 0;
+    asset->root_motion.primary[0] = primary ? primary[0] : 0;
+    asset->root_motion.primary[1] = primary ? primary[1] : 0;
+    asset->root_motion.primary[2] = primary ? primary[2] : 0;
+    asset->root_motion.secondary[0] = secondary ? secondary[0] : 0;
+    asset->root_motion.secondary[1] = secondary ? secondary[1] : 0;
+    asset->root_motion.secondary[2] = secondary ? secondary[2] : 0;
 }
 
 static void model_capture_render_trace(
@@ -2967,7 +2988,7 @@ int rasterfall_model_sample_clip(struct rasterfall_model_asset *asset,
                                  int time_ms)
 {
     unsigned int i;
-    if (!asset || !asset->animation_rotations || !asset->bone_count) return -1;
+    if (!asset || !asset->animation.rotations || !asset->bone_count) return -1;
     asset->render_trace_time_ms = time_ms;
     asset->render_trace_write_valid = 0;
     memset(asset->render_trace_write_valid_by_bone, 0,
@@ -3001,29 +3022,29 @@ int rasterfall_model_sample_clip(struct rasterfall_model_asset *asset,
         asset->bones[i].animation_y = 0;
         asset->bones[i].animation_z = 0;
     }
-    if (asset->vmd_skeleton_translation_enabled) {
-        int center = rasterfall_model_find_bone(asset, "センター");
-        int groove = rasterfall_model_find_bone(asset, "グルーブ");
-        if (center >= 0) {
-            asset->bones[center].animation_x = asset->vmd_center_translation[0];
-            asset->bones[center].animation_y = asset->vmd_center_translation[1];
-            asset->bones[center].animation_z = asset->vmd_center_translation[2];
+    if (asset->root_motion.enabled) {
+        int center = asset->root_motion.primary_bone;
+        int groove = asset->root_motion.secondary_bone;
+        if (center >= 0 && center < (int)asset->bone_count) {
+            asset->bones[center].animation_x = asset->root_motion.primary[0];
+            asset->bones[center].animation_y = asset->root_motion.primary[1];
+            asset->bones[center].animation_z = asset->root_motion.primary[2];
         }
-        if (groove >= 0) {
-            asset->bones[groove].animation_x = asset->vmd_groove_translation[0];
-            asset->bones[groove].animation_y = asset->vmd_groove_translation[1];
-            asset->bones[groove].animation_z = asset->vmd_groove_translation[2];
+        if (groove >= 0 && groove < (int)asset->bone_count) {
+            asset->bones[groove].animation_x = asset->root_motion.secondary[0];
+            asset->bones[groove].animation_y = asset->root_motion.secondary[1];
+            asset->bones[groove].animation_z = asset->root_motion.secondary[2];
         }
     }
-    rasterfall_animation_sample(clip, time_ms, asset->animation_rotations,
+    rasterfall_animation_sample(clip, time_ms, asset->animation.rotations,
                                 asset->bone_count);
     for (i = 0; i < asset->bone_count; i++) {
-        asset->bones[i].rotate_x = asset->animation_rotations[i].x;
-        asset->bones[i].rotate_y = asset->animation_rotations[i].y;
-        asset->bones[i].rotate_z = asset->animation_rotations[i].z;
+        asset->bones[i].rotate_x = asset->animation.rotations[i].x;
+        asset->bones[i].rotate_y = asset->animation.rotations[i].y;
+        asset->bones[i].rotate_z = asset->animation.rotations[i].z;
     }
     model_capture_render_trace(asset, 0);
-    asset->pose = RASTERFALL_MODEL_POSE_BIND;
+    asset->animation.pose = RASTERFALL_MODEL_POSE_BIND;
     if (asset->ik_enabled && clip && asset->ik_count)
         model_solve_leg_iks(asset, clip, time_ms);
     model_capture_render_trace(asset, 1);
@@ -3159,7 +3180,7 @@ int rasterfall_model_sample_glb_rotation_clip(
         return -1;
     rasterfall_humanoid_rotation_skeleton_identity(&target);
     rasterfall_humanoid_rotation_pose_bind(&target,&target_reference);
-    rasterfall_humanoid_map_eula(asset, &mapping);
+    rasterfall_model_map_humanoid(asset, &mapping);
     memcpy(&source,&reference->skeleton,sizeof(source));
     memcpy(&source_reference,&reference->pose,sizeof(source_reference));
     memcpy(source_basis,reference->basis,sizeof(source_basis));
@@ -3187,7 +3208,7 @@ int rasterfall_model_sample_glb_rotation_clip(
         asset->bones[bone].rotate_y = rotation.y;
         asset->bones[bone].rotate_z = rotation.z;
     }
-    asset->pose = RASTERFALL_MODEL_POSE_BIND;
+    asset->animation.pose = RASTERFALL_MODEL_POSE_BIND;
     return rasterfall_model_update_bones(asset);
 }
 
@@ -3214,9 +3235,9 @@ int rasterfall_model_update_bones(struct rasterfall_model_asset *asset)
             transform->position[0] += bone->animation_x;
             transform->position[1] += bone->animation_y;
             transform->position[2] += bone->animation_z;
-            transform->position[0] += asset->animation_offset_x;
-            transform->position[1] += asset->animation_offset_y;
-            transform->position[2] += asset->animation_offset_z;
+            transform->position[0] += asset->animation_offset[0];
+            transform->position[1] += asset->animation_offset[1];
+            transform->position[2] += asset->animation_offset[2];
         } else {
             struct rasterfall_model_bone *parent_bone = &asset->bones[parent];
             struct rasterfall_model_bone_transform *parent_transform =
@@ -3272,9 +3293,12 @@ static void model_vmd_translation(const struct rasterfall_vmd_clip *vmd,
     }
     if (factor < 0) factor = 0;
     if (factor > 1000) factor = 1000;
-    out[0] = (a->tx + (b->tx - a->tx) * factor / 1000.0) * 232.0;
-    out[1] = (a->ty + (b->ty - a->ty) * factor / 1000.0) * 232.0;
-    out[2] = (a->tz + (b->tz - a->tz) * factor / 1000.0) * 232.0;
+    out[0] = (a->tx + (b->tx - a->tx) * factor / 1000.0) *
+             RASTERFALL_VMD_TRANSLATION_SCALE;
+    out[1] = (a->ty + (b->ty - a->ty) * factor / 1000.0) *
+             RASTERFALL_VMD_TRANSLATION_SCALE;
+    out[2] = (a->tz + (b->tz - a->tz) * factor / 1000.0) *
+             RASTERFALL_VMD_TRANSLATION_SCALE;
 }
 
 static void model_update_center_diagnostic(
@@ -3332,7 +3356,7 @@ void rasterfall_model_dump_ik_hierarchy(const struct rasterfall_model_asset *ass
                                   "左足ＩＫ", "右足ＩＫ"};
     int i;
     if (!asset) return;
-    __printf("eula IK hierarchy (child -> parent):\n");
+    __printf("MMD IK hierarchy (child -> parent):\n");
     for (i = 0; i < (int)(sizeof(names) / sizeof(names[0])); i++) {
         int bone = rasterfall_model_find_bone(asset, names[i]);
         int parent;
@@ -3349,12 +3373,12 @@ void rasterfall_model_dump_ik_hierarchy(const struct rasterfall_model_asset *ass
 void rasterfall_model_reset_center_ab_diagnostic(struct rasterfall_model_asset *asset)
 {
     if (!asset) return;
-    asset->center_ab_samples = asset->center_ab_a_unreachable =
-        asset->center_ab_b_unreachable = 0;
-    asset->center_ab_a_ratio_total = asset->center_ab_b_ratio_total = 0.0;
-    asset->center_ab_a_ratio_max = asset->center_ab_b_ratio_max = 0.0;
-    asset->center_ab_a_excess_total = asset->center_ab_b_excess_total = 0.0;
-    asset->center_ab_a_excess_max = asset->center_ab_b_excess_max = 0.0;
+    asset->solver_metrics.center_ab_samples = asset->solver_metrics.center_ab_a_unreachable =
+        asset->solver_metrics.center_ab_b_unreachable = 0;
+    asset->solver_metrics.center_ab_a_ratio_total = asset->solver_metrics.center_ab_b_ratio_total = 0.0;
+    asset->solver_metrics.center_ab_a_ratio_max = asset->solver_metrics.center_ab_b_ratio_max = 0.0;
+    asset->solver_metrics.center_ab_a_excess_total = asset->solver_metrics.center_ab_b_excess_total = 0.0;
+    asset->solver_metrics.center_ab_a_excess_max = asset->solver_metrics.center_ab_b_excess_max = 0.0;
 }
 
 void rasterfall_model_center_ab_diagnostic(struct rasterfall_model_asset *asset,
@@ -3407,19 +3431,19 @@ void rasterfall_model_center_ab_diagnostic(struct rasterfall_model_asset *asset,
         distance_b = model_distance3(b[thigh].position, desired_b);
         ratio_a = max_reach > 0.0 ? distance_a / max_reach : 0.0;
         ratio_b = max_reach > 0.0 ? distance_b / max_reach : 0.0;
-        asset->center_ab_samples++;
-        asset->center_ab_a_ratio_total += ratio_a;
-        asset->center_ab_b_ratio_total += ratio_b;
-        if (ratio_a > asset->center_ab_a_ratio_max) asset->center_ab_a_ratio_max = ratio_a;
-        if (ratio_b > asset->center_ab_b_ratio_max) asset->center_ab_b_ratio_max = ratio_b;
-        if (distance_a > max_reach) asset->center_ab_a_unreachable++;
-        if (distance_b > max_reach) asset->center_ab_b_unreachable++;
-        if (distance_a > max_reach) asset->center_ab_a_excess_total += distance_a - max_reach;
-        if (distance_b > max_reach) asset->center_ab_b_excess_total += distance_b - max_reach;
-        if (distance_a > max_reach && distance_a - max_reach > asset->center_ab_a_excess_max)
-            asset->center_ab_a_excess_max = distance_a - max_reach;
-        if (distance_b > max_reach && distance_b - max_reach > asset->center_ab_b_excess_max)
-            asset->center_ab_b_excess_max = distance_b - max_reach;
+        asset->solver_metrics.center_ab_samples++;
+        asset->solver_metrics.center_ab_a_ratio_total += ratio_a;
+        asset->solver_metrics.center_ab_b_ratio_total += ratio_b;
+        if (ratio_a > asset->solver_metrics.center_ab_a_ratio_max) asset->solver_metrics.center_ab_a_ratio_max = ratio_a;
+        if (ratio_b > asset->solver_metrics.center_ab_b_ratio_max) asset->solver_metrics.center_ab_b_ratio_max = ratio_b;
+        if (distance_a > max_reach) asset->solver_metrics.center_ab_a_unreachable++;
+        if (distance_b > max_reach) asset->solver_metrics.center_ab_b_unreachable++;
+        if (distance_a > max_reach) asset->solver_metrics.center_ab_a_excess_total += distance_a - max_reach;
+        if (distance_b > max_reach) asset->solver_metrics.center_ab_b_excess_total += distance_b - max_reach;
+        if (distance_a > max_reach && distance_a - max_reach > asset->solver_metrics.center_ab_a_excess_max)
+            asset->solver_metrics.center_ab_a_excess_max = distance_a - max_reach;
+        if (distance_b > max_reach && distance_b - max_reach > asset->solver_metrics.center_ab_b_excess_max)
+            asset->solver_metrics.center_ab_b_excess_max = distance_b - max_reach;
         if (print_sample)
             __printf("  %s hip_A=(%.3f,%.3f,%.3f) hip_B=(%.3f,%.3f,%.3f) target_A=(%.3f,%.3f,%.3f) target_B=(%.3f,%.3f,%.3f) distance_A/B=%.3f/%.3f max_reach=%.3f\n",
                      asset->bones[ik->controller].name,
@@ -3437,15 +3461,15 @@ void rasterfall_model_print_center_ab_diagnostic(
 {
     if (!asset) return;
     __printf("center AB reachability: controller_samples=%lu A_unreachable=%.2f%% B_unreachable=%.2f%% A_avg_ratio=%.4f B_avg_ratio=%.4f A_max_ratio=%.4f B_max_ratio=%.4f A_avg_excess=%.3f B_avg_excess=%.3f A_max_excess=%.3f B_max_excess=%.3f\n",
-             asset->center_ab_samples,
-             asset->center_ab_samples ? 100.0 * asset->center_ab_a_unreachable / asset->center_ab_samples : 0.0,
-             asset->center_ab_samples ? 100.0 * asset->center_ab_b_unreachable / asset->center_ab_samples : 0.0,
-             asset->center_ab_samples ? asset->center_ab_a_ratio_total / asset->center_ab_samples : 0.0,
-             asset->center_ab_samples ? asset->center_ab_b_ratio_total / asset->center_ab_samples : 0.0,
-             asset->center_ab_a_ratio_max, asset->center_ab_b_ratio_max,
-             asset->center_ab_samples ? asset->center_ab_a_excess_total / asset->center_ab_samples : 0.0,
-             asset->center_ab_samples ? asset->center_ab_b_excess_total / asset->center_ab_samples : 0.0,
-             asset->center_ab_a_excess_max, asset->center_ab_b_excess_max);
+             asset->solver_metrics.center_ab_samples,
+             asset->solver_metrics.center_ab_samples ? 100.0 * asset->solver_metrics.center_ab_a_unreachable / asset->solver_metrics.center_ab_samples : 0.0,
+             asset->solver_metrics.center_ab_samples ? 100.0 * asset->solver_metrics.center_ab_b_unreachable / asset->solver_metrics.center_ab_samples : 0.0,
+             asset->solver_metrics.center_ab_samples ? asset->solver_metrics.center_ab_a_ratio_total / asset->solver_metrics.center_ab_samples : 0.0,
+             asset->solver_metrics.center_ab_samples ? asset->solver_metrics.center_ab_b_ratio_total / asset->solver_metrics.center_ab_samples : 0.0,
+             asset->solver_metrics.center_ab_a_ratio_max, asset->solver_metrics.center_ab_b_ratio_max,
+             asset->solver_metrics.center_ab_samples ? asset->solver_metrics.center_ab_a_excess_total / asset->solver_metrics.center_ab_samples : 0.0,
+             asset->solver_metrics.center_ab_samples ? asset->solver_metrics.center_ab_b_excess_total / asset->solver_metrics.center_ab_samples : 0.0,
+             asset->solver_metrics.center_ab_a_excess_max, asset->solver_metrics.center_ab_b_excess_max);
 }
 
 static void model_transform_vertex(const struct rasterfall_model_asset *asset,
@@ -3510,7 +3534,7 @@ int rasterfall_model_skin_vertex(const struct rasterfall_model_asset *asset,
                                     n1[axis] * (65535U - weight)) / 65535.0);
         }
     }
-    if (asset->pose == RASTERFALL_MODEL_POSE_BIND) {
+    if (asset->animation.pose == RASTERFALL_MODEL_POSE_BIND) {
         memcpy(normal, bind_normal, sizeof(bind_normal));
         return 0;
     }
@@ -3610,8 +3634,8 @@ static int model_find_exact_bone(const struct rasterfall_model_asset *asset,
     return -1;
 }
 
-void rasterfall_humanoid_map_eula(const struct rasterfall_model_asset *asset,
-                                  struct rasterfall_humanoid_mapping *mapping)
+void rasterfall_model_map_humanoid(const struct rasterfall_model_asset *asset,
+                                   struct rasterfall_humanoid_mapping *mapping)
 {
     static const char *names[RASTERFALL_HUMANOID_BONE_COUNT][2] = {
         {"全ての親", "操作中心"}, {"腰", "下半身"},
@@ -3683,7 +3707,7 @@ void rasterfall_model_dump_humanoid(const struct rasterfall_model_asset *asset)
     struct rasterfall_humanoid_mapping mapping;
     struct rasterfall_humanoid_diagnostics diagnostics;
     int i, j;
-    rasterfall_humanoid_map_eula(asset, &mapping);
+    rasterfall_model_map_humanoid(asset, &mapping);
     rasterfall_humanoid_validate(asset, &mapping, &diagnostics);
     for (i = 0; i < RASTERFALL_HUMANOID_BONE_COUNT; i++) {
         int index = mapping.bone_indices[i];
@@ -3726,7 +3750,7 @@ int rasterfall_humanoid_logic_test(void)
     bones[1].name = "腰"; bones[1].parent = 0;
     bones[2].name = "上半身"; bones[2].parent = 1;
     bones[3].name = "右腕"; bones[3].parent = 2;
-    rasterfall_humanoid_map_eula(&asset, &mapping);
+    rasterfall_model_map_humanoid(&asset, &mapping);
     if (mapping.bone_indices[RASTERFALL_HUMANOID_ROOT] != 0 ||
         mapping.bone_indices[RASTERFALL_HUMANOID_HIPS] != 1 ||
         mapping.bone_indices[RASTERFALL_HUMANOID_SPINE] != 2 ||
@@ -3761,7 +3785,7 @@ int rasterfall_model_build_humanoid_bases(
     int i;
     if (!asset || !bases) return -1;
     __memset(&input, 0, sizeof(input));
-    rasterfall_humanoid_map_eula(asset, &mapping);
+    rasterfall_model_map_humanoid(asset, &mapping);
     for (i = 0; i < RASTERFALL_HUMANOID_BONE_COUNT; i++)
         model_basis_point(asset, mapping.bone_indices[i], &input.bones[i]);
     model_basis_point(asset, model_find_exact_bone(asset, "左つま先", 0), &input.left_toe);
@@ -3787,7 +3811,7 @@ void rasterfall_model_dump_humanoid_bases(const struct rasterfall_model_asset *a
     struct rasterfall_humanoid_mapping mapping;
     struct rasterfall_humanoid_rest_basis bases[RASTERFALL_HUMANOID_BONE_COUNT];
     double error = 0.0; int i, j;
-    rasterfall_humanoid_map_eula(asset, &mapping);
+    rasterfall_model_map_humanoid(asset, &mapping);
     if (rasterfall_model_build_humanoid_bases(asset, bases) < 0) {
         __printf("humanoid basis: construction failed\n"); return;
     }
@@ -3879,7 +3903,7 @@ int rasterfall_model_retarget_synthetic_test(
                                                &target,target_basis,&result)<0)return -1;
     display_direction=bone==RASTERFALL_HUMANOID_CHEST?target_basis[bone].secondary:target_basis[bone].primary;
     model_quat_rotate(result.global_rotation[bone],display_direction,new_direction);
-    rasterfall_humanoid_map_eula(asset,&mapping);
+    rasterfall_model_map_humanoid(asset,&mapping);
     __printf("retarget synthetic: action=%s semantic=%s target=%s/index%d degrees=%d canonical_axis=%s\n",
              action,humanoid_names[bone],asset->bones[mapping.bone_indices[bone]].name,
              mapping.bone_indices[bone],degrees,
@@ -3905,7 +3929,7 @@ int rasterfall_model_glb_animation_test(struct rasterfall_model_asset *asset,
     if(rasterfall_glb_rotation_clip_load(&reference_clip,glb_path,"Idle_Loop")<0)return -1;
     if(rasterfall_glb_rotation_clip_load(&clip,glb_path,clip_name)<0){rasterfall_glb_rotation_clip_unload(&reference_clip);return -1;}
     if(rasterfall_model_build_humanoid_bases(asset,target_basis)<0){rasterfall_glb_rotation_clip_unload(&clip);rasterfall_glb_rotation_clip_unload(&reference_clip);return -1;}
-    rasterfall_humanoid_rotation_skeleton_identity(&target);rasterfall_humanoid_rotation_pose_bind(&target,&target_reference);rasterfall_humanoid_map_eula(asset,&mapping);
+    rasterfall_humanoid_rotation_skeleton_identity(&target);rasterfall_humanoid_rotation_pose_bind(&target,&target_reference);rasterfall_model_map_humanoid(asset,&mapping);
     if(rasterfall_glb_rotation_reference_build(&reference_clip,&shared_reference)<0){rasterfall_glb_rotation_clip_unload(&clip);rasterfall_glb_rotation_clip_unload(&reference_clip);return -1;}memcpy(&source,&shared_reference.skeleton,sizeof(source));memcpy(&source_reference,&shared_reference.pose,sizeof(source_reference));memcpy(source_basis,shared_reference.basis,sizeof(source_basis));
     samples[0]=0;samples[1]=clip.duration_ms/4;samples[2]=clip.duration_ms/2;samples[3]=clip.duration_ms*3/4;
     __printf("glb animation: name=%s duration_ms=%d rotation_channels=%d active_rotation_bones=%d rotation_keys=%d..%d interpolation=LINEAR\n",clip_name,clip.duration_ms,clip.rotation_channels,clip.active_rotation_bones,clip.min_rotation_keys,clip.max_rotation_keys);
@@ -3917,7 +3941,7 @@ int rasterfall_model_glb_animation_test(struct rasterfall_model_asset *asset,
             struct rasterfall_animation_quaternion q={result.local_rotation[bone][0],result.local_rotation[bone][1],result.local_rotation[bone][2],result.local_rotation[bone][3]};
             struct rasterfall_animation_rotation rotation;rasterfall_animation_quat_to_euler(q,&rotation);i=mapping.bone_indices[bone];asset->bones[i].rotate_x=rotation.x;asset->bones[i].rotate_y=rotation.y;asset->bones[i].rotate_z=rotation.z;
         }
-        asset->pose=RASTERFALL_MODEL_POSE_RIGHT_ARM;rasterfall_model_update_bones(asset);
+        asset->animation.pose=RASTERFALL_MODEL_POSE_RIGHT_ARM;rasterfall_model_update_bones(asset);
         __printf("sample requested_ms=%d sampled_ms=%d",samples[sample],sampled);
         {static const int watched[3]={RASTERFALL_HUMANOID_RIGHT_UPPER_ARM,RASTERFALL_HUMANOID_CHEST,RASTERFALL_HUMANOID_RIGHT_UPPER_LEG};int w;for(w=0;w<3;w++){double direction[3];bone=watched[w];model_quat_rotate(result.global_rotation[bone],target_basis[bone].primary,direction);__printf(" %s_source_global=(",humanoid_names[bone]);for(i=0;i<4;i++){if(i)__printf(",");model_print_basis_number(source_pose.global[bone][i]);}__printf(") target_local=(");for(i=0;i<4;i++){if(i)__printf(",");model_print_basis_number(result.local_rotation[bone][i]);}__printf(") target_primary=(");for(i=0;i<3;i++){if(i)__printf(",");model_print_basis_number(direction[i]);}__printf(")");}}
         __printf(" normalized=yes warnings=0\n");
@@ -3988,7 +4012,7 @@ int rasterfall_model_glb_motion_diagnostic(struct rasterfall_model_asset *asset,
     struct rasterfall_humanoid_mapping mapping;unsigned int mask=((1u<<RASTERFALL_HUMANOID_BONE_COUNT)-1u)&~1u;int clip_index;
     if(!asset||!glb_path||rasterfall_glb_rotation_clip_load(&idle,glb_path,"Idle_Loop")<0)return -1;
     if(rasterfall_glb_rotation_reference_build(&idle,&idle_shared)<0||rasterfall_model_build_humanoid_bases(asset,target_basis)<0){rasterfall_glb_rotation_clip_unload(&idle);return -1;}memcpy(&idle_skeleton,&idle_shared.skeleton,sizeof(idle_skeleton));memcpy(&idle_reference,&idle_shared.pose,sizeof(idle_reference));memcpy(idle_basis,idle_shared.basis,sizeof(idle_basis));
-    rasterfall_humanoid_rotation_skeleton_identity(&target);rasterfall_humanoid_rotation_pose_bind(&target,&target_reference);rasterfall_humanoid_map_eula(asset,&mapping);
+    rasterfall_humanoid_rotation_skeleton_identity(&target);rasterfall_humanoid_rotation_pose_bind(&target,&target_reference);rasterfall_model_map_humanoid(asset,&mapping);
     for(clip_index=0;clip_index<2;clip_index++){
         double A[9][RASTERFALL_HUMANOID_BONE_COUNT][4],B[9][RASTERFALL_HUMANOID_BONE_COUNT][4],C[9][RASTERFALL_HUMANOID_BONE_COUNT][4],CI[9][RASTERFALL_HUMANOID_BONE_COUNT][4],D[9][RASTERFALL_HUMANOID_BONE_COUNT][4],E[9][RASTERFALL_HUMANOID_BONE_COUNT][4],F[9][RASTERFALL_HUMANOID_BONE_COUNT][4],G[9][RASTERFALL_HUMANOID_BONE_COUNT][4];
         double source_forward[RASTERFALL_HUMANOID_BONE_COUNT][9],target_forward[RASTERFALL_HUMANOID_BONE_COUNT][9],source_primary[9][RASTERFALL_HUMANOID_BONE_COUNT][3],target_primary[9][RASTERFALL_HUMANOID_BONE_COUNT][3],actual_primary[9][RASTERFALL_HUMANOID_BONE_COUNT][3];int duration,sample,bi,bone,sampled;
@@ -4010,7 +4034,7 @@ int rasterfall_model_glb_motion_diagnostic(struct rasterfall_model_asset *asset,
             rasterfall_model_update_bones(asset);for(bone=0;bone<RASTERFALL_HUMANOID_BONE_COUNT;bone++){int index=mapping.bone_indices[bone];model_matrix_quaternion(asset->bone_transforms[index].rotation,G[sample][bone]);matrix_vector(asset->bone_transforms[index].rotation,target_basis[bone].primary[0],target_basis[bone].primary[1],target_basis[bone].primary[2],&actual_primary[sample][bone][0],&actual_primary[sample][bone][1],&actual_primary[sample][bone][2]);}
             __printf("  time[%d]=requested:%d sampled:%d wrap=%s\n",sample,time,sampled,sample==8&&sampled==0?"yes":"no");
         }
-        for(bi=0;bi<16;bi++){bone=bones[bi];__printf("range %s A_local=",humanoid_names[bone]);model_print_basis_number(model_motion_range(A,bone));__printf(" B_global=");model_print_basis_number(model_motion_range(B,bone));__printf(" C_clip_t0=");model_print_basis_number(model_motion_range(C,bone));__printf(" C_idle_t0=");model_print_basis_number(model_motion_range(CI,bone));__printf(" D_canonical=");model_print_basis_number(model_motion_range(D,bone));__printf(" E_target_global=");model_print_basis_number(model_motion_range(E,bone));__printf(" F_target_local=");model_print_basis_number(model_motion_range(F,bone));__printf(" G_eula_global=");model_print_basis_number(model_motion_range(G,bone));__printf("\n");for(sample=0;sample<9;sample++){__printf("  %d%% A=",sample*125/10);model_print_basis_number(model_quat_angle_between(A[0][bone],A[sample][bone]));__printf(" B=");model_print_basis_number(model_quat_angle_between(B[0][bone],B[sample][bone]));__printf(" C=");model_print_basis_number(model_quat_angle_between(C[0][bone],C[sample][bone]));__printf(" D=");model_print_basis_number(model_quat_angle_between(D[0][bone],D[sample][bone]));__printf(" E=");model_print_basis_number(model_quat_angle_between(E[0][bone],E[sample][bone]));__printf(" F=");model_print_basis_number(model_quat_angle_between(F[0][bone],F[sample][bone]));__printf(" G=");model_print_basis_number(model_quat_angle_between(G[0][bone],G[sample][bone]));__printf(" source_primary_z=");model_print_basis_number(source_forward[bone][sample]);__printf(" target_primary_z=");model_print_basis_number(target_forward[bone][sample]);__printf("\n");}}
+        for(bi=0;bi<16;bi++){bone=bones[bi];__printf("range %s A_local=",humanoid_names[bone]);model_print_basis_number(model_motion_range(A,bone));__printf(" B_global=");model_print_basis_number(model_motion_range(B,bone));__printf(" C_clip_t0=");model_print_basis_number(model_motion_range(C,bone));__printf(" C_idle_t0=");model_print_basis_number(model_motion_range(CI,bone));__printf(" D_canonical=");model_print_basis_number(model_motion_range(D,bone));__printf(" E_target_global=");model_print_basis_number(model_motion_range(E,bone));__printf(" F_target_local=");model_print_basis_number(model_motion_range(F,bone));__printf(" G_target_global=");model_print_basis_number(model_motion_range(G,bone));__printf("\n");for(sample=0;sample<9;sample++){__printf("  %d%% A=",sample*125/10);model_print_basis_number(model_quat_angle_between(A[0][bone],A[sample][bone]));__printf(" B=");model_print_basis_number(model_quat_angle_between(B[0][bone],B[sample][bone]));__printf(" C=");model_print_basis_number(model_quat_angle_between(C[0][bone],C[sample][bone]));__printf(" D=");model_print_basis_number(model_quat_angle_between(D[0][bone],D[sample][bone]));__printf(" E=");model_print_basis_number(model_quat_angle_between(E[0][bone],E[sample][bone]));__printf(" F=");model_print_basis_number(model_quat_angle_between(F[0][bone],F[sample][bone]));__printf(" G=");model_print_basis_number(model_quat_angle_between(G[0][bone],G[sample][bone]));__printf(" source_primary_z=");model_print_basis_number(source_forward[bone][sample]);__printf(" target_primary_z=");model_print_basis_number(target_forward[bone][sample]);__printf("\n");}}
         {static const double identity[4]={0,0,0,1};for(bi=0;bi<16;bi++){bone=bones[bi];__printf("reference-offset %s clip_t0=",humanoid_names[bone]);model_print_basis_number(model_quat_angle_between(C[0][bone],identity));__printf(" idle_t0_start=");model_print_basis_number(model_quat_angle_between(CI[0][bone],identity));__printf(" idle_t0_half=");model_print_basis_number(model_quat_angle_between(CI[4][bone],identity));__printf(" primary_range source=");model_print_basis_number(model_direction_range(source_primary,bone));__printf(" target=");model_print_basis_number(model_direction_range(target_primary,bone));__printf(" actual=");model_print_basis_number(model_direction_range(actual_primary,bone));__printf("\n");}}
         {static const int pairs[3][2]={{RASTERFALL_HUMANOID_LEFT_UPPER_ARM,RASTERFALL_HUMANOID_RIGHT_UPPER_ARM},{RASTERFALL_HUMANOID_LEFT_UPPER_LEG,RASTERFALL_HUMANOID_RIGHT_UPPER_LEG},{RASTERFALL_HUMANOID_LEFT_LOWER_LEG,RASTERFALL_HUMANOID_RIGHT_LOWER_LEG}};int p;for(p=0;p<3;p++){__printf("phase %s/%s source_correlation=",humanoid_names[pairs[p][0]],humanoid_names[pairs[p][1]]);model_print_basis_number(model_motion_phase(source_forward[pairs[p][0]],source_forward[pairs[p][1]]));__printf(" target_correlation=");model_print_basis_number(model_motion_phase(target_forward[pairs[p][0]],target_forward[pairs[p][1]]));__printf(" source_0_50=(");model_print_basis_number(source_forward[pairs[p][0]][0]);__printf(",");model_print_basis_number(source_forward[pairs[p][0]][4]);__printf(")/(");model_print_basis_number(source_forward[pairs[p][1]][0]);__printf(",");model_print_basis_number(source_forward[pairs[p][1]][4]);__printf(") target_0_50=(");model_print_basis_number(target_forward[pairs[p][0]][0]);__printf(",");model_print_basis_number(target_forward[pairs[p][0]][4]);__printf(")/(");model_print_basis_number(target_forward[pairs[p][1]][0]);__printf(",");model_print_basis_number(target_forward[pairs[p][1]][4]);__printf(")\n");}}
         {static const int pairs[3][2]={{RASTERFALL_HUMANOID_LEFT_UPPER_ARM,RASTERFALL_HUMANOID_RIGHT_UPPER_ARM},{RASTERFALL_HUMANOID_LEFT_UPPER_LEG,RASTERFALL_HUMANOID_RIGHT_UPPER_LEG},{RASTERFALL_HUMANOID_LEFT_LOWER_LEG,RASTERFALL_HUMANOID_RIGHT_LOWER_LEG}};static const int quarters[4]={0,2,4,6};int p,q;for(p=0;p<3;p++){__printf("quarters %s/%s source_lr=",humanoid_names[pairs[p][0]],humanoid_names[pairs[p][1]]);for(q=0;q<4;q++){if(q)__printf(";");__printf("%d:",q*25);model_print_basis_number(source_forward[pairs[p][0]][quarters[q]]);__printf(",");model_print_basis_number(source_forward[pairs[p][1]][quarters[q]]);}__printf(" target_lr=");for(q=0;q<4;q++){if(q)__printf(";");__printf("%d:",q*25);model_print_basis_number(target_forward[pairs[p][0]][quarters[q]]);__printf(",");model_print_basis_number(target_forward[pairs[p][1]][quarters[q]]);}__printf("\n");}}
@@ -4049,13 +4073,13 @@ int rasterfall_model_skinning_logic_test(void)
     skin[0] = 1;
     skin[2] = 0xff; skin[3] = 0xff;
     skin[4] = 0xff; skin[5] = 0xff;
-    asset.pose = RASTERFALL_MODEL_POSE_BIND;
+    asset.animation.pose = RASTERFALL_MODEL_POSE_BIND;
     if (rasterfall_model_update_bones(&asset) < 0 ||
         rasterfall_model_skin_vertex(&asset, 0, position, normal) < 0 ||
         position[0] != 20 || position[1] != 0 || normal[0] != 32767)
         return 1;
     bones[0].rotate_z = 90;
-    asset.pose = RASTERFALL_MODEL_POSE_RIGHT_ARM;
+    asset.animation.pose = RASTERFALL_MODEL_POSE_RIGHT_ARM;
     if (rasterfall_model_update_bones(&asset) < 0 ||
         rasterfall_model_skin_vertex(&asset, 0, position, normal) < 0 ||
         position[0] != 0 || position[1] != 20 ||

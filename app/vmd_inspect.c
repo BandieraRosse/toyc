@@ -5,11 +5,11 @@
 
 static void reset_ik_stats(struct rasterfall_model_asset *m)
 {
-    m->ik_sample_count = 0;
-    m->ik_controller_sample_count = 0;
-    m->ik_analytic_solved_count = 0;
-    m->ik_analytic_clamped_count = 0;
-    m->ik_analytic_rejected_count = 0;
+    m->solver_metrics.ik_sample_count = 0;
+    m->solver_metrics.ik_controller_sample_count = 0;
+    m->solver_metrics.ik_analytic_solved_count = 0;
+    m->solver_metrics.ik_analytic_clamped_count = 0;
+    m->solver_metrics.ik_analytic_rejected_count = 0;
     m->ik_analytic_accept_count[0] = m->ik_analytic_accept_count[1] = 0;
     m->ik_analytic_reject_count[0] = m->ik_analytic_reject_count[1] = 0;
     memset(m->ik_analytic_reject_reason, 0, sizeof(m->ik_analytic_reject_reason));
@@ -35,20 +35,20 @@ static void reset_ik_stats(struct rasterfall_model_asset *m)
     memset(m->ik_near_degenerate_ca_active_count, 0, sizeof(m->ik_near_degenerate_ca_active_count));
     memset(m->ik_near_degenerate_ca_reconciled_count, 0, sizeof(m->ik_near_degenerate_ca_reconciled_count));
     memset(m->ik_near_degenerate_ca_unavailable_count, 0, sizeof(m->ik_near_degenerate_ca_unavailable_count));
-    m->ik_iteration_total = 0;
-    m->ik_iteration_max = 0;
-    m->ik_error_before_total = m->ik_error_after_total = 0.0;
-    m->ik_error_before_max = m->ik_error_after_max = 0.0;
-    m->ik_reach_sample_count = m->ik_unreachable_count = 0;
-    m->ik_reach_distance_total = m->ik_reach_ratio_total = 0.0;
-    m->ik_reach_distance_max = m->ik_reach_ratio_max = 0.0;
+    m->solver_metrics.ik_iteration_total = 0;
+    m->solver_metrics.ik_iteration_max = 0;
+    m->solver_metrics.ik_error_before_total = m->solver_metrics.ik_error_after_total = 0.0;
+    m->solver_metrics.ik_error_before_max = m->solver_metrics.ik_error_after_max = 0.0;
+    m->solver_metrics.ik_reach_sample_count = m->solver_metrics.ik_unreachable_count = 0;
+    m->solver_metrics.ik_reach_distance_total = m->solver_metrics.ik_reach_ratio_total = 0.0;
+    m->solver_metrics.ik_reach_distance_max = m->solver_metrics.ik_reach_ratio_max = 0.0;
 }
 
 static void print_ik_runtime(const struct rasterfall_model_asset *m)
 {
     __printf("analytic leg IK: solved=%lu clamped_targets=%lu rejected=%lu\n",
-             m->ik_analytic_solved_count, m->ik_analytic_clamped_count,
-             m->ik_analytic_rejected_count);
+             m->solver_metrics.ik_analytic_solved_count, m->solver_metrics.ik_analytic_clamped_count,
+             m->solver_metrics.ik_analytic_rejected_count);
     __printf("analytic normalized ankle error bins (<.005,.01,.02,.05,.10,.20,.30,.50,1.0,>=1): left=%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu right=%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu\n",
              m->ik_analytic_error_hist[0][0],m->ik_analytic_error_hist[0][1],m->ik_analytic_error_hist[0][2],m->ik_analytic_error_hist[0][3],m->ik_analytic_error_hist[0][4],m->ik_analytic_error_hist[0][5],m->ik_analytic_error_hist[0][6],m->ik_analytic_error_hist[0][7],m->ik_analytic_error_hist[0][8],m->ik_analytic_error_hist[0][9],
              m->ik_analytic_error_hist[1][0],m->ik_analytic_error_hist[1][1],m->ik_analytic_error_hist[1][2],m->ik_analytic_error_hist[1][3],m->ik_analytic_error_hist[1][4],m->ik_analytic_error_hist[1][5],m->ik_analytic_error_hist[1][6],m->ik_analytic_error_hist[1][7],m->ik_analytic_error_hist[1][8],m->ik_analytic_error_hist[1][9]);
@@ -56,28 +56,28 @@ static void print_ik_runtime(const struct rasterfall_model_asset *m)
              "max_iterations_per_leg=%u avg_error_before=%.3f "
              "avg_error_after=%.3f max_error_before=%.3f "
              "max_error_after=%.3f enabled=%s\n",
-             m->ik_sample_count,
-             m->ik_controller_sample_count ?
-                 (double)m->ik_iteration_total / m->ik_controller_sample_count : 0.0,
-             m->ik_iteration_max,
-             m->ik_controller_sample_count ?
-                 m->ik_error_before_total / m->ik_controller_sample_count : 0.0,
-             m->ik_controller_sample_count ?
-                 m->ik_error_after_total / m->ik_controller_sample_count : 0.0,
-             m->ik_error_before_max, m->ik_error_after_max,
+             m->solver_metrics.ik_sample_count,
+             m->solver_metrics.ik_controller_sample_count ?
+                 (double)m->solver_metrics.ik_iteration_total / m->solver_metrics.ik_controller_sample_count : 0.0,
+             m->solver_metrics.ik_iteration_max,
+             m->solver_metrics.ik_controller_sample_count ?
+                 m->solver_metrics.ik_error_before_total / m->solver_metrics.ik_controller_sample_count : 0.0,
+             m->solver_metrics.ik_controller_sample_count ?
+                 m->solver_metrics.ik_error_after_total / m->solver_metrics.ik_controller_sample_count : 0.0,
+             m->solver_metrics.ik_error_before_max, m->solver_metrics.ik_error_after_max,
              m->ik_enabled ? "yes" : "no");
     __printf("ik reachability: samples=%lu avg_distance=%.3f max_distance=%.3f "
              "avg_distance_over_reach=%.4f max_distance_over_reach=%.4f "
              "unreachable=%.2f%%\n",
-             m->ik_reach_sample_count,
-             m->ik_reach_sample_count ?
-                 m->ik_reach_distance_total / m->ik_reach_sample_count : 0.0,
-             m->ik_reach_distance_max,
-             m->ik_reach_sample_count ?
-                 m->ik_reach_ratio_total / m->ik_reach_sample_count : 0.0,
-             m->ik_reach_ratio_max,
-             m->ik_reach_sample_count ?
-             100.0 * m->ik_unreachable_count / m->ik_reach_sample_count : 0.0);
+             m->solver_metrics.ik_reach_sample_count,
+             m->solver_metrics.ik_reach_sample_count ?
+                 m->solver_metrics.ik_reach_distance_total / m->solver_metrics.ik_reach_sample_count : 0.0,
+             m->solver_metrics.ik_reach_distance_max,
+             m->solver_metrics.ik_reach_sample_count ?
+                 m->solver_metrics.ik_reach_ratio_total / m->solver_metrics.ik_reach_sample_count : 0.0,
+             m->solver_metrics.ik_reach_ratio_max,
+             m->solver_metrics.ik_reach_sample_count ?
+             100.0 * m->solver_metrics.ik_unreachable_count / m->solver_metrics.ik_reach_sample_count : 0.0);
     __printf("ik pole anchor: left valid=%lu flipped=%lu right valid=%lu flipped=%lu\n",
              m->ik_analytic_pole_anchor_valid_count[0],
              m->ik_analytic_pole_flipped_by_anchor_count[0],
@@ -93,17 +93,20 @@ static void print_ik_runtime(const struct rasterfall_model_asset *m)
              m->ik_near_degenerate_ca_unavailable_count[1]);
 }
 
-static void prepare_vmd_skeleton_translation(struct rasterfall_model_asset *m,
+static void prepare_vmd_root_motion(struct rasterfall_model_asset *m,
                                              const struct rasterfall_vmd_clip *v,
                                              int time_ms, int legacy)
 {
     int center[3], groove[3];
     rasterfall_vmd_sample_bone_translation(v, "センター", time_ms, center);
     rasterfall_vmd_sample_bone_translation(v, "グルーブ", time_ms, groove);
-    rasterfall_model_set_vmd_skeleton_translation(m, center, groove, !legacy);
-    m->animation_offset_x = legacy ? center[0] + groove[0] : 0;
-    m->animation_offset_y = legacy ? center[1] + groove[1] : 0;
-    m->animation_offset_z = legacy ? center[2] + groove[2] : 0;
+    rasterfall_model_bind_root_motion(
+        m, rasterfall_model_find_bone(m,"センター"),
+        rasterfall_model_find_bone(m,"グルーブ"));
+    rasterfall_model_set_root_motion(m,center,groove,!legacy);
+    m->animation_offset[0] = legacy ? center[0] + groove[0] : 0;
+    m->animation_offset[1] = legacy ? center[1] + groove[1] : 0;
+    m->animation_offset[2] = legacy ? center[2] + groove[2] : 0;
 }
 
 static int inspect_bone_index(const struct rasterfall_model_asset *m,
@@ -240,7 +243,7 @@ static void inspect_analytic_synthetic(struct rasterfall_model_asset *m,
         double base_offset[3] = {0.0, 0.0, 0.0};
         m->ik_synthetic_side = side;
         m->ik_synthetic_target = 0;
-        prepare_vmd_skeleton_translation(m, v, 0, 0);
+        prepare_vmd_root_motion(m, v, 0, 0);
         rasterfall_model_sample_clip(m, clip, 0);
         controller = rasterfall_model_find_bone(m, side ? "右足ＩＫ" : "左足ＩＫ");
         if (controller >= 0) {
@@ -266,7 +269,7 @@ static void inspect_analytic_synthetic(struct rasterfall_model_asset *m,
             __printf("synthetic case side=%s target=%s offset=(%.1f,%.1f,%.1f)\n",
                      side_name[side], target_name[target], offsets[target][0],
                      offsets[target][1], offsets[target][2]);
-            prepare_vmd_skeleton_translation(m, v, 0, 0);
+            prepare_vmd_root_motion(m, v, 0, 0);
             rasterfall_model_sample_clip(m, clip, 0);
         }
     }
@@ -299,7 +302,7 @@ static void inspect_analytic_pole_sweep(struct rasterfall_model_asset *m,
     for(side=0;side<2;side++) {
         int controller, ankle=-1, thigh, knee, ik_index;
         double base_offset[3], h[3], a0[3], axis[3], u[3], w[3], bind[3], dot, len;
-        m->ik_synthetic_side=side;prepare_vmd_skeleton_translation(m,v,0,0);rasterfall_model_sample_clip(m,clip,0);
+        m->ik_synthetic_side=side;prepare_vmd_root_motion(m,v,0,0);rasterfall_model_sample_clip(m,clip,0);
         controller=rasterfall_model_find_bone(m,side?"右足ＩＫ":"左足ＩＫ");
         thigh=rasterfall_model_find_bone(m,side?"右足":"左足");
         knee=rasterfall_model_find_bone(m,side?"右ひざ":"左ひざ");
@@ -329,7 +332,7 @@ static void inspect_analytic_pole_sweep(struct rasterfall_model_asset *m,
                 m->ik_synthetic_target=1;m->ik_analytic_pole_override=1;
                 m->ik_synthetic_offset[0]=base_offset[0]+offsets[target][0];m->ik_synthetic_offset[1]=base_offset[1]+offsets[target][1];m->ik_synthetic_offset[2]=base_offset[2]+offsets[target][2];
                 m->ik_analytic_pole[0]=u[0]*cos(phi)+w[0]*sin(phi);m->ik_analytic_pole[1]=u[1]*cos(phi)+w[1]*sin(phi);m->ik_analytic_pole[2]=u[2]*cos(phi)+w[2]*sin(phi);
-                prepare_vmd_skeleton_translation(m,v,0,0);rasterfall_model_sample_clip(m,clip,0);
+                prepare_vmd_root_motion(m,v,0,0);rasterfall_model_sample_clip(m,clip,0);
                 if(m->ik_analytic_probe_ran && m->ik_analytic_probe_knee_valid) {valid_count++;if(m->ik_analytic_probe_ankle_error<30.0){low_count++;if(m->ik_analytic_probe_ankle_error<best_error){best_error=m->ik_analytic_probe_ankle_error;best_phi=sample*360.0/32.0;best_knee=m->ik_analytic_probe_raw_knee_x;}}}
                 if(sample==0||sample==8||sample==16||sample==24)__printf("pole sample side=%s target=%s phi=%.1f knee=%d valid=%s ankle_error=%.3f\n",side_name[side],target_name[target],sample*360.0/32.0,m->ik_analytic_probe_raw_knee_x,m->ik_analytic_probe_knee_valid?"yes":"no",m->ik_analytic_probe_ankle_error);
             }
@@ -507,7 +510,7 @@ static void inspect_leg_sequence(struct rasterfall_model_asset *m,
     memset(s,0,sizeof(s));memset(prev_knee,0,sizeof(prev_knee));memset(prev_thigh,0,sizeof(prev_thigh));memset(prev_ankle,0,sizeof(prev_ankle));
     reset_ik_stats(m);m->ik_legacy_knee_ccd=legacy;m->ik_enabled=1;
     for(time=0;time<v->duration_ms;time+=step) {
-        prepare_vmd_skeleton_translation(m,v,time,0);rasterfall_model_sample_clip(m,clip,time);
+        prepare_vmd_root_motion(m,v,time,0);rasterfall_model_sample_clip(m,clip,time);
         for(side=0;side<2;side++) {
             int knee=rasterfall_model_find_bone(m,side?"右ひざ":"左ひざ");
             int thigh=rasterfall_model_find_bone(m,side?"右足":"左足");
@@ -555,7 +558,7 @@ static void inspect_analytic_thigh_jumps(struct rasterfall_model_asset *m,
     int previous_state[2]={0,0}, previous_thigh[2][3]={{0,0,0},{0,0,0}};
     reset_ik_stats(m);m->ik_legacy_knee_ccd=0;m->ik_analytic_trace_time_ms=-1;
     for(time=0;time<v->duration_ms;time+=step) {
-        prepare_vmd_skeleton_translation(m,v,time,0);rasterfall_model_sample_clip(m,clip,time);
+        prepare_vmd_root_motion(m,v,time,0);rasterfall_model_sample_clip(m,clip,time);
         for(side=0;side<2;side++) {
             int thigh=rasterfall_model_find_bone(m,side?"右足":"左足"), state=m->ik_last_leg_solver[side];
             int now[3];double delta;
@@ -578,14 +581,14 @@ static void inspect_analytic_thigh_jumps(struct rasterfall_model_asset *m,
         __printf("analytical-only thigh maximum side=%s time=%dms previous=%dms current=%dms delta=%.6fdeg window=±10frames\n",side?"right":"left",max_time[side],max_time[side]-step,max_time[side],max_jump[side]);
         if(max_time[side]<0)continue;
         m->ik_analytic_trace_side=side;
-        for(time=max_time[side]-10*step;time<=max_time[side]+10*step;time+=step){if(time<0||time>=v->duration_ms)continue;m->ik_analytic_trace_time_ms=time;prepare_vmd_skeleton_translation(m,v,time,0);rasterfall_model_sample_clip(m,clip,time);}
+        for(time=max_time[side]-10*step;time<=max_time[side]+10*step;time+=step){if(time<0||time>=v->duration_ms)continue;m->ik_analytic_trace_time_ms=time;prepare_vmd_root_motion(m,v,time,0);rasterfall_model_sample_clip(m,clip,time);}
     }
     {
         static const int history[] = {70080,102480,227680,159008};
         int hi;
         for (hi=0;hi<4;hi++) {
             if (history[hi] >= v->duration_ms) continue;
-            prepare_vmd_skeleton_translation(m,v,history[hi],0);
+            prepare_vmd_root_motion(m,v,history[hi],0);
             rasterfall_model_sample_clip(m,clip,history[hi]);
             __printf("analytical history time=%d left=%s right=%s\n",history[hi],m->ik_last_leg_solver[0]==1?"accepted":"rejected/fallback",m->ik_last_leg_solver[1]==1?"accepted":"rejected/fallback");
         }
@@ -629,7 +632,7 @@ static void inspect_analytic_orientation_events(
                 __printf("orientation event side=%s time=%d window=±10frames\n",event_side[i]?"right":"left",time);
             break;
         }
-        prepare_vmd_skeleton_translation(m,v,time,0);
+        prepare_vmd_root_motion(m,v,time,0);
         rasterfall_model_sample_clip(m,clip,time);
     }
     m->ik_analytic_trace_time_ms=-1;
@@ -681,7 +684,7 @@ static void inspect_walk_runtime_flips(
         for (side=0;side<2;side++) {
             prior_state[side]=m->ik_last_leg_solver[side];
         }
-        prepare_vmd_skeleton_translation(m,v,time,0);
+        prepare_vmd_root_motion(m,v,time,0);
         rasterfall_model_sample_clip(m,clip,time);
         for (side=0;side<2;side++) {
             int thigh,knee,ankle,controller,branch=0,classification=6;
@@ -832,7 +835,7 @@ static void inspect_forward_swing_trace(struct rasterfall_model_asset *m,
     memset(m->ik_previous_final_valid,0,sizeof(m->ik_previous_final_valid));
     m->ik_last_leg_solver[0]=m->ik_last_leg_solver[1]=0;
     for(time=0;time<v->duration_ms;time+=step){
-        prepare_vmd_skeleton_translation(m,v,time,0);rasterfall_model_sample_clip(m,clip,time);
+        prepare_vmd_root_motion(m,v,time,0);rasterfall_model_sample_clip(m,clip,time);
         for(side=0;side<2;side++){
             int thigh=rasterfall_model_find_bone(m,side?"右足":"左足"),now[3];double d;
             if(thigh<0)continue;
@@ -857,7 +860,7 @@ static void inspect_forward_swing_trace(struct rasterfall_model_asset *m,
         for(time=0;time<v->duration_ms;time+=step){
             int thigh,knee,ankle,controller=-1,i;double target[3],axis[3],hk[3],perp[3],len,d;int branch;
             m->ik_analytic_trace_time_ms=(time>=peak_time[side]-10*step&&time<=peak_time[side]+10*step)?time:-1;
-            prepare_vmd_skeleton_translation(m,v,time,0);rasterfall_model_sample_clip(m,clip,time);
+            prepare_vmd_root_motion(m,v,time,0);rasterfall_model_sample_clip(m,clip,time);
             if(m->ik_analytic_trace_time_ms<0)continue;
             thigh=rasterfall_model_find_bone(m,side?"右足":"左足");knee=rasterfall_model_find_bone(m,side?"右ひざ":"左ひざ");ankle=rasterfall_model_find_bone(m,side?"右足首":"左足首");
             for(i=0;i<(int)m->ik_count;i++)if(m->iks[i].controller==rasterfall_model_find_bone(m,side?("右足ＩＫ"):"左足ＩＫ")){controller=m->iks[i].controller;break;}
@@ -903,7 +906,7 @@ static void inspect_walk_pole_phase_trace(struct rasterfall_model_asset *m,
     memset(m->ik_previous_final_valid,0,sizeof(m->ik_previous_final_valid));
     m->ik_last_leg_solver[0]=m->ik_last_leg_solver[1]=0;
     for(time=0;time<v->duration_ms;time+=step) {
-        prepare_vmd_skeleton_translation(m,v,time,0);
+        prepare_vmd_root_motion(m,v,time,0);
         rasterfall_model_sample_clip(m,clip,time);
         for(side=0;side<2;side++) {
             int controller=rasterfall_model_find_bone(m,side?"右足ＩＫ":"左足ＩＫ");
@@ -932,7 +935,7 @@ static void inspect_walk_pole_phase_trace(struct rasterfall_model_asset *m,
     for(time=0;time<v->duration_ms;time+=step) {
         int previous_state[2];
         for(side=0;side<2;side++)previous_state[side]=m->ik_last_leg_solver[side];
-        prepare_vmd_skeleton_translation(m,v,time,0);
+        prepare_vmd_root_motion(m,v,time,0);
         rasterfall_model_sample_clip(m,clip,time);
         for(side=0;side<2;side++) {
             int thigh=rasterfall_model_find_bone(m,side?"右足":"左足");
@@ -1055,7 +1058,7 @@ static void inspect_walk_pole_reference_compare(
     memset(m->ik_previous_final_valid,0,sizeof(m->ik_previous_final_valid));
     m->ik_last_leg_solver[0]=m->ik_last_leg_solver[1]=0;
     for(time=0;time<v->duration_ms;time+=step){
-        prepare_vmd_skeleton_translation(m,v,time,0);rasterfall_model_sample_clip(m,clip,time);
+        prepare_vmd_root_motion(m,v,time,0);rasterfall_model_sample_clip(m,clip,time);
         for(side=0;side<2;side++){
             int controller=rasterfall_model_find_bone(m,side?"右足ＩＫ":"左足ＩＫ"),sampled[3]={0,0,0},i;
             if(controller<0)continue;
@@ -1070,7 +1073,7 @@ static void inspect_walk_pole_reference_compare(
     m->ik_last_leg_solver[0]=m->ik_last_leg_solver[1]=0;
     __printf("walk pole reference comparison: A=K0-H B=rest/bind C=target velocity D=previous final bend; phase axis=target_offset_z\n");
     for(time=0;time<v->duration_ms;time+=step){
-        prepare_vmd_skeleton_translation(m,v,time,0);rasterfall_model_sample_clip(m,clip,time);
+        prepare_vmd_root_motion(m,v,time,0);rasterfall_model_sample_clip(m,clip,time);
         for(side=0;side<2;side++){
             int controller=rasterfall_model_find_bone(m,side?"右足ＩＫ":"左足ＩＫ");
             int thigh=rasterfall_model_find_bone(m,side?"右足":"左足"),knee=rasterfall_model_find_bone(m,side?"右ひざ":"左ひざ");
@@ -1406,7 +1409,7 @@ static void inspect_knee_branch_scan(struct rasterfall_model_asset *m,
         m->ik_handoff_trace_time_ms=time;
         m->ik_handoff_trace_side=-1;
         m->ik_handoff_snapshot_valid=0;
-        prepare_vmd_skeleton_translation(m,v,time,0);
+        prepare_vmd_root_motion(m,v,time,0);
         rasterfall_model_sample_clip(m,clip,time);
         for(side=0;side<2;side++){
             const char *name=side?"右足ＩＫ":"左足ＩＫ";
@@ -1633,7 +1636,7 @@ static void inspect_knee_branch_scan(struct rasterfall_model_asset *m,
                             leg_scale=inspect_position_delta(m->bone_transforms[thigh].position,m->bone_transforms[knee].position)+inspect_position_delta(m->bone_transforms[knee].position,m->bone_transforms[ankle].position);
                             m->ik_analytic_pole_override=1;
                             m->ik_analytic_pole[0]=compat_pole[0];m->ik_analytic_pole[1]=compat_pole[1];m->ik_analytic_pole[2]=compat_pole[2];
-                            prepare_vmd_skeleton_translation(m,v,time,0);rasterfall_model_sample_clip(m,clip,time);
+                            prepare_vmd_root_motion(m,v,time,0);rasterfall_model_sample_clip(m,clip,time);
                             compat_state=m->ik_last_leg_solver[side];
                             if (compat_state==1) {
                                 compat_ankle[0]=m->bone_transforms[ankle].position[0];compat_ankle[1]=m->bone_transforms[ankle].position[1];compat_ankle[2]=m->bone_transforms[ankle].position[2];
@@ -1643,7 +1646,7 @@ static void inspect_knee_branch_scan(struct rasterfall_model_asset *m,
                                 compatible=compat_branch_sign==previous[side].sign;
                             }
                             m->ik_analytic_pole_override=old_override;
-                            prepare_vmd_skeleton_translation(m,v,time,0);rasterfall_model_sample_clip(m,clip,time);
+                            prepare_vmd_root_motion(m,v,time,0);rasterfall_model_sample_clip(m,clip,time);
                             ca_compat_count[side]++;
                             if (compatible) {
                                 cost=compat_error-analytical_error;ratio=analytical_error>0.000001?compat_error/analytical_error:0.0;
@@ -1729,7 +1732,7 @@ static void inspect_knee_branch_scan(struct rasterfall_model_asset *m,
         for(side=0;side<2;side++)for(j=0;j<TOP;j++)if(top_ca_angle[side][j]>0.0 && top_ca_time[side][j]==time){trace_side=side;break;}
         m->ik_analytic_trace_time_ms=trace_side>=0?time:-1;
         m->ik_analytic_trace_side=trace_side;
-        prepare_vmd_skeleton_translation(m,v,time,0);
+        prepare_vmd_root_motion(m,v,time,0);
         rasterfall_model_sample_clip(m,clip,time);
     }
     m->ik_analytical_inherit_diagnostic=0;
@@ -1770,7 +1773,7 @@ static void inspect_ccd_motion(struct rasterfall_model_asset *m,
         m->ik_handoff_trace_side=-1;
         m->ik_handoff_snapshot_valid=0;
         m->ik_iteration_trace_time_ms = -1;
-        prepare_vmd_skeleton_translation(m,v,time,0);
+        prepare_vmd_root_motion(m,v,time,0);
         rasterfall_model_sample_clip(m,clip,time);
         for(side=0;side<2;side++){
             const char *name=side?"右足ＩＫ":"左足ＩＫ";
@@ -1896,7 +1899,7 @@ static void inspect_vmd_leg_trace(struct rasterfall_model_asset *m,
     int max_lateral_time[2]={0,0};
     int time, have=0, side;
     __printf("vmd leg trace: translation_sampling=linear, solver_init=FK_base_each_frame, frame_step=33ms\n");
-    prepare_vmd_skeleton_translation(m,v,0,0);
+    prepare_vmd_root_motion(m,v,0,0);
     rasterfall_model_sample_clip(m,clip,0);
     for (time=0; time<=v->duration_ms; time+=1000/30) {
         for (side=0; side<2; side++) {
@@ -1937,7 +1940,7 @@ static void inspect_vmd_leg_trace(struct rasterfall_model_asset *m,
         }
         have=1;
         if (time < v->duration_ms) {
-            prepare_vmd_skeleton_translation(m,v,time+1000/30,0);
+            prepare_vmd_root_motion(m,v,time+1000/30,0);
             rasterfall_model_sample_clip(m,clip,time+1000/30);
         }
     }
@@ -1960,7 +1963,7 @@ static void inspect_knee_window(struct rasterfall_model_asset *m,
         int time = center + n * (1000/30);
         if (time < 0) time = 0;
         m->ik_iteration_trace_time_ms = n == 0 ? time : -1;
-        prepare_vmd_skeleton_translation(m, v, time, 0);
+        prepare_vmd_root_motion(m, v, time, 0);
         rasterfall_model_sample_clip(m, clip, time);
         for (side=0; side<2; side++) {
             int controller = rasterfall_model_find_bone(m, controller_name[side]);
@@ -2016,7 +2019,7 @@ static void inspect_continuity_ab(struct rasterfall_model_asset *m,
     m->ik_warm_start_diagnostic = warm;
     reset_ik_stats(m);
     for (time=0; time<=v->duration_ms; time+=step) {
-        prepare_vmd_skeleton_translation(m, v, time, 0);
+        prepare_vmd_root_motion(m, v, time, 0);
         rasterfall_model_sample_clip(m, clip, time);
         for (side=0; side<2; side++) {
             int knee = rasterfall_model_find_bone(m, side ? "右ひざ" : "左ひざ");
@@ -2051,10 +2054,10 @@ static void inspect_continuity_ab(struct rasterfall_model_asset *m,
              step, limits ? "on" : "off", warm ? "previous_frame" : "FK_base",
              max_knee, samples ? sum_knee/samples : 0.0, max_ankle,
              samples ? sum_ankle/samples : 0.0,
-             m->ik_controller_sample_count ?
-                 (double)m->ik_iteration_total/m->ik_controller_sample_count : 0.0,
-             m->ik_controller_sample_count ?
-                 m->ik_error_after_total/m->ik_controller_sample_count : 0.0);
+             m->solver_metrics.ik_controller_sample_count ?
+                 (double)m->solver_metrics.ik_iteration_total/m->solver_metrics.ik_controller_sample_count : 0.0,
+             m->solver_metrics.ik_controller_sample_count ?
+                 m->solver_metrics.ik_error_after_total/m->solver_metrics.ik_controller_sample_count : 0.0);
     m->ik_warm_start_diagnostic = 0;
     m->ik_limits_enabled = 1;
 }
@@ -2073,10 +2076,10 @@ static void inspect_solver_variant(struct rasterfall_model_asset *m,
              knee_scale/1000.0, thigh_scale/1000.0);
     inspect_continuity_ab(m, v, clip, 1, 0);
     m->ik_iteration_trace_time_ms = 216777;
-    prepare_vmd_skeleton_translation(m, v, 216777, 0);
+    prepare_vmd_root_motion(m, v, 216777, 0);
     rasterfall_model_sample_clip(m, clip, 216777);
     m->ik_iteration_trace_time_ms = 51216;
-    prepare_vmd_skeleton_translation(m, v, 51216, 0);
+    prepare_vmd_root_motion(m, v, 51216, 0);
     rasterfall_model_sample_clip(m, clip, 51216);
     m->ik_iteration_trace_time_ms = -1;
 }
@@ -2091,7 +2094,7 @@ int main(int argc, char **argv)
     double norm;
 
     if (argc < 2) {
-        __printf("usage: vmd-inspect <motion.vmd> [eula.rmesh] "
+        __printf("usage: vmd-inspect <motion.vmd> [model.rmesh] "
                  "[--vmd-disable-ik] [--vmd-disable-grant] "
                  "[--vmd-legacy-root-offset] "
                  "[--leg-static-rotation-test] [--vmd-leg-trace] "
@@ -2114,7 +2117,7 @@ int main(int argc, char **argv)
             return 1;
         }
         have = 1;
-        rasterfall_vmd_map_eula(&v, &m);
+        rasterfall_vmd_map_model(&v, &m);
     }
     if (have) {
         int phase = v.duration_ms / 4;
@@ -2218,16 +2221,16 @@ int main(int argc, char **argv)
                 m.ik_target_space_diagnostic = 0;
                 m.ik_diagnostic_dump = 1;
                 __printf("ik diagnostic: normal target, phase=25%%\n");
-                prepare_vmd_skeleton_translation(&m, &v, phase, legacy);
+                prepare_vmd_root_motion(&m, &v, phase, legacy);
                 rasterfall_model_sample_clip(&m, &clip, phase);
                 m.ik_diagnostic_dump = 0;
                 m.ik_limits_enabled = 1;
                 rasterfall_model_set_ik_enabled(&m, 0);
-                prepare_vmd_skeleton_translation(&m, &v, phase, legacy);
+                prepare_vmd_root_motion(&m, &v, phase, legacy);
                 rasterfall_model_sample_clip(&m, &clip, phase);
                 inspect_leg_transforms(&m, "phase=25% IK OFF");
                 rasterfall_model_set_ik_enabled(&m, 1);
-                prepare_vmd_skeleton_translation(&m, &v, phase, legacy);
+                prepare_vmd_root_motion(&m, &v, phase, legacy);
                 rasterfall_model_sample_clip(&m, &clip, phase);
                 inspect_leg_transforms(&m, "phase=25% IK ON");
 
@@ -2244,7 +2247,7 @@ int main(int argc, char **argv)
                 m.ik_limits_enabled = 0;
                 m.ik_diagnostic_dump = 1;
                 __printf("ik diagnostic: normal target, knee limits=off, phase=25%%\n");
-                prepare_vmd_skeleton_translation(&m, &v, phase, legacy);
+                prepare_vmd_root_motion(&m, &v, phase, legacy);
                 rasterfall_model_sample_clip(&m, &clip, phase);
                 m.ik_diagnostic_dump = 0;
                 m.ik_limits_enabled = 1;
@@ -2261,7 +2264,7 @@ int main(int argc, char **argv)
                 __printf("ik runtime sampling: step_ms=%d (solver unchanged)\n",
                          sample_step);
                 for (i = 0; i < v.duration_ms; i += sample_step)
-                { prepare_vmd_skeleton_translation(&m, &v, i, legacy);
+                { prepare_vmd_root_motion(&m, &v, i, legacy);
                     rasterfall_model_sample_clip(&m, &clip, i);
                 }
             }

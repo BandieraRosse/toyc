@@ -1,7 +1,8 @@
 #ifndef RASTERFALL_ANIMATION_H
 #define RASTERFALL_ANIMATION_H
 
-#include "toy_game.h"
+#include "core.h"
+#include "string.h"
 #include "math.h"
 
 /* PMX/glTF/VMD-neutral runtime clip representation.  Importers only need to
@@ -22,6 +23,10 @@ struct rasterfall_animation_clip {
     int loop;
     const struct rasterfall_animation_track *tracks;
     int track_count;
+    /* Converts source translation units to model/world units.  Importers own
+     * this boundary; the model solver must not know whether a clip was VMD,
+     * glTF, or generated at runtime. */
+    float translation_scale;
 };
 struct rasterfall_animation_rotation { int x, y, z; };
 struct rasterfall_animation_player {
@@ -29,7 +34,7 @@ struct rasterfall_animation_player {
     int clip_id, time_ms, playing, loop, speed_milli;
 };
 
-static struct rasterfall_animation_quaternion
+static inline struct rasterfall_animation_quaternion
 rasterfall_animation_quat_from_euler(int x, int y, int z)
 {
     double sx = sin(x * M_PI / 360.0), cx = cos(x * M_PI / 360.0);
@@ -41,7 +46,7 @@ rasterfall_animation_quat_from_euler(int x, int y, int z)
     return q;
 }
 
-static struct rasterfall_animation_quaternion
+static inline struct rasterfall_animation_quaternion
 rasterfall_animation_quat_normalize(struct rasterfall_animation_quaternion q)
 {
     double n = sqrt(q.x*q.x + q.y*q.y + q.z*q.z + q.w*q.w);
@@ -52,7 +57,7 @@ rasterfall_animation_quat_normalize(struct rasterfall_animation_quaternion q)
 
 /* Normalized lerp is adequate for these short clips and avoids a trig-heavy
  * slerp path.  The sign fix preserves the shortest path. */
-static struct rasterfall_animation_quaternion
+static inline struct rasterfall_animation_quaternion
 rasterfall_animation_quat_nlerp(struct rasterfall_animation_quaternion a,
                                  struct rasterfall_animation_quaternion b,
                                  int factor_milli)
@@ -65,7 +70,7 @@ rasterfall_animation_quat_nlerp(struct rasterfall_animation_quaternion a,
     return rasterfall_animation_quat_normalize(a);
 }
 
-static void rasterfall_animation_quat_to_euler(
+static inline void rasterfall_animation_quat_to_euler(
     struct rasterfall_animation_quaternion q,
     struct rasterfall_animation_rotation *out)
 {
@@ -84,7 +89,7 @@ static void rasterfall_animation_quat_to_euler(
     out->z = (int)(z * 180.0 / M_PI + (z < 0 ? -0.5 : 0.5));
 }
 
-static void rasterfall_animation_sample(
+static inline void rasterfall_animation_sample(
     const struct rasterfall_animation_clip *clip, int time_ms,
     struct rasterfall_animation_rotation *out, int out_count)
 {
@@ -131,7 +136,7 @@ static void rasterfall_animation_sample(
     }
 }
 
-static void rasterfall_animation_player_update(
+static inline void rasterfall_animation_player_update(
     struct rasterfall_animation_player *player, int dt_ms)
 {
     long next;
@@ -144,7 +149,7 @@ static void rasterfall_animation_player_update(
     else player->time_ms = (int)next;
 }
 
-static int rasterfall_animation_logic_test(void)
+static inline int rasterfall_animation_logic_test(void)
 {
     struct rasterfall_animation_keyframe k[3];
     struct rasterfall_animation_track t[2];
@@ -180,92 +185,6 @@ static int rasterfall_animation_logic_test(void)
     rasterfall_animation_sample(&c, 29, out, 3);
     if (out[0].z < 1 || out[0].z > 5) return 8;
     return 0;
-}
-
-/* Presentation tuning knobs.  Keep these here so reload and locomotion can
- * be adjusted without changing gameplay timings or animation state IDs. */
-#define RASTERFALL_RELOAD_WEAPON_PITCH 780
-#define RASTERFALL_MOVE_LEG_SWING 520
-
-/* Presentation-only result of sampling a gameplay animation state.  The
- * renderer can later replace these procedural poses with skeleton channels
- * without changing actor state or network code. */
-struct rasterfall_animation_pose {
-    int body_lift;
-    int forward_shift;
-    int leg_swing;
-    int weapon_pitch;
-    int body_pitch;
-    int right_upper_pitch;
-    int right_forearm_pitch;
-    int left_upper_pitch;
-    int left_forearm_pitch;
-    int left_arm_rotation;
-};
-
-static void rasterfall_animation_sample_duration(
-    int animation_id, int time_ms, int duration_ms,
-    struct rasterfall_animation_pose *pose)
-{
-    int phase;
-    if (!pose) return;
-    pose->body_lift = 0;
-    pose->forward_shift = 0;
-    pose->leg_swing = 0;
-    pose->weapon_pitch = 0;
-    pose->body_pitch = 0;
-    pose->right_upper_pitch = -60;
-    pose->right_forearm_pitch = -30;
-    pose->left_upper_pitch = -45;
-    /* The left forearm drops toward the weapon receiver instead of lifting
-     * away from it in the normal carry pose. */
-    pose->left_forearm_pitch = -30;
-    pose->left_arm_rotation = 0;
-    if (time_ms < 0) time_ms = 0;
-    if (animation_id == TOY_GAME_ANIM_IDLE) {
-        phase = (time_ms / 100) % 8;
-        pose->body_lift = (phase < 4 ? phase : 7 - phase) * 4;
-    } else if (animation_id == TOY_GAME_ANIM_MOVE) {
-        static const int leg_wave[16] = {
-            0, 200, 380, 480, 520, 480, 380, 200,
-            0, -200, -380, -480, -520, -480, -380, -200
-        };
-        phase = (time_ms / 25) % 16;
-        pose->body_lift = phase < 8 ? phase * 3 / 2 : (15 - phase) * 3 / 2;
-        pose->leg_swing = leg_wave[phase];
-    } else if (animation_id == TOY_GAME_ANIM_FIRE) {
-        /* Recoil moves the actor slightly backward, not downward. */
-        pose->body_lift = time_ms < 60 ? -6 : 0;
-        pose->forward_shift = time_ms < 80 ? -55 : 0;
-    } else if (animation_id == TOY_GAME_ANIM_HIT) {
-        /* A hit compresses the torso and tips its upper edge forward. */
-        pose->body_lift = time_ms < 100 ? -32 : 0;
-        pose->body_pitch = time_ms < 140 ? 24 - time_ms * 24 / 140 : 0;
-    } else if (animation_id == TOY_GAME_ANIM_RELOAD) {
-        if (duration_ms <= 0)
-            duration_ms = toy_game_animation_info(TOY_GAME_ANIM_RELOAD)->duration_ms;
-        phase = time_ms * 1000 / duration_ms;
-        if (phase > 1000) phase = 1000;
-        if (phase < 500) phase *= 2;
-        else phase = (1000 - phase) * 2;
-        pose->weapon_pitch = phase * RASTERFALL_RELOAD_WEAPON_PITCH / 1000;
-        /* During the first half the left hand leaves the weapon; during the
-         * second half it rises toward the front of the weapon. */
-        pose->left_upper_pitch = -30 + phase * 20 / 1000;
-        pose->left_forearm_pitch = -30 + phase * 65 / 1000;
-    } else if (animation_id == TOY_GAME_ANIM_SHOVE) {
-        if (duration_ms <= 0)
-            duration_ms = TOY_CONFIG_SHOVE_ANIMATION_MS;
-        phase = time_ms * 1000 / duration_ms;
-        if (phase > 1000) phase = 1000;
-        if (phase < 500) phase *= 2;
-        else phase = (1000 - phase) * 2;
-        /* Rotate the complete left arm once around the shoulder/elbow plane.
-         * Segment lengths remain fixed; only their Y/Z direction changes. */
-        pose->left_upper_pitch = -30;
-        pose->left_forearm_pitch = -30;
-        pose->left_arm_rotation = phase * TOY_CONFIG_SHOVE_SWEEP_DEGREES / 1000;
-    }
 }
 
 #endif

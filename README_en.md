@@ -42,6 +42,9 @@ The Linux build uses Wayland, ALSA/WSLg audio, and the repository's freestanding
 runtime. The Windows build is isolated in a platform layer using SDL2, Win32
 threads/synchronization, and Winsock; Toyc does not need to emit PE/COFF.
 
+See [`rasterfall/ANIMATION_ARCHITECTURE.md`](rasterfall/ANIMATION_ARCHITECTURE.md)
+for the model, animation-format, retargeting, and IK module boundaries.
+
 Linux build and run:
 
 ```sh

@@ -40,6 +40,9 @@ Rasterfall 是一个用 Toyc/Tinylibc 构建的第一人称射击原型，包含
 freestanding 运行时；Windows 版本通过独立平台层使用 SDL2、Win32 线程/同步和
 Winsock，不要求 Toyc 输出 PE/COFF。
 
+模型、动画格式、重定向与 IK 的模块边界见
+[`rasterfall/ANIMATION_ARCHITECTURE.md`](rasterfall/ANIMATION_ARCHITECTURE.md)。
+
 Linux 构建和运行（从项目资源目录读取）：
 
 ```sh

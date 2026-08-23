@@ -1853,7 +1853,7 @@ static int benchmark_model_features(const char *model_path, int iterations,
             int animation_id, sample, sample_count = iterations * 100;
             for (animation_id = 0; animation_id < 4; animation_id++) {
                 const struct rasterfall_animation_clip *clip =
-                    animation_id == 0 ? NULL : &model.demo_clips[animation_id-1];
+                    animation_id == 0 ? NULL : &model.animation.demo_clips[animation_id-1];
                 for (sample = 0; sample < sample_count; sample++) {
                     long start = monotonic_us();
                     rasterfall_model_sample_clip(&model, clip,

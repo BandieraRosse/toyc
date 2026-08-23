@@ -22,6 +22,7 @@
 #include "rasterfall_model.h"
 #include "rasterfall_viewmodel.h"
 #include "rasterfall_animation.h"
+#include "rasterfall_actor_animation.h"
 #include "rasterfall_glb_animation.h"
 #include "rasterfall_glb_preview.h"
 #include "rasterfall_vmd.h"
@@ -1271,10 +1272,10 @@ static int render_gallery_model(struct toy_renderer *renderer,
         model_setup_timing.edge_triangles_us += edge_us;
         active_model_triangle_stats = collect_model_render_stats ?
             &model_render_stats.body : 0;
-        if (material < model->material_count && model->texture_assets) {
+        if (material < model->material_count && model->textures.assets) {
             unsigned int texture_index = model_u32(model->materials + material * model->material_bytes + 8);
-            if (texture_index < model->texture_count && model->texture_assets[texture_index].data) {
-                texture = &model->texture_views[texture_index];
+            if (texture_index < model->textures.count && model->textures.assets[texture_index].data) {
+                texture = &model->textures.views[texture_index];
                 active_texture_view = texture;
             }
             if (model->format_version >= 3) {
@@ -1288,9 +1289,9 @@ static int render_gallery_model(struct toy_renderer *renderer,
                     (sphere_mode == 1 || sphere_mode == 2 ||
                      (sphere_mode == 3 && model->vertex_bytes >=
                       RASTERFALL_MODEL_VERTEX_BYTES_ADDITIONAL_UV)) &&
-                    sphere_index != 0xffffU && sphere_index < model->texture_count &&
-                    model->texture_assets[sphere_index].data) {
-                    sphere_texture = &model->texture_views[sphere_index];
+                    sphere_index != 0xffffU && sphere_index < model->textures.count &&
+                    model->textures.assets[sphere_index].data) {
+                    sphere_texture = &model->textures.views[sphere_index];
                     active_sphere_texture = sphere_texture;
                     active_sphere_mode = sphere_mode;
                 } else active_sphere_texture = 0;
@@ -1298,9 +1299,9 @@ static int render_gallery_model(struct toy_renderer *renderer,
             if (model->format_version >= 5 && !active_disable_toon) {
                 unsigned int toon_index = model->materials[material * model->material_bytes + 5];
                 unsigned int toon_kind = model->materials[material * model->material_bytes + 6];
-                if (toon_kind == 1 && toon_index < model->texture_count &&
-                    model->texture_assets[toon_index].data) {
-                    toon_texture = &model->texture_views[toon_index];
+                if (toon_kind == 1 && toon_index < model->textures.count &&
+                    model->textures.assets[toon_index].data) {
+                    toon_texture = &model->textures.views[toon_index];
                     active_toon_texture = toon_texture;
                 } else if (toon_kind == 2) active_toon_shared = (int)toon_index;
             }
@@ -1495,8 +1496,12 @@ static int render_private_character(struct toy_renderer *renderer,
         private_character_model.data) {
             if (rasterfall_vmd_load(&private_character_vmd,
                                 requested_vmd) == 0) {
-            rasterfall_vmd_map_eula(&private_character_vmd,
+            rasterfall_vmd_map_model(&private_character_vmd,
                                     &private_character_model);
+            rasterfall_model_bind_root_motion(
+                &private_character_model,
+                rasterfall_model_find_bone(&private_character_model,"センター"),
+                rasterfall_model_find_bone(&private_character_model,"グルーブ"));
             rasterfall_vmd_build_animation(&private_character_vmd,
                 &private_character_vmd_clip, private_character_vmd_tracks,
                 RASTERFALL_VMD_MAX_BONES);
@@ -1517,7 +1522,7 @@ static int render_private_character(struct toy_renderer *renderer,
             snprintf(private_character_vmd_loaded_path,
                      sizeof(private_character_vmd_loaded_path), "%s",
                      requested_vmd);
-            __printf("rasterfall: VMD walk loaded directly on Eula: %s\n",
+            __printf("rasterfall: VMD walk loaded on character model: %s\n",
                      requested_vmd);
         } else __fprintf(2, "rasterfall: cannot load VMD walk %s\n",
                          requested_vmd);
@@ -1528,11 +1533,11 @@ static int render_private_character(struct toy_renderer *renderer,
             &active_session->skeletal_demo_player;
         {
             int zero[3] = {0, 0, 0};
-            rasterfall_model_set_vmd_skeleton_translation(
-                &private_character_model, zero, zero, 0);
-            private_character_model.animation_offset_x = 0;
-            private_character_model.animation_offset_y = 0;
-            private_character_model.animation_offset_z = 0;
+            rasterfall_model_set_root_motion(&private_character_model,
+                                             zero, zero, 0);
+            private_character_model.animation_offset[0] = 0;
+            private_character_model.animation_offset[1] = 0;
+            private_character_model.animation_offset[2] = 0;
         }
         long sample_start = render_monotonic_us();
         /* The no-argument VMD demo starts with clip_id == -1.  Once the
@@ -1562,22 +1567,22 @@ static int render_private_character(struct toy_renderer *renderer,
                     "センター", player->time_ms, center);
                 rasterfall_vmd_sample_bone_translation(&private_character_vmd,
                     "グルーブ", player->time_ms, groove);
-                rasterfall_model_set_vmd_skeleton_translation(
-                    &private_character_model, center, groove,
+                rasterfall_model_set_root_motion(
+                    &private_character_model,center,groove,
                     !private_character_vmd_legacy_root_offset);
-                private_character_model.animation_offset_x = 0;
-                private_character_model.animation_offset_y = 0;
-                private_character_model.animation_offset_z = 0;
+                private_character_model.animation_offset[0] = 0;
+                private_character_model.animation_offset[1] = 0;
+                private_character_model.animation_offset[2] = 0;
                 if (private_character_vmd_legacy_root_offset) {
-                    private_character_model.animation_offset_x = center[0] + groove[0];
-                    private_character_model.animation_offset_y = center[1] + groove[1];
-                    private_character_model.animation_offset_z = center[2] + groove[2];
+                    private_character_model.animation_offset[0] = center[0] + groove[0];
+                    private_character_model.animation_offset[1] = center[1] + groove[1];
+                    private_character_model.animation_offset[2] = center[2] + groove[2];
                 }
             }
             rasterfall_model_sample_clip(&private_character_model,
                                          player->clip, player->time_ms);
         } else if (player->clip_id >= 0 && player->clip_id < 3) {
-            player->clip = &private_character_model.demo_clips[player->clip_id];
+            player->clip = &private_character_model.animation.demo_clips[player->clip_id];
             player->loop = player->clip->loop;
             rasterfall_model_sample_clip(&private_character_model, player->clip,
                                          player->time_ms);
@@ -3838,13 +3843,13 @@ static int render_actor_model_weapon(struct toy_renderer *renderer,
 {
     const char *path = rasterfall_weapon_model_path(weapon);
     struct rasterfall_model_asset *model;
-    struct rasterfall_animation_pose pose;
+    struct rasterfall_actor_pose pose;
     int width, height, depth, length, scale, anchor_x, anchor_z;
     int i, pixels = 0;
     if (!path) return 0;
     model = gallery_model_named(path, NULL);
     if (!model) return 0;
-    rasterfall_animation_sample_duration(
+    rasterfall_actor_animation_sample(
         animation_id, animation_time_ms,
         animation_id == TOY_GAME_ANIM_RELOAD ?
             toy_game_weapon_info(weapon)->reload_ms :
@@ -4098,13 +4103,13 @@ static int render_player_avatar(struct toy_renderer *renderer,
                                 uint32_t body_color, int downed,
                                 int animation_id, int animation_time_ms)
 {
-    struct rasterfall_animation_pose pose;
+    struct rasterfall_actor_pose pose;
     int pixels = 0, face_y0, face_y1, animation_lift;
     int pose_x, pose_z;
     int death_progress = 0;
     int show_fall_gear = 0;
     if (!renderer || !camera) return 0;
-    rasterfall_animation_sample_duration(
+    rasterfall_actor_animation_sample(
         animation_id, animation_time_ms,
         animation_id == TOY_GAME_ANIM_RELOAD && weapon >= 0 ?
             toy_game_weapon_info(weapon)->reload_ms :
