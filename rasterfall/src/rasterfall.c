@@ -186,7 +186,14 @@ static struct toy_texture_asset model_texture;
 static struct toy_texture_view model_texture_view;
 /* Toyc 自托管版的纹理光栅化仍有运行时崩溃风险；纯色路径作为稳定默认值。
  * 调试纹理渲染时可显式传入 --textures。 */
+#ifdef TOYC_WINDOWS
+/* The MinGW build uses the host compiler/runtime and supports the complete
+ * texture path.  Keep Windows models textured without requiring a hidden
+ * command-line switch. */
+static int textures_enabled = 1;
+#else
 static int textures_enabled = 0;
+#endif
 static struct rasterfall_effects effects;
 
 /* 主循环仍需要少量坐标和特效同步辅助；几何绘制本身位于

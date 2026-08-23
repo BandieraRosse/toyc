@@ -56,6 +56,8 @@ long __read(int fd, void *buf, size_t len)
 int __openat(int dirfd, const char *path, int flags, int mode)
 {
     char absolute[MAX_PATH];
+    wchar_t wide[MAX_PATH];
+    const char *resolved = path;
     DWORD length;
     (void)dirfd;
     if (path && path[0] && path[1] != ':' && path[0] != '\\' && path[0] != '/') {
@@ -66,11 +68,14 @@ int __openat(int dirfd, const char *path, int flags, int mode)
                 length--;
             if (length + strlen(path) < sizeof(absolute)) {
                 strcpy(absolute + length, path);
-                return _open(absolute, win_flags(flags), mode);
+                resolved = absolute;
             }
         }
     }
-    return _open(path, win_flags(flags), mode);
+    if (resolved && MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS,
+                                        resolved, -1, wide, MAX_PATH) > 0)
+        return _wopen(wide, win_flags(flags), mode);
+    return _open(resolved, win_flags(flags), mode);
 }
 
 int __creat(const char *path, int mode)

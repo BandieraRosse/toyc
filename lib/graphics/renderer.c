@@ -16,6 +16,9 @@
 #include "pthread.h"
 #include "tlibc_compat.h"
 #include "atomic.h"
+#if defined(TOYC_WINDOWS)
+#include <windows.h>
+#endif
 
 #define TOY_UV_ONE 65536L
 #define TOY_INV_Z_SCALE 1048576L
@@ -905,6 +908,7 @@ void toy_renderer_set_texture_diagnostics(struct toy_renderer *renderer,
 
 /* ── 工作线程池：futex 等待 job_generation，主线程分发后自旋等 done ── */
 
+#if !defined(TOYC_WINDOWS)
 static int parse_cpu_online(const char *text, int length)
 {
     int at = 0, count = 0;
@@ -928,9 +932,15 @@ static int parse_cpu_online(const char *text, int length)
     }
     return count;
 }
+#endif
 
 static int count_processors(void)
 {
+#if defined(TOYC_WINDOWS)
+    SYSTEM_INFO info;
+    GetSystemInfo(&info);
+    return info.dwNumberOfProcessors > 0 ? (int)info.dwNumberOfProcessors : 4;
+#else
     static const char processor[] = "processor";
     char buf[4096];
     int fd, n, count = 0, match = 0;
@@ -965,6 +975,7 @@ static int count_processors(void)
     }
     if (count < 1) count = 4;
     return count;
+#endif
 }
 
 static void worker_clear(struct toy_renderer *renderer, int id)
@@ -1212,15 +1223,11 @@ int toy_renderer_begin(struct toy_renderer *renderer,
     renderer->surface.stride = surface->stride;
     /* Tiny in-memory probes gain nothing from the worker pool and should not
      * require thread/TLS setup merely to exercise rasterization math. */
-#if defined(TOYC_WINDOWS)
-    clear_single(renderer, clear_color);
-#else
     if ((long)surface->width * surface->height >= 320 * 180 &&
         ensure_workers(renderer) == 0)
         renderer_dispatch(renderer, 1, clear_color);
     else
         clear_single(renderer, clear_color);
-#endif
     return 0;
 }
 

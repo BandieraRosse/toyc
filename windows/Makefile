@@ -12,9 +12,10 @@ CPPFLAGS := -DTOYC_WINDOWS \
             -include windows/include/windows_stdlib.h
 CFLAGS := -std=c11 -O2 -Wall -Wextra -ffunction-sections -fdata-sections \
           -MMD -MP
-LDFLAGS := -static -static-libgcc -mwindows -Wl,--gc-sections
+LDFLAGS := -static -static-libgcc -mwindows -municode -Wl,--gc-sections
 LDLIBS := -L$(SDL_PREFIX)/lib -lSDL2 -lws2_32 -lwinmm \
-          -lgdi32 -limm32 -lole32 -loleaut32 -luuid -lversion -lsetupapi
+          -lgdi32 -limm32 -lole32 -loleaut32 -luuid -lversion -lsetupapi \
+          -lshell32
 
 GAME_SRCS := rasterfall/src/rasterfall.c \
              rasterfall/src/rasterfall_audio.c \
