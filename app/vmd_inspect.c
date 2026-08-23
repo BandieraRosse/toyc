@@ -1892,6 +1892,8 @@ static void inspect_vmd_leg_trace(struct rasterfall_model_asset *m,
     int peak_thigh_before[2][3], peak_thigh_after[2][3], peak_knee_before[2][3], peak_knee_after[2][3], peak_d_before[2][3], peak_d_after[2][3];
     double max_target[2]={0,0}, max_thigh[2]={0,0}, max_knee[2]={0,0}, max_d[2]={0,0}, max_ankle[2]={0,0};
     int max_target_time[2]={0,0}, max_thigh_time[2]={0,0}, max_knee_time[2]={0,0}, max_d_time[2]={0,0}, max_ankle_time[2]={0,0};
+    double max_lateral[2]={0,0};
+    int max_lateral_time[2]={0,0};
     int time, have=0, side;
     __printf("vmd leg trace: translation_sampling=linear, solver_init=FK_base_each_frame, frame_step=33ms\n");
     prepare_vmd_skeleton_translation(m,v,0,0);
@@ -1916,7 +1918,20 @@ static void inspect_vmd_leg_trace(struct rasterfall_model_asset *m,
             euler_thigh[0]=m->bones[thigh].rotate_x;euler_thigh[1]=m->bones[thigh].rotate_y;euler_thigh[2]=m->bones[thigh].rotate_z;
             euler_knee[0]=m->bones[knee].rotate_x;euler_knee[1]=m->bones[knee].rotate_y;euler_knee[2]=m->bones[knee].rotate_z;
             euler_d[0]=m->bones[dbone].rotate_x;euler_d[1]=m->bones[dbone].rotate_y;euler_d[2]=m->bones[dbone].rotate_z;
-            if(have){double x=inspect_position_delta(previous_target[side],target),y=inspect_rotation_delta(previous_thigh[side],euler_thigh),z=inspect_rotation_delta(previous_knee[side],euler_knee),q=inspect_rotation_delta(previous_d[side],euler_d),r=inspect_position_delta(previous_ankle[side],ankle_pos);if(x>max_target[side]){max_target[side]=x;max_target_time[side]=time;memcpy(peak_target_before[side],previous_target[side],sizeof(previous_target[side]));memcpy(peak_target_after[side],target,sizeof(target));}if(y>max_thigh[side]){max_thigh[side]=y;max_thigh_time[side]=time;memcpy(peak_thigh_before[side],previous_thigh[side],sizeof(previous_thigh[side]));memcpy(peak_thigh_after[side],euler_thigh,sizeof(euler_thigh));}if(z>max_knee[side]){max_knee[side]=z;max_knee_time[side]=time;memcpy(peak_knee_before[side],previous_knee[side],sizeof(previous_knee[side]));memcpy(peak_knee_after[side],euler_knee,sizeof(euler_knee));}if(q>max_d[side]){max_d[side]=q;max_d_time[side]=time;memcpy(peak_d_before[side],previous_d[side],sizeof(previous_d[side]));memcpy(peak_d_after[side],euler_d,sizeof(euler_d));}if(r>max_ankle[side]){max_ankle[side]=r;max_ankle_time[side]=time;memcpy(peak_ankle_before[side],previous_ankle[side],sizeof(previous_ankle[side]));memcpy(peak_ankle_after[side],ankle_pos,sizeof(ankle_pos));}}
+            if(have){
+                double target_delta=inspect_position_delta(previous_target[side],target);
+                double thigh_delta=inspect_rotation_delta(previous_thigh[side],euler_thigh);
+                double knee_delta=inspect_rotation_delta(previous_knee[side],euler_knee);
+                double d_delta=inspect_rotation_delta(previous_d[side],euler_d);
+                double ankle_delta=inspect_position_delta(previous_ankle[side],ankle_pos);
+                double lateral_delta=fabs(ankle_pos[0]-previous_ankle[side][0]);
+                if(target_delta>max_target[side]){max_target[side]=target_delta;max_target_time[side]=time;memcpy(peak_target_before[side],previous_target[side],sizeof(previous_target[side]));memcpy(peak_target_after[side],target,sizeof(target));}
+                if(thigh_delta>max_thigh[side]){max_thigh[side]=thigh_delta;max_thigh_time[side]=time;memcpy(peak_thigh_before[side],previous_thigh[side],sizeof(previous_thigh[side]));memcpy(peak_thigh_after[side],euler_thigh,sizeof(euler_thigh));}
+                if(knee_delta>max_knee[side]){max_knee[side]=knee_delta;max_knee_time[side]=time;memcpy(peak_knee_before[side],previous_knee[side],sizeof(previous_knee[side]));memcpy(peak_knee_after[side],euler_knee,sizeof(euler_knee));}
+                if(d_delta>max_d[side]){max_d[side]=d_delta;max_d_time[side]=time;memcpy(peak_d_before[side],previous_d[side],sizeof(previous_d[side]));memcpy(peak_d_after[side],euler_d,sizeof(euler_d));}
+                if(ankle_delta>max_ankle[side]){max_ankle[side]=ankle_delta;max_ankle_time[side]=time;memcpy(peak_ankle_before[side],previous_ankle[side],sizeof(previous_ankle[side]));memcpy(peak_ankle_after[side],ankle_pos,sizeof(ankle_pos));}
+                if(lateral_delta>max_lateral[side]){max_lateral[side]=lateral_delta;max_lateral_time[side]=time;}
+            }
             if(time<=1000)__printf("leg trace time=%dms side=%s target=(%.3f,%.3f,%.3f) thigh=(%d,%d,%d) knee=(%d,%d,%d) D=(%d,%d,%d) ankle=(%.3f,%.3f,%.3f) error=%.3f iterations=%d\n",time,side==0?"left":"right",target[0],target[1],target[2],euler_thigh[0],euler_thigh[1],euler_thigh[2],euler_knee[0],euler_knee[1],euler_knee[2],euler_d[0],euler_d[1],euler_d[2],ankle_pos[0],ankle_pos[1],ankle_pos[2],inspect_position_delta(target,ankle_pos),ik>=0?m->iks[ik].iterations:0);
             memcpy(previous_target[side],target,sizeof(target));memcpy(previous_ankle[side],ankle_pos,sizeof(ankle_pos));memcpy(previous_thigh[side],euler_thigh,sizeof(euler_thigh));memcpy(previous_knee[side],euler_knee,sizeof(euler_knee));memcpy(previous_d[side],euler_d,sizeof(euler_d));
         }
@@ -1927,6 +1942,7 @@ static void inspect_vmd_leg_trace(struct rasterfall_model_asset *m,
         }
     }
     for(side=0;side<2;side++)__printf("leg trace peaks side=%s target_delta=%.3f@%dms before=(%.3f,%.3f,%.3f) after=(%.3f,%.3f,%.3f) thigh_delta=%.3fdeg@%dms before=(%d,%d,%d) after=(%d,%d,%d) knee_delta=%.3fdeg@%dms before=(%d,%d,%d) after=(%d,%d,%d) D_delta=%.3fdeg@%dms before=(%d,%d,%d) after=(%d,%d,%d) ankle_delta=%.3f@%dms before=(%.3f,%.3f,%.3f) after=(%.3f,%.3f,%.3f)\n",side==0?"left":"right",max_target[side],max_target_time[side],peak_target_before[side][0],peak_target_before[side][1],peak_target_before[side][2],peak_target_after[side][0],peak_target_after[side][1],peak_target_after[side][2],max_thigh[side],max_thigh_time[side],peak_thigh_before[side][0],peak_thigh_before[side][1],peak_thigh_before[side][2],peak_thigh_after[side][0],peak_thigh_after[side][1],peak_thigh_after[side][2],max_knee[side],max_knee_time[side],peak_knee_before[side][0],peak_knee_before[side][1],peak_knee_before[side][2],peak_knee_after[side][0],peak_knee_after[side][1],peak_knee_after[side][2],max_d[side],max_d_time[side],peak_d_before[side][0],peak_d_before[side][1],peak_d_before[side][2],peak_d_after[side][0],peak_d_after[side][1],peak_d_after[side][2],max_ankle[side],max_ankle_time[side],peak_ankle_before[side][0],peak_ankle_before[side][1],peak_ankle_before[side][2],peak_ankle_after[side][0],peak_ankle_after[side][1],peak_ankle_after[side][2]);
+    for(side=0;side<2;side++)__printf("leg lateral peak side=%s delta=%.3f@%dms\n",side?"right":"left",max_lateral[side],max_lateral_time[side]);
     __printf("vmd leg trace conclusion: CCD starts from FK base each frame; early exit threshold=8 units; configured iterations=40\n");
 }
 
