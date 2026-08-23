@@ -10,15 +10,14 @@ SDL2_SOURCE_URL="https://your-mirror.example/SDL2-2.30.11.tar.gz" \
   ./scripts/setup-windows-build.sh
 
 make win-rasterfall WINDOWS_DEPS="$PWD/.windows-deps"
+make win-rasterfall-package WINDOWS_DEPS="$PWD/.windows-deps"
 ```
 
-The result will be `build/rasterfall.exe`. Existing `make`, `make
-self-*`, and test targets continue to use `build/` and are unaffected.
-
-The Windows target is the single-file package build. It embeds
-`rasterfall/assets/` and, when present, runtime files from
-`rasterfall/private-assets/` into `build/rasterfall.exe`; no external resource
-directory or particular working directory is required.
+The first target incrementally produces `build/rasterfall.exe` without linking
+assets. The package target produces `build/rasterfall-windows.zip`, containing
+one EXE plus complete project-shaped public and private local-development asset
+directories, including art sources, models, textures, and animations. The
+program resolves those paths relative to its executable directory.
 
 The installer caches the SDL2 archive and build under `.windows-deps`; rerun
 it after an interrupted download to resume instead of starting over. If you

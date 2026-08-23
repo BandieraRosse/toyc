@@ -96,7 +96,7 @@ bone reference，并列出每根骨骼的 index、name、parent、rest position�
 
 ```sh
 build/rasterfall --model-views \
-    rasterfall/private-assets/models/yola.rmesh tmp/yola-views
+    rasterfall/private-assets/models/eula.rmesh tmp/eula-views
 ```
 
 输出为 `front.bmp`、`side.bmp`、`back.bmp` 及对应的 PPM。模型会按包围盒自动居中和缩放，
@@ -105,14 +105,14 @@ build/rasterfall --model-views \
 骨骼诊断和程序化 pose 回归可使用：
 
 ```sh
-build/rasterfall --model-bones rasterfall/private-assets/models/yola.rmesh 腕
-build/rasterfall --model-humanoid rasterfall/private-assets/models/yola.rmesh
-build/rasterfall --model-humanoid-basis rasterfall/private-assets/models/yola.rmesh
-build/rasterfall --model-retarget-test rasterfall/private-assets/models/yola.rmesh right-arm
-build/rasterfall --model-glb-animation rasterfall/private-assets/models/yola.rmesh rasterfall/private-assets/models/UAL1_Standard.glb Idle_Loop
-build/rasterfall --model-static-views rasterfall/private-assets/models/yola.rmesh tmp/yola-static
-build/rasterfall --model-pose-views rasterfall/private-assets/models/yola.rmesh tmp/yola-bind bind
-build/rasterfall --model-pose-views rasterfall/private-assets/models/yola.rmesh tmp/yola-arm right-arm
+build/rasterfall --model-bones rasterfall/private-assets/models/eula.rmesh 腕
+build/rasterfall --model-humanoid rasterfall/private-assets/models/eula.rmesh
+build/rasterfall --model-humanoid-basis rasterfall/private-assets/models/eula.rmesh
+build/rasterfall --model-retarget-test rasterfall/private-assets/models/eula.rmesh right-arm
+build/rasterfall --model-glb-animation rasterfall/private-assets/models/eula.rmesh rasterfall/private-assets/models/UAL1_Standard.glb Idle_Loop
+build/rasterfall --model-static-views rasterfall/private-assets/models/eula.rmesh tmp/eula-static
+build/rasterfall --model-pose-views rasterfall/private-assets/models/eula.rmesh tmp/eula-bind bind
+build/rasterfall --model-pose-views rasterfall/private-assets/models/eula.rmesh tmp/eula-arm right-arm
 ```
 
 `--model-humanoid` 按骨名建立第一版通用人体语义映射，并报告缺失核心骨、重复映射和
@@ -182,7 +182,7 @@ GLB animation keyframe，也不改变 AnimationClip、root motion 或游戏动�
 
 ```sh
 build/rasterfall --model-views-compare \
-    rasterfall/private-assets/models/yola.rmesh tmp/yola-compare
+    rasterfall/private-assets/models/eula.rmesh tmp/eula-compare
 ```
 
 该命令分别在 `with-sphere/` 和 `without-sphere/` 中生成三张同机位图片；
@@ -192,7 +192,7 @@ Toon 对照使用：
 
 ```sh
 build/rasterfall --model-views-toon-compare \
-    rasterfall/private-assets/models/yola.rmesh tmp/yola-toon-compare
+    rasterfall/private-assets/models/eula.rmesh tmp/eula-toon-compare
 ```
 
 该命令分别在 `with-toon/` 和 `without-toon/` 中生成三张同机位图片；两组都
@@ -202,7 +202,7 @@ Edge 轮廓对照使用：
 
 ```sh
 build/rasterfall --model-views-edge-compare \
-    rasterfall/private-assets/models/yola.rmesh tmp/yola-edge-compare
+    rasterfall/private-assets/models/eula.rmesh tmp/eula-edge-compare
 ```
 
 该命令分别在 `with-edge/` 和 `without-edge/` 中生成三张同机位图片，其余材质、
@@ -212,7 +212,7 @@ build/rasterfall --model-views-edge-compare \
 
 ```sh
 build/rasterfall --model-views-lighting-compare \
-    rasterfall/private-assets/models/yola.rmesh tmp/yola-lighting-compare
+    rasterfall/private-assets/models/eula.rmesh tmp/eula-lighting-compare
 ```
 
 该命令分别输出 `with-lighting/` 和 `without-lighting/`，只切换 RFM2 v9 保存的
@@ -222,7 +222,7 @@ ambient/specular 材质参数。
 
 ```sh
 build/rasterfall --model-material-regression \
-    rasterfall/private-assets/models/yola.rmesh tmp/yola-material-regression
+    rasterfall/private-assets/models/eula.rmesh tmp/eula-material-regression
 ```
 
 输出目录包含 `base/`、`sphere/`、`toon/`、`full/` 四组三视图和
@@ -236,7 +236,7 @@ Full、Edge off、Toon off、Sphere off、lighting off 和 model off：
 
 ```sh
 build/rasterfall --model-performance \
-    rasterfall/private-assets/models/yola.rmesh 5 8
+    rasterfall/private-assets/models/eula.rmesh 5 8
 ```
 
 第二个参数是每个视角的迭代次数，可选第三个参数固定 worker 数量（1–8，省略时
@@ -251,7 +251,7 @@ build/rasterfall --model-performance \
 
 版权受限的本地测试模型应放在 `private-assets/` 下；该目录已被 Git 忽略，
 不会参与公开资源或嵌入式发布构建。当前本地角色样本位于
-`private-assets/models/yola.rmesh`，游戏会将其绘制在 `(-13000, -900, -10000)`。
+`private-assets/models/eula.rmesh`，游戏会将其绘制在 `(-13000, -900, -10000)`。
 同目录存在 `UAL1_Standard.glb` 时，游戏会在旁边绘制一个直接使用 GLB 原骨架
 和 skin 的 Quaternius 模型。第二排 GLB Idle/Walk/Jog 按钮播放原始 local TRS
 动画，不经过 Humanoid retarget，用于和第一排优菈 retarget 结果同场对照。

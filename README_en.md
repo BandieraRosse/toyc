@@ -64,13 +64,16 @@ make win-deps
 make win-rasterfall
 ```
 
-After dependencies are ready, `make win-rasterfall` or
-`make -f windows/Makefile` performs the Windows single-file package build. It
-links `rasterfall/assets/` and any runtime files under
-`rasterfall/private-assets/` into `build/rasterfall.exe`, so no external asset
-directory is required. Linux keeps its default directory-based build and the
-optional `rasterfall-embedded` compatibility target. Source, header, and
-Rasterfall asset changes are tracked by the Makefiles.
+After dependencies are ready, `make win-rasterfall` incrementally builds the
+small, resource-external `build/rasterfall.exe`. Run
+`make win-rasterfall-package` (or `make -f windows/Makefile package`) for the
+release archive `build/rasterfall-windows.zip`. The archive contains one EXE
+and complete project-shaped `rasterfall/assets/` and
+`rasterfall/private-assets/` local-development art, model, source-texture, and
+animation directories. At startup the program uses the EXE directory as its
+resource root, independently of the caller's working directory. Linux keeps
+its default directory-based build and the optional `rasterfall-embedded`
+compatibility target.
 
 The headless logic check is available with:
 

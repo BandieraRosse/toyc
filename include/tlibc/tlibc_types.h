@@ -25,8 +25,14 @@ typedef signed short int int16_t;
 typedef unsigned short int uint16_t;
 typedef signed int int32_t;
 typedef unsigned int uint32_t;
-typedef signed long int int64_t;
-typedef unsigned long int uint64_t;
+/* LP64 (Linux) and LLP64 (64-bit Windows) disagree on the width of long.
+ * Fixed-width data must therefore use long long, which is 64 bits on both
+ * targets supported by Rasterfall. */
+typedef signed long long int int64_t;
+typedef unsigned long long int uint64_t;
+
+typedef char tlibc_int64_must_be_8_bytes[(sizeof(int64_t) == 8) ? 1 : -1];
+typedef char tlibc_uint64_must_be_8_bytes[(sizeof(uint64_t) == 8) ? 1 : -1];
 
 #ifndef NULL
 #define NULL ((void *)0)

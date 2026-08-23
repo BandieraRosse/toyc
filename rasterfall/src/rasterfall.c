@@ -1464,7 +1464,7 @@ static void draw_input_debug(struct toy_surface *surface,
 #include "rasterfall_perf.h"
 
 struct model_view_stats {
-    unsigned long hash;
+    uint64_t hash;
     unsigned long foreground;
     unsigned long luminance_sum;
     unsigned long near_black;
@@ -1478,7 +1478,7 @@ static void measure_model_view(const struct toy_surface *surface,
 {
     int x, y;
     memset(stats, 0, sizeof(*stats));
-    stats->hash = 1469598103934665603UL;
+    stats->hash = 1469598103934665603ULL;
     for (y = 0; y < surface->height; y++) {
         const uint32_t *row = (const uint32_t *)((const unsigned char *)surface->pixels +
                                                  y * surface->stride);
@@ -1487,7 +1487,7 @@ static void measure_model_view(const struct toy_surface *surface,
             int r = (color >> 16) & 255, g = (color >> 8) & 255, b = color & 255;
             int luminance;
             stats->hash ^= color;
-            stats->hash *= 1099511628211UL;
+            stats->hash *= 1099511628211ULL;
             if (color == 0x30343bU) continue;
             luminance = (r * 299 + g * 587 + b * 114) / 1000;
             stats->foreground++;
@@ -1680,7 +1680,7 @@ static int dump_model_material_regression(const char *model_path,
         unsigned long mean = stats[group][view].foreground ?
             stats[group][view].luminance_sum / stats[group][view].foreground : 0;
         length = snprintf(line, sizeof(line),
-            "%s/%s.bmp hash=%016lx foreground=%lu mean_luminance=%lu near_black=%lu\n",
+            "%s/%s.bmp hash=%016llx foreground=%lu mean_luminance=%lu near_black=%lu\n",
             groups[group], views[view], stats[group][view].hash,
             stats[group][view].foreground, mean, stats[group][view].near_black);
         if (length <= 0 || length >= (int)sizeof(line) ||

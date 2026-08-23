@@ -62,8 +62,7 @@ build/rasterfall --connect 127.0.0.1 --port 28460
 ```
 
 Windows 版本需要 Linux 主机上的 MinGW-w64、CMake、Ninja 和 SDL2 构建依赖。首次
-构建先安装/准备依赖（SDL2 源码和交叉编译工具会缓存到 `.windows-deps/`），然后生成
-`build/rasterfall.exe`：
+构建先安装/准备依赖（SDL2 源码和交叉编译工具会缓存到 `.windows-deps/`）：
 
 ```sh
 make win-deps
@@ -76,10 +75,13 @@ make win-rasterfall
 make win-rasterfall
 ```
 
-也可以直接执行 `make -f windows/Makefile`。`win-rasterfall` 是 Windows 的单文件打包
-构建选项，会把 `rasterfall/assets/` 及存在的 `rasterfall/private-assets/` 运行资源链接
-进 `build/rasterfall.exe`，运行时不需要额外资源目录。Linux 默认程序读取仓库资源目录；
-其 `rasterfall-embedded` 兼容目标仍可生成单文件程序。
+该目标只增量生成 `build/rasterfall.exe`，资源保持外置，因此链接速度不受私有模型大小
+影响。发布时运行 `make win-rasterfall-package`，生成 `build/rasterfall-windows.zip`；压缩
+包内只有一个 EXE，并原样保留本地开发项目中的 `rasterfall/assets/` 和
+`rasterfall/private-assets/` 美术资源、模型、源纹理与动画目录。程序启动时会以 EXE 所在目录为资源根目录，
+不依赖启动时的当前工作目录。也可以直接运行 `make -f windows/Makefile package`。
+Linux 默认程序继续读取仓库资源目录，其 `rasterfall-embedded` 兼容目标仍可生成内嵌资源
+程序。
 修改源文件、头文件或 Rasterfall 资源后，Makefile 会按依赖关系增量编译和重新链接。
 
 `bootstrap/` 保存版本控制内的种子二进制。它们用于阶段性的自举检查，不参与默认

@@ -36,8 +36,12 @@ typedef signed short int        int16_t;
 typedef unsigned short int      uint16_t;
 typedef signed int              int32_t;
 typedef unsigned int            uint32_t;
-typedef signed long int         int64_t;
-typedef unsigned long int       uint64_t;
+/* Keep serialized and cross-platform values stable across LP64 and LLP64. */
+typedef signed long long int    int64_t;
+typedef unsigned long long int  uint64_t;
+
+typedef char toyc_int64_must_be_8_bytes[(sizeof(int64_t) == 8) ? 1 : -1];
+typedef char toyc_uint64_must_be_8_bytes[(sizeof(uint64_t) == 8) ? 1 : -1];
 
 #ifndef NULL
 #define NULL ((void *)0)

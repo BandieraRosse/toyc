@@ -228,7 +228,7 @@ void rasterfall_perf_dump(const struct rasterfall_perf_stats *s, const char *lab
                  (long long)flat_us, (long long)tex_us, (long long)fpct,
                  (long long)(100 - fpct));
     }
-    __printf("[stats:%s] scene detail us/f sky_floor=%lld map=%lld gallery=%lld yola=%lld projectiles=%lld models tested=%lu culled=%lu triangles_culled/f=%lu\n",
+    __printf("[stats:%s] scene detail us/f sky_floor=%lld map=%lld gallery=%lld eula=%lld projectiles=%lld models tested=%lu culled=%lu triangles_culled/f=%lu\n",
              label,
              (long long)(s->scene_sky_floor_us / s->frames),
              (long long)(s->scene_map_us / s->frames),

@@ -1476,7 +1476,7 @@ static int render_private_character(struct toy_renderer *renderer,
                                     const struct camera *camera)
 {
     const char *path = private_character_override_path ?
-        private_character_override_path : "rasterfall/private-assets/models/yola.rmesh";
+        private_character_override_path : "rasterfall/private-assets/models/eula.rmesh";
     int scale;
     if (!private_character_loaded) {
         rasterfall_model_load(&private_character_model, path);

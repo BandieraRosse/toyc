@@ -55,7 +55,21 @@ long __read(int fd, void *buf, size_t len)
 
 int __openat(int dirfd, const char *path, int flags, int mode)
 {
+    char absolute[MAX_PATH];
+    DWORD length;
     (void)dirfd;
+    if (path && path[0] && path[1] != ':' && path[0] != '\\' && path[0] != '/') {
+        length = GetModuleFileNameA(NULL, absolute, sizeof(absolute));
+        if (length > 0 && length < sizeof(absolute)) {
+            while (length > 0 && absolute[length - 1] != '\\' &&
+                   absolute[length - 1] != '/')
+                length--;
+            if (length + strlen(path) < sizeof(absolute)) {
+                strcpy(absolute + length, path);
+                return _open(absolute, win_flags(flags), mode);
+            }
+        }
+    }
     return _open(path, win_flags(flags), mode);
 }
 

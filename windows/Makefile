@@ -44,26 +44,26 @@ SRCS := $(GAME_SRCS) $(ANIMATION_SRCS) $(GAME_LIB_SRCS) $(PLATFORM_SRCS) $(LIB_S
 OBJS := $(patsubst %.c,$(BUILD)/win/%.o,$(SRCS))
 DEPS := $(OBJS:.o=.d)
 TARGET := $(BUILD)/rasterfall.exe
-ASSET_FILES := $(shell find rasterfall/assets rasterfall/private-assets -type f \
-                       ! -path '*/source/*' ! -name 'UAL1_Standard_RM.glb' -print 2>/dev/null)
-ASSET_SRC := $(BUILD)/rasterfall_windows_assets.c
-ASSET_OBJ := $(BUILD)/win/rasterfall_windows_assets.o
+PACKAGE_DIR := $(BUILD)/rasterfall-windows
+PACKAGE := $(BUILD)/rasterfall-windows.zip
 
-.PHONY: all clean
+.PHONY: all package clean
 
 all: $(TARGET)
 
-$(TARGET): $(OBJS) $(ASSET_OBJ) | $(BUILD)
+$(TARGET): $(OBJS) | $(BUILD)
 	@printf '  WIN-LD  %s\n' "$@"
-	$(WIN_CC) $(LDFLAGS) -o $@ $(OBJS) $(ASSET_OBJ) $(LDLIBS)
+	$(WIN_CC) $(LDFLAGS) -o $@ $(OBJS) $(LDLIBS)
 
-$(ASSET_SRC): scripts/embed-assets.py $(ASSET_FILES) | $(BUILD)
-	@python3 scripts/embed-assets.py rasterfall $@
-
-$(ASSET_OBJ): $(ASSET_SRC) windows/Makefile | $(BUILD)
-	@mkdir -p "$(dir $@)"
-	@printf '  WIN-CC  %s\n' "$<"
-	$(WIN_CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
+package: $(TARGET)
+	@rm -rf "$(PACKAGE_DIR)"
+	@mkdir -p "$(PACKAGE_DIR)/rasterfall"
+	@cp "$(TARGET)" "$(PACKAGE_DIR)/rasterfall.exe"
+	@cp -R rasterfall/assets "$(PACKAGE_DIR)/rasterfall/assets"
+	@cp -R rasterfall/private-assets "$(PACKAGE_DIR)/rasterfall/private-assets"
+	@rm -f "$(PACKAGE)"
+	@cd "$(PACKAGE_DIR)" && python3 -m zipfile -c "$(abspath $(PACKAGE))" rasterfall.exe rasterfall
+	@printf '  WIN-ZIP %s\n' "$(PACKAGE)"
 
 $(BUILD)/win/app/glb_inspect.o: app/glb_inspect.c windows/Makefile | $(BUILD)
 	@mkdir -p "$(dir $@)"
@@ -82,4 +82,5 @@ $(BUILD)/win/%.o: %.c windows/Makefile | $(BUILD)
 
 clean:
 	rm -rf $(BUILD)/win
-	rm -f $(TARGET)
+	rm -rf $(PACKAGE_DIR)
+	rm -f $(TARGET) $(PACKAGE)

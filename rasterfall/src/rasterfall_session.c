@@ -284,7 +284,7 @@ void rasterfall_session_reset(struct rasterfall_session *session,
     session->carried_flag = -1;
     session->assignment_flag = 0;
     /* Keep the initial flag at the world origin while the player starts
-     * 500 units closer to the Yola display. */
+     * 500 units closer to the Eula display. */
     session_init_flag(session, 0, 0, 0);
     for (i = 0; i < 3; i++)
         if (session->game_state.actors[i].active &&

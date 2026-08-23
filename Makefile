@@ -67,7 +67,7 @@ HEADERS  := $(TOYC_NEED) $(ELF_H) $(ELF_W_H)
 # ─── 默认目标 ──────────────────────────────────────────────────
 
 .PHONY: all clean update-bootstrap test test-selfhost test-source test-all \
-        test-toyar win-deps win-rasterfall
+        test-toyar win-deps win-rasterfall win-rasterfall-package
 
 all: $(BUILD)/toyc $(BUILD)/toyas $(BUILD)/toyld $(BUILD)/toyar
 	@printf "$(GREEN)✓ 构建完成$(RESET)\n"
@@ -79,6 +79,9 @@ win-deps:
 
 win-rasterfall:
 	@$(MAKE) -f windows/Makefile WINDOWS_DEPS="$(if $(WINDOWS_DEPS),$(WINDOWS_DEPS),$(CURDIR)/.windows-deps)"
+
+win-rasterfall-package:
+	@$(MAKE) -f windows/Makefile package WINDOWS_DEPS="$(if $(WINDOWS_DEPS),$(WINDOWS_DEPS),$(CURDIR)/.windows-deps)"
 
 $(BUILD)/gen_sfx: tools/gen_sfx.c rasterfall/lib/sfx.c rasterfall/include/toy_game.h | $(BUILD)
 	@printf "  $(BLUE)  GCC$(RESET)  $<\n"
