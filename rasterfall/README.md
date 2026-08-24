@@ -200,46 +200,6 @@ GLB animation keyframe，也不改变 AnimationClip、root motion 或游戏动�
 游戏地图在优菈前方提供 RESET、RIGHT ARM、ARMS 和 BODY TURN 四个 E 互动按钮；
 默认单人出生点位于模型正面并朝向模型。这些 pose 仅为本地程序化演示，不进入网络同步。
 
-需要严格对比 sphere 效果时，使用：
-
-```sh
-build/rasterfall --model-views-compare \
-    rasterfall/private-assets/models/eula.rmesh tmp/eula-compare
-```
-
-该命令分别在 `with-sphere/` 和 `without-sphere/` 中生成三张同机位图片；
-禁用版本只关闭 sphere 辅助纹理，基础纹理、缩放、相机和光照保持不变。
-
-Toon 对照使用：
-
-```sh
-build/rasterfall --model-views-toon-compare \
-    rasterfall/private-assets/models/eula.rmesh tmp/eula-toon-compare
-```
-
-该命令分别在 `with-toon/` 和 `without-toon/` 中生成三张同机位图片；两组都
-保留基础纹理、透明混合和 sphere，只切换 toon 色阶。
-
-Edge 轮廓对照使用：
-
-```sh
-build/rasterfall --model-views-edge-compare \
-    rasterfall/private-assets/models/eula.rmesh tmp/eula-edge-compare
-```
-
-该命令分别在 `with-edge/` 和 `without-edge/` 中生成三张同机位图片，其余材质、
-相机和缩放设置保持一致。
-
-环境光与镜面高光对照使用：
-
-```sh
-build/rasterfall --model-views-lighting-compare \
-    rasterfall/private-assets/models/eula.rmesh tmp/eula-lighting-compare
-```
-
-该命令分别输出 `with-lighting/` 和 `without-lighting/`，只切换 RFM2 v9 保存的
-ambient/specular 材质参数。
-
 完整材质回归使用：
 
 ```sh
@@ -252,6 +212,23 @@ build/rasterfall --model-material-regression \
 与近黑像素数，可用于提交前比较材质或光栅器修改是否造成视觉回退。
 模型三视图命令还会逐视角输出主体与 Edge 的三角形统计，包括 near reject、
 near clip、背面剔除、实际输出和延迟渲染命令溢出数量。
+
+1280×720 五角色固定工作负载基准使用：
+
+```sh
+build/rasterfall --actor-performance 30 8
+```
+
+输出包含确定性帧缓冲哈希，以及 animation、skeleton、skin、vertex transform、
+triangle setup 和 raster 的每帧平均耗时。不同优化等级必须产生相同哈希：
+
+```sh
+make RASTERFALL_OPT=-O0 build/rasterfall
+```
+
+GCC 构建默认使用已通过上述像素哈希对照的 `-O2`；`RASTERFALL_OPT`
+用于重现 `-O0` / `-O2` / `-O3` 比较。修改该变量时应使用独立 `BUILD`
+目录或先清理旧对象，避免 Make 复用不同优化等级的产物。
 
 模型功能性能基准会预加载一次资源，并在固定的 800×800 正/侧/后三视图下比较
 Full、Edge off、Toon off、Sphere off、lighting off 和 model off：

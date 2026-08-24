@@ -26,18 +26,12 @@
  *   --texture-stats                显示纹理统计
  *   --dump-frame <path>            导出帧图像
  *   --model-views <model> <dir>     离屏导出模型正面/侧面/背面图
- *   --model-views-compare <model> <dir>
- *                                   同时导出启用/禁用 sphere 的三视图
- *   --model-views-toon-compare <model> <dir>
- *                                   同时导出启用/禁用 toon 的三视图
- *   --model-views-edge-compare <model> <dir>
- *                                   同时导出启用/禁用 edge 的三视图
- *   --model-views-lighting-compare <model> <dir>
- *                                   同时导出启用/禁用材质光照的三视图
  *   --model-material-regression <model> <dir>
  *                                   导出四组材质基线和像素统计清单
  *   --model-performance <model> [iterations] [workers]
  *                                   固定视角模型功能与 worker 负载基准
+ *   --actor-performance [iterations] [workers]
+ *                                   1280x720 五角色固定工作负载基准
  *   --model-humanoid <model>        输出通用 Humanoid 骨骼映射诊断
  *   --model-humanoid-basis <model>  输出 canonical rest basis
  *   --model-retarget-test <model> <right-arm|left-arm|right-leg|chest>
@@ -1598,56 +1592,6 @@ static int dump_model_views(const char *model_path, const char *output_dir,
     return result;
 }
 
-static int dump_model_view_comparison(const char *model_path,
-                                      const char *output_dir)
-{
-    char with_sphere[512], without_sphere[512];
-    if (snprintf(with_sphere, sizeof(with_sphere), "%s/with-sphere",
-                 output_dir) >= (int)sizeof(with_sphere) ||
-        snprintf(without_sphere, sizeof(without_sphere), "%s/without-sphere",
-                 output_dir) >= (int)sizeof(without_sphere)) return 1;
-    if (dump_model_views(model_path, with_sphere, 1, 1, 1, 1, 0) != 0) return 1;
-    return dump_model_views(model_path, without_sphere, 0, 1, 1, 1, 0);
-}
-
-static int dump_model_toon_comparison(const char *model_path,
-                                      const char *output_dir)
-{
-    char with_toon[512], without_toon[512];
-    if (snprintf(with_toon, sizeof(with_toon), "%s/with-toon",
-                 output_dir) >= (int)sizeof(with_toon) ||
-        snprintf(without_toon, sizeof(without_toon), "%s/without-toon",
-                 output_dir) >= (int)sizeof(without_toon)) return 1;
-    if (dump_model_views(model_path, with_toon, 1, 1, 1, 1, 0) != 0) return 1;
-    return dump_model_views(model_path, without_toon, 1, 0, 1, 1, 0);
-}
-
-static int dump_model_edge_comparison(const char *model_path,
-                                      const char *output_dir)
-{
-    char with_edge[512], without_edge[512];
-    if (snprintf(with_edge, sizeof(with_edge), "%s/with-edge", output_dir) >=
-            (int)sizeof(with_edge) ||
-        snprintf(without_edge, sizeof(without_edge), "%s/without-edge",
-                 output_dir) >= (int)sizeof(without_edge)) return 1;
-    if (dump_model_views(model_path, with_edge, 1, 1, 1, 1, 0) != 0) return 1;
-    return dump_model_views(model_path, without_edge, 1, 1, 0, 1, 0);
-}
-
-static int dump_model_lighting_comparison(const char *model_path,
-                                          const char *output_dir)
-{
-    char with_lighting[512], without_lighting[512];
-    if (snprintf(with_lighting, sizeof(with_lighting), "%s/with-lighting",
-                 output_dir) >= (int)sizeof(with_lighting) ||
-        snprintf(without_lighting, sizeof(without_lighting),
-                 "%s/without-lighting", output_dir) >=
-                 (int)sizeof(without_lighting)) return 1;
-    if (dump_model_views(model_path, with_lighting, 1, 1, 1, 1, 0) != 0)
-        return 1;
-    return dump_model_views(model_path, without_lighting, 1, 1, 1, 0, 0);
-}
-
 static int dump_model_material_regression(const char *model_path,
                                           const char *output_dir)
 {
@@ -2197,10 +2141,6 @@ int main(int argc, char **argv)
     const char *dump_path = 0;
     const char *view_model_path = 0;
     const char *view_output_dir = 0;
-    int compare_model_views = 0;
-    int compare_model_toon = 0;
-    int compare_model_edge = 0;
-    int compare_model_lighting = 0;
     int material_regression = 0;
     const char *performance_model_path = 0;
     const char *bone_model_path = 0;
@@ -2219,6 +2159,7 @@ int main(int argc, char **argv)
     int vmd_skin_trace = 0;
     int performance_iterations = 5;
     int performance_workers = 0;
+    int actor_performance = 0;
     for (int arg = 1; arg < argc; arg++) {
         if (strcmp(argv[arg], "--input-test") == 0) input_debug = 1;
         else if (strcmp(argv[arg], "--logic-test") == 0 ||
@@ -2242,26 +2183,6 @@ int main(int argc, char **argv)
         else if (strcmp(argv[arg], "--model-views") == 0 && arg + 2 < argc) {
             view_model_path = argv[++arg];
             view_output_dir = argv[++arg];
-        } else if (strcmp(argv[arg], "--model-views-compare") == 0 &&
-                   arg + 2 < argc) {
-            view_model_path = argv[++arg];
-            view_output_dir = argv[++arg];
-            compare_model_views = 1;
-        } else if (strcmp(argv[arg], "--model-views-toon-compare") == 0 &&
-                   arg + 2 < argc) {
-            view_model_path = argv[++arg];
-            view_output_dir = argv[++arg];
-            compare_model_toon = 1;
-        } else if (strcmp(argv[arg], "--model-views-edge-compare") == 0 &&
-                   arg + 2 < argc) {
-            view_model_path = argv[++arg];
-            view_output_dir = argv[++arg];
-            compare_model_edge = 1;
-        } else if (strcmp(argv[arg], "--model-views-lighting-compare") == 0 &&
-                   arg + 2 < argc) {
-            view_model_path = argv[++arg];
-            view_output_dir = argv[++arg];
-            compare_model_lighting = 1;
         } else if (strcmp(argv[arg], "--model-static-views") == 0 &&
                    arg + 2 < argc) {
             view_model_path = argv[++arg];
@@ -2324,6 +2245,16 @@ int main(int argc, char **argv)
         } else if (strcmp(argv[arg], "--model-performance") == 0 &&
                    arg + 1 < argc) {
             performance_model_path = argv[++arg];
+            if (arg + 1 < argc && argv[arg + 1][0] >= '0' &&
+                argv[arg + 1][0] <= '9')
+                performance_iterations =
+                    parse_positive_int(argv[++arg], performance_iterations);
+            if (arg + 1 < argc && argv[arg + 1][0] >= '0' &&
+                argv[arg + 1][0] <= '9')
+                performance_workers =
+                    parse_positive_int(argv[++arg], performance_workers);
+        } else if (strcmp(argv[arg], "--actor-performance") == 0) {
+            actor_performance = 1;
             if (arg + 1 < argc && argv[arg + 1][0] >= '0' &&
                 argv[arg + 1][0] <= '9')
                 performance_iterations =
@@ -2403,18 +2334,12 @@ int main(int argc, char **argv)
         return benchmark_model_features(performance_model_path,
                                         performance_iterations,
                                         performance_workers);
+    if (actor_performance)
+        return rasterfall_render_actor_benchmark(performance_iterations,
+                                                 performance_workers);
     if (view_model_path) {
         if (material_regression)
             return dump_model_material_regression(view_model_path,
-                                                  view_output_dir);
-        if (compare_model_views)
-            return dump_model_view_comparison(view_model_path, view_output_dir);
-        if (compare_model_toon)
-            return dump_model_toon_comparison(view_model_path, view_output_dir);
-        if (compare_model_edge)
-            return dump_model_edge_comparison(view_model_path, view_output_dir);
-        if (compare_model_lighting)
-            return dump_model_lighting_comparison(view_model_path,
                                                   view_output_dir);
         return dump_model_views(view_model_path, view_output_dir,
                                 1, 1, 1, 1, 0);

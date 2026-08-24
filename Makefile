@@ -740,8 +740,11 @@ RASTERFALL_INC := $(RASTERFALL_DIR)/include
 RASTERFALL_LIB := $(RASTERFALL_DIR)/lib
 LIBC_A    := $(BUILD)/toyc.a
 
+# 五角色 1280x720 基准默认选择保持像素结果一致且快于 -O3 的 -O2；
+# 可用 `make RASTERFALL_OPT=-O0 build/rasterfall` 显式覆盖以做对照。
+RASTERFALL_OPT ?= -O2
 # gcc 标志：无 libc、独立环境、包含 Tinylibc 头文件路径
-LIBC_CFLAGS := -nostdlib -ffreestanding -Wall -Wextra -O0 \
+LIBC_CFLAGS := -nostdlib -ffreestanding -Wall -Wextra $(RASTERFALL_OPT) \
                -I include -I include/posix -I include/tlibc \
                -I arch -I arch/x86_64 \
                -DX86_64_TLIBC=1 \

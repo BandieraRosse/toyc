@@ -1572,6 +1572,143 @@ void rasterfall_render_model_setup_timing(
     if (out) memcpy(out, &model_setup_timing, sizeof(*out));
 }
 
+/* Fixed five-actor workload used to compare compiler optimization levels and
+ * renderer architecture.  Keep assets, camera, animation times and pixels
+ * identical between runs: this is a measurement fixture, not a quality knob. */
+int rasterfall_render_actor_benchmark(int iterations, int workers)
+{
+    static const char *paths[5] = {
+        "rasterfall/private-assets/models/eula.rmesh",
+        "rasterfall/private-assets/models/st_ar15.rmesh",
+        "rasterfall/private-assets/models/g11.rmesh",
+        "rasterfall/private-assets/models/vector.rmesh",
+        "rasterfall/private-assets/models/ump45.rmesh"
+    };
+    static const int heights[5] = {1736, 1652, 1429, 1474, 1516};
+    static const int positions[5] = {-1800, -900, 0, 900, 1800};
+    static const char vmd_path[] =
+        "rasterfall/private-assets/animations/walk04_loop5.vmd";
+    struct actor_fixture {
+        struct rasterfall_model_asset model;
+        struct rasterfall_vmd_clip vmd;
+        struct rasterfall_animation_clip clip;
+        struct rasterfall_animation_track tracks[RASTERFALL_VMD_MAX_BONES];
+    };
+    struct actor_fixture *actors;
+    struct toy_renderer renderer;
+    struct toy_surface surface;
+    struct camera camera;
+    uint32_t *pixels = 0;
+    uint64_t hash = 1469598103934665603ULL;
+    long animation_us = 0, skeleton_us = 0, skin_us = 0;
+    long vertex_us = 0, triangle_us = 0, material_us = 0;
+    long body_triangle_us = 0, edge_triangle_us = 0;
+    long raster_us = 0, frame_us = 0;
+    unsigned long triangles = 0;
+    int frame, actor, loaded = 0, result = 1;
+    if (iterations < 1) iterations = 1;
+    if (iterations > 1000) iterations = 1000;
+    actors = tlibc_malloc(sizeof(*actors) * 5);
+    if (!actors) goto done;
+    __memset(actors, 0, sizeof(*actors) * 5);
+    pixels = tlibc_malloc((size_t)1280 * 720 * sizeof(*pixels));
+    if (!pixels) goto done;
+    __memset(&camera, 0, sizeof(camera));
+    camera.y = 0; camera.z = -5000; camera.cy = 1024;
+    camera.pitch_cy = 1024;
+    for (actor = 0; actor < 5; actor++) {
+        int center, groove;
+        if (rasterfall_model_load(&actors[actor].model, paths[actor]) < 0)
+            goto done;
+        loaded++;
+        if (
+            rasterfall_vmd_load(&actors[actor].vmd, vmd_path) < 0 ||
+            rasterfall_vmd_map_model(&actors[actor].vmd,
+                                     &actors[actor].model) <= 0 ||
+            rasterfall_vmd_build_animation(&actors[actor].vmd,
+                &actors[actor].clip, actors[actor].tracks,
+                RASTERFALL_VMD_MAX_BONES) < 0) goto done;
+        center = rasterfall_model_find_bone(&actors[actor].model, "センター");
+        groove = rasterfall_model_find_bone(&actors[actor].model, "グルーブ");
+        rasterfall_model_bind_root_motion(&actors[actor].model, center, groove);
+    }
+    surface.pixels = pixels; surface.width = 1280; surface.height = 720;
+    surface.stride = 1280 * (int)sizeof(*pixels);
+    toy_renderer_init(&renderer);
+    toy_renderer_set_worker_count(&renderer, workers);
+    active_gallery_lighting = 1;
+    /* Warm all allocations, texture paths and worker threads. */
+    if (toy_renderer_begin(&renderer, &surface, 0x30343B) < 0) goto destroy;
+    for (actor = 0; actor < 5; actor++) {
+        rasterfall_model_sample_clip(&actors[actor].model,
+                                     &actors[actor].clip, 0);
+        render_gallery_model(&renderer, &camera, &actors[actor].model,
+            positions[actor], -900, 1000,
+            character_model_scale(&actors[actor].model, heights[actor]));
+    }
+    toy_renderer_flush(&renderer);
+    for (frame = 0; frame < iterations; frame++) {
+        long start = render_monotonic_us(), raster_start;
+        __memset(&model_setup_timing, 0, sizeof(model_setup_timing));
+        if (toy_renderer_begin(&renderer, &surface, 0x30343B) < 0) goto destroy;
+        for (actor = 0; actor < 5; actor++) {
+            long animation_start = render_monotonic_us();
+            rasterfall_model_sample_clip(&actors[actor].model,
+                &actors[actor].clip, (frame * 17) % actors[actor].clip.duration_ms);
+            model_setup_timing.animation_sample_us +=
+                render_monotonic_us() - animation_start;
+            render_gallery_model(&renderer, &camera, &actors[actor].model,
+                positions[actor], -900, 1000,
+                character_model_scale(&actors[actor].model, heights[actor]));
+        }
+        raster_start = render_monotonic_us();
+        toy_renderer_flush(&renderer);
+        raster_us += render_monotonic_us() - raster_start;
+        animation_us += model_setup_timing.animation_sample_us;
+        skeleton_us += model_setup_timing.bone_hierarchy_us;
+        skin_us += model_setup_timing.skinning_us;
+        vertex_us += model_setup_timing.vertex_cache_us;
+        material_us += model_setup_timing.material_us;
+        body_triangle_us += model_setup_timing.body_triangles_us;
+        edge_triangle_us += model_setup_timing.edge_triangles_us;
+        triangle_us += model_setup_timing.material_us +
+            model_setup_timing.body_triangles_us +
+            model_setup_timing.edge_triangles_us;
+        triangles += renderer.submitted_triangles;
+        frame_us += render_monotonic_us() - start;
+        for (int y = 0; y < surface.height; y++) {
+            const uint32_t *row = (const uint32_t *)
+                ((const unsigned char *)surface.pixels + y * surface.stride);
+            for (int x = 0; x < surface.width; x++) {
+                hash ^= row[x] & 0xffffffU;
+                hash *= 1099511628211ULL;
+            }
+        }
+    }
+    __printf("rasterfall: actor benchmark actors=5 size=1280x720 frames=%d detected_cpus=%d workers=%d hash=%016llx frame_us=%ld animation_us=%ld skeleton_us=%ld skin_us=%ld vertex_transform_us=%ld triangle_setup_us=%ld material_us=%ld body_triangle_us=%ld edge_triangle_us=%ld raster_us=%ld triangles=%lu\n",
+        iterations, renderer.detected_cpu_count, renderer.worker_count, hash,
+        frame_us / iterations, animation_us / iterations,
+        skeleton_us / iterations, skin_us / iterations, vertex_us / iterations,
+        triangle_us / iterations, material_us / iterations,
+        body_triangle_us / iterations, edge_triangle_us / iterations,
+        raster_us / iterations,
+        triangles / (unsigned long)iterations);
+    result = 0;
+destroy:
+    active_gallery_lighting = 0;
+    toy_renderer_destroy(&renderer);
+done:
+    if (actors) {
+        for (actor = 0; actor < loaded; actor++) {
+            rasterfall_vmd_unload(&actors[actor].vmd);
+            rasterfall_model_unload(&actors[actor].model);
+        }
+        tlibc_free(actors);
+    }
+    if (pixels) tlibc_free(pixels);
+    return result;
+}
+
 /* Static developer display: nine models per row, in front of the north
  * wall. These assets are visual-only; they never enter map collision or AI. */
 static int render_model_gallery(struct toy_renderer *renderer,
