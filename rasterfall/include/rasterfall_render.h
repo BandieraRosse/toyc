@@ -58,6 +58,16 @@ struct rasterfall_scene_stats {
     unsigned long models_tested;
     unsigned long models_culled;
     unsigned long model_triangles_culled;
+    long character_wall_us[5];
+    long character_animation_us[5];
+    long character_skin_us[5];
+    long character_vertex_us[5];
+    long character_triangle_us[5];
+    unsigned long character_triangles[5];
+    unsigned char character_visible[5];
+    unsigned char character_edge_disabled[5];
+    long character_prepare_wall_us;
+    long character_primitive_wall_us;
 };
 
 void rasterfall_render_bind(struct rasterfall_render_context *ctx);

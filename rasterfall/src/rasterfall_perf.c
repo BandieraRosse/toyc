@@ -113,6 +113,7 @@ void rasterfall_perf_add_scene(struct rasterfall_perf_stats *window,
                            struct rasterfall_perf_stats *total,
                            const struct rasterfall_scene_stats *scene)
 {
+    int i;
     window->scene_sky_floor_us += scene->sky_floor_us;
     total->scene_sky_floor_us += scene->sky_floor_us;
     window->scene_map_us += scene->map_us;
@@ -129,6 +130,30 @@ void rasterfall_perf_add_scene(struct rasterfall_perf_stats *window,
     total->scene_models_culled += scene->models_culled;
     window->scene_model_triangles_culled += scene->model_triangles_culled;
     total->scene_model_triangles_culled += scene->model_triangles_culled;
+    window->character_prepare_wall_us += scene->character_prepare_wall_us;
+    total->character_prepare_wall_us += scene->character_prepare_wall_us;
+    window->character_primitive_wall_us += scene->character_primitive_wall_us;
+    total->character_primitive_wall_us += scene->character_primitive_wall_us;
+    for (i = 0; i < 5; i++) {
+        window->character_wall_us[i] += scene->character_wall_us[i];
+        total->character_wall_us[i] += scene->character_wall_us[i];
+        window->character_animation_us[i] += scene->character_animation_us[i];
+        total->character_animation_us[i] += scene->character_animation_us[i];
+        window->character_skin_us[i] += scene->character_skin_us[i];
+        total->character_skin_us[i] += scene->character_skin_us[i];
+        window->character_vertex_us[i] += scene->character_vertex_us[i];
+        total->character_vertex_us[i] += scene->character_vertex_us[i];
+        window->character_triangle_us[i] += scene->character_triangle_us[i];
+        total->character_triangle_us[i] += scene->character_triangle_us[i];
+        window->character_triangles[i] += scene->character_triangles[i];
+        total->character_triangles[i] += scene->character_triangles[i];
+        window->character_visible_frames[i] += scene->character_visible[i];
+        total->character_visible_frames[i] += scene->character_visible[i];
+        window->character_edge_disabled_frames[i] +=
+            scene->character_edge_disabled[i];
+        total->character_edge_disabled_frames[i] +=
+            scene->character_edge_disabled[i];
+    }
 }
 
 /* 排序副本上的最近秩百分位（us）：p95 即第 ceil(0.95*n) 个样本。 */
@@ -238,4 +263,22 @@ void rasterfall_perf_dump(const struct rasterfall_perf_stats *s, const char *lab
              s->scene_models_tested / (unsigned long)s->frames,
              s->scene_models_culled / (unsigned long)s->frames,
              s->scene_model_triangles_culled / (unsigned long)s->frames);
+    {
+        static const char *names[5] = {
+            "eula", "st_ar15", "g11", "vector", "ump45"
+        };
+        __printf("[stats:%s] character pipeline prepare_wall_us/f=%ld primitive_wall_us/f=%ld\n",
+            label, s->character_prepare_wall_us / s->frames,
+            s->character_primitive_wall_us / s->frames);
+        for (i = 0; i < 5; i++)
+            __printf("[stats:%s] character=%s visible=%lu/%d edge_off=%lu/%d critical_job_us/f=%ld animation_us/f=%ld skin_us/f=%ld vertex_us/f=%ld triangle_cpu_us/f=%ld tris/f=%lu\n",
+                label, names[i], s->character_visible_frames[i], s->frames,
+                s->character_edge_disabled_frames[i], s->frames,
+                s->character_wall_us[i] / s->frames,
+                s->character_animation_us[i] / s->frames,
+                s->character_skin_us[i] / s->frames,
+                s->character_vertex_us[i] / s->frames,
+                s->character_triangle_us[i] / s->frames,
+                s->character_triangles[i] / (unsigned long)s->frames);
+    }
 }
