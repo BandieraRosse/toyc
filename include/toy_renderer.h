@@ -248,6 +248,12 @@ int toy_renderer_parallel_for(struct toy_renderer *renderer, int task_count,
 /* Append a private recording stream without changing its command order. */
 int toy_renderer_merge_commands(struct toy_renderer *renderer,
                                 const struct toy_renderer *source);
+/* 按 sources 数组顺序合并多个命令列表。仅复制阶段并行，目标偏移预先固定，
+ * 因此与逐个调用 toy_renderer_merge_commands 的命令顺序完全一致。 */
+int toy_renderer_merge_command_batch(
+    struct toy_renderer *renderer,
+    const struct toy_renderer *const *sources, int source_count,
+    int worker_limit);
 /* 仅供离线性能消融；默认 0 保持正常渲染。 */
 #define TOY_RENDER_DIAG_FORCE_OPAQUE    1
 #define TOY_RENDER_DIAG_AFFINE_UV       2

@@ -1269,6 +1269,84 @@ int toy_renderer_merge_commands(struct toy_renderer *renderer,
     return 0;
 }
 
+#define TOY_RENDER_MERGE_SOURCE_MAX 1024
+#define TOY_RENDER_MERGE_COPY_MAX 1536
+#define TOY_RENDER_MERGE_COPY_COMMANDS 2048
+
+struct renderer_merge_copy {
+    const struct toy_renderer *source;
+    int source_offset;
+    int target_offset;
+    int count;
+};
+
+struct renderer_merge_batch {
+    struct toy_renderer *renderer;
+    struct renderer_merge_copy copies[TOY_RENDER_MERGE_COPY_MAX];
+    int copy_count;
+};
+
+static void renderer_merge_copy_job(int worker_id, int task, void *opaque)
+{
+    struct renderer_merge_batch *batch = opaque;
+    const struct renderer_merge_copy *copy = &batch->copies[task];
+    (void)worker_id;
+    memcpy(batch->renderer->cmds + copy->target_offset,
+           copy->source->cmds + copy->source_offset,
+           (size_t)copy->count * sizeof(*copy->source->cmds));
+}
+
+int toy_renderer_merge_command_batch(
+    struct toy_renderer *renderer,
+    const struct toy_renderer *const *sources, int source_count,
+    int worker_limit)
+{
+    struct renderer_merge_batch batch;
+    int required, i;
+    if (!renderer || !sources || source_count < 0 ||
+        source_count > TOY_RENDER_MERGE_SOURCE_MAX) return -1;
+    required = renderer->cmd_count;
+    batch.renderer = renderer;
+    batch.copy_count = 0;
+    for (i = 0; i < source_count; i++) {
+        const struct toy_renderer *source = sources[i];
+        int source_offset;
+        if (!source || source->cmd_count < 0 ||
+            source->cmd_count > TOY_RENDER_CMD_MAX - required) return -1;
+        for (source_offset = 0; source_offset < source->cmd_count;
+             source_offset += TOY_RENDER_MERGE_COPY_COMMANDS) {
+            struct renderer_merge_copy *copy;
+            int count = source->cmd_count - source_offset;
+            if (count > TOY_RENDER_MERGE_COPY_COMMANDS)
+                count = TOY_RENDER_MERGE_COPY_COMMANDS;
+            if (batch.copy_count >= TOY_RENDER_MERGE_COPY_MAX) return -1;
+            copy = &batch.copies[batch.copy_count++];
+            copy->source = source;
+            copy->source_offset = source_offset;
+            copy->target_offset = required + source_offset;
+            copy->count = count;
+        }
+        required += source->cmd_count;
+    }
+    while (renderer->cmd_cap < required)
+        if (!grow_cmds(renderer)) return -1;
+    if (batch.copy_count > 0 &&
+        toy_renderer_parallel_for(renderer, batch.copy_count, worker_limit,
+                                  renderer_merge_copy_job, &batch) < 0)
+        return -1;
+    renderer->cmd_count = required;
+    for (i = 0; i < source_count; i++) {
+        const struct toy_renderer *source = sources[i];
+        renderer->submitted_triangles += source->submitted_triangles;
+        renderer->submitted_vertices += source->submitted_vertices;
+        renderer->textured_triangles += source->textured_triangles;
+        renderer->textured_pixels += source->textured_pixels;
+        renderer->texture_fallback_pixels += source->texture_fallback_pixels;
+        renderer->cmd_overflow += source->cmd_overflow;
+    }
+    return 0;
+}
+
 static void clear_single(struct toy_renderer *renderer, uint32_t clear_color)
 {
     for (int y = 0; y < renderer->surface.height; y++) {

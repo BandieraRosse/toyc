@@ -52,7 +52,7 @@ make app-rasterfall
 build/rasterfall
 ```
 
-For the local private AR-15 model, `make lod-ar15` deterministically builds the
+For the local private character models, `make lod-characters` deterministically builds the
 mid-distance mesh LOD. The generated private asset stays unversioned and the
 runtime automatically falls back to the full mesh when it is absent.
 

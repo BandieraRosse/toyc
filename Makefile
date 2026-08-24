@@ -1001,15 +1001,30 @@ $(BUILD)/rasterfall-embedded: $(BUILD)/rasterfall.o $(LIBC_A) $(APP_EXTRA_OBJS_r
 $(BUILD)/wayland_fps: $(BUILD)/rasterfall
 	@ln -sf rasterfall $@
 
-.PHONY: rasterfall rasterfall-embedded wayland_fps app-rasterfall-embedded lod-ar15
+.PHONY: rasterfall rasterfall-embedded wayland_fps app-rasterfall-embedded \
+	lod-characters lod-ar15 lod-ump45 lod-vector lod-g11
 rasterfall: $(BUILD)/rasterfall
 rasterfall-embedded app-rasterfall-embedded: $(BUILD)/rasterfall-embedded
 wayland_fps: $(BUILD)/wayland_fps
 
-# 私有 AR-15 模型的确定性中距离 LOD；输出与源模型共享纹理目录。
+# 私有角色模型的确定性中距离 LOD；输出与源模型共享纹理目录。
+lod-characters: lod-ar15 lod-ump45 lod-vector lod-g11
+
 lod-ar15:
 	tools/rmesh_lod.py rasterfall/private-assets/models/st_ar15.rmesh \
 		rasterfall/private-assets/models/st_ar15_lod1.rmesh --ratio 0.4
+
+lod-ump45:
+	tools/rmesh_lod.py rasterfall/private-assets/models/ump45.rmesh \
+		rasterfall/private-assets/models/ump45_lod1.rmesh --ratio 0.4
+
+lod-vector:
+	tools/rmesh_lod.py rasterfall/private-assets/models/vector.rmesh \
+		rasterfall/private-assets/models/vector_lod1.rmesh --ratio 0.4
+
+lod-g11:
+	tools/rmesh_lod.py rasterfall/private-assets/models/g11.rmesh \
+		rasterfall/private-assets/models/g11_lod1.rmesh --ratio 0.4
 
 # 单个 app：make app-echo
 $(foreach name,$(APP_NAMES),$(eval app-$(name): $(BUILD)/$(name)))

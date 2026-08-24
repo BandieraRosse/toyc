@@ -83,15 +83,16 @@ tools/import-pmx-model.sh path/to/character-folder character
 目录中应只有一个 `.pmx`；脚本会构建转换器、复制 PMX 引用的纹理并自动生成
 TTEX。重新导入已有名称时显式添加 `--force`。
 
-高模角色的中距离 LOD 可在导入后离线生成。当前 AR-15 流程使用：
+高模角色的中距离 LOD 可在导入后离线生成。当前四个开发者角色使用：
 
 ```sh
-make lod-ar15
+make lod-characters
 ```
 
-生成的 `st_ar15_lod1.rmesh` 保留相同顶点、骨骼、蒙皮与材质布局，只简化索引，
-并共享 `st_ar15.textures/`。运行时在角色投影高度低于材质 LOD 阈值时自动选择该
-网格；文件不存在时无条件回退完整模型。
+生成的 `*_lod1.rmesh` 保留相同顶点、骨骼、蒙皮与材质布局，只简化索引，并共享
+各自全模的纹理目录。运行时在角色投影高度低于材质 LOD 阈值时自动选择该网格；
+任一文件不存在时，该角色无条件回退完整模型。也可使用 `lod-ar15`、`lod-ump45`、
+`lod-vector` 和 `lod-g11` 单独更新。
 
 `pmx2rmesh` 读取 PMX 2.0/2.1 的顶点位置、法线、UV、三角形索引和材质漫
 反射色、基础纹理、sphere 和 toon 纹理引用，输出现有 RFM2 格式，并将 PMX 引用的
@@ -230,7 +231,7 @@ build/rasterfall --actor-performance 30 5 8
 ```
 
 输出包含确定性帧缓冲哈希，以及 animation、skeleton、skin、vertex transform、
-triangle setup 和 raster 的每帧平均耗时，并列出每个 actor job 和 frontend
+triangle setup、command merge 和 raster 的每帧平均耗时，并列出每个 actor job 和 frontend
 worker 的负载。三个数字依次是帧数、frontend worker 数和 raster worker 数。
 不同并行度与优化等级必须产生相同哈希：
 

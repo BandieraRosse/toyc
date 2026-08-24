@@ -26,7 +26,7 @@ PNG、BMP、SPA/SPH、JPG/JPEG 纹理会自动转为 TTEX。默认模型名来�
 ## RFM2 mesh LOD
 
 ```sh
-make lod-ar15
+make lod-characters
 tools/rmesh_lod.py input.rmesh output_lod1.rmesh --ratio 0.4
 ```
 

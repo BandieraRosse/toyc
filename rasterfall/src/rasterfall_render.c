@@ -273,14 +273,17 @@ static struct rasterfall_developer_character developer_characters[] = {
       .height_source = "GFL2_MODEL_RELATIVE_LEVA_1516MM",
       .x = -15400, .z = -10000, .base_y = -900, .target_height_mm = 1652 },
     { .name = "G11", .model_path = "rasterfall/private-assets/models/g11.rmesh",
+      .lod_model_path = "rasterfall/private-assets/models/g11_lod1.rmesh",
       .height_source = "GFL2_MODEL_RELATIVE_LEVA_1516MM",
       .x = -14200, .z = -10000, .base_y = -900, .target_height_mm = 1429 },
     { .name = "VECTOR",
       .model_path = "rasterfall/private-assets/models/vector.rmesh",
+      .lod_model_path = "rasterfall/private-assets/models/vector_lod1.rmesh",
       .height_source = "GFL2_MODEL_RELATIVE_LEVA_1516MM",
       .x = -11800, .z = -10000, .base_y = -900, .target_height_mm = 1474 },
     { .name = "UMP45",
       .model_path = "rasterfall/private-assets/models/ump45.rmesh",
+      .lod_model_path = "rasterfall/private-assets/models/ump45_lod1.rmesh",
       .height_source = "GFL2_MODEL_RELATIVE_LEVA_1516MM",
       .x = -10600, .z = -10000, .base_y = -900, .target_height_mm = 1516 }
 };
@@ -1770,7 +1773,7 @@ int rasterfall_render_actor_benchmark(int iterations, int frontend_workers,
     long animation_us = 0, skeleton_us = 0, skin_us = 0;
     long vertex_us = 0, triangle_us = 0, material_us = 0;
     long body_triangle_us = 0, edge_triangle_us = 0;
-    long raster_us = 0, frame_us = 0;
+    long merge_us = 0, raster_us = 0, frame_us = 0;
     unsigned long triangles = 0;
     long actor_us[5] = {0,0,0,0,0};
     long actor_animation[5] = {0,0,0,0,0};
@@ -1780,6 +1783,7 @@ int rasterfall_render_actor_benchmark(int iterations, int frontend_workers,
     long worker_us[8] = {0,0,0,0,0,0,0,0};
     long frontend_wall_us = 0;
     long triangle_wall_us = 0;
+    const struct toy_renderer *merge_sources[5];
     int actor_worker[5] = {0,0,0,0,0};
     int frame, actor, loaded = 0, result = 1;
     if (iterations < 1) iterations = 1;
@@ -1829,9 +1833,9 @@ int rasterfall_render_actor_benchmark(int iterations, int frontend_workers,
                                   actor_benchmark_job, &dispatch) < 0)
         goto destroy;
     for (actor = 0; actor < 5; actor++)
-        if (toy_renderer_merge_commands(&renderer,
-                                        &actors[actor].commands) < 0)
-            goto destroy;
+        merge_sources[actor] = &actors[actor].commands;
+    if (toy_renderer_merge_command_batch(&renderer, merge_sources, 5, 5) < 0)
+        goto destroy;
     toy_renderer_flush(&renderer);
     for (frame = 0; frame < iterations; frame++) {
         long start = render_monotonic_us(), raster_start;
@@ -1845,12 +1849,16 @@ int rasterfall_render_actor_benchmark(int iterations, int frontend_workers,
                                           &dispatch) < 0) goto destroy;
             frontend_wall_us += render_monotonic_us() - frontend_start;
         }
+        {
+            long merge_start = render_monotonic_us();
+            if (toy_renderer_merge_command_batch(
+                    &renderer, merge_sources, 5, 5) < 0)
+                goto destroy;
+            merge_us += render_monotonic_us() - merge_start;
+        }
         for (actor = 0; actor < 5; actor++) {
             struct rasterfall_model_setup_timing *timing =
                 &actors[actor].state.timing;
-            if (toy_renderer_merge_commands(&renderer,
-                                            &actors[actor].commands) < 0)
-                goto destroy;
             animation_us += timing->animation_sample_us;
             skeleton_us += timing->bone_hierarchy_us;
             skin_us += timing->skinning_us;
@@ -1898,10 +1906,11 @@ int rasterfall_render_actor_benchmark(int iterations, int frontend_workers,
             }
         }
     }
-    __printf("rasterfall: actor benchmark actors=5 size=1280x720 frames=%d detected_cpus=%d frontend_workers=%d raster_workers=%d hash=%016llx frame_us=%ld frontend_wall_us=%ld animation_us=%ld skeleton_us=%ld skin_us=%ld vertex_transform_us=%ld triangle_setup_us=%ld triangle_setup_cpu_us=%ld material_us=%ld body_triangle_us=%ld edge_triangle_us=%ld raster_us=%ld triangles=%lu\n",
+    __printf("rasterfall: actor benchmark actors=5 size=1280x720 frames=%d detected_cpus=%d frontend_workers=%d raster_workers=%d hash=%016llx frame_us=%ld frontend_wall_us=%ld merge_us=%ld animation_us=%ld skeleton_us=%ld skin_us=%ld vertex_transform_us=%ld triangle_setup_us=%ld triangle_setup_cpu_us=%ld material_us=%ld body_triangle_us=%ld edge_triangle_us=%ld raster_us=%ld triangles=%lu\n",
         iterations, renderer.detected_cpu_count, frontend_workers,
         renderer.worker_count, hash,
         frame_us / iterations, frontend_wall_us / iterations,
+        merge_us / iterations,
         animation_us / iterations,
         skeleton_us / iterations, skin_us / iterations, vertex_us / iterations,
         triangle_wall_us / iterations, triangle_us / iterations,
@@ -1999,6 +2008,7 @@ struct character_primitive_dispatch {
 };
 
 static struct character_primitive_job *character_primitive_jobs;
+static const struct toy_renderer *character_command_sources[1024];
 static int character_primitive_capacity;
 
 static void prepare_character_command_renderer(
@@ -2253,10 +2263,15 @@ static int render_characters_parallel(struct toy_renderer *renderer,
         scene_stats.character_primitive_wall_us =
             render_monotonic_us() - pipeline_start;
         merge_start = render_monotonic_us();
+        if (task_count > (int)(sizeof(character_command_sources) /
+                               sizeof(character_command_sources[0])))
+            return -1;
         for (i = 0; i < task_count; i++)
-            if (toy_renderer_merge_commands(
-                    renderer, &character_primitive_jobs[i].commands) < 0)
-                return -1;
+            character_command_sources[i] =
+                &character_primitive_jobs[i].commands;
+        if (toy_renderer_merge_command_batch(renderer,
+                character_command_sources, task_count, 8) < 0)
+            return -1;
         scene_stats.character_merge_us = render_monotonic_us() - merge_start;
     }
     for (i = 0; i < 5; i++) {
