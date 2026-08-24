@@ -45,4 +45,12 @@ void pthread_exit(void *result)
     _endthreadex((unsigned)(uintptr_t)result);
 }
 
+pthread_t pthread_self(void)
+{
+    /* pthread_t is opaque to the renderer.  A stable per-thread Win32 ID is
+     * sufficient for pthread_equal and avoids allocating a fake pthread
+     * object for the calling thread. */
+    return (pthread_t)(uintptr_t)GetCurrentThreadId();
+}
+
 int pthread_equal(pthread_t a, pthread_t b) { return a == b; }

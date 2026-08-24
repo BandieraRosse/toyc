@@ -17,6 +17,7 @@ int pthread_create(pthread_t *out, const pthread_attr_t *attr,
                    void *(*entry)(void *), void *arg);
 int pthread_join(pthread_t thread, void **result);
 void pthread_exit(void *result);
+pthread_t pthread_self(void);
 int pthread_equal(pthread_t a, pthread_t b);
 
 #endif

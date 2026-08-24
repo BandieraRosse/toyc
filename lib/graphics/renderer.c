@@ -1241,7 +1241,11 @@ int toy_renderer_begin(struct toy_renderer *renderer,
     size_t required;
     if (!renderer || !surface || !surface->pixels ||
         surface->width <= 0 || surface->height <= 0) return -1;
-    required = (size_t)surface->width * surface->height * sizeof(int);
+    if ((size_t)surface->width > (size_t)-1 / (size_t)surface->height ||
+        (size_t)surface->width * (size_t)surface->height >
+            (size_t)-1 / sizeof(int))
+        return -1;
+    required = (size_t)surface->width * (size_t)surface->height * sizeof(int);
     if (required != renderer->depth_size) {
         int *new_depth;
         if (renderer->depth) tlibc_free(renderer->depth);

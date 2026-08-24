@@ -773,11 +773,23 @@ RASTERFALL_ASSET_FILES := $(shell find $(RASTERFALL_DIR)/assets -type f -print)
 RASTERFALL_ASSET_SRC := $(BUILD)/rasterfall_assets.c
 RASTERFALL_ASSET_OBJ := $(BUILD)/rasterfall_assets.o
 APP_EXTRA_OBJS_rasterfall := $(BUILD)/rasterfall_character.o $(BUILD)/rasterfall_game.o $(BUILD)/rasterfall_sfx.o $(BUILD)/rasterfall_map_engine.o $(BUILD)/rasterfall_map.o $(BUILD)/rasterfall_session.o $(BUILD)/rasterfall_ai.o $(BUILD)/rasterfall_net.o $(BUILD)/rasterfall_net_discovery.o $(BUILD)/rasterfall_hud.o $(BUILD)/rasterfall_audio.o $(BUILD)/rasterfall_effects.o $(BUILD)/rasterfall_perf.o $(BUILD)/rasterfall_sky.o $(BUILD)/rasterfall_viewmodel.o $(BUILD)/rasterfall_render.o $(BUILD)/rasterfall_model.o $(BUILD)/rasterfall_humanoid_basis.o $(BUILD)/rasterfall_humanoid_retarget.o $(BUILD)/rasterfall_glb_animation.o $(BUILD)/rasterfall_vmd.o
+RASTERFALL_OPT_DEP := $(BUILD)/.rasterfall-opt
 APP_EXTRA_OBJS_vmd_inspect := $(BUILD)/rasterfall_vmd.o $(BUILD)/rasterfall_model.o $(BUILD)/rasterfall_humanoid_basis.o $(BUILD)/rasterfall_humanoid_retarget.o $(BUILD)/rasterfall_glb_animation.o $(BUILD)/rasterfall_game.o
 APP_EXTRA_OBJS_glb_inspect := $(BUILD)/rasterfall_humanoid_basis.o \
 	$(BUILD)/rasterfall_humanoid_retarget.o
 
 # ─── 库编译规则 ────────────────────────────────────────────────
+
+# 编译选项不是 make 的隐式依赖。记录当前 Rasterfall 优化级别，避免在
+# `RASTERFALL_OPT=-O0` 与默认 `-O2` 间切换时错误复用旧目标文件。
+.PHONY: rasterfall-opt-force
+rasterfall-opt-force:
+
+$(RASTERFALL_OPT_DEP): rasterfall-opt-force | $(BUILD)
+	@if test -f "$@" && test "`cat \"$@\"`" = "$(RASTERFALL_OPT)"; then :; \
+	else printf '%s\n' "$(RASTERFALL_OPT)" > "$@"; fi
+
+$(APP_EXTRA_OBJS_rasterfall) $(BUILD)/rasterfall.o: $(RASTERFALL_OPT_DEP)
 
 # Rasterfall 地图模块作为独立编译单元参与主程序链接。
 $(BUILD)/rasterfall_game.o: $(RASTERFALL_LIB)/game.c $(RASTERFALL_INC)/toy_game.h | $(BUILD)

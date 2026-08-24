@@ -182,6 +182,12 @@ static unsigned int key_code(SDL_Scancode code, SDL_Keycode sym)
 struct toy_window *toy_window_open(const char *title, int width, int height)
 {
     struct toy_window *out;
+    size_t pixels;
+    if (width <= 0 || height <= 0 ||
+        (size_t)width > (size_t)-1 / (size_t)height)
+        return NULL;
+    pixels = (size_t)width * (size_t)height;
+    if (pixels > (size_t)-1 / sizeof(uint32_t)) return NULL;
     if (SDL_WasInit(SDL_INIT_VIDEO) == 0 && SDL_InitSubSystem(SDL_INIT_VIDEO) < 0)
         return NULL;
     out = (struct toy_window *)SDL_calloc(1, sizeof(*out));
@@ -190,20 +196,27 @@ struct toy_window *toy_window_open(const char *title, int width, int height)
     out->height = height;
     out->window = SDL_CreateWindow(title, SDL_WINDOWPOS_CENTERED,
                                    SDL_WINDOWPOS_CENTERED, width, height,
-                                   SDL_WINDOW_RESIZABLE);
+                                   /* The software surface and streaming
+                                    * texture are fixed-size.  Do not expose
+                                    * SDL resize handles until a real
+                                    * realloc/resize path exists; otherwise a
+                                    * resized Windows client presents a
+                                    * stretched or stale framebuffer. */
+                                   0);
     out->renderer = out->window ? SDL_CreateRenderer(out->window, -1,
                                                       SDL_RENDERER_PRESENTVSYNC) : NULL;
     out->texture = out->renderer ? SDL_CreateTexture(out->renderer,
                                                      SDL_PIXELFORMAT_ARGB8888,
                                                      SDL_TEXTUREACCESS_STREAMING,
                                                      width, height) : NULL;
-    out->pixels = out->texture ? (uint32_t *)SDL_calloc((size_t)width * height,
+    out->pixels = out->texture ? (uint32_t *)SDL_calloc(pixels,
                                                         sizeof(uint32_t)) : NULL;
     if (!out->window || !out->renderer || !out->texture || !out->pixels) {
         toy_window_close(out);
         return NULL;
     }
     SDL_SetRelativeMouseMode(SDL_FALSE);
+    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "nearest");
     return out;
 }
 

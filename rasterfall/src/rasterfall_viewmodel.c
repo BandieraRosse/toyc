@@ -618,18 +618,28 @@ static int render_model_weapon(struct toy_renderer *renderer,
 static int render_pill_viewmodel(struct toy_surface *surface, int bob_x,
                                  int bob_y, int kick)
 {
-    int x = surface->width - 190 + bob_x + kick / 3;
-    int y = surface->height - 185 + bob_y - kick / 2;
-    int w = 105, h = 72, i, drawn = 0;
+    /* The procedural pill is screen-space art, unlike the imported weapon
+     * meshes. Scale it with the 450px reference height so it remains the same
+     * apparent size at the new 720p default without changing world/FOV math. */
+    int ui_scale = surface->height >= 675 ? 2 : 1;
+    int x = surface->width - 190 * ui_scale + bob_x * ui_scale +
+            kick * ui_scale / 3;
+    int y = surface->height - 185 * ui_scale + bob_y * ui_scale -
+            kick * ui_scale / 2;
+    int w = 105 * ui_scale, h = 72 * ui_scale, i, drawn = 0;
     for (i = 0; i < h; i++) {
-        int inset = i < 8 ? 8 - i : i >= h - 8 ? i - (h - 9) : 0;
+        int inset = i < 8 * ui_scale ? 8 * ui_scale - i :
+                    i >= h - 8 * ui_scale ? i - (h - 9 * ui_scale) : 0;
         viewmodel_fill_rect(surface, x + inset, y + i, w - inset * 2, 1,
-                            i < 10 || i >= h - 10 ? 0xA8B8A8 : 0xE9F1E9);
+                            i < 10 * ui_scale ||
+                            i >= h - 10 * ui_scale ? 0xA8B8A8 : 0xE9F1E9);
         drawn += w - inset * 2;
     }
-    viewmodel_fill_rect(surface, x + 47, y + 14, 12, 44, 0x20B84B);
-    viewmodel_fill_rect(surface, x + 31, y + 30, 44, 12, 0x20B84B);
-    return drawn + 56 * 2;
+    viewmodel_fill_rect(surface, x + 47 * ui_scale, y + 14 * ui_scale,
+                        12 * ui_scale, 44 * ui_scale, 0x20B84B);
+    viewmodel_fill_rect(surface, x + 31 * ui_scale, y + 30 * ui_scale,
+                        44 * ui_scale, 12 * ui_scale, 0x20B84B);
+    return drawn + 56 * ui_scale * ui_scale;
 }
 
 int rasterfall_viewmodel_render(struct toy_renderer *renderer,

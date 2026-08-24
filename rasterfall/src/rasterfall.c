@@ -866,30 +866,48 @@ static void draw_startup_menu(struct toy_surface *surface, int screen,
                               const struct rasterfall_net_discovery *discovery)
 {
     int i, y = 92;
+    int menu_x, menu_w = 440, menu_top;
     char line[96];
     fill_rect(surface, 0, 0, surface->width, surface->height, 0x10151D);
-    fb_draw_string((unsigned char *)surface->pixels, 238, 35,
-                   "RASTERFALL", RF_COLOR_UI_ACCENT, surface->stride);
     if (screen == RASTERFALL_STARTUP_MAIN) {
         static const char *items[] = {"CREATE LOCAL ROOM", "WATCH MANAGED AI",
                                       "CREATE PUBLIC ROOM", "JOIN PUBLIC ROOM",
                                       "JOIN LAN ROOM", "JOIN BY ADDRESS", "QUIT"};
+        /* Keep the complete menu block centered in the actual surface.  The
+         * old coordinates were tuned for 800x450 and left the menu visibly
+         * stuck in the upper-left quadrant at the 1280x720 default. */
+        if (menu_w > surface->width - 40) menu_w = surface->width - 40;
+        menu_x = (surface->width - menu_w) / 2;
+        menu_top = (surface->height - 450) / 2;
+        if (menu_top < 35) menu_top = 35;
+        y = menu_top + 57;
+        fb_draw_string((unsigned char *)surface->pixels,
+                       (surface->width - 10 * FB_FONT_W) / 2, menu_top,
+                       "RASTERFALL", RF_COLOR_UI_ACCENT, surface->stride);
         for (i = 0; i < 7; i++) {
             uint32_t color = i == selected ? RF_COLOR_UI_ACCENT : RF_COLOR_UI_TEXT;
             if (i == selected)
-                fill_rect(surface, 180, y + i * 34 - 4, 440, FB_FONT_H + 8,
+                fill_rect(surface, menu_x, y + i * 34 - 4, menu_w,
+                          FB_FONT_H + 8,
                           0x293746);
-            fb_draw_string((unsigned char *)surface->pixels, 205, y + i * 34,
+            fb_draw_string((unsigned char *)surface->pixels,
+                           menu_x + 25, y + i * 34,
                            items[i], color, surface->stride);
         }
-        fb_draw_string((unsigned char *)surface->pixels, 150, 325,
+        fb_draw_string((unsigned char *)surface->pixels,
+                       (surface->width - 34 * FB_FONT_W) / 2,
+                       menu_top + 290,
                        "UP DOWN SELECT   ENTER CONFIRM", RF_COLOR_UI_TEXT_MUTED,
                        surface->stride);
-        fb_draw_string((unsigned char *)surface->pixels, 260, 350,
+        fb_draw_string((unsigned char *)surface->pixels,
+                       (surface->width - 27 * FB_FONT_W) / 2,
+                       menu_top + 315,
                        "DRAG TITLE AREA TO MOVE", RF_COLOR_UI_TEXT_DIM,
                        surface->stride);
         if (error && error[0])
-            fb_draw_string((unsigned char *)surface->pixels, 90, 375,
+            fb_draw_string((unsigned char *)surface->pixels,
+                           (surface->width - (int)strlen(error) * FB_FONT_W) / 2,
+                           menu_top + 340,
                            error, 0xFF8060, surface->stride);
     } else if (screen == RASTERFALL_STARTUP_LAN_ROOMS) {
         int row = 0;
@@ -1465,6 +1483,12 @@ static void draw_input_debug(struct toy_surface *surface,
 #include "rasterfall_logic_test.inc"
 
 #include "rasterfall_perf.h"
+
+/* Keep the presentation default at the same 16:9 aspect ratio used by the
+ * original 800x450 build.  Gameplay units and camera FOV deliberately do not
+ * depend on these values. */
+#define RASTERFALL_DEFAULT_WIDTH  1280
+#define RASTERFALL_DEFAULT_HEIGHT 720
 
 struct model_view_stats {
     uint64_t hash;
@@ -2454,7 +2478,8 @@ int main(int argc, char **argv)
     if (seed == 0) seed = 1;
     rasterfall_session_reset(&session, &camera, seed);
     rf_windows_log("startup: session reset");
-    window = toy_window_open("Rasterfall", 800, 450);
+    window = toy_window_open("Rasterfall", RASTERFALL_DEFAULT_WIDTH,
+                             RASTERFALL_DEFAULT_HEIGHT);
     if (!window) {
         __fprintf(2, "rasterfall: cannot create Wayland window\n");
         if (scene_texture.blob) toy_texture_unload(&scene_texture);
