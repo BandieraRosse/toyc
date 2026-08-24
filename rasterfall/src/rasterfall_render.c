@@ -36,6 +36,8 @@
 #define BAKED_LM_W 32
 #define BAKED_LM_H 24
 #define RASTERFALL_CHARACTER_EDGE_MIN_HEIGHT 320
+#define RASTERFALL_CHARACTER_MATERIAL_MIN_HEIGHT 320
+#define RASTERFALL_CHARACTER_TASK_TRIANGLES 8192
 
 struct vec3 { int x, y, z; };
 struct box { int minx, maxx, minz, maxz, height; uint32_t color; };
@@ -58,6 +60,8 @@ struct rasterfall_frontend_state {
     int reuse_skinned_vertices;
     int skinned_vertices_valid;
     int disable_edge;
+    int disable_sphere;
+    int disable_toon;
 };
 static struct rasterfall_frontend_state frontend_default = {
     .toon_shared = -1, .toon_level = 255, .material_alpha = 255,
@@ -93,6 +97,8 @@ static struct rasterfall_frontend_state *frontend_state(void)
 #define gallery_vertex_cache (frontend_state()->vertex_cache)
 #define gallery_vertex_cache_capacity (frontend_state()->vertex_cache_capacity)
 #define active_disable_edge (frontend_state()->disable_edge)
+#define active_disable_sphere (frontend_state()->disable_sphere)
+#define active_disable_toon (frontend_state()->disable_toon)
 
 static long render_monotonic_us(void)
 {
@@ -113,8 +119,6 @@ static int active_actor_lift;
 static int active_actor_roll_sin;
 static int active_actor_roll_cos = 1024;
 static int active_gallery_lighting;
-static int active_disable_sphere;
-static int active_disable_toon;
 static int active_disable_material_light;
 static int active_emissive_projectile;
 static int active_coordinate_axes;
@@ -1334,7 +1338,8 @@ static int render_gallery_model_range(struct toy_renderer *renderer,
                                 const struct rasterfall_model_asset *model,
                                 int center_x, int base_y, int center_z,
                                 int scale, int first_primitive,
-                                int primitive_count, int prepare_vertices)
+                                int primitive_count, int first_index,
+                                int slice_index_count, int prepare_vertices)
 {
     int primitive_end = first_primitive + primitive_count;
     if (first_primitive < 0) first_primitive = 0;
@@ -1392,6 +1397,7 @@ static int render_gallery_model_range(struct toy_renderer *renderer,
         const unsigned char *primitive = model->primitives + i * RASTERFALL_MODEL_PRIMITIVE_BYTES;
         const unsigned char *indices = model->indices + model_u32(primitive) * 4;
         unsigned int index_count = model_u32(primitive + 4);
+        unsigned int index_begin = 0, index_end = index_count;
         unsigned int material = model_u32(primitive + 8);
         const struct toy_texture_view *texture = 0;
         const struct toy_texture_view *sphere_texture = 0;
@@ -1422,6 +1428,12 @@ static int render_gallery_model_range(struct toy_renderer *renderer,
                          model_u32(model->materials + material * model->material_bytes) :
                          RF_COLOR_UI_TEXT_MUTED;
         unsigned int j;
+        if (primitive_count == 1 && slice_index_count >= 0) {
+            if (first_index > 0) index_begin = (unsigned int)first_index;
+            if (index_begin > index_count) index_begin = index_count;
+            index_end = index_begin + (unsigned int)slice_index_count;
+            if (index_end > index_count) index_end = index_count;
+        }
         phase_start = render_monotonic_us();
         if (!active_disable_edge && material < model->material_count &&
             model->format_version >= 8) {
@@ -1443,7 +1455,7 @@ static int render_gallery_model_range(struct toy_renderer *renderer,
                 toy_renderer_set_recording_edge(renderer, 1);
                 active_model_triangle_stats = collect_model_render_stats ?
                     &model_render_stats.edge : 0;
-                for (j = 0; j + 2 < index_count; j += 3) {
+                for (j = index_begin; j + 2 < index_end; j += 3) {
                     unsigned int ia = model_u32(indices + j * 4);
                     unsigned int ib = model_u32(indices + (j + 1) * 4);
                     unsigned int ic = model_u32(indices + (j + 2) * 4);
@@ -1507,7 +1519,7 @@ static int render_gallery_model_range(struct toy_renderer *renderer,
         }
         if (!texture && shared_texture) active_texture_view = active_model_texture;
         phase_start = render_monotonic_us();
-        for (j = 0; j + 2 < index_count; j += 3) {
+        for (j = index_begin; j + 2 < index_end; j += 3) {
             unsigned int ia = model_u32(indices + j * 4);
             unsigned int ib = model_u32(indices + (j + 1) * 4);
             unsigned int ic = model_u32(indices + (j + 2) * 4);
@@ -1595,7 +1607,7 @@ static int render_gallery_model(struct toy_renderer *renderer,
                                 int scale)
 {
     return render_gallery_model_range(renderer, camera, model, center_x,
-        base_y, center_z, scale, 0, (int)model->primitive_count, 1);
+        base_y, center_z, scale, 0, (int)model->primitive_count, 0, -1, 1);
 }
 
 int rasterfall_render_model_preview(struct toy_renderer *renderer,
@@ -1943,6 +1955,8 @@ struct character_primitive_job {
     int initialized;
     int actor;
     int primitive;
+    int first_index;
+    int index_count;
     int drawn;
     long wall_us;
 };
@@ -2032,7 +2046,7 @@ static void character_frontend_job(int worker_id, int task, void *opaque)
         state->reuse_skinned_vertices = reuse;
     }
     dispatch->drawn[task] = render_gallery_model_range(
-        commands, dispatch->camera, model, x, y, z, scale, 0, 0, 1);
+        commands, dispatch->camera, model, x, y, z, scale, 0, 0, 0, -1, 1);
     dispatch->wall_us[task] = render_monotonic_us() - start;
     frontend_slots[worker_id].state = 0;
 }
@@ -2084,10 +2098,13 @@ static void character_primitive_job(int worker_id, int task, void *opaque)
     job->frontend.vertex_cache = actor_state->vertex_cache;
     job->frontend.vertex_cache_capacity = actor_state->vertex_cache_capacity;
     job->frontend.disable_edge = actor_state->disable_edge;
+    job->frontend.disable_sphere = actor_state->disable_sphere;
+    job->frontend.disable_toon = actor_state->disable_toon;
     frontend_slots[worker_id].thread = pthread_self();
     frontend_slots[worker_id].state = &job->frontend;
     job->drawn = render_gallery_model_range(&job->commands,
-        characters->camera, model, x, y, z, scale, job->primitive, 1, 0);
+        characters->camera, model, x, y, z, scale, job->primitive, 1,
+        job->first_index, job->index_count, 0);
     job->wall_us = render_monotonic_us() - start;
     frontend_slots[worker_id].state = 0;
 }
@@ -2115,6 +2132,7 @@ static int render_characters_parallel(struct toy_renderer *renderer,
         private_character_animation_us;
     for (i = 0; i < 4; i++) {
         struct rasterfall_developer_character *entry = &developer_characters[i];
+        int projected_height;
         dispatch.visible[i + 1] = entry->model.data &&
             world_distance(camera, entry->x, entry->z) <= ENEMY_RENDER_DISTANCE &&
             gallery_model_visible(dispatch.surface, camera, &entry->model,
@@ -2122,19 +2140,28 @@ static int render_characters_parallel(struct toy_renderer *renderer,
                 character_model_scale(&entry->model, entry->target_height_mm));
         prepare_character_command_renderer(&entry->commands, &entry->frontend,
             &entry->commands_initialized, dispatch.surface, dispatch.depth);
-        entry->frontend.disable_edge = dispatch.visible[i + 1] &&
-            gallery_model_projected_height(dispatch.surface, camera,
+        projected_height = gallery_model_projected_height(dispatch.surface, camera,
                 &entry->model, entry->x, entry->base_y, entry->z,
                 character_model_scale(&entry->model,
-                                      entry->target_height_mm)) <
-            RASTERFALL_CHARACTER_EDGE_MIN_HEIGHT;
+                                      entry->target_height_mm));
+        entry->frontend.disable_edge = dispatch.visible[i + 1] &&
+            projected_height < RASTERFALL_CHARACTER_EDGE_MIN_HEIGHT;
+        entry->frontend.disable_sphere = dispatch.visible[i + 1] &&
+            projected_height < RASTERFALL_CHARACTER_MATERIAL_MIN_HEIGHT;
+        entry->frontend.disable_toon = entry->frontend.disable_sphere;
     }
-    private_character_frontend.disable_edge = dispatch.visible[0] &&
-        gallery_model_projected_height(dispatch.surface, camera,
+    {
+        int projected_height = gallery_model_projected_height(dispatch.surface, camera,
             &private_character_model, -13000, -900, -10000,
             character_model_scale(&private_character_model,
-                                  RASTERFALL_EULA_HEIGHT_MM)) <
-        RASTERFALL_CHARACTER_EDGE_MIN_HEIGHT;
+                                  RASTERFALL_EULA_HEIGHT_MM));
+        private_character_frontend.disable_edge = dispatch.visible[0] &&
+            projected_height < RASTERFALL_CHARACTER_EDGE_MIN_HEIGHT;
+        private_character_frontend.disable_sphere = dispatch.visible[0] &&
+            projected_height < RASTERFALL_CHARACTER_MATERIAL_MIN_HEIGHT;
+        private_character_frontend.disable_toon =
+            private_character_frontend.disable_sphere;
+    }
     pipeline_start = render_monotonic_us();
     if (toy_renderer_parallel_for(renderer, 5, 5,
                                   character_frontend_job, &dispatch) < 0)
@@ -2144,7 +2171,14 @@ static int render_characters_parallel(struct toy_renderer *renderer,
     for (actor = 0; actor < 5; actor++) if (dispatch.visible[actor]) {
         const struct rasterfall_model_asset *model = actor == 0 ?
             &private_character_model : &developer_characters[actor - 1].model;
-        task_count += (int)model->primitive_count;
+        for (primitive = 0; primitive < (int)model->primitive_count;
+             primitive++) {
+            const unsigned char *p = model->primitives +
+                primitive * RASTERFALL_MODEL_PRIMITIVE_BYTES;
+            unsigned int indices = model_u32(p + 4);
+            unsigned int chunk = RASTERFALL_CHARACTER_TASK_TRIANGLES * 3U;
+            task_count += (int)((indices + chunk - 1) / chunk);
+        }
     }
     if (task_count > 0) {
         if (ensure_character_primitive_jobs(task_count) < 0) return -1;
@@ -2154,9 +2188,21 @@ static int render_characters_parallel(struct toy_renderer *renderer,
                 &private_character_model : &developer_characters[actor - 1].model;
             for (primitive = 0; primitive < (int)model->primitive_count;
                  primitive++) {
-                character_primitive_jobs[task_count].actor = actor;
-                character_primitive_jobs[task_count].primitive = primitive;
-                task_count++;
+                const unsigned char *p = model->primitives +
+                    primitive * RASTERFALL_MODEL_PRIMITIVE_BYTES;
+                int index_count = (int)model_u32(p + 4);
+                int first_index;
+                int chunk = RASTERFALL_CHARACTER_TASK_TRIANGLES * 3;
+                for (first_index = 0; first_index < index_count;
+                     first_index += chunk) {
+                    int count = index_count - first_index;
+                    if (count > chunk) count = chunk;
+                    character_primitive_jobs[task_count].actor = actor;
+                    character_primitive_jobs[task_count].primitive = primitive;
+                    character_primitive_jobs[task_count].first_index = first_index;
+                    character_primitive_jobs[task_count].index_count = count;
+                    task_count++;
+                }
             }
         }
         primitive_dispatch.jobs = character_primitive_jobs;

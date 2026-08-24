@@ -310,9 +310,7 @@ static long raster_tex(struct toy_renderer *renderer,
                        int material_features,
                        int base_texture_valid, int sphere_texture_valid,
                        int material_alpha,
-                       uint32_t material_ambient,
-                       uint32_t material_specular,
-                       int material_specular_level,
+                       uint32_t material_add,
                        int repeat, uint32_t fallback_color,
                        int light_factor, int fog_factor,
                        unsigned long *tex_pixels,
@@ -499,28 +497,30 @@ static long raster_tex(struct toy_renderer *renderer,
                     if (light_factor < 0) worker->material_color_divisions++;
                     if (fog_factor < 0) worker->material_color_divisions++;
                     {
-                    int alpha = diagnostic & TOY_RENDER_DIAG_FORCE_OPAQUE ?
-                                255 :
-                                (int)(color >> 24) * material_alpha / 255;
-                    if (!(diagnostic & TOY_RENDER_DIAG_FORCE_OPAQUE))
+                    int alpha;
+                    if (diagnostic & TOY_RENDER_DIAG_FORCE_OPAQUE)
+                        alpha = 255;
+                    else if (material_alpha == 255)
+                        alpha = (int)(color >> 24);
+                    else
+                        alpha = (int)(color >> 24) * material_alpha / 255;
+                    if (!(diagnostic & TOY_RENDER_DIAG_FORCE_OPAQUE) &&
+                        material_alpha != 255)
                     {
                         pixel_divisions++;
                         worker->alpha_divisions++;
                     }
                     if (alpha > 0) {
-                        pixel_divisions += 12; /* material 6 + light/fog 6 */
-                        worker->material_color_divisions += 12;
+                        pixel_divisions += 6; /* light/fog RGB shading */
+                        worker->material_color_divisions += 6;
                         worker->shaded_px++;
                         {
                             int r = (color >> 16) & 255;
                             int g = (color >> 8) & 255;
                             int b = color & 255;
-                            r += ((material_ambient >> 16) & 255) * 16 / 255 +
-                                 ((material_specular >> 16) & 255) * material_specular_level / 255;
-                            g += ((material_ambient >> 8) & 255) * 16 / 255 +
-                                 ((material_specular >> 8) & 255) * material_specular_level / 255;
-                            b += (material_ambient & 255) * 16 / 255 +
-                                 (material_specular & 255) * material_specular_level / 255;
+                            r += (material_add >> 16) & 255;
+                            g += (material_add >> 8) & 255;
+                            b += material_add & 255;
                             color = (color & 0xff000000U) |
                                 (uint32_t)clampi(r, 0, 255) << 16 |
                                 (uint32_t)clampi(g, 0, 255) << 8 |
@@ -618,9 +618,7 @@ static void rasterize_cmd(struct toy_renderer *renderer,
                                      cmd->base_texture_valid,
                                      cmd->sphere_texture_valid,
                                      cmd->material_alpha,
-                                     cmd->material_ambient,
-                                     cmd->material_specular,
-                                     cmd->material_specular_level,
+                                     cmd->material_add,
                                      cmd->repeat,
                                      cmd->fallback, cmd->light, cmd->fog,
                                      &worker->textured_pixels,
@@ -694,6 +692,7 @@ static int record_cmd(struct toy_renderer *renderer, int textured,
     cmd->material_ambient = 0;
     cmd->material_specular = 0;
     cmd->material_specular_level = 0;
+    cmd->material_add = 0;
     cmd->transparent = textured && texture && texture->has_transparency;
     cmd->edge = renderer->recording_edge;
     cmd->area = area;
@@ -883,6 +882,18 @@ int toy_renderer_triangle_textured_material_lit(
     cmd->material_ambient = material_ambient;
     cmd->material_specular = material_specular;
     cmd->material_specular_level = clampi(material_specular_level, 0, 255);
+    {
+        int level = cmd->material_specular_level;
+        int r = ((material_ambient >> 16) & 255) * 16 / 255 +
+                ((material_specular >> 16) & 255) * level / 255;
+        int g = ((material_ambient >> 8) & 255) * 16 / 255 +
+                ((material_specular >> 8) & 255) * level / 255;
+        int b = (material_ambient & 255) * 16 / 255 +
+                (material_specular & 255) * level / 255;
+        cmd->material_add = (uint32_t)clampi(r, 0, 255) << 16 |
+                            (uint32_t)clampi(g, 0, 255) << 8 |
+                            (uint32_t)clampi(b, 0, 255);
+    }
     cmd->transparent = material_alpha < 255 ||
                        (texture && texture->has_transparency);
     renderer->submitted_triangles++;

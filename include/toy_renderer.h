@@ -64,6 +64,7 @@ struct toy_raster_cmd {
     uint32_t material_ambient;
     uint32_t material_specular;
     int material_specular_level;
+    uint32_t material_add;
     int transparent;
     int edge;
     long long area;
