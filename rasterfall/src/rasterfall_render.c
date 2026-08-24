@@ -249,16 +249,17 @@ static long private_character_animation_us;
 #define RASTERFALL_EULA_HEIGHT_MM 1736
 
 struct rasterfall_developer_character {
-    const char *name, *model_path, *height_source;
+    const char *name, *model_path, *lod_model_path, *height_source;
     int x, z, base_y, target_height_mm;
     struct rasterfall_model_asset model;
+    struct rasterfall_model_asset lod_model;
     struct rasterfall_vmd_clip vmd;
     struct rasterfall_animation_clip walk;
     struct rasterfall_animation_track tracks[RASTERFALL_VMD_MAX_BONES];
     struct toy_renderer commands;
     struct rasterfall_frontend_state frontend;
     int commands_initialized;
-    int load_attempted, vmd_loaded;
+    int load_attempted, lod_loaded, vmd_loaded;
 };
 
 /* Presentation-only lineup.  Per-model placement belongs here rather than in
@@ -268,6 +269,7 @@ struct rasterfall_developer_character {
 static struct rasterfall_developer_character developer_characters[] = {
     { .name = "ST AR-15",
       .model_path = "rasterfall/private-assets/models/st_ar15.rmesh",
+      .lod_model_path = "rasterfall/private-assets/models/st_ar15_lod1.rmesh",
       .height_source = "GFL2_MODEL_RELATIVE_LEVA_1516MM",
       .x = -15400, .z = -10000, .base_y = -900, .target_height_mm = 1652 },
     { .name = "G11", .model_path = "rasterfall/private-assets/models/g11.rmesh",
@@ -305,6 +307,18 @@ static void load_developer_characters(void)
                 rasterfall_vmd_build_animation(&entry->vmd, &entry->walk,
                     entry->tracks, RASTERFALL_VMD_MAX_BONES);
                 entry->vmd_loaded = 1;
+                if (entry->lod_model_path &&
+                    rasterfall_model_load(&entry->lod_model,
+                                          entry->lod_model_path) == 0) {
+                    rasterfall_model_bind_root_motion(
+                        &entry->lod_model,
+                        rasterfall_model_find_bone(&entry->lod_model, "センター"),
+                        rasterfall_model_find_bone(&entry->lod_model, "グルーブ"));
+                    entry->lod_loaded = 1;
+                    __printf("rasterfall: developer character %s LOD vertices=%u triangles=%u\n",
+                        entry->name, entry->lod_model.vertex_count,
+                        entry->lod_model.index_count / 3);
+                }
                 __printf("rasterfall: developer character %s target_height_mm=%d height_source=%s scale_milli=%d vertices=%u triangles=%u bones=%d VMD_mapped=%d VMD_missing=%d duration_ms=%d\n",
                     entry->name, entry->target_height_mm,
                     entry->height_source,
@@ -341,10 +355,26 @@ static void sample_developer_character(struct rasterfall_developer_character *en
             rasterfall_model_set_root_motion(&entry->model, center, groove, 1);
             rasterfall_model_sample_clip(&entry->model, &entry->walk,
                                          player->time_ms);
+            if (entry->lod_loaded) {
+                rasterfall_model_set_ik_enabled(&entry->lod_model,
+                                                private_character_vmd_ik_enabled);
+                rasterfall_model_set_grant_enabled(&entry->lod_model,
+                                                   private_character_vmd_grant_enabled);
+                rasterfall_model_set_legacy_knee_ccd(
+                    &entry->lod_model, private_character_vmd_legacy_knee_ccd);
+                rasterfall_model_set_root_motion(&entry->lod_model,
+                                                  center, groove, 1);
+                rasterfall_model_sample_clip(&entry->lod_model, &entry->walk,
+                                             player->time_ms);
+            }
     } else {
         int zero[3] = {0, 0, 0};
         rasterfall_model_set_root_motion(&entry->model, zero, zero, 0);
         rasterfall_model_sample_clip(&entry->model, NULL, 0);
+        if (entry->lod_loaded) {
+            rasterfall_model_set_root_motion(&entry->lod_model, zero, zero, 0);
+            rasterfall_model_sample_clip(&entry->lod_model, NULL, 0);
+        }
     }
 }
 
@@ -1943,6 +1973,7 @@ static int render_model_gallery(struct toy_renderer *renderer,
 struct character_frontend_dispatch {
     const struct camera *camera;
     const struct toy_surface *surface;
+    const struct rasterfall_model_asset *models[5];
     int *depth;
     unsigned char visible[5];
     int drawn[5];
@@ -2009,7 +2040,7 @@ static void character_frontend_job(int worker_id, int task, void *opaque)
     if (task == 0) {
         commands = &private_character_commands;
         state = &private_character_frontend;
-        model = &private_character_model;
+        model = dispatch->models[0];
         x = -13000; y = -900; z = -10000;
         scale = character_model_scale(model, RASTERFALL_EULA_HEIGHT_MM);
     } else {
@@ -2017,7 +2048,7 @@ static void character_frontend_job(int worker_id, int task, void *opaque)
             &developer_characters[task - 1];
         commands = &entry->commands;
         state = &entry->frontend;
-        model = &entry->model;
+        model = dispatch->models[task];
         x = entry->x; y = entry->base_y; z = entry->z;
         scale = character_model_scale(model, entry->target_height_mm);
     }
@@ -2079,8 +2110,8 @@ static void character_primitive_job(int worker_id, int task, void *opaque)
     struct rasterfall_frontend_state *actor_state = job->actor == 0 ?
         &private_character_frontend :
         &developer_characters[job->actor - 1].frontend;
-    const struct rasterfall_model_asset *model = job->actor == 0 ?
-        &private_character_model : &developer_characters[job->actor - 1].model;
+    const struct rasterfall_model_asset *model =
+        characters->models[job->actor];
     int x, y, z, scale;
     long start = render_monotonic_us();
     if (job->actor == 0) {
@@ -2115,10 +2146,11 @@ static int render_characters_parallel(struct toy_renderer *renderer,
     struct character_frontend_dispatch dispatch;
     struct character_primitive_dispatch primitive_dispatch;
     int i, actor, primitive, task_count = 0, drawn = 0;
-    long pipeline_start;
+    long pipeline_start, setup_start, merge_start;
     dispatch.camera = camera;
     dispatch.surface = &renderer->surface;
     dispatch.depth = renderer->depth;
+    dispatch.models[0] = &private_character_model;
     dispatch.visible[0] = private_character_model.data &&
         world_distance(camera, -13000, -10000) <= ENEMY_RENDER_DISTANCE &&
         gallery_model_visible(dispatch.surface, camera,
@@ -2149,6 +2181,9 @@ static int render_characters_parallel(struct toy_renderer *renderer,
         entry->frontend.disable_sphere = dispatch.visible[i + 1] &&
             projected_height < RASTERFALL_CHARACTER_MATERIAL_MIN_HEIGHT;
         entry->frontend.disable_toon = entry->frontend.disable_sphere;
+        dispatch.models[i + 1] = entry->lod_loaded &&
+            projected_height < RASTERFALL_CHARACTER_MATERIAL_MIN_HEIGHT ?
+            &entry->lod_model : &entry->model;
     }
     {
         int projected_height = gallery_model_projected_height(dispatch.surface, camera,
@@ -2168,9 +2203,10 @@ static int render_characters_parallel(struct toy_renderer *renderer,
         return -1;
     scene_stats.character_prepare_wall_us =
         render_monotonic_us() - pipeline_start;
+    setup_start = render_monotonic_us();
     for (actor = 0; actor < 5; actor++) if (dispatch.visible[actor]) {
         const struct rasterfall_model_asset *model = actor == 0 ?
-            &private_character_model : &developer_characters[actor - 1].model;
+            dispatch.models[0] : dispatch.models[actor];
         for (primitive = 0; primitive < (int)model->primitive_count;
              primitive++) {
             const unsigned char *p = model->primitives +
@@ -2185,7 +2221,7 @@ static int render_characters_parallel(struct toy_renderer *renderer,
         task_count = 0;
         for (actor = 0; actor < 5; actor++) if (dispatch.visible[actor]) {
             const struct rasterfall_model_asset *model = actor == 0 ?
-                &private_character_model : &developer_characters[actor - 1].model;
+                dispatch.models[0] : dispatch.models[actor];
             for (primitive = 0; primitive < (int)model->primitive_count;
                  primitive++) {
                 const unsigned char *p = model->primitives +
@@ -2208,16 +2244,20 @@ static int render_characters_parallel(struct toy_renderer *renderer,
         primitive_dispatch.jobs = character_primitive_jobs;
         primitive_dispatch.characters = &dispatch;
         primitive_dispatch.count = task_count;
+        scene_stats.character_task_setup_us =
+            render_monotonic_us() - setup_start;
         pipeline_start = render_monotonic_us();
         if (toy_renderer_parallel_for(renderer, task_count, 8,
                                       character_primitive_job,
                                       &primitive_dispatch) < 0) return -1;
         scene_stats.character_primitive_wall_us =
             render_monotonic_us() - pipeline_start;
+        merge_start = render_monotonic_us();
         for (i = 0; i < task_count; i++)
             if (toy_renderer_merge_commands(
                     renderer, &character_primitive_jobs[i].commands) < 0)
                 return -1;
+        scene_stats.character_merge_us = render_monotonic_us() - merge_start;
     }
     for (i = 0; i < 5; i++) {
         struct rasterfall_frontend_state *state = i == 0 ?
@@ -2386,6 +2426,8 @@ static int render_private_character(struct toy_renderer *renderer,
             rasterfall_model_sample_clip(&private_character_model, NULL, 0);
         }
         private_character_animation_us = render_monotonic_us() - sample_start;
+        scene_stats.character_animation_outside_us =
+            private_character_animation_us;
     }
     if (!private_character_model.data ||
         world_distance(camera, -13000, -10000) > ENEMY_RENDER_DISTANCE)
@@ -2399,9 +2441,11 @@ static int render_private_character(struct toy_renderer *renderer,
         else
             pixels += character_pixels;
         {int clip_id=active_session?active_session->skeletal_demo_player.clip_id:-1;
+         long preview_start=render_monotonic_us();
          pixels+=render_quaternius_preview(renderer,camera,
                 clip_id>=6&&clip_id<=8?clip_id-6:-1,
-                active_session?active_session->skeletal_demo_player.time_ms:0);}
+                active_session?active_session->skeletal_demo_player.time_ms:0);
+         scene_stats.character_preview_us=render_monotonic_us()-preview_start;}
         return pixels;
     }
 }

@@ -56,6 +56,10 @@ struct rasterfall_perf_stats {
     unsigned long character_edge_disabled_frames[5];
     long character_prepare_wall_us;
     long character_primitive_wall_us;
+    long character_task_setup_us;
+    long character_merge_us;
+    long character_preview_us;
+    long character_animation_outside_us;
 };
 
 struct rasterfall_scene_stats;

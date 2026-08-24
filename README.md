@@ -50,6 +50,9 @@ make app-rasterfall
 build/rasterfall
 ```
 
+本地私有 AR-15 模型可用 `make lod-ar15` 确定性生成中距离 mesh LOD；生成物保留在
+`rasterfall/private-assets/`，不纳入版本控制，运行时缺失时自动回退完整模型。
+
 旧的单文件内嵌方式仍可使用 `make rasterfall-embedded` 或
 `make app-rasterfall-embedded`，输出为 `build/rasterfall-embedded`。
 

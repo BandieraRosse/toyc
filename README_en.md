@@ -52,6 +52,10 @@ make app-rasterfall
 build/rasterfall
 ```
 
+For the local private AR-15 model, `make lod-ar15` deterministically builds the
+mid-distance mesh LOD. The generated private asset stays unversioned and the
+runtime automatically falls back to the full mesh when it is absent.
+
 The Linux program reads assets from `rasterfall/assets/`. The previous single-file
 packaging mode remains available as `make rasterfall-embedded` or
 `make app-rasterfall-embedded`, producing `build/rasterfall-embedded`.

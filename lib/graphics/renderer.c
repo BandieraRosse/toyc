@@ -322,6 +322,9 @@ static long raster_tex(struct toy_renderer *renderer,
     int y, x, drawn = 0;
     int diagnostic = renderer->texture_diagnostic_flags;
     int has_sphere = (material_features & TOY_MATERIAL_SPHERE) != 0;
+    int fast_opaque = !diagnostic && !has_sphere && !has_toon &&
+        material_alpha == 255 && base_texture_valid && texture &&
+        !texture->has_transparency;
     struct toy_raster_sampler base_sampler, sphere_sampler;
     prepare_sampler(&base_sampler, texture, base_texture_valid);
     prepare_sampler(&sphere_sampler, has_sphere ? texture2 : 0,
@@ -440,6 +443,37 @@ static long raster_tex(struct toy_renderer *renderer,
                         color = texture_sample_prepared(
                             &base_sampler, u, v, repeat, fallback_color,
                             &used_fallback);
+                    if (fast_opaque) {
+                        long light = light_factor >= 0 ? light_factor :
+                            (e0 * a->light + e1 * b->light +
+                             e2 * c->light) / area;
+                        long fog = fog_factor >= 0 ? fog_factor :
+                            (e0 * a->fog + e1 * b->fog +
+                             e2 * c->fog) / area;
+                        int r = (int)((color >> 16) & 255) +
+                                (int)((material_add >> 16) & 255);
+                        int g = (int)((color >> 8) & 255) +
+                                (int)((material_add >> 8) & 255);
+                        int b = (int)(color & 255) +
+                                (int)(material_add & 255);
+                        color = (uint32_t)clampi(r, 0, 255) << 16 |
+                                (uint32_t)clampi(g, 0, 255) << 8 |
+                                (uint32_t)clampi(b, 0, 255);
+                        color = shade_color(color, (int)light, (int)fog);
+                        depth[at] = (int)inv_norm;
+                        row[x] = color;
+                        if (light_factor < 0) pixel_divisions++;
+                        if (fog_factor < 0) pixel_divisions++;
+                        pixel_divisions += 6;
+                        worker->material_color_divisions +=
+                            (light_factor < 0) + (fog_factor < 0) + 6;
+                        worker->shaded_px++;
+                        worker->written_px++;
+                        worker->material_path_divisions[path] += pixel_divisions;
+                        (*tex_pixels)++;
+                        drawn++;
+                        goto raster_tex_pixel_done;
+                    }
                     if (has_sphere) {
                         int sphere_fallback = 0;
                         long u2, v2;
@@ -554,6 +588,8 @@ static long raster_tex(struct toy_renderer *renderer,
                     worker->material_path_divisions[path] += pixel_divisions;
                     }
                 }
+raster_tex_pixel_done:
+                ;
             }
             e0 += dEx0; e1 += dEx1; e2 += dEx2;
             if (diagnostic & TOY_RENDER_DIAG_AFFINE_UV) {

@@ -83,6 +83,16 @@ tools/import-pmx-model.sh path/to/character-folder character
 目录中应只有一个 `.pmx`；脚本会构建转换器、复制 PMX 引用的纹理并自动生成
 TTEX。重新导入已有名称时显式添加 `--force`。
 
+高模角色的中距离 LOD 可在导入后离线生成。当前 AR-15 流程使用：
+
+```sh
+make lod-ar15
+```
+
+生成的 `st_ar15_lod1.rmesh` 保留相同顶点、骨骼、蒙皮与材质布局，只简化索引，
+并共享 `st_ar15.textures/`。运行时在角色投影高度低于材质 LOD 阈值时自动选择该
+网格；文件不存在时无条件回退完整模型。
+
 `pmx2rmesh` 读取 PMX 2.0/2.1 的顶点位置、法线、UV、三角形索引和材质漫
 反射色、基础纹理、sphere 和 toon 纹理引用，输出现有 RFM2 格式，并将 PMX 引用的
 PNG/BMP 纹理复制到指定目录。再使用 `build/toyasset convert png1024|bmp`

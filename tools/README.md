@@ -23,6 +23,18 @@ PNG、BMP、SPA/SPH、JPG/JPEG 纹理会自动转为 TTEX。默认模型名来�
 
 `jpg_decode.{c,h}` 是 toyasset 的 JPEG 解码依赖，不是独立程序。
 
+## RFM2 mesh LOD
+
+```sh
+make lod-ar15
+tools/rmesh_lod.py input.rmesh output_lod1.rmesh --ratio 0.4
+```
+
+`rmesh_lod.py` 对每个材质 primitive 做确定性的蒙皮/UV 感知顶点聚类，保留原始
+顶点表、骨骼、动画和材质数据，只重建简化索引。`name_lodN.rmesh` 在运行时共享
+`name.textures/`，避免为各级 LOD 复制纹理。输出三角形比例是目标值；为了保护
+UV 接缝和骨骼边界，实际最接近比例会随模型拓扑略有变化。
+
 ## toyasset — 资产转换
 
 ```sh

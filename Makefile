@@ -1001,10 +1001,15 @@ $(BUILD)/rasterfall-embedded: $(BUILD)/rasterfall.o $(LIBC_A) $(APP_EXTRA_OBJS_r
 $(BUILD)/wayland_fps: $(BUILD)/rasterfall
 	@ln -sf rasterfall $@
 
-.PHONY: rasterfall rasterfall-embedded wayland_fps app-rasterfall-embedded
+.PHONY: rasterfall rasterfall-embedded wayland_fps app-rasterfall-embedded lod-ar15
 rasterfall: $(BUILD)/rasterfall
 rasterfall-embedded app-rasterfall-embedded: $(BUILD)/rasterfall-embedded
 wayland_fps: $(BUILD)/wayland_fps
+
+# 私有 AR-15 模型的确定性中距离 LOD；输出与源模型共享纹理目录。
+lod-ar15:
+	tools/rmesh_lod.py rasterfall/private-assets/models/st_ar15.rmesh \
+		rasterfall/private-assets/models/st_ar15_lod1.rmesh --ratio 0.4
 
 # 单个 app：make app-echo
 $(foreach name,$(APP_NAMES),$(eval app-$(name): $(BUILD)/$(name)))
