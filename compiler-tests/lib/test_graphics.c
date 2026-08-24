@@ -150,6 +150,21 @@ int main(void)
     toy_renderer_flush(&renderer);
     if (pixels[2 * 8 + 2] != 0x80003F) return 14;
 
+    toy_renderer_begin(&renderer, &surface, 0);
+    a.z = b.z = c.z = 10;
+    a.inv_z = b.inv_z = c.inv_z = 104857;
+    a.u = b.u = c.u = a.v = b.v = c.v = 16384;
+    a.u_over_z = b.u_over_z = c.u_over_z =
+        (long)a.u * a.inv_z;
+    a.v_over_z = b.v_over_z = c.v_over_z =
+        (long)a.v * a.inv_z;
+    toy_renderer_set_base_texture_bilinear(&renderer, 1);
+    toy_renderer_triangle_textured_lit(&renderer, &a, &b, &c,
+                                       &texture, 0, 0, 256, 0);
+    toy_renderer_set_base_texture_bilinear(&renderer, 0);
+    toy_renderer_flush(&renderer);
+    if (pixels[2 * 8 + 2] != 0x808080) return 15;
+
     toy_renderer_destroy(&renderer);
     return 0;
 }

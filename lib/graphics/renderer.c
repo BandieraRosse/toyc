@@ -273,6 +273,79 @@ static uint32_t texture_sample_prepared(const struct toy_raster_sampler *s,
            ((uint32_t)p[0] << 16) | ((uint32_t)p[1] << 8) | p[2];
 }
 
+static long bilinear_component(long c00, long c10, long c01, long c11,
+                               long fx, long fy)
+{
+    long top = (c00 * (TOY_UV_ONE - fx) + c10 * fx + 32768) /
+               TOY_UV_ONE;
+    long bottom = (c01 * (TOY_UV_ONE - fx) + c11 * fx + 32768) /
+                  TOY_UV_ONE;
+    return (top * (TOY_UV_ONE - fy) + bottom * fy + 32768) /
+           TOY_UV_ONE;
+}
+
+static uint32_t texture_sample_bilinear_prepared(
+    const struct toy_raster_sampler *s, long u, long v, int repeat,
+    uint32_t fallback, int *used_fallback)
+{
+    long scaled_x, scaled_y, x0, y0, x1, y1, fx, fy;
+    uint32_t out = 0;
+    long alpha = 255, a00 = 255, a10 = 255, a01 = 255, a11 = 255;
+    int channel;
+    if (!s->valid) {
+        long cx = (u / TOY_UV_ONE) & 1;
+        long cy = (v / TOY_UV_ONE) & 1;
+        *used_fallback = 1;
+        return (cx ^ cy) ? 0xFFFF00FFU : fallback;
+    }
+    if (repeat) {
+        u &= TOY_UV_ONE - 1;
+        v &= TOY_UV_ONE - 1;
+    } else {
+        if (u < 0) u = 0;
+        if (v < 0) v = 0;
+        if (u >= TOY_UV_ONE) u = TOY_UV_ONE - 1;
+        if (v >= TOY_UV_ONE) v = TOY_UV_ONE - 1;
+    }
+    scaled_x = u * s->width;
+    scaled_y = v * s->height;
+    x0 = scaled_x / TOY_UV_ONE;
+    y0 = scaled_y / TOY_UV_ONE;
+    fx = scaled_x & (TOY_UV_ONE - 1);
+    fy = scaled_y & (TOY_UV_ONE - 1);
+    x1 = x0 + 1;
+    y1 = y0 + 1;
+    if (x1 >= (long)s->width) x1 = repeat ? 0 : x0;
+    if (y1 >= (long)s->height) y1 = repeat ? 0 : y0;
+    if (s->channels == 4) {
+        a00 = s->data[(y0 * s->width + x0) * 4 + 3];
+        a10 = s->data[(y0 * s->width + x1) * 4 + 3];
+        a01 = s->data[(y1 * s->width + x0) * 4 + 3];
+        a11 = s->data[(y1 * s->width + x1) * 4 + 3];
+        alpha = bilinear_component(a00, a10, a01, a11, fx, fy);
+    }
+    for (channel = 0; channel < 4; channel++) {
+        long c00, c10, c01, c11, value;
+        if (channel == 3) value = alpha;
+        else {
+            c00 = s->data[(y0 * s->width + x0) * s->channels + channel];
+            c10 = s->data[(y0 * s->width + x1) * s->channels + channel];
+            c01 = s->data[(y1 * s->width + x0) * s->channels + channel];
+            c11 = s->data[(y1 * s->width + x1) * s->channels + channel];
+            if (s->channels == 4) {
+                value = bilinear_component(c00 * a00, c10 * a10,
+                    c01 * a01, c11 * a11, fx, fy);
+                value = alpha ? (value + alpha / 2) / alpha : 0;
+            } else
+                value = bilinear_component(c00, c10, c01, c11, fx, fy);
+        }
+        out |= (uint32_t)value << (channel == 0 ? 16 :
+                                   channel == 1 ? 8 :
+                                   channel == 2 ? 0 : 24);
+    }
+    return out;
+}
+
 static uint32_t shade_color(uint32_t color, int light, int fog)
 {
     int r = (int)((color >> 16) & 255), g = (int)((color >> 8) & 255);
@@ -308,7 +381,8 @@ static long raster_tex(struct toy_renderer *renderer,
                        int blend_mode,
                        int has_toon, uint32_t toon_multiplier,
                        int material_features,
-                       int base_texture_valid, int sphere_texture_valid,
+                       int base_texture_valid, int base_texture_bilinear,
+                       int sphere_texture_valid,
                        int material_alpha,
                        uint32_t material_add,
                        int repeat, uint32_t fallback_color,
@@ -439,6 +513,15 @@ static long raster_tex(struct toy_renderer *renderer,
                     if ((diagnostic & TOY_RENDER_DIAG_SIMPLE_ADDRESS) &&
                         texture_valid(texture))
                         color = texture_sample_simple(texture, u, v, repeat);
+                    else if (base_texture_bilinear)
+                    {
+                        color = texture_sample_bilinear_prepared(
+                            &base_sampler, u, v, repeat, fallback_color,
+                            &used_fallback);
+                        pixel_divisions += base_sampler.channels == 4 ? 15 : 9;
+                        worker->material_color_divisions +=
+                            base_sampler.channels == 4 ? 15 : 9;
+                    }
                     else
                         color = texture_sample_prepared(
                             &base_sampler, u, v, repeat, fallback_color,
@@ -652,6 +735,7 @@ static void rasterize_cmd(struct toy_renderer *renderer,
                                      cmd->toon_multiplier,
                                      cmd->material_features,
                                      cmd->base_texture_valid,
+                                     cmd->base_texture_bilinear,
                                      cmd->sphere_texture_valid,
                                      cmd->material_alpha,
                                      cmd->material_add,
@@ -723,6 +807,8 @@ static int record_cmd(struct toy_renderer *renderer, int textured,
     cmd->toon_multiplier = 0xffffffffU;
     cmd->material_features = 0;
     cmd->base_texture_valid = texture_valid(texture);
+    cmd->base_texture_bilinear =
+        renderer->recording_base_texture_bilinear;
     cmd->sphere_texture_valid = 0;
     cmd->material_alpha = 255;
     cmd->material_ambient = 0;
@@ -940,6 +1026,12 @@ int toy_renderer_triangle_textured_material_lit(
 void toy_renderer_set_recording_edge(struct toy_renderer *renderer, int edge)
 {
     if (renderer) renderer->recording_edge = edge != 0;
+}
+
+void toy_renderer_set_base_texture_bilinear(struct toy_renderer *renderer,
+                                            int enabled)
+{
+    if (renderer) renderer->recording_base_texture_bilinear = enabled != 0;
 }
 
 void toy_renderer_set_worker_count(struct toy_renderer *renderer, int count)
@@ -1406,6 +1498,7 @@ int toy_renderer_begin(struct toy_renderer *renderer,
     renderer->last_sorted_cmds = 0;
     renderer->last_worker_wait_us = 0;
     renderer->recording_edge = 0;
+    renderer->recording_base_texture_bilinear = 0;
     renderer->toon_cache_valid = 0;
     /* Keep this self-host friendly: avoid a whole-structure assignment here. */
     renderer->surface.pixels = surface->pixels;

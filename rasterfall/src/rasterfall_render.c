@@ -62,6 +62,7 @@ struct rasterfall_frontend_state {
     int disable_edge;
     int disable_sphere;
     int disable_toon;
+    int face_material;
 };
 static struct rasterfall_frontend_state frontend_default = {
     .toon_shared = -1, .toon_level = 255, .material_alpha = 255,
@@ -93,6 +94,7 @@ static struct rasterfall_frontend_state *frontend_state(void)
 #define active_material_specular (frontend_state()->material_specular)
 #define active_material_specular_power (frontend_state()->material_specular_power)
 #define active_material_specular_level (frontend_state()->material_specular_level)
+#define active_face_material (frontend_state()->face_material)
 #define active_model_triangle_stats (frontend_state()->model_triangle_stats)
 #define gallery_vertex_cache (frontend_state()->vertex_cache)
 #define gallery_vertex_cache_capacity (frontend_state()->vertex_cache_capacity)
@@ -260,7 +262,11 @@ struct rasterfall_developer_character {
     struct rasterfall_frontend_state frontend;
     int commands_initialized;
     int load_attempted, lod_loaded, vmd_loaded;
+    int vmd_mapped;
+    long load_us;
 };
+
+#define RASTERFALL_CHARACTER_DISPLAY_MEAN_HEIGHT_MM 1750
 
 /* Presentation-only lineup.  Per-model placement belongs here rather than in
  * toy_game: these objects have no gameplay actor, collision, AI or network
@@ -270,73 +276,92 @@ static struct rasterfall_developer_character developer_characters[] = {
     { .name = "ST AR-15",
       .model_path = "rasterfall/private-assets/models/st_ar15.rmesh",
       .lod_model_path = "rasterfall/private-assets/models/st_ar15_lod1.rmesh",
-      .height_source = "GFL2_MODEL_RELATIVE_LEVA_1516MM",
-      .x = -15400, .z = -10000, .base_y = -900, .target_height_mm = 1652 },
+      .height_source = "GFL2_RELATIVE_NORMALIZED_TO_1750MM_MEAN",
+      .x = -15400, .z = -10000, .base_y = -900, .target_height_mm = 1904 },
     { .name = "G11", .model_path = "rasterfall/private-assets/models/g11.rmesh",
       .lod_model_path = "rasterfall/private-assets/models/g11_lod1.rmesh",
-      .height_source = "GFL2_MODEL_RELATIVE_LEVA_1516MM",
-      .x = -14200, .z = -10000, .base_y = -900, .target_height_mm = 1429 },
+      .height_source = "GFL2_RELATIVE_NORMALIZED_TO_1750MM_MEAN",
+      .x = -14200, .z = -10000, .base_y = -900, .target_height_mm = 1647 },
     { .name = "VECTOR",
       .model_path = "rasterfall/private-assets/models/vector.rmesh",
       .lod_model_path = "rasterfall/private-assets/models/vector_lod1.rmesh",
-      .height_source = "GFL2_MODEL_RELATIVE_LEVA_1516MM",
-      .x = -11800, .z = -10000, .base_y = -900, .target_height_mm = 1474 },
+      .height_source = "GFL2_RELATIVE_NORMALIZED_TO_1750MM_MEAN",
+      .x = -11800, .z = -10000, .base_y = -900, .target_height_mm = 1699 },
     { .name = "UMP45",
       .model_path = "rasterfall/private-assets/models/ump45.rmesh",
       .lod_model_path = "rasterfall/private-assets/models/ump45_lod1.rmesh",
-      .height_source = "GFL2_MODEL_RELATIVE_LEVA_1516MM",
-      .x = -10600, .z = -10000, .base_y = -900, .target_height_mm = 1516 }
+      .height_source = "GFL2_RELATIVE_NORMALIZED_TO_1750MM_MEAN",
+      .x = -10600, .z = -10000, .base_y = -900, .target_height_mm = 1750 }
 };
 
-static void load_developer_characters(void)
+static void load_developer_character_job(int worker_id, int task, void *opaque)
 {
     static const char walk_path[] =
         "rasterfall/private-assets/animations/walk04_loop5.vmd";
-    int i;
-    for (i = 0; i < (int)(sizeof(developer_characters) /
-                          sizeof(developer_characters[0])); i++) {
-        struct rasterfall_developer_character *entry =
-            &developer_characters[i];
-        if (!entry->load_attempted) {
-            entry->load_attempted = 1;
-            if (rasterfall_model_load(&entry->model, entry->model_path) == 0 &&
-                rasterfall_vmd_load(&entry->vmd, walk_path) == 0) {
-                int mapped = rasterfall_vmd_map_model(&entry->vmd,
-                                                       &entry->model);
-                rasterfall_model_bind_root_motion(
-                    &entry->model,
-                    rasterfall_model_find_bone(&entry->model, "センター"),
-                    rasterfall_model_find_bone(&entry->model, "グルーブ"));
-                rasterfall_vmd_build_animation(&entry->vmd, &entry->walk,
-                    entry->tracks, RASTERFALL_VMD_MAX_BONES);
-                entry->vmd_loaded = 1;
-                if (entry->lod_model_path &&
-                    rasterfall_model_load(&entry->lod_model,
-                                          entry->lod_model_path) == 0) {
-                    rasterfall_model_bind_root_motion(
-                        &entry->lod_model,
-                        rasterfall_model_find_bone(&entry->lod_model, "センター"),
-                        rasterfall_model_find_bone(&entry->lod_model, "グルーブ"));
-                    entry->lod_loaded = 1;
-                    __printf("rasterfall: developer character %s LOD vertices=%u triangles=%u\n",
-                        entry->name, entry->lod_model.vertex_count,
-                        entry->lod_model.index_count / 3);
-                }
-                __printf("rasterfall: developer character %s target_height_mm=%d height_source=%s scale_milli=%d vertices=%u triangles=%u bones=%d VMD_mapped=%d VMD_missing=%d duration_ms=%d\n",
-                    entry->name, entry->target_height_mm,
-                    entry->height_source,
-                    character_model_scale(&entry->model,
-                                          entry->target_height_mm),
-                    entry->model.vertex_count,
-                    entry->model.index_count / 3, entry->model.bone_count,
-                    mapped, entry->vmd.track_count - mapped,
-                    entry->walk.duration_ms);
-            } else {
-                __fprintf(2, "rasterfall: cannot load developer character %s\n",
-                          entry->name);
-            }
+    struct rasterfall_developer_character *entries = opaque;
+    struct rasterfall_developer_character *entry = &entries[task];
+    long start = render_monotonic_us();
+    (void)worker_id;
+    if (rasterfall_model_load(&entry->model, entry->model_path) == 0 &&
+        rasterfall_vmd_load(&entry->vmd, walk_path) == 0) {
+        entry->vmd_mapped = rasterfall_vmd_map_model(&entry->vmd,
+                                                      &entry->model);
+        rasterfall_model_bind_root_motion(
+            &entry->model,
+            rasterfall_model_find_bone(&entry->model, "センター"),
+            rasterfall_model_find_bone(&entry->model, "グルーブ"));
+        rasterfall_vmd_build_animation(&entry->vmd, &entry->walk,
+            entry->tracks, RASTERFALL_VMD_MAX_BONES);
+        entry->vmd_loaded = 1;
+        if (entry->lod_model_path &&
+            rasterfall_model_load(&entry->lod_model,
+                                  entry->lod_model_path) == 0) {
+            rasterfall_model_bind_root_motion(
+                &entry->lod_model,
+                rasterfall_model_find_bone(&entry->lod_model, "センター"),
+                rasterfall_model_find_bone(&entry->lod_model, "グルーブ"));
+            entry->lod_loaded = 1;
         }
     }
+    entry->load_us = render_monotonic_us() - start;
+}
+
+static void load_developer_characters(struct toy_renderer *renderer)
+{
+    int i, pending = 0;
+    long start = render_monotonic_us();
+    for (i = 0; i < (int)(sizeof(developer_characters) /
+                          sizeof(developer_characters[0])); i++)
+        if (!developer_characters[i].load_attempted) pending++;
+    if (!pending) return;
+    for (i = 0; i < 4; i++) developer_characters[i].load_attempted = 1;
+    if (toy_renderer_parallel_for(renderer, 4, 4,
+            load_developer_character_job, developer_characters) < 0)
+        for (i = 0; i < 4; i++)
+            load_developer_character_job(0, i, developer_characters);
+    for (i = 0; i < 4; i++) {
+        struct rasterfall_developer_character *entry =
+            &developer_characters[i];
+        if (!entry->vmd_loaded) {
+            __fprintf(2, "rasterfall: cannot load developer character %s\n",
+                      entry->name);
+            continue;
+        }
+        if (entry->lod_loaded)
+            __printf("rasterfall: developer character %s LOD vertices=%u triangles=%u\n",
+                entry->name, entry->lod_model.vertex_count,
+                entry->lod_model.index_count / 3);
+        __printf("rasterfall: developer character %s target_height_mm=%d height_source=%s scale_milli=%d vertices=%u triangles=%u bones=%d VMD_mapped=%d VMD_missing=%d duration_ms=%d load_us=%ld\n",
+            entry->name, entry->target_height_mm, entry->height_source,
+            character_model_scale(&entry->model, entry->target_height_mm),
+            entry->model.vertex_count, entry->model.index_count / 3,
+            entry->model.bone_count, entry->vmd_mapped,
+            entry->vmd.track_count - entry->vmd_mapped,
+            entry->walk.duration_ms, entry->load_us);
+    }
+    __printf("rasterfall: developer characters parallel_load_us=%ld count=4 display_mean_height_mm=%d\n",
+             render_monotonic_us() - start,
+             RASTERFALL_CHARACTER_DISPLAY_MEAN_HEIGHT_MM);
 }
 
 static void sample_developer_character(struct rasterfall_developer_character *entry)
@@ -456,7 +481,7 @@ static int render_quaternius_preview(struct toy_renderer *renderer,
 static char gallery_paths[RASTERFALL_MODEL_MAX_GALLERY]
                           [RASTERFALL_MODEL_PATH_BYTES];
 
-struct world_uv_vertex { struct vec3 p; int u, v; int su, sv; };
+struct world_uv_vertex { struct vec3 p; int u, v; int su, sv; int light; };
 struct gallery_cached_vertex {
     struct world_uv_vertex uv;
     struct vec3 view;
@@ -1324,6 +1349,15 @@ static void gallery_uv_vertex(const struct rasterfall_model_asset *model,
     out->p = gallery_vertex_cache[index].uv.p;
     out->u = gallery_vertex_cache[index].uv.u;
     out->v = gallery_vertex_cache[index].uv.v;
+    {
+        int nx = gallery_vertex_cache[index].normal[0];
+        int ny = gallery_vertex_cache[index].normal[1];
+        int nz = gallery_vertex_cache[index].normal[2];
+        int dot = (-nx + ny * 2 - nz) / 4;
+        out->light = 264 + dot * 32 / 32767;
+        if (out->light < 232) out->light = 232;
+        if (out->light > 288) out->light = 288;
+    }
     if (sphere_mode == 3 && model->vertex_bytes >=
                             RASTERFALL_MODEL_VERTEX_BYTES_ADDITIONAL_UV) {
         out->su = gallery_vertex_cache[index].uv.su;
@@ -1366,6 +1400,76 @@ static void gallery_uv_vertex(const struct rasterfall_model_asset *model,
     }
 }
 
+/* The four imported PMX layouts are stable across their full and index-only
+ * LOD meshes.  Keep this content policy beside the renderer until RFM2
+ * carries authored material roles: face/eyes receive filtering and smooth
+ * lighting, hair keeps its silhouette, and clothing/equipment relinquish
+ * sphere, toon and edge budget. */
+enum character_perceptual_model {
+    CHARACTER_PERCEPTUAL_NONE,
+    CHARACTER_PERCEPTUAL_AR15,
+    CHARACTER_PERCEPTUAL_G11,
+    CHARACTER_PERCEPTUAL_VECTOR,
+    CHARACTER_PERCEPTUAL_UMP45
+};
+
+static int character_perceptual_model(
+    const struct rasterfall_model_asset *model)
+{
+    if (!model) return CHARACTER_PERCEPTUAL_NONE;
+    if (model->vertex_count == 86537 && model->primitive_count == 29)
+        return CHARACTER_PERCEPTUAL_AR15;
+    if (model->vertex_count == 34699 && model->primitive_count == 20)
+        return CHARACTER_PERCEPTUAL_G11;
+    if (model->vertex_count == 32964 && model->primitive_count == 20)
+        return CHARACTER_PERCEPTUAL_VECTOR;
+    if (model->vertex_count == 55843 && model->primitive_count == 22)
+        return CHARACTER_PERCEPTUAL_UMP45;
+    return CHARACTER_PERCEPTUAL_NONE;
+}
+
+static int character_face_eye_primitive(int profile, int primitive)
+{
+    if (profile == CHARACTER_PERCEPTUAL_AR15)
+        return primitive <= 8 || primitive == 25 || primitive == 28;
+    if (profile == CHARACTER_PERCEPTUAL_G11)
+        return primitive <= 10 || primitive >= 17;
+    if (profile == CHARACTER_PERCEPTUAL_VECTOR)
+        return primitive <= 5 || (primitive >= 7 && primitive <= 12) ||
+               primitive >= 18;
+    if (profile == CHARACTER_PERCEPTUAL_UMP45)
+        return primitive <= 10 || primitive >= 20;
+    return 0;
+}
+
+static int character_low_priority_primitive(int profile, int primitive)
+{
+    if (profile == CHARACTER_PERCEPTUAL_AR15)
+        return (primitive >= 10 && primitive <= 22) ||
+               primitive == 26 || primitive == 27;
+    if (profile == CHARACTER_PERCEPTUAL_G11)
+        return primitive >= 11 && primitive <= 14;
+    if (profile == CHARACTER_PERCEPTUAL_VECTOR)
+        return primitive >= 13 && primitive <= 15;
+    if (profile == CHARACTER_PERCEPTUAL_UMP45)
+        return primitive == 11 || primitive == 12 ||
+               (primitive >= 17 && primitive <= 19);
+    return 0;
+}
+
+static int character_hair_primitive(int profile, int primitive)
+{
+    if (profile == CHARACTER_PERCEPTUAL_AR15)
+        return primitive == 23 || primitive == 24;
+    if (profile == CHARACTER_PERCEPTUAL_G11)
+        return primitive == 15 || primitive == 16;
+    if (profile == CHARACTER_PERCEPTUAL_VECTOR)
+        return primitive == 16 || primitive == 17;
+    if (profile == CHARACTER_PERCEPTUAL_UMP45)
+        return primitive == 13 || primitive == 14 || primitive == 16;
+    return 0;
+}
+
 static int render_gallery_model_range(struct toy_renderer *renderer,
                                 const struct camera *camera,
                                 const struct rasterfall_model_asset *model,
@@ -1404,7 +1508,11 @@ static int render_gallery_model_range(struct toy_renderer *renderer,
     uint32_t previous_material_specular = active_material_specular;
     int previous_material_specular_power = active_material_specular_power;
     int previous_material_specular_level = active_material_specular_level;
+    int previous_face_material = active_face_material;
+    int previous_base_bilinear =
+        renderer->recording_base_texture_bilinear;
     int shared_texture = gallery_model_has_texture(model);
+    int perceptual_profile = character_perceptual_model(model);
     if (prepare_vertices) {
         long bone_before, skin_before;
         phase_start = render_monotonic_us();
@@ -1435,6 +1543,13 @@ static int render_gallery_model_range(struct toy_renderer *renderer,
         const struct toy_texture_view *texture = 0;
         const struct toy_texture_view *sphere_texture = 0;
         const struct toy_texture_view *toon_texture = 0;
+        int low_priority = character_low_priority_primitive(
+            perceptual_profile, i);
+        int hair = character_hair_primitive(perceptual_profile, i);
+        active_face_material = character_face_eye_primitive(
+            perceptual_profile, i);
+        toy_renderer_set_base_texture_bilinear(renderer,
+            active_face_material);
         active_texture_view = 0;
         active_sphere_texture = 0;
         active_sphere_mode = 0;
@@ -1468,7 +1583,8 @@ static int render_gallery_model_range(struct toy_renderer *renderer,
             if (index_end > index_count) index_end = index_count;
         }
         phase_start = render_monotonic_us();
-        if (!active_disable_edge && material < model->material_count &&
+        if (!active_disable_edge && !low_priority &&
+            material < model->material_count &&
             model->format_version >= 8) {
             const unsigned char *material_data = model->materials +
                 material * model->material_bytes;
@@ -1529,7 +1645,7 @@ static int render_gallery_model_range(struct toy_renderer *renderer,
                 /* PMX modes 1/2 are multiplicative/additive environment maps.
                  * Mode 0 disables sphere mapping; mode 3 uses the first
                  * additional UV channel retained by RFM2 v6 and newer. */
-                if (!active_disable_sphere &&
+                if (!active_disable_sphere && !low_priority && !hair &&
                     (sphere_mode == 1 || sphere_mode == 2 ||
                      (sphere_mode == 3 && model->vertex_bytes >=
                       RASTERFALL_MODEL_VERTEX_BYTES_ADDITIONAL_UV)) &&
@@ -1540,7 +1656,8 @@ static int render_gallery_model_range(struct toy_renderer *renderer,
                     active_sphere_mode = sphere_mode;
                 } else active_sphere_texture = 0;
             }
-            if (model->format_version >= 5 && !active_disable_toon) {
+            if (model->format_version >= 5 && !active_disable_toon &&
+                !low_priority && !active_face_material) {
                 unsigned int toon_index = model->materials[material * model->material_bytes + 5];
                 unsigned int toon_kind = model->materials[material * model->material_bytes + 6];
                 if (toon_kind == 1 && toon_index < model->textures.count &&
@@ -1625,6 +1742,9 @@ static int render_gallery_model_range(struct toy_renderer *renderer,
     active_material_specular = previous_material_specular;
     active_material_specular_power = previous_material_specular_power;
     active_material_specular_level = previous_material_specular_level;
+    active_face_material = previous_face_material;
+    toy_renderer_set_base_texture_bilinear(renderer,
+                                           previous_base_bilinear);
     active_model_triangle_stats = 0;
     if (collect_model_render_stats)
         model_render_stats.command_overflow += renderer->cmd_overflow -
@@ -2449,7 +2569,7 @@ static int render_private_character(struct toy_renderer *renderer,
         return 0;
     {
         int pixels = 0;
-        load_developer_characters();
+        load_developer_characters(renderer);
         int character_pixels = render_characters_parallel(renderer, camera);
         if (character_pixels < 0)
             __fprintf(2, "rasterfall: parallel character rendering failed\n");
@@ -2651,6 +2771,7 @@ static void copy_world_uv(struct world_uv_vertex *out,
     copy_vec3(&out->p, &in->p);
     out->u = in->u; out->v = in->v;
     out->su = in->su; out->sv = in->sv;
+    out->light = in->light;
 }
 
 static void near_intersection_uv(const struct world_uv_vertex *a,
@@ -2664,6 +2785,8 @@ static void near_intersection_uv(const struct world_uv_vertex *a,
     out->v = a->v + (int)(((long long)b->v - a->v) * numerator / denominator);
     out->su = a->su + (int)(((long long)b->su - a->su) * numerator / denominator);
     out->sv = a->sv + (int)(((long long)b->sv - a->sv) * numerator / denominator);
+    out->light = a->light +
+        (int)(((long long)b->light - a->light) * numerator / denominator);
 }
 
 /* Windows x86_64 follows LLP64, where long remains 32-bit.  A Q16 UV near
@@ -2878,6 +3001,9 @@ static int draw_world_triangle_tex_views(struct toy_renderer *renderer,
     input[0].su = a->su; input[0].sv = a->sv;
     input[1].su = b->su; input[1].sv = b->sv;
     input[2].su = c->su; input[2].sv = c->sv;
+    input[0].light = a->light;
+    input[1].light = b->light;
+    input[2].light = c->light;
     if (input[0].p.z >= NEAR_Z && input[1].p.z >= NEAR_Z &&
         input[2].p.z >= NEAR_Z) {
         clipped[0] = input[0]; clipped[1] = input[1]; clipped[2] = input[2];
@@ -2893,6 +3019,7 @@ static int draw_world_triangle_tex_views(struct toy_renderer *renderer,
     for (int i = 1; i + 1 < count; i++) {
         struct toy_screen_vertex sa, sb, sc;
         long long area;
+        int reversed = 0;
         project_uv_vertex(&renderer->surface, &clipped[0].p,
                           clipped[0].u, clipped[0].v,
                           clipped[0].su, clipped[0].sv,
@@ -2926,6 +3053,7 @@ static int draw_world_triangle_tex_views(struct toy_renderer *renderer,
             sc.u=swap.u; sc.v=swap.v; sc.inv_z=swap.inv_z;
             sc.u_over_z=swap.u_over_z; sc.v_over_z=swap.v_over_z;
             sc.u2=swap.u2; sc.v2=swap.v2; sc.u2_over_z=swap.u2_over_z; sc.v2_over_z=swap.v2_over_z;
+            reversed = 1;
         }
         int center_x = (a->p.x + b->p.x + c->p.x) / 3;
         int center_z = (a->p.z + b->p.z + c->p.z) / 3;
@@ -2933,8 +3061,21 @@ static int draw_world_triangle_tex_views(struct toy_renderer *renderer,
                     fixed_floor_lighting ? 256 : baked_light_at(center_x, center_z);
         int fog = active_gallery_lighting ? 0 :
                   fixed_floor_lighting ? 0 : baked_fog_at(world_distance(camera, center_x, center_z));
-        sa.light = sb.light = sc.light = light;
-        sa.fog = sb.fog = sc.fog = fog;
+        if (active_face_material) {
+            int face_scene_light = light < 224 ? 224 : light;
+            sa.light = clipped[0].light * face_scene_light / 256;
+            sb.light = (reversed ? clipped[i + 1].light : clipped[i].light) *
+                       face_scene_light / 256;
+            sc.light = (reversed ? clipped[i].light : clipped[i + 1].light) *
+                       face_scene_light / 256;
+            if (sa.light < 224) sa.light = 224;
+            if (sb.light < 224) sb.light = 224;
+            if (sc.light < 224) sc.light = 224;
+            sa.fog = sb.fog = sc.fog = fog / 2;
+        } else {
+            sa.light = sb.light = sc.light = light;
+            sa.fog = sb.fog = sc.fog = fog;
+        }
         if (active_sphere_texture || active_toon_texture ||
             active_toon_shared >= 0 || active_material_ambient ||
             active_material_specular)
@@ -2944,11 +3085,15 @@ static int draw_world_triangle_tex_views(struct toy_renderer *renderer,
                 active_toon_texture, active_toon_shared, active_toon_level,
                 active_material_alpha, active_material_ambient,
                 active_material_specular, active_material_specular_level,
-                1, 0xFF202020U, light, fog);
+                1, 0xFF202020U,
+                active_face_material ? -1 : light,
+                active_face_material ? -1 : fog);
         else
             drawn += toy_renderer_triangle_textured_lit(renderer, &sa, &sb, &sc,
                                                          active_texture_view, 1,
-                                                         0xFF202020U, light, fog);
+                                                         0xFF202020U,
+                                                         active_face_material ? -1 : light,
+                                                         active_face_material ? -1 : fog);
         if (active_model_triangle_stats)
             active_model_triangle_stats->emitted_triangles++;
     }

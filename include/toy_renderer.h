@@ -59,6 +59,7 @@ struct toy_raster_cmd {
     uint32_t toon_multiplier;
     int material_features;
     int base_texture_valid;
+    int base_texture_bilinear;
     int sphere_texture_valid;
     int material_alpha;
     uint32_t material_ambient;
@@ -155,6 +156,7 @@ struct toy_renderer {
     int sort_cmd_cap;
     int cmd_overflow;
     int recording_edge;
+    int recording_base_texture_bilinear;
     int requested_worker_count;
     int detected_cpu_count;
     int texture_diagnostic_flags;
@@ -238,6 +240,9 @@ int toy_renderer_triangle_textured_material_lit(
     int repeat, uint32_t fallback_color, int light, int fog);
 /* 给性能诊断标记随后记录的命令是否来自模型 Edge 壳；不改变渲染行为。 */
 void toy_renderer_set_recording_edge(struct toy_renderer *renderer, int edge);
+/* 随后记录的命令仅对 base texture 使用双线性采样；sphere/toon 保持原路径。 */
+void toy_renderer_set_base_texture_bilinear(struct toy_renderer *renderer,
+                                            int enabled);
 /* 仅在 worker 池创建前生效；0 使用自动 CPU 数，诊断可固定为 1..8。 */
 void toy_renderer_set_worker_count(struct toy_renderer *renderer, int count);
 /* Reuse the renderer's parked workers for independent frontend tasks. */
