@@ -693,6 +693,7 @@ void toy_game_set_ai_teammate_class(struct toy_game *g, int active, int class_id
     memset(a, 0, sizeof(*a));
     a->active = active != 0;
     a->actor_id = 1;
+    a->character_id = a->actor_id % TOY_GAME_CHARACTER_COUNT;
     a->kind = TOY_GAME_ACTOR_AI;
     a->class_id = class_id;
     a->state = TOY_GAME_ACTOR_ALIVE;
@@ -731,6 +732,7 @@ int toy_game_add_ai(struct toy_game *g, int class_id, int x, int z,
     memset(a, 0, sizeof(*a));
     a->active = 1;
     a->actor_id = slot + 1;
+    a->character_id = a->actor_id % TOY_GAME_CHARACTER_COUNT;
     a->kind = TOY_GAME_ACTOR_AI;
     a->class_id = class_id;
     a->state = TOY_GAME_ACTOR_ALIVE;
@@ -837,6 +839,7 @@ int toy_game_set_remote_player(struct toy_game *g, int player_id,
     if (!a->active || a->kind != TOY_GAME_ACTOR_PLAYER) {
         memset(a, 0, sizeof(*a));
         a->actor_id = 100 + player_id;
+        a->character_id = player_id % TOY_GAME_CHARACTER_COUNT;
         a->kind = TOY_GAME_ACTOR_PLAYER;
         a->class_id = TOY_GAME_AI_LEVEL_2;
         a->state = TOY_GAME_ACTOR_ALIVE;

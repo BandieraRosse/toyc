@@ -75,6 +75,36 @@ static inline void rasterfall_actor_animation_sample(
         pose->left_upper_pitch = -30;
         pose->left_forearm_pitch = -30;
         pose->left_arm_rotation = phase * TOY_CONFIG_SHOVE_SWEEP_DEGREES / 1000;
+    } else if (animation_id == TOY_GAME_ANIM_MELEE) {
+        if (duration_ms <= 0) duration_ms = TOY_CONFIG_MELEE_SWING_MS;
+        phase = time_ms * 1000 / duration_ms;
+        if (phase > 1000) phase = 1000;
+        /* Wind up, strike across the body, then recover. */
+        pose->body_pitch = phase < 350 ? -phase * 18 / 350 :
+                           phase < 650 ? -18 + (phase - 350) * 42 / 300 :
+                           24 - (phase - 650) * 24 / 350;
+        pose->right_upper_pitch = -35 + phase * 45 / 1000;
+        pose->right_forearm_pitch = -20 + phase * 55 / 1000;
+    } else if (animation_id == TOY_GAME_ANIM_THROW) {
+        if (duration_ms <= 0)
+            duration_ms = toy_game_animation_info(TOY_GAME_ANIM_THROW)->duration_ms;
+        phase = time_ms * 1000 / duration_ms;
+        if (phase > 1000) phase = 1000;
+        pose->right_upper_pitch = phase < 500 ? -60 - phase * 75 / 500 :
+                                  -135 + (phase - 500) * 150 / 500;
+        pose->right_forearm_pitch = phase < 500 ? -30 - phase * 45 / 500 :
+                                    -75 + (phase - 500) * 75 / 500;
+        pose->forward_shift = phase > 450 && phase < 750 ? 45 : 0;
+    } else if (animation_id == TOY_GAME_ANIM_DOWNED) {
+        pose->body_lift = -110;
+        pose->body_pitch = 35;
+    } else if (animation_id == TOY_GAME_ANIM_REVIVE) {
+        if (duration_ms <= 0)
+            duration_ms = toy_game_animation_info(TOY_GAME_ANIM_REVIVE)->duration_ms;
+        phase = time_ms * 1000 / duration_ms;
+        if (phase > 1000) phase = 1000;
+        pose->body_lift = -(1000 - phase) * 110 / 1000;
+        pose->body_pitch = (1000 - phase) * 35 / 1000;
     }
 }
 

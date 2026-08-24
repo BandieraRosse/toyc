@@ -135,7 +135,7 @@ mesh/material，也不生成 Rasterfall 动画。`humanoid` 模式将 Quaternius
 `basis` 模式使用与 RFM2 相同的 Humanoid 规则输出 canonical global rest basis；
 它只进行诊断，不转换或播放动画。
 
-## VMD→Eula 兼容性实验
+## VMD→多 PMX 角色兼容性实验
 
 本轮 VMD spike 保持 MMD/PMX bone local rotation 直连，不经过 GLB Humanoid
 retarget。先使用独立 inspector 查看 CP932 bone names、帧范围、平移/旋转、IK
@@ -153,13 +153,15 @@ build/vmd_inspect .claude/walk/walk04_loop5.vmd [eula.rmesh]
 build/rasterfall --vmd-eula-walk <eula.rmesh> .claude/walk/walk04_loop5.vmd
 ```
 
-v1 只把非 IK bone rotation 转成现有 `AnimationClip`；Center/Groove translation
+VMD bone rotation 转成现有 `AnimationClip`；Center/Groove translation
 作为 presentation-only root offset（按 PMX 导入的 232 倍单位缩放），不修改
-gameplay world position。VMD interpolation bytes 会报告为 present，但当前采样明确
-使用 linear/nlerp；IK tracks 会诊断并忽略，PMX IK solver 仍未执行。
+gameplay world position。VMD interpolation bytes 会报告为 present；VMD 自带的 IK
+显示轨道只作诊断，实际腿部约束由 PMX runtime IK 与 grant 链路求解。
 
-开发者区域第二排新增 `VMD WALK (EULA)` 按钮，使用
-`.claude/walk/walk04_loop5.vmd`，不改变同排的三个 GLB 预览按钮。
+开发者区域第二排的 `VMD WALK (5 CHARACTERS)` 按钮统一驱动 Eula、ST AR-15、
+G11、Vector 和 UMP45，使用 `.claude/walk/walk04_loop5.vmd`，不改变同排的三个
+GLB 预览按钮。四个少女前线模型只是 presentation-only developer preview，不会
+进入 gameplay actor、碰撞、AI、敌方 targeting 或网络同步。
 
 VMD inspector 还会输出腿部普通轨道/IK 轨道、Eula leg basis、头部采样角速度、
 loop boundary 和 Center/Groove 根位移范围。实机定位可使用：
@@ -251,7 +253,10 @@ build/rasterfall --model-performance \
 
 版权受限的本地测试模型应放在 `private-assets/` 下；该目录已被 Git 忽略，
 不会参与公开资源或嵌入式发布构建。当前本地角色样本位于
-`private-assets/models/eula.rmesh`，游戏会将其绘制在 `(-13000, -900, -10000)`。
+`private-assets/models/eula.rmesh`；ST AR-15、G11、Vector、UMP45 分别使用
+`st_ar15.rmesh`、`g11.rmesh`、`vector.rmesh`、`ump45.rmesh`，在开发者区域与 Eula
+按固定间距并排展示。模型特有的比例、朝向和地面偏移应继续留在 presentation
+metadata 中，不要写入 `toy_game` 规则层。
 同目录存在 `UAL1_Standard.glb` 时，游戏会在旁边绘制一个直接使用 GLB 原骨架
 和 skin 的 Quaternius 模型。第二排 GLB Idle/Walk/Jog 按钮播放原始 local TRS
 动画，不经过 Humanoid retarget，用于和第一排优菈 retarget 结果同场对照。

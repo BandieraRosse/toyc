@@ -152,6 +152,7 @@ static int read_text(struct cursor *c, int encoding, char *out, int max)
         if (length & 1) return -1;
         for (i = 0; i < length; i += 2) {
             unsigned int code = c->p[i] | (unsigned int)c->p[i + 1] << 8;
+            if (code == '\\') code = '/';
             if (code >= 0xD800 && code <= 0xDBFF && i + 3 < length) {
                 unsigned int low = c->p[i + 2] | (unsigned int)c->p[i + 3] << 8;
                 if (low >= 0xDC00 && low <= 0xDFFF) {
@@ -208,14 +209,27 @@ static int read_weight(struct cursor *c, const struct pmx_header *h,
         index_value(c, h->bone_size, 1, &v->bone1) < 0 ||
         f32(c, &v->weight) < 0 ? -1 : 0;
     if (type == 2 || type == 4) {
-        for (i = 0; i < 4; i++) if (index_value(c, h->bone_size, 1, &i) < 0) return -1;
-        for (i = 0; i < 4; i++) if (f32(c, 0) < 0) return -1;
+        int bones[4];
+        float weights[4];
+        int first = 0, second = 1;
+        for (i = 0; i < 4; i++)
+            if (index_value(c, h->bone_size, 1, &bones[i]) < 0) return -1;
+        for (i = 0; i < 4; i++) if (f32(c, &weights[i]) < 0) return -1;
+        if (weights[second] > weights[first]) first = 1, second = 0;
+        for (i = 2; i < 4; i++) {
+            if (weights[i] > weights[first]) second = first, first = i;
+            else if (weights[i] > weights[second]) second = i;
+        }
+        v->bone0 = bones[first]; v->bone1 = bones[second];
+        v->weight = weights[first] + weights[second] > 0.000001f ?
+            weights[first] / (weights[first] + weights[second]) : 1.0f;
         return 0;
     }
     /* SDEF: two bone indices, weight, C, R0 and R1. */
     if (type == 3)
-        return index_value(c, h->bone_size, 1, &i) < 0 ||
-            index_value(c, h->bone_size, 1, &i) < 0 || f32(c, 0) < 0 ||
+        return index_value(c, h->bone_size, 1, &v->bone0) < 0 ||
+            index_value(c, h->bone_size, 1, &v->bone1) < 0 ||
+            f32(c, &v->weight) < 0 ||
             !have(c, 36) ? -1 : (c->p += 36, 0);
     return -1;
 }
@@ -443,6 +457,11 @@ static int copy_textures(const char *pmx_path, const char *output_dir,
     memcpy(source_dir, pmx_path, length); source_dir[length] = 0;
     if (tlibc_recursive_mkdir(output_dir) < 0) return -1;
     for (i = 0; i < texture_count; i++) {
+        length = (int)strlen(textures[i].path);
+        if (!length || textures[i].path[length - 1] == '/') {
+            __printf("pmx2rmesh: texture %d is an empty/directory placeholder; runtime will use material fallback\n", i);
+            continue;
+        }
         if (textures[i].path[0] == '/' ||
             (textures[i].path[0] && textures[i].path[1] == ':'))
             snprintf(source, sizeof(source), "%s", textures[i].path);
@@ -678,7 +697,7 @@ static void print_diagnostics(const struct pmx_header *h,
              diagnostics->weights[2], diagnostics->weights[3],
              diagnostics->weights[4], diagnostics->bone_count,
              diagnostics->root_count, diagnostics->max_depth);
-    __printf("pmx2rmesh: skeletal stage1: BDEF1=%u BDEF2=%u imported; advanced_bone_flags=0x%x parsed_not_evaluated; BDEF4=%u SDEF=%u QDEF=%u unsupported; morphs/display_frames/rigid_bodies/joints/soft_bodies=not imported\n",
+    __printf("pmx2rmesh: skeletal stage1: BDEF1=%u BDEF2=%u imported; advanced_bone_flags=0x%x parsed_not_evaluated; BDEF4=%u SDEF=%u QDEF=%u reduced_to_two_weights; morphs/display_frames/rigid_bodies/joints/soft_bodies=not imported\n",
              diagnostics->weights[0], diagnostics->weights[1], diagnostics->advanced_flags,
              diagnostics->weights[2], diagnostics->weights[3],
              diagnostics->weights[4]);
@@ -735,11 +754,11 @@ int main(int argc, char **argv)
         for (i = 0; i < vertex_count; i++) {
             if (read_vertex(&c, &h, &v) < 0) goto audit_fail;
             if (v.bone0 >= 0 && v.bone0 < diagnostics.bone_count) {
-                float w = v.weight_type == 1 ? v.weight : 1.0f;
+                float w = v.weight_type != 0 ? v.weight : 1.0f;
                 influenced[v.bone0]++; weight_sum[v.bone0] += w;
                 if (w > max_weight[v.bone0]) max_weight[v.bone0] = w;
             }
-            if (v.weight_type == 1 && v.bone1 >= 0 && v.bone1 < diagnostics.bone_count) {
+            if (v.weight_type != 0 && v.bone1 >= 0 && v.bone1 < diagnostics.bone_count) {
                 float w = 1.0f - v.weight;
                 influenced[v.bone1]++; weight_sum[v.bone1] += w;
                 if (w > max_weight[v.bone1]) max_weight[v.bone1] = w;
@@ -822,19 +841,17 @@ audit_fail:
         }
         free_bones(bones, diagnostics.bone_count); __munmap(file, size); return 0;
     }
-    if (diagnostics.weights[2] || diagnostics.weights[3] || diagnostics.weights[4]) {
-        __printf("pmx2rmesh: stage1 supports only BDEF1/BDEF2 (BDEF4=%u SDEF=%u QDEF=%u)\n",
-                 diagnostics.weights[2], diagnostics.weights[3],
-                 diagnostics.weights[4]);
-        goto invalid;
-    }
+    if (diagnostics.weights[2] || diagnostics.weights[3] || diagnostics.weights[4])
+        __printf("pmx2rmesh: skin compatibility: BDEF4=%u and QDEF=%u use normalized top-two weights; SDEF=%u uses its BDEF2 base weights\n",
+                 diagnostics.weights[2], diagnostics.weights[4],
+                 diagnostics.weights[3]);
     c.p = file; c.end = file + size;
     if (header(&c, &h) < 0 || i32(&c, &j) < 0 || j != vertex_count)
         goto invalid;
     for (i = 0; i < vertex_count; i++) {
         if (read_vertex(&c, &h, &v) < 0) goto invalid;
         if (v.bone0 < 0 || v.bone0 >= diagnostics.bone_count ||
-            (v.weight_type == 1 &&
+            (v.weight_type != 0 &&
              (v.bone1 < 0 || v.bone1 >= diagnostics.bone_count ||
               !(v.weight >= 0.0f && v.weight <= 1.0f))))
             invalid_bone_references++;

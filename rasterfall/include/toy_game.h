@@ -21,6 +21,7 @@
 #define TOY_GAME_MAX_WAVE_QUEUE 512
 #define TOY_GAME_MAX_ACTORS     64
 #define TOY_GAME_MAX_PLAYERS    4
+#define TOY_GAME_CHARACTER_COUNT 4 /* stable IDs interpreted by presentation */
 #define TOY_GAME_REMOTE_ACTOR_BASE \
     (TOY_GAME_MAX_ACTORS - TOY_GAME_MAX_PLAYERS)
 #define TOY_GAME_MAX_PLATFORMS  16
@@ -443,6 +444,7 @@ struct toy_game_actor {
     int actor_id;
     int kind;
     int class_id;
+    int character_id;           /* stable presentation profile, not an asset index */
     int base_core;              /* BASE: fixed defense objective */
     int hired;                  /* 雇佣 AI：可由商店/开发者按钮清除 */
     int developer_only;         /* 开发者展示/测试角色，不可分配旗帜 */

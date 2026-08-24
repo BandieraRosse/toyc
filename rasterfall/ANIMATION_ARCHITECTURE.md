@@ -20,6 +20,9 @@ skinning / rendering
 
 模块职责如下：
 
+- `rasterfall_character.*`：正式 actor 的稳定角色目录。规则和网络只保存 `character_id`，
+  目录负责角色名称、默认调色板、模型入口和动作能力；新增角色不应在渲染循环中增加名称
+  特判。当前 Akari、Mio、Ren、Yuki 使用程序化低模，后续可逐项替换为 RFM2 模型。
 - `rasterfall_animation.h`：格式无关的 clip、track、player 和四元数采样。不得依赖游戏
   状态、某个角色名称或文件格式。
 - `rasterfall_actor_animation.h`：当前游戏角色的程序化表现层。它可以逐步被正式动作
@@ -53,6 +56,16 @@ rest basis 重定向。不要在 VMD、glTF 解析器里添加目标角色专用
 3. 缺少 PMX 腿部 IK metadata 的模型走 humanoid 重定向路径，不应假设存在
    `左足ＩＫ`/`右足ＩＫ`。
 4. 用 inspector 检查骨骼覆盖率、父子链、腿部连续性和最终全局旋转。
+
+## 扩展正式角色与关键动作
+
+新增角色时先在 `rasterfall_character` 注册稳定 ID、动作能力与资源入口，再由 actor 的
+`character_id` 选择它。不要用 actor 名字、AI 等级或模型路径充当身份。网络协议必须同步
+这个 ID，缺失资源时应回退到程序化 actor，保证规则模拟不依赖私有美术资源。
+
+游戏动作以 `toy_game_animation_id` 为稳定语义层。idle/move/fire/reload/hit、近战、投掷、
+倒地、死亡和复活都先进入同一动作采样入口；角色专属 clip 在目录或后续 animation set
+中覆盖这些语义。导入器仍只负责生成格式无关 clip，不能反向依赖某个游戏动作。
 
 ## 姿态求值顺序
 

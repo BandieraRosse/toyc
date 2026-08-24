@@ -813,7 +813,7 @@ static void session_interact(struct rasterfall_session *session,
         session->skeletal_demo_player.playing = 1;
         session->skeletal_demo_player.loop = 1;
         session->banner_ms = 1800;
-        session->banner_text = "VMD WALK (EULA DIRECT)";
+        session->banner_text = "VMD WALK (5 CHARACTER LINEUP)";
     } else if (it->kind == TOY_MAP_PICKUP_VMD_MANJUSAKA_BUTTON) {
         session->skeletal_demo_pose = RASTERFALL_MODEL_POSE_BIND;
         session->skeletal_demo_player.clip = NULL;

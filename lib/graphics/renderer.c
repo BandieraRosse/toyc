@@ -29,7 +29,10 @@
  * Near-plane clipping can also split one input triangle into two commands.
  * Keep the existing grow-on-demand policy, but leave enough headroom so a
  * late material is not silently truncated while its earlier Edge survives. */
-#define TOY_RENDER_CMD_MAX 65536
+/* Detailed PMX characters routinely submit more than 65k visible body/edge
+ * triangles.  Keep the small initial allocation, but allow the command pool
+ * to grow far enough for the developer character lineup without truncation. */
+#define TOY_RENDER_CMD_MAX 524288
 #define TOY_FUTEX_WAIT 0
 #define TOY_FUTEX_WAKE 1
 #define TOY_MATERIAL_TOON   1

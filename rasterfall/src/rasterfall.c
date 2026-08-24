@@ -76,6 +76,7 @@
 #include "rasterfall_session.h"
 #include "rasterfall_net.h"
 #include "rasterfall_humanoid_retarget.h"
+#include "rasterfall_character.h"
 #include "math.h"
 
 #define KEY_ESC   1

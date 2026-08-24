@@ -23,6 +23,7 @@
 #include "rasterfall_viewmodel.h"
 #include "rasterfall_animation.h"
 #include "rasterfall_actor_animation.h"
+#include "rasterfall_character.h"
 #include "rasterfall_glb_animation.h"
 #include "rasterfall_glb_preview.h"
 #include "rasterfall_vmd.h"
@@ -131,6 +132,12 @@ static int draw_world_triangle_tex_views(struct toy_renderer *renderer,
                                    const struct vec3 *vb,
                                    const struct vec3 *vc);
 static void rotate_arm_xz(int x, int z, int degrees, int *out_x, int *out_z);
+static int gallery_model_scale(const struct rasterfall_model_asset *model);
+static int render_gallery_model(struct toy_renderer *renderer,
+                                const struct camera *camera,
+                                const struct rasterfall_model_asset *model,
+                                int center_x, int base_y, int center_z,
+                                int scale);
 
 static struct rasterfall_model_asset gallery_models[RASTERFALL_MODEL_MAX_GALLERY];
 static int gallery_loaded;
@@ -189,6 +196,107 @@ static int private_character_load_glb_clip(int index)
     return 0;
 }
 static int private_character_loaded;
+
+struct rasterfall_developer_character {
+    const char *name, *model_path;
+    int x, z, base_y, scale_percent;
+    struct rasterfall_model_asset model;
+    struct rasterfall_vmd_clip vmd;
+    struct rasterfall_animation_clip walk;
+    struct rasterfall_animation_track tracks[RASTERFALL_VMD_MAX_BONES];
+    int load_attempted, vmd_loaded;
+};
+
+/* Presentation-only lineup.  Per-model placement belongs here rather than in
+ * toy_game: these objects have no gameplay actor, collision, AI or network
+ * identity.  The metadata is also the intended home for future scale/yaw or
+ * ground-offset corrections discovered during content validation. */
+static struct rasterfall_developer_character developer_characters[] = {
+    { .name = "ST AR-15",
+      .model_path = "rasterfall/private-assets/models/st_ar15.rmesh",
+      .x = -15400, .z = -10000, .base_y = -900, .scale_percent = 100 },
+    { .name = "G11", .model_path = "rasterfall/private-assets/models/g11.rmesh",
+      .x = -14200, .z = -10000, .base_y = -900, .scale_percent = 100 },
+    { .name = "VECTOR",
+      .model_path = "rasterfall/private-assets/models/vector.rmesh",
+      .x = -11800, .z = -10000, .base_y = -900, .scale_percent = 100 },
+    { .name = "UMP45",
+      .model_path = "rasterfall/private-assets/models/ump45.rmesh",
+      .x = -10600, .z = -10000, .base_y = -900, .scale_percent = 100 }
+};
+
+/* All PMX imports use the same 232x unit conversion.  A shared presentation
+ * scale preserves their authored relative heights; gallery_model_scale()
+ * would independently normalize every character to nearly the same height. */
+#define RASTERFALL_DEVELOPER_CHARACTER_SCALE 207
+
+static int render_developer_characters(struct toy_renderer *renderer,
+                                       const struct camera *camera)
+{
+    static const char walk_path[] =
+        "rasterfall/private-assets/animations/walk04_loop5.vmd";
+    int i, pixels = 0;
+    for (i = 0; i < (int)(sizeof(developer_characters) /
+                          sizeof(developer_characters[0])); i++) {
+        struct rasterfall_developer_character *entry =
+            &developer_characters[i];
+        struct rasterfall_animation_player *player = active_session ?
+            &active_session->skeletal_demo_player : NULL;
+        int scale;
+        if (!entry->load_attempted) {
+            entry->load_attempted = 1;
+            if (rasterfall_model_load(&entry->model, entry->model_path) == 0 &&
+                rasterfall_vmd_load(&entry->vmd, walk_path) == 0) {
+                int mapped = rasterfall_vmd_map_model(&entry->vmd,
+                                                       &entry->model);
+                rasterfall_model_bind_root_motion(
+                    &entry->model,
+                    rasterfall_model_find_bone(&entry->model, "センター"),
+                    rasterfall_model_find_bone(&entry->model, "グルーブ"));
+                rasterfall_vmd_build_animation(&entry->vmd, &entry->walk,
+                    entry->tracks, RASTERFALL_VMD_MAX_BONES);
+                entry->vmd_loaded = 1;
+                __printf("rasterfall: developer character %s vertices=%u triangles=%u bones=%d VMD_mapped=%d VMD_missing=%d duration_ms=%d\n",
+                    entry->name, entry->model.vertex_count,
+                    entry->model.index_count / 3, entry->model.bone_count,
+                    mapped, entry->vmd.track_count - mapped,
+                    entry->walk.duration_ms);
+            } else {
+                __fprintf(2, "rasterfall: cannot load developer character %s\n",
+                          entry->name);
+            }
+        }
+        if (!entry->model.data ||
+            world_distance(camera, entry->x, entry->z) > ENEMY_RENDER_DISTANCE)
+            continue;
+        if (player && entry->vmd_loaded && player->clip_id == 9) {
+            int center[3], groove[3];
+            rasterfall_model_set_ik_enabled(&entry->model,
+                                            private_character_vmd_ik_enabled);
+            rasterfall_model_set_grant_enabled(
+                &entry->model, private_character_vmd_grant_enabled);
+            rasterfall_model_set_legacy_knee_ccd(
+                &entry->model, private_character_vmd_legacy_knee_ccd);
+            rasterfall_vmd_sample_bone_translation(
+                &entry->vmd, "センター", player->time_ms, center);
+            rasterfall_vmd_sample_bone_translation(
+                &entry->vmd, "グルーブ", player->time_ms, groove);
+            rasterfall_model_set_root_motion(&entry->model, center, groove, 1);
+            rasterfall_model_sample_clip(&entry->model, &entry->walk,
+                                         player->time_ms);
+        } else {
+            int zero[3] = {0, 0, 0};
+            rasterfall_model_set_root_motion(&entry->model, zero, zero, 0);
+            rasterfall_model_sample_clip(&entry->model, NULL, 0);
+        }
+        scale = RASTERFALL_DEVELOPER_CHARACTER_SCALE *
+                entry->scale_percent / 100;
+        if (scale < 1) scale = 1;
+        pixels += render_gallery_model(renderer, camera, &entry->model,
+            entry->x, entry->base_y, entry->z, scale);
+    }
+    return pixels;
+}
 
 int rasterfall_render_set_vmd_walk(const char *model_path, const char *vmd_path)
 {
@@ -1615,6 +1723,7 @@ static int render_private_character(struct toy_renderer *renderer,
     {
         int pixels=render_gallery_model(renderer,camera,&private_character_model,
                                         -13000,-900,-10000,scale);
+        pixels += render_developer_characters(renderer, camera);
         {int clip_id=active_session?active_session->skeletal_demo_player.clip_id:-1;
          pixels+=render_quaternius_preview(renderer,camera,
                 clip_id>=6&&clip_id<=8?clip_id-6:-1,
@@ -3718,7 +3827,7 @@ static void render_actor_status(struct toy_renderer *renderer,
 static int render_player_avatar(struct toy_renderer *renderer,
                                 const struct camera *camera, int x, int z,
                                 int sy, int cy, int weapon, int muzzle_flash,
-                                uint32_t body_color, int downed,
+                                int character_id, uint32_t body_color, int downed,
                                 int animation_id, int animation_time_ms);
 
 static void sample_actor_fall_roll(int progress, int *out_sin, int *out_cos)
@@ -4099,7 +4208,8 @@ static int render_ai_teammate(struct toy_renderer *renderer,
                                        actor->current_slot >= 0 &&
                                        actor->current_slot < TOY_GAME_WEAPON_SLOTS ?
                                        actor->slots[actor->current_slot].weapon : -1,
-                                       actor->muzzle_flash_ms, color,
+                                       actor->muzzle_flash_ms,
+                                       actor->character_id, color,
                                        actor->state == TOY_GAME_ACTOR_DOWNED,
                                        actor->animation.id,
                                        actor->animation.time_ms);
@@ -4111,15 +4221,18 @@ static int render_ai_teammate(struct toy_renderer *renderer,
 static int render_player_avatar(struct toy_renderer *renderer,
                                 const struct camera *camera, int x, int z,
                                 int sy, int cy, int weapon, int muzzle_flash,
-                                uint32_t body_color, int downed,
+                                int character_id, uint32_t body_color, int downed,
                                 int animation_id, int animation_time_ms)
 {
+    const struct rasterfall_character_profile *character =
+        rasterfall_character_profile(character_id);
     struct rasterfall_actor_pose pose;
     int pixels = 0, face_y0, face_y1, animation_lift;
     int pose_x, pose_z;
     int death_progress = 0;
     int show_fall_gear = 0;
     if (!renderer || !camera) return 0;
+    if (character_id >= 0) body_color = character->body_color;
     rasterfall_actor_animation_sample(
         animation_id, animation_time_ms,
         animation_id == TOY_GAME_ANIM_RELOAD && weapon >= 0 ?
@@ -4146,23 +4259,24 @@ static int render_player_avatar(struct toy_renderer *renderer,
          * local space first, then receive the body fall rotation below. */
         pixels += draw_actor_leg_box(renderer, camera, pose_x, pose_z,
                                      sy, cy, -95, -10, -900, -610,
-                                     0, 0x25354A);
+                                     0, character->leg_color);
         pixels += draw_actor_leg_box(renderer, camera, pose_x, pose_z,
                                      sy, cy, 10, 95, -900, -610,
-                                     0, 0x25354A);
+                                     0, character->leg_color);
         pixels += draw_actor_box(renderer, camera, pose_x, pose_z, sy, cy,
                                  -155, 155, -620, -100, -100, 100,
                                  body_color);
         pixels += draw_actor_ellipsoid_head(renderer, camera, pose_x, pose_z,
                                             sy, cy, 50, 145, 150,
-                                            0xD2A878);
+                                            character->skin_color);
         face_y0 = -35; face_y1 = 185;
     } else if (downed) {
         pixels += draw_cuboid(renderer, camera, pose_x - 170, pose_x + 170,
                               -850 + active_actor_lift, -650 + active_actor_lift,
                               pose_z - 100, pose_z + 100, body_color);
         pixels += draw_ellipsoid_head(renderer, camera, pose_x, pose_z,
-                                      -550 + active_actor_lift, 145, 100, 0xD2A878);
+                                      -550 + active_actor_lift, 145, 100,
+                                      character->skin_color);
         face_y0 = -650; face_y1 = -470;
     } else {
         int left_leg_shift = pose.leg_swing;
@@ -4171,17 +4285,17 @@ static int render_player_avatar(struct toy_renderer *renderer,
          * attached to the torso while the whole volume swings. */
         pixels += draw_actor_leg_box(renderer, camera, pose_x, pose_z,
                                      sy, cy, -95, -10, -900, -610,
-                                     left_leg_shift, 0x25354A);
+                                     left_leg_shift, character->leg_color);
         pixels += draw_actor_leg_box(renderer, camera, pose_x, pose_z,
                                      sy, cy, 10, 95, -900, -610,
-                                     right_leg_shift, 0x25354A);
+                                     right_leg_shift, character->leg_color);
         pixels += draw_actor_tilted_box(renderer, camera, pose_x, pose_z,
                                         sy, cy, -155, 155, -620, -100,
                                         -100, 100, pose.body_pitch,
                                         body_color);
         pixels += draw_actor_ellipsoid_head(renderer, camera, pose_x, pose_z,
                                             sy, cy, 50 + pose.body_pitch * 2 / 3,
-                                            145, 150, 0xD2A878);
+                                            145, 150, character->skin_color);
         face_y0 = -35; face_y1 = 185;
     }
     if (!downed || animation_id == TOY_GAME_ANIM_DEATH ||
@@ -4191,13 +4305,13 @@ static int render_player_avatar(struct toy_renderer *renderer,
                                       animation_time_ms, body_color);
     }
     pixels += draw_actor_face_rect(renderer, camera, pose_x, pose_z, sy, cy, 145,
-                             -72, 72, face_y0, face_y1, RF_COLOR_AI_HEAVY);
+                             -72, 72, face_y0, face_y1, character->hair_color);
     pixels += draw_actor_face_rect(renderer, camera, pose_x, pose_z, sy, cy, 145,
                              -16, 16, face_y0 + 40,
-                             face_y1 - 40, 0xE8D2A8);
+                             face_y1 - 40, character->skin_color);
     pixels += draw_actor_face_rect(renderer, camera, pose_x, pose_z, sy, cy, 145,
                              -72, 72, face_y0 + 90,
-                             face_y0 + 115, 0xE8D2A8);
+                             face_y0 + 115, character->skin_color);
     if (muzzle_flash > 0 &&
         ((animation_id != TOY_GAME_ANIM_DEATH &&
           animation_id != TOY_GAME_ANIM_REVIVE) || show_fall_gear))
@@ -4239,7 +4353,8 @@ static int render_network_teammate(struct toy_renderer *renderer,
             pixels += render_player_avatar(renderer, camera,
                 render_camera->x, render_camera->z, render_camera->sy,
                 render_camera->cy, player->weapon, player->muzzle_flash_ms,
-                colors[i], player->downed, player->animation.id,
+                i % RASTERFALL_CHARACTER_COUNT, colors[i], player->downed,
+                player->animation.id,
                 player->animation.time_ms);
             active_actor_lift = 0;
         }
@@ -4257,7 +4372,9 @@ static int render_network_teammate(struct toy_renderer *renderer,
                                                client->airborne_y);
         pixels += render_player_avatar(renderer, camera, client->camera.x,
             client->camera.z, client->camera.sy, client->camera.cy, weapon,
-            client->muzzle_flash_ms, colors[client->client_id], client->down,
+            client->muzzle_flash_ms,
+            client->client_id % RASTERFALL_CHARACTER_COUNT,
+            colors[client->client_id], client->down,
             client->animation.id, client->animation.time_ms);
         active_actor_lift = 0;
     }
@@ -4643,7 +4760,7 @@ int rasterfall_render_managed_player(struct toy_renderer *renderer,
     if (!renderer || !viewer || !body_camera || game.player_down) return 0;
     return render_player_avatar(renderer, viewer, body_camera->x, body_camera->z,
                                  body_camera->sy, body_camera->cy, -1, 0,
-                                 RF_COLOR_UI_PLAYER, 0,
+                                 -1, RF_COLOR_UI_PLAYER, 0,
                                  game.animation.id, game.animation.time_ms);
 }
 

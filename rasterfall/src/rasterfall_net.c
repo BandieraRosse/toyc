@@ -24,7 +24,7 @@ static void net_windows_log(const char *message) { (void)message; }
  * player fires; keeping them out of the periodic player snapshot saves 180
  * bytes per player even when nobody is shooting. */
 #define NET_PLAYER_SIZE (NET_PLAYER_BASE_SIZE + 4)
-#define NET_ACTOR_SIZE (42 + TOY_GAME_MAX_NAME)
+#define NET_ACTOR_SIZE (43 + TOY_GAME_MAX_NAME)
 #define NET_ENEMY_SIZE 48
 #define NET_WORLD_BASE_SIZE 44
 #define NET_WORLD_FLAG_SIZE 12
@@ -1324,6 +1324,7 @@ static void encode_actor(unsigned char *p, const struct toy_game_actor *a,
     put_u32(p + 37, (uint32_t)a->throwable_damage_dealt);
     p[41] = (unsigned char)(a->hired != 0);
     memcpy(p + 42, a->name, TOY_GAME_MAX_NAME);
+    p[42 + TOY_GAME_MAX_NAME] = (unsigned char)a->character_id;
 }
 
 static void decode_actor(const unsigned char *p, struct rasterfall_net_actor *a)
@@ -1349,6 +1350,8 @@ static void decode_actor(const unsigned char *p, struct rasterfall_net_actor *a)
     a->hired = p[41] != 0;
     memcpy(a->name, p + 42, TOY_GAME_MAX_NAME);
     a->name[TOY_GAME_MAX_NAME - 1] = 0;
+    a->character_id = p[42 + TOY_GAME_MAX_NAME] < TOY_GAME_CHARACTER_COUNT ?
+                      p[42 + TOY_GAME_MAX_NAME] : 0;
     if (a->state == TOY_GAME_ACTOR_DOWNED)
         a->revive_progress_ms = p[17] * 12;
     else
