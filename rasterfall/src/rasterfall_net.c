@@ -1,6 +1,7 @@
 #include "tlibc_everything.h"
 #include "errno.h"
 #include "rasterfall_net.h"
+#include "rasterfall_units.h"
 
 #ifdef TOYC_WINDOWS
 #define net_windows_log toy_windows_log
@@ -983,7 +984,7 @@ static void decode_command_camera(const unsigned char *payload,
     camera->cy = get_i16(payload + 14);
     camera->pitch_sy = get_i16(payload + 16);
     camera->pitch_cy = get_i16(payload + 18);
-    camera->y = 0;
+    camera->y = RASTERFALL_STANDING_CAMERA_Y;
 }
 
 static void net_record_prediction(struct rasterfall_net *net,

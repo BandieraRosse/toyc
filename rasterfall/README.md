@@ -53,6 +53,26 @@ build/glb2rmesh Zombie.glb rasterfall/assets/models/zombie.rmesh
 
 ## PMX 模型导入与第一阶段骨骼蒙皮
 
+### 世界长度与角色身高
+
+Rasterfall 统一使用 RFU（Rasterfall World Unit）：`512 RFU = 1 米`。地图、碰撞和
+gameplay 坐标使用 RFU；PMX/GLB 等资产局部单位只在 presentation 边界换算，不能直接
+当作 RFU。默认人类基准为 1750 mm（896 RFU），站立眼高为 1610 mm（824 RFU）。
+
+角色模型通过 presentation metadata 的 `target_height_mm` 换算显示比例，不再使用
+gallery 的逐模型自动填充高度。Eula 采用游戏内测量参考值 1736 mm。四个 GFL2
+模型以 Leva/UMP45 的社区 Blender 模型测量值约 1516 mm 为锚，保持 PMX 包围盒原始
+比例，得到 ST AR-15 1652 mm、G11 1429 mm、Vector 1474 mm、UMP45 1516 mm。
+四者最终使用同一约 177‰ presentation scale，避免逐角色主观拉伸。这些是带来源等级
+且明确可替换的项目校准数据，不宣称为版权方公布的官方设定。
+
+身高来源等级：GFL/GFL2 官方角色页未列出厘米身高；GFL2 数值来自社区使用官方模型
+进行 Blender 测量的结果，因此标记为 `MODEL_MEASURED`，再由同批 PMX 的脚底到头顶
+包围盒比例传播。Eula 数值来自 HoYoLAB 游戏内人工测量，同样不是官方角色档案字段。
+参考：[GFL2 模型测量讨论](https://www.reddit.com/r/GirlsFrontline2/comments/1k4nypi/)、
+[Leva 模型高度讨论](https://www.reddit.com/r/GirlsFrontline2/comments/1mthgeq/)、
+[Eula 游戏内测量](https://www.hoyolab.com/article/20956615)。
+
 对于 MMD/PMX 模型，可以不经过 Blender，直接提取 Rasterfall 的材质、网格和
 第一阶段骨骼蒙皮数据：
 

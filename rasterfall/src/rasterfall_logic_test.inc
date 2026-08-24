@@ -23,6 +23,10 @@ static int run_logic_test(void)
     if (rasterfall_character_logic_test() != 0) return 166;
     toy_input_init(&input);
     rasterfall_session_reset(&session, &camera, 1);
+    if (RASTERFALL_RFU_FROM_MM(1000) != RASTERFALL_RFU_PER_METER ||
+        RASTERFALL_HUMAN_HEIGHT_RFU != 896 ||
+        RASTERFALL_HUMAN_EYE_HEIGHT_RFU != 824 ||
+        camera.y != RASTERFALL_STANDING_CAMERA_Y) return 167;
     {
         static const int kinds[11] = {
             TOY_MAP_PICKUP_POSE_RESET_BUTTON,

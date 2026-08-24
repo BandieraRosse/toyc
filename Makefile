@@ -962,6 +962,7 @@ $(BUILD)/rasterfall.o: $(RASTERFALL_INC)/rasterfall_hud.h \
                        $(RASTERFALL_INC)/rasterfall_session.h \
                        $(RASTERFALL_INC)/rasterfall_net.h \
                        $(RASTERFALL_INC)/rasterfall_camera.h \
+                       $(RASTERFALL_INC)/rasterfall_units.h \
                        $(RASTERFALL_INC)/rasterfall_audio.h \
                        $(RASTERFALL_INC)/rasterfall_effects.h \
                        $(RASTERFALL_INC)/rasterfall_perf.h \

@@ -2,6 +2,7 @@
 #include "math.h"
 #include "rasterfall_ai_names.h"
 #include "rasterfall_session.h"
+#include "rasterfall_units.h"
 #include "rasterfall_model.h"
 
 #define INTERACT_AIM_CONE 784
@@ -190,7 +191,7 @@ void rasterfall_session_reset(struct rasterfall_session *session,
     camera->cy = session->level.start_cy;
     camera->pitch_sy = 0;
     camera->pitch_cy = 1024;
-    camera->y = 0;
+    camera->y = RASTERFALL_STANDING_CAMERA_Y;
     session->seed = seed ? seed : 1;
     session->skeletal_demo_pose = RASTERFALL_MODEL_POSE_BIND;
     session->skeletal_demo_player.clip = NULL;
@@ -418,7 +419,8 @@ static void session_sync_special_motion(struct rasterfall_session *session,
         camera->x = session->game_state.px;
         camera->z = session->game_state.pz;
     }
-    camera->y = session->game_state.player_ground_y +
+    camera->y = RASTERFALL_STANDING_CAMERA_Y +
+                session->game_state.player_ground_y +
                 session->game_state.player_airborne_y;
 }
 
@@ -550,7 +552,7 @@ int rasterfall_session_paid_revive(struct rasterfall_session *session,
     camera->cy = session->level.start_cy;
     camera->pitch_sy = 0;
     camera->pitch_cy = 1024;
-    camera->y = 0;
+    camera->y = RASTERFALL_STANDING_CAMERA_Y;
     game->px = camera->x;
     game->pz = camera->z;
     toy_game_animation_set(&game->animation, TOY_GAME_ANIM_REVIVE);
@@ -1409,7 +1411,7 @@ int rasterfall_session_recover_managed_player(
     camera->cy = session->level.start_cy;
     camera->pitch_sy = 0;
     camera->pitch_cy = 1024;
-    camera->y = 0;
+    camera->y = RASTERFALL_STANDING_CAMERA_Y;
     session->game_state.px = x;
     session->game_state.pz = z;
     session->game_state.player_ground_y = toy_game_ground_height(

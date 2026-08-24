@@ -77,6 +77,7 @@
 #include "rasterfall_net.h"
 #include "rasterfall_humanoid_retarget.h"
 #include "rasterfall_character.h"
+#include "rasterfall_units.h"
 #include "math.h"
 
 #define KEY_ESC   1

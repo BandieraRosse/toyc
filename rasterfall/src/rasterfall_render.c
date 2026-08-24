@@ -24,6 +24,7 @@
 #include "rasterfall_animation.h"
 #include "rasterfall_actor_animation.h"
 #include "rasterfall_character.h"
+#include "rasterfall_units.h"
 #include "rasterfall_glb_animation.h"
 #include "rasterfall_glb_preview.h"
 #include "rasterfall_vmd.h"
@@ -133,6 +134,8 @@ static int draw_world_triangle_tex_views(struct toy_renderer *renderer,
                                    const struct vec3 *vc);
 static void rotate_arm_xz(int x, int z, int degrees, int *out_x, int *out_z);
 static int gallery_model_scale(const struct rasterfall_model_asset *model);
+static int character_model_scale(const struct rasterfall_model_asset *model,
+                                 int target_height_mm);
 static int render_gallery_model(struct toy_renderer *renderer,
                                 const struct camera *camera,
                                 const struct rasterfall_model_asset *model,
@@ -196,10 +199,12 @@ static int private_character_load_glb_clip(int index)
     return 0;
 }
 static int private_character_loaded;
+/* HoYoLAB in-game measurement; Eula is not part of the GFL2 model cohort. */
+#define RASTERFALL_EULA_HEIGHT_MM 1736
 
 struct rasterfall_developer_character {
-    const char *name, *model_path;
-    int x, z, base_y, scale_percent;
+    const char *name, *model_path, *height_source;
+    int x, z, base_y, target_height_mm;
     struct rasterfall_model_asset model;
     struct rasterfall_vmd_clip vmd;
     struct rasterfall_animation_clip walk;
@@ -214,21 +219,20 @@ struct rasterfall_developer_character {
 static struct rasterfall_developer_character developer_characters[] = {
     { .name = "ST AR-15",
       .model_path = "rasterfall/private-assets/models/st_ar15.rmesh",
-      .x = -15400, .z = -10000, .base_y = -900, .scale_percent = 100 },
+      .height_source = "GFL2_MODEL_RELATIVE_LEVA_1516MM",
+      .x = -15400, .z = -10000, .base_y = -900, .target_height_mm = 1652 },
     { .name = "G11", .model_path = "rasterfall/private-assets/models/g11.rmesh",
-      .x = -14200, .z = -10000, .base_y = -900, .scale_percent = 100 },
+      .height_source = "GFL2_MODEL_RELATIVE_LEVA_1516MM",
+      .x = -14200, .z = -10000, .base_y = -900, .target_height_mm = 1429 },
     { .name = "VECTOR",
       .model_path = "rasterfall/private-assets/models/vector.rmesh",
-      .x = -11800, .z = -10000, .base_y = -900, .scale_percent = 100 },
+      .height_source = "GFL2_MODEL_RELATIVE_LEVA_1516MM",
+      .x = -11800, .z = -10000, .base_y = -900, .target_height_mm = 1474 },
     { .name = "UMP45",
       .model_path = "rasterfall/private-assets/models/ump45.rmesh",
-      .x = -10600, .z = -10000, .base_y = -900, .scale_percent = 100 }
+      .height_source = "GFL2_MODEL_RELATIVE_LEVA_1516MM",
+      .x = -10600, .z = -10000, .base_y = -900, .target_height_mm = 1516 }
 };
-
-/* All PMX imports use the same 232x unit conversion.  A shared presentation
- * scale preserves their authored relative heights; gallery_model_scale()
- * would independently normalize every character to nearly the same height. */
-#define RASTERFALL_DEVELOPER_CHARACTER_SCALE 207
 
 static int render_developer_characters(struct toy_renderer *renderer,
                                        const struct camera *camera)
@@ -256,8 +260,12 @@ static int render_developer_characters(struct toy_renderer *renderer,
                 rasterfall_vmd_build_animation(&entry->vmd, &entry->walk,
                     entry->tracks, RASTERFALL_VMD_MAX_BONES);
                 entry->vmd_loaded = 1;
-                __printf("rasterfall: developer character %s vertices=%u triangles=%u bones=%d VMD_mapped=%d VMD_missing=%d duration_ms=%d\n",
-                    entry->name, entry->model.vertex_count,
+                __printf("rasterfall: developer character %s target_height_mm=%d height_source=%s scale_milli=%d vertices=%u triangles=%u bones=%d VMD_mapped=%d VMD_missing=%d duration_ms=%d\n",
+                    entry->name, entry->target_height_mm,
+                    entry->height_source,
+                    character_model_scale(&entry->model,
+                                          entry->target_height_mm),
+                    entry->model.vertex_count,
                     entry->model.index_count / 3, entry->model.bone_count,
                     mapped, entry->vmd.track_count - mapped,
                     entry->walk.duration_ms);
@@ -289,8 +297,8 @@ static int render_developer_characters(struct toy_renderer *renderer,
             rasterfall_model_set_root_motion(&entry->model, zero, zero, 0);
             rasterfall_model_sample_clip(&entry->model, NULL, 0);
         }
-        scale = RASTERFALL_DEVELOPER_CHARACTER_SCALE *
-                entry->scale_percent / 100;
+        scale = character_model_scale(&entry->model,
+                                      entry->target_height_mm);
         if (scale < 1) scale = 1;
         pixels += render_gallery_model(renderer, camera, &entry->model,
             entry->x, entry->base_y, entry->z, scale);
@@ -501,6 +509,19 @@ static int gallery_model_scale(const struct rasterfall_model_asset *model)
     if (height > 0 && 350000 / height < scale) scale = 350000 / height;
     if (scale < 1) scale = 1;
     return scale;
+}
+
+static int character_model_scale(const struct rasterfall_model_asset *model,
+                                 int target_height_mm)
+{
+    int height;
+    if (!model || target_height_mm <= 0) return 1;
+    height = model->max_y - model->min_y;
+    if (height <= 0) return 1;
+    /* Convert mm to milli-scale in one division.  Quantizing target height to
+     * whole RFU first is enough to make adjacent models disagree by 1‰. */
+    return (int)(((long)target_height_mm * RASTERFALL_RFU_PER_METER +
+                  height / 2) / height);
 }
 
 static int prepare_gallery_vertex_cache(
@@ -1587,7 +1608,11 @@ static int render_private_character(struct toy_renderer *renderer,
         private_character_override_path : "rasterfall/private-assets/models/eula.rmesh";
     int scale;
     if (!private_character_loaded) {
-        rasterfall_model_load(&private_character_model, path);
+        if (rasterfall_model_load(&private_character_model, path) == 0)
+            __printf("rasterfall: Eula target_height_mm=%d scale_milli=%d\n",
+                     RASTERFALL_EULA_HEIGHT_MM,
+                     character_model_scale(&private_character_model,
+                                           RASTERFALL_EULA_HEIGHT_MM));
         private_character_loaded = 1;
     }
     {
@@ -1718,7 +1743,8 @@ static int render_private_character(struct toy_renderer *renderer,
     if (!private_character_model.data ||
         world_distance(camera, -13000, -10000) > ENEMY_RENDER_DISTANCE)
         return 0;
-    scale = gallery_model_scale(&private_character_model) * 3;
+    scale = character_model_scale(&private_character_model,
+                                  RASTERFALL_EULA_HEIGHT_MM);
     if (scale < 1) scale = 1;
     {
         int pixels=render_gallery_model(renderer,camera,&private_character_model,
@@ -2728,9 +2754,14 @@ int rasterfall_render_flag_text(struct toy_renderer *renderer,
     return drawn;
 }
 
-static void actor_world_point(int x, int z, int sy, int cy,
-                              int lx, int ly, int lz, struct vec3 *out)
+static void oriented_world_point(int x, int z, int sy, int cy,
+                                 int lx, int ly, int lz, int scale,
+                                 struct vec3 *out)
 {
+    lx = lx * scale / 1000;
+    ly = RASTERFALL_WORLD_GROUND_Y +
+         (ly - RASTERFALL_WORLD_GROUND_Y) * scale / 1000;
+    lz = lz * scale / 1000;
     int ry = -900 + ((ly + 900) * active_actor_roll_cos +
                      lz * active_actor_roll_sin) / 1024;
     int rz = (-(ly + 900) * active_actor_roll_sin +
@@ -2738,6 +2769,14 @@ static void actor_world_point(int x, int z, int sy, int cy,
     out->x = x + (cy * lx + sy * rz) / 1024;
     out->y = ry + active_actor_lift;
     out->z = z + (-sy * lx + cy * rz) / 1024;
+}
+
+static void actor_world_point(int x, int z, int sy, int cy,
+                              int lx, int ly, int lz, struct vec3 *out)
+{
+    oriented_world_point(x, z, sy, cy, lx, ly, lz,
+        RASTERFALL_HUMAN_HEIGHT_RFU * 1000 /
+        RASTERFALL_LEGACY_ACTOR_HEIGHT_RFU, out);
 }
 
 /* 角色局部坐标的立体盒：local X 为角色右侧，local Z 为面朝方向。
@@ -3466,7 +3505,7 @@ static int render_charger_enemy(struct toy_renderer *renderer,
 
 static int draw_tank_arm_box(struct toy_renderer *renderer,
                              const struct camera *camera, int x, int z,
-                             int sy, int cy, int side_x,
+                             int sy, int cy, int scale, int side_x,
                              int shoulder_y, int shoulder_z,
                              int fist_y, int fist_z, uint32_t color)
 {
@@ -3493,8 +3532,8 @@ static int draw_tank_arm_box(struct toy_renderer *renderer,
             ((corner == 0 || corner == 3) ? -half_width : half_width);
         local_y[i] = center_y + (corner < 2 ? -py : py);
         local_z[i] = center_z + (corner < 2 ? -pz : pz);
-        actor_world_point(x, z, sy, cy, local_x[i], local_y[i], local_z[i],
-                          &vertices[i]);
+        oriented_world_point(x, z, sy, cy, local_x[i], local_y[i],
+                             local_z[i], scale, &vertices[i]);
     }
     for (i = 0; i < 36; i += 3)
         pixels += draw_world_triangle(renderer, camera,
@@ -3532,11 +3571,11 @@ static int render_tank_enemy(struct toy_renderer *renderer,
                           z - 210, z + 210, color);
     active_actor_lift = active_enemy_lift;
     pixels += draw_tank_arm_box(renderer, camera, x, z,
-                                e->dir_x, e->dir_z, -390,
+                                e->dir_x, e->dir_z, 1000, -390,
                                 450, 0, fist_y, fist_z,
                                 color + 0x101008);
     pixels += draw_tank_arm_box(renderer, camera, x, z,
-                                e->dir_x, e->dir_z, 390,
+                                e->dir_x, e->dir_z, 1000, 390,
                                 450, 0, fist_y, fist_z,
                                 color + 0x101008);
     active_actor_lift = 0;
