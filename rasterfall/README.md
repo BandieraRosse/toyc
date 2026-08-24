@@ -216,11 +216,13 @@ near clip、背面剔除、实际输出和延迟渲染命令溢出数量。
 1280×720 五角色固定工作负载基准使用：
 
 ```sh
-build/rasterfall --actor-performance 30 8
+build/rasterfall --actor-performance 30 5 8
 ```
 
 输出包含确定性帧缓冲哈希，以及 animation、skeleton、skin、vertex transform、
-triangle setup 和 raster 的每帧平均耗时。不同优化等级必须产生相同哈希：
+triangle setup 和 raster 的每帧平均耗时，并列出每个 actor job 和 frontend
+worker 的负载。三个数字依次是帧数、frontend worker 数和 raster worker 数。
+不同并行度与优化等级必须产生相同哈希：
 
 ```sh
 make RASTERFALL_OPT=-O0 build/rasterfall

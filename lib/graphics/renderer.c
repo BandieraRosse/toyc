@@ -1098,7 +1098,16 @@ static void *render_worker_main(void *arg)
         worker->path_start = 0;
         long active_start = renderer_monotonic_us();
         long cpu_start = renderer_thread_cpu_us();
-        if (renderer->job_is_clear)
+        if (renderer->job_is_parallel) {
+            if (worker->id < renderer->job_parallel_workers)
+                for (;;) {
+                    int task = (int)atomic_fetch_add_u32(
+                        (volatile uint32_t *)&renderer->job_parallel_next, 1);
+                    if (task >= renderer->job_parallel_count) break;
+                    renderer->job_parallel_fn(worker->id, task,
+                                              renderer->job_parallel_context);
+                }
+        } else if (renderer->job_is_clear)
             worker_clear(renderer, worker->id);
         else
             worker_rasterize(renderer, worker->id, worker);
@@ -1151,6 +1160,7 @@ static void renderer_dispatch(struct toy_renderer *renderer, int is_clear,
 {
     long wait_start = renderer_monotonic_us();
     renderer->job_is_clear = is_clear;
+    renderer->job_is_parallel = 0;
     renderer->job_clear_color = clear_color;
     renderer->job_done_count = 0;
     __sync_synchronize();
@@ -1161,6 +1171,55 @@ static void renderer_dispatch(struct toy_renderer *renderer, int is_clear,
     while (renderer->job_done_count != renderer->worker_count)
         __sync_synchronize();
     renderer->last_worker_wait_us = renderer_monotonic_us() - wait_start;
+}
+
+int toy_renderer_parallel_for(struct toy_renderer *renderer, int task_count,
+                              int worker_limit,
+                              toy_renderer_parallel_fn function,
+                              void *context)
+{
+    if (!renderer || !function || task_count < 1) return -1;
+    if (ensure_workers(renderer) < 0) return -1;
+    if (worker_limit < 1 || worker_limit > renderer->worker_count)
+        worker_limit = renderer->worker_count;
+    renderer->job_parallel_fn = function;
+    renderer->job_parallel_context = context;
+    renderer->job_parallel_count = task_count;
+    renderer->job_parallel_workers = worker_limit;
+    renderer->job_parallel_next = 0;
+    renderer->job_is_clear = 0;
+    renderer->job_is_parallel = 1;
+    renderer->job_done_count = 0;
+    __sync_synchronize();
+    renderer->job_generation++;
+    __sync_synchronize();
+    __futex((unsigned int *)&renderer->job_generation, TOY_FUTEX_WAKE,
+            0x7fffffff, NULL, NULL, 0);
+    while (renderer->job_done_count != renderer->worker_count)
+        __sync_synchronize();
+    renderer->job_is_parallel = 0;
+    return 0;
+}
+
+int toy_renderer_merge_commands(struct toy_renderer *renderer,
+                                const struct toy_renderer *source)
+{
+    int required;
+    if (!renderer || !source || source->cmd_count < 0) return -1;
+    required = renderer->cmd_count + source->cmd_count;
+    if (required > TOY_RENDER_CMD_MAX) return -1;
+    while (renderer->cmd_cap < required)
+        if (!grow_cmds(renderer)) return -1;
+    memcpy(renderer->cmds + renderer->cmd_count, source->cmds,
+           (size_t)source->cmd_count * sizeof(*source->cmds));
+    renderer->cmd_count = required;
+    renderer->submitted_triangles += source->submitted_triangles;
+    renderer->submitted_vertices += source->submitted_vertices;
+    renderer->textured_triangles += source->textured_triangles;
+    renderer->textured_pixels += source->textured_pixels;
+    renderer->texture_fallback_pixels += source->texture_fallback_pixels;
+    renderer->cmd_overflow += source->cmd_overflow;
+    return 0;
 }
 
 static void clear_single(struct toy_renderer *renderer, uint32_t clear_color)

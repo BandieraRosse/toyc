@@ -33,6 +33,9 @@ struct toy_texture_view {
     uint32_t has_transparency;
 };
 
+typedef void (*toy_renderer_parallel_fn)(int worker_id, int task_index,
+                                         void *context);
+
 /* 一条待光栅化三角形命令。投影/裁剪在记录阶段完成，包围盒与 area 一并
  * 缓存，工作线程按自己的扫描行带直接消费，无需重算顶点级数据。 */
 struct toy_raster_cmd {
@@ -167,6 +170,12 @@ struct toy_renderer {
     volatile int quit;
     int job_is_clear;
     uint32_t job_clear_color;
+    int job_is_parallel;
+    toy_renderer_parallel_fn job_parallel_fn;
+    void *job_parallel_context;
+    int job_parallel_count;
+    int job_parallel_workers;
+    volatile int job_parallel_next;
 };
 
 void toy_renderer_init(struct toy_renderer *renderer);
@@ -230,6 +239,14 @@ int toy_renderer_triangle_textured_material_lit(
 void toy_renderer_set_recording_edge(struct toy_renderer *renderer, int edge);
 /* 仅在 worker 池创建前生效；0 使用自动 CPU 数，诊断可固定为 1..8。 */
 void toy_renderer_set_worker_count(struct toy_renderer *renderer, int count);
+/* Reuse the renderer's parked workers for independent frontend tasks. */
+int toy_renderer_parallel_for(struct toy_renderer *renderer, int task_count,
+                              int worker_limit,
+                              toy_renderer_parallel_fn function,
+                              void *context);
+/* Append a private recording stream without changing its command order. */
+int toy_renderer_merge_commands(struct toy_renderer *renderer,
+                                const struct toy_renderer *source);
 /* 仅供离线性能消融；默认 0 保持正常渲染。 */
 #define TOY_RENDER_DIAG_FORCE_OPAQUE    1
 #define TOY_RENDER_DIAG_AFFINE_UV       2

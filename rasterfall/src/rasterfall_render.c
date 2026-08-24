@@ -40,8 +40,54 @@ struct vec3 { int x, y, z; };
 struct box { int minx, maxx, minz, maxz, height; uint32_t color; };
 
 static struct rasterfall_render_context *render_ctx;
-static struct rasterfall_model_setup_timing model_setup_timing;
 static struct rasterfall_scene_stats scene_stats;
+struct gallery_cached_vertex;
+struct rasterfall_frontend_state {
+    const struct toy_texture_view *texture_view;
+    const struct toy_texture_view *sphere_texture;
+    const struct toy_texture_view *toon_texture;
+    int sphere_mode, toon_shared, toon_level;
+    int material_alpha, material_double_sided;
+    uint32_t material_ambient, material_specular;
+    int material_specular_power, material_specular_level;
+    struct rasterfall_model_triangle_stats *model_triangle_stats;
+    struct gallery_cached_vertex *vertex_cache;
+    unsigned int vertex_cache_capacity;
+    struct rasterfall_model_setup_timing timing;
+};
+static struct rasterfall_frontend_state frontend_default = {
+    .toon_shared = -1, .toon_level = 255, .material_alpha = 255,
+    .material_double_sided = 1
+};
+struct rasterfall_frontend_slot {
+    pthread_t thread;
+    struct rasterfall_frontend_state *state;
+};
+static struct rasterfall_frontend_slot frontend_slots[8];
+static struct rasterfall_frontend_state *frontend_state(void)
+{
+    pthread_t self = pthread_self();
+    int i;
+    for (i = 0; i < 8; i++)
+        if (frontend_slots[i].thread == self && frontend_slots[i].state)
+            return frontend_slots[i].state;
+    return &frontend_default;
+}
+#define model_setup_timing (frontend_state()->timing)
+#define active_sphere_texture (frontend_state()->sphere_texture)
+#define active_sphere_mode (frontend_state()->sphere_mode)
+#define active_toon_texture (frontend_state()->toon_texture)
+#define active_toon_shared (frontend_state()->toon_shared)
+#define active_toon_level (frontend_state()->toon_level)
+#define active_material_alpha (frontend_state()->material_alpha)
+#define active_material_double_sided (frontend_state()->material_double_sided)
+#define active_material_ambient (frontend_state()->material_ambient)
+#define active_material_specular (frontend_state()->material_specular)
+#define active_material_specular_power (frontend_state()->material_specular_power)
+#define active_material_specular_level (frontend_state()->material_specular_level)
+#define active_model_triangle_stats (frontend_state()->model_triangle_stats)
+#define gallery_vertex_cache (frontend_state()->vertex_cache)
+#define gallery_vertex_cache_capacity (frontend_state()->vertex_cache_capacity)
 
 static long render_monotonic_us(void)
 {
@@ -54,17 +100,6 @@ static struct rasterfall_effects *active_effects;
 static const struct rasterfall_net *active_net;
 static const struct toy_texture_view *active_wall_texture;
 static const struct toy_texture_view *active_model_texture;
-static const struct toy_texture_view *active_sphere_texture;
-static int active_sphere_mode;
-static const struct toy_texture_view *active_toon_texture;
-static int active_toon_shared = -1;
-static int active_toon_level = 255;
-static int active_material_alpha = 255;
-static int active_material_double_sided = 1;
-static uint32_t active_material_ambient;
-static uint32_t active_material_specular;
-static int active_material_specular_power;
-static int active_material_specular_level;
 static unsigned short *active_lightmap;
 static int active_textures;
 static int active_fixed_floor_lighting;
@@ -80,7 +115,6 @@ static int active_disable_material_light;
 static int active_emissive_projectile;
 static int active_coordinate_axes;
 static struct rasterfall_model_render_stats model_render_stats;
-static struct rasterfall_model_triangle_stats *active_model_triangle_stats;
 static int collect_model_render_stats;
 
 #define level_map active_session->level
@@ -92,7 +126,7 @@ static int collect_model_render_stats;
 #define baked_light_at_render(x, z) baked_light_at(x, z)
 #define fixed_floor_lighting active_fixed_floor_lighting
 #define textures_enabled active_textures
-#define active_texture_view active_wall_texture
+#define active_texture_view (frontend_state()->texture_view)
 #define wall_texture_view active_wall_texture
 #define effects (*active_effects)
 typedef struct rasterfall_interactable interactable;
@@ -393,8 +427,6 @@ struct gallery_cached_vertex {
     int model_position[3];
     int normal[3];
 };
-static struct gallery_cached_vertex *gallery_vertex_cache;
-static unsigned int gallery_vertex_cache_capacity;
 
 static int clampi(int value, int low, int high)
 {
@@ -1572,10 +1604,62 @@ void rasterfall_render_model_setup_timing(
     if (out) memcpy(out, &model_setup_timing, sizeof(*out));
 }
 
+struct actor_benchmark_fixture {
+    struct rasterfall_model_asset model;
+    struct rasterfall_vmd_clip vmd;
+    struct rasterfall_animation_clip clip;
+    struct rasterfall_animation_track tracks[RASTERFALL_VMD_MAX_BONES];
+    struct toy_renderer commands;
+    struct rasterfall_frontend_state state;
+    long wall_us;
+    int worker_id;
+};
+struct actor_benchmark_dispatch {
+    struct actor_benchmark_fixture *actors;
+    const struct camera *camera;
+    const struct toy_surface *surface;
+    int *depth;
+    int time_ms;
+};
+static void actor_benchmark_job(int worker_id, int actor, void *opaque)
+{
+    static const int heights[5] = {1736, 1652, 1429, 1474, 1516};
+    static const int positions[5] = {-1800, -900, 0, 900, 1800};
+    struct actor_benchmark_dispatch *dispatch = opaque;
+    struct actor_benchmark_fixture *job = &dispatch->actors[actor];
+    long start = render_monotonic_us();
+    frontend_slots[worker_id].thread = pthread_self();
+    frontend_slots[worker_id].state = &job->state;
+    __memset(&job->state.timing, 0, sizeof(job->state.timing));
+    job->commands.surface = *dispatch->surface;
+    job->commands.depth = dispatch->depth;
+    job->commands.cmd_count = 0;
+    job->commands.cmd_overflow = 0;
+    job->commands.submitted_triangles = 0;
+    job->commands.submitted_vertices = 0;
+    job->commands.textured_triangles = 0;
+    job->commands.textured_pixels = 0;
+    job->commands.texture_fallback_pixels = 0;
+    {
+        long animation_start = render_monotonic_us();
+        rasterfall_model_sample_clip(&job->model, &job->clip,
+                                     dispatch->time_ms % job->clip.duration_ms);
+        job->state.timing.animation_sample_us =
+            render_monotonic_us() - animation_start;
+    }
+    render_gallery_model(&job->commands, dispatch->camera, &job->model,
+        positions[actor], -900, 1000,
+        character_model_scale(&job->model, heights[actor]));
+    job->wall_us = render_monotonic_us() - start;
+    job->worker_id = worker_id;
+    frontend_slots[worker_id].state = 0;
+}
+
 /* Fixed five-actor workload used to compare compiler optimization levels and
  * renderer architecture.  Keep assets, camera, animation times and pixels
  * identical between runs: this is a measurement fixture, not a quality knob. */
-int rasterfall_render_actor_benchmark(int iterations, int workers)
+int rasterfall_render_actor_benchmark(int iterations, int frontend_workers,
+                                      int raster_workers)
 {
     static const char *paths[5] = {
         "rasterfall/private-assets/models/eula.rmesh",
@@ -1584,17 +1668,10 @@ int rasterfall_render_actor_benchmark(int iterations, int workers)
         "rasterfall/private-assets/models/vector.rmesh",
         "rasterfall/private-assets/models/ump45.rmesh"
     };
-    static const int heights[5] = {1736, 1652, 1429, 1474, 1516};
-    static const int positions[5] = {-1800, -900, 0, 900, 1800};
     static const char vmd_path[] =
         "rasterfall/private-assets/animations/walk04_loop5.vmd";
-    struct actor_fixture {
-        struct rasterfall_model_asset model;
-        struct rasterfall_vmd_clip vmd;
-        struct rasterfall_animation_clip clip;
-        struct rasterfall_animation_track tracks[RASTERFALL_VMD_MAX_BONES];
-    };
-    struct actor_fixture *actors;
+    struct actor_benchmark_fixture *actors = 0;
+    struct actor_benchmark_dispatch dispatch;
     struct toy_renderer renderer;
     struct toy_surface surface;
     struct camera camera;
@@ -1605,6 +1682,15 @@ int rasterfall_render_actor_benchmark(int iterations, int workers)
     long body_triangle_us = 0, edge_triangle_us = 0;
     long raster_us = 0, frame_us = 0;
     unsigned long triangles = 0;
+    long actor_us[5] = {0,0,0,0,0};
+    long actor_animation[5] = {0,0,0,0,0};
+    long actor_skin[5] = {0,0,0,0,0};
+    long actor_vertex[5] = {0,0,0,0,0};
+    long actor_triangle[5] = {0,0,0,0,0};
+    long worker_us[8] = {0,0,0,0,0,0,0,0};
+    long frontend_wall_us = 0;
+    long triangle_wall_us = 0;
+    int actor_worker[5] = {0,0,0,0,0};
     int frame, actor, loaded = 0, result = 1;
     if (iterations < 1) iterations = 1;
     if (iterations > 1000) iterations = 1000;
@@ -1631,49 +1717,86 @@ int rasterfall_render_actor_benchmark(int iterations, int workers)
         center = rasterfall_model_find_bone(&actors[actor].model, "センター");
         groove = rasterfall_model_find_bone(&actors[actor].model, "グルーブ");
         rasterfall_model_bind_root_motion(&actors[actor].model, center, groove);
+        toy_renderer_init(&actors[actor].commands);
+        actors[actor].state.toon_shared = -1;
+        actors[actor].state.toon_level = 255;
+        actors[actor].state.material_alpha = 255;
+        actors[actor].state.material_double_sided = 1;
+        actors[actor].state.texture_view = active_wall_texture;
     }
     surface.pixels = pixels; surface.width = 1280; surface.height = 720;
     surface.stride = 1280 * (int)sizeof(*pixels);
     toy_renderer_init(&renderer);
-    toy_renderer_set_worker_count(&renderer, workers);
+    toy_renderer_set_worker_count(&renderer, raster_workers);
     active_gallery_lighting = 1;
-    /* Warm all allocations, texture paths and worker threads. */
-    if (toy_renderer_begin(&renderer, &surface, 0x30343B) < 0) goto destroy;
-    for (actor = 0; actor < 5; actor++) {
-        rasterfall_model_sample_clip(&actors[actor].model,
-                                     &actors[actor].clip, 0);
-        render_gallery_model(&renderer, &camera, &actors[actor].model,
-            positions[actor], -900, 1000,
-            character_model_scale(&actors[actor].model, heights[actor]));
-    }
+    dispatch.actors = actors; dispatch.camera = &camera;
+    dispatch.surface = &surface; dispatch.time_ms = 0;
+    if (toy_renderer_begin(&renderer, &surface, 0x30343B) < 0)
+        goto destroy;
+    dispatch.depth = renderer.depth;
+    if (
+        toy_renderer_parallel_for(&renderer, 5, frontend_workers,
+                                  actor_benchmark_job, &dispatch) < 0)
+        goto destroy;
+    for (actor = 0; actor < 5; actor++)
+        if (toy_renderer_merge_commands(&renderer,
+                                        &actors[actor].commands) < 0)
+            goto destroy;
     toy_renderer_flush(&renderer);
     for (frame = 0; frame < iterations; frame++) {
         long start = render_monotonic_us(), raster_start;
-        __memset(&model_setup_timing, 0, sizeof(model_setup_timing));
         if (toy_renderer_begin(&renderer, &surface, 0x30343B) < 0) goto destroy;
+        dispatch.depth = renderer.depth;
+        dispatch.time_ms = frame * 17;
+        {
+            long frontend_start = render_monotonic_us();
+            if (toy_renderer_parallel_for(&renderer, 5, frontend_workers,
+                                          actor_benchmark_job,
+                                          &dispatch) < 0) goto destroy;
+            frontend_wall_us += render_monotonic_us() - frontend_start;
+        }
         for (actor = 0; actor < 5; actor++) {
-            long animation_start = render_monotonic_us();
-            rasterfall_model_sample_clip(&actors[actor].model,
-                &actors[actor].clip, (frame * 17) % actors[actor].clip.duration_ms);
-            model_setup_timing.animation_sample_us +=
-                render_monotonic_us() - animation_start;
-            render_gallery_model(&renderer, &camera, &actors[actor].model,
-                positions[actor], -900, 1000,
-                character_model_scale(&actors[actor].model, heights[actor]));
+            struct rasterfall_model_setup_timing *timing =
+                &actors[actor].state.timing;
+            if (toy_renderer_merge_commands(&renderer,
+                                            &actors[actor].commands) < 0)
+                goto destroy;
+            animation_us += timing->animation_sample_us;
+            skeleton_us += timing->bone_hierarchy_us;
+            skin_us += timing->skinning_us;
+            vertex_us += timing->vertex_cache_us;
+            material_us += timing->material_us;
+            body_triangle_us += timing->body_triangles_us;
+            edge_triangle_us += timing->edge_triangles_us;
+            triangle_us += timing->material_us + timing->body_triangles_us +
+                timing->edge_triangles_us;
+            actor_us[actor] += actors[actor].wall_us;
+            actor_animation[actor] += timing->animation_sample_us;
+            actor_skin[actor] += timing->skinning_us;
+            actor_vertex[actor] += timing->vertex_cache_us;
+            actor_triangle[actor] += timing->material_us +
+                timing->body_triangles_us + timing->edge_triangles_us;
+            actor_worker[actor] = actors[actor].worker_id;
+            worker_us[actors[actor].worker_id] += actors[actor].wall_us;
+        }
+        {
+            long worker_triangle[8] = {0,0,0,0,0,0,0,0};
+            long maximum = 0;
+            for (actor = 0; actor < 5; actor++) {
+                struct rasterfall_model_setup_timing *timing =
+                    &actors[actor].state.timing;
+                worker_triangle[actors[actor].worker_id] +=
+                    timing->material_us + timing->body_triangles_us +
+                    timing->edge_triangles_us;
+            }
+            for (actor = 0; actor < 8; actor++)
+                if (worker_triangle[actor] > maximum)
+                    maximum = worker_triangle[actor];
+            triangle_wall_us += maximum;
         }
         raster_start = render_monotonic_us();
         toy_renderer_flush(&renderer);
         raster_us += render_monotonic_us() - raster_start;
-        animation_us += model_setup_timing.animation_sample_us;
-        skeleton_us += model_setup_timing.bone_hierarchy_us;
-        skin_us += model_setup_timing.skinning_us;
-        vertex_us += model_setup_timing.vertex_cache_us;
-        material_us += model_setup_timing.material_us;
-        body_triangle_us += model_setup_timing.body_triangles_us;
-        edge_triangle_us += model_setup_timing.edge_triangles_us;
-        triangle_us += model_setup_timing.material_us +
-            model_setup_timing.body_triangles_us +
-            model_setup_timing.edge_triangles_us;
         triangles += renderer.submitted_triangles;
         frame_us += render_monotonic_us() - start;
         for (int y = 0; y < surface.height; y++) {
@@ -1685,14 +1808,29 @@ int rasterfall_render_actor_benchmark(int iterations, int workers)
             }
         }
     }
-    __printf("rasterfall: actor benchmark actors=5 size=1280x720 frames=%d detected_cpus=%d workers=%d hash=%016llx frame_us=%ld animation_us=%ld skeleton_us=%ld skin_us=%ld vertex_transform_us=%ld triangle_setup_us=%ld material_us=%ld body_triangle_us=%ld edge_triangle_us=%ld raster_us=%ld triangles=%lu\n",
-        iterations, renderer.detected_cpu_count, renderer.worker_count, hash,
-        frame_us / iterations, animation_us / iterations,
+    __printf("rasterfall: actor benchmark actors=5 size=1280x720 frames=%d detected_cpus=%d frontend_workers=%d raster_workers=%d hash=%016llx frame_us=%ld frontend_wall_us=%ld animation_us=%ld skeleton_us=%ld skin_us=%ld vertex_transform_us=%ld triangle_setup_us=%ld triangle_setup_cpu_us=%ld material_us=%ld body_triangle_us=%ld edge_triangle_us=%ld raster_us=%ld triangles=%lu\n",
+        iterations, renderer.detected_cpu_count, frontend_workers,
+        renderer.worker_count, hash,
+        frame_us / iterations, frontend_wall_us / iterations,
+        animation_us / iterations,
         skeleton_us / iterations, skin_us / iterations, vertex_us / iterations,
-        triangle_us / iterations, material_us / iterations,
+        triangle_wall_us / iterations, triangle_us / iterations,
+        material_us / iterations,
         body_triangle_us / iterations, edge_triangle_us / iterations,
         raster_us / iterations,
         triangles / (unsigned long)iterations);
+    for (actor = 0; actor < 5; actor++)
+        __printf("rasterfall: actor benchmark job=%d last_worker=%d job_wall_us=%ld animation_us=%ld skin_us=%ld vertex_us=%ld triangle_us=%ld commands=%d triangles=%lu\n",
+                 actor, actor_worker[actor], actor_us[actor] / iterations,
+                 actor_animation[actor] / iterations,
+                 actor_skin[actor] / iterations,
+                 actor_vertex[actor] / iterations,
+                 actor_triangle[actor] / iterations,
+                 actors[actor].commands.cmd_count,
+                 actors[actor].commands.submitted_triangles);
+    for (actor = 0; actor < renderer.worker_count; actor++)
+        __printf("rasterfall: actor benchmark frontend_worker=%d active_us=%ld\n",
+                 actor, worker_us[actor] / iterations);
     result = 0;
 destroy:
     active_gallery_lighting = 0;
@@ -1700,6 +1838,12 @@ destroy:
 done:
     if (actors) {
         for (actor = 0; actor < loaded; actor++) {
+            /* Recording-only renderer borrows the destination depth pointer
+             * solely to satisfy triangle API validation; it never owns it. */
+            actors[actor].commands.depth = 0;
+            toy_renderer_destroy(&actors[actor].commands);
+            if (actors[actor].state.vertex_cache)
+                tlibc_free(actors[actor].state.vertex_cache);
             rasterfall_vmd_unload(&actors[actor].vmd);
             rasterfall_model_unload(&actors[actor].model);
         }
@@ -4852,6 +4996,7 @@ void rasterfall_render_bind(struct rasterfall_render_context *ctx)
     active_effects = ctx->effects;
     active_net = ctx->net;
     active_wall_texture = ctx->wall_texture;
+    frontend_default.texture_view = active_wall_texture;
     active_model_texture = ctx->model_texture;
     active_lightmap = ctx->lightmap;
     active_textures = ctx->textures_enabled;

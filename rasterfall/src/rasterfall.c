@@ -30,7 +30,7 @@
  *                                   导出四组材质基线和像素统计清单
  *   --model-performance <model> [iterations] [workers]
  *                                   固定视角模型功能与 worker 负载基准
- *   --actor-performance [iterations] [workers]
+ *   --actor-performance [iterations] [frontend-workers] [raster-workers]
  *                                   1280x720 五角色固定工作负载基准
  *   --model-humanoid <model>        输出通用 Humanoid 骨骼映射诊断
  *   --model-humanoid-basis <model>  输出 canonical rest basis
@@ -2160,6 +2160,7 @@ int main(int argc, char **argv)
     int performance_iterations = 5;
     int performance_workers = 0;
     int actor_performance = 0;
+    int actor_raster_workers = 8;
     for (int arg = 1; arg < argc; arg++) {
         if (strcmp(argv[arg], "--input-test") == 0) input_debug = 1;
         else if (strcmp(argv[arg], "--logic-test") == 0 ||
@@ -2263,6 +2264,10 @@ int main(int argc, char **argv)
                 argv[arg + 1][0] <= '9')
                 performance_workers =
                     parse_positive_int(argv[++arg], performance_workers);
+            if (arg + 1 < argc && argv[arg + 1][0] >= '0' &&
+                argv[arg + 1][0] <= '9')
+                actor_raster_workers =
+                    parse_positive_int(argv[++arg], actor_raster_workers);
         }
         else if (strcmp(argv[arg], "--frames") == 0 && arg + 1 < argc) {
             const char *p = argv[++arg];
@@ -2336,7 +2341,8 @@ int main(int argc, char **argv)
                                         performance_workers);
     if (actor_performance)
         return rasterfall_render_actor_benchmark(performance_iterations,
-                                                 performance_workers);
+                                                 performance_workers,
+                                                 actor_raster_workers);
     if (view_model_path) {
         if (material_regression)
             return dump_model_material_regression(view_model_path,

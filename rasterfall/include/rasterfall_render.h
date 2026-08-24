@@ -78,7 +78,8 @@ int rasterfall_render_model_preview(struct toy_renderer *renderer,
 void rasterfall_render_model_stats(struct rasterfall_model_render_stats *out);
 void rasterfall_render_model_setup_timing(
     struct rasterfall_model_setup_timing *out);
-int rasterfall_render_actor_benchmark(int iterations, int workers);
+int rasterfall_render_actor_benchmark(int iterations, int frontend_workers,
+                                      int raster_workers);
 void rasterfall_render_scene_stats(struct rasterfall_scene_stats *out);
 int rasterfall_render_near_clip_test(void);
 
