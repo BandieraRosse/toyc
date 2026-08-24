@@ -26,6 +26,7 @@
  *   --texture-stats                显示纹理统计
  *   --dump-frame <path>            导出帧图像
  *   --model-views <model> <dir>     离屏导出模型正面/侧面/背面图
+ *   --model-views-supersample <1|2> 设置离屏模型视图内部采样倍率
  *   --model-material-regression <model> <dir>
  *                                   导出四组材质基线和像素统计清单
  *   --model-performance <model> [iterations] [workers]
@@ -1527,14 +1528,14 @@ static void measure_model_view(const struct toy_surface *surface,
 static int dump_model_views(const char *model_path, const char *output_dir,
                             int use_sphere, int use_toon, int use_edge,
                             int use_material_light,
-                            struct model_view_stats *stats)
+                            struct model_view_stats *stats, int supersample)
 {
     static const char *names[3] = {"front", "side", "back"};
     struct camera cameras[3];
     struct rasterfall_model_asset model;
-    struct toy_surface surface;
+    struct toy_surface surface, output_surface;
     struct toy_renderer renderer;
-    uint32_t *pixels;
+    uint32_t *pixels, *output_pixels = 0;
     char path[512];
     int i, result = 0;
 
@@ -1554,8 +1555,9 @@ static int dump_model_views(const char *model_path, const char *output_dir,
         rasterfall_model_unload(&model);
         return 1;
     }
-    surface.width = 800;
-    surface.height = 800;
+    if (supersample != 2) supersample = 1;
+    surface.width = 800 * supersample;
+    surface.height = 800 * supersample;
     surface.stride = surface.width * (int)sizeof(uint32_t);
     pixels = tlibc_malloc((size_t)surface.stride * surface.height);
     if (!pixels) {
@@ -1563,6 +1565,19 @@ static int dump_model_views(const char *model_path, const char *output_dir,
         return 1;
     }
     surface.pixels = pixels;
+    output_surface = surface;
+    if (supersample == 2) {
+        output_surface.width = 800;
+        output_surface.height = 800;
+        output_surface.stride = 800 * (int)sizeof(uint32_t);
+        output_pixels = tlibc_malloc((size_t)output_surface.stride * 800);
+        if (!output_pixels) {
+            tlibc_free(pixels);
+            rasterfall_model_unload(&model);
+            return 1;
+        }
+        output_surface.pixels = output_pixels;
+    }
     toy_renderer_init(&renderer);
 
     /* Front and back look along the model Z axis; side looks along +X. */
@@ -1594,23 +1609,50 @@ static int dump_model_views(const char *model_path, const char *output_dir,
                  render_stats.edge.emitted_triangles,
                  render_stats.command_overflow);
         toy_renderer_flush(&renderer);
-        if (stats) measure_model_view(&surface, &stats[i]);
+        if (supersample == 2) {
+            int y, x;
+            for (y = 0; y < output_surface.height; y++) {
+                uint32_t *destination = (uint32_t *)((unsigned char *)
+                    output_surface.pixels + y * output_surface.stride);
+                const uint32_t *row0 = (const uint32_t *)((unsigned char *)
+                    surface.pixels + y * 2 * surface.stride);
+                const uint32_t *row1 = (const uint32_t *)((unsigned char *)
+                    surface.pixels + (y * 2 + 1) * surface.stride);
+                for (x = 0; x < output_surface.width; x++) {
+                    uint32_t p0 = row0[x * 2], p1 = row0[x * 2 + 1];
+                    uint32_t p2 = row1[x * 2], p3 = row1[x * 2 + 1];
+                    unsigned int a = (p0 >> 24) + (p1 >> 24) +
+                                     (p2 >> 24) + (p3 >> 24);
+                    unsigned int r = ((p0 >> 16) & 255) + ((p1 >> 16) & 255) +
+                                     ((p2 >> 16) & 255) + ((p3 >> 16) & 255);
+                    unsigned int g = ((p0 >> 8) & 255) + ((p1 >> 8) & 255) +
+                                     ((p2 >> 8) & 255) + ((p3 >> 8) & 255);
+                    unsigned int b = (p0 & 255) + (p1 & 255) +
+                                     (p2 & 255) + (p3 & 255);
+                    destination[x] = ((a + 2) / 4 << 24) |
+                                     ((r + 2) / 4 << 16) |
+                                     ((g + 2) / 4 << 8) | (b + 2) / 4;
+                }
+            }
+        }
+        if (stats) measure_model_view(&output_surface, &stats[i]);
         if (snprintf(path, sizeof(path), "%s/%s.bmp", output_dir, names[i]) >=
                 (int)sizeof(path) ||
-            rasterfall_hud_dump_bmp(path, &surface) < 0) {
+            rasterfall_hud_dump_bmp(path, &output_surface) < 0) {
             __fprintf(2, "rasterfall: cannot write model preview %s\n", names[i]);
             result = 1;
             break;
         }
         if (snprintf(path, sizeof(path), "%s/%s.ppm", output_dir, names[i]) >=
                 (int)sizeof(path) ||
-            rasterfall_hud_dump_frame(path, &surface) < 0) {
+            rasterfall_hud_dump_frame(path, &output_surface) < 0) {
             __fprintf(2, "rasterfall: cannot write model PPM %s\n", names[i]);
             result = 1;
             break;
         }
     }
     toy_renderer_destroy(&renderer);
+    tlibc_free(output_pixels);
     tlibc_free(pixels);
     rasterfall_model_unload(&model);
     return result;
@@ -1633,7 +1675,7 @@ static int dump_model_material_regression(const char *model_path,
         if (snprintf(directory, sizeof(directory), "%s/%s", output_dir,
                      groups[group]) >= (int)sizeof(directory) ||
             dump_model_views(model_path, directory, sphere[group], toon[group],
-                             1, 1, stats[group]) != 0) return 1;
+                             1, 1, stats[group], 1) != 0) return 1;
     }
     if (snprintf(manifest_path, sizeof(manifest_path), "%s/manifest.txt",
                  output_dir) >= (int)sizeof(manifest_path)) return 1;
@@ -2165,6 +2207,7 @@ int main(int argc, char **argv)
     const char *dump_path = 0;
     const char *view_model_path = 0;
     const char *view_output_dir = 0;
+    int model_views_supersample = 1;
     int material_regression = 0;
     const char *performance_model_path = 0;
     const char *bone_model_path = 0;
@@ -2208,6 +2251,10 @@ int main(int argc, char **argv)
         else if (strcmp(argv[arg], "--model-views") == 0 && arg + 2 < argc) {
             view_model_path = argv[++arg];
             view_output_dir = argv[++arg];
+        } else if (strcmp(argv[arg], "--model-views-supersample") == 0 &&
+                   arg + 1 < argc) {
+            model_views_supersample = parse_positive_int(argv[++arg], 1);
+            if (model_views_supersample != 2) model_views_supersample = 1;
         } else if (strcmp(argv[arg], "--model-static-views") == 0 &&
                    arg + 2 < argc) {
             view_model_path = argv[++arg];
@@ -2372,7 +2419,7 @@ int main(int argc, char **argv)
             return dump_model_material_regression(view_model_path,
                                                   view_output_dir);
         return dump_model_views(view_model_path, view_output_dir,
-                                1, 1, 1, 1, 0);
+                                1, 1, 1, 1, 0, model_views_supersample);
     }
     rasterfall_net_init(&net);
     rasterfall_net_set_loss(&net, net_loss_percent);

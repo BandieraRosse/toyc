@@ -1413,6 +1413,24 @@ enum character_perceptual_model {
     CHARACTER_PERCEPTUAL_UMP45
 };
 
+enum rasterfall_character_visual_class {
+    RASTERFALL_VISUAL_DEFAULT,
+    RASTERFALL_VISUAL_FACE,
+    RASTERFALL_VISUAL_EYES,
+    RASTERFALL_VISUAL_HAIR,
+    RASTERFALL_VISUAL_SKIN,
+    RASTERFALL_VISUAL_CLOTHING,
+    RASTERFALL_VISUAL_EQUIPMENT
+};
+
+struct rasterfall_character_render_policy {
+    int use_sphere;
+    int use_toon;
+    int use_edge;
+    int base_texture_bilinear;
+    int edge_width_milli;
+};
+
 static int character_perceptual_model(
     const struct rasterfall_model_asset *model)
 {
@@ -1428,46 +1446,63 @@ static int character_perceptual_model(
     return CHARACTER_PERCEPTUAL_NONE;
 }
 
-static int character_face_eye_primitive(int profile, int primitive)
+static enum rasterfall_character_visual_class
+character_visual_class(int profile, int primitive, unsigned int material)
 {
-    if (profile == CHARACTER_PERCEPTUAL_AR15)
-        return primitive <= 8 || primitive == 25 || primitive == 28;
-    if (profile == CHARACTER_PERCEPTUAL_G11)
-        return primitive <= 10 || primitive >= 17;
-    if (profile == CHARACTER_PERCEPTUAL_VECTOR)
-        return primitive <= 5 || (primitive >= 7 && primitive <= 12) ||
-               primitive >= 18;
-    if (profile == CHARACTER_PERCEPTUAL_UMP45)
-        return primitive <= 10 || primitive >= 20;
-    return 0;
+    (void)material;
+    if (profile == CHARACTER_PERCEPTUAL_AR15) {
+        if (primitive <= 8 || primitive == 25 || primitive == 28)
+            return RASTERFALL_VISUAL_FACE;
+        if (primitive == 23 || primitive == 24)
+            return RASTERFALL_VISUAL_HAIR;
+        if ((primitive >= 10 && primitive <= 22) ||
+            primitive == 26 || primitive == 27)
+            return RASTERFALL_VISUAL_EQUIPMENT;
+    } else if (profile == CHARACTER_PERCEPTUAL_G11) {
+        if (primitive <= 10 || primitive >= 17)
+            return RASTERFALL_VISUAL_FACE;
+        if (primitive == 15 || primitive == 16)
+            return RASTERFALL_VISUAL_HAIR;
+        if (primitive >= 11 && primitive <= 14)
+            return RASTERFALL_VISUAL_EQUIPMENT;
+    } else if (profile == CHARACTER_PERCEPTUAL_VECTOR) {
+        if (primitive <= 5 || (primitive >= 7 && primitive <= 12) ||
+            primitive >= 18)
+            return RASTERFALL_VISUAL_FACE;
+        if (primitive == 16 || primitive == 17)
+            return RASTERFALL_VISUAL_HAIR;
+        if (primitive >= 13 && primitive <= 15)
+            return RASTERFALL_VISUAL_EQUIPMENT;
+    } else if (profile == CHARACTER_PERCEPTUAL_UMP45) {
+        if (primitive <= 10 || primitive >= 20)
+            return RASTERFALL_VISUAL_FACE;
+        if (primitive == 13 || primitive == 14 || primitive == 16)
+            return RASTERFALL_VISUAL_HAIR;
+        if (primitive == 11 || primitive == 12 ||
+            (primitive >= 17 && primitive <= 19))
+            return RASTERFALL_VISUAL_EQUIPMENT;
+    }
+    return RASTERFALL_VISUAL_DEFAULT;
 }
 
-static int character_low_priority_primitive(int profile, int primitive)
+static struct rasterfall_character_render_policy
+character_render_policy(enum rasterfall_character_visual_class visual_class)
 {
-    if (profile == CHARACTER_PERCEPTUAL_AR15)
-        return (primitive >= 10 && primitive <= 22) ||
-               primitive == 26 || primitive == 27;
-    if (profile == CHARACTER_PERCEPTUAL_G11)
-        return primitive >= 11 && primitive <= 14;
-    if (profile == CHARACTER_PERCEPTUAL_VECTOR)
-        return primitive >= 13 && primitive <= 15;
-    if (profile == CHARACTER_PERCEPTUAL_UMP45)
-        return primitive == 11 || primitive == 12 ||
-               (primitive >= 17 && primitive <= 19);
-    return 0;
-}
-
-static int character_hair_primitive(int profile, int primitive)
-{
-    if (profile == CHARACTER_PERCEPTUAL_AR15)
-        return primitive == 23 || primitive == 24;
-    if (profile == CHARACTER_PERCEPTUAL_G11)
-        return primitive == 15 || primitive == 16;
-    if (profile == CHARACTER_PERCEPTUAL_VECTOR)
-        return primitive == 16 || primitive == 17;
-    if (profile == CHARACTER_PERCEPTUAL_UMP45)
-        return primitive == 13 || primitive == 14 || primitive == 16;
-    return 0;
+    struct rasterfall_character_render_policy policy = {1, 1, 1, 0, 1000};
+    if (visual_class == RASTERFALL_VISUAL_FACE ||
+        visual_class == RASTERFALL_VISUAL_EYES) {
+        policy.use_toon = 0;
+        policy.base_texture_bilinear = 1;
+    } else if (visual_class == RASTERFALL_VISUAL_HAIR) {
+        policy.use_sphere = 0;
+        policy.edge_width_milli = 600;
+    } else if (visual_class == RASTERFALL_VISUAL_CLOTHING ||
+               visual_class == RASTERFALL_VISUAL_EQUIPMENT) {
+        policy.use_sphere = 0;
+        policy.use_toon = 0;
+        policy.use_edge = 0;
+    }
+    return policy;
 }
 
 static int render_gallery_model_range(struct toy_renderer *renderer,
@@ -1543,13 +1578,14 @@ static int render_gallery_model_range(struct toy_renderer *renderer,
         const struct toy_texture_view *texture = 0;
         const struct toy_texture_view *sphere_texture = 0;
         const struct toy_texture_view *toon_texture = 0;
-        int low_priority = character_low_priority_primitive(
-            perceptual_profile, i);
-        int hair = character_hair_primitive(perceptual_profile, i);
-        active_face_material = character_face_eye_primitive(
-            perceptual_profile, i);
+        enum rasterfall_character_visual_class visual_class =
+            character_visual_class(perceptual_profile, i, material);
+        struct rasterfall_character_render_policy policy =
+            character_render_policy(visual_class);
+        active_face_material = visual_class == RASTERFALL_VISUAL_FACE ||
+            visual_class == RASTERFALL_VISUAL_EYES;
         toy_renderer_set_base_texture_bilinear(renderer,
-            active_face_material);
+            policy.base_texture_bilinear);
         active_texture_view = 0;
         active_sphere_texture = 0;
         active_sphere_mode = 0;
@@ -1583,13 +1619,15 @@ static int render_gallery_model_range(struct toy_renderer *renderer,
             if (index_end > index_count) index_end = index_count;
         }
         phase_start = render_monotonic_us();
-        if (!active_disable_edge && !low_priority &&
+        if (!active_disable_edge && policy.use_edge &&
             material < model->material_count &&
             model->format_version >= 8) {
             const unsigned char *material_data = model->materials +
                 material * model->material_bytes;
             unsigned int edge = model_u32(material_data + 16);
             int edge_size = (int)model_u32(material_data + 20);
+            edge_size = (int)((long long)edge_size *
+                              policy.edge_width_milli / 1000);
             if ((material_data[7] & 0x10) && edge_size > 0 && (edge >> 24)) {
                 const struct toy_texture_view *saved_texture = active_texture_view;
                 const struct toy_texture_view *saved_sphere = active_sphere_texture;
@@ -1645,7 +1683,7 @@ static int render_gallery_model_range(struct toy_renderer *renderer,
                 /* PMX modes 1/2 are multiplicative/additive environment maps.
                  * Mode 0 disables sphere mapping; mode 3 uses the first
                  * additional UV channel retained by RFM2 v6 and newer. */
-                if (!active_disable_sphere && !low_priority && !hair &&
+                if (!active_disable_sphere && policy.use_sphere &&
                     (sphere_mode == 1 || sphere_mode == 2 ||
                      (sphere_mode == 3 && model->vertex_bytes >=
                       RASTERFALL_MODEL_VERTEX_BYTES_ADDITIONAL_UV)) &&
@@ -1657,7 +1695,7 @@ static int render_gallery_model_range(struct toy_renderer *renderer,
                 } else active_sphere_texture = 0;
             }
             if (model->format_version >= 5 && !active_disable_toon &&
-                !low_priority && !active_face_material) {
+                policy.use_toon) {
                 unsigned int toon_index = model->materials[material * model->material_bytes + 5];
                 unsigned int toon_kind = model->materials[material * model->material_bytes + 6];
                 if (toon_kind == 1 && toon_index < model->textures.count &&
