@@ -64,19 +64,16 @@ static void execute(struct rasterfall_console *c)
       out(c,"  clear         clear console log");
       out(c,"  killall       kill all active enemies");
       out(c,"  give+N        add N money, e.g. give+500");
-      out(c,"POSE EDITOR");
-      out(c,"  pose          open default Eula + AK editor");
-      out(c,"  pose eula ak  edit the Eula + AK rifle pose");
       out(c,"EDITOR");
       out(c,"  pose          open Eula + AK editor");
       out(c,"  pose eula ak  edit this character/weapon pair");
       return;
   }
-  if(!strcmp(w[0],"pose") && (n==1 || (n>=3&&!strcmp(w[1],"eula")&&!strcmp(w[2],"ak")))){c->calibration.active=1;c->calibration.character=0;c->calibration.weapon=TOY_GAME_WEAPON_AK;c->calibration.left_ik=1;c->calibration.axes=1;c->calibration.anchors=1;c->pose_hud_request=1;c->close_requested=1;out(c,"Rifle Pose Editor: Eula + AK");return;}
+if(!strcmp(w[0],"pose") && (n==1 || (n>=3&&!strcmp(w[1],"eula")&&!strcmp(w[2],"ak")))){c->calibration.active=1;c->calibration.character=0;c->calibration.weapon=TOY_GAME_WEAPON_AK;c->calibration.pose.left_ik=1;c->calibration.left_ik=1;c->calibration.axes=1;c->calibration.anchors=1;c->pose_hud_request=1;c->close_requested=1;out(c,"Rifle Pose Editor: Eula + AK");return;}
   out_error(c,"unknown command; type help");
 }
 void rasterfall_console_init(struct rasterfall_console *c){memset(c,0,sizeof(*c));rasterfall_calibration_init(&c->calibration);}
-int rasterfall_console_handle_input(struct rasterfall_console *c,struct toy_input *in,unsigned char *pending){int k,ch,len,i;if(take(in,pending,KEY_ESC)){c->open=0;return 1;}if(take(in,pending,KEY_ENTER)){if(c->line[0]){for(i=7;i>0;i--)strcpy(c->history[i],c->history[i-1]);strcpy(c->history[0],c->line);rasterfall_console_log(c,RASTERFALL_CONSOLE_COMMAND,c->line);}c->history_cursor=0;execute(c);rasterfall_calibration_apply_runtime(&c->calibration.weapon_profile);c->line[0]=0;return 1;}if(take(in,pending,KEY_BACKSPACE)){len=strlen(c->line);if(len)c->line[len-1]=0;return 1;}if(take(in,pending,KEY_UP)){if(c->history_cursor<8&&c->history[c->history_cursor][0]){strcpy(c->line,c->history[c->history_cursor]);c->history_cursor++;}return 1;}if(take(in,pending,KEY_DOWN)){if(c->history_cursor>1)c->history_cursor--;else c->history_cursor=0;if(c->history_cursor==0)c->line[0]=0;else strcpy(c->line,c->history[c->history_cursor-1]);return 1;}for(k=0;k<TOY_INPUT_KEY_COUNT;k++)if((ch=chr(k))&&take(in,pending,k)){len=strlen(c->line);if(len<159){c->line[len]=ch;c->line[len+1]=0;}return 1;}return c->open;}
+int rasterfall_console_handle_input(struct rasterfall_console *c,struct toy_input *in,unsigned char *pending){int k,ch,len,i;if(take(in,pending,KEY_ESC)){c->open=0;return 1;}if(take(in,pending,KEY_ENTER)){if(c->line[0]){for(i=7;i>0;i--)strcpy(c->history[i],c->history[i-1]);strcpy(c->history[0],c->line);rasterfall_console_log(c,RASTERFALL_CONSOLE_COMMAND,c->line);}c->history_cursor=0;execute(c);c->line[0]=0;return 1;}if(take(in,pending,KEY_BACKSPACE)){len=strlen(c->line);if(len)c->line[len-1]=0;return 1;}if(take(in,pending,KEY_UP)){if(c->history_cursor<8&&c->history[c->history_cursor][0]){strcpy(c->line,c->history[c->history_cursor]);c->history_cursor++;}return 1;}if(take(in,pending,KEY_DOWN)){if(c->history_cursor>1)c->history_cursor--;else c->history_cursor=0;if(c->history_cursor==0)c->line[0]=0;else strcpy(c->line,c->history[c->history_cursor-1]);return 1;}for(k=0;k<TOY_INPUT_KEY_COUNT;k++)if((ch=chr(k))&&take(in,pending,k)){len=strlen(c->line);if(len<159){c->line[len]=ch;c->line[len+1]=0;}return 1;}return c->open;}
 static void rect_alpha(struct toy_surface *s,int x,int y,int w,int h,
                        unsigned int color, int alpha)
 {

@@ -1,11 +1,18 @@
 #include "rasterfall_calibration.h"
 #include "string.h"
 #include "tlibc_everything.h"
+#include "rasterfall_animation_composition.h"
 
-static struct rasterfall_weapon_visual_profile profiles[TOY_GAME_WEAPON_COUNT];
+static struct rasterfall_weapon_asset_profile asset_profiles[TOY_GAME_WEAPON_COUNT];
+static struct rasterfall_pose_calibration pose_profiles[TOY_GAME_CHARACTER_COUNT][TOY_GAME_WEAPON_COUNT];
 static int profiles_ready;
-static struct rasterfall_weapon_visual_profile runtime_profile;
-static int runtime_profile_enabled;
+
+static const int default_body_pose[RASTERFALL_POSE_BODY_CHANNEL_COUNT][3] = {
+    {-5, 0, 0}, {-63, 5, 51}, {85, 34, -91}, {21, 66, 2}, {92, 30, -4}
+};
+static const char *pose_body_channel_names[RASTERFALL_POSE_BODY_CHANNEL_COUNT] = {
+    "upper_body", "right_arm", "right_elbow", "left_arm", "left_elbow"
+};
 
 static void profile_init(void)
 {
@@ -17,78 +24,111 @@ static void profile_init(void)
         "rasterfall/assets/models/bomb.rmesh", "rasterfall/assets/models/molotov.rmesh"
     };
     if (profiles_ready) return;
-    memset(profiles, 0, sizeof(profiles));
+    memset(asset_profiles, 0, sizeof(asset_profiles));
+    memset(pose_profiles, 0, sizeof(pose_profiles));
     for (i = 0; i < TOY_GAME_WEAPON_COUNT; i++) {
-        profiles[i].model_path = paths[i]; profiles[i].scale_milli = 1000;
+        asset_profiles[i].model_path = paths[i];
+        asset_profiles[i].base_scale_milli = 760000;
     }
-    /* The imported AK is reversed in asset space.  This is a source-to-
-     * canonical correction, not actor yaw.  750 makes its bbox a usable rifle
-     * size under the existing RFU model scale. */
-    profiles[TOY_GAME_WEAPON_AK].scale_milli = 750;
-    profiles[TOY_GAME_WEAPON_AK].asset_basis = 2;
-    profiles[TOY_GAME_WEAPON_AK].grip = (struct rasterfall_cal_vec3){-18, -8, 24};
-    profiles[TOY_GAME_WEAPON_AK].foregrip = (struct rasterfall_cal_vec3){0, -4, 190};
-    profiles[TOY_GAME_WEAPON_AK].muzzle = (struct rasterfall_cal_vec3){0, 0, 420};
-    profiles[TOY_GAME_WEAPON_AK].stock = (struct rasterfall_cal_vec3){0, 4, -190};
-    profiles[TOY_GAME_WEAPON_AWP].scale_milli = 820;
+    asset_profiles[TOY_GAME_WEAPON_AK].asset_basis = 2;
+    asset_profiles[TOY_GAME_WEAPON_AK].skeletal = 1;
+    asset_profiles[TOY_GAME_WEAPON_AK].base_scale_milli = 760000;
+    asset_profiles[TOY_GAME_WEAPON_AWP].skeletal = 1;
+    asset_profiles[TOY_GAME_WEAPON_AWP].base_scale_milli = 920000;
+    pose_profiles[0][TOY_GAME_WEAPON_AK].character_id = 0;
+    pose_profiles[0][TOY_GAME_WEAPON_AK].weapon = TOY_GAME_WEAPON_AK;
+    pose_profiles[0][TOY_GAME_WEAPON_AK].scale_milli = 750;
+    pose_profiles[0][TOY_GAME_WEAPON_AK].grip = (struct rasterfall_cal_vec3){-18, -8, 24};
+    pose_profiles[0][TOY_GAME_WEAPON_AK].foregrip = (struct rasterfall_cal_vec3){0, -4, 190};
+    pose_profiles[0][TOY_GAME_WEAPON_AK].muzzle = (struct rasterfall_cal_vec3){0, 0, 420};
+    memcpy(pose_profiles[0][TOY_GAME_WEAPON_AK].body_pose, default_body_pose,
+           sizeof(default_body_pose));
+    pose_profiles[0][TOY_GAME_WEAPON_AK].left_ik = 1;
+    for (i = 0; i < TOY_GAME_CHARACTER_COUNT; i++)
+        for (int w = 0; w < TOY_GAME_WEAPON_COUNT; w++) {
+            if (pose_profiles[i][w].scale_milli == 0) {
+                pose_profiles[i][w].character_id = i;
+                pose_profiles[i][w].weapon = w;
+                pose_profiles[i][w].scale_milli = 1000;
+                memcpy(pose_profiles[i][w].body_pose, default_body_pose,
+                       sizeof(default_body_pose));
+            }
+        }
     profiles_ready = 1;
 }
 
-const struct rasterfall_weapon_visual_profile *rasterfall_weapon_visual_profile(int weapon)
+const struct rasterfall_weapon_asset_profile *rasterfall_weapon_asset_profile(int weapon)
 {
     profile_init();
     if (weapon < 0 || weapon >= TOY_GAME_WEAPON_COUNT) weapon = TOY_GAME_WEAPON_PISTOL;
-    if (runtime_profile_enabled && weapon == TOY_GAME_WEAPON_AK)
-        return &runtime_profile;
-    return &profiles[weapon];
+    return &asset_profiles[weapon];
 }
 
-void rasterfall_calibration_apply_runtime(
-    const struct rasterfall_weapon_visual_profile *profile)
-{
-    if (!profile) { runtime_profile_enabled = 0; return; }
-    runtime_profile = *profile; runtime_profile_enabled = 1;
-}
-
-struct rasterfall_weapon_visual_profile *rasterfall_calibration_weapon(
-    struct rasterfall_calibration_state *state, int weapon)
+const struct rasterfall_pose_calibration *rasterfall_pose_calibration_resolve(
+    const struct rasterfall_calibration_state *editor,
+    int character_id, int weapon)
 {
     profile_init();
-    if (weapon < 0 || weapon >= TOY_GAME_WEAPON_COUNT) return NULL;
-    if (state && state->weapon == weapon) return &state->weapon_profile;
-    return &profiles[weapon];
+    if (character_id < 0 || character_id >= TOY_GAME_CHARACTER_COUNT)
+        character_id = 0;
+    if (weapon < 0 || weapon >= TOY_GAME_WEAPON_COUNT)
+        weapon = TOY_GAME_WEAPON_PISTOL;
+    if (editor && editor->active && editor->character == character_id &&
+        editor->weapon == weapon)
+        return &editor->pose;
+    return &pose_profiles[character_id][weapon];
+}
+
+const char *rasterfall_pose_character_name(int character_id)
+{
+    static const char *names[TOY_GAME_CHARACTER_COUNT] = {"eula", "ar15", "ump45", "character3"};
+    if (character_id < 0 || character_id >= TOY_GAME_CHARACTER_COUNT) return "character";
+    return names[character_id];
+}
+
+const char *rasterfall_pose_weapon_name(int weapon)
+{
+    if (weapon == TOY_GAME_WEAPON_AK) return "ak";
+    if (weapon == TOY_GAME_WEAPON_AWP) return "awp";
+    if (weapon == TOY_GAME_WEAPON_SMG) return "smg";
+    if (weapon == TOY_GAME_WEAPON_SHOTGUN) return "shotgun";
+    if (weapon == TOY_GAME_WEAPON_PISTOL) return "pistol";
+    if (weapon == TOY_GAME_WEAPON_AXE) return "axe";
+    if (weapon == TOY_GAME_WEAPON_BOMB) return "bomb";
+    if (weapon == TOY_GAME_WEAPON_MOLOTOV) return "molotov";
+    return "weapon";
+}
+
+void rasterfall_pose_export_path(const struct rasterfall_calibration_state *s,
+                                 char *path, int path_size)
+{
+    if (!path || path_size <= 0) return;
+    snprintf(path, path_size, "tmp/%s_%s.rfpose",
+             rasterfall_pose_character_name(s ? s->character : 0),
+             rasterfall_pose_weapon_name(s ? s->weapon : TOY_GAME_WEAPON_AK));
 }
 
 void rasterfall_calibration_reset(struct rasterfall_calibration_state *state)
 {
-    const struct rasterfall_weapon_visual_profile *p;
+    const struct rasterfall_pose_calibration *p;
     memset(state, 0, sizeof(*state)); state->character = 0;
-    state->weapon = TOY_GAME_WEAPON_AK; state->left_ik = 0;
-    p = rasterfall_weapon_visual_profile(state->weapon);
-    memcpy(&state->weapon_profile, p, sizeof(*p));
-    state->character_profile.right_hand_bone = "右手首";
-    state->character_profile.left_hand_bone = "左手首";
+    state->weapon = TOY_GAME_WEAPON_AK;
+    p = rasterfall_pose_calibration_resolve(NULL, state->character, state->weapon);
+    memcpy(&state->pose, p, sizeof(*p));
+    state->left_ik = state->pose.left_ik;
     state->locomotion = 0; state->fire_overlay = 0;
     state->page = RASTERFALL_POSE_PAGE_BODY;
     state->selection = 0; state->selected_bone = 0;
     state->selected_axis = 0; state->dirty = 0;
-    /* The eight editor rows are deliberately named in the authoring layer.
-     * The animation composition adapter maps them to the model's existing
-     * five rifle-pose channels until the lower-level rig grows those channels. */
-    state->stance[0][0] = -5;
-    state->stance[3][0] = -63; state->stance[3][1] = 5; state->stance[3][2] = 51;
-    state->stance[4][0] = 85; state->stance[4][1] = 34; state->stance[4][2] = -91;
-    state->stance[6][0] = 21; state->stance[6][1] = 66; state->stance[6][2] = 2;
-    state->stance[7][0] = 92; state->stance[7][1] = 30; state->stance[7][2] = -4;
 }
 
 void rasterfall_calibration_init(struct rasterfall_calibration_state *state)
-{ profile_init(); runtime_profile_enabled = 0; rasterfall_calibration_reset(state); }
+{ profile_init(); rasterfall_calibration_reset(state); }
 
 void rasterfall_weapon_asset_to_canonical(int weapon, int x, int y, int z,
                                           int *ox, int *oy, int *oz)
 {
-    int basis = rasterfall_weapon_visual_profile(weapon)->asset_basis;
+    int basis = rasterfall_weapon_asset_profile(weapon)->asset_basis;
     if (basis == 1) { *ox = z; *oy = y; *oz = x; }
     else if (basis == 2) { *ox = -x; *oy = y; *oz = -z; }
     else { *ox = x; *oy = y; *oz = z; }
@@ -100,23 +140,20 @@ static void dump_vec(const char *name, struct rasterfall_cal_vec3 v)
 void rasterfall_calibration_dump(const struct rasterfall_calibration_state *s)
 {
     int i;
-    __printf("calibration character=eula weapon=ak active=%d\n", s->active);
-    __printf("weapon scale=%d offset=%d %d %d yaw=%d pitch=%d roll=%d\n", s->weapon_profile.scale_milli,
-             s->weapon_profile.offset.x, s->weapon_profile.offset.y, s->weapon_profile.offset.z,
-             s->weapon_profile.yaw_offset, s->weapon_profile.pitch_offset, s->weapon_profile.roll_offset);
-    dump_vec("grip", s->weapon_profile.grip); dump_vec("foregrip", s->weapon_profile.foregrip);
-    dump_vec("muzzle", s->weapon_profile.muzzle); dump_vec("stock", s->weapon_profile.stock);
-    __printf("right hand anchor bone=%s offset=%d %d %d rotation=%d %d %d\n",
-             s->character_profile.right_hand_bone, s->character_profile.right_grip_anchor.x,
-             s->character_profile.right_grip_anchor.y, s->character_profile.right_grip_anchor.z,
-             s->character_profile.right_yaw, s->character_profile.right_pitch, s->character_profile.right_roll);
-    __printf("left hand anchor bone=%s offset=%d %d %d\n", s->character_profile.left_hand_bone,
-             s->character_profile.left_grip_anchor.x, s->character_profile.left_grip_anchor.y,
-             s->character_profile.left_grip_anchor.z);
+    __printf("calibration character=%s weapon=%s active=%d\n",
+             rasterfall_pose_character_name(s->character),
+             rasterfall_pose_weapon_name(s->weapon), s->active);
+    __printf("weapon scale=%d offset=%d %d %d yaw=%d pitch=%d roll=%d\n", s->pose.scale_milli,
+             s->pose.offset.x, s->pose.offset.y, s->pose.offset.z,
+             s->pose.yaw_offset, s->pose.pitch_offset, s->pose.roll_offset);
+    dump_vec("grip", s->pose.grip); dump_vec("foregrip", s->pose.foregrip);
+    dump_vec("muzzle", s->pose.muzzle);
     __printf("left-hand IK enabled=%d axes=%d anchors=%d locomotion=%d fire_overlay=%d\n",
-             s->left_ik, s->axes, s->anchors, s->locomotion, s->fire_overlay);
-    for (i = 0; i < 8; i++) if (s->stance[i][0] || s->stance[i][1] || s->stance[i][2])
-        __printf("stance[%d] = %d %d %d\n", i, s->stance[i][0], s->stance[i][1], s->stance[i][2]);
+             s->pose.left_ik, s->axes, s->anchors, s->locomotion, s->fire_overlay);
+    for (i = 0; i < RASTERFALL_RIFLE_POSE_BONE_COUNT; i++)
+        __printf("body[%s] = %d %d %d\n", rasterfall_rifle_pose_bone_display_names[i],
+                 s->pose.body_pose[i][0], s->pose.body_pose[i][1],
+                 s->pose.body_pose[i][2]);
 }
 
 int rasterfall_calibration_logic_test(void)
@@ -124,31 +161,31 @@ int rasterfall_calibration_logic_test(void)
     struct rasterfall_calibration_state s;
     int x, y, z;
     rasterfall_calibration_init(&s);
-    if (s.weapon != TOY_GAME_WEAPON_AK || s.weapon_profile.scale_milli != 750) return 1;
+    if (s.weapon != TOY_GAME_WEAPON_AK || s.pose.scale_milli != 750) return 1;
     rasterfall_weapon_asset_to_canonical(TOY_GAME_WEAPON_AK, 1, 2, 3, &x, &y, &z);
     if (x != -1 || y != 2 || z != -3) return 2;
     return 0;
 }
 
 static int editor_field_count(int page)
-{ return page == RASTERFALL_POSE_PAGE_BODY ? 8 : page == RASTERFALL_POSE_PAGE_WEAPON ? 7 : 9; }
+{ return page == RASTERFALL_POSE_PAGE_BODY ? RASTERFALL_POSE_BODY_CHANNEL_COUNT : page == RASTERFALL_POSE_PAGE_WEAPON ? 7 : 9; }
 
 static int *editor_value(struct rasterfall_calibration_state *s, int *axis)
 {
     int n = s->selection;
     if (s->page == RASTERFALL_POSE_PAGE_BODY) {
-        *axis = s->selected_axis; return &s->stance[n][*axis];
+        *axis = s->selected_axis; return &s->pose.body_pose[n][*axis];
     }
     if (s->page == RASTERFALL_POSE_PAGE_WEAPON) {
-        if (n == 0) return &s->weapon_profile.scale_milli;
-        if (n <= 3) { *axis = n - 1; return &((int *)&s->weapon_profile.offset)[*axis]; }
-        if (n == 4) return &s->weapon_profile.pitch_offset;
-        if (n == 5) return &s->weapon_profile.yaw_offset;
-        return &s->weapon_profile.roll_offset;
+        if (n == 0) return &s->pose.scale_milli;
+        if (n <= 3) { *axis = n - 1; return &((int *)&s->pose.offset)[*axis]; }
+        if (n == 4) return &s->pose.pitch_offset;
+        if (n == 5) return &s->pose.yaw_offset;
+        return &s->pose.roll_offset;
     }
-    if (n < 3) { *axis = n; return &((int *)&s->weapon_profile.grip)[*axis]; }
-    if (n < 6) { *axis = n - 3; return &((int *)&s->weapon_profile.foregrip)[*axis]; }
-    *axis = n - 6; return &((int *)&s->weapon_profile.muzzle)[*axis];
+    if (n < 3) { *axis = n; return &((int *)&s->pose.grip)[*axis]; }
+    if (n < 6) { *axis = n - 3; return &((int *)&s->pose.foregrip)[*axis]; }
+    *axis = n - 6; return &((int *)&s->pose.muzzle)[*axis];
 }
 
 int rasterfall_calibration_editor_step(struct rasterfall_calibration_state *s, int action)
@@ -159,7 +196,9 @@ int rasterfall_calibration_editor_step(struct rasterfall_calibration_state *s, i
     if (action == RASTERFALL_POSE_EDITOR_EXIT) { s->active = 0; return 1; }
     if (action == RASTERFALL_POSE_EDITOR_TOGGLE_AXES) { s->axes=!s->axes; return 1; }
     if (action == RASTERFALL_POSE_EDITOR_TOGGLE_ANCHORS) { s->anchors=!s->anchors; return 1; }
-    if (action == RASTERFALL_POSE_EDITOR_TOGGLE_IK) { s->left_ik=!s->left_ik; return 1; }
+    if (action == RASTERFALL_POSE_EDITOR_TOGGLE_IK) {
+        s->left_ik=!s->left_ik; s->pose.left_ik=s->left_ik; s->dirty=1; return 1;
+    }
     if (action >= RASTERFALL_POSE_EDITOR_AXIS_X && action <= RASTERFALL_POSE_EDITOR_AXIS_Z) { s->selected_axis=action-RASTERFALL_POSE_EDITOR_AXIS_X; return 1; }
     if (action == RASTERFALL_POSE_EDITOR_NEXT_PAGE) { s->page=(s->page+1)%RASTERFALL_POSE_PAGE_COUNT; s->selection=0; return 1; }
     if (action == RASTERFALL_POSE_EDITOR_PREV_PAGE) { s->page=(s->page+RASTERFALL_POSE_PAGE_COUNT-1)%RASTERFALL_POSE_PAGE_COUNT; s->selection=0; return 1; }
@@ -167,9 +206,9 @@ int rasterfall_calibration_editor_step(struct rasterfall_calibration_state *s, i
     if (action == RASTERFALL_POSE_EDITOR_NEXT_FIELD) { s->selection=(s->selection+1)%count; return 1; }
     if (action == RASTERFALL_POSE_EDITOR_PREV_FIELD) { s->selection=(s->selection+count-1)%count; return 1; }
     if (action == RASTERFALL_POSE_EDITOR_RESET) {
-        if (s->page == RASTERFALL_POSE_PAGE_BODY) s->stance[s->selection][0]=s->stance[s->selection][1]=s->stance[s->selection][2]=0;
-        else if (s->page == RASTERFALL_POSE_PAGE_WEAPON) { const struct rasterfall_weapon_visual_profile *p=rasterfall_weapon_visual_profile(s->weapon); if(s->selection==0)s->weapon_profile.scale_milli=p->scale_milli; else if(s->selection<=3)((int *)&s->weapon_profile.offset)[s->selection-1]=0; else if(s->selection==4)s->weapon_profile.pitch_offset=0; else if(s->selection==5)s->weapon_profile.yaw_offset=0; else s->weapon_profile.roll_offset=0; }
-        else { if(s->selection<3)((int *)&s->weapon_profile.grip)[s->selection]=0; else if(s->selection<6)((int *)&s->weapon_profile.foregrip)[s->selection-3]=0; else ((int *)&s->weapon_profile.muzzle)[s->selection-6]=0; }
+        if (s->page == RASTERFALL_POSE_PAGE_BODY) s->pose.body_pose[s->selection][0]=s->pose.body_pose[s->selection][1]=s->pose.body_pose[s->selection][2]=0;
+        else if (s->page == RASTERFALL_POSE_PAGE_WEAPON) { const struct rasterfall_pose_calibration *p=rasterfall_pose_calibration_resolve(NULL,s->character,s->weapon); if(s->selection==0)s->pose.scale_milli=p->scale_milli; else if(s->selection<=3)((int *)&s->pose.offset)[s->selection-1]=0; else if(s->selection==4)s->pose.pitch_offset=0; else if(s->selection==5)s->pose.yaw_offset=0; else s->pose.roll_offset=0; }
+        else { if(s->selection<3)((int *)&s->pose.grip)[s->selection]=0; else if(s->selection<6)((int *)&s->pose.foregrip)[s->selection-3]=0; else ((int *)&s->pose.muzzle)[s->selection-6]=0; }
         s->dirty=1; return 1;
     }
     if (action == RASTERFALL_POSE_EDITOR_EXPORT) return rasterfall_calibration_export(s);
@@ -185,16 +224,19 @@ int rasterfall_calibration_editor_step(struct rasterfall_calibration_state *s, i
 
 int rasterfall_calibration_export(const struct rasterfall_calibration_state *s)
 {
-    static const char *bones[] = {"chest","upper_chest","right_shoulder","right_upper_arm","right_forearm","left_shoulder","left_upper_arm","left_forearm"};
     char out[2400]; int n=0, i, fd;
-    n += snprintf(out+n,sizeof(out)-n,"character eula\nweapon ak\n\nweapon_scale %d\nweapon_offset %d %d %d\nweapon_rotation %d %d %d\n",s->weapon_profile.scale_milli,s->weapon_profile.offset.x,s->weapon_profile.offset.y,s->weapon_profile.offset.z,s->weapon_profile.pitch_offset,s->weapon_profile.yaw_offset,s->weapon_profile.roll_offset);
-    n += snprintf(out+n,sizeof(out)-n,"weapon_grip %d %d %d\nweapon_foregrip %d %d %d\nweapon_muzzle %d %d %d\nweapon_stock %d %d %d\n",s->weapon_profile.grip.x,s->weapon_profile.grip.y,s->weapon_profile.grip.z,s->weapon_profile.foregrip.x,s->weapon_profile.foregrip.y,s->weapon_profile.foregrip.z,s->weapon_profile.muzzle.x,s->weapon_profile.muzzle.y,s->weapon_profile.muzzle.z,s->weapon_profile.stock.x,s->weapon_profile.stock.y,s->weapon_profile.stock.z);
-    for(i=0;i<8;i++) n+=snprintf(out+n,sizeof(out)-n,"%s %d %d %d\n",bones[i],s->stance[i][0],s->stance[i][1],s->stance[i][2]);
-    n+=snprintf(out+n,sizeof(out)-n,"left_ik %d\n",s->left_ik);
+    n += snprintf(out+n,sizeof(out)-n,"rfpose 1\ncharacter %s\nweapon %s\n\nweapon_scale %d\nweapon_offset %d %d %d\nweapon_rotation %d %d %d\n",rasterfall_pose_character_name(s->character),rasterfall_pose_weapon_name(s->weapon),s->pose.scale_milli,s->pose.offset.x,s->pose.offset.y,s->pose.offset.z,s->pose.yaw_offset,s->pose.pitch_offset,s->pose.roll_offset);
+    n += snprintf(out+n,sizeof(out)-n,"grip %d %d %d\nforegrip %d %d %d\nmuzzle %d %d %d\n",s->pose.grip.x,s->pose.grip.y,s->pose.grip.z,s->pose.foregrip.x,s->pose.foregrip.y,s->pose.foregrip.z,s->pose.muzzle.x,s->pose.muzzle.y,s->pose.muzzle.z);
+    for(i=0;i<RASTERFALL_POSE_BODY_CHANNEL_COUNT;i++) n+=snprintf(out+n,sizeof(out)-n,"body %s %d %d %d\n",pose_body_channel_names[i],s->pose.body_pose[i][0],s->pose.body_pose[i][1],s->pose.body_pose[i][2]);
+    n+=snprintf(out+n,sizeof(out)-n,"left_ik %d\n",s->pose.left_ik);
     /* Export is also used from fresh checkouts where build/test cleanup may
      * have removed tmp/.  Existing directories are accepted by the helper. */
     if (tlibc_recursive_mkdir("tmp") < 0) return 0;
-    fd=__openat(AT_FDCWD,"tmp/eula_ak.rfpose",O_WRONLY|O_CREAT|O_TRUNC,0644);
+    {
+        char path[128];
+        rasterfall_pose_export_path(s, path, sizeof(path));
+        fd=__openat(AT_FDCWD,path,O_WRONLY|O_CREAT|O_TRUNC,0644);
+    }
     if (fd < 0) return 0;
     __write(fd,out,n);
     __close(fd);

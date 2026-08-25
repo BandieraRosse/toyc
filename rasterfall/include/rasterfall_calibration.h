@@ -2,27 +2,28 @@
 #define RASTERFALL_CALIBRATION_H
 
 #include "toy_game.h"
+#include "string.h"
 
 /* Rasterfall canonical weapon space: +X right, +Y up, +Z muzzle/forward.
  * Coordinates are RFU; 512 RFU is one metre. */
 struct rasterfall_cal_vec3 { int x, y, z; };
-struct rasterfall_weapon_visual_profile {
+#define RASTERFALL_POSE_BODY_CHANNEL_COUNT 5
+struct rasterfall_weapon_asset_profile {
     const char *model_path;
+    int asset_basis;
+    int skeletal;
+    int base_scale_milli;
+};
+
+struct rasterfall_pose_calibration {
+    int character_id, weapon;
     int scale_milli;
     int yaw_offset, pitch_offset, roll_offset;
     struct rasterfall_cal_vec3 offset;
-    struct rasterfall_cal_vec3 grip, foregrip, muzzle, stock;
-    /* Asset-space basis conversion, kept here instead of renderer branches. */
-    int asset_basis;
-};
-
-struct rasterfall_character_attachment_profile {
-    const char *right_hand_bone;
-    const char *left_hand_bone;
-    struct rasterfall_cal_vec3 right_grip_anchor;
-    struct rasterfall_cal_vec3 left_grip_anchor;
-    int right_yaw, right_pitch, right_roll;
-    int left_yaw, left_pitch, left_roll;
+    struct rasterfall_cal_vec3 grip, foregrip, muzzle;
+    /* UPPER_BODY, RIGHT_ARM, RIGHT_ELBOW, LEFT_ARM, LEFT_ELBOW. */
+    int body_pose[RASTERFALL_POSE_BODY_CHANNEL_COUNT][3];
+    int left_ik;
 };
 
 struct rasterfall_calibration_state {
@@ -32,9 +33,7 @@ struct rasterfall_calibration_state {
     /* Presentation-layer Rifle Pose Editor state.  The old cal parser may
      * still edit the same values, but new authoring should use pose pages. */
     int page, selection, selected_bone, selected_axis, dirty;
-    struct rasterfall_weapon_visual_profile weapon_profile;
-    struct rasterfall_character_attachment_profile character_profile;
-    int stance[8][3];
+    struct rasterfall_pose_calibration pose;
 };
 
 enum rasterfall_pose_editor_page {
@@ -67,12 +66,15 @@ enum rasterfall_pose_editor_action {
 
 void rasterfall_calibration_init(struct rasterfall_calibration_state *state);
 void rasterfall_calibration_reset(struct rasterfall_calibration_state *state);
-struct rasterfall_weapon_visual_profile *rasterfall_calibration_weapon(
-    struct rasterfall_calibration_state *state, int weapon);
-const struct rasterfall_weapon_visual_profile *rasterfall_weapon_visual_profile(
+const struct rasterfall_weapon_asset_profile *rasterfall_weapon_asset_profile(
     int weapon);
-void rasterfall_calibration_apply_runtime(
-    const struct rasterfall_weapon_visual_profile *profile);
+const struct rasterfall_pose_calibration *rasterfall_pose_calibration_resolve(
+    const struct rasterfall_calibration_state *editor,
+    int character_id, int weapon);
+const char *rasterfall_pose_character_name(int character_id);
+const char *rasterfall_pose_weapon_name(int weapon);
+void rasterfall_pose_export_path(const struct rasterfall_calibration_state *state,
+                                 char *path, int path_size);
 void rasterfall_calibration_dump(const struct rasterfall_calibration_state *state);
 int rasterfall_calibration_editor_step(struct rasterfall_calibration_state *state,
                                        int action);
