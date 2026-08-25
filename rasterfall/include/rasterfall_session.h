@@ -157,6 +157,9 @@ void rasterfall_session_step(struct rasterfall_session *session,
                              struct camera *camera,
                              const struct rasterfall_command *command,
                              int dt_ms);
+int rasterfall_session_dev_killall(struct rasterfall_session *session);
+void rasterfall_session_dev_give_money(struct rasterfall_session *session,
+                                        int amount);
 /* 客户端预测：只推进本地玩家和武器，不推进敌人/波次，也不在本地
  * 修改敌人生命；敌人命中结果由主机快照决定。 */
 void rasterfall_session_step_client(struct rasterfall_session *session,

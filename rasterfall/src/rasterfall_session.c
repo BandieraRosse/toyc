@@ -2160,6 +2160,32 @@ void rasterfall_session_step(struct rasterfall_session *session,
     }
 }
 
+int rasterfall_session_dev_killall(struct rasterfall_session *session)
+{
+    int i, killed = 0;
+    if (!session) return 0;
+    for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
+        struct toy_game_enemy *enemy = &session->game_state.enemies[i];
+        if (enemy->active != 1) continue;
+        enemy->hp = 0;
+        enemy->active = 2;
+        enemy->dying_ms = TOY_GAME_DYING_MS;
+        enemy->flash = 120;
+        killed++;
+    }
+    session->game_state.enemies_alive -= killed;
+    if (session->game_state.enemies_alive < 0)
+        session->game_state.enemies_alive = 0;
+    return killed;
+}
+
+void rasterfall_session_dev_give_money(struct rasterfall_session *session,
+                                       int amount)
+{
+    if (!session || amount <= 0) return;
+    session->game_state.money += amount;
+}
+
 static void session_step_client_mode(struct rasterfall_session *session,
                                      struct camera *camera,
                                      const struct rasterfall_command *command,

@@ -72,6 +72,7 @@
 #include "rasterfall_net.h"
 #include "rasterfall_humanoid_retarget.h"
 #include "rasterfall_character.h"
+#include "rasterfall_console.h"
 #include "rasterfall_units.h"
 #include "rasterfall_animation_composition.h"
 #include "math.h"
@@ -123,6 +124,7 @@
 #define KEY_LEFT  105
 #define KEY_RIGHT 106
 #define KEY_DOWN  108
+#define KEY_GRAVE 41
 #define BTN_LEFT 0x110
 #define BTN_RIGHT 0x111
 
@@ -2183,6 +2185,7 @@ int main(int argc, char **argv)
     struct control_settings settings;
     struct pause_menu pause_menu;
     struct managed_terminal managed_terminal;
+    struct rasterfall_console developer_console;
     int64_t last_time, accumulator = 0, fps_window_start, fps_elapsed;
     int64_t prev_begin = 0, last_active = 0;   /* 帧间隔统计 */
     int running = 1, pointer_lock_requested = 0, paused = 1;
@@ -2533,6 +2536,11 @@ int main(int argc, char **argv)
     tlibc_sigaction(SIGPIPE, (void (*)(int))1);
     toy_input_init(&input);
     memset(&managed_terminal, 0, sizeof(managed_terminal));
+    rasterfall_console_init(&developer_console);
+    if (!textures_enabled)
+        rasterfall_console_log(&developer_console,
+                               RASTERFALL_CONSOLE_WARNING,
+                               "textures disabled; using pure colors");
     memset(pending_key_edges, 0, sizeof(pending_key_edges));
     toy_renderer_init(&renderer);
     rasterfall_viewmodel_set_texture(&model_texture_view);
@@ -2678,6 +2686,9 @@ startup_again:
     rasterfall_audio_load_assets(&audio);
     if (rasterfall_audio_start(&audio) < 0) {
         __printf("rasterfall: audio unavailable, playing silent\n");
+        rasterfall_console_log(&developer_console,
+                               RASTERFALL_CONSOLE_WARNING,
+                               "audio unavailable; playing silent");
         rf_windows_log("startup: audio unavailable");
     } else {
         rf_windows_log("startup: audio ready");
@@ -2777,7 +2788,70 @@ startup_again:
                 pointer_lock_requested = 0;
             }
         }
-        if (managed_spectator && !managed_terminal.open && !paused &&
+        if (!developer_console.open && pending_key_edges[KEY_GRAVE]) {
+            pending_key_edges[KEY_GRAVE] = 0;
+            developer_console.open = 1;
+            developer_console.was_paused = paused;
+            developer_console.line[0] = 0;
+            rasterfall_console_log(&developer_console,
+                                   RASTERFALL_CONSOLE_INFO,
+                                   "developer console opened");
+            toy_window_set_pointer_lock(window, 0);
+            pointer_lock_requested = 0;
+        }
+        {
+            int console_was_open = developer_console.open;
+            if (developer_console.open)
+                rasterfall_console_handle_input(&developer_console, &input,
+                                                pending_key_edges);
+            if (developer_console.pose_hud_request != 0) {
+                session.pose_debug_active =
+                    developer_console.pose_hud_request > 0;
+                developer_console.pose_hud_request = 0;
+            }
+            if (developer_console.close_requested) {
+                developer_console.close_requested = 0;
+                developer_console.open = 0;
+            }
+            if (console_was_open && !developer_console.open) {
+                rasterfall_console_log(&developer_console,
+                                       RASTERFALL_CONSOLE_INFO,
+                                       "developer console closed");
+                int capture_result = toy_window_set_pointer_lock(window, 1);
+                pointer_lock_requested = capture_result > 0;
+                paused = developer_console.was_paused;
+            }
+        }
+        if (developer_console.killall_requested) {
+            int killed = rasterfall_session_dev_killall(&session);
+            developer_console.killall_requested = 0;
+            {
+                char message[64];
+                snprintf(message, sizeof(message),
+                         "killed %d active enemies", killed);
+                rasterfall_console_log(&developer_console,
+                                       RASTERFALL_CONSOLE_WARNING, message);
+            }
+        }
+        if (developer_console.give_requested > 0) {
+            int amount = developer_console.give_requested;
+            rasterfall_session_dev_give_money(&session, amount);
+            developer_console.give_requested = 0;
+            {
+                char message[64];
+                snprintf(message, sizeof(message), "money +%d", amount);
+                rasterfall_console_log(&developer_console,
+                                       RASTERFALL_CONSOLE_INFO, message);
+            }
+        }
+        if (developer_console.open) {
+            fire_edge = 0;
+            shove_edge = 0;
+            pointer_turn_pending = 0;
+            pointer_pitch_pending = 0;
+        }
+        if (managed_spectator && !developer_console.open &&
+            !managed_terminal.open && !paused &&
             managed_terminal_take_key(&input, pending_key_edges, KEY_F2)) {
             managed_terminal.open = 1;
             managed_terminal.line[0] = 0;
@@ -2788,7 +2862,9 @@ startup_again:
         }
         {
             int terminal_was_open = managed_terminal.open;
-            if (managed_terminal.open)
+            if (developer_console.open)
+                ;
+            else if (managed_terminal.open)
                 managed_terminal_input(&managed_terminal, &input,
                                        pending_key_edges, &session, &camera);
             if (terminal_was_open && !managed_terminal.open) {
@@ -3003,9 +3079,13 @@ startup_again:
                     if (shop_input)
                         memset(&command, 0, sizeof(command));
                     else
-                        build_game_command(&command, &input, &settings, fire_edge,
-                                           shove_edge, pointer_turn_pending,
-                                           pointer_pitch_pending);
+                        if (developer_console.open)
+                            memset(&command, 0, sizeof(command));
+                        else
+                            build_game_command(&command, &input, &settings,
+                                               fire_edge, shove_edge,
+                                               pointer_turn_pending,
+                                               pointer_pitch_pending);
                     if (game.player_down &&
                         (command.buttons & RASTERFALL_CMD_FLAG)) {
                         command.buttons &= ~RASTERFALL_CMD_FLAG;
@@ -3290,6 +3370,8 @@ startup_again:
             } else if (game.state == TOY_GAME_WON) {
                 draw_level_won_panel(&surface,
                                      net.mode == RASTERFALL_NET_CLIENT);
+            } else if (developer_console.open) {
+                /* Developer console is drawn after every other overlay. */
             } else if (managed_terminal.open) {
                 draw_managed_terminal(&surface, &managed_terminal);
             } else if (paused) {
@@ -3326,6 +3408,8 @@ startup_again:
                                  have_last_key ? last_key : 0,
                                  have_last_key ? last_key_pressed : 0,
                                  input_event_count);
+            if (developer_console.open)
+                rasterfall_console_draw(&surface, &developer_console);
             rasterfall_perf_end_stage(&stats, &stats_total, RASTERFALL_STATS_OVERLAY,
                            &t_stage, renderer.submitted_triangles - prev_tris,
                            (unsigned long)stage_pixels);
