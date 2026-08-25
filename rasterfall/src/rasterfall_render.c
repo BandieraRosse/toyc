@@ -420,7 +420,7 @@ static void sample_developer_character(struct rasterfall_developer_character *en
             rasterfall_model_set_root_motion(&entry->model, center, groove, 1);
             if (player->clip_id == 11) {
                 struct rasterfall_animation_composition composition = {
-                    &entry->walk, player->time_ms, 1000, 1,
+                    &entry->walk, player->time_ms, 1000, 1, 1,
                     (player->time_ms / 1200) & 1 ?
                         RASTERFALL_COMPOSITION_OVERLAY_HIT :
                         RASTERFALL_COMPOSITION_OVERLAY_FIRE,
@@ -440,7 +440,7 @@ static void sample_developer_character(struct rasterfall_developer_character *en
                                                   center, groove, 1);
                 if (player->clip_id == 11) {
                     struct rasterfall_animation_composition composition = {
-                        &entry->walk, player->time_ms, 1000, 1,
+                        &entry->walk, player->time_ms, 1000, 1, 1,
                         (player->time_ms / 1200) & 1 ?
                             RASTERFALL_COMPOSITION_OVERLAY_HIT :
                             RASTERFALL_COMPOSITION_OVERLAY_FIRE,
@@ -2403,7 +2403,11 @@ static int render_characters_parallel(struct toy_renderer *renderer,
     for (i = 0; i < 4; i++) {
         struct rasterfall_developer_character *entry = &developer_characters[i];
         int projected_height;
-        dispatch.visible[i + 1] = entry->model.data &&
+        /* Pose authoring isolates the edited Eula.  Rendering the other four
+         * high-detail developer displays in parallel and then rendering the
+         * preview serially kept all character frontends hot for no authoring
+         * benefit and was the only sustained-load path unique to the editor. */
+        dispatch.visible[i + 1] = !active_pose_preview && entry->model.data &&
             world_distance(camera, entry->x, entry->z) <= ENEMY_RENDER_DISTANCE &&
             gallery_model_visible(dispatch.surface, camera, &entry->model,
                 entry->x, entry->base_y, entry->z,
@@ -2599,6 +2603,10 @@ static int render_private_character(struct toy_renderer *renderer,
     if (private_character_model.data && active_session) {
         struct rasterfall_animation_player *player =
             &active_session->skeletal_demo_player;
+        int pose_preview_active = active_session->pose_debug_active &&
+            active_session->pose_editor.active &&
+            active_session->pose_editor.character == 0 &&
+            active_session->pose_editor.weapon == TOY_GAME_WEAPON_AK;
         {
             int zero[3] = {0, 0, 0};
             rasterfall_model_set_root_motion(&private_character_model,
@@ -2615,7 +2623,8 @@ static int render_private_character(struct toy_renderer *renderer,
         if (private_character_vmd_loaded &&
             (player->clip_id == 9 || player->clip_id == 10 ||
              player->clip_id == 11 ||
-             (private_character_vmd_forced && player->clip_id < 0))) {
+             (private_character_vmd_forced && player->clip_id < 0 &&
+              !pose_preview_active))) {
             rasterfall_model_set_ik_enabled(&private_character_model,
                                             private_character_vmd_ik_enabled);
             rasterfall_model_set_grant_enabled(&private_character_model,
@@ -2627,7 +2636,8 @@ static int render_private_character(struct toy_renderer *renderer,
              * player may have been initialized before that load (or may have
              * been stopped while its clip was still NULL), so binding the
              * actual clip must also re-arm the forced direct-VMD preview. */
-            player->playing = 1;
+            player->playing = pose_preview_active ?
+                active_session->pose_editor.animation_playing : 1;
             player->speed_milli = 1000;
             player->loop = 1;
             {
@@ -2661,6 +2671,9 @@ static int render_private_character(struct toy_renderer *renderer,
                 composition.locomotion_time_ms = player->time_ms;
                 composition.locomotion_weight_milli = 1000;
                 composition.rifle_stance = 1;
+                composition.upper_body_lock =
+                    active_session->pose_debug_active ?
+                    active_session->pose_editor.upper_body_lock : 1;
                 composition.overlay = active_session->pose_debug_active ?
                     (active_session->pose_editor.animation_overlay == 1 ?
                      RASTERFALL_COMPOSITION_OVERLAY_FIRE :
@@ -2700,7 +2713,8 @@ static int render_private_character(struct toy_renderer *renderer,
             player->clip = NULL;
             rasterfall_model_sample_clip(&private_character_model, NULL, 0);
         }
-        if (active_pose_preview && active_session->pose_editor.animation_base == 0) {
+        if (pose_preview_active &&
+            active_session->pose_editor.animation_base == 0) {
             struct rasterfall_rifle_pose preview_pose;
             struct rasterfall_animation_composition composition;
             const struct rasterfall_pose_calibration *preview_calibration =
@@ -2712,6 +2726,8 @@ static int render_private_character(struct toy_renderer *renderer,
             composition.locomotion_time_ms = 0;
             composition.locomotion_weight_milli = 1000;
             composition.rifle_stance = 1;
+            composition.upper_body_lock =
+                active_session->pose_editor.upper_body_lock;
             composition.overlay = active_session->pose_editor.animation_overlay == 1 ?
                 RASTERFALL_COMPOSITION_OVERLAY_FIRE :
                 active_session->pose_editor.animation_overlay == 2 ?
@@ -2797,40 +2813,9 @@ static int render_private_character(struct toy_renderer *renderer,
             if (rasterfall_model_attachment_transform(
                     &private_character_model, eula_actor_profile.right_hand_bone,
                     &right_hand) == 0) {
-                const struct rasterfall_pose_calibration *wp =
-                    rasterfall_pose_calibration_resolve(&active_session->pose_editor, 0, TOY_GAME_WEAPON_AK);
-                const struct rasterfall_weapon_asset_profile *asset =
-                    rasterfall_weapon_asset_profile(TOY_GAME_WEAPON_AK);
-                if (active_session->pose_editor.pose.left_ik) {
-                    int character_scale = character_model_scale(
-                        &private_character_model,
-                        eula_actor_profile.target_height_mm);
-                    int delta[3], calibrated[3], axis;
-                    double target[3];
-                    for (axis=0; axis<3; axis++)
-                        delta[axis] = (((int *)&wp->foregrip)[axis] -
-                                       ((int *)&asset->attachment_grip)[axis]) * 1000 /
-                                      character_scale;
-                    weapon_profile_local(wp, delta, calibrated);
-                    target[0] = right_hand.position[0] +
-                        (right_hand.rotation[0]*calibrated[0] +
-                         right_hand.rotation[1]*calibrated[1] +
-                         right_hand.rotation[2]*calibrated[2]) / 1000.0;
-                    target[1] = right_hand.position[1] +
-                        (right_hand.rotation[3]*calibrated[0] +
-                         right_hand.rotation[4]*calibrated[1] +
-                         right_hand.rotation[5]*calibrated[2]) / 1000.0;
-                    target[2] = right_hand.position[2] +
-                        (right_hand.rotation[6]*calibrated[0] +
-                         right_hand.rotation[7]*calibrated[1] +
-                         right_hand.rotation[8]*calibrated[2]) / 1000.0;
-                    {
-                        double pole[3] = {-1.0, 0.0, 0.0};
-                        rasterfall_model_solve_two_bone_attachment(
-                            &private_character_model, "左腕", "左ひじ", "左手首",
-                            target, pole);
-                    }
-                }
+                /* Left-hand IK was already solved before skinning.  Solving
+                 * it again here cannot affect the character just drawn and
+                 * only mutates the persistent solver history for next frame. */
                 pixels += render_skeletal_rifle(renderer, camera,
                     &private_character_model, &right_hand, &eula_actor_profile,
                     -13000, -900, -10000, 0, 1024,
@@ -5514,6 +5499,7 @@ static int render_ai_teammate(struct toy_renderer *renderer,
             composition.locomotion_time_ms=actor->animation.time_ms;
             composition.locomotion_weight_milli=actor->moving?blend:1000-blend;
             composition.rifle_stance=1;
+            composition.upper_body_lock=1;
             composition.overlay=actor->animation.id==TOY_GAME_ANIM_FIRE?RASTERFALL_COMPOSITION_OVERLAY_FIRE:RASTERFALL_COMPOSITION_OVERLAY_NONE;
             composition.overlay_time_ms=actor->animation.time_ms;
             memcpy(actor_body_pose.rotation, actor_pose->body_pose,

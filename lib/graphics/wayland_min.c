@@ -121,13 +121,11 @@ static uint32_t new_object(struct toywl *wl, enum object_kind kind)
     for (uint32_t attempts = 0; attempts < WL_MAX_OBJECTS - 2; attempts++) {
         uint32_t id = wl->next_id++;
         if (wl->next_id >= WL_MAX_OBJECTS) wl->next_id = 2;
-        /* ZOMBIE 槽位可复用：进入 ZOMBIE 的只有已销毁对象（回调 done 后
-         * 由服务器销毁；shm pool/buffer、指针约束对象均已发出 destroy）。
-         * 组合器按序处理请求，旧对象的销毁必然先于新 id 的使用。不回收
-         * 会在大约 4094 帧后耗尽 id 空间，new_object 返回 0 并让
-         * wl_surface.frame 携带非法 id 0，触发协议错误。 */
-        if (id >= 2 && (wl->kinds[id] == OBJ_NONE ||
-                        wl->kinds[id] == OBJ_ZOMBIE)) {
+        /* Wayland client object ids cannot be reused until wl_display sends
+         * delete_id.  A callback done event only makes the object a zombie;
+         * reusing that slot before delete_id eventually corrupts protocol
+         * state when the id allocator wraps during a long session. */
+        if (id >= 2 && wl->kinds[id] == OBJ_NONE) {
             wl->kinds[id] = (unsigned char)kind;
             return id;
         }
@@ -722,14 +720,9 @@ int toywl_present(struct toywl *wl)
     mb_init(&m, wl->surface, 9); mb_u32(&m, 0); mb_u32(&m, 0);
     mb_u32(&m, (uint32_t)wl->width); mb_u32(&m, (uint32_t)wl->height);
     if (send_request(wl, &m, -1) < 0) return -1;
-    /* Keep one callback outstanding for compositor pacing diagnostics, but
-     * do not overwrite its object id when the second shm buffer is submitted
-     * before it fires.  Buffer release remains the hard back-pressure limit. */
-    if (!wl->frame_callback) {
-        wl->frame_callback = new_object(wl, OBJ_CALLBACK);
-        mb_init(&m, wl->surface, 3); mb_u32(&m, wl->frame_callback);
-        if (send_request(wl, &m, -1) < 0) return -1;
-    }
+    /* wl_buffer.release is the actual double-buffer back-pressure signal.
+     * A per-frame wl_surface.frame callback was not consumed for pacing and
+     * only churned through client object ids in long-running sessions. */
     if (request0(wl, wl->surface, 6) < 0) return -1;
     b->busy = 1; wl->draw_index = -1; wl->frame_ready = 0;
     return 0;

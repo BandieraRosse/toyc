@@ -33,6 +33,7 @@ struct rasterfall_calibration_state {
     int active, axes, anchors, left_ik;
     int locomotion, fire_overlay;
     int animation_base, animation_overlay, animation_time_ms, animation_playing;
+    int upper_body_lock;
     int character, weapon;
     /* Presentation-layer Rifle Pose Editor state.  The old cal parser may
      * still edit the same values, but new authoring should use pose pages. */

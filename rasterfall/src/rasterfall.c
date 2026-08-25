@@ -2854,9 +2854,11 @@ startup_again:
                     session.pose_editor.active = 1;
                     session.pose_debug_bone = 0;
                     session.pose_debug_axis = 0;
-                    session.skeletal_demo_player.clip_id = 11;
+                    session.skeletal_demo_player.clip_id =
+                        session.pose_editor.animation_base ? 11 : -1;
                     session.skeletal_demo_player.time_ms = 0;
-                    session.skeletal_demo_player.playing = 1;
+                    session.skeletal_demo_player.playing =
+                        session.pose_editor.animation_base != 0;
                 }
                 developer_console.pose_hud_request = 0;
             }

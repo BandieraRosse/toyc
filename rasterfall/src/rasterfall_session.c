@@ -195,10 +195,13 @@ void rasterfall_session_reset(struct rasterfall_session *session,
     session->seed = seed ? seed : 1;
     session->skeletal_demo_pose = RASTERFALL_MODEL_POSE_BIND;
     session->skeletal_demo_player.clip = NULL;
-    /* All five developer characters enter the map in the same walk state. */
-    session->skeletal_demo_player.clip_id = 9;
+    /* Fixed developer displays start in the reusable reference pose.  Keeping
+     * all five high-detail models in WALK forced full animation, skinning and
+     * triangle generation every frame for the entire session.  WALK remains
+     * available from its map button and from the Pose Editor animation page. */
+    session->skeletal_demo_player.clip_id = -1;
     session->skeletal_demo_player.time_ms = 0;
-    session->skeletal_demo_player.playing = 1;
+    session->skeletal_demo_player.playing = 0;
     session->skeletal_demo_player.loop = 1;
     session->skeletal_demo_player.speed_milli = 1000;
     rasterfall_rifle_pose_default(&session->rifle_pose);
@@ -2057,16 +2060,13 @@ void rasterfall_session_step(struct rasterfall_session *session,
     }
     rasterfall_animation_player_update(&session->skeletal_demo_player, dt_ms);
     if (session->pose_debug_active && session->pose_editor.active) {
-        if (session->pose_editor.animation_base == 0) {
-            session->skeletal_demo_player.clip = NULL;
-            session->skeletal_demo_player.clip_id = -1;
-            session->skeletal_demo_player.playing = 0;
-        } else {
-            session->skeletal_demo_player.clip_id = 11;
-            session->skeletal_demo_player.playing = session->pose_editor.animation_playing;
-        }
-        session->pose_editor.animation_time_ms =
-            session->skeletal_demo_player.time_ms;
+        /* Capture the advancing clock before applying this frame's editor
+         * command.  A paused TIME edit below can then seek the player without
+         * being overwritten on the same frame. */
+        if (session->pose_editor.animation_base != 0 &&
+            session->pose_editor.animation_playing)
+            session->pose_editor.animation_time_ms =
+                session->skeletal_demo_player.time_ms;
     }
     if (session->pose_debug_active && command->pose_editor_action) {
         int editor_action = command->pose_editor_action;
@@ -2075,9 +2075,26 @@ void rasterfall_session_step(struct rasterfall_session *session,
         if (editor_action == RASTERFALL_POSE_EDITOR_EXPORT) {
             session->banner_text = editor_result ? "POSE EXPORTED" : "POSE EXPORT FAILED";
             session->banner_ms = 1800;
+        } else if (editor_result && session->pose_editor.active &&
+                   session->pose_editor.dirty) {
+            /* Pose edits are sparse key events, so saving each accepted edit
+             * is cheap and prevents a renderer/window failure from discarding
+             * an authoring session. */
+            rasterfall_calibration_export(&session->pose_editor);
         }
     }
     if (session->pose_debug_active && session->pose_editor.active) {
+        if (session->pose_editor.animation_base == 0) {
+            session->skeletal_demo_player.clip = NULL;
+            session->skeletal_demo_player.clip_id = -1;
+            session->skeletal_demo_player.playing = 0;
+        } else {
+            session->skeletal_demo_player.clip_id = 11;
+            session->skeletal_demo_player.time_ms =
+                session->pose_editor.animation_time_ms;
+            session->skeletal_demo_player.playing =
+                session->pose_editor.animation_playing;
+        }
         /* The editor stores the same five channels consumed by composition. */
         memcpy(session->rifle_pose.rotation, session->pose_editor.pose.body_pose,
                sizeof(session->rifle_pose.rotation));

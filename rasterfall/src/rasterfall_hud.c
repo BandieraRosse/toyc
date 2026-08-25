@@ -739,8 +739,10 @@ void rasterfall_hud_render(struct toy_surface *surface, int fps,
             fb_draw_string((unsigned char*)surface->pixels,14,y,line,e->selection==1?0xFFFFFF:0xA8C0D0,surface->stride); y+=FB_FONT_H;
             snprintf(line,sizeof(line),"%c TIME       %5d ms",e->selection==2?'>':' ',e->animation_time_ms);
             fb_draw_string((unsigned char*)surface->pixels,14,y,line,e->selection==2?0xFFFFFF:0xA8C0D0,surface->stride); y+=FB_FONT_H;
-            snprintf(line,sizeof(line),"  PLAY       %s",e->animation_playing?"ON":"OFF");
-            fb_draw_string((unsigned char*)surface->pixels,14,y,line,0xA8C0D0,surface->stride);
+            snprintf(line,sizeof(line),"%c PLAY       %s",e->selection==3?'>':' ',e->animation_playing?"ON":"OFF");
+            fb_draw_string((unsigned char*)surface->pixels,14,y,line,e->selection==3?0xFFFFFF:0xA8C0D0,surface->stride); y+=FB_FONT_H;
+            snprintf(line,sizeof(line),"%c UPPER LOCK %s",e->selection==4?'>':' ',e->upper_body_lock?"ON":"OFF");
+            fb_draw_string((unsigned char*)surface->pixels,14,y,line,e->selection==4?0xFFFFFF:0xA8C0D0,surface->stride);
         }
         y=306;
         snprintf(line,sizeof(line),"TAB PAGE  ,/. SELECT  X/Y/Z AXIS  J/L EDIT  SHIFT J/L +/-5");
