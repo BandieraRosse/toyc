@@ -553,6 +553,7 @@ static void build_game_command(struct rasterfall_command *command,
         if (toy_input_pressed(input, KEY_U)) command->pose_editor_action=RASTERFALL_POSE_EDITOR_TOGGLE_AXES;
         if (toy_input_pressed(input, KEY_O)) command->pose_editor_action=RASTERFALL_POSE_EDITOR_TOGGLE_ANCHORS;
         if (toy_input_pressed(input, KEY_I)) command->pose_editor_action=RASTERFALL_POSE_EDITOR_TOGGLE_IK;
+        if (toy_input_pressed(input, KEY_V)) command->pose_editor_action=RASTERFALL_POSE_EDITOR_TOGGLE_ANIMATION_PLAY;
         if (toy_input_pressed(input, KEY_X)) command->pose_editor_action=RASTERFALL_POSE_EDITOR_AXIS_X;
         if (toy_input_pressed(input, KEY_Y)) command->pose_editor_action=RASTERFALL_POSE_EDITOR_AXIS_Y;
         if (toy_input_pressed(input, KEY_Z)) command->pose_editor_action=RASTERFALL_POSE_EDITOR_AXIS_Z;

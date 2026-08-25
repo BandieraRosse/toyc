@@ -13,6 +13,9 @@ struct rasterfall_weapon_asset_profile {
     int asset_basis;
     int skeletal;
     int base_scale_milli;
+    /* Fixed source/asset attachment pivot.  Authored pose anchors are
+     * evaluated relative to this pivot and must not move the mesh itself. */
+    struct rasterfall_cal_vec3 attachment_grip;
 };
 
 struct rasterfall_pose_calibration {
@@ -29,6 +32,7 @@ struct rasterfall_pose_calibration {
 struct rasterfall_calibration_state {
     int active, axes, anchors, left_ik;
     int locomotion, fire_overlay;
+    int animation_base, animation_overlay, animation_time_ms, animation_playing;
     int character, weapon;
     /* Presentation-layer Rifle Pose Editor state.  The old cal parser may
      * still edit the same values, but new authoring should use pose pages. */
@@ -40,6 +44,7 @@ enum rasterfall_pose_editor_page {
     RASTERFALL_POSE_PAGE_BODY,
     RASTERFALL_POSE_PAGE_WEAPON,
     RASTERFALL_POSE_PAGE_ANCHORS,
+    RASTERFALL_POSE_PAGE_ANIMATION,
     RASTERFALL_POSE_PAGE_COUNT
 };
 
@@ -62,6 +67,7 @@ enum rasterfall_pose_editor_action {
     RASTERFALL_POSE_EDITOR_AXIS_X,
     RASTERFALL_POSE_EDITOR_AXIS_Y,
     RASTERFALL_POSE_EDITOR_AXIS_Z
+    ,RASTERFALL_POSE_EDITOR_TOGGLE_ANIMATION_PLAY
 };
 
 void rasterfall_calibration_init(struct rasterfall_calibration_state *state);

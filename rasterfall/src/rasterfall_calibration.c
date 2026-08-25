@@ -33,14 +33,22 @@ static void profile_init(void)
     asset_profiles[TOY_GAME_WEAPON_AK].asset_basis = 2;
     asset_profiles[TOY_GAME_WEAPON_AK].skeletal = 1;
     asset_profiles[TOY_GAME_WEAPON_AK].base_scale_milli = 760000;
+    asset_profiles[TOY_GAME_WEAPON_AK].attachment_grip =
+        (struct rasterfall_cal_vec3){-18, -8, 24};
     asset_profiles[TOY_GAME_WEAPON_AWP].skeletal = 1;
     asset_profiles[TOY_GAME_WEAPON_AWP].base_scale_milli = 920000;
     pose_profiles[0][TOY_GAME_WEAPON_AK].character_id = 0;
     pose_profiles[0][TOY_GAME_WEAPON_AK].weapon = TOY_GAME_WEAPON_AK;
-    pose_profiles[0][TOY_GAME_WEAPON_AK].scale_milli = 750;
+    /* Imported from tmp/eula_ak.rfpose. */
+    pose_profiles[0][TOY_GAME_WEAPON_AK].scale_milli = 500;
+    pose_profiles[0][TOY_GAME_WEAPON_AK].offset =
+        (struct rasterfall_cal_vec3){255, 25, 15};
+    pose_profiles[0][TOY_GAME_WEAPON_AK].yaw_offset = -35;
+    pose_profiles[0][TOY_GAME_WEAPON_AK].pitch_offset = -80;
+    pose_profiles[0][TOY_GAME_WEAPON_AK].roll_offset = 0;
     pose_profiles[0][TOY_GAME_WEAPON_AK].grip = (struct rasterfall_cal_vec3){-18, -8, 24};
-    pose_profiles[0][TOY_GAME_WEAPON_AK].foregrip = (struct rasterfall_cal_vec3){0, -4, 190};
-    pose_profiles[0][TOY_GAME_WEAPON_AK].muzzle = (struct rasterfall_cal_vec3){0, 0, 420};
+    pose_profiles[0][TOY_GAME_WEAPON_AK].foregrip = (struct rasterfall_cal_vec3){-5, 1, 105};
+    pose_profiles[0][TOY_GAME_WEAPON_AK].muzzle = (struct rasterfall_cal_vec3){-5, 15, 220};
     memcpy(pose_profiles[0][TOY_GAME_WEAPON_AK].body_pose, default_body_pose,
            sizeof(default_body_pose));
     pose_profiles[0][TOY_GAME_WEAPON_AK].left_ik = 1;
@@ -117,6 +125,10 @@ void rasterfall_calibration_reset(struct rasterfall_calibration_state *state)
     memcpy(&state->pose, p, sizeof(*p));
     state->left_ik = state->pose.left_ik;
     state->locomotion = 0; state->fire_overlay = 0;
+    state->animation_base = 1;
+    state->animation_overlay = 0;
+    state->animation_time_ms = 0;
+    state->animation_playing = 1;
     state->page = RASTERFALL_POSE_PAGE_BODY;
     state->selection = 0; state->selected_bone = 0;
     state->selected_axis = 0; state->dirty = 0;
@@ -161,14 +173,14 @@ int rasterfall_calibration_logic_test(void)
     struct rasterfall_calibration_state s;
     int x, y, z;
     rasterfall_calibration_init(&s);
-    if (s.weapon != TOY_GAME_WEAPON_AK || s.pose.scale_milli != 750) return 1;
+    if (s.weapon != TOY_GAME_WEAPON_AK || s.pose.scale_milli != 500) return 1;
     rasterfall_weapon_asset_to_canonical(TOY_GAME_WEAPON_AK, 1, 2, 3, &x, &y, &z);
     if (x != -1 || y != 2 || z != -3) return 2;
     return 0;
 }
 
 static int editor_field_count(int page)
-{ return page == RASTERFALL_POSE_PAGE_BODY ? RASTERFALL_POSE_BODY_CHANNEL_COUNT : page == RASTERFALL_POSE_PAGE_WEAPON ? 7 : 9; }
+{ return page == RASTERFALL_POSE_PAGE_BODY ? RASTERFALL_POSE_BODY_CHANNEL_COUNT : page == RASTERFALL_POSE_PAGE_WEAPON ? 7 : page == RASTERFALL_POSE_PAGE_ANCHORS ? 9 : 3; }
 
 static int *editor_value(struct rasterfall_calibration_state *s, int *axis)
 {
@@ -182,6 +194,11 @@ static int *editor_value(struct rasterfall_calibration_state *s, int *axis)
         if (n == 4) return &s->pose.pitch_offset;
         if (n == 5) return &s->pose.yaw_offset;
         return &s->pose.roll_offset;
+    }
+    if (s->page == RASTERFALL_POSE_PAGE_ANIMATION) {
+        if (n == 0) return &s->animation_base;
+        if (n == 1) return &s->animation_overlay;
+        return &s->animation_time_ms;
     }
     if (n < 3) { *axis = n; return &((int *)&s->pose.grip)[*axis]; }
     if (n < 6) { *axis = n - 3; return &((int *)&s->pose.foregrip)[*axis]; }
@@ -199,6 +216,9 @@ int rasterfall_calibration_editor_step(struct rasterfall_calibration_state *s, i
     if (action == RASTERFALL_POSE_EDITOR_TOGGLE_IK) {
         s->left_ik=!s->left_ik; s->pose.left_ik=s->left_ik; s->dirty=1; return 1;
     }
+    if (action == RASTERFALL_POSE_EDITOR_TOGGLE_ANIMATION_PLAY) {
+        s->animation_playing=!s->animation_playing; return 1;
+    }
     if (action >= RASTERFALL_POSE_EDITOR_AXIS_X && action <= RASTERFALL_POSE_EDITOR_AXIS_Z) { s->selected_axis=action-RASTERFALL_POSE_EDITOR_AXIS_X; return 1; }
     if (action == RASTERFALL_POSE_EDITOR_NEXT_PAGE) { s->page=(s->page+1)%RASTERFALL_POSE_PAGE_COUNT; s->selection=0; return 1; }
     if (action == RASTERFALL_POSE_EDITOR_PREV_PAGE) { s->page=(s->page+RASTERFALL_POSE_PAGE_COUNT-1)%RASTERFALL_POSE_PAGE_COUNT; s->selection=0; return 1; }
@@ -208,7 +228,8 @@ int rasterfall_calibration_editor_step(struct rasterfall_calibration_state *s, i
     if (action == RASTERFALL_POSE_EDITOR_RESET) {
         if (s->page == RASTERFALL_POSE_PAGE_BODY) s->pose.body_pose[s->selection][0]=s->pose.body_pose[s->selection][1]=s->pose.body_pose[s->selection][2]=0;
         else if (s->page == RASTERFALL_POSE_PAGE_WEAPON) { const struct rasterfall_pose_calibration *p=rasterfall_pose_calibration_resolve(NULL,s->character,s->weapon); if(s->selection==0)s->pose.scale_milli=p->scale_milli; else if(s->selection<=3)((int *)&s->pose.offset)[s->selection-1]=0; else if(s->selection==4)s->pose.pitch_offset=0; else if(s->selection==5)s->pose.yaw_offset=0; else s->pose.roll_offset=0; }
-        else { if(s->selection<3)((int *)&s->pose.grip)[s->selection]=0; else if(s->selection<6)((int *)&s->pose.foregrip)[s->selection-3]=0; else ((int *)&s->pose.muzzle)[s->selection-6]=0; }
+        else if (s->page == RASTERFALL_POSE_PAGE_ANCHORS) { if(s->selection<3)((int *)&s->pose.grip)[s->selection]=0; else if(s->selection<6)((int *)&s->pose.foregrip)[s->selection-3]=0; else ((int *)&s->pose.muzzle)[s->selection-6]=0; }
+        else { if(s->selection==0)s->animation_base=1; else if(s->selection==1)s->animation_overlay=0; else s->animation_time_ms=0; }
         s->dirty=1; return 1;
     }
     if (action == RASTERFALL_POSE_EDITOR_EXPORT) return rasterfall_calibration_export(s);
@@ -218,6 +239,11 @@ int rasterfall_calibration_editor_step(struct rasterfall_calibration_state *s, i
     else if (action == RASTERFALL_POSE_EDITOR_DECREASE_LARGE) *value -= 5;
     else if (action == RASTERFALL_POSE_EDITOR_INCREASE_LARGE) *value += 5;
     else return 0;
+    if (s->page == RASTERFALL_POSE_PAGE_ANIMATION) {
+        if (s->selection == 0) { if (*value < 0) *value=0; if (*value > 1) *value=1; }
+        else if (s->selection == 1) { if (*value < 0) *value=0; if (*value > 2) *value=2; }
+        else if (*value < 0) *value=0;
+    }
     if (s->page == RASTERFALL_POSE_PAGE_BODY) s->selected_bone=s->selection;
     s->dirty=1; return 1;
 }

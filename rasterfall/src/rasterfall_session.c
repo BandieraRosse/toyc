@@ -2056,6 +2056,18 @@ void rasterfall_session_step(struct rasterfall_session *session,
         return;
     }
     rasterfall_animation_player_update(&session->skeletal_demo_player, dt_ms);
+    if (session->pose_debug_active && session->pose_editor.active) {
+        if (session->pose_editor.animation_base == 0) {
+            session->skeletal_demo_player.clip = NULL;
+            session->skeletal_demo_player.clip_id = -1;
+            session->skeletal_demo_player.playing = 0;
+        } else {
+            session->skeletal_demo_player.clip_id = 11;
+            session->skeletal_demo_player.playing = session->pose_editor.animation_playing;
+        }
+        session->pose_editor.animation_time_ms =
+            session->skeletal_demo_player.time_ms;
+    }
     if (session->pose_debug_active && command->pose_editor_action) {
         int editor_action = command->pose_editor_action;
         int editor_result = rasterfall_calibration_editor_step(&session->pose_editor, editor_action);

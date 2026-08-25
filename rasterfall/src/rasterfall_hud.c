@@ -715,7 +715,7 @@ void rasterfall_hud_render(struct toy_surface *surface, int fps,
     render_player_hud(surface, game, state->player_name);
     render_revive_prompt(surface, state);
     if (state->pose_debug_active && state->pose_editor && state->pose_editor->active) {
-        static const char *pages[] = {"BODY", "WEAPON", "ANCHORS"};
+        static const char *pages[] = {"BODY", "WEAPON", "ANCHORS", "ANIMATION"};
         char line[180]; int i, y=54; const struct rasterfall_calibration_state *e=state->pose_editor;
         hud_fill_rect(surface,8,50,410,250,0x182634);
         snprintf(line,sizeof(line),"RIFLE POSE EDITOR   CHARACTER EULA   WEAPON AK");
@@ -727,14 +727,25 @@ void rasterfall_hud_render(struct toy_surface *surface, int fps,
         } else if(e->page==RASTERFALL_POSE_PAGE_WEAPON) {
             const char *names[]={"SCALE","OFFSET X","OFFSET Y","OFFSET Z","PITCH","YAW","ROLL"}; int v[7]={e->pose.scale_milli,e->pose.offset.x,e->pose.offset.y,e->pose.offset.z,e->pose.pitch_offset,e->pose.yaw_offset,e->pose.roll_offset};
             for(i=0;i<7;i++){snprintf(line,sizeof(line),"%c %-12s %5d",i==e->selection?'>':' ',names[i],v[i]);fb_draw_string((unsigned char*)surface->pixels,14,y,line,i==e->selection?0xFFFFFF:0xA8C0D0,surface->stride);y+=FB_FONT_H;}
-        } else {
+        } else if(e->page==RASTERFALL_POSE_PAGE_ANCHORS) {
             const char *names[]={"RIGHT GRIP X","RIGHT GRIP Y","RIGHT GRIP Z","FOREGRIP X","FOREGRIP Y","FOREGRIP Z","MUZZLE X","MUZZLE Y","MUZZLE Z"}; int v[9]={e->pose.grip.x,e->pose.grip.y,e->pose.grip.z,e->pose.foregrip.x,e->pose.foregrip.y,e->pose.foregrip.z,e->pose.muzzle.x,e->pose.muzzle.y,e->pose.muzzle.z};
             for(i=0;i<9;i++){snprintf(line,sizeof(line),"%c %-14s %5d",i==e->selection?'>':' ',names[i],v[i]);fb_draw_string((unsigned char*)surface->pixels,14,y,line,i==e->selection?0xFFFFFF:0xA8C0D0,surface->stride);y+=FB_FONT_H;}
+        } else {
+            const char *base[] = {"IDLE", "WALK"};
+            const char *overlay[] = {"NONE", "FIRE", "HIT"};
+            snprintf(line,sizeof(line),"%c BASE       %s",e->selection==0?'>':' ',base[e->animation_base]);
+            fb_draw_string((unsigned char*)surface->pixels,14,y,line,e->selection==0?0xFFFFFF:0xA8C0D0,surface->stride); y+=FB_FONT_H;
+            snprintf(line,sizeof(line),"%c OVERLAY    %s",e->selection==1?'>':' ',overlay[e->animation_overlay]);
+            fb_draw_string((unsigned char*)surface->pixels,14,y,line,e->selection==1?0xFFFFFF:0xA8C0D0,surface->stride); y+=FB_FONT_H;
+            snprintf(line,sizeof(line),"%c TIME       %5d ms",e->selection==2?'>':' ',e->animation_time_ms);
+            fb_draw_string((unsigned char*)surface->pixels,14,y,line,e->selection==2?0xFFFFFF:0xA8C0D0,surface->stride); y+=FB_FONT_H;
+            snprintf(line,sizeof(line),"  PLAY       %s",e->animation_playing?"ON":"OFF");
+            fb_draw_string((unsigned char*)surface->pixels,14,y,line,0xA8C0D0,surface->stride);
         }
         y=306;
         snprintf(line,sizeof(line),"TAB PAGE  ,/. SELECT  X/Y/Z AXIS  J/L EDIT  SHIFT J/L +/-5");
         fb_draw_string((unsigned char*)surface->pixels,14,y,line,0x90F090,surface->stride);
-        snprintf(line,sizeof(line),"U AXES  O ANCHORS  I IK  R RESET  P EXPORT  ESC EXIT%s",e->dirty?"  * DIRTY":"");
+        snprintf(line,sizeof(line),"U AXES  O ANCHORS  I IK  V PLAY  R RESET  P EXPORT  ESC EXIT%s",e->dirty?"  * DIRTY":"");
         fb_draw_string((unsigned char*)surface->pixels,14,y+FB_FONT_H,line,0x90F090,surface->stride);
     }
     if (state->shop_open) render_shop(surface, state);
