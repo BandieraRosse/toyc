@@ -195,10 +195,16 @@ void rasterfall_session_reset(struct rasterfall_session *session,
     session->seed = seed ? seed : 1;
     session->skeletal_demo_pose = RASTERFALL_MODEL_POSE_BIND;
     session->skeletal_demo_player.clip = NULL;
-    session->skeletal_demo_player.clip_id = -1;
+    /* All five developer characters enter the map in the same walk state. */
+    session->skeletal_demo_player.clip_id = 9;
     session->skeletal_demo_player.time_ms = 0;
-    session->skeletal_demo_player.playing = 0;
+    session->skeletal_demo_player.playing = 1;
+    session->skeletal_demo_player.loop = 1;
     session->skeletal_demo_player.speed_milli = 1000;
+    rasterfall_rifle_pose_default(&session->rifle_pose);
+    __memset(&session->hit_pose,0,sizeof(session->hit_pose));
+    session->hit_pose.rotation[0][0]=18;
+    session->hit_pose.rotation[0][2]=-18;
     toy_game_init(&session->game_state, session->seed);
     /* 环境变量不依赖 libc；HOSTNAME 是最稳定的本机身份来源，缺失时
      * toy_game_init 的 PLAYER 保底仍可用。名字只用于身份展示/未来快照。 */
@@ -651,6 +657,10 @@ static void session_client_interact_banner(struct rasterfall_session *session)
         session->banner_text = "GLB WALK";
     else if (it->kind == TOY_MAP_PICKUP_GLB_JOG_BUTTON)
         session->banner_text = "GLB JOG_FWD";
+    else if (it->kind == TOY_MAP_PICKUP_ANIMATION_COMPOSITION_BUTTON)
+        session->banner_text = "WALK + RIFLE STANCE + FIRE/HIT OVERLAY";
+    else if (it->kind == TOY_MAP_PICKUP_HUMANOID_POSE_DEBUG_BUTTON)
+        session->banner_text = "EULA AK HUMANOID POSE DEBUGGER";
     else if (it->kind == TOY_MAP_PICKUP_AMMO)
         session->banner_text = "AMMO REFILLED";
     else if (it->kind == TOY_MAP_PICKUP_WEAPON ||
@@ -825,6 +835,25 @@ static void session_interact(struct rasterfall_session *session,
         session->skeletal_demo_player.loop = 1;
         session->banner_ms = 1800;
         session->banner_text = "VMD MANJUSAKA (EULA DIRECT)";
+    } else if (it->kind == TOY_MAP_PICKUP_ANIMATION_COMPOSITION_BUTTON) {
+        session->skeletal_demo_pose = RASTERFALL_MODEL_POSE_BIND;
+        session->skeletal_demo_player.clip = NULL;
+        session->skeletal_demo_player.clip_id = 11;
+        session->skeletal_demo_player.time_ms = 0;
+        session->skeletal_demo_player.playing = 1;
+        session->skeletal_demo_player.loop = 1;
+        session->banner_ms = 2400;
+        session->banner_text = "COMPOSITION: WALK + RIFLE + FIRE/HIT";
+    } else if (it->kind == TOY_MAP_PICKUP_HUMANOID_POSE_DEBUG_BUTTON) {
+        session->pose_debug_active = 1;
+        session->pose_debug_bone = 0;
+        session->pose_debug_axis = 0;
+        session->skeletal_demo_player.clip = NULL;
+        session->skeletal_demo_player.clip_id = 11;
+        session->skeletal_demo_player.playing = 1;
+        session->skeletal_demo_player.loop = 1;
+        session->banner_ms = 2200;
+        session->banner_text = "EULA AK HUMANOID POSE DEBUGGER";
     } else if (it->kind == TOY_MAP_PICKUP_AMMO) {
         toy_game_refill_ammo(&session->game_state);
     } else if (it->kind == TOY_MAP_PICKUP_MONEY_BUTTON) {
@@ -2021,6 +2050,16 @@ void rasterfall_session_step(struct rasterfall_session *session,
         return;
     }
     rasterfall_animation_player_update(&session->skeletal_demo_player, dt_ms);
+    if (session->pose_debug_active && command->pose_debug_action) {
+        int action=command->pose_debug_action;
+        struct rasterfall_rifle_pose *edited=&session->rifle_pose;
+        if(action==RASTERFALL_POSE_DEBUG_PREV_BONE)session->pose_debug_bone=(session->pose_debug_bone+RASTERFALL_RIFLE_POSE_BONE_COUNT-1)%RASTERFALL_RIFLE_POSE_BONE_COUNT;
+        else if(action==RASTERFALL_POSE_DEBUG_NEXT_BONE)session->pose_debug_bone=(session->pose_debug_bone+1)%RASTERFALL_RIFLE_POSE_BONE_COUNT;
+        else if(action>=RASTERFALL_POSE_DEBUG_AXIS_X&&action<=RASTERFALL_POSE_DEBUG_AXIS_Z)session->pose_debug_axis=action-RASTERFALL_POSE_DEBUG_AXIS_X;
+        else if(action==RASTERFALL_POSE_DEBUG_DECREASE)edited->rotation[session->pose_debug_bone][session->pose_debug_axis]--;
+        else if(action==RASTERFALL_POSE_DEBUG_INCREASE)edited->rotation[session->pose_debug_bone][session->pose_debug_axis]++;
+        else if(action==RASTERFALL_POSE_DEBUG_EXPORT){char out[1400];int fd,n=0,i;n+=snprintf(out+n,sizeof(out)-n,"# Eula AK humanoid poses\n");for(i=0;i<RASTERFALL_RIFLE_POSE_BONE_COUNT;i++)n+=snprintf(out+n,sizeof(out)-n,"rifle %s %d %d %d\n",rasterfall_rifle_pose_bone_names[i],session->rifle_pose.rotation[i][0],session->rifle_pose.rotation[i][1],session->rifle_pose.rotation[i][2]);for(i=0;i<RASTERFALL_RIFLE_POSE_BONE_COUNT;i++)n+=snprintf(out+n,sizeof(out)-n,"hit %s %d %d %d\n",rasterfall_rifle_pose_bone_names[i],session->hit_pose.rotation[i][0],session->hit_pose.rotation[i][1],session->hit_pose.rotation[i][2]);fd=__openat(AT_FDCWD,"tmp/eula_ak_rifle_pose.txt",O_WRONLY|O_CREAT|O_TRUNC,0644);if(fd>=0){__write(fd,out,n);__close(fd);session->banner_text="POSES EXPORTED: tmp/eula_ak_rifle_pose.txt";}else session->banner_text="POSE EXPORT FAILED";session->banner_ms=2400;}
+    }
     if (session_managed_ai_active(session)) {
         memset(&managed_command, 0, sizeof(managed_command));
         /* Weapon-master preparation owns the command while it is travelling

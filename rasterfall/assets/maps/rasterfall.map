@@ -109,6 +109,7 @@ button_clear_hired 5600 -9200 -250
 button_air 23940 -7600 -250
 # 优菈骨骼蒙皮第一阶段：模型正前方四个本地程序化 pose 按钮。
 button_pose_reset -14250 -11300 -250
+button_humanoid_pose_debug -15100 -11300 -250
 button_pose_right_arm -13400 -11300 -250
 button_pose_arms -12600 -11300 -250
 button_pose_body -11750 -11300 -250
@@ -122,6 +123,7 @@ button_glb_jog -9200 -12100 -250
 # MMD 原生 VMD 直连 Eula PMX/RFM2；与 GLB 预览按钮同排。
 button_vmd_walk -8350 -12100 -250
 button_vmd_manjusaka -7500 -12100 -250
+button_animation_composition -6650 -12100 -250
 # 三名原据点 AI 保持普通队友规则；BASE 是基地核心目标。
 ai_spawn Jesus 2 level2 1000 0 0
 ai_spawn GUARD 1 level1 0 -900 0

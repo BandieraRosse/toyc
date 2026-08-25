@@ -183,7 +183,9 @@ int toy_map_load(const char *path, struct toy_map *m)
                  !strcmp(kind,"button_glb_walk") ||
                  !strcmp(kind,"button_glb_jog") ||
                  !strcmp(kind,"button_vmd_walk") ||
-                 !strcmp(kind,"button_vmd_manjusaka")) && m->pickup_count<TOY_MAP_MAX_PICKUPS){
+                 !strcmp(kind,"button_vmd_manjusaka") ||
+                 !strcmp(kind,"button_animation_composition") ||
+                 !strcmp(kind,"button_humanoid_pose_debug")) && m->pickup_count<TOY_MAP_MAX_PICKUPS){
             char *sx=word(&p),*sz=word(&p),*sy=word(&p);
             if(sx&&sz&&sy){
                 m->pickups[m->pickup_count].kind=!strcmp(kind,"button_air") ?
@@ -232,6 +234,10 @@ int toy_map_load(const char *path, struct toy_map *m)
                     m->pickups[m->pickup_count].kind = TOY_MAP_PICKUP_VMD_WALK_BUTTON;
                 else if (!strcmp(kind,"button_vmd_manjusaka"))
                     m->pickups[m->pickup_count].kind = TOY_MAP_PICKUP_VMD_MANJUSAKA_BUTTON;
+                else if (!strcmp(kind,"button_animation_composition"))
+                    m->pickups[m->pickup_count].kind = TOY_MAP_PICKUP_ANIMATION_COMPOSITION_BUTTON;
+                else if (!strcmp(kind,"button_humanoid_pose_debug"))
+                    m->pickups[m->pickup_count].kind = TOY_MAP_PICKUP_HUMANOID_POSE_DEBUG_BUTTON;
                 m->pickups[m->pickup_count].x=number(sx,10);
                 m->pickups[m->pickup_count].z=number(sz,10);
                 m->pickups[m->pickup_count].y=number(sy,10);

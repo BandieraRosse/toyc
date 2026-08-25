@@ -73,6 +73,7 @@
 #include "rasterfall_humanoid_retarget.h"
 #include "rasterfall_character.h"
 #include "rasterfall_units.h"
+#include "rasterfall_animation_composition.h"
 #include "math.h"
 
 #define KEY_ESC   1
@@ -80,6 +81,8 @@
 #define KEY_2     3
 #define KEY_3     4
 #define KEY_4     5
+#define KEY_MINUS 12
+#define KEY_EQUAL 13
 #define KEY_E     18
 #define KEY_F     33
 #define KEY_B     48
@@ -101,6 +104,7 @@
 #define KEY_V     47
 #define KEY_X     45
 #define KEY_Y     21
+#define KEY_Z     44
 #define KEY_Z     44
 #define KEY_ENTER 28
 #define KEY_TAB   15
@@ -361,6 +365,12 @@ static void fill_hud_state(struct rasterfall_hud_state *hud,
     hud->flag_count = session.flag_count;
     hud->assignment_flag = session.assignment_flag;
     hud->flag_carried = session.carried_flag >= 0;
+    hud->pose_debug_active = session.pose_debug_active;
+    hud->pose_debug_bone = session.pose_debug_bone;
+    hud->pose_debug_axis = session.pose_debug_axis;
+    hud->rifle_pose = &session.rifle_pose;
+    hud->pose_debug_layer = session.pose_debug_layer;
+    hud->hit_pose = &session.hit_pose;
     for (i = 0; i < session.flag_count && i < 8; i++)
         hud->flag_colors[i] = session.flags[i].color;
     hud->flag_near = 0;
@@ -520,6 +530,16 @@ static void build_game_command(struct rasterfall_command *command,
     if (toy_input_pressed(input, KEY_4)) command->buttons |= RASTERFALL_CMD_SLOT_4;
     if (toy_input_pressed(input, KEY_E)) command->buttons |= RASTERFALL_CMD_INTERACT;
     if (toy_input_pressed(input, KEY_F)) command->buttons |= RASTERFALL_CMD_FLAG;
+    if (session.pose_debug_active) {
+        if (toy_input_pressed(input, KEY_N)) command->pose_debug_action=RASTERFALL_POSE_DEBUG_PREV_BONE;
+        if (toy_input_pressed(input, KEY_B)) command->pose_debug_action=RASTERFALL_POSE_DEBUG_NEXT_BONE;
+        if (toy_input_pressed(input, KEY_X)) command->pose_debug_action=RASTERFALL_POSE_DEBUG_AXIS_X;
+        if (toy_input_pressed(input, KEY_Y)) command->pose_debug_action=RASTERFALL_POSE_DEBUG_AXIS_Y;
+        if (toy_input_pressed(input, KEY_Z)) command->pose_debug_action=RASTERFALL_POSE_DEBUG_AXIS_Z;
+        if (toy_input_pressed(input, KEY_MINUS)) command->pose_debug_action=RASTERFALL_POSE_DEBUG_DECREASE;
+        if (toy_input_pressed(input, KEY_EQUAL)) command->pose_debug_action=RASTERFALL_POSE_DEBUG_INCREASE;
+        if (toy_input_pressed(input, KEY_P)) command->pose_debug_action=RASTERFALL_POSE_DEBUG_EXPORT;
+    }
 }
 
 static void capture_jump_vector(struct rasterfall_command *command,

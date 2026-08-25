@@ -1,0 +1,16 @@
+#ifndef TOYC_RASTERFALL_ANIMATION_COMPOSITION_H
+#define TOYC_RASTERFALL_ANIMATION_COMPOSITION_H
+#include "rasterfall_model.h"
+enum rasterfall_composition_overlay { RASTERFALL_COMPOSITION_OVERLAY_NONE, RASTERFALL_COMPOSITION_OVERLAY_FIRE, RASTERFALL_COMPOSITION_OVERLAY_HIT };
+enum { RASTERFALL_RIFLE_POSE_BONE_COUNT = 5 };
+static const char *const rasterfall_rifle_pose_bone_names[5]={"上半身","右腕","右ひじ","左腕","左ひじ"};
+static const char *const rasterfall_rifle_pose_bone_display_names[5]={"UPPER_BODY","RIGHT_ARM","RIGHT_ELBOW","LEFT_ARM","LEFT_ELBOW"};
+struct rasterfall_rifle_pose { int rotation[5][3]; };
+static inline void rasterfall_rifle_pose_default(struct rasterfall_rifle_pose*p){static const int v[5][3]={{-5,0,0},{-42,-8,-18},{-34,0,0},{-48,10,24},{-58,0,0}};int i,j;if(p)for(i=0;i<5;i++)for(j=0;j<3;j++)p->rotation[i][j]=v[i][j];}
+struct rasterfall_animation_composition{const struct rasterfall_animation_clip*locomotion;int locomotion_time_ms,rifle_stance,overlay,overlay_time_ms;const struct rasterfall_rifle_pose*rifle_pose,*hit_pose;int hit_pose_preview;};
+static inline void composition_rotate(struct rasterfall_model_asset*m,const char*n,int x,int y,int z){int b=rasterfall_model_find_bone(m,n);if(b<0)return;m->bones[b].rotate_x+=x;m->bones[b].rotate_y+=y;m->bones[b].rotate_z+=z;}
+static inline void composition_clear(struct rasterfall_model_asset*m,const char*n){int b=rasterfall_model_find_bone(m,n);if(b<0)return;m->bones[b].rotate_x=m->bones[b].rotate_y=m->bones[b].rotate_z=0;}
+static inline void composition_clear_upper_body(struct rasterfall_model_asset*m){static const char*const names[]={"上半身","上半身2","上半身3","首","頭","右肩","左肩","右腕","右腕捻","右ひじ","右手捻","右手首","左腕","左腕捻","左ひじ","左手捻","左手首"};int i;for(i=0;i<(int)(sizeof(names)/sizeof(names[0]));i++)composition_clear(m,names[i]);}
+static inline void rasterfall_animation_compose(struct rasterfall_model_asset*m,const struct rasterfall_animation_composition*c){int i,a=0;struct rasterfall_rifle_pose d;const struct rasterfall_rifle_pose*p;if(!m||!c)return;rasterfall_model_sample_clip(m,c->locomotion,c->locomotion_time_ms);p=c->rifle_pose;if(!p){rasterfall_rifle_pose_default(&d);p=&d;}if(c->rifle_stance){composition_clear_upper_body(m);for(i=0;i<5;i++)composition_rotate(m,rasterfall_rifle_pose_bone_names[i],p->rotation[i][0],p->rotation[i][1],p->rotation[i][2]);}if(c->hit_pose_preview&&c->hit_pose)for(i=0;i<5;i++)composition_rotate(m,rasterfall_rifle_pose_bone_names[i],c->hit_pose->rotation[i][0],c->hit_pose->rotation[i][1],c->hit_pose->rotation[i][2]);if(c->overlay==RASTERFALL_COMPOSITION_OVERLAY_FIRE){int t=c->overlay_time_ms%240;a=t<70?12*(70-t)/70:0;composition_rotate(m,"上半身",a,0,0);composition_rotate(m,"右腕",a,0,0);composition_rotate(m,"左腕",a,0,0);}else if(c->overlay==RASTERFALL_COMPOSITION_OVERLAY_HIT){int t=c->overlay_time_ms%420;a=t<180?18*(180-t)/180:0;composition_rotate(m,"上半身",a,0,-a);composition_rotate(m,"首",0,a/2,0);}rasterfall_model_update_bones(m);}
+static inline int rasterfall_animation_composition_logic_test(void){struct rasterfall_animation_composition c={0,37,1,RASTERFALL_COMPOSITION_OVERLAY_FIRE,0,0,0,0};return c.rifle_stance?0:1;}
+#endif

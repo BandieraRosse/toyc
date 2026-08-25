@@ -20,6 +20,7 @@ static int run_logic_test(void)
     if (rasterfall_humanoid_basis_logic_test() != 0) return 163;
     if (rasterfall_humanoid_retarget_logic_test() != 0) return 164;
     if (rasterfall_animation_logic_test() != 0) return 161;
+    if (rasterfall_animation_composition_logic_test() != 0) return 168;
     if (rasterfall_character_logic_test() != 0) return 166;
     toy_input_init(&input);
     rasterfall_session_reset(&session, &camera, 1);
@@ -28,7 +29,7 @@ static int run_logic_test(void)
         RASTERFALL_HUMAN_EYE_HEIGHT_RFU != 824 ||
         camera.y != RASTERFALL_STANDING_CAMERA_Y) return 167;
     {
-        static const int kinds[11] = {
+        static const int kinds[13] = {
             TOY_MAP_PICKUP_POSE_RESET_BUTTON,
             TOY_MAP_PICKUP_POSE_RIGHT_ARM_BUTTON,
             TOY_MAP_PICKUP_POSE_ARMS_BUTTON,
@@ -39,9 +40,11 @@ static int run_logic_test(void)
             TOY_MAP_PICKUP_GLB_IDLE_BUTTON,
             TOY_MAP_PICKUP_GLB_WALK_BUTTON,
             TOY_MAP_PICKUP_GLB_JOG_BUTTON,
-            TOY_MAP_PICKUP_VMD_WALK_BUTTON
+            TOY_MAP_PICKUP_VMD_WALK_BUTTON,
+            TOY_MAP_PICKUP_ANIMATION_COMPOSITION_BUTTON,
+            TOY_MAP_PICKUP_HUMANOID_POSE_DEBUG_BUTTON
         };
-        static const int poses[11] = {
+        static const int poses[13] = {
             RASTERFALL_MODEL_POSE_BIND,
             RASTERFALL_MODEL_POSE_RIGHT_ARM,
             RASTERFALL_MODEL_POSE_ARMS,
@@ -52,10 +55,12 @@ static int run_logic_test(void)
             RASTERFALL_MODEL_POSE_BIND,
             RASTERFALL_MODEL_POSE_BIND,
             RASTERFALL_MODEL_POSE_BIND,
+            RASTERFALL_MODEL_POSE_BIND,
+            RASTERFALL_MODEL_POSE_BIND,
             RASTERFALL_MODEL_POSE_BIND
         };
         int button, found = 0;
-        for (button = 0; button < 11; button++) {
+        for (button = 0; button < 13; button++) {
             int item;
             for (item = 0; item < session.item_count; item++)
                 if (session.items[item].kind == kinds[button]) break;
@@ -76,12 +81,13 @@ static int run_logic_test(void)
                                 !session.skeletal_demo_player.loop))
                 return 164;
             if (button >= 4 && (!session.skeletal_demo_player.playing ||
-                                session.skeletal_demo_player.clip_id != button - 1 ||
+                                session.skeletal_demo_player.clip_id !=
+                                    (button >= 11 ? 11 : button - 1) ||
                                 !session.skeletal_demo_player.loop))
                 return 165;
             found++;
         }
-        if (found != 11) return 158;
+        if (found != 13 || !session.pose_debug_active) return 158;
         rasterfall_session_reset(&session, &camera, 1);
     }
     if (session.level.safe_count > 0 &&

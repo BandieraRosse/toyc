@@ -23,6 +23,7 @@
 #include "rasterfall_viewmodel.h"
 #include "rasterfall_animation.h"
 #include "rasterfall_actor_animation.h"
+#include "rasterfall_animation_composition.h"
 #include "rasterfall_character.h"
 #include "rasterfall_units.h"
 #include "rasterfall_glb_animation.h"
@@ -328,20 +329,26 @@ static void load_developer_character_job(int worker_id, int task, void *opaque)
 
 static void load_developer_characters(struct toy_renderer *renderer)
 {
-    int i, pending = 0;
+    int i, pending = 0, task = -1;
     long start = render_monotonic_us();
+    (void)renderer;
     for (i = 0; i < (int)(sizeof(developer_characters) /
                           sizeof(developer_characters[0])); i++)
         if (!developer_characters[i].load_attempted) pending++;
     if (!pending) return;
-    for (i = 0; i < 4; i++) developer_characters[i].load_attempted = 1;
-    if (toy_renderer_parallel_for(renderer, 4, 4,
-            load_developer_character_job, developer_characters) < 0)
-        for (i = 0; i < 4; i++)
-            load_developer_character_job(0, i, developer_characters);
+    /* Warm one character per frame.  The importer is intentionally kept off
+     * the first-visible path, and spreading its unavoidable synchronous work
+     * prevents four model/LOD/VMD sets from producing one large hitch. */
+    for (i = 0; i < 4; i++) if (!developer_characters[i].load_attempted) {
+        task = i; break;
+    }
+    if (task < 0) return;
+    developer_characters[task].load_attempted = 1;
+    load_developer_character_job(0, task, developer_characters);
     for (i = 0; i < 4; i++) {
         struct rasterfall_developer_character *entry =
             &developer_characters[i];
+        if (!entry->load_attempted) continue;
         if (!entry->vmd_loaded) {
             __fprintf(2, "rasterfall: cannot load developer character %s\n",
                       entry->name);
@@ -359,8 +366,9 @@ static void load_developer_characters(struct toy_renderer *renderer)
             entry->vmd.track_count - entry->vmd_mapped,
             entry->walk.duration_ms, entry->load_us);
     }
-    __printf("rasterfall: developer characters parallel_load_us=%ld count=4 display_mean_height_mm=%d\n",
+    __printf("rasterfall: developer character warmup_step_us=%ld remaining=%d display_mean_height_mm=%d\n",
              render_monotonic_us() - start,
+             pending - 1,
              RASTERFALL_CHARACTER_DISPLAY_MEAN_HEIGHT_MM);
 }
 
@@ -368,7 +376,8 @@ static void sample_developer_character(struct rasterfall_developer_character *en
 {
     struct rasterfall_animation_player *player = active_session ?
         &active_session->skeletal_demo_player : NULL;
-    if (player && entry->vmd_loaded && player->clip_id == 9) {
+    if (player && entry->vmd_loaded &&
+        (player->clip_id == 9 || player->clip_id == 11)) {
             int center[3], groove[3];
             rasterfall_model_set_ik_enabled(&entry->model,
                                             private_character_vmd_ik_enabled);
@@ -381,8 +390,17 @@ static void sample_developer_character(struct rasterfall_developer_character *en
             rasterfall_vmd_sample_bone_translation(
                 &entry->vmd, "グルーブ", player->time_ms, groove);
             rasterfall_model_set_root_motion(&entry->model, center, groove, 1);
-            rasterfall_model_sample_clip(&entry->model, &entry->walk,
-                                         player->time_ms);
+            if (player->clip_id == 11) {
+                struct rasterfall_animation_composition composition = {
+                    &entry->walk, player->time_ms, 1,
+                    (player->time_ms / 1200) & 1 ?
+                        RASTERFALL_COMPOSITION_OVERLAY_HIT :
+                        RASTERFALL_COMPOSITION_OVERLAY_FIRE,
+                    player->time_ms % 1200, NULL, NULL, 0
+                };
+                rasterfall_animation_compose(&entry->model, &composition);
+            } else rasterfall_model_sample_clip(&entry->model, &entry->walk,
+                                                player->time_ms);
             if (entry->lod_loaded) {
                 rasterfall_model_set_ik_enabled(&entry->lod_model,
                                                 private_character_vmd_ik_enabled);
@@ -392,8 +410,17 @@ static void sample_developer_character(struct rasterfall_developer_character *en
                     &entry->lod_model, private_character_vmd_legacy_knee_ccd);
                 rasterfall_model_set_root_motion(&entry->lod_model,
                                                   center, groove, 1);
-                rasterfall_model_sample_clip(&entry->lod_model, &entry->walk,
-                                             player->time_ms);
+                if (player->clip_id == 11) {
+                    struct rasterfall_animation_composition composition = {
+                        &entry->walk, player->time_ms, 1,
+                        (player->time_ms / 1200) & 1 ?
+                            RASTERFALL_COMPOSITION_OVERLAY_HIT :
+                            RASTERFALL_COMPOSITION_OVERLAY_FIRE,
+                        player->time_ms % 1200, NULL, NULL, 0
+                    };
+                    rasterfall_animation_compose(&entry->lod_model,&composition);
+                } else rasterfall_model_sample_clip(&entry->lod_model,
+                                                    &entry->walk,player->time_ms);
             }
     } else {
         int zero[3] = {0, 0, 0};
@@ -450,7 +477,7 @@ static int render_quaternius_preview(struct toy_renderer *renderer,
                                      int time_ms)
 {
     const char path[]="rasterfall/private-assets/models/UAL1_Standard.glb";
-    int i,pixels=0,scale=520,origin_x=-14500,origin_y=-900,origin_z=-10000;
+    int i,pixels=0,scale=520,origin_x=-14500,origin_y=-900,origin_z=-8800;
     if(!quaternius_preview_loaded){
         quaternius_preview_loaded=1;
         if(rasterfall_glb_preview_load(&quaternius_preview,path)<0)return 0;
@@ -2226,7 +2253,7 @@ static void character_frontend_job(int worker_id, int task, void *opaque)
     if (task > 0) {
         struct rasterfall_animation_player *player = active_session ?
             &active_session->skeletal_demo_player : NULL;
-        int reuse = !player || player->clip_id != 9;
+        int reuse = !player || (player->clip_id != 9 && player->clip_id != 11);
         long animation_start = render_monotonic_us();
         if (reuse && !state->reuse_skinned_vertices)
             state->skinned_vertices_valid = 0;
@@ -2478,6 +2505,10 @@ static int render_private_character(struct toy_renderer *renderer,
     }
     {
         const char *requested_vmd = private_character_vmd_path;
+        if (active_session &&
+            (active_session->skeletal_demo_player.clip_id == 9 ||
+             active_session->skeletal_demo_player.clip_id == 11))
+            requested_vmd = "rasterfall/private-assets/animations/walk04_loop5.vmd";
         if (active_session && active_session->skeletal_demo_player.clip_id == 10)
             requested_vmd = "rasterfall/private-assets/animations/曼珠沙華.vmd";
         if (private_character_vmd_loaded && requested_vmd &&
@@ -2540,6 +2571,7 @@ static int render_private_character(struct toy_renderer *renderer,
          * explicit clips (or the initial forced demo state). */
         if (private_character_vmd_loaded &&
             (player->clip_id == 9 || player->clip_id == 10 ||
+             player->clip_id == 11 ||
              (private_character_vmd_forced && player->clip_id < 0))) {
             rasterfall_model_set_ik_enabled(&private_character_model,
                                             private_character_vmd_ik_enabled);
@@ -2573,8 +2605,19 @@ static int render_private_character(struct toy_renderer *renderer,
                     private_character_model.animation_offset[2] = center[2] + groove[2];
                 }
             }
-            rasterfall_model_sample_clip(&private_character_model,
-                                         player->clip, player->time_ms);
+            if (player->clip_id == 11) {
+                struct rasterfall_animation_composition composition = {
+                    player->clip, player->time_ms, 1,
+                    active_session->pose_debug_active ? RASTERFALL_COMPOSITION_OVERLAY_NONE :
+                    ((player->time_ms / 1200) & 1 ? RASTERFALL_COMPOSITION_OVERLAY_HIT : RASTERFALL_COMPOSITION_OVERLAY_FIRE),
+                    player->time_ms % 1200,
+                    active_session->pose_debug_active ?
+                        &active_session->rifle_pose : NULL,
+                    NULL, 0
+                };
+                rasterfall_animation_compose(&private_character_model,&composition);
+            } else rasterfall_model_sample_clip(&private_character_model,
+                                                player->clip,player->time_ms);
         } else if (player->clip_id >= 0 && player->clip_id < 3) {
             player->clip = &private_character_model.animation.demo_clips[player->clip_id];
             player->loop = player->clip->loop;
@@ -2602,12 +2645,12 @@ static int render_private_character(struct toy_renderer *renderer,
         scene_stats.character_animation_outside_us =
             private_character_animation_us;
     }
+    load_developer_characters(renderer);
     if (!private_character_model.data ||
         world_distance(camera, -13000, -10000) > ENEMY_RENDER_DISTANCE)
         return 0;
     {
         int pixels = 0;
-        load_developer_characters(renderer);
         int character_pixels = render_characters_parallel(renderer, camera);
         if (character_pixels < 0)
             __fprintf(2, "rasterfall: parallel character rendering failed\n");
@@ -4090,7 +4133,9 @@ static int render_interactables(struct toy_renderer *renderer,
                                              it->kind==TOY_MAP_PICKUP_GLB_JOG_BUTTON?2:
                                              it->kind==TOY_MAP_PICKUP_GLB_WALK_BUTTON);
         else if (it->kind == TOY_MAP_PICKUP_VMD_WALK_BUTTON ||
-                 it->kind == TOY_MAP_PICKUP_VMD_MANJUSAKA_BUTTON)
+                 it->kind == TOY_MAP_PICKUP_VMD_MANJUSAKA_BUTTON ||
+                 it->kind == TOY_MAP_PICKUP_ANIMATION_COMPOSITION_BUTTON ||
+                 it->kind == TOY_MAP_PICKUP_HUMANOID_POSE_DEBUG_BUTTON)
             pixels += render_special_button(renderer, camera, it->x, it->y,
                                              it->z, on, 1);
         else if (it->kind == TOY_MAP_PICKUP_SHOP)

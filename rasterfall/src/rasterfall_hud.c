@@ -714,6 +714,17 @@ void rasterfall_hud_render(struct toy_surface *surface, int fps,
     render_money(surface, game);
     render_player_hud(surface, game, state->player_name);
     render_revive_prompt(surface, state);
+    if (state->pose_debug_active && state->rifle_pose) {
+        char line[180]; int b=state->pose_debug_bone;
+        const struct rasterfall_rifle_pose *pose=state->rifle_pose;
+        snprintf(line,sizeof(line),"EULA AK RIFLE STANCE  B/N HUMANOID BONE: %s  X/Y/Z AXIS: %c",
+                 rasterfall_rifle_pose_bone_display_names[b],"XYZ"[state->pose_debug_axis]);
+        hud_fill_rect(surface,8,54,(int)strlen(line)*FB_FONT_W+12,FB_FONT_H*2+10,0x182634);
+        fb_draw_string((unsigned char*)surface->pixels,14,58,line,0x80D8FF,surface->stride);
+        snprintf(line,sizeof(line),"BONE NAME: %s   ROTATION X %d  Y %d  Z %d   -/+ EDIT  P EXPORT",
+                 rasterfall_rifle_pose_bone_display_names[b],pose->rotation[b][0],pose->rotation[b][1],pose->rotation[b][2]);
+        fb_draw_string((unsigned char*)surface->pixels,14,58+FB_FONT_H,line,0xFFD070,surface->stride);
+    }
     if (state->shop_open) render_shop(surface, state);
     if (state->horde_banner_ms > 0 && state->interaction_banner) {
         int banner_y = surface->height / 3;
@@ -815,6 +826,10 @@ void rasterfall_hud_draw_interact_prompt(struct toy_renderer *renderer,
         snprintf(label, sizeof(label), "E: VMD WALK (5 CHARACTERS)");
     else if (it->kind == TOY_MAP_PICKUP_VMD_MANJUSAKA_BUTTON)
         snprintf(label, sizeof(label), "E: VMD MANJUSAKA (EULA)");
+    else if (it->kind == TOY_MAP_PICKUP_ANIMATION_COMPOSITION_BUTTON)
+        snprintf(label, sizeof(label), "E: PLAY ANIMATION COMPOSITION");
+    else if (it->kind == TOY_MAP_PICKUP_HUMANOID_POSE_DEBUG_BUTTON)
+        snprintf(label, sizeof(label), "E: EULA AK POSE DEBUGGER");
     else if (it->kind == TOY_MAP_PICKUP_WEAPON ||
              it->kind == TOY_MAP_PICKUP_SMG ||
              it->kind == TOY_MAP_PICKUP_SHOTGUN) {

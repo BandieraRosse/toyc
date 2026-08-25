@@ -8,6 +8,7 @@
 #include "rasterfall_map.h"
 #include "rasterfall_ai.h"
 #include "rasterfall_animation.h"
+#include "rasterfall_animation_composition.h"
 
 #define RASTERFALL_PLAYER_RADIUS 180
 #define RASTERFALL_MOVE_STEP TOY_CONFIG_PLAYER_MOVE_STEP
@@ -88,7 +89,10 @@ struct rasterfall_command {
     /* Captured once when a jump command is built. */
     int jump_dx;
     int jump_dz;
+    int pose_debug_action;
 };
+
+enum rasterfall_pose_debug_action { RASTERFALL_POSE_DEBUG_NONE, RASTERFALL_POSE_DEBUG_PREV_BONE, RASTERFALL_POSE_DEBUG_NEXT_BONE, RASTERFALL_POSE_DEBUG_AXIS_X, RASTERFALL_POSE_DEBUG_AXIS_Y, RASTERFALL_POSE_DEBUG_AXIS_Z, RASTERFALL_POSE_DEBUG_DECREASE, RASTERFALL_POSE_DEBUG_INCREASE, RASTERFALL_POSE_DEBUG_EXPORT, RASTERFALL_POSE_DEBUG_TOGGLE_LAYER };
 
 struct rasterfall_session {
     struct toy_map level;
@@ -133,6 +137,8 @@ struct rasterfall_session {
     int assignment_flag;
     int skeletal_demo_pose;
     struct rasterfall_animation_player skeletal_demo_player;
+    int pose_debug_active, pose_debug_bone, pose_debug_axis, pose_debug_layer;
+    struct rasterfall_rifle_pose rifle_pose, hit_pose;
     uint64_t seed;
 };
 
