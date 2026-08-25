@@ -191,6 +191,9 @@ int rasterfall_calibration_export(const struct rasterfall_calibration_state *s)
     n += snprintf(out+n,sizeof(out)-n,"weapon_grip %d %d %d\nweapon_foregrip %d %d %d\nweapon_muzzle %d %d %d\nweapon_stock %d %d %d\n",s->weapon_profile.grip.x,s->weapon_profile.grip.y,s->weapon_profile.grip.z,s->weapon_profile.foregrip.x,s->weapon_profile.foregrip.y,s->weapon_profile.foregrip.z,s->weapon_profile.muzzle.x,s->weapon_profile.muzzle.y,s->weapon_profile.muzzle.z,s->weapon_profile.stock.x,s->weapon_profile.stock.y,s->weapon_profile.stock.z);
     for(i=0;i<8;i++) n+=snprintf(out+n,sizeof(out)-n,"%s %d %d %d\n",bones[i],s->stance[i][0],s->stance[i][1],s->stance[i][2]);
     n+=snprintf(out+n,sizeof(out)-n,"left_ik %d\n",s->left_ik);
+    /* Export is also used from fresh checkouts where build/test cleanup may
+     * have removed tmp/.  Existing directories are accepted by the helper. */
+    if (tlibc_recursive_mkdir("tmp") < 0) return 0;
     fd=__openat(AT_FDCWD,"tmp/eula_ak.rfpose",O_WRONLY|O_CREAT|O_TRUNC,0644);
     if (fd < 0) return 0;
     __write(fd,out,n);

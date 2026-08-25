@@ -3408,6 +3408,16 @@ startup_again:
             /* 直接写屏与第二次光栅化（拾取物）都归入 overlay 阶段 */
             prev_tris = renderer.submitted_triangles;
             stage_pixels = 0;
+            /* World interactables must finish before the first-person layer
+             * and all direct framebuffer HUD overlays.  They are submitted
+             * and flushed here so map buttons/weapons cannot cover the
+             * viewmodel or Pose Editor. */
+            if (game.state == TOY_GAME_PLAYING && !paused &&
+                !session.shop_open) {
+                stage_pixels += rasterfall_render_interactables(
+                    &renderer, &render_camera);
+                stage_pixels += toy_renderer_flush(&renderer);
+            }
             stage_pixels += rasterfall_render_tracers(&renderer, &render_camera);
             stage_pixels += rasterfall_render_particles(&renderer, &render_camera);
             /* 第一人称武器：最后画，叠加在世界之上 */
@@ -3437,14 +3447,11 @@ startup_again:
             }
             if (game.state == TOY_GAME_PLAYING && !paused &&
                 !session.shop_open) {
-                stage_pixels += rasterfall_render_interactables(&renderer, &render_camera);
-                /* 拾取物保持画在枪模之上的现状顺序 */
-                stage_pixels += toy_renderer_flush(&renderer);
-                {
-                    struct rasterfall_hud_state hud;
-                    fill_hud_state(&hud, &net, host_address, net_port, &camera);
-                    rasterfall_hud_draw_interact_prompt(&renderer, &hud);
-                }
+                struct rasterfall_hud_state hud;
+                fill_hud_state(&hud, &net, host_address, net_port, &camera);
+                /* The interaction prompt is direct framebuffer text and is
+                 * intentionally above world buttons and the viewmodel. */
+                rasterfall_hud_draw_interact_prompt(&renderer, &hud);
             }
             scene_pixels += stage_pixels;
             rasterfall_render_ai_teammate_name(&renderer, &render_camera);
