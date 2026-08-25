@@ -1,5 +1,8 @@
 # Rasterfall
 
+项目暂停开发时的状态、持枪姿态快照、动画遗留问题、外部资源名称与转换流程见
+[`PROJECT_HANDOFF.md`](PROJECT_HANDOFF.md)。恢复开发或整理发布包前应先阅读该文档。
+
 Rasterfall 的代码、专属游戏引擎和运行时资源集中在本目录：
 
 - `src/`：游戏主程序及各功能模块

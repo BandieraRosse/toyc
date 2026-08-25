@@ -101,7 +101,7 @@ static int session_collect_assignable(const struct rasterfall_session *s,
             int assigned = a->flag_index == fi;
             int assigned_elsewhere = a->flag_index >= 0 && !assigned;
             if (!a->active || a->kind != TOY_GAME_ACTOR_AI || a->base_core ||
-                a->developer_only || a->companion || assigned_elsewhere ||
+                a->developer_only || a->companion || a->flag_guard || assigned_elsewhere ||
                 (pass == 0 ? !assigned : assigned)) continue;
             indices[count++] = i;
         }
@@ -295,12 +295,13 @@ void rasterfall_session_reset(struct rasterfall_session *session,
             &session->ai_registry, TOY_GAME_PLAYER_ACTOR_INDEX,
             RASTERFALL_AI_CONTROLLER_MANAGED_PLAYER, 100,
             RASTERFALL_AI_POLICY_MANAGED_SIMPLE);
-    session->flag_count = 1;
+    session->flag_count = 2;
     session->carried_flag = -1;
     session->assignment_flag = 0;
     /* Keep the initial flag at the world origin while the player starts
      * 500 units closer to the Eula display. */
     session_init_flag(session, 0, 0, 0);
+    session_init_flag(session, 1, -12000, 0);
     for (i = 0; i < 3; i++)
         if (session->game_state.actors[i].active &&
             session->game_state.actors[i].kind == TOY_GAME_ACTOR_AI &&
@@ -308,6 +309,24 @@ void rasterfall_session_reset(struct rasterfall_session *session,
             toy_game_assign_actor_deployment(&session->game_state, i,
                 session->flags[0].x + session->flags[0].slot_offsets[i][0],
                 session->flags[0].z + session->flags[0].slot_offsets[i][1], 0);
+    {
+        static const char *guard_names[] = {
+            "ANIME_GUARD_1", "ANIME_GUARD_2",
+            "ANIME_GUARD_3", "ANIME_GUARD_4"
+        };
+        for (i = 0; i < 4; i++) {
+            int actor_id = toy_game_add_anime_flag_guard(
+                &session->game_state, i + 1,
+                session->flags[1].x + session->flags[1].slot_offsets[i][0],
+                session->flags[1].z + session->flags[1].slot_offsets[i][1],
+                guard_names[i], 1);
+            if (actor_id > 0)
+                toy_game_assign_actor_deployment(
+                    &session->game_state, actor_id - 1,
+                    session->flags[1].x + session->flags[1].slot_offsets[i][0],
+                    session->flags[1].z + session->flags[1].slot_offsets[i][1], 1);
+        }
+    }
     session->game_state.px = camera->x;
     session->game_state.pz = camera->z;
     toy_game_set_player_pitch(&session->game_state, camera->pitch_sy,

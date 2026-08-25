@@ -194,11 +194,14 @@ struct rasterfall_skeletal_actor_profile;
 static void weapon_profile_local(const struct rasterfall_pose_calibration *p,
                                  const int in[3], int out[3]);
 static const struct rasterfall_pose_calibration *render_pose_calibration(int weapon);
+static int rifle_frame_transform(const struct rasterfall_model_asset *, struct rasterfall_model_attachment_transform *);
+static void rifle_solve_hands(struct rasterfall_model_asset *, const struct rasterfall_model_attachment_transform *, const struct rasterfall_pose_calibration *, const struct rasterfall_weapon_asset_profile *, int);
 static int render_skeletal_rifle(
     struct toy_renderer *renderer, const struct camera *camera,
     const struct rasterfall_model_asset *character,
-    const struct rasterfall_model_attachment_transform *hand,
+    const struct rasterfall_model_attachment_transform *rifle_frame,
     const struct rasterfall_skeletal_actor_profile *profile,
+    const struct rasterfall_pose_calibration *calibration,
     int actor_x, int base_y, int actor_z, int actor_sy, int actor_cy,
     int weapon, int muzzle_flash);
 
@@ -2760,32 +2763,16 @@ static int render_private_character(struct toy_renderer *renderer,
             active_session->pose_editor.character == 0 &&
             active_session->pose_editor.weapon == TOY_GAME_WEAPON_AK &&
             active_session->pose_editor.pose.left_ik) {
-            struct rasterfall_model_attachment_transform right_hand;
-            if (rasterfall_model_attachment_transform(
-                    &private_character_model, eula_actor_profile.right_hand_bone,
-                    &right_hand) == 0) {
+            struct rasterfall_model_attachment_transform rifle_frame;
+            if (rifle_frame_transform(&private_character_model,&rifle_frame)==0) {
                 const struct rasterfall_pose_calibration *wp =
                     rasterfall_pose_calibration_resolve(&active_session->pose_editor, 0, TOY_GAME_WEAPON_AK);
                 const struct rasterfall_weapon_asset_profile *asset =
                     rasterfall_weapon_asset_profile(TOY_GAME_WEAPON_AK);
                 int character_scale = character_model_scale(
                     &private_character_model, eula_actor_profile.target_height_mm);
-                int delta[3], calibrated[3], axis;
-                double target[3], pole[3] = {-1.0, 0.0, 0.0};
-                for (axis=0; axis<3; axis++)
-                    delta[axis] = (((int *)&wp->foregrip)[axis] -
-                                   ((int *)&asset->attachment_grip)[axis]) * 1000 /
-                                  character_scale;
-                weapon_profile_local(wp, delta, calibrated);
-                target[0] = right_hand.position[0] +
-                    (right_hand.rotation[0]*calibrated[0] + right_hand.rotation[1]*calibrated[1] + right_hand.rotation[2]*calibrated[2]) / 1000.0;
-                target[1] = right_hand.position[1] +
-                    (right_hand.rotation[3]*calibrated[0] + right_hand.rotation[4]*calibrated[1] + right_hand.rotation[5]*calibrated[2]) / 1000.0;
-                target[2] = right_hand.position[2] +
-                    (right_hand.rotation[6]*calibrated[0] + right_hand.rotation[7]*calibrated[1] + right_hand.rotation[8]*calibrated[2]) / 1000.0;
-                rasterfall_model_solve_two_bone_attachment(
-                    &private_character_model, "左腕", "左ひじ", "左手首",
-                    target, pole);
+                rifle_solve_hands(&private_character_model,&rifle_frame,wp,
+                                  asset,character_scale);
             }
         }
         int character_pixels = render_characters_parallel(renderer, camera);
@@ -2809,15 +2796,14 @@ static int render_private_character(struct toy_renderer *renderer,
         if (active_session->pose_editor.active &&
             active_session->pose_editor.character == 0 &&
             active_session->pose_editor.weapon == TOY_GAME_WEAPON_AK) {
-            struct rasterfall_model_attachment_transform right_hand;
-            if (rasterfall_model_attachment_transform(
-                    &private_character_model, eula_actor_profile.right_hand_bone,
-                    &right_hand) == 0) {
+            struct rasterfall_model_attachment_transform rifle_frame;
+            if (rifle_frame_transform(&private_character_model,&rifle_frame)==0) {
                 /* Left-hand IK was already solved before skinning.  Solving
                  * it again here cannot affect the character just drawn and
                  * only mutates the persistent solver history for next frame. */
+                const struct rasterfall_pose_calibration *wp = render_pose_calibration(TOY_GAME_WEAPON_AK);
                 pixels += render_skeletal_rifle(renderer, camera,
-                    &private_character_model, &right_hand, &eula_actor_profile,
+                    &private_character_model, &rifle_frame, &eula_actor_profile,wp,
                     -13000, -900, -10000, 0, 1024,
                     TOY_GAME_WEAPON_AK, 0);
             }
@@ -5278,6 +5264,13 @@ static const struct rasterfall_pose_calibration *render_pose_calibration(int wea
         active_session ? &active_session->pose_editor : NULL, 0, weapon);
 }
 
+static int rifle_frame_transform(const struct rasterfall_model_asset *model,
+                                 struct rasterfall_model_attachment_transform *frame)
+{
+    if (rasterfall_model_attachment_transform(model,"上半身2",frame)==0) return 0;
+    return rasterfall_model_attachment_transform(model,"上半身",frame);
+}
+
 static void weapon_profile_local(const struct rasterfall_pose_calibration *p,
                                  const int in[3], int out[3])
 {
@@ -5318,16 +5311,42 @@ static void skeletal_attachment_point(
     out->z=actor_z+(model_z*cy-model_x*sy)/1024;
 }
 
+static void rifle_anchor_model_target(
+    const struct rasterfall_model_attachment_transform *frame,
+    const struct rasterfall_pose_calibration *profile,
+    const struct rasterfall_weapon_asset_profile *asset,
+    struct rasterfall_cal_vec3 anchor,double target[3],int character_scale)
+{
+    int delta[3],calibrated[3],i;
+    for(i=0;i<3;i++) delta[i]=(((int *)&anchor)[i]-((int *)&asset->attachment_grip)[i])*1000/character_scale;
+    weapon_profile_local(profile,delta,calibrated);
+    for(i=0;i<3;i++) target[i]=frame->position[i]+
+        (frame->rotation[i*3+0]*calibrated[0]+frame->rotation[i*3+1]*calibrated[1]+frame->rotation[i*3+2]*calibrated[2])/1000.0;
+}
+
+static void rifle_solve_hands(struct rasterfall_model_asset *model,
+                              const struct rasterfall_model_attachment_transform *frame,
+                              const struct rasterfall_pose_calibration *profile,
+                              const struct rasterfall_weapon_asset_profile *asset,
+                              int character_scale)
+{
+    double target[3];
+    if (!model || !frame || !profile || !asset || !profile->left_ik) return;
+    rifle_anchor_model_target(frame,profile,asset,profile->foregrip,target,character_scale);
+    rasterfall_model_solve_two_bone_attachment(model,"左腕","左ひじ","左手首",target,(double[3]){-1.0,0.0,0.0});
+}
+
 static int render_skeletal_rifle(
     struct toy_renderer *renderer,const struct camera *camera,
     const struct rasterfall_model_asset *character,
-    const struct rasterfall_model_attachment_transform *hand,
+    const struct rasterfall_model_attachment_transform *rifle_frame,
     const struct rasterfall_skeletal_actor_profile *profile,
+    const struct rasterfall_pose_calibration *calibration,
     int actor_x,int base_y,int actor_z,int actor_sy,int actor_cy,
     int weapon,int muzzle_flash)
 {
     const struct rasterfall_weapon_asset_profile *asset=rasterfall_weapon_asset_profile(weapon);
-    const struct rasterfall_pose_calibration *weapon_profile=render_pose_calibration(weapon);
+    const struct rasterfall_pose_calibration *weapon_profile=calibration;
     struct rasterfall_model_asset *model;
     struct vec3 grip_world,foregrip_world,muzzle_world;
     int grip_offset[3],foregrip_offset[3],muzzle_offset[3];
@@ -5346,11 +5365,11 @@ static int render_skeletal_rifle(
         foregrip_offset[i]=((int *)&weapon_profile->foregrip)[i]-((int *)&asset->attachment_grip)[i];
         muzzle_offset[i]=((int *)&weapon_profile->muzzle)[i]-((int *)&asset->attachment_grip)[i];
     }
-    skeletal_attachment_point(character,hand,profile,actor_x,base_y,actor_z,
+    skeletal_attachment_point(character,rifle_frame,profile,actor_x,base_y,actor_z,
         actor_sy,actor_cy,character_scale,weapon_profile,grip_offset,&grip_world);
-    skeletal_attachment_point(character,hand,profile,actor_x,base_y,actor_z,
+    skeletal_attachment_point(character,rifle_frame,profile,actor_x,base_y,actor_z,
         actor_sy,actor_cy,character_scale,weapon_profile,foregrip_offset,&foregrip_world);
-    skeletal_attachment_point(character,hand,profile,actor_x,base_y,actor_z,
+    skeletal_attachment_point(character,rifle_frame,profile,actor_x,base_y,actor_z,
         actor_sy,actor_cy,character_scale,weapon_profile,muzzle_offset,&muzzle_world);
     (void)grip_world;(void)foregrip_world;
     if (active_pose_preview && active_session && active_session->pose_editor.active) {
@@ -5362,7 +5381,7 @@ static int render_skeletal_rifle(
         if (active_session->pose_editor.axes) {
             int axis_local[3][3]={{700,0,0},{0,700,0},{0,0,900}}; struct vec3 ends[3]; int a;
             for(a=0;a<3;a++) {
-                skeletal_attachment_point(character,hand,profile,actor_x,base_y,actor_z,actor_sy,actor_cy,character_scale,weapon_profile,axis_local[a],&ends[a]);
+                skeletal_attachment_point(character,rifle_frame,profile,actor_x,base_y,actor_z,actor_sy,actor_cy,character_scale,weapon_profile,axis_local[a],&ends[a]);
                 pixels += draw_cuboid(renderer,camera,(grip_world.x+ends[a].x)/2-10,(grip_world.x+ends[a].x)/2+10,(grip_world.y+ends[a].y)/2-10,(grip_world.y+ends[a].y)/2+10,(grip_world.z+ends[a].z)/2-10,(grip_world.z+ends[a].z)/2+10,a==0?0xE05050:a==1?0x50E070:0x5080F0);
             }
         }
@@ -5394,7 +5413,7 @@ static int render_skeletal_rifle(
                     local[1]=canonical[1]*scale/1000-asset->attachment_grip.y;
                     local[2]=canonical[2]*scale/1000-asset->attachment_grip.z;
                 }
-                skeletal_attachment_point(character,hand,profile,actor_x,base_y,
+                skeletal_attachment_point(character,rifle_frame,profile,actor_x,base_y,
                     actor_z,actor_sy,actor_cy,character_scale,weapon_profile,local,&v[k]);
             }
             if(k==3)pixels+=draw_world_triangle(renderer,camera,&v[0],&v[1],&v[2],color);
@@ -5483,7 +5502,7 @@ static int render_ai_teammate(struct toy_renderer *renderer,
             struct rasterfall_rifle_pose hit={0};
             struct rasterfall_rifle_pose actor_body_pose;
             struct rasterfall_animation_composition composition;
-            struct rasterfall_model_attachment_transform right_hand;
+            struct rasterfall_model_attachment_transform rifle_frame;
             int pose_weapon = actor->current_slot >= 0 &&
                 actor->current_slot < TOY_GAME_WEAPON_SLOTS ?
                 actor->slots[actor->current_slot].weapon : TOY_GAME_WEAPON_PISTOL;
@@ -5491,7 +5510,7 @@ static int render_ai_teammate(struct toy_renderer *renderer,
                 rasterfall_pose_calibration_resolve(
                     active_session ? &active_session->pose_editor : NULL,
                     0, pose_weapon);
-            int have_right_hand;
+            int have_rifle_frame;
             int blend=actor->locomotion_blend_ms*5;
             if(blend>1000)blend=1000;
             hit.rotation[0][0]=8; hit.rotation[0][2]=-8;
@@ -5507,10 +5526,8 @@ static int render_ai_teammate(struct toy_renderer *renderer,
             composition.rifle_pose=&actor_body_pose;composition.hit_pose=&hit;
             composition.hit_pose_preview=actor->animation.id==TOY_GAME_ANIM_HIT;
             rasterfall_animation_compose(&private_character_model,&composition);
-            have_right_hand=rasterfall_model_attachment_transform(
-                &private_character_model,eula_actor_profile.right_hand_bone,
-                &right_hand)==0;
-            if(have_right_hand&&actor->current_slot>=0&&
+            have_rifle_frame=rifle_frame_transform(&private_character_model,&rifle_frame)==0;
+            if(have_rifle_frame&&actor->current_slot>=0&&
                actor->current_slot<TOY_GAME_WEAPON_SLOTS){
                 int weapon=actor->slots[actor->current_slot].weapon;
                 const struct rasterfall_weapon_asset_profile *asset=
@@ -5520,34 +5537,11 @@ static int render_ai_teammate(struct toy_renderer *renderer,
                 if(asset->skeletal&&(actor->animation.id==TOY_GAME_ANIM_IDLE||
                    actor->animation.id==TOY_GAME_ANIM_MOVE||
                    actor->animation.id==TOY_GAME_ANIM_FIRE)){
-                    double foregrip_target[3],pole[3]={-1.0,0.0,0.0};
                     int character_scale=character_model_scale(
                         &private_character_model,
                         eula_actor_profile.target_height_mm);
-                    double local[3]; int calibrated[3]; int axis;
-                    for(axis=0;axis<3;axis++)
-                        local[axis]=(((int *)&weapon_profile->foregrip)[axis]-
-                            ((int *)&asset->attachment_grip)[axis])*1000.0/character_scale;
-                    {
-                        int delta[3];
-                        for (axis=0;axis<3;axis++) delta[axis]=(int)local[axis];
-                        weapon_profile_local(weapon_profile,delta,calibrated);
-                    }
-                    foregrip_target[0]=right_hand.position[0]+
-                        right_hand.rotation[0]*calibrated[0]*1.0/1000+
-                        right_hand.rotation[1]*calibrated[1]*1.0/1000+
-                        right_hand.rotation[2]*calibrated[2]*1.0/1000;
-                    foregrip_target[1]=right_hand.position[1]+
-                        right_hand.rotation[3]*calibrated[0]*1.0/1000+
-                        right_hand.rotation[4]*calibrated[1]*1.0/1000+
-                        right_hand.rotation[5]*calibrated[2]*1.0/1000;
-                    foregrip_target[2]=right_hand.position[2]+
-                        right_hand.rotation[6]*calibrated[0]*1.0/1000+
-                        right_hand.rotation[7]*calibrated[1]*1.0/1000+
-                        right_hand.rotation[8]*calibrated[2]*1.0/1000;
-                    rasterfall_model_solve_two_bone_attachment(
-                        &private_character_model,"左腕","左ひじ","左手首",
-                        foregrip_target,pole);
+                    rifle_solve_hands(&private_character_model,&rifle_frame,weapon_profile,
+                                      asset,character_scale);
                 }
             }
             active_gallery_facing=1;
@@ -5562,9 +5556,12 @@ static int render_ai_teammate(struct toy_renderer *renderer,
             active_gallery_facing=0;
             if(actor->current_slot>=0&&actor->current_slot<TOY_GAME_WEAPON_SLOTS){
                 int weapon=actor->slots[actor->current_slot].weapon;
-                if(have_right_hand && rasterfall_weapon_asset_profile(weapon)->skeletal)
+                const struct rasterfall_pose_calibration *weapon_profile=
+                    render_pose_calibration(weapon);
+                if(have_rifle_frame && rasterfall_weapon_asset_profile(weapon)->skeletal)
                     pixels+=render_skeletal_rifle(renderer,camera,
-                        &private_character_model,&right_hand,&eula_actor_profile,
+                        &private_character_model,&rifle_frame,&eula_actor_profile,
+                        weapon_profile,
                         actor->x,-900+active_actor_lift,actor->z,actor->sy,
                         actor->cy,weapon,actor->muzzle_flash_ms);
                 else pixels+=render_actor_model_weapon(renderer,camera,actor->x,

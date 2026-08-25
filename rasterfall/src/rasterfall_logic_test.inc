@@ -119,7 +119,7 @@ static int run_logic_test(void)
             return 170;
     }
     /* 远端旗帜操作必须由主机状态承接，旗帜位置保持在初始点。 */
-    if (session.flag_count != 1) return 131;
+    if (session.flag_count != 2) return 131;
     camera.x = session.flags[0].x;
     camera.z = session.flags[0].z;
     rasterfall_session_toggle_flag_remote(&session, &camera, 1);

@@ -756,6 +756,21 @@ int toy_game_add_anime_actor(struct toy_game *g, int character_id,
     a->fire_enabled=1;return a->actor_id;
 }
 
+int toy_game_add_anime_flag_guard(struct toy_game *g, int character_id,
+                                  int x, int z, const char *name,
+                                  int flag_index)
+{
+    int actor_id = toy_game_add_anime_actor(g, character_id, x, z, name);
+    struct toy_game_actor *a;
+    if (actor_id < 0) return -1;
+    a = toy_game_actor_by_id(g, actor_id);
+    if (!a) return -1;
+    a->companion = 0;
+    a->flag_guard = 1;
+    a->flag_index = flag_index;
+    return actor_id;
+}
+
 int toy_game_add_ai(struct toy_game *g, int class_id, int x, int z,
                     const char *name)
 {

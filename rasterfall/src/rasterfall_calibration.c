@@ -42,15 +42,28 @@ static void profile_init(void)
     /* Imported from tmp/eula_ak.rfpose. */
     pose_profiles[0][TOY_GAME_WEAPON_AK].scale_milli = 500;
     pose_profiles[0][TOY_GAME_WEAPON_AK].offset =
-        (struct rasterfall_cal_vec3){-35, -130, -55};
-    pose_profiles[0][TOY_GAME_WEAPON_AK].yaw_offset = 105;
+        (struct rasterfall_cal_vec3){-2, -4, -256};
+    pose_profiles[0][TOY_GAME_WEAPON_AK].yaw_offset = 117;
     pose_profiles[0][TOY_GAME_WEAPON_AK].pitch_offset = -45;
-    pose_profiles[0][TOY_GAME_WEAPON_AK].roll_offset = 50;
-    pose_profiles[0][TOY_GAME_WEAPON_AK].grip = (struct rasterfall_cal_vec3){-18, -8, -66};
+    pose_profiles[0][TOY_GAME_WEAPON_AK].roll_offset = 45;
+    pose_profiles[0][TOY_GAME_WEAPON_AK].grip = (struct rasterfall_cal_vec3){-18, -8, -65};
     pose_profiles[0][TOY_GAME_WEAPON_AK].foregrip = (struct rasterfall_cal_vec3){5, 1, 48};
     pose_profiles[0][TOY_GAME_WEAPON_AK].muzzle = (struct rasterfall_cal_vec3){-5, 28, 225};
-    memcpy(pose_profiles[0][TOY_GAME_WEAPON_AK].body_pose, default_body_pose,
-           sizeof(default_body_pose));
+    pose_profiles[0][TOY_GAME_WEAPON_AK].body_pose[0][0] = -5;
+    pose_profiles[0][TOY_GAME_WEAPON_AK].body_pose[0][1] = 0;
+    pose_profiles[0][TOY_GAME_WEAPON_AK].body_pose[0][2] = 0;
+    pose_profiles[0][TOY_GAME_WEAPON_AK].body_pose[1][0] = -64;
+    pose_profiles[0][TOY_GAME_WEAPON_AK].body_pose[1][1] = 3;
+    pose_profiles[0][TOY_GAME_WEAPON_AK].body_pose[1][2] = 55;
+    pose_profiles[0][TOY_GAME_WEAPON_AK].body_pose[2][0] = 90;
+    pose_profiles[0][TOY_GAME_WEAPON_AK].body_pose[2][1] = 26;
+    pose_profiles[0][TOY_GAME_WEAPON_AK].body_pose[2][2] = -92;
+    pose_profiles[0][TOY_GAME_WEAPON_AK].body_pose[3][0] = 21;
+    pose_profiles[0][TOY_GAME_WEAPON_AK].body_pose[3][1] = 66;
+    pose_profiles[0][TOY_GAME_WEAPON_AK].body_pose[3][2] = 2;
+    pose_profiles[0][TOY_GAME_WEAPON_AK].body_pose[4][0] = 62;
+    pose_profiles[0][TOY_GAME_WEAPON_AK].body_pose[4][1] = 51;
+    pose_profiles[0][TOY_GAME_WEAPON_AK].body_pose[4][2] = -18;
     pose_profiles[0][TOY_GAME_WEAPON_AK].left_ik = 1;
     for (i = 0; i < TOY_GAME_CHARACTER_COUNT; i++)
         for (int w = 0; w < TOY_GAME_WEAPON_COUNT; w++) {
@@ -179,11 +192,11 @@ int rasterfall_calibration_logic_test(void)
     int x, y, z;
     rasterfall_calibration_init(&s);
     if (s.weapon != TOY_GAME_WEAPON_AK || s.pose.scale_milli != 500 ||
-        s.pose.offset.x != -35 || s.pose.offset.y != -130 ||
-        s.pose.offset.z != -55 || s.pose.yaw_offset != 105 ||
-        s.pose.pitch_offset != -45 || s.pose.roll_offset != 50 ||
+        s.pose.offset.x != -2 || s.pose.offset.y != -4 ||
+        s.pose.offset.z != -256 || s.pose.yaw_offset != 117 ||
+        s.pose.pitch_offset != -45 || s.pose.roll_offset != 45 ||
         s.pose.grip.x != -18 || s.pose.grip.y != -8 ||
-        s.pose.grip.z != -66 || s.pose.foregrip.x != 5 ||
+        s.pose.grip.z != -65 || s.pose.foregrip.x != 5 ||
         s.pose.foregrip.y != 1 || s.pose.foregrip.z != 48 ||
         s.pose.muzzle.x != -5 || s.pose.muzzle.y != 28 ||
         s.pose.muzzle.z != 225 || s.animation_base != 0 ||
