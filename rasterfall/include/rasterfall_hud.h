@@ -7,6 +7,7 @@
 #include "rasterfall_map.h"
 #include "rasterfall_net.h"
 #include "rasterfall_animation_composition.h"
+#include "rasterfall_calibration.h"
 
 struct rasterfall_hud_state {
     const struct toy_game *game;
@@ -45,6 +46,7 @@ struct rasterfall_hud_state {
     int flag_colors[8];
     int pose_debug_active, pose_debug_bone, pose_debug_axis, pose_debug_layer;
     const struct rasterfall_rifle_pose *rifle_pose, *hit_pose;
+    const struct rasterfall_calibration_state *pose_editor;
 };
 
 void rasterfall_hud_draw_interact_prompt(struct toy_renderer *renderer,

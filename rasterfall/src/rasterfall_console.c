@@ -47,11 +47,9 @@ static void out_error(struct rasterfall_console *c, const char *s)
 { rasterfall_console_log(c, RASTERFALL_CONSOLE_ERROR, s); }
 static int num(const char *s, int *v, int *relative)
 { int sign=1,n=0; *relative=0; if(*s=='+'||*s=='-'){*relative=1;if(*s++=='-')sign=-1;} if(!*s)return 0; while(*s>='0'&&*s<='9'){n=n*10+*s++-'0';} if(*s)return 0; *v=n*sign; return 1; }
-static void setv(struct rasterfall_cal_vec3 *v, const char *axis, const char *value, char *msg)
-{ int n,r; if(!num(value,&n,&r)){strcpy(msg,"bad number");return;} if(!strcmp(axis,"x")){v->x=r?v->x+n:n;} else if(!strcmp(axis,"y")){v->y=r?v->y+n:n;} else if(!strcmp(axis,"z")){v->z=r?v->z+n:n;} else {strcpy(msg,"axis must be x/y/z");return;} strcpy(msg,"ok"); }
 static int words(char *s,char **w,int max){int n=0;while(*s&&n<max){while(*s==' ')s++;if(!*s)break;w[n++]=s;while(*s&&*s!=' ')s++;if(*s)*s++=0;}return n;}
 static void execute(struct rasterfall_console *c)
-{ char *w[6],msg[64],line[160]; int n,v,r; strcpy(line,c->line); n=words(line,w,6); if(!n)return;
+{ char *w[6],line[160]; int n,v,r; strcpy(line,c->line); n=words(line,w,6); if(!n)return;
   if(!strcmp(w[0],"killall")){c->killall_requested=1;out(c,"killall requested");return;}
   if (!strncmp(w[0], "give+", 5)) {
       if (!num(w[0] + 5, &v, &r) || r || v <= 0) {
@@ -66,30 +64,15 @@ static void execute(struct rasterfall_console *c)
       out(c,"  clear         clear console log");
       out(c,"  killall       kill all active enemies");
       out(c,"  give+N        add N money, e.g. give+500");
-      out(c,"CALIBRATION");
-      out(c,"  cal begin eula ak    enter Eula + AK mode");
-      out(c,"  cal end | cal reset  leave/reset calibration");
-      out(c,"  cal dump             print complete profile");
-      out(c,"  cal axes|anchors on/off");
-      out(c,"  cal ik left on/off");
-      out(c,"WEAPON / HAND");
-      out(c,"  cal weapon scale|yaw|pitch|roll N");
-      out(c,"  cal grip|foregrip|muzzle|stock x|y|z N");
-      out(c,"  cal hand right x|y|z|yaw|pitch|roll N");
-      out(c,"  cal bone <name> x|y|z N");
-      out(c,"  N accepts absolute or relative values (+5 / -10)");
+      out(c,"POSE EDITOR");
+      out(c,"  pose          open default Eula + AK editor");
+      out(c,"  pose eula ak  edit the Eula + AK rifle pose");
+      out(c,"EDITOR");
+      out(c,"  pose          open Eula + AK editor");
+      out(c,"  pose eula ak  edit this character/weapon pair");
       return;
   }
-  if(n>=2&&!strcmp(w[0],"cal")&&!strcmp(w[1],"begin")){c->calibration.active=1;c->calibration.left_ik=0;c->pose_hud_request=1;c->close_requested=1;out(c,"rifle pose HUD enabled: N/B bone, X/Y/Z axis, -/+ adjust, P export");return;}
-  if(n>=2&&!strcmp(w[0],"cal")&&!strcmp(w[1],"end")){c->calibration.active=0;c->pose_hud_request=-1;c->close_requested=1;out(c,"rifle pose HUD disabled");return;}
-  if(n>=3&&!strcmp(w[0],"cal")&&(!strcmp(w[1],"axes")||!strcmp(w[1],"anchors"))){int on=!strcmp(w[2],"on");if(!strcmp(w[1],"axes"))c->calibration.axes=on;else c->calibration.anchors=on;out(c,on?"debug marker on":"debug marker off");return;}
-  if(n>=4&&!strcmp(w[0],"cal")&&!strcmp(w[1],"ik")&&!strcmp(w[2],"left")){c->calibration.left_ik=!strcmp(w[3],"on");out(c,c->calibration.left_ik?"left IK on":"left IK off");return;}
-  if(n>=4&&!strcmp(w[0],"cal")&&!strcmp(w[1],"weapon")){if(!num(w[3],&v,&r)){out(c,"bad number");return;} if(!strcmp(w[2],"scale"))c->calibration.weapon_profile.scale_milli=r?c->calibration.weapon_profile.scale_milli+v:v; else if(!strcmp(w[2],"yaw"))c->calibration.weapon_profile.yaw_offset=r?c->calibration.weapon_profile.yaw_offset+v:v; else if(!strcmp(w[2],"pitch"))c->calibration.weapon_profile.pitch_offset=r?c->calibration.weapon_profile.pitch_offset+v:v; else if(!strcmp(w[2],"roll"))c->calibration.weapon_profile.roll_offset=r?c->calibration.weapon_profile.roll_offset+v:v; else {out(c,"unknown weapon field");return;} out(c,"weapon updated");return;}
-  if(n>=5&&!strcmp(w[0],"cal")&&(!strcmp(w[1],"grip")||!strcmp(w[1],"foregrip")||!strcmp(w[1],"muzzle")||!strcmp(w[1],"stock"))){struct rasterfall_cal_vec3 *p=!strcmp(w[1],"grip")?&c->calibration.weapon_profile.grip:!strcmp(w[1],"foregrip")?&c->calibration.weapon_profile.foregrip:!strcmp(w[1],"muzzle")?&c->calibration.weapon_profile.muzzle:&c->calibration.weapon_profile.stock;setv(p,w[2],w[3],msg);out(c,msg);return;}
-  if(n>=5&&!strcmp(w[0],"cal")&&!strcmp(w[1],"hand")&&!strcmp(w[2],"right")){if(!num(w[4],&v,&r)){out(c,"bad number");return;}if(!strcmp(w[3],"x")){c->calibration.character_profile.right_grip_anchor.x=r?c->calibration.character_profile.right_grip_anchor.x+v:v;}else if(!strcmp(w[3],"y")){c->calibration.character_profile.right_grip_anchor.y=r?c->calibration.character_profile.right_grip_anchor.y+v:v;}else if(!strcmp(w[3],"z")){c->calibration.character_profile.right_grip_anchor.z=r?c->calibration.character_profile.right_grip_anchor.z+v:v;}else if(!strcmp(w[3],"yaw"))c->calibration.character_profile.right_yaw=r?c->calibration.character_profile.right_yaw+v:v;else if(!strcmp(w[3],"pitch"))c->calibration.character_profile.right_pitch=r?c->calibration.character_profile.right_pitch+v:v;else if(!strcmp(w[3],"roll"))c->calibration.character_profile.right_roll=r?c->calibration.character_profile.right_roll+v:v;else{out(c,"unknown hand field");return;}out(c,"right hand updated");return;}
-  if(n>=5&&!strcmp(w[0],"cal")&&!strcmp(w[1],"bone")){int b=-1;if(!strcmp(w[2],"chest"))b=0;else if(!strcmp(w[2],"upper_chest"))b=1;else if(!strcmp(w[2],"right_shoulder"))b=2;else if(!strcmp(w[2],"right_upper_arm"))b=3;else if(!strcmp(w[2],"right_forearm"))b=4;else if(!strcmp(w[2],"left_shoulder"))b=5;else if(!strcmp(w[2],"left_upper_arm"))b=6;else if(!strcmp(w[2],"left_forearm"))b=7;if(b<0||!num(w[4],&v,&r)){out(c,"unknown bone or bad number");return;}if(!strcmp(w[3],"x"))c->calibration.stance[b][0]=r?c->calibration.stance[b][0]+v:v;else if(!strcmp(w[3],"y"))c->calibration.stance[b][1]=r?c->calibration.stance[b][1]+v:v;else if(!strcmp(w[3],"z"))c->calibration.stance[b][2]=r?c->calibration.stance[b][2]+v:v;else{out(c,"axis must be x/y/z");return;}out(c,"stance bone updated");return;}
-  if(n>=2&&!strcmp(w[0],"cal")&&!strcmp(w[1],"dump")){rasterfall_calibration_dump(&c->calibration);out(c,"dump written to stdout");return;}
-  if(n>=2&&!strcmp(w[0],"cal")&&!strcmp(w[1],"reset")){int active=c->calibration.active;rasterfall_calibration_reset(&c->calibration);c->calibration.active=active;out(c,"calibration reset");return;}
+  if(!strcmp(w[0],"pose") && (n==1 || (n>=3&&!strcmp(w[1],"eula")&&!strcmp(w[2],"ak")))){c->calibration.active=1;c->calibration.character=0;c->calibration.weapon=TOY_GAME_WEAPON_AK;c->calibration.left_ik=1;c->calibration.axes=1;c->calibration.anchors=1;c->pose_hud_request=1;c->close_requested=1;out(c,"Rifle Pose Editor: Eula + AK");return;}
   out_error(c,"unknown command; type help");
 }
 void rasterfall_console_init(struct rasterfall_console *c){memset(c,0,sizeof(*c));rasterfall_calibration_init(&c->calibration);}

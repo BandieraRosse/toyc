@@ -373,6 +373,7 @@ static void fill_hud_state(struct rasterfall_hud_state *hud,
     hud->rifle_pose = &session.rifle_pose;
     hud->pose_debug_layer = session.pose_debug_layer;
     hud->hit_pose = &session.hit_pose;
+    hud->pose_editor = &session.pose_editor;
     for (i = 0; i < session.flag_count && i < 8; i++)
         hud->flag_colors[i] = session.flags[i].color;
     hud->flag_near = 0;
@@ -532,6 +533,31 @@ static void build_game_command(struct rasterfall_command *command,
     if (toy_input_pressed(input, KEY_4)) command->buttons |= RASTERFALL_CMD_SLOT_4;
     if (toy_input_pressed(input, KEY_E)) command->buttons |= RASTERFALL_CMD_INTERACT;
     if (toy_input_pressed(input, KEY_F)) command->buttons |= RASTERFALL_CMD_FLAG;
+    if (session.pose_debug_active && session.pose_editor.active) {
+        /* Keep movement, mouse look, and arrow-key look in the ordinary
+         * command.  Only gameplay actions are consumed by the editor. */
+        command->fire_held = 0;
+        command->buttons = 0;
+        if (toy_input_pressed(input, KEY_TAB))
+            command->pose_editor_action = toy_input_down(input, KEY_LEFTSHIFT) ?
+                RASTERFALL_POSE_EDITOR_PREV_PAGE : RASTERFALL_POSE_EDITOR_NEXT_PAGE;
+        /* Pose editing deliberately avoids WASD and the arrow keys: movement
+         * and camera look remain available while the editor is open. */
+        if (toy_input_pressed(input, KEY_COMMA)) command->pose_editor_action=RASTERFALL_POSE_EDITOR_PREV_FIELD;
+        if (toy_input_pressed(input, KEY_DOT)) command->pose_editor_action=RASTERFALL_POSE_EDITOR_NEXT_FIELD;
+        if (toy_input_pressed(input, KEY_J)) command->pose_editor_action=toy_input_down(input, KEY_LEFTSHIFT)?RASTERFALL_POSE_EDITOR_DECREASE_LARGE:RASTERFALL_POSE_EDITOR_DECREASE;
+        if (toy_input_pressed(input, KEY_L)) command->pose_editor_action=toy_input_down(input, KEY_LEFTSHIFT)?RASTERFALL_POSE_EDITOR_INCREASE_LARGE:RASTERFALL_POSE_EDITOR_INCREASE;
+        if (toy_input_pressed(input, KEY_R)) command->pose_editor_action=RASTERFALL_POSE_EDITOR_RESET;
+        if (toy_input_pressed(input, KEY_P)) command->pose_editor_action=RASTERFALL_POSE_EDITOR_EXPORT;
+        if (toy_input_pressed(input, KEY_ESC)) command->pose_editor_action=RASTERFALL_POSE_EDITOR_EXIT;
+        if (toy_input_pressed(input, KEY_U)) command->pose_editor_action=RASTERFALL_POSE_EDITOR_TOGGLE_AXES;
+        if (toy_input_pressed(input, KEY_O)) command->pose_editor_action=RASTERFALL_POSE_EDITOR_TOGGLE_ANCHORS;
+        if (toy_input_pressed(input, KEY_I)) command->pose_editor_action=RASTERFALL_POSE_EDITOR_TOGGLE_IK;
+        if (toy_input_pressed(input, KEY_X)) command->pose_editor_action=RASTERFALL_POSE_EDITOR_AXIS_X;
+        if (toy_input_pressed(input, KEY_Y)) command->pose_editor_action=RASTERFALL_POSE_EDITOR_AXIS_Y;
+        if (toy_input_pressed(input, KEY_Z)) command->pose_editor_action=RASTERFALL_POSE_EDITOR_AXIS_Z;
+        return;
+    }
     if (session.pose_debug_active) {
         if (toy_input_pressed(input, KEY_N)) command->pose_debug_action=RASTERFALL_POSE_DEBUG_PREV_BONE;
         if (toy_input_pressed(input, KEY_B)) command->pose_debug_action=RASTERFALL_POSE_DEBUG_NEXT_BONE;
@@ -571,6 +597,21 @@ static void consume_game_command_edges(struct toy_input *input)
     input->key_pressed[KEY_F] = 0;
     input->key_pressed[KEY_SLASH] = 0;
     input->key_pressed[KEY_LEFTSHIFT] = 0;
+    /* Pose-editor actions are edge events.  Clear their sampled state after
+     * the fixed-step command has consumed it; key_down remains untouched, so
+     * holding a key never turns into repeated menu navigation. */
+    input->key_pressed[KEY_TAB] = 0;
+    input->key_pressed[KEY_COMMA] = 0;
+    input->key_pressed[KEY_DOT] = 0;
+    input->key_pressed[KEY_J] = 0;
+    input->key_pressed[KEY_L] = 0;
+    input->key_pressed[KEY_U] = 0;
+    input->key_pressed[KEY_O] = 0;
+    input->key_pressed[KEY_I] = 0;
+    input->key_pressed[KEY_P] = 0;
+    input->key_pressed[KEY_X] = 0;
+    input->key_pressed[KEY_Y] = 0;
+    input->key_pressed[KEY_Z] = 0;
 }
 
 static void draw_crosshair(struct toy_surface *surface,
@@ -2807,6 +2848,15 @@ startup_again:
             if (developer_console.pose_hud_request != 0) {
                 session.pose_debug_active =
                     developer_console.pose_hud_request > 0;
+                if (session.pose_debug_active) {
+                    session.pose_editor = developer_console.calibration;
+                    session.pose_editor.active = 1;
+                    session.pose_debug_bone = 0;
+                    session.pose_debug_axis = 0;
+                    session.skeletal_demo_player.clip_id = 11;
+                    session.skeletal_demo_player.time_ms = 0;
+                    session.skeletal_demo_player.playing = 1;
+                }
                 developer_console.pose_hud_request = 0;
             }
             if (developer_console.close_requested) {
@@ -3401,7 +3451,7 @@ startup_again:
             rasterfall_render_network_teammate_status(&renderer, &render_camera, &net);
             rasterfall_hud_damage_flash(&surface, &game);
             if (game.state == TOY_GAME_PLAYING && !paused &&
-                toy_input_down(&input, KEY_TAB))
+                !session.pose_editor.active && toy_input_down(&input, KEY_TAB))
                 draw_scoreboard(&surface, &net);
             if (input_debug)
                 draw_input_debug(&surface, &input,

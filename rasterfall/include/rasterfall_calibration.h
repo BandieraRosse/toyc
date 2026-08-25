@@ -10,6 +10,7 @@ struct rasterfall_weapon_visual_profile {
     const char *model_path;
     int scale_milli;
     int yaw_offset, pitch_offset, roll_offset;
+    struct rasterfall_cal_vec3 offset;
     struct rasterfall_cal_vec3 grip, foregrip, muzzle, stock;
     /* Asset-space basis conversion, kept here instead of renderer branches. */
     int asset_basis;
@@ -28,9 +29,40 @@ struct rasterfall_calibration_state {
     int active, axes, anchors, left_ik;
     int locomotion, fire_overlay;
     int character, weapon;
+    /* Presentation-layer Rifle Pose Editor state.  The old cal parser may
+     * still edit the same values, but new authoring should use pose pages. */
+    int page, selection, selected_bone, selected_axis, dirty;
     struct rasterfall_weapon_visual_profile weapon_profile;
     struct rasterfall_character_attachment_profile character_profile;
     int stance[8][3];
+};
+
+enum rasterfall_pose_editor_page {
+    RASTERFALL_POSE_PAGE_BODY,
+    RASTERFALL_POSE_PAGE_WEAPON,
+    RASTERFALL_POSE_PAGE_ANCHORS,
+    RASTERFALL_POSE_PAGE_COUNT
+};
+
+enum rasterfall_pose_editor_action {
+    RASTERFALL_POSE_EDITOR_NONE,
+    RASTERFALL_POSE_EDITOR_NEXT_PAGE,
+    RASTERFALL_POSE_EDITOR_PREV_PAGE,
+    RASTERFALL_POSE_EDITOR_NEXT_FIELD,
+    RASTERFALL_POSE_EDITOR_PREV_FIELD,
+    RASTERFALL_POSE_EDITOR_DECREASE,
+    RASTERFALL_POSE_EDITOR_INCREASE,
+    RASTERFALL_POSE_EDITOR_DECREASE_LARGE,
+    RASTERFALL_POSE_EDITOR_INCREASE_LARGE,
+    RASTERFALL_POSE_EDITOR_RESET,
+    RASTERFALL_POSE_EDITOR_EXPORT,
+    RASTERFALL_POSE_EDITOR_EXIT,
+    RASTERFALL_POSE_EDITOR_TOGGLE_AXES,
+    RASTERFALL_POSE_EDITOR_TOGGLE_ANCHORS,
+    RASTERFALL_POSE_EDITOR_TOGGLE_IK,
+    RASTERFALL_POSE_EDITOR_AXIS_X,
+    RASTERFALL_POSE_EDITOR_AXIS_Y,
+    RASTERFALL_POSE_EDITOR_AXIS_Z
 };
 
 void rasterfall_calibration_init(struct rasterfall_calibration_state *state);
@@ -42,6 +74,9 @@ const struct rasterfall_weapon_visual_profile *rasterfall_weapon_visual_profile(
 void rasterfall_calibration_apply_runtime(
     const struct rasterfall_weapon_visual_profile *profile);
 void rasterfall_calibration_dump(const struct rasterfall_calibration_state *state);
+int rasterfall_calibration_editor_step(struct rasterfall_calibration_state *state,
+                                       int action);
+int rasterfall_calibration_export(const struct rasterfall_calibration_state *state);
 int rasterfall_calibration_logic_test(void);
 
 /* Convert an imported model point into canonical weapon space. */

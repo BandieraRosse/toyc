@@ -205,6 +205,7 @@ void rasterfall_session_reset(struct rasterfall_session *session,
     __memset(&session->hit_pose,0,sizeof(session->hit_pose));
     session->hit_pose.rotation[0][0]=8;
     session->hit_pose.rotation[0][2]=-8;
+    rasterfall_calibration_init(&session->pose_editor);
     toy_game_init(&session->game_state, session->seed);
     /* 环境变量不依赖 libc；HOSTNAME 是最稳定的本机身份来源，缺失时
      * toy_game_init 的 PLAYER 保底仍可用。名字只用于身份展示/未来快照。 */
@@ -2055,6 +2056,27 @@ void rasterfall_session_step(struct rasterfall_session *session,
         return;
     }
     rasterfall_animation_player_update(&session->skeletal_demo_player, dt_ms);
+    if (session->pose_debug_active && command->pose_editor_action) {
+        int editor_action = command->pose_editor_action;
+        int editor_result = rasterfall_calibration_editor_step(&session->pose_editor, editor_action);
+        session->pose_debug_active = session->pose_editor.active;
+        if (editor_action == RASTERFALL_POSE_EDITOR_EXPORT) {
+            session->banner_text = editor_result ? "POSE EXPORTED: tmp/eula_ak.rfpose" : "POSE EXPORT FAILED";
+            session->banner_ms = 1800;
+        }
+    }
+    if (session->pose_debug_active && session->pose_editor.active) {
+        /* Adapter from the eight authoring rows to the existing composition
+         * channels.  This keeps VMD/IK internals unchanged while the editor
+         * exposes the character-facing vocabulary. */
+        session->rifle_pose.rotation[0][0]=session->pose_editor.stance[0][0];
+        session->rifle_pose.rotation[0][1]=session->pose_editor.stance[0][1];
+        session->rifle_pose.rotation[0][2]=session->pose_editor.stance[0][2];
+        memcpy(session->rifle_pose.rotation[1],session->pose_editor.stance[3],sizeof(session->rifle_pose.rotation[1]));
+        memcpy(session->rifle_pose.rotation[2],session->pose_editor.stance[4],sizeof(session->rifle_pose.rotation[2]));
+        memcpy(session->rifle_pose.rotation[3],session->pose_editor.stance[6],sizeof(session->rifle_pose.rotation[3]));
+        memcpy(session->rifle_pose.rotation[4],session->pose_editor.stance[7],sizeof(session->rifle_pose.rotation[4]));
+    }
     if (session->pose_debug_active && command->pose_debug_action) {
         int action=command->pose_debug_action;
         struct rasterfall_rifle_pose *edited=&session->rifle_pose;

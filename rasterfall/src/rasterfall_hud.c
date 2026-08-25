@@ -714,16 +714,29 @@ void rasterfall_hud_render(struct toy_surface *surface, int fps,
     render_money(surface, game);
     render_player_hud(surface, game, state->player_name);
     render_revive_prompt(surface, state);
-    if (state->pose_debug_active && state->rifle_pose) {
-        char line[180]; int b=state->pose_debug_bone;
-        const struct rasterfall_rifle_pose *pose=state->rifle_pose;
-        snprintf(line,sizeof(line),"EULA AK RIFLE STANCE  B/N HUMANOID BONE: %s  X/Y/Z AXIS: %c",
-                 rasterfall_rifle_pose_bone_display_names[b],"XYZ"[state->pose_debug_axis]);
-        hud_fill_rect(surface,8,54,(int)strlen(line)*FB_FONT_W+12,FB_FONT_H*2+10,0x182634);
-        fb_draw_string((unsigned char*)surface->pixels,14,58,line,0x80D8FF,surface->stride);
-        snprintf(line,sizeof(line),"BONE NAME: %s   ROTATION X %d  Y %d  Z %d   -/+ EDIT  P EXPORT",
-                 rasterfall_rifle_pose_bone_display_names[b],pose->rotation[b][0],pose->rotation[b][1],pose->rotation[b][2]);
-        fb_draw_string((unsigned char*)surface->pixels,14,58+FB_FONT_H,line,0xFFD070,surface->stride);
+    if (state->pose_debug_active && state->pose_editor && state->pose_editor->active) {
+        static const char *pages[] = {"BODY", "WEAPON", "ANCHORS"};
+        static const char *bones[] = {"CHEST","UPPER_CHEST","RIGHT_SHOULDER","RIGHT_UPPER_ARM","RIGHT_FOREARM","LEFT_SHOULDER","LEFT_UPPER_ARM","LEFT_FOREARM"};
+        char line[180]; int i, y=54; const struct rasterfall_calibration_state *e=state->pose_editor;
+        hud_fill_rect(surface,8,50,410,250,0x182634);
+        snprintf(line,sizeof(line),"RIFLE POSE EDITOR   CHARACTER EULA   WEAPON AK");
+        fb_draw_string((unsigned char*)surface->pixels,14,y,line,0x80D8FF,surface->stride); y+=FB_FONT_H+2;
+        snprintf(line,sizeof(line),"PAGE %s   EDIT AXIS %c   %s   %s   LEFT IK %s",pages[e->page],"XYZ"[e->selected_axis],e->axes?"AXES ON":"AXES OFF",e->anchors?"ANCHORS ON":"ANCHORS OFF",e->left_ik?"ON":"OFF");
+        fb_draw_string((unsigned char*)surface->pixels,14,y,line,0xFFD070,surface->stride); y+=FB_FONT_H+4;
+        if(e->page==RASTERFALL_POSE_PAGE_BODY) {
+            for(i=0;i<8;i++){snprintf(line,sizeof(line),"%c %-16s X %4d Y %4d Z %4d",i==e->selection?'>':' ',bones[i],e->stance[i][0],e->stance[i][1],e->stance[i][2]);fb_draw_string((unsigned char*)surface->pixels,14,y,line,i==e->selection?0xFFFFFF:0xA8C0D0,surface->stride);y+=FB_FONT_H;}
+        } else if(e->page==RASTERFALL_POSE_PAGE_WEAPON) {
+            const char *names[]={"SCALE","OFFSET X","OFFSET Y","OFFSET Z","PITCH","YAW","ROLL"}; int v[7]={e->weapon_profile.scale_milli,e->weapon_profile.offset.x,e->weapon_profile.offset.y,e->weapon_profile.offset.z,e->weapon_profile.pitch_offset,e->weapon_profile.yaw_offset,e->weapon_profile.roll_offset};
+            for(i=0;i<7;i++){snprintf(line,sizeof(line),"%c %-12s %5d",i==e->selection?'>':' ',names[i],v[i]);fb_draw_string((unsigned char*)surface->pixels,14,y,line,i==e->selection?0xFFFFFF:0xA8C0D0,surface->stride);y+=FB_FONT_H;}
+        } else {
+            const char *names[]={"RIGHT GRIP X","RIGHT GRIP Y","RIGHT GRIP Z","FOREGRIP X","FOREGRIP Y","FOREGRIP Z","MUZZLE X","MUZZLE Y","MUZZLE Z"}; int v[9]={e->weapon_profile.grip.x,e->weapon_profile.grip.y,e->weapon_profile.grip.z,e->weapon_profile.foregrip.x,e->weapon_profile.foregrip.y,e->weapon_profile.foregrip.z,e->weapon_profile.muzzle.x,e->weapon_profile.muzzle.y,e->weapon_profile.muzzle.z};
+            for(i=0;i<9;i++){snprintf(line,sizeof(line),"%c %-14s %5d",i==e->selection?'>':' ',names[i],v[i]);fb_draw_string((unsigned char*)surface->pixels,14,y,line,i==e->selection?0xFFFFFF:0xA8C0D0,surface->stride);y+=FB_FONT_H;}
+        }
+        y=306;
+        snprintf(line,sizeof(line),"TAB PAGE  ,/. SELECT  X/Y/Z AXIS  J/L EDIT  SHIFT J/L +/-5");
+        fb_draw_string((unsigned char*)surface->pixels,14,y,line,0x90F090,surface->stride);
+        snprintf(line,sizeof(line),"U AXES  O ANCHORS  I IK  R RESET  P EXPORT  ESC EXIT%s",e->dirty?"  * DIRTY":"");
+        fb_draw_string((unsigned char*)surface->pixels,14,y+FB_FONT_H,line,0x90F090,surface->stride);
     }
     if (state->shop_open) render_shop(surface, state);
     if (state->horde_banner_ms > 0 && state->interaction_banner) {
