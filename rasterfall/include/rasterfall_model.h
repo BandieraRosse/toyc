@@ -94,6 +94,25 @@ struct rasterfall_model_bone_transform {
     double position[3];
 };
 
+/* Read-only snapshot of a named bone after animation composition, IK and
+ * grant evaluation.  Values remain in model space so presentation code can
+ * apply its asset scale and forward-axis correction exactly once. */
+struct rasterfall_model_attachment_transform {
+    double position[3];
+    double rotation[9];
+};
+
+struct rasterfall_model_two_bone_diagnostics {
+    double requested_target[3];
+    double clamped_target[3];
+    double elbow_pole[3];
+    double reach;
+    double max_reach;
+    double hand_error;
+    int reach_clamped;
+    int used_previous_pole;
+};
+
 struct rasterfall_model_ik_link {
     int bone;
     int limited;
@@ -279,6 +298,9 @@ struct rasterfall_model_asset {
     int ik_diagnostic_knee_scale_milli;
     int ik_diagnostic_thigh_scale_milli;
     int ik_iteration_trace_time_ms;
+    double attachment_ik_previous_pole[3];
+    int attachment_ik_previous_pole_valid;
+    struct rasterfall_model_two_bone_diagnostics attachment_ik_diagnostics;
     /* Inspector-only snapshots of the real CCD handoff boundary. */
     int ik_handoff_trace_time_ms;
     int ik_handoff_trace_side;
@@ -481,6 +503,15 @@ int rasterfall_model_sample_glb_rotation_clip(
     const struct rasterfall_glb_rotation_reference *source_reference,
     int time_ms);
 int rasterfall_model_update_bones(struct rasterfall_model_asset *asset);
+int rasterfall_model_attachment_transform(
+    const struct rasterfall_model_asset *asset, const char *bone_name,
+    struct rasterfall_model_attachment_transform *out);
+int rasterfall_model_solve_two_bone_attachment(
+    struct rasterfall_model_asset *asset, const char *upper_bone,
+    const char *forearm_bone, const char *hand_bone,
+    const double target[3], const double pole_hint[3]);
+void rasterfall_model_print_two_bone_diagnostics(
+    const struct rasterfall_model_asset *asset, const char *label);
 int rasterfall_model_skin_vertex(const struct rasterfall_model_asset *asset,
                                  unsigned int index, int position[3],
                                  int normal[3]);

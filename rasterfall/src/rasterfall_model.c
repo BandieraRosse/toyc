@@ -3265,6 +3265,144 @@ int rasterfall_model_update_bones(struct rasterfall_model_asset *asset)
     return 0;
 }
 
+int rasterfall_model_attachment_transform(
+    const struct rasterfall_model_asset *asset, const char *bone_name,
+    struct rasterfall_model_attachment_transform *out)
+{
+    int bone;
+    if (!asset || !bone_name || !out || !asset->bone_transforms) return -1;
+    bone = rasterfall_model_find_bone(asset, bone_name);
+    if (bone < 0 || bone >= (int)asset->bone_count) return -1;
+    memcpy(out->position, asset->bone_transforms[bone].position,
+           sizeof(out->position));
+    memcpy(out->rotation, asset->bone_transforms[bone].rotation,
+           sizeof(out->rotation));
+    return 0;
+}
+
+int rasterfall_model_solve_two_bone_attachment(
+    struct rasterfall_model_asset *asset, const char *upper_bone,
+    const char *forearm_bone, const char *hand_bone,
+    const double requested[3], const double pole_hint[3])
+{
+    struct rasterfall_model_two_bone_diagnostics *diag;
+    int upper,forearm,hand,parent,i,reference[3],x,y,z,used_previous=0;
+    double h[3],k[3],a[3],axis[3],pole[3],current[3],desired[3];
+    double l1,l2,d,min_reach,max_reach,along,height,dot,len;
+    double elbow[3],delta[9],desired_global[9],parent_inverse[9],local[9];
+    if(!asset||!requested||!pole_hint)return -1;
+    upper=rasterfall_model_find_bone(asset,upper_bone);
+    forearm=rasterfall_model_find_bone(asset,forearm_bone);
+    hand=rasterfall_model_find_bone(asset,hand_bone);
+    if(upper<0||forearm<0||hand<0||asset->bones[forearm].parent!=upper||
+       asset->bones[hand].parent!=forearm)return -1;
+    if(rasterfall_model_update_bones(asset)<0)return -1;
+    for(i=0;i<3;i++){
+        h[i]=asset->bone_transforms[upper].position[i];
+        k[i]=asset->bone_transforms[forearm].position[i];
+        a[i]=asset->bone_transforms[hand].position[i];
+        axis[i]=requested[i]-h[i];
+    }
+    l1=model_vec_length((double[3]){k[0]-h[0],k[1]-h[1],k[2]-h[2]});
+    l2=model_vec_length((double[3]){a[0]-k[0],a[1]-k[1],a[2]-k[2]});
+    d=model_vec_length(axis);if(l1<0.000001||l2<0.000001)return -1;
+    if(d<0.000001){for(i=0;i<3;i++)axis[i]=a[i]-h[i];d=model_vec_length(axis);}
+    if(d<0.000001)return -1;
+    for(i=0;i<3;i++)axis[i]/=d;
+    min_reach=fabs(l1-l2)+0.001;max_reach=l1+l2-0.001;
+    diag=&asset->attachment_ik_diagnostics;memset(diag,0,sizeof(*diag));
+    memcpy(diag->requested_target,requested,sizeof(diag->requested_target));
+    diag->reach=d;diag->max_reach=max_reach;
+    if(d>max_reach){d=max_reach;diag->reach_clamped=1;}
+    if(d<min_reach){d=min_reach;diag->reach_clamped=1;}
+    for(i=0;i<3;i++)diag->clamped_target[i]=h[i]+axis[i]*d;
+    for(i=0;i<3;i++)pole[i]=pole_hint[i];
+    dot=pole[0]*axis[0]+pole[1]*axis[1]+pole[2]*axis[2];
+    for(i=0;i<3;i++)pole[i]-=axis[i]*dot;
+    len=model_vec_length(pole);
+    if(len<0.000001){
+        for(i=0;i<3;i++)pole[i]=k[i]-h[i];
+        dot=pole[0]*axis[0]+pole[1]*axis[1]+pole[2]*axis[2];
+        for(i=0;i<3;i++)pole[i]-=axis[i]*dot;
+        len=model_vec_length(pole);
+    }
+    if(len<0.000001){pole[0]=0;pole[1]=0;pole[2]=1;len=1;}
+    for(i=0;i<3;i++)pole[i]/=len;
+    if(asset->attachment_ik_previous_pole_valid){
+        double previous[3],previous_dot;
+        for(i=0;i<3;i++)previous[i]=asset->attachment_ik_previous_pole[i];
+        dot=previous[0]*axis[0]+previous[1]*axis[1]+previous[2]*axis[2];
+        for(i=0;i<3;i++)previous[i]-=axis[i]*dot;
+        len=model_vec_length(previous);
+        if(len>0.000001){
+            for(i=0;i<3;i++)previous[i]/=len;
+            previous_dot=previous[0]*pole[0]+previous[1]*pole[1]+previous[2]*pole[2];
+            if(previous_dot<0.0)for(i=0;i<3;i++)pole[i]=-pole[i];
+            for(i=0;i<3;i++)pole[i]=previous[i]*0.75+pole[i]*0.25;
+            len=model_vec_length(pole);if(len>0.000001)
+                for(i=0;i<3;i++)pole[i]/=len;
+            used_previous=1;
+        }
+    }
+    memcpy(asset->attachment_ik_previous_pole,pole,sizeof(pole));
+    asset->attachment_ik_previous_pole_valid=1;
+    memcpy(diag->elbow_pole,pole,sizeof(diag->elbow_pole));
+    diag->used_previous_pole=used_previous;
+    along=(l1*l1-l2*l2+d*d)/(2.0*d);
+    height=l1*l1-along*along;height=height>0.0?sqrt(height):0.0;
+    for(i=0;i<3;i++)elbow[i]=h[i]+axis[i]*along+pole[i]*height;
+
+    for(i=0;i<3;i++){current[i]=k[i]-h[i];desired[i]=elbow[i]-h[i];}
+    if(model_rotation_between(current,desired,pole,delta)<0)return -1;
+    matrix_multiply(delta,asset->bone_transforms[upper].rotation,desired_global);
+    parent=asset->bones[upper].parent;
+    if(parent>=0){model_matrix_transpose(asset->bone_transforms[parent].rotation,
+        parent_inverse);matrix_multiply(parent_inverse,desired_global,local);}
+    else memcpy(local,desired_global,sizeof(local));
+    reference[0]=asset->bones[upper].rotate_x;reference[1]=asset->bones[upper].rotate_y;
+    reference[2]=asset->bones[upper].rotate_z;
+    model_matrix_to_euler_near(local,reference,&x,&y,&z);
+    asset->bones[upper].rotate_x=x;asset->bones[upper].rotate_y=y;asset->bones[upper].rotate_z=z;
+    rasterfall_model_update_bones(asset);
+
+    for(i=0;i<3;i++){
+        current[i]=asset->bone_transforms[hand].position[i]-
+                   asset->bone_transforms[forearm].position[i];
+        desired[i]=diag->clamped_target[i]-
+                   asset->bone_transforms[forearm].position[i];
+    }
+    if(model_rotation_between(current,desired,pole,delta)<0)return -1;
+    matrix_multiply(delta,asset->bone_transforms[forearm].rotation,desired_global);
+    parent=asset->bones[forearm].parent;
+    model_matrix_transpose(asset->bone_transforms[parent].rotation,parent_inverse);
+    matrix_multiply(parent_inverse,desired_global,local);
+    reference[0]=asset->bones[forearm].rotate_x;reference[1]=asset->bones[forearm].rotate_y;
+    reference[2]=asset->bones[forearm].rotate_z;
+    model_matrix_to_euler_near(local,reference,&x,&y,&z);
+    asset->bones[forearm].rotate_x=x;asset->bones[forearm].rotate_y=y;
+    asset->bones[forearm].rotate_z=z;
+    rasterfall_model_update_bones(asset);
+    diag->hand_error=model_vec_length((double[3]){
+        asset->bone_transforms[hand].position[0]-diag->clamped_target[0],
+        asset->bone_transforms[hand].position[1]-diag->clamped_target[1],
+        asset->bone_transforms[hand].position[2]-diag->clamped_target[2]});
+    return 0;
+}
+
+void rasterfall_model_print_two_bone_diagnostics(
+    const struct rasterfall_model_asset *asset,const char *label)
+{
+    const struct rasterfall_model_two_bone_diagnostics *d;
+    if(!asset)return;
+    d=&asset->attachment_ik_diagnostics;
+    __printf("two_bone_ik label=%s requested=(%.3f,%.3f,%.3f) clamped=(%.3f,%.3f,%.3f) reach=%.3f max=%.3f reach_clamped=%d pole=(%.6f,%.6f,%.6f) previous_pole=%d hand_error=%.6f\n",
+        label?label:"?",d->requested_target[0],d->requested_target[1],
+        d->requested_target[2],d->clamped_target[0],d->clamped_target[1],
+        d->clamped_target[2],d->reach,d->max_reach,d->reach_clamped,
+        d->elbow_pole[0],d->elbow_pole[1],d->elbow_pole[2],
+        d->used_previous_pole,d->hand_error);
+}
+
 static const struct rasterfall_vmd_bone_track *model_vmd_track(
     const struct rasterfall_vmd_clip *vmd, const char *name)
 {
@@ -4058,6 +4196,7 @@ int rasterfall_model_skinning_logic_test(void)
     unsigned int order[2] = {0, 1};
     unsigned char vertices[RASTERFALL_MODEL_VERTEX_BYTES_EDGE_SCALE];
     unsigned char skin[RASTERFALL_MODEL_SKIN_VERTEX_BYTES];
+    struct rasterfall_model_attachment_transform attachment;
     int position[3], normal[3];
     __memset(&asset, 0, sizeof(asset));
     __memset(bones, 0, sizeof(bones));
@@ -4074,6 +4213,7 @@ int rasterfall_model_skinning_logic_test(void)
     asset.skinning_enabled = 1;
     bones[0].parent = -1;
     bones[1].parent = 0;
+    bones[1].name = "RIGHT_HAND";
     bones[1].rest_x = 10;
     *(int *)(vertices) = 20;
     *(short *)(vertices + 12) = 32767;
@@ -4109,5 +4249,42 @@ int rasterfall_model_skinning_logic_test(void)
         position[0] != 15 || position[1] != 5 ||
         normal[0] < 23160 || normal[0] > 23180 ||
         normal[1] < 23160 || normal[1] > 23180) return 5;
+    if (rasterfall_model_attachment_transform(
+            &asset, "RIGHT_HAND", &attachment) < 0 ||
+        attachment.position[0] != 10.0 || attachment.position[1] != 0.0 ||
+        attachment.rotation[0] > 0.001 || attachment.rotation[0] < -0.001 ||
+        attachment.rotation[3] < 0.999) return 6;
+    {
+        struct rasterfall_model_asset arm;
+        struct rasterfall_model_bone arm_bones[4];
+        struct rasterfall_model_bone_transform arm_transforms[4];
+        unsigned int arm_order[4]={0,1,2,3};
+        double target[3]={12.0,12.0,0.0},pole[3]={0.0,0.0,1.0};
+        double prior_pole[3],dot;
+        __memset(&arm,0,sizeof(arm));__memset(arm_bones,0,sizeof(arm_bones));
+        arm.bones=arm_bones;arm.bone_transforms=arm_transforms;
+        arm.bone_order=arm_order;arm.bone_count=4;
+        arm_bones[0].parent=-1;arm_bones[0].name="ROOT";
+        arm_bones[1].parent=0;arm_bones[1].name="UPPER";
+        arm_bones[2].parent=1;arm_bones[2].name="FOREARM";arm_bones[2].rest_x=10;
+        arm_bones[3].parent=2;arm_bones[3].name="HAND";arm_bones[3].rest_x=20;
+        if(rasterfall_model_solve_two_bone_attachment(&arm,"UPPER","FOREARM",
+            "HAND",target,pole)<0||arm.attachment_ik_diagnostics.hand_error>0.1||
+            arm.attachment_ik_diagnostics.reach_clamped)return 7;
+        memcpy(prior_pole,arm.attachment_ik_previous_pole,sizeof(prior_pole));
+        target[0]=12.2;target[1]=12.1;
+        if(rasterfall_model_solve_two_bone_attachment(&arm,"UPPER","FOREARM",
+            "HAND",target,pole)<0||!arm.attachment_ik_diagnostics.used_previous_pole)
+            return 8;
+        dot=prior_pole[0]*arm.attachment_ik_previous_pole[0]+
+            prior_pole[1]*arm.attachment_ik_previous_pole[1]+
+            prior_pole[2]*arm.attachment_ik_previous_pole[2];
+        if(dot<0.9)return 9;
+        target[0]=40.0;target[1]=0.0;
+        if(rasterfall_model_solve_two_bone_attachment(&arm,"UPPER","FOREARM",
+            "HAND",target,pole)<0||!arm.attachment_ik_diagnostics.reach_clamped||
+            arm.attachment_ik_diagnostics.hand_error>0.1)return 10;
+        rasterfall_model_print_two_bone_diagnostics(&arm,"logic_test_left_arm");
+    }
     return 0;
 }

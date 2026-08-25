@@ -251,8 +251,21 @@ static struct toy_renderer private_character_commands;
 static struct rasterfall_frontend_state private_character_frontend;
 static int private_character_commands_initialized;
 static long private_character_animation_us;
-/* HoYoLAB in-game measurement; Eula is not part of the GFL2 model cohort. */
-#define RASTERFALL_EULA_HEIGHT_MM 1736
+struct rasterfall_skeletal_actor_profile {
+    const char *model_path;
+    const char *walk_path;
+    const char *right_hand_bone;
+    int target_height_mm;
+    int forward_sy, forward_cy;
+};
+
+/* Asset-space facts live in the profile rather than actor-specific renderer
+ * branches.  PMX Eula faces -Z, hence the 180-degree forward correction. */
+static const struct rasterfall_skeletal_actor_profile eula_actor_profile = {
+    "rasterfall/private-assets/models/eula.rmesh",
+    "rasterfall/private-assets/animations/walk04_loop5.vmd",
+    "右手首", 1736, 0, -1024
+};
 
 struct rasterfall_developer_character {
     const char *name, *model_path, *lod_model_path, *height_source;
@@ -2255,7 +2268,7 @@ static void character_frontend_job(int worker_id, int task, void *opaque)
         state = &private_character_frontend;
         model = dispatch->models[0];
         x = -13000; y = -900; z = -10000;
-        scale = character_model_scale(model, RASTERFALL_EULA_HEIGHT_MM);
+        scale = character_model_scale(model, eula_actor_profile.target_height_mm);
     } else {
         struct rasterfall_developer_character *entry =
             &developer_characters[task - 1];
@@ -2329,7 +2342,7 @@ static void character_primitive_job(int worker_id, int task, void *opaque)
     long start = render_monotonic_us();
     if (job->actor == 0) {
         x = -13000; y = -900; z = -10000;
-        scale = character_model_scale(model, RASTERFALL_EULA_HEIGHT_MM);
+        scale = character_model_scale(model, eula_actor_profile.target_height_mm);
     } else {
         struct rasterfall_developer_character *entry =
             &developer_characters[job->actor - 1];
@@ -2369,7 +2382,7 @@ static int render_characters_parallel(struct toy_renderer *renderer,
         gallery_model_visible(dispatch.surface, camera,
             &private_character_model, -13000, -900, -10000,
             character_model_scale(&private_character_model,
-                                  RASTERFALL_EULA_HEIGHT_MM));
+                                  eula_actor_profile.target_height_mm));
     prepare_character_command_renderer(&private_character_commands,
         &private_character_frontend, &private_character_commands_initialized,
         dispatch.surface, dispatch.depth);
@@ -2402,7 +2415,7 @@ static int render_characters_parallel(struct toy_renderer *renderer,
         int projected_height = gallery_model_projected_height(dispatch.surface, camera,
             &private_character_model, -13000, -900, -10000,
             character_model_scale(&private_character_model,
-                                  RASTERFALL_EULA_HEIGHT_MM));
+                                  eula_actor_profile.target_height_mm));
         private_character_frontend.disable_edge = dispatch.visible[0] &&
             projected_height < RASTERFALL_CHARACTER_EDGE_MIN_HEIGHT;
         private_character_frontend.disable_sphere = dispatch.visible[0] &&
@@ -2512,13 +2525,13 @@ static int render_private_character(struct toy_renderer *renderer,
                                     const struct camera *camera)
 {
     const char *path = private_character_override_path ?
-        private_character_override_path : "rasterfall/private-assets/models/eula.rmesh";
+        private_character_override_path : eula_actor_profile.model_path;
     if (!private_character_loaded) {
         if (rasterfall_model_load(&private_character_model, path) == 0)
             __printf("rasterfall: Eula target_height_mm=%d scale_milli=%d\n",
-                     RASTERFALL_EULA_HEIGHT_MM,
+                     eula_actor_profile.target_height_mm,
                      character_model_scale(&private_character_model,
-                                           RASTERFALL_EULA_HEIGHT_MM));
+                                           eula_actor_profile.target_height_mm));
         private_character_loaded = 1;
     }
     {
@@ -2526,7 +2539,7 @@ static int render_private_character(struct toy_renderer *renderer,
         if (active_session &&
             (active_session->skeletal_demo_player.clip_id == 9 ||
              active_session->skeletal_demo_player.clip_id == 11))
-            requested_vmd = "rasterfall/private-assets/animations/walk04_loop5.vmd";
+            requested_vmd = eula_actor_profile.walk_path;
         if (active_session && active_session->skeletal_demo_player.clip_id == 10)
             requested_vmd = "rasterfall/private-assets/animations/曼珠沙華.vmd";
         if (private_character_vmd_loaded && requested_vmd &&
@@ -5123,6 +5136,122 @@ static int render_actor_weapon(struct toy_renderer *renderer,
                                      animation_time_ms, body_color, 1);
 }
 
+struct rasterfall_rifle_attachment {
+    int weapon;
+    int grip[3];
+    int foregrip[3];
+    int muzzle[3];
+};
+
+/* Attachment points are in the rifle's canonical local RFU frame after mesh
+ * axis conversion.  Grip is constrained to the animated right wrist;
+ * foregrip is exposed for the future left-hand IK pass. */
+static const struct rasterfall_rifle_attachment rifle_attachments[] = {
+    { TOY_GAME_WEAPON_AK,  {0,0,-180}, {0,0,80},  {0,0,380} },
+    { TOY_GAME_WEAPON_AWP, {0,0,-210}, {0,0,110}, {0,0,460} }
+};
+
+static const struct rasterfall_rifle_attachment *rifle_attachment(int weapon)
+{
+    int i;
+    for(i=0;i<(int)(sizeof(rifle_attachments)/sizeof(rifle_attachments[0]));i++)
+        if(rifle_attachments[i].weapon==weapon)return &rifle_attachments[i];
+    return NULL;
+}
+
+static void skeletal_attachment_point(
+    const struct rasterfall_model_asset *character,
+    const struct rasterfall_model_attachment_transform *hand,
+    const struct rasterfall_skeletal_actor_profile *profile,
+    int actor_x,int base_y,int actor_z,int actor_sy,int actor_cy,int scale,
+    const int local[3],struct vec3 *out)
+{
+    double rx=hand->rotation[0]*local[0]+hand->rotation[1]*local[1]+
+              hand->rotation[2]*local[2];
+    double ry=hand->rotation[3]*local[0]+hand->rotation[4]*local[1]+
+              hand->rotation[5]*local[2];
+    double rz=hand->rotation[6]*local[0]+hand->rotation[7]*local[1]+
+              hand->rotation[8]*local[2];
+    int model_x=(int)(hand->position[0]*scale/1000.0+rx);
+    int model_y=(int)((hand->position[1]-character->min_y)*scale/1000.0+ry);
+    int model_z=(int)(hand->position[2]*scale/1000.0+rz);
+    int sy=(actor_sy*profile->forward_cy+
+            actor_cy*profile->forward_sy)/1024;
+    int cy=(actor_cy*profile->forward_cy-
+            actor_sy*profile->forward_sy)/1024;
+    out->x=actor_x+(model_x*cy+model_z*sy)/1024;
+    out->y=base_y+model_y;
+    out->z=actor_z+(model_z*cy-model_x*sy)/1024;
+}
+
+static int render_skeletal_rifle(
+    struct toy_renderer *renderer,const struct camera *camera,
+    const struct rasterfall_model_asset *character,
+    const struct rasterfall_model_attachment_transform *hand,
+    const struct rasterfall_skeletal_actor_profile *profile,
+    int actor_x,int base_y,int actor_z,int actor_sy,int actor_cy,
+    int weapon,int muzzle_flash)
+{
+    const struct rasterfall_rifle_attachment *attachment=
+        rifle_attachment(weapon);
+    struct rasterfall_model_asset *model;
+    struct vec3 grip_world,foregrip_world,muzzle_world;
+    int grip_origin[3]={0,0,0},foregrip_offset[3],muzzle_offset[3];
+    const char *path;
+    int length,scale,character_scale,i,pixels=0;
+    if(!attachment||(path=rasterfall_weapon_model_path(weapon))==NULL)return 0;
+    model=gallery_model_named(path,NULL);if(!model)return 0;
+    length=model->max_x-model->min_x;
+    if(model->max_y-model->min_y>length)length=model->max_y-model->min_y;
+    if(model->max_z-model->min_z>length)length=model->max_z-model->min_z;
+    if(length<=0)return 0;
+    scale=(weapon==TOY_GAME_WEAPON_AWP?920000:760000)/length;
+    character_scale=character_model_scale(character,profile->target_height_mm);
+    for(i=0;i<3;i++){
+        foregrip_offset[i]=attachment->foregrip[i]-attachment->grip[i];
+        muzzle_offset[i]=attachment->muzzle[i]-attachment->grip[i];
+    }
+    skeletal_attachment_point(character,hand,profile,actor_x,base_y,actor_z,
+        actor_sy,actor_cy,character_scale,grip_origin,&grip_world);
+    skeletal_attachment_point(character,hand,profile,actor_x,base_y,actor_z,
+        actor_sy,actor_cy,character_scale,foregrip_offset,&foregrip_world);
+    skeletal_attachment_point(character,hand,profile,actor_x,base_y,actor_z,
+        actor_sy,actor_cy,character_scale,muzzle_offset,&muzzle_world);
+    (void)grip_world;(void)foregrip_world;
+    for(i=0;i<(int)model->primitive_count;i++){
+        const unsigned char *primitive=model->primitives+
+            i*RASTERFALL_MODEL_PRIMITIVE_BYTES;
+        const unsigned char *indices=model->indices+model_u32(primitive)*4;
+        unsigned int count=model_u32(primitive+4),material=model_u32(primitive+8),j;
+        uint32_t color=material<model->material_count?
+            model_u32(model->materials+material*model->material_bytes):
+            RF_COLOR_UI_TEXT_MUTED;
+        for(j=0;j+2<count;j+=3){
+            struct vec3 v[3];int k;
+            for(k=0;k<3;k++){
+                unsigned int index=model_u32(indices+(j+k)*4);
+                const unsigned char *p;int local[3];
+                if(index>=model->vertex_count)break;
+                p=model->vertices+index*model->vertex_bytes;
+                local[0]=(-*(const int*)p+(model->min_x+model->max_x)/2)*scale/1000-
+                         attachment->grip[0];
+                local[1]=(*(const int*)(p+4)-(model->min_y+model->max_y)/2)*scale/1000-
+                         attachment->grip[1];
+                local[2]=(-*(const int*)(p+8)+(model->min_z+model->max_z)/2)*scale/1000-
+                         attachment->grip[2];
+                skeletal_attachment_point(character,hand,profile,actor_x,base_y,
+                    actor_z,actor_sy,actor_cy,character_scale,local,&v[k]);
+            }
+            if(k==3)pixels+=draw_world_triangle(renderer,camera,&v[0],&v[1],&v[2],color);
+        }
+    }
+    if(muzzle_flash>0)
+        pixels+=draw_cuboid(renderer,camera,muzzle_world.x-32,muzzle_world.x+32,
+            muzzle_world.y-32,muzzle_world.y+32,muzzle_world.z-32,
+            muzzle_world.z+32,RF_COLOR_UI_ACCENT);
+    return pixels;
+}
+
 static int network_actor_lift(int x, int z, int airborne_y)
 {
     int lift = airborne_y;
@@ -5198,6 +5327,8 @@ static int render_ai_teammate(struct toy_renderer *renderer,
         if (actor->anime_character_id && private_character_model.data) {
             struct rasterfall_rifle_pose hit={0};
             struct rasterfall_animation_composition composition;
+            struct rasterfall_model_attachment_transform right_hand;
+            int have_right_hand;
             int blend=actor->locomotion_blend_ms*5;
             if(blend>1000)blend=1000;
             hit.rotation[0][0]=8; hit.rotation[0][2]=-8;
@@ -5210,22 +5341,63 @@ static int render_ai_teammate(struct toy_renderer *renderer,
             composition.rifle_pose=NULL;composition.hit_pose=&hit;
             composition.hit_pose_preview=actor->animation.id==TOY_GAME_ANIM_HIT;
             rasterfall_animation_compose(&private_character_model,&composition);
-            /* PMX character assets face local -Z, while gameplay actors use
-             * local +Z as forward.  Apply the 180-degree basis correction to
-             * the character only; weapon placement and firing retain the
-             * gameplay-facing vector. */
+            have_right_hand=rasterfall_model_attachment_transform(
+                &private_character_model,eula_actor_profile.right_hand_bone,
+                &right_hand)==0;
+            if(have_right_hand&&actor->current_slot>=0&&
+               actor->current_slot<TOY_GAME_WEAPON_SLOTS){
+                int weapon=actor->slots[actor->current_slot].weapon;
+                const struct rasterfall_rifle_attachment *attachment=
+                    rifle_attachment(weapon);
+                if(attachment&&(actor->animation.id==TOY_GAME_ANIM_IDLE||
+                   actor->animation.id==TOY_GAME_ANIM_MOVE||
+                   actor->animation.id==TOY_GAME_ANIM_FIRE)){
+                    double foregrip_target[3],pole[3]={-1.0,0.0,0.0};
+                    int character_scale=character_model_scale(
+                        &private_character_model,
+                        eula_actor_profile.target_height_mm);
+                    double local[3];int axis;
+                    for(axis=0;axis<3;axis++)
+                        local[axis]=(attachment->foregrip[axis]-
+                            attachment->grip[axis])*1000.0/character_scale;
+                    foregrip_target[0]=right_hand.position[0]+
+                        right_hand.rotation[0]*local[0]+
+                        right_hand.rotation[1]*local[1]+
+                        right_hand.rotation[2]*local[2];
+                    foregrip_target[1]=right_hand.position[1]+
+                        right_hand.rotation[3]*local[0]+
+                        right_hand.rotation[4]*local[1]+
+                        right_hand.rotation[5]*local[2];
+                    foregrip_target[2]=right_hand.position[2]+
+                        right_hand.rotation[6]*local[0]+
+                        right_hand.rotation[7]*local[1]+
+                        right_hand.rotation[8]*local[2];
+                    rasterfall_model_solve_two_bone_attachment(
+                        &private_character_model,"左腕","左ひじ","左手首",
+                        foregrip_target,pole);
+                }
+            }
             active_gallery_facing=1;
-            active_gallery_sy=-actor->sy;active_gallery_cy=-actor->cy;
+            active_gallery_sy=(actor->sy*eula_actor_profile.forward_cy+
+                actor->cy*eula_actor_profile.forward_sy)/1024;
+            active_gallery_cy=(actor->cy*eula_actor_profile.forward_cy-
+                actor->sy*eula_actor_profile.forward_sy)/1024;
             pixels+=render_gallery_model(renderer,camera,&private_character_model,
                 actor->x,-900+active_actor_lift,actor->z,
-                character_model_scale(&private_character_model,RASTERFALL_EULA_HEIGHT_MM));
+                character_model_scale(&private_character_model,
+                                      eula_actor_profile.target_height_mm));
             active_gallery_facing=0;
-            if(actor->current_slot>=0&&actor->current_slot<TOY_GAME_WEAPON_SLOTS)
-                pixels+=render_actor_model_weapon(renderer,camera,actor->x,
-                    actor->z,actor->sy,actor->cy,
-                    actor->slots[actor->current_slot].weapon,
-                    actor->muzzle_flash_ms,actor->animation.id,
-                    actor->animation.time_ms,0,0);
+            if(actor->current_slot>=0&&actor->current_slot<TOY_GAME_WEAPON_SLOTS){
+                int weapon=actor->slots[actor->current_slot].weapon;
+                if(have_right_hand&&rifle_attachment(weapon))
+                    pixels+=render_skeletal_rifle(renderer,camera,
+                        &private_character_model,&right_hand,&eula_actor_profile,
+                        actor->x,-900+active_actor_lift,actor->z,actor->sy,
+                        actor->cy,weapon,actor->muzzle_flash_ms);
+                else pixels+=render_actor_model_weapon(renderer,camera,actor->x,
+                    actor->z,actor->sy,actor->cy,weapon,actor->muzzle_flash_ms,
+                    actor->animation.id,actor->animation.time_ms,0,0);
+            }
             active_actor_lift=0;continue;
         }
         pixels += render_player_avatar(renderer, camera, actor->x, actor->z,
