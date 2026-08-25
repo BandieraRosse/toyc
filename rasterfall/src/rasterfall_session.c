@@ -58,7 +58,7 @@ static void session_set_flag_assignments(struct rasterfall_session *s, int fi)
     for (i = 0; i < TOY_GAME_MAX_ACTORS && n < 4; i++) {
         struct toy_game_actor *a = &s->game_state.actors[i];
         if (!a->active || a->kind != TOY_GAME_ACTOR_AI || a->base_core ||
-            a->developer_only) continue;
+            a->developer_only || a->companion) continue;
         if (a->flag_index == fi)
             toy_game_assign_actor_deployment(&s->game_state, i,
                 f->x + f->slot_offsets[n][0], f->z + f->slot_offsets[n][1], fi), n++;
@@ -71,7 +71,7 @@ static int session_flag_assigned_count(const struct rasterfall_session *s, int f
     for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
         const struct toy_game_actor *a = &s->game_state.actors[i];
         if (a->active && a->kind == TOY_GAME_ACTOR_AI && !a->base_core &&
-            !a->developer_only && a->flag_index == fi) count++;
+            !a->developer_only && !a->companion && a->flag_index == fi) count++;
     }
     return count;
 }
@@ -101,7 +101,7 @@ static int session_collect_assignable(const struct rasterfall_session *s,
             int assigned = a->flag_index == fi;
             int assigned_elsewhere = a->flag_index >= 0 && !assigned;
             if (!a->active || a->kind != TOY_GAME_ACTOR_AI || a->base_core ||
-                a->developer_only || assigned_elsewhere ||
+                a->developer_only || a->companion || assigned_elsewhere ||
                 (pass == 0 ? !assigned : assigned)) continue;
             indices[count++] = i;
         }
@@ -299,7 +299,8 @@ void rasterfall_session_reset(struct rasterfall_session *session,
     session_init_flag(session, 0, 0, 0);
     for (i = 0; i < 3; i++)
         if (session->game_state.actors[i].active &&
-            session->game_state.actors[i].kind == TOY_GAME_ACTOR_AI)
+            session->game_state.actors[i].kind == TOY_GAME_ACTOR_AI &&
+            !session->game_state.actors[i].companion)
             toy_game_assign_actor_deployment(&session->game_state, i,
                 session->flags[0].x + session->flags[0].slot_offsets[i][0],
                 session->flags[0].z + session->flags[0].slot_offsets[i][1], 0);
@@ -1067,7 +1068,7 @@ int rasterfall_session_shop_can(const struct rasterfall_session *session,
             request->target_actor >= TOY_GAME_MAX_ACTORS) return 0;
         actor = &g->actors[request->target_actor];
         if (!actor->active || actor->kind != TOY_GAME_ACTOR_AI ||
-            actor->base_core || actor->developer_only) return 0;
+            actor->base_core || actor->developer_only || actor->companion) return 0;
     } else if (request->action == RASTERFALL_SHOP_UPGRADE_AI) {
         if (request->target_actor < 0 ||
             request->target_actor >= TOY_GAME_MAX_ACTORS) return 0;

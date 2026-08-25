@@ -110,6 +110,9 @@ static long render_monotonic_us(void)
     return now.tv_sec * 1000000L + now.tv_nsec / 1000;
 }
 static struct rasterfall_session *active_session;
+static int active_gallery_facing;
+static int active_gallery_sy;
+static int active_gallery_cy = 1024;
 static struct rasterfall_effects *active_effects;
 static const struct rasterfall_net *active_net;
 static const struct toy_texture_view *active_wall_texture;
@@ -392,7 +395,7 @@ static void sample_developer_character(struct rasterfall_developer_character *en
             rasterfall_model_set_root_motion(&entry->model, center, groove, 1);
             if (player->clip_id == 11) {
                 struct rasterfall_animation_composition composition = {
-                    &entry->walk, player->time_ms, 1,
+                    &entry->walk, player->time_ms, 1000, 1,
                     (player->time_ms / 1200) & 1 ?
                         RASTERFALL_COMPOSITION_OVERLAY_HIT :
                         RASTERFALL_COMPOSITION_OVERLAY_FIRE,
@@ -412,7 +415,7 @@ static void sample_developer_character(struct rasterfall_developer_character *en
                                                   center, groove, 1);
                 if (player->clip_id == 11) {
                     struct rasterfall_animation_composition composition = {
-                        &entry->walk, player->time_ms, 1,
+                        &entry->walk, player->time_ms, 1000, 1,
                         (player->time_ms / 1200) & 1 ?
                             RASTERFALL_COMPOSITION_OVERLAY_HIT :
                             RASTERFALL_COMPOSITION_OVERLAY_FIRE,
@@ -696,12 +699,27 @@ static int prepare_gallery_vertex_cache(
             cached->normal[1] = *(const short *)(p + 14);
             cached->normal[2] = *(const short *)(p + 16);
         }
+        {
+        int render_x = position[0], render_z = position[2];
+        if (active_gallery_facing) {
+            int model_x = position[0], model_z = position[2];
+            int normal_x = cached->normal[0], normal_z = cached->normal[2];
+            render_x = (int)(((long long)model_x * active_gallery_cy +
+                              (long long)model_z * active_gallery_sy) / 1024);
+            render_z = (int)(((long long)model_z * active_gallery_cy -
+                              (long long)model_x * active_gallery_sy) / 1024);
+            cached->normal[0] = (short)(((long long)normal_x * active_gallery_cy +
+                                         (long long)normal_z * active_gallery_sy) / 1024);
+            cached->normal[2] = (short)(((long long)normal_z * active_gallery_cy -
+                                         (long long)normal_x * active_gallery_sy) / 1024);
+        }
         cached->uv.p.x = center_x +
-            (int)((long)position[0] * scale / 1000);
+            (int)((long)render_x * scale / 1000);
         cached->uv.p.y = base_y +
             (int)((long)(position[1] - model->min_y) * scale / 1000);
         cached->uv.p.z = center_z +
-            (int)((long)position[2] * scale / 1000);
+            (int)((long)render_z * scale / 1000);
+        }
         world_to_view(camera, &cached->uv.p, &cached->view);
         cached->uv.u = *(const unsigned short *)(p + 18);
         cached->uv.v = *(const unsigned short *)(p + 20);
@@ -2607,7 +2625,7 @@ static int render_private_character(struct toy_renderer *renderer,
             }
             if (player->clip_id == 11) {
                 struct rasterfall_animation_composition composition = {
-                    player->clip, player->time_ms, 1,
+                    player->clip, player->time_ms, 1000, 1,
                     active_session->pose_debug_active ? RASTERFALL_COMPOSITION_OVERLAY_NONE :
                     ((player->time_ms / 1200) & 1 ? RASTERFALL_COMPOSITION_OVERLAY_HIT : RASTERFALL_COMPOSITION_OVERLAY_FIRE),
                     player->time_ms % 1200,
@@ -4933,7 +4951,7 @@ static int render_actor_model_weapon(struct toy_renderer *renderer,
                                      int sy, int cy, int weapon,
                                      int muzzle_flash, int animation_id,
                                      int animation_time_ms,
-                                     uint32_t body_color)
+                                     uint32_t body_color, int draw_arms)
 {
     const char *path = rasterfall_weapon_model_path(weapon);
     struct rasterfall_model_asset *model;
@@ -5031,7 +5049,7 @@ static int render_actor_model_weapon(struct toy_renderer *renderer,
                                  RF_COLOR_UI_ACCENT);
     /* Two overlapping cuboids per arm.  Both segments remain in the arm's
      * local Y-Z plane; draw_limb_segment performs the actor yaw transform. */
-    {
+    if (draw_arms) {
         int ruy, ruz, rfy, rfz, luy, luz, lfy, lfz;
         int rex, rey, rez, rwx, rwy, rwz;
         int lex, ley, lez, lwx, lwy, lwz;
@@ -5102,7 +5120,7 @@ static int render_actor_weapon(struct toy_renderer *renderer,
     if (weapon < 0) return 0;
     return render_actor_model_weapon(renderer, camera, x, z, sy, cy,
                                      weapon, muzzle_flash, animation_id,
-                                     animation_time_ms, body_color);
+                                     animation_time_ms, body_color, 1);
 }
 
 static int network_actor_lift(int x, int z, int airborne_y)
@@ -5180,18 +5198,34 @@ static int render_ai_teammate(struct toy_renderer *renderer,
         if (actor->anime_character_id && private_character_model.data) {
             struct rasterfall_rifle_pose hit={0};
             struct rasterfall_animation_composition composition;
+            int blend=actor->locomotion_blend_ms*5;
+            if(blend>1000)blend=1000;
             hit.rotation[0][0]=8; hit.rotation[0][2]=-8;
-            composition.locomotion=actor->moving&&private_character_vmd_loaded?&private_character_vmd_clip:NULL;
+            composition.locomotion=(actor->moving||blend<1000)&&private_character_vmd_loaded?&private_character_vmd_clip:NULL;
             composition.locomotion_time_ms=actor->animation.time_ms;
+            composition.locomotion_weight_milli=actor->moving?blend:1000-blend;
             composition.rifle_stance=1;
             composition.overlay=actor->animation.id==TOY_GAME_ANIM_FIRE?RASTERFALL_COMPOSITION_OVERLAY_FIRE:RASTERFALL_COMPOSITION_OVERLAY_NONE;
             composition.overlay_time_ms=actor->animation.time_ms;
             composition.rifle_pose=NULL;composition.hit_pose=&hit;
             composition.hit_pose_preview=actor->animation.id==TOY_GAME_ANIM_HIT;
             rasterfall_animation_compose(&private_character_model,&composition);
+            /* PMX character assets face local -Z, while gameplay actors use
+             * local +Z as forward.  Apply the 180-degree basis correction to
+             * the character only; weapon placement and firing retain the
+             * gameplay-facing vector. */
+            active_gallery_facing=1;
+            active_gallery_sy=-actor->sy;active_gallery_cy=-actor->cy;
             pixels+=render_gallery_model(renderer,camera,&private_character_model,
                 actor->x,-900+active_actor_lift,actor->z,
                 character_model_scale(&private_character_model,RASTERFALL_EULA_HEIGHT_MM));
+            active_gallery_facing=0;
+            if(actor->current_slot>=0&&actor->current_slot<TOY_GAME_WEAPON_SLOTS)
+                pixels+=render_actor_model_weapon(renderer,camera,actor->x,
+                    actor->z,actor->sy,actor->cy,
+                    actor->slots[actor->current_slot].weapon,
+                    actor->muzzle_flash_ms,actor->animation.id,
+                    actor->animation.time_ms,0,0);
             active_actor_lift=0;continue;
         }
         pixels += render_player_avatar(renderer, camera, actor->x, actor->z,

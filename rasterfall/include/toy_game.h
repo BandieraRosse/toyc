@@ -449,6 +449,7 @@ struct toy_game_actor {
     int base_core;              /* BASE: fixed defense objective */
     int hired;                  /* 雇佣 AI：可由商店/开发者按钮清除 */
     int developer_only;         /* 开发者展示/测试角色，不可分配旗帜 */
+    int companion;              /* 常驻副官：跟随玩家，永不驻守旗帜 */
     int anime_character_id;     /* -1: low-poly AI; >=0: anime actor system */
     int anime_wander_timer_ms;
     int anime_wander_x, anime_wander_z;
@@ -494,6 +495,7 @@ struct toy_game_actor {
     int animation_demo;
     int animation_demo_elapsed_ms;
     struct toy_game_animation_state animation;
+    int locomotion_blend_ms;     /* idle/walk 过渡时钟 */
 };
 
 /* 一个 actor 在单帧中的可执行意图。决策层只填写这份值，规则层负责

@@ -385,12 +385,26 @@ void toy_game_animation_update(struct toy_game_animation_state *state,
 
 void toy_game_actor_set_animation(struct toy_game_actor *actor, int animation_id)
 {
-    if (actor) toy_game_animation_set(&actor->animation, animation_id);
+    if (actor) {
+        int old = actor->animation.id;
+        toy_game_animation_set(&actor->animation, animation_id);
+        if (old != animation_id &&
+            ((old == TOY_GAME_ANIM_IDLE && animation_id == TOY_GAME_ANIM_MOVE) ||
+             (old == TOY_GAME_ANIM_MOVE && animation_id == TOY_GAME_ANIM_IDLE)))
+            actor->locomotion_blend_ms = 0;
+    }
 }
 
 void toy_game_actor_update_animation(struct toy_game_actor *actor, int dt_ms)
 {
-    if (actor) toy_game_animation_update(&actor->animation, dt_ms);
+    if (actor) {
+        toy_game_animation_update(&actor->animation, dt_ms);
+        if (actor->locomotion_blend_ms < 200) {
+            actor->locomotion_blend_ms += dt_ms;
+            if (actor->locomotion_blend_ms > 200)
+                actor->locomotion_blend_ms = 200;
+        }
+    }
 }
 
 static int segment_hits_box(int px, int pz, int qx, int qz,
@@ -734,6 +748,7 @@ int toy_game_add_anime_actor(struct toy_game *g, int character_id,
     a=&g->actors[slot];memset(a,0,sizeof(*a));
     a->active=1;a->actor_id=slot+1;a->kind=TOY_GAME_ACTOR_AI;
     a->anime_character_id=character_id+1;a->class_id=TOY_GAME_AI_LEVEL_2;
+    a->companion=1;
     a->state=TOY_GAME_ACTOR_ALIVE;a->x=x;a->z=z;a->cy=1024;
     a->deployment_x=x;a->deployment_z=z;a->flag_index=-1;
     a->hp=a->max_hp=190;a->anime_wander_timer_ms=2000;
@@ -777,7 +792,7 @@ int toy_game_assign_actor_deployment(struct toy_game *g, int actor_index,
     if (!g || actor_index < 0 || actor_index >= TOY_GAME_MAX_ACTORS)
         return 0;
     a = &g->actors[actor_index];
-    if (!a->active || a->kind != TOY_GAME_ACTOR_AI) return 0;
+    if (!a->active || a->kind != TOY_GAME_ACTOR_AI || a->companion) return 0;
     a->deployment_x = x;
     a->deployment_z = z;
     a->flag_index = flag_index;
@@ -4550,6 +4565,7 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
     int actor_weapon;
     int ai_can_fire;
     int facing_error = 180;
+    int move_face_x = 0, move_face_z = 0;
     struct toy_game_actor_command command;
     struct toy_game_ai_observation observation;
     memset(&command, 0, sizeof(command));
@@ -4622,15 +4638,18 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
         return;
     }
 
-    /* Anime actors follow the player independently of mercenary deployment:
-     * catch up beyond 2000, stop inside 1000, and make occasional short idle
-     * moves while staying near the player. Enemy selection remains shared. */
+    /* Companions follow independently of mercenary deployment.  A generous
+     * stop radius prevents nervous pacing beside the player. */
     {
-        if(actor->anime_character_id){int dx=g->px-actor->x,dz=g->pz-actor->z;int dist=isqrt((long long)dx*dx+(long long)dz*dz);actor->anime_wander_timer_ms-=dt_ms;if(dist>2000){ai_idle=0;actor_path_toward(g,actor,g->px,g->pz,ai_info->move_speed);}else if(dist>1000){ai_idle=0;actor_path_toward(g,actor,g->px,g->pz,ai_info->move_speed);}else{if(actor->anime_wander_timer_ms<=0){actor->anime_wander_timer_ms=2500+rand_range(g,0,2500);actor->anime_wander_x=g->px+rand_range(g,-700,700);actor->anime_wander_z=g->pz+rand_range(g,-700,700);}if(actor->x!=actor->anime_wander_x||actor->z!=actor->anime_wander_z){ai_idle=0;actor_path_toward(g,actor,actor->anime_wander_x,actor->anime_wander_z,ai_info->move_speed);}}}
+        if(actor->companion){int dx=g->px-actor->x,dz=g->pz-actor->z;int dist=isqrt((long long)dx*dx+(long long)dz*dz);if(dist>1600){ai_idle=0;actor_path_toward(g,actor,g->px,g->pz,ai_info->move_speed);move_face_x=(actor->nav_active?actor->nav_x:g->px)-actor->x;move_face_z=(actor->nav_active?actor->nav_z:g->pz)-actor->z;}else actor->nav_active=0;}
         else if (!observation.at_deployment) {
             ai_idle = 0;
             actor_path_toward(g, actor, actor->deployment_x,
                               actor->deployment_z, ai_info->move_speed);
+            move_face_x = (actor->nav_active ? actor->nav_x :
+                           actor->deployment_x) - actor->x;
+            move_face_z = (actor->nav_active ? actor->nav_z :
+                           actor->deployment_z) - actor->z;
         } else {
             actor->nav_active = 0;
         }
@@ -4661,10 +4680,15 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
     }
 
     if (target >= 0) {
+        /* Combat aim owns facing whenever a target is visible. */
         facing_error = ai_turn_toward(actor, sy, cy,
                                       ai_info->turn_speed_degree, dt_ms);
         sy = actor->sy;
         cy = actor->cy;
+    } else if (!ai_idle && (move_face_x || move_face_z)) {
+        /* Otherwise turn into the actual path segment, including detours. */
+        ai_turn_toward(actor, move_face_x, move_face_z,
+                       ai_info->turn_speed_degree, dt_ms);
     }
     ai_can_fire = actor->fire_enabled && target >= 0 && facing_error <= 6;
 
@@ -4703,7 +4727,6 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
         toy_game_actor_set_animation(actor, TOY_GAME_ANIM_RELOAD);
     else if (fired) toy_game_actor_set_animation(actor, TOY_GAME_ANIM_FIRE);
     else if (!keep_animation) {
-        if (target >= 0) ai_idle = 0;
         toy_game_actor_set_animation(actor, ai_idle ? TOY_GAME_ANIM_IDLE :
                                      TOY_GAME_ANIM_MOVE);
     }
