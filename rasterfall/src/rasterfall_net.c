@@ -1305,6 +1305,7 @@ static void encode_actor(unsigned char *p, const struct toy_game_actor *a,
     if (slot < 0 || slot >= TOY_GAME_WEAPON_SLOTS) slot = 0;
     p[0] = (unsigned char)((a->class_id & 3) << 2);
     p[0] |= (unsigned char)((a->state & 3) << 4);
+    if (a->anime_character_id) p[0] |= 0x40;
     p[1] = (unsigned char)actor_index;
     p[2] = put_weapon_value(a->slots[slot].weapon);
     put_u32(p + 3, (uint32_t)a->x); put_u32(p + 7, (uint32_t)a->z);
@@ -1335,6 +1336,7 @@ static void decode_actor(const unsigned char *p, struct rasterfall_net_actor *a)
     a->actor_index = p[1];
     a->class_id = (p[0] >> 2) & 3;
     a->state = (p[0] >> 4) & 3;
+    a->anime_character_id = (p[0] & 0x40) ? 1 : 0;
     a->weapon = get_weapon_value(p[2]);
     a->x = (int)get_u32(p + 3); a->z = (int)get_u32(p + 7);
     a->sy = get_i16(p + 11); a->cy = get_i16(p + 13);
@@ -3746,10 +3748,12 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
             dst->kind = index >= TOY_GAME_REMOTE_ACTOR_BASE ?
                         TOY_GAME_ACTOR_PLAYER : TOY_GAME_ACTOR_AI;
             dst->class_id = src->class_id;
+            dst->anime_character_id = src->anime_character_id;
             dst->state = src->state;
             dst->x = src->x; dst->z = src->z;
             dst->sy = src->sy; dst->cy = src->cy;
             dst->hp = src->hp;
+            if (src->anime_character_id) dst->max_hp = 190;
             dst->kills = src->kills;
             dst->special_kills = src->special_kills;
     dst->damage_dealt = src->damage_dealt;

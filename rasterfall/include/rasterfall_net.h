@@ -170,6 +170,7 @@ struct rasterfall_net_actor {
     int actor_index;
     int class_id;
     int character_id;
+    int anime_character_id;
     int state;
     int x, z;
     int sy, cy;

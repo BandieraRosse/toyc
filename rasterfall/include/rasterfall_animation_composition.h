@@ -6,7 +6,7 @@ enum { RASTERFALL_RIFLE_POSE_BONE_COUNT = 5 };
 static const char *const rasterfall_rifle_pose_bone_names[5]={"上半身","右腕","右ひじ","左腕","左ひじ"};
 static const char *const rasterfall_rifle_pose_bone_display_names[5]={"UPPER_BODY","RIGHT_ARM","RIGHT_ELBOW","LEFT_ARM","LEFT_ELBOW"};
 struct rasterfall_rifle_pose { int rotation[5][3]; };
-static inline void rasterfall_rifle_pose_default(struct rasterfall_rifle_pose*p){static const int v[5][3]={{-5,0,0},{-42,-8,-18},{-34,0,0},{-48,10,24},{-58,0,0}};int i,j;if(p)for(i=0;i<5;i++)for(j=0;j<3;j++)p->rotation[i][j]=v[i][j];}
+static inline void rasterfall_rifle_pose_default(struct rasterfall_rifle_pose*p){static const int v[5][3]={{-5,0,0},{-63,5,51},{85,34,-91},{21,66,2},{92,30,-4}};int i,j;if(p)for(i=0;i<5;i++)for(j=0;j<3;j++)p->rotation[i][j]=v[i][j];}
 struct rasterfall_animation_composition{const struct rasterfall_animation_clip*locomotion;int locomotion_time_ms,rifle_stance,overlay,overlay_time_ms;const struct rasterfall_rifle_pose*rifle_pose,*hit_pose;int hit_pose_preview;};
 static inline void composition_rotate(struct rasterfall_model_asset*m,const char*n,int x,int y,int z){int b=rasterfall_model_find_bone(m,n);if(b<0)return;m->bones[b].rotate_x+=x;m->bones[b].rotate_y+=y;m->bones[b].rotate_z+=z;}
 static inline void composition_clear(struct rasterfall_model_asset*m,const char*n){int b=rasterfall_model_find_bone(m,n);if(b<0)return;m->bones[b].rotate_x=m->bones[b].rotate_y=m->bones[b].rotate_z=0;}

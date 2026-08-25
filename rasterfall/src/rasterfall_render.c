@@ -5177,6 +5177,23 @@ static int render_ai_teammate(struct toy_renderer *renderer,
                 platform->height > active_actor_lift)
                 active_actor_lift = platform->height;
         }
+        if (actor->anime_character_id && private_character_model.data) {
+            struct rasterfall_rifle_pose hit={0};
+            struct rasterfall_animation_composition composition;
+            hit.rotation[0][0]=8; hit.rotation[0][2]=-8;
+            composition.locomotion=actor->moving&&private_character_vmd_loaded?&private_character_vmd_clip:NULL;
+            composition.locomotion_time_ms=actor->animation.time_ms;
+            composition.rifle_stance=1;
+            composition.overlay=actor->animation.id==TOY_GAME_ANIM_FIRE?RASTERFALL_COMPOSITION_OVERLAY_FIRE:RASTERFALL_COMPOSITION_OVERLAY_NONE;
+            composition.overlay_time_ms=actor->animation.time_ms;
+            composition.rifle_pose=NULL;composition.hit_pose=&hit;
+            composition.hit_pose_preview=actor->animation.id==TOY_GAME_ANIM_HIT;
+            rasterfall_animation_compose(&private_character_model,&composition);
+            pixels+=render_gallery_model(renderer,camera,&private_character_model,
+                actor->x,-900+active_actor_lift,actor->z,
+                character_model_scale(&private_character_model,RASTERFALL_EULA_HEIGHT_MM));
+            active_actor_lift=0;continue;
+        }
         pixels += render_player_avatar(renderer, camera, actor->x, actor->z,
                                        actor->sy, actor->cy,
                                        actor->current_slot >= 0 &&

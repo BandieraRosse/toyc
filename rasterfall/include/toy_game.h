@@ -150,7 +150,8 @@ enum toy_game_enemy_ai {
  * 伪装成玩家输入端；名字和类型可以直接作为快照元数据传输。 */
 enum toy_game_actor_kind {
     TOY_GAME_ACTOR_PLAYER = 0,
-    TOY_GAME_ACTOR_AI = 1
+    TOY_GAME_ACTOR_AI = 1,
+    TOY_GAME_ACTOR_ANIME = 2
 };
 
 enum toy_game_actor_state {
@@ -448,6 +449,9 @@ struct toy_game_actor {
     int base_core;              /* BASE: fixed defense objective */
     int hired;                  /* 雇佣 AI：可由商店/开发者按钮清除 */
     int developer_only;         /* 开发者展示/测试角色，不可分配旗帜 */
+    int anime_character_id;     /* -1: low-poly AI; >=0: anime actor system */
+    int anime_wander_timer_ms;
+    int anime_wander_x, anime_wander_z;
     int state;
     int x, z;
     int sy, cy;
@@ -681,6 +685,8 @@ int  toy_game_add_ai(struct toy_game *g, int class_id, int x, int z,
                      const char *name);
 int  toy_game_add_hired_ai(struct toy_game *g, int weapon, int x, int z,
                            const char *name);
+int  toy_game_add_anime_actor(struct toy_game *g, int character_id,
+                              int x, int z, const char *name);
 int  toy_game_set_ai_weapon(struct toy_game *g, int actor_index, int weapon);
 int  toy_game_clear_hired_ai(struct toy_game *g);
 int  toy_game_upgrade_ai(struct toy_game *g, int actor_index);

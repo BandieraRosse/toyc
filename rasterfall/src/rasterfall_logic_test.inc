@@ -93,6 +93,30 @@ static int run_logic_test(void)
     if (session.level.safe_count > 0 &&
         session.game_state.safe_room_count != session.level.safe_count)
         return 126;
+    {
+        int anime=-1,i;
+        for(i=0;i<TOY_GAME_MAX_ACTORS;i++)
+            if(session.game_state.actors[i].active&&
+               session.game_state.actors[i].anime_character_id){anime=i;break;}
+        if(anime<0||session.game_state.actors[anime].max_hp!=190||
+           session.game_state.actors[anime].slots[
+             session.game_state.actors[anime].current_slot].weapon!=TOY_GAME_WEAPON_AK)
+            return 169;
+    }
+    {
+        struct toy_game anime_follow;
+        int id,before;
+        toy_game_init(&anime_follow,77);
+        id=toy_game_add_anime_actor(&anime_follow,0,0,0,"EULA_TEST");
+        if(id<0)return 170;
+        anime_follow.room_limit=10000;
+        anime_follow.px=3000;anime_follow.pz=0;
+        before=anime_follow.actors[id-1].x;
+        toy_game_update_ai_teammates(&anime_follow,100);
+        if(anime_follow.actors[id-1].x<=before||
+           anime_follow.actors[id-1].max_hp<=TOY_CONFIG_AI_LEVEL_3_HP)
+            return 170;
+    }
     /* 远端旗帜操作必须由主机状态承接，旗帜位置保持在初始点。 */
     if (session.flag_count != 1) return 131;
     camera.x = session.flags[0].x;

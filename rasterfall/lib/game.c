@@ -155,6 +155,13 @@ static const struct toy_game_ai_info ai_table[TOY_GAME_AI_CLASS_COUNT] = {
       TOY_CONFIG_AI_LEVEL_3_SPREAD_PERCENT }
 };
 
+/* Anime actors are deliberately not a fourth mercenary level.  Their shared
+ * baseline sits between L2 and L3 in ordinary combat attributes; individual
+ * characters then add a small set of explicit signature strengths. */
+static const struct toy_game_ai_info anime_ai_template = {
+    140, RF_COLOR_AI_RIFLE, 90, 600, 700, 42, 110
+};
+
 static int ai_random_weapon(struct toy_game *g, int class_id)
 {
     if (class_id == TOY_GAME_AI_LEVEL_1) return TOY_GAME_WEAPON_PISTOL;
@@ -715,6 +722,23 @@ void toy_game_set_ai_teammate(struct toy_game *g, int active, int x, int z,
 {
     toy_game_set_ai_teammate_class(g, active, TOY_GAME_AI_LEVEL_2,
                                    x, z, name);
+}
+
+int toy_game_add_anime_actor(struct toy_game *g, int character_id,
+                             int x, int z, const char *name)
+{
+    struct toy_game_actor *a; int i,slot=-1;
+    if(!g||character_id<0)return -1;
+    for(i=0;i<TOY_GAME_REMOTE_ACTOR_BASE;i++)if(!g->actors[i].active){slot=i;break;}
+    if(slot<0)return -1;
+    a=&g->actors[slot];memset(a,0,sizeof(*a));
+    a->active=1;a->actor_id=slot+1;a->kind=TOY_GAME_ACTOR_AI;
+    a->anime_character_id=character_id+1;a->class_id=TOY_GAME_AI_LEVEL_2;
+    a->state=TOY_GAME_ACTOR_ALIVE;a->x=x;a->z=z;a->cy=1024;
+    a->deployment_x=x;a->deployment_z=z;a->flag_index=-1;
+    a->hp=a->max_hp=190;a->anime_wander_timer_ms=2000;
+    copy_name(a->name,name?name:"EULA");actor_set_weapon(a,TOY_GAME_WEAPON_AK);
+    a->fire_enabled=1;return a->actor_id;
 }
 
 int toy_game_add_ai(struct toy_game *g, int class_id, int x, int z,
@@ -1540,9 +1564,11 @@ static int ai_try_shove(struct toy_game *g, struct toy_game_actor *actor)
     if (actor->class_id < 0 || actor->class_id >= TOY_GAME_AI_CLASS_COUNT)
         return 0;
     if (actor->ai_shove_cooldown_ms > 0) return 0;
-    info = &ai_table[actor->class_id];
+    info = actor->anime_character_id ? &anime_ai_template :
+           &ai_table[actor->class_id];
     pushed = toy_game_shove_at(g, actor->x, actor->z, actor->sy, actor->cy);
-    actor->ai_shove_cooldown_ms = info->shove_cooldown_ms;
+    actor->ai_shove_cooldown_ms = actor->anime_character_id ? 350 :
+                                  info->shove_cooldown_ms;
     return pushed;
 }
 
@@ -4513,6 +4539,7 @@ int toy_game_execute_actor_command(
 void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
 {
     const struct toy_game_ai_info *ai_info;
+    struct toy_game_ai_info anime_info;
     struct toy_game_actor *actor;
     int target = -1, best_dist = 0, i;
     int sy = 0, cy = 1024;
@@ -4530,7 +4557,8 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
     actor = &g->actors[g->ai_context_actor_index];
     if (!toy_game_ai_observe(g, g->ai_context_actor_index, &observation))
         return;
-    ai_info = actor->class_id >= 0 && actor->class_id < TOY_GAME_AI_CLASS_COUNT ?
+    if(actor->anime_character_id){anime_info=anime_ai_template;anime_info.max_hp=190;anime_info.move_speed=52;anime_info.shove_cooldown_ms=350;ai_info=&anime_info;}
+    else ai_info = actor->class_id >= 0 && actor->class_id < TOY_GAME_AI_CLASS_COUNT ?
               &ai_table[actor->class_id] : &ai_table[TOY_GAME_AI_LEVEL_2];
     if (actor->ai_shove_cooldown_ms > 0) {
         actor->ai_shove_cooldown_ms -= dt_ms;
@@ -4594,9 +4622,12 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
         return;
     }
 
-    /* 自由状态下向部署点回位；回位只占用移动，不影响索敌和开火。 */
+    /* Anime actors follow the player independently of mercenary deployment:
+     * catch up beyond 2000, stop inside 1000, and make occasional short idle
+     * moves while staying near the player. Enemy selection remains shared. */
     {
-        if (!observation.at_deployment) {
+        if(actor->anime_character_id){int dx=g->px-actor->x,dz=g->pz-actor->z;int dist=isqrt((long long)dx*dx+(long long)dz*dz);actor->anime_wander_timer_ms-=dt_ms;if(dist>2000){ai_idle=0;actor_path_toward(g,actor,g->px,g->pz,ai_info->move_speed);}else if(dist>1000){ai_idle=0;actor_path_toward(g,actor,g->px,g->pz,ai_info->move_speed);}else{if(actor->anime_wander_timer_ms<=0){actor->anime_wander_timer_ms=2500+rand_range(g,0,2500);actor->anime_wander_x=g->px+rand_range(g,-700,700);actor->anime_wander_z=g->pz+rand_range(g,-700,700);}if(actor->x!=actor->anime_wander_x||actor->z!=actor->anime_wander_z){ai_idle=0;actor_path_toward(g,actor,actor->anime_wander_x,actor->anime_wander_z,ai_info->move_speed);}}}
+        else if (!observation.at_deployment) {
             ai_idle = 0;
             actor_path_toward(g, actor, actor->deployment_x,
                               actor->deployment_z, ai_info->move_speed);

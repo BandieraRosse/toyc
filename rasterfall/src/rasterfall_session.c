@@ -203,8 +203,8 @@ void rasterfall_session_reset(struct rasterfall_session *session,
     session->skeletal_demo_player.speed_milli = 1000;
     rasterfall_rifle_pose_default(&session->rifle_pose);
     __memset(&session->hit_pose,0,sizeof(session->hit_pose));
-    session->hit_pose.rotation[0][0]=18;
-    session->hit_pose.rotation[0][2]=-18;
+    session->hit_pose.rotation[0][0]=8;
+    session->hit_pose.rotation[0][2]=-8;
     toy_game_init(&session->game_state, session->seed);
     /* 环境变量不依赖 libc；HOSTNAME 是最稳定的本机身份来源，缺失时
      * toy_game_init 的 PLAYER 保底仍可用。名字只用于身份展示/未来快照。 */
@@ -277,6 +277,10 @@ void rasterfall_session_reset(struct rasterfall_session *session,
         }
         if (spawn->downed) session_down_ai(session, actor_index, spawn->x, spawn->z);
     }
+    /* Anime companions are session actors, separate from map-authored
+     * low-poly mercenaries and the fixed developer model lineup. */
+    toy_game_add_anime_actor(&session->game_state,0,
+                             camera->x-800,camera->z,"EULA");
     /* Registration is separate from simulation: the existing teammate
      * executor remains authoritative while policies are introduced. */
     rasterfall_ai_registry_init(&session->ai_registry);
