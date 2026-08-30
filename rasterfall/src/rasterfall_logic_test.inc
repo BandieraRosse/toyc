@@ -69,7 +69,7 @@ static int run_logic_test(void)
             camera.x = session.items[item].x;
             camera.z = session.items[item].z + 500;
             camera.sy = 0; camera.cy = -1024;
-            rasterfall_session_interact_remote(&session, &camera);
+            rasterfall_session_interact_remote(&session, &camera, -1);
             if (session.skeletal_demo_pose != poses[button]) return 159;
             if (button == 0 && (session.skeletal_demo_player.playing ||
                                 session.skeletal_demo_player.clip_id != -1))

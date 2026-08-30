@@ -491,11 +491,32 @@ void rasterfall_session_step_remote_player(struct rasterfall_session *session,
 }
 
 void rasterfall_session_interact_remote(struct rasterfall_session *session,
-                                        const struct camera *camera)
+                                        const struct camera *camera,
+                                        int expected_kind)
 {
-    int index;
+    int index, i;
     if (session->game_state.state != TOY_GAME_PLAYING) return;
     index = rasterfall_session_compute_highlight(session, camera);
+    /* Client prediction and the host's delayed camera can disagree about two
+     * nearby buttons.  Carry the highlighted pickup kind with the edge and
+     * resolve that same aimed target on the authority instead of activating
+     * whichever neighbour happens to win the host's distance tie. */
+    if (expected_kind >= 0 &&
+        (index < 0 || session->items[index].kind != expected_kind)) {
+        int saved_count = session->item_count;
+        for (i = 0; i < saved_count; i++) {
+            struct rasterfall_interactable saved;
+            if (session->items[i].kind != expected_kind) continue;
+            saved = session->items[0];
+            session->items[0] = session->items[i];
+            session->item_count = 1;
+            index = rasterfall_session_compute_highlight(session, camera);
+            session->item_count = saved_count;
+            session->items[0] = saved;
+            if (index == 0) { index = i; break; }
+            index = -1;
+        }
+    }
     /* A remote player's shop is a local UI on that player's machine.  The
      * host still processes shop requests separately, but must not open its
      * own armory when a client walks up to the same pickup. */
@@ -652,17 +673,19 @@ static void session_client_interact_banner(struct rasterfall_session *session)
         session->banner_text = session->manual_alarm_on ?
             "ALARM DISABLED" : "ALARM ENABLED - 2-3 ENEMIES EACH SECOND";
     else if (it->kind == TOY_MAP_PICKUP_BUTTON)
-        session->banner_text = "HORDE SUMMONED - THEY WILL FIND YOU";
+        session->banner_text = "HORDE REQUEST SENT";
+    else if (it->kind == TOY_MAP_PICKUP_WAVE_SKIP_BUTTON)
+        session->banner_text = "NEXT WAVE REQUEST SENT";
     else if (it->kind == TOY_MAP_PICKUP_HEAVY_HORDE_BUTTON)
-        session->banner_text = "BROWN BRUTE HORDE SUMMONED";
+        session->banner_text = "BROWN BRUTE HORDE REQUEST SENT";
     else if (it->kind == TOY_MAP_PICKUP_FAST_HORDE_BUTTON)
-        session->banner_text = "RED RUNNER HORDE SUMMONED";
+        session->banner_text = "RED RUNNER HORDE REQUEST SENT";
     else if (it->kind == TOY_MAP_PICKUP_SMOKER_BUTTON)
-        session->banner_text = "SMOKER SUMMONED";
+        session->banner_text = "SMOKER REQUEST SENT";
     else if (it->kind == TOY_MAP_PICKUP_CHARGER_BUTTON)
-        session->banner_text = "CHARGER SUMMONED";
+        session->banner_text = "CHARGER REQUEST SENT";
     else if (it->kind == TOY_MAP_PICKUP_TANK_BUTTON)
-        session->banner_text = "TANK SUMMONED";
+        session->banner_text = "TANK REQUEST SENT";
     else if (it->kind == TOY_MAP_PICKUP_ATTACK_X2_BUTTON)
         session->banner_text = "ATTACK POINTS X2";
     else if (it->kind == TOY_MAP_PICKUP_ATTACK_X3_BUTTON)

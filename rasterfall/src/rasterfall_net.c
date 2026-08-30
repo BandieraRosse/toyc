@@ -1283,6 +1283,7 @@ static void encode_actor(unsigned char *p, const struct toy_game_actor *a,
     p[0] = (unsigned char)((a->class_id & 3) << 2);
     p[0] |= (unsigned char)((a->state & 3) << 4);
     if (a->anime_character_id) p[0] |= 0x40;
+    if (a->moving) p[0] |= 0x80;
     p[1] = (unsigned char)actor_index;
     p[2] = put_weapon_value(a->slots[slot].weapon);
     put_u32(p + 3, (uint32_t)a->x); put_u32(p + 7, (uint32_t)a->z);
@@ -1301,7 +1302,11 @@ static void encode_actor(unsigned char *p, const struct toy_game_actor *a,
     put_i16(p + 31, a->special_kills);
     put_u32(p + 33, (uint32_t)a->damage_dealt);
     put_u32(p + 37, (uint32_t)a->throwable_damage_dealt);
-    p[41] = (unsigned char)(a->hired != 0);
+    /* Keep the hired flag and the complete model selector in one byte.  The
+     * old wire format only carried anime_character_id as a boolean, turning
+     * every maid into model 1 (Eula) on clients. */
+    p[41] = (unsigned char)((a->hired != 0) |
+                            ((a->anime_character_id & 7) << 1));
     memcpy(p + 42, a->name, TOY_GAME_MAX_NAME);
     p[42 + TOY_GAME_MAX_NAME] = (unsigned char)a->character_id;
 }
@@ -1313,7 +1318,8 @@ static void decode_actor(const unsigned char *p, struct rasterfall_net_actor *a)
     a->actor_index = p[1];
     a->class_id = (p[0] >> 2) & 3;
     a->state = (p[0] >> 4) & 3;
-    a->anime_character_id = (p[0] & 0x40) ? 1 : 0;
+    a->anime_character_id = (p[41] >> 1) & 7;
+    a->moving = (p[0] & 0x80) != 0;
     a->weapon = get_weapon_value(p[2]);
     a->x = (int)get_u32(p + 3); a->z = (int)get_u32(p + 7);
     a->sy = get_i16(p + 11); a->cy = get_i16(p + 13);
@@ -2873,7 +2879,8 @@ static void net_apply_client(struct rasterfall_net *net,
     if ((client->command.buttons & RASTERFALL_CMD_INTERACT) &&
         client->command.shop_request_id != client->shop_request_id &&
         !g->player_down)
-        rasterfall_session_interact_remote(session, &client->camera);
+        rasterfall_session_interact_remote(session, &client->camera,
+            client->command.shop_arg > 0 ? client->command.shop_arg - 1 : -1);
     if ((client->command.buttons & RASTERFALL_CMD_FLAG) &&
         client->command.shop_request_id != client->shop_request_id)
         rasterfall_session_toggle_flag_remote(session, &client->camera,
@@ -3750,6 +3757,10 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
                         TOY_GAME_ACTOR_PLAYER : TOY_GAME_ACTOR_AI;
             dst->class_id = src->class_id;
             dst->anime_character_id = src->anime_character_id;
+            if (dst->moving != src->moving) {
+                dst->moving = src->moving;
+                dst->locomotion_blend_ms = 0;
+            }
             dst->state = src->state;
             dst->x = src->x; dst->z = src->z;
             dst->sy = src->sy; dst->cy = src->cy;
@@ -3797,6 +3808,14 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
                     TOY_GAME_ACTOR_DOWNED)
                 session->ai_revive_active = 0;
         }
+        /* Damage is host-authoritative, but the red first-person hit overlay
+         * is local presentation.  Detect each newly acknowledged HP loss
+         * before replacing the previous authoritative value.  Copying a
+         * countdown through snapshots would repeatedly extend the flash at
+         * snapshot frequency and make it last longer on clients than hosts. */
+        if (own->hp < session->game_state.hp &&
+            session->game_state.hp > 0)
+            session->game_state.damage_flash_ms = TOY_GAME_DAMAGE_FLASH_MS;
         session->game_state.hp = own->hp;
         session->game_state.player_down = own->downed;
         /* Local viewmodel presentation is immediate and is not rewound by a

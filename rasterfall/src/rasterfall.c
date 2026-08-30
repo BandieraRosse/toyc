@@ -1384,7 +1384,8 @@ static void sync_fire_effects(const struct camera *camera)
 
 /* AI 的弹道同样进入 tracer/命中特效环。起点使用 AI 的世界坐标，终点
  * 仍通过当前观察相机投影，因此第一人称玩家和旁观者都能看到完整弹道。 */
-static void sync_ai_fire_effects(const struct camera *camera)
+static void sync_ai_fire_effects(const struct camera *camera,
+                                 struct rasterfall_audio *audio)
 {
     int actor_index;
     (void)camera;
@@ -1398,6 +1399,18 @@ static void sync_ai_fire_effects(const struct camera *camera)
         }
         if (actor->fire_seq == effects.last_actor_fire_seq[actor_index]) continue;
         effects.last_actor_fire_seq[actor_index] = actor->fire_seq;
+        if (audio && audio->running) {
+            int weapon = actor->current_slot >= 0 &&
+                         actor->current_slot < TOY_GAME_WEAPON_SLOTS ?
+                         actor->slots[actor->current_slot].weapon : -1;
+            unsigned char event = weapon == TOY_GAME_WEAPON_SMG ?
+                TOY_GAME_EV_SHOOT_SMG :
+                weapon == TOY_GAME_WEAPON_SHOTGUN ? TOY_GAME_EV_SHOOT_SHOTGUN :
+                weapon == TOY_GAME_WEAPON_AK ? TOY_GAME_EV_SHOOT_AK :
+                weapon == TOY_GAME_WEAPON_AWP ? TOY_GAME_EV_SHOOT_AWP :
+                TOY_GAME_EV_SHOOT;
+            rasterfall_audio_play_events(audio, &event, 1);
+        }
         if (actor_index == 0) effects.last_ai_fire_seq = actor->fire_seq;
         ray_count = actor->ray_count;
         if (ray_count < 0) ray_count = 0;
@@ -2845,7 +2858,7 @@ startup_again:
                 sync_network_fire_effects(&camera, &player->camera, i,
                                           player->weapon, player->fire_seq,
                                           player->ray_count, player->rays,
-                                          NULL);
+                                          &audio);
             }
         }
         /* 本帧到达的按压边沿并入保留位，再把保留位全部合入 key_pressed
@@ -3260,10 +3273,17 @@ startup_again:
                                 FIXED_STEP_US / 1000);
                     }
                     if (net.mode == RASTERFALL_NET_CLIENT)
+                    {
+                        if ((command.buttons & RASTERFALL_CMD_INTERACT) &&
+                            session.highlight_index >= 0 &&
+                            session.highlight_index < session.item_count)
+                            command.shop_arg =
+                                session.items[session.highlight_index].kind + 1;
                         rasterfall_net_send_command(
                             &net, &command, &camera, &game,
                             command.jump_dx,
                             command.jump_dz);
+                    }
                     consume_game_command_edges(&input, pending_key_edges);
                     pointer_turn_pending = 0;
                     pointer_pitch_pending = 0;
@@ -3333,7 +3353,7 @@ startup_again:
             rasterfall_audio_play_events(&audio, game_events, game_event_count);
         if (!paused) {
             sync_fire_effects(&camera);
-            sync_ai_fire_effects(&camera);
+            sync_ai_fire_effects(&camera, &audio);
         }
         if (accumulator >= FIXED_STEP_US) accumulator %= FIXED_STEP_US;
         /* 本帧跑过逻辑步：所有保留边沿都已暴露给消费方，可以清除；
