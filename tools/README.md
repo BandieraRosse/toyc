@@ -21,6 +21,27 @@ PNG、BMP、SPA/SPH、JPG/JPEG 纹理会自动转为 TTEX。默认模型名来�
 不会被覆盖，除非显式指定 `--force`。导入日志会逐材质解码 drawing flags，并输出
 几何、纹理、透明度、sphere、toon、edge、光照及蒙皮数据的 feature summary。
 
+## FBX 角色导入
+
+FBX 角色先由 Blender 后台脚本删除 Shape Key、简化网格、把每顶点权重裁为最大
+两项并重新归一化，再通过临时 PMX 复用现有 RFM2/SKN1 转换器。临时 PMX 和 PNG
+不进入最终模型目录。
+
+```sh
+make rasterfall-blender-deps # Blender 缺少 numpy 时执行一次
+make import-maid
+
+# 通用入口；默认目标为 5000 triangles
+tools/import-fbx-model.sh --force --target-triangles 5000 \
+    path/to/model.fbx model_name
+```
+
+可通过 `BLENDER=/path/to/blender` 指定 Blender，通过 `BLENDER_PYTHONPATH` 指定
+Blender Python 附加模块目录。Maid 配置保留完整 Mixamo 骨架，将核心 Humanoid
+骨骼映射为 Rasterfall 已识别的稳定名称；主体和脸部贴图限制为 1024，其他细节
+限制为 512。当前材质到纹理的文件名映射针对 Maid 资产，导入其他 FBX 前需要把
+映射移到模型 profile。
+
 `jpg_decode.{c,h}` 是 toyasset 的 JPEG 解码依赖，不是独立程序。
 
 ## RFM2 mesh LOD

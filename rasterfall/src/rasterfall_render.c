@@ -306,24 +306,20 @@ struct rasterfall_developer_character {
  * ground-offset corrections discovered during content validation. */
 static struct rasterfall_developer_character developer_characters[] = {
     { .name = "ST AR-15",
-      .model_path = "rasterfall/private-assets/models/st_ar15.rmesh",
-      .lod_model_path = "rasterfall/private-assets/models/st_ar15_lod1.rmesh",
-      .height_source = "GFL2_RELATIVE_NORMALIZED_TO_1750MM_MEAN",
-      .x = -15400, .z = -10000, .base_y = -900, .target_height_mm = 1904 },
-    { .name = "G11", .model_path = "rasterfall/private-assets/models/g11.rmesh",
-      .lod_model_path = "rasterfall/private-assets/models/g11_lod1.rmesh",
-      .height_source = "GFL2_RELATIVE_NORMALIZED_TO_1750MM_MEAN",
-      .x = -14200, .z = -10000, .base_y = -900, .target_height_mm = 1647 },
+      .model_path = "rasterfall/private-assets/models/maid.rmesh",
+      .height_source = "MAID_PREVIEW_MATCHED_TO_EULA",
+      .x = -15400, .z = -10000, .base_y = -900, .target_height_mm = 1736 },
+    { .name = "G11", .model_path = "rasterfall/private-assets/models/maid.rmesh",
+      .height_source = "MAID_PREVIEW_MATCHED_TO_EULA",
+      .x = -14200, .z = -10000, .base_y = -900, .target_height_mm = 1736 },
     { .name = "VECTOR",
-      .model_path = "rasterfall/private-assets/models/vector.rmesh",
-      .lod_model_path = "rasterfall/private-assets/models/vector_lod1.rmesh",
-      .height_source = "GFL2_RELATIVE_NORMALIZED_TO_1750MM_MEAN",
-      .x = -11800, .z = -10000, .base_y = -900, .target_height_mm = 1699 },
+      .model_path = "rasterfall/private-assets/models/maid.rmesh",
+      .height_source = "MAID_PREVIEW_MATCHED_TO_EULA",
+      .x = -11800, .z = -10000, .base_y = -900, .target_height_mm = 1736 },
     { .name = "UMP45",
-      .model_path = "rasterfall/private-assets/models/ump45.rmesh",
-      .lod_model_path = "rasterfall/private-assets/models/ump45_lod1.rmesh",
-      .height_source = "GFL2_RELATIVE_NORMALIZED_TO_1750MM_MEAN",
-      .x = -10600, .z = -10000, .base_y = -900, .target_height_mm = 1750 }
+      .model_path = "rasterfall/private-assets/models/maid.rmesh",
+      .height_source = "MAID_PREVIEW_MATCHED_TO_EULA",
+      .x = -10600, .z = -10000, .base_y = -900, .target_height_mm = 1736 }
 };
 
 static void load_developer_character_job(int worker_id, int task, void *opaque)
@@ -1947,7 +1943,7 @@ struct actor_benchmark_dispatch {
 };
 static void actor_benchmark_job(int worker_id, int actor, void *opaque)
 {
-    static const int heights[5] = {1736, 1652, 1429, 1474, 1516};
+    static const int heights[5] = {1736, 1736, 1736, 1736, 1736};
     static const int positions[5] = {-1800, -900, 0, 900, 1800};
     struct actor_benchmark_dispatch *dispatch = opaque;
     struct actor_benchmark_fixture *job = &dispatch->actors[actor];
@@ -1987,10 +1983,10 @@ int rasterfall_render_actor_benchmark(int iterations, int frontend_workers,
 {
     static const char *paths[5] = {
         "rasterfall/private-assets/models/eula.rmesh",
-        "rasterfall/private-assets/models/st_ar15.rmesh",
-        "rasterfall/private-assets/models/g11.rmesh",
-        "rasterfall/private-assets/models/vector.rmesh",
-        "rasterfall/private-assets/models/ump45.rmesh"
+        "rasterfall/private-assets/models/maid.rmesh",
+        "rasterfall/private-assets/models/maid.rmesh",
+        "rasterfall/private-assets/models/maid.rmesh",
+        "rasterfall/private-assets/models/maid.rmesh"
     };
     static const char vmd_path[] =
         "rasterfall/private-assets/animations/walk04_loop5.vmd";

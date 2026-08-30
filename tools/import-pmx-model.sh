@@ -61,7 +61,7 @@ while IFS= read -r -d '' texture; do
     extension=${extension,,}
     output=${texture%.*}.ttex
     case $extension in
-        png) format=png1024 ;;
+        png) format=${TOYASSET_PNG_FORMAT:-png1024} ;;
         bmp|spa|sph) format=bmp ;;
         jpg|jpeg) format=jpg ;;
         *)

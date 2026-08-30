@@ -2,6 +2,7 @@ build/**
 build-self/**
 build-windows/**
 .windows-deps/**
+.blender-python/**
 .vscode/*
 tmp/**
 .claude/**

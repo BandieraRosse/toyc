@@ -1013,10 +1013,18 @@ $(BUILD)/wayland_fps: $(BUILD)/rasterfall
 	@ln -sf rasterfall $@
 
 .PHONY: rasterfall rasterfall-embedded wayland_fps app-rasterfall-embedded \
-	lod-characters lod-ar15 lod-ump45 lod-vector lod-g11
+	lod-characters lod-ar15 lod-ump45 lod-vector lod-g11 \
+	rasterfall-blender-deps import-maid
 rasterfall: $(BUILD)/rasterfall
 rasterfall-embedded app-rasterfall-embedded: $(BUILD)/rasterfall-embedded
 wayland_fps: $(BUILD)/wayland_fps
+
+rasterfall-blender-deps:
+	python3 -m pip install --target .blender-python numpy
+
+import-maid:
+	tools/import-fbx-model.sh --force --target-triangles 5000 \
+		rasterfall/private-assets/source/maid/Maid.fbx maid
 
 # 私有角色模型的确定性中距离 LOD；输出与源模型共享纹理目录。
 lod-characters: lod-ar15 lod-ump45 lod-vector lod-g11
