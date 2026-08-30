@@ -1105,7 +1105,10 @@ static int run_startup_menu(struct toy_window *window, struct toy_renderer *rend
                 } else if (key == KEY_ENTER) {
                     if (strlen(room_text) == 4) {
                         *room_id = atoi(room_text); *public_room = 1;
-                        *net_mode = selected == 1 ? RASTERFALL_NET_HOST : RASTERFALL_NET_CLIENT;
+                        /* Keep the public-room role selected on the main menu:
+                         * item 2 creates a host and item 3 joins as a guest. */
+                        *net_mode = selected == 2 ? RASTERFALL_NET_HOST :
+                                                   RASTERFALL_NET_CLIENT;
                         return 1;
                     }
                 } else {
