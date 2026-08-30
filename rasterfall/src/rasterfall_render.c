@@ -618,6 +618,9 @@ enum rasterfall_character_distance_quality {
 static unsigned long rasterfall_render_frame;
 static struct rasterfall_frontend_state ai_character_frontends[TOY_GAME_MAX_ACTORS];
 static unsigned char ai_character_frontends_initialized[TOY_GAME_MAX_ACTORS];
+/* Per-frame budget for nearby, visible original skeletal meshes.  IDs 0..4
+ * are the gallery Eula/developer displays; 100+i identifies an AI actor. */
+static int near_original_model_owner = -1;
 
 /* Distance policy for high-detail characters.  Keep the decision in one
  * place: distance is horizontal Euclidean distance squared, while all
@@ -1483,6 +1486,66 @@ static int gallery_model_visible(const struct toy_surface *surface,
         if (yf >= -y_limit) all_below = 0;
     }
     return !(all_left || all_right || all_above || all_below);
+}
+
+static int character_view_depth(const struct camera *camera, int x, int z)
+{
+    long long dx = (long long)x - camera->x;
+    long long dz = (long long)z - camera->z;
+    long long depth = dx * camera->sy + dz * camera->cy;
+    if (depth < 0) return -1;
+    return depth > 2147483647LL ? 2147483647 : (int)depth;
+}
+
+static void select_near_original_model(const struct camera *camera,
+                                       const struct toy_surface *surface)
+{
+    int best_depth = 2147483647;
+    int i;
+    near_original_model_owner = -1;
+    if (active_pose_preview) return;
+
+#define CONSIDER_NEAR_CHARACTER(owner_id, asset, px, py, pz, pscale) \
+    do { \
+        if ((asset)->data && \
+            character_distance_policy(camera, (px), (pz), (owner_id), NULL) == \
+                RASTERFALL_CHARACTER_NEAR && \
+            gallery_model_visible((surface), camera, (asset), (px), (py), \
+                                  (pz), (pscale))) { \
+            int candidate_depth = character_view_depth(camera, (px), (pz)); \
+            if (candidate_depth >= 0 && candidate_depth < best_depth) { \
+                best_depth = candidate_depth; \
+                near_original_model_owner = (owner_id); \
+            } \
+        } \
+    } while (0)
+
+    CONSIDER_NEAR_CHARACTER(0, &private_character_model,
+        -13000, -900, -10000,
+        character_model_scale(&private_character_model,
+                              eula_actor_profile.target_height_mm));
+    for (i = 0; i < 4; i++) {
+        struct rasterfall_developer_character *entry = &developer_characters[i];
+        CONSIDER_NEAR_CHARACTER(i + 1, &entry->model, entry->x, entry->base_y,
+            entry->z, character_model_scale(&entry->model,
+                                            entry->target_height_mm));
+    }
+    for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
+        const struct toy_game_actor *actor = &game.actors[i];
+        struct rasterfall_developer_character *entry;
+        const struct rasterfall_model_asset *asset;
+        int scale;
+        if (!actor->active || actor->kind != TOY_GAME_ACTOR_AI ||
+            !actor->anime_character_id) continue;
+        entry = actor->anime_character_id >= 2 && actor->anime_character_id <= 5 ?
+            &developer_characters[actor->anime_character_id - 2] : NULL;
+        asset = entry && entry->vmd_loaded ? &entry->model :
+            &private_character_model;
+        scale = character_model_scale(asset, eula_actor_profile.target_height_mm);
+        CONSIDER_NEAR_CHARACTER(100 + i, asset, actor->x, -900,
+            actor->z, scale);
+    }
+#undef CONSIDER_NEAR_CHARACTER
 }
 
 static void gallery_edge_vertex(const struct rasterfall_model_asset *model,
@@ -2543,6 +2606,11 @@ static int render_characters_parallel(struct toy_renderer *renderer,
              character_distance_policy(camera, -13000, -10000, 0, NULL) >=
                  RASTERFALL_CHARACTER_MID)
         dispatch.models[0] = &private_character_lod_model;
+    else if (!active_pose_preview && private_character_lod_loaded &&
+             near_original_model_owner != 0 &&
+             character_distance_policy(camera, -13000, -10000, 0, NULL) ==
+                 RASTERFALL_CHARACTER_NEAR)
+        dispatch.models[0] = &private_character_lod_model;
     dispatch.visible[0] = !active_pose_preview && private_character_model.data &&
         character_distance_policy(camera, -13000, -10000, 0,
             &private_character_frontend) != RASTERFALL_CHARACTER_HIDDEN &&
@@ -2577,6 +2645,10 @@ static int render_characters_parallel(struct toy_renderer *renderer,
         else if (entry->lod_loaded &&
             character_distance_policy(camera, entry->x, entry->z, i + 1,
                                       NULL) >= RASTERFALL_CHARACTER_MID)
+            dispatch.models[i + 1] = &entry->lod_model;
+        else if (entry->lod_loaded && near_original_model_owner != i + 1 &&
+                 character_distance_policy(camera, entry->x, entry->z, i + 1,
+                                           NULL) == RASTERFALL_CHARACTER_NEAR)
             dispatch.models[i + 1] = &entry->lod_model;
     }
     {
@@ -2926,6 +2998,7 @@ static int render_private_character(struct toy_renderer *renderer,
         active_pose_preview = active_session->pose_editor.active &&
             active_session->pose_editor.character == 0 &&
             active_session->pose_editor.weapon == TOY_GAME_WEAPON_AK;
+        select_near_original_model(camera, &renderer->surface);
         /* Solve the preview hand before the character frontend skins and
          * rasterizes it.  Solving after render would only move the next
          * frame's attachment target, leaving the visible hand one frame/state
@@ -5734,6 +5807,14 @@ static int render_ai_teammate(struct toy_renderer *renderer,
                 actor_model = &private_character_lod2_model;
             else if (!maid_entry && private_character_lod_loaded &&
                 character_quality >= RASTERFALL_CHARACTER_MID)
+                actor_model = &private_character_lod_model;
+            else if (maid_entry && maid_entry->lod_loaded &&
+                     near_original_model_owner != 100 + i &&
+                     character_quality == RASTERFALL_CHARACTER_NEAR)
+                actor_model = &maid_entry->lod_model;
+            else if (!maid_entry && private_character_lod_loaded &&
+                     near_original_model_owner != 100 + i &&
+                     character_quality == RASTERFALL_CHARACTER_NEAR)
                 actor_model = &private_character_lod_model;
             const struct rasterfall_animation_clip *locomotion_clip =
                 maid_entry && maid_entry->vmd_loaded ?
