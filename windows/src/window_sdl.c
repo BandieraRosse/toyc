@@ -22,7 +22,8 @@ struct toy_window {
 /* Linux input numbers are part of the existing game-facing key contract. Keep
  * the values local here so this Windows file does not include Linux headers. */
 enum {
-    KEY_ESC = 1, KEY_1 = 2, KEY_2 = 3, KEY_BACKSPACE = 14, KEY_TAB = 15,
+    KEY_ESC = 1, KEY_1 = 2, KEY_2 = 3, KEY_3 = 4, KEY_4 = 5,
+    KEY_BACKSPACE = 14, KEY_TAB = 15,
     KEY_Q = 16, KEY_W = 17, KEY_E = 18, KEY_R = 19, KEY_F = 33,
     KEY_A = 30, KEY_S = 31, KEY_D = 32, KEY_ENTER = 28,
     KEY_LEFTSHIFT = 42, KEY_COMMA = 51, KEY_DOT = 52,
@@ -74,7 +75,8 @@ static void poll_windows_keys(struct toy_window_events *events)
         {KEY_W, 'W'}, {KEY_A, 'A'}, {KEY_S, 'S'}, {KEY_D, 'D'},
         {KEY_SPACE, VK_SPACE}, {KEY_LEFTSHIFT, VK_LSHIFT},
         {KEY_TAB, VK_TAB}, {KEY_R, 'R'}, {KEY_E, 'E'}, {KEY_F, 'F'},
-        {KEY_1, '1'}, {KEY_2, '2'}, {KEY_UP, VK_UP}, {KEY_DOWN, VK_DOWN},
+        {KEY_1, '1'}, {KEY_2, '2'}, {KEY_3, '3'}, {KEY_4, '4'},
+        {KEY_UP, VK_UP}, {KEY_DOWN, VK_DOWN},
         {KEY_LEFT, VK_LEFT}, {KEY_RIGHT, VK_RIGHT}, {KEY_SLASH, VK_OEM_2}
     };
     static int previous[sizeof(keys) / sizeof(keys[0])];
@@ -110,8 +112,8 @@ static unsigned int key_code(SDL_Scancode code, SDL_Keycode sym)
     case SDLK_BACKSPACE: return KEY_BACKSPACE;
     case SDLK_1: return KEY_1;
     case SDLK_2: return KEY_2;
-    case SDLK_3: return 4;
-    case SDLK_4: return 5;
+    case SDLK_3: return KEY_3;
+    case SDLK_4: return KEY_4;
     case SDLK_5: return 6;
     case SDLK_6: return 7;
     case SDLK_7: return 8;
@@ -157,8 +159,8 @@ static unsigned int key_code(SDL_Scancode code, SDL_Keycode sym)
     case SDL_SCANCODE_BACKSPACE: return KEY_BACKSPACE;
     case SDL_SCANCODE_1: return KEY_1;
     case SDL_SCANCODE_2: return KEY_2;
-    case SDL_SCANCODE_3: return 4;
-    case SDL_SCANCODE_4: return 5;
+    case SDL_SCANCODE_3: return KEY_3;
+    case SDL_SCANCODE_4: return KEY_4;
     case SDL_SCANCODE_5: return 6;
     case SDL_SCANCODE_6: return 7;
     case SDL_SCANCODE_7: return 8;

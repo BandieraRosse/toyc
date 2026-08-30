@@ -596,12 +596,32 @@ static int render_model_weapon(struct toy_renderer *renderer,
                     sv[n].light = 256; sv[n].fog = 0;
                 }
                 if (n == 3) {
+                    /* Axe, bomb, and molotov use the shared extracted model
+                     * palette (model_diffuse.ttex). The model loader has no
+                     * separate public *.textures directory for these assets,
+                     * so this is the same texture source used by the world
+                     * model path. Fall back to the material color when the
+                     * texture is unavailable. */
                     if (weapon >= TOY_GAME_WEAPON_AXE && viewmodel_texture &&
-                        viewmodel_texture->data)
-                        drawn += toy_renderer_triangle_textured_lit(
-                            renderer, &sv[0], &sv[1], &sv[2],
-                            viewmodel_texture, 1, color, 256, 0);
-                    else
+                        viewmodel_texture->data) {
+                        long long area = (long long)(sv[1].x - sv[0].x) *
+                                             (sv[2].y - sv[0].y) -
+                                         (long long)(sv[1].y - sv[0].y) *
+                                             (sv[2].x - sv[0].x);
+                        /* The renderer accepts edge() < 0.  The cross
+                         * product above is the opposite sign of edge(), so
+                         * reverse non-negative-edge triangles. This also
+                         * keeps the throwable meshes visible when their
+                         * authored winding differs from the axe. */
+                        if (area <= 0)
+                            drawn += toy_renderer_triangle_textured_lit(
+                                renderer, &sv[0], &sv[2], &sv[1],
+                                viewmodel_texture, 1, color, 256, 0);
+                        else
+                            drawn += toy_renderer_triangle_textured_lit(
+                                renderer, &sv[0], &sv[1], &sv[2],
+                                viewmodel_texture, 1, color, 256, 0);
+                    } else
                         drawn += fill_triangle_2d(surface, sx[0], sy[0],
                                                   sx[1], sy[1], sx[2], sy[2],
                                                   color);

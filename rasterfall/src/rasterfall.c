@@ -503,6 +503,7 @@ static void accumulate_mouse_look(int *pending_turn, int *pending_pitch,
 static void build_game_command(struct rasterfall_command *command,
                                const struct toy_input *input,
                                const struct control_settings *settings,
+                               const unsigned char *pending_key_edges,
                                int fire_edge, int shove_edge,
                                int pointer_turn,
                                int pointer_pitch)
@@ -528,10 +529,17 @@ static void build_game_command(struct rasterfall_command *command,
     if (toy_input_pressed(input, KEY_SLASH))
         command->buttons |= RASTERFALL_CMD_SHOVE;
     if (toy_input_pressed(input, KEY_R)) command->buttons |= RASTERFALL_CMD_RELOAD;
-    if (toy_input_pressed(input, KEY_1)) command->buttons |= RASTERFALL_CMD_SLOT_1;
-    if (toy_input_pressed(input, KEY_2)) command->buttons |= RASTERFALL_CMD_SLOT_2;
-    if (toy_input_pressed(input, KEY_3)) command->buttons |= RASTERFALL_CMD_SLOT_3;
-    if (toy_input_pressed(input, KEY_4)) command->buttons |= RASTERFALL_CMD_SLOT_4;
+    /* A key edge may arrive between fixed ticks (or while the renderer is
+     * waiting for a present buffer). Use the retained edge queue so movement
+     * cannot make a number press disappear. */
+    if (toy_input_pressed(input, KEY_1) || pending_key_edges[KEY_1])
+        command->buttons |= RASTERFALL_CMD_SLOT_1;
+    if (toy_input_pressed(input, KEY_2) || pending_key_edges[KEY_2])
+        command->buttons |= RASTERFALL_CMD_SLOT_2;
+    if (toy_input_pressed(input, KEY_3) || pending_key_edges[KEY_3])
+        command->buttons |= RASTERFALL_CMD_SLOT_3;
+    if (toy_input_pressed(input, KEY_4) || pending_key_edges[KEY_4])
+        command->buttons |= RASTERFALL_CMD_SLOT_4;
     if (toy_input_pressed(input, KEY_E)) command->buttons |= RASTERFALL_CMD_INTERACT;
     if (toy_input_pressed(input, KEY_F)) command->buttons |= RASTERFALL_CMD_FLAG;
     if (session.pose_debug_active && session.pose_editor.active) {
@@ -588,13 +596,20 @@ static void capture_jump_vector(struct rasterfall_command *command,
                        RASTERFALL_MOVE_STEP / 1024;
 }
 
-static void consume_game_command_edges(struct toy_input *input)
+static void consume_game_command_edges(struct toy_input *input,
+                                       unsigned char *pending_key_edges)
 {
     input->key_pressed[KEY_R] = 0;
     input->key_pressed[KEY_1] = 0;
     input->key_pressed[KEY_2] = 0;
     input->key_pressed[KEY_3] = 0;
     input->key_pressed[KEY_4] = 0;
+    /* Catch-up can execute several fixed steps in one render iteration.
+     * Consume retained slot edges with the first command. */
+    pending_key_edges[KEY_1] = 0;
+    pending_key_edges[KEY_2] = 0;
+    pending_key_edges[KEY_3] = 0;
+    pending_key_edges[KEY_4] = 0;
     input->key_pressed[KEY_E] = 0;
     input->key_pressed[KEY_F] = 0;
     input->key_pressed[KEY_SLASH] = 0;
@@ -3141,6 +3156,7 @@ startup_again:
                             memset(&command, 0, sizeof(command));
                         else
                             build_game_command(&command, &input, &settings,
+                                               pending_key_edges,
                                                fire_edge, shove_edge,
                                                pointer_turn_pending,
                                                pointer_pitch_pending);
@@ -3226,7 +3242,7 @@ startup_again:
                             &net, &command, &camera, &game,
                             command.jump_dx,
                             command.jump_dz);
-                    consume_game_command_edges(&input);
+                    consume_game_command_edges(&input, pending_key_edges);
                     pointer_turn_pending = 0;
                     pointer_pitch_pending = 0;
                     fire_edge = 0;
@@ -3432,6 +3448,11 @@ startup_again:
             if (!game.player_down)
                 stage_pixels += rasterfall_viewmodel_render(&renderer, &game,
                                                             &effects);
+            /* Viewmodel meshes use the renderer command path (unlike the
+             * procedural pill and hands). Flush this layer before drawing
+             * the remaining direct framebuffer overlays; otherwise textured
+             * melee/throwable commands never reach the rasterizer. */
+            stage_pixels += toy_renderer_flush(&renderer);
             if (game.state == TOY_GAME_OVER) {
                 draw_game_over_panel(&surface,
                                      net.mode == RASTERFALL_NET_CLIENT);
