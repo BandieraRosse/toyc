@@ -515,6 +515,8 @@ void rasterfall_session_toggle_flag_remote(struct rasterfall_session *session,
             session->flags[i].carrier_id != player_id) continue;
         session->flags[i].carried = 0;
         session->flags[i].carrier_id = -1;
+        session->flags[i].x = camera->x;
+        session->flags[i].z = camera->z;
         session_set_flag_assignments(session, i);
         return;
     }
@@ -533,6 +535,8 @@ void rasterfall_session_update_flag_remote(struct rasterfall_session *session,
     for (i = 0; i < session->flag_count; i++)
         if (session->flags[i].carried &&
             session->flags[i].carrier_id == player_id) {
+            session->flags[i].x = camera->x;
+            session->flags[i].z = camera->z;
             session_set_flag_assignments(session, i);
         }
 }
@@ -946,6 +950,8 @@ static void session_toggle_flag(struct rasterfall_session *s,
     if (i >= 0) {
         s->flags[i].carried = 0;
         s->flags[i].carrier_id = -1;
+        s->flags[i].x = camera->x;
+        s->flags[i].z = camera->z;
         s->carried_flag = -1;
         session_set_flag_assignments(s, i);
         s->banner_text = "FLAG PLANTED"; s->banner_ms = 1400;
@@ -956,6 +962,18 @@ static void session_toggle_flag(struct rasterfall_session *s,
     s->flags[i].carried = 1; s->flags[i].carrier_id = 0;
     s->carried_flag = i;
     s->banner_text = "FLAG CARRIED"; s->banner_ms = 1400;
+}
+
+static void session_update_carried_flag(struct rasterfall_session *s,
+                                        const struct camera *camera)
+{
+    int i;
+    if (!s || !camera) return;
+    i = s->carried_flag;
+    if (i < 0 || i >= s->flag_count || !s->flags[i].carried) return;
+    s->flags[i].x = camera->x;
+    s->flags[i].z = camera->z;
+    session_set_flag_assignments(s, i);
 }
 
 static int session_hired_count(const struct rasterfall_session *session)
@@ -2152,6 +2170,7 @@ void rasterfall_session_step(struct rasterfall_session *session,
     if (command->turn || command->pitch)
         rasterfall_camera_rotate(camera, command->turn, command->pitch);
     session_update_smooth_turn(session, camera);
+    session_update_carried_flag(session, camera);
     session->game_state.px = camera->x;
     session->game_state.pz = camera->z;
     toy_game_set_player_pitch(&session->game_state, camera->pitch_sy,
@@ -2287,6 +2306,7 @@ static void session_step_client_mode(struct rasterfall_session *session,
     session_move_player(session, camera, command);
     if (command->turn || command->pitch)
         rasterfall_camera_rotate(camera, command->turn, command->pitch);
+    session_update_carried_flag(session, camera);
     session->game_state.px = camera->x;
     session->game_state.pz = camera->z;
     toy_game_update_player_special_control(&session->game_state, dt_ms);
