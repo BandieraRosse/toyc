@@ -329,12 +329,13 @@ static int model_texture_path(const char *model_path, int index,
     char *lod;
     if (n <= 0 || n >= (int)sizeof(base) || length >= size) return -1;
     memcpy(base, name, n); base[n] = 0;
-    /* Generated mesh LODs retain the source material/texture table.  A file
-     * named `character_lodN.rmesh` therefore intentionally shares the
-     * canonical `character.textures/` directory instead of duplicating large
-     * private texture assets for every geometry level. */
+    /* Generated mesh LODs and explicitly authored Lite meshes retain the
+     * source material/texture table.  They therefore share the canonical
+     * `character.textures/` directory instead of duplicating large assets. */
     lod = strstr(base, "_lod");
     if (lod && lod[4] >= '0' && lod[4] <= '9') *lod = 0;
+    lod = strstr(base, "_lite");
+    if (lod && lod[5] == 0) *lod = 0;
     if (length) snprintf(out, size, "%.*s/%s.textures/texture_%03d.ttex", length, model_path, base, index);
     else snprintf(out, size, "%s.textures/texture_%03d.ttex", base, index);
     return 0;

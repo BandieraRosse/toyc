@@ -89,25 +89,30 @@ def cluster_map(data, info, divisions):
     return mapped
 
 
+def simplify_primitive(data, info, mapped, primitive):
+    at = info["primitive_at"] + primitive * PRIMITIVE
+    first, count = u32(data, at), u32(data, at + 4)
+    seen = set()
+    kept = []
+    for j in range(first, first + count, 3):
+        tri = tuple(mapped[u32(data, info["index_at"] + (j + k) * 4)]
+                    for k in range(3))
+        if len(set(tri)) < 3:
+            continue
+        canonical = tuple(sorted(tri))
+        if canonical in seen:
+            continue
+        seen.add(canonical)
+        kept.extend(tri)
+    return kept
+
+
 def simplify(data, info, divisions):
     mapped = cluster_map(data, info, divisions)
     output = []
     counts = []
     for primitive in range(info["primitives"]):
-        at = info["primitive_at"] + primitive * PRIMITIVE
-        first, count = u32(data, at), u32(data, at + 4)
-        seen = set()
-        kept = []
-        for j in range(first, first + count, 3):
-            tri = tuple(mapped[u32(data, info["index_at"] + (j + k) * 4)]
-                        for k in range(3))
-            if len(set(tri)) < 3:
-                continue
-            canonical = tuple(sorted(tri))
-            if canonical in seen:
-                continue
-            seen.add(canonical)
-            kept.extend(tri)
+        kept = simplify_primitive(data, info, mapped, primitive)
         output.extend(kept)
         counts.append(len(kept))
     return output, counts
@@ -118,19 +123,46 @@ def main():
     parser.add_argument("input", type=Path)
     parser.add_argument("output", type=Path)
     parser.add_argument("--ratio", type=float, default=0.4)
+    parser.add_argument(
+        "--primitive-ratios",
+        help="comma-separated triangle budgets for each material primitive; "
+             "overrides --ratio and protects important material groups",
+    )
     args = parser.parse_args()
     if not 0.05 <= args.ratio < 1.0:
         parser.error("--ratio must be in [0.05, 1.0)")
     data = args.input.read_bytes()
     info = validate(data)
-    target = info["indices"] * args.ratio
-    best = None
-    for divisions in range(4, 129):
-        indices, counts = simplify(data, info, divisions)
-        score = abs(len(indices) - target)
-        if best is None or score < best[0]:
-            best = score, divisions, indices, counts
-    _, divisions, indices, counts = best
+    if args.primitive_ratios:
+        ratios = [float(value) for value in args.primitive_ratios.split(",")]
+        if len(ratios) != info["primitives"] or any(r < 0 for r in ratios):
+            parser.error("--primitive-ratios must contain one non-negative ratio per primitive")
+        maps = {divisions: cluster_map(data, info, divisions)
+                for divisions in range(4, 129)}
+        indices, counts, selected = [], [], []
+        for primitive, ratio in enumerate(ratios):
+            at = info["primitive_at"] + primitive * PRIMITIVE
+            target = u32(data, at + 4) * ratio
+            choice = min(
+                ((abs(len(simplify_primitive(data, info, mapped, primitive)) - target),
+                  divisions, mapped)
+                 for divisions, mapped in maps.items()),
+                key=lambda item: item[0],
+            )
+            kept = simplify_primitive(data, info, choice[2], primitive)
+            indices.extend(kept)
+            counts.append(len(kept))
+            selected.append(choice[1])
+        divisions = "profile[" + ",".join(str(value) for value in selected) + "]"
+    else:
+        target = info["indices"] * args.ratio
+        best = None
+        for divisions in range(4, 129):
+            indices, counts = simplify(data, info, divisions)
+            score = abs(len(indices) - target)
+            if best is None or score < best[0]:
+                best = score, divisions, indices, counts
+        _, divisions, indices, counts = best
     header = bytearray(data[:HEADER])
     struct.pack_into("<I", header, 12, len(indices))
     new_skin_at = (info["index_at"] + len(indices) * 4)
@@ -148,7 +180,7 @@ def main():
     validate(output)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_bytes(output)
-    print("rmesh-lod: %s -> %s divisions=%d triangles=%d -> %d ratio=%.3f" %
+    print("rmesh-lod: %s -> %s divisions=%s triangles=%d -> %d ratio=%.3f" %
           (args.input, args.output, divisions, info["indices"] // 3,
            len(indices) // 3, len(indices) / info["indices"]))
 

@@ -118,6 +118,7 @@ static long render_monotonic_us(void)
 }
 static struct rasterfall_session *active_session;
 static int active_pose_preview;
+static int edge_pass_enabled = 1;
 static struct rasterfall_effects *active_effects;
 static const struct rasterfall_net *active_net;
 static const struct toy_texture_view *active_wall_texture;
@@ -1716,7 +1717,7 @@ static int render_gallery_model_range(struct toy_renderer *renderer,
             if (index_end > index_count) index_end = index_count;
         }
         phase_start = render_monotonic_us();
-        if (!active_disable_edge && policy.use_edge &&
+        if (edge_pass_enabled && !active_disable_edge && policy.use_edge &&
             material < model->material_count &&
             model->format_version >= 8) {
             const unsigned char *material_data = model->materials +
@@ -2489,7 +2490,8 @@ static int render_characters_parallel(struct toy_renderer *renderer,
             character_model_scale(&private_character_model,
                                   eula_actor_profile.target_height_mm));
         private_character_frontend.disable_edge = dispatch.visible[0] &&
-            projected_height < RASTERFALL_CHARACTER_EDGE_MIN_HEIGHT;
+            (edge_pass_enabled == 0 ||
+             projected_height < RASTERFALL_CHARACTER_EDGE_MIN_HEIGHT);
         private_character_frontend.disable_sphere = dispatch.visible[0] &&
             projected_height < RASTERFALL_CHARACTER_MATERIAL_MIN_HEIGHT;
         private_character_frontend.disable_toon =
@@ -6152,6 +6154,11 @@ void rasterfall_render_bind(struct rasterfall_render_context *ctx)
     active_lightmap = ctx->lightmap;
     active_textures = ctx->textures_enabled;
     active_fixed_floor_lighting = ctx->fixed_floor_lighting;
+}
+
+void rasterfall_render_set_edge_pass(int enabled)
+{
+    edge_pass_enabled = enabled != 0;
 }
 
 void rasterfall_render_set_coordinate_axes(int enabled)

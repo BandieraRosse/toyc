@@ -22,6 +22,7 @@
  *   --net-loss <percent>           模拟网络丢包
  *   --auto                         自动化压测模式
  *   --textures / --no-textures     开启/关闭纹理渲染
+ *   --edge-pass / --no-edge-pass   开启/关闭模型 edge pass
  *   --no-stats                     关闭性能统计
  *   --texture-stats                显示纹理统计
  *   --dump-frame <path>            导出帧图像
@@ -2267,6 +2268,7 @@ int main(int argc, char **argv)
     const char *startup_error = NULL;
     char selected_address[64];
     int auto_mode = 0;
+    int edge_pass_enabled = 1;
     int managed_spectator = 0;
     int managed_third_person = 0;
     const char *dump_path = 0;
@@ -2309,6 +2311,8 @@ int main(int argc, char **argv)
         else if (strcmp(argv[arg], "--auto") == 0) auto_mode = 1;
         else if (strcmp(argv[arg], "--textures") == 0) textures_enabled = 1;
         else if (strcmp(argv[arg], "--no-textures") == 0) textures_enabled = 0;
+        else if (strcmp(argv[arg], "--edge-pass") == 0) edge_pass_enabled = 1;
+        else if (strcmp(argv[arg], "--no-edge-pass") == 0) edge_pass_enabled = 0;
         else if (strcmp(argv[arg], "--no-stats") == 0) stats_enabled = 0;
         else if (strcmp(argv[arg], "--texture-stats") == 0) texture_stats = 1;
         else if (strcmp(argv[arg], "--dump-frame") == 0 && arg + 1 < argc)
@@ -2411,6 +2415,7 @@ int main(int argc, char **argv)
                 frame_limit = frame_limit * 10 + (*p++ - '0');
         }
     }
+    rasterfall_render_set_edge_pass(edge_pass_enabled);
     if(glb_animation_model){
         struct rasterfall_model_asset animation_model;memset(&animation_model,0,sizeof(animation_model));
         if(rasterfall_model_load(&animation_model,glb_animation_model)<0||
