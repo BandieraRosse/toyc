@@ -676,7 +676,7 @@ static int character_model_scale(const struct rasterfall_model_asset *model,
     if (height <= 0) return 1;
     /* Convert mm to milli-scale in one division.  Quantizing target height to
      * whole RFU first is enough to make adjacent models disagree by 1‰. */
-    return (int)(((long)target_height_mm * RASTERFALL_RFU_PER_METER +
+    return (int)(((long long)target_height_mm * RASTERFALL_RFU_PER_METER +
                   height / 2) / height);
 }
 
@@ -742,11 +742,11 @@ static int prepare_gallery_vertex_cache(
                                          (long long)normal_x * active_gallery_sy) / 1024);
         }
         cached->uv.p.x = center_x +
-            (int)((long)render_x * scale / 1000);
+            (int)((long long)render_x * scale / 1000);
         cached->uv.p.y = base_y +
-            (int)((long)(position[1] - model->min_y) * scale / 1000);
+            (int)((long long)(position[1] - model->min_y) * scale / 1000);
         cached->uv.p.z = center_z +
-            (int)((long)render_z * scale / 1000);
+            (int)((long long)render_z * scale / 1000);
         }
         world_to_view(camera, &cached->uv.p, &cached->view);
         cached->uv.u = *(const unsigned short *)(p + 18);
@@ -1333,13 +1333,13 @@ static int gallery_model_visible(const struct toy_surface *surface,
             (model->max_y - model->min_y) / 4 : 0;
         int margin_z = model->skinning_enabled ?
             (model->max_z - model->min_z) / 2 : 0;
-        xs[0] = center_x + (int)((long)(model->min_x - margin_x) * scale / 1000);
-        xs[1] = center_x + (int)((long)(model->max_x + margin_x) * scale / 1000);
-        ys[0] = base_y - (int)((long)margin_y * scale / 1000);
-        ys[1] = base_y + (int)((long)(model->max_y - model->min_y + margin_y) *
+        xs[0] = center_x + (int)((long long)(model->min_x - margin_x) * scale / 1000);
+        xs[1] = center_x + (int)((long long)(model->max_x + margin_x) * scale / 1000);
+        ys[0] = base_y - (int)((long long)margin_y * scale / 1000);
+        ys[1] = base_y + (int)((long long)(model->max_y - model->min_y + margin_y) *
                                scale / 1000);
-        zs[0] = center_z + (int)((long)(model->min_z - margin_z) * scale / 1000);
-        zs[1] = center_z + (int)((long)(model->max_z + margin_z) * scale / 1000);
+        zs[0] = center_z + (int)((long long)(model->min_z - margin_z) * scale / 1000);
+        zs[1] = center_z + (int)((long long)(model->max_z + margin_z) * scale / 1000);
     }
     for (int xi = 0; xi < 2; xi++) for (int yi = 0; yi < 2; yi++)
         for (int zi = 0; zi < 2; zi++) {
@@ -1352,10 +1352,10 @@ static int gallery_model_visible(const struct toy_surface *surface,
     if (max_z < NEAR_Z) return 0;
     if (crosses_near) return 1;
     for (n = 0; n < 8; n++) {
-        long xf = (long)view[n].x * focal;
-        long yf = (long)view[n].y * focal;
-        long x_limit = (long)view[n].z * half_width;
-        long y_limit = (long)view[n].z * half_height;
+        long long xf = (long long)view[n].x * focal;
+        long long yf = (long long)view[n].y * focal;
+        long long x_limit = (long long)view[n].z * half_width;
+        long long y_limit = (long long)view[n].z * half_height;
         if (xf >= -x_limit) all_left = 0;
         if (xf <= x_limit) all_right = 0;
         if (yf <= y_limit) all_above = 0;
@@ -1371,13 +1371,13 @@ static int gallery_model_projected_height(const struct toy_surface *surface,
                                           int center_z, int scale)
 {
     struct vec3 center, view;
-    long height;
+    long long height;
     center.x = center_x;
-    center.y = base_y + (int)((long)(model->max_y - model->min_y) * scale / 2000);
+    center.y = base_y + (int)((long long)(model->max_y - model->min_y) * scale / 2000);
     center.z = center_z;
     world_to_view(camera, &center, &view);
     if (view.z < NEAR_Z) return surface->height;
-    height = (long)(model->max_y - model->min_y) * scale / 1000;
+    height = (long long)(model->max_y - model->min_y) * scale / 1000;
     return (int)(height * (surface->width * 3 / 4) / view.z);
 }
 
@@ -1924,9 +1924,9 @@ int rasterfall_render_model_preview(struct toy_renderer *renderer,
      * directly comparable across future imported character models. */
     scale = 900000 / size;
     if (scale < 1) scale = 1;
-    center_x = -(int)((long)(model->min_x + model->max_x) * scale / 2000);
-    center_z = -(int)((long)(model->min_z + model->max_z) * scale / 2000);
-    base_y = -(int)((long)height * scale / 2000);
+    center_x = -(int)(((long long)model->min_x + model->max_x) * scale / 2000);
+    center_z = -(int)(((long long)model->min_z + model->max_z) * scale / 2000);
+    base_y = -(int)((long long)height * scale / 2000);
     active_gallery_lighting = 1;
     active_disable_sphere = !use_sphere;
     active_disable_toon = !use_toon;
@@ -3148,9 +3148,9 @@ static void project_vertex(const struct toy_surface *surface,
     int focal = surface->width * 3 / 4;
     int z = view->z < NEAR_Z ? NEAR_Z : view->z;
     screen->x = surface->width / 2 +
-                (int)((long)view->x * focal / z);
+                (int)((long long)view->x * focal / z);
     screen->y = surface->height / 2 -
-                (int)((long)view->y * focal / z);
+                (int)((long long)view->y * focal / z);
     screen->z = z;
     /* 渲染器深度缓冲使用逆深度，纯色路径也读该字段；必须在投影时填好。 */
     screen->inv_z = (long)1048576 / z;
@@ -4007,8 +4007,8 @@ static int draw_tongue_segment(struct toy_renderer *renderer,
                                int x0, int y0, int z0,
                                int x1, int y1, int z1)
 {
-    long dx = x1 - x0, dz = z1 - z0;
-    long len = isqrt(dx * dx + dz * dz);
+    long long dx = (long long)x1 - x0, dz = (long long)z1 - z0;
+    long long len = isqrt(dx * dx + dz * dz);
     int width = 18;
     struct vec3 a, b, c, d;
     if (len <= 0) return 0;
@@ -5516,7 +5516,7 @@ static void render_ai_teammate_name(struct toy_renderer *renderer,
         const struct toy_game_actor *actor = &game.actors[i];
         char label[64];
         const char *display_name;
-        long dx, dz, d2, dist, dot;
+        long long dx, dz, d2, dist, dot;
         uint32_t color = actor->class_id == TOY_GAME_AI_LEVEL_3 ? RF_COLOR_UI_ACCENT :
                          actor->class_id == TOY_GAME_AI_LEVEL_2 ? RF_COLOR_UI_AI :
                          RF_COLOR_UI_PLAYER;
@@ -5524,7 +5524,7 @@ static void render_ai_teammate_name(struct toy_renderer *renderer,
         dx = (long)actor->x - camera->x;
         dz = (long)actor->z - camera->z;
         d2 = dx * dx + dz * dz;
-        if (d2 > 10800L * 10800L) continue;
+        if (d2 > 10800LL * 10800LL) continue;
         dist = isqrt(d2);
         if (dist <= 0) continue;
         dot = dx * camera->sy + dz * camera->cy;

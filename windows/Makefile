@@ -30,6 +30,8 @@ GAME_SRCS := rasterfall/src/rasterfall.c \
              rasterfall/src/rasterfall_net.c \
              rasterfall/src/rasterfall_net_discovery.c \
              rasterfall/src/rasterfall_perf.c \
+             rasterfall/src/rasterfall_calibration.c \
+             rasterfall/src/rasterfall_console.c \
              rasterfall/src/rasterfall_render.c \
              rasterfall/src/rasterfall_session.c \
              rasterfall/src/rasterfall_sky.c \

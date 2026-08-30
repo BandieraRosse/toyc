@@ -112,16 +112,20 @@ static long raster_flat(struct toy_renderer *renderer,
     /* 增量边函数：E(x+1,y)=E(x,y)+dEx、E(x,y+1)=E(x,y)+dEy，每像素
      * 由 3 次完整边函数（-O0 下是 3 次调用 + 6 次乘法）退化为 3 次加法；
      * 行首边值只按行增量更新。整数加法与逐像素重算完全一致。 */
-    long dEx0 = c->y - b->y, dEx1 = a->y - c->y, dEx2 = b->y - a->y;
-    long dEy0 = b->x - c->x, dEy1 = c->x - a->x, dEy2 = a->x - b->x;
-    long w0 = edge(b, c, minx, y0);
-    long w1 = edge(c, a, minx, y0);
-    long w2 = edge(a, b, minx, y0);
+    long long dEx0 = (long long)c->y - b->y;
+    long long dEx1 = (long long)a->y - c->y;
+    long long dEx2 = (long long)b->y - a->y;
+    long long dEy0 = (long long)b->x - c->x;
+    long long dEy1 = (long long)c->x - a->x;
+    long long dEy2 = (long long)a->x - b->x;
+    long long w0 = edge(b, c, minx, y0);
+    long long w1 = edge(c, a, minx, y0);
+    long long w2 = edge(a, b, minx, y0);
     for (y = y0; y <= y1; y++) {
         uint32_t *row = (uint32_t *)((unsigned char *)surface->pixels +
                                      y * surface->stride);
         int base = y * width;
-        long e0 = w0, e1 = w1, e2 = w2;
+        long long e0 = w0, e1 = w1, e2 = w2;
         for (x = minx; x <= maxx; x++) {
             if (e0 <= 0 && e1 <= 0 && e2 <= 0) {
                 inside++;
@@ -406,11 +410,15 @@ static long raster_tex(struct toy_renderer *renderer,
                     sphere_texture_valid);
     unsigned long inside = 0;
     /* 与 raster_flat 相同的增量边函数（行首边值按行增量更新）。 */
-    long dEx0 = c->y - b->y, dEx1 = a->y - c->y, dEx2 = b->y - a->y;
-    long dEy0 = b->x - c->x, dEy1 = c->x - a->x, dEy2 = a->x - b->x;
-    long w0 = edge(b, c, minx, y0);
-    long w1 = edge(c, a, minx, y0);
-    long w2 = edge(a, b, minx, y0);
+    long long dEx0 = (long long)c->y - b->y;
+    long long dEx1 = (long long)a->y - c->y;
+    long long dEx2 = (long long)b->y - a->y;
+    long long dEy0 = (long long)b->x - c->x;
+    long long dEy1 = (long long)c->x - a->x;
+    long long dEy2 = (long long)a->x - b->x;
+    long long w0 = edge(b, c, minx, y0);
+    long long w1 = edge(c, a, minx, y0);
+    long long w2 = edge(a, b, minx, y0);
     long affine_u_row = 0, affine_v_row = 0;
     long affine_u2_row = 0, affine_v2_row = 0;
     long affine_du_dx = 0, affine_dv_dx = 0;
@@ -459,7 +467,7 @@ static long raster_tex(struct toy_renderer *renderer,
         uint32_t *row = (uint32_t *)((unsigned char *)surface->pixels +
                                      y * surface->stride);
         int base = y * width;
-        long e0 = w0, e1 = w1, e2 = w2;
+        long long e0 = w0, e1 = w1, e2 = w2;
         long affine_u = affine_u_row, affine_v = affine_v_row;
         long affine_u2 = affine_u2_row, affine_v2 = affine_v2_row;
         for (x = minx; x <= maxx; x++) {
