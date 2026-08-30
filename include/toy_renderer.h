@@ -66,6 +66,7 @@ struct toy_raster_cmd {
     uint32_t material_specular;
     int material_specular_level;
     uint32_t material_add;
+    uint32_t material_tint;
     int transparent;
     int edge;
     long long area;
@@ -236,7 +237,7 @@ int toy_renderer_triangle_textured_material_lit(
     const struct toy_texture_view *toon_texture,
     int toon_shared, int toon_level, int material_alpha,
     uint32_t material_ambient, uint32_t material_specular,
-    int material_specular_level,
+    int material_specular_level, uint32_t material_tint,
     int repeat, uint32_t fallback_color, int light, int fog);
 /* 给性能诊断标记随后记录的命令是否来自模型 Edge 壳；不改变渲染行为。 */
 void toy_renderer_set_recording_edge(struct toy_renderer *renderer, int edge);

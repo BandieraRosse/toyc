@@ -371,13 +371,11 @@ def main():
             r, g, b, a = material_color(material)
             face_or_skin = "face" in role or "skin" in role or "eye" in role
             body_skin = "body" in role and "skin" in role
-            hair = "hair" in role
             flags = 0x01
             edge_size = 0.0
-            if hair:
-                flags |= 0x10
-                edge_size = 0.15
-            ambient = (0.68, 0.62, 0.58) if body_skin else \
+            # Alpha-mapped hair cards cannot use the current untextured edge
+            # shell: it fills transparent texels and creates internal lines.
+            ambient = (0.25, 0.18, 0.16) if body_skin else \
                 (0.95, 0.88, 0.82) if face_or_skin else (
                 r * 0.35, g * 0.35, b * 0.35)
             specular = (0.0, 0.0, 0.0) if face_or_skin else (0.08, 0.08, 0.08)
@@ -391,7 +389,13 @@ def main():
             out.write(pmx_index(-1))
             out.write(struct.pack("<BB", 0, 0))
             out.write(pmx_index(-1))
-            out.write(pmx_text("Rasterfall FBX import"))
+            visual_role = "FACE" if "face" in role else \
+                "EYES" if "eye" in role else \
+                "HAIR" if "hair" in role else \
+                "SKIN" if "skin" in role or "body" in role else \
+                "CLOTHING" if any(token in role for token in
+                                  ("cloth", "tops", "shoes")) else "NONE"
+            out.write(pmx_text("Rasterfall role=" + visual_role))
             out.write(struct.pack("<i", len(material_indices[index])))
         out.write(struct.pack("<i", len(bones)))
         for index, bone in enumerate(bones):

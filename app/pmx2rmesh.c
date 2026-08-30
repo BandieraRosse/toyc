@@ -22,7 +22,43 @@
 struct cursor { const unsigned char *p, *end; };
 struct pmx_header { int vertex_size, texture_size, material_size; int bone_size, morph_size, rigid_size; int encoding, append_uv; };
 struct pmx_texture { char path[TEXTURE_PATH_MAX]; };
-struct pmx_material { char name[MATERIAL_NAME_MAX], name_en[MATERIAL_NAME_MAX]; unsigned int color; unsigned int index_count; int texture_index; int sphere_index; int sphere_mode; int alpha; int toon_index; int toon_shared; int draw_flags; unsigned int edge_color; int edge_size; unsigned int ambient_color; unsigned int specular_color; int specular_power; };
+struct pmx_material { char name[MATERIAL_NAME_MAX], name_en[MATERIAL_NAME_MAX]; unsigned int color; unsigned int index_count; int texture_index; int sphere_index; int sphere_mode; int alpha; int toon_index; int toon_shared; int draw_flags; unsigned int edge_color; int edge_size; unsigned int ambient_color; unsigned int specular_color; int specular_power; int visual_role; };
+
+static int ascii_contains(const char *text, const char *needle)
+{
+    int i, j;
+    for (i = 0; text[i]; i++) {
+        for (j = 0; needle[j]; j++) {
+            int a = text[i + j], b = needle[j];
+            if (!a) return 0;
+            if (a >= 'A' && a <= 'Z') a += 'a' - 'A';
+            if (b >= 'A' && b <= 'Z') b += 'a' - 'A';
+            if (a != b) break;
+        }
+        if (!needle[j]) return 1;
+    }
+    return 0;
+}
+
+static int material_visual_role(const char *name)
+{
+    if (ascii_contains(name, "hair")) return RASTERFALL_MODEL_MATERIAL_ROLE_HAIR;
+    if (ascii_contains(name, "eyes") || ascii_contains(name, "eyeiris") ||
+        ascii_contains(name, "eyewhite") ||
+        ascii_contains(name, "eyehighlight")) return RASTERFALL_MODEL_MATERIAL_ROLE_EYES;
+    if (ascii_contains(name, "face") && ascii_contains(name, "skin"))
+        return RASTERFALL_MODEL_MATERIAL_ROLE_FACE;
+    if (ascii_contains(name, "face") || ascii_contains(name, "mouth") ||
+        ascii_contains(name, "brow") || ascii_contains(name, "eyeline"))
+        return RASTERFALL_MODEL_MATERIAL_ROLE_FACE;
+    if (ascii_contains(name, "skin") || ascii_contains(name, "body"))
+        return RASTERFALL_MODEL_MATERIAL_ROLE_SKIN;
+    if (ascii_contains(name, "cloth") || ascii_contains(name, "tops") ||
+        ascii_contains(name, "shoes")) return RASTERFALL_MODEL_MATERIAL_ROLE_CLOTHING;
+    if (ascii_contains(name, "equipment"))
+        return RASTERFALL_MODEL_MATERIAL_ROLE_EQUIPMENT;
+    return RASTERFALL_MODEL_MATERIAL_ROLE_NONE;
+}
 struct pmx_vertex { float x, y, z, nx, ny, nz, u, v, au, av, edge_scale, weight; unsigned int weight_type; int bone0, bone1; };
 struct pmx_ik_link { int bone, limited; float lower[3], upper[3]; };
 struct pmx_bone {
@@ -370,6 +406,7 @@ static int read_materials(struct cursor *c, const struct pmx_header *h,
                           struct pmx_material *materials, int *count)
 {
     int n, i, j, texture, sphere, sphere_mode, toon_flag, toon, face_count;
+    char memo[128];
     float r, g, b, a, sr, sg, sb, power, ar, ag, ab;
     float er, eg, eb, ea, edge_size;
     if (i32(c, &n) < 0 || n <= 0 || n > MAX_MATERIALS) return -1;
@@ -390,7 +427,10 @@ static int read_materials(struct cursor *c, const struct pmx_header *h,
             u8(c, (unsigned int *)&toon_flag) < 0) return -1;
         if (toon_flag == 0) { if (index_value(c, h->texture_size, 1, &toon) < 0) return -1; }
         else if (u8(c, (unsigned int *)&toon) < 0) return -1;
-        if (text(c) < 0 || i32(c, &face_count) < 0 || face_count < 0 || face_count % 3) return -1;
+        if (read_text(c, h->encoding, memo, sizeof(memo)) < 0 ||
+            i32(c, &face_count) < 0 || face_count < 0 || face_count % 3) return -1;
+        materials[i].visual_role = ascii_contains(memo, "rasterfall role=") ?
+            material_visual_role(memo) : RASTERFALL_MODEL_MATERIAL_ROLE_NONE;
         materials[i].index_count = (unsigned int)face_count;
         /* Sphere maps are handled separately; retain the ordinary base map. */
         materials[i].texture_index = texture;
@@ -893,6 +933,8 @@ audit_fail:
         put_u32(record + 24, materials[i].ambient_color);
         put_u32(record + 28, materials[i].specular_color);
         put_u32(record + 32, (unsigned int)materials[i].specular_power);
+        record[RASTERFALL_MODEL_MATERIAL_ROLE_OFFSET] =
+            (unsigned char)materials[i].visual_role;
         if (write_all(out, record, sizeof(record)) < 0) { __close(out); goto invalid; }
     }
     c.p = file; c.end = file + size; if (header(&c, &h) < 0 || i32(&c, &j) < 0) { __close(out); goto invalid; }

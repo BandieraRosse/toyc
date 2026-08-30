@@ -46,6 +46,8 @@ struct rasterfall_vmd_clip;
  * stores PMX material drawing flags in byte 7 (bit 0 means double-sided).
  * Bytes 12..15 contain a packed sphere-table index in bits 0..15 and PMX sphere mode in bits 16..17.
  * Texture files are kept beside the mesh by the offline importer.
+ * Version 9 material byte 36 is an optional authored visual role.  Zero keeps
+ * the legacy model-profile inference path.
  */
 #define RASTERFALL_MODEL_MAGIC 0x324d4652U /* "RFM2" in little-endian */
 #define RASTERFALL_MODEL_VERSION 13
@@ -57,6 +59,14 @@ struct rasterfall_vmd_clip;
 #define RASTERFALL_MODEL_MATERIAL_BYTES_LEGACY 16
 #define RASTERFALL_MODEL_MATERIAL_BYTES_EDGE 24
 #define RASTERFALL_MODEL_MATERIAL_BYTES 40
+#define RASTERFALL_MODEL_MATERIAL_ROLE_OFFSET 36
+#define RASTERFALL_MODEL_MATERIAL_ROLE_NONE 0
+#define RASTERFALL_MODEL_MATERIAL_ROLE_FACE 1
+#define RASTERFALL_MODEL_MATERIAL_ROLE_EYES 2
+#define RASTERFALL_MODEL_MATERIAL_ROLE_HAIR 3
+#define RASTERFALL_MODEL_MATERIAL_ROLE_SKIN 4
+#define RASTERFALL_MODEL_MATERIAL_ROLE_CLOTHING 5
+#define RASTERFALL_MODEL_MATERIAL_ROLE_EQUIPMENT 6
 #define RASTERFALL_MODEL_SKIN_MAGIC 0x314e4b53U /* "SKN1" */
 #define RASTERFALL_MODEL_SKIN_HEADER_BYTES 32
 #define RASTERFALL_MODEL_BONE_BYTES_LEGACY 24

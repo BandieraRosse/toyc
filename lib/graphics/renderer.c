@@ -385,6 +385,7 @@ static long raster_tex(struct toy_renderer *renderer,
                        int sphere_texture_valid,
                        int material_alpha,
                        uint32_t material_add,
+                       uint32_t material_tint,
                        int repeat, uint32_t fallback_color,
                        int light_factor, int fog_factor,
                        unsigned long *tex_pixels,
@@ -533,11 +534,14 @@ static long raster_tex(struct toy_renderer *renderer,
                         long fog = fog_factor >= 0 ? fog_factor :
                             (e0 * a->fog + e1 * b->fog +
                              e2 * c->fog) / area;
-                        int r = (int)((color >> 16) & 255) +
+                        int r = (int)((color >> 16) & 255) *
+                                (int)((material_tint >> 16) & 255) / 255 +
                                 (int)((material_add >> 16) & 255);
-                        int g = (int)((color >> 8) & 255) +
+                        int g = (int)((color >> 8) & 255) *
+                                (int)((material_tint >> 8) & 255) / 255 +
                                 (int)((material_add >> 8) & 255);
-                        int b = (int)(color & 255) +
+                        int b = (int)(color & 255) *
+                                (int)(material_tint & 255) / 255 +
                                 (int)(material_add & 255);
                         color = (uint32_t)clampi(r, 0, 255) << 16 |
                                 (uint32_t)clampi(g, 0, 255) << 8 |
@@ -632,9 +636,11 @@ static long raster_tex(struct toy_renderer *renderer,
                         worker->material_color_divisions += 6;
                         worker->shaded_px++;
                         {
-                            int r = (color >> 16) & 255;
-                            int g = (color >> 8) & 255;
-                            int b = color & 255;
+                            int r = ((color >> 16) & 255) *
+                                    ((material_tint >> 16) & 255) / 255;
+                            int g = ((color >> 8) & 255) *
+                                    ((material_tint >> 8) & 255) / 255;
+                            int b = (color & 255) * (material_tint & 255) / 255;
                             r += (material_add >> 16) & 255;
                             g += (material_add >> 8) & 255;
                             b += material_add & 255;
@@ -739,6 +745,7 @@ static void rasterize_cmd(struct toy_renderer *renderer,
                                      cmd->sphere_texture_valid,
                                      cmd->material_alpha,
                                      cmd->material_add,
+                                     cmd->material_tint,
                                      cmd->repeat,
                                      cmd->fallback, cmd->light, cmd->fog,
                                      &worker->textured_pixels,
@@ -815,6 +822,7 @@ static int record_cmd(struct toy_renderer *renderer, int textured,
     cmd->material_specular = 0;
     cmd->material_specular_level = 0;
     cmd->material_add = 0;
+    cmd->material_tint = 0x00ffffffU;
     cmd->transparent = textured && texture && texture->has_transparency;
     cmd->edge = renderer->recording_edge;
     cmd->area = area;
@@ -953,7 +961,7 @@ int toy_renderer_triangle_textured_material_lit(
     const struct toy_texture_view *toon_texture,
     int toon_shared, int toon_level, int material_alpha,
     uint32_t material_ambient, uint32_t material_specular,
-    int material_specular_level,
+    int material_specular_level, uint32_t material_tint,
     int repeat, uint32_t fallback_color, int light, int fog)
 {
     long long area;
@@ -1004,6 +1012,7 @@ int toy_renderer_triangle_textured_material_lit(
     cmd->material_ambient = material_ambient;
     cmd->material_specular = material_specular;
     cmd->material_specular_level = clampi(material_specular_level, 0, 255);
+    cmd->material_tint = material_tint & 0x00ffffffU;
     {
         int level = cmd->material_specular_level;
         int r = ((material_ambient >> 16) & 255) * 16 / 255 +

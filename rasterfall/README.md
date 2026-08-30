@@ -113,7 +113,9 @@ BDEF4/SDEF/QDEF、IK、append transform、Morph、刚体或关节。PNG 转换�
 alpha、toon 引用和第一组附加 UV 从 RFM2 v6 起保存；v7 还保存材质 drawing
 flags，并按 bit 0 区分双面绘制与背面剔除；v8 将材质记录扩展为 24 字节，保存
 edge RGBA 和宽度，并用外扩背面壳绘制轮廓；v9 保存环境色、镜面色和镜面指数，
-在纹理合成后加入低强度环境光与随指数收窄的镜面高光；v10 在顶点记录中保存
+在纹理合成后加入低强度环境光与随指数收窄的镜面高光；40 字节材质记录的 byte 36
+还可保存 FACE、EYES、HAIR、SKIN、CLOTHING 或 EQUIPMENT 视觉角色，零值模型继续使用
+旧的角色 profile 推断；v10 在顶点记录中保存
 PMX Edge Scale，使材质轮廓宽度可按顶点缩放；v11 增加可选骨骼/蒙皮尾段。加载器
 仍兼容 v2 到 v5 的 24 字节旧
 顶点记录及 v2 到 v7 的 16 字节旧材质记录，旧格式继续按双面材质渲染。

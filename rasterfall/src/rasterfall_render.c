@@ -52,7 +52,7 @@ struct rasterfall_frontend_state {
     const struct toy_texture_view *toon_texture;
     int sphere_mode, toon_shared, toon_level;
     int material_alpha, material_double_sided;
-    uint32_t material_ambient, material_specular;
+    uint32_t material_ambient, material_specular, material_tint;
     int material_specular_power, material_specular_level;
     struct rasterfall_model_triangle_stats *model_triangle_stats;
     struct gallery_cached_vertex *vertex_cache;
@@ -64,6 +64,7 @@ struct rasterfall_frontend_state {
     int disable_sphere;
     int disable_toon;
     int face_material;
+    int skin_material;
 };
 static struct rasterfall_frontend_state frontend_default = {
     .toon_shared = -1, .toon_level = 255, .material_alpha = 255,
@@ -96,6 +97,8 @@ static struct rasterfall_frontend_state *frontend_state(void)
 #define active_material_specular_power (frontend_state()->material_specular_power)
 #define active_material_specular_level (frontend_state()->material_specular_level)
 #define active_face_material (frontend_state()->face_material)
+#define active_skin_material (frontend_state()->skin_material)
+#define active_material_tint (frontend_state()->material_tint)
 #define active_model_triangle_stats (frontend_state()->model_triangle_stats)
 #define gallery_vertex_cache (frontend_state()->vertex_cache)
 #define gallery_vertex_cache_capacity (frontend_state()->vertex_cache_capacity)
@@ -1554,6 +1557,24 @@ character_visual_class(int profile, int primitive, unsigned int material)
     return RASTERFALL_VISUAL_DEFAULT;
 }
 
+static enum rasterfall_character_visual_class
+authored_visual_class(const struct rasterfall_model_asset *model,
+                      unsigned int material)
+{
+    unsigned int role;
+    if (!model || model->format_version < 9 || material >= model->material_count)
+        return RASTERFALL_VISUAL_DEFAULT;
+    role = model->materials[material * model->material_bytes +
+                            RASTERFALL_MODEL_MATERIAL_ROLE_OFFSET];
+    if (role == RASTERFALL_MODEL_MATERIAL_ROLE_FACE) return RASTERFALL_VISUAL_FACE;
+    if (role == RASTERFALL_MODEL_MATERIAL_ROLE_EYES) return RASTERFALL_VISUAL_EYES;
+    if (role == RASTERFALL_MODEL_MATERIAL_ROLE_HAIR) return RASTERFALL_VISUAL_HAIR;
+    if (role == RASTERFALL_MODEL_MATERIAL_ROLE_SKIN) return RASTERFALL_VISUAL_SKIN;
+    if (role == RASTERFALL_MODEL_MATERIAL_ROLE_CLOTHING) return RASTERFALL_VISUAL_CLOTHING;
+    if (role == RASTERFALL_MODEL_MATERIAL_ROLE_EQUIPMENT) return RASTERFALL_VISUAL_EQUIPMENT;
+    return RASTERFALL_VISUAL_DEFAULT;
+}
+
 static struct rasterfall_character_render_policy
 character_render_policy(enum rasterfall_character_visual_class visual_class)
 {
@@ -1564,7 +1585,7 @@ character_render_policy(enum rasterfall_character_visual_class visual_class)
         policy.base_texture_bilinear = 1;
     } else if (visual_class == RASTERFALL_VISUAL_HAIR) {
         policy.use_sphere = 0;
-        policy.edge_width_milli = 600;
+        policy.use_edge = 0;
     } else if (visual_class == RASTERFALL_VISUAL_CLOTHING ||
                visual_class == RASTERFALL_VISUAL_EQUIPMENT) {
         policy.use_sphere = 0;
@@ -1613,6 +1634,8 @@ static int render_gallery_model_range(struct toy_renderer *renderer,
     int previous_material_specular_power = active_material_specular_power;
     int previous_material_specular_level = active_material_specular_level;
     int previous_face_material = active_face_material;
+    int previous_skin_material = active_skin_material;
+    uint32_t previous_material_tint = active_material_tint;
     int previous_base_bilinear =
         renderer->recording_base_texture_bilinear;
     int shared_texture = gallery_model_has_texture(model);
@@ -1648,11 +1671,15 @@ static int render_gallery_model_range(struct toy_renderer *renderer,
         const struct toy_texture_view *sphere_texture = 0;
         const struct toy_texture_view *toon_texture = 0;
         enum rasterfall_character_visual_class visual_class =
-            character_visual_class(perceptual_profile, i, material);
+            authored_visual_class(model, material);
+        if (visual_class == RASTERFALL_VISUAL_DEFAULT)
+            visual_class = character_visual_class(perceptual_profile, i, material);
         struct rasterfall_character_render_policy policy =
             character_render_policy(visual_class);
         active_face_material = visual_class == RASTERFALL_VISUAL_FACE ||
             visual_class == RASTERFALL_VISUAL_EYES;
+        active_skin_material = visual_class == RASTERFALL_VISUAL_SKIN;
+        active_material_tint = active_skin_material ? 0x00fff5edU : 0x00ffffffU;
         toy_renderer_set_base_texture_bilinear(renderer,
             policy.base_texture_bilinear);
         active_texture_view = 0;
@@ -1850,6 +1877,8 @@ static int render_gallery_model_range(struct toy_renderer *renderer,
     active_material_specular_power = previous_material_specular_power;
     active_material_specular_level = previous_material_specular_level;
     active_face_material = previous_face_material;
+    active_skin_material = previous_skin_material;
+    active_material_tint = previous_material_tint;
     toy_renderer_set_base_texture_bilinear(renderer,
                                            previous_base_bilinear);
     active_model_triangle_stats = 0;
@@ -3302,6 +3331,20 @@ static int draw_world_triangle_tex_views(struct toy_renderer *renderer,
             if (sb.light < 224) sb.light = 224;
             if (sc.light < 224) sc.light = 224;
             sa.fog = sb.fog = sc.fog = fog / 2;
+        } else if (active_skin_material) {
+            int skin_scene_light = light < 224 ? 224 : light;
+            sa.light = clipped[0].light * skin_scene_light / 256;
+            sb.light = (reversed ? clipped[i + 1].light : clipped[i].light) *
+                       skin_scene_light / 256;
+            sc.light = (reversed ? clipped[i].light : clipped[i + 1].light) *
+                       skin_scene_light / 256;
+            if (sa.light < 224) sa.light = 224;
+            if (sb.light < 224) sb.light = 224;
+            if (sc.light < 224) sc.light = 224;
+            if (sa.light > 256) sa.light = 256;
+            if (sb.light > 256) sb.light = 256;
+            if (sc.light > 256) sc.light = 256;
+            sa.fog = sb.fog = sc.fog = fog;
         } else {
             sa.light = sb.light = sc.light = light;
             sa.fog = sb.fog = sc.fog = fog;
@@ -3315,8 +3358,9 @@ static int draw_world_triangle_tex_views(struct toy_renderer *renderer,
                 active_toon_texture, active_toon_shared, active_toon_level,
                 active_material_alpha, active_material_ambient,
                 active_material_specular, active_material_specular_level,
+                active_material_tint,
                 1, 0xFF202020U,
-                active_face_material ? -1 : light,
+                active_face_material || active_skin_material ? -1 : light,
                 active_face_material ? -1 : fog);
         else
             drawn += toy_renderer_triangle_textured_lit(renderer, &sa, &sb, &sc,
@@ -5495,6 +5539,16 @@ static int render_ai_teammate(struct toy_renderer *renderer,
                 active_actor_lift = platform->height;
         }
         if (actor->anime_character_id && private_character_model.data) {
+            struct rasterfall_developer_character *maid_entry =
+                actor->anime_character_id >= 2 && actor->anime_character_id <= 5 ?
+                &developer_characters[actor->anime_character_id - 2] : NULL;
+            struct rasterfall_model_asset *actor_model =
+                maid_entry && maid_entry->vmd_loaded ?
+                &maid_entry->model : &private_character_model;
+            const struct rasterfall_animation_clip *locomotion_clip =
+                maid_entry && maid_entry->vmd_loaded ?
+                &maid_entry->walk :
+                (private_character_vmd_loaded ? &private_character_vmd_clip : NULL);
             struct rasterfall_rifle_pose hit={0};
             struct rasterfall_rifle_pose actor_body_pose;
             struct rasterfall_animation_composition composition;
@@ -5510,7 +5564,7 @@ static int render_ai_teammate(struct toy_renderer *renderer,
             int blend=actor->locomotion_blend_ms*5;
             if(blend>1000)blend=1000;
             hit.rotation[0][0]=8; hit.rotation[0][2]=-8;
-            composition.locomotion=(actor->moving||blend<1000)&&private_character_vmd_loaded?&private_character_vmd_clip:NULL;
+            composition.locomotion=(actor->moving||blend<1000)?locomotion_clip:NULL;
             composition.locomotion_time_ms=actor->animation.time_ms;
             composition.locomotion_weight_milli=actor->moving?blend:1000-blend;
             composition.rifle_stance=1;
@@ -5521,8 +5575,8 @@ static int render_ai_teammate(struct toy_renderer *renderer,
                    sizeof(actor_body_pose.rotation));
             composition.rifle_pose=&actor_body_pose;composition.hit_pose=&hit;
             composition.hit_pose_preview=actor->animation.id==TOY_GAME_ANIM_HIT;
-            rasterfall_animation_compose(&private_character_model,&composition);
-            have_rifle_frame=rifle_frame_transform(&private_character_model,&rifle_frame)==0;
+            rasterfall_animation_compose(actor_model,&composition);
+            have_rifle_frame=rifle_frame_transform(actor_model,&rifle_frame)==0;
             if(have_rifle_frame&&actor->current_slot>=0&&
                actor->current_slot<TOY_GAME_WEAPON_SLOTS){
                 int weapon=actor->slots[actor->current_slot].weapon;
@@ -5534,9 +5588,9 @@ static int render_ai_teammate(struct toy_renderer *renderer,
                    actor->animation.id==TOY_GAME_ANIM_MOVE||
                    actor->animation.id==TOY_GAME_ANIM_FIRE)){
                     int character_scale=character_model_scale(
-                        &private_character_model,
+                        actor_model,
                         eula_actor_profile.target_height_mm);
-                    rifle_solve_hands(&private_character_model,&rifle_frame,weapon_profile,
+                    rifle_solve_hands(actor_model,&rifle_frame,weapon_profile,
                                       asset,character_scale);
                 }
             }
@@ -5545,9 +5599,9 @@ static int render_ai_teammate(struct toy_renderer *renderer,
                 actor->cy*eula_actor_profile.forward_sy)/1024;
             active_gallery_cy=(actor->cy*eula_actor_profile.forward_cy-
                 actor->sy*eula_actor_profile.forward_sy)/1024;
-            pixels+=render_gallery_model(renderer,camera,&private_character_model,
+            pixels+=render_gallery_model(renderer,camera,actor_model,
                 actor->x,-900+active_actor_lift,actor->z,
-                character_model_scale(&private_character_model,
+                character_model_scale(actor_model,
                                       eula_actor_profile.target_height_mm));
             active_gallery_facing=0;
             if(actor->current_slot>=0&&actor->current_slot<TOY_GAME_WEAPON_SLOTS){
@@ -5556,7 +5610,7 @@ static int render_ai_teammate(struct toy_renderer *renderer,
                     render_pose_calibration(weapon);
                 if(have_rifle_frame && rasterfall_weapon_asset_profile(weapon)->skeletal)
                     pixels+=render_skeletal_rifle(renderer,camera,
-                        &private_character_model,&rifle_frame,&eula_actor_profile,
+                        actor_model,&rifle_frame,&eula_actor_profile,
                         weapon_profile,
                         actor->x,-900+active_actor_lift,actor->z,actor->sy,
                         actor->cy,weapon,actor->muzzle_flash_ms);
