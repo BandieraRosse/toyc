@@ -5568,11 +5568,24 @@ static int render_ai_teammate(struct toy_renderer *renderer,
             composition.locomotion_time_ms=actor->animation.time_ms;
             composition.locomotion_weight_milli=actor->moving?blend:1000-blend;
             composition.rifle_stance=1;
-            composition.upper_body_lock=1;
+            /* Maid's Mixamo bind pose differs from Eula's PMX rest pose.
+             * Preserve the authored walk above the hips and add only a weak
+             * relative rifle silhouette; clearing the upper body here turns
+             * Maid's moving pose back toward its bind T-pose. */
+            composition.upper_body_lock=maid_entry ? 0 : 1;
             composition.overlay=actor->animation.id==TOY_GAME_ANIM_FIRE?RASTERFALL_COMPOSITION_OVERLAY_FIRE:RASTERFALL_COMPOSITION_OVERLAY_NONE;
             composition.overlay_time_ms=actor->animation.time_ms;
             memcpy(actor_body_pose.rotation, actor_pose->body_pose,
                    sizeof(actor_body_pose.rotation));
+            if (maid_entry) {
+                int pose_bone, axis;
+                for (pose_bone = 0;
+                     pose_bone < RASTERFALL_RIFLE_POSE_BONE_COUNT;
+                     pose_bone++)
+                    for (axis = 0; axis < 3; axis++)
+                        actor_body_pose.rotation[pose_bone][axis] =
+                            actor_body_pose.rotation[pose_bone][axis] * 2 / 3;
+            }
             composition.rifle_pose=&actor_body_pose;composition.hit_pose=&hit;
             composition.hit_pose_preview=actor->animation.id==TOY_GAME_ANIM_HIT;
             rasterfall_animation_compose(actor_model,&composition);
@@ -5584,7 +5597,8 @@ static int render_ai_teammate(struct toy_renderer *renderer,
                     rasterfall_weapon_asset_profile(weapon);
                 const struct rasterfall_pose_calibration *weapon_profile=
                     render_pose_calibration(weapon);
-                if(asset->skeletal&&(actor->animation.id==TOY_GAME_ANIM_IDLE||
+                if(!maid_entry && asset->skeletal&&
+                   (actor->animation.id==TOY_GAME_ANIM_IDLE||
                    actor->animation.id==TOY_GAME_ANIM_MOVE||
                    actor->animation.id==TOY_GAME_ANIM_FIRE)){
                     int character_scale=character_model_scale(
