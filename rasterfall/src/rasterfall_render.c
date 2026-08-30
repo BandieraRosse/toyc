@@ -36,9 +36,10 @@
 #define UV_ONE 65536
 #define BAKED_LM_W 32
 #define BAKED_LM_H 24
-#define RASTERFALL_CHARACTER_EDGE_MIN_HEIGHT 320
-#define RASTERFALL_CHARACTER_MATERIAL_MIN_HEIGHT 320
 #define RASTERFALL_CHARACTER_TASK_TRIANGLES 8192
+#define RASTERFALL_CHARACTER_NEAR_RFU 1536
+#define RASTERFALL_CHARACTER_MID_RFU 4096
+#define RASTERFALL_CHARACTER_FAR_RFU 15360
 
 struct vec3 { int x, y, z; };
 struct box { int minx, maxx, minz, maxz, height; uint32_t color; };
@@ -76,10 +77,12 @@ struct rasterfall_frontend_slot {
     struct rasterfall_frontend_state *state;
 };
 static struct rasterfall_frontend_slot frontend_slots[8];
+static struct rasterfall_frontend_state *frontend_override;
 static struct rasterfall_frontend_state *frontend_state(void)
 {
     pthread_t self = pthread_self();
     int i;
+    if (frontend_override) return frontend_override;
     for (i = 0; i < 8; i++)
         if (frontend_slots[i].thread == self && frontend_slots[i].state)
             return frontend_slots[i].state;
@@ -551,7 +554,57 @@ struct gallery_cached_vertex {
     int edge_ready;
     int model_position[3];
     int normal[3];
+    int source_normal[3];
 };
+
+enum rasterfall_character_distance_quality {
+    RASTERFALL_CHARACTER_NEAR,
+    RASTERFALL_CHARACTER_MID,
+    RASTERFALL_CHARACTER_FAR,
+    RASTERFALL_CHARACTER_HIDDEN
+};
+
+static unsigned long rasterfall_render_frame;
+static struct rasterfall_frontend_state ai_character_frontends[TOY_GAME_MAX_ACTORS];
+static unsigned char ai_character_frontends_initialized[TOY_GAME_MAX_ACTORS];
+
+/* Distance policy for high-detail characters.  Keep the decision in one
+ * place: distance is horizontal Euclidean distance squared, while all
+ * projection/frustum work remains in the normal model renderer. */
+static enum rasterfall_character_distance_quality character_distance_policy(
+    const struct camera *camera, int x, int z, int actor_index,
+    struct rasterfall_frontend_state *state)
+{
+    long long dx = (long long)x - camera->x;
+    long long dz = (long long)z - camera->z;
+    long long distance_sq = dx * dx + dz * dz;
+    long long near_sq = (long long)RASTERFALL_CHARACTER_NEAR_RFU *
+                        RASTERFALL_CHARACTER_NEAR_RFU;
+    long long mid_sq = (long long)RASTERFALL_CHARACTER_MID_RFU *
+                       RASTERFALL_CHARACTER_MID_RFU;
+    long long far_sq = (long long)RASTERFALL_CHARACTER_FAR_RFU *
+                       RASTERFALL_CHARACTER_FAR_RFU;
+    enum rasterfall_character_distance_quality quality;
+    int interval, update;
+    if (distance_sq < near_sq) quality = RASTERFALL_CHARACTER_NEAR;
+    else if (distance_sq < mid_sq) quality = RASTERFALL_CHARACTER_MID;
+    else if (distance_sq < far_sq) quality = RASTERFALL_CHARACTER_FAR;
+    else quality = RASTERFALL_CHARACTER_HIDDEN;
+    if (!state) return quality;
+    state->disable_edge = quality != RASTERFALL_CHARACTER_NEAR;
+    state->disable_sphere = quality != RASTERFALL_CHARACTER_NEAR;
+    state->disable_toon = quality == RASTERFALL_CHARACTER_FAR ||
+                          quality == RASTERFALL_CHARACTER_HIDDEN;
+    interval = quality == RASTERFALL_CHARACTER_NEAR ? 1 :
+               quality == RASTERFALL_CHARACTER_MID ? 2 : 4;
+    update = quality != RASTERFALL_CHARACTER_HIDDEN &&
+             ((rasterfall_render_frame + (unsigned long)actor_index) %
+              (unsigned long)interval) == 0;
+    if (quality != RASTERFALL_CHARACTER_HIDDEN &&
+        !state->skinned_vertices_valid) update = 1;
+    state->reuse_skinned_vertices = !update;
+    return quality;
+}
 
 static int clampi(int value, int low, int high)
 {
@@ -713,6 +766,14 @@ static int prepare_gallery_vertex_cache(
             if (rasterfall_model_skin_vertex(model, i,
                     gallery_vertex_cache[i].model_position,
                     gallery_vertex_cache[i].normal) < 0) return -1;
+        for (i = 0; i < model->vertex_count; i++) {
+            gallery_vertex_cache[i].source_normal[0] =
+                gallery_vertex_cache[i].normal[0];
+            gallery_vertex_cache[i].source_normal[1] =
+                gallery_vertex_cache[i].normal[1];
+            gallery_vertex_cache[i].source_normal[2] =
+                gallery_vertex_cache[i].normal[2];
+        }
         model_setup_timing.skinning_us += render_monotonic_us() - phase_start;
         frontend_state()->skinned_vertices_valid = 1;
     }
@@ -727,12 +788,16 @@ static int prepare_gallery_vertex_cache(
             cached->normal[0] = *(const short *)(p + 12);
             cached->normal[1] = *(const short *)(p + 14);
             cached->normal[2] = *(const short *)(p + 16);
+            cached->source_normal[0] = cached->normal[0];
+            cached->source_normal[1] = cached->normal[1];
+            cached->source_normal[2] = cached->normal[2];
         }
         {
         int render_x = position[0], render_z = position[2];
         if (active_gallery_facing) {
             int model_x = position[0], model_z = position[2];
-            int normal_x = cached->normal[0], normal_z = cached->normal[2];
+            int normal_x = cached->source_normal[0];
+            int normal_z = cached->source_normal[2];
             render_x = (int)(((long long)model_x * active_gallery_cy +
                               (long long)model_z * active_gallery_sy) / 1024);
             render_z = (int)(((long long)model_z * active_gallery_cy -
@@ -741,6 +806,10 @@ static int prepare_gallery_vertex_cache(
                                          (long long)normal_z * active_gallery_sy) / 1024);
             cached->normal[2] = (short)(((long long)normal_z * active_gallery_cy -
                                          (long long)normal_x * active_gallery_sy) / 1024);
+        } else {
+            cached->normal[0] = cached->source_normal[0];
+            cached->normal[1] = cached->source_normal[1];
+            cached->normal[2] = cached->source_normal[2];
         }
         cached->uv.p.x = center_x +
             (int)((long long)render_x * scale / 1000);
@@ -1363,23 +1432,6 @@ static int gallery_model_visible(const struct toy_surface *surface,
         if (yf >= -y_limit) all_below = 0;
     }
     return !(all_left || all_right || all_above || all_below);
-}
-
-static int gallery_model_projected_height(const struct toy_surface *surface,
-                                          const struct camera *camera,
-                                          const struct rasterfall_model_asset *model,
-                                          int center_x, int base_y,
-                                          int center_z, int scale)
-{
-    struct vec3 center, view;
-    long long height;
-    center.x = center_x;
-    center.y = base_y + (int)((long long)(model->max_y - model->min_y) * scale / 2000);
-    center.z = center_z;
-    world_to_view(camera, &center, &view);
-    if (view.z < NEAR_Z) return surface->height;
-    height = (long long)(model->max_y - model->min_y) * scale / 1000;
-    return (int)(height * (surface->width * 3 / 4) / view.z);
 }
 
 static void gallery_edge_vertex(const struct rasterfall_model_asset *model,
@@ -2342,25 +2394,11 @@ static void character_frontend_job(int worker_id, int task, void *opaque)
     frontend_slots[worker_id].thread = pthread_self();
     frontend_slots[worker_id].state = state;
     if (task > 0) {
-        struct rasterfall_animation_player *player = active_session ?
-            &active_session->skeletal_demo_player : NULL;
-        int reuse = !player || (player->clip_id != 9 && player->clip_id != 11);
         long animation_start = render_monotonic_us();
-        if (reuse && !state->reuse_skinned_vertices)
-            state->skinned_vertices_valid = 0;
-        state->reuse_skinned_vertices = reuse;
         if (!state->reuse_skinned_vertices || !state->skinned_vertices_valid)
             sample_developer_character(&developer_characters[task - 1]);
         state->timing.animation_sample_us +=
             render_monotonic_us() - animation_start;
-    } else {
-        struct rasterfall_animation_player *player = active_session ?
-            &active_session->skeletal_demo_player : NULL;
-        int reuse = player && player->clip_id < 0 &&
-            !private_character_vmd_forced;
-        if (reuse && !state->reuse_skinned_vertices)
-            state->skinned_vertices_valid = 0;
-        state->reuse_skinned_vertices = reuse;
     }
     if (task > 0) {
         int target_x = active_session ? active_session->level.start_x : -13000;
@@ -2447,7 +2485,8 @@ static int render_characters_parallel(struct toy_renderer *renderer,
     dispatch.depth = renderer->depth;
     dispatch.models[0] = &private_character_model;
     dispatch.visible[0] = !active_pose_preview && private_character_model.data &&
-        world_distance(camera, -13000, -10000) <= ENEMY_RENDER_DISTANCE &&
+        character_distance_policy(camera, -13000, -10000, 0,
+            &private_character_frontend) != RASTERFALL_CHARACTER_HIDDEN &&
         gallery_model_visible(dispatch.surface, camera,
             &private_character_model, -13000, -900, -10000,
             character_model_scale(&private_character_model,
@@ -2459,43 +2498,22 @@ static int render_characters_parallel(struct toy_renderer *renderer,
         private_character_animation_us;
     for (i = 0; i < 4; i++) {
         struct rasterfall_developer_character *entry = &developer_characters[i];
-        int projected_height;
         /* Pose authoring isolates the edited Eula.  Rendering the other four
          * high-detail developer displays in parallel and then rendering the
          * preview serially kept all character frontends hot for no authoring
          * benefit and was the only sustained-load path unique to the editor. */
         dispatch.visible[i + 1] = !active_pose_preview && entry->model.data &&
-            world_distance(camera, entry->x, entry->z) <= ENEMY_RENDER_DISTANCE &&
+            character_distance_policy(camera, entry->x, entry->z, i + 1,
+                &entry->frontend) != RASTERFALL_CHARACTER_HIDDEN &&
             gallery_model_visible(dispatch.surface, camera, &entry->model,
                 entry->x, entry->base_y, entry->z,
                 character_model_scale(&entry->model, entry->target_height_mm));
         prepare_character_command_renderer(&entry->commands, &entry->frontend,
             &entry->commands_initialized, dispatch.surface, dispatch.depth);
-        projected_height = gallery_model_projected_height(dispatch.surface, camera,
-                &entry->model, entry->x, entry->base_y, entry->z,
-                character_model_scale(&entry->model,
-                                      entry->target_height_mm));
-        entry->frontend.disable_edge = dispatch.visible[i + 1] &&
-            projected_height < RASTERFALL_CHARACTER_EDGE_MIN_HEIGHT;
-        entry->frontend.disable_sphere = dispatch.visible[i + 1] &&
-            projected_height < RASTERFALL_CHARACTER_MATERIAL_MIN_HEIGHT;
-        entry->frontend.disable_toon = entry->frontend.disable_sphere;
-        dispatch.models[i + 1] = entry->lod_loaded &&
-            projected_height < RASTERFALL_CHARACTER_MATERIAL_MIN_HEIGHT ?
-            &entry->lod_model : &entry->model;
+        dispatch.models[i + 1] = &entry->model;
     }
     {
-        int projected_height = gallery_model_projected_height(dispatch.surface, camera,
-            &private_character_model, -13000, -900, -10000,
-            character_model_scale(&private_character_model,
-                                  eula_actor_profile.target_height_mm));
-        private_character_frontend.disable_edge = dispatch.visible[0] &&
-            (edge_pass_enabled == 0 ||
-             projected_height < RASTERFALL_CHARACTER_EDGE_MIN_HEIGHT);
-        private_character_frontend.disable_sphere = dispatch.visible[0] &&
-            projected_height < RASTERFALL_CHARACTER_MATERIAL_MIN_HEIGHT;
-        private_character_frontend.disable_toon =
-            private_character_frontend.disable_sphere;
+        private_character_frontend.disable_edge |= edge_pass_enabled == 0;
     }
     pipeline_start = render_monotonic_us();
     if (toy_renderer_parallel_for(renderer, 5, 5,
@@ -2600,6 +2618,8 @@ static int render_private_character(struct toy_renderer *renderer,
 {
     const char *path = private_character_override_path ?
         private_character_override_path : eula_actor_profile.model_path;
+    enum rasterfall_character_distance_quality character_quality;
+    int character_update;
     if (!private_character_loaded) {
         if (rasterfall_model_load(&private_character_model, path) == 0)
             __printf("rasterfall: Eula target_height_mm=%d scale_milli=%d\n",
@@ -2608,6 +2628,10 @@ static int render_private_character(struct toy_renderer *renderer,
                                            eula_actor_profile.target_height_mm));
         private_character_loaded = 1;
     }
+    character_quality = character_distance_policy(
+        camera, -13000, -10000, 0, &private_character_frontend);
+    if (character_quality == RASTERFALL_CHARACTER_HIDDEN) return 0;
+    character_update = !private_character_frontend.reuse_skinned_vertices;
     {
         const char *requested_vmd = private_character_vmd_path;
         if (active_session &&
@@ -2658,7 +2682,7 @@ static int render_private_character(struct toy_renderer *renderer,
                          requested_vmd);
     }
     }
-    if (private_character_model.data && active_session) {
+    if (private_character_model.data && active_session && character_update) {
         struct rasterfall_animation_player *player =
             &active_session->skeletal_demo_player;
         int pose_preview_active = active_session->pose_debug_active &&
@@ -2803,7 +2827,7 @@ static int render_private_character(struct toy_renderer *renderer,
     }
     load_developer_characters(renderer);
     if (!private_character_model.data ||
-        world_distance(camera, -13000, -10000) > ENEMY_RENDER_DISTANCE)
+        character_quality == RASTERFALL_CHARACTER_HIDDEN)
         return 0;
     {
         int pixels = 0;
@@ -4481,6 +4505,7 @@ static int render_scene(struct toy_renderer *renderer, const struct camera *came
     int pixels = 0;
     long phase_start;
     struct vec3 a, b, c, d;
+    rasterfall_render_frame++;
     __memset(&scene_stats, 0, sizeof(scene_stats));
     phase_start = render_monotonic_us();
     /* 自由俯仰下先铺天空/地面：地平线由俯仰角决定，墙面与地板随后覆盖 */
@@ -5556,7 +5581,9 @@ static int render_ai_teammate(struct toy_renderer *renderer,
         if (!actor->active || actor->kind != TOY_GAME_ACTOR_AI) continue;
         center.x = actor->x; center.y = 0; center.z = actor->z;
         world_to_view(camera, &center, &view);
-        if (view.z < NEAR_Z || view.z > ENEMY_RENDER_DISTANCE) continue;
+        if (view.z < NEAR_Z ||
+            (view.z > ENEMY_RENDER_DISTANCE && !actor->anime_character_id))
+            continue;
         color = actor->class_id == TOY_GAME_AI_LEVEL_3 ? RF_COLOR_AI_HEAVY :
                 actor->class_id == TOY_GAME_AI_LEVEL_2 ? RF_COLOR_AI_RIFLE :
                 RF_COLOR_AI_BASIC;
@@ -5569,6 +5596,26 @@ static int render_ai_teammate(struct toy_renderer *renderer,
                 active_actor_lift = platform->height;
         }
         if (actor->anime_character_id && private_character_model.data) {
+            struct rasterfall_frontend_state *actor_frontend =
+                &ai_character_frontends[i];
+            int character_update;
+            enum rasterfall_character_distance_quality character_quality;
+            if (!ai_character_frontends_initialized[i]) {
+                __memset(actor_frontend, 0, sizeof(*actor_frontend));
+                actor_frontend->toon_shared = -1;
+                actor_frontend->toon_level = 255;
+                actor_frontend->material_alpha = 255;
+                actor_frontend->material_double_sided = 1;
+                ai_character_frontends_initialized[i] = 1;
+            }
+            character_quality = character_distance_policy(
+                camera, actor->x, actor->z, i, actor_frontend);
+            if (character_quality == RASTERFALL_CHARACTER_HIDDEN) {
+                frontend_override = 0;
+                continue;
+            }
+            character_update = !actor_frontend->reuse_skinned_vertices;
+            frontend_override = actor_frontend;
             struct rasterfall_developer_character *maid_entry =
                 actor->anime_character_id >= 2 && actor->anime_character_id <= 5 ?
                 &developer_characters[actor->anime_character_id - 2] : NULL;
@@ -5622,7 +5669,8 @@ static int render_ai_teammate(struct toy_renderer *renderer,
             }
             composition.rifle_pose=&actor_body_pose;composition.hit_pose=&hit;
             composition.hit_pose_preview=actor->animation.id==TOY_GAME_ANIM_HIT;
-            rasterfall_animation_compose(actor_model,&composition);
+            if (character_update)
+                rasterfall_animation_compose(actor_model,&composition);
             have_rifle_frame=rifle_frame_transform(actor_model,&rifle_frame)==0;
             if(have_rifle_frame&&actor->current_slot>=0&&
                actor->current_slot<TOY_GAME_WEAPON_SLOTS){
@@ -5674,6 +5722,7 @@ static int render_ai_teammate(struct toy_renderer *renderer,
                     actor->z,actor->sy,actor->cy,weapon,actor->muzzle_flash_ms,
                     actor->animation.id,actor->animation.time_ms,0,0);
             }
+            frontend_override = 0;
             active_actor_lift=0;continue;
         }
         pixels += render_player_avatar(renderer, camera, actor->x, actor->z,
