@@ -65,10 +65,11 @@ struct rasterfall_frontend_state {
     int disable_toon;
     int face_material;
     int skin_material;
+    int gallery_facing, gallery_sy, gallery_cy;
 };
 static struct rasterfall_frontend_state frontend_default = {
     .toon_shared = -1, .toon_level = 255, .material_alpha = 255,
-    .material_double_sided = 1
+    .material_double_sided = 1, .gallery_cy = 1024
 };
 struct rasterfall_frontend_slot {
     pthread_t thread;
@@ -105,6 +106,9 @@ static struct rasterfall_frontend_state *frontend_state(void)
 #define active_disable_edge (frontend_state()->disable_edge)
 #define active_disable_sphere (frontend_state()->disable_sphere)
 #define active_disable_toon (frontend_state()->disable_toon)
+#define active_gallery_facing (frontend_state()->gallery_facing)
+#define active_gallery_sy (frontend_state()->gallery_sy)
+#define active_gallery_cy (frontend_state()->gallery_cy)
 
 static long render_monotonic_us(void)
 {
@@ -113,9 +117,6 @@ static long render_monotonic_us(void)
     return now.tv_sec * 1000000L + now.tv_nsec / 1000;
 }
 static struct rasterfall_session *active_session;
-static int active_gallery_facing;
-static int active_gallery_sy;
-static int active_gallery_cy = 1024;
 static int active_pose_preview;
 static struct rasterfall_effects *active_effects;
 static const struct rasterfall_net *active_net;
@@ -422,7 +423,7 @@ static void sample_developer_character(struct rasterfall_developer_character *en
             rasterfall_model_set_root_motion(&entry->model, center, groove, 1);
             if (player->clip_id == 11) {
                 struct rasterfall_animation_composition composition = {
-                    &entry->walk, player->time_ms, 1000, 1, 1,
+                    &entry->walk, player->time_ms, 1000, 0, 0,
                     (player->time_ms / 1200) & 1 ?
                         RASTERFALL_COMPOSITION_OVERLAY_HIT :
                         RASTERFALL_COMPOSITION_OVERLAY_FIRE,
@@ -442,7 +443,7 @@ static void sample_developer_character(struct rasterfall_developer_character *en
                                                   center, groove, 1);
                 if (player->clip_id == 11) {
                     struct rasterfall_animation_composition composition = {
-                        &entry->walk, player->time_ms, 1000, 1, 1,
+                        &entry->walk, player->time_ms, 1000, 0, 0,
                         (player->time_ms / 1200) & 1 ?
                             RASTERFALL_COMPOSITION_OVERLAY_HIT :
                             RASTERFALL_COMPOSITION_OVERLAY_FIRE,
@@ -2292,6 +2293,24 @@ static void prepare_character_command_renderer(
     commands->texture_fallback_pixels = 0;
 }
 
+static void gallery_face_toward(int model_x, int model_z,
+                                int target_x, int target_z)
+{
+    long long dx = (long long)target_x - model_x;
+    long long dz = (long long)target_z - model_z;
+    long long length = isqrt(dx * dx + dz * dz);
+    if (length <= 0) {
+        active_gallery_facing = 0;
+        return;
+    }
+    /* Maid's local forward axis is +Z.  The gallery transform maps that
+     * axis to (sin_yaw, cos_yaw), so derive the yaw from the actual target
+     * point instead of applying a model-specific 180-degree correction. */
+    active_gallery_facing = 1;
+    active_gallery_sy = (int)(dx * 1024 / length);
+    active_gallery_cy = (int)(dz * 1024 / length);
+}
+
 static void character_frontend_job(int worker_id, int task, void *opaque)
 {
     struct character_frontend_dispatch *dispatch = opaque;
@@ -2341,6 +2360,15 @@ static void character_frontend_job(int worker_id, int task, void *opaque)
         if (reuse && !state->reuse_skinned_vertices)
             state->skinned_vertices_valid = 0;
         state->reuse_skinned_vertices = reuse;
+    }
+    if (task > 0) {
+        int target_x = active_session ? active_session->level.start_x : -13000;
+        int target_z = active_session ? active_session->level.start_z : -12000;
+        gallery_face_toward(x, z, target_x, target_z);
+    } else {
+        /* Eula's authored local forward is -Z, so the unrotated display
+         * model already faces the player spawn side of the gallery. */
+        active_gallery_facing = 0;
     }
     dispatch->drawn[task] = render_gallery_model_range(
         commands, dispatch->camera, model, x, y, z, scale, 0, 0, 0, -1, 1);
@@ -5567,7 +5595,11 @@ static int render_ai_teammate(struct toy_renderer *renderer,
             composition.locomotion=(actor->moving||blend<1000)?locomotion_clip:NULL;
             composition.locomotion_time_ms=actor->animation.time_ms;
             composition.locomotion_weight_milli=actor->moving?blend:1000-blend;
-            composition.rifle_stance=1;
+            /* Eula's rifle pose is calibrated in a different local bone
+             * basis.  Leave maid in the authored VMD pose until it has its
+             * own hand/forearm calibration; otherwise the wrists twist
+             * behind the body even though the model yaw is correct. */
+            composition.rifle_stance=maid_entry ? 0 : 1;
             /* Maid's Mixamo bind pose differs from Eula's PMX rest pose.
              * Preserve the authored walk above the hips and add only a weak
              * relative rifle silhouette; clearing the upper body here turns
@@ -5609,10 +5641,18 @@ static int render_ai_teammate(struct toy_renderer *renderer,
                 }
             }
             active_gallery_facing=1;
-            active_gallery_sy=(actor->sy*eula_actor_profile.forward_cy+
-                actor->cy*eula_actor_profile.forward_sy)/1024;
-            active_gallery_cy=(actor->cy*eula_actor_profile.forward_cy-
-                actor->sy*eula_actor_profile.forward_sy)/1024;
+            /* Maid's FBX is authored facing +Z.  Eula's PMX faces -Z and
+             * needs the historical 180-degree correction; sharing that
+             * correction made maid hold the weapon behind her. */
+            if (maid_entry) {
+                active_gallery_sy=actor->sy;
+                active_gallery_cy=actor->cy;
+            } else {
+                active_gallery_sy=(actor->sy*eula_actor_profile.forward_cy+
+                    actor->cy*eula_actor_profile.forward_sy)/1024;
+                active_gallery_cy=(actor->cy*eula_actor_profile.forward_cy-
+                    actor->sy*eula_actor_profile.forward_sy)/1024;
+            }
             pixels+=render_gallery_model(renderer,camera,actor_model,
                 actor->x,-900+active_actor_lift,actor->z,
                 character_model_scale(actor_model,

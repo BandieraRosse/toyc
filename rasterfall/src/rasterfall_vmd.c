@@ -62,7 +62,25 @@ int rasterfall_vmd_load(struct rasterfall_vmd_clip*c,const char*path){
 }
 void rasterfall_vmd_unload(struct rasterfall_vmd_clip*c){int i;if(!c)return;for(i=0;i<c->track_count;i++){if(c->tracks[i].keys)tlibc_free(c->tracks[i].keys);if(c->tracks[i].animation_keys)tlibc_free(c->tracks[i].animation_keys);}if(c->tracks)tlibc_free(c->tracks);memset(c,0,sizeof(*c));}
 int rasterfall_vmd_map(struct rasterfall_vmd_clip*c,rasterfall_vmd_bone_resolver resolve,void*context){int i,j,m=0;if(!c||!resolve)return -1;for(i=0;i<c->track_count;i++){struct rasterfall_vmd_bone_track*t=&c->tracks[i];t->target_bone=resolve(context,t->name);t->mapping_status=t->target_bone<0?0:(t->is_ik&&!t->is_leg_ik)?2:1;for(j=0;j<i&&t->target_bone>=0;j++)if(c->tracks[j].target_bone==t->target_bone)t->mapping_status=3;if(t->mapping_status==1)m++;}return m;}
-static int vmd_model_bone_resolver(void*context,const char*name){return rasterfall_model_find_bone((const struct rasterfall_model_asset*)context,name);}
+static int vmd_model_bone_resolver(void*context,const char*name)
+{
+ const struct rasterfall_model_asset *asset=(const struct rasterfall_model_asset*)context;
+ int bone;
+ if(!asset||!name)return -1;
+ bone=rasterfall_model_find_bone(asset,name);
+ if(bone>=0)return bone;
+ /* Some MMD walk clips store locomotion only on the foot IK controllers.
+  * Imported FBX/PMX display skeletons, such as maid, may intentionally omit
+  * those helper bones.  Their IK rotation is still a useful authored thigh
+  * swing, so bind the controller track to the matching upper-leg bone as a
+  * compatibility fallback.  Models with real IK controllers keep the
+  * normal solver path above. */
+ if(!strcmp(name,"左足ＩＫ"))
+  return rasterfall_model_find_bone(asset,"左足");
+ if(!strcmp(name,"右足ＩＫ"))
+  return rasterfall_model_find_bone(asset,"右足");
+ return -1;
+}
 int rasterfall_vmd_map_model(struct rasterfall_vmd_clip*c,const struct rasterfall_model_asset*a){if(!a)return-1;return rasterfall_vmd_map(c,vmd_model_bone_resolver,(void*)a);}
 void rasterfall_vmd_dump(const struct rasterfall_vmd_clip*c,const struct rasterfall_model_asset*a){int i,m=0,d=0,ig=0,dup=0;if(!c)return;__printf("vmd: header=Vocaloid Motion Data 0002 version=%d model=\"%s\" bone_motions=%d unique_bones=%d max_frame=%d duration_ms=%d (30fps)\n",c->version,c->model_name,c->motion_count,c->track_count,c->max_frame,c->duration_ms);__printf("vmd: interpolation=%s runtime=LINEAR/NLERP IK tracks=%d status=leg IK solver runtime; toe IK metadata loaded but not solved\n",c->interpolation_tracks?"present":"not detected",c->ignored_ik_tracks);for(i=0;i<c->track_count;i++){const struct rasterfall_vmd_bone_track*t=&c->tracks[i];const char*s=t->mapping_status==1?"exact":t->mapping_status==2?"ignored":t->mapping_status==3?"duplicate":"missing";if(t->mapping_status==1)m++;if(t->mapping_status==0)d++;if(t->mapping_status==2)ig++;if(t->mapping_status==3)dup++;__printf("  %-16s keys=%-3d frames=%d-%d translation=%s rotation=%s",t->name,t->key_count,t->first_frame,t->last_frame,t->translation_changed?"changes":"static",t->rotation_changed?"changes":"static");if(a)__printf(" -> %-16s [%s]",t->target_bone>=0?a->bones[t->target_bone].name:"-",s);__printf("\n");}if(a)__printf("mapping: mapped=%d missing=%d ignored=%d duplicate=%d coverage=%d/%d\n",m,d,ig,dup,m,c->track_count);}
 static const struct rasterfall_vmd_bone_track *vmd_track(const struct rasterfall_vmd_clip*c,const char*n){int i;for(i=0;i<c->track_count;i++)if(!strcmp(c->tracks[i].name,n))return &c->tracks[i];return 0;}
