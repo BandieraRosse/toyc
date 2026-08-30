@@ -218,6 +218,8 @@ static int gallery_loaded;
 static struct rasterfall_model_asset private_character_model;
 static struct rasterfall_model_asset private_character_lod_model;
 static int private_character_lod_loaded;
+static struct rasterfall_model_asset private_character_lod2_model;
+static int private_character_lod2_loaded;
 static struct rasterfall_vmd_clip private_character_vmd;
 static struct rasterfall_animation_clip private_character_vmd_clip;
 static struct rasterfall_animation_track private_character_vmd_tracks[RASTERFALL_VMD_MAX_BONES];
@@ -288,6 +290,17 @@ static void sync_private_character_lod_pose(void)
            private_character_model.bone_count *
                sizeof(*private_character_model.bone_transforms));
 }
+static void sync_private_character_lod2_pose(void)
+{
+    if (!private_character_lod2_loaded || !private_character_model.bone_transforms ||
+        !private_character_lod2_model.bone_transforms ||
+        private_character_model.bone_count != private_character_lod2_model.bone_count)
+        return;
+    memcpy(private_character_lod2_model.bone_transforms,
+           private_character_model.bone_transforms,
+           private_character_model.bone_count *
+               sizeof(*private_character_model.bone_transforms));
+}
 struct rasterfall_skeletal_actor_profile {
     const char *model_path;
     const char *walk_path;
@@ -305,17 +318,18 @@ static const struct rasterfall_skeletal_actor_profile eula_actor_profile = {
 };
 
 struct rasterfall_developer_character {
-    const char *name, *model_path, *lod_model_path, *height_source;
+    const char *name, *model_path, *lod_model_path, *lod2_model_path, *height_source;
     int x, z, base_y, target_height_mm;
     struct rasterfall_model_asset model;
     struct rasterfall_model_asset lod_model;
+    struct rasterfall_model_asset lod2_model;
     struct rasterfall_vmd_clip vmd;
     struct rasterfall_animation_clip walk;
     struct rasterfall_animation_track tracks[RASTERFALL_VMD_MAX_BONES];
     struct toy_renderer commands;
     struct rasterfall_frontend_state frontend;
     int commands_initialized;
-    int load_attempted, lod_loaded, vmd_loaded;
+    int load_attempted, lod_loaded, lod2_loaded, vmd_loaded;
     int vmd_mapped;
     long load_us;
 };
@@ -330,20 +344,24 @@ static struct rasterfall_developer_character developer_characters[] = {
     { .name = "ST AR-15",
       .model_path = "rasterfall/private-assets/models/maid.rmesh",
       .lod_model_path = "rasterfall/private-assets/models/maid_lod1.rmesh",
+      .lod2_model_path = "rasterfall/private-assets/models/maid_lod2.rmesh",
       .height_source = "MAID_PREVIEW_MATCHED_TO_EULA",
       .x = -15400, .z = -10000, .base_y = -900, .target_height_mm = 1736 },
     { .name = "G11", .model_path = "rasterfall/private-assets/models/maid.rmesh",
       .lod_model_path = "rasterfall/private-assets/models/maid_lod1.rmesh",
+      .lod2_model_path = "rasterfall/private-assets/models/maid_lod2.rmesh",
       .height_source = "MAID_PREVIEW_MATCHED_TO_EULA",
       .x = -14200, .z = -10000, .base_y = -900, .target_height_mm = 1736 },
     { .name = "VECTOR",
       .model_path = "rasterfall/private-assets/models/maid.rmesh",
       .lod_model_path = "rasterfall/private-assets/models/maid_lod1.rmesh",
+      .lod2_model_path = "rasterfall/private-assets/models/maid_lod2.rmesh",
       .height_source = "MAID_PREVIEW_MATCHED_TO_EULA",
       .x = -11800, .z = -10000, .base_y = -900, .target_height_mm = 1736 },
     { .name = "UMP45",
       .model_path = "rasterfall/private-assets/models/maid.rmesh",
       .lod_model_path = "rasterfall/private-assets/models/maid_lod1.rmesh",
+      .lod2_model_path = "rasterfall/private-assets/models/maid_lod2.rmesh",
       .height_source = "MAID_PREVIEW_MATCHED_TO_EULA",
       .x = -10600, .z = -10000, .base_y = -900, .target_height_mm = 1736 }
 };
@@ -375,6 +393,15 @@ static void load_developer_character_job(int worker_id, int task, void *opaque)
                 rasterfall_model_find_bone(&entry->lod_model, "センター"),
                 rasterfall_model_find_bone(&entry->lod_model, "グルーブ"));
             entry->lod_loaded = 1;
+        }
+        if (entry->lod2_model_path &&
+            rasterfall_model_load(&entry->lod2_model,
+                                  entry->lod2_model_path) == 0) {
+            rasterfall_model_bind_root_motion(
+                &entry->lod2_model,
+                rasterfall_model_find_bone(&entry->lod2_model, "センター"),
+                rasterfall_model_find_bone(&entry->lod2_model, "グルーブ"));
+            entry->lod2_loaded = 1;
         }
     }
     entry->load_us = render_monotonic_us() - start;
@@ -484,6 +511,12 @@ static void sample_developer_character(struct rasterfall_developer_character *en
             rasterfall_model_sample_clip(&entry->lod_model, NULL, 0);
         }
     }
+    if (entry->lod2_loaded && entry->model.bone_transforms &&
+        entry->lod2_model.bone_transforms &&
+        entry->model.bone_count == entry->lod2_model.bone_count)
+        memcpy(entry->lod2_model.bone_transforms,
+               entry->model.bone_transforms,
+               entry->model.bone_count * sizeof(*entry->model.bone_transforms));
 }
 
 int rasterfall_render_set_vmd_walk(const char *model_path, const char *vmd_path)
@@ -2502,9 +2535,13 @@ static int render_characters_parallel(struct toy_renderer *renderer,
     dispatch.surface = &renderer->surface;
     dispatch.depth = renderer->depth;
     dispatch.models[0] = &private_character_model;
-    if (!active_pose_preview && private_character_lod_loaded &&
+    if (!active_pose_preview && private_character_lod2_loaded &&
         character_distance_policy(camera, -13000, -10000, 0, NULL) >=
-            RASTERFALL_CHARACTER_MID)
+            RASTERFALL_CHARACTER_FAR)
+        dispatch.models[0] = &private_character_lod2_model;
+    else if (!active_pose_preview && private_character_lod_loaded &&
+             character_distance_policy(camera, -13000, -10000, 0, NULL) >=
+                 RASTERFALL_CHARACTER_MID)
         dispatch.models[0] = &private_character_lod_model;
     dispatch.visible[0] = !active_pose_preview && private_character_model.data &&
         character_distance_policy(camera, -13000, -10000, 0,
@@ -2533,7 +2570,11 @@ static int render_characters_parallel(struct toy_renderer *renderer,
         prepare_character_command_renderer(&entry->commands, &entry->frontend,
             &entry->commands_initialized, dispatch.surface, dispatch.depth);
         dispatch.models[i + 1] = &entry->model;
-        if (entry->lod_loaded &&
+        if (entry->lod2_loaded &&
+            character_distance_policy(camera, entry->x, entry->z, i + 1,
+                                      NULL) >= RASTERFALL_CHARACTER_FAR)
+            dispatch.models[i + 1] = &entry->lod2_model;
+        else if (entry->lod_loaded &&
             character_distance_policy(camera, entry->x, entry->z, i + 1,
                                       NULL) >= RASTERFALL_CHARACTER_MID)
             dispatch.models[i + 1] = &entry->lod_model;
@@ -2663,6 +2704,16 @@ static int render_private_character(struct toy_renderer *renderer,
                 __printf("rasterfall: Eula LOD vertices=%u triangles=%u\n",
                          private_character_lod_model.vertex_count,
                          private_character_lod_model.index_count / 3);
+            }
+            if (!strcmp(path, eula_actor_profile.model_path) &&
+                rasterfall_model_load(&private_character_lod2_model,
+                    "rasterfall/private-assets/models/eula_lod2.rmesh") == 0 &&
+                private_character_lod2_model.bone_count ==
+                    private_character_model.bone_count) {
+                private_character_lod2_loaded = 1;
+                __printf("rasterfall: Eula LOD2 vertices=%u triangles=%u\n",
+                         private_character_lod2_model.vertex_count,
+                         private_character_lod2_model.index_count / 3);
             }
         }
         private_character_loaded = 1;
@@ -2865,6 +2916,7 @@ static int render_private_character(struct toy_renderer *renderer,
             private_character_animation_us;
     }
     sync_private_character_lod_pose();
+    sync_private_character_lod2_pose();
     load_developer_characters(renderer);
     if (!private_character_model.data ||
         character_quality == RASTERFALL_CHARACTER_HIDDEN)
@@ -5671,9 +5723,15 @@ static int render_ai_teammate(struct toy_renderer *renderer,
             struct rasterfall_model_asset *actor_model =
                 maid_entry && maid_entry->vmd_loaded ?
                 &maid_entry->model : &private_character_model;
-            if (maid_entry && maid_entry->lod_loaded &&
-                character_quality >= RASTERFALL_CHARACTER_MID)
+            if (maid_entry && maid_entry->lod2_loaded &&
+                character_quality >= RASTERFALL_CHARACTER_FAR)
+                actor_model = &maid_entry->lod2_model;
+            else if (maid_entry && maid_entry->lod_loaded &&
+                     character_quality >= RASTERFALL_CHARACTER_MID)
                 actor_model = &maid_entry->lod_model;
+            else if (!maid_entry && private_character_lod2_loaded &&
+                character_quality >= RASTERFALL_CHARACTER_FAR)
+                actor_model = &private_character_lod2_model;
             else if (!maid_entry && private_character_lod_loaded &&
                 character_quality >= RASTERFALL_CHARACTER_MID)
                 actor_model = &private_character_lod_model;

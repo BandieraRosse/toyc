@@ -68,7 +68,7 @@ def skin_keys(data, info):
     return keys
 
 
-def cluster_map(data, info, divisions):
+def cluster_map(data, info, divisions, aggressive=False):
     mins = (i32(data, 20), i32(data, 24), i32(data, 28))
     maxs = (i32(data, 32), i32(data, 36), i32(data, 40))
     spans = tuple(max(1, maxs[i] - mins[i]) for i in range(3))
@@ -81,9 +81,11 @@ def cluster_map(data, info, divisions):
         uv = struct.unpack_from("<HH", data, at + 18)
         cell = tuple((position[a] - mins[a]) * divisions // spans[a]
                      for a in range(3))
-        # UV and primary influences protect seams and animated joints while
-        # still allowing dense, locally redundant surface vertices to merge.
-        key = cell + (uv[0] >> 12, uv[1] >> 12) + skin[i]
+        # Normal LOD protects UV seams and the complete two-weight skin key.
+        # LOD2 trades texture fidelity for stronger reduction, but keeps the
+        # primary-bone partition so unrelated animated limbs do not collapse.
+        key = (cell + (skin[i][0],) if aggressive else
+               cell + (uv[0] >> 12, uv[1] >> 12) + skin[i])
         representative = representatives.setdefault(key, i)
         mapped.append(representative)
     return mapped
@@ -114,8 +116,8 @@ def original_primitive(data, info, primitive):
             for j in range(first, first + count)]
 
 
-def simplify(data, info, divisions):
-    mapped = cluster_map(data, info, divisions)
+def simplify(data, info, divisions, aggressive=False):
+    mapped = cluster_map(data, info, divisions, aggressive)
     output = []
     counts = []
     for primitive in range(info["primitives"]):
@@ -140,9 +142,13 @@ def main():
         help="comma-separated primitive indices to keep byte-for-byte; "
              "all other primitives use --ratio",
     )
+    parser.add_argument(
+        "--aggressive", action="store_true",
+        help="use LOD2 clustering: drop UV/secondary-weight protection",
+    )
     args = parser.parse_args()
-    if not 0.05 <= args.ratio < 1.0:
-        parser.error("--ratio must be in [0.05, 1.0)")
+    if not 0.01 <= args.ratio < 1.0:
+        parser.error("--ratio must be in [0.01, 1.0)")
     data = args.input.read_bytes()
     info = validate(data)
     preserved = set()
@@ -160,7 +166,7 @@ def main():
             parser.error("--primitive-ratios must contain one non-negative ratio per primitive")
         if preserved:
             parser.error("--preserve-primitives cannot be combined with --primitive-ratios")
-        maps = {divisions: cluster_map(data, info, divisions)
+        maps = {divisions: cluster_map(data, info, divisions, args.aggressive)
                 for divisions in range(4, 129)}
         indices, counts, selected = [], [], []
         for primitive, ratio in enumerate(ratios):
@@ -184,7 +190,7 @@ def main():
             selected.append(choice[1])
         divisions = "profile[" + ",".join(str(value) for value in selected) + "]"
     elif preserved:
-        maps = {divisions: cluster_map(data, info, divisions)
+        maps = {divisions: cluster_map(data, info, divisions, args.aggressive)
                 for divisions in range(4, 129)}
         indices, counts, selected = [], [], []
         for primitive in range(info["primitives"]):
@@ -210,7 +216,7 @@ def main():
         target = info["indices"] * args.ratio
         best = None
         for divisions in range(4, 129):
-            indices, counts = simplify(data, info, divisions)
+            indices, counts = simplify(data, info, divisions, args.aggressive)
             score = abs(len(indices) - target)
             if best is None or score < best[0]:
                 best = score, divisions, indices, counts

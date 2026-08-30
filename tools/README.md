@@ -53,6 +53,7 @@ tools/rmesh_lod.py input.rmesh output_lod1.rmesh --ratio 0.4
 
 重要的材质 primitive 可用 `--preserve-primitives 0,1,...` 原样保留，其余
 primitive 继续使用 `--ratio` 简化；优菈的 `make lod-eula` 会保留头发和脸部相关组。
+`--aggressive` 用于 8 米以上的 LOD2，会放宽 UV/次要骨骼保护以获得约 1000 面的激进减面。
 
 `rmesh_lod.py` 对每个材质 primitive 做确定性的蒙皮/UV 感知顶点聚类，保留原始
 顶点表、骨骼、动画和材质数据，只重建简化索引。`name_lodN.rmesh` 在运行时共享

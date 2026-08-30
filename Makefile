@@ -1013,7 +1013,7 @@ $(BUILD)/wayland_fps: $(BUILD)/rasterfall
 	@ln -sf rasterfall $@
 
 .PHONY: rasterfall rasterfall-embedded wayland_fps app-rasterfall-embedded \
-	lod-characters lod-eula lod-maid lod-ar15 lod-ump45 lod-vector lod-g11 \
+	lod-characters lod-eula lod-eula2 lod-maid lod-maid2 lod-ar15 lod-ump45 lod-vector lod-g11 \
 	rasterfall-blender-deps import-maid
 rasterfall: $(BUILD)/rasterfall
 rasterfall-embedded app-rasterfall-embedded: $(BUILD)/rasterfall-embedded
@@ -1027,17 +1027,25 @@ import-maid:
 		rasterfall/private-assets/source/maid/Maid.fbx maid
 
 # 私有角色模型的确定性中距离 LOD；输出与源模型共享纹理目录。
-lod-characters: lod-eula lod-maid lod-ar15 lod-ump45 lod-vector lod-g11
+lod-characters: lod-eula lod-eula2 lod-maid lod-maid2 lod-ar15 lod-ump45 lod-vector lod-g11
 
 lod-eula:
 	tools/rmesh_lod.py rasterfall/private-assets/models/eula.rmesh \
 		rasterfall/private-assets/models/eula_lod1.rmesh --ratio 0.25 \
 		--preserve-primitives 0,1,15,16,17,18,19,20,21,22,23,24
 
+lod-eula2:
+	tools/rmesh_lod.py rasterfall/private-assets/models/eula.rmesh \
+		rasterfall/private-assets/models/eula_lod2.rmesh --ratio 0.04 --aggressive
+
 lod-maid:
 	tools/rmesh_lod.py rasterfall/private-assets/models/maid.rmesh \
 		rasterfall/private-assets/models/maid_lod1.rmesh --ratio 0.25 \
 		--preserve-primitives 1,4,5,6,7,8,9,10,11
+
+lod-maid2:
+	tools/rmesh_lod.py rasterfall/private-assets/models/maid.rmesh \
+		rasterfall/private-assets/models/maid_lod2.rmesh --ratio 0.2 --aggressive
 
 lod-ar15:
 	tools/rmesh_lod.py rasterfall/private-assets/models/st_ar15.rmesh \
