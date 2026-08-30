@@ -12,20 +12,16 @@
 #include "tlibc_everything.h"
 #include "net.h"
 #include "errno.h"
+#include "rasterfall_public_protocol.h"
 
 #define PUNCH_MAGIC_0 'R'
 #define PUNCH_MAGIC_1 'F'
 #define PUNCH_MAGIC_2 'P'
 #define PUNCH_MAGIC_3 '2'
-#define PUNCH_VERSION 2
-#define PUNCH_REGISTER 1
-#define PUNCH_MATCH 2
 #define PUNCH_MAX_ROOMS 128
-#define PUNCH_PORT 28461
 #define PUNCH_PEER_TIMEOUT_MS 12000
-#define PUNCH_RELAY_MATCH 1
 #define PUNCH_MAX_PACKET 3000
-#define PUNCH_RELAY_ROOM_MIN 5000
+#define PUNCH_GUEST_MAX 3
 
 struct punch_peer {
     int active;
@@ -41,8 +37,7 @@ struct punch_room {
     unsigned long generation;
     long created_ms;
     struct punch_peer host;
-    struct punch_peer guest;
-    struct punch_peer guests[2];
+    struct punch_peer guests[PUNCH_GUEST_MAX];
 };
 
 static struct punch_room rooms[PUNCH_MAX_ROOMS];
@@ -107,11 +102,19 @@ static uint32_t new_token(int room_id)
 
 static struct punch_room *find_room(int id)
 {
-    int i, free_slot = -1;
+    int i;
     for (i = 0; i < PUNCH_MAX_ROOMS; i++) {
         if (rooms[i].active && rooms[i].room_id == id) return &rooms[i];
-        if (free_slot < 0 && !rooms[i].active) free_slot = i;
     }
+    return NULL;
+}
+
+static struct punch_room *create_room(int id)
+{
+    int free_slot = -1, i;
+    if (find_room(id)) return NULL;
+    for (i = 0; i < PUNCH_MAX_ROOMS; i++)
+        if (!rooms[i].active) { free_slot = i; break; }
     if (free_slot < 0) return NULL;
     memset(&rooms[free_slot], 0, sizeof(rooms[free_slot]));
     rooms[free_slot].active = 1;
@@ -135,11 +138,7 @@ static void expire_rooms(long now)
             clear_room(room, "host timeout");
             continue;
         }
-        if (room->guest.active && now - room->guest.last_seen_ms > PUNCH_PEER_TIMEOUT_MS) {
-            log_peer("guest timeout", &room->guest);
-            memset(&room->guest, 0, sizeof(room->guest));
-        }
-        for (int i = 0; i < 2; i++)
+        for (int i = 0; i < PUNCH_GUEST_MAX; i++)
             if (room->guests[i].active &&
                 now - room->guests[i].last_seen_ms > PUNCH_PEER_TIMEOUT_MS) {
                 log_peer("guest timeout", &room->guests[i]);
@@ -150,22 +149,20 @@ static void expire_rooms(long now)
 
 static void print_room(const struct punch_room *room)
 {
-    char host[64], guest[64];
+    char host[64];
     int i;
     if (!room || !room->active) return;
     if (room->host.active) address_text(&room->host.address, host, sizeof(host));
     else strcpy(host, "-");
-    if (room->guest.active) address_text(&room->guest.address, guest, sizeof(guest));
-    else strcpy(guest, "-");
-    __printf("room %04d gen=%lu token=%u host=%s guest=%s\n",
+    __printf("room %04d gen=%lu token=%u host=%s\n",
              room->room_id, room->generation, (unsigned int)room->token,
-             host, guest);
-    for (i = 0; i < 2; i++) {
+             host);
+    for (i = 0; i < PUNCH_GUEST_MAX; i++) {
         char extra[64];
         if (room->guests[i].active)
             address_text(&room->guests[i].address, extra, sizeof(extra));
         else strcpy(extra, "-");
-        __printf("room %04d guest%d=%s\n", room->room_id, i + 2, extra);
+        __printf("room %04d guest%d=%s\n", room->room_id, i + 1, extra);
     }
 }
 
@@ -213,37 +210,77 @@ static void send_match(int fd, const struct punch_peer *destination,
                        uint32_t token, int player_id)
 {
     unsigned char packet[20];
-    memcpy(packet, "RFP2", 4);
-    packet[4] = PUNCH_VERSION; packet[5] = PUNCH_MATCH;
+    memcpy(packet, "RFP3", 4);
+    packet[4] = RASTERFALL_PUBLIC_VERSION;
+    packet[5] = RASTERFALL_PUBLIC_MATCH;
     put_u16(packet + 6, (unsigned int)room_id);
     put_u32(packet + 8, token);
     memcpy(packet + 12, &peer->address.sin_addr.s_addr, 4);
     put_u16(packet + 16, ntohs(peer->address.sin_port));
-    packet[18] = room_id >= PUNCH_RELAY_ROOM_MIN ? PUNCH_RELAY_MATCH : 0;
+    packet[18] = (unsigned char)rasterfall_public_room_uses_relay(room_id);
     packet[19] = (unsigned char)player_id;
     sendto(fd, packet, sizeof(packet), 0,
            (const struct sockaddr *)&destination->address, sizeof(destination->address));
 }
 
+static void send_error(int fd, const struct sockaddr_in *destination,
+                       int room_id, int error)
+{
+    unsigned char packet[RASTERFALL_PUBLIC_ERROR_SIZE];
+    memcpy(packet, "RFP3", 4);
+    packet[4] = RASTERFALL_PUBLIC_VERSION;
+    packet[5] = RASTERFALL_PUBLIC_ERROR;
+    put_u16(packet + 6, (unsigned int)room_id);
+    packet[8] = (unsigned char)error;
+    packet[9] = 0;
+    sendto(fd, packet, sizeof(packet), 0,
+           (const struct sockaddr *)destination, sizeof(*destination));
+}
+
+static void send_registered(int fd, const struct sockaddr_in *destination,
+                            int room_id)
+{
+    unsigned char packet[RASTERFALL_PUBLIC_REGISTERED_SIZE];
+    memcpy(packet, "RFP3", 4);
+    packet[4] = RASTERFALL_PUBLIC_VERSION;
+    packet[5] = RASTERFALL_PUBLIC_REGISTERED;
+    put_u16(packet + 6, (unsigned int)room_id);
+    packet[8] = 0;
+    sendto(fd, packet, sizeof(packet), 0,
+           (const struct sockaddr *)destination, sizeof(*destination));
+}
+
+static void send_room_matches(int fd, const struct punch_room *room)
+{
+    int i;
+    if (!room || !room->host.active) return;
+    for (i = 0; i < PUNCH_GUEST_MAX; i++) {
+        if (!room->guests[i].active) continue;
+        send_match(fd, &room->host, &room->guests[i], room->room_id,
+                   room->token, i + 1);
+        send_match(fd, &room->guests[i], &room->host, room->room_id,
+                   room->token, i + 1);
+    }
+}
+
 static void relay_packet(int fd, const struct sockaddr_in *source,
                          const unsigned char *packet, long size)
 {
-    int i, source_id = -1;
+    int i;
     unsigned char wrapped[PUNCH_MAX_PACKET + 5];
     for (i = 0; i < PUNCH_MAX_ROOMS; i++) {
         struct punch_room *room = &rooms[i];
         int j;
         if (!room->active) continue;
-        if (room->room_id < PUNCH_RELAY_ROOM_MIN) continue;
+        int source_id = -1;
+        if (!rasterfall_public_room_uses_relay(room->room_id)) continue;
         if (room->host.active && same_address(&room->host.address, source))
             source_id = 0;
-        else if (room->guest.active && same_address(&room->guest.address, source))
-            source_id = 1;
-        else for (j = 0; j < 2; j++)
+        else for (j = 0; j < PUNCH_GUEST_MAX; j++)
             if (room->guests[j].active &&
                 same_address(&room->guests[j].address, source))
-                source_id = j + 2;
-        if (source_id < 0) return;
+                source_id = j + 1;
+        if (source_id < 0) continue;
         if (size + 5 > (long)sizeof(wrapped)) return;
         wrapped[0] = 'R'; wrapped[1] = 'F'; wrapped[2] = 'R'; wrapped[3] = '4';
         wrapped[4] = (unsigned char)source_id;
@@ -252,12 +289,8 @@ static void relay_packet(int fd, const struct sockaddr_in *source,
             sendto(fd, wrapped, (size_t)size + 5, 0,
                    (const struct sockaddr *)&room->host.address,
                    sizeof(room->host.address));
-        if (room->guest.active && source_id != 1)
-            sendto(fd, wrapped, (size_t)size + 5, 0,
-                   (const struct sockaddr *)&room->guest.address,
-                   sizeof(room->guest.address));
-        for (j = 0; j < 2; j++)
-            if (room->guests[j].active && source_id != j + 2)
+        for (j = 0; j < PUNCH_GUEST_MAX; j++)
+            if (room->guests[j].active && source_id != j + 1)
                 sendto(fd, wrapped, (size_t)size + 5, 0,
                        (const struct sockaddr *)&room->guests[j].address,
                        sizeof(room->guests[j].address));
@@ -267,7 +300,7 @@ static void relay_packet(int fd, const struct sockaddr_in *source,
 
 int main(int argc, char **argv)
 {
-    int fd, port = PUNCH_PORT, reuse = 1, running = 1;
+    int fd, port = RASTERFALL_PUBLIC_PORT, reuse = 1, running = 1;
     struct sockaddr_in local, source;
     unsigned char packet[PUNCH_MAX_PACKET];
     char command[256];
@@ -313,8 +346,10 @@ int main(int argc, char **argv)
         long received = recvfrom(fd, packet, sizeof(packet), 0,
                                  (struct sockaddr *)&source, &length);
         if (received <= 0) continue;
-        if (received < 12 || memcmp(packet, "RFP2", 4) != 0 ||
-            packet[4] != PUNCH_VERSION || packet[5] != PUNCH_REGISTER) {
+        if (received < RASTERFALL_PUBLIC_REGISTER_SIZE ||
+            memcmp(packet, "RFP3", 4) != 0 ||
+            packet[4] != RASTERFALL_PUBLIC_VERSION ||
+            packet[5] != RASTERFALL_PUBLIC_REGISTER) {
             relay_packet(fd, &source, packet, received);
             continue;
         }
@@ -323,43 +358,54 @@ int main(int argc, char **argv)
             int role = packet[10];
             struct punch_room *room;
             struct punch_peer *slot;
-            if (room_id < 0 || room_id > 9999 || (role != 1 && role != 2)) continue;
+            uint32_t nonce = get_u32(packet + 8);
+            if (!rasterfall_public_room_valid(room_id) ||
+                (role != RASTERFALL_PUBLIC_ROLE_HOST &&
+                 role != RASTERFALL_PUBLIC_ROLE_GUEST)) continue;
             room = find_room(room_id);
-            if (!room) continue;
-            slot = role == 1 ? &room->host : NULL;
-            if (role != 1) {
-                struct punch_peer *candidates[3] = {
-                    &room->guest, &room->guests[0], &room->guests[1]
-                };
+            if (role == RASTERFALL_PUBLIC_ROLE_HOST) {
+                if (!room) room = create_room(room_id);
+                if (!room) {
+                    send_error(fd, &source, room_id,
+                               RASTERFALL_PUBLIC_ERROR_SERVER_FULL);
+                    continue;
+                }
+                slot = &room->host;
+                if (slot->active &&
+                    !(same_address(&slot->address, &source) &&
+                      slot->nonce == nonce)) {
+                    send_error(fd, &source, room_id,
+                               RASTERFALL_PUBLIC_ERROR_ROOM_EXISTS);
+                    continue;
+                }
+            } else {
+                if (!room || !room->host.active) {
+                    send_error(fd, &source, room_id,
+                               RASTERFALL_PUBLIC_ERROR_ROOM_NOT_FOUND);
+                    continue;
+                }
                 slot = NULL;
-                for (int i = 0; i < 3; i++)
-                    if (candidates[i]->active &&
-                        same_address(&candidates[i]->address, &source)) {
-                        slot = candidates[i]; break;
+                for (int i = 0; i < PUNCH_GUEST_MAX; i++)
+                    if (room->guests[i].active &&
+                        same_address(&room->guests[i].address, &source) &&
+                        room->guests[i].nonce == nonce) {
+                        slot = &room->guests[i]; break;
                     }
                 if (!slot)
-                    for (int i = 0; i < 3; i++)
-                        if (!candidates[i]->active) {
-                            slot = candidates[i]; break;
+                    for (int i = 0; i < PUNCH_GUEST_MAX; i++)
+                        if (!room->guests[i].active) {
+                            slot = &room->guests[i]; break;
                         }
+                if (!slot) {
+                    send_error(fd, &source, room_id,
+                               RASTERFALL_PUBLIC_ERROR_ROOM_FULL);
+                    continue;
+                }
             }
-            if (!slot) continue;
             {
-                uint32_t nonce = get_u32(packet + 8);
                 int same_session = slot->active &&
                     same_address(&slot->address, &source) &&
                     slot->nonce == nonce;
-                /* A new host session owns the room.  Clear the old guest so
-                 * the host cannot render a stale player after room reuse. */
-                if (role == 1 && slot->active && !same_session) {
-                    __printf("punch-server: new host registration for room %04d\n",
-                             room_id);
-                    clear_room(room, "host session replaced");
-                    room = find_room(room_id);
-                    slot = &room->host;
-                }
-                if (role != 1 && slot->active && !same_session)
-                    log_peer("guest session replaced", slot);
                 slot->active = 1;
                 memcpy(&slot->address, &source, sizeof(source));
                 slot->nonce = nonce;
@@ -367,21 +413,14 @@ int main(int argc, char **argv)
                 slot->registrations++;
                 if (!same_session || slot->registrations == 1 ||
                     (slot->registrations % 10) == 0)
-                    log_peer(role == 1 ? "host register" : "guest register", slot);
+                    log_peer(role == RASTERFALL_PUBLIC_ROLE_HOST ?
+                             "host register" : "guest register", slot);
             }
-            if (room->host.active && room->guest.active) {
+            send_registered(fd, &source, room_id);
+            if (room->host.active) {
                 __printf("punch-server: match room %04d generation=%lu\n",
                          room_id, room->generation);
-                send_match(fd, &room->host, &room->guest, room_id,
-                           room->token, 1);
-                send_match(fd, &room->guest, &room->host, room_id,
-                           room->token, 1);
-                for (int i = 0; i < 2; i++) if (room->guests[i].active) {
-                    send_match(fd, &room->host, &room->guests[i], room_id,
-                               room->token, i + 2);
-                    send_match(fd, &room->guests[i], &room->host, room_id,
-                               room->token, i + 2);
-                }
+                send_room_matches(fd, room);
             }
         }
     }

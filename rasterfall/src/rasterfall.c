@@ -1269,6 +1269,7 @@ static int wait_for_network_connection(struct toy_window *window,
             return -2;
         rasterfall_net_poll(net);
         rasterfall_net_update_connection(net);
+        if (net->public_error) return -3;
         if (net->connected) return 0;
         ready = toy_window_begin_frame(window, &surface);
         if (ready < 0) return -2;
@@ -2664,6 +2665,21 @@ startup_again:
             requested_net_mode = RASTERFALL_NET_OFF;
             goto startup_again;
         }
+        {
+            int connect_result = wait_for_network_connection(window, &renderer,
+                                                             &input, &events,
+                                                             &net, "PUBLIC ROOM",
+                                                             RASTERFALL_NET_PUNCH_PORT);
+            if (connect_result != 0) {
+                startup_error = connect_result == -2 ?
+                    "PUBLIC ROOM CANCELLED" : connect_result == -3 ?
+                    "PUBLIC ROOM EXISTS OR SERVER IS FULL" :
+                    "PUBLIC ROOM FAILED: SERVER UNREACHABLE";
+                rasterfall_net_close(&net);
+                requested_net_mode = RASTERFALL_NET_OFF;
+                goto startup_again;
+            }
+        }
         snprintf(host_address, sizeof(host_address), "ROOM %04d", public_room_id);
         __printf("rasterfall: public room %04d, punch server %s:%d\n",
                  public_room_id, RASTERFALL_NET_PUNCH_SERVER,
@@ -2685,8 +2701,11 @@ startup_again:
                                                              RASTERFALL_NET_PUNCH_PORT);
             if (connect_result != 0) {
                 startup_error = connect_result == -2 ?
-                    "PUBLIC JOIN CANCELLED" :
-                    "PUBLIC JOIN TIMEOUT: ROOM NOT FOUND";
+                    "PUBLIC JOIN CANCELLED" : connect_result == -3 ?
+                    (net.public_error == RASTERFALL_PUBLIC_ERROR_ROOM_FULL ?
+                     "PUBLIC ROOM IS FULL" :
+                     "PUBLIC ROOM NOT FOUND") :
+                    "PUBLIC JOIN TIMEOUT: HOST UNREACHABLE";
                 rasterfall_net_close(&net);
                 requested_net_mode = RASTERFALL_NET_OFF;
                 goto startup_again;

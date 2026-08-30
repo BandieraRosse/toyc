@@ -28,6 +28,7 @@ GAME_SRCS := rasterfall/src/rasterfall.c \
              rasterfall/src/rasterfall_humanoid_retarget.c \
              rasterfall/src/rasterfall_ai.c \
              rasterfall/src/rasterfall_net.c \
+             rasterfall/src/rasterfall_net_transport.c \
              rasterfall/src/rasterfall_net_discovery.c \
              rasterfall/src/rasterfall_perf.c \
              rasterfall/src/rasterfall_calibration.c \

@@ -3,6 +3,7 @@
 
 #include "core.h"
 #include "net.h"
+#include "rasterfall_public_protocol.h"
 #include "rasterfall_camera.h"
 #include "rasterfall_session.h"
 
@@ -23,7 +24,7 @@
 #define RASTERFALL_NET_DISCOVERY_PORT 28459
 #define RASTERFALL_NET_DISCOVERY_MAX_ROOMS 8
 #define RASTERFALL_NET_PUNCH_SERVER "47.82.117.182"
-#define RASTERFALL_NET_PUNCH_PORT 28461
+#define RASTERFALL_NET_PUNCH_PORT RASTERFALL_PUBLIC_PORT
 
 enum rasterfall_net_mode {
     RASTERFALL_NET_OFF,
@@ -367,6 +368,8 @@ struct rasterfall_net {
     uint32_t public_nonce;
     uint32_t public_token;
     int public_matched;
+    int public_registered;
+    int public_error;
     struct sockaddr_in public_server;
     long last_public_register_ms;
     long last_public_punch_ms;
