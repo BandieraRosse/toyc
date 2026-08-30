@@ -3814,8 +3814,13 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
          * countdown through snapshots would repeatedly extend the flash at
          * snapshot frequency and make it last longer on clients than hosts. */
         if (own->hp < session->game_state.hp &&
-            session->game_state.hp > 0)
+            session->game_state.hp > 0) {
             session->game_state.damage_flash_ms = TOY_GAME_DAMAGE_FLASH_MS;
+            /* The host's shared combat event stream is intentionally not
+             * relied upon for a local hit cue: HP acknowledgement is the
+             * reliable, player-specific damage signal. */
+            toy_game_emit_event(&session->game_state, TOY_GAME_EV_BITE);
+        }
         session->game_state.hp = own->hp;
         session->game_state.player_down = own->downed;
         /* Local viewmodel presentation is immediate and is not rewound by a

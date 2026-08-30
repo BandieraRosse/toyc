@@ -2487,6 +2487,17 @@ static void session_step_client_mode(struct rasterfall_session *session,
             session->banner_text = NULL;
         }
     }
+    /* AI simulation only runs on the host.  Clients still own the visual
+     * idle/walk cross-fade for snapshot actors, so advance that small clock
+     * without touching their authoritative animation id/time. */
+    if (!suppress_presentation)
+        for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
+            struct toy_game_actor *actor = &session->game_state.actors[i];
+            if (!actor->active || actor->locomotion_blend_ms >= 200) continue;
+            actor->locomotion_blend_ms += dt_ms;
+            if (actor->locomotion_blend_ms > 200)
+                actor->locomotion_blend_ms = 200;
+        }
     if (suppress_presentation) {
         session->game_state.animation = saved_animation;
         session->game_state.event_count = saved_events;
