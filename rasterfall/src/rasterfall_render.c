@@ -216,6 +216,8 @@ static int render_skeletal_rifle(
 static struct rasterfall_model_asset gallery_models[RASTERFALL_MODEL_MAX_GALLERY];
 static int gallery_loaded;
 static struct rasterfall_model_asset private_character_model;
+static struct rasterfall_model_asset private_character_lod_model;
+static int private_character_lod_loaded;
 static struct rasterfall_vmd_clip private_character_vmd;
 static struct rasterfall_animation_clip private_character_vmd_clip;
 static struct rasterfall_animation_track private_character_vmd_tracks[RASTERFALL_VMD_MAX_BONES];
@@ -274,6 +276,18 @@ static struct toy_renderer private_character_commands;
 static struct rasterfall_frontend_state private_character_frontend;
 static int private_character_commands_initialized;
 static long private_character_animation_us;
+
+static void sync_private_character_lod_pose(void)
+{
+    if (!private_character_lod_loaded || !private_character_model.bone_transforms ||
+        !private_character_lod_model.bone_transforms ||
+        private_character_model.bone_count != private_character_lod_model.bone_count)
+        return;
+    memcpy(private_character_lod_model.bone_transforms,
+           private_character_model.bone_transforms,
+           private_character_model.bone_count *
+               sizeof(*private_character_model.bone_transforms));
+}
 struct rasterfall_skeletal_actor_profile {
     const char *model_path;
     const char *walk_path;
@@ -315,17 +329,21 @@ struct rasterfall_developer_character {
 static struct rasterfall_developer_character developer_characters[] = {
     { .name = "ST AR-15",
       .model_path = "rasterfall/private-assets/models/maid.rmesh",
+      .lod_model_path = "rasterfall/private-assets/models/maid_lod1.rmesh",
       .height_source = "MAID_PREVIEW_MATCHED_TO_EULA",
       .x = -15400, .z = -10000, .base_y = -900, .target_height_mm = 1736 },
     { .name = "G11", .model_path = "rasterfall/private-assets/models/maid.rmesh",
+      .lod_model_path = "rasterfall/private-assets/models/maid_lod1.rmesh",
       .height_source = "MAID_PREVIEW_MATCHED_TO_EULA",
       .x = -14200, .z = -10000, .base_y = -900, .target_height_mm = 1736 },
     { .name = "VECTOR",
       .model_path = "rasterfall/private-assets/models/maid.rmesh",
+      .lod_model_path = "rasterfall/private-assets/models/maid_lod1.rmesh",
       .height_source = "MAID_PREVIEW_MATCHED_TO_EULA",
       .x = -11800, .z = -10000, .base_y = -900, .target_height_mm = 1736 },
     { .name = "UMP45",
       .model_path = "rasterfall/private-assets/models/maid.rmesh",
+      .lod_model_path = "rasterfall/private-assets/models/maid_lod1.rmesh",
       .height_source = "MAID_PREVIEW_MATCHED_TO_EULA",
       .x = -10600, .z = -10000, .base_y = -900, .target_height_mm = 1736 }
 };
@@ -2484,6 +2502,10 @@ static int render_characters_parallel(struct toy_renderer *renderer,
     dispatch.surface = &renderer->surface;
     dispatch.depth = renderer->depth;
     dispatch.models[0] = &private_character_model;
+    if (!active_pose_preview && private_character_lod_loaded &&
+        character_distance_policy(camera, -13000, -10000, 0, NULL) >=
+            RASTERFALL_CHARACTER_MID)
+        dispatch.models[0] = &private_character_lod_model;
     dispatch.visible[0] = !active_pose_preview && private_character_model.data &&
         character_distance_policy(camera, -13000, -10000, 0,
             &private_character_frontend) != RASTERFALL_CHARACTER_HIDDEN &&
@@ -2511,6 +2533,10 @@ static int render_characters_parallel(struct toy_renderer *renderer,
         prepare_character_command_renderer(&entry->commands, &entry->frontend,
             &entry->commands_initialized, dispatch.surface, dispatch.depth);
         dispatch.models[i + 1] = &entry->model;
+        if (entry->lod_loaded &&
+            character_distance_policy(camera, entry->x, entry->z, i + 1,
+                                      NULL) >= RASTERFALL_CHARACTER_MID)
+            dispatch.models[i + 1] = &entry->lod_model;
     }
     {
         private_character_frontend.disable_edge |= edge_pass_enabled == 0;
@@ -2621,11 +2647,24 @@ static int render_private_character(struct toy_renderer *renderer,
     enum rasterfall_character_distance_quality character_quality;
     int character_update;
     if (!private_character_loaded) {
-        if (rasterfall_model_load(&private_character_model, path) == 0)
+        if (rasterfall_model_load(&private_character_model, path) == 0) {
             __printf("rasterfall: Eula target_height_mm=%d scale_milli=%d\n",
                      eula_actor_profile.target_height_mm,
                      character_model_scale(&private_character_model,
                                            eula_actor_profile.target_height_mm));
+            /* Pair the stock model only with the LOD regenerated from it.
+             * Custom model overrides retain their existing full-model path. */
+            if (!strcmp(path, eula_actor_profile.model_path) &&
+                rasterfall_model_load(&private_character_lod_model,
+                    "rasterfall/private-assets/models/eula_lod1.rmesh") == 0 &&
+                private_character_lod_model.bone_count ==
+                    private_character_model.bone_count) {
+                private_character_lod_loaded = 1;
+                __printf("rasterfall: Eula LOD vertices=%u triangles=%u\n",
+                         private_character_lod_model.vertex_count,
+                         private_character_lod_model.index_count / 3);
+            }
+        }
         private_character_loaded = 1;
     }
     character_quality = character_distance_policy(
@@ -2825,6 +2864,7 @@ static int render_private_character(struct toy_renderer *renderer,
         scene_stats.character_animation_outside_us =
             private_character_animation_us;
     }
+    sync_private_character_lod_pose();
     load_developer_characters(renderer);
     if (!private_character_model.data ||
         character_quality == RASTERFALL_CHARACTER_HIDDEN)
@@ -5614,6 +5654,15 @@ static int render_ai_teammate(struct toy_renderer *renderer,
                 frontend_override = 0;
                 continue;
             }
+            /* Skeletal weapons read the character attachment every frame.
+             * Do not reuse a stale skinned body while rifle_solve_hands()
+             * moves the same pose; otherwise the AK can visibly oscillate
+             * against the hands at mid/far LOD update intervals. */
+            if (actor->current_slot >= 0 &&
+                actor->current_slot < TOY_GAME_WEAPON_SLOTS &&
+                rasterfall_weapon_asset_profile(
+                    actor->slots[actor->current_slot].weapon)->skeletal)
+                actor_frontend->reuse_skinned_vertices = 0;
             character_update = !actor_frontend->reuse_skinned_vertices;
             frontend_override = actor_frontend;
             struct rasterfall_developer_character *maid_entry =
@@ -5622,6 +5671,12 @@ static int render_ai_teammate(struct toy_renderer *renderer,
             struct rasterfall_model_asset *actor_model =
                 maid_entry && maid_entry->vmd_loaded ?
                 &maid_entry->model : &private_character_model;
+            if (maid_entry && maid_entry->lod_loaded &&
+                character_quality >= RASTERFALL_CHARACTER_MID)
+                actor_model = &maid_entry->lod_model;
+            else if (!maid_entry && private_character_lod_loaded &&
+                character_quality >= RASTERFALL_CHARACTER_MID)
+                actor_model = &private_character_lod_model;
             const struct rasterfall_animation_clip *locomotion_clip =
                 maid_entry && maid_entry->vmd_loaded ?
                 &maid_entry->walk :
