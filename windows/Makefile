@@ -33,7 +33,9 @@ GAME_SRCS := rasterfall/src/rasterfall.c \
              rasterfall/src/rasterfall_perf.c \
              rasterfall/src/rasterfall_calibration.c \
              rasterfall/src/rasterfall_console.c \
+             rasterfall/src/rasterfall_options.c \
              rasterfall/src/rasterfall_render.c \
+             rasterfall/src/render/rasterfall_render_frontend.c \
              rasterfall/src/rasterfall_session.c \
              rasterfall/src/rasterfall_sky.c \
              rasterfall/src/rasterfall_viewmodel.c
