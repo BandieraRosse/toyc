@@ -150,7 +150,7 @@ static int model_load_skin(struct rasterfall_model_asset *asset,
     unsigned int bone_count, bone_bytes, vertex_count, vertex_bytes, names_bytes;
     const unsigned char *bone_data, *skin_vertices, *names;
     unsigned long required;
-    unsigned int i, invalid_references = 0, bdef1 = 0, bdef2 = 0;
+    unsigned int i, invalid_references = 0;
     unsigned int j;
     unsigned int expected_bone_bytes;
     if (bytes < RASTERFALL_MODEL_SKIN_HEADER_BYTES ||
@@ -281,11 +281,9 @@ static int model_load_skin(struct rasterfall_model_asset *asset,
         unsigned int bone0 = model_u16(record), bone1 = model_u16(record + 2);
         unsigned int weight = model_u16(record + 4), type = record[6];
         if (type == 0) {
-            bdef1++;
             if (bone0 >= bone_count || bone1 != 0xffffU || weight != 65535U)
                 invalid_references++;
         } else if (type == 1) {
-            bdef2++;
             if (bone0 >= bone_count || bone1 >= bone_count)
                 invalid_references++;
         } else invalid_references++;
@@ -304,16 +302,6 @@ static int model_load_skin(struct rasterfall_model_asset *asset,
     asset->skinning_enabled = 1;
     asset->animation.pose = RASTERFALL_MODEL_POSE_BIND;
     if (rasterfall_model_update_bones(asset) < 0) return -1;
-    __printf("rasterfall: skeleton bones=%u roots=%u max_depth=%u BDEF1=%u BDEF2=%u invalid_bone_references=0\n",
-             bone_count, asset->root_bone_count, asset->max_bone_depth,
-             bdef1, bdef2);
-    __printf("rasterfall: demo bones right_arm={index=%d,name=\"%s\"} left_arm={index=%d,name=\"%s\"} body={index=%d,name=\"%s\"}\n",
-             asset->animation.demo_right_arm,
-             asset->animation.demo_right_arm >= 0 ? asset->bones[asset->animation.demo_right_arm].name : "not found",
-             asset->animation.demo_left_arm,
-             asset->animation.demo_left_arm >= 0 ? asset->bones[asset->animation.demo_left_arm].name : "not found",
-             asset->animation.demo_body,
-             asset->animation.demo_body >= 0 ? asset->bones[asset->animation.demo_body].name : "not found");
     return 0;
 }
 
@@ -452,17 +440,6 @@ int rasterfall_model_load(struct rasterfall_model_asset *asset,
                 asset->textures.views[i].channels = asset->textures.assets[i].channels;
                 asset->textures.views[i].has_transparency = asset->textures.assets[i].has_transparency;
             }
-        }
-        if (asset->format_version >= 3) for (i = 0; i < asset->material_count; i++) {
-            unsigned int base = model_u32(asset->materials + i * asset->material_bytes + 8);
-            unsigned int packed = model_u32(asset->materials + i * asset->material_bytes + 12);
-            unsigned int sphere = packed & 0xffffU;
-            unsigned int mode = (packed >> 16) & 3U;
-            if (sphere != 0xffffU)
-                __printf("rasterfall: material=%u base_texture_index=%u sphere_texture_index=%u sphere_mode=%u uv_source=%s\n",
-                         i, base, sphere, mode,
-                         mode == 3 ? "ADDITIONAL_UV" :
-                         mode == 0 ? "DISABLED" : "SPHERE_UV");
         }
     }
     return 0;

@@ -345,30 +345,16 @@ struct rasterfall_developer_character {
  * identity.  The metadata is also the intended home for future scale/yaw or
  * ground-offset corrections discovered during content validation. */
 static struct rasterfall_developer_character developer_characters[] = {
-    { .name = "ST AR-15",
+    { .name = "Maid",
       .model_path = "rasterfall/private-assets/models/maid.rmesh",
       .lod_model_path = "rasterfall/private-assets/models/maid_lod1.rmesh",
       .lod2_model_path = "rasterfall/private-assets/models/maid_lod2.rmesh",
       .height_source = "MAID_PREVIEW_MATCHED_TO_EULA",
-      .x = -15400, .z = -10000, .base_y = -900, .target_height_mm = 1736 },
-    { .name = "G11", .model_path = "rasterfall/private-assets/models/maid.rmesh",
-      .lod_model_path = "rasterfall/private-assets/models/maid_lod1.rmesh",
-      .lod2_model_path = "rasterfall/private-assets/models/maid_lod2.rmesh",
-      .height_source = "MAID_PREVIEW_MATCHED_TO_EULA",
-      .x = -14200, .z = -10000, .base_y = -900, .target_height_mm = 1736 },
-    { .name = "VECTOR",
-      .model_path = "rasterfall/private-assets/models/maid.rmesh",
-      .lod_model_path = "rasterfall/private-assets/models/maid_lod1.rmesh",
-      .lod2_model_path = "rasterfall/private-assets/models/maid_lod2.rmesh",
-      .height_source = "MAID_PREVIEW_MATCHED_TO_EULA",
-      .x = -11800, .z = -10000, .base_y = -900, .target_height_mm = 1736 },
-    { .name = "UMP45",
-      .model_path = "rasterfall/private-assets/models/maid.rmesh",
-      .lod_model_path = "rasterfall/private-assets/models/maid_lod1.rmesh",
-      .lod2_model_path = "rasterfall/private-assets/models/maid_lod2.rmesh",
-      .height_source = "MAID_PREVIEW_MATCHED_TO_EULA",
-      .x = -10600, .z = -10000, .base_y = -900, .target_height_mm = 1736 }
+      .x = -14200, .z = -10000, .base_y = -900, .target_height_mm = 1736 }
 };
+
+#define RASTERFALL_DEVELOPER_CHARACTER_COUNT \
+    ((int)(sizeof(developer_characters) / sizeof(developer_characters[0])))
 
 static void load_developer_character_job(int worker_id, int task, void *opaque)
 {
@@ -420,16 +406,15 @@ static void load_developer_characters(struct toy_renderer *renderer)
                           sizeof(developer_characters[0])); i++)
         if (!developer_characters[i].load_attempted) pending++;
     if (!pending) return;
-    /* Warm one character per frame.  The importer is intentionally kept off
-     * the first-visible path, and spreading its unavoidable synchronous work
-     * prevents four model/LOD/VMD sets from producing one large hitch. */
-    for (i = 0; i < 4; i++) if (!developer_characters[i].load_attempted) {
+    /* Warm the one optional Maid display off the first-visible path. */
+    for (i = 0; i < RASTERFALL_DEVELOPER_CHARACTER_COUNT; i++)
+        if (!developer_characters[i].load_attempted) {
         task = i; break;
     }
     if (task < 0) return;
     developer_characters[task].load_attempted = 1;
     load_developer_character_job(0, task, developer_characters);
-    for (i = 0; i < 4; i++) {
+    for (i = 0; i < RASTERFALL_DEVELOPER_CHARACTER_COUNT; i++) {
         struct rasterfall_developer_character *entry =
             &developer_characters[i];
         if (!entry->load_attempted) continue;
@@ -1595,7 +1580,7 @@ static void select_near_original_model(const struct camera *camera,
         -13000, -900, -10000,
         character_model_scale(&private_character_model,
                               eula_actor_profile.target_height_mm));
-    for (i = 0; i < 4; i++) {
+    for (i = 0; i < RASTERFALL_DEVELOPER_CHARACTER_COUNT; i++) {
         struct rasterfall_developer_character *entry = &developer_characters[i];
         CONSIDER_NEAR_CHARACTER(i + 1, &entry->model, entry->x, entry->base_y,
             entry->z, character_model_scale(&entry->model,
@@ -1609,7 +1594,7 @@ static void select_near_original_model(const struct camera *camera,
         if (!actor->active || actor->kind != TOY_GAME_ACTOR_AI ||
             !actor->anime_character_id) continue;
         entry = actor->anime_character_id >= 2 && actor->anime_character_id <= 5 ?
-            &developer_characters[actor->anime_character_id - 2] : NULL;
+            &developer_characters[0] : NULL;
         asset = entry && entry->vmd_loaded ? &entry->model :
             &private_character_model;
         scale = character_model_scale(asset, eula_actor_profile.target_height_mm);
@@ -2481,11 +2466,11 @@ static int render_model_gallery(struct toy_renderer *renderer,
 struct character_frontend_dispatch {
     const struct camera *camera;
     const struct toy_surface *surface;
-    const struct rasterfall_model_asset *models[5];
+    const struct rasterfall_model_asset *models[2];
     int *depth;
-    unsigned char visible[5];
-    int drawn[5];
-    long wall_us[5];
+    unsigned char visible[2];
+    int drawn[2];
+    long wall_us[2];
 };
 
 static void prepare_character_command_renderer(
@@ -2620,12 +2605,9 @@ static int render_characters_parallel(struct toy_renderer *renderer,
     private_character_commands.job_cancel_flag = &renderer->job_cancelled;
     private_character_frontend.timing.animation_sample_us =
         private_character_animation_us;
-    for (i = 0; i < 4; i++) {
+    for (i = 0; i < RASTERFALL_DEVELOPER_CHARACTER_COUNT; i++) {
         struct rasterfall_developer_character *entry = &developer_characters[i];
-        /* Pose authoring isolates the edited Eula.  Rendering the other four
-         * high-detail developer displays in parallel and then rendering the
-         * preview serially kept all character frontends hot for no authoring
-         * benefit and was the only sustained-load path unique to the editor. */
+        /* Keep the single Maid display independent from the Eula preview. */
         dispatch.visible[i + 1] = !active_pose_preview && entry->model.data &&
             character_distance_policy(camera, entry->x, entry->z, i + 1,
                 &entry->frontend) != RASTERFALL_CHARACTER_HIDDEN &&
@@ -2653,22 +2635,22 @@ static int render_characters_parallel(struct toy_renderer *renderer,
         private_character_frontend.disable_edge |= edge_pass_enabled == 0;
     }
     pipeline_start = render_monotonic_us();
-    if (toy_renderer_parallel_for(renderer, 5, 5,
+    if (toy_renderer_parallel_for(renderer, 2, 2,
                                   character_frontend_job, &dispatch) < 0)
         return -1;
     scene_stats.character_prepare_wall_us =
         render_monotonic_us() - pipeline_start;
     scene_stats.character_task_setup_us = 0;
     scene_stats.character_primitive_wall_us = 0;
-    for (i = 0; i < 5; i++) if (dispatch.visible[i])
+    for (i = 0; i < 2; i++) if (dispatch.visible[i])
         command_sources[source_count++] = i == 0 ?
             &private_character_commands : &developer_characters[i - 1].commands;
     merge_start = render_monotonic_us();
     if (source_count > 0 && toy_renderer_merge_command_batch(renderer,
-            command_sources, source_count, 5) < 0)
+            command_sources, source_count, 2) < 0)
         return -1;
     scene_stats.character_merge_us = render_monotonic_us() - merge_start;
-    for (i = 0; i < 5; i++) {
+    for (i = 0; i < 2; i++) {
         struct rasterfall_frontend_state *state = i == 0 ?
             &private_character_frontend : &developer_characters[i - 1].frontend;
         drawn += dispatch.drawn[i];
@@ -2697,6 +2679,8 @@ static int render_private_character(struct toy_renderer *renderer,
     enum rasterfall_character_distance_quality character_quality;
     int character_update;
     if (!private_character_loaded) {
+        int frame_budget = renderer->frame_budget_ms;
+        toy_renderer_set_frame_budget(renderer, 0);
         if (rasterfall_model_load(&private_character_model, path) == 0) {
             __printf("rasterfall: Eula target_height_mm=%d scale_milli=%d\n",
                      eula_actor_profile.target_height_mm,
@@ -2725,6 +2709,7 @@ static int render_private_character(struct toy_renderer *renderer,
                          private_character_lod2_model.index_count / 3);
             }
         }
+        toy_renderer_set_frame_budget(renderer, frame_budget);
         private_character_loaded = 1;
     }
     character_quality = character_distance_policy(
@@ -2747,6 +2732,8 @@ static int render_private_character(struct toy_renderer *renderer,
         }
         if (requested_vmd && !private_character_vmd_loaded &&
         private_character_model.data) {
+            int frame_budget = renderer->frame_budget_ms;
+            toy_renderer_set_frame_budget(renderer, 0);
             if (rasterfall_vmd_load(&private_character_vmd,
                                 requested_vmd) == 0) {
             rasterfall_vmd_map_model(&private_character_vmd,
@@ -2779,6 +2766,7 @@ static int render_private_character(struct toy_renderer *renderer,
                      requested_vmd);
         } else __fprintf(2, "rasterfall: cannot load VMD walk %s\n",
                          requested_vmd);
+            toy_renderer_set_frame_budget(renderer, frame_budget);
     }
     }
     if (private_character_model.data && active_session && character_update) {
@@ -2926,7 +2914,12 @@ static int render_private_character(struct toy_renderer *renderer,
     }
     sync_private_character_lod_pose();
     sync_private_character_lod2_pose();
-    load_developer_characters(renderer);
+    if (!developer_characters[0].load_attempted) {
+        int frame_budget = renderer->frame_budget_ms;
+        toy_renderer_set_frame_budget(renderer, 0);
+        load_developer_characters(renderer);
+        toy_renderer_set_frame_budget(renderer, frame_budget);
+    }
     if (active_session && active_session->pose_debug_active &&
         active_session->pose_editor.active &&
         active_session->pose_editor.character == 1 &&
@@ -5734,7 +5727,7 @@ static int render_ai_teammate(struct toy_renderer *renderer,
             frontend_override = actor_frontend;
             struct rasterfall_developer_character *maid_entry =
                 actor->anime_character_id >= 2 && actor->anime_character_id <= 5 ?
-                &developer_characters[actor->anime_character_id - 2] : NULL;
+                &developer_characters[0] : NULL;
             struct rasterfall_model_asset *actor_model =
                 maid_entry && maid_entry->vmd_loaded ?
                 &maid_entry->model : &private_character_model;

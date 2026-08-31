@@ -103,6 +103,12 @@ void toy_renderer_set_frame_budget(struct toy_renderer *renderer, int budget_ms)
 {
     if (!renderer) return;
     renderer->frame_budget_ms = budget_ms > 0 ? budget_ms : 0;
+    /* A lazy asset load can happen after toy_renderer_begin() has already
+     * installed this frame's deadline.  Disabling the budget must also clear
+     * that active deadline; otherwise the old 200 ms deadline still cancels
+     * the load's subsequent frontend/raster jobs. */
+    if (renderer->frame_budget_ms == 0)
+        renderer->frame_deadline_us = 0;
 }
 
 /* ── 条带化逐像素光栅化（y 范围由调用方给定，数学与单线程版完全一致） ── */
