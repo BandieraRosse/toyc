@@ -2380,6 +2380,30 @@ static void session_step_client_mode(struct rasterfall_session *session,
                                         (command->buttons & RASTERFALL_CMD_FIRE),
                                     client_hitscan && command->fire_held,
                                     camera->sy, camera->cy, dt_ms);
+        /* Melee damage and projectile creation are host-authoritative, but
+         * their first-person windup must start on the owning client.  The
+         * client intentionally does not call toy_game_fire for these weapons
+         * because that would also mutate the shared world/inventory. */
+        if ((command->buttons & RASTERFALL_CMD_FIRE) &&
+            !session->game_state.reloading &&
+            session->game_state.weapon_switch_timer_ms <= 0) {
+            if (weapon == TOY_GAME_WEAPON_AXE &&
+                session->game_state.melee_timer_ms <= 0) {
+                session->game_state.melee_timer_ms =
+                    TOY_CONFIG_MELEE_SWING_MS;
+                toy_game_animation_set(&session->game_state.animation,
+                                       TOY_GAME_ANIM_MELEE);
+            } else if ((weapon == TOY_GAME_WEAPON_BOMB ||
+                        weapon == TOY_GAME_WEAPON_MOLOTOV) &&
+                       session->game_state.slots[
+                           session->game_state.current_slot].mag > 0 &&
+                       session->game_state.throw_timer_ms <= 0) {
+                session->game_state.throw_timer_ms =
+                    TOY_CONFIG_THROW_COOLDOWN_MS;
+                toy_game_animation_set(&session->game_state.animation,
+                                       TOY_GAME_ANIM_THROW);
+            }
+        }
     }
     /* The client predicts its own weapon state, so it must also predict the
      * presentation transition.  The host path uses toy_game_update_held,

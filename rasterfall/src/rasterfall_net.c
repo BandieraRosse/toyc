@@ -690,8 +690,10 @@ static void net_apply_own_inventory(struct toy_game *game,
             /* Purchases and uses of throwables/pills are host-authoritative. */
             slot->mag = own->mag[i];
             slot->reserve = own->reserve[i];
-        } else if (!game->reloading && slot->mag == own->mag[i] &&
-                   own->reserve[i] > slot->reserve) {
+        } else if (own->reserve[i] > slot->reserve) {
+            /* Ammo boxes refill reserve only.  Comparing the magazine here
+             * used to reject a valid grant whenever the client had fired
+             * another predicted shot before the pickup snapshot arrived. */
             slot->reserve = own->reserve[i];
         }
     }
@@ -3730,6 +3732,16 @@ int rasterfall_net_pipeline_test(void)
         if (inventory_game.slots[2].mag != 2 ||
             inventory_game.slots[3].mag != 5)
             return 24;
+        inventory_game.slots[0].weapon = TOY_GAME_WEAPON_SMG;
+        inventory_game.slots[0].mag = 7;
+        inventory_game.slots[0].reserve = 3;
+        own.slot_weapon[0] = TOY_GAME_WEAPON_SMG;
+        own.mag[0] = 8;
+        own.reserve[0] = 90;
+        net_apply_own_inventory(&inventory_game, &own);
+        if (inventory_game.slots[0].mag != 7 ||
+            inventory_game.slots[0].reserve != 90)
+            return 25;
     }
     /* Reliable special events apply locally and stale CONTROL_END is ignored. */
     {
