@@ -72,20 +72,46 @@ static struct rasterfall_frontend_state frontend_default = {
     .material_double_sided = 1, .gallery_cy = 1024
 };
 struct rasterfall_frontend_slot {
-    pthread_t thread;
-    struct rasterfall_frontend_state *state;
+    pthread_t volatile thread;
+    struct rasterfall_frontend_state *volatile state;
 };
 static struct rasterfall_frontend_slot frontend_slots[8];
 static struct rasterfall_frontend_state *frontend_override;
+static pthread_t frontend_owner_thread;
 static struct rasterfall_frontend_state *frontend_state(void)
 {
     pthread_t self = pthread_self();
     int i;
-    if (frontend_override) return frontend_override;
+    /* A worker binding is more specific than the legacy main-thread
+     * override.  Checking the process-wide override first made every active
+     * character worker share the actor frontend (including its reallocating
+     * vertex cache) whenever the two paths overlapped. */
     for (i = 0; i < 8; i++)
         if (frontend_slots[i].thread == self && frontend_slots[i].state)
             return frontend_slots[i].state;
+    if (frontend_owner_thread == self && frontend_override)
+        return frontend_override;
     return &frontend_default;
+}
+static void frontend_set_override(struct rasterfall_frontend_state *state)
+{
+    frontend_override = state;
+}
+static void frontend_bind_worker(int worker_id,
+                                 struct rasterfall_frontend_state *state)
+{
+    if (worker_id < 0 || worker_id >= 8) return;
+    frontend_slots[worker_id].thread = pthread_self();
+    __sync_synchronize();
+    frontend_slots[worker_id].state = state;
+    __sync_synchronize();
+}
+static void frontend_unbind_worker(int worker_id)
+{
+    if (worker_id < 0 || worker_id >= 8) return;
+    __sync_synchronize();
+    frontend_slots[worker_id].state = 0;
+    __sync_synchronize();
 }
 #define model_setup_timing (frontend_state()->timing)
 #define active_sphere_texture (frontend_state()->sphere_texture)
@@ -2205,8 +2231,7 @@ static void actor_benchmark_job(int worker_id, int actor, void *opaque)
     struct actor_benchmark_dispatch *dispatch = opaque;
     struct actor_benchmark_fixture *job = &dispatch->actors[actor];
     long start = render_monotonic_us();
-    frontend_slots[worker_id].thread = pthread_self();
-    frontend_slots[worker_id].state = &job->state;
+    frontend_bind_worker(worker_id, &job->state);
     __memset(&job->state.timing, 0, sizeof(job->state.timing));
     job->commands.surface = *dispatch->surface;
     job->commands.depth = dispatch->depth;
@@ -2229,7 +2254,7 @@ static void actor_benchmark_job(int worker_id, int actor, void *opaque)
         character_model_scale(&job->model, heights[actor]));
     job->wall_us = render_monotonic_us() - start;
     job->worker_id = worker_id;
-    frontend_slots[worker_id].state = 0;
+    frontend_unbind_worker(worker_id);
 }
 
 /* Fixed five-actor workload used to compare compiler optimization levels and
@@ -2543,8 +2568,8 @@ static void character_frontend_job(int worker_id, int task, void *opaque)
         scale = character_model_scale(model, entry->target_height_mm);
     }
     if (scale < 1) scale = 1;
-    frontend_slots[worker_id].thread = pthread_self();
-    frontend_slots[worker_id].state = state;
+    frontend_bind_worker(worker_id, state);
+    if (toy_renderer_job_cancelled(commands)) goto cleanup;
     if (task > 0) {
         long animation_start = render_monotonic_us();
         if (!state->reuse_skinned_vertices || !state->skinned_vertices_valid)
@@ -2552,6 +2577,7 @@ static void character_frontend_job(int worker_id, int task, void *opaque)
         state->timing.animation_sample_us +=
             render_monotonic_us() - animation_start;
     }
+    if (toy_renderer_job_cancelled(commands)) goto cleanup;
     if (task > 0) {
         int target_x = active_session ? active_session->level.start_x : -13000;
         int target_z = active_session ? active_session->level.start_z : -12000;
@@ -2565,7 +2591,8 @@ static void character_frontend_job(int worker_id, int task, void *opaque)
         commands, dispatch->camera, model, x, y, z, scale, 0,
         (int)model->primitive_count, 0, -1, 1);
     dispatch->wall_us[task] = render_monotonic_us() - start;
-    frontend_slots[worker_id].state = 0;
+cleanup:
+    frontend_unbind_worker(worker_id);
 }
 
 static int render_characters_parallel(struct toy_renderer *renderer,
@@ -5711,7 +5738,7 @@ static int render_ai_teammate(struct toy_renderer *renderer,
             character_quality = character_distance_policy(
                 camera, actor->x, actor->z, i, actor_frontend);
             if (character_quality == RASTERFALL_CHARACTER_HIDDEN) {
-                frontend_override = 0;
+                frontend_set_override(0);
                 continue;
             }
             /* Skeletal weapons read the character attachment every frame.
@@ -5724,7 +5751,7 @@ static int render_ai_teammate(struct toy_renderer *renderer,
                     actor->slots[actor->current_slot].weapon)->skeletal)
                 actor_frontend->reuse_skinned_vertices = 0;
             character_update = !actor_frontend->reuse_skinned_vertices;
-            frontend_override = actor_frontend;
+            frontend_set_override(actor_frontend);
             struct rasterfall_developer_character *maid_entry =
                 actor->anime_character_id >= 2 && actor->anime_character_id <= 5 ?
                 &developer_characters[0] : NULL;
@@ -5860,7 +5887,7 @@ static int render_ai_teammate(struct toy_renderer *renderer,
                     actor->z,actor->sy,actor->cy,weapon,actor->muzzle_flash_ms,
                     actor->animation.id,actor->animation.time_ms,0,0);
             }
-            frontend_override = 0;
+            frontend_set_override(0);
             active_actor_lift=0;continue;
         }
         pixels += render_player_avatar(renderer, camera, actor->x, actor->z,
@@ -6331,6 +6358,7 @@ static int render_particles(struct toy_renderer *renderer, const struct camera *
 #undef fixed_floor_lighting
 void rasterfall_render_bind(struct rasterfall_render_context *ctx)
 {
+    frontend_owner_thread = pthread_self();
     render_ctx = ctx;
     active_session = ctx->session;
     active_effects = ctx->effects;
