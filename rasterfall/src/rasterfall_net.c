@@ -277,6 +277,11 @@ static int decode_reliable_events(const unsigned char *payload, int size,
     if (count < 0 || count > TOY_GAME_MAX_EVENTS ||
         size != NET_RELIABLE_EVENT_BASE + count * NET_RELIABLE_EVENT_SIZE)
         return -1;
+    /* The first reliable packet received after joining establishes the
+     * stream baseline.  Its id may be greater than one because older events
+     * belonged to clients that were already in the room. */
+    if (!net->remote_event_last_id && first_id > 1)
+        net->remote_event_last_id = first_id - 1;
     net->remote_event_count = 0;
     for (i = 0; i < count; i++) {
         const unsigned char *p = payload + NET_RELIABLE_EVENT_BASE +
@@ -725,6 +730,10 @@ static void net_reset_client(struct rasterfall_net *net,
     client->active = 1;
     client->connected = 1;
     client->client_id = id;
+    /* A newly joined client starts consuming the reliable stream at the
+     * current tail.  Events before this point describe a world it never
+     * observed and must not keep the shared queue pinned forever. */
+    client->reliable_event_ack = net->reliable_event_next_id;
     client->revive_target_id = -1;
     client->ai_revive_actor_index = -1;
     if (source) memcpy(&client->address, source, sizeof(*source));
@@ -2597,7 +2606,14 @@ static void net_receive_client_packet(struct rasterfall_net *net,
     client->reported_camera.y = get_i16(payload + 36) + client->airborne_y;
     client->camera = client->reported_camera;
     client->reported_camera_ready = 1;
-    client->reliable_event_ack = get_u32(payload + 20);
+    {
+        uint32_t event_ack = get_u32(payload + 20);
+        /* Redundant input packets can carry an older acknowledgement.  In
+         * particular, a new client reports zero until it receives its first
+         * event; never let that rewind the join-time stream baseline. */
+        if (sequence_after(event_ack, client->reliable_event_ack))
+            client->reliable_event_ack = event_ack;
+    }
     for (i = 0; i < count; i++) {
         struct rasterfall_net_input input;
         struct rasterfall_net_input *slot;
@@ -3852,6 +3868,28 @@ int rasterfall_net_pipeline_test(void)
                 TOY_GAME_AIRBORNE_MS)
             return 22;
     }
+    /* A second client may join after the reliable stream has advanced.  It
+     * adopts the current tail and accepts the first later event instead of
+     * waiting forever for events that predate the connection. */
+    {
+        unsigned char payload[NET_RELIABLE_EVENT_BASE +
+                              NET_RELIABLE_EVENT_SIZE];
+        struct rasterfall_net late;
+        memset(payload, 0, sizeof(payload));
+        rasterfall_net_init(&late);
+        late.reliable_event_next_id = 41;
+        net_reset_client(&late, &late.clients[1], 2, NULL);
+        if (late.clients[1].reliable_event_ack != 41) return 27;
+        put_u32(payload, 42);
+        payload[4] = 1;
+        payload[NET_RELIABLE_EVENT_BASE] = TOY_GAME_EV_KILL;
+        payload[NET_RELIABLE_EVENT_BASE + 1] = put_i8_value(-1);
+        payload[NET_RELIABLE_EVENT_BASE + 2] = put_i8_value(-1);
+        put_u32(payload + NET_RELIABLE_EVENT_BASE + 18, 42);
+        if (decode_reliable_events(payload, sizeof(payload), &late) < 0 ||
+            late.remote_event_count != 1 || late.reliable_event_ack != 42)
+            return 28;
+    }
     return 0;
 }
 
@@ -4007,6 +4045,30 @@ static void net_smooth_client_enemies(struct rasterfall_net *net,
             dst->z += step_z;
         }
     }
+}
+
+static int net_pending_fire_kills_enemy(const struct rasterfall_net *net,
+                                        uint32_t acknowledged_fire,
+                                        int enemy_index, int hp)
+{
+    uint32_t applied[RASTERFALL_NET_INPUT_HISTORY];
+    int applied_count = 0, damage = 0, h;
+    if (!net || hp <= 0) return 0;
+    for (h = 0; h < RASTERFALL_NET_INPUT_HISTORY; h++) {
+        const struct rasterfall_net_input *input = &net->input_history[h];
+        int seen_fire = 0, a, r;
+        if (!input->valid || !input->fire_seq ||
+            !sequence_after(input->fire_seq, acknowledged_fire)) continue;
+        for (a = 0; a < applied_count; a++)
+            if (applied[a] == input->fire_seq) seen_fire = 1;
+        if (seen_fire) continue;
+        applied[applied_count++] = input->fire_seq;
+        for (r = 0; r < input->ray_count; r++)
+            if (input->rays[r].enemy_index == enemy_index &&
+                input->rays[r].damage > 0)
+                damage += input->rays[r].damage;
+    }
+    return damage >= hp;
 }
 
 void rasterfall_net_reconcile_client(struct rasterfall_net *net,
@@ -4214,7 +4276,10 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
              * live snapshot still identifies actual slot reuse. */
             preserve_predicted_death =
                 (old_active == 2 && src->active == 1) ||
-                (old_active == 0 && src->active == 2);
+                (old_active == 0 && src->active == 2) ||
+                (old_active == 0 && src->active == 1 &&
+                 net_pending_fire_kills_enemy(net, own->fire_seq,
+                                              index, src->hp));
             if (!preserve_predicted_death) {
                 dst->active = src->active;
                 dst->hp = src->hp;

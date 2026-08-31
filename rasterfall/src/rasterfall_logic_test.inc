@@ -1586,6 +1586,39 @@ static int run_logic_test(void)
     if (rasterfall_net_pipeline_test() != 0) return 140;
     if (rasterfall_net_client_slot_test() != 0) return 140;
     if (rasterfall_net_discovery_test() != 0) return 141;
+    /* 已播完的预测死亡不能被致命射击确认前到达的旧存活快照重启。 */
+    {
+        struct rasterfall_net net_test;
+        struct rasterfall_net_input *pending;
+        rasterfall_session_reset(&session, &camera, 151);
+        rasterfall_net_init(&net_test);
+        net_test.mode = RASTERFALL_NET_CLIENT;
+        net_test.local_player_id = 1;
+        net_test.snapshot_ready = 1;
+        net_test.players[1].active = 1;
+        net_test.players[1].state = TOY_GAME_PLAYING;
+        net_test.players[1].hp = session.game_state.hp;
+        net_test.players[1].fire_seq = 8;
+        net_test.enemy_count = 1;
+        net_test.enemies[0].index = 0;
+        net_test.enemies[0].active = 1;
+        net_test.enemies[0].hp = 10;
+        session.game_state.enemies[0].active = 0;
+        session.game_state.enemies[0].hp = 0;
+        pending = &net_test.input_history[9 % RASTERFALL_NET_INPUT_HISTORY];
+        pending->valid = 1;
+        pending->sequence = 9;
+        pending->fire_seq = 9;
+        pending->ray_count = 1;
+        pending->rays[0].enemy_index = 0;
+        pending->rays[0].damage = 10;
+        rasterfall_net_reconcile_client(&net_test, &session, &camera);
+        if (session.game_state.enemies[0].active != 0) return 157;
+        net_test.snapshot_ready = 1;
+        net_test.players[1].fire_seq = 9;
+        rasterfall_net_reconcile_client(&net_test, &session, &camera);
+        if (session.game_state.enemies[0].active != 1) return 158;
+    }
     /* 特感击飞通过一次冲量进入玩家本地运动状态，落地后恢复自主移动。 */
     {
         int actor_index;
