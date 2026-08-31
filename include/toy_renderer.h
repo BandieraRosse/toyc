@@ -112,6 +112,8 @@ struct toy_render_worker {
     long tex_us;              /* 纹理路径光栅化累计耗时（us） */
     long active_us;           /* 完整 raster job 墙钟活跃时间 */
     long cpu_us;              /* CLOCK_THREAD_CPUTIME_ID */
+    volatile int current_task; /* -1=idle; watchdog diagnostic only */
+    volatile long task_start_us;
     int last_path;            /* 路径段计时：上一条命令类型（-1=无） */
     long path_start;          /* 当前路径段起点（us） */
 };
@@ -180,9 +182,16 @@ struct toy_renderer {
     int job_parallel_count;
     int job_parallel_workers;
     volatile int job_parallel_next;
+    volatile int job_cancelled;
+    volatile int *job_cancel_flag;
+    long frame_deadline_us;
+    int frame_budget_ms;
+    unsigned int deadline_check_counter;
 };
 
 void toy_renderer_init(struct toy_renderer *renderer);
+/* Set the interactive frame watchdog budget; 0 disables it for offline tests. */
+void toy_renderer_set_frame_budget(struct toy_renderer *renderer, int budget_ms);
 void toy_renderer_destroy(struct toy_renderer *renderer);
 int toy_renderer_begin(struct toy_renderer *renderer,
                        const struct toy_surface *surface, uint32_t clear_color);
@@ -251,6 +260,9 @@ int toy_renderer_parallel_for(struct toy_renderer *renderer, int task_count,
                               int worker_limit,
                               toy_renderer_parallel_fn function,
                               void *context);
+/* Long-running frontend loops use this to cooperatively abandon an expired
+ * frame.  Cancellation is reset by toy_renderer_begin(). */
+int toy_renderer_job_cancelled(struct toy_renderer *renderer);
 /* Append a private recording stream without changing its command order. */
 int toy_renderer_merge_commands(struct toy_renderer *renderer,
                                 const struct toy_renderer *source);

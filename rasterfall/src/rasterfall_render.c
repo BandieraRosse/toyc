@@ -36,7 +36,6 @@
 #define UV_ONE 65536
 #define BAKED_LM_W 32
 #define BAKED_LM_H 24
-#define RASTERFALL_CHARACTER_TASK_TRIANGLES 8192
 #define RASTERFALL_CHARACTER_NEAR_RFU 1536
 #define RASTERFALL_CHARACTER_MID_RFU 4096
 #define RASTERFALL_CHARACTER_FAR_RFU 15360
@@ -1907,6 +1906,8 @@ static int render_gallery_model_range(struct toy_renderer *renderer,
                 active_model_triangle_stats = collect_model_render_stats ?
                     &model_render_stats.edge : 0;
                 for (j = index_begin; j + 2 < index_end; j += 3) {
+                    if ((j & 255U) == 0 &&
+                        toy_renderer_job_cancelled(renderer)) break;
                     unsigned int ia = model_u32(indices + j * 4);
                     unsigned int ib = model_u32(indices + (j + 1) * 4);
                     unsigned int ic = model_u32(indices + (j + 2) * 4);
@@ -1972,6 +1973,8 @@ static int render_gallery_model_range(struct toy_renderer *renderer,
         if (!texture && shared_texture) active_texture_view = active_model_texture;
         phase_start = render_monotonic_us();
         for (j = index_begin; j + 2 < index_end; j += 3) {
+            if ((j & 255U) == 0 &&
+                toy_renderer_job_cancelled(renderer)) break;
             unsigned int ia = model_u32(indices + j * 4);
             unsigned int ib = model_u32(indices + (j + 1) * 4);
             unsigned int ic = model_u32(indices + (j + 2) * 4);
@@ -2413,28 +2416,6 @@ struct character_frontend_dispatch {
     long wall_us[5];
 };
 
-struct character_primitive_job {
-    struct toy_renderer commands;
-    struct rasterfall_frontend_state frontend;
-    int initialized;
-    int actor;
-    int primitive;
-    int first_index;
-    int index_count;
-    int drawn;
-    long wall_us;
-};
-
-struct character_primitive_dispatch {
-    struct character_primitive_job *jobs;
-    struct character_frontend_dispatch *characters;
-    int count;
-};
-
-static struct character_primitive_job *character_primitive_jobs;
-static const struct toy_renderer *character_command_sources[1024];
-static int character_primitive_capacity;
-
 static void prepare_character_command_renderer(
     struct toy_renderer *commands, struct rasterfall_frontend_state *state,
     int *initialized, const struct toy_surface *surface, int *depth)
@@ -2524,66 +2505,9 @@ static void character_frontend_job(int worker_id, int task, void *opaque)
         active_gallery_facing = 0;
     }
     dispatch->drawn[task] = render_gallery_model_range(
-        commands, dispatch->camera, model, x, y, z, scale, 0, 0, 0, -1, 1);
+        commands, dispatch->camera, model, x, y, z, scale, 0,
+        (int)model->primitive_count, 0, -1, 1);
     dispatch->wall_us[task] = render_monotonic_us() - start;
-    frontend_slots[worker_id].state = 0;
-}
-
-static int ensure_character_primitive_jobs(int count)
-{
-    struct character_primitive_job *jobs;
-    int i;
-    if (count <= character_primitive_capacity) return 0;
-    jobs = tlibc_malloc((size_t)count * sizeof(*jobs));
-    if (!jobs) return -1;
-    __memset(jobs, 0, (size_t)count * sizeof(*jobs));
-    if (character_primitive_jobs) {
-        for (i = 0; i < character_primitive_capacity; i++) {
-            character_primitive_jobs[i].commands.depth = 0;
-            toy_renderer_destroy(&character_primitive_jobs[i].commands);
-        }
-        tlibc_free(character_primitive_jobs);
-    }
-    character_primitive_jobs = jobs;
-    character_primitive_capacity = count;
-    return 0;
-}
-
-static void character_primitive_job(int worker_id, int task, void *opaque)
-{
-    struct character_primitive_dispatch *dispatch = opaque;
-    struct character_primitive_job *job = &dispatch->jobs[task];
-    struct character_frontend_dispatch *characters = dispatch->characters;
-    struct rasterfall_frontend_state *actor_state = job->actor == 0 ?
-        &private_character_frontend :
-        &developer_characters[job->actor - 1].frontend;
-    const struct rasterfall_model_asset *model =
-        characters->models[job->actor];
-    int x, y, z, scale;
-    long start = render_monotonic_us();
-    if (job->actor == 0) {
-        x = -13000; y = -900; z = -10000;
-        scale = character_model_scale(model, eula_actor_profile.target_height_mm);
-    } else {
-        struct rasterfall_developer_character *entry =
-            &developer_characters[job->actor - 1];
-        x = entry->x; y = entry->base_y; z = entry->z;
-        scale = character_model_scale(model, entry->target_height_mm);
-    }
-    if (scale < 1) scale = 1;
-    prepare_character_command_renderer(&job->commands, &job->frontend,
-        &job->initialized, characters->surface, characters->depth);
-    job->frontend.vertex_cache = actor_state->vertex_cache;
-    job->frontend.vertex_cache_capacity = actor_state->vertex_cache_capacity;
-    job->frontend.disable_edge = actor_state->disable_edge;
-    job->frontend.disable_sphere = actor_state->disable_sphere;
-    job->frontend.disable_toon = actor_state->disable_toon;
-    frontend_slots[worker_id].thread = pthread_self();
-    frontend_slots[worker_id].state = &job->frontend;
-    job->drawn = render_gallery_model_range(&job->commands,
-        characters->camera, model, x, y, z, scale, job->primitive, 1,
-        job->first_index, job->index_count, 0);
-    job->wall_us = render_monotonic_us() - start;
     frontend_slots[worker_id].state = 0;
 }
 
@@ -2591,9 +2515,9 @@ static int render_characters_parallel(struct toy_renderer *renderer,
                                       const struct camera *camera)
 {
     struct character_frontend_dispatch dispatch;
-    struct character_primitive_dispatch primitive_dispatch;
-    int i, actor, primitive, task_count = 0, drawn = 0;
-    long pipeline_start, setup_start, merge_start;
+    const struct toy_renderer *command_sources[5];
+    int i, source_count = 0, drawn = 0;
+    long pipeline_start, merge_start;
     dispatch.camera = camera;
     dispatch.surface = &renderer->surface;
     dispatch.depth = renderer->depth;
@@ -2621,6 +2545,7 @@ static int render_characters_parallel(struct toy_renderer *renderer,
     prepare_character_command_renderer(&private_character_commands,
         &private_character_frontend, &private_character_commands_initialized,
         dispatch.surface, dispatch.depth);
+    private_character_commands.job_cancel_flag = &renderer->job_cancelled;
     private_character_frontend.timing.animation_sample_us =
         private_character_animation_us;
     for (i = 0; i < 4; i++) {
@@ -2637,6 +2562,7 @@ static int render_characters_parallel(struct toy_renderer *renderer,
                 character_model_scale(&entry->model, entry->target_height_mm));
         prepare_character_command_renderer(&entry->commands, &entry->frontend,
             &entry->commands_initialized, dispatch.surface, dispatch.depth);
+        entry->commands.job_cancel_flag = &renderer->job_cancelled;
         dispatch.models[i + 1] = &entry->model;
         if (entry->lod2_loaded &&
             character_distance_policy(camera, entry->x, entry->z, i + 1,
@@ -2660,67 +2586,16 @@ static int render_characters_parallel(struct toy_renderer *renderer,
         return -1;
     scene_stats.character_prepare_wall_us =
         render_monotonic_us() - pipeline_start;
-    setup_start = render_monotonic_us();
-    for (actor = 0; actor < 5; actor++) if (dispatch.visible[actor]) {
-        const struct rasterfall_model_asset *model = actor == 0 ?
-            dispatch.models[0] : dispatch.models[actor];
-        for (primitive = 0; primitive < (int)model->primitive_count;
-             primitive++) {
-            const unsigned char *p = model->primitives +
-                primitive * RASTERFALL_MODEL_PRIMITIVE_BYTES;
-            unsigned int indices = model_u32(p + 4);
-            unsigned int chunk = RASTERFALL_CHARACTER_TASK_TRIANGLES * 3U;
-            task_count += (int)((indices + chunk - 1) / chunk);
-        }
-    }
-    if (task_count > 0) {
-        if (ensure_character_primitive_jobs(task_count) < 0) return -1;
-        task_count = 0;
-        for (actor = 0; actor < 5; actor++) if (dispatch.visible[actor]) {
-            const struct rasterfall_model_asset *model = actor == 0 ?
-                dispatch.models[0] : dispatch.models[actor];
-            for (primitive = 0; primitive < (int)model->primitive_count;
-                 primitive++) {
-                const unsigned char *p = model->primitives +
-                    primitive * RASTERFALL_MODEL_PRIMITIVE_BYTES;
-                int index_count = (int)model_u32(p + 4);
-                int first_index;
-                int chunk = RASTERFALL_CHARACTER_TASK_TRIANGLES * 3;
-                for (first_index = 0; first_index < index_count;
-                     first_index += chunk) {
-                    int count = index_count - first_index;
-                    if (count > chunk) count = chunk;
-                    character_primitive_jobs[task_count].actor = actor;
-                    character_primitive_jobs[task_count].primitive = primitive;
-                    character_primitive_jobs[task_count].first_index = first_index;
-                    character_primitive_jobs[task_count].index_count = count;
-                    task_count++;
-                }
-            }
-        }
-        primitive_dispatch.jobs = character_primitive_jobs;
-        primitive_dispatch.characters = &dispatch;
-        primitive_dispatch.count = task_count;
-        scene_stats.character_task_setup_us =
-            render_monotonic_us() - setup_start;
-        pipeline_start = render_monotonic_us();
-        if (toy_renderer_parallel_for(renderer, task_count, 8,
-                                      character_primitive_job,
-                                      &primitive_dispatch) < 0) return -1;
-        scene_stats.character_primitive_wall_us =
-            render_monotonic_us() - pipeline_start;
-        merge_start = render_monotonic_us();
-        if (task_count > (int)(sizeof(character_command_sources) /
-                               sizeof(character_command_sources[0])))
-            return -1;
-        for (i = 0; i < task_count; i++)
-            character_command_sources[i] =
-                &character_primitive_jobs[i].commands;
-        if (toy_renderer_merge_command_batch(renderer,
-                character_command_sources, task_count, 8) < 0)
-            return -1;
-        scene_stats.character_merge_us = render_monotonic_us() - merge_start;
-    }
+    scene_stats.character_task_setup_us = 0;
+    scene_stats.character_primitive_wall_us = 0;
+    for (i = 0; i < 5; i++) if (dispatch.visible[i])
+        command_sources[source_count++] = i == 0 ?
+            &private_character_commands : &developer_characters[i - 1].commands;
+    merge_start = render_monotonic_us();
+    if (source_count > 0 && toy_renderer_merge_command_batch(renderer,
+            command_sources, source_count, 5) < 0)
+        return -1;
+    scene_stats.character_merge_us = render_monotonic_us() - merge_start;
     for (i = 0; i < 5; i++) {
         struct rasterfall_frontend_state *state = i == 0 ?
             &private_character_frontend : &developer_characters[i - 1].frontend;
@@ -2733,19 +2608,9 @@ static int render_characters_parallel(struct toy_renderer *renderer,
         scene_stats.character_vertex_us[i] = state->timing.vertex_cache_us;
         scene_stats.character_triangle_us[i] = state->timing.material_us +
             state->timing.body_triangles_us + state->timing.edge_triangles_us;
-        scene_stats.character_triangles[i] = 0;
-    }
-    for (i = 0; i < task_count; i++) {
-        struct character_primitive_job *job = &character_primitive_jobs[i];
-        struct rasterfall_model_setup_timing *timing = &job->frontend.timing;
-        int actor_id = job->actor;
-        drawn += job->drawn;
-        if (job->wall_us > scene_stats.character_wall_us[actor_id])
-            scene_stats.character_wall_us[actor_id] = job->wall_us;
-        scene_stats.character_triangle_us[actor_id] += timing->material_us +
-            timing->body_triangles_us + timing->edge_triangles_us;
-        scene_stats.character_triangles[actor_id] +=
-            job->commands.submitted_triangles;
+        scene_stats.character_triangles[i] = i == 0 ?
+            private_character_commands.submitted_triangles :
+            developer_characters[i - 1].commands.submitted_triangles;
     }
     return drawn;
 }

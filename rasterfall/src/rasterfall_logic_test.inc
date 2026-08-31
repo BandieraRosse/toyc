@@ -583,6 +583,7 @@ static int run_logic_test(void)
     surface.stride = 320 * sizeof(uint32_t);
     camera.x = 0; camera.z = -4200;
     toy_renderer_init(&renderer);
+    toy_renderer_set_frame_budget(&renderer, 0);
     if (toy_renderer_begin(&renderer, &surface, 0x151922) < 0) {
         toy_renderer_destroy(&renderer);
         tlibc_free(pixels);

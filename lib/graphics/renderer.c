@@ -24,6 +24,8 @@
 #define TOY_INV_Z_SCALE 1048576L
 #define TOY_RENDER_MAX_WORKERS 8
 #define TOY_RENDER_CMD_INIT 4096
+#define TOY_RENDER_FRAME_BUDGET_US 200000L
+#define TOY_RENDER_WATCHDOG_REPORT_US 1000000L
 /* A detailed PMX character can submit roughly 25k body triangles plus its
  * outline shell after the world has already populated the deferred list.
  * Near-plane clipping can also split one input triangle into two commands.
@@ -91,7 +93,16 @@ static void close_runs(struct toy_render_worker *worker)
 
 void toy_renderer_init(struct toy_renderer *renderer)
 {
-    if (renderer) memset(renderer, 0, sizeof(struct toy_renderer));
+    if (renderer) {
+        memset(renderer, 0, sizeof(struct toy_renderer));
+        renderer->frame_budget_ms = 200;
+    }
+}
+
+void toy_renderer_set_frame_budget(struct toy_renderer *renderer, int budget_ms)
+{
+    if (!renderer) return;
+    renderer->frame_budget_ms = budget_ms > 0 ? budget_ms : 0;
 }
 
 /* ── 条带化逐像素光栅化（y 范围由调用方给定，数学与单线程版完全一致） ── */
@@ -122,6 +133,7 @@ static long raster_flat(struct toy_renderer *renderer,
     long long w1 = edge(c, a, minx, y0);
     long long w2 = edge(a, b, minx, y0);
     for (y = y0; y <= y1; y++) {
+        if ((y & 7) == 0 && renderer->job_cancelled) break;
         uint32_t *row = (uint32_t *)((unsigned char *)surface->pixels +
                                      y * surface->stride);
         int base = y * width;
@@ -464,6 +476,7 @@ static long raster_tex(struct toy_renderer *renderer,
                                 (long long)dEy2 * c->v2) / area);
     }
     for (y = y0; y <= y1; y++) {
+        if ((y & 7) == 0 && renderer->job_cancelled) break;
         uint32_t *row = (uint32_t *)((unsigned char *)surface->pixels +
                                      y * surface->stride);
         int base = y * width;
@@ -798,6 +811,9 @@ static int record_cmd(struct toy_renderer *renderer, int textured,
                       int overlay)
 {
     struct toy_raster_cmd *cmd;
+    if ((++renderer->deadline_check_counter & 255U) == 0 &&
+        toy_renderer_job_cancelled(renderer))
+        return 0;
     if (renderer->cmd_count >= renderer->cmd_cap) {
         if (!grow_cmds(renderer)) {
             renderer->cmd_overflow++;
@@ -1183,6 +1199,7 @@ static void worker_rasterize(struct toy_renderer *renderer, int id,
     int bot1 = (int)((long)(band_b + 1) * height / band_count) - 1;
     worker->commands = (unsigned long)renderer->cmd_count;
     for (int i = 0; i < renderer->cmd_count; i++) {
+        if ((i & 63) == 0 && renderer->job_cancelled) break;
         const struct toy_raster_cmd *cmd = &renderer->cmds[i];
         int hit0 = cmd->bbox_maxy >= top0 && cmd->bbox_miny <= bot0;
         int hit1 = cmd->bbox_maxy >= top1 && cmd->bbox_miny <= bot1;
@@ -1251,6 +1268,8 @@ static void *render_worker_main(void *arg)
         worker->active_us = 0;
         worker->cpu_us = 0;
         worker->last_path = -1;
+        worker->current_task = -1;
+        worker->task_start_us = 0;
         worker->path_start = 0;
         long active_start = renderer_monotonic_us();
         long cpu_start = renderer_thread_cpu_us();
@@ -1259,14 +1278,28 @@ static void *render_worker_main(void *arg)
                 for (;;) {
                     int task = (int)atomic_fetch_add_u32(
                         (volatile uint32_t *)&renderer->job_parallel_next, 1);
-                    if (task >= renderer->job_parallel_count) break;
+                    if (task >= renderer->job_parallel_count ||
+                        renderer->job_cancelled) break;
+                    worker->current_task = task;
+                    worker->task_start_us = renderer_monotonic_us();
                     renderer->job_parallel_fn(worker->id, task,
                                               renderer->job_parallel_context);
+                    worker->current_task = -1;
+                    worker->task_start_us = 0;
                 }
-        } else if (renderer->job_is_clear)
+        } else if (renderer->job_is_clear) {
+            worker->current_task = -2;
+            worker->task_start_us = renderer_monotonic_us();
             worker_clear(renderer, worker->id);
-        else
+            worker->current_task = -1;
+            worker->task_start_us = 0;
+        } else {
+            worker->current_task = -3;
+            worker->task_start_us = renderer_monotonic_us();
             worker_rasterize(renderer, worker->id, worker);
+            worker->current_task = -1;
+            worker->task_start_us = 0;
+        }
         worker->cpu_us = renderer_thread_cpu_us() - cpu_start;
         worker->active_us = renderer_monotonic_us() - active_start;
         __sync_synchronize();
@@ -1309,10 +1342,62 @@ static int ensure_workers(struct toy_renderer *renderer)
     return 0;
 }
 
+int toy_renderer_job_cancelled(struct toy_renderer *renderer)
+{
+    volatile int *external;
+    if (!renderer) return 1;
+    external = renderer->job_cancel_flag;
+    if (renderer->job_cancelled || (external && *external)) return 1;
+    if (renderer->frame_deadline_us > 0 &&
+        renderer_monotonic_us() >= renderer->frame_deadline_us) {
+        renderer->job_cancelled = 1;
+        if (external) *external = 1;
+        return 1;
+    }
+    return 0;
+}
+
+static int renderer_wait_workers(struct toy_renderer *renderer,
+                                 const char *stage, long wait_start)
+{
+    long next_report = wait_start + TOY_RENDER_FRAME_BUDGET_US;
+    int timed_out = 0;
+    while (renderer->job_done_count != renderer->worker_count) {
+        long now = renderer_monotonic_us();
+        if (!timed_out && (renderer->job_cancelled ||
+            (renderer->frame_deadline_us > 0 &&
+             now >= renderer->frame_deadline_us))) {
+            renderer->job_cancelled = 1;
+            timed_out = 1;
+        }
+        if (now >= next_report) {
+            int i;
+            __fprintf(2,
+                "renderer watchdog: stage=%s elapsed_ms=%ld done=%d/%d cancel=%d\n",
+                stage, (now - wait_start) / 1000,
+                renderer->job_done_count, renderer->worker_count,
+                renderer->job_cancelled);
+            for (i = 0; i < renderer->worker_count; i++) {
+                struct toy_render_worker *worker = &renderer->workers[i];
+                if (worker->current_task != -1)
+                    __fprintf(2,
+                        "renderer watchdog: worker=%d task=%d running_ms=%ld"
+                        " (-2=clear,-3=raster)\n",
+                        i, worker->current_task,
+                        worker->task_start_us > 0 ?
+                            (now - worker->task_start_us) / 1000 : 0);
+            }
+            next_report = now + TOY_RENDER_WATCHDOG_REPORT_US;
+        }
+        __sync_synchronize();
+    }
+    return timed_out || renderer->job_cancelled ? -1 : 0;
+}
+
 /* 分发一个 job 并等待全部 worker 完成。任务字段只在上一 job 全部结束后
  * 才被改写，worker 随后都在 futex 上休眠，因此无并发写竞争。 */
-static void renderer_dispatch(struct toy_renderer *renderer, int is_clear,
-                              uint32_t clear_color)
+static int renderer_dispatch(struct toy_renderer *renderer, int is_clear,
+                             uint32_t clear_color)
 {
     long wait_start = renderer_monotonic_us();
     renderer->job_is_clear = is_clear;
@@ -1324,9 +1409,11 @@ static void renderer_dispatch(struct toy_renderer *renderer, int is_clear,
     __sync_synchronize();
     __futex((unsigned int *)&renderer->job_generation, TOY_FUTEX_WAKE,
             0x7fffffff, NULL, NULL, 0);
-    while (renderer->job_done_count != renderer->worker_count)
-        __sync_synchronize();
+    if (renderer_wait_workers(renderer, is_clear ? "clear" : "raster",
+                              wait_start) < 0)
+        return -1;
     renderer->last_worker_wait_us = renderer_monotonic_us() - wait_start;
+    return 0;
 }
 
 int toy_renderer_parallel_for(struct toy_renderer *renderer, int task_count,
@@ -1334,7 +1421,9 @@ int toy_renderer_parallel_for(struct toy_renderer *renderer, int task_count,
                               toy_renderer_parallel_fn function,
                               void *context)
 {
+    long wait_start;
     if (!renderer || !function || task_count < 1) return -1;
+    if (toy_renderer_job_cancelled(renderer)) return -1;
     if (ensure_workers(renderer) < 0) return -1;
     if (worker_limit < 1 || worker_limit > renderer->worker_count)
         worker_limit = renderer->worker_count;
@@ -1351,8 +1440,11 @@ int toy_renderer_parallel_for(struct toy_renderer *renderer, int task_count,
     __sync_synchronize();
     __futex((unsigned int *)&renderer->job_generation, TOY_FUTEX_WAKE,
             0x7fffffff, NULL, NULL, 0);
-    while (renderer->job_done_count != renderer->worker_count)
-        __sync_synchronize();
+    wait_start = renderer_monotonic_us();
+    if (renderer_wait_workers(renderer, "parallel", wait_start) < 0) {
+        renderer->job_is_parallel = 0;
+        return -1;
+    }
     renderer->job_is_parallel = 0;
     return 0;
 }
@@ -1479,6 +1571,11 @@ int toy_renderer_begin(struct toy_renderer *renderer,
         (size_t)surface->width * (size_t)surface->height >
             (size_t)-1 / sizeof(int))
         return -1;
+    renderer->job_cancelled = 0;
+    renderer->job_cancel_flag = NULL;
+    renderer->frame_deadline_us = renderer->frame_budget_ms > 0 ?
+        renderer_monotonic_us() + (long)renderer->frame_budget_ms * 1000 : 0;
+    renderer->deadline_check_counter = 0;
     required = (size_t)surface->width * (size_t)surface->height * sizeof(int);
     if (required != renderer->depth_size) {
         int *new_depth;
@@ -1525,10 +1622,11 @@ int toy_renderer_begin(struct toy_renderer *renderer,
     /* Tiny in-memory probes gain nothing from the worker pool and should not
      * require thread/TLS setup merely to exercise rasterization math. */
     if ((long)surface->width * surface->height >= 320 * 180 &&
-        ensure_workers(renderer) == 0)
-        renderer_dispatch(renderer, 1, clear_color);
-    else
+        ensure_workers(renderer) == 0) {
+        if (renderer_dispatch(renderer, 1, clear_color) < 0) return -1;
+    } else {
         clear_single(renderer, clear_color);
+    }
     return 0;
 }
 
@@ -1565,6 +1663,11 @@ int toy_renderer_flush(struct toy_renderer *renderer)
     long flat_us = 0, tex_us = 0;
     long sort_start, phase_start;
     if (!renderer) return 0;
+    if (toy_renderer_job_cancelled(renderer)) {
+        renderer->cmd_count = 0;
+        __fprintf(2, "renderer watchdog: frame exceeded 200ms; dropping frame\n");
+        return -1;
+    }
     renderer->last_classify_us = 0;
     renderer->last_merge_copy_us = 0;
     renderer->last_actual_sort_us = 0;
@@ -1577,6 +1680,12 @@ int toy_renderer_flush(struct toy_renderer *renderer)
     if (renderer->cmd_count > 0) {
         int i;
         for (i = 0; i < renderer->cmd_count; i++) {
+            if ((i & 1023) == 0 && toy_renderer_job_cancelled(renderer)) {
+                renderer->cmd_count = 0;
+                __fprintf(2,
+                    "renderer watchdog: frame exceeded 200ms during classify; dropping frame\n");
+                return -1;
+            }
             if (renderer->cmds[i].transparent)
                 renderer->last_transparent_cmds++;
             else
@@ -1617,7 +1726,12 @@ int toy_renderer_flush(struct toy_renderer *renderer)
     }
     renderer->last_sort_us = renderer_monotonic_us() - sort_start;
     if (renderer->worker_count > 0) {
-        renderer_dispatch(renderer, 0, 0);
+        if (renderer_dispatch(renderer, 0, 0) < 0) {
+            renderer->cmd_count = 0;
+            __fprintf(2,
+                "renderer watchdog: raster workers cancelled; dropping frame\n");
+            return -1;
+        }
         /* 命令已被本次 flush 消费：清零后下一条记录从空列表开始，
          * 每帧第二次 flush 不会重复光栅化整个场景。 */
         renderer->cmd_count = 0;

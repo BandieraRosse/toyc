@@ -3461,6 +3461,11 @@ startup_again:
             /* 世界几何并行光栅化；弹道/粒子/枪模随后直接写屏覆盖 */
             prev_tris = (unsigned long)renderer.cmd_count;
             stage_pixels = toy_renderer_flush(&renderer);
+            if (stage_pixels < 0) {
+                __fprintf(2,
+                    "rasterfall: skipped frame after renderer watchdog timeout\n");
+                continue;
+            }
             scene_pixels += stage_pixels;
             if (coordinate_axes)
                 rasterfall_render_coordinate_labels(&surface, &render_camera);
@@ -3482,7 +3487,13 @@ startup_again:
                 !session.shop_open) {
                 stage_pixels += rasterfall_render_interactables(
                     &renderer, &render_camera);
-                stage_pixels += toy_renderer_flush(&renderer);
+                present_result = toy_renderer_flush(&renderer);
+                if (present_result < 0) {
+                    __fprintf(2,
+                        "rasterfall: skipped frame after renderer watchdog timeout\n");
+                    continue;
+                }
+                stage_pixels += present_result;
             }
             stage_pixels += rasterfall_render_tracers(&renderer, &render_camera);
             stage_pixels += rasterfall_render_particles(&renderer, &render_camera);
@@ -3494,7 +3505,13 @@ startup_again:
              * procedural pill and hands). Flush this layer before drawing
              * the remaining direct framebuffer overlays; otherwise textured
              * melee/throwable commands never reach the rasterizer. */
-            stage_pixels += toy_renderer_flush(&renderer);
+            present_result = toy_renderer_flush(&renderer);
+            if (present_result < 0) {
+                __fprintf(2,
+                    "rasterfall: skipped frame after renderer watchdog timeout\n");
+                continue;
+            }
+            stage_pixels += present_result;
             if (game.state == TOY_GAME_OVER) {
                 draw_game_over_panel(&surface,
                                      net.mode == RASTERFALL_NET_CLIENT);
