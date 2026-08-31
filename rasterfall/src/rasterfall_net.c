@@ -654,6 +654,22 @@ static void net_init_player_slots(struct toy_game_slot *slots,
     *current_slot = 1;
 }
 
+static void net_accept_client_weapon_state(
+    struct rasterfall_net_client *client,
+    const struct rasterfall_net_input *input)
+{
+    int i;
+    if (!client || !input) return;
+    for (i = 0; i < TOY_GAME_WEAPON_SLOTS; i++)
+        if (client->slots[i].weapon != input->slots[i].weapon)
+            return;
+    for (i = 0; i < TOY_GAME_WEAPON_SLOTS; i++) {
+        client->slots[i].mag = input->slots[i].mag;
+        client->slots[i].reserve = input->slots[i].reserve;
+    }
+    client->current_slot = input->current_slot;
+}
+
 static int net_client_index_client_id(const struct rasterfall_net *net,
                                       int client_id)
 {
@@ -733,6 +749,22 @@ int rasterfall_net_client_slot_test(void)
     if (net_alloc_client_id(&net, &address, 2) != 1 ||
         net.clients[1].kills != 0 || net.clients[1].client_id != 2)
         return 4;
+    {
+        struct rasterfall_net_input stale;
+        memset(&stale, 0, sizeof(stale));
+        net_init_player_slots(stale.slots, &stale.current_slot);
+        net.clients[1].slots[0].weapon = TOY_GAME_WEAPON_AK;
+        net.clients[1].slots[0].mag = 30;
+        net.clients[1].current_slot = 0;
+        net_accept_client_weapon_state(&net.clients[1], &stale);
+        if (net.clients[1].slots[0].weapon != TOY_GAME_WEAPON_AK ||
+            net.clients[1].current_slot != 0) return 5;
+        stale.slots[0] = net.clients[1].slots[0];
+        stale.slots[0].mag = 23;
+        stale.current_slot = 0;
+        net_accept_client_weapon_state(&net.clients[1], &stale);
+        if (net.clients[1].slots[0].mag != 23) return 6;
+    }
     return 0;
 }
 
@@ -1063,6 +1095,7 @@ int rasterfall_net_send_command(struct rasterfall_net *net,
             (RASTERFALL_CMD_SHOP | RASTERFALL_CMD_FLAG |
              RASTERFALL_CMD_INTERACT);
         net->pending_shop_until_ms = net_monotonic_ms() + 2000;
+        net->pending_shop_input_sequence = 0;
     }
     if (net->pending_shop_request_id &&
         net_monotonic_ms() < net->pending_shop_until_ms) {
@@ -1073,9 +1106,13 @@ int rasterfall_net_send_command(struct rasterfall_net *net,
         wire.shop_request_id = net->pending_shop_request_id;
     } else if (net->pending_shop_request_id) {
         net->pending_shop_request_id = 0;
+        net->pending_shop_input_sequence = 0;
     }
     net->tick++;
     sequence = ++net->send_sequence;
+    if (wire.shop_request_id == net->pending_shop_request_id &&
+        !net->pending_shop_input_sequence)
+        net->pending_shop_input_sequence = sequence;
     {
         struct rasterfall_net_input *entry =
             &net->input_history[sequence % RASTERFALL_NET_INPUT_HISTORY];
@@ -1131,12 +1168,9 @@ int rasterfall_net_send_command(struct rasterfall_net *net,
     net->input_packets_sent++;
     if (result == 0) {
         net_record_prediction(net, sequence, predicted);
-        /* The current packet plus its redundancy copies are the reliable
-         * delivery window for an edge action.  Keeping the request alive for
-         * two seconds used to put the same shop command in every subsequent
-         * input packet and delayed the ordinary navigation inputs behind it. */
-        if (wire.shop_request_id == net->pending_shop_request_id)
-            net->pending_shop_request_id = 0;
+        /* Edge actions remain attached to ordinary inputs until a player
+         * snapshot acknowledges the first carrying sequence.  The host
+         * deduplicates shop_request_id, so retransmission is harmless. */
     }
     return result;
 }
@@ -2844,6 +2878,36 @@ void rasterfall_net_update_connection(struct rasterfall_net *net)
     }
 }
 
+static int net_apply_client_fire_report(
+    struct toy_game *game, struct rasterfall_net_client *client,
+    unsigned int fire_seq, int ray_count, const struct toy_game_ray *rays)
+{
+    struct toy_game_actor *actor;
+    int index, i;
+    if (!game || !client || !fire_seq || !rays ||
+        (client->last_applied_fire_seq &&
+         !sequence_after(fire_seq, client->last_applied_fire_seq))) return 0;
+    index = TOY_GAME_REMOTE_ACTOR_BASE + client->client_id - 1;
+    if (index < 0 || index >= TOY_GAME_MAX_ACTORS) return 0;
+    actor = &game->actors[index];
+    if (ray_count < 0) ray_count = 0;
+    if (ray_count > TOY_GAME_MAX_RAYS) ray_count = TOY_GAME_MAX_RAYS;
+    for (i = 0; i < ray_count; i++)
+        if (rays[i].enemy_index >= 0 && rays[i].damage > 0)
+            toy_game_apply_reported_hit(game, actor,
+                                        rays[i].enemy_index, rays[i].damage);
+    actor->fire_seq = fire_seq; actor->ray_count = ray_count;
+    memcpy(actor->rays, rays, sizeof(actor->rays));
+    toy_game_animation_set(&actor->animation, TOY_GAME_ANIM_FIRE);
+    client->fire_seq = fire_seq; client->ray_count = ray_count;
+    memcpy(client->rays, rays, sizeof(client->rays));
+    client->kills = actor->kills;
+    client->special_kills = actor->special_kills;
+    client->damage_dealt = actor->damage_dealt;
+    client->last_applied_fire_seq = fire_seq;
+    return 1;
+}
+
 static void net_apply_client(struct rasterfall_net *net,
                                    struct rasterfall_session *session,
                                    struct rasterfall_net_client *client)
@@ -2994,20 +3058,11 @@ static void net_apply_client(struct rasterfall_net *net,
                 client->camera.cy, 16);
         }
     }
-    if (client->fire_seq &&
-        (!client->last_applied_fire_seq ||
-         sequence_after(client->fire_seq, client->last_applied_fire_seq))) {
-        int ray_i;
-        for (ray_i = 0; ray_i < client->ray_count; ray_i++) {
-            const struct toy_game_ray *ray = &client->rays[ray_i];
-            if (ray->enemy_index >= 0 && ray->damage > 0)
-                toy_game_apply_reported_hit(g, NULL, ray->enemy_index,
-                                            ray->damage);
-        }
-        actor->fire_seq = client->fire_seq;
-        actor->ray_count = client->ray_count;
-        memcpy(actor->rays, client->rays, sizeof(actor->rays));
-        client->last_applied_fire_seq = client->fire_seq;
+    if (net_apply_client_fire_report(g, client, client->fire_seq,
+                                     client->ray_count, client->rays)) {
+        g->kills = client->kills;
+        g->special_kills = client->special_kills;
+        g->damage_dealt = client->damage_dealt;
         toy_game_animation_set(&g->animation, TOY_GAME_ANIM_FIRE);
     } else if (client->reloading) {
         toy_game_animation_set(&g->animation, TOY_GAME_ANIM_RELOAD);
@@ -3375,8 +3430,10 @@ void rasterfall_net_apply_clients(struct rasterfall_net *net,
             client->input_jump_dz = next->jump_dz;
             client->command.jump_dx = next->jump_dx;
             client->command.jump_dz = next->jump_dz;
-            memcpy(client->slots, next->slots, sizeof(client->slots));
-            client->current_slot = next->current_slot;
+            /* Weapon identity is granted by the host.  Until the client
+             * echoes a purchase/pickup snapshot, queued pre-grant inputs
+             * must not restore its old inventory. */
+            net_accept_client_weapon_state(client, next);
             client->reloading = next->reloading;
             client->reload_timer_ms = next->reload_timer_ms;
             client->weapon_switch_timer_ms = next->weapon_switch_timer_ms;
@@ -3746,6 +3803,22 @@ void rasterfall_net_prepare_host_step(struct rasterfall_net *net,
             !net->clients[i].down)
             game->network_rescuer_available = 1;
     rasterfall_net_sync_clients(net, game);
+    /* Merge the next in-order client shot before enemy AI runs this tick.
+     * The ordinary input pass still consumes the command afterwards, but the
+     * fire sequence guard prevents double damage.  This removes the extra
+     * host tick in which a client-killed enemy could still bite. */
+    for (i = 0; i < RASTERFALL_NET_CLIENT_MAX; i++) {
+        struct rasterfall_net_client *client = &net->clients[i];
+        struct rasterfall_net_input *input;
+        uint32_t sequence;
+        if (!client->active || !client->connected) continue;
+        sequence = client->last_processed_input_sequence + 1U;
+        input = &client->input_queue[
+            sequence % RASTERFALL_NET_INPUT_HISTORY];
+        if (input->valid && input->sequence == sequence && input->fire_seq)
+            net_apply_client_fire_report(game, client, input->fire_seq,
+                                         input->ray_count, input->rays);
+    }
 }
 
 void rasterfall_net_apply_local_rescue(struct rasterfall_net *net,
@@ -3861,6 +3934,12 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
     own = &net->players[net->local_player_id];
     if (!own->active) return;
     net->last_snapshot_input_ack = own->input_ack;
+    if (net->pending_shop_request_id && net->pending_shop_input_sequence &&
+        sequence_before_or_equal(net->pending_shop_input_sequence,
+                                 own->input_ack)) {
+        net->pending_shop_request_id = 0;
+        net->pending_shop_input_sequence = 0;
+    }
     if (session) {
         int seen[TOY_GAME_MAX_ACTORS];
         int i;
@@ -4042,19 +4121,33 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
             const struct rasterfall_net_enemy *src = &net->enemies[i];
             struct toy_game_enemy *dst;
             int index = src->index;
+            int old_hp, old_hurt, old_flash, preserve_predicted_death;
             if (index < 0 || index >= TOY_GAME_MAX_ENEMIES) continue;
             dst = &session->game_state.enemies[index];
             int old_active = dst->active;
-            dst->active = src->active; dst->type = src->type;
+            old_hp = dst->hp; old_hurt = dst->hurt; old_flash = dst->flash;
+            /* A pre-hit entity chunk must not revive an enemy during the
+             * locally predicted death animation.  Slot reuse is accepted
+             * after that short animation reaches inactive state. */
+            preserve_predicted_death = old_active == 2 && src->active == 1;
+            if (!preserve_predicted_death) {
+                dst->active = src->active;
+                dst->hp = src->hp;
+            }
+            dst->type = src->type;
             dst->ai_state = src->ai_state;
-            dst->hp = src->hp;
             if (old_active != 1 || src->active != 1) {
                 dst->x = src->x;
                 dst->z = src->z;
             }
             dst->speed = src->speed; dst->bite_cooldown_ms = src->bite_cooldown_ms;
-            dst->flash = src->flash; dst->hurt = src->hurt;
-            dst->dying_ms = src->dying_ms;
+            /* Enemy hit color is local presentation.  Snapshot countdowns
+             * are not copied because they extend/redrive the flash at 15 Hz. */
+            dst->hurt = old_hurt;
+            dst->flash = old_flash;
+            if (src->active == 1 && src->hp < old_hp && old_active == 1)
+                dst->hurt = 80;
+            if (!preserve_predicted_death) dst->dying_ms = src->dying_ms;
             dst->ability.special_target_active = src->ability.special_target_active;
             dst->ability.charge_active = src->ability.charge_active;
             dst->ability.special_timer_ms = src->ability.special_timer_ms;
@@ -4107,7 +4200,6 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
                     enemy = &session->game_state.enemies[ray->enemy_index];
                     if (enemy->active != 1) continue;
                     enemy->hp -= ray->damage;
-                    enemy->hurt = 150; enemy->flash = 120;
                     if (enemy->hp <= 0) {
                         enemy->hp = 0; enemy->active = 2;
                         enemy->dying_ms = TOY_GAME_DYING_MS;
@@ -4127,7 +4219,10 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
     for (int i = 0; i < RASTERFALL_NET_INPUT_HISTORY; i++)
         if (net->input_history[i].valid &&
             sequence_before_or_equal(net->input_history[i].sequence,
-                                     own->input_ack))
+                                     own->input_ack) &&
+            (!net->input_history[i].fire_seq ||
+             sequence_before_or_equal(net->input_history[i].fire_seq,
+                                      own->fire_seq)))
             net->input_history[i].valid = 0;
     net->snapshot_ready = 0;
 }

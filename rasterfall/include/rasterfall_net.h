@@ -360,6 +360,7 @@ struct rasterfall_net {
     long last_command_sent_ms;
     unsigned int shop_request_next_id;
     unsigned int pending_shop_request_id;
+    uint32_t pending_shop_input_sequence;
     int pending_shop_action;
     int pending_shop_item;
     int pending_shop_arg;

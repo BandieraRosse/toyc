@@ -2391,6 +2391,14 @@ static void session_step_client_mode(struct rasterfall_session *session,
     else if (session->game_state.fire_seq != old_fire_seq)
         toy_game_animation_set(&session->game_state.animation,
                                TOY_GAME_ANIM_FIRE);
+    if (session->game_state.fire_seq != old_fire_seq) {
+        for (i = 0; i < session->game_state.ray_count; i++) {
+            int enemy_index = session->game_state.rays[i].enemy_index;
+            if (enemy_index >= 0 && enemy_index < TOY_GAME_MAX_ENEMIES &&
+                session->game_state.enemies[enemy_index].active == 1)
+                session->game_state.enemies[enemy_index].hurt = 80;
+        }
+    }
     if (session->game_state.animation.id == TOY_GAME_ANIM_RELOAD) {
         toy_game_animation_update(&session->game_state.animation, dt_ms);
         if (!session->game_state.reloading)
@@ -2437,7 +2445,16 @@ static void session_step_client_mode(struct rasterfall_session *session,
      * cannot leave a flattened corpse rendered forever. */
     for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
         struct toy_game_enemy *enemy = &session->game_state.enemies[i];
-        if (enemy->active == 2) {
+        if (enemy->active == 1) {
+            if (enemy->hurt > 0) {
+                enemy->hurt -= dt_ms;
+                if (enemy->hurt < 0) enemy->hurt = 0;
+            }
+            if (enemy->flash > 0) {
+                enemy->flash -= dt_ms;
+                if (enemy->flash < 0) enemy->flash = 0;
+            }
+        } else if (enemy->active == 2) {
             enemy->dying_ms -= dt_ms;
             if (enemy->dying_ms <= 0) enemy->active = 0;
         }
