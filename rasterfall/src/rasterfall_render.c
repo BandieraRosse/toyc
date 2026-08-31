@@ -1670,6 +1670,7 @@ static void prepare_character_command_renderer(
     commands->textured_triangles = 0;
     commands->textured_pixels = 0;
     commands->texture_fallback_pixels = 0;
+    commands->job_cancelled = 0;
 }
 
 static void gallery_face_toward(int model_x, int model_z,
@@ -1717,7 +1718,7 @@ static void character_frontend_job(int worker_id, int task, void *opaque)
         scale = character_model_scale(model, entry->target_height_mm);
     }
     if (scale < 1) scale = 1;
-    frontend_bind_worker(worker_id, state);
+    if (frontend_bind_worker(worker_id, state) < 0) return;
     if (toy_renderer_job_cancelled(commands)) goto cleanup;
     if (task > 0) {
         long animation_start = render_monotonic_us();

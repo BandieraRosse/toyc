@@ -26,16 +26,17 @@ GPT-2 实现。
 make                    # build/{toyc,toyas,toyld,toyar}
 make build/toypp        # 可选：构建独立预处理器
 make self-lib           # 用 build/toyc 构建 Tinylibc
-make self-app           # 用 build/toyc 构建全部应用
+make self-app           # 用 build/toyc 构建 app/ 目录中的应用
 make clean              # 删除 build/ 和 tmp/
 ```
 
 也可使用 `make lib`、`make app` 或 `make app-<name>` 由 GCC 构建库、全部应用或单个
-应用；`make self-app-<name>` 是对应的自托管构建。
+应用；`make self-app-<name>` 是 `app/` 内应用对应的自托管构建。Rasterfall 不属于
+Toyc 兼容范围，以 GCC 构建为准。
 
 ### Rasterfall
 
-Rasterfall 是一个用 Toyc/Tinylibc 构建的第一人称射击原型，包含软件渲染、程序合成
+Rasterfall 是一个使用仓库内 Tinylibc、由 GCC 构建的第一人称射击原型，包含软件渲染、程序合成
 音效、本地运行和基础 UDP 联机。Linux 版本使用 Wayland、ALSA/WSLg 音频和仓库内的
 freestanding 运行时；Windows 版本通过独立平台层使用 SDL2、Win32 线程/同步和
 Winsock，不要求 Toyc 输出 PE/COFF。

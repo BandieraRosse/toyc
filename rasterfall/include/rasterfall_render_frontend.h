@@ -36,7 +36,7 @@ void rasterfall_render_frontend_set_default_texture(
     const struct toy_texture_view *texture);
 void rasterfall_render_frontend_set_override(
     struct rasterfall_frontend_state *state);
-void rasterfall_render_frontend_bind_worker(
+int rasterfall_render_frontend_bind_worker(
     int worker_id, struct rasterfall_frontend_state *state);
 void rasterfall_render_frontend_unbind_worker(int worker_id);
 

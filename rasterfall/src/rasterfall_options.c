@@ -87,7 +87,8 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
             rasterfall_options_usage(1);
             return 1;
         } else if (!strcmp(option, "--input-test")) o->input_debug = 1;
-        else if (!strcmp(option, "--logic-test")) o->logic_test = 1;
+        else if (!strcmp(option, "--logic-test") ||
+                 !strcmp(option, "--net-test")) o->logic_test = 1;
         else if (!strcmp(option, "--host"))
             o->requested_net_mode = RASTERFALL_NET_HOST;
         else if (!strcmp(option, "--connect")) {
@@ -109,6 +110,7 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
         } else if (!strcmp(option,"--auto")) o->auto_mode=1;
         else if (!strcmp(option,"--textures")) o->textures_enabled=1;
         else if (!strcmp(option,"--no-textures")) o->textures_enabled=0;
+        else if (!strcmp(option,"--edge-pass")) o->edge_pass_enabled=1;
         else if (!strcmp(option,"--no-edge-pass")) o->edge_pass_enabled=0;
         else if (!strcmp(option,"--no-stats")) o->stats_enabled=0;
         else if (!strcmp(option,"--texture-stats")) o->texture_stats=1;

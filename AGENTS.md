@@ -124,6 +124,9 @@ make test-all           # 核心聚合目标，不包含 test-toyld 和 test-llm
 ## 修改原则
 
 - 保持工具链 freestanding，不要无意引入宿主 libc 依赖。
+- Toyc 源码兼容范围以 `app/` 目录为界；`rasterfall/` 不要求由 Toyc 编译，
+  Linux 版本以 GCC 构建和验证结果为准。不要为了维持 Rasterfall 的 Toyc 兼容而限制其
+  实现方式或扩张编译器特性。
 - 优先添加最小回归用例，再修改编译器实现。
 - 不要把 `compiler-tests/pending/` 中的复现用例当成已支持特性。
 - 保留用户已有的工作区修改；不要顺手格式化或改写无关文件。

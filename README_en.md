@@ -27,16 +27,18 @@ generated Toyc compiler.
 make                    # build/{toyc,toyas,toyld,toyar}
 make build/toypp        # optional standalone preprocessor
 make self-lib           # build Tinylibc with build/toyc
-make self-app           # build every app with build/toyc
+make self-app           # build applications under app/ with build/toyc
 make clean              # remove build/ and tmp/
 ```
 
 Use `make lib`, `make app`, or `make app-<name>` for GCC builds of the library,
-all apps, or one app. `make self-app-<name>` is the self-hosted equivalent.
+all apps, or one app. `make self-app-<name>` is the self-hosted equivalent for
+applications under `app/`. Rasterfall is outside Toyc's compatibility scope and
+uses the GCC build as its reference.
 
 ### Rasterfall
 
-Rasterfall is a first-person shooter prototype built with Toyc/Tinylibc. It provides
+Rasterfall is a first-person shooter prototype built with GCC and the repository's Tinylibc. It provides
 software rendering, generated sound effects, local play, and basic UDP networking.
 The Linux build uses Wayland, ALSA/WSLg audio, and the repository's freestanding
 runtime. The Windows build is isolated in a platform layer using SDL2, Win32

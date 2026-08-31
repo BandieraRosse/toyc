@@ -139,7 +139,8 @@ static long raster_flat(struct toy_renderer *renderer,
     long long w1 = edge(c, a, minx, y0);
     long long w2 = edge(a, b, minx, y0);
     for (y = y0; y <= y1; y++) {
-        if ((y & 7) == 0 && renderer->job_cancelled) break;
+        if ((y & 7) == 0 && __atomic_load_n(
+                &renderer->job_cancelled, __ATOMIC_ACQUIRE)) break;
         uint32_t *row = (uint32_t *)((unsigned char *)surface->pixels +
                                      y * surface->stride);
         int base = y * width;
@@ -482,7 +483,8 @@ static long raster_tex(struct toy_renderer *renderer,
                                 (long long)dEy2 * c->v2) / area);
     }
     for (y = y0; y <= y1; y++) {
-        if ((y & 7) == 0 && renderer->job_cancelled) break;
+        if ((y & 7) == 0 && __atomic_load_n(
+                &renderer->job_cancelled, __ATOMIC_ACQUIRE)) break;
         uint32_t *row = (uint32_t *)((unsigned char *)surface->pixels +
                                      y * surface->stride);
         int base = y * width;
@@ -1205,7 +1207,8 @@ static void worker_rasterize(struct toy_renderer *renderer, int id,
     int bot1 = (int)((long)(band_b + 1) * height / band_count) - 1;
     worker->commands = (unsigned long)renderer->cmd_count;
     for (int i = 0; i < renderer->cmd_count; i++) {
-        if ((i & 63) == 0 && renderer->job_cancelled) break;
+        if ((i & 63) == 0 && __atomic_load_n(
+                &renderer->job_cancelled, __ATOMIC_ACQUIRE)) break;
         const struct toy_raster_cmd *cmd = &renderer->cmds[i];
         int hit0 = cmd->bbox_maxy >= top0 && cmd->bbox_miny <= bot0;
         int hit1 = cmd->bbox_maxy >= top1 && cmd->bbox_miny <= bot1;
@@ -1285,7 +1288,8 @@ static void *render_worker_main(void *arg)
                     int task = (int)atomic_fetch_add_u32(
                         (volatile uint32_t *)&renderer->job_parallel_next, 1);
                     if (task >= renderer->job_parallel_count ||
-                        renderer->job_cancelled) break;
+                        __atomic_load_n(&renderer->job_cancelled,
+                                        __ATOMIC_ACQUIRE)) break;
                     worker->current_task = task;
                     worker->task_start_us = renderer_monotonic_us();
                     renderer->job_parallel_fn(worker->id, task,
@@ -1353,11 +1357,12 @@ int toy_renderer_job_cancelled(struct toy_renderer *renderer)
     volatile int *external;
     if (!renderer) return 1;
     external = renderer->job_cancel_flag;
-    if (renderer->job_cancelled || (external && *external)) return 1;
+    if (__atomic_load_n(&renderer->job_cancelled, __ATOMIC_ACQUIRE) ||
+        (external && __atomic_load_n(external, __ATOMIC_ACQUIRE))) return 1;
     if (renderer->frame_deadline_us > 0 &&
         renderer_monotonic_us() >= renderer->frame_deadline_us) {
-        renderer->job_cancelled = 1;
-        if (external) *external = 1;
+        __atomic_store_n(&renderer->job_cancelled, 1, __ATOMIC_RELEASE);
+        if (external) __atomic_store_n(external, 1, __ATOMIC_RELEASE);
         return 1;
     }
     return 0;
@@ -1370,10 +1375,11 @@ static int renderer_wait_workers(struct toy_renderer *renderer,
     int timed_out = 0;
     while (renderer->job_done_count != renderer->worker_count) {
         long now = renderer_monotonic_us();
-        if (!timed_out && (renderer->job_cancelled ||
+        if (!timed_out && (__atomic_load_n(&renderer->job_cancelled,
+                                           __ATOMIC_ACQUIRE) ||
             (renderer->frame_deadline_us > 0 &&
              now >= renderer->frame_deadline_us))) {
-            renderer->job_cancelled = 1;
+            __atomic_store_n(&renderer->job_cancelled, 1, __ATOMIC_RELEASE);
             timed_out = 1;
         }
         if (now >= next_report) {
@@ -1382,7 +1388,7 @@ static int renderer_wait_workers(struct toy_renderer *renderer,
                 "renderer watchdog: stage=%s elapsed_ms=%ld done=%d/%d cancel=%d\n",
                 stage, (now - wait_start) / 1000,
                 renderer->job_done_count, renderer->worker_count,
-                renderer->job_cancelled);
+                __atomic_load_n(&renderer->job_cancelled, __ATOMIC_ACQUIRE));
             for (i = 0; i < renderer->worker_count; i++) {
                 struct toy_render_worker *worker = &renderer->workers[i];
                 if (worker->current_task != -1)
@@ -1397,7 +1403,8 @@ static int renderer_wait_workers(struct toy_renderer *renderer,
         }
         __sync_synchronize();
     }
-    return timed_out || renderer->job_cancelled ? -1 : 0;
+    return timed_out || __atomic_load_n(&renderer->job_cancelled,
+                                         __ATOMIC_ACQUIRE) ? -1 : 0;
 }
 
 /* 分发一个 job 并等待全部 worker 完成。任务字段只在上一 job 全部结束后
@@ -1577,7 +1584,7 @@ int toy_renderer_begin(struct toy_renderer *renderer,
         (size_t)surface->width * (size_t)surface->height >
             (size_t)-1 / sizeof(int))
         return -1;
-    renderer->job_cancelled = 0;
+    __atomic_store_n(&renderer->job_cancelled, 0, __ATOMIC_RELEASE);
     renderer->job_cancel_flag = NULL;
     renderer->frame_deadline_us = renderer->frame_budget_ms > 0 ?
         renderer_monotonic_us() + (long)renderer->frame_budget_ms * 1000 : 0;

@@ -22,7 +22,7 @@ static void actor_benchmark_job(int worker_id, int actor, void *opaque)
     struct actor_benchmark_dispatch *dispatch = opaque;
     struct actor_benchmark_fixture *job = &dispatch->actors[actor];
     long start = render_monotonic_us();
-    frontend_bind_worker(worker_id, &job->state);
+    if (frontend_bind_worker(worker_id, &job->state) < 0) return;
     __memset(&job->state.timing, 0, sizeof(job->state.timing));
     job->commands.surface = *dispatch->surface;
     job->commands.depth = dispatch->depth;

@@ -1159,7 +1159,7 @@ SELF_LIBC_OBJS     := $(SELF_LIBC_C_OBJS) $(SELF_LIBC_ASM_OBJS)
 
 # ─── App 源文件（复用 APP_SRCS 定义） ─────────────────────────
 
-SELF_APP_NAMES   := $(APP_NAMES)
+SELF_APP_NAMES   := $(filter-out rasterfall,$(APP_NAMES))
 SELF_APP_OBJS    := $(foreach name,$(SELF_APP_NAMES),$(BUILD)/$(name)_self.o)
 SELF_APP_TARGETS := $(foreach name,$(SELF_APP_NAMES),$(BUILD)/$(name)_self)
 SELF_APP_EXTRA_OBJS_rasterfall := $(BUILD)/rasterfall_game_self.o $(BUILD)/rasterfall_sfx_self.o $(BUILD)/rasterfall_map_engine_self.o $(BUILD)/rasterfall_map_self.o $(BUILD)/rasterfall_session_self.o $(BUILD)/rasterfall_ai_self.o $(BUILD)/rasterfall_net_self.o $(BUILD)/rasterfall_net_transport_self.o $(BUILD)/rasterfall_net_discovery_self.o $(BUILD)/rasterfall_hud_self.o $(BUILD)/rasterfall_audio_self.o $(BUILD)/rasterfall_effects_self.o $(BUILD)/rasterfall_perf_self.o $(BUILD)/rasterfall_sky_self.o $(BUILD)/rasterfall_viewmodel_self.o $(BUILD)/rasterfall_options_self.o $(BUILD)/rasterfall_render_self.o $(BUILD)/rasterfall_render_frontend_self.o $(BUILD)/rasterfall_model_self.o $(BUILD)/rasterfall_humanoid_basis_self.o $(BUILD)/rasterfall_humanoid_retarget_self.o
@@ -1342,7 +1342,7 @@ $$(BUILD)/$(notdir $(basename $(1)))_self: $$(BUILD)/$(notdir $(basename $(1)))_
 	@printf "$(BLUE)  LD(s)  %s\n" "$(notdir $(basename $(1)))"
 	$$(SELF_LD) -e __tlibc_start $$(SELF_CRT_OBJS) $$< $(SELF_APP_EXTRA_OBJS_$(notdir $(basename $(1)))) --whole-archive $$(SELF_LIB_A) --no-whole-archive -o $$@
 endef
-$(foreach src,$(APP_SRCS),$(eval $(call SELF_APP_rule,$(src))))
+$(foreach src,$(filter $(APP_DIR)/%,$(APP_SRCS)),$(eval $(call SELF_APP_rule,$(src))))
 
 # ─── 目标 ───────────────────────────────────────────────────────
 
