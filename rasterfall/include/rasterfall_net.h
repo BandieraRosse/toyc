@@ -349,6 +349,8 @@ struct rasterfall_net {
     uint32_t last_command_sequence;
     uint32_t last_jump_command_sequence;
     uint32_t last_snapshot_input_ack;
+    int own_snapshot_reserve[TOY_GAME_WEAPON_SLOTS];
+    int own_snapshot_reserve_valid;
     struct rasterfall_net_prediction prediction_history[64];
     struct rasterfall_net_input input_history[RASTERFALL_NET_INPUT_HISTORY];
     struct rasterfall_net_remote_sample remote_samples[RASTERFALL_NET_PLAYER_MAX][3];

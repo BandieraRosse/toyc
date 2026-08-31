@@ -31,7 +31,7 @@ static void net_windows_log(const char *message) { (void)message; }
 #define NET_PLAYER_SIZE (NET_PLAYER_BASE_SIZE + 4)
 #define NET_ACTOR_SIZE (43 + TOY_GAME_MAX_NAME)
 #define NET_ENEMY_SIZE 48
-#define NET_WORLD_BASE_SIZE 44
+#define NET_WORLD_BASE_SIZE 52
 #define NET_WORLD_FLAG_SIZE 12
 #define NET_WORLD_FIXED_SIZE (NET_WORLD_BASE_SIZE + 4 + 4 + \
                         RASTERFALL_MAX_FLAGS * NET_WORLD_FLAG_SIZE + \
@@ -674,11 +674,12 @@ static void net_accept_client_weapon_state(
     client->current_slot = input->current_slot;
 }
 
-static void net_apply_own_inventory(struct toy_game *game,
+static void net_apply_own_inventory(struct rasterfall_net *net,
+                                    struct toy_game *game,
                                     const struct rasterfall_net_player *own)
 {
-    int i;
-    if (!game || !own) return;
+    int i, consumed_selected = 0;
+    if (!net || !game || !own) return;
     for (i = 0; i < TOY_GAME_WEAPON_SLOTS; i++) {
         struct toy_game_slot *slot = &game->slots[i];
         if (slot->weapon != own->slot_weapon[i]) {
@@ -688,15 +689,22 @@ static void net_apply_own_inventory(struct toy_game *game,
             game->current_slot = own->current_slot;
         } else if (i >= 2) {
             /* Purchases and uses of throwables/pills are host-authoritative. */
+            if (i == game->current_slot && own->mag[i] < slot->mag)
+                consumed_selected = 1;
             slot->mag = own->mag[i];
             slot->reserve = own->reserve[i];
-        } else if (own->reserve[i] > slot->reserve) {
-            /* Ammo boxes refill reserve only.  Comparing the magazine here
-             * used to reject a valid grant whenever the client had fired
-             * another predicted shot before the pickup snapshot arrived. */
+        } else if (net->own_snapshot_reserve_valid &&
+                   own->reserve[i] > net->own_snapshot_reserve[i]) {
+            /* Apply each authoritative ammo-box increase once.  Repeated
+             * snapshots of the same grant must not refill reserve consumed
+             * later by the owning client's predicted reload. */
             slot->reserve = own->reserve[i];
         }
+        net->own_snapshot_reserve[i] = own->reserve[i];
     }
+    net->own_snapshot_reserve_valid = 1;
+    if (consumed_selected)
+        game->current_slot = own->current_slot;
 }
 
 static int net_client_index_client_id(const struct rasterfall_net *net,
@@ -1755,6 +1763,8 @@ static int net_send_world_snapshot(struct rasterfall_net *net,
     put_i16(w + 38, game->wave_waiting_heavy);
     put_i16(w + 40, game->wave_waiting_special);
     put_i16(w + 42, game->wave_waiting_tank);
+    put_u32(w + 44, (uint32_t)game->spawn_timer_ms);
+    put_u32(w + 48, (uint32_t)game->phase_timer_ms);
     put_u32(w + NET_WORLD_BASE_SIZE, (uint32_t)game->money);
     put_u32(w + NET_WORLD_BASE_SIZE + 4, game->unlocked_weapons);
     put_i16(w + NET_WORLD_BASE_SIZE + 8, session ? session->flag_count : 0);
@@ -1923,6 +1933,8 @@ int rasterfall_net_send_snapshot(struct rasterfall_net *net,
     put_i16(world_data + 38, game->wave_waiting_heavy);
     put_i16(world_data + 40, game->wave_waiting_special);
     put_i16(world_data + 42, game->wave_waiting_tank);
+    put_u32(world_data + 44, (uint32_t)game->spawn_timer_ms);
+    put_u32(world_data + 48, (uint32_t)game->phase_timer_ms);
     put_u32(world_data + NET_WORLD_BASE_SIZE, (uint32_t)game->money);
     put_u32(world_data + NET_WORLD_BASE_SIZE + 4,
             (uint32_t)game->unlocked_weapons);
@@ -2073,10 +2085,10 @@ static int decode_world_snapshot(const unsigned char *payload, int size,
     w = payload + 4;
     net->snapshot_world_wave = get_i16(w);
     net->snapshot_world_to_spawn = get_i16(w + 2);
-    net->snapshot_world_spawn_timer_ms = get_i16(w + 4);
+    net->snapshot_world_spawn_timer_ms = (int)get_u32(w + 44);
     net->snapshot_world_enemies_alive = get_i16(w + 6);
     net->snapshot_world_phase = get_i16(w + 8);
-    net->snapshot_world_phase_timer_ms = get_i16(w + 10);
+    net->snapshot_world_phase_timer_ms = (int)get_u32(w + 48);
     net->snapshot_air_walls_enabled = w[12] & 1;
     net->snapshot_manual_alarm_enabled = (w[12] & 2) != 0;
     net->snapshot_world_alarm_timer_ms = get_i16(w + 14);
@@ -2200,10 +2212,10 @@ static int decode_snapshot(const unsigned char *payload, int size,
                      &net->enemies[i]);
     net->snapshot_world_wave = get_i16(world_data);
     net->snapshot_world_to_spawn = get_i16(world_data + 2);
-    net->snapshot_world_spawn_timer_ms = get_i16(world_data + 4);
+    net->snapshot_world_spawn_timer_ms = (int)get_u32(world_data + 44);
     net->snapshot_world_enemies_alive = get_i16(world_data + 6);
     net->snapshot_world_phase = get_i16(world_data + 8);
-    net->snapshot_world_phase_timer_ms = get_i16(world_data + 10);
+    net->snapshot_world_phase_timer_ms = (int)get_u32(world_data + 48);
     net->snapshot_air_walls_enabled = world_data[12] & 1;
     net->snapshot_manual_alarm_enabled = (world_data[12] & 2) != 0;
     net->snapshot_world_alarm_timer_ms = get_i16(world_data + 14);
@@ -3656,6 +3668,8 @@ int rasterfall_net_pipeline_test(void)
         int cursor = NET_WORLD_FIXED_SIZE;
         memset(world_packet, 0, sizeof(world_packet));
         put_u32(world_packet, 12);
+        put_u32(w + 44, 512000);
+        put_u32(w + 48, 511000);
         w[cursor++] = 1;
         w[cursor + 0] = 3; w[cursor + 1] = TOY_GAME_WEAPON_BOMB;
         put_u32(w + cursor + 4, 4321); put_u32(w + cursor + 8, (uint32_t)-8765);
@@ -3669,7 +3683,9 @@ int rasterfall_net_pipeline_test(void)
             net.snapshot_projectiles[3].x != 4321 ||
             net.snapshot_projectiles[3].z != -8765 ||
             !net.snapshot_burn_zones[5].active ||
-            net.snapshot_burn_zones[5].remaining_ms != 3000)
+            net.snapshot_burn_zones[5].remaining_ms != 3000 ||
+            net.snapshot_world_spawn_timer_ms != 512000 ||
+            net.snapshot_world_phase_timer_ms != 511000)
             return 10;
     }
     /* Fixed-delay interpolation is render-only and does not alter the latest
@@ -3726,11 +3742,15 @@ int rasterfall_net_pipeline_test(void)
         own.mag[2] = 2; own.mag[3] = 5;
         inventory_game.slots[2].weapon = TOY_GAME_WEAPON_BOMB;
         inventory_game.slots[2].mag = 3;
+        inventory_game.current_slot = 2;
         inventory_game.slots[3].weapon = TOY_GAME_WEAPON_PILL;
         inventory_game.slots[3].mag = 4;
-        net_apply_own_inventory(&inventory_game, &own);
+        net.own_snapshot_reserve_valid = 1;
+        net.own_snapshot_reserve[0] = own.reserve[0];
+        net_apply_own_inventory(&net, &inventory_game, &own);
         if (inventory_game.slots[2].mag != 2 ||
-            inventory_game.slots[3].mag != 5)
+            inventory_game.slots[3].mag != 5 ||
+            inventory_game.current_slot != own.current_slot)
             return 24;
         inventory_game.slots[0].weapon = TOY_GAME_WEAPON_SMG;
         inventory_game.slots[0].mag = 7;
@@ -3738,10 +3758,14 @@ int rasterfall_net_pipeline_test(void)
         own.slot_weapon[0] = TOY_GAME_WEAPON_SMG;
         own.mag[0] = 8;
         own.reserve[0] = 90;
-        net_apply_own_inventory(&inventory_game, &own);
+        net_apply_own_inventory(&net, &inventory_game, &own);
         if (inventory_game.slots[0].mag != 7 ||
             inventory_game.slots[0].reserve != 90)
             return 25;
+        inventory_game.slots[0].reserve = 80;
+        net_apply_own_inventory(&net, &inventory_game, &own);
+        if (inventory_game.slots[0].reserve != 80)
+            return 26;
     }
     /* Reliable special events apply locally and stale CONTROL_END is ignored. */
     {
@@ -4108,7 +4132,7 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
          * Host-side pickups initialize changed slots, firearm ammo grants are
          * merged conservatively, and host-simulated consumables are copied
          * authoritatively so purchases and uses both reach the client. */
-        net_apply_own_inventory(&session->game_state, own);
+        net_apply_own_inventory(net, &session->game_state, own);
         session->game_state.throw_timer_ms = own->throw_timer_ms;
         session->game_state.wave = net->snapshot_world_wave;
         session->game_state.to_spawn = net->snapshot_world_to_spawn;
