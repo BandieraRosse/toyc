@@ -160,6 +160,9 @@ struct toy_renderer {
     int cmd_overflow;
     int recording_edge;
     int recording_base_texture_bilinear;
+    /* Optional caller-owned state used while recording commands.  The core
+     * renderer never dereferences it. */
+    void *recording_context;
     int requested_worker_count;
     int detected_cpu_count;
     int texture_diagnostic_flags;

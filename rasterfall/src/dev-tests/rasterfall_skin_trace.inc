@@ -374,7 +374,8 @@ static void skin_trace_print_window(const struct rasterfall_model_asset *model,
     }
 }
 
-static void skin_trace_capture(const struct rasterfall_model_asset *model)
+static void skin_trace_capture(struct toy_renderer *renderer,
+                               const struct rasterfall_model_asset *model)
 {
     struct rasterfall_skin_trace_frame *f, *p = 0;
     int i, time_ms = 0;

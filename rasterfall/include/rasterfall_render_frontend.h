@@ -6,8 +6,8 @@
 
 struct gallery_cached_vertex;
 
-/* Mutable model-frontend state belongs to one renderer path.  Worker jobs
- * bind distinct instances; only the render owner thread may use override. */
+/* Mutable model-frontend state belongs to one command renderer.  Parallel
+ * jobs record through distinct renderer/state pairs. */
 struct rasterfall_frontend_state {
     const struct toy_texture_view *texture_view;
     const struct toy_texture_view *sphere_texture;
@@ -30,14 +30,20 @@ struct rasterfall_frontend_state {
     int gallery_facing, gallery_sy, gallery_cy;
 };
 
-struct rasterfall_frontend_state *rasterfall_render_frontend_current(void);
-void rasterfall_render_frontend_set_owner(void);
+struct rasterfall_frontend_state *rasterfall_render_frontend_default(void);
+static inline struct rasterfall_frontend_state *
+rasterfall_render_frontend_current(const struct toy_renderer *renderer)
+{
+    if (renderer && renderer->recording_context)
+        return renderer->recording_context;
+    return rasterfall_render_frontend_default();
+}
 void rasterfall_render_frontend_set_default_texture(
     const struct toy_texture_view *texture);
 void rasterfall_render_frontend_set_override(
-    struct rasterfall_frontend_state *state);
+    struct toy_renderer *renderer, struct rasterfall_frontend_state *state);
 int rasterfall_render_frontend_bind_worker(
-    int worker_id, struct rasterfall_frontend_state *state);
-void rasterfall_render_frontend_unbind_worker(int worker_id);
+    struct toy_renderer *renderer, struct rasterfall_frontend_state *state);
+void rasterfall_render_frontend_unbind_worker(struct toy_renderer *renderer);
 
 #endif

@@ -22,7 +22,7 @@ static void actor_benchmark_job(int worker_id, int actor, void *opaque)
     struct actor_benchmark_dispatch *dispatch = opaque;
     struct actor_benchmark_fixture *job = &dispatch->actors[actor];
     long start = render_monotonic_us();
-    if (frontend_bind_worker(worker_id, &job->state) < 0) return;
+    if (frontend_bind_worker(&job->commands, &job->state) < 0) return;
     __memset(&job->state.timing, 0, sizeof(job->state.timing));
     job->commands.surface = *dispatch->surface;
     job->commands.depth = dispatch->depth;
@@ -45,7 +45,7 @@ static void actor_benchmark_job(int worker_id, int actor, void *opaque)
         character_model_scale(&job->model, heights[actor]));
     job->wall_us = render_monotonic_us() - start;
     job->worker_id = worker_id;
-    frontend_unbind_worker(worker_id);
+    frontend_unbind_worker(&job->commands);
 }
 /* Fixed five-actor workload used to compare compiler optimization levels and
  * renderer architecture.  Keep assets, camera, animation times and pixels

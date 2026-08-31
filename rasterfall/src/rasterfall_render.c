@@ -47,7 +47,7 @@ struct box { int minx, maxx, minz, maxz, height; uint32_t color; };
 static struct rasterfall_render_context *render_ctx;
 static struct rasterfall_scene_stats scene_stats;
 struct gallery_cached_vertex;
-#define frontend_state rasterfall_render_frontend_current
+#define frontend_state() rasterfall_render_frontend_current(renderer)
 #define frontend_set_override rasterfall_render_frontend_set_override
 #define frontend_bind_worker rasterfall_render_frontend_bind_worker
 #define frontend_unbind_worker rasterfall_render_frontend_unbind_worker
@@ -809,7 +809,8 @@ static int character_model_scale(const struct rasterfall_model_asset *model,
 }
 
 static int prepare_gallery_vertex_cache(
-    const struct rasterfall_model_asset *model, const struct camera *camera,
+    struct toy_renderer *renderer, const struct rasterfall_model_asset *model,
+    const struct camera *camera,
     int center_x, int base_y, int center_z, int scale)
 {
     unsigned int i;
@@ -1028,7 +1029,8 @@ static void select_near_original_model(const struct camera *camera,
 #undef CONSIDER_NEAR_CHARACTER
 }
 
-static void gallery_edge_vertex(const struct rasterfall_model_asset *model,
+static void gallery_edge_vertex(struct toy_renderer *renderer,
+                                const struct rasterfall_model_asset *model,
                                 const struct camera *camera,
                                 unsigned int index, int center_x, int base_y,
                                 int center_z, int scale, int edge_size,
@@ -1058,7 +1060,8 @@ static void gallery_edge_vertex(const struct rasterfall_model_asset *model,
     *view_out = cached->edge_view;
 }
 
-static void gallery_uv_vertex(const struct rasterfall_model_asset *model,
+static void gallery_uv_vertex(struct toy_renderer *renderer,
+                              const struct rasterfall_model_asset *model,
                               const struct camera *camera,
                               unsigned int index, int center_x, int base_y,
                               int center_z, int scale,
@@ -1293,10 +1296,10 @@ static int render_gallery_model_range(struct toy_renderer *renderer,
         phase_start = render_monotonic_us();
         bone_before = model_setup_timing.bone_hierarchy_us;
         skin_before = model_setup_timing.skinning_us;
-        if (prepare_gallery_vertex_cache(model, camera, center_x, base_y,
+        if (prepare_gallery_vertex_cache(renderer, model, camera, center_x, base_y,
                                          center_z, scale) < 0)
             return 0;
-        skin_trace_capture(model);
+        skin_trace_capture(renderer, model);
         model_setup_timing.vertex_cache_us += render_monotonic_us() - phase_start -
             (model_setup_timing.bone_hierarchy_us - bone_before) -
             (model_setup_timing.skinning_us - skin_before);
@@ -1395,11 +1398,11 @@ static int render_gallery_model_range(struct toy_renderer *renderer,
                     struct vec3 a, b, c, va, vb, vc;
                     if (ia >= model->vertex_count || ib >= model->vertex_count ||
                         ic >= model->vertex_count) continue;
-                    gallery_edge_vertex(model, camera, ia, center_x, base_y,
+                    gallery_edge_vertex(renderer, model, camera, ia, center_x, base_y,
                                         center_z, scale, edge_size, &a, &va);
-                    gallery_edge_vertex(model, camera, ic, center_x, base_y,
+                    gallery_edge_vertex(renderer, model, camera, ic, center_x, base_y,
                                         center_z, scale, edge_size, &b, &vb);
-                    gallery_edge_vertex(model, camera, ib, center_x, base_y,
+                    gallery_edge_vertex(renderer, model, camera, ib, center_x, base_y,
                                         center_z, scale, edge_size, &c, &vc);
                     drawn += draw_world_triangle_views(renderer, camera,
                         &a, &b, &c, &va, &vb, &vc, edge & 0xffffffU);
@@ -1491,11 +1494,11 @@ static int render_gallery_model_range(struct toy_renderer *renderer,
                         active_material_specular_level / 255;
             }
             if (texture || shared_texture) {
-                gallery_uv_vertex(model, camera, ia, center_x, base_y, center_z, scale,
+                gallery_uv_vertex(renderer, model, camera, ia, center_x, base_y, center_z, scale,
                                   active_sphere_texture ? active_sphere_mode : 0, &ta);
-                gallery_uv_vertex(model, camera, ib, center_x, base_y, center_z, scale,
+                gallery_uv_vertex(renderer, model, camera, ib, center_x, base_y, center_z, scale,
                                   active_sphere_texture ? active_sphere_mode : 0, &tb);
-                gallery_uv_vertex(model, camera, ic, center_x, base_y, center_z, scale,
+                gallery_uv_vertex(renderer, model, camera, ic, center_x, base_y, center_z, scale,
                                   active_sphere_texture ? active_sphere_mode : 0, &tc);
                 drawn += draw_world_triangle_tex_views(renderer, camera,
                     &ta, &tb, &tc, &gallery_vertex_cache[ia].view,
@@ -1602,7 +1605,8 @@ void rasterfall_render_model_stats(struct rasterfall_model_render_stats *out)
 void rasterfall_render_model_setup_timing(
     struct rasterfall_model_setup_timing *out)
 {
-    if (out) memcpy(out, &model_setup_timing, sizeof(*out));
+    if (out) memcpy(out,
+        &rasterfall_render_frontend_current(0)->timing, sizeof(*out));
 }
 
 /* The benchmark intentionally exercises the private frontend implementation;
@@ -1673,22 +1677,23 @@ static void prepare_character_command_renderer(
     commands->job_cancelled = 0;
 }
 
-static void gallery_face_toward(int model_x, int model_z,
+static void gallery_face_toward(struct rasterfall_frontend_state *state,
+                                int model_x, int model_z,
                                 int target_x, int target_z)
 {
     long long dx = (long long)target_x - model_x;
     long long dz = (long long)target_z - model_z;
     long long length = isqrt(dx * dx + dz * dz);
     if (length <= 0) {
-        active_gallery_facing = 0;
+        state->gallery_facing = 0;
         return;
     }
     /* Maid's local forward axis is +Z.  The gallery transform maps that
      * axis to (sin_yaw, cos_yaw), so derive the yaw from the actual target
      * point instead of applying a model-specific 180-degree correction. */
-    active_gallery_facing = 1;
-    active_gallery_sy = (int)(dx * 1024 / length);
-    active_gallery_cy = (int)(dz * 1024 / length);
+    state->gallery_facing = 1;
+    state->gallery_sy = (int)(dx * 1024 / length);
+    state->gallery_cy = (int)(dz * 1024 / length);
 }
 
 static void character_frontend_job(int worker_id, int task, void *opaque)
@@ -1718,7 +1723,8 @@ static void character_frontend_job(int worker_id, int task, void *opaque)
         scale = character_model_scale(model, entry->target_height_mm);
     }
     if (scale < 1) scale = 1;
-    if (frontend_bind_worker(worker_id, state) < 0) return;
+    (void)worker_id;
+    if (frontend_bind_worker(commands, state) < 0) return;
     if (toy_renderer_job_cancelled(commands)) goto cleanup;
     if (task > 0) {
         long animation_start = render_monotonic_us();
@@ -1731,18 +1737,18 @@ static void character_frontend_job(int worker_id, int task, void *opaque)
     if (task > 0) {
         int target_x = active_session ? active_session->level.start_x : -13000;
         int target_z = active_session ? active_session->level.start_z : -12000;
-        gallery_face_toward(x, z, target_x, target_z);
+        gallery_face_toward(state, x, z, target_x, target_z);
     } else {
         /* Eula's authored local forward is -Z, so the unrotated display
          * model already faces the player spawn side of the gallery. */
-        active_gallery_facing = 0;
+        state->gallery_facing = 0;
     }
     dispatch->drawn[task] = render_gallery_model_range(
         commands, dispatch->camera, model, x, y, z, scale, 0,
         (int)model->primitive_count, 0, -1, 1);
     dispatch->wall_us[task] = render_monotonic_us() - start;
 cleanup:
-    frontend_unbind_worker(worker_id);
+    frontend_unbind_worker(commands);
 }
 
 static int render_characters_parallel(struct toy_renderer *renderer,
@@ -4885,7 +4891,7 @@ static int render_ai_teammate(struct toy_renderer *renderer,
             character_quality = character_distance_policy(
                 camera, actor->x, actor->z, i, actor_frontend);
             if (character_quality == RASTERFALL_CHARACTER_HIDDEN) {
-                frontend_set_override(0);
+                frontend_set_override(renderer, 0);
                 continue;
             }
             /* Skeletal weapons read the character attachment every frame.
@@ -4898,7 +4904,7 @@ static int render_ai_teammate(struct toy_renderer *renderer,
                     actor->slots[actor->current_slot].weapon)->skeletal)
                 actor_frontend->reuse_skinned_vertices = 0;
             character_update = !actor_frontend->reuse_skinned_vertices;
-            frontend_set_override(actor_frontend);
+            frontend_set_override(renderer, actor_frontend);
             struct rasterfall_developer_character *maid_entry =
                 actor->anime_character_id >= 2 && actor->anime_character_id <= 5 ?
                 &developer_characters[0] : NULL;
@@ -5034,7 +5040,7 @@ static int render_ai_teammate(struct toy_renderer *renderer,
                     actor->z,actor->sy,actor->cy,weapon,actor->muzzle_flash_ms,
                     actor->animation.id,actor->animation.time_ms,0,0);
             }
-            frontend_set_override(0);
+            frontend_set_override(renderer, 0);
             active_actor_lift=0;continue;
         }
         pixels += render_player_avatar(renderer, camera, actor->x, actor->z,
@@ -5505,7 +5511,6 @@ static int render_particles(struct toy_renderer *renderer, const struct camera *
 #undef fixed_floor_lighting
 void rasterfall_render_bind(struct rasterfall_render_context *ctx)
 {
-    rasterfall_render_frontend_set_owner();
     render_ctx = ctx;
     active_session = ctx->session;
     active_effects = ctx->effects;
