@@ -22,7 +22,7 @@
  *   --net-loss <percent>           模拟网络丢包
  *   --auto                         自动化压测模式
  *   --textures / --no-textures     开启/关闭纹理渲染
- *   --edge-pass / --no-edge-pass   开启/关闭模型 edge pass
+ *   --no-edge-pass                 关闭模型 edge pass
  *   --no-stats                     关闭性能统计
  *   --texture-stats                显示纹理统计
  *   --dump-frame <path>            导出帧图像
@@ -48,7 +48,8 @@
  *   --vmd-legacy-leg-ccd         diagnostic: use legacy leg CCD path
  *   --frames <count>               运行指定帧数后退出
  *   --input-test                   输入调试测试
- *   --logic-test / --net-test      运行逻辑测试
+ *   --logic-test                   运行逻辑和网络回归测试
+ *   --help                         显示完整选项说明
  */
 
 #include "core.h"
@@ -76,6 +77,7 @@
 #include "rasterfall_console.h"
 #include "rasterfall_units.h"
 #include "rasterfall_animation_composition.h"
+#include "rasterfall_options.h"
 #include "math.h"
 
 #define KEY_ESC   1
@@ -2249,6 +2251,48 @@ fail:
     return 1;
 }
 
+#define input_debug options.input_debug
+#define logic_test options.logic_test
+#define requested_net_mode options.requested_net_mode
+#define net_port options.net_port
+#define net_loss_percent options.net_loss_percent
+#define net_address options.net_address
+#define auto_mode options.auto_mode
+#define edge_pass_enabled options.edge_pass_enabled
+#define stats_enabled options.stats_enabled
+#define texture_stats options.texture_stats
+#define frame_limit options.frame_limit
+#define dump_path options.dump_path
+#define view_model_path options.view_model_path
+#define view_output_dir options.view_output_dir
+#define model_views_supersample options.model_views_supersample
+#define material_regression options.material_regression
+#define performance_model_path options.performance_model_path
+#define bone_model_path options.bone_model_path
+#define bone_search options.bone_search
+#define humanoid_model_path options.humanoid_model_path
+#define humanoid_basis_model_path options.humanoid_basis_model_path
+#define retarget_model_path options.retarget_model_path
+#define retarget_action options.retarget_action
+#define glb_animation_model options.glb_animation_model
+#define glb_animation_path options.glb_animation_path
+#define glb_animation_name options.glb_animation_name
+#define glb_motion_model options.glb_motion_model
+#define glb_motion_path options.glb_motion_path
+#define vmd_walk_model options.vmd_walk_model
+#define vmd_walk_path options.vmd_walk_path
+#define vmd_freeze_head options.vmd_freeze_head
+#define vmd_freeze_torso options.vmd_freeze_torso
+#define vmd_disable_ik options.vmd_disable_ik
+#define vmd_disable_grant options.vmd_disable_grant
+#define vmd_legacy_root_offset options.vmd_legacy_root_offset
+#define vmd_legacy_knee_ccd options.vmd_legacy_knee_ccd
+#define vmd_skin_trace options.vmd_skin_trace
+#define performance_iterations options.performance_iterations
+#define performance_workers options.performance_workers
+#define actor_performance options.actor_performance
+#define actor_raster_workers options.actor_raster_workers
+
 int main(int argc, char **argv)
 {
     struct toy_window *window;
@@ -2267,7 +2311,7 @@ int main(int argc, char **argv)
     int coordinate_axes = 0;
     int return_to_menu = 0;
     int last_pointer_x = 0, last_pointer_y = 0, have_pointer_position = 0;
-    int frame_limit = 0, rendered_frames = 0, scene_pixels = 0;
+    int rendered_frames = 0, scene_pixels = 0;
     int display_fps = 0, fps_window_frames = 0;
     int fire_edge = 0;
     int shove_edge = 0;
@@ -2279,9 +2323,7 @@ int main(int argc, char **argv)
      * 到达的按压，每帧合入 key_pressed 供消费方读取；逻辑步跑过的那
      * 帧末尾统一清除。 */
     unsigned char pending_key_edges[TOY_INPUT_KEY_COUNT];
-    int input_debug = 0, input_event_count = 0, have_last_key = 0;
-    int texture_stats = 0;
-    int stats_enabled = 1;
+    int input_event_count = 0, have_last_key = 0;
     struct rasterfall_perf_stats stats, stats_total;
     unsigned int last_key = 0;
     int last_key_pressed = 0;
@@ -2290,163 +2332,19 @@ int main(int argc, char **argv)
     struct rasterfall_net_discovery discovery;
     char host_address[16];
     uint64_t seed;
-
-    int logic_test = 0;
-    int requested_net_mode = RASTERFALL_NET_OFF;
-    int net_port = RASTERFALL_NET_DEFAULT_PORT;
+    struct rasterfall_options options;
+    int options_result;
     int public_room = 0, public_room_id = 0;
-    int net_loss_percent = 0;
-    const char *net_address = NULL;
+    int managed_spectator = 0, managed_third_person = 0;
     const char *startup_error = NULL;
     char selected_address[64];
-    int auto_mode = 0;
-    int edge_pass_enabled = 1;
-    int managed_spectator = 0;
-    int managed_third_person = 0;
-    const char *dump_path = 0;
-    const char *view_model_path = 0;
-    const char *view_output_dir = 0;
-    int model_views_supersample = 1;
-    int material_regression = 0;
-    const char *performance_model_path = 0;
-    const char *bone_model_path = 0;
-    const char *bone_search = 0;
-    const char *humanoid_model_path = 0;
-    const char *humanoid_basis_model_path = 0;
-    const char *retarget_model_path = 0;
-    const char *retarget_action = 0;
-    const char *glb_animation_model = 0, *glb_animation_path = 0;
-    const char *glb_animation_name = 0,*glb_motion_model=0,*glb_motion_path=0;
-    const char *vmd_walk_model=0,*vmd_walk_path=0;
-    int vmd_freeze_head = 0, vmd_freeze_torso = 0, vmd_disable_ik = 0;
-    int vmd_disable_grant = 0;
-    int vmd_legacy_root_offset = 0;
-    int vmd_legacy_knee_ccd = 0;
-    int vmd_skin_trace = 0;
-    int performance_iterations = 5;
-    int performance_workers = 0;
-    int actor_performance = 0;
-    int actor_raster_workers = 8;
-    for (int arg = 1; arg < argc; arg++) {
-        if (strcmp(argv[arg], "--input-test") == 0) input_debug = 1;
-        else if (strcmp(argv[arg], "--logic-test") == 0 ||
-                 strcmp(argv[arg], "--net-test") == 0) logic_test = 1;
-        else if (strcmp(argv[arg], "--host") == 0)
-            requested_net_mode = RASTERFALL_NET_HOST;
-        else if (strcmp(argv[arg], "--connect") == 0 && arg + 1 < argc) {
-            requested_net_mode = RASTERFALL_NET_CLIENT;
-            net_address = argv[++arg];
-        } else if (strcmp(argv[arg], "--port") == 0 && arg + 1 < argc)
-            net_port = parse_positive_int(argv[++arg], RASTERFALL_NET_DEFAULT_PORT);
-        else if (strcmp(argv[arg], "--net-loss") == 0 && arg + 1 < argc)
-            net_loss_percent = parse_positive_int(argv[++arg], 0);
-        else if (strcmp(argv[arg], "--auto") == 0) auto_mode = 1;
-        else if (strcmp(argv[arg], "--textures") == 0) textures_enabled = 1;
-        else if (strcmp(argv[arg], "--no-textures") == 0) textures_enabled = 0;
-        else if (strcmp(argv[arg], "--edge-pass") == 0) edge_pass_enabled = 1;
-        else if (strcmp(argv[arg], "--no-edge-pass") == 0) edge_pass_enabled = 0;
-        else if (strcmp(argv[arg], "--no-stats") == 0) stats_enabled = 0;
-        else if (strcmp(argv[arg], "--texture-stats") == 0) texture_stats = 1;
-        else if (strcmp(argv[arg], "--dump-frame") == 0 && arg + 1 < argc)
-            dump_path = argv[++arg];
-        else if (strcmp(argv[arg], "--model-views") == 0 && arg + 2 < argc) {
-            view_model_path = argv[++arg];
-            view_output_dir = argv[++arg];
-        } else if (strcmp(argv[arg], "--model-views-supersample") == 0 &&
-                   arg + 1 < argc) {
-            model_views_supersample = parse_positive_int(argv[++arg], 1);
-            if (model_views_supersample != 2) model_views_supersample = 1;
-        } else if (strcmp(argv[arg], "--model-static-views") == 0 &&
-                   arg + 2 < argc) {
-            view_model_path = argv[++arg];
-            view_output_dir = argv[++arg];
-            requested_model_skinning = 0;
-        } else if (strcmp(argv[arg], "--model-pose-views") == 0 &&
-                   arg + 3 < argc) {
-            const char *pose_name;
-            view_model_path = argv[++arg];
-            view_output_dir = argv[++arg];
-            pose_name = argv[++arg];
-            requested_model_skinning = 1;
-            requested_model_pose = !strcmp(pose_name, "right-arm") ?
-                RASTERFALL_MODEL_POSE_RIGHT_ARM :
-                !strcmp(pose_name, "arms") ? RASTERFALL_MODEL_POSE_ARMS :
-                !strcmp(pose_name, "body") ? RASTERFALL_MODEL_POSE_BODY_TURN :
-                RASTERFALL_MODEL_POSE_BIND;
-        } else if (strcmp(argv[arg], "--model-bones") == 0 &&
-                   arg + 1 < argc) {
-            bone_model_path = argv[++arg];
-            if (arg + 1 < argc && argv[arg + 1][0] != '-')
-                bone_search = argv[++arg];
-        } else if (strcmp(argv[arg], "--model-humanoid") == 0 &&
-                   arg + 1 < argc) {
-            humanoid_model_path = argv[++arg];
-        } else if (strcmp(argv[arg], "--model-humanoid-basis") == 0 &&
-                   arg + 1 < argc) {
-            humanoid_basis_model_path = argv[++arg];
-        } else if (strcmp(argv[arg], "--model-retarget-test") == 0 &&
-                   arg + 2 < argc) {
-            retarget_model_path = argv[++arg]; retarget_action = argv[++arg];
-        } else if (strcmp(argv[arg], "--model-glb-animation") == 0 &&
-                   arg + 3 < argc) {
-            glb_animation_model=argv[++arg];glb_animation_path=argv[++arg];
-            glb_animation_name=argv[++arg];
-        } else if(strcmp(argv[arg],"--model-glb-motion-diagnostic")==0&&arg+2<argc){
-            glb_motion_model=argv[++arg];glb_motion_path=argv[++arg];
-        } else if (strcmp(argv[arg], "--vmd-eula-walk") == 0 && arg + 2 < argc) {
-            vmd_walk_model = argv[++arg]; vmd_walk_path = argv[++arg];
-        } else if (strcmp(argv[arg], "--vmd-freeze-head") == 0) {
-            vmd_freeze_head = 1;
-        } else if (strcmp(argv[arg], "--vmd-freeze-torso") == 0) {
-            vmd_freeze_torso = 1;
-        } else if (strcmp(argv[arg], "--vmd-disable-ik") == 0) {
-            vmd_disable_ik = 1;
-        } else if (strcmp(argv[arg], "--vmd-disable-grant") == 0) {
-            vmd_disable_grant = 1;
-        } else if (strcmp(argv[arg], "--vmd-legacy-root-offset") == 0) {
-            vmd_legacy_root_offset = 1;
-        } else if (strcmp(argv[arg], "--vmd-legacy-knee-ccd") == 0 ||
-                   strcmp(argv[arg], "--vmd-legacy-leg-ccd") == 0) {
-            vmd_legacy_knee_ccd = 1;
-        } else if (strcmp(argv[arg], "--vmd-skin-trace") == 0) {
-            vmd_skin_trace = 1;
-        } else if (strcmp(argv[arg], "--model-material-regression") == 0 &&
-                   arg + 2 < argc) {
-            view_model_path = argv[++arg];
-            view_output_dir = argv[++arg];
-            material_regression = 1;
-        } else if (strcmp(argv[arg], "--model-performance") == 0 &&
-                   arg + 1 < argc) {
-            performance_model_path = argv[++arg];
-            if (arg + 1 < argc && argv[arg + 1][0] >= '0' &&
-                argv[arg + 1][0] <= '9')
-                performance_iterations =
-                    parse_positive_int(argv[++arg], performance_iterations);
-            if (arg + 1 < argc && argv[arg + 1][0] >= '0' &&
-                argv[arg + 1][0] <= '9')
-                performance_workers =
-                    parse_positive_int(argv[++arg], performance_workers);
-        } else if (strcmp(argv[arg], "--actor-performance") == 0) {
-            actor_performance = 1;
-            if (arg + 1 < argc && argv[arg + 1][0] >= '0' &&
-                argv[arg + 1][0] <= '9')
-                performance_iterations =
-                    parse_positive_int(argv[++arg], performance_iterations);
-            if (arg + 1 < argc && argv[arg + 1][0] >= '0' &&
-                argv[arg + 1][0] <= '9')
-                performance_workers =
-                    parse_positive_int(argv[++arg], performance_workers);
-            if (arg + 1 < argc && argv[arg + 1][0] >= '0' &&
-                argv[arg + 1][0] <= '9')
-                actor_raster_workers =
-                    parse_positive_int(argv[++arg], actor_raster_workers);
-        }
-        else if (strcmp(argv[arg], "--frames") == 0 && arg + 1 < argc) {
-            const char *p = argv[++arg];
-            while (*p >= '0' && *p <= '9')
-                frame_limit = frame_limit * 10 + (*p++ - '0');
-        }
-    }
+
+    rasterfall_options_init(&options, textures_enabled);
+    options_result = rasterfall_options_parse(&options, argc, argv);
+    if (options_result != 0) return options_result < 0 ? 2 : 0;
+    textures_enabled = options.textures_enabled;
+    requested_model_skinning = options.model_skinning;
+    requested_model_pose = options.model_pose;
     rasterfall_render_set_edge_pass(edge_pass_enabled);
     if(glb_animation_model){
         struct rasterfall_model_asset animation_model;memset(&animation_model,0,sizeof(animation_model));
