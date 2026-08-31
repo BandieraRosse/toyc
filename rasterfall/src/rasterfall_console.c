@@ -67,9 +67,10 @@ static void execute(struct rasterfall_console *c)
       out(c,"EDITOR");
       out(c,"  pose          open Eula + AK editor");
       out(c,"  pose eula ak  edit this character/weapon pair");
+      out(c,"  pose maid ak  edit maid/AK rifle pose");
       return;
   }
-if(!strcmp(w[0],"pose") && (n==1 || (n>=3&&!strcmp(w[1],"eula")&&!strcmp(w[2],"ak")))){c->calibration.active=1;c->calibration.character=0;c->calibration.weapon=TOY_GAME_WEAPON_AK;c->calibration.pose.left_ik=1;c->calibration.left_ik=1;c->calibration.axes=1;c->calibration.anchors=1;c->pose_hud_request=1;c->close_requested=1;out(c,"Rifle Pose Editor: Eula + AK");return;}
+if(!strcmp(w[0],"pose") && (n==1 || (n>=3&&(!strcmp(w[1],"eula")||!strcmp(w[1],"maid"))&&!strcmp(w[2],"ak")))){int character=n>=3&&!strcmp(w[1],"maid")?1:0;const struct rasterfall_pose_calibration *profile=rasterfall_pose_calibration_resolve(NULL,character,TOY_GAME_WEAPON_AK);c->calibration.active=1;c->calibration.character=character;c->calibration.weapon=TOY_GAME_WEAPON_AK;memcpy(&c->calibration.pose,profile,sizeof(c->calibration.pose));c->calibration.left_ik=c->calibration.pose.left_ik;c->calibration.axes=1;c->calibration.anchors=1;c->calibration.upper_body_lock=1;c->calibration.animation_base=0;c->calibration.animation_playing=0;c->pose_hud_request=1;c->close_requested=1;out(c,character?"Rifle Pose Editor: Maid + AK":"Rifle Pose Editor: Eula + AK");return;}
   out_error(c,"unknown command; type help");
 }
 void rasterfall_console_init(struct rasterfall_console *c){memset(c,0,sizeof(*c));rasterfall_calibration_init(&c->calibration);}

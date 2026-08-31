@@ -65,6 +65,34 @@ static void profile_init(void)
     pose_profiles[0][TOY_GAME_WEAPON_AK].body_pose[4][1] = 51;
     pose_profiles[0][TOY_GAME_WEAPON_AK].body_pose[4][2] = -18;
     pose_profiles[0][TOY_GAME_WEAPON_AK].left_ik = 1;
+    pose_profiles[1][TOY_GAME_WEAPON_AK].character_id = 1;
+    pose_profiles[1][TOY_GAME_WEAPON_AK].weapon = TOY_GAME_WEAPON_AK;
+    /* Imported from the verified maid_ak.rfpose authoring export. */
+    pose_profiles[1][TOY_GAME_WEAPON_AK].scale_milli = 500;
+    pose_profiles[1][TOY_GAME_WEAPON_AK].offset =
+        (struct rasterfall_cal_vec3){45, -65, 180};
+    pose_profiles[1][TOY_GAME_WEAPON_AK].grip =
+        (struct rasterfall_cal_vec3){-18, -8, -65};
+    pose_profiles[1][TOY_GAME_WEAPON_AK].foregrip =
+        (struct rasterfall_cal_vec3){5, 1, 48};
+    pose_profiles[1][TOY_GAME_WEAPON_AK].muzzle =
+        (struct rasterfall_cal_vec3){-5, 28, 225};
+    pose_profiles[1][TOY_GAME_WEAPON_AK].body_pose[0][0] = -5;
+    pose_profiles[1][TOY_GAME_WEAPON_AK].body_pose[0][1] = 0;
+    pose_profiles[1][TOY_GAME_WEAPON_AK].body_pose[0][2] = 0;
+    pose_profiles[1][TOY_GAME_WEAPON_AK].body_pose[1][0] = 25;
+    pose_profiles[1][TOY_GAME_WEAPON_AK].body_pose[1][1] = 45;
+    pose_profiles[1][TOY_GAME_WEAPON_AK].body_pose[1][2] = 105;
+    pose_profiles[1][TOY_GAME_WEAPON_AK].body_pose[2][0] = -15;
+    pose_profiles[1][TOY_GAME_WEAPON_AK].body_pose[2][1] = 35;
+    pose_profiles[1][TOY_GAME_WEAPON_AK].body_pose[2][2] = 35;
+    pose_profiles[1][TOY_GAME_WEAPON_AK].body_pose[3][0] = 0;
+    pose_profiles[1][TOY_GAME_WEAPON_AK].body_pose[3][1] = 15;
+    pose_profiles[1][TOY_GAME_WEAPON_AK].body_pose[3][2] = -90;
+    pose_profiles[1][TOY_GAME_WEAPON_AK].body_pose[4][0] = 0;
+    pose_profiles[1][TOY_GAME_WEAPON_AK].body_pose[4][1] = -105;
+    pose_profiles[1][TOY_GAME_WEAPON_AK].body_pose[4][2] = 5;
+    pose_profiles[1][TOY_GAME_WEAPON_AK].left_ik = 0;
     for (i = 0; i < TOY_GAME_CHARACTER_COUNT; i++)
         for (int w = 0; w < TOY_GAME_WEAPON_COUNT; w++) {
             if (pose_profiles[i][w].scale_milli == 0) {
@@ -102,7 +130,7 @@ const struct rasterfall_pose_calibration *rasterfall_pose_calibration_resolve(
 
 const char *rasterfall_pose_character_name(int character_id)
 {
-    static const char *names[TOY_GAME_CHARACTER_COUNT] = {"eula", "ar15", "ump45", "character3"};
+    static const char *names[TOY_GAME_CHARACTER_COUNT] = {"eula", "maid", "ump45", "character3"};
     if (character_id < 0 || character_id >= TOY_GAME_CHARACTER_COUNT) return "character";
     return names[character_id];
 }
@@ -189,6 +217,7 @@ void rasterfall_calibration_dump(const struct rasterfall_calibration_state *s)
 int rasterfall_calibration_logic_test(void)
 {
     struct rasterfall_calibration_state s;
+    const struct rasterfall_pose_calibration *maid;
     int x, y, z;
     rasterfall_calibration_init(&s);
     if (s.weapon != TOY_GAME_WEAPON_AK || s.pose.scale_milli != 500 ||
@@ -201,6 +230,12 @@ int rasterfall_calibration_logic_test(void)
         s.pose.muzzle.x != -5 || s.pose.muzzle.y != 28 ||
         s.pose.muzzle.z != 225 || s.animation_base != 0 ||
         !s.upper_body_lock) return 1;
+    maid = rasterfall_pose_calibration_resolve(NULL, 1, TOY_GAME_WEAPON_AK);
+    if (maid->scale_milli != 500 || maid->offset.x != 45 ||
+        maid->offset.y != -65 || maid->offset.z != 180 ||
+        maid->body_pose[1][0] != 25 || maid->body_pose[1][1] != 45 ||
+        maid->body_pose[1][2] != 105 || maid->body_pose[3][2] != -90 ||
+        maid->left_ik != 0) return 3;
     rasterfall_weapon_asset_to_canonical(TOY_GAME_WEAPON_AK, 1, 2, 3, &x, &y, &z);
     if (x != -1 || y != 2 || z != -3) return 2;
     return 0;

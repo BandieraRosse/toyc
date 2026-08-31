@@ -315,6 +315,11 @@ static const struct rasterfall_skeletal_actor_profile eula_actor_profile = {
     "rasterfall/private-assets/animations/walk04_loop5.vmd",
     "右手首", 1736, 0, -1024
 };
+static const struct rasterfall_skeletal_actor_profile maid_actor_profile = {
+    "rasterfall/private-assets/models/maid.rmesh",
+    "rasterfall/private-assets/animations/walk04_loop5.vmd",
+    "右手首", 1736, 0, 1024
+};
 
 struct rasterfall_developer_character {
     const char *name, *model_path, *lod_model_path, *lod2_model_path, *height_source;
@@ -516,6 +521,73 @@ static void sample_developer_character(struct rasterfall_developer_character *en
         memcpy(entry->lod2_model.bone_transforms,
                entry->model.bone_transforms,
                entry->model.bone_count * sizeof(*entry->model.bone_transforms));
+}
+
+static int render_maid_pose_preview(struct toy_renderer *renderer,
+                                    const struct camera *camera)
+{
+    struct rasterfall_developer_character *entry = &developer_characters[0];
+    struct rasterfall_calibration_state *editor = &active_session->pose_editor;
+    struct rasterfall_rifle_pose preview_pose;
+    struct rasterfall_animation_composition composition;
+    struct rasterfall_model_attachment_transform rifle_frame;
+    const struct rasterfall_pose_calibration *wp;
+    const struct rasterfall_weapon_asset_profile *asset;
+    int zero[3] = {0, 0, 0};
+    int scale, pixels = 0;
+
+    if (!entry->model.data || !entry->vmd_loaded) return 0;
+    rasterfall_model_set_ik_enabled(&entry->model, private_character_vmd_ik_enabled);
+    rasterfall_model_set_grant_enabled(&entry->model, private_character_vmd_grant_enabled);
+    rasterfall_model_set_root_motion(&entry->model, zero, zero, 0);
+    memcpy(preview_pose.rotation, editor->pose.body_pose,
+           sizeof(preview_pose.rotation));
+    memset(&composition, 0, sizeof(composition));
+    composition.rifle_stance = 1;
+    composition.upper_body_lock = editor->upper_body_lock;
+    composition.rifle_pose = &preview_pose;
+    if (editor->animation_base) {
+        int center[3], groove[3];
+        rasterfall_vmd_sample_bone_translation(&entry->vmd, "センター",
+                                               editor->animation_time_ms, center);
+        rasterfall_vmd_sample_bone_translation(&entry->vmd, "グルーブ",
+                                               editor->animation_time_ms, groove);
+        rasterfall_model_set_root_motion(&entry->model, center, groove, 1);
+        composition.locomotion = &entry->walk;
+        composition.locomotion_time_ms = editor->animation_time_ms;
+        composition.locomotion_weight_milli = 1000;
+        composition.overlay = editor->animation_overlay == 1 ?
+            RASTERFALL_COMPOSITION_OVERLAY_FIRE :
+            editor->animation_overlay == 2 ?
+            RASTERFALL_COMPOSITION_OVERLAY_HIT :
+            RASTERFALL_COMPOSITION_OVERLAY_NONE;
+        composition.overlay_time_ms = editor->animation_time_ms % 1200;
+    } else {
+        rasterfall_model_sample_clip(&entry->model, NULL, 0);
+    }
+    /* The editor pose is useful in the stationary bind pose too.  Keep the
+     * composition call outside the animation branch so body/arm edits are
+     * visible before the author enables a locomotion preview. */
+    rasterfall_animation_compose(&entry->model, &composition);
+    if (rifle_frame_transform(&entry->model, &rifle_frame) < 0) return 0;
+    wp = rasterfall_pose_calibration_resolve(editor, 1, TOY_GAME_WEAPON_AK);
+    asset = rasterfall_weapon_asset_profile(TOY_GAME_WEAPON_AK);
+    scale = character_model_scale(&entry->model, maid_actor_profile.target_height_mm);
+    if (wp->left_ik)
+        rifle_solve_hands(&entry->model, &rifle_frame, wp, asset, scale);
+    active_pose_preview = 1;
+    active_gallery_facing = 1;
+    active_gallery_sy = 0;
+    active_gallery_cy = maid_actor_profile.forward_cy;
+    pixels += render_gallery_model(renderer, camera, &entry->model,
+                                   -13000, -900, -10000, scale);
+    pixels += render_skeletal_rifle(renderer, camera, &entry->model,
+                                    &rifle_frame, &maid_actor_profile, wp,
+                                    -13000, -900, -10000, 0, 1024,
+                                    TOY_GAME_WEAPON_AK, 0);
+    active_gallery_facing = 0;
+    active_pose_preview = 0;
+    return pixels;
 }
 
 int rasterfall_render_set_vmd_walk(const char *model_path, const char *vmd_path)
@@ -2855,6 +2927,11 @@ static int render_private_character(struct toy_renderer *renderer,
     sync_private_character_lod_pose();
     sync_private_character_lod2_pose();
     load_developer_characters(renderer);
+    if (active_session && active_session->pose_debug_active &&
+        active_session->pose_editor.active &&
+        active_session->pose_editor.character == 1 &&
+        active_session->pose_editor.weapon == TOY_GAME_WEAPON_AK)
+        return render_maid_pose_preview(renderer, camera);
     if (!private_character_model.data ||
         character_quality == RASTERFALL_CHARACTER_HIDDEN)
         return 0;
@@ -5692,10 +5769,12 @@ static int render_ai_teammate(struct toy_renderer *renderer,
             int pose_weapon = actor->current_slot >= 0 &&
                 actor->current_slot < TOY_GAME_WEAPON_SLOTS ?
                 actor->slots[actor->current_slot].weapon : TOY_GAME_WEAPON_PISTOL;
+            int maid_character = actor->anime_character_id >= 2 &&
+                                 actor->anime_character_id <= 5;
             const struct rasterfall_pose_calibration *actor_pose =
                 rasterfall_pose_calibration_resolve(
                     active_session ? &active_session->pose_editor : NULL,
-                    0, pose_weapon);
+                    maid_character ? 1 : 0, pose_weapon);
             int have_rifle_frame;
             int blend=actor->locomotion_blend_ms*5;
             if(blend>1000)blend=1000;
@@ -5707,17 +5786,20 @@ static int render_ai_teammate(struct toy_renderer *renderer,
              * basis.  Leave maid in the authored VMD pose until it has its
              * own hand/forearm calibration; otherwise the wrists twist
              * behind the body even though the model yaw is correct. */
-            composition.rifle_stance=maid_entry ? 0 : 1;
+            composition.rifle_stance=maid_entry && pose_weapon != TOY_GAME_WEAPON_AK ? 0 : 1;
             /* Maid's Mixamo bind pose differs from Eula's PMX rest pose.
              * Preserve the authored walk above the hips and add only a weak
              * relative rifle silhouette; clearing the upper body here turns
              * Maid's moving pose back toward its bind T-pose. */
-            composition.upper_body_lock=maid_entry ? 0 : 1;
+            /* Like Eula's editor path, the authored rifle pose owns the
+             * complete upper body.  Maid's walk VMD must not reopen or spread
+             * the hands after the calibrated arm rotations are applied. */
+            composition.upper_body_lock=1;
             composition.overlay=actor->animation.id==TOY_GAME_ANIM_FIRE?RASTERFALL_COMPOSITION_OVERLAY_FIRE:RASTERFALL_COMPOSITION_OVERLAY_NONE;
             composition.overlay_time_ms=actor->animation.time_ms;
             memcpy(actor_body_pose.rotation, actor_pose->body_pose,
                    sizeof(actor_body_pose.rotation));
-            if (maid_entry) {
+            if (maid_entry && pose_weapon != TOY_GAME_WEAPON_AK) {
                 int pose_bone, axis;
                 for (pose_bone = 0;
                      pose_bone < RASTERFALL_RIFLE_POSE_BONE_COUNT;
@@ -5770,10 +5852,14 @@ static int render_ai_teammate(struct toy_renderer *renderer,
             if(actor->current_slot>=0&&actor->current_slot<TOY_GAME_WEAPON_SLOTS){
                 int weapon=actor->slots[actor->current_slot].weapon;
                 const struct rasterfall_pose_calibration *weapon_profile=
-                    render_pose_calibration(weapon);
+                    rasterfall_pose_calibration_resolve(
+                        active_session ? &active_session->pose_editor : NULL,
+                        maid_entry ? 1 : 0, weapon);
+                const struct rasterfall_skeletal_actor_profile *actor_profile =
+                    maid_entry ? &maid_actor_profile : &eula_actor_profile;
                 if(have_rifle_frame && rasterfall_weapon_asset_profile(weapon)->skeletal)
                     pixels+=render_skeletal_rifle(renderer,camera,
-                        actor_model,&rifle_frame,&eula_actor_profile,
+                        actor_model,&rifle_frame,actor_profile,
                         weapon_profile,
                         actor->x,-900+active_actor_lift,actor->z,actor->sy,
                         actor->cy,weapon,actor->muzzle_flash_ms);
