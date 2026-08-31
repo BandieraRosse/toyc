@@ -67,8 +67,6 @@ struct rasterfall_scene_stats {
     unsigned char character_visible[5];
     unsigned char character_edge_disabled[5];
     long character_prepare_wall_us;
-    long character_primitive_wall_us;
-    long character_task_setup_us;
     long character_merge_us;
     long character_preview_us;
     long character_animation_outside_us;

@@ -132,10 +132,6 @@ void rasterfall_perf_add_scene(struct rasterfall_perf_stats *window,
     total->scene_model_triangles_culled += scene->model_triangles_culled;
     window->character_prepare_wall_us += scene->character_prepare_wall_us;
     total->character_prepare_wall_us += scene->character_prepare_wall_us;
-    window->character_primitive_wall_us += scene->character_primitive_wall_us;
-    total->character_primitive_wall_us += scene->character_primitive_wall_us;
-    window->character_task_setup_us += scene->character_task_setup_us;
-    total->character_task_setup_us += scene->character_task_setup_us;
     window->character_merge_us += scene->character_merge_us;
     total->character_merge_us += scene->character_merge_us;
     window->character_preview_us += scene->character_preview_us;
@@ -277,10 +273,8 @@ void rasterfall_perf_dump(const struct rasterfall_perf_stats *s, const char *lab
         static const char *names[5] = {
             "eula", "st_ar15", "g11", "vector", "ump45"
         };
-        __printf("[stats:%s] character pipeline prepare_wall_us/f=%ld primitive_wall_us/f=%ld task_setup_us/f=%ld merge_us/f=%ld preview_us/f=%ld animation_outside_us/f=%ld\n",
+        __printf("[stats:%s] character pipeline prepare_wall_us/f=%ld merge_us/f=%ld preview_us/f=%ld animation_outside_us/f=%ld\n",
             label, s->character_prepare_wall_us / s->frames,
-            s->character_primitive_wall_us / s->frames,
-            s->character_task_setup_us / s->frames,
             s->character_merge_us / s->frames,
             s->character_preview_us / s->frames,
             s->character_animation_outside_us / s->frames);
