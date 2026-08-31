@@ -663,11 +663,38 @@ static void net_accept_client_weapon_state(
     for (i = 0; i < TOY_GAME_WEAPON_SLOTS; i++)
         if (client->slots[i].weapon != input->slots[i].weapon)
             return;
-    for (i = 0; i < TOY_GAME_WEAPON_SLOTS; i++) {
+    /* Firearm ammunition is predicted by the owning client.  Consumables are
+     * simulated by the host (purchase, pill use and projectile launch), so an
+     * input queued before the latest snapshot must never write their old
+     * quantity back over the authoritative value. */
+    for (i = 0; i < 2; i++) {
         client->slots[i].mag = input->slots[i].mag;
         client->slots[i].reserve = input->slots[i].reserve;
     }
     client->current_slot = input->current_slot;
+}
+
+static void net_apply_own_inventory(struct toy_game *game,
+                                    const struct rasterfall_net_player *own)
+{
+    int i;
+    if (!game || !own) return;
+    for (i = 0; i < TOY_GAME_WEAPON_SLOTS; i++) {
+        struct toy_game_slot *slot = &game->slots[i];
+        if (slot->weapon != own->slot_weapon[i]) {
+            slot->weapon = own->slot_weapon[i];
+            slot->mag = own->mag[i];
+            slot->reserve = own->reserve[i];
+            game->current_slot = own->current_slot;
+        } else if (i >= 2) {
+            /* Purchases and uses of throwables/pills are host-authoritative. */
+            slot->mag = own->mag[i];
+            slot->reserve = own->reserve[i];
+        } else if (!game->reloading && slot->mag == own->mag[i] &&
+                   own->reserve[i] > slot->reserve) {
+            slot->reserve = own->reserve[i];
+        }
+    }
 }
 
 static int net_client_index_client_id(const struct rasterfall_net *net,
@@ -3672,6 +3699,38 @@ int rasterfall_net_pipeline_test(void)
             net_prediction_for_ack(&net, 77)->z != -300)
             return 12;
     }
+    /* Client inputs cannot rewind host-owned consumable quantities, while a
+     * player snapshot must acknowledge both purchases and consumption. */
+    {
+        struct rasterfall_net_input input;
+        struct toy_game inventory_game;
+        struct rasterfall_net_player own;
+        memset(&input, 0, sizeof(input));
+        net_init_player_slots(client->slots, &client->current_slot);
+        client->slots[2].weapon = TOY_GAME_WEAPON_BOMB;
+        client->slots[2].mag = 3;
+        client->slots[3].weapon = TOY_GAME_WEAPON_PILL;
+        client->slots[3].mag = 4;
+        memcpy(input.slots, client->slots, sizeof(input.slots));
+        input.slots[2].mag = 1; input.slots[3].mag = 1;
+        input.current_slot = 2;
+        net_accept_client_weapon_state(client, &input);
+        if (client->slots[2].mag != 3 || client->slots[3].mag != 4)
+            return 23;
+        toy_game_init(&inventory_game, 156);
+        memset(&own, 0, sizeof(own));
+        own.slot_weapon[2] = TOY_GAME_WEAPON_BOMB;
+        own.slot_weapon[3] = TOY_GAME_WEAPON_PILL;
+        own.mag[2] = 2; own.mag[3] = 5;
+        inventory_game.slots[2].weapon = TOY_GAME_WEAPON_BOMB;
+        inventory_game.slots[2].mag = 3;
+        inventory_game.slots[3].weapon = TOY_GAME_WEAPON_PILL;
+        inventory_game.slots[3].mag = 4;
+        net_apply_own_inventory(&inventory_game, &own);
+        if (inventory_game.slots[2].mag != 2 ||
+            inventory_game.slots[3].mag != 5)
+            return 24;
+    }
     /* Reliable special events apply locally and stale CONTROL_END is ignored. */
     {
         struct rasterfall_session event_session;
@@ -4033,24 +4092,11 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
             session->game_state.throwable_damage_dealt = own->throwable_damage_dealt;
         }
         session->game_state.state = own->state;
-        /* Ordinary snapshots never rewind the owning client's weapon clock.
-         * Host-side pickups are ownership transfers: a changed weapon id
-         * initializes that slot, while an ammo grant is accepted only when
-         * the magazine still matches (so an old pre-reload snapshot cannot
-         * restore spent reserve ammunition). */
-        for (i = 0; i < TOY_GAME_WEAPON_SLOTS; i++) {
-            struct toy_game_slot *slot = &session->game_state.slots[i];
-            if (slot->weapon != own->slot_weapon[i]) {
-                slot->weapon = own->slot_weapon[i];
-                slot->mag = own->mag[i];
-                slot->reserve = own->reserve[i];
-                session->game_state.current_slot = own->current_slot;
-            } else if (!session->game_state.reloading &&
-                       slot->mag == own->mag[i] &&
-                       own->reserve[i] > slot->reserve) {
-                slot->reserve = own->reserve[i];
-            }
-        }
+        /* Ordinary snapshots never rewind the owning client's firearm clock.
+         * Host-side pickups initialize changed slots, firearm ammo grants are
+         * merged conservatively, and host-simulated consumables are copied
+         * authoritatively so purchases and uses both reach the client. */
+        net_apply_own_inventory(&session->game_state, own);
         session->game_state.throw_timer_ms = own->throw_timer_ms;
         session->game_state.wave = net->snapshot_world_wave;
         session->game_state.to_spawn = net->snapshot_world_to_spawn;
@@ -4127,9 +4173,12 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
             int old_active = dst->active;
             old_hp = dst->hp; old_hurt = dst->hurt; old_flash = dst->flash;
             /* A pre-hit entity chunk must not revive an enemy during the
-             * locally predicted death animation.  Slot reuse is accepted
-             * after that short animation reaches inactive state. */
-            preserve_predicted_death = old_active == 2 && src->active == 1;
+             * locally predicted death animation.  Likewise, a delayed dying
+             * snapshot must not restart a death that already finished.  A
+             * live snapshot still identifies actual slot reuse. */
+            preserve_predicted_death =
+                (old_active == 2 && src->active == 1) ||
+                (old_active == 0 && src->active == 2);
             if (!preserve_predicted_death) {
                 dst->active = src->active;
                 dst->hp = src->hp;
@@ -4147,7 +4196,13 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
             dst->flash = old_flash;
             if (src->active == 1 && src->hp < old_hp && old_active == 1)
                 dst->hurt = 80;
-            if (!preserve_predicted_death) dst->dying_ms = src->dying_ms;
+            if (!preserve_predicted_death) {
+                /* Death presentation is monotonic.  Repeated snapshots may
+                 * shorten it to the host clock, but can never restart it. */
+                if (!(old_active == 2 && src->active == 2 && old_hp <= 0 &&
+                      dst->dying_ms < src->dying_ms))
+                    dst->dying_ms = src->dying_ms;
+            }
             dst->ability.special_target_active = src->ability.special_target_active;
             dst->ability.charge_active = src->ability.charge_active;
             dst->ability.special_timer_ms = src->ability.special_timer_ms;
