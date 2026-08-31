@@ -365,6 +365,8 @@ struct toy_game_ray {
     int ex, ez;        /* 终点：命中敌人/墙体位置，或最大射程端点 */
     int hit_enemy;     /* 该弹丸击倒敌人 */
     int hit_world;     /* 该弹丸撞上障碍（终点为墙体交点） */
+    int enemy_index;   /* 命中的敌人；未命中为 -1 */
+    int damage;        /* 本次弹丸实际造成的伤害 */
 };
 
 struct toy_game_slot {
@@ -780,6 +782,9 @@ void toy_game_set_player_pitch(struct toy_game *g, int pitch_sy, int pitch_cy,
 void toy_game_set_player_moving(struct toy_game *g, int moving);
 int  toy_game_current_spread(const struct toy_game *g);
 int  toy_game_fire(struct toy_game *g, int sy, int cy);     /* hitscan，命中返回 1 */
+int  toy_game_apply_reported_hit(struct toy_game *g,
+                                 struct toy_game_actor *actor,
+                                 int enemy_index, int damage);
 int  toy_game_switch_weapon(struct toy_game *g, int slot);  /* 切枪；空槽/同槽返回 0 */
 int  toy_game_equip_weapon(struct toy_game *g, int weapon); /* 按武器定义装备到对应槽；同武器=补充弹药返回 0，新武器返回 1，非法返回 -1 */
 int  toy_game_refill_ammo(struct toy_game *g);              /* 弹药盒：补满已拥有武器的备弹，有变化返回 1 */

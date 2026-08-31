@@ -2297,13 +2297,7 @@ static void session_step_client_mode(struct rasterfall_session *session,
                                      int dt_ms, int suppress_presentation)
 {
     unsigned char keys[TOY_GAME_KEY_RELOAD + 1];
-    struct {
-        int index;
-        int hp, active, dying_ms, flash, hurt;
-    } saved_enemy_hits[TOY_GAME_MAX_ENEMIES];
-    int saved_enemy_count = 0;
-    int enemy_count, kills, special_kills, damage_dealt;
-    int throwable_damage_dealt, event_start, write, i;
+    int i;
     int saved_throw_timer;
     int old_reloading;
     unsigned int old_fire_seq;
@@ -2372,32 +2366,21 @@ static void session_step_client_mode(struct rasterfall_session *session,
     if (command->buttons & RASTERFALL_CMD_SLOT_2) keys[TOY_GAME_KEY_SLOT_2] = 1;
     if (command->buttons & RASTERFALL_CMD_SLOT_3) keys[TOY_GAME_KEY_SLOT_3] = 1;
     if (command->buttons & RASTERFALL_CMD_SLOT_4) keys[TOY_GAME_KEY_SLOT_4] = 1;
-    /* Weapon prediction can only mutate the enemy hit fields.  Saving the
-     * complete 64-entry enemy array here made every client tick (and every
-     * replay tick) pay for a world-sized memcpy. */
-    for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
-        struct toy_game_enemy *enemy = &session->game_state.enemies[i];
-        if (!enemy->active) continue;
-        saved_enemy_hits[saved_enemy_count].index = i;
-        saved_enemy_hits[saved_enemy_count].hp = enemy->hp;
-        saved_enemy_hits[saved_enemy_count].active = enemy->active;
-        saved_enemy_hits[saved_enemy_count].dying_ms = enemy->dying_ms;
-        saved_enemy_hits[saved_enemy_count].flash = enemy->flash;
-        saved_enemy_hits[saved_enemy_count].hurt = enemy->hurt;
-        saved_enemy_count++;
-    }
-    enemy_count = session->game_state.enemies_alive;
-    kills = session->game_state.kills;
-    special_kills = session->game_state.special_kills;
-    damage_dealt = session->game_state.damage_dealt;
-    throwable_damage_dealt = session->game_state.throwable_damage_dealt;
-    event_start = session->game_state.event_count;
     old_reloading = session->game_state.reloading;
     old_fire_seq = session->game_state.fire_seq;
-    toy_game_update_weapon_held(&session->game_state, keys,
-                                (command->buttons & RASTERFALL_CMD_FIRE) != 0,
-                                command->fire_held, camera->sy, camera->cy,
-                                dt_ms);
+    {
+        int weapon = session->game_state.slots[
+            session->game_state.current_slot].weapon;
+        int client_hitscan = weapon != TOY_GAME_WEAPON_AXE &&
+            weapon != TOY_GAME_WEAPON_PILL &&
+            weapon != TOY_GAME_WEAPON_BOMB &&
+            weapon != TOY_GAME_WEAPON_MOLOTOV;
+        toy_game_update_weapon_held(&session->game_state, keys,
+                                    client_hitscan &&
+                                        (command->buttons & RASTERFALL_CMD_FIRE),
+                                    client_hitscan && command->fire_held,
+                                    camera->sy, camera->cy, dt_ms);
+    }
     /* The client predicts its own weapon state, so it must also predict the
      * presentation transition.  The host path uses toy_game_update_held,
      * which owns this transition; the client deliberately calls the lower
@@ -2449,15 +2432,6 @@ static void session_step_client_mode(struct rasterfall_session *session,
      * the predicted first-person camera in the same post-tick state as the
      * host camera instead of waiting for the next snapshot to move camera.y. */
     session_sync_special_motion(session, camera);
-    for (i = 0; i < saved_enemy_count; i++) {
-        struct toy_game_enemy *enemy = &session->game_state.enemies[
-            saved_enemy_hits[i].index];
-        enemy->hp = saved_enemy_hits[i].hp;
-        enemy->active = saved_enemy_hits[i].active;
-        enemy->dying_ms = saved_enemy_hits[i].dying_ms;
-        enemy->flash = saved_enemy_hits[i].flash;
-        enemy->hurt = saved_enemy_hits[i].hurt;
-    }
     /* Clients do not run the authoritative enemy simulation.  Still advance
      * the short death presentation locally so a lost final entity snapshot
      * cannot leave a flattened corpse rendered forever. */
@@ -2468,18 +2442,7 @@ static void session_step_client_mode(struct rasterfall_session *session,
             if (enemy->dying_ms <= 0) enemy->active = 0;
         }
     }
-    session->game_state.enemies_alive = enemy_count;
-    session->game_state.kills = kills;
-    session->game_state.special_kills = special_kills;
-    session->game_state.damage_dealt = damage_dealt;
-    session->game_state.throwable_damage_dealt = throwable_damage_dealt;
     session->game_state.throw_timer_ms = saved_throw_timer;
-    /* 预测射击仍保留开火/换弹音效，但击杀音效只由主机事件复制。 */
-    write = event_start;
-    for (i = event_start; i < session->game_state.event_count; i++)
-        if (session->game_state.events[i] != TOY_GAME_EV_KILL)
-            session->game_state.events[write++] = session->game_state.events[i];
-    session->game_state.event_count = write;
     if (session->banner_ms > 0) {
         session->banner_ms -= dt_ms;
         if (session->banner_ms <= 0) {

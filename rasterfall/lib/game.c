@@ -3515,16 +3515,58 @@ static void normalize_dir(int *sy, int *cy)
     }
 }
 
+int toy_game_apply_reported_hit(struct toy_game *g,
+                                struct toy_game_actor *actor,
+                                int enemy_index, int damage)
+{
+    struct toy_game_enemy *e;
+    int inflicted;
+    if (!g || enemy_index < 0 || enemy_index >= TOY_GAME_MAX_ENEMIES ||
+        damage <= 0) return 0;
+    e = &g->enemies[enemy_index];
+    if (e->active != 1) return 0;
+    inflicted = damage < e->hp ? damage : e->hp;
+    e->hp -= damage;
+    if (actor) actor->damage_dealt += inflicted;
+    else g->damage_dealt += inflicted;
+    if (e->hp > 0) {
+        e->hurt = 150;
+        return 1;
+    }
+    e->hp = 0; e->active = 2; e->dying_ms = TOY_GAME_DYING_MS;
+    e->flash = 120; g->enemies_alive--;
+    if (actor) actor->kills++; else g->kills++;
+    if (e->type == TOY_GAME_ENEMY_TANK) g->money += TOY_CONFIG_MONEY_TANK;
+    else if (e->type == TOY_GAME_ENEMY_SMOKER ||
+             e->type == TOY_GAME_ENEMY_CHARGER)
+        g->money += TOY_CONFIG_MONEY_SPECIAL;
+    else if (e->type == TOY_GAME_ENEMY_HEAVY ||
+             e->type == TOY_GAME_ENEMY_PURSUIT_HEAVY)
+        g->money += TOY_CONFIG_MONEY_HEAVY;
+    else if (e->type == TOY_GAME_ENEMY_PURSUIT_FAST)
+        g->money += TOY_CONFIG_MONEY_FAST;
+    else g->money += TOY_CONFIG_MONEY_COMMON;
+    if (toy_game_enemy_info(e->type)->ability != TOY_GAME_ENEMY_ABILITY_NONE) {
+        if (actor) actor->special_kills++; else g->special_kills++;
+    }
+    if (g->player_pull_enemy_index == enemy_index) release_player_special(g);
+    push_event(g, TOY_GAME_EV_KILL);
+    return 2;
+}
+
 /* 单发 hitscan：最近且未被障碍遮挡的敌人一枪毙命，命中返回 1。
  * 同时输出射线终点：命中敌人 → 敌人位置；未命中 → 首个墙交点或最大射程。 */
 static int fire_ray(struct toy_game *g, int source_x, int source_z,
                     struct toy_game_actor *actor,
                     int sy, int cy, int damage, int range,
-                    int *out_ex, int *out_ez, int *out_hit_world)
+                    int *out_ex, int *out_ez, int *out_hit_world,
+                    int *out_enemy_index, int *out_damage)
 {
     int best = -1, best_t = 0, i;
     int radius_times_1024 = TOY_GAME_HIT_RADIUS * 1024;
     long long world_t = (long long)range << 20; /* 世界距离定点 */
+    *out_enemy_index = -1;
+    *out_damage = 0;
     for (i = 0; i < g->world_count; i++) {
         long long entry_u;
         if (ray_box_entry(source_x, source_z, sy, cy,
@@ -3561,45 +3603,15 @@ static int fire_ray(struct toy_game *g, int source_x, int source_z,
         }
     }
     if (best >= 0) {
-        struct toy_game_enemy *e = &g->enemies[best];
-        int inflicted = damage < e->hp ? damage : e->hp;
+        *out_enemy_index = best;
+        /* Report the weapon's damage operation, not the locally clamped HP
+         * delta.  The host clamps against its merged HP after concurrent
+         * client shots are ordered. */
+        *out_damage = damage;
         *out_ex = g->px + (sy * best_t) / 1024;
         *out_ez = g->pz + (cy * best_t) / 1024;
         *out_hit_world = 0;
-        e->hp -= damage;
-        if (actor) actor->damage_dealt += inflicted;
-        else if (inflicted > 0) g->damage_dealt += inflicted;
-        if (e->hp <= 0) {
-            e->hp = 0;
-            e->active = 2;
-            e->dying_ms = TOY_GAME_DYING_MS;
-            e->flash = 120;
-            g->enemies_alive--;
-            if (actor) actor->kills++;
-            else g->kills++;
-            if (e->type == TOY_GAME_ENEMY_TANK)
-                g->money += TOY_CONFIG_MONEY_TANK;
-            else if (e->type == TOY_GAME_ENEMY_SMOKER ||
-                     e->type == TOY_GAME_ENEMY_CHARGER)
-                g->money += TOY_CONFIG_MONEY_SPECIAL;
-            else if (e->type == TOY_GAME_ENEMY_HEAVY ||
-                     e->type == TOY_GAME_ENEMY_PURSUIT_HEAVY)
-                g->money += TOY_CONFIG_MONEY_HEAVY;
-            else if (e->type == TOY_GAME_ENEMY_PURSUIT_FAST)
-                g->money += TOY_CONFIG_MONEY_FAST;
-            else
-                g->money += TOY_CONFIG_MONEY_COMMON;
-            if (toy_game_enemy_info(e->type)->ability !=
-                TOY_GAME_ENEMY_ABILITY_NONE) {
-                if (actor) actor->special_kills++;
-                else g->special_kills++;
-            }
-            if (g->player_pull_enemy_index == best)
-                release_player_special(g);
-            push_event(g, TOY_GAME_EV_KILL);
-        } else {
-            e->hurt = 150;
-        }
+        toy_game_apply_reported_hit(g, actor, best, damage);
         return 1;
     }
     {
@@ -3966,11 +3978,11 @@ int toy_game_fire(struct toy_game *g, int sy, int cy)
                  spread * spread);
         ray_sy = (sy * 1024 - cy * off_x) / 1024;
         ray_cy = (cy * 1024 + sy * off_x) / 1024;
-        int ex, ez, hit_world, killed;
+        int ex, ez, hit_world, killed, enemy_index, inflicted;
         normalize_dir(&ray_sy, &ray_cy);   /* 旋转后长度略偏，归一化保证判定一致 */
         killed = fire_ray(g, g->px, g->pz, NULL,
                           ray_sy, ray_cy, w->damage, w->range,
-                          &ex, &ez, &hit_world);
+                          &ex, &ez, &hit_world, &enemy_index, &inflicted);
         if (killed) hit = 1;
         g->rays[pellet].sy = ray_sy;
         g->rays[pellet].cy = ray_cy;
@@ -3979,6 +3991,8 @@ int toy_game_fire(struct toy_game *g, int sy, int cy)
         g->rays[pellet].ez = ez;
         g->rays[pellet].hit_enemy = killed;
         g->rays[pellet].hit_world = hit_world;
+        g->rays[pellet].enemy_index = enemy_index;
+        g->rays[pellet].damage = inflicted;
     }
     return hit;
 }
@@ -4438,6 +4452,7 @@ static int toy_game_fire_actor(struct toy_game *g,
     actor->ray_count = w->pellets;
     for (pellet = 0; pellet < w->pellets; pellet++) {
         int off_x, off_y, ray_sy, ray_cy, ex, ez, hit_world, killed;
+        int enemy_index, inflicted;
         do {
             off_x = rand_range(g, -spread, spread);
             off_y = rand_range(g, -spread, spread);
@@ -4446,7 +4461,8 @@ static int toy_game_fire_actor(struct toy_game *g,
         ray_cy = (cy * 1024 + sy * off_x) / 1024;
         normalize_dir(&ray_sy, &ray_cy);
         killed = fire_ray(g, actor->x, actor->z, actor, ray_sy, ray_cy,
-                          w->damage, w->range, &ex, &ez, &hit_world);
+                          w->damage, w->range, &ex, &ez, &hit_world,
+                          &enemy_index, &inflicted);
         if (killed) hit = 1;
         actor->rays[pellet].sy = ray_sy;
         actor->rays[pellet].cy = ray_cy;
@@ -4455,6 +4471,8 @@ static int toy_game_fire_actor(struct toy_game *g,
         actor->rays[pellet].ez = ez;
         actor->rays[pellet].hit_enemy = killed;
         actor->rays[pellet].hit_world = hit_world;
+        actor->rays[pellet].enemy_index = enemy_index;
+        actor->rays[pellet].damage = inflicted;
     }
     return hit;
 }
