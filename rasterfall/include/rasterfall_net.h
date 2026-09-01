@@ -371,6 +371,10 @@ struct rasterfall_net {
     uint32_t last_snapshot_sequence;
     unsigned int ai_fire_sent_seq[TOY_GAME_MAX_ACTORS];
     unsigned int player_fire_sent_seq[RASTERFALL_NET_CLIENT_MAX];
+    unsigned int host_fire_sent_seq;
+    unsigned char ai_fire_resend[TOY_GAME_MAX_ACTORS];
+    unsigned char player_fire_resend[RASTERFALL_NET_CLIENT_MAX];
+    unsigned char host_fire_resend;
     long last_snapshot_sent_ms;
     long last_receive_ms;
     long last_hello_ms;

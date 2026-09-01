@@ -1498,8 +1498,12 @@ static int send_ai_fire_packets(struct rasterfall_net *net,
         unsigned char *p;
         int ray_count, i, size;
         if (!actor->active || actor->kind != TOY_GAME_ACTOR_AI) continue;
-        if (!actor->fire_seq || actor->fire_seq == net->ai_fire_sent_seq[actor_index])
-            continue;
+        if (!actor->fire_seq) continue;
+        if (actor->fire_seq != net->ai_fire_sent_seq[actor_index]) {
+            net->ai_fire_sent_seq[actor_index] = actor->fire_seq;
+            net->ai_fire_resend[actor_index] = 3;
+        }
+        if (!net->ai_fire_resend[actor_index]) continue;
         ray_count = actor->ray_count;
         if (ray_count < 0) ray_count = 0;
         if (ray_count > TOY_GAME_MAX_RAYS) ray_count = TOY_GAME_MAX_RAYS;
@@ -1526,46 +1530,70 @@ static int send_ai_fire_packets(struct rasterfall_net *net,
          * packets only went to client 1: later clients missed the effect and
          * interpreted the resulting sequence hole as packet loss. */
         if (net_send_clients(net, packet, size) < 0) return -1;
-        net->ai_fire_sent_seq[actor_index] = actor->fire_seq;
+        net->ai_fire_resend[actor_index]--;
     }
     return 0;
 }
 
-static int send_player_fire_packets(struct rasterfall_net *net)
+static int send_one_player_fire_packet(struct rasterfall_net *net, int player_id,
+                                       unsigned int fire_seq, int ray_count,
+                                       const struct toy_game_ray *rays)
 {
     unsigned char packet[RASTERFALL_NET_MAX_PACKET];
+    unsigned char *p;
+    int i, size;
+    if (ray_count < 0) ray_count = 0;
+    if (ray_count > TOY_GAME_MAX_RAYS) ray_count = TOY_GAME_MAX_RAYS;
+    size = packet_begin(packet, RASTERFALL_NET_PLAYER_FIRE,
+                        NET_PLAYER_FIRE_BASE + ray_count * NET_PLAYER_RAY_SIZE,
+                        ++net->send_sequence, net->receive_sequence);
+    if (size < 0) return -1;
+    p = packet + NET_HEADER_SIZE;
+    p[0] = (unsigned char)player_id;
+    p[1] = (unsigned char)ray_count;
+    put_u32(p + 2, fire_seq);
+    for (i = 0; i < ray_count; i++) {
+        unsigned char *q = p + NET_PLAYER_FIRE_BASE + i * NET_PLAYER_RAY_SIZE;
+        put_i16(q, rays[i].sy); put_i16(q + 2, rays[i].cy);
+        put_i16(q + 4, rays[i].vy);
+        put_u32(q + 6, (uint32_t)rays[i].ex);
+        put_u32(q + 10, (uint32_t)rays[i].ez);
+        q[14] = (unsigned char)((rays[i].hit_enemy ? 1 : 0) |
+                                (rays[i].hit_world ? 2 : 0));
+        put_i16(q + 15, rays[i].enemy_index);
+        put_i16(q + 17, rays[i].damage);
+    }
+    return net_send_clients(net, packet, size);
+}
+
+static int send_player_fire_packets(struct rasterfall_net *net,
+                                    const struct toy_game *game)
+{
     int client_i;
+    if (game->fire_seq) {
+        if (game->fire_seq != net->host_fire_sent_seq) {
+            net->host_fire_sent_seq = game->fire_seq;
+            net->host_fire_resend = 3;
+        }
+        if (net->host_fire_resend) {
+            if (send_one_player_fire_packet(net, 0, game->fire_seq,
+                                            game->ray_count, game->rays) < 0)
+                return -1;
+            net->host_fire_resend--;
+        }
+    }
     for (client_i = 0; client_i < RASTERFALL_NET_CLIENT_MAX; client_i++) {
         const struct rasterfall_net_client *client = &net->clients[client_i];
-        unsigned char *p;
-        int ray_count, i, size;
-        if (!client->active || !client->connected || !client->fire_seq ||
-            client->fire_seq == net->player_fire_sent_seq[client_i]) continue;
-        ray_count = client->ray_count;
-        if (ray_count < 0) ray_count = 0;
-        if (ray_count > TOY_GAME_MAX_RAYS) ray_count = TOY_GAME_MAX_RAYS;
-        size = packet_begin(packet, RASTERFALL_NET_PLAYER_FIRE,
-                            NET_PLAYER_FIRE_BASE + ray_count * NET_PLAYER_RAY_SIZE,
-                            ++net->send_sequence, net->receive_sequence);
-        if (size < 0) return -1;
-        p = packet + NET_HEADER_SIZE;
-        p[0] = (unsigned char)client->client_id;
-        p[1] = (unsigned char)ray_count;
-        put_u32(p + 2, client->fire_seq);
-        for (i = 0; i < ray_count; i++) {
-            unsigned char *q = p + NET_PLAYER_FIRE_BASE +
-                               i * NET_PLAYER_RAY_SIZE;
-            put_i16(q, client->rays[i].sy); put_i16(q + 2, client->rays[i].cy);
-            put_i16(q + 4, client->rays[i].vy);
-            put_u32(q + 6, (uint32_t)client->rays[i].ex);
-            put_u32(q + 10, (uint32_t)client->rays[i].ez);
-            q[14] = (unsigned char)((client->rays[i].hit_enemy ? 1 : 0) |
-                                    (client->rays[i].hit_world ? 2 : 0));
-            put_i16(q + 15, client->rays[i].enemy_index);
-            put_i16(q + 17, client->rays[i].damage);
+        if (!client->active || !client->connected || !client->fire_seq) continue;
+        if (client->fire_seq != net->player_fire_sent_seq[client_i]) {
+            net->player_fire_sent_seq[client_i] = client->fire_seq;
+            net->player_fire_resend[client_i] = 3;
         }
-        if (net_send_clients(net, packet, size) < 0) return -1;
-        net->player_fire_sent_seq[client_i] = client->fire_seq;
+        if (!net->player_fire_resend[client_i]) continue;
+        if (send_one_player_fire_packet(net, client->client_id,
+                                        client->fire_seq, client->ray_count,
+                                        client->rays) < 0) return -1;
+        net->player_fire_resend[client_i]--;
     }
     return 0;
 }
@@ -1620,6 +1648,17 @@ static int decode_player_compact(const unsigned char *p,
     if (decode_player(full, player) < 0) return -1;
     player->special_motion = p[NET_PLAYER_SIZE] != 0;
     return 0;
+}
+
+static int net_animation_is_transient(int animation_id)
+{
+    return animation_id == TOY_GAME_ANIM_FIRE ||
+           animation_id == TOY_GAME_ANIM_SHOVE ||
+           animation_id == TOY_GAME_ANIM_HIT ||
+           animation_id == TOY_GAME_ANIM_RELOAD ||
+           animation_id == TOY_GAME_ANIM_MELEE ||
+           animation_id == TOY_GAME_ANIM_THROW ||
+           animation_id == TOY_GAME_ANIM_REVIVE;
 }
 
 static int net_send_player_snapshot(struct rasterfall_net *net,
@@ -1858,7 +1897,7 @@ int rasterfall_net_send_snapshot(struct rasterfall_net *net,
                                     manual_alarm_timer_ms,
                                     snapshot_sequence) < 0) return -1;
         net_send_reliable_events(net);
-        if (send_player_fire_packets(net) < 0) return -1;
+        if (send_player_fire_packets(net, game) < 0) return -1;
         return send_ai_fire_packets(net, game);
     }
 #if 0 /* Protocol v30 monolithic snapshot sender; kept beside its decoder only
@@ -2008,9 +2047,38 @@ static int decode_player_snapshot(const unsigned char *payload, int size,
         return 0;
     for (i = 0; i < count; i++) {
         struct rasterfall_net_player player;
+        struct rasterfall_net_player *previous;
         if (decode_player_compact(payload + NET_PLAYER_SNAPSHOT_BASE +
                                   i * NET_PLAYER_COMPACT_SIZE, &player) < 0)
             return -1;
+        previous = &net->players[player.id];
+        /* Fire packets carry the rays independently from the fixed-size
+         * player snapshot.  A later snapshot for the same shot must not erase
+         * a fire packet that was already decoded during this poll cycle. */
+        if (player.fire_seq == previous->fire_seq && previous->ray_count > 0) {
+            player.ray_count = previous->ray_count;
+            memcpy(player.rays, previous->rays, sizeof(player.rays));
+            if (previous->animation.id == TOY_GAME_ANIM_FIRE &&
+                player.animation.id != TOY_GAME_ANIM_FIRE)
+                player.animation = previous->animation;
+        }
+        /* Network action overlays are shorter than, or close to, one snapshot
+         * interval.  Finish an action already observed by this client instead
+         * of allowing a following NONE/locomotion snapshot in the same poll
+         * batch to erase it before a frame is rendered. */
+        if (net_animation_is_transient(previous->animation.id)) {
+            int duration = toy_game_animation_info(
+                previous->animation.id)->duration_ms;
+            if (player.animation.id == previous->animation.id) {
+                if (player.animation.time_ms < previous->animation.time_ms)
+                    player.animation.time_ms = previous->animation.time_ms;
+            } else if ((player.animation.id == TOY_GAME_ANIM_NONE ||
+                        player.animation.id == TOY_GAME_ANIM_IDLE ||
+                        player.animation.id == TOY_GAME_ANIM_MOVE) &&
+                       previous->animation.time_ms < duration) {
+                player.animation = previous->animation;
+            }
+        }
         net->players[player.id] = player;
         net_push_remote_sample(net, player.id, &player);
     }
@@ -2523,6 +2591,7 @@ static int decode_ai_fire(const unsigned char *payload, int size,
         actor->actor_index = actor_index;
     }
     actor->fire_seq = get_u32(payload + 2);
+    toy_game_animation_set(&actor->animation, TOY_GAME_ANIM_FIRE);
     actor->ray_count = ray_count;
     for (i = 0; i < ray_count; i++) {
         const unsigned char *q = payload + NET_AI_FIRE_BASE +
@@ -2547,12 +2616,13 @@ static int decode_player_fire(const unsigned char *payload, int size,
     if (size < NET_PLAYER_FIRE_BASE) return -1;
     player_id = payload[0];
     ray_count = payload[1];
-    if (player_id <= 0 || player_id > RASTERFALL_NET_CLIENT_MAX ||
+    if (player_id < 0 || player_id > RASTERFALL_NET_CLIENT_MAX ||
         ray_count > TOY_GAME_MAX_RAYS ||
         size != NET_PLAYER_FIRE_BASE + ray_count * NET_PLAYER_RAY_SIZE)
         return -1;
     player = &net->players[player_id];
     player->fire_seq = get_u32(payload + 2);
+    toy_game_animation_set(&player->animation, TOY_GAME_ANIM_FIRE);
     player->ray_count = ray_count;
     for (i = 0; i < ray_count; i++) {
         const unsigned char *q = payload + NET_PLAYER_FIRE_BASE +
@@ -2565,6 +2635,19 @@ static int decode_player_fire(const unsigned char *payload, int size,
         player->rays[i].hit_world = (q[14] & 2) != 0;
         player->rays[i].enemy_index = get_i16(q + 15);
         player->rays[i].damage = get_i16(q + 17);
+    }
+    /* Remote players are ultimately rendered from their reserved actor slot.
+     * Let the fire event itself drive that short overlay as well, so losing
+     * the one entity snapshot that contained FIRE cannot hide the animation. */
+    for (i = 0; i < net->actor_count; i++) {
+        struct rasterfall_net_actor *actor = &net->actors[i];
+        if (actor->actor_index != TOY_GAME_REMOTE_ACTOR_BASE + player_id - 1)
+            continue;
+        actor->fire_seq = player->fire_seq;
+        actor->ray_count = player->ray_count;
+        memcpy(actor->rays, player->rays, sizeof(actor->rays));
+        toy_game_animation_set(&actor->animation, TOY_GAME_ANIM_FIRE);
+        break;
     }
     return 0;
 }
@@ -3646,6 +3729,10 @@ int rasterfall_net_pipeline_test(void)
                 0, 0, 0, NULL, 0, 0, 0, 0, 0,
                 i == 1 ? 102 : 0, 0,
                 &animation);
+        /* The player snapshot announces the shot sequence but deliberately
+         * leaves its variable-size ray payload to NET_PLAYER_FIRE. */
+        put_u32(player_packet + NET_PLAYER_SNAPSHOT_BASE +
+                NET_PLAYER_COMPACT_SIZE + NET_PLAYER_BASE_SIZE, 77);
         memset(&ray, 0, sizeof(ray));
         ray.sy = 12; ray.cy = 1012; ray.ex = 1234; ray.ez = -5678;
         encode_player_compact(player_packet + NET_PLAYER_SNAPSHOT_BASE,
@@ -3671,11 +3758,29 @@ int rasterfall_net_pipeline_test(void)
                 net.players[1].rays[0].ex != 1234 ||
                 net.players[1].rays[0].ez != -5678)
                 return 8;
+            fire_payload[0] = 0;
+            put_u32(fire_payload + 2, 78);
+            if (decode_player_fire(fire_payload, sizeof(fire_payload), &net) < 0 ||
+                net.players[0].fire_seq != 78 ||
+                net.players[0].ray_count != 1 ||
+                net.players[0].animation.id != TOY_GAME_ANIM_FIRE)
+                return 29;
         }
         net.local_player_id = 1; net.snapshot_ready = 0;
         if (decode_player_snapshot(player_packet, sizeof(player_packet),
                                    &net) < 0 || !net.snapshot_ready ||
-            net.players[1].input_ack != 102) return 9;
+            net.players[1].input_ack != 102 ||
+            net.players[1].fire_seq != 77 ||
+            net.players[1].ray_count != 1 ||
+            net.players[1].rays[0].ex != 1234 ||
+            net.players[1].animation.id != TOY_GAME_ANIM_FIRE) return 9;
+        net.players[2].active = 1;
+        toy_game_animation_set(&net.players[2].animation,
+                               TOY_GAME_ANIM_SHOVE);
+        net.local_player_id = 1;
+        rasterfall_net_update_presentation(&net, 16);
+        if (net.players[2].animation.id != TOY_GAME_ANIM_SHOVE ||
+            net.players[2].animation.time_ms != 16) return 30;
     }
     /* World entities use active-only lists. */
     {
@@ -4396,6 +4501,16 @@ void rasterfall_net_update_presentation(struct rasterfall_net *net, int dt_ms)
     long target = net_monotonic_ms() - NET_INTERPOLATION_DELAY_MS;
     int id;
     if (!net) return;
+    for (id = 0; id < RASTERFALL_NET_PLAYER_MAX; id++) {
+        struct rasterfall_net_player *player = &net->players[id];
+        int duration;
+        if (!player->active || id == net->local_player_id ||
+            !net_animation_is_transient(player->animation.id)) continue;
+        duration = toy_game_animation_info(player->animation.id)->duration_ms;
+        toy_game_animation_update(&player->animation, dt_ms);
+        if (player->animation.time_ms >= duration)
+            toy_game_animation_set(&player->animation, TOY_GAME_ANIM_NONE);
+    }
     if (net->correction_remaining_ms > 0) {
         int consume = dt_ms > net->correction_remaining_ms ?
                       net->correction_remaining_ms : dt_ms;
