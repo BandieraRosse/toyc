@@ -4257,8 +4257,7 @@ static int render_enemies(struct toy_renderer *renderer,
             else if (e->ai_state == TOY_GAME_ENEMY_TRACKING)
                 color = RF_COLOR_ENEMY_COMMON; /* PURSUIT_COMMON：沿用普通敌人颜色 */
         }
-        active_enemy_lift = toy_game_query_ground(
-            &game, e->x, e->z, 0, 0).support_y;
+        active_enemy_lift = e->ground_y;
         pixels += render_blob_shadow(renderer, camera, e, scale);
         active_enemy_lift += e->airborne_y;
         if (toy_game_enemy_info(e->type)->ability ==

@@ -1806,6 +1806,89 @@ static int run_logic_test(void)
         if (game.slots[3].mag != TOY_GAME_PILL_MAX ||
             toy_game_buy_weapon(&game, TOY_GAME_WEAPON_PILL) != -1) return 147;
     }
+    /* Ground-aware traversal must be consumed by behavior, not only stored in
+     * the navigation grid: enemies climb and descend, while a companion that
+     * faces a ramp side routes around to its low entrance. */
+    {
+        struct toy_game_platform terrain[2] = {
+            { 0, 2400, -1000, 1000, 0, TOY_GAME_GROUND_RAMP_X, 600 },
+            { 2400, 4200, -1000, 1000, 600, TOY_GAME_GROUND_FLAT, 0 }
+        };
+        int i, max_ground = 0, min_ground, actor_id;
+        struct toy_game_actor *ramp_actor;
+        toy_game_init(&game, 180);
+        game.to_spawn = 0;
+        game.px = 3300; game.pz = 0;
+        game.player_ground_y = 600;
+        game.hp = 100000;
+        toy_game_set_world(&game, NULL, 0, 5000);
+        game.safe_room_count = 0;
+        toy_game_set_platforms(&game, terrain, 2);
+        toy_game_place_enemy(&game, -500, 0);
+        if (!game.enemies[0].active) return 180;
+        game.enemies[0].ai_state = TOY_GAME_ENEMY_TRACKING;
+        game.enemies[0].type = TOY_GAME_ENEMY_COMMON;
+        for (i = 0; i < 360; i++) {
+            toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
+            if (game.enemies[0].ground_y > max_ground)
+                max_ground = game.enemies[0].ground_y;
+        }
+        if (max_ground < 450) return 181;
+        toy_game_init(&game, 182);
+        game.to_spawn = 0;
+        game.px = -800; game.pz = 0;
+        game.hp = 100000;
+        toy_game_set_world(&game, NULL, 0, 5000);
+        game.safe_room_count = 0;
+        toy_game_set_platforms(&game, terrain, 2);
+        memset(&game.enemies[0], 0, sizeof(game.enemies[0]));
+        game.enemies[0].active = 1;
+        game.enemies[0].type = TOY_GAME_ENEMY_COMMON;
+        game.enemies[0].speed = toy_game_enemy_info(
+            TOY_GAME_ENEMY_COMMON)->speed_max;
+        game.enemies[0].hp = toy_game_enemy_info(
+            TOY_GAME_ENEMY_COMMON)->max_hp;
+        game.enemies[0].x = 3000;
+        game.enemies[0].z = 0;
+        game.enemies[0].ground_y = 600;
+        game.enemies[0].target_kind = -1;
+        game.enemies[0].retarget_timer_ms = 0;
+        game.enemies[0].ai_state = TOY_GAME_ENEMY_TRACKING;
+        game.enemies_alive = 1;
+        min_ground = game.enemies[0].ground_y;
+        for (i = 0; i < 360; i++) {
+            toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
+            if (game.enemies[0].ground_y < min_ground)
+                min_ground = game.enemies[0].ground_y;
+            memset(&game.enemies[1], 0,
+                   sizeof(game.enemies) - sizeof(game.enemies[0]));
+            game.enemies_alive = 1;
+            game.to_spawn = 0;
+            if (game.enemies[0].x <= 900) break;
+        }
+        if (game.enemies[0].x > 900 || min_ground > 225)
+            return 182;
+
+        toy_game_init(&game, 183);
+        game.to_spawn = 0;
+        game.px = 3300; game.pz = 0;
+        game.player_ground_y = 600;
+        toy_game_set_world(&game, NULL, 0, 5000);
+        game.safe_room_count = 0;
+        toy_game_set_platforms(&game, terrain, 2);
+        actor_id = toy_game_add_anime_actor(
+            &game, 0, 1200, -1500, "RAMP_AI");
+        ramp_actor = toy_game_actor_by_id(&game, actor_id);
+        if (!ramp_actor) return 183;
+        max_ground = 0;
+        for (i = 0; i < 600; i++) {
+            toy_game_update_ai_teammates(&game, 16);
+            if (ramp_actor->ground_y > max_ground)
+                max_ground = ramp_actor->ground_y;
+        }
+        if (max_ground < 300 || ramp_actor->x < 1200 ||
+            ramp_actor->z < -1000) return 184;
+    }
     __printf("rasterfall: logic test passed\n");
     return 0;
 }

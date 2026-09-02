@@ -4237,6 +4237,8 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
             dst->fire_seq = src->fire_seq;
             dst->airborne_ms = src->airborne_ms;
             dst->airborne_y = src->airborne_y;
+            dst->ground_y = toy_game_query_ground(
+                &session->game_state, dst->x, dst->z, 0, 0).support_y;
             dst->animation.id = src->animation.id;
             dst->animation.time_ms = src->animation.time_ms;
             dst->revive_progress_ms = src->revive_progress_ms;
@@ -4421,6 +4423,8 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
             dst->ability.charge_elapsed_ms = src->ability.charge_elapsed_ms;
             dst->airborne_ms = src->airborne_ms;
             dst->airborne_y = src->airborne_y;
+            dst->ground_y = toy_game_query_ground(
+                &session->game_state, dst->x, dst->z, 0, 0).support_y;
             if (old_active != 1 || src->active != 1 ||
                 (dst->dir_x == 0 && dst->dir_z == 0)) {
                 dst->dir_x = src->dir_x;

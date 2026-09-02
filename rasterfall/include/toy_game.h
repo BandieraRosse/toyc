@@ -451,6 +451,7 @@ struct toy_game_enemy {
     int airborne_ms;
     int vertical_velocity;
     int airborne_y;
+    int ground_y;
     int knockback_x, knockback_z;
 };
 

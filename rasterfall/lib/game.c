@@ -1061,7 +1061,8 @@ int toy_game_position_blocked_at_height(const struct toy_game *g,
                 return 1;
             continue;
         }
-        if (p->height <= ground_height) continue;
+        if (p->height <= ground_height + TOY_CONFIG_GROUND_STEP_HEIGHT)
+            continue;
         if (x + radius > p->minx && x - radius < p->maxx &&
             z + radius > p->minz && z - radius < p->maxz) return 1;
     }
@@ -1341,12 +1342,39 @@ static int enemy_position_blocked(const struct toy_game *g,
     return 0;
 }
 
+static int enemy_step_blocked(const struct toy_game *g,
+                              const struct toy_game_enemy *e,
+                              int x, int z, int radius)
+{
+    int i;
+    if (toy_game_position_blocked_at_height(
+            g, x, z, radius, e->ground_y + e->airborne_y)) return 1;
+    for (i = 0; i < g->safe_room_count; i++) {
+        const struct toy_game_box *b = &g->safe_rooms[i];
+        if (x + radius > b->minx && x - radius < b->maxx &&
+            z + radius > b->minz && z - radius < b->maxz) return 1;
+    }
+    return 0;
+}
+
 static int enemy_radius(const struct toy_game_enemy *e)
 {
     int ability = toy_game_enemy_info(e->type)->ability;
     return ability == TOY_GAME_ENEMY_ABILITY_TANK_SWEEP ? TOY_GAME_TANK_RADIUS :
            ability == TOY_GAME_ENEMY_ABILITY_CHARGER_RUSH ?
            TOY_GAME_CHARGER_RADIUS : TOY_GAME_ENEMY_RADIUS;
+}
+
+static void update_enemy_ground(struct toy_game *g,
+                                struct toy_game_enemy *e)
+{
+    struct toy_game_ground_query ground;
+    if (!g || !e || e->airborne_ms > 0) return;
+    /* Enemy collision still uses its full radius, but locomotion height is
+     * sampled at the center.  This keeps ground continuous while the circle
+     * straddles a ramp/platform seam. */
+    ground = toy_game_query_ground(g, e->x, e->z, 0, e->ground_y);
+    e->ground_y = ground.support_y;
 }
 
 static int enemy_separation_distance(const struct toy_game_enemy *a,
@@ -2129,11 +2157,11 @@ static void wander_enemy(struct toy_game *g, struct toy_game_enemy *e, int dt_ms
     if (step < 1) step = 1;
     nx = e->dir_x * step / 1024;
     nz = e->dir_z * step / 1024;
-    if (!enemy_position_blocked(g, e->x + nx, e->z, enemy_radius(e)))
+    if (!enemy_step_blocked(g, e, e->x + nx, e->z, enemy_radius(e)))
         e->x += nx;
     else
         e->wander_timer_ms = 0;
-    if (!enemy_position_blocked(g, e->x, e->z + nz, enemy_radius(e)))
+    if (!enemy_step_blocked(g, e, e->x, e->z + nz, enemy_radius(e)))
         e->z += nz;
     else
         e->wander_timer_ms = 0;
@@ -2151,9 +2179,9 @@ static void chase_enemy(struct toy_game *g, struct toy_game_enemy *e,
     if (dist == 0) return;
     nx = (int)((long long)dx * e->speed / dist);
     nz = (int)((long long)dz * e->speed / dist);
-    if (!enemy_position_blocked(g, e->x + nx, e->z, enemy_radius(e)))
+    if (!enemy_step_blocked(g, e, e->x + nx, e->z, enemy_radius(e)))
         e->x += nx;
-    if (!enemy_position_blocked(g, e->x, e->z + nz, enemy_radius(e)))
+    if (!enemy_step_blocked(g, e, e->x, e->z + nz, enemy_radius(e)))
         e->z += nz;
 }
 
@@ -2471,9 +2499,9 @@ static void move_enemy_forced(struct toy_game *g, struct toy_game_enemy *e,
     int nx = e->x + dx;
     int nz = e->z + dz;
     int radius = enemy_radius(e);
-    if (!enemy_position_blocked(g, nx, e->z, radius))
+    if (!enemy_step_blocked(g, e, nx, e->z, radius))
         e->x = nx;
-    if (!enemy_position_blocked(g, e->x, nz, radius))
+    if (!enemy_step_blocked(g, e, e->x, nz, radius))
         e->z = nz;
 }
 
@@ -2491,9 +2519,8 @@ static void move_actor_forced(struct toy_game *g, struct toy_game_actor *a,
         a->z = nz;
 }
 
-/* Visibility-graph step for AI teammates.  Direct travel is preferred; when
- * a wall blocks it, route through the cheapest reachable expanded corner.
- * Keeping the selected corner until it is reached prevents wall-edge jitter. */
+/* Direct-segment checks and grid waypoints for AI teammates.  A selected
+ * waypoint is retained until reached to prevent wall-edge jitter. */
 static int actor_segment_blocked(const struct toy_game *g,
                                  int x0, int z0, int x1, int z1, int padding)
 {
@@ -2503,6 +2530,83 @@ static int actor_segment_blocked(const struct toy_game *g,
         box.minx -= padding; box.maxx += padding;
         box.minz -= padding; box.maxz += padding;
         if (segment_hits_box(x0, z0, x1, z1, &box)) return i + 1;
+    }
+    return 0;
+}
+
+static int nav_segment_allowed(const struct toy_game *g,
+                               int x0, int z0, int x1, int z1,
+                               int radius, int ground_y)
+{
+    int dx = x1 - x0, dz = z1 - z0;
+    int distance = isqrt((long long)dx * dx + (long long)dz * dz);
+    int steps;
+    int i;
+    if (!g || g->nav_cell_size < 2) return 1;
+    steps = distance / (g->nav_cell_size / 2) + 1;
+    for (i = 1; i <= steps; i++) {
+        int x = x0 + (int)((long long)dx * i / steps);
+        int z = z0 + (int)((long long)dz * i / steps);
+        struct toy_game_ground_query ground;
+        if (toy_game_position_blocked_at_height(g, x, z, radius, ground_y))
+            return 0;
+        ground = toy_game_query_ground(g, x, z, radius, ground_y);
+        if (ground.support_y - ground_y > TOY_CONFIG_GROUND_STEP_HEIGHT ||
+            ground_y - ground.support_y > TOY_CONFIG_GROUND_STEP_HEIGHT)
+            return 0;
+        ground_y = ground.support_y;
+    }
+    return 1;
+}
+
+static int nav_next_waypoint(const struct toy_game *g,
+                             int x, int z, int target_x, int target_z,
+                             int radius, int ground_y,
+                             int *out_x, int *out_z)
+{
+    int parent[TOY_GAME_NAV_MAX_CELLS];
+    int queue[TOY_GAME_NAV_MAX_CELLS];
+    int start = nav_cell_index(g, x, z);
+    int goal = nav_cell_index(g, target_x, target_z);
+    int count = g->nav_width * g->nav_height;
+    int head = 0, tail = 0, i, current, cx, cz, dx, dz, next;
+    if (!g || g->nav_cell_size <= 0 || start < 0 || goal < 0 || start == goal ||
+        !g->nav_walkable[start] || !g->nav_walkable[goal] ||
+        !g->nav_component[start] ||
+        g->nav_component[start] != g->nav_component[goal]) return 0;
+    for (i = 0; i < count; i++) parent[i] = -1;
+    parent[start] = start;
+    queue[tail++] = start;
+    while (head < tail && parent[goal] < 0) {
+        current = queue[head++];
+        cx = current % g->nav_width;
+        cz = current / g->nav_width;
+        for (dz = -1; dz <= 1; dz++) {
+            for (dx = -1; dx <= 1; dx++) {
+                if (!dx && !dz) continue;
+                if (!nav_step_allowed(g, cx, cz, cx + dx, cz + dz)) continue;
+                next = (cz + dz) * g->nav_width + cx + dx;
+                if (parent[next] >= 0) continue;
+                parent[next] = current;
+                if (tail < count) queue[tail++] = next;
+            }
+        }
+    }
+    if (parent[goal] < 0) return 0;
+    current = goal;
+    while (current != start) {
+        int waypoint_x = g->nav_origin + (current % g->nav_width) *
+                         g->nav_cell_size + g->nav_cell_size / 2;
+        int waypoint_z = g->nav_origin + (current / g->nav_width) *
+                         g->nav_cell_size + g->nav_cell_size / 2;
+        if (!actor_segment_blocked(g, x, z, waypoint_x, waypoint_z, radius) &&
+            nav_segment_allowed(g, x, z, waypoint_x, waypoint_z,
+                                radius, ground_y)) {
+            *out_x = waypoint_x;
+            *out_z = waypoint_z;
+            return 1;
+        }
+        current = parent[current];
     }
     return 0;
 }
@@ -2518,34 +2622,14 @@ static void actor_path_toward(struct toy_game *g, struct toy_game_actor *a,
             a->nav_active = 0;
     }
     if (!a->nav_active &&
-        actor_segment_blocked(g, a->x, a->z, target_x, target_z,
-                              TOY_GAME_PLAYER_RADIUS)) {
-        int hit = actor_segment_blocked(g, a->x, a->z, target_x, target_z,
-                                        TOY_GAME_PLAYER_RADIUS) - 1;
-        const struct toy_game_box *b = &g->world[hit];
-        int pad = TOY_GAME_PLAYER_RADIUS + 96;
-        int cx[4] = { b->minx - pad, b->minx - pad,
-                      b->maxx + pad, b->maxx + pad };
-        int cz[4] = { b->minz - pad, b->maxz + pad,
-                      b->minz - pad, b->maxz + pad };
-        long long best = 0;
-        int i, best_i = -1;
-        for (i = 0; i < 4; i++) {
-            long long ax, az, tx, tz, cost;
-            if (toy_game_position_blocked(g, cx[i], cz[i],
-                                          TOY_GAME_PLAYER_RADIUS)) continue;
-            if (actor_segment_blocked(g, a->x, a->z, cx[i], cz[i],
-                                      TOY_GAME_PLAYER_RADIUS)) continue;
-            ax = cx[i] - a->x; az = cz[i] - a->z;
-            tx = target_x - cx[i]; tz = target_z - cz[i];
-            cost = (long long)isqrt(ax * ax + az * az) +
-                   (long long)isqrt(tx * tx + tz * tz);
-            if (best_i < 0 || cost < best) { best = cost; best_i = i; }
-        }
-        if (best_i >= 0) {
-            a->nav_x = cx[best_i]; a->nav_z = cz[best_i];
+        (actor_segment_blocked(g, a->x, a->z, target_x, target_z,
+                               TOY_GAME_PLAYER_RADIUS) ||
+         !nav_segment_allowed(g, a->x, a->z, target_x, target_z,
+                              TOY_GAME_PLAYER_RADIUS, a->ground_y))) {
+        if (nav_next_waypoint(g, a->x, a->z, target_x, target_z,
+                              TOY_GAME_PLAYER_RADIUS, a->ground_y,
+                              &a->nav_x, &a->nav_z))
             a->nav_active = 1;
-        }
     }
     dx = (a->nav_active ? a->nav_x : target_x) - a->x;
     dz = (a->nav_active ? a->nav_z : target_z) - a->z;
@@ -3052,6 +3136,8 @@ static int charger_hit_entities(struct toy_game *g,
 static void update_enemy_airborne(struct toy_game *g,
                                   struct toy_game_enemy *e, int dt_ms)
 {
+    struct toy_game_ground_query ground;
+    int landing_ground;
     e->airborne_ms -= dt_ms;
     if (e->airborne_ms < 0) e->airborne_ms = 0;
     e->airborne_y += e->vertical_velocity;
@@ -3061,9 +3147,16 @@ static void update_enemy_airborne(struct toy_game *g,
         e->knockback_x = e->knockback_x * 3 / 4;
         e->knockback_z = e->knockback_z * 3 / 4;
     }
-    if (e->airborne_y <= 0 && e->vertical_velocity < 0) {
+    ground = toy_game_query_ground(g, e->x, e->z, enemy_radius(e),
+                                   e->ground_y);
+    landing_ground = ground.landing_y;
+    if (e->vertical_velocity < 0 &&
+        ((landing_ground >= e->ground_y &&
+          e->airborne_y <= landing_ground - e->ground_y) ||
+         (landing_ground < e->ground_y && e->airborne_y <= 0))) {
         e->airborne_y = 0;
         e->airborne_ms = 0;
+        e->ground_y = landing_ground;
         e->vertical_velocity = 0;
         e->knockback_x = 0;
         e->knockback_z = 0;
@@ -4949,6 +5042,7 @@ void toy_game_update_held(struct toy_game *g,
                 continue;       /* 僵直中：不移动、不攻击、不换目标 */
             }
             update_enemy_ai(g, e, dt_ms);
+            update_enemy_ground(g, e);
         } else if (e->active == 2) {
             e->dying_ms -= dt_ms;
             if (e->dying_ms <= 0) e->active = 0;
