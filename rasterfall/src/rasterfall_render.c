@@ -2811,6 +2811,18 @@ static int floor_draw_contains(const struct toy_map_draw *draw, int x, int z)
            z < draw->c + draw->e || z >= draw->d - draw->e;
 }
 
+static int map_has_floor_ground(int x, int z)
+{
+    int i;
+    for (i = 0; i < level_map.draw_count; i++) {
+        const struct toy_map_draw *draw = &level_map.draw[i];
+        if (draw->type == TOY_MAP_DRAW_FLOOR &&
+            x >= draw->a && x < draw->b &&
+            z >= draw->c && z < draw->d) return 1;
+    }
+    return 0;
+}
+
 /* Render the checkerboard and authored floor colours as one tessellated
  * plane.  A colour region changes the colour of the affected sub-rectangles;
  * it never creates a second, nearly coplanar surface. */
@@ -2868,6 +2880,9 @@ static int draw_partitioned_floor(struct toy_renderer *renderer,
                     uint32_t base_color = (((base_x + base_z) / 1000) & 1) ?
                                            0x30343A : 0x272B31;
                     uint32_t color = base_color;
+                    /* The world rectangle is only an extent.  Do not paint
+                     * its uncovered cells as a default floor. */
+                    if (!map_has_floor_ground(center_x, center_z)) continue;
                     /* Spawn zones are the strongest authored region. */
                     for (k = 0; k < level_map.spawn_count; k++) {
                         struct toy_map_zone *spawn = &level_map.spawn_zones[k];
@@ -2882,6 +2897,11 @@ static int draw_partitioned_floor(struct toy_renderer *renderer,
                             struct toy_map_draw *draw = &level_map.draw[k];
                             if (draw->type != TOY_MAP_DRAW_FLOOR &&
                                 draw->type != TOY_MAP_DRAW_BORDER) continue;
+                            /* A ground directive supplies coverage only.  It
+                             * deliberately leaves the checkerboard visible;
+                             * floor remains the authored colour-paint layer. */
+                            if (draw->type == TOY_MAP_DRAW_FLOOR &&
+                                draw->style == TOY_MAP_FLOOR_GROUND) continue;
                             if (floor_draw_contains(draw, center_x, center_z)) {
                                 color = draw->color;
                                 break;

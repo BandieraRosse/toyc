@@ -3,6 +3,10 @@
 # 单一基地防守地图：玩家、三名原据点 AI 和 BASE 核心在中央区域守住尸潮。
 # 刷怪区贴近世界四边，尸潮从远方边缘涌来。
 world -24000 24000 -24000 24000 24000
+# ground is the actual walkable surface; world above is only the maximum extent.
+# This explicit base preserves the legacy arena until later map passes carve its
+# west/north/east channels into separate ground regions.
+ground -24000 24000 -24000 24000 272B31
 start -13000 -12000 0 1024
 
 # ── 单一基地防守区 ────────────────────────────────────────────────

@@ -1011,9 +1011,11 @@ struct toy_game_ground_query toy_game_query_ground(
 {
     struct toy_game_ground_query result;
     int i, found_support = 0, found_landing = 0;
+    result.has_support = 0;
+    result.has_landing = 0;
     result.support_y = 0;
     result.landing_y = 0;
-    result.touches_current_support = current_ground_y == 0;
+    result.touches_current_support = 0;
     result.support_is_ramp = 0;
     if (!g || !g->platforms) return result;
     for (i = 0; i < g->platform_count; i++) {
@@ -1028,10 +1030,12 @@ struct toy_game_ground_query toy_game_query_ground(
             result.support_y = height;
             result.support_is_ramp = p->kind != TOY_GAME_GROUND_FLAT;
             found_support = 1;
+            result.has_support = 1;
         }
         if (overlaps && (!found_landing || height > result.landing_y)) {
             result.landing_y = height;
             found_landing = 1;
+            result.has_landing = 1;
         }
         if (overlaps && (p->height == current_ground_y ||
                          p->end_height == current_ground_y ||
@@ -1050,7 +1054,13 @@ int toy_game_position_blocked_at_height(const struct toy_game *g,
                                         int ground_height)
 {
     int i;
+    struct toy_game_ground_query ground;
     if (toy_game_position_blocked(g, x, z, radius)) return 1;
+    ground = toy_game_query_ground(g, x, z, radius, ground_height);
+    /* Callers that have not supplied terrain retain the old standalone-game
+     * fixture behavior.  A loaded map always supplies its ground primitive
+     * array (possibly with zero entries), where absence of support is solid. */
+    if (g->platforms && !ground.has_support) return 1;
     for (i = 0; i < g->platform_count; i++) {
         const struct toy_game_platform *p = &g->platforms[i];
         if (p->kind != TOY_GAME_GROUND_FLAT) {
@@ -1298,9 +1308,13 @@ void toy_game_rebuild_navigation(struct toy_game *g)
             int pz = g->nav_origin + z * g->nav_cell_size +
                      g->nav_cell_size / 2;
             index = z * g->nav_width + x;
-            g->nav_walkable[index] = !nav_position_blocked(g, px, pz);
-            g->nav_ground_y[index] = toy_game_query_ground(
-                g, px, pz, 0, 0).support_y;
+            {
+                struct toy_game_ground_query ground =
+                    toy_game_query_ground(g, px, pz, 0, 0);
+                g->nav_walkable[index] = (!g->platforms || ground.has_support) &&
+                                         !nav_position_blocked(g, px, pz);
+                g->nav_ground_y[index] = ground.support_y;
+            }
             g->nav_component[index] = 0;
         }
     }

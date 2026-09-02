@@ -9,7 +9,7 @@
 #define TOY_MAP_MAX_PICKUPS 48
 #define TOY_MAP_MAX_BASES 8
 #define TOY_MAP_MAX_AI_SPAWNS 32
-#define TOY_MAP_MAX_PLATFORMS 16
+#define TOY_MAP_MAX_PLATFORMS 64
 #define TOY_MAP_ROLE_SIZE 32
 #define TOY_MAP_TEXT_SIZE 64
 
@@ -22,6 +22,11 @@ enum toy_map_draw_type {
     TOY_MAP_DRAW_MODEL,
     TOY_MAP_DRAW_TEXTURE,
     TOY_MAP_DRAW_RAMP
+};
+
+enum toy_map_floor_style {
+    TOY_MAP_FLOOR_PAINT,
+    TOY_MAP_FLOOR_GROUND
 };
 
 /* visible and collision are independent.  Legacy box syntax defaults to

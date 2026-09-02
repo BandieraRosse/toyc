@@ -134,7 +134,22 @@ int toy_map_load(const char *path, struct toy_map *m)
         }
         else if(!strcmp(kind,"spawn") && get4(&p,&a,&b,&c,&d)==0 && m->spawn_count<TOY_MAP_MAX_ZONES){char *co=word(&p);m->spawn_zones[m->spawn_count].box.minx=a;m->spawn_zones[m->spawn_count].box.maxx=b;m->spawn_zones[m->spawn_count].box.minz=c;m->spawn_zones[m->spawn_count].box.maxz=d;m->spawn_zones[m->spawn_count].color=color(co);m->spawn_count++;}
         else if(!strcmp(kind,"alarm") && get4(&p,&a,&b,&c,&d)==0){char *zone=word(&p);m->alarm_zone.minx=a;m->alarm_zone.maxx=b;m->alarm_zone.minz=c;m->alarm_zone.maxz=d;m->has_alarm=1;if(zone)m->alarm_spawn_zone=number(zone,10);}
-        else if(!strcmp(kind,"floor") && get4(&p,&a,&b,&c,&d)==0){char *co=word(&p);add_draw(m,TOY_MAP_DRAW_FLOOR,a,b,c,d,0,0,color(co),NULL);}
+        else if((!strcmp(kind,"floor") || !strcmp(kind,"ground")) &&
+                get4(&p,&a,&b,&c,&d)==0){
+            char *co=word(&p);
+            int ground_only = !strcmp(kind,"ground");
+            add_draw(m,TOY_MAP_DRAW_FLOOR,a,b,c,d,0,0,color(co),NULL);
+            if (ground_only)
+                m->draw[m->draw_count-1].style = TOY_MAP_FLOOR_GROUND;
+            /* A floor is both its visible paint and an explicit zero-height
+             * ground primitive.  This keeps existing maps valid while the
+             * world extent itself no longer implies a floor. */
+            if (m->platform_count < TOY_MAP_MAX_PLATFORMS) {
+                struct toy_game_platform *pl=&m->platforms[m->platform_count++];
+                pl->minx=a; pl->maxx=b; pl->minz=c; pl->maxz=d;
+                pl->height=0; pl->kind=TOY_GAME_GROUND_FLAT; pl->end_height=0;
+            }
+        }
         else if(!strcmp(kind,"border") && get4(&p,&a,&b,&c,&d)==0){char *w=word(&p),*co=word(&p);if(w)add_draw(m,TOY_MAP_DRAW_BORDER,a,b,c,d,number(w,10),0,color(co),NULL);}
         else if(!strcmp(kind,"wall") && get4(&p,&a,&b,&c,&d)==0){char *h=word(&p),*co=word(&p);if(h)add_draw(m,TOY_MAP_DRAW_WALL,a,b,c,d,number(h,10),0,color(co),NULL);}
         else if(!strcmp(kind,"label") && get4(&p,&a,&b,&c,&d)==0){char *co=word(&p),*t=word(&p);add_draw(m,TOY_MAP_DRAW_LABEL,a,b,c,d,0,0,color(co),t);}

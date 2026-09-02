@@ -292,6 +292,8 @@ struct toy_game_platform {
     int kind, end_height;
 };
 struct toy_game_ground_query {
+    int has_support;               /* whole footprint is on a ground primitive */
+    int has_landing;               /* footprint overlaps a ground primitive */
     int support_y;                 /* whole footprint is on this surface */
     int landing_y;                 /* footprint overlaps this surface */
     int touches_current_support;   /* current support still touches footprint */

@@ -1138,14 +1138,17 @@ static int run_logic_test(void)
     }
     /* 多层地面：跳入悬空平台范围后应落在平台顶部，而不是穿回地面。 */
     {
-        struct toy_game_platform platform = {
-            280, 2200, -1000, 1000, 500, TOY_GAME_GROUND_FLAT, 0
+        struct toy_game_platform terrain[2] = {
+            { -12000, 12000, -12000, 12000, 0,
+              TOY_GAME_GROUND_FLAT, 0 },
+            { 280, 2200, -1000, 1000, 500,
+              TOY_GAME_GROUND_FLAT, 0 }
         };
         struct toy_game_ground_query ground;
         toy_game_init(&game, 47);
         game.world_count = 0;
         game.room_limit = 12000;
-        toy_game_set_platforms(&game, &platform, 1);
+        toy_game_set_platforms(&game, terrain, 2);
         ground = toy_game_query_ground(&game, 300, 0,
                                        TOY_GAME_PLAYER_RADIUS, 0);
         if (ground.support_y != 0 || ground.landing_y != 500 ||
@@ -1226,7 +1229,7 @@ static int run_logic_test(void)
             toy_game_update_actor_ground(&game, 0);
             if (game.actors[0].ground_y != 100 ||
                 game.actors[0].airborne_ms != 0) return 176;
-            toy_game_set_platforms(&game, &platform, 1);
+            toy_game_set_platforms(&game, terrain, 2);
             game.px = 0;
             game.pz = 0;
             game.player_ground_y = 0;
@@ -1259,16 +1262,43 @@ static int run_logic_test(void)
         if (game.player_airborne_ms != 0 || game.player_airborne_y != 0)
             return 91;
     }
+    /* world 是导航和碰撞的最大坐标范围，不是默认地面。 */
+    {
+        struct toy_game_platform ground_patch = {
+            0, 600, -600, 600, 0, TOY_GAME_GROUND_FLAT, 0
+        };
+        struct toy_game_ground_query on_ground, no_ground;
+        int on_cell, empty_cell;
+        toy_game_init(&game, 184);
+        toy_game_set_world(&game, NULL, 0, 1200);
+        toy_game_set_platforms(&game, &ground_patch, 1);
+        on_ground = toy_game_query_ground(&game, 300, 0, 0, 0);
+        no_ground = toy_game_query_ground(&game, 900, 0, 0, 0);
+        on_cell = ((150 - game.nav_origin) / game.nav_cell_size) *
+                  game.nav_width +
+                  (150 - game.nav_origin) / game.nav_cell_size;
+        empty_cell = ((150 - game.nav_origin) / game.nav_cell_size) *
+                     game.nav_width +
+                     (750 - game.nav_origin) / game.nav_cell_size;
+        if (!on_ground.has_support || no_ground.has_support ||
+            !toy_game_position_blocked_at_height(
+                &game, 900, 0, TOY_GAME_PLAYER_RADIUS, 0) ||
+            !game.nav_walkable[on_cell] || game.nav_walkable[empty_cell])
+            return 185;
+    }
     /* 网络玩家 actor 必须保留跳跃水平动量，并在平台顶落地。 */
     {
-        struct toy_game_platform platform = {
-            280, 2200, -1000, 1000, 500, TOY_GAME_GROUND_FLAT, 0
+        struct toy_game_platform terrain[2] = {
+            { -12000, 12000, -12000, 12000, 0,
+              TOY_GAME_GROUND_FLAT, 0 },
+            { 280, 2200, -1000, 1000, 500,
+              TOY_GAME_GROUND_FLAT, 0 }
         };
         int actor_index = TOY_GAME_REMOTE_ACTOR_BASE + 1;
         toy_game_init(&game, 49);
         game.world_count = 0;
         game.room_limit = 12000;
-        toy_game_set_platforms(&game, &platform, 1);
+        toy_game_set_platforms(&game, terrain, 2);
         if (toy_game_set_remote_player(&game, 2, 1, 0, 0, "REMOTE") !=
             actor_index) return 103;
         if (!toy_game_jump_actor(&game, actor_index, 20, 0)) return 104;
@@ -1488,15 +1518,18 @@ static int run_logic_test(void)
     /* 平台对地面实体是实心障碍：敌人不能生成或追进台体，
      * AI 队友也不能被直接移入平台。 */
     {
-        struct toy_game_platform platform = {
-            -500, 500, -500, 500, 800, TOY_GAME_GROUND_FLAT, 0
+        struct toy_game_platform terrain[2] = {
+            { -12000, 12000, -12000, 12000, 0,
+              TOY_GAME_GROUND_FLAT, 0 },
+            { -500, 500, -500, 500, 800,
+              TOY_GAME_GROUND_FLAT, 0 }
         };
         int actor_x;
         toy_game_init(&game, 48);
         game.world_count = 0;
         game.room_limit = 12000;
         game.to_spawn = 0;
-        toy_game_set_platforms(&game, &platform, 1);
+        toy_game_set_platforms(&game, terrain, 2);
         toy_game_place_enemy(&game, 0, 0);
         if (game.enemies_alive != 0) return 96;
         toy_game_place_enemy(&game, -800, 0);
@@ -1504,7 +1537,7 @@ static int run_logic_test(void)
         game.px = 800; game.pz = 0;
         for (int i = 0; i < 100; i++)
             toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
-        if (game.enemies[0].x + TOY_GAME_ENEMY_RADIUS > platform.minx)
+        if (game.enemies[0].x + TOY_GAME_ENEMY_RADIUS > terrain[1].minx)
             return 98;
         actor_x = game.actors[0].x;
         if (toy_game_move_ai_actor(&game, 0, 0, 0) ||
@@ -1810,7 +1843,9 @@ static int run_logic_test(void)
      * the navigation grid: enemies climb and descend, while a companion that
      * faces a ramp side routes around to its low entrance. */
     {
-        struct toy_game_platform terrain[2] = {
+        struct toy_game_platform terrain[3] = {
+            { -5000, 5000, -5000, 5000, 0,
+              TOY_GAME_GROUND_FLAT, 0 },
             { 0, 2400, -1000, 1000, 0, TOY_GAME_GROUND_RAMP_X, 600 },
             { 2400, 4200, -1000, 1000, 600, TOY_GAME_GROUND_FLAT, 0 }
         };
@@ -1823,7 +1858,7 @@ static int run_logic_test(void)
         game.hp = 100000;
         toy_game_set_world(&game, NULL, 0, 5000);
         game.safe_room_count = 0;
-        toy_game_set_platforms(&game, terrain, 2);
+        toy_game_set_platforms(&game, terrain, 3);
         toy_game_place_enemy(&game, -500, 0);
         if (!game.enemies[0].active) return 180;
         game.enemies[0].ai_state = TOY_GAME_ENEMY_TRACKING;
@@ -1840,7 +1875,7 @@ static int run_logic_test(void)
         game.hp = 100000;
         toy_game_set_world(&game, NULL, 0, 5000);
         game.safe_room_count = 0;
-        toy_game_set_platforms(&game, terrain, 2);
+        toy_game_set_platforms(&game, terrain, 3);
         memset(&game.enemies[0], 0, sizeof(game.enemies[0]));
         game.enemies[0].active = 1;
         game.enemies[0].type = TOY_GAME_ENEMY_COMMON;
@@ -1875,7 +1910,7 @@ static int run_logic_test(void)
         game.player_ground_y = 600;
         toy_game_set_world(&game, NULL, 0, 5000);
         game.safe_room_count = 0;
-        toy_game_set_platforms(&game, terrain, 2);
+        toy_game_set_platforms(&game, terrain, 3);
         actor_id = toy_game_add_anime_actor(
             &game, 0, 1200, -1500, "RAMP_AI");
         ramp_actor = toy_game_actor_by_id(&game, actor_id);
