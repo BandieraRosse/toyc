@@ -658,6 +658,7 @@ struct toy_game {
     int nav_width;
     int nav_height;
     unsigned char nav_walkable[TOY_GAME_NAV_MAX_CELLS];
+    int nav_ground_y[TOY_GAME_NAV_MAX_CELLS];
     unsigned short nav_component[TOY_GAME_NAV_MAX_CELLS];
 
     int network_rescuer_available;

@@ -1160,11 +1160,12 @@ static int run_logic_test(void)
             ground.touches_current_support != 0) return 173;
         {
             struct toy_game_platform ramp = {
-                0, 1200, -600, 600, 0, TOY_GAME_GROUND_RAMP_X, 600
+                0, 1200, -600, 600, 0, TOY_GAME_GROUND_RAMP_X, 400
             };
+            int nav_a, nav_b;
             toy_game_set_platforms(&game, &ramp, 1);
             ground = toy_game_query_ground(&game, 600, 0, 0, 0);
-            if (ground.support_y != 300 || ground.landing_y != 300 ||
+            if (ground.support_y != 200 || ground.landing_y != 200 ||
                 !ground.support_is_ramp) return 174;
             if (toy_game_position_blocked_at_height(
                     &game, 100, 0, 50, 0) ||
@@ -1173,18 +1174,57 @@ static int run_logic_test(void)
                 !toy_game_position_blocked_at_height(
                     &game, 1150, 0, 100, 0) ||
                 toy_game_position_blocked_at_height(
-                    &game, 700, 0, 100, 300)) return 177;
+                    &game, 700, 0, 100, 200)) return 177;
+            nav_a = ((150 - game.nav_origin) / game.nav_cell_size) *
+                    game.nav_width +
+                    (150 - game.nav_origin) / game.nav_cell_size;
+            nav_b = ((150 - game.nav_origin) / game.nav_cell_size) *
+                    game.nav_width +
+                    (450 - game.nav_origin) / game.nav_cell_size;
+            if (game.nav_ground_y[nav_a] != 50 ||
+                game.nav_ground_y[nav_b] != 150 ||
+                !game.nav_component[nav_a] ||
+                game.nav_component[nav_a] != game.nav_component[nav_b])
+                return 178;
+            {
+                struct toy_game nav_game;
+                struct toy_game_platform steep = {
+                    -300, 300, -1200, 1200, 0,
+                    TOY_GAME_GROUND_RAMP_X, 600
+                };
+                int low_cell, high_cell;
+                toy_game_init(&nav_game, 48);
+                nav_game.world_count = 0;
+                nav_game.room_limit = 1200;
+                toy_game_set_platforms(&nav_game, &steep, 1);
+                low_cell = ((150 - nav_game.nav_origin) /
+                            nav_game.nav_cell_size) * nav_game.nav_width +
+                           (-150 - nav_game.nav_origin) /
+                            nav_game.nav_cell_size;
+                high_cell = ((150 - nav_game.nav_origin) /
+                             nav_game.nav_cell_size) * nav_game.nav_width +
+                            (150 - nav_game.nav_origin) /
+                             nav_game.nav_cell_size;
+                if (!nav_game.nav_walkable[low_cell] ||
+                    !nav_game.nav_walkable[high_cell] ||
+                    nav_game.nav_ground_y[low_cell] != 150 ||
+                    nav_game.nav_ground_y[high_cell] != 450 ||
+                    !nav_game.nav_component[low_cell] ||
+                    !nav_game.nav_component[high_cell] ||
+                    nav_game.nav_component[low_cell] ==
+                        nav_game.nav_component[high_cell]) return 179;
+            }
             game.px = 900;
             game.pz = 0;
             game.player_ground_y = 500;
             toy_game_update_player_ground(&game);
-            if (game.player_ground_y != 450 || game.player_airborne_ms != 0)
+            if (game.player_ground_y != 300 || game.player_airborne_ms != 0)
                 return 175;
             game.actors[0].x = 300;
             game.actors[0].z = 0;
             game.actors[0].ground_y = 0;
             toy_game_update_actor_ground(&game, 0);
-            if (game.actors[0].ground_y != 150 ||
+            if (game.actors[0].ground_y != 100 ||
                 game.actors[0].airborne_ms != 0) return 176;
             toy_game_set_platforms(&game, &platform, 1);
             game.px = 0;

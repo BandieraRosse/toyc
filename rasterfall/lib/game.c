@@ -983,6 +983,7 @@ void toy_game_set_platforms(struct toy_game *g,
     if (g->platform_count < 0) g->platform_count = 0;
     if (g->platform_count > TOY_GAME_MAX_PLATFORMS)
         g->platform_count = TOY_GAME_MAX_PLATFORMS;
+    if (g->room_limit > 0) toy_game_rebuild_navigation(g);
 }
 
 static int ground_primitive_height(const struct toy_game_platform *p,
@@ -1236,14 +1237,36 @@ static int nav_step_allowed(const struct toy_game *g, int cx, int cz,
                             int nx, int nz)
 {
     int dx = nx - cx, dz = nz - cz;
-    int index;
+    int index, from, side_x, side_z;
     if (nx < 0 || nz < 0 || nx >= g->nav_width || nz >= g->nav_height)
         return 0;
+    from = cz * g->nav_width + cx;
     index = nz * g->nav_width + nx;
     if (!g->nav_walkable[index]) return 0;
+    if (g->nav_ground_y[index] - g->nav_ground_y[from] >
+            TOY_CONFIG_GROUND_STEP_HEIGHT ||
+        g->nav_ground_y[from] - g->nav_ground_y[index] >
+            TOY_CONFIG_GROUND_STEP_HEIGHT) return 0;
     if (dx != 0 && dz != 0) {
-        if (!g->nav_walkable[cz * g->nav_width + nx] ||
-            !g->nav_walkable[nz * g->nav_width + cx]) return 0;
+        side_x = cz * g->nav_width + nx;
+        side_z = nz * g->nav_width + cx;
+        if (!g->nav_walkable[side_x] || !g->nav_walkable[side_z]) return 0;
+        if (g->nav_ground_y[side_x] - g->nav_ground_y[from] >
+                TOY_CONFIG_GROUND_STEP_HEIGHT ||
+            g->nav_ground_y[from] - g->nav_ground_y[side_x] >
+                TOY_CONFIG_GROUND_STEP_HEIGHT ||
+            g->nav_ground_y[side_z] - g->nav_ground_y[from] >
+                TOY_CONFIG_GROUND_STEP_HEIGHT ||
+            g->nav_ground_y[from] - g->nav_ground_y[side_z] >
+                TOY_CONFIG_GROUND_STEP_HEIGHT ||
+            g->nav_ground_y[index] - g->nav_ground_y[side_x] >
+                TOY_CONFIG_GROUND_STEP_HEIGHT ||
+            g->nav_ground_y[side_x] - g->nav_ground_y[index] >
+                TOY_CONFIG_GROUND_STEP_HEIGHT ||
+            g->nav_ground_y[index] - g->nav_ground_y[side_z] >
+                TOY_CONFIG_GROUND_STEP_HEIGHT ||
+            g->nav_ground_y[side_z] - g->nav_ground_y[index] >
+                TOY_CONFIG_GROUND_STEP_HEIGHT) return 0;
     }
     return 1;
 }
@@ -1275,6 +1298,8 @@ void toy_game_rebuild_navigation(struct toy_game *g)
                      g->nav_cell_size / 2;
             index = z * g->nav_width + x;
             g->nav_walkable[index] = !nav_position_blocked(g, px, pz);
+            g->nav_ground_y[index] = toy_game_query_ground(
+                g, px, pz, 0, 0).support_y;
             g->nav_component[index] = 0;
         }
     }
