@@ -1139,10 +1139,23 @@ static int run_logic_test(void)
     /* 多层地面：跳入悬空平台范围后应落在平台顶部，而不是穿回地面。 */
     {
         struct toy_game_platform platform = { 280, 2200, -1000, 1000, 500 };
+        struct toy_game_ground_query ground;
         toy_game_init(&game, 47);
         game.world_count = 0;
         game.room_limit = 12000;
         toy_game_set_platforms(&game, &platform, 1);
+        ground = toy_game_query_ground(&game, 300, 0,
+                                       TOY_GAME_PLAYER_RADIUS, 0);
+        if (ground.support_y != 0 || ground.landing_y != 500 ||
+            ground.touches_current_support != 1) return 171;
+        ground = toy_game_query_ground(&game, 500, 0,
+                                       TOY_GAME_PLAYER_RADIUS, 500);
+        if (ground.support_y != 500 || ground.landing_y != 500 ||
+            ground.touches_current_support != 1) return 172;
+        ground = toy_game_query_ground(&game, 2400, 0,
+                                       TOY_GAME_PLAYER_RADIUS, 500);
+        if (ground.support_y != 0 || ground.landing_y != 0 ||
+            ground.touches_current_support != 0) return 173;
         if (!toy_game_jump_with_velocity(&game, 20, 0)) return 87;
         for (int i = 0; i < 70; i++)
             toy_game_update_player_motion(&game, 16);

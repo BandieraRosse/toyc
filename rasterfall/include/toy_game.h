@@ -283,6 +283,11 @@ struct toy_game_player_impulse_event {
 /* 碰撞/命中共用的 xz 平面轴对齐盒（与房间障碍物同尺度） */
 struct toy_game_box { int minx, maxx, minz, maxz; };
 struct toy_game_platform { int minx, maxx, minz, maxz, height; };
+struct toy_game_ground_query {
+    int support_y;                 /* whole footprint is on this surface */
+    int landing_y;                 /* footprint overlaps this surface */
+    int touches_current_support;   /* current support still touches footprint */
+};
 
 /* The world is small enough for a fixed connectivity grid.  This is
  * deliberately a component map, not a path-finding data structure. */
@@ -728,8 +733,8 @@ void toy_game_rebuild_navigation(struct toy_game *g);
 void toy_game_set_platforms(struct toy_game *g,
                             const struct toy_game_platform *platforms,
                             int platform_count);
-int  toy_game_ground_height(const struct toy_game *g, int x, int z,
-                            int radius);
+struct toy_game_ground_query toy_game_query_ground(
+    const struct toy_game *g, int x, int z, int radius, int current_ground_y);
 int  toy_game_position_blocked_at_height(const struct toy_game *g,
                                          int x, int z, int radius,
                                          int ground_height);

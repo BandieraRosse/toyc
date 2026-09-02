@@ -4170,7 +4170,7 @@ static int render_blob_shadow(struct toy_renderer *renderer,
     struct vec3 a, b, c, d;
     int rx = 230 * scale / 1000;
     int rz = 150 * scale / 1000;
-    int y = -886; /* just above the baked floor */
+    int y = -886 + active_enemy_lift; /* just above the queried ground */
     if (rx < 18) rx = 18;
     if (rz < 12) rz = 12;
     a.x = e->x - rx; a.y = y; a.z = e->z - rz;
@@ -4225,12 +4225,14 @@ static int render_enemies(struct toy_renderer *renderer,
             else if (e->ai_state == TOY_GAME_ENEMY_TRACKING)
                 color = RF_COLOR_ENEMY_COMMON; /* PURSUIT_COMMON：沿用普通敌人颜色 */
         }
+        active_enemy_lift = toy_game_query_ground(
+            &game, e->x, e->z, 0, 0).support_y;
         pixels += render_blob_shadow(renderer, camera, e, scale);
+        active_enemy_lift += e->airborne_y;
         if (toy_game_enemy_info(e->type)->ability ==
                 TOY_GAME_ENEMY_ABILITY_SMOKER_TONGUE &&
             e->special_target_active)
             pixels += render_smoker_tongue(renderer, camera, e);
-        active_enemy_lift = e->airborne_y;
         if (toy_game_enemy_info(e->type)->ability ==
                 TOY_GAME_ENEMY_ABILITY_TANK_SWEEP)
             pixels += render_tank_enemy(renderer, camera, e, scale, color);
@@ -4245,8 +4247,8 @@ static int render_enemies(struct toy_renderer *renderer,
             pixels += render_block_enemy(renderer, camera, e, scale, color);
         else
             pixels += render_round_enemy(renderer, camera, e, scale, color);
-        active_enemy_lift = 0;
         render_enemy_alert(renderer, camera, e, scale);
+        active_enemy_lift = 0;
     }
     return pixels;
 }
@@ -4803,16 +4805,9 @@ static int render_skeletal_rifle(
 
 static int network_actor_lift(int x, int z, int airborne_y)
 {
-    int lift = airborne_y;
-    int i;
-    for (i = 0; i < level_map.platform_count; i++) {
-        const struct toy_game_platform *platform = &level_map.platforms[i];
-        if (x >= platform->minx && x <= platform->maxx &&
-            z >= platform->minz && z <= platform->maxz &&
-            platform->height > lift)
-            lift = platform->height;
-    }
-    return lift;
+    struct toy_game_ground_query ground =
+        toy_game_query_ground(&game, x, z, 0, 0);
+    return ground.support_y + airborne_y;
 }
 
 static void render_ai_teammate_name(struct toy_renderer *renderer,
@@ -4843,7 +4838,8 @@ static void render_ai_teammate_name(struct toy_renderer *renderer,
             display_name = label;
         }
         render_actor_status(renderer, camera, actor->x, actor->z,
-                            actor->state == TOY_GAME_ACTOR_DOWNED ? -350 : 700,
+                            actor->ground_y + actor->airborne_y +
+                            (actor->state == TOY_GAME_ACTOR_DOWNED ? -350 : 700),
                             display_name, actor->hp, actor->max_hp,
                             actor->state == TOY_GAME_ACTOR_DOWNED,
                             actor->revive_progress_ms, color);
@@ -4867,14 +4863,7 @@ static int render_ai_teammate(struct toy_renderer *renderer,
         color = actor->class_id == TOY_GAME_AI_LEVEL_3 ? RF_COLOR_AI_HEAVY :
                 actor->class_id == TOY_GAME_AI_LEVEL_2 ? RF_COLOR_AI_RIFLE :
                 RF_COLOR_AI_BASIC;
-        active_actor_lift = actor->airborne_y;
-        for (int p = 0; p < level_map.platform_count; p++) {
-            const struct toy_game_platform *platform = &level_map.platforms[p];
-            if (actor->x >= platform->minx && actor->x <= platform->maxx &&
-                actor->z >= platform->minz && actor->z <= platform->maxz &&
-                platform->height > active_actor_lift)
-                active_actor_lift = platform->height;
-        }
+        active_actor_lift = actor->ground_y + actor->airborne_y;
         if (actor->anime_character_id && private_character_model.data) {
             struct rasterfall_frontend_state *actor_frontend =
                 &ai_character_frontends[i];
@@ -5603,11 +5592,16 @@ int rasterfall_render_managed_player(struct toy_renderer *renderer,
                                      const struct camera *viewer,
                                      const struct camera *body_camera)
 {
+    int pixels;
     if (!renderer || !viewer || !body_camera || game.player_down) return 0;
-    return render_player_avatar(renderer, viewer, body_camera->x, body_camera->z,
-                                 body_camera->sy, body_camera->cy, -1, 0,
-                                 -1, RF_COLOR_UI_PLAYER, 0,
-                                 game.animation.id, game.animation.time_ms);
+    active_actor_lift = game.player_ground_y + game.player_airborne_y;
+    pixels = render_player_avatar(renderer, viewer, body_camera->x,
+                                  body_camera->z, body_camera->sy,
+                                  body_camera->cy, -1, 0, -1,
+                                  RF_COLOR_UI_PLAYER, 0, game.animation.id,
+                                  game.animation.time_ms);
+    active_actor_lift = 0;
+    return pixels;
 }
 
 int rasterfall_render_network_teammate(struct toy_renderer *renderer,

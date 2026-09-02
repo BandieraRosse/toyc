@@ -1512,8 +1512,8 @@ int rasterfall_session_recover_managed_player(
     camera->y = RASTERFALL_STANDING_CAMERA_Y;
     session->game_state.px = x;
     session->game_state.pz = z;
-    session->game_state.player_ground_y = toy_game_ground_height(
-        &session->game_state, x, z, RASTERFALL_PLAYER_RADIUS);
+    session->game_state.player_ground_y = toy_game_query_ground(
+        &session->game_state, x, z, RASTERFALL_PLAYER_RADIUS, 0).support_y;
     session->game_state.player_airborne_ms = 0;
     session->game_state.player_airborne_y = 0;
     session->game_state.player_vertical_velocity = 0;

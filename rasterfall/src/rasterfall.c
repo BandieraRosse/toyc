@@ -1417,15 +1417,7 @@ static void sync_ai_fire_effects(const struct camera *camera,
         ray_count = actor->ray_count;
         if (ray_count < 0) ray_count = 0;
         if (ray_count > TOY_GAME_MAX_RAYS) ray_count = TOY_GAME_MAX_RAYS;
-        int platform_lift = actor->airborne_y;
-        int p;
-        for (p = 0; p < session.level.platform_count; p++) {
-            const struct toy_game_platform *platform = &session.level.platforms[p];
-            if (actor->x >= platform->minx && actor->x <= platform->maxx &&
-                actor->z >= platform->minz && actor->z <= platform->maxz &&
-                platform->height > platform_lift)
-                platform_lift = platform->height;
-        }
+        int platform_lift = actor->ground_y + actor->airborne_y;
         rasterfall_viewmodel_actor_muzzle(actor->x, actor->z,
                                           actor->sy, actor->cy,
                                           platform_lift,

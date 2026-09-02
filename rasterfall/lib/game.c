@@ -985,32 +985,30 @@ void toy_game_set_platforms(struct toy_game *g,
         g->platform_count = TOY_GAME_MAX_PLATFORMS;
 }
 
-int toy_game_ground_height(const struct toy_game *g, int x, int z,
-                           int radius)
+struct toy_game_ground_query toy_game_query_ground(
+    const struct toy_game *g, int x, int z, int radius, int current_ground_y)
 {
-    int i, height = 0;
-    if (!g || !g->platforms) return 0;
+    struct toy_game_ground_query result;
+    int i;
+    result.support_y = 0;
+    result.landing_y = 0;
+    result.touches_current_support = current_ground_y == 0;
+    if (!g || !g->platforms) return result;
     for (i = 0; i < g->platform_count; i++) {
         const struct toy_game_platform *p = &g->platforms[i];
-        if (x - radius < p->minx || x + radius > p->maxx ||
-            z - radius < p->minz || z + radius > p->maxz) continue;
-        if (p->height > height) height = p->height;
+        int overlaps = x + radius > p->minx && x - radius < p->maxx &&
+                       z + radius > p->minz && z - radius < p->maxz;
+        int supported = x - radius >= p->minx && x + radius <= p->maxx &&
+                        z - radius >= p->minz && z + radius <= p->maxz;
+        if (radius == 0) overlaps = supported;
+        if (supported && p->height > result.support_y)
+            result.support_y = p->height;
+        if (overlaps && p->height > result.landing_y)
+            result.landing_y = p->height;
+        if (overlaps && p->height == current_ground_y)
+            result.touches_current_support = 1;
     }
-    return height;
-}
-
-static int ground_height_overlapping(const struct toy_game *g,
-                                     int x, int z, int radius)
-{
-    int i, height = 0;
-    if (!g || !g->platforms) return 0;
-    for (i = 0; i < g->platform_count; i++) {
-        const struct toy_game_platform *p = &g->platforms[i];
-        if (x + radius <= p->minx || x - radius >= p->maxx ||
-            z + radius <= p->minz || z - radius >= p->maxz) continue;
-        if (p->height > height) height = p->height;
-    }
-    return height;
+    return result;
 }
 
 int toy_game_position_blocked_at_height(const struct toy_game *g,
@@ -1030,24 +1028,19 @@ int toy_game_position_blocked_at_height(const struct toy_game *g,
 
 void toy_game_update_player_ground(struct toy_game *g)
 {
-    int i, next_ground;
+    struct toy_game_ground_query ground;
+    int next_ground;
     if (!g || g->player_airborne_ms > 0) return;
-    next_ground = toy_game_ground_height(g, g->px, g->pz,
-                                         TOY_GAME_PLAYER_RADIUS);
+    ground = toy_game_query_ground(g, g->px, g->pz,
+                                   TOY_GAME_PLAYER_RADIUS,
+                                   g->player_ground_y);
+    next_ground = ground.support_y;
     if (next_ground < g->player_ground_y) {
         /* Keep the current platform as support until the player's collision
          * circle has completely crossed its edge.  Without this hysteresis,
          * ground height drops while the circle still intersects the side and
          * the player becomes trapped inside the platform collision. */
-        for (i = 0; i < g->platform_count; i++) {
-            const struct toy_game_platform *p = &g->platforms[i];
-            if (p->height != g->player_ground_y) continue;
-            if (g->px + TOY_GAME_PLAYER_RADIUS > p->minx &&
-                g->px - TOY_GAME_PLAYER_RADIUS < p->maxx &&
-                g->pz + TOY_GAME_PLAYER_RADIUS > p->minz &&
-                g->pz - TOY_GAME_PLAYER_RADIUS < p->maxz)
-                return;
-        }
+        if (ground.touches_current_support) return;
         /* The circle is clear of the ledge: preserve the absolute height and
          * enter the ordinary airborne path instead of snapping to the floor. */
         g->player_airborne_y = g->player_ground_y - next_ground;
@@ -2525,6 +2518,7 @@ static void update_motion_values(struct toy_game *g, int *x, int *z,
 static void update_player_special_motion(struct toy_game *g, int dt_ms)
 {
     if (g->player_airborne_ms > 0) {
+        struct toy_game_ground_query ground;
         int landing_ground;
         g->player_airborne_ms -= dt_ms;
         if (g->player_airborne_ms < 0) g->player_airborne_ms = 0;
@@ -2537,8 +2531,10 @@ static void update_player_special_motion(struct toy_game *g, int dt_ms)
         /* Descending onto even a partially covered edge must land on the
          * platform top.  Otherwise the player reaches ground height while the
          * collision circle still intersects the platform side and gets stuck. */
-        landing_ground = ground_height_overlapping(g, g->px, g->pz,
-                                                   TOY_GAME_PLAYER_RADIUS);
+        ground = toy_game_query_ground(g, g->px, g->pz,
+                                       TOY_GAME_PLAYER_RADIUS,
+                                       g->player_ground_y);
+        landing_ground = ground.landing_y;
         if (g->player_vertical_velocity < 0 &&
             ((landing_ground >= g->player_ground_y &&
               g->player_airborne_y <= landing_ground - g->player_ground_y) ||
@@ -2574,6 +2570,7 @@ static void update_remote_player_motion(struct toy_game *g, int *x, int *z,
                                         int *knockback_x, int *knockback_z,
                                         int dt_ms)
 {
+    struct toy_game_ground_query ground;
     int landing_ground, nx, nz, height;
     if (*airborne_ms <= 0) return;
     *airborne_ms -= dt_ms;
@@ -2591,8 +2588,9 @@ static void update_remote_player_motion(struct toy_game *g, int *x, int *z,
                                                   TOY_GAME_PLAYER_RADIUS,
                                                   height)) *z = nz;
     }
-    landing_ground = ground_height_overlapping(g, *x, *z,
-                                                TOY_GAME_PLAYER_RADIUS);
+    ground = toy_game_query_ground(g, *x, *z, TOY_GAME_PLAYER_RADIUS,
+                                   *ground_y);
+    landing_ground = ground.landing_y;
     if (*vertical_velocity < 0 &&
         ((landing_ground >= *ground_y &&
           *airborne_y <= landing_ground - *ground_y) ||
@@ -2691,21 +2689,16 @@ void toy_game_update_actor_motion(struct toy_game *g, int actor_index, int dt_ms
 void toy_game_update_actor_ground(struct toy_game *g, int actor_index)
 {
     struct toy_game_actor *actor;
-    int i, next_ground;
+    struct toy_game_ground_query ground;
+    int next_ground;
     if (!g || actor_index < 0 || actor_index >= TOY_GAME_MAX_ACTORS) return;
     actor = &g->actors[actor_index];
     if (actor->airborne_ms > 0) return;
-    next_ground = toy_game_ground_height(g, actor->x, actor->z,
-                                         TOY_GAME_PLAYER_RADIUS);
+    ground = toy_game_query_ground(g, actor->x, actor->z,
+                                   TOY_GAME_PLAYER_RADIUS, actor->ground_y);
+    next_ground = ground.support_y;
     if (next_ground < actor->ground_y) {
-        for (i = 0; i < g->platform_count; i++) {
-            const struct toy_game_platform *p = &g->platforms[i];
-            if (p->height != actor->ground_y) continue;
-            if (actor->x + TOY_GAME_PLAYER_RADIUS > p->minx &&
-                actor->x - TOY_GAME_PLAYER_RADIUS < p->maxx &&
-                actor->z + TOY_GAME_PLAYER_RADIUS > p->minz &&
-                actor->z - TOY_GAME_PLAYER_RADIUS < p->maxz) return;
-        }
+        if (ground.touches_current_support) return;
         actor->airborne_y = actor->ground_y - next_ground;
         actor->ground_y = next_ground;
         actor->airborne_ms = TOY_GAME_JUMP_MS;
