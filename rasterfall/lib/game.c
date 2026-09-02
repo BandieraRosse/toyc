@@ -2677,9 +2677,15 @@ static void update_motion_values(struct toy_game *g, int *x, int *z,
 {
     if (*airborne_ms <= 0) return;
     *airborne_ms -= dt_ms;
-    if (*airborne_ms < 0) *airborne_ms = 0;
+    /* airborne_ms is also the active-state flag.  The configured duration is
+     * only a nominal animation/network timer: a sufficiently high fall can
+     * outlive it, so keep the state active until the trajectory reaches its
+     * landing height. */
+    if (*airborne_ms <= 0) *airborne_ms = 1;
     *airborne_y += *vertical_velocity;
     *vertical_velocity -= TOY_GAME_AIRBORNE_GRAVITY;
+    if (*vertical_velocity < -TOY_GAME_FALL_TERMINAL_VELOCITY)
+        *vertical_velocity = -TOY_GAME_FALL_TERMINAL_VELOCITY;
     if (*knockback_x || *knockback_z) {
         int nx = *x + *knockback_x;
         int nz = *z + *knockback_z;
@@ -2708,9 +2714,13 @@ static void update_player_special_motion(struct toy_game *g, int dt_ms)
         struct toy_game_ground_query ground;
         int landing_ground;
         g->player_airborne_ms -= dt_ms;
-        if (g->player_airborne_ms < 0) g->player_airborne_ms = 0;
+        if (g->player_airborne_ms <= 0) g->player_airborne_ms = 1;
         g->player_airborne_y += g->player_vertical_velocity;
         g->player_vertical_velocity -= TOY_GAME_AIRBORNE_GRAVITY;
+        if (g->player_vertical_velocity <
+                -TOY_GAME_FALL_TERMINAL_VELOCITY)
+            g->player_vertical_velocity =
+                -TOY_GAME_FALL_TERMINAL_VELOCITY;
         /* Apply horizontal jump momentum before checking the landing surface,
          * so a jump can reach a platform during this frame. */
         if (g->player_air_x || g->player_air_z)
@@ -2723,10 +2733,8 @@ static void update_player_special_motion(struct toy_game *g, int dt_ms)
                                        g->player_ground_y);
         landing_ground = ground.landing_y;
         if (g->player_vertical_velocity < 0 &&
-            ((landing_ground >= g->player_ground_y &&
-              g->player_airborne_y <= landing_ground - g->player_ground_y) ||
-             (landing_ground < g->player_ground_y &&
-              g->player_airborne_y <= 0))) {
+            g->player_airborne_y <=
+                landing_ground - g->player_ground_y) {
             g->player_airborne_y = 0;
             g->player_airborne_ms = 0;
             g->player_ground_y = landing_ground;
@@ -2761,9 +2769,11 @@ static void update_remote_player_motion(struct toy_game *g, int *x, int *z,
     int landing_ground, nx, nz, height;
     if (*airborne_ms <= 0) return;
     *airborne_ms -= dt_ms;
-    if (*airborne_ms < 0) *airborne_ms = 0;
+    if (*airborne_ms <= 0) *airborne_ms = 1;
     *airborne_y += *vertical_velocity;
     *vertical_velocity -= TOY_GAME_AIRBORNE_GRAVITY;
+    if (*vertical_velocity < -TOY_GAME_FALL_TERMINAL_VELOCITY)
+        *vertical_velocity = -TOY_GAME_FALL_TERMINAL_VELOCITY;
     height = *ground_y + *airborne_y;
     if (*air_x || *air_z) {
         nx = *x + *air_x;
@@ -2779,9 +2789,7 @@ static void update_remote_player_motion(struct toy_game *g, int *x, int *z,
                                    *ground_y);
     landing_ground = ground.landing_y;
     if (*vertical_velocity < 0 &&
-        ((landing_ground >= *ground_y &&
-          *airborne_y <= landing_ground - *ground_y) ||
-         (landing_ground < *ground_y && *airborne_y <= 0))) {
+        *airborne_y <= landing_ground - *ground_y) {
         *airborne_y = 0;
         *airborne_ms = 0;
         *ground_y = landing_ground;
@@ -3171,9 +3179,11 @@ static void update_enemy_airborne(struct toy_game *g,
     struct toy_game_ground_query ground;
     int landing_ground;
     e->airborne_ms -= dt_ms;
-    if (e->airborne_ms < 0) e->airborne_ms = 0;
+    if (e->airborne_ms <= 0) e->airborne_ms = 1;
     e->airborne_y += e->vertical_velocity;
     e->vertical_velocity -= TOY_GAME_AIRBORNE_GRAVITY;
+    if (e->vertical_velocity < -TOY_GAME_FALL_TERMINAL_VELOCITY)
+        e->vertical_velocity = -TOY_GAME_FALL_TERMINAL_VELOCITY;
     if (e->knockback_x || e->knockback_z) {
         move_enemy_forced(g, e, e->knockback_x, e->knockback_z);
         e->knockback_x = e->knockback_x * 3 / 4;
@@ -3183,9 +3193,7 @@ static void update_enemy_airborne(struct toy_game *g,
                                    e->ground_y);
     landing_ground = ground.landing_y;
     if (e->vertical_velocity < 0 &&
-        ((landing_ground >= e->ground_y &&
-          e->airborne_y <= landing_ground - e->ground_y) ||
-         (landing_ground < e->ground_y && e->airborne_y <= 0))) {
+        e->airborne_y <= landing_ground - e->ground_y) {
         e->airborne_y = 0;
         e->airborne_ms = 0;
         e->ground_y = landing_ground;

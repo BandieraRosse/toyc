@@ -1178,6 +1178,28 @@ static int run_logic_test(void)
                     &game, 1150, 0, 100, 0) ||
                 toy_game_position_blocked_at_height(
                     &game, 700, 0, 100, 200)) return 177;
+            /* 坡尾可通过相互重叠、单级不超过 step height 的承接面
+             * 登上实体盒顶；玩家圆不能在坡面完整支撑结束处卡住。 */
+            {
+                struct toy_game_platform ramp_top[2] = {
+                    { -1000, 1000, -15000, -5900, 0,
+                      TOY_GAME_GROUND_RAMP_Z, 3960 },
+                    { -1000, 1000, -6620, -5340, 3900,
+                      TOY_GAME_GROUND_FLAT, 0 }
+                };
+                struct toy_game_box wall_top = {
+                    -1000, 1000, -5900, -5700, 0, 3900
+                };
+                toy_game_set_world(&game, &wall_top, 1, 16000);
+                toy_game_set_platforms(&game, ramp_top, 2);
+                if (toy_game_position_blocked_at_height(
+                        &game, 0, -6224, TOY_GAME_PLAYER_RADIUS, 3784) ||
+                    toy_game_query_ground(&game, 0, -6224,
+                        TOY_GAME_PLAYER_RADIUS, 3784).support_y != 3900)
+                    return 188;
+                toy_game_set_world(&game, NULL, 0, 12000);
+                toy_game_set_platforms(&game, &ramp, 1);
+            }
             nav_a = ((150 - game.nav_origin) / game.nav_cell_size) *
                     game.nav_width +
                     (150 - game.nav_origin) / game.nav_cell_size;
@@ -1247,9 +1269,23 @@ static int run_logic_test(void)
             toy_game_update_player_motion(&game, 16);
         if (game.player_airborne_ms != 0 || game.player_ground_y != 500 ||
             game.player_airborne_y != 0) return 95;
+        /* 从高台起跳并离开边缘后，相对起跳点高度回到零时仍在半空；
+         * 必须继续下降到低处地面的绝对高度，不能在此处瞬移落地。 */
+        game.px = 1800;
+        game.player_ground_y = 500;
+        if (!toy_game_jump_with_velocity(&game, 100, 0)) return 190;
+        for (int i = 0; i < 400 && game.player_airborne_y >= 0; i++)
+            toy_game_update_player_motion(&game, 16);
+        if (game.player_airborne_ms <= 0 || game.player_airborne_y >= 0 ||
+            game.player_ground_y != 500) return 191;
+        for (int i = 0; i < 400 && game.player_airborne_ms > 0; i++)
+            toy_game_update_player_motion(&game, 16);
+        if (game.player_airborne_ms != 0 || game.player_ground_y != 0 ||
+            game.player_airborne_y != 0) return 192;
         /* 离开平台时，在碰撞圆完全越过边缘前仍保持站立；
          * 越过后从平台高度开始下落，不能直接陷入平台侧面。 */
         game.px = 2300;
+        game.player_ground_y = 500;
         toy_game_update_player_ground(&game);
         if (game.player_ground_y != 500 || game.player_airborne_ms != 0)
             return 89;
@@ -1261,6 +1297,24 @@ static int run_logic_test(void)
             toy_game_update_player_motion(&game, 16);
         if (game.player_airborne_ms != 0 || game.player_airborne_y != 0)
             return 91;
+        /* 高处坠落不能因名义跳跃计时结束而瞬移落地。 */
+        game.player_ground_y = 0;
+        game.player_airborne_y = 10000;
+        game.player_airborne_ms = TOY_GAME_JUMP_MS;
+        game.player_vertical_velocity = 0;
+        for (int i = 0; i < 57; i++) {
+            int previous_y = game.player_airborne_y;
+            toy_game_update_player_motion(&game, 16);
+            if (previous_y - game.player_airborne_y >
+                    TOY_GAME_FALL_TERMINAL_VELOCITY)
+                return 189;
+        }
+        if (game.player_airborne_ms <= 0 || game.player_airborne_y <= 0)
+            return 186;
+        for (int i = 0; i < 600 && game.player_airborne_ms > 0; i++)
+            toy_game_update_player_motion(&game, 16);
+        if (game.player_airborne_ms != 0 || game.player_airborne_y != 0)
+            return 187;
     }
     /* world 是导航和碰撞的最大坐标范围，不是默认地面。 */
     {
