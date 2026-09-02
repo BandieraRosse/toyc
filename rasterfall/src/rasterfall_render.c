@@ -3780,6 +3780,36 @@ static void fill_rect(struct toy_surface *surface, int x, int y,
                       int width, int height, uint32_t color);
 static uint32_t mix_color(uint32_t from, uint32_t to, int num, int den);
 
+static int render_ramp(struct toy_renderer *renderer,
+                       const struct camera *camera,
+                       const struct toy_map_draw *ramp)
+{
+    struct vec3 a, b, c, d, base_a, base_b, base_c, base_d;
+    int low = -900 + ramp->e, high = -900 + ramp->f;
+    a.x = ramp->a; a.z = ramp->c;
+    b.x = ramp->b; b.z = ramp->c;
+    c.x = ramp->b; c.z = ramp->d;
+    d.x = ramp->a; d.z = ramp->d;
+    if (ramp->style == TOY_GAME_GROUND_RAMP_X) {
+        a.y = low; b.y = high; c.y = high; d.y = low;
+    } else {
+        a.y = low; b.y = low; c.y = high; d.y = high;
+    }
+    base_a = a; base_a.y = -900;
+    base_b = b; base_b.y = -900;
+    base_c = c; base_c.y = -900;
+    base_d = d; base_d.y = -900;
+    return draw_quad(renderer, camera, &a, &b, &c, &d, ramp->color) +
+           draw_quad(renderer, camera, &base_a, &base_b, &b, &a,
+                     mix_color(ramp->color, 0x10151D, 1, 3)) +
+           draw_quad(renderer, camera, &base_b, &base_c, &c, &b,
+                     mix_color(ramp->color, 0x10151D, 1, 3)) +
+           draw_quad(renderer, camera, &base_c, &base_d, &d, &c,
+                     mix_color(ramp->color, 0x10151D, 1, 3)) +
+           draw_quad(renderer, camera, &base_d, &base_a, &a, &d,
+                     mix_color(ramp->color, 0x10151D, 1, 3));
+}
+
 static int render_scene(struct toy_renderer *renderer, const struct camera *camera)
 {
     int pixels = 0;
@@ -3834,6 +3864,8 @@ static int render_scene(struct toy_renderer *renderer, const struct camera *came
         } else if (x->type==TOY_MAP_DRAW_TEXTURE) {
             a.x=x->a;a.y=-900;a.z=x->c;b.x=x->b;b.y=-900;b.z=x->c;c.x=x->b;c.y=x->e;c.z=x->c;d.x=x->a;d.y=x->e;d.z=x->c;
             pixels+=draw_position_quad_tex(renderer,camera,&a,&b,&c,&d,x->texture_u*UV_ONE,x->texture_v*UV_ONE,x->color);
+        } else if (x->type==TOY_MAP_DRAW_RAMP) {
+            pixels += render_ramp(renderer, camera, x);
         } else if (x->type==TOY_MAP_DRAW_LABEL) {
             struct toy_game_box zone={x->a,x->b,x->c,x->d}; draw_world_label(renderer,camera,&zone,x->text,x->color);
         } else if (x->type==TOY_MAP_DRAW_SIGN) {

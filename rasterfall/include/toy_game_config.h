@@ -6,6 +6,7 @@
 #define TOY_CONFIG_PLAYER_HP                  100  /* 主玩家生命值 */
 #define TOY_CONFIG_SECONDARY_PLAYER_HP        100  /* 第二玩家生命值 */
 #define TOY_CONFIG_PLAYER_MOVE_STEP            76  /* 玩家每逻辑步移动量 */
+#define TOY_CONFIG_GROUND_STEP_HEIGHT          120 /* 可直接跨越的最大地面高差 */
 #define TOY_CONFIG_BASE_HP                     500 /* 基地核心初始/最大生命 */
 #define TOY_CONFIG_BASE_REGEN_MS               1000 /* 基地核心每秒回复 */
 #define TOY_CONFIG_AI_RETURN_SPEED             38  /* AI 队友回位速度 */

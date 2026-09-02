@@ -282,11 +282,20 @@ struct toy_game_player_impulse_event {
 
 /* 碰撞/命中共用的 xz 平面轴对齐盒（与房间障碍物同尺度） */
 struct toy_game_box { int minx, maxx, minz, maxz; };
-struct toy_game_platform { int minx, maxx, minz, maxz, height; };
+enum toy_game_ground_kind {
+    TOY_GAME_GROUND_FLAT,
+    TOY_GAME_GROUND_RAMP_X,
+    TOY_GAME_GROUND_RAMP_Z
+};
+struct toy_game_platform {
+    int minx, maxx, minz, maxz, height;
+    int kind, end_height;
+};
 struct toy_game_ground_query {
     int support_y;                 /* whole footprint is on this surface */
     int landing_y;                 /* footprint overlaps this surface */
     int touches_current_support;   /* current support still touches footprint */
+    int support_is_ramp;
 };
 
 /* The world is small enough for a fixed connectivity grid.  This is

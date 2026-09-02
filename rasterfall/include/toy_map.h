@@ -20,7 +20,8 @@ enum toy_map_draw_type {
     TOY_MAP_DRAW_LABEL,
     TOY_MAP_DRAW_SIGN,
     TOY_MAP_DRAW_MODEL,
-    TOY_MAP_DRAW_TEXTURE
+    TOY_MAP_DRAW_TEXTURE,
+    TOY_MAP_DRAW_RAMP
 };
 
 /* visible and collision are independent.  Legacy box syntax defaults to

@@ -1138,7 +1138,9 @@ static int run_logic_test(void)
     }
     /* 多层地面：跳入悬空平台范围后应落在平台顶部，而不是穿回地面。 */
     {
-        struct toy_game_platform platform = { 280, 2200, -1000, 1000, 500 };
+        struct toy_game_platform platform = {
+            280, 2200, -1000, 1000, 500, TOY_GAME_GROUND_FLAT, 0
+        };
         struct toy_game_ground_query ground;
         toy_game_init(&game, 47);
         game.world_count = 0;
@@ -1156,6 +1158,39 @@ static int run_logic_test(void)
                                        TOY_GAME_PLAYER_RADIUS, 500);
         if (ground.support_y != 0 || ground.landing_y != 0 ||
             ground.touches_current_support != 0) return 173;
+        {
+            struct toy_game_platform ramp = {
+                0, 1200, -600, 600, 0, TOY_GAME_GROUND_RAMP_X, 600
+            };
+            toy_game_set_platforms(&game, &ramp, 1);
+            ground = toy_game_query_ground(&game, 600, 0, 0, 0);
+            if (ground.support_y != 300 || ground.landing_y != 300 ||
+                !ground.support_is_ramp) return 174;
+            if (toy_game_position_blocked_at_height(
+                    &game, 100, 0, 50, 0) ||
+                !toy_game_position_blocked_at_height(
+                    &game, 600, -550, 100, 0) ||
+                !toy_game_position_blocked_at_height(
+                    &game, 1150, 0, 100, 0) ||
+                toy_game_position_blocked_at_height(
+                    &game, 700, 0, 100, 300)) return 177;
+            game.px = 900;
+            game.pz = 0;
+            game.player_ground_y = 500;
+            toy_game_update_player_ground(&game);
+            if (game.player_ground_y != 450 || game.player_airborne_ms != 0)
+                return 175;
+            game.actors[0].x = 300;
+            game.actors[0].z = 0;
+            game.actors[0].ground_y = 0;
+            toy_game_update_actor_ground(&game, 0);
+            if (game.actors[0].ground_y != 150 ||
+                game.actors[0].airborne_ms != 0) return 176;
+            toy_game_set_platforms(&game, &platform, 1);
+            game.px = 0;
+            game.pz = 0;
+            game.player_ground_y = 0;
+        }
         if (!toy_game_jump_with_velocity(&game, 20, 0)) return 87;
         for (int i = 0; i < 70; i++)
             toy_game_update_player_motion(&game, 16);
@@ -1186,7 +1221,9 @@ static int run_logic_test(void)
     }
     /* 网络玩家 actor 必须保留跳跃水平动量，并在平台顶落地。 */
     {
-        struct toy_game_platform platform = { 280, 2200, -1000, 1000, 500 };
+        struct toy_game_platform platform = {
+            280, 2200, -1000, 1000, 500, TOY_GAME_GROUND_FLAT, 0
+        };
         int actor_index = TOY_GAME_REMOTE_ACTOR_BASE + 1;
         toy_game_init(&game, 49);
         game.world_count = 0;
@@ -1411,7 +1448,9 @@ static int run_logic_test(void)
     /* 平台对地面实体是实心障碍：敌人不能生成或追进台体，
      * AI 队友也不能被直接移入平台。 */
     {
-        struct toy_game_platform platform = { -500, 500, -500, 500, 800 };
+        struct toy_game_platform platform = {
+            -500, 500, -500, 500, 800, TOY_GAME_GROUND_FLAT, 0
+        };
         int actor_x;
         toy_game_init(&game, 48);
         game.world_count = 0;

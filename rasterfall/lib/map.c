@@ -141,6 +141,18 @@ int toy_map_load(const char *path, struct toy_map *m)
         else if(!strcmp(kind,"sign") && get4(&p,&a,&b,&c,&d)==0){char *y0=word(&p),*y1=word(&p),*co=word(&p),*t=rest_text(&p);if(y0&&y1&&co)add_draw(m,TOY_MAP_DRAW_SIGN,a,b,c,d,number(y0,10),number(y1,10),color(co),t);}
         else if(!strcmp(kind,"model") && get4(&p,&a,&b,&c,&d)==0){char *y0=word(&p),*y1=word(&p),*co=word(&p),*st=word(&p);if(y0&&y1){add_draw(m,TOY_MAP_DRAW_MODEL,a,b,c,d,number(y0,10),number(y1,10),color(co),NULL);if(st)m->draw[m->draw_count-1].style=number(st,10);}}
         else if(!strcmp(kind,"platform") && m->platform_count<TOY_MAP_MAX_PLATFORMS){int h;if(get5(&p,&a,&b,&c,&d,&h)==0){struct toy_game_platform *pl=&m->platforms[m->platform_count++];pl->minx=a;pl->maxx=b;pl->minz=c;pl->maxz=d;pl->height=h;}}
+        else if(!strcmp(kind,"ramp") && m->platform_count<TOY_MAP_MAX_PLATFORMS && m->draw_count<TOY_MAP_MAX_DRAW){
+            int h0,h1; char *s0=word(&p),*s1=word(&p),*s2=word(&p),*s3=word(&p),*lo=word(&p),*hi=word(&p),*axis=word(&p),*co=word(&p);
+            if(!s0||!s1||!s2||!s3||!lo||!hi||!axis)continue;
+            a=number(s0,10);b=number(s1,10);c=number(s2,10);d=number(s3,10);h0=number(lo,10);h1=number(hi,10);
+            if((!strcmp(axis,"x")&&b>a)||(!strcmp(axis,"z")&&d>c)){
+                struct toy_game_platform *pl=&m->platforms[m->platform_count++];
+                pl->minx=a;pl->maxx=b;pl->minz=c;pl->maxz=d;pl->height=h0;pl->end_height=h1;
+                pl->kind=!strcmp(axis,"x")?TOY_GAME_GROUND_RAMP_X:TOY_GAME_GROUND_RAMP_Z;
+                add_draw(m,TOY_MAP_DRAW_RAMP,a,b,c,d,h0,h1,color(co),NULL);
+                m->draw[m->draw_count-1].style=pl->kind;
+            }
+        }
         else if(!strcmp(kind,"texture") && get4(&p,&a,&b,&c,&d)==0){char *y=word(&p),*u=word(&p),*v=word(&p),*co=word(&p);if(y&&u&&v){add_draw(m,TOY_MAP_DRAW_TEXTURE,a,b,c,d,number(y,10),0,color(co),NULL);m->draw[m->draw_count-1].texture_u=number(u,10);m->draw[m->draw_count-1].texture_v=number(v,10);}}
         else if(!strcmp(kind,"pickup") && m->pickup_count<TOY_MAP_MAX_PICKUPS){
             char *k=word(&p),*sx=word(&p),*sz=word(&p),*sy=word(&p);
