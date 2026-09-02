@@ -119,7 +119,8 @@ static long raster_flat(struct toy_renderer *renderer,
                         const struct toy_screen_vertex *b,
                         const struct toy_screen_vertex *c,
                         long long area, int minx, int maxx,
-                        int y0, int y1, uint32_t color, int overlay)
+                        int y0, int y1, uint32_t color, int overlay,
+                        int cmd_alpha)
 {
     struct toy_surface *surface = &renderer->surface;
     int *depth = renderer->depth;
@@ -165,8 +166,25 @@ static long raster_flat(struct toy_renderer *renderer,
                 if (overlay || inv >= depth[at]) {
                     worker->depth_pass_px++;
                     worker->shaded_px++;
-                    if (!overlay) depth[at] = (int)inv;
-                    row[x] = color;
+                    if (!overlay && cmd_alpha == 255) depth[at] = (int)inv;
+                    if (cmd_alpha == 255) {
+                        row[x] = color;
+                    } else if (cmd_alpha > 0) {
+                        uint32_t under = row[x];
+                        int ur = (under >> 16) & 255;
+                        int ug = (under >> 8) & 255;
+                        int ub = under & 255;
+                        int sr = (color >> 16) & 255;
+                        int sg = (color >> 8) & 255;
+                        int sb = color & 255;
+                        row[x] = (uint32_t)((sr * cmd_alpha + ur * (255 - cmd_alpha)) / 255) << 16 |
+                                 (uint32_t)((sg * cmd_alpha + ug * (255 - cmd_alpha)) / 255) << 8 |
+                                 (uint32_t)((sb * cmd_alpha + ub * (255 - cmd_alpha)) / 255);
+                        worker->alpha_blended_pixels++;
+                        worker->blend_divisions += 3;
+                    } else {
+                        worker->alpha_zero_pixels++;
+                    }
                     worker->written_px++;
                     worker->flat_pixels++;
                     drawn++;
@@ -784,7 +802,7 @@ static void rasterize_cmd(struct toy_renderer *renderer,
                                       cmd->area, cmd->bbox_minx,
                                       cmd->bbox_maxx, y0, y1,
                                       shade_color(cmd->color, cmd->light, cmd->fog),
-                                      cmd->overlay);
+                                      cmd->overlay, cmd->material_alpha);
 }
 
 static int grow_cmds(struct toy_renderer *renderer)
@@ -901,6 +919,30 @@ int toy_renderer_triangle_lit(struct toy_renderer *renderer,
         renderer->submitted_triangles++;
         renderer->submitted_vertices += 3;
     }
+    return 0;
+}
+
+int toy_renderer_triangle_lit_alpha(struct toy_renderer *renderer,
+                                    const struct toy_screen_vertex *a,
+                                    const struct toy_screen_vertex *b,
+                                    const struct toy_screen_vertex *c,
+                                    uint32_t color, int light, int fog,
+                                    int alpha)
+{
+    long long area;
+    struct toy_raster_cmd *cmd;
+    if (!renderer || !renderer->depth || !a || !b || !c) return 0;
+    area = edge(a, b, c->x, c->y);
+    if (area >= 0) return 0;
+    if (alpha < 0) alpha = 0;
+    if (alpha > 255) alpha = 255;
+    if (!record_cmd(renderer, 0, a, b, c, area, color, NULL, 0, 0,
+                    light, fog, 0)) return 0;
+    cmd = &renderer->cmds[renderer->cmd_count - 1];
+    cmd->material_alpha = alpha;
+    cmd->transparent = alpha < 255;
+    renderer->submitted_triangles++;
+    renderer->submitted_vertices += 3;
     return 0;
 }
 

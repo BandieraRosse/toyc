@@ -2570,6 +2570,58 @@ static int draw_world_triangle(struct toy_renderer *renderer,
                                      color);
 }
 
+static int draw_world_triangle_alpha(struct toy_renderer *renderer,
+                                     const struct camera *camera,
+                                     const struct vec3 *a,
+                                     const struct vec3 *b,
+                                     const struct vec3 *c,
+                                     uint32_t color, int alpha)
+{
+    struct vec3 input[3], clipped[4];
+    struct toy_screen_vertex screen[3];
+    int count, i, drawn = 0;
+    long long area;
+    world_to_view(camera, a, &input[0]);
+    world_to_view(camera, b, &input[1]);
+    world_to_view(camera, c, &input[2]);
+    if (input[0].z >= NEAR_Z && input[1].z >= NEAR_Z && input[2].z >= NEAR_Z) {
+        clipped[0] = input[0]; clipped[1] = input[1]; clipped[2] = input[2];
+        count = 3;
+    } else count = clip_near(input, 3, clipped);
+    if (count < 3) return 0;
+    project_vertex(&renderer->surface, &clipped[0], &screen[0]);
+    for (i = 1; i + 1 < count; i++) {
+        project_vertex(&renderer->surface, &clipped[i], &screen[1]);
+        project_vertex(&renderer->surface, &clipped[i + 1], &screen[2]);
+        area = ((long long)screen[2].x - screen[0].x) *
+                   ((long long)screen[1].y - screen[0].y) -
+               ((long long)screen[2].y - screen[0].y) *
+                   ((long long)screen[1].x - screen[0].x);
+        if (area >= 0) {
+            struct toy_screen_vertex swap = screen[1];
+            screen[1] = screen[2]; screen[2] = swap;
+        }
+        drawn += toy_renderer_triangle_lit_alpha(
+            renderer, &screen[0], &screen[1], &screen[2], color,
+            fixed_floor_lighting ? 256 : baked_light_at((a->x + b->x + c->x) / 3,
+                                                        (a->z + b->z + c->z) / 3),
+            fixed_floor_lighting ? 0 : baked_fog_at(world_distance(
+                camera, (a->x + b->x + c->x) / 3,
+                (a->z + b->z + c->z) / 3)), alpha);
+    }
+    return drawn;
+}
+
+static int draw_quad_alpha(struct toy_renderer *renderer,
+                           const struct camera *camera,
+                           const struct vec3 *a, const struct vec3 *b,
+                           const struct vec3 *c, const struct vec3 *d,
+                           uint32_t color, int alpha)
+{
+    return draw_world_triangle_alpha(renderer, camera, a, b, c, color, alpha) +
+           draw_world_triangle_alpha(renderer, camera, a, c, d, color, alpha);
+}
+
 static int draw_world_triangle_tex_views(struct toy_renderer *renderer,
                                     const struct camera *camera,
                                     const struct world_uv_vertex *a,
@@ -3111,6 +3163,28 @@ static int draw_box(struct toy_renderer *renderer, const struct camera *camera,
     pixels += draw_quad(renderer,camera,&c,&d,&h,&g,box->color);
     pixels += draw_quad(renderer,camera,&d,&a,&e,&h,box->color + 0x080808);
     pixels += draw_quad(renderer,camera,&e,&f,&g,&h,box->color + 0x181818);
+    return pixels;
+}
+
+static int draw_box_alpha(struct toy_renderer *renderer,
+                          const struct camera *camera,
+                          const struct box *box, int alpha)
+{
+    struct vec3 a, b, c, d, e, f, g, h;
+    int pixels = 0;
+    a.x = box->minx; a.y = -900; a.z = box->minz;
+    b.x = box->maxx; b.y = -900; b.z = box->minz;
+    c.x = box->maxx; c.y = -900; c.z = box->maxz;
+    d.x = box->minx; d.y = -900; d.z = box->maxz;
+    e.x = a.x; e.y = box->height; e.z = a.z;
+    f.x = b.x; f.y = box->height; f.z = b.z;
+    g.x = c.x; g.y = box->height; g.z = c.z;
+    h.x = d.x; h.y = box->height; h.z = d.z;
+    pixels += draw_quad_alpha(renderer, camera, &a, &b, &f, &e, box->color, alpha);
+    pixels += draw_quad_alpha(renderer, camera, &b, &c, &g, &f, box->color + 0x080808, alpha);
+    pixels += draw_quad_alpha(renderer, camera, &c, &d, &h, &g, box->color, alpha);
+    pixels += draw_quad_alpha(renderer, camera, &d, &a, &e, &h, box->color + 0x080808, alpha);
+    pixels += draw_quad_alpha(renderer, camera, &e, &f, &g, &h, box->color + 0x181818, alpha);
     return pixels;
 }
 
@@ -3893,8 +3967,15 @@ static int render_scene(struct toy_renderer *renderer, const struct camera *came
         }
     }
     for (int i=0; i<level_map.box_count; i++) if (level_map.boxes[i].visible) {
-        struct box obstacle={level_map.boxes[i].minx,level_map.boxes[i].maxx,level_map.boxes[i].minz,level_map.boxes[i].maxz,level_map.boxes[i].height,level_map.boxes[i].color};
-        pixels+=draw_box(renderer,camera,&obstacle);
+        struct toy_map_box *map_box = &level_map.boxes[i];
+        struct box obstacle={map_box->minx,map_box->maxx,map_box->minz,
+                             map_box->maxz,map_box->height,map_box->color};
+        if (!strncmp(map_box->role, "air_gate_", 9)) {
+            if (active_session->air_walls_enabled)
+                pixels += draw_box_alpha(renderer, camera, &obstacle, 48);
+        } else {
+            pixels += draw_box(renderer,camera,&obstacle);
+        }
     }
     scene_stats.map_us = render_monotonic_us() - phase_start;
     phase_start = render_monotonic_us();

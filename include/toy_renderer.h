@@ -208,6 +208,12 @@ int toy_renderer_triangle_lit(struct toy_renderer *renderer,
                               const struct toy_screen_vertex *b,
                               const struct toy_screen_vertex *c,
                               uint32_t color, int light, int fog);
+int toy_renderer_triangle_lit_alpha(struct toy_renderer *renderer,
+                                    const struct toy_screen_vertex *a,
+                                    const struct toy_screen_vertex *b,
+                                    const struct toy_screen_vertex *c,
+                                    uint32_t color, int light, int fog,
+                                    int alpha);
 /* 与 toy_renderer_triangle_lit 相同，但按覆盖层光栅化：不比较、不写深度，
  * 后画的覆盖先画的。适用于与底层几乎共面且先画者已在命令列表中排序在前
  * 的区域涂色。 */

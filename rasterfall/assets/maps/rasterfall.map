@@ -27,8 +27,12 @@ model -1800 1800 -5700 -4000 1300 1500 3F6751 0
 
 # ── 开发者区（保留：测试按钮、武器桌、陈列台、贴图展示墙）──────────
 # 空气墙与起点后墙同线；中心为开发者门。
-box -24000 -1800 -5700 -5680 5400 000000 hidden collision role=air_gate_left
-box 1800 24000 -5700 -5680 5400 000000 hidden collision role=air_gate_right
+# x=-20000 处为通往空气墙顶部的开发者快捷坡道，终点与空气墙对齐，坡度约 0.42。
+box -24000 -21000 -5900 -5700 3000 48C8E0 visible collision role=air_gate_left
+box -19000 -1800 -5900 -5700 3000 48C8E0 visible collision role=air_gate_left
+ramp -21000 -19000 -15000 -5700 0 3900 z 477A66
+label -21000 -19000 -14600 -14400 9FE8C8 DEV_RAMP_SLOPE_0.42
+box 1800 24000 -5900 -5700 3000 48C8E0 visible collision role=air_gate_right
 floor -24000 -1800 -5900 -5700 26394A
 floor 1800 24000 -5900 -5700 26394A
 label -23000 23000 -6200 -6000 70D8FF AIR WALL CONTROL LINE
@@ -99,6 +103,14 @@ wall -24000 -24000 -24000 -800 5400 5E5965
 wall -24000 -24000 800 24000 5400 5E5965
 wall 24000 24000 -24000 -800 5400 56515D
 wall 24000 24000 800 24000 5400 56515D
+# 内层边界墙的碰撞体；保留西/东/北走廊的开口。
+box -24000 24000 -24020 -23980 5400 555B68 hidden collision
+box -24020 -23980 24000 24020 5400 4C5260 hidden collision
+box 23980 24020 24000 24020 5400 4C5260 hidden collision
+box -24020 -23980 -24000 -800 5400 5E5965 hidden collision
+box -24020 -23980 800 24000 5400 5E5965 hidden collision
+box 23980 24020 -24000 -800 5400 56515D hidden collision
+box 23980 24020 800 24000 5400 56515D hidden collision
 
 # 西侧走廊：从 x=-24000 向外到 -33000。
 floor -33000 -24000 -800 800 314B43
