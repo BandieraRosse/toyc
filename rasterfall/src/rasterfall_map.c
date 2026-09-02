@@ -43,14 +43,18 @@ void rasterfall_map_prepare(struct rasterfall_map_state *map)
         map->bounds[i].maxx = map->level->boxes[i].maxx;
         map->bounds[i].minz = map->level->boxes[i].minz;
         map->bounds[i].maxz = map->level->boxes[i].maxz;
+        map->bounds[i].miny = 0;
+        map->bounds[i].maxy = map->level->boxes[i].collision ?
+            map->level->boxes[i].height + 900 : 0;
         if (!map->level->boxes[i].collision) {
             map->bounds[i].minx = 1; map->bounds[i].maxx = 0;
             map->bounds[i].minz = 1; map->bounds[i].maxz = 0;
         }
         if ((!strcmp(map->level->boxes[i].role, "air_gate") ||
              !strncmp(map->level->boxes[i].role, "air_gate_", 9)) &&
-            map->level->boxes[i].collision && gate_count < TOY_MAP_MAX_BASES)
+            map->level->boxes[i].collision && gate_count < TOY_MAP_MAX_BASES) {
             map->air_wall_indices[gate_count++] = i;
+        }
     }
     map->air_wall_count = gate_count;
     for (i = 0; i < map->level->safe_count; i++)

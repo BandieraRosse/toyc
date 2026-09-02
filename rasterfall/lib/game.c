@@ -1053,10 +1053,28 @@ int toy_game_position_blocked_at_height(const struct toy_game *g,
                                         int x, int z, int radius,
                                         int ground_height)
 {
-    int i;
+    int i, collision_height = ground_height;
     struct toy_game_ground_query ground;
-    if (toy_game_position_blocked(g, x, z, radius)) return 1;
+    if (!g) return 1;
+    if (x - radius < -g->room_limit || x + radius > g->room_limit ||
+        z - radius < -g->room_limit || z + radius > g->room_limit) return 1;
+    /* Resolve the destination support before testing solid cuboids.  This
+     * lets ordinary movement step onto the top of a box when the destination
+     * platform is within the configured step height; no obstacle-specific
+     * exception is needed. */
     ground = toy_game_query_ground(g, x, z, radius, ground_height);
+    if (ground.has_support && ground.support_y > collision_height)
+        collision_height = ground.support_y;
+    for (i = 0; i < g->world_count; i++) {
+        const struct toy_game_box *b = &g->world[i];
+        /* Finite boxes are ordinary solid cuboids: once the player's feet
+         * reach the top, the box no longer blocks horizontal movement.  A
+         * zero vertical range preserves the legacy fixture behavior for
+         * standalone tests that only provide x/z boxes. */
+        if (b->maxy > b->miny && collision_height >= b->maxy) continue;
+        if (x + radius > b->minx && x - radius < b->maxx &&
+            z + radius > b->minz && z - radius < b->maxz) return 1;
+    }
     /* Callers that have not supplied terrain retain the old standalone-game
      * fixture behavior.  A loaded map always supplies its ground primitive
      * array (possibly with zero entries), where absence of support is solid. */

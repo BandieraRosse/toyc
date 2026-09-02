@@ -281,7 +281,7 @@ struct toy_game_player_impulse_event {
 };
 
 /* 碰撞/命中共用的 xz 平面轴对齐盒（与房间障碍物同尺度） */
-struct toy_game_box { int minx, maxx, minz, maxz; };
+struct toy_game_box { int minx, maxx, minz, maxz, miny, maxy; };
 enum toy_game_ground_kind {
     TOY_GAME_GROUND_FLAT,
     TOY_GAME_GROUND_RAMP_X,

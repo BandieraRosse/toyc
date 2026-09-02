@@ -3961,7 +3961,7 @@ static int render_scene(struct toy_renderer *renderer, const struct camera *came
         } else if (x->type==TOY_MAP_DRAW_RAMP) {
             pixels += render_ramp(renderer, camera, x);
         } else if (x->type==TOY_MAP_DRAW_LABEL) {
-            struct toy_game_box zone={x->a,x->b,x->c,x->d}; draw_world_label(renderer,camera,&zone,x->text,x->color);
+            struct toy_game_box zone={x->a,x->b,x->c,x->d,0,0}; draw_world_label(renderer,camera,&zone,x->text,x->color);
         } else if (x->type==TOY_MAP_DRAW_SIGN) {
             pixels += render_world_sign(renderer, camera, x);
         }

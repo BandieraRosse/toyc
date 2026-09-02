@@ -945,7 +945,7 @@ static int run_logic_test(void)
     /* 敌人槽位复用不能继承上一只敌人的推开僵直。 */
     {
         struct toy_game reuse_test;
-        struct toy_game_box point = {0, 0, 300, 300};
+        struct toy_game_box point = {0, 0, 300, 300, 0, 0};
         toy_game_init(&reuse_test, 47);
         reuse_test.world_count = 0;
         reuse_test.room_limit = 12000;
@@ -1561,7 +1561,7 @@ static int run_logic_test(void)
     }
     /* AI 回位需绕过横在路径上的墙，而不是持续顶墙。 */
     {
-        struct toy_game_box wall = { -500, 500, -900, 900 };
+        struct toy_game_box wall = { -500, 500, -900, 900, 0, 0 };
         toy_game_init(&game, 72);
         toy_game_set_ai_teammate(&game, 1, -1400, 0, "AI");
         toy_game_set_world(&game, &wall, 1, 5000);
@@ -1577,7 +1577,7 @@ static int run_logic_test(void)
     /* 导航目标选择：不可达的主玩家不能成为隐式默认目标；可达的
      * 第二目标即使更远也应优先于不可达目标。 */
     {
-        struct toy_game_box wall = { -100, 100, -6000, 6000 };
+        struct toy_game_box wall = { -100, 100, -6000, 6000, 0, 0 };
         toy_game_init(&game, 81);
         game.to_spawn = 0;
         game.px = 3000; game.pz = 0;
@@ -1594,7 +1594,7 @@ static int run_logic_test(void)
     }
     /* TRACKING 只忽略 LOS，不忽略 component；绕过有限障碍后仍可追踪。 */
     {
-        struct toy_game_box wall = { -100, 100, -600, 600 };
+        struct toy_game_box wall = { -100, 100, -600, 600, 0, 0 };
         toy_game_init(&game, 82);
         game.to_spawn = 0;
         game.px = 3000; game.pz = 2000;
@@ -1614,7 +1614,7 @@ static int run_logic_test(void)
     }
     /* 空气墙拓扑变化后，关闭墙体必须重新合并 component。 */
     {
-        struct toy_game_box wall = { -100, 100, -6000, 6000 };
+        struct toy_game_box wall = { -100, 100, -6000, 6000, 0, 0 };
         toy_game_init(&game, 83);
         game.to_spawn = 0; game.px = 3000; game.pz = 0;
         toy_game_set_world(&game, &wall, 1, 6000);
