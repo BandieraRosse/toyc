@@ -1331,11 +1331,20 @@ int toy_game_position_blocked(const struct toy_game *g,
 static int nav_position_blocked(const struct toy_game *g, int x, int z)
 {
     int i;
+    struct toy_game_ground_query ground;
     /* A cell stands for the whole square, not just its center.  Expanding by
      * half a cell prevents a thin wall that falls between two sample points
      * from becoming an artificial bridge in the component map. */
     int radius = TOY_GAME_CHARGER_RADIUS + g->nav_cell_size / 2;
-    if (toy_game_position_blocked(g, x, z, radius)) return 1;
+    /* Navigation samples terrain at its own support height.  Using the
+     * legacy height-0 wrapper here makes every elevated point of a ramp look
+     * like a solid obstacle, before the ramp-aware link test gets a chance to
+     * classify its edge.  This remains nav-only; gameplay collision keeps its
+     * original caller-supplied height. */
+    ground = toy_game_query_ground(g, x, z, 0, 0);
+    if (position_blocked_at_height(g, x, z, radius,
+                                   ground.has_support ? ground.support_y : 0,
+                                   0)) return 1;
     for (i = 0; i < g->safe_room_count; i++) {
         const struct toy_game_box *b = &g->safe_rooms[i];
         if (x + radius > b->minx && x - radius < b->maxx &&
@@ -1389,42 +1398,104 @@ static int nav_component_at_position(const struct toy_game *g, int x, int z)
     return best ? g->nav_component[best] : 0;
 }
 
-static int nav_step_allowed(const struct toy_game *g, int cx, int cz,
-                            int nx, int nz)
+static int nav_link_slot(int dx, int dz)
 {
-    int dx = nx - cx, dz = nz - cz;
-    int index, from, side_x, side_z;
+    /* Compact row-major direction table, with the center omitted. */
+    if (dx < -1 || dx > 1 || dz < -1 || dz > 1 || (!dx && !dz)) return -1;
+    if (dz < 0) return dx + 1;
+    if (dz == 0) return dx < 0 ? 3 : 4;
+    return dx + 6;
+}
+
+static int nav_ramp_supports_axis_link(const struct toy_game *g,
+                                       int cx, int cz, int nx, int nz)
+{
+    int dx = nx - cx, dz = nz - cz, boundary, lo, hi, i;
+    if (!g || (dx && dz) || (!dx && !dz)) return 0;
+    if (dx) {
+        boundary = g->nav_origin + (cx > nx ? cx : nx) * g->nav_cell_size;
+        lo = g->nav_origin + cz * g->nav_cell_size;
+        hi = lo + g->nav_cell_size;
+    } else {
+        boundary = g->nav_origin + (cz > nz ? cz : nz) * g->nav_cell_size;
+        lo = g->nav_origin + cx * g->nav_cell_size;
+        hi = lo + g->nav_cell_size;
+    }
+    for (i = 0; i < g->primitive_count; i++) {
+        const struct toy_map_primitive *p = &g->primitives[i];
+        int overlap_lo, overlap_hi;
+        if (!(p->flags & TOY_MAP_PRIMITIVE_WALKABLE) ||
+            (dx && p->shape != TOY_MAP_PRIMITIVE_RAMP_X) ||
+            (dz && p->shape != TOY_MAP_PRIMITIVE_RAMP_Z)) continue;
+        if (dx) {
+            if (boundary < p->minx || boundary > p->maxx) continue;
+            overlap_lo = lo > p->minz ? lo : p->minz;
+            overlap_hi = hi < p->maxz ? hi : p->maxz;
+        } else {
+            if (boundary < p->minz || boundary > p->maxz) continue;
+            overlap_lo = lo > p->minx ? lo : p->minx;
+            overlap_hi = hi < p->maxx ? hi : p->maxx;
+        }
+        if (overlap_hi > overlap_lo) return 1;
+    }
+    return 0;
+}
+
+static int nav_axis_link_type(const struct toy_game *g, int from, int to,
+                              int cx, int cz, int nx, int nz)
+{
+    int delta = g->nav_ground_y[to] - g->nav_ground_y[from];
+    if (delta < 0) delta = -delta;
+    if (delta <= TOY_CONFIG_GROUND_STEP_HEIGHT)
+        return TOY_GAME_NAV_LINK_GROUND;
+    if (nav_ramp_supports_axis_link(g, cx, cz, nx, nz))
+        return TOY_GAME_NAV_LINK_RAMP;
+    return TOY_GAME_NAV_LINK_BLOCKED;
+}
+
+static int nav_calculate_link_type(const struct toy_game *g, int cx, int cz,
+                                   int nx, int nz)
+{
+    int dx = nx - cx, dz = nz - cz, from, to, side_x, side_z;
     if (nx < 0 || nz < 0 || nx >= g->nav_width || nz >= g->nav_height)
-        return 0;
+        return TOY_GAME_NAV_LINK_BLOCKED;
     from = cz * g->nav_width + cx;
-    index = nz * g->nav_width + nx;
-    if (!g->nav_walkable[index]) return 0;
-    if (g->nav_ground_y[index] - g->nav_ground_y[from] >
-            TOY_CONFIG_GROUND_STEP_HEIGHT ||
-        g->nav_ground_y[from] - g->nav_ground_y[index] >
-            TOY_CONFIG_GROUND_STEP_HEIGHT) return 0;
+    to = nz * g->nav_width + nx;
+    if (!g->nav_walkable[to]) return TOY_GAME_NAV_LINK_BLOCKED;
+    if (!dx || !dz)
+        return nav_axis_link_type(g, from, to, cx, cz, nx, nz);
     if (dx != 0 && dz != 0) {
         side_x = cz * g->nav_width + nx;
         side_z = nz * g->nav_width + cx;
         if (!g->nav_walkable[side_x] || !g->nav_walkable[side_z]) return 0;
-        if (g->nav_ground_y[side_x] - g->nav_ground_y[from] >
-                TOY_CONFIG_GROUND_STEP_HEIGHT ||
-            g->nav_ground_y[from] - g->nav_ground_y[side_x] >
-                TOY_CONFIG_GROUND_STEP_HEIGHT ||
-            g->nav_ground_y[side_z] - g->nav_ground_y[from] >
-                TOY_CONFIG_GROUND_STEP_HEIGHT ||
-            g->nav_ground_y[from] - g->nav_ground_y[side_z] >
-                TOY_CONFIG_GROUND_STEP_HEIGHT ||
-            g->nav_ground_y[index] - g->nav_ground_y[side_x] >
-                TOY_CONFIG_GROUND_STEP_HEIGHT ||
-            g->nav_ground_y[side_x] - g->nav_ground_y[index] >
-                TOY_CONFIG_GROUND_STEP_HEIGHT ||
-            g->nav_ground_y[index] - g->nav_ground_y[side_z] >
-                TOY_CONFIG_GROUND_STEP_HEIGHT ||
-            g->nav_ground_y[side_z] - g->nav_ground_y[index] >
-                TOY_CONFIG_GROUND_STEP_HEIGHT) return 0;
+        if (nav_axis_link_type(g, from, side_x, cx, cz, nx, cz) ==
+                TOY_GAME_NAV_LINK_BLOCKED ||
+            nav_axis_link_type(g, from, side_z, cx, cz, cx, nz) ==
+                TOY_GAME_NAV_LINK_BLOCKED ||
+            nav_axis_link_type(g, side_x, to, nx, cz, nx, nz) ==
+                TOY_GAME_NAV_LINK_BLOCKED ||
+            nav_axis_link_type(g, side_z, to, cx, nz, nx, nz) ==
+                TOY_GAME_NAV_LINK_BLOCKED) return TOY_GAME_NAV_LINK_BLOCKED;
+        if (nav_axis_link_type(g, from, side_x, cx, cz, nx, cz) ==
+                TOY_GAME_NAV_LINK_RAMP ||
+            nav_axis_link_type(g, from, side_z, cx, cz, cx, nz) ==
+                TOY_GAME_NAV_LINK_RAMP ||
+            nav_axis_link_type(g, side_x, to, nx, cz, nx, nz) ==
+                TOY_GAME_NAV_LINK_RAMP ||
+            nav_axis_link_type(g, side_z, to, cx, nz, nx, nz) ==
+                TOY_GAME_NAV_LINK_RAMP) return TOY_GAME_NAV_LINK_RAMP;
     }
-    return 1;
+    return TOY_GAME_NAV_LINK_GROUND;
+}
+
+static int nav_step_allowed(const struct toy_game *g, int cx, int cz,
+                            int nx, int nz)
+{
+    int link = nav_link_slot(nx - cx, nz - cz);
+    int index = cz * g->nav_width + cx;
+    if (link < 0) return 0;
+    return g->nav_link_type[index * TOY_GAME_NAV_LINK_DIRECTIONS + link] !=
+           TOY_GAME_NAV_LINK_BLOCKED;
 }
 
 void toy_game_rebuild_navigation(struct toy_game *g)
@@ -1461,6 +1532,20 @@ void toy_game_rebuild_navigation(struct toy_game *g)
                 g->nav_ground_y[index] = ground.support_y;
             }
             g->nav_component[index] = 0;
+        }
+    }
+    for (cz = 0; cz < g->nav_height; cz++) {
+        for (cx = 0; cx < g->nav_width; cx++) {
+            index = cz * g->nav_width + cx;
+            for (dz = -1; dz <= 1; dz++) {
+                for (dx = -1; dx <= 1; dx++) {
+                    int slot = nav_link_slot(dx, dz);
+                    if (slot >= 0)
+                        g->nav_link_type[index * TOY_GAME_NAV_LINK_DIRECTIONS + slot] =
+                            (unsigned char)nav_calculate_link_type(
+                                g, cx, cz, cx + dx, cz + dz);
+                }
+            }
         }
     }
     for (i = 0; i < g->nav_width * g->nav_height; i++) {

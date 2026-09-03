@@ -55,6 +55,32 @@ static int primitive_gameplay_logic_test(void)
     g.px=200;g.pz=0;g.player_ground_y=200*400/1200;
     for(int x=300;x<=900;x+=100)if(!toy_game_try_move_player(&g,x,0)||g.player_ground_y!=x*400/1200)return 4;
     for(int x=800;x>=200;x-=100)if(!toy_game_try_move_player(&g,x,0)||g.player_ground_y!=x*400/1200)return 5;
+    {
+        struct toy_game nav_game;
+        struct toy_map_primitive steep = test_ramp_primitive(
+            TOY_MAP_PRIMITIVE_RAMP_X, -600, 600, -1200, 1200, 0, 600);
+        int low = 3 * 8 + 3, high = 3 * 8 + 4;
+        toy_game_init(&nav_game, 212);
+        toy_game_set_primitives(&nav_game, &steep, 1, 1200);
+        if (!nav_game.nav_walkable[low] || !nav_game.nav_walkable[high] ||
+            nav_game.nav_component[low] != nav_game.nav_component[high] ||
+            nav_game.nav_link_type[low * TOY_GAME_NAV_LINK_DIRECTIONS + 4] !=
+                TOY_GAME_NAV_LINK_RAMP) {
+            return 11;
+        }
+        {
+            struct toy_map_primitive step[2] = {
+                test_flat_primitive(-1200, 0, -1200, 1200, 0),
+                test_flat_primitive(0, 1200, -1200, 1200, 600)
+            };
+            step[0].flags &= ~TOY_MAP_PRIMITIVE_COLLISION;
+            step[1].flags &= ~TOY_MAP_PRIMITIVE_COLLISION;
+            toy_game_set_primitives(&nav_game, step, 2, 1200);
+            if (nav_game.nav_component[low] == nav_game.nav_component[high] ||
+                nav_game.nav_link_type[low * TOY_GAME_NAV_LINK_DIRECTIONS + 4] !=
+                    TOY_GAME_NAV_LINK_BLOCKED) return 12;
+        }
+    }
     world[0]=test_flat_primitive(-1200,1200,-1200,1200,0);
     world[1]=test_box_primitive(200,400,-1000,1000,0,1000,TOY_MAP_PRIMITIVE_COLLISION);
     toy_game_set_primitives(&g,world,2,1200);g.px=0;g.pz=0;g.player_ground_y=0;
@@ -1343,7 +1369,7 @@ static int run_logic_test(void)
             {
                 struct toy_game nav_game;
                 struct toy_map_primitive steep=test_ramp_primitive(
-                    TOY_MAP_PRIMITIVE_RAMP_X,-300,300,-1200,1200,0,600);
+                    TOY_MAP_PRIMITIVE_RAMP_X,-600,600,-1200,1200,0,600);
                 int low_cell, high_cell;
                 toy_game_init(&nav_game, 48);
                 nav_game.primitive_count = 0;
@@ -1363,8 +1389,22 @@ static int run_logic_test(void)
                     nav_game.nav_ground_y[high_cell] != 450 ||
                     !nav_game.nav_component[low_cell] ||
                     !nav_game.nav_component[high_cell] ||
-                    nav_game.nav_component[low_cell] ==
+                    nav_game.nav_component[low_cell] !=
                         nav_game.nav_component[high_cell]) return 179;
+                if (nav_game.nav_link_type[low_cell *
+                        TOY_GAME_NAV_LINK_DIRECTIONS + 4] !=
+                    TOY_GAME_NAV_LINK_RAMP) return 180;
+                {
+                    struct toy_map_primitive step[2] = {
+                        test_flat_primitive(-1200, 0, -1200, 1200, 0),
+                        test_flat_primitive(0, 1200, -1200, 1200, 600)
+                    };
+                    step[0].flags &= ~TOY_MAP_PRIMITIVE_COLLISION;
+                    step[1].flags &= ~TOY_MAP_PRIMITIVE_COLLISION;
+                    toy_game_set_primitives(&nav_game, step, 2, 1200);
+                    if (nav_game.nav_component[low_cell] ==
+                            nav_game.nav_component[high_cell]) return 181;
+                }
             }
             game.px = 900;
             game.pz = 0;

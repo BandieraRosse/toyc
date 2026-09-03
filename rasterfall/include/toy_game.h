@@ -315,6 +315,16 @@ struct toy_game_ground_query {
 #define TOY_GAME_NAV_CELL_SIZE 300
 #define TOY_GAME_NAV_MAX_SIDE 128
 #define TOY_GAME_NAV_MAX_CELLS (TOY_GAME_NAV_MAX_SIDE * TOY_GAME_NAV_MAX_SIDE)
+#define TOY_GAME_NAV_LINK_DIRECTIONS 8
+
+/* Navigation links are classified independently of gameplay movement.  A
+ * ramp link is only a graph connection; collision, ground queries and player
+ * movement continue to use their existing rules. */
+enum toy_game_nav_link_type {
+    TOY_GAME_NAV_LINK_BLOCKED,
+    TOY_GAME_NAV_LINK_GROUND,
+    TOY_GAME_NAV_LINK_RAMP
+};
 
 /* ── 武器槽：0=主武器，1=副武器/近战，2=投掷物 ─────────────── */
 
@@ -671,6 +681,8 @@ struct toy_game {
     unsigned char nav_walkable[TOY_GAME_NAV_MAX_CELLS];
     int nav_ground_y[TOY_GAME_NAV_MAX_CELLS];
     unsigned short nav_component[TOY_GAME_NAV_MAX_CELLS];
+    unsigned char nav_link_type[TOY_GAME_NAV_MAX_CELLS *
+                                TOY_GAME_NAV_LINK_DIRECTIONS];
 
     int network_rescuer_available;
     int player_down;
