@@ -1015,7 +1015,10 @@ struct toy_game_ground_query toy_game_query_ground(
                         z - radius >= p->minz && z + radius <= p->maxz;
         int height = primitive_surface_height(p, x, z);
         if (radius == 0) overlaps = supported;
-        if (supported && (!found_support || height > result.support_y)) {
+        if (supported &&
+            ((p->flags & TOY_MAP_PRIMITIVE_COLLISION) ||
+             height <= current_ground_y + TOY_CONFIG_GROUND_STEP_HEIGHT) &&
+            (!found_support || height > result.support_y)) {
             result.support_y = height;
             result.support_is_ramp = p->shape == TOY_MAP_PRIMITIVE_RAMP_X ||
                                      p->shape == TOY_MAP_PRIMITIVE_RAMP_Z;

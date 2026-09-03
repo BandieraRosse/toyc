@@ -837,7 +837,7 @@ static void session_interact(struct rasterfall_session *session,
                   type, n);
     } else if (it->kind == TOY_MAP_PICKUP_WEST_CORRIDOR_BUTTON) {
         struct toy_game_box corridor_spawn = {
-            -44400, -43400, -550, 550, 0, 0
+            -44400, -43400, -1650, 1650, 0, 0
         };
         int n = toy_game_spawn_random_horde(&session->game_state, 16,
                                             &corridor_spawn, 1,
