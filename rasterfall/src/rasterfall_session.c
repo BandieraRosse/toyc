@@ -402,16 +402,20 @@ static void session_move_player(struct rasterfall_session *session,
               camera->sy * command->move_strafe) * RASTERFALL_MOVE_STEP / 1024;
     int next_x = camera->x + dx;
     int next_z = camera->z + dz;
-    if (!toy_game_position_blocked_at_height(&session->game_state, next_x,
-                                             camera->z, RASTERFALL_PLAYER_RADIUS,
-                                             session->game_state.player_ground_y +
-                                             session->game_state.player_airborne_y))
+    if (session->game_state.player_airborne_ms <= 0) {
+        if (toy_game_try_move_player(&session->game_state, next_x, next_z)) {
+            camera->x = session->game_state.px;
+            camera->z = session->game_state.pz;
+        }
+        return;
+    }
+    if (!toy_game_position_blocked_at_height(
+            &session->game_state, next_x, next_z, RASTERFALL_PLAYER_RADIUS,
+            session->game_state.player_ground_y +
+            session->game_state.player_airborne_y)) {
         camera->x = next_x;
-    if (!toy_game_position_blocked_at_height(&session->game_state, camera->x,
-                                             next_z, RASTERFALL_PLAYER_RADIUS,
-                                             session->game_state.player_ground_y +
-                                             session->game_state.player_airborne_y))
         camera->z = next_z;
+    }
 }
 
 static void session_move_remote_player(struct rasterfall_session *session,

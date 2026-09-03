@@ -752,6 +752,7 @@ struct toy_game_ground_query toy_game_query_ground(
 int  toy_game_position_blocked_at_height(const struct toy_game *g,
                                          int x, int z, int radius,
                                          int ground_height);
+int  toy_game_try_move_player(struct toy_game *g, int x, int z);
 void toy_game_update_player_ground(struct toy_game *g);
 void toy_game_set_campaign(struct toy_game *g,
                            const struct toy_game_box *safe_rooms,

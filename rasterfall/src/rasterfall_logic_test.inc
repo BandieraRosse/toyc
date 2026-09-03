@@ -1192,6 +1192,23 @@ static int run_logic_test(void)
                 };
                 toy_game_set_world(&game, &wall_top, 1, 16000);
                 toy_game_set_platforms(&game, ramp_top, 2);
+                game.px = 0;
+                game.pz = -7000;
+                game.player_ground_y = toy_game_query_ground(
+                    &game, game.px, game.pz, TOY_GAME_PLAYER_RADIUS,
+                    0).support_y;
+                while (game.pz < -5700) {
+                    int next_z = game.pz + TOY_CONFIG_PLAYER_MOVE_STEP;
+                    if (next_z > -5700) next_z = -5700;
+                    if (!toy_game_try_move_player(&game, game.px, next_z))
+                        return 198;
+                    if (game.player_ground_y != toy_game_query_ground(
+                            &game, game.px, game.pz,
+                            TOY_GAME_PLAYER_RADIUS,
+                            game.player_ground_y).support_y)
+                        return 199;
+                }
+                if (game.player_ground_y != 3900) return 200;
                 if (toy_game_position_blocked_at_height(
                         &game, 0, -6080, TOY_GAME_PLAYER_RADIUS, 3881))
                     return 188;

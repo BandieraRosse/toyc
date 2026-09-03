@@ -1097,6 +1097,25 @@ int toy_game_position_blocked_at_height(const struct toy_game *g,
     return 0;
 }
 
+int toy_game_try_move_player(struct toy_game *g, int x, int z)
+{
+    struct toy_game_ground_query ground;
+    int candidate_ground_y;
+    if (!g || g->player_airborne_ms > 0) return 0;
+    ground = toy_game_query_ground(g, x, z, TOY_GAME_PLAYER_RADIUS,
+                                   g->player_ground_y);
+    if (!ground.has_support) return 0;
+    candidate_ground_y = ground.support_y;
+    if (toy_game_position_blocked_at_height(g, x, z,
+                                            TOY_GAME_PLAYER_RADIUS,
+                                            candidate_ground_y))
+        return 0;
+    g->px = x;
+    g->pz = z;
+    g->player_ground_y = candidate_ground_y;
+    return 1;
+}
+
 void toy_game_update_player_ground(struct toy_game *g)
 {
     struct toy_game_ground_query ground;
