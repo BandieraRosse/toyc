@@ -1,5 +1,8 @@
 # Rasterfall 代码导航
 
+> 最后更新：2026-09-03
+> 依据提交：`2698c813cbd04ed2c197dc84101ae02f0b9b02a4`（增加 Rasterfall 代码导航文档）
+
 本目录面向接手 Rasterfall 任务的编码代理。目标不是介绍玩法，而是先把问题归到正确的
 状态所有者和文件，再开始搜索。命令、资源导入方法和用户可见特性仍以
 [`../README.md`](../README.md) 为准。
@@ -60,4 +63,3 @@ toy_renderer / window / audio    仓库公共平台层
 - 修改地图语义：检查 `toy_map.h`/`lib/map.c` 的解析、`rasterfall_map.c` 的绑定、玩法碰撞和渲染。
 - 修改角色动画：检查角色选择、会话动画状态、模型求值、渲染以及网络动画字段。
 - 修改命令行或诊断模式：从 `rasterfall_options.c` 到 `rasterfall.c` 的早退分支一起核对。
-

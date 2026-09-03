@@ -1,5 +1,8 @@
 # 运行时与主循环
 
+> 最后更新：2026-09-03
+> 依据提交：`2698c813cbd04ed2c197dc84101ae02f0b9b02a4`（增加 Rasterfall 代码导航文档）
+
 ## 状态所有者
 
 `src/rasterfall.c` 是可执行程序入口和最高层编排器。它拥有窗口、输入、摄像机、音频、网络、
@@ -32,4 +35,3 @@
 
 平台 API 不在本目录：窗口与输入分别在 `lib/platform/window_wayland.c`、`lib/input/input.c`，
 Windows 替换实现位于 `windows/src/`。只有跨应用的平台缺陷才应修改这些公共层。
-

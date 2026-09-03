@@ -1,5 +1,8 @@
 # 网络代码导航
 
+> 最后更新：2026-09-03
+> 依据提交：`2698c813cbd04ed2c197dc84101ae02f0b9b02a4`（增加 Rasterfall 代码导航文档）
+
 ## 文件职责
 
 - `rasterfall_net.c` / `rasterfall_net.h`：UDP 协议、握手、客户端槽位、输入/快照、可靠事件、
@@ -24,4 +27,3 @@
 协议使用显式整数编码和单位换算；不要发送原始 C struct。Windows socket 适配位于
 `windows/src/socket_winsock.c`，Linux 使用 Tinylibc 网络接口。网络测试可受沙箱和本机端口环境影响，
 应把纯 packet/logic 测试与真实回环或公网验收分开报告。
-

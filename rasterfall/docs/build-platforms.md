@@ -1,5 +1,8 @@
 # 构建、平台与验证
 
+> 最后更新：2026-09-03
+> 依据提交：`2698c813cbd04ed2c197dc84101ae02f0b9b02a4`（增加 Rasterfall 代码导航文档）
+
 ## Linux
 
 根 `Makefile` 的 Rasterfall 区域定义全部独立编译单元、依赖和链接对象。`make app-rasterfall`

@@ -1,5 +1,8 @@
 # Rasterfall
 
+> 最后更新：2026-09-03
+> 依据提交：`2698c813cbd04ed2c197dc84101ae02f0b9b02a4`（增加 Rasterfall 代码导航文档）
+
 项目暂停开发时的状态、持枪姿态快照、动画遗留问题、外部资源名称与转换流程见
 [`PROJECT_HANDOFF.md`](PROJECT_HANDOFF.md)。恢复开发或整理发布包前应先阅读该文档。
 

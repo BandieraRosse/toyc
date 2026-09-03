@@ -1,5 +1,8 @@
 # 渲染、HUD、特效与性能
 
+> 最后更新：2026-09-03
+> 依据提交：`2698c813cbd04ed2c197dc84101ae02f0b9b02a4`（增加 Rasterfall 代码导航文档）
+
 ## 渲染边界
 
 `src/rasterfall_render.c` 是世界渲染和角色渲染主体：投影/近裁剪、三角形提交、地面与地图图元、
@@ -35,4 +38,3 @@
 
 模型和动画的求值边界见 [assets-animation.md](assets-animation.md)。改可见结果时保留确定性截图/像素
 测试的价值；改并行路径时还要比较单 worker 和多 worker 的画面与统计。
-

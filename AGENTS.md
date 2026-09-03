@@ -1,152 +1,90 @@
-# Toyc 项目协作说明
+# Rasterfall 项目协作说明
 
-本文件为使用 AI 编码代理参与仓库开发时提供稳定的项目上下文。面向用户的构建、测试和
-项目介绍以 `README.md` 为准；语言特性详情以 `toyc-c-features.md` 为准。不要在本
-文件复制测试通过数、日期或修复流水账，以免多个文档再次失去同步。
+本仓库源自 Toyc：`compiler/` 是面向 Linux x86_64 的自托管 C 工具链，`lib/` 和 `include/`
+包含 Tinylibc 与公共平台设施。当前开发重点是 `rasterfall/`。编译器时期的完整代理说明保存在
+`docs/AGENTS-toyc-history.md`；用户文档和语言特性仍分别以 `README.md`、`README_en.md` 和
+`toyc-c-features.md` 为准。
 
-## 项目概况
+## 开始 Rasterfall 任务前
 
-Toyc 是面向 Linux x86_64 的小型、自托管 C 工具链：
+**阅读代码之前，必须先打开 `rasterfall/docs/README.md`，根据任务类型进入对应模块文档，
+再按文档给出的状态所有者和入口查源码。** 不要从最大的 `.c` 文件盲目搜索，也不要仅凭文件名
+推断模块边界。
 
-- `compiler/toyc.c` 及相关文件：C → ELF64 目标文件
-- `compiler/toyas.c`：x86_64 汇编器
-- `compiler/toyld.c`：静态链接器
-- `compiler/toyar.c`：ar 归档器
-- `compiler/toypp.c`：独立预处理器（非默认构建目标）
-- `compiler/toyc_rt.c`：不依赖 libc、直接使用系统调用的运行时
-- `lib/`、`include/`：仓库内的 Tinylibc
-- `app/`：示例和自托管应用
-- `llm/`：小型 GPT-2 实现与测试
+文档索引：
 
-## 模块简介
+- `rasterfall/docs/README.md`：总入口、任务到文件映射、架构主线。
+- `rasterfall/docs/runtime.md`：启动、参数、输入、主循环和音画同步。
+- `rasterfall/docs/gameplay.md`：玩法核心、session、地图和 AI。
+- `rasterfall/docs/rendering.md`：世界渲染、角色、HUD、特效和性能。
+- `rasterfall/docs/assets-animation.md`：资源、模型、蒙皮、IK、VMD/GLB 和转换工具。
+- `rasterfall/docs/networking.md`：协议、快照、预测、可靠事件和房间发现。
+- `rasterfall/docs/build-platforms.md`：Linux/Windows 构建、平台边界和验证矩阵。
+- `rasterfall/ANIMATION_ARCHITECTURE.md`、`rasterfall/NETWORK_ARCHITECTURE.md`：专题设计。
+- `rasterfall/PROJECT_HANDOFF.md`：私有模型和动画实验的阶段性交接背景。
 
-- 编译器模块负责词法分析、预处理、语法分析、代码生成和 ELF 目标文件输出。
-- 工具链模块包含 `toyas` 汇编器、`toyld` 静态链接器、`toyar` 归档器和可选的 `toypp` 预处理器。
-- 运行时与 Tinylibc 模块提供 freestanding 系统调用运行时、C 库、平台适配和基础设施。
-- 应用模块包含命令行工具、图形/音频示例、Rasterfall 和自托管构建目标。
-- LLM 模块包含 GPT-2、Qwen2 及共享张量/检查点代码，独立于核心编译器测试。
+文档与代码不一致时，以 Makefile、脚本和实际行为为准，同时修正文档。每篇导航文档顶部记录
+最后更新日期和所依据的提交；更新内容时一并刷新这两个字段。
 
-## 目录简介
+**完成重大重构、模块职责调整、数据流变化、重要文件迁移或重大功能变动后，必须在同一改动中
+更新 `rasterfall/docs/` 的总索引与受影响模块文档。** 新增跨模块功能时，应补充“任务到文件”
+定位和跨层联动点，不能只更新面向玩家的 README。
 
-- `compiler/`：Toyc 工具链和运行时源码
-- `include/`：公共头文件与 Tinylibc 头文件
-- `lib/`：Tinylibc 和平台库实现
-- `app/`：示例、命令行工具和可自托管应用
-- `rasterfall/`：Rasterfall 游戏及其图形、音频、网络模块
-- `rasterfall/docs/`：面向编码代理的 Rasterfall 架构与代码导航；处理 Rasterfall 任务时先从
-  `rasterfall/docs/README.md` 按模块定位，再阅读对应专题文档和源码
-- `compiler-tests/`：编译器、链接器、归档器、Tinylibc 和诊断测试
-- `llm/`：语言模型实现、测试和模型工具
-- `bootstrap/`：版本控制内的自举种子及说明
-- `build/`、`tmp/`：本地构建和测试生成物，不提交到仓库
+## 关键架构原则
 
-## 构建事实
+- `rasterfall/src/rasterfall.c` 只做进程生命周期、输入、固定步长主循环及顶层音画网络编排。
+- `rasterfall/src/rasterfall_session.c` 负责编排单机、主机和客户端会话。
+- `rasterfall/lib/game.c` 与 `rasterfall/include/toy_game.h` 拥有确定性规则和权威玩法状态。
+- 渲染和 HUD 读取玩法/展示状态，不应修改权威结果；纯视觉状态不要塞进 `toy_game`。
+- 联机主机权威；客户端预测、校正和插值属于网络展示链路。协议显式编码，不发送原始 C 结构。
+- 地图功能需区分文本解析、玩法绑定、碰撞/交互和渲染，不能用可见几何代替玩法碰撞。
+- 资产坐标、bind pose、动画求值和渲染补偿分层处理，不用末端视觉偏移掩盖上游资产错误。
+- Rasterfall 不要求由 Toyc 编译。Linux 版本以 GCC 验证，不为 Toyc 兼容限制 Rasterfall 实现。
+- Linux 和 Windows 共用玩法与渲染源码；平台差异优先留在公共平台层或 `windows/src/`。
+- 保留 freestanding Linux 路径，不无意引入宿主 libc 依赖。
 
-默认 `make` 使用 GCC、GNU `as` 和 GNU `ld` 构建
-`build/{toyc,toyas,toyld,toyar}`，并不使用 `bootstrap/` 种子。`self-*` 目标才使用
-生成的 `build/toyc` 验证自托管构建。
+## 重要目录
 
-```sh
-make                    # 默认工具链
-make build/toypp        # 可选预处理器
-make self-lib           # Toyc 构建 Tinylibc
-make self-app           # Toyc 构建全部应用
-make clean              # 删除 build/ 和 tmp/
-```
+- `rasterfall/include/`：模块公开状态和接口，定位所有权时优先查看。
+- `rasterfall/lib/`：可脱离窗口验证的玩法、地图解析和声音合成核心。
+- `rasterfall/src/`：运行编排、session、网络、渲染、界面和模型运行时。
+- `rasterfall/assets/`：公开资源；`rasterfall/private-assets/` 是可选本地资源。
+- `lib/`、`include/`：Tinylibc 及共用平台、窗口、渲染、输入、音频和资源设施。
+- `windows/`：MinGW-w64 + SDL2 平台适配和打包。
+- `app/`、`tools/`：模型检查、格式转换、导入和 LOD 工具。
+- `build/`、`tmp/`：本地生成物，不提交。
 
-Rasterfall 构建：Linux 默认目标使用仓库内 freestanding 运行时和 Wayland/ALSA 或
-WSLg 平台实现：
+## 构建与验证
 
 ```sh
 make generate-assets
 make app-rasterfall
 build/rasterfall
+build/rasterfall --logic-test
+
+make win-deps
+make win-rasterfall
+make win-rasterfall-package
 ```
 
-Rasterfall 的 Linux 默认构建读取仓库资源目录，也保留可选的内嵌资源目标。Windows
-增量构建生成不含大资源的 EXE；本地开发 ZIP 内含一个 EXE，并原样保留与项目相同的公开
-及私有美术、模型、源纹理和动画目录。Windows 程序以 EXE 所在目录为资源根目录，不依赖
-调用者的当前工作目录。
+Linux 默认从仓库目录读取资产；内嵌公开资源使用 `make rasterfall-embedded`。可用
+`make RASTERFALL_OPT=-O0 build/rasterfall` 做优化级别对照。
 
-Windows Rasterfall 使用独立的 MinGW-w64 + SDL2 平台构建，不需要 Toyc 输出 PE/COFF：
+修改后先运行最近的验证，再按风险扩大：玩法/session/map 至少构建并运行 `--logic-test`；渲染、
+模型和动画使用相关 dump、benchmark 或诊断参数并在可用时实际启动；网络先跑纯逻辑用例，再按
+`rasterfall/NETWORK_ARCHITECTURE.md` 验证所需拓扑；共享平台或 Windows 改动补对应平台构建。
+无图形、音频、网络或交叉编译环境时，明确报告未覆盖项。
 
-```sh
-make win-deps       # 首次准备交叉编译工具和 SDL2，缓存到 .windows-deps/
-make win-rasterfall # 生成 build/rasterfall.exe
-make win-rasterfall-package # 生成 build/rasterfall-windows.zip
-```
+只有改动 Toyc 编译器、公共代码生成路径或影响无法限定时，才按
+`docs/AGENTS-toyc-history.md` 扩大到编译器测试。不要在普通 Rasterfall 修改中运行
+`make update-bootstrap`。
 
-依赖准备完成后可直接运行 `make win-rasterfall`，或在仓库根目录运行
-`make -f windows/Makefile`。发布包也可用 `make -f windows/Makefile package` 生成。
+## 修改与提交约束
 
-`bootstrap/` 内是版本控制跟踪的种子二进制，仅用于阶段性收敛检查。不要在普通修改中
-运行 `make update-bootstrap`；只有明确需要更新种子时才运行，并随后验证：
-
-```sh
-./bootstrap-selfhost.sh
-./bootstrap-to-10.sh
-```
-
-种子可能暂时落后于源码，这不等同于默认 GCC 构建失败。
-
-## 测试策略
-
-修改后先运行与改动最接近的测试，再根据风险扩大范围：
-
-如果没有修改 `compiler/toyc.c`、`compiler/lex.c`、`compiler/parse.c`、
-`compiler/preproc.c`、`compiler/cgen*.c`、`compiler/elf_write.c`、`compiler/toyc.h` 等
-toyc 编译器源文件，则不要求执行完整测试；运行与本次改动直接相关的构建和测试即可。
-只有修改编译器实现、公共代码生成路径或影响范围无法可靠限定时，才需要扩大到完整测试。
-
-```sh
-make test               # 常规编译/运行测试
-make test-selfhost      # 无 toyc_rt 的自包含测试
-make test-source        # 编译器源码级测试
-make test-error         # 诊断测试
-make test-toyld         # toyld 链接/运行测试
-make test-toyar
-make test-toyld-archive
-make test-toyld-self
-make test-llm
-make test-all           # 核心聚合目标，不包含 test-toyld 和 test-llm
-```
-
-测试注意事项：
-
-- `make test-lib` 是早期用于验证 Toyc 能否编译 Tinylibc 的阶段性目标；该历史任务已经
-  完成，目标现已弃用，不再作为修改后的验证入口，也不要在常规开发中运行。
-- `make test-all` 遇到首个失败会停止，后续目标需要单独补跑。
-- `make test-self-app` 不负责构建应用；应先运行 `make self-app`，否则缺失程序会被
-  跳过，出现“零失败”但没有实际覆盖的结果。
-- syscall 和 procfs 测试可能受容器或沙箱影响。例如只读根文件系统会让
-  `renameat2` 返回 `EROFS`，容器 PID 1 的 `/proc` 字段也可能不同。报告结果时应区分
-  编译器回归与环境相关断言，不能简单宣称全部通过。
-- 测试数量会随用例变化。更新文档前应从实际输出或测试文件重新统计。
-
-## 修改原则
-
-- 保持工具链 freestanding，不要无意引入宿主 libc 依赖。
-- Toyc 源码兼容范围以 `app/` 目录为界；`rasterfall/` 不要求由 Toyc 编译，
-  Linux 版本以 GCC 构建和验证结果为准。不要为了维持 Rasterfall 的 Toyc 兼容而限制其
-  实现方式或扩张编译器特性。
-- 优先添加最小回归用例，再修改编译器实现。
-- 不要把 `compiler-tests/pending/` 中的复现用例当成已支持特性。
-- 保留用户已有的工作区修改；不要顺手格式化或改写无关文件。
-- 不要提交 `build/`、`tmp/` 或 `/tmp` 中的生成物。
-- 更新构建目标或测试集合时，同步检查 `README.md`、`README_en.md` 和 Makefile 顶部
-  注释，避免三处说法分叉。
-- 提交信息优先使用简洁的中文标题；较大修改在正文概括问题、主要改动和实际验证结果，
-  风格与仓库近期提交保持一致。
-- 通过命令行编写多段提交正文时，使用多个 `git commit -m` 参数或真正的换行；不要在
-  `-m` 字符串中写 `\n`，Git 会将其原样保存为反斜杠和字母，而不会转换成换行。
-
-## 文档职责
-
-- `README.md` / `README_en.md`：用户入口、构建命令、测试语义和最近一次实测结果
-- `toyc-c-features.md`：C 特性支持范围和限制
-- `bootstrap/README.md`：种子二进制及自举流程
-- `rasterfall/docs/`：Rasterfall 的模块边界、状态所有权和“任务到文件”导航
-- `AGENTS.md`：AI 编码代理共享的稳定项目上下文和仓库操作约束
-- `CLAUDE.md`：通过 `@AGENTS.md` 向 Claude Code 导入本文件
-
-遇到文档与代码不一致时，以 Makefile、脚本和实际测试行为为准，并修正文档。
+- 保留用户已有工作区修改，不格式化或改写无关文件。
+- 新增 Rasterfall 编译单元时同时检查根 Makefile、`windows/Makefile` 和适用的 self 规则。
+- 新增资源时同时检查文件加载、内嵌资源依赖和 Windows package 复制规则。
+- 不提交 `build/`、`tmp/`、`/tmp`、依赖缓存或私有资源。
+- 测试数量和阶段性结果不要写入稳定导航文档；结果以实际输出为准。
+- 提交信息优先使用简洁中文标题。多段正文使用多个 `git commit -m` 参数或真正换行，不在
+  `-m` 字符串中写字面量 `\n`。
