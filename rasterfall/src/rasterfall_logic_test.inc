@@ -81,6 +81,32 @@ static int primitive_gameplay_logic_test(void)
                     TOY_GAME_NAV_LINK_BLOCKED) return 12;
         }
     }
+    {
+        struct toy_game ramp_game;
+        struct toy_map_primitive ramp_world[3] = {
+            test_flat_primitive(-5000,5000,-5000,5000,0),
+            test_ramp_primitive(TOY_MAP_PRIMITIVE_RAMP_X,
+                                0,2400,-1000,1000,0,600),
+            test_flat_primitive(2400,4200,-1000,1000,600)
+        };
+        int i, max_ground = 0;
+        toy_game_init(&ramp_game, 213);
+        ramp_game.to_spawn = 0;
+        ramp_game.px = 3300;
+        ramp_game.pz = 0;
+        ramp_game.hp = 100000;
+        ramp_game.safe_room_count = 0;
+        toy_game_set_primitives(&ramp_game, ramp_world, 3, 5000);
+        toy_game_place_enemy(&ramp_game, -500, 0);
+        if (!ramp_game.enemies[0].active) return 13;
+        ramp_game.enemies[0].ai_state = TOY_GAME_ENEMY_TRACKING;
+        for (i = 0; i < 360; i++) {
+            toy_game_update_held(&ramp_game, NULL, 0, 0, 0, 1024, 16);
+            if (ramp_game.enemies[0].ground_y > max_ground)
+                max_ground = ramp_game.enemies[0].ground_y;
+        }
+        if (max_ground < 450 || ramp_game.enemies[0].x < 1800) return 14;
+    }
     world[0]=test_flat_primitive(-1200,1200,-1200,1200,0);
     world[1]=test_box_primitive(200,400,-1000,1000,0,1000,TOY_MAP_PRIMITIVE_COLLISION);
     toy_game_set_primitives(&g,world,2,1200);g.px=0;g.pz=0;g.player_ground_y=0;
@@ -108,6 +134,27 @@ static int primitive_gameplay_logic_test(void)
            (p->flags&TOY_MAP_PRIMITIVE_COLLISION))air_gate=1;
     }
     if(!table||!ramp||!air_gate)return 10;
+    {
+        struct toy_game west_game;
+        int i, max_x;
+        toy_game_init(&west_game, 214);
+        west_game.to_spawn = 0;
+        west_game.px = -13000;
+        west_game.pz = 0;
+        west_game.hp = 100000;
+        west_game.safe_room_count = 0;
+        toy_game_set_primitives(&west_game, level_map.primitives,
+                                level_map.primitive_count, 45000);
+        toy_game_place_enemy(&west_game, -43400, 0);
+        if (!west_game.enemies[0].active) return 15;
+        west_game.enemies[0].ai_state = TOY_GAME_ENEMY_TRACKING;
+        max_x = west_game.enemies[0].x;
+        for (i = 0; i < 1000; i++) {
+            toy_game_update_held(&west_game, NULL, 0, 0, 0, 1024, 16);
+            if (west_game.enemies[0].x > max_x) max_x = west_game.enemies[0].x;
+        }
+        if (max_x < -35000) return 16;
+    }
     return 0;
 }
 

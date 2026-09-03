@@ -21,9 +21,6 @@
 /* Transitional field aliases keep the AI behavior patch small while the
  * special state moves behind enemy.ability.  New code should use ability.*. */
 
-static int enemy_target_reachable(const struct toy_game *g,
-                                  const struct toy_game_enemy *e,
-                                  int x, int z);
 static int enemy_target_valid(const struct toy_game *g,
                               const struct toy_game_enemy *e,
                               int target_kind, int target_index,
@@ -1362,42 +1359,6 @@ static int nav_cell_index(const struct toy_game *g, int x, int z)
     return cz * g->nav_width + cx;
 }
 
-/* The cell mask is intentionally conservative (it includes half a cell),
- * so an enemy standing close to a wall can be inside a blocked sample cell
- * even though its actual collision circle is valid.  Resolve such positions
- * to the nearest walkable sample instead of treating the actor as outside
- * the navigation graph. */
-static int nav_component_at_position(const struct toy_game *g, int x, int z)
-{
-    int base = nav_cell_index(g, x, z);
-    int base_x, base_z, dx, dz, cx, cz, index, best = 0;
-    long long best_dist = 0, dist;
-    if (base < 0) return 0;
-    base_x = base % g->nav_width;
-    base_z = base / g->nav_width;
-    for (dz = -2; dz <= 2; dz++) {
-        for (dx = -2; dx <= 2; dx++) {
-            cx = base_x + dx; cz = base_z + dz;
-            if (cx < 0 || cz < 0 || cx >= g->nav_width ||
-                cz >= g->nav_height) continue;
-            index = cz * g->nav_width + cx;
-            if (!g->nav_walkable[index] || !g->nav_component[index]) continue;
-            dist = (long long)(g->nav_origin + cx * g->nav_cell_size +
-                               g->nav_cell_size / 2 - x);
-            dist *= dist;
-            dist += (long long)(g->nav_origin + cz * g->nav_cell_size +
-                                g->nav_cell_size / 2 - z) *
-                    (g->nav_origin + cz * g->nav_cell_size +
-                     g->nav_cell_size / 2 - z);
-            if (!best || dist < best_dist) {
-                best = index;
-                best_dist = dist;
-            }
-        }
-    }
-    return best ? g->nav_component[best] : 0;
-}
-
 static int nav_link_slot(int dx, int dz)
 {
     /* Compact row-major direction table, with the center omitted. */
@@ -1588,17 +1549,66 @@ static int enemy_position_blocked(const struct toy_game *g,
 
 static int enemy_step_blocked(const struct toy_game *g,
                               const struct toy_game_enemy *e,
-                              int x, int z, int radius)
+                              int x, int z, int radius, int ground_height,
+                              int require_ground_support)
 {
     int i;
-    if (toy_game_position_blocked_at_height(
-            g, x, z, radius, e->ground_y + e->airborne_y)) return 1;
+    if (position_blocked_at_height(g, x, z, radius,
+                                   ground_height + e->airborne_y,
+                                   require_ground_support)) return 1;
     for (i = 0; i < g->safe_room_count; i++) {
         const struct toy_game_box *b = &g->safe_rooms[i];
         if (x + radius > b->minx && x - radius < b->maxx &&
             z + radius > b->minz && z - radius < b->maxz) return 1;
     }
     return 0;
+}
+
+static int point_on_walkable_ramp(const struct toy_game *g, int x, int z,
+                                  int radius)
+{
+    int i;
+    if (!g) return 0;
+    for (i = 0; i < g->primitive_count; i++) {
+        const struct toy_map_primitive *p = &g->primitives[i];
+        if (!(p->flags & TOY_MAP_PRIMITIVE_WALKABLE)) continue;
+        if (p->shape != TOY_MAP_PRIMITIVE_RAMP_X &&
+            p->shape != TOY_MAP_PRIMITIVE_RAMP_Z) continue;
+        if (x + radius > p->minx && x - radius < p->maxx &&
+            z + radius > p->minz && z - radius < p->maxz) return 1;
+    }
+    return 0;
+}
+
+/* Carry support height through each horizontal step.  Testing a ramp step at
+ * the previous height makes the uphill part look like a wall to enemies. */
+static int enemy_try_step(struct toy_game *g, struct toy_game_enemy *e,
+                          int x, int z, int radius)
+{
+    struct toy_game_ground_query ground, current_ground;
+    int delta, support_height;
+    int ramp_transition;
+    if (!g || !e) return 0;
+    ground = toy_game_query_ground(g, x, z, 0, e->ground_y);
+    if (g->primitives && !ground.has_support) return 0;
+    support_height = ground.has_support ? ground.support_y : e->ground_y;
+    current_ground = toy_game_query_ground(g, e->x, e->z, 0,
+                                           e->ground_y);
+    ramp_transition = ground.support_is_ramp ||
+                      current_ground.support_is_ramp ||
+                      point_on_walkable_ramp(g, x, z, radius) ||
+                      point_on_walkable_ramp(g, e->x, e->z, radius);
+    delta = ground.support_y - e->ground_y;
+    if (delta < 0) delta = -delta;
+    if (ground.has_support && ground.support_y > e->ground_y &&
+        delta > TOY_CONFIG_GROUND_STEP_HEIGHT && !ground.support_is_ramp)
+        return 0;
+    if (enemy_step_blocked(g, e, x, z, radius, support_height,
+                           ramp_transition ? 0 : 1)) return 0;
+    e->x = x;
+    e->z = z;
+    if (ground.has_support) e->ground_y = support_height;
+    return 1;
 }
 
 static int enemy_radius(const struct toy_game_enemy *e)
@@ -2424,13 +2434,9 @@ static void wander_enemy(struct toy_game *g, struct toy_game_enemy *e, int dt_ms
     if (step < 1) step = 1;
     nx = e->dir_x * step / 1024;
     nz = e->dir_z * step / 1024;
-    if (!enemy_step_blocked(g, e, e->x + nx, e->z, enemy_radius(e)))
-        e->x += nx;
-    else
+    if (!enemy_try_step(g, e, e->x + nx, e->z, enemy_radius(e)))
         e->wander_timer_ms = 0;
-    if (!enemy_step_blocked(g, e, e->x, e->z + nz, enemy_radius(e)))
-        e->z += nz;
-    else
+    if (!enemy_try_step(g, e, e->x, e->z + nz, enemy_radius(e)))
         e->wander_timer_ms = 0;
 }
 
@@ -2463,10 +2469,8 @@ static void chase_enemy(struct toy_game *g, struct toy_game_enemy *e,
     }
     nx = (int)((long long)dx * e->speed / dist);
     nz = (int)((long long)dz * e->speed / dist);
-    if (!enemy_step_blocked(g, e, e->x + nx, e->z, enemy_radius(e)))
-        e->x += nx;
-    if (!enemy_step_blocked(g, e, e->x, e->z + nz, enemy_radius(e)))
-        e->z += nz;
+    enemy_try_step(g, e, e->x + nx, e->z, enemy_radius(e));
+    enemy_try_step(g, e, e->x, e->z + nz, enemy_radius(e));
 }
 
 static void enemy_investigate_noise(struct toy_game_enemy *e, int x, int z)
@@ -2624,31 +2628,17 @@ static int enemy_has_line_of_sight(const struct toy_game *g,
     return 1;
 }
 
-static int enemy_target_reachable(const struct toy_game *g,
-                                  const struct toy_game_enemy *e,
-                                  int x, int z)
-{
-    int from, to;
-    if (g->nav_width <= 0 || g->primitive_count == 0)
-        toy_game_rebuild_navigation((struct toy_game *)g);
-    from = nav_component_at_position(g, e->x, e->z);
-    to = nav_component_at_position(g, x, z);
-    /* Spawn/developer areas can intentionally sit outside the conservative
-     * nav mask.  They remain valid targets; collision still decides whether
-     * the enemy can physically approach them. */
-    if (!from || !to) return 1;
-    return from != 0 && from == to;
-}
-
-/* Target validity is deliberately independent of LOS.  LOS belongs to
- * perception and special attacks; this rule answers whether an actor may be
- * retained as a navigation target at all. */
+/* Target validity is deliberately independent of LOS and navigation
+ * connectivity.  LOS belongs to perception, while navigation is only a
+ * movement aid; a blocked or conservative nav cell must not make an enemy
+ * forget a visible player. */
 static int enemy_target_valid(const struct toy_game *g,
                               const struct toy_game_enemy *e,
                               int target_kind, int target_index,
                               int *out_x, int *out_z)
 {
     int x, z;
+    (void)e;
     if (target_kind == 0) {
         if (g->player_down) return 0;
         x = g->px; z = g->pz;
@@ -2660,7 +2650,6 @@ static int enemy_target_valid(const struct toy_game *g,
             a->state != TOY_GAME_ACTOR_ALIVE || a->hp <= 0) return 0;
         x = a->x; z = a->z;
     } else return 0;
-    if (!enemy_target_reachable(g, e, x, z)) return 0;
     if (out_x) *out_x = x;
     if (out_z) *out_z = z;
     return 1;
@@ -2794,9 +2783,9 @@ static void move_enemy_forced(struct toy_game *g, struct toy_game_enemy *e,
     int nx = e->x + dx;
     int nz = e->z + dz;
     int radius = enemy_radius(e);
-    if (!enemy_step_blocked(g, e, nx, e->z, radius))
+    if (!enemy_step_blocked(g, e, nx, e->z, radius, e->ground_y, 1))
         e->x = nx;
-    if (!enemy_step_blocked(g, e, e->x, nz, radius))
+    if (!enemy_step_blocked(g, e, e->x, nz, radius, e->ground_y, 1))
         e->z = nz;
 }
 
