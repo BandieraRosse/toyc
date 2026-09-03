@@ -1,7 +1,7 @@
 # 构建、平台与验证
 
-> 最后更新：2026-09-03
-> 依据提交：`2698c813cbd04ed2c197dc84101ae02f0b9b02a4`（增加 Rasterfall 代码导航文档）
+> 文档更新：2026-09-03
+> 源码核对基线：`75a10cd`（将项目协作说明转向 Rasterfall）
 
 ## Linux
 
@@ -32,7 +32,7 @@ WinSock、SDL 窗口/音频、线程和 WinMain 适配。平台契约头在 `win
 
 - 纯玩法/session/map：`make app-rasterfall`，再运行 `build/rasterfall --logic-test`。
 - 渲染或模型：构建 + logic test，并使用相关 dump/benchmark/诊断参数；涉及画面时做实际启动检查。
-- 网络：先跑 logic test 中的 packet/pipeline 用例，再按 `NETWORK_ARCHITECTURE.md` 做所需人工拓扑。
+- 网络：先跑 logic test 中的 packet/pipeline 用例，再按 `network-architecture.md` 做所需人工拓扑。
 - Linux 平台：实际 Wayland/ALSA 启动；无图形/音频环境时明确报告未覆盖项。
 - Windows 平台或共享平台契约：依赖已准备时运行 `make win-rasterfall`；打包变化再跑 package。
 

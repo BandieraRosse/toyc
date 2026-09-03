@@ -1,7 +1,7 @@
 # 资源、模型与动画
 
-> 最后更新：2026-09-03
-> 依据提交：`2698c813cbd04ed2c197dc84101ae02f0b9b02a4`（增加 Rasterfall 代码导航文档）
+> 文档更新：2026-09-03
+> 源码核对基线：`75a10cd`（将项目协作说明转向 Rasterfall）
 
 ## 运行时资源
 
@@ -20,7 +20,8 @@
 - `rasterfall_character.c`：actor/class 到角色资产选择；实际加载与绘制在 render。
 - `app/glb_inspect.c`：既是 GLB 检查器，也以 `RASTERFALL_GLB_LIBRARY` 编入游戏提供 GLB 动画加载。
 
-完整求值顺序、格式扩展点和回归要求见 [`../ANIMATION_ARCHITECTURE.md`](../ANIMATION_ARCHITECTURE.md)。
+完整求值顺序、格式扩展点和回归要求见
+[`animation-architecture.md`](animation-architecture.md)。
 
 ## 工具链定位
 
@@ -28,7 +29,7 @@
 - PMX 转换：`app/pmx2rmesh.c`、`tools/import-pmx-model.sh`。
 - Blender 角色导出：`tools/blender/export_rasterfall_character.py`。
 - LOD：`tools/rmesh_lod.py` 和 Makefile 的 `lod-*` 目标。
-- 当前私有模型/VMD 的实验结论与恢复步骤：`PROJECT_HANDOFF.md`。
+- 资源许可与发布边界：`asset-sources.md`；历史实验现场仅在 `archive/` 中追溯。
 
 ## 修改提示
 

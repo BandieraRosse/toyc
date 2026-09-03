@@ -1,12 +1,16 @@
 # Rasterfall 暂停开发与恢复说明
 
-> 最后更新：2026-09-03
-> 依据提交：`2698c813cbd04ed2c197dc84101ae02f0b9b02a4`（增加 Rasterfall 代码导航文档）
+> 现场记录日期：2026-09-03
+> 适用源码基线：`75a10cd`（将项目协作说明转向 Rasterfall）
+> 归档日期：2026-09-03
+
+> **历史资料：** 本文只保留暂停开发时的现场，不代表当前实现。当前代码导航从
+> [`../README.md`](../README.md) 开始，资源许可状态以 [`../asset-sources.md`](../asset-sources.md) 为准。
 
 本文是 Rasterfall 暂停开发时留下的现场记录。它不代表产品路线图，也不承诺继续维护；
 目的是让未来的自己或接手者不必重新猜测当前边界、资源来源、转换流程和动画问题。
-面向用户的构建方法仍以仓库根目录 `README.md` 和本目录 `README.md` 为准，模型与动画
-内部边界以 `ANIMATION_ARCHITECTURE.md` 为准。
+面向用户的构建方法以仓库根目录 README 和 `rasterfall/README.md` 为准，模型与动画当前
+内部边界以 [`../animation-architecture.md`](../animation-architecture.md) 为准。
 
 ## 当前结论
 

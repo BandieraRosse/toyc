@@ -42,7 +42,7 @@ freestanding 运行时；Windows 版本通过独立平台层使用 SDL2、Win32 
 Winsock，不要求 Toyc 输出 PE/COFF。
 
 模型、动画格式、重定向与 IK 的模块边界见
-[`rasterfall/ANIMATION_ARCHITECTURE.md`](rasterfall/ANIMATION_ARCHITECTURE.md)。
+[`rasterfall/docs/animation-architecture.md`](rasterfall/docs/animation-architecture.md)。
 
 Linux 构建和运行（从项目资源目录读取）：
 

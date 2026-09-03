@@ -18,13 +18,16 @@
 - `rasterfall/docs/gameplay.md`：玩法核心、session、地图和 AI。
 - `rasterfall/docs/rendering.md`：世界渲染、角色、HUD、特效和性能。
 - `rasterfall/docs/assets-animation.md`：资源、模型、蒙皮、IK、VMD/GLB 和转换工具。
+- `rasterfall/docs/asset-pipeline.md`：资产转换、LOD、检查器和离屏诊断。
+- `rasterfall/docs/map-format.md`：地图文本格式和跨层修改要求。
 - `rasterfall/docs/networking.md`：协议、快照、预测、可靠事件和房间发现。
 - `rasterfall/docs/build-platforms.md`：Linux/Windows 构建、平台边界和验证矩阵。
-- `rasterfall/ANIMATION_ARCHITECTURE.md`、`rasterfall/NETWORK_ARCHITECTURE.md`：专题设计。
-- `rasterfall/PROJECT_HANDOFF.md`：私有模型和动画实验的阶段性交接背景。
+- `rasterfall/docs/animation-architecture.md`、`rasterfall/docs/network-architecture.md`：专题设计。
+- `rasterfall/docs/asset-sources.md`：资源来源、许可状态和发布边界。
+- `rasterfall/docs/archive/`：历史现场记录，不作为当前设计依据。
 
 文档与代码不一致时，以 Makefile、脚本和实际行为为准，同时修正文档。每篇导航文档顶部记录
-最后更新日期和所依据的提交；更新内容时一并刷新这两个字段。
+“文档更新”和“源码核对基线”；更新内容时一并刷新这两个字段。
 
 **完成重大重构、模块职责调整、数据流变化、重要文件迁移或重大功能变动后，必须在同一改动中
 更新 `rasterfall/docs/` 的总索引与受影响模块文档。** 新增跨模块功能时，应补充“任务到文件”
@@ -72,7 +75,7 @@ Linux 默认从仓库目录读取资产；内嵌公开资源使用 `make rasterf
 
 修改后先运行最近的验证，再按风险扩大：玩法/session/map 至少构建并运行 `--logic-test`；渲染、
 模型和动画使用相关 dump、benchmark 或诊断参数并在可用时实际启动；网络先跑纯逻辑用例，再按
-`rasterfall/NETWORK_ARCHITECTURE.md` 验证所需拓扑；共享平台或 Windows 改动补对应平台构建。
+`rasterfall/docs/network-architecture.md` 验证所需拓扑；共享平台或 Windows 改动补对应平台构建。
 无图形、音频、网络或交叉编译环境时，明确报告未覆盖项。
 
 只有改动 Toyc 编译器、公共代码生成路径或影响无法限定时，才按

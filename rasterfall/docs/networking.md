@@ -1,7 +1,7 @@
 # 网络代码导航
 
-> 最后更新：2026-09-03
-> 依据提交：`2698c813cbd04ed2c197dc84101ae02f0b9b02a4`（增加 Rasterfall 代码导航文档）
+> 文档更新：2026-09-03
+> 源码核对基线：`75a10cd`（将项目协作说明转向 Rasterfall）
 
 ## 文件职责
 
@@ -14,7 +14,7 @@
 - `rasterfall_session.c`：权威 step、客户端 step/replay，以及网络命令最终落到玩法的边界。
 
 联机状态分类、房间生命周期和人工验收清单见
-[`../NETWORK_ARCHITECTURE.md`](../NETWORK_ARCHITECTURE.md)。
+[`network-architecture.md`](network-architecture.md)。
 
 ## 排查顺序
 

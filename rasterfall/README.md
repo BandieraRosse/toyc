@@ -1,304 +1,86 @@
 # Rasterfall
 
-> 最后更新：2026-09-03
-> 依据提交：`2698c813cbd04ed2c197dc84101ae02f0b9b02a4`（增加 Rasterfall 代码导航文档）
+> 文档更新：2026-09-03
+> 源码核对基线：`75a10cd`（将项目协作说明转向 Rasterfall）
 
-项目暂停开发时的状态、持枪姿态快照、动画遗留问题、外部资源名称与转换流程见
-[`PROJECT_HANDOFF.md`](PROJECT_HANDOFF.md)。恢复开发或整理发布包前应先阅读该文档。
+Rasterfall 是 Toyc 仓库中的 freestanding 第一人称合作射击游戏实验，使用软件光栅器，包含
+地图、战斗、波次、AI 队友、音频、局域网/公网联机以及静态和骨骼模型。Linux 版本使用仓库内
+Tinylibc 与 Wayland/音频后端；Windows 版本使用 MinGW-w64 和 SDL2。
 
-Rasterfall 的代码、专属游戏引擎和运行时资源集中在本目录：
+面向代码维护者和 Codex 的模块导航从 [`docs/README.md`](docs/README.md) 开始。资源来源、
+许可状态和发布限制见 [`docs/asset-sources.md`](docs/asset-sources.md)。
 
-- `src/`：游戏主程序及各功能模块
-- `include/`：Rasterfall 模块头文件，以及专属 `toy_game`/地图引擎接口
-- `lib/`：Rasterfall 专属游戏规则、SFX 和地图加载实现
-- `assets/audio/`：音效资源
-- `assets/maps/`：地图资源
-- `assets/textures/`：游戏纹理资源
-- `assets/models/`：由外部 GLB 转换得到的 RFM2 静态网格资源
+## 构建与运行
 
-地图文件使用 `assets/maps/*.map` 的文本格式。地图几何的可见性和碰撞是
-独立属性：`box ... visible collision` 表示可见且阻挡，`box ... hidden
-collision` 表示只参与碰撞；未写选项的旧 `box` 默认两者都开启。空气墙应
-使用 `role=air_gate_*` 标识，例如：
-
-```text
-box -12000 -1800 -5700 -5680 1800 000000 hidden collision role=air_gate_left
-```
-
-`safe ... start/goal` 声明起点和终点安全室；`base id minx maxx minz maxz`
-声明据点；`ai_spawn name base_id level1|level2|level3 x z downed` 声明 AI
-出生点。旧的 `air` box 语法仍兼容，但新地图应使用显式的
-`visible/collision/role` 选项。
-
-从仓库根目录执行 `make rasterfall` 或 `make app-rasterfall` 构建游戏。Linux 默认从
-本目录读取资源；如需旧的单文件方式，使用 `make rasterfall-embedded`，生成
-`build/rasterfall-embedded`。Windows 使用 `make win-rasterfall`，生成自包含的
-`build/rasterfall.exe`。
-
-## 联机设计原则
-
-Rasterfall 联机按可信玩家之间的合作游戏设计，不把反作弊或抵抗恶意客户端、伪造包和
-主动攻击作为目标。客户端权威决定自己的移动状态；主机接收客户端上报的位置和运动状态，
-不应在网络模块中改成主机重演移动。这里的“可信”不免除长度、范围、生命周期和状态一致性
-检查：这些检查仍用于防止正常版本、丢包、乱序或断线造成越界和状态分叉。
-
-公网房间号同时决定传输模式，不进行运行时回退：`0000`～`4999` 使用 UDP 打洞，
-`5000`～`9999` 使用 relay。客户端、主机和协调服务必须按房间号的这一高位约定得到同一个
-模式；打洞失败时仍保持打洞模式并报告连接失败，不能静默切换 relay，反之亦然。
-
-网络协议不兼容旧客户端。协议布局或同步语义改变时直接提高
-`RASTERFALL_NET_PROTOCOL_VERSION`，所有参与者均假定运行同一新版本，不为旧版本增加兼容
-分支。当前支持平台仅为 Linux 和 Windows，实际联机设计、排障和验收以 Windows 为主，
-同时保持 Linux 构建和联机入口可用。
-
-网络逻辑的首要验收方式是代码审查和真实游戏实测。自动测试只能辅助检查局部编码和不变量，
-不能作为打洞、relay、多人状态同步、丢包恢复或 Windows 实际联机正确性的依据。完成网络
-修改后，应清楚列出需要用户实测的场景、预期现象和诊断信息，由项目维护者本人完成最终
-联机验证。
-
-模块职责、房间生命周期和新玩法状态分类见
-[`NETWORK_ARCHITECTURE.md`](NETWORK_ARCHITECTURE.md)。
-
-## 外部模型导入
-
-Rasterfall 不在游戏进程中解析 glTF JSON，而是使用仓库内的 `RFM2` 紧凑
-网格格式。这样运行时只需读取定长顶点、索引和材质表，适合当前的
-freestanding 软件光栅器。转换 `Zombie.glb` 的流程是：
+在仓库根目录构建 Linux 版本：
 
 ```sh
-mkdir -p rasterfall/assets/models
-make app-glb2rmesh
-build/glb2rmesh Zombie.glb rasterfall/assets/models/zombie.rmesh
+make generate-assets
+make app-rasterfall
+build/rasterfall
 ```
 
-`glb2rmesh` 支持一个 GLB Mesh 内全部静态 primitive 的 `POSITION`、可选
-`NORMAL`/`TEXCOORD_0` 和 `UNSIGNED_BYTE/SHORT/INT` 三角形索引，并会自动
-合并顶点和修正索引基址。它会将模型坐标按 `232` 倍转换为 Rasterfall 世界
-单位。RFM2 会保存 primitive 到材质的映射，以及 GLB 的
-`baseColorFactor`、metallic 和 roughness；当前仍不展开图片贴图、骨骼和
-动画。
-
-`.claude/glb/` 中的武器和弹药箱资源已经转换到 `assets/models/*.rmesh`，
-文件名使用小写下划线命名，并保留同名变体的来源后缀。
-
-## PMX 模型导入与第一阶段骨骼蒙皮
-
-### 世界长度与角色身高
-
-Rasterfall 统一使用 RFU（Rasterfall World Unit）：`512 RFU = 1 米`。地图、碰撞和
-gameplay 坐标使用 RFU；PMX/GLB 等资产局部单位只在 presentation 边界换算，不能直接
-当作 RFU。默认人类基准为 1750 mm（896 RFU），站立眼高为 1610 mm（824 RFU）。
-
-角色模型通过 presentation metadata 的 `target_height_mm` 换算显示比例，不再使用
-gallery 的逐模型自动填充高度。Eula 采用游戏内测量参考值 1736 mm。四个 GFL2
-模型以 Leva/UMP45 的社区 Blender 模型测量值约 1516 mm 为锚，保持 PMX 包围盒原始
-比例，得到 ST AR-15 1652 mm、G11 1429 mm、Vector 1474 mm、UMP45 1516 mm。
-四者最终使用同一约 177‰ presentation scale，避免逐角色主观拉伸。这些是带来源等级
-且明确可替换的项目校准数据，不宣称为版权方公布的官方设定。
-
-身高来源等级：GFL/GFL2 官方角色页未列出厘米身高；GFL2 数值来自社区使用官方模型
-进行 Blender 测量的结果，因此标记为 `MODEL_MEASURED`，再由同批 PMX 的脚底到头顶
-包围盒比例传播。Eula 数值来自 HoYoLAB 游戏内人工测量，同样不是官方角色档案字段。
-参考：[GFL2 模型测量讨论](https://www.reddit.com/r/GirlsFrontline2/comments/1k4nypi/)、
-[Leva 模型高度讨论](https://www.reddit.com/r/GirlsFrontline2/comments/1mthgeq/)、
-[Eula 游戏内测量](https://www.hoyolab.com/article/20956615)。
-
-对于 MMD/PMX 模型，可以不经过 Blender，直接提取 Rasterfall 的材质、网格和
-第一阶段骨骼蒙皮数据：
+Linux 默认从 `rasterfall/assets/` 读取资源。需要把公开资源嵌入程序时使用：
 
 ```sh
-tools/import-pmx-model.sh path/to/character-folder character
+make rasterfall-embedded
+build/rasterfall-embedded
 ```
 
-目录中应只有一个 `.pmx`；脚本会构建转换器、复制 PMX 引用的纹理并自动生成
-TTEX。重新导入已有名称时显式添加 `--force`。
-
-高模角色的中距离 LOD 可在导入后离线生成。当前四个开发者角色使用：
+Windows 版本使用独立工具链，不要求 Toyc 输出 PE/COFF：
 
 ```sh
-make lod-characters
+make win-deps
+make win-rasterfall
+make win-rasterfall-package
 ```
 
-生成的 `*_lod1.rmesh` 保留相同顶点、骨骼、蒙皮与材质布局，只简化索引，并共享
-各自全模的纹理目录。运行时在角色投影高度低于材质 LOD 阈值时自动选择该网格；
-任一文件不存在时，该角色无条件回退完整模型。也可使用 `lod-ar15`、`lod-ump45`、
-`lod-vector` 和 `lod-g11` 单独更新。
+生成物分别为 `build/rasterfall.exe` 和 `build/rasterfall-windows.zip`。Windows 程序以 EXE
+所在目录为资源根目录，构建及打包细节见 [`../windows/README.md`](../windows/README.md)。
 
-`pmx2rmesh` 读取 PMX 2.0/2.1 的顶点位置、法线、UV、三角形索引和材质漫
-反射色、基础纹理、sphere 和 toon 纹理引用，输出现有 RFM2 格式，并将 PMX 引用的
-PNG/BMP 纹理复制到指定目录。再使用 `build/toyasset convert png1024|bmp`
-转成 TTEX 后，Rasterfall 会按 RFM2 材质索引加载基础色、sphere 和 toon 纹理；sphere
-贴图的乘算（mode 1）与加算（mode 2）模式会按顶点法线生成的 sphere UV
-进行混合；mode 3 使用第一组 PMX 附加 UV 作为 SubTexture 乘算。独立 toon
-纹理按模型法线生成的光照色阶采样；共享 toon 使用内置色阶。RFM2 v11 在旧网格
-尾部追加可选 `SKN1` 段，保存 bone name、parent、rest position、flags 和每顶点
-BDEF1/BDEF2；旧 v2～v10 模型没有该段时继续按静态网格渲染。当前不会求值
-BDEF4/SDEF/QDEF、IK、append transform、Morph、刚体或关节。PNG 转换为 RGBA TTEX
-时会保留 alpha；
-全透明像素不写入颜色和深度，纹理 alpha 与 PMX 材质 alpha 相乘。包含透明度
-的三角形在不透明命令之后按相机深度由远到近进行 source-over 混合。PMX 材质
-alpha、toon 引用和第一组附加 UV 从 RFM2 v6 起保存；v7 还保存材质 drawing
-flags，并按 bit 0 区分双面绘制与背面剔除；v8 将材质记录扩展为 24 字节，保存
-edge RGBA 和宽度，并用外扩背面壳绘制轮廓；v9 保存环境色、镜面色和镜面指数，
-在纹理合成后加入低强度环境光与随指数收窄的镜面高光；40 字节材质记录的 byte 36
-还可保存 FACE、EYES、HAIR、SKIN、CLOTHING 或 EQUIPMENT 视觉角色，零值模型继续使用
-旧的角色 profile 推断；v10 在顶点记录中保存
-PMX Edge Scale，使材质轮廓宽度可按顶点缩放；v11 增加可选骨骼/蒙皮尾段。加载器
-仍兼容 v2 到 v5 的 24 字节旧
-顶点记录及 v2 到 v7 的 16 字节旧材质记录，旧格式继续按双面材质渲染。
+## 操作
 
-转换时会输出导入诊断：逐材质列出中英文名称、基础/sphere/toon 纹理、模式、
-透明度、drawing flags 及各标志位语义、edge、环境光和镜面参数，并输出模型级
-feature summary，汇总几何、纹理、BDEF1/BDEF2 数量、root 数、最大层级深度和异常
-bone reference，并列出每根骨骼的 index、name、parent、rest position、flags。高级
-骨骼 flags 会解析并报告，但不执行其语义；多于一组的附加 UV 会明确报告为未保留。
+- `WASD`：移动；鼠标或方向键：观察。
+- 鼠标左键或空格：射击；`R`：换弹；`1`/`2`：切换武器。
+- `E`：交互；`Esc`：暂停或恢复。
+- 波次间可使用商店、拾取武器和弹药，并管理 AI 队友。
 
-可以通过无窗口的离屏渲染输出模型正面、侧面和背面验证图。输出目录会自动
-创建，图片采用无需额外编码库的 BMP 格式；该命令走与游戏内相同的材质、
-基础纹理和 sphere 混合路径：
+游戏启动菜单提供单机、局域网房间和公网房间入口。公网房间 `0000`～`4999` 使用 UDP 打洞，
+`5000`～`9999` 使用 relay；失败时不会在两种模式之间静默回退。联机是可信玩家之间的合作模式，
+不以抵抗恶意客户端为设计目标。完整约束见
+[`docs/network-architecture.md`](docs/network-architecture.md)。
+
+## 资源目录
+
+- `assets/maps/`：文本地图。
+- `assets/models/`：公开 RFM2/RMESH 运行时模型。
+- `assets/textures/`：TTEX 纹理。
+- `assets/audio/`：TSND 音效。
+- `private-assets/`：可选的本地受限资源，不属于公开发布内容。
+
+地图的可见几何与碰撞属性相互独立；格式见 [`docs/map-format.md`](docs/map-format.md)，玩法绑定
+入口见 [`docs/gameplay.md`](docs/gameplay.md)。模型运行时见
+[`docs/assets-animation.md`](docs/assets-animation.md)，PMX/GLB/VMD 工具与诊断命令见
+[`docs/asset-pipeline.md`](docs/asset-pipeline.md)。
+
+## 常用验证
 
 ```sh
-build/rasterfall --model-views \
-    rasterfall/private-assets/models/eula.rmesh tmp/eula-views
-```
-
-输出为 `front.bmp`、`side.bmp`、`back.bmp` 及对应的 PPM。模型会按包围盒自动居中和缩放，
-因此以后可以直接替换 RFM2 路径验证其他动漫模型。
-
-骨骼诊断和程序化 pose 回归可使用：
-
-```sh
-build/rasterfall --model-bones rasterfall/private-assets/models/eula.rmesh 腕
-build/rasterfall --model-humanoid rasterfall/private-assets/models/eula.rmesh
-build/rasterfall --model-humanoid-basis rasterfall/private-assets/models/eula.rmesh
-build/rasterfall --model-retarget-test rasterfall/private-assets/models/eula.rmesh right-arm
-build/rasterfall --model-glb-animation rasterfall/private-assets/models/eula.rmesh rasterfall/private-assets/models/UAL1_Standard.glb Idle_Loop
-build/rasterfall --model-static-views rasterfall/private-assets/models/eula.rmesh tmp/eula-static
-build/rasterfall --model-pose-views rasterfall/private-assets/models/eula.rmesh tmp/eula-bind bind
-build/rasterfall --model-pose-views rasterfall/private-assets/models/eula.rmesh tmp/eula-arm right-arm
-```
-
-`--model-humanoid` 按骨名建立第一版通用人体语义映射，并报告缺失核心骨、重复映射和
-异常父链。该映射只保存到现有 skeleton bone index 的对应关系，不改变 RFM2 骨架、
-BDEF 蒙皮或 AnimationClip 的运行方式。
-
-离线检查 GLB 骨架和动画元数据可使用：
-
-```sh
-make app-glb-inspect
-build/glb-inspect animation.glb
-build/glb-inspect animation.glb humanoid
-build/glb-inspect animation.glb basis
+build/rasterfall --logic-test
+make app-vmd-inspect app-glb-inspect
 build/glb-inspect --self-test
-```
-
-工具只解析 GLB 容器及 glTF 的 node、skin、accessor 和 animation 元数据，不导入
-mesh/material，也不生成 Rasterfall 动画。`humanoid` 模式将 Quaternius 的明确骨名
-映射到通用 Humanoid 语义，并省略手指等非核心 joint 和逐 channel 明细。
-`basis` 模式使用与 RFM2 相同的 Humanoid 规则输出 canonical global rest basis；
-它只进行诊断，不转换或播放动画。
-
-## VMD→多 PMX 角色兼容性实验
-
-本轮 VMD spike 保持 MMD/PMX bone local rotation 直连，不经过 GLB Humanoid
-retarget。先使用独立 inspector 查看 CP932 bone names、帧范围、平移/旋转、IK
-和 mapping：
-
-```sh
-make app-vmd-inspect
-build/vmd_inspect .claude/walk/walk04_loop5.vmd [eula.rmesh]
-```
-
-`walk04_loop5.vmd` 是 `walk04.vmd` 的循环拼接版本，适合作为主循环样本。运行时
-实验入口为：
-
-```sh
-build/rasterfall --vmd-eula-walk <eula.rmesh> .claude/walk/walk04_loop5.vmd
-```
-
-VMD bone rotation 转成现有 `AnimationClip`；Center/Groove translation
-作为 presentation-only root offset（按 PMX 导入的 232 倍单位缩放），不修改
-gameplay world position。VMD interpolation bytes 会报告为 present；VMD 自带的 IK
-显示轨道只作诊断，实际腿部约束由 PMX runtime IK 与 grant 链路求解。
-
-开发者区域第二排的 `VMD WALK (5 CHARACTERS)` 按钮统一驱动 Eula、ST AR-15、
-G11、Vector 和 UMP45，使用 `.claude/walk/walk04_loop5.vmd`，不改变同排的三个
-GLB 预览按钮。四个少女前线模型只是 presentation-only developer preview，不会
-进入 gameplay actor、碰撞、AI、敌方 targeting 或网络同步。
-
-VMD inspector 还会输出腿部普通轨道/IK 轨道、Eula leg basis、头部采样角速度、
-loop boundary 和 Center/Groove 根位移范围。实机定位可使用：
-
-```sh
-build/rasterfall --vmd-eula-walk <eula.rmesh> .claude/walk/walk04_loop5.vmd --vmd-freeze-head
-build/rasterfall --vmd-eula-walk <eula.rmesh> .claude/walk/walk04_loop5.vmd --vmd-freeze-torso
-```
-
-这两个选项只冻结诊断用的头/颈或上半身 tracks，不改变默认播放。
-
-`--model-retarget-test` 只把固定角度的 canonical Humanoid rotation delta
-换基为目标骨的 parent-local quaternion，用于验证 rotation retarget 数学顺序；它不读取
-GLB animation keyframe，也不改变 AnimationClip、root motion 或游戏动画状态。
-
-游戏地图在优菈前方提供 RESET、RIGHT ARM、ARMS 和 BODY TURN 四个 E 互动按钮；
-默认单人出生点位于模型正面并朝向模型。这些 pose 仅为本地程序化演示，不进入网络同步。
-
-完整材质回归使用：
-
-```sh
-build/rasterfall --model-material-regression \
-    rasterfall/private-assets/models/eula.rmesh tmp/eula-material-regression
-```
-
-输出目录包含 `base/`、`sphere/`、`toon/`、`full/` 四组三视图和
-`manifest.txt`。清单记录每张图片的确定性像素哈希、非背景像素数、平均亮度
-与近黑像素数，可用于提交前比较材质或光栅器修改是否造成视觉回退。
-模型三视图命令还会逐视角输出主体与 Edge 的三角形统计，包括 near reject、
-near clip、背面剔除、实际输出和延迟渲染命令溢出数量。
-
-1280×720 五角色固定工作负载基准使用：
-
-```sh
 build/rasterfall --actor-performance 30 5 8
 ```
 
-输出包含确定性帧缓冲哈希，以及 animation、skeleton、skin、vertex transform、
-triangle setup、command merge 和 raster 的每帧平均耗时，并列出每个 actor job 和 frontend
-worker 的负载。三个数字依次是帧数、frontend worker 数和 raster worker 数。
-不同并行度与优化等级必须产生相同哈希：
+逻辑测试不能代替模型动画的视觉检查或真实多人联机验收。按修改类型选择完整验证方式，参见
+[`docs/build-platforms.md`](docs/build-platforms.md)。所有命令行诊断选项以
+`build/rasterfall --help` 的当前输出为准。
 
-```sh
-make RASTERFALL_OPT=-O0 build/rasterfall
-```
+## 开发文档
 
-GCC 构建默认使用已通过上述像素哈希对照的 `-O2`；`RASTERFALL_OPT`
-用于重现 `-O0` / `-O2` / `-O3` 比较。修改该变量时应使用独立 `BUILD`
-目录或先清理旧对象，避免 Make 复用不同优化等级的产物。
-
-模型功能性能基准会预加载一次资源，并在固定的 800×800 正/侧/后三视图下比较
-Full、Edge off、Toon off、Sphere off、lighting off 和 model off：
-
-```sh
-build/rasterfall --model-performance \
-    rasterfall/private-assets/models/eula.rmesh 5 8
-```
-
-第二个参数是每个视角的迭代次数，可选第三个参数固定 worker 数量（1–8，省略时
-自动取可用 CPU 数并限制为 8）；输出将墙钟时间拆为 clear、triangle setup、
-透明命令准备和 pixel raster；透明阶段进一步拆出分类、归并/复制、实际排序，
-并输出 opaque、transparent、Edge 命令数和真实排序元素数。纯色/纹理光栅的
-工作线程累计 CPU 时间、三角形数和像素漏斗也会一并输出；不包含模型加载、
-纹理解码或图片写盘。Full 模式还会逐 worker 输出活跃/CPU 时间、检查命令数、
-相交三角形数以及 bbox、inside、depth-pass、shaded/written、flat/texture 像素。
-基准同时包含 base-texture-only、强制 opaque、仿射 UV 和简化纹理寻址等诊断
-消融；其中标记 `intentionally_changed=yes` 的模式只用于归因，不代表默认画质。
-
-版权受限的本地测试模型应放在 `private-assets/` 下；该目录已被 Git 忽略，
-不会参与公开资源或嵌入式发布构建。当前本地角色样本位于
-`private-assets/models/eula.rmesh`；ST AR-15、G11、Vector、UMP45 分别使用
-`st_ar15.rmesh`、`g11.rmesh`、`vector.rmesh`、`ump45.rmesh`，在开发者区域与 Eula
-按固定间距并排展示。模型特有的比例、朝向和地面偏移应继续留在 presentation
-metadata 中，不要写入 `toy_game` 规则层。
-同目录存在 `UAL1_Standard.glb` 时，游戏会在旁边绘制一个直接使用 GLB 原骨架
-和 skin 的 Quaternius 模型。第二排 GLB Idle/Walk/Jog 按钮播放原始 local TRS
-动画，不经过 Humanoid retarget，用于和第一排优菈 retarget 结果同场对照。
+- [`docs/README.md`](docs/README.md)：代码导航总入口。
+- [`docs/animation-architecture.md`](docs/animation-architecture.md)：模型与动画架构契约。
+- [`docs/network-architecture.md`](docs/network-architecture.md)：联机架构与扩展边界。
+- [`docs/asset-sources.md`](docs/asset-sources.md)：资源来源、许可和发布检查。
+- [`docs/archive/project-handoff-2026-09.md`](docs/archive/project-handoff-2026-09.md)：历史现场记录，
+  不代表当前实现。
