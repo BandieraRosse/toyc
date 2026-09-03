@@ -1314,6 +1314,25 @@ static int run_logic_test(void)
         toy_game_set_platforms(&game, terrain, 2);
         game.px = 0;
         game.player_ground_y = 0;
+        /* 完整斜向移动撞墙后移除法线 X 分量，保留 Z 切向分量。 */
+        {
+            struct toy_game_box slide_wall = {
+                200, 400, -1000, 1000, 0, 1000
+            };
+            struct toy_game_platform slide_ground = {
+                -2000, 2000, -2000, 2000, 0,
+                TOY_GAME_GROUND_FLAT, 0
+            };
+            toy_game_set_world(&game, &slide_wall, 1, 2000);
+            toy_game_set_platforms(&game, &slide_ground, 1);
+            game.px = 0; game.pz = 0; game.player_ground_y = 0;
+            if (!toy_game_move_player_sliding(&game, 100, 100) ||
+                game.px != 0 || game.pz != 100 ||
+                game.player_ground_y != 0) return 205;
+            toy_game_set_world(&game, NULL, 0, 12000);
+            toy_game_set_platforms(&game, terrain, 2);
+            game.px = 0; game.pz = 0; game.player_ground_y = 0;
+        }
     }
         if (!toy_game_jump_with_velocity(&game, 20, 0)) return 87;
         for (int i = 0; i < 70; i++)

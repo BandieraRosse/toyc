@@ -403,16 +403,42 @@ static void session_move_player(struct rasterfall_session *session,
     int next_x = camera->x + dx;
     int next_z = camera->z + dz;
     if (session->game_state.player_airborne_ms <= 0) {
-        if (toy_game_try_move_player(&session->game_state, next_x, next_z)) {
+        if (toy_game_move_player_sliding(&session->game_state, dx, dz)) {
             camera->x = session->game_state.px;
             camera->z = session->game_state.pz;
         }
         return;
     }
-    if (!toy_game_position_blocked_at_height(
-            &session->game_state, next_x, next_z, RASTERFALL_PLAYER_RADIUS,
-            session->game_state.player_ground_y +
-            session->game_state.player_airborne_y)) {
+    {
+        int height = session->game_state.player_ground_y +
+                     session->game_state.player_airborne_y;
+        int blocks_x, blocks_z;
+        if (!toy_game_position_blocked_at_height(
+                &session->game_state, next_x, next_z,
+                RASTERFALL_PLAYER_RADIUS, height)) {
+            camera->x = next_x;
+            camera->z = next_z;
+            return;
+        }
+        blocks_x = dx && toy_game_position_blocked_at_height(
+            &session->game_state, next_x, camera->z,
+            RASTERFALL_PLAYER_RADIUS, height);
+        blocks_z = dz && toy_game_position_blocked_at_height(
+            &session->game_state, camera->x, next_z,
+            RASTERFALL_PLAYER_RADIUS, height);
+        if (!blocks_x && !blocks_z) {
+            int abs_x = dx < 0 ? -dx : dx;
+            int abs_z = dz < 0 ? -dz : dz;
+            if (abs_x >= abs_z) blocks_x = 1;
+            else blocks_z = 1;
+        }
+        if (blocks_x) next_x = camera->x;
+        if (blocks_z) next_z = camera->z;
+        if ((next_x != camera->x || next_z != camera->z) &&
+            toy_game_position_blocked_at_height(
+                &session->game_state, next_x, next_z,
+                RASTERFALL_PLAYER_RADIUS, height))
+            return;
         camera->x = next_x;
         camera->z = next_z;
     }

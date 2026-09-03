@@ -1185,6 +1185,53 @@ int toy_game_try_move_player(struct toy_game *g, int x, int z)
     return 1;
 }
 
+static int probe_player_move(struct toy_game *g, int x, int z)
+{
+    int px, pz, ground_y, airborne_y, airborne_ms, vertical_velocity;
+    int air_x, air_z, result;
+    px = g->px; pz = g->pz;
+    ground_y = g->player_ground_y;
+    airborne_y = g->player_airborne_y;
+    airborne_ms = g->player_airborne_ms;
+    vertical_velocity = g->player_vertical_velocity;
+    air_x = g->player_air_x; air_z = g->player_air_z;
+    result = toy_game_try_move_player(g, x, z);
+    g->px = px; g->pz = pz;
+    g->player_ground_y = ground_y;
+    g->player_airborne_y = airborne_y;
+    g->player_airborne_ms = airborne_ms;
+    g->player_vertical_velocity = vertical_velocity;
+    g->player_air_x = air_x; g->player_air_z = air_z;
+    return result;
+}
+
+int toy_game_move_player_sliding(struct toy_game *g, int dx, int dz)
+{
+    int start_x, start_z, blocks_x, blocks_z, abs_x, abs_z;
+    if (!g || g->player_airborne_ms > 0) return 0;
+    start_x = g->px;
+    start_z = g->pz;
+    if (toy_game_try_move_player(g, start_x + dx, start_z + dz)) return 1;
+
+    /* Axis probes identify the normal components of the blocking surface.
+     * Removing those components leaves motion tangent to an axis-aligned box
+     * or platform edge while preserving the existing circular footprint. */
+    blocks_x = dx && !probe_player_move(g, start_x + dx, start_z);
+    blocks_z = dz && !probe_player_move(g, start_x, start_z + dz);
+    if (!blocks_x && !blocks_z) {
+        /* A diagonal circle-versus-corner contact may block only the combined
+         * move.  Treat the dominant approach axis as the contact normal. */
+        abs_x = dx < 0 ? -dx : dx;
+        abs_z = dz < 0 ? -dz : dz;
+        if (abs_x >= abs_z) blocks_x = 1;
+        else blocks_z = 1;
+    }
+    if (blocks_x) dx = 0;
+    if (blocks_z) dz = 0;
+    if (!dx && !dz) return 0;
+    return toy_game_try_move_player(g, start_x + dx, start_z + dz);
+}
+
 void toy_game_update_player_ground(struct toy_game *g)
 {
     struct toy_game_ground_query ground;

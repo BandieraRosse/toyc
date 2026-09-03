@@ -753,6 +753,7 @@ int  toy_game_position_blocked_at_height(const struct toy_game *g,
                                          int x, int z, int radius,
                                          int ground_height);
 int  toy_game_try_move_player(struct toy_game *g, int x, int z);
+int  toy_game_move_player_sliding(struct toy_game *g, int dx, int dz);
 void toy_game_update_player_ground(struct toy_game *g);
 void toy_game_set_campaign(struct toy_game *g,
                            const struct toy_game_box *safe_rooms,
