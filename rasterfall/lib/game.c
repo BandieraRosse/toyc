@@ -1078,9 +1078,10 @@ static int ground_has_ramp_surface_transition(
     return 0;
 }
 
-int toy_game_position_blocked_at_height(const struct toy_game *g,
-                                        int x, int z, int radius,
-                                        int ground_height)
+static int position_blocked_at_height(const struct toy_game *g,
+                                      int x, int z, int radius,
+                                      int ground_height,
+                                      int require_ground_support)
 {
     int i, collision_height = ground_height;
     struct toy_game_ground_query ground;
@@ -1107,7 +1108,7 @@ int toy_game_position_blocked_at_height(const struct toy_game *g,
     /* Callers that have not supplied terrain retain the old standalone-game
      * fixture behavior.  A loaded map always supplies its ground primitive
      * array (possibly with zero entries), where absence of support is solid. */
-    if (g->platforms && !ground.has_support) return 1;
+    if (require_ground_support && g->platforms && !ground.has_support) return 1;
     for (i = 0; i < g->platform_count; i++) {
         const struct toy_game_platform *p = &g->platforms[i];
         if (p->kind != TOY_GAME_GROUND_FLAT) {
@@ -1133,22 +1134,54 @@ int toy_game_position_blocked_at_height(const struct toy_game *g,
     return 0;
 }
 
+int toy_game_position_blocked_at_height(const struct toy_game *g,
+                                        int x, int z, int radius,
+                                        int ground_height)
+{
+    return position_blocked_at_height(g, x, z, radius, ground_height, 1);
+}
+
 int toy_game_try_move_player(struct toy_game *g, int x, int z)
 {
     struct toy_game_ground_query ground;
-    int candidate_ground_y;
+    int candidate_ground_y, current_ground_y;
     if (!g || g->player_airborne_ms > 0) return 0;
+    current_ground_y = g->player_ground_y;
     ground = toy_game_query_ground(g, x, z, TOY_GAME_PLAYER_RADIUS,
-                                   g->player_ground_y);
-    if (!ground.has_support) return 0;
+                                   current_ground_y);
     candidate_ground_y = ground.support_y;
-    if (toy_game_position_blocked_at_height(g, x, z,
-                                            TOY_GAME_PLAYER_RADIUS,
-                                            candidate_ground_y))
+    if (ground.has_support && candidate_ground_y > current_ground_y) {
+        if (candidate_ground_y - current_ground_y >
+                TOY_CONFIG_GROUND_STEP_HEIGHT ||
+            position_blocked_at_height(g, x, z, TOY_GAME_PLAYER_RADIUS,
+                                       candidate_ground_y, 1))
+            return 0;
+    } else if (position_blocked_at_height(g, x, z,
+                                          TOY_GAME_PLAYER_RADIUS,
+                                          current_ground_y, 0)) {
         return 0;
+    }
     g->px = x;
     g->pz = z;
-    g->player_ground_y = candidate_ground_y;
+    if (ground.has_support &&
+        (candidate_ground_y >= current_ground_y ||
+         ground.support_is_ramp ||
+         current_ground_y - candidate_ground_y <=
+             TOY_CONFIG_GROUND_STEP_HEIGHT)) {
+        g->player_ground_y = candidate_ground_y;
+    } else if (ground.touches_current_support) {
+        g->player_ground_y = current_ground_y;
+    } else {
+        /* Preserve absolute height while transferring ownership from the old
+         * surface to airborne motion.  A lower surface may be far below, or
+         * there may be no support at all. */
+        g->player_ground_y = ground.has_support ? candidate_ground_y : 0;
+        g->player_airborne_y = current_ground_y - g->player_ground_y;
+        g->player_airborne_ms = TOY_GAME_JUMP_MS;
+        g->player_vertical_velocity = 0;
+        g->player_air_x = 0;
+        g->player_air_z = 0;
+    }
     return 1;
 }
 
@@ -2787,7 +2820,8 @@ static void update_player_special_motion(struct toy_game *g, int dt_ms)
                                        TOY_GAME_PLAYER_RADIUS,
                                        g->player_ground_y);
         landing_ground = ground.landing_y;
-        if (g->player_vertical_velocity < 0 &&
+        if ((!g->platforms || ground.has_landing) &&
+            g->player_vertical_velocity < 0 &&
             g->player_airborne_y <=
                 landing_ground - g->player_ground_y) {
             g->player_airborne_y = 0;

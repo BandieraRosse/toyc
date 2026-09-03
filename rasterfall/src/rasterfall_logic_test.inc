@@ -1282,10 +1282,39 @@ static int run_logic_test(void)
             if (game.actors[0].ground_y != 100 ||
                 game.actors[0].airborne_ms != 0) return 176;
             toy_game_set_platforms(&game, terrain, 2);
-            game.px = 0;
-            game.pz = 0;
-            game.player_ground_y = 0;
-        }
+        game.px = 0;
+        game.pz = 0;
+        game.player_ground_y = 0;
+        /* 事务移动区分上升与下降：高台不能直接攀爬，离开高台边缘则
+         * 保持绝对高度进入下落；没有任何支撑也不能阻止水平移动。 */
+        if (toy_game_try_move_player(&game, 500, 0) ||
+            game.player_ground_y != 0) return 201;
+        game.px = 2000;
+        game.player_ground_y = 500;
+        if (!toy_game_try_move_player(&game, 2400, 0) ||
+            game.px != 2400 || game.player_ground_y != 0 ||
+            game.player_airborne_y != 500 ||
+            game.player_airborne_ms <= 0) return 202;
+        game.player_airborne_ms = 0;
+        game.player_airborne_y = 0;
+        game.player_vertical_velocity = 0;
+        game.px = 0;
+        game.pz = 0;
+        game.player_ground_y = 500;
+        toy_game_set_platforms(&game, NULL, 0);
+        if (!toy_game_try_move_player(&game, 300, 0) ||
+            game.px != 300 || game.player_ground_y != 0 ||
+            game.player_airborne_y != 500 ||
+            game.player_airborne_ms <= 0) return 203;
+        toy_game_update_player_motion(&game, 16);
+        if (game.player_airborne_ms <= 0) return 204;
+        game.player_airborne_ms = 0;
+        game.player_airborne_y = 0;
+        game.player_vertical_velocity = 0;
+        toy_game_set_platforms(&game, terrain, 2);
+        game.px = 0;
+        game.player_ground_y = 0;
+    }
         if (!toy_game_jump_with_velocity(&game, 20, 0)) return 87;
         for (int i = 0; i < 70; i++)
             toy_game_update_player_motion(&game, 16);
