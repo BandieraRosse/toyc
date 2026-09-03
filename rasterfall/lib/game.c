@@ -977,51 +977,6 @@ void toy_game_set_primitives(struct toy_game *g,
     toy_game_rebuild_navigation(g);
 }
 
-void toy_game_set_world(struct toy_game *g, const struct toy_game_box *boxes,
-                        int box_count, int room_limit)
-{
-    int i, count = 0;
-    if (!g) return;
-    for (i = 0; i < g->primitive_count && count < TOY_GAME_MAX_PRIMITIVES; i++)
-        if (g->primitives[i].shape != TOY_MAP_PRIMITIVE_BOX)
-            g->primitive_storage[count++] = g->primitives[i];
-    for (i = 0; boxes && i < box_count && count < TOY_GAME_MAX_PRIMITIVES; i++) {
-        struct toy_map_primitive *p = &g->primitive_storage[count++];
-        memset(p, 0, sizeof(*p)); p->shape = TOY_MAP_PRIMITIVE_BOX;
-        p->minx=boxes[i].minx; p->maxx=boxes[i].maxx;
-        p->minz=boxes[i].minz; p->maxz=boxes[i].maxz;
-        p->base_y=boxes[i].miny; p->surface_y0=boxes[i].maxy;
-        p->surface_y1=boxes[i].maxy; p->flags=TOY_MAP_PRIMITIVE_COLLISION;
-    }
-    g->primitives=g->primitive_storage; g->primitive_count=count;
-    g->room_limit=room_limit; toy_game_rebuild_navigation(g);
-}
-
-void toy_game_set_platforms(struct toy_game *g,
-                            const struct toy_game_platform *platforms,
-                            int platform_count)
-{
-    int i, count = 0;
-    if (!g) return;
-    for (i = 0; i < g->primitive_count && count < TOY_GAME_MAX_PRIMITIVES; i++)
-        if (g->primitives[i].shape == TOY_MAP_PRIMITIVE_BOX)
-            g->primitive_storage[count++] = g->primitives[i];
-    for (i = 0; platforms && i < platform_count && count < TOY_GAME_MAX_PRIMITIVES; i++) {
-        struct toy_map_primitive *p = &g->primitive_storage[count++];
-        memset(p,0,sizeof(*p));
-        p->shape=platforms[i].kind==TOY_GAME_GROUND_RAMP_X ? TOY_MAP_PRIMITIVE_RAMP_X :
-                 platforms[i].kind==TOY_GAME_GROUND_RAMP_Z ? TOY_MAP_PRIMITIVE_RAMP_Z :
-                 TOY_MAP_PRIMITIVE_FLAT;
-        p->minx=platforms[i].minx; p->maxx=platforms[i].maxx;
-        p->minz=platforms[i].minz; p->maxz=platforms[i].maxz;
-        p->surface_y0=platforms[i].height; p->surface_y1=platforms[i].end_height;
-        if (p->shape==TOY_MAP_PRIMITIVE_FLAT) p->surface_y1=p->surface_y0;
-        p->flags=TOY_MAP_PRIMITIVE_COLLISION|TOY_MAP_PRIMITIVE_WALKABLE;
-    }
-    g->primitives=g->primitive_storage; g->primitive_count=count;
-    if (g->room_limit > 0) toy_game_rebuild_navigation(g);
-}
-
 static int primitive_surface_height(const struct toy_map_primitive *p,
                                     int x, int z)
 {
@@ -1370,16 +1325,7 @@ void toy_game_set_alarm(struct toy_game *g,
 int toy_game_position_blocked(const struct toy_game *g,
                               int x, int z, int radius)
 {
-    int i;
-    if (x - radius < -g->room_limit || x + radius > g->room_limit ||
-        z - radius < -g->room_limit || z + radius > g->room_limit) return 1;
-    for (i = 0; i < g->primitive_count; i++) {
-        const struct toy_map_primitive *b = &g->primitives[i];
-        if (!(b->flags & TOY_MAP_PRIMITIVE_COLLISION)) continue;
-        if (x + radius > b->minx && x - radius < b->maxx &&
-            z + radius > b->minz && z - radius < b->maxz) return 1;
-    }
-    return 0;
+    return position_blocked_at_height(g,x,z,radius,0,0);
 }
 
 static int nav_position_blocked(const struct toy_game *g, int x, int z)

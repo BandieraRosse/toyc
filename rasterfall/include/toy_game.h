@@ -301,17 +301,6 @@ struct toy_map_primitive {
     unsigned int flags, color;
     char role[32];
 };
-/* Transitional constructors for standalone logic fixtures.  They are copied
- * into primitive_storage and are never retained as runtime world state. */
-enum toy_game_ground_kind {
-    TOY_GAME_GROUND_FLAT,
-    TOY_GAME_GROUND_RAMP_X,
-    TOY_GAME_GROUND_RAMP_Z
-};
-struct toy_game_platform {
-    int minx, maxx, minz, maxz, height;
-    int kind, end_height;
-};
 struct toy_game_ground_query {
     int has_support;               /* whole footprint is on a ground primitive */
     int has_landing;               /* footprint overlaps a ground primitive */
@@ -673,7 +662,6 @@ struct toy_game {
     /* 世界（宿主所有，只读借用） */
     const struct toy_map_primitive *primitives;
     int primitive_count;
-    struct toy_map_primitive primitive_storage[TOY_GAME_MAX_PRIMITIVES];
     int room_limit;
 
     int nav_origin;
@@ -762,11 +750,6 @@ int  toy_game_apply_entity_impact(struct toy_game *g, int kind, int index,
 void toy_game_set_primitives(struct toy_game *g,
                              const struct toy_map_primitive *primitives,
                              int primitive_count, int room_limit);
-void toy_game_set_world(struct toy_game *g, const struct toy_game_box *boxes,
-                        int box_count, int room_limit);
-void toy_game_set_platforms(struct toy_game *g,
-                            const struct toy_game_platform *platforms,
-                            int platform_count);
 void toy_game_rebuild_navigation(struct toy_game *g);
 struct toy_game_ground_query toy_game_query_ground(
     const struct toy_game *g, int x, int z, int radius, int current_ground_y);

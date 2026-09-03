@@ -4,6 +4,87 @@
 #define special_pull_timer_ms ability.special_pull_timer_ms
 #define charge_active ability.charge_active
 
+static struct toy_map_primitive test_flat_primitive(
+    int minx, int maxx, int minz, int maxz, int y)
+{
+    struct toy_map_primitive p;
+    memset(&p, 0, sizeof(p));
+    p.shape=TOY_MAP_PRIMITIVE_FLAT; p.minx=minx; p.maxx=maxx;
+    p.minz=minz; p.maxz=maxz; p.surface_y0=y; p.surface_y1=y;
+    p.flags=TOY_MAP_PRIMITIVE_COLLISION|TOY_MAP_PRIMITIVE_WALKABLE;
+    return p;
+}
+
+static struct toy_map_primitive test_ramp_primitive(
+    int shape, int minx, int maxx, int minz, int maxz, int y0, int y1)
+{
+    struct toy_map_primitive p=test_flat_primitive(minx,maxx,minz,maxz,y0);
+    p.shape=shape; p.surface_y1=y1;
+    return p;
+}
+
+static struct toy_map_primitive test_box_primitive(
+    int minx, int maxx, int minz, int maxz, int miny, int maxy,
+    unsigned int flags)
+{
+    struct toy_map_primitive p;
+    memset(&p,0,sizeof(p)); p.shape=TOY_MAP_PRIMITIVE_BOX;
+    p.minx=minx; p.maxx=maxx; p.minz=minz; p.maxz=maxz;
+    p.base_y=miny; p.surface_y0=maxy; p.surface_y1=maxy; p.flags=flags;
+    return p;
+}
+
+static int primitive_gameplay_logic_test(void)
+{
+    struct toy_game g;
+    struct toy_game_ground_query ground;
+    struct toy_map_primitive world[2];
+    int left, right, table=0, ramp=0, air_gate=0;
+    world[0]=test_flat_primitive(-2000,2000,-2000,2000,0);
+    world[1]=test_flat_primitive(200,1000,-500,500,100);
+    toy_game_init(&g,211); toy_game_set_primitives(&g,world,2,2000);
+    ground=toy_game_query_ground(&g,400,0,TOY_GAME_PLAYER_RADIUS,0);
+    if(!ground.has_support||!ground.has_landing||ground.support_y!=100)return 1;
+    g.px=0;g.pz=0;g.player_ground_y=0;
+    if(!toy_game_try_move_player(&g,400,0)||g.player_ground_y!=100)return 2;
+    world[0]=test_ramp_primitive(TOY_MAP_PRIMITIVE_RAMP_X,
+                                0,1200,-600,600,0,400);
+    toy_game_set_primitives(&g,world,1,2000);
+    ground=toy_game_query_ground(&g,600,0,0,0);
+    if(!ground.has_support||ground.support_y!=200||!ground.support_is_ramp)return 3;
+    g.px=200;g.pz=0;g.player_ground_y=200*400/1200;
+    for(int x=300;x<=900;x+=100)if(!toy_game_try_move_player(&g,x,0)||g.player_ground_y!=x*400/1200)return 4;
+    for(int x=800;x>=200;x-=100)if(!toy_game_try_move_player(&g,x,0)||g.player_ground_y!=x*400/1200)return 5;
+    world[0]=test_flat_primitive(-1200,1200,-1200,1200,0);
+    world[1]=test_box_primitive(200,400,-1000,1000,0,1000,TOY_MAP_PRIMITIVE_COLLISION);
+    toy_game_set_primitives(&g,world,2,1200);g.px=0;g.pz=0;g.player_ground_y=0;
+    if(toy_game_try_move_player(&g,100,0))return 6;
+    world[1].flags&=~TOY_MAP_PRIMITIVE_COLLISION;toy_game_rebuild_navigation(&g);
+    if(!toy_game_try_move_player(&g,100,0))return 7;
+    world[1]=test_box_primitive(-100,100,-1200,1200,0,1000,TOY_MAP_PRIMITIVE_COLLISION);
+    toy_game_rebuild_navigation(&g);
+    left=((150-g.nav_origin)/g.nav_cell_size)*g.nav_width+(-750-g.nav_origin)/g.nav_cell_size;
+    right=((150-g.nav_origin)/g.nav_cell_size)*g.nav_width+(750-g.nav_origin)/g.nav_cell_size;
+    if(!g.nav_walkable[left]||!g.nav_walkable[right]||!g.nav_component[left]||!g.nav_component[right]||g.nav_component[left]==g.nav_component[right]){
+        __printf("primitive nav split: walk=%d/%d component=%d/%d\n",
+                 g.nav_walkable[left],g.nav_walkable[right],
+                 g.nav_component[left],g.nav_component[right]);return 8;}
+    world[1].flags&=~TOY_MAP_PRIMITIVE_COLLISION;toy_game_rebuild_navigation(&g);
+    if(!g.nav_walkable[left]||!g.nav_walkable[right]||g.nav_component[left]!=g.nav_component[right])return 9;
+    for(int i=0;i<level_map.primitive_count;i++){
+        const struct toy_map_primitive *p=&level_map.primitives[i];
+        if(p->shape==TOY_MAP_PRIMITIVE_FLAT&&p->minx==-880&&p->maxx==880&&
+           p->surface_y0==650&&(p->flags&TOY_MAP_PRIMITIVE_WALKABLE))table=1;
+        if(p->shape==TOY_MAP_PRIMITIVE_RAMP_X&&p->minx==7000&&
+           p->surface_y0==0&&p->surface_y1==900&&
+           (p->flags&TOY_MAP_PRIMITIVE_WALKABLE))ramp=1;
+        if(!strcmp(p->role,"air_gate_left")&&
+           (p->flags&TOY_MAP_PRIMITIVE_COLLISION))air_gate=1;
+    }
+    if(!table||!ramp||!air_gate)return 10;
+    return 0;
+}
+
 static int run_logic_test(void)
 {
     struct camera camera;
@@ -15,6 +96,9 @@ static int run_logic_test(void)
     uint32_t *pixels;
     int count;
     long long direction_length;
+    { int primitive_result=primitive_gameplay_logic_test();
+      if(primitive_result){__printf("primitive gameplay failure: %d\n",primitive_result);return 211;} }
+    __printf("rasterfall: primitive gameplay test passed\n");
     if (rasterfall_model_skinning_logic_test() != 0) return 157;
     if (rasterfall_humanoid_logic_test() != 0) return 162;
     if (rasterfall_humanoid_basis_logic_test() != 0) return 163;
@@ -1140,17 +1224,15 @@ static int run_logic_test(void)
     }
     /* 多层地面：跳入悬空平台范围后应落在平台顶部，而不是穿回地面。 */
     {
-        struct toy_game_platform terrain[2] = {
-            { -12000, 12000, -12000, 12000, 0,
-              TOY_GAME_GROUND_FLAT, 0 },
-            { 280, 2200, -1000, 1000, 500,
-              TOY_GAME_GROUND_FLAT, 0 }
+        struct toy_map_primitive terrain[2] = {
+            test_flat_primitive(-12000,12000,-12000,12000,0),
+            test_flat_primitive(280,2200,-1000,1000,500)
         };
         struct toy_game_ground_query ground;
         toy_game_init(&game, 47);
         game.primitive_count = 0;
         game.room_limit = 12000;
-        toy_game_set_platforms(&game, terrain, 2);
+        toy_game_set_primitives(&game,terrain,2,12000);
         ground = toy_game_query_ground(&game, 300, 0,
                                        TOY_GAME_PLAYER_RADIUS, 0);
         if (ground.support_y != 0 || ground.landing_y != 500 ||
@@ -1164,14 +1246,33 @@ static int run_logic_test(void)
         if (ground.support_y != 0 || ground.landing_y != 0 ||
             ground.touches_current_support != 0) return 173;
         {
-            struct toy_game_platform ramp = {
-                0, 1200, -600, 600, 0, TOY_GAME_GROUND_RAMP_X, 400
+            struct toy_map_primitive step[2] = {
+                test_flat_primitive(-2000,2000,-1000,1000,0),
+                test_flat_primitive(200,1000,-500,500,100)
             };
+            toy_game_set_primitives(&game,step,2,2000);
+            game.px=0; game.pz=0; game.player_ground_y=0;
+            if (!toy_game_try_move_player(&game,400,0) ||
+                game.player_ground_y != 100) return 208;
+        }
+        {
+            struct toy_map_primitive ramp=test_ramp_primitive(
+                TOY_MAP_PRIMITIVE_RAMP_X,0,1200,-600,600,0,400);
             int nav_a, nav_b;
-            toy_game_set_platforms(&game, &ramp, 1);
+            toy_game_set_primitives(&game,&ramp,1,12000);
             ground = toy_game_query_ground(&game, 600, 0, 0, 0);
             if (ground.support_y != 200 || ground.landing_y != 200 ||
                 !ground.support_is_ramp) return 174;
+            game.px=200; game.pz=0;
+            game.player_ground_y=200*400/1200;
+            for (int x=300; x<=900; x+=100)
+                if (!toy_game_try_move_player(&game,x,0) ||
+                    game.player_ground_y != x*400/1200)
+                    return 209;
+            for (int x=800; x>=200; x-=100)
+                if (!toy_game_try_move_player(&game,x,0) ||
+                    game.player_ground_y != x*400/1200)
+                    return 210;
             if (toy_game_position_blocked_at_height(
                     &game, 100, 0, 50, 0) ||
                 !toy_game_position_blocked_at_height(
@@ -1183,17 +1284,14 @@ static int run_logic_test(void)
             /* 墙顶面覆盖完整实体，并在坡尾按玩家半径精确衔接：上下坡
              * 都不能卡边，沿墙方向离开坡口后也必须继续受顶部支撑。 */
             {
-                struct toy_game_platform ramp_top[2] = {
-                    { -1000, 1000, -15000, -5900, 0,
-                      TOY_GAME_GROUND_RAMP_Z, 3979 },
-                    { -4180, 3180, -6260, -5520, 3900,
-                      TOY_GAME_GROUND_FLAT, 0 }
+                struct toy_map_primitive ramp_top[3] = {
+                    test_box_primitive(-4000,3000,-5900,-5700,0,3900,
+                                       TOY_MAP_PRIMITIVE_COLLISION),
+                    test_ramp_primitive(TOY_MAP_PRIMITIVE_RAMP_Z,
+                                        -1000,1000,-15000,-5900,0,3979),
+                    test_flat_primitive(-4180,3180,-6260,-5520,3900)
                 };
-                struct toy_game_box wall_top = {
-                    -4000, 3000, -5900, -5700, 0, 3900
-                };
-                toy_game_set_world(&game, &wall_top, 1, 16000);
-                toy_game_set_platforms(&game, ramp_top, 2);
+                toy_game_set_primitives(&game,ramp_top,3,16000);
                 game.px = 0;
                 game.pz = -7000;
                 game.player_ground_y = toy_game_query_ground(
@@ -1229,8 +1327,7 @@ static int run_logic_test(void)
                 if (toy_game_query_ground(&game, -3500, -5700,
                         TOY_GAME_PLAYER_RADIUS, 3900).support_y != 3900)
                     return 197;
-                toy_game_set_world(&game, NULL, 0, 12000);
-                toy_game_set_platforms(&game, &ramp, 1);
+                toy_game_set_primitives(&game,&ramp,1,12000);
             }
             nav_a = ((150 - game.nav_origin) / game.nav_cell_size) *
                     game.nav_width +
@@ -1245,15 +1342,13 @@ static int run_logic_test(void)
                 return 178;
             {
                 struct toy_game nav_game;
-                struct toy_game_platform steep = {
-                    -300, 300, -1200, 1200, 0,
-                    TOY_GAME_GROUND_RAMP_X, 600
-                };
+                struct toy_map_primitive steep=test_ramp_primitive(
+                    TOY_MAP_PRIMITIVE_RAMP_X,-300,300,-1200,1200,0,600);
                 int low_cell, high_cell;
                 toy_game_init(&nav_game, 48);
                 nav_game.primitive_count = 0;
                 nav_game.room_limit = 1200;
-                toy_game_set_platforms(&nav_game, &steep, 1);
+                toy_game_set_primitives(&nav_game,&steep,1,1200);
                 low_cell = ((150 - nav_game.nav_origin) /
                             nav_game.nav_cell_size) * nav_game.nav_width +
                            (-150 - nav_game.nav_origin) /
@@ -1283,7 +1378,7 @@ static int run_logic_test(void)
             toy_game_update_actor_ground(&game, 0);
             if (game.actors[0].ground_y != 100 ||
                 game.actors[0].airborne_ms != 0) return 176;
-            toy_game_set_platforms(&game, terrain, 2);
+            toy_game_set_primitives(&game,terrain,2,12000);
         game.px = 0;
         game.pz = 0;
         game.player_ground_y = 0;
@@ -1303,7 +1398,7 @@ static int run_logic_test(void)
         game.px = 0;
         game.pz = 0;
         game.player_ground_y = 500;
-        toy_game_set_platforms(&game, NULL, 0);
+        toy_game_set_primitives(&game,NULL,0,12000);
         if (!toy_game_try_move_player(&game, 300, 0) ||
             game.px != 300 || game.player_ground_y != 0 ||
             game.player_airborne_y != 500 ||
@@ -1313,26 +1408,33 @@ static int run_logic_test(void)
         game.player_airborne_ms = 0;
         game.player_airborne_y = 0;
         game.player_vertical_velocity = 0;
-        toy_game_set_platforms(&game, terrain, 2);
+        toy_game_set_primitives(&game,terrain,2,12000);
         game.px = 0;
         game.player_ground_y = 0;
         /* 完整斜向移动撞墙后移除法线 X 分量，保留 Z 切向分量。 */
         {
-            struct toy_game_box slide_wall = {
-                200, 400, -1000, 1000, 0, 1000
+            struct toy_map_primitive slide_world[2] = {
+                test_box_primitive(200,400,-1000,1000,0,1000,
+                                   TOY_MAP_PRIMITIVE_COLLISION),
+                test_flat_primitive(-2000,2000,-2000,2000,0)
             };
-            struct toy_game_platform slide_ground = {
-                -2000, 2000, -2000, 2000, 0,
-                TOY_GAME_GROUND_FLAT, 0
-            };
-            toy_game_set_world(&game, &slide_wall, 1, 2000);
-            toy_game_set_platforms(&game, &slide_ground, 1);
+            toy_game_set_primitives(&game,slide_world,2,2000);
             game.px = 0; game.pz = 0; game.player_ground_y = 0;
+            /* Collision is an independent primitive capability: the same
+             * box becomes passable when an air-gate style toggle clears it,
+             * while the WALKABLE ground primitive continues to support us. */
+            if (toy_game_try_move_player(&game,100,0)) return 206;
+            slide_world[0].flags &= ~TOY_MAP_PRIMITIVE_COLLISION;
+            toy_game_rebuild_navigation(&game);
+            if (!toy_game_try_move_player(&game,100,0) || game.px != 100 ||
+                game.player_ground_y != 0) return 207;
+            slide_world[0].flags |= TOY_MAP_PRIMITIVE_COLLISION;
+            toy_game_rebuild_navigation(&game);
+            game.px=0; game.pz=0;
             if (!toy_game_move_player_sliding(&game, 100, 100) ||
                 game.px != 0 || game.pz != 100 ||
                 game.player_ground_y != 0) return 205;
-            toy_game_set_world(&game, NULL, 0, 12000);
-            toy_game_set_platforms(&game, terrain, 2);
+            toy_game_set_primitives(&game,terrain,2,12000);
             game.px = 0; game.pz = 0; game.player_ground_y = 0;
         }
     }
@@ -1398,14 +1500,12 @@ static int run_logic_test(void)
     }
     /* world 是导航和碰撞的最大坐标范围，不是默认地面。 */
     {
-        struct toy_game_platform ground_patch = {
-            0, 600, -600, 600, 0, TOY_GAME_GROUND_FLAT, 0
-        };
+        struct toy_map_primitive ground_patch=test_flat_primitive(
+            0,600,-600,600,0);
         struct toy_game_ground_query on_ground, no_ground;
         int on_cell, empty_cell;
         toy_game_init(&game, 184);
-        toy_game_set_world(&game, NULL, 0, 1200);
-        toy_game_set_platforms(&game, &ground_patch, 1);
+        toy_game_set_primitives(&game,&ground_patch,1,1200);
         on_ground = toy_game_query_ground(&game, 300, 0, 0, 0);
         no_ground = toy_game_query_ground(&game, 900, 0, 0, 0);
         on_cell = ((150 - game.nav_origin) / game.nav_cell_size) *
@@ -1422,17 +1522,15 @@ static int run_logic_test(void)
     }
     /* 网络玩家 actor 必须保留跳跃水平动量，并在平台顶落地。 */
     {
-        struct toy_game_platform terrain[2] = {
-            { -12000, 12000, -12000, 12000, 0,
-              TOY_GAME_GROUND_FLAT, 0 },
-            { 280, 2200, -1000, 1000, 500,
-              TOY_GAME_GROUND_FLAT, 0 }
+        struct toy_map_primitive terrain[2] = {
+            test_flat_primitive(-12000,12000,-12000,12000,0),
+            test_flat_primitive(280,2200,-1000,1000,500)
         };
         int actor_index = TOY_GAME_REMOTE_ACTOR_BASE + 1;
         toy_game_init(&game, 49);
         game.primitive_count = 0;
         game.room_limit = 12000;
-        toy_game_set_platforms(&game, terrain, 2);
+        toy_game_set_primitives(&game,terrain,2,12000);
         if (toy_game_set_remote_player(&game, 2, 1, 0, 0, "REMOTE") !=
             actor_index) return 103;
         if (!toy_game_jump_actor(&game, actor_index, 20, 0)) return 104;
@@ -1652,18 +1750,16 @@ static int run_logic_test(void)
     /* 平台对地面实体是实心障碍：敌人不能生成或追进台体，
      * AI 队友也不能被直接移入平台。 */
     {
-        struct toy_game_platform terrain[2] = {
-            { -12000, 12000, -12000, 12000, 0,
-              TOY_GAME_GROUND_FLAT, 0 },
-            { -500, 500, -500, 500, 800,
-              TOY_GAME_GROUND_FLAT, 0 }
+        struct toy_map_primitive terrain[2] = {
+            test_flat_primitive(-12000,12000,-12000,12000,0),
+            test_flat_primitive(-500,500,-500,500,800)
         };
         int actor_x;
         toy_game_init(&game, 48);
         game.primitive_count = 0;
         game.room_limit = 12000;
         game.to_spawn = 0;
-        toy_game_set_platforms(&game, terrain, 2);
+        toy_game_set_primitives(&game,terrain,2,12000);
         toy_game_place_enemy(&game, 0, 0);
         if (game.enemies_alive != 0) return 96;
         toy_game_place_enemy(&game, -800, 0);
@@ -1695,10 +1791,11 @@ static int run_logic_test(void)
     }
     /* AI 回位需绕过横在路径上的墙，而不是持续顶墙。 */
     {
-        struct toy_game_box wall = { -500, 500, -900, 900, 0, 0 };
+        struct toy_map_primitive wall=test_box_primitive(
+            -500,500,-900,900,0,0,TOY_MAP_PRIMITIVE_COLLISION);
         toy_game_init(&game, 72);
         toy_game_set_ai_teammate(&game, 1, -1400, 0, "AI");
-        toy_game_set_world(&game, &wall, 1, 5000);
+        toy_game_set_primitives(&game,&wall,1,5000);
         game.actors[0].deployment_x = 1400;
         game.actors[0].deployment_z = 0;
         game.actors[0].x = -1400;
@@ -1711,11 +1808,12 @@ static int run_logic_test(void)
     /* 导航目标选择：不可达的主玩家不能成为隐式默认目标；可达的
      * 第二目标即使更远也应优先于不可达目标。 */
     {
-        struct toy_game_box wall = { -100, 100, -6000, 6000, 0, 0 };
+        struct toy_map_primitive wall=test_box_primitive(
+            -100,100,-6000,6000,0,0,TOY_MAP_PRIMITIVE_COLLISION);
         toy_game_init(&game, 81);
         game.to_spawn = 0;
         game.px = 3000; game.pz = 0;
-        toy_game_set_world(&game, &wall, 1, 6000);
+        toy_game_set_primitives(&game,&wall,1,6000);
         toy_game_place_enemy(&game, -3000, 0);
         toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
         if (game.enemies[0].target_kind != -1) return 120;
@@ -1728,11 +1826,12 @@ static int run_logic_test(void)
     }
     /* TRACKING 只忽略 LOS，不忽略 component；绕过有限障碍后仍可追踪。 */
     {
-        struct toy_game_box wall = { -100, 100, -600, 600, 0, 0 };
+        struct toy_map_primitive wall=test_box_primitive(
+            -100,100,-600,600,0,0,TOY_MAP_PRIMITIVE_COLLISION);
         toy_game_init(&game, 82);
         game.to_spawn = 0;
         game.px = 3000; game.pz = 2000;
-        toy_game_set_world(&game, &wall, 1, 6000);
+        toy_game_set_primitives(&game,&wall,1,6000);
         toy_game_place_enemy(&game, -3000, 0);
         game.enemies[0].ai_state = TOY_GAME_ENEMY_TRACKING;
         game.enemies[0].type = TOY_GAME_ENEMY_COMMON;
@@ -1740,7 +1839,6 @@ static int run_logic_test(void)
         if (game.enemies[0].target_kind != 0) return 122;
 
         game.px = 3000; game.pz = 0;
-        game.primitive_count = 1;
         wall.minz = -6000; wall.maxz = 6000;
         toy_game_rebuild_navigation(&game);
         toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
@@ -1748,14 +1846,15 @@ static int run_logic_test(void)
     }
     /* 空气墙拓扑变化后，关闭墙体必须重新合并 component。 */
     {
-        struct toy_game_box wall = { -100, 100, -6000, 6000, 0, 0 };
+        struct toy_map_primitive wall=test_box_primitive(
+            -100,100,-6000,6000,0,0,TOY_MAP_PRIMITIVE_COLLISION);
         toy_game_init(&game, 83);
         game.to_spawn = 0; game.px = 3000; game.pz = 0;
-        toy_game_set_world(&game, &wall, 1, 6000);
+        toy_game_set_primitives(&game,&wall,1,6000);
         toy_game_place_enemy(&game, -3000, 0);
         toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
         if (game.enemies[0].target_kind != -1) return 124;
-        wall.minx = 7000; wall.maxx = 8000;
+        wall.flags &= ~TOY_MAP_PRIMITIVE_COLLISION;
         toy_game_rebuild_navigation(&game);
         toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
         if (game.enemies[0].target_kind != 0) return 125;
@@ -1977,11 +2076,11 @@ static int run_logic_test(void)
      * the navigation grid: enemies climb and descend, while a companion that
      * faces a ramp side routes around to its low entrance. */
     {
-        struct toy_game_platform terrain[3] = {
-            { -5000, 5000, -5000, 5000, 0,
-              TOY_GAME_GROUND_FLAT, 0 },
-            { 0, 2400, -1000, 1000, 0, TOY_GAME_GROUND_RAMP_X, 600 },
-            { 2400, 4200, -1000, 1000, 600, TOY_GAME_GROUND_FLAT, 0 }
+        struct toy_map_primitive terrain[3] = {
+            test_flat_primitive(-5000,5000,-5000,5000,0),
+            test_ramp_primitive(TOY_MAP_PRIMITIVE_RAMP_X,
+                                0,2400,-1000,1000,0,600),
+            test_flat_primitive(2400,4200,-1000,1000,600)
         };
         int i, max_ground = 0, min_ground, actor_id;
         struct toy_game_actor *ramp_actor;
@@ -1990,9 +2089,8 @@ static int run_logic_test(void)
         game.px = 3300; game.pz = 0;
         game.player_ground_y = 600;
         game.hp = 100000;
-        toy_game_set_world(&game, NULL, 0, 5000);
         game.safe_room_count = 0;
-        toy_game_set_platforms(&game, terrain, 3);
+        toy_game_set_primitives(&game,terrain,3,5000);
         toy_game_place_enemy(&game, -500, 0);
         if (!game.enemies[0].active) return 180;
         game.enemies[0].ai_state = TOY_GAME_ENEMY_TRACKING;
@@ -2007,9 +2105,8 @@ static int run_logic_test(void)
         game.to_spawn = 0;
         game.px = -800; game.pz = 0;
         game.hp = 100000;
-        toy_game_set_world(&game, NULL, 0, 5000);
         game.safe_room_count = 0;
-        toy_game_set_platforms(&game, terrain, 3);
+        toy_game_set_primitives(&game,terrain,3,5000);
         memset(&game.enemies[0], 0, sizeof(game.enemies[0]));
         game.enemies[0].active = 1;
         game.enemies[0].type = TOY_GAME_ENEMY_COMMON;
@@ -2042,9 +2139,8 @@ static int run_logic_test(void)
         game.to_spawn = 0;
         game.px = 3300; game.pz = 0;
         game.player_ground_y = 600;
-        toy_game_set_world(&game, NULL, 0, 5000);
         game.safe_room_count = 0;
-        toy_game_set_platforms(&game, terrain, 3);
+        toy_game_set_primitives(&game,terrain,3,5000);
         actor_id = toy_game_add_anime_actor(
             &game, 0, 1200, -1500, "RAMP_AI");
         ramp_actor = toy_game_actor_by_id(&game, actor_id);
