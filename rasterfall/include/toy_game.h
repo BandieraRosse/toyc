@@ -103,6 +103,7 @@
 #define TOY_GAME_AIRBORNE_MS    TOY_CONFIG_AIRBORNE_MS
 #define TOY_GAME_AIRBORNE_VELOCITY TOY_CONFIG_AIRBORNE_VELOCITY
 #define TOY_GAME_FALL_TERMINAL_VELOCITY TOY_CONFIG_FALL_TERMINAL_VELOCITY
+#define TOY_GAME_PLAYER_KNOCKBACK_COOLDOWN_MS TOY_CONFIG_PLAYER_KNOCKBACK_COOLDOWN_MS
 #define TOY_GAME_JUMP_MS         TOY_CONFIG_JUMP_MS
 #define TOY_GAME_JUMP_VELOCITY   TOY_CONFIG_JUMP_VELOCITY
 #define TOY_GAME_AI_RETURN_SPEED TOY_CONFIG_AI_RETURN_SPEED
@@ -506,6 +507,7 @@ struct toy_game_actor {
     int ground_y;
     int air_x, air_z;
     int knockback_x, knockback_z;
+    int knockback_cooldown_ms;
     int control_disabled;       /* special attack currently owns movement */
     char name[TOY_GAME_MAX_NAME];
     struct toy_game_slot slots[TOY_GAME_WEAPON_SLOTS];
@@ -703,6 +705,7 @@ struct toy_game {
     int player_air_x, player_air_z;
     int player_knockback_x;
     int player_knockback_z;
+    int player_knockback_cooldown_ms;
     int ai_context_actor_index;
 
     /* PRNG（xorshift64*，init 时播种） */

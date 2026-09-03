@@ -2268,7 +2268,11 @@ static void bite_player(struct toy_game *g, struct toy_game_enemy *e)
     if (g->hp < 0) g->hp = 0;
     g->damage_flash_ms = TOY_GAME_DAMAGE_FLASH_MS;
     e->hurt = 150;
-    push_enemy_from_player(g, e, TOY_GAME_CHARGER_KNOCKBACK);
+    if (g->player_knockback_cooldown_ms <= 0) {
+        push_enemy_from_player(g, e, TOY_GAME_CHARGER_KNOCKBACK);
+        g->player_knockback_cooldown_ms =
+            TOY_GAME_PLAYER_KNOCKBACK_COOLDOWN_MS;
+    }
     push_event(g, TOY_GAME_EV_BITE);
     if (g->hp <= 0) {
         g->player_down = 1;
@@ -2770,7 +2774,7 @@ void toy_game_apply_player_impulse(struct toy_game *g, int impulse_x,
                                    int impulse_z, int vertical_velocity,
                                    int airborne_ms, int airborne_y)
 {
-    if (!g || g->player_down) return;
+    if (!g || g->player_down || g->player_knockback_cooldown_ms > 0) return;
     g->player_airborne_ms = airborne_ms > 0 ? airborne_ms : TOY_GAME_AIRBORNE_MS;
     g->player_airborne_y = airborne_y;
     g->player_vertical_velocity = vertical_velocity;
@@ -2778,6 +2782,8 @@ void toy_game_apply_player_impulse(struct toy_game *g, int impulse_x,
     g->player_air_z = 0;
     g->player_knockback_x = impulse_x;
     g->player_knockback_z = impulse_z;
+    g->player_knockback_cooldown_ms =
+        TOY_GAME_PLAYER_KNOCKBACK_COOLDOWN_MS;
 }
 
 static void move_enemy_forced(struct toy_game *g, struct toy_game_enemy *e,
@@ -3312,6 +3318,7 @@ static int apply_entity_impact_with_knockback(struct toy_game *g, int kind,
     dx = dx * knockback / (int)dist;
     dz = dz * knockback / (int)dist;
     if (kind == TOY_GAME_ENTITY_PLAYER) {
+        int apply_knockback;
         if (g->player_down) return 0;
         g->hp -= damage; if (g->hp < 0) g->hp = 0;
         if (g->hp == 0) {
@@ -3320,15 +3327,21 @@ static int apply_entity_impact_with_knockback(struct toy_game *g, int kind,
             toy_game_animation_set(&g->animation, TOY_GAME_ANIM_DEATH);
         } else toy_game_animation_set(&g->animation, TOY_GAME_ANIM_HIT);
         g->damage_flash_ms = TOY_GAME_DAMAGE_FLASH_MS;
-        g->player_airborne_ms = TOY_GAME_AIRBORNE_MS;
-        g->player_airborne_y = 0;
-        g->player_vertical_velocity = TOY_GAME_AIRBORNE_VELOCITY;
-        g->player_knockback_x = dx; g->player_knockback_z = dz;
-        g->player_control_disabled = 1;
+        apply_knockback = g->player_knockback_cooldown_ms <= 0;
+        if (apply_knockback) {
+            g->player_airborne_ms = TOY_GAME_AIRBORNE_MS;
+            g->player_airborne_y = 0;
+            g->player_vertical_velocity = TOY_GAME_AIRBORNE_VELOCITY;
+            g->player_knockback_x = dx; g->player_knockback_z = dz;
+            g->player_control_disabled = 1;
+            g->player_knockback_cooldown_ms =
+                TOY_GAME_PLAYER_KNOCKBACK_COOLDOWN_MS;
+        }
         return 1;
     }
     if (kind == TOY_GAME_ENTITY_ACTOR) {
         struct toy_game_actor *a;
+        int apply_knockback;
         if (index < 0 || index >= TOY_GAME_MAX_ACTORS) return 0;
         a = &g->actors[index];
         if (!a->active || a->state != TOY_GAME_ACTOR_ALIVE) return 0;
@@ -3351,15 +3364,21 @@ static int apply_entity_impact_with_knockback(struct toy_game *g, int kind,
             a->knockback_x = 0;
             a->knockback_z = 0;
         } else {
-            a->control_disabled = 1;
-            a->airborne_ms = TOY_GAME_AIRBORNE_MS;
-            a->airborne_y = 0;
-            a->vertical_velocity = TOY_GAME_AIRBORNE_VELOCITY;
-            a->knockback_x = dx;
-            a->knockback_z = dz;
-            push_player_impulse_event(g, a, dx, dz,
-                                      a->vertical_velocity, a->airborne_ms,
-                                      a->airborne_y);
+            apply_knockback = a->kind != TOY_GAME_ACTOR_PLAYER ||
+                              a->knockback_cooldown_ms <= 0;
+            if (apply_knockback) {
+                a->control_disabled = 1;
+                a->airborne_ms = TOY_GAME_AIRBORNE_MS;
+                a->airborne_y = 0;
+                a->vertical_velocity = TOY_GAME_AIRBORNE_VELOCITY;
+                a->knockback_x = dx;
+                a->knockback_z = dz;
+                a->knockback_cooldown_ms =
+                    TOY_GAME_PLAYER_KNOCKBACK_COOLDOWN_MS;
+                push_player_impulse_event(g, a, dx, dz,
+                                          a->vertical_velocity, a->airborne_ms,
+                                          a->airborne_y);
+            }
         }
         return 1;
     }
@@ -3489,6 +3508,8 @@ static void update_charger(struct toy_game *g, struct toy_game_enemy *e,
         /* 沿锁定直线持续冲锋；同一轮可连续撞到多个敌人。 */
         charger_hit_entities(g, e);
         if (dist <= TOY_GAME_CHARGER_IMPACT_RANGE) {
+            int player_knockback_ready =
+                g->player_knockback_cooldown_ms <= 0;
             /* A target is launched by the impact, so do not damage the same
              * player again until they have landed.  The charge itself keeps
              * moving for its configured duration. */
@@ -3496,7 +3517,9 @@ static void update_charger(struct toy_game *g, struct toy_game_enemy *e,
                 if (toy_game_apply_entity_impact(
                         g, TOY_GAME_ENTITY_PLAYER, 0,
                         dx, dz, TOY_GAME_CHARGER_DAMAGE))
-                    push_enemy_from_player(g, e, TOY_GAME_CHARGER_KNOCKBACK);
+                    if (player_knockback_ready)
+                        push_enemy_from_player(g, e,
+                                               TOY_GAME_CHARGER_KNOCKBACK);
             } else if (target_kind == 1 && target_index >= 0 &&
                        target_index < TOY_GAME_MAX_ACTORS &&
                        !(e->ability.charge_hit_actor_mask &
@@ -4831,6 +4854,11 @@ void toy_game_update_weapon_held(struct toy_game *g,
         g->damage_flash_ms -= dt_ms;
         if (g->damage_flash_ms < 0) g->damage_flash_ms = 0;
     }
+    if (g->player_knockback_cooldown_ms > 0) {
+        g->player_knockback_cooldown_ms -= dt_ms;
+        if (g->player_knockback_cooldown_ms < 0)
+            g->player_knockback_cooldown_ms = 0;
+    }
 
     /* 换弹 */
     if (g->reloading) {
@@ -5307,6 +5335,13 @@ void toy_game_update_held(struct toy_game *g,
     unsigned int old_fire_seq;
     int old_reloading;
     if (g->state != TOY_GAME_PLAYING) return;
+    for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
+        if (g->actors[i].kind != TOY_GAME_ACTOR_PLAYER ||
+            g->actors[i].knockback_cooldown_ms <= 0) continue;
+        g->actors[i].knockback_cooldown_ms -= dt_ms;
+        if (g->actors[i].knockback_cooldown_ms < 0)
+            g->actors[i].knockback_cooldown_ms = 0;
+    }
     old_fire_seq = g->fire_seq;
     old_reloading = g->reloading;
     toy_game_update_weapon_held(g, keys_pressed, fire_pressed, fire_held,

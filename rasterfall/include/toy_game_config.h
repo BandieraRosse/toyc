@@ -62,6 +62,7 @@
 #define TOY_CONFIG_AIRBORNE_GRAVITY            10  /* 空中重力 */
 #define TOY_CONFIG_FALL_TERMINAL_VELOCITY     120  /* 最大单逻辑步下落速度 */
 #define TOY_CONFIG_CHARGER_KNOCKBACK         1050  /* Charger 击退强度 */
+#define TOY_CONFIG_PLAYER_KNOCKBACK_COOLDOWN_MS 5000 /* 玩家击飞冷却 */
 
 /* Pistol: magazine, reserve, cooldown, reload, automatic, pellets, spread, slot, damage. */
 #define TOY_CONFIG_PISTOL_MAG                  15  /* 弹匣容量 */
