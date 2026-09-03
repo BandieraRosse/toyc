@@ -3910,25 +3910,16 @@ static int render_platform(struct toy_renderer *renderer,
                            const struct camera *camera,
                            const struct toy_map_draw *platform)
 {
-    struct vec3 a, b, c, d, base_a, base_b, base_c, base_d;
+    struct vec3 a, b, c, d;
     int y = -900 + platform->e;
     a.x = platform->a; a.y = y; a.z = platform->c;
     b.x = platform->b; b.y = y; b.z = platform->c;
     c.x = platform->b; c.y = y; c.z = platform->d;
     d.x = platform->a; d.y = y; d.z = platform->d;
-    base_a = a; base_a.y = -900;
-    base_b = b; base_b.y = -900;
-    base_c = c; base_c.y = -900;
-    base_d = d; base_d.y = -900;
-    return draw_quad(renderer, camera, &a, &b, &c, &d, platform->color) +
-           draw_quad(renderer, camera, &base_a, &base_b, &b, &a,
-                     mix_color(platform->color, 0x10151D, 1, 3)) +
-           draw_quad(renderer, camera, &base_b, &base_c, &c, &b,
-                     mix_color(platform->color, 0x10151D, 1, 3)) +
-           draw_quad(renderer, camera, &base_c, &base_d, &d, &c,
-                     mix_color(platform->color, 0x10151D, 1, 3)) +
-           draw_quad(renderer, camera, &base_d, &base_a, &a, &d,
-                     mix_color(platform->color, 0x10151D, 1, 3));
+    /* A platform is a walkable surface, not a volumetric wall.  Render only
+     * its top so a large roof/platform used above an air gate cannot turn
+     * into an opaque wall from the side. */
+    return draw_quad(renderer, camera, &a, &b, &c, &d, platform->color);
 }
 
 static int render_scene(struct toy_renderer *renderer, const struct camera *camera)
