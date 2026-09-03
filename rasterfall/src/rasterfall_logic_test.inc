@@ -1178,25 +1178,38 @@ static int run_logic_test(void)
                     &game, 1150, 0, 100, 0) ||
                 toy_game_position_blocked_at_height(
                     &game, 700, 0, 100, 200)) return 177;
-            /* 坡尾可通过相互重叠、单级不超过 step height 的承接面
-             * 登上实体盒顶；玩家圆不能在坡面完整支撑结束处卡住。 */
+            /* 墙顶面覆盖完整实体，并在坡尾按玩家半径精确衔接：上下坡
+             * 都不能卡边，沿墙方向离开坡口后也必须继续受顶部支撑。 */
             {
                 struct toy_game_platform ramp_top[2] = {
                     { -1000, 1000, -15000, -5900, 0,
-                      TOY_GAME_GROUND_RAMP_Z, 3960 },
-                    { -1000, 1000, -6620, -5340, 3900,
+                      TOY_GAME_GROUND_RAMP_Z, 3979 },
+                    { -4180, 3180, -6260, -5520, 3900,
                       TOY_GAME_GROUND_FLAT, 0 }
                 };
                 struct toy_game_box wall_top = {
-                    -1000, 1000, -5900, -5700, 0, 3900
+                    -4000, 3000, -5900, -5700, 0, 3900
                 };
                 toy_game_set_world(&game, &wall_top, 1, 16000);
                 toy_game_set_platforms(&game, ramp_top, 2);
                 if (toy_game_position_blocked_at_height(
-                        &game, 0, -6224, TOY_GAME_PLAYER_RADIUS, 3784) ||
-                    toy_game_query_ground(&game, 0, -6224,
-                        TOY_GAME_PLAYER_RADIUS, 3784).support_y != 3900)
+                        &game, 0, -6080, TOY_GAME_PLAYER_RADIUS, 3881))
                     return 188;
+                if (toy_game_query_ground(&game, 0, -6080,
+                        TOY_GAME_PLAYER_RADIUS, 3881).support_y != 3900)
+                    return 193;
+                if (toy_game_position_blocked_at_height(
+                        &game, 0, -6090, TOY_GAME_PLAYER_RADIUS, 3900))
+                    return 194;
+                if (toy_game_query_ground(&game, 0, -6090,
+                        TOY_GAME_PLAYER_RADIUS, 3900).support_y < 3890)
+                    return 195;
+                if (toy_game_position_blocked_at_height(
+                        &game, -3500, -5700, TOY_GAME_PLAYER_RADIUS, 3900))
+                    return 196;
+                if (toy_game_query_ground(&game, -3500, -5700,
+                        TOY_GAME_PLAYER_RADIUS, 3900).support_y != 3900)
+                    return 197;
                 toy_game_set_world(&game, NULL, 0, 12000);
                 toy_game_set_platforms(&game, &ramp, 1);
             }

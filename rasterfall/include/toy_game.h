@@ -24,7 +24,7 @@
 #define TOY_GAME_CHARACTER_COUNT 4 /* stable IDs interpreted by presentation */
 #define TOY_GAME_REMOTE_ACTOR_BASE \
     (TOY_GAME_MAX_ACTORS - TOY_GAME_MAX_PLAYERS)
-#define TOY_GAME_MAX_PLATFORMS  16
+#define TOY_GAME_MAX_PLATFORMS  64
 #define TOY_GAME_AMMO_INFINITE  (-1)
 #define TOY_GAME_BITE_MS        1000
 #define TOY_GAME_BITE_DAMAGE    2
