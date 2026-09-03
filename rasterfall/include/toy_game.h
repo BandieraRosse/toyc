@@ -24,7 +24,7 @@
 #define TOY_GAME_CHARACTER_COUNT 4 /* stable IDs interpreted by presentation */
 #define TOY_GAME_REMOTE_ACTOR_BASE \
     (TOY_GAME_MAX_ACTORS - TOY_GAME_MAX_PLAYERS)
-#define TOY_GAME_MAX_PLATFORMS  64
+#define TOY_GAME_MAX_PRIMITIVES 128
 #define TOY_GAME_AMMO_INFINITE  (-1)
 #define TOY_GAME_BITE_MS        1000
 #define TOY_GAME_BITE_DAMAGE    2
@@ -283,6 +283,26 @@ struct toy_game_player_impulse_event {
 
 /* 碰撞/命中共用的 xz 平面轴对齐盒（与房间障碍物同尺度） */
 struct toy_game_box { int minx, maxx, minz, maxz, miny, maxy; };
+enum toy_map_primitive_shape {
+    TOY_MAP_PRIMITIVE_BOX,
+    TOY_MAP_PRIMITIVE_FLAT,
+    TOY_MAP_PRIMITIVE_RAMP_X,
+    TOY_MAP_PRIMITIVE_RAMP_Z
+};
+enum toy_map_primitive_flags {
+    TOY_MAP_PRIMITIVE_VISIBLE = 1 << 0,
+    TOY_MAP_PRIMITIVE_COLLISION = 1 << 1,
+    TOY_MAP_PRIMITIVE_WALKABLE = 1 << 2
+};
+struct toy_map_primitive {
+    int shape;
+    int minx, maxx, minz, maxz;
+    int base_y, surface_y0, surface_y1;
+    unsigned int flags, color;
+    char role[32];
+};
+/* Transitional constructors for standalone logic fixtures.  They are copied
+ * into primitive_storage and are never retained as runtime world state. */
 enum toy_game_ground_kind {
     TOY_GAME_GROUND_FLAT,
     TOY_GAME_GROUND_RAMP_X,
@@ -651,11 +671,10 @@ struct toy_game {
     int alarm_timer_ms;
 
     /* 世界（宿主所有，只读借用） */
-    const struct toy_game_box *world;
-    int world_count;
+    const struct toy_map_primitive *primitives;
+    int primitive_count;
+    struct toy_map_primitive primitive_storage[TOY_GAME_MAX_PRIMITIVES];
     int room_limit;
-    const struct toy_game_platform *platforms;
-    int platform_count;
 
     int nav_origin;
     int nav_cell_size;
@@ -740,13 +759,15 @@ void toy_game_apply_player_impulse(struct toy_game *g, int impulse_x,
 /* 对指定实体施加统一的伤害、打断和击飞规则。dx/dz 是相对冲击方向。 */
 int  toy_game_apply_entity_impact(struct toy_game *g, int kind, int index,
                                   int dx, int dz, int damage);
-void toy_game_set_world(struct toy_game *g,
-                        const struct toy_game_box *boxes,
+void toy_game_set_primitives(struct toy_game *g,
+                             const struct toy_map_primitive *primitives,
+                             int primitive_count, int room_limit);
+void toy_game_set_world(struct toy_game *g, const struct toy_game_box *boxes,
                         int box_count, int room_limit);
-void toy_game_rebuild_navigation(struct toy_game *g);
 void toy_game_set_platforms(struct toy_game *g,
                             const struct toy_game_platform *platforms,
                             int platform_count);
+void toy_game_rebuild_navigation(struct toy_game *g);
 struct toy_game_ground_query toy_game_query_ground(
     const struct toy_game *g, int x, int z, int radius, int current_ground_y);
 int  toy_game_position_blocked_at_height(const struct toy_game *g,

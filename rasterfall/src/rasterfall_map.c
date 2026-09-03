@@ -3,7 +3,6 @@
 
 void rasterfall_map_bind(struct rasterfall_map_state *map,
                          struct toy_map *level,
-                         struct toy_game_box *bounds,
                          struct toy_game_box *safe_rooms,
                          struct toy_game_box *spawn_zones,
                          int *spawn_count,
@@ -12,7 +11,6 @@ void rasterfall_map_bind(struct rasterfall_map_state *map,
                          int *interactable_count)
 {
     map->level = level;
-    map->bounds = bounds;
     map->safe_rooms = safe_rooms;
     map->spawn_zones = spawn_zones;
     map->spawn_count = spawn_count;
@@ -38,21 +36,12 @@ void rasterfall_map_prepare(struct rasterfall_map_state *map)
     if (!map) return;
     for (i = 0; i < TOY_MAP_MAX_BASES; i++) map->air_wall_indices[i] = -1;
     map->air_wall_count = 0;
-    for (i = 0; i < map->level->box_count; i++) {
-        map->bounds[i].minx = map->level->boxes[i].minx;
-        map->bounds[i].maxx = map->level->boxes[i].maxx;
-        map->bounds[i].minz = map->level->boxes[i].minz;
-        map->bounds[i].maxz = map->level->boxes[i].maxz;
-        map->bounds[i].miny = 0;
-        map->bounds[i].maxy = map->level->boxes[i].collision ?
-            map->level->boxes[i].height + 900 : 0;
-        if (!map->level->boxes[i].collision) {
-            map->bounds[i].minx = 1; map->bounds[i].maxx = 0;
-            map->bounds[i].minz = 1; map->bounds[i].maxz = 0;
-        }
-        if ((!strcmp(map->level->boxes[i].role, "air_gate") ||
-             !strncmp(map->level->boxes[i].role, "air_gate_", 9)) &&
-            map->level->boxes[i].collision && gate_count < TOY_MAP_MAX_BASES) {
+    for (i = 0; i < map->level->primitive_count; i++) {
+        struct toy_map_primitive *p = &map->level->primitives[i];
+        if ((!strcmp(p->role, "air_gate") ||
+             !strncmp(p->role, "air_gate_", 9)) &&
+            (p->flags & TOY_MAP_PRIMITIVE_COLLISION) &&
+            gate_count < TOY_MAP_MAX_BASES) {
             map->air_wall_indices[gate_count++] = i;
         }
     }
@@ -73,13 +62,10 @@ void rasterfall_map_set_air_walls(struct rasterfall_map_state *map, int enabled)
     for (i = 0; i < map->air_wall_count; i++) {
         index = map->air_wall_indices[i];
         if (index < 0) continue;
-        if (*map->air_walls_enabled) {
-            map->bounds[index].minx = map->level->boxes[index].minx;
-            map->bounds[index].maxx = map->level->boxes[index].maxx;
-        } else {
-            map->bounds[index].minx = 20000;
-            map->bounds[index].maxx = 19000;
-        }
+        if (*map->air_walls_enabled)
+            map->level->primitives[index].flags |= TOY_MAP_PRIMITIVE_COLLISION;
+        else
+            map->level->primitives[index].flags &= ~TOY_MAP_PRIMITIVE_COLLISION;
     }
 }
 

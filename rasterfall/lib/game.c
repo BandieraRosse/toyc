@@ -964,45 +964,81 @@ int toy_game_move_ai_actor(struct toy_game *g, int actor_index, int x, int z)
     return 1;
 }
 
-void toy_game_set_world(struct toy_game *g,
-                        const struct toy_game_box *boxes,
-                        int box_count, int room_limit)
+void toy_game_set_primitives(struct toy_game *g,
+                             const struct toy_map_primitive *primitives,
+                             int primitive_count, int room_limit)
 {
-    g->world = boxes;
-    g->world_count = box_count;
+    g->primitives = primitives;
+    g->primitive_count = primitive_count;
+    if (g->primitive_count < 0) g->primitive_count = 0;
+    if (g->primitive_count > TOY_GAME_MAX_PRIMITIVES)
+        g->primitive_count = TOY_GAME_MAX_PRIMITIVES;
     g->room_limit = room_limit;
     toy_game_rebuild_navigation(g);
+}
+
+void toy_game_set_world(struct toy_game *g, const struct toy_game_box *boxes,
+                        int box_count, int room_limit)
+{
+    int i, count = 0;
+    if (!g) return;
+    for (i = 0; i < g->primitive_count && count < TOY_GAME_MAX_PRIMITIVES; i++)
+        if (g->primitives[i].shape != TOY_MAP_PRIMITIVE_BOX)
+            g->primitive_storage[count++] = g->primitives[i];
+    for (i = 0; boxes && i < box_count && count < TOY_GAME_MAX_PRIMITIVES; i++) {
+        struct toy_map_primitive *p = &g->primitive_storage[count++];
+        memset(p, 0, sizeof(*p)); p->shape = TOY_MAP_PRIMITIVE_BOX;
+        p->minx=boxes[i].minx; p->maxx=boxes[i].maxx;
+        p->minz=boxes[i].minz; p->maxz=boxes[i].maxz;
+        p->base_y=boxes[i].miny; p->surface_y0=boxes[i].maxy;
+        p->surface_y1=boxes[i].maxy; p->flags=TOY_MAP_PRIMITIVE_COLLISION;
+    }
+    g->primitives=g->primitive_storage; g->primitive_count=count;
+    g->room_limit=room_limit; toy_game_rebuild_navigation(g);
 }
 
 void toy_game_set_platforms(struct toy_game *g,
                             const struct toy_game_platform *platforms,
                             int platform_count)
 {
-    g->platforms = platforms;
-    g->platform_count = platform_count;
-    if (g->platform_count < 0) g->platform_count = 0;
-    if (g->platform_count > TOY_GAME_MAX_PLATFORMS)
-        g->platform_count = TOY_GAME_MAX_PLATFORMS;
+    int i, count = 0;
+    if (!g) return;
+    for (i = 0; i < g->primitive_count && count < TOY_GAME_MAX_PRIMITIVES; i++)
+        if (g->primitives[i].shape == TOY_MAP_PRIMITIVE_BOX)
+            g->primitive_storage[count++] = g->primitives[i];
+    for (i = 0; platforms && i < platform_count && count < TOY_GAME_MAX_PRIMITIVES; i++) {
+        struct toy_map_primitive *p = &g->primitive_storage[count++];
+        memset(p,0,sizeof(*p));
+        p->shape=platforms[i].kind==TOY_GAME_GROUND_RAMP_X ? TOY_MAP_PRIMITIVE_RAMP_X :
+                 platforms[i].kind==TOY_GAME_GROUND_RAMP_Z ? TOY_MAP_PRIMITIVE_RAMP_Z :
+                 TOY_MAP_PRIMITIVE_FLAT;
+        p->minx=platforms[i].minx; p->maxx=platforms[i].maxx;
+        p->minz=platforms[i].minz; p->maxz=platforms[i].maxz;
+        p->surface_y0=platforms[i].height; p->surface_y1=platforms[i].end_height;
+        if (p->shape==TOY_MAP_PRIMITIVE_FLAT) p->surface_y1=p->surface_y0;
+        p->flags=TOY_MAP_PRIMITIVE_COLLISION|TOY_MAP_PRIMITIVE_WALKABLE;
+    }
+    g->primitives=g->primitive_storage; g->primitive_count=count;
     if (g->room_limit > 0) toy_game_rebuild_navigation(g);
 }
 
-static int ground_primitive_height(const struct toy_game_platform *p,
-                                   int x, int z)
+static int primitive_surface_height(const struct toy_map_primitive *p,
+                                    int x, int z)
 {
     int offset, length;
-    if (p->kind == TOY_GAME_GROUND_RAMP_X) {
+    if (p->shape == TOY_MAP_PRIMITIVE_RAMP_X) {
         length = p->maxx - p->minx;
         offset = x - p->minx;
-    } else if (p->kind == TOY_GAME_GROUND_RAMP_Z) {
+    } else if (p->shape == TOY_MAP_PRIMITIVE_RAMP_Z) {
         length = p->maxz - p->minz;
         offset = z - p->minz;
     } else {
-        return p->height;
+        return p->surface_y0;
     }
-    if (length <= 0) return p->height;
+    if (length <= 0) return p->surface_y0;
     if (offset < 0) offset = 0;
     if (offset > length) offset = length;
-    return p->height + (int)((long long)(p->end_height - p->height) *
+    return p->surface_y0 + (int)((long long)(p->surface_y1 - p->surface_y0) *
                              offset / length);
 }
 
@@ -1017,18 +1053,20 @@ struct toy_game_ground_query toy_game_query_ground(
     result.landing_y = 0;
     result.touches_current_support = 0;
     result.support_is_ramp = 0;
-    if (!g || !g->platforms) return result;
-    for (i = 0; i < g->platform_count; i++) {
-        const struct toy_game_platform *p = &g->platforms[i];
+    if (!g || !g->primitives) return result;
+    for (i = 0; i < g->primitive_count; i++) {
+        const struct toy_map_primitive *p = &g->primitives[i];
+        if (!(p->flags & TOY_MAP_PRIMITIVE_WALKABLE)) continue;
         int overlaps = x + radius > p->minx && x - radius < p->maxx &&
                        z + radius > p->minz && z - radius < p->maxz;
         int supported = x - radius >= p->minx && x + radius <= p->maxx &&
                         z - radius >= p->minz && z + radius <= p->maxz;
-        int height = ground_primitive_height(p, x, z);
+        int height = primitive_surface_height(p, x, z);
         if (radius == 0) overlaps = supported;
         if (supported && (!found_support || height > result.support_y)) {
             result.support_y = height;
-            result.support_is_ramp = p->kind != TOY_GAME_GROUND_FLAT;
+            result.support_is_ramp = p->shape == TOY_MAP_PRIMITIVE_RAMP_X ||
+                                     p->shape == TOY_MAP_PRIMITIVE_RAMP_Z;
             found_support = 1;
             result.has_support = 1;
         }
@@ -1037,13 +1075,14 @@ struct toy_game_ground_query toy_game_query_ground(
             found_landing = 1;
             result.has_landing = 1;
         }
-        if (overlaps && (p->height == current_ground_y ||
-                         p->end_height == current_ground_y ||
-                         (p->kind != TOY_GAME_GROUND_FLAT &&
-                          current_ground_y >= (p->height < p->end_height ?
-                              p->height : p->end_height) &&
-                          current_ground_y <= (p->height > p->end_height ?
-                              p->height : p->end_height))))
+        if (overlaps && (p->surface_y0 == current_ground_y ||
+                         p->surface_y1 == current_ground_y ||
+                         ((p->shape == TOY_MAP_PRIMITIVE_RAMP_X ||
+                           p->shape == TOY_MAP_PRIMITIVE_RAMP_Z) &&
+                          current_ground_y >= (p->surface_y0 < p->surface_y1 ?
+                              p->surface_y0 : p->surface_y1) &&
+                          current_ground_y <= (p->surface_y0 > p->surface_y1 ?
+                              p->surface_y0 : p->surface_y1))))
             result.touches_current_support = 1;
     }
     return result;
@@ -1052,25 +1091,27 @@ struct toy_game_ground_query toy_game_query_ground(
 static int ground_has_ramp_surface_transition(
     const struct toy_game *g, int x, int z, int radius,
     const struct toy_game_ground_query *ground,
-    const struct toy_game_platform *surface)
+    const struct toy_map_primitive *surface)
 {
     int i;
     if (!g || !ground || !surface || !ground->has_support ||
         !ground->support_is_ramp ||
-        surface->kind != TOY_GAME_GROUND_FLAT)
+        surface->shape != TOY_MAP_PRIMITIVE_FLAT)
         return 0;
-    for (i = 0; i < g->platform_count; i++) {
-        const struct toy_game_platform *ramp = &g->platforms[i];
+    for (i = 0; i < g->primitive_count; i++) {
+        const struct toy_map_primitive *ramp = &g->primitives[i];
         int supported, endpoint_delta;
-        if (ramp->kind == TOY_GAME_GROUND_FLAT) continue;
+        if (!(ramp->flags & TOY_MAP_PRIMITIVE_WALKABLE) ||
+            (ramp->shape != TOY_MAP_PRIMITIVE_RAMP_X &&
+             ramp->shape != TOY_MAP_PRIMITIVE_RAMP_Z)) continue;
         supported = x - radius >= ramp->minx &&
                     x + radius <= ramp->maxx &&
                     z - radius >= ramp->minz &&
                     z + radius <= ramp->maxz;
-        if (!supported || ground_primitive_height(ramp, x, z) !=
+        if (!supported || primitive_surface_height(ramp, x, z) !=
                               ground->support_y)
             continue;
-        endpoint_delta = ramp->end_height - surface->height;
+        endpoint_delta = ramp->surface_y1 - surface->surface_y0;
         if (endpoint_delta < 0) endpoint_delta = -endpoint_delta;
         if (endpoint_delta <= TOY_CONFIG_GROUND_STEP_HEIGHT)
             return 1;
@@ -1095,31 +1136,35 @@ static int position_blocked_at_height(const struct toy_game *g,
     ground = toy_game_query_ground(g, x, z, radius, ground_height);
     if (ground.has_support && ground.support_y > collision_height)
         collision_height = ground.support_y;
-    for (i = 0; i < g->world_count; i++) {
-        const struct toy_game_box *b = &g->world[i];
+    for (i = 0; i < g->primitive_count; i++) {
+        const struct toy_map_primitive *b = &g->primitives[i];
+        if (!(b->flags & TOY_MAP_PRIMITIVE_COLLISION) ||
+            b->shape != TOY_MAP_PRIMITIVE_BOX) continue;
         /* Finite boxes are ordinary solid cuboids: once the player's feet
          * reach the top, the box no longer blocks horizontal movement.  A
          * zero vertical range preserves the legacy fixture behavior for
          * standalone tests that only provide x/z boxes. */
-        if (b->maxy > b->miny && collision_height >= b->maxy) continue;
+        if (b->surface_y0 > b->base_y && collision_height >= b->surface_y0) continue;
         if (x + radius > b->minx && x - radius < b->maxx &&
             z + radius > b->minz && z - radius < b->maxz) return 1;
     }
     /* Callers that have not supplied terrain retain the old standalone-game
      * fixture behavior.  A loaded map always supplies its ground primitive
      * array (possibly with zero entries), where absence of support is solid. */
-    if (require_ground_support && g->platforms && !ground.has_support) return 1;
-    for (i = 0; i < g->platform_count; i++) {
-        const struct toy_game_platform *p = &g->platforms[i];
-        if (p->kind != TOY_GAME_GROUND_FLAT) {
+    if (require_ground_support && g->primitives && !ground.has_support) return 1;
+    for (i = 0; i < g->primitive_count; i++) {
+        const struct toy_map_primitive *p = &g->primitives[i];
+        if (!(p->flags & TOY_MAP_PRIMITIVE_COLLISION) ||
+            p->shape == TOY_MAP_PRIMITIVE_BOX) continue;
+        if (p->shape != TOY_MAP_PRIMITIVE_FLAT) {
             if (x + radius > p->minx && x - radius < p->maxx &&
                 z + radius > p->minz && z - radius < p->maxz &&
-                ground_primitive_height(p, x, z) >
+                primitive_surface_height(p, x, z) >
                     ground_height + TOY_CONFIG_GROUND_STEP_HEIGHT)
                 return 1;
             continue;
         }
-        if (p->height <= ground_height + TOY_CONFIG_GROUND_STEP_HEIGHT)
+        if (p->surface_y0 <= ground_height + TOY_CONFIG_GROUND_STEP_HEIGHT)
             continue;
         /* A platform whose top meets the end of the supporting ramp is the
          * ramp's continuation, not an early vertical obstacle.  Keep walking
@@ -1328,8 +1373,9 @@ int toy_game_position_blocked(const struct toy_game *g,
     int i;
     if (x - radius < -g->room_limit || x + radius > g->room_limit ||
         z - radius < -g->room_limit || z + radius > g->room_limit) return 1;
-    for (i = 0; i < g->world_count; i++) {
-        const struct toy_game_box *b = &g->world[i];
+    for (i = 0; i < g->primitive_count; i++) {
+        const struct toy_map_primitive *b = &g->primitives[i];
+        if (!(b->flags & TOY_MAP_PRIMITIVE_COLLISION)) continue;
         if (x + radius > b->minx && x - radius < b->maxx &&
             z + radius > b->minz && z - radius < b->maxz) return 1;
     }
@@ -1464,7 +1510,7 @@ void toy_game_rebuild_navigation(struct toy_game *g)
             {
                 struct toy_game_ground_query ground =
                     toy_game_query_ground(g, px, pz, 0, 0);
-                g->nav_walkable[index] = (!g->platforms || ground.has_support) &&
+                g->nav_walkable[index] = (!g->primitives || ground.has_support) &&
                                          !nav_position_blocked(g, px, pz);
                 g->nav_ground_y[index] = ground.support_y;
             }
@@ -2494,9 +2540,16 @@ static int enemy_has_line_of_sight(const struct toy_game *g,
                                    int target_x, int target_z)
 {
     int i;
-    for (i = 0; i < g->world_count; i++)
-        if (segment_hits_box(e->x, e->z, target_x, target_z, &g->world[i]))
+    for (i = 0; i < g->primitive_count; i++) {
+        const struct toy_map_primitive *p = &g->primitives[i];
+        struct toy_game_box box;
+        if (!(p->flags & TOY_MAP_PRIMITIVE_COLLISION) ||
+            p->shape != TOY_MAP_PRIMITIVE_BOX) continue;
+        box.minx=p->minx; box.maxx=p->maxx; box.minz=p->minz; box.maxz=p->maxz;
+        box.miny=p->base_y; box.maxy=p->surface_y0;
+        if (segment_hits_box(e->x, e->z, target_x, target_z, &box))
             return 0;
+    }
     return 1;
 }
 
@@ -2505,10 +2558,7 @@ static int enemy_target_reachable(const struct toy_game *g,
                                   int x, int z)
 {
     int from, to;
-    /* A few legacy unit cases construct a world by directly clearing
-     * world_count.  Keep those freestanding fixtures correct while normal
-     * gameplay uses explicit topology rebuilds on state changes. */
-    if (g->nav_width <= 0 || g->world_count == 0)
+    if (g->nav_width <= 0 || g->primitive_count == 0)
         toy_game_rebuild_navigation((struct toy_game *)g);
     from = nav_component_at_position(g, e->x, e->z);
     to = nav_component_at_position(g, x, z);
@@ -2692,8 +2742,13 @@ static int actor_segment_blocked(const struct toy_game *g,
                                  int x0, int z0, int x1, int z1, int padding)
 {
     int i;
-    for (i = 0; i < g->world_count; i++) {
-        struct toy_game_box box = g->world[i];
+    for (i = 0; i < g->primitive_count; i++) {
+        const struct toy_map_primitive *p = &g->primitives[i];
+        struct toy_game_box box;
+        if (!(p->flags & TOY_MAP_PRIMITIVE_COLLISION) ||
+            p->shape != TOY_MAP_PRIMITIVE_BOX) continue;
+        box.minx=p->minx; box.maxx=p->maxx; box.minz=p->minz; box.maxz=p->maxz;
+        box.miny=p->base_y; box.maxy=p->surface_y0;
         box.minx -= padding; box.maxx += padding;
         box.minz -= padding; box.maxz += padding;
         if (segment_hits_box(x0, z0, x1, z1, &box)) return i + 1;
@@ -2867,7 +2922,7 @@ static void update_player_special_motion(struct toy_game *g, int dt_ms)
                                        TOY_GAME_PLAYER_RADIUS,
                                        g->player_ground_y);
         landing_ground = ground.landing_y;
-        if ((!g->platforms || ground.has_landing) &&
+        if ((!g->primitives || ground.has_landing) &&
             g->player_vertical_velocity < 0 &&
             g->player_airborne_y <=
                 landing_ground - g->player_ground_y) {
@@ -3904,10 +3959,16 @@ static int fire_ray(struct toy_game *g, int source_x, int source_z,
     long long world_t = (long long)range << 20; /* 世界距离定点 */
     *out_enemy_index = -1;
     *out_damage = 0;
-    for (i = 0; i < g->world_count; i++) {
+    for (i = 0; i < g->primitive_count; i++) {
+        const struct toy_map_primitive *p = &g->primitives[i];
+        struct toy_game_box box;
         long long entry_u;
+        if (!(p->flags & TOY_MAP_PRIMITIVE_COLLISION) ||
+            p->shape != TOY_MAP_PRIMITIVE_BOX) continue;
+        box.minx=p->minx; box.maxx=p->maxx; box.minz=p->minz; box.maxz=p->maxz;
+        box.miny=p->base_y; box.maxy=p->surface_y0;
         if (ray_box_entry(source_x, source_z, sy, cy,
-                          &g->world[i], &entry_u)) {
+                          &box, &entry_u)) {
             long long entry_w = entry_u * 1024;
             if (entry_w < world_t) world_t = entry_w;
         }
@@ -3927,9 +3988,15 @@ static int fire_ray(struct toy_game *g, int source_x, int source_z,
         if ((long long)t << 20 >= world_t) continue;   /* 墙先于敌人 */
         hit_x = source_x + (sy * t) / 1024;
         hit_z = source_z + (cy * t) / 1024;
-        for (j = 0; j < g->world_count; j++) {
+        for (j = 0; j < g->primitive_count; j++) {
+            const struct toy_map_primitive *p = &g->primitives[j];
+            struct toy_game_box box;
+            if (!(p->flags & TOY_MAP_PRIMITIVE_COLLISION) ||
+                p->shape != TOY_MAP_PRIMITIVE_BOX) continue;
+            box.minx=p->minx; box.maxx=p->maxx; box.minz=p->minz; box.maxz=p->maxz;
+            box.miny=p->base_y; box.maxy=p->surface_y0;
             if (segment_hits_box(source_x, source_z, hit_x, hit_z,
-                                 &g->world[j])) {
+                                 &box)) {
                 occluded = 1;
                 break;
             }
@@ -5038,9 +5105,16 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
             continue;
         dist = (int)isqrt(d2);
         if (dist <= 0) continue;
-        for (j = 0; j < g->world_count; j++)
+        for (j = 0; j < g->primitive_count; j++) {
+            const struct toy_map_primitive *p = &g->primitives[j];
+            struct toy_game_box box;
+            if (!(p->flags & TOY_MAP_PRIMITIVE_COLLISION) ||
+                p->shape != TOY_MAP_PRIMITIVE_BOX) continue;
+            box.minx=p->minx; box.maxx=p->maxx; box.minz=p->minz; box.maxz=p->maxz;
+            box.miny=p->base_y; box.maxy=p->surface_y0;
             if (segment_hits_box(actor->x, actor->z, e->x, e->z,
-                                 &g->world[j])) { blocked = 1; break; }
+                                 &box)) { blocked = 1; break; }
+        }
         if (blocked) continue;
         if (target < 0 || dist < best_dist) {
             target = i; best_dist = dist;

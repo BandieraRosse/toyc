@@ -2246,12 +2246,13 @@ static void bake_static_lightmap(void)
                  (BAKED_LM_H * 2);
         int light = 270 + (wx - level_map.minx) * 4 /
                     (level_map.maxx - level_map.minx ? level_map.maxx - level_map.minx : 1);
-        for (i = 0; i < level_map.box_count; i++) {
-            const struct toy_map_box *b = &level_map.boxes[i];
+        for (i = 0; i < level_map.primitive_count; i++) {
+            const struct toy_map_primitive *b = &level_map.primitives[i];
             int dx = wx < b->minx ? b->minx - wx : wx > b->maxx ? wx - b->maxx : 0;
             int dz = wz < b->minz ? b->minz - wz : wz > b->maxz ? wz - b->maxz : 0;
             int dist = dx > dz ? dx : dz;
-            if (!b->air && dist < 900)
+            if (b->shape == TOY_MAP_PRIMITIVE_BOX &&
+                strncmp(b->role, "air_gate", 8) && dist < 900)
                 light -= (900 - dist) * 24 / 900;
         }
         /* Warm point light baked from the small lamp in the east corner. */
@@ -3884,7 +3885,7 @@ static int render_ramp(struct toy_renderer *renderer,
     b.x = ramp->b; b.z = ramp->c;
     c.x = ramp->b; c.z = ramp->d;
     d.x = ramp->a; d.z = ramp->d;
-    if (ramp->style == TOY_GAME_GROUND_RAMP_X) {
+    if (ramp->style == TOY_MAP_PRIMITIVE_RAMP_X) {
         a.y = low; b.y = high; c.y = high; d.y = low;
     } else {
         a.y = low; b.y = low; c.y = high; d.y = high;
@@ -3960,21 +3961,18 @@ static int render_scene(struct toy_renderer *renderer, const struct camera *came
             pixels+=draw_position_quad_tex(renderer,camera,&a,&b,&c,&d,x->texture_u*UV_ONE,x->texture_v*UV_ONE,x->color);
         } else if (x->type==TOY_MAP_DRAW_RAMP) {
             pixels += render_ramp(renderer, camera, x);
+        } else if (x->type==TOY_MAP_DRAW_BOX) {
+            struct box obstacle={x->a,x->b,x->c,x->d,x->e-900,x->color};
+            if (!strncmp(x->text, "air_gate_", 9)) {
+                if (active_session->air_walls_enabled)
+                    pixels += draw_box_alpha(renderer, camera, &obstacle, 48);
+            } else {
+                pixels += draw_box(renderer,camera,&obstacle);
+            }
         } else if (x->type==TOY_MAP_DRAW_LABEL) {
             struct toy_game_box zone={x->a,x->b,x->c,x->d,0,0}; draw_world_label(renderer,camera,&zone,x->text,x->color);
         } else if (x->type==TOY_MAP_DRAW_SIGN) {
             pixels += render_world_sign(renderer, camera, x);
-        }
-    }
-    for (int i=0; i<level_map.box_count; i++) if (level_map.boxes[i].visible) {
-        struct toy_map_box *map_box = &level_map.boxes[i];
-        struct box obstacle={map_box->minx,map_box->maxx,map_box->minz,
-                             map_box->maxz,map_box->height,map_box->color};
-        if (!strncmp(map_box->role, "air_gate_", 9)) {
-            if (active_session->air_walls_enabled)
-                pixels += draw_box_alpha(renderer, camera, &obstacle, 48);
-        } else {
-            pixels += draw_box(renderer,camera,&obstacle);
         }
     }
     scene_stats.map_us = render_monotonic_us() - phase_start;

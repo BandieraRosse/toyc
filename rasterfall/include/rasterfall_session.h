@@ -99,7 +99,6 @@ enum rasterfall_pose_debug_action { RASTERFALL_POSE_DEBUG_NONE, RASTERFALL_POSE_
 struct rasterfall_session {
     struct toy_map level;
     struct toy_game game_state;
-    struct toy_game_box bounds[TOY_MAP_MAX_BOXES];
     struct toy_game_box safe_rooms[TOY_MAP_MAX_ZONES];
     struct toy_game_box spawn_zones[TOY_MAP_MAX_ZONES];
     int spawn_count;

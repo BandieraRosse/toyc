@@ -502,7 +502,7 @@ static int run_logic_test(void)
     /* 死亡重开仍须恢复世界碰撞配置并能推进首波。 */
     game.state = TOY_GAME_OVER;
     rasterfall_session_reset(&session, &camera, 2);
-    if (game.world_count != level_map.box_count ||
+    if (game.primitive_count != level_map.primitive_count ||
         game.room_limit != level_map.room_limit ||
         toy_game_position_blocked(&game, camera.x, camera.z,
                                   RASTERFALL_PLAYER_RADIUS)) {
@@ -730,7 +730,9 @@ static int run_logic_test(void)
         int first_wave = 0, first_kills = 0, first_hp = 0;
         for (pass = 0; pass < 2; pass++) {
             toy_game_init(&smoke, 1234);
-            toy_game_set_world(&smoke, map_bounds, level_map.box_count, level_map.room_limit);
+            toy_game_set_primitives(&smoke, level_map.primitives,
+                                    level_map.primitive_count,
+                                    level_map.room_limit);
             smoke.px = 0;
             smoke.pz = -5000;
             for (i = 0; i < 500; i++)
@@ -947,7 +949,7 @@ static int run_logic_test(void)
         struct toy_game reuse_test;
         struct toy_game_box point = {0, 0, 300, 300, 0, 0};
         toy_game_init(&reuse_test, 47);
-        reuse_test.world_count = 0;
+        reuse_test.primitive_count = 0;
         reuse_test.room_limit = 12000;
         reuse_test.px = 0; reuse_test.pz = 0;
         if (toy_game_spawn_horde_type(&reuse_test, TOY_GAME_ENEMY_COMMON, 1, 1,
@@ -974,7 +976,7 @@ static int run_logic_test(void)
         game.campaign_mode = 0;
         game.to_spawn = 0;
         game.safe_room_count = 0;
-        game.world_count = 0;
+        game.primitive_count = 0;
         game.state = TOY_GAME_PLAYING;
         game.player_down = 0;
         game.player_control_disabled = 0;
@@ -1002,7 +1004,7 @@ static int run_logic_test(void)
     /* Smoker 对 AI 队友的舌头在队友倒地前不因固定时长自动释放。 */
     {
         toy_game_init(&game, 43);
-        game.world_count = 0;
+        game.primitive_count = 0;
         game.room_limit = 12000;
         game.px = 10000; game.pz = 0;
         game.player_down = 0;
@@ -1027,7 +1029,7 @@ static int run_logic_test(void)
     /* Charger 撞到 AI 时，AI 也必须进入带垂直速度的空中状态。 */
     {
         toy_game_init(&game, 44);
-        game.world_count = 0;
+        game.primitive_count = 0;
         game.room_limit = 12000;
         game.px = 10000; game.pz = 0;
         toy_game_set_ai_teammate(&game, 1, 0, 300, "AI");
@@ -1055,7 +1057,7 @@ static int run_logic_test(void)
         game.campaign_mode = 0;
         game.to_spawn = 0;
         game.safe_room_count = 0;
-        game.world_count = 0;
+        game.primitive_count = 0;
         game.state = TOY_GAME_PLAYING;
         game.player_down = 0;
         game.player_control_disabled = 0;
@@ -1079,7 +1081,7 @@ static int run_logic_test(void)
     /* 统一实体冲击：AI 队友与普通实体共享击飞状态，落地后回到部署点。 */
     {
         toy_game_init(&game, 42);
-        game.world_count = 0;
+        game.primitive_count = 0;
         game.room_limit = 12000;
         game.campaign_mode = 0;
         game.to_spawn = 0;
@@ -1102,7 +1104,7 @@ static int run_logic_test(void)
     {
         long long dx, dz, dist2;
         toy_game_init(&game, 45);
-        game.world_count = 0;
+        game.primitive_count = 0;
         game.room_limit = 12000;
         game.enemies_alive = 2;
         game.enemies[0].active = 1;
@@ -1125,7 +1127,7 @@ static int run_logic_test(void)
     /* 玩家跳跃复用现有空中状态，落地后才能再次起跳。 */
     {
         toy_game_init(&game, 46);
-        game.world_count = 0;
+        game.primitive_count = 0;
         game.room_limit = 12000;
         if (!toy_game_jump_with_velocity(&game, 10, 0) ||
             game.player_airborne_ms <= 0 ||
@@ -1146,7 +1148,7 @@ static int run_logic_test(void)
         };
         struct toy_game_ground_query ground;
         toy_game_init(&game, 47);
-        game.world_count = 0;
+        game.primitive_count = 0;
         game.room_limit = 12000;
         toy_game_set_platforms(&game, terrain, 2);
         ground = toy_game_query_ground(&game, 300, 0,
@@ -1249,7 +1251,7 @@ static int run_logic_test(void)
                 };
                 int low_cell, high_cell;
                 toy_game_init(&nav_game, 48);
-                nav_game.world_count = 0;
+                nav_game.primitive_count = 0;
                 nav_game.room_limit = 1200;
                 toy_game_set_platforms(&nav_game, &steep, 1);
                 low_cell = ((150 - nav_game.nav_origin) /
@@ -1428,7 +1430,7 @@ static int run_logic_test(void)
         };
         int actor_index = TOY_GAME_REMOTE_ACTOR_BASE + 1;
         toy_game_init(&game, 49);
-        game.world_count = 0;
+        game.primitive_count = 0;
         game.room_limit = 12000;
         toy_game_set_platforms(&game, terrain, 2);
         if (toy_game_set_remote_player(&game, 2, 1, 0, 0, "REMOTE") !=
@@ -1658,7 +1660,7 @@ static int run_logic_test(void)
         };
         int actor_x;
         toy_game_init(&game, 48);
-        game.world_count = 0;
+        game.primitive_count = 0;
         game.room_limit = 12000;
         game.to_spawn = 0;
         toy_game_set_platforms(&game, terrain, 2);
@@ -1738,7 +1740,7 @@ static int run_logic_test(void)
         if (game.enemies[0].target_kind != 0) return 122;
 
         game.px = 3000; game.pz = 0;
-        game.world_count = 1;
+        game.primitive_count = 1;
         wall.minz = -6000; wall.maxz = 6000;
         toy_game_rebuild_navigation(&game);
         toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
@@ -1762,7 +1764,7 @@ static int run_logic_test(void)
     {
         int i, player_hp, ai_hp, base_hp, behind_hp;
         toy_game_init(&game, 84);
-        game.world_count = 0; game.room_limit = 12000; game.to_spawn = 0;
+        game.primitive_count = 0; game.room_limit = 12000; game.to_spawn = 0;
         game.px = 0; game.pz = 1200; /* 新起手距离内，旧 712 距离外 */
         memset(game.actors, 0, sizeof(game.actors));
         game.actors[0].active = 0;
@@ -1812,7 +1814,7 @@ static int run_logic_test(void)
     {
         int old_z;
         toy_game_init(&game, 86);
-        game.world_count = 0; game.room_limit = 12000; game.to_spawn = 0;
+        game.primitive_count = 0; game.room_limit = 12000; game.to_spawn = 0;
         game.px = 0; game.pz = 0;
         memset(game.enemies, 0, sizeof(game.enemies));
         game.enemies_alive = 1;
@@ -1828,7 +1830,7 @@ static int run_logic_test(void)
     /* Tank 击杀奖励独立于普通特感，固定为 50。 */
     {
         toy_game_init(&game, 85);
-        game.world_count = 0; game.room_limit = 12000; game.to_spawn = 0;
+        game.primitive_count = 0; game.room_limit = 12000; game.to_spawn = 0;
         memset(game.enemies, 0, sizeof(game.enemies));
         game.enemies_alive = 1;
         game.enemies[0].active = 1;
@@ -1880,7 +1882,7 @@ static int run_logic_test(void)
     {
         int actor_index;
         toy_game_init(&game, 152);
-        game.world_count = 0;
+        game.primitive_count = 0;
         actor_index = toy_game_set_remote_player(&game, 1, 1, 0, 0,
                                                  "REMOTE");
         if (actor_index < 0 || !toy_game_apply_entity_impact(
@@ -1895,7 +1897,7 @@ static int run_logic_test(void)
     /* Smoker 控制使用 generation：旧 END 不能清掉更新后的控制。 */
     {
         toy_game_init(&game, 154);
-        game.world_count = 0;
+        game.primitive_count = 0;
         game.room_limit = 12000;
         game.enemies[0].active = 1;
         game.enemies[0].x = 500;

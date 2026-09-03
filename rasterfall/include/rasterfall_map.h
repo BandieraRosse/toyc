@@ -7,7 +7,6 @@ struct rasterfall_interactable { int kind; int weapon; int x, z, y; };
 
 struct rasterfall_map_state {
     struct toy_map *level;
-    struct toy_game_box *bounds;
     struct toy_game_box *safe_rooms;
     struct toy_game_box *spawn_zones;
     int *spawn_count;
@@ -20,7 +19,6 @@ struct rasterfall_map_state {
 
 void rasterfall_map_bind(struct rasterfall_map_state *map,
                          struct toy_map *level,
-                         struct toy_game_box *bounds,
                          struct toy_game_box *safe_rooms,
                          struct toy_game_box *spawn_zones,
                          int *spawn_count,

@@ -63,6 +63,21 @@ static void add_draw(struct toy_map *m, int type, int a, int b, int c, int d,
     }
 }
 
+static struct toy_map_primitive *add_primitive(struct toy_map *m, int shape,
+    int minx, int maxx, int minz, int maxz, int base_y, int y0, int y1,
+    unsigned int flags, unsigned int col)
+{
+    struct toy_map_primitive *p;
+    if (m->primitive_count >= TOY_MAP_MAX_PRIMITIVES) return NULL;
+    p = &m->primitives[m->primitive_count++];
+    memset(p, 0, sizeof(*p));
+    p->shape = shape; p->minx = minx; p->maxx = maxx;
+    p->minz = minz; p->maxz = maxz; p->base_y = base_y;
+    p->surface_y0 = y0; p->surface_y1 = y1;
+    p->flags = flags; p->color = col;
+    return p;
+}
+
 int toy_map_load(const char *path, struct toy_map *m)
 {
     uint32_t size; unsigned char *data; char *line, *save, *kind;
@@ -89,22 +104,33 @@ int toy_map_load(const char *path, struct toy_map *m)
         else if(!strcmp(kind,"start") && get2(&p,&m->start_x,&m->start_z)==0){char *sy=word(&p),*cy=word(&p);if(sy&&cy){m->start_sy=number(sy,10);m->start_cy=number(cy,10);}}
         else if(!strcmp(kind,"box") && get4(&p,&a,&b,&c,&d)==0){
             char *h=word(&p),*co=word(&p),*opt;
-            struct toy_map_box *box;
-            if(!h||!co||m->box_count>=TOY_MAP_MAX_BOXES)continue;
-            box=&m->boxes[m->box_count++]; memset(box,0,sizeof(*box));
-            box->minx=a; box->maxx=b; box->minz=c; box->maxz=d;
-            box->height=number(h,10); box->color=color(co);
-            box->visible=1; box->collision=1;
+            struct toy_map_primitive *box;
+            unsigned int flags=TOY_MAP_PRIMITIVE_VISIBLE|TOY_MAP_PRIMITIVE_COLLISION;
+            int air=0, top;
+            if(!h||!co)continue;
+            top=number(h,10)+900;
+            box=add_primitive(m,TOY_MAP_PRIMITIVE_BOX,a,b,c,d,0,top,top,
+                              flags,color(co));
+            if(!box)continue;
             while ((opt=word(&p)) != NULL) {
                 if (!strcmp(opt,"air")) {
-                    box->air=1; box->visible=0; box->collision=1;
+                    air=1; box->flags&=~TOY_MAP_PRIMITIVE_VISIBLE;
+                    box->flags|=TOY_MAP_PRIMITIVE_COLLISION;
                     copy_role(box->role, "air_gate", TOY_MAP_ROLE_SIZE);
-                } else if (!strcmp(opt,"visible")) box->visible=1;
-                else if (!strcmp(opt,"hidden")) box->visible=0;
-                else if (!strcmp(opt,"collision")) box->collision=1;
-                else if (!strcmp(opt,"nocollision")) box->collision=0;
+                } else if (!strcmp(opt,"visible")) box->flags|=TOY_MAP_PRIMITIVE_VISIBLE;
+                else if (!strcmp(opt,"hidden")) box->flags&=~TOY_MAP_PRIMITIVE_VISIBLE;
+                else if (!strcmp(opt,"collision")) box->flags|=TOY_MAP_PRIMITIVE_COLLISION;
+                else if (!strcmp(opt,"nocollision")) box->flags&=~TOY_MAP_PRIMITIVE_COLLISION;
+                else if (!strcmp(opt,"walkable")) box->flags|=TOY_MAP_PRIMITIVE_WALKABLE;
+                else if (!strcmp(opt,"nowalkable")) box->flags&=~TOY_MAP_PRIMITIVE_WALKABLE;
                 else if (!strncmp(opt,"role=",5))
                     copy_role(box->role, opt+5, TOY_MAP_ROLE_SIZE);
+            }
+            if (box->flags & TOY_MAP_PRIMITIVE_VISIBLE) {
+                int draw_count = m->draw_count;
+                add_draw(m,TOY_MAP_DRAW_BOX,a,b,c,d,top,0,box->color,box->role);
+                if (m->draw_count > draw_count)
+                    m->draw[m->draw_count-1].style=air;
             }
         } else if(!strcmp(kind,"safe") && get4(&p,&a,&b,&c,&d)==0 && m->safe_count<TOY_MAP_MAX_ZONES){
             char *role=word(&p); int index=m->safe_count;
@@ -138,34 +164,37 @@ int toy_map_load(const char *path, struct toy_map *m)
                 get4(&p,&a,&b,&c,&d)==0){
             char *co=word(&p);
             int ground_only = !strcmp(kind,"ground");
-            add_draw(m,TOY_MAP_DRAW_FLOOR,a,b,c,d,0,0,color(co),NULL);
-            if (ground_only)
+            { int draw_count = m->draw_count;
+              add_draw(m,TOY_MAP_DRAW_FLOOR,a,b,c,d,0,0,color(co),NULL);
+              if (ground_only && m->draw_count > draw_count)
                 m->draw[m->draw_count-1].style = TOY_MAP_FLOOR_GROUND;
+            }
             /* A floor is both its visible paint and an explicit zero-height
              * ground primitive.  This keeps existing maps valid while the
              * world extent itself no longer implies a floor. */
-            if (m->platform_count < TOY_MAP_MAX_PLATFORMS) {
-                struct toy_game_platform *pl=&m->platforms[m->platform_count++];
-                pl->minx=a; pl->maxx=b; pl->minz=c; pl->maxz=d;
-                pl->height=0; pl->kind=TOY_GAME_GROUND_FLAT; pl->end_height=0;
-            }
+            add_primitive(m,TOY_MAP_PRIMITIVE_FLAT,a,b,c,d,0,0,0,
+                          TOY_MAP_PRIMITIVE_WALKABLE |
+                          (ground_only ? 0 : TOY_MAP_PRIMITIVE_VISIBLE),color(co));
         }
         else if(!strcmp(kind,"border") && get4(&p,&a,&b,&c,&d)==0){char *w=word(&p),*co=word(&p);if(w)add_draw(m,TOY_MAP_DRAW_BORDER,a,b,c,d,number(w,10),0,color(co),NULL);}
         else if(!strcmp(kind,"wall") && get4(&p,&a,&b,&c,&d)==0){char *h=word(&p),*co=word(&p);if(h)add_draw(m,TOY_MAP_DRAW_WALL,a,b,c,d,number(h,10),0,color(co),NULL);}
         else if(!strcmp(kind,"label") && get4(&p,&a,&b,&c,&d)==0){char *co=word(&p),*t=word(&p);add_draw(m,TOY_MAP_DRAW_LABEL,a,b,c,d,0,0,color(co),t);}
         else if(!strcmp(kind,"sign") && get4(&p,&a,&b,&c,&d)==0){char *y0=word(&p),*y1=word(&p),*co=word(&p),*t=rest_text(&p);if(y0&&y1&&co)add_draw(m,TOY_MAP_DRAW_SIGN,a,b,c,d,number(y0,10),number(y1,10),color(co),t);}
         else if(!strcmp(kind,"model") && get4(&p,&a,&b,&c,&d)==0){char *y0=word(&p),*y1=word(&p),*co=word(&p),*st=word(&p);if(y0&&y1){add_draw(m,TOY_MAP_DRAW_MODEL,a,b,c,d,number(y0,10),number(y1,10),color(co),NULL);if(st)m->draw[m->draw_count-1].style=number(st,10);}}
-        else if(!strcmp(kind,"platform") && m->platform_count<TOY_MAP_MAX_PLATFORMS){int h;if(get5(&p,&a,&b,&c,&d,&h)==0){struct toy_game_platform *pl=&m->platforms[m->platform_count++];pl->minx=a;pl->maxx=b;pl->minz=c;pl->maxz=d;pl->height=h;}}
-        else if(!strcmp(kind,"ramp") && m->platform_count<TOY_MAP_MAX_PLATFORMS && m->draw_count<TOY_MAP_MAX_DRAW){
+        else if(!strcmp(kind,"platform")){int h;if(get5(&p,&a,&b,&c,&d,&h)==0)add_primitive(m,TOY_MAP_PRIMITIVE_FLAT,a,b,c,d,0,h,h,TOY_MAP_PRIMITIVE_COLLISION|TOY_MAP_PRIMITIVE_WALKABLE,0);}
+        else if(!strcmp(kind,"ramp")){
             int h0,h1; char *s0=word(&p),*s1=word(&p),*s2=word(&p),*s3=word(&p),*lo=word(&p),*hi=word(&p),*axis=word(&p),*co=word(&p);
             if(!s0||!s1||!s2||!s3||!lo||!hi||!axis)continue;
             a=number(s0,10);b=number(s1,10);c=number(s2,10);d=number(s3,10);h0=number(lo,10);h1=number(hi,10);
             if((!strcmp(axis,"x")&&b>a)||(!strcmp(axis,"z")&&d>c)){
-                struct toy_game_platform *pl=&m->platforms[m->platform_count++];
-                pl->minx=a;pl->maxx=b;pl->minz=c;pl->maxz=d;pl->height=h0;pl->end_height=h1;
-                pl->kind=!strcmp(axis,"x")?TOY_GAME_GROUND_RAMP_X:TOY_GAME_GROUND_RAMP_Z;
-                add_draw(m,TOY_MAP_DRAW_RAMP,a,b,c,d,h0,h1,color(co),NULL);
-                m->draw[m->draw_count-1].style=pl->kind;
+                int shape=!strcmp(axis,"x")?TOY_MAP_PRIMITIVE_RAMP_X:TOY_MAP_PRIMITIVE_RAMP_Z;
+                add_primitive(m,shape,a,b,c,d,0,h0,h1,
+                              TOY_MAP_PRIMITIVE_VISIBLE|TOY_MAP_PRIMITIVE_COLLISION|
+                              TOY_MAP_PRIMITIVE_WALKABLE,color(co));
+                { int draw_count=m->draw_count;
+                  add_draw(m,TOY_MAP_DRAW_RAMP,a,b,c,d,h0,h1,color(co),NULL);
+                  if(m->draw_count>draw_count)m->draw[m->draw_count-1].style=shape;
+                }
             }
         }
         else if(!strcmp(kind,"texture") && get4(&p,&a,&b,&c,&d)==0){char *y=word(&p),*u=word(&p),*v=word(&p),*co=word(&p);if(y&&u&&v){add_draw(m,TOY_MAP_DRAW_TEXTURE,a,b,c,d,number(y,10),0,color(co),NULL);m->draw[m->draw_count-1].texture_u=number(u,10);m->draw[m->draw_count-1].texture_v=number(v,10);}}

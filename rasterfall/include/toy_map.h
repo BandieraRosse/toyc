@@ -3,13 +3,12 @@
 
 #include "toy_game.h"
 
-#define TOY_MAP_MAX_BOXES 64
+#define TOY_MAP_MAX_PRIMITIVES 128
 #define TOY_MAP_MAX_ZONES 16
 #define TOY_MAP_MAX_DRAW 128
 #define TOY_MAP_MAX_PICKUPS 48
 #define TOY_MAP_MAX_BASES 8
 #define TOY_MAP_MAX_AI_SPAWNS 32
-#define TOY_MAP_MAX_PLATFORMS 64
 #define TOY_MAP_ROLE_SIZE 32
 #define TOY_MAP_TEXT_SIZE 64
 
@@ -21,7 +20,8 @@ enum toy_map_draw_type {
     TOY_MAP_DRAW_SIGN,
     TOY_MAP_DRAW_MODEL,
     TOY_MAP_DRAW_TEXTURE,
-    TOY_MAP_DRAW_RAMP
+    TOY_MAP_DRAW_RAMP,
+    TOY_MAP_DRAW_BOX
 };
 
 enum toy_map_floor_style {
@@ -31,12 +31,6 @@ enum toy_map_floor_style {
 
 /* visible and collision are independent.  Legacy box syntax defaults to
  * visible+collision; legacy box ... air defaults to hidden+collision. */
-struct toy_map_box {
-    int minx, maxx, minz, maxz, height;
-    unsigned int color;
-    int visible, collision, air;
-    char role[TOY_MAP_ROLE_SIZE];
-};
 struct toy_map_zone { struct toy_game_box box; unsigned int color; };
 struct toy_map_base { int id; struct toy_game_box box; };
 struct toy_map_ai_spawn {
@@ -98,8 +92,8 @@ struct toy_map_draw {
 struct toy_map {
     int minx, maxx, minz, maxz, room_limit;
     int start_x, start_z, start_sy, start_cy;
-    struct toy_map_box boxes[TOY_MAP_MAX_BOXES];
-    int box_count;
+    struct toy_map_primitive primitives[TOY_MAP_MAX_PRIMITIVES];
+    int primitive_count;
     struct toy_game_box safe_rooms[TOY_MAP_MAX_ZONES];
     int safe_count;
     int start_safe_index, goal_safe_index;
@@ -112,8 +106,6 @@ struct toy_map {
     int base_count;
     struct toy_map_ai_spawn ai_spawns[TOY_MAP_MAX_AI_SPAWNS];
     int ai_spawn_count;
-    struct toy_game_platform platforms[TOY_MAP_MAX_PLATFORMS];
-    int platform_count;
     struct toy_map_draw draw[TOY_MAP_MAX_DRAW];
     int draw_count;
     struct toy_map_pickup pickups[TOY_MAP_MAX_PICKUPS];

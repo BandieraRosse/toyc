@@ -167,7 +167,7 @@ int rasterfall_session_load(struct rasterfall_session *session,
     memset(session, 0, sizeof(struct rasterfall_session));
     session->air_walls_enabled = 1;
     session->highlight_index = -1;
-    rasterfall_map_bind(&session->map_ops, &session->level, session->bounds,
+    rasterfall_map_bind(&session->map_ops, &session->level,
                         session->safe_rooms, session->spawn_zones,
                         &session->spawn_count, &session->air_walls_enabled,
                         session->items, &session->item_count);
@@ -215,10 +215,9 @@ void rasterfall_session_reset(struct rasterfall_session *session,
     if (global_envp && get_env_var(global_envp, "HOSTNAME"))
         toy_game_set_player_name(&session->game_state,
                                  get_env_var(global_envp, "HOSTNAME"));
-    toy_game_set_world(&session->game_state, session->bounds,
-                       session->level.box_count, session->level.room_limit);
-    toy_game_set_platforms(&session->game_state, session->level.platforms,
-                           session->level.platform_count);
+    toy_game_set_primitives(&session->game_state, session->level.primitives,
+                            session->level.primitive_count,
+                            session->level.room_limit);
     /* The safe room is open to the player through its doorway, but its whole
      * footprint is an enemy-forbidden area.  Register it even in the endless
      * director mode; toy_game_set_campaign also rebuilds navigation. */

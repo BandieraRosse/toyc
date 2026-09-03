@@ -174,7 +174,6 @@ enum rasterfall_startup_screen {
 static struct rasterfall_session session;
 static struct rasterfall_render_context render_context;
 #define level_map (session.level)
-#define map_bounds (session.bounds)
 #define map_safe_rooms (session.safe_rooms)
 #define map_spawn_zones (session.spawn_zones)
 #define map_spawn_count (session.spawn_count)
