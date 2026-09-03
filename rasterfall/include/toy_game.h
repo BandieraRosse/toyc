@@ -475,6 +475,8 @@ struct toy_game_enemy {
     int airborne_y;
     int ground_y;
     int knockback_x, knockback_z;
+    int nav_x, nav_z;
+    int nav_active;
 };
 
 /* 固定容量 actor 容器。旧的 ai_* 字段暂时保留在 toy_game 中作为兼容

@@ -2434,16 +2434,33 @@ static void wander_enemy(struct toy_game *g, struct toy_game_enemy *e, int dt_ms
         e->wander_timer_ms = 0;
 }
 
+static int nav_next_waypoint(const struct toy_game *g,
+                             int x, int z, int target_x, int target_z,
+                             int radius, int ground_y,
+                             int *out_x, int *out_z);
+
 static void chase_enemy(struct toy_game *g, struct toy_game_enemy *e,
                         int dx, int dz, long long dist, int target_kind)
 {
-    int nx, nz;
+    int nx, nz, waypoint_x, waypoint_z;
     if (dist < TOY_GAME_ATTACK_RANGE) {
         if (target_kind == 0 && !player_in_safe_room(g)) bite_player(g, e);
         else if (target_kind == TOY_GAME_TARGET_ACTOR) bite_ai(g, e);
         return;
     }
     if (dist == 0) return;
+    /* A reachable target may still be behind an obstacle.  Follow the nav
+     * graph in that case so a ramp link can carry the enemy onto a platform.
+     * If either endpoint is outside the nav mask, nav_next_waypoint returns
+     * no route and the legacy direct movement remains the fallback. */
+    if (nav_next_waypoint(g, e->x, e->z, e->x + dx, e->z + dz,
+                          enemy_radius(e), e->ground_y,
+                          &waypoint_x, &waypoint_z)) {
+        dx = waypoint_x - e->x;
+        dz = waypoint_z - e->z;
+        dist = isqrt((long long)dx * dx + (long long)dz * dz);
+        if (dist == 0) return;
+    }
     nx = (int)((long long)dx * e->speed / dist);
     nz = (int)((long long)dz * e->speed / dist);
     if (!enemy_step_blocked(g, e, e->x + nx, e->z, enemy_radius(e)))
@@ -2616,6 +2633,10 @@ static int enemy_target_reachable(const struct toy_game *g,
         toy_game_rebuild_navigation((struct toy_game *)g);
     from = nav_component_at_position(g, e->x, e->z);
     to = nav_component_at_position(g, x, z);
+    /* Spawn/developer areas can intentionally sit outside the conservative
+     * nav mask.  They remain valid targets; collision still decides whether
+     * the enemy can physically approach them. */
+    if (!from || !to) return 1;
     return from != 0 && from == to;
 }
 
@@ -2820,7 +2841,7 @@ static int nav_segment_allowed(const struct toy_game *g,
     int dx = x1 - x0, dz = z1 - z0;
     int distance = isqrt((long long)dx * dx + (long long)dz * dz);
     int steps;
-    int i;
+    int i, previous_ramp = 0;
     if (!g || g->nav_cell_size < 2) return 1;
     steps = distance / (g->nav_cell_size / 2) + 1;
     for (i = 1; i <= steps; i++) {
@@ -2830,10 +2851,12 @@ static int nav_segment_allowed(const struct toy_game *g,
         if (toy_game_position_blocked_at_height(g, x, z, radius, ground_y))
             return 0;
         ground = toy_game_query_ground(g, x, z, radius, ground_y);
-        if (ground.support_y - ground_y > TOY_CONFIG_GROUND_STEP_HEIGHT ||
-            ground_y - ground.support_y > TOY_CONFIG_GROUND_STEP_HEIGHT)
+        if ((ground.support_y - ground_y > TOY_CONFIG_GROUND_STEP_HEIGHT ||
+             ground_y - ground.support_y > TOY_CONFIG_GROUND_STEP_HEIGHT) &&
+            !previous_ramp && !ground.support_is_ramp)
             return 0;
         ground_y = ground.support_y;
+        previous_ramp = ground.support_is_ramp;
     }
     return 1;
 }
