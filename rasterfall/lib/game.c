@@ -2614,11 +2614,14 @@ static void move_player_forced(struct toy_game *g, int dx, int dz)
     int nx = g->px + dx;
     int nz = g->pz + dz;
     int height = g->player_ground_y + g->player_airborne_y;
-    if (!toy_game_position_blocked_at_height(g, nx, g->pz,
-                                             TOY_GAME_PLAYER_RADIUS, height))
+    /* Airborne motion may cross a primitive seam before the landing query
+     * resolves the next support.  Requiring a fully supported footprint here
+     * incorrectly blocks jumps across ramp/platform boundaries. */
+    if (!position_blocked_at_height(g, nx, g->pz,
+                                    TOY_GAME_PLAYER_RADIUS, height, 0))
         g->px = nx;
-    if (!toy_game_position_blocked_at_height(g, g->px, nz,
-                                             TOY_GAME_PLAYER_RADIUS, height))
+    if (!position_blocked_at_height(g, g->px, nz,
+                                    TOY_GAME_PLAYER_RADIUS, height, 0))
         g->pz = nz;
 }
 

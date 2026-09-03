@@ -3918,8 +3918,13 @@ static int render_platform(struct toy_renderer *renderer,
     d.x = platform->a; d.y = y; d.z = platform->d;
     /* A platform is a walkable surface, not a volumetric wall.  Render only
      * its top so a large roof/platform used above an air gate cannot turn
-     * into an opaque wall from the side. */
-    return draw_quad(renderer, camera, &a, &b, &c, &d, platform->color);
+     * into an opaque wall from the side.  Map syntax selects opaque or
+     * translucent rendering; the default is hidden for utility platforms. */
+    if (platform->style == 0) return 0;
+    return platform->style == 2 ?
+        draw_quad(renderer, camera, &a, &b, &c, &d, platform->color) :
+        draw_quad_alpha(renderer, camera, &a, &b, &c, &d,
+                        platform->color, 96);
 }
 
 static int render_scene(struct toy_renderer *renderer, const struct camera *camera)

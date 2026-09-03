@@ -182,14 +182,20 @@ int toy_map_load(const char *path, struct toy_map *m)
         else if(!strcmp(kind,"sign") && get4(&p,&a,&b,&c,&d)==0){char *y0=word(&p),*y1=word(&p),*co=word(&p),*t=rest_text(&p);if(y0&&y1&&co)add_draw(m,TOY_MAP_DRAW_SIGN,a,b,c,d,number(y0,10),number(y1,10),color(co),t);}
         else if(!strcmp(kind,"model") && get4(&p,&a,&b,&c,&d)==0){char *y0=word(&p),*y1=word(&p),*co=word(&p),*st=word(&p);if(y0&&y1){add_draw(m,TOY_MAP_DRAW_MODEL,a,b,c,d,number(y0,10),number(y1,10),color(co),NULL);if(st)m->draw[m->draw_count-1].style=number(st,10);}}
         else if(!strcmp(kind,"platform")){
-            int h; char *co;
+            int h, draw_index; char *co, *mode;
             if(get5(&p,&a,&b,&c,&d,&h)==0){
                 co=word(&p);
                 add_primitive(m,TOY_MAP_PRIMITIVE_FLAT,a,b,c,d,0,h,h,
                               TOY_MAP_PRIMITIVE_COLLISION|TOY_MAP_PRIMITIVE_WALKABLE,
                               color(co ? co : "3B5550"));
+                draw_index = m->draw_count;
                 add_draw(m,TOY_MAP_DRAW_PLATFORM,a,b,c,d,h,0,
                          color(co ? co : "3B5550"),NULL);
+                mode = word(&p);
+                if (m->draw_count > draw_index)
+                    m->draw[draw_index].style =
+                        mode && !strcmp(mode, "opaque") ? 2 :
+                        mode && !strcmp(mode, "transparent") ? 1 : 0;
             }
         }
         else if(!strcmp(kind,"ramp")){
