@@ -1702,6 +1702,29 @@ int toy_game_spawn_horde(struct toy_game *g, int count_min, int count_max,
                                      min_player_dist);
 }
 
+int toy_game_spawn_random_horde(struct toy_game *g, int count,
+                                const struct toy_game_box *points, int point_count,
+                                int min_player_dist)
+{
+    int i, spawned = 0;
+    int min_dist2 = min_player_dist * min_player_dist;
+    if (!g || g->state != TOY_GAME_PLAYING || !points || point_count <= 0)
+        return 0;
+    if (count < 0) count = 0;
+    if (count > TOY_GAME_MAX_ENEMIES) count = TOY_GAME_MAX_ENEMIES;
+    for (i = 0; i < count; i++) {
+        const struct toy_game_box *p = &points[rand_range(g, 0, point_count - 1)];
+        int type = rand_range(g, 0, TOY_GAME_ENEMY_TYPE_COUNT - 1);
+        if (spawn_tracking_enemy(g, type, p->minx, p->maxx,
+                                  p->minz, p->maxz, min_dist2))
+            spawned++;
+        else if (find_free_slot(g) < 0)
+            break;
+    }
+    if (spawned > 0) push_event(g, TOY_GAME_EV_SPAWN);
+    return spawned;
+}
+
 /* 从房间边界带随机选一个合法生成点；找不到返回 0 */
 static int try_spawn(struct toy_game *g)
 {

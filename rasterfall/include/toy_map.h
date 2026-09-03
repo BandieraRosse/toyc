@@ -21,7 +21,8 @@ enum toy_map_draw_type {
     TOY_MAP_DRAW_MODEL,
     TOY_MAP_DRAW_TEXTURE,
     TOY_MAP_DRAW_RAMP,
-    TOY_MAP_DRAW_BOX
+    TOY_MAP_DRAW_BOX,
+    TOY_MAP_DRAW_PLATFORM
 };
 
 enum toy_map_floor_style {
@@ -78,6 +79,7 @@ enum toy_map_pickup_kind {
     ,TOY_MAP_PICKUP_VMD_MANJUSAKA_BUTTON
     ,TOY_MAP_PICKUP_ANIMATION_COMPOSITION_BUTTON
     ,TOY_MAP_PICKUP_HUMANOID_POSE_DEBUG_BUTTON
+    ,TOY_MAP_PICKUP_WEST_CORRIDOR_BUTTON
 };
 struct toy_map_pickup { int kind; int weapon; int x, z, y; };
 struct toy_map_draw {

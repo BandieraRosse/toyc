@@ -745,6 +745,8 @@ static void session_client_interact_banner(struct rasterfall_session *session)
         session->banner_text = "WALK + RIFLE STANCE + FIRE/HIT OVERLAY";
     else if (it->kind == TOY_MAP_PICKUP_HUMANOID_POSE_DEBUG_BUTTON)
         session->banner_text = "EULA AK HUMANOID POSE DEBUGGER";
+    else if (it->kind == TOY_MAP_PICKUP_WEST_CORRIDOR_BUTTON)
+        session->banner_text = "WEST CORRIDOR: 16 RANDOM ENEMIES";
     else if (it->kind == TOY_MAP_PICKUP_AMMO)
         session->banner_text = "AMMO REFILLED";
     else if (it->kind == TOY_MAP_PICKUP_WEAPON ||
@@ -833,6 +835,16 @@ static void session_interact(struct rasterfall_session *session,
             "CHARGER SUMMONED" : "TANK SUMMONED";
         __printf("rasterfall: special test enemy summoned type %d (%d)\n",
                   type, n);
+    } else if (it->kind == TOY_MAP_PICKUP_WEST_CORRIDOR_BUTTON) {
+        struct toy_game_box corridor_spawn = {
+            -44400, -43400, -550, 550, 0, 0
+        };
+        int n = toy_game_spawn_random_horde(&session->game_state, 16,
+                                            &corridor_spawn, 1,
+                                            HORDE_MIN_PLAYER_DIST);
+        session->banner_ms = 3500;
+        session->banner_text = "WEST CORRIDOR: RANDOM HORDE SUMMONED";
+        __printf("rasterfall: west corridor random horde summoned %d/16 enemies\n", n);
     } else if (it->kind == TOY_MAP_PICKUP_ATTACK_X2_BUTTON ||
                it->kind == TOY_MAP_PICKUP_ATTACK_X3_BUTTON ||
                it->kind == TOY_MAP_PICKUP_ATTACK_X4_BUTTON) {

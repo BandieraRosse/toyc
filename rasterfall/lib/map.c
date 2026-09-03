@@ -181,7 +181,17 @@ int toy_map_load(const char *path, struct toy_map *m)
         else if(!strcmp(kind,"label") && get4(&p,&a,&b,&c,&d)==0){char *co=word(&p),*t=word(&p);add_draw(m,TOY_MAP_DRAW_LABEL,a,b,c,d,0,0,color(co),t);}
         else if(!strcmp(kind,"sign") && get4(&p,&a,&b,&c,&d)==0){char *y0=word(&p),*y1=word(&p),*co=word(&p),*t=rest_text(&p);if(y0&&y1&&co)add_draw(m,TOY_MAP_DRAW_SIGN,a,b,c,d,number(y0,10),number(y1,10),color(co),t);}
         else if(!strcmp(kind,"model") && get4(&p,&a,&b,&c,&d)==0){char *y0=word(&p),*y1=word(&p),*co=word(&p),*st=word(&p);if(y0&&y1){add_draw(m,TOY_MAP_DRAW_MODEL,a,b,c,d,number(y0,10),number(y1,10),color(co),NULL);if(st)m->draw[m->draw_count-1].style=number(st,10);}}
-        else if(!strcmp(kind,"platform")){int h;if(get5(&p,&a,&b,&c,&d,&h)==0)add_primitive(m,TOY_MAP_PRIMITIVE_FLAT,a,b,c,d,0,h,h,TOY_MAP_PRIMITIVE_COLLISION|TOY_MAP_PRIMITIVE_WALKABLE,0);}
+        else if(!strcmp(kind,"platform")){
+            int h; char *co;
+            if(get5(&p,&a,&b,&c,&d,&h)==0){
+                co=word(&p);
+                add_primitive(m,TOY_MAP_PRIMITIVE_FLAT,a,b,c,d,0,h,h,
+                              TOY_MAP_PRIMITIVE_COLLISION|TOY_MAP_PRIMITIVE_WALKABLE,
+                              color(co ? co : "3B5550"));
+                add_draw(m,TOY_MAP_DRAW_PLATFORM,a,b,c,d,h,0,
+                         color(co ? co : "3B5550"),NULL);
+            }
+        }
         else if(!strcmp(kind,"ramp")){
             int h0,h1; char *s0=word(&p),*s1=word(&p),*s2=word(&p),*s3=word(&p),*lo=word(&p),*hi=word(&p),*axis=word(&p),*co=word(&p);
             if(!s0||!s1||!s2||!s3||!lo||!hi||!axis)continue;
@@ -241,7 +251,8 @@ int toy_map_load(const char *path, struct toy_map *m)
                  !strcmp(kind,"button_vmd_walk") ||
                  !strcmp(kind,"button_vmd_manjusaka") ||
                  !strcmp(kind,"button_animation_composition") ||
-                 !strcmp(kind,"button_humanoid_pose_debug")) && m->pickup_count<TOY_MAP_MAX_PICKUPS){
+                 !strcmp(kind,"button_humanoid_pose_debug") ||
+                 !strcmp(kind,"button_west_corridor")) && m->pickup_count<TOY_MAP_MAX_PICKUPS){
             char *sx=word(&p),*sz=word(&p),*sy=word(&p);
             if(sx&&sz&&sy){
                 m->pickups[m->pickup_count].kind=!strcmp(kind,"button_air") ?
@@ -294,6 +305,8 @@ int toy_map_load(const char *path, struct toy_map *m)
                     m->pickups[m->pickup_count].kind = TOY_MAP_PICKUP_ANIMATION_COMPOSITION_BUTTON;
                 else if (!strcmp(kind,"button_humanoid_pose_debug"))
                     m->pickups[m->pickup_count].kind = TOY_MAP_PICKUP_HUMANOID_POSE_DEBUG_BUTTON;
+                else if (!strcmp(kind,"button_west_corridor"))
+                    m->pickups[m->pickup_count].kind = TOY_MAP_PICKUP_WEST_CORRIDOR_BUTTON;
                 m->pickups[m->pickup_count].x=number(sx,10);
                 m->pickups[m->pickup_count].z=number(sz,10);
                 m->pickups[m->pickup_count].y=number(sy,10);
