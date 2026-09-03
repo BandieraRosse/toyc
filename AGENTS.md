@@ -33,6 +33,8 @@ Toyc 是面向 Linux x86_64 的小型、自托管 C 工具链：
 - `lib/`：Tinylibc 和平台库实现
 - `app/`：示例、命令行工具和可自托管应用
 - `rasterfall/`：Rasterfall 游戏及其图形、音频、网络模块
+- `rasterfall/docs/`：面向编码代理的 Rasterfall 架构与代码导航；处理 Rasterfall 任务时先从
+  `rasterfall/docs/README.md` 按模块定位，再阅读对应专题文档和源码
 - `compiler-tests/`：编译器、链接器、归档器、Tinylibc 和诊断测试
 - `llm/`：语言模型实现、测试和模型工具
 - `bootstrap/`：版本控制内的自举种子及说明
@@ -143,6 +145,7 @@ make test-all           # 核心聚合目标，不包含 test-toyld 和 test-llm
 - `README.md` / `README_en.md`：用户入口、构建命令、测试语义和最近一次实测结果
 - `toyc-c-features.md`：C 特性支持范围和限制
 - `bootstrap/README.md`：种子二进制及自举流程
+- `rasterfall/docs/`：Rasterfall 的模块边界、状态所有权和“任务到文件”导航
 - `AGENTS.md`：AI 编码代理共享的稳定项目上下文和仓库操作约束
 - `CLAUDE.md`：通过 `@AGENTS.md` 向 Claude Code 导入本文件
 
