@@ -1049,6 +1049,35 @@ struct toy_game_ground_query toy_game_query_ground(
     return result;
 }
 
+static int ground_has_ramp_surface_transition(
+    const struct toy_game *g, int x, int z, int radius,
+    const struct toy_game_ground_query *ground,
+    const struct toy_game_platform *surface)
+{
+    int i;
+    if (!g || !ground || !surface || !ground->has_support ||
+        !ground->support_is_ramp ||
+        surface->kind != TOY_GAME_GROUND_FLAT)
+        return 0;
+    for (i = 0; i < g->platform_count; i++) {
+        const struct toy_game_platform *ramp = &g->platforms[i];
+        int supported, endpoint_delta;
+        if (ramp->kind == TOY_GAME_GROUND_FLAT) continue;
+        supported = x - radius >= ramp->minx &&
+                    x + radius <= ramp->maxx &&
+                    z - radius >= ramp->minz &&
+                    z + radius <= ramp->maxz;
+        if (!supported || ground_primitive_height(ramp, x, z) !=
+                              ground->support_y)
+            continue;
+        endpoint_delta = ramp->end_height - surface->height;
+        if (endpoint_delta < 0) endpoint_delta = -endpoint_delta;
+        if (endpoint_delta <= TOY_CONFIG_GROUND_STEP_HEIGHT)
+            return 1;
+    }
+    return 0;
+}
+
 int toy_game_position_blocked_at_height(const struct toy_game *g,
                                         int x, int z, int radius,
                                         int ground_height)
@@ -1090,6 +1119,13 @@ int toy_game_position_blocked_at_height(const struct toy_game *g,
             continue;
         }
         if (p->height <= ground_height + TOY_CONFIG_GROUND_STEP_HEIGHT)
+            continue;
+        /* A platform whose top meets the end of the supporting ramp is the
+         * ramp's continuation, not an early vertical obstacle.  Keep walking
+         * on the ramp until the destination footprint is fully supported by
+         * the platform; the transactional move then changes ground_y. */
+        if (ground_has_ramp_surface_transition(g, x, z, radius,
+                                               &ground, p))
             continue;
         if (x + radius > p->minx && x - radius < p->maxx &&
             z + radius > p->minz && z - radius < p->maxz) return 1;
