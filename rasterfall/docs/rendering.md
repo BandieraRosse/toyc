@@ -17,8 +17,9 @@
 - `rasterfall_hud.c`：玩家、网络、波次、商店 HUD，交互提示和 BMP/帧导出。
 - `rasterfall_viewmodel.c`：第一人称手臂、武器模型、后坐/摆动和枪口位置。
 - `rasterfall_effects.c`：消费 `rasterfall_effect_event`，维护枪口闪光、弹道、命中粒子等短生命周期表现状态。
-  事件消费现在还会登记到固定容量的 `rasterfall_effect_instance` runtime 池；旧的 muzzle/tracer/
-  particle 池继续负责现有绘制，因此本阶段不改变画面。`EXPLOSION` 已有 runtime 类型和生命周期，
+  事件消费现在还会登记到固定容量的 `rasterfall_effect_instance` runtime 池；instance 将底层
+  组件类型（particle/ray/billboard/overlay/emitter）与语义 kind 分离。旧的 muzzle/tracer/
+  particle 池继续负责现有绘制，因此本阶段不改变画面。`EXPLOSION` 已有 emitter 类型和生命周期，
   暂无 emitter 或视觉绘制。事件类型统一定义在 `include/rasterfall_effect_event.h`，该模块不反写 gameplay。
 - `rasterfall_sky.c`：天空背景。
 - `rasterfall_perf.c`：阶段计时、场景统计和性能输出。
@@ -32,7 +33,7 @@
 
 战斗事件链路为：规则结果/网络展示适配器 → `rasterfall_effect_event` →
 `rasterfall_effects_consume()` → runtime instance pool，同时旁路进入现有 muzzle/tracer/particle
-池。runtime instance 统一拥有类型、位置、方向、速度、生命周期/年龄、尺寸和 alpha 等基础状态；
+池。runtime instance 统一拥有组件类型、语义 kind、位置、方向、速度、生命周期/年龄、尺寸和 alpha 等基础状态；
 更新阶段统一推进其运动和寿命，但当前渲染仍使用旧池。射击同步器只搬运规则层射线与枪口坐标；
 伤害、命中规则和网络快照不读取或写入这些视觉状态。
 

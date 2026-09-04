@@ -806,7 +806,8 @@ static int run_logic_test(void)
                 RASTERFALL_EFFECT_INSTANCE_SLOTS - 1 : effects.instance_next - 1;
             instance = &effects.instances[instance_index];
             if (!instance->active ||
-                instance->type != RASTERFALL_EFFECT_INSTANCE_EXPLOSION ||
+                instance->type != RASTERFALL_EFFECT_INSTANCE_EMITTER ||
+                instance->kind != RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION ||
                 instance->x != 11 || instance->y != 22 || instance->z != 33)
                 return 63;
             rasterfall_effects_reset_fire(&effects);

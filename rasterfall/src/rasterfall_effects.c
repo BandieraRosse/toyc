@@ -19,9 +19,9 @@ static int effect_rand(struct rasterfall_effects *effects, int lo, int hi)
 
 static int effect_default_lifetime(int type)
 {
-    if (type == RASTERFALL_EFFECT_INSTANCE_TRACER)
+    if (type == RASTERFALL_EFFECT_INSTANCE_RAY)
         return RASTERFALL_TRACER_LIFE_MS;
-    if (type == RASTERFALL_EFFECT_INSTANCE_MUZZLE_FLASH)
+    if (type == RASTERFALL_EFFECT_INSTANCE_BILLBOARD)
         return RASTERFALL_MUZZLE_FLASH_LIFE_MS;
     return RASTERFALL_PARTICLE_LIFE_MS;
 }
@@ -47,12 +47,13 @@ struct rasterfall_effect_instance *rasterfall_effects_spawn_instance(
 
 static void spawn_event_instance(struct rasterfall_effects *effects,
                                  const struct rasterfall_effect_event *event,
-                                 int type, int x, int y, int z,
+                                 int type, int kind, int x, int y, int z,
                                  int vx, int vy, int vz)
 {
     struct rasterfall_effect_instance instance;
     memset(&instance, 0, sizeof(instance));
     instance.type = type;
+    instance.kind = kind;
     instance.flags = event->flags;
     instance.source_id = event->source_id;
     instance.target_id = event->target_id;
@@ -108,6 +109,7 @@ void rasterfall_effects_spawn_hit_particles(struct rasterfall_effects *effects,
             struct rasterfall_effect_instance instance;
             memset(&instance, 0, sizeof(instance));
             instance.type = RASTERFALL_EFFECT_INSTANCE_PARTICLE;
+            instance.kind = RASTERFALL_EFFECT_INSTANCE_KIND_HIT_PARTICLE;
             instance.x = p->x; instance.y = p->y; instance.z = p->z;
             /* The legacy particle pool advances once per 16ms fixed step;
              * normalize its velocity for the runtime's per-millisecond API. */
@@ -145,7 +147,8 @@ void rasterfall_effects_consume(struct rasterfall_effects *effects,
     if (!effects || !event) return;
     if (event->type == RASTERFALL_EFFECT_EVENT_WEAPON_FIRE) {
         spawn_event_instance(effects, event,
-                             RASTERFALL_EFFECT_INSTANCE_MUZZLE_FLASH,
+                             RASTERFALL_EFFECT_INSTANCE_BILLBOARD,
+                             RASTERFALL_EFFECT_INSTANCE_KIND_MUZZLE_FLASH,
                              event->sx, event->sy, event->sz, 0, 0, 0);
         flash = &effects->muzzle_flashes[effects->muzzle_flash_next];
         effects->muzzle_flash_next =
@@ -161,7 +164,8 @@ void rasterfall_effects_consume(struct rasterfall_effects *effects,
             int life = event->life_ms > 0 ? event->life_ms :
                        RASTERFALL_TRACER_LIFE_MS;
             spawn_event_instance(effects, event,
-                                 RASTERFALL_EFFECT_INSTANCE_TRACER,
+                                 RASTERFALL_EFFECT_INSTANCE_RAY,
+                                 RASTERFALL_EFFECT_INSTANCE_KIND_TRACER,
                                  event->sx, event->sy, event->sz,
                                  (event->ex - event->sx) / life,
                                  (event->ey - event->sy) / life,
@@ -183,7 +187,8 @@ void rasterfall_effects_consume(struct rasterfall_effects *effects,
                                                 event->dir_cy);
     } else if (event->type == RASTERFALL_EFFECT_EVENT_EXPLOSION) {
         spawn_event_instance(effects, event,
-                             RASTERFALL_EFFECT_INSTANCE_EXPLOSION,
+                             RASTERFALL_EFFECT_INSTANCE_EMITTER,
+                             RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION,
                              event->x, event->y, event->z, 0, 0, 0);
     }
 }

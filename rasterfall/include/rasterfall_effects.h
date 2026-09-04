@@ -15,14 +15,33 @@
 #define RASTERFALL_MUZZLE_FLASH_LIFE_MS 70
 #define RASTERFALL_EFFECT_INSTANCE_SLOTS 128
 
-/* Runtime types are presentation-side categories.  They are intentionally
- * separate from rasterfall_effect_event_type: one event may eventually
- * produce a different runtime effect or several instances. */
+/* Runtime component types describe the low-level renderer primitive.  They
+ * are intentionally separate from event types: one event may eventually
+ * produce a different component or several instances. */
 enum rasterfall_effect_instance_type {
-    RASTERFALL_EFFECT_INSTANCE_MUZZLE_FLASH,
-    RASTERFALL_EFFECT_INSTANCE_TRACER,
     RASTERFALL_EFFECT_INSTANCE_PARTICLE,
-    RASTERFALL_EFFECT_INSTANCE_EXPLOSION
+    RASTERFALL_EFFECT_INSTANCE_RAY,
+    RASTERFALL_EFFECT_INSTANCE_BILLBOARD,
+    RASTERFALL_EFFECT_INSTANCE_OVERLAY,
+    RASTERFALL_EFFECT_INSTANCE_EMITTER
+};
+
+/* Semantic variants remain separate from the low-level component.  These
+ * names let the migration preserve existing behavior while renderers move to
+ * the shared primitives one effect family at a time. */
+enum rasterfall_effect_instance_kind {
+    RASTERFALL_EFFECT_INSTANCE_KIND_NONE,
+    RASTERFALL_EFFECT_INSTANCE_KIND_MUZZLE_FLASH,
+    RASTERFALL_EFFECT_INSTANCE_KIND_TRACER,
+    RASTERFALL_EFFECT_INSTANCE_KIND_HIT_PARTICLE,
+    RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION
+};
+
+/* Compatibility aliases for the first runtime prototype. */
+enum rasterfall_effect_instance_compat_type {
+    RASTERFALL_EFFECT_INSTANCE_MUZZLE_FLASH = RASTERFALL_EFFECT_INSTANCE_BILLBOARD,
+    RASTERFALL_EFFECT_INSTANCE_TRACER = RASTERFALL_EFFECT_INSTANCE_RAY,
+    RASTERFALL_EFFECT_INSTANCE_EXPLOSION = RASTERFALL_EFFECT_INSTANCE_EMITTER
 };
 
 /* Fixed-point runtime state.  Positions and velocities use the same integer
@@ -32,6 +51,7 @@ enum rasterfall_effect_instance_type {
 struct rasterfall_effect_instance {
     int active;
     int type;
+    int kind;
     int flags;
     int source_id;
     int target_id;
