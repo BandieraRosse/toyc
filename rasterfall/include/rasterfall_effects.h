@@ -113,22 +113,6 @@ struct rasterfall_effect_emitter {
     uint32_t color;
 };
 
-/* Compatibility names for callers that still use the original pool-specific
- * cue.  New code should use rasterfall_effect_event directly. */
-enum rasterfall_effect_cue_type {
-    RASTERFALL_EFFECT_CUE_TRACER = RASTERFALL_EFFECT_EVENT_WEAPON_FIRE,
-    RASTERFALL_EFFECT_CUE_HIT_PARTICLES = RASTERFALL_EFFECT_EVENT_BULLET_IMPACT
-};
-
-struct rasterfall_effect_cue {
-    int type;
-    int depth_test;
-    int sx, sy, sz;
-    int ex, ey, ez;
-    int dir_sy, dir_cy;
-    int life_ms;
-};
-
 struct rasterfall_effects {
     struct rasterfall_effect_instance instances[RASTERFALL_EFFECT_INSTANCE_SLOTS];
     int instance_next;
@@ -164,8 +148,6 @@ struct rasterfall_effect_emitter *rasterfall_effects_spawn_emitter(
     const struct rasterfall_effect_emitter *seed);
 void rasterfall_effects_spawn_hit_particles(struct rasterfall_effects *effects,
                                             int x, int y, int z, int sy, int cy);
-void rasterfall_effects_emit(struct rasterfall_effects *effects,
-                             const struct rasterfall_effect_cue *cue);
 void rasterfall_effects_consume(struct rasterfall_effects *effects,
                                 const struct rasterfall_effect_event *event);
 

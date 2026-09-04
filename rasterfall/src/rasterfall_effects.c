@@ -358,24 +358,6 @@ void rasterfall_effects_spawn_hit_particles(struct rasterfall_effects *effects,
     }
 }
 
-void rasterfall_effects_emit(struct rasterfall_effects *effects,
-                             const struct rasterfall_effect_cue *cue)
-{
-    struct rasterfall_effect_event event;
-    if (!cue) return;
-    memset(&event, 0, sizeof(event));
-    event.type = cue->type;
-    if (event.type == RASTERFALL_EFFECT_CUE_TRACER)
-        event.type = RASTERFALL_EFFECT_EVENT_TRACER;
-    event.flags = cue->depth_test ? RASTERFALL_EFFECT_EVENT_DEPTH_TEST : 0;
-    event.sx = cue->sx; event.sy = cue->sy; event.sz = cue->sz;
-    event.ex = cue->ex; event.ey = cue->ey; event.ez = cue->ez;
-    event.x = cue->ex; event.y = cue->ey; event.z = cue->ez;
-    event.dir_sy = cue->dir_sy; event.dir_cy = cue->dir_cy;
-    event.life_ms = cue->life_ms;
-    rasterfall_effects_consume(effects, &event);
-}
-
 void rasterfall_effects_consume(struct rasterfall_effects *effects,
                                 const struct rasterfall_effect_event *event)
 {

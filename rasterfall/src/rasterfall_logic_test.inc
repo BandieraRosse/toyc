@@ -773,10 +773,10 @@ static int run_logic_test(void)
         memset(&game.burn_zones[0], 0, sizeof(game.burn_zones[0]));
     }
     {
-        struct rasterfall_effect_cue cue;
         struct rasterfall_effect_event fire_event;
+        struct rasterfall_effect_event cue_event;
         int i, muzzle_count = 0, tracer_count = 0, hit_count = 0;
-        memset(&cue, 0, sizeof(cue));
+        memset(&cue_event, 0, sizeof(cue_event));
         memset(&fire_event, 0, sizeof(fire_event));
         fire_event.type = RASTERFALL_EFFECT_EVENT_WEAPON_FIRE;
         fire_event.sx = 10; fire_event.sy = 20; fire_event.sz = 30;
@@ -791,12 +791,12 @@ static int run_logic_test(void)
         if (muzzle_count != 1)
             return 59;
         rasterfall_effects_reset_fire(&effects);
-        cue.type = RASTERFALL_EFFECT_CUE_TRACER;
-        cue.depth_test = 1;
-        cue.sx = 1; cue.sy = 2; cue.sz = 3;
-        cue.ex = 4; cue.ey = 5; cue.ez = 6;
-        cue.life_ms = 77;
-        rasterfall_effects_emit(&effects, &cue);
+        cue_event.type = RASTERFALL_EFFECT_EVENT_TRACER;
+        cue_event.flags = RASTERFALL_EFFECT_EVENT_DEPTH_TEST;
+        cue_event.sx = 1; cue_event.sy = 2; cue_event.sz = 3;
+        cue_event.ex = 4; cue_event.ey = 5; cue_event.ez = 6;
+        cue_event.life_ms = 77;
+        rasterfall_effects_consume(&effects, &cue_event);
         for (i = 0; i < RASTERFALL_EFFECT_INSTANCE_SLOTS; i++)
             if (effects.instances[i].active &&
                 effects.instances[i].kind == RASTERFALL_EFFECT_INSTANCE_KIND_TRACER &&
@@ -806,9 +806,10 @@ static int run_logic_test(void)
                 tracer_count++;
         if (tracer_count != 1)
             return 57;
-        cue.type = RASTERFALL_EFFECT_CUE_HIT_PARTICLES;
-        cue.dir_sy = 1024; cue.dir_cy = 0;
-        rasterfall_effects_emit(&effects, &cue);
+        cue_event.type = RASTERFALL_EFFECT_EVENT_BULLET_IMPACT;
+        cue_event.dir_sy = 1024; cue_event.dir_cy = 0;
+        cue_event.x = 4; cue_event.y = 5; cue_event.z = 6;
+        rasterfall_effects_consume(&effects, &cue_event);
         for (i = 0; i < RASTERFALL_EFFECT_INSTANCE_SLOTS; i++)
             if (effects.instances[i].active &&
                 effects.instances[i].kind == RASTERFALL_EFFECT_INSTANCE_KIND_HIT_PARTICLE)
