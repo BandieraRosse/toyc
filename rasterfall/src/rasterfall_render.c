@@ -5466,10 +5466,10 @@ static void draw_depth_effect_line(struct toy_renderer *renderer,
 
 /* 弹道投影为屏幕线段：起点（枪口）与终点（命中点）都从世界空间投影，
  * 先裁剪到近平面，再 Liang-Barsky 裁剪到屏幕。 */
-static void draw_tracer_line(struct toy_renderer *renderer,
-                             const struct camera *camera,
-                             int sx, int sy, int sz, int ex, int ey, int ez,
-                             uint32_t color, int depth_test)
+static void render_effect_ray(struct toy_renderer *renderer,
+                               const struct camera *camera,
+                               int sx, int sy, int sz, int ex, int ey, int ez,
+                               uint32_t color, int depth_test)
 {
     struct toy_surface *surface = &renderer->surface;
     struct vec3 a, b, clipped;
@@ -5547,14 +5547,21 @@ static void draw_tracer_line(struct toy_renderer *renderer,
 static int render_tracers(struct toy_renderer *renderer, const struct camera *camera)
 {
     int i, pixels = 0;
-    for (i = 0; i < RASTERFALL_TRACER_SLOTS; i++) {
-        const struct rasterfall_tracer *t = &effects.tracers[i];
+    for (i = 0; i < RASTERFALL_EFFECT_INSTANCE_SLOTS; i++) {
+        const struct rasterfall_effect_instance *t = &effects.instances[i];
         uint32_t color;
-        if (!t->active) continue;
+        int remaining;
+        if (!t->active || t->type != RASTERFALL_EFFECT_INSTANCE_RAY ||
+            t->kind != RASTERFALL_EFFECT_INSTANCE_KIND_TRACER) continue;
+        remaining = t->lifetime_ms - t->age_ms;
+        if (remaining < 0) remaining = 0;
         color = mix_color(0xFFE060, 0x3A2C14,
-                          t->life_ms * 256 / RASTERFALL_TRACER_LIFE_MS, 256);
-        draw_tracer_line(renderer, camera, t->sx, t->sy, t->sz,
-                         t->ex, t->ey, t->ez, color, t->depth_test);
+                          remaining * 256 /
+                              (t->lifetime_ms > 0 ? t->lifetime_ms : 1),
+                          256);
+        render_effect_ray(renderer, camera, t->x, t->y, t->z,
+                          t->ex, t->ey, t->ez, color,
+                          (t->flags & RASTERFALL_EFFECT_EVENT_DEPTH_TEST) != 0);
         pixels++;
     }
     return pixels;

@@ -726,22 +726,21 @@ static int run_logic_test(void)
     /* 弹道/粒子渲染冒烟：轴向弹道 + 终点越出右屏的弹道（屏幕裁剪与
      * 偏移线边界） + 远处粒子 */
     {
-        struct rasterfall_tracer *t = &effects.tracers[0];
+        struct rasterfall_effect_event ray_event;
         struct rasterfall_particle *p = &effects.particles[0];
-        t->active = 1;
-        t->sx = camera.x;
-        t->sy = RASTERFALL_TRACER_Y;
-        t->sz = camera.z;
-        t->ex = camera.x;
-        t->ez = camera.z - 3000;
-        t->life_ms = 100;
-        effects.tracers[1].active = 1;
-        effects.tracers[1].sx = camera.x;
-        effects.tracers[1].sy = RASTERFALL_TRACER_Y;
-        effects.tracers[1].sz = camera.z;
-        effects.tracers[1].ex = camera.x + 4000;
-        effects.tracers[1].ez = camera.z - 3000;
-        effects.tracers[1].life_ms = 100;
+        memset(&ray_event, 0, sizeof(ray_event));
+        ray_event.type = RASTERFALL_EFFECT_EVENT_TRACER;
+        ray_event.flags = RASTERFALL_EFFECT_EVENT_DEPTH_TEST;
+        ray_event.sx = camera.x;
+        ray_event.sy = RASTERFALL_TRACER_Y;
+        ray_event.sz = camera.z;
+        ray_event.ex = camera.x;
+        ray_event.ey = RASTERFALL_TRACER_Y;
+        ray_event.ez = camera.z - 3000;
+        ray_event.life_ms = 100;
+        rasterfall_effects_consume(&effects, &ray_event);
+        ray_event.ex = camera.x + 4000;
+        rasterfall_effects_consume(&effects, &ray_event);
         p->active = 1;
         p->x = camera.x + 200;
         p->y = -350;

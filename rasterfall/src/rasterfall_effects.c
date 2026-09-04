@@ -60,6 +60,11 @@ static void spawn_event_instance(struct rasterfall_effects *effects,
     instance.weapon = event->weapon;
     instance.sequence = event->sequence;
     instance.x = x; instance.y = y; instance.z = z;
+    if (type == RASTERFALL_EFFECT_INSTANCE_RAY) {
+        instance.ex = event->ex;
+        instance.ey = event->ey;
+        instance.ez = event->ez;
+    }
     instance.dir_x = event->dir_sy;
     instance.dir_z = event->dir_cy;
     instance.vx = vx; instance.vy = vy; instance.vz = vz;
@@ -161,15 +166,11 @@ void rasterfall_effects_consume(struct rasterfall_effects *effects,
                          RASTERFALL_MUZZLE_FLASH_LIFE_MS;
     } else if (event->type == RASTERFALL_EFFECT_EVENT_TRACER) {
         {
-            int life = event->life_ms > 0 ? event->life_ms :
-                       RASTERFALL_TRACER_LIFE_MS;
             spawn_event_instance(effects, event,
                                  RASTERFALL_EFFECT_INSTANCE_RAY,
                                  RASTERFALL_EFFECT_INSTANCE_KIND_TRACER,
                                  event->sx, event->sy, event->sz,
-                                 (event->ex - event->sx) / life,
-                                 (event->ey - event->sy) / life,
-                                 (event->ez - event->sz) / life);
+                                 0, 0, 0);
         }
         tracer = &effects->tracers[effects->tracer_next];
         effects->tracer_next =

@@ -43,7 +43,8 @@ toy_renderer / window / audio    仓库公共平台层
 
 战斗表现事件是 presentation-only 数据，统一经 `rasterfall_effects` 消费为短生命周期表现状态，
 并登记到固定容量的 `rasterfall_effect_instance` runtime 池；instance 将底层组件类型与效果语义
-分离，现有 muzzle/tracer/particle 池仍负责当前绘制。它不进入 `toy_game` 的权威状态同步。
+分离，tracer 已由 runtime `RAY` 组件绘制，muzzle/particle 仍保留旧绘制路径。它不进入
+`toy_game` 的权威状态同步。
 
 网络主机运行权威会话；客户端通过 `rasterfall_net.c` 的快照、预测与校正形成展示状态。
 不要把纯视觉状态塞进 `toy_game`，也不要让渲染器修改权威玩法结果。

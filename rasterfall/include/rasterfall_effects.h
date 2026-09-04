@@ -58,6 +58,9 @@ struct rasterfall_effect_instance {
     int weapon;
     unsigned int sequence;
     int x, y, z;
+    /* Ray components use an explicit endpoint; other components leave it
+     * unused. */
+    int ex, ey, ez;
     int dir_x, dir_y, dir_z;
     int vx, vy, vz;
     int lifetime_ms;
