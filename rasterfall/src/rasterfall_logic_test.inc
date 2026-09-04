@@ -1380,10 +1380,12 @@ static int run_logic_test(void)
                              nav_game.nav_cell_size) * nav_game.nav_width +
                             (150 - nav_game.nav_origin) /
                              nav_game.nav_cell_size;
+                /* The navigation samples cell centers: x=-150 and x=150
+                 * on the -600..600, 0..600 ramp. */
                 if (!nav_game.nav_walkable[low_cell] ||
                     !nav_game.nav_walkable[high_cell] ||
-                    nav_game.nav_ground_y[low_cell] != 150 ||
-                    nav_game.nav_ground_y[high_cell] != 450 ||
+                    nav_game.nav_ground_y[low_cell] != 225 ||
+                    nav_game.nav_ground_y[high_cell] != 375 ||
                     !nav_game.nav_component[low_cell] ||
                     !nav_game.nav_component[high_cell] ||
                     nav_game.nav_component[low_cell] !=
@@ -1842,8 +1844,8 @@ static int run_logic_test(void)
         /* The arena no longer contains campaign geometry that needs a
          * scripted AI redeployment route. */
     }
-    /* 导航目标选择：不可达的主玩家不能成为隐式默认目标；可达的
-     * 第二目标即使更远也应优先于不可达目标。 */
+    /* 目标合法性与 LOS/导航连通性分离：墙后主玩家仍是有效目标；
+     * 存在更近的远端玩家时，AI 应选择该玩家。 */
     {
         struct toy_map_primitive wall=test_box_primitive(
             -100,100,-6000,6000,0,0,TOY_MAP_PRIMITIVE_COLLISION);
