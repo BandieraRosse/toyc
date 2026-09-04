@@ -5482,6 +5482,73 @@ static void draw_depth_effect_line(struct toy_renderer *renderer,
     }
 }
 
+/* 用世界空间小方柱表现非第一人称 tracer。屏幕线宽在沿射线观察时
+ * 会盖过被透视压缩的长度，变成横线；方柱的截面则随深度缩放，沿射线
+ * 观察时只留下正确的方形截面，侧视时才显出细长体积。 */
+static void render_effect_ray_volume(struct toy_renderer *renderer,
+                                     const struct camera *camera,
+                                     int sx, int sy, int sz,
+                                     int ex, int ey, int ez,
+                                     uint32_t color, int width)
+{
+    struct vec3 v[8];
+    struct vec3 mid, mid_view;
+    int right_x, right_z, up_x, up_y, up_z;
+    int half, focal, i;
+    static const unsigned char faces[6][4] = {
+        {0, 1, 3, 2}, {4, 6, 7, 5},
+        {0, 4, 5, 1}, {2, 3, 7, 6},
+        {0, 2, 6, 4}, {1, 5, 7, 3}
+    };
+
+    mid.x = (sx + ex) / 2;
+    mid.y = (sy + ey) / 2;
+    mid.z = (sz + ez) / 2;
+    world_to_view(camera, &mid, &mid_view);
+    if (mid_view.z < NEAR_Z) mid_view.z = NEAR_Z;
+    focal = renderer->surface.width * 3 / 4;
+    if (focal < 1) focal = 1;
+    half = width * mid_view.z / focal;
+    if (half < 2) half = 2;
+
+    /* Camera right and camera up are expressed in world coordinates, both
+     * scaled by 1024 to match the rest of Rasterfall's fixed-point math. */
+    right_x = camera->cy;
+    right_z = -camera->sy;
+    up_x = -camera->sy * camera->pitch_sy / 1024;
+    up_y = camera->pitch_cy;
+    up_z = -camera->cy * camera->pitch_sy / 1024;
+    for (i = 0; i < 8; i++) {
+        int endpoint = i >= 4;
+        int side = (i & 1) ? 1 : -1;
+        int vertical = (i & 2) ? 1 : -1;
+        int cx = endpoint ? ex : sx;
+        int cy = endpoint ? ey : sy;
+        int cz = endpoint ? ez : sz;
+        v[i].x = cx + side * right_x * half / 1024 +
+                 vertical * up_x * half / 1024;
+        v[i].y = cy + vertical * up_y * half / 1024;
+        v[i].z = cz + side * right_z * half / 1024 +
+                 vertical * up_z * half / 1024;
+    }
+
+    /* Effects are not material-owned geometry; make all six faces visible,
+     * while the renderer still performs its normal depth test. */
+    {
+        int old_double_sided = active_material_double_sided;
+        active_material_double_sided = 1;
+        for (i = 0; i < 6; i++) {
+            const struct vec3 *a = &v[faces[i][0]];
+            const struct vec3 *b = &v[faces[i][1]];
+            const struct vec3 *c = &v[faces[i][2]];
+            const struct vec3 *d = &v[faces[i][3]];
+            draw_world_triangle(renderer, camera, a, b, c, color);
+            draw_world_triangle(renderer, camera, a, c, d, color);
+        }
+        active_material_double_sided = old_double_sided;
+    }
+}
+
 /* 弹道投影为屏幕线段：起点（枪口）与终点（命中点）都从世界空间投影，
  * 先裁剪到近平面，再 Liang-Barsky 裁剪到屏幕。 */
 static void render_effect_ray(struct toy_renderer *renderer,
@@ -5553,16 +5620,32 @@ static void render_effect_ray(struct toy_renderer *renderer,
     if (width < 1) width = 1;
     if (width > 4) width = 4;
     if (depth_test) {
-        int offset;
-        for (offset = 0; offset < width; offset++)
-            draw_depth_effect_line(renderer, x0 + offset, y0 + offset,
-                                   pa.inv_z, x1 + offset, y1 + offset,
+        int offset, dx = x1 - x0, dy = y1 - y0;
+        int adx = dx < 0 ? -dx : dx, ady = dy < 0 ? -dy : dy;
+        int normal_len = adx > ady ? adx : ady;
+        if (normal_len < 1) normal_len = 1;
+        /* The old (+offset,+offset) expansion changed the direction of the
+         * projected tracer and made a nearly-on-axis projectile look like a
+         * horizontal bar.  Expand along the screen-space normal of the
+         * projected 3D segment instead, keeping its world direction intact. */
+        for (offset = -(width / 2); offset < width - width / 2; offset++) {
+            int ox = -dy * offset / normal_len;
+            int oy = dx * offset / normal_len;
+            draw_depth_effect_line(renderer, x0 + ox, y0 + oy,
+                                   pa.inv_z, x1 + ox, y1 + oy,
                                    pb.inv_z, color);
+        }
     } else {
-        int offset;
-        for (offset = 0; offset < width; offset++)
-            draw_effect_line(surface, x0 + offset, y0 + offset,
-                             x1 + offset, y1 + offset, color);
+        int offset, dx = x1 - x0, dy = y1 - y0;
+        int adx = dx < 0 ? -dx : dx, ady = dy < 0 ? -dy : dy;
+        int normal_len = adx > ady ? adx : ady;
+        if (normal_len < 1) normal_len = 1;
+        for (offset = -(width / 2); offset < width - width / 2; offset++) {
+            int ox = -dy * offset / normal_len;
+            int oy = dx * offset / normal_len;
+            draw_effect_line(surface, x0 + ox, y0 + oy,
+                             x1 + ox, y1 + oy, color);
+        }
     }
 }
 
@@ -5597,8 +5680,14 @@ static int render_effect_rays(struct toy_renderer *renderer, const struct camera
             int hx, hy, hz, tx, ty, tz;
             int visibility, midpoint_x, midpoint_y, midpoint_z;
             struct vec3 visibility_world, visibility_view;
-            int lead_ms = 12;
+            int local_tracer = t->source_id == 0;
+            int lead_ms = local_tracer ? 12 : 7;
             tail_percent = t->ray_tail_percent > 0 ? t->ray_tail_percent : 14;
+            /* Remote/AI tracers remain moving short segments, but use a much
+             * tighter visual envelope so they read as a fast projectile
+             * streak instead of a visible beam in the world. */
+            if (!local_tracer) tail_percent = tail_percent / 4;
+            if (tail_percent < 4) tail_percent = 4;
             head_t = (t->age_ms + lead_ms) * 65536 /
                      (t->lifetime_ms > 0 ? t->lifetime_ms : 1);
             if (head_t > 65536) head_t = 65536;
@@ -5612,6 +5701,12 @@ static int render_effect_rays(struct toy_renderer *renderer, const struct camera
             hy = ray_lerp(t->y, t->ey, head_t);
             hz = ray_lerp(t->z, t->ez, head_t);
             width = t->ray_width > 0 ? t->ray_width : 1;
+            if (!local_tracer) {
+                /* Third-person tracers are kept slimmer so their world-space
+                 * presentation does not read as a large laser beam. */
+                width = (width + 1) / 2;
+                if (width < 1) width = 1;
+            }
             /* Suppress the muzzle-near part of the tracer.  A hitscan line
              * should read from mid range, while a bright line immediately in
              * front of the camera looks like a laser.  The value is shared by
@@ -5625,7 +5720,8 @@ static int render_effect_rays(struct toy_renderer *renderer, const struct camera
             world_to_view(camera, &visibility_world, &visibility_view);
             /* Smoothstep avoids a visible slope break at either end of the
              * mid-range reveal band.  Keep the near muzzle almost hidden. */
-            visibility = (visibility_view.z - 900) * 256 / 2100;
+            visibility = (visibility_view.z - (local_tracer ? 900 : 1200)) *
+                         256 / (local_tracer ? 2100 : 1800);
             if (visibility < 0) visibility = 0;
             if (visibility > 256) visibility = 256;
             visibility = visibility * visibility *
@@ -5637,17 +5733,24 @@ static int render_effect_rays(struct toy_renderer *renderer, const struct camera
              * would invert mix_color() and make the fresh muzzle end black. */
             color = mix_color(t->color ? t->color : 0xFFFFFF,
                               0x101820, fade, 256);
-            render_effect_ray(renderer, camera, tx, ty, tz, hx, hy, hz,
-                              color,
-                              (t->flags & RASTERFALL_EFFECT_EVENT_DEPTH_TEST) != 0,
-                              width);
+            if (!local_tracer)
+                render_effect_ray_volume(renderer, camera, tx, ty, tz,
+                                         hx, hy, hz, color, width);
+            else
+                render_effect_ray(renderer, camera, tx, ty, tz, hx, hy, hz,
+                                  color, 0, width);
             /* The second pass keeps the segment readable at its head without
              * introducing a second color. */
-            render_effect_ray(renderer, camera,
-                              ray_lerp(tx, hx, 32768), ray_lerp(ty, hy, 32768),
-                              ray_lerp(tz, hz, 32768), hx, hy, hz, color,
-                              (t->flags & RASTERFALL_EFFECT_EVENT_DEPTH_TEST) != 0,
-                              width);
+            if (!local_tracer)
+                render_effect_ray_volume(
+                    renderer, camera,
+                    ray_lerp(tx, hx, 32768), ray_lerp(ty, hy, 32768),
+                    ray_lerp(tz, hz, 32768), hx, hy, hz, color, width);
+            else
+                render_effect_ray(
+                    renderer, camera,
+                    ray_lerp(tx, hx, 32768), ray_lerp(ty, hy, 32768),
+                    ray_lerp(tz, hz, 32768), hx, hy, hz, color, 0, width);
         } else {
             render_effect_ray(renderer, camera, t->x, t->y, t->z,
                               t->ex, t->ey, t->ez, color,

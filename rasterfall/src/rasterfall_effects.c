@@ -573,17 +573,6 @@ void rasterfall_effects_consume(struct rasterfall_effects *effects,
         rasterfall_effects_spawn_hit_particles(effects, event->x, event->y,
                                                 event->z, event->dir_sy,
                                                 event->dir_cy);
-        if (event->type == RASTERFALL_EFFECT_EVENT_ENTITY_HIT) {
-            struct rasterfall_effect_event hit_ray = *event;
-            hit_ray.ex = event->x;
-            hit_ray.ey = event->y;
-            hit_ray.ez = event->z;
-            hit_ray.life_ms = 45;
-            spawn_event_instance(effects, &hit_ray,
-                                 RASTERFALL_EFFECT_INSTANCE_RAY,
-                                 RASTERFALL_EFFECT_INSTANCE_KIND_ENTITY_HIT_RAY,
-                                 event->sx, event->sy, event->sz, 0, 0, 0);
-        }
     } else if (event->type == RASTERFALL_EFFECT_EVENT_EXPLOSION) {
         struct rasterfall_effect_emitter emitter;
         init_explosion_emitter(&emitter, event);

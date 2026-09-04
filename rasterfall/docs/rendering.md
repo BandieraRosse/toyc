@@ -1,7 +1,7 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-04
-> 源码核对基线：工作区（RAY tracer 短线段/加粗加长 descriptor，通用 emitter preset table）
+> 源码核对基线：工作区（RAY tracer 短线段/定向线宽投影，通用 emitter preset table）
 
 ## 渲染边界
 
@@ -19,7 +19,7 @@
 - `rasterfall_effects.c`：消费 `rasterfall_effect_event`，并从投掷物/燃烧区域展示状态同步枪口闪光、弹道、命中粒子、炸弹闪烁和 Molotov 火焰等短生命周期表现状态。
   事件消费现在还会登记到固定容量的 `rasterfall_effect_instance` runtime 池；instance 将底层
   组件类型（particle/ray/billboard/overlay/emitter）与语义 kind 分离。tracer、命中火花、分层 muzzle flash 和 Molotov 火焰已迁移到统一
-  `RAY`/`PARTICLE`/`BILLBOARD` 组件；`ENTITY_HIT` 还会生成短生命周期 hit ray，炸弹 fuse flash 使用 billboard；玩家伤害闪屏使用 `OVERLAY`，敌人受击颜色使用 `MATERIAL` feedback，交互高亮已登记为短生命周期 `INTERACTION_HIGHLIGHT` billboard 并驱动现有高亮绘制，屏幕空间效果通过 `render_effect_overlay()` 和
+  `RAY`/`PARTICLE`/`BILLBOARD` 组件；`ENTITY_HIT` 生成命中粒子但不再额外生成整条 hit ray，炸弹 fuse flash 使用 billboard；玩家伤害闪屏使用 `OVERLAY`，敌人受击颜色使用 `MATERIAL` feedback，交互高亮已登记为短生命周期 `INTERACTION_HIGHLIGHT` billboard 并驱动现有高亮绘制，屏幕空间效果通过 `render_effect_overlay()` 和
   `rasterfall_render_overlays()` 提供统一入口，因此本阶段不改变已有效果画面。`EXPLOSION`
   现在由固定生命周期的 emitter 生成 16 个通用 `EXPLOSION_PARTICLE` 子实例；事件类型统一定义在
   `include/rasterfall_effect_event.h`，该模块不反写 gameplay。
@@ -56,9 +56,10 @@ instance pool；当前爆炸配置生成冲击波 ray、短时 billboard 和固�
 tracer RAY instance 保留事件提供的枪口起点和命中/射程终点，但绘制时按 lifetime/age 在两点
 之间截取短段并推进到终点，不再显示整条弹道。颜色在整条可见短段内保持统一，线宽、尾段比例和 68--86ms 的寿命
 由 `toy_game_weapon_info` 的 presentation-only descriptor 提供；普通武器统一白色，AK/AWP
-采用黄橙色。tracer 还按相机空间深度抑制枪口近处亮度，使用平滑插值从约中距离开始逐渐显现。
-instance
-pool、事件和深度测试 flags 不变。
+采用黄橙色。第一人称本地玩家 tracer 按相机空间深度抑制枪口近处亮度，使用平滑插值从约中
+距离开始逐渐显现；AI/远端玩家也使用短线段快速移动，但采用更短的可见段和独立距离参数。
+AI/远端 tracer 使用世界空间小方柱，避免沿射线方向观察时固定屏幕线宽盖过透视长度而显示为横线。
+instance pool、事件和深度测试 flags 不变。
 
 ## 常见任务落点
 

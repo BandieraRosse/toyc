@@ -1319,10 +1319,28 @@ static void tracer_world_endpoint(const struct toy_game_ray *ray,
     *out_z = ez;
 }
 
+/* AI/远端的命中点来自角色中心的 gameplay 射线。视觉枪口通常位于角色
+ * 一侧，不能直接把它连到中心射线的命中点，否则短线段移动时会出现
+ * 平行四边形式的斜向漂移。用同一条水平射线方向，从视觉枪口重新取终点。 */
+static void tracer_world_endpoint_on_ray(const struct toy_game_ray *ray,
+                                         int origin_x, int origin_y,
+                                         int origin_z, int ray_origin_x,
+                                         int ray_origin_z, int ex, int ez,
+                                         int *out_x, int *out_y, int *out_z)
+{
+    int dx = ex - ray_origin_x;
+    int dz = ez - ray_origin_z;
+    int distance = isqrt((long long)dx * dx + (long long)dz * dz);
+    if (distance < 1) distance = 1;
+    *out_x = origin_x + ray->sy * distance / 1024;
+    *out_y = origin_y + ray->vy * distance / 1024;
+    *out_z = origin_z + ray->cy * distance / 1024;
+}
+
 static void emit_ray_effects(const struct toy_game_ray *ray,
                              int sx, int sy, int sz,
                              int ex, int ey, int ez, int depth_test,
-                             int target_id, int weapon)
+                             int target_id, int weapon, int source_id)
 {
     struct rasterfall_effect_event event;
     memset(&event, 0, sizeof(event));
@@ -1333,6 +1351,7 @@ static void emit_ray_effects(const struct toy_game_ray *ray,
     event.x = ex; event.y = ey; event.z = ez;
     event.target_id = target_id;
     event.weapon = weapon;
+    event.source_id = source_id;
     event.life_ms = toy_game_weapon_info(weapon)->tracer_lifetime_ms;
     rasterfall_effects_consume(&effects, &event);
     if (ray->hit_enemy || ray->hit_world) {
@@ -1406,7 +1425,7 @@ static void sync_fire_effects(const struct camera *camera)
                             &tracer_x, &tracer_y, &tracer_z);
         emit_ray_effects(r, muzzle.x, muzzle.y, muzzle.z,
                          tracer_x, tracer_y, tracer_z, 0, r->enemy_index,
-                         weapon);
+                         weapon, 0);
     }
 }
 
@@ -1459,14 +1478,15 @@ static void sync_ai_fire_effects(const struct camera *camera,
         for (i = 0; i < ray_count; i++) {
             const struct toy_game_ray *r = &actor->rays[i];
             int tracer_x, tracer_y, tracer_z;
-            tracer_world_endpoint(r, mx, my, mz, 0, 1024,
-                                r->ex, r->ez,
-                                &tracer_x, &tracer_y, &tracer_z);
+            tracer_world_endpoint_on_ray(r, mx, my, mz, actor->x, actor->z,
+                                          r->ex, r->ez,
+                                          &tracer_x, &tracer_y, &tracer_z);
             emit_ray_effects(r, mx, my, mz,
                              tracer_x, tracer_y, tracer_z, 1, r->enemy_index,
                              actor->current_slot >= 0 &&
                              actor->current_slot < TOY_GAME_WEAPON_SLOTS ?
-                             actor->slots[actor->current_slot].weapon : -1);
+                             actor->slots[actor->current_slot].weapon : -1,
+                             1 + actor_index);
         }
     }
 }
@@ -1515,12 +1535,12 @@ static void sync_network_fire_effects(const struct camera *viewer,
     for (i = 0; i < ray_count; i++) {
         const struct toy_game_ray *r = &rays[i];
         int tracer_x, tracer_y, tracer_z;
-        tracer_world_endpoint(r, muzzle.x, muzzle.y, muzzle.z,
-                              0, 1024,
-                              r->ex, r->ez,
-                              &tracer_x, &tracer_y, &tracer_z);
+        tracer_world_endpoint_on_ray(r, muzzle.x, muzzle.y, muzzle.z,
+                                      client->x, client->z, r->ex, r->ez,
+                                      &tracer_x, &tracer_y, &tracer_z);
         emit_ray_effects(r, muzzle.x, muzzle.y, muzzle.z,
-                         tracer_x, tracer_y, tracer_z, 0, r->enemy_index, weapon);
+                         tracer_x, tracer_y, tracer_z, 1, r->enemy_index, weapon,
+                         32 + source_id);
     }
     (void)viewer;
 }
