@@ -381,6 +381,12 @@ struct toy_game_weapon_info {
     int range;          /* 弹丸最远距离 */
     int alert_range;    /* AI 持有该武器时的索敌距离 */
     int power_bias;     /* CP 特殊修正；通常为 0 */
+    /* Presentation-only tracer descriptor. */
+    uint32_t tracer_start_color;
+    uint32_t tracer_end_color;
+    int tracer_width;
+    int tracer_tail_percent;
+    int tracer_lifetime_ms;
 };
 
 struct toy_game_enemy_info {

@@ -5487,7 +5487,7 @@ static void draw_depth_effect_line(struct toy_renderer *renderer,
 static void render_effect_ray(struct toy_renderer *renderer,
                                const struct camera *camera,
                                int sx, int sy, int sz, int ex, int ey, int ez,
-                               uint32_t color, int depth_test)
+                               uint32_t color, int depth_test, int width)
 {
     struct toy_surface *surface = &renderer->surface;
     struct vec3 a, b, clipped;
@@ -5550,16 +5550,25 @@ static void render_effect_ray(struct toy_renderer *renderer,
         x0 = nx0;
         y0 = ny0;
     }
-    /* 双线 = 2px 粗的射线；偏移像素同色，无需额外混合 */
+    if (width < 1) width = 1;
+    if (width > 4) width = 4;
     if (depth_test) {
-        draw_depth_effect_line(renderer, x0, y0, pa.inv_z,
-                               x1, y1, pb.inv_z, color);
-        draw_depth_effect_line(renderer, x0 + 1, y0 + 1, pa.inv_z,
-                               x1 + 1, y1 + 1, pb.inv_z, color);
+        int offset;
+        for (offset = 0; offset < width; offset++)
+            draw_depth_effect_line(renderer, x0 + offset, y0 + offset,
+                                   pa.inv_z, x1 + offset, y1 + offset,
+                                   pb.inv_z, color);
     } else {
-        draw_effect_line(surface, x0, y0, x1, y1, color);
-        draw_effect_line(surface, x0 + 1, y0 + 1, x1 + 1, y1 + 1, color);
+        int offset;
+        for (offset = 0; offset < width; offset++)
+            draw_effect_line(surface, x0 + offset, y0 + offset,
+                             x1 + offset, y1 + offset, color);
     }
+}
+
+static int ray_lerp(int a, int b, int t)
+{
+    return a + (int)((long long)(b - a) * t / 65536);
 }
 
 static int render_effect_rays(struct toy_renderer *renderer, const struct camera *camera)
@@ -5568,23 +5577,83 @@ static int render_effect_rays(struct toy_renderer *renderer, const struct camera
     for (i = 0; i < RASTERFALL_EFFECT_INSTANCE_SLOTS; i++) {
         const struct rasterfall_effect_instance *t = &effects.instances[i];
         uint32_t color;
-        int remaining;
+        int remaining, fade, width;
         if (!t->active || t->type != RASTERFALL_EFFECT_INSTANCE_RAY ||
             (t->kind != RASTERFALL_EFFECT_INSTANCE_KIND_TRACER &&
              t->kind != RASTERFALL_EFFECT_INSTANCE_KIND_ENTITY_HIT_RAY &&
              t->kind != RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION_RAY)) continue;
         remaining = t->lifetime_ms - t->age_ms;
         if (remaining < 0) remaining = 0;
+        fade = remaining * 256 /
+               (t->lifetime_ms > 0 ? t->lifetime_ms : 1);
         color = mix_color(t->kind == RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION_RAY ?
                               0xFFF0A0 : 0xFFE060,
                           t->kind == RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION_RAY ?
                               0x8A2408 : 0x3A2C14,
-                          remaining * 256 /
-                              (t->lifetime_ms > 0 ? t->lifetime_ms : 1),
-                          256);
-        render_effect_ray(renderer, camera, t->x, t->y, t->z,
-                          t->ex, t->ey, t->ez, color,
-                          (t->flags & RASTERFALL_EFFECT_EVENT_DEPTH_TEST) != 0);
+                          fade, 256);
+        width = 2;
+        if (t->kind == RASTERFALL_EFFECT_INSTANCE_KIND_TRACER) {
+            int head_t, tail_t, tail_percent;
+            int hx, hy, hz, tx, ty, tz;
+            int visibility, midpoint_x, midpoint_y, midpoint_z;
+            struct vec3 visibility_world, visibility_view;
+            int lead_ms = 12;
+            tail_percent = t->ray_tail_percent > 0 ? t->ray_tail_percent : 14;
+            head_t = (t->age_ms + lead_ms) * 65536 /
+                     (t->lifetime_ms > 0 ? t->lifetime_ms : 1);
+            if (head_t > 65536) head_t = 65536;
+            if (head_t < 0) head_t = 0;
+            tail_t = head_t - tail_percent * 65536 / 100;
+            if (tail_t < 0) tail_t = 0;
+            tx = ray_lerp(t->x, t->ex, tail_t);
+            ty = ray_lerp(t->y, t->ey, tail_t);
+            tz = ray_lerp(t->z, t->ez, tail_t);
+            hx = ray_lerp(t->x, t->ex, head_t);
+            hy = ray_lerp(t->y, t->ey, head_t);
+            hz = ray_lerp(t->z, t->ez, head_t);
+            width = t->ray_width > 0 ? t->ray_width : 1;
+            /* Suppress the muzzle-near part of the tracer.  A hitscan line
+             * should read from mid range, while a bright line immediately in
+             * front of the camera looks like a laser.  The value is shared by
+             * both passes so the segment keeps one uniform color. */
+            midpoint_x = (tx + hx) / 2;
+            midpoint_y = (ty + hy) / 2;
+            midpoint_z = (tz + hz) / 2;
+            visibility_world.x = midpoint_x;
+            visibility_world.y = midpoint_y;
+            visibility_world.z = midpoint_z;
+            world_to_view(camera, &visibility_world, &visibility_view);
+            /* Smoothstep avoids a visible slope break at either end of the
+             * mid-range reveal band.  Keep the near muzzle almost hidden. */
+            visibility = (visibility_view.z - 900) * 256 / 2100;
+            if (visibility < 0) visibility = 0;
+            if (visibility > 256) visibility = 256;
+            visibility = visibility * visibility *
+                         (768 - 2 * visibility) / 65536;
+            visibility = 4 + visibility * 252 / 256;
+            fade = fade * visibility / 256;
+            /* Keep the whole moving segment chromatically uniform.  Only
+             * its lifetime fade changes; mixing black as the `from` color
+             * would invert mix_color() and make the fresh muzzle end black. */
+            color = mix_color(t->color ? t->color : 0xFFFFFF,
+                              0x101820, fade, 256);
+            render_effect_ray(renderer, camera, tx, ty, tz, hx, hy, hz,
+                              color,
+                              (t->flags & RASTERFALL_EFFECT_EVENT_DEPTH_TEST) != 0,
+                              width);
+            /* The second pass keeps the segment readable at its head without
+             * introducing a second color. */
+            render_effect_ray(renderer, camera,
+                              ray_lerp(tx, hx, 32768), ray_lerp(ty, hy, 32768),
+                              ray_lerp(tz, hz, 32768), hx, hy, hz, color,
+                              (t->flags & RASTERFALL_EFFECT_EVENT_DEPTH_TEST) != 0,
+                              width);
+        } else {
+            render_effect_ray(renderer, camera, t->x, t->y, t->z,
+                              t->ex, t->ey, t->ez, color,
+                              (t->flags & RASTERFALL_EFFECT_EVENT_DEPTH_TEST) != 0,
+                              width);
+        }
         pixels++;
     }
     return pixels;

@@ -38,6 +38,19 @@ static void session_interact(struct rasterfall_session *session,
 static int session_near_flag(const struct rasterfall_session *session,
                              const struct camera *camera);
 
+/* The weapon table below the air wall is a developer-only pickup strip.
+ * Keep this exception local to the map/session layer; the normal armory still
+ * owns all purchase and unlock checks elsewhere. */
+static int session_is_developer_weapon_pickup(
+    const struct rasterfall_interactable *it)
+{
+    if (!it || it->z > -7000 || it->z < -8000 ||
+        it->x < -1800 || it->x > 1800) return 0;
+    return it->kind == TOY_MAP_PICKUP_WEAPON ||
+           it->kind == TOY_MAP_PICKUP_SMG ||
+           it->kind == TOY_MAP_PICKUP_SHOTGUN;
+}
+
 static void session_down_ai(struct rasterfall_session *session, int index,
                             int x, int z)
 {
@@ -970,7 +983,10 @@ static void session_interact(struct rasterfall_session *session,
             toy_game_equip_weapon(&session->game_state, it->weapon);
             return;
         }
-        if (toy_game_weapon_unlocked(&session->game_state, it->weapon))
+        if (session_is_developer_weapon_pickup(it)) {
+            session->game_state.unlocked_weapons |= 1u << it->weapon;
+            toy_game_equip_weapon(&session->game_state, it->weapon);
+        } else if (toy_game_weapon_unlocked(&session->game_state, it->weapon))
             toy_game_equip_weapon(&session->game_state, it->weapon);
         else {
             session->banner_ms = 2000;
@@ -980,7 +996,10 @@ static void session_interact(struct rasterfall_session *session,
     } else {
         int weapon = it->kind == TOY_MAP_PICKUP_SMG ?
             TOY_GAME_WEAPON_SMG : TOY_GAME_WEAPON_SHOTGUN;
-        if (toy_game_weapon_unlocked(&session->game_state, weapon))
+        if (session_is_developer_weapon_pickup(it)) {
+            session->game_state.unlocked_weapons |= 1u << weapon;
+            toy_game_equip_weapon(&session->game_state, weapon);
+        } else if (toy_game_weapon_unlocked(&session->game_state, weapon))
             toy_game_equip_weapon(&session->game_state, weapon);
         else {
             session->banner_ms = 2000;

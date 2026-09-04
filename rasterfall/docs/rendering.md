@@ -1,7 +1,7 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-04
-> 源码核对基线：工作区（通用 emitter preset table，FIRE/EXPLOSION 已统一）
+> 源码核对基线：工作区（RAY tracer 短线段/加粗加长 descriptor，通用 emitter preset table）
 
 ## 渲染边界
 
@@ -52,6 +52,13 @@ instance pool；当前爆炸配置生成冲击波 ray、短时 billboard 和固�
   `rasterfall_render_effects()` 统一提交 ray/billboard/particle，overlay 仍在屏幕空间阶段单独提交，
   以保证 HUD 和第一人称视图模型的层级顺序。
   统一 instance 和 emitter 池均为固定容量环形池，满载时按写指针覆盖最旧槽位；该策略已由逻辑测试覆盖。后续可在不改变火焰语义的前提下替换粒子渲染细节。
+
+tracer RAY instance 保留事件提供的枪口起点和命中/射程终点，但绘制时按 lifetime/age 在两点
+之间截取短段并推进到终点，不再显示整条弹道。颜色在整条可见短段内保持统一，线宽、尾段比例和 68--86ms 的寿命
+由 `toy_game_weapon_info` 的 presentation-only descriptor 提供；普通武器统一白色，AK/AWP
+采用黄橙色。tracer 还按相机空间深度抑制枪口近处亮度，使用平滑插值从约中距离开始逐渐显现。
+instance
+pool、事件和深度测试 flags 不变。
 
 ## 常见任务落点
 

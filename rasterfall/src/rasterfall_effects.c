@@ -444,6 +444,22 @@ static struct rasterfall_effect_instance *spawn_event_instance(
     instance.dir_z = event->dir_cy;
     instance.vx = vx; instance.vy = vy; instance.vz = vz;
     instance.lifetime_ms = event->life_ms;
+    if (kind == RASTERFALL_EFFECT_INSTANCE_KIND_TRACER) {
+        const struct toy_game_weapon_info *weapon =
+            toy_game_weapon_info_or_null(event->weapon);
+        if (weapon) {
+            instance.color = weapon->tracer_start_color;
+            instance.ray_end_color = weapon->tracer_end_color;
+            instance.ray_width = weapon->tracer_width;
+            instance.ray_tail_percent = weapon->tracer_tail_percent;
+            if (instance.lifetime_ms <= 0)
+                instance.lifetime_ms = weapon->tracer_lifetime_ms;
+        }
+        if (instance.lifetime_ms <= 0)
+            instance.lifetime_ms = RASTERFALL_TRACER_LIFE_MS;
+        if (instance.ray_width <= 0) instance.ray_width = 1;
+        if (instance.ray_tail_percent <= 0) instance.ray_tail_percent = 14;
+    }
     return rasterfall_effects_spawn_instance(effects, &instance);
 }
 

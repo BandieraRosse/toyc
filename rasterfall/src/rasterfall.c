@@ -1322,7 +1322,7 @@ static void tracer_world_endpoint(const struct toy_game_ray *ray,
 static void emit_ray_effects(const struct toy_game_ray *ray,
                              int sx, int sy, int sz,
                              int ex, int ey, int ez, int depth_test,
-                             int target_id)
+                             int target_id, int weapon)
 {
     struct rasterfall_effect_event event;
     memset(&event, 0, sizeof(event));
@@ -1332,7 +1332,8 @@ static void emit_ray_effects(const struct toy_game_ray *ray,
     event.ex = ex; event.ey = ey; event.ez = ez;
     event.x = ex; event.y = ey; event.z = ez;
     event.target_id = target_id;
-    event.life_ms = RASTERFALL_TRACER_LIFE_MS;
+    event.weapon = weapon;
+    event.life_ms = toy_game_weapon_info(weapon)->tracer_lifetime_ms;
     rasterfall_effects_consume(&effects, &event);
     if (ray->hit_enemy || ray->hit_world) {
         event.type = ray->hit_enemy ? RASTERFALL_EFFECT_EVENT_ENTITY_HIT :
@@ -1364,7 +1365,7 @@ static void emit_weapon_fire_effect(int sx, int sy, int sz, int dir_sy,
  * 火花，枪口闪光则由独立的 weapon fire event 绘制。 */
 static void sync_fire_effects(const struct camera *camera)
 {
-    int i, ray_count;
+    int i, ray_count, weapon;
     struct vec3 muzzle;
     struct vec3 muzzle_view;
     if (game.fire_seq < effects.last_fire_seq) {
@@ -1379,9 +1380,10 @@ static void sync_fire_effects(const struct camera *camera)
     if (ray_count > TOY_GAME_MAX_RAYS) ray_count = TOY_GAME_MAX_RAYS;
     /* 后坐力 + 枪口世界坐标（开火瞬间采样，含后坐位移） */
     effects.weapon_kick = VIEWMODEL_KICK_MAX;
+    weapon = rasterfall_viewmodel_weapon(&game);
     {
         int mx, my, mz;
-        rasterfall_viewmodel_muzzle_offset(rasterfall_viewmodel_weapon(&game),
+        rasterfall_viewmodel_muzzle_offset(weapon,
                                            effects.weapon_kick, &mx, &my, &mz);
         muzzle_view.x = mx;
         muzzle_view.y = my;
@@ -1393,7 +1395,7 @@ static void sync_fire_effects(const struct camera *camera)
     view_to_world(camera, &muzzle, &muzzle);
     emit_weapon_fire_effect(muzzle.x, muzzle.y, muzzle.z,
                             camera->pitch_sy, camera->pitch_cy,
-                            rasterfall_viewmodel_weapon(&game),
+                            weapon,
                             game.fire_seq, 0);
     for (i = 0; i < ray_count; i++) {
         const struct toy_game_ray *r = &game.rays[i];
@@ -1403,7 +1405,8 @@ static void sync_fire_effects(const struct camera *camera)
                             r->ex, r->ez,
                             &tracer_x, &tracer_y, &tracer_z);
         emit_ray_effects(r, muzzle.x, muzzle.y, muzzle.z,
-                         tracer_x, tracer_y, tracer_z, 0, r->enemy_index);
+                         tracer_x, tracer_y, tracer_z, 0, r->enemy_index,
+                         weapon);
     }
 }
 
@@ -1460,7 +1463,10 @@ static void sync_ai_fire_effects(const struct camera *camera,
                                 r->ex, r->ez,
                                 &tracer_x, &tracer_y, &tracer_z);
             emit_ray_effects(r, mx, my, mz,
-                             tracer_x, tracer_y, tracer_z, 1, r->enemy_index);
+                             tracer_x, tracer_y, tracer_z, 1, r->enemy_index,
+                             actor->current_slot >= 0 &&
+                             actor->current_slot < TOY_GAME_WEAPON_SLOTS ?
+                             actor->slots[actor->current_slot].weapon : -1);
         }
     }
 }
@@ -1514,7 +1520,7 @@ static void sync_network_fire_effects(const struct camera *viewer,
                               r->ex, r->ez,
                               &tracer_x, &tracer_y, &tracer_z);
         emit_ray_effects(r, muzzle.x, muzzle.y, muzzle.z,
-                         tracer_x, tracer_y, tracer_z, 0, r->enemy_index);
+                         tracer_x, tracer_y, tracer_z, 0, r->enemy_index, weapon);
     }
     (void)viewer;
 }

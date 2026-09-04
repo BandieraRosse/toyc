@@ -6,7 +6,7 @@
 #include "rasterfall_effect_event.h"
 
 #define RASTERFALL_TRACER_SLOTS 32
-#define RASTERFALL_TRACER_LIFE_MS 160
+#define RASTERFALL_TRACER_LIFE_MS 72
 #define RASTERFALL_TRACER_Y (-350)
 #define RASTERFALL_PARTICLE_SLOTS 96
 #define RASTERFALL_PARTICLE_LIFE_MS 240
@@ -105,6 +105,11 @@ struct rasterfall_effect_instance {
     /* Ray components use an explicit endpoint; other components leave it
      * unused. */
     int ex, ey, ez;
+    /* Tracer-only presentation controls.  The ray endpoints remain the
+     * gameplay/presentation payload; these fields only shape its rendering. */
+    int ray_tail_percent;
+    int ray_width;
+    uint32_t ray_end_color;
     int dir_x, dir_y, dir_z;
     int vx, vy, vz;
     int gravity_y;
