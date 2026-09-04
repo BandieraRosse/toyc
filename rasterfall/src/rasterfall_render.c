@@ -5552,10 +5552,15 @@ static int render_tracers(struct toy_renderer *renderer, const struct camera *ca
         uint32_t color;
         int remaining;
         if (!t->active || t->type != RASTERFALL_EFFECT_INSTANCE_RAY ||
-            t->kind != RASTERFALL_EFFECT_INSTANCE_KIND_TRACER) continue;
+            (t->kind != RASTERFALL_EFFECT_INSTANCE_KIND_TRACER &&
+             t->kind != RASTERFALL_EFFECT_INSTANCE_KIND_ENTITY_HIT_RAY &&
+             t->kind != RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION_RAY)) continue;
         remaining = t->lifetime_ms - t->age_ms;
         if (remaining < 0) remaining = 0;
-        color = mix_color(0xFFE060, 0x3A2C14,
+        color = mix_color(t->kind == RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION_RAY ?
+                              0xFFF0A0 : 0xFFE060,
+                          t->kind == RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION_RAY ?
+                              0x8A2408 : 0x3A2C14,
                           remaining * 256 /
                               (t->lifetime_ms > 0 ? t->lifetime_ms : 1),
                           256);
@@ -5623,6 +5628,26 @@ static int render_muzzle_flashes(struct toy_renderer *renderer,
                                     size / 2 + 1,
                                     mix_color(0xFFD050, 0x7A1D08,
                                               intensity, 256));
+    }
+    return pixels;
+}
+
+static int render_explosion_flashes(struct toy_renderer *renderer,
+                                    const struct camera *camera)
+{
+    int i, pixels = 0;
+    for (i = 0; i < RASTERFALL_EFFECT_INSTANCE_SLOTS; i++) {
+        const struct rasterfall_effect_instance *f = &effects.instances[i];
+        int size, intensity;
+        if (!f->active || f->type != RASTERFALL_EFFECT_INSTANCE_BILLBOARD ||
+            f->kind != RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION_FLASH)
+            continue;
+        size = 11 + (f->age_ms < 24 ? f->age_ms / 4 : 0);
+        intensity = f->alpha;
+        pixels += render_effect_billboard(renderer, camera, f->x, f->y, f->z,
+                                          size,
+                                          mix_color(0xFFF4A0, 0xB63A08,
+                                                    intensity, 256));
     }
     return pixels;
 }
@@ -5832,6 +5857,7 @@ int rasterfall_render_particles(struct toy_renderer *renderer,
                                 const struct camera *camera)
 {
     return render_muzzle_flashes(renderer, camera) +
+           render_explosion_flashes(renderer, camera) +
            render_particles(renderer, camera);
 }
 

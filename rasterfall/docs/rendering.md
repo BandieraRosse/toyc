@@ -20,7 +20,7 @@
   事件消费现在还会登记到固定容量的 `rasterfall_effect_instance` runtime 池；instance 将底层
   组件类型（particle/ray/billboard/overlay/emitter）与语义 kind 分离。旧的 muzzle/tracer/
   particle 池继续负责兼容更新；tracer、命中火花、muzzle flash 和 Molotov 火焰已迁移到统一
-  `RAY`/`PARTICLE`/`BILLBOARD` 组件；屏幕空间效果通过 `render_effect_overlay()` 和
+`RAY`/`PARTICLE`/`BILLBOARD` 组件；`ENTITY_HIT` 还会生成短生命周期 hit ray；屏幕空间效果通过 `render_effect_overlay()` 和
   `rasterfall_render_overlays()` 提供统一入口，因此本阶段不改变已有效果画面。`EXPLOSION`
   现在由固定生命周期的 emitter 生成 16 个通用 `EXPLOSION_PARTICLE` 子实例；事件类型统一定义在
   `include/rasterfall_effect_event.h`，该模块不反写 gameplay。
@@ -44,7 +44,7 @@ muzzle flash 和 Molotov 火焰的渲染已经直接消费 runtime `RAY`/`PARTIC
 
 爆炸由炸弹命中/结束位置产生 `RASTERFALL_EFFECT_EVENT_EXPLOSION`，在
 `rasterfall_effects_consume()` 中登记一个固定容量 emitter，并由 emitter 按间隔把子组件写入统一
-instance pool；当前爆炸配置生成固定数量的粒子子 instance，由
+instance pool；当前爆炸配置生成冲击波 ray、短时 billboard 和固定数量的粒子子 instance，由
 `rasterfall_render_particles()` 的通用粒子分支绘制。该接入不修改炸弹伤害和网络协议；联机事件仍应由展示适配器构造已有 event。当前 Molotov 火焰已经通过
 `rasterfall_effects_sync_fire_zones()` 将原有燃烧区域程序化采样同步为 `FIRE` 语义的 `PARTICLE` instance，
 并由通用粒子绘制入口消费；后续可在不改变火焰语义的前提下替换粒子渲染细节。

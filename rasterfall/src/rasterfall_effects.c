@@ -307,8 +307,20 @@ void rasterfall_effects_consume(struct rasterfall_effects *effects,
         rasterfall_effects_spawn_hit_particles(effects, event->x, event->y,
                                                 event->z, event->dir_sy,
                                                 event->dir_cy);
+        if (event->type == RASTERFALL_EFFECT_EVENT_ENTITY_HIT) {
+            struct rasterfall_effect_event hit_ray = *event;
+            hit_ray.ex = event->x;
+            hit_ray.ey = event->y;
+            hit_ray.ez = event->z;
+            hit_ray.life_ms = 45;
+            spawn_event_instance(effects, &hit_ray,
+                                 RASTERFALL_EFFECT_INSTANCE_RAY,
+                                 RASTERFALL_EFFECT_INSTANCE_KIND_ENTITY_HIT_RAY,
+                                 event->sx, event->sy, event->sz, 0, 0, 0);
+        }
     } else if (event->type == RASTERFALL_EFFECT_EVENT_EXPLOSION) {
         struct rasterfall_effect_emitter emitter;
+        struct rasterfall_effect_event shockwave = *event;
         memset(&emitter, 0, sizeof(emitter));
         emitter.x = event->x; emitter.y = event->y; emitter.z = event->z;
         emitter.lifetime_ms = 180;
@@ -324,6 +336,18 @@ void rasterfall_effects_consume(struct rasterfall_effects *effects,
         spawn_event_instance(effects, event,
                              RASTERFALL_EFFECT_INSTANCE_EMITTER,
                              RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION,
+                             event->x, event->y, event->z, 0, 0, 0);
+        shockwave.sx = event->x; shockwave.sy = event->y; shockwave.sz = event->z;
+        shockwave.ex = event->x + 1400; shockwave.ey = event->y;
+        shockwave.ez = event->z;
+        shockwave.life_ms = 80;
+        spawn_event_instance(effects, &shockwave,
+                             RASTERFALL_EFFECT_INSTANCE_RAY,
+                             RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION_RAY,
+                             event->x, event->y, event->z, 0, 0, 0);
+        spawn_event_instance(effects, event,
+                             RASTERFALL_EFFECT_INSTANCE_BILLBOARD,
+                             RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION_FLASH,
                              event->x, event->y, event->z, 0, 0, 0);
     }
 }
