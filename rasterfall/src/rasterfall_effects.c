@@ -24,6 +24,40 @@ static const int effect_fire_ring[16][2] = {
     { 0, -2500 }, { 956, -2310 }, { 1768, -1768 }, { 2310, -956 }
 };
 
+enum rasterfall_effect_emitter_preset_id {
+    RASTERFALL_EFFECT_EMITTER_PRESET_FIRE,
+    RASTERFALL_EFFECT_EMITTER_PRESET_EXPLOSION,
+    RASTERFALL_EFFECT_EMITTER_PRESET_COUNT
+};
+
+struct rasterfall_effect_emitter_preset {
+    int lifetime_ms;
+    int spawn_interval_ms;
+    int burst_count;
+    int spawn_limit;
+    int child_type;
+    int child_kind;
+    int spread;
+    int gravity_y;
+    int size;
+    int alpha;
+    int pattern;
+    uint32_t color;
+};
+
+static const struct rasterfall_effect_emitter_preset emitter_preset_table[
+    RASTERFALL_EFFECT_EMITTER_PRESET_COUNT] = {
+    [RASTERFALL_EFFECT_EMITTER_PRESET_FIRE] = {
+        160, 16, 88, 0, RASTERFALL_EFFECT_INSTANCE_PARTICLE,
+        RASTERFALL_EFFECT_INSTANCE_KIND_FIRE, 0, 0, 0, 256,
+        RASTERFALL_EFFECT_EMITTER_PATTERN_FIRE, 0
+    },
+    [RASTERFALL_EFFECT_EMITTER_PRESET_EXPLOSION] = {
+        180, 1, 0, 0, 0, 0, 0, 0, 0, 256,
+        RASTERFALL_EFFECT_EMITTER_PATTERN_DEFAULT, 0
+    }
+};
+
 static int effect_default_lifetime(int type)
 {
     if (type == RASTERFALL_EFFECT_INSTANCE_RAY)
@@ -91,6 +125,29 @@ static const int explosion_velocity[16][3] = {
     { 36, 28,  0 }, { -36, 28,  0 }, { 0, 28, 36 }, { 0, 28, -36 },
     { 28, -18, 28 }, { -28, -18, 28 }, { 28, -18, -28 }, { -28, -18, -28 },
     { 18, 42, 18 }, { -18, 42, 18 }, { 18, 42, -18 }, { -18, 42, -18 }
+};
+
+static const struct rasterfall_effect_emitter_child explosion_child_table[
+    RASTERFALL_EFFECT_EMITTER_CHILD_SLOTS] = {
+    {
+        RASTERFALL_EFFECT_INSTANCE_PARTICLE,
+        RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION_PARTICLE,
+        0, 16, 0, 0, 4500, 256, 1000, 0, 0, 0, 2,
+        RASTERFALL_EFFECT_EMITTER_PATTERN_EXPLOSION, 0, 0, 0, 0xFFD050
+    },
+    {
+        RASTERFALL_EFFECT_INSTANCE_RAY,
+        RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION_RAY,
+        0, 1, 0, 80, 0, 256, 0, 0, 0, 0, 0,
+        RASTERFALL_EFFECT_EMITTER_PATTERN_DEFAULT, 0, 0, 0, 0
+    },
+    {
+        RASTERFALL_EFFECT_INSTANCE_BILLBOARD,
+        RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION_FLASH,
+        0, 1, 0, RASTERFALL_MUZZLE_FLASH_LIFE_MS, 1000, 256, 0,
+        0, 0, 0, 0, RASTERFALL_EFFECT_EMITTER_PATTERN_DEFAULT,
+        0, 0, 0, 0xFFF4A0
+    }
 };
 
 static void spawn_emitter_child(struct rasterfall_effects *effects,
@@ -206,17 +263,20 @@ void rasterfall_effects_sync_fire_zones(struct rasterfall_effects *effects,
         }
         if (!emitter) {
             struct rasterfall_effect_emitter seed;
+            const struct rasterfall_effect_emitter_preset *preset =
+                &emitter_preset_table[RASTERFALL_EFFECT_EMITTER_PRESET_FIRE];
             memset(&seed, 0, sizeof(seed));
             seed.source_id = i;
             seed.x = zone->x; seed.y = -890; seed.z = zone->z;
-            seed.lifetime_ms = zone->remaining_ms;
-            seed.spawn_interval_ms = 16;
-            seed.burst_count = 88;
-            seed.child_type = RASTERFALL_EFFECT_INSTANCE_PARTICLE;
-            seed.child_kind = RASTERFALL_EFFECT_INSTANCE_KIND_FIRE;
-            seed.spawn_limit = 0;
-            seed.pattern = RASTERFALL_EFFECT_EMITTER_PATTERN_FIRE;
-            seed.alpha = 256;
+            seed.lifetime_ms = zone->remaining_ms > 0 ? zone->remaining_ms :
+                               preset->lifetime_ms;
+            seed.spawn_interval_ms = preset->spawn_interval_ms;
+            seed.burst_count = preset->burst_count;
+            seed.child_type = preset->child_type;
+            seed.child_kind = preset->child_kind;
+            seed.spawn_limit = preset->spawn_limit;
+            seed.pattern = preset->pattern;
+            seed.alpha = preset->alpha;
             emitter = rasterfall_effects_spawn_emitter(effects, &seed);
             if (emitter) emitter->spawn_accum_ms = emitter->spawn_interval_ms;
         }
@@ -366,38 +426,18 @@ static void spawn_event_instance(struct rasterfall_effects *effects,
 static void init_explosion_emitter(struct rasterfall_effect_emitter *emitter,
                                    const struct rasterfall_effect_event *event)
 {
-    struct rasterfall_effect_emitter_child *particle;
-    struct rasterfall_effect_emitter_child *ray;
-    struct rasterfall_effect_emitter_child *flash;
+    const struct rasterfall_effect_emitter_preset *preset =
+        &emitter_preset_table[RASTERFALL_EFFECT_EMITTER_PRESET_EXPLOSION];
     memset(emitter, 0, sizeof(*emitter));
     emitter->x = event->x; emitter->y = event->y; emitter->z = event->z;
-    emitter->lifetime_ms = 180;
-    emitter->spawn_interval_ms = 1;
+    emitter->lifetime_ms = preset->lifetime_ms;
+    emitter->spawn_interval_ms = preset->spawn_interval_ms;
     emitter->child_count = 3;
-    particle = &emitter->children[0];
-    particle->type = RASTERFALL_EFFECT_INSTANCE_PARTICLE;
-    particle->kind = RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION_PARTICLE;
-    particle->spawn_limit = 16;
-    particle->pattern = RASTERFALL_EFFECT_EMITTER_PATTERN_EXPLOSION;
-    particle->spread = 1000;
-    particle->gravity_y = 2;
-    particle->size = 4500;
-    particle->alpha = 256;
-    particle->color = 0xFFD050;
-    ray = &emitter->children[1];
-    ray->type = RASTERFALL_EFFECT_INSTANCE_RAY;
-    ray->kind = RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION_RAY;
-    ray->spawn_limit = 1;
-    ray->lifetime_ms = 80;
-    ray->ex = event->x + 1400; ray->ey = event->y; ray->ez = event->z;
-    flash = &emitter->children[2];
-    flash->type = RASTERFALL_EFFECT_INSTANCE_BILLBOARD;
-    flash->kind = RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION_FLASH;
-    flash->spawn_limit = 1;
-    flash->lifetime_ms = RASTERFALL_MUZZLE_FLASH_LIFE_MS;
-    flash->size = 1000;
-    flash->alpha = 256;
-    flash->color = 0xFFF4A0;
+    memcpy(emitter->children, explosion_child_table,
+           sizeof(explosion_child_table));
+    emitter->children[1].ex = event->x + 1400;
+    emitter->children[1].ey = event->y;
+    emitter->children[1].ez = event->z;
 }
 
 void rasterfall_effects_init(struct rasterfall_effects *effects)
