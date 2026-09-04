@@ -727,7 +727,7 @@ static int run_logic_test(void)
      * 偏移线边界） + 远处粒子 */
     {
         struct rasterfall_effect_event ray_event;
-        struct rasterfall_particle *p = &effects.particles[0];
+        struct rasterfall_effect_instance seed;
         memset(&ray_event, 0, sizeof(ray_event));
         ray_event.type = RASTERFALL_EFFECT_EVENT_TRACER;
         ray_event.flags = RASTERFALL_EFFECT_EVENT_DEPTH_TEST;
@@ -741,14 +741,36 @@ static int run_logic_test(void)
         rasterfall_effects_consume(&effects, &ray_event);
         ray_event.ex = camera.x + 4000;
         rasterfall_effects_consume(&effects, &ray_event);
-        p->active = 1;
-        p->x = camera.x + 200;
-        p->y = -350;
-        p->z = camera.z - 2000;
-        p->life_ms = 100;
+        memset(&seed, 0, sizeof(seed));
+        seed.type = RASTERFALL_EFFECT_INSTANCE_PARTICLE;
+        seed.kind = RASTERFALL_EFFECT_INSTANCE_KIND_HIT_PARTICLE;
+        seed.x = camera.x + 200;
+        seed.y = -350;
+        seed.z = camera.z - 2000;
+        seed.lifetime_ms = 100;
+        seed.size = 1000;
+        seed.alpha = 256;
+        if (!rasterfall_effects_spawn_instance(&effects, &seed)) return 64;
         rasterfall_render_tracers(&renderer, &camera);
         rasterfall_render_particles(&renderer, &camera);
         rasterfall_effects_reset_fire(&effects);
+    }
+    /* Molotov flames are represented by the same runtime particle pool as
+     * hit sparks; the gameplay burn zone remains the source of truth. */
+    {
+        int i, fire_count = 0;
+        memset(&game.burn_zones[0], 0, sizeof(game.burn_zones[0]));
+        game.burn_zones[0].active = 1;
+        game.burn_zones[0].x = camera.x;
+        game.burn_zones[0].z = camera.z - 2000;
+        rasterfall_effects_sync_fire_zones(&effects, &game);
+        for (i = 0; i < RASTERFALL_EFFECT_INSTANCE_SLOTS; i++)
+            if (effects.instances[i].active &&
+                effects.instances[i].kind == RASTERFALL_EFFECT_INSTANCE_KIND_FIRE)
+                fire_count++;
+        if (fire_count <= 0) return 65;
+        rasterfall_effects_reset_fire(&effects);
+        memset(&game.burn_zones[0], 0, sizeof(game.burn_zones[0]));
     }
     {
         struct rasterfall_effect_cue cue;

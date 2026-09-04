@@ -5584,73 +5584,42 @@ static int render_fire_point(struct toy_renderer *renderer,
     return 1;
 }
 
-/* Molotov flames are deliberately drawn as a small procedural billboard
- * field.  This keeps the effect freestanding and gives the whole burn zone
- * a readable footprint without adding a texture asset. */
-static int render_fire_zones(struct toy_renderer *renderer,
-                             const struct camera *camera)
+/* A billboard primitive currently uses the same small camera-facing screen
+ * rectangle as the original procedural fire point.  Keeping this boundary
+ * separate lets textured or larger billboard quads replace it later. */
+static int render_effect_billboard(struct toy_renderer *renderer,
+                                   const struct camera *camera,
+                                   int x, int y, int z, int size,
+                                   uint32_t color)
 {
-    static const int ring[16][2] = {
-        { 2500, 0 }, { 2310, 956 }, { 1768, 1768 }, { 956, 2310 },
-        { 0, 2500 }, { -956, 2310 }, { -1768, 1768 }, { -2310, 956 },
-        { -2500, 0 }, { -2310, -956 }, { -1768, -1768 }, { -956, -2310 },
-        { 0, -2500 }, { 956, -2310 }, { 1768, -1768 }, { 2310, -956 }
-    };
-    int i, j, pixels = 0;
-    for (i = 0; i < TOY_CONFIG_MAX_BURN_ZONES; i++) {
-        const struct toy_game_burn_zone *zone = &game.burn_zones[i];
-        if (!zone->active) continue;
-        for (j = 0; j < 16; j++) {
-            int density;
-            for (density = 0; density < 3; density++) {
-                int pulse = (zone->elapsed_ms / 90 + j * 37 + density * 11) % 5;
-                int x = zone->x + ring[j][0] + (density - 1) * 90;
-                int z = zone->z + ring[j][1] + (density - 1) * 70;
-                int height = 180 + pulse * 55;
-                pixels += render_fire_point(renderer, camera, x, -890, z,
-                                            3 + pulse / 2, 0xD84A08);
-                if ((j + density + zone->elapsed_ms / 120) % 3 == 0)
-                    pixels += render_fire_point(renderer, camera,
-                                                x - ring[j][1] / 20,
-                                                -890 + height,
-                                                z + ring[j][0] / 20,
-                                                3 + pulse / 2, 0xFFB51A);
-            }
-        }
-        for (j = 0; j < 24; j++) {
-            int pulse = (zone->elapsed_ms / 75 + j * 19) % 6;
-            int ox = (j * 733 % 1500) - 750;
-            int oz = (j * 947 % 1500) - 750;
-            pixels += render_fire_point(renderer, camera,
-                                        zone->x + ox, -890 + 100 + pulse * 45,
-                                        zone->z + oz, 4 + pulse / 2,
-                                        j & 1 ? 0xFFB51A : 0xFF6A08);
-        }
-    }
-    return pixels;
+    return render_fire_point(renderer, camera, x, y, z, size, color);
 }
 
 static int render_muzzle_flashes(struct toy_renderer *renderer,
                                  const struct camera *camera)
 {
     int i, pixels = 0;
-    for (i = 0; i < RASTERFALL_MUZZLE_FLASH_SLOTS; i++) {
-        const struct rasterfall_muzzle_flash *f = &effects.muzzle_flashes[i];
-        int intensity, size, forward;
-        if (!f->active) continue;
-        intensity = f->life_ms * 256 / RASTERFALL_MUZZLE_FLASH_LIFE_MS;
+    for (i = 0; i < RASTERFALL_EFFECT_INSTANCE_SLOTS; i++) {
+        const struct rasterfall_effect_instance *f = &effects.instances[i];
+        int intensity, size, forward, remaining;
+        if (!f->active || f->type != RASTERFALL_EFFECT_INSTANCE_BILLBOARD ||
+            f->kind != RASTERFALL_EFFECT_INSTANCE_KIND_MUZZLE_FLASH)
+            continue;
+        remaining = f->lifetime_ms - f->age_ms;
+        if (remaining < 0) remaining = 0;
+        intensity = f->alpha;
         if (intensity > 256) intensity = 256;
         size = f->weapon == TOY_GAME_WEAPON_SHOTGUN ? 9 : 7;
-        forward = (RASTERFALL_MUZZLE_FLASH_LIFE_MS - f->life_ms) / 3;
-        pixels += render_fire_point(renderer, camera, f->x, f->y, f->z,
+        forward = (f->lifetime_ms - remaining) / 3;
+        pixels += render_effect_billboard(renderer, camera, f->x, f->y, f->z,
                                     size, mix_color(0xFFF4A0, 0xB63A08,
                                                     intensity, 256));
         /* A short directional lobe makes the procedural flash read as a
          * muzzle burst without introducing a texture or particle system. */
-        pixels += render_fire_point(renderer, camera,
-                                    f->x + f->sy * forward / 1024,
+        pixels += render_effect_billboard(renderer, camera,
+                                    f->x + f->dir_x * forward / 1024,
                                     f->y + 18,
-                                    f->z + f->cy * forward / 1024,
+                                    f->z + f->dir_z * forward / 1024,
                                     size / 2 + 1,
                                     mix_color(0xFFD050, 0x7A1D08,
                                               intensity, 256));
@@ -5664,21 +5633,23 @@ static int render_effect_particle(struct toy_renderer *renderer,
 {
     struct vec3 world, view;
     struct toy_screen_vertex screen;
-    int size, k;
+    int width, height, k;
     if (!p->active) return 0;
     world.x = p->x; world.y = p->y; world.z = p->z;
     world_to_view(camera, &world, &view);
     if (view.z < NEAR_Z) return 0;
     project_vertex(&renderer->surface, &view, &screen);
-    size = 2 * p->size / 1000;
-    if (size < 1) size = 1;
-    if (screen.x < 0 || screen.x + size >= renderer->surface.width ||
-        screen.y < 0 || screen.y + size >= renderer->surface.height) return 0;
+    width = 2 * p->size / 1000;
+    if (width < 1) width = 1;
+    height = width * p->stretch_y / 1000;
+    if (height < 1) height = 1;
+    if (screen.x < 0 || screen.x + width >= renderer->surface.width ||
+        screen.y < 0 || screen.y + height >= renderer->surface.height) return 0;
     k = p->alpha;
     if (k < 0) k = 0;
     if (k > 256) k = 256;
-    fill_rect(&renderer->surface, screen.x, screen.y, size, size,
-              mix_color(0xFFC860, 0x4A2008, k, 256));
+    fill_rect(&renderer->surface, screen.x, screen.y, width, height,
+              p->color ? p->color : mix_color(0xFFC860, 0x4A2008, k, 256));
     return 1;
 }
 
@@ -5688,7 +5659,8 @@ static int render_particles(struct toy_renderer *renderer, const struct camera *
     for (i = 0; i < RASTERFALL_EFFECT_INSTANCE_SLOTS; i++) {
         const struct rasterfall_effect_instance *p = &effects.instances[i];
         if (p->type != RASTERFALL_EFFECT_INSTANCE_PARTICLE ||
-            p->kind != RASTERFALL_EFFECT_INSTANCE_KIND_HIT_PARTICLE)
+            (p->kind != RASTERFALL_EFFECT_INSTANCE_KIND_HIT_PARTICLE &&
+             p->kind != RASTERFALL_EFFECT_INSTANCE_KIND_FIRE))
             continue;
         pixels += render_effect_particle(renderer, camera, p);
     }
@@ -5833,7 +5805,6 @@ int rasterfall_render_tracers(struct toy_renderer *renderer,
 int rasterfall_render_particles(struct toy_renderer *renderer,
                                 const struct camera *camera)
 {
-    return render_fire_zones(renderer, camera) +
-           render_muzzle_flashes(renderer, camera) +
+    return render_muzzle_flashes(renderer, camera) +
            render_particles(renderer, camera);
 }

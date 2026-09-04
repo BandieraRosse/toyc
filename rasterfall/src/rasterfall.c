@@ -3227,6 +3227,7 @@ startup_again:
                     fire_edge = 0;
                     shove_edge = 0;
                 }
+                rasterfall_effects_sync_fire_zones(&effects, &game);
                 if (net.mode == RASTERFALL_NET_HOST) {
                     rasterfall_net_apply_clients(&net, &session, &camera);
                     rasterfall_net_capture_events(&net, &game);

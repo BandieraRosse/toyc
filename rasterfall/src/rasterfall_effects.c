@@ -17,6 +17,13 @@ static int effect_rand(struct rasterfall_effects *effects, int lo, int hi)
     return lo + (int)(xorshift32(&effects->rng) % (uint32_t)span);
 }
 
+static const int effect_fire_ring[16][2] = {
+    { 2500, 0 }, { 2310, 956 }, { 1768, 1768 }, { 956, 2310 },
+    { 0, 2500 }, { -956, 2310 }, { -1768, 1768 }, { -2310, 956 },
+    { -2500, 0 }, { -2310, -956 }, { -1768, -1768 }, { -956, -2310 },
+    { 0, -2500 }, { 956, -2310 }, { 1768, -1768 }, { 2310, -956 }
+};
+
 static int effect_default_lifetime(int type)
 {
     if (type == RASTERFALL_EFFECT_INSTANCE_RAY)
@@ -41,8 +48,65 @@ struct rasterfall_effect_instance *rasterfall_effects_spawn_instance(
     if (instance->lifetime_ms <= 0)
         instance->lifetime_ms = effect_default_lifetime(instance->type);
     if (instance->size <= 0) instance->size = 1000;
+    if (instance->stretch_y <= 0) instance->stretch_y = 1000;
     if (instance->alpha <= 0) instance->alpha = 256;
     return instance;
+}
+
+static void spawn_fire_particle(struct rasterfall_effects *effects,
+                                int x, int y, int z, int size,
+                                uint32_t color)
+{
+    struct rasterfall_effect_instance instance;
+    memset(&instance, 0, sizeof(instance));
+    instance.type = RASTERFALL_EFFECT_INSTANCE_PARTICLE;
+    instance.kind = RASTERFALL_EFFECT_INSTANCE_KIND_FIRE;
+    instance.x = x; instance.y = y; instance.z = z;
+    instance.lifetime_ms = 16;
+    instance.size = size * 500;
+    instance.stretch_y = 2000;
+    instance.color = color;
+    rasterfall_effects_spawn_instance(effects, &instance);
+}
+
+void rasterfall_effects_sync_fire_zones(struct rasterfall_effects *effects,
+                                        const struct toy_game *game)
+{
+    int i, j;
+    if (!effects || !game) return;
+    for (i = 0; i < RASTERFALL_EFFECT_INSTANCE_SLOTS; i++)
+        if (effects->instances[i].kind == RASTERFALL_EFFECT_INSTANCE_KIND_FIRE)
+            effects->instances[i].active = 0;
+    for (i = 0; i < TOY_CONFIG_MAX_BURN_ZONES; i++) {
+        const struct toy_game_burn_zone *zone = &game->burn_zones[i];
+        if (!zone->active) continue;
+        for (j = 0; j < 16; j++) {
+            int density;
+            for (density = 0; density < 3; density++) {
+                int pulse = (zone->elapsed_ms / 90 + j * 37 + density * 11) % 5;
+                int x = zone->x + effect_fire_ring[j][0] + (density - 1) * 90;
+                int z = zone->z + effect_fire_ring[j][1] + (density - 1) * 70;
+                int height = 180 + pulse * 55;
+                spawn_fire_particle(effects, x, -890, z,
+                                    3 + pulse / 2, 0xD84A08);
+                if ((j + density + zone->elapsed_ms / 120) % 3 == 0)
+                    spawn_fire_particle(effects,
+                                        x - effect_fire_ring[j][1] / 20,
+                                        -890 + height,
+                                        z + effect_fire_ring[j][0] / 20,
+                                        3 + pulse / 2, 0xFFB51A);
+            }
+        }
+        for (j = 0; j < 24; j++) {
+            int pulse = (zone->elapsed_ms / 75 + j * 19) % 6;
+            int ox = (j * 733 % 1500) - 750;
+            int oz = (j * 947 % 1500) - 750;
+            spawn_fire_particle(effects, zone->x + ox,
+                                -890 + 100 + pulse * 45,
+                                zone->z + oz, 4 + pulse / 2,
+                                j & 1 ? 0xFFB51A : 0xFF6A08);
+        }
+    }
 }
 
 static void spawn_event_instance(struct rasterfall_effects *effects,

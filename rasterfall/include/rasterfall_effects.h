@@ -13,7 +13,7 @@
 #define RASTERFALL_PARTICLE_GRAVITY 4
 #define RASTERFALL_MUZZLE_FLASH_SLOTS 16
 #define RASTERFALL_MUZZLE_FLASH_LIFE_MS 70
-#define RASTERFALL_EFFECT_INSTANCE_SLOTS 128
+#define RASTERFALL_EFFECT_INSTANCE_SLOTS 2048
 
 /* Runtime component types describe the low-level renderer primitive.  They
  * are intentionally separate from event types: one event may eventually
@@ -34,7 +34,8 @@ enum rasterfall_effect_instance_kind {
     RASTERFALL_EFFECT_INSTANCE_KIND_MUZZLE_FLASH,
     RASTERFALL_EFFECT_INSTANCE_KIND_TRACER,
     RASTERFALL_EFFECT_INSTANCE_KIND_HIT_PARTICLE,
-    RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION
+    RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION,
+    RASTERFALL_EFFECT_INSTANCE_KIND_FIRE
 };
 
 /* Compatibility aliases for the first runtime prototype. */
@@ -65,6 +66,8 @@ struct rasterfall_effect_instance {
     int dir_x, dir_y, dir_z;
     int vx, vy, vz;
     int gravity_y;
+    int stretch_y;
+    uint32_t color;
     int lifetime_ms;
     int age_ms;
     int size;
@@ -130,6 +133,8 @@ struct rasterfall_effects {
 void rasterfall_effects_init(struct rasterfall_effects *effects);
 void rasterfall_effects_update(struct rasterfall_effects *effects, int dt_ms);
 void rasterfall_effects_reset_fire(struct rasterfall_effects *effects);
+void rasterfall_effects_sync_fire_zones(
+    struct rasterfall_effects *effects, const struct toy_game *game);
 struct rasterfall_effect_instance *rasterfall_effects_spawn_instance(
     struct rasterfall_effects *effects,
     const struct rasterfall_effect_instance *seed);
