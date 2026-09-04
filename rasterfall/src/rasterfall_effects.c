@@ -57,22 +57,39 @@ void rasterfall_effects_spawn_hit_particles(struct rasterfall_effects *effects,
 void rasterfall_effects_emit(struct rasterfall_effects *effects,
                              const struct rasterfall_effect_cue *cue)
 {
+    struct rasterfall_effect_event event;
+    if (!cue) return;
+    memset(&event, 0, sizeof(event));
+    event.type = cue->type;
+    event.flags = cue->depth_test ? RASTERFALL_EFFECT_EVENT_DEPTH_TEST : 0;
+    event.sx = cue->sx; event.sy = cue->sy; event.sz = cue->sz;
+    event.ex = cue->ex; event.ey = cue->ey; event.ez = cue->ez;
+    event.x = cue->ex; event.y = cue->ey; event.z = cue->ez;
+    event.dir_sy = cue->dir_sy; event.dir_cy = cue->dir_cy;
+    event.life_ms = cue->life_ms;
+    rasterfall_effects_consume(effects, &event);
+}
+
+void rasterfall_effects_consume(struct rasterfall_effects *effects,
+                                const struct rasterfall_effect_event *event)
+{
     struct rasterfall_tracer *tracer;
-    if (!effects || !cue) return;
-    if (cue->type == RASTERFALL_EFFECT_CUE_TRACER) {
+    if (!effects || !event) return;
+    if (event->type == RASTERFALL_EFFECT_EVENT_WEAPON_FIRE) {
         tracer = &effects->tracers[effects->tracer_next];
         effects->tracer_next =
             (effects->tracer_next + 1) % RASTERFALL_TRACER_SLOTS;
         tracer->active = 1;
-        tracer->depth_test = cue->depth_test;
-        tracer->sx = cue->sx; tracer->sy = cue->sy; tracer->sz = cue->sz;
-        tracer->ex = cue->ex; tracer->ey = cue->ey; tracer->ez = cue->ez;
-        tracer->life_ms = cue->life_ms > 0 ? cue->life_ms :
+        tracer->depth_test = (event->flags & RASTERFALL_EFFECT_EVENT_DEPTH_TEST) != 0;
+        tracer->sx = event->sx; tracer->sy = event->sy; tracer->sz = event->sz;
+        tracer->ex = event->ex; tracer->ey = event->ey; tracer->ez = event->ez;
+        tracer->life_ms = event->life_ms > 0 ? event->life_ms :
                           RASTERFALL_TRACER_LIFE_MS;
-    } else if (cue->type == RASTERFALL_EFFECT_CUE_HIT_PARTICLES) {
-        rasterfall_effects_spawn_hit_particles(effects, cue->ex, cue->ey,
-                                                cue->ez, cue->dir_sy,
-                                                cue->dir_cy);
+    } else if (event->type == RASTERFALL_EFFECT_EVENT_BULLET_IMPACT ||
+               event->type == RASTERFALL_EFFECT_EVENT_ENTITY_HIT) {
+        rasterfall_effects_spawn_hit_particles(effects, event->x, event->y,
+                                                event->z, event->dir_sy,
+                                                event->dir_cy);
     }
 }
 

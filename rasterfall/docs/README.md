@@ -1,7 +1,7 @@
 # Rasterfall 代码导航
 
-> 文档更新：2026-09-03
-> 源码核对基线：`75a10cd`（将项目协作说明转向 Rasterfall）
+> 文档更新：2026-09-04
+> 源码核对基线：`92aab4e`（effect event / presentation cue 基础层）
 
 本目录面向接手 Rasterfall 任务的编码代理。目标不是介绍玩法，而是先把问题归到正确的
 状态所有者和文件，再开始搜索。命令、资源导入方法和用户可见特性仍以
@@ -16,6 +16,7 @@
 | 地图格式、关卡实体、拾取物、出生点 | [gameplay.md](gameplay.md) | `lib/map.c`、`src/rasterfall_map.c` |
 | 编写或扩展 `.map` 文本格式 | [map-format.md](map-format.md) | `lib/map.c`、`include/toy_map.h` |
 | 场景、角色、HUD、特效、第一人称武器、性能 | [rendering.md](rendering.md) | `src/rasterfall_render.c` |
+| 战斗表现事件、tracer/particle 消费 | [rendering.md](rendering.md) | `include/rasterfall_effect_event.h`、`src/rasterfall_effects.c` |
 | 模型、蒙皮、IK、VMD/GLB、动作重定向 | [assets-animation.md](assets-animation.md) | `src/rasterfall_model.c` |
 | 转换 PMX/GLB、生成 LOD、模型诊断 | [asset-pipeline.md](asset-pipeline.md) | `app/`、`tools/`、模型加载器 |
 | 联机协议、快照、预测、可靠事件、房间发现 | [networking.md](networking.md) | `src/rasterfall_net.c` |
@@ -39,6 +40,9 @@ src/rasterfall_render.c + HUD    只读玩法状态并生成画面
       ↓
 toy_renderer / window / audio    仓库公共平台层
 ```
+
+战斗表现事件是 presentation-only 数据，统一经 `rasterfall_effects` 消费为短生命周期表现状态；
+它不进入 `toy_game` 的权威状态同步。
 
 网络主机运行权威会话；客户端通过 `rasterfall_net.c` 的快照、预测与校正形成展示状态。
 不要把纯视觉状态塞进 `toy_game`，也不要让渲染器修改权威玩法结果。

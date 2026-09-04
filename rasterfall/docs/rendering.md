@@ -1,7 +1,7 @@
 # 渲染、HUD、特效与性能
 
-> 文档更新：2026-09-03
-> 源码核对基线：`75a10cd`（将项目协作说明转向 Rasterfall）
+> 文档更新：2026-09-04
+> 源码核对基线：`92aab4e`（effect event / presentation cue 基础层）
 
 ## 渲染边界
 
@@ -16,7 +16,9 @@
 
 - `rasterfall_hud.c`：玩家、网络、波次、商店 HUD，交互提示和 BMP/帧导出。
 - `rasterfall_viewmodel.c`：第一人称手臂、武器模型、后坐/摆动和枪口位置。
-- `rasterfall_effects.c`：弹道、命中粒子等短生命周期表现状态。
+- `rasterfall_effects.c`：消费 `rasterfall_effect_event`，维护弹道、命中粒子等短生命周期表现状态。
+  事件类型统一定义在 `include/rasterfall_effect_event.h`，包含 weapon fire、bullet impact、
+  entity hit 和预留 explosion；该模块不反写 gameplay。
 - `rasterfall_sky.c`：天空背景。
 - `rasterfall_perf.c`：阶段计时、场景统计和性能输出。
 - `src/dev-tests/*.inc`：角色基准和蒙皮跟踪，直接包含进 render 编译单元。
@@ -26,6 +28,9 @@
 主循环更新 session/net/effects 后，设置 `rasterfall_render_context`，调用场景及实体公开入口，
 底层 renderer 收集/光栅化几何；随后绘制 HUD、菜单和调试叠层并 present。客户端角色展示可能使用
 网络插值状态，不应误读为权威 `toy_game` 状态。
+
+战斗事件链路为：规则结果/网络展示适配器 → `rasterfall_effect_event` →
+`rasterfall_effects_consume()` → tracer/particle pool。当前消费者的具体参数保持原行为。
 
 ## 常见任务落点
 

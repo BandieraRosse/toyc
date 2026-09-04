@@ -1,7 +1,7 @@
 # 玩法、会话、地图与 AI
 
-> 文档更新：2026-09-03
-> 源码核对基线：`75a10cd`（将项目协作说明转向 Rasterfall）
+> 文档更新：2026-09-04
+> 源码核对基线：`92aab4e`（effect event / presentation cue 基础层）
 
 ## 三层职责
 
@@ -31,6 +31,9 @@
 - 商店、剧情、队友雇佣、托管玩法：`rasterfall_session.c` 的 `shop`、`campaign`、`managed_ai` 区域。
 - 角色外观选择：`rasterfall_character.c`；角色动作状态仍由 `toy_game_actor.animation` 等字段拥有。
 - HUD 显示错误：先确认 `rasterfall_hud_state` 在主循环中是否正确填充，再改 `rasterfall_hud.c`。
+
+射击射线和命中结果由会话/展示适配器转换为 `rasterfall_effect_event`；该事件只描述开火、
+弹着点、受击或预留爆炸，不是玩法状态，也不加入快照。
 
 ## 跨层检查
 

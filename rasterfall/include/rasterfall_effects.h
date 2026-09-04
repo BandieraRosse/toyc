@@ -3,6 +3,7 @@
 
 #include "core.h"
 #include "toy_game.h"
+#include "rasterfall_effect_event.h"
 
 #define RASTERFALL_TRACER_SLOTS 32
 #define RASTERFALL_TRACER_LIFE_MS 160
@@ -11,12 +12,11 @@
 #define RASTERFALL_PARTICLE_LIFE_MS 240
 #define RASTERFALL_PARTICLE_GRAVITY 4
 
-/* Gameplay/network code emits these presentation cues; it does not own the
- * tracer/particle pools.  New weapons and abilities can add cue types here
- * without duplicating pool management in the main loop. */
+/* Compatibility names for callers that still use the original pool-specific
+ * cue.  New code should use rasterfall_effect_event directly. */
 enum rasterfall_effect_cue_type {
-    RASTERFALL_EFFECT_CUE_TRACER,
-    RASTERFALL_EFFECT_CUE_HIT_PARTICLES
+    RASTERFALL_EFFECT_CUE_TRACER = RASTERFALL_EFFECT_EVENT_WEAPON_FIRE,
+    RASTERFALL_EFFECT_CUE_HIT_PARTICLES = RASTERFALL_EFFECT_EVENT_BULLET_IMPACT
 };
 
 struct rasterfall_effect_cue {
@@ -63,5 +63,7 @@ void rasterfall_effects_spawn_hit_particles(struct rasterfall_effects *effects,
                                             int x, int y, int z, int sy, int cy);
 void rasterfall_effects_emit(struct rasterfall_effects *effects,
                              const struct rasterfall_effect_cue *cue);
+void rasterfall_effects_consume(struct rasterfall_effects *effects,
+                                const struct rasterfall_effect_event *event);
 
 #endif

@@ -1,7 +1,7 @@
 # 网络代码导航
 
-> 文档更新：2026-09-03
-> 源码核对基线：`75a10cd`（将项目协作说明转向 Rasterfall）
+> 文档更新：2026-09-04
+> 源码核对基线：`92aab4e`（effect event / presentation cue 基础层）
 
 ## 文件职责
 
@@ -23,6 +23,9 @@
 - 抖动或回弹：查 reconcile 与 presentation interpolation，不要在 renderer 中修权威坐标。
 - 枪声/命中特效丢失：查可靠事件队列、fire sequence、主循环 `sync_network_fire_effects()`。
 - 新增同步字段：同时检查主机采集、编码、边界/版本、解码、客户端应用、重置和相关测试。
+
+`rasterfall_effect_event` 是接收端的 presentation-only 扩展接口。纯视觉事件不加入 snapshot，
+也不把 event 的原始 C 布局直接发送到网络；未来网络驱动表现必须增加明确的协议编码。
 
 协议使用显式整数编码和单位换算；不要发送原始 C struct。Windows socket 适配位于
 `windows/src/socket_winsock.c`，Linux 使用 Tinylibc 网络接口。网络测试可受沙箱和本机端口环境影响，
