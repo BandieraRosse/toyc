@@ -40,7 +40,9 @@ enum rasterfall_effect_instance_kind {
     RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION_PARTICLE,
     RASTERFALL_EFFECT_INSTANCE_KIND_ENTITY_HIT_RAY,
     RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION_RAY,
-    RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION_FLASH
+    RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION_FLASH,
+    RASTERFALL_EFFECT_INSTANCE_KIND_PROJECTILE_FLASH,
+    RASTERFALL_EFFECT_INSTANCE_KIND_DAMAGE_FLASH
 };
 
 /* Compatibility aliases for the first runtime prototype. */
@@ -86,12 +88,14 @@ struct rasterfall_effect_instance {
  * instances into the shared runtime pool and never owns gameplay state. */
 struct rasterfall_effect_emitter {
     int active;
+    int source_id;
     int x, y, z;
     int dir_x, dir_y, dir_z;
     int lifetime_ms;
     int age_ms;
     int spawn_interval_ms;
     int spawn_accum_ms;
+    int burst_count;
     int spawned_count;
     int spawn_limit;
     int child_type;
@@ -101,6 +105,8 @@ struct rasterfall_effect_emitter {
     int gravity_y;
     int size;
     int alpha;
+    int phase_ms;
+    int pattern;
     uint32_t color;
 };
 
@@ -166,6 +172,10 @@ void rasterfall_effects_init(struct rasterfall_effects *effects);
 void rasterfall_effects_update(struct rasterfall_effects *effects, int dt_ms);
 void rasterfall_effects_reset_fire(struct rasterfall_effects *effects);
 void rasterfall_effects_sync_fire_zones(
+    struct rasterfall_effects *effects, const struct toy_game *game);
+void rasterfall_effects_sync_projectile_flashes(
+    struct rasterfall_effects *effects, const struct toy_game *game);
+void rasterfall_effects_sync_damage_flash(
     struct rasterfall_effects *effects, const struct toy_game *game);
 struct rasterfall_effect_instance *rasterfall_effects_spawn_instance(
     struct rasterfall_effects *effects,

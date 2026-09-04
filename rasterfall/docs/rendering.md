@@ -1,7 +1,7 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-04
-> 源码核对基线：工作区（effect runtime 第二阶段基础渲染原语）
+> 源码核对基线：工作区（effect runtime 第五阶段环境效果迁移）
 
 ## 渲染边界
 
@@ -16,11 +16,11 @@
 
 - `rasterfall_hud.c`：玩家、网络、波次、商店 HUD，交互提示和 BMP/帧导出。
 - `rasterfall_viewmodel.c`：第一人称手臂、武器模型、后坐/摆动和枪口位置。
-- `rasterfall_effects.c`：消费 `rasterfall_effect_event`，维护枪口闪光、弹道、命中粒子和 Molotov 火焰等短生命周期表现状态。
+- `rasterfall_effects.c`：消费 `rasterfall_effect_event`，并从投掷物/燃烧区域展示状态同步枪口闪光、弹道、命中粒子、炸弹闪烁和 Molotov 火焰等短生命周期表现状态。
   事件消费现在还会登记到固定容量的 `rasterfall_effect_instance` runtime 池；instance 将底层
   组件类型（particle/ray/billboard/overlay/emitter）与语义 kind 分离。旧的 muzzle/tracer/
   particle 池继续负责兼容更新；tracer、命中火花、muzzle flash 和 Molotov 火焰已迁移到统一
-`RAY`/`PARTICLE`/`BILLBOARD` 组件；`ENTITY_HIT` 还会生成短生命周期 hit ray；屏幕空间效果通过 `render_effect_overlay()` 和
+  `RAY`/`PARTICLE`/`BILLBOARD` 组件；`ENTITY_HIT` 还会生成短生命周期 hit ray，炸弹 fuse flash 使用 billboard；玩家伤害闪屏使用 `OVERLAY`，屏幕空间效果通过 `render_effect_overlay()` 和
   `rasterfall_render_overlays()` 提供统一入口，因此本阶段不改变已有效果画面。`EXPLOSION`
   现在由固定生命周期的 emitter 生成 16 个通用 `EXPLOSION_PARTICLE` 子实例；事件类型统一定义在
   `include/rasterfall_effect_event.h`，该模块不反写 gameplay。
@@ -46,8 +46,8 @@ muzzle flash 和 Molotov 火焰的渲染已经直接消费 runtime `RAY`/`PARTIC
 `rasterfall_effects_consume()` 中登记一个固定容量 emitter，并由 emitter 按间隔把子组件写入统一
 instance pool；当前爆炸配置生成冲击波 ray、短时 billboard 和固定数量的粒子子 instance，由
 `rasterfall_render_particles()` 的通用粒子分支绘制。该接入不修改炸弹伤害和网络协议；联机事件仍应由展示适配器构造已有 event。当前 Molotov 火焰已经通过
-`rasterfall_effects_sync_fire_zones()` 将原有燃烧区域程序化采样同步为 `FIRE` 语义的 `PARTICLE` instance，
-并由通用粒子绘制入口消费；后续可在不改变火焰语义的前提下替换粒子渲染细节。
+`rasterfall_effects_sync_fire_zones()` 将每个燃烧区域同步为固定容量 emitter；emitter 按固定间隔批量生成
+`FIRE` 语义的 `PARTICLE` instance，并由通用粒子绘制入口消费。后续可在不改变火焰语义的前提下替换粒子渲染细节。
 
 ## 常见任务落点
 

@@ -3228,6 +3228,8 @@ startup_again:
                     shove_edge = 0;
                 }
                 rasterfall_effects_sync_fire_zones(&effects, &game);
+                rasterfall_effects_sync_projectile_flashes(&effects, &game);
+                rasterfall_effects_sync_damage_flash(&effects, &game);
                 if (net.mode == RASTERFALL_NET_HOST) {
                     rasterfall_net_apply_clients(&net, &session, &camera);
                     rasterfall_net_capture_events(&net, &game);
@@ -3465,7 +3467,6 @@ startup_again:
             scene_pixels += stage_pixels;
             rasterfall_render_ai_teammate_name(&renderer, &render_camera);
             rasterfall_render_network_teammate_status(&renderer, &render_camera, &net);
-            rasterfall_hud_damage_flash(&surface, &game);
             stage_pixels += rasterfall_render_overlays(&renderer);
             if (game.state == TOY_GAME_PLAYING && !paused &&
                 !session.pose_editor.active && toy_input_down(&input, KEY_TAB))

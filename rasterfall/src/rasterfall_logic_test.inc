@@ -764,6 +764,7 @@ static int run_logic_test(void)
         game.burn_zones[0].x = camera.x;
         game.burn_zones[0].z = camera.z - 2000;
         rasterfall_effects_sync_fire_zones(&effects, &game);
+        rasterfall_effects_update(&effects, 16);
         for (i = 0; i < RASTERFALL_EFFECT_INSTANCE_SLOTS; i++)
             if (effects.instances[i].active &&
                 effects.instances[i].kind == RASTERFALL_EFFECT_INSTANCE_KIND_FIRE)
@@ -851,6 +852,39 @@ static int run_logic_test(void)
                 return 63;
             rasterfall_effects_reset_fire(&effects);
         }
+    }
+    /* Bomb fuse flashes are presentation instances; projectile gameplay
+     * state remains the source and is cleared after this smoke check. */
+    {
+        int i, flash_count = 0;
+        memset(&game.projectiles[0], 0, sizeof(game.projectiles[0]));
+        game.projectiles[0].active = 1;
+        game.projectiles[0].kind = TOY_GAME_WEAPON_BOMB;
+        game.projectiles[0].x = camera.x;
+        game.projectiles[0].y = 0;
+        game.projectiles[0].z = camera.z - 1000;
+        game.projectiles[0].flash_ms = 100;
+        rasterfall_effects_sync_projectile_flashes(&effects, &game);
+        for (i = 0; i < RASTERFALL_EFFECT_INSTANCE_SLOTS; i++)
+            if (effects.instances[i].active &&
+                effects.instances[i].kind == RASTERFALL_EFFECT_INSTANCE_KIND_PROJECTILE_FLASH)
+                flash_count++;
+        if (flash_count != 1) return 67;
+        rasterfall_effects_reset_fire(&effects);
+        memset(&game.projectiles[0], 0, sizeof(game.projectiles[0]));
+    }
+    {
+        int i, overlay_count = 0;
+        game.damage_flash_ms = TOY_GAME_DAMAGE_FLASH_MS;
+        rasterfall_effects_sync_damage_flash(&effects, &game);
+        for (i = 0; i < RASTERFALL_EFFECT_INSTANCE_SLOTS; i++)
+            if (effects.instances[i].active &&
+                effects.instances[i].type == RASTERFALL_EFFECT_INSTANCE_OVERLAY &&
+                effects.instances[i].kind == RASTERFALL_EFFECT_INSTANCE_KIND_DAMAGE_FLASH)
+                overlay_count++;
+        if (overlay_count != 1) return 68;
+        rasterfall_effects_reset_fire(&effects);
+        game.damage_flash_ms = 0;
     }
     /* 开发者区域场景：纹理墙/模型台座渲染 + 真实开火产生弹道与命中
      * 火花（向北穿门洞直达最大射程长弹道，向西命中空气墙 1800）。

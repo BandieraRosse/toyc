@@ -98,7 +98,6 @@ static int active_actor_roll_sin;
 static int active_actor_roll_cos = 1024;
 static int active_gallery_lighting;
 static int active_disable_material_light;
-static int active_emissive_projectile;
 static int active_coordinate_axes;
 static struct rasterfall_model_render_stats model_render_stats;
 static int collect_model_render_stats;
@@ -2541,11 +2540,9 @@ static int draw_world_triangle_views(struct toy_renderer *renderer,
         }
         int center_x = (a->x + b->x + c->x) / 3;
         int center_z = (a->z + b->z + c->z) / 3;
-        int light = active_emissive_projectile ? 384 :
-                    active_gallery_lighting ? 256 :
+        int light = active_gallery_lighting ? 256 :
                     fixed_floor_lighting ? 256 : baked_light_at(center_x, center_z);
-        int fog = active_emissive_projectile ? 0 :
-                  active_gallery_lighting ? 0 : fixed_floor_lighting ? 0 :
+        int fog = active_gallery_lighting ? 0 : fixed_floor_lighting ? 0 :
                   baked_fog_at(world_distance(camera, center_x, center_z));
         /* 区域涂色（fixed_floor_lighting）与地砖仅差 6 个世界单位，掠射角下
          * 插值深度误差会盖过真实差值导致 z-fight；涂色按覆盖层绘制，
@@ -3792,8 +3789,6 @@ static int render_projectiles(struct toy_renderer *renderer,
         struct rasterfall_model_asset *model;
         int width, height, depth, length, scale, j;
         if (!p->active) continue;
-        active_emissive_projectile =
-            p->flash_ms && p->kind == TOY_GAME_WEAPON_BOMB;
         path = p->kind == TOY_GAME_WEAPON_BOMB ?
                "rasterfall/assets/models/bomb.rmesh" :
                "rasterfall/assets/models/molotov.rmesh";
@@ -3855,8 +3850,6 @@ static int render_projectiles(struct toy_renderer *renderer,
                                                           &uv[0], &uv[1],
                                                           &uv[2]);
                     } else {
-                        if (p->flash_ms && p->kind == TOY_GAME_WEAPON_BOMB)
-                            color = 0xFF0000;
                         pixels += draw_world_triangle(renderer, camera,
                                                       &v[0], &v[1], &v[2],
                                                       color);
@@ -3865,7 +3858,6 @@ static int render_projectiles(struct toy_renderer *renderer,
             }
         }
     }
-    active_emissive_projectile = 0;
     active_texture_view = previous_texture;
     return pixels;
 }
@@ -5652,6 +5644,27 @@ static int render_explosion_flashes(struct toy_renderer *renderer,
     return pixels;
 }
 
+static int render_projectile_flashes(struct toy_renderer *renderer,
+                                     const struct camera *camera)
+{
+    int i, pixels = 0;
+    for (i = 0; i < RASTERFALL_EFFECT_INSTANCE_SLOTS; i++) {
+        const struct rasterfall_effect_instance *f = &effects.instances[i];
+        int size, intensity;
+        if (!f->active || f->type != RASTERFALL_EFFECT_INSTANCE_BILLBOARD ||
+            f->kind != RASTERFALL_EFFECT_INSTANCE_KIND_PROJECTILE_FLASH)
+            continue;
+        size = 7;
+        intensity = f->alpha;
+        if (intensity > 256) intensity = 256;
+        pixels += render_effect_billboard(renderer, camera, f->x, f->y, f->z,
+                                          size,
+                                          mix_color(0xFF6060, 0x641010,
+                                                    intensity, 256));
+    }
+    return pixels;
+}
+
 static int render_effect_overlay(struct toy_renderer *renderer,
                                  const struct rasterfall_effect_instance *overlay)
 {
@@ -5858,6 +5871,7 @@ int rasterfall_render_particles(struct toy_renderer *renderer,
 {
     return render_muzzle_flashes(renderer, camera) +
            render_explosion_flashes(renderer, camera) +
+           render_projectile_flashes(renderer, camera) +
            render_particles(renderer, camera);
 }
 
