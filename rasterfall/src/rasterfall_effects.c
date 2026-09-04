@@ -69,6 +69,8 @@ struct rasterfall_effect_emitter *rasterfall_effects_spawn_emitter(
     if (emitter->lifetime_ms <= 0) emitter->lifetime_ms = 160;
     if (emitter->spawn_interval_ms <= 0) emitter->spawn_interval_ms = 16;
     if (emitter->spawn_limit < 0) emitter->spawn_limit = 0;
+    if (emitter->burst_count < 0) emitter->burst_count = 0;
+    if (emitter->spread < 0) emitter->spread = 0;
     if (emitter->alpha <= 0) emitter->alpha = 256;
     return emitter;
 }
@@ -317,6 +319,24 @@ static void spawn_event_instance(struct rasterfall_effects *effects,
     rasterfall_effects_spawn_instance(effects, &instance);
 }
 
+static void init_explosion_emitter(struct rasterfall_effect_emitter *emitter,
+                                   const struct rasterfall_effect_event *event)
+{
+    memset(emitter, 0, sizeof(*emitter));
+    emitter->x = event->x; emitter->y = event->y; emitter->z = event->z;
+    emitter->lifetime_ms = 180;
+    emitter->spawn_interval_ms = 1;
+    emitter->spawn_limit = 16;
+    emitter->child_type = RASTERFALL_EFFECT_INSTANCE_PARTICLE;
+    emitter->child_kind = RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION_PARTICLE;
+    emitter->pattern = RASTERFALL_EFFECT_EMITTER_PATTERN_EXPLOSION;
+    emitter->spread = 1000;
+    emitter->gravity_y = 2;
+    emitter->size = 4500;
+    emitter->alpha = 256;
+    emitter->color = 0xFFD050;
+}
+
 void rasterfall_effects_init(struct rasterfall_effects *effects)
 {
     memset(effects, 0, sizeof(struct rasterfall_effects));
@@ -394,18 +414,7 @@ void rasterfall_effects_consume(struct rasterfall_effects *effects,
     } else if (event->type == RASTERFALL_EFFECT_EVENT_EXPLOSION) {
         struct rasterfall_effect_emitter emitter;
         struct rasterfall_effect_event shockwave = *event;
-        memset(&emitter, 0, sizeof(emitter));
-        emitter.x = event->x; emitter.y = event->y; emitter.z = event->z;
-        emitter.lifetime_ms = 180;
-        emitter.spawn_interval_ms = 1;
-        emitter.spawn_limit = 16;
-        emitter.child_type = RASTERFALL_EFFECT_INSTANCE_PARTICLE;
-        emitter.child_kind = RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION_PARTICLE;
-        emitter.pattern = RASTERFALL_EFFECT_EMITTER_PATTERN_EXPLOSION;
-        emitter.spread = 1000;
-        emitter.gravity_y = 2;
-        emitter.size = 4500;
-        emitter.color = 0xFFD050;
+        init_explosion_emitter(&emitter, event);
         rasterfall_effects_spawn_emitter(effects, &emitter);
         spawn_event_instance(effects, event,
                              RASTERFALL_EFFECT_INSTANCE_EMITTER,
