@@ -753,7 +753,18 @@ static int run_logic_test(void)
     }
     {
         struct rasterfall_effect_cue cue;
+        struct rasterfall_effect_event fire_event;
         memset(&cue, 0, sizeof(cue));
+        memset(&fire_event, 0, sizeof(fire_event));
+        fire_event.type = RASTERFALL_EFFECT_EVENT_WEAPON_FIRE;
+        fire_event.sx = 10; fire_event.sy = 20; fire_event.sz = 30;
+        fire_event.weapon = TOY_GAME_WEAPON_AK;
+        rasterfall_effects_consume(&effects, &fire_event);
+        if (!effects.muzzle_flashes[0].active ||
+            effects.muzzle_flashes[0].x != 10 ||
+            effects.muzzle_flashes[0].weapon != TOY_GAME_WEAPON_AK)
+            return 59;
+        rasterfall_effects_reset_fire(&effects);
         cue.type = RASTERFALL_EFFECT_CUE_TRACER;
         cue.depth_test = 1;
         cue.sx = 1; cue.sy = 2; cue.sz = 3;

@@ -11,6 +11,8 @@
 #define RASTERFALL_PARTICLE_SLOTS 96
 #define RASTERFALL_PARTICLE_LIFE_MS 240
 #define RASTERFALL_PARTICLE_GRAVITY 4
+#define RASTERFALL_MUZZLE_FLASH_SLOTS 16
+#define RASTERFALL_MUZZLE_FLASH_LIFE_MS 70
 
 /* Compatibility names for callers that still use the original pool-specific
  * cue.  New code should use rasterfall_effect_event directly. */
@@ -43,11 +45,21 @@ struct rasterfall_particle {
     int life_ms;
 };
 
+struct rasterfall_muzzle_flash {
+    int active;
+    int x, y, z;
+    int sy, cy;
+    int weapon;
+    int life_ms;
+};
+
 struct rasterfall_effects {
     struct rasterfall_tracer tracers[RASTERFALL_TRACER_SLOTS];
     int tracer_next;
     struct rasterfall_particle particles[RASTERFALL_PARTICLE_SLOTS];
     int particle_next;
+    struct rasterfall_muzzle_flash muzzle_flashes[RASTERFALL_MUZZLE_FLASH_SLOTS];
+    int muzzle_flash_next;
     unsigned int last_fire_seq;
     unsigned int last_network_fire_seq[4];
     unsigned int last_ai_fire_seq;

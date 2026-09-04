@@ -6,6 +6,7 @@
  * network adapter may produce them; the effects module consumes them. */
 enum rasterfall_effect_event_type {
     RASTERFALL_EFFECT_EVENT_WEAPON_FIRE,
+    RASTERFALL_EFFECT_EVENT_TRACER,
     RASTERFALL_EFFECT_EVENT_BULLET_IMPACT,
     RASTERFALL_EFFECT_EVENT_ENTITY_HIT,
     RASTERFALL_EFFECT_EVENT_EXPLOSION
@@ -23,8 +24,9 @@ struct rasterfall_effect_event {
     int weapon;
     unsigned int sequence;
 
-    /* Fixed-point world-space payload.  For weapon fire, start/end describe
-     * one ray.  For impact/hit/explosion, x/y/z is the event position. */
+    /* Fixed-point world-space payload.  Weapon fire uses sx/sy/sz as the
+     * muzzle position; tracer uses start/end for one ray.  Impact/hit/
+     * explosion use x/y/z as the event position. */
     int sx, sy, sz;
     int ex, ey, ez;
     int x, y, z;

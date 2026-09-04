@@ -1326,7 +1326,7 @@ static void emit_ray_effects(const struct toy_game_ray *ray,
 {
     struct rasterfall_effect_event event;
     memset(&event, 0, sizeof(event));
-    event.type = RASTERFALL_EFFECT_EVENT_WEAPON_FIRE;
+    event.type = RASTERFALL_EFFECT_EVENT_TRACER;
     event.flags = depth_test ? RASTERFALL_EFFECT_EVENT_DEPTH_TEST : 0;
     event.sx = sx; event.sy = sy; event.sz = sz;
     event.ex = ex; event.ey = ey; event.ez = ez;
@@ -1343,9 +1343,25 @@ static void emit_ray_effects(const struct toy_game_ray *ray,
     }
 }
 
+static void emit_weapon_fire_effect(int sx, int sy, int sz, int dir_sy,
+                                    int dir_cy, int weapon,
+                                    unsigned int sequence, int source_id)
+{
+    struct rasterfall_effect_event event;
+    memset(&event, 0, sizeof(event));
+    event.type = RASTERFALL_EFFECT_EVENT_WEAPON_FIRE;
+    event.sx = sx; event.sy = sy; event.sz = sz;
+    event.dir_sy = dir_sy; event.dir_cy = dir_cy;
+    event.weapon = weapon;
+    event.sequence = sequence;
+    event.source_id = source_id;
+    event.life_ms = RASTERFALL_MUZZLE_FLASH_LIFE_MS;
+    rasterfall_effects_consume(&effects, &event);
+}
+
 /* 每次实际开火后同步：把 game 里最新一枪的射线搬进 tracer 环，
  * 起点统一取枪口世界坐标；命中（敌人或墙体）的弹丸在弹着点生成
- * 火花，枪口火花则由独立的粒子与闪光绘制。 */
+ * 火花，枪口闪光则由独立的 weapon fire event 绘制。 */
 static void sync_fire_effects(const struct camera *camera)
 {
     int i, ray_count;
@@ -1375,6 +1391,10 @@ static void sync_fire_effects(const struct camera *camera)
     muzzle.y = muzzle_view.y;
     muzzle.z = muzzle_view.z;
     view_to_world(camera, &muzzle, &muzzle);
+    emit_weapon_fire_effect(muzzle.x, muzzle.y, muzzle.z,
+                            camera->pitch_sy, camera->pitch_cy,
+                            rasterfall_viewmodel_weapon(&game),
+                            game.fire_seq, 0);
     for (i = 0; i < ray_count; i++) {
         const struct toy_game_ray *r = &game.rays[i];
         int tracer_x, tracer_y, tracer_z;
@@ -1428,6 +1448,11 @@ static void sync_ai_fire_effects(const struct camera *camera,
                                           actor->current_slot < TOY_GAME_WEAPON_SLOTS ?
                                           actor->slots[actor->current_slot].weapon : -1,
                                           &mx, &my, &mz);
+        emit_weapon_fire_effect(mx, my, mz, actor->sy, actor->cy,
+                                actor->current_slot >= 0 &&
+                                actor->current_slot < TOY_GAME_WEAPON_SLOTS ?
+                                actor->slots[actor->current_slot].weapon : -1,
+                                actor->fire_seq, 1 + actor_index);
         for (i = 0; i < ray_count; i++) {
             const struct toy_game_ray *r = &actor->rays[i];
             int tracer_x, tracer_y, tracer_z;
@@ -1479,6 +1504,8 @@ static void sync_network_fire_effects(const struct camera *viewer,
                                       client->sy, client->cy, client->y,
                                       weapon, &mx, &my, &mz);
     muzzle.x = mx; muzzle.y = my; muzzle.z = mz;
+    emit_weapon_fire_effect(mx, my, mz, client->sy, client->cy, weapon,
+                            fire_seq, 32 + source_id);
     for (i = 0; i < ray_count; i++) {
         const struct toy_game_ray *r = &rays[i];
         int tracer_x, tracer_y, tracer_z;

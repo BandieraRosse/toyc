@@ -29,6 +29,8 @@ void rasterfall_effects_reset_fire(struct rasterfall_effects *effects)
     memset(effects->particles, 0, sizeof(effects->particles));
     effects->tracer_next = 0;
     effects->particle_next = 0;
+    memset(effects->muzzle_flashes, 0, sizeof(effects->muzzle_flashes));
+    effects->muzzle_flash_next = 0;
     effects->last_fire_seq = 0;
     memset(effects->last_network_fire_seq, 0,
            sizeof(effects->last_network_fire_seq));
@@ -61,6 +63,8 @@ void rasterfall_effects_emit(struct rasterfall_effects *effects,
     if (!cue) return;
     memset(&event, 0, sizeof(event));
     event.type = cue->type;
+    if (event.type == RASTERFALL_EFFECT_CUE_TRACER)
+        event.type = RASTERFALL_EFFECT_EVENT_TRACER;
     event.flags = cue->depth_test ? RASTERFALL_EFFECT_EVENT_DEPTH_TEST : 0;
     event.sx = cue->sx; event.sy = cue->sy; event.sz = cue->sz;
     event.ex = cue->ex; event.ey = cue->ey; event.ez = cue->ez;
@@ -74,8 +78,19 @@ void rasterfall_effects_consume(struct rasterfall_effects *effects,
                                 const struct rasterfall_effect_event *event)
 {
     struct rasterfall_tracer *tracer;
+    struct rasterfall_muzzle_flash *flash;
     if (!effects || !event) return;
     if (event->type == RASTERFALL_EFFECT_EVENT_WEAPON_FIRE) {
+        flash = &effects->muzzle_flashes[effects->muzzle_flash_next];
+        effects->muzzle_flash_next =
+            (effects->muzzle_flash_next + 1) % RASTERFALL_MUZZLE_FLASH_SLOTS;
+        flash->active = 1;
+        flash->x = event->sx; flash->y = event->sy; flash->z = event->sz;
+        flash->sy = event->dir_sy; flash->cy = event->dir_cy;
+        flash->weapon = event->weapon;
+        flash->life_ms = event->life_ms > 0 ? event->life_ms :
+                         RASTERFALL_MUZZLE_FLASH_LIFE_MS;
+    } else if (event->type == RASTERFALL_EFFECT_EVENT_TRACER) {
         tracer = &effects->tracers[effects->tracer_next];
         effects->tracer_next =
             (effects->tracer_next + 1) % RASTERFALL_TRACER_SLOTS;
@@ -113,5 +128,11 @@ void rasterfall_effects_update(struct rasterfall_effects *effects, int dt_ms)
         p->vy -= RASTERFALL_PARTICLE_GRAVITY;
         p->life_ms -= dt_ms;
         if (p->life_ms <= 0 || p->y < -880) p->active = 0;
+    }
+    for (i = 0; i < RASTERFALL_MUZZLE_FLASH_SLOTS; i++) {
+        struct rasterfall_muzzle_flash *f = &effects->muzzle_flashes[i];
+        if (!f->active) continue;
+        f->life_ms -= dt_ms;
+        if (f->life_ms <= 0) f->active = 0;
     }
 }

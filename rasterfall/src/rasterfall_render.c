@@ -5178,9 +5178,9 @@ static int render_ai_teammate(struct toy_renderer *renderer,
                         actor_model,&rifle_frame,actor_profile,
                         weapon_profile,
                         actor->x,-900+active_actor_lift,actor->z,actor->sy,
-                        actor->cy,weapon,actor->muzzle_flash_ms);
+                        actor->cy,weapon,0);
                 else pixels+=render_actor_model_weapon(renderer,camera,actor->x,
-                    actor->z,actor->sy,actor->cy,weapon,actor->muzzle_flash_ms,
+                    actor->z,actor->sy,actor->cy,weapon,0,
                     actor->animation.id,actor->animation.time_ms,0,0);
             }
             frontend_set_override(renderer, 0);
@@ -5191,7 +5191,7 @@ static int render_ai_teammate(struct toy_renderer *renderer,
                                        actor->current_slot >= 0 &&
                                        actor->current_slot < TOY_GAME_WEAPON_SLOTS ?
                                        actor->slots[actor->current_slot].weapon : -1,
-                                       actor->muzzle_flash_ms,
+                                       0,
                                        actor->character_id, color,
                                        actor->state == TOY_GAME_ACTOR_DOWNED,
                                        actor->animation.id,
@@ -5335,7 +5335,7 @@ static int render_network_teammate(struct toy_renderer *renderer,
                                                    render_airborne);
             pixels += render_player_avatar(renderer, camera,
                 render_camera->x, render_camera->z, render_camera->sy,
-                render_camera->cy, player->weapon, player->muzzle_flash_ms,
+                             render_camera->cy, player->weapon, 0,
                 i % RASTERFALL_CHARACTER_COUNT, colors[i], player->downed,
                 player->animation.id,
                 player->animation.time_ms);
@@ -5355,7 +5355,7 @@ static int render_network_teammate(struct toy_renderer *renderer,
                                                client->airborne_y);
         pixels += render_player_avatar(renderer, camera, client->camera.x,
             client->camera.z, client->camera.sy, client->camera.cy, weapon,
-            client->muzzle_flash_ms,
+            0,
             client->client_id % RASTERFALL_CHARACTER_COUNT,
             colors[client->client_id], client->down,
             client->animation.id, client->animation.time_ms);
@@ -5623,6 +5623,34 @@ static int render_fire_zones(struct toy_renderer *renderer,
     return pixels;
 }
 
+static int render_muzzle_flashes(struct toy_renderer *renderer,
+                                 const struct camera *camera)
+{
+    int i, pixels = 0;
+    for (i = 0; i < RASTERFALL_MUZZLE_FLASH_SLOTS; i++) {
+        const struct rasterfall_muzzle_flash *f = &effects.muzzle_flashes[i];
+        int intensity, size, forward;
+        if (!f->active) continue;
+        intensity = f->life_ms * 256 / RASTERFALL_MUZZLE_FLASH_LIFE_MS;
+        if (intensity > 256) intensity = 256;
+        size = f->weapon == TOY_GAME_WEAPON_SHOTGUN ? 9 : 7;
+        forward = (RASTERFALL_MUZZLE_FLASH_LIFE_MS - f->life_ms) / 3;
+        pixels += render_fire_point(renderer, camera, f->x, f->y, f->z,
+                                    size, mix_color(0xFFF4A0, 0xB63A08,
+                                                    intensity, 256));
+        /* A short directional lobe makes the procedural flash read as a
+         * muzzle burst without introducing a texture or particle system. */
+        pixels += render_fire_point(renderer, camera,
+                                    f->x + f->sy * forward / 1024,
+                                    f->y + 18,
+                                    f->z + f->cy * forward / 1024,
+                                    size / 2 + 1,
+                                    mix_color(0xFFD050, 0x7A1D08,
+                                              intensity, 256));
+    }
+    return pixels;
+}
+
 static int render_particles(struct toy_renderer *renderer, const struct camera *camera)
 {
     int i, pixels = 0;
@@ -5788,5 +5816,6 @@ int rasterfall_render_particles(struct toy_renderer *renderer,
                                 const struct camera *camera)
 {
     return render_fire_zones(renderer, camera) +
+           render_muzzle_flashes(renderer, camera) +
            render_particles(renderer, camera);
 }
