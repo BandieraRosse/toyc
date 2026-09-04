@@ -71,6 +71,17 @@ struct rasterfall_effect_emitter *rasterfall_effects_spawn_emitter(
     if (emitter->spawn_limit < 0) emitter->spawn_limit = 0;
     if (emitter->burst_count < 0) emitter->burst_count = 0;
     if (emitter->spread < 0) emitter->spread = 0;
+    if (emitter->child_count < 0) emitter->child_count = 0;
+    if (emitter->child_count > RASTERFALL_EFFECT_EMITTER_CHILD_SLOTS)
+        emitter->child_count = RASTERFALL_EFFECT_EMITTER_CHILD_SLOTS;
+    {
+        int child_index;
+        for (child_index = 0; child_index < emitter->child_count; child_index++) {
+            if (emitter->children[child_index].spawn_limit < 0)
+                emitter->children[child_index].spawn_limit = 0;
+            emitter->children[child_index].spawned_count = 0;
+        }
+    }
     if (emitter->alpha <= 0) emitter->alpha = 256;
     return emitter;
 }
@@ -139,6 +150,39 @@ static void spawn_emitter_child(struct rasterfall_effects *effects,
     if (!instance.color) instance.color = emitter->color;
     rasterfall_effects_spawn_instance(effects, &instance);
     emitter->spawned_count++;
+}
+
+static void spawn_emitter_descriptor(
+    struct rasterfall_effects *effects,
+    struct rasterfall_effect_emitter *emitter,
+    struct rasterfall_effect_emitter_child *child)
+{
+    struct rasterfall_effect_instance instance;
+    int index = child->spawned_count % 16;
+    int spread = child->spread < 0 ? 0 : child->spread;
+    memset(&instance, 0, sizeof(instance));
+    instance.type = child->type;
+    instance.kind = child->kind;
+    instance.flags = child->flags;
+    instance.x = emitter->x; instance.y = emitter->y; instance.z = emitter->z;
+    if (child->pattern == RASTERFALL_EFFECT_EMITTER_PATTERN_EXPLOSION) {
+        instance.vx = child->vx + explosion_velocity[index][0] * spread / 1000;
+        instance.vy = child->vy + explosion_velocity[index][1] * spread / 1000;
+        instance.vz = child->vz + explosion_velocity[index][2] * spread / 1000;
+    } else {
+        instance.vx = child->vx + effect_rand(effects, -spread, spread);
+        instance.vy = child->vy + effect_rand(effects, -spread, spread);
+        instance.vz = child->vz + effect_rand(effects, -spread, spread);
+    }
+    instance.ex = child->ex; instance.ey = child->ey; instance.ez = child->ez;
+    instance.gravity_y = child->gravity_y;
+    instance.lifetime_ms = child->lifetime_ms > 0 ? child->lifetime_ms :
+                           emitter->lifetime_ms;
+    instance.size = child->size > 0 ? child->size : emitter->size;
+    instance.alpha = child->alpha > 0 ? child->alpha : emitter->alpha;
+    instance.color = child->color ? child->color : emitter->color;
+    rasterfall_effects_spawn_instance(effects, &instance);
+    child->spawned_count++;
 }
 
 void rasterfall_effects_sync_fire_zones(struct rasterfall_effects *effects,
@@ -322,19 +366,38 @@ static void spawn_event_instance(struct rasterfall_effects *effects,
 static void init_explosion_emitter(struct rasterfall_effect_emitter *emitter,
                                    const struct rasterfall_effect_event *event)
 {
+    struct rasterfall_effect_emitter_child *particle;
+    struct rasterfall_effect_emitter_child *ray;
+    struct rasterfall_effect_emitter_child *flash;
     memset(emitter, 0, sizeof(*emitter));
     emitter->x = event->x; emitter->y = event->y; emitter->z = event->z;
     emitter->lifetime_ms = 180;
     emitter->spawn_interval_ms = 1;
-    emitter->spawn_limit = 16;
-    emitter->child_type = RASTERFALL_EFFECT_INSTANCE_PARTICLE;
-    emitter->child_kind = RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION_PARTICLE;
-    emitter->pattern = RASTERFALL_EFFECT_EMITTER_PATTERN_EXPLOSION;
-    emitter->spread = 1000;
-    emitter->gravity_y = 2;
-    emitter->size = 4500;
-    emitter->alpha = 256;
-    emitter->color = 0xFFD050;
+    emitter->child_count = 3;
+    particle = &emitter->children[0];
+    particle->type = RASTERFALL_EFFECT_INSTANCE_PARTICLE;
+    particle->kind = RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION_PARTICLE;
+    particle->spawn_limit = 16;
+    particle->pattern = RASTERFALL_EFFECT_EMITTER_PATTERN_EXPLOSION;
+    particle->spread = 1000;
+    particle->gravity_y = 2;
+    particle->size = 4500;
+    particle->alpha = 256;
+    particle->color = 0xFFD050;
+    ray = &emitter->children[1];
+    ray->type = RASTERFALL_EFFECT_INSTANCE_RAY;
+    ray->kind = RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION_RAY;
+    ray->spawn_limit = 1;
+    ray->lifetime_ms = 80;
+    ray->ex = event->x + 1400; ray->ey = event->y; ray->ez = event->z;
+    flash = &emitter->children[2];
+    flash->type = RASTERFALL_EFFECT_INSTANCE_BILLBOARD;
+    flash->kind = RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION_FLASH;
+    flash->spawn_limit = 1;
+    flash->lifetime_ms = RASTERFALL_MUZZLE_FLASH_LIFE_MS;
+    flash->size = 1000;
+    flash->alpha = 256;
+    flash->color = 0xFFF4A0;
 }
 
 void rasterfall_effects_init(struct rasterfall_effects *effects)
@@ -413,24 +476,11 @@ void rasterfall_effects_consume(struct rasterfall_effects *effects,
         }
     } else if (event->type == RASTERFALL_EFFECT_EVENT_EXPLOSION) {
         struct rasterfall_effect_emitter emitter;
-        struct rasterfall_effect_event shockwave = *event;
         init_explosion_emitter(&emitter, event);
         rasterfall_effects_spawn_emitter(effects, &emitter);
         spawn_event_instance(effects, event,
                              RASTERFALL_EFFECT_INSTANCE_EMITTER,
                              RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION,
-                             event->x, event->y, event->z, 0, 0, 0);
-        shockwave.sx = event->x; shockwave.sy = event->y; shockwave.sz = event->z;
-        shockwave.ex = event->x + 1400; shockwave.ey = event->y;
-        shockwave.ez = event->z;
-        shockwave.life_ms = 80;
-        spawn_event_instance(effects, &shockwave,
-                             RASTERFALL_EFFECT_INSTANCE_RAY,
-                             RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION_RAY,
-                             event->x, event->y, event->z, 0, 0, 0);
-        spawn_event_instance(effects, event,
-                             RASTERFALL_EFFECT_INSTANCE_BILLBOARD,
-                             RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION_FLASH,
                              event->x, event->y, event->z, 0, 0, 0);
     }
 }
@@ -462,20 +512,44 @@ void rasterfall_effects_update(struct rasterfall_effects *effects, int dt_ms)
         emitter->age_ms += dt_ms;
         emitter->spawn_accum_ms += dt_ms;
         while (emitter->spawn_accum_ms >= emitter->spawn_interval_ms &&
-               (emitter->spawn_limit <= 0 ||
+               (emitter->child_count > 0 || emitter->spawn_limit <= 0 ||
                 emitter->spawned_count < emitter->spawn_limit)) {
             int burst = emitter->burst_count > 0 ? emitter->burst_count : 1;
             int emitted;
-            for (emitted = 0; emitted < burst &&
-                 (emitter->spawn_limit <= 0 ||
-                  emitter->spawned_count < emitter->spawn_limit); emitted++)
-                spawn_emitter_child(effects, emitter);
+            for (emitted = 0; emitted < burst; emitted++) {
+                int child_index;
+                if (emitter->child_count > 0) {
+                    for (child_index = 0; child_index < emitter->child_count;
+                         child_index++) {
+                        struct rasterfall_effect_emitter_child *child =
+                            &emitter->children[child_index];
+                        if (child->spawn_limit <= 0 ||
+                            child->spawned_count < child->spawn_limit)
+                            spawn_emitter_descriptor(effects, emitter, child);
+                    }
+                    emitter->spawned_count++;
+                } else if (emitter->spawn_limit <= 0 ||
+                           emitter->spawned_count < emitter->spawn_limit) {
+                    spawn_emitter_child(effects, emitter);
+                }
+            }
             emitter->spawn_accum_ms -= emitter->spawn_interval_ms;
         }
-        if (emitter->age_ms >= emitter->lifetime_ms ||
-            (emitter->spawn_limit > 0 &&
-             emitter->spawned_count >= emitter->spawn_limit))
+        {
+            int exhausted = emitter->child_count > 0;
+            int child_index;
+            for (child_index = 0; exhausted &&
+                 child_index < emitter->child_count; child_index++)
+                if (emitter->children[child_index].spawn_limit <= 0 ||
+                    emitter->children[child_index].spawned_count <
+                    emitter->children[child_index].spawn_limit)
+                    exhausted = 0;
+            if (emitter->age_ms >= emitter->lifetime_ms ||
+                (emitter->child_count > 0 && exhausted) ||
+                (emitter->child_count == 0 && emitter->spawn_limit > 0 &&
+                 emitter->spawned_count >= emitter->spawn_limit))
             emitter->active = 0;
+        }
     }
     effects->weapon_kick -= dt_ms * 2;
     if (effects->weapon_kick < 0) effects->weapon_kick = 0;

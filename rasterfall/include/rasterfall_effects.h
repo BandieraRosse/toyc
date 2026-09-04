@@ -62,6 +62,25 @@ enum rasterfall_effect_emitter_pattern {
     RASTERFALL_EFFECT_EMITTER_PATTERN_EXPLOSION
 };
 
+#define RASTERFALL_EFFECT_EMITTER_CHILD_SLOTS 3
+
+struct rasterfall_effect_emitter_child {
+    int type;
+    int kind;
+    int flags;
+    int spawn_limit;
+    int spawned_count;
+    int lifetime_ms;
+    int size;
+    int alpha;
+    int spread;
+    int vx, vy, vz;
+    int gravity_y;
+    int pattern;
+    int ex, ey, ez;
+    uint32_t color;
+};
+
 /* Fixed-point runtime state.  Positions and velocities use the same integer
  * world units as the existing effect pools; velocity and gravity are applied
  * in Rasterfall's fixed 16ms simulation ticks.  Size is milli-scale and alpha
@@ -118,6 +137,9 @@ struct rasterfall_effect_emitter {
     int phase_ms;
     int pattern;
     uint32_t color;
+    int child_count;
+    struct rasterfall_effect_emitter_child
+        children[RASTERFALL_EFFECT_EMITTER_CHILD_SLOTS];
 };
 
 struct rasterfall_effects {

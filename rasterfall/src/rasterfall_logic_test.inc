@@ -821,6 +821,7 @@ static int run_logic_test(void)
             struct rasterfall_effect_event explosion;
             struct rasterfall_effect_instance *instance;
             int instance_index, explosion_particles = 0;
+            int explosion_rays = 0, explosion_flashes = 0;
             memset(&seed, 0, sizeof(seed));
             seed.type = RASTERFALL_EFFECT_INSTANCE_PARTICLE;
             seed.x = 100; seed.vx = 2; seed.lifetime_ms = 32;
@@ -847,8 +848,17 @@ static int run_logic_test(void)
                     instance->type == RASTERFALL_EFFECT_INSTANCE_PARTICLE &&
                     instance->kind == RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION_PARTICLE)
                     explosion_particles++;
+                if (instance->active &&
+                    instance->type == RASTERFALL_EFFECT_INSTANCE_RAY &&
+                    instance->kind == RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION_RAY)
+                    explosion_rays++;
+                if (instance->active &&
+                    instance->type == RASTERFALL_EFFECT_INSTANCE_BILLBOARD &&
+                    instance->kind == RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION_FLASH)
+                    explosion_flashes++;
             }
             if (explosion_particles != 16) return 64;
+            if (explosion_rays != 1 || explosion_flashes != 1) return 77;
             if (effects.emitters[0].spawned_count != 16) return 66;
             instance = 0;
             for (instance_index = 0;
