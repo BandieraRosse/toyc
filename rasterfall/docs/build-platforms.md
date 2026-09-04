@@ -1,11 +1,13 @@
 # 构建、平台与验证
 
-> 文档更新：2026-09-03
-> 源码核对基线：`75a10cd`（将项目协作说明转向 Rasterfall）
+> 文档更新：2026-09-04
+> 源码核对基线：`d86bac0`（Rasterfall 对象无条件重建规则）
 
 ## Linux
 
-根 `Makefile` 的 Rasterfall 区域定义全部独立编译单元、依赖和链接对象。`make app-rasterfall`
+根 `Makefile` 的 Rasterfall 区域定义全部独立编译单元、依赖和链接对象。Rasterfall 与其共享的
+Tinylibc/app 对象统一依赖 `rasterfall-rebuild`，每次目标构建都会重新编译对象，以避免头文件依赖
+文件缺失、不完整或切换工作区状态时复用不一致的旧对象。`make app-rasterfall`
 构建 freestanding Linux 程序，窗口/输入/渲染/音频来自仓库 Tinylibc 与公共库。默认运行时读取
 `rasterfall/assets`；`rasterfall-embedded` 才嵌入公开资源。
 
@@ -20,7 +22,8 @@
 
 `windows/Makefile` 用 MinGW-w64 + SDL2 构建相同玩法/渲染源，并加入 `windows/src/` 的 runtime、
 WinSock、SDL 窗口/音频、线程和 WinMain 适配。平台契约头在 `windows/include/`。资源定位和包结构见
-`windows/README.md`；不要把 Windows 修复硬编码进共享玩法，优先修平台适配层。
+`windows/README.md`；对象同样依赖无条件重建目标，确保共享头文件变化不会留下旧的 Windows 对象；
+不要把 Windows 修复硬编码进共享玩法，优先修平台适配层。
 
 ## 改文件列表时
 

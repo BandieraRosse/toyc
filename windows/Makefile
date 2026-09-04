@@ -54,7 +54,11 @@ TARGET := $(BUILD)/rasterfall.exe
 PACKAGE_DIR := $(BUILD)/rasterfall-windows
 PACKAGE := $(BUILD)/rasterfall-windows.zip
 
-.PHONY: all package clean
+.PHONY: all package clean rasterfall-rebuild
+
+# Windows 构建与 Linux 构建共用头文件和玩法/渲染源码；无条件重建对象，
+# 防止依赖文件缺失或切换工作区状态时复用与头文件不一致的旧对象。
+rasterfall-rebuild:
 
 all: $(TARGET)
 
@@ -72,7 +76,7 @@ package: $(TARGET)
 	@cd "$(PACKAGE_DIR)" && python3 -m zipfile -c "$(abspath $(PACKAGE))" rasterfall.exe rasterfall
 	@printf '  WIN-ZIP %s\n' "$(PACKAGE)"
 
-$(BUILD)/win/app/glb_inspect.o: app/glb_inspect.c windows/Makefile | $(BUILD)
+$(BUILD)/win/app/glb_inspect.o: app/glb_inspect.c windows/Makefile rasterfall-rebuild | $(BUILD)
 	@mkdir -p "$(dir $@)"
 	@printf '  WIN-CC  %s (library)\n' "$<"
 	$(WIN_CC) $(CPPFLAGS) $(CFLAGS) -DRASTERFALL_GLB_LIBRARY=1 -c $< -o $@
@@ -80,7 +84,7 @@ $(BUILD)/win/app/glb_inspect.o: app/glb_inspect.c windows/Makefile | $(BUILD)
 $(BUILD):
 	mkdir -p $@
 
-$(BUILD)/win/%.o: %.c windows/Makefile | $(BUILD)
+$(BUILD)/win/%.o: %.c windows/Makefile rasterfall-rebuild | $(BUILD)
 	@mkdir -p "$(dir $@)"
 	@printf '  WIN-CC  %s\n' "$<"
 	$(WIN_CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@

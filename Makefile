@@ -743,6 +743,11 @@ LIBC_A    := $(BUILD)/toyc.a
 # 五角色 1280x720 基准默认选择保持像素结果一致且快于 -O3 的 -O2；
 # 可用 `make RASTERFALL_OPT=-O0 build/rasterfall` 显式覆盖以做对照。
 RASTERFALL_OPT ?= -O2
+# Rasterfall 的头文件会跨越 Tinylibc、玩法、渲染和平台层共享。即使已有
+# .d 文件，也无条件重建这些对象，避免切换分支或生成依赖不完整时复用旧对象。
+.PHONY: rasterfall-rebuild
+rasterfall-rebuild:
+
 # gcc 标志：无 libc、独立环境、包含 Tinylibc 头文件路径
 LIBC_CFLAGS := -nostdlib -ffreestanding -Wall -Wextra $(RASTERFALL_OPT) \
                -I include -I include/posix -I include/tlibc \
@@ -790,6 +795,10 @@ $(RASTERFALL_OPT_DEP): rasterfall-opt-force | $(BUILD)
 	else printf '%s\n' "$(RASTERFALL_OPT)" > "$@"; fi
 
 $(APP_EXTRA_OBJS_rasterfall) $(BUILD)/rasterfall.o: $(RASTERFALL_OPT_DEP)
+
+# Rasterfall 不复用旧的编译对象；链接目标仍保持普通的时间戳增量规则。
+$(LIBC_OBJS) $(APP_OBJS) $(APP_EXTRA_OBJS_rasterfall) \
+$(APP_EXTRA_OBJS_vmd_inspect) $(APP_EXTRA_OBJS_glb_inspect): rasterfall-rebuild
 
 # Rasterfall 地图模块作为独立编译单元参与主程序链接。
 $(BUILD)/rasterfall_game.o: $(RASTERFALL_LIB)/game.c $(RASTERFALL_INC)/toy_game.h | $(BUILD)
@@ -1165,6 +1174,10 @@ SELF_APP_TARGETS := $(foreach name,$(SELF_APP_NAMES),$(BUILD)/$(name)_self)
 SELF_APP_EXTRA_OBJS_rasterfall := $(BUILD)/rasterfall_game_self.o $(BUILD)/rasterfall_sfx_self.o $(BUILD)/rasterfall_map_engine_self.o $(BUILD)/rasterfall_map_self.o $(BUILD)/rasterfall_session_self.o $(BUILD)/rasterfall_ai_self.o $(BUILD)/rasterfall_net_self.o $(BUILD)/rasterfall_net_transport_self.o $(BUILD)/rasterfall_net_discovery_self.o $(BUILD)/rasterfall_hud_self.o $(BUILD)/rasterfall_audio_self.o $(BUILD)/rasterfall_effects_self.o $(BUILD)/rasterfall_perf_self.o $(BUILD)/rasterfall_sky_self.o $(BUILD)/rasterfall_viewmodel_self.o $(BUILD)/rasterfall_options_self.o $(BUILD)/rasterfall_render_self.o $(BUILD)/rasterfall_render_frontend_self.o $(BUILD)/rasterfall_model_self.o $(BUILD)/rasterfall_humanoid_basis_self.o $(BUILD)/rasterfall_humanoid_retarget_self.o
 SELF_APP_EXTRA_OBJS_glb_inspect := $(BUILD)/rasterfall_humanoid_basis_self.o \
 	$(BUILD)/rasterfall_humanoid_retarget_self.o
+
+# 自托管 Rasterfall 也必须遵守同一条规则，避免使用与头文件不一致的旧对象。
+$(SELF_LIBC_OBJS) $(SELF_APP_OBJS) $(SELF_APP_EXTRA_OBJS_rasterfall) \
+$(SELF_APP_EXTRA_OBJS_vmd_inspect) $(SELF_APP_EXTRA_OBJS_glb_inspect): rasterfall-rebuild
 
 # ─── 库编译规则 ────────────────────────────────────────────────
 
