@@ -45,8 +45,9 @@ enum rasterfall_effect_instance_compat_type {
 };
 
 /* Fixed-point runtime state.  Positions and velocities use the same integer
- * world units as the existing effect pools; size is milli-scale and alpha is
- * 0..256.  This is deliberately a data-only foundation for future emitters.
+ * world units as the existing effect pools; velocity and gravity are applied
+ * in Rasterfall's fixed 16ms simulation ticks.  Size is milli-scale and alpha
+ * is 0..256.  This is deliberately a data-only foundation for future emitters.
  */
 struct rasterfall_effect_instance {
     int active;
@@ -63,6 +64,7 @@ struct rasterfall_effect_instance {
     int ex, ey, ez;
     int dir_x, dir_y, dir_z;
     int vx, vy, vz;
+    int gravity_y;
     int lifetime_ms;
     int age_ms;
     int size;

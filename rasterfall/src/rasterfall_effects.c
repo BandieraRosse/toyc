@@ -116,10 +116,10 @@ void rasterfall_effects_spawn_hit_particles(struct rasterfall_effects *effects,
             instance.type = RASTERFALL_EFFECT_INSTANCE_PARTICLE;
             instance.kind = RASTERFALL_EFFECT_INSTANCE_KIND_HIT_PARTICLE;
             instance.x = p->x; instance.y = p->y; instance.z = p->z;
-            /* The legacy particle pool advances once per 16ms fixed step;
-             * normalize its velocity for the runtime's per-millisecond API. */
-            instance.vx = p->vx / 16; instance.vy = p->vy / 16;
-            instance.vz = p->vz / 16;
+            /* Mirror the legacy particle's fixed-step motion. */
+            instance.vx = p->vx; instance.vy = p->vy;
+            instance.vz = p->vz;
+            instance.gravity_y = RASTERFALL_PARTICLE_GRAVITY;
             instance.lifetime_ms = p->life_ms;
             rasterfall_effects_spawn_instance(effects, &instance);
         }
@@ -196,19 +196,23 @@ void rasterfall_effects_consume(struct rasterfall_effects *effects,
 
 void rasterfall_effects_update(struct rasterfall_effects *effects, int dt_ms)
 {
-    int i;
+    int i, steps;
+    steps = dt_ms / 16;
+    if (dt_ms > 0 && steps < 1) steps = 1;
     for (i = 0; i < RASTERFALL_EFFECT_INSTANCE_SLOTS; i++) {
         struct rasterfall_effect_instance *instance = &effects->instances[i];
         if (!instance->active) continue;
         instance->age_ms += dt_ms;
-        instance->x += instance->vx * dt_ms;
-        instance->y += instance->vy * dt_ms;
-        instance->z += instance->vz * dt_ms;
+        instance->x += instance->vx * steps;
+        instance->y += instance->vy * steps;
+        instance->z += instance->vz * steps;
+        if (instance->gravity_y) instance->vy -= instance->gravity_y * steps;
         if (instance->lifetime_ms > 0)
             instance->alpha = (instance->lifetime_ms - instance->age_ms) *
                               256 / instance->lifetime_ms;
         if (instance->alpha < 0) instance->alpha = 0;
-        if (instance->age_ms >= instance->lifetime_ms)
+        if (instance->age_ms >= instance->lifetime_ms ||
+            (instance->gravity_y && instance->y < -880))
             instance->active = 0;
     }
     effects->weapon_kick -= dt_ms * 2;

@@ -793,7 +793,7 @@ static int run_logic_test(void)
                 return 60;
             rasterfall_effects_update(&effects, 16);
             if (!instance->active || instance->age_ms != 16 ||
-                instance->x != 132 || instance->alpha != 128)
+                instance->x != 102 || instance->alpha != 128)
                 return 61;
             rasterfall_effects_update(&effects, 16);
             if (instance->active) return 62;

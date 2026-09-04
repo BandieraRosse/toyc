@@ -5658,28 +5658,39 @@ static int render_muzzle_flashes(struct toy_renderer *renderer,
     return pixels;
 }
 
+static int render_effect_particle(struct toy_renderer *renderer,
+                                  const struct camera *camera,
+                                  const struct rasterfall_effect_instance *p)
+{
+    struct vec3 world, view;
+    struct toy_screen_vertex screen;
+    int size, k;
+    if (!p->active) return 0;
+    world.x = p->x; world.y = p->y; world.z = p->z;
+    world_to_view(camera, &world, &view);
+    if (view.z < NEAR_Z) return 0;
+    project_vertex(&renderer->surface, &view, &screen);
+    size = 2 * p->size / 1000;
+    if (size < 1) size = 1;
+    if (screen.x < 0 || screen.x + size >= renderer->surface.width ||
+        screen.y < 0 || screen.y + size >= renderer->surface.height) return 0;
+    k = p->alpha;
+    if (k < 0) k = 0;
+    if (k > 256) k = 256;
+    fill_rect(&renderer->surface, screen.x, screen.y, size, size,
+              mix_color(0xFFC860, 0x4A2008, k, 256));
+    return 1;
+}
+
 static int render_particles(struct toy_renderer *renderer, const struct camera *camera)
 {
     int i, pixels = 0;
-    for (i = 0; i < RASTERFALL_PARTICLE_SLOTS; i++) {
-        const struct rasterfall_particle *p = &effects.particles[i];
-        struct vec3 world, view;
-        struct toy_screen_vertex screen;
-        int k;
-        if (!p->active) continue;
-        world.x = p->x;
-        world.y = p->y;
-        world.z = p->z;
-        world_to_view(camera, &world, &view);
-        if (view.z < NEAR_Z) continue;
-        project_vertex(&renderer->surface, &view, &screen);
-        if (screen.x < 0 || screen.x + 2 >= renderer->surface.width ||
-            screen.y < 0 || screen.y + 2 >= renderer->surface.height) continue;
-        k = p->life_ms * 256 / RASTERFALL_PARTICLE_LIFE_MS;
-        if (k > 256) k = 256;   /* 寿命随机 +40ms 可能超出基准，钳制插值比例 */
-        fill_rect(&renderer->surface, screen.x, screen.y, 2, 2,
-                  mix_color(0xFFC860, 0x4A2008, k, 256));
-        pixels++;
+    for (i = 0; i < RASTERFALL_EFFECT_INSTANCE_SLOTS; i++) {
+        const struct rasterfall_effect_instance *p = &effects.instances[i];
+        if (p->type != RASTERFALL_EFFECT_INSTANCE_PARTICLE ||
+            p->kind != RASTERFALL_EFFECT_INSTANCE_KIND_HIT_PARTICLE)
+            continue;
+        pixels += render_effect_particle(renderer, camera, p);
     }
     return pixels;
 }
