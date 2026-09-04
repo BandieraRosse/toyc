@@ -1,7 +1,7 @@
 # 网络代码导航
 
 > 文档更新：2026-09-04
-> 源码核对基线：`92aab4e`（effect event / presentation cue 基础层）
+> 源码核对基线：工作区（effect runtime 第五阶段收尾）
 
 ## 文件职责
 
@@ -26,6 +26,10 @@
 
 `rasterfall_effect_event` 是接收端的 presentation-only 扩展接口。纯视觉事件不加入 snapshot，
 也不把 event 的原始 C 布局直接发送到网络；未来网络驱动表现必须增加明确的协议编码。
+
+网络主机和客户端的远端开火展示由 `sync_network_fire_effects()` 统一适配为 muzzle billboard
+和 tracer ray runtime instance；`fire_seq` 是去重边界。该路径只读取网络展示状态并写入
+`rasterfall_effects`，不回写玩法状态，也不改变协议字段。
 
 协议使用显式整数编码和单位换算；不要发送原始 C struct。Windows socket 适配位于
 `windows/src/socket_winsock.c`，Linux 使用 Tinylibc 网络接口。网络测试可受沙箱和本机端口环境影响，

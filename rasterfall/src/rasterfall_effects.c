@@ -241,6 +241,55 @@ void rasterfall_effects_sync_damage_flash(struct rasterfall_effects *effects,
     rasterfall_effects_spawn_instance(effects, &instance);
 }
 
+void rasterfall_effects_sync_enemy_feedback(struct rasterfall_effects *effects,
+                                            const struct toy_game *game)
+{
+    int i;
+    if (!effects || !game) return;
+    for (i = 0; i < RASTERFALL_EFFECT_INSTANCE_SLOTS; i++)
+        if (effects->instances[i].kind ==
+            RASTERFALL_EFFECT_INSTANCE_KIND_ENEMY_HURT_TINT)
+            effects->instances[i].active = 0;
+    for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
+        const struct toy_game_enemy *enemy = &game->enemies[i];
+        struct rasterfall_effect_instance instance;
+        if (enemy->active == 0 || (enemy->hurt <= 0 && enemy->flash <= 0))
+            continue;
+        memset(&instance, 0, sizeof(instance));
+        instance.type = RASTERFALL_EFFECT_INSTANCE_MATERIAL;
+        instance.kind = RASTERFALL_EFFECT_INSTANCE_KIND_ENEMY_HURT_TINT;
+        instance.target_id = i;
+        instance.lifetime_ms = 16;
+        instance.alpha = 256;
+        instance.color = enemy->hurt > 0 ? 0xBB3333 : 0xDFDFDF;
+        rasterfall_effects_spawn_instance(effects, &instance);
+    }
+}
+
+void rasterfall_effects_sync_interaction_highlight(
+    struct rasterfall_effects *effects, int target_id,
+    int x, int y, int z, int active)
+{
+    struct rasterfall_effect_instance instance;
+    int i;
+    if (!effects) return;
+    for (i = 0; i < RASTERFALL_EFFECT_INSTANCE_SLOTS; i++)
+        if (effects->instances[i].kind ==
+            RASTERFALL_EFFECT_INSTANCE_KIND_INTERACTION_HIGHLIGHT)
+            effects->instances[i].active = 0;
+    if (!active || target_id < 0) return;
+    memset(&instance, 0, sizeof(instance));
+    instance.type = RASTERFALL_EFFECT_INSTANCE_BILLBOARD;
+    instance.kind = RASTERFALL_EFFECT_INSTANCE_KIND_INTERACTION_HIGHLIGHT;
+    instance.target_id = target_id;
+    instance.x = x; instance.y = y + 260; instance.z = z;
+    instance.lifetime_ms = 16;
+    instance.size = 1000;
+    instance.alpha = 256;
+    instance.color = 0xFFE070;
+    rasterfall_effects_spawn_instance(effects, &instance);
+}
+
 static void spawn_event_instance(struct rasterfall_effects *effects,
                                  const struct rasterfall_effect_event *event,
                                  int type, int kind, int x, int y, int z,
@@ -280,12 +329,6 @@ void rasterfall_effects_reset_fire(struct rasterfall_effects *effects)
     effects->instance_next = 0;
     memset(effects->emitters, 0, sizeof(effects->emitters));
     effects->emitter_next = 0;
-    memset(effects->tracers, 0, sizeof(effects->tracers));
-    memset(effects->particles, 0, sizeof(effects->particles));
-    effects->tracer_next = 0;
-    effects->particle_next = 0;
-    memset(effects->muzzle_flashes, 0, sizeof(effects->muzzle_flashes));
-    effects->muzzle_flash_next = 0;
     effects->last_fire_seq = 0;
     memset(effects->last_network_fire_seq, 0,
            sizeof(effects->last_network_fire_seq));
@@ -298,29 +341,20 @@ void rasterfall_effects_spawn_hit_particles(struct rasterfall_effects *effects,
 {
     int i;
     for (i = 0; i < 7; i++) {
-        struct rasterfall_particle *p = &effects->particles[effects->particle_next];
-        effects->particle_next = (effects->particle_next + 1) % RASTERFALL_PARTICLE_SLOTS;
-        p->active = 1;
-        p->x = x;
-        p->y = y + effect_rand(effects, -10, 10);
-        p->z = z;
-        p->vx = sy * 22 / 1024 + effect_rand(effects, -24, 24);
-        p->vy = effect_rand(effects, 8, 30);
-        p->vz = cy * 22 / 1024 + effect_rand(effects, -24, 24);
-        p->life_ms = RASTERFALL_PARTICLE_LIFE_MS + effect_rand(effects, -40, 40);
-        {
-            struct rasterfall_effect_instance instance;
-            memset(&instance, 0, sizeof(instance));
-            instance.type = RASTERFALL_EFFECT_INSTANCE_PARTICLE;
-            instance.kind = RASTERFALL_EFFECT_INSTANCE_KIND_HIT_PARTICLE;
-            instance.x = p->x; instance.y = p->y; instance.z = p->z;
-            /* Mirror the legacy particle's fixed-step motion. */
-            instance.vx = p->vx; instance.vy = p->vy;
-            instance.vz = p->vz;
-            instance.gravity_y = RASTERFALL_PARTICLE_GRAVITY;
-            instance.lifetime_ms = p->life_ms;
-            rasterfall_effects_spawn_instance(effects, &instance);
-        }
+        struct rasterfall_effect_instance instance;
+        memset(&instance, 0, sizeof(instance));
+        instance.type = RASTERFALL_EFFECT_INSTANCE_PARTICLE;
+        instance.kind = RASTERFALL_EFFECT_INSTANCE_KIND_HIT_PARTICLE;
+        instance.x = x;
+        instance.y = y + effect_rand(effects, -10, 10);
+        instance.z = z;
+        instance.vx = sy * 22 / 1024 + effect_rand(effects, -24, 24);
+        instance.vy = effect_rand(effects, 8, 30);
+        instance.vz = cy * 22 / 1024 + effect_rand(effects, -24, 24);
+        instance.gravity_y = RASTERFALL_PARTICLE_GRAVITY;
+        instance.lifetime_ms = RASTERFALL_PARTICLE_LIFE_MS +
+                               effect_rand(effects, -40, 40);
+        rasterfall_effects_spawn_instance(effects, &instance);
     }
 }
 
@@ -345,23 +379,12 @@ void rasterfall_effects_emit(struct rasterfall_effects *effects,
 void rasterfall_effects_consume(struct rasterfall_effects *effects,
                                 const struct rasterfall_effect_event *event)
 {
-    struct rasterfall_tracer *tracer;
-    struct rasterfall_muzzle_flash *flash;
     if (!effects || !event) return;
     if (event->type == RASTERFALL_EFFECT_EVENT_WEAPON_FIRE) {
         spawn_event_instance(effects, event,
                              RASTERFALL_EFFECT_INSTANCE_BILLBOARD,
                              RASTERFALL_EFFECT_INSTANCE_KIND_MUZZLE_FLASH,
                              event->sx, event->sy, event->sz, 0, 0, 0);
-        flash = &effects->muzzle_flashes[effects->muzzle_flash_next];
-        effects->muzzle_flash_next =
-            (effects->muzzle_flash_next + 1) % RASTERFALL_MUZZLE_FLASH_SLOTS;
-        flash->active = 1;
-        flash->x = event->sx; flash->y = event->sy; flash->z = event->sz;
-        flash->sy = event->dir_sy; flash->cy = event->dir_cy;
-        flash->weapon = event->weapon;
-        flash->life_ms = event->life_ms > 0 ? event->life_ms :
-                         RASTERFALL_MUZZLE_FLASH_LIFE_MS;
     } else if (event->type == RASTERFALL_EFFECT_EVENT_TRACER) {
         {
             spawn_event_instance(effects, event,
@@ -370,15 +393,6 @@ void rasterfall_effects_consume(struct rasterfall_effects *effects,
                                  event->sx, event->sy, event->sz,
                                  0, 0, 0);
         }
-        tracer = &effects->tracers[effects->tracer_next];
-        effects->tracer_next =
-            (effects->tracer_next + 1) % RASTERFALL_TRACER_SLOTS;
-        tracer->active = 1;
-        tracer->depth_test = (event->flags & RASTERFALL_EFFECT_EVENT_DEPTH_TEST) != 0;
-        tracer->sx = event->sx; tracer->sy = event->sy; tracer->sz = event->sz;
-        tracer->ex = event->ex; tracer->ey = event->ey; tracer->ez = event->ez;
-        tracer->life_ms = event->life_ms > 0 ? event->life_ms :
-                          RASTERFALL_TRACER_LIFE_MS;
     } else if (event->type == RASTERFALL_EFFECT_EVENT_BULLET_IMPACT ||
                event->type == RASTERFALL_EFFECT_EVENT_ENTITY_HIT) {
         rasterfall_effects_spawn_hit_particles(effects, event->x, event->y,
@@ -473,26 +487,4 @@ void rasterfall_effects_update(struct rasterfall_effects *effects, int dt_ms)
     }
     effects->weapon_kick -= dt_ms * 2;
     if (effects->weapon_kick < 0) effects->weapon_kick = 0;
-    for (i = 0; i < RASTERFALL_TRACER_SLOTS; i++) {
-        struct rasterfall_tracer *t = &effects->tracers[i];
-        if (!t->active) continue;
-        t->life_ms -= dt_ms;
-        if (t->life_ms <= 0) t->active = 0;
-    }
-    for (i = 0; i < RASTERFALL_PARTICLE_SLOTS; i++) {
-        struct rasterfall_particle *p = &effects->particles[i];
-        if (!p->active) continue;
-        p->x += p->vx;
-        p->y += p->vy;
-        p->z += p->vz;
-        p->vy -= RASTERFALL_PARTICLE_GRAVITY;
-        p->life_ms -= dt_ms;
-        if (p->life_ms <= 0 || p->y < -880) p->active = 0;
-    }
-    for (i = 0; i < RASTERFALL_MUZZLE_FLASH_SLOTS; i++) {
-        struct rasterfall_muzzle_flash *f = &effects->muzzle_flashes[i];
-        if (!f->active) continue;
-        f->life_ms -= dt_ms;
-        if (f->life_ms <= 0) f->active = 0;
-    }
 }

@@ -106,7 +106,6 @@ static int collect_model_render_stats;
 #define game active_session->game_state
 #define interactables active_session->items
 #define interactable_count active_session->item_count
-#define highlighted active_session->highlight_index
 #define baked_lightmap active_lightmap
 #define baked_light_at_render(x, z) baked_light_at(x, z)
 #define fixed_floor_lighting active_fixed_floor_lighting
@@ -3673,7 +3672,18 @@ static int render_interactables(struct toy_renderer *renderer,
     int i, pixels = 0;
     for (i = 0; i < interactable_count; i++) {
         const interactable *it = &interactables[i];
-        int on = i == highlighted;
+        int on = 0;
+        for (int effect_index = 0;
+             effect_index < RASTERFALL_EFFECT_INSTANCE_SLOTS; effect_index++) {
+            const struct rasterfall_effect_instance *effect =
+                &effects.instances[effect_index];
+            if (effect->active &&
+                effect->kind == RASTERFALL_EFFECT_INSTANCE_KIND_INTERACTION_HIGHLIGHT &&
+                effect->target_id == i) {
+                on = 1;
+                break;
+            }
+        }
         if (it->kind == TOY_MAP_PICKUP_SMG ||
             (it->kind == TOY_MAP_PICKUP_WEAPON &&
              it->weapon == TOY_GAME_WEAPON_SMG))
@@ -4309,6 +4319,20 @@ static void render_enemy_alert(struct toy_renderer *renderer,
     fill_rect(&renderer->surface, x + 1, y + 21, 7, 4, 0xFF3030);
 }
 
+static uint32_t enemy_feedback_color(int target_id)
+{
+    int i;
+    for (i = 0; i < RASTERFALL_EFFECT_INSTANCE_SLOTS; i++) {
+        const struct rasterfall_effect_instance *feedback = &effects.instances[i];
+        if (feedback->active &&
+            feedback->type == RASTERFALL_EFFECT_INSTANCE_MATERIAL &&
+            feedback->kind == RASTERFALL_EFFECT_INSTANCE_KIND_ENEMY_HURT_TINT &&
+            feedback->target_id == target_id)
+            return feedback->color;
+    }
+    return 0;
+}
+
 /* 两种低多边形敌人；受击闪红/命中闪白，倒地时整体纵向压扁。 */
 static int render_blob_shadow(struct toy_renderer *renderer,
                               const struct camera *camera,
@@ -4363,14 +4387,16 @@ static int render_enemies(struct toy_renderer *renderer,
             }
             if (info->ability == TOY_GAME_ENEMY_ABILITY_SMOKER_TONGUE)
                 scale = 1000;
-            if (e->hurt > 0) color = 0xBB3333;
-            else if (e->flash > 0) color = 0xDFDFDF;
-            else if (e->type == TOY_GAME_ENEMY_PURSUIT_HEAVY)
-                color = RF_COLOR_ENEMY_PURSUIT_HEAVY;
-            else if (e->type == TOY_GAME_ENEMY_PURSUIT_FAST)
-                color = RF_COLOR_ENEMY_PURSUIT_FAST;
-            else if (e->ai_state == TOY_GAME_ENEMY_TRACKING)
-                color = RF_COLOR_ENEMY_COMMON; /* PURSUIT_COMMON：沿用普通敌人颜色 */
+            {
+                uint32_t feedback = enemy_feedback_color(i);
+                if (feedback) color = feedback;
+                else if (e->type == TOY_GAME_ENEMY_PURSUIT_HEAVY)
+                    color = RF_COLOR_ENEMY_PURSUIT_HEAVY;
+                else if (e->type == TOY_GAME_ENEMY_PURSUIT_FAST)
+                    color = RF_COLOR_ENEMY_PURSUIT_FAST;
+                else if (e->ai_state == TOY_GAME_ENEMY_TRACKING)
+                    color = RF_COLOR_ENEMY_COMMON; /* PURSUIT_COMMON：沿用普通敌人颜色 */
+            }
         }
         active_enemy_lift = e->ground_y;
         pixels += render_blob_shadow(renderer, camera, e, scale);
@@ -5536,7 +5562,7 @@ static void render_effect_ray(struct toy_renderer *renderer,
     }
 }
 
-static int render_tracers(struct toy_renderer *renderer, const struct camera *camera)
+static int render_effect_rays(struct toy_renderer *renderer, const struct camera *camera)
 {
     int i, pixels = 0;
     for (i = 0; i < RASTERFALL_EFFECT_INSTANCE_SLOTS; i++) {
@@ -5592,75 +5618,46 @@ static int render_effect_billboard(struct toy_renderer *renderer,
     return render_fire_point(renderer, camera, x, y, z, size, color);
 }
 
-static int render_muzzle_flashes(struct toy_renderer *renderer,
-                                 const struct camera *camera)
-{
-    int i, pixels = 0;
-    for (i = 0; i < RASTERFALL_EFFECT_INSTANCE_SLOTS; i++) {
-        const struct rasterfall_effect_instance *f = &effects.instances[i];
-        int intensity, size, forward, remaining;
-        if (!f->active || f->type != RASTERFALL_EFFECT_INSTANCE_BILLBOARD ||
-            f->kind != RASTERFALL_EFFECT_INSTANCE_KIND_MUZZLE_FLASH)
-            continue;
-        remaining = f->lifetime_ms - f->age_ms;
-        if (remaining < 0) remaining = 0;
-        intensity = f->alpha;
-        if (intensity > 256) intensity = 256;
-        size = f->weapon == TOY_GAME_WEAPON_SHOTGUN ? 9 : 7;
-        forward = (f->lifetime_ms - remaining) / 3;
-        pixels += render_effect_billboard(renderer, camera, f->x, f->y, f->z,
-                                    size, mix_color(0xFFF4A0, 0xB63A08,
-                                                    intensity, 256));
-        /* A short directional lobe makes the procedural flash read as a
-         * muzzle burst without introducing a texture or particle system. */
-        pixels += render_effect_billboard(renderer, camera,
-                                    f->x + f->dir_x * forward / 1024,
-                                    f->y + 18,
-                                    f->z + f->dir_z * forward / 1024,
-                                    size / 2 + 1,
-                                    mix_color(0xFFD050, 0x7A1D08,
-                                              intensity, 256));
-    }
-    return pixels;
-}
-
-static int render_explosion_flashes(struct toy_renderer *renderer,
+static int render_effect_billboards(struct toy_renderer *renderer,
                                     const struct camera *camera)
 {
     int i, pixels = 0;
     for (i = 0; i < RASTERFALL_EFFECT_INSTANCE_SLOTS; i++) {
         const struct rasterfall_effect_instance *f = &effects.instances[i];
-        int size, intensity;
-        if (!f->active || f->type != RASTERFALL_EFFECT_INSTANCE_BILLBOARD ||
-            f->kind != RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION_FLASH)
+        int size, intensity, forward, remaining;
+        if (!f->active || f->type != RASTERFALL_EFFECT_INSTANCE_BILLBOARD)
             continue;
-        size = 11 + (f->age_ms < 24 ? f->age_ms / 4 : 0);
-        intensity = f->alpha;
-        pixels += render_effect_billboard(renderer, camera, f->x, f->y, f->z,
-                                          size,
-                                          mix_color(0xFFF4A0, 0xB63A08,
-                                                    intensity, 256));
-    }
-    return pixels;
-}
-
-static int render_projectile_flashes(struct toy_renderer *renderer,
-                                     const struct camera *camera)
-{
-    int i, pixels = 0;
-    for (i = 0; i < RASTERFALL_EFFECT_INSTANCE_SLOTS; i++) {
-        const struct rasterfall_effect_instance *f = &effects.instances[i];
-        int size, intensity;
-        if (!f->active || f->type != RASTERFALL_EFFECT_INSTANCE_BILLBOARD ||
-            f->kind != RASTERFALL_EFFECT_INSTANCE_KIND_PROJECTILE_FLASH)
-            continue;
-        size = 7;
         intensity = f->alpha;
         if (intensity > 256) intensity = 256;
-        pixels += render_effect_billboard(renderer, camera, f->x, f->y, f->z,
-                                          size,
-                                          mix_color(0xFF6060, 0x641010,
-                                                    intensity, 256));
+        if (f->kind == RASTERFALL_EFFECT_INSTANCE_KIND_MUZZLE_FLASH) {
+            size = f->weapon == TOY_GAME_WEAPON_SHOTGUN ? 9 : 7;
+            remaining = f->lifetime_ms - f->age_ms;
+            if (remaining < 0) remaining = 0;
+            forward = (f->lifetime_ms - remaining) / 3;
+            pixels += render_effect_billboard(renderer, camera, f->x, f->y,
+                                              f->z, size,
+                                              mix_color(0xFFF4A0, 0xB63A08,
+                                                        intensity, 256));
+            /* Directional lobe preserves the original muzzle burst shape. */
+            pixels += render_effect_billboard(renderer, camera,
+                                              f->x + f->dir_x * forward / 1024,
+                                              f->y + 18,
+                                              f->z + f->dir_z * forward / 1024,
+                                              size / 2 + 1,
+                                              mix_color(0xFFD050, 0x7A1D08,
+                                                        intensity, 256));
+        } else if (f->kind == RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION_FLASH) {
+            size = 11 + (f->age_ms < 24 ? f->age_ms / 4 : 0);
+            pixels += render_effect_billboard(renderer, camera, f->x, f->y,
+                                              f->z, size,
+                                              mix_color(0xFFF4A0, 0xB63A08,
+                                                        intensity, 256));
+        } else if (f->kind == RASTERFALL_EFFECT_INSTANCE_KIND_PROJECTILE_FLASH) {
+            pixels += render_effect_billboard(renderer, camera, f->x, f->y,
+                                              f->z, 7,
+                                              mix_color(0xFF6060, 0x641010,
+                                                        intensity, 256));
+        }
     }
     return pixels;
 }
@@ -5716,7 +5713,7 @@ static int render_effect_particle(struct toy_renderer *renderer,
     return 1;
 }
 
-static int render_particles(struct toy_renderer *renderer, const struct camera *camera)
+static int render_effect_particles(struct toy_renderer *renderer, const struct camera *camera)
 {
     int i, pixels = 0;
     for (i = 0; i < RASTERFALL_EFFECT_INSTANCE_SLOTS; i++) {
@@ -5860,19 +5857,15 @@ void rasterfall_render_network_teammate_status(
     render_network_teammate_status(renderer, camera, net);
 }
 
-int rasterfall_render_tracers(struct toy_renderer *renderer,
+int rasterfall_render_effects(struct toy_renderer *renderer,
                               const struct camera *camera)
 {
-    return render_tracers(renderer, camera);
-}
-
-int rasterfall_render_particles(struct toy_renderer *renderer,
-                                const struct camera *camera)
-{
-    return render_muzzle_flashes(renderer, camera) +
-           render_explosion_flashes(renderer, camera) +
-           render_projectile_flashes(renderer, camera) +
-           render_particles(renderer, camera);
+    /* Preserve the established world-effect draw order while callers move to
+     * one runtime entry point.  Overlay instances stay in the frame-tail
+     * screen-space pass. */
+    return render_effect_rays(renderer, camera) +
+           render_effect_billboards(renderer, camera) +
+           render_effect_particles(renderer, camera);
 }
 
 int rasterfall_render_overlays(struct toy_renderer *renderer)

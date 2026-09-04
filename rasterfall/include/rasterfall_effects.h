@@ -24,7 +24,8 @@ enum rasterfall_effect_instance_type {
     RASTERFALL_EFFECT_INSTANCE_RAY,
     RASTERFALL_EFFECT_INSTANCE_BILLBOARD,
     RASTERFALL_EFFECT_INSTANCE_OVERLAY,
-    RASTERFALL_EFFECT_INSTANCE_EMITTER
+    RASTERFALL_EFFECT_INSTANCE_EMITTER,
+    RASTERFALL_EFFECT_INSTANCE_MATERIAL
 };
 
 /* Semantic variants remain separate from the low-level component.  These
@@ -42,7 +43,9 @@ enum rasterfall_effect_instance_kind {
     RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION_RAY,
     RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION_FLASH,
     RASTERFALL_EFFECT_INSTANCE_KIND_PROJECTILE_FLASH,
-    RASTERFALL_EFFECT_INSTANCE_KIND_DAMAGE_FLASH
+    RASTERFALL_EFFECT_INSTANCE_KIND_DAMAGE_FLASH,
+    RASTERFALL_EFFECT_INSTANCE_KIND_ENEMY_HURT_TINT,
+    RASTERFALL_EFFECT_INSTANCE_KIND_INTERACTION_HIGHLIGHT
 };
 
 /* Compatibility aliases for the first runtime prototype. */
@@ -126,40 +129,11 @@ struct rasterfall_effect_cue {
     int life_ms;
 };
 
-struct rasterfall_tracer {
-    int active;
-    int depth_test;
-    int sx, sy, sz;
-    int ex, ey, ez;
-    int life_ms;
-};
-
-struct rasterfall_particle {
-    int active;
-    int x, y, z;
-    int vx, vy, vz;
-    int life_ms;
-};
-
-struct rasterfall_muzzle_flash {
-    int active;
-    int x, y, z;
-    int sy, cy;
-    int weapon;
-    int life_ms;
-};
-
 struct rasterfall_effects {
     struct rasterfall_effect_instance instances[RASTERFALL_EFFECT_INSTANCE_SLOTS];
     int instance_next;
     struct rasterfall_effect_emitter emitters[RASTERFALL_EFFECT_EMITTER_SLOTS];
     int emitter_next;
-    struct rasterfall_tracer tracers[RASTERFALL_TRACER_SLOTS];
-    int tracer_next;
-    struct rasterfall_particle particles[RASTERFALL_PARTICLE_SLOTS];
-    int particle_next;
-    struct rasterfall_muzzle_flash muzzle_flashes[RASTERFALL_MUZZLE_FLASH_SLOTS];
-    int muzzle_flash_next;
     unsigned int last_fire_seq;
     unsigned int last_network_fire_seq[4];
     unsigned int last_ai_fire_seq;
@@ -177,6 +151,11 @@ void rasterfall_effects_sync_projectile_flashes(
     struct rasterfall_effects *effects, const struct toy_game *game);
 void rasterfall_effects_sync_damage_flash(
     struct rasterfall_effects *effects, const struct toy_game *game);
+void rasterfall_effects_sync_enemy_feedback(
+    struct rasterfall_effects *effects, const struct toy_game *game);
+void rasterfall_effects_sync_interaction_highlight(
+    struct rasterfall_effects *effects, int target_id,
+    int x, int y, int z, int active);
 struct rasterfall_effect_instance *rasterfall_effects_spawn_instance(
     struct rasterfall_effects *effects,
     const struct rasterfall_effect_instance *seed);

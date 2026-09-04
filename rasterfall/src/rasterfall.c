@@ -3230,6 +3230,18 @@ startup_again:
                 rasterfall_effects_sync_fire_zones(&effects, &game);
                 rasterfall_effects_sync_projectile_flashes(&effects, &game);
                 rasterfall_effects_sync_damage_flash(&effects, &game);
+                rasterfall_effects_sync_enemy_feedback(&effects, &game);
+                if (session.highlight_index >= 0 &&
+                    session.highlight_index < session.item_count) {
+                    const struct rasterfall_interactable *highlight =
+                        &session.items[session.highlight_index];
+                    rasterfall_effects_sync_interaction_highlight(
+                        &effects, session.highlight_index, highlight->x,
+                        highlight->y, highlight->z, 1);
+                } else {
+                    rasterfall_effects_sync_interaction_highlight(
+                        &effects, -1, 0, 0, 0, 0);
+                }
                 if (net.mode == RASTERFALL_NET_HOST) {
                     rasterfall_net_apply_clients(&net, &session, &camera);
                     rasterfall_net_capture_events(&net, &game);
@@ -3418,8 +3430,7 @@ startup_again:
                 }
                 stage_pixels += present_result;
             }
-            stage_pixels += rasterfall_render_tracers(&renderer, &render_camera);
-            stage_pixels += rasterfall_render_particles(&renderer, &render_camera);
+            stage_pixels += rasterfall_render_effects(&renderer, &render_camera);
             /* 第一人称武器：最后画，叠加在世界之上 */
             if (!game.player_down)
                 stage_pixels += rasterfall_viewmodel_render(&renderer, &game,

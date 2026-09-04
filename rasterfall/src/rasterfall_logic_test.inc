@@ -751,8 +751,7 @@ static int run_logic_test(void)
         seed.size = 1000;
         seed.alpha = 256;
         if (!rasterfall_effects_spawn_instance(&effects, &seed)) return 64;
-        rasterfall_render_tracers(&renderer, &camera);
-        rasterfall_render_particles(&renderer, &camera);
+        rasterfall_render_effects(&renderer, &camera);
         rasterfall_effects_reset_fire(&effects);
     }
     /* Molotov flames are represented by the same runtime particle pool as
@@ -776,15 +775,20 @@ static int run_logic_test(void)
     {
         struct rasterfall_effect_cue cue;
         struct rasterfall_effect_event fire_event;
+        int i, muzzle_count = 0, tracer_count = 0, hit_count = 0;
         memset(&cue, 0, sizeof(cue));
         memset(&fire_event, 0, sizeof(fire_event));
         fire_event.type = RASTERFALL_EFFECT_EVENT_WEAPON_FIRE;
         fire_event.sx = 10; fire_event.sy = 20; fire_event.sz = 30;
         fire_event.weapon = TOY_GAME_WEAPON_AK;
         rasterfall_effects_consume(&effects, &fire_event);
-        if (!effects.muzzle_flashes[0].active ||
-            effects.muzzle_flashes[0].x != 10 ||
-            effects.muzzle_flashes[0].weapon != TOY_GAME_WEAPON_AK)
+        for (i = 0; i < RASTERFALL_EFFECT_INSTANCE_SLOTS; i++)
+            if (effects.instances[i].active &&
+                effects.instances[i].kind == RASTERFALL_EFFECT_INSTANCE_KIND_MUZZLE_FLASH &&
+                effects.instances[i].x == 10 &&
+                effects.instances[i].weapon == TOY_GAME_WEAPON_AK)
+                muzzle_count++;
+        if (muzzle_count != 1)
             return 59;
         rasterfall_effects_reset_fire(&effects);
         cue.type = RASTERFALL_EFFECT_CUE_TRACER;
@@ -793,14 +797,23 @@ static int run_logic_test(void)
         cue.ex = 4; cue.ey = 5; cue.ez = 6;
         cue.life_ms = 77;
         rasterfall_effects_emit(&effects, &cue);
-        if (!effects.tracers[0].active || effects.tracers[0].sx != 1 ||
-            effects.tracers[0].ey != 5 || effects.tracers[0].life_ms != 77 ||
-            !effects.tracers[0].depth_test)
+        for (i = 0; i < RASTERFALL_EFFECT_INSTANCE_SLOTS; i++)
+            if (effects.instances[i].active &&
+                effects.instances[i].kind == RASTERFALL_EFFECT_INSTANCE_KIND_TRACER &&
+                effects.instances[i].x == 1 && effects.instances[i].ey == 5 &&
+                effects.instances[i].lifetime_ms == 77 &&
+                (effects.instances[i].flags & RASTERFALL_EFFECT_EVENT_DEPTH_TEST))
+                tracer_count++;
+        if (tracer_count != 1)
             return 57;
         cue.type = RASTERFALL_EFFECT_CUE_HIT_PARTICLES;
         cue.dir_sy = 1024; cue.dir_cy = 0;
         rasterfall_effects_emit(&effects, &cue);
-        if (effects.particle_next != 7) return 58;
+        for (i = 0; i < RASTERFALL_EFFECT_INSTANCE_SLOTS; i++)
+            if (effects.instances[i].active &&
+                effects.instances[i].kind == RASTERFALL_EFFECT_INSTANCE_KIND_HIT_PARTICLE)
+                hit_count++;
+        if (hit_count != 7) return 58;
         rasterfall_effects_reset_fire(&effects);
         {
             struct rasterfall_effect_instance seed;
@@ -886,6 +899,111 @@ static int run_logic_test(void)
         rasterfall_effects_reset_fire(&effects);
         game.damage_flash_ms = 0;
     }
+    {
+        int i, feedback_count = 0;
+        struct toy_game_enemy saved_enemy = game.enemies[0];
+        memset(&game.enemies[0], 0, sizeof(game.enemies[0]));
+        game.enemies[0].active = 1;
+        game.enemies[0].hurt = 80;
+        rasterfall_effects_sync_enemy_feedback(&effects, &game);
+        for (i = 0; i < RASTERFALL_EFFECT_INSTANCE_SLOTS; i++)
+            if (effects.instances[i].active &&
+                effects.instances[i].type == RASTERFALL_EFFECT_INSTANCE_MATERIAL &&
+                effects.instances[i].kind == RASTERFALL_EFFECT_INSTANCE_KIND_ENEMY_HURT_TINT &&
+                effects.instances[i].target_id == 0)
+                feedback_count++;
+        if (feedback_count != 1) return 69;
+        rasterfall_effects_reset_fire(&effects);
+        game.enemies[0] = saved_enemy;
+    }
+    {
+        int i, highlight_count = 0;
+        rasterfall_effects_sync_interaction_highlight(&effects, 3,
+                                                      100, -900, -2000, 1);
+        for (i = 0; i < RASTERFALL_EFFECT_INSTANCE_SLOTS; i++)
+            if (effects.instances[i].active &&
+                effects.instances[i].type == RASTERFALL_EFFECT_INSTANCE_BILLBOARD &&
+                effects.instances[i].kind == RASTERFALL_EFFECT_INSTANCE_KIND_INTERACTION_HIGHLIGHT &&
+                effects.instances[i].target_id == 3)
+                highlight_count++;
+        if (highlight_count != 1) return 70;
+        rasterfall_effects_reset_fire(&effects);
+    }
+    /* Unified pools are fixed-capacity rings: overflowing a pool replaces the
+     * oldest slot selected by the write cursor and never allocates memory. */
+    {
+        int i, active_instances = 0, active_emitters = 0;
+        struct rasterfall_effect_instance instance;
+        struct rasterfall_effect_emitter emitter;
+        memset(&instance, 0, sizeof(instance));
+        instance.type = RASTERFALL_EFFECT_INSTANCE_PARTICLE;
+        instance.kind = RASTERFALL_EFFECT_INSTANCE_KIND_HIT_PARTICLE;
+        instance.lifetime_ms = 100000;
+        for (i = 0; i < RASTERFALL_EFFECT_INSTANCE_SLOTS + 3; i++) {
+            instance.x = i;
+            if (!rasterfall_effects_spawn_instance(&effects, &instance))
+                return 71;
+        }
+        for (i = 0; i < RASTERFALL_EFFECT_INSTANCE_SLOTS; i++)
+            if (effects.instances[i].active) active_instances++;
+        if (active_instances != RASTERFALL_EFFECT_INSTANCE_SLOTS ||
+            effects.instances[0].x != RASTERFALL_EFFECT_INSTANCE_SLOTS ||
+            effects.instances[1].x != RASTERFALL_EFFECT_INSTANCE_SLOTS + 1 ||
+            effects.instances[2].x != RASTERFALL_EFFECT_INSTANCE_SLOTS + 2)
+            return 72;
+        memset(&emitter, 0, sizeof(emitter));
+        emitter.lifetime_ms = 100000;
+        emitter.spawn_limit = 0;
+        for (i = 0; i < RASTERFALL_EFFECT_EMITTER_SLOTS + 2; i++) {
+            emitter.x = i;
+            if (!rasterfall_effects_spawn_emitter(&effects, &emitter))
+                return 73;
+        }
+        for (i = 0; i < RASTERFALL_EFFECT_EMITTER_SLOTS; i++)
+            if (effects.emitters[i].active) active_emitters++;
+        if (active_emitters != RASTERFALL_EFFECT_EMITTER_SLOTS ||
+            effects.emitters[0].x != RASTERFALL_EFFECT_EMITTER_SLOTS ||
+            effects.emitters[1].x != RASTERFALL_EFFECT_EMITTER_SLOTS + 1)
+            return 74;
+        rasterfall_effects_reset_fire(&effects);
+    }
+    /* The shared network presentation adapter feeds the same runtime as the
+     * local path, while its fire sequence suppresses duplicate snapshots. */
+    {
+        struct camera viewer, remote;
+        struct toy_game_ray ray;
+        int i, tracer_count = 0, muzzle_count = 0;
+        memset(&viewer, 0, sizeof(viewer));
+        memset(&remote, 0, sizeof(remote));
+        memset(&ray, 0, sizeof(ray));
+        viewer.cy = 1024;
+        remote.cy = 1024;
+        remote.x = 400;
+        remote.z = -1200;
+        ray.ex = 400;
+        ray.ez = -3200;
+        rasterfall_effects_reset_fire(&effects);
+        sync_network_fire_effects(&viewer, &remote, 0,
+                                  TOY_GAME_WEAPON_SMG, 7, 1, &ray, NULL);
+        for (i = 0; i < RASTERFALL_EFFECT_INSTANCE_SLOTS; i++) {
+            if (effects.instances[i].active &&
+                effects.instances[i].kind == RASTERFALL_EFFECT_INSTANCE_KIND_TRACER)
+                tracer_count++;
+            if (effects.instances[i].active &&
+                effects.instances[i].kind == RASTERFALL_EFFECT_INSTANCE_KIND_MUZZLE_FLASH)
+                muzzle_count++;
+        }
+        if (tracer_count != 1 || muzzle_count != 1) return 75;
+        tracer_count = 0;
+        sync_network_fire_effects(&viewer, &remote, 0,
+                                  TOY_GAME_WEAPON_SMG, 7, 1, &ray, NULL);
+        for (i = 0; i < RASTERFALL_EFFECT_INSTANCE_SLOTS; i++)
+            if (effects.instances[i].active &&
+                effects.instances[i].kind == RASTERFALL_EFFECT_INSTANCE_KIND_TRACER)
+                tracer_count++;
+        if (tracer_count != 1) return 76;
+        rasterfall_effects_reset_fire(&effects);
+    }
     /* 开发者区域场景：纹理墙/模型台座渲染 + 真实开火产生弹道与命中
      * 火花（向北穿门洞直达最大射程长弹道，向西命中空气墙 1800）。
      * 弹道起点取枪口世界坐标；同帧附加枪口粒子。 */
@@ -903,8 +1021,7 @@ static int run_logic_test(void)
         toy_game_fire(&game, -1024, 0);
         sync_fire_effects(&camera);
         rasterfall_effects_update(&effects, 16);
-        rasterfall_render_tracers(&renderer, &camera);
-        rasterfall_render_particles(&renderer, &camera);
+        rasterfall_render_effects(&renderer, &camera);
         /* 第一人称武器模型冒烟：SMG 几何进入光栅器 */
         rasterfall_viewmodel_render(&renderer, &game, &effects);
         rasterfall_effects_reset_fire(&effects);
