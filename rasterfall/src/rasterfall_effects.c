@@ -420,10 +420,10 @@ void rasterfall_effects_sync_interaction_highlight(
     rasterfall_effects_spawn_instance(effects, &instance);
 }
 
-static void spawn_event_instance(struct rasterfall_effects *effects,
-                                 const struct rasterfall_effect_event *event,
-                                 int type, int kind, int x, int y, int z,
-                                 int vx, int vy, int vz)
+static struct rasterfall_effect_instance *spawn_event_instance(
+    struct rasterfall_effects *effects,
+    const struct rasterfall_effect_event *event,
+    int type, int kind, int x, int y, int z, int vx, int vy, int vz)
 {
     struct rasterfall_effect_instance instance;
     memset(&instance, 0, sizeof(instance));
@@ -444,7 +444,7 @@ static void spawn_event_instance(struct rasterfall_effects *effects,
     instance.dir_z = event->dir_cy;
     instance.vx = vx; instance.vy = vy; instance.vz = vz;
     instance.lifetime_ms = event->life_ms;
-    rasterfall_effects_spawn_instance(effects, &instance);
+    return rasterfall_effects_spawn_instance(effects, &instance);
 }
 
 static void init_explosion_emitter(struct rasterfall_effect_emitter *emitter,
@@ -512,10 +512,38 @@ void rasterfall_effects_consume(struct rasterfall_effects *effects,
 {
     if (!effects || !event) return;
     if (event->type == RASTERFALL_EFFECT_EVENT_WEAPON_FIRE) {
-        spawn_event_instance(effects, event,
-                             RASTERFALL_EFFECT_INSTANCE_BILLBOARD,
-                             RASTERFALL_EFFECT_INSTANCE_KIND_MUZZLE_FLASH,
-                             event->sx, event->sy, event->sz, 0, 0, 0);
+        struct rasterfall_effect_instance *instance;
+        int weapon_scale = event->weapon == TOY_GAME_WEAPON_SHOTGUN ? 1 : 0;
+        instance = spawn_event_instance(
+            effects, event, RASTERFALL_EFFECT_INSTANCE_BILLBOARD,
+            RASTERFALL_EFFECT_INSTANCE_KIND_MUZZLE_FLASH_CORE,
+            event->sx, event->sy, event->sz, 0, 0, 0);
+        if (instance) {
+            instance->lifetime_ms = 28;
+            instance->size = (weapon_scale ? 7 : 5) +
+                             effect_rand(effects, -1, 1);
+            instance->alpha = 256;
+        }
+        instance = spawn_event_instance(
+            effects, event, RASTERFALL_EFFECT_INSTANCE_BILLBOARD,
+            RASTERFALL_EFFECT_INSTANCE_KIND_MUZZLE_FLASH_OUTER,
+            event->sx, event->sy, event->sz, 0, 0, 0);
+        if (instance) {
+            instance->lifetime_ms = event->life_ms > 0 ? event->life_ms : 70;
+            instance->size = (weapon_scale ? 16 : 12) +
+                             effect_rand(effects, -1, 1);
+            instance->alpha = 205 + effect_rand(effects, -16, 16);
+        }
+        instance = spawn_event_instance(
+            effects, event, RASTERFALL_EFFECT_INSTANCE_BILLBOARD,
+            RASTERFALL_EFFECT_INSTANCE_KIND_MUZZLE_FLASH_LOBE,
+            event->sx, event->sy, event->sz, 0, 0, 0);
+        if (instance) {
+            instance->lifetime_ms = 48;
+            instance->size = (weapon_scale ? 9 : 7) +
+                             effect_rand(effects, -1, 1);
+            instance->alpha = 220 + effect_rand(effects, -12, 12);
+        }
     } else if (event->type == RASTERFALL_EFFECT_EVENT_TRACER) {
         {
             spawn_event_instance(effects, event,

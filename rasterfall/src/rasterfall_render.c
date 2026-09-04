@@ -5629,23 +5629,34 @@ static int render_effect_billboards(struct toy_renderer *renderer,
             continue;
         intensity = f->alpha;
         if (intensity > 256) intensity = 256;
-        if (f->kind == RASTERFALL_EFFECT_INSTANCE_KIND_MUZZLE_FLASH) {
-            size = f->weapon == TOY_GAME_WEAPON_SHOTGUN ? 9 : 7;
+        if (f->kind == RASTERFALL_EFFECT_INSTANCE_KIND_MUZZLE_FLASH_CORE ||
+            f->kind == RASTERFALL_EFFECT_INSTANCE_KIND_MUZZLE_FLASH_OUTER ||
+            f->kind == RASTERFALL_EFFECT_INSTANCE_KIND_MUZZLE_FLASH_LOBE ||
+            f->kind == RASTERFALL_EFFECT_INSTANCE_KIND_MUZZLE_FLASH) {
             remaining = f->lifetime_ms - f->age_ms;
             if (remaining < 0) remaining = 0;
-            forward = (f->lifetime_ms - remaining) / 3;
-            pixels += render_effect_billboard(renderer, camera, f->x, f->y,
-                                              f->z, size,
-                                              mix_color(0xFFF4A0, 0xB63A08,
-                                                        intensity, 256));
-            /* Directional lobe preserves the original muzzle burst shape. */
-            pixels += render_effect_billboard(renderer, camera,
-                                              f->x + f->dir_x * forward / 1024,
-                                              f->y + 18,
-                                              f->z + f->dir_z * forward / 1024,
-                                              size / 2 + 1,
-                                              mix_color(0xFFD050, 0x7A1D08,
-                                                        intensity, 256));
+            size = f->size > 0 ? f->size :
+                   (f->weapon == TOY_GAME_WEAPON_SHOTGUN ? 16 : 12);
+            if (f->kind == RASTERFALL_EFFECT_INSTANCE_KIND_MUZZLE_FLASH_CORE) {
+                pixels += render_effect_billboard(renderer, camera, f->x, f->y,
+                                                  f->z, size,
+                                                  mix_color(0xFFFFFF, 0xFFF0A0,
+                                                            intensity, 256));
+            } else if (f->kind == RASTERFALL_EFFECT_INSTANCE_KIND_MUZZLE_FLASH_LOBE) {
+                forward = (f->lifetime_ms - remaining) / 2;
+                pixels += render_effect_billboard(renderer, camera,
+                                                  f->x + f->dir_x * forward / 1024,
+                                                  f->y + 18,
+                                                  f->z + f->dir_z * forward / 1024,
+                                                  size,
+                                                  mix_color(0xFFD050, 0x7A1D08,
+                                                            intensity, 256));
+            } else {
+                pixels += render_effect_billboard(renderer, camera, f->x, f->y,
+                                                  f->z, size,
+                                                  mix_color(0xFFF4A0, 0xB63A08,
+                                                            intensity, 256));
+            }
         } else if (f->kind == RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION_FLASH) {
             size = 11 + (f->age_ms < 24 ? f->age_ms / 4 : 0);
             pixels += render_effect_billboard(renderer, camera, f->x, f->y,

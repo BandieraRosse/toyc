@@ -784,11 +784,14 @@ static int run_logic_test(void)
         rasterfall_effects_consume(&effects, &fire_event);
         for (i = 0; i < RASTERFALL_EFFECT_INSTANCE_SLOTS; i++)
             if (effects.instances[i].active &&
-                effects.instances[i].kind == RASTERFALL_EFFECT_INSTANCE_KIND_MUZZLE_FLASH &&
+                effects.instances[i].kind >=
+                    RASTERFALL_EFFECT_INSTANCE_KIND_MUZZLE_FLASH_CORE &&
+                effects.instances[i].kind <=
+                    RASTERFALL_EFFECT_INSTANCE_KIND_MUZZLE_FLASH_LOBE &&
                 effects.instances[i].x == 10 &&
                 effects.instances[i].weapon == TOY_GAME_WEAPON_AK)
                 muzzle_count++;
-        if (muzzle_count != 1)
+        if (muzzle_count != 3)
             return 59;
         rasterfall_effects_reset_fire(&effects);
         cue_event.type = RASTERFALL_EFFECT_EVENT_TRACER;
@@ -1001,10 +1004,13 @@ static int run_logic_test(void)
                 effects.instances[i].kind == RASTERFALL_EFFECT_INSTANCE_KIND_TRACER)
                 tracer_count++;
             if (effects.instances[i].active &&
-                effects.instances[i].kind == RASTERFALL_EFFECT_INSTANCE_KIND_MUZZLE_FLASH)
+                effects.instances[i].kind >=
+                    RASTERFALL_EFFECT_INSTANCE_KIND_MUZZLE_FLASH_CORE &&
+                effects.instances[i].kind <=
+                    RASTERFALL_EFFECT_INSTANCE_KIND_MUZZLE_FLASH_LOBE)
                 muzzle_count++;
         }
-        if (tracer_count != 1 || muzzle_count != 1) return 75;
+        if (tracer_count != 1 || muzzle_count != 3) return 75;
         tracer_count = 0;
         sync_network_fire_effects(&viewer, &remote, 0,
                                   TOY_GAME_WEAPON_SMG, 7, 1, &ray, NULL);
