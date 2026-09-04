@@ -14,6 +14,7 @@
 #define RASTERFALL_MUZZLE_FLASH_SLOTS 16
 #define RASTERFALL_MUZZLE_FLASH_LIFE_MS 70
 #define RASTERFALL_EFFECT_INSTANCE_SLOTS 2048
+#define RASTERFALL_EFFECT_EMITTER_SLOTS 32
 
 /* Runtime component types describe the low-level renderer primitive.  They
  * are intentionally separate from event types: one event may eventually
@@ -61,6 +62,9 @@ struct rasterfall_effect_instance {
     int weapon;
     unsigned int sequence;
     int x, y, z;
+    /* Overlay components use x/y as screen coordinates and width/height as
+     * a clipped screen-space rectangle. */
+    int width, height;
     /* Ray components use an explicit endpoint; other components leave it
      * unused. */
     int ex, ey, ez;
@@ -73,6 +77,28 @@ struct rasterfall_effect_instance {
     int age_ms;
     int size;
     int alpha;
+};
+
+/* Emitter configuration is presentation-only and fixed-capacity. It emits
+ * instances into the shared runtime pool and never owns gameplay state. */
+struct rasterfall_effect_emitter {
+    int active;
+    int x, y, z;
+    int dir_x, dir_y, dir_z;
+    int lifetime_ms;
+    int age_ms;
+    int spawn_interval_ms;
+    int spawn_accum_ms;
+    int spawned_count;
+    int spawn_limit;
+    int child_type;
+    int child_kind;
+    int spread;
+    int vx, vy, vz;
+    int gravity_y;
+    int size;
+    int alpha;
+    uint32_t color;
 };
 
 /* Compatibility names for callers that still use the original pool-specific
@@ -117,6 +143,8 @@ struct rasterfall_muzzle_flash {
 struct rasterfall_effects {
     struct rasterfall_effect_instance instances[RASTERFALL_EFFECT_INSTANCE_SLOTS];
     int instance_next;
+    struct rasterfall_effect_emitter emitters[RASTERFALL_EFFECT_EMITTER_SLOTS];
+    int emitter_next;
     struct rasterfall_tracer tracers[RASTERFALL_TRACER_SLOTS];
     int tracer_next;
     struct rasterfall_particle particles[RASTERFALL_PARTICLE_SLOTS];
@@ -139,6 +167,9 @@ void rasterfall_effects_sync_fire_zones(
 struct rasterfall_effect_instance *rasterfall_effects_spawn_instance(
     struct rasterfall_effects *effects,
     const struct rasterfall_effect_instance *seed);
+struct rasterfall_effect_emitter *rasterfall_effects_spawn_emitter(
+    struct rasterfall_effects *effects,
+    const struct rasterfall_effect_emitter *seed);
 void rasterfall_effects_spawn_hit_particles(struct rasterfall_effects *effects,
                                             int x, int y, int z, int sy, int cy);
 void rasterfall_effects_emit(struct rasterfall_effects *effects,

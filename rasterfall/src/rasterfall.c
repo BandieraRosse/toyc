@@ -3466,6 +3466,7 @@ startup_again:
             rasterfall_render_ai_teammate_name(&renderer, &render_camera);
             rasterfall_render_network_teammate_status(&renderer, &render_camera, &net);
             rasterfall_hud_damage_flash(&surface, &game);
+            stage_pixels += rasterfall_render_overlays(&renderer);
             if (game.state == TOY_GAME_PLAYING && !paused &&
                 !session.pose_editor.active && toy_input_down(&input, KEY_TAB))
                 draw_scoreboard(&surface, &net);

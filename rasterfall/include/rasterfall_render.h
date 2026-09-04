@@ -129,5 +129,6 @@ int rasterfall_render_tracers(struct toy_renderer *renderer,
                               const struct camera *camera);
 int rasterfall_render_particles(struct toy_renderer *renderer,
                                 const struct camera *camera);
+int rasterfall_render_overlays(struct toy_renderer *renderer);
 
 #endif

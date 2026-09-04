@@ -5627,6 +5627,31 @@ static int render_muzzle_flashes(struct toy_renderer *renderer,
     return pixels;
 }
 
+static int render_effect_overlay(struct toy_renderer *renderer,
+                                 const struct rasterfall_effect_instance *overlay)
+{
+    int x, y, width, height, alpha;
+    if (!overlay->active || overlay->type != RASTERFALL_EFFECT_INSTANCE_OVERLAY)
+        return 0;
+    x = overlay->x;
+    y = overlay->y;
+    width = overlay->width > 0 ? overlay->width : renderer->surface.width;
+    height = overlay->height > 0 ? overlay->height : renderer->surface.height;
+    if (x < 0) { width += x; x = 0; }
+    if (y < 0) { height += y; y = 0; }
+    if (x + width > renderer->surface.width)
+        width = renderer->surface.width - x;
+    if (y + height > renderer->surface.height)
+        height = renderer->surface.height - y;
+    if (width <= 0 || height <= 0) return 0;
+    alpha = overlay->alpha;
+    if (alpha < 0) alpha = 0;
+    if (alpha > 256) alpha = 256;
+    fill_rect(&renderer->surface, x, y, width, height,
+              mix_color(0x000000, overlay->color, alpha, 256));
+    return width * height;
+}
+
 static int render_effect_particle(struct toy_renderer *renderer,
                                   const struct camera *camera,
                                   const struct rasterfall_effect_instance *p)
@@ -5808,4 +5833,12 @@ int rasterfall_render_particles(struct toy_renderer *renderer,
 {
     return render_muzzle_flashes(renderer, camera) +
            render_particles(renderer, camera);
+}
+
+int rasterfall_render_overlays(struct toy_renderer *renderer)
+{
+    int i, pixels = 0;
+    for (i = 0; i < RASTERFALL_EFFECT_INSTANCE_SLOTS; i++)
+        pixels += render_effect_overlay(renderer, &active_effects->instances[i]);
+    return pixels;
 }

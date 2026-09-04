@@ -823,6 +823,7 @@ static int run_logic_test(void)
             explosion.type = RASTERFALL_EFFECT_EVENT_EXPLOSION;
             explosion.x = 11; explosion.y = 22; explosion.z = 33;
             rasterfall_effects_consume(&effects, &explosion);
+            rasterfall_effects_update(&effects, 16);
             for (instance_index = 0;
                  instance_index < RASTERFALL_EFFECT_INSTANCE_SLOTS;
                  instance_index++) {
@@ -833,6 +834,7 @@ static int run_logic_test(void)
                     explosion_particles++;
             }
             if (explosion_particles != 16) return 64;
+            if (effects.emitters[0].spawned_count != 16) return 66;
             instance = 0;
             for (instance_index = 0;
                  instance_index < RASTERFALL_EFFECT_INSTANCE_SLOTS;
