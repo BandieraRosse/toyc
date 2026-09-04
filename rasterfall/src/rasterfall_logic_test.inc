@@ -780,6 +780,37 @@ static int run_logic_test(void)
         rasterfall_effects_emit(&effects, &cue);
         if (effects.particle_next != 7) return 58;
         rasterfall_effects_reset_fire(&effects);
+        {
+            struct rasterfall_effect_instance seed;
+            struct rasterfall_effect_event explosion;
+            struct rasterfall_effect_instance *instance;
+            int instance_index;
+            memset(&seed, 0, sizeof(seed));
+            seed.type = RASTERFALL_EFFECT_INSTANCE_PARTICLE;
+            seed.x = 100; seed.vx = 2; seed.lifetime_ms = 32;
+            instance = rasterfall_effects_spawn_instance(&effects, &seed);
+            if (!instance || !instance->active || instance->age_ms != 0 ||
+                instance->alpha != 256 || instance->size != 1000)
+                return 60;
+            rasterfall_effects_update(&effects, 16);
+            if (!instance->active || instance->age_ms != 16 ||
+                instance->x != 132 || instance->alpha != 128)
+                return 61;
+            rasterfall_effects_update(&effects, 16);
+            if (instance->active) return 62;
+            memset(&explosion, 0, sizeof(explosion));
+            explosion.type = RASTERFALL_EFFECT_EVENT_EXPLOSION;
+            explosion.x = 11; explosion.y = 22; explosion.z = 33;
+            rasterfall_effects_consume(&effects, &explosion);
+            instance_index = effects.instance_next == 0 ?
+                RASTERFALL_EFFECT_INSTANCE_SLOTS - 1 : effects.instance_next - 1;
+            instance = &effects.instances[instance_index];
+            if (!instance->active ||
+                instance->type != RASTERFALL_EFFECT_INSTANCE_EXPLOSION ||
+                instance->x != 11 || instance->y != 22 || instance->z != 33)
+                return 63;
+            rasterfall_effects_reset_fire(&effects);
+        }
     }
     /* 开发者区域场景：纹理墙/模型台座渲染 + 真实开火产生弹道与命中
      * 火花（向北穿门洞直达最大射程长弹道，向西命中空气墙 1800）。
