@@ -55,6 +55,13 @@ enum rasterfall_effect_instance_compat_type {
     RASTERFALL_EFFECT_INSTANCE_EXPLOSION = RASTERFALL_EFFECT_INSTANCE_EMITTER
 };
 
+/* Emitter child placement is a runtime policy, not an asset format. */
+enum rasterfall_effect_emitter_pattern {
+    RASTERFALL_EFFECT_EMITTER_PATTERN_DEFAULT,
+    RASTERFALL_EFFECT_EMITTER_PATTERN_FIRE,
+    RASTERFALL_EFFECT_EMITTER_PATTERN_EXPLOSION
+};
+
 /* Fixed-point runtime state.  Positions and velocities use the same integer
  * world units as the existing effect pools; velocity and gravity are applied
  * in Rasterfall's fixed 16ms simulation ticks.  Size is milli-scale and alpha

@@ -46,7 +46,8 @@ muzzle flash 和 Molotov 火焰的渲染已经直接消费 runtime `RAY`/`PARTIC
 instance pool；当前爆炸配置生成冲击波 ray、短时 billboard 和固定数量的粒子子 instance，由
   `rasterfall_render_effects()` 的通用 world primitive 分支绘制。该接入不修改炸弹伤害和网络协议；联机事件仍应由展示适配器构造已有 event。当前 Molotov 火焰已经通过
 `rasterfall_effects_sync_fire_zones()` 将每个燃烧区域同步为固定容量 emitter；emitter 按固定间隔批量生成
-  `FIRE` 语义的 `PARTICLE` instance，并由通用粒子绘制入口消费。主循环现在通过
+  `FIRE` 语义的 `PARTICLE` instance，并由通用粒子绘制入口消费。emitter 的子组件类型、生成间隔、
+  数量上限、散布和 placement pattern 都是固定容量 runtime 描述；主循环现在通过
   `rasterfall_render_effects()` 统一提交 ray/billboard/particle，overlay 仍在屏幕空间阶段单独提交，
   以保证 HUD 和第一人称视图模型的层级顺序。
   统一 instance 和 emitter 池均为固定容量环形池，满载时按写指针覆盖最旧槽位；该策略已由逻辑测试覆盖。后续可在不改变火焰语义的前提下替换粒子渲染细节。

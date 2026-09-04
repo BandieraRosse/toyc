@@ -90,7 +90,7 @@ static void spawn_emitter_child(struct rasterfall_effects *effects,
     instance.type = emitter->child_type;
     instance.kind = emitter->child_kind;
     instance.x = emitter->x; instance.y = emitter->y; instance.z = emitter->z;
-    if (emitter->pattern == 1) {
+    if (emitter->pattern == RASTERFALL_EFFECT_EMITTER_PATTERN_FIRE) {
         int fire_index = emitter->spawned_count % 88;
         int pulse;
         if (fire_index < 48) {
@@ -121,7 +121,7 @@ static void spawn_emitter_child(struct rasterfall_effects *effects,
         }
         instance.lifetime_ms = 16;
         instance.stretch_y = 2000;
-    } else if (emitter->child_kind == RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION_PARTICLE) {
+    } else if (emitter->pattern == RASTERFALL_EFFECT_EMITTER_PATTERN_EXPLOSION) {
         instance.vx = emitter->vx + explosion_velocity[index][0] * spread / 1000;
         instance.vy = emitter->vy + explosion_velocity[index][1] * spread / 1000;
         instance.vz = emitter->vz + explosion_velocity[index][2] * spread / 1000;
@@ -169,7 +169,7 @@ void rasterfall_effects_sync_fire_zones(struct rasterfall_effects *effects,
             seed.child_type = RASTERFALL_EFFECT_INSTANCE_PARTICLE;
             seed.child_kind = RASTERFALL_EFFECT_INSTANCE_KIND_FIRE;
             seed.spawn_limit = 0;
-            seed.pattern = 1;
+            seed.pattern = RASTERFALL_EFFECT_EMITTER_PATTERN_FIRE;
             seed.alpha = 256;
             emitter = rasterfall_effects_spawn_emitter(effects, &seed);
             if (emitter) emitter->spawn_accum_ms = emitter->spawn_interval_ms;
@@ -401,6 +401,7 @@ void rasterfall_effects_consume(struct rasterfall_effects *effects,
         emitter.spawn_limit = 16;
         emitter.child_type = RASTERFALL_EFFECT_INSTANCE_PARTICLE;
         emitter.child_kind = RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION_PARTICLE;
+        emitter.pattern = RASTERFALL_EFFECT_EMITTER_PATTERN_EXPLOSION;
         emitter.spread = 1000;
         emitter.gravity_y = 2;
         emitter.size = 4500;
