@@ -1844,59 +1844,57 @@ static int run_logic_test(void)
         /* The arena no longer contains campaign geometry that needs a
          * scripted AI redeployment route. */
     }
-    /* 目标合法性与 LOS/导航连通性分离：墙后主玩家仍是有效目标；
-     * 存在更近的远端玩家时，AI 应选择该玩家。 */
+    /* 索敌候选、感知和移动拓扑分离：合法目标即使被墙遮挡也要保留，
+     * 远端玩家只在重选周期到期后切换；持续追踪同样不因墙或 component
+     * 变化而丢失目标。 */
     {
         struct toy_map_primitive wall=test_box_primitive(
             -100,100,-6000,6000,0,0,TOY_MAP_PRIMITIVE_COLLISION);
+        struct toy_map_primitive terrain[2];
+        int i;
+        terrain[0] = test_flat_primitive(-6000,6000,-6000,6000,0);
+        terrain[1] = wall;
         toy_game_init(&game, 81);
         game.to_spawn = 0;
         game.px = 3000; game.pz = 0;
-        toy_game_set_primitives(&game,&wall,1,6000);
+        toy_game_set_primitives(&game,terrain,2,6000);
         toy_game_place_enemy(&game, -3000, 0);
+        game.enemies[0].ai_state = TOY_GAME_ENEMY_ALERT;
+        game.enemies[0].ai_timer_ms = 100000;
         toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
-        if (game.enemies[0].target_kind != -1) return 120;
+        if (game.enemies[0].target_kind != TOY_GAME_TARGET_HOST ||
+            game.enemies[0].target_index != -1) return 120;
 
         toy_game_set_remote_player(&game, 1, 1, -1800, 0, "PLAYER");
         toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
-        if (game.enemies[0].target_kind != 1 ||
-            game.enemies[0].target_index != TOY_GAME_REMOTE_ACTOR_BASE)
+        if (game.enemies[0].target_kind != TOY_GAME_TARGET_HOST)
             return 121;
-    }
-    /* TRACKING 只忽略 LOS，不忽略 component；绕过有限障碍后仍可追踪。 */
-    {
-        struct toy_map_primitive wall=test_box_primitive(
-            -100,100,-600,600,0,0,TOY_MAP_PRIMITIVE_COLLISION);
+        for (i = 0; i < TOY_GAME_RETARGET_MS / 16; i++)
+            toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
+        if (game.enemies[0].target_kind != TOY_GAME_TARGET_ACTOR ||
+            game.enemies[0].target_index != TOY_GAME_REMOTE_ACTOR_BASE)
+            return 122;
+
+        game.actors[TOY_GAME_REMOTE_ACTOR_BASE].state =
+            TOY_GAME_ACTOR_DOWNED;
+        toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
+        if (game.enemies[0].target_kind != TOY_GAME_TARGET_HOST ||
+            game.enemies[0].target_index != -1) return 123;
+
         toy_game_init(&game, 82);
         game.to_spawn = 0;
-        game.px = 3000; game.pz = 2000;
-        toy_game_set_primitives(&game,&wall,1,6000);
+        game.px = 3000; game.pz = 0;
+        toy_game_set_primitives(&game,terrain,2,6000);
         toy_game_place_enemy(&game, -3000, 0);
         game.enemies[0].ai_state = TOY_GAME_ENEMY_TRACKING;
-        game.enemies[0].type = TOY_GAME_ENEMY_COMMON;
         toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
-        if (game.enemies[0].target_kind != 0) return 122;
-
-        game.px = 3000; game.pz = 0;
-        wall.minz = -6000; wall.maxz = 6000;
-        toy_game_rebuild_navigation(&game);
-        toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
-        if (game.enemies[0].target_kind != -1) return 123;
-    }
-    /* 空气墙拓扑变化后，关闭墙体必须重新合并 component。 */
-    {
-        struct toy_map_primitive wall=test_box_primitive(
-            -100,100,-6000,6000,0,0,TOY_MAP_PRIMITIVE_COLLISION);
-        toy_game_init(&game, 83);
-        game.to_spawn = 0; game.px = 3000; game.pz = 0;
-        toy_game_set_primitives(&game,&wall,1,6000);
-        toy_game_place_enemy(&game, -3000, 0);
-        toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
-        if (game.enemies[0].target_kind != -1) return 124;
+        if (game.enemies[0].target_kind != TOY_GAME_TARGET_HOST)
+            return 124;
         wall.flags &= ~TOY_MAP_PRIMITIVE_COLLISION;
         toy_game_rebuild_navigation(&game);
         toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
-        if (game.enemies[0].target_kind != 0) return 125;
+        if (game.enemies[0].target_kind != TOY_GAME_TARGET_HOST)
+            return 125;
     }
     /* Tank 在慢前摇末段同时命中前方单位；基地受 24 伤害但不击飞。 */
     {
