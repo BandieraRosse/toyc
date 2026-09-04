@@ -805,7 +805,7 @@ static int run_logic_test(void)
             struct rasterfall_effect_instance seed;
             struct rasterfall_effect_event explosion;
             struct rasterfall_effect_instance *instance;
-            int instance_index;
+            int instance_index, explosion_particles = 0;
             memset(&seed, 0, sizeof(seed));
             seed.type = RASTERFALL_EFFECT_INSTANCE_PARTICLE;
             seed.x = 100; seed.vx = 2; seed.lifetime_ms = 32;
@@ -823,13 +823,29 @@ static int run_logic_test(void)
             explosion.type = RASTERFALL_EFFECT_EVENT_EXPLOSION;
             explosion.x = 11; explosion.y = 22; explosion.z = 33;
             rasterfall_effects_consume(&effects, &explosion);
-            instance_index = effects.instance_next == 0 ?
-                RASTERFALL_EFFECT_INSTANCE_SLOTS - 1 : effects.instance_next - 1;
-            instance = &effects.instances[instance_index];
-            if (!instance->active ||
-                instance->type != RASTERFALL_EFFECT_INSTANCE_EMITTER ||
-                instance->kind != RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION ||
-                instance->x != 11 || instance->y != 22 || instance->z != 33)
+            for (instance_index = 0;
+                 instance_index < RASTERFALL_EFFECT_INSTANCE_SLOTS;
+                 instance_index++) {
+                instance = &effects.instances[instance_index];
+                if (instance->active &&
+                    instance->type == RASTERFALL_EFFECT_INSTANCE_PARTICLE &&
+                    instance->kind == RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION_PARTICLE)
+                    explosion_particles++;
+            }
+            if (explosion_particles != 16) return 64;
+            instance = 0;
+            for (instance_index = 0;
+                 instance_index < RASTERFALL_EFFECT_INSTANCE_SLOTS;
+                 instance_index++) {
+                if (effects.instances[instance_index].active &&
+                    effects.instances[instance_index].type == RASTERFALL_EFFECT_INSTANCE_EMITTER &&
+                    effects.instances[instance_index].kind == RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION) {
+                    instance = &effects.instances[instance_index];
+                    break;
+                }
+            }
+            if (!instance || instance->x != 11 || instance->y != 22 ||
+                instance->z != 33)
                 return 63;
             rasterfall_effects_reset_fire(&effects);
         }

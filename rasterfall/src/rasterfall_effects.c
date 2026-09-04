@@ -69,6 +69,32 @@ static void spawn_fire_particle(struct rasterfall_effects *effects,
     rasterfall_effects_spawn_instance(effects, &instance);
 }
 
+static void spawn_explosion_particles(struct rasterfall_effects *effects,
+                                      const struct rasterfall_effect_event *event)
+{
+    static const int velocity[16][3] = {
+        { 52,  0,  0 }, { -52,  0,  0 }, { 0,  0, 52 }, { 0,  0, -52 },
+        { 36, 28,  0 }, { -36, 28,  0 }, { 0, 28, 36 }, { 0, 28, -36 },
+        { 28, -18, 28 }, { -28, -18, 28 }, { 28, -18, -28 }, { -28, -18, -28 },
+        { 18, 42, 18 }, { -18, 42, 18 }, { 18, 42, -18 }, { -18, 42, -18 }
+    };
+    int i;
+    for (i = 0; i < 16; i++) {
+        struct rasterfall_effect_instance instance;
+        memset(&instance, 0, sizeof(instance));
+        instance.type = RASTERFALL_EFFECT_INSTANCE_PARTICLE;
+        instance.kind = RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION_PARTICLE;
+        instance.x = event->x; instance.y = event->y; instance.z = event->z;
+        instance.vx = velocity[i][0]; instance.vy = velocity[i][1];
+        instance.vz = velocity[i][2];
+        instance.gravity_y = 2;
+        instance.lifetime_ms = 180;
+        instance.size = 4500 - (i % 4) * 500;
+        instance.color = i & 1 ? 0xFF8A18 : 0xFFD050;
+        rasterfall_effects_spawn_instance(effects, &instance);
+    }
+}
+
 void rasterfall_effects_sync_fire_zones(struct rasterfall_effects *effects,
                                         const struct toy_game *game)
 {
@@ -255,6 +281,7 @@ void rasterfall_effects_consume(struct rasterfall_effects *effects,
                              RASTERFALL_EFFECT_INSTANCE_EMITTER,
                              RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION,
                              event->x, event->y, event->z, 0, 0, 0);
+        spawn_explosion_particles(effects, event);
     }
 }
 

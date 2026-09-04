@@ -5660,7 +5660,8 @@ static int render_particles(struct toy_renderer *renderer, const struct camera *
         const struct rasterfall_effect_instance *p = &effects.instances[i];
         if (p->type != RASTERFALL_EFFECT_INSTANCE_PARTICLE ||
             (p->kind != RASTERFALL_EFFECT_INSTANCE_KIND_HIT_PARTICLE &&
-             p->kind != RASTERFALL_EFFECT_INSTANCE_KIND_FIRE))
+             p->kind != RASTERFALL_EFFECT_INSTANCE_KIND_FIRE &&
+             p->kind != RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION_PARTICLE))
             continue;
         pixels += render_effect_particle(renderer, camera, p);
     }
