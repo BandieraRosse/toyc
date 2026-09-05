@@ -119,7 +119,7 @@
 #define TOY_CONFIG_AWP_SLOT                      0  /* 武器槽位 */
 #define TOY_CONFIG_AWP_DAMAGE                  200  /* 单颗伤害 */
 
-/* Weapon reach and AI awareness.  The legacy common reach is 11500. */
+/* Weapon reach and AI teammate awareness. */
 #define TOY_CONFIG_PISTOL_RANGE              11500  /* 最大射程 */
 #define TOY_CONFIG_PISTOL_ALERT_RANGE         8400  /* AI 警觉范围 */
 #define TOY_CONFIG_SMG_RANGE                 11500  /* 最大射程 */

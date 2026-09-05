@@ -4381,16 +4381,6 @@ static int render_smoker_tongue(struct toy_renderer *renderer,
     return pixels;
 }
 
-static void render_enemy_alert(struct toy_renderer *renderer,
-                               const struct camera *camera,
-                               const struct toy_game_enemy *e, int scale)
-{
-    (void)renderer;
-    (void)camera;
-    (void)e;
-    (void)scale;
-}
-
 static uint32_t enemy_feedback_color(int target_id)
 {
     int i;
@@ -4487,7 +4477,6 @@ static int render_enemies(struct toy_renderer *renderer,
             pixels += render_block_enemy(renderer, camera, e, scale, color);
         else
             pixels += render_round_enemy(renderer, camera, e, scale, color);
-        render_enemy_alert(renderer, camera, e, scale);
         active_enemy_lift = 0;
     }
     return pixels;

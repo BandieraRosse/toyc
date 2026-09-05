@@ -63,8 +63,6 @@
 #define TOY_GAME_ATTACK_RANGE   300     /* 敌我距离小于此值开始咬 */
 #define TOY_GAME_SHOVE_PUSH     500     /* 推开位移（沿面朝方向） */
 #define TOY_GAME_SHOVE_CONE     2       /* 面前扇形 120°：点积*2 >= 距离 */
-#define TOY_GAME_ENEMY_HALF     120     /* 渲染 box 半宽（宿主用） */
-#define TOY_GAME_ENEMY_HEIGHT   350     /* 敌人模型顶部略高于玩家视角 */
 #define TOY_GAME_SPAWN_EDGE     250     /* 生成点距房间边界内缩量 */
 #define TOY_GAME_MIN_SPAWN_DIST 1200    /* 生成点距玩家最小距离（防贴脸） */
 #define TOY_GAME_GOAL_HOLD_MS   1500    /* 终点安全室内停留多久判定通关 */
@@ -232,7 +230,6 @@ enum toy_game_event {
     TOY_GAME_EV_WAVE_START,
     TOY_GAME_EV_LEVEL_WON,
     TOY_GAME_EV_ALARM_TRIGGERED,
-    TOY_GAME_EV_ENEMY_ALERT,
     TOY_GAME_EV_ACTOR_DOWN,
     TOY_GAME_EV_ACTOR_REVIVE,
     TOY_GAME_EV_PICKUP,
@@ -375,7 +372,6 @@ struct toy_game_enemy_info {
     int speed_min;
     int speed_max;
     int bite_damage;
-    int model_id;
     unsigned int color;
     int content_id;    /* 稳定内容 ID */
     const char *name;  /* 调试/配置名称 */
