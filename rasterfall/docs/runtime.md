@@ -29,6 +29,9 @@
 `session_sync_special_motion()` 派生 camera 的位置和高度；camera 的方向仍作为输入视角供移动
 与瞄准使用。渲染阶段可复制 camera 叠加纯展示效果，但不得回写 gameplay 位置。
 
+`struct camera` 现以 `body` 和 `view` 两个命名空间表达该边界；旧的扁平字段暂保留为布局兼容
+别名。新代码应使用 `camera.body` 读写派生位置，使用 `camera.view` 读写方向和展示高度。
+
 ## 常见任务落点
 
 - 新增启动参数：options 头文件字段、`rasterfall_options_init/parse/usage`，再接入 `main()`。

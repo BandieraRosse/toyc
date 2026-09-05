@@ -492,8 +492,8 @@ static void session_sync_special_motion(struct rasterfall_session *session,
     if (!session || !camera) return;
     /* The gameplay/prediction state owns the body position.  Camera keeps
      * orientation and presentation height, and is rebuilt from that state. */
-    camera->x = session->game_state.px;
-    camera->z = session->game_state.pz;
+    rasterfall_camera_set_body(camera, session->game_state.px,
+                               session->game_state.pz);
     camera->y = RASTERFALL_STANDING_CAMERA_Y +
                 session->game_state.player_ground_y +
                 session->game_state.player_airborne_y;

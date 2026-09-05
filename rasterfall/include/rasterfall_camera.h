@@ -4,14 +4,44 @@
 #define RASTERFALL_PITCH_LIMIT_SY 989
 #define RASTERFALL_PITCH_LIMIT_CY 265
 
-/* Rasterfall 使用 1024 定点单位保存水平偏航和垂直俯仰。相机是游戏会话、
- * 世界渲染、天空和网络玩家视图之间共享的数据类型，不归属于任一渲染模块。 */
-struct camera {
+/* Body position and view input intentionally occupy separate namespaces while
+ * preserving the historic flat layout used by the network codec.  The
+ * anonymous members keep old call sites source-compatible during migration;
+ * new gameplay code should use body, and new view/input code should use view. */
+struct rasterfall_camera_body {
     int x, z;
+};
+
+/* Rasterfall 使用 1024 定点单位保存水平偏航和垂直俯仰。y is the
+ * presentation height derived from body/ground state, not a gameplay body
+ * position authority. */
+struct rasterfall_camera_view {
     int sy, cy;
     int pitch_sy, pitch_cy;
-    /* 玩家被击飞时的世界高度；网络旧字段保持兼容，远端默认落地。 */
     int y;
 };
+
+struct camera {
+    union {
+        struct rasterfall_camera_body body;
+        struct { int x, z; };       /* legacy layout alias */
+    };
+    union {
+        struct rasterfall_camera_view view;
+        struct {                     /* legacy layout alias */
+            int sy, cy;
+            int pitch_sy, pitch_cy;
+            int y;
+        };
+    };
+};
+
+static inline void rasterfall_camera_set_body(struct camera *camera,
+                                              int x, int z)
+{
+    if (!camera) return;
+    camera->body.x = x;
+    camera->body.z = z;
+}
 
 #endif

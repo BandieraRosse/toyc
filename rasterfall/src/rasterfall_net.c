@@ -1084,8 +1084,8 @@ static int decode_input_entry(const unsigned char *p,
 static void decode_command_camera(const unsigned char *payload,
                                   struct camera *camera)
 {
-    camera->x = (int)get_u32(payload + 4);
-    camera->z = (int)get_u32(payload + 8);
+    camera->body.x = (int)get_u32(payload + 4);
+    camera->body.z = (int)get_u32(payload + 8);
     camera->sy = get_i16(payload + 12);
     camera->cy = get_i16(payload + 14);
     camera->pitch_sy = get_i16(payload + 16);
@@ -1183,7 +1183,8 @@ int rasterfall_net_send_command(struct rasterfall_net *net,
                         sequence, net->receive_sequence);
     if (size < 0) return size;
     p[0] = 0; p[1] = p[2] = p[3] = 0;
-    put_u32(p + 4, (uint32_t)predicted->x); put_u32(p + 8, (uint32_t)predicted->z);
+    put_u32(p + 4, (uint32_t)predicted->body.x);
+    put_u32(p + 8, (uint32_t)predicted->body.z);
     put_i16(p + 12, predicted->sy); put_i16(p + 14, predicted->cy);
     put_i16(p + 16, predicted->pitch_sy); put_i16(p + 18, predicted->pitch_cy);
     put_u32(p + 20, net->reliable_event_ack);

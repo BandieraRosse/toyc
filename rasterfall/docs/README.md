@@ -49,6 +49,7 @@ toy_renderer / window / audio    仓库公共平台层
 
 网络主机运行权威会话；客户端通过 `rasterfall_net.c` 的快照、预测与校正形成展示状态。炸弹和
 Molotov 的世界实体显式携带 `owner_actor_id`，本地预测 body 位置再派生 camera 展示位置。
+`struct camera` 已显式区分 `body` 与 `view` 命名空间；扁平字段仅作为迁移期布局兼容别名。
 主机和客户端的开火展示都经 `sync_network_fire_effects()` 适配到同一 runtime，并按 fire sequence
 抑制重复事件。不要把纯视觉状态塞进 `toy_game`，也不要让渲染器修改权威玩法结果。
 
