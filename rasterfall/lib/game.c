@@ -5448,6 +5448,56 @@ void toy_game_update_held(struct toy_game *g,
     toy_game_mirror_actor_from_player(g);
 }
 
+void toy_game_update_world(struct toy_game *g, int dt_ms)
+{
+    int i;
+    if (!g || g->state != TOY_GAME_PLAYING) return;
+    /* Existing world rules still inspect the legacy player view.  Populate it
+     * from the actor at the boundary and copy world-side player effects back
+     * only after the world step; no local weapon/input work happens here. */
+    toy_game_mirror_player_from_actor(g);
+    toy_game_update_projectiles(g, dt_ms);
+    toy_game_update_burn_zones(g, dt_ms);
+    toy_game_update_ai_teammates(g, dt_ms);
+    for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
+        struct toy_game_enemy *e = &g->enemies[i];
+        if (e->active == 1) {
+            if (e->airborne_ms > 0) {
+                update_enemy_airborne(g, e, dt_ms);
+                continue;
+            }
+            if (e->bite_cooldown_ms > 0) {
+                e->bite_cooldown_ms -= dt_ms;
+                if (e->bite_cooldown_ms < 0) e->bite_cooldown_ms = 0;
+            }
+            if (e->flash > 0) {
+                e->flash -= dt_ms;
+                if (e->flash < 0) e->flash = 0;
+            }
+            if (e->hurt > 0) {
+                e->hurt -= dt_ms;
+                if (e->hurt < 0) e->hurt = 0;
+            }
+            if (e->shove_stun_ms > 0) {
+                e->shove_stun_ms -= dt_ms;
+                if (e->shove_stun_ms < 0) e->shove_stun_ms = 0;
+                continue;
+            }
+            update_enemy_ai(g, e, dt_ms);
+            update_enemy_ground(g, e);
+        } else if (e->active == 2) {
+            e->dying_ms -= dt_ms;
+            if (e->dying_ms <= 0) e->active = 0;
+        }
+    }
+    update_player_special_motion(g, dt_ms);
+    separate_enemies(g);
+    update_base_core(g, dt_ms);
+    if (g->campaign_mode) update_campaign(g, dt_ms);
+    else update_waves(g, dt_ms);
+    toy_game_mirror_actor_from_player(g);
+}
+
 /* 半自动兼容入口：无按住连发（历史测试/宿主行为不变） */
 void toy_game_update(struct toy_game *g, const unsigned char *keys_pressed,
                      int fire_pressed, int sy, int cy, int dt_ms)

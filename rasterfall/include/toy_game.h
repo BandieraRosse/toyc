@@ -793,6 +793,9 @@ void toy_game_update_held(struct toy_game *g,
                           const unsigned char *keys_pressed, /* 可 NULL */
                           int fire_pressed, int fire_held,
                           int sy, int cy, int dt_ms);       /* 全自动武器的按住连发 */
+/* 推进投掷物、AI、敌人、波次和地图世界；不读取本地玩家输入，也不
+ * 推进本地玩家武器计时。Rasterfall session 用它把 actor 武器步骤分离。 */
+void toy_game_update_world(struct toy_game *g, int dt_ms);
 /* 只推进一名玩家的武器/换弹状态，不更新敌人、波次或世界。联机主机
  * 用它在同一份权威世界上验证远端射击。 */
 void toy_game_update_weapon_held(struct toy_game *g,

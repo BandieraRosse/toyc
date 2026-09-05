@@ -2279,13 +2279,8 @@ void rasterfall_session_step(struct rasterfall_session *session,
     if (command->buttons & RASTERFALL_CMD_SLOT_2) keys[TOY_GAME_KEY_SLOT_2] = 1;
     if (command->buttons & RASTERFALL_CMD_SLOT_3) keys[TOY_GAME_KEY_SLOT_3] = 1;
     if (command->buttons & RASTERFALL_CMD_SLOT_4) keys[TOY_GAME_KEY_SLOT_4] = 1;
-    /* The remaining world simulation still has a legacy entry point.  Feed it
-     * a compatibility snapshot, then resume local-player work on the actor. */
-    toy_game_mirror_player_from_actor(&session->game_state);
-    toy_game_update_held(&session->game_state, NULL, 0, 0,
-                         session->game_state.actors[0].sy,
-                         session->game_state.actors[0].cy, dt_ms);
-    toy_game_mirror_actor_from_player(&session->game_state);
+    /* World simulation is separate from the local actor's weapon step. */
+    toy_game_update_world(&session->game_state, dt_ms);
     {
         struct toy_game_actor *player =
             toy_game_local_player_actor(&session->game_state);
