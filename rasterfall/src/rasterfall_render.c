@@ -4068,18 +4068,21 @@ struct enemy_body_part {
     int scale_xy;
     uint32_t color_delta;
     uint32_t fixed_color;
+    int has_fixed_color;
 };
 
 #define ENEMY_BOX(kind, x0, x1, y0, y1, z0, z1, delta) \
-    { kind, x0, x1, y0, y1, z0, z1, 0, 0, delta, 0 }
+    { kind, x0, x1, y0, y1, z0, z1, 0, 0, delta, 0, 0 }
 #define ENEMY_FIXED_BOX(kind, x0, x1, y0, y1, z0, z1, fixed) \
-    { kind, x0, x1, y0, y1, z0, z1, 0, 0, 0, fixed }
+    { kind, x0, x1, y0, y1, z0, z1, 0, 0, 0, fixed, 1 }
 #define ENEMY_CYLINDER(radius_, y0, y1, delta) \
-    { ENEMY_BODY_CYLINDER, 0, 0, y0, y1, 0, 0, radius_, 0, delta, 0 }
+    { ENEMY_BODY_CYLINDER, 0, 0, y0, y1, 0, 0, radius_, 0, delta, 0, 0 }
 #define ENEMY_ELLIPSOID(center, rx_, ry_, delta) \
-    { ENEMY_BODY_ELLIPSOID, center, rx_, ry_, 0, 0, 0, 0, 0, delta, 0 }
+    { ENEMY_BODY_ELLIPSOID, center, rx_, ry_, 0, 0, 0, 0, 0, delta, 0, 0 }
 #define ENEMY_FACE(radius_, h0, h1, y0, y1, delta) \
-    { ENEMY_BODY_FACE, h0, h1, y0, y1, 0, 0, radius_, 0, delta, 0 }
+    { ENEMY_BODY_FACE, h0, h1, y0, y1, 0, 0, radius_, 0, delta, 0, 0 }
+#define ENEMY_FIXED_FACE(radius_, h0, h1, y0, y1, fixed) \
+    { ENEMY_BODY_FACE, h0, h1, y0, y1, 0, 0, radius_, 0, 0, fixed, 1 }
 
 static int render_enemy_body_parts(struct toy_renderer *renderer,
                                    const struct camera *camera,
@@ -4093,7 +4096,7 @@ static int render_enemy_body_parts(struct toy_renderer *renderer,
     if (charger_xy_scale < 1) charger_xy_scale = 1;
     for (i = 0; i < count; i++) {
         const struct enemy_body_part *p = &parts[i];
-        uint32_t part_color = p->fixed_color ? p->fixed_color :
+        uint32_t part_color = p->has_fixed_color ? p->fixed_color :
                               color + p->color_delta;
         int x0 = p->a, x1 = p->b, z0 = p->e, z1 = p->f;
         if (p->type == ENEMY_BODY_BOX_ACTOR) {
@@ -4141,12 +4144,12 @@ static int render_block_enemy(struct toy_renderer *renderer,
                               int scale, uint32_t color)
 {
     static const struct enemy_body_part parts[] = {
-        ENEMY_FIXED_BOX(ENEMY_BODY_BOX_ACTOR, -105, -15, -900, -760, -105, 105, RF_COLOR_AI_HEAVY),
-        ENEMY_FIXED_BOX(ENEMY_BODY_BOX_ACTOR, 15, 105, -900, -760, -105, 105, RF_COLOR_AI_HEAVY),
-        ENEMY_BOX(ENEMY_BODY_BOX_ACTOR, -100, -10, -760, -450, -85, 85, -0x101008),
-        ENEMY_BOX(ENEMY_BODY_BOX_ACTOR, 10, 100, -760, -450, -85, 85, -0x101008),
-        ENEMY_BOX(ENEMY_BODY_BOX_ACTOR, -175, 175, -470, 20, -105, 105, 0),
-        ENEMY_BOX(ENEMY_BODY_BOX_ACTOR, -155, 155, 0, 320, -155, 155, 0x202010),
+        ENEMY_FIXED_BOX(ENEMY_BODY_BOX_WORLD, -105, -15, -900, -760, -105, 105, RF_COLOR_AI_HEAVY),
+        ENEMY_FIXED_BOX(ENEMY_BODY_BOX_WORLD, 15, 105, -900, -760, -105, 105, RF_COLOR_AI_HEAVY),
+        ENEMY_BOX(ENEMY_BODY_BOX_WORLD, -100, -10, -760, -450, -85, 85, -0x101008),
+        ENEMY_BOX(ENEMY_BODY_BOX_WORLD, 10, 100, -760, -450, -85, 85, -0x101008),
+        ENEMY_BOX(ENEMY_BODY_BOX_WORLD, -175, 175, -470, 20, -105, 105, 0),
+        ENEMY_BOX(ENEMY_BODY_BOX_WORLD, -155, 155, 0, 320, -155, 155, 0x202010),
         ENEMY_FACE(155, -105, -18, 210, 235, 0x4A1010),
         ENEMY_FACE(155, 18, 105, 210, 235, 0x4A1010),
         ENEMY_FACE(155, -82, -28, 160, 200, 0xFFF0A0),
@@ -4164,12 +4167,12 @@ static int render_round_enemy(struct toy_renderer *renderer,
                               int scale, uint32_t color)
 {
     static const struct enemy_body_part parts[] = {
-        ENEMY_BOX(ENEMY_BODY_BOX_WORLD, -145, -12, -900, -760, -180, 95, 0x202328),
-        ENEMY_BOX(ENEMY_BODY_BOX_WORLD, 12, 145, -900, -760, -180, 95, 0x202328),
+        ENEMY_FIXED_BOX(ENEMY_BODY_BOX_WORLD, -145, -12, -900, -760, -180, 95, 0x202328),
+        ENEMY_FIXED_BOX(ENEMY_BODY_BOX_WORLD, 12, 145, -900, -760, -180, 95, 0x202328),
         ENEMY_CYLINDER(180, -770, 20, 0),
         ENEMY_ELLIPSOID(155, 205, 205, 0x181810),
-        ENEMY_FACE(205, -25, 25, 35, 275, 0x251F20),
-        ENEMY_FACE(205, -120, 120, 135, 175, 0x251F20)
+        ENEMY_FIXED_FACE(205, -25, 25, 35, 275, 0x000000),
+        ENEMY_FIXED_FACE(205, -120, 120, 135, 175, 0x000000)
     };
     /* The head's vertical radius used to be derived from the scaled bounds. */
     struct enemy_body_part adjusted[sizeof(parts) / sizeof(parts[0])];
@@ -4189,13 +4192,13 @@ static int render_charger_enemy(struct toy_renderer *renderer,
                                 uint32_t color)
 {
     static const struct enemy_body_part parts[] = {
-        ENEMY_BOX(ENEMY_BODY_BOX_ORIENTED, -135, -20, -900, -760, -150, 110, 0x30261F),
-        ENEMY_BOX(ENEMY_BODY_BOX_ORIENTED, 20, 135, -900, -760, -150, 110, 0x30261F),
+        ENEMY_FIXED_BOX(ENEMY_BODY_BOX_ORIENTED, -135, -20, -900, -760, -150, 110, 0x30261F),
+        ENEMY_FIXED_BOX(ENEMY_BODY_BOX_ORIENTED, 20, 135, -900, -760, -150, 110, 0x30261F),
         ENEMY_BOX(ENEMY_BODY_BOX_ORIENTED, -235, 235, -760, 95, -135, 135, 0),
         ENEMY_BOX(ENEMY_BODY_BOX_ORIENTED, -205, 205, 75, 360, -145, 145, 0x18100A),
-        ENEMY_FACE(150, -120, -82, 105, 315, 0x2A1710),
-        ENEMY_FACE(150, -82, 100, 280, 315, 0x2A1710),
-        ENEMY_FACE(150, -82, 100, 105, 140, 0x2A1710)
+        ENEMY_FIXED_FACE(150, -120, -82, 105, 315, 0x000000),
+        ENEMY_FIXED_FACE(150, -82, 100, 280, 315, 0x000000),
+        ENEMY_FIXED_FACE(150, -82, 100, 105, 140, 0x000000)
     };
     struct enemy_body_part adjusted[sizeof(parts) / sizeof(parts[0])];
     int i;
@@ -4254,12 +4257,12 @@ static int render_tank_enemy(struct toy_renderer *renderer,
                              uint32_t color)
 {
     static const struct enemy_body_part parts[] = {
-        ENEMY_BOX(ENEMY_BODY_BOX_WORLD, -150, -35, -900, -700, -175, 120, 0x29291F),
-        ENEMY_BOX(ENEMY_BODY_BOX_WORLD, 35, 150, -900, -700, -175, 120, 0x29291F),
+        ENEMY_FIXED_BOX(ENEMY_BODY_BOX_WORLD, -150, -35, -900, -700, -175, 120, 0x29291F),
+        ENEMY_FIXED_BOX(ENEMY_BODY_BOX_WORLD, 35, 150, -900, -700, -175, 120, 0x29291F),
         ENEMY_BOX(ENEMY_BODY_BOX_WORLD, -285, 285, -720, 170, -210, 210, 0),
         ENEMY_ELLIPSOID(330, 225, 0, 0x18180C),
-        ENEMY_FACE(225, -125, 125, 360, 410, 0x202016),
-        ENEMY_FACE(225, -28, 28, 180, 410, 0x202016)
+        ENEMY_FIXED_FACE(225, -125, 125, 360, 410, 0x000000),
+        ENEMY_FIXED_FACE(225, -28, 28, 180, 410, 0x000000)
     };
     struct enemy_body_part adjusted[sizeof(parts) / sizeof(parts[0])];
     int x = e->x, z = e->z, pixels, i;
@@ -4305,8 +4308,8 @@ static int render_smoker_enemy(struct toy_renderer *renderer,
                                uint32_t color)
 {
     static const struct enemy_body_part parts[] = {
-        ENEMY_BOX(ENEMY_BODY_BOX_WORLD, -105, -25, -900, -760, -105, 75, 0x30261F),
-        ENEMY_BOX(ENEMY_BODY_BOX_WORLD, 25, 105, -900, -760, -105, 75, 0x30261F),
+        ENEMY_FIXED_BOX(ENEMY_BODY_BOX_WORLD, -105, -25, -900, -760, -105, 75, 0x30261F),
+        ENEMY_FIXED_BOX(ENEMY_BODY_BOX_WORLD, 25, 105, -900, -760, -105, 75, 0x30261F),
         ENEMY_CYLINDER(145, -770, 180, 0),
         ENEMY_ELLIPSOID(315, 165, 0, 0x18100A)
     };
