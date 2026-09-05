@@ -490,6 +490,11 @@ struct toy_game_actor {
     int knockback_x, knockback_z;
     int knockback_cooldown_ms;
     int control_disabled;       /* special attack currently owns movement */
+    int special_control;
+    uint32_t special_control_id;
+    int special_source;
+    int special_pull_step;
+    int special_pull_timer_ms;
     char name[TOY_GAME_MAX_NAME];
     struct toy_game_slot slots[TOY_GAME_WEAPON_SLOTS];
     int current_slot;
@@ -746,9 +751,17 @@ int  toy_game_move_ai_actor(struct toy_game *g, int actor_index, int x, int z);
 void toy_game_set_player_special_control(struct toy_game *g, int type,
                                          uint32_t control_id,
                                          int source_enemy, int pull_step);
+void toy_game_set_actor_special_control(struct toy_game_actor *actor, int type,
+                                        uint32_t control_id,
+                                        int source_enemy, int pull_step);
 void toy_game_clear_player_special_control(struct toy_game *g,
                                            uint32_t control_id);
+void toy_game_clear_actor_special_control(struct toy_game_actor *actor,
+                                          uint32_t control_id);
 void toy_game_update_player_special_control(struct toy_game *g, int dt_ms);
+void toy_game_update_actor_special_control(struct toy_game *g,
+                                           struct toy_game_actor *actor,
+                                           int dt_ms);
 void toy_game_apply_player_impulse(struct toy_game *g, int impulse_x,
                                    int impulse_z, int vertical_velocity,
                                    int airborne_ms, int airborne_y);

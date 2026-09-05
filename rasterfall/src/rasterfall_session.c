@@ -1603,12 +1603,14 @@ static int session_managed_ai_pistol_defense(
 {
     int enemy_index, dx, dz, distance;
     struct toy_game_enemy *enemy;
+    const struct toy_game_actor *player;
+    player = session ? toy_game_local_player_actor_const(&session->game_state) : NULL;
     if (!session || !camera || !command ||
-        session->game_state.current_slot != 1 ||
-        session->game_state.player_special_control !=
+        !player || player->current_slot != 1 ||
+        player->special_control !=
             TOY_GAME_SPECIAL_CONTROL_SMOKER)
         return 0;
-    enemy_index = session->game_state.player_special_source;
+    enemy_index = player->special_source;
     if (enemy_index < 0 || enemy_index >= TOY_GAME_MAX_ENEMIES)
         return 0;
     enemy = &session->game_state.enemies[enemy_index];
@@ -1636,17 +1638,20 @@ static int session_managed_ai_weapon_master(
     int target_weapon, shop = -1, ammo = -1, i;
     int dx, dz, distance;
     const struct toy_game_weapon_info *info;
+    const struct toy_game_actor *player;
 
     int primary_empty = 0;
-    if (!session || !camera || !command || session->game_state.player_down ||
+    player = session ? toy_game_local_player_actor_const(&session->game_state) : NULL;
+    if (!session || !camera || !command || !player ||
+        player->state == TOY_GAME_ACTOR_DOWNED ||
         session->game_state.state != TOY_GAME_PLAYING)
         return 0;
-    if (session->game_state.slots[0].weapon >= TOY_GAME_WEAPON_SMG &&
-        session->game_state.slots[0].weapon <= TOY_GAME_WEAPON_AWP) {
+    if (player->slots[0].weapon >= TOY_GAME_WEAPON_SMG &&
+        player->slots[0].weapon <= TOY_GAME_WEAPON_AWP) {
         const struct toy_game_weapon_info *primary = toy_game_weapon_info(
-            session->game_state.slots[0].weapon);
+            player->slots[0].weapon);
         if (primary->reserve_max != TOY_GAME_AMMO_INFINITE)
-            primary_empty = session->game_state.slots[0].reserve <= 0;
+            primary_empty = player->slots[0].reserve <= 0;
     }
     /* Horde completion starts a new rest period even though the wave number
      * has not advanced yet. */
@@ -1660,7 +1665,7 @@ static int session_managed_ai_weapon_master(
         /* Pistol has infinite reserve ammo and remains usable while a
          * smoker disables ordinary movement.  The next normal weapon is
          * restored after the ammo-box trip. */
-        if (session->game_state.current_slot != 1)
+        if (player->current_slot != 1)
             toy_game_switch_weapon(&session->game_state, 1);
         session->managed_ai_weapon_master_route = 7;
     }
