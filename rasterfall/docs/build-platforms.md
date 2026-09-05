@@ -7,8 +7,7 @@
 
 根 `Makefile` 的 Rasterfall 区域定义全部独立编译单元、依赖和链接对象。Rasterfall 与其共享的
 Tinylibc/app 对象统一依赖 `rasterfall-rebuild`，每次目标构建都会重新编译对象，以避免头文件依赖
-文件缺失、不完整或切换工作区状态时复用不一致的旧对象。推荐使用
-推荐使用 `make rasterfall` 构建；该目标内部自动按 `nproc` 并行，不需要额外传递 `-j` 参数。
+文件缺失、不完整或切换工作区状态时复用不一致的旧对象。推荐使用 `make rasterfall` 构建；该目标内部自动按 `nproc` 并行，不需要额外传递 `-j` 参数。
 底层 `app-rasterfall` 目标仍可直接使用；如需手动控制并行度，可调用
 `make -j12 app-rasterfall`。
 构建 freestanding Linux 程序，窗口/输入/渲染/音频来自仓库 Tinylibc 与公共库。默认运行时读取

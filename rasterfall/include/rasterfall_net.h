@@ -10,9 +10,8 @@
 #define RASTERFALL_NET_DEFAULT_PORT 28460
 #define RASTERFALL_NET_MAX_PACKET 1200
 #define RASTERFALL_NET_MAX_SNAPSHOT 8192
-/* v30 uses one uniform host-side client layout.  Keep protocol
- * changes explicit: clients with a different snapshot layout must fail during
- * discovery/handshake instead of decoding shifted world data. */
+/* Keep protocol changes explicit: clients with a different snapshot layout
+ * must fail during discovery/handshake instead of decoding shifted data. */
 #define RASTERFALL_NET_PROTOCOL_VERSION 39
 #define RASTERFALL_NET_MAX_ACTORS 32
 #define RASTERFALL_NET_PLAYER_MAX 4

@@ -6,20 +6,16 @@
 #include "rasterfall_camera.h"
 #include "rasterfall_effect_event.h"
 
-#define RASTERFALL_TRACER_SLOTS 32
 #define RASTERFALL_TRACER_LIFE_MS 72
 #define RASTERFALL_TRACER_Y (-350)
-#define RASTERFALL_PARTICLE_SLOTS 96
 #define RASTERFALL_PARTICLE_LIFE_MS 240
 #define RASTERFALL_PARTICLE_GRAVITY 4
-#define RASTERFALL_MUZZLE_FLASH_SLOTS 16
 #define RASTERFALL_MUZZLE_FLASH_LIFE_MS 70
 #define RASTERFALL_EFFECT_INSTANCE_SLOTS 2048
 #define RASTERFALL_EFFECT_EMITTER_SLOTS 32
 
 /* Local camera-shake tuning.  Translation values are view-space units;
  * yaw/pitch values use the camera's 1024 fixed-point angular units. */
-#define RASTERFALL_CAMERA_SHAKE_LIFE_MS 110
 #define RASTERFALL_CAMERA_SHAKE_PISTOL_LIFE_MS 110
 #define RASTERFALL_CAMERA_SHAKE_SMG_LIFE_MS 150
 #define RASTERFALL_CAMERA_SHAKE_AK_LIFE_MS 240
@@ -114,13 +110,6 @@ enum rasterfall_effect_instance_kind {
     RASTERFALL_EFFECT_INSTANCE_KIND_ENEMY_HURT_TINT,
     RASTERFALL_EFFECT_INSTANCE_KIND_INTERACTION_HIGHLIGHT,
     RASTERFALL_EFFECT_INSTANCE_KIND_CAMERA_SHAKE
-};
-
-/* Compatibility aliases for the first runtime prototype. */
-enum rasterfall_effect_instance_compat_type {
-    RASTERFALL_EFFECT_INSTANCE_MUZZLE_FLASH = RASTERFALL_EFFECT_INSTANCE_BILLBOARD,
-    RASTERFALL_EFFECT_INSTANCE_TRACER = RASTERFALL_EFFECT_INSTANCE_RAY,
-    RASTERFALL_EFFECT_INSTANCE_EXPLOSION = RASTERFALL_EFFECT_INSTANCE_EMITTER
 };
 
 /* Emitter child placement is a runtime policy, not an asset format. */
