@@ -521,11 +521,11 @@ static void build_game_command(struct rasterfall_command *command,
     command->pitch = pointer_pitch +
                      (toy_input_down(input, KEY_UP) -
                       toy_input_down(input, KEY_DOWN)) * 16 * percent / 100;
-    command->fire_held = toy_input_down(input, KEY_SPACE) ||
+    command->fire_held = toy_input_down(input, KEY_ENTER) ||
                          (input->mouse_buttons & 1) != 0;
     if (fire_edge) command->buttons |= RASTERFALL_CMD_FIRE;
     if (shove_edge) command->buttons |= RASTERFALL_CMD_SHOVE;
-    if (toy_input_pressed(input, KEY_LEFTSHIFT))
+    if (toy_input_pressed(input, KEY_SPACE))
         command->buttons |= RASTERFALL_CMD_JUMP;
     if (toy_input_pressed(input, KEY_SLASH))
         command->buttons |= RASTERFALL_CMD_SHOVE;
@@ -614,7 +614,7 @@ static void consume_game_command_edges(struct toy_input *input,
     input->key_pressed[KEY_E] = 0;
     input->key_pressed[KEY_F] = 0;
     input->key_pressed[KEY_SLASH] = 0;
-    input->key_pressed[KEY_LEFTSHIFT] = 0;
+    input->key_pressed[KEY_SPACE] = 0;
     /* Pose-editor actions are edge events.  Clear their sampled state after
      * the fixed-step command has consumed it; key_down remains untouched, so
      * holding a key never turns into repeated menu navigation. */
@@ -3020,12 +3020,8 @@ startup_again:
         /* 射击输入：每帧只取一次边沿（恢复点击帧不开火） */
         if (!paused && !resumed && events.button_pressed && events.button == BTN_LEFT)
             fire_edge = 1;
-        if (!paused && !resumed && toy_input_pressed(&input, KEY_SPACE)) {
-            if (managed_spectator)
-                managed_third_person = !managed_third_person;
-            else
-                fire_edge = 1;
-        }
+        if (!paused && !resumed && toy_input_pressed(&input, KEY_ENTER))
+            fire_edge = 1;
         /* 推开输入：右键与开火同一套边沿锁存（恢复点击帧不算） */
         if (!paused && !resumed && events.button_pressed && events.button == BTN_RIGHT)
             shove_edge = 1;

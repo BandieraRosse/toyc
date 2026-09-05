@@ -4150,11 +4150,11 @@ static int render_block_enemy(struct toy_renderer *renderer,
         ENEMY_BOX(ENEMY_BODY_BOX_WORLD, 10, 100, -760, -450, -85, 85, -0x101008),
         ENEMY_BOX(ENEMY_BODY_BOX_WORLD, -175, 175, -470, 20, -105, 105, 0),
         ENEMY_BOX(ENEMY_BODY_BOX_WORLD, -155, 155, 0, 320, -155, 155, 0x202010),
-        ENEMY_FACE(155, -105, -18, 210, 235, 0x4A1010),
-        ENEMY_FACE(155, 18, 105, 210, 235, 0x4A1010),
-        ENEMY_FACE(155, -82, -28, 160, 200, 0xFFF0A0),
-        ENEMY_FACE(155, 28, 82, 160, 200, 0xFFF0A0),
-        ENEMY_FACE(155, -70, 70, 80, 105, 0x4A1010)
+        ENEMY_FIXED_FACE(155, -105, -18, 210, 235, 0x4A1010),
+        ENEMY_FIXED_FACE(155, 18, 105, 210, 235, 0x4A1010),
+        ENEMY_FIXED_FACE(155, -82, -28, 160, 200, 0xFFF0A0),
+        ENEMY_FIXED_FACE(155, 28, 82, 160, 200, 0xFFF0A0),
+        ENEMY_FIXED_FACE(155, -70, 70, 80, 105, 0x4A1010)
     };
     return render_enemy_body_parts(renderer, camera, e, scale, color,
                                    parts, sizeof(parts) / sizeof(parts[0]));
