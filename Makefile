@@ -1046,7 +1046,9 @@ $(BUILD)/wayland_fps: $(BUILD)/rasterfall
 .PHONY: rasterfall rasterfall-embedded wayland_fps app-rasterfall-embedded \
 	lod-characters lod-eula lod-eula2 lod-maid lod-maid2 lod-ar15 lod-ump45 lod-vector lod-g11 \
 	rasterfall-blender-deps import-maid
-rasterfall: $(BUILD)/rasterfall
+rasterfall:
+	# 默认按本机 nproc 并行；调用方无需额外传递 -j 参数。
+	+$(MAKE) -j$$(nproc) $(BUILD)/rasterfall
 rasterfall-embedded app-rasterfall-embedded: $(BUILD)/rasterfall-embedded
 wayland_fps: $(BUILD)/wayland_fps
 

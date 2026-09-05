@@ -50,9 +50,12 @@ for the model, animation-format, retargeting, and IK module boundaries.
 Linux build and run:
 
 ```sh
-make app-rasterfall
+make rasterfall
 build/rasterfall
 ```
+
+`make rasterfall` automatically builds in parallel using the host's `nproc` count; no extra
+`-j` argument is required.
 
 For the local private character models, `make lod-characters` deterministically builds the
 mid-distance mesh LOD. The generated private asset stays unversioned and the

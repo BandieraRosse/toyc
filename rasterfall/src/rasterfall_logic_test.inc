@@ -910,6 +910,12 @@ static int run_logic_test(void)
                 effects.instances[i].kind == RASTERFALL_EFFECT_INSTANCE_KIND_DAMAGE_FLASH)
                 overlay_count++;
         if (overlay_count != 1) return 68;
+        for (i = 0; i < RASTERFALL_EFFECT_INSTANCE_SLOTS; i++)
+            if (effects.instances[i].active &&
+                effects.instances[i].kind == RASTERFALL_EFFECT_INSTANCE_KIND_DAMAGE_FLASH &&
+                (effects.instances[i].lifetime_ms != 100 ||
+                 effects.instances[i].alpha != 16))
+                return 70;
         rasterfall_effects_reset_fire(&effects);
         game.damage_flash_ms = 0;
     }

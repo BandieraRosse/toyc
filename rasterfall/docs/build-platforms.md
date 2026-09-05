@@ -1,14 +1,16 @@
 # 构建、平台与验证
 
 > 文档更新：2026-09-05
-> 源码核对基线：工作区（Rasterfall 对象无条件重建规则，支持并行构建建议）
+> 源码核对基线：工作区（Rasterfall 对象无条件重建规则，`make rasterfall` 内部按 `nproc` 并行）
 
 ## Linux
 
 根 `Makefile` 的 Rasterfall 区域定义全部独立编译单元、依赖和链接对象。Rasterfall 与其共享的
 Tinylibc/app 对象统一依赖 `rasterfall-rebuild`，每次目标构建都会重新编译对象，以避免头文件依赖
 文件缺失、不完整或切换工作区状态时复用不一致的旧对象。推荐使用
-`make -j12 app-rasterfall` 并行构建；`-j12` 是本项目推荐值，机器资源不足时再降低并行度。
+推荐使用 `make rasterfall` 构建；该目标内部自动按 `nproc` 并行，不需要额外传递 `-j` 参数。
+底层 `app-rasterfall` 目标仍可直接使用；如需手动控制并行度，可调用
+`make -j12 app-rasterfall`。
 构建 freestanding Linux 程序，窗口/输入/渲染/音频来自仓库 Tinylibc 与公共库。默认运行时读取
 `rasterfall/assets`；`rasterfall-embedded` 才嵌入公开资源。
 
@@ -34,7 +36,7 @@ WinSock、SDL 窗口/音频、线程和 WinMain 适配。平台契约头在 `win
 
 ## 最小验证矩阵
 
-- 纯玩法/session/map：`make -j12 app-rasterfall`，再运行 `build/rasterfall --logic-test`。
+- 纯玩法/session/map：`make rasterfall`，再运行 `build/rasterfall --logic-test`。
 - 渲染或模型：构建 + logic test，并使用相关 dump/benchmark/诊断参数；涉及画面时做实际启动检查。
 - 网络：先跑 logic test 中的 packet/pipeline 用例，再按 `network-architecture.md` 做所需人工拓扑。
 - Linux 平台：实际 Wayland/ALSA 启动；无图形/音频环境时明确报告未覆盖项。

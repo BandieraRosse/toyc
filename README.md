@@ -47,9 +47,11 @@ Winsock，不要求 Toyc 输出 PE/COFF。
 Linux 构建和运行（从项目资源目录读取）：
 
 ```sh
-make app-rasterfall
+make rasterfall
 build/rasterfall
 ```
+
+`make rasterfall` 会在目标内部按本机 `nproc` 自动并行构建，不需要额外传递 `-j` 参数。
 
 本地私有角色模型可用 `make lod-characters` 确定性生成中距离 mesh LOD；生成物保留在
 `rasterfall/private-assets/`，不纳入版本控制，运行时缺失时自动回退完整模型。

@@ -562,7 +562,7 @@ void rasterfall_effects_sync_damage_flash(struct rasterfall_effects *effects,
     instance.width = 0;
     instance.height = 0;
     instance.lifetime_ms = game->damage_flash_ms;
-    instance.alpha = game->damage_flash_ms * 128 / TOY_GAME_DAMAGE_FLASH_MS;
+    instance.alpha = game->damage_flash_ms * 16 / TOY_GAME_DAMAGE_FLASH_MS;
     instance.color = 0xAA0000;
     rasterfall_effects_spawn_instance(effects, &instance);
 }
