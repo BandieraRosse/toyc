@@ -2071,6 +2071,20 @@ int toy_game_shove(struct toy_game *g, int sy, int cy)
     return pushed;
 }
 
+int toy_game_actor_shove(struct toy_game *g, struct toy_game_actor *actor,
+                         int sy, int cy)
+{
+    int pushed;
+    if (!g || !actor || !actor->active ||
+        actor->state != TOY_GAME_ACTOR_ALIVE ||
+        g->state != TOY_GAME_PLAYING) return 0;
+    toy_game_actor_set_animation(actor, TOY_GAME_ANIM_SHOVE);
+    push_event(g, TOY_GAME_EV_SHOVE);
+    pushed = toy_game_shove_at(g, actor->x, actor->z, sy, cy);
+    if (pushed > 0) push_event(g, TOY_GAME_EV_SHOVE_HIT);
+    return pushed;
+}
+
 int toy_game_use_pill(struct toy_game *g)
 {
     if (!g || g->state != TOY_GAME_PLAYING || g->current_slot != 3 ||
@@ -2755,16 +2769,22 @@ void toy_game_apply_player_impulse(struct toy_game *g, int impulse_x,
                                    int impulse_z, int vertical_velocity,
                                    int airborne_ms, int airborne_y)
 {
-    if (!g || g->player_down || g->player_knockback_cooldown_ms > 0) return;
-    g->player_airborne_ms = airborne_ms > 0 ? airborne_ms : TOY_GAME_AIRBORNE_MS;
-    g->player_airborne_y = airborne_y;
-    g->player_vertical_velocity = vertical_velocity;
-    g->player_air_x = 0;
-    g->player_air_z = 0;
-    g->player_knockback_x = impulse_x;
-    g->player_knockback_z = impulse_z;
-    g->player_knockback_cooldown_ms =
-        TOY_GAME_PLAYER_KNOCKBACK_COOLDOWN_MS;
+    struct toy_game_actor *actor;
+    if (!g) return;
+    toy_game_mirror_actor_from_player(g);
+    actor = toy_game_local_player_actor(g);
+    if (!actor || actor->state != TOY_GAME_ACTOR_ALIVE ||
+        actor->knockback_cooldown_ms > 0) return;
+    actor->airborne_ms = airborne_ms > 0 ? airborne_ms : TOY_GAME_AIRBORNE_MS;
+    actor->airborne_y = airborne_y;
+    actor->vertical_velocity = vertical_velocity;
+    actor->air_x = 0;
+    actor->air_z = 0;
+    actor->knockback_x = impulse_x;
+    actor->knockback_z = impulse_z;
+    actor->knockback_cooldown_ms = TOY_GAME_PLAYER_KNOCKBACK_COOLDOWN_MS;
+    actor->control_disabled = 1;
+    toy_game_mirror_player_from_actor(g);
 }
 
 static void move_enemy_forced(struct toy_game *g, struct toy_game_enemy *e,
@@ -3073,22 +3093,25 @@ int toy_game_jump(struct toy_game *g)
 
 int toy_game_jump_with_velocity(struct toy_game *g, int dx, int dz)
 {
-    if (!g || g->state != TOY_GAME_PLAYING || g->player_down ||
-        g->player_control_disabled || g->player_airborne_ms > 0)
+    struct toy_game_actor *actor;
+    if (!g || g->state != TOY_GAME_PLAYING)
         return 0;
-    g->player_airborne_ms = TOY_GAME_JUMP_MS;
-    g->player_airborne_y = 0;
-    g->player_vertical_velocity = TOY_GAME_JUMP_VELOCITY;
-    g->player_air_x = dx;
-    g->player_air_z = dz;
-    g->player_knockback_x = 0;
-    g->player_knockback_z = 0;
+    /* Legacy callers may have seeded px/pz or ground state directly. */
+    toy_game_mirror_actor_from_player(g);
+    actor = toy_game_local_player_actor(g);
+    if (!actor || actor->control_disabled) return 0;
+    if (!toy_game_jump_actor(g, TOY_GAME_PLAYER_ACTOR_INDEX, dx, dz))
+        return 0;
+    toy_game_mirror_player_from_actor(g);
     return 1;
 }
 
 void toy_game_update_player_motion(struct toy_game *g, int dt_ms)
 {
-    if (g) update_player_special_motion(g, dt_ms);
+    if (!g) return;
+    toy_game_mirror_actor_from_player(g);
+    toy_game_update_actor_motion(g, TOY_GAME_PLAYER_ACTOR_INDEX, dt_ms);
+    toy_game_mirror_player_from_actor(g);
 }
 
 int toy_game_jump_actor(struct toy_game *g, int actor_index, int dx, int dz)

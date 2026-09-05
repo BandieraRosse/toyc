@@ -2251,7 +2251,9 @@ void rasterfall_session_step(struct rasterfall_session *session,
     if (command->buttons & RASTERFALL_CMD_INTERACT)
         session_client_interact_banner(session);
     if (command->buttons & RASTERFALL_CMD_SHOVE)
-        toy_game_shove(&session->game_state, camera->sy, camera->cy);
+        toy_game_actor_shove(&session->game_state,
+            toy_game_local_player_actor(&session->game_state),
+            camera->sy, camera->cy);
     if ((command->buttons & RASTERFALL_CMD_INTERACT) &&
         session_near_ai(session, camera, &session->ai_revive_actor_index))
         session->ai_revive_active = 1;
@@ -2311,14 +2313,15 @@ void rasterfall_session_step(struct rasterfall_session *session,
                 break;
             }
     }
-    if (!session->game_state.reloading &&
-        toy_game_animation_allows_locomotion(
-            session->game_state.animation.id))
-        toy_game_animation_set(&session->game_state.animation,
-                               command->move_forward || command->move_strafe ?
-                               TOY_GAME_ANIM_MOVE : TOY_GAME_ANIM_NONE);
-    toy_game_local_player_actor(&session->game_state)->animation =
-        session->game_state.animation;
+    {
+        struct toy_game_actor *player =
+            toy_game_local_player_actor(&session->game_state);
+        if (!player->reloading &&
+            toy_game_animation_allows_locomotion(player->animation.id))
+            toy_game_actor_set_animation(player,
+                command->move_forward || command->move_strafe ?
+                TOY_GAME_ANIM_MOVE : TOY_GAME_ANIM_NONE);
+    }
     session_sync_special_motion(session, camera);
     session_update_manual_alarm(session, dt_ms);
     if (session->banner_ms > 0) {
@@ -2367,16 +2370,18 @@ static void session_step_client_mode(struct rasterfall_session *session,
     int saved_throw_timer;
     int old_reloading;
     unsigned int old_fire_seq;
+    struct toy_game_actor *local_player =
+        toy_game_local_player_actor(&session->game_state);
     struct toy_game_animation_state saved_animation =
-        session->game_state.animation;
+        local_player->animation;
     struct toy_game_ray saved_rays[TOY_GAME_MAX_RAYS];
     int saved_events = session->game_state.event_count;
-    int saved_muzzle = session->game_state.muzzle_flash_ms;
-    int saved_ray_count = session->game_state.ray_count;
-    saved_throw_timer = session->game_state.throw_timer_ms;
-    unsigned int saved_fire_seq = session->game_state.fire_seq;
+    int saved_muzzle = local_player->muzzle_flash_ms;
+    int saved_ray_count = local_player->ray_count;
+    saved_throw_timer = local_player->throw_timer_ms;
+    unsigned int saved_fire_seq = local_player->fire_seq;
     toy_game_mirror_player_from_actor(&session->game_state);
-    memcpy(saved_rays, session->game_state.rays, sizeof(saved_rays));
+    memcpy(saved_rays, local_player->rays, sizeof(saved_rays));
     if (command->buttons & RASTERFALL_CMD_RESET) {
         rasterfall_session_reset(session, camera, session->seed);
         return;
@@ -2406,7 +2411,7 @@ static void session_step_client_mode(struct rasterfall_session *session,
     /* Predict only the local first-person presentation.  The host remains
      * authoritative for the shove's enemy displacement and stun state. */
     if (command->buttons & RASTERFALL_CMD_SHOVE)
-        toy_game_animation_set(&session->game_state.animation,
+        toy_game_actor_set_animation(local_player,
                                TOY_GAME_ANIM_SHOVE);
     /* AI rescue remains host-authoritative, but keep the local action state so
      * the client can render the same progress bar while the host advances it.
@@ -2431,11 +2436,10 @@ static void session_step_client_mode(struct rasterfall_session *session,
     if (command->buttons & RASTERFALL_CMD_SLOT_2) keys[TOY_GAME_KEY_SLOT_2] = 1;
     if (command->buttons & RASTERFALL_CMD_SLOT_3) keys[TOY_GAME_KEY_SLOT_3] = 1;
     if (command->buttons & RASTERFALL_CMD_SLOT_4) keys[TOY_GAME_KEY_SLOT_4] = 1;
-    old_reloading = session->game_state.reloading;
-    old_fire_seq = session->game_state.fire_seq;
+    old_reloading = local_player->reloading;
+    old_fire_seq = local_player->fire_seq;
     {
-        int weapon = session->game_state.slots[
-            session->game_state.current_slot].weapon;
+        int weapon = local_player->slots[local_player->current_slot].weapon;
         int client_hitscan = weapon != TOY_GAME_WEAPON_AXE &&
             weapon != TOY_GAME_WEAPON_PILL &&
             weapon != TOY_GAME_WEAPON_BOMB &&
@@ -2451,22 +2455,21 @@ static void session_step_client_mode(struct rasterfall_session *session,
          * client intentionally does not call toy_game_fire for these weapons
          * because that would also mutate the shared world/inventory. */
         if ((command->buttons & RASTERFALL_CMD_FIRE) &&
-            !session->game_state.reloading &&
-            session->game_state.weapon_switch_timer_ms <= 0) {
+            !local_player->reloading &&
+            local_player->weapon_switch_timer_ms <= 0) {
             if (weapon == TOY_GAME_WEAPON_AXE &&
-                session->game_state.melee_timer_ms <= 0) {
-                session->game_state.melee_timer_ms =
+                local_player->melee_timer_ms <= 0) {
+                local_player->melee_timer_ms =
                     TOY_CONFIG_MELEE_SWING_MS;
-                toy_game_animation_set(&session->game_state.animation,
+                toy_game_actor_set_animation(local_player,
                                        TOY_GAME_ANIM_MELEE);
             } else if ((weapon == TOY_GAME_WEAPON_BOMB ||
                         weapon == TOY_GAME_WEAPON_MOLOTOV) &&
-                       session->game_state.slots[
-                           session->game_state.current_slot].mag > 0 &&
-                       session->game_state.throw_timer_ms <= 0) {
-                session->game_state.throw_timer_ms =
+                       local_player->slots[local_player->current_slot].mag > 0 &&
+                       local_player->throw_timer_ms <= 0) {
+                local_player->throw_timer_ms =
                     TOY_CONFIG_THROW_COOLDOWN_MS;
-                toy_game_animation_set(&session->game_state.animation,
+                toy_game_actor_set_animation(local_player,
                                        TOY_GAME_ANIM_THROW);
             }
         }
@@ -2475,54 +2478,54 @@ static void session_step_client_mode(struct rasterfall_session *session,
      * presentation transition.  The host path uses toy_game_update_held,
      * which owns this transition; the client deliberately calls the lower
      * level weapon update to avoid simulating the shared world. */
-    if (session->game_state.reloading && !old_reloading)
-        toy_game_animation_set(&session->game_state.animation,
+    if (local_player->reloading && !old_reloading)
+        toy_game_actor_set_animation(local_player,
                                TOY_GAME_ANIM_RELOAD);
-    else if (session->game_state.fire_seq != old_fire_seq)
-        toy_game_animation_set(&session->game_state.animation,
+    else if (local_player->fire_seq != old_fire_seq)
+        toy_game_actor_set_animation(local_player,
                                TOY_GAME_ANIM_FIRE);
-    if (session->game_state.fire_seq != old_fire_seq) {
-        for (i = 0; i < session->game_state.ray_count; i++) {
-            int enemy_index = session->game_state.rays[i].enemy_index;
+    if (local_player->fire_seq != old_fire_seq) {
+        for (i = 0; i < local_player->ray_count; i++) {
+            int enemy_index = local_player->rays[i].enemy_index;
             if (enemy_index >= 0 && enemy_index < TOY_GAME_MAX_ENEMIES &&
                 session->game_state.enemies[enemy_index].active == 1)
                 session->game_state.enemies[enemy_index].hurt = 80;
         }
     }
-    if (session->game_state.animation.id == TOY_GAME_ANIM_RELOAD) {
-        toy_game_animation_update(&session->game_state.animation, dt_ms);
-        if (!session->game_state.reloading)
-            toy_game_animation_set(&session->game_state.animation,
+    if (local_player->animation.id == TOY_GAME_ANIM_RELOAD) {
+        toy_game_animation_update(&local_player->animation, dt_ms);
+        if (!local_player->reloading)
+            toy_game_actor_set_animation(local_player,
                                    TOY_GAME_ANIM_NONE);
-    } else if (session->game_state.animation.id == TOY_GAME_ANIM_FIRE) {
-        toy_game_animation_update(&session->game_state.animation, dt_ms);
-        if (session->game_state.animation.time_ms >=
+    } else if (local_player->animation.id == TOY_GAME_ANIM_FIRE) {
+        toy_game_animation_update(&local_player->animation, dt_ms);
+        if (local_player->animation.time_ms >=
             toy_game_animation_info(TOY_GAME_ANIM_FIRE)->duration_ms)
-            toy_game_animation_set(&session->game_state.animation,
+            toy_game_actor_set_animation(local_player,
                                    TOY_GAME_ANIM_NONE);
     }
     /* There is no local gameplay update on the client for the shove, so
      * advance its presentation clock here until the authoritative snapshot
      * replaces it. */
-    if (session->game_state.animation.id == TOY_GAME_ANIM_SHOVE) {
-        toy_game_animation_update(&session->game_state.animation, dt_ms);
-        if (session->game_state.animation.time_ms >=
+    if (local_player->animation.id == TOY_GAME_ANIM_SHOVE) {
+        toy_game_animation_update(&local_player->animation, dt_ms);
+        if (local_player->animation.time_ms >=
             toy_game_animation_info(TOY_GAME_ANIM_SHOVE)->duration_ms)
-            toy_game_animation_set(&session->game_state.animation,
+            toy_game_actor_set_animation(local_player,
                                    TOY_GAME_ANIM_NONE);
     }
-    if (session->game_state.animation.id == TOY_GAME_ANIM_MELEE ||
-        session->game_state.animation.id == TOY_GAME_ANIM_THROW) {
-        toy_game_animation_update(&session->game_state.animation, dt_ms);
-        if (session->game_state.animation.time_ms >=
-            toy_game_animation_info(session->game_state.animation.id)->duration_ms)
-            toy_game_animation_set(&session->game_state.animation,
+    if (local_player->animation.id == TOY_GAME_ANIM_MELEE ||
+        local_player->animation.id == TOY_GAME_ANIM_THROW) {
+        toy_game_animation_update(&local_player->animation, dt_ms);
+        if (local_player->animation.time_ms >=
+            toy_game_animation_info(local_player->animation.id)->duration_ms)
+            toy_game_actor_set_animation(local_player,
                                    TOY_GAME_ANIM_NONE);
     }
-    if (!session->game_state.reloading &&
+    if (!local_player->reloading &&
         toy_game_animation_allows_locomotion(
-            session->game_state.animation.id))
-        toy_game_animation_set(&session->game_state.animation,
+            local_player->animation.id))
+        toy_game_actor_set_animation(local_player,
                                command->move_forward || command->move_strafe ?
                                TOY_GAME_ANIM_MOVE : TOY_GAME_ANIM_NONE);
     toy_game_update_actor_motion(&session->game_state,
@@ -2550,7 +2553,7 @@ static void session_step_client_mode(struct rasterfall_session *session,
             if (enemy->dying_ms <= 0) enemy->active = 0;
         }
     }
-    session->game_state.throw_timer_ms = saved_throw_timer;
+    local_player->throw_timer_ms = saved_throw_timer;
     if (session->banner_ms > 0) {
         session->banner_ms -= dt_ms;
         if (session->banner_ms <= 0) {
@@ -2570,12 +2573,12 @@ static void session_step_client_mode(struct rasterfall_session *session,
                 actor->locomotion_blend_ms = 200;
         }
     if (suppress_presentation) {
-        session->game_state.animation = saved_animation;
+        local_player->animation = saved_animation;
         session->game_state.event_count = saved_events;
-        session->game_state.muzzle_flash_ms = saved_muzzle;
-        session->game_state.fire_seq = saved_fire_seq;
-        session->game_state.ray_count = saved_ray_count;
-        memcpy(session->game_state.rays, saved_rays, sizeof(saved_rays));
+        local_player->muzzle_flash_ms = saved_muzzle;
+        local_player->fire_seq = saved_fire_seq;
+        local_player->ray_count = saved_ray_count;
+        memcpy(local_player->rays, saved_rays, sizeof(saved_rays));
     }
     /* Prediction owns the local actor.  Keep the old player fields as a
      * compatibility mirror; never let them overwrite the predicted state. */

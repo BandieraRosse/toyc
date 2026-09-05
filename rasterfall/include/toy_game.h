@@ -809,6 +809,8 @@ int  toy_game_update_actor_weapon_held(
 int  toy_game_actor_use_special(struct toy_game *g,
                                 struct toy_game_actor *actor,
                                 int sy, int cy);
+int  toy_game_actor_shove(struct toy_game *g, struct toy_game_actor *actor,
+                          int sy, int cy);
 int  toy_game_actor_throwable(struct toy_game *g,
                               struct toy_game_actor *actor,
                               int sy, int cy, int pitch_sy, int pitch_cy,
