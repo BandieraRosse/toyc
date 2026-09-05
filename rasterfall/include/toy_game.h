@@ -206,12 +206,12 @@ enum toy_game_enemy_type {
 /* Enemy catalog indexes are local implementation details.  These IDs are
  * stable across map data and network packets. */
 enum toy_game_enemy_id {
-    TOY_GAME_ENEMY_ID_PURSUIT_COMMON = 110,
-    TOY_GAME_ENEMY_ID_PURSUIT_HEAVY = 130,
-    TOY_GAME_ENEMY_ID_PURSUIT_FAST = 140,
-    TOY_GAME_ENEMY_ID_SMOKER = 200,
-    TOY_GAME_ENEMY_ID_CHARGER = 210,
-    TOY_GAME_ENEMY_ID_TANK = 220
+    TOY_GAME_ENEMY_ID_PURSUIT_COMMON = 0,
+    TOY_GAME_ENEMY_ID_PURSUIT_HEAVY = 1,
+    TOY_GAME_ENEMY_ID_PURSUIT_FAST = 2,
+    TOY_GAME_ENEMY_ID_SMOKER = 3,
+    TOY_GAME_ENEMY_ID_CHARGER = 4,
+    TOY_GAME_ENEMY_ID_TANK = 5
 };
 
 enum toy_game_enemy_ability {
@@ -448,8 +448,8 @@ struct toy_game_enemy {
     int shove_stun_ms;  /* 推开后的僵直计时：期间不移动不攻击 */
     int dying_ms;       /* 倒地压扁计时 */
     int target_x, target_z; /* 特感技能锁定的目标位置 */
-    int target_kind;         /* 0=主机，1=客户端，2=AI 队友 */
-    int target_index;    /* target_kind=2 时的 actor 数组索引 */
+    int target_kind;         /* enum toy_game_target_kind：主机玩家或 actor */
+    int target_index;        /* target_kind=TOY_GAME_TARGET_ACTOR 时的 actor 数组索引 */
     int retarget_timer_ms;
     int wander_timer_ms; /* 仅供特感恢复阶段使用 */
     int dir_x, dir_z;   /* 面向，1024 基准定点 */

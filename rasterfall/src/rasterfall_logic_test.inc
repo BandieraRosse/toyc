@@ -418,8 +418,17 @@ static int run_logic_test(void)
             brute->max_hp != 200 || runner->max_hp != 60) return 49;
         if (!toy_game_enemy_type_is_valid(TOY_GAME_ENEMY_SMOKER) ||
             toy_game_enemy_type_is_valid(-1) ||
+            toy_game_enemy_content_id(TOY_GAME_ENEMY_PURSUIT_COMMON) != 0 ||
+            toy_game_enemy_content_id(TOY_GAME_ENEMY_PURSUIT_HEAVY) != 1 ||
+            toy_game_enemy_content_id(TOY_GAME_ENEMY_PURSUIT_FAST) != 2 ||
             toy_game_enemy_content_id(TOY_GAME_ENEMY_SMOKER) !=
                 TOY_GAME_ENEMY_ID_SMOKER ||
+            toy_game_enemy_from_content_id(TOY_GAME_ENEMY_ID_PURSUIT_COMMON) !=
+                TOY_GAME_ENEMY_PURSUIT_COMMON ||
+            toy_game_enemy_from_content_id(TOY_GAME_ENEMY_ID_PURSUIT_HEAVY) !=
+                TOY_GAME_ENEMY_PURSUIT_HEAVY ||
+            toy_game_enemy_from_content_id(TOY_GAME_ENEMY_ID_PURSUIT_FAST) !=
+                TOY_GAME_ENEMY_PURSUIT_FAST ||
             toy_game_enemy_from_content_id(TOY_GAME_ENEMY_ID_CHARGER) !=
                 TOY_GAME_ENEMY_CHARGER ||
             toy_game_enemy_from_content_id(TOY_GAME_ENEMY_ID_TANK) !=
