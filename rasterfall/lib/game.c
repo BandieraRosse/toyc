@@ -3269,7 +3269,9 @@ static void update_smoker(struct toy_game *g, struct toy_game_enemy *e,
             pull_x = g->actors[target_index].x;
             pull_z = g->actors[target_index].z;
         } else {
-            pull_x = g->px; pull_z = g->pz;
+            const struct toy_game_actor *a =
+                toy_game_local_player_actor_const(g);
+            pull_x = a->x; pull_z = a->z;
         }
         if (!enemy_target_valid(g, e, target_kind, target_index,
                                 &pull_x, &pull_z)) {
@@ -3357,7 +3359,9 @@ static void update_smoker(struct toy_game *g, struct toy_game_enemy *e,
         return;
     }
     e->ability.special_target_active = 0;
-    if (g->player_down && target_kind == 0) return;
+    if (target_kind == 0 &&
+        toy_game_local_player_actor_const(g)->state == TOY_GAME_ACTOR_DOWNED)
+        return;
     if (e->ability.special_windup_ms > 0) {
         e->ability.special_windup_ms -= dt_ms;
         if (e->ability.special_windup_ms < 0) e->ability.special_windup_ms = 0;
@@ -5582,7 +5586,7 @@ void toy_game_update_world(struct toy_game *g, int dt_ms)
             if (e->dying_ms <= 0) e->active = 0;
         }
     }
-    update_player_special_motion(g, dt_ms);
+    toy_game_update_actor_motion(g, TOY_GAME_PLAYER_ACTOR_INDEX, dt_ms);
     separate_enemies(g);
     update_base_core(g, dt_ms);
     if (g->campaign_mode) update_campaign(g, dt_ms);
