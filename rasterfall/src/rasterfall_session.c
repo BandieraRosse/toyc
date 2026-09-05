@@ -409,53 +409,29 @@ static void session_move_player(struct rasterfall_session *session,
                                 struct camera *camera,
                                 const struct rasterfall_command *command)
 {
-    if (session->game_state.player_control_disabled)
+    struct toy_game_actor *actor = toy_game_local_player_actor(&session->game_state);
+    if (!actor || actor->control_disabled)
         return;
     int dx = (camera->sy * command->move_forward +
               camera->cy * command->move_strafe) * RASTERFALL_MOVE_STEP / 1024;
     int dz = (camera->cy * command->move_forward -
               camera->sy * command->move_strafe) * RASTERFALL_MOVE_STEP / 1024;
-    int next_x = session->game_state.px + dx;
-    int next_z = session->game_state.pz + dz;
-    if (session->game_state.player_airborne_ms <= 0) {
-        if (toy_game_move_player_sliding(&session->game_state, dx, dz)) {
-            /* Camera position is derived below from the predicted player. */
-        }
+    int next_x = actor->x + dx;
+    int next_z = actor->z + dz;
+    int height = actor->ground_y + actor->airborne_y;
+    if (actor->airborne_ms <= 0) {
+        if (!toy_game_position_blocked_at_height(&session->game_state, next_x,
+                                                  actor->z, RASTERFALL_PLAYER_RADIUS,
+                                                  height)) actor->x = next_x;
+        if (!toy_game_position_blocked_at_height(&session->game_state, actor->x,
+                                                  next_z, RASTERFALL_PLAYER_RADIUS,
+                                                  height)) actor->z = next_z;
         return;
     }
-    {
-        int height = session->game_state.player_ground_y +
-                     session->game_state.player_airborne_y;
-        int blocks_x, blocks_z;
-        if (!toy_game_position_blocked_at_height(
-                &session->game_state, next_x, next_z,
-                RASTERFALL_PLAYER_RADIUS, height)) {
-            session->game_state.px = next_x;
-            session->game_state.pz = next_z;
-            return;
-        }
-        blocks_x = dx && toy_game_position_blocked_at_height(
-            &session->game_state, next_x, session->game_state.pz,
-            RASTERFALL_PLAYER_RADIUS, height);
-        blocks_z = dz && toy_game_position_blocked_at_height(
-            &session->game_state, session->game_state.px, next_z,
-            RASTERFALL_PLAYER_RADIUS, height);
-        if (!blocks_x && !blocks_z) {
-            int abs_x = dx < 0 ? -dx : dx;
-            int abs_z = dz < 0 ? -dz : dz;
-            if (abs_x >= abs_z) blocks_x = 1;
-            else blocks_z = 1;
-        }
-        if (blocks_x) next_x = session->game_state.px;
-        if (blocks_z) next_z = session->game_state.pz;
-        if ((next_x != session->game_state.px ||
-             next_z != session->game_state.pz) &&
-            toy_game_position_blocked_at_height(
-                &session->game_state, next_x, next_z,
-                RASTERFALL_PLAYER_RADIUS, height))
-            return;
-        session->game_state.px = next_x;
-        session->game_state.pz = next_z;
+    if (!toy_game_position_blocked_at_height(&session->game_state, next_x,
+                                              next_z, RASTERFALL_PLAYER_RADIUS,
+                                              height)) {
+        actor->x = next_x; actor->z = next_z;
     }
 }
 
@@ -485,8 +461,8 @@ static void session_jump_player(struct rasterfall_session *session,
                                 const struct rasterfall_command *command)
 {
     (void)camera;
-    toy_game_jump_with_velocity(&session->game_state,
-                                command->jump_dx, command->jump_dz);
+    toy_game_jump_actor(&session->game_state, TOY_GAME_PLAYER_ACTOR_INDEX,
+                        command->jump_dx, command->jump_dz);
 }
 
 static void session_sync_special_motion(struct rasterfall_session *session,
@@ -2253,17 +2229,21 @@ void rasterfall_session_step(struct rasterfall_session *session,
         session_toggle_flag(session, camera);
     if (command->buttons & RASTERFALL_CMD_JUMP)
         session_jump_player(session, camera, command);
-    if (!session->game_state.player_down)
+    if (toy_game_local_player_actor_const(&session->game_state)->state ==
+        TOY_GAME_ACTOR_ALIVE)
         session_move_player(session, camera, command);
     if (command->turn || command->pitch)
         rasterfall_camera_rotate(camera, command->turn, command->pitch);
     session_update_smooth_turn(session, camera);
     session_update_carried_flag(session, camera);
-    toy_game_set_player_pitch(&session->game_state, camera->pitch_sy,
-                              camera->pitch_cy, camera->y);
-    toy_game_set_player_moving(&session->game_state,
-                               command->move_forward || command->move_strafe);
-    toy_game_update_player_ground(&session->game_state);
+    {
+        struct toy_game_actor *player =
+            toy_game_local_player_actor(&session->game_state);
+        player->sy = camera->sy; player->cy = camera->cy;
+        player->moving = command->move_forward || command->move_strafe;
+        toy_game_update_actor_ground(&session->game_state,
+                                     TOY_GAME_PLAYER_ACTOR_INDEX);
+    }
     /* Ground/platform resolution must precede weapon simulation: the visual
      * muzzle is derived from camera->y during this same tick. */
     session_sync_special_motion(session, camera);
@@ -2297,12 +2277,30 @@ void rasterfall_session_step(struct rasterfall_session *session,
     if (command->buttons & RASTERFALL_CMD_SLOT_2) keys[TOY_GAME_KEY_SLOT_2] = 1;
     if (command->buttons & RASTERFALL_CMD_SLOT_3) keys[TOY_GAME_KEY_SLOT_3] = 1;
     if (command->buttons & RASTERFALL_CMD_SLOT_4) keys[TOY_GAME_KEY_SLOT_4] = 1;
-    toy_game_update_held(&session->game_state, keys,
-                         (command->buttons & RASTERFALL_CMD_FIRE) != 0,
-                         command->fire_held, camera->sy, camera->cy, dt_ms);
-    /* All gameplay mutations above are committed back to the actor before
-     * camera/presentation code observes the body. */
+    /* The remaining world simulation still has a legacy entry point.  Feed it
+     * a compatibility snapshot, then resume local-player work on the actor. */
+    toy_game_mirror_player_from_actor(&session->game_state);
+    toy_game_update_held(&session->game_state, NULL, 0, 0,
+                         session->game_state.actors[0].sy,
+                         session->game_state.actors[0].cy, dt_ms);
     toy_game_mirror_actor_from_player(&session->game_state);
+    {
+        struct toy_game_actor *player =
+            toy_game_local_player_actor(&session->game_state);
+        int fired = toy_game_update_actor_weapon_held(
+            &session->game_state, player, keys,
+            (command->buttons & RASTERFALL_CMD_FIRE) != 0,
+            command->fire_held, player->sy, player->cy, dt_ms, 100);
+        if ((command->buttons & RASTERFALL_CMD_FIRE) &&
+            toy_game_actor_use_special(&session->game_state, player,
+                                       player->sy, player->cy)) fired = 1;
+        if ((command->buttons & RASTERFALL_CMD_FIRE) &&
+            toy_game_actor_throwable(&session->game_state, player,
+                                     player->sy, player->cy,
+                                     camera->pitch_sy, camera->pitch_cy,
+                                     camera->y)) fired = 1;
+        (void)fired;
+    }
     {
         int i;
         for (i = 0; i < session->game_state.event_count; i++)
@@ -2319,7 +2317,8 @@ void rasterfall_session_step(struct rasterfall_session *session,
         toy_game_animation_set(&session->game_state.animation,
                                command->move_forward || command->move_strafe ?
                                TOY_GAME_ANIM_MOVE : TOY_GAME_ANIM_NONE);
-    toy_game_mirror_actor_from_player(&session->game_state);
+    toy_game_local_player_actor(&session->game_state)->animation =
+        session->game_state.animation;
     session_sync_special_motion(session, camera);
     session_update_manual_alarm(session, dt_ms);
     if (session->banner_ms > 0) {
@@ -2392,12 +2391,14 @@ static void session_step_client_mode(struct rasterfall_session *session,
     if (command->turn || command->pitch)
         rasterfall_camera_rotate(camera, command->turn, command->pitch);
     session_update_carried_flag(session, camera);
-    toy_game_update_player_special_control(&session->game_state, dt_ms);
-    toy_game_set_player_pitch(&session->game_state, camera->pitch_sy,
-                              camera->pitch_cy, camera->y);
-    toy_game_set_player_moving(&session->game_state,
-                               command->move_forward || command->move_strafe);
-    toy_game_update_player_ground(&session->game_state);
+    {
+        struct toy_game_actor *player =
+            toy_game_local_player_actor(&session->game_state);
+        player->sy = camera->sy; player->cy = camera->cy;
+        player->moving = command->move_forward || command->move_strafe;
+        toy_game_update_actor_ground(&session->game_state,
+                                     TOY_GAME_PLAYER_ACTOR_INDEX);
+    }
     session_sync_special_motion(session, camera);
     session->highlight_index = rasterfall_session_compute_highlight(session, camera);
     if (command->buttons & RASTERFALL_CMD_INTERACT)
@@ -2439,11 +2440,12 @@ static void session_step_client_mode(struct rasterfall_session *session,
             weapon != TOY_GAME_WEAPON_PILL &&
             weapon != TOY_GAME_WEAPON_BOMB &&
             weapon != TOY_GAME_WEAPON_MOLOTOV;
-        toy_game_update_weapon_held(&session->game_state, keys,
-                                    client_hitscan &&
-                                        (command->buttons & RASTERFALL_CMD_FIRE),
-                                    client_hitscan && command->fire_held,
-                                    camera->sy, camera->cy, dt_ms);
+        toy_game_update_actor_weapon_held(
+            &session->game_state,
+            toy_game_local_player_actor(&session->game_state), keys,
+            client_hitscan && (command->buttons & RASTERFALL_CMD_FIRE),
+            client_hitscan && command->fire_held, camera->sy, camera->cy,
+            dt_ms, 100);
         /* Melee damage and projectile creation are host-authoritative, but
          * their first-person windup must start on the owning client.  The
          * client intentionally does not call toy_game_fire for these weapons
@@ -2523,8 +2525,8 @@ static void session_step_client_mode(struct rasterfall_session *session,
         toy_game_animation_set(&session->game_state.animation,
                                command->move_forward || command->move_strafe ?
                                TOY_GAME_ANIM_MOVE : TOY_GAME_ANIM_NONE);
-    toy_game_update_player_motion(&session->game_state, dt_ms);
-    toy_game_mirror_actor_from_player(&session->game_state);
+    toy_game_update_actor_motion(&session->game_state,
+                                 TOY_GAME_PLAYER_ACTOR_INDEX, dt_ms);
     /* Motion changes airborne_y (and may move the player horizontally).  Keep
      * the predicted first-person camera in the same post-tick state as the
      * host camera instead of waiting for the next snapshot to move camera.y. */
@@ -2575,7 +2577,9 @@ static void session_step_client_mode(struct rasterfall_session *session,
         session->game_state.ray_count = saved_ray_count;
         memcpy(session->game_state.rays, saved_rays, sizeof(saved_rays));
     }
-    toy_game_mirror_actor_from_player(&session->game_state);
+    /* Prediction owns the local actor.  Keep the old player fields as a
+     * compatibility mirror; never let them overwrite the predicted state. */
+    toy_game_mirror_player_from_actor(&session->game_state);
 }
 
 void rasterfall_session_step_client(struct rasterfall_session *session,

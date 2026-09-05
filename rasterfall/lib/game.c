@@ -3157,6 +3157,9 @@ void toy_game_update_actor_ground(struct toy_game *g, int actor_index)
     actor->ground_y = next_ground;
 }
 
+static void move_actor_forced(struct toy_game *g, struct toy_game_actor *a,
+                              int dx, int dz);
+
 static void update_smoker(struct toy_game *g, struct toy_game_enemy *e,
                           int index, int target_x, int target_z,
                           int target_kind, int target_index,
@@ -3236,8 +3239,9 @@ static void update_smoker(struct toy_game *g, struct toy_game_enemy *e,
             int mz = pull_dz * step / (int)pull_dist;
             if (target_kind == 0)
                 move_player_forced(g, mx, mz);
-            /* Remote players execute the pull locally from PLAYER_CONTROL;
-             * the host only maintains the control state and damage. */
+            else if (target_kind == 1 && target_index >= 0 &&
+                     target_index < TOY_GAME_MAX_ACTORS)
+                move_actor_forced(g, &g->actors[target_index], mx, mz);
         }
         if (pull_dist > 0) {
             e->dir_x = -pull_dx * 1024 / (int)pull_dist;

@@ -1403,7 +1403,7 @@ static int run_logic_test(void)
             game.enemies[0].special_pull_timer_ms != -1) {
             return 81;
         }
-        game.actors[0].state = TOY_GAME_ACTOR_DOWNED;
+        game.actors[1].state = TOY_GAME_ACTOR_DOWNED;
         toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
         if (game.enemies[0].special_target_active) return 82;
     }
@@ -1422,10 +1422,10 @@ static int run_logic_test(void)
         game.enemies[0].hp = 100000;
         for (int i = 0; i < 100; i++) {
             toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
-            if (game.actors[0].airborne_y > 0) break;
+            if (game.actors[1].airborne_y > 0) break;
         }
-        if (game.actors[0].airborne_ms <= 0 ||
-            game.actors[0].vertical_velocity <= 0) return 83;
+        if (game.actors[1].airborne_ms <= 0 ||
+            game.actors[1].vertical_velocity <= 0) return 83;
     }
     /* Charger 里程碑：蓄力后造成伤害，并进入短暂空中/击飞状态。 */
     {
@@ -1466,19 +1466,19 @@ static int run_logic_test(void)
         game.room_limit = 12000;
         game.campaign_mode = 0;
         game.to_spawn = 0;
-        game.actors[0].x = 1200;
-        game.actors[0].z = 0;
-        game.actors[0].deployment_x = 0;
-        game.actors[0].deployment_z = 0;
-        if (!toy_game_apply_entity_impact(&game, TOY_GAME_ENTITY_ACTOR, 0,
+        game.actors[1].x = 1200;
+        game.actors[1].z = 0;
+        game.actors[1].deployment_x = 0;
+        game.actors[1].deployment_z = 0;
+        if (!toy_game_apply_entity_impact(&game, TOY_GAME_ENTITY_ACTOR, 1,
                                           1000, 0, 1) ||
-            game.actors[0].airborne_ms <= 0 ||
-            game.actors[0].animation.id != TOY_GAME_ANIM_SHOVE) return 79;
+            game.actors[1].airborne_ms <= 0 ||
+            game.actors[1].animation.id != TOY_GAME_ANIM_SHOVE) return 79;
         toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
-        if (game.actors[0].animation.id != TOY_GAME_ANIM_SHOVE) return 79;
+        if (game.actors[1].animation.id != TOY_GAME_ANIM_SHOVE) return 79;
         for (int i = 0; i < 130; i++)
             toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
-        if (game.actors[0].airborne_ms > 0)
+        if (game.actors[1].airborne_ms > 0)
             return 80;
     }
     /* 敌人分离使用碰撞半径，不能长期重叠成一团。 */
@@ -2008,10 +2008,10 @@ static int run_logic_test(void)
                                        &jump_command, 16);
         rasterfall_session_replay_client(&replay_session, &replay_camera,
                                          &jump_command, 16);
-        if (live_session.game_state.player_air_x != 37 ||
-            live_session.game_state.player_air_z != -29 ||
-            replay_session.game_state.player_air_x != 37 ||
-            replay_session.game_state.player_air_z != -29)
+        if (live_session.game_state.actors[TOY_GAME_PLAYER_ACTOR_INDEX].air_x != 37 ||
+            live_session.game_state.actors[TOY_GAME_PLAYER_ACTOR_INDEX].air_z != -29 ||
+            replay_session.game_state.actors[TOY_GAME_PLAYER_ACTOR_INDEX].air_x != 37 ||
+            replay_session.game_state.actors[TOY_GAME_PLAYER_ACTOR_INDEX].air_z != -29)
             return 145;
     }
 

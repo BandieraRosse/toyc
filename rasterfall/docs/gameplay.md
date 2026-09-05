@@ -1,7 +1,7 @@
 # 玩法、会话、地图与 AI
 
 > 文档更新：2026-09-05
-> 源码核对基线：工作区（本地玩家正式占用 `toy_game.actors[0]`，旧玩家字段仅作单向兼容镜像；AI 从槽位 1 起分配；投射物/燃烧区携带 actor owner；本地预测 body 位置驱动 camera）
+> 源码核对基线：工作区（本地玩家移动/跳跃/airborne/武器/动画由 `actors[0]` 直接驱动；legacy 仅供未迁移世界规则兼容；AI 从槽位 1 起分配；投射物/燃烧区携带 actor owner）
 
 ## 三层职责
 
@@ -18,7 +18,10 @@
 `TOY_GAME_ACTOR_PLAYER`。位置、生命、空中状态、库存/武器计时、统计和动画持久化在 actor 中。
 由于旧规则入口和网络展示仍读取顶层玩家字段，`toy_game_mirror_player_from_actor()` 在进入兼容
 路径前复制 actor 到 legacy，规则执行结束再由 `toy_game_mirror_actor_from_player()` 收回；该
-镜像是迁移边界，不是第二个状态源。AI 分配从槽位 1 开始，网络协议和远端 actor 槽位不变。
+镜像是迁移边界，不是第二个状态源。session 的本地 step 与 client prediction 已直接操作 actor 的
+移动、跳跃、airborne、武器/reload/fire cooldown、投掷物和 animation；camera.body 始终由 actor
+派生。AI 分配从槽位 1 开始，网络协议和远端 actor 槽位不变。legacy 读取目前只保留给尚未迁移的
+世界规则（敌人目标/世界推进）、HUD/特效兼容和网络包适配。
 
 ## 地图链路
 
