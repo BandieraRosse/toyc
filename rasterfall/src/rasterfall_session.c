@@ -338,8 +338,9 @@ void rasterfall_session_reset(struct rasterfall_session *session,
                     session->flags[1].z + session->flags[1].slot_offsets[i][1], 1);
         }
     }
-    session->game_state.px = camera->x;
-    session->game_state.pz = camera->z;
+    toy_game_local_player_actor(&session->game_state)->x = camera->x;
+    toy_game_local_player_actor(&session->game_state)->z = camera->z;
+    toy_game_mirror_player_from_actor(&session->game_state);
     toy_game_set_player_pitch(&session->game_state, camera->pitch_sy,
                               camera->pitch_cy, camera->y);
     toy_game_mirror_actor_from_player(&session->game_state);
@@ -587,7 +588,10 @@ int rasterfall_session_revive_remote(struct rasterfall_session *session,
                                      const struct camera *camera, int dt_ms)
 {
     int actor_index = -1;
-    if (!session || !camera || session->game_state.player_down) return -1;
+    const struct toy_game_actor *player;
+    if (!session || !camera) return -1;
+    player = toy_game_local_player_actor_const(&session->game_state);
+    if (!player || player->state == TOY_GAME_ACTOR_DOWNED) return -1;
     if (!session_near_ai(session, camera, &actor_index)) return -1;
     return toy_game_revive_actor(&session->game_state, actor_index, dt_ms);
 }
@@ -615,17 +619,20 @@ int rasterfall_session_paid_revive(struct rasterfall_session *session,
                                    struct camera *camera)
 {
     struct toy_game *game;
+    struct toy_game_actor *player;
     if (!session || !camera) return 0;
     game = &session->game_state;
-    if (game->state != TOY_GAME_PLAYING || !game->player_down ||
+    player = toy_game_local_player_actor(game);
+    if (!player || game->state != TOY_GAME_PLAYING ||
+        player->state != TOY_GAME_ACTOR_DOWNED ||
         game->money < RASTERFALL_PAID_REVIVE_COST)
         return 0;
     game->money -= RASTERFALL_PAID_REVIVE_COST;
     toy_game_clear_player_special_control(game, 0);
-    game->player_down = 0;
-    game->hp = TOY_GAME_REVIVE_HP;
-    game->player_revive_progress_ms = 0;
-    game->player_control_disabled = 0;
+    player->state = TOY_GAME_ACTOR_ALIVE;
+    player->hp = TOY_GAME_REVIVE_HP;
+    player->revive_progress_ms = 0;
+    player->control_disabled = 0;
     camera->x = session->level.start_x;
     camera->z = session->level.start_z;
     camera->sy = session->level.start_sy;
@@ -633,9 +640,10 @@ int rasterfall_session_paid_revive(struct rasterfall_session *session,
     camera->pitch_sy = 0;
     camera->pitch_cy = 1024;
     camera->y = RASTERFALL_STANDING_CAMERA_Y;
-    game->px = camera->x;
-    game->pz = camera->z;
-    toy_game_animation_set(&game->animation, TOY_GAME_ANIM_REVIVE);
+    player->x = camera->x;
+    player->z = camera->z;
+    toy_game_actor_set_animation(player, TOY_GAME_ANIM_REVIVE);
+    toy_game_mirror_player_from_actor(game);
     toy_game_emit_event(game, TOY_GAME_EV_REVIVE);
     toy_game_emit_event(game, TOY_GAME_EV_ACTOR_REVIVE);
     session->banner_ms = 1800;
@@ -680,7 +688,7 @@ static void session_client_interact_banner(struct rasterfall_session *session)
         session->shop_page = 0;
         session->shop_selected = 0;
         session->shop_nav_selected = 0;
-        session->game_state.player_control_disabled = 1;
+        toy_game_local_player_actor(&session->game_state)->control_disabled = 1;
         session->banner_ms = 0;
         session->banner_text = NULL;
         return;
@@ -769,7 +777,7 @@ static void session_interact(struct rasterfall_session *session,
         session->shop_selected = 0;
         session->banner_ms = 0;
         session->banner_text = NULL;
-        session->game_state.player_control_disabled = 1;
+        toy_game_local_player_actor(&session->game_state)->control_disabled = 1;
         return;
     }
     if (it->kind == TOY_MAP_PICKUP_BUTTON) {
@@ -1121,7 +1129,9 @@ static int session_buy_flag(struct rasterfall_session *s)
     if (s->flag_count >= RASTERFALL_MAX_FLAGS || s->game_state.money < price)
         return 0;
     fi = s->flag_count++;
-    session_init_flag(s, fi, s->game_state.px, s->game_state.pz);
+    session_init_flag(s, fi,
+                      toy_game_local_player_actor(&s->game_state)->x,
+                      toy_game_local_player_actor(&s->game_state)->z);
     s->game_state.money -= price;
     return 1;
 }
@@ -1254,7 +1264,7 @@ void rasterfall_session_shop_input(struct rasterfall_session *session,
             session->shop_selected = 0;
         } else {
             session->shop_open = 0;
-            session->game_state.player_control_disabled = 0;
+            toy_game_local_player_actor(&session->game_state)->control_disabled = 0;
         }
         return;
     }
@@ -1549,8 +1559,9 @@ int rasterfall_session_recover_managed_player(
     camera->pitch_sy = 0;
     camera->pitch_cy = 1024;
     camera->y = RASTERFALL_STANDING_CAMERA_Y;
-    session->game_state.px = x;
-    session->game_state.pz = z;
+    toy_game_local_player_actor(&session->game_state)->x = x;
+    toy_game_local_player_actor(&session->game_state)->z = z;
+    toy_game_mirror_player_from_actor(&session->game_state);
     session->game_state.player_ground_y = toy_game_query_ground(
         &session->game_state, x, z, RASTERFALL_PLAYER_RADIUS, 0).support_y;
     session->game_state.player_airborne_ms = 0;
@@ -1848,7 +1859,8 @@ static void session_build_managed_ai_command(
     const struct toy_game_box *safe_room = NULL;
     int dx, dz, distance, i;
     memset(command, 0, sizeof(*command));
-    if (session->game_state.player_down) {
+    if (toy_game_local_player_actor_const(&session->game_state)->state ==
+        TOY_GAME_ACTOR_DOWNED) {
         if (session->game_state.money >= RASTERFALL_PAID_REVIVE_COST)
             command->buttons = RASTERFALL_CMD_REVIVE;
         return;
@@ -2263,10 +2275,14 @@ void rasterfall_session_step(struct rasterfall_session *session,
         session_near_ai(session, camera, &session->ai_revive_actor_index))
         session->ai_revive_active = 1;
     if ((command->buttons & RASTERFALL_CMD_INTERACT) &&
-        session->highlight_index >= 0 && !session->game_state.player_down)
+        session->highlight_index >= 0 &&
+        toy_game_local_player_actor_const(&session->game_state)->state !=
+            TOY_GAME_ACTOR_DOWNED)
         session_interact(session, &session->items[session->highlight_index]);
     if (session->ai_revive_active) {
-        if (!session_near_ai(session, camera, NULL) || session->game_state.player_down) {
+        if (!session_near_ai(session, camera, NULL) ||
+            toy_game_local_player_actor_const(&session->game_state)->state ==
+                TOY_GAME_ACTOR_DOWNED) {
             session->ai_revive_active = 0;
         } else if (toy_game_revive_actor(&session->game_state,
                                          session->ai_revive_actor_index,
@@ -2423,7 +2439,8 @@ static void session_step_client_mode(struct rasterfall_session *session,
         int index = session->ai_revive_actor_index;
         if (index < 0 || index >= TOY_GAME_MAX_ACTORS ||
             !session_near_ai(session, camera, NULL) ||
-            session->game_state.player_down ||
+            toy_game_local_player_actor_const(&session->game_state)->state ==
+                TOY_GAME_ACTOR_DOWNED ||
             session->game_state.actors[index].state != TOY_GAME_ACTOR_DOWNED) {
             session->ai_revive_active = 0;
         }
