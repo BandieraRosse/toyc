@@ -3238,12 +3238,20 @@ static void update_smoker(struct toy_game *g, struct toy_game_enemy *e,
         /* 舌头把玩家拉到身边后保持束缚，并按接触间隔造成伤害。 */
         if (pull_dist < 420 && e->bite_cooldown_ms <= 0) {
             if (target_kind == 0) {
-                g->hp -= TOY_GAME_SMOKER_DAMAGE;
-                if (g->hp < 0) g->hp = 0;
-                g->damage_flash_ms = TOY_GAME_DAMAGE_FLASH_MS;
-                toy_game_animation_set(&g->animation,
-                    g->hp <= 0 ? TOY_GAME_ANIM_DEATH : TOY_GAME_ANIM_HIT);
-                if (g->hp <= 0) g->player_down = 1;
+                struct toy_game_actor *a =
+                    toy_game_local_player_actor(g);
+                if (a && a->state == TOY_GAME_ACTOR_ALIVE) {
+                    a->hp -= TOY_GAME_SMOKER_DAMAGE;
+                    if (a->hp < 0) a->hp = 0;
+                    a->damage_flash_ms = TOY_GAME_DAMAGE_FLASH_MS;
+                    toy_game_actor_set_animation(a,
+                        a->hp <= 0 ? TOY_GAME_ANIM_DEATH : TOY_GAME_ANIM_HIT);
+                    if (a->hp <= 0) {
+                        a->state = TOY_GAME_ACTOR_DOWNED;
+                        a->revive_progress_ms = 0;
+                    }
+                    toy_game_mirror_player_from_actor(g);
+                }
             } else if (target_kind == 1 && target_index >= 0 &&
                        target_index < TOY_GAME_MAX_ACTORS) {
                 struct toy_game_actor *a = &g->actors[target_index];
