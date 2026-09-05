@@ -1,7 +1,7 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-05
-> 源码核对基线：工作区（敌人目录已移除 COMMON/HEAVY 基础类型，普通敌人 AI 已收敛为直接追击，特感保留独立技能逻辑，敌人 Content ID 为 0-based 连续编号；投射物/燃烧区携带 actor owner；本地预测 body 位置驱动 camera）
+> 源码核对基线：工作区（本地玩家正式占用 `toy_game.actors[0]`，旧玩家字段仅作单向兼容镜像；AI 从槽位 1 起分配；本地预测 body 位置驱动 camera；网络协议未变）
 
 本目录面向接手 Rasterfall 任务的编码代理。目标不是介绍玩法，而是先把问题归到正确的
 状态所有者和文件，再开始搜索。命令、资源导入方法和用户可见特性仍以
@@ -84,6 +84,8 @@ Molotov 的世界实体显式携带 `owner_actor_id`，本地预测 body 位置�
 - 修改角色动画：检查角色选择、会话动画状态、模型求值、渲染以及网络动画字段。
 - 修改敌人外观组件：检查 `src/rasterfall_render.c` 的 `enemy_body_part` 描述表、通用组件解释器和特感动态组件；地面锚点仍由 `toy_game_enemy.ground_y` 与 `airborne_y` 提供。
 - 修改命令行或诊断模式：从 `rasterfall_options.c` 到 `rasterfall.c` 的早退分支一起核对。
+- 修改本地玩家状态：从 `toy_game_local_player_actor()`、`toy_game_mirror_*()` 和
+  `rasterfall_session.c` 的本地主循环开始；不要把 camera 的位置字段写回为 gameplay 源。
 
 ## 修改后更新哪些文档
 

@@ -239,8 +239,7 @@ void rasterfall_session_reset(struct rasterfall_session *session,
                           session->spawn_count);
     /* The game starts directly in the ordinary endless wave director.  There
      * are no safe rooms, capture stages, alarms, or objective transitions. */
-    /* AI 出生点属于地图语义；第一个条目仍占用 actor 0，以兼容旧的
-     * toy_game AI 镜像和现有 HUD/网络协议。 */
+    /* actor 0 is reserved for the local player; map-authored AI starts at 1. */
     for (i = 0; i < session->level.ai_spawn_count && i < TOY_GAME_MAX_ACTORS; i++) {
         const struct toy_map_ai_spawn *spawn = &session->level.ai_spawns[i];
         int actor_index;
@@ -248,7 +247,7 @@ void rasterfall_session_reset(struct rasterfall_session *session,
             toy_game_set_ai_teammate_class(&session->game_state, 1,
                                            spawn->class_id, spawn->x, spawn->z,
                                            spawn->name);
-            actor_index = 0;
+            actor_index = 1;
         } else {
             int actor_id = toy_game_add_ai(&session->game_state, spawn->class_id,
                                            spawn->x, spawn->z, spawn->name);
@@ -343,6 +342,10 @@ void rasterfall_session_reset(struct rasterfall_session *session,
     session->game_state.pz = camera->z;
     toy_game_set_player_pitch(&session->game_state, camera->pitch_sy,
                               camera->pitch_cy, camera->y);
+    toy_game_mirror_actor_from_player(&session->game_state);
+    rasterfall_camera_set_body(camera,
+                               session->game_state.actors[0].x,
+                               session->game_state.actors[0].z);
     session->banner_ms = 0;
     session->banner_text = NULL;
     session->manual_alarm_on = 0;
@@ -489,14 +492,15 @@ static void session_jump_player(struct rasterfall_session *session,
 static void session_sync_special_motion(struct rasterfall_session *session,
                                         struct camera *camera)
 {
+    const struct toy_game_actor *player;
     if (!session || !camera) return;
     /* The gameplay/prediction state owns the body position.  Camera keeps
      * orientation and presentation height, and is rebuilt from that state. */
-    rasterfall_camera_set_body(camera, session->game_state.px,
-                               session->game_state.pz);
+    player = toy_game_local_player_actor_const(&session->game_state);
+    if (!player) return;
+    rasterfall_camera_set_body(camera, player->x, player->z);
     camera->y = RASTERFALL_STANDING_CAMERA_Y +
-                session->game_state.player_ground_y +
-                session->game_state.player_airborne_y;
+                player->ground_y + player->airborne_y;
 }
 
 static void session_update_smooth_turn(struct rasterfall_session *session,
@@ -2173,6 +2177,8 @@ void rasterfall_session_step(struct rasterfall_session *session,
 {
     unsigned char keys[TOY_GAME_KEY_RELOAD + 1];
     struct rasterfall_command managed_command;
+    /* Enter the legacy rule implementation through the local actor mirror. */
+    toy_game_mirror_player_from_actor(&session->game_state);
     if (command->buttons & RASTERFALL_CMD_RESET) {
         rasterfall_session_reset(session, camera, session->seed);
         return;
@@ -2294,6 +2300,9 @@ void rasterfall_session_step(struct rasterfall_session *session,
     toy_game_update_held(&session->game_state, keys,
                          (command->buttons & RASTERFALL_CMD_FIRE) != 0,
                          command->fire_held, camera->sy, camera->cy, dt_ms);
+    /* All gameplay mutations above are committed back to the actor before
+     * camera/presentation code observes the body. */
+    toy_game_mirror_actor_from_player(&session->game_state);
     {
         int i;
         for (i = 0; i < session->game_state.event_count; i++)
@@ -2310,6 +2319,7 @@ void rasterfall_session_step(struct rasterfall_session *session,
         toy_game_animation_set(&session->game_state.animation,
                                command->move_forward || command->move_strafe ?
                                TOY_GAME_ANIM_MOVE : TOY_GAME_ANIM_NONE);
+    toy_game_mirror_actor_from_player(&session->game_state);
     session_sync_special_motion(session, camera);
     session_update_manual_alarm(session, dt_ms);
     if (session->banner_ms > 0) {
@@ -2366,6 +2376,7 @@ static void session_step_client_mode(struct rasterfall_session *session,
     int saved_ray_count = session->game_state.ray_count;
     saved_throw_timer = session->game_state.throw_timer_ms;
     unsigned int saved_fire_seq = session->game_state.fire_seq;
+    toy_game_mirror_player_from_actor(&session->game_state);
     memcpy(saved_rays, session->game_state.rays, sizeof(saved_rays));
     if (command->buttons & RASTERFALL_CMD_RESET) {
         rasterfall_session_reset(session, camera, session->seed);
@@ -2513,6 +2524,7 @@ static void session_step_client_mode(struct rasterfall_session *session,
                                command->move_forward || command->move_strafe ?
                                TOY_GAME_ANIM_MOVE : TOY_GAME_ANIM_NONE);
     toy_game_update_player_motion(&session->game_state, dt_ms);
+    toy_game_mirror_actor_from_player(&session->game_state);
     /* Motion changes airborne_y (and may move the player horizontally).  Keep
      * the predicted first-person camera in the same post-tick state as the
      * host camera instead of waiting for the next snapshot to move camera.y. */
@@ -2563,6 +2575,7 @@ static void session_step_client_mode(struct rasterfall_session *session,
         session->game_state.ray_count = saved_ray_count;
         memcpy(session->game_state.rays, saved_rays, sizeof(saved_rays));
     }
+    toy_game_mirror_actor_from_player(&session->game_state);
 }
 
 void rasterfall_session_step_client(struct rasterfall_session *session,

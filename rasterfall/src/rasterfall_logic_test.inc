@@ -389,8 +389,8 @@ static int run_logic_test(void)
         toy_game_init(&ai_observe_test, 151);
         if (toy_game_add_ai(&ai_observe_test, TOY_GAME_AI_LEVEL_2,
                             0, 0, "OBSERVE") < 0 ||
-            !toy_game_ai_observe(&ai_observe_test, 0, &ai_observation) ||
-            ai_observation.actor_id != ai_observe_test.actors[0].actor_id ||
+            !toy_game_ai_observe(&ai_observe_test, 2, &ai_observation) ||
+            ai_observation.actor_id != ai_observe_test.actors[2].actor_id ||
             ai_observation.health_percent <= 0 ||
             ai_observation.current_weapon < 0 ||
             ai_observation.nearest_enemy_index != -1 ||
@@ -502,25 +502,25 @@ static int run_logic_test(void)
                 TOY_GAME_AMMO_INFINITE ||
             ai_reload_test.actors[ai_id - 1].slots[
                 ai_reload_test.actors[ai_id - 1].current_slot].mag <= 0) return 63;
-        if (!game.actors[1].active ||
-            game.actors[1].class_id != TOY_GAME_AI_LEVEL_1 ||
-            game.actors[1].slots[game.actors[1].current_slot].weapon != TOY_GAME_WEAPON_PISTOL ||
-            !game.actors[2].active ||
-            game.actors[2].class_id != TOY_GAME_AI_LEVEL_3 ||
-            (game.actors[2].slots[game.actors[2].current_slot].weapon != TOY_GAME_WEAPON_AK &&
-             game.actors[2].slots[game.actors[2].current_slot].weapon != TOY_GAME_WEAPON_AWP) ||
-            game.actors[0].hp != 120 || game.actors[0].max_hp != 120 ||
-            game.actors[0].state != TOY_GAME_ACTOR_ALIVE ||
+        if (!game.actors[2].active ||
+            game.actors[2].class_id != TOY_GAME_AI_LEVEL_1 ||
+            game.actors[2].slots[game.actors[2].current_slot].weapon != TOY_GAME_WEAPON_PISTOL ||
+            !game.actors[3].active ||
+            game.actors[3].class_id != TOY_GAME_AI_LEVEL_3 ||
+            (game.actors[3].slots[game.actors[3].current_slot].weapon != TOY_GAME_WEAPON_AK &&
+             game.actors[3].slots[game.actors[3].current_slot].weapon != TOY_GAME_WEAPON_AWP) ||
+            game.actors[1].hp != 120 || game.actors[1].max_hp != 120 ||
             game.actors[1].state != TOY_GAME_ACTOR_ALIVE ||
             game.actors[2].state != TOY_GAME_ACTOR_ALIVE ||
-            game.actors[0].x != 1000 || game.actors[0].z != 0 ||
-            game.actors[1].x != 0 || game.actors[1].z != -900 ||
-            game.actors[2].x != -1000 || game.actors[2].z != 0 ||
-            !game.actors[3].active || !game.actors[3].base_core ||
-            game.actors[3].hp != TOY_CONFIG_BASE_HP ||
-            game.actors[3].max_hp != TOY_CONFIG_BASE_HP ||
-            game.actors[3].slots[0].weapon != TOY_GAME_WEAPON_PISTOL ||
-            game.actors[3].state != TOY_GAME_ACTOR_ALIVE) return 51;
+            game.actors[3].state != TOY_GAME_ACTOR_ALIVE ||
+            game.actors[1].x != 1000 || game.actors[1].z != 0 ||
+            game.actors[2].x != 0 || game.actors[2].z != -900 ||
+            game.actors[3].x != -1000 || game.actors[3].z != 0 ||
+            !game.actors[4].active || !game.actors[4].base_core ||
+            game.actors[4].hp != TOY_CONFIG_BASE_HP ||
+            game.actors[4].max_hp != TOY_CONFIG_BASE_HP ||
+            game.actors[4].slots[0].weapon != TOY_GAME_WEAPON_PISTOL ||
+            game.actors[4].state != TOY_GAME_ACTOR_ALIVE) return 51;
         toy_game_init(&actor_test, 3);
         if (toy_game_set_remote_player(&actor_test, 1, 1,
                                        2400, -3000, "REMOTE") !=
@@ -605,10 +605,10 @@ static int run_logic_test(void)
             actor_test.actors[TOY_GAME_REMOTE_ACTOR_BASE + 2].slots[1].mag == 11)
             return 56;
         if (toy_game_add_ai(&actor_test, TOY_GAME_AI_LEVEL_3,
-                            1200, -3000, "ELITE") != 2 ||
-            !toy_game_actor_by_id(&actor_test, 2) ||
-            toy_game_actor_by_id(&actor_test, 2)->hp != 160 ||
-            toy_game_actor_by_id(&actor_test, 2)->slots[0].reserve !=
+                            1200, -3000, "ELITE") != 3 ||
+            !toy_game_actor_by_id(&actor_test, 3) ||
+            toy_game_actor_by_id(&actor_test, 3)->hp != 160 ||
+            toy_game_actor_by_id(&actor_test, 3)->slots[0].reserve !=
                 TOY_GAME_AMMO_INFINITE) return 50;
         actor_test.actors[0].state = TOY_GAME_ACTOR_DOWNED;
         actor_test.actors[0].hp = 0;

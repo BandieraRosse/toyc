@@ -287,6 +287,100 @@ struct toy_game_actor *toy_game_actor_by_id(struct toy_game *g, int actor_id)
     return NULL;
 }
 
+struct toy_game_actor *toy_game_local_player_actor(struct toy_game *g)
+{
+    if (!g) return NULL;
+    return &g->actors[TOY_GAME_PLAYER_ACTOR_INDEX];
+}
+
+const struct toy_game_actor *toy_game_local_player_actor_const(
+    const struct toy_game *g)
+{
+    if (!g) return NULL;
+    return &g->actors[TOY_GAME_PLAYER_ACTOR_INDEX];
+}
+
+void toy_game_mirror_player_from_actor(struct toy_game *g)
+{
+    const struct toy_game_actor *a = toy_game_local_player_actor_const(g);
+    if (!g || !a || !a->active) return;
+    g->px = a->x; g->pz = a->z;
+    g->hp = a->hp;
+    g->player_down = a->state == TOY_GAME_ACTOR_DOWNED;
+    g->player_revive_progress_ms = a->revive_progress_ms;
+    memcpy(g->slots, a->slots, sizeof(g->slots));
+    g->current_slot = a->current_slot;
+    g->reloading = a->reloading;
+    g->reload_timer_ms = a->reload_timer_ms;
+    g->weapon_switch_timer_ms = a->weapon_switch_timer_ms;
+    g->melee_timer_ms = a->melee_timer_ms;
+    g->throw_timer_ms = a->throw_timer_ms;
+    g->fire_cooldown_ms = a->fire_cooldown_ms;
+    g->weapon_spread_heat = a->weapon_spread_heat;
+    g->moving = a->moving;
+    g->muzzle_flash_ms = a->muzzle_flash_ms;
+    g->damage_flash_ms = a->damage_flash_ms;
+    g->kills = a->kills;
+    g->special_kills = a->special_kills;
+    g->damage_dealt = a->damage_dealt;
+    g->throwable_damage_dealt = a->throwable_damage_dealt;
+    g->fire_seq = a->fire_seq;
+    g->ray_count = a->ray_count;
+    memcpy(g->rays, a->rays, sizeof(g->rays));
+    g->animation = a->animation;
+    g->player_airborne_ms = a->airborne_ms;
+    g->player_airborne_y = a->airborne_y;
+    g->player_ground_y = a->ground_y;
+    g->player_vertical_velocity = a->vertical_velocity;
+    g->player_air_x = a->air_x; g->player_air_z = a->air_z;
+    g->player_knockback_x = a->knockback_x;
+    g->player_knockback_z = a->knockback_z;
+    g->player_knockback_cooldown_ms = a->knockback_cooldown_ms;
+    g->player_control_disabled = a->control_disabled;
+}
+
+void toy_game_mirror_actor_from_player(struct toy_game *g)
+{
+    struct toy_game_actor *a = toy_game_local_player_actor(g);
+    if (!g || !a) return;
+    a->active = 1;
+    a->actor_id = g->actor_id;
+    a->kind = TOY_GAME_ACTOR_PLAYER;
+    a->state = g->player_down ? TOY_GAME_ACTOR_DOWNED :
+        TOY_GAME_ACTOR_ALIVE;
+    a->x = g->px; a->z = g->pz;
+    a->sy = g->pitch_sy; a->cy = g->pitch_cy;
+    a->hp = g->hp; a->max_hp = TOY_GAME_PLAYER_HP;
+    a->revive_progress_ms = g->player_revive_progress_ms;
+    memcpy(a->slots, g->slots, sizeof(a->slots));
+    a->current_slot = g->current_slot;
+    a->reloading = g->reloading; a->reload_timer_ms = g->reload_timer_ms;
+    a->weapon_switch_timer_ms = g->weapon_switch_timer_ms;
+    a->melee_timer_ms = g->melee_timer_ms;
+    a->throw_timer_ms = g->throw_timer_ms;
+    a->fire_cooldown_ms = g->fire_cooldown_ms;
+    a->weapon_spread_heat = g->weapon_spread_heat;
+    a->moving = g->moving;
+    a->muzzle_flash_ms = g->muzzle_flash_ms;
+    a->damage_flash_ms = g->damage_flash_ms;
+    a->kills = g->kills; a->special_kills = g->special_kills;
+    a->damage_dealt = g->damage_dealt;
+    a->throwable_damage_dealt = g->throwable_damage_dealt;
+    a->fire_seq = g->fire_seq; a->ray_count = g->ray_count;
+    memcpy(a->rays, g->rays, sizeof(a->rays));
+    a->animation = g->animation;
+    a->airborne_ms = g->player_airborne_ms;
+    a->airborne_y = g->player_airborne_y;
+    a->ground_y = g->player_ground_y;
+    a->vertical_velocity = g->player_vertical_velocity;
+    a->air_x = g->player_air_x; a->air_z = g->player_air_z;
+    a->knockback_x = g->player_knockback_x;
+    a->knockback_z = g->player_knockback_z;
+    a->knockback_cooldown_ms = g->player_knockback_cooldown_ms;
+    a->control_disabled = g->player_control_disabled;
+    memcpy(a->name, g->player_name, sizeof(a->name));
+}
+
 const struct toy_game_actor *toy_game_actor_by_id_const(const struct toy_game *g,
                                                         int actor_id)
 {
@@ -590,6 +684,9 @@ void toy_game_init(struct toy_game *g, uint64_t seed)
     g->actor_id = 0;
     g->actor_kind = TOY_GAME_ACTOR_PLAYER;
     toy_game_set_player_name(g, "PLAYER");
+    toy_game_mirror_actor_from_player(g);
+    memcpy(g->actors[TOY_GAME_PLAYER_ACTOR_INDEX].name, g->player_name,
+           sizeof(g->actors[TOY_GAME_PLAYER_ACTOR_INDEX].name));
     toy_game_set_ai_teammate(g, 1, -11000, -5800, "Jesus");
 }
 
@@ -617,25 +714,13 @@ int toy_game_ai_observe(const struct toy_game *g, int actor_index,
                         struct toy_game_ai_observation *out)
 {
     const struct toy_game_actor *actor;
-    struct toy_game_actor player_view;
     int i, best = -1;
     long long best_d2 = 0;
     if (!g || !out || actor_index < TOY_GAME_PLAYER_ACTOR_INDEX ||
         actor_index >= TOY_GAME_MAX_ACTORS) return 0;
     if (actor_index == TOY_GAME_PLAYER_ACTOR_INDEX) {
-        memset(&player_view, 0, sizeof(player_view));
-        player_view.active = 1;
-        player_view.actor_id = g->actor_id;
-        player_view.kind = TOY_GAME_ACTOR_PLAYER;
-        player_view.state = g->player_down ? TOY_GAME_ACTOR_DOWNED :
-                             TOY_GAME_ACTOR_ALIVE;
-        player_view.x = g->px; player_view.z = g->pz;
-        player_view.hp = g->hp; player_view.max_hp = TOY_GAME_PLAYER_HP;
-        memcpy(player_view.slots, g->slots, sizeof(player_view.slots));
-        player_view.current_slot = g->current_slot;
-        player_view.deployment_x = g->px;
-        player_view.deployment_z = g->pz;
-        actor = &player_view;
+        actor = &g->actors[TOY_GAME_PLAYER_ACTOR_INDEX];
+        if (!actor->active || actor->kind != TOY_GAME_ACTOR_PLAYER) return 0;
     } else {
         actor = &g->actors[actor_index];
         if (!actor->active || actor->kind != TOY_GAME_ACTOR_AI) return 0;
@@ -701,7 +786,7 @@ void toy_game_set_ai_teammate_class(struct toy_game *g, int active, int class_id
     info = &ai_table[class_id];
     ai_weapon = ai_random_weapon(g, class_id);
     w = toy_game_weapon_info(ai_weapon);
-    a = &g->actors[0];
+    a = &g->actors[1];
     memset(a, 0, sizeof(*a));
     a->active = active != 0;
     a->actor_id = 1;
@@ -769,7 +854,7 @@ int toy_game_add_ai(struct toy_game *g, int class_id, int x, int z,
     struct toy_game_actor *a;
     int i, slot = -1;
     if (class_id < 0 || class_id >= TOY_GAME_AI_CLASS_COUNT) return -1;
-    for (i = 0; i < TOY_GAME_REMOTE_ACTOR_BASE; i++)
+    for (i = 1; i < TOY_GAME_REMOTE_ACTOR_BASE; i++)
         if (!g->actors[i].active) { slot = i; break; }
     if (slot < 0) return -1;
     info = &ai_table[class_id];
@@ -836,7 +921,7 @@ int toy_game_clear_hired_ai(struct toy_game *g)
 {
     int i, count = 0;
     if (!g) return 0;
-    for (i = 0; i < TOY_GAME_REMOTE_ACTOR_BASE; i++) {
+    for (i = 1; i < TOY_GAME_REMOTE_ACTOR_BASE; i++) {
         if (!g->actors[i].active || !g->actors[i].hired) continue;
         memset(&g->actors[i], 0, sizeof(g->actors[i]));
         count++;
@@ -5254,6 +5339,10 @@ void toy_game_update_held(struct toy_game *g,
     unsigned int old_fire_seq;
     int old_reloading;
     if (g->state != TOY_GAME_PLAYING) return;
+    /* Preserve the old public entry point for logic tests and small hosts
+     * that still seed px/pz directly; normal Rasterfall sessions arrive here
+     * after the actor-to-legacy mirror. */
+    toy_game_mirror_actor_from_player(g);
     for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
         if (g->actors[i].kind != TOY_GAME_ACTOR_PLAYER ||
             g->actors[i].knockback_cooldown_ms <= 0) continue;
@@ -5329,6 +5418,7 @@ void toy_game_update_held(struct toy_game *g,
     update_base_core(g, dt_ms);
     if (g->campaign_mode) update_campaign(g, dt_ms);
     else update_waves(g, dt_ms);
+    toy_game_mirror_actor_from_player(g);
 }
 
 /* 半自动兼容入口：无按住连发（历史测试/宿主行为不变） */

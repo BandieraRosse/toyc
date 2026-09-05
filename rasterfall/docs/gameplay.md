@@ -1,7 +1,7 @@
 # 玩法、会话、地图与 AI
 
 > 文档更新：2026-09-05
-> 源码核对基线：工作区（敌人目录已移除 COMMON/HEAVY 基础类型，普通敌人直接追击，特感保留独立技能逻辑；投射物/燃烧区携带 actor owner；本地预测 body 位置驱动 camera）
+> 源码核对基线：工作区（本地玩家正式占用 `toy_game.actors[0]`，旧玩家字段仅作单向兼容镜像；AI 从槽位 1 起分配；投射物/燃烧区携带 actor owner；本地预测 body 位置驱动 camera）
 
 ## 三层职责
 
@@ -13,6 +13,12 @@
 
 `src/rasterfall_ai.c` + `include/rasterfall_ai.h` 管理可插拔 AI 注册表，把 observation 交给控制器并
 将 decision 同步回游戏；具体内建战斗和移动规则大量仍在 `lib/game.c` 与 session 的托管 AI 中。
+
+本地玩家现在是 `toy_game.actors[TOY_GAME_PLAYER_ACTOR_INDEX]`（当前为槽位 0）的正式
+`TOY_GAME_ACTOR_PLAYER`。位置、生命、空中状态、库存/武器计时、统计和动画持久化在 actor 中。
+由于旧规则入口和网络展示仍读取顶层玩家字段，`toy_game_mirror_player_from_actor()` 在进入兼容
+路径前复制 actor 到 legacy，规则执行结束再由 `toy_game_mirror_actor_from_player()` 收回；该
+镜像是迁移边界，不是第二个状态源。AI 分配从槽位 1 开始，网络协议和远端 actor 槽位不变。
 
 ## 地图链路
 

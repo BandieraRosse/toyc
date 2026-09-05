@@ -97,7 +97,7 @@
 #define TOY_GAME_AI_RETURN_SPEED TOY_CONFIG_AI_RETURN_SPEED
 #define TOY_GAME_AI_DEPLOY_RADIUS 180
 #define TOY_GAME_MAX_FLAG_SLOTS 4
-#define TOY_GAME_PLAYER_ACTOR_INDEX (-1)
+#define TOY_GAME_PLAYER_ACTOR_INDEX 0
 
 #define TOY_GAME_KEY_RELOAD     19      /* evdev KEY_R */
 #define TOY_GAME_KEY_SLOT_1     2       /* evdev KEY_1：主武器槽 */
@@ -699,6 +699,16 @@ struct toy_game {
     struct toy_game_player_impulse_event
         player_impulse_events[TOY_GAME_MAX_EVENTS];
 };
+
+/* The local player is a real actor.  These two helpers are the temporary
+ * compatibility boundary for rules that still use the legacy player fields.
+ * The actor is the persistent source of truth; the mirror is one-way at each
+ * boundary and must not be used as a second gameplay state. */
+struct toy_game_actor *toy_game_local_player_actor(struct toy_game *g);
+const struct toy_game_actor *toy_game_local_player_actor_const(
+    const struct toy_game *g);
+void toy_game_mirror_player_from_actor(struct toy_game *g);
+void toy_game_mirror_actor_from_player(struct toy_game *g);
 
 void toy_game_init(struct toy_game *g, uint64_t seed);      /* 初始化/重开共用 */
 void toy_game_emit_event(struct toy_game *g, int event);

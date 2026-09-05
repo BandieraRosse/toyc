@@ -4286,6 +4286,7 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
          * merged conservatively, and host-simulated consumables are copied
          * authoritatively so purchases and uses both reach the client. */
         net_apply_own_inventory(net, &session->game_state, own);
+        toy_game_mirror_actor_from_player(&session->game_state);
         session->game_state.throw_timer_ms = own->throw_timer_ms;
         session->game_state.wave = net->snapshot_world_wave;
         session->game_state.to_spawn = net->snapshot_world_to_spawn;
