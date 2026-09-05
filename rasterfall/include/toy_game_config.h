@@ -131,19 +131,11 @@
 #define TOY_CONFIG_AWP_RANGE                 23000  /* 最大射程 */
 #define TOY_CONFIG_AWP_ALERT_RANGE           23000  /* AI 警觉范围 */
 
-/* Common enemy tuning. */
-#define TOY_CONFIG_COMMON_HP                   50  /* 生命值 */
-#define TOY_CONFIG_COMMON_SPEED_MIN           38  /* 最低速度 */
-#define TOY_CONFIG_COMMON_SPEED_MAX           56  /* 最高速度 */
-#define TOY_CONFIG_COMMON_BITE_DAMAGE          2  /* 咬伤 */
+/* Pursuit enemy tuning. */
 #define TOY_CONFIG_PURSUIT_COMMON_HP           50  /* 生命值 */
 #define TOY_CONFIG_PURSUIT_COMMON_SPEED_MIN   66  /* 最低速度 */
 #define TOY_CONFIG_PURSUIT_COMMON_SPEED_MAX   82  /* 最高速度 */
 #define TOY_CONFIG_PURSUIT_COMMON_BITE_DAMAGE  2  /* 咬伤 */
-#define TOY_CONFIG_HEAVY_HP                  200  /* 生命值 */
-#define TOY_CONFIG_HEAVY_SPEED_MIN            24  /* 最低速度 */
-#define TOY_CONFIG_HEAVY_SPEED_MAX            34  /* 最高速度 */
-#define TOY_CONFIG_HEAVY_BITE_DAMAGE           4  /* 咬伤 */
 #define TOY_CONFIG_PURSUIT_HEAVY_HP          200  /* 生命值 */
 #define TOY_CONFIG_PURSUIT_HEAVY_SPEED_MIN    30  /* 最低速度 */
 #define TOY_CONFIG_PURSUIT_HEAVY_SPEED_MAX    42  /* 最高速度 */

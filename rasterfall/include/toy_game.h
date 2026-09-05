@@ -209,9 +209,7 @@ enum toy_game_ai_class {
 };
 
 enum toy_game_enemy_type {
-    TOY_GAME_ENEMY_COMMON,
-    TOY_GAME_ENEMY_PURSUIT_COMMON,   /* PURSUIT_COMMON */
-    TOY_GAME_ENEMY_HEAVY,
+    TOY_GAME_ENEMY_PURSUIT_COMMON,
     TOY_GAME_ENEMY_PURSUIT_HEAVY,
     TOY_GAME_ENEMY_PURSUIT_FAST,
     TOY_GAME_ENEMY_SMOKER,
@@ -223,9 +221,7 @@ enum toy_game_enemy_type {
 /* Enemy catalog indexes are local implementation details.  These IDs are
  * stable across map data and network packets. */
 enum toy_game_enemy_id {
-    TOY_GAME_ENEMY_ID_COMMON = 100,
     TOY_GAME_ENEMY_ID_PURSUIT_COMMON = 110,
-    TOY_GAME_ENEMY_ID_HEAVY = 120,
     TOY_GAME_ENEMY_ID_PURSUIT_HEAVY = 130,
     TOY_GAME_ENEMY_ID_PURSUIT_FAST = 140,
     TOY_GAME_ENEMY_ID_SMOKER = 200,

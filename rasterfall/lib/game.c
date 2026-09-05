@@ -110,12 +110,7 @@ static const struct toy_game_weapon_info weapon_table[TOY_GAME_WEAPON_COUNT] = {
 
 static const struct toy_game_enemy_info enemy_table[TOY_GAME_ENEMY_TYPE_COUNT] = {
     /* max hp, speed range, bite damage, model, base color */
-    { TOY_CONFIG_COMMON_HP, TOY_CONFIG_COMMON_SPEED_MIN, TOY_CONFIG_COMMON_SPEED_MAX, TOY_CONFIG_COMMON_BITE_DAMAGE, 0, RF_COLOR_ENEMY_COMMON, TOY_GAME_ENEMY_ID_COMMON, "COMMON", TOY_GAME_ENEMY_ABILITY_NONE },
-    /* PURSUIT_COMMON is the ordinary tracking zombie.  Its numeric content
-     * ID remains 110 for save/network compatibility; PURSUIT_FAST is the
-     * faster red variant. */
     { TOY_CONFIG_PURSUIT_COMMON_HP, TOY_CONFIG_PURSUIT_COMMON_SPEED_MIN, TOY_CONFIG_PURSUIT_COMMON_SPEED_MAX, TOY_CONFIG_PURSUIT_COMMON_BITE_DAMAGE, 1, RF_COLOR_ENEMY_PURSUIT_COMMON, TOY_GAME_ENEMY_ID_PURSUIT_COMMON, "PURSUIT_COMMON", TOY_GAME_ENEMY_ABILITY_NONE },
-    { TOY_CONFIG_HEAVY_HP, TOY_CONFIG_HEAVY_SPEED_MIN, TOY_CONFIG_HEAVY_SPEED_MAX, TOY_CONFIG_HEAVY_BITE_DAMAGE, 2, RF_COLOR_ENEMY_HEAVY, TOY_GAME_ENEMY_ID_HEAVY, "HEAVY", TOY_GAME_ENEMY_ABILITY_NONE },
     { TOY_CONFIG_PURSUIT_HEAVY_HP, TOY_CONFIG_PURSUIT_HEAVY_SPEED_MIN, TOY_CONFIG_PURSUIT_HEAVY_SPEED_MAX, TOY_CONFIG_PURSUIT_HEAVY_BITE_DAMAGE, 2, RF_COLOR_ENEMY_PURSUIT_HEAVY, TOY_GAME_ENEMY_ID_PURSUIT_HEAVY, "PURSUIT_HEAVY", TOY_GAME_ENEMY_ABILITY_NONE },
     { TOY_CONFIG_PURSUIT_FAST_HP, TOY_CONFIG_PURSUIT_FAST_SPEED_MIN, TOY_CONFIG_PURSUIT_FAST_SPEED_MAX, TOY_CONFIG_PURSUIT_FAST_BITE_DAMAGE, 1, RF_COLOR_ENEMY_PURSUIT_FAST, TOY_GAME_ENEMY_ID_PURSUIT_FAST, "PURSUIT_FAST", TOY_GAME_ENEMY_ABILITY_NONE },
     { TOY_CONFIG_SMOKER_HP, TOY_CONFIG_SMOKER_SPEED_MIN, TOY_CONFIG_SMOKER_SPEED_MAX, TOY_CONFIG_SMOKER_BITE_DAMAGE, 1, RF_COLOR_ENEMY_SMOKER, TOY_GAME_ENEMY_ID_SMOKER, "SMOKER", TOY_GAME_ENEMY_ABILITY_SMOKER_TONGUE },
@@ -255,7 +250,7 @@ const struct toy_game_enemy_info *toy_game_enemy_info(int type)
     const struct toy_game_enemy_info *info =
         toy_game_enemy_info_or_null(type);
     if (!info)
-        return &enemy_table[TOY_GAME_ENEMY_COMMON];
+        return &enemy_table[TOY_GAME_ENEMY_PURSUIT_COMMON];
     return info;
 }
 
@@ -1684,7 +1679,8 @@ static void init_enemy_stats(struct toy_game *g, struct toy_game_enemy *e,
                              int type)
 {
     const struct toy_game_enemy_info *info = toy_game_enemy_info(type);
-    e->type = type >= 0 && type < TOY_GAME_ENEMY_TYPE_COUNT ? type : 0;
+    e->type = type >= 0 && type < TOY_GAME_ENEMY_TYPE_COUNT ? type :
+              TOY_GAME_ENEMY_PURSUIT_COMMON;
     e->speed = rand_range(g, info->speed_min, info->speed_max);
     e->hp = info->max_hp;
     e->ability.special_timer_ms = 0;
@@ -1869,9 +1865,9 @@ static int try_spawn(struct toy_game *g)
                      slot % 6 == 0)
                 type = TOY_GAME_ENEMY_SMOKER;
             else
-                type = slot % 10 == 0 ? TOY_GAME_ENEMY_HEAVY :
+                type = slot % 10 == 0 ? TOY_GAME_ENEMY_PURSUIT_HEAVY :
                        slot % 5 == 0 ? TOY_GAME_ENEMY_PURSUIT_COMMON :
-                       TOY_GAME_ENEMY_COMMON;
+                       TOY_GAME_ENEMY_PURSUIT_COMMON;
             init_enemy_stats(g, &g->enemies[slot], type);
         }
         g->enemies[slot].bite_cooldown_ms = 0;
@@ -1901,7 +1897,7 @@ void toy_game_place_enemy(struct toy_game *g, int x, int z)
     g->enemies[slot].active = 1;
     g->enemies[slot].x = x;
     g->enemies[slot].z = z;
-    init_enemy_stats(g, &g->enemies[slot], TOY_GAME_ENEMY_COMMON);
+    init_enemy_stats(g, &g->enemies[slot], TOY_GAME_ENEMY_PURSUIT_COMMON);
     g->enemies[slot].bite_cooldown_ms = 0;
     g->enemies[slot].flash = 0;
     g->enemies[slot].hurt = 0;
@@ -4055,8 +4051,7 @@ int toy_game_apply_reported_hit(struct toy_game *g,
     else if (e->type == TOY_GAME_ENEMY_SMOKER ||
              e->type == TOY_GAME_ENEMY_CHARGER)
         g->money += TOY_CONFIG_MONEY_SPECIAL;
-    else if (e->type == TOY_GAME_ENEMY_HEAVY ||
-             e->type == TOY_GAME_ENEMY_PURSUIT_HEAVY)
+    else if (e->type == TOY_GAME_ENEMY_PURSUIT_HEAVY)
         g->money += TOY_CONFIG_MONEY_HEAVY;
     else if (e->type == TOY_GAME_ENEMY_PURSUIT_FAST)
         g->money += TOY_CONFIG_MONEY_FAST;

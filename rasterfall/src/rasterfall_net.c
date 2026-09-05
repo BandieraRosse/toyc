@@ -1396,7 +1396,7 @@ static void decode_enemy(const unsigned char *p, struct rasterfall_net_enemy *e)
     e->index = p[47];
     e->active = p[0];
     e->type = toy_game_enemy_from_content_id((int)p[1]);
-    if (e->type < 0) e->type = TOY_GAME_ENEMY_COMMON;
+    if (e->type < 0) e->type = TOY_GAME_ENEMY_PURSUIT_COMMON;
     e->ai_state = p[2];
     e->hp = get_i16(p + 3);
     e->x = (int)get_u32(p + 5); e->z = (int)get_u32(p + 9);

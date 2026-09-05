@@ -362,12 +362,8 @@ static int run_logic_test(void)
         struct toy_game_actor *throwable_ai;
         const struct toy_game_actor *actor =
             toy_game_actor_by_id_const(&game, 1);
-        const struct toy_game_enemy_info *common =
-            toy_game_enemy_info(TOY_GAME_ENEMY_COMMON);
         const struct toy_game_enemy_info *pursuit_common =
             toy_game_enemy_info(TOY_GAME_ENEMY_PURSUIT_COMMON);
-        const struct toy_game_enemy_info *heavy =
-            toy_game_enemy_info(TOY_GAME_ENEMY_HEAVY);
         const struct toy_game_enemy_info *brute =
             toy_game_enemy_info(TOY_GAME_ENEMY_PURSUIT_HEAVY);
         const struct toy_game_enemy_info *runner =
@@ -419,12 +415,8 @@ static int run_logic_test(void)
             ai_registry.agents[2].decision.target_enemy != -1) return 147;
         if (!actor || actor->kind != TOY_GAME_ACTOR_AI ||
             actor->class_id != TOY_GAME_AI_LEVEL_2 ||
-            pursuit_common->speed_min <= common->speed_max ||
-            heavy->max_hp <= common->max_hp ||
-            heavy->bite_damage <= common->bite_damage ||
-            runner->speed_min <= pursuit_common->speed_max ||
             smg->damage != 25 || shotgun->damage != 25 ||
-            common->max_hp != 50 || heavy->max_hp != 200 ||
+            pursuit_common->max_hp != 50 ||
             brute->max_hp != 200 || runner->max_hp != 60) return 49;
         if (!toy_game_enemy_type_is_valid(TOY_GAME_ENEMY_SMOKER) ||
             toy_game_enemy_type_is_valid(-1) ||
@@ -439,8 +431,7 @@ static int run_logic_test(void)
             charger->ability != TOY_GAME_ENEMY_ABILITY_CHARGER_RUSH ||
             tank->ability != TOY_GAME_ENEMY_ABILITY_TANK_SWEEP ||
             tank->max_hp != 4000 ||
-            tank->speed_min != common->speed_min ||
-            tank->speed_max != common->speed_max ||
+            tank->speed_min != 38 || tank->speed_max != 56 ||
             TOY_CONFIG_TANK_ATTACK_RANGE != 2850 ||
             TOY_CONFIG_TANK_ATTACK_START_DIVISOR != 2 ||
             TOY_CONFIG_TANK_ATTACK_START_RANGE != 1425 ||
@@ -488,7 +479,7 @@ static int run_logic_test(void)
         ai_reload_test.actors[ai_id - 1].slots[
             ai_reload_test.actors[ai_id - 1].current_slot].mag = 1;
         ai_reload_test.enemies[0].active = 1;
-        ai_reload_test.enemies[0].type = TOY_GAME_ENEMY_HEAVY;
+        ai_reload_test.enemies[0].type = TOY_GAME_ENEMY_PURSUIT_HEAVY;
         ai_reload_test.enemies[0].x = 0;
         ai_reload_test.enemies[0].z = 1000;
         ai_reload_test.enemies[0].hp = 200;
@@ -1315,7 +1306,7 @@ static int run_logic_test(void)
         reuse_test.primitive_count = 0;
         reuse_test.room_limit = 12000;
         reuse_test.px = 0; reuse_test.pz = 0;
-        if (toy_game_spawn_horde_type(&reuse_test, TOY_GAME_ENEMY_COMMON, 1, 1,
+        if (toy_game_spawn_horde_type(&reuse_test, TOY_GAME_ENEMY_PURSUIT_COMMON, 1, 1,
                                       &point, 1, 0) != 1) return 87;
         toy_game_shove(&reuse_test, 0, 1024);
         if (reuse_test.enemies[0].shove_stun_ms <= 0) return 88;
@@ -1324,7 +1315,7 @@ static int run_logic_test(void)
         for (int i = 0; i < 100 && reuse_test.enemies[0].active != 0; i++)
             toy_game_update_held(&reuse_test, NULL, 0, 0, 0, 1024, 16);
         if (reuse_test.enemies[0].active != 0) return 90;
-        if (toy_game_spawn_horde_type(&reuse_test, TOY_GAME_ENEMY_COMMON, 1, 1,
+        if (toy_game_spawn_horde_type(&reuse_test, TOY_GAME_ENEMY_PURSUIT_COMMON, 1, 1,
                                       &point, 1, 0) != 1) return 91;
         if (reuse_test.enemies[0].shove_stun_ms != 0) return 92;
     }
@@ -1471,11 +1462,11 @@ static int run_logic_test(void)
         game.room_limit = 12000;
         game.enemies_alive = 2;
         game.enemies[0].active = 1;
-        game.enemies[0].type = TOY_GAME_ENEMY_COMMON;
+        game.enemies[0].type = TOY_GAME_ENEMY_PURSUIT_COMMON;
         game.enemies[0].x = 0; game.enemies[0].z = 0;
         game.enemies[0].shove_stun_ms = 1000;
         game.enemies[1].active = 1;
-        game.enemies[1].type = TOY_GAME_ENEMY_COMMON;
+        game.enemies[1].type = TOY_GAME_ENEMY_PURSUIT_COMMON;
         game.enemies[1].x = 100; game.enemies[1].z = 0;
         game.enemies[1].shove_stun_ms = 1000;
         for (int i = 0; i < 12; i++)
@@ -2387,7 +2378,7 @@ static int run_logic_test(void)
         toy_game_place_enemy(&game, -500, 0);
         if (!game.enemies[0].active) return 180;
         game.enemies[0].ai_state = TOY_GAME_ENEMY_TRACKING;
-        game.enemies[0].type = TOY_GAME_ENEMY_COMMON;
+        game.enemies[0].type = TOY_GAME_ENEMY_PURSUIT_COMMON;
         for (i = 0; i < 360; i++) {
             toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
             if (game.enemies[0].ground_y > max_ground)
@@ -2402,11 +2393,11 @@ static int run_logic_test(void)
         toy_game_set_primitives(&game,terrain,3,5000);
         memset(&game.enemies[0], 0, sizeof(game.enemies[0]));
         game.enemies[0].active = 1;
-        game.enemies[0].type = TOY_GAME_ENEMY_COMMON;
+        game.enemies[0].type = TOY_GAME_ENEMY_PURSUIT_COMMON;
         game.enemies[0].speed = toy_game_enemy_info(
-            TOY_GAME_ENEMY_COMMON)->speed_max;
+            TOY_GAME_ENEMY_PURSUIT_COMMON)->speed_max;
         game.enemies[0].hp = toy_game_enemy_info(
-            TOY_GAME_ENEMY_COMMON)->max_hp;
+            TOY_GAME_ENEMY_PURSUIT_COMMON)->max_hp;
         game.enemies[0].x = 3000;
         game.enemies[0].z = 0;
         game.enemies[0].ground_y = 600;

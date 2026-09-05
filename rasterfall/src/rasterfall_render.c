@@ -4418,8 +4418,7 @@ static int render_enemies(struct toy_renderer *renderer,
         } else {
             const struct toy_game_enemy_info *info = toy_game_enemy_info(e->type);
             color = info->color;
-            if (e->type == TOY_GAME_ENEMY_HEAVY ||
-                e->type == TOY_GAME_ENEMY_PURSUIT_HEAVY) scale = 1350;
+            if (e->type == TOY_GAME_ENEMY_PURSUIT_HEAVY) scale = 1350;
             if (info->ability == TOY_GAME_ENEMY_ABILITY_SMOKER_TONGUE)
                 color = RF_COLOR_ENEMY_SMOKER;
             if (info->ability == TOY_GAME_ENEMY_ABILITY_CHARGER_RUSH) {
@@ -4459,8 +4458,7 @@ static int render_enemies(struct toy_renderer *renderer,
         else if (toy_game_enemy_info(e->type)->ability ==
                 TOY_GAME_ENEMY_ABILITY_SMOKER_TONGUE)
             pixels += render_smoker_enemy(renderer, camera, e, scale, color);
-        else if (e->type == TOY_GAME_ENEMY_HEAVY ||
-            e->type == TOY_GAME_ENEMY_PURSUIT_HEAVY || (i & 1) == 0)
+        else if (e->type == TOY_GAME_ENEMY_PURSUIT_HEAVY || (i & 1) == 0)
             pixels += render_block_enemy(renderer, camera, e, scale, color);
         else
             pixels += render_round_enemy(renderer, camera, e, scale, color);

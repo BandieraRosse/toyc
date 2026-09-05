@@ -1,7 +1,7 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-05
-> 源码核对基线：工作区（通用 emitter preset table，FIRE/EXPLOSION 已统一，CAMERA_SHAKE 支持开火后座与受击摇晃）
+> 源码核对基线：工作区（敌人目录已移除 COMMON/HEAVY 基础类型，通用 emitter preset table，FIRE/EXPLOSION 已统一）
 
 本目录面向接手 Rasterfall 任务的编码代理。目标不是介绍玩法，而是先把问题归到正确的
 状态所有者和文件，再开始搜索。命令、资源导入方法和用户可见特性仍以

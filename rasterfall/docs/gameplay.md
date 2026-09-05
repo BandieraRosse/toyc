@@ -1,7 +1,7 @@
 # 玩法、会话、地图与 AI
 
-> 文档更新：2026-09-04
-> 源码核对基线：工作区（开发者区武器 pickup 直接解锁/装备，effect event / presentation cue）
+> 文档更新：2026-09-05
+> 源码核对基线：工作区（敌人目录已移除 COMMON/HEAVY 基础类型，仅保留追击型、快速型和特感）
 
 ## 三层职责
 
@@ -31,6 +31,10 @@
 - 商店、剧情、队友雇佣、托管玩法：`rasterfall_session.c` 的 `shop`、`campaign`、`managed_ai` 区域。
 - 角色外观选择：`rasterfall_character.c`；角色动作状态仍由 `toy_game_actor.animation` 等字段拥有。
 - HUD 显示错误：先确认 `rasterfall_hud_state` 在主循环中是否正确填充，再改 `rasterfall_hud.c`。
+
+当前敌人目录不再包含独立的 `COMMON` 和 `HEAVY` 基础类型；普通刷怪统一使用
+`PURSUIT_COMMON`，重型刷怪统一使用 `PURSUIT_HEAVY`。`wave_waiting_common` 与
+`wave_waiting_heavy` 仍是追击型波次的统计字段，不代表已删除的敌人类型。
 
 开发者区域武器桌的 pickup 由 `src/rasterfall_session.c` 按地图坐标识别，直接解锁并装备；普通
 商店和其他区域的武器 pickup 仍经过 `toy_game_weapon_unlocked` 检查，购买流程不变。
