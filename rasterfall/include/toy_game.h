@@ -398,6 +398,7 @@ struct toy_game_slot {
 #define TOY_GAME_MAX_PROJECTILES 16
 struct toy_game_projectile {
     int active, kind;
+    int owner_actor_id;          /* 0=host player, 100+ = remote actor */
     int x, z, vx, vz, vy;
     int fuse_ms;
     int blink_timer_ms;             /* 距离下一次红灯/滴声 */
@@ -409,6 +410,7 @@ struct toy_game_projectile {
 
 struct toy_game_burn_zone {
     int active;
+    int owner_actor_id;          /* same ownership namespace as projectiles */
     int x, z;
     int remaining_ms;
     int tick_ms;
@@ -797,6 +799,10 @@ int  toy_game_update_actor_weapon_held(
 int  toy_game_actor_use_special(struct toy_game *g,
                                 struct toy_game_actor *actor,
                                 int sy, int cy);
+int  toy_game_actor_throwable(struct toy_game *g,
+                              struct toy_game_actor *actor,
+                              int sy, int cy, int pitch_sy, int pitch_cy,
+                              int view_y);
 int  toy_game_execute_actor_command(
     struct toy_game *g, struct toy_game_actor *actor,
     const struct toy_game_actor_command *command,

@@ -1,7 +1,7 @@
 # 运行时与主循环
 
 > 文档更新：2026-09-05
-> 源码核对基线：工作区（渲染镜头复制后应用 CAMERA_SHAKE，受击摇晃由展示态 HP 下降触发）
+> 源码核对基线：工作区（渲染镜头复制后应用 CAMERA_SHAKE，受击摇晃由展示态 HP 下降触发；本地 body 位置驱动 camera）
 
 ## 状态所有者
 
@@ -24,6 +24,10 @@
 主循环先轮询平台事件和网络，再保留按键边沿；固定 16 ms 逻辑步中构造
 `rasterfall_command`，交给 session 或客户端预测路径；之后同步音频/特效并渲染。排查“偶发吞键”
 时查看 `pending_key_edges`，排查帧率相关玩法差异时查看 accumulator 和逻辑步，而不是只看渲染帧。
+
+本地 session/client prediction 先更新 gameplay body 位置，再由
+`session_sync_special_motion()` 派生 camera 的位置和高度；camera 的方向仍作为输入视角供移动
+与瞄准使用。渲染阶段可复制 camera 叠加纯展示效果，但不得回写 gameplay 位置。
 
 ## 常见任务落点
 

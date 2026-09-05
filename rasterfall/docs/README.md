@@ -1,7 +1,7 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-05
-> 源码核对基线：工作区（敌人目录已移除 COMMON/HEAVY 基础类型，普通敌人 AI 已收敛为直接追击，特感保留独立技能逻辑，敌人 Content ID 为 0-based 连续编号；程序化敌人身体已迁移为统一几何组件描述）
+> 源码核对基线：工作区（敌人目录已移除 COMMON/HEAVY 基础类型，普通敌人 AI 已收敛为直接追击，特感保留独立技能逻辑，敌人 Content ID 为 0-based 连续编号；投射物/燃烧区携带 actor owner；本地预测 body 位置驱动 camera）
 
 本目录面向接手 Rasterfall 任务的编码代理。目标不是介绍玩法，而是先把问题归到正确的
 状态所有者和文件，再开始搜索。命令、资源导入方法和用户可见特性仍以
@@ -47,7 +47,8 @@ toy_renderer / window / audio    仓库公共平台层
 受击时由展示态生命值下降触发本地 `CAMERA_SHAKE` preset；其参数和最短间隔位于
 `include/rasterfall_effects.h`。它不进入 `toy_game` 的权威状态同步。
 
-网络主机运行权威会话；客户端通过 `rasterfall_net.c` 的快照、预测与校正形成展示状态。
+网络主机运行权威会话；客户端通过 `rasterfall_net.c` 的快照、预测与校正形成展示状态。炸弹和
+Molotov 的世界实体显式携带 `owner_actor_id`，本地预测 body 位置再派生 camera 展示位置。
 主机和客户端的开火展示都经 `sync_network_fire_effects()` 适配到同一 runtime，并按 fire sequence
 抑制重复事件。不要把纯视觉状态塞进 `toy_game`，也不要让渲染器修改权威玩法结果。
 

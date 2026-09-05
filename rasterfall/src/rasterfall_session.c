@@ -412,12 +412,11 @@ static void session_move_player(struct rasterfall_session *session,
               camera->cy * command->move_strafe) * RASTERFALL_MOVE_STEP / 1024;
     int dz = (camera->cy * command->move_forward -
               camera->sy * command->move_strafe) * RASTERFALL_MOVE_STEP / 1024;
-    int next_x = camera->x + dx;
-    int next_z = camera->z + dz;
+    int next_x = session->game_state.px + dx;
+    int next_z = session->game_state.pz + dz;
     if (session->game_state.player_airborne_ms <= 0) {
         if (toy_game_move_player_sliding(&session->game_state, dx, dz)) {
-            camera->x = session->game_state.px;
-            camera->z = session->game_state.pz;
+            /* Camera position is derived below from the predicted player. */
         }
         return;
     }
@@ -428,15 +427,15 @@ static void session_move_player(struct rasterfall_session *session,
         if (!toy_game_position_blocked_at_height(
                 &session->game_state, next_x, next_z,
                 RASTERFALL_PLAYER_RADIUS, height)) {
-            camera->x = next_x;
-            camera->z = next_z;
+            session->game_state.px = next_x;
+            session->game_state.pz = next_z;
             return;
         }
         blocks_x = dx && toy_game_position_blocked_at_height(
-            &session->game_state, next_x, camera->z,
+            &session->game_state, next_x, session->game_state.pz,
             RASTERFALL_PLAYER_RADIUS, height);
         blocks_z = dz && toy_game_position_blocked_at_height(
-            &session->game_state, camera->x, next_z,
+            &session->game_state, session->game_state.px, next_z,
             RASTERFALL_PLAYER_RADIUS, height);
         if (!blocks_x && !blocks_z) {
             int abs_x = dx < 0 ? -dx : dx;
@@ -444,15 +443,16 @@ static void session_move_player(struct rasterfall_session *session,
             if (abs_x >= abs_z) blocks_x = 1;
             else blocks_z = 1;
         }
-        if (blocks_x) next_x = camera->x;
-        if (blocks_z) next_z = camera->z;
-        if ((next_x != camera->x || next_z != camera->z) &&
+        if (blocks_x) next_x = session->game_state.px;
+        if (blocks_z) next_z = session->game_state.pz;
+        if ((next_x != session->game_state.px ||
+             next_z != session->game_state.pz) &&
             toy_game_position_blocked_at_height(
                 &session->game_state, next_x, next_z,
                 RASTERFALL_PLAYER_RADIUS, height))
             return;
-        camera->x = next_x;
-        camera->z = next_z;
+        session->game_state.px = next_x;
+        session->game_state.pz = next_z;
     }
 }
 
@@ -490,11 +490,10 @@ static void session_sync_special_motion(struct rasterfall_session *session,
                                         struct camera *camera)
 {
     if (!session || !camera) return;
-    if (session->game_state.player_control_disabled ||
-        session->game_state.player_airborne_ms > 0) {
-        camera->x = session->game_state.px;
-        camera->z = session->game_state.pz;
-    }
+    /* The gameplay/prediction state owns the body position.  Camera keeps
+     * orientation and presentation height, and is rebuilt from that state. */
+    camera->x = session->game_state.px;
+    camera->z = session->game_state.pz;
     camera->y = RASTERFALL_STANDING_CAMERA_Y +
                 session->game_state.player_ground_y +
                 session->game_state.player_airborne_y;
@@ -2254,8 +2253,6 @@ void rasterfall_session_step(struct rasterfall_session *session,
         rasterfall_camera_rotate(camera, command->turn, command->pitch);
     session_update_smooth_turn(session, camera);
     session_update_carried_flag(session, camera);
-    session->game_state.px = camera->x;
-    session->game_state.pz = camera->z;
     toy_game_set_player_pitch(&session->game_state, camera->pitch_sy,
                               camera->pitch_cy, camera->y);
     toy_game_set_player_moving(&session->game_state,
@@ -2384,11 +2381,7 @@ static void session_step_client_mode(struct rasterfall_session *session,
     if (command->turn || command->pitch)
         rasterfall_camera_rotate(camera, command->turn, command->pitch);
     session_update_carried_flag(session, camera);
-    session->game_state.px = camera->x;
-    session->game_state.pz = camera->z;
     toy_game_update_player_special_control(&session->game_state, dt_ms);
-    camera->x = session->game_state.px;
-    camera->z = session->game_state.pz;
     toy_game_set_player_pitch(&session->game_state, camera->pitch_sy,
                               camera->pitch_cy, camera->y);
     toy_game_set_player_moving(&session->game_state,

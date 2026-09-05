@@ -4007,7 +4007,77 @@ int toy_game_actor_use_special(struct toy_game *g,
     return 1;
 }
 
-static void toy_game_start_burn(struct toy_game *g, int x, int z)
+int toy_game_actor_throwable(struct toy_game *g,
+                             struct toy_game_actor *actor,
+                             int sy, int cy, int pitch_sy, int pitch_cy,
+                             int view_y)
+{
+    struct toy_game_slot *s;
+    struct toy_game_projectile *p;
+    int i;
+    if (!g || !actor || !actor->active ||
+        actor->state != TOY_GAME_ACTOR_ALIVE ||
+        g->state != TOY_GAME_PLAYING || actor->current_slot < 0 ||
+        actor->current_slot >= TOY_GAME_WEAPON_SLOTS)
+        return 0;
+    s = &actor->slots[actor->current_slot];
+    if ((s->weapon != TOY_GAME_WEAPON_BOMB &&
+         s->weapon != TOY_GAME_WEAPON_MOLOTOV) || s->mag <= 0 ||
+        actor->throw_timer_ms > 0 || actor->weapon_switch_timer_ms > 0)
+        return 0;
+    for (i = 0; i < TOY_GAME_MAX_PROJECTILES; i++)
+        if (!g->projectiles[i].active) break;
+    if (i == TOY_GAME_MAX_PROJECTILES) return 0;
+    s->mag--;
+    actor->throw_timer_ms = TOY_CONFIG_THROW_COOLDOWN_MS;
+    p = &g->projectiles[i];
+    memset(p, 0, sizeof(*p));
+    p->active = 1;
+    p->kind = s->weapon;
+    p->owner_actor_id = actor->actor_id;
+    p->x = actor->x + (long long)sy * pitch_cy * 250 / (1024 * 1024);
+    p->z = actor->z + (long long)cy * pitch_cy * 250 / (1024 * 1024);
+    p->vx = (int)((long long)sy * pitch_cy * TOY_CONFIG_THROW_SPEED /
+                  (1024 * 1024));
+    p->vz = (int)((long long)cy * pitch_cy * TOY_CONFIG_THROW_SPEED /
+                  (1024 * 1024));
+    p->vy = (int)((long long)pitch_sy * TOY_CONFIG_THROW_SPEED / 1024);
+    p->y = view_y + 900 + pitch_sy * 250 / 1024;
+    toy_game_actor_set_animation(actor, TOY_GAME_ANIM_THROW);
+    push_event(g, TOY_GAME_EV_SHOOT);
+    /* A consumed throwable is never left selected. */
+    if (actor->slots[0].weapon >= 0)
+        actor->current_slot = 0;
+    else if (actor->slots[1].weapon >= 0)
+        actor->current_slot = 1;
+    return 1;
+}
+
+static struct toy_game_actor *toy_game_throwable_owner(
+    struct toy_game *g, int owner_actor_id)
+{
+    if (!g || owner_actor_id < 100) return NULL;
+    return toy_game_actor_by_id(g, owner_actor_id);
+}
+
+static void toy_game_add_throwable_stats(struct toy_game *g,
+                                         int owner_actor_id, int damage,
+                                         int kill)
+{
+    struct toy_game_actor *owner;
+    if (!g) return;
+    owner = toy_game_throwable_owner(g, owner_actor_id);
+    if (owner) {
+        owner->throwable_damage_dealt += damage;
+        if (kill) owner->kills++;
+    } else {
+        g->throwable_damage_dealt += damage;
+        if (kill) g->kills++;
+    }
+}
+
+static void toy_game_start_burn(struct toy_game *g, int x, int z,
+                                int owner_actor_id)
 {
     int i;
     struct toy_game_burn_zone *zone = NULL;
@@ -4019,6 +4089,7 @@ static void toy_game_start_burn(struct toy_game *g, int x, int z)
     }
     if (!zone) zone = &g->burn_zones[0];
     zone->active = 1;
+    zone->owner_actor_id = owner_actor_id;
     zone->x = x; zone->z = z;
     zone->remaining_ms = TOY_CONFIG_MOLOTOV_BURN_MS;
     zone->tick_ms = TOY_CONFIG_MOLOTOV_TICK_MS;
@@ -4048,13 +4119,15 @@ static void toy_game_update_burn_zones(struct toy_game *g, int dt_ms)
                             e->hp : TOY_CONFIG_MOLOTOV_DAMAGE;
                 e->hp -= TOY_CONFIG_MOLOTOV_DAMAGE;
                 e->hurt = 180;
-                g->throwable_damage_dealt += inflicted;
+                toy_game_add_throwable_stats(g, zone->owner_actor_id,
+                                              inflicted, 0);
                 if (e->hp <= 0) {
                     e->hp = 0;
                     e->active = 2;
                     e->dying_ms = TOY_GAME_DYING_MS;
                     g->enemies_alive--;
-                    g->kills++;
+                    toy_game_add_throwable_stats(g, zone->owner_actor_id,
+                                                  0, 1);
                     push_event(g, TOY_GAME_EV_KILL);
                 }
             }
@@ -4064,7 +4137,8 @@ static void toy_game_update_burn_zones(struct toy_game *g, int dt_ms)
     }
 }
 
-static void toy_game_explode(struct toy_game *g, int x, int z, int bomb)
+static void toy_game_explode(struct toy_game *g, int x, int z, int bomb,
+                             int owner_actor_id)
 {
     int i;
     int damage = bomb ? TOY_CONFIG_BOMB_DAMAGE : TOY_CONFIG_MELEE_DAMAGE;
@@ -4082,12 +4156,13 @@ static void toy_game_explode(struct toy_game *g, int x, int z, int bomb)
             int inflicted = e->hp < damage ? e->hp : damage;
             if (bomb && toy_game_apply_entity_impact(g, TOY_GAME_ENTITY_ENEMY, i,
                                                      (int)dx, (int)dz, damage)) {
-                g->throwable_damage_dealt += inflicted;
+                toy_game_add_throwable_stats(g, owner_actor_id, inflicted, 0);
             }
         }
         if (e->active == 2) {
             push_event(g, TOY_GAME_EV_KILL);
-            g->enemies_alive--; g->kills++;
+            g->enemies_alive--;
+            toy_game_add_throwable_stats(g, owner_actor_id, 0, 1);
         }
     }
     /* Bombs damage players and knock friendly AI away; the local player is
@@ -4114,7 +4189,7 @@ static void toy_game_explode(struct toy_game *g, int x, int z, int bomb)
         push_event(g, TOY_GAME_EV_SHOVE_HIT);
         push_event(g, TOY_GAME_EV_BOMB_EXPLODE);
     } else {
-        toy_game_start_burn(g, x, z);
+        toy_game_start_burn(g, x, z, owner_actor_id);
         push_event(g, TOY_GAME_EV_MOLOTOV_BREAK);
     }
 }
@@ -4205,7 +4280,8 @@ static void toy_game_update_projectiles(struct toy_game *g, int dt_ms)
             if (p->fuse_ms > 0) continue;
         }
         toy_game_explode(g, p->x, p->z,
-                         p->kind == TOY_GAME_WEAPON_BOMB);
+                         p->kind == TOY_GAME_WEAPON_BOMB,
+                         p->owner_actor_id);
         p->active = 0;
     }
 }

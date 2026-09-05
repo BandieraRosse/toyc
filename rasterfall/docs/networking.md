@@ -1,7 +1,7 @@
 # 网络代码导航
 
 > 文档更新：2026-09-05
-> 源码核对基线：工作区（主机普通枪械及斧头/药丸客户端输入直接应用到远端 actor；炸弹和 Molotov 仍暂走本地玩家兼容路径；敌人快照已移除普通 AI 状态字段，特感能力字段仍显式同步）
+> 源码核对基线：工作区（主机普通枪械、斧头/药丸及炸弹/Molotov 客户端输入均直接应用到远端 actor；投射物/燃烧区显式携带 owner；本地预测位置驱动 camera）
 
 ## 文件职责
 
@@ -26,8 +26,9 @@
 
 主机处理远端玩家时，普通枪械的武器、命中和动画状态直接归入
 `session->game_state.actors[remote_actor_index]`；不要再把远端玩家临时覆盖到
-`toy_game` 的本地玩家字段。炸弹和 Molotov 仍使用旧的投掷物兼容路径，
-这是后续继续收敛状态所有权的明确迁移边界。
+`toy_game` 的本地玩家字段。炸弹和 Molotov 通过
+`toy_game_actor_throwable()` 直接作用于远端 actor；投射物和燃烧区保存稳定
+`owner_actor_id`，爆炸/燃烧造成的伤害、击杀和 throwable 统计归属投掷者。
 
 `rasterfall_effect_event` 是接收端的 presentation-only 扩展接口。纯视觉事件不加入 snapshot，
 也不把 event 的原始 C 布局直接发送到网络；未来网络驱动表现必须增加明确的协议编码。

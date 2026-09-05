@@ -1,7 +1,7 @@
 # Rasterfall 联机架构与扩展边界
 
 > 文档更新：2026-09-05
-> 源码核对基线：工作区（主机普通枪械及斧头/药丸客户端输入直接应用到远端 actor；炸弹和 Molotov 仍暂走本地玩家兼容路径；敌人快照不再同步普通 AI 状态，仅同步玩法与特感展示所需字段）
+> 源码核对基线：工作区（主机普通枪械、斧头/药丸及炸弹/Molotov 客户端输入直接应用到远端 actor；投射物/燃烧区携带 owner；本地预测位置派生 camera）
 
 本文记录联机实现必须保持的内部边界。产品入口和平台范围见 `../README.md`。
 
@@ -50,9 +50,11 @@
 远端玩家临时拷贝进 `toy_game` 的本地玩家字段。`rasterfall_net_client` 仍保留输入队列、
 客户端报告的相机/运动、ack 和传输状态，但这些字段不是渲染或玩法的第二个权威 actor。
 
-炸弹和 Molotov 仍依赖旧的 `toy_game` 本地玩家武器入口，当前作为兼容迁移边界保留。
-斧头和药丸已经通过 `toy_game_actor_use_special()` 直接作用于远端 actor。继续扩展远端玩家
-状态时，应优先为 actor 增加对应规则入口，再删除剩余兼容路径；不要新增对本地玩家字段的临时覆盖。
+炸弹和 Molotov 已通过 `toy_game_actor_throwable()` 直接作用于远端 actor；投射物和燃烧区的
+`owner_actor_id` 使用稳定 actor ID，不能保存指针或依赖 C 结构布局。斧头和药丸通过
+`toy_game_actor_use_special()` 直接作用于远端 actor。继续扩展远端玩家状态时，应优先为 actor
+增加对应规则入口，再删除剩余兼容路径；不要新增对本地玩家字段的临时覆盖。客户端预测中，
+gameplay 位置是 body state 的来源，camera 位置由 session 派生；camera 只保留方向和展示数据。
 
 ## 人工联机验收
 

@@ -1837,7 +1837,8 @@ static int net_send_world_snapshot(struct rasterfall_net *net,
             unsigned char *pp;
             if (!p->active) continue;
             pp = w + cursor; pp[0] = (unsigned char)i; pp[1] = (unsigned char)p->kind;
-            pp[2] = (unsigned char)(p->landed ? 1 : 0); pp[3] = 0;
+            pp[2] = (unsigned char)(p->landed ? 1 : 0);
+            pp[3] = (unsigned char)p->owner_actor_id;
             put_u32(pp + 4, (uint32_t)p->x); put_u32(pp + 8, (uint32_t)p->z);
             put_i16(pp + 12, p->vx); put_i16(pp + 14, p->vz);
             put_i16(pp + 16, p->vy); put_i16(pp + 18, p->y);
@@ -1852,7 +1853,8 @@ static int net_send_world_snapshot(struct rasterfall_net *net,
                 const struct toy_game_burn_zone *zone = game->burn_zones + i;
                 unsigned char *bp;
                 if (!zone->active) continue;
-                bp = w + cursor; bp[0] = (unsigned char)i; bp[1] = 1;
+                bp = w + cursor; bp[0] = (unsigned char)i;
+                bp[1] = (unsigned char)zone->owner_actor_id;
                 put_u32(bp + 2, (uint32_t)zone->x); put_u32(bp + 6, (uint32_t)zone->z);
                 put_i16(bp + 10, zone->remaining_ms);
                 put_i16(bp + 12, zone->tick_ms); put_i16(bp + 14, zone->elapsed_ms);
@@ -2085,6 +2087,7 @@ static int decode_world_snapshot(const unsigned char *payload, int size,
             if (id >= TOY_GAME_MAX_PROJECTILES) return -1;
             p = &net->snapshot_projectiles[id];
             p->active = 1; p->kind = pp[1]; p->landed = pp[2] & 1;
+            p->owner_actor_id = pp[3];
             p->x = (int)get_u32(pp + 4); p->z = (int)get_u32(pp + 8);
             p->vx = get_i16(pp + 12); p->vz = get_i16(pp + 14);
             p->vy = get_i16(pp + 16); p->y = get_i16(pp + 18);
@@ -2103,6 +2106,7 @@ static int decode_world_snapshot(const unsigned char *payload, int size,
             if (id >= TOY_CONFIG_MAX_BURN_ZONES) return -1;
             zone = &net->snapshot_burn_zones[id];
             zone->active = 1;
+            zone->owner_actor_id = bp[1];
             zone->x = (int)get_u32(bp + 2); zone->z = (int)get_u32(bp + 6);
             zone->remaining_ms = get_i16(bp + 10);
             zone->tick_ms = get_i16(bp + 12);
@@ -2930,10 +2934,6 @@ static int net_apply_client_actor_state(struct rasterfall_net *net,
     if (actor->current_slot < 0 ||
         actor->current_slot >= TOY_GAME_WEAPON_SLOTS) return 0;
     weapon = actor->slots[actor->current_slot].weapon;
-    if (weapon == TOY_GAME_WEAPON_BOMB ||
-        weapon == TOY_GAME_WEAPON_MOLOTOV)
-        return 0;
-
     if ((client->command.buttons & RASTERFALL_CMD_INTERACT) &&
         client->command.shop_request_id != client->shop_request_id &&
         actor->state == TOY_GAME_ACTOR_ALIVE)
@@ -2963,6 +2963,15 @@ static int net_apply_client_actor_state(struct rasterfall_net *net,
         (client->command.buttons & RASTERFALL_CMD_FIRE)) {
         special_fired = toy_game_actor_use_special(
             g, actor, client->camera.sy, client->camera.cy);
+        fired = 0;
+    } else if (weapon == TOY_GAME_WEAPON_BOMB ||
+               weapon == TOY_GAME_WEAPON_MOLOTOV) {
+        if ((client->command.buttons & RASTERFALL_CMD_FIRE) ||
+            client->command.fire_held)
+            special_fired = toy_game_actor_throwable(
+                g, actor, client->camera.sy, client->camera.cy,
+                client->camera.pitch_sy, client->camera.pitch_cy,
+                client->camera.y);
         fired = 0;
     } else {
         fired = net_apply_client_fire_report(g, client, client->fire_seq,
@@ -3043,14 +3052,14 @@ static void net_apply_client(struct rasterfall_net *net,
     /* The owning client advances its weapon clock and inventory locally.
      * The host mirrors that state and only merges reported damage into the
      * shared enemy world. */
-    actor->slots[0] = client->slots[0];
-    actor->slots[1] = client->slots[1];
+    memcpy(actor->slots, client->slots, sizeof(actor->slots));
     actor->current_slot = client->current_slot;
     actor->reloading = client->reloading;
     actor->reload_timer_ms = client->reload_timer_ms;
     actor->weapon_switch_timer_ms = client->weapon_switch_timer_ms;
     actor->fire_cooldown_ms = client->fire_cooldown_ms;
     actor->muzzle_flash_ms = client->muzzle_flash_ms;
+    actor->throw_timer_ms = client->throw_timer_ms;
     /* Client locomotion is always authoritative.  Special attacks arrive as
      * impulses/control events and never switch this path to host position. */
     if (client->reported_camera_ready)

@@ -578,6 +578,27 @@ static int run_logic_test(void)
             throwable_test.actors[TOY_GAME_REMOTE_ACTOR_BASE].hp >=
                 TOY_GAME_SECONDARY_PLAYER_HP)
             return 141;
+        {
+            struct toy_game_actor *remote_thrower =
+                &throwable_test.actors[TOY_GAME_REMOTE_ACTOR_BASE];
+            int projectile_index = -1;
+            remote_thrower->state = TOY_GAME_ACTOR_ALIVE;
+            remote_thrower->hp = remote_thrower->max_hp;
+            remote_thrower->slots[2].weapon = TOY_GAME_WEAPON_BOMB;
+            remote_thrower->slots[2].mag = 1;
+            remote_thrower->current_slot = 2;
+            if (!toy_game_actor_throwable(&throwable_test, remote_thrower,
+                                          0, 1024, 0, 1024, 900))
+                return 156;
+            for (projectile_index = 0;
+                 projectile_index < TOY_GAME_MAX_PROJECTILES;
+                 projectile_index++)
+                if (throwable_test.projectiles[projectile_index].active) break;
+            if (projectile_index == TOY_GAME_MAX_PROJECTILES ||
+                throwable_test.projectiles[projectile_index].owner_actor_id !=
+                    remote_thrower->actor_id)
+                return 156;
+        }
         actor_test.actors[TOY_GAME_REMOTE_ACTOR_BASE].slots[1].mag = 7;
         actor_test.actors[TOY_GAME_REMOTE_ACTOR_BASE + 1].slots[1].mag = 11;
         if (actor_test.actors[TOY_GAME_REMOTE_ACTOR_BASE + 2].slots[1].mag == 7 ||
