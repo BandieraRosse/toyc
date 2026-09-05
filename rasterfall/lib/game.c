@@ -2429,9 +2429,23 @@ static void turn_enemy_toward(struct toy_game_enemy *e, int dx, int dz)
     }
 }
 
+/* Keep the visual heading tied to the direction in which an enemy actually
+ * moved.  Chase paths can be clipped by walls and navigation waypoints, so
+ * the requested target vector is not always the final displacement. */
+static void set_enemy_direction_from_delta(struct toy_game_enemy *e,
+                                           int dx, int dz)
+{
+    long long dist;
+    if (!e) return;
+    dist = isqrt((long long)dx * dx + (long long)dz * dz);
+    if (dist <= 0) return;
+    e->dir_x = (int)((long long)dx * 1024 / dist);
+    e->dir_z = (int)((long long)dz * 1024 / dist);
+}
+
 static void wander_enemy(struct toy_game *g, struct toy_game_enemy *e, int dt_ms)
 {
-    int step, nx, nz;
+    int step, nx, nz, old_x, old_z;
     e->wander_timer_ms -= dt_ms;
     if (e->wander_timer_ms <= 0) {
         int direction = rand_range(g, 0, 7);
@@ -2443,10 +2457,13 @@ static void wander_enemy(struct toy_game *g, struct toy_game_enemy *e, int dt_ms
     if (step < 1) step = 1;
     nx = e->dir_x * step / 1024;
     nz = e->dir_z * step / 1024;
+    old_x = e->x;
+    old_z = e->z;
     if (!enemy_try_step(g, e, e->x + nx, e->z, enemy_radius(e)))
         e->wander_timer_ms = 0;
     if (!enemy_try_step(g, e, e->x, e->z + nz, enemy_radius(e)))
         e->wander_timer_ms = 0;
+    set_enemy_direction_from_delta(e, e->x - old_x, e->z - old_z);
 }
 
 static int nav_next_waypoint(const struct toy_game *g,
@@ -2457,7 +2474,7 @@ static int nav_next_waypoint(const struct toy_game *g,
 static void chase_enemy(struct toy_game *g, struct toy_game_enemy *e,
                         int dx, int dz, long long dist, int target_kind)
 {
-    int nx, nz, waypoint_x, waypoint_z;
+    int nx, nz, waypoint_x, waypoint_z, old_x, old_z;
     if (dist < TOY_GAME_ATTACK_RANGE) {
         if (target_kind == 0 && !player_in_safe_room(g)) bite_player(g, e);
         else if (target_kind == TOY_GAME_TARGET_ACTOR) bite_ai(g, e);
@@ -2478,8 +2495,11 @@ static void chase_enemy(struct toy_game *g, struct toy_game_enemy *e,
     }
     nx = (int)((long long)dx * e->speed / dist);
     nz = (int)((long long)dz * e->speed / dist);
+    old_x = e->x;
+    old_z = e->z;
     enemy_try_step(g, e, e->x + nx, e->z, enemy_radius(e));
     enemy_try_step(g, e, e->x, e->z + nz, enemy_radius(e));
+    set_enemy_direction_from_delta(e, e->x - old_x, e->z - old_z);
 }
 
 static void enemy_investigate_noise(struct toy_game_enemy *e, int x, int z)
@@ -3533,25 +3553,31 @@ static void update_charger(struct toy_game *g, struct toy_game_enemy *e,
             }
             charger_hit_entities(g, e);
         }
-        nx = e->ability.charge_dir_x * TOY_GAME_CHARGER_SPEED / 1024;
-        nz = e->ability.charge_dir_z * TOY_GAME_CHARGER_SPEED / 1024;
-        if (!enemy_position_blocked(g, e->x + nx, e->z,
-                                    enemy_radius(e)))
-            e->x += nx;
-        if (!enemy_position_blocked(g, e->x, e->z + nz,
-                                    enemy_radius(e)))
-            e->z += nz;
+        {
+            int old_x = e->x, old_z = e->z;
+            nx = e->ability.charge_dir_x * TOY_GAME_CHARGER_SPEED / 1024;
+            nz = e->ability.charge_dir_z * TOY_GAME_CHARGER_SPEED / 1024;
+            if (!enemy_position_blocked(g, e->x + nx, e->z,
+                                        enemy_radius(e)))
+                e->x += nx;
+            if (!enemy_position_blocked(g, e->x, e->z + nz,
+                                        enemy_radius(e)))
+                e->z += nz;
+            set_enemy_direction_from_delta(e, e->x - old_x, e->z - old_z);
+        }
         return;
     }
     if (e->ability.special_timer_ms > 0) {
         /* 冲锋后的恢复期主动离开玩家，再以低速徘徊等待下一轮。 */
         if (dist > 0 && dist < 3600) {
+            int old_x = e->x, old_z = e->z;
             nx = -dx * (e->speed / 4) / (int)dist;
             nz = -dz * (e->speed / 4) / (int)dist;
             if (!enemy_position_blocked(g, e->x + nx, e->z,
                                         enemy_radius(e))) e->x += nx;
             if (!enemy_position_blocked(g, e->x, e->z + nz,
                                         enemy_radius(e))) e->z += nz;
+            set_enemy_direction_from_delta(e, e->x - old_x, e->z - old_z);
         } else {
             wander_enemy(g, e, dt_ms);
         }

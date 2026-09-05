@@ -3208,6 +3208,37 @@ static int draw_cuboid(struct toy_renderer *renderer, const struct camera *camer
     return pixels;
 }
 
+/* Enemy-local cuboid.  Unlike draw_actor_box(), this keeps the authored enemy
+ * height unchanged; it is used for enemies whose world-space scale is already
+ * resolved by enemy_y(). */
+static int draw_enemy_oriented_box(struct toy_renderer *renderer,
+                                   const struct camera *camera, int x, int z,
+                                   int sy, int cy, int x0, int x1,
+                                   int y0, int y1, int z0, int z1,
+                                   uint32_t color)
+{
+    struct vec3 v[8];
+    static const int faces[36] = {
+        0, 1, 2, 0, 2, 3, 4, 6, 5, 4, 7, 6,
+        0, 4, 5, 0, 5, 1, 3, 2, 6, 3, 6, 7,
+        0, 3, 7, 0, 7, 4, 1, 5, 6, 1, 6, 2
+    };
+    int lx[8] = {x0, x1, x1, x0, x0, x1, x1, x0};
+    int ly[8] = {y0, y0, y0, y0, y1, y1, y1, y1};
+    int lz[8] = {z0, z0, z1, z1, z0, z0, z1, z1};
+    int i, pixels = 0;
+    for (i = 0; i < 8; i++) {
+        v[i].x = x + (cy * lx[i] + sy * lz[i]) / 1024;
+        v[i].y = ly[i] + active_enemy_lift;
+        v[i].z = z + (-sy * lx[i] + cy * lz[i]) / 1024;
+    }
+    for (i = 0; i < 36; i += 3)
+        pixels += draw_world_triangle(renderer, camera, &v[faces[i]],
+                                      &v[faces[i + 1]], &v[faces[i + 2]],
+                                      color + ((i / 3) & 3) * 0x050505);
+    return pixels;
+}
+
     /* Developer coordinate ruler.  Keep it in world space so it follows the
      * map, is depth-tested against walls, and remains useful while spectating.
      * All three axes intersect at the world origin (0,0,0). */
@@ -4025,24 +4056,30 @@ static int render_block_enemy(struct toy_renderer *renderer,
                               int scale, uint32_t color)
 {
     int x = e->x, z = e->z, pixels = 0;
-    pixels += draw_cuboid(renderer, camera, x - 105, x - 15,
-                          enemy_y(-900, scale), enemy_y(-760, scale),
-                          z - 105, z + 105, RF_COLOR_AI_HEAVY);
-    pixels += draw_cuboid(renderer, camera, x + 15, x + 105,
-                          enemy_y(-900, scale), enemy_y(-760, scale),
-                          z - 105, z + 105, RF_COLOR_AI_HEAVY);
-    pixels += draw_cuboid(renderer, camera, x - 100, x - 10,
-                          enemy_y(-760, scale), enemy_y(-450, scale),
-                          z - 85, z + 85, color - 0x101008);
-    pixels += draw_cuboid(renderer, camera, x + 10, x + 100,
-                          enemy_y(-760, scale), enemy_y(-450, scale),
-                          z - 85, z + 85, color - 0x101008);
-    pixels += draw_cuboid(renderer, camera, x - 175, x + 175,
-                          enemy_y(-470, scale), enemy_y(20, scale),
-                          z - 105, z + 105, color);
-    pixels += draw_cuboid(renderer, camera, x - 155, x + 155,
-                          enemy_y(0, scale), enemy_y(320, scale),
-                          z - 155, z + 155, color + 0x202010);
+    /* draw_actor_box uses local +Z as the facing direction.  The gameplay
+     * vector is expressed as world X/Z, so convert it once here and use the
+     * same yaw for every part of the block body.  Previously only the face
+     * decals used e->dir_*, leaving the head/body axis-aligned while the eyes
+     * moved to an edge between two head faces during a turn. */
+    int sy = e->dir_x;
+    int cy = e->dir_z;
+    pixels += draw_actor_box(renderer, camera, x, z, sy, cy,
+                             -105, -15, -900, -760, -105, 105,
+                             RF_COLOR_AI_HEAVY);
+    pixels += draw_actor_box(renderer, camera, x, z, sy, cy,
+                             15, 105, -900, -760, -105, 105,
+                             RF_COLOR_AI_HEAVY);
+    pixels += draw_actor_box(renderer, camera, x, z, sy, cy,
+                             -100, -10, -760, -450, -85, 85,
+                             color - 0x101008);
+    pixels += draw_actor_box(renderer, camera, x, z, sy, cy,
+                             10, 100, -760, -450, -85, 85,
+                             color - 0x101008);
+    pixels += draw_actor_box(renderer, camera, x, z, sy, cy,
+                             -175, 175, -470, 20, -105, 105, color);
+    pixels += draw_actor_box(renderer, camera, x, z, sy, cy,
+                             -155, 155, 0, 320, -155, 155,
+                             color + 0x202010);
     /* 像素化愤怒脸：下压的双眉、亮眼和紧闭嘴。 */
     pixels += draw_face_rect(renderer, camera, x, z, 155, e->dir_x, e->dir_z,
                              -105, -18, enemy_y(210, scale),
@@ -4098,18 +4135,26 @@ static int render_charger_enemy(struct toy_renderer *renderer,
 {
     int x = e->x, z = e->z, pixels = 0;
     int sx = scale * 100 / 1120;
-    pixels += draw_cuboid(renderer, camera, x - 135 * sx / 100, x - 20 * sx / 100,
-                          enemy_y(-900, scale), enemy_y(-760, scale),
-                          z - 150 * sx / 100, z + 110 * sx / 100, 0x30261F);
-    pixels += draw_cuboid(renderer, camera, x + 20 * sx / 100, x + 135 * sx / 100,
-                          enemy_y(-900, scale), enemy_y(-760, scale),
-                          z - 150 * sx / 100, z + 110 * sx / 100, 0x30261F);
-    pixels += draw_cuboid(renderer, camera, x - 235 * sx / 100, x + 235 * sx / 100,
-                          enemy_y(-760, scale), enemy_y(95, scale),
-                          z - 135 * sx / 100, z + 135 * sx / 100, color);
-    pixels += draw_cuboid(renderer, camera, x - 205 * sx / 100, x + 205 * sx / 100,
-                          enemy_y(75, scale), enemy_y(360, scale),
-                          z - 145 * sx / 100, z + 145 * sx / 100, color + 0x18100A);
+    /* The charge vector is the enemy's local +Z.  Rotate the complete body,
+     * not only the face decal, so the charger cannot visually run backwards
+     * during a charge or while retreating after one. */
+    pixels += draw_enemy_oriented_box(renderer, camera, x, z, e->dir_x, e->dir_z,
+                             -135 * sx / 100, -20 * sx / 100,
+                             enemy_y(-900, scale), enemy_y(-760, scale),
+                             -150 * sx / 100, 110 * sx / 100, 0x30261F);
+    pixels += draw_enemy_oriented_box(renderer, camera, x, z, e->dir_x, e->dir_z,
+                             20 * sx / 100, 135 * sx / 100,
+                             enemy_y(-900, scale), enemy_y(-760, scale),
+                             -150 * sx / 100, 110 * sx / 100, 0x30261F);
+    pixels += draw_enemy_oriented_box(renderer, camera, x, z, e->dir_x, e->dir_z,
+                             -235 * sx / 100, 235 * sx / 100,
+                             enemy_y(-760, scale), enemy_y(95, scale),
+                             -135 * sx / 100, 135 * sx / 100, color);
+    pixels += draw_enemy_oriented_box(renderer, camera, x, z, e->dir_x, e->dir_z,
+                             -205 * sx / 100, 205 * sx / 100,
+                             enemy_y(75, scale), enemy_y(360, scale),
+                             -145 * sx / 100, 145 * sx / 100,
+                             color + 0x18100A);
     /* Charger 面部是一个粗像素 C。 */
     pixels += draw_face_rect(renderer, camera, x, z, 150, e->dir_x, e->dir_z,
                              -120, -82, enemy_y(105, scale), enemy_y(315, scale),
