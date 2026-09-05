@@ -9,11 +9,14 @@ enum rasterfall_effect_event_type {
     RASTERFALL_EFFECT_EVENT_TRACER,
     RASTERFALL_EFFECT_EVENT_BULLET_IMPACT,
     RASTERFALL_EFFECT_EVENT_ENTITY_HIT,
-    RASTERFALL_EFFECT_EVENT_EXPLOSION
+    RASTERFALL_EFFECT_EVENT_EXPLOSION,
+    RASTERFALL_EFFECT_EVENT_CAMERA_SHAKE
 };
 
 enum rasterfall_effect_event_flags {
-    RASTERFALL_EFFECT_EVENT_DEPTH_TEST = 1 << 0
+    RASTERFALL_EFFECT_EVENT_DEPTH_TEST = 1 << 0,
+    /* Only a local presentation event may affect the viewer's camera. */
+    RASTERFALL_EFFECT_EVENT_LOCAL_VIEW = 1 << 1
 };
 
 struct rasterfall_effect_event {
@@ -32,6 +35,11 @@ struct rasterfall_effect_event {
     int x, y, z;
     int dir_sy, dir_cy;
     int life_ms;
+
+    /* Camera-shake amplitudes in view units.  These are presentation-only
+     * and are ignored by all non-camera-shake event types. */
+    int shake_side, shake_up, shake_forward;
+    int shake_yaw, shake_pitch;
 };
 
 #endif

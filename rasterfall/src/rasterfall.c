@@ -1365,11 +1365,13 @@ static void emit_ray_effects(const struct toy_game_ray *ray,
 
 static void emit_weapon_fire_effect(int sx, int sy, int sz, int dir_sy,
                                     int dir_cy, int weapon,
-                                    unsigned int sequence, int source_id)
+                                    unsigned int sequence, int source_id,
+                                    int local_view)
 {
     struct rasterfall_effect_event event;
     memset(&event, 0, sizeof(event));
     event.type = RASTERFALL_EFFECT_EVENT_WEAPON_FIRE;
+    event.flags = local_view ? RASTERFALL_EFFECT_EVENT_LOCAL_VIEW : 0;
     event.sx = sx; event.sy = sy; event.sz = sz;
     event.dir_sy = dir_sy; event.dir_cy = dir_cy;
     event.weapon = weapon;
@@ -1415,7 +1417,7 @@ static void sync_fire_effects(const struct camera *camera)
     emit_weapon_fire_effect(muzzle.x, muzzle.y, muzzle.z,
                             camera->pitch_sy, camera->pitch_cy,
                             weapon,
-                            game.fire_seq, 0);
+                            game.fire_seq, 0, 1);
     for (i = 0; i < ray_count; i++) {
         const struct toy_game_ray *r = &game.rays[i];
         int tracer_x, tracer_y, tracer_z;
@@ -1474,7 +1476,7 @@ static void sync_ai_fire_effects(const struct camera *camera,
                                 actor->current_slot >= 0 &&
                                 actor->current_slot < TOY_GAME_WEAPON_SLOTS ?
                                 actor->slots[actor->current_slot].weapon : -1,
-                                actor->fire_seq, 1 + actor_index);
+                                actor->fire_seq, 1 + actor_index, 0);
         for (i = 0; i < ray_count; i++) {
             const struct toy_game_ray *r = &actor->rays[i];
             int tracer_x, tracer_y, tracer_z;
@@ -1531,7 +1533,7 @@ static void sync_network_fire_effects(const struct camera *viewer,
                                       weapon, &mx, &my, &mz);
     muzzle.x = mx; muzzle.y = my; muzzle.z = mz;
     emit_weapon_fire_effect(mx, my, mz, client->sy, client->cy, weapon,
-                            fire_seq, 32 + source_id);
+                            fire_seq, 32 + source_id, 0);
     for (i = 0; i < ray_count; i++) {
         const struct toy_game_ray *r = &rays[i];
         int tracer_x, tracer_y, tracer_z;
@@ -3400,6 +3402,7 @@ startup_again:
             if (managed_spectator)
                 set_managed_spectator_camera(&render_camera, &camera,
                                              managed_third_person);
+            rasterfall_effects_apply_camera_shake(&effects, &render_camera);
             scene_pixels = rasterfall_render_scene(&renderer, &render_camera);
             rasterfall_render_scene_stats(&scene_detail);
             rasterfall_perf_add_scene(&stats, &stats_total, &scene_detail);

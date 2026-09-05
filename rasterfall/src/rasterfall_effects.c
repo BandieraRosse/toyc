@@ -1,4 +1,5 @@
 #include "tlibc_everything.h"
+#include "math.h"
 #include "rasterfall_effects.h"
 
 static uint32_t xorshift32(uint32_t *state)
@@ -15,6 +16,147 @@ static int effect_rand(struct rasterfall_effects *effects, int lo, int hi)
 {
     int span = hi - lo + 1;
     return lo + (int)(xorshift32(&effects->rng) % (uint32_t)span);
+}
+
+static int shake_noise(uint32_t seed)
+{
+    seed ^= seed >> 16;
+    seed *= 0x7FEB352D;
+    seed ^= seed >> 15;
+    seed *= 0x846CA68B;
+    seed ^= seed >> 16;
+    return (int)(seed % 2001u) - 1000;
+}
+
+static int shake_sample(int amplitude, uint32_t seed, int age_ms,
+                        int lifetime_ms)
+{
+    int envelope;
+    if (amplitude == 0 || lifetime_ms <= 0 || age_ms >= lifetime_ms)
+        return 0;
+    envelope = (lifetime_ms - age_ms) * 256 / lifetime_ms;
+    return amplitude * shake_noise(seed + (uint32_t)(age_ms / 16) * 2654435761u) *
+           envelope / (1000 * 256);
+}
+
+static int shake_recoil_sample(int amplitude, uint32_t seed, int age_ms,
+                               int lifetime_ms)
+{
+    int envelope;
+    if (amplitude == 0 || lifetime_ms <= 0 || age_ms >= lifetime_ms)
+        return 0;
+    envelope = (lifetime_ms - age_ms) * 256 / lifetime_ms;
+    /* Pitch is recoil-biased: it rises on every shot while noise keeps the
+     * result from looking perfectly mechanical. */
+    return amplitude * (1000 + shake_noise(seed)) * envelope /
+           (1000 * 256);
+}
+
+static int shake_clamp(int value, int limit)
+{
+    if (value < -limit) return -limit;
+    if (value > limit) return limit;
+    return value;
+}
+
+static int shake_approach(int current, int target, int dt_ms)
+{
+    int amount = dt_ms * RASTERFALL_CAMERA_SHAKE_SMOOTHING / 16;
+    int delta, step;
+    if (amount < 1) amount = 1;
+    if (amount > 256) amount = 256;
+    delta = target - current;
+    step = delta * amount / 256;
+    if (delta && step == 0) step = delta > 0 ? 1 : -1;
+    return current + step;
+}
+
+static int camera_shake_lifetime(int weapon)
+{
+    if (weapon == TOY_GAME_WEAPON_SMG)
+        return RASTERFALL_CAMERA_SHAKE_SMG_LIFE_MS;
+    if (weapon == TOY_GAME_WEAPON_AK)
+        return RASTERFALL_CAMERA_SHAKE_AK_LIFE_MS;
+    if (weapon == TOY_GAME_WEAPON_SHOTGUN)
+        return RASTERFALL_CAMERA_SHAKE_SHOTGUN_LIFE_MS;
+    if (weapon == TOY_GAME_WEAPON_AWP)
+        return RASTERFALL_CAMERA_SHAKE_AWP_LIFE_MS;
+    return RASTERFALL_CAMERA_SHAKE_PISTOL_LIFE_MS;
+}
+
+enum camera_shake_axis {
+    CAMERA_SHAKE_AXIS_SIDE,
+    CAMERA_SHAKE_AXIS_UP,
+    CAMERA_SHAKE_AXIS_FORWARD,
+    CAMERA_SHAKE_AXIS_YAW,
+    CAMERA_SHAKE_AXIS_PITCH
+};
+
+static int camera_shake_max(int weapon, int axis)
+{
+    if (weapon == TOY_GAME_WEAPON_SMG) {
+        if (axis == CAMERA_SHAKE_AXIS_SIDE) return RASTERFALL_CAMERA_SHAKE_SMG_MAX_SIDE;
+        if (axis == CAMERA_SHAKE_AXIS_UP) return RASTERFALL_CAMERA_SHAKE_SMG_MAX_UP;
+        if (axis == CAMERA_SHAKE_AXIS_FORWARD) return RASTERFALL_CAMERA_SHAKE_SMG_MAX_FORWARD;
+        if (axis == CAMERA_SHAKE_AXIS_YAW) return RASTERFALL_CAMERA_SHAKE_SMG_MAX_YAW;
+        return RASTERFALL_CAMERA_SHAKE_SMG_MAX_PITCH;
+    }
+    if (weapon == TOY_GAME_WEAPON_AK) {
+        if (axis == CAMERA_SHAKE_AXIS_SIDE) return RASTERFALL_CAMERA_SHAKE_AK_MAX_SIDE;
+        if (axis == CAMERA_SHAKE_AXIS_UP) return RASTERFALL_CAMERA_SHAKE_AK_MAX_UP;
+        if (axis == CAMERA_SHAKE_AXIS_FORWARD) return RASTERFALL_CAMERA_SHAKE_AK_MAX_FORWARD;
+        if (axis == CAMERA_SHAKE_AXIS_YAW) return RASTERFALL_CAMERA_SHAKE_AK_MAX_YAW;
+        return RASTERFALL_CAMERA_SHAKE_AK_MAX_PITCH;
+    }
+    if (weapon == TOY_GAME_WEAPON_SHOTGUN) {
+        if (axis == CAMERA_SHAKE_AXIS_SIDE) return RASTERFALL_CAMERA_SHAKE_SHOTGUN_MAX_SIDE;
+        if (axis == CAMERA_SHAKE_AXIS_UP) return RASTERFALL_CAMERA_SHAKE_SHOTGUN_MAX_UP;
+        if (axis == CAMERA_SHAKE_AXIS_FORWARD) return RASTERFALL_CAMERA_SHAKE_SHOTGUN_MAX_FORWARD;
+        if (axis == CAMERA_SHAKE_AXIS_YAW) return RASTERFALL_CAMERA_SHAKE_SHOTGUN_MAX_YAW;
+        return RASTERFALL_CAMERA_SHAKE_SHOTGUN_MAX_PITCH;
+    }
+    if (weapon == TOY_GAME_WEAPON_AWP) {
+        if (axis == CAMERA_SHAKE_AXIS_SIDE) return RASTERFALL_CAMERA_SHAKE_AWP_MAX_SIDE;
+        if (axis == CAMERA_SHAKE_AXIS_UP) return RASTERFALL_CAMERA_SHAKE_AWP_MAX_UP;
+        if (axis == CAMERA_SHAKE_AXIS_FORWARD) return RASTERFALL_CAMERA_SHAKE_AWP_MAX_FORWARD;
+        if (axis == CAMERA_SHAKE_AXIS_YAW) return RASTERFALL_CAMERA_SHAKE_AWP_MAX_YAW;
+        return RASTERFALL_CAMERA_SHAKE_AWP_MAX_PITCH;
+    }
+    if (axis == CAMERA_SHAKE_AXIS_SIDE) return RASTERFALL_CAMERA_SHAKE_PISTOL_MAX_SIDE;
+    if (axis == CAMERA_SHAKE_AXIS_UP) return RASTERFALL_CAMERA_SHAKE_PISTOL_MAX_UP;
+    if (axis == CAMERA_SHAKE_AXIS_FORWARD) return RASTERFALL_CAMERA_SHAKE_PISTOL_MAX_FORWARD;
+    if (axis == CAMERA_SHAKE_AXIS_YAW) return RASTERFALL_CAMERA_SHAKE_PISTOL_MAX_YAW;
+    return RASTERFALL_CAMERA_SHAKE_PISTOL_MAX_PITCH;
+}
+
+static void apply_camera_angle(int *sy, int *cy, int amount)
+{
+    int old_sy = *sy, old_cy = *cy;
+    int length;
+    *sy = (old_sy * 1024 + old_cy * amount) / 1024;
+    *cy = (old_cy * 1024 - old_sy * amount) / 1024;
+    length = isqrt((long long)*sy * *sy + (long long)*cy * *cy);
+    if (length > 0) {
+        *sy = (int)((long long)*sy * 1024 / length);
+        *cy = (int)((long long)*cy * 1024 / length);
+    }
+}
+
+static void apply_camera_pitch(int *sy, int *cy, int amount)
+{
+    int old_sy = *sy, old_cy = *cy;
+    int length;
+    *sy = (old_sy * 1024 + old_cy * amount) / 1024;
+    *cy = (old_cy * 1024 - old_sy * amount) / 1024;
+    length = isqrt((long long)*sy * *sy + (long long)*cy * *cy);
+    if (length > 0) {
+        *sy = (int)((long long)*sy * 1024 / length);
+        *cy = (int)((long long)*cy * 1024 / length);
+    }
+    if (*cy < RASTERFALL_PITCH_LIMIT_CY) {
+        *sy = *sy < 0 ? -RASTERFALL_PITCH_LIMIT_SY : RASTERFALL_PITCH_LIMIT_SY;
+        *cy = RASTERFALL_PITCH_LIMIT_CY;
+    }
 }
 
 static const int effect_fire_ring[16][2] = {
@@ -50,6 +192,9 @@ struct rasterfall_effect_instance *rasterfall_effects_spawn_instance(
     if (instance->size <= 0) instance->size = 1000;
     if (instance->stretch_y <= 0) instance->stretch_y = 1000;
     if (instance->alpha <= 0) instance->alpha = 256;
+    if (instance->type == RASTERFALL_EFFECT_INSTANCE_CAMERA_SHAKE &&
+        instance->shake_seed == 0)
+        instance->shake_seed = effects->rng++;
     return instance;
 }
 
@@ -499,6 +644,11 @@ void rasterfall_effects_reset_fire(struct rasterfall_effects *effects)
            sizeof(effects->last_network_fire_seq));
     effects->last_ai_fire_seq = 0;
     effects->weapon_kick = 0;
+    effects->camera_shake_side = 0;
+    effects->camera_shake_up = 0;
+    effects->camera_shake_forward = 0;
+    effects->camera_shake_yaw = 0;
+    effects->camera_shake_pitch = 0;
 }
 
 void rasterfall_effects_spawn_hit_particles(struct rasterfall_effects *effects,
@@ -560,6 +710,50 @@ void rasterfall_effects_consume(struct rasterfall_effects *effects,
                              effect_rand(effects, -1, 1);
             instance->alpha = 220 + effect_rand(effects, -12, 12);
         }
+        if (event->flags & RASTERFALL_EFFECT_EVENT_LOCAL_VIEW) {
+            struct rasterfall_effect_instance shake;
+            memset(&shake, 0, sizeof(shake));
+            shake.type = RASTERFALL_EFFECT_INSTANCE_CAMERA_SHAKE;
+            shake.kind = RASTERFALL_EFFECT_INSTANCE_KIND_CAMERA_SHAKE;
+            shake.weapon = event->weapon;
+            shake.lifetime_ms = camera_shake_lifetime(event->weapon);
+            shake.shake_side = event->weapon == TOY_GAME_WEAPON_SHOTGUN ?
+                               RASTERFALL_CAMERA_SHAKE_SHOTGUN_SIDE :
+                               event->weapon == TOY_GAME_WEAPON_AWP ?
+                               RASTERFALL_CAMERA_SHAKE_AWP_SIDE :
+                               event->weapon == TOY_GAME_WEAPON_AK ?
+                               RASTERFALL_CAMERA_SHAKE_AK_SIDE :
+                               RASTERFALL_CAMERA_SHAKE_DEFAULT_SIDE;
+            shake.shake_up = event->weapon == TOY_GAME_WEAPON_SHOTGUN ?
+                             RASTERFALL_CAMERA_SHAKE_SHOTGUN_UP :
+                             event->weapon == TOY_GAME_WEAPON_AWP ?
+                             RASTERFALL_CAMERA_SHAKE_AWP_UP :
+                             event->weapon == TOY_GAME_WEAPON_AK ?
+                             RASTERFALL_CAMERA_SHAKE_AK_UP :
+                             RASTERFALL_CAMERA_SHAKE_DEFAULT_UP;
+            shake.shake_forward = event->weapon == TOY_GAME_WEAPON_AWP ?
+                                  RASTERFALL_CAMERA_SHAKE_AWP_FORWARD :
+                                  event->weapon == TOY_GAME_WEAPON_SHOTGUN ?
+                                  RASTERFALL_CAMERA_SHAKE_SHOTGUN_FORWARD :
+                                  event->weapon == TOY_GAME_WEAPON_AK ?
+                                  RASTERFALL_CAMERA_SHAKE_AK_FORWARD :
+                                  RASTERFALL_CAMERA_SHAKE_DEFAULT_FORWARD;
+            shake.shake_yaw = event->weapon == TOY_GAME_WEAPON_SHOTGUN ?
+                              RASTERFALL_CAMERA_SHAKE_SHOTGUN_YAW :
+                              event->weapon == TOY_GAME_WEAPON_AWP ?
+                              RASTERFALL_CAMERA_SHAKE_AWP_YAW :
+                              event->weapon == TOY_GAME_WEAPON_AK ?
+                              RASTERFALL_CAMERA_SHAKE_AK_YAW :
+                              RASTERFALL_CAMERA_SHAKE_DEFAULT_YAW;
+            shake.shake_pitch = event->weapon == TOY_GAME_WEAPON_SHOTGUN ?
+                                RASTERFALL_CAMERA_SHAKE_SHOTGUN_PITCH :
+                                event->weapon == TOY_GAME_WEAPON_AWP ?
+                                RASTERFALL_CAMERA_SHAKE_AWP_PITCH :
+                                event->weapon == TOY_GAME_WEAPON_AK ?
+                                RASTERFALL_CAMERA_SHAKE_AK_PITCH :
+                                RASTERFALL_CAMERA_SHAKE_DEFAULT_PITCH;
+            rasterfall_effects_spawn_instance(effects, &shake);
+        }
     } else if (event->type == RASTERFALL_EFFECT_EVENT_TRACER) {
         {
             spawn_event_instance(effects, event,
@@ -581,7 +775,97 @@ void rasterfall_effects_consume(struct rasterfall_effects *effects,
                              RASTERFALL_EFFECT_INSTANCE_EMITTER,
                              RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION,
                              event->x, event->y, event->z, 0, 0, 0);
+    } else if (event->type == RASTERFALL_EFFECT_EVENT_CAMERA_SHAKE) {
+        struct rasterfall_effect_instance shake;
+        memset(&shake, 0, sizeof(shake));
+        shake.type = RASTERFALL_EFFECT_INSTANCE_CAMERA_SHAKE;
+        shake.kind = RASTERFALL_EFFECT_INSTANCE_KIND_CAMERA_SHAKE;
+        shake.weapon = event->weapon;
+        shake.lifetime_ms = event->life_ms > 0 ? event->life_ms : 120;
+        shake.shake_side = event->shake_side;
+        shake.shake_up = event->shake_up;
+        shake.shake_forward = event->shake_forward;
+        shake.shake_yaw = event->shake_yaw;
+        shake.shake_pitch = event->shake_pitch;
+        rasterfall_effects_spawn_instance(effects, &shake);
     }
+}
+
+void rasterfall_effects_apply_camera_shake(
+    const struct rasterfall_effects *effects, struct camera *render_camera)
+{
+    int side, up, forward, yaw, pitch;
+    int base_x, base_y, base_z, base_sy, base_cy;
+    if (!effects || !render_camera) return;
+    side = effects->camera_shake_side;
+    up = effects->camera_shake_up;
+    forward = effects->camera_shake_forward;
+    yaw = effects->camera_shake_yaw;
+    pitch = effects->camera_shake_pitch;
+    base_x = render_camera->x;
+    base_y = render_camera->y;
+    base_z = render_camera->z;
+    base_sy = render_camera->sy;
+    base_cy = render_camera->cy;
+    render_camera->x = base_x + (side * base_cy + forward * base_sy) / 1024;
+    render_camera->z = base_z + (-side * base_sy + forward * base_cy) / 1024;
+    render_camera->y = base_y + up;
+    apply_camera_angle(&render_camera->sy, &render_camera->cy, yaw);
+    apply_camera_pitch(&render_camera->pitch_sy, &render_camera->pitch_cy,
+                       pitch);
+}
+
+static void update_camera_shake(struct rasterfall_effects *effects, int dt_ms)
+{
+    int i;
+    int side = 0, up = 0, forward = 0, yaw = 0, pitch = 0;
+    int max_side = RASTERFALL_CAMERA_SHAKE_PISTOL_MAX_SIDE;
+    int max_up = RASTERFALL_CAMERA_SHAKE_PISTOL_MAX_UP;
+    int max_forward = RASTERFALL_CAMERA_SHAKE_PISTOL_MAX_FORWARD;
+    int max_yaw = RASTERFALL_CAMERA_SHAKE_PISTOL_MAX_YAW;
+    int max_pitch = RASTERFALL_CAMERA_SHAKE_PISTOL_MAX_PITCH;
+    if (!effects) return;
+    for (i = 0; i < RASTERFALL_EFFECT_INSTANCE_SLOTS; i++) {
+        const struct rasterfall_effect_instance *shake = &effects->instances[i];
+        if (!shake->active ||
+            shake->type != RASTERFALL_EFFECT_INSTANCE_CAMERA_SHAKE)
+            continue;
+        if (camera_shake_max(shake->weapon, CAMERA_SHAKE_AXIS_SIDE) > max_side)
+            max_side = camera_shake_max(shake->weapon, CAMERA_SHAKE_AXIS_SIDE);
+        if (camera_shake_max(shake->weapon, CAMERA_SHAKE_AXIS_UP) > max_up)
+            max_up = camera_shake_max(shake->weapon, CAMERA_SHAKE_AXIS_UP);
+        if (camera_shake_max(shake->weapon, CAMERA_SHAKE_AXIS_FORWARD) > max_forward)
+            max_forward = camera_shake_max(shake->weapon, CAMERA_SHAKE_AXIS_FORWARD);
+        if (camera_shake_max(shake->weapon, CAMERA_SHAKE_AXIS_YAW) > max_yaw)
+            max_yaw = camera_shake_max(shake->weapon, CAMERA_SHAKE_AXIS_YAW);
+        if (camera_shake_max(shake->weapon, CAMERA_SHAKE_AXIS_PITCH) > max_pitch)
+            max_pitch = camera_shake_max(shake->weapon, CAMERA_SHAKE_AXIS_PITCH);
+        side += shake_sample(shake->shake_side, shake->shake_seed,
+                             shake->age_ms, shake->lifetime_ms);
+        up += shake_sample(shake->shake_up, shake->shake_seed + 17,
+                           shake->age_ms, shake->lifetime_ms);
+        forward += shake_sample(shake->shake_forward, shake->shake_seed + 31,
+                                shake->age_ms, shake->lifetime_ms);
+        yaw += shake_sample(shake->shake_yaw, shake->shake_seed + 47,
+                            shake->age_ms, shake->lifetime_ms);
+        pitch += shake_recoil_sample(shake->shake_pitch, shake->shake_seed + 61,
+                                     shake->age_ms, shake->lifetime_ms);
+    }
+    side = shake_clamp(side, max_side);
+    up = shake_clamp(up, max_up);
+    forward = shake_clamp(forward, max_forward);
+    yaw = shake_clamp(yaw, max_yaw);
+    pitch = shake_clamp(pitch, max_pitch);
+    effects->camera_shake_side = shake_approach(
+        effects->camera_shake_side, side, dt_ms);
+    effects->camera_shake_up = shake_approach(
+        effects->camera_shake_up, up, dt_ms);
+    effects->camera_shake_forward = shake_approach(
+        effects->camera_shake_forward, forward, dt_ms);
+    effects->camera_shake_yaw = shake_approach(
+        effects->camera_shake_yaw, yaw, dt_ms);
+    effects->camera_shake_pitch = shake_approach(
+        effects->camera_shake_pitch, pitch, dt_ms);
 }
 
 void rasterfall_effects_update(struct rasterfall_effects *effects, int dt_ms)
@@ -605,6 +889,7 @@ void rasterfall_effects_update(struct rasterfall_effects *effects, int dt_ms)
             (instance->gravity_y && instance->y < -880))
             instance->active = 0;
     }
+    update_camera_shake(effects, dt_ms);
     for (i = 0; i < RASTERFALL_EFFECT_EMITTER_SLOTS; i++) {
         struct rasterfall_effect_emitter *emitter = &effects->emitters[i];
         if (!emitter->active) continue;
