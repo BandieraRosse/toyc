@@ -1,13 +1,15 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-05
-> 源码核对基线：工作区（RAY tracer 短线段/定向线宽投影，通用 emitter preset table，CAMERA_SHAKE 含开火后座与受击摇晃）
+> 源码核对基线：工作区（RAY tracer 短线段/定向线宽投影，通用 emitter preset table，CAMERA_SHAKE 含开火后座与受击摇晃；程序化敌人身体组件描述表）
 
 ## 渲染边界
 
 `src/rasterfall_render.c` 是世界渲染和角色渲染主体：投影/近裁剪、三角形提交、地面与地图图元、
 拾取物、敌人、玩家/队友、骨骼角色、弹道粒子及模型诊断。公开入口在
 `include/rasterfall_render.h`，共享状态由 `rasterfall_render_context` 绑定。
+
+程序化敌人模型采用统一的 `enemy_body_part` 描述：每个条目对应一个基本身体组件，类型包括局部朝向盒、世界盒、圆柱、椭球和面部矩形，尺寸与局部偏移仍使用现有 RFU 数值。通用解释器按描述顺序提交几何，因此可以在不改变玩法状态的前提下继续接入参数化配置。敌人位置以 `toy_game_enemy.x/z` 为水平锚点，垂直基准由地面 `Y=-900`、`ground_y` 和 `airborne_y` 组成；Charger 的水平放大和普通敌人的既有缩放语义保留在解释器中。Tank 的挥臂依赖蓄力时间，是动态组件，继续由专用函数求值后插入静态组件之间，以保持原有遮挡和绘制顺序。
 
 `src/render/rasterfall_render_frontend.c` 是渲染器前端适配，管理默认纹理、覆盖配置和 worker
 绑定；底层光栅器在仓库公共的 `lib/graphics/renderer.c` / `include/toy_renderer.h`。

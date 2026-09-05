@@ -1,7 +1,7 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-05
-> 源码核对基线：工作区（敌人目录已移除 COMMON/HEAVY 基础类型，普通敌人 AI 已收敛为直接追击，特感保留独立技能逻辑，敌人 Content ID 为 0-based 连续编号）
+> 源码核对基线：工作区（敌人目录已移除 COMMON/HEAVY 基础类型，普通敌人 AI 已收敛为直接追击，特感保留独立技能逻辑，敌人 Content ID 为 0-based 连续编号；程序化敌人身体已迁移为统一几何组件描述）
 
 本目录面向接手 Rasterfall 任务的编码代理。目标不是介绍玩法，而是先把问题归到正确的
 状态所有者和文件，再开始搜索。命令、资源导入方法和用户可见特性仍以
@@ -80,6 +80,7 @@ toy_renderer / window / audio    仓库公共平台层
 - 修改 `toy_game.h` 的武器、敌人、事件或结构布局：检查 `lib/game.c`、session、HUD、渲染和网络编码。
 - 修改地图语义：检查 `toy_map.h`/`lib/map.c` 的解析、`rasterfall_map.c` 的绑定、玩法碰撞和渲染。
 - 修改角色动画：检查角色选择、会话动画状态、模型求值、渲染以及网络动画字段。
+- 修改敌人外观组件：检查 `src/rasterfall_render.c` 的 `enemy_body_part` 描述表、通用组件解释器和特感动态组件；地面锚点仍由 `toy_game_enemy.ground_y` 与 `airborne_y` 提供。
 - 修改命令行或诊断模式：从 `rasterfall_options.c` 到 `rasterfall.c` 的早退分支一起核对。
 
 ## 修改后更新哪些文档
