@@ -52,6 +52,27 @@ static int shake_recoil_sample(int amplitude, uint32_t seed, int age_ms,
            (1000 * 256);
 }
 
+static int damage_shake_angle(void)
+{
+    return RASTERFALL_DAMAGE_CAMERA_SHAKE_ANGLE_DEGREES * 1024 / 360;
+}
+
+static int damage_shake_sample(int amplitude, int age_ms)
+{
+    int decay_ms = RASTERFALL_DAMAGE_CAMERA_SHAKE_LIFE_MS -
+                   RASTERFALL_DAMAGE_CAMERA_SHAKE_RISE_MS -
+                   RASTERFALL_DAMAGE_CAMERA_SHAKE_HOLD_MS;
+    if (age_ms < 0 || age_ms >= RASTERFALL_DAMAGE_CAMERA_SHAKE_LIFE_MS)
+        return 0;
+    if (age_ms < RASTERFALL_DAMAGE_CAMERA_SHAKE_RISE_MS)
+        return amplitude * age_ms / RASTERFALL_DAMAGE_CAMERA_SHAKE_RISE_MS;
+    if (age_ms < RASTERFALL_DAMAGE_CAMERA_SHAKE_RISE_MS +
+                  RASTERFALL_DAMAGE_CAMERA_SHAKE_HOLD_MS)
+        return amplitude;
+    return amplitude * (RASTERFALL_DAMAGE_CAMERA_SHAKE_LIFE_MS - age_ms) /
+           decay_ms;
+}
+
 static int shake_clamp(int value, int limit)
 {
     if (value < -limit) return -limit;
@@ -94,6 +115,8 @@ enum camera_shake_axis {
 
 static int camera_shake_max(int weapon, int axis)
 {
+    if (weapon < 0)
+        return axis == CAMERA_SHAKE_AXIS_YAW ? damage_shake_angle() : 0;
     if (weapon == TOY_GAME_WEAPON_SMG) {
         if (axis == CAMERA_SHAKE_AXIS_SIDE) return RASTERFALL_CAMERA_SHAKE_SMG_MAX_SIDE;
         if (axis == CAMERA_SHAKE_AXIS_UP) return RASTERFALL_CAMERA_SHAKE_SMG_MAX_UP;
@@ -500,6 +523,34 @@ void rasterfall_effects_sync_damage_flash(struct rasterfall_effects *effects,
     struct rasterfall_effect_instance instance;
     int i;
     if (!effects || !game) return;
+    if (effects->last_player_hp < 0) {
+        effects->last_player_hp = game->hp;
+    } else if (game->hp < effects->last_player_hp &&
+               effects->damage_shake_cooldown_ms <= 0) {
+        struct rasterfall_effect_instance shake;
+        int shake_i;
+        for (shake_i = 0; shake_i < RASTERFALL_EFFECT_INSTANCE_SLOTS;
+             shake_i++)
+            if (effects->instances[shake_i].active &&
+                effects->instances[shake_i].type ==
+                    RASTERFALL_EFFECT_INSTANCE_CAMERA_SHAKE &&
+                effects->instances[shake_i].weapon < 0)
+                effects->instances[shake_i].active = 0;
+        memset(&shake, 0, sizeof(shake));
+        shake.type = RASTERFALL_EFFECT_INSTANCE_CAMERA_SHAKE;
+        shake.kind = RASTERFALL_EFFECT_INSTANCE_KIND_CAMERA_SHAKE;
+        shake.weapon = -1; /* damage preset, not weapon recoil */
+        shake.lifetime_ms = RASTERFALL_DAMAGE_CAMERA_SHAKE_LIFE_MS;
+        shake.shake_yaw = effect_rand(effects, 0, 1) ?
+                          damage_shake_angle() : -damage_shake_angle();
+        rasterfall_effects_spawn_instance(effects, &shake);
+        /* Restarting damage shake returns the aggregate to neutral first. */
+        effects->camera_shake_yaw = 0;
+        effects->camera_shake_pitch = 0;
+        effects->damage_shake_cooldown_ms =
+            RASTERFALL_DAMAGE_CAMERA_SHAKE_MIN_INTERVAL_MS;
+    }
+    effects->last_player_hp = game->hp;
     for (i = 0; i < RASTERFALL_EFFECT_INSTANCE_SLOTS; i++)
         if (effects->instances[i].kind ==
             RASTERFALL_EFFECT_INSTANCE_KIND_DAMAGE_FLASH)
@@ -649,6 +700,8 @@ void rasterfall_effects_reset_fire(struct rasterfall_effects *effects)
     effects->camera_shake_forward = 0;
     effects->camera_shake_yaw = 0;
     effects->camera_shake_pitch = 0;
+    effects->last_player_hp = -1;
+    effects->damage_shake_cooldown_ms = 0;
 }
 
 void rasterfall_effects_spawn_hit_particles(struct rasterfall_effects *effects,
@@ -840,6 +893,10 @@ static void update_camera_shake(struct rasterfall_effects *effects, int dt_ms)
             max_yaw = camera_shake_max(shake->weapon, CAMERA_SHAKE_AXIS_YAW);
         if (camera_shake_max(shake->weapon, CAMERA_SHAKE_AXIS_PITCH) > max_pitch)
             max_pitch = camera_shake_max(shake->weapon, CAMERA_SHAKE_AXIS_PITCH);
+        if (shake->weapon < 0) {
+            yaw += damage_shake_sample(shake->shake_yaw, shake->age_ms);
+            continue;
+        }
         side += shake_sample(shake->shake_side, shake->shake_seed,
                              shake->age_ms, shake->lifetime_ms);
         up += shake_sample(shake->shake_up, shake->shake_seed + 17,
@@ -871,8 +928,14 @@ static void update_camera_shake(struct rasterfall_effects *effects, int dt_ms)
 void rasterfall_effects_update(struct rasterfall_effects *effects, int dt_ms)
 {
     int i, steps;
+    if (!effects) return;
     steps = dt_ms / 16;
     if (dt_ms > 0 && steps < 1) steps = 1;
+    if (effects->damage_shake_cooldown_ms > 0) {
+        effects->damage_shake_cooldown_ms -= dt_ms;
+        if (effects->damage_shake_cooldown_ms < 0)
+            effects->damage_shake_cooldown_ms = 0;
+    }
     for (i = 0; i < RASTERFALL_EFFECT_INSTANCE_SLOTS; i++) {
         struct rasterfall_effect_instance *instance = &effects->instances[i];
         if (!instance->active) continue;

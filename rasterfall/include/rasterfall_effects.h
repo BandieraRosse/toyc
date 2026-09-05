@@ -72,6 +72,13 @@
 #define RASTERFALL_CAMERA_SHAKE_AWP_MAX_PITCH 10
 #define RASTERFALL_CAMERA_SHAKE_SMOOTHING 160
 
+/* Damage feedback preset. Angles are degrees; the camera uses 1024 units. */
+#define RASTERFALL_DAMAGE_CAMERA_SHAKE_ANGLE_DEGREES 15
+#define RASTERFALL_DAMAGE_CAMERA_SHAKE_RISE_MS 45
+#define RASTERFALL_DAMAGE_CAMERA_SHAKE_HOLD_MS 55
+#define RASTERFALL_DAMAGE_CAMERA_SHAKE_LIFE_MS 500
+#define RASTERFALL_DAMAGE_CAMERA_SHAKE_MIN_INTERVAL_MS 120
+
 /* Runtime component types describe the low-level renderer primitive.  They
  * are intentionally separate from event types: one event may eventually
  * produce a different component or several instances. */
@@ -226,6 +233,8 @@ struct rasterfall_effects {
     /* Smoothed aggregate camera-shake state; never part of gameplay state. */
     int camera_shake_side, camera_shake_up, camera_shake_forward;
     int camera_shake_yaw, camera_shake_pitch;
+    int last_player_hp;
+    int damage_shake_cooldown_ms;
 };
 
 void rasterfall_effects_init(struct rasterfall_effects *effects);

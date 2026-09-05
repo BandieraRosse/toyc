@@ -1,7 +1,7 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-05
-> 源码核对基线：工作区（RAY tracer 短线段/定向线宽投影，通用 emitter preset table，CAMERA_SHAKE 按枪械叠加/限幅/插值）
+> 源码核对基线：工作区（RAY tracer 短线段/定向线宽投影，通用 emitter preset table，CAMERA_SHAKE 含开火后座与受击摇晃）
 
 ## 渲染边界
 
@@ -67,7 +67,9 @@ instance pool；当前爆炸配置生成冲击波 ray、短时 billboard 和固�
   `rasterfall_render_effects()` 统一提交 ray/billboard/particle，overlay 仍在屏幕空间阶段单独提交，
   以保证 HUD 和第一人称视图模型的层级顺序。
   镜头晃动不进入世界 primitive 绘制；`rasterfall_effects_apply_camera_shake()` 在世界渲染前对当前
-  `render_camera` 做确定性衰减采样。
+  `render_camera` 做确定性衰减采样。受击摇晃使用独立的可配置 preset：默认随机左右偏航约 15°，
+  先快速到峰值、短暂保持，再在 500ms 内连续衰减；重置时清除未完成的受击方向。最短接受间隔内
+  的重复伤害不会生成新的摇晃，参数位于 `include/rasterfall_effects.h`。
   统一 instance 和 emitter 池均为固定容量环形池，满载时按写指针覆盖最旧槽位；该策略已由逻辑测试覆盖。后续可在不改变火焰语义的前提下替换粒子渲染细节。
 
 tracer RAY instance 保留事件提供的枪口起点和命中/射程终点，但绘制时按 lifetime/age 在两点
