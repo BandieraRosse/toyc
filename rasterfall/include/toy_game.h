@@ -71,19 +71,9 @@
 #define TOY_GAME_MAX_RANGE      11500   /* 弹丸最大射程（世界单位，≈地图尺度） */
 #define TOY_GAME_MAX_RAYS       12      /* 单枪最大弹丸数（霰弹枪），弹道记录上限 */
 #define TOY_GAME_MAX_NAME       32      /* 身份显示名（含结尾 NUL） */
-#define TOY_GAME_DETECT_RANGE   5600    /* 视觉最远察觉距离（原值两倍） */
+#define TOY_GAME_DETECT_RANGE   5600    /* 枪声警报基础距离 */
 #define TOY_GAME_RETARGET_MS    500     /* 多玩家目标重新评估间隔 */
-#define TOY_GAME_CLOSE_DETECT_RANGE 600 /* 极近距离无需处于正面视野 */
-#define TOY_GAME_NOTICE_MIN_MS  700     /* 进入范围后至少观察多久 */
-#define TOY_GAME_NOTICE_MAX_MS  1400
-#define TOY_GAME_ALERT_MS       700     /* 发现玩家后转向、显示感叹号的停顿 */
-#define TOY_GAME_GUNSHOT_RANGE  3600    /* 枪声调查半径，允许绕过视觉遮挡 */
-#define TOY_GAME_LOCAL_ALERT_RANGE 1800 /* 尖叫直接警觉半径 */
-#define TOY_GAME_LOCAL_ALERT_MAX_RANGE 3200
-#define TOY_GAME_PROPAGATED_ALERT_MIN_MS 850
-#define TOY_GAME_PROPAGATED_ALERT_MAX_MS 1100
-#define TOY_GAME_INVESTIGATE_MS 5000
-#define TOY_GAME_SEARCH_MS      4000
+#define TOY_GAME_CLOSE_DETECT_RANGE 600 /* 特感近距离技能索敌判定 */
 #define TOY_GAME_SMOKER_RANGE   13000
 #define TOY_GAME_SMOKER_PULL_MS 4000
 #define TOY_GAME_SMOKER_COOLDOWN_MS 6500
@@ -139,13 +129,8 @@ enum toy_game_campaign_phase {
 };
 
 enum toy_game_enemy_ai {
-    TOY_GAME_ENEMY_IDLE,
-    TOY_GAME_ENEMY_NOTICE,
-    TOY_GAME_ENEMY_INVESTIGATE,
-    TOY_GAME_ENEMY_ALERT,
-    TOY_GAME_ENEMY_CHASE,
-    TOY_GAME_ENEMY_SEARCH,
-    TOY_GAME_ENEMY_TRACKING
+    /* 普通敌人不再有感知状态机；该值仅表示直接追击，供快照诊断使用。 */
+    TOY_GAME_ENEMY_CHASE
 };
 
 /* 可同步的身份类型。AI 使用独立 actor_id，未来接入网络时不必把 AI
@@ -462,15 +447,11 @@ struct toy_game_enemy {
     int hurt;           /* 受击闪红计时 */
     int shove_stun_ms;  /* 推开后的僵直计时：期间不移动不攻击 */
     int dying_ms;       /* 倒地压扁计时 */
-    int ai_state;       /* enum toy_game_enemy_ai */
-    int ai_timer_ms;    /* 侦测/警觉阶段倒计时 */
-    int target_x, target_z; /* 调查目标或最后声源 */
-    int last_seen_x, last_seen_z;
-    int lost_sight_ms;
+    int target_x, target_z; /* 特感技能锁定的目标位置 */
     int target_kind;         /* 0=主机，1=客户端，2=AI 队友 */
     int target_index;    /* target_kind=2 时的 actor 数组索引 */
     int retarget_timer_ms;
-    int wander_timer_ms;
+    int wander_timer_ms; /* 仅供特感恢复阶段使用 */
     int dir_x, dir_z;   /* 面向，1024 基准定点 */
     struct toy_game_enemy_ability_state ability;
     int airborne_ms;
@@ -898,7 +879,7 @@ int  toy_game_spawn_random_horde(struct toy_game *g, int count,
                                  int point_count, int min_player_dist);
     /* 召唤尸潮：从 points 中随机选出 1-3 个互异刷怪点（不超过
      * point_count），把 count_min..count_max 个持续追踪型敌人
-     * （TOY_GAME_ENEMY_TRACKING，无视遮挡与丢失目标，永远直扑玩家）
+     * （普通敌人统一直接追击，特感保留各自技能逻辑）
      * 均摊到各点矩形内随机生成，每个位置距玩家至少 min_player_dist
      * （单位同世界坐标）。受空槽位限制，返回实际生成数。 */
 

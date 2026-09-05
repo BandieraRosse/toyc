@@ -30,7 +30,7 @@ static void net_windows_log(const char *message) { (void)message; }
  * bytes per player even when nobody is shooting. */
 #define NET_PLAYER_SIZE (NET_PLAYER_BASE_SIZE + 4)
 #define NET_ACTOR_SIZE (43 + TOY_GAME_MAX_NAME)
-#define NET_ENEMY_SIZE 48
+#define NET_ENEMY_SIZE 47
 #define NET_WORLD_BASE_SIZE 52
 #define NET_WORLD_FLAG_SIZE 12
 #define NET_WORLD_FIXED_SIZE (NET_WORLD_BASE_SIZE + 4 + 4 + \
@@ -1368,54 +1368,52 @@ static void encode_enemy(unsigned char *p, const struct toy_game_enemy *e,
     p[0] = (unsigned char)e->active;
     p[1] = (unsigned char)(toy_game_enemy_content_id(e->type) < 0 ? 0 :
                            toy_game_enemy_content_id(e->type));
-    p[2] = (unsigned char)e->ai_state;
-    put_i16(p + 3, e->hp);
-    put_u32(p + 5, (uint32_t)e->x); put_u32(p + 9, (uint32_t)e->z);
-    put_i16(p + 13, e->speed); put_i16(p + 15, e->bite_cooldown_ms);
-    put_i16(p + 17, e->flash); put_i16(p + 19, e->hurt);
-    put_i16(p + 21, e->dying_ms);
-    put_i16(p + 23, e->dir_x); put_i16(p + 25, e->dir_z);
-    p[27] = (unsigned char)(e->ability.special_target_active ? 1 : 0);
-    p[28] = (unsigned char)(e->ability.charge_active ? 1 : 0);
-    put_i16(p + 29, e->ability.special_timer_ms);
-    put_i16(p + 31, e->ability.special_windup_ms);
-    p[33] = put_i8_value(e->ability.special_target_kind);
-    p[34] = put_i8_value(e->ability.special_target_index);
-    put_i16(p + 35, e->ability.special_pull_timer_ms);
-    put_i16(p + 37, e->ability.charge_dir_x);
-    put_i16(p + 39, e->ability.charge_dir_z);
-    put_i16(p + 41, e->ability.charge_elapsed_ms);
-    put_i16(p + 43, e->airborne_ms);
-    put_i16(p + 45, e->airborne_y);
-    p[47] = (unsigned char)index;
+    put_i16(p + 2, e->hp);
+    put_u32(p + 4, (uint32_t)e->x); put_u32(p + 8, (uint32_t)e->z);
+    put_i16(p + 12, e->speed); put_i16(p + 14, e->bite_cooldown_ms);
+    put_i16(p + 16, e->flash); put_i16(p + 18, e->hurt);
+    put_i16(p + 20, e->dying_ms);
+    put_i16(p + 22, e->dir_x); put_i16(p + 24, e->dir_z);
+    p[26] = (unsigned char)(e->ability.special_target_active ? 1 : 0);
+    p[27] = (unsigned char)(e->ability.charge_active ? 1 : 0);
+    put_i16(p + 28, e->ability.special_timer_ms);
+    put_i16(p + 30, e->ability.special_windup_ms);
+    p[32] = put_i8_value(e->ability.special_target_kind);
+    p[33] = put_i8_value(e->ability.special_target_index);
+    put_i16(p + 34, e->ability.special_pull_timer_ms);
+    put_i16(p + 36, e->ability.charge_dir_x);
+    put_i16(p + 38, e->ability.charge_dir_z);
+    put_i16(p + 40, e->ability.charge_elapsed_ms);
+    put_i16(p + 42, e->airborne_ms);
+    put_i16(p + 44, e->airborne_y);
+    p[46] = (unsigned char)index;
 }
 
 static void decode_enemy(const unsigned char *p, struct rasterfall_net_enemy *e)
 {
     memset(e, 0, sizeof(*e));
-    e->index = p[47];
+    e->index = p[46];
     e->active = p[0];
     e->type = toy_game_enemy_from_content_id((int)p[1]);
     if (e->type < 0) e->type = TOY_GAME_ENEMY_PURSUIT_COMMON;
-    e->ai_state = p[2];
-    e->hp = get_i16(p + 3);
-    e->x = (int)get_u32(p + 5); e->z = (int)get_u32(p + 9);
-    e->speed = get_i16(p + 13); e->bite_cooldown_ms = get_i16(p + 15);
-    e->flash = get_i16(p + 17); e->hurt = get_i16(p + 19);
-    e->dying_ms = get_i16(p + 21);
-    e->dir_x = get_i16(p + 23); e->dir_z = get_i16(p + 25);
-    e->ability.special_target_active = p[27] & 1;
-    e->ability.charge_active = p[28] & 1;
-    e->ability.special_timer_ms = get_i16(p + 29);
-    e->ability.special_windup_ms = get_i16(p + 31);
-    e->ability.special_target_kind = get_i8_value(p[33]);
-    e->ability.special_target_index = get_i8_value(p[34]);
-    e->ability.special_pull_timer_ms = get_i16(p + 35);
-    e->ability.charge_dir_x = get_i16(p + 37);
-    e->ability.charge_dir_z = get_i16(p + 39);
-    e->ability.charge_elapsed_ms = get_i16(p + 41);
-    e->airborne_ms = get_i16(p + 43);
-    e->airborne_y = get_i16(p + 45);
+    e->hp = get_i16(p + 2);
+    e->x = (int)get_u32(p + 4); e->z = (int)get_u32(p + 8);
+    e->speed = get_i16(p + 12); e->bite_cooldown_ms = get_i16(p + 14);
+    e->flash = get_i16(p + 16); e->hurt = get_i16(p + 18);
+    e->dying_ms = get_i16(p + 20);
+    e->dir_x = get_i16(p + 22); e->dir_z = get_i16(p + 24);
+    e->ability.special_target_active = p[26] & 1;
+    e->ability.charge_active = p[27] & 1;
+    e->ability.special_timer_ms = get_i16(p + 28);
+    e->ability.special_windup_ms = get_i16(p + 30);
+    e->ability.special_target_kind = get_i8_value(p[32]);
+    e->ability.special_target_index = get_i8_value(p[33]);
+    e->ability.special_pull_timer_ms = get_i16(p + 34);
+    e->ability.charge_dir_x = get_i16(p + 36);
+    e->ability.charge_dir_z = get_i16(p + 38);
+    e->ability.charge_elapsed_ms = get_i16(p + 40);
+    e->airborne_ms = get_i16(p + 42);
+    e->airborne_y = get_i16(p + 44);
 }
 
 static void encode_actor(unsigned char *p, const struct toy_game_actor *a,
@@ -2497,7 +2495,7 @@ int rasterfall_net_snapshot_fragment_test(void)
         snapshot[actor_base + i * NET_ACTOR_SIZE + 1] = (unsigned char)i;
     snapshot[enemy_count_offset] = (unsigned char)enemy_count;
     for (i = 0; i < enemy_count; i++)
-        snapshot[enemy_count_offset + 1 + i * NET_ENEMY_SIZE + 47] =
+        snapshot[enemy_count_offset + 1 + i * NET_ENEMY_SIZE + 46] =
             (unsigned char)i;
 
     /* Complete in order. */
@@ -4392,7 +4390,6 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
                 dst->hp = src->hp;
             }
             dst->type = src->type;
-            dst->ai_state = src->ai_state;
             if (old_active != 1 || src->active != 1) {
                 dst->x = src->x;
                 dst->z = src->z;

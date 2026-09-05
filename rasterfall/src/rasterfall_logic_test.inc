@@ -99,7 +99,6 @@ static int primitive_gameplay_logic_test(void)
         toy_game_set_primitives(&ramp_game, ramp_world, 3, 5000);
         toy_game_place_enemy(&ramp_game, -500, 0);
         if (!ramp_game.enemies[0].active) return 13;
-        ramp_game.enemies[0].ai_state = TOY_GAME_ENEMY_TRACKING;
         for (i = 0; i < 360; i++) {
             toy_game_update_held(&ramp_game, NULL, 0, 0, 0, 1024, 16);
             if (ramp_game.enemies[0].ground_y > max_ground)
@@ -147,7 +146,6 @@ static int primitive_gameplay_logic_test(void)
                                 level_map.primitive_count, 45000);
         toy_game_place_enemy(&west_game, -43400, 0);
         if (!west_game.enemies[0].active) return 15;
-        west_game.enemies[0].ai_state = TOY_GAME_ENEMY_TRACKING;
         max_x = west_game.enemies[0].x;
         for (i = 0; i < 1000; i++) {
             toy_game_update_held(&west_game, NULL, 0, 0, 0, 1024, 16);
@@ -707,7 +705,6 @@ static int run_logic_test(void)
     game.enemies[1].x = 350;
     game.enemies[1].z = -2500;
     game.enemies[1].dir_z = -1024;
-    game.enemies[1].ai_state = TOY_GAME_ENEMY_ALERT;
     rasterfall_render_enemies(&renderer, &camera);
     if (toy_renderer_flush(&renderer) < 1000) {
         toy_renderer_destroy(&renderer);
@@ -2106,8 +2103,6 @@ static int run_logic_test(void)
         game.px = 3000; game.pz = 0;
         toy_game_set_primitives(&game,terrain,2,6000);
         toy_game_place_enemy(&game, -3000, 0);
-        game.enemies[0].ai_state = TOY_GAME_ENEMY_ALERT;
-        game.enemies[0].ai_timer_ms = 100000;
         toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
         if (game.enemies[0].target_kind != TOY_GAME_TARGET_HOST ||
             game.enemies[0].target_index != -1) return 120;
@@ -2133,7 +2128,6 @@ static int run_logic_test(void)
         game.px = 3000; game.pz = 0;
         toy_game_set_primitives(&game,terrain,2,6000);
         toy_game_place_enemy(&game, -3000, 0);
-        game.enemies[0].ai_state = TOY_GAME_ENEMY_TRACKING;
         toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
         if (game.enemies[0].target_kind != TOY_GAME_TARGET_HOST)
             return 124;
@@ -2377,7 +2371,6 @@ static int run_logic_test(void)
         toy_game_set_primitives(&game,terrain,3,5000);
         toy_game_place_enemy(&game, -500, 0);
         if (!game.enemies[0].active) return 180;
-        game.enemies[0].ai_state = TOY_GAME_ENEMY_TRACKING;
         game.enemies[0].type = TOY_GAME_ENEMY_PURSUIT_COMMON;
         for (i = 0; i < 360; i++) {
             toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
@@ -2403,7 +2396,6 @@ static int run_logic_test(void)
         game.enemies[0].ground_y = 600;
         game.enemies[0].target_kind = -1;
         game.enemies[0].retarget_timer_ms = 0;
-        game.enemies[0].ai_state = TOY_GAME_ENEMY_TRACKING;
         game.enemies_alive = 1;
         min_ground = game.enemies[0].ground_y;
         for (i = 0; i < 360; i++) {

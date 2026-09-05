@@ -1,7 +1,7 @@
 # 玩法、会话、地图与 AI
 
 > 文档更新：2026-09-05
-> 源码核对基线：工作区（敌人目录已移除 COMMON/HEAVY 基础类型，仅保留追击型、快速型和特感）
+> 源码核对基线：工作区（敌人目录已移除 COMMON/HEAVY 基础类型，普通敌人直接追击，特感保留独立技能逻辑）
 
 ## 三层职责
 
@@ -35,6 +35,10 @@
 当前敌人目录不再包含独立的 `COMMON` 和 `HEAVY` 基础类型；普通刷怪统一使用
 `PURSUIT_COMMON`，重型刷怪统一使用 `PURSUIT_HEAVY`。`wave_waiting_common` 与
 `wave_waiting_heavy` 仍是追击型波次的统计字段，不代表已删除的敌人类型。
+
+敌人 AI 现在分为两条路径。`PURSUIT_COMMON`、`PURSUIT_HEAVY` 和 `PURSUIT_FAST` 只做最近有效目标选择、导航追击和攻击距离判定，不再经过视野方向、观察、警戒传播、枪声调查、丢失目标或搜索状态。`SMOKER`、`CHARGER`、`TANK` 仍进入各自的特感更新函数，并保留技能的独立索敌、前摇、冲锋/束缚/横扫逻辑。普通敌人的目标选择仍支持主机玩家和存活 AI actor，目标每 `TOY_GAME_RETARGET_MS` 重新评估。
+
+普通敌人状态不再写入网络快照；快照只同步位置、朝向、生命、受击/死亡展示计时和特感能力状态。对应的显式编码入口是 `src/rasterfall_net.c` 的 `encode_enemy` / `decode_enemy`，修改敌人展示字段时要同步检查这里。
 
 开发者区域武器桌的 pickup 由 `src/rasterfall_session.c` 按地图坐标识别，直接解锁并装备；普通
 商店和其他区域的武器 pickup 仍经过 `toy_game_weapon_unlocked` 检查，购买流程不变。

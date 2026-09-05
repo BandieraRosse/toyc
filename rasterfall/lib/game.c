@@ -1661,16 +1661,11 @@ static const int enemy_dir_z[8] = {0, 724, 1024, 724, 0, -724, -1024, -724};
 static void init_enemy_ai(struct toy_game *g, struct toy_game_enemy *e)
 {
     int direction = rand_range(g, 0, 7);
-    e->ai_state = TOY_GAME_ENEMY_IDLE;
-    e->ai_timer_ms = 0;
     e->target_x = e->x;
     e->target_z = e->z;
-    e->last_seen_x = e->x;
-    e->last_seen_z = e->z;
-    e->lost_sight_ms = 0;
     e->target_kind = -1;
     e->retarget_timer_ms = TOY_GAME_RETARGET_MS;
-    e->wander_timer_ms = rand_range(g, 600, 1800);
+    e->wander_timer_ms = 0;
     e->dir_x = enemy_dir_x[direction];
     e->dir_z = enemy_dir_z[direction];
 }
@@ -1702,11 +1697,10 @@ static void init_enemy_stats(struct toy_game *g, struct toy_game_enemy *e,
     e->knockback_z = 0;
 }
 
-/* 在矩形区域内随机生成一个追踪型敌人；距玩家过近、压障碍或槽满
- * 返回 0。生成方向直接朝向玩家（追踪态首个逻辑步就会转脸）。 */
-static int spawn_tracking_enemy(struct toy_game *g, int enemy_type,
-                                int minx, int maxx, int minz, int maxz,
-                                int min_dist2)
+/* 在矩形区域内随机生成一个敌人；距玩家过近、压障碍或槽满返回 0。 */
+static int spawn_enemy_at(struct toy_game *g, int enemy_type,
+                          int minx, int maxx, int minz, int maxz,
+                          int min_dist2)
 {
     int i, slot;
     for (i = 0; i < 24; i++) {
@@ -1730,11 +1724,6 @@ static int spawn_tracking_enemy(struct toy_game *g, int enemy_type,
         g->enemies[slot].hurt = 0;
         g->enemies[slot].dying_ms = 0;
         init_enemy_ai(g, &g->enemies[slot]);
-        g->enemies[slot].ai_state = TOY_GAME_ENEMY_TRACKING;
-        g->enemies[slot].target_x = g->px;
-        g->enemies[slot].target_z = g->pz;
-        g->enemies[slot].last_seen_x = g->px;
-        g->enemies[slot].last_seen_z = g->pz;
         dist = isqrt(dist2);
         if (dist > 0) {
             g->enemies[slot].dir_x = (int)((long long)dx * 1024 / dist);
@@ -1778,7 +1767,7 @@ int toy_game_spawn_horde_type(struct toy_game *g, int enemy_type,
         const struct toy_game_box *p = &points[order[i]];
         int want = per + (i < extra ? 1 : 0);
         for (j = 0; j < want; j++) {
-            if (spawn_tracking_enemy(g, enemy_type, p->minx, p->maxx,
+            if (spawn_enemy_at(g, enemy_type, p->minx, p->maxx,
                                      p->minz, p->maxz, min_dist2))
                 spawned++;
             else if (find_free_slot(g) < 0)
@@ -1811,7 +1800,7 @@ int toy_game_spawn_random_horde(struct toy_game *g, int count,
     for (i = 0; i < count; i++) {
         const struct toy_game_box *p = &points[rand_range(g, 0, point_count - 1)];
         int type = rand_range(g, 0, TOY_GAME_ENEMY_TYPE_COUNT - 1);
-        if (spawn_tracking_enemy(g, type, p->minx, p->maxx,
+        if (spawn_enemy_at(g, type, p->minx, p->maxx,
                                   p->minz, p->maxz, min_dist2))
             spawned++;
         else if (find_free_slot(g) < 0)
@@ -1875,14 +1864,6 @@ static int try_spawn(struct toy_game *g)
         g->enemies[slot].hurt = 0;
         g->enemies[slot].dying_ms = 0;
         init_enemy_ai(g, &g->enemies[slot]);
-        if (g->campaign_mode &&
-            g->campaign_phase == TOY_GAME_PHASE_HORDE) {
-            g->enemies[slot].ai_state = TOY_GAME_ENEMY_CHASE;
-            g->enemies[slot].target_x = g->px;
-            g->enemies[slot].target_z = g->pz;
-            g->enemies[slot].last_seen_x = g->px;
-            g->enemies[slot].last_seen_z = g->pz;
-        }
         g->enemies_alive++;
         return 1;
     }
@@ -2046,7 +2027,7 @@ static void update_waves(struct toy_game *g, int dt_ms)
                 rand_range(g, 0, g->spawn_zone_count - 1) : -1;
             const struct toy_game_box *zone = zone_index >= 0 ?
                 &g->spawn_zones[zone_index] : NULL;
-            if (zone && spawn_tracking_enemy(g, type, zone->minx, zone->maxx,
+            if (zone && spawn_enemy_at(g, type, zone->minx, zone->maxx,
                                               zone->minz, zone->maxz,
                                               TOY_GAME_MIN_SPAWN_DIST *
                                               TOY_GAME_MIN_SPAWN_DIST)) {
@@ -2213,10 +2194,7 @@ static void update_campaign(struct toy_game *g, int dt_ms)
     g->active_attackers = 0;
     for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
         const struct toy_game_enemy *e = &g->enemies[i];
-        if (e->active == 1 &&
-            (e->ai_state == TOY_GAME_ENEMY_ALERT ||
-             e->ai_state == TOY_GAME_ENEMY_CHASE ||
-             e->ai_state == TOY_GAME_ENEMY_TRACKING))
+        if (e->active == 1)
             g->active_attackers++;
     }
     /* The host owns the result.  A downed player can wait for a remote
@@ -2498,33 +2476,6 @@ static void chase_enemy(struct toy_game *g, struct toy_game_enemy *e,
     set_enemy_direction_from_delta(e, e->x - old_x, e->z - old_z);
 }
 
-static void enemy_investigate_noise(struct toy_game_enemy *e, int x, int z)
-{
-    if (e->ai_state == TOY_GAME_ENEMY_ALERT ||
-        e->ai_state == TOY_GAME_ENEMY_CHASE ||
-        e->ai_state == TOY_GAME_ENEMY_TRACKING) return;
-    e->ai_state = TOY_GAME_ENEMY_INVESTIGATE;
-    e->ai_timer_ms = TOY_GAME_INVESTIGATE_MS;
-    e->target_x = x;
-    e->target_z = z;
-}
-
-static void enemy_remember_target(struct toy_game_enemy *e, int x, int z)
-{
-    e->last_seen_x = x;
-    e->last_seen_z = z;
-    e->target_x = x;
-    e->target_z = z;
-    e->lost_sight_ms = 0;
-}
-
-static void enemy_enter_search(struct toy_game_enemy *e)
-{
-    e->ai_state = TOY_GAME_ENEMY_SEARCH;
-    e->ai_timer_ms = TOY_GAME_SEARCH_MS;
-    e->wander_timer_ms = 0;
-}
-
 static int nearest_ai_position(const struct toy_game *g,
                                const struct toy_game_enemy *e,
                                int *out_x, int *out_z,
@@ -2583,58 +2534,6 @@ static int nearest_special_target(const struct toy_game *g,
     return 1;
 }
 
-static void emit_enemy_noise(struct toy_game *g, int x, int z, int range)
-{
-    int i;
-    long long range2 = (long long)range * range;
-    for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
-        struct toy_game_enemy *e = &g->enemies[i];
-        long long dx, dz;
-        if (e->active != 1) continue;
-        dx = e->x - x;
-        dz = e->z - z;
-        if (dx * dx + dz * dz <= range2)
-            enemy_investigate_noise(e, x, z);
-    }
-}
-
-static void alert_nearby_enemies(struct toy_game *g,
-                                 struct toy_game_enemy *source)
-{
-    int i;
-    long long alert2 = (long long)TOY_GAME_LOCAL_ALERT_RANGE *
-                       TOY_GAME_LOCAL_ALERT_RANGE;
-    long long alert_max2 = (long long)TOY_GAME_LOCAL_ALERT_MAX_RANGE *
-                           TOY_GAME_LOCAL_ALERT_MAX_RANGE;
-    for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
-        struct toy_game_enemy *e = &g->enemies[i];
-        long long dx, dz, dist2;
-        if (e == source || e->active != 1) continue;
-        if (e->ai_state == TOY_GAME_ENEMY_ALERT ||
-            e->ai_state == TOY_GAME_ENEMY_CHASE ||
-            e->ai_state == TOY_GAME_ENEMY_TRACKING) continue;
-        dx = e->x - source->x;
-        dz = e->z - source->z;
-        dist2 = dx * dx + dz * dz;
-        if (dist2 <= alert_max2) {
-            e->ai_state = TOY_GAME_ENEMY_ALERT;
-            if (dist2 <= alert2)
-                e->ai_timer_ms = rand_range(g, TOY_GAME_PROPAGATED_ALERT_MIN_MS,
-                                             TOY_GAME_PROPAGATED_ALERT_MAX_MS);
-            else
-                e->ai_timer_ms = rand_range(g,
-                                             TOY_GAME_PROPAGATED_ALERT_MAX_MS + 200,
-                                             TOY_GAME_PROPAGATED_ALERT_MAX_MS + 700);
-            e->target_x = g->px;
-            e->target_z = g->pz;
-            e->last_seen_x = g->px;
-            e->last_seen_z = g->pz;
-            e->lost_sight_ms = 0;
-        }
-    }
-    push_event(g, TOY_GAME_EV_ENEMY_ALERT);
-}
-
 static int enemy_has_line_of_sight(const struct toy_game *g,
                                    const struct toy_game_enemy *e,
                                    int target_x, int target_z)
@@ -2686,24 +2585,6 @@ static int player_in_safe_room_at(const struct toy_game *g, int x, int z)
     for (i = 0; i < g->safe_room_count; i++)
         if (toy_game_point_in_box(x, z, &g->safe_rooms[i])) return 1;
     return 0;
-}
-
-/* 0=不可见，1=侧面/边缘视野，2=正面或极近距离。 */
-static int enemy_visual_stimulus(const struct toy_game *g,
-                                 const struct toy_game_enemy *e,
-                                 int target_x, int target_z,
-                                 int dx, int dz, long long dist)
-{
-    long long dot;
-    if (player_in_safe_room_at(g, target_x, target_z) ||
-        dist > TOY_GAME_DETECT_RANGE) return 0;
-    if (!enemy_has_line_of_sight(g, e, target_x, target_z)) return 0;
-    if (dist <= TOY_GAME_CLOSE_DETECT_RANGE) return 2;
-    dot = (long long)e->dir_x * dx + (long long)e->dir_z * dz;
-    if (dot <= 0) return 0;
-    /* 约 cos(70°)：正面约 140° 为强刺激，其余前半球为弱刺激。 */
-    if (dot * 3 >= dist * 1024) return 2;
-    return 1;
 }
 
 /* 特感技能拥有独立于普通索敌的远距离视野；普通敌人的察觉距离不能
@@ -3702,24 +3583,17 @@ static void update_enemy_ai(struct toy_game *g, struct toy_game_enemy *e,
     long long primary_dist2 = (long long)primary_dx * primary_dx +
                               (long long)primary_dz * primary_dz;
     int dx, dz;
-    long long dist2;
-    long long dist;
     long long ai_dist2 = 0;
-    int ai_x = 0, ai_z = 0;
-    int ai_index = 0;
+    int ai_x = 0, ai_z = 0, ai_index = -1;
     int special_x = g->px, special_z = g->pz;
     int special_player = -1, special_actor = -1;
-    int visual;
     int primary_valid;
-    int ai_available = nearest_ai_position(g, e, &ai_x, &ai_z, &ai_dist2,
-                                           &ai_index);
-    primary_valid = enemy_target_valid(g, e, 0, -1, NULL, NULL);
-    visual = enemy_visual_stimulus(g, e, g->px, g->pz,
-                                   primary_dx, primary_dz,
-                                   isqrt(primary_dist2));
+    int ai_available;
+    long long dist;
 
     if (toy_game_enemy_info(e->type)->ability ==
             TOY_GAME_ENEMY_ABILITY_SMOKER_TONGUE) {
+        int visual;
         if (!nearest_special_target(g, e, &special_x, &special_z,
                                     &special_player, &special_actor)) {
             e->ability.special_target_active = 0;
@@ -3727,9 +3601,8 @@ static void update_enemy_ai(struct toy_game *g, struct toy_game_enemy *e,
         }
         dx = special_x - e->x; dz = special_z - e->z;
         dist = isqrt((long long)dx * dx + (long long)dz * dz);
-        visual = enemy_special_visual_stimulus(g, e, special_x, special_z,
-                                               dx, dz, dist,
-                                               TOY_GAME_SMOKER_RANGE);
+        visual = enemy_special_visual_stimulus(
+            g, e, special_x, special_z, dx, dz, dist, TOY_GAME_SMOKER_RANGE);
         update_smoker(g, e, (int)(e - g->enemies), special_x, special_z,
                       special_player, special_actor, dx, dz, dist, visual,
                       dt_ms);
@@ -3737,6 +3610,7 @@ static void update_enemy_ai(struct toy_game *g, struct toy_game_enemy *e,
     }
     if (toy_game_enemy_info(e->type)->ability ==
             TOY_GAME_ENEMY_ABILITY_CHARGER_RUSH) {
+        int visual;
         if (!nearest_special_target(g, e, &special_x, &special_z,
                                     &special_player, &special_actor)) {
             e->ability.charge_active = 0;
@@ -3744,9 +3618,9 @@ static void update_enemy_ai(struct toy_game *g, struct toy_game_enemy *e,
         }
         dx = special_x - e->x; dz = special_z - e->z;
         dist = isqrt((long long)dx * dx + (long long)dz * dz);
-        visual = enemy_special_visual_stimulus(g, e, special_x, special_z,
-                                               dx, dz, dist,
-                                               TOY_GAME_CHARGER_RANGE);
+        visual = enemy_special_visual_stimulus(
+            g, e, special_x, special_z, dx, dz, dist,
+            TOY_GAME_CHARGER_RANGE);
         update_charger(g, e, special_x, special_z, dx, dz,
                        special_player, special_actor, dist, visual, dt_ms);
         return;
@@ -3764,24 +3638,20 @@ static void update_enemy_ai(struct toy_game *g, struct toy_game_enemy *e,
         return;
     }
 
+    /* 普通敌人只有一条规则：选择最近有效目标，然后直接追击。 */
     if (e->retarget_timer_ms > 0) e->retarget_timer_ms -= dt_ms;
-    if (!enemy_target_valid(g, e, e->target_kind,
-                            e->target_index, NULL, NULL)) {
+    if (!enemy_target_valid(g, e, e->target_kind, e->target_index,
+                            NULL, NULL))
         e->retarget_timer_ms = 0;
-    }
-    if (e->retarget_timer_ms > 0 &&
-        enemy_target_valid(g, e, e->target_kind,
-                           e->target_index, &target_x, &target_z)) {
-        target_kind = e->target_kind;
-    } else if (e->retarget_timer_ms <= 0 || e->target_kind < 0) {
+    if (e->retarget_timer_ms <= 0 || e->target_kind < 0) {
+        ai_available = nearest_ai_position(g, e, &ai_x, &ai_z, &ai_dist2,
+                                           &ai_index);
+        primary_valid = enemy_target_valid(g, e, 0, -1, NULL, NULL);
         target_kind = primary_valid ? 0 : -1;
-        if (ai_available) {
-            if (target_kind < 0 || ai_dist2 < primary_dist2)
-                target_kind = 1;
-        }
+        if (ai_available &&
+            (target_kind < 0 || ai_dist2 < primary_dist2)) target_kind = 1;
         e->target_kind = target_kind;
-        if (target_kind == 1) e->target_index = ai_index;
-        else e->target_index = -1;
+        e->target_index = target_kind == 1 ? ai_index : -1;
         e->retarget_timer_ms = TOY_GAME_RETARGET_MS;
     } else {
         target_kind = e->target_kind;
@@ -3792,117 +3662,14 @@ static void update_enemy_ai(struct toy_game *g, struct toy_game_enemy *e,
         e->target_kind = -1;
         e->target_index = -1;
         e->retarget_timer_ms = 0;
-        if (e->ai_state != TOY_GAME_ENEMY_TRACKING)
-            wander_enemy(g, e, dt_ms);
         return;
     }
     dx = target_x - e->x;
     dz = target_z - e->z;
-    dist2 = (long long)dx * dx + (long long)dz * dz;
-    dist = isqrt(dist2);
-    visual = enemy_visual_stimulus(g, e, target_x, target_z, dx, dz, dist);
-
-    /* 尸潮追踪者：不走普通 AI 状态机，无视视线遮挡/声源/丢失目标，
-     * 每帧直扑玩家当前位置（安全室仍能挡下，作为玩家最后的庇护）。 */
-    if (e->ai_state == TOY_GAME_ENEMY_TRACKING) {
-        enemy_remember_target(e, target_x, target_z);
-        turn_enemy_toward(e, dx, dz);
-        chase_enemy(g, e, dx, dz, dist, target_kind);
-        return;
-    }
-
-    if (e->ai_state == TOY_GAME_ENEMY_IDLE) {
-        wander_enemy(g, e, dt_ms);
-        if (visual) {
-            e->ai_state = TOY_GAME_ENEMY_NOTICE;
-            e->ai_timer_ms = rand_range(g, TOY_GAME_NOTICE_MIN_MS,
-                                        TOY_GAME_NOTICE_MAX_MS);
-            if (visual == 1) e->ai_timer_ms = e->ai_timer_ms * 3 / 2;
-            enemy_remember_target(e, target_x, target_z);
-        }
-        return;
-    }
-    if (e->ai_state == TOY_GAME_ENEMY_NOTICE) {
-        if (!visual) {
-            e->ai_state = TOY_GAME_ENEMY_IDLE;
-            e->ai_timer_ms = 0;
-            e->wander_timer_ms = rand_range(g, 600, 1800);
-            return;
-        }
-        turn_enemy_toward(e, dx, dz);
-        enemy_remember_target(e, target_x, target_z);
-        e->ai_timer_ms -= dt_ms;
-        if (e->ai_timer_ms <= 0) {
-            e->ai_state = TOY_GAME_ENEMY_ALERT;
-            e->ai_timer_ms = TOY_GAME_ALERT_MS;
-            alert_nearby_enemies(g, e);
-        }
-        return;
-    }
-    if (e->ai_state == TOY_GAME_ENEMY_INVESTIGATE) {
-        int tx = e->target_x - e->x;
-        int tz = e->target_z - e->z;
-        long long target_dist = isqrt((long long)tx * tx + (long long)tz * tz);
-        if (visual) {
-            e->ai_state = TOY_GAME_ENEMY_NOTICE;
-            e->ai_timer_ms = TOY_GAME_NOTICE_MIN_MS;
-            enemy_remember_target(e, target_x, target_z);
-            return;
-        }
-        e->ai_timer_ms -= dt_ms;
-        if (e->ai_timer_ms <= 0 || target_dist <= TOY_GAME_ATTACK_RANGE) {
-            e->ai_state = TOY_GAME_ENEMY_IDLE;
-            e->ai_timer_ms = 0;
-            e->wander_timer_ms = rand_range(g, 600, 1800);
-            return;
-        }
-        turn_enemy_toward(e, tx, tz);
-        chase_enemy(g, e, tx, tz, target_dist, target_kind);
-        return;
-    }
-    if (e->ai_state == TOY_GAME_ENEMY_ALERT) {
-        int tx, tz;
-        if (visual) enemy_remember_target(e, target_x, target_z);
-        tx = e->target_x - e->x;
-        tz = e->target_z - e->z;
-        turn_enemy_toward(e, tx, tz);
-        e->ai_timer_ms -= dt_ms;
-        if (e->ai_timer_ms <= 0) {
-            e->ai_state = TOY_GAME_ENEMY_CHASE;
-            e->ai_timer_ms = 0;
-        }
-        return;
-    }
-    if (e->ai_state == TOY_GAME_ENEMY_CHASE) {
-        int tx, tz;
-        long long target_dist;
-        if (visual) enemy_remember_target(e, target_x, target_z);
-        else e->lost_sight_ms += dt_ms;
-        tx = e->last_seen_x - e->x;
-        tz = e->last_seen_z - e->z;
-        target_dist = isqrt((long long)tx * tx + (long long)tz * tz);
-        if (!visual && target_dist <= TOY_GAME_ATTACK_RANGE) {
-            enemy_enter_search(e);
-            return;
-        }
-        turn_enemy_toward(e, tx, tz);
-        chase_enemy(g, e, tx, tz, target_dist, target_kind);
-        return;
-    }
-    if (visual) {
-        enemy_remember_target(e, target_x, target_z);
-        e->ai_state = TOY_GAME_ENEMY_CHASE;
-        return;
-    }
-    e->ai_timer_ms -= dt_ms;
-    if (e->ai_timer_ms <= 0) {
-        e->ai_state = TOY_GAME_ENEMY_IDLE;
-        e->ai_timer_ms = 0;
-        e->wander_timer_ms = rand_range(g, 600, 1800);
-        return;
-    }
-    wander_enemy(g, e, dt_ms);
+    dist = isqrt((long long)dx * dx + (long long)dz * dz);
+    chase_enemy(g, e, dx, dz, dist, target_kind);
 }
+
 
 /* 敌人间分离：按两者碰撞半径留出少量余量，避免尸群挤成一团。 */
 static void separate_enemies(struct toy_game *g)
@@ -4478,7 +4245,6 @@ int toy_game_fire(struct toy_game *g, int sy, int cy)
         push_event(g, TOY_GAME_EV_SHOOT_AWP);
     else
         push_event(g, TOY_GAME_EV_SHOOT);
-    emit_enemy_noise(g, g->px, g->pz, TOY_GAME_GUNSHOT_RANGE);
     if (s->mag == 0) {
         g->reloading = 1;
         g->reload_timer_ms = toy_game_reload_ms(w);
@@ -4964,7 +4730,6 @@ static int toy_game_fire_actor(struct toy_game *g,
         push_event(g, TOY_GAME_EV_SHOOT_AWP);
     else
         push_event(g, TOY_GAME_EV_SHOOT);
-    emit_enemy_noise(g, actor->x, actor->z, TOY_GAME_GUNSHOT_RANGE);
     if (s->mag == 0) {
         actor->reloading = 1;
         actor->reload_timer_ms = w->reload_ms;

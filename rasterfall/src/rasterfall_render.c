@@ -4340,28 +4340,10 @@ static void render_enemy_alert(struct toy_renderer *renderer,
                                const struct camera *camera,
                                const struct toy_game_enemy *e, int scale)
 {
-    struct vec3 world, view;
-    struct toy_screen_vertex screen;
-    int x, y;
-    /* 追踪尸潮也常显红色惊叹号：它们已知晓玩家位置，无需侦测。 */
-    if (e->ai_state != TOY_GAME_ENEMY_NOTICE &&
-        e->ai_state != TOY_GAME_ENEMY_ALERT &&
-        e->ai_state != TOY_GAME_ENEMY_TRACKING) return;
-    world.x = e->x;
-    world.y = enemy_y(500, scale);
-    world.z = e->z;
-    world_to_view(camera, &world, &view);
-    if (view.z < NEAR_Z) return;
-    project_vertex(&renderer->surface, &view, &screen);
-    x = screen.x - 5;
-    y = screen.y;
-    if (x < 1 || x + 11 >= renderer->surface.width ||
-        y < 1 || y + 27 >= renderer->surface.height)
-        return;
-    fill_rect(&renderer->surface, x - 1, y - 1, 11, 18, 0x301010);
-    fill_rect(&renderer->surface, x + 1, y + 1, 7, 14, 0xFF3030);
-    fill_rect(&renderer->surface, x - 1, y + 19, 11, 8, 0x301010);
-    fill_rect(&renderer->surface, x + 1, y + 21, 7, 4, 0xFF3030);
+    (void)renderer;
+    (void)camera;
+    (void)e;
+    (void)scale;
 }
 
 static uint32_t enemy_feedback_color(int target_id)
@@ -4438,8 +4420,6 @@ static int render_enemies(struct toy_renderer *renderer,
                     color = RF_COLOR_ENEMY_PURSUIT_HEAVY;
                 else if (e->type == TOY_GAME_ENEMY_PURSUIT_FAST)
                     color = RF_COLOR_ENEMY_PURSUIT_FAST;
-                else if (e->ai_state == TOY_GAME_ENEMY_TRACKING)
-                    color = RF_COLOR_ENEMY_COMMON; /* PURSUIT_COMMON：沿用普通敌人颜色 */
             }
         }
         active_enemy_lift = e->ground_y;
