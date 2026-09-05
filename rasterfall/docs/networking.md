@@ -1,7 +1,7 @@
 # 网络代码导航
 
 > 文档更新：2026-09-05
-> 源码核对基线：工作区（主机普通枪械、斧头/药丸及炸弹/Molotov 客户端输入均直接应用到远端 actor；投射物/燃烧区显式携带 owner；本地预测位置驱动 camera）
+> 源码核对基线：工作区（主机普通枪械、斧头/药丸及炸弹/Molotov 客户端输入均直接应用到远端 actor；本地快照生命/库存/复活状态直接应用到 `actors[0]`；投射物/燃烧区显式携带 owner；本地预测位置驱动 camera）
 
 ## 文件职责
 
@@ -40,3 +40,6 @@
 协议使用显式整数编码和单位换算；不要发送原始 C struct。Windows socket 适配位于
 `windows/src/socket_winsock.c`，Linux 使用 Tinylibc 网络接口。网络测试可受沙箱和本机端口环境影响，
 应把纯 packet/logic 测试与真实回环或公网验收分开报告。
+
+本地玩家快照应用的状态源是 `actors[TOY_GAME_PLAYER_ACTOR_INDEX]`；legacy 玩家字段只在网络
+兼容入口进行一次性镜像，不能用来驱动本地预测或复活规则。协议 payload 和字段布局保持不变。

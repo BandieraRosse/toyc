@@ -684,17 +684,23 @@ static void net_apply_own_inventory(struct rasterfall_net *net,
                                     const struct rasterfall_net_player *own)
 {
     int i, consumed_selected = 0;
+    struct toy_game_actor *actor;
     if (!net || !game || !own) return;
+    /* Standalone callers may still seed the legacy fixture fields; consume
+     * that compatibility input once, then keep the actor authoritative. */
+    toy_game_mirror_actor_from_player(game);
+    actor = toy_game_local_player_actor(game);
+    if (!actor) return;
     for (i = 0; i < TOY_GAME_WEAPON_SLOTS; i++) {
-        struct toy_game_slot *slot = &game->slots[i];
+        struct toy_game_slot *slot = &actor->slots[i];
         if (slot->weapon != own->slot_weapon[i]) {
             slot->weapon = own->slot_weapon[i];
             slot->mag = own->mag[i];
             slot->reserve = own->reserve[i];
-            game->current_slot = own->current_slot;
+            actor->current_slot = own->current_slot;
         } else if (i >= 2) {
             /* Purchases and uses of throwables/pills are host-authoritative. */
-            if (i == game->current_slot && own->mag[i] < slot->mag)
+            if (i == actor->current_slot && own->mag[i] < slot->mag)
                 consumed_selected = 1;
             slot->mag = own->mag[i];
             slot->reserve = own->reserve[i];
@@ -709,7 +715,8 @@ static void net_apply_own_inventory(struct rasterfall_net *net,
     }
     net->own_snapshot_reserve_valid = 1;
     if (consumed_selected)
-        game->current_slot = own->current_slot;
+        actor->current_slot = own->current_slot;
+    toy_game_mirror_player_from_actor(game);
 }
 
 static int net_client_index_client_id(const struct rasterfall_net *net,
@@ -3268,9 +3275,13 @@ static int net_find_down_target(struct rasterfall_net *net,
     int target = -1;
     long best = 0;
     int i;
-    if (rescuer_id != 0 && session->game_state.player_down) {
-        long dx = (long)rescuer->x - session->game_state.px;
-        long dz = (long)rescuer->z - session->game_state.pz;
+    if (rescuer_id != 0 &&
+        toy_game_local_player_actor_const(&session->game_state)->state ==
+            TOY_GAME_ACTOR_DOWNED) {
+        const struct toy_game_actor *player =
+            toy_game_local_player_actor_const(&session->game_state);
+        long dx = (long)rescuer->x - player->x;
+        long dz = (long)rescuer->z - player->z;
         long d2 = dx * dx + dz * dz;
         if (d2 <= (long)RASTERFALL_INTERACT_RANGE * RASTERFALL_INTERACT_RANGE) {
             target = 0; best = d2;
@@ -3329,7 +3340,9 @@ static int net_target_is_down(const struct rasterfall_net *net,
                               int target_id)
 {
     int i;
-    if (target_id == 0) return session->game_state.player_down;
+    if (target_id == 0)
+        return toy_game_local_player_actor_const(&session->game_state)->state ==
+            TOY_GAME_ACTOR_DOWNED;
     for (i = 0; i < RASTERFALL_NET_CLIENT_MAX; i++)
         if (net->clients[i].client_id == target_id)
             return net->clients[i].active && net->clients[i].connected &&
@@ -3343,11 +3356,13 @@ static void net_finish_rescue(struct rasterfall_net *net,
 {
     int i;
     if (target_id == 0) {
-        session->game_state.player_down = 0;
-        session->game_state.hp = TOY_GAME_REVIVE_HP;
-        session->game_state.player_revive_progress_ms = 0;
-        toy_game_animation_set(&session->game_state.animation,
-                               TOY_GAME_ANIM_REVIVE);
+        struct toy_game_actor *player =
+            toy_game_local_player_actor(&session->game_state);
+        player->state = TOY_GAME_ACTOR_ALIVE;
+        player->hp = TOY_GAME_REVIVE_HP;
+        player->revive_progress_ms = 0;
+        toy_game_actor_set_animation(player, TOY_GAME_ANIM_REVIVE);
+        toy_game_mirror_player_from_actor(&session->game_state);
     } else for (i = 0; i < RASTERFALL_NET_CLIENT_MAX; i++) {
         struct rasterfall_net_client *target = &net->clients[i];
         struct toy_game_actor *actor;
@@ -3441,9 +3456,11 @@ static void net_apply_extra_rescue_actions(struct rasterfall_net *net,
         target_id = rescuer->revive_target_id;
         target_camera = net_rescue_target_camera(net, session, target_id);
         if (target_id == 0) {
+            const struct toy_game_actor *player =
+                toy_game_local_player_actor_const(&session->game_state);
             memset(&host_target_camera, 0, sizeof(host_target_camera));
-            host_target_camera.x = session->game_state.px;
-            host_target_camera.z = session->game_state.pz;
+            host_target_camera.x = player->x;
+            host_target_camera.z = player->z;
             host_target_camera.cy = 1024;
             host_target_camera.pitch_cy = 1024;
             target_camera = &host_target_camera;
@@ -3464,8 +3481,13 @@ static void net_apply_extra_rescue_actions(struct rasterfall_net *net,
         }
         if (rescuer->local_revive_active) {
             rescuer->revive_progress_ms = rescuer->local_revive_progress_ms;
-            if (target_id == 0) session->game_state.player_revive_progress_ms =
-                rescuer->local_revive_progress_ms;
+            if (target_id == 0) {
+                struct toy_game_actor *player =
+                    toy_game_local_player_actor(&session->game_state);
+                player->revive_progress_ms =
+                    rescuer->local_revive_progress_ms;
+                toy_game_mirror_player_from_actor(&session->game_state);
+            }
             else if (target_id > 0 &&
                      target_id <= RASTERFALL_NET_CLIENT_MAX)
                 net->clients[target_id - 1].revive_progress_ms =
@@ -4260,34 +4282,36 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
          * before replacing the previous authoritative value.  Copying a
          * countdown through snapshots would repeatedly extend the flash at
          * snapshot frequency and make it last longer on clients than hosts. */
-        if (own->hp < session->game_state.hp &&
-            session->game_state.hp > 0) {
-            session->game_state.damage_flash_ms = TOY_GAME_DAMAGE_FLASH_MS;
-            /* The host's shared combat event stream is intentionally not
-             * relied upon for a local hit cue: HP acknowledgement is the
-             * reliable, player-specific damage signal. */
-            toy_game_emit_event(&session->game_state, TOY_GAME_EV_BITE);
+        {
+            struct toy_game_actor *local_player =
+                toy_game_local_player_actor(&session->game_state);
+            if (own->hp < local_player->hp && local_player->hp > 0) {
+                local_player->damage_flash_ms =
+                    TOY_GAME_DAMAGE_FLASH_MS;
+                toy_game_emit_event(&session->game_state, TOY_GAME_EV_BITE);
+            }
+            local_player->hp = own->hp;
+            local_player->state = own->downed ? TOY_GAME_ACTOR_DOWNED :
+                TOY_GAME_ACTOR_ALIVE;
+            local_player->revive_progress_ms = own->revive_progress_ms;
+            if (!session->game_state.fire_seq ||
+                !sequence_after(session->game_state.fire_seq, own->fire_seq)) {
+                local_player->kills = own->kills;
+                local_player->special_kills = own->special_kills;
+                local_player->damage_dealt = own->damage_dealt;
+                local_player->throwable_damage_dealt =
+                    own->throwable_damage_dealt;
+            }
+            local_player->fire_seq = own->fire_seq;
+            net_apply_own_inventory(net, &session->game_state, own);
         }
-        session->game_state.hp = own->hp;
-        session->game_state.player_down = own->downed;
-        /* Local viewmodel presentation is immediate and is not rewound by a
-         * routine authoritative snapshot. */
-        session->game_state.player_revive_progress_ms = own->revive_progress_ms;
-        if (!session->game_state.fire_seq ||
-            !sequence_after(session->game_state.fire_seq, own->fire_seq)) {
-            session->game_state.kills = own->kills;
-            session->game_state.special_kills = own->special_kills;
-            session->game_state.damage_dealt = own->damage_dealt;
-            session->game_state.throwable_damage_dealt = own->throwable_damage_dealt;
-        }
-        session->game_state.state = own->state;
         /* Ordinary snapshots never rewind the owning client's firearm clock.
          * Host-side pickups initialize changed slots, firearm ammo grants are
          * merged conservatively, and host-simulated consumables are copied
          * authoritatively so purchases and uses both reach the client. */
-        net_apply_own_inventory(net, &session->game_state, own);
-        toy_game_mirror_actor_from_player(&session->game_state);
-        session->game_state.throw_timer_ms = own->throw_timer_ms;
+        toy_game_local_player_actor(&session->game_state)->throw_timer_ms =
+            own->throw_timer_ms;
+        toy_game_mirror_player_from_actor(&session->game_state);
         session->game_state.wave = net->snapshot_world_wave;
         session->game_state.to_spawn = net->snapshot_world_to_spawn;
         session->game_state.spawn_timer_ms = net->snapshot_world_spawn_timer_ms;

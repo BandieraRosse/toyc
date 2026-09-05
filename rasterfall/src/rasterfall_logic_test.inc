@@ -2038,8 +2038,10 @@ static int run_logic_test(void)
             game.actors[actor_index].state != TOY_GAME_ACTOR_ALIVE ||
             game.actors[actor_index].hp != TOY_GAME_REVIVE_HP) return 110;
 
-        game.player_down = 1;
-        game.hp = 0;
+        game.actors[TOY_GAME_PLAYER_ACTOR_INDEX].state =
+            TOY_GAME_ACTOR_DOWNED;
+        game.actors[TOY_GAME_PLAYER_ACTOR_INDEX].hp = 0;
+        toy_game_mirror_player_from_actor(&game);
         net_test.clients[0].command_ready = 1;
         net_test.clients[0].command.move_forward = 1;
         net_test.clients[0].command.buttons = RASTERFALL_CMD_JUMP;
