@@ -3113,12 +3113,12 @@ static void update_remote_player_motion(struct toy_game *g, int *x, int *z,
     if (*air_x || *air_z) {
         nx = *x + *air_x;
         nz = *z + *air_z;
-        if (!toy_game_position_blocked_at_height(g, nx, *z,
-                                                  TOY_GAME_PLAYER_RADIUS,
-                                                  height)) *x = nx;
-        if (!toy_game_position_blocked_at_height(g, *x, nz,
-                                                  TOY_GAME_PLAYER_RADIUS,
-                                                  height)) *z = nz;
+        if (!position_blocked_at_height(g, nx, *z,
+                                        TOY_GAME_PLAYER_RADIUS, height, 0))
+            *x = nx;
+        if (!position_blocked_at_height(g, *x, nz,
+                                        TOY_GAME_PLAYER_RADIUS, height, 0))
+            *z = nz;
     }
     ground = toy_game_query_ground(g, *x, *z, TOY_GAME_PLAYER_RADIUS,
                                    *ground_y);
