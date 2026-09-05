@@ -3949,6 +3949,64 @@ static int toy_game_melee(struct toy_game *g, int sy, int cy)
     return hit;
 }
 
+int toy_game_actor_use_special(struct toy_game *g,
+                               struct toy_game_actor *actor,
+                               int sy, int cy)
+{
+    struct toy_game_slot *s;
+    int i, hit = 0;
+    long long range2 = (long long)TOY_CONFIG_MELEE_RANGE *
+                       TOY_CONFIG_MELEE_RANGE;
+    if (!g || !actor || !actor->active ||
+        actor->state != TOY_GAME_ACTOR_ALIVE ||
+        g->state != TOY_GAME_PLAYING || actor->current_slot < 0 ||
+        actor->current_slot >= TOY_GAME_WEAPON_SLOTS)
+        return 0;
+    s = &actor->slots[actor->current_slot];
+    if (s->weapon == TOY_GAME_WEAPON_PILL) {
+        if (actor->current_slot != 3 || s->mag <= 0 ||
+            actor->hp >= actor->max_hp) return 0;
+        actor->hp = actor->max_hp;
+        s->mag--;
+        return 1;
+    }
+    if (s->weapon != TOY_GAME_WEAPON_AXE || actor->reloading ||
+        actor->weapon_switch_timer_ms > 0 || actor->melee_timer_ms > 0)
+        return 0;
+    actor->melee_timer_ms = TOY_CONFIG_MELEE_SWING_MS;
+    toy_game_actor_set_animation(actor, TOY_GAME_ANIM_MELEE);
+    push_event(g, TOY_GAME_EV_MELEE);
+    for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
+        struct toy_game_enemy *e = &g->enemies[i];
+        long long dx, dz, dist2, dist, dot;
+        int inflicted;
+        if (e->active != 1) continue;
+        dx = e->x - actor->x; dz = e->z - actor->z;
+        dist2 = dx * dx + dz * dz;
+        if (!dist2 || dist2 > range2) continue;
+        dist = isqrt(dist2);
+        dot = dx * sy + dz * cy;
+        if (dot * TOY_GAME_SHOVE_CONE < dist * 1024) continue;
+        inflicted = TOY_CONFIG_MELEE_DAMAGE < e->hp ?
+            TOY_CONFIG_MELEE_DAMAGE : e->hp;
+        e->hp -= TOY_CONFIG_MELEE_DAMAGE;
+        actor->damage_dealt += inflicted;
+        e->hurt = 150;
+        hit = 1;
+        if (e->hp <= 0) {
+            e->hp = 0;
+            e->active = 2;
+            e->dying_ms = TOY_GAME_DYING_MS;
+            g->enemies_alive--;
+            actor->kills++;
+            push_event(g, TOY_GAME_EV_KILL);
+        }
+    }
+    toy_game_shove_at(g, actor->x, actor->z, sy, cy);
+    if (hit) push_event(g, TOY_GAME_EV_MELEE_HIT);
+    return 1;
+}
+
 static void toy_game_start_burn(struct toy_game *g, int x, int z)
 {
     int i;

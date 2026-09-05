@@ -794,6 +794,9 @@ int  toy_game_update_actor_weapon_held(
     struct toy_game *g, struct toy_game_actor *actor,
     const unsigned char *keys_pressed, int fire_pressed, int fire_held,
     int sy, int cy, int dt_ms, int spread_percent);
+int  toy_game_actor_use_special(struct toy_game *g,
+                                struct toy_game_actor *actor,
+                                int sy, int cy);
 int  toy_game_execute_actor_command(
     struct toy_game *g, struct toy_game_actor *actor,
     const struct toy_game_actor_command *command,

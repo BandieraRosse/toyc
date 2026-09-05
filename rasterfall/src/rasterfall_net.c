@@ -2915,6 +2915,108 @@ static int net_apply_client_fire_report(
     return 1;
 }
 
+/* Firearms are already represented by the remote actor.  Keep this path
+ * independent from toy_game's local-player compatibility fields; those
+ * fields are still needed by the legacy throwable implementation below. */
+static int net_apply_client_actor_state(struct rasterfall_net *net,
+                                        struct rasterfall_session *session,
+                                        struct rasterfall_net_client *client,
+                                        struct toy_game_actor *actor)
+{
+    struct toy_game *g;
+    int weapon, event_start, fired, special_fired = 0;
+    if (!net || !session || !client || !actor) return 0;
+    g = &session->game_state;
+    if (actor->current_slot < 0 ||
+        actor->current_slot >= TOY_GAME_WEAPON_SLOTS) return 0;
+    weapon = actor->slots[actor->current_slot].weapon;
+    if (weapon == TOY_GAME_WEAPON_BOMB ||
+        weapon == TOY_GAME_WEAPON_MOLOTOV)
+        return 0;
+
+    if ((client->command.buttons & RASTERFALL_CMD_INTERACT) &&
+        client->command.shop_request_id != client->shop_request_id &&
+        actor->state == TOY_GAME_ACTOR_ALIVE)
+        rasterfall_session_interact_remote(
+            session, &client->camera,
+            client->command.shop_arg > 0 ? client->command.shop_arg - 1 : -1);
+    if ((client->command.buttons & RASTERFALL_CMD_FLAG) &&
+        client->command.shop_request_id != client->shop_request_id)
+        rasterfall_session_toggle_flag_remote(session, &client->camera,
+                                               client->client_id);
+    rasterfall_session_update_flag_remote(session, &client->camera,
+                                          client->client_id);
+    if ((client->command.buttons & RASTERFALL_CMD_SHOP) &&
+        client->command.shop_request_id != client->shop_request_id) {
+        rasterfall_session_shop_request(session, client->command.shop_action,
+                                        client->command.shop_item,
+                                        client->command.shop_arg);
+        client->shop_request_id = client->command.shop_request_id;
+    }
+    if (client->command.buttons & (RASTERFALL_CMD_FLAG |
+                                   RASTERFALL_CMD_INTERACT))
+        client->shop_request_id = client->command.shop_request_id;
+
+    event_start = g->event_count;
+    if ((weapon == TOY_GAME_WEAPON_AXE ||
+         weapon == TOY_GAME_WEAPON_PILL) &&
+        (client->command.buttons & RASTERFALL_CMD_FIRE)) {
+        special_fired = toy_game_actor_use_special(
+            g, actor, client->camera.sy, client->camera.cy);
+        fired = 0;
+    } else {
+        fired = net_apply_client_fire_report(g, client, client->fire_seq,
+                                             client->ray_count, client->rays);
+    }
+    if (client->command.buttons & RASTERFALL_CMD_CLEAR_STATS) {
+        actor->kills = 0;
+        actor->special_kills = 0;
+        actor->damage_dealt = 0;
+        actor->throwable_damage_dealt = 0;
+    }
+    if (!special_fired) {
+        if (fired)
+            toy_game_actor_set_animation(actor, TOY_GAME_ANIM_FIRE);
+        else if (client->reloading)
+            toy_game_actor_set_animation(actor, TOY_GAME_ANIM_RELOAD);
+    }
+    toy_game_actor_update_animation(actor, 16);
+
+    client->hp = actor->hp;
+    client->down = actor->state == TOY_GAME_ACTOR_DOWNED;
+    client->state = g->state;
+    client->revive_progress_ms = actor->revive_progress_ms;
+    client->kills = actor->kills;
+    client->special_kills = actor->special_kills;
+    client->damage_dealt = actor->damage_dealt;
+    client->throwable_damage_dealt = actor->throwable_damage_dealt;
+    client->airborne_ms = actor->airborne_ms;
+    client->airborne_y = actor->airborne_y;
+    client->airborne_velocity = actor->vertical_velocity;
+    client->air_x = actor->air_x;
+    client->air_z = actor->air_z;
+    memcpy(client->slots, actor->slots, sizeof(client->slots));
+    client->current_slot = actor->current_slot;
+    client->reloading = actor->reloading;
+    client->reload_timer_ms = actor->reload_timer_ms;
+    client->weapon_switch_timer_ms = actor->weapon_switch_timer_ms;
+    client->muzzle_flash_ms = actor->muzzle_flash_ms;
+    client->throw_timer_ms = actor->throw_timer_ms;
+    client->fire_seq = actor->fire_seq;
+    client->ray_count = actor->ray_count;
+    memcpy(client->rays, actor->rays, sizeof(client->rays));
+    client->animation = actor->animation;
+    if (g->event_count > event_start) {
+        int count = g->event_count - event_start;
+        if (count > TOY_GAME_MAX_EVENTS) count = TOY_GAME_MAX_EVENTS;
+        net_queue_remote_events(net, g->events + event_start, count,
+                                client->client_id, client->camera.x,
+                                client->camera.z);
+        g->event_count = event_start;
+    }
+    return 1;
+}
+
 static void net_apply_client(struct rasterfall_net *net,
                                    struct rasterfall_session *session,
                                    struct rasterfall_net_client *client)
@@ -2963,6 +3065,11 @@ static void net_apply_client(struct rasterfall_net *net,
     toy_game_update_actor_ground(g, index);
     if (client->command.buttons & RASTERFALL_CMD_REVIVE)
         net_paid_revive_client(net, session, client);
+    /* Do not route ordinary remote firearms through the local player's
+     * compatibility state.  The actor is the only gameplay representation
+     * used for this client; throwable weapons remain on the legacy path. */
+    if (net_apply_client_actor_state(net, session, client, actor))
+        return;
     memcpy(host_slots, g->slots, sizeof(host_slots));
     memcpy(host_rays, g->rays, sizeof(host_rays));
     host_px = g->px; host_pz = g->pz; host_hp = g->hp;
