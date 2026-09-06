@@ -2106,12 +2106,14 @@ int toy_game_actor_shove(struct toy_game *g, struct toy_game_actor *actor,
 
 int toy_game_use_pill(struct toy_game *g)
 {
-    if (!g || g->state != TOY_GAME_PLAYING || g->current_slot != 3 ||
-        g->slots[3].weapon != TOY_GAME_WEAPON_PILL || g->slots[3].mag <= 0 ||
-        g->hp >= TOY_GAME_PLAYER_HP) return 0;
-    g->hp = TOY_GAME_PLAYER_HP;
-    g->slots[3].mag--;
-    return 1;
+    struct toy_game_actor *player;
+    int used;
+    if (!g) return 0;
+    toy_game_mirror_actor_from_player(g);
+    player = toy_game_local_player_actor(g);
+    used = toy_game_actor_use_special(g, player, player->sy, player->cy);
+    toy_game_mirror_player_from_actor(g);
+    return used;
 }
 
 /* ── 波次状态机 ────────────────────────────────────────────────── */
@@ -4505,46 +4507,17 @@ static void toy_game_update_projectiles(struct toy_game *g, int dt_ms)
 
 static int toy_game_throw(struct toy_game *g, int sy, int cy)
 {
-    struct toy_game_slot *s;
-    int i;
-    if (!g || g->current_slot < 0 || g->current_slot >= TOY_GAME_WEAPON_SLOTS)
-        return 0;
-    s = &g->slots[g->current_slot];
-    if ((s->weapon != TOY_GAME_WEAPON_BOMB &&
-         s->weapon != TOY_GAME_WEAPON_MOLOTOV) || s->mag <= 0 ||
-        g->throw_timer_ms > 0 || g->weapon_switch_timer_ms > 0) return 0;
-    for (i = 0; i < TOY_GAME_MAX_PROJECTILES; i++)
-        if (!g->projectiles[i].active) break;
-    if (i == TOY_GAME_MAX_PROJECTILES) return 0;
-    s->mag--;
-    g->throw_timer_ms = TOY_CONFIG_THROW_COOLDOWN_MS;
-    g->projectiles[i].active = 1;
-    g->projectiles[i].kind = s->weapon;
-    /* One normalized 3D direction: the projectile leaves along the crosshair. */
-    g->projectiles[i].x = g->px + (long long)sy * g->pitch_cy * 250 /
-                          (1024 * 1024);
-    g->projectiles[i].z = g->pz + (long long)cy * g->pitch_cy * 250 /
-                          (1024 * 1024);
-    g->projectiles[i].vx = (int)((long long)sy * g->pitch_cy *
-                                 TOY_CONFIG_THROW_SPEED / (1024 * 1024));
-    g->projectiles[i].vz = (int)((long long)cy * g->pitch_cy *
-                                 TOY_CONFIG_THROW_SPEED / (1024 * 1024));
-    g->projectiles[i].vy = (int)((long long)g->pitch_sy *
-                                 TOY_CONFIG_THROW_SPEED / 1024);
-    g->projectiles[i].fuse_ms = 0;
-    g->projectiles[i].blink_timer_ms = 0;
-    g->projectiles[i].flash_ms = 0;
-    g->projectiles[i].age_ms = 0;
-    g->projectiles[i].y = g->view_y + 900 +
-                          g->pitch_sy * 250 / 1024;
-    g->projectiles[i].bounces = 0;
-    g->projectiles[i].landed = 0;
-    toy_game_animation_set(&g->animation, TOY_GAME_ANIM_THROW);
-    push_event(g, TOY_GAME_EV_SHOOT);
-    /* A consumed throwable is never left selected. */
-    if (g->slots[0].weapon >= 0) toy_game_switch_weapon(g, 0);
-    else if (g->slots[1].weapon >= 0) toy_game_switch_weapon(g, 1);
-    return 1;
+    struct toy_game_actor *player;
+    int thrown;
+    if (!g) return 0;
+    toy_game_mirror_actor_from_player(g);
+    player = toy_game_local_player_actor(g);
+    player->sy = sy;
+    player->cy = cy;
+    thrown = toy_game_actor_throwable(g, player, sy, cy,
+                                      g->pitch_sy, g->pitch_cy, g->view_y);
+    toy_game_mirror_player_from_actor(g);
+    return thrown;
 }
 
 static int toy_game_fire_cooldown_ms(const struct toy_game_weapon_info *w)
