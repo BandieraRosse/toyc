@@ -360,7 +360,8 @@ void toy_game_mirror_actor_from_player(struct toy_game *g)
     a->state = g->player_down ? TOY_GAME_ACTOR_DOWNED :
         TOY_GAME_ACTOR_ALIVE;
     a->x = g->px; a->z = g->pz;
-    a->sy = g->pitch_sy; a->cy = g->pitch_cy;
+    /* actor sy/cy is horizontal facing.  pitch_sy/pitch_cy is the separate
+     * vertical aim vector used only by throwable launch and view height. */
     a->hp = g->hp; a->max_hp = TOY_GAME_PLAYER_HP;
     a->revive_progress_ms = g->player_revive_progress_ms;
     memcpy(a->slots, g->slots, sizeof(a->slots));

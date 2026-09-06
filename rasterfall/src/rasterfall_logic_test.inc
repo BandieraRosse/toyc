@@ -43,6 +43,10 @@ static int primitive_gameplay_logic_test(void)
     world[0]=test_flat_primitive(-2000,2000,-2000,2000,0);
     world[1]=test_flat_primitive(200,1000,-500,500,100);
     toy_game_init(&g,211); toy_game_set_primitives(&g,world,2,2000);
+    g.actors[0].sy = 1024; g.actors[0].cy = 0;
+    toy_game_set_player_pitch(&g, 300, 979, 700);
+    toy_game_mirror_actor_from_player(&g);
+    if (g.actors[0].sy != 1024 || g.actors[0].cy != 0) return 17;
     ground=toy_game_query_ground(&g,400,0,TOY_GAME_PLAYER_RADIUS,0);
     if(!ground.has_support||!ground.has_landing||ground.support_y!=100)return 1;
     g.px=0;g.pz=0;g.player_ground_y=0;
