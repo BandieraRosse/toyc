@@ -1,7 +1,7 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-06
-> 源码核对基线：工作区（本地玩家移动/跳跃/airborne/水平朝向/武器/库存/动画/special-control/shove 由 `actors[0]` 直接驱动；空格/E 等关键边沿经过固定步 pending 队列；生成距离、安全室/战役目标、敌人近战/Tank 受击、爆炸目标、敌人特感索敌、投掷物/药丸、hitscan 开火和 update_held 武器推进已按 actor 规则处理；legacy 仅供兼容入口和展示适配；武器切换、装备、补给和购买等兼容入口只在检测到旧坐标输入时导入 legacy，避免正式 actor 移动后被旧坐标回滚；shove 兼容入口按字段冲突选择导入范围，不全量覆盖 actor；camera body 由 actor 派生；网络协议未变）
+> 源码核对基线：工作区（本地玩家移动/跳跃/airborne/水平朝向/武器/库存/动画/special-control/shove 由 `actors[0]` 直接驱动；空格/E 等关键边沿经过固定步 pending 队列；武器装备、切换、补给、购买和药丸使用的正式入口均显式接收 actor；生成距离、安全室/战役目标、敌人近战/Tank 受击、爆炸目标、敌人特感索敌、投掷物、hitscan 开火和 update_held 武器推进已按 actor 规则处理；legacy 仍存在于尚未完成的世界规则和少量兼容入口，正在按 actor-only 方案删除；camera body 由 actor 派生；网络协议未变）
 
 本目录面向接手 Rasterfall 任务的编码代理。目标不是介绍玩法，而是先把问题归到正确的
 状态所有者和文件，再开始搜索。命令、资源导入方法和用户可见特性仍以

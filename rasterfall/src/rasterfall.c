@@ -639,7 +639,8 @@ static void draw_crosshair(struct toy_surface *surface,
                            const struct toy_game *game_state)
 {
     int cx = surface->width / 2, cy = surface->height / 2;
-    int gap = toy_game_current_spread(game_state) * 9 / 20 + 2;
+    int gap = toy_game_actor_current_spread(
+        toy_game_local_player_actor_const(game_state)) * 9 / 20 + 2;
     int length = 5;
     if (gap > 65) gap = 65;
     for (int d = -gap - length; d <= gap + length; d++) {
@@ -3062,7 +3063,9 @@ startup_again:
                     camera.z = spot_z[idx % 8];
                     game.px = camera.x;
                     game.pz = camera.z;
-                    toy_game_equip_weapon(&game, wslot[idx % 3]);
+                    toy_game_actor_equip_weapon(
+                        &game, toy_game_local_player_actor(&game),
+                        wslot[idx % 3]);
                     __printf("rasterfall: auto teleport %d to (%d,%d) w=%d\n",
                              idx, camera.x, camera.z, wslot[idx % 3]);
                 }

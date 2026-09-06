@@ -469,11 +469,11 @@ static void session_jump_player(struct rasterfall_session *session,
 static void session_sync_special_motion(struct rasterfall_session *session,
                                         struct camera *camera)
 {
-    const struct toy_game_actor *player;
+    struct toy_game_actor *player;
     if (!session || !camera) return;
     /* The gameplay/prediction state owns the body position.  Camera keeps
      * orientation and presentation height, and is rebuilt from that state. */
-    player = toy_game_local_player_actor_const(&session->game_state);
+    player = toy_game_local_player_actor(&session->game_state);
     if (!player) return;
     rasterfall_camera_set_body(camera, player->x, player->z);
     camera->y = RASTERFALL_STANDING_CAMERA_Y +
@@ -758,6 +758,8 @@ static void session_client_interact_banner(struct rasterfall_session *session)
 static void session_interact(struct rasterfall_session *session,
                              struct rasterfall_interactable *it)
 {
+    struct toy_game_actor *player =
+        toy_game_local_player_actor(&session->game_state);
     toy_game_emit_event(&session->game_state, TOY_GAME_EV_BUTTON);
     session->banner_success = 1;
     if (it->kind == TOY_MAP_PICKUP_SMG ||
@@ -946,7 +948,7 @@ static void session_interact(struct rasterfall_session *session,
         session->banner_ms = 2200;
         session->banner_text = "EULA AK HUMANOID POSE DEBUGGER";
     } else if (it->kind == TOY_MAP_PICKUP_AMMO) {
-        toy_game_refill_ammo(&session->game_state);
+        toy_game_actor_refill_ammo(&session->game_state, player);
     } else if (it->kind == TOY_MAP_PICKUP_MONEY_BUTTON) {
         session->game_state.money += 500;
         session->banner_ms = 2000;
@@ -962,14 +964,14 @@ static void session_interact(struct rasterfall_session *session,
         it->kind == TOY_MAP_PICKUP_PILL) {
         if (it->kind == TOY_MAP_PICKUP_THROWABLE ||
             it->kind == TOY_MAP_PICKUP_PILL) {
-            toy_game_equip_weapon(&session->game_state, it->weapon);
+            toy_game_actor_equip_weapon(&session->game_state, player, it->weapon);
             return;
         }
         if (session_is_developer_weapon_pickup(it)) {
             session->game_state.unlocked_weapons |= 1u << it->weapon;
-            toy_game_equip_weapon(&session->game_state, it->weapon);
+            toy_game_actor_equip_weapon(&session->game_state, player, it->weapon);
         } else if (toy_game_weapon_unlocked(&session->game_state, it->weapon))
-            toy_game_equip_weapon(&session->game_state, it->weapon);
+            toy_game_actor_equip_weapon(&session->game_state, player, it->weapon);
         else {
             session->banner_ms = 2000;
             session->banner_success = 0;
@@ -980,9 +982,9 @@ static void session_interact(struct rasterfall_session *session,
             TOY_GAME_WEAPON_SMG : TOY_GAME_WEAPON_SHOTGUN;
         if (session_is_developer_weapon_pickup(it)) {
             session->game_state.unlocked_weapons |= 1u << weapon;
-            toy_game_equip_weapon(&session->game_state, weapon);
+            toy_game_actor_equip_weapon(&session->game_state, player, weapon);
         } else if (toy_game_weapon_unlocked(&session->game_state, weapon))
-            toy_game_equip_weapon(&session->game_state, weapon);
+            toy_game_actor_equip_weapon(&session->game_state, player, weapon);
         else {
             session->banner_ms = 2000;
             session->banner_success = 0;
@@ -1205,9 +1207,11 @@ int rasterfall_session_shop_execute(struct rasterfall_session *session,
                                     const struct rasterfall_shop_request *request)
 {
     int result = 0, price;
+    struct toy_game_actor *player;
     if (!rasterfall_session_shop_can(session, request, &price)) return 0;
+    player = toy_game_local_player_actor(&session->game_state);
     if (request->action == RASTERFALL_SHOP_BUY_WEAPON)
-        result = toy_game_buy_weapon(&session->game_state, request->item);
+        result = toy_game_buy_weapon(&session->game_state, player, request->item);
     else if (request->action == RASTERFALL_SHOP_HIRE_AI)
         result = session_hire_ai(session, request->item);
     else if (request->action == RASTERFALL_SHOP_BUY_FLAG)
@@ -1610,7 +1614,7 @@ static int session_managed_ai_pistol_defense(
     int enemy_index, dx, dz, distance;
     struct toy_game_enemy *enemy;
     const struct toy_game_actor *player;
-    player = session ? toy_game_local_player_actor_const(&session->game_state) : NULL;
+    player = session ? toy_game_local_player_actor(&session->game_state) : NULL;
     if (!session || !camera || !command ||
         !player || player->current_slot != 1 ||
         player->special_control !=
@@ -1644,10 +1648,10 @@ static int session_managed_ai_weapon_master(
     int target_weapon, shop = -1, ammo = -1, i;
     int dx, dz, distance;
     const struct toy_game_weapon_info *info;
-    const struct toy_game_actor *player;
+    struct toy_game_actor *player;
 
     int primary_empty = 0;
-    player = session ? toy_game_local_player_actor_const(&session->game_state) : NULL;
+    player = session ? toy_game_local_player_actor(&session->game_state) : NULL;
     if (!session || !camera || !command || !player ||
         player->state == TOY_GAME_ACTOR_DOWNED ||
         session->game_state.state != TOY_GAME_PLAYING)
@@ -1672,7 +1676,7 @@ static int session_managed_ai_weapon_master(
          * smoker disables ordinary movement.  The next normal weapon is
          * restored after the ammo-box trip. */
         if (player->current_slot != 1)
-            toy_game_switch_weapon(&session->game_state, 1);
+            toy_game_actor_switch_weapon(&session->game_state, player, 1);
         session->managed_ai_weapon_master_route = 7;
     }
     /* Every rest period starts with a mandatory ammo-box visit. */
@@ -1719,10 +1723,10 @@ static int session_managed_ai_weapon_master(
             command->move_forward = 1;
             return 1;
         }
-        toy_game_refill_ammo(&session->game_state);
-        if (session->game_state.slots[0].weapon >= TOY_GAME_WEAPON_SMG &&
-            session->game_state.slots[0].weapon <= TOY_GAME_WEAPON_AWP)
-            toy_game_switch_weapon(&session->game_state, 0);
+        toy_game_actor_refill_ammo(&session->game_state, player);
+        if (player->slots[0].weapon >= TOY_GAME_WEAPON_SMG &&
+            player->slots[0].weapon <= TOY_GAME_WEAPON_AWP)
+            toy_game_actor_switch_weapon(&session->game_state, player, 0);
         if (session->game_state.campaign_phase == TOY_GAME_PHASE_CALM)
             session->managed_ai_ammo_rest_wave = session->game_state.wave;
         session->managed_ai_weapon_master_route = 6;
@@ -1770,13 +1774,15 @@ static int session_managed_ai_weapon_master(
                 session->managed_ai_weapon_master_route++;
             } else if (toy_game_weapon_unlocked(&session->game_state,
                                                  target_weapon)) {
-                toy_game_equip_weapon(&session->game_state, target_weapon);
+                toy_game_actor_equip_weapon(&session->game_state, player,
+                                            target_weapon);
                 session->managed_ai_weapon_master_route = 3;
             } else if (session->game_state.money >=
                        toy_game_weapon_price(target_weapon)) {
                 /* Deliberately bypass the shop UI: range and money are
                  * checked here, then the authoritative purchase function. */
-                if (toy_game_buy_weapon(&session->game_state, target_weapon) > 0) {
+                if (toy_game_buy_weapon(&session->game_state, player,
+                                        target_weapon) > 0) {
                     session->managed_ai_weapon_master_route = 3;
                     session->banner_ms = 1200;
                     session->banner_text = "MANAGED AI BOUGHT WEAPON";
@@ -1829,8 +1835,8 @@ static int session_managed_ai_weapon_master(
             command->move_forward = 1;
             return 1;
         }
-        toy_game_refill_ammo(&session->game_state);
-        toy_game_equip_weapon(&session->game_state, target_weapon);
+        toy_game_actor_refill_ammo(&session->game_state, player);
+        toy_game_actor_equip_weapon(&session->game_state, player, target_weapon);
         session->managed_ai_ammo_rest_wave = session->game_state.wave;
         session->managed_ai_weapon_master_route = 6;
     }

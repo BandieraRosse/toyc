@@ -26,9 +26,8 @@ static int ai_try_shove(struct toy_game *g, struct toy_game_actor *actor);
 static int apply_entity_impact_with_knockback(struct toy_game *g, int kind,
                                               int index, int dx, int dz,
                                               int damage, int knockback);
-static int toy_game_fire_actor(struct toy_game *g,
-                               struct toy_game_actor *actor,
-                               int sy, int cy, int spread_percent);
+int toy_game_actor_fire(struct toy_game *g, struct toy_game_actor *actor,
+                        int sy, int cy, int spread_percent);
 static int toy_game_switch_actor_weapon(struct toy_game_actor *actor, int slot);
 
 /* ── PRNG：xorshift64* ──────────────────────────────────────────── */
@@ -397,21 +396,6 @@ void toy_game_mirror_actor_from_player(struct toy_game *g)
     a->special_pull_step = g->player_special_pull_step;
     a->special_pull_timer_ms = g->player_pull_timer_ms;
     memcpy(a->name, g->player_name, sizeof(a->name));
-}
-
-/* Legacy wrappers may receive direct px/pz edits from old hosts.  In an
- * actor-driven session the actor can already have moved earlier in this
- * tick, so importing stale legacy state would roll the player back. */
-static struct toy_game_actor *toy_game_prepare_local_actor(
-    struct toy_game *g)
-{
-    struct toy_game_actor *actor;
-    if (!g) return NULL;
-    actor = toy_game_local_player_actor(g);
-    if (!actor) return NULL;
-    if (!actor->active || (actor->x == g->px && actor->z == g->pz))
-        toy_game_mirror_actor_from_player(g);
-    return actor;
 }
 
 const struct toy_game_actor *toy_game_actor_by_id_const(const struct toy_game *g,
@@ -2073,6 +2057,51 @@ static int ai_try_shove(struct toy_game *g, struct toy_game_actor *actor)
     return pushed;
 }
 
+static int toy_game_actor_pill_heal(struct toy_game *g,
+                                    struct toy_game_actor *actor,
+                                    int sy, int cy)
+{
+    struct toy_game_slot *slot;
+    int i, best = -1;
+    long long best_d2 = 0;
+    long long range2 = (long long)TOY_CONFIG_SHOVE_RANGE *
+                       TOY_CONFIG_SHOVE_RANGE;
+    if (!g || !actor || actor->current_slot != 3) return 0;
+    slot = &actor->slots[3];
+    if (slot->weapon != TOY_GAME_WEAPON_PILL || slot->mag <= 0) return 0;
+    for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
+        struct toy_game_actor *target = &g->actors[i];
+        long long dx, dz, d2, dist, dot;
+        if (!target->active || target->state != TOY_GAME_ACTOR_ALIVE ||
+            target->base_core || target->hp >= target->max_hp) continue;
+        dx = target->x - actor->x; dz = target->z - actor->z;
+        d2 = dx * dx + dz * dz;
+        if (!d2 || d2 > range2) continue;
+        dist = isqrt(d2);
+        dot = dx * sy + dz * cy;
+        if (dot * TOY_GAME_SHOVE_CONE < dist * 1024) continue;
+        if (best < 0 || d2 < best_d2) {
+            best = i;
+            best_d2 = d2;
+        }
+    }
+    if (best >= 0) {
+        g->actors[best].hp = g->actors[best].max_hp;
+        slot->mag--;
+        return 1;
+    }
+    for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
+        struct toy_game_actor *base = &g->actors[i];
+        if (!base->active || !base->base_core || base->hp <= 0 ||
+            base->hp >= base->max_hp) continue;
+        base->hp += 100;
+        if (base->hp > base->max_hp) base->hp = base->max_hp;
+        slot->mag--;
+        return 1;
+    }
+    return 0;
+}
+
 int toy_game_shove(struct toy_game *g, int sy, int cy)
 {
     struct toy_game_actor *player;
@@ -2158,6 +2187,7 @@ int toy_game_actor_shove(struct toy_game *g, struct toy_game_actor *actor,
     push_event(g, TOY_GAME_EV_SHOVE);
     pushed = toy_game_shove_at(g, actor->x, actor->z, sy, cy);
     if (pushed > 0) push_event(g, TOY_GAME_EV_SHOVE_HIT);
+    toy_game_actor_pill_heal(g, actor, sy, cy);
     return pushed;
 }
 
@@ -2170,18 +2200,6 @@ int toy_game_shove_from_position(struct toy_game *g, int x, int z,
     pushed = toy_game_shove_at(g, x, z, sy, cy);
     if (pushed > 0) push_event(g, TOY_GAME_EV_SHOVE_HIT);
     return pushed;
-}
-
-int toy_game_use_pill(struct toy_game *g)
-{
-    struct toy_game_actor *player;
-    int used;
-    if (!g) return 0;
-    toy_game_mirror_actor_from_player(g);
-    player = toy_game_local_player_actor(g);
-    used = toy_game_actor_use_special(g, player, player->sy, player->cy);
-    toy_game_mirror_player_from_actor(g);
-    return used;
 }
 
 /* ── 波次状态机 ────────────────────────────────────────────────── */
@@ -3273,6 +3291,8 @@ void toy_game_update_player_motion(struct toy_game *g, int dt_ms)
 {
     if (!g) return;
     toy_game_mirror_actor_from_player(g);
+    toy_game_update_actor_special_control(
+        g, toy_game_local_player_actor(g), dt_ms);
     toy_game_update_actor_motion(g, TOY_GAME_PLAYER_ACTOR_INDEX, dt_ms);
     toy_game_mirror_player_from_actor(g);
 }
@@ -4179,8 +4199,8 @@ static int fire_ray(struct toy_game *g, int source_x, int source_z,
          * delta.  The host clamps against its merged HP after concurrent
          * client shots are ordered. */
         *out_damage = damage;
-        *out_ex = g->px + (sy * best_t) / 1024;
-        *out_ez = g->pz + (cy * best_t) / 1024;
+        *out_ex = source_x + (sy * best_t) / 1024;
+        *out_ez = source_z + (cy * best_t) / 1024;
         *out_hit_world = 0;
         toy_game_apply_reported_hit(g, actor, best, damage);
         return 1;
@@ -4598,6 +4618,24 @@ static int toy_game_reload_ms(const struct toy_game_weapon_info *w)
     return w->reload_ms * TOY_CONFIG_PLAYER_RELOAD_TIME_PERCENT / 100;
 }
 
+static int toy_game_actor_fire_cooldown_ms(
+    const struct toy_game_actor *actor,
+    const struct toy_game_weapon_info *w)
+{
+    if (!w) return 0;
+    return actor && actor->kind == TOY_GAME_ACTOR_PLAYER ?
+        toy_game_fire_cooldown_ms(w) : w->cooldown_ms;
+}
+
+static int toy_game_actor_reload_ms(
+    const struct toy_game_actor *actor,
+    const struct toy_game_weapon_info *w)
+{
+    if (!w) return 0;
+    return actor && actor->kind == TOY_GAME_ACTOR_PLAYER ?
+        toy_game_reload_ms(w) : w->reload_ms;
+}
+
 int toy_game_fire(struct toy_game *g, int sy, int cy)
 {
     struct toy_game_actor *player;
@@ -4622,7 +4660,7 @@ int toy_game_fire(struct toy_game *g, int sy, int cy)
         fired = toy_game_actor_throwable(g, player, sy, cy,
                                          g->pitch_sy, g->pitch_cy, g->view_y);
     else {
-        fired = toy_game_fire_actor(g, player, sy, cy, 100);
+        fired = toy_game_actor_fire(g, player, sy, cy, 100);
         player->fire_cooldown_ms = toy_game_fire_cooldown_ms(weapon);
         if (player->reloading)
             player->reload_timer_ms = toy_game_reload_ms(weapon);
@@ -4632,21 +4670,13 @@ int toy_game_fire(struct toy_game *g, int sy, int cy)
 }
 
 /* 切枪：只允许切到有武器的槽位；换弹被打断 */
-int toy_game_switch_weapon(struct toy_game *g, int slot)
+int toy_game_actor_switch_weapon(struct toy_game *g,
+                                 struct toy_game_actor *actor, int slot)
 {
-    struct toy_game_actor *actor;
-    struct toy_game_slot *s;
     if (!g || slot < 0 || slot >= TOY_GAME_WEAPON_SLOTS) return 0;
-    actor = toy_game_prepare_local_actor(g);
-    s = &actor->slots[slot];
-    if (slot == actor->current_slot || s->weapon < 0) return 0;
-    if (slot == 2 &&
-        ((s->weapon != TOY_GAME_WEAPON_BOMB &&
-          s->weapon != TOY_GAME_WEAPON_MOLOTOV) || s->mag <= 0)) return 0;
-    if (slot == 3 && (s->weapon != TOY_GAME_WEAPON_PILL || s->mag <= 0)) return 0;
+    if (!actor) return 0;
     if (!toy_game_switch_actor_weapon(actor, slot)) return 0;
     push_event(g, TOY_GAME_EV_WEAPON_SWITCH);
-    toy_game_mirror_player_from_actor(g);
     return 1;
 }
 
@@ -4712,15 +4742,10 @@ static int toy_game_equip_actor_weapon(struct toy_game *g,
 }
 
 /* 拾取主武器（SMG/霰弹枪）。同武器 = 补满弹匣与备弹；新武器替换槽 0 并自动切出。 */
-int toy_game_equip_weapon(struct toy_game *g, int weapon)
+int toy_game_actor_equip_weapon(struct toy_game *g,
+                                struct toy_game_actor *actor, int weapon)
 {
-    struct toy_game_actor *actor;
-    int result;
-    if (!g) return -1;
-    actor = toy_game_prepare_local_actor(g);
-    result = toy_game_equip_actor_weapon(g, actor, weapon);
-    toy_game_mirror_player_from_actor(g);
-    return result;
+    return toy_game_equip_actor_weapon(g, actor, weapon);
 }
 
 int toy_game_weapon_price(int weapon)
@@ -4887,7 +4912,8 @@ int toy_game_weapon_unlocked(const struct toy_game *g, int weapon)
     return (g->unlocked_weapons & (1u << weapon)) != 0;
 }
 
-int toy_game_buy_weapon(struct toy_game *g, int weapon)
+int toy_game_buy_weapon(struct toy_game *g, struct toy_game_actor *actor,
+                        int weapon)
 {
     int price, consumable;
     if (!g || weapon <= TOY_GAME_WEAPON_PISTOL ||
@@ -4898,30 +4924,28 @@ int toy_game_buy_weapon(struct toy_game *g, int weapon)
     price = toy_game_weapon_price(weapon);
     if (toy_game_weapon_unlocked(g, weapon))
     {
-        if (!consumable) return toy_game_equip_weapon(g, weapon);
+        if (!consumable) return toy_game_actor_equip_weapon(g, actor, weapon);
         if (g->money < price) return 0;
-        struct toy_game_actor *actor;
-        actor = toy_game_prepare_local_actor(g);
+        if (!actor) return -1;
         if ((weapon == TOY_GAME_WEAPON_PILL && actor->slots[3].mag >= TOY_GAME_PILL_MAX) ||
             ((weapon == TOY_GAME_WEAPON_BOMB || weapon == TOY_GAME_WEAPON_MOLOTOV) &&
              actor->slots[2].mag >= TOY_GAME_THROWABLE_MAX)) return -1;
         g->money -= price;
-        toy_game_equip_weapon(g, weapon);
+        toy_game_actor_equip_weapon(g, actor, weapon);
         return 1;
     }
     if (g->money < price) return 0;
     g->money -= price;
     g->unlocked_weapons |= 1u << weapon;
-    return toy_game_equip_weapon(g, weapon) ? 2 : 1;
+    return toy_game_actor_equip_weapon(g, actor, weapon) ? 2 : 1;
 }
 
 /* 弹药盒：补满已拥有武器的备弹（手枪无限备弹跳过），有变化返回 1 */
-int toy_game_refill_ammo(struct toy_game *g)
+int toy_game_actor_refill_ammo(struct toy_game *g,
+                               struct toy_game_actor *actor)
 {
-    struct toy_game_actor *actor;
     int i, changed = 0;
-    if (!g) return 0;
-    actor = toy_game_prepare_local_actor(g);
+    if (!g || !actor) return 0;
     for (i = 0; i < TOY_GAME_WEAPON_SLOTS; i++) {
         struct toy_game_slot *s = &actor->slots[i];
         const struct toy_game_weapon_info *w;
@@ -4933,7 +4957,6 @@ int toy_game_refill_ammo(struct toy_game *g)
             changed = 1;
         }
     }
-    toy_game_mirror_player_from_actor(g);
     return changed;
 }
 
@@ -4946,17 +4969,23 @@ void toy_game_set_player_moving(struct toy_game *g, int moving)
 
 int toy_game_current_spread(const struct toy_game *g)
 {
+    return g ? toy_game_actor_current_spread(
+        toy_game_local_player_actor_const(g)) : 0;
+}
+
+int toy_game_actor_current_spread(const struct toy_game_actor *actor)
+{
     const struct toy_game_slot *slot;
     const struct toy_game_weapon_info *weapon;
     int spread;
-    if (!g || g->current_slot < 0 ||
-        g->current_slot >= TOY_GAME_WEAPON_SLOTS) return 0;
-    slot = &g->slots[g->current_slot];
+    if (!actor || actor->current_slot < 0 ||
+        actor->current_slot >= TOY_GAME_WEAPON_SLOTS) return 0;
+    slot = &actor->slots[actor->current_slot];
     weapon = toy_game_weapon_info_or_null(slot->weapon);
     if (!weapon) return 0;
-    spread = weapon->spread * (g->moving ? TOY_CONFIG_SPREAD_MOVE_PERCENT :
+    spread = weapon->spread * (actor->moving ? TOY_CONFIG_SPREAD_MOVE_PERCENT :
                                TOY_CONFIG_SPREAD_STILL_PERCENT) / 100;
-    spread += g->weapon_spread_heat;
+    spread += actor->weapon_spread_heat;
     return spread < 1 ? 1 : spread;
 }
 
@@ -4991,10 +5020,14 @@ void toy_game_update_weapon_held(struct toy_game *g,
 
     /* 切枪键（1/2）：先于换弹与射击处理，切换即打断换弹 */
     if (keys_pressed) {
-        if (keys_pressed[TOY_GAME_KEY_SLOT_1]) toy_game_switch_weapon(g, 0);
-        if (keys_pressed[TOY_GAME_KEY_SLOT_2]) toy_game_switch_weapon(g, 1);
-        if (keys_pressed[TOY_GAME_KEY_SLOT_3]) toy_game_switch_weapon(g, 2);
-        if (keys_pressed[TOY_GAME_KEY_SLOT_4]) toy_game_switch_weapon(g, 3);
+        if (keys_pressed[TOY_GAME_KEY_SLOT_1])
+            toy_game_switch_actor_weapon(toy_game_local_player_actor(g), 0);
+        if (keys_pressed[TOY_GAME_KEY_SLOT_2])
+            toy_game_switch_actor_weapon(toy_game_local_player_actor(g), 1);
+        if (keys_pressed[TOY_GAME_KEY_SLOT_3])
+            toy_game_switch_actor_weapon(toy_game_local_player_actor(g), 2);
+        if (keys_pressed[TOY_GAME_KEY_SLOT_4])
+            toy_game_switch_actor_weapon(toy_game_local_player_actor(g), 3);
     }
     s = &g->slots[g->current_slot];
     w = toy_game_weapon_info(s->weapon);
@@ -5068,9 +5101,8 @@ static int toy_game_switch_actor_weapon(struct toy_game_actor *actor, int slot)
     return 1;
 }
 
-static int toy_game_fire_actor(struct toy_game *g,
-                               struct toy_game_actor *actor,
-                               int sy, int cy, int spread_percent)
+int toy_game_actor_fire(struct toy_game *g, struct toy_game_actor *actor,
+                        int sy, int cy, int spread_percent)
 {
     struct toy_game_slot *s;
     const struct toy_game_weapon_info *w;
@@ -5084,7 +5116,7 @@ static int toy_game_fire_actor(struct toy_game *g,
         s->weapon == TOY_GAME_WEAPON_BOMB ||
         s->weapon == TOY_GAME_WEAPON_MOLOTOV ||
         actor->reloading || actor->weapon_switch_timer_ms > 0) return 0;
-    actor->fire_cooldown_ms = w->cooldown_ms;
+    actor->fire_cooldown_ms = toy_game_actor_fire_cooldown_ms(actor, w);
     actor->muzzle_flash_ms = TOY_GAME_MUZZLE_FLASH_MS;
     if (s->mag <= 0) {
         push_event(g, TOY_GAME_EV_DRY_FIRE);
@@ -5106,7 +5138,7 @@ static int toy_game_fire_actor(struct toy_game *g,
         push_event(g, TOY_GAME_EV_SHOOT);
     if (s->mag == 0) {
         actor->reloading = 1;
-        actor->reload_timer_ms = w->reload_ms;
+        actor->reload_timer_ms = toy_game_actor_reload_ms(actor, w);
         push_event(g, TOY_GAME_EV_RELOAD_START);
     }
     spread = w->spread * (actor->moving ? TOY_CONFIG_SPREAD_MOVE_PERCENT :
@@ -5183,7 +5215,7 @@ int toy_game_update_actor_weapon_held(
         (s->reserve == TOY_GAME_AMMO_INFINITE || s->reserve > 0) &&
         !actor->reloading) {
         actor->reloading = 1;
-        actor->reload_timer_ms = w->reload_ms;
+        actor->reload_timer_ms = toy_game_actor_reload_ms(actor, w);
         push_event(g, TOY_GAME_EV_RELOAD_START);
     }
     if (actor->fire_cooldown_ms > 0) {
@@ -5207,12 +5239,12 @@ int toy_game_update_actor_weapon_held(
                s->mag < w->mag_size &&
                (s->reserve == TOY_GAME_AMMO_INFINITE || s->reserve > 0)) {
         actor->reloading = 1;
-        actor->reload_timer_ms = w->reload_ms;
+        actor->reload_timer_ms = toy_game_actor_reload_ms(actor, w);
         push_event(g, TOY_GAME_EV_RELOAD_START);
     }
     if (!actor->reloading && actor->fire_cooldown_ms <= 0 &&
         (fire_pressed || (fire_held && w->full_auto)))
-        return toy_game_fire_actor(g, actor, sy, cy, spread_percent);
+        return toy_game_actor_fire(g, actor, sy, cy, spread_percent);
     return 0;
 }
 
@@ -5639,6 +5671,8 @@ void toy_game_update_world(struct toy_game *g, int dt_ms)
             if (e->dying_ms <= 0) e->active = 0;
         }
     }
+    toy_game_update_actor_special_control(
+        g, toy_game_local_player_actor(g), dt_ms);
     toy_game_update_actor_motion(g, TOY_GAME_PLAYER_ACTOR_INDEX, dt_ms);
     separate_enemies(g);
     update_base_core(g, dt_ms);

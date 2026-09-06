@@ -362,6 +362,7 @@ static int run_logic_test(void)
         struct toy_game throwable_test;
         int i;
         int ai_id;
+        struct toy_game_actor *throwable_player;
         struct toy_game_actor *throwable_ai;
         const struct toy_game_actor *actor =
             toy_game_actor_by_id_const(&game, 1);
@@ -545,41 +546,50 @@ static int run_logic_test(void)
             !actor_test.actors[TOY_GAME_REMOTE_ACTOR_BASE + 2].active)
             return 55;
         toy_game_init(&throwable_test, 4);
+        throwable_player = toy_game_local_player_actor(&throwable_test);
         throwable_test.money = 200;
-        if (toy_game_buy_weapon(&throwable_test, TOY_GAME_WEAPON_BOMB) <= 0 ||
-            throwable_test.slots[2].weapon != TOY_GAME_WEAPON_BOMB ||
-            toy_game_buy_weapon(&throwable_test, TOY_GAME_WEAPON_MOLOTOV) <= 0 ||
-            throwable_test.slots[2].weapon != TOY_GAME_WEAPON_MOLOTOV)
+        if (toy_game_buy_weapon(&throwable_test, throwable_player,
+                                TOY_GAME_WEAPON_BOMB) <= 0 ||
+            throwable_player->slots[2].weapon != TOY_GAME_WEAPON_BOMB ||
+            toy_game_buy_weapon(&throwable_test, throwable_player,
+                                TOY_GAME_WEAPON_MOLOTOV) <= 0 ||
+            throwable_player->slots[2].weapon != TOY_GAME_WEAPON_MOLOTOV)
             return 137;
-        throwable_test.current_slot = 3;
-        throwable_test.slots[3].weapon = TOY_GAME_WEAPON_PILL;
-        throwable_test.slots[3].mag = 2;
-        throwable_test.hp = 50;
-        if (!toy_game_use_pill(&throwable_test) ||
-            throwable_test.hp != TOY_GAME_PLAYER_HP ||
-            throwable_test.slots[3].mag != 1)
+        throwable_player->current_slot = 3;
+        throwable_player->slots[3].weapon = TOY_GAME_WEAPON_PILL;
+        throwable_player->slots[3].mag = 2;
+        throwable_player->hp = 50;
+        if (!toy_game_actor_use_special(&throwable_test, throwable_player,
+                                        throwable_player->sy,
+                                        throwable_player->cy) ||
+            throwable_player->hp != TOY_GAME_PLAYER_HP ||
+            throwable_player->slots[3].mag != 1)
             return 138;
-        throwable_ai = &throwable_test.actors[0];
+        ai_id = toy_game_add_ai(&throwable_test, TOY_GAME_AI_LEVEL_1,
+                                0, 500, "HEAL_TARGET");
+        if (ai_id <= 0) return 139;
+        throwable_ai = &throwable_test.actors[ai_id - 1];
         throwable_ai->hp = throwable_ai->max_hp - 40;
-        throwable_test.px = throwable_ai->x;
-        throwable_test.pz = throwable_ai->z - 500;
-        toy_game_shove(&throwable_test, 0, 1024);
+        throwable_player->x = throwable_ai->x;
+        throwable_player->z = throwable_ai->z - 500;
+        throwable_player->current_slot = 3;
+        toy_game_actor_shove(&throwable_test, throwable_player, 0, 1024);
         if (throwable_ai->hp != throwable_ai->max_hp ||
-            throwable_test.slots[3].mag != 0)
+            throwable_player->slots[3].mag != 0)
             return 139;
         if (toy_game_set_remote_player(&throwable_test, 1, 1,
-                                       throwable_test.px + 100,
-                                       throwable_test.pz, "REMOTE") < 0)
+                                       throwable_player->x + 100,
+                                       throwable_player->z, "REMOTE") < 0)
             return 140;
-        throwable_test.hp = TOY_GAME_PLAYER_HP;
+        throwable_player->hp = TOY_GAME_PLAYER_HP;
         throwable_test.projectiles[0].active = 1;
         throwable_test.projectiles[0].kind = TOY_GAME_WEAPON_BOMB;
         throwable_test.projectiles[0].landed = 1;
         throwable_test.projectiles[0].fuse_ms = 1;
-        throwable_test.projectiles[0].x = throwable_test.px;
-        throwable_test.projectiles[0].z = throwable_test.pz;
+        throwable_test.projectiles[0].x = throwable_player->x;
+        throwable_test.projectiles[0].z = throwable_player->z;
         toy_game_update(&throwable_test, NULL, 0, 0, 1024, 16);
-        if (throwable_test.hp >= TOY_GAME_PLAYER_HP ||
+        if (throwable_player->hp >= TOY_GAME_PLAYER_HP ||
             throwable_test.actors[TOY_GAME_REMOTE_ACTOR_BASE].hp >=
                 TOY_GAME_SECONDARY_PLAYER_HP)
             return 141;
@@ -1058,13 +1068,17 @@ static int run_logic_test(void)
         camera.z = -6400;
         game.px = 0;
         game.pz = -6400;
-        if (toy_game_equip_weapon(&game, TOY_GAME_WEAPON_SMG) != 1) return 40;
+        if (toy_game_actor_equip_weapon(
+                &game, toy_game_local_player_actor(&game),
+                TOY_GAME_WEAPON_SMG) != 1) return 40;
         rasterfall_render_scene(&renderer, &camera);
         toy_renderer_flush(&renderer);
         effects.last_fire_seq = game.fire_seq;
-        toy_game_fire(&game, 0, 1024);
+        toy_game_actor_fire(&game, toy_game_local_player_actor(&game),
+                            0, 1024, 100);
         sync_fire_effects(&camera);
-        toy_game_fire(&game, -1024, 0);
+        toy_game_actor_fire(&game, toy_game_local_player_actor(&game),
+                            -1024, 0, 100);
         sync_fire_effects(&camera);
         rasterfall_effects_update(&effects, 16);
         rasterfall_render_effects(&renderer, &camera);
@@ -1137,89 +1151,106 @@ static int run_logic_test(void)
     {
         int i;
         unsigned char keys[TOY_INPUT_KEY_COUNT];
+        struct toy_game_actor *player;
         rasterfall_session_reset(&session, &camera, 7);
-        if (game.current_slot != 1 ||
-            game.slots[1].weapon != TOY_GAME_WEAPON_PISTOL ||
-            game.slots[1].mag != TOY_CONFIG_PISTOL_MAG ||
-            game.slots[1].reserve != TOY_CONFIG_PISTOL_RESERVE ||
-            game.slots[0].weapon != -1) return 17;
-        if (toy_game_switch_weapon(&game, 0)) return 18;
+        player = toy_game_local_player_actor(&game);
+        if (player->current_slot != 1 ||
+            player->slots[1].weapon != TOY_GAME_WEAPON_PISTOL ||
+            player->slots[1].mag != TOY_CONFIG_PISTOL_MAG ||
+            player->slots[1].reserve != TOY_CONFIG_PISTOL_RESERVE ||
+            player->slots[0].weapon != -1) return 17;
+        if (toy_game_actor_switch_weapon(&game, player, 0)) return 18;
         /* 拾取 SMG：按配置容量并自动切出；同武器再拾取 = 补充弹药 */
-        if (toy_game_equip_weapon(&game, TOY_GAME_WEAPON_SMG) != 1) return 19;
-        if (game.current_slot != 0 || game.slots[0].mag != TOY_CONFIG_SMG_MAG ||
-            game.slots[0].reserve != TOY_CONFIG_SMG_RESERVE) return 20;
-        game.slots[0].mag = 7;
-        game.slots[0].reserve = 120;
-        if (toy_game_equip_weapon(&game, TOY_GAME_WEAPON_SMG) != 0 ||
-            game.slots[0].mag != TOY_CONFIG_SMG_MAG ||
-            game.slots[0].reserve != TOY_CONFIG_SMG_RESERVE) return 21;
+        if (toy_game_actor_equip_weapon(&game, player,
+                                        TOY_GAME_WEAPON_SMG) != 1) return 19;
+        if (player->current_slot != 0 || player->slots[0].mag != TOY_CONFIG_SMG_MAG ||
+            player->slots[0].reserve != TOY_CONFIG_SMG_RESERVE) return 20;
+        player->slots[0].mag = 7;
+        player->slots[0].reserve = 120;
+        if (toy_game_actor_equip_weapon(&game, player,
+                                        TOY_GAME_WEAPON_SMG) != 0 ||
+            player->slots[0].mag != TOY_CONFIG_SMG_MAG ||
+            player->slots[0].reserve != TOY_CONFIG_SMG_RESERVE) return 21;
         /* 切枪保留各自弹药状态 */
-        if (!toy_game_switch_weapon(&game, 1) ||
-            game.slots[1].mag != TOY_CONFIG_PISTOL_MAG)
+        if (!toy_game_actor_switch_weapon(&game, player, 1) ||
+            player->slots[1].mag != TOY_CONFIG_PISTOL_MAG)
             return 22;
-        if (!toy_game_switch_weapon(&game, 0) ||
-            game.slots[0].mag != TOY_CONFIG_SMG_MAG ||
-            game.slots[0].reserve != TOY_CONFIG_SMG_RESERVE) return 23;
+        if (!toy_game_actor_switch_weapon(&game, player, 0) ||
+            player->slots[0].mag != TOY_CONFIG_SMG_MAG ||
+            player->slots[0].reserve != TOY_CONFIG_SMG_RESERVE) return 23;
         /* 切枪动画期间默认禁射；等待其 500ms 表现窗口结束后再测全自动。 */
         for (i = 0; i < TOY_CONFIG_WEAPON_SWITCH_MS / 16 + 1; i++)
-            toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
+            toy_game_update_actor_weapon_held(
+                &game, player, NULL, 0, 0, 0, 1024, 16, 100);
         /* 弹药盒补满备弹，不碰弹匣 */
-        game.slots[0].mag = 3;
-        game.slots[0].reserve = 5;
-        if (!toy_game_refill_ammo(&game) ||
-            game.slots[0].reserve != TOY_CONFIG_SMG_RESERVE ||
-            game.slots[0].mag != 3) return 24;
+        player->slots[0].mag = 3;
+        player->slots[0].reserve = 5;
+        if (!toy_game_actor_refill_ammo(&game, player) ||
+            player->slots[0].reserve != TOY_CONFIG_SMG_RESERVE ||
+            player->slots[0].mag != 3) return 24;
         /* SMG 全自动：按住 10 步（160ms，玩家增强后 50ms 冷却）消耗 3 发 */
-        game.slots[0].mag = TOY_CONFIG_SMG_MAG;
+        player->slots[0].mag = TOY_CONFIG_SMG_MAG;
         for (i = 0; i < 10; i++)
-            toy_game_update_held(&game, NULL, 0, 1, 0, 1024, 16);
-        if (game.slots[0].mag != TOY_CONFIG_SMG_MAG - 3) return 25;
+            toy_game_update_actor_weapon_held(
+                &game, player, NULL, 0, 1, 0, 1024, 16, 100);
+        if (player->slots[0].mag != TOY_CONFIG_SMG_MAG - 3) return 25;
         /* 手枪半自动：按住不连发 */
-        toy_game_switch_weapon(&game, 1);
+        toy_game_actor_switch_weapon(&game, player, 1);
         for (i = 0; i < 5; i++)
-            toy_game_update_held(&game, NULL, 0, 1, 0, 1024, 16);
-        if (game.slots[1].mag != TOY_CONFIG_PISTOL_MAG) return 26;
+            toy_game_update_actor_weapon_held(
+                &game, player, NULL, 0, 1, 0, 1024, 16, 100);
+        if (player->slots[1].mag != TOY_CONFIG_PISTOL_MAG) return 26;
         /* 有限备弹换弹：SMG 2000ms，按当前弹匣缺口消耗备弹 */
         memset(keys, 0, sizeof(keys));
         keys[TOY_GAME_KEY_RELOAD] = 1;
-        toy_game_switch_weapon(&game, 0);
-        toy_game_update(&game, keys, 0, 0, 1024, 16);
-        if (!game.reloading) return 27;
+        toy_game_actor_switch_weapon(&game, player, 0);
+        toy_game_update_actor_weapon_held(
+            &game, player, keys, 0, 0, 0, 1024, 16, 100);
+        if (!player->reloading) return 27;
         for (i = 0; i < 125; i++)
-            toy_game_update(&game, NULL, 0, 0, 1024, 16);
-        if (game.reloading || game.slots[0].mag != TOY_CONFIG_SMG_MAG ||
-            game.slots[0].reserve != 647) return 28;
+            toy_game_update_actor_weapon_held(
+                &game, player, NULL, 0, 0, 0, 1024, 16, 100);
+        if (player->reloading || player->slots[0].mag != TOY_CONFIG_SMG_MAG ||
+            player->slots[0].reserve != 647) return 28;
         /* 霰弹枪按配置容量：12 弹丸随机散射，整匣内应放倒并排两敌 */
-        if (toy_game_equip_weapon(&game, TOY_GAME_WEAPON_SHOTGUN) != 1 ||
-            game.slots[0].mag != TOY_CONFIG_SHOTGUN_MAG ||
-            game.slots[0].reserve != TOY_CONFIG_SHOTGUN_RESERVE) return 29;
+        if (toy_game_actor_equip_weapon(&game, player,
+                                        TOY_GAME_WEAPON_SHOTGUN) != 1 ||
+            player->slots[0].mag != TOY_CONFIG_SHOTGUN_MAG ||
+            player->slots[0].reserve != TOY_CONFIG_SHOTGUN_RESERVE) return 29;
+        for (i = 0; i < TOY_CONFIG_WEAPON_SWITCH_MS / 16 + 1; i++)
+            toy_game_update_actor_weapon_held(
+                &game, player, NULL, 0, 0, 0, 1024, 16, 100);
         memset(game.enemies, 0, sizeof(game.enemies));
+        memset(game.projectiles, 0, sizeof(game.projectiles));
+        memset(game.burn_zones, 0, sizeof(game.burn_zones));
         game.enemies[0].active = 1;
-        game.enemies[0].x = game.px + 120;
-        game.enemies[0].z = game.pz + 900;
+        game.enemies[0].hp = 100;
+        game.enemies[0].x = player->x + 120;
+        game.enemies[0].z = player->z + 900;
         game.enemies[1].active = 1;
-        game.enemies[1].x = game.px - 120;
-        game.enemies[1].z = game.pz + 900;
+        game.enemies[1].hp = 100;
+        game.enemies[1].x = player->x - 120;
+        game.enemies[1].z = player->z + 900;
         game.enemies_alive = 2;
-        game.kills = 0;
+        player->kills = 0;
         {
-            unsigned int seq_before = game.fire_seq;
-            for (i = 0; i < 8 && game.kills < 2; i++)
-                toy_game_fire(&game, 0, 1024);
-            if (game.kills != 2) return 30;
-            if (game.slots[0].mag != TOY_CONFIG_SHOTGUN_MAG - i) return 31;
+            unsigned int seq_before = player->fire_seq;
+            for (i = 0; i < 8 && player->kills < 2; i++)
+                toy_game_actor_fire(&game, player, 0, 1024, 100);
+            if (player->kills != 2) return 30;
+            if (player->slots[0].mag != TOY_CONFIG_SHOTGUN_MAG - i) return 31;
             /* 弹道记录：射线数量跟随霰弹枪配置 */
-            if (game.ray_count != TOY_CONFIG_SHOTGUN_PELLETS ||
-                game.fire_seq != seq_before + (unsigned int)i) return 38;
-            for (i = 0; i < game.ray_count; i++) {
-                const struct toy_game_ray *r = &game.rays[i];
+            if (player->ray_count != TOY_CONFIG_SHOTGUN_PELLETS ||
+                player->fire_seq != seq_before + (unsigned int)i) return 38;
+            for (i = 0; i < player->ray_count; i++) {
+                const struct toy_game_ray *r = &player->rays[i];
                 long long len_sq = (long long)r->sy * r->sy +
                                    (long long)r->cy * r->cy;
                 if (len_sq < 1022 * 1022 || len_sq > 1026 * 1026) return 38;
-                if (r->ex < game.px - TOY_GAME_MAX_RANGE ||
-                    r->ex > game.px + TOY_GAME_MAX_RANGE ||
-                    r->ez < game.pz - TOY_GAME_MAX_RANGE ||
-                    r->ez > game.pz + TOY_GAME_MAX_RANGE) return 38;
+                if (r->ex < player->x - TOY_GAME_MAX_RANGE ||
+                    r->ex > player->x + TOY_GAME_MAX_RANGE ||
+                    r->ez < player->z - TOY_GAME_MAX_RANGE ||
+                    r->ez > player->z + TOY_GAME_MAX_RANGE) return 38;
             }
         }
         /* 特感击杀单独累计，同时仍计入总击杀。 */
@@ -1227,22 +1258,22 @@ static int run_logic_test(void)
         game.enemies[0].active = 1;
         game.enemies[0].type = TOY_GAME_ENEMY_SMOKER;
         game.enemies[0].hp = 1;
-        game.enemies[0].x = game.px;
-        game.enemies[0].z = game.pz + 900;
+        game.enemies[0].x = player->x;
+        game.enemies[0].z = player->z + 900;
         game.enemies_alive = 1;
-        game.fire_cooldown_ms = 0;
-        toy_game_fire(&game, 0, 1024);
-        if (game.kills != 3 || game.special_kills != 1 ||
-            game.damage_dealt != 1) return 117;
+        player->fire_cooldown_ms = 0;
+        toy_game_actor_fire(&game, player, 0, 1024, 100);
+        if (player->kills != 3 || player->special_kills != 1 ||
+            player->damage_dealt != 201) return 117;
         /* 无敌人时射线止于世界边界；当前地图没有安全屋内墙。 */
-        game.reloading = 0;
-        game.slots[0].mag = 8;
+        player->reloading = 0;
+        player->slots[0].mag = 8;
         memset(game.enemies, 0, sizeof(game.enemies));
         game.enemies_alive = 0;
-        toy_game_fire(&game, -1024, 0);
-        if (game.ray_count != TOY_CONFIG_SHOTGUN_PELLETS) return 39;
-        for (i = 0; i < game.ray_count; i++) {
-            const struct toy_game_ray *r = &game.rays[i];
+        toy_game_actor_fire(&game, player, -1024, 0, 100);
+        if (player->ray_count != TOY_CONFIG_SHOTGUN_PELLETS) return 39;
+        for (i = 0; i < player->ray_count; i++) {
+            const struct toy_game_ray *r = &player->rays[i];
             if (r->hit_enemy) return 39;
         }
     }
@@ -1355,37 +1386,47 @@ static int run_logic_test(void)
     /* 特感里程碑：Smoker 锁住移动但不锁住武器，持续把玩家拉向自身。 */
     {
         int start_z;
+        struct toy_game_actor *player =
+            toy_game_local_player_actor(&game);
         memset(game.enemies, 0, sizeof(game.enemies));
-        memset(game.actors, 0, sizeof(game.actors));
-        game.actors[0].active = 0;
+        memset(&game.actors[1], 0,
+               sizeof(game.actors) - sizeof(game.actors[0]));
+        memset(game.projectiles, 0, sizeof(game.projectiles));
+        memset(game.burn_zones, 0, sizeof(game.burn_zones));
         game.enemies_alive = 1;
         game.campaign_mode = 0;
         game.to_spawn = 0;
         game.safe_room_count = 0;
         game.primitive_count = 0;
         game.state = TOY_GAME_PLAYING;
-        game.player_down = 0;
-        game.player_control_disabled = 0;
-        game.player_pull_enemy_index = -1;
-        game.px = 0; game.pz = 0;
+        player->active = 1;
+        player->kind = TOY_GAME_ACTOR_PLAYER;
+        player->state = TOY_GAME_ACTOR_ALIVE;
+        player->x = 0; player->z = 0;
+        player->hp = TOY_GAME_PLAYER_HP;
+        player->max_hp = TOY_GAME_PLAYER_HP;
+        player->control_disabled = 0;
+        player->special_control = 0;
+        player->special_control_id = 0;
         game.enemies[0].active = 1;
         game.enemies[0].type = TOY_GAME_ENEMY_SMOKER;
         game.enemies[0].x = 0; game.enemies[0].z = 1800;
-        game.enemies[0].hp = 25;
+        game.enemies[0].hp = 20;
         game.enemies[0].dir_x = 0; game.enemies[0].dir_z = -1024;
-        toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
-        if (game.player_control_disabled || game.enemies[0].special_windup_ms <= 0)
+        toy_game_update_world(&game, 16);
+        if (player->control_disabled || game.enemies[0].special_windup_ms <= 0)
             return 74;
         for (int i = 0; i < 80; i++)
-            toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
-        if (!game.player_control_disabled || game.player_pull_enemy_index != 0)
+            toy_game_update_world(&game, 16);
+        if (!player->control_disabled ||
+            player->special_control != TOY_GAME_SPECIAL_CONTROL_SMOKER)
             return 74;
-        start_z = game.pz;
-        toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
-        if (game.pz <= start_z) return 75;
-        if (toy_game_fire(&game, 0, 1024) != 1) return 76;
-        if (game.enemies[0].active != 2 ||
-            game.player_control_disabled) return 77;
+        start_z = player->z;
+        toy_game_update_world(&game, 16);
+        if (player->z <= start_z) return 75;
+        if (toy_game_actor_fire(&game, toy_game_local_player_actor(&game),
+                                0, 1024, 100) != 1) return 76;
+        if (game.enemies[0].active != 2 || player->control_disabled) return 77;
     }
     /* Smoker 对 AI 队友的舌头在队友倒地前不因固定时长自动释放。 */
     {
@@ -2071,18 +2112,22 @@ static int run_logic_test(void)
     /* 动态散布：静止最稳，移动和连射依次扩大，停火后恢复。 */
     {
         int still_spread, moving_spread, hot_spread;
+        struct toy_game_actor *player;
         toy_game_init(&game, 71);
-        still_spread = toy_game_current_spread(&game);
-        toy_game_set_player_moving(&game, 1);
-        moving_spread = toy_game_current_spread(&game);
-        toy_game_fire(&game, 0, 1024);
-        hot_spread = toy_game_current_spread(&game);
+        player = toy_game_local_player_actor(&game);
+        still_spread = toy_game_actor_current_spread(player);
+        player->moving = 1;
+        moving_spread = toy_game_actor_current_spread(player);
+        toy_game_actor_fire(&game, player,
+                            0, 1024, 100);
+        hot_spread = toy_game_actor_current_spread(player);
         if (moving_spread <= still_spread || hot_spread <= moving_spread)
             return 113;
-        toy_game_set_player_moving(&game, 0);
-        toy_game_update_weapon_held(&game, NULL, 0, 0, 0, 1024, 2000);
-        if (game.weapon_spread_heat != 0 ||
-            toy_game_current_spread(&game) != still_spread) return 114;
+        player->moving = 0;
+        toy_game_update_actor_weapon_held(
+            &game, player, NULL, 0, 0, 0, 1024, 2000, 100);
+        if (player->weapon_spread_heat != 0 ||
+            toy_game_actor_current_spread(player) != still_spread) return 114;
     }
     /* AI 回位需绕过横在路径上的墙，而不是持续顶墙。 */
     {
@@ -2227,8 +2272,10 @@ static int run_logic_test(void)
         game.enemies[0].hp = 1;
         game.enemies[0].x = 0; game.enemies[0].z = 1000;
         game.money = 0;
-        toy_game_fire(&game, 0, 1024);
-        if (game.money != 50 || game.special_kills != 1) return 129;
+        toy_game_actor_fire(&game, toy_game_local_player_actor(&game),
+                            0, 1024, 100);
+        if (game.money != 50 ||
+            toy_game_local_player_actor(&game)->special_kills != 1) return 129;
     }
     if (rasterfall_net_snapshot_fragment_test() != 0) return 139;
     if (rasterfall_net_pipeline_test() != 0) return 140;
@@ -2307,12 +2354,15 @@ static int run_logic_test(void)
     }
     /* 玩家武器增强只影响玩家操作者，AI 仍使用武器标准计时。 */
     {
+        struct toy_game_actor *player;
         toy_game_init(&game, 143);
-        game.slots[game.current_slot].mag = 1;
-        toy_game_fire(&game, 0, 1024);
-        if (game.fire_cooldown_ms != 200 * 100 /
+        player = toy_game_local_player_actor(&game);
+        player->slots[player->current_slot].mag = 1;
+        toy_game_actor_fire(&game, player,
+                            0, 1024, 100);
+        if (player->fire_cooldown_ms != 200 * 100 /
                 TOY_CONFIG_PLAYER_FIRE_RATE_PERCENT ||
-            game.reload_timer_ms != 1500 * 60 / 100) return 150;
+            player->reload_timer_ms != 1500 * 60 / 100) return 150;
     }
     /* Combat Power 使用武器真实参数计算，并输出完整拆分，方便调平衡。 */
     {
@@ -2341,26 +2391,29 @@ static int run_logic_test(void)
      * caps; buying the other throwable replaces the current throwable. */
     {
         int i;
+        struct toy_game_actor *player;
         toy_game_init(&game, 141);
+        player = toy_game_local_player_actor(&game);
         game.money = 1000;
-        if (toy_game_buy_weapon(&game, TOY_GAME_WEAPON_BOMB) <= 0 ||
-            game.slots[2].mag != 1) return 142;
+        if (toy_game_buy_weapon(&game, player, TOY_GAME_WEAPON_BOMB) <= 0 ||
+            player->slots[2].mag != 1) return 142;
         for (i = 0; i < TOY_GAME_THROWABLE_MAX - 1; i++)
-            if (toy_game_buy_weapon(&game, TOY_GAME_WEAPON_BOMB) <= 0) return 143;
-        if (game.slots[2].mag != TOY_GAME_THROWABLE_MAX ||
-            toy_game_buy_weapon(&game, TOY_GAME_WEAPON_BOMB) != -1) return 144;
-        if (toy_game_buy_weapon(&game, TOY_GAME_WEAPON_MOLOTOV) <= 0 ||
-            game.slots[2].weapon != TOY_GAME_WEAPON_MOLOTOV ||
-            game.slots[2].mag != 1) return 148;
-        if (toy_game_buy_weapon(&game, TOY_GAME_WEAPON_MOLOTOV) <= 0 ||
-            game.slots[2].mag != 2) return 149;
+            if (toy_game_buy_weapon(&game, player, TOY_GAME_WEAPON_BOMB) <= 0) return 143;
+        if (player->slots[2].mag != TOY_GAME_THROWABLE_MAX ||
+            toy_game_buy_weapon(&game, player, TOY_GAME_WEAPON_BOMB) != -1) return 144;
+        if (toy_game_buy_weapon(&game, player, TOY_GAME_WEAPON_MOLOTOV) <= 0 ||
+            player->slots[2].weapon != TOY_GAME_WEAPON_MOLOTOV ||
+            player->slots[2].mag != 1) return 148;
+        if (toy_game_buy_weapon(&game, player, TOY_GAME_WEAPON_MOLOTOV) <= 0 ||
+            player->slots[2].mag != 2) return 149;
         toy_game_init(&game, 142);
+        player = toy_game_local_player_actor(&game);
         game.money = 1000;
-        if (toy_game_buy_weapon(&game, TOY_GAME_WEAPON_PILL) <= 0) return 145;
+        if (toy_game_buy_weapon(&game, player, TOY_GAME_WEAPON_PILL) <= 0) return 145;
         for (i = 1; i < TOY_GAME_PILL_MAX; i++)
-            if (toy_game_buy_weapon(&game, TOY_GAME_WEAPON_PILL) <= 0) return 146;
-        if (game.slots[3].mag != TOY_GAME_PILL_MAX ||
-            toy_game_buy_weapon(&game, TOY_GAME_WEAPON_PILL) != -1) return 147;
+            if (toy_game_buy_weapon(&game, player, TOY_GAME_WEAPON_PILL) <= 0) return 146;
+        if (player->slots[3].mag != TOY_GAME_PILL_MAX ||
+            toy_game_buy_weapon(&game, player, TOY_GAME_WEAPON_PILL) != -1) return 147;
     }
     /* Ground-aware traversal must be consumed by behavior, not only stored in
      * the navigation grid: enemies climb and descend, while a companion that

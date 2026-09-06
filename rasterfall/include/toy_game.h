@@ -841,13 +841,18 @@ void toy_game_set_player_pitch(struct toy_game *g, int pitch_sy, int pitch_cy,
                                int view_y);
 void toy_game_set_player_moving(struct toy_game *g, int moving);
 int  toy_game_current_spread(const struct toy_game *g);
-int  toy_game_fire(struct toy_game *g, int sy, int cy);     /* hitscan，命中返回 1 */
+int  toy_game_actor_current_spread(const struct toy_game_actor *actor);
+int  toy_game_actor_fire(struct toy_game *g, struct toy_game_actor *actor,
+                         int sy, int cy, int spread_percent);
 int  toy_game_apply_reported_hit(struct toy_game *g,
                                  struct toy_game_actor *actor,
                                  int enemy_index, int damage);
-int  toy_game_switch_weapon(struct toy_game *g, int slot);  /* 切枪；空槽/同槽返回 0 */
-int  toy_game_equip_weapon(struct toy_game *g, int weapon); /* 按武器定义装备到对应槽；同武器=补充弹药返回 0，新武器返回 1，非法返回 -1 */
-int  toy_game_refill_ammo(struct toy_game *g);              /* 弹药盒：补满已拥有武器的备弹，有变化返回 1 */
+int  toy_game_actor_switch_weapon(struct toy_game *g,
+                                  struct toy_game_actor *actor, int slot);
+int  toy_game_actor_equip_weapon(struct toy_game *g,
+                                 struct toy_game_actor *actor, int weapon);
+int  toy_game_actor_refill_ammo(struct toy_game *g,
+                                struct toy_game_actor *actor);
 int  toy_game_weapon_price(int weapon);
 int  toy_game_weapon_combat_dps(int weapon);
 int  toy_game_weapon_spread_penalty(int weapon);
@@ -864,7 +869,8 @@ int  toy_game_count_downed_actors(const struct toy_game *g);
 int  toy_game_nearest_enemy_distance(const struct toy_game *g,
                                      const struct toy_game_actor *actor);
 int  toy_game_weapon_unlocked(const struct toy_game *g, int weapon);
-int  toy_game_buy_weapon(struct toy_game *g, int weapon);
+int  toy_game_buy_weapon(struct toy_game *g, struct toy_game_actor *actor,
+                         int weapon);
 const struct toy_game_weapon_info *toy_game_weapon_info(int weapon);
 const struct toy_game_weapon_info *toy_game_weapon_info_or_null(int weapon);
 int  toy_game_weapon_is_valid(int weapon);
@@ -899,8 +905,7 @@ int  toy_game_drain_events(struct toy_game *g, unsigned char *out, int max);
 int  toy_game_drain_player_impulses(
     struct toy_game *g, struct toy_game_player_impulse_event *out, int max);
 void toy_game_place_enemy(struct toy_game *g, int x, int z); /* 测试钩子 */
-int  toy_game_shove(struct toy_game *g, int sy, int cy);    /* 推开面前敌人，返回推开的数量 */
-int  toy_game_use_pill(struct toy_game *g);
+int  toy_game_shove(struct toy_game *g, int sy, int cy);    /* 临时待删除入口 */
 int  toy_game_spawn_horde(struct toy_game *g, int count_min, int count_max,
                           const struct toy_game_box *points, int point_count,
                           int min_player_dist);
