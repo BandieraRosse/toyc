@@ -1,7 +1,7 @@
 # 网络代码导航
 
 > 文档更新：2026-09-05
-> 源码核对基线：工作区（主机普通枪械、斧头/药丸及炸弹/Molotov 客户端输入均直接应用到远端 actor；本地快照生命/库存/复活状态直接应用到 `actors[0]`；投射物/燃烧区显式携带 owner；本地预测位置驱动 camera）
+> 源码核对基线：工作区（主机普通枪械、斧头/药丸、shove 及炸弹/Molotov 客户端输入均直接应用到远端 actor 或按远端位置执行；本地快照生命/库存/复活状态直接应用到 `actors[0]`；投射物/燃烧区显式携带 owner；本地预测位置驱动 camera）
 
 ## 文件职责
 
@@ -29,6 +29,8 @@
 `toy_game` 的本地玩家字段。炸弹和 Molotov 通过
 `toy_game_actor_throwable()` 直接作用于远端 actor；投射物和燃烧区保存稳定
 `owner_actor_id`，爆炸/燃烧造成的伤害、击杀和 throwable 统计归属投掷者。
+远端 shove 不再临时覆盖本地玩家的 `px/pz`，而是通过
+`toy_game_shove_from_position()` 将远端位置作为只读规则输入。
 
 `rasterfall_effect_event` 是接收端的 presentation-only 扩展接口。纯视觉事件不加入 snapshot，
 也不把 event 的原始 C 布局直接发送到网络；未来网络驱动表现必须增加明确的协议编码。

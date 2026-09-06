@@ -2144,6 +2144,17 @@ int toy_game_actor_shove(struct toy_game *g, struct toy_game_actor *actor,
     return pushed;
 }
 
+int toy_game_shove_from_position(struct toy_game *g, int x, int z,
+                                 int sy, int cy)
+{
+    int pushed;
+    if (!g || g->state != TOY_GAME_PLAYING) return 0;
+    push_event(g, TOY_GAME_EV_SHOVE);
+    pushed = toy_game_shove_at(g, x, z, sy, cy);
+    if (pushed > 0) push_event(g, TOY_GAME_EV_SHOVE_HIT);
+    return pushed;
+}
+
 int toy_game_use_pill(struct toy_game *g)
 {
     struct toy_game_actor *player;

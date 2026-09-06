@@ -501,14 +501,9 @@ void rasterfall_session_step_remote_player(struct rasterfall_session *session,
     if (command->turn || command->pitch)
         rasterfall_camera_rotate(camera, command->turn, command->pitch);
     if (command->buttons & RASTERFALL_CMD_SHOVE) {
-        /* 推开以远端玩家自己的位置/朝向为准（主机 px/pz 属本地玩家） */
-        int save_px = session->game_state.px;
-        int save_pz = session->game_state.pz;
-        session->game_state.px = camera->x;
-        session->game_state.pz = camera->z;
-        toy_game_shove(&session->game_state, camera->sy, camera->cy);
-        session->game_state.px = save_px;
-        session->game_state.pz = save_pz;
+        /* 远端 camera 代表展示位置；不要临时覆盖本地玩家 legacy 坐标。 */
+        toy_game_shove_from_position(&session->game_state, camera->x,
+                                     camera->z, camera->sy, camera->cy);
     }
 }
 
