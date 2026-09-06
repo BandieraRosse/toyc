@@ -2924,7 +2924,7 @@ static void update_motion_values(struct toy_game *g, int *x, int *z,
     }
 }
 
-static void update_player_special_motion(struct toy_game *g, int dt_ms)
+static void update_actor_special_motion(struct toy_game *g, int dt_ms)
 {
     struct toy_game_actor *actor = toy_game_local_player_actor(g);
     if (!actor) return;
@@ -5133,7 +5133,7 @@ void toy_game_update_held(struct toy_game *g,
             if (e->dying_ms <= 0) e->active = 0;
         }
     }
-    update_player_special_motion(g, dt_ms);
+    update_actor_special_motion(g, dt_ms);
     separate_enemies(g);
     update_base_core(g, dt_ms);
     if (g->campaign_mode) update_campaign(g, dt_ms);

@@ -1720,8 +1720,7 @@ static int net_send_player_snapshot(struct rasterfall_net *net,
             &game->actors[TOY_GAME_REMOTE_ACTOR_BASE + i];
         if (actor->active) {
             /* World damage is applied to the actor before this snapshot is
-             * emitted.  Mirror only gameplay state; camera remains the
-             * client's final reported position. */
+             * emitted.  Camera remains the client's final reported position. */
             c->hp = actor->hp;
             c->down = actor->state == TOY_GAME_ACTOR_DOWNED;
             c->revive_progress_ms = actor->revive_progress_ms;
@@ -2944,8 +2943,7 @@ static int net_apply_client_fire_report(
     return 1;
 }
 
-/* Firearms and special weapons are represented by the remote actor.  Keep
- * this path independent from toy_game's local-player compatibility fields. */
+/* Firearms and special weapons are represented by the remote actor. */
 static int net_apply_client_actor_state(struct rasterfall_net *net,
                                         struct rasterfall_session *session,
                                         struct rasterfall_net_client *client,

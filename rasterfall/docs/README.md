@@ -1,7 +1,7 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-06
-> 源码核对基线：工作区（本地玩家状态结构上统一存放在 `actors[0]`；移动/跳跃/airborne/水平朝向/武器/库存/动画/special-control/shove 及世界步由 actor 直接驱动；测试、session、网络和 `update_held` 正式路径均直接使用 actor API；旧 mirror、顶层玩家字段和 player-only wrapper 已删除；武器装备、切换、补给、购买和药丸使用的正式入口均显式接收 actor；HUD、viewmodel、crosshair、effects 和角色展示查询直接读取 actor；网络协议未变）
+> 源码核对基线：工作区（本地玩家状态统一存放在 `actors[0]`；local human、remote human、AI 和 special controller 都经 actor API 驱动 `toy_game_actor`，world step 独立推进共享规则；测试、session、网络和 `update_held` 正式路径均直接使用 actor API；武器装备、切换、补给、购买和药丸使用的正式入口均显式接收 actor；HUD、viewmodel、crosshair、effects 和角色展示查询直接读取 actor；网络协议未变）
 
 本目录面向接手 Rasterfall 任务的编码代理。目标不是介绍玩法，而是先把问题归到正确的
 状态所有者和文件，再开始搜索。命令、资源导入方法和用户可见特性仍以
@@ -32,9 +32,11 @@
       ↓
 src/rasterfall.c                 进程、菜单、输入、固定步长帧循环
       ↓
-src/rasterfall_session.c         单机/主机/客户端会话编排
+src/rasterfall_session.c         单机/主机/客户端会话编排与 controller
       ↓
-lib/game.c                       确定性玩法状态和规则
+actor API → toy_game_actor       各类角色共享的状态与动作入口
+      ↓
+lib/game.c                       world simulation 与确定性玩法规则
       ↓
 src/rasterfall_render.c + HUD    只读玩法状态并生成画面
       ↓
@@ -84,7 +86,7 @@ Molotov 的世界实体显式携带 `owner_actor_id`，本地预测 body 位置�
 - 修改角色动画：检查角色选择、会话动画状态、模型求值、渲染以及网络动画字段。
 - 修改敌人外观组件：检查 `src/rasterfall_render.c` 的 `enemy_body_part` 描述表、通用组件解释器和特感动态组件；地面锚点仍由 `toy_game_enemy.ground_y` 与 `airborne_y` 提供。
 - 修改命令行或诊断模式：从 `rasterfall_options.c` 到 `rasterfall.c` 的早退分支一起核对。
-- 修改本地玩家状态：从 `toy_game_local_player_actor()` 和
+- 修改角色状态：从 `toy_game_actor`、actor API 和
   `rasterfall_session.c` 的本地主循环开始；不要把 camera 的位置字段写回为 gameplay 源。
 
 ## 修改后更新哪些文档

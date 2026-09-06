@@ -53,8 +53,7 @@
 炸弹和 Molotov 已通过 `toy_game_actor_throwable()` 直接作用于远端 actor；投射物和燃烧区的
 `owner_actor_id` 使用稳定 actor ID，不能保存指针或依赖 C 结构布局。斧头和药丸通过
 `toy_game_actor_use_special()` 直接作用于远端 actor。输入历史、可靠事件坐标、玩家快照和远端
-命令执行都直接读写对应 actor，不再保留临时覆盖本地玩家字段的网络路径。legacy 字段仅作为
-展示/旧入口的兼容镜像；不要新增对本地玩家字段的临时覆盖。客户端预测中，
+命令执行都直接读写对应 actor，不再保留临时覆盖本地玩家字段的网络路径。客户端预测中，
 gameplay 位置是 body state 的来源，camera 位置由 session 派生；camera 只保留方向和展示数据。
 
 ## 人工联机验收

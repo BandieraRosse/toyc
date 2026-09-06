@@ -461,8 +461,7 @@ struct toy_game_enemy {
     int nav_active;
 };
 
-/* 固定容量 actor 容器。旧的 ai_* 字段暂时保留在 toy_game 中作为兼容
- * 镜像，本结构是后续多 AI 迁移的唯一目标。 */
+/* 固定容量 actor 容器；本结构是所有可控制角色的唯一玩法状态。 */
 struct toy_game_actor {
     int active;
     int actor_id;

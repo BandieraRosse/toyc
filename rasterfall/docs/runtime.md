@@ -1,7 +1,7 @@
 # 运行时与主循环
 
 > 文档更新：2026-09-05
-> 源码核对基线：工作区（渲染镜头复制后应用 CAMERA_SHAKE，受击摇晃由展示态 HP 下降触发；本地 body 位置驱动 camera；空格/E 等动作边沿由 pending_key_edges 跨固定步保存）
+> 源码核对基线：工作区（控制器命令经 actor API 进入玩法；世界步独立推进投射物、敌人、波次和地图规则；camera、HUD、网络只读取 actor/world 展示状态；本地 body 位置驱动 camera；空格/E 等动作边沿由 pending_key_edges 跨固定步保存）
 
 ## 状态所有者
 
@@ -25,9 +25,10 @@
 `rasterfall_command`，交给 session 或客户端预测路径；之后同步音频/特效并渲染。排查“偶发吞键”
 时查看 `pending_key_edges`，排查帧率相关玩法差异时查看 accumulator 和逻辑步，而不是只看渲染帧。
 
-本地 session/client prediction 先更新 gameplay body 位置，再由
-`session_sync_special_motion()` 派生 camera 的位置和高度；camera 的方向仍作为输入视角供移动
-与瞄准使用。渲染阶段可复制 camera 叠加纯展示效果，但不得回写 gameplay 位置。
+本地 session/client prediction 把控制器命令交给 actor API；actor 先更新 gameplay body，随后
+world step 推进共享世界规则，再由 `session_sync_special_motion()` 派生 camera 的位置和高度。
+camera 的方向仍作为输入视角供移动与瞄准使用。渲染阶段可复制 camera 叠加纯展示效果，但不得
+回写 gameplay 位置。
 
 `struct camera` 现以 `body` 和 `view` 两个命名空间表达该边界；旧的扁平字段暂保留为布局兼容
 别名。新代码应使用 `camera.body` 读写派生位置，使用 `camera.view` 读写方向和展示高度。

@@ -1,7 +1,7 @@
 # 玩法、会话、地图与 AI
 
 > 文档更新：2026-09-06
-> 源码核对基线：工作区（本地玩家状态结构上统一存放在 `actors[0]`；移动/跳跃/airborne/水平朝向/武器/库存/切枪/reload/动画/special-control/shove 及世界规则由 actor 直接驱动；玩家俯仰保存在独立的 `pitch_sy/pitch_cy`，不会覆盖 actor 水平朝向；测试、session、网络和 `update_held` 正式路径均直接使用 actor API；旧 mirror、顶层玩家字段和 player-only wrapper 已删除；装备、切枪、补给、购买和药丸使用入口均显式操作 actor inventory；AI 从槽位 1 起分配；投射物/燃烧区携带 actor owner）
+> 源码核对基线：工作区（本地玩家状态统一存放在 `actors[0]`；移动/跳跃/airborne/水平朝向/武器/库存/切枪/reload/动画/special-control/shove 及世界规则由 actor API 与 world step 驱动；玩家俯仰保存在独立的 `pitch_sy/pitch_cy`，不会覆盖 actor 水平朝向；测试、session、网络和 `update_held` 正式路径均直接使用 actor API；装备、切枪、补给、购买和药丸使用入口均显式操作 actor inventory；AI 从槽位 1 起分配；投射物/燃烧区携带 actor owner）
 
 ## 三层职责
 
@@ -16,8 +16,8 @@
 
 本地玩家现在是 `toy_game.actors[TOY_GAME_PLAYER_ACTOR_INDEX]`（当前为槽位 0）的正式
 `TOY_GAME_ACTOR_PLAYER`。位置、生命、空中状态、库存/武器计时、统计和动画持久化在 actor 中。
-正式世界规则、session、HUD 和展示层都直接读取 actor；旧的顶层玩家字段、mirror 和 player-only
-wrapper 已删除。session 的本地 step 与 client prediction 已直接操作 actor 的
+正式世界规则、session、HUD 和展示层都直接读取 actor；不存在独立的玩家状态副本或仅供玩家使用的
+规则入口。session 的本地 step 与 client prediction 已直接操作 actor 的
 移动、跳跃、airborne、武器/reload/fire cooldown、投掷物、animation 和 special-control；camera.body
 始终由 actor 派生。AI 分配从槽位 1 开始，网络协议和远端 actor 槽位不变。
 

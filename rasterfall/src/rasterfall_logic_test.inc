@@ -641,6 +641,52 @@ static int run_logic_test(void)
             toy_game_revive_actor(&actor_test, 0, 16);
         if (actor_test.actors[0].state != TOY_GAME_ACTOR_ALIVE ||
             actor_test.actors[0].hp != TOY_GAME_REVIVE_HP) return 52;
+
+        /* The controller boundary must be usable without the local-player
+         * helper: actor intent is executed first, then the world advances. */
+        {
+            struct toy_game api_test;
+            struct toy_game_actor_command actor_command;
+            struct toy_game_actor *api_actor;
+            int projectile_index;
+            toy_game_init(&api_test, 161);
+            api_actor = &api_test.actors[TOY_GAME_PLAYER_ACTOR_INDEX];
+            api_actor->x = 0;
+            api_actor->z = 0;
+            api_actor->sy = 0;
+            api_actor->cy = 1024;
+            api_test.enemies[0].active = 1;
+            api_test.enemies[0].x = 0;
+            api_test.enemies[0].z = 1200;
+            api_test.enemies[0].hp = 100;
+            api_test.enemies_alive = 1;
+            memset(&actor_command, 0, sizeof(actor_command));
+            actor_command.switch_slot = -1;
+            actor_command.aim_active = 1;
+            actor_command.aim_sy = 0;
+            actor_command.aim_cy = 1024;
+            actor_command.fire_pressed = 1;
+            if (!toy_game_execute_actor_command(&api_test, api_actor,
+                                                &actor_command, 16, 100) ||
+                api_actor->fire_seq == 0 ||
+                api_test.enemies[0].hp >= 100) return 157;
+            api_actor->slots[2].weapon = TOY_GAME_WEAPON_BOMB;
+            api_actor->slots[2].mag = 1;
+            api_actor->current_slot = 2;
+            if (!toy_game_actor_throwable(&api_test, api_actor, 0, 1024,
+                                          0, 1024, 0)) return 158;
+            projectile_index = -1;
+            for (i = 0; i < TOY_GAME_MAX_PROJECTILES; i++)
+                if (api_test.projectiles[i].active) {
+                    projectile_index = i;
+                    break;
+                }
+            if (projectile_index < 0) return 159;
+            api_test.projectiles[projectile_index].landed = 1;
+            api_test.projectiles[projectile_index].fuse_ms = 1;
+            toy_game_update_world(&api_test, 16);
+            if (api_test.projectiles[projectile_index].active) return 160;
+        }
     }
     memset(&command, 0, sizeof(command));
     command.move_forward = 1;
