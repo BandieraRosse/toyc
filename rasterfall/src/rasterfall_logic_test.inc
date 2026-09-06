@@ -37,6 +37,7 @@ static struct toy_map_primitive test_box_primitive(
 static int primitive_gameplay_logic_test(void)
 {
     struct toy_game g;
+    struct toy_game_actor *player = toy_game_local_player_actor(&g);
     struct toy_game_ground_query ground;
     struct toy_map_primitive world[2];
     int left, right, table=0, ramp=0, air_gate=0;
@@ -50,16 +51,16 @@ static int primitive_gameplay_logic_test(void)
         g.actors[TOY_GAME_PLAYER_ACTOR_INDEX].cy != 0) return 17;
     ground=toy_game_query_ground(&g,400,0,TOY_GAME_PLAYER_RADIUS,0);
     if(!ground.has_support||!ground.has_landing||ground.support_y!=100)return 1;
-    g.px=0;g.pz=0;g.player_ground_y=0;
-    if(!toy_game_try_move_player(&g,400,0)||g.player_ground_y!=100)return 2;
+    player->x=0; player->z=0; player->ground_y=0;
+    if(!toy_game_try_move_player(&g,400,0)||player->ground_y!=100)return 2;
     world[0]=test_ramp_primitive(TOY_MAP_PRIMITIVE_RAMP_X,
                                 0,1200,-600,600,0,400);
     toy_game_set_primitives(&g,world,1,2000);
     ground=toy_game_query_ground(&g,600,0,0,0);
     if(!ground.has_support||ground.support_y!=200||!ground.support_is_ramp)return 3;
-    g.px=200;g.pz=0;g.player_ground_y=200*400/1200;
-    for(int x=300;x<=900;x+=100)if(!toy_game_try_move_player(&g,x,0)||g.player_ground_y!=x*400/1200)return 4;
-    for(int x=800;x>=200;x-=100)if(!toy_game_try_move_player(&g,x,0)||g.player_ground_y!=x*400/1200)return 5;
+    player->x=200; player->z=0; player->ground_y=200*400/1200;
+    for(int x=300;x<=900;x+=100)if(!toy_game_try_move_player(&g,x,0)||player->ground_y!=x*400/1200)return 4;
+    for(int x=800;x>=200;x-=100)if(!toy_game_try_move_player(&g,x,0)||player->ground_y!=x*400/1200)return 5;
     {
         struct toy_game nav_game;
         struct toy_map_primitive steep = test_ramp_primitive(
@@ -95,11 +96,13 @@ static int primitive_gameplay_logic_test(void)
             test_flat_primitive(2400,4200,-1000,1000,600)
         };
         int i, max_ground = 0;
+        struct toy_game_actor *ramp_player;
         toy_game_init(&ramp_game, 213);
+        ramp_player = toy_game_local_player_actor(&ramp_game);
         ramp_game.to_spawn = 0;
-        ramp_game.px = 3300;
-        ramp_game.pz = 0;
-        ramp_game.hp = 100000;
+        ramp_player->x = 3300;
+        ramp_player->z = 0;
+        ramp_player->hp = 100000;
         ramp_game.safe_room_count = 0;
         toy_game_set_primitives(&ramp_game, ramp_world, 3, 5000);
         toy_game_place_enemy(&ramp_game, -500, 0);
@@ -113,7 +116,7 @@ static int primitive_gameplay_logic_test(void)
     }
     world[0]=test_flat_primitive(-1200,1200,-1200,1200,0);
     world[1]=test_box_primitive(200,400,-1000,1000,0,1000,TOY_MAP_PRIMITIVE_COLLISION);
-    toy_game_set_primitives(&g,world,2,1200);g.px=0;g.pz=0;g.player_ground_y=0;
+    toy_game_set_primitives(&g,world,2,1200);player->x=0;player->z=0;player->ground_y=0;
     if(toy_game_try_move_player(&g,100,0))return 6;
     world[1].flags&=~TOY_MAP_PRIMITIVE_COLLISION;toy_game_rebuild_navigation(&g);
     if(!toy_game_try_move_player(&g,100,0))return 7;
@@ -140,12 +143,14 @@ static int primitive_gameplay_logic_test(void)
     if(!table||!ramp||!air_gate)return 10;
     {
         struct toy_game west_game;
+        struct toy_game_actor *west_player;
         int i, max_x;
         toy_game_init(&west_game, 214);
+        west_player = toy_game_local_player_actor(&west_game);
         west_game.to_spawn = 0;
-        west_game.px = -13000;
-        west_game.pz = 0;
-        west_game.hp = 100000;
+        west_player->x = -13000;
+        west_player->z = 0;
+        west_player->hp = 100000;
         west_game.safe_room_count = 0;
         toy_game_set_primitives(&west_game, level_map.primitives,
                                 level_map.primitive_count, 45000);
@@ -286,7 +291,8 @@ static int run_logic_test(void)
         id=toy_game_add_anime_actor(&anime_follow,0,0,0,"EULA_TEST");
         if(id<0)return 170;
         anime_follow.room_limit=10000;
-        anime_follow.px=3000;anime_follow.pz=0;
+        toy_game_local_player_actor(&anime_follow)->x = 3000;
+        toy_game_local_player_actor(&anime_follow)->z = 0;
         before=anime_follow.actors[id-1].x;
         toy_game_update_ai_teammates(&anime_follow,100);
         if(anime_follow.actors[id-1].x<=before||
@@ -479,13 +485,15 @@ static int run_logic_test(void)
             toy_game_animation_info(TOY_GAME_ANIM_FIRE)->duration_ms != 180 ||
             toy_game_animation_info(TOY_GAME_ANIM_FIRE)->loop ||
             toy_game_animation_info(99)->duration_ms != 0) return 59;
-        toy_game_animation_set(&game.animation, TOY_GAME_ANIM_RELOAD);
-        toy_game_animation_update(&game.animation, 450);
-        if (game.animation.id != TOY_GAME_ANIM_RELOAD ||
-            game.animation.time_ms != 450) return 60;
-        toy_game_animation_update(&game.animation, 600);
-        if (game.animation.time_ms != 1050) return 61;
-        toy_game_animation_set(&game.animation, TOY_GAME_ANIM_NONE);
+        toy_game_animation_set(&toy_game_local_player_actor(&game)->animation,
+                               TOY_GAME_ANIM_RELOAD);
+        toy_game_animation_update(&toy_game_local_player_actor(&game)->animation, 450);
+        if (toy_game_local_player_actor(&game)->animation.id != TOY_GAME_ANIM_RELOAD ||
+            toy_game_local_player_actor(&game)->animation.time_ms != 450) return 60;
+        toy_game_animation_update(&toy_game_local_player_actor(&game)->animation, 600);
+        if (toy_game_local_player_actor(&game)->animation.time_ms != 1050) return 61;
+        toy_game_animation_set(&toy_game_local_player_actor(&game)->animation,
+                               TOY_GAME_ANIM_NONE);
         toy_game_init(&ai_reload_test, 9);
         ai_id = toy_game_add_ai(&ai_reload_test, TOY_GAME_AI_LEVEL_1,
                                 0, 0, "RELOAD TEST");
@@ -935,7 +943,7 @@ static int run_logic_test(void)
     }
     {
         int i, overlay_count = 0;
-        game.damage_flash_ms = TOY_GAME_DAMAGE_FLASH_MS;
+        toy_game_local_player_actor(&game)->damage_flash_ms = TOY_GAME_DAMAGE_FLASH_MS;
         rasterfall_effects_sync_damage_flash(&effects, &game);
         for (i = 0; i < RASTERFALL_EFFECT_INSTANCE_SLOTS; i++)
             if (effects.instances[i].active &&
@@ -950,7 +958,7 @@ static int run_logic_test(void)
                  effects.instances[i].alpha != 16))
                 return 70;
         rasterfall_effects_reset_fire(&effects);
-        game.damage_flash_ms = 0;
+        toy_game_local_player_actor(&game)->damage_flash_ms = 0;
     }
     {
         int i, feedback_count = 0;
@@ -1066,14 +1074,14 @@ static int run_logic_test(void)
     {
         camera.x = 0;
         camera.z = -6400;
-        game.px = 0;
-        game.pz = -6400;
+        toy_game_local_player_actor(&game)->x = 0;
+        toy_game_local_player_actor(&game)->z = -6400;
         if (toy_game_actor_equip_weapon(
                 &game, toy_game_local_player_actor(&game),
                 TOY_GAME_WEAPON_SMG) != 1) return 40;
         rasterfall_render_scene(&renderer, &camera);
         toy_renderer_flush(&renderer);
-        effects.last_fire_seq = game.fire_seq;
+        effects.last_fire_seq = toy_game_local_player_actor(&game)->fire_seq;
         toy_game_actor_fire(&game, toy_game_local_player_actor(&game),
                             0, 1024, 100);
         sync_fire_effects(&camera);
@@ -1133,16 +1141,17 @@ static int run_logic_test(void)
             toy_game_set_primitives(&smoke, level_map.primitives,
                                     level_map.primitive_count,
                                     level_map.room_limit);
-            smoke.px = 0;
-            smoke.pz = -5000;
+            toy_game_local_player_actor(&smoke)->x = 0;
+            toy_game_local_player_actor(&smoke)->z = -5000;
             for (i = 0; i < 500; i++)
                 toy_game_update(&smoke, NULL, 0, 0, 1024, 16);
             if (pass == 0) {
                 first_wave = smoke.wave;
-                first_kills = smoke.kills;
-                first_hp = smoke.hp;
-            } else if (smoke.wave != first_wave || smoke.kills != first_kills ||
-                       smoke.hp != first_hp) {
+                first_kills = toy_game_local_player_actor(&smoke)->kills;
+                first_hp = toy_game_local_player_actor(&smoke)->hp;
+            } else if (smoke.wave != first_wave ||
+                       toy_game_local_player_actor(&smoke)->kills != first_kills ||
+                       toy_game_local_player_actor(&smoke)->hp != first_hp) {
                 return 9;
             }
         }
@@ -1321,7 +1330,8 @@ static int run_logic_test(void)
         /* 挪开 AI 队友，避免它们射杀测试敌人（DETECT_RANGE 5600）。 */
         game.actors[0].x = 0; game.actors[0].z = 11000;
         game.actors[1].x = 0; game.actors[1].z = 11000;
-        game.px = aim.x; game.pz = aim.z - 5000;
+        toy_game_local_player_actor(&game)->x = aim.x;
+        toy_game_local_player_actor(&game)->z = aim.z - 5000;
         memset(game.enemies, 0, sizeof(game.enemies));
         game.enemies_alive = 0;
         game.enemies[0].active = 1;             /* 面前 300：应被推 */
@@ -1336,8 +1346,8 @@ static int run_logic_test(void)
         game.enemies[1].dir_z = -1024;
         game.enemies_alive = 2;
         /* 直接验证击退函数，避免本帧敌人 AI 先移动身后敌人。 */
-        game.px = aim.x;
-        game.pz = aim.z;
+        toy_game_local_player_actor(&game)->x = aim.x;
+        toy_game_local_player_actor(&game)->z = aim.z;
         toy_game_shove(&game, aim.sy, aim.cy);
         if (game.enemies[0].z != aim.z + 300 + TOY_GAME_SHOVE_PUSH) return 63;
         if (game.enemies[0].shove_stun_ms <= 0 ||
@@ -1368,7 +1378,8 @@ static int run_logic_test(void)
         toy_game_init(&reuse_test, 47);
         reuse_test.primitive_count = 0;
         reuse_test.room_limit = 12000;
-        reuse_test.px = 0; reuse_test.pz = 0;
+        toy_game_local_player_actor(&reuse_test)->x = 0;
+        toy_game_local_player_actor(&reuse_test)->z = 0;
         if (toy_game_spawn_horde_type(&reuse_test, TOY_GAME_ENEMY_PURSUIT_COMMON, 1, 1,
                                       &point, 1, 0) != 1) return 87;
         toy_game_shove(&reuse_test, 0, 1024);
@@ -1433,8 +1444,9 @@ static int run_logic_test(void)
         toy_game_init(&game, 43);
         game.primitive_count = 0;
         game.room_limit = 12000;
-        game.px = 10000; game.pz = 0;
-        game.player_down = 0;
+        toy_game_local_player_actor(&game)->x = 10000;
+        toy_game_local_player_actor(&game)->z = 0;
+        toy_game_local_player_actor(&game)->state = TOY_GAME_ACTOR_ALIVE;
         toy_game_set_ai_teammate(&game, 1, 0, 0, "AI");
         memset(game.enemies, 0, sizeof(game.enemies));
         game.enemies_alive = 1;
@@ -1458,7 +1470,8 @@ static int run_logic_test(void)
         toy_game_init(&game, 44);
         game.primitive_count = 0;
         game.room_limit = 12000;
-        game.px = 10000; game.pz = 0;
+        toy_game_local_player_actor(&game)->x = 10000;
+        toy_game_local_player_actor(&game)->z = 0;
         toy_game_set_ai_teammate(&game, 1, 0, 300, "AI");
         memset(game.enemies, 0, sizeof(game.enemies));
         game.enemies_alive = 1;
@@ -1486,10 +1499,12 @@ static int run_logic_test(void)
         game.safe_room_count = 0;
         game.primitive_count = 0;
         game.state = TOY_GAME_PLAYING;
-        game.player_down = 0;
-        game.player_control_disabled = 0;
-        game.player_airborne_ms = 0;
-        game.px = 0; game.pz = 0; old_hp = game.hp;
+        toy_game_local_player_actor(&game)->state = TOY_GAME_ACTOR_ALIVE;
+        toy_game_local_player_actor(&game)->control_disabled = 0;
+        toy_game_local_player_actor(&game)->airborne_ms = 0;
+        toy_game_local_player_actor(&game)->x = 0;
+        toy_game_local_player_actor(&game)->z = 0;
+        old_hp = toy_game_local_player_actor(&game)->hp;
         game.enemies[0].active = 1;
         game.enemies[0].type = TOY_GAME_ENEMY_CHARGER;
         game.enemies[0].x = 0; game.enemies[0].z = 1800;
@@ -1497,12 +1512,12 @@ static int run_logic_test(void)
         game.enemies[0].dir_x = 0; game.enemies[0].dir_z = -1024;
         for (int i = 0; i < 80; i++) {
             toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
-            if (game.player_airborne_y > 0) saw_airborne_y = 1;
-            if (game.player_control_disabled) saw_control_lock = 1;
-            if (game.hp < old_hp && game.enemies[0].charge_active)
+            if (toy_game_local_player_actor(&game)->airborne_y > 0) saw_airborne_y = 1;
+            if (toy_game_local_player_actor(&game)->control_disabled) saw_control_lock = 1;
+            if (toy_game_local_player_actor(&game)->hp < old_hp && game.enemies[0].charge_active)
                 saw_charge_after_hit = 1;
         }
-        if (game.hp >= old_hp || !saw_airborne_y || !saw_control_lock ||
+        if (toy_game_local_player_actor(&game)->hp >= old_hp || !saw_airborne_y || !saw_control_lock ||
             !saw_charge_after_hit) return 78;
     }
     /* 统一实体冲击：AI 队友与普通实体共享击飞状态，落地后回到部署点。 */
@@ -1557,12 +1572,13 @@ static int run_logic_test(void)
         game.primitive_count = 0;
         game.room_limit = 12000;
         if (!toy_game_jump_with_velocity(&game, 10, 0) ||
-            game.player_airborne_ms <= 0 ||
+            toy_game_local_player_actor(&game)->airborne_ms <= 0 ||
             toy_game_jump(&game)) return 85;
         for (int i = 0; i < 70; i++)
             toy_game_update_player_motion(&game, 16);
-        if (game.player_airborne_ms != 0 || game.player_airborne_y != 0 ||
-            game.px <= 0 ||
+        if (toy_game_local_player_actor(&game)->airborne_ms != 0 ||
+            toy_game_local_player_actor(&game)->airborne_y != 0 ||
+            toy_game_local_player_actor(&game)->x <= 0 ||
             !toy_game_jump(&game)) return 86;
     }
     /* 多层地面：跳入悬空平台范围后应落在平台顶部，而不是穿回地面。 */
@@ -1572,7 +1588,9 @@ static int run_logic_test(void)
             test_flat_primitive(280,2200,-1000,1000,500)
         };
         struct toy_game_ground_query ground;
+        struct toy_game_actor *player;
         toy_game_init(&game, 47);
+        player = toy_game_local_player_actor(&game);
         game.primitive_count = 0;
         game.room_limit = 12000;
         toy_game_set_primitives(&game,terrain,2,12000);
@@ -1594,9 +1612,9 @@ static int run_logic_test(void)
                 test_flat_primitive(200,1000,-500,500,100)
             };
             toy_game_set_primitives(&game,step,2,2000);
-            game.px=0; game.pz=0; game.player_ground_y=0;
+            player->x=0; player->z=0; player->ground_y=0;
             if (!toy_game_try_move_player(&game,400,0) ||
-                game.player_ground_y != 100) return 208;
+                player->ground_y != 100) return 208;
         }
         {
             struct toy_map_primitive ramp=test_ramp_primitive(
@@ -1606,15 +1624,15 @@ static int run_logic_test(void)
             ground = toy_game_query_ground(&game, 600, 0, 0, 0);
             if (ground.support_y != 200 || ground.landing_y != 200 ||
                 !ground.support_is_ramp) return 174;
-            game.px=200; game.pz=0;
-            game.player_ground_y=200*400/1200;
+            player->x=200; player->z=0;
+            player->ground_y=200*400/1200;
             for (int x=300; x<=900; x+=100)
                 if (!toy_game_try_move_player(&game,x,0) ||
-                    game.player_ground_y != x*400/1200)
+                    player->ground_y != x*400/1200)
                     return 209;
             for (int x=800; x>=200; x-=100)
                 if (!toy_game_try_move_player(&game,x,0) ||
-                    game.player_ground_y != x*400/1200)
+                    player->ground_y != x*400/1200)
                     return 210;
             if (toy_game_position_blocked_at_height(
                     &game, 100, 0, 50, 0) ||
@@ -1635,23 +1653,23 @@ static int run_logic_test(void)
                     test_flat_primitive(-4180,3180,-6260,-5520,3900)
                 };
                 toy_game_set_primitives(&game,ramp_top,3,16000);
-                game.px = 0;
-                game.pz = -7000;
-                game.player_ground_y = toy_game_query_ground(
-                    &game, game.px, game.pz, TOY_GAME_PLAYER_RADIUS,
+                player->x = 0;
+                player->z = -7000;
+                player->ground_y = toy_game_query_ground(
+                    &game, player->x, player->z, TOY_GAME_PLAYER_RADIUS,
                     0).support_y;
-                while (game.pz < -5700) {
-                    int next_z = game.pz + TOY_CONFIG_PLAYER_MOVE_STEP;
+                while (player->z < -5700) {
+                    int next_z = player->z + TOY_CONFIG_PLAYER_MOVE_STEP;
                     if (next_z > -5700) next_z = -5700;
-                    if (!toy_game_try_move_player(&game, game.px, next_z))
+                    if (!toy_game_try_move_player(&game, player->x, next_z))
                         return 198;
-                    if (game.player_ground_y != toy_game_query_ground(
-                            &game, game.px, game.pz,
+                    if (player->ground_y != toy_game_query_ground(
+                            &game, player->x, player->z,
                             TOY_GAME_PLAYER_RADIUS,
-                            game.player_ground_y).support_y)
+                            player->ground_y).support_y)
                         return 199;
                 }
-                if (game.player_ground_y != 3900) return 200;
+                if (player->ground_y != 3900) return 200;
                 if (toy_game_position_blocked_at_height(
                         &game, 0, -6080, TOY_GAME_PLAYER_RADIUS, 3881))
                     return 188;
@@ -1725,11 +1743,11 @@ static int run_logic_test(void)
                             nav_game.nav_component[high_cell]) return 181;
                 }
             }
-            game.px = 900;
-            game.pz = 0;
-            game.player_ground_y = 500;
+            player->x = 900;
+            player->z = 0;
+            player->ground_y = 500;
             toy_game_update_player_ground(&game);
-            if (game.player_ground_y != 300 || game.player_airborne_ms != 0)
+            if (player->ground_y != 300 || player->airborne_ms != 0)
                 return 175;
             game.actors[0].x = 300;
             game.actors[0].z = 0;
@@ -1738,38 +1756,38 @@ static int run_logic_test(void)
             if (game.actors[0].ground_y != 100 ||
                 game.actors[0].airborne_ms != 0) return 176;
             toy_game_set_primitives(&game,terrain,2,12000);
-        game.px = 0;
-        game.pz = 0;
-        game.player_ground_y = 0;
+        player->x = 0;
+        player->z = 0;
+        player->ground_y = 0;
         /* 事务移动区分上升与下降：高台不能直接攀爬，离开高台边缘则
          * 保持绝对高度进入下落；没有任何支撑也不能阻止水平移动。 */
         if (toy_game_try_move_player(&game, 500, 0) ||
-            game.player_ground_y != 0) return 201;
-        game.px = 2000;
-        game.player_ground_y = 500;
+            player->ground_y != 0) return 201;
+        player->x = 2000;
+        player->ground_y = 500;
         if (!toy_game_try_move_player(&game, 2400, 0) ||
-            game.px != 2400 || game.player_ground_y != 0 ||
-            game.player_airborne_y != 500 ||
-            game.player_airborne_ms <= 0) return 202;
-        game.player_airborne_ms = 0;
-        game.player_airborne_y = 0;
-        game.player_vertical_velocity = 0;
-        game.px = 0;
-        game.pz = 0;
-        game.player_ground_y = 500;
+            player->x != 2400 || player->ground_y != 0 ||
+            player->airborne_y != 500 ||
+            player->airborne_ms <= 0) return 202;
+        player->airborne_ms = 0;
+        player->airborne_y = 0;
+        player->vertical_velocity = 0;
+        player->x = 0;
+        player->z = 0;
+        player->ground_y = 500;
         toy_game_set_primitives(&game,NULL,0,12000);
         if (!toy_game_try_move_player(&game, 300, 0) ||
-            game.px != 300 || game.player_ground_y != 0 ||
-            game.player_airborne_y != 500 ||
-            game.player_airborne_ms <= 0) return 203;
+            player->x != 300 || player->ground_y != 0 ||
+            player->airborne_y != 500 ||
+            player->airborne_ms <= 0) return 203;
         toy_game_update_player_motion(&game, 16);
-        if (game.player_airborne_ms <= 0) return 204;
-        game.player_airborne_ms = 0;
-        game.player_airborne_y = 0;
-        game.player_vertical_velocity = 0;
+        if (player->airborne_ms <= 0) return 204;
+        player->airborne_ms = 0;
+        player->airborne_y = 0;
+        player->vertical_velocity = 0;
         toy_game_set_primitives(&game,terrain,2,12000);
-        game.px = 0;
-        game.player_ground_y = 0;
+        player->x = 0;
+        player->ground_y = 0;
         /* 完整斜向移动撞墙后移除法线 X 分量，保留 Z 切向分量。 */
         {
             struct toy_map_primitive slide_world[2] = {
@@ -1778,83 +1796,83 @@ static int run_logic_test(void)
                 test_flat_primitive(-2000,2000,-2000,2000,0)
             };
             toy_game_set_primitives(&game,slide_world,2,2000);
-            game.px = 0; game.pz = 0; game.player_ground_y = 0;
+            player->x = 0; player->z = 0; player->ground_y = 0;
             /* Collision is an independent primitive capability: the same
              * box becomes passable when an air-gate style toggle clears it,
              * while the WALKABLE ground primitive continues to support us. */
             if (toy_game_try_move_player(&game,100,0)) return 206;
             slide_world[0].flags &= ~TOY_MAP_PRIMITIVE_COLLISION;
             toy_game_rebuild_navigation(&game);
-            if (!toy_game_try_move_player(&game,100,0) || game.px != 100 ||
-                game.player_ground_y != 0) return 207;
+            if (!toy_game_try_move_player(&game,100,0) || player->x != 100 ||
+                player->ground_y != 0) return 207;
             slide_world[0].flags |= TOY_MAP_PRIMITIVE_COLLISION;
             toy_game_rebuild_navigation(&game);
-            game.px=0; game.pz=0;
+            player->x=0; player->z=0;
             if (!toy_game_move_player_sliding(&game, 100, 100) ||
-                game.px != 0 || game.pz != 100 ||
-                game.player_ground_y != 0) return 205;
+                player->x != 0 || player->z != 100 ||
+                player->ground_y != 0) return 205;
             toy_game_set_primitives(&game,terrain,2,12000);
-            game.px = 0; game.pz = 0; game.player_ground_y = 0;
+            player->x = 0; player->z = 0; player->ground_y = 0;
         }
     }
         if (!toy_game_jump_with_velocity(&game, 20, 0)) return 87;
         for (int i = 0; i < 70; i++)
             toy_game_update_player_motion(&game, 16);
-        if (game.player_airborne_ms != 0 || game.player_ground_y != 500 ||
-            game.player_airborne_y != 0) return 88;
+        if (player->airborne_ms != 0 || player->ground_y != 500 ||
+            player->airborne_y != 0) return 88;
         /* 从边缘原地起跳时，碰撞圆仍压着台面就应落回台顶，
          * 不能落到地面高度后卡在平台侧面。 */
-        game.px = 2300;
+        player->x = 2300;
         if (!toy_game_jump(&game)) return 94;
         for (int i = 0; i < 70; i++)
             toy_game_update_player_motion(&game, 16);
-        if (game.player_airborne_ms != 0 || game.player_ground_y != 500 ||
-            game.player_airborne_y != 0) return 95;
+        if (player->airborne_ms != 0 || player->ground_y != 500 ||
+            player->airborne_y != 0) return 95;
         /* 从高台起跳并离开边缘后，相对起跳点高度回到零时仍在半空；
          * 必须继续下降到低处地面的绝对高度，不能在此处瞬移落地。 */
-        game.px = 1800;
-        game.player_ground_y = 500;
+        player->x = 1800;
+        player->ground_y = 500;
         if (!toy_game_jump_with_velocity(&game, 100, 0)) return 190;
-        for (int i = 0; i < 400 && game.player_airborne_y >= 0; i++)
+        for (int i = 0; i < 400 && player->airborne_y >= 0; i++)
             toy_game_update_player_motion(&game, 16);
-        if (game.player_airborne_ms <= 0 || game.player_airborne_y >= 0 ||
-            game.player_ground_y != 500) return 191;
-        for (int i = 0; i < 400 && game.player_airborne_ms > 0; i++)
+        if (player->airborne_ms <= 0 || player->airborne_y >= 0 ||
+            player->ground_y != 500) return 191;
+        for (int i = 0; i < 400 && player->airborne_ms > 0; i++)
             toy_game_update_player_motion(&game, 16);
-        if (game.player_airborne_ms != 0 || game.player_ground_y != 0 ||
-            game.player_airborne_y != 0) return 192;
+        if (player->airborne_ms != 0 || player->ground_y != 0 ||
+            player->airborne_y != 0) return 192;
         /* 离开平台时，在碰撞圆完全越过边缘前仍保持站立；
          * 越过后从平台高度开始下落，不能直接陷入平台侧面。 */
-        game.px = 2300;
-        game.player_ground_y = 500;
+        player->x = 2300;
+        player->ground_y = 500;
         toy_game_update_player_ground(&game);
-        if (game.player_ground_y != 500 || game.player_airborne_ms != 0)
+        if (player->ground_y != 500 || player->airborne_ms != 0)
             return 89;
-        game.px = 2400;
+        player->x = 2400;
         toy_game_update_player_ground(&game);
-        if (game.player_ground_y != 0 || game.player_airborne_ms <= 0 ||
-            game.player_airborne_y != 500) return 90;
+        if (player->ground_y != 0 || player->airborne_ms <= 0 ||
+            player->airborne_y != 500) return 90;
         for (int i = 0; i < 70; i++)
             toy_game_update_player_motion(&game, 16);
-        if (game.player_airborne_ms != 0 || game.player_airborne_y != 0)
+        if (player->airborne_ms != 0 || player->airborne_y != 0)
             return 91;
         /* 高处坠落不能因名义跳跃计时结束而瞬移落地。 */
-        game.player_ground_y = 0;
-        game.player_airborne_y = 10000;
-        game.player_airborne_ms = TOY_GAME_JUMP_MS;
-        game.player_vertical_velocity = 0;
+        player->ground_y = 0;
+        player->airborne_y = 10000;
+        player->airborne_ms = TOY_GAME_JUMP_MS;
+        player->vertical_velocity = 0;
         for (int i = 0; i < 57; i++) {
-            int previous_y = game.player_airborne_y;
+            int previous_y = player->airborne_y;
             toy_game_update_player_motion(&game, 16);
-            if (previous_y - game.player_airborne_y >
+            if (previous_y - player->airborne_y >
                     TOY_GAME_FALL_TERMINAL_VELOCITY)
                 return 189;
         }
-        if (game.player_airborne_ms <= 0 || game.player_airborne_y <= 0)
+        if (player->airborne_ms <= 0 || player->airborne_y <= 0)
             return 186;
-        for (int i = 0; i < 600 && game.player_airborne_ms > 0; i++)
+        for (int i = 0; i < 600 && player->airborne_ms > 0; i++)
             toy_game_update_player_motion(&game, 16);
-        if (game.player_airborne_ms != 0 || game.player_airborne_y != 0)
+        if (player->airborne_ms != 0 || player->airborne_y != 0)
             return 187;
     }
     /* world 是导航和碰撞的最大坐标范围，不是默认地面。 */
@@ -1953,12 +1971,12 @@ static int run_logic_test(void)
         net_test.input_history[10 % RASTERFALL_NET_INPUT_HISTORY].command.buttons =
             RASTERFALL_CMD_JUMP;
         net_test.input_history[10 % RASTERFALL_NET_INPUT_HISTORY].command.move_forward = 1;
-        game.player_airborne_ms = 600;
-        game.player_airborne_y = 180;
+        toy_game_local_player_actor(&game)->airborne_ms = 600;
+        toy_game_local_player_actor(&game)->airborne_y = 180;
         {
             int old_x = camera.x, old_z = camera.z;
             rasterfall_net_reconcile_client(&net_test, &session, &camera);
-            if (game.player_airborne_ms <= 0) return 109;
+            if (toy_game_local_player_actor(&game)->airborne_ms <= 0) return 109;
             if (camera.x != old_x || camera.z != old_z) return 142;
             if (camera.x == net_test.players[1].camera.x &&
                 camera.z == net_test.players[1].camera.z) return 143;
@@ -1999,7 +2017,8 @@ static int run_logic_test(void)
         net_test.snapshot_ready = 1;
         net_test.players[1].active = 1;
         net_test.players[1].state = TOY_GAME_PLAYING;
-        net_test.players[1].hp = session.game_state.hp;
+        net_test.players[1].hp =
+            toy_game_local_player_actor(&session.game_state)->hp;
         net_test.players[1].camera = authoritative;
         net_test.players[1].input_ack = 100;
         session.smooth_turn_remaining = 1611;
@@ -2062,7 +2081,6 @@ static int run_logic_test(void)
         game.actors[TOY_GAME_PLAYER_ACTOR_INDEX].state =
             TOY_GAME_ACTOR_DOWNED;
         game.actors[TOY_GAME_PLAYER_ACTOR_INDEX].hp = 0;
-        toy_game_mirror_player_from_actor(&game);
         net_test.clients[0].command_ready = 1;
         net_test.clients[0].command.move_forward = 1;
         net_test.clients[0].command.buttons = RASTERFALL_CMD_JUMP;
@@ -2081,7 +2099,8 @@ static int run_logic_test(void)
             net_test.clients[0].command_ready = 1;
             rasterfall_net_apply_clients(&net_test, &session, &camera);
         }
-        if (game.player_down || game.hp != TOY_GAME_REVIVE_HP) return 112;
+        if (toy_game_local_player_actor(&game)->state == TOY_GAME_ACTOR_DOWNED ||
+            toy_game_local_player_actor(&game)->hp != TOY_GAME_REVIVE_HP) return 112;
     }
     /* 平台对地面实体是实心障碍：敌人不能生成或追进台体，
      * AI 队友也不能被直接移入平台。 */
@@ -2100,7 +2119,8 @@ static int run_logic_test(void)
         if (game.enemies_alive != 0) return 96;
         toy_game_place_enemy(&game, -800, 0);
         if (game.enemies_alive != 1) return 97;
-        game.px = 800; game.pz = 0;
+        toy_game_local_player_actor(&game)->x = 800;
+        toy_game_local_player_actor(&game)->z = 0;
         for (int i = 0; i < 100; i++)
             toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
         if (game.enemies[0].x + TOY_GAME_ENEMY_RADIUS > terrain[1].minx)
@@ -2157,7 +2177,8 @@ static int run_logic_test(void)
         terrain[1] = wall;
         toy_game_init(&game, 81);
         game.to_spawn = 0;
-        game.px = 3000; game.pz = 0;
+        toy_game_local_player_actor(&game)->x = 3000;
+        toy_game_local_player_actor(&game)->z = 0;
         toy_game_set_primitives(&game,terrain,2,6000);
         toy_game_place_enemy(&game, -3000, 0);
         toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
@@ -2182,7 +2203,8 @@ static int run_logic_test(void)
 
         toy_game_init(&game, 82);
         game.to_spawn = 0;
-        game.px = 3000; game.pz = 0;
+        toy_game_local_player_actor(&game)->x = 3000;
+        toy_game_local_player_actor(&game)->z = 0;
         toy_game_set_primitives(&game,terrain,2,6000);
         toy_game_place_enemy(&game, -3000, 0);
         toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
@@ -2199,7 +2221,8 @@ static int run_logic_test(void)
         int i, player_hp, ai_hp, base_hp, behind_hp;
         toy_game_init(&game, 84);
         game.primitive_count = 0; game.room_limit = 12000; game.to_spawn = 0;
-        game.px = 0; game.pz = 1200; /* 新起手距离内，旧 712 距离外 */
+        toy_game_local_player_actor(&game)->x = 0;
+        toy_game_local_player_actor(&game)->z = 1200; /* 新起手距离内，旧 712 距离外 */
         memset(game.actors, 0, sizeof(game.actors));
         game.actors[0].active = 0;
         for (i = 0; i < 3; i++) {
@@ -2224,15 +2247,18 @@ static int run_logic_test(void)
         game.enemies[0].hp = 4000;
         game.enemies[0].speed = TOY_CONFIG_TANK_SPEED_MIN;
         game.enemies[0].dir_z = 1024;
-        player_hp = game.hp; ai_hp = game.actors[0].hp;
+        player_hp = toy_game_local_player_actor(&game)->hp;
+        ai_hp = game.actors[0].hp;
         base_hp = game.actors[1].hp; behind_hp = game.actors[2].hp;
         toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
         for (i = 0; i < 39; i++)
             toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
-        if (game.hp != player_hp || game.actors[0].hp != ai_hp ||
+        if (toy_game_local_player_actor(&game)->hp != player_hp ||
+            game.actors[0].hp != ai_hp ||
             game.actors[1].hp != base_hp) return 126;
         toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
-        if (game.hp != player_hp - 8 || game.player_airborne_ms <= 0 ||
+        if (toy_game_local_player_actor(&game)->hp != player_hp - 8 ||
+            toy_game_local_player_actor(&game)->airborne_ms <= 0 ||
             game.actors[0].hp != ai_hp - 8 ||
             game.actors[0].airborne_ms <= 0 ||
             game.actors[1].hp != base_hp - 24 ||
@@ -2249,7 +2275,8 @@ static int run_logic_test(void)
         int old_z;
         toy_game_init(&game, 86);
         game.primitive_count = 0; game.room_limit = 12000; game.to_spawn = 0;
-        game.px = 0; game.pz = 0;
+        toy_game_local_player_actor(&game)->x = 0;
+        toy_game_local_player_actor(&game)->z = 0;
         memset(game.enemies, 0, sizeof(game.enemies));
         game.enemies_alive = 1;
         game.enemies[0].active = 1;
@@ -2292,7 +2319,8 @@ static int run_logic_test(void)
         net_test.snapshot_ready = 1;
         net_test.players[1].active = 1;
         net_test.players[1].state = TOY_GAME_PLAYING;
-        net_test.players[1].hp = session.game_state.hp;
+        net_test.players[1].hp =
+            toy_game_local_player_actor(&session.game_state)->hp;
         net_test.players[1].fire_seq = 8;
         net_test.enemy_count = 1;
         net_test.enemies[0].index = 0;
@@ -2338,18 +2366,19 @@ static int run_logic_test(void)
         game.enemies[0].active = 1;
         game.enemies[0].x = 500;
         game.enemies[0].z = 0;
-        game.px = 0;
-        game.pz = 0;
+        toy_game_local_player_actor(&game)->x = 0;
+        toy_game_local_player_actor(&game)->z = 0;
         toy_game_set_player_special_control(
             &game, TOY_GAME_SPECIAL_CONTROL_SMOKER, 37, 0, 20);
         toy_game_clear_player_special_control(&game, 36);
-        if (!game.player_control_disabled ||
-            game.player_special_control_id != 37) return 154;
+        if (!toy_game_local_player_actor(&game)->control_disabled ||
+            toy_game_local_player_actor(&game)->special_control_id != 37) return 154;
         toy_game_update_player_special_control(&game, 16);
-        if (game.px <= 0) return 155;
+        if (toy_game_local_player_actor(&game)->x <= 0) return 155;
         toy_game_clear_player_special_control(&game, 37);
-        if (game.player_control_disabled ||
-            game.player_special_control != TOY_GAME_SPECIAL_CONTROL_NONE)
+        if (toy_game_local_player_actor(&game)->control_disabled ||
+            toy_game_local_player_actor(&game)->special_control !=
+                TOY_GAME_SPECIAL_CONTROL_NONE)
             return 156;
     }
     /* 玩家武器增强只影响玩家操作者，AI 仍使用武器标准计时。 */
@@ -2429,9 +2458,10 @@ static int run_logic_test(void)
         struct toy_game_actor *ramp_actor;
         toy_game_init(&game, 180);
         game.to_spawn = 0;
-        game.px = 3300; game.pz = 0;
-        game.player_ground_y = 600;
-        game.hp = 100000;
+        toy_game_local_player_actor(&game)->x = 3300;
+        toy_game_local_player_actor(&game)->z = 0;
+        toy_game_local_player_actor(&game)->ground_y = 600;
+        toy_game_local_player_actor(&game)->hp = 100000;
         game.safe_room_count = 0;
         toy_game_set_primitives(&game,terrain,3,5000);
         toy_game_place_enemy(&game, -500, 0);
@@ -2445,8 +2475,9 @@ static int run_logic_test(void)
         if (max_ground < 450) return 181;
         toy_game_init(&game, 182);
         game.to_spawn = 0;
-        game.px = -800; game.pz = 0;
-        game.hp = 100000;
+        toy_game_local_player_actor(&game)->x = -800;
+        toy_game_local_player_actor(&game)->z = 0;
+        toy_game_local_player_actor(&game)->hp = 100000;
         game.safe_room_count = 0;
         toy_game_set_primitives(&game,terrain,3,5000);
         memset(&game.enemies[0], 0, sizeof(game.enemies[0]));
@@ -2478,8 +2509,9 @@ static int run_logic_test(void)
 
         toy_game_init(&game, 183);
         game.to_spawn = 0;
-        game.px = 3300; game.pz = 0;
-        game.player_ground_y = 600;
+        toy_game_local_player_actor(&game)->x = 3300;
+        toy_game_local_player_actor(&game)->z = 0;
+        toy_game_local_player_actor(&game)->ground_y = 600;
         game.safe_room_count = 0;
         toy_game_set_primitives(&game,terrain,3,5000);
         actor_id = toy_game_add_anime_actor(

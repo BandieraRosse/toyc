@@ -5410,14 +5410,7 @@ void toy_game_update_ai_teammates(struct toy_game *g, int dt_ms)
         TOY_GAME_ANIM_REVIVE, TOY_GAME_ANIM_SHOVE
     };
     int i, old_context = g->ai_context_actor_index;
-    struct toy_game_actor *local_player = toy_game_local_player_actor(g);
     /* Teammate updates consume the normalized local actor directly. */
-    /* Keep the historical standalone host path working when it seeds only
-     * px/pz before calling this public helper.  The normal world step never
-     * enters this import because the actor has already been normalized. */
-    if (local_player && local_player->x == 0 && local_player->z == 0 &&
-        (g->px != 0 || g->pz != 0))
-        toy_game_mirror_actor_from_player(g);
     for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
         if (!g->actors[i].active || g->actors[i].kind != TOY_GAME_ACTOR_AI)
             continue;
@@ -5468,10 +5461,8 @@ void toy_game_update_held(struct toy_game *g,
     unsigned int old_fire_seq;
     int old_reloading;
     if (g->state != TOY_GAME_PLAYING) return;
-    /* Preserve the old public entry point for logic tests and small hosts
-     * that still seed px/pz directly; normal Rasterfall sessions arrive here
-     * after the actor-to-legacy mirror. */
-    toy_game_mirror_actor_from_player(g);
+    /* The actor is already normalized by the caller; legacy fields are only
+     * published after the step for old observers. */
     player = toy_game_local_player_actor(g);
     for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
         if (g->actors[i].kind != TOY_GAME_ACTOR_PLAYER ||
