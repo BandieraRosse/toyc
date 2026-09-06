@@ -23,6 +23,9 @@ static int enemy_target_valid(const struct toy_game *g,
                               int target_kind, int target_index,
                               int *out_x, int *out_z);
 static int ai_try_shove(struct toy_game *g, struct toy_game_actor *actor);
+static int apply_entity_impact_with_knockback(struct toy_game *g, int kind,
+                                              int index, int dx, int dz,
+                                              int damage, int knockback);
 
 /* ── PRNG：xorshift64* ──────────────────────────────────────────── */
 
@@ -1732,9 +1735,12 @@ static int enemy_separation_distance(const struct toy_game_enemy *a,
 
 static int player_in_safe_room(const struct toy_game *g)
 {
+    const struct toy_game_actor *player = toy_game_local_player_actor_const(g);
     int i;
+    if (!player || !player->active) return 0;
     for (i = 0; i < g->safe_room_count; i++)
-        if (toy_game_point_in_box(g->px, g->pz, &g->safe_rooms[i])) return 1;
+        if (toy_game_point_in_box(player->x, player->z,
+                                  &g->safe_rooms[i])) return 1;
     return 0;
 }
 
@@ -1795,14 +1801,15 @@ static int spawn_enemy_at(struct toy_game *g, int enemy_type,
                           int minx, int maxx, int minz, int maxz,
                           int min_dist2)
 {
+    const struct toy_game_actor *player = toy_game_local_player_actor_const(g);
     int i, slot;
     for (i = 0; i < 24; i++) {
         int x, z, dx, dz;
         long long dist2, dist;
         x = rand_range(g, minx, maxx);
         z = rand_range(g, minz, maxz);
-        dx = x - g->px;
-        dz = z - g->pz;
+        dx = x - player->x;
+        dz = z - player->z;
         dist2 = (long long)dx * dx + (long long)dz * dz;
         if (dist2 < (long long)min_dist2) continue;
         if (enemy_position_blocked(g, x, z, TOY_GAME_ENEMY_RADIUS)) continue;
@@ -1906,6 +1913,7 @@ int toy_game_spawn_random_horde(struct toy_game *g, int count,
 /* 从房间边界带随机选一个合法生成点；找不到返回 0 */
 static int try_spawn(struct toy_game *g)
 {
+    const struct toy_game_actor *player = toy_game_local_player_actor_const(g);
     int edge = g->room_limit - TOY_GAME_SPAWN_EDGE;
     int i, slot;
     int min_dist2 = TOY_GAME_MIN_SPAWN_DIST * TOY_GAME_MIN_SPAWN_DIST;
@@ -1928,8 +1936,8 @@ static int try_spawn(struct toy_game *g)
             x = (side == 2) ? -edge : edge;
         }
         if (enemy_position_blocked(g, x, z, TOY_GAME_ENEMY_RADIUS)) continue;
-        dx = x - g->px;
-        dz = z - g->pz;
+        dx = x - player->x;
+        dz = z - player->z;
         if (dx * dx + dz * dz < min_dist2) continue;
         slot = find_free_slot(g);
         if (slot < 0) return 0;         /* 槽位满，等待死亡腾位 */
@@ -2172,6 +2180,7 @@ int toy_game_skip_wave_rest(struct toy_game *g)
 
 static void update_campaign_goal(struct toy_game *g, int dt_ms)
 {
+    const struct toy_game_actor *player = toy_game_local_player_actor_const(g);
     const struct toy_game_box *goal;
     if (g->campaign_stage < 2) {
         g->goal_hold_ms = 0;
@@ -2180,7 +2189,8 @@ static void update_campaign_goal(struct toy_game *g, int dt_ms)
     if (g->safe_goal_index < 0 || g->safe_goal_index >= g->safe_room_count)
         return;
     goal = &g->safe_rooms[g->safe_goal_index];
-    if (toy_game_point_in_box(g->px, g->pz, goal)) {
+    if (player && player->active &&
+        toy_game_point_in_box(player->x, player->z, goal)) {
         g->goal_hold_ms += dt_ms;
         if (g->goal_hold_ms >= TOY_GAME_GOAL_HOLD_MS) {
             g->goal_hold_ms = TOY_GAME_GOAL_HOLD_MS;
@@ -2210,8 +2220,9 @@ static void campaign_enter_calm(struct toy_game *g)
 
 static void update_alarm_event(struct toy_game *g, int dt_ms)
 {
-    if (!g->alarm_triggered && g->alarm_zone &&
-        toy_game_point_in_box(g->px, g->pz, g->alarm_zone)) {
+    const struct toy_game_actor *player = toy_game_local_player_actor_const(g);
+    if (!g->alarm_triggered && g->alarm_zone && player && player->active &&
+        toy_game_point_in_box(player->x, player->z, g->alarm_zone)) {
         g->alarm_triggered = 1;
         g->campaign_phase = TOY_GAME_PHASE_HORDE;
         g->spawn_budget = TOY_GAME_ALARM_SPAWN_BUDGET;
@@ -2328,10 +2339,12 @@ static void update_campaign(struct toy_game *g, int dt_ms)
 static void push_enemy_from_player(struct toy_game *g,
                                    struct toy_game_enemy *e, int knockback)
 {
+    const struct toy_game_actor *player = toy_game_local_player_actor_const(g);
     int dx, dz, distance;
-    if (!g || !e || e->active != 1 || e->airborne_ms > 0) return;
-    dx = e->x - g->px;
-    dz = e->z - g->pz;
+    if (!g || !player || !player->active || !e || e->active != 1 ||
+        e->airborne_ms > 0) return;
+    dx = e->x - player->x;
+    dz = e->z - player->z;
     distance = isqrt((long long)dx * dx + (long long)dz * dz);
     if (distance <= 0) return;
     e->airborne_ms = TOY_GAME_AIRBORNE_MS;
@@ -2345,24 +2358,39 @@ static void push_enemy_from_player(struct toy_game *g,
 static void bite_player(struct toy_game *g, struct toy_game_enemy *e)
 {
     const struct toy_game_enemy_info *info = toy_game_enemy_info(e->type);
-    if (e->bite_cooldown_ms > 0 || g->player_down) return;
+    struct toy_game_actor *player = toy_game_local_player_actor(g);
+    int knockback_ready;
+    if (!player || !player->active || player->state != TOY_GAME_ACTOR_ALIVE ||
+        e->bite_cooldown_ms > 0) return;
     e->bite_cooldown_ms = TOY_GAME_BITE_MS;
-    g->hp -= info->bite_damage;
-    if (g->hp < 0) g->hp = 0;
-    g->damage_flash_ms = TOY_GAME_DAMAGE_FLASH_MS;
+    knockback_ready = player->knockback_cooldown_ms <= 0;
+    /* Keep the bite's historical one-shot reaction (the enemy is pushed,
+     * while the player is not launched).  The state itself is nevertheless
+     * actor-owned; the generic impact path is reserved for explosive and
+     * special hits that explicitly launch their victim. */
+    player->hp -= info->bite_damage;
+    if (player->hp < 0) player->hp = 0;
+    player->damage_flash_ms = TOY_GAME_DAMAGE_FLASH_MS;
+    if (player->hp <= 0) {
+        player->state = TOY_GAME_ACTOR_DOWNED;
+        player->revive_progress_ms = 0;
+        toy_game_actor_set_animation(player, TOY_GAME_ANIM_DEATH);
+    } else toy_game_actor_set_animation(player, TOY_GAME_ANIM_HIT);
     e->hurt = 150;
-    if (g->player_knockback_cooldown_ms <= 0) {
+    if (knockback_ready) {
         push_enemy_from_player(g, e, TOY_GAME_CHARGER_KNOCKBACK);
+        player->knockback_cooldown_ms =
+            TOY_GAME_PLAYER_KNOCKBACK_COOLDOWN_MS;
+        /* Keep the compatibility mirror coherent for update_held callers:
+         * that entry point refreshes actor state from legacy fields at the
+         * beginning of every frame. */
         g->player_knockback_cooldown_ms =
             TOY_GAME_PLAYER_KNOCKBACK_COOLDOWN_MS;
     }
     push_event(g, TOY_GAME_EV_BITE);
-    if (g->hp <= 0) {
-        g->player_down = 1;
-        g->player_revive_progress_ms = 0;
-        toy_game_animation_set(&g->animation, TOY_GAME_ANIM_DEATH);
+    if (player->state == TOY_GAME_ACTOR_DOWNED) {
         push_event(g, TOY_GAME_EV_ACTOR_DOWN);
-    } else toy_game_animation_set(&g->animation, TOY_GAME_ANIM_HIT);
+    }
 }
 
 static void bite_ai(struct toy_game *g, struct toy_game_enemy *e)
@@ -3420,31 +3448,11 @@ static int apply_entity_impact_with_knockback(struct toy_game *g, int kind,
     if (!g || dist <= 0) { dx = 0; dz = 1024; dist = 1024; }
     dx = dx * knockback / (int)dist;
     dz = dz * knockback / (int)dist;
-    if (kind == TOY_GAME_ENTITY_PLAYER) {
-        int apply_knockback;
-        if (g->player_down) return 0;
-        g->hp -= damage; if (g->hp < 0) g->hp = 0;
-        if (g->hp == 0) {
-            g->player_down = 1;
-            g->player_revive_progress_ms = 0;
-            toy_game_animation_set(&g->animation, TOY_GAME_ANIM_DEATH);
-        } else toy_game_animation_set(&g->animation, TOY_GAME_ANIM_HIT);
-        g->damage_flash_ms = TOY_GAME_DAMAGE_FLASH_MS;
-        apply_knockback = g->player_knockback_cooldown_ms <= 0;
-        if (apply_knockback) {
-            g->player_airborne_ms = TOY_GAME_AIRBORNE_MS;
-            g->player_airborne_y = 0;
-            g->player_vertical_velocity = TOY_GAME_AIRBORNE_VELOCITY;
-            g->player_knockback_x = dx; g->player_knockback_z = dz;
-            g->player_control_disabled = 1;
-            g->player_knockback_cooldown_ms =
-                TOY_GAME_PLAYER_KNOCKBACK_COOLDOWN_MS;
-        }
-        return 1;
-    }
-    if (kind == TOY_GAME_ENTITY_ACTOR) {
+    if (kind == TOY_GAME_ENTITY_PLAYER || kind == TOY_GAME_ENTITY_ACTOR) {
         struct toy_game_actor *a;
         int apply_knockback;
+        if (kind == TOY_GAME_ENTITY_PLAYER)
+            index = TOY_GAME_PLAYER_ACTOR_INDEX;
         if (index < 0 || index >= TOY_GAME_MAX_ACTORS) return 0;
         a = &g->actors[index];
         if (!a->active || a->state != TOY_GAME_ACTOR_ALIVE) return 0;
@@ -3483,6 +3491,8 @@ static int apply_entity_impact_with_knockback(struct toy_game *g, int kind,
                                           a->airborne_y);
             }
         }
+        if (index == TOY_GAME_PLAYER_ACTOR_INDEX)
+            toy_game_mirror_player_from_actor(g);
         return 1;
     }
     if (kind == TOY_GAME_ENTITY_ENEMY) {
@@ -3705,15 +3715,9 @@ static int tank_target_in_sweep(const struct toy_game_enemy *tank,
 static void tank_sweep_entities(struct toy_game *g,
                                 struct toy_game_enemy *tank)
 {
-    int i, dx, dz;
+    int i;
     int actor_hit[TOY_GAME_MAX_ACTORS];
     int actor_dx[TOY_GAME_MAX_ACTORS], actor_dz[TOY_GAME_MAX_ACTORS];
-    if (!g->player_down && tank_target_in_sweep(tank, g->px, g->pz)) {
-        dx = g->px - tank->x; dz = g->pz - tank->z;
-        apply_entity_impact_with_knockback(
-            g, TOY_GAME_ENTITY_PLAYER, 0, dx, dz,
-            TOY_CONFIG_TANK_DAMAGE, TOY_CONFIG_TANK_KNOCKBACK);
-    }
     /* Freeze the cone result before applying any hit.  An AI hit reaction can
      * shove the attacker, but that must not change who was inside this one
      * simultaneous sweep. */
@@ -4373,11 +4377,13 @@ static void toy_game_explode(struct toy_game *g, int x, int z, int bomb,
             toy_game_add_throwable_stats(g, owner_actor_id, 0, 1);
         }
     }
-    /* Bombs damage players and knock friendly AI away; the local player is
-     * stored outside the actor array. */
+    /* The PLAYER compatibility entity maps to actors[0]. Keep it as the
+     * single local-player path so legacy callers receive mirrored fields;
+     * the actor loop handles only non-local actors. */
     for (i = 0; bomb && i < TOY_GAME_MAX_ACTORS; i++) {
         struct toy_game_actor *a = &g->actors[i];
         long long dx, dz;
+        if (i == TOY_GAME_PLAYER_ACTOR_INDEX) continue;
         if (!a->active || a->state != TOY_GAME_ACTOR_ALIVE || a->base_core)
             continue;
         dx = a->x - x; dz = a->z - z;
@@ -5305,7 +5311,7 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
     /* Companions follow independently of mercenary deployment.  A generous
      * stop radius prevents nervous pacing beside the player. */
     {
-        if(actor->companion){int dx=g->px-actor->x,dz=g->pz-actor->z;int dist=isqrt((long long)dx*dx+(long long)dz*dz);if(dist>1600){ai_idle=0;actor_path_toward(g,actor,g->px,g->pz,ai_info->move_speed);move_face_x=(actor->nav_active?actor->nav_x:g->px)-actor->x;move_face_z=(actor->nav_active?actor->nav_z:g->pz)-actor->z;}else actor->nav_active=0;}
+        if(actor->companion){const struct toy_game_actor *player=toy_game_local_player_actor_const(g);int dx=player->x-actor->x,dz=player->z-actor->z;int dist=isqrt((long long)dx*dx+(long long)dz*dz);if(dist>1600){ai_idle=0;actor_path_toward(g,actor,player->x,player->z,ai_info->move_speed);move_face_x=(actor->nav_active?actor->nav_x:player->x)-actor->x;move_face_z=(actor->nav_active?actor->nav_z:player->z)-actor->z;}else actor->nav_active=0;}
         else if (!observation.at_deployment) {
             ai_idle = 0;
             actor_path_toward(g, actor, actor->deployment_x,
@@ -5413,6 +5419,14 @@ void toy_game_update_ai_teammates(struct toy_game *g, int dt_ms)
         TOY_GAME_ANIM_REVIVE, TOY_GAME_ANIM_SHOVE
     };
     int i, old_context = g->ai_context_actor_index;
+    struct toy_game_actor *local_player = toy_game_local_player_actor(g);
+    /* A few small hosts call this public helper directly after seeding only
+     * the historical player coordinates.  Do the one-time compatibility
+     * import while the normalized player actor is still at its init origin;
+     * once the actor has moved, the session/world path remains actor-owned. */
+    if (local_player && local_player->x == 0 && local_player->z == 0 &&
+        (g->px != 0 || g->pz != 0))
+        toy_game_mirror_actor_from_player(g);
     for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
         if (!g->actors[i].active || g->actors[i].kind != TOY_GAME_ACTOR_AI)
             continue;
