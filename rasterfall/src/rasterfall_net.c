@@ -1367,6 +1367,9 @@ static void net_push_remote_sample(struct rasterfall_net *net, int id,
     if (count >= 3) {
         samples[0] = samples[1]; samples[1] = samples[2]; count = 2;
     }
+    /* actor = gameplay truth.  This is only the remote presentation cache:
+     * copy render coordinates from the received snapshot, never gameplay
+     * fields such as HP, weapon, reload, statistics, or control state. */
     samples[count].valid = 1;
     samples[count].received_ms = net_monotonic_ms();
     samples[count].camera = player->camera;
@@ -3643,8 +3646,9 @@ int rasterfall_net_pipeline_test(void)
             net.snapshot_world_phase_timer_ms != 511000)
             return 10;
     }
-    /* Fixed-delay interpolation is render-only and does not alter the latest
-     * authoritative player camera. */
+    /* Fixed-delay interpolation is render-only: remote presentation cache =
+     * derived render state.  It does not alter actor gameplay truth or the
+     * latest network camera snapshot. */
     {
         long now = net_monotonic_ms();
         net.local_player_id = 1; net.remote_sample_count[2] = 2;
@@ -3654,10 +3658,16 @@ int rasterfall_net_pipeline_test(void)
         net.remote_samples[2][0].camera.x = 0;
         net.remote_samples[2][1].camera.x = 100;
         net.players[2].camera.x = 100;
+        net.players[2].hp = 7;
+        net.players[2].weapon = TOY_GAME_WEAPON_AWP;
+        net.players[2].reloading = 1;
+        net.players[2].kills = 99;
         rasterfall_net_update_presentation(&net, 0);
         if (net.remote_render_camera[2].x < 40 ||
             net.remote_render_camera[2].x > 60 ||
-            net.players[2].camera.x != 100) return 11;
+            net.players[2].camera.x != 100 || net.players[2].hp != 7 ||
+            net.players[2].weapon != TOY_GAME_WEAPON_AWP ||
+            !net.players[2].reloading || net.players[2].kills != 99) return 11;
     }
     /* Reconciliation may only treat positions as matching when they belong
      * to the exact input acknowledged by the snapshot. */

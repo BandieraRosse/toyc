@@ -166,6 +166,9 @@ struct rasterfall_net_prediction {
 };
 
 struct rasterfall_net_remote_sample {
+    /* actor = gameplay truth.  This is only the remote presentation cache =
+     * derived render state.  Never add HP, weapon, reload, inventory,
+     * statistics, or control state here. */
     int valid;
     long received_ms;
     struct camera camera;
@@ -352,8 +355,11 @@ struct rasterfall_net {
     int own_snapshot_reserve_valid;
     struct rasterfall_net_prediction prediction_history[64];
     struct rasterfall_net_input input_history[RASTERFALL_NET_INPUT_HISTORY];
+    /* Interpolation history contains only render coordinates, orientation,
+     * height and timestamps; gameplay remains in game_state.actors[]. */
     struct rasterfall_net_remote_sample remote_samples[RASTERFALL_NET_PLAYER_MAX][3];
     int remote_sample_count[RASTERFALL_NET_PLAYER_MAX];
+    /* Current derived render result; never an input to gameplay or authority. */
     struct camera remote_render_camera[RASTERFALL_NET_PLAYER_MAX];
     int remote_render_airborne_y[RASTERFALL_NET_PLAYER_MAX];
     int correction_x, correction_z, correction_y;

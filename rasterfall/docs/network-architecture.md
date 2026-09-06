@@ -1,7 +1,7 @@
 # Rasterfall 联机架构与扩展边界
 
 > 文档更新：2026-09-06
-> 源码核对基线：工作区（输入历史、玩家快照和远端命令执行直接绑定 actor；主机普通枪械、斧头/药丸及炸弹/Molotov 客户端输入直接应用到远端 actor；投射物/燃烧区携带 owner；本地预测位置派生 camera）
+> 源码核对基线：工作区（输入历史、玩家快照和远端命令执行直接绑定 actor；`actor = gameplay truth`；`remote presentation cache = derived render state`，插值缓存只保存位置、朝向、高度和时间戳；主机普通枪械、斧头/药丸及炸弹/Molotov 客户端输入直接应用到远端 actor；投射物/燃烧区携带 owner；本地预测位置派生 camera）
 
 本文记录联机实现必须保持的内部边界。产品入口和平台范围见 `../README.md`。
 
@@ -55,6 +55,8 @@
 `toy_game_actor_use_special()` 直接作用于远端 actor。输入历史、可靠事件坐标、玩家快照和远端
 命令执行都直接读写对应 actor，不再保留临时覆盖本地玩家字段的网络路径。客户端预测中，
 gameplay 位置是 body state 的来源，camera 位置由 session 派生；camera 只保留方向和展示数据。
+`remote_samples` 与 `remote_render_*` 是接收端的纯展示缓存，只保存插值所需的位置、朝向、
+高度和时间戳；HP、武器、reload、统计和控制状态必须继续从 `game_state.actors[]` 读取。
 
 ## 人工联机验收
 
