@@ -1,7 +1,7 @@
 # Rasterfall 联机架构与扩展边界
 
-> 文档更新：2026-09-05
-> 源码核对基线：工作区（主机普通枪械、斧头/药丸及炸弹/Molotov 客户端输入直接应用到远端 actor；投射物/燃烧区携带 owner；本地预测位置派生 camera）
+> 文档更新：2026-09-06
+> 源码核对基线：工作区（输入历史、玩家快照和远端命令执行直接绑定 actor；主机普通枪械、斧头/药丸及炸弹/Molotov 客户端输入直接应用到远端 actor；投射物/燃烧区携带 owner；本地预测位置派生 camera）
 
 本文记录联机实现必须保持的内部边界。产品入口和平台范围见 `../README.md`。
 
@@ -52,8 +52,9 @@
 
 炸弹和 Molotov 已通过 `toy_game_actor_throwable()` 直接作用于远端 actor；投射物和燃烧区的
 `owner_actor_id` 使用稳定 actor ID，不能保存指针或依赖 C 结构布局。斧头和药丸通过
-`toy_game_actor_use_special()` 直接作用于远端 actor。继续扩展远端玩家状态时，应优先为 actor
-增加对应规则入口，再删除剩余兼容路径；不要新增对本地玩家字段的临时覆盖。客户端预测中，
+`toy_game_actor_use_special()` 直接作用于远端 actor。输入历史、可靠事件坐标、玩家快照和远端
+命令执行都直接读写对应 actor，不再保留临时覆盖本地玩家字段的网络路径。legacy 字段仅作为
+展示/旧入口的兼容镜像；不要新增对本地玩家字段的临时覆盖。客户端预测中，
 gameplay 位置是 body state 的来源，camera 位置由 session 派生；camera 只保留方向和展示数据。
 
 ## 人工联机验收

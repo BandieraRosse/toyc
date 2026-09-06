@@ -330,15 +330,19 @@ static void net_apply_remote_special_events(struct rasterfall_net *net,
                                           event->value3);
         } else if (event->type ==
                    RASTERFALL_NET_EVENT_PLAYER_CONTROL_START) {
-            if (game->player_special_control !=
+            const struct toy_game_actor *actor =
+                toy_game_local_player_actor_const(game);
+            if (actor->special_control !=
                     TOY_GAME_SPECIAL_CONTROL_NONE &&
-                game->player_special_control_id >= event->control_id)
+                actor->special_control_id >= event->control_id)
                 continue;
-            toy_game_set_player_special_control(
-                game, TOY_GAME_SPECIAL_CONTROL_SMOKER, event->control_id,
+            toy_game_set_actor_special_control(
+                toy_game_local_player_actor(game),
+                TOY_GAME_SPECIAL_CONTROL_SMOKER, event->control_id,
                 event->source_id, event->value);
         } else if (event->type == RASTERFALL_NET_EVENT_PLAYER_CONTROL_END) {
-            toy_game_clear_player_special_control(game, event->control_id);
+            toy_game_clear_actor_special_control(
+                toy_game_local_player_actor(game), event->control_id);
         }
     }
     net->remote_event_count = 0;
@@ -360,10 +364,12 @@ void rasterfall_net_capture_events(struct rasterfall_net *net,
         net->reliable_events[net->reliable_event_count].type = game->events[i];
         net->reliable_events[net->reliable_event_count].source_id = 0;
         net->reliable_events[net->reliable_event_count].target_id = -1;
-        net->reliable_events[net->reliable_event_count].x = game->px;
-        net->reliable_events[net->reliable_event_count].z = game->pz;
+        net->reliable_events[net->reliable_event_count].x =
+            toy_game_local_player_actor_const(game)->x;
+        net->reliable_events[net->reliable_event_count].z =
+            toy_game_local_player_actor_const(game)->z;
         net->reliable_events[net->reliable_event_count].value =
-            game->current_slot;
+            toy_game_local_player_actor_const(game)->current_slot;
         net->reliable_events[net->reliable_event_count].value2 = 0;
         net->reliable_events[net->reliable_event_count].value3 = 0;
         net->reliable_events[net->reliable_event_count].control_id = 0;
@@ -686,9 +692,6 @@ static void net_apply_own_inventory(struct rasterfall_net *net,
     int i, consumed_selected = 0;
     struct toy_game_actor *actor;
     if (!net || !game || !own) return;
-    /* Standalone callers may still seed the legacy fixture fields; consume
-     * that compatibility input once, then keep the actor authoritative. */
-    toy_game_mirror_actor_from_player(game);
     actor = toy_game_local_player_actor(game);
     if (!actor) return;
     for (i = 0; i < TOY_GAME_WEAPON_SLOTS; i++) {
@@ -716,7 +719,6 @@ static void net_apply_own_inventory(struct rasterfall_net *net,
     net->own_snapshot_reserve_valid = 1;
     if (consumed_selected)
         actor->current_slot = own->current_slot;
-    toy_game_mirror_player_from_actor(game);
 }
 
 static int net_client_index_client_id(const struct rasterfall_net *net,
@@ -1169,21 +1171,23 @@ int rasterfall_net_send_command(struct rasterfall_net *net,
     {
         struct rasterfall_net_input *entry =
             &net->input_history[sequence % RASTERFALL_NET_INPUT_HISTORY];
+        const struct toy_game_actor *actor = local_game ?
+            toy_game_local_player_actor_const(local_game) : NULL;
         memset(entry, 0, sizeof(*entry)); entry->valid = 1;
         entry->sequence = sequence; entry->tick = net->tick;
         entry->command = wire;
         entry->jump_dx = jump_dx; entry->jump_dz = jump_dz;
-        if (local_game) {
-            memcpy(entry->slots, local_game->slots, sizeof(entry->slots));
-            entry->current_slot = local_game->current_slot;
-            entry->reloading = local_game->reloading;
-            entry->reload_timer_ms = local_game->reload_timer_ms;
-            entry->weapon_switch_timer_ms = local_game->weapon_switch_timer_ms;
-            entry->fire_cooldown_ms = local_game->fire_cooldown_ms;
-            entry->muzzle_flash_ms = local_game->muzzle_flash_ms;
-            entry->fire_seq = local_game->fire_seq;
-            entry->ray_count = local_game->ray_count;
-            memcpy(entry->rays, local_game->rays, sizeof(entry->rays));
+        if (actor) {
+            memcpy(entry->slots, actor->slots, sizeof(entry->slots));
+            entry->current_slot = actor->current_slot;
+            entry->reloading = actor->reloading;
+            entry->reload_timer_ms = actor->reload_timer_ms;
+            entry->weapon_switch_timer_ms = actor->weapon_switch_timer_ms;
+            entry->fire_cooldown_ms = actor->fire_cooldown_ms;
+            entry->muzzle_flash_ms = actor->muzzle_flash_ms;
+            entry->fire_seq = actor->fire_seq;
+            entry->ray_count = actor->ray_count;
+            memcpy(entry->rays, actor->rays, sizeof(entry->rays));
         }
     }
     size = packet_begin(packet, RASTERFALL_NET_INPUT, NET_INPUT_SIZE,
@@ -1198,12 +1202,16 @@ int rasterfall_net_send_command(struct rasterfall_net *net,
     /* The local player owns locomotion.  Keep the input packet as the wire
      * carrier, but report the complete post-tick motion state as well. */
     put_i16(p + 24, predicted->y);
-    put_i16(p + 26, local_game ? local_game->player_airborne_ms : 0);
-    put_i16(p + 28, local_game ? local_game->player_airborne_y : 0);
-    put_i16(p + 30, local_game ? local_game->player_vertical_velocity : 0);
-    put_i16(p + 32, local_game ? local_game->player_air_x : 0);
-    put_i16(p + 34, local_game ? local_game->player_air_z : 0);
-    put_i16(p + 36, local_game ? local_game->player_ground_y : 0);
+    {
+        const struct toy_game_actor *actor = local_game ?
+            toy_game_local_player_actor_const(local_game) : NULL;
+        put_i16(p + 26, actor ? actor->airborne_ms : 0);
+        put_i16(p + 28, actor ? actor->airborne_y : 0);
+        put_i16(p + 30, actor ? actor->vertical_velocity : 0);
+        put_i16(p + 32, actor ? actor->air_x : 0);
+        put_i16(p + 34, actor ? actor->air_z : 0);
+        put_i16(p + 36, actor ? actor->ground_y : 0);
+    }
     for (i = 0; i < RASTERFALL_NET_INPUT_REDUNDANCY; i++) {
         uint32_t s = sequence - (uint32_t)i;
         struct rasterfall_net_input *entry =
@@ -1576,14 +1584,17 @@ static int send_player_fire_packets(struct rasterfall_net *net,
                                     const struct toy_game *game)
 {
     int client_i;
-    if (game->fire_seq) {
-        if (game->fire_seq != net->host_fire_sent_seq) {
-            net->host_fire_sent_seq = game->fire_seq;
+    const struct toy_game_actor *host_actor =
+        toy_game_local_player_actor_const(game);
+    if (host_actor->fire_seq) {
+        if (host_actor->fire_seq != net->host_fire_sent_seq) {
+            net->host_fire_sent_seq = host_actor->fire_seq;
             net->host_fire_resend = 3;
         }
         if (net->host_fire_resend) {
-            if (send_one_player_fire_packet(net, 0, game->fire_seq,
-                                            game->ray_count, game->rays) < 0)
+            if (send_one_player_fire_packet(net, 0, host_actor->fire_seq,
+                                            host_actor->ray_count,
+                                            host_actor->rays) < 0)
                 return -1;
             net->host_fire_resend--;
         }
@@ -1676,28 +1687,32 @@ static int net_send_player_snapshot(struct rasterfall_net *net,
                          RASTERFALL_NET_PLAYER_MAX * NET_PLAYER_COMPACT_SIZE];
     unsigned char *p = packet + NET_HEADER_SIZE;
     int size, i;
+    const struct toy_game_actor *local_actor =
+        toy_game_local_player_actor_const(game);
     size = packet_begin(packet, RASTERFALL_NET_PLAYER_SNAPSHOT,
                         NET_PLAYER_SNAPSHOT_BASE +
                         RASTERFALL_NET_PLAYER_MAX * NET_PLAYER_COMPACT_SIZE,
                         ++net->send_sequence, net->receive_sequence);
     if (size < 0) return -1;
     put_u32(p, snapshot_sequence); p[4] = RASTERFALL_NET_PLAYER_MAX;
-    p[5] = (unsigned char)(game->player_control_disabled != 0);
+    p[5] = (unsigned char)(local_actor->control_disabled != 0);
     p[6] = p[7] = 0;
     encode_player_compact(p + NET_PLAYER_SNAPSHOT_BASE, 0, 1, host_camera,
-        game->hp, game->slots[game->current_slot].weapon, game->state,
-        game->player_down, game->player_revive_progress_ms, game->slots,
-        game->current_slot, game->reloading, game->reload_timer_ms,
-        game->throw_timer_ms,
-        game->weapon_switch_timer_ms,
-        game->muzzle_flash_ms, game->kills, game->special_kills,
-        game->damage_dealt, game->throwable_damage_dealt, game->fire_seq,
-        game->ray_count, game->rays,
-        game->player_airborne_ms, game->player_airborne_y,
-        game->player_vertical_velocity, 0,
-        game->player_air_x, game->player_air_z,
-        game->player_control_disabled || game->player_airborne_ms > 0,
-        &game->animation);
+        local_actor->hp,
+        local_actor->slots[local_actor->current_slot].weapon, game->state,
+        local_actor->state == TOY_GAME_ACTOR_DOWNED,
+        local_actor->revive_progress_ms, local_actor->slots,
+        local_actor->current_slot, local_actor->reloading,
+        local_actor->reload_timer_ms, local_actor->throw_timer_ms,
+        local_actor->weapon_switch_timer_ms, local_actor->muzzle_flash_ms,
+        local_actor->kills, local_actor->special_kills,
+        local_actor->damage_dealt, local_actor->throwable_damage_dealt,
+        local_actor->fire_seq, local_actor->ray_count, local_actor->rays,
+        local_actor->airborne_ms, local_actor->airborne_y,
+        local_actor->vertical_velocity, local_actor->air_x,
+        local_actor->air_z, 0,
+        local_actor->special_control != TOY_GAME_SPECIAL_CONTROL_NONE,
+        &local_actor->animation);
     for (i = 0; i < RASTERFALL_NET_CLIENT_MAX; i++) {
         struct rasterfall_net_client *c = &net->clients[i];
         int id = i + 1;
@@ -1798,6 +1813,8 @@ static int net_send_world_snapshot(struct rasterfall_net *net,
     unsigned char packet[NET_HEADER_SIZE + 4 + NET_WORLD_SIZE];
     unsigned char *w = packet + NET_HEADER_SIZE + 4;
     int size, i, cursor, world_size;
+    const struct toy_game_actor *local_actor =
+        toy_game_local_player_actor_const(game);
     memset(w, 0, NET_WORLD_SIZE);
     put_i16(w, game->wave); put_i16(w + 2, game->to_spawn);
     put_i16(w + 4, game->spawn_timer_ms); put_i16(w + 6, game->enemies_alive);
@@ -1809,7 +1826,7 @@ static int net_send_world_snapshot(struct rasterfall_net *net,
     put_i16(w + 20, game->director_encounters); put_i16(w + 22, game->goal_hold_ms);
     put_i16(w + 24, manual_alarm_timer_ms); put_i16(w + 26, game->alarm_triggered);
     put_i16(w + 28, game->campaign_stage);
-    w[30] = (unsigned char)(game->player_control_disabled != 0);
+    w[30] = (unsigned char)(local_actor->control_disabled != 0);
     w[31] = (unsigned char)game->wave_attack_multiplier;
     put_i16(w + 32, game->wave_attack_points);
     put_i16(w + 34, game->wave_waiting_common);
@@ -2927,9 +2944,8 @@ static int net_apply_client_fire_report(
     return 1;
 }
 
-/* Firearms are already represented by the remote actor.  Keep this path
- * independent from toy_game's local-player compatibility fields; those
- * fields are still needed by the legacy throwable implementation below. */
+/* Firearms and special weapons are represented by the remote actor.  Keep
+ * this path independent from toy_game's local-player compatibility fields. */
 static int net_apply_client_actor_state(struct rasterfall_net *net,
                                         struct rasterfall_session *session,
                                         struct rasterfall_net_client *client,
@@ -3039,18 +3055,8 @@ static void net_apply_client(struct rasterfall_net *net,
                                    struct rasterfall_net_client *client)
 {
     struct toy_game *g = &session->game_state;
-    struct toy_game_slot host_slots[TOY_GAME_WEAPON_SLOTS];
-    struct toy_game_ray host_rays[TOY_GAME_MAX_RAYS];
     struct toy_game_actor *actor;
-    int host_px, host_pz, host_hp, host_down, host_revive;
-    int host_current, host_reload, host_reload_timer, host_weapon_switch;
-    int host_throw_timer;
-    int host_cooldown;
-    int host_muzzle, host_damage, host_kills, host_special_kills;
-    int host_damage_dealt, host_throwable_damage_dealt, host_ray_count;
-    struct toy_game_animation_state host_animation;
-    unsigned int host_fire_seq;
-    int event_start, index;
+    int index;
     if (!client->active || !client->connected || !client->command_ready)
         return;
     /* Client ids map directly and uniformly onto the reserved actor slots. */
@@ -3090,189 +3096,7 @@ static void net_apply_client(struct rasterfall_net *net,
     }
     if (client->command.buttons & RASTERFALL_CMD_REVIVE)
         net_paid_revive_client(net, session, client);
-    /* Do not route ordinary remote firearms through the local player's
-     * compatibility state.  The actor is the only gameplay representation
-     * used for this client; throwable weapons remain on the legacy path. */
-    if (net_apply_client_actor_state(net, session, client, actor))
-        return;
-    memcpy(host_slots, g->slots, sizeof(host_slots));
-    memcpy(host_rays, g->rays, sizeof(host_rays));
-    host_px = g->px; host_pz = g->pz; host_hp = g->hp;
-    host_down = g->player_down;
-    host_revive = g->player_revive_progress_ms;
-    host_current = g->current_slot;
-    host_reload = g->reloading; host_reload_timer = g->reload_timer_ms;
-    host_weapon_switch = g->weapon_switch_timer_ms;
-    host_throw_timer = g->throw_timer_ms;
-    host_cooldown = g->fire_cooldown_ms; host_muzzle = g->muzzle_flash_ms;
-    host_damage = g->damage_flash_ms; host_kills = g->kills;
-    host_special_kills = g->special_kills;
-    host_damage_dealt = g->damage_dealt;
-    host_throwable_damage_dealt = g->throwable_damage_dealt;
-    host_ray_count = g->ray_count; host_fire_seq = g->fire_seq;
-    host_animation = g->animation;
-    memcpy(g->slots, actor->slots, sizeof(g->slots));
-    g->current_slot = actor->current_slot;
-    g->hp = actor->hp; g->player_down = actor->state == TOY_GAME_ACTOR_DOWNED;
-    g->player_revive_progress_ms = actor->revive_progress_ms;
-    g->reloading = actor->reloading; g->reload_timer_ms = actor->reload_timer_ms;
-    g->weapon_switch_timer_ms = client->weapon_switch_timer_ms;
-    g->throw_timer_ms = client->throw_timer_ms;
-    g->fire_cooldown_ms = actor->fire_cooldown_ms;
-    g->muzzle_flash_ms = actor->muzzle_flash_ms;
-    g->damage_flash_ms = 0; g->kills = client->kills;
-    g->special_kills = client->special_kills;
-    g->damage_dealt = client->damage_dealt;
-    g->throwable_damage_dealt = client->throwable_damage_dealt;
-    if (client->command.buttons & RASTERFALL_CMD_CLEAR_STATS) {
-        g->kills = 0;
-        g->special_kills = 0;
-        g->damage_dealt = 0;
-        g->throwable_damage_dealt = 0;
-    }
-    g->fire_seq = actor->fire_seq;
-    /* Projectile launch uses the player's pitch stored in the game object,
-     * while remote input carries it in the reported camera. */
-    toy_game_set_player_pitch(g, client->camera.pitch_sy,
-                              client->camera.pitch_cy, client->camera.y);
-    /* Remote weapon simulation must start from this actor's animation.  The
-     * game object is temporarily reused for weapon logic, but its animation
-     * must not inherit the host player or a previously processed client. */
-    g->animation = actor->animation;
-    g->px = client->camera.x; g->pz = client->camera.z;
-    {
-        struct rasterfall_command gameplay_command = client->command;
-        /* Keep remote gameplay hooks (shove/interact/flag), but never let
-         * the old remote movement helper simulate this client's locomotion. */
-        gameplay_command.move_forward = 0;
-        gameplay_command.move_strafe = 0;
-        gameplay_command.turn = 0;
-        gameplay_command.pitch = 0;
-        gameplay_command.buttons &= ~RASTERFALL_CMD_JUMP;
-        rasterfall_session_step_remote_player(
-            session, &client->camera, &gameplay_command,
-            actor->state != TOY_GAME_ACTOR_ALIVE,
-            actor->ground_y + actor->airborne_y);
-    }
-    actor->x = client->camera.x;
-    actor->z = client->camera.z;
-    g->px = client->camera.x;
-    g->pz = client->camera.z;
-    if ((client->command.buttons & RASTERFALL_CMD_INTERACT) &&
-        client->command.shop_request_id != client->shop_request_id &&
-        !g->player_down)
-        rasterfall_session_interact_remote(session, &client->camera,
-            client->command.shop_arg > 0 ? client->command.shop_arg - 1 : -1);
-    if ((client->command.buttons & RASTERFALL_CMD_FLAG) &&
-        client->command.shop_request_id != client->shop_request_id)
-        rasterfall_session_toggle_flag_remote(session, &client->camera,
-                                               client->client_id);
-    rasterfall_session_update_flag_remote(session, &client->camera,
-                                          client->client_id);
-    if ((client->command.buttons & RASTERFALL_CMD_SHOP) &&
-        client->command.shop_request_id != client->shop_request_id) {
-        rasterfall_session_shop_request(session, client->command.shop_action,
-                                        client->command.shop_item,
-                                        client->command.shop_arg);
-        client->shop_request_id = client->command.shop_request_id;
-    }
-    if (client->command.buttons & (RASTERFALL_CMD_FLAG |
-                                   RASTERFALL_CMD_INTERACT))
-        client->shop_request_id = client->command.shop_request_id;
-    event_start = g->event_count;
-    {
-        int weapon = g->slots[g->current_slot].weapon;
-        int host_weapon = weapon == TOY_GAME_WEAPON_AXE ||
-            weapon == TOY_GAME_WEAPON_PILL ||
-            weapon == TOY_GAME_WEAPON_BOMB ||
-            weapon == TOY_GAME_WEAPON_MOLOTOV;
-        if (host_weapon &&
-            ((client->command.buttons & RASTERFALL_CMD_FIRE) ||
-             client->command.fire_held)) {
-            unsigned char no_keys[TOY_GAME_KEY_RELOAD + 1];
-            memset(no_keys, 0, sizeof(no_keys));
-            toy_game_update_weapon_held(g, no_keys,
-                (client->command.buttons & RASTERFALL_CMD_FIRE) != 0,
-                client->command.fire_held, client->camera.sy,
-                client->camera.cy, 16);
-        }
-    }
-    if (net_apply_client_fire_report(g, client, client->fire_seq,
-                                     client->ray_count, client->rays)) {
-        g->kills = client->kills;
-        g->special_kills = client->special_kills;
-        g->damage_dealt = client->damage_dealt;
-        toy_game_animation_set(&g->animation, TOY_GAME_ANIM_FIRE);
-    } else if (client->reloading) {
-        toy_game_animation_set(&g->animation, TOY_GAME_ANIM_RELOAD);
-    }
-    toy_game_animation_update(&g->animation, 16);
-    actor->x = client->camera.x; actor->z = client->camera.z;
-    /* The temporary weapon view above belongs to this player's inventory only;
-     * never copy the host player's vertical state back into this actor. */
-    client->camera.y = client->reported_camera.y;
-    actor->sy = client->camera.sy; actor->cy = client->camera.cy;
-    actor->hp = g->hp;
-    actor->state = g->player_down ? TOY_GAME_ACTOR_DOWNED :
-                                     TOY_GAME_ACTOR_ALIVE;
-    actor->revive_progress_ms = g->player_revive_progress_ms;
-    memcpy(actor->slots, g->slots, sizeof(actor->slots));
-    actor->current_slot = g->current_slot;
-    actor->reloading = g->reloading; actor->reload_timer_ms = g->reload_timer_ms;
-    actor->fire_cooldown_ms = g->fire_cooldown_ms;
-    actor->muzzle_flash_ms = g->muzzle_flash_ms;
-    actor->kills = g->kills;
-    actor->special_kills = g->special_kills;
-    actor->damage_dealt = g->damage_dealt;
-    actor->throwable_damage_dealt = g->throwable_damage_dealt;
-    actor->fire_seq = client->fire_seq;
-    actor->animation = g->animation;
-    client->animation = g->animation;
-    /* From this point on the shared legacy player state belongs to the host
-     * again.  Keep the remote animation only in its actor/client records. */
-    g->animation = host_animation;
-    client->hp = actor->hp; client->down = actor->state == TOY_GAME_ACTOR_DOWNED;
-    client->state = g->state;
-    client->kills = g->kills;
-    client->special_kills = g->special_kills;
-    client->damage_dealt = g->damage_dealt;
-    client->throwable_damage_dealt = g->throwable_damage_dealt;
-    client->airborne_ms = actor->airborne_ms;
-    client->airborne_y = actor->airborne_y;
-    client->airborne_velocity = actor->vertical_velocity;
-    client->air_x = actor->air_x;
-    client->air_z = actor->air_z;
-    memcpy(client->slots, actor->slots, sizeof(client->slots));
-    client->current_slot = actor->current_slot;
-    client->reloading = actor->reloading;
-    client->reload_timer_ms = actor->reload_timer_ms;
-    client->weapon_switch_timer_ms = g->weapon_switch_timer_ms;
-    client->throw_timer_ms = g->throw_timer_ms;
-    client->muzzle_flash_ms = actor->muzzle_flash_ms;
-    client->fire_seq = actor->fire_seq; client->ray_count = actor->ray_count;
-    memcpy(client->rays, actor->rays, sizeof(client->rays));
-    if (g->event_count > event_start) {
-        int count = g->event_count - event_start;
-        if (count > TOY_GAME_MAX_EVENTS) count = TOY_GAME_MAX_EVENTS;
-        net_queue_remote_events(net, g->events + event_start, count,
-                                client->client_id, client->camera.x,
-                                client->camera.z);
-        g->event_count = event_start;
-    }
-    memcpy(g->slots, host_slots, sizeof(g->slots));
-    memcpy(g->rays, host_rays, sizeof(g->rays));
-    g->px = host_px; g->pz = host_pz; g->hp = host_hp;
-    g->player_down = host_down; g->player_revive_progress_ms = host_revive;
-    g->current_slot = host_current; g->reloading = host_reload;
-    g->reload_timer_ms = host_reload_timer; g->fire_cooldown_ms = host_cooldown;
-    g->weapon_switch_timer_ms = host_weapon_switch;
-    g->throw_timer_ms = host_throw_timer;
-    g->muzzle_flash_ms = host_muzzle; g->damage_flash_ms = host_damage;
-    g->kills = host_kills; g->special_kills = host_special_kills;
-    g->damage_dealt = host_damage_dealt;
-    g->throwable_damage_dealt = host_throwable_damage_dealt;
-    g->ray_count = host_ray_count;
-    g->fire_seq = host_fire_seq;
+    net_apply_client_actor_state(net, session, client, actor);
 }
 
 static int net_find_down_target(struct rasterfall_net *net,
@@ -3857,6 +3681,7 @@ int rasterfall_net_pipeline_test(void)
     {
         struct rasterfall_net_input input;
         struct toy_game inventory_game;
+        struct toy_game_actor *inventory_actor;
         struct rasterfall_net_player own;
         memset(&input, 0, sizeof(input));
         net_init_player_slots(client->slots, &client->current_slot);
@@ -3871,35 +3696,36 @@ int rasterfall_net_pipeline_test(void)
         if (client->slots[2].mag != 3 || client->slots[3].mag != 4)
             return 23;
         toy_game_init(&inventory_game, 156);
+        inventory_actor = toy_game_local_player_actor(&inventory_game);
         memset(&own, 0, sizeof(own));
         own.slot_weapon[2] = TOY_GAME_WEAPON_BOMB;
         own.slot_weapon[3] = TOY_GAME_WEAPON_PILL;
         own.mag[2] = 2; own.mag[3] = 5;
-        inventory_game.slots[2].weapon = TOY_GAME_WEAPON_BOMB;
-        inventory_game.slots[2].mag = 3;
-        inventory_game.current_slot = 2;
-        inventory_game.slots[3].weapon = TOY_GAME_WEAPON_PILL;
-        inventory_game.slots[3].mag = 4;
+        inventory_actor->slots[2].weapon = TOY_GAME_WEAPON_BOMB;
+        inventory_actor->slots[2].mag = 3;
+        inventory_actor->current_slot = 2;
+        inventory_actor->slots[3].weapon = TOY_GAME_WEAPON_PILL;
+        inventory_actor->slots[3].mag = 4;
         net.own_snapshot_reserve_valid = 1;
         net.own_snapshot_reserve[0] = own.reserve[0];
         net_apply_own_inventory(&net, &inventory_game, &own);
-        if (inventory_game.slots[2].mag != 2 ||
-            inventory_game.slots[3].mag != 5 ||
-            inventory_game.current_slot != own.current_slot)
+        if (inventory_actor->slots[2].mag != 2 ||
+            inventory_actor->slots[3].mag != 5 ||
+            inventory_actor->current_slot != own.current_slot)
             return 24;
-        inventory_game.slots[0].weapon = TOY_GAME_WEAPON_SMG;
-        inventory_game.slots[0].mag = 7;
-        inventory_game.slots[0].reserve = 3;
+        inventory_actor->slots[0].weapon = TOY_GAME_WEAPON_SMG;
+        inventory_actor->slots[0].mag = 7;
+        inventory_actor->slots[0].reserve = 3;
         own.slot_weapon[0] = TOY_GAME_WEAPON_SMG;
         own.mag[0] = 8;
         own.reserve[0] = 90;
         net_apply_own_inventory(&net, &inventory_game, &own);
-        if (inventory_game.slots[0].mag != 7 ||
-            inventory_game.slots[0].reserve != 90)
+        if (inventory_actor->slots[0].mag != 7 ||
+            inventory_actor->slots[0].reserve != 90)
             return 25;
-        inventory_game.slots[0].reserve = 80;
+        inventory_actor->slots[0].reserve = 80;
         net_apply_own_inventory(&net, &inventory_game, &own);
-        if (inventory_game.slots[0].reserve != 80)
+        if (inventory_actor->slots[0].reserve != 80)
             return 26;
     }
     /* Reliable special events apply locally and stale CONTROL_END is ignored. */
