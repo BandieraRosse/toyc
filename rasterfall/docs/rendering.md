@@ -1,7 +1,7 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-06
-> 源码核对基线：工作区（HUD、viewmodel、crosshair、effects、smoker tongue 和 managed-player 展示查询直接读取本地 actor；RAY tracer 短线段/定向线宽投影，通用 emitter preset table，CAMERA_SHAKE 含开火后座与受击摇晃；程序化敌人身体组件描述表）
+> 源码核对基线：工作区（HUD、viewmodel、crosshair、effects、smoker tongue、managed-player 和客户端远端玩家的 gameplay 展示查询直接读取 actor；远端位置/朝向继续使用网络插值缓存；RAY tracer 短线段/定向线宽投影，通用 emitter preset table，CAMERA_SHAKE 含开火后座与受击摇晃；程序化敌人身体组件描述表）
 
 ## 渲染边界
 
@@ -33,8 +33,10 @@
 ## 一帧的数据流
 
 主循环更新 session/net/effects 后，展示层从 `actors[TOY_GAME_PLAYER_ACTOR_INDEX]` 和其他 actor
-读取玩家状态，再设置 `rasterfall_render_context`，调用场景及实体公开入口；不从 `toy_game` 顶层
-玩家字段取 HUD、第一人称武器或受击效果数据。
+读取玩家状态，再设置 `rasterfall_render_context`，调用场景及实体公开入口；客户端远端玩家的
+HP、武器、downed、动画和统计也从对应 actor 读取。网络 `players[]` 只为协议接收、身份/连接管理
+以及远端位置/朝向插值保留 camera 缓存，不作为远端 gameplay 展示源；不从 `toy_game` 顶层玩家字段
+取 HUD、第一人称武器或受击效果数据。
 底层 renderer 收集/光栅化几何；随后绘制 HUD、菜单和调试叠层并 present。客户端角色展示可能使用
 网络插值状态，不应误读为权威 `toy_game` 状态。
 

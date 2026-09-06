@@ -316,20 +316,24 @@ static void fill_hud_state(struct rasterfall_hud_state *hud,
             }
         } else {
             for (i = 0; i < RASTERFALL_NET_PLAYER_MAX; i++) {
-                const struct rasterfall_net_player *player =
-                    &net_state->players[i];
+                const struct toy_game_actor *actor;
+                int actor_index;
                 long dx, dz, d2;
-                if (i == net_state->local_player_id || !player->active ||
-                    !player->downed) continue;
-                dx = (long)camera->x - player->camera.x;
-                dz = (long)camera->z - player->camera.z;
+                if (i == net_state->local_player_id) continue;
+                actor_index = TOY_GAME_REMOTE_ACTOR_BASE + i - 1;
+                if (actor_index < 0 || actor_index >= TOY_GAME_MAX_ACTORS) continue;
+                actor = &session.game_state.actors[actor_index];
+                if (!actor->active || actor->kind != TOY_GAME_ACTOR_PLAYER ||
+                    actor->state != TOY_GAME_ACTOR_DOWNED) continue;
+                dx = (long)camera->x - net_state->players[i].camera.x;
+                dz = (long)camera->z - net_state->players[i].camera.z;
                 d2 = dx * dx + dz * dz;
                 if (d2 > (long)RASTERFALL_INTERACT_RANGE *
                           RASTERFALL_INTERACT_RANGE ||
                     (player_target >= 0 && d2 >= player_target_d2)) continue;
                 player_target = i;
                 player_target_d2 = d2;
-                player_progress = player->revive_progress_ms;
+                player_progress = actor->revive_progress_ms;
                 player_active = player_progress > 0;
             }
         }
@@ -427,22 +431,30 @@ static int clampi(int value, int low, int high)
 static void set_network_spectator_camera(struct camera *camera,
                                          const struct rasterfall_net *net)
 {
-    const struct rasterfall_net_player *target = NULL;
+    int target_id = -1;
     int i;
     int distance = 1250;
     if (!camera || !net) return;
     if (net->mode == RASTERFALL_NET_CLIENT &&
         net->local_player_id >= 0 &&
         net->local_player_id < RASTERFALL_NET_PLAYER_MAX &&
-        net->players[net->local_player_id].downed) {
+        game.actors[net->local_player_id == 0 ?
+                    TOY_GAME_PLAYER_ACTOR_INDEX :
+                    TOY_GAME_REMOTE_ACTOR_BASE + net->local_player_id - 1].state ==
+            TOY_GAME_ACTOR_DOWNED) {
         for (i = 0; i < RASTERFALL_NET_PLAYER_MAX; i++) {
-            if (i != net->local_player_id && net->players[i].active &&
-                !net->players[i].downed) {
-                target = &net->players[i];
+            int actor_index = i == 0 ? TOY_GAME_PLAYER_ACTOR_INDEX :
+                              TOY_GAME_REMOTE_ACTOR_BASE + i - 1;
+            if (i != net->local_player_id &&
+                actor_index >= 0 && actor_index < TOY_GAME_MAX_ACTORS &&
+                game.actors[actor_index].active &&
+                game.actors[actor_index].kind == TOY_GAME_ACTOR_PLAYER &&
+                game.actors[actor_index].state != TOY_GAME_ACTOR_DOWNED) {
+                target_id = i;
                 break;
             }
         }
-        if (!target) return;
+        if (target_id < 0) return;
     } else if (net->mode == RASTERFALL_NET_HOST &&
                toy_game_local_player_actor_const(&game)->state ==
                    TOY_GAME_ACTOR_DOWNED) {
@@ -462,13 +474,15 @@ static void set_network_spectator_camera(struct camera *camera,
             }
         return;
     } else return;
-    camera->x = target->camera.x - target->camera.sy * distance / 1024;
-    camera->z = target->camera.z - target->camera.cy * distance / 1024;
-    camera->sy = target->camera.sy;
-    camera->cy = target->camera.cy;
-    camera->pitch_sy = target->camera.pitch_sy;
-    camera->pitch_cy = target->camera.pitch_cy;
-    camera->y = target->camera.y;
+    camera->x = net->players[target_id].camera.x -
+        net->players[target_id].camera.sy * distance / 1024;
+    camera->z = net->players[target_id].camera.z -
+        net->players[target_id].camera.cy * distance / 1024;
+    camera->sy = net->players[target_id].camera.sy;
+    camera->cy = net->players[target_id].camera.cy;
+    camera->pitch_sy = net->players[target_id].camera.pitch_sy;
+    camera->pitch_cy = net->players[target_id].camera.pitch_cy;
+    camera->y = net->players[target_id].camera.y;
 }
 
 static void set_managed_spectator_camera(struct camera *render_camera,
@@ -727,14 +741,19 @@ static void draw_scoreboard(struct toy_surface *surface,
     int x = 20, y = 38, width = surface->width - 40;
     if (net->mode == RASTERFALL_NET_CLIENT) {
         for (i = 0; i < RASTERFALL_NET_PLAYER_MAX; i++) {
-            if (!net->players[i].active) continue;
+            int actor_index = i == 0 ? TOY_GAME_PLAYER_ACTOR_INDEX :
+                              TOY_GAME_REMOTE_ACTOR_BASE + i - 1;
+            const struct toy_game_actor *actor =
+                actor_index >= 0 && actor_index < TOY_GAME_MAX_ACTORS ?
+                &game.actors[actor_index] : NULL;
+            if (!actor || !actor->active ||
+                actor->kind != TOY_GAME_ACTOR_PLAYER) continue;
             snprintf(name, sizeof(name), "PLAYER %d%s", i + 1,
                      i == net->local_player_id ? " *" : "");
             scoreboard_add(players, &player_count, name,
-                           net->players[i].kills,
-                           net->players[i].special_kills,
-                           net->players[i].damage_dealt,
-                           net->players[i].throwable_damage_dealt);
+                           actor->kills, actor->special_kills,
+                           actor->damage_dealt,
+                           actor->throwable_damage_dealt);
         }
     } else {
         {
@@ -3434,7 +3453,8 @@ startup_again:
             if (managed_spectator && managed_third_person)
                 scene_pixels += rasterfall_render_managed_player(
                     &renderer, &render_camera, &camera);
-            scene_pixels += rasterfall_render_network_teammate(&renderer, &render_camera, &net);
+            scene_pixels += rasterfall_render_network_teammate(
+                &renderer, &render_camera, &net, &game);
             rasterfall_perf_end_stage(&stats, &stats_total, RASTERFALL_STATS_ENEMIES, &t_stage,
                            renderer.submitted_triangles - prev_tris, 0);
             /* World lettering is submitted before the flush, so it follows
@@ -3526,7 +3546,8 @@ startup_again:
             }
             scene_pixels += stage_pixels;
             rasterfall_render_ai_teammate_name(&renderer, &render_camera);
-            rasterfall_render_network_teammate_status(&renderer, &render_camera, &net);
+            rasterfall_render_network_teammate_status(
+                &renderer, &render_camera, &net, &game);
             stage_pixels += rasterfall_render_overlays(&renderer);
             if (game.state == TOY_GAME_PLAYING && !paused &&
                 !session.pose_editor.active && toy_input_down(&input, KEY_TAB))

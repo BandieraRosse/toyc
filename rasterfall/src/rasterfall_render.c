@@ -4353,10 +4353,12 @@ static int render_smoker_tongue(struct toy_renderer *renderer,
 {
     int target_x, target_z, target_lift = 0, pixels;
     if (active_net && active_net->mode == RASTERFALL_NET_CLIENT &&
-        e->special_target_kind == 0 && active_net->players[0].active) {
-        target_x = active_net->players[0].camera.x;
-        target_z = active_net->players[0].camera.z;
-        target_lift = active_net->players[0].airborne_y;
+        e->special_target_kind == 0 && game.actors[TOY_GAME_PLAYER_ACTOR_INDEX].active) {
+        const struct toy_game_actor *player =
+            &game.actors[TOY_GAME_PLAYER_ACTOR_INDEX];
+        target_x = player->x;
+        target_z = player->z;
+        target_lift = player->airborne_y;
     } else if (e->special_target_kind == 1 &&
                e->special_target_index >= 0 &&
                e->special_target_index < TOY_GAME_MAX_ACTORS &&
@@ -5386,7 +5388,8 @@ static int render_player_avatar(struct toy_renderer *renderer,
 
 static int render_network_teammate(struct toy_renderer *renderer,
                                    const struct camera *camera,
-                                   const struct rasterfall_net *net)
+                                   const struct rasterfall_net *net,
+                                   const struct toy_game *game_state)
 {
     static const uint32_t colors[RASTERFALL_NET_PLAYER_MAX] = {
         RF_COLOR_AI_RIFLE, RF_COLOR_UI_PLAYER, 0xD59BFF, 0x66D9D9
@@ -5394,14 +5397,19 @@ static int render_network_teammate(struct toy_renderer *renderer,
     int pixels = 0, i;
     if (net->mode == RASTERFALL_NET_CLIENT) {
         for (i = 0; i < RASTERFALL_NET_PLAYER_MAX; i++) {
-            const struct rasterfall_net_player *player = &net->players[i];
+            const struct toy_game_actor *actor;
             const struct camera *render_camera;
             int render_airborne;
-            if (!player->active || i == net->local_player_id) continue;
+            int actor_index;
+            if (i == net->local_player_id || !game_state) continue;
+            actor_index = TOY_GAME_REMOTE_ACTOR_BASE + i - 1;
+            if (actor_index < 0 || actor_index >= TOY_GAME_MAX_ACTORS) continue;
+            actor = &game_state->actors[actor_index];
+            if (!actor->active || actor->kind != TOY_GAME_ACTOR_PLAYER) continue;
             /* Keep a downed body at its authoritative death position;
              * extrapolation can otherwise move it away from rescue range. */
-            if (player->downed) {
-                render_camera = &player->camera;
+            if (actor->state == TOY_GAME_ACTOR_DOWNED) {
+                render_camera = &net->players[i].camera;
                 render_airborne = 0;
             } else {
                 render_camera = rasterfall_net_remote_render_camera(
@@ -5412,10 +5420,11 @@ static int render_network_teammate(struct toy_renderer *renderer,
                                                    render_airborne);
             pixels += render_player_avatar(renderer, camera,
                 render_camera->x, render_camera->z, render_camera->sy,
-                             render_camera->cy, player->weapon, 0,
-                i % RASTERFALL_CHARACTER_COUNT, colors[i], player->downed,
-                player->animation.id,
-                player->animation.time_ms);
+                             render_camera->cy,
+                             toy_game_actor_current_weapon(actor), 0,
+                actor->character_id % RASTERFALL_CHARACTER_COUNT, colors[i],
+                actor->state == TOY_GAME_ACTOR_DOWNED,
+                actor->animation.id, actor->animation.time_ms);
             active_actor_lift = 0;
         }
         return pixels;
@@ -5443,22 +5452,30 @@ static int render_network_teammate(struct toy_renderer *renderer,
 
 static void render_network_teammate_status(struct toy_renderer *renderer,
                                            const struct camera *camera,
-                                           const struct rasterfall_net *net)
+                                           const struct rasterfall_net *net,
+                                           const struct toy_game *game_state)
 {
     int i;
     char name[16];
     if (net->mode == RASTERFALL_NET_CLIENT) {
         for (i = 0; i < RASTERFALL_NET_PLAYER_MAX; i++) {
-            const struct rasterfall_net_player *player = &net->players[i];
+            const struct toy_game_actor *actor;
             const struct camera *render_camera;
-            if (!player->active || i == net->local_player_id) continue;
-            render_camera = player->downed ? &player->camera :
+            int actor_index;
+            if (i == net->local_player_id || !game_state) continue;
+            actor_index = TOY_GAME_REMOTE_ACTOR_BASE + i - 1;
+            if (actor_index < 0 || actor_index >= TOY_GAME_MAX_ACTORS) continue;
+            actor = &game_state->actors[actor_index];
+            if (!actor->active || actor->kind != TOY_GAME_ACTOR_PLAYER) continue;
+            render_camera = actor->state == TOY_GAME_ACTOR_DOWNED ?
+                &net->players[i].camera :
                 rasterfall_net_remote_render_camera(net, i, NULL);
             snprintf(name, sizeof(name), "PLAYER %d", i + 1);
             render_actor_status(renderer, camera, render_camera->x,
-                render_camera->z, 700, name, player->hp,
-                TOY_GAME_SECONDARY_PLAYER_HP, player->downed,
-                player->revive_progress_ms, RF_COLOR_UI_PLAYER);
+                render_camera->z, 700, name, actor->hp,
+                TOY_GAME_SECONDARY_PLAYER_HP,
+                actor->state == TOY_GAME_ACTOR_DOWNED,
+                actor->revive_progress_ms, RF_COLOR_UI_PLAYER);
         }
         return;
     }
@@ -6084,9 +6101,10 @@ int rasterfall_render_managed_player(struct toy_renderer *renderer,
 
 int rasterfall_render_network_teammate(struct toy_renderer *renderer,
                                        const struct camera *camera,
-                                       const struct rasterfall_net *net)
+                                       const struct rasterfall_net *net,
+                                       const struct toy_game *game_state)
 {
-    return render_network_teammate(renderer, camera, net);
+    return render_network_teammate(renderer, camera, net, game_state);
 }
 
 void rasterfall_render_ai_teammate_name(struct toy_renderer *renderer,
@@ -6097,9 +6115,9 @@ void rasterfall_render_ai_teammate_name(struct toy_renderer *renderer,
 
 void rasterfall_render_network_teammate_status(
     struct toy_renderer *renderer, const struct camera *camera,
-    const struct rasterfall_net *net)
+    const struct rasterfall_net *net, const struct toy_game *game_state)
 {
-    render_network_teammate_status(renderer, camera, net);
+    render_network_teammate_status(renderer, camera, net, game_state);
 }
 
 int rasterfall_render_effects(struct toy_renderer *renderer,

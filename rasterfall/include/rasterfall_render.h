@@ -119,12 +119,13 @@ int rasterfall_render_managed_player(struct toy_renderer *renderer,
                                      const struct camera *body_camera);
 int rasterfall_render_network_teammate(struct toy_renderer *renderer,
                                        const struct camera *camera,
-                                       const struct rasterfall_net *net);
+                                       const struct rasterfall_net *net,
+                                       const struct toy_game *game);
 void rasterfall_render_ai_teammate_name(struct toy_renderer *renderer,
                                         const struct camera *camera);
 void rasterfall_render_network_teammate_status(
     struct toy_renderer *renderer, const struct camera *camera,
-    const struct rasterfall_net *net);
+    const struct rasterfall_net *net, const struct toy_game *game);
 /* Unified runtime facade for world-space ray, billboard and particle
  * instances.  Screen-space overlay instances are submitted separately at
  * the frame tail. */
