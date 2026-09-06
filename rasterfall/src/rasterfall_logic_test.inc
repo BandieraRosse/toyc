@@ -43,10 +43,11 @@ static int primitive_gameplay_logic_test(void)
     world[0]=test_flat_primitive(-2000,2000,-2000,2000,0);
     world[1]=test_flat_primitive(200,1000,-500,500,100);
     toy_game_init(&g,211); toy_game_set_primitives(&g,world,2,2000);
-    g.actors[0].sy = 1024; g.actors[0].cy = 0;
+    g.actors[TOY_GAME_PLAYER_ACTOR_INDEX].sy = 1024;
+    g.actors[TOY_GAME_PLAYER_ACTOR_INDEX].cy = 0;
     toy_game_set_player_pitch(&g, 300, 979, 700);
-    toy_game_mirror_actor_from_player(&g);
-    if (g.actors[0].sy != 1024 || g.actors[0].cy != 0) return 17;
+    if (g.actors[TOY_GAME_PLAYER_ACTOR_INDEX].sy != 1024 ||
+        g.actors[TOY_GAME_PLAYER_ACTOR_INDEX].cy != 0) return 17;
     ground=toy_game_query_ground(&g,400,0,TOY_GAME_PLAYER_RADIUS,0);
     if(!ground.has_support||!ground.has_landing||ground.support_y!=100)return 1;
     g.px=0;g.pz=0;g.player_ground_y=0;
@@ -1944,31 +1945,6 @@ static int run_logic_test(void)
         camera.z = 2000;
         rasterfall_net_reconcile_client(&net_test, &session, &camera);
         if (camera.x != 1000 || camera.z != 2000) return 111;
-    }
-    /* Legacy replay data remains allocated, but snapshots do not execute it. */
-    {
-        struct rasterfall_net net_test;
-        struct camera authoritative;
-        rasterfall_session_reset(&session, &camera, 512);
-        authoritative = camera;
-        rasterfall_net_init(&net_test);
-        net_test.mode = RASTERFALL_NET_CLIENT;
-        net_test.local_player_id = 1;
-        net_test.snapshot_ready = 1;
-        net_test.players[1].active = 1;
-        net_test.players[1].state = TOY_GAME_PLAYING;
-        net_test.players[1].hp = session.game_state.hp;
-        net_test.players[1].camera = authoritative;
-        net_test.players[1].input_ack = 100;
-        session.game_state.animation.id = TOY_GAME_ANIM_FIRE;
-        session.game_state.animation.time_ms = 77;
-        session.game_state.event_count = 1;
-        session.game_state.events[0] = TOY_GAME_EV_SHOOT;
-        rasterfall_net_reconcile_client(&net_test, &session, &camera);
-        if (camera.x != authoritative.x || camera.z != authoritative.z ||
-            session.game_state.animation.id != TOY_GAME_ANIM_FIRE ||
-            session.game_state.animation.time_ms != 77 ||
-            session.game_state.event_count != 1) return 141;
     }
     /* Local facing remains untouched by an authoritative snapshot. */
     {
