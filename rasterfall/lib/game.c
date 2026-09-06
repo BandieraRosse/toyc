@@ -5408,6 +5408,7 @@ void toy_game_update_held(struct toy_game *g,
                           int fire_pressed, int fire_held,
                           int sy, int cy, int dt_ms)
 {
+    struct toy_game_actor *player;
     int i;
     unsigned int old_fire_seq;
     int old_reloading;
@@ -5416,6 +5417,7 @@ void toy_game_update_held(struct toy_game *g,
      * that still seed px/pz directly; normal Rasterfall sessions arrive here
      * after the actor-to-legacy mirror. */
     toy_game_mirror_actor_from_player(g);
+    player = toy_game_local_player_actor(g);
     for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
         if (g->actors[i].kind != TOY_GAME_ACTOR_PLAYER ||
             g->actors[i].knockback_cooldown_ms <= 0) continue;
@@ -5423,34 +5425,42 @@ void toy_game_update_held(struct toy_game *g,
         if (g->actors[i].knockback_cooldown_ms < 0)
             g->actors[i].knockback_cooldown_ms = 0;
     }
-    old_fire_seq = g->fire_seq;
-    old_reloading = g->reloading;
-    toy_game_update_weapon_held(g, keys_pressed, fire_pressed, fire_held,
-                                sy, cy, dt_ms);
-    if (g->reloading && !old_reloading)
-        toy_game_animation_set(&g->animation, TOY_GAME_ANIM_RELOAD);
-    else if (g->fire_seq != old_fire_seq)
-        toy_game_animation_set(&g->animation, TOY_GAME_ANIM_FIRE);
-    else if (g->animation.id != TOY_GAME_ANIM_RELOAD || !g->reloading)
-        if (g->animation.id != TOY_GAME_ANIM_FIRE ||
-            g->animation.time_ms >=
+    old_fire_seq = player->fire_seq;
+    old_reloading = player->reloading;
+    toy_game_update_actor_weapon_held(g, player, keys_pressed, fire_pressed,
+                                      fire_held, sy, cy, dt_ms, 100);
+    if (player->fire_seq != old_fire_seq) {
+        player->fire_cooldown_ms = toy_game_fire_cooldown_ms(
+            toy_game_weapon_info(player->slots[player->current_slot].weapon));
+        player->animation.id = TOY_GAME_ANIM_FIRE;
+        player->animation.time_ms = 0;
+    } else if (player->reloading && !old_reloading) {
+        player->reload_timer_ms = toy_game_reload_ms(
+            toy_game_weapon_info(player->slots[player->current_slot].weapon));
+        player->animation.id = TOY_GAME_ANIM_RELOAD;
+        player->animation.time_ms = 0;
+    } else if (player->animation.id != TOY_GAME_ANIM_RELOAD ||
+               !player->reloading)
+        if (player->animation.id != TOY_GAME_ANIM_FIRE ||
+            player->animation.time_ms >=
                 toy_game_animation_info(TOY_GAME_ANIM_FIRE)->duration_ms)
-                if (g->animation.id != TOY_GAME_ANIM_HIT ||
-                    g->animation.time_ms >=
+                if (player->animation.id != TOY_GAME_ANIM_HIT ||
+                    player->animation.time_ms >=
                     toy_game_animation_info(TOY_GAME_ANIM_HIT)->duration_ms)
-                if (g->animation.id != TOY_GAME_ANIM_DEATH &&
-                    g->animation.id != TOY_GAME_ANIM_REVIVE &&
-                    (g->animation.id != TOY_GAME_ANIM_SHOVE ||
-                     g->animation.time_ms >=
+                if (player->animation.id != TOY_GAME_ANIM_DEATH &&
+                    player->animation.id != TOY_GAME_ANIM_REVIVE &&
+                    (player->animation.id != TOY_GAME_ANIM_SHOVE ||
+                     player->animation.time_ms >=
                      toy_game_animation_info(TOY_GAME_ANIM_SHOVE)->duration_ms) &&
-                    (g->animation.id != TOY_GAME_ANIM_MELEE ||
-                     g->animation.time_ms >=
+                    (player->animation.id != TOY_GAME_ANIM_MELEE ||
+                     player->animation.time_ms >=
                      toy_game_animation_info(TOY_GAME_ANIM_MELEE)->duration_ms) &&
-                    (g->animation.id != TOY_GAME_ANIM_THROW ||
-                     g->animation.time_ms >=
+                    (player->animation.id != TOY_GAME_ANIM_THROW ||
+                     player->animation.time_ms >=
                      toy_game_animation_info(TOY_GAME_ANIM_THROW)->duration_ms))
-                    toy_game_animation_set(&g->animation, TOY_GAME_ANIM_NONE);
-    toy_game_animation_update(&g->animation, dt_ms);
+                    toy_game_actor_set_animation(player, TOY_GAME_ANIM_NONE);
+    toy_game_actor_update_animation(player, dt_ms);
+    toy_game_mirror_player_from_actor(g);
     toy_game_update_projectiles(g, dt_ms);
     toy_game_update_burn_zones(g, dt_ms);
     toy_game_update_ai_teammates(g, dt_ms);
