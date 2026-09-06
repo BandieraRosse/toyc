@@ -54,14 +54,16 @@ static const struct rasterfall_viewmodel_hand_pose *viewmodel_hand_pose(int weap
 
 static void viewmodel_bob(const struct toy_game *game, int *x, int *y)
 {
+    const struct toy_game_actor *player =
+        toy_game_local_player_actor_const(game);
     static const int wave[16] = {
         0, 8, 15, 20, 22, 20, 15, 8,
         0, -8, -15, -20, -22, -20, -15, -8
     };
     int phase;
     *x = 0; *y = 0;
-    if (!game || game->animation.id != TOY_GAME_ANIM_MOVE) return;
-    phase = (game->animation.time_ms / 25) & 15;
+    if (!player || player->animation.id != TOY_GAME_ANIM_MOVE) return;
+    phase = (player->animation.time_ms / 25) & 15;
     *y = wave[phase];
     *x = wave[(phase + 4) & 15] / 2;
 }
@@ -138,9 +140,11 @@ const char *rasterfall_weapon_model_path(int weapon)
 
 int rasterfall_viewmodel_weapon(const struct toy_game *game)
 {
-    int slot = game->current_slot;
+    const struct toy_game_actor *player =
+        toy_game_local_player_actor_const(game);
+    int slot = player ? player->current_slot : -1;
     if (slot < 0 || slot >= TOY_GAME_WEAPON_SLOTS) return -1;
-    return game->slots[slot].weapon;
+    return player->slots[slot].weapon;
 }
 
 void rasterfall_viewmodel_muzzle_offset(int weapon, int kick,
@@ -314,6 +318,8 @@ static int render_viewmodel_hands(struct toy_surface *surface,
                                   const struct toy_game *game,
                                   int kick)
 {
+    const struct toy_game_actor *player =
+        toy_game_local_player_actor_const(game);
     const struct rasterfall_viewmodel_hand_pose *profile;
     int bob_y, bob_x, reload = 0, weapon;
     int r_elbow_y, r_wrist_y, l_elbow_y, l_wrist_y;
@@ -324,7 +330,7 @@ static int render_viewmodel_hands(struct toy_surface *surface,
     int hand_kick_right, hand_kick_left;
     int fire_pulse = 0, reload_slap = 0;
     int drawn = 0;
-    if (!surface || !game) return 0;
+    if (!surface || !player) return 0;
     (void)kick;
     weapon = rasterfall_viewmodel_weapon(game);
     profile = viewmodel_hand_pose(weapon);
@@ -351,8 +357,8 @@ static int render_viewmodel_hands(struct toy_surface *surface,
     r_elbow_z += RASTERFALL_VIEWMODEL_HAND_OFFSET_Z;
     l_elbow_z += RASTERFALL_VIEWMODEL_HAND_OFFSET_Z;
     viewmodel_bob(game, &bob_x, &bob_y);
-    if (game->animation.id == TOY_GAME_ANIM_SHOVE) {
-        int phase = game->animation.time_ms * 1000 /
+    if (player->animation.id == TOY_GAME_ANIM_SHOVE) {
+        int phase = player->animation.time_ms * 1000 /
                     toy_game_animation_info(TOY_GAME_ANIM_SHOVE)->duration_ms;
         int dx, dz, angle;
         if (phase > 1000) phase = 1000;
@@ -362,8 +368,8 @@ static int render_viewmodel_hands(struct toy_surface *surface,
         rotate_view_xz(dx, dz, angle, &dx, &dz);
         l_wrist_x = l_elbow_x + dx;
         l_wrist_z = l_elbow_z + dz;
-    } else if (game->animation.id == TOY_GAME_ANIM_MELEE) {
-        int phase = game->animation.time_ms * 1000 /
+    } else if (player->animation.id == TOY_GAME_ANIM_MELEE) {
+        int phase = player->animation.time_ms * 1000 /
                     TOY_CONFIG_MELEE_SWING_MS;
         if (phase > 1000) phase = 1000;
         r_wrist_x -= phase * 230 / 1000;
@@ -372,16 +378,16 @@ static int render_viewmodel_hands(struct toy_surface *surface,
         l_wrist_x -= phase * 145 / 1000;
         l_wrist_y += phase * 115 / 1000;
         l_wrist_z += phase * 300 / 1000;
-    } else if (game->animation.id == TOY_GAME_ANIM_THROW) {
-        int phase = game->animation.time_ms * 1000 /
+    } else if (player->animation.id == TOY_GAME_ANIM_THROW) {
+        int phase = player->animation.time_ms * 1000 /
                     TOY_CONFIG_THROW_HANDOFF_MS;
         if (phase > 1000) phase = 1000;
         r_wrist_y += phase * 240 / 1000;
         r_wrist_z += phase * 260 / 1000;
         r_elbow_y += phase * 120 / 1000;
-    } else if (game->animation.id == TOY_GAME_ANIM_RELOAD) {
+    } else if (player->animation.id == TOY_GAME_ANIM_RELOAD) {
         if (weapon >= 0) reload_ms = toy_game_weapon_info(weapon)->reload_ms;
-        reload = game->animation.time_ms * 1000 / reload_ms;
+        reload = player->animation.time_ms * 1000 / reload_ms;
         if (reload > 1000) reload = 1000;
         /* Smooth up/down reload arc. */
         {
@@ -404,11 +410,11 @@ static int render_viewmodel_hands(struct toy_surface *surface,
     }
     /* Keep firearm recoil on the weapon itself.  Hands get only a small
      * upward visual pulse during FIRE, so they stay attached to the grip. */
-    if (game->animation.id == TOY_GAME_ANIM_FIRE) {
-        int pulse = game->animation.time_ms < 45 ?
-                    game->animation.time_ms * 1000 / 45 :
-                    game->animation.time_ms < 110 ?
-                    (110 - game->animation.time_ms) * 1000 / 65 : 0;
+    if (player->animation.id == TOY_GAME_ANIM_FIRE) {
+        int pulse = player->animation.time_ms < 45 ?
+                    player->animation.time_ms * 1000 / 45 :
+                    player->animation.time_ms < 110 ?
+                    (110 - player->animation.time_ms) * 1000 / 65 : 0;
         fire_pulse = pulse * 12 / 1000;
     }
     hand_kick_right = fire_pulse;
@@ -666,14 +672,16 @@ int rasterfall_viewmodel_render(struct toy_renderer *renderer,
                                 const struct toy_game *game,
                                 const struct rasterfall_effects *effects)
 {
+    const struct toy_game_actor *player =
+        toy_game_local_player_actor_const(game);
     int weapon = rasterfall_viewmodel_weapon(game);
     int kick = effects->weapon_kick;
     int bob_x, bob_y, switch_pitch = 0;
     int drawn = 0;
     viewmodel_load_models();
     viewmodel_bob(game, &bob_x, &bob_y);
-    if (game->weapon_switch_timer_ms > 0)
-        switch_pitch = game->weapon_switch_timer_ms *
+    if (player && player->weapon_switch_timer_ms > 0)
+        switch_pitch = player->weapon_switch_timer_ms *
                        RASTERFALL_RELOAD_VIEWMODEL_PITCH /
                        TOY_CONFIG_WEAPON_SWITCH_MS;
     drawn += render_viewmodel_hands(&renderer->surface, game, kick);
@@ -685,8 +693,8 @@ int rasterfall_viewmodel_render(struct toy_renderer *renderer,
         viewmodel_models[weapon].data) {
         drawn += render_model_weapon(renderer,
                                      &viewmodel_models[weapon], weapon, kick,
-                                     game->animation.id,
-                                     game->animation.time_ms, bob_x, bob_y,
+                                     player ? player->animation.id : TOY_GAME_ANIM_NONE,
+                                     player ? player->animation.time_ms : 0, bob_x, bob_y,
                                      switch_pitch);
     }
     return drawn;

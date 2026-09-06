@@ -112,14 +112,17 @@ static void render_weapon_card(struct toy_surface *surface, int x, int y,
 static void render_weapon_hud(struct toy_surface *surface,
                               const struct toy_game *game)
 {
+    const struct toy_game_actor *player =
+        toy_game_local_player_actor_const(game);
     int x = surface->width - 84;
     int y = surface->height / 2 - 73;
-    render_weapon_card(surface, x, y, 0, &game->slots[0],
-                       game->current_slot == 0);
-    render_weapon_card(surface, x, y + 78, 1, &game->slots[1],
-                       game->current_slot == 1);
-    render_weapon_card(surface, x, y + 156, 2, &game->slots[2],
-                       game->current_slot == 2);
+    if (!player) return;
+    render_weapon_card(surface, x, y, 0, &player->slots[0],
+                       player->current_slot == 0);
+    render_weapon_card(surface, x, y + 78, 1, &player->slots[1],
+                       player->current_slot == 1);
+    render_weapon_card(surface, x, y + 156, 2, &player->slots[2],
+                       player->current_slot == 2);
 }
 
 static void render_money(struct toy_surface *surface, const struct toy_game *game)
@@ -414,6 +417,8 @@ static void render_shop(struct toy_surface *surface,
         return;
     }
     for (i = 0; i < 8; i++) {
+        const struct toy_game_actor *player =
+            toy_game_local_player_actor_const(state->game);
         int cx = x + 16;
         int cy = y + 56 + i * 27;
         int selected = i == state->shop_selected;
@@ -421,12 +426,12 @@ static void render_shop(struct toy_surface *surface,
         int quantity = -1, quantity_max = 0;
         if (weapons[i] == TOY_GAME_WEAPON_BOMB ||
             weapons[i] == TOY_GAME_WEAPON_MOLOTOV) {
-            quantity = state->game->slots[2].weapon == weapons[i] ?
-                       state->game->slots[2].mag : 0;
+            quantity = player && player->slots[2].weapon == weapons[i] ?
+                       player->slots[2].mag : 0;
             quantity_max = TOY_GAME_THROWABLE_MAX;
         } else if (weapons[i] == TOY_GAME_WEAPON_PILL) {
-            quantity = state->game->slots[3].weapon == weapons[i] ?
-                       state->game->slots[3].mag : 0;
+            quantity = player && player->slots[3].weapon == weapons[i] ?
+                       player->slots[3].mag : 0;
             quantity_max = TOY_GAME_PILL_MAX;
         }
         hud_fill_rect(surface, cx, cy, 488, 24,
@@ -465,12 +470,15 @@ static void render_player_hud(struct toy_surface *surface,
                               const struct toy_game *game,
                               const char *player_name)
 {
+    const struct toy_game_actor *player =
+        toy_game_local_player_actor_const(game);
     char name[TOY_GAME_MAX_NAME];
     char line[32];
     int i, x = 16, y = surface->height - 68;
     int bar_x = x + 53, bar_y = y + 29, bar_w = 128;
-    uint32_t hp_color = game->hp < 10 ? RF_COLOR_UI_DANGER :
-                        game->hp < 40 ? RF_COLOR_UI_WARNING : RF_COLOR_UI_SUCCESS;
+    int hp = player ? player->hp : 0;
+    uint32_t hp_color = hp < 10 ? RF_COLOR_UI_DANGER :
+                        hp < 40 ? RF_COLOR_UI_WARNING : RF_COLOR_UI_SUCCESS;
     if (!player_name || !*player_name) player_name = "PLAYER";
     for (i = 0; i < TOY_GAME_MAX_NAME - 1 && player_name[i]; i++)
         name[i] = hud_upper_ascii(player_name[i]);
@@ -485,17 +493,17 @@ static void render_player_hud(struct toy_surface *surface,
                    name, RF_COLOR_UI_TEXT, surface->stride);
     hud_fill_rect(surface, bar_x, bar_y, bar_w, 10, RF_COLOR_UI_PANEL);
     hud_fill_rect(surface, bar_x, bar_y,
-                  game->hp * bar_w / TOY_GAME_PLAYER_HP, 10, hp_color);
-    snprintf(line, sizeof(line), "%d / %d", game->hp, TOY_GAME_PLAYER_HP);
+                  hp * bar_w / TOY_GAME_PLAYER_HP, 10, hp_color);
+    snprintf(line, sizeof(line), "%d / %d", hp, TOY_GAME_PLAYER_HP);
     fb_draw_string((unsigned char *)surface->pixels, bar_x + bar_w -
                    (int)strlen(line) * FB_FONT_W, bar_y + 12,
                    line, hp_color, surface->stride);
-    if (game->slots[3].weapon == TOY_GAME_WEAPON_PILL) {
+    if (player && player->slots[3].weapon == TOY_GAME_WEAPON_PILL) {
         int px = bar_x + bar_w + 18, py = bar_y - 2;
         hud_fill_rect(surface, px, py, 30, 24, 0xE8EEE8);
         hud_fill_rect(surface, px + 12, py + 4, 6, 16, 0x20B84B);
         hud_fill_rect(surface, px + 7, py + 9, 16, 6, 0x20B84B);
-        snprintf(line, sizeof(line), "%d", game->slots[3].mag);
+        snprintf(line, sizeof(line), "%d", player->slots[3].mag);
         fb_draw_string((unsigned char *)surface->pixels, px + 35, py + 5,
                        line, 0x70E090, surface->stride);
     }
@@ -505,9 +513,11 @@ static void render_revive_prompt(struct toy_surface *surface,
                                  const struct rasterfall_hud_state *state)
 {
     const struct toy_game *game = state->game;
+    const struct toy_game_actor *player =
+        toy_game_local_player_actor_const(game);
     char line[64];
     int width, x, y = surface->height / 2 + 24;
-    if (game->player_down) {
+    if (player && player->state == TOY_GAME_ACTOR_DOWNED) {
         snprintf(line, sizeof(line), "F REVIVE $%d   WAIT FOR RESCUE",
                  RASTERFALL_PAID_REVIVE_COST);
     } else if (!state->ai_revive_available &&
@@ -708,6 +718,8 @@ void rasterfall_hud_render(struct toy_surface *surface, int fps,
                            const struct rasterfall_hud_state *state)
 {
     const struct toy_game *game = state->game;
+    const struct toy_game_actor *player =
+        toy_game_local_player_actor_const(game);
     render_wave_hud(surface, game, fps);
     render_network_hud(surface, state->net, state->host_address, state->host_port);
     render_weapon_hud(surface, game);
@@ -760,13 +772,13 @@ void rasterfall_hud_render(struct toy_surface *surface, int fps,
                        surface->stride);
     }
     {
-        int smoker_pull = game->player_pull_enemy_index >= 0;
+        int smoker_pull = player && player->special_source >= 0;
         for (int i = 0; !smoker_pull && i < TOY_GAME_MAX_ENEMIES; i++)
             if (game->enemies[i].active == 1 &&
                 game->enemies[i].type == TOY_GAME_ENEMY_SMOKER &&
                 game->enemies[i].special_target_active)
                 smoker_pull = 1;
-        if (game->player_control_disabled && smoker_pull) {
+        if (player && player->control_disabled && smoker_pull) {
         const char *warning = "WARNING: SMOKER PULLING YOU";
         fb_draw_string((unsigned char *)surface->pixels,
                        (surface->width - (int)strlen(warning) * FB_FONT_W) / 2,
@@ -863,7 +875,7 @@ void rasterfall_hud_draw_interact_prompt(struct toy_renderer *renderer,
                      TOY_GAME_WEAPON_SHOTGUN;
         const char *name = toy_game_weapon_name(weapon);
         snprintf(label, sizeof(label), "E %s %s",
-                 state->game->slots[0].weapon == weapon ? "REFILL" : "PICK UP",
+                 toy_game_local_player_actor_const(state->game)->slots[0].weapon == weapon ? "REFILL" : "PICK UP",
                  name);
     } else {
         snprintf(label, sizeof(label), "E INTERACT");
@@ -972,8 +984,10 @@ int rasterfall_hud_dump_bmp(const char *path, const struct toy_surface *surface)
 void rasterfall_hud_damage_flash(struct toy_surface *surface,
                                  const struct toy_game *game)
 {
+    const struct toy_game_actor *player =
+        toy_game_local_player_actor_const(game);
     int x, y;
-    if (game->damage_flash_ms <= 0) return;
+    if (!player || player->damage_flash_ms <= 0) return;
     for (y = 0; y < surface->height; y++) {
         uint32_t *row = (uint32_t *)((unsigned char *)surface->pixels +
                                      y * surface->stride);

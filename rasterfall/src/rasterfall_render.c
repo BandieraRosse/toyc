@@ -4367,9 +4367,11 @@ static int render_smoker_tongue(struct toy_renderer *renderer,
         target_z = actor->z;
         target_lift = actor->airborne_y;
     } else {
-        target_x = game.px;
-        target_z = game.pz;
-        target_lift = game.player_airborne_y;
+        const struct toy_game_actor *player =
+            toy_game_local_player_actor_const(&game);
+        target_x = player->x;
+        target_z = player->z;
+        target_lift = player->airborne_y;
     }
     pixels = draw_tongue_segment(renderer, camera, e->x, 270, e->z,
                                  target_x, -360 + target_lift, target_z);
@@ -6065,14 +6067,17 @@ int rasterfall_render_managed_player(struct toy_renderer *renderer,
                                      const struct camera *viewer,
                                      const struct camera *body_camera)
 {
+    const struct toy_game_actor *player =
+        toy_game_local_player_actor_const(&game);
     int pixels;
-    if (!renderer || !viewer || !body_camera || game.player_down) return 0;
-    active_actor_lift = game.player_ground_y + game.player_airborne_y;
+    if (!renderer || !viewer || !body_camera ||
+        player->state == TOY_GAME_ACTOR_DOWNED) return 0;
+    active_actor_lift = player->ground_y + player->airborne_y;
     pixels = render_player_avatar(renderer, viewer, body_camera->x,
                                   body_camera->z, body_camera->sy,
                                   body_camera->cy, -1, 0, -1,
-                                  RF_COLOR_UI_PLAYER, 0, game.animation.id,
-                                  game.animation.time_ms);
+                                  RF_COLOR_UI_PLAYER, 0, player->animation.id,
+                                  player->animation.time_ms);
     active_actor_lift = 0;
     return pixels;
 }

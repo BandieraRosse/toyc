@@ -311,6 +311,8 @@ void toy_game_mirror_player_from_actor(struct toy_game *g)
     const struct toy_game_actor *a = toy_game_local_player_actor_const(g);
     if (!g || !a || !a->active) return;
     g->px = a->x; g->pz = a->z;
+    g->pitch_sy = a->pitch_sy; g->pitch_cy = a->pitch_cy;
+    g->view_y = a->view_y;
     g->hp = a->hp;
     g->player_down = a->state == TOY_GAME_ACTOR_DOWNED;
     g->player_revive_progress_ms = a->revive_progress_ms;
@@ -360,6 +362,8 @@ void toy_game_mirror_actor_from_player(struct toy_game *g)
     a->state = g->player_down ? TOY_GAME_ACTOR_DOWNED :
         TOY_GAME_ACTOR_ALIVE;
     a->x = g->px; a->z = g->pz;
+    a->pitch_sy = g->pitch_sy; a->pitch_cy = g->pitch_cy;
+    a->view_y = g->view_y;
     /* actor sy/cy is horizontal facing.  pitch_sy/pitch_cy is the separate
      * vertical aim vector used only by throwable launch and view height. */
     a->hp = g->hp; a->max_hp = TOY_GAME_PLAYER_HP;
@@ -725,7 +729,9 @@ static void copy_name(char *dst, const char *src)
 
 void toy_game_set_player_name(struct toy_game *g, const char *name)
 {
+    if (!g) return;
     copy_name(g->player_name, name);
+    copy_name(toy_game_local_player_actor(g)->name, name);
 }
 
 int toy_game_ai_observe(const struct toy_game *g, int actor_index,
@@ -4605,7 +4611,8 @@ static int toy_game_throw(struct toy_game *g, int sy, int cy)
     player->sy = sy;
     player->cy = cy;
     thrown = toy_game_actor_throwable(g, player, sy, cy,
-                                      g->pitch_sy, g->pitch_cy, g->view_y);
+                                      player->pitch_sy, player->pitch_cy,
+                                      player->view_y);
     toy_game_mirror_player_from_actor(g);
     return thrown;
 }
@@ -4660,7 +4667,8 @@ int toy_game_fire(struct toy_game *g, int sy, int cy)
     else if (slot->weapon == TOY_GAME_WEAPON_BOMB ||
              slot->weapon == TOY_GAME_WEAPON_MOLOTOV)
         fired = toy_game_actor_throwable(g, player, sy, cy,
-                                         g->pitch_sy, g->pitch_cy, g->view_y);
+                                         player->pitch_sy, player->pitch_cy,
+                                         player->view_y);
     else {
         fired = toy_game_actor_fire(g, player, sy, cy, 100);
         player->fire_cooldown_ms = toy_game_fire_cooldown_ms(weapon);
@@ -4685,10 +4693,12 @@ int toy_game_actor_switch_weapon(struct toy_game *g,
 void toy_game_set_player_pitch(struct toy_game *g, int pitch_sy, int pitch_cy,
                                int view_y)
 {
+    struct toy_game_actor *player;
     if (!g) return;
-    g->pitch_sy = pitch_sy;
-    g->pitch_cy = pitch_cy > 0 ? pitch_cy : 1;
-    g->view_y = view_y;
+    player = toy_game_local_player_actor(g);
+    player->pitch_sy = pitch_sy;
+    player->pitch_cy = pitch_cy > 0 ? pitch_cy : 1;
+    player->view_y = view_y;
 }
 
 static int toy_game_start_empty_reload(

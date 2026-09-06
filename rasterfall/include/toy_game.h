@@ -480,6 +480,8 @@ struct toy_game_actor {
     int state;
     int x, z;
     int sy, cy;
+    int pitch_sy, pitch_cy;
+    int view_y;
     int hp, max_hp;
     int revive_progress_ms;
     int airborne_ms;

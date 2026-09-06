@@ -520,12 +520,14 @@ void rasterfall_effects_sync_projectile_flashes(
 void rasterfall_effects_sync_damage_flash(struct rasterfall_effects *effects,
                                           const struct toy_game *game)
 {
+    const struct toy_game_actor *player =
+        toy_game_local_player_actor_const(game);
     struct rasterfall_effect_instance instance;
     int i;
-    if (!effects || !game) return;
+    if (!effects || !player) return;
     if (effects->last_player_hp < 0) {
-        effects->last_player_hp = game->hp;
-    } else if (game->hp < effects->last_player_hp &&
+        effects->last_player_hp = player->hp;
+    } else if (player->hp < effects->last_player_hp &&
                effects->damage_shake_cooldown_ms <= 0) {
         struct rasterfall_effect_instance shake;
         int shake_i;
@@ -550,19 +552,19 @@ void rasterfall_effects_sync_damage_flash(struct rasterfall_effects *effects,
         effects->damage_shake_cooldown_ms =
             RASTERFALL_DAMAGE_CAMERA_SHAKE_MIN_INTERVAL_MS;
     }
-    effects->last_player_hp = game->hp;
+    effects->last_player_hp = player->hp;
     for (i = 0; i < RASTERFALL_EFFECT_INSTANCE_SLOTS; i++)
         if (effects->instances[i].kind ==
             RASTERFALL_EFFECT_INSTANCE_KIND_DAMAGE_FLASH)
             effects->instances[i].active = 0;
-    if (game->damage_flash_ms <= 0) return;
+    if (player->damage_flash_ms <= 0) return;
     memset(&instance, 0, sizeof(instance));
     instance.type = RASTERFALL_EFFECT_INSTANCE_OVERLAY;
     instance.kind = RASTERFALL_EFFECT_INSTANCE_KIND_DAMAGE_FLASH;
     instance.width = 0;
     instance.height = 0;
-    instance.lifetime_ms = game->damage_flash_ms;
-    instance.alpha = game->damage_flash_ms * 16 / TOY_GAME_DAMAGE_FLASH_MS;
+    instance.lifetime_ms = player->damage_flash_ms;
+    instance.alpha = player->damage_flash_ms * 16 / TOY_GAME_DAMAGE_FLASH_MS;
     instance.color = 0xAA0000;
     rasterfall_effects_spawn_instance(effects, &instance);
 }

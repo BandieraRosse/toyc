@@ -4128,8 +4128,10 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
             local_player->state = own->downed ? TOY_GAME_ACTOR_DOWNED :
                 TOY_GAME_ACTOR_ALIVE;
             local_player->revive_progress_ms = own->revive_progress_ms;
-            if (!session->game_state.fire_seq ||
-                !sequence_after(session->game_state.fire_seq, own->fire_seq)) {
+            if (!toy_game_local_player_actor_const(&session->game_state)->fire_seq ||
+                !sequence_after(toy_game_local_player_actor_const(
+                                    &session->game_state)->fire_seq,
+                                own->fire_seq)) {
                 local_player->kills = own->kills;
                 local_player->special_kills = own->special_kills;
                 local_player->damage_dealt = own->damage_dealt;

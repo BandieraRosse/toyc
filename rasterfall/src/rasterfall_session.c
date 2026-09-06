@@ -340,10 +340,9 @@ void rasterfall_session_reset(struct rasterfall_session *session,
     }
     toy_game_local_player_actor(&session->game_state)->x = camera->x;
     toy_game_local_player_actor(&session->game_state)->z = camera->z;
-    toy_game_mirror_player_from_actor(&session->game_state);
     toy_game_set_player_pitch(&session->game_state, camera->pitch_sy,
                               camera->pitch_cy, camera->y);
-    toy_game_mirror_actor_from_player(&session->game_state);
+    toy_game_mirror_player_from_actor(&session->game_state);
     rasterfall_camera_set_body(camera,
                                session->game_state.actors[0].x,
                                session->game_state.actors[0].z);
@@ -1144,16 +1143,17 @@ int rasterfall_session_shop_can(const struct rasterfall_session *session,
     if (!session || !request || session->game_state.state != TOY_GAME_PLAYING)
         return 0;
     g = &session->game_state;
+    actor = toy_game_local_player_actor_const(g);
     if (request->action == RASTERFALL_SHOP_BUY_WEAPON) {
         int weapon = request->item;
         if (!toy_game_weapon_is_valid(weapon) ||
             weapon == TOY_GAME_WEAPON_PISTOL) return 0;
         if (toy_game_weapon_unlocked(g, weapon)) {
             if (weapon == TOY_GAME_WEAPON_PILL &&
-                g->slots[3].mag >= TOY_GAME_PILL_MAX) return 0;
+                actor->slots[3].mag >= TOY_GAME_PILL_MAX) return 0;
             if ((weapon == TOY_GAME_WEAPON_BOMB ||
                  weapon == TOY_GAME_WEAPON_MOLOTOV) &&
-                g->slots[2].mag >= TOY_GAME_THROWABLE_MAX) return 0;
+                actor->slots[2].mag >= TOY_GAME_THROWABLE_MAX) return 0;
             value = (weapon == TOY_GAME_WEAPON_BOMB ||
                      weapon == TOY_GAME_WEAPON_MOLOTOV ||
                      weapon == TOY_GAME_WEAPON_PILL) ?
@@ -1560,16 +1560,19 @@ int rasterfall_session_recover_managed_player(
     camera->y = RASTERFALL_STANDING_CAMERA_Y;
     toy_game_local_player_actor(&session->game_state)->x = x;
     toy_game_local_player_actor(&session->game_state)->z = z;
-    toy_game_mirror_player_from_actor(&session->game_state);
-    session->game_state.player_ground_y = toy_game_query_ground(
+    {
+        struct toy_game_actor *player =
+            toy_game_local_player_actor(&session->game_state);
+        player->ground_y = toy_game_query_ground(
         &session->game_state, x, z, RASTERFALL_PLAYER_RADIUS, 0).support_y;
-    session->game_state.player_airborne_ms = 0;
-    session->game_state.player_airborne_y = 0;
-    session->game_state.player_vertical_velocity = 0;
-    session->game_state.player_air_x = 0;
-    session->game_state.player_air_z = 0;
-    session->game_state.player_knockback_x = 0;
-    session->game_state.player_knockback_z = 0;
+        player->airborne_ms = 0;
+        player->airborne_y = 0;
+        player->vertical_velocity = 0;
+        player->air_x = 0;
+        player->air_z = 0;
+        player->knockback_x = 0;
+        player->knockback_z = 0;
+    }
     toy_game_clear_player_special_control(&session->game_state, 0);
     session->managed_ai_escape_phase = -1;
     session->managed_ai_route_phase = 5;
@@ -1924,11 +1927,11 @@ static void session_build_managed_ai_command(
          * -> safe-room door -> main base.  It avoids the table/platform lanes
          * and never asks the generic combat steering to solve this escape. */
         target_is_escape = 1;
-        if (toy_game_position_blocked_at_height(
+            if (toy_game_position_blocked_at_height(
                 &session->game_state, camera->x, camera->z,
                 RASTERFALL_PLAYER_RADIUS,
-                session->game_state.player_ground_y +
-                session->game_state.player_airborne_y)) {
+                toy_game_local_player_actor_const(&session->game_state)->ground_y +
+                toy_game_local_player_actor_const(&session->game_state)->airborne_y)) {
             /* A Charger can leave us inside a prop.  This is the terminal's
              * same authoritative recovery operation: synchronize px/pz and
              * clear the old airborne impulse before the next game tick. */

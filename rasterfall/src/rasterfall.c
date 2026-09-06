@@ -337,7 +337,8 @@ static void fill_hud_state(struct rasterfall_hud_state *hud,
     hud->game = &session.game_state;
     hud->map = &level_map;
     hud->safe_rooms = map_safe_rooms;
-    hud->player_name = session.game_state.player_name;
+    hud->player_name = toy_game_local_player_actor_const(
+        &session.game_state)->name;
     hud->interactables = session.items;
     hud->interactable_count = session.item_count;
     hud->highlighted = session.highlight_index;
@@ -442,7 +443,9 @@ static void set_network_spectator_camera(struct camera *camera,
             }
         }
         if (!target) return;
-    } else if (net->mode == RASTERFALL_NET_HOST && game.player_down) {
+    } else if (net->mode == RASTERFALL_NET_HOST &&
+               toy_game_local_player_actor_const(&game)->state ==
+                   TOY_GAME_ACTOR_DOWNED) {
         for (i = 0; i < RASTERFALL_NET_CLIENT_MAX; i++)
             if (net->clients[i].active && net->clients[i].connected &&
                 !net->clients[i].down) {
@@ -734,9 +737,14 @@ static void draw_scoreboard(struct toy_surface *surface,
                            net->players[i].throwable_damage_dealt);
         }
     } else {
-        scoreboard_add(players, &player_count, "PLAYER 1 *",
-                       game.kills, game.special_kills, game.damage_dealt,
-                       game.throwable_damage_dealt);
+        {
+            const struct toy_game_actor *local_player =
+                toy_game_local_player_actor_const(&game);
+            scoreboard_add(players, &player_count, "PLAYER 1 *",
+                           local_player->kills, local_player->special_kills,
+                           local_player->damage_dealt,
+                           local_player->throwable_damage_dealt);
+        }
         for (i = 0; i < RASTERFALL_NET_CLIENT_MAX; i++) {
             if (!net->clients[i].active || !net->clients[i].connected) continue;
             snprintf(name, sizeof(name), "PLAYER %d", net->clients[i].client_id + 1);
@@ -889,7 +897,7 @@ static void managed_terminal_execute(struct managed_terminal *terminal,
         snprintf(terminal->message, sizeof(terminal->message),
                  "POS %d,%d AIR %d ESC %d",
                  camera->x, camera->z,
-                 session->game_state.player_airborne_ms,
+                 toy_game_local_player_actor_const(&session->game_state)->airborne_ms,
                  session->managed_ai_escape_phase);
     else if (!strcmp(terminal->line, "unstuck") ||
              !strcmp(terminal->line, "return")) {
@@ -1390,17 +1398,19 @@ static void emit_weapon_fire_effect(int sx, int sy, int sz, int dir_sy,
  * 火花，枪口闪光则由独立的 weapon fire event 绘制。 */
 static void sync_fire_effects(const struct camera *camera)
 {
+    const struct toy_game_actor *local_player =
+        toy_game_local_player_actor_const(&game);
     int i, ray_count, weapon;
     struct vec3 muzzle;
     struct vec3 muzzle_view;
-    if (game.fire_seq < effects.last_fire_seq) {
+    if (local_player->fire_seq < effects.last_fire_seq) {
         /* 新局（R 重开/死亡重开）：丢弃旧弹道与粒子 */
         rasterfall_effects_reset_fire(&effects);
         return;
     }
-    if (game.fire_seq == effects.last_fire_seq) return;
-    effects.last_fire_seq = game.fire_seq;
-    ray_count = game.ray_count;
+    if (local_player->fire_seq == effects.last_fire_seq) return;
+    effects.last_fire_seq = local_player->fire_seq;
+    ray_count = local_player->ray_count;
     if (ray_count < 0) ray_count = 0;
     if (ray_count > TOY_GAME_MAX_RAYS) ray_count = TOY_GAME_MAX_RAYS;
     /* 后坐力 + 枪口世界坐标（开火瞬间采样，含后坐位移） */
@@ -1421,9 +1431,9 @@ static void sync_fire_effects(const struct camera *camera)
     emit_weapon_fire_effect(muzzle.x, muzzle.y, muzzle.z,
                             camera->pitch_sy, camera->pitch_cy,
                             weapon,
-                            game.fire_seq, 0, 1);
+                            local_player->fire_seq, 0, 1);
     for (i = 0; i < ray_count; i++) {
-        const struct toy_game_ray *r = &game.rays[i];
+        const struct toy_game_ray *r = &local_player->rays[i];
         int tracer_x, tracer_y, tracer_z;
         tracer_world_endpoint(r, muzzle.x, muzzle.y, muzzle.z,
                             camera->pitch_sy, camera->pitch_cy,
@@ -1568,7 +1578,8 @@ static void draw_game_over_panel(struct toy_surface *surface, int network_client
     fb_draw_string((unsigned char *)surface->pixels,
                    x + (panel_w - FB_FONT_W * 8) / 2, y + 28,
                    "YOU DIED", RF_COLOR_UI_TEXT, surface->stride);
-    snprintf(line, sizeof(line), "WAVE %d  KILLS %d", game.wave, game.kills);
+    snprintf(line, sizeof(line), "WAVE %d  KILLS %d", game.wave,
+             toy_game_local_player_actor_const(&game)->kills);
     fb_draw_string((unsigned char *)surface->pixels,
                    x + (panel_w - FB_FONT_W * (int)strlen(line)) / 2, y + 60,
                    line, RF_COLOR_UI_TEXT, surface->stride);
@@ -1592,7 +1603,8 @@ static void draw_level_won_panel(struct toy_surface *surface, int network_client
     fb_draw_string((unsigned char *)surface->pixels,
                    x + (panel_w - FB_FONT_W * 17) / 2, y + 28,
                    "SAFE ROOM REACHED", RF_COLOR_UI_AI, surface->stride);
-    snprintf(line, sizeof(line), "KILLS %d", game.kills);
+    snprintf(line, sizeof(line), "KILLS %d",
+             toy_game_local_player_actor_const(&game)->kills);
     fb_draw_string((unsigned char *)surface->pixels,
                    x + (panel_w - FB_FONT_W * (int)strlen(line)) / 2, y + 60,
                    line, RF_COLOR_UI_TEXT, surface->stride);
@@ -3061,8 +3073,8 @@ startup_again:
                                                  TOY_GAME_WEAPON_SHOTGUN};
                     camera.x = spot_x[idx % 8];
                     camera.z = spot_z[idx % 8];
-                    game.px = camera.x;
-                    game.pz = camera.z;
+                    toy_game_local_player_actor(&game)->x = camera.x;
+                    toy_game_local_player_actor(&game)->z = camera.z;
                     toy_game_actor_equip_weapon(
                         &game, toy_game_local_player_actor(&game),
                         wslot[idx % 3]);
@@ -3125,11 +3137,13 @@ startup_again:
                     camera.pitch_cy = net.client_spawn_base.pitch_cy;
                     net.spawn_pending = 0;
                 }
-                if (net.mode == RASTERFALL_NET_HOST && game.player_down) {
+                if (net.mode == RASTERFALL_NET_HOST &&
+                    toy_game_local_player_actor_const(&game)->state ==
+                        TOY_GAME_ACTOR_DOWNED) {
                     /* The render-only spectator camera must not become the
                      * authoritative body position on the next tick. */
-                    camera.x = game.px;
-                    camera.z = game.pz;
+                    camera.x = toy_game_local_player_actor_const(&game)->x;
+                    camera.z = toy_game_local_player_actor_const(&game)->z;
                 }
                 if (game.state == TOY_GAME_PLAYING &&
                     !(net.mode == RASTERFALL_NET_CLIENT &&
@@ -3145,7 +3159,8 @@ startup_again:
                                                fire_edge, shove_edge,
                                                pointer_turn_pending,
                                                pointer_pitch_pending);
-                    if (game.player_down &&
+                    if (toy_game_local_player_actor_const(&game)->state ==
+                            TOY_GAME_ACTOR_DOWNED &&
                         (command.buttons & RASTERFALL_CMD_FLAG)) {
                         command.buttons &= ~RASTERFALL_CMD_FLAG;
                         command.buttons |= RASTERFALL_CMD_REVIVE;
@@ -3198,10 +3213,12 @@ startup_again:
                         command.buttons &= ~RASTERFALL_CMD_RELOAD;
                         command.buttons |= RASTERFALL_CMD_CLEAR_STATS;
                         if (net.mode != RASTERFALL_NET_CLIENT) {
-                            game.kills = 0;
-                            game.special_kills = 0;
-                            game.damage_dealt = 0;
-                            game.throwable_damage_dealt = 0;
+                            struct toy_game_actor *local_player =
+                                toy_game_local_player_actor(&game);
+                            local_player->kills = 0;
+                            local_player->special_kills = 0;
+                            local_player->damage_dealt = 0;
+                            local_player->throwable_damage_dealt = 0;
                         }
                     }
                     capture_jump_vector(&command, &camera);
@@ -3463,7 +3480,8 @@ startup_again:
             }
             stage_pixels += rasterfall_render_effects(&renderer, &render_camera);
             /* 第一人称武器：最后画，叠加在世界之上 */
-            if (!game.player_down)
+            if (toy_game_local_player_actor_const(&game)->state !=
+                TOY_GAME_ACTOR_DOWNED)
                 stage_pixels += rasterfall_viewmodel_render(&renderer, &game,
                                                             &effects);
             /* Viewmodel meshes use the renderer command path (unlike the

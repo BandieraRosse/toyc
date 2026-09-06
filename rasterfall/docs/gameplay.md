@@ -16,12 +16,13 @@
 
 本地玩家现在是 `toy_game.actors[TOY_GAME_PLAYER_ACTOR_INDEX]`（当前为槽位 0）的正式
 `TOY_GAME_ACTOR_PLAYER`。位置、生命、空中状态、库存/武器计时、统计和动画持久化在 actor 中。
-`toy_game_mirror_player_from_actor()` 只向 HUD、网络和旧公开入口提供兼容快照；正式世界规则不再
+`toy_game_mirror_player_from_actor()` 只向旧公开入口和兼容测试提供快照；正式世界规则、session、HUD
+和展示层不再
 从顶层玩家字段导入，只有仍需支持旧宿主的入口保留显式兼容导入。该镜像是迁移边界，不是第二个
 状态源。session 的本地 step 与 client prediction 已直接操作 actor 的
 移动、跳跃、airborne、武器/reload/fire cooldown、投掷物、animation 和 special-control；camera.body
 始终由 actor 派生。AI 分配从槽位 1 开始，网络协议和远端 actor 槽位不变。legacy 读取目前只保留给
-初始化、兼容入口、HUD/特效兼容和网络包适配。
+初始化、兼容入口和网络包适配。
 
 session 的本地复活、商店控制锁、交互死亡判断和托管武器决策读取 actor 状态；出生点、付费复活
 和正式 world step 也直接写入或推进 local actor，再通过镜像更新旧宿主字段。
