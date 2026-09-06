@@ -503,7 +503,7 @@ void rasterfall_session_step_remote_player(struct rasterfall_session *session,
     if (command->turn || command->pitch)
         rasterfall_camera_rotate(camera, command->turn, command->pitch);
     if (command->buttons & RASTERFALL_CMD_SHOVE) {
-        /* 远端 camera 代表展示位置；不要临时覆盖本地玩家 legacy 坐标。 */
+        /* 远端 camera 代表展示位置；不要临时改写本地 actor。 */
         toy_game_shove_from_position(&session->game_state, camera->x,
                                      camera->z, camera->sy, camera->cy);
     }
@@ -1937,8 +1937,9 @@ static void session_build_managed_ai_command(
                 toy_game_local_player_actor_const(&session->game_state)->ground_y +
                 toy_game_local_player_actor_const(&session->game_state)->airborne_y)) {
             /* A Charger can leave us inside a prop.  This is the terminal's
-             * same authoritative recovery operation: synchronize px/pz and
-             * clear the old airborne impulse before the next game tick. */
+             * same authoritative recovery operation: synchronize the local
+             * actor position and clear its airborne impulse before the next
+             * game tick. */
             if (rasterfall_session_recover_managed_player(session, camera))
                 return;
         }

@@ -7,7 +7,7 @@
  * 不依赖窗口/输入/渲染设施，可无窗口测试。
  *
  * 约定：所有计时字段单位 ms；朝向 sy/cy 为 1024 基准定点（同 Rasterfall
- * 的 camera）；玩家位置 px/pz 由宿主每帧同步。
+ * 的 camera）；本地玩家状态统一存放在 actors[0]。
  */
 
 #ifndef TOYC_TOY_GAME_H
@@ -584,45 +584,16 @@ struct toy_game_ai_decision {
 };
 
 struct toy_game {
-    /* 玩家 */
-    int px, pz;         /* 宿主每帧同步相机位置 */
-    int hp;
     int state;          /* enum toy_game_state */
-    struct toy_game_slot slots[TOY_GAME_WEAPON_SLOTS];
-    int current_slot;   /* 当前武器槽位 */
-    int pitch_sy, pitch_cy; /* 玩家当前俯仰方向（1024 定点） */
-    int view_y;         /* 玩家视角世界高度 */
-    int weapon_switch_timer_ms; /* 切枪表现/禁射倒计时 */
-    int melee_timer_ms;
-    int throw_timer_ms;
     struct toy_game_projectile projectiles[TOY_GAME_MAX_PROJECTILES];
     struct toy_game_burn_zone burn_zones[TOY_CONFIG_MAX_BURN_ZONES];
-    struct toy_game_animation_state animation;
-    int reloading, reload_timer_ms;
-    int fire_cooldown_ms;
-    int weapon_spread_heat; /* 连射累积，停火后逐渐恢复 */
-    int moving;            /* 宿主每帧同步的移动状态 */
-    int muzzle_flash_ms;
-    int damage_flash_ms;
-    int kills;
-    int special_kills;
-    int damage_dealt;
-    int throwable_damage_dealt;
     int money;
     unsigned int unlocked_weapons;
-    int actor_id;
-    int actor_kind;
-    char player_name[TOY_GAME_MAX_NAME];
 
     struct toy_game_actor actors[TOY_GAME_MAX_ACTORS];
     int base_actor_index;
     int base_regen_timer_ms;
 
-
-    /* 弹道记录：最近一次射击产生的弹丸射线（宿主渲染 tracer） */
-    unsigned int fire_seq;   /* 每次实际开火 +1；宿主以此检测新弹道 */
-    int ray_count;
-    struct toy_game_ray rays[TOY_GAME_MAX_RAYS];
 
     /* 敌人与波次 */
     struct toy_game_enemy enemies[TOY_GAME_MAX_ENEMIES];
@@ -677,23 +648,6 @@ struct toy_game {
                                 TOY_GAME_NAV_LINK_DIRECTIONS];
 
     int network_rescuer_available;
-    int player_down;
-    int player_revive_progress_ms;
-    int player_control_disabled;
-    int player_pull_enemy_index;
-    int player_pull_timer_ms;
-    int player_special_control;
-    uint32_t player_special_control_id;
-    int player_special_source;
-    int player_special_pull_step;
-    int player_airborne_ms;
-    int player_airborne_y;
-    int player_ground_y;
-    int player_vertical_velocity;
-    int player_air_x, player_air_z;
-    int player_knockback_x;
-    int player_knockback_z;
-    int player_knockback_cooldown_ms;
     int ai_context_actor_index;
 
     /* PRNG（xorshift64*，init 时播种） */
@@ -707,19 +661,12 @@ struct toy_game {
         player_impulse_events[TOY_GAME_MAX_EVENTS];
 };
 
-/* The local player is a real actor.  These two helpers are the temporary
- * compatibility boundary for rules that still use the legacy player fields.
- * The actor is the persistent source of truth; the mirror is one-way at each
- * boundary and must not be used as a second gameplay state. */
 struct toy_game_actor *toy_game_local_player_actor(struct toy_game *g);
 const struct toy_game_actor *toy_game_local_player_actor_const(
     const struct toy_game *g);
-void toy_game_mirror_player_from_actor(struct toy_game *g);
-void toy_game_mirror_actor_from_player(struct toy_game *g);
 
 void toy_game_init(struct toy_game *g, uint64_t seed);      /* 初始化/重开共用 */
 void toy_game_emit_event(struct toy_game *g, int event);
-void toy_game_set_player_name(struct toy_game *g, const char *name);
 void toy_game_set_actor_name(struct toy_game_actor *actor, const char *name);
 int  toy_game_ai_observe(const struct toy_game *g, int actor_index,
                          struct toy_game_ai_observation *out);
@@ -751,23 +698,14 @@ int  toy_game_revive_ai(struct toy_game *g, int dt_ms);
 int  toy_game_revive_actor(struct toy_game *g, int actor_index, int dt_ms);
 int  toy_game_set_campaign_stage(struct toy_game *g, int stage);
 int  toy_game_move_ai_actor(struct toy_game *g, int actor_index, int x, int z);
-void toy_game_set_player_special_control(struct toy_game *g, int type,
-                                         uint32_t control_id,
-                                         int source_enemy, int pull_step);
 void toy_game_set_actor_special_control(struct toy_game_actor *actor, int type,
                                         uint32_t control_id,
                                         int source_enemy, int pull_step);
-void toy_game_clear_player_special_control(struct toy_game *g,
-                                           uint32_t control_id);
 void toy_game_clear_actor_special_control(struct toy_game_actor *actor,
                                           uint32_t control_id);
-void toy_game_update_player_special_control(struct toy_game *g, int dt_ms);
 void toy_game_update_actor_special_control(struct toy_game *g,
                                            struct toy_game_actor *actor,
                                            int dt_ms);
-void toy_game_apply_player_impulse(struct toy_game *g, int impulse_x,
-                                   int impulse_z, int vertical_velocity,
-                                   int airborne_ms, int airborne_y);
 void toy_game_apply_actor_impulse(struct toy_game_actor *actor,
                                   int impulse_x, int impulse_z,
                                   int vertical_velocity, int airborne_ms,
@@ -784,14 +722,11 @@ struct toy_game_ground_query toy_game_query_ground(
 int  toy_game_position_blocked_at_height(const struct toy_game *g,
                                          int x, int z, int radius,
                                          int ground_height);
-int  toy_game_try_move_player(struct toy_game *g, int x, int z);
-int  toy_game_move_player_sliding(struct toy_game *g, int dx, int dz);
 int  toy_game_try_move_actor(struct toy_game *g, struct toy_game_actor *actor,
                              int x, int z);
 int  toy_game_move_actor_sliding(struct toy_game *g,
                                  struct toy_game_actor *actor,
                                  int dx, int dz);
-void toy_game_update_player_ground(struct toy_game *g);
 void toy_game_set_campaign(struct toy_game *g,
                            const struct toy_game_box *safe_rooms,
                            int safe_room_count,
@@ -805,12 +740,6 @@ void toy_game_set_alarm(struct toy_game *g,
 int  toy_game_point_in_box(int x, int z, const struct toy_game_box *box);
 int  toy_game_position_blocked(const struct toy_game *g,
                                int x, int z, int radius);
-void toy_game_update(struct toy_game *g,
-                     const unsigned char *keys_pressed,     /* 可 NULL */
-                     int fire_pressed, int sy, int cy, int dt_ms);
-int  toy_game_jump(struct toy_game *g);
-int  toy_game_jump_with_velocity(struct toy_game *g, int dx, int dz);
-void toy_game_update_player_motion(struct toy_game *g, int dt_ms);
 int  toy_game_jump_actor(struct toy_game *g, int actor_index, int dx, int dz);
 void toy_game_update_actor_motion(struct toy_game *g, int actor_index, int dt_ms);
 void toy_game_update_actor_ground(struct toy_game *g, int actor_index);
@@ -821,15 +750,8 @@ void toy_game_update_held(struct toy_game *g,
 /* 推进投掷物、AI、敌人、波次和地图世界；不读取本地玩家输入，也不
  * 推进本地玩家武器计时。Rasterfall session 用它把 actor 武器步骤分离。 */
 void toy_game_update_world(struct toy_game *g, int dt_ms);
-/* 只推进一名玩家的武器/换弹状态，不更新敌人、波次或世界。联机主机
- * 用它在同一份权威世界上验证远端射击。 */
-void toy_game_update_weapon_held(struct toy_game *g,
-                                 const unsigned char *keys_pressed,
-                                 int fire_pressed, int fire_held,
-                                 int sy, int cy, int dt_ms);
 /* Execute one actor's weapon intent through the same weapon/fire rules as the
- * local player.  The actor is the source of truth; player fields are only a
- * temporary compatibility context for the existing hitscan implementation. */
+ * local player. */
 int  toy_game_update_actor_weapon_held(
     struct toy_game *g, struct toy_game_actor *actor,
     const unsigned char *keys_pressed, int fire_pressed, int fire_held,
@@ -849,10 +771,6 @@ int  toy_game_execute_actor_command(
     struct toy_game *g, struct toy_game_actor *actor,
     const struct toy_game_actor_command *command,
     int dt_ms, int spread_percent);
-void toy_game_set_player_pitch(struct toy_game *g, int pitch_sy, int pitch_cy,
-                               int view_y);
-void toy_game_set_player_moving(struct toy_game *g, int moving);
-int  toy_game_current_spread(const struct toy_game *g);
 int  toy_game_actor_current_spread(const struct toy_game_actor *actor);
 int  toy_game_actor_fire(struct toy_game *g, struct toy_game_actor *actor,
                          int sy, int cy, int spread_percent);
@@ -917,7 +835,6 @@ int  toy_game_drain_events(struct toy_game *g, unsigned char *out, int max);
 int  toy_game_drain_player_impulses(
     struct toy_game *g, struct toy_game_player_impulse_event *out, int max);
 void toy_game_place_enemy(struct toy_game *g, int x, int z); /* 测试钩子 */
-int  toy_game_shove(struct toy_game *g, int sy, int cy);    /* 临时待删除入口 */
 int  toy_game_spawn_horde(struct toy_game *g, int count_min, int count_max,
                           const struct toy_game_box *points, int point_count,
                           int min_player_dist);

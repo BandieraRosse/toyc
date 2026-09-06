@@ -598,7 +598,7 @@ static int run_logic_test(void)
         throwable_test.projectiles[0].fuse_ms = 1;
         throwable_test.projectiles[0].x = throwable_player->x;
         throwable_test.projectiles[0].z = throwable_player->z;
-        toy_game_update(&throwable_test, NULL, 0, 0, 1024, 16);
+        toy_game_update_held(&throwable_test, NULL, 0, 0, 0, 1024, 16);
         if (throwable_player->hp >= TOY_GAME_PLAYER_HP ||
             throwable_test.actors[TOY_GAME_REMOTE_ACTOR_BASE].hp >=
                 TOY_GAME_SECONDARY_PLAYER_HP)
@@ -661,7 +661,8 @@ static int run_logic_test(void)
     }
     if (!toy_game_skip_wave_rest(&game)) return 139;
     for (int i = 0; i < 170; i++)
-        toy_game_update(&game, NULL, 0, camera.sy, camera.cy, 16);
+        toy_game_update_held(&game, NULL, 0, 0,
+                             camera.sy, camera.cy, 16);
     if (game.enemies_alive == 0) return 14;
 
     camera.x = -1200; camera.z = 0; camera.sy = 0; camera.cy = 1024;
@@ -1146,7 +1147,7 @@ static int run_logic_test(void)
             toy_game_local_player_actor(&smoke)->x = 0;
             toy_game_local_player_actor(&smoke)->z = -5000;
             for (i = 0; i < 500; i++)
-                toy_game_update(&smoke, NULL, 0, 0, 1024, 16);
+                toy_game_update_held(&smoke, NULL, 0, 0, 0, 1024, 16);
             if (pass == 0) {
                 first_wave = smoke.wave;
                 first_kills = toy_game_local_player_actor(&smoke)->kills;
@@ -1350,7 +1351,9 @@ static int run_logic_test(void)
         /* 直接验证击退函数，避免本帧敌人 AI 先移动身后敌人。 */
         toy_game_local_player_actor(&game)->x = aim.x;
         toy_game_local_player_actor(&game)->z = aim.z;
-        toy_game_shove(&game, aim.sy, aim.cy);
+        toy_game_actor_shove(&game,
+                             toy_game_local_player_actor(&game),
+                             aim.sy, aim.cy);
         if (game.enemies[0].z != aim.z + 300 + TOY_GAME_SHOVE_PUSH) return 63;
         if (game.enemies[0].shove_stun_ms <= 0 ||
             game.enemies[0].shove_stun_ms > TOY_CONFIG_SHOVE_STUN_MS) return 64;
@@ -1384,7 +1387,9 @@ static int run_logic_test(void)
         toy_game_local_player_actor(&reuse_test)->z = 0;
         if (toy_game_spawn_horde_type(&reuse_test, TOY_GAME_ENEMY_PURSUIT_COMMON, 1, 1,
                                       &point, 1, 0) != 1) return 87;
-        toy_game_shove(&reuse_test, 0, 1024);
+        toy_game_actor_shove(&reuse_test,
+                             toy_game_local_player_actor(&reuse_test),
+                             0, 1024);
         if (reuse_test.enemies[0].shove_stun_ms <= 0) return 88;
         if (!toy_game_apply_entity_impact(&reuse_test, TOY_GAME_ENTITY_ENEMY, 0,
                                           0, 1024, 10000)) return 89;
@@ -2286,7 +2291,9 @@ static int run_logic_test(void)
         game.enemies[0].hp = 4000;
         game.enemies[0].x = 0; game.enemies[0].z = 500;
         old_z = game.enemies[0].z;
-        if (toy_game_shove(&game, 0, 1024) != 0 ||
+        if (toy_game_actor_shove(&game,
+                                 toy_game_local_player_actor(&game),
+                                 0, 1024) != 0 ||
             game.enemies[0].z != old_z ||
             game.enemies[0].shove_stun_ms != 0) return 130;
     }

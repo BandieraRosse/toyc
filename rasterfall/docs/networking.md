@@ -1,7 +1,7 @@
 # 网络代码导航
 
 > 文档更新：2026-09-06
-> 源码核对基线：工作区（输入历史、可靠事件坐标、主机/客户端玩家快照以及远端命令执行均直接绑定 actor；session/net 的本地 pitch、冲量、特殊控制和 mirror 发布路径已移除；主机普通枪械、斧头/药丸、shove 及炸弹/Molotov 客户端输入直接应用到远端 actor 或按远端位置执行；远端 actor 的水平朝向在武器与 shove 规则前由客户端 camera 显式同步；投射物/燃烧区显式携带 owner；本地预测位置驱动 camera）
+> 源码核对基线：工作区（输入历史、可靠事件坐标、主机/客户端玩家快照以及远端命令执行均直接绑定 actor；本地和远端玩家状态结构上统一使用 actor，session/net 的旧 player 字段、mirror 和 wrapper 路径已删除；主机普通枪械、斧头/药丸、shove 及炸弹/Molotov 客户端输入直接应用到远端 actor 或按远端位置执行；远端 actor 的水平朝向在武器与 shove 规则前由客户端 camera 显式同步；投射物/燃烧区显式携带 owner；本地预测位置驱动 camera）
 
 ## 文件职责
 
@@ -29,7 +29,7 @@
 `toy_game` 的本地玩家字段。炸弹和 Molotov 通过
 `toy_game_actor_throwable()` 直接作用于远端 actor；投射物和燃烧区保存稳定
 `owner_actor_id`，爆炸/燃烧造成的伤害、击杀和 throwable 统计归属投掷者。
-远端 shove 不再临时覆盖本地玩家的 `px/pz`，而是通过
+远端 shove 不再临时覆盖本地 actor 的位置，而是通过
 `toy_game_shove_from_position()` 将远端位置作为只读规则输入。
 
 `rasterfall_effect_event` 是接收端的 presentation-only 扩展接口。纯视觉事件不加入 snapshot，
@@ -43,6 +43,5 @@
 `windows/src/socket_winsock.c`，Linux 使用 Tinylibc 网络接口。网络测试可受沙箱和本机端口环境影响，
 应把纯 packet/logic 测试与真实回环或公网验收分开报告。
 
-本地玩家输入、快照和可靠事件的状态源是 `actors[TOY_GAME_PLAYER_ACTOR_INDEX]`；远端命令执行不再
-通过临时覆盖 `toy_game` 的 legacy 玩家字段完成。legacy 玩家字段只在网络展示或兼容入口进行一次性
-镜像，不能用来驱动预测、武器和复活规则。协议 payload 和字段布局保持不变。
+本地玩家输入、快照和可靠事件的状态源是 `actors[TOY_GAME_PLAYER_ACTOR_INDEX]`；远端命令执行直接
+绑定对应 actor。协议 payload 和字段布局保持不变。

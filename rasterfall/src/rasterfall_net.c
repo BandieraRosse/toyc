@@ -3064,8 +3064,8 @@ static void net_apply_client(struct rasterfall_net *net,
     if (index < 0 || index >= TOY_GAME_MAX_ACTORS) return;
     actor = &g->actors[index];
     /* The owning client advances its weapon clock and inventory locally.
-     * The host mirrors that state and only merges reported damage into the
-     * shared enemy world. */
+     * The host copies that actor state and only merges reported damage into
+     * the shared enemy world. */
     memcpy(actor->slots, client->slots, sizeof(actor->slots));
     actor->current_slot = client->current_slot;
     actor->reloading = client->reloading;
@@ -3743,19 +3743,19 @@ int rasterfall_net_pipeline_test(void)
         net.remote_event_data[0].value = 20;
         net.remote_event_data[0].control_id = 37;
         net_apply_remote_special_events(&net, &event_session);
-        if (!event_session.game_state.player_control_disabled ||
-            event_session.game_state.player_special_control_id != 37)
+        if (!toy_game_local_player_actor(&event_session.game_state)->control_disabled ||
+            toy_game_local_player_actor(&event_session.game_state)->special_control_id != 37)
             return 14;
         net.remote_event_count = 1;
         net.remote_event_data[0].type =
             RASTERFALL_NET_EVENT_PLAYER_CONTROL_END;
         net.remote_event_data[0].control_id = 36;
         net_apply_remote_special_events(&net, &event_session);
-        if (!event_session.game_state.player_control_disabled) return 15;
+        if (!toy_game_local_player_actor(&event_session.game_state)->control_disabled) return 15;
         net.remote_event_count = 1;
         net.remote_event_data[0].control_id = 37;
         net_apply_remote_special_events(&net, &event_session);
-        if (event_session.game_state.player_control_disabled) return 16;
+        if (toy_game_local_player_actor(&event_session.game_state)->control_disabled) return 16;
     }
     /* Impulse payloads are created by gameplay and survive later actor-state
      * updates.  A normal airborne state without that payload is not an
@@ -3803,11 +3803,11 @@ int rasterfall_net_pipeline_test(void)
         net.remote_event_count = 1;
         net.remote_event_data[0] = *event;
         net_apply_remote_special_events(&net, &target_session);
-        if (target_session.game_state.player_airborne_ms != 0) return 21;
+        if (toy_game_local_player_actor(&target_session.game_state)->airborne_ms != 0) return 21;
         net.local_player_id = 1;
         net.remote_event_count = 1;
         net_apply_remote_special_events(&net, &target_session);
-        if (target_session.game_state.player_airborne_ms !=
+        if (toy_game_local_player_actor(&target_session.game_state)->airborne_ms !=
                 TOY_GAME_AIRBORNE_MS)
             return 22;
     }
