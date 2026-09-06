@@ -1,7 +1,7 @@
 # Rasterfall 联机架构与扩展边界
 
-> 文档更新：2026-09-06
-> 源码核对基线：工作区（输入历史、玩家快照和远端命令执行直接绑定 actor；`actor = gameplay truth`；`remote presentation cache = derived render state`，插值缓存只保存位置、朝向、高度和时间戳；主机普通枪械、斧头/药丸及炸弹/Molotov 客户端输入直接应用到远端 actor；投射物/燃烧区携带 owner；本地预测位置派生 camera）
+> 文档更新：2026-09-07
+> 源码核对基线：工作区（输入条目只保留 command、sequence/tick、选中槽位意图、airborne prediction report 和 fire validation rays；协议版本 41；玩家快照仍保留；输入历史、玩家快照和远端命令执行直接绑定 actor；`actor = gameplay truth`；`remote presentation cache = derived render state`，插值缓存只保存位置、朝向、高度和时间戳；主机普通枪械、斧头/药丸及炸弹/Molotov 客户端输入直接应用到远端 actor；投射物/燃烧区携带 owner；本地预测位置派生 camera）
 
 本文记录联机实现必须保持的内部边界。产品入口和平台范围见 `../README.md`。
 
@@ -53,8 +53,10 @@
 
 其中 `actor = gameplay truth`；`remote presentation cache = derived render state`。主机端
 `latest_input` 是当前解码的输入/报告协议数据，不是持久 gameplay 镜像；HP/down、animation/stats、
-airborne 以及 weapon timers/inventory 都只写入和读取对应 `game_state.actors[]`。玩家快照协议仍
-保留，快照字段由 actor 编码，协议布局没有删除或改版。
+weapon timers/inventory 都只写入和读取对应 `game_state.actors[]`。airborne report 属于客户端预测
+所需的运动 metadata，主机只将其作为远端 actor 运动输入；`current_slot` 是装备选择意图，主机按
+actor 自有 inventory 解析。`fire_seq`/`rays` 是开火验证与去重 metadata，不是玩家状态。玩家快照
+协议仍保留，快照字段由 actor 编码；仅输入条目布局在协议版本 41 中收敛。
 
 炸弹和 Molotov 已通过 `toy_game_actor_throwable()` 直接作用于远端 actor；投射物和燃烧区的
 `owner_actor_id` 使用稳定 actor ID，不能保存指针或依赖 C 结构布局。斧头和药丸通过

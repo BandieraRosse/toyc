@@ -17,7 +17,7 @@ static void net_windows_log(const char *message) { (void)message; }
 #define NET_MAGIC_2 'N'
 #define NET_MAGIC_3 '1'
 #define NET_INPUT_RAY_SIZE 19
-#define NET_INPUT_RAY_BASE 67
+#define NET_INPUT_RAY_BASE 39
 #define NET_INPUT_ENTRY_SIZE (NET_INPUT_RAY_BASE + \
                               TOY_GAME_MAX_RAYS * NET_INPUT_RAY_SIZE)
 #define NET_INPUT_META_SIZE 40
@@ -675,40 +675,6 @@ static const struct toy_game_actor *net_client_actor_const(
     return &game->actors[index];
 }
 
-static void net_init_player_slots(struct toy_game_slot *slots,
-                                  int *current_slot)
-{
-    if (!slots || !current_slot) return;
-    memset(slots, 0, sizeof(struct toy_game_slot) * TOY_GAME_WEAPON_SLOTS);
-    slots[0].weapon = -1;
-    slots[2].weapon = -1;
-    slots[3].weapon = -1;
-    slots[1].weapon = TOY_GAME_WEAPON_PISTOL;
-    slots[1].mag = toy_game_weapon_info(TOY_GAME_WEAPON_PISTOL)->mag_size;
-    slots[1].reserve = toy_game_weapon_info(TOY_GAME_WEAPON_PISTOL)->reserve_max;
-    *current_slot = 1;
-}
-
-static void net_accept_client_weapon_state(
-    struct toy_game_actor *actor,
-    const struct rasterfall_net_input *input)
-{
-    int i;
-    if (!actor || !input) return;
-    for (i = 0; i < TOY_GAME_WEAPON_SLOTS; i++)
-        if (actor->slots[i].weapon != input->slots[i].weapon)
-            return;
-    /* Firearm ammunition is predicted by the owning client.  Consumables are
-     * simulated by the host (purchase, pill use and projectile launch), so an
-     * input queued before the latest snapshot must never write their old
-     * quantity back over the authoritative value. */
-    for (i = 0; i < 2; i++) {
-        actor->slots[i].mag = input->slots[i].mag;
-        actor->slots[i].reserve = input->slots[i].reserve;
-    }
-    actor->current_slot = input->current_slot;
-}
-
 static void net_apply_own_inventory(struct rasterfall_net *net,
                                     struct toy_game *game,
                                     const struct rasterfall_net_player *own)
@@ -804,14 +770,9 @@ static int net_alloc_client_id(struct rasterfall_net *net,
 int rasterfall_net_client_slot_test(void)
 {
     struct rasterfall_net net;
-    struct toy_game game;
-    struct toy_game_actor *actor;
     struct sockaddr_in address;
     int i;
     rasterfall_net_init(&net);
-    toy_game_init(&game, 156);
-    toy_game_set_remote_player(&game, 2, 1, 0, 0, "PLAYER");
-    actor = net_client_actor(&game, &net.clients[1]);
     net.client_spawn_base.x = 1000;
     net.client_spawn_base.z = 2000;
     memset(&address, 0, sizeof(address));
@@ -829,23 +790,6 @@ int rasterfall_net_client_slot_test(void)
     if (net_alloc_client_id(&net, &address, 2) != 1 ||
         net.clients[1].client_id != 2)
         return 4;
-    actor = net_client_actor(&game, &net.clients[1]);
-    {
-        struct rasterfall_net_input stale;
-        memset(&stale, 0, sizeof(stale));
-        net_init_player_slots(stale.slots, &stale.current_slot);
-        actor->slots[0].weapon = TOY_GAME_WEAPON_AK;
-        actor->slots[0].mag = 30;
-        actor->current_slot = 0;
-        net_accept_client_weapon_state(actor, &stale);
-        if (actor->slots[0].weapon != TOY_GAME_WEAPON_AK ||
-            actor->current_slot != 0) return 5;
-        stale.slots[0] = actor->slots[0];
-        stale.slots[0].mag = 23;
-        stale.current_slot = 0;
-        net_accept_client_weapon_state(actor, &stale);
-        if (actor->slots[0].mag != 23) return 6;
-    }
     return 0;
 }
 
@@ -1038,6 +982,9 @@ static void encode_input_entry(unsigned char *p,
 {
     const struct rasterfall_command *c = &input->command;
     int i;
+    /* Input entries contain command intent, sequence/tick, selected-slot
+     * intent and fire validation data.  They deliberately do not contain
+     * inventory, reload, cooldown or muzzle-flash state. */
     put_u32(p, input->sequence); put_u32(p + 4, input->tick);
     p[8] = put_i8_value(c->move_forward);
     p[9] = put_i8_value(c->move_strafe);
@@ -1047,20 +994,9 @@ static void encode_input_entry(unsigned char *p,
     put_u16(p + 16, c->buttons); put_u16(p + 18, c->shop_action);
     put_i16(p + 20, c->shop_arg); put_u32(p + 24, c->shop_request_id);
     put_i16(p + 28, input->jump_dx); put_i16(p + 30, input->jump_dz);
-    for (i = 0; i < TOY_GAME_WEAPON_SLOTS; i++) {
-        unsigned char *s = p + 32 + i * 5;
-        s[0] = put_weapon_value(input->slots[i].weapon);
-        put_i16(s + 1, input->slots[i].mag);
-        put_i16(s + 3, input->slots[i].reserve);
-    }
-    p[52] = (unsigned char)input->current_slot;
-    p[53] = (unsigned char)(input->reloading != 0);
-    put_i16(p + 54, input->reload_timer_ms);
-    put_i16(p + 56, input->weapon_switch_timer_ms);
-    put_i16(p + 58, input->fire_cooldown_ms);
-    put_i16(p + 60, input->muzzle_flash_ms);
-    put_u32(p + 62, input->fire_seq);
-    p[66] = (unsigned char)input->ray_count;
+    p[32] = (unsigned char)input->current_slot;
+    put_u32(p + 34, input->fire_seq);
+    p[38] = (unsigned char)input->ray_count;
     for (i = 0; i < input->ray_count && i < TOY_GAME_MAX_RAYS; i++) {
         const struct toy_game_ray *ray = &input->rays[i];
         unsigned char *q = p + NET_INPUT_RAY_BASE + i * NET_INPUT_RAY_SIZE;
@@ -1087,18 +1023,8 @@ static int decode_input_entry(const unsigned char *p,
     c->shop_arg = get_i16(p + 20); c->shop_request_id = get_u32(p + 24);
     input->jump_dx = get_i16(p + 28); input->jump_dz = get_i16(p + 30);
     c->jump_dx = input->jump_dx; c->jump_dz = input->jump_dz;
-    for (i = 0; i < TOY_GAME_WEAPON_SLOTS; i++) {
-        const unsigned char *s = p + 32 + i * 5;
-        input->slots[i].weapon = get_weapon_value(s[0]);
-        input->slots[i].mag = get_i16(s + 1);
-        input->slots[i].reserve = get_i16(s + 3);
-    }
-    input->current_slot = p[52]; input->reloading = p[53] != 0;
-    input->reload_timer_ms = get_i16(p + 54);
-    input->weapon_switch_timer_ms = get_i16(p + 56);
-    input->fire_cooldown_ms = get_i16(p + 58);
-    input->muzzle_flash_ms = get_i16(p + 60);
-    input->fire_seq = get_u32(p + 62); input->ray_count = p[66];
+    input->current_slot = p[32];
+    input->fire_seq = get_u32(p + 34); input->ray_count = p[38];
     if (input->current_slot < 0 || input->current_slot >= TOY_GAME_WEAPON_SLOTS ||
         input->ray_count < 0 || input->ray_count > TOY_GAME_MAX_RAYS) return -1;
     for (i = 0; i < input->ray_count; i++) {
@@ -1204,13 +1130,7 @@ int rasterfall_net_send_command(struct rasterfall_net *net,
         entry->command = wire;
         entry->jump_dx = jump_dx; entry->jump_dz = jump_dz;
         if (actor) {
-            memcpy(entry->slots, actor->slots, sizeof(entry->slots));
             entry->current_slot = actor->current_slot;
-            entry->reloading = actor->reloading;
-            entry->reload_timer_ms = actor->reload_timer_ms;
-            entry->weapon_switch_timer_ms = actor->weapon_switch_timer_ms;
-            entry->fire_cooldown_ms = actor->fire_cooldown_ms;
-            entry->muzzle_flash_ms = actor->muzzle_flash_ms;
             entry->fire_seq = actor->fire_seq;
             entry->ray_count = actor->ray_count;
             memcpy(entry->rays, actor->rays, sizeof(entry->rays));
@@ -3065,12 +2985,9 @@ static void net_apply_client(struct rasterfall_net *net,
     actor->vertical_velocity = client->latest_input.airborne_velocity;
     actor->air_x = client->latest_input.air_x;
     actor->air_z = client->latest_input.air_z;
-    net_accept_client_weapon_state(actor, &client->latest_input);
-    actor->reloading = client->latest_input.reloading;
-    actor->reload_timer_ms = client->latest_input.reload_timer_ms;
-    actor->weapon_switch_timer_ms = client->latest_input.weapon_switch_timer_ms;
-    actor->fire_cooldown_ms = client->latest_input.fire_cooldown_ms;
-    actor->muzzle_flash_ms = client->latest_input.muzzle_flash_ms;
+    if (client->latest_input.current_slot >= 0 &&
+        client->latest_input.current_slot < TOY_GAME_WEAPON_SLOTS)
+        actor->current_slot = client->latest_input.current_slot;
     actor->fire_seq = client->latest_input.fire_seq;
     actor->ray_count = client->latest_input.ray_count;
     memcpy(actor->rays, client->latest_input.rays, sizeof(actor->rays));
@@ -3475,12 +3392,7 @@ int rasterfall_net_pipeline_test(void)
                 RASTERFALL_CMD_FIRE | RASTERFALL_CMD_JUMP;
             inputs[i].jump_dx = -53;
             inputs[i].jump_dz = 41;
-            inputs[i].slots[0].weapon = TOY_GAME_WEAPON_SHOTGUN;
-            inputs[i].slots[0].mag = 5;
-            inputs[i].slots[0].reserve = 36;
             inputs[i].current_slot = 0;
-            inputs[i].reloading = 1;
-            inputs[i].reload_timer_ms = 777;
             inputs[i].fire_seq = 9;
             inputs[i].ray_count = 1;
             inputs[i].rays[0].enemy_index = 7;
@@ -3509,10 +3421,8 @@ int rasterfall_net_pipeline_test(void)
         if (expected == 101 &&
             (entry->jump_dx != -53 || entry->jump_dz != 41)) return 13;
         if (expected == 101 &&
-            (entry->slots[0].weapon != TOY_GAME_WEAPON_SHOTGUN ||
-             entry->slots[0].mag != 5 || entry->slots[0].reserve != 36 ||
-             !entry->reloading || entry->reload_timer_ms != 777 ||
-             entry->fire_seq != 9 || entry->ray_count != 1 ||
+            (entry->current_slot != 0 || entry->fire_seq != 9 ||
+             entry->ray_count != 1 ||
              entry->rays[0].enemy_index != 7 ||
              entry->rays[0].damage != 13)) return 14;
         entry->valid = 0; client->input_queue_depth--;
@@ -3662,29 +3572,13 @@ int rasterfall_net_pipeline_test(void)
             net_prediction_for_ack(&net, 77)->z != -300)
             return 12;
     }
-    /* Client inputs cannot rewind host-owned consumable quantities, while a
-     * player snapshot must acknowledge both purchases and consumption. */
+    /* Player snapshots still apply authoritative inventory; input entries do
+     * not carry an inventory or timer mirror. */
     {
-        struct rasterfall_net_input input;
         struct toy_game inventory_game;
         struct toy_game_actor *inventory_actor;
-        struct toy_game_actor *client_actor;
         struct rasterfall_net_player own;
-        memset(&input, 0, sizeof(input));
         toy_game_init(&inventory_game, 156);
-        client_actor = toy_game_local_player_actor(&inventory_game);
-        net_init_player_slots(client_actor->slots, &client_actor->current_slot);
-        client_actor->slots[2].weapon = TOY_GAME_WEAPON_BOMB;
-        client_actor->slots[2].mag = 3;
-        client_actor->slots[3].weapon = TOY_GAME_WEAPON_PILL;
-        client_actor->slots[3].mag = 4;
-        memcpy(input.slots, client_actor->slots, sizeof(input.slots));
-        input.slots[2].mag = 1; input.slots[3].mag = 1;
-        input.current_slot = 2;
-        net_accept_client_weapon_state(client_actor, &input);
-        if (client_actor->slots[2].mag != 3 ||
-            client_actor->slots[3].mag != 4)
-            return 23;
         inventory_actor = toy_game_local_player_actor(&inventory_game);
         memset(&own, 0, sizeof(own));
         own.slot_weapon[2] = TOY_GAME_WEAPON_BOMB;

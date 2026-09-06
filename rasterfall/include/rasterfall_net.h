@@ -12,7 +12,7 @@
 #define RASTERFALL_NET_MAX_SNAPSHOT 8192
 /* Keep protocol changes explicit: clients with a different snapshot layout
  * must fail during discovery/handshake instead of decoding shifted data. */
-#define RASTERFALL_NET_PROTOCOL_VERSION 40
+#define RASTERFALL_NET_PROTOCOL_VERSION 41
 #define RASTERFALL_NET_MAX_ACTORS 32
 #define RASTERFALL_NET_PLAYER_MAX 4
 #define RASTERFALL_NET_CLIENT_MAX (RASTERFALL_NET_PLAYER_MAX - 1)
@@ -55,10 +55,10 @@ struct rasterfall_net_input {
     uint32_t tick;
     struct rasterfall_command command;
     int jump_dx, jump_dz;
-    struct toy_game_slot slots[TOY_GAME_WEAPON_SLOTS];
+    /* Equipment selection is input intent; the host resolves it against the
+     * actor inventory and never accepts an inventory mirror from the wire. */
     int current_slot;
-    int reloading, reload_timer_ms, weapon_switch_timer_ms;
-    int fire_cooldown_ms, muzzle_flash_ms;
+    /* Fire reports are validation metadata, not persistent actor state. */
     unsigned int fire_seq;
     int ray_count;
     struct toy_game_ray rays[TOY_GAME_MAX_RAYS];
