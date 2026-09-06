@@ -46,9 +46,15 @@
 ## 玩家状态收敛
 
 远端玩家的规则状态以 `toy_game_actor` 为主机侧玩法落点。普通枪械路径由
-`rasterfall_net.c` 直接更新对应 actor，并从 actor 回填客户端连接状态和快照字段；不再把
-远端玩家临时拷贝进 `toy_game` 的本地玩家字段。`rasterfall_net_client` 仍保留输入队列、
-客户端报告的相机/运动、ack 和传输状态，但这些字段不是渲染或玩法的第二个权威 actor。
+`rasterfall_net.c` 直接更新对应 actor，并从 actor 编码玩家快照；不再把远端玩家临时拷贝进
+`toy_game` 的本地玩家字段。`rasterfall_net_client` 仅保留连接身份、输入队列、客户端报告的
+相机/运动、sequence/ack、RTT/丢包、可靠事件和请求 metadata；这些字段不是渲染或玩法的第二个
+权威 actor。
+
+其中 `actor = gameplay truth`；`remote presentation cache = derived render state`。主机端
+`latest_input` 是当前解码的输入/报告协议数据，不是持久 gameplay 镜像；HP/down、animation/stats、
+airborne 以及 weapon timers/inventory 都只写入和读取对应 `game_state.actors[]`。玩家快照协议仍
+保留，快照字段由 actor 编码，协议布局没有删除或改版。
 
 炸弹和 Molotov 已通过 `toy_game_actor_throwable()` 直接作用于远端 actor；投射物和燃烧区的
 `owner_actor_id` 使用稳定 actor ID，不能保存指针或依赖 C 结构布局。斧头和药丸通过

@@ -62,6 +62,9 @@ struct rasterfall_net_input {
     unsigned int fire_seq;
     int ray_count;
     struct toy_game_ray rays[TOY_GAME_MAX_RAYS];
+    /* Host-side reported movement state carried by the input protocol. */
+    int airborne_ms, airborne_y, airborne_velocity;
+    int air_x, air_z;
     int valid;
 };
 
@@ -226,36 +229,20 @@ struct rasterfall_net_client {
     int input_queue_max_depth;
     int input_gap_ticks;
     uint32_t last_input_tick;
-    struct toy_game_slot slots[TOY_GAME_WEAPON_SLOTS];
-    int current_slot;
-    int hp;
-    int state;
-    int down;
-    int revive_progress_ms;
+    /* Gameplay truth is game_state.actors[]; client keeps only input and
+     * connection/request metadata, never a gameplay mirror. */
+    struct rasterfall_net_input latest_input;
     int local_revive_active;
     int local_revive_progress_ms;
     int revive_target_id;
     int ai_revive_active;
     int ai_revive_actor_index;
-    int reloading, reload_timer_ms, weapon_switch_timer_ms;
-    int throw_timer_ms;
-    int fire_cooldown_ms, muzzle_flash_ms, damage_flash_ms;
-    int kills;
-    int special_kills;
-    int damage_dealt;
-    int throwable_damage_dealt;
     int rtt_ms;
     uint32_t stats_last_rx_sequence;
     unsigned long stats_rx_packets;
     unsigned long stats_lost_packets;
     int loss_permille;
-    unsigned int fire_seq;
     unsigned int last_applied_fire_seq;
-    int ray_count;
-    struct toy_game_ray rays[TOY_GAME_MAX_RAYS];
-    int airborne_ms, airborne_y, airborne_velocity;
-    int air_x, air_z;
-    struct toy_game_animation_state animation;
     uint32_t reliable_event_ack;
     unsigned int shop_request_id;
     long last_receive_ms;

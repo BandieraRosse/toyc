@@ -1980,14 +1980,14 @@ static int run_logic_test(void)
         net_test.clients[0].active = 1;
         net_test.clients[0].connected = 1;
         net_test.clients[0].client_id = 1;
-        net_test.clients[0].hp = TOY_GAME_SECONDARY_PLAYER_HP;
         net_test.clients[0].camera = camera;
         net_test.clients[0].reported_camera = camera;
         net_test.clients[0].reported_camera_ready = 1;
-        net_test.clients[0].airborne_ms = 600;
-        net_test.clients[0].airborne_y = 180;
-        net_test.clients[0].airborne_velocity = 20;
+        net_test.clients[0].latest_input.airborne_ms = 600;
+        net_test.clients[0].latest_input.airborne_y = 180;
+        net_test.clients[0].latest_input.airborne_velocity = 20;
         rasterfall_net_prepare_host_step(&net_test, &game);
+        game.actors[actor_index].hp = TOY_GAME_SECONDARY_PLAYER_HP;
         if (!game.actors[actor_index].active ||
             game.actors[actor_index].hp != TOY_GAME_SECONDARY_PLAYER_HP)
             return 106;
@@ -2119,16 +2119,13 @@ static int run_logic_test(void)
         net_test.clients[0].connected = 1;
         net_test.clients[0].client_id = 1;
         net_test.clients[0].camera = camera;
-        net_test.clients[0].hp = 0;
-        net_test.clients[0].down = 1;
         rasterfall_net_prepare_host_step(&net_test, &game);
         game.actors[actor_index].hp = 0;
         game.actors[actor_index].state = TOY_GAME_ACTOR_DOWNED;
         for (int i = 0; i < (TOY_GAME_REVIVE_MS + 15) / 16; i++)
             rasterfall_net_apply_local_rescue(&net_test, &session, &camera,
                                                i == 0, 16);
-        if (net_test.clients[0].down ||
-            game.actors[actor_index].state != TOY_GAME_ACTOR_ALIVE ||
+        if (game.actors[actor_index].state != TOY_GAME_ACTOR_ALIVE ||
             game.actors[actor_index].hp != TOY_GAME_REVIVE_HP) return 110;
 
         game.actors[TOY_GAME_PLAYER_ACTOR_INDEX].state =
@@ -2139,13 +2136,13 @@ static int run_logic_test(void)
         net_test.clients[0].command.buttons = RASTERFALL_CMD_JUMP;
         net_test.clients[0].reported_camera = camera;
         net_test.clients[0].reported_camera_ready = 1;
-        net_test.clients[0].airborne_ms = 600;
-        net_test.clients[0].airborne_y = 180;
+        net_test.clients[0].latest_input.airborne_ms = 600;
+        net_test.clients[0].latest_input.airborne_y = 180;
         rasterfall_net_apply_clients(&net_test, &session, &camera);
         if (game.actors[actor_index].airborne_ms != 600) return 111;
 
         game.actors[actor_index].airborne_ms = 0;
-        net_test.clients[0].airborne_ms = 0;
+        net_test.clients[0].latest_input.airborne_ms = 0;
         net_test.clients[0].command.move_forward = 0;
         net_test.clients[0].command.buttons = RASTERFALL_CMD_INTERACT;
         for (int i = 0; i < (TOY_GAME_REVIVE_MS + 15) / 16; i++) {

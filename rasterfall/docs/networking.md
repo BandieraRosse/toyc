@@ -32,6 +32,12 @@
 远端 shove 不再临时覆盖本地 actor 的位置，而是通过
 `toy_game_shove_from_position()` 将远端位置作为只读规则输入。
 
+主机侧 `rasterfall_net_client` 是 connection/input/protocol 状态容器，不是玩家 gameplay
+镜像：`actor = gameplay truth`，而 `remote presentation cache = derived render state`。
+`latest_input` 只表示最新解码的输入/客户端报告；HP/down、animation/stats、airborne、武器计时器
+和 inventory 均由对应 `game_state.actors[]` 持有。玩家 snapshot 编码仍使用原有
+`rasterfall_net_player` 协议，不删除快照字段。
+
 `rasterfall_effect_event` 是接收端的 presentation-only 扩展接口。纯视觉事件不加入 snapshot，
 也不把 event 的原始 C 布局直接发送到网络；未来网络驱动表现必须增加明确的协议编码。
 

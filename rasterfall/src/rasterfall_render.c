@@ -5431,20 +5431,24 @@ static int render_network_teammate(struct toy_renderer *renderer,
     }
     for (i = 0; i < RASTERFALL_NET_CLIENT_MAX; i++) {
         const struct rasterfall_net_client *client = &net->clients[i];
+        const struct toy_game_actor *actor;
+        int actor_index = TOY_GAME_REMOTE_ACTOR_BASE + client->client_id - 1;
         int weapon;
-        if (!client->active || !client->connected) continue;
-        weapon = client->current_slot >= 0 &&
-                 client->current_slot < TOY_GAME_WEAPON_SLOTS ?
-                 client->slots[client->current_slot].weapon : -1;
+        if (!client->active || !client->connected || !game_state ||
+            actor_index < 0 || actor_index >= TOY_GAME_MAX_ACTORS) continue;
+        actor = &game_state->actors[actor_index];
+        if (!actor->active || actor->kind != TOY_GAME_ACTOR_PLAYER) continue;
+        weapon = toy_game_actor_current_weapon(actor);
         active_actor_lift = network_actor_lift(client->camera.x,
                                                client->camera.z,
-                                               client->airborne_y);
+                                               actor->airborne_y);
         pixels += render_player_avatar(renderer, camera, client->camera.x,
             client->camera.z, client->camera.sy, client->camera.cy, weapon,
             0,
             client->client_id % RASTERFALL_CHARACTER_COUNT,
-            colors[client->client_id], client->down,
-            client->animation.id, client->animation.time_ms);
+            colors[client->client_id],
+            actor->state == TOY_GAME_ACTOR_DOWNED,
+            actor->animation.id, actor->animation.time_ms);
         active_actor_lift = 0;
     }
     return pixels;
@@ -5481,12 +5485,18 @@ static void render_network_teammate_status(struct toy_renderer *renderer,
     }
     for (i = 0; i < RASTERFALL_NET_CLIENT_MAX; i++) {
         const struct rasterfall_net_client *client = &net->clients[i];
-        if (!client->active || !client->connected) continue;
+        const struct toy_game_actor *actor;
+        int actor_index = TOY_GAME_REMOTE_ACTOR_BASE + client->client_id - 1;
+        if (!client->active || !client->connected || !game_state ||
+            actor_index < 0 || actor_index >= TOY_GAME_MAX_ACTORS) continue;
+        actor = &game_state->actors[actor_index];
+        if (!actor->active || actor->kind != TOY_GAME_ACTOR_PLAYER) continue;
         snprintf(name, sizeof(name), "PLAYER %d", client->client_id + 1);
         render_actor_status(renderer, camera, client->camera.x,
-            client->camera.z, 700, name, client->hp,
-            TOY_GAME_SECONDARY_PLAYER_HP, client->down,
-            client->revive_progress_ms, RF_COLOR_UI_PLAYER);
+            client->camera.z, 700, name, actor->hp,
+            TOY_GAME_SECONDARY_PLAYER_HP,
+            actor->state == TOY_GAME_ACTOR_DOWNED,
+            actor->revive_progress_ms, RF_COLOR_UI_PLAYER);
     }
 }
 

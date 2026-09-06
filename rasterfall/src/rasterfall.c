@@ -297,8 +297,16 @@ static void fill_hud_state(struct rasterfall_hud_state *hud,
             for (i = 0; i < RASTERFALL_NET_CLIENT_MAX; i++) {
                 const struct rasterfall_net_client *client =
                     &net_state->clients[i];
+                int actor_index = TOY_GAME_REMOTE_ACTOR_BASE +
+                                  client->client_id - 1;
+                const struct toy_game_actor *actor;
                 long dx, dz, d2;
-                if (!client->active || !client->connected || !client->down)
+                if (!client->active || !client->connected || actor_index < 0 ||
+                    actor_index >= TOY_GAME_MAX_ACTORS)
+                    continue;
+                actor = &session.game_state.actors[actor_index];
+                if (!actor->active || actor->kind != TOY_GAME_ACTOR_PLAYER ||
+                    actor->state != TOY_GAME_ACTOR_DOWNED)
                     continue;
                 dx = (long)camera->x - client->camera.x;
                 dz = (long)camera->z - client->camera.z;
@@ -308,7 +316,7 @@ static void fill_hud_state(struct rasterfall_hud_state *hud,
                     (player_target >= 0 && d2 >= player_target_d2)) continue;
                 player_target = client->client_id;
                 player_target_d2 = d2;
-                player_progress = client->revive_progress_ms;
+                player_progress = actor->revive_progress_ms;
                 player_active = (net_state->host_revive_active &&
                                  net_state->host_revive_target_id ==
                                      client->client_id) ||
@@ -460,7 +468,13 @@ static void set_network_spectator_camera(struct camera *camera,
                    TOY_GAME_ACTOR_DOWNED) {
         for (i = 0; i < RASTERFALL_NET_CLIENT_MAX; i++)
             if (net->clients[i].active && net->clients[i].connected &&
-                !net->clients[i].down) {
+                net->clients[i].client_id > 0 &&
+                net->clients[i].client_id <= RASTERFALL_NET_CLIENT_MAX &&
+                game.actors[TOY_GAME_REMOTE_ACTOR_BASE +
+                            net->clients[i].client_id - 1].active &&
+                game.actors[TOY_GAME_REMOTE_ACTOR_BASE +
+                            net->clients[i].client_id - 1].state ==
+                    TOY_GAME_ACTOR_ALIVE) {
                 camera->x = net->clients[i].camera.x -
                     net->clients[i].camera.sy * distance / 1024;
                 camera->z = net->clients[i].camera.z -
@@ -765,13 +779,19 @@ static void draw_scoreboard(struct toy_surface *surface,
                            local_player->throwable_damage_dealt);
         }
         for (i = 0; i < RASTERFALL_NET_CLIENT_MAX; i++) {
-            if (!net->clients[i].active || !net->clients[i].connected) continue;
+            int actor_index = TOY_GAME_REMOTE_ACTOR_BASE +
+                              net->clients[i].client_id - 1;
+            const struct toy_game_actor *actor;
+            if (!net->clients[i].active || !net->clients[i].connected ||
+                actor_index < 0 || actor_index >= TOY_GAME_MAX_ACTORS)
+                continue;
+            actor = &game.actors[actor_index];
+            if (!actor->active || actor->kind != TOY_GAME_ACTOR_PLAYER)
+                continue;
             snprintf(name, sizeof(name), "PLAYER %d", net->clients[i].client_id + 1);
             scoreboard_add(players, &player_count, name,
-                           net->clients[i].kills,
-                           net->clients[i].special_kills,
-                           net->clients[i].damage_dealt,
-                           net->clients[i].throwable_damage_dealt);
+                           actor->kills, actor->special_kills,
+                           actor->damage_dealt, actor->throwable_damage_dealt);
         }
     }
     for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
@@ -2824,15 +2844,20 @@ startup_again:
         if (net.mode == RASTERFALL_NET_HOST) {
             for (int i = 0; i < RASTERFALL_NET_CLIENT_MAX; i++) {
                 const struct rasterfall_net_client *client = &net.clients[i];
+                const struct toy_game_actor *actor;
+                int actor_index = TOY_GAME_REMOTE_ACTOR_BASE +
+                                  client->client_id - 1;
                 int weapon;
-                if (!client->active || !client->connected) continue;
-                weapon = client->current_slot >= 0 &&
-                         client->current_slot < TOY_GAME_WEAPON_SLOTS ?
-                         client->slots[client->current_slot].weapon : -1;
+                if (!client->active || !client->connected || actor_index < 0 ||
+                    actor_index >= TOY_GAME_MAX_ACTORS) continue;
+                actor = &game.actors[actor_index];
+                if (!actor->active || actor->kind != TOY_GAME_ACTOR_PLAYER)
+                    continue;
+                weapon = toy_game_actor_current_weapon(actor);
                 sync_network_fire_effects(&camera, &client->camera,
                                           client->client_id, weapon,
-                                          client->fire_seq, client->ray_count,
-                                          client->rays, &audio);
+                                          actor->fire_seq, actor->ray_count,
+                                          actor->rays, &audio);
             }
         } else if (net.mode == RASTERFALL_NET_CLIENT) {
             for (int i = 0; i < RASTERFALL_NET_PLAYER_MAX; i++) {
@@ -3319,15 +3344,21 @@ startup_again:
                     for (int i = 0; i < RASTERFALL_NET_CLIENT_MAX; i++) {
                         const struct rasterfall_net_client *client =
                             &net.clients[i];
+                        const struct toy_game_actor *actor;
+                        int actor_index = TOY_GAME_REMOTE_ACTOR_BASE +
+                                          client->client_id - 1;
                         int weapon;
-                        if (!client->active || !client->connected) continue;
-                        weapon = client->current_slot >= 0 &&
-                                 client->current_slot < TOY_GAME_WEAPON_SLOTS ?
-                                 client->slots[client->current_slot].weapon : -1;
+                        if (!client->active || !client->connected ||
+                            actor_index < 0 ||
+                            actor_index >= TOY_GAME_MAX_ACTORS) continue;
+                        actor = &game.actors[actor_index];
+                        if (!actor->active ||
+                            actor->kind != TOY_GAME_ACTOR_PLAYER) continue;
+                        weapon = toy_game_actor_current_weapon(actor);
                         sync_network_fire_effects(&camera, &client->camera,
                                                   client->client_id, weapon,
-                                                  client->fire_seq,
-                                                  client->ray_count, client->rays,
+                                                  actor->fire_seq,
+                                                  actor->ray_count, actor->rays,
                                                   &audio);
                     }
                     /* 15 Hz authoritative snapshots are sufficient once
