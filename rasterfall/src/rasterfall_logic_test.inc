@@ -2013,12 +2013,13 @@ static int run_logic_test(void)
         net_test.last_jump_command_sequence = 10;
         net_test.last_command_sequence = 10;
         net_test.last_snapshot_input_ack = 9;
-        net_test.players[1].active = 1;
-        net_test.players[1].input_ack = 9;
-        net_test.players[1].state = TOY_GAME_PLAYING;
-        net_test.players[1].camera = camera;
-        net_test.players[1].camera.x -= 1000;
-        net_test.players[1].camera.z -= 1000;
+        net_test.actor_count = 1;
+        net_test.actors[0].active = 1;
+        net_test.actors[0].actor_index = 0;
+        net_test.actors[0].input_ack = 9;
+        net_test.actors[0].state = TOY_GAME_ACTOR_ALIVE;
+        net_test.actors[0].x = camera.x - 1000;
+        net_test.actors[0].z = camera.z - 1000;
         net_test.input_history[10 % RASTERFALL_NET_INPUT_HISTORY].valid = 1;
         net_test.input_history[10 % RASTERFALL_NET_INPUT_HISTORY].sequence = 10;
         net_test.input_history[10 % RASTERFALL_NET_INPUT_HISTORY].command.buttons =
@@ -2031,8 +2032,8 @@ static int run_logic_test(void)
             rasterfall_net_reconcile_client(&net_test, &session, &camera);
             if (toy_game_local_player_actor(&game)->airborne_ms <= 0) return 109;
             if (camera.x != old_x || camera.z != old_z) return 142;
-            if (camera.x == net_test.players[1].camera.x &&
-                camera.z == net_test.players[1].camera.z) return 143;
+            if (camera.x == net_test.actors[0].x &&
+                camera.z == net_test.actors[0].z) return 143;
         }
     }
     /* Even an acknowledged snapshot never restores the local position. */
@@ -2044,11 +2045,13 @@ static int run_logic_test(void)
         net_test.mode = RASTERFALL_NET_CLIENT;
         net_test.local_player_id = 1;
         net_test.snapshot_ready = 1;
-        net_test.players[1].active = 1;
-        net_test.players[1].state = TOY_GAME_PLAYING;
-        net_test.players[1].input_ack = 9;
-        net_test.players[1].camera.x = 900;
-        net_test.players[1].camera.z = 1900;
+        net_test.actor_count = 1;
+        net_test.actors[0].active = 1;
+        net_test.actors[0].actor_index = 0;
+        net_test.actors[0].state = TOY_GAME_ACTOR_ALIVE;
+        net_test.actors[0].input_ack = 9;
+        net_test.actors[0].x = 900;
+        net_test.actors[0].z = 1900;
         prediction = &net_test.prediction_history[9 % 64];
         prediction->sequence = 9;
         prediction->x = 800;
@@ -2068,12 +2071,17 @@ static int run_logic_test(void)
         net_test.mode = RASTERFALL_NET_CLIENT;
         net_test.local_player_id = 1;
         net_test.snapshot_ready = 1;
-        net_test.players[1].active = 1;
-        net_test.players[1].state = TOY_GAME_PLAYING;
-        net_test.players[1].hp =
+        net_test.actor_count = 1;
+        net_test.actors[0].active = 1;
+        net_test.actors[0].actor_index = 0;
+        net_test.actors[0].state = TOY_GAME_ACTOR_ALIVE;
+        net_test.actors[0].hp =
             toy_game_local_player_actor(&session.game_state)->hp;
-        net_test.players[1].camera = authoritative;
-        net_test.players[1].input_ack = 100;
+        net_test.actors[0].x = authoritative.x;
+        net_test.actors[0].z = authoritative.z;
+        net_test.actors[0].sy = authoritative.sy;
+        net_test.actors[0].cy = authoritative.cy;
+        net_test.actors[0].input_ack = 100;
         session.smooth_turn_remaining = 1611;
         rasterfall_net_reconcile_client(&net_test, &session, &camera);
         if (camera.sy != authoritative.sy || camera.cy != authoritative.cy)
@@ -2356,7 +2364,6 @@ static int run_logic_test(void)
         if (game.money != 50 ||
             toy_game_local_player_actor(&game)->special_kills != 1) return 129;
     }
-    if (rasterfall_net_snapshot_fragment_test() != 0) return 139;
     if (rasterfall_net_pipeline_test() != 0) return 140;
     if (rasterfall_net_client_slot_test() != 0) return 140;
     if (rasterfall_net_discovery_test() != 0) return 141;
@@ -2369,11 +2376,13 @@ static int run_logic_test(void)
         net_test.mode = RASTERFALL_NET_CLIENT;
         net_test.local_player_id = 1;
         net_test.snapshot_ready = 1;
-        net_test.players[1].active = 1;
-        net_test.players[1].state = TOY_GAME_PLAYING;
-        net_test.players[1].hp =
+        net_test.actor_count = 1;
+        net_test.actors[0].active = 1;
+        net_test.actors[0].actor_index = 0;
+        net_test.actors[0].state = TOY_GAME_ACTOR_ALIVE;
+        net_test.actors[0].hp =
             toy_game_local_player_actor(&session.game_state)->hp;
-        net_test.players[1].fire_seq = 8;
+        net_test.actors[0].fire_seq = 8;
         net_test.enemy_count = 1;
         net_test.enemies[0].index = 0;
         net_test.enemies[0].active = 1;
@@ -2390,7 +2399,7 @@ static int run_logic_test(void)
         rasterfall_net_reconcile_client(&net_test, &session, &camera);
         if (session.game_state.enemies[0].active != 0) return 157;
         net_test.snapshot_ready = 1;
-        net_test.players[1].fire_seq = 9;
+        net_test.actors[0].fire_seq = 9;
         rasterfall_net_reconcile_client(&net_test, &session, &camera);
         if (session.game_state.enemies[0].active != 1) return 158;
     }

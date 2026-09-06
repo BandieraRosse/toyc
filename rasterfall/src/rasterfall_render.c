@@ -5409,7 +5409,7 @@ static int render_network_teammate(struct toy_renderer *renderer,
             /* Keep a downed body at its authoritative death position;
              * extrapolation can otherwise move it away from rescue range. */
             if (actor->state == TOY_GAME_ACTOR_DOWNED) {
-                render_camera = &net->players[i].camera;
+                render_camera = &net->remote_render_camera[i];
                 render_airborne = 0;
             } else {
                 render_camera = rasterfall_net_remote_render_camera(
@@ -5472,7 +5472,7 @@ static void render_network_teammate_status(struct toy_renderer *renderer,
             actor = &game_state->actors[actor_index];
             if (!actor->active || actor->kind != TOY_GAME_ACTOR_PLAYER) continue;
             render_camera = actor->state == TOY_GAME_ACTOR_DOWNED ?
-                &net->players[i].camera :
+                &net->remote_render_camera[i] :
                 rasterfall_net_remote_render_camera(net, i, NULL);
             snprintf(name, sizeof(name), "PLAYER %d", i + 1);
             render_actor_status(renderer, camera, render_camera->x,

@@ -1,7 +1,7 @@
 # 网络代码导航
 
 > 文档更新：2026-09-07
-> 源码核对基线：工作区（输入条目只编码 command、sequence/tick、选中槽位意图、airborne prediction report 和 fire validation rays；不编码 inventory/reload/cooldown/muzzle gameplay 镜像；输入协议版本 41；玩家快照协议仍保留；输入历史、可靠事件坐标、主机/客户端玩家快照以及远端命令执行均直接绑定 actor；本地和远端玩家 gameplay 状态统一由 `toy_game_actor` 拥有；客户端远端玩家渲染、头顶状态和 scoreboard 的 HP/武器/downed/动画/统计均读取对应 actor；`net->players[]` 保留协议接收和位置/朝向插值 camera 缓存；主机普通枪械、斧头/药丸、shove 及炸弹/Molotov 客户端输入直接应用到远端 actor 或按远端位置执行；远端 actor 的水平朝向在武器与 shove 规则前由客户端 camera 显式同步；投射物/燃烧区显式携带 owner；本地预测位置驱动 camera）
+> 源码核对基线：工作区（输入条目只编码 command、sequence/tick、选中槽位意图、airborne prediction report 和 fire validation rays；不编码 inventory/reload/cooldown/muzzle gameplay 镜像；输入协议版本 42；旧玩家快照已删除；actor snapshot 是玩家/AI/远端玩家 gameplay truth，world snapshot 只承载世界级状态；远端插值缓存只保存 derived render state；投射物/燃烧区显式携带 owner；本地预测位置驱动 camera）
 
 ## 文件职责
 
@@ -35,8 +35,8 @@
 主机侧 `rasterfall_net_client` 是 connection/input/protocol 状态容器，不是玩家 gameplay
 镜像：`actor = gameplay truth`，而 `remote presentation cache = derived render state`。
 `latest_input` 只表示最新解码的输入/客户端报告；HP/down、animation/stats、airborne、武器计时器
-和 inventory 均由对应 `game_state.actors[]` 持有。玩家 snapshot 编码仍使用原有
-`rasterfall_net_player` 协议，不删除快照字段。
+和 inventory 均由对应 `game_state.actors[]` 持有。玩家和 AI 均通过 actor snapshot
+表达，不再存在独立玩家 gameplay 镜像。
 
 `rasterfall_effect_event` 是接收端的 presentation-only 扩展接口。纯视觉事件不加入 snapshot，
 也不把 event 的原始 C 布局直接发送到网络；未来网络驱动表现必须增加明确的协议编码。
@@ -50,5 +50,5 @@
 应把纯 packet/logic 测试与真实回环或公网验收分开报告。
 
 本地玩家输入、快照和可靠事件的状态源是 `actors[TOY_GAME_PLAYER_ACTOR_INDEX]`；远端命令执行直接
-绑定对应 actor。玩家 snapshot payload 和字段布局保持不变；输入条目在协议版本 41 中收敛为输入意图、
+绑定对应 actor。actor snapshot 同时表达玩家、AI 和远端玩家 gameplay 状态；输入条目在协议版本 42 中收敛为输入意图、
 预测 metadata 与开火验证数据，旧的输入状态镜像字段不再编码。

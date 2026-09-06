@@ -333,8 +333,8 @@ static void fill_hud_state(struct rasterfall_hud_state *hud,
                 actor = &session.game_state.actors[actor_index];
                 if (!actor->active || actor->kind != TOY_GAME_ACTOR_PLAYER ||
                     actor->state != TOY_GAME_ACTOR_DOWNED) continue;
-                dx = (long)camera->x - net_state->players[i].camera.x;
-                dz = (long)camera->z - net_state->players[i].camera.z;
+                dx = (long)camera->x - net_state->remote_render_camera[i].x;
+                dz = (long)camera->z - net_state->remote_render_camera[i].z;
                 d2 = dx * dx + dz * dz;
                 if (d2 > (long)RASTERFALL_INTERACT_RANGE *
                           RASTERFALL_INTERACT_RANGE ||
@@ -488,15 +488,15 @@ static void set_network_spectator_camera(struct camera *camera,
             }
         return;
     } else return;
-    camera->x = net->players[target_id].camera.x -
-        net->players[target_id].camera.sy * distance / 1024;
-    camera->z = net->players[target_id].camera.z -
-        net->players[target_id].camera.cy * distance / 1024;
-    camera->sy = net->players[target_id].camera.sy;
-    camera->cy = net->players[target_id].camera.cy;
-    camera->pitch_sy = net->players[target_id].camera.pitch_sy;
-    camera->pitch_cy = net->players[target_id].camera.pitch_cy;
-    camera->y = net->players[target_id].camera.y;
+    camera->x = net->remote_render_camera[target_id].x -
+        net->remote_render_camera[target_id].sy * distance / 1024;
+    camera->z = net->remote_render_camera[target_id].z -
+        net->remote_render_camera[target_id].cy * distance / 1024;
+    camera->sy = net->remote_render_camera[target_id].sy;
+    camera->cy = net->remote_render_camera[target_id].cy;
+    camera->pitch_sy = net->remote_render_camera[target_id].pitch_sy;
+    camera->pitch_cy = net->remote_render_camera[target_id].pitch_cy;
+    camera->y = net->remote_render_camera[target_id].y;
 }
 
 static void set_managed_spectator_camera(struct camera *render_camera,
@@ -2833,13 +2833,13 @@ startup_again:
             rasterfall_net_reconcile_client(&net, &session, &camera);
             rasterfall_net_update_presentation(&net, 16);
         }
-        if (net.mode == RASTERFALL_NET_CLIENT && net.players[0].active) {
-            sync_network_fire_effects(&camera, &net.players[0].camera,
-                                      0,
-                                      net.players[0].weapon,
-                                      net.players[0].fire_seq,
-                                      net.players[0].ray_count,
-                                      net.players[0].rays, NULL);
+        if (net.mode == RASTERFALL_NET_CLIENT && game.actors[0].active) {
+            const struct toy_game_actor *local_actor = &game.actors[0];
+            sync_network_fire_effects(&camera, &camera, 0,
+                                      toy_game_actor_current_weapon(local_actor),
+                                      local_actor->fire_seq,
+                                      local_actor->ray_count,
+                                      local_actor->rays, NULL);
         }
         if (net.mode == RASTERFALL_NET_HOST) {
             for (int i = 0; i < RASTERFALL_NET_CLIENT_MAX; i++) {
@@ -2860,13 +2860,16 @@ startup_again:
                                           actor->rays, &audio);
             }
         } else if (net.mode == RASTERFALL_NET_CLIENT) {
-            for (int i = 0; i < RASTERFALL_NET_PLAYER_MAX; i++) {
-                const struct rasterfall_net_player *player = &net.players[i];
-                if (!player->active || i == net.local_player_id) continue;
-                sync_network_fire_effects(&camera, &player->camera, i,
-                                          player->weapon, player->fire_seq,
-                                          player->ray_count, player->rays,
-                                          &audio);
+            for (int i = 0; i < net.actor_count; i++) {
+                const struct rasterfall_net_actor *actor = &net.actors[i];
+                int player_id = actor->actor_index - TOY_GAME_REMOTE_ACTOR_BASE + 1;
+                if (!actor->active || player_id <= 0 ||
+                    player_id >= RASTERFALL_NET_PLAYER_MAX) continue;
+                sync_network_fire_effects(&camera,
+                                          &net.remote_render_camera[player_id],
+                                          player_id, actor->weapon,
+                                          actor->fire_seq, actor->ray_count,
+                                          actor->rays, &audio);
             }
         }
         /* 本帧到达的按压边沿并入保留位，再把保留位全部合入 key_pressed

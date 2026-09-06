@@ -12,7 +12,7 @@
 #define RASTERFALL_NET_MAX_SNAPSHOT 8192
 /* Keep protocol changes explicit: clients with a different snapshot layout
  * must fail during discovery/handshake instead of decoding shifted data. */
-#define RASTERFALL_NET_PROTOCOL_VERSION 41
+#define RASTERFALL_NET_PROTOCOL_VERSION 42
 #define RASTERFALL_NET_MAX_ACTORS 32
 #define RASTERFALL_NET_PLAYER_MAX 4
 #define RASTERFALL_NET_CLIENT_MAX (RASTERFALL_NET_PLAYER_MAX - 1)
@@ -34,11 +34,8 @@ enum rasterfall_net_mode {
 enum rasterfall_net_packet_type {
     RASTERFALL_NET_HELLO = 1,
     RASTERFALL_NET_INPUT,
-    RASTERFALL_NET_SNAPSHOT,
     RASTERFALL_NET_AI_FIRE,
-    RASTERFALL_NET_SNAPSHOT_PART,
     RASTERFALL_NET_RELIABLE_EVENT,
-    RASTERFALL_NET_PLAYER_SNAPSHOT,
     RASTERFALL_NET_ENTITY_SNAPSHOT,
     RASTERFALL_NET_WORLD_SNAPSHOT,
     RASTERFALL_NET_PLAYER_FIRE
@@ -98,54 +95,10 @@ struct rasterfall_net_discovery {
     struct rasterfall_net_room rooms[RASTERFALL_NET_DISCOVERY_MAX_ROOMS];
 };
 
-struct rasterfall_snapshot_assembly {
-    uint32_t sequence;
-    int total_size;
-    int part_count;
-    unsigned int mask;
-    unsigned char buffer[RASTERFALL_NET_MAX_SNAPSHOT];
-};
-
 enum rasterfall_net_discovery_mode {
     RASTERFALL_NET_DISCOVERY_OFF,
     RASTERFALL_NET_DISCOVERY_BROWSER,
     RASTERFALL_NET_DISCOVERY_HOST
-};
-
-struct rasterfall_net_player {
-    int active;
-    int id;
-    struct camera camera;
-    int hp;
-    int weapon;
-    int state;
-    int downed;
-    int revive_progress_ms;
-    int current_slot;
-    /* The active weapon is not enough to restore the inventory after a
-     * network pickup: the other slot may have changed while it was inactive. */
-    int slot_weapon[TOY_GAME_WEAPON_SLOTS];
-    int mag[TOY_GAME_WEAPON_SLOTS];
-    int reserve[TOY_GAME_WEAPON_SLOTS];
-    int reloading;
-    int reload_timer_ms;
-    int weapon_switch_timer_ms;
-    int throw_timer_ms;
-    int muzzle_flash_ms;
-    int kills;
-    int special_kills;
-    int damage_dealt;
-    int throwable_damage_dealt;
-    unsigned int fire_seq;
-    int ray_count;
-    struct toy_game_ray rays[TOY_GAME_MAX_RAYS];
-    int airborne_ms;
-    int airborne_y;
-    int airborne_velocity;
-    int air_x, air_z;
-    uint32_t input_ack;
-    int special_motion;
-    struct toy_game_animation_state animation;
 };
 
 struct rasterfall_net_enemy {
@@ -205,6 +158,13 @@ struct rasterfall_net_actor {
     struct toy_game_animation_state animation;
     int ray_count;
     struct toy_game_ray rays[TOY_GAME_MAX_RAYS];
+    uint32_t input_ack;
+    int current_slot;
+    int reloading;
+    int reload_timer_ms;
+    int throw_timer_ms;
+    int control_disabled;
+    struct toy_game_slot slots[TOY_GAME_WEAPON_SLOTS];
 };
 
 /* Host-authoritative state for one network client.  Every client uses the
@@ -259,7 +219,6 @@ struct rasterfall_net {
     uint32_t send_sequence;
     uint32_t receive_sequence;
     uint32_t tick;
-    struct rasterfall_net_player players[RASTERFALL_NET_PLAYER_MAX];
     struct rasterfall_net_client clients[RASTERFALL_NET_CLIENT_MAX];
     int host_revive_active;
     int host_revive_target_id;
@@ -322,17 +281,11 @@ struct rasterfall_net {
     int snapshot_actor_flag_index[TOY_GAME_MAX_ACTORS];
     struct toy_game_projectile snapshot_projectiles[TOY_GAME_MAX_PROJECTILES];
     struct toy_game_burn_zone snapshot_burn_zones[TOY_CONFIG_MAX_BURN_ZONES];
-    int snapshot_player_control_disabled;
     int snapshot_air_walls_enabled;
     int snapshot_manual_alarm_enabled;
     int snapshot_ready;
-    uint32_t player_snapshot_sequence;
     uint32_t entity_snapshot_sequence;
     uint32_t world_snapshot_sequence;
-    /* 快照在应用层分片，避免依赖 IP 分片；保留当前和上一代未完成组，
-     * 允许轻微乱序补齐上一代快照。 */
-    struct rasterfall_snapshot_assembly snapshot_current;
-    struct rasterfall_snapshot_assembly snapshot_previous;
     int connected;
     int rtt_ms;
     uint32_t last_command_sequence;
@@ -397,19 +350,11 @@ struct rasterfall_net {
     int net_stats_avg_rtt_ms;
     long net_stats_rtt_sum_ms;
     int net_stats_rtt_samples;
-    /* Snapshot-fragment statistics are a separate signal from packet
-     * sequence gaps: all fragments of one snapshot intentionally share a
-     * sequence number.  These are rolling one-second counters. */
-    int snapshot_parts_received;
-    int snapshot_parts_missing;
-    int snapshot_parts_duplicate;
-    int snapshot_completed;
-    int snapshot_abandoned;
     unsigned long input_packets_sent, input_packets_received;
     unsigned long input_entries_received, input_duplicates;
     unsigned long input_out_of_order, input_recovered;
     unsigned long input_synthesized;
-    unsigned long player_snapshots_received, entity_snapshots_received;
+    unsigned long entity_snapshots_received;
     unsigned long world_snapshots_received;
     unsigned long reconciliation_count, reconciliation_total;
     unsigned long reconciliation_max;
@@ -439,7 +384,6 @@ void rasterfall_net_poll(struct rasterfall_net *net);
 void rasterfall_net_update_connection(struct rasterfall_net *net);
 /* Used by --logic-test to exercise the fixed-size snapshot assembler without
  * changing the wire format or opening a socket. */
-int rasterfall_net_snapshot_fragment_test(void);
 int rasterfall_net_client_slot_test(void);
 int rasterfall_net_pipeline_test(void);
 int rasterfall_net_send_command(struct rasterfall_net *net,

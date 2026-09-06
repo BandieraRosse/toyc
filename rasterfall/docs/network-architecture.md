@@ -1,7 +1,7 @@
 # Rasterfall 联机架构与扩展边界
 
 > 文档更新：2026-09-07
-> 源码核对基线：工作区（输入条目只保留 command、sequence/tick、选中槽位意图、airborne prediction report 和 fire validation rays；协议版本 41；玩家快照仍保留；输入历史、玩家快照和远端命令执行直接绑定 actor；`actor = gameplay truth`；`remote presentation cache = derived render state`，插值缓存只保存位置、朝向、高度和时间戳；主机普通枪械、斧头/药丸及炸弹/Molotov 客户端输入直接应用到远端 actor；投射物/燃烧区携带 owner；本地预测位置派生 camera）
+> 源码核对基线：工作区（输入条目只保留 command、sequence/tick、选中槽位意图、airborne prediction report 和 fire validation rays；协议版本 42；独立玩家快照已删除；输入历史、actor snapshot 和远端命令执行直接绑定 actor；`actor = gameplay truth`；`remote presentation cache = derived render state`，插值缓存只保存位置、朝向、高度和时间戳；主机普通枪械、斧头/药丸及炸弹/Molotov 客户端输入直接应用到远端 actor；投射物/燃烧区携带 owner；本地预测位置派生 camera）
 
 本文记录联机实现必须保持的内部边界。产品入口和平台范围见 `../README.md`。
 
@@ -46,7 +46,7 @@
 ## 玩家状态收敛
 
 远端玩家的规则状态以 `toy_game_actor` 为主机侧玩法落点。普通枪械路径由
-`rasterfall_net.c` 直接更新对应 actor，并从 actor 编码玩家快照；不再把远端玩家临时拷贝进
+`rasterfall_net.c` 直接更新对应 actor，并从 actor 编码 actor snapshot；不再把远端玩家临时拷贝进
 `toy_game` 的本地玩家字段。`rasterfall_net_client` 仅保留连接身份、输入队列、客户端报告的
 相机/运动、sequence/ack、RTT/丢包、可靠事件和请求 metadata；这些字段不是渲染或玩法的第二个
 权威 actor。
@@ -55,12 +55,12 @@
 `latest_input` 是当前解码的输入/报告协议数据，不是持久 gameplay 镜像；HP/down、animation/stats、
 weapon timers/inventory 都只写入和读取对应 `game_state.actors[]`。airborne report 属于客户端预测
 所需的运动 metadata，主机只将其作为远端 actor 运动输入；`current_slot` 是装备选择意图，主机按
-actor 自有 inventory 解析。`fire_seq`/`rays` 是开火验证与去重 metadata，不是玩家状态。玩家快照
-协议仍保留，快照字段由 actor 编码；仅输入条目布局在协议版本 41 中收敛。
+actor 自有 inventory 解析。`fire_seq`/`rays` 是开火验证与去重 metadata，不是持久玩法状态。actor
+snapshot 布局和输入条目布局在协议版本 42 中生效。
 
 炸弹和 Molotov 已通过 `toy_game_actor_throwable()` 直接作用于远端 actor；投射物和燃烧区的
 `owner_actor_id` 使用稳定 actor ID，不能保存指针或依赖 C 结构布局。斧头和药丸通过
-`toy_game_actor_use_special()` 直接作用于远端 actor。输入历史、可靠事件坐标、玩家快照和远端
+`toy_game_actor_use_special()` 直接作用于远端 actor。输入历史、可靠事件坐标、actor snapshot 和远端
 命令执行都直接读写对应 actor，不再保留临时覆盖本地玩家字段的网络路径。客户端预测中，
 gameplay 位置是 body state 的来源，camera 位置由 session 派生；camera 只保留方向和展示数据。
 `remote_samples` 与 `remote_render_*` 是接收端的纯展示缓存，只保存插值所需的位置、朝向、

@@ -34,8 +34,8 @@
 
 主循环更新 session/net/effects 后，展示层从 `actors[TOY_GAME_PLAYER_ACTOR_INDEX]` 和其他 actor
 读取玩家状态，再设置 `rasterfall_render_context`，调用场景及实体公开入口；客户端远端玩家的
-HP、武器、downed、动画和统计也从对应 actor 读取。网络 `players[]` 只为协议接收、身份/连接管理
-以及远端位置/朝向插值保留 camera 缓存，不作为远端 gameplay 展示源；不从 `toy_game` 顶层玩家字段
+HP、武器、downed、动画和统计也从对应 actor 读取。网络连接状态来自 `clients[]`，远端位置/朝向
+插值来自 derived presentation cache，不作为远端 gameplay 展示源；不从 `toy_game` 顶层玩家字段
 取 HUD、第一人称武器或受击效果数据。
 底层 renderer 收集/光栅化几何；随后绘制 HUD、菜单和调试叠层并 present。客户端角色展示可能使用
 网络插值状态，不应误读为权威 `toy_game` 状态。

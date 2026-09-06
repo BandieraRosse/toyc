@@ -642,8 +642,7 @@ static void render_network_hud(struct toy_surface *surface,
         fb_draw_string((unsigned char *)surface->pixels, x, line_y, line,
                        RF_COLOR_UI_SECONDARY, surface->stride);
         line_y += FB_FONT_H;
-        snprintf(line, sizeof(line), "P/E/W %lu/%lu/%lu INPUT REC %lu DUP %lu",
-                 net->player_snapshots_received,
+        snprintf(line, sizeof(line), "E/W %lu/%lu INPUT REC %lu DUP %lu",
                  net->entity_snapshots_received,
                  net->world_snapshots_received,
                  net->input_recovered, net->input_duplicates);
