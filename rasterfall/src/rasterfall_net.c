@@ -3074,12 +3074,20 @@ static void net_apply_client(struct rasterfall_net *net,
         client->camera = client->reported_camera;
     actor->x = client->camera.x;
     actor->z = client->camera.z;
+    actor->sy = client->camera.sy;
+    actor->cy = client->camera.cy;
     actor->airborne_ms = client->airborne_ms;
     actor->airborne_y = client->airborne_y;
     actor->vertical_velocity = client->airborne_velocity;
     actor->air_x = client->air_x;
     actor->air_z = client->air_z;
     toy_game_update_actor_ground(g, index);
+    if ((client->command.buttons & RASTERFALL_CMD_SHOVE) &&
+        actor->state == TOY_GAME_ACTOR_ALIVE) {
+        toy_game_shove_from_position(g, actor->x, actor->z,
+                                     actor->sy, actor->cy);
+        toy_game_actor_set_animation(actor, TOY_GAME_ANIM_SHOVE);
+    }
     if (client->command.buttons & RASTERFALL_CMD_REVIVE)
         net_paid_revive_client(net, session, client);
     /* Do not route ordinary remote firearms through the local player's
