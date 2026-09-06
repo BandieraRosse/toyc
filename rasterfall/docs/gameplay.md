@@ -1,7 +1,7 @@
 # 玩法、会话、地图与 AI
 
 > 文档更新：2026-09-06
-> 源码核对基线：工作区（本地玩家移动/跳跃/airborne/武器/动画/special-control 由 `actors[0]` 直接驱动；生成距离、安全室/战役目标、敌人近战/Tank 受击、爆炸目标、特感索敌、投掷物/药丸、hitscan 开火和 update_held 武器推进已按 actor 规则处理；legacy 主要供兼容入口、旧测试和展示适配；AI 从槽位 1 起分配；投射物/燃烧区携带 actor owner）
+> 源码核对基线：工作区（本地玩家移动/跳跃/airborne/武器/动画/special-control/shove 由 `actors[0]` 直接驱动；生成距离、安全室/战役目标、敌人近战/Tank 受击、爆炸目标、特感索敌、投掷物/药丸、hitscan 开火和 update_held 武器推进已按 actor 规则处理；legacy 主要供兼容入口、旧测试和展示适配；shove 入口仅对检测到的旧坐标/槽位输入做最小兼容导入，不覆盖 actor 生命等正式状态；AI 从槽位 1 起分配；投射物/燃烧区携带 actor owner）
 
 ## 三层职责
 

@@ -2058,38 +2058,75 @@ static int ai_try_shove(struct toy_game *g, struct toy_game_actor *actor)
 
 int toy_game_shove(struct toy_game *g, int sy, int cy)
 {
-    int pushed;
-    if (!g || g->state != TOY_GAME_PLAYING || g->player_down) return 0;
-    g->animation.id = TOY_GAME_ANIM_SHOVE;
-    g->animation.time_ms = 0;
+    struct toy_game_actor *player;
+    struct toy_game_slot *slot;
+    int pushed, i, best = -1;
+    int heal_origin_x, heal_origin_z;
+    long long best_d2 = 0;
+    long long range2 = (long long)TOY_CONFIG_SHOVE_RANGE * TOY_CONFIG_SHOVE_RANGE;
+    if (!g) return 0;
+    player = toy_game_local_player_actor(g);
+    heal_origin_x = player ? player->x : g->px;
+    heal_origin_z = player ? player->z : g->pz;
+    if (player && player->active &&
+        (player->x != g->px || player->z != g->pz)) {
+        /* Compatibility hosts may still reposition the player through px/pz.
+         * Do not import hp or the full legacy snapshot here: actor gameplay
+         * may have changed those fields since the last mirror. */
+        if (player->hp == g->hp) {
+            player->x = g->px;
+            player->z = g->pz;
+            heal_origin_x = player->x;
+            heal_origin_z = player->z;
+        } else {
+            heal_origin_x = g->px;
+            heal_origin_z = g->pz;
+        }
+        player->sy = g->pitch_sy;
+        player->cy = g->pitch_cy;
+        if (g->current_slot >= 0 && g->current_slot < TOY_GAME_WEAPON_SLOTS) {
+            player->current_slot = g->current_slot;
+            memcpy(player->slots, g->slots, sizeof(player->slots));
+        }
+    }
+    if (!player || !player->active || player->state != TOY_GAME_ACTOR_ALIVE ||
+        g->state != TOY_GAME_PLAYING) {
+        toy_game_mirror_player_from_actor(g);
+        return 0;
+    }
+    player->sy = sy;
+    player->cy = cy;
+    toy_game_actor_set_animation(player, TOY_GAME_ANIM_SHOVE);
     push_event(g, TOY_GAME_EV_SHOVE);
-    pushed = toy_game_shove_at(g, g->px, g->pz, sy, cy);
+    pushed = toy_game_shove_at(g, player->x, player->z, sy, cy);
     if (pushed > 0) push_event(g, TOY_GAME_EV_SHOVE_HIT);
-    if (g->current_slot == 3 && g->slots[3].weapon == TOY_GAME_WEAPON_PILL &&
-        g->slots[3].mag > 0) {
-        int i, best = -1, best_d2 = 0;
-        long long range2 = (long long)TOY_CONFIG_SHOVE_RANGE * TOY_CONFIG_SHOVE_RANGE;
+    if (player->current_slot >= 0 && player->current_slot < TOY_GAME_WEAPON_SLOTS)
+        slot = &player->slots[player->current_slot];
+    else slot = NULL;
+    if (slot && slot->weapon == TOY_GAME_WEAPON_PILL && slot->mag > 0) {
         for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
             struct toy_game_actor *a = &g->actors[i];
             long long dx, dz, d2, dist, dot;
             if (!a->active || a->state != TOY_GAME_ACTOR_ALIVE || a->base_core) continue;
-            dx = a->x - g->px; dz = a->z - g->pz; d2 = dx * dx + dz * dz;
+            dx = a->x - heal_origin_x; dz = a->z - heal_origin_z;
+            d2 = dx * dx + dz * dz;
             if (!d2 || d2 > range2 || a->hp >= a->max_hp) continue;
             dist = isqrt(d2); dot = dx * sy + dz * cy;
             if (dot * TOY_GAME_SHOVE_CONE < dist * 1024) continue;
-            if (best < 0 || d2 < best_d2) { best = i; best_d2 = (int)d2; }
+            if (best < 0 || d2 < best_d2) { best = i; best_d2 = d2; }
         }
-        if (best >= 0) { g->actors[best].hp = g->actors[best].max_hp; g->slots[3].mag--; }
+        if (best >= 0) { g->actors[best].hp = g->actors[best].max_hp; slot->mag--; }
         else {
             struct toy_game_actor *base = NULL;
             for (i = 0; i < TOY_GAME_MAX_ACTORS; i++)
                 if (g->actors[i].active && g->actors[i].base_core) { base = &g->actors[i]; break; }
             if (base && base->hp > 0 && base->hp < base->max_hp) {
                 base->hp += 100; if (base->hp > base->max_hp) base->hp = base->max_hp;
-                g->slots[3].mag--;
+                slot->mag--;
             }
         }
     }
+    toy_game_mirror_player_from_actor(g);
     return pushed;
 }
 
