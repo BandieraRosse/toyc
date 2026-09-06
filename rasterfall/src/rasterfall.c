@@ -525,7 +525,7 @@ static void build_game_command(struct rasterfall_command *command,
                          (input->mouse_buttons & 1) != 0;
     if (fire_edge) command->buttons |= RASTERFALL_CMD_FIRE;
     if (shove_edge) command->buttons |= RASTERFALL_CMD_SHOVE;
-    if (toy_input_pressed(input, KEY_SPACE))
+    if (toy_input_pressed(input, KEY_SPACE) || pending_key_edges[KEY_SPACE])
         command->buttons |= RASTERFALL_CMD_JUMP;
     if (toy_input_pressed(input, KEY_SLASH))
         command->buttons |= RASTERFALL_CMD_SHOVE;
@@ -541,7 +541,8 @@ static void build_game_command(struct rasterfall_command *command,
         command->buttons |= RASTERFALL_CMD_SLOT_3;
     if (toy_input_pressed(input, KEY_4) || pending_key_edges[KEY_4])
         command->buttons |= RASTERFALL_CMD_SLOT_4;
-    if (toy_input_pressed(input, KEY_E)) command->buttons |= RASTERFALL_CMD_INTERACT;
+    if (toy_input_pressed(input, KEY_E) || pending_key_edges[KEY_E])
+        command->buttons |= RASTERFALL_CMD_INTERACT;
     if (toy_input_pressed(input, KEY_F)) command->buttons |= RASTERFALL_CMD_FLAG;
     if (session.pose_debug_active && session.pose_editor.active) {
         /* Keep movement, mouse look, and arrow-key look in the ordinary
@@ -615,6 +616,8 @@ static void consume_game_command_edges(struct toy_input *input,
     input->key_pressed[KEY_F] = 0;
     input->key_pressed[KEY_SLASH] = 0;
     input->key_pressed[KEY_SPACE] = 0;
+    pending_key_edges[KEY_SPACE] = 0;
+    pending_key_edges[KEY_E] = 0;
     /* Pose-editor actions are edge events.  Clear their sampled state after
      * the fixed-step command has consumed it; key_down remains untouched, so
      * holding a key never turns into repeated menu navigation. */

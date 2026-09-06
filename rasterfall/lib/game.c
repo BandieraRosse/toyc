@@ -4656,33 +4656,56 @@ static int toy_game_start_empty_reload(
     return 1;
 }
 
-/* 拾取主武器（SMG/霰弹枪）。同武器 = 补满弹匣与备弹；新武器替换槽 0 并自动切出。 */
-int toy_game_equip_weapon(struct toy_game *g, int weapon)
+static int toy_game_equip_actor_weapon(struct toy_game *g,
+                                       struct toy_game_actor *actor,
+                                       int weapon)
 {
     const struct toy_game_weapon_info *w;
     int slot;
-    if (weapon < 0 || weapon >= TOY_GAME_WEAPON_COUNT) return -1;
+    if (!g || !actor || weapon < 0 || weapon >= TOY_GAME_WEAPON_COUNT)
+        return -1;
     w = toy_game_weapon_info(weapon);
     slot = w->slot;
     if (slot < 0 || slot >= TOY_GAME_WEAPON_SLOTS) return -1;
-    if (g->slots[slot].weapon == weapon) {
+    if (actor->slots[slot].weapon == weapon) {
         if (weapon == TOY_GAME_WEAPON_PILL) {
-            if (g->slots[slot].mag < TOY_GAME_PILL_MAX) g->slots[slot].mag++;
+            if (actor->slots[slot].mag < TOY_GAME_PILL_MAX)
+                actor->slots[slot].mag++;
             return 0;
         }
         if (weapon == TOY_GAME_WEAPON_BOMB || weapon == TOY_GAME_WEAPON_MOLOTOV) {
-            if (g->slots[slot].mag < TOY_GAME_THROWABLE_MAX) g->slots[slot].mag++;
+            if (actor->slots[slot].mag < TOY_GAME_THROWABLE_MAX)
+                actor->slots[slot].mag++;
             return 0;
         }
-        g->slots[slot].mag = w->mag_size;
-        g->slots[slot].reserve = w->reserve_max;
+        actor->slots[slot].mag = w->mag_size;
+        actor->slots[slot].reserve = w->reserve_max;
         return 0;
     }
-    g->slots[slot].weapon = weapon;
-    g->slots[slot].mag = w->mag_size;
-    g->slots[slot].reserve = w->reserve_max;
-    toy_game_switch_weapon(g, slot);
+    actor->slots[slot].weapon = weapon;
+    actor->slots[slot].mag = w->mag_size;
+    actor->slots[slot].reserve = w->reserve_max;
+    if (slot != actor->current_slot) {
+        actor->current_slot = slot;
+        actor->weapon_switch_timer_ms = TOY_CONFIG_WEAPON_SWITCH_MS;
+        actor->reloading = 0;
+        actor->reload_timer_ms = 0;
+        push_event(g, TOY_GAME_EV_WEAPON_SWITCH);
+    }
     return 1;
+}
+
+/* 拾取主武器（SMG/霰弹枪）。同武器 = 补满弹匣与备弹；新武器替换槽 0 并自动切出。 */
+int toy_game_equip_weapon(struct toy_game *g, int weapon)
+{
+    struct toy_game_actor *actor;
+    int result;
+    if (!g) return -1;
+    toy_game_mirror_actor_from_player(g);
+    actor = toy_game_local_player_actor(g);
+    result = toy_game_equip_actor_weapon(g, actor, weapon);
+    toy_game_mirror_player_from_actor(g);
+    return result;
 }
 
 int toy_game_weapon_price(int weapon)
