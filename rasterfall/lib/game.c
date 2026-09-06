@@ -26,6 +26,9 @@ static int ai_try_shove(struct toy_game *g, struct toy_game_actor *actor);
 static int apply_entity_impact_with_knockback(struct toy_game *g, int kind,
                                               int index, int dx, int dz,
                                               int damage, int knockback);
+static int toy_game_fire_actor(struct toy_game *g,
+                               struct toy_game_actor *actor,
+                               int sy, int cy, int spread_percent);
 
 /* ── PRNG：xorshift64* ──────────────────────────────────────────── */
 
@@ -4532,78 +4535,35 @@ static int toy_game_reload_ms(const struct toy_game_weapon_info *w)
 
 int toy_game_fire(struct toy_game *g, int sy, int cy)
 {
-    struct toy_game_slot *s = &g->slots[g->current_slot];
-    const struct toy_game_weapon_info *w = toy_game_weapon_info(s->weapon);
-    int pellet, hit = 0;
-    int spread;
-    if (s->weapon == TOY_GAME_WEAPON_AXE)
-        return toy_game_melee(g, sy, cy);
-    if (s->weapon == TOY_GAME_WEAPON_PILL)
-        return toy_game_use_pill(g);
-    if (s->weapon == TOY_GAME_WEAPON_BOMB ||
-        s->weapon == TOY_GAME_WEAPON_MOLOTOV)
-        return toy_game_throw(g, sy, cy);
-    if (g->state != TOY_GAME_PLAYING || g->reloading ||
-        (TOY_CONFIG_BLOCK_FIRE_DURING_SWITCH &&
-         g->weapon_switch_timer_ms > 0)) return 0;
-    g->fire_cooldown_ms = toy_game_fire_cooldown_ms(w);
-    g->muzzle_flash_ms = TOY_GAME_MUZZLE_FLASH_MS;
-    if (s->mag <= 0) {
-        push_event(g, TOY_GAME_EV_DRY_FIRE);
-        return 0;
+    struct toy_game_actor *player;
+    struct toy_game_slot *slot;
+    const struct toy_game_weapon_info *weapon;
+    int fired;
+    if (!g) return 0;
+    toy_game_mirror_actor_from_player(g);
+    player = toy_game_local_player_actor(g);
+    if (!player || player->current_slot < 0 ||
+        player->current_slot >= TOY_GAME_WEAPON_SLOTS) return 0;
+    player->sy = sy;
+    player->cy = cy;
+    slot = &player->slots[player->current_slot];
+    weapon = toy_game_weapon_info_or_null(slot->weapon);
+    if (!weapon) return 0;
+    if (slot->weapon == TOY_GAME_WEAPON_AXE ||
+        slot->weapon == TOY_GAME_WEAPON_PILL)
+        fired = toy_game_actor_use_special(g, player, sy, cy);
+    else if (slot->weapon == TOY_GAME_WEAPON_BOMB ||
+             slot->weapon == TOY_GAME_WEAPON_MOLOTOV)
+        fired = toy_game_actor_throwable(g, player, sy, cy,
+                                         g->pitch_sy, g->pitch_cy, g->view_y);
+    else {
+        fired = toy_game_fire_actor(g, player, sy, cy, 100);
+        player->fire_cooldown_ms = toy_game_fire_cooldown_ms(weapon);
+        if (player->reloading)
+            player->reload_timer_ms = toy_game_reload_ms(weapon);
     }
-    s->mag--;
-    g->weapon_spread_heat += TOY_CONFIG_SPREAD_SHOT_STEP;
-    if (g->weapon_spread_heat > TOY_CONFIG_SPREAD_HEAT_MAX)
-        g->weapon_spread_heat = TOY_CONFIG_SPREAD_HEAT_MAX;
-    if (s->weapon == TOY_GAME_WEAPON_SMG)
-        push_event(g, TOY_GAME_EV_SHOOT_SMG);
-    else if (s->weapon == TOY_GAME_WEAPON_SHOTGUN)
-        push_event(g, TOY_GAME_EV_SHOOT_SHOTGUN);
-    else if (s->weapon == TOY_GAME_WEAPON_AK)
-        push_event(g, TOY_GAME_EV_SHOOT_AK);
-    else if (s->weapon == TOY_GAME_WEAPON_AWP)
-        push_event(g, TOY_GAME_EV_SHOOT_AWP);
-    else
-        push_event(g, TOY_GAME_EV_SHOOT);
-    if (s->mag == 0) {
-        g->reloading = 1;
-        g->reload_timer_ms = toy_game_reload_ms(w);
-        push_event(g, TOY_GAME_EV_RELOAD_START);
-    }
-    /* 每颗弹丸在 [-spread, +spread] 内随机偏转（1024 定点）：霰弹枪
-     * 近距离密集、远距离发散；弹道记录供宿主渲染 tracer 与命中特效。 */
-    spread = toy_game_current_spread(g);
-    g->fire_seq++;
-    g->ray_count = w->pellets;
-    for (pellet = 0; pellet < w->pellets; pellet++) {
-        int off_x, off_y;
-        int ray_sy, ray_cy;
-        /* 在准心周围取圆形散布，而不是只在水平线上散布。 */
-        do {
-            off_x = rand_range(g, -spread, spread);
-            off_y = rand_range(g, -spread, spread);
-        } while (off_x * off_x + off_y * off_y >
-                 spread * spread);
-        ray_sy = (sy * 1024 - cy * off_x) / 1024;
-        ray_cy = (cy * 1024 + sy * off_x) / 1024;
-        int ex, ez, hit_world, killed, enemy_index, inflicted;
-        normalize_dir(&ray_sy, &ray_cy);   /* 旋转后长度略偏，归一化保证判定一致 */
-        killed = fire_ray(g, g->px, g->pz, NULL,
-                          ray_sy, ray_cy, w->damage, w->range,
-                          &ex, &ez, &hit_world, &enemy_index, &inflicted);
-        if (killed) hit = 1;
-        g->rays[pellet].sy = ray_sy;
-        g->rays[pellet].cy = ray_cy;
-        g->rays[pellet].vy = off_y;
-        g->rays[pellet].ex = ex;
-        g->rays[pellet].ez = ez;
-        g->rays[pellet].hit_enemy = killed;
-        g->rays[pellet].hit_world = hit_world;
-        g->rays[pellet].enemy_index = enemy_index;
-        g->rays[pellet].damage = inflicted;
-    }
-    return hit;
+    toy_game_mirror_player_from_actor(g);
+    return fired;
 }
 
 /* 切枪：只允许切到有武器的槽位；换弹被打断 */
