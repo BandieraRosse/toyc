@@ -3622,12 +3622,14 @@ static void update_charger(struct toy_game *g, struct toy_game_enemy *e,
         /* 沿锁定直线持续冲锋；同一轮可连续撞到多个敌人。 */
         charger_hit_entities(g, e);
         if (dist <= TOY_GAME_CHARGER_IMPACT_RANGE) {
-            int player_knockback_ready =
-                g->player_knockback_cooldown_ms <= 0;
+            const struct toy_game_actor *player =
+                toy_game_local_player_actor_const(g);
+            int player_knockback_ready = player &&
+                player->knockback_cooldown_ms <= 0;
             /* A target is launched by the impact, so do not damage the same
              * player again until they have landed.  The charge itself keeps
              * moving for its configured duration. */
-            if (target_kind == 0 && g->player_airborne_ms <= 0) {
+            if (target_kind == 0 && player && player->airborne_ms <= 0) {
                 if (toy_game_apply_entity_impact(
                         g, TOY_GAME_ENTITY_PLAYER, 0,
                         dx, dz, TOY_GAME_CHARGER_DAMAGE))
@@ -3786,15 +3788,16 @@ static void update_tank(struct toy_game *g, struct toy_game_enemy *e,
 static void update_enemy_ai(struct toy_game *g, struct toy_game_enemy *e,
                             int dt_ms)
 {
+    const struct toy_game_actor *player = toy_game_local_player_actor_const(g);
     int target_x, target_z, target_kind;
-    int primary_dx = g->px - e->x;
-    int primary_dz = g->pz - e->z;
+    int primary_dx = player->x - e->x;
+    int primary_dz = player->z - e->z;
     long long primary_dist2 = (long long)primary_dx * primary_dx +
                               (long long)primary_dz * primary_dz;
     int dx, dz;
     long long ai_dist2 = 0;
     int ai_x = 0, ai_z = 0, ai_index = -1;
-    int special_x = g->px, special_z = g->pz;
+    int special_x = player->x, special_z = player->z;
     int special_player = -1, special_actor = -1;
     int primary_valid;
     int ai_available;
