@@ -226,8 +226,9 @@ void rasterfall_session_reset(struct rasterfall_session *session,
     /* 环境变量不依赖 libc；HOSTNAME 是最稳定的本机身份来源，缺失时
      * toy_game_init 的 PLAYER 保底仍可用。名字只用于身份展示/未来快照。 */
     if (global_envp && get_env_var(global_envp, "HOSTNAME"))
-        toy_game_set_player_name(&session->game_state,
-                                 get_env_var(global_envp, "HOSTNAME"));
+        toy_game_set_actor_name(
+            toy_game_local_player_actor(&session->game_state),
+            get_env_var(global_envp, "HOSTNAME"));
     toy_game_set_primitives(&session->game_state, session->level.primitives,
                             session->level.primitive_count,
                             session->level.room_limit);
@@ -340,9 +341,11 @@ void rasterfall_session_reset(struct rasterfall_session *session,
     }
     toy_game_local_player_actor(&session->game_state)->x = camera->x;
     toy_game_local_player_actor(&session->game_state)->z = camera->z;
-    toy_game_set_player_pitch(&session->game_state, camera->pitch_sy,
-                              camera->pitch_cy, camera->y);
-    toy_game_mirror_player_from_actor(&session->game_state);
+    toy_game_local_player_actor(&session->game_state)->pitch_sy =
+        camera->pitch_sy;
+    toy_game_local_player_actor(&session->game_state)->pitch_cy =
+        camera->pitch_cy;
+    toy_game_local_player_actor(&session->game_state)->view_y = camera->y;
     rasterfall_camera_set_body(camera,
                                session->game_state.actors[0].x,
                                session->game_state.actors[0].z);
@@ -622,7 +625,8 @@ int rasterfall_session_paid_revive(struct rasterfall_session *session,
         game->money < RASTERFALL_PAID_REVIVE_COST)
         return 0;
     game->money -= RASTERFALL_PAID_REVIVE_COST;
-    toy_game_clear_player_special_control(game, 0);
+    toy_game_clear_actor_special_control(
+        toy_game_local_player_actor(game), 0);
     player->state = TOY_GAME_ACTOR_ALIVE;
     player->hp = TOY_GAME_REVIVE_HP;
     player->revive_progress_ms = 0;
@@ -637,7 +641,6 @@ int rasterfall_session_paid_revive(struct rasterfall_session *session,
     player->x = camera->x;
     player->z = camera->z;
     toy_game_actor_set_animation(player, TOY_GAME_ANIM_REVIVE);
-    toy_game_mirror_player_from_actor(game);
     toy_game_emit_event(game, TOY_GAME_EV_REVIVE);
     toy_game_emit_event(game, TOY_GAME_EV_ACTOR_REVIVE);
     session->banner_ms = 1800;
@@ -1573,7 +1576,8 @@ int rasterfall_session_recover_managed_player(
         player->knockback_x = 0;
         player->knockback_z = 0;
     }
-    toy_game_clear_player_special_control(&session->game_state, 0);
+    toy_game_clear_actor_special_control(
+        toy_game_local_player_actor(&session->game_state), 0);
     session->managed_ai_escape_phase = -1;
     session->managed_ai_route_phase = 5;
     session->managed_ai_target_index = -1;
@@ -2174,8 +2178,6 @@ void rasterfall_session_step(struct rasterfall_session *session,
 {
     unsigned char keys[TOY_GAME_KEY_RELOAD + 1];
     struct rasterfall_command managed_command;
-    /* Enter the legacy rule implementation through the local actor mirror. */
-    toy_game_mirror_player_from_actor(&session->game_state);
     if (command->buttons & RASTERFALL_CMD_RESET) {
         rasterfall_session_reset(session, camera, session->seed);
         return;
@@ -2400,7 +2402,6 @@ static void session_step_client_mode(struct rasterfall_session *session,
     int saved_ray_count = local_player->ray_count;
     saved_throw_timer = local_player->throw_timer_ms;
     unsigned int saved_fire_seq = local_player->fire_seq;
-    toy_game_mirror_player_from_actor(&session->game_state);
     memcpy(saved_rays, local_player->rays, sizeof(saved_rays));
     if (command->buttons & RASTERFALL_CMD_RESET) {
         rasterfall_session_reset(session, camera, session->seed);
@@ -2601,9 +2602,6 @@ static void session_step_client_mode(struct rasterfall_session *session,
         local_player->ray_count = saved_ray_count;
         memcpy(local_player->rays, saved_rays, sizeof(saved_rays));
     }
-    /* Prediction owns the local actor.  Keep the old player fields as a
-     * compatibility mirror; never let them overwrite the predicted state. */
-    toy_game_mirror_player_from_actor(&session->game_state);
 }
 
 void rasterfall_session_step_client(struct rasterfall_session *session,

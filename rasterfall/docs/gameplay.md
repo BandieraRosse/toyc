@@ -1,7 +1,7 @@
 # 玩法、会话、地图与 AI
 
 > 文档更新：2026-09-06
-> 源码核对基线：工作区（本地玩家移动/跳跃/airborne/水平朝向/武器/库存/切枪/reload/动画/special-control/shove 及世界规则由 `actors[0]` 直接驱动；玩家俯仰保存在独立的 `pitch_sy/pitch_cy`，不会覆盖 actor 水平朝向；装备、切枪、补给、购买和药丸使用入口均显式操作 actor inventory；生成距离、安全室/战役目标、敌人近战/Tank 受击、爆炸目标、特感索敌、投掷物、hitscan 开火和 update_held 武器推进已按 actor 规则处理；legacy 仅作为镜像和少量公开兼容入口，不再作为正式世界规则源；AI 从槽位 1 起分配；投射物/燃烧区携带 actor owner）
+> 源码核对基线：工作区（本地玩家移动/跳跃/airborne/水平朝向/武器/库存/切枪/reload/动画/special-control/shove 及世界规则由 `actors[0]` 直接驱动；玩家俯仰保存在独立的 `pitch_sy/pitch_cy`，不会覆盖 actor 水平朝向；测试、session、网络和 `update_held` 正式路径均直接使用 actor API；装备、切枪、补给、购买和药丸使用入口均显式操作 actor inventory；生成距离、安全室/战役目标、敌人近战/Tank 受击、爆炸目标、特感索敌、投掷物和 hitscan 开火已按 actor 规则处理；legacy 仅作为镜像、初始化和未调用的公开兼容入口，不再作为正式世界规则源；AI 从槽位 1 起分配；投射物/燃烧区携带 actor owner）
 
 ## 三层职责
 

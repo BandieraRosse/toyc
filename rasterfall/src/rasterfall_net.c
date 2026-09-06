@@ -325,9 +325,9 @@ static void net_apply_remote_special_events(struct rasterfall_net *net,
             &net->remote_event_data[i];
         if (event->target_id != net->local_player_id) continue;
         if (event->type == RASTERFALL_NET_EVENT_PLAYER_IMPULSE) {
-            toy_game_apply_player_impulse(game, event->x, event->z,
-                                          event->value, event->value2,
-                                          event->value3);
+            toy_game_apply_actor_impulse(
+                toy_game_local_player_actor(game), event->x, event->z,
+                event->value, event->value2, event->value3);
         } else if (event->type ==
                    RASTERFALL_NET_EVENT_PLAYER_CONTROL_START) {
             const struct toy_game_actor *actor =
@@ -3194,7 +3194,6 @@ static void net_finish_rescue(struct rasterfall_net *net,
         player->hp = TOY_GAME_REVIVE_HP;
         player->revive_progress_ms = 0;
         toy_game_actor_set_animation(player, TOY_GAME_ANIM_REVIVE);
-        toy_game_mirror_player_from_actor(&session->game_state);
     } else for (i = 0; i < RASTERFALL_NET_CLIENT_MAX; i++) {
         struct rasterfall_net_client *target = &net->clients[i];
         struct toy_game_actor *actor;
@@ -3318,7 +3317,6 @@ static void net_apply_extra_rescue_actions(struct rasterfall_net *net,
                     toy_game_local_player_actor(&session->game_state);
                 player->revive_progress_ms =
                     rescuer->local_revive_progress_ms;
-                toy_game_mirror_player_from_actor(&session->game_state);
             }
             else if (target_id > 0 &&
                      target_id <= RASTERFALL_NET_CLIENT_MAX)
@@ -4024,7 +4022,8 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
     (void)camera;
     if (net->mode != RASTERFALL_NET_CLIENT) return;
     if (!net->connected && session)
-        toy_game_clear_player_special_control(&session->game_state, 0);
+        toy_game_clear_actor_special_control(
+            toy_game_local_player_actor(&session->game_state), 0);
     net_apply_remote_special_events(net, session);
     if (!net->snapshot_ready) {
         net_smooth_client_enemies(net, session);
@@ -4147,7 +4146,6 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
          * authoritatively so purchases and uses both reach the client. */
         toy_game_local_player_actor(&session->game_state)->throw_timer_ms =
             own->throw_timer_ms;
-        toy_game_mirror_player_from_actor(&session->game_state);
         session->game_state.wave = net->snapshot_world_wave;
         session->game_state.to_spawn = net->snapshot_world_to_spawn;
         session->game_state.spawn_timer_ms = net->snapshot_world_spawn_timer_ms;

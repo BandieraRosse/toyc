@@ -705,7 +705,8 @@ void toy_game_init(struct toy_game *g, uint64_t seed)
     g->wave_attack_multiplier = 1;
     g->actor_id = 0;
     g->actor_kind = TOY_GAME_ACTOR_PLAYER;
-    toy_game_set_player_name(g, "PLAYER");
+    toy_game_set_actor_name(&g->actors[TOY_GAME_PLAYER_ACTOR_INDEX],
+                            "PLAYER");
     toy_game_mirror_actor_from_player(g);
     memcpy(g->actors[TOY_GAME_PLAYER_ACTOR_INDEX].name, g->player_name,
            sizeof(g->actors[TOY_GAME_PLAYER_ACTOR_INDEX].name));
@@ -731,7 +732,12 @@ void toy_game_set_player_name(struct toy_game *g, const char *name)
 {
     if (!g) return;
     copy_name(g->player_name, name);
-    copy_name(toy_game_local_player_actor(g)->name, name);
+    toy_game_set_actor_name(toy_game_local_player_actor(g), name);
+}
+
+void toy_game_set_actor_name(struct toy_game_actor *actor, const char *name)
+{
+    if (actor) copy_name(actor->name, name);
 }
 
 int toy_game_ai_observe(const struct toy_game *g, int actor_index,
@@ -1244,13 +1250,12 @@ int toy_game_position_blocked_at_height(const struct toy_game *g,
     return position_blocked_at_height(g, x, z, radius, ground_height, 1);
 }
 
-int toy_game_try_move_player(struct toy_game *g, int x, int z)
+int toy_game_try_move_actor(struct toy_game *g, struct toy_game_actor *actor,
+                            int x, int z)
 {
     struct toy_game_ground_query ground;
-    struct toy_game_actor *actor;
     int candidate_ground_y, current_ground_y;
     if (!g) return 0;
-    actor = toy_game_local_player_actor(g);
     if (!actor || !actor->active || actor->airborne_ms > 0) return 0;
     current_ground_y = actor->ground_y;
     ground = toy_game_query_ground(g, x, z, TOY_GAME_PLAYER_RADIUS,
@@ -1288,13 +1293,23 @@ int toy_game_try_move_player(struct toy_game *g, int x, int z)
         actor->air_x = 0;
         actor->air_z = 0;
     }
+    return 1;
+}
+
+int toy_game_try_move_player(struct toy_game *g, int x, int z)
+{
+    struct toy_game_actor *actor;
+    if (!g) return 0;
+    toy_game_mirror_actor_from_player(g);
+    actor = toy_game_local_player_actor(g);
+    if (!toy_game_try_move_actor(g, actor, x, z)) return 0;
     toy_game_mirror_player_from_actor(g);
     return 1;
 }
 
-static int probe_player_move(struct toy_game *g, int x, int z)
+static int probe_actor_move(struct toy_game *g, struct toy_game_actor *actor,
+                            int x, int z)
 {
-    struct toy_game_actor *actor = toy_game_local_player_actor(g);
     int px, pz, ground_y, airborne_y, airborne_ms, vertical_velocity;
     int air_x, air_z, result;
     px = actor->x; pz = actor->z;
@@ -1303,7 +1318,7 @@ static int probe_player_move(struct toy_game *g, int x, int z)
     airborne_ms = actor->airborne_ms;
     vertical_velocity = actor->vertical_velocity;
     air_x = actor->air_x; air_z = actor->air_z;
-    result = toy_game_try_move_player(g, x, z);
+    result = toy_game_try_move_actor(g, actor, x, z);
     actor->x = px; actor->z = pz;
     actor->ground_y = ground_y;
     actor->airborne_y = airborne_y;
@@ -1313,22 +1328,22 @@ static int probe_player_move(struct toy_game *g, int x, int z)
     return result;
 }
 
-int toy_game_move_player_sliding(struct toy_game *g, int dx, int dz)
+int toy_game_move_actor_sliding(struct toy_game *g,
+                                struct toy_game_actor *actor,
+                                int dx, int dz)
 {
-    struct toy_game_actor *actor;
     int start_x, start_z, blocks_x, blocks_z, abs_x, abs_z;
-    if (!g) return 0;
-    actor = toy_game_local_player_actor(g);
+    if (!g || !actor) return 0;
     if (!actor || actor->airborne_ms > 0) return 0;
     start_x = actor->x;
     start_z = actor->z;
-    if (toy_game_try_move_player(g, start_x + dx, start_z + dz)) return 1;
+    if (toy_game_try_move_actor(g, actor, start_x + dx, start_z + dz)) return 1;
 
     /* Axis probes identify the normal components of the blocking surface.
      * Removing those components leaves motion tangent to an axis-aligned box
      * or platform edge while preserving the existing circular footprint. */
-    blocks_x = dx && !probe_player_move(g, start_x + dx, start_z);
-    blocks_z = dz && !probe_player_move(g, start_x, start_z + dz);
+    blocks_x = dx && !probe_actor_move(g, actor, start_x + dx, start_z);
+    blocks_z = dz && !probe_actor_move(g, actor, start_x, start_z + dz);
     if (!blocks_x && !blocks_z) {
         /* A diagonal circle-versus-corner contact may block only the combined
          * move.  Treat the dominant approach axis as the contact normal. */
@@ -1340,7 +1355,18 @@ int toy_game_move_player_sliding(struct toy_game *g, int dx, int dz)
     if (blocks_x) dx = 0;
     if (blocks_z) dz = 0;
     if (!dx && !dz) return 0;
-    return toy_game_try_move_player(g, start_x + dx, start_z + dz);
+    return toy_game_try_move_actor(g, actor, start_x + dx, start_z + dz);
+}
+
+int toy_game_move_player_sliding(struct toy_game *g, int dx, int dz)
+{
+    struct toy_game_actor *actor;
+    if (!g) return 0;
+    toy_game_mirror_actor_from_player(g);
+    actor = toy_game_local_player_actor(g);
+    if (!toy_game_move_actor_sliding(g, actor, dx, dz)) return 0;
+    toy_game_mirror_player_from_actor(g);
+    return 1;
 }
 
 void toy_game_update_player_ground(struct toy_game *g)
@@ -1376,7 +1402,6 @@ void toy_game_update_player_ground(struct toy_game *g)
         return;
     }
     actor->ground_y = next_ground;
-    toy_game_mirror_player_from_actor(g);
 }
 
 int toy_game_point_in_box(int x, int z, const struct toy_game_box *box)
@@ -2466,11 +2491,6 @@ static void bite_player(struct toy_game *g, struct toy_game_enemy *e)
         push_enemy_from_player(g, e, TOY_GAME_CHARGER_KNOCKBACK);
         player->knockback_cooldown_ms =
             TOY_GAME_PLAYER_KNOCKBACK_COOLDOWN_MS;
-        /* update_held is a legacy compatibility entry point and imports its
-         * input snapshot before each frame.  Publish this actor-owned timer
-         * so that import cannot erase the cooldown on the next frame. */
-        g->player_knockback_cooldown_ms =
-            TOY_GAME_PLAYER_KNOCKBACK_COOLDOWN_MS;
     }
     push_event(g, TOY_GAME_EV_BITE);
     if (player->state == TOY_GAME_ACTOR_DOWNED) {
@@ -2871,7 +2891,6 @@ void toy_game_set_player_special_control(struct toy_game *g, int type,
     a = toy_game_local_player_actor(g);
     toy_game_set_actor_special_control(a, type, control_id, source_enemy,
                                        pull_step);
-    toy_game_mirror_player_from_actor(g);
 }
 
 void toy_game_set_actor_special_control(struct toy_game_actor *actor, int type,
@@ -2909,7 +2928,6 @@ void toy_game_clear_player_special_control(struct toy_game *g,
     toy_game_mirror_actor_from_player(g);
     a = toy_game_local_player_actor(g);
     toy_game_clear_actor_special_control(a, control_id);
-    toy_game_mirror_player_from_actor(g);
 }
 
 void toy_game_update_player_special_control(struct toy_game *g, int dt_ms)
@@ -2926,10 +2944,19 @@ void toy_game_apply_player_impulse(struct toy_game *g, int impulse_x,
                                    int impulse_z, int vertical_velocity,
                                    int airborne_ms, int airborne_y)
 {
-    struct toy_game_actor *actor;
     if (!g) return;
     toy_game_mirror_actor_from_player(g);
-    actor = toy_game_local_player_actor(g);
+    toy_game_apply_actor_impulse(toy_game_local_player_actor(g), impulse_x,
+                                 impulse_z, vertical_velocity, airborne_ms,
+                                 airborne_y);
+    toy_game_mirror_player_from_actor(g);
+}
+
+void toy_game_apply_actor_impulse(struct toy_game_actor *actor,
+                                  int impulse_x, int impulse_z,
+                                  int vertical_velocity, int airborne_ms,
+                                  int airborne_y)
+{
     if (!actor || actor->state != TOY_GAME_ACTOR_ALIVE ||
         actor->knockback_cooldown_ms > 0) return;
     actor->airborne_ms = airborne_ms > 0 ? airborne_ms : TOY_GAME_AIRBORNE_MS;
@@ -2941,7 +2968,6 @@ void toy_game_apply_player_impulse(struct toy_game *g, int impulse_x,
     actor->knockback_z = impulse_z;
     actor->knockback_cooldown_ms = TOY_GAME_PLAYER_KNOCKBACK_COOLDOWN_MS;
     actor->control_disabled = 1;
-    toy_game_mirror_player_from_actor(g);
 }
 
 static void move_enemy_forced(struct toy_game *g, struct toy_game_enemy *e,
@@ -3440,7 +3466,6 @@ static void update_smoker(struct toy_game *g, struct toy_game_enemy *e,
                         a->state = TOY_GAME_ACTOR_DOWNED;
                         a->revive_progress_ms = 0;
                     }
-                    toy_game_mirror_player_from_actor(g);
                 }
             } else if (target_kind == 1 && target_index >= 0 &&
                        target_index < TOY_GAME_MAX_ACTORS) {
@@ -3461,7 +3486,6 @@ static void update_smoker(struct toy_game *g, struct toy_game_enemy *e,
             if (target_kind == 0) {
                 struct toy_game_actor *a = toy_game_local_player_actor(g);
                 move_actor_forced(g, a, mx, mz);
-                toy_game_mirror_player_from_actor(g);
             }
             else if (target_kind == 1 && target_index >= 0 &&
                      target_index < TOY_GAME_MAX_ACTORS)
@@ -3494,7 +3518,6 @@ static void update_smoker(struct toy_game *g, struct toy_game_enemy *e,
                     toy_game_local_player_actor(g),
                     TOY_GAME_SPECIAL_CONTROL_SMOKER, 0, index,
                     TOY_GAME_SMOKER_PULL_STEP);
-                toy_game_mirror_player_from_actor(g);
             } else if (e->ability.special_target_index >= 0 &&
                        e->ability.special_target_index < TOY_GAME_MAX_ACTORS)
                 toy_game_set_actor_special_control(
@@ -3576,8 +3599,6 @@ static int apply_entity_impact_with_knockback(struct toy_game *g, int kind,
                                           a->airborne_y);
             }
         }
-        if (index == TOY_GAME_PLAYER_ACTOR_INDEX)
-            toy_game_mirror_player_from_actor(g);
         return 1;
     }
     if (kind == TOY_GAME_ENTITY_ENEMY) {
@@ -4097,21 +4118,20 @@ int toy_game_apply_reported_hit(struct toy_game *g,
 {
     struct toy_game_enemy *e;
     int inflicted;
-    if (!g || enemy_index < 0 || enemy_index >= TOY_GAME_MAX_ENEMIES ||
-        damage <= 0) return 0;
+    if (!g || !actor || enemy_index < 0 ||
+        enemy_index >= TOY_GAME_MAX_ENEMIES || damage <= 0) return 0;
     e = &g->enemies[enemy_index];
     if (e->active != 1) return 0;
     inflicted = damage < e->hp ? damage : e->hp;
     e->hp -= damage;
-    if (actor) actor->damage_dealt += inflicted;
-    else g->damage_dealt += inflicted;
+    actor->damage_dealt += inflicted;
     if (e->hp > 0) {
         e->hurt = 150;
         return 1;
     }
     e->hp = 0; e->active = 2; e->dying_ms = TOY_GAME_DYING_MS;
     e->flash = 120; g->enemies_alive--;
-    if (actor) actor->kills++; else g->kills++;
+    actor->kills++;
     if (e->type == TOY_GAME_ENEMY_TANK) g->money += TOY_CONFIG_MONEY_TANK;
     else if (e->type == TOY_GAME_ENEMY_SMOKER ||
              e->type == TOY_GAME_ENEMY_CHARGER)
@@ -4122,7 +4142,7 @@ int toy_game_apply_reported_hit(struct toy_game *g,
         g->money += TOY_CONFIG_MONEY_FAST;
     else g->money += TOY_CONFIG_MONEY_COMMON;
     if (toy_game_enemy_info(e->type)->ability != TOY_GAME_ENEMY_ABILITY_NONE) {
-        if (actor) actor->special_kills++; else g->special_kills++;
+        actor->special_kills++;
     }
     if (toy_game_local_player_actor_const(g)->special_source == enemy_index)
         release_player_special(g);
@@ -4377,8 +4397,11 @@ static void toy_game_add_throwable_stats(struct toy_game *g,
         owner->throwable_damage_dealt += damage;
         if (kill) owner->kills++;
     } else {
-        g->throwable_damage_dealt += damage;
-        if (kill) g->kills++;
+        owner = toy_game_local_player_actor(g);
+        if (owner) {
+            owner->throwable_damage_dealt += damage;
+            if (kill) owner->kills++;
+        }
     }
 }
 
@@ -4613,7 +4636,6 @@ static int toy_game_throw(struct toy_game *g, int sy, int cy)
     thrown = toy_game_actor_throwable(g, player, sy, cy,
                                       player->pitch_sy, player->pitch_cy,
                                       player->view_y);
-    toy_game_mirror_player_from_actor(g);
     return thrown;
 }
 
@@ -4675,7 +4697,6 @@ int toy_game_fire(struct toy_game *g, int sy, int cy)
         if (player->reloading)
             player->reload_timer_ms = toy_game_reload_ms(weapon);
     }
-    toy_game_mirror_player_from_actor(g);
     return fired;
 }
 
@@ -4699,19 +4720,6 @@ void toy_game_set_player_pitch(struct toy_game *g, int pitch_sy, int pitch_cy,
     player->pitch_sy = pitch_sy;
     player->pitch_cy = pitch_cy > 0 ? pitch_cy : 1;
     player->view_y = view_y;
-}
-
-static int toy_game_start_empty_reload(
-    struct toy_game *g, struct toy_game_slot *s,
-    const struct toy_game_weapon_info *w)
-{
-    if (!g || !s || !w || g->reloading || s->mag > 0 ||
-        (s->reserve != TOY_GAME_AMMO_INFINITE && s->reserve <= 0))
-        return 0;
-    g->reloading = 1;
-    g->reload_timer_ms = toy_game_reload_ms(w);
-    push_event(g, TOY_GAME_EV_RELOAD_START);
-    return 1;
 }
 
 static int toy_game_equip_actor_weapon(struct toy_game *g,
@@ -5012,7 +5020,6 @@ void toy_game_update_weapon_held(struct toy_game *g,
     if (!actor) return;
     toy_game_update_actor_weapon_held(g, actor, keys_pressed, fire_pressed,
                                       fire_held, sy, cy, dt_ms, 100);
-    toy_game_mirror_player_from_actor(g);
 }
 
 static int toy_game_switch_actor_weapon(struct toy_game_actor *actor, int slot)
@@ -5506,7 +5513,6 @@ void toy_game_update_held(struct toy_game *g,
                      toy_game_animation_info(TOY_GAME_ANIM_THROW)->duration_ms))
                     toy_game_actor_set_animation(player, TOY_GAME_ANIM_NONE);
     toy_game_actor_update_animation(player, dt_ms);
-    toy_game_mirror_player_from_actor(g);
     toy_game_update_projectiles(g, dt_ms);
     toy_game_update_burn_zones(g, dt_ms);
     toy_game_update_ai_teammates(g, dt_ms);
@@ -5547,7 +5553,6 @@ void toy_game_update_held(struct toy_game *g,
     update_base_core(g, dt_ms);
     if (g->campaign_mode) update_campaign(g, dt_ms);
     else update_waves(g, dt_ms);
-    toy_game_mirror_actor_from_player(g);
 }
 
 void toy_game_update_world(struct toy_game *g, int dt_ms)
@@ -5595,7 +5600,6 @@ void toy_game_update_world(struct toy_game *g, int dt_ms)
     update_base_core(g, dt_ms);
     if (g->campaign_mode) update_campaign(g, dt_ms);
     else update_waves(g, dt_ms);
-    toy_game_mirror_player_from_actor(g);
 }
 
 /* 半自动兼容入口：无按住连发（历史测试/宿主行为不变） */

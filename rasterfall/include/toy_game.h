@@ -720,6 +720,7 @@ void toy_game_mirror_actor_from_player(struct toy_game *g);
 void toy_game_init(struct toy_game *g, uint64_t seed);      /* 初始化/重开共用 */
 void toy_game_emit_event(struct toy_game *g, int event);
 void toy_game_set_player_name(struct toy_game *g, const char *name);
+void toy_game_set_actor_name(struct toy_game_actor *actor, const char *name);
 int  toy_game_ai_observe(const struct toy_game *g, int actor_index,
                          struct toy_game_ai_observation *out);
 void toy_game_ai_decision_clear(struct toy_game_ai_decision *decision);
@@ -767,6 +768,10 @@ void toy_game_update_actor_special_control(struct toy_game *g,
 void toy_game_apply_player_impulse(struct toy_game *g, int impulse_x,
                                    int impulse_z, int vertical_velocity,
                                    int airborne_ms, int airborne_y);
+void toy_game_apply_actor_impulse(struct toy_game_actor *actor,
+                                  int impulse_x, int impulse_z,
+                                  int vertical_velocity, int airborne_ms,
+                                  int airborne_y);
 /* 对指定实体施加统一的伤害、打断和击飞规则。dx/dz 是相对冲击方向。 */
 int  toy_game_apply_entity_impact(struct toy_game *g, int kind, int index,
                                   int dx, int dz, int damage);
@@ -781,6 +786,11 @@ int  toy_game_position_blocked_at_height(const struct toy_game *g,
                                          int ground_height);
 int  toy_game_try_move_player(struct toy_game *g, int x, int z);
 int  toy_game_move_player_sliding(struct toy_game *g, int dx, int dz);
+int  toy_game_try_move_actor(struct toy_game *g, struct toy_game_actor *actor,
+                             int x, int z);
+int  toy_game_move_actor_sliding(struct toy_game *g,
+                                 struct toy_game_actor *actor,
+                                 int dx, int dz);
 void toy_game_update_player_ground(struct toy_game *g);
 void toy_game_set_campaign(struct toy_game *g,
                            const struct toy_game_box *safe_rooms,
