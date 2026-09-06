@@ -399,6 +399,21 @@ void toy_game_mirror_actor_from_player(struct toy_game *g)
     memcpy(a->name, g->player_name, sizeof(a->name));
 }
 
+/* Legacy wrappers may receive direct px/pz edits from old hosts.  In an
+ * actor-driven session the actor can already have moved earlier in this
+ * tick, so importing stale legacy state would roll the player back. */
+static struct toy_game_actor *toy_game_prepare_local_actor(
+    struct toy_game *g)
+{
+    struct toy_game_actor *actor;
+    if (!g) return NULL;
+    actor = toy_game_local_player_actor(g);
+    if (!actor) return NULL;
+    if (!actor->active || (actor->x == g->px && actor->z == g->pz))
+        toy_game_mirror_actor_from_player(g);
+    return actor;
+}
+
 const struct toy_game_actor *toy_game_actor_by_id_const(const struct toy_game *g,
                                                         int actor_id)
 {
@@ -4622,8 +4637,7 @@ int toy_game_switch_weapon(struct toy_game *g, int slot)
     struct toy_game_actor *actor;
     struct toy_game_slot *s;
     if (!g || slot < 0 || slot >= TOY_GAME_WEAPON_SLOTS) return 0;
-    toy_game_mirror_actor_from_player(g);
-    actor = toy_game_local_player_actor(g);
+    actor = toy_game_prepare_local_actor(g);
     s = &actor->slots[slot];
     if (slot == actor->current_slot || s->weapon < 0) return 0;
     if (slot == 2 &&
@@ -4703,8 +4717,7 @@ int toy_game_equip_weapon(struct toy_game *g, int weapon)
     struct toy_game_actor *actor;
     int result;
     if (!g) return -1;
-    toy_game_mirror_actor_from_player(g);
-    actor = toy_game_local_player_actor(g);
+    actor = toy_game_prepare_local_actor(g);
     result = toy_game_equip_actor_weapon(g, actor, weapon);
     toy_game_mirror_player_from_actor(g);
     return result;
@@ -4888,8 +4901,7 @@ int toy_game_buy_weapon(struct toy_game *g, int weapon)
         if (!consumable) return toy_game_equip_weapon(g, weapon);
         if (g->money < price) return 0;
         struct toy_game_actor *actor;
-        toy_game_mirror_actor_from_player(g);
-        actor = toy_game_local_player_actor(g);
+        actor = toy_game_prepare_local_actor(g);
         if ((weapon == TOY_GAME_WEAPON_PILL && actor->slots[3].mag >= TOY_GAME_PILL_MAX) ||
             ((weapon == TOY_GAME_WEAPON_BOMB || weapon == TOY_GAME_WEAPON_MOLOTOV) &&
              actor->slots[2].mag >= TOY_GAME_THROWABLE_MAX)) return -1;
@@ -4909,8 +4921,7 @@ int toy_game_refill_ammo(struct toy_game *g)
     struct toy_game_actor *actor;
     int i, changed = 0;
     if (!g) return 0;
-    toy_game_mirror_actor_from_player(g);
-    actor = toy_game_local_player_actor(g);
+    actor = toy_game_prepare_local_actor(g);
     for (i = 0; i < TOY_GAME_WEAPON_SLOTS; i++) {
         struct toy_game_slot *s = &actor->slots[i];
         const struct toy_game_weapon_info *w;
