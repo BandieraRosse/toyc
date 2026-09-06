@@ -29,6 +29,7 @@ static int apply_entity_impact_with_knockback(struct toy_game *g, int kind,
 static int toy_game_fire_actor(struct toy_game *g,
                                struct toy_game_actor *actor,
                                int sy, int cy, int spread_percent);
+static int toy_game_switch_actor_weapon(struct toy_game_actor *actor, int slot);
 
 /* ── PRNG：xorshift64* ──────────────────────────────────────────── */
 
@@ -4618,19 +4619,20 @@ int toy_game_fire(struct toy_game *g, int sy, int cy)
 /* 切枪：只允许切到有武器的槽位；换弹被打断 */
 int toy_game_switch_weapon(struct toy_game *g, int slot)
 {
-    if (slot < 0 || slot >= TOY_GAME_WEAPON_SLOTS) return 0;
-    if (slot == g->current_slot || g->slots[slot].weapon < 0) return 0;
+    struct toy_game_actor *actor;
+    struct toy_game_slot *s;
+    if (!g || slot < 0 || slot >= TOY_GAME_WEAPON_SLOTS) return 0;
+    toy_game_mirror_actor_from_player(g);
+    actor = toy_game_local_player_actor(g);
+    s = &actor->slots[slot];
+    if (slot == actor->current_slot || s->weapon < 0) return 0;
     if (slot == 2 &&
-        ((g->slots[slot].weapon != TOY_GAME_WEAPON_BOMB &&
-          g->slots[slot].weapon != TOY_GAME_WEAPON_MOLOTOV) ||
-         g->slots[slot].mag <= 0)) return 0;
-    if (slot == 3 && (g->slots[slot].weapon != TOY_GAME_WEAPON_PILL ||
-                      g->slots[slot].mag <= 0)) return 0;
-    g->current_slot = slot;
-    g->weapon_switch_timer_ms = TOY_CONFIG_WEAPON_SWITCH_MS;
-    g->reloading = 0;
-    g->reload_timer_ms = 0;
+        ((s->weapon != TOY_GAME_WEAPON_BOMB &&
+          s->weapon != TOY_GAME_WEAPON_MOLOTOV) || s->mag <= 0)) return 0;
+    if (slot == 3 && (s->weapon != TOY_GAME_WEAPON_PILL || s->mag <= 0)) return 0;
+    if (!toy_game_switch_actor_weapon(actor, slot)) return 0;
     push_event(g, TOY_GAME_EV_WEAPON_SWITCH);
+    toy_game_mirror_player_from_actor(g);
     return 1;
 }
 
@@ -4885,9 +4887,12 @@ int toy_game_buy_weapon(struct toy_game *g, int weapon)
     {
         if (!consumable) return toy_game_equip_weapon(g, weapon);
         if (g->money < price) return 0;
-        if ((weapon == TOY_GAME_WEAPON_PILL && g->slots[3].mag >= TOY_GAME_PILL_MAX) ||
+        struct toy_game_actor *actor;
+        toy_game_mirror_actor_from_player(g);
+        actor = toy_game_local_player_actor(g);
+        if ((weapon == TOY_GAME_WEAPON_PILL && actor->slots[3].mag >= TOY_GAME_PILL_MAX) ||
             ((weapon == TOY_GAME_WEAPON_BOMB || weapon == TOY_GAME_WEAPON_MOLOTOV) &&
-             g->slots[2].mag >= TOY_GAME_THROWABLE_MAX)) return -1;
+             actor->slots[2].mag >= TOY_GAME_THROWABLE_MAX)) return -1;
         g->money -= price;
         toy_game_equip_weapon(g, weapon);
         return 1;
@@ -4901,9 +4906,13 @@ int toy_game_buy_weapon(struct toy_game *g, int weapon)
 /* 弹药盒：补满已拥有武器的备弹（手枪无限备弹跳过），有变化返回 1 */
 int toy_game_refill_ammo(struct toy_game *g)
 {
+    struct toy_game_actor *actor;
     int i, changed = 0;
+    if (!g) return 0;
+    toy_game_mirror_actor_from_player(g);
+    actor = toy_game_local_player_actor(g);
     for (i = 0; i < TOY_GAME_WEAPON_SLOTS; i++) {
-        struct toy_game_slot *s = &g->slots[i];
+        struct toy_game_slot *s = &actor->slots[i];
         const struct toy_game_weapon_info *w;
         if (s->weapon < 0) continue;
         w = toy_game_weapon_info(s->weapon);
@@ -4913,6 +4922,7 @@ int toy_game_refill_ammo(struct toy_game *g)
             changed = 1;
         }
     }
+    toy_game_mirror_player_from_actor(g);
     return changed;
 }
 
