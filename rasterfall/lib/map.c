@@ -89,10 +89,53 @@ static struct toy_map_primitive *add_primitive(struct toy_map *m, int shape,
     return p;
 }
 
+/* Commit a prop and its optional gameplay primitive as one operation.  The
+ * instance is not visible to the renderer until its collision primitive (when
+ * requested) has been admitted. */
+static int add_prop(struct toy_map *m, int asset_id, int x, int z,
+                    int yaw_degrees, int scale_milli, int collision)
+{
+    const struct rasterfall_prop_asset_profile *profile;
+    struct rasterfall_prop_dimensions dimensions;
+    struct toy_map_prop prop;
+    struct toy_map_primitive *box;
+
+    if (!m || m->prop_count >= TOY_MAP_MAX_PROPS || scale_milli <= 0)
+        return -1;
+    profile = rasterfall_prop_asset_profile(asset_id);
+    if (!profile) return -1;
+    if (collision) {
+        if (m->primitive_count >= TOY_MAP_MAX_PRIMITIVES ||
+            rasterfall_prop_collision_dimensions(profile, yaw_degrees,
+                                                 scale_milli,
+                                                 &dimensions) < 0)
+            return -1;
+        box = add_primitive(m, TOY_MAP_PRIMITIVE_BOX,
+                            x - dimensions.x / 2,
+                            x + (dimensions.x + 1) / 2,
+                            z - dimensions.z / 2,
+                            z + (dimensions.z + 1) / 2,
+                            0, dimensions.y, dimensions.y,
+                            TOY_MAP_PRIMITIVE_COLLISION |
+                            TOY_MAP_PRIMITIVE_WALKABLE, 0);
+        if (!box) return -1;
+    }
+    prop.asset_id = asset_id;
+    prop.x = x;
+    prop.z = z;
+    prop.yaw_degrees = yaw_degrees;
+    prop.scale_milli = scale_milli;
+    m->props[m->prop_count++] = prop;
+    return 0;
+}
+
 int toy_map_load(const char *path, struct toy_map *m)
 {
     uint32_t size; unsigned char *data; char *line, *save, *kind;
     if (!m || !path) return -1;
+    /* Loading replaces the owned text blob.  Release the previous one before
+     * clearing the map so repeated load calls are safe. */
+    if (m->blob) tlibc_free(m->blob);
     memset(m,0,sizeof(*m));
     m->start_safe_index = -1;
     m->goal_safe_index = -1;
@@ -174,37 +217,15 @@ int toy_map_load(const char *path, struct toy_map *m)
             char *syaw=word(&p), *sscale=word(&p);
             char *option;
             int asset_id;
-            const struct rasterfall_prop_asset_profile *profile;
-            struct rasterfall_prop_dimensions dimensions;
-            struct toy_map_prop *prop;
             int collision = 1;
             if (!asset || !sx || !sz || !syaw || !sscale) continue;
             asset_id = prop_asset_id(asset);
             if (!asset_id || number(sscale, 10) <= 0) continue;
             while ((option = word(&p)) != NULL)
                 if (!strcmp(option, "collision=none")) collision = 0;
-            prop = &m->props[m->prop_count++];
-            prop->asset_id = asset_id;
-            prop->x = number(sx, 10);
-            prop->z = number(sz, 10);
-            prop->yaw_degrees = number(syaw, 10);
-            prop->scale_milli = number(sscale, 10);
-            profile = rasterfall_prop_asset_profile(asset_id);
-            if (collision && profile && m->primitive_count < TOY_MAP_MAX_PRIMITIVES &&
-                rasterfall_prop_collision_dimensions(profile, prop->yaw_degrees,
-                                                     prop->scale_milli,
-                                                     &dimensions) == 0) {
-                struct toy_map_primitive *box = add_primitive(
-                    m, TOY_MAP_PRIMITIVE_BOX,
-                    prop->x - dimensions.x / 2,
-                    prop->x + (dimensions.x + 1) / 2,
-                    prop->z - dimensions.z / 2,
-                    prop->z + (dimensions.z + 1) / 2,
-                    0, dimensions.y, dimensions.y,
-                    TOY_MAP_PRIMITIVE_COLLISION |
-                    TOY_MAP_PRIMITIVE_WALKABLE, 0);
-                (void)box;
-            }
+            if (add_prop(m, asset_id, number(sx, 10), number(sz, 10),
+                         number(syaw, 10), number(sscale, 10), collision) < 0)
+                continue;
         }
         else if(!strcmp(kind,"spawn") && get4(&p,&a,&b,&c,&d)==0 && m->spawn_count<TOY_MAP_MAX_ZONES){char *co=word(&p);m->spawn_zones[m->spawn_count].box.minx=a;m->spawn_zones[m->spawn_count].box.maxx=b;m->spawn_zones[m->spawn_count].box.minz=c;m->spawn_zones[m->spawn_count].box.maxz=d;m->spawn_zones[m->spawn_count].color=color(co);m->spawn_count++;}
         else if(!strcmp(kind,"alarm") && get4(&p,&a,&b,&c,&d)==0){char *zone=word(&p);m->alarm_zone.minx=a;m->alarm_zone.maxx=b;m->alarm_zone.minz=c;m->alarm_zone.maxz=d;m->has_alarm=1;if(zone)m->alarm_spawn_zone=number(zone,10);}
@@ -393,3 +414,36 @@ int toy_map_load(const char *path, struct toy_map *m)
     return 0;
 }
 void toy_map_unload(struct toy_map *m){if(m&&m->blob)tlibc_free(m->blob);if(m)memset(m,0,sizeof(*m));}
+
+int toy_map_prop_logic_test(void)
+{
+    struct toy_map m;
+    memset(&m, 0, sizeof(m));
+    m.primitive_count = TOY_MAP_MAX_PRIMITIVES;
+    if (add_prop(&m, RASTERFALL_PROP_ASSET_CRATE, 0, 0, 0, 1000, 1) == 0 ||
+        m.prop_count != 0 || m.primitive_count != TOY_MAP_MAX_PRIMITIVES)
+        return 1;
+    if (add_prop(&m, RASTERFALL_PROP_ASSET_CRATE, 0, 0, 45, 1000, 0) < 0 ||
+        m.prop_count != 1 || m.primitive_count != TOY_MAP_MAX_PRIMITIVES ||
+        m.props[0].asset_id != RASTERFALL_PROP_ASSET_CRATE)
+        return 2;
+    return 0;
+}
+
+int toy_map_lifecycle_logic_test(void)
+{
+    struct toy_map m;
+    int props, primitives;
+    memset(&m, 0, sizeof(m));
+    if (toy_map_load("rasterfall/assets/maps/rasterfall.map", &m) < 0)
+        return 1;
+    props = m.prop_count;
+    primitives = m.primitive_count;
+    if (toy_map_load("rasterfall/assets/maps/rasterfall.map", &m) < 0 ||
+        m.prop_count != props || m.primitive_count != primitives) {
+        toy_map_unload(&m);
+        return 2;
+    }
+    toy_map_unload(&m);
+    return 0;
+}

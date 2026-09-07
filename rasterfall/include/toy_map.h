@@ -123,5 +123,7 @@ struct toy_map {
 
 int toy_map_load(const char *path, struct toy_map *map);
 void toy_map_unload(struct toy_map *map);
+int toy_map_lifecycle_logic_test(void);
+int toy_map_prop_logic_test(void);
 
 #endif

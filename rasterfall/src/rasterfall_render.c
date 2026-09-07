@@ -938,7 +938,8 @@ static int gallery_model_visible(const struct toy_surface *surface,
                                  const struct camera *camera,
                                  const struct rasterfall_model_asset *model,
                                  int center_x, int base_y, int center_z,
-                                 int scale)
+                                 int scale, int facing, int gallery_sy,
+                                 int gallery_cy)
 {
     struct vec3 view[8];
     int xs[2], ys[2], zs[2], n = 0;
@@ -966,7 +967,20 @@ static int gallery_model_visible(const struct toy_surface *surface,
     }
     for (int xi = 0; xi < 2; xi++) for (int yi = 0; yi < 2; yi++)
         for (int zi = 0; zi < 2; zi++) {
-            struct vec3 world = {xs[xi], ys[yi], zs[zi]};
+            int local_x = model->min_x +
+                (xi ? model->max_x - model->min_x : 0);
+            int local_z = model->min_z +
+                (zi ? model->max_z - model->min_z : 0);
+            int world_x = xs[xi], world_z = zs[zi];
+            if (facing) {
+                world_x = center_x + (int)(((long long)local_x * gallery_cy +
+                                            (long long)local_z * gallery_sy) *
+                                           scale / (1024 * 1000));
+                world_z = center_z + (int)(((long long)local_z * gallery_cy -
+                                            (long long)local_x * gallery_sy) *
+                                           scale / (1024 * 1000));
+            }
+            struct vec3 world = {world_x, ys[yi], world_z};
             world_to_view(camera, &world, &view[n]);
             if (view[n].z < NEAR_Z) crosses_near = 1;
             if (view[n].z > max_z) max_z = view[n].z;
@@ -985,6 +999,30 @@ static int gallery_model_visible(const struct toy_surface *surface,
         if (yf >= -y_limit) all_below = 0;
     }
     return !(all_left || all_right || all_above || all_below);
+}
+
+int rasterfall_render_static_prop_culling_logic_test(void)
+{
+    struct rasterfall_model_asset model;
+    struct toy_renderer renderer;
+    struct camera camera;
+    int result;
+
+    memset(&model, 0, sizeof(model));
+    memset(&renderer, 0, sizeof(renderer));
+    memset(&camera, 0, sizeof(camera));
+    model.min_x = -232; model.max_x = 232;
+    model.min_y = 0; model.max_y = 232;
+    model.min_z = -232; model.max_z = 232;
+    renderer.surface.width = 640;
+    renderer.surface.height = 480;
+    camera.cy = 1024;
+    camera.pitch_cy = 1024;
+    /* At this position the unrotated box is just outside the right frustum,
+     * while its 45-degree rotated corners still cross the screen edge. */
+    result = gallery_model_visible(&renderer.surface, &camera, &model,
+                                   3600, 0, 5000, 1000, 1, 724, 724);
+    return result ? 0 : 1;
 }
 
 static int character_view_depth(const struct camera *camera, int x, int z)
@@ -1010,7 +1048,7 @@ static void select_near_original_model(const struct camera *camera,
             character_distance_policy(camera, (px), (pz), (owner_id), NULL) == \
                 RASTERFALL_CHARACTER_NEAR && \
             gallery_model_visible((surface), camera, (asset), (px), (py), \
-                                  (pz), (pscale))) { \
+                                  (pz), (pscale), 0, 0, 1024)) { \
             int candidate_depth = character_view_depth(camera, (px), (pz)); \
             if (candidate_depth >= 0 && candidate_depth < best_depth) { \
                 best_depth = candidate_depth; \
@@ -1279,7 +1317,9 @@ static int render_gallery_model_range(struct toy_renderer *renderer,
     if (prepare_vertices) {
         __sync_fetch_and_add(&scene_stats.models_tested, 1);
         if (!gallery_model_visible(&renderer->surface, camera, model, center_x,
-                                   base_y, center_z, scale)) {
+                                   base_y, center_z, scale,
+                                   active_gallery_facing, active_gallery_sy,
+                                   active_gallery_cy)) {
             __sync_fetch_and_add(&scene_stats.models_culled, 1);
             __sync_fetch_and_add(&scene_stats.model_triangles_culled,
                                  model->index_count / 3);
@@ -1869,7 +1909,8 @@ static int render_characters_parallel(struct toy_renderer *renderer,
         gallery_model_visible(dispatch.surface, camera,
             &private_character_model, -13000, -900, -10000,
             character_model_scale(&private_character_model,
-                                  eula_actor_profile.target_height_mm));
+                                  eula_actor_profile.target_height_mm),
+            0, 0, 1024);
     prepare_character_command_renderer(&private_character_commands,
         &private_character_frontend, &private_character_commands_initialized,
         dispatch.surface, dispatch.depth);
@@ -1884,7 +1925,8 @@ static int render_characters_parallel(struct toy_renderer *renderer,
                 &entry->frontend) != RASTERFALL_CHARACTER_HIDDEN &&
             gallery_model_visible(dispatch.surface, camera, &entry->model,
                 entry->x, entry->base_y, entry->z,
-                character_model_scale(&entry->model, entry->target_height_mm));
+                character_model_scale(&entry->model, entry->target_height_mm),
+                0, 0, 1024);
         prepare_character_command_renderer(&entry->commands, &entry->frontend,
             &entry->commands_initialized, dispatch.surface, dispatch.depth);
         entry->commands.job_cancel_flag = &renderer->job_cancelled;

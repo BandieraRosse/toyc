@@ -177,6 +177,10 @@ static void session_set_air_walls(struct rasterfall_session *session,
 int rasterfall_session_load(struct rasterfall_session *session,
                             const char *map_path)
 {
+    if (!session) return -1;
+    /* A session owns level.blob through map_ops.  Release it before resetting
+     * the containing object so load -> load cannot orphan the old map. */
+    rasterfall_session_unload(session);
     memset(session, 0, sizeof(struct rasterfall_session));
     session->air_walls_enabled = 1;
     session->highlight_index = -1;

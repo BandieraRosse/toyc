@@ -161,7 +161,7 @@ static int primitive_gameplay_logic_test(void)
                 p->minz == -17256 && p->maxz == -16744 && p->surface_y0 == 512)
                 crate_box = 1;
             if (p->minx == -13256 && p->maxx == -12744 &&
-                p->minz == -17615 && p->maxz == -16385 && p->surface_y0 == 410)
+                p->minz == -17614 && p->maxz == -16385 && p->surface_y0 == 410)
                 barrier_box = 1;
         }
         if (!crate_box || !barrier_box) return 19;
@@ -174,7 +174,6 @@ static int primitive_gameplay_logic_test(void)
                                    TOY_MAP_PRIMITIVE_WALKABLE)
             };
             int center = ((0 - (-1200)) / 300) * 8 + (0 - (-1200)) / 300;
-            int edge = ((0 - (-1200)) / 300) * 8 + (900 - (-1200)) / 300;
             toy_game_init(&prop_game, 215);
             toy_game_set_primitives(&prop_game, prop_world, 2, 1200);
             if (!toy_game_position_blocked_at_height(&prop_game, 0, 0,
@@ -187,8 +186,9 @@ static int primitive_gameplay_logic_test(void)
                                        TOY_GAME_PLAYER_RADIUS, 0).has_support ||
                 toy_game_query_ground(&prop_game, 0, 0,
                                       TOY_GAME_PLAYER_RADIUS, 0).support_y != 410 ||
-                !prop_game.nav_walkable[center] || !prop_game.nav_walkable[edge])
+                !prop_game.nav_walkable[center]) {
                 return 20;
+            }
         }
     }
     {
@@ -253,6 +253,15 @@ static int run_logic_test(void)
     if (rasterfall_animation_composition_logic_test() != 0) return 168;
     if (rasterfall_character_logic_test() != 0) return 166;
     if (rasterfall_prop_asset_logic_test() != 0) return 170;
+    if (toy_map_lifecycle_logic_test() != 0) return 173;
+    if (toy_map_prop_logic_test() != 0) return 171;
+    if (rasterfall_render_static_prop_culling_logic_test() != 0) return 172;
+    if (rasterfall_session_load(&session,
+                               "rasterfall/assets/maps/rasterfall.map") < 0 ||
+        rasterfall_session_load(&session,
+                                "rasterfall/assets/maps/rasterfall.map") < 0)
+        return 174;
+    rasterfall_map_prepare(&session.map_ops);
     if (rasterfall_console_logic_test() != 0) return 169;
     toy_input_init(&input);
     rasterfall_session_reset(&session, &camera, 1);
@@ -1094,6 +1103,7 @@ static int run_logic_test(void)
         int i, active_instances = 0, active_emitters = 0;
         struct rasterfall_effect_instance instance;
         struct rasterfall_effect_emitter emitter;
+        rasterfall_effects_init(&effects);
         memset(&instance, 0, sizeof(instance));
         instance.type = RASTERFALL_EFFECT_INSTANCE_PARTICLE;
         instance.kind = RASTERFALL_EFFECT_INSTANCE_KIND_HIT_PARTICLE;

@@ -99,6 +99,7 @@ int rasterfall_render_actor_benchmark(int iterations, int frontend_workers,
                                       int raster_workers);
 void rasterfall_render_scene_stats(struct rasterfall_scene_stats *out);
 int rasterfall_render_near_clip_test(void);
+int rasterfall_render_static_prop_culling_logic_test(void);
 
 int rasterfall_render_scene(struct toy_renderer *renderer,
                             const struct camera *camera);
