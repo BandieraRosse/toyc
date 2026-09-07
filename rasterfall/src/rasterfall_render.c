@@ -29,6 +29,7 @@
 #include "rasterfall_units.h"
 #include "rasterfall_glb_animation.h"
 #include "rasterfall_glb_preview.h"
+#include "rasterfall_prop.h"
 #include "rasterfall_vmd.h"
 #include "math.h"
 
@@ -176,6 +177,8 @@ static int render_skeletal_rifle(
 
 static struct rasterfall_model_asset gallery_models[RASTERFALL_MODEL_MAX_GALLERY];
 static int gallery_loaded;
+static struct rasterfall_model_asset static_prop_models[RASTERFALL_PROP_ASSET_COUNT];
+static unsigned char static_prop_model_attempted[RASTERFALL_PROP_ASSET_COUNT];
 static struct rasterfall_model_asset private_character_model;
 static struct rasterfall_model_asset private_character_lod_model;
 static int private_character_lod_loaded;
@@ -717,9 +720,26 @@ static unsigned int model_u32(const unsigned char *p)
 
 static void gallery_load(void)
 {
-    int i, count;
+    int i, count, raw_count;
     if (gallery_loaded) return;
-    count = toy_platform_list_models(gallery_paths, RASTERFALL_MODEL_MAX_GALLERY);
+    raw_count = toy_platform_list_models(gallery_paths,
+                                         RASTERFALL_MODEL_MAX_GALLERY);
+    count = 0;
+    for (i = 0; i < raw_count; i++) {
+        int prop_path = 0;
+        int id;
+        for (id = 1; id <= RASTERFALL_PROP_ASSET_COUNT; id++) {
+            const struct rasterfall_prop_asset_profile *profile =
+                rasterfall_prop_asset_profile(id);
+            if (profile && !strcmp(profile->model_path, gallery_paths[i])) {
+                prop_path = 1;
+                break;
+            }
+        }
+        if (prop_path) continue;
+        if (i != count) strcpy(gallery_paths[count], gallery_paths[i]);
+        count++;
+    }
 
     /* getdents order is filesystem-dependent; sort paths for a stable
      * gallery layout and for predictable inventory by the displayed index. */
@@ -1550,6 +1570,72 @@ static int render_gallery_model(struct toy_renderer *renderer,
 {
     return render_gallery_model_range(renderer, camera, model, center_x,
         base_y, center_z, scale, 0, (int)model->primitive_count, 0, -1, 1);
+}
+
+static struct rasterfall_model_asset *static_prop_model(int asset_id)
+{
+    const struct rasterfall_prop_asset_profile *profile;
+    int index;
+    if (asset_id <= 0 || asset_id > RASTERFALL_PROP_ASSET_COUNT) return 0;
+    index = asset_id - 1;
+    profile = rasterfall_prop_asset_profile(asset_id);
+    if (!profile) return 0;
+    if (!static_prop_model_attempted[index]) {
+        static_prop_model_attempted[index] = 1;
+        if (rasterfall_model_load(&static_prop_models[index],
+                                  profile->model_path) < 0)
+            return 0;
+    }
+    return static_prop_models[index].data ? &static_prop_models[index] : 0;
+}
+
+int rasterfall_render_static_prop(
+    struct toy_renderer *renderer, const struct camera *camera,
+    const struct rasterfall_prop_instance *instance)
+{
+    struct rasterfall_model_asset *model;
+    const struct rasterfall_prop_asset_profile *profile;
+    int previous_facing, previous_sy, previous_cy, previous_lighting;
+    int yaw, scale, pixels;
+    if (!renderer || !camera || !instance || instance->scale_milli <= 0)
+        return -1;
+    profile = rasterfall_prop_asset_profile(instance->asset_id);
+    model = static_prop_model(instance->asset_id);
+    if (!profile || !model) return 0;
+    scale = (int)((long long)profile->render_scale_milli *
+                  instance->scale_milli / 1000);
+    if (scale <= 0) return -1;
+    yaw = instance->yaw_degrees % 360;
+    if (yaw < 0) yaw += 360;
+    previous_facing = active_gallery_facing;
+    previous_sy = active_gallery_sy;
+    previous_cy = active_gallery_cy;
+    previous_lighting = active_gallery_lighting;
+    active_gallery_facing = 1;
+    active_gallery_sy = (int)(sin((double)yaw * 3.141592653589793 / 180.0) * 1024.0);
+    active_gallery_cy = (int)(cos((double)yaw * 3.141592653589793 / 180.0) * 1024.0);
+    active_gallery_lighting = 1;
+    pixels = render_gallery_model(renderer, camera, model, instance->x,
+                                  instance->y, instance->z, scale);
+    active_gallery_facing = previous_facing;
+    active_gallery_sy = previous_sy;
+    active_gallery_cy = previous_cy;
+    active_gallery_lighting = previous_lighting;
+    return pixels;
+}
+
+static int render_static_prop_dev_scene(struct toy_renderer *renderer,
+                                        const struct camera *camera)
+{
+    static const struct rasterfall_prop_instance props[] = {
+        { RASTERFALL_PROP_ASSET_CRATE, -14500, -900, -10500, 0, 1000 },
+        { RASTERFALL_PROP_ASSET_BARRIER, -13000, -900, -10500, 90, 1000 },
+        { RASTERFALL_PROP_ASSET_LAMP_POST, -11500, -900, -10500, 45, 1000 }
+    };
+    int i, pixels = 0;
+    for (i = 0; i < (int)(sizeof(props) / sizeof(props[0])); i++)
+        pixels += rasterfall_render_static_prop(renderer, camera, &props[i]);
+    return pixels;
 }
 
 int rasterfall_render_model_preview(struct toy_renderer *renderer,
@@ -4034,6 +4120,7 @@ static int render_scene(struct toy_renderer *renderer, const struct camera *came
     }
     scene_stats.map_us = render_monotonic_us() - phase_start;
     phase_start = render_monotonic_us();
+    pixels += render_static_prop_dev_scene(renderer, camera);
     pixels += render_model_gallery(renderer, camera);
     scene_stats.gallery_us = render_monotonic_us() - phase_start;
     phase_start = render_monotonic_us();

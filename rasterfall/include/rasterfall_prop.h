@@ -30,6 +30,17 @@ struct rasterfall_prop_asset_profile {
     struct rasterfall_prop_dimensions collision_size;
 };
 
+/* Presentation-only world instance. x/y/z are RFU; y is the ground/pivot
+ * height. scale_milli is an instance multiplier, with 1000 as the default. */
+struct rasterfall_prop_instance {
+    int asset_id;
+    int x;
+    int y;
+    int z;
+    int yaw_degrees;
+    int scale_milli;
+};
+
 const struct rasterfall_prop_asset_profile *
 rasterfall_prop_asset_profile(int id);
 const struct rasterfall_prop_asset_profile *

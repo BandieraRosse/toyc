@@ -1,13 +1,20 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-07
-> 源码核对基线：工作区（HUD、viewmodel、crosshair、effects、managed actor 和客户端远端玩家的 gameplay 展示查询直接读取 actor；远端位置/朝向继续使用纯 derived presentation cache；RAY tracer 短线段/定向线宽投影，通用 emitter preset table，CAMERA_SHAKE 含开火后座与受击摇晃；程序化敌人身体组件描述表）
+> 源码核对基线：工作区（HUD、viewmodel、crosshair、effects、managed actor 和客户端远端玩家的 gameplay 展示查询直接读取 actor；远端位置/朝向继续使用纯 derived presentation cache；RAY tracer 短线段/定向线宽投影，通用 emitter preset table，CAMERA_SHAKE 含开火后座与受击摇晃；程序化敌人身体组件描述表；world-space 静态 RMESH prop 入口与开发场景）
 
 ## 渲染边界
 
 `src/rasterfall_render.c` 是世界渲染和角色渲染主体：投影/近裁剪、三角形提交、地面与地图图元、
 拾取物、敌人、玩家/队友、骨骼角色、弹道粒子及模型诊断。公开入口在
 `include/rasterfall_render.h`，共享状态由 `rasterfall_render_context` 绑定。
+
+静态环境组件通过 `rasterfall_render_static_prop()` 提交 world-space RMESH。调用者提供注册表
+asset id、RFU `x/y/z`、绕世界 Y 轴的 yaw 和实例缩放；入口按
+“RMESH local → `512/232` profile scale → instance scale → yaw → world translation”求值。
+注册表模型缓存按 asset id 懒加载一次，多个实例共享同一 `rasterfall_model_asset`；开发场景当前在
+玩家出生点前硬编码展示 crate、barrier、lamp_post，用于检查底部 pivot、尺寸、yaw、材质和深度。
+这些 prop 仍是 presentation-only，不进入地图格式、gameplay 或碰撞。
 
 程序化敌人模型采用统一的 `enemy_body_part` 描述：每个条目对应一个基本身体组件，类型包括局部朝向盒、世界盒、圆柱、椭球和面部矩形，尺寸与局部偏移仍使用现有 RFU 数值。通用解释器按描述顺序提交几何，因此可以在不改变玩法状态的前提下继续接入参数化配置。敌人位置以 `toy_game_enemy.x/z` 为水平锚点，垂直基准由地面 `Y=-900`、`ground_y` 和 `airborne_y` 组成；Charger 的水平放大和普通敌人的既有缩放语义保留在解释器中。Tank 的挥臂依赖蓄力时间，是动态组件，继续由专用函数求值后插入静态组件之间，以保持原有遮挡和绘制顺序。
 

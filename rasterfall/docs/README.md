@@ -1,7 +1,7 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-07
-> 源码核对基线：工作区（新增首批工业环境组件生成器、静态 GLB 导入边界导航和 `rasterfall_prop` 静态资产 profile；本地玩家、远端人类、AI 和 special controller 的 gameplay 状态统一由 `toy_game_actor` 拥有；`toy_game_set_remote_actor()` 是远端 actor 生命周期入口；网络协议版本 42 的 actor snapshot 统一表达角色状态，world snapshot 仅表达世界状态；HUD、viewmodel、effects 和角色展示只读 actor；remote presentation cache 只保存派生渲染坐标）
+> 源码核对基线：工作区（新增首批工业环境组件生成器、静态 GLB 导入边界导航、`rasterfall_prop` 静态资产 profile 和 world-space RMESH prop 渲染入口；本地玩家、远端人类、AI 和 special controller 的 gameplay 状态统一由 `toy_game_actor` 拥有；`toy_game_set_remote_actor()` 是远端 actor 生命周期入口；网络协议版本 42 的 actor snapshot 统一表达角色状态，world snapshot 仅表达世界状态；HUD、viewmodel、effects 和角色展示只读 actor；remote presentation cache 只保存派生渲染坐标）
 
 本目录面向接手 Rasterfall 任务的编码代理。目标不是介绍玩法，而是先把问题归到正确的
 状态所有者和文件，再开始搜索。命令、资源导入方法和用户可见特性仍以
@@ -16,6 +16,7 @@
 | 地图格式、关卡实体、拾取物、出生点 | [gameplay.md](gameplay.md) | `lib/map.c`、`src/rasterfall_map.c` |
 | 编写或扩展 `.map` 文本格式 | [map-format.md](map-format.md) | `lib/map.c`、`include/toy_map.h` |
 | 场景、角色、HUD、特效、第一人称武器、性能 | [rendering.md](rendering.md) | `src/rasterfall_render.c` |
+| world-space 静态 RMESH prop、实例变换和开发展示 | [rendering.md](rendering.md) | `include/rasterfall_render.h`、`src/rasterfall_render.c` |
 | 战斗表现事件、muzzle/tracer/impact/camera shake 消费 | [rendering.md](rendering.md) | `include/rasterfall_effect_event.h`、`src/rasterfall_effects.c` |
 | 模型、蒙皮、IK、VMD/GLB、动作重定向 | [assets-animation.md](assets-animation.md) | `src/rasterfall_model.c` |
 | 转换 PMX/GLB、生成 LOD、模型诊断 | [asset-pipeline.md](asset-pipeline.md) | `app/`、`tools/`、模型加载器 |

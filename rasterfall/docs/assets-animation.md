@@ -1,7 +1,7 @@
 # 资源、模型与动画
 
-> 文档更新：2026-09-03
-> 源码核对基线：`75a10cd`（将项目协作说明转向 Rasterfall）
+> 文档更新：2026-09-07
+> 源码核对基线：工作区（补充静态 RMESH prop 的 world-space 渲染入口和共享模型缓存）
 
 ## 运行时资源
 
@@ -18,6 +18,8 @@
 - `rasterfall_animation.h`：通用 clip/track/player 数据和采样辅助。
 - `rasterfall_actor_animation.h`、`rasterfall_animation_composition.h`：玩法动作到角色姿态、持枪和叠加规则。
 - `rasterfall_character.c`：actor/class 到角色资产选择；实际加载与绘制在 render。
+- `rasterfall_prop.h` / `rasterfall_prop.c`：静态 prop asset profile、RMESH 路径与 `512/232`
+  presentation 缩放；`rasterfall_render_static_prop()` 负责实例变换和共享模型提交，不接 gameplay 碰撞。
 - `app/glb_inspect.c`：既是 GLB 检查器，也以 `RASTERFALL_GLB_LIBRARY` 编入游戏提供 GLB 动画加载。
 
 完整求值顺序、格式扩展点和回归要求见

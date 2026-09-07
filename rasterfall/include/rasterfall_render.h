@@ -6,6 +6,7 @@
 #include "rasterfall_session.h"
 #include "rasterfall_effects.h"
 #include "rasterfall_net.h"
+#include "rasterfall_prop.h"
 #include "rasterfall_model.h"
 
 #define RASTERFALL_BAKED_LM_W 32
@@ -88,6 +89,9 @@ int rasterfall_render_model_preview(struct toy_renderer *renderer,
                                     const struct rasterfall_model_asset *model,
                                     int use_sphere, int use_toon, int use_edge,
                                     int use_material_light);
+int rasterfall_render_static_prop(
+    struct toy_renderer *renderer, const struct camera *camera,
+    const struct rasterfall_prop_instance *instance);
 void rasterfall_render_model_stats(struct rasterfall_model_render_stats *out);
 void rasterfall_render_model_setup_timing(
     struct rasterfall_model_setup_timing *out);
