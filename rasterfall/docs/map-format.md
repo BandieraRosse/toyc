@@ -1,7 +1,7 @@
 # Rasterfall 地图格式
 
-> 文档更新：2026-09-03
-> 源码核对基线：`75a10cd`（将项目协作说明转向 Rasterfall）
+> 文档更新：2026-09-07
+> 源码核对基线：工作区（新增静态 prop 实例记录与 parser 输出）
 
 正式地图位于 `rasterfall/assets/maps/*.map`。磁盘结构定义在 `include/toy_map.h`，文本解析在
 `lib/map.c`，`src/rasterfall_map.c` 再把结果绑定到玩法盒体、图元、可交互物和安全区。修改语法时
@@ -32,6 +32,16 @@ ai_spawn name base_id level1|level2|level3 x z downed
 - `base` 声明带稳定 ID 的据点区域。
 - `ai_spawn` 声明 AI 名称、所属据点、等级、位置和初始倒地状态。
 
+静态环境组件使用 registry 中的稳定名称或 ID，不直接引用模型路径：
+
+```text
+prop asset x z yaw scale
+prop crate -14500 -17000 0 1000
+```
+
+`x/z` 使用 RFU，实例落在地面锚点 `y=-900`；`yaw` 为绕世界 Y 轴的角度；`scale=1000`
+表示资产原始设计尺寸。解析结果位于 `toy_map.props`，仅供 presentation 渲染使用，不产生
+gameplay collision。
+
 其他受支持记录及参数应直接以 `lib/map.c` 的解析分支为准。新增记录时在本文记录用途和最小示例，
 不要只修改关卡文件。可见几何不能代替玩法碰撞，渲染正确也不能证明导航和地面查询正确。
-

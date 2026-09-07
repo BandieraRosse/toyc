@@ -43,6 +43,14 @@ rasterfall_prop_asset_by_name(const char *name)
     return 0;
 }
 
+int rasterfall_prop_render_scale(
+    const struct rasterfall_prop_asset_profile *profile, int instance_scale_milli)
+{
+    if (!profile || instance_scale_milli <= 0) return 0;
+    return (int)((long long)profile->render_scale_milli *
+                 instance_scale_milli / 1000);
+}
+
 int rasterfall_prop_asset_logic_test(void)
 {
     int i;
@@ -74,5 +82,9 @@ int rasterfall_prop_asset_logic_test(void)
         crate->collision_size.y != RASTERFALL_RFU_FROM_MM(1000) ||
         crate->collision_size.z != RASTERFALL_RFU_FROM_MM(1000))
         return 4;
+    if (rasterfall_prop_render_scale(crate, 1000) != 2207 ||
+        rasterfall_prop_render_scale(crate, 2000) != 4414 ||
+        rasterfall_prop_render_scale(crate, 0) != 0)
+        return 5;
     return 0;
 }

@@ -143,6 +143,14 @@ static int primitive_gameplay_logic_test(void)
            (p->flags&TOY_MAP_PRIMITIVE_COLLISION))air_gate=1;
     }
     if(!table||!ramp||!air_gate)return 10;
+    if (level_map.prop_count != 3 ||
+        level_map.props[0].asset_id != RASTERFALL_PROP_ASSET_CRATE ||
+        level_map.props[0].x != -14500 || level_map.props[0].z != -17000 ||
+        level_map.props[0].yaw_degrees != 0 ||
+        level_map.props[0].scale_milli != 1000 ||
+        level_map.props[1].asset_id != RASTERFALL_PROP_ASSET_BARRIER ||
+        level_map.props[2].asset_id != RASTERFALL_PROP_ASSET_LAMP_POST)
+        return 18;
     {
         struct toy_game west_game;
         struct toy_game_actor *west_player;

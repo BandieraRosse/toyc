@@ -1602,8 +1602,7 @@ int rasterfall_render_static_prop(
     profile = rasterfall_prop_asset_profile(instance->asset_id);
     model = static_prop_model(instance->asset_id);
     if (!profile || !model) return 0;
-    scale = (int)((long long)profile->render_scale_milli *
-                  instance->scale_milli / 1000);
+    scale = rasterfall_prop_render_scale(profile, instance->scale_milli);
     if (scale <= 0) return -1;
     yaw = instance->yaw_degrees % 360;
     if (yaw < 0) yaw += 360;
@@ -1624,17 +1623,22 @@ int rasterfall_render_static_prop(
     return pixels;
 }
 
-static int render_static_prop_dev_scene(struct toy_renderer *renderer,
-                                        const struct camera *camera)
+static int render_static_props(struct toy_renderer *renderer,
+                               const struct camera *camera)
 {
-    static const struct rasterfall_prop_instance props[] = {
-        { RASTERFALL_PROP_ASSET_CRATE, -14500, -900, -17000, 0, 1000 },
-        { RASTERFALL_PROP_ASSET_BARRIER, -13000, -900, -17000, 90, 1000 },
-        { RASTERFALL_PROP_ASSET_LAMP_POST, -11500, -900, -17000, 45, 1000 }
-    };
     int i, pixels = 0;
-    for (i = 0; i < (int)(sizeof(props) / sizeof(props[0])); i++)
-        pixels += rasterfall_render_static_prop(renderer, camera, &props[i]);
+    for (i = 0; i < level_map.prop_count; i++)
+    {
+        const struct toy_map_prop *map_prop = &level_map.props[i];
+        struct rasterfall_prop_instance instance;
+        instance.asset_id = map_prop->asset_id;
+        instance.x = map_prop->x;
+        instance.y = -900;
+        instance.z = map_prop->z;
+        instance.yaw_degrees = map_prop->yaw_degrees;
+        instance.scale_milli = map_prop->scale_milli;
+        pixels += rasterfall_render_static_prop(renderer, camera, &instance);
+    }
     return pixels;
 }
 
@@ -4120,7 +4124,7 @@ static int render_scene(struct toy_renderer *renderer, const struct camera *came
     }
     scene_stats.map_us = render_monotonic_us() - phase_start;
     phase_start = render_monotonic_us();
-    pixels += render_static_prop_dev_scene(renderer, camera);
+    pixels += render_static_props(renderer, camera);
     pixels += render_model_gallery(renderer, camera);
     scene_stats.gallery_us = render_monotonic_us() - phase_start;
     phase_start = render_monotonic_us();

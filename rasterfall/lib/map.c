@@ -1,6 +1,7 @@
 #include "tlibc_everything.h"
 #include "toy_map.h"
 #include "toy_assets.h"
+#include "rasterfall_prop.h"
 
 static int number(const char *s, int base) { return (int)strtol(s, NULL, base); }
 static char *word(char **p) { char *s = strtok_r(*p, " \t\r\n", p); return s; }
@@ -34,6 +35,16 @@ static int get5(char **p, int *a, int *b, int *c, int *d, int *e)
     if(!s1||!s2||!s3||!s4||!s5)return -1;
     *a=number(s1,10); *b=number(s2,10); *c=number(s3,10);
     *d=number(s4,10); *e=number(s5,10); return 0;
+}
+static int prop_asset_id(const char *s)
+{
+    const struct rasterfall_prop_asset_profile *asset;
+    int id;
+    if (!s) return 0;
+    asset = rasterfall_prop_asset_by_name(s);
+    if (asset) return asset->id;
+    id = number(s, 10);
+    return rasterfall_prop_asset_profile(id) ? id : 0;
 }
 static unsigned int color(char *s) { return s ? (unsigned int)strtol(s, NULL, 16) : 0; }
 static void copy_role(char *out, const char *in, int size)
@@ -157,6 +168,21 @@ int toy_map_load(const char *path, struct toy_map *m)
             spawn->x=number(sx,10); spawn->z=number(sz,10);
             spawn->downed=down ? number(down,10) != 0 : 1;
             if (weapon_name) spawn->weapon = toy_game_weapon_from_name(weapon_name);
+        }
+        else if(!strcmp(kind,"prop") && m->prop_count<TOY_MAP_MAX_PROPS){
+            char *asset=word(&p), *sx=word(&p), *sz=word(&p);
+            char *syaw=word(&p), *sscale=word(&p);
+            int asset_id;
+            struct toy_map_prop *prop;
+            if (!asset || !sx || !sz || !syaw || !sscale) continue;
+            asset_id = prop_asset_id(asset);
+            if (!asset_id || number(sscale, 10) <= 0) continue;
+            prop = &m->props[m->prop_count++];
+            prop->asset_id = asset_id;
+            prop->x = number(sx, 10);
+            prop->z = number(sz, 10);
+            prop->yaw_degrees = number(syaw, 10);
+            prop->scale_milli = number(sscale, 10);
         }
         else if(!strcmp(kind,"spawn") && get4(&p,&a,&b,&c,&d)==0 && m->spawn_count<TOY_MAP_MAX_ZONES){char *co=word(&p);m->spawn_zones[m->spawn_count].box.minx=a;m->spawn_zones[m->spawn_count].box.maxx=b;m->spawn_zones[m->spawn_count].box.minz=c;m->spawn_zones[m->spawn_count].box.maxz=d;m->spawn_zones[m->spawn_count].color=color(co);m->spawn_count++;}
         else if(!strcmp(kind,"alarm") && get4(&p,&a,&b,&c,&d)==0){char *zone=word(&p);m->alarm_zone.minx=a;m->alarm_zone.maxx=b;m->alarm_zone.minz=c;m->alarm_zone.maxz=d;m->has_alarm=1;if(zone)m->alarm_spawn_zone=number(zone,10);}

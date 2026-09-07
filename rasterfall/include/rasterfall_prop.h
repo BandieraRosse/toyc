@@ -45,6 +45,8 @@ const struct rasterfall_prop_asset_profile *
 rasterfall_prop_asset_profile(int id);
 const struct rasterfall_prop_asset_profile *
 rasterfall_prop_asset_by_name(const char *name);
+int rasterfall_prop_render_scale(const struct rasterfall_prop_asset_profile *profile,
+                                 int instance_scale_milli);
 int rasterfall_prop_asset_logic_test(void);
 
 #endif

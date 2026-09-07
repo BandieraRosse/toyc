@@ -840,7 +840,8 @@ $(RASTERFALL_ASSET_OBJ): $(RASTERFALL_ASSET_SRC) $(INC)/toy_assets.h | $(BUILD)
 
 $(BUILD)/rasterfall_map_engine.o: $(RASTERFALL_LIB)/map.c \
                                  $(RASTERFALL_INC)/toy_map.h \
-                                 $(RASTERFALL_INC)/toy_game.h $(INC)/toy_assets.h | $(BUILD)
+                                 $(RASTERFALL_INC)/toy_game.h \
+                                 $(RASTERFALL_INC)/rasterfall_prop.h $(INC)/toy_assets.h | $(BUILD)
 	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
 	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 

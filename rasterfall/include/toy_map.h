@@ -9,6 +9,7 @@
 #define TOY_MAP_MAX_PICKUPS 48
 #define TOY_MAP_MAX_BASES 8
 #define TOY_MAP_MAX_AI_SPAWNS 32
+#define TOY_MAP_MAX_PROPS 128
 #define TOY_MAP_ROLE_SIZE 32
 #define TOY_MAP_TEXT_SIZE 64
 
@@ -82,6 +83,9 @@ enum toy_map_pickup_kind {
     ,TOY_MAP_PICKUP_WEST_CORRIDOR_BUTTON
 };
 struct toy_map_pickup { int kind; int weapon; int x, z, y; };
+/* Presentation-only map record.  The parser stores a registry asset ID, not
+ * a model path; the renderer adapts this to rasterfall_prop_instance. */
+struct toy_map_prop { int asset_id; int x, z, yaw_degrees, scale_milli; };
 struct toy_map_draw {
     int type;
     int a, b, c, d, e, f;
@@ -112,6 +116,8 @@ struct toy_map {
     int draw_count;
     struct toy_map_pickup pickups[TOY_MAP_MAX_PICKUPS];
     int pickup_count;
+    struct toy_map_prop props[TOY_MAP_MAX_PROPS];
+    int prop_count;
     char *blob;
 };
 
