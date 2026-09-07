@@ -1963,9 +1963,7 @@ static int toy_game_shove_at(struct toy_game *g, int origin_x, int origin_z,
         for (s = 0; s < 4; s++) {
             nx = e->x + (int)((long long)sy * push[s] / 1024);
             nz = e->z + (int)((long long)cy * push[s] / 1024);
-            if (!enemy_position_blocked(g, nx, nz, TOY_GAME_ENEMY_RADIUS)) {
-                e->x = nx;
-                e->z = nz;
+            if (enemy_try_step(g, e, nx, nz, enemy_radius(e))) {
                 break;
             }
         }
@@ -2814,6 +2812,13 @@ static void move_actor_forced(struct toy_game *g, struct toy_game_actor *a,
 {
     int nx = a->x + dx;
     int nz = a->z + dz;
+    /* Grounded forced motion includes AI path following and Smoker's pull.
+     * Route it through the same ramp-aware actor movement as the player so
+     * support height advances with the horizontal position. */
+    if (a->airborne_ms <= 0) {
+        toy_game_move_actor_sliding(g, a, dx, dz);
+        return;
+    }
     int height = a->ground_y + a->airborne_y;
     if (!position_blocked_at_height(g, nx, a->z,
                                     TOY_GAME_PLAYER_RADIUS, height, 0))
