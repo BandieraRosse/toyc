@@ -201,7 +201,8 @@ int toy_map_load(const char *path, struct toy_map *m)
                     prop->z - dimensions.z / 2,
                     prop->z + (dimensions.z + 1) / 2,
                     0, dimensions.y, dimensions.y,
-                    TOY_MAP_PRIMITIVE_COLLISION, 0);
+                    TOY_MAP_PRIMITIVE_COLLISION |
+                    TOY_MAP_PRIMITIVE_WALKABLE, 0);
                 (void)box;
             }
         }

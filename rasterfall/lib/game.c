@@ -1090,7 +1090,12 @@ static int position_blocked_at_height(const struct toy_game *g,
      * platform is within the configured step height; no obstacle-specific
      * exception is needed. */
     ground = toy_game_query_ground(g, x, z, radius, ground_height);
-    if (ground.has_support && ground.support_y > collision_height)
+    /* A tall walkable box is a landing surface, not a way to bypass its
+     * sides.  Only promote the collision height for a small step, or when
+     * the caller is already at the support height; otherwise a point inside
+     * a crate/lamp would incorrectly skip the box side collision. */
+    if (ground.has_support && ground.support_y > collision_height &&
+        ground.support_y - ground_height <= TOY_CONFIG_GROUND_STEP_HEIGHT)
         collision_height = ground.support_y;
     for (i = 0; i < g->primitive_count; i++) {
         const struct toy_map_primitive *b = &g->primitives[i];

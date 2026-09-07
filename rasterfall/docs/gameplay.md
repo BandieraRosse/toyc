@@ -1,7 +1,7 @@
 # 玩法、会话、地图与 AI
 
 > 文档更新：2026-09-07
-> 源码核对基线：工作区（所有人类玩家和 AI 的移动/跳跃/airborne/朝向/武器/库存/切枪/reload/动画/special-control/shove/统计均由 `toy_game_actor` 拥有；`toy_game_set_remote_actor()` 只负责远端 actor 生命周期；客户端展示缓存不参与玩法规则；投射物/燃烧区携带 actor owner）
+> 源码核对基线：工作区（静态 prop profile 碰撞盒作为可站立 RFU primitive；所有人类玩家和 AI 的移动/跳跃/airborne/朝向/武器/库存/切枪/reload/动画/special-control/shove/统计均由 `toy_game_actor` 拥有；客户端展示缓存不参与玩法规则）
 
 ## 三层职责
 

@@ -1,7 +1,7 @@
 # Rasterfall 地图格式
 
 > 文档更新：2026-09-07
-> 源码核对基线：工作区（新增静态 prop 实例记录与 parser 输出）
+> 源码核对基线：工作区（静态 prop 实例及 profile 碰撞盒接入现有 primitive/nav）
 
 正式地图位于 `rasterfall/assets/maps/*.map`。磁盘结构定义在 `include/toy_map.h`，文本解析在
 `lib/map.c`，`src/rasterfall_map.c` 再把结果绑定到玩法盒体、图元、可交互物和安全区。修改语法时
@@ -47,8 +47,8 @@ prop crate -14500 -17000 0 1000
 prop lamp_post 0 -17000 0 1000 collision=none
 ```
 
-解析结果位于 `toy_map.props`，生成的碰撞结果位于同一地图的 `primitives`，二者都不引用
-RMESH 的 232 单位。
+解析结果位于 `toy_map.props`，生成的碰撞结果位于同一地图的 `primitives`；默认 primitive
+同时是碰撞体和可站立顶面，玩家可从边缘离开。二者都不引用 RMESH 的 232 单位。
 
 其他受支持记录及参数应直接以 `lib/map.c` 的解析分支为准。新增记录时在本文记录用途和最小示例，
 不要只修改关卡文件。可见几何不能代替玩法碰撞，渲染正确也不能证明导航和地面查询正确。

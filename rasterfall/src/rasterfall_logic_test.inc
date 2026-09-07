@@ -170,7 +170,8 @@ static int primitive_gameplay_logic_test(void)
             struct toy_map_primitive prop_world[2] = {
                 test_flat_primitive(-3000, 3000, -3000, 3000, 0),
                 test_box_primitive(-256, 256, -615, 615, 0, 410,
-                                   TOY_MAP_PRIMITIVE_COLLISION)
+                                   TOY_MAP_PRIMITIVE_COLLISION |
+                                   TOY_MAP_PRIMITIVE_WALKABLE)
             };
             int center = ((0 - (-1200)) / 300) * 8 + (0 - (-1200)) / 300;
             int edge = ((0 - (-1200)) / 300) * 8 + (900 - (-1200)) / 300;
@@ -180,7 +181,13 @@ static int primitive_gameplay_logic_test(void)
                                                      TOY_GAME_PLAYER_RADIUS, 0) ||
                 toy_game_position_blocked_at_height(&prop_game, 0, 900,
                                                     TOY_GAME_PLAYER_RADIUS, 0) ||
-                prop_game.nav_walkable[center] || !prop_game.nav_walkable[edge])
+                toy_game_position_blocked_at_height(&prop_game, 0, 0,
+                                                    TOY_GAME_PLAYER_RADIUS, 410) ||
+                !toy_game_query_ground(&prop_game, 0, 0,
+                                       TOY_GAME_PLAYER_RADIUS, 0).has_support ||
+                toy_game_query_ground(&prop_game, 0, 0,
+                                      TOY_GAME_PLAYER_RADIUS, 0).support_y != 410 ||
+                !prop_game.nav_walkable[center] || !prop_game.nav_walkable[edge])
                 return 20;
         }
     }
