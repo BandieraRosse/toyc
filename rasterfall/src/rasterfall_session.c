@@ -2146,6 +2146,8 @@ void rasterfall_session_step(struct rasterfall_session *session,
 {
     unsigned char keys[TOY_GAME_KEY_RELOAD + 1];
     struct rasterfall_command managed_command;
+    int old_reloading;
+    unsigned int old_fire_seq;
     if (command->buttons & RASTERFALL_CMD_RESET) {
         rasterfall_session_reset(session, camera, session->seed);
         return;
@@ -2279,6 +2281,8 @@ void rasterfall_session_step(struct rasterfall_session *session,
     {
         struct toy_game_actor *player =
             toy_game_local_player_actor(&session->game_state);
+        old_reloading = player->reloading;
+        old_fire_seq = player->fire_seq;
         int fired = toy_game_update_actor_weapon_held(
             &session->game_state, player, keys,
             (command->buttons & RASTERFALL_CMD_FIRE) != 0,
@@ -2292,6 +2296,37 @@ void rasterfall_session_step(struct rasterfall_session *session,
                                      camera->pitch_sy, camera->pitch_cy,
                                      camera->y)) fired = 1;
         (void)fired;
+    }
+    {
+        struct toy_game_actor *player =
+            toy_game_local_player_actor(&session->game_state);
+        /* This used to be handled by toy_game_update_held().  The actor
+         * migration calls the lower-level weapon step directly, so keep the
+         * local action selection and clock here as well. */
+        if (player->reloading && !old_reloading)
+            toy_game_actor_set_animation(player, TOY_GAME_ANIM_RELOAD);
+        else if (player->fire_seq != old_fire_seq)
+            toy_game_actor_set_animation(player, TOY_GAME_ANIM_FIRE);
+        toy_game_actor_update_animation(player, dt_ms);
+        if (player->animation.id == TOY_GAME_ANIM_RELOAD &&
+            !player->reloading)
+            toy_game_actor_set_animation(player, TOY_GAME_ANIM_NONE);
+        else if (player->animation.id == TOY_GAME_ANIM_FIRE &&
+                 player->animation.time_ms >=
+                 toy_game_animation_info(TOY_GAME_ANIM_FIRE)->duration_ms)
+            toy_game_actor_set_animation(player, TOY_GAME_ANIM_NONE);
+        else if (player->animation.id == TOY_GAME_ANIM_SHOVE &&
+                 player->animation.time_ms >=
+                 toy_game_animation_info(TOY_GAME_ANIM_SHOVE)->duration_ms)
+            toy_game_actor_set_animation(player, TOY_GAME_ANIM_NONE);
+        else if (player->animation.id == TOY_GAME_ANIM_MELEE &&
+                 player->animation.time_ms >=
+                 toy_game_animation_info(TOY_GAME_ANIM_MELEE)->duration_ms)
+            toy_game_actor_set_animation(player, TOY_GAME_ANIM_NONE);
+        else if (player->animation.id == TOY_GAME_ANIM_THROW &&
+                 player->animation.time_ms >=
+                 toy_game_animation_info(TOY_GAME_ANIM_THROW)->duration_ms)
+            toy_game_actor_set_animation(player, TOY_GAME_ANIM_NONE);
     }
     {
         int i;

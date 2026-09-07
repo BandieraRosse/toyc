@@ -2649,6 +2649,36 @@ static void release_player_special(struct toy_game *g)
     toy_game_clear_actor_special_control(a, 0);
 }
 
+static void interrupt_smoker_for_actor(struct toy_game *g,
+                                       struct toy_game_actor *actor)
+{
+    int i, actor_index = -1;
+    if (!g || !actor) return;
+    for (i = 0; i < TOY_GAME_MAX_ACTORS; i++)
+        if (&g->actors[i] == actor) {
+            actor_index = i;
+            break;
+        }
+    if (actor_index < 0) return;
+    for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
+        struct toy_game_enemy *e = &g->enemies[i];
+        int targets_actor = actor->kind == TOY_GAME_ACTOR_PLAYER ?
+            e->ability.special_target_kind == TOY_GAME_TARGET_HOST :
+            e->ability.special_target_kind == TOY_GAME_TARGET_ACTOR &&
+            e->ability.special_target_index == actor_index;
+        if (e->active != 1 || !e->ability.special_target_active ||
+            !targets_actor) continue;
+        e->ability.special_target_active = 0;
+        e->ability.special_windup_ms = 0;
+        e->ability.special_pull_timer_ms = 0;
+        e->ability.special_timer_ms = TOY_GAME_SMOKER_COOLDOWN_MS;
+        if (actor->kind == TOY_GAME_ACTOR_PLAYER)
+            release_player_special(g);
+        else
+            toy_game_clear_actor_special_control(actor, 0);
+    }
+}
+
 static void move_player_forced(struct toy_game *g, int dx, int dz)
 {
     struct toy_game_actor *actor = toy_game_local_player_actor(g);
@@ -3102,6 +3132,23 @@ void toy_game_update_actor_ground(struct toy_game *g, int actor_index)
 static void move_actor_forced(struct toy_game *g, struct toy_game_actor *a,
                               int dx, int dz);
 
+static void smoker_end_pull(struct toy_game *g, struct toy_game_enemy *e)
+{
+    int target_kind, target_index;
+    if (!g || !e) return;
+    target_kind = e->ability.special_target_kind;
+    target_index = e->ability.special_target_index;
+    e->ability.special_target_active = 0;
+    e->ability.special_windup_ms = 0;
+    e->ability.special_pull_timer_ms = 0;
+    e->ability.special_timer_ms = TOY_GAME_SMOKER_COOLDOWN_MS;
+    if (target_kind == TOY_GAME_TARGET_HOST)
+        release_player_special(g);
+    else if (target_kind == TOY_GAME_TARGET_ACTOR &&
+             target_index >= 0 && target_index < TOY_GAME_MAX_ACTORS)
+        toy_game_clear_actor_special_control(&g->actors[target_index], 0);
+}
+
 static void update_smoker(struct toy_game *g, struct toy_game_enemy *e,
                           int index, int target_x, int target_z,
                           int target_kind, int target_index,
@@ -3110,10 +3157,6 @@ static void update_smoker(struct toy_game *g, struct toy_game_enemy *e,
 {
     long long pull_dist;
     int pull_dx, pull_dz, pull_x, pull_z, step;
-    if (e->ability.special_timer_ms > 0) {
-        e->ability.special_timer_ms -= dt_ms;
-        if (e->ability.special_timer_ms < 0) e->ability.special_timer_ms = 0;
-    }
     if (e->ability.special_target_active) {
         e->ability.special_target_active = 1;
         target_kind = e->ability.special_target_kind;
@@ -3129,11 +3172,7 @@ static void update_smoker(struct toy_game *g, struct toy_game_enemy *e,
         }
         if (!enemy_target_valid(g, e, target_kind, target_index,
                                 &pull_x, &pull_z)) {
-            e->ability.special_target_active = 0;
-            if (target_kind == 0) release_player_special(g);
-            else if (target_index >= 0 && target_index < TOY_GAME_MAX_ACTORS)
-                toy_game_clear_actor_special_control(
-                    &g->actors[target_index], 0);
+            smoker_end_pull(g, e);
             return;
         }
         if (target_kind == 1 && target_index >= 0 &&
@@ -3145,25 +3184,16 @@ static void update_smoker(struct toy_game *g, struct toy_game_enemy *e,
                 TOY_GAME_SPECIAL_CONTROL_SMOKER,
                 0, index,
                 TOY_GAME_SMOKER_PULL_STEP);
-        if (target_kind == 0)
-            e->ability.special_pull_timer_ms -= dt_ms;
+        e->ability.special_pull_timer_ms -= dt_ms;
+        if (e->ability.special_pull_timer_ms <= 0 ||
+            !enemy_has_line_of_sight(g, e, pull_x, pull_z)) {
+            smoker_end_pull(g, e);
+            return;
+        }
         pull_dx = e->x - pull_x;
         pull_dz = e->z - pull_z;
         pull_dist = isqrt((long long)pull_dx * pull_dx +
                           (long long)pull_dz * pull_dz);
-        if ((target_kind == 0 && e->ability.special_pull_timer_ms <= 0) ||
-            (target_kind == 1 && target_index >= 0 &&
-             target_index < TOY_GAME_MAX_ACTORS &&
-             (!g->actors[target_index].active ||
-              g->actors[target_index].state != TOY_GAME_ACTOR_ALIVE)) ||
-            !enemy_has_line_of_sight(g, e, pull_x, pull_z)) {
-            e->ability.special_target_active = 0;
-            if (target_kind == 0) release_player_special(g);
-            else if (target_index >= 0 && target_index < TOY_GAME_MAX_ACTORS)
-                toy_game_clear_actor_special_control(
-                    &g->actors[target_index], 0);
-            return;
-        }
         /* 舌头把玩家拉到身边后保持束缚，并按接触间隔造成伤害。 */
         if (pull_dist < 420 && e->bite_cooldown_ms <= 0) {
             if (target_kind == 0) {
@@ -3210,6 +3240,48 @@ static void update_smoker(struct toy_game *g, struct toy_game_enemy *e,
         }
         return;
     }
+    if (e->ability.special_timer_ms > 0) {
+        int retreat_x = 0, retreat_z = 0, retreat_valid = 0;
+        e->ability.special_timer_ms -= dt_ms;
+        if (e->ability.special_timer_ms < 0)
+            e->ability.special_timer_ms = 0;
+        if (e->ability.special_target_kind == TOY_GAME_TARGET_HOST) {
+            const struct toy_game_actor *a =
+                toy_game_local_player_actor_const(g);
+            retreat_x = a->x; retreat_z = a->z;
+            retreat_valid = enemy_target_valid(
+                g, e, TOY_GAME_TARGET_HOST, -1, NULL, NULL);
+        } else if (e->ability.special_target_kind ==
+                   TOY_GAME_TARGET_ACTOR &&
+                   e->ability.special_target_index >= 0 &&
+                   e->ability.special_target_index < TOY_GAME_MAX_ACTORS) {
+            const struct toy_game_actor *a =
+                &g->actors[e->ability.special_target_index];
+            retreat_x = a->x; retreat_z = a->z;
+            retreat_valid = enemy_target_valid(
+                g, e, TOY_GAME_TARGET_ACTOR,
+                e->ability.special_target_index, NULL, NULL);
+        }
+        if (retreat_valid) {
+            int away_x = retreat_x - e->x;
+            int away_z = retreat_z - e->z;
+            long long away_dist = isqrt((long long)away_x * away_x +
+                                        (long long)away_z * away_z);
+            if (away_dist > 0 && away_dist < 3600) {
+                int retreat_step = e->speed / 2;
+                if (retreat_step < 1) retreat_step = 1;
+                enemy_try_step(g, e,
+                               e->x - away_x * retreat_step / (int)away_dist,
+                               e->z - away_z * retreat_step / (int)away_dist,
+                               enemy_radius(e));
+            } else {
+                wander_enemy(g, e, dt_ms);
+            }
+        } else {
+            wander_enemy(g, e, dt_ms);
+        }
+        return;
+    }
     e->ability.special_target_active = 0;
     if (target_kind == 0 &&
         toy_game_local_player_actor_const(g)->state == TOY_GAME_ACTOR_DOWNED)
@@ -3224,8 +3296,6 @@ static void update_smoker(struct toy_game *g, struct toy_game_enemy *e,
         if (e->ability.special_windup_ms == 0) {
             e->ability.special_target_active = 1;
             e->ability.special_pull_timer_ms = TOY_GAME_SMOKER_PULL_MS;
-            if (e->ability.special_target_kind == 1)
-                e->ability.special_pull_timer_ms = -1;
             if (e->ability.special_target_kind == 0) {
                 toy_game_set_actor_special_control(
                     toy_game_local_player_actor(g),
@@ -3246,7 +3316,6 @@ static void update_smoker(struct toy_game *g, struct toy_game_enemy *e,
             e->dir_z = dz * 1024 / (int)dist;
         }
         e->ability.special_target_active = 0;
-        e->ability.special_timer_ms = TOY_GAME_SMOKER_COOLDOWN_MS;
         e->ability.special_windup_ms = TOY_GAME_SPECIAL_WINDUP_MS;
         e->ability.special_target_kind = target_kind;
         e->ability.special_target_index = target_index;
@@ -3471,12 +3540,12 @@ static void update_charger(struct toy_game *g, struct toy_game_enemy *e,
             int old_x = e->x, old_z = e->z;
             nx = e->ability.charge_dir_x * TOY_GAME_CHARGER_SPEED / 1024;
             nz = e->ability.charge_dir_z * TOY_GAME_CHARGER_SPEED / 1024;
-            if (!enemy_position_blocked(g, e->x + nx, e->z,
-                                        enemy_radius(e)))
-                e->x += nx;
-            if (!enemy_position_blocked(g, e->x, e->z + nz,
-                                        enemy_radius(e)))
-                e->z += nz;
+            /* Charger used to bypass enemy_try_step() here and only test
+             * horizontal blockage.  That left ground_y at the old height
+             * while crossing a ramp; after a shove/impact the stale support
+             * height made the model float or miss its landing. */
+            enemy_try_step(g, e, e->x + nx, e->z, enemy_radius(e));
+            enemy_try_step(g, e, e->x, e->z + nz, enemy_radius(e));
             set_enemy_direction_from_delta(e, e->x - old_x, e->z - old_z);
         }
         return;
@@ -3487,10 +3556,8 @@ static void update_charger(struct toy_game *g, struct toy_game_enemy *e,
             int old_x = e->x, old_z = e->z;
             nx = -dx * (e->speed / 4) / (int)dist;
             nz = -dz * (e->speed / 4) / (int)dist;
-            if (!enemy_position_blocked(g, e->x + nx, e->z,
-                                        enemy_radius(e))) e->x += nx;
-            if (!enemy_position_blocked(g, e->x, e->z + nz,
-                                        enemy_radius(e))) e->z += nz;
+            enemy_try_step(g, e, e->x + nx, e->z, enemy_radius(e));
+            enemy_try_step(g, e, e->x, e->z + nz, enemy_radius(e));
             set_enemy_direction_from_delta(e, e->x - old_x, e->z - old_z);
         } else {
             wander_enemy(g, e, dt_ms);
@@ -3970,6 +4037,7 @@ int toy_game_actor_use_special(struct toy_game *g,
         return 0;
     actor->melee_timer_ms = TOY_CONFIG_MELEE_SWING_MS;
     toy_game_actor_set_animation(actor, TOY_GAME_ANIM_MELEE);
+    interrupt_smoker_for_actor(g, actor);
     push_event(g, TOY_GAME_EV_MELEE);
     for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
         struct toy_game_enemy *e = &g->enemies[i];
