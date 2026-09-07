@@ -284,6 +284,46 @@ static int run_logic_test(void)
         RASTERFALL_HUMAN_EYE_HEIGHT_RFU != 824 ||
         camera.y != RASTERFALL_STANDING_CAMERA_Y) return 167;
     {
+        int i, found_companion = 0;
+        for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
+            struct toy_game_actor *actor = &session.game_state.actors[i];
+            if (!actor->active || !actor->companion) continue;
+            found_companion = 1;
+            if (actor->ground_y != toy_game_query_ground(
+                    &session.game_state, actor->x, actor->z,
+                    TOY_GAME_PLAYER_RADIUS, 0).support_y)
+                return 177;
+        }
+        if (!found_companion) return 178;
+    }
+    {
+        struct toy_game air_game;
+        struct toy_game_actor *air_player;
+        int i;
+        toy_game_init(&air_game, 179);
+        toy_game_set_primitives(&air_game, session.level.primitives,
+                                session.level.primitive_count,
+                                session.level.room_limit);
+        air_player = toy_game_local_player_actor(&air_game);
+        air_player->x = -2000;
+        air_player->z = -6000;
+        air_player->ground_y = 3900;
+        if (!toy_game_jump_actor(&air_game, TOY_GAME_PLAYER_ACTOR_INDEX,
+                                 160, 0)) return 179;
+        for (i = 0; i < 120 && air_player->airborne_ms > 0; i++)
+            toy_game_update_actor_motion(&air_game,
+                                         TOY_GAME_PLAYER_ACTOR_INDEX, 16);
+        for (i = 0; i < 20; i++)
+            toy_game_move_actor_sliding(&air_game, air_player, 160, 0);
+        /* The right air wall top is a valid landing surface.  Without it the
+         * player falls to world ground while still inside the wall footprint.
+         */
+        if (air_player->airborne_ms > 0 || air_player->x <= 1800 ||
+            air_player->ground_y < 3800) {
+            return 180;
+        }
+    }
+    {
         struct toy_game_actor *ramp_actor =
             toy_game_local_player_actor(&session.game_state);
         int step;
@@ -2679,13 +2719,22 @@ static int run_logic_test(void)
             &game, 0, 1200, -1500, "RAMP_AI");
         ramp_actor = toy_game_actor_by_id(&game, actor_id);
         if (!ramp_actor) return 183;
+        /* A companion that falls onto the middle of a ramp must land on the
+         * ramp surface, not at world height zero inside the ramp. */
+        ramp_actor->x = 1200;
+        ramp_actor->z = 0;
+        ramp_actor->ground_y = 0;
+        ramp_actor->airborne_y = 600;
+        ramp_actor->airborne_ms = TOY_GAME_JUMP_MS;
+        ramp_actor->vertical_velocity = -40;
         max_ground = 0;
         for (i = 0; i < 600; i++) {
             toy_game_update_ai_teammates(&game, 16);
             if (ramp_actor->ground_y > max_ground)
                 max_ground = ramp_actor->ground_y;
         }
-        if (max_ground < 300 || ramp_actor->x < 1200 ||
+        if (ramp_actor->airborne_ms > 0 || max_ground < 300 ||
+            ramp_actor->x < 1200 ||
             ramp_actor->z < -1000) return 184;
     }
     __printf("rasterfall: logic test passed\n");

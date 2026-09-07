@@ -16,8 +16,9 @@ box minx maxx minz maxz height color visible collision
 box minx maxx minz maxz height color hidden collision role=air_gate_left
 ```
 
-未写选项的旧 `box` 默认可见且参与碰撞。空气墙应使用 `hidden collision` 并通过
-`role=air_gate_*` 表达用途；旧 `air` 语法只用于兼容已有地图，新内容不要继续使用。
+未写选项的旧 `box` 默认可见且参与碰撞。需要允许站上顶部的高墙应追加 `walkable`；空气墙应
+使用 `hidden collision` 并通过 `role=air_gate_*` 表达用途；旧 `air` 语法只用于兼容已有地图，
+新内容不要继续使用。
 
 ## 玩法声明
 

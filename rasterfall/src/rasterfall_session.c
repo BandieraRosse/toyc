@@ -350,6 +350,13 @@ void rasterfall_session_reset(struct rasterfall_session *session,
     toy_game_local_player_actor(&session->game_state)->pitch_cy =
         camera->pitch_cy;
     toy_game_local_player_actor(&session->game_state)->view_y = camera->y;
+    /* Map-authored and developer actors can spawn on ramps or platforms.
+     * Their constructors run before/after the primitive binding and therefore
+     * cannot reliably initialize ground_y themselves.  Resolve every actor's
+     * initial support once the complete actor roster is present. */
+    for (i = 0; i < TOY_GAME_MAX_ACTORS; i++)
+        if (session->game_state.actors[i].active)
+            toy_game_update_actor_ground(&session->game_state, i);
     rasterfall_camera_set_body(camera,
                                session->game_state.actors[0].x,
                                session->game_state.actors[0].z);

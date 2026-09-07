@@ -2978,8 +2978,11 @@ static void actor_path_toward(struct toy_game *g, struct toy_game_actor *a,
 static void update_motion_values(struct toy_game *g, int *x, int *z,
                                  int *airborne_ms, int *airborne_y,
                                  int *vertical_velocity, int *knockback_x,
-                                 int *knockback_z, int radius, int dt_ms)
+                                 int *knockback_z, int *ground_y,
+                                 int radius, int dt_ms)
 {
+    struct toy_game_ground_query ground;
+    int landing_ground;
     if (*airborne_ms <= 0) return;
     *airborne_ms -= dt_ms;
     /* airborne_ms is also the active-state flag.  The configured duration is
@@ -2994,16 +2997,28 @@ static void update_motion_values(struct toy_game *g, int *x, int *z,
     if (*knockback_x || *knockback_z) {
         int nx = *x + *knockback_x;
         int nz = *z + *knockback_z;
-        if (!toy_game_position_blocked_at_height(g, nx, *z, radius, 0))
+        int height = *ground_y + *airborne_y;
+        if (!toy_game_position_blocked_at_height(g, nx, *z, radius,
+                                                  height))
             *x = nx;
-        if (!toy_game_position_blocked_at_height(g, *x, nz, radius, 0))
+        if (!toy_game_position_blocked_at_height(g, *x, nz, radius,
+                                                  height))
             *z = nz;
         *knockback_x = *knockback_x * 3 / 4;
         *knockback_z = *knockback_z * 3 / 4;
     }
-    if (*airborne_y <= 0 && *vertical_velocity < 0) {
+    ground = toy_game_query_ground(g, *x, *z, radius, *ground_y);
+    landing_ground = ground.landing_y;
+    /* A fall can end on a ramp above the actor's previous ground_y.  Landing
+     * at absolute height zero leaves the actor inside the ramp and the next
+     * grounded step sees it as an impassable wall. */
+    if (*vertical_velocity < 0 &&
+        ((!g->primitives && *airborne_y <= 0) ||
+         (g->primitives && ground.has_landing &&
+          *airborne_y <= landing_ground - *ground_y))) {
         *airborne_y = 0;
         *airborne_ms = 0;
+        if (g->primitives) *ground_y = landing_ground;
     }
     if (*airborne_ms == 0) {
         *vertical_velocity = 0;
@@ -5009,6 +5024,7 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
         update_motion_values(g, &actor->x, &actor->z, &actor->airborne_ms,
                              &actor->airborne_y, &actor->vertical_velocity,
                              &actor->knockback_x, &actor->knockback_z,
+                             &actor->ground_y,
                              TOY_GAME_PLAYER_RADIUS, dt_ms);
         return; /* 被击飞时中断自己的行为，落地后恢复。 */
     }
