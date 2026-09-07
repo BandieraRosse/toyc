@@ -438,27 +438,6 @@ static void session_move_player(struct rasterfall_session *session,
     }
 }
 
-static void session_move_remote_player(struct rasterfall_session *session,
-                                       struct camera *camera,
-                                       const struct rasterfall_command *command,
-                                       int height)
-{
-    int dx = (camera->sy * command->move_forward +
-              camera->cy * command->move_strafe) * RASTERFALL_MOVE_STEP / 1024;
-    int dz = (camera->cy * command->move_forward -
-              camera->sy * command->move_strafe) * RASTERFALL_MOVE_STEP / 1024;
-    int next_x = camera->x + dx;
-    int next_z = camera->z + dz;
-    if (!toy_game_position_blocked_at_height(&session->game_state, next_x,
-                                             camera->z, RASTERFALL_PLAYER_RADIUS,
-                                             height))
-        camera->x = next_x;
-    if (!toy_game_position_blocked_at_height(&session->game_state, camera->x,
-                                             next_z, RASTERFALL_PLAYER_RADIUS,
-                                             height))
-        camera->z = next_z;
-}
-
 static void session_jump_player(struct rasterfall_session *session,
                                 struct camera *camera,
                                 const struct rasterfall_command *command)
@@ -491,22 +470,6 @@ static void session_update_smooth_turn(struct rasterfall_session *session,
     if (step == 0) return;
     rasterfall_camera_rotate(camera, step, 0);
     session->smooth_turn_remaining -= step;
-}
-
-void rasterfall_session_step_remote_player(struct rasterfall_session *session,
-                                           struct camera *camera,
-                                           const struct rasterfall_command *command,
-                                           int remote_down, int ground_y)
-{
-    if (!remote_down)
-        session_move_remote_player(session, camera, command, ground_y);
-    if (command->turn || command->pitch)
-        rasterfall_camera_rotate(camera, command->turn, command->pitch);
-    if (command->buttons & RASTERFALL_CMD_SHOVE) {
-        /* 远端 camera 代表展示位置；不要临时改写本地 actor。 */
-        toy_game_shove_from_position(&session->game_state, camera->x,
-                                     camera->z, camera->sy, camera->cy);
-    }
 }
 
 void rasterfall_session_interact_remote(struct rasterfall_session *session,
@@ -593,7 +556,7 @@ int rasterfall_session_revive_remote(struct rasterfall_session *session,
     return toy_game_revive_actor(&session->game_state, actor_index, dt_ms);
 }
 
-int rasterfall_session_revive_player(struct rasterfall_session *session,
+int rasterfall_session_revive_target(struct rasterfall_session *session,
                                      const struct camera *rescuer,
                                      const struct camera *target,
                                      int *progress_ms, int dt_ms)
@@ -1545,7 +1508,7 @@ int rasterfall_session_set_managed_ai(struct rasterfall_session *session,
         RASTERFALL_AI_POLICY_MANAGED_SIMPLE) >= 0;
 }
 
-int rasterfall_session_recover_managed_player(
+int rasterfall_session_recover_managed_actor(
     struct rasterfall_session *session, struct camera *camera)
 {
     int x, z;
@@ -1940,7 +1903,7 @@ static void session_build_managed_ai_command(
              * same authoritative recovery operation: synchronize the local
              * actor position and clear its airborne impulse before the next
              * game tick. */
-            if (rasterfall_session_recover_managed_player(session, camera))
+            if (rasterfall_session_recover_managed_actor(session, camera))
                 return;
         }
         if (session->managed_ai_escape_phase == 0) {

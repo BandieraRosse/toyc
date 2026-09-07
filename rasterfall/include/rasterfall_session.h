@@ -153,7 +153,7 @@ void rasterfall_session_reset(struct rasterfall_session *session,
 int rasterfall_session_set_managed_ai(struct rasterfall_session *session,
                                       int active);
 /* 旁观者的托管 AI 脱困命令：同步重置相机、逻辑位置和击飞状态。 */
-int rasterfall_session_recover_managed_player(
+int rasterfall_session_recover_managed_actor(
     struct rasterfall_session *session, struct camera *camera);
 void rasterfall_session_step(struct rasterfall_session *session,
                              struct camera *camera,
@@ -172,13 +172,7 @@ void rasterfall_session_replay_client(struct rasterfall_session *session,
                                       struct camera *camera,
                                       const struct rasterfall_command *command,
                                       int dt_ms);
-/* 只推进远端玩家的移动与朝向，不重复推进敌人/director。主机用它验证
- * 客户端移动；射击和互动要等多玩家规则状态接入后再由权威会话处理。 */
-void rasterfall_session_step_remote_player(struct rasterfall_session *session,
-                                           struct camera *camera,
-                                           const struct rasterfall_command *command,
-                                           int remote_down, int ground_y);
-/* 主机验证远端玩家的交互按键，沿用同一视锥/距离判定。 */
+/* 主机验证远端 actor 的交互按键，沿用同一视锥/距离判定。 */
 void rasterfall_session_interact_remote(struct rasterfall_session *session,
                                         const struct camera *camera,
                                         int expected_kind);
@@ -190,7 +184,7 @@ void rasterfall_session_update_flag_remote(struct rasterfall_session *session,
                                            int player_id);
 int rasterfall_session_revive_remote(struct rasterfall_session *session,
                                      const struct camera *camera, int dt_ms);
-int rasterfall_session_revive_player(struct rasterfall_session *session,
+int rasterfall_session_revive_target(struct rasterfall_session *session,
                                      const struct camera *rescuer,
                                      const struct camera *target,
                                      int *progress_ms, int dt_ms);

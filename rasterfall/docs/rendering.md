@@ -1,7 +1,7 @@
 # 渲染、HUD、特效与性能
 
-> 文档更新：2026-09-06
-> 源码核对基线：工作区（HUD、viewmodel、crosshair、effects、smoker tongue、managed-player 和客户端远端玩家的 gameplay 展示查询直接读取 actor；远端位置/朝向继续使用网络插值缓存；RAY tracer 短线段/定向线宽投影，通用 emitter preset table，CAMERA_SHAKE 含开火后座与受击摇晃；程序化敌人身体组件描述表）
+> 文档更新：2026-09-07
+> 源码核对基线：工作区（HUD、viewmodel、crosshair、effects、managed actor 和客户端远端玩家的 gameplay 展示查询直接读取 actor；远端位置/朝向继续使用纯 derived presentation cache；RAY tracer 短线段/定向线宽投影，通用 emitter preset table，CAMERA_SHAKE 含开火后座与受击摇晃；程序化敌人身体组件描述表）
 
 ## 渲染边界
 

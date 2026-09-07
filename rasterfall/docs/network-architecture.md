@@ -45,7 +45,7 @@
 
 ## 玩家状态收敛
 
-远端玩家的规则状态以 `toy_game_actor` 为主机侧玩法落点。普通枪械路径由
+远端人类和 AI 的规则状态均以 `toy_game_actor` 为唯一玩法落点。普通枪械路径由
 `rasterfall_net.c` 直接更新对应 actor，并从 actor 编码 actor snapshot；不再把远端玩家临时拷贝进
 `toy_game` 的本地玩家字段。`rasterfall_net_client` 仅保留连接身份、输入队列、客户端报告的
 相机/运动、sequence/ack、RTT/丢包、可靠事件和请求 metadata；这些字段不是渲染或玩法的第二个

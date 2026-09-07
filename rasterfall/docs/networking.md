@@ -33,7 +33,8 @@
 `toy_game_shove_from_position()` 将远端位置作为只读规则输入。
 
 主机侧 `rasterfall_net_client` 是 connection/input/protocol 状态容器，不是玩家 gameplay
-镜像：`actor = gameplay truth`，而 `remote presentation cache = derived render state`。
+镜像：`actor = gameplay truth`，而 `remote presentation cache = derived render state`；远端 actor
+生命周期由 `toy_game_set_remote_actor()` 管理，网络客户端槽位不保存第二份 HP、武器或统计。
 `latest_input` 只表示最新解码的输入/客户端报告；HP/down、animation/stats、airborne、武器计时器
 和 inventory 均由对应 `game_state.actors[]` 持有。玩家和 AI 均通过 actor snapshot
 表达，不再存在独立玩家 gameplay 镜像。

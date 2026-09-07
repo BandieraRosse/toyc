@@ -538,7 +538,7 @@ static int run_logic_test(void)
             game.actors[4].slots[0].weapon != TOY_GAME_WEAPON_PISTOL ||
             game.actors[4].state != TOY_GAME_ACTOR_ALIVE) return 51;
         toy_game_init(&actor_test, 3);
-        if (toy_game_set_remote_player(&actor_test, 1, 1,
+        if (toy_game_set_remote_actor(&actor_test, 1, 1,
                                        2400, -3000, "REMOTE") !=
                 TOY_GAME_REMOTE_ACTOR_BASE ||
             !actor_test.actors[TOY_GAME_REMOTE_ACTOR_BASE].active ||
@@ -546,10 +546,10 @@ static int run_logic_test(void)
                 TOY_GAME_ACTOR_PLAYER ||
             actor_test.actors[TOY_GAME_REMOTE_ACTOR_BASE].hp !=
                 TOY_GAME_SECONDARY_PLAYER_HP) return 54;
-        if (toy_game_set_remote_player(&actor_test, 2, 1,
+        if (toy_game_set_remote_actor(&actor_test, 2, 1,
                                        2750, -3000, "REMOTE2") !=
                 TOY_GAME_REMOTE_ACTOR_BASE + 1 ||
-            toy_game_set_remote_player(&actor_test, 3, 1,
+            toy_game_set_remote_actor(&actor_test, 3, 1,
                                        3100, -3000, "REMOTE3") !=
                 TOY_GAME_REMOTE_ACTOR_BASE + 2 ||
             !actor_test.actors[TOY_GAME_REMOTE_ACTOR_BASE + 1].active ||
@@ -587,7 +587,7 @@ static int run_logic_test(void)
         if (throwable_ai->hp != throwable_ai->max_hp ||
             throwable_player->slots[3].mag != 0)
             return 139;
-        if (toy_game_set_remote_player(&throwable_test, 1, 1,
+        if (toy_game_set_remote_actor(&throwable_test, 1, 1,
                                        throwable_player->x + 100,
                                        throwable_player->z, "REMOTE") < 0)
             return 140;
@@ -1961,7 +1961,7 @@ static int run_logic_test(void)
         game.primitive_count = 0;
         game.room_limit = 12000;
         toy_game_set_primitives(&game,terrain,2,12000);
-        if (toy_game_set_remote_player(&game, 2, 1, 0, 0, "REMOTE") !=
+        if (toy_game_set_remote_actor(&game, 2, 1, 0, 0, "REMOTE") !=
             actor_index) return 103;
         if (!toy_game_jump_actor(&game, actor_index, 20, 0)) return 104;
         for (int i = 0; i < 70; i++)
@@ -2243,7 +2243,7 @@ static int run_logic_test(void)
         if (game.enemies[0].target_kind != TOY_GAME_TARGET_HOST ||
             game.enemies[0].target_index != -1) return 120;
 
-        toy_game_set_remote_player(&game, 1, 1, -1800, 0, "PLAYER");
+        toy_game_set_remote_actor(&game, 1, 1, -1800, 0, "PLAYER");
         toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
         if (game.enemies[0].target_kind != TOY_GAME_TARGET_HOST)
             return 121;
@@ -2408,7 +2408,7 @@ static int run_logic_test(void)
         int actor_index;
         toy_game_init(&game, 152);
         game.primitive_count = 0;
-        actor_index = toy_game_set_remote_player(&game, 1, 1, 0, 0,
+        actor_index = toy_game_set_remote_actor(&game, 1, 1, 0, 0,
                                                  "REMOTE");
         if (actor_index < 0 || !toy_game_apply_entity_impact(
                 &game, TOY_GAME_ENTITY_ACTOR, actor_index, 0, 1024, 1) ||

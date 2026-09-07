@@ -1,7 +1,7 @@
 # 运行时与主循环
 
-> 文档更新：2026-09-05
-> 源码核对基线：工作区（控制器命令经 actor API 进入玩法；世界步独立推进投射物、敌人、波次和地图规则；camera、HUD、网络只读取 actor/world 展示状态；本地 body 位置驱动 camera；空格/E 等动作边沿由 pending_key_edges 跨固定步保存）
+> 文档更新：2026-09-07
+> 源码核对基线：工作区（控制器命令经 actor API 进入玩法；`game_state.actors[]` 是玩家/AI gameplay truth；world step 独立推进投射物、敌人、波次和地图规则；camera、HUD、网络展示只读取 actor/world 或 derived presentation cache；本地 body 位置驱动 camera）
 
 ## 状态所有者
 

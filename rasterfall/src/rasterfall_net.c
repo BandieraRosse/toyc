@@ -343,7 +343,7 @@ void rasterfall_net_capture_events(struct rasterfall_net *net,
                                    struct toy_game *game)
 {
     int i, capacity, count;
-    struct toy_game_player_impulse_event impulses[TOY_GAME_MAX_EVENTS];
+    struct toy_game_actor_impulse_event impulses[TOY_GAME_MAX_EVENTS];
     if (!net || !game || net->mode != RASTERFALL_NET_HOST) return;
     if (game->event_count < net->local_event_scan_count)
         net->local_event_scan_count = 0;
@@ -368,15 +368,15 @@ void rasterfall_net_capture_events(struct rasterfall_net *net,
         net->local_event_scan_count = i + 1;
     }
     /* Impulses are gameplay events with hit-time payloads.  Consume them
-     * independently of actor snapshots/state; a PLAYER_STATE can therefore
+     * independently of actor snapshots/state; an actor state snapshot can therefore
      * arrive before or after this capture without deleting the event. */
     capacity = RASTERFALL_NET_RELIABLE_EVENT_MAX -
                net->reliable_event_count;
     if (capacity <= 0) return;
     if (capacity > TOY_GAME_MAX_EVENTS) capacity = TOY_GAME_MAX_EVENTS;
-    count = toy_game_drain_player_impulses(game, impulses, capacity);
+    count = toy_game_drain_actor_impulses(game, impulses, capacity);
     for (i = 0; i < count; i++) {
-        struct toy_game_player_impulse_event *impulse = &impulses[i];
+        struct toy_game_actor_impulse_event *impulse = &impulses[i];
         struct rasterfall_net_event *event =
             &net->reliable_events[net->reliable_event_count++];
         memset(event, 0, sizeof(*event));
@@ -569,7 +569,7 @@ static const struct toy_game_actor *net_client_actor_const(
 
 /* A paid revive is a player action, not a rescue interaction.  The client
  * predicts it for responsiveness, but the shared money balance and the
- * remote player's downed state must be changed here on the host. */
+ * remote actor's downed state must be changed here on the host. */
 static int net_paid_revive_client(struct rasterfall_net *net,
                                   struct rasterfall_session *session,
                                   struct rasterfall_net_client *client)
@@ -1743,7 +1743,7 @@ static int decode_player_fire(const unsigned char *payload, int size,
         actor->rays[i].enemy_index = get_i16(q + 15);
         actor->rays[i].damage = get_i16(q + 17);
     }
-    /* Remote players are ultimately rendered from their reserved actor slot.
+    /* Remote actors are ultimately rendered from their reserved actor slot.
      * Let the fire event itself drive that short overlay as well, so losing
      * the one entity snapshot that contained FIRE cannot hide the animation. */
     return 0;
@@ -2339,7 +2339,7 @@ static void net_finish_rescue(struct rasterfall_net *net,
         struct toy_game_actor *actor;
         int actor_index;
         if (target->client_id != target_id) continue;
-        actor_index = toy_game_set_remote_player(&session->game_state,
+        actor_index = toy_game_set_remote_actor(&session->game_state,
             target_id, 1, target->camera.x, target->camera.z, "PLAYER");
         if (actor_index >= 0) {
             actor = &session->game_state.actors[actor_index];
@@ -2440,7 +2440,7 @@ static void net_apply_extra_rescue_actions(struct rasterfall_net *net,
             target_camera = &host_target_camera;
         }
         if (!target_camera) continue;
-        revive = rasterfall_session_revive_player(
+        revive = rasterfall_session_revive_target(
             session, &rescuer->camera, target_camera,
             &rescuer->local_revive_progress_ms, 16);
         if (revive < 0) {
@@ -2780,13 +2780,13 @@ int rasterfall_net_pipeline_test(void)
         toy_game_init(&impulse_game, 154);
         memset(&target_session, 0, sizeof(target_session));
         toy_game_init(&target_session.game_state, 155);
-        actor_index = toy_game_set_remote_player(&impulse_game, 1, 1,
+        actor_index = toy_game_set_remote_actor(&impulse_game, 1, 1,
                                                  100, 200, "A");
         if (actor_index < 0 ||
             !toy_game_apply_entity_impact(&impulse_game,
                                           TOY_GAME_ENTITY_ACTOR, actor_index,
                                           300, 400, 7) ||
-            impulse_game.player_impulse_event_count != 1)
+            impulse_game.actor_impulse_event_count != 1)
             return 17;
         actor = &impulse_game.actors[actor_index];
         actor->x = 9999; actor->z = -9999;
@@ -2844,6 +2844,48 @@ int rasterfall_net_pipeline_test(void)
             late.remote_event_count != 1 || late.reliable_event_ack != 42)
             return 28;
     }
+    /* Regression guard: two remote clients use the same actor snapshot path
+     * for weapon state, down/revive state, animation and statistics.  The
+     * presentation cache is deliberately not involved in this round-trip. */
+    {
+        struct toy_game actor_game;
+        struct rasterfall_net_actor decoded;
+        unsigned char wire[NET_ACTOR_SIZE];
+        struct toy_game_actor *first;
+        struct toy_game_actor *second;
+        toy_game_init(&actor_game, 162);
+        if (toy_game_set_remote_actor(&actor_game, 1, 1, 100, 200, "A") < 0 ||
+            toy_game_set_remote_actor(&actor_game, 2, 1, 300, 400, "B") < 0)
+            return 29;
+        first = &actor_game.actors[TOY_GAME_REMOTE_ACTOR_BASE];
+        second = &actor_game.actors[TOY_GAME_REMOTE_ACTOR_BASE + 1];
+        first->current_slot = 1;
+        first->slots[1].weapon = TOY_GAME_WEAPON_AWP;
+        first->slots[1].mag = 3; first->slots[1].reserve = 17;
+        first->reloading = 1; first->reload_timer_ms = 240;
+        first->control_disabled = 1; first->kills = 8;
+        toy_game_animation_set(&first->animation, TOY_GAME_ANIM_DEATH);
+        second->state = TOY_GAME_ACTOR_DOWNED; second->hp = 0;
+        second->revive_progress_ms = 320; second->special_kills = 4;
+        second->damage_dealt = 1234;
+        encode_actor(wire, first, TOY_GAME_REMOTE_ACTOR_BASE, 55);
+        decode_actor(wire, &decoded);
+        if (decoded.actor_index != TOY_GAME_REMOTE_ACTOR_BASE ||
+            decoded.input_ack != 55 || decoded.current_slot != 1 ||
+            decoded.slots[1].weapon != TOY_GAME_WEAPON_AWP ||
+            decoded.slots[1].mag != 3 || decoded.slots[1].reserve != 17 ||
+            !decoded.reloading || decoded.reload_timer_ms != 240 ||
+            !decoded.control_disabled || decoded.kills != 8 ||
+            decoded.animation.id != TOY_GAME_ANIM_DEATH)
+            return 30;
+        encode_actor(wire, second, TOY_GAME_REMOTE_ACTOR_BASE + 1, 66);
+        decode_actor(wire, &decoded);
+        if (decoded.actor_index != TOY_GAME_REMOTE_ACTOR_BASE + 1 ||
+            decoded.state != TOY_GAME_ACTOR_DOWNED || decoded.hp != 0 ||
+            decoded.revive_progress_ms != 320 || decoded.special_kills != 4 ||
+            decoded.damage_dealt != 1234)
+            return 31;
+    }
     return 0;
 }
 
@@ -2856,7 +2898,7 @@ void rasterfall_net_sync_clients(struct rasterfall_net *net,
         struct rasterfall_net_client *client = &net->clients[i];
         struct toy_game_actor *actor;
         if (!client->active || !client->connected) {
-            toy_game_set_remote_player(game, i + 1, 0, 0, 0, NULL);
+            toy_game_set_remote_actor(game, i + 1, 0, 0, 0, NULL);
             continue;
         }
         index = net_client_actor_index(client);
@@ -2866,7 +2908,7 @@ void rasterfall_net_sync_clients(struct rasterfall_net *net,
          * remote actor for connection lifecycle.  The remote presentation
          * cache and decoded inputs never overwrite gameplay state here. */
         if (!actor->active || actor->kind != TOY_GAME_ACTOR_PLAYER)
-            toy_game_set_remote_player(game, client->client_id, 1,
+            toy_game_set_remote_actor(game, client->client_id, 1,
                                        client->camera.x, client->camera.z,
                                        "PLAYER");
     }
@@ -2931,7 +2973,7 @@ void rasterfall_net_apply_local_rescue(struct rasterfall_net *net,
     if (!net->host_revive_active) return;
     target = &net->clients[net->host_revive_target_id - 1];
     target_camera = &target->camera;
-    revive = rasterfall_session_revive_player(
+    revive = rasterfall_session_revive_target(
         session, host_camera, target_camera, &net->host_revive_progress_ms,
         dt_ms);
     if (revive < 0) {
@@ -3305,7 +3347,7 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
     /* The local camera/game_state remains the result of local movement,
      * jump, air control, collision and facing simulation.  The actor snapshot
      * supplies host-authoritative gameplay state, while prediction history/acks stay intact for protocol
-     * compatibility and diagnostics; no replay or correction is performed. */
+     * acknowledgement and diagnostics; no replay or correction is performed. */
     for (int i = 0; i < RASTERFALL_NET_INPUT_HISTORY; i++)
         if (net->input_history[i].valid &&
             sequence_before_or_equal(net->input_history[i].sequence,

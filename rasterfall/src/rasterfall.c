@@ -940,7 +940,7 @@ static void managed_terminal_execute(struct managed_terminal *terminal,
                  session->managed_ai_escape_phase);
     else if (!strcmp(terminal->line, "unstuck") ||
              !strcmp(terminal->line, "return")) {
-        if (rasterfall_session_recover_managed_player(session, camera))
+        if (rasterfall_session_recover_managed_actor(session, camera))
             strcpy(terminal->message, "AI RETURNED TO BASE");
         else
             strcpy(terminal->message, "RECOVERY UNAVAILABLE");

@@ -253,7 +253,7 @@ enum toy_game_event {
 
 /* Gameplay-owned one-shot event.  This captures the hit-time values instead
  * of asking a later network pass to infer them from actor motion state. */
-struct toy_game_player_impulse_event {
+struct toy_game_actor_impulse_event {
     int target_id;
     int impulse_x, impulse_z;
     int vertical_velocity;
@@ -655,9 +655,9 @@ struct toy_game {
     /* 本帧事件队列（宿主每帧 drain） */
     int event_count;
     unsigned char events[TOY_GAME_MAX_EVENTS];
-    int player_impulse_event_count;
-    struct toy_game_player_impulse_event
-        player_impulse_events[TOY_GAME_MAX_EVENTS];
+    int actor_impulse_event_count;
+    struct toy_game_actor_impulse_event
+        actor_impulse_events[TOY_GAME_MAX_EVENTS];
 };
 
 struct toy_game_actor *toy_game_local_player_actor(struct toy_game *g);
@@ -686,14 +686,13 @@ int  toy_game_add_anime_flag_guard(struct toy_game *g, int character_id,
 int  toy_game_set_ai_weapon(struct toy_game *g, int actor_index, int weapon);
 int  toy_game_clear_hired_ai(struct toy_game *g);
 int  toy_game_upgrade_ai(struct toy_game *g, int actor_index);
-int  toy_game_set_remote_player(struct toy_game *g, int player_id,
+int  toy_game_set_remote_actor(struct toy_game *g, int player_id,
                                 int active, int x, int z,
                                 const char *name);
 void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms);
 void toy_game_update_ai_teammates(struct toy_game *g, int dt_ms);
 int  toy_game_assign_actor_deployment(struct toy_game *g, int actor_index,
                                       int x, int z, int flag_index);
-int  toy_game_revive_ai(struct toy_game *g, int dt_ms);
 int  toy_game_revive_actor(struct toy_game *g, int actor_index, int dt_ms);
 int  toy_game_set_campaign_stage(struct toy_game *g, int stage);
 int  toy_game_move_ai_actor(struct toy_game *g, int actor_index, int x, int z);
@@ -831,8 +830,8 @@ void toy_game_animation_update(struct toy_game_animation_state *state,
 void toy_game_actor_set_animation(struct toy_game_actor *actor, int animation_id);
 void toy_game_actor_update_animation(struct toy_game_actor *actor, int dt_ms);
 int  toy_game_drain_events(struct toy_game *g, unsigned char *out, int max);
-int  toy_game_drain_player_impulses(
-    struct toy_game *g, struct toy_game_player_impulse_event *out, int max);
+int  toy_game_drain_actor_impulses(
+    struct toy_game *g, struct toy_game_actor_impulse_event *out, int max);
 void toy_game_place_enemy(struct toy_game *g, int x, int z); /* 测试钩子 */
 int  toy_game_spawn_horde(struct toy_game *g, int count_min, int count_max,
                           const struct toy_game_box *points, int point_count,

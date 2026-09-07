@@ -1,7 +1,7 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-07
-> 源码核对基线：工作区（本地玩家状态统一存放在 `actors[0]`；local human、remote human、AI 和 special controller 都经 actor API 驱动 `toy_game_actor`，world step 独立推进共享规则；测试、session、网络和 `update_held` 正式路径均直接使用 actor API；武器装备、切换、补给、购买和药丸使用的正式入口均显式接收 actor；HUD、viewmodel、crosshair、effects 和角色展示查询直接读取 actor；网络协议版本 42 的 actor snapshot 统一表达玩家/AI gameplay，world snapshot 仅表达世界状态，旧 player snapshot 已删除）
+> 源码核对基线：工作区（本地玩家、远端人类、AI 和 special controller 的 gameplay 状态统一由 `toy_game_actor` 拥有；`toy_game_set_remote_actor()` 是远端 actor 生命周期入口；网络协议版本 42 的 actor snapshot 统一表达角色状态，world snapshot 仅表达世界状态；HUD、viewmodel、effects 和角色展示只读 actor；remote presentation cache 只保存派生渲染坐标）
 
 本目录面向接手 Rasterfall 任务的编码代理。目标不是介绍玩法，而是先把问题归到正确的
 状态所有者和文件，再开始搜索。命令、资源导入方法和用户可见特性仍以

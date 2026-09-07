@@ -444,41 +444,41 @@ int toy_game_drain_events(struct toy_game *g, unsigned char *out, int max)
     return count;
 }
 
-int toy_game_drain_player_impulses(
-    struct toy_game *g, struct toy_game_player_impulse_event *out, int max)
+int toy_game_drain_actor_impulses(
+    struct toy_game *g, struct toy_game_actor_impulse_event *out, int max)
 {
     int count;
     if (!g || max <= 0) return 0;
-    count = g->player_impulse_event_count;
+    count = g->actor_impulse_event_count;
     if (count > max) count = max;
     if (out && count > 0)
-        memcpy(out, g->player_impulse_events,
+        memcpy(out, g->actor_impulse_events,
                (unsigned long)count * sizeof(*out));
-    if (count < g->player_impulse_event_count)
-        memmove(g->player_impulse_events,
-                g->player_impulse_events + count,
-                (unsigned long)(g->player_impulse_event_count - count) *
+    if (count < g->actor_impulse_event_count)
+        memmove(g->actor_impulse_events,
+                g->actor_impulse_events + count,
+                (unsigned long)(g->actor_impulse_event_count - count) *
                     sizeof(*out));
-    g->player_impulse_event_count -= count;
+    g->actor_impulse_event_count -= count;
     return count;
 }
 
-static void push_player_impulse_event(struct toy_game *g,
+static void push_actor_impulse_event(struct toy_game *g,
                                       const struct toy_game_actor *actor,
                                       int impulse_x, int impulse_z,
                                       int vertical_velocity,
                                       int airborne_ms, int airborne_y)
 {
-    struct toy_game_player_impulse_event *event;
+    struct toy_game_actor_impulse_event *event;
     int target_id;
-    if (!g || !actor || g->player_impulse_event_count >= TOY_GAME_MAX_EVENTS)
+    if (!g || !actor || g->actor_impulse_event_count >= TOY_GAME_MAX_EVENTS)
         return;
     /* Remote player actors use the stable 101..103 actor ids. */
     target_id = actor->actor_id - 100;
     if (actor->kind != TOY_GAME_ACTOR_PLAYER || target_id <= 0 ||
         target_id >= TOY_GAME_MAX_PLAYERS)
         return;
-    event = &g->player_impulse_events[g->player_impulse_event_count++];
+    event = &g->actor_impulse_events[g->actor_impulse_event_count++];
     event->target_id = target_id;
     event->impulse_x = impulse_x;
     event->impulse_z = impulse_z;
@@ -879,7 +879,7 @@ int toy_game_upgrade_ai(struct toy_game *g, int actor_index)
     return 1;
 }
 
-int toy_game_set_remote_player(struct toy_game *g, int player_id,
+int toy_game_set_remote_actor(struct toy_game *g, int player_id,
                                int active, int x, int z, const char *name)
 {
     const struct toy_game_weapon_info *w;
@@ -915,11 +915,6 @@ int toy_game_set_remote_player(struct toy_game *g, int player_id,
     a->sy = 0; a->cy = 1024;
     copy_name(a->name, name ? name : "PLAYER");
     return index;
-}
-
-int toy_game_revive_ai(struct toy_game *g, int dt_ms)
-{
-    return toy_game_revive_actor(g, 0, dt_ms);
 }
 
 int toy_game_revive_actor(struct toy_game *g, int actor_index, int dt_ms)
@@ -3307,7 +3302,7 @@ static int apply_entity_impact_with_knockback(struct toy_game *g, int kind,
                 a->knockback_z = dz;
                 a->knockback_cooldown_ms =
                     TOY_GAME_PLAYER_KNOCKBACK_COOLDOWN_MS;
-                push_player_impulse_event(g, a, dx, dz,
+                push_actor_impulse_event(g, a, dx, dz,
                                           a->vertical_velocity, a->airborne_ms,
                                           a->airborne_y);
             }
