@@ -13,7 +13,7 @@
 asset id、RFU `x/y/z`、绕世界 Y 轴的 yaw 和实例缩放；入口按
 “RMESH local → `512/232` profile scale → instance scale → yaw → world translation”求值。
 注册表模型缓存按 asset id 懒加载一次，多个实例共享同一 `rasterfall_model_asset`；开发场景当前在
-玩家出生点前硬编码展示 crate、barrier、lamp_post，用于检查底部 pivot、尺寸、yaw、材质和深度。
+空地 `z=-17000` 一带硬编码展示 crate、barrier、lamp_post，用于检查底部 pivot、尺寸、yaw、材质和深度。
 这些 prop 仍是 presentation-only，不进入地图格式、gameplay 或碰撞。
 
 程序化敌人模型采用统一的 `enemy_body_part` 描述：每个条目对应一个基本身体组件，类型包括局部朝向盒、世界盒、圆柱、椭球和面部矩形，尺寸与局部偏移仍使用现有 RFU 数值。通用解释器按描述顺序提交几何，因此可以在不改变玩法状态的前提下继续接入参数化配置。敌人位置以 `toy_game_enemy.x/z` 为水平锚点，垂直基准由地面 `Y=-900`、`ground_y` 和 `airborne_y` 组成；Charger 的水平放大和普通敌人的既有缩放语义保留在解释器中。Tank 的挥臂依赖蓄力时间，是动态组件，继续由专用函数求值后插入静态组件之间，以保持原有遮挡和绘制顺序。

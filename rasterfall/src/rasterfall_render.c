@@ -1628,9 +1628,9 @@ static int render_static_prop_dev_scene(struct toy_renderer *renderer,
                                         const struct camera *camera)
 {
     static const struct rasterfall_prop_instance props[] = {
-        { RASTERFALL_PROP_ASSET_CRATE, -14500, -900, -10500, 0, 1000 },
-        { RASTERFALL_PROP_ASSET_BARRIER, -13000, -900, -10500, 90, 1000 },
-        { RASTERFALL_PROP_ASSET_LAMP_POST, -11500, -900, -10500, 45, 1000 }
+        { RASTERFALL_PROP_ASSET_CRATE, -14500, -900, -17000, 0, 1000 },
+        { RASTERFALL_PROP_ASSET_BARRIER, -13000, -900, -17000, 90, 1000 },
+        { RASTERFALL_PROP_ASSET_LAMP_POST, -11500, -900, -17000, 45, 1000 }
     };
     int i, pixels = 0;
     for (i = 0; i < (int)(sizeof(props) / sizeof(props[0])); i++)
