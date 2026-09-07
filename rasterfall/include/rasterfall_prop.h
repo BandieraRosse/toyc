@@ -26,7 +26,7 @@ struct rasterfall_prop_asset_profile {
     const char *model_path;
     /* milli-scale from RMESH units into RFU at the presentation edge. */
     int render_scale_milli;
-    /* Default AABB dimensions in RFU; not consumed by gameplay yet. */
+    /* Default AABB dimensions in RFU for gameplay collision. */
     struct rasterfall_prop_dimensions collision_size;
 };
 
@@ -47,6 +47,10 @@ const struct rasterfall_prop_asset_profile *
 rasterfall_prop_asset_by_name(const char *name);
 int rasterfall_prop_render_scale(const struct rasterfall_prop_asset_profile *profile,
                                  int instance_scale_milli);
+int rasterfall_prop_collision_dimensions(
+    const struct rasterfall_prop_asset_profile *profile,
+    int yaw_degrees, int instance_scale_milli,
+    struct rasterfall_prop_dimensions *out);
 int rasterfall_prop_asset_logic_test(void);
 
 #endif

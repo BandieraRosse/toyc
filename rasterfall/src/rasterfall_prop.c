@@ -1,4 +1,5 @@
 #include "rasterfall_prop.h"
+#include "math.h"
 #include "string.h"
 
 /* GLB remains metres, glb2rmesh stores 232 units per metre, and the world
@@ -51,6 +52,31 @@ int rasterfall_prop_render_scale(
                  instance_scale_milli / 1000);
 }
 
+int rasterfall_prop_collision_dimensions(
+    const struct rasterfall_prop_asset_profile *profile,
+    int yaw_degrees, int instance_scale_milli,
+    struct rasterfall_prop_dimensions *out)
+{
+    double angle, sine, cosine;
+    int yaw, width, depth;
+    if (!profile || !out || instance_scale_milli <= 0) return -1;
+    width = (int)((long long)profile->collision_size.x *
+                  instance_scale_milli / 1000);
+    out->y = (int)((long long)profile->collision_size.y *
+                   instance_scale_milli / 1000);
+    depth = (int)((long long)profile->collision_size.z *
+                  instance_scale_milli / 1000);
+    if (width <= 0 || out->y <= 0 || depth <= 0) return -1;
+    yaw = yaw_degrees % 360;
+    if (yaw < 0) yaw += 360;
+    angle = (double)yaw * 3.141592653589793 / 180.0;
+    sine = sin(angle); if (sine < 0) sine = -sine;
+    cosine = cos(angle); if (cosine < 0) cosine = -cosine;
+    out->x = (int)(width * cosine + depth * sine + 0.999999);
+    out->z = (int)(width * sine + depth * cosine + 0.999999);
+    return out->x > 0 && out->z > 0 ? 0 : -1;
+}
+
 int rasterfall_prop_asset_logic_test(void)
 {
     int i;
@@ -86,5 +112,15 @@ int rasterfall_prop_asset_logic_test(void)
         rasterfall_prop_render_scale(crate, 2000) != 4414 ||
         rasterfall_prop_render_scale(crate, 0) != 0)
         return 5;
+    {
+        struct rasterfall_prop_dimensions dimensions;
+        if (rasterfall_prop_collision_dimensions(barrier, 0, 1000,
+                                                  &dimensions) != 0 ||
+            dimensions.x != 1229 || dimensions.y != 410 || dimensions.z != 512 ||
+            rasterfall_prop_collision_dimensions(barrier, 90, 1000,
+                                                  &dimensions) != 0 ||
+            dimensions.x != 512 || dimensions.z != 1229)
+            return 6;
+    }
     return 0;
 }

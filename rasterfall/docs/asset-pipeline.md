@@ -29,10 +29,11 @@ glTF JSON。静态转换路径不导入 GLB 骨架和动画，不能替代 GLB �
 `include/rasterfall_prop.h` / `src/rasterfall_prop.c` 保存静态组件的 presentation 资产 profile。
 当前注册 `crate`、`barrier` 和 `lamp_post`，每项包含稳定 asset ID、名称、RMESH 路径、默认
 展示缩放和 RFU 碰撞尺寸。profile 使用 `512 RFU/m ÷ 232 RMESH units/m` 的 milli-scale；该换算
-不进入地图语法或 `toy_game`，碰撞尺寸当前只作为未接入玩法的资产元数据。
+不进入 RMESH 或地图 visual mesh，碰撞尺寸以 RFU 元数据供地图 parser 生成 gameplay primitive。
 
-此 registry 只提供查找和单位契约，不负责地图实例化、模型加载或碰撞绑定。新增组件时应先在
-profile 中分配不复用的 ID，并同步检查 `rasterfall_prop_asset_logic_test()`。
+此 registry 提供查找、单位契约和默认 RFU 碰撞盒；地图 parser 负责实例化碰撞 primitive，renderer
+负责模型加载。新增组件时应先在 profile 中分配不复用的 ID，并同步检查
+`rasterfall_prop_asset_logic_test()`。
 
 ## PMX 转 RFM2/TTEX
 

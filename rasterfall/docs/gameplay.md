@@ -29,7 +29,7 @@ session 的本地复活、商店控制锁、交互死亡判断和托管武器决
 
 - `include/toy_map.h`：磁盘地图解析后的通用结构。
 - `lib/map.c`：文本 `.map` 解析器；新增语法或字段从这里开始。
-- `include/rasterfall_map.h` / `src/rasterfall_map.c`：把地图绑定为玩法盒体、图元、可交互物和安全区。
+- `include/rasterfall_map.h` / `src/rasterfall_map.c`：把地图绑定为玩法盒体、图元、prop 碰撞、可交互物和安全区。
 - `assets/maps/rasterfall.map`：正式公开关卡数据。
 - `rasterfall_render.c`：只负责把地图结构画出来；不可用视觉几何代替玩法碰撞。
 
@@ -37,7 +37,7 @@ session 的本地复活、商店控制锁、交互死亡判断和托管武器决
 
 - 武器数值、弹药、射速、价格：`toy_game.h` 的 weapon 枚举/结构和 `game.c` 的武器表与操作。
 - 敌人类型、技能、波次：enemy 枚举/信息表、wave plan、enemy update 路径。
-- 移动、坡道、跳跃、碰撞：`toy_game_query_ground`、`position_blocked`、motion/navigation 相关函数。
+- 移动、坡道、跳跃、碰撞：`toy_game_query_ground`、`position_blocked`、motion/navigation 相关函数；静态 prop 在 `lib/map.c` 中按 RFU profile 生成普通 box，导航消费同一 primitive。
 - 玩家输入产生何种动作：`rasterfall.c` 构造 command，session 执行，game 落实规则。
 - 商店、剧情、队友雇佣、托管玩法：`rasterfall_session.c` 的 `shop`、`campaign`、`managed_ai` 区域。
 - 角色外观选择：`rasterfall_character.c`；角色动作状态仍由 `toy_game_actor.animation` 等字段拥有。

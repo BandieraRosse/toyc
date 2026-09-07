@@ -1,7 +1,7 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-07
-> 源码核对基线：工作区（新增地图静态 prop 实例解析与渲染遍历；`rasterfall_prop` 静态资产 profile 和 world-space RMESH prop 渲染入口；本地玩家、远端人类、AI 和 special controller 的 gameplay 状态统一由 `toy_game_actor` 拥有；`rasterfall_render_static_prop()` 只消费展示实例）
+> 源码核对基线：工作区（地图静态 prop 实例解析、profile 驱动 RFU 碰撞 primitive 与渲染遍历；`rasterfall_prop` 静态资产 profile 和 world-space RMESH prop 渲染入口；本地玩家、远端人类、AI 和 special controller 的 gameplay 状态统一由 `toy_game_actor` 拥有）
 
 本目录面向接手 Rasterfall 任务的编码代理。目标不是介绍玩法，而是先把问题归到正确的
 状态所有者和文件，再开始搜索。命令、资源导入方法和用户可见特性仍以

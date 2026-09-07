@@ -40,8 +40,15 @@ prop crate -14500 -17000 0 1000
 ```
 
 `x/z` 使用 RFU，实例落在地面锚点 `y=-900`；`yaw` 为绕世界 Y 轴的角度；`scale=1000`
-表示资产原始设计尺寸。解析结果位于 `toy_map.props`，仅供 presentation 渲染使用，不产生
-gameplay collision。
+表示资产原始设计尺寸。默认根据资产 profile 的 RFU 碰撞盒生成普通 gameplay box；视觉网格
+与该盒体独立。仅在确有需要时可追加 `collision=none`，例如：
+
+```text
+prop lamp_post 0 -17000 0 1000 collision=none
+```
+
+解析结果位于 `toy_map.props`，生成的碰撞结果位于同一地图的 `primitives`，二者都不引用
+RMESH 的 232 单位。
 
 其他受支持记录及参数应直接以 `lib/map.c` 的解析分支为准。新增记录时在本文记录用途和最小示例，
 不要只修改关卡文件。可见几何不能代替玩法碰撞，渲染正确也不能证明导航和地面查询正确。

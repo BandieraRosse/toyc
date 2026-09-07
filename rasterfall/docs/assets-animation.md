@@ -19,7 +19,8 @@
 - `rasterfall_actor_animation.h`、`rasterfall_animation_composition.h`：玩法动作到角色姿态、持枪和叠加规则。
 - `rasterfall_character.c`：actor/class 到角色资产选择；实际加载与绘制在 render。
 - `rasterfall_prop.h` / `rasterfall_prop.c`：静态 prop asset profile、RMESH 路径与 `512/232`
-  presentation 缩放；`rasterfall_render_static_prop()` 负责实例变换和共享模型提交，不接 gameplay 碰撞。
+  presentation 缩放；`rasterfall_render_static_prop()` 负责实例变换和共享模型提交，地图 parser
+  独立消费 RFU 碰撞 profile 生成 gameplay primitive。
 - `app/glb_inspect.c`：既是 GLB 检查器，也以 `RASTERFALL_GLB_LIBRARY` 编入游戏提供 GLB 动画加载。
 
 完整求值顺序、格式扩展点和回归要求见

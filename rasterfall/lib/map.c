@@ -172,17 +172,38 @@ int toy_map_load(const char *path, struct toy_map *m)
         else if(!strcmp(kind,"prop") && m->prop_count<TOY_MAP_MAX_PROPS){
             char *asset=word(&p), *sx=word(&p), *sz=word(&p);
             char *syaw=word(&p), *sscale=word(&p);
+            char *option;
             int asset_id;
+            const struct rasterfall_prop_asset_profile *profile;
+            struct rasterfall_prop_dimensions dimensions;
             struct toy_map_prop *prop;
+            int collision = 1;
             if (!asset || !sx || !sz || !syaw || !sscale) continue;
             asset_id = prop_asset_id(asset);
             if (!asset_id || number(sscale, 10) <= 0) continue;
+            while ((option = word(&p)) != NULL)
+                if (!strcmp(option, "collision=none")) collision = 0;
             prop = &m->props[m->prop_count++];
             prop->asset_id = asset_id;
             prop->x = number(sx, 10);
             prop->z = number(sz, 10);
             prop->yaw_degrees = number(syaw, 10);
             prop->scale_milli = number(sscale, 10);
+            profile = rasterfall_prop_asset_profile(asset_id);
+            if (collision && profile && m->primitive_count < TOY_MAP_MAX_PRIMITIVES &&
+                rasterfall_prop_collision_dimensions(profile, prop->yaw_degrees,
+                                                     prop->scale_milli,
+                                                     &dimensions) == 0) {
+                struct toy_map_primitive *box = add_primitive(
+                    m, TOY_MAP_PRIMITIVE_BOX,
+                    prop->x - dimensions.x / 2,
+                    prop->x + (dimensions.x + 1) / 2,
+                    prop->z - dimensions.z / 2,
+                    prop->z + (dimensions.z + 1) / 2,
+                    0, dimensions.y, dimensions.y,
+                    TOY_MAP_PRIMITIVE_COLLISION, 0);
+                (void)box;
+            }
         }
         else if(!strcmp(kind,"spawn") && get4(&p,&a,&b,&c,&d)==0 && m->spawn_count<TOY_MAP_MAX_ZONES){char *co=word(&p);m->spawn_zones[m->spawn_count].box.minx=a;m->spawn_zones[m->spawn_count].box.maxx=b;m->spawn_zones[m->spawn_count].box.minz=c;m->spawn_zones[m->spawn_count].box.maxz=d;m->spawn_zones[m->spawn_count].color=color(co);m->spawn_count++;}
         else if(!strcmp(kind,"alarm") && get4(&p,&a,&b,&c,&d)==0){char *zone=word(&p);m->alarm_zone.minx=a;m->alarm_zone.maxx=b;m->alarm_zone.minz=c;m->alarm_zone.maxz=d;m->has_alarm=1;if(zone)m->alarm_spawn_zone=number(zone,10);}

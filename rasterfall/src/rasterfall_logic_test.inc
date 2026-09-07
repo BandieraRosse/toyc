@@ -152,6 +152,39 @@ static int primitive_gameplay_logic_test(void)
         level_map.props[2].asset_id != RASTERFALL_PROP_ASSET_LAMP_POST)
         return 18;
     {
+        int crate_box = 0, barrier_box = 0, i;
+        for (i = 0; i < level_map.primitive_count; i++) {
+            const struct toy_map_primitive *p = &level_map.primitives[i];
+            if (p->shape != TOY_MAP_PRIMITIVE_BOX ||
+                !(p->flags & TOY_MAP_PRIMITIVE_COLLISION)) continue;
+            if (p->minx == -14807 && p->maxx == -14193 &&
+                p->minz == -17256 && p->maxz == -16744 && p->surface_y0 == 512)
+                crate_box = 1;
+            if (p->minx == -13256 && p->maxx == -12744 &&
+                p->minz == -17615 && p->maxz == -16385 && p->surface_y0 == 410)
+                barrier_box = 1;
+        }
+        if (!crate_box || !barrier_box) return 19;
+        {
+            struct toy_game prop_game;
+            struct toy_map_primitive prop_world[2] = {
+                test_flat_primitive(-3000, 3000, -3000, 3000, 0),
+                test_box_primitive(-256, 256, -615, 615, 0, 410,
+                                   TOY_MAP_PRIMITIVE_COLLISION)
+            };
+            int center = ((0 - (-1200)) / 300) * 8 + (0 - (-1200)) / 300;
+            int edge = ((0 - (-1200)) / 300) * 8 + (900 - (-1200)) / 300;
+            toy_game_init(&prop_game, 215);
+            toy_game_set_primitives(&prop_game, prop_world, 2, 1200);
+            if (!toy_game_position_blocked_at_height(&prop_game, 0, 0,
+                                                     TOY_GAME_PLAYER_RADIUS, 0) ||
+                toy_game_position_blocked_at_height(&prop_game, 0, 900,
+                                                    TOY_GAME_PLAYER_RADIUS, 0) ||
+                prop_game.nav_walkable[center] || !prop_game.nav_walkable[edge])
+                return 20;
+        }
+    }
+    {
         struct toy_game west_game;
         struct toy_game_actor *west_player;
         int i, max_x;
