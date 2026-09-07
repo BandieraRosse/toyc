@@ -1,7 +1,7 @@
 # 玩法、会话、地图与 AI
 
 > 文档更新：2026-09-07
-> 源码核对基线：工作区（静态 prop profile 碰撞盒作为可站立 RFU primitive；所有人类玩家和 AI 的移动/跳跃/airborne/朝向/武器/库存/切枪/reload/动画/special-control/shove/统计均由 `toy_game_actor` 拥有；Smoker 对玩家和 AI 统一使用 4 秒拉拽、8 秒冷却和冷却期间远离；客户端展示缓存不参与玩法规则）
+> 源码核对基线：工作区（静态 prop profile 碰撞盒作为可站立 RFU primitive；所有人类玩家和 AI 的移动/跳跃/airborne/朝向/武器/库存/切枪/reload/动画/special-control/shove/统计均由 `toy_game_actor` 拥有；Smoker 对玩家和 AI 统一使用 4 秒拉拽、8 秒冷却和冷却期间远离；西侧走廊出口旁新增排除 Tank 的 16 敌人随机刷怪按钮；客户端展示缓存不参与玩法规则）
 
 ## 三层职责
 
@@ -48,6 +48,8 @@ session 的本地复活、商店控制锁、交互死亡判断和托管武器决
 `wave_waiting_heavy` 仍是追击型波次的统计字段，不代表已删除的敌人类型。
 
 敌人 AI 现在分为两条路径。`PURSUIT_COMMON`、`PURSUIT_HEAVY` 和 `PURSUIT_FAST` 只做最近有效目标选择、导航追击和攻击距离判定，不再经过视野方向、观察、警戒传播、枪声调查、丢失目标或搜索状态。`SMOKER`、`CHARGER`、`TANK` 仍进入各自的特感更新函数，并保留技能的独立索敌、前摇、冲锋/束缚/横扫逻辑。Smoker 对主机玩家和 AI 队友统一使用 `4000ms` 拉拽；拉拽结束、目标失效、失去视线或玩家近战打断后进入 `8000ms` 冷却，冷却期间不重新索敌并主动远离上一个目标。普通敌人的目标选择仍支持主机玩家和存活 AI actor，目标每 `TOY_GAME_RETARGET_MS` 重新评估。
+
+西侧走廊出口旁墙面的 `button_west_corridor_no_tank` 可一次生成 16 个随机敌人，随机池包含普通、重型、快速、Smoker 和 Charger，不包含 Tank。
 
 普通敌人状态不再写入网络快照；快照只同步位置、朝向、生命、受击/死亡展示计时和特感能力状态。对应的显式编码入口是 `src/rasterfall_net.c` 的 `encode_enemy` / `decode_enemy`，修改敌人展示字段时要同步检查这里。
 

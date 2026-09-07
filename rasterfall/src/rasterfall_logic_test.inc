@@ -115,6 +115,20 @@ static int primitive_gameplay_logic_test(void)
                 max_ground = ramp_game.enemies[0].ground_y;
         }
         if (max_ground < 450 || ramp_game.enemies[0].x < 1800) return 14;
+        ramp_player->x = -500;
+        ramp_player->z = 0;
+        ramp_player->ground_y = 0;
+        for (i = 0; i < 60; i++) {
+            int next_x = ramp_player->x + 76;
+            if (!toy_game_try_move_actor(&ramp_game, ramp_player,
+                                         next_x, ramp_player->z)) {
+                __printf("ramp player blocked x=%d next=%d ground=%d\n",
+                          ramp_player->x, next_x, ramp_player->ground_y);
+                return 17;
+            }
+        }
+        if (ramp_player->x < 4000 || ramp_player->ground_y != 600)
+            return 18;
     }
     world[0]=test_flat_primitive(-1200,1200,-1200,1200,0);
     world[1]=test_box_primitive(200,400,-1000,1000,0,1000,TOY_MAP_PRIMITIVE_COLLISION);
@@ -269,6 +283,26 @@ static int run_logic_test(void)
         RASTERFALL_HUMAN_HEIGHT_RFU != 896 ||
         RASTERFALL_HUMAN_EYE_HEIGHT_RFU != 824 ||
         camera.y != RASTERFALL_STANDING_CAMERA_Y) return 167;
+    {
+        struct toy_game_actor *ramp_actor =
+            toy_game_local_player_actor(&session.game_state);
+        int step;
+        ramp_actor->x = -32000;
+        ramp_actor->z = 0;
+        ramp_actor->ground_y = 0;
+        ramp_actor->airborne_ms = 0;
+        for (step = 0; step < 80; step++) {
+            int next_x = ramp_actor->x + 76;
+            if (!toy_game_try_move_actor(&session.game_state, ramp_actor,
+                                         next_x, ramp_actor->z)) {
+                __printf("ramp map player blocked x=%d next=%d ground=%d\n",
+                          ramp_actor->x, next_x, ramp_actor->ground_y);
+                return 175;
+            }
+        }
+        if (ramp_actor->x < -25900 || ramp_actor->ground_y != 900)
+            return 176;
+    }
     {
         static const int kinds[13] = {
             TOY_MAP_PICKUP_POSE_RESET_BUTTON,

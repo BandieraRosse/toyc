@@ -81,6 +81,7 @@ enum toy_map_pickup_kind {
     ,TOY_MAP_PICKUP_ANIMATION_COMPOSITION_BUTTON
     ,TOY_MAP_PICKUP_HUMANOID_POSE_DEBUG_BUTTON
     ,TOY_MAP_PICKUP_WEST_CORRIDOR_BUTTON
+    ,TOY_MAP_PICKUP_WEST_CORRIDOR_NO_TANK_BUTTON
 };
 struct toy_map_pickup { int kind; int weapon; int x, z, y; };
 /* Presentation-only map record.  The parser stores a registry asset ID, not

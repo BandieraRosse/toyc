@@ -423,22 +423,21 @@ static void session_move_player(struct rasterfall_session *session,
               camera->cy * command->move_strafe) * RASTERFALL_MOVE_STEP / 1024;
     int dz = (camera->cy * command->move_forward -
               camera->sy * command->move_strafe) * RASTERFALL_MOVE_STEP / 1024;
-    int next_x = actor->x + dx;
-    int next_z = actor->z + dz;
-    int height = actor->ground_y + actor->airborne_y;
     if (actor->airborne_ms <= 0) {
-        if (!toy_game_position_blocked_at_height(&session->game_state, next_x,
-                                                  actor->z, RASTERFALL_PLAYER_RADIUS,
-                                                  height)) actor->x = next_x;
-        if (!toy_game_position_blocked_at_height(&session->game_state, actor->x,
-                                                  next_z, RASTERFALL_PLAYER_RADIUS,
-                                                  height)) actor->z = next_z;
+        /* Ground movement must use the gameplay actor API so ramps update
+         * ground_y and ramp/platform seams remain traversable. */
+        toy_game_move_actor_sliding(&session->game_state, actor, dx, dz);
         return;
     }
+    {
+        int next_x = actor->x + dx;
+        int next_z = actor->z + dz;
+        int height = actor->ground_y + actor->airborne_y;
     if (!toy_game_position_blocked_at_height(&session->game_state, next_x,
                                               next_z, RASTERFALL_PLAYER_RADIUS,
                                               height)) {
         actor->x = next_x; actor->z = next_z;
+    }
     }
 }
 
@@ -711,6 +710,8 @@ static void session_client_interact_banner(struct rasterfall_session *session)
         session->banner_text = "EULA AK HUMANOID POSE DEBUGGER";
     else if (it->kind == TOY_MAP_PICKUP_WEST_CORRIDOR_BUTTON)
         session->banner_text = "WEST CORRIDOR: 16 RANDOM ENEMIES";
+    else if (it->kind == TOY_MAP_PICKUP_WEST_CORRIDOR_NO_TANK_BUTTON)
+        session->banner_text = "WEST CORRIDOR: 16 RANDOM (NO TANK)";
     else if (it->kind == TOY_MAP_PICKUP_AMMO)
         session->banner_text = "AMMO REFILLED";
     else if (it->kind == TOY_MAP_PICKUP_WEAPON ||
@@ -811,6 +812,16 @@ static void session_interact(struct rasterfall_session *session,
         session->banner_ms = 3500;
         session->banner_text = "WEST CORRIDOR: RANDOM HORDE SUMMONED";
         __printf("rasterfall: west corridor random horde summoned %d/16 enemies\n", n);
+    } else if (it->kind == TOY_MAP_PICKUP_WEST_CORRIDOR_NO_TANK_BUTTON) {
+        struct toy_game_box corridor_spawn = {
+            -44400, -43400, -1650, 1650, 0, 0
+        };
+        int n = toy_game_spawn_random_horde_no_tank(
+            &session->game_state, 16, &corridor_spawn, 1,
+            HORDE_MIN_PLAYER_DIST);
+        session->banner_ms = 3500;
+        session->banner_text = "WEST CORRIDOR: RANDOM HORDE (NO TANK)";
+        __printf("rasterfall: west corridor random no-tank horde summoned %d/16 enemies\n", n);
     } else if (it->kind == TOY_MAP_PICKUP_ATTACK_X2_BUTTON ||
                it->kind == TOY_MAP_PICKUP_ATTACK_X3_BUTTON ||
                it->kind == TOY_MAP_PICKUP_ATTACK_X4_BUTTON) {

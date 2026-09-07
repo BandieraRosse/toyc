@@ -32,6 +32,10 @@ ai_spawn name base_id level1|level2|level3 x z downed
 - `base` 声明带稳定 ID 的据点区域。
 - `ai_spawn` 声明 AI 名称、所属据点、等级、位置和初始倒地状态。
 
+墙上按钮使用 `button_<用途> x z y` 记录并绑定到对应玩法交互；例如
+`button_west_corridor_no_tank -23940 2100 200` 会在西侧走廊出口旁的墙面放置一个按钮，
+一次生成 16 个随机敌人但排除 Tank。
+
 静态环境组件使用 registry 中的稳定名称或 ID，不直接引用模型路径：
 
 ```text

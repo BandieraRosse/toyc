@@ -214,6 +214,8 @@ button_vmd_walk -8350 -12100 -250
 button_vmd_manjusaka -7500 -12100 -250
 button_animation_composition -6650 -12100 -250
 button_west_corridor -23940 -2100 200
+# 西侧走廊出口旁的西墙：16 个随机敌人，但随机池排除 Tank。
+button_west_corridor_no_tank -23940 2100 200
 # 三名原据点 AI 保持普通队友规则；BASE 是基地核心目标。
 ai_spawn Jesus 2 level2 1000 0 0
 ai_spawn GUARD 1 level1 0 -900 0

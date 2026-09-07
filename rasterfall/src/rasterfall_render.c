@@ -3361,7 +3361,11 @@ static int draw_enemy_oriented_box(struct toy_renderer *renderer,
     int i, pixels = 0;
     for (i = 0; i < 8; i++) {
         v[i].x = x + (cy * lx[i] + sy * lz[i]) / 1024;
-        v[i].y = ly[i] + active_enemy_lift;
+        /* y0/y1 are already resolved through enemy_y() by the body-part
+         * dispatcher.  Do not apply active_enemy_lift a second time here;
+         * Charger is the only enemy using this oriented-box path, and the
+         * duplicate lift becomes especially visible on ramps. */
+        v[i].y = ly[i];
         v[i].z = z + (-sy * lx[i] + cy * lz[i]) / 1024;
     }
     for (i = 0; i < 36; i += 3)
@@ -3887,7 +3891,8 @@ static int render_interactables(struct toy_renderer *renderer,
                  it->kind == TOY_MAP_PICKUP_BASE_1_BUTTON ||
                  it->kind == TOY_MAP_PICKUP_BASE_2_BUTTON ||
                  it->kind == TOY_MAP_PICKUP_WAVE_SKIP_BUTTON ||
-                 it->kind == TOY_MAP_PICKUP_WEST_CORRIDOR_BUTTON)
+                 it->kind == TOY_MAP_PICKUP_WEST_CORRIDOR_BUTTON ||
+                 it->kind == TOY_MAP_PICKUP_WEST_CORRIDOR_NO_TANK_BUTTON)
             pixels += render_button(renderer, camera, it->x, it->y, it->z, on,
                                     it->x < -10000 ? 1 : it->x > 10000 ? 2 : 0);
         else if (it->kind == TOY_MAP_PICKUP_SMOKER_BUTTON ||

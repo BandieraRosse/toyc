@@ -844,6 +844,10 @@ int  toy_game_spawn_horde_type(struct toy_game *g, int enemy_type,
 int  toy_game_spawn_random_horde(struct toy_game *g, int count,
                                  const struct toy_game_box *points,
                                  int point_count, int min_player_dist);
+/* 同上，但随机池排除 Tank。 */
+int  toy_game_spawn_random_horde_no_tank(
+    struct toy_game *g, int count, const struct toy_game_box *points,
+    int point_count, int min_player_dist);
     /* 召唤尸潮：从 points 中随机选出 1-3 个互异刷怪点（不超过
      * point_count），把 count_min..count_max 个持续追踪型敌人
      * （普通敌人统一直接追击，特感保留各自技能逻辑）

@@ -1075,6 +1075,9 @@ static int ground_has_ramp_surface_transition(
     return 0;
 }
 
+static int point_on_walkable_ramp(const struct toy_game *g, int x, int z,
+                                  int radius);
+
 static int position_blocked_at_height(const struct toy_game *g,
                                       int x, int z, int radius,
                                       int ground_height,
@@ -1151,14 +1154,33 @@ int toy_game_try_move_actor(struct toy_game *g, struct toy_game_actor *actor,
                             int x, int z)
 {
     struct toy_game_ground_query ground;
-    int candidate_ground_y, current_ground_y;
+    int candidate_ground_y, current_ground_y, ramp_transition = 0;
     if (!g) return 0;
     if (!actor || !actor->active || actor->airborne_ms > 0) return 0;
     current_ground_y = actor->ground_y;
     ground = toy_game_query_ground(g, x, z, TOY_GAME_PLAYER_RADIUS,
                                    current_ground_y);
     candidate_ground_y = ground.support_y;
-    if (ground.has_support && candidate_ground_y > current_ground_y) {
+    /* At a ramp/platform seam the player's circular footprint can be split
+     * between both surfaces, so neither primitive is fully supported even
+     * though the move is a continuous walk across the ramp end.  Accept the
+     * landing height only when the destination still overlaps the current
+     * support and the height change is a normal step. */
+    if (ground.has_landing && ground.touches_current_support &&
+        point_on_walkable_ramp(g, x, z, TOY_GAME_PLAYER_RADIUS)) {
+        int landing_delta = ground.landing_y - current_ground_y;
+        if (landing_delta < 0) landing_delta = -landing_delta;
+        if (landing_delta <= TOY_CONFIG_GROUND_STEP_HEIGHT) {
+            candidate_ground_y = ground.landing_y;
+            ramp_transition = 1;
+        }
+    }
+    if (ramp_transition) {
+        if (position_blocked_at_height(g, x, z,
+                                       TOY_GAME_PLAYER_RADIUS,
+                                       candidate_ground_y, 0))
+            return 0;
+    } else if (ground.has_support && candidate_ground_y > current_ground_y) {
         if (candidate_ground_y - current_ground_y >
                 TOY_CONFIG_GROUND_STEP_HEIGHT ||
             position_blocked_at_height(g, x, z, TOY_GAME_PLAYER_RADIUS,
@@ -1171,11 +1193,11 @@ int toy_game_try_move_actor(struct toy_game *g, struct toy_game_actor *actor,
     }
     actor->x = x;
     actor->z = z;
-    if (ground.has_support &&
+    if (ramp_transition || (ground.has_support &&
         (candidate_ground_y >= current_ground_y ||
          ground.support_is_ramp ||
          current_ground_y - candidate_ground_y <=
-             TOY_CONFIG_GROUND_STEP_HEIGHT)) {
+             TOY_CONFIG_GROUND_STEP_HEIGHT))) {
         actor->ground_y = candidate_ground_y;
     } else if (ground.touches_current_support) {
         actor->ground_y = current_ground_y;
@@ -1789,6 +1811,38 @@ int toy_game_spawn_random_horde(struct toy_game *g, int count,
         int type = rand_range(g, 0, TOY_GAME_ENEMY_TYPE_COUNT - 1);
         if (spawn_enemy_at(g, type, p->minx, p->maxx,
                                   p->minz, p->maxz, min_dist2))
+            spawned++;
+        else if (find_free_slot(g) < 0)
+            break;
+    }
+    if (spawned > 0) push_event(g, TOY_GAME_EV_SPAWN);
+    return spawned;
+}
+
+int toy_game_spawn_random_horde_no_tank(
+    struct toy_game *g, int count, const struct toy_game_box *points,
+    int point_count, int min_player_dist)
+{
+    static const int enemy_types[] = {
+        TOY_GAME_ENEMY_PURSUIT_COMMON,
+        TOY_GAME_ENEMY_PURSUIT_HEAVY,
+        TOY_GAME_ENEMY_PURSUIT_FAST,
+        TOY_GAME_ENEMY_SMOKER,
+        TOY_GAME_ENEMY_CHARGER
+    };
+    int i, spawned = 0;
+    int min_dist2 = min_player_dist * min_player_dist;
+    if (!g || g->state != TOY_GAME_PLAYING || !points || point_count <= 0)
+        return 0;
+    if (count < 0) count = 0;
+    if (count > TOY_GAME_MAX_ENEMIES) count = TOY_GAME_MAX_ENEMIES;
+    for (i = 0; i < count; i++) {
+        const struct toy_game_box *p = &points[rand_range(g, 0, point_count - 1)];
+        int type = enemy_types[rand_range(g, 0,
+                                          (int)(sizeof(enemy_types) /
+                                                sizeof(enemy_types[0])) - 1)];
+        if (spawn_enemy_at(g, type, p->minx, p->maxx, p->minz, p->maxz,
+                           min_dist2))
             spawned++;
         else if (find_free_slot(g) < 0)
             break;
