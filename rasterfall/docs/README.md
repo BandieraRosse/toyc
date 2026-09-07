@@ -1,7 +1,7 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-07
-> 源码核对基线：工作区（本地玩家、远端人类、AI 和 special controller 的 gameplay 状态统一由 `toy_game_actor` 拥有；`toy_game_set_remote_actor()` 是远端 actor 生命周期入口；网络协议版本 42 的 actor snapshot 统一表达角色状态，world snapshot 仅表达世界状态；HUD、viewmodel、effects 和角色展示只读 actor；remote presentation cache 只保存派生渲染坐标）
+> 源码核对基线：工作区（新增首批工业环境组件生成器、静态 GLB 导入边界导航和 `rasterfall_prop` 静态资产 profile；本地玩家、远端人类、AI 和 special controller 的 gameplay 状态统一由 `toy_game_actor` 拥有；`toy_game_set_remote_actor()` 是远端 actor 生命周期入口；网络协议版本 42 的 actor snapshot 统一表达角色状态，world snapshot 仅表达世界状态；HUD、viewmodel、effects 和角色展示只读 actor；remote presentation cache 只保存派生渲染坐标）
 
 本目录面向接手 Rasterfall 任务的编码代理。目标不是介绍玩法，而是先把问题归到正确的
 状态所有者和文件，再开始搜索。命令、资源导入方法和用户可见特性仍以
@@ -19,6 +19,8 @@
 | 战斗表现事件、muzzle/tracer/impact/camera shake 消费 | [rendering.md](rendering.md) | `include/rasterfall_effect_event.h`、`src/rasterfall_effects.c` |
 | 模型、蒙皮、IK、VMD/GLB、动作重定向 | [assets-animation.md](assets-animation.md) | `src/rasterfall_model.c` |
 | 转换 PMX/GLB、生成 LOD、模型诊断 | [asset-pipeline.md](asset-pipeline.md) | `app/`、`tools/`、模型加载器 |
+| 程序化工业/军事环境组件、Blender 批量导出 | [industrial-props.md](industrial-props.md)、[asset-pipeline.md](asset-pipeline.md) | `tools/blender/generate_rasterfall_props.py` |
+| 静态 prop 资产 ID、路径、展示缩放和默认尺寸 | [asset-pipeline.md](asset-pipeline.md) | `include/rasterfall_prop.h`、`src/rasterfall_prop.c` |
 | 联机协议、快照、预测、可靠事件、房间发现 | [networking.md](networking.md) | `src/rasterfall_net.c` |
 | Linux/Windows 平台差异、构建、测试 | [build-platforms.md](build-platforms.md) | `Makefile`、`windows/Makefile` |
 | 动画求值顺序、格式/角色扩展契约 | [animation-architecture.md](animation-architecture.md) | `src/rasterfall_model.c`、动画头文件 |
@@ -66,6 +68,8 @@ Molotov 的世界实体显式携带 `owner_actor_id`，本地预测 body 位置�
   详见各模块文档。
 
 专题设计和活动台账：
+
+- [industrial-props.md](industrial-props.md)：首批十件环境组件规格、米制轴向、碰撞建议与一条命令生成流程；源码核对为 2026-09-07 工作区生成器及静态转换器。
 
 - [animation-architecture.md](animation-architecture.md)：动画数据流、不变量和扩展边界。
 - [network-architecture.md](network-architecture.md)：联机状态分类和房间生命周期。

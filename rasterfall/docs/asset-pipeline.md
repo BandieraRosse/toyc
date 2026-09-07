@@ -1,12 +1,16 @@
 # Rasterfall 资产转换与诊断
 
-> 文档更新：2026-09-03
-> 源码核对基线：`75a10cd`（将项目协作说明转向 Rasterfall）
+> 文档更新：2026-09-07
+> 源码核对基线：工作区（程序化环境组件生成器、`app/glb2rmesh.c` 静态导入边界、`rasterfall_prop` 资产 profile）
 
 本文记录可执行的模型、纹理和动画工具链。运行时模块边界见 `assets-animation.md`，动画求值契约
 见 `animation-architecture.md`，资源是否允许发布见 `asset-sources.md`。
 
 ## 静态 GLB 转 RMESH
+
+首批十件工业/军事环境组件使用 `tools/blender/generate_rasterfall_props.py` 生成，
+完整规格与 CLI 见 [industrial-props.md](industrial-props.md)。默认产物在 `tmp/`，
+不自动加入公开资源、内嵌依赖或 Windows package。
 
 ```sh
 make app-glb2rmesh
@@ -16,6 +20,19 @@ build/glb2rmesh input.glb rasterfall/assets/models/output.rmesh
 `app/glb2rmesh.c` 读取 GLB mesh primitive 的 POSITION、可选 NORMAL/TEXCOORD_0 和常见三角形
 索引，合并 primitive 并修正索引基址。坐标按资产边界的换算进入 Rasterfall 单位；运行时不解析
 glTF JSON。静态转换路径不导入 GLB 骨架和动画，不能替代 GLB 动画预览路径。
+当前仅处理第一个 mesh，忽略 node transform；每个组件必须单独导出、应用变换。
+位置默认按 232 量化，极小模型另有自动放大，不等于米到 512 RFU 的玩法换算；
+米制环境源资产保持真实尺寸，展示绑定时按已有目标尺寸规则换算。
+
+## 静态 prop asset registry
+
+`include/rasterfall_prop.h` / `src/rasterfall_prop.c` 保存静态组件的 presentation 资产 profile。
+当前注册 `crate`、`barrier` 和 `lamp_post`，每项包含稳定 asset ID、名称、RMESH 路径、默认
+展示缩放和 RFU 碰撞尺寸。profile 使用 `512 RFU/m ÷ 232 RMESH units/m` 的 milli-scale；该换算
+不进入地图语法或 `toy_game`，碰撞尺寸当前只作为未接入玩法的资产元数据。
+
+此 registry 只提供查找和单位契约，不负责地图实例化、模型加载或碰撞绑定。新增组件时应先在
+profile 中分配不复用的 ID，并同步检查 `rasterfall_prop_asset_logic_test()`。
 
 ## PMX 转 RFM2/TTEX
 
@@ -79,4 +96,3 @@ build/rasterfall --actor-performance 30 5 8
 玩法世界使用 RFU，`512 RFU = 1 m`。PMX、GLB、VMD 的局部单位只在 presentation/导入边界
 换算，不能直接进入碰撞、AI 或网络规则。坐标系或 bind pose 异常应从转换器输出一路定位到加载、
 姿态求值和渲染，不要用角色专属末端偏移掩盖通用资产错误。
-
