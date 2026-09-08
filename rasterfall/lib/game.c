@@ -487,6 +487,15 @@ static void push_actor_impulse_event(struct toy_game *g,
     event->airborne_y = airborne_y;
 }
 
+static void update_actor_knockback_cooldown(struct toy_game_actor *actor,
+                                             int dt_ms)
+{
+    if (!actor || actor->knockback_cooldown_ms <= 0) return;
+    actor->knockback_cooldown_ms -= dt_ms;
+    if (actor->knockback_cooldown_ms < 0)
+        actor->knockback_cooldown_ms = 0;
+}
+
 /* ── 初始化 / 世界 ─────────────────────────────────────────────── */
 
 static int wave_combat_power(const struct toy_game *g)
@@ -2327,7 +2336,7 @@ static void bite_player(struct toy_game *g, struct toy_game_enemy *e)
     } else toy_game_actor_set_animation(player, TOY_GAME_ANIM_HIT);
     e->hurt = 150;
     if (knockback_ready) {
-        push_enemy_from_player(g, e, TOY_GAME_CHARGER_KNOCKBACK);
+        push_enemy_from_player(g, e, TOY_GAME_CHARGER_KNOCKBACK_SPEED);
         player->knockback_cooldown_ms =
             TOY_GAME_PLAYER_KNOCKBACK_COOLDOWN_MS;
     }
@@ -3004,8 +3013,6 @@ static void update_motion_values(struct toy_game *g, int *x, int *z,
         if (!toy_game_position_blocked_at_height(g, *x, nz, radius,
                                                   height))
             *z = nz;
-        *knockback_x = *knockback_x * 3 / 4;
-        *knockback_z = *knockback_z * 3 / 4;
     }
     ground = toy_game_query_ground(g, *x, *z, radius, *ground_y);
     landing_ground = ground.landing_y;
@@ -3032,6 +3039,7 @@ static void update_actor_special_motion(struct toy_game *g, int dt_ms)
 {
     struct toy_game_actor *actor = toy_game_local_player_actor(g);
     if (!actor) return;
+    update_actor_knockback_cooldown(actor, dt_ms);
     if (actor->airborne_ms > 0) {
         struct toy_game_ground_query ground;
         int landing_ground;
@@ -3063,8 +3071,6 @@ static void update_actor_special_motion(struct toy_game *g, int dt_ms)
         }
         if (actor->knockback_x || actor->knockback_z) {
             move_player_forced(g, actor->knockback_x, actor->knockback_z);
-            actor->knockback_x = actor->knockback_x * 3 / 4;
-            actor->knockback_z = actor->knockback_z * 3 / 4;
         }
         if (actor->airborne_ms == 0) {
             actor->vertical_velocity = 0;
@@ -3124,8 +3130,6 @@ static void update_remote_player_motion(struct toy_game *g, int *x, int *z,
         if (!toy_game_position_blocked_at_height(g, *x, nz,
                                                   TOY_GAME_PLAYER_RADIUS,
                                                   height)) *z = nz;
-        *knockback_x = *knockback_x * 3 / 4;
-        *knockback_z = *knockback_z * 3 / 4;
     }
     if (*airborne_ms == 0) {
         *vertical_velocity = 0;
@@ -3165,6 +3169,7 @@ void toy_game_update_actor_motion(struct toy_game *g, int actor_index, int dt_ms
     if (!actor->active || actor->kind != TOY_GAME_ACTOR_PLAYER ||
         actor->state != TOY_GAME_ACTOR_ALIVE)
         return;
+    update_actor_knockback_cooldown(actor, dt_ms);
     update_remote_player_motion(g, &actor->x, &actor->z,
         &actor->airborne_ms, &actor->airborne_y, &actor->ground_y,
         &actor->vertical_velocity, &actor->air_x, &actor->air_z,
@@ -3408,8 +3413,10 @@ static int apply_entity_impact_with_knockback(struct toy_game *g, int kind,
                                               int index, int dx, int dz,
                                               int damage, int knockback)
 {
-    long long dist = isqrt((long long)dx * dx + (long long)dz * dz);
-    if (!g || dist <= 0) { dx = 0; dz = 1024; dist = 1024; }
+    long long dist;
+    if (!g) return 0;
+    dist = isqrt((long long)dx * dx + (long long)dz * dz);
+    if (dist <= 0) { dx = 0; dz = 1024; dist = 1024; }
     dx = dx * knockback / (int)dist;
     dz = dz * knockback / (int)dist;
     if (kind == TOY_GAME_ENTITY_PLAYER || kind == TOY_GAME_ENTITY_ACTOR) {
@@ -3485,7 +3492,7 @@ int toy_game_apply_entity_impact(struct toy_game *g, int kind, int index,
 {
     return apply_entity_impact_with_knockback(g, kind, index, dx, dz,
                                                damage,
-                                               TOY_GAME_CHARGER_KNOCKBACK);
+                                               TOY_GAME_CHARGER_KNOCKBACK_SPEED);
 }
 
 static int charger_hit_entities(struct toy_game *g,
@@ -3545,8 +3552,6 @@ static void update_enemy_airborne(struct toy_game *g,
         e->vertical_velocity = -TOY_GAME_FALL_TERMINAL_VELOCITY;
     if (e->knockback_x || e->knockback_z) {
         move_enemy_forced(g, e, e->knockback_x, e->knockback_z);
-        e->knockback_x = e->knockback_x * 3 / 4;
-        e->knockback_z = e->knockback_z * 3 / 4;
     }
     ground = toy_game_query_ground(g, e->x, e->z, enemy_radius(e),
                                    e->ground_y);
@@ -3598,7 +3603,7 @@ static void update_charger(struct toy_game *g, struct toy_game_enemy *e,
                         dx, dz, TOY_GAME_CHARGER_DAMAGE))
                     if (player_knockback_ready)
                         push_enemy_from_player(g, e,
-                                               TOY_GAME_CHARGER_KNOCKBACK);
+                                               TOY_GAME_CHARGER_KNOCKBACK_SPEED);
             } else if (target_kind == 1 && target_index >= 0 &&
                        target_index < TOY_GAME_MAX_ACTORS &&
                        !(e->ability.charge_hit_actor_mask &
@@ -5199,13 +5204,6 @@ void toy_game_update_held(struct toy_game *g,
     /* The actor is already normalized by the caller and remains the sole
      * local-player gameplay state. */
     player = toy_game_local_player_actor(g);
-    for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
-        if (g->actors[i].kind != TOY_GAME_ACTOR_PLAYER ||
-            g->actors[i].knockback_cooldown_ms <= 0) continue;
-        g->actors[i].knockback_cooldown_ms -= dt_ms;
-        if (g->actors[i].knockback_cooldown_ms < 0)
-            g->actors[i].knockback_cooldown_ms = 0;
-    }
     old_fire_seq = player->fire_seq;
     old_reloading = player->reloading;
     toy_game_update_actor_weapon_held(g, player, keys_pressed, fire_pressed,

@@ -251,16 +251,26 @@ int toy_map_load(const char *path, struct toy_map *m)
         else if(!strcmp(kind,"sign") && get4(&p,&a,&b,&c,&d)==0){char *y0=word(&p),*y1=word(&p),*co=word(&p),*t=rest_text(&p);if(y0&&y1&&co)add_draw(m,TOY_MAP_DRAW_SIGN,a,b,c,d,number(y0,10),number(y1,10),color(co),t);}
         else if(!strcmp(kind,"model") && get4(&p,&a,&b,&c,&d)==0){char *y0=word(&p),*y1=word(&p),*co=word(&p),*st=word(&p);if(y0&&y1){add_draw(m,TOY_MAP_DRAW_MODEL,a,b,c,d,number(y0,10),number(y1,10),color(co),NULL);if(st)m->draw[m->draw_count-1].style=number(st,10);}}
         else if(!strcmp(kind,"platform")){
-            int h, draw_index; char *co, *mode;
+            int h, draw_index; char *co, *mode, *opt;
+            struct toy_map_primitive *platform;
             if(get5(&p,&a,&b,&c,&d,&h)==0){
                 co=word(&p);
                 mode=word(&p);
-                add_primitive(m,TOY_MAP_PRIMITIVE_FLAT,a,b,c,d,0,h,h,
-                              TOY_MAP_PRIMITIVE_COLLISION|TOY_MAP_PRIMITIVE_WALKABLE,
-                              color(co ? co : "3B5550"));
+                platform=add_primitive(m,TOY_MAP_PRIMITIVE_FLAT,a,b,c,d,0,h,h,
+                                       TOY_MAP_PRIMITIVE_COLLISION|
+                                       TOY_MAP_PRIMITIVE_WALKABLE,
+                                       color(co ? co : "3B5550"));
+                if (!platform) continue;
+                if (mode && !strncmp(mode,"role=",5)) {
+                    copy_role(platform->role,mode+5,TOY_MAP_ROLE_SIZE);
+                    mode=NULL;
+                }
+                while ((opt=word(&p)) != NULL)
+                    if (!strncmp(opt,"role=",5))
+                        copy_role(platform->role,opt+5,TOY_MAP_ROLE_SIZE);
                 draw_index = m->draw_count;
                 add_draw(m,TOY_MAP_DRAW_PLATFORM,a,b,c,d,h,0,
-                         color(co ? co : "3B5550"),NULL);
+                         color(co ? co : "3B5550"),platform->role);
                 if (m->draw_count > draw_index)
                     m->draw[draw_index].style =
                         mode && !strcmp(mode, "opaque") ? 2 :

@@ -40,7 +40,7 @@ static int primitive_gameplay_logic_test(void)
     struct toy_game_actor *player = toy_game_local_player_actor(&g);
     struct toy_game_ground_query ground;
     struct toy_map_primitive world[2];
-    int left, right, table=0, ramp=0, air_gate=0;
+    int left, right, table=0, ramp=0, air_gate=0, air_gate_parts=0;
     world[0]=test_flat_primitive(-2000,2000,-2000,2000,0);
     world[1]=test_flat_primitive(200,1000,-500,500,100);
     toy_game_init(&g,211); toy_game_set_primitives(&g,world,2,2000);
@@ -155,8 +155,16 @@ static int primitive_gameplay_logic_test(void)
            (p->flags&TOY_MAP_PRIMITIVE_WALKABLE))ramp=1;
         if(!strcmp(p->role,"air_gate_left")&&
            (p->flags&TOY_MAP_PRIMITIVE_COLLISION))air_gate=1;
+        if(!strncmp(p->role,"air_gate_",9)&&
+           (p->flags&TOY_MAP_PRIMITIVE_COLLISION))air_gate_parts++;
     }
-    if(!table||!ramp||!air_gate)return 10;
+    if(!table||!ramp||!air_gate||air_gate_parts!=4)return 10;
+    rasterfall_map_set_air_walls(&session.map_ops,0);
+    for(int i=0;i<level_map.primitive_count;i++)
+        if(!strncmp(level_map.primitives[i].role,"air_gate_",9)&&
+           (level_map.primitives[i].flags&TOY_MAP_PRIMITIVE_COLLISION))
+            return 19;
+    rasterfall_map_set_air_walls(&session.map_ops,1);
     if (level_map.prop_count != 10 ||
         level_map.props[0].asset_id != RASTERFALL_PROP_ASSET_CRATE ||
         level_map.props[0].x != -14500 || level_map.props[0].z != -17000 ||
@@ -2593,6 +2601,41 @@ static int run_logic_test(void)
         while (game.actors[actor_index].airborne_ms > 0)
             toy_game_update_actor_motion(&game, actor_index, 16);
         if (game.actors[actor_index].control_disabled) return 153;
+    }
+    /* actor 迁移后的本地玩家也必须消费击飞：水平速度恒定、垂直速度受
+     * 重力作用，形成抛物线；冷却由新 world/session 路径持续推进。 */
+    {
+        struct toy_game_actor *local;
+        int z0, z1, z2, y_peak = 0, descending = 0;
+        toy_game_init(&game, 212);
+        game.primitive_count = 0;
+        local = toy_game_local_player_actor(&game);
+        z0 = local->z;
+        if (!toy_game_apply_entity_impact(&game, TOY_GAME_ENTITY_ACTOR,
+                                          TOY_GAME_PLAYER_ACTOR_INDEX,
+                                          0, 1024, 1) ||
+            !local->control_disabled || local->airborne_ms <= 0)
+            return 212;
+        toy_game_update_world(&game, 16);
+        z1 = local->z;
+        if (z1 <= z0 || local->airborne_y <= 0) return 213;
+        toy_game_update_world(&game, 16);
+        z2 = local->z;
+        if (z2 - z1 != z1 - z0) return 214;
+        while (local->airborne_ms > 0) {
+            int old_y = local->airborne_y;
+            toy_game_update_world(&game, 16);
+            if (local->airborne_y > y_peak) y_peak = local->airborne_y;
+            if (local->airborne_y < old_y) descending = 1;
+        }
+        if (y_peak <= 0 || !descending || local->control_disabled) return 215;
+        while (local->knockback_cooldown_ms > 0)
+            toy_game_update_world(&game, 16);
+        if (!toy_game_apply_entity_impact(&game, TOY_GAME_ENTITY_ACTOR,
+                                          TOY_GAME_PLAYER_ACTOR_INDEX,
+                                          0, 1024, 1) ||
+            local->airborne_ms <= 0)
+            return 216;
     }
     /* Smoker 控制使用 generation：旧 END 不能清掉更新后的控制。 */
     {

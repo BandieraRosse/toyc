@@ -2863,7 +2863,7 @@ int rasterfall_net_pipeline_test(void)
         if (net.reliable_event_count != 1) return 18;
         event = &net.reliable_events[0];
         if (event->type != RASTERFALL_NET_EVENT_PLAYER_IMPULSE ||
-            event->target_id != 1 || event->x != 630 || event->z != 840 ||
+            event->target_id != 1 || event->x != 13 || event->z != 18 ||
             event->value != TOY_GAME_AIRBORNE_VELOCITY ||
             event->value2 != TOY_GAME_AIRBORNE_MS || event->value3 != 0)
             return 19;

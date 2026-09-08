@@ -1,7 +1,7 @@
 # Rasterfall 地图格式
 
 > 文档更新：2026-09-08
-> 源码核对基线：工作区（地图排布通过 PNG/JSON 导出链路核验；地图布局 PNG/JSON 导出器与 JSON 查询器；北侧走廊入口边界碰撞；外围渲染墙与 gameplay 碰撞分离；静态 prop 实例及 profile 碰撞盒接入现有 primitive/nav）
+> 源码核对基线：工作区（地图排布通过 PNG/JSON 导出链路核验；地图布局 PNG/JSON 导出器与 JSON 查询器；空气墙竖直 box 和可站立 platform 通过同组 role 同步切换显示、碰撞与导航；北侧走廊入口边界碰撞；外围渲染墙与 gameplay 碰撞分离；静态 prop 实例及 profile 碰撞盒接入现有 primitive/nav）
 
 正式地图位于 `rasterfall/assets/maps/*.map`。磁盘结构定义在 `include/toy_map.h`，文本解析在
 `lib/map.c`，`src/rasterfall_map.c` 再把结果绑定到玩法盒体、图元、可交互物和安全区。修改语法时
@@ -24,6 +24,10 @@ box minx maxx minz maxz height color hidden collision role=air_gate_left
 只负责渲染，不会自动参与玩法碰撞。正式地图的外围渲染墙就是这种情况，实际可玩边界由中央
 区域的内层墙、走廊侧墙和走廊端墙组成。边界有入口时，应拆成入口两侧的碰撞段，不能用一整
 块墙再依赖渲染开口。
+
+`platform` 可在颜色和显示模式后追加 `role=`。空气墙的可站立顶面必须和对应竖直墙使用同一
+`air_gate_*` role 前缀，例如 `platform ... 3B5550 transparent role=air_gate_left_top`；空气墙开关
+会同时移除整组的渲染、碰撞和导航阻挡，不能留下无形顶面。
 
 ## 玩法声明
 

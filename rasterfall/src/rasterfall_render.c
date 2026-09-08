@@ -4154,7 +4154,9 @@ static int render_scene(struct toy_renderer *renderer, const struct camera *came
         } else if (x->type==TOY_MAP_DRAW_RAMP) {
             pixels += render_ramp(renderer, camera, x);
         } else if (x->type==TOY_MAP_DRAW_PLATFORM) {
-            pixels += render_platform(renderer, camera, x);
+            if (strncmp(x->text, "air_gate_", 9) ||
+                active_session->air_walls_enabled)
+                pixels += render_platform(renderer, camera, x);
         } else if (x->type==TOY_MAP_DRAW_BOX) {
             struct box obstacle={x->a,x->b,x->c,x->d,x->e-900,x->color};
             if (!strncmp(x->text, "air_gate_", 9)) {
