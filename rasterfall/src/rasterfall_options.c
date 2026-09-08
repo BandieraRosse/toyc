@@ -60,7 +60,7 @@ void rasterfall_options_usage(int fd)
         "  --textures | --no-textures  --no-edge-pass  --no-stats\n"
         "  --texture-stats  --frames <count>  --dump-frame <path>\n"
         "  --logic-test  --input-test  --auto\n"
-        "  --visual-capture procedural-humanoid --visual-output <path.bmp>\n"
+        "  --visual-capture <procedural-humanoid|hurd-squad> --visual-output <path.bmp>\n"
         "  --model-views <model> <dir> [--model-views-supersample <1|2>]\n"
         "  --model-static-views <model> <dir>\n"
         "  --model-pose-views <model> <dir> <bind|right-arm|arms|body>\n"

@@ -36,6 +36,7 @@ struct rasterfall_procedural_humanoid_state {
     int weapon, muzzle_flash;
     int downed;
     int animation_id, animation_time_ms;
+    int profession_id; /* rasterfall_profession_id; presentation identity, default NONE. */
 };
 
 /* Uses the bound render context and existing serial primitive helpers.

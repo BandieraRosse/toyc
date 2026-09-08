@@ -46,3 +46,19 @@ int rasterfall_character_logic_test(void)
     }
     return rasterfall_character_profile(-1)->id != RASTERFALL_CHARACTER_AKARI;
 }
+
+static const struct rasterfall_profession_visual_profile professions[] = {
+    {0, 0, RF_HEAD_NONE, RF_BADGE_NONE, RF_BAG_NONE, 0, 0},
+    {0xD28A30, 0x414957, RF_HEAD_GOGGLES, RF_BADGE_TOOL, RF_BAG_TOOLS, 0, 0},
+    {0xB5A06C, 0x607384, RF_HEAD_CAP, RF_BADGE_CRATE, RF_BAG_NONE, 1, 0},
+    {0x30965C, 0xD3DDD5, RF_HEAD_MEDICAL_BAND, RF_BADGE_CROSS, RF_BAG_MEDICAL, 0, 0},
+    {0x80966A, 0x37483F, RF_HEAD_HELMET_BAND, RF_BADGE_SHIELD, RF_BAG_NONE, 0, 1}
+};
+
+const struct rasterfall_profession_visual_profile *
+rasterfall_profession_visual_profile(int profession_id)
+{
+    if (profession_id <= RASTERFALL_PROFESSION_NONE ||
+        profession_id >= RASTERFALL_PROFESSION_COUNT) return NULL;
+    return &professions[profession_id];
+}

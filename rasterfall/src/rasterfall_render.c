@@ -5414,7 +5414,7 @@ static int render_ai_teammate(struct toy_renderer *renderer,
                 actor->current_slot < TOY_GAME_WEAPON_SLOTS ?
                     actor->slots[actor->current_slot].weapon : -1,
                 0, actor->state == TOY_GAME_ACTOR_DOWNED,
-                actor->animation.id, actor->animation.time_ms
+                actor->animation.id, actor->animation.time_ms, RASTERFALL_PROFESSION_NONE
             };
             struct rasterfall_character_profile character =
                 *rasterfall_character_profile(actor->character_id);
@@ -5434,7 +5434,7 @@ static int render_player_avatar(struct toy_renderer *renderer,
 {
     const struct rasterfall_procedural_humanoid_state state = {
         x, z, active_actor_lift, sy, cy, weapon, muzzle_flash, downed,
-        animation_id, animation_time_ms
+        animation_id, animation_time_ms, RASTERFALL_PROFESSION_NONE
     };
     struct rasterfall_character_profile character =
         *rasterfall_character_profile(character_id);
@@ -5442,6 +5442,113 @@ static int render_player_avatar(struct toy_renderer *renderer,
     if (character_id < 0) character.body_color = body_color;
     return rasterfall_render_procedural_humanoid(renderer, camera,
                                                 &state, &character);
+}
+
+/* All equipment uses the same actor-local primitive transforms as the body.
+ * Torso pieces share its hit-reaction shear; head pieces share its head lift.
+ * The legacy downed proxy has no upright torso, so equipment is omitted there. */
+static int render_profession_visual(
+    struct toy_renderer *renderer, const struct camera *camera,
+    int x, int z, int sy, int cy, int pitch,
+    const struct rasterfall_profession_visual_profile *p)
+{
+    int pixels = 0;
+    int head_lift = pitch * 2 / 3;
+    uint32_t accent = p->accent_color, gear = p->gear_color;
+#define GEAR_BOX(x0,x1,y0,y1,z0,z1,c) \
+    pixels += draw_actor_tilted_box(renderer,camera,x,z,sy,cy, \
+        x0,x1,y0,y1,z0,z1,pitch,c)
+#define HEAD_BOX(x0,x1,y0,y1,z0,z1,c) \
+    pixels += draw_actor_box(renderer,camera,x,z,sy,cy, \
+        x0,x1,(y0)+head_lift,(y1)+head_lift,z0,z1,c)
+    /* Shared harness language; base sleeves and trousers remain character-owned. */
+    GEAR_BOX(-135,135,-520,-150,101,125,gear);
+    GEAR_BOX(-165,165,-605,-555,-115,132,gear);
+    GEAR_BOX(-125,-85,-540,-105,126,140,
+             p->waist_bag == RF_BAG_TOOLS ? gear : accent);
+    GEAR_BOX(85,125,-540,-105,126,140,
+             p->waist_bag == RF_BAG_TOOLS ? gear : accent);
+    if (p->waist_bag == RF_BAG_TOOLS) {
+        GEAR_BOX(-125,-85,-175,-105,141,150,accent);
+        GEAR_BOX(85,125,-175,-105,141,150,accent);
+    }
+    if (p->vest) {
+        GEAR_BOX(-190,190,-590,-110,-145,150,gear);
+        GEAR_BOX(-215,-150,-245,-105,-130,130,gear);
+        GEAR_BOX(150,215,-245,-105,-130,130,gear);
+        GEAR_BOX(-140,140,-510,-450,151,172,accent);
+    }
+    if (p->backpack) {
+        GEAR_BOX(-205,205,-625,15,-355,-105,accent);
+        GEAR_BOX(-215,215,-90,40,-375,-95,gear);
+        GEAR_BOX(-250,-190,-545,-225,-330,-115,gear);
+        GEAR_BOX(190,250,-545,-225,-330,-115,gear);
+        GEAR_BOX(-130,-90,-590,5,-372,-356,gear);
+        GEAR_BOX(90,130,-590,5,-372,-356,gear);
+        GEAR_BOX(-78,78,-510,-385,140,195,accent);
+    }
+    if (p->waist_bag == RF_BAG_TOOLS) {
+        GEAR_BOX(-290,-145,-650,-425,-95,110,gear);
+        GEAR_BOX(-305,-140,-470,-425,-100,115,accent);
+        /* Exposed steel tool shafts and an open wrench jaw, not a hard hat. */
+        GEAR_BOX(-280,-255,-440,-285,0,25,0xA6B2B9);
+        GEAR_BOX(-292,-243,-315,-290,0,25,0xA6B2B9);
+        GEAR_BOX(-292,-278,-290,-255,0,25,0xA6B2B9);
+        GEAR_BOX(-257,-243,-290,-255,0,25,0xA6B2B9);
+        GEAR_BOX(-220,-200,-440,-300,0,25,accent);
+    } else if (p->waist_bag == RF_BAG_MEDICAL) {
+        GEAR_BOX(-320,-145,-635,-355,-100,135,gear);
+        GEAR_BOX(-325,-140,-395,-355,-105,140,accent);
+        GEAR_BOX(-254,-214,-580,-420,136,145,accent);
+        GEAR_BOX(-294,-174,-520,-480,136,145,accent);
+        /* Repeat the cross on the exposed outer side of the medical case. */
+        GEAR_BOX(-329,-321,-580,-420,-10,30,accent);
+        GEAR_BOX(-329,-321,-520,-480,-65,85,accent);
+    }
+    /* Large upper-chest badges, above the idle weapon. */
+    {
+        int front = p->vest ? 175 : 145;
+        GEAR_BOX(-72,72,-270,-100,front,front+8,gear);
+        if (p->badge == RF_BADGE_CROSS) {
+            GEAR_BOX(-22,22,-255,-115,front+9,front+15,accent);
+            GEAR_BOX(-62,62,-205,-165,front+9,front+15,accent);
+        } else if (p->badge == RF_BADGE_CRATE) {
+            GEAR_BOX(-58,58,-240,-130,front+9,front+15,accent);
+            GEAR_BOX(-8,8,-240,-130,front+16,front+20,gear);
+            GEAR_BOX(-58,58,-190,-175,front+16,front+20,gear);
+        } else if (p->badge == RF_BADGE_TOOL) {
+            GEAR_BOX(-14,14,-250,-155,front+9,front+15,accent);
+            GEAR_BOX(-45,45,-180,-155,front+9,front+15,accent);
+            GEAR_BOX(-45,-20,-155,-115,front+9,front+15,accent);
+            GEAR_BOX(20,45,-155,-115,front+9,front+15,accent);
+        } else if (p->badge == RF_BADGE_SHIELD) {
+            GEAR_BOX(-58,58,-200,-120,front+9,front+15,accent);
+            GEAR_BOX(-40,40,-230,-200,front+9,front+15,accent);
+            GEAR_BOX(-20,20,-255,-230,front+9,front+15,accent);
+        }
+    }
+    if (p->head == RF_HEAD_GOGGLES) {
+        HEAD_BOX(-143,143,75,110,-85,110,gear);
+        HEAD_BOX(-112,112,55,115,149,168,accent);
+        HEAD_BOX(-92,-15,65,105,169,175,0x354D5A);
+        HEAD_BOX(15,92,65,105,169,175,0x354D5A);
+    } else if (p->head == RF_HEAD_CAP) {
+        HEAD_BOX(-135,135,140,205,-110,105,gear);
+        HEAD_BOX(-145,145,135,157,95,205,accent);
+    } else if (p->head == RF_HEAD_MEDICAL_BAND) {
+        HEAD_BOX(-142,142,115,155,-100,150,accent);
+        HEAD_BOX(-42,42,100,170,151,160,gear);
+        HEAD_BOX(-12,12,105,165,161,167,accent);
+        HEAD_BOX(-35,35,125,145,161,167,accent);
+    } else if (p->head == RF_HEAD_HELMET_BAND) {
+        HEAD_BOX(-160,160,115,195,-125,125,gear);
+        HEAD_BOX(-170,170,100,125,-135,150,accent);
+        HEAD_BOX(-160,-130,15,115,-100,60,gear);
+        HEAD_BOX(130,160,15,115,-100,60,gear);
+    }
+#undef GEAR_BOX
+#undef HEAD_BOX
+    return pixels;
 }
 
 int rasterfall_render_procedural_humanoid(
@@ -5548,6 +5655,16 @@ int rasterfall_render_procedural_humanoid(
     pixels += draw_actor_face_rect(renderer, camera, pose_x, pose_z, sy, cy, 145,
                              -72, 72, face_y0 + 90,
                              face_y0 + 115, character->skin_color);
+    if (!downed || animation_id == TOY_GAME_ANIM_DEATH ||
+        animation_id == TOY_GAME_ANIM_REVIVE) {
+        const struct rasterfall_profession_visual_profile *profession =
+            rasterfall_profession_visual_profile(state->profession_id);
+        if (profession)
+            pixels += render_profession_visual(renderer, camera, pose_x, pose_z,
+                sy, cy, (animation_id == TOY_GAME_ANIM_DEATH ||
+                         animation_id == TOY_GAME_ANIM_REVIVE) ? 0 : pose.body_pitch,
+                profession);
+    }
     if (muzzle_flash > 0 &&
         ((animation_id != TOY_GAME_ANIM_DEATH &&
           animation_id != TOY_GAME_ANIM_REVIVE) || show_fall_gear))

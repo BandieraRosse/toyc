@@ -1,7 +1,7 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-09
-> 源码核对基线：工作区（Visual CLI V1 固定 procedural-humanoid 离屏 BMP capture；低模队友使用显式展示状态与 character profile 的 procedural humanoid 入口；地图排布导出与游戏 UI 共用仓库内 GB2312 16×16 点阵字库；十件 V2 Hybrid 程序化几何与静态 prop；actor 统一 gameplay 状态；本地受击四角闪红与八方向提示；player/actor 与敌人空中强制位移均使用确定性分段扫掠）
+> 源码核对基线：工作区（Hurd 四职业 presentation profile 与固定 hurd-squad capture；Visual CLI V1 固定 procedural-humanoid 离屏 BMP capture；低模队友使用显式展示状态与 character profile 的 procedural humanoid 入口；地图排布导出与游戏 UI 共用仓库内 GB2312 16×16 点阵字库；十件 V2 Hybrid 程序化几何与静态 prop；actor 统一 gameplay 状态；本地受击四角闪红与八方向提示；player/actor 与敌人空中强制位移均使用确定性分段扫掠）
 
 本目录面向接手 Rasterfall 任务的编码代理。目标不是介绍玩法，而是先把问题归到正确的
 状态所有者和文件，再开始搜索。命令、资源导入方法和用户可见特性仍以
@@ -18,7 +18,7 @@
 | 编写或扩展 `.map` 文本格式 | [map-format.md](map-format.md) | `lib/map.c`、`include/toy_map.h` |
 | 修改地图排布、导出地图俯视图、agent 可读 JSON 和精确布局查询 | [map-format.md](map-format.md) | `tools/map_layout_export.py`、`tools/map_layout_query.py`、`make map-layout` |
 | 场景、角色、HUD、特效、第一人称武器、性能 | [rendering.md](rendering.md) | `src/rasterfall_render.c` |
-| 低模 AI 人体、基础外观、指定角色独立绘制入口 | [rendering.md](rendering.md) | `rasterfall_render.h` 的 `rasterfall_procedural_humanoid_state` / `rasterfall_render_procedural_humanoid()`；`rasterfall_character.h` 的外观 profile |
+| Hurd 职业外观、低模 AI 人体、基础外观、指定角色独立绘制入口 | [rendering.md](rendering.md) | `rasterfall_render.h` 的 `rasterfall_procedural_humanoid_state` / `rasterfall_render_procedural_humanoid()`；`rasterfall_character.h` 的基础/职业 profile；`dev-tests/rasterfall_visual_capture.inc` 的四人 fixture |
 | 中文 UI、UTF-8 文本和 GB2312 点阵字库 | [rendering.md](rendering.md)、[asset-sources.md](asset-sources.md) | `lib/graphics/fb_font.c`、`assets/fonts/` |
 | world-space 静态 RMESH prop、实例变换和开发展示 | [rendering.md](rendering.md) | `include/rasterfall_render.h`、`src/rasterfall_render.c` |
 | 战斗表现事件、muzzle/tracer/impact/camera shake 消费 | [rendering.md](rendering.md) | `include/rasterfall_effect_event.h`、`src/rasterfall_effects.c` |
@@ -105,6 +105,7 @@ player/actor 和敌人的 airborne forced/knockback movement 均由玩法核心�
   `glb2rmesh`/`pmx2rmesh`、`toyasset`、`rmesh_lod.py`；不要让 runtime 读取 manifest。
 - 修改敌人外观组件：检查 `src/rasterfall_render.c` 的 `enemy_body_part` 描述表、通用组件解释器和特感动态组件；地面锚点仍由 `toy_game_enemy.ground_y` 与 `airborne_y` 提供。
 - 修改命令行或诊断模式：从 `rasterfall_options.c` 到 `rasterfall.c` 的早退分支一起核对。
+- 修改职业外观：character 层定义 profession identity 和静态 presentation profile，humanoid state 传入 ID，renderer 组合 primitive；Visual CLI 提供固定小队。当前 actor 和网络不携带职业，后续玩法接入只需在展示适配层传入稳定 ID，不能把附件字段塞入 actor。
 - 修改角色状态：从 `toy_game_actor`、actor API 和
   `rasterfall_session.c` 的本地主循环开始；不要把 camera 的位置字段写回为 gameplay 源。
 

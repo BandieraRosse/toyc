@@ -1,7 +1,7 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-09
-> 源码核对基线：工作区（Visual CLI V1 固定 procedural-humanoid 离屏 BMP capture；低模 AI 使用显式 state/profile 的 procedural humanoid 入口；HUD 与启动菜单使用 UTF-8/GB2312 8×16/16×16 点阵文本；viewmodel、crosshair、effects、managed actor 和客户端远端玩家的 gameplay 展示查询直接读取 actor；远端位置/朝向继续使用纯 derived presentation cache；RAY tracer 短线段/定向线宽投影，通用 emitter preset table，CAMERA_SHAKE 含开火后座与受击摇晃；受击四角浅红边缘与八方向中心箭头；程序化敌人身体组件描述表；world-space 静态 RMESH prop 入口与十件组件不重叠开发场景）
+> 源码核对基线：工作区（Hurd 四职业 presentation profile 与固定 hurd-squad capture；Visual CLI V1 固定 procedural-humanoid 离屏 BMP capture；低模 AI 使用显式 state/profile 的 procedural humanoid 入口；HUD 与启动菜单使用 UTF-8/GB2312 8×16/16×16 点阵文本；viewmodel、crosshair、effects、managed actor 和客户端远端玩家的 gameplay 展示查询直接读取 actor；远端位置/朝向继续使用纯 derived presentation cache；RAY tracer 短线段/定向线宽投影，通用 emitter preset table，CAMERA_SHAKE 含开火后座与受击摇晃；受击四角浅红边缘与八方向中心箭头；程序化敌人身体组件描述表；world-space 静态 RMESH prop 入口与十件组件不重叠开发场景）
 
 ## 渲染边界
 
@@ -27,9 +27,19 @@ leg 用于腿，skin 用于头部和脸部，hair 用于脸部矩形；武器 he
 腿摆动、身体俯仰、death/revive 翻倒和 downed 简化身体的既有行为与绘制顺序。
 内部保存/恢复 primitive helpers 的 lift/roll 临时状态；仍依赖已绑定 render context 和串行
 helpers，不承诺并发重入。`render_player_avatar()` 仅保留其他现有调用者的参数适配。
-后续 profession visual profile/附件最自然地接在该入口的外观与 pose 求值边界；新增 idle
-应扩展 pose 采样，portrait 可提交指定展示状态与 camera 复用人体绘制。本轮不提供附件、
-新姿态或上半身裁切功能。
+职业身份枚举 `rasterfall_profession_id` 位于 character identity 头文件，与基础 character ID 独立；
+`rasterfall_procedural_humanoid_state.profession_id` 携带一次绘制的身份。当前普通 actor 适配器显式
+传 NONE，不修改 actor、AI、武器规则或网络结构。`rasterfall_profession_visual_profile()` 在 character
+模块解析静态 presentation-only 配置：accent/gear 颜色、head、badge、waist_bag、backpack、vest。
+NONE/无效 ID 返回 NULL，完全跳过装备绘制，基础身体和既有绘制顺序保持原样。
+
+renderer 内 `render_profession_visual()` 组合相同 actor-local box primitive：Gunsmith 橙色工具侧包、
+露出扳手和护目镜；Logistics 卡其大背包、侧袋、胸袋和帽檐；Medic 灰白医疗箱、绿色十字和头带；
+Guard 宽厚深绿背心、肩部护片、盾徽和简化头盔带。基础身体配色仍由 character profile 提供。
+附件使用现有 lift/roll，躯干附件使用 body_pitch，头部使用原有 head lift；downed 简化代理不画
+直立装备，death/revive 使用既有整体翻倒变换。未增加动画状态或附件资产系统。
+后续玩法只需在 scene/actor 展示适配层传 profession identity；portrait 可复用该入口和静态 profile，
+仍需自行提供 camera 和展示状态。
 
 静态环境组件通过 `rasterfall_render_static_prop()` 提交 world-space RMESH。地图 parser 将
 注册表 asset name/id 转为轻量 `toy_map.props` 实例，renderer 遍历该数组；入口消费 RFU
@@ -134,7 +144,7 @@ make app-rasterfall
 build/rasterfall --visual-capture procedural-humanoid --visual-output /tmp/rf-humanoid.bmp
 ```
 
-输出为 800×800、24-bit BMP，路径由调用者指定，父目录须已存在；成功后打印最终路径并退出。
+输出为 24-bit BMP（单人 800×800，小队 1600×800），路径由调用者指定，父目录须已存在；成功后打印最终路径并退出。
 已有文件会覆盖。可连续 capture 后使用 `cmp` 检查字节一致性，再用图片查看工具观察。
 不依赖窗口、音频、私有角色资源、地图或 gameplay step。
 
@@ -143,15 +153,22 @@ build/rasterfall --visual-capture procedural-humanoid --visual-output /tmp/rf-hu
 `toy_renderer_flush()` → `rasterfall_hud_dump_bmp()`。setup 与进程级 capture 实现在
 `src/dev-tests/rasterfall_visual_capture.inc`，由 render 编译单元包含，人体代码没有副本。
 
-唯一场景 `procedural-humanoid` 使用 Akari 基础 profile、手枪、idle 0ms、未倒地，
+场景 `procedural-humanoid` 使用 Akari 基础 profile、手枪、idle 0ms、未倒地，
 actor 展示锚点 x/z/lift 均为 0，朝向 sy=512/cy=-887；camera 位于 (x=0,y=-350,z=-1900)，
 yaw sy=0/cy=1024、pitch sy=0/cy=1024。固定纯色背景与光照，串行光栅化并关闭交互 watchdog。
 fixture 仅预载公开手枪到既有模型缓存，避免 gallery 扫描；该入口只供新进程诊断后立即退出，
 不是运行中切换场景的 API。
 
-后续 Hurd profession visual profile 可通过同一 humanoid boundary 接入，再保持 fixture
-camera/placement/animation 固定重复 capture、查看和修改；本接口不实现职业外观、portrait、
-任意相机控制、回放或图片基线管理。
+```sh
+build/rasterfall --visual-capture hurd-squad --visual-output /tmp/rf-hurd-squad.bmp
+```
+
+`hurd-squad` 从左到右固定 Gunsmith、Logistics、Medic、Guard，均使用 Akari 基础身体与 idle 0ms，
+前三人显示 Pistol，Guard 显示 SMG（仅 fixture 的 weapon 展示字段）。camera z=-2600，其余相机参数
+及角色朝向沿用单人场景；角色 x 为 -1320、-440、440、1320，z/lift=0。斜向正面构图同时展示胸口、
+头部、武器和侧后附件。固定背景/光照，串行绘制，预载公开 Pistol/SMG，不初始化 gameplay。
+职业装备与普通人物共用 `rasterfall_render_procedural_humanoid()`，没有人物绘制副本。
+接口不提供 portrait、任意相机控制、回放或图片基线管理。
 
 ## 常见任务落点
 
