@@ -7,9 +7,9 @@
 #define __FB_FONT_H
 
 /*
- * fb_font — VGA 8×16 位图字体渲染
+ * fb_font — GB2312 8/16×16 点阵字体渲染
  *
- * 基于经典 VGA ROM 字体的 8×16 点阵位图，覆盖 ASCII 可打印字符 (0x20-0x7E)。
+ * 字符串接口接受 UTF-8；ASCII 为半宽 8×16，GB2312 字符为全宽 16×16。
  * 坐标原点在屏幕左上角，x→右，y→下。
  * 像素格式：XRGB8888（同 fb_draw.h 约定）。
  *
@@ -21,7 +21,11 @@
 
 /* ── 字体尺寸（固定宽高） ── */
 #define FB_FONT_W   8       /* 每个字符宽度（像素） */
+#define FB_FONT_CJK_W 16    /* GB2312 字符宽度（像素） */
 #define FB_FONT_H   16      /* 每个字符高度（像素） */
+
+int fb_font_load(const char *path);
+void fb_font_unload(void);
 
 /* ── 绘制单个字符（透明背景） ──
  *
@@ -69,6 +73,7 @@ void fb_draw_string_scaled(unsigned char *fbp, int x, int y,
  * World-space renderers can use the same font without first drawing it to the
  * framebuffer. */
 unsigned char fb_font_glyph_row(unsigned char ch, int row);
+uint16_t fb_font_glyph_row_utf8(unsigned int codepoint, int row, int *width);
 
 /* ── 查询函数 ── */
 

@@ -1119,7 +1119,13 @@ $(BUILD)/glb-inspect: $(BUILD)/glb_inspect | $(BUILD)
 .PHONY: app-vmd-inspect
 app-vmd-inspect: $(BUILD)/vmd_inspect
 
-.PHONY: setup-map-layout map-layout map-layout-query test-map-layout-export test-map-layout-query
+.PHONY: setup-map-layout map-layout map-layout-query test-map-layout-export test-map-layout-query generate-gb2312-font
+generate-gb2312-font:
+	python3 tools/fonts/build_gb2312_16.py \
+		rasterfall/assets/fonts/source/wenquanyi_12pt.bdf.gz \
+		rasterfall/assets/fonts/gb2312-16.rfh \
+		--ascii-bdf rasterfall/assets/fonts/source/wenquanyi_13px.bdf.gz
+
 setup-map-layout:
 	tools/setup-map-layout.sh
 

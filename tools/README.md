@@ -12,7 +12,7 @@
 
 ## 地图布局导出
 
-地图布局 PNG/JSON 导出使用 Pillow 和 Linux 的 Noto Sans CJK SC 字体，不要求 C 核心保持零依赖。
+地图布局 PNG/JSON 导出使用 Pillow，并直接读取仓库内与游戏共用的 GB2312 16×16 点阵字库。
 首次使用运行：
 
 ```sh
@@ -20,8 +20,7 @@ make setup-map-layout
 make map-layout
 ```
 
-环境安装在 `.venv/map-layout/`，不会进入运行时或提交内容；可用
-`.venv/map-layout/bin/python tools/map_layout_export.py ... --font path/to/font.ttc` 覆盖字体。
+环境安装在 `.venv/map-layout/`；导出不再探测、安装或覆盖系统字体。
 
 ```sh
 tools/assets/import_asset.py path/to/asset.json

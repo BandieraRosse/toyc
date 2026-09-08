@@ -1,7 +1,7 @@
 # Rasterfall 地图格式
 
 > 文档更新：2026-09-08
-> 源码核对基线：工作区（地图排布通过 PNG/JSON 导出链路核验；地图布局 PNG/JSON 导出器与 JSON 查询器；空气墙竖直 box 和可站立 platform 通过同组 role 同步切换显示、碰撞与导航；边界 box 显式 blocks_airborne；外围渲染墙与 gameplay 碰撞分离；静态 prop 实例及 profile 碰撞盒接入现有 primitive/nav）
+> 源码核对基线：工作区（地图布局 PNG/JSON 导出器使用仓库内 GB2312 16×16 点阵字库；JSON 查询器；空气墙竖直 box 和可站立 platform 通过同组 role 同步切换显示、碰撞与导航；边界 box 显式 blocks_airborne；外围渲染墙与 gameplay 碰撞分离；静态 prop 实例及 profile 碰撞盒接入现有 primitive/nav）
 
 正式地图位于 `rasterfall/assets/maps/*.map`。磁盘结构定义在 `include/toy_map.h`，文本解析在
 `lib/map.c`，`src/rasterfall_map.c` 再把结果绑定到玩法盒体、图元、可交互物和安全区。修改语法时
@@ -114,9 +114,9 @@ python3 tools/map_layout_query.py tmp/map-layout/output.json rect -15000 -13000 
 ```
 
 地图布局导出是 Linux 开发工具，不属于 C 核心的零依赖边界。首次使用先运行
-`make setup-map-layout`；它在 `.venv/map-layout` 创建独立 Python 环境，安装 Pillow，并检查/安装
-`Noto Sans CJK SC`。导出器使用 Pillow 绘制中英双语图例，稳定对象 ID 和 JSON 字段仍保持 ASCII；也可用
-`--font path/to/font.ttc` 指定其他 CJK 字体。
+`make setup-map-layout`；它只在 `.venv/map-layout` 创建独立 Python 环境并安装 Pillow。导出器直接读取
+`assets/fonts/gb2312-16.rfh` 绘制中英双语图例；不探测系统字体，也不再提供 TrueType 字体覆盖入口。
+稳定对象 ID 和 JSON 字段仍保持 ASCII。字库重建和许可见 `assets/fonts/README.md`。
 
 PNG 使用 x/z 平面、RFU 网格、色块/线框和紧凑 ID；右侧图例按区域、角色、通行、世界和交互分组并显示对象数量，`prop`
 在图例中称为“组件 COMPONENT”；绘制顺序为底图几何、语义区域、碰撞叠加和关键点/标签，避免平台或组件遮挡边界信息。

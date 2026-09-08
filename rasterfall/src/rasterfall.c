@@ -1013,8 +1013,9 @@ static void draw_startup_menu(struct toy_surface *surface, int screen,
         if (menu_top < 35) menu_top = 35;
         y = menu_top + 57;
         fb_draw_string((unsigned char *)surface->pixels,
-                       (surface->width - 10 * FB_FONT_W) / 2, menu_top,
-                       "RASTERFALL", RF_COLOR_UI_ACCENT, surface->stride);
+                       (surface->width - fb_string_width("RASTERFALL / 光栅坠落")) / 2,
+                       menu_top, "RASTERFALL / 光栅坠落",
+                       RF_COLOR_UI_ACCENT, surface->stride);
         for (i = 0; i < 7; i++) {
             uint32_t color = i == selected ? RF_COLOR_UI_ACCENT : RF_COLOR_UI_TEXT;
             if (i == selected)
@@ -2445,6 +2446,10 @@ int main(int argc, char **argv)
     rasterfall_options_init(&options, textures_enabled);
     options_result = rasterfall_options_parse(&options, argc, argv);
     if (options_result != 0) return options_result < 0 ? 2 : 0;
+    if (fb_font_load("rasterfall/assets/fonts/gb2312-16.rfh") < 0) {
+        __fprintf(2, "rasterfall: cannot load GB2312 font asset\n");
+        return 1;
+    }
     textures_enabled = options.textures_enabled;
     requested_model_skinning = options.model_skinning;
     requested_model_pose = options.model_pose;

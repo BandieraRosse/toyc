@@ -1,7 +1,7 @@
 # 构建、平台与验证
 
-> 文档更新：2026-09-05
-> 源码核对基线：工作区（Rasterfall 对象无条件重建规则，`make rasterfall` 内部按 `nproc` 并行）
+> 文档更新：2026-09-08
+> 源码核对基线：工作区（Rasterfall 对象无条件重建规则，`make rasterfall` 内部按 `nproc` 并行；GB2312 字库进入 Linux embedded 与 Windows 资产包）
 
 ## Linux
 
@@ -12,6 +12,8 @@ Tinylibc/app 对象统一依赖 `rasterfall-rebuild`，每次目标构建都会�
 `make -j12 app-rasterfall`。
 构建 freestanding Linux 程序，窗口/输入/渲染/音频来自仓库 Tinylibc 与公共库。默认运行时读取
 `rasterfall/assets`；`rasterfall-embedded` 才嵌入公开资源。
+GB2312 字库位于 `rasterfall/assets/fonts/`，普通运行缺少 `gb2312-16.rfh` 时会明确报错并停止；
+embedded 目标通过公开资产扫描自动纳入该文件及其许可/来源。
 
 平台相关实现主要是：
 
@@ -26,6 +28,7 @@ Tinylibc/app 对象统一依赖 `rasterfall-rebuild`，每次目标构建都会�
 WinSock、SDL 窗口/音频、线程和 WinMain 适配。平台契约头在 `windows/include/`。资源定位和包结构见
 `windows/README.md`；对象同样依赖无条件重建目标，确保共享头文件变化不会留下旧的 Windows 对象；
 不要把 Windows 修复硬编码进共享玩法，优先修平台适配层。
+Windows package 复制整个 `rasterfall/assets`，因此会同时携带字库、BDF 源文件和许可。
 
 ## 改文件列表时
 

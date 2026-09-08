@@ -1,7 +1,7 @@
 # Rasterfall 资源来源与发布限制
 
 > 文档更新：2026-09-08
-> 源码核对基线：工作区（移除开发者区纹理展示墙及其 wall.ttex 资源）
+> 源码核对基线：工作区（移除开发者区纹理展示墙；加入文泉驿来源的 GB2312 16×16 点阵字库、对应 BDF 源文件与许可）
 
 本文是资源来源、许可状态和本地样本身份的活动台账。文件存在或能够构建不代表允许公开分发；
 发布前必须逐项确认原件、作者和许可。`private-assets/` 与 `.claude/` 是本地区域，不进入公开资源
@@ -33,6 +33,11 @@
 帧区间和输出哈希。
 
 ## 公开模型与其他资源
+
+`assets/fonts/gb2312-16.rfh` 由 WenQuanYi Bitmap Song 1.0 (Hero) RC1 的 16×16 BDF strike
+确定性生成，半宽 ASCII 来自同包 13px strike。上游版权、GPL v2+ 字体嵌入例外、归档哈希、完整
+COPYING、对应压缩 BDF 源文件和重建命令均保存在 `assets/fonts/`；该字库允许随公开构建分发，
+发布包必须保留该目录中的许可和来源文件。
 
 `assets/models/` 下的武器、弹药箱和道具 `.rmesh` 是运行时转换产物；工业 prop 现在位于
 `assets/models/props/industrial/`。原件曾位于 `.claude/glb/`，

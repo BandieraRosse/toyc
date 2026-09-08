@@ -1,7 +1,7 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-08
-> 源码核对基线：工作区（HUD、viewmodel、crosshair、effects、managed actor 和客户端远端玩家的 gameplay 展示查询直接读取 actor；远端位置/朝向继续使用纯 derived presentation cache；RAY tracer 短线段/定向线宽投影，通用 emitter preset table，CAMERA_SHAKE 含开火后座与受击摇晃；受击四角浅红边缘与八方向中心箭头；程序化敌人身体组件描述表；world-space 静态 RMESH prop 入口与十件组件不重叠开发场景）
+> 源码核对基线：工作区（HUD 与启动菜单使用 UTF-8/GB2312 8×16/16×16 点阵文本；viewmodel、crosshair、effects、managed actor 和客户端远端玩家的 gameplay 展示查询直接读取 actor；远端位置/朝向继续使用纯 derived presentation cache；RAY tracer 短线段/定向线宽投影，通用 emitter preset table，CAMERA_SHAKE 含开火后座与受击摇晃；受击四角浅红边缘与八方向中心箭头；程序化敌人身体组件描述表；world-space 静态 RMESH prop 入口与十件组件不重叠开发场景）
 
 ## 渲染边界
 
@@ -25,6 +25,10 @@
 绑定；底层光栅器在仓库公共的 `lib/graphics/renderer.c` / `include/toy_renderer.h`。
 
 其他视觉模块：
+
+- `lib/graphics/fb_font.c`：加载 `assets/fonts/gb2312-16.rfh`，把 UTF-8 字符串映射到半宽 ASCII
+  或全宽 GB2312 16×16 点阵；启动菜单中的“光栅坠落”是游戏内中文显示的常驻验证入口。该资产也供
+  地图排布导出器读取，运行时不依赖 FreeType、系统 CJK 字体或宿主 libc 编码转换。
 
 - `rasterfall_hud.c`：玩家、网络、波次、商店 HUD，交互提示和 BMP/帧导出。
 - `rasterfall_viewmodel.c`：第一人称手臂、武器模型、后坐/摆动和枪口位置。
