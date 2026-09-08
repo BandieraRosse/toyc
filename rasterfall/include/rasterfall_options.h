@@ -8,6 +8,7 @@ struct rasterfall_options {
     int auto_mode, textures_enabled, edge_pass_enabled;
     int stats_enabled, texture_stats, frame_limit;
     const char *dump_path;
+    const char *visual_scenario, *visual_output;
     const char *view_model_path, *view_output_dir;
     int model_views_supersample, model_skinning, model_pose;
     int material_regression;

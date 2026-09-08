@@ -938,6 +938,7 @@ $(BUILD)/rasterfall_render.o: $(RASTERFALL_SRC)/rasterfall_render.c \
                               $(RASTERFALL_INC)/rasterfall_model.h \
                               $(RASTERFALL_INC)/rasterfall_render_frontend.h \
                               $(RASTERFALL_SRC)/dev-tests/rasterfall_actor_benchmark.inc \
+                              $(RASTERFALL_SRC)/dev-tests/rasterfall_visual_capture.inc \
                               $(RASTERFALL_SRC)/dev-tests/rasterfall_skin_trace.inc | $(BUILD)
 	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
 	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
@@ -1346,6 +1347,7 @@ $(BUILD)/rasterfall_render_self.o: $(RASTERFALL_SRC)/rasterfall_render.c \
                                    $(RASTERFALL_INC)/rasterfall_model.h \
                                    $(RASTERFALL_INC)/rasterfall_render_frontend.h \
                                    $(RASTERFALL_SRC)/dev-tests/rasterfall_actor_benchmark.inc \
+                                   $(RASTERFALL_SRC)/dev-tests/rasterfall_visual_capture.inc \
                                    $(RASTERFALL_SRC)/dev-tests/rasterfall_skin_trace.inc \
                                    $(SELF_CC) | $(BUILD)
 	@printf "  $(BLUE)  CC(s)  %s\n" "$<"

@@ -1,7 +1,7 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-09
-> 源码核对基线：工作区（低模队友使用显式展示状态与 character profile 的 procedural humanoid 入口；地图排布导出与游戏 UI 共用仓库内 GB2312 16×16 点阵字库；十件 V2 Hybrid 程序化几何与静态 prop；actor 统一 gameplay 状态；本地受击四角闪红与八方向提示；player/actor 与敌人空中强制位移均使用确定性分段扫掠）
+> 源码核对基线：工作区（Visual CLI V1 固定 procedural-humanoid 离屏 BMP capture；低模队友使用显式展示状态与 character profile 的 procedural humanoid 入口；地图排布导出与游戏 UI 共用仓库内 GB2312 16×16 点阵字库；十件 V2 Hybrid 程序化几何与静态 prop；actor 统一 gameplay 状态；本地受击四角闪红与八方向提示；player/actor 与敌人空中强制位移均使用确定性分段扫掠）
 
 本目录面向接手 Rasterfall 任务的编码代理。目标不是介绍玩法，而是先把问题归到正确的
 状态所有者和文件，再开始搜索。命令、资源导入方法和用户可见特性仍以
@@ -12,6 +12,7 @@
 | 任务或症状 | 首先阅读 | 主要入口 |
 | --- | --- | --- |
 | 启动、参数、输入、暂停、主循环、音画同步 | [runtime.md](runtime.md) | `src/rasterfall.c` |
+| agent 固定视觉场景截图 / Visual CLI | [rendering.md](rendering.md)、[runtime.md](runtime.md) | options → `rasterfall_render_visual_capture()` → `src/dev-tests/rasterfall_visual_capture.inc` |
 | 武器、敌人、碰撞、寻路、波次、商店、AI | [gameplay.md](gameplay.md) | `lib/game.c`、`src/rasterfall_session.c` |
 | 地图格式、关卡实体、拾取物、静态 prop、出生点 | [map-format.md](map-format.md) | `lib/map.c`、`src/rasterfall_map.c` |
 | 编写或扩展 `.map` 文本格式 | [map-format.md](map-format.md) | `lib/map.c`、`include/toy_map.h` |

@@ -60,6 +60,7 @@ void rasterfall_options_usage(int fd)
         "  --textures | --no-textures  --no-edge-pass  --no-stats\n"
         "  --texture-stats  --frames <count>  --dump-frame <path>\n"
         "  --logic-test  --input-test  --auto\n"
+        "  --visual-capture procedural-humanoid --visual-output <path.bmp>\n"
         "  --model-views <model> <dir> [--model-views-supersample <1|2>]\n"
         "  --model-static-views <model> <dir>\n"
         "  --model-pose-views <model> <dir> <bind|right-arm|arms|body>\n"
@@ -117,6 +118,12 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
         else if (!strcmp(option,"--dump-frame")) {
             if(require_arguments(argc,argv,arg,1,option)<0)return -1;
             o->dump_path=argv[++arg];
+        } else if (!strcmp(option,"--visual-capture")) {
+            if(require_arguments(argc,argv,arg,1,option)<0)return -1;
+            o->visual_scenario=argv[++arg];
+        } else if (!strcmp(option,"--visual-output")) {
+            if(require_arguments(argc,argv,arg,1,option)<0)return -1;
+            o->visual_output=argv[++arg];
         } else if (!strcmp(option,"--model-views")) {
             if(require_arguments(argc,argv,arg,2,option)<0)return -1;
             o->view_model_path=argv[++arg];o->view_output_dir=argv[++arg];
@@ -190,6 +197,10 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
             rasterfall_options_usage(2);
             return -1;
         }
+    }
+    if ((o->visual_scenario != 0) != (o->visual_output != 0)) {
+        __fprintf(2,"rasterfall: --visual-capture and --visual-output are required together\n");
+        return -1;
     }
     return 0;
 }

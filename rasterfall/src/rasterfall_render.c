@@ -13,6 +13,7 @@
 #include "rasterfall_net.h"
 #include "rasterfall_sky.h"
 #include "rasterfall_render.h"
+#include "rasterfall_hud.h"
 #include "rasterfall_render_frontend.h"
 
 #define special_target_active ability.special_target_active
@@ -6233,6 +6234,7 @@ static int render_effect_particles(struct toy_renderer *renderer, const struct c
 #undef effects
 #undef textures_enabled
 #undef fixed_floor_lighting
+#include "dev-tests/rasterfall_visual_capture.inc"
 void rasterfall_render_bind(struct rasterfall_render_context *ctx)
 {
     render_ctx = ctx;

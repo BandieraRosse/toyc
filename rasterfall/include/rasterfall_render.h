@@ -118,6 +118,8 @@ void rasterfall_render_model_setup_timing(
     struct rasterfall_model_setup_timing *out);
 int rasterfall_render_actor_benchmark(int iterations, int frontend_workers,
                                       int raster_workers);
+/* Process-only diagnostic: call before runtime initialization, then exit. */
+int rasterfall_render_visual_capture(const char *scenario, const char *output);
 void rasterfall_render_scene_stats(struct rasterfall_scene_stats *out);
 int rasterfall_render_near_clip_test(void);
 int rasterfall_render_static_prop_culling_logic_test(void);

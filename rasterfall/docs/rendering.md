@@ -1,7 +1,7 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-09
-> 源码核对基线：工作区（低模 AI 使用显式 state/profile 的 procedural humanoid 入口；HUD 与启动菜单使用 UTF-8/GB2312 8×16/16×16 点阵文本；viewmodel、crosshair、effects、managed actor 和客户端远端玩家的 gameplay 展示查询直接读取 actor；远端位置/朝向继续使用纯 derived presentation cache；RAY tracer 短线段/定向线宽投影，通用 emitter preset table，CAMERA_SHAKE 含开火后座与受击摇晃；受击四角浅红边缘与八方向中心箭头；程序化敌人身体组件描述表；world-space 静态 RMESH prop 入口与十件组件不重叠开发场景）
+> 源码核对基线：工作区（Visual CLI V1 固定 procedural-humanoid 离屏 BMP capture；低模 AI 使用显式 state/profile 的 procedural humanoid 入口；HUD 与启动菜单使用 UTF-8/GB2312 8×16/16×16 点阵文本；viewmodel、crosshair、effects、managed actor 和客户端远端玩家的 gameplay 展示查询直接读取 actor；远端位置/朝向继续使用纯 derived presentation cache；RAY tracer 短线段/定向线宽投影，通用 emitter preset table，CAMERA_SHAKE 含开火后座与受击摇晃；受击四角浅红边缘与八方向中心箭头；程序化敌人身体组件描述表；world-space 静态 RMESH prop 入口与十件组件不重叠开发场景）
 
 ## 渲染边界
 
@@ -124,6 +124,34 @@ tracer RAY instance 保留事件提供的枪口起点和命中/射程终点，�
 距离开始逐渐显现；AI/远端玩家也使用短线段快速移动，但采用更短的可见段和独立距离参数。
 AI/远端 tracer 使用世界空间小方柱，避免沿射线方向观察时固定屏幕线宽盖过透视长度而显示为横线。
 instance pool、事件和深度测试 flags 不变。
+
+## Visual CLI V1：固定场景观察
+
+从仓库根目录运行：
+
+```sh
+make app-rasterfall
+build/rasterfall --visual-capture procedural-humanoid --visual-output /tmp/rf-humanoid.bmp
+```
+
+输出为 800×800、24-bit BMP，路径由调用者指定，父目录须已存在；成功后打印最终路径并退出。
+已有文件会覆盖。可连续 capture 后使用 `cmp` 检查字节一致性，再用图片查看工具观察。
+不依赖窗口、音频、私有角色资源、地图或 gameplay step。
+
+数据流：options → main 诊断早退 → 命名场景检查/固定 setup →
+`rasterfall_render_procedural_humanoid()` → 普通 primitive 与武器 helper →
+`toy_renderer_flush()` → `rasterfall_hud_dump_bmp()`。setup 与进程级 capture 实现在
+`src/dev-tests/rasterfall_visual_capture.inc`，由 render 编译单元包含，人体代码没有副本。
+
+唯一场景 `procedural-humanoid` 使用 Akari 基础 profile、手枪、idle 0ms、未倒地，
+actor 展示锚点 x/z/lift 均为 0，朝向 sy=512/cy=-887；camera 位于 (x=0,y=-350,z=-1900)，
+yaw sy=0/cy=1024、pitch sy=0/cy=1024。固定纯色背景与光照，串行光栅化并关闭交互 watchdog。
+fixture 仅预载公开手枪到既有模型缓存，避免 gallery 扫描；该入口只供新进程诊断后立即退出，
+不是运行中切换场景的 API。
+
+后续 Hurd profession visual profile 可通过同一 humanoid boundary 接入，再保持 fixture
+camera/placement/animation 固定重复 capture、查看和修改；本接口不实现职业外观、portrait、
+任意相机控制、回放或图片基线管理。
 
 ## 常见任务落点
 
