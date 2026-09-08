@@ -13,7 +13,7 @@
 struct slice { const char *p, *end; };
 struct accessor { int view, offset, count, component, type; };
 struct view { int offset, length, stride; };
-struct material { unsigned int color; unsigned short metallic, roughness; };
+struct material { unsigned int color; unsigned short metallic, roughness; unsigned int texture; };
 struct part {
     struct accessor pos, normal, uv, index;
     struct view pos_view, normal_view, uv_view, index_view;
@@ -147,8 +147,8 @@ static void put_u32(unsigned char *p, unsigned int v)
 
 static struct material read_material(struct slice materials, int index)
 {
-    struct material out = {0xFFFFFFFFU, 0, 65535};
-    struct slice m, pbr, color;
+    struct material out = {0xFFFFFFFFU, 0, 65535, 0xffffffffU};
+    struct slice m, pbr, color, base_texture;
     int r, g, b, a, fixed;
     m = array_item(materials, index); if (!m.p) return out;
     pbr = raw_value(m, "pbrMetallicRoughness");
@@ -164,6 +164,9 @@ static struct material read_material(struct slice materials, int index)
     out.metallic = clamp_i(fixed * 65535 / 1000, 0, 65535);
     fixed = json_fixed(raw_value(pbr, "roughnessFactor"), 1000);
     out.roughness = clamp_i(fixed * 65535 / 1000, 0, 65535);
+    base_texture = raw_value(pbr, "baseColorTexture");
+    if (base_texture.p)
+        out.texture = (unsigned int)json_int(raw_value(base_texture, "index"), -1);
     (void)a;
     return out;
 }
@@ -262,7 +265,7 @@ int main(int argc, char **argv)
         if (!array_item(materials_json, i).p) break;
         materials[i] = read_material(materials_json, i); material_count++;
     }
-    if (!material_count) { material_count = 1; materials[0].color = 0xB0B0B0; materials[0].metallic = 0; materials[0].roughness = 65535; }
+    if (!material_count) { material_count = 1; materials[0].color = 0xB0B0B0; materials[0].metallic = 0; materials[0].roughness = 65535; materials[0].texture = 0xffffffffU; }
     for (i = 0; i < part_count; i++) if (parts[i].material < 0 || parts[i].material >= material_count) parts[i].material = 0;
     for (i = 0; i < part_count; i++) { struct part *p = &parts[i]; int stride = p->pos_view.stride ? p->pos_view.stride : 12; int off = p->pos_view.offset + p->pos.offset; int j; for (j = 0; j < p->pos.count; j++) { const unsigned char *v = bin + off + j * stride; float x=f32(v), y=f32(v+4), z=f32(v+8); int sx=f_to_i(x,position_scale), sy=f_to_i(y,position_scale), sz=f_to_i(z,position_scale); if(x<raw_minx)raw_minx=x;if(y<raw_miny)raw_miny=y;if(z<raw_minz)raw_minz=z;if(x>raw_maxx)raw_maxx=x;if(y>raw_maxy)raw_maxy=y;if(z>raw_maxz)raw_maxz=z; if(sx<minx)minx=sx;if(sy<miny)miny=sy;if(sz<minz)minz=sz;if(sx>maxx)maxx=sx;if(sy>maxy)maxy=sy;if(sz>maxz)maxz=sz; } }
     {
@@ -280,7 +283,7 @@ int main(int argc, char **argv)
     __memset(header, 0, sizeof(header)); header[0]='R'; header[1]='F'; header[2]='M'; header[3]='2'; header[4]=2; put_u32(header+8, vertex_count); put_u32(header+12, index_count); put_u32(header+16, position_scale); ((int *)(header+20))[0]=minx; ((int *)(header+20))[1]=miny; ((int *)(header+20))[2]=minz; ((int *)(header+20))[3]=maxx; ((int *)(header+20))[4]=maxy; ((int *)(header+20))[5]=maxz; put_u32(header+44, part_count); put_u32(header+48, material_count); put_u32(header+52, RASTERFALL_MODEL_HEADER_BYTES); put_u32(header+56, RASTERFALL_MODEL_HEADER_BYTES + part_count * RASTERFALL_MODEL_PRIMITIVE_BYTES);
     if (write_all(out, header, RASTERFALL_MODEL_HEADER_BYTES) < 0) { __close(out); return 1; }
     for (i = 0; i < part_count; i++) { unsigned char record[RASTERFALL_MODEL_PRIMITIVE_BYTES]; __memset(record, 0, sizeof(record)); put_u32(record, parts[i].index_base); put_u32(record+4, parts[i].index.count); put_u32(record+8, parts[i].material); if (write_all(out, record, sizeof(record)) < 0) { __close(out); return 1; } }
-    for (i = 0; i < material_count; i++) { unsigned char record[RASTERFALL_MODEL_MATERIAL_BYTES_LEGACY]; __memset(record, 0, sizeof(record)); put_u32(record, materials[i].color); put_u16(record+4, materials[i].metallic); put_u16(record+6, materials[i].roughness); put_u32(record+8, 0xffffffffU); if (write_all(out, record, sizeof(record)) < 0) { __close(out); return 1; } }
+    for (i = 0; i < material_count; i++) { unsigned char record[RASTERFALL_MODEL_MATERIAL_BYTES_LEGACY]; __memset(record, 0, sizeof(record)); put_u32(record, materials[i].color); put_u16(record+4, materials[i].metallic); put_u16(record+6, materials[i].roughness); put_u32(record+8, materials[i].texture); if (write_all(out, record, sizeof(record)) < 0) { __close(out); return 1; } }
     for (i = 0; i < part_count; i++) { struct part *p=&parts[i]; int ps=p->pos_view.stride?p->pos_view.stride:12, ns=p->normal_view.stride?p->normal_view.stride:12, us=p->uv_view.stride?p->uv_view.stride:8, po=p->pos_view.offset+p->pos.offset, no=p->normal_view.offset+p->normal.offset, uo=p->uv_view.offset+p->uv.offset, j; for(j=0;j<p->pos.count;j++){ const unsigned char *q=bin+po+j*ps; unsigned char v[RASTERFALL_MODEL_VERTEX_BYTES]; __memset(v,0,sizeof(v)); *(int *)(v)=f_to_i(f32(q),position_scale);*(int *)(v+4)=f_to_i(f32(q+4),position_scale);*(int *)(v+8)=f_to_i(f32(q+8),position_scale); if(p->normal.view>=0&&j<p->normal.count){q=bin+no+j*ns;*(short*)(v+12)=clamp_i(f_to_i(f32(q),32767),-32767,32767);*(short*)(v+14)=clamp_i(f_to_i(f32(q+4),32767),-32767,32767);*(short*)(v+16)=clamp_i(f_to_i(f32(q+8),32767),-32767,32767);} if(p->uv.view>=0&&j<p->uv.count){q=bin+uo+j*us;*(unsigned short*)(v+18)=clamp_i(f_to_i(f32(q),65535),0,65535);*(unsigned short*)(v+20)=clamp_i(f_to_i(f32(q+4),65535),0,65535);} if(write_all(out,v,RASTERFALL_MODEL_VERTEX_BYTES)<0){__close(out);return 1;} } }
     for (i = 0; i < part_count; i++) { struct part *p=&parts[i]; int is=p->index.component==5121?1:p->index.component==5123?2:4, io=p->index_view.offset+p->index.offset, j; for(j=0;j<p->index.count;j++){ const unsigned char *q=bin+io+j*is; unsigned int n=p->index.component==5121?q[0]:p->index.component==5123?u16(q):u32(q); unsigned char b[4]; if(n>=(unsigned)p->pos.count){__printf("glb2rmesh: index out of range in primitive %d\n",i);__close(out);return 1;} n += p->vertex_base; b[0]=n;b[1]=n>>8;b[2]=n>>16;b[3]=n>>24; if(write_all(out,b,4)<0){__close(out);return 1;} } }
     __close(out); __munmap(file,size); __printf("glb2rmesh: %s -> %s (%d vertices, %d triangles, %d primitives, %d materials)\n",argv[1],argv[2],vertex_count,index_count/3,part_count,material_count); return 0;

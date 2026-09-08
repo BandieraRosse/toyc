@@ -135,6 +135,10 @@ $(BUILD)/toyasset: tools/toyasset.c tools/jpg_decode.c | $(BUILD)
 	@printf "  $(BLUE)  GCC$(RESET)  $<\n"
 	$(CC) -std=c11 -Wall -Wextra -O2 $< tools/jpg_decode.c -lz -o $@
 
+.PHONY: test-asset-pipeline
+test-asset-pipeline: app-glb2rmesh $(BUILD)/toyasset
+	python3 tools/assets/test_import_asset.py
+
 # ─── 汇编入口 ──────────────────────────────────────────────────
 
 $(BUILD)/toyc_rt_start.o: $(SRC)/toyc_rt_start.S | $(BUILD)

@@ -1,7 +1,7 @@
 # Rasterfall 代码导航
 
-> 文档更新：2026-09-07
-> 源码核对基线：工作区（地图静态 prop 实例解析、profile 驱动 RFU 碰撞 primitive 与渲染遍历；`rasterfall_prop` 静态资产 profile 和 world-space RMESH prop 渲染入口；本地玩家、远端人类、AI 和 special controller 的 gameplay 状态统一由 `toy_game_actor` 拥有）
+> 文档更新：2026-09-08
+> 源码核对基线：工作区（统一离线资产 importer 与 manifest/GLB texture/LOD 验证契约；地图静态 prop 实例解析、profile 驱动 RFU 碰撞 primitive 与渲染遍历；本地玩家、远端人类、AI 和 special controller 的 gameplay 状态统一由 `toy_game_actor` 拥有）
 
 本目录面向接手 Rasterfall 任务的编码代理。目标不是介绍玩法，而是先把问题归到正确的
 状态所有者和文件，再开始搜索。命令、资源导入方法和用户可见特性仍以
@@ -19,7 +19,7 @@
 | world-space 静态 RMESH prop、实例变换和开发展示 | [rendering.md](rendering.md) | `include/rasterfall_render.h`、`src/rasterfall_render.c` |
 | 战斗表现事件、muzzle/tracer/impact/camera shake 消费 | [rendering.md](rendering.md) | `include/rasterfall_effect_event.h`、`src/rasterfall_effects.c` |
 | 模型、蒙皮、IK、VMD/GLB、动作重定向 | [assets-animation.md](assets-animation.md) | `src/rasterfall_model.c` |
-| 转换 PMX/GLB、生成 LOD、模型诊断 | [asset-pipeline.md](asset-pipeline.md) | `app/`、`tools/`、模型加载器 |
+| 导入 PMX/GLB、manifest、纹理、LOD、模型诊断 | [asset-pipeline.md](asset-pipeline.md) | `tools/assets/import_asset.py`、现有转换器、模型加载器 |
 | 程序化工业/军事环境组件、Blender 批量导出 | [industrial-props.md](industrial-props.md)、[asset-pipeline.md](asset-pipeline.md) | `tools/blender/generate_rasterfall_props.py` |
 | 静态 prop 资产 ID、路径、展示缩放和默认尺寸 | [asset-pipeline.md](asset-pipeline.md) | `include/rasterfall_prop.h`、`src/rasterfall_prop.c` |
 | 联机协议、快照、预测、可靠事件、房间发现 | [networking.md](networking.md) | `src/rasterfall_net.c` |
@@ -89,6 +89,8 @@ Molotov 的世界实体显式携带 `owner_actor_id`，本地预测 body 位置�
 - 修改 `toy_game.h` 的武器、敌人、事件或结构布局：检查 `lib/game.c`、session、HUD、渲染和网络编码。
 - 修改地图语义：检查 `toy_map.h`/`lib/map.c` 的解析、`rasterfall_map.c` 的绑定、玩法碰撞和渲染。
 - 修改角色动画：检查角色选择、会话动画状态、模型求值、渲染以及网络动画字段。
+- 修改离线资产导入契约：从 `tools/assets/import_asset.py` 和 manifest 开始，分别检查
+  `glb2rmesh`/`pmx2rmesh`、`toyasset`、`rmesh_lod.py`；不要让 runtime 读取 manifest。
 - 修改敌人外观组件：检查 `src/rasterfall_render.c` 的 `enemy_body_part` 描述表、通用组件解释器和特感动态组件；地面锚点仍由 `toy_game_enemy.ground_y` 与 `airborne_y` 提供。
 - 修改命令行或诊断模式：从 `rasterfall_options.c` 到 `rasterfall.c` 的早退分支一起核对。
 - 修改角色状态：从 `toy_game_actor`、actor API 和

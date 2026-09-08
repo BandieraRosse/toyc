@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "id": "rf_crate",
+  "type": "static_prop",
+  "source": "../../tmp/rasterfall-props/rf_crate.glb",
+  "dimensions_m": [1.2, 1.2, 1.2],
+  "lods": [
+    {"level": 1, "ratio": 0.4}
+  ]
+}

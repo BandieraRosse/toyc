@@ -8,6 +8,19 @@
 | toyasset | `tools/toyasset.c` + `jpg_decode.c` | `make build/toyasset` | 离线格式转换 |
 | gen_sfx | `tools/gen_sfx.c` + `rasterfall/lib/sfx.c` | `make build/gen_sfx` | 程序合成音效 → TSND |
 
+## Rasterfall 统一资产导入
+
+```sh
+tools/assets/import_asset.py path/to/asset.json
+tools/assets/import_asset.py --force path/to/asset.json
+make test-asset-pipeline
+```
+
+该入口按 manifest 的资产类型和源扩展名编排既有 `glb2rmesh`、`pmx2rmesh`、`toyasset` 与
+`rmesh_lod.py`，统一生成 `<id>.rmesh`、`<id>.textures/texture_###.ttex` 和可选
+`<id>_lodN.rmesh`。完整契约、空间规范和示例见 `rasterfall/docs/asset-pipeline.md` 与
+`tools/assets/manifest.example.json`。以下旧入口和单工具命令继续保留。
+
 ## PMX 模型一键导入
 
 ```sh
