@@ -1,7 +1,42 @@
 # 第一套程序化工业 / 军事组件
 
 > 文档更新：2026-09-08
-> 源码核对基线：工作区 `tools/blender/generate_rasterfall_props.py`、`tools/assets/manifests/props/industrial/`、`app/glb2rmesh.c`、`rasterfall/src/rasterfall_prop.c`、`rasterfall/lib/map.c`
+> 源码核对基线：工作区（十件 V2 Hybrid 的程序化几何、flat surface role、局部 32×32 sign 与统一 importer；空间与运行时契约不变）
+
+## V2 Hybrid 生成
+
+十件组件默认采用 geometry + flat materials + limited decal texture。`PILOT` 保存工业
+主体 palette 和标识身份，`ACCENTS` 保存少量功能色；`Builder.box()` 用面 UV 的 tile role
+标记主体/框架/点缀/标牌。`hybrid_prop()` 将大面转为无纹理 flat 材质，只有局部标牌正面
+保留纹理；crate 沿用已确认的 `hybrid_crate()`。色值从 sRGB palette 转为线性 GLB factor。
+每件使用三个或四个材质/primitive、一张 32×32 标牌 PNG。原生 exporter 与无 numpy 的
+静态 writer 均支持 UV/内嵌 PNG；不存在大面积纹理磨损、油迹或面板边线。
+
+```sh
+blender -b --python-exit-code 1 --python tools/blender/generate_rasterfall_props.py -- \
+    --output tmp/props-v2-hybrid-set
+for id in rf_crate rf_barrier rf_short_wall rf_railing rf_lamp_post rf_vent_unit \
+          rf_workbench rf_ammo_container rf_industrial_pillar rf_pipe_module; do
+    cp "tmp/props-v2-hybrid-set/$id.glb" rasterfall/private-assets/source/props/industrial/
+    tools/assets/import_asset.py --force --output-root rasterfall/assets/models/props/industrial \
+        "tools/assets/manifests/props/industrial/$id.asset.json"
+done
+```
+
+可用 `--assets ID ...` 只生成所选资产；输出含独立 GLB、标牌 PNG 和已 pack 图像的 blend。
+已有输出需显式 `--overwrite`，可用 `cmp` 比较两次独立 GLB/PNG。安装后由既有展示区
+直接加载；资源身份、路径、展示比例、地图、碰撞及 runtime 均不变。
+
+### Crate 对照
+
+生成时加 `--assets rf_crate --crate-material hybrid`。`hybrid_crate()` 在原 V2 几何完成后
+按现有面 UV 分区重分配材质，不改变位置、法线、三角形或空间契约。主体和凹盖使用灰绿
+flat 材质，框架使用暗灰 flat 材质，只有铭牌正面使用纹理；共三个材质/primitive。
+编号 tile 独立裁为 32×32，保持原 texel 密度和留边。取消全表面纹理面板边线、底缘磨损、
+积尘与盖板油迹；保留几何凹盖、粗箍、护角和编号。没有新增警示图案或几何。
+`--crate-material full` 仍可生成 full-texture 对照，默认是 `hybrid`；其他资产不受该选项影响。
+两种模式均沿用 `rf_crate` ID，经既有 importer 安装；同场 A/B 需分别安装并重启游戏，
+保持同一地图、相机和实例数量，不为试验新增 registry ID 或地图实例。
 
 ## 生成与检查
 
@@ -21,11 +56,11 @@ blender -b --python-exit-code 1 --python tools/blender/generate_rasterfall_props
 
 已有同名输出默认拒绝覆盖；明确需要重新生成时加 `--overwrite`。
 脚本会清空当前场景，适合在单独的 background 进程中运行。
-所有部件合并为独立 mesh，倒角固定一段并应用，显式三角化、flat normals、无 UV / 纹理、
-无灯光、相机、动画、骨骼或压缩扩展。每件资产只有军绿与警示赭黄两个共享材质；
+所有部件合并为独立 mesh，倒角固定一段并应用，显式三角化、flat normals，
+无灯光、相机、动画、骨骼或压缩扩展。按用途分配低饱和主体色与暗框、局部功能色；
 使用不透明 Base Color、metallic=0、roughness=0.9，不依赖 PBR 效果。
-大面颜色形成分区，倒角贡献轮廓与明暗变化，不做螺丝、文字、密集格栅或贴花。
-以上描述是当前 **V1 生成事实**；后续 V2 light upgrade 的颜色、几何、albedo 预算、逐件改造要点
+大面颜色形成分区，倒角贡献轮廓与明暗变化，纹理仅提供粗编号、箭头或单个安全符号。
+不做螺丝、细字或密集格栅。V2 light upgrade 的颜色、几何、纹理预算、逐件改造要点
 和验收标准以 [environment-art.md](environment-art.md) 为准。V2 不改变本页记录的尺寸、pivot、用途、
 碰撞建议或导入契约。
 
@@ -83,18 +118,18 @@ GLB 保留真实米制尺寸。现有 `glb2rmesh` 将位置乘以 232 存储（�
 
 ## 组件规格
 
-预算是建议上限，不是要求填满；实际统计以运行输出为准。所有组件均为 2 materials，
+预算是建议上限，不是要求填满；实际统计以运行输出为准。各组件为 3–4 materials，
 pivot 和 forward 均使用上述统一约定。
 
 | object name | 建议 triangles | 实际尺寸 m | 主要 silhouette | 地图典型用途（设计建议） |
 | --- | --- | --- | --- | --- |
 | `rf_crate` | 200–600 | 1.2 × 1.0 × 1.0 | 宽顶底框、两道粗箍、正面宽铭牌块 | 仓库货垛、路口遮挡、补给区标记 |
-| `rf_barrier` | 200–600 | 2.4 × 0.8 × 1.0 | 宽脚窄肩梯形、三块黄色肩标 | 检查站、道路分流、低掩体 |
+| `rf_barrier` | 200–600 | 2.4 × 0.8 × 1.0 | 宽脚窄肩梯形、三块肩标、正面换装板 | 检查站、道路分流、低掩体 |
 | `rf_short_wall` | 200–600 | 2.4 × 0.5 × 1.4 | 粗压顶、底座、三条竖向筋 | 院区分隔、走廊转角、阵地边缘 |
 | `rf_railing` | 200–600 | 2.4 × 0.3 × 1.1 | 三根立柱、双横杆、宽脚板，保留大空隙 | 平台边缘、危险区域、通道引导 |
 | `rf_lamp_post` | 200–600 | 0.8 × 0.8 × 3.2 | 高细杆、前伸大灯头、宽底座 | 路口与入口视觉地标；灯面仅色块，无实际光源 |
 | `rf_vent_unit` | 200–800 | 1.4 × 0.9 × 1.2 | 厚柜体、四片宽百叶、顶底框 | 机房、屋顶设备、墙边遮挡 |
-| `rf_workbench` | 200–600 | 1.8 × 0.8 × 0.9 | 厚黄色台面、四粗腿、底架、单侧抽屉 | 工坊、维修点、补给区 |
+| `rf_workbench` | 200–600 | 1.8 × 0.8 × 0.9 | 土黄台面、四粗腿、底架、单侧双柜面 | 工坊、维修点、补给区 |
 | `rf_ammo_container` | 200–600 | 0.9 × 0.5 × 0.6 | 扁长箱、厚盖、双锁扣、低矮提手 | 弹药存放视觉提示；不自动成为可交互拾取物 |
 | `rf_industrial_pillar` | 200–600 | 0.8 × 0.8 × 2.8 | 窄倒角柱身、宽柱头柱脚、双套环 | 走廊节奏、厂房结构视觉提示 |
 | `rf_pipe_module` | 200–800 | 1.6 × 0.8 × 1.4 | 双八棱立管、粗法兰、共同底座 | 设备区、管线端站、机房轮廓变化 |

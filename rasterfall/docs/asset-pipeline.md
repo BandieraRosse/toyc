@@ -1,7 +1,7 @@
 # Rasterfall 资产转换与诊断
 
 > 文档更新：2026-09-08
-> 源码核对基线：工作区（`tools/assets/import_asset.py` 统一入口、GLB baseColor texture 闭环、manifest/LOD/原子安装验证、十件工业 prop 的 manifest 与 RMESH；V2 环境艺术规范）
+> 源码核对基线：工作区（统一 importer 契约不变；十件 V2 Hybrid GLB 与局部 32×32 sign 经现有入口安装 RMESH/TTEX）
 
 本文记录可执行的模型、纹理和动画工具链。运行时模块边界见 `assets-animation.md`，动画求值契约
 见 `animation-architecture.md`，资源是否允许发布见 `asset-sources.md`。
@@ -62,6 +62,9 @@ Blender 只负责 FBX、复杂场景和源坐标的预处理，按上述类型�
 不自动加入公开资源、内嵌依赖或 Windows package。
 其 V2 light upgrade 的几何、albedo、palette、预算与验收约束见
 [environment-art.md](environment-art.md)；艺术升级不改变下述导入和运行时契约。
+整套 V2 Hybrid 的选择生成与安装命令见 [industrial-props.md](industrial-props.md)。每件局部标识内嵌 PNG
+导入为 `<id>.textures/texture_000.ttex`；根 Makefile 递归资产依赖和 Windows package
+递归复制包含这些纹理。manifest、registry、展示比例与地图均沿用既有定义。
 
 ```sh
 tools/assets/import_asset.py prop.asset.json
