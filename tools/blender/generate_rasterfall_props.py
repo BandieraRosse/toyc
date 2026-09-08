@@ -331,7 +331,10 @@ def build(name, mats):
                     box((0, y, z), (1, .1, .12), True, bevel=.015)
             else:
                 box((0, 0, z), (1.2, 1, .12), True)
-        for x in (-.48, .48):
+        # Keep the frame rail's outer face off the body side.  At +/- .48
+        # its outer edge was exactly coplanar with the body (x=+/- .56),
+        # causing material z-fighting during camera rotation.
+        for x in (-.50, .50):
             box((x, 0, .5), (.16, 1, .76), True)
         box((0, -.47, .5), (.44, .06, .3), tile=3, face=(1, -1))
         if len(mats) == 1:
@@ -375,8 +378,12 @@ def build(name, mats):
             box((0, 0, z), (2.4, .16, .1), True)
         for x in (-1.08, 0, 1.08):
             box((x, 0, 1.055), (.20, .24, .09), True, bevel=.014)
-            for z in (.48, 1.01):
-                box((x, 0, z), (.24, .22, .12), tile=5, bevel=0)
+            # The lower accent belongs on the front of the lower rail, not
+            # inside it: both used to occupy z=0.48 with intersecting boxes.
+            box((x, -.105, .48), (.24, .03, .12), tile=5, bevel=0)
+            # Keep the upper accent in the same front-panel plane, but ahead
+            # of the top cap so its front face cannot be coplanar with it.
+            box((x, -.13, 1.01), (.24, .02, .12), tile=5, bevel=0)
         box((0, -.125, .82), (.22, .04, .24), tile=3, face=(1, -1), bevel=0)
     elif name == 'rf_lamp_post':
         box((0, 0, .08), (.8, .8, .16))
@@ -429,7 +436,9 @@ def build(name, mats):
         for x in (-.415, .415):
             box((x, 0, .32), (.07, .26, .12), True, bevel=.012)
         box((0, -.242, .28), (.30, .016, .18), tile=3, face=(1, -1), bevel=0)
-        box((.22, -.238, .44), (.08, .02, .18), tile=5, bevel=0)
+        # Leave a visible depth gap from the case front so the red icon does
+        # not compete with the front panel after RMESH quantization.
+        box((.22, -.245, .44), (.08, .01, .18), tile=5, bevel=0)
     elif name == 'rf_industrial_pillar':
         box((0, 0, 1.4), (.48, .48, 2.64), bevel=.065)
         for z in (.1, 2.7):

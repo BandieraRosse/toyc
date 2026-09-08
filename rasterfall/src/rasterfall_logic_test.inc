@@ -182,8 +182,8 @@ static int primitive_gameplay_logic_test(void)
             if (p->minx == -14807 && p->maxx == -14193 &&
                 p->minz == -17256 && p->maxz == -16744 && p->surface_y0 == 512)
                 crate_box = 1;
-            if (p->minx == -13256 && p->maxx == -12744 &&
-                p->minz == -17614 && p->maxz == -16385 && p->surface_y0 == 410)
+            if (p->minx == -13205 && p->maxx == -12795 &&
+                p->minz == -17614 && p->maxz == -16385 && p->surface_y0 == 512)
                 barrier_box = 1;
         }
         if (!crate_box || !barrier_box) return 19;

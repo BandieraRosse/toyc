@@ -14,10 +14,10 @@ static const struct rasterfall_prop_asset_profile prop_assets[] = {
       RASTERFALL_PROP_RENDER_SCALE_MILLI, { 614, 512, 512 } },
     { RASTERFALL_PROP_ASSET_BARRIER, "barrier",
       "rasterfall/assets/models/props/industrial/rf_barrier.rmesh",
-      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 1229, 410, 512 } },
+      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 1229, 512, 410 } },
     { RASTERFALL_PROP_ASSET_LAMP_POST, "lamp_post",
       "rasterfall/assets/models/props/industrial/rf_lamp_post.rmesh",
-      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 410, 410, 1638 } },
+      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 410, 1638, 410 } },
     { RASTERFALL_PROP_ASSET_SHORT_WALL, "short_wall",
       "rasterfall/assets/models/props/industrial/rf_short_wall.rmesh",
       RASTERFALL_PROP_RENDER_SCALE_MILLI, { 1229, 717, 256 } },
@@ -120,6 +120,13 @@ int rasterfall_prop_asset_logic_test(void)
         barrier->id != RASTERFALL_PROP_ASSET_BARRIER ||
         lamp->id != RASTERFALL_PROP_ASSET_LAMP_POST)
         return 2;
+    if (barrier->collision_size.x != 1229 ||
+        barrier->collision_size.y != 512 ||
+        barrier->collision_size.z != 410 ||
+        lamp->collision_size.x != 410 ||
+        lamp->collision_size.y != 1638 ||
+        lamp->collision_size.z != 410)
+        return 7;
     if (rasterfall_prop_asset_profile(0) ||
         rasterfall_prop_asset_by_name("missing") ||
         rasterfall_prop_asset_by_name(0))
@@ -137,10 +144,10 @@ int rasterfall_prop_asset_logic_test(void)
         struct rasterfall_prop_dimensions dimensions;
         if (rasterfall_prop_collision_dimensions(barrier, 0, 1000,
                                                   &dimensions) != 0 ||
-            dimensions.x != 1229 || dimensions.y != 410 || dimensions.z != 512 ||
+            dimensions.x != 1229 || dimensions.y != 512 || dimensions.z != 410 ||
             rasterfall_prop_collision_dimensions(barrier, 90, 1000,
                                                   &dimensions) != 0 ||
-            dimensions.x != 512 || dimensions.z != 1229)
+            dimensions.x != 410 || dimensions.z != 1229)
             return 6;
     }
     return 0;
