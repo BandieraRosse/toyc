@@ -1,7 +1,7 @@
 # Rasterfall 资产转换与诊断
 
 > 文档更新：2026-09-08
-> 源码核对基线：工作区（`tools/assets/import_asset.py` 统一入口、GLB baseColor texture 闭环、manifest/LOD/原子安装验证、十件工业 prop 的 manifest 与 RMESH）
+> 源码核对基线：工作区（`tools/assets/import_asset.py` 统一入口、GLB baseColor texture 闭环、manifest/LOD/原子安装验证、十件工业 prop 的 manifest 与 RMESH；V2 环境艺术规范）
 
 本文记录可执行的模型、纹理和动画工具链。运行时模块边界见 `assets-animation.md`，动画求值契约
 见 `animation-architecture.md`，资源是否允许发布见 `asset-sources.md`。
@@ -44,7 +44,8 @@ runtime 不解析 JSON。当前 importer 不生成 runtime registry，避免在�
 
 ## 空间规范与 Blender 边界
 
-- `static_prop`：源文件为真实米制，Y-up、-Z forward，pivot 位于底面中心；导出前应用对象变换。
+- `static_prop`：Blender 源场景为真实米制、Z-up、-Y forward；标准化 GLB 为 Y-up、+Z forward，
+  pivot 位于底面中心；导出前应用对象变换。
   importer 只接受标准化 GLB，不用末端展示缩放修补源资产空间。
 - `character`：保留 skeleton、root、bind pose、骨骼层级和蒙皮语义；当前统一运行时导入使用 PMX
   转换路径。不得为了 static prop 规范烘焙或重置这些语义。
@@ -59,6 +60,8 @@ Blender 只负责 FBX、复杂场景和源坐标的预处理，按上述类型�
 首批十件工业/军事环境组件使用 `tools/blender/generate_rasterfall_props.py` 生成，
 完整规格与 CLI 见 [industrial-props.md](industrial-props.md)。默认产物在 `tmp/`，
 不自动加入公开资源、内嵌依赖或 Windows package。
+其 V2 light upgrade 的几何、albedo、palette、预算与验收约束见
+[environment-art.md](environment-art.md)；艺术升级不改变下述导入和运行时契约。
 
 ```sh
 tools/assets/import_asset.py prop.asset.json

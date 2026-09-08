@@ -25,6 +25,9 @@ blender -b --python-exit-code 1 --python tools/blender/generate_rasterfall_props
 无灯光、相机、动画、骨骼或压缩扩展。每件资产只有军绿与警示赭黄两个共享材质；
 使用不透明 Base Color、metallic=0、roughness=0.9，不依赖 PBR 效果。
 大面颜色形成分区，倒角贡献轮廓与明暗变化，不做螺丝、文字、密集格栅或贴花。
+以上描述是当前 **V1 生成事实**；后续 V2 light upgrade 的颜色、几何、albedo 预算、逐件改造要点
+和验收标准以 [environment-art.md](environment-art.md) 为准。V2 不改变本页记录的尺寸、pivot、用途、
+碰撞建议或导入契约。
 
 终端先报告 Blender mesh 顶点、实际三角形、预算和边界，再报告 GLB 因平面法线拆分后的
 实际顶点、三角形和 primitive 数。脚本检查尺寸、地面 pivot、非退化面、200～预算上限、

@@ -1,7 +1,7 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-08
-> 源码核对基线：工作区（统一离线资产 importer 与 manifest/GLB texture/LOD 验证契约；十件静态 prop registry、分类运行时资产目录、RMESH 资产和不重叠展示区；地图静态 prop 实例解析、profile 驱动 RFU 碰撞 primitive 与渲染遍历；本地玩家、远端人类、AI 和 special controller 的 gameplay 状态统一由 `toy_game_actor` 拥有）
+> 源码核对基线：工作区（统一离线资产 importer 与 manifest/GLB texture/LOD 验证契约；十件静态 prop registry、分类运行时资产目录、RMESH 资产、不重叠展示区及 V2 环境艺术规范；地图静态 prop 实例解析、profile 驱动 RFU 碰撞 primitive 与渲染遍历；本地玩家、远端人类、AI 和 special controller 的 gameplay 状态统一由 `toy_game_actor` 拥有）
 
 本目录面向接手 Rasterfall 任务的编码代理。目标不是介绍玩法，而是先把问题归到正确的
 状态所有者和文件，再开始搜索。命令、资源导入方法和用户可见特性仍以
@@ -21,6 +21,7 @@
 | 模型、蒙皮、IK、VMD/GLB、动作重定向 | [assets-animation.md](assets-animation.md) | `src/rasterfall_model.c` |
 | 导入 PMX/GLB、manifest、纹理、LOD、模型诊断 | [asset-pipeline.md](asset-pipeline.md) | `tools/assets/import_asset.py`、现有转换器、模型加载器 |
 | 程序化工业/军事环境组件、Blender 批量导出 | [industrial-props.md](industrial-props.md)、[asset-pipeline.md](asset-pipeline.md) | `tools/blender/generate_rasterfall_props.py` |
+| 环境组件 V2 风格、palette、几何/纹理预算与验收 | [environment-art.md](environment-art.md)、[industrial-props.md](industrial-props.md) | 十件 static prop 源资产与游戏内展示 |
 | 静态 prop 资产 ID、路径、展示缩放和默认尺寸 | [asset-pipeline.md](asset-pipeline.md) | `include/rasterfall_prop.h`、`src/rasterfall_prop.c` |
 | 联机协议、快照、预测、可靠事件、房间发现 | [networking.md](networking.md) | `src/rasterfall_net.c` |
 | Linux/Windows 平台差异、构建、测试 | [build-platforms.md](build-platforms.md) | `Makefile`、`windows/Makefile` |
@@ -71,6 +72,7 @@ Molotov 的世界实体显式携带 `owner_actor_id`，本地预测 body 位置�
 专题设计和活动台账：
 
 - [industrial-props.md](industrial-props.md)：首批十件环境组件规格、米制轴向、碰撞建议与一条命令生成流程；源码核对为 2026-09-07 工作区生成器及静态转换器。
+- [environment-art.md](environment-art.md)：十件工业 / 军事组件的 V2 light upgrade 风格、逐件要点、预算、验收与试点顺序。
 
 - [animation-architecture.md](animation-architecture.md)：动画数据流、不变量和扩展边界。
 - [network-architecture.md](network-architecture.md)：联机状态分类和房间生命周期。
