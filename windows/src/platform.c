@@ -3,14 +3,58 @@
 #include <string.h>
 #include "toy_platform.h"
 
-int toy_platform_list_models(char paths[][TOY_PLATFORM_PATH_MAX], int max)
+static int scan_model_directory(const char *directory, const char *prefix,
+                                char paths[][TOY_PLATFORM_PATH_MAX],
+                                int max, int count)
 {
     WIN32_FIND_DATAA entry;
     HANDLE search;
+    char pattern[MAX_PATH];
+    int length;
+
+    if (count >= max) return count;
+    length = (int)strlen(directory);
+    if (length + 3 >= (int)sizeof(pattern)) return count;
+    strcpy(pattern, directory);
+    strcpy(pattern + length, "\\*");
+    search = FindFirstFileA(pattern, &entry);
+    if (search == INVALID_HANDLE_VALUE) return count;
+    do {
+        char child_directory[MAX_PATH];
+        char child_prefix[TOY_PLATFORM_PATH_MAX];
+        int name_length = (int)strlen(entry.cFileName);
+        int is_dot = !strcmp(entry.cFileName, ".") ||
+                     !strcmp(entry.cFileName, "..");
+        if (is_dot) continue;
+        if (entry.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+            if (length + name_length + 2 >= (int)sizeof(child_directory) ||
+                (int)strlen(prefix) + name_length + 2 >= TOY_PLATFORM_PATH_MAX)
+                continue;
+            strcpy(child_directory, directory);
+            strcpy(child_directory + length, "\\");
+            strcpy(child_directory + length + 1, entry.cFileName);
+            strcpy(child_prefix, prefix);
+            strcat(child_prefix, entry.cFileName);
+            strcat(child_prefix, "/");
+            count = scan_model_directory(child_directory, child_prefix,
+                                          paths, max, count);
+        } else if (count < max && name_length > 6 &&
+                   !strcmp(entry.cFileName + name_length - 6, ".rmesh") &&
+                   (int)strlen(prefix) + name_length < TOY_PLATFORM_PATH_MAX) {
+            strcpy(paths[count], prefix);
+            strcpy(paths[count] + strlen(prefix), entry.cFileName);
+            count++;
+        }
+    } while (count < max && FindNextFileA(search, &entry));
+    FindClose(search);
+    return count;
+}
+
+int toy_platform_list_models(char paths[][TOY_PLATFORM_PATH_MAX], int max)
+{
     int count = 0;
     char directory[MAX_PATH];
     const char prefix[] = "rasterfall/assets/models/";
-    const char suffix[] = "rasterfall\\assets\\models\\*.rmesh";
     DWORD length;
 
     if (!paths || max <= 0) return 0;
@@ -19,22 +63,8 @@ int toy_platform_list_models(char paths[][TOY_PLATFORM_PATH_MAX], int max)
     while (length > 0 && directory[length - 1] != '\\' &&
            directory[length - 1] != '/')
         length--;
-    if (length + strlen(suffix) >= sizeof(directory)) return 0;
-    strcpy(directory + length, suffix);
-    search = FindFirstFileA(directory, &entry);
-    if (search == INVALID_HANDLE_VALUE) return 0;
-    do {
-        if (!(entry.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
-            int prefix_length = (int)strlen(prefix);
-            int name_length = (int)strlen(entry.cFileName);
-            if (prefix_length + name_length < TOY_PLATFORM_PATH_MAX) {
-                memcpy(paths[count], prefix, prefix_length);
-                memcpy(paths[count] + prefix_length, entry.cFileName,
-                       name_length + 1);
-                count++;
-            }
-        }
-    } while (count < max && FindNextFileA(search, &entry));
-    FindClose(search);
-    return count;
+    if (length + strlen("rasterfall\\assets\\models") >= sizeof(directory))
+        return 0;
+    strcpy(directory + length, "rasterfall\\assets\\models");
+    return scan_model_directory(directory, prefix, paths, max, count);
 }

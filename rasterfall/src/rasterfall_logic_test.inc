@@ -157,13 +157,21 @@ static int primitive_gameplay_logic_test(void)
            (p->flags&TOY_MAP_PRIMITIVE_COLLISION))air_gate=1;
     }
     if(!table||!ramp||!air_gate)return 10;
-    if (level_map.prop_count != 3 ||
+    if (level_map.prop_count != 10 ||
         level_map.props[0].asset_id != RASTERFALL_PROP_ASSET_CRATE ||
         level_map.props[0].x != -14500 || level_map.props[0].z != -17000 ||
         level_map.props[0].yaw_degrees != 0 ||
         level_map.props[0].scale_milli != 1000 ||
         level_map.props[1].asset_id != RASTERFALL_PROP_ASSET_BARRIER ||
-        level_map.props[2].asset_id != RASTERFALL_PROP_ASSET_LAMP_POST)
+        level_map.props[2].asset_id != RASTERFALL_PROP_ASSET_LAMP_POST ||
+        level_map.props[3].asset_id != RASTERFALL_PROP_ASSET_SHORT_WALL ||
+        level_map.props[4].asset_id != RASTERFALL_PROP_ASSET_RAILING ||
+        level_map.props[5].asset_id != RASTERFALL_PROP_ASSET_VENT_UNIT ||
+        level_map.props[6].asset_id != RASTERFALL_PROP_ASSET_WORKBENCH ||
+        level_map.props[7].asset_id != RASTERFALL_PROP_ASSET_AMMO_CONTAINER ||
+        level_map.props[8].asset_id != RASTERFALL_PROP_ASSET_INDUSTRIAL_PILLAR ||
+        level_map.props[9].asset_id != RASTERFALL_PROP_ASSET_PIPE_MODULE ||
+        level_map.props[9].x != -1000 || level_map.props[9].z != -17000)
         return 18;
     {
         int crate_box = 0, barrier_box = 0, i;

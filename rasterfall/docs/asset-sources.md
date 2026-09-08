@@ -34,7 +34,8 @@
 
 ## 公开模型与其他资源
 
-`assets/models/*.rmesh` 中的武器、弹药箱和道具是运行时转换产物。原件曾位于 `.claude/glb/`，
+`assets/models/` 下的武器、弹药箱和道具 `.rmesh` 是运行时转换产物；工业 prop 现在位于
+`assets/models/props/industrial/`。原件曾位于 `.claude/glb/`，
 但当前工作区无法从这些产物恢复作者、资源包名称或许可。发布前必须重新建立逐项来源台账，
 文件名本身不是许可证明。
 

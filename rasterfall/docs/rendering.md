@@ -1,7 +1,7 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-07
-> 源码核对基线：工作区（HUD、viewmodel、crosshair、effects、managed actor 和客户端远端玩家的 gameplay 展示查询直接读取 actor；远端位置/朝向继续使用纯 derived presentation cache；RAY tracer 短线段/定向线宽投影，通用 emitter preset table，CAMERA_SHAKE 含开火后座与受击摇晃；程序化敌人身体组件描述表；world-space 静态 RMESH prop 入口与开发场景）
+> 源码核对基线：工作区（HUD、viewmodel、crosshair、effects、managed actor 和客户端远端玩家的 gameplay 展示查询直接读取 actor；远端位置/朝向继续使用纯 derived presentation cache；RAY tracer 短线段/定向线宽投影，通用 emitter preset table，CAMERA_SHAKE 含开火后座与受击摇晃；程序化敌人身体组件描述表；world-space 静态 RMESH prop 入口与十件组件不重叠开发场景）
 
 ## 渲染边界
 
@@ -14,7 +14,8 @@
 `x/y/z`、绕世界 Y 轴的 yaw 和实例缩放，按
 “RMESH local → `512/232` profile scale → instance scale → yaw → world translation”求值。
 注册表模型缓存按 asset id 懒加载一次，多个实例共享同一 `rasterfall_model_asset`；地图实例在
-空地 `z=-17000` 一带展示 crate、barrier、lamp_post，用于检查底部 pivot、尺寸、yaw、材质和深度。
+空地 `z=-17000` 一带按 1500 RFU 间距展示十件工业组件，用于检查底部 pivot、尺寸、yaw、材质和深度；
+相邻实例的 profile 碰撞 AABB 保持正间隙，不以视觉网格孔洞替代玩法碰撞。
 地图实例使用 `asset x z yaw scale` 五个字段，`y` 固定为地面锚点 `-900`，`scale=1000`
 表示资产原始设计尺寸。visual mesh 是 presentation-only；碰撞由地图 parser 从 profile 独立生成 gameplay box。
 

@@ -10,14 +10,35 @@
 
 static const struct rasterfall_prop_asset_profile prop_assets[] = {
     { RASTERFALL_PROP_ASSET_CRATE, "crate",
-      "rasterfall/assets/models/rf_crate.rmesh",
+      "rasterfall/assets/models/props/industrial/rf_crate.rmesh",
       RASTERFALL_PROP_RENDER_SCALE_MILLI, { 614, 512, 512 } },
     { RASTERFALL_PROP_ASSET_BARRIER, "barrier",
-      "rasterfall/assets/models/rf_barrier.rmesh",
+      "rasterfall/assets/models/props/industrial/rf_barrier.rmesh",
       RASTERFALL_PROP_RENDER_SCALE_MILLI, { 1229, 410, 512 } },
     { RASTERFALL_PROP_ASSET_LAMP_POST, "lamp_post",
-      "rasterfall/assets/models/rf_lamp_post.rmesh",
-      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 410, 410, 1638 } }
+      "rasterfall/assets/models/props/industrial/rf_lamp_post.rmesh",
+      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 410, 410, 1638 } },
+    { RASTERFALL_PROP_ASSET_SHORT_WALL, "short_wall",
+      "rasterfall/assets/models/props/industrial/rf_short_wall.rmesh",
+      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 1229, 717, 256 } },
+    { RASTERFALL_PROP_ASSET_RAILING, "railing",
+      "rasterfall/assets/models/props/industrial/rf_railing.rmesh",
+      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 1229, 563, 154 } },
+    { RASTERFALL_PROP_ASSET_VENT_UNIT, "vent_unit",
+      "rasterfall/assets/models/props/industrial/rf_vent_unit.rmesh",
+      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 717, 614, 461 } },
+    { RASTERFALL_PROP_ASSET_WORKBENCH, "workbench",
+      "rasterfall/assets/models/props/industrial/rf_workbench.rmesh",
+      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 922, 461, 410 } },
+    { RASTERFALL_PROP_ASSET_AMMO_CONTAINER, "ammo_container",
+      "rasterfall/assets/models/props/industrial/rf_ammo_container.rmesh",
+      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 461, 307, 256 } },
+    { RASTERFALL_PROP_ASSET_INDUSTRIAL_PILLAR, "industrial_pillar",
+      "rasterfall/assets/models/props/industrial/rf_industrial_pillar.rmesh",
+      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 410, 1434, 410 } },
+    { RASTERFALL_PROP_ASSET_PIPE_MODULE, "pipe_module",
+      "rasterfall/assets/models/props/industrial/rf_pipe_module.rmesh",
+      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 819, 717, 410 } }
 };
 
 static const struct rasterfall_prop_asset_profile *find_id(int id)

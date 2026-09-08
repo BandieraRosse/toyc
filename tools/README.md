@@ -19,7 +19,9 @@ make test-asset-pipeline
 该入口按 manifest 的资产类型和源扩展名编排既有 `glb2rmesh`、`pmx2rmesh`、`toyasset` 与
 `rmesh_lod.py`，统一生成 `<id>.rmesh`、`<id>.textures/texture_###.ttex` 和可选
 `<id>_lodN.rmesh`。完整契约、空间规范和示例见 `rasterfall/docs/asset-pipeline.md` 与
-`tools/assets/manifest.example.json`。以下旧入口和单工具命令继续保留。
+`tools/assets/manifest.example.json`。工业 prop 的 manifest 位于
+`tools/assets/manifests/props/industrial/`，运行时产物位于
+`rasterfall/assets/models/props/industrial/`。以下旧入口和单工具命令继续保留。
 
 ## PMX 模型一键导入
 

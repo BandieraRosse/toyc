@@ -1,7 +1,7 @@
 # 第一套程序化工业 / 军事组件
 
-> 文档更新：2026-09-07
-> 源码核对基线：工作区 `tools/blender/generate_rasterfall_props.py`、`app/glb2rmesh.c`、`rasterfall/src/rasterfall_prop.c`、`rasterfall/lib/map.c`
+> 文档更新：2026-09-08
+> 源码核对基线：工作区 `tools/blender/generate_rasterfall_props.py`、`tools/assets/manifests/props/industrial/`、`app/glb2rmesh.c`、`rasterfall/src/rasterfall_prop.c`、`rasterfall/lib/map.c`
 
 ## 生成与检查
 
@@ -44,9 +44,26 @@ build/glb2rmesh tmp/rasterfall-props/rf_crate.glb tmp/rasterfall-props/rf_crate.
 导出选项依据 [Blender glTF API](https://docs.blender.org/api/3.0/bpy.ops.export_scene.html)。
 生成器不需要第三方插件，也不更改构建、地图、碰撞或运行时格式。
 
-当前仅有 `crate`、`barrier` 和 `lamp_post` 进入静态 prop asset registry，profile 位于
-`rasterfall/include/rasterfall_prop.h` / `rasterfall/src/rasterfall_prop.c`。registry 只登记稳定
-资产 ID、RMESH 路径、`512/232` 展示缩放和默认 RFU 尺寸，不改变地图格式，也不负责实例化或碰撞。
+生成后的十个 manifest 位于 `tools/assets/manifests/props/industrial/`，公开运行时产物统一安装到
+分类目录：
+
+```sh
+for manifest in tools/assets/manifests/props/industrial/*.asset.json; do
+    tools/assets/import_asset.py --force \
+        --output-root rasterfall/assets/models/props/industrial "$manifest"
+done
+```
+
+首批十件组件均已进入静态 prop asset registry，profile 位于
+`rasterfall/include/rasterfall_prop.h` / `rasterfall/src/rasterfall_prop.c`；对应 manifest 位于
+`tools/assets/manifests/props/industrial/`；运行时 RMESH 位于
+`rasterfall/assets/models/props/industrial/`，本地源文件位于
+`rasterfall/private-assets/source/props/industrial/`。registry 只登记稳定资产 ID、RMESH
+路径、`512/232` 展示缩放和默认 RFU 尺寸，不改变地图格式，也不负责实例化或碰撞。
+
+地图开发者区的 `z=-17000` 陈列带已接入十件组件，x 坐标从 `-14500` 到 `-1000`，相邻实例
+中心间距为 1500 RFU；按各 profile 的旋转后碰撞 AABB，最小水平间隙为 271 RFU，因此展示
+区不会发生实例或默认碰撞盒重叠。
 
 ## 统一空间约定
 

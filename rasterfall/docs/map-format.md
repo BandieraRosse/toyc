@@ -44,6 +44,10 @@ prop asset x z yaw scale
 prop crate -14500 -17000 0 1000
 ```
 
+当前开发地图的 `z=-17000` 陈列带使用同一 `prop` 记录接入十件工业组件；实例中心沿 X 轴每
+1500 RFU 排列，renderer 与 gameplay primitive 共用各资产 profile 的尺寸契约，避免展示和
+默认碰撞盒重叠。
+
 `x/z` 使用 RFU，实例落在地面锚点 `y=-900`；`yaw` 为绕世界 Y 轴的角度；`scale=1000`
 表示资产原始设计尺寸。默认根据资产 profile 的 RFU 碰撞盒生成普通 gameplay box；视觉网格
 与该盒体独立。仅在确有需要时可追加 `collision=none`，例如：

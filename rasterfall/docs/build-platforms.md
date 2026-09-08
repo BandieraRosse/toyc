@@ -31,7 +31,7 @@ WinSock、SDL 窗口/音频、线程和 WinMain 适配。平台契约头在 `win
 
 新增 Rasterfall `.c` 文件通常必须同时加入根 Makefile 的对象/规则及 `windows/Makefile` 的源列表；
 若该文件要求 Toyc 自托管，还要核对 self 对象规则。新增公开运行时资源要检查默认文件加载、内嵌资源
-依赖和 Windows package 的复制规则。
+依赖和 Windows package 的复制规则；模型展示扫描必须覆盖 `rasterfall/assets/models/` 下的分类子目录。
 
 ## 最小验证矩阵
 

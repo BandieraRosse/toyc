@@ -60,6 +60,13 @@ label -4000 4000 -9700 -9200 90D0FF MODEL_DISPLAY
 prop crate -14500 -17000 0 1000
 prop barrier -13000 -17000 90 1000
 prop lamp_post -11500 -17000 45 1000
+prop short_wall -10000 -17000 0 1000
+prop railing -8500 -17000 0 1000
+prop vent_unit -7000 -17000 0 1000
+prop workbench -5500 -17000 0 1000
+prop ammo_container -4000 -17000 0 1000
+prop industrial_pillar -2500 -17000 0 1000
+prop pipe_module -1000 -17000 0 1000
 label 3800 7800 -9800 -9400 FFD060 SPECIAL_INFECTED
 label 3000 6000 -11100 -10900 FFD060 ATTACK_POINTS
 label 4050 4350 -11400 -11250 FFD060 *2

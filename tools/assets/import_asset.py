@@ -231,11 +231,12 @@ def convert_textures(raw_dir, texture_dir, toyasset):
 
 def validate_outputs(mesh, texture_dir, lods):
     info = rmesh_info(mesh)
-    if not texture_dir.is_dir():
+    if not texture_dir.is_dir() and info["textures"]:
         raise ImportFailure("missing texture directory: %s" % texture_dir)
-    for path in texture_dir.iterdir():
-        if not path.is_file() or not re.fullmatch(r"texture_\d{3}\.ttex", path.name):
-            raise ImportFailure("non-contract file in texture directory: %s" % path.name)
+    if texture_dir.is_dir():
+        for path in texture_dir.iterdir():
+            if not path.is_file() or not re.fullmatch(r"texture_\d{3}\.ttex", path.name):
+                raise ImportFailure("non-contract file in texture directory: %s" % path.name)
         validate_ttex(path)
     for texture in info["textures"]:
         expected = texture_dir / ("texture_%03d.ttex" % texture)

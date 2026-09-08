@@ -1,7 +1,7 @@
 # Rasterfall 资产转换与诊断
 
 > 文档更新：2026-09-08
-> 源码核对基线：工作区（`tools/assets/import_asset.py` 统一入口、GLB baseColor texture 闭环、manifest/LOD/原子安装验证、现有转换器）
+> 源码核对基线：工作区（`tools/assets/import_asset.py` 统一入口、GLB baseColor texture 闭环、manifest/LOD/原子安装验证、十件工业 prop 的 manifest 与 RMESH）
 
 本文记录可执行的模型、纹理和动画工具链。运行时模块边界见 `assets-animation.md`，动画求值契约
 见 `animation-architecture.md`，资源是否允许发布见 `asset-sources.md`。
@@ -17,8 +17,8 @@ tools/assets/import_asset.py --validate-only path/to/foo.asset.json
 make test-asset-pipeline
 ```
 
-默认安装到 `rasterfall/private-assets/models`；公开资产审核后可显式传
-`--output-root rasterfall/assets/models`。输出名称全部由 asset ID 推导：
+默认安装到 `rasterfall/private-assets/models`；公开工业 prop 可显式传
+`--output-root rasterfall/assets/models/props/industrial`。输出名称全部由 asset ID 推导：
 
 ```text
 foo.rmesh
@@ -76,8 +76,11 @@ TTEX；`glb2rmesh` 本身不实现图片解码。运行时仍只读 RMESH/TTEX�
 ## 静态 prop asset registry
 
 `include/rasterfall_prop.h` / `src/rasterfall_prop.c` 保存静态组件的 presentation 资产 profile。
-当前注册 `crate`、`barrier` 和 `lamp_post`，每项包含稳定 asset ID、名称、RMESH 路径、默认
-展示缩放和 RFU 碰撞尺寸。profile 使用 `512 RFU/m ÷ 232 RMESH units/m` 的 milli-scale；该换算
+当前注册首批十件工业组件（`crate`、`barrier`、`short_wall`、`railing`、`lamp_post`、
+`vent_unit`、`workbench`、`ammo_container`、`industrial_pillar`、`pipe_module`），每项包含稳定 asset ID、名称、RMESH 路径、默认
+展示缩放和 RFU 碰撞尺寸，运行时产物位于 `rasterfall/assets/models/props/industrial/`。
+对应 manifest 位于 `tools/assets/manifests/props/industrial/`，源 GLB/Blend 位于本地
+`rasterfall/private-assets/source/props/industrial/`。profile 使用 `512 RFU/m ÷ 232 RMESH units/m` 的 milli-scale；该换算
 不进入 RMESH 或地图 visual mesh，碰撞尺寸以 RFU 元数据供地图 parser 生成 gameplay primitive。
 
 此 registry 提供查找、单位契约和默认 RFU 碰撞盒；地图 parser 负责实例化碰撞 primitive，renderer

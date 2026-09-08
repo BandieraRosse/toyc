@@ -248,15 +248,111 @@ def inspect_glb(path, objects):
               f'primitives={len(mesh["primitives"])}', flush=True)
 
 
+def _pad4(data, fill=b'\0'):
+    return data + fill * ((4 - len(data) % 4) % 4)
+
+
+def write_static_glb(path, objects):
+    """Write the generator's deliberately small, untextured GLB subset."""
+    binary = bytearray()
+    accessors, views, meshes, nodes = [], [], [], []
+
+    def add_view(payload, target):
+        offset = len(binary)
+        binary.extend(_pad4(payload))
+        views.append({'buffer': 0, 'byteOffset': offset,
+                      'byteLength': len(payload), 'target': target})
+        return len(views) - 1
+
+    def add_accessor(view, count, kind, component, minimum=None, maximum=None):
+        accessor = {'bufferView': view, 'componentType': component,
+                    'count': count, 'type': kind}
+        if minimum is not None:
+            accessor['min'] = minimum
+            accessor['max'] = maximum
+        accessors.append(accessor)
+        return len(accessors) - 1
+
+    for obj in objects:
+        groups = {}
+        mesh = obj.data
+        for polygon in mesh.polygons:
+            groups.setdefault(polygon.material_index, []).append(polygon)
+        primitives = []
+        for material_index in sorted(groups):
+            vertices, normals, indices = [], [], []
+            for polygon in groups[material_index]:
+                for loop_index in polygon.loop_indices:
+                    loop = mesh.loops[loop_index]
+                    vertex = mesh.vertices[loop.vertex_index].co
+                    normal = polygon.normal
+                    vertices.extend((vertex.x, vertex.z, -vertex.y))
+                    normals.extend((normal.x, normal.z, -normal.y))
+                    indices.append(len(indices))
+            position = struct.pack('<%sf' % len(vertices), *vertices)
+            normal = struct.pack('<%sf' % len(normals), *normals)
+            index = struct.pack('<%sI' % len(indices), *indices)
+            pview = add_view(position, 34962)
+            nview = add_view(normal, 34962)
+            iview = add_view(index, 34963)
+            points = list(zip(vertices[0::3], vertices[1::3], vertices[2::3]))
+            pmin = [min(point[i] for point in points) for i in range(3)]
+            pmax = [max(point[i] for point in points) for i in range(3)]
+            pa = add_accessor(pview, len(points), 'VEC3', 5126, pmin, pmax)
+            na = add_accessor(nview, len(points), 'VEC3', 5126)
+            ia = add_accessor(iview, len(indices), 'SCALAR', 5125)
+            primitives.append({'attributes': {'POSITION': pa, 'NORMAL': na},
+                               'indices': ia, 'material': material_index})
+        meshes.append({'name': obj.name, 'primitives': primitives})
+        nodes.append({'name': obj.name, 'mesh': len(meshes) - 1})
+
+    doc = {
+        'asset': {'version': '2.0', 'generator': 'rasterfall-prop-generator'},
+        'scene': 0, 'scenes': [{'nodes': list(range(len(nodes))) }],
+        'nodes': nodes, 'meshes': meshes,
+        'materials': [
+            {'name': 'rf_olive', 'pbrMetallicRoughness':
+             {'baseColorFactor': [0.12, 0.16, 0.09, 1.0],
+              'metallicFactor': 0.0, 'roughnessFactor': 0.9}},
+            {'name': 'rf_safety_ochre', 'pbrMetallicRoughness':
+             {'baseColorFactor': [0.65, 0.36, 0.045, 1.0],
+              'metallicFactor': 0.0, 'roughnessFactor': 0.9}},
+        ],
+        'buffers': [{'byteLength': len(_pad4(binary))}],
+        'bufferViews': views, 'accessors': accessors,
+    }
+    encoded = json.dumps(doc, separators=(',', ':')).encode('utf-8')
+    encoded = _pad4(encoded, b' ')
+    binary = _pad4(binary)
+    total = 12 + 8 + len(encoded) + 8 + len(binary)
+    with path.open('wb') as output:
+        output.write(struct.pack('<3I', 0x46546C67, 2, total))
+        output.write(struct.pack('<2I', len(encoded), 0x4E4F534A))
+        output.write(encoded)
+        output.write(struct.pack('<2I', len(binary), 0x004E4942))
+        output.write(binary)
+
+
 def export(path, objects):
     select_only(objects)
-    bpy.ops.export_scene.gltf(
-        filepath=str(path), export_format='GLB', use_selection=True,
-        export_yup=True, export_apply=False, export_animations=False,
-        export_skins=False, export_morph=False, export_cameras=False,
-        export_lights=False, export_extras=False, export_texcoords=False,
-        export_normals=True, export_tangents=False, export_materials='EXPORT',
-        export_draco_mesh_compression_enable=False)
+    try:
+        import numpy  # noqa: F401
+        use_native_exporter = True
+    except ModuleNotFoundError:
+        use_native_exporter = False
+    if use_native_exporter:
+        bpy.ops.export_scene.gltf(
+            filepath=str(path), export_format='GLB', use_selection=True,
+            export_yup=True, export_apply=False, export_animations=False,
+            export_skins=False, export_morph=False, export_cameras=False,
+            export_lights=False, export_extras=False, export_texcoords=False,
+            export_normals=True, export_tangents=False, export_materials='EXPORT',
+            export_draco_mesh_compression_enable=False)
+    else:
+        # Blender's bundled exporter imports numpy in newer releases.  Keep
+        # this generator usable in the minimal Blender packages used by CI by
+        # writing the small static-prop GLB contract directly.
+        write_static_glb(path, objects)
     inspect_glb(path, objects)
 
 
