@@ -1376,6 +1376,45 @@ static int nav_cell_index(const struct toy_game *g, int x, int z)
     return cz * g->nav_width + cx;
 }
 
+/* All enabled air_gate primitives form one authored combat-region control
+ * line.  The formal map has a developer doorway between the left and right
+ * wall pieces (and a ramp onto one piece), so ordinary nav components remain
+ * connected.  Enemies must nevertheless ignore actors on the other side of
+ * that control line. */
+static int enemy_path_crosses_air_gate(const struct toy_game *g,
+                                       int from_x, int from_z,
+                                       int to_x, int to_z)
+{
+    int i, found = 0;
+    struct toy_game_box boundary;
+    for (i = 0; i < g->primitive_count; i++) {
+        const struct toy_map_primitive *p = &g->primitives[i];
+        if (!(p->flags & TOY_MAP_PRIMITIVE_COLLISION) ||
+            strncmp(p->role, "air_gate", 8)) continue;
+        if (!found) {
+            boundary.minx = p->minx; boundary.maxx = p->maxx;
+            boundary.minz = p->minz; boundary.maxz = p->maxz;
+            found = 1;
+        } else {
+            if (p->minx < boundary.minx) boundary.minx = p->minx;
+            if (p->maxx > boundary.maxx) boundary.maxx = p->maxx;
+            if (p->minz < boundary.minz) boundary.minz = p->minz;
+            if (p->maxz > boundary.maxz) boundary.maxz = p->maxz;
+        }
+    }
+    if (!found) return 0;
+    boundary.miny = boundary.maxy = 0;
+    return segment_hits_box(from_x, from_z, to_x, to_z, &boundary);
+}
+
+static int enemy_positions_share_target_region(const struct toy_game *g,
+                                               int from_x, int from_z,
+                                               int to_x, int to_z)
+{
+    if (!g) return 1;
+    return !enemy_path_crosses_air_gate(g, from_x, from_z, to_x, to_z);
+}
+
 static int nav_link_slot(int dx, int dz)
 {
     /* Compact row-major direction table, with the center omitted. */
@@ -2650,17 +2689,17 @@ static int enemy_has_line_of_sight(const struct toy_game *g,
     return 1;
 }
 
-/* Target validity is deliberately independent of LOS and navigation
- * connectivity.  LOS belongs to perception, while navigation is only a
- * movement aid; a blocked or conservative nav cell must not make an enemy
- * forget a visible player. */
+/* Target validity is independent of LOS, but it must respect gameplay
+ * connectivity.  LOS belongs to perception; navigation determines whether
+ * an enemy can actually reach the candidate.  This also keeps developer-only
+ * display/test actors out of the combat target set. */
 static int enemy_target_valid(const struct toy_game *g,
                               const struct toy_game_enemy *e,
                               int target_kind, int target_index,
                               int *out_x, int *out_z)
 {
     int x, z;
-    (void)e;
+    if (!g || !e) return 0;
     if (target_kind == 0) {
         const struct toy_game_actor *a =
             toy_game_local_player_actor_const(g);
@@ -2672,9 +2711,12 @@ static int enemy_target_valid(const struct toy_game *g,
         const struct toy_game_actor *a = &g->actors[target_index];
         if (!a->active || (a->kind != TOY_GAME_ACTOR_AI &&
                            a->kind != TOY_GAME_ACTOR_PLAYER) ||
-            a->state != TOY_GAME_ACTOR_ALIVE || a->hp <= 0) return 0;
+            a->state != TOY_GAME_ACTOR_ALIVE || a->hp <= 0 ||
+            a->developer_only) return 0;
         x = a->x; z = a->z;
     } else return 0;
+    /* All target kinds obey authored combat-region boundaries. */
+    if (!enemy_positions_share_target_region(g, e->x, e->z, x, z)) return 0;
     if (out_x) *out_x = x;
     if (out_z) *out_z = z;
     return 1;

@@ -2455,6 +2455,72 @@ static int run_logic_test(void)
         toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
         if (game.enemies[0].target_kind != TOY_GAME_TARGET_HOST)
             return 125;
+
+        /* A closer AI behind the air wall is not a reachable target. */
+        {
+            struct toy_map_primitive gates[3];
+            gates[0] = terrain[0];
+            gates[1] = test_box_primitive(
+                -6000, -900, -100, 100, 0, 1000,
+                TOY_MAP_PRIMITIVE_COLLISION);
+            gates[2] = test_box_primitive(
+                900, 6000, -100, 100, 0, 1000,
+                TOY_MAP_PRIMITIVE_COLLISION);
+            strcpy(gates[1].role, "air_gate_left");
+            strcpy(gates[2].role, "air_gate_right");
+            game.actors[1].active = 0;
+            game.actors[TOY_GAME_PLAYER_ACTOR_INDEX].x = -2500;
+            game.actors[TOY_GAME_PLAYER_ACTOR_INDEX].z = 1000;
+            toy_game_set_primitives(&game, gates, 3, 6000);
+            if (toy_game_add_ai(&game, TOY_GAME_AI_LEVEL_1, 500, -1000,
+                                "DEV_TEST") < 0) return 126;
+            game.enemies[0].x = -500;
+            game.enemies[0].z = 1000;
+            game.enemies[0].target_kind = -1;
+            game.enemies[0].target_index = -1;
+            game.enemies[0].retarget_timer_ms = 0;
+            toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
+            if (game.enemies[0].target_kind != TOY_GAME_TARGET_HOST)
+                return 126;
+
+            /* The host itself is also unreachable when it crosses the
+             * authored air gate; do not let an off-side enemy chase through
+             * it just because the host is the primary target. */
+            game.actors[TOY_GAME_PLAYER_ACTOR_INDEX].x = 500;
+            game.actors[TOY_GAME_PLAYER_ACTOR_INDEX].z = -1000;
+            game.enemies[0].x = -500;
+            game.enemies[0].z = 1000;
+            game.enemies[0].target_kind = -1;
+            game.enemies[0].target_index = -1;
+            game.enemies[0].retarget_timer_ms = 0;
+            toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
+            if (game.enemies[0].target_kind != -1)
+                return 127;
+
+            /* Disabling the complete authored gate re-joins the combat
+             * regions and makes the host eligible again. */
+            gates[1].flags &= ~TOY_MAP_PRIMITIVE_COLLISION;
+            gates[2].flags &= ~TOY_MAP_PRIMITIVE_COLLISION;
+            toy_game_rebuild_navigation(&game);
+            game.enemies[0].retarget_timer_ms = 0;
+            toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
+            if (game.enemies[0].target_kind != TOY_GAME_TARGET_HOST)
+                return 128;
+
+            /* Developer display/test actors are never combat targets, even
+             * when they happen to share the arena component. */
+            game.actors[1].x = -2000;
+            game.actors[1].z = 1000;
+            game.actors[1].developer_only = 1;
+            game.actors[TOY_GAME_PLAYER_ACTOR_INDEX].x = -5000;
+            game.actors[TOY_GAME_PLAYER_ACTOR_INDEX].z = 1000;
+            game.enemies[0].target_kind = -1;
+            game.enemies[0].target_index = -1;
+            game.enemies[0].retarget_timer_ms = 0;
+            toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
+            if (game.enemies[0].target_kind != TOY_GAME_TARGET_HOST)
+                return 129;
+        }
     }
     /* Tank 在慢前摇末段同时命中前方单位；基地受 24 伤害但不击飞。 */
     {
