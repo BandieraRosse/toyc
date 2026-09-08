@@ -1,7 +1,7 @@
 # Rasterfall 地图格式
 
 > 文档更新：2026-09-08
-> 源码核对基线：工作区（地图布局 PNG/JSON 导出器；分组计数图例、基地五角星锚点；静态 prop 实例及 profile 碰撞盒接入现有 primitive/nav）
+> 源码核对基线：工作区（地图布局 PNG/JSON 导出器与 JSON 查询器；分组计数图例、基地五角星锚点；静态 prop 实例及 profile 碰撞盒接入现有 primitive/nav）
 
 正式地图位于 `rasterfall/assets/maps/*.map`。磁盘结构定义在 `include/toy_map.h`，文本解析在
 `lib/map.c`，`src/rasterfall_map.c` 再把结果绑定到玩法盒体、图元、可交互物和安全区。修改语法时
@@ -72,6 +72,11 @@ make map-layout
 # 或导出任意地图，固定生成 output.png / output.json
 .venv/map-layout/bin/python tools/map_layout_export.py path/to/level.map --output-dir tmp/level-layout
 make test-map-layout-export
+# 已有 output.json 的精确事实查询（不重新解析 .map）
+python3 tools/map_layout_query.py tmp/map-layout/output.json summary
+python3 tools/map_layout_query.py tmp/map-layout/output.json get PR1
+python3 tools/map_layout_query.py tmp/map-layout/output.json near-pos -14500 -17000 1000
+python3 tools/map_layout_query.py tmp/map-layout/output.json rect -15000 -13000 -18000 -16000
 ```
 
 地图布局导出是 Linux 开发工具，不属于 C 核心的零依赖边界。首次使用先运行
@@ -85,6 +90,11 @@ PNG 使用 x/z 平面、RFU 网格、色块/线框和紧凑 ID；右侧图例按
 最后以白色空心交叉线框显示，普通 box 只挑 role box 和面积最大的少量碰撞 box 标为 `BXn`。JSON schema 为
 `rasterfall-map-layout-v1`，每个对象保留源记录名、原始字段和行号，并补充导出 ID、中心点及 bounds；
 顶层明确记录 `512 RFU = 1 m`。当前范围只覆盖布局理解，不做 chokepoint、路径分析或高程渲染。
+
+`tools/map_layout_query.py` 只消费上述 `output.json`，支持 `summary`、`get ID`、`type TYPE`、`near ID radius`、
+`near-pos x z radius` 和 `rect minx maxx minz maxz`；追加 `--json` 可得到机器可读结果。空间查询只使用已有
+center/bounds：图片负责整体空间感，query 负责精确局部事实；不做路径规划、chokepoint 或自然语言区域识别。
+Exporter 会记录源 `.map` 文件指纹，源文件变化时 query 在 stderr 提醒。
 
 最小人工验收是在正式地图上运行 `make map-layout`，打开 `tmp/map-layout/output.png`，抽查 safe、
 spawn、button、prop 的相对位置，再用相同导出 ID 对照 `output.json` 的中心点与 bounds。当前正式地图

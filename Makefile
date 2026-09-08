@@ -1119,7 +1119,7 @@ $(BUILD)/glb-inspect: $(BUILD)/glb_inspect | $(BUILD)
 .PHONY: app-vmd-inspect
 app-vmd-inspect: $(BUILD)/vmd_inspect
 
-.PHONY: setup-map-layout map-layout test-map-layout-export
+.PHONY: setup-map-layout map-layout map-layout-query test-map-layout-export test-map-layout-query
 setup-map-layout:
 	tools/setup-map-layout.sh
 
@@ -1127,9 +1127,15 @@ map-layout:
 	@if test ! -x .venv/map-layout/bin/python; then echo "run 'make setup-map-layout' first" >&2; exit 2; fi
 	.venv/map-layout/bin/python tools/map_layout_export.py rasterfall/assets/maps/rasterfall.map --output-dir tmp/map-layout
 
+map-layout-query:
+	python3 tools/map_layout_query.py tmp/map-layout/output.json summary
+
 test-map-layout-export:
 	@if test ! -x .venv/map-layout/bin/python; then echo "run 'make setup-map-layout' first" >&2; exit 2; fi
 	python3 tools/test_map_layout_export.py
+
+test-map-layout-query:
+	python3 tools/test_map_layout_query.py
 
 # ─── 清理 ───────────────────────────────────────────────────────
 
