@@ -2863,7 +2863,9 @@ int rasterfall_net_pipeline_test(void)
         if (net.reliable_event_count != 1) return 18;
         event = &net.reliable_events[0];
         if (event->type != RASTERFALL_NET_EVENT_PLAYER_IMPULSE ||
-            event->target_id != 1 || event->x != 13 || event->z != 18 ||
+            event->target_id != 1 ||
+            event->x != 300 * TOY_GAME_CHARGER_KNOCKBACK_SPEED / 500 ||
+            event->z != 400 * TOY_GAME_CHARGER_KNOCKBACK_SPEED / 500 ||
             event->value != TOY_GAME_AIRBORNE_VELOCITY ||
             event->value2 != TOY_GAME_AIRBORNE_MS || event->value3 != 0)
             return 19;
@@ -2949,8 +2951,8 @@ int rasterfall_net_pipeline_test(void)
         decode_actor(wire, &decoded);
         if (decoded.actor_index != TOY_GAME_REMOTE_ACTOR_BASE + 1 ||
             decoded.state != TOY_GAME_ACTOR_DOWNED || decoded.hp != 0 ||
-            decoded.revive_progress_ms != 320 || decoded.special_kills != 4 ||
-            decoded.damage_dealt != 1234)
+            decoded.revive_progress_ms != (320 / 12) * 12 ||
+            decoded.special_kills != 4 || decoded.damage_dealt != 1234)
             return 31;
     }
     return 0;
@@ -3198,10 +3200,15 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
             memcpy(dst->name, src->name, TOY_GAME_MAX_NAME);
             dst->muzzle_flash_ms = src->muzzle_flash_ms;
             dst->fire_seq = src->fire_seq;
-            dst->airborne_ms = src->airborne_ms;
-            dst->airborne_y = src->airborne_y;
-            dst->ground_y = toy_game_query_ground(
-                &session->game_state, dst->x, dst->z, 0, 0).support_y;
+            /* The local actor's motion is replayed from acknowledged input;
+             * do not erase a still-pending jump/knockback with the older
+             * snapshot motion. */
+            if (index != TOY_GAME_PLAYER_ACTOR_INDEX) {
+                dst->airborne_ms = src->airborne_ms;
+                dst->airborne_y = src->airborne_y;
+                dst->ground_y = toy_game_query_ground(
+                    &session->game_state, dst->x, dst->z, 0, 0).support_y;
+            }
             dst->animation.id = src->animation.id;
             dst->animation.time_ms = src->animation.time_ms;
             dst->revive_progress_ms = src->revive_progress_ms;

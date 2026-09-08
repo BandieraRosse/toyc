@@ -1,7 +1,7 @@
 # Rasterfall 联机架构与扩展边界
 
 > 文档更新：2026-09-08
-> 源码核对基线：工作区（客户端权威移动为长期协议模型；客户端按可信端处理；输入条目只保留 command、sequence/tick、选中槽位意图、airborne prediction report 和 fire validation rays；协议版本 42；独立玩家快照已删除；输入历史、actor snapshot 和远端命令执行直接绑定 actor；`actor = gameplay truth`；`remote presentation cache = derived render state`，插值缓存只保存位置、朝向、高度和时间戳；主机普通枪械、斧头/药丸及炸弹/Molotov 客户端输入直接应用到远端 actor；投射物/燃烧区携带 owner；本地预测位置派生 camera）
+> 源码核对基线：工作区（客户端权威移动为长期协议模型；客户端按可信端处理；输入条目只保留 command、sequence/tick、选中槽位意图、airborne prediction report 和 fire validation rays；协议版本 42；独立玩家快照已删除；输入历史、actor snapshot 和远端命令执行直接绑定 actor；`actor = gameplay truth`；`remote presentation cache = derived render state`，插值缓存只保存位置、朝向、高度和时间戳；本地主体仍有未确认输入时，reconcile 不覆盖其 airborne/knockback motion；主机普通枪械、斧头/药丸及炸弹/Molotov 客户端输入直接应用到远端 actor；投射物/燃烧区携带 owner；本地预测位置派生 camera）
 
 本文记录联机实现必须保持的内部边界。产品入口和平台范围见 `../README.md`。
 

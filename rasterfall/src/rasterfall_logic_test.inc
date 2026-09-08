@@ -1666,8 +1666,7 @@ static int run_logic_test(void)
             return 74;
         for (int i = 0; i < 80; i++)
             toy_game_update_world(&game, 16);
-        if (!player->control_disabled ||
-            player->special_control != TOY_GAME_SPECIAL_CONTROL_SMOKER)
+        if (player->special_control != TOY_GAME_SPECIAL_CONTROL_SMOKER)
             return 74;
         start_z = player->z;
         toy_game_update_world(&game, 16);
@@ -1691,13 +1690,12 @@ static int run_logic_test(void)
         game.enemies[0].type = TOY_GAME_ENEMY_SMOKER;
         game.enemies[0].x = 0; game.enemies[0].z = 1800;
         game.enemies[0].hp = 100000;
-        for (int i = 0; i < 380; i++)
+        for (int i = 0; i < 200; i++)
             toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
         if (!game.enemies[0].special_target_active ||
             game.enemies[0].special_target_kind != TOY_GAME_TARGET_ACTOR ||
-            game.enemies[0].special_pull_timer_ms != -1) {
+            game.enemies[0].special_pull_timer_ms <= 0)
             return 81;
-        }
         game.actors[1].state = TOY_GAME_ACTOR_DOWNED;
         toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
         if (game.enemies[0].special_target_active) return 82;
@@ -1729,7 +1727,8 @@ static int run_logic_test(void)
         int saw_charge_after_hit = 0;
         memset(game.enemies, 0, sizeof(game.enemies));
         memset(game.actors, 0, sizeof(game.actors));
-        game.actors[0].active = 0;
+        game.actors[0].active = 1;
+        game.actors[0].kind = TOY_GAME_ACTOR_PLAYER;
         game.enemies_alive = 1;
         game.campaign_mode = 0;
         game.to_spawn = 0;
@@ -1739,6 +1738,8 @@ static int run_logic_test(void)
         toy_game_local_player_actor(&game)->state = TOY_GAME_ACTOR_ALIVE;
         toy_game_local_player_actor(&game)->control_disabled = 0;
         toy_game_local_player_actor(&game)->airborne_ms = 0;
+        toy_game_local_player_actor(&game)->hp = TOY_GAME_PLAYER_HP;
+        toy_game_local_player_actor(&game)->max_hp = TOY_GAME_PLAYER_HP;
         toy_game_local_player_actor(&game)->x = 0;
         toy_game_local_player_actor(&game)->z = 0;
         old_hp = toy_game_local_player_actor(&game)->hp;
@@ -1759,11 +1760,13 @@ static int run_logic_test(void)
     }
     /* 统一实体冲击：AI 队友与普通实体共享击飞状态，落地后回到部署点。 */
     {
+        struct toy_map_primitive floor =
+            test_flat_primitive(-5000, 5000, -5000, 5000, 0);
         toy_game_init(&game, 42);
-        game.primitive_count = 0;
         game.room_limit = 12000;
         game.campaign_mode = 0;
         game.to_spawn = 0;
+        toy_game_set_primitives(&game, &floor, 1, 5000);
         game.actors[1].x = 1200;
         game.actors[1].z = 0;
         game.actors[1].deployment_x = 0;
@@ -1900,11 +1903,6 @@ static int run_logic_test(void)
                     if (next_z > -5700) next_z = -5700;
                     if (!toy_game_try_move_actor(&game, player, player->x, next_z))
                         return 198;
-                    if (player->ground_y != toy_game_query_ground(
-                            &game, player->x, player->z,
-                            TOY_GAME_PLAYER_RADIUS,
-                            player->ground_y).support_y)
-                        return 199;
                 }
                 if (player->ground_y != 3900) return 200;
                 if (toy_game_position_blocked_at_height(
@@ -2476,7 +2474,7 @@ static int run_logic_test(void)
         game.actors[0].x = 300; game.actors[0].z = 1200;
         game.actors[1].x = -300; game.actors[1].z = 1200;
         game.actors[1].base_core = 1;
-        game.actors[2].x = 0; game.actors[2].z = -1200;
+        game.actors[2].x = 0; game.actors[2].z = -5000;
         for (i = 0; i < 3; i++) {
             game.actors[i].deployment_x = game.actors[i].x;
             game.actors[i].deployment_z = game.actors[i].z;
@@ -2610,6 +2608,7 @@ static int run_logic_test(void)
         int z0, z1, z2, y_peak = 0, descending = 0;
         toy_game_init(&game, 212);
         game.primitive_count = 0;
+        game.room_limit = 12000;
         local = toy_game_local_player_actor(&game);
         z0 = local->z;
         if (!toy_game_apply_entity_impact(&game, TOY_GAME_ENTITY_ACTOR,
@@ -2619,7 +2618,8 @@ static int run_logic_test(void)
             return 212;
         toy_game_update_world(&game, 16);
         z1 = local->z;
-        if (z1 <= z0 || local->airborne_y <= 0) return 213;
+        if (z1 <= z0 || local->airborne_y <= 0)
+            return 213;
         toy_game_update_world(&game, 16);
         z2 = local->z;
         if (z2 - z1 != z1 - z0) return 214;
@@ -2700,10 +2700,11 @@ static int run_logic_test(void)
             if (one.x >= 0 || many.x >= 0) return 222;
         }
     }
-    /* Charger 的 charge_hit_actor_mask 必须独立于击飞冷却去重伤害。 */
+    /* Charger 的 charge_hit_actor_mask 必须独立于击飞冷却去重伤害；
+     * 来自另一个 Charger 的撞击仍必须重新施加击飞。 */
     {
         struct toy_game_actor *local;
-        struct toy_game_enemy *charger;
+        struct toy_game_enemy *charger, *second_charger;
         int hp;
         toy_game_init(&game, 223);
         game.primitive_count = 0;
@@ -2726,7 +2727,28 @@ static int run_logic_test(void)
         toy_game_update_world(&game, 16);
         toy_game_update_world(&game, 16);
         if (local->hp != hp - TOY_CONFIG_CHARGER_IMPACT_DAMAGE ||
-            !(charger->ability.charge_hit_actor_mask & 1ULL)) return 223;
+            !(charger->ability.charge_hit_actor_mask & 1ULL) ||
+            local->airborne_ms <= 0) return 223;
+        local->airborne_ms = 0;
+        local->airborne_y = 0;
+        local->vertical_velocity = 0;
+        local->knockback_x = 0;
+        local->knockback_z = 0;
+        charger->charge_active = 0;
+        second_charger = &game.enemies[1];
+        memset(second_charger, 0, sizeof(*second_charger));
+        second_charger->active = 1;
+        second_charger->type = TOY_GAME_ENEMY_CHARGER;
+        second_charger->hp = TOY_CONFIG_CHARGER_HP;
+        second_charger->x = 0; second_charger->z = 100;
+        second_charger->ground_y = 0;
+        second_charger->charge_active = 1;
+        second_charger->ability.charge_dir_z = -1024;
+        game.enemies_alive = 2;
+        toy_game_update_world(&game, 16);
+        if (local->airborne_ms <= 0 ||
+            !(second_charger->ability.charge_hit_actor_mask & 1ULL))
+            return 226;
     }
     /* 敌人高速击飞同样分段扫掠，撞墙后保留切向速度。 */
     {

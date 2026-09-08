@@ -25,7 +25,8 @@ static int enemy_target_valid(const struct toy_game *g,
 static int ai_try_shove(struct toy_game *g, struct toy_game_actor *actor);
 static int apply_entity_impact_with_knockback(struct toy_game *g, int kind,
                                               int index, int dx, int dz,
-                                              int damage, int knockback);
+                                              int damage, int knockback,
+                                              int ignore_knockback_cooldown);
 int toy_game_actor_fire(struct toy_game *g, struct toy_game_actor *actor,
                         int sy, int cy, int spread_percent);
 static int toy_game_switch_actor_weapon(struct toy_game_actor *actor, int slot);
@@ -2766,12 +2767,14 @@ int toy_game_move_actor_forced_swept(struct toy_game *g,
         int target_z = start_z + (int)((long long)dz * i / steps);
         int height = old_height +
             (int)((long long)(new_height - old_height) * i / steps);
-        if (!position_blocked_at_height(g, target_x, actor->z,
+        if (!(blocked & TOY_GAME_FORCED_MOVE_BLOCKED_X) &&
+            !position_blocked_at_height(g, target_x, actor->z,
                                         TOY_GAME_PLAYER_RADIUS, height, 0))
             actor->x = target_x;
         else
             blocked |= TOY_GAME_FORCED_MOVE_BLOCKED_X;
-        if (!position_blocked_at_height(g, actor->x, target_z,
+        if (!(blocked & TOY_GAME_FORCED_MOVE_BLOCKED_Z) &&
+            !position_blocked_at_height(g, actor->x, target_z,
                                         TOY_GAME_PLAYER_RADIUS, height, 0))
             actor->z = target_z;
         else
@@ -2857,12 +2860,14 @@ static int move_enemy_forced_swept(struct toy_game *g,
             (int)((long long)(new_height - old_height) * i / steps);
         int saved_airborne_y = e->airborne_y;
         e->airborne_y = height - e->ground_y;
-        if (!enemy_step_blocked(g, e, target_x, e->z, radius,
+        if (!(blocked & TOY_GAME_FORCED_MOVE_BLOCKED_X) &&
+            !enemy_step_blocked(g, e, target_x, e->z, radius,
                                 e->ground_y, 0))
             e->x = target_x;
         else
             blocked |= TOY_GAME_FORCED_MOVE_BLOCKED_X;
-        if (!enemy_step_blocked(g, e, e->x, target_z, radius,
+        if (!(blocked & TOY_GAME_FORCED_MOVE_BLOCKED_Z) &&
+            !enemy_step_blocked(g, e, e->x, target_z, radius,
                                 e->ground_y, 0))
             e->z = target_z;
         else
@@ -3084,6 +3089,8 @@ static void update_actor_special_motion(struct toy_game *g, int dt_ms)
 {
     struct toy_game_actor *actor = toy_game_local_player_actor(g);
     if (!actor) return;
+    if (actor->special_control != TOY_GAME_SPECIAL_CONTROL_NONE)
+        actor->control_disabled = 1;
     update_actor_knockback_cooldown(actor, dt_ms);
     if (actor->airborne_ms > 0) {
         struct toy_game_ground_query ground;
@@ -3302,6 +3309,8 @@ static void update_smoker(struct toy_game *g, struct toy_game_enemy *e,
                 TOY_GAME_SPECIAL_CONTROL_SMOKER,
                 0, index,
                 TOY_GAME_SMOKER_PULL_STEP);
+        if (target_kind == 0)
+            toy_game_local_player_actor(g)->control_disabled = 1;
         e->ability.special_pull_timer_ms -= dt_ms;
         if (e->ability.special_pull_timer_ms <= 0 ||
             !enemy_has_line_of_sight(g, e, pull_x, pull_z)) {
@@ -3450,7 +3459,8 @@ static void update_smoker(struct toy_game *g, struct toy_game_enemy *e,
 
 static int apply_entity_impact_with_knockback(struct toy_game *g, int kind,
                                               int index, int dx, int dz,
-                                              int damage, int knockback)
+                                              int damage, int knockback,
+                                              int ignore_knockback_cooldown)
 {
     long long dist;
     if (!g) return 0;
@@ -3486,6 +3496,7 @@ static int apply_entity_impact_with_knockback(struct toy_game *g, int kind,
             a->knockback_z = 0;
         } else {
             apply_knockback = a->kind != TOY_GAME_ACTOR_PLAYER ||
+                              ignore_knockback_cooldown ||
                               a->knockback_cooldown_ms <= 0;
             if (apply_knockback) {
                 a->control_disabled = 1;
@@ -3531,7 +3542,17 @@ int toy_game_apply_entity_impact(struct toy_game *g, int kind, int index,
 {
     return apply_entity_impact_with_knockback(g, kind, index, dx, dz,
                                                damage,
-                                               TOY_GAME_CHARGER_KNOCKBACK_SPEED);
+                                               TOY_GAME_CHARGER_KNOCKBACK_SPEED,
+                                               0);
+}
+
+static int toy_game_apply_charger_impact(struct toy_game *g, int kind,
+                                         int index, int dx, int dz,
+                                         int damage)
+{
+    return apply_entity_impact_with_knockback(
+        g, kind, index, dx, dz, damage,
+        TOY_GAME_CHARGER_KNOCKBACK_SPEED, 1);
 }
 
 static int charger_hit_entities(struct toy_game *g,
@@ -3565,7 +3586,7 @@ static int charger_hit_entities(struct toy_game *g,
         if (dist2 <= (long long)TOY_GAME_CHARGER_IMPACT_RANGE *
                     TOY_GAME_CHARGER_IMPACT_RANGE &&
             (!a->base_core || !charger->ability.charge_hit_base) &&
-            toy_game_apply_entity_impact(g, TOY_GAME_ENTITY_ACTOR, i,
+            toy_game_apply_charger_impact(g, TOY_GAME_ENTITY_ACTOR, i,
                                           dx, dz, TOY_GAME_CHARGER_IMPACT_DAMAGE)) {
             charger->ability.charge_hit_actor_mask |= 1ULL << i;
             hits++;
@@ -3730,7 +3751,7 @@ static void tank_sweep_entities(struct toy_game *g,
         if (tank->ability.charge_hit_actor_mask & (1ULL << i)) continue;
         if (apply_entity_impact_with_knockback(g, TOY_GAME_ENTITY_ACTOR, i,
                                            actor_dx[i], actor_dz[i], damage,
-                                           TOY_CONFIG_TANK_KNOCKBACK))
+                                           TOY_CONFIG_TANK_KNOCKBACK, 0))
             tank->ability.charge_hit_actor_mask |= 1ULL << i;
     }
 }
