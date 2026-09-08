@@ -6091,6 +6091,66 @@ static int render_effect_overlay(struct toy_renderer *renderer,
     alpha = overlay->alpha;
     if (alpha < 0) alpha = 0;
     if (alpha > 256) alpha = 256;
+    if (overlay->kind == RASTERFALL_EFFECT_INSTANCE_KIND_DAMAGE_FLASH) {
+        struct toy_surface *surface = &renderer->surface;
+        int corner_w = surface->width / 4;
+        int corner_h = surface->height / 4;
+        int edge = surface->width < surface->height ?
+                   surface->width / 42 : surface->height / 42;
+        int px, py, cx = surface->width / 2, cy = surface->height / 2;
+        int radius = (surface->width < surface->height ?
+                      surface->width : surface->height) / 7;
+        int ux = overlay->dir_x, uy = overlay->dir_y;
+        int scale = (ux && uy) ? 181 : 256;
+        int tip_x, tip_y, base_x, base_y, wing = 11;
+        if (overlay->lifetime_ms > 0)
+            alpha = alpha * (overlay->lifetime_ms - overlay->age_ms) /
+                    overlay->lifetime_ms;
+        if (edge < 7) edge = 7;
+        /* Blend only short L-shaped corner bands over the existing frame.
+         * The low alpha keeps the world legible while the corners pulse. */
+        for (py = 0; py < surface->height; py++) {
+            uint32_t *row = (uint32_t *)((unsigned char *)surface->pixels +
+                                         py * surface->stride);
+            for (px = 0; px < surface->width; px++) {
+                int near_x = px < edge || px >= surface->width - edge;
+                int near_y = py < edge || py >= surface->height - edge;
+                int in_corner_x = px < corner_w || px >= surface->width - corner_w;
+                int in_corner_y = py < corner_h || py >= surface->height - corner_h;
+                if ((near_x && in_corner_y) || (near_y && in_corner_x))
+                    row[px] = mix_color(row[px], overlay->color, alpha, 256);
+            }
+        }
+        if (!ux && !uy) return 2 * edge * (corner_w + corner_h);
+        ux = ux * scale / 256;
+        uy = uy * scale / 256;
+        tip_x = cx + ux * radius;
+        tip_y = cy + uy * radius;
+        base_x = tip_x - ux * 22;
+        base_y = tip_y - uy * 22;
+        /* A compact outward-pointing chevron, quantized to eight directions. */
+        for (int arm = -1; arm <= 1; arm += 2) {
+            int end_x = base_x + (-uy) * wing * arm;
+            int end_y = base_y + ux * wing * arm;
+            int steps = 24;
+            for (int step = 0; step <= steps; step++) {
+                int lx = tip_x + (end_x - tip_x) * step / steps;
+                int ly = tip_y + (end_y - tip_y) * step / steps;
+                for (int oy = -2; oy <= 2; oy++)
+                    for (int ox = -2; ox <= 2; ox++)
+                        if (ox * ox + oy * oy <= 5 && lx + ox >= 0 &&
+                            lx + ox < surface->width && ly + oy >= 0 &&
+                            ly + oy < surface->height) {
+                            uint32_t *row = (uint32_t *)
+                                ((unsigned char *)surface->pixels +
+                                 (ly + oy) * surface->stride);
+                            row[lx + ox] = mix_color(row[lx + ox], 0xFF3030,
+                                                    176, 256);
+                        }
+            }
+        }
+        return 2 * edge * (corner_w + corner_h) + 250;
+    }
     fill_rect(&renderer->surface, x, y, width, height,
               mix_color(0x000000, overlay->color, alpha, 256));
     return width * height;

@@ -3297,7 +3297,7 @@ startup_again:
                 }
                 rasterfall_effects_sync_fire_zones(&effects, &game);
                 rasterfall_effects_sync_projectile_flashes(&effects, &game);
-                rasterfall_effects_sync_damage_flash(&effects, &game);
+                rasterfall_effects_sync_damage_flash(&effects, &game, &camera);
                 rasterfall_effects_sync_enemy_feedback(&effects, &game);
                 if (session.highlight_index >= 0 &&
                     session.highlight_index < session.item_count) {

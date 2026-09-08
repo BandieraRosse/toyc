@@ -74,6 +74,7 @@
 #define RASTERFALL_DAMAGE_CAMERA_SHAKE_HOLD_MS 55
 #define RASTERFALL_DAMAGE_CAMERA_SHAKE_LIFE_MS 500
 #define RASTERFALL_DAMAGE_CAMERA_SHAKE_MIN_INTERVAL_MS 120
+#define RASTERFALL_DAMAGE_FLASH_LIFE_MS 140
 
 /* Runtime component types describe the low-level renderer primitive.  They
  * are intentionally separate from event types: one event may eventually
@@ -236,7 +237,8 @@ void rasterfall_effects_sync_fire_zones(
 void rasterfall_effects_sync_projectile_flashes(
     struct rasterfall_effects *effects, const struct toy_game *game);
 void rasterfall_effects_sync_damage_flash(
-    struct rasterfall_effects *effects, const struct toy_game *game);
+    struct rasterfall_effects *effects, const struct toy_game *game,
+    const struct camera *camera);
 void rasterfall_effects_sync_enemy_feedback(
     struct rasterfall_effects *effects, const struct toy_game *game);
 void rasterfall_effects_sync_interaction_highlight(

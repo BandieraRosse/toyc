@@ -1175,7 +1175,7 @@ static int run_logic_test(void)
     {
         int i, overlay_count = 0;
         toy_game_local_player_actor(&game)->damage_flash_ms = TOY_GAME_DAMAGE_FLASH_MS;
-        rasterfall_effects_sync_damage_flash(&effects, &game);
+        rasterfall_effects_sync_damage_flash(&effects, &game, &camera);
         for (i = 0; i < RASTERFALL_EFFECT_INSTANCE_SLOTS; i++)
             if (effects.instances[i].active &&
                 effects.instances[i].type == RASTERFALL_EFFECT_INSTANCE_OVERLAY &&
@@ -1185,8 +1185,9 @@ static int run_logic_test(void)
         for (i = 0; i < RASTERFALL_EFFECT_INSTANCE_SLOTS; i++)
             if (effects.instances[i].active &&
                 effects.instances[i].kind == RASTERFALL_EFFECT_INSTANCE_KIND_DAMAGE_FLASH &&
-                (effects.instances[i].lifetime_ms != 100 ||
-                 effects.instances[i].alpha != 16))
+                (effects.instances[i].lifetime_ms !=
+                     RASTERFALL_DAMAGE_FLASH_LIFE_MS ||
+                 effects.instances[i].alpha != 24))
                 return 70;
         rasterfall_effects_reset_fire(&effects);
         toy_game_local_player_actor(&game)->damage_flash_ms = 0;

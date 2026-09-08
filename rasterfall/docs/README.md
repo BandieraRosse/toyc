@@ -1,7 +1,7 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-08
-> 源码核对基线：工作区（地图排布通过 PNG/JSON 导出链路核验；十件 V2 Hybrid 程序化几何与静态 prop；actor 统一 gameplay 状态）
+> 源码核对基线：工作区（地图排布通过 PNG/JSON 导出链路核验；十件 V2 Hybrid 程序化几何与静态 prop；actor 统一 gameplay 状态；本地受击四角闪红与八方向提示）
 
 本目录面向接手 Rasterfall 任务的编码代理。目标不是介绍玩法，而是先把问题归到正确的
 状态所有者和文件，再开始搜索。命令、资源导入方法和用户可见特性仍以
@@ -52,7 +52,8 @@ toy_renderer / window / audio    仓库公共平台层
 战斗表现事件是 presentation-only 数据，统一经 `rasterfall_effects` 消费为短生命周期表现状态，
 并登记到固定容量的 `rasterfall_effect_instance` runtime 池；instance 将底层组件类型与效果语义
 分离，tracer、命中火花、分层 muzzle flash 和 Molotov 火焰已由 runtime `RAY`/`PARTICLE`/`BILLBOARD` 组件绘制；屏幕空间反馈已有 `OVERLAY` 原语入口，主循环通过统一 `rasterfall_render_effects()` facade 消费这些 instance。FIRE 与 EXPLOSION 通过统一 emitter preset table 描述生命周期、生成间隔和固定 child descriptor 列表。它不进入
-受击时由展示态生命值下降触发本地 `CAMERA_SHAKE` preset；其参数和最短间隔位于
+受击时由展示态生命值下降触发本地 `CAMERA_SHAKE` preset；同一展示同步入口生成浅色四角边缘
+闪红，并根据最近存活敌人与相机朝向生成八方向中心受击箭头。其参数和最短间隔位于
 `include/rasterfall_effects.h`。它不进入 `toy_game` 的权威状态同步。
 
 网络主机运行权威会话；客户端通过 `rasterfall_net.c` 的快照、预测与校正形成展示状态。炸弹和
