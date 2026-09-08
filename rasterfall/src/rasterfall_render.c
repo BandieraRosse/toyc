@@ -5407,6 +5407,8 @@ static int render_ai_teammate(struct toy_renderer *renderer,
             active_actor_lift=0;continue;
         }
         {
+            const struct rasterfall_character_profile *profile =
+                rasterfall_character_profile(actor->character_id);
             const struct rasterfall_procedural_humanoid_state state = {
                 actor->x, actor->z, actor->ground_y + actor->airborne_y,
                 actor->sy, actor->cy,
@@ -5414,10 +5416,11 @@ static int render_ai_teammate(struct toy_renderer *renderer,
                 actor->current_slot < TOY_GAME_WEAPON_SLOTS ?
                     actor->slots[actor->current_slot].weapon : -1,
                 0, actor->state == TOY_GAME_ACTOR_DOWNED,
-                actor->animation.id, actor->animation.time_ms, RASTERFALL_PROFESSION_NONE
+                actor->animation.id, actor->animation.time_ms,
+                actor->character_id < 0 ? RASTERFALL_PROFESSION_NONE :
+                                          profile->profession_id
             };
-            struct rasterfall_character_profile character =
-                *rasterfall_character_profile(actor->character_id);
+            struct rasterfall_character_profile character = *profile;
             if (actor->character_id < 0) character.body_color = color;
             pixels += rasterfall_render_procedural_humanoid(
                 renderer, camera, &state, &character);
@@ -5432,12 +5435,14 @@ static int render_player_avatar(struct toy_renderer *renderer,
                                 int character_id, uint32_t body_color, int downed,
                                 int animation_id, int animation_time_ms)
 {
+    const struct rasterfall_character_profile *profile =
+        rasterfall_character_profile(character_id);
     const struct rasterfall_procedural_humanoid_state state = {
         x, z, active_actor_lift, sy, cy, weapon, muzzle_flash, downed,
-        animation_id, animation_time_ms, RASTERFALL_PROFESSION_NONE
+        animation_id, animation_time_ms,
+        character_id < 0 ? RASTERFALL_PROFESSION_NONE : profile->profession_id
     };
-    struct rasterfall_character_profile character =
-        *rasterfall_character_profile(character_id);
+    struct rasterfall_character_profile character = *profile;
     /* Preserve the legacy negative-ID body tint for existing callers. */
     if (character_id < 0) character.body_color = body_color;
     return rasterfall_render_procedural_humanoid(renderer, camera,

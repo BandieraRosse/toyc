@@ -28,8 +28,10 @@ leg 用于腿，skin 用于头部和脸部，hair 用于脸部矩形；武器 he
 内部保存/恢复 primitive helpers 的 lift/roll 临时状态；仍依赖已绑定 render context 和串行
 helpers，不承诺并发重入。`render_player_avatar()` 仅保留其他现有调用者的参数适配。
 职业身份枚举 `rasterfall_profession_id` 位于 character identity 头文件，与基础 character ID 独立；
-`rasterfall_procedural_humanoid_state.profession_id` 携带一次绘制的身份。当前普通 actor 适配器显式
-传 NONE，不修改 actor、AI、武器规则或网络结构。`rasterfall_profession_visual_profile()` 在 character
+稳定职业身份保存在 `rasterfall_character_profile.profession_id`，不进入 actor 或网络结构。
+actor 展示适配器从 `character_id` 解析 profile，并通过
+`rasterfall_procedural_humanoid_state.profession_id` 携带一次绘制的身份；负 character ID 的普通 AI
+兼容路径仍显式传 NONE。`rasterfall_profession_visual_profile()` 在 character
 模块解析静态 presentation-only 配置：accent/gear 颜色、head、badge、waist_bag、backpack、vest。
 NONE/无效 ID 返回 NULL，完全跳过装备绘制，基础身体和既有绘制顺序保持原样。
 
@@ -38,7 +40,7 @@ renderer 内 `render_profession_visual()` 组合相同 actor-local box primitive
 Guard 宽厚深绿背心、肩部护片、盾徽和简化头盔带。基础身体配色仍由 character profile 提供。
 附件使用现有 lift/roll，躯干附件使用 body_pitch，头部使用原有 head lift；downed 简化代理不画
 直立装备，death/revive 使用既有整体翻倒变换。未增加动画状态或附件资产系统。
-后续玩法只需在 scene/actor 展示适配层传 profession identity；portrait 可复用该入口和静态 profile，
+portrait 可复用该入口和静态 profile，
 仍需自行提供 camera 和展示状态。
 
 静态环境组件通过 `rasterfall_render_static_prop()` 提交 world-space RMESH。地图 parser 将

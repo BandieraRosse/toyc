@@ -105,7 +105,7 @@ player/actor 和敌人的 airborne forced/knockback movement 均由玩法核心�
   `glb2rmesh`/`pmx2rmesh`、`toyasset`、`rmesh_lod.py`；不要让 runtime 读取 manifest。
 - 修改敌人外观组件：检查 `src/rasterfall_render.c` 的 `enemy_body_part` 描述表、通用组件解释器和特感动态组件；地面锚点仍由 `toy_game_enemy.ground_y` 与 `airborne_y` 提供。
 - 修改命令行或诊断模式：从 `rasterfall_options.c` 到 `rasterfall.c` 的早退分支一起核对。
-- 修改职业外观：character 层定义 profession identity 和静态 presentation profile，humanoid state 传入 ID，renderer 组合 primitive；Visual CLI 提供固定小队。当前 actor 和网络不携带职业，后续玩法接入只需在展示适配层传入稳定 ID，不能把附件字段塞入 actor。
+- 修改职业外观：character profile 保存稳定 profession identity，静态 presentation profile 保存附件配置；actor 展示适配器从 `character_id` 解析职业并经 humanoid state 传入 renderer。actor 和网络不携带职业或附件字段；Visual CLI 提供固定小队。
 - 修改角色状态：从 `toy_game_actor`、actor API 和
   `rasterfall_session.c` 的本地主循环开始；不要把 camera 的位置字段写回为 gameplay 源。
 

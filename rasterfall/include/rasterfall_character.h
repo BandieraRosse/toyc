@@ -51,6 +51,7 @@ enum rasterfall_character_action {
 
 struct rasterfall_character_profile {
     int id;
+    int profession_id; /* Stable identity only; visual details stay in profession profile. */
     const char *name;
     const char *model_path; /* NULL selects the procedural actor renderer. */
     unsigned int actions;

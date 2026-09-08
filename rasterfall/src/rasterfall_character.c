@@ -10,13 +10,17 @@
  * catalog is the migration seam for per-character RFM2 assets and authored
  * clips; gameplay and networking only retain the stable profile ID. */
 static const struct rasterfall_character_profile characters[] = {
-    { RASTERFALL_CHARACTER_AKARI, "Akari", NULL, ALL_ACTIONS,
+    { RASTERFALL_CHARACTER_AKARI, RASTERFALL_PROFESSION_GUNSMITH,
+      "Akari", NULL, ALL_ACTIONS,
       0xD94F70, 0x542F55, 0xF0C3A5, 0x512B3A },
-    { RASTERFALL_CHARACTER_MIO, "Mio", NULL, ALL_ACTIONS,
+    { RASTERFALL_CHARACTER_MIO, RASTERFALL_PROFESSION_LOGISTICS,
+      "Mio", NULL, ALL_ACTIONS,
       0x4C78C2, 0x263A63, 0xEBC0A2, 0x25243D },
-    { RASTERFALL_CHARACTER_REN, "Ren", NULL, ALL_ACTIONS,
+    { RASTERFALL_CHARACTER_REN, RASTERFALL_PROFESSION_MEDIC,
+      "Ren", NULL, ALL_ACTIONS,
       0x4FAF82, 0x294F48, 0xD9A47F, 0x33271F },
-    { RASTERFALL_CHARACTER_YUKI, "Yuki", NULL, ALL_ACTIONS,
+    { RASTERFALL_CHARACTER_YUKI, RASTERFALL_PROFESSION_GUARD,
+      "Yuki", NULL, ALL_ACTIONS,
       0x9B70C7, 0x49365F, 0xF1C8B0, 0xD8DCE8 }
 };
 
@@ -40,7 +44,9 @@ int rasterfall_character_logic_test(void)
     for (i = 0; i < RASTERFALL_CHARACTER_COUNT; i++) {
         const struct rasterfall_character_profile *profile =
             rasterfall_character_profile(i);
-        if (profile->id != i || !profile->name ||
+        if (profile->id != i ||
+            profile->profession_id != RASTERFALL_PROFESSION_GUNSMITH + i ||
+            !profile->name ||
             (profile->actions & ALL_ACTIONS) != ALL_ACTIONS)
             return 1;
     }
