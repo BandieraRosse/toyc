@@ -1,7 +1,7 @@
 # Rasterfall 地图格式
 
 > 文档更新：2026-09-08
-> 源码核对基线：工作区（地图布局 PNG/JSON 导出器与 JSON 查询器；北侧走廊入口边界碰撞；外围渲染墙与 gameplay 碰撞分离；静态 prop 实例及 profile 碰撞盒接入现有 primitive/nav）
+> 源码核对基线：工作区（地图排布通过 PNG/JSON 导出链路核验；地图布局 PNG/JSON 导出器与 JSON 查询器；北侧走廊入口边界碰撞；外围渲染墙与 gameplay 碰撞分离；静态 prop 实例及 profile 碰撞盒接入现有 primitive/nav）
 
 正式地图位于 `rasterfall/assets/maps/*.map`。磁盘结构定义在 `include/toy_map.h`，文本解析在
 `lib/map.c`，`src/rasterfall_map.c` 再把结果绑定到玩法盒体、图元、可交互物和安全区。修改语法时
@@ -66,6 +66,26 @@ prop lamp_post 0 -17000 0 1000 collision=none
 
 其他受支持记录及参数应直接以 `lib/map.c` 的解析分支为准。新增记录时在本文记录用途和最小示例，
 不要只修改关卡文件。可见几何不能代替玩法碰撞，渲染正确也不能证明导航和地面查询正确。
+
+## 修改地图排布的必经流程
+
+地图排布以 `.map` 文本为唯一输入。调整区域、墙体、出生点、按钮或 `prop` 的位置后，必须使用
+现有布局导出接口同时生成俯视图和 JSON 信息，再据此检查相对位置、边界和语义对象；不能只凭肉眼阅读
+`.map`，也不能手工维护另一份坐标表或 JSON。
+
+推荐流程如下：
+
+1. 修改 `rasterfall/assets/maps/*.map`，保持玩法碰撞、可见几何和交互声明分别表达。
+2. 运行 `make map-layout`（或对指定地图调用 `tools/map_layout_export.py`），生成配套的
+   `output.png` 与 `output.json`。
+3. 打开 PNG 检查整体排布，再用 `tools/map_layout_query.py` 查询对象的精确中心点、bounds、类型和邻近关系；
+   PNG 用于空间理解，JSON/query 用于可复核的精确事实。
+4. 若排布发生变化，重新导出两份结果并复查，不要继续使用旧的 PNG/JSON。导出的 JSON 是派生诊断资料，
+   不能反向编辑来修改地图。
+
+若现有导出器无法表达排布检查所需的信息，应先扩展导出器/schema 和查询接口，再修改地图；不要绕过接口
+另写一次性脚本。完成地图排布修改时，至少核对 `safe`、`ai_spawn`、`button`、`prop` 以及相关碰撞体的
+相对位置，并确认导出 JSON 的源文件指纹对应当前 `.map`。
 
 ## 俯视布局导出
 

@@ -1,7 +1,7 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-08
-> 源码核对基线：工作区（地图布局 PNG/JSON 导出器；十件 V2 Hybrid 程序化几何与静态 prop；actor 统一 gameplay 状态）
+> 源码核对基线：工作区（地图排布通过 PNG/JSON 导出链路核验；十件 V2 Hybrid 程序化几何与静态 prop；actor 统一 gameplay 状态）
 
 本目录面向接手 Rasterfall 任务的编码代理。目标不是介绍玩法，而是先把问题归到正确的
 状态所有者和文件，再开始搜索。命令、资源导入方法和用户可见特性仍以
@@ -15,7 +15,7 @@
 | 武器、敌人、碰撞、寻路、波次、商店、AI | [gameplay.md](gameplay.md) | `lib/game.c`、`src/rasterfall_session.c` |
 | 地图格式、关卡实体、拾取物、静态 prop、出生点 | [map-format.md](map-format.md) | `lib/map.c`、`src/rasterfall_map.c` |
 | 编写或扩展 `.map` 文本格式 | [map-format.md](map-format.md) | `lib/map.c`、`include/toy_map.h` |
-| 导出地图俯视图、agent 可读 JSON 和精确布局查询 | [map-format.md](map-format.md) | `tools/map_layout_export.py`、`tools/map_layout_query.py`、`make map-layout` |
+| 修改地图排布、导出地图俯视图、agent 可读 JSON 和精确布局查询 | [map-format.md](map-format.md) | `tools/map_layout_export.py`、`tools/map_layout_query.py`、`make map-layout` |
 | 场景、角色、HUD、特效、第一人称武器、性能 | [rendering.md](rendering.md) | `src/rasterfall_render.c` |
 | world-space 静态 RMESH prop、实例变换和开发展示 | [rendering.md](rendering.md) | `include/rasterfall_render.h`、`src/rasterfall_render.c` |
 | 战斗表现事件、muzzle/tracer/impact/camera shake 消费 | [rendering.md](rendering.md) | `include/rasterfall_effect_event.h`、`src/rasterfall_effects.c` |
