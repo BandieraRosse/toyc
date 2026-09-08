@@ -177,6 +177,8 @@ int toy_map_load(const char *path, struct toy_map *m)
                 else if (!strcmp(opt,"nocollision")) box->flags&=~TOY_MAP_PRIMITIVE_COLLISION;
                 else if (!strcmp(opt,"walkable")) box->flags|=TOY_MAP_PRIMITIVE_WALKABLE;
                 else if (!strcmp(opt,"nowalkable")) box->flags&=~TOY_MAP_PRIMITIVE_WALKABLE;
+                else if (!strcmp(opt,"blocks_airborne")) box->flags|=TOY_MAP_PRIMITIVE_BLOCKS_AIRBORNE;
+                else if (!strcmp(opt,"allows_airborne")) box->flags&=~TOY_MAP_PRIMITIVE_BLOCKS_AIRBORNE;
                 else if (!strncmp(opt,"role=",5))
                     copy_role(box->role, opt+5, TOY_MAP_ROLE_SIZE);
             }

@@ -1117,7 +1117,9 @@ static int position_blocked_at_height(const struct toy_game *g,
          * reach the top, the box no longer blocks horizontal movement.  A
          * zero vertical range preserves the legacy fixture behavior for
          * standalone tests that only provide x/z boxes. */
-        if (b->surface_y0 > b->base_y && collision_height >= b->surface_y0) continue;
+        if (!(b->flags & TOY_MAP_PRIMITIVE_BLOCKS_AIRBORNE) &&
+            b->surface_y0 > b->base_y && collision_height >= b->surface_y0)
+            continue;
         if (x + radius > b->minx && x - radius < b->maxx &&
             z + radius > b->minz && z - radius < b->maxz) return 1;
     }
@@ -2740,23 +2742,50 @@ static void interrupt_smoker_for_actor(struct toy_game *g,
     }
 }
 
-static void move_player_forced(struct toy_game *g, int dx, int dz)
+int toy_game_move_actor_forced_swept(struct toy_game *g,
+                                     struct toy_game_actor *actor,
+                                     int dx, int dz,
+                                     int old_height, int new_height)
 {
-    struct toy_game_actor *actor = toy_game_local_player_actor(g);
-    int nx, nz, height;
-    if (!actor) return;
-    nx = actor->x + dx;
-    nz = actor->z + dz;
-    height = actor->ground_y + actor->airborne_y;
+    int start_x, start_z, max_delta, max_step, steps, i, blocked = 0;
+    if (!g || !actor) return TOY_GAME_FORCED_MOVE_BLOCKED_X |
+                             TOY_GAME_FORCED_MOVE_BLOCKED_Z;
+    start_x = actor->x;
+    start_z = actor->z;
+    max_delta = dx < 0 ? -dx : dx;
+    if ((dz < 0 ? -dz : dz) > max_delta) max_delta = dz < 0 ? -dz : dz;
+    max_step = TOY_GAME_PLAYER_RADIUS / 2;
+    if (max_step < 1) max_step = 1;
+    steps = (max_delta + max_step - 1) / max_step;
+    if (steps < 1) steps = 1;
     /* Airborne motion may cross a primitive seam before the landing query
      * resolves the next support.  Requiring a fully supported footprint here
      * incorrectly blocks jumps across ramp/platform boundaries. */
-    if (!position_blocked_at_height(g, nx, actor->z,
-                                    TOY_GAME_PLAYER_RADIUS, height, 0))
-        actor->x = nx;
-    if (!position_blocked_at_height(g, actor->x, nz,
-                                    TOY_GAME_PLAYER_RADIUS, height, 0))
-        actor->z = nz;
+    for (i = 1; i <= steps; i++) {
+        int target_x = start_x + (int)((long long)dx * i / steps);
+        int target_z = start_z + (int)((long long)dz * i / steps);
+        int height = old_height +
+            (int)((long long)(new_height - old_height) * i / steps);
+        if (!position_blocked_at_height(g, target_x, actor->z,
+                                        TOY_GAME_PLAYER_RADIUS, height, 0))
+            actor->x = target_x;
+        else
+            blocked |= TOY_GAME_FORCED_MOVE_BLOCKED_X;
+        if (!position_blocked_at_height(g, actor->x, target_z,
+                                        TOY_GAME_PLAYER_RADIUS, height, 0))
+            actor->z = target_z;
+        else
+            blocked |= TOY_GAME_FORCED_MOVE_BLOCKED_Z;
+    }
+    return blocked;
+}
+
+static int move_player_forced(struct toy_game *g, int dx, int dz,
+                              int old_height, int new_height)
+{
+    struct toy_game_actor *actor = toy_game_local_player_actor(g);
+    return toy_game_move_actor_forced_swept(g, actor, dx, dz,
+                                             old_height, new_height);
 }
 
 void toy_game_set_actor_special_control(struct toy_game_actor *actor, int type,
@@ -2816,25 +2845,18 @@ static void move_enemy_forced(struct toy_game *g, struct toy_game_enemy *e,
         e->z = nz;
 }
 
-static void move_actor_forced(struct toy_game *g, struct toy_game_actor *a,
-                              int dx, int dz)
+static int move_actor_forced(struct toy_game *g, struct toy_game_actor *a,
+                             int dx, int dz)
 {
-    int nx = a->x + dx;
-    int nz = a->z + dz;
     /* Grounded forced motion includes AI path following and Smoker's pull.
      * Route it through the same ramp-aware actor movement as the player so
      * support height advances with the horizontal position. */
     if (a->airborne_ms <= 0) {
         toy_game_move_actor_sliding(g, a, dx, dz);
-        return;
+        return 0;
     }
     int height = a->ground_y + a->airborne_y;
-    if (!position_blocked_at_height(g, nx, a->z,
-                                    TOY_GAME_PLAYER_RADIUS, height, 0))
-        a->x = nx;
-    if (!position_blocked_at_height(g, a->x, nz,
-                                    TOY_GAME_PLAYER_RADIUS, height, 0))
-        a->z = nz;
+    return toy_game_move_actor_forced_swept(g, a, dx, dz, height, height);
 }
 
 void toy_game_update_actor_special_control(struct toy_game *g,
@@ -2984,54 +3006,50 @@ static void actor_path_toward(struct toy_game *g, struct toy_game_actor *a,
         move_actor_forced(g, a, dx * speed / distance, dz * speed / distance);
 }
 
-static void update_motion_values(struct toy_game *g, int *x, int *z,
-                                 int *airborne_ms, int *airborne_y,
-                                 int *vertical_velocity, int *knockback_x,
-                                 int *knockback_z, int *ground_y,
-                                 int radius, int dt_ms)
+static void update_motion_values(struct toy_game *g,
+                                 struct toy_game_actor *actor, int dt_ms)
 {
     struct toy_game_ground_query ground;
-    int landing_ground;
-    if (*airborne_ms <= 0) return;
-    *airborne_ms -= dt_ms;
+    int landing_ground, old_height, new_height, blocked;
+    if (actor->airborne_ms <= 0) return;
+    old_height = actor->ground_y + actor->airborne_y;
+    actor->airborne_ms -= dt_ms;
     /* airborne_ms is also the active-state flag.  The configured duration is
      * only a nominal animation/network timer: a sufficiently high fall can
      * outlive it, so keep the state active until the trajectory reaches its
      * landing height. */
-    if (*airborne_ms <= 0) *airborne_ms = 1;
-    *airborne_y += *vertical_velocity;
-    *vertical_velocity -= TOY_GAME_AIRBORNE_GRAVITY;
-    if (*vertical_velocity < -TOY_GAME_FALL_TERMINAL_VELOCITY)
-        *vertical_velocity = -TOY_GAME_FALL_TERMINAL_VELOCITY;
-    if (*knockback_x || *knockback_z) {
-        int nx = *x + *knockback_x;
-        int nz = *z + *knockback_z;
-        int height = *ground_y + *airborne_y;
-        if (!toy_game_position_blocked_at_height(g, nx, *z, radius,
-                                                  height))
-            *x = nx;
-        if (!toy_game_position_blocked_at_height(g, *x, nz, radius,
-                                                  height))
-            *z = nz;
+    if (actor->airborne_ms <= 0) actor->airborne_ms = 1;
+    actor->airborne_y += actor->vertical_velocity;
+    actor->vertical_velocity -= TOY_GAME_AIRBORNE_GRAVITY;
+    if (actor->vertical_velocity < -TOY_GAME_FALL_TERMINAL_VELOCITY)
+        actor->vertical_velocity = -TOY_GAME_FALL_TERMINAL_VELOCITY;
+    new_height = actor->ground_y + actor->airborne_y;
+    if (actor->knockback_x || actor->knockback_z) {
+        blocked = toy_game_move_actor_forced_swept(
+            g, actor, actor->knockback_x, actor->knockback_z,
+            old_height, new_height);
+        if (blocked & TOY_GAME_FORCED_MOVE_BLOCKED_X) actor->knockback_x = 0;
+        if (blocked & TOY_GAME_FORCED_MOVE_BLOCKED_Z) actor->knockback_z = 0;
     }
-    ground = toy_game_query_ground(g, *x, *z, radius, *ground_y);
+    ground = toy_game_query_ground(g, actor->x, actor->z,
+                                   TOY_GAME_PLAYER_RADIUS, actor->ground_y);
     landing_ground = ground.landing_y;
     /* A fall can end on a ramp above the actor's previous ground_y.  Landing
      * at absolute height zero leaves the actor inside the ramp and the next
      * grounded step sees it as an impassable wall. */
-    if (*vertical_velocity < 0 &&
-        ((!g->primitives && *airborne_y <= 0) ||
+    if (actor->vertical_velocity < 0 &&
+        ((!g->primitives && actor->airborne_y <= 0) ||
          (g->primitives && ground.has_landing &&
-          *airborne_y <= landing_ground - *ground_y))) {
-        *airborne_y = 0;
-        *airborne_ms = 0;
-        if (g->primitives) *ground_y = landing_ground;
+          actor->airborne_y <= landing_ground - actor->ground_y))) {
+        actor->airborne_y = 0;
+        actor->airborne_ms = 0;
+        if (g->primitives) actor->ground_y = landing_ground;
     }
-    if (*airborne_ms == 0) {
-        *vertical_velocity = 0;
-        *knockback_x = 0;
-        *knockback_z = 0;
-        *airborne_y = 0;
+    if (actor->airborne_ms == 0) {
+        actor->vertical_velocity = 0;
+        actor->knockback_x = 0;
+        actor->knockback_z = 0;
+        actor->airborne_y = 0;
     }
 }
 
@@ -3042,7 +3060,8 @@ static void update_actor_special_motion(struct toy_game *g, int dt_ms)
     update_actor_knockback_cooldown(actor, dt_ms);
     if (actor->airborne_ms > 0) {
         struct toy_game_ground_query ground;
-        int landing_ground;
+        int landing_ground, old_height, new_height, blocked;
+        old_height = actor->ground_y + actor->airborne_y;
         actor->airborne_ms -= dt_ms;
         if (actor->airborne_ms <= 0) actor->airborne_ms = 1;
         actor->airborne_y += actor->vertical_velocity;
@@ -3051,10 +3070,12 @@ static void update_actor_special_motion(struct toy_game *g, int dt_ms)
                 -TOY_GAME_FALL_TERMINAL_VELOCITY)
             actor->vertical_velocity =
                 -TOY_GAME_FALL_TERMINAL_VELOCITY;
+        new_height = actor->ground_y + actor->airborne_y;
         /* Apply horizontal jump momentum before checking the landing surface,
          * so a jump can reach a platform during this frame. */
         if (actor->air_x || actor->air_z)
-            move_player_forced(g, actor->air_x, actor->air_z);
+            move_player_forced(g, actor->air_x, actor->air_z,
+                               old_height, new_height);
         /* Descending onto even a partially covered edge must land on the
          * platform top.  Otherwise the player reaches ground height while the
          * collision circle still intersects the platform side and gets stuck. */
@@ -3070,7 +3091,13 @@ static void update_actor_special_motion(struct toy_game *g, int dt_ms)
             actor->ground_y = landing_ground;
         }
         if (actor->knockback_x || actor->knockback_z) {
-            move_player_forced(g, actor->knockback_x, actor->knockback_z);
+            blocked = move_player_forced(g, actor->knockback_x,
+                                         actor->knockback_z,
+                                         old_height, new_height);
+            if (blocked & TOY_GAME_FORCED_MOVE_BLOCKED_X)
+                actor->knockback_x = 0;
+            if (blocked & TOY_GAME_FORCED_MOVE_BLOCKED_Z)
+                actor->knockback_z = 0;
         }
         if (actor->airborne_ms == 0) {
             actor->vertical_velocity = 0;
@@ -3085,59 +3112,47 @@ static void update_actor_special_motion(struct toy_game *g, int dt_ms)
     }
 }
 
-static void update_remote_player_motion(struct toy_game *g, int *x, int *z,
-                                        int *airborne_ms, int *airborne_y,
-                                        int *ground_y, int *vertical_velocity,
-                                        int *air_x, int *air_z,
-                                        int *knockback_x, int *knockback_z,
+static void update_remote_player_motion(struct toy_game *g,
+                                        struct toy_game_actor *actor,
                                         int dt_ms)
 {
     struct toy_game_ground_query ground;
-    int landing_ground, nx, nz, height;
-    if (*airborne_ms <= 0) return;
-    *airborne_ms -= dt_ms;
-    if (*airborne_ms <= 0) *airborne_ms = 1;
-    *airborne_y += *vertical_velocity;
-    *vertical_velocity -= TOY_GAME_AIRBORNE_GRAVITY;
-    if (*vertical_velocity < -TOY_GAME_FALL_TERMINAL_VELOCITY)
-        *vertical_velocity = -TOY_GAME_FALL_TERMINAL_VELOCITY;
-    height = *ground_y + *airborne_y;
-    if (*air_x || *air_z) {
-        nx = *x + *air_x;
-        nz = *z + *air_z;
-        if (!position_blocked_at_height(g, nx, *z,
-                                        TOY_GAME_PLAYER_RADIUS, height, 0))
-            *x = nx;
-        if (!position_blocked_at_height(g, *x, nz,
-                                        TOY_GAME_PLAYER_RADIUS, height, 0))
-            *z = nz;
-    }
-    ground = toy_game_query_ground(g, *x, *z, TOY_GAME_PLAYER_RADIUS,
-                                   *ground_y);
+    int landing_ground, old_height, new_height, blocked;
+    if (actor->airborne_ms <= 0) return;
+    old_height = actor->ground_y + actor->airborne_y;
+    actor->airborne_ms -= dt_ms;
+    if (actor->airborne_ms <= 0) actor->airborne_ms = 1;
+    actor->airborne_y += actor->vertical_velocity;
+    actor->vertical_velocity -= TOY_GAME_AIRBORNE_GRAVITY;
+    if (actor->vertical_velocity < -TOY_GAME_FALL_TERMINAL_VELOCITY)
+        actor->vertical_velocity = -TOY_GAME_FALL_TERMINAL_VELOCITY;
+    new_height = actor->ground_y + actor->airborne_y;
+    if (actor->air_x || actor->air_z)
+        toy_game_move_actor_forced_swept(g, actor, actor->air_x, actor->air_z,
+                                          old_height, new_height);
+    ground = toy_game_query_ground(g, actor->x, actor->z,
+                                   TOY_GAME_PLAYER_RADIUS, actor->ground_y);
     landing_ground = ground.landing_y;
-    if (*vertical_velocity < 0 &&
-        *airborne_y <= landing_ground - *ground_y) {
-        *airborne_y = 0;
-        *airborne_ms = 0;
-        *ground_y = landing_ground;
+    if (actor->vertical_velocity < 0 &&
+        actor->airborne_y <= landing_ground - actor->ground_y) {
+        actor->airborne_y = 0;
+        actor->airborne_ms = 0;
+        actor->ground_y = landing_ground;
     }
-    if (*knockback_x || *knockback_z) {
-        nx = *x + *knockback_x;
-        nz = *z + *knockback_z;
-        if (!toy_game_position_blocked_at_height(g, nx, *z,
-                                                  TOY_GAME_PLAYER_RADIUS,
-                                                  height)) *x = nx;
-        if (!toy_game_position_blocked_at_height(g, *x, nz,
-                                                  TOY_GAME_PLAYER_RADIUS,
-                                                  height)) *z = nz;
+    if (actor->knockback_x || actor->knockback_z) {
+        blocked = toy_game_move_actor_forced_swept(
+            g, actor, actor->knockback_x, actor->knockback_z,
+            old_height, new_height);
+        if (blocked & TOY_GAME_FORCED_MOVE_BLOCKED_X) actor->knockback_x = 0;
+        if (blocked & TOY_GAME_FORCED_MOVE_BLOCKED_Z) actor->knockback_z = 0;
     }
-    if (*airborne_ms == 0) {
-        *vertical_velocity = 0;
-        *airborne_y = 0;
-        *air_x = 0;
-        *air_z = 0;
-        *knockback_x = 0;
-        *knockback_z = 0;
+    if (actor->airborne_ms == 0) {
+        actor->vertical_velocity = 0;
+        actor->airborne_y = 0;
+        actor->air_x = 0;
+        actor->air_z = 0;
+        actor->knockback_x = 0;
+        actor->knockback_z = 0;
     }
 }
 
@@ -3170,10 +3185,7 @@ void toy_game_update_actor_motion(struct toy_game *g, int actor_index, int dt_ms
         actor->state != TOY_GAME_ACTOR_ALIVE)
         return;
     update_actor_knockback_cooldown(actor, dt_ms);
-    update_remote_player_motion(g, &actor->x, &actor->z,
-        &actor->airborne_ms, &actor->airborne_y, &actor->ground_y,
-        &actor->vertical_velocity, &actor->air_x, &actor->air_z,
-        &actor->knockback_x, &actor->knockback_z, dt_ms);
+    update_remote_player_motion(g, actor, dt_ms);
     if (actor->airborne_ms == 0) {
         actor->air_x = 0;
         actor->air_z = 0;
@@ -3208,8 +3220,8 @@ void toy_game_update_actor_ground(struct toy_game *g, int actor_index)
     actor->ground_y = next_ground;
 }
 
-static void move_actor_forced(struct toy_game *g, struct toy_game_actor *a,
-                              int dx, int dz);
+static int move_actor_forced(struct toy_game *g, struct toy_game_actor *a,
+                             int dx, int dz);
 
 static void smoker_end_pull(struct toy_game *g, struct toy_game_enemy *e)
 {
@@ -3574,6 +3586,7 @@ static void update_charger(struct toy_game *g, struct toy_game_enemy *e,
 {
     int nx, nz;
     (void)target_index;
+    (void)target_kind;
     if (e->ability.charge_active) {
         e->dir_x = e->ability.charge_dir_x;
         e->dir_z = e->ability.charge_dir_z;
@@ -3587,34 +3600,8 @@ static void update_charger(struct toy_game *g, struct toy_game_enemy *e,
             e->ability.special_timer_ms = TOY_GAME_CHARGER_COOLDOWN_MS;
             return;
         }
-        /* 沿锁定直线持续冲锋；同一轮可连续撞到多个敌人。 */
+        /* 沿锁定直线持续冲锋；mask 是同一轮 actor 命中的唯一事实。 */
         charger_hit_entities(g, e);
-        if (dist <= TOY_GAME_CHARGER_IMPACT_RANGE) {
-            const struct toy_game_actor *player =
-                toy_game_local_player_actor_const(g);
-            int player_knockback_ready = player &&
-                player->knockback_cooldown_ms <= 0;
-            /* A target is launched by the impact, so do not damage the same
-             * player again until they have landed.  The charge itself keeps
-             * moving for its configured duration. */
-            if (target_kind == 0 && player && player->airborne_ms <= 0) {
-                if (toy_game_apply_entity_impact(
-                        g, TOY_GAME_ENTITY_PLAYER, 0,
-                        dx, dz, TOY_GAME_CHARGER_DAMAGE))
-                    if (player_knockback_ready)
-                        push_enemy_from_player(g, e,
-                                               TOY_GAME_CHARGER_KNOCKBACK_SPEED);
-            } else if (target_kind == 1 && target_index >= 0 &&
-                       target_index < TOY_GAME_MAX_ACTORS &&
-                       !(e->ability.charge_hit_actor_mask &
-                         (1ULL << target_index))) {
-                toy_game_apply_entity_impact(g, TOY_GAME_ENTITY_ACTOR,
-                                             target_index, dx, dz,
-                                             TOY_GAME_CHARGER_DAMAGE);
-                e->ability.charge_hit_actor_mask |= 1ULL << target_index;
-            }
-            charger_hit_entities(g, e);
-        }
         {
             int old_x = e->x, old_z = e->z;
             nx = e->ability.charge_dir_x * TOY_GAME_CHARGER_SPEED / 1024;
@@ -5026,11 +5013,7 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
             actor->animation.id != TOY_GAME_ANIM_DEATH)
             toy_game_actor_set_animation(actor, TOY_GAME_ANIM_NONE);
         toy_game_actor_update_animation(actor, dt_ms);
-        update_motion_values(g, &actor->x, &actor->z, &actor->airborne_ms,
-                             &actor->airborne_y, &actor->vertical_velocity,
-                             &actor->knockback_x, &actor->knockback_z,
-                             &actor->ground_y,
-                             TOY_GAME_PLAYER_RADIUS, dt_ms);
+        update_motion_values(g, actor, dt_ms);
         return; /* 被击飞时中断自己的行为，落地后恢复。 */
     }
     if (!actor->active || actor->state != TOY_GAME_ACTOR_ALIVE ||

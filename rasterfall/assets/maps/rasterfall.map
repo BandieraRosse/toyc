@@ -119,16 +119,16 @@ wall -24000 -24000 2400 24000 5400 5E5965
 wall 24000 24000 -24000 -800 5400 56515D
 wall 24000 24000 800 24000 5400 56515D
 # 内层边界墙的碰撞体；保留西/东/北走廊的开口。
-box -24000 24000 -24020 -23980 5400 555B68 hidden collision
-box -24020 -23980 24000 24020 5400 4C5260 hidden collision
-box 23980 24020 24000 24020 5400 4C5260 hidden collision
-box -24020 -23980 -24000 -2400 5400 5E5965 hidden collision
-box -24020 -23980 2400 24000 5400 5E5965 hidden collision
-box 23980 24020 -24000 -800 5400 56515D hidden collision
-box 23980 24020 800 24000 5400 56515D hidden collision
+box -24000 24000 -24020 -23980 5400 555B68 hidden collision blocks_airborne
+box -24020 -23980 24000 24020 5400 4C5260 hidden collision blocks_airborne
+box 23980 24020 24000 24020 5400 4C5260 hidden collision blocks_airborne
+box -24020 -23980 -24000 -2400 5400 5E5965 hidden collision blocks_airborne
+box -24020 -23980 2400 24000 5400 5E5965 hidden collision blocks_airborne
+box 23980 24020 -24000 -800 5400 56515D hidden collision blocks_airborne
+box 23980 24020 800 24000 5400 56515D hidden collision blocks_airborne
 # 北侧内层边界的碰撞体；只在 x=-800..800 留出北走廊入口。
-box -24000 -800 23980 24020 5400 4C5260 hidden collision
-box 800 24000 23980 24020 5400 4C5260 hidden collision
+box -24000 -800 23980 24020 5400 4C5260 hidden collision blocks_airborne
+box 800 24000 23980 24020 5400 4C5260 hidden collision blocks_airborne
 
 # 西侧走廊：横向宽度扩为原来的 3 倍（z=-2400..2400）；坡度统一为
 # 900/3000=0.30，与南侧可行走测试坡一致。
@@ -141,27 +141,27 @@ ramp -31000 -28000 -2400 2400 0 900 x 314B43
 platform -28000 -27000 -2400 2400 900 3B5550 opaque
 ramp -27000 -24000 -2400 2400 900 0 x 314B43
 floor -45000 -39000 -2400 2400 314B43
-box -45000 -24000 -2420 -2400 5400 5E5965 hidden collision
-box -45000 -24000 2400 2420 5400 5E5965 hidden collision
-box -45020 -45000 -2420 2420 5400 5E5965 hidden collision
+box -45000 -24000 -2420 -2400 5400 5E5965 hidden collision blocks_airborne
+box -45000 -24000 2400 2420 5400 5E5965 hidden collision blocks_airborne
+box -45020 -45000 -2420 2420 5400 5E5965 hidden collision blocks_airborne
 wall -45000 -24000 -2400 -2400 5400 5E5965
 wall -45000 -24000 2400 2400 5400 5E5965
 wall -45000 -45000 -2400 2400 5400 5E5965
 
 # 东侧走廊：从 x=24000 向外到 33000。
 floor 24000 33000 -800 800 314B43
-box 24000 33000 -820 -800 5400 56515D hidden collision
-box 24000 33000 800 820 5400 56515D hidden collision
-box 33000 33020 -820 820 5400 56515D hidden collision
+box 24000 33000 -820 -800 5400 56515D hidden collision blocks_airborne
+box 24000 33000 800 820 5400 56515D hidden collision blocks_airborne
+box 33000 33020 -820 820 5400 56515D hidden collision blocks_airborne
 wall 24000 33000 -800 -800 5400 56515D
 wall 24000 33000 800 800 5400 56515D
 wall 33000 33000 -800 800 5400 56515D
 
 # 北侧走廊：从 z=24000 向外到 33000。
 floor -800 800 24000 33000 314B43
-box -820 -800 24000 33000 5400 4C5260 hidden collision
-box 800 820 24000 33000 5400 4C5260 hidden collision
-box -820 820 33000 33020 5400 4C5260 hidden collision
+box -820 -800 24000 33000 5400 4C5260 hidden collision blocks_airborne
+box 800 820 24000 33000 5400 4C5260 hidden collision blocks_airborne
+box -820 820 33000 33020 5400 4C5260 hidden collision blocks_airborne
 wall -800 -800 24000 33000 5400 4C5260
 wall 800 800 24000 33000 5400 4C5260
 wall -800 800 33000 33000 5400 4C5260

@@ -2638,6 +2638,96 @@ static int run_logic_test(void)
             local->airborne_ms <= 0)
             return 216;
     }
+    /* 空中强制位移使用确定性分段扫掠，并逐轴报告碰撞。 */
+    {
+        struct toy_game swept_game;
+        struct toy_game_actor *actor;
+        struct toy_map_primitive swept_world[2] = {
+            test_flat_primitive(-5000, 5000, -5000, 5000, 0),
+            test_box_primitive(0, 20, -5000, 5000, 0, 1000,
+                               TOY_MAP_PRIMITIVE_COLLISION)
+        };
+        int result;
+        toy_game_init(&swept_game, 217);
+        toy_game_set_primitives(&swept_game, swept_world, 2, 5000);
+        actor = toy_game_local_player_actor(&swept_game);
+        actor->x = -1000; actor->z = 0;
+        result = toy_game_move_actor_forced_swept(
+            &swept_game, actor, 2000, 0, 0, 0);
+        if (!(result & TOY_GAME_FORCED_MOVE_BLOCKED_X) || actor->x >= 0)
+            return 217; /* 高速正面位移不能穿过薄墙。 */
+
+        actor->x = -1000; actor->z = 0;
+        result = toy_game_move_actor_forced_swept(
+            &swept_game, actor, 2000, 800, 0, 0);
+        if (!(result & TOY_GAME_FORCED_MOVE_BLOCKED_X) ||
+            (result & TOY_GAME_FORCED_MOVE_BLOCKED_Z) ||
+            actor->x >= 0 || actor->z != 800)
+            return 218; /* 斜撞保留切向滑动。 */
+
+        actor->x = -1000; actor->z = 0;
+        actor->airborne_ms = 700; actor->airborne_y = 0;
+        actor->vertical_velocity = 220;
+        actor->knockback_x = 2000; actor->knockback_z = 80;
+        toy_game_update_actor_motion(&swept_game,
+                                     TOY_GAME_PLAYER_ACTOR_INDEX, 16);
+        if (actor->knockback_x != 0 || actor->knockback_z != 80 ||
+            actor->z != 80) return 219;
+
+        actor->x = -1000; actor->z = 0;
+        result = toy_game_move_actor_forced_swept(
+            &swept_game, actor, 2000, 0, 1500, 1500);
+        if (result & TOY_GAME_FORCED_MOVE_BLOCKED_X || actor->x != 1000)
+            return 220; /* 普通低障碍仍可从上方越过。 */
+
+        swept_world[1].flags |= TOY_MAP_PRIMITIVE_BLOCKS_AIRBORNE;
+        actor->x = -1000; actor->z = 0;
+        result = toy_game_move_actor_forced_swept(
+            &swept_game, actor, 2000, 0, 5000, 5000);
+        if (!(result & TOY_GAME_FORCED_MOVE_BLOCKED_X) || actor->x >= 0)
+            return 221;
+
+        {
+            struct toy_game_actor one = *actor, many = *actor;
+            int i;
+            swept_world[1].flags &= ~TOY_MAP_PRIMITIVE_BLOCKS_AIRBORNE;
+            one.x = many.x = -1000; one.z = many.z = 0;
+            toy_game_move_actor_forced_swept(
+                &swept_game, &one, 2000, 0, 0, 0);
+            for (i = 0; i < 20; i++)
+                toy_game_move_actor_forced_swept(
+                    &swept_game, &many, 100, 0, 0, 0);
+            if (one.x >= 0 || many.x >= 0) return 222;
+        }
+    }
+    /* Charger 的 charge_hit_actor_mask 必须独立于击飞冷却去重伤害。 */
+    {
+        struct toy_game_actor *local;
+        struct toy_game_enemy *charger;
+        int hp;
+        toy_game_init(&game, 223);
+        game.primitive_count = 0;
+        game.room_limit = 12000;
+        game.to_spawn = 0;
+        local = toy_game_local_player_actor(&game);
+        local->x = 0; local->z = 0;
+        local->knockback_cooldown_ms = 5000;
+        hp = local->hp;
+        charger = &game.enemies[0];
+        memset(charger, 0, sizeof(*charger));
+        charger->active = 1;
+        charger->type = TOY_GAME_ENEMY_CHARGER;
+        charger->hp = TOY_CONFIG_CHARGER_HP;
+        charger->x = 0; charger->z = 100;
+        charger->ground_y = 0;
+        charger->charge_active = 1;
+        charger->ability.charge_dir_z = -1024;
+        game.enemies_alive = 1;
+        toy_game_update_world(&game, 16);
+        toy_game_update_world(&game, 16);
+        if (local->hp != hp - TOY_CONFIG_CHARGER_IMPACT_DAMAGE ||
+            !(charger->ability.charge_hit_actor_mask & 1ULL)) return 223;
+    }
     /* Smoker 控制使用 generation：旧 END 不能清掉更新后的控制。 */
     {
         toy_game_init(&game, 154);

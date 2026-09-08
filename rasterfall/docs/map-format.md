@@ -1,7 +1,7 @@
 # Rasterfall 地图格式
 
 > 文档更新：2026-09-08
-> 源码核对基线：工作区（地图排布通过 PNG/JSON 导出链路核验；地图布局 PNG/JSON 导出器与 JSON 查询器；空气墙竖直 box 和可站立 platform 通过同组 role 同步切换显示、碰撞与导航；北侧走廊入口边界碰撞；外围渲染墙与 gameplay 碰撞分离；静态 prop 实例及 profile 碰撞盒接入现有 primitive/nav）
+> 源码核对基线：工作区（地图排布通过 PNG/JSON 导出链路核验；地图布局 PNG/JSON 导出器与 JSON 查询器；空气墙竖直 box 和可站立 platform 通过同组 role 同步切换显示、碰撞与导航；边界 box 显式 blocks_airborne；外围渲染墙与 gameplay 碰撞分离；静态 prop 实例及 profile 碰撞盒接入现有 primitive/nav）
 
 正式地图位于 `rasterfall/assets/maps/*.map`。磁盘结构定义在 `include/toy_map.h`，文本解析在
 `lib/map.c`，`src/rasterfall_map.c` 再把结果绑定到玩法盒体、图元、可交互物和安全区。修改语法时
@@ -14,11 +14,16 @@
 ```text
 box minx maxx minz maxz height color visible collision
 box minx maxx minz maxz height color hidden collision role=air_gate_left
+box minx maxx minz maxz height color hidden collision blocks_airborne
 ```
 
 未写选项的旧 `box` 默认可见且参与碰撞。需要允许站上顶部的高墙应追加 `walkable`；空气墙应
 使用 `hidden collision` 并通过 `role=air_gate_*` 表达用途；旧 `air` 语法只用于兼容已有地图，
 新内容不要继续使用。
+
+`blocks_airborne` 是独立碰撞属性：水平移动在角色高于 box 顶面时仍会被它阻挡，适用于不可越过的
+关卡边界。普通 box 默认不带该属性，crate、platform 和矮墙仍可从足够高度越过；该属性不从
+`role` 推导。可用 `allows_airborne` 显式清除属性。
 
 走廊或区域边界应使用明确的 `box ... hidden collision` 碰撞体；仅用于背景围合的 `wall` 记录
 只负责渲染，不会自动参与玩法碰撞。正式地图的外围渲染墙就是这种情况，实际可玩边界由中央

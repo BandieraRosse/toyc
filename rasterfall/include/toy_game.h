@@ -271,7 +271,8 @@ enum toy_map_primitive_shape {
 enum toy_map_primitive_flags {
     TOY_MAP_PRIMITIVE_VISIBLE = 1 << 0,
     TOY_MAP_PRIMITIVE_COLLISION = 1 << 1,
-    TOY_MAP_PRIMITIVE_WALKABLE = 1 << 2
+    TOY_MAP_PRIMITIVE_WALKABLE = 1 << 2,
+    TOY_MAP_PRIMITIVE_BLOCKS_AIRBORNE = 1 << 3
 };
 struct toy_map_primitive {
     int shape;
@@ -708,6 +709,14 @@ void toy_game_apply_actor_impulse(struct toy_game_actor *actor,
                                   int impulse_x, int impulse_z,
                                   int vertical_velocity, int airborne_ms,
                                   int airborne_y);
+enum toy_game_forced_move_result {
+    TOY_GAME_FORCED_MOVE_BLOCKED_X = 1 << 0,
+    TOY_GAME_FORCED_MOVE_BLOCKED_Z = 1 << 1
+};
+int toy_game_move_actor_forced_swept(struct toy_game *g,
+                                     struct toy_game_actor *actor,
+                                     int dx, int dz,
+                                     int old_height, int new_height);
 /* 对指定实体施加统一的伤害、打断和击飞规则。dx/dz 是相对冲击方向。 */
 int  toy_game_apply_entity_impact(struct toy_game *g, int kind, int index,
                                   int dx, int dz, int damage);
