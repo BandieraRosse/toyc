@@ -1,13 +1,35 @@
 # 渲染、HUD、特效与性能
 
-> 文档更新：2026-09-08
-> 源码核对基线：工作区（HUD 与启动菜单使用 UTF-8/GB2312 8×16/16×16 点阵文本；viewmodel、crosshair、effects、managed actor 和客户端远端玩家的 gameplay 展示查询直接读取 actor；远端位置/朝向继续使用纯 derived presentation cache；RAY tracer 短线段/定向线宽投影，通用 emitter preset table，CAMERA_SHAKE 含开火后座与受击摇晃；受击四角浅红边缘与八方向中心箭头；程序化敌人身体组件描述表；world-space 静态 RMESH prop 入口与十件组件不重叠开发场景）
+> 文档更新：2026-09-09
+> 源码核对基线：工作区（低模 AI 使用显式 state/profile 的 procedural humanoid 入口；HUD 与启动菜单使用 UTF-8/GB2312 8×16/16×16 点阵文本；viewmodel、crosshair、effects、managed actor 和客户端远端玩家的 gameplay 展示查询直接读取 actor；远端位置/朝向继续使用纯 derived presentation cache；RAY tracer 短线段/定向线宽投影，通用 emitter preset table，CAMERA_SHAKE 含开火后座与受击摇晃；受击四角浅红边缘与八方向中心箭头；程序化敌人身体组件描述表；world-space 静态 RMESH prop 入口与十件组件不重叠开发场景）
 
 ## 渲染边界
 
 `src/rasterfall_render.c` 是世界渲染和角色渲染主体：投影/近裁剪、三角形提交、地面与地图图元、
 拾取物、敌人、玩家/队友、骨骼角色、弹道粒子及模型诊断。公开入口在
 `include/rasterfall_render.h`，共享状态由 `rasterfall_render_context` 绑定。
+
+低模 AI 链路为 `rasterfall_render_ai_teammate()` → `render_ai_teammate()` 的 actor
+遍历/可见性/模型路径选择 → `rasterfall_render_procedural_humanoid()` → 现有 pose、身体部件、
+武器 helpers → primitive 提交。公开入口和 `rasterfall_procedural_humanoid_state` 位于
+`include/rasterfall_render.h`，实现保留在 `src/rasterfall_render.c`，不增加编译单元。
+场景层提供 actor 的 x/z、sy/cy、ground_y + airborne_y、当前 slot 武器、downed、动画 ID/时间；
+AI 的 muzzle_flash 参数仍为 0。入口只读这些瞬时参数，不查 actor 数组、不裁剪整个人物、
+不绘制姓名/血条，也不查询地面；调用者可传入指定 camera。
+
+`rasterfall_character_profile()` 提供 body/leg/skin/hair 基础外观：body 用于躯干及上臂，
+leg 用于腿，skin 用于头部和脸部，hair 用于脸部矩形；武器 helper 的前臂固定肤色保持原样。
+负 character ID 的旧 class/body tint 由调用适配层覆盖 profile 副本的 body_color，
+其余外观继续使用默认 profile。实际骨骼路径选择仍取决于 `anime_character_id` 与模型是否加载，
+不在本入口解释 profile 的 model_path/actions。
+
+入口采样现有 `rasterfall_actor_animation_sample()`，保留 reload 武器时长、前移/抬升、
+腿摆动、身体俯仰、death/revive 翻倒和 downed 简化身体的既有行为与绘制顺序。
+内部保存/恢复 primitive helpers 的 lift/roll 临时状态；仍依赖已绑定 render context 和串行
+helpers，不承诺并发重入。`render_player_avatar()` 仅保留其他现有调用者的参数适配。
+后续 profession visual profile/附件最自然地接在该入口的外观与 pose 求值边界；新增 idle
+应扩展 pose 采样，portrait 可提交指定展示状态与 camera 复用人体绘制。本轮不提供附件、
+新姿态或上半身裁切功能。
 
 静态环境组件通过 `rasterfall_render_static_prop()` 提交 world-space RMESH。地图 parser 将
 注册表 asset name/id 转为轻量 `toy_map.props` 实例，renderer 遍历该数组；入口消费 RFU

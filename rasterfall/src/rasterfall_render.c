@@ -5236,12 +5236,12 @@ static int render_ai_teammate(struct toy_renderer *renderer,
         color = actor->class_id == TOY_GAME_AI_LEVEL_3 ? RF_COLOR_AI_HEAVY :
                 actor->class_id == TOY_GAME_AI_LEVEL_2 ? RF_COLOR_AI_RIFLE :
                 RF_COLOR_AI_BASIC;
-        active_actor_lift = actor->ground_y + actor->airborne_y;
         if (actor->anime_character_id && private_character_model.data) {
             struct rasterfall_frontend_state *actor_frontend =
                 &ai_character_frontends[i];
             int character_update;
             enum rasterfall_character_distance_quality character_quality;
+            active_actor_lift = actor->ground_y + actor->airborne_y;
             if (!ai_character_frontends_initialized[i]) {
                 __memset(actor_frontend, 0, sizeof(*actor_frontend));
                 actor_frontend->toon_shared = -1;
@@ -5405,17 +5405,22 @@ static int render_ai_teammate(struct toy_renderer *renderer,
             frontend_set_override(renderer, 0);
             active_actor_lift=0;continue;
         }
-        pixels += render_player_avatar(renderer, camera, actor->x, actor->z,
-                                       actor->sy, actor->cy,
-                                       actor->current_slot >= 0 &&
-                                       actor->current_slot < TOY_GAME_WEAPON_SLOTS ?
-                                       actor->slots[actor->current_slot].weapon : -1,
-                                       0,
-                                       actor->character_id, color,
-                                       actor->state == TOY_GAME_ACTOR_DOWNED,
-                                       actor->animation.id,
-                                       actor->animation.time_ms);
-        active_actor_lift = 0;
+        {
+            const struct rasterfall_procedural_humanoid_state state = {
+                actor->x, actor->z, actor->ground_y + actor->airborne_y,
+                actor->sy, actor->cy,
+                actor->current_slot >= 0 &&
+                actor->current_slot < TOY_GAME_WEAPON_SLOTS ?
+                    actor->slots[actor->current_slot].weapon : -1,
+                0, actor->state == TOY_GAME_ACTOR_DOWNED,
+                actor->animation.id, actor->animation.time_ms
+            };
+            struct rasterfall_character_profile character =
+                *rasterfall_character_profile(actor->character_id);
+            if (actor->character_id < 0) character.body_color = color;
+            pixels += rasterfall_render_procedural_humanoid(
+                renderer, camera, &state, &character);
+        }
     }
     return pixels;
 }
@@ -5426,15 +5431,43 @@ static int render_player_avatar(struct toy_renderer *renderer,
                                 int character_id, uint32_t body_color, int downed,
                                 int animation_id, int animation_time_ms)
 {
-    const struct rasterfall_character_profile *character =
-        rasterfall_character_profile(character_id);
+    const struct rasterfall_procedural_humanoid_state state = {
+        x, z, active_actor_lift, sy, cy, weapon, muzzle_flash, downed,
+        animation_id, animation_time_ms
+    };
+    struct rasterfall_character_profile character =
+        *rasterfall_character_profile(character_id);
+    /* Preserve the legacy negative-ID body tint for existing callers. */
+    if (character_id < 0) character.body_color = body_color;
+    return rasterfall_render_procedural_humanoid(renderer, camera,
+                                                &state, &character);
+}
+
+int rasterfall_render_procedural_humanoid(
+    struct toy_renderer *renderer, const struct camera *camera,
+    const struct rasterfall_procedural_humanoid_state *state,
+    const struct rasterfall_character_profile *character)
+{
     struct rasterfall_actor_pose pose;
+    int x, z, sy, cy, weapon, muzzle_flash, downed;
+    int animation_id, animation_time_ms;
+    uint32_t body_color;
+    int saved_lift = active_actor_lift;
+    int saved_roll_sin = active_actor_roll_sin;
+    int saved_roll_cos = active_actor_roll_cos;
     int pixels = 0, face_y0, face_y1, animation_lift;
     int pose_x, pose_z;
     int death_progress = 0;
     int show_fall_gear = 0;
-    if (!renderer || !camera) return 0;
-    if (character_id >= 0) body_color = character->body_color;
+    if (!renderer || !camera || !state || !character) return 0;
+    x = state->x; z = state->z;
+    sy = state->sy; cy = state->cy;
+    weapon = state->weapon; muzzle_flash = state->muzzle_flash;
+    downed = state->downed;
+    animation_id = state->animation_id;
+    animation_time_ms = state->animation_time_ms;
+    body_color = character->body_color;
+    active_actor_lift = state->lift;
     rasterfall_actor_animation_sample(
         animation_id, animation_time_ms,
         animation_id == TOY_GAME_ANIM_RELOAD && weapon >= 0 ?
@@ -5520,9 +5553,9 @@ static int render_player_avatar(struct toy_renderer *renderer,
         pixels += draw_cuboid(renderer, camera, pose_x - 45, pose_x + 45,
                               -560 + active_actor_lift, -430 + active_actor_lift,
                               pose_z - 120, pose_z + 120, RF_COLOR_UI_ACCENT);
-    active_actor_lift -= animation_lift;
-    active_actor_roll_sin = 0;
-    active_actor_roll_cos = 1024;
+    active_actor_lift = saved_lift;
+    active_actor_roll_sin = saved_roll_sin;
+    active_actor_roll_cos = saved_roll_cos;
     return pixels;
 }
 

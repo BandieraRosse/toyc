@@ -25,6 +25,27 @@ struct rasterfall_render_context {
     int fixed_floor_lighting;
 };
 
+struct rasterfall_character_profile;
+
+/* Presentation snapshot, borrowed for one draw; no actor ownership or culling.
+ * x/z and lift use RFU; lift = ground_y + airborne_y (feet at -900 + lift).
+ * sy/cy are the existing 1024-scaled facing basis. */
+struct rasterfall_procedural_humanoid_state {
+    int x, z, lift;
+    int sy, cy;
+    int weapon, muzzle_flash;
+    int downed;
+    int animation_id, animation_time_ms;
+};
+
+/* Uses the bound render context and existing serial primitive helpers.
+ * character supplies base appearance; state and character must be non-NULL.
+ * Saves/restores primitive transform state; does not select actors or cameras. */
+int rasterfall_render_procedural_humanoid(
+    struct toy_renderer *renderer, const struct camera *camera,
+    const struct rasterfall_procedural_humanoid_state *state,
+    const struct rasterfall_character_profile *character);
+
 struct rasterfall_model_triangle_stats {
     unsigned long total_triangles;
     unsigned long near_rejected_triangles;
