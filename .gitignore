@@ -3,6 +3,8 @@ build-self/**
 build-windows/**
 .windows-deps/**
 .blender-python/**
+.venv/**
+tools/.map-layout-fonts/**
 .vscode/*
 tmp/**
 .claude/**

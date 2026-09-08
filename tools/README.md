@@ -10,6 +10,19 @@
 
 ## Rasterfall 统一资产导入
 
+## 地图布局导出
+
+地图布局 PNG/JSON 导出使用 Pillow 和 Linux 的 Noto Sans CJK SC 字体，不要求 C 核心保持零依赖。
+首次使用运行：
+
+```sh
+make setup-map-layout
+make map-layout
+```
+
+环境安装在 `.venv/map-layout/`，不会进入运行时或提交内容；可用
+`tools/map_layout_export.py ... --font path/to/font.ttc` 覆盖字体。
+
 ```sh
 tools/assets/import_asset.py path/to/asset.json
 tools/assets/import_asset.py --force path/to/asset.json
