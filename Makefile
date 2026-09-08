@@ -1119,6 +1119,13 @@ $(BUILD)/glb-inspect: $(BUILD)/glb_inspect | $(BUILD)
 .PHONY: app-vmd-inspect
 app-vmd-inspect: $(BUILD)/vmd_inspect
 
+.PHONY: map-layout test-map-layout-export
+map-layout:
+	python3 tools/map_layout_export.py rasterfall/assets/maps/rasterfall.map --output-dir tmp/map-layout
+
+test-map-layout-export:
+	python3 tools/test_map_layout_export.py
+
 # ─── 清理 ───────────────────────────────────────────────────────
 
 clean-app:

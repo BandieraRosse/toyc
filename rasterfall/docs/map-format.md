@@ -1,7 +1,7 @@
 # Rasterfall 地图格式
 
-> 文档更新：2026-09-07
-> 源码核对基线：工作区（静态 prop 实例及 profile 碰撞盒接入现有 primitive/nav）
+> 文档更新：2026-09-08
+> 源码核对基线：工作区（地图布局 PNG/JSON 导出器；静态 prop 实例及 profile 碰撞盒接入现有 primitive/nav）
 
 正式地图位于 `rasterfall/assets/maps/*.map`。磁盘结构定义在 `include/toy_map.h`，文本解析在
 `lib/map.c`，`src/rasterfall_map.c` 再把结果绑定到玩法盒体、图元、可交互物和安全区。修改语法时
@@ -61,3 +61,24 @@ prop lamp_post 0 -17000 0 1000 collision=none
 
 其他受支持记录及参数应直接以 `lib/map.c` 的解析分支为准。新增记录时在本文记录用途和最小示例，
 不要只修改关卡文件。可见几何不能代替玩法碰撞，渲染正确也不能证明导航和地面查询正确。
+
+## 俯视布局导出
+
+零依赖离线工具 `tools/map_layout_export.py` 把现有 `.map` 导出为开发用俯视 PNG 和 JSON sidecar，
+不引入新地图语法，也不进入游戏运行时：
+
+```sh
+make map-layout
+# 或导出任意地图，固定生成 output.png / output.json
+python3 tools/map_layout_export.py path/to/level.map --output-dir tmp/level-layout
+make test-map-layout-export
+```
+
+PNG 使用 x/z 平面、RFU 网格、色块/线框和紧凑 ID；隐藏碰撞以交叉线框 `AWn` 显示，普通 box
+只挑 role box 和面积最大的少量碰撞 box 标为 `BXn`。JSON schema 为
+`rasterfall-map-layout-v1`，每个对象保留源记录名、原始字段和行号，并补充导出 ID、中心点及 bounds；
+顶层明确记录 `512 RFU = 1 m`。当前范围只覆盖布局理解，不做 chokepoint、路径分析或高程渲染。
+
+最小人工验收是在正式地图上运行 `make map-layout`，打开 `tmp/map-layout/output.png`，抽查 safe、
+spawn、button、prop 的相对位置，再用相同导出 ID 对照 `output.json` 的中心点与 bounds。当前正式地图
+没有 `base` 或 `safe goal` 记录；这两类由自动化覆盖用例验证，待正式地图实际声明后再加入人工抽查。
