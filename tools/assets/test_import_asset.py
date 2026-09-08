@@ -24,7 +24,7 @@ def png_rgb():
             chunk(b"IDAT", zlib.compress(b"\x00\xff\x40\x20")) + chunk(b"IEND", b""))
 
 
-def make_glb(path):
+def make_glb(path, textured=True):
     positions = struct.pack("<9f", 0, 0, 0, 1, 0, 0, 0, 1, 0)
     normals = struct.pack("<9f", 0, 0, 1, 0, 0, 1, 0, 0, 1)
     uvs = struct.pack("<6f", 0, 0, 1, 0, 0, 1)
@@ -32,7 +32,8 @@ def make_glb(path):
     image = png_rgb()
     offsets = []
     binary = bytearray()
-    for payload in (positions, normals, uvs, indices, image):
+    payloads = (positions, normals, uvs, indices, image) if textured else (positions, normals, indices)
+    for payload in payloads:
         while len(binary) % 4:
             binary.append(0)
         offsets.append(len(binary))
@@ -42,20 +43,28 @@ def make_glb(path):
         "buffers": [{"byteLength": len(binary)}],
         "bufferViews": [
             {"buffer": 0, "byteOffset": offsets[i], "byteLength": len(payload)}
-            for i, payload in enumerate((positions, normals, uvs, indices, image))
+            for i, payload in enumerate(payloads)
         ],
-        "accessors": [
+        "accessors": ([
             {"bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3"},
             {"bufferView": 1, "componentType": 5126, "count": 3, "type": "VEC3"},
             {"bufferView": 2, "componentType": 5126, "count": 3, "type": "VEC2"},
             {"bufferView": 3, "componentType": 5123, "count": 3, "type": "SCALAR"}
-        ],
-        "images": [{"bufferView": 4, "mimeType": "image/png"}],
-        "textures": [{"source": 0}],
-        "materials": [{"pbrMetallicRoughness": {"baseColorTexture": {"index": 0}}}],
-        "meshes": [{"primitives": [{"attributes": {"POSITION": 0, "NORMAL": 1, "TEXCOORD_0": 2},
-                                      "indices": 3, "material": 0}]}]
+        ] if textured else [
+            {"bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3"},
+            {"bufferView": 1, "componentType": 5126, "count": 3, "type": "VEC3"},
+            {"bufferView": 2, "componentType": 5123, "count": 3, "type": "SCALAR"}
+        ]),
+        "materials": [{"pbrMetallicRoughness": {}}],
+        "meshes": [{"primitives": [{
+            "attributes": ({"POSITION": 0, "NORMAL": 1, "TEXCOORD_0": 2} if textured else
+                           {"POSITION": 0, "NORMAL": 1}),
+            "indices": 3 if textured else 2, "material": 0}]}]
     }
+    if textured:
+        document.update(images=[{"bufferView": 4, "mimeType": "image/png"}],
+                        textures=[{"source": 0}])
+        document["materials"][0]["pbrMetallicRoughness"]["baseColorTexture"] = {"index": 0}
     encoded = json.dumps(document, separators=(",", ":")).encode()
     encoded += b" " * (-len(encoded) % 4)
     binary += b"\0" * (-len(binary) % 4)
@@ -82,6 +91,28 @@ class AssetImporterTest(unittest.TestCase):
             self.assertEqual(struct.unpack_from("<I", (output / "test_crate.rmesh").read_bytes(), 88)[0], 0)
             self.assertTrue((output / "test_crate.textures/texture_000.ttex").is_file())
             self.assertTrue((output / "test_crate_lod1.rmesh").is_file())
+            subprocess.run(command + ["--validate-only"], cwd=REPO, check=True)
+
+    def test_zero_texture_force_reimport(self):
+        if not (REPO / "build/glb2rmesh").is_file() or not (REPO / "build/toyasset").is_file():
+            self.skipTest("converter binaries were not built")
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source, manifest, output = root / "plain.glb", root / "plain.json", root / "out"
+            make_glb(source, textured=False)
+            manifest.write_text(json.dumps({
+                "schema": 1, "id": "plain_prop", "type": "static_prop", "source": "plain.glb"
+            }))
+            command = [str(IMPORTER), str(manifest), "--output-root", str(output), "--no-build"]
+            subprocess.run(command, cwd=REPO, check=True)
+            texture_dir = output / "plain_prop.textures"
+            self.assertTrue(texture_dir.is_dir())
+            self.assertEqual(list(texture_dir.iterdir()), [])
+
+            stale = texture_dir / "texture_000.ttex"
+            stale.write_bytes(b"stale")
+            subprocess.run(command + ["--force"], cwd=REPO, check=True)
+            self.assertEqual(list(texture_dir.iterdir()), [])
             subprocess.run(command + ["--validate-only"], cwd=REPO, check=True)
 
     def test_manifest_rejects_global_derived_fields(self):

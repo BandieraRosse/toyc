@@ -237,7 +237,7 @@ def validate_outputs(mesh, texture_dir, lods):
         for path in texture_dir.iterdir():
             if not path.is_file() or not re.fullmatch(r"texture_\d{3}\.ttex", path.name):
                 raise ImportFailure("non-contract file in texture directory: %s" % path.name)
-        validate_ttex(path)
+            validate_ttex(path)
     for texture in info["textures"]:
         expected = texture_dir / ("texture_%03d.ttex" % texture)
         if not expected.is_file():
