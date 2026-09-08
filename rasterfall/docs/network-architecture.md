@@ -1,7 +1,7 @@
 # Rasterfall 联机架构与扩展边界
 
-> 文档更新：2026-09-07
-> 源码核对基线：工作区（输入条目只保留 command、sequence/tick、选中槽位意图、airborne prediction report 和 fire validation rays；协议版本 42；独立玩家快照已删除；输入历史、actor snapshot 和远端命令执行直接绑定 actor；`actor = gameplay truth`；`remote presentation cache = derived render state`，插值缓存只保存位置、朝向、高度和时间戳；主机普通枪械、斧头/药丸及炸弹/Molotov 客户端输入直接应用到远端 actor；投射物/燃烧区携带 owner；本地预测位置派生 camera）
+> 文档更新：2026-09-08
+> 源码核对基线：工作区（客户端权威移动为长期协议模型；客户端按可信端处理；输入条目只保留 command、sequence/tick、选中槽位意图、airborne prediction report 和 fire validation rays；协议版本 42；独立玩家快照已删除；输入历史、actor snapshot 和远端命令执行直接绑定 actor；`actor = gameplay truth`；`remote presentation cache = derived render state`，插值缓存只保存位置、朝向、高度和时间戳；主机普通枪械、斧头/药丸及炸弹/Molotov 客户端输入直接应用到远端 actor；投射物/燃烧区携带 owner；本地预测位置派生 camera）
 
 本文记录联机实现必须保持的内部边界。产品入口和平台范围见 `../README.md`。
 
@@ -36,6 +36,15 @@
 | Presentation | 接收端从规则状态推导，不上网 | 动画混合时钟、模型 LOD、粒子、镜头平滑 |
 | Local only | 永不进入协议 | Pose Editor、模型预览、开发者标定状态 |
 
+移动归属是 Input 类别的长期特例：客户端权威推进自己的 body position、朝向和 airborne prediction，
+主机不重新执行远端平移；客户端按可信端处理，主机负责接收报告、绑定到对应 actor、执行世界交互和玩法结果，并通过
+actor snapshot 发布其他权威字段。客户端 camera 由本地 body/presentation 状态派生，不能成为 renderer
+之外的第二个 gameplay owner。
+
+本项目长期假设客户端可信。主机对 fire report 只做轻量状态边界检查：序号去重、武器/弹药/冷却、
+弹丸数量、伤害上限、方向和射程；这些检查用于保持 actor 状态和网络包边界稳定，不承担反作弊，
+也不要求重做墙体 raycast 或重建客户端散射。
+
 战斗表现事件遵循 Presentation 类别：由权威射击/命中结果或接收端已有展示数据生成，交给
 `rasterfall_effects` 消费；不能把粒子、tracer、镜头抖动等视觉状态反向写入 gameplay。
 
@@ -55,7 +64,8 @@
 `latest_input` 是当前解码的输入/报告协议数据，不是持久 gameplay 镜像；HP/down、animation/stats、
 weapon timers/inventory 都只写入和读取对应 `game_state.actors[]`。airborne report 属于客户端预测
 所需的运动 metadata，主机只将其作为远端 actor 运动输入；`current_slot` 是装备选择意图，主机按
-actor 自有 inventory 解析。`fire_seq`/`rays` 是开火验证与去重 metadata，不是持久玩法状态。actor
+actor 自有 inventory 通过 actor weapon rules 解析。reload 与普通枪械 fire cadence 同样在主机 actor
+上推进；`fire_seq`/`rays` 是开火验证与去重 metadata，不是持久玩法状态。actor
 snapshot 布局和输入条目布局在协议版本 42 中生效。
 
 炸弹和 Molotov 已通过 `toy_game_actor_throwable()` 直接作用于远端 actor；投射物和燃烧区的

@@ -1,7 +1,7 @@
 # 网络代码导航
 
-> 文档更新：2026-09-07
-> 源码核对基线：工作区（输入条目只编码 command、sequence/tick、选中槽位意图、airborne prediction report 和 fire validation rays；不编码 inventory/reload/cooldown/muzzle gameplay 镜像；输入协议版本 42；旧玩家快照已删除；actor snapshot 是玩家/AI/远端玩家 gameplay truth，world snapshot 只承载世界级状态；远端插值缓存只保存 derived render state；投射物/燃烧区显式携带 owner；本地预测位置驱动 camera）
+> 文档更新：2026-09-08
+> 源码核对基线：工作区（客户端权威移动为长期协议模型；客户端按可信端处理；输入条目只编码 command、sequence/tick、选中槽位意图、airborne prediction report 和 fire validation rays；不编码 inventory/reload/cooldown/muzzle gameplay 镜像；输入协议版本 42；旧玩家快照已删除；actor snapshot 是玩家/AI/远端玩家 gameplay truth，world snapshot 只承载世界级状态；远端插值缓存只保存 derived render state；投射物/燃烧区显式携带 owner；本地预测位置驱动 camera）
 
 ## 文件职责
 
@@ -31,6 +31,17 @@
 `owner_actor_id`，爆炸/燃烧造成的伤害、击杀和 throwable 统计归属投掷者。
 远端 shove 不再临时覆盖本地 actor 的位置，而是通过
 `toy_game_shove_from_position()` 将远端位置作为只读规则输入。
+
+客户端权威移动是长期架构，不是迁移期间的临时兼容路径。客户端负责根据本地输入推进自己的 body
+position、airborne 状态和视角，并在输入包中冗余发送预测后的运动报告；主机将该报告写入对应 remote
+actor，负责玩法结果、伤害、特殊控制、世界实体和快照发布。该边界意味着主机不重新模拟远端平移；
+主机不重新模拟远端平移，也不以此边界承担反作弊职责；不要在 renderer 或旧 player 状态中建立第二个
+位置源。
+
+远端 reload、切槽和普通枪械开火仍必须经过 actor 规则边界：主机用输入意图推进 actor 的换弹/切枪
+计时和库存，fire report 只提供客户端瞄准结果；主机负责验证武器、弹药、冷却、弹丸数量、伤害上限、
+射程和基础命中几何后才写入伤害与统计。该校验用于阻止 malformed packet、非法状态和重复结算，
+不重做完整墙体 raycast、不重建客户端散射；客户端长期按可信端处理。
 
 主机侧 `rasterfall_net_client` 是 connection/input/protocol 状态容器，不是玩家 gameplay
 镜像：`actor = gameplay truth`，而 `remote presentation cache = derived render state`；远端 actor

@@ -1301,7 +1301,7 @@ static void decode_actor(const unsigned char *p, struct rasterfall_net_actor *a)
     a->special_kills = get_i16(p + 31);
     a->damage_dealt = (int)get_u32(p + 33);
     a->throwable_damage_dealt = (int)get_u32(p + 37);
-    a->hired = p[41] != 0;
+    a->hired = (p[41] & 1) != 0;
     memcpy(a->name, p + 42, TOY_GAME_MAX_NAME);
     a->name[TOY_GAME_MAX_NAME - 1] = 0;
     a->character_id = p[42 + TOY_GAME_MAX_NAME] < TOY_GAME_CHARACTER_COUNT ?
@@ -2102,20 +2102,66 @@ void rasterfall_net_update_connection(struct rasterfall_net *net)
     }
 }
 
+/* Clients are trusted by design.  This is a bounded consistency check for
+ * actor state, ammo/cooldown and malformed ray data, not an anti-cheat
+ * verifier: the host deliberately does not redo wall raycasts or reconstruct
+ * the client's spread. */
 static int net_apply_client_fire_report(
     struct toy_game *game, struct rasterfall_net_client *client,
     unsigned int fire_seq, int ray_count, const struct toy_game_ray *rays)
 {
     struct toy_game_actor *actor;
-    int index, i;
+    const struct toy_game_weapon_info *info;
+    int index, i, weapon;
     if (!game || !client || !fire_seq || !rays ||
         (client->last_applied_fire_seq &&
          !sequence_after(fire_seq, client->last_applied_fire_seq))) return 0;
     index = TOY_GAME_REMOTE_ACTOR_BASE + client->client_id - 1;
     if (index < 0 || index >= TOY_GAME_MAX_ACTORS) return 0;
     actor = &game->actors[index];
-    if (ray_count < 0) ray_count = 0;
-    if (ray_count > TOY_GAME_MAX_RAYS) ray_count = TOY_GAME_MAX_RAYS;
+    if (!actor->active || actor->state != TOY_GAME_ACTOR_ALIVE) return 0;
+    weapon = toy_game_actor_current_weapon(actor);
+    info = toy_game_weapon_info_or_null(weapon);
+    if (!info || weapon == TOY_GAME_WEAPON_AXE ||
+        weapon == TOY_GAME_WEAPON_PILL ||
+        weapon == TOY_GAME_WEAPON_BOMB ||
+        weapon == TOY_GAME_WEAPON_MOLOTOV ||
+        actor->reloading || actor->weapon_switch_timer_ms > 0 ||
+        actor->fire_cooldown_ms > 0 ||
+        actor->slots[actor->current_slot].mag <= 0 ||
+        ray_count != info->pellets) return 0;
+    if (ray_count < 0 || ray_count > TOY_GAME_MAX_RAYS) return 0;
+    for (i = 0; i < ray_count; i++) {
+        const struct toy_game_ray *ray = &rays[i];
+        int dx, dz, projection, cross;
+        long long length2;
+        if (ray->damage < 0 || ray->damage > info->damage) return 0;
+        if (ray->damage == 0) {
+            if (ray->enemy_index >= 0) return 0;
+            continue;
+        }
+        if (ray->enemy_index < 0 ||
+            ray->enemy_index >= TOY_GAME_MAX_ENEMIES ||
+            game->enemies[ray->enemy_index].active != 1)
+            return 0;
+        dx = game->enemies[ray->enemy_index].x - actor->x;
+        dz = game->enemies[ray->enemy_index].z - actor->z;
+        projection = dx * ray->sy + dz * ray->cy;
+        cross = dx * ray->cy - dz * ray->sy;
+        length2 = (long long)dx * dx + (long long)dz * dz;
+        if (ray->sy < -1024 || ray->sy > 1024 ||
+            ray->cy < -1024 || ray->cy > 1024 || projection <= 0 ||
+            (cross > TOY_GAME_HIT_RADIUS * 1024 ||
+             cross < -TOY_GAME_HIT_RADIUS * 1024) ||
+            length2 > (long long)info->range * info->range)
+            return 0;
+    }
+    actor->slots[actor->current_slot].mag--;
+    actor->fire_cooldown_ms = info->cooldown_ms;
+    actor->muzzle_flash_ms = TOY_GAME_MUZZLE_FLASH_MS;
+    actor->weapon_spread_heat += TOY_CONFIG_SPREAD_SHOT_STEP;
+    if (actor->weapon_spread_heat > TOY_CONFIG_SPREAD_HEAT_MAX)
+        actor->weapon_spread_heat = TOY_CONFIG_SPREAD_HEAT_MAX;
     for (i = 0; i < ray_count; i++)
         if (rays[i].enemy_index >= 0 && rays[i].damage > 0)
             toy_game_apply_reported_hit(game, actor,
@@ -2123,6 +2169,16 @@ static int net_apply_client_fire_report(
     actor->fire_seq = fire_seq; actor->ray_count = ray_count;
     memcpy(actor->rays, rays, sizeof(actor->rays));
     toy_game_animation_set(&actor->animation, TOY_GAME_ANIM_FIRE);
+    if (weapon == TOY_GAME_WEAPON_SMG)
+        toy_game_emit_event(game, TOY_GAME_EV_SHOOT_SMG);
+    else if (weapon == TOY_GAME_WEAPON_SHOTGUN)
+        toy_game_emit_event(game, TOY_GAME_EV_SHOOT_SHOTGUN);
+    else if (weapon == TOY_GAME_WEAPON_AK)
+        toy_game_emit_event(game, TOY_GAME_EV_SHOOT_AK);
+    else if (weapon == TOY_GAME_WEAPON_AWP)
+        toy_game_emit_event(game, TOY_GAME_EV_SHOOT_AWP);
+    else
+        toy_game_emit_event(game, TOY_GAME_EV_SHOOT);
     client->last_applied_fire_seq = fire_seq;
     return 1;
 }
@@ -2181,7 +2237,8 @@ static int net_apply_client_actor_state(struct rasterfall_net *net,
         fired = 0;
     } else {
         fired = net_apply_client_fire_report(
-            g, client, actor->fire_seq, actor->ray_count, actor->rays);
+            g, client, client->latest_input.fire_seq,
+            client->latest_input.ray_count, client->latest_input.rays);
     }
     if (client->command.buttons & RASTERFALL_CMD_CLEAR_STATS) {
         actor->kills = 0;
@@ -2234,11 +2291,10 @@ static void net_apply_client(struct rasterfall_net *net,
     actor->air_x = client->latest_input.air_x;
     actor->air_z = client->latest_input.air_z;
     if (client->latest_input.current_slot >= 0 &&
-        client->latest_input.current_slot < TOY_GAME_WEAPON_SLOTS)
-        actor->current_slot = client->latest_input.current_slot;
-    actor->fire_seq = client->latest_input.fire_seq;
-    actor->ray_count = client->latest_input.ray_count;
-    memcpy(actor->rays, client->latest_input.rays, sizeof(actor->rays));
+        client->latest_input.current_slot < TOY_GAME_WEAPON_SLOTS &&
+        client->latest_input.current_slot != actor->current_slot)
+        toy_game_actor_switch_weapon(g, actor,
+                                     client->latest_input.current_slot);
     /* Client locomotion is always authoritative.  Special attacks arrive as
      * impulses/control events and never switch this path to host position. */
     toy_game_update_actor_ground(g, index);
@@ -2247,6 +2303,14 @@ static void net_apply_client(struct rasterfall_net *net,
         toy_game_shove_from_position(g, actor->x, actor->z,
                                      actor->sy, actor->cy);
         toy_game_actor_set_animation(actor, TOY_GAME_ANIM_SHOVE);
+    }
+    {
+        unsigned char keys[TOY_GAME_KEY_RELOAD + 1];
+        memset(keys, 0, sizeof(keys));
+        if (client->command.buttons & RASTERFALL_CMD_RELOAD)
+            keys[TOY_GAME_KEY_RELOAD] = 1;
+        toy_game_update_actor_weapon_held(g, actor, keys, 0, 0,
+                                          actor->sy, actor->cy, 16, 100);
     }
     if (client->command.buttons & RASTERFALL_CMD_REVIVE)
         net_paid_revive_client(net, session, client);
@@ -2862,6 +2926,8 @@ int rasterfall_net_pipeline_test(void)
         first->current_slot = 1;
         first->slots[1].weapon = TOY_GAME_WEAPON_AWP;
         first->slots[1].mag = 3; first->slots[1].reserve = 17;
+        first->anime_character_id = 2;
+        first->hired = 0;
         first->reloading = 1; first->reload_timer_ms = 240;
         first->control_disabled = 1; first->kills = 8;
         toy_game_animation_set(&first->animation, TOY_GAME_ANIM_DEATH);
@@ -2876,6 +2942,7 @@ int rasterfall_net_pipeline_test(void)
             decoded.slots[1].mag != 3 || decoded.slots[1].reserve != 17 ||
             !decoded.reloading || decoded.reload_timer_ms != 240 ||
             !decoded.control_disabled || decoded.kills != 8 ||
+            decoded.anime_character_id != 2 || decoded.hired ||
             decoded.animation.id != TOY_GAME_ANIM_DEATH)
             return 30;
         encode_actor(wire, second, TOY_GAME_REMOTE_ACTOR_BASE + 1, 66);
@@ -3107,7 +3174,8 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
             dst = &session->game_state.actors[index];
             dst->actor_id = index + 1;
             dst->active = src->active;
-            dst->kind = index >= TOY_GAME_REMOTE_ACTOR_BASE ?
+            dst->kind = index == TOY_GAME_PLAYER_ACTOR_INDEX ||
+                        index >= TOY_GAME_REMOTE_ACTOR_BASE ?
                         TOY_GAME_ACTOR_PLAYER : TOY_GAME_ACTOR_AI;
             dst->class_id = src->class_id;
             dst->anime_character_id = src->anime_character_id;
