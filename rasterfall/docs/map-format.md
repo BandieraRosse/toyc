@@ -70,7 +70,7 @@ prop lamp_post 0 -17000 0 1000 collision=none
 ```sh
 make map-layout
 # 或导出任意地图，固定生成 output.png / output.json
-python3 tools/map_layout_export.py path/to/level.map --output-dir tmp/level-layout
+.venv/map-layout/bin/python tools/map_layout_export.py path/to/level.map --output-dir tmp/level-layout
 make test-map-layout-export
 ```
 

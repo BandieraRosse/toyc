@@ -21,7 +21,7 @@ make map-layout
 ```
 
 环境安装在 `.venv/map-layout/`，不会进入运行时或提交内容；可用
-`tools/map_layout_export.py ... --font path/to/font.ttc` 覆盖字体。
+`.venv/map-layout/bin/python tools/map_layout_export.py ... --font path/to/font.ttc` 覆盖字体。
 
 ```sh
 tools/assets/import_asset.py path/to/asset.json
