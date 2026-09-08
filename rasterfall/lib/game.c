@@ -2833,16 +2833,43 @@ void toy_game_apply_actor_impulse(struct toy_game_actor *actor,
     actor->control_disabled = 1;
 }
 
-static void move_enemy_forced(struct toy_game *g, struct toy_game_enemy *e,
-                              int dx, int dz)
+static int move_enemy_forced_swept(struct toy_game *g,
+                                   struct toy_game_enemy *e,
+                                   int dx, int dz,
+                                   int old_height, int new_height)
 {
-    int nx = e->x + dx;
-    int nz = e->z + dz;
-    int radius = enemy_radius(e);
-    if (!enemy_step_blocked(g, e, nx, e->z, radius, e->ground_y, 1))
-        e->x = nx;
-    if (!enemy_step_blocked(g, e, e->x, nz, radius, e->ground_y, 1))
-        e->z = nz;
+    int start_x, start_z, radius, max_delta, max_step, steps, i, blocked = 0;
+    if (!g || !e) return TOY_GAME_FORCED_MOVE_BLOCKED_X |
+                         TOY_GAME_FORCED_MOVE_BLOCKED_Z;
+    start_x = e->x;
+    start_z = e->z;
+    radius = enemy_radius(e);
+    max_delta = dx < 0 ? -dx : dx;
+    if ((dz < 0 ? -dz : dz) > max_delta) max_delta = dz < 0 ? -dz : dz;
+    max_step = radius / 2;
+    if (max_step < 1) max_step = 1;
+    steps = (max_delta + max_step - 1) / max_step;
+    if (steps < 1) steps = 1;
+    for (i = 1; i <= steps; i++) {
+        int target_x = start_x + (int)((long long)dx * i / steps);
+        int target_z = start_z + (int)((long long)dz * i / steps);
+        int height = old_height +
+            (int)((long long)(new_height - old_height) * i / steps);
+        int saved_airborne_y = e->airborne_y;
+        e->airborne_y = height - e->ground_y;
+        if (!enemy_step_blocked(g, e, target_x, e->z, radius,
+                                e->ground_y, 0))
+            e->x = target_x;
+        else
+            blocked |= TOY_GAME_FORCED_MOVE_BLOCKED_X;
+        if (!enemy_step_blocked(g, e, e->x, target_z, radius,
+                                e->ground_y, 0))
+            e->z = target_z;
+        else
+            blocked |= TOY_GAME_FORCED_MOVE_BLOCKED_Z;
+        e->airborne_y = saved_airborne_y;
+    }
+    return blocked;
 }
 
 static int move_actor_forced(struct toy_game *g, struct toy_game_actor *a,
@@ -3555,15 +3582,21 @@ static void update_enemy_airborne(struct toy_game *g,
                                   struct toy_game_enemy *e, int dt_ms)
 {
     struct toy_game_ground_query ground;
-    int landing_ground;
+    int landing_ground, old_height, new_height, blocked;
+    old_height = e->ground_y + e->airborne_y;
     e->airborne_ms -= dt_ms;
     if (e->airborne_ms <= 0) e->airborne_ms = 1;
     e->airborne_y += e->vertical_velocity;
     e->vertical_velocity -= TOY_GAME_AIRBORNE_GRAVITY;
     if (e->vertical_velocity < -TOY_GAME_FALL_TERMINAL_VELOCITY)
         e->vertical_velocity = -TOY_GAME_FALL_TERMINAL_VELOCITY;
+    new_height = e->ground_y + e->airborne_y;
     if (e->knockback_x || e->knockback_z) {
-        move_enemy_forced(g, e, e->knockback_x, e->knockback_z);
+        blocked = move_enemy_forced_swept(g, e, e->knockback_x,
+                                          e->knockback_z,
+                                          old_height, new_height);
+        if (blocked & TOY_GAME_FORCED_MOVE_BLOCKED_X) e->knockback_x = 0;
+        if (blocked & TOY_GAME_FORCED_MOVE_BLOCKED_Z) e->knockback_z = 0;
     }
     ground = toy_game_query_ground(g, e->x, e->z, enemy_radius(e),
                                    e->ground_y);

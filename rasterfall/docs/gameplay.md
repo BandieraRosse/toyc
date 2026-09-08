@@ -1,7 +1,7 @@
 # 玩法、会话、地图与 AI
 
 > 文档更新：2026-09-08
-> 源码核对基线：工作区（静态 prop profile 碰撞盒作为可站立 RFU primitive；所有人类玩家和 AI 的移动/跳跃/airborne/朝向/武器/库存/切枪/reload/动画/special-control/shove/统计均由 `toy_game_actor` 拥有；本地和远端武器意图经 `toy_game_execute_actor_command()` 进入 actor 规则边界；player/actor 空中强制位移共用确定性分段扫掠，逐轴返回阻挡并消除对应击飞速度；玩家击飞冷却由 actor motion/world 路径推进；Smoker 对玩家和 AI 统一使用 4 秒拉拽、8 秒冷却和冷却期间远离；西侧走廊出口旁新增排除 Tank 的 16 敌人随机刷怪按钮；客户端展示缓存不参与玩法规则）
+> 源码核对基线：工作区（静态 prop profile 碰撞盒作为可站立 RFU primitive；所有人类玩家和 AI 的移动/跳跃/airborne/朝向/武器/库存/切枪/reload/动画/special-control/shove/统计均由 `toy_game_actor` 拥有；本地和远端武器意图经 `toy_game_execute_actor_command()` 进入 actor 规则边界；player/actor 与敌人的空中强制位移均使用确定性分段扫掠，逐轴返回阻挡并消除对应击飞速度；玩家击飞冷却由 actor motion/world 路径推进；Smoker 对玩家和 AI 统一使用 4 秒拉拽、8 秒冷却和冷却期间远离；西侧走廊出口旁新增排除 Tank 的 16 敌人随机刷怪按钮；客户端展示缓存不参与玩法规则）
 
 ## 三层职责
 
@@ -29,7 +29,7 @@ session 的本地复活、商店控制锁、交互死亡判断和托管武器决
 重力，水平方向在落地前保持速度，因此世界空间轨迹为抛物线；最终距离由水平初速度和实际滞空时间
 自然决定。player/actor 的单帧空中强制位移按不超过碰撞半径一半的子步扫掠，子步使用累计目标
 坐标并在本逻辑步的新旧高度间插值；X/Z 仍分轴处理，受阻轴会清除对应 knockback 速度。玩家的击飞冷却不依赖旧的
-`toy_game_update_held()`，本地主机 world step 与客户端 actor motion 都会推进它。
+`toy_game_update_held()`，本地主机 world step 与客户端 actor motion 都会推进它。敌人击飞按自身碰撞半径分段扫掠，在逻辑步的新旧高度间插值，撞墙时仅清除受阻轴的水平速度。Charger 和 Tank 的击飞水平目标距离分别为 9m 和 6m。
 
 ## 地图链路
 

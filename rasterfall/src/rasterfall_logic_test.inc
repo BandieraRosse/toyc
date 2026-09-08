@@ -2728,6 +2728,35 @@ static int run_logic_test(void)
         if (local->hp != hp - TOY_CONFIG_CHARGER_IMPACT_DAMAGE ||
             !(charger->ability.charge_hit_actor_mask & 1ULL)) return 223;
     }
+    /* 敌人高速击飞同样分段扫掠，撞墙后保留切向速度。 */
+    {
+        struct toy_game swept_game;
+        struct toy_game_enemy *enemy;
+        struct toy_map_primitive swept_world[2] = {
+            test_flat_primitive(-5000, 5000, -5000, 5000, 0),
+            test_box_primitive(0, 20, -5000, 5000, 0, 1000,
+                               TOY_MAP_PRIMITIVE_COLLISION)
+        };
+        toy_game_init(&swept_game, 224);
+        toy_game_set_primitives(&swept_game, swept_world, 2, 5000);
+        swept_game.to_spawn = 0;
+        enemy = &swept_game.enemies[0];
+        memset(enemy, 0, sizeof(*enemy));
+        enemy->active = 1;
+        enemy->type = TOY_GAME_ENEMY_PURSUIT_COMMON;
+        enemy->hp = 100;
+        enemy->x = -1000;
+        enemy->airborne_ms = 700;
+        enemy->vertical_velocity = TOY_GAME_AIRBORNE_VELOCITY;
+        enemy->knockback_x = 2000;
+        enemy->knockback_z = 800;
+        swept_game.enemies_alive = 1;
+        toy_game_update_world(&swept_game, 16);
+        if (enemy->x >= 0 || enemy->z != 800 || enemy->knockback_x != 0 ||
+            enemy->knockback_z != 800) return 224;
+        if (TOY_CONFIG_CHARGER_KNOCKBACK_SPEED != 102 ||
+            TOY_CONFIG_TANK_KNOCKBACK != 68) return 225;
+    }
     /* Smoker 控制使用 generation：旧 END 不能清掉更新后的控制。 */
     {
         toy_game_init(&game, 154);

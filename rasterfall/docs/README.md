@@ -1,7 +1,7 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-08
-> 源码核对基线：工作区（地图排布通过 PNG/JSON 导出链路核验；十件 V2 Hybrid 程序化几何与静态 prop；actor 统一 gameplay 状态；本地受击四角闪红与八方向提示；player/actor 空中强制位移共用确定性分段扫掠）
+> 源码核对基线：工作区（地图排布通过 PNG/JSON 导出链路核验；十件 V2 Hybrid 程序化几何与静态 prop；actor 统一 gameplay 状态；本地受击四角闪红与八方向提示；player/actor 与敌人空中强制位移均使用确定性分段扫掠）
 
 本目录面向接手 Rasterfall 任务的编码代理。目标不是介绍玩法，而是先把问题归到正确的
 状态所有者和文件，再开始搜索。命令、资源导入方法和用户可见特性仍以
@@ -62,7 +62,7 @@ Molotov 的世界实体显式携带 `owner_actor_id`，本地预测 body 位置�
 主机和客户端的开火展示都经 `sync_network_fire_effects()` 适配到同一 runtime，并按 fire sequence
 抑制重复事件。不要把纯视觉状态塞进 `toy_game`，也不要让渲染器修改权威玩法结果。
 
-player/actor 的 airborne forced/knockback movement 统一由玩法核心按碰撞半径分段扫掠；每个子步
+player/actor 和敌人的 airborne forced/knockback movement 均由玩法核心按各自碰撞半径分段扫掠；每个子步
 保留 X/Z 分轴滑动，并在受阻时清除对应 knockback 分量。不可高抛越过的地图边界使用 primitive
 的显式 `BLOCKS_AIRBORNE` 属性，不从 `role` 推导。
 
