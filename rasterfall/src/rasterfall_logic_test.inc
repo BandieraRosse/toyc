@@ -214,6 +214,37 @@ static int primitive_gameplay_logic_test(void)
         }
     }
     {
+        struct toy_game boundary_game;
+        struct toy_game_actor *boundary_player;
+        toy_game_init(&boundary_game, 216);
+        boundary_player = toy_game_local_player_actor(&boundary_game);
+        boundary_game.to_spawn = 0;
+        boundary_game.safe_room_count = 0;
+        toy_game_set_primitives(&boundary_game, level_map.primitives,
+                                level_map.primitive_count,
+                                level_map.room_limit);
+        boundary_player->ground_y = 0;
+        /* The north boundary is solid outside the central corridor opening. */
+        boundary_player->x = 4000;
+        boundary_player->z = 23800;
+        if (!toy_game_try_move_actor(&boundary_game, boundary_player,
+                                     boundary_player->x, 24200))
+            return 21;
+        /* The x=-800..800 opening must remain traversable into the corridor. */
+        boundary_player->x = 0;
+        boundary_player->z = 23800;
+        if (!toy_game_try_move_actor(&boundary_game, boundary_player,
+                                     boundary_player->x, 24200))
+            return 22;
+        /* The corridor side wall must still prevent leaving its width. */
+        boundary_player->x = 0;
+        boundary_player->z = 25000;
+        if (!toy_game_position_blocked_at_height(
+                &boundary_game, 900, boundary_player->z,
+                TOY_GAME_PLAYER_RADIUS, boundary_player->ground_y))
+            return 23;
+    }
+    {
         struct toy_game west_game;
         struct toy_game_actor *west_player;
         int i, max_x;
