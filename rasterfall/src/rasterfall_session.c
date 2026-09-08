@@ -2162,7 +2162,6 @@ void rasterfall_session_step(struct rasterfall_session *session,
                              const struct rasterfall_command *command,
                              int dt_ms)
 {
-    unsigned char keys[TOY_GAME_KEY_RELOAD + 1];
     struct rasterfall_command managed_command;
     int old_reloading;
     unsigned int old_fire_seq;
@@ -2288,23 +2287,30 @@ void rasterfall_session_step(struct rasterfall_session *session,
             session->banner_text = revived->name;
         }
     }
-    memset(keys, 0, sizeof(keys));
-    if (command->buttons & RASTERFALL_CMD_RELOAD) keys[TOY_GAME_KEY_RELOAD] = 1;
-    if (command->buttons & RASTERFALL_CMD_SLOT_1) keys[TOY_GAME_KEY_SLOT_1] = 1;
-    if (command->buttons & RASTERFALL_CMD_SLOT_2) keys[TOY_GAME_KEY_SLOT_2] = 1;
-    if (command->buttons & RASTERFALL_CMD_SLOT_3) keys[TOY_GAME_KEY_SLOT_3] = 1;
-    if (command->buttons & RASTERFALL_CMD_SLOT_4) keys[TOY_GAME_KEY_SLOT_4] = 1;
     /* World simulation is separate from the local actor's weapon step. */
     toy_game_update_world(&session->game_state, dt_ms);
     {
         struct toy_game_actor *player =
             toy_game_local_player_actor(&session->game_state);
+        struct toy_game_actor_command actor_command;
+        int fired = 0;
         old_reloading = player->reloading;
         old_fire_seq = player->fire_seq;
-        int fired = toy_game_update_actor_weapon_held(
-            &session->game_state, player, keys,
-            (command->buttons & RASTERFALL_CMD_FIRE) != 0,
-            command->fire_held, player->sy, player->cy, dt_ms, 100);
+        memset(&actor_command, 0, sizeof(actor_command));
+        actor_command.switch_slot = -1;
+        actor_command.aim_active = 1;
+        actor_command.aim_sy = player->sy;
+        actor_command.aim_cy = player->cy;
+        actor_command.reload = (command->buttons & RASTERFALL_CMD_RELOAD) != 0;
+        actor_command.fire_pressed =
+            (command->buttons & RASTERFALL_CMD_FIRE) != 0;
+        actor_command.fire_held = command->fire_held;
+        if (command->buttons & RASTERFALL_CMD_SLOT_1) actor_command.switch_slot = 0;
+        else if (command->buttons & RASTERFALL_CMD_SLOT_2) actor_command.switch_slot = 1;
+        else if (command->buttons & RASTERFALL_CMD_SLOT_3) actor_command.switch_slot = 2;
+        else if (command->buttons & RASTERFALL_CMD_SLOT_4) actor_command.switch_slot = 3;
+        toy_game_execute_actor_command(&session->game_state, player,
+                                       &actor_command, dt_ms, 100);
         if ((command->buttons & RASTERFALL_CMD_FIRE) &&
             toy_game_actor_use_special(&session->game_state, player,
                                        player->sy, player->cy)) fired = 1;
@@ -2408,7 +2414,6 @@ static void session_step_client_mode(struct rasterfall_session *session,
                                      const struct rasterfall_command *command,
                                      int dt_ms, int suppress_presentation)
 {
-    unsigned char keys[TOY_GAME_KEY_RELOAD + 1];
     int i;
     int saved_throw_timer;
     int old_reloading;
@@ -2473,26 +2478,27 @@ static void session_step_client_mode(struct rasterfall_session *session,
     }
     /* 交互由主机权威执行。客户端只发送 INTERACT 命令，等待主机快照
      * 回传拾取、救援、弹药、空气墙和刷怪结果，避免两端世界分叉。 */
-    memset(keys, 0, sizeof(keys));
-    if (command->buttons & RASTERFALL_CMD_RELOAD) keys[TOY_GAME_KEY_RELOAD] = 1;
-    if (command->buttons & RASTERFALL_CMD_SLOT_1) keys[TOY_GAME_KEY_SLOT_1] = 1;
-    if (command->buttons & RASTERFALL_CMD_SLOT_2) keys[TOY_GAME_KEY_SLOT_2] = 1;
-    if (command->buttons & RASTERFALL_CMD_SLOT_3) keys[TOY_GAME_KEY_SLOT_3] = 1;
-    if (command->buttons & RASTERFALL_CMD_SLOT_4) keys[TOY_GAME_KEY_SLOT_4] = 1;
     old_reloading = local_player->reloading;
     old_fire_seq = local_player->fire_seq;
     {
-        int weapon = local_player->slots[local_player->current_slot].weapon;
-        int client_hitscan = weapon != TOY_GAME_WEAPON_AXE &&
-            weapon != TOY_GAME_WEAPON_PILL &&
-            weapon != TOY_GAME_WEAPON_BOMB &&
-            weapon != TOY_GAME_WEAPON_MOLOTOV;
-        toy_game_update_actor_weapon_held(
-            &session->game_state,
-            toy_game_local_player_actor(&session->game_state), keys,
-            client_hitscan && (command->buttons & RASTERFALL_CMD_FIRE),
-            client_hitscan && command->fire_held, camera->sy, camera->cy,
-            dt_ms, 100);
+        struct toy_game_actor_command actor_command;
+        int weapon;
+        memset(&actor_command, 0, sizeof(actor_command));
+        actor_command.switch_slot = -1;
+        actor_command.aim_active = 1;
+        actor_command.aim_sy = camera->sy;
+        actor_command.aim_cy = camera->cy;
+        actor_command.reload = (command->buttons & RASTERFALL_CMD_RELOAD) != 0;
+        actor_command.fire_pressed =
+            (command->buttons & RASTERFALL_CMD_FIRE) != 0;
+        actor_command.fire_held = command->fire_held;
+        if (command->buttons & RASTERFALL_CMD_SLOT_1) actor_command.switch_slot = 0;
+        else if (command->buttons & RASTERFALL_CMD_SLOT_2) actor_command.switch_slot = 1;
+        else if (command->buttons & RASTERFALL_CMD_SLOT_3) actor_command.switch_slot = 2;
+        else if (command->buttons & RASTERFALL_CMD_SLOT_4) actor_command.switch_slot = 3;
+        toy_game_execute_actor_command(&session->game_state, local_player,
+                                       &actor_command, dt_ms, 100);
+        weapon = toy_game_actor_current_weapon(local_player);
         /* Melee damage and projectile creation are host-authoritative, but
          * their first-person windup must start on the owning client.  The
          * client intentionally does not call toy_game_fire for these weapons

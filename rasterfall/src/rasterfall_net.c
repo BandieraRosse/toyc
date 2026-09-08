@@ -2290,11 +2290,6 @@ static void net_apply_client(struct rasterfall_net *net,
     actor->vertical_velocity = client->latest_input.airborne_velocity;
     actor->air_x = client->latest_input.air_x;
     actor->air_z = client->latest_input.air_z;
-    if (client->latest_input.current_slot >= 0 &&
-        client->latest_input.current_slot < TOY_GAME_WEAPON_SLOTS &&
-        client->latest_input.current_slot != actor->current_slot)
-        toy_game_actor_switch_weapon(g, actor,
-                                     client->latest_input.current_slot);
     /* Client locomotion is always authoritative.  Special attacks arrive as
      * impulses/control events and never switch this path to host position. */
     toy_game_update_actor_ground(g, index);
@@ -2305,12 +2300,17 @@ static void net_apply_client(struct rasterfall_net *net,
         toy_game_actor_set_animation(actor, TOY_GAME_ANIM_SHOVE);
     }
     {
-        unsigned char keys[TOY_GAME_KEY_RELOAD + 1];
-        memset(keys, 0, sizeof(keys));
-        if (client->command.buttons & RASTERFALL_CMD_RELOAD)
-            keys[TOY_GAME_KEY_RELOAD] = 1;
-        toy_game_update_actor_weapon_held(g, actor, keys, 0, 0,
-                                          actor->sy, actor->cy, 16, 100);
+        struct toy_game_actor_command actor_command;
+        memset(&actor_command, 0, sizeof(actor_command));
+        actor_command.switch_slot = client->latest_input.current_slot;
+        actor_command.aim_active = 1;
+        actor_command.aim_sy = actor->sy;
+        actor_command.aim_cy = actor->cy;
+        actor_command.reload =
+            (client->command.buttons & RASTERFALL_CMD_RELOAD) != 0;
+        /* Hitscan fire is applied from the trusted report below; the
+         * executor still owns its timers and inventory transitions. */
+        toy_game_execute_actor_command(g, actor, &actor_command, 16, 100);
     }
     if (client->command.buttons & RASTERFALL_CMD_REVIVE)
         net_paid_revive_client(net, session, client);

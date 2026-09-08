@@ -1,7 +1,7 @@
 # 玩法、会话、地图与 AI
 
 > 文档更新：2026-09-07
-> 源码核对基线：工作区（静态 prop profile 碰撞盒作为可站立 RFU primitive；所有人类玩家和 AI 的移动/跳跃/airborne/朝向/武器/库存/切枪/reload/动画/special-control/shove/统计均由 `toy_game_actor` 拥有；Smoker 对玩家和 AI 统一使用 4 秒拉拽、8 秒冷却和冷却期间远离；西侧走廊出口旁新增排除 Tank 的 16 敌人随机刷怪按钮；客户端展示缓存不参与玩法规则）
+> 源码核对基线：工作区（静态 prop profile 碰撞盒作为可站立 RFU primitive；所有人类玩家和 AI 的移动/跳跃/airborne/朝向/武器/库存/切枪/reload/动画/special-control/shove/统计均由 `toy_game_actor` 拥有；本地和远端武器意图经 `toy_game_execute_actor_command()` 进入 actor 规则边界；Smoker 对玩家和 AI 统一使用 4 秒拉拽、8 秒冷却和冷却期间远离；西侧走廊出口旁新增排除 Tank 的 16 敌人随机刷怪按钮；客户端展示缓存不参与玩法规则）
 
 ## 三层职责
 
