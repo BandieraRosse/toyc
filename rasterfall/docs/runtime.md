@@ -26,7 +26,8 @@
 `--visual-capture <scenario> --visual-output <path>` 必须成对提供。解析后立即进入
 `rasterfall_render_visual_capture()` 并退出，先于字库、网络、session/map、窗口和音频初始化。
 固定场景不读取时钟、不推进 simulation，也不受交互式画面选项影响；不要与其他诊断模式混用。
-支持 `procedural-humanoid`、`hurd-squad` 和 `--character-acceptance <model.rmesh> <output-dir>`；后者仍是独立的纯展示 fixture，不读取正式 world actor；
+支持 `procedural-humanoid`、`hurd-squad`、`--character-acceptance <model.rmesh> <output-dir>` 和
+`--character-world-capture <output-dir>`；前两者仍是独立的纯展示 fixture，不读取正式 world actor；
 正式 Hurd 四人另由 session reset 创建，两条路径共享 character/profession profile 和程序化人物绘制入口。
 场景与离屏输出契约见 [rendering.md](rendering.md) 的 Visual CLI。未知场景、缺少参数、
 资源加载/渲染/文件写入失败均返回非零并输出错误。

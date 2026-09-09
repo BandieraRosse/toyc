@@ -52,6 +52,8 @@ int rasterfall_render_visual_capture(const char *scenario, const char *output)
     }
     gallery_loaded = squad ? 2 : 1;
     memset(&context, 0, sizeof(context));
+    context.session = active_session;
+    context.effects = active_effects;
     context.fixed_floor_lighting = 1;
     rasterfall_render_bind(&context);
     surface.width = squad ? 1600 : 800;
@@ -136,6 +138,136 @@ static void visual_acceptance_pose(struct rasterfall_model_asset *model, int mod
     composition.rifle_stance = 1; composition.upper_body_lock = 1;
     composition.rifle_pose = &pose;
     rasterfall_animation_compose(model, &composition);
+    if (mode == 3) {
+        composition_rotate_role(model, RASTERFALL_HUMANOID_LEFT_UPPER_LEG,
+                                "RF_L_UPPER_LEG", -18, 0, 0);
+        composition_rotate_role(model, RASTERFALL_HUMANOID_LEFT_LOWER_LEG,
+                                "RF_L_LOWER_LEG", 30, 0, 0);
+        composition_rotate_role(model, RASTERFALL_HUMANOID_RIGHT_UPPER_LEG,
+                                "RF_R_UPPER_LEG", 10, 0, 0);
+        rasterfall_model_update_bones(model);
+    }
+}
+
+/* Fixed presentation-only strip in the existing developer zone. It shares
+ * the world renderer, depth buffer, lighting and standard AK path; it never
+ * creates gameplay actors or map collision. */
+static int render_character_test_strip(struct toy_renderer *renderer,
+                                       const struct camera *camera)
+{
+    static const int rf_x[] = {-14000, -10000, -6000};
+    static const int rf_mode[] = {1, 2, 3};
+    const struct rasterfall_skeletal_actor_profile profile =
+        {"rf_humanoid_acceptance", NULL, NULL, 1736, 0, 1024};
+    const struct rasterfall_pose_calibration *calibration;
+    const struct rasterfall_weapon_asset_profile *weapon;
+    struct rasterfall_model_attachment_transform frame;
+    struct rasterfall_procedural_humanoid_state old_state;
+    int i, pixels = 0, scale;
+    if (!active_session || active_pose_preview) return 0;
+    if (!character_strip_load_attempted) {
+        int budget = renderer->frame_budget_ms;
+        character_strip_load_attempted = 1;
+        toy_renderer_set_frame_budget(renderer, 0);
+        if (rasterfall_model_load(&character_strip_model,
+            "rasterfall/private-assets/models/rf_humanoid_acceptance.rmesh") < 0)
+            __fprintf(2, "rasterfall: character test strip unavailable\n");
+        toy_renderer_set_frame_budget(renderer, budget);
+    }
+    memset(&old_state, 0, sizeof(old_state));
+    old_state.x = -18000; old_state.z = -20000;
+    old_state.weapon = TOY_GAME_WEAPON_AK;
+    old_state.sy = 0; old_state.cy = -1024;
+    old_state.animation_id = TOY_GAME_ANIM_IDLE;
+    pixels += rasterfall_render_procedural_humanoid(renderer, camera, &old_state,
+        rasterfall_character_profile(RASTERFALL_CHARACTER_HURD_GUNSMITH));
+    if (!character_strip_model.data) return pixels;
+    scale = character_model_scale(&character_strip_model, profile.target_height_mm);
+    weapon = rasterfall_weapon_asset_profile(TOY_GAME_WEAPON_AK);
+    calibration = rasterfall_pose_calibration_resolve(NULL, 1, TOY_GAME_WEAPON_AK);
+    for (i = 0; i < 3; i++) {
+        int x = rf_x[i], z = -20000;
+        if (!gallery_model_visible(&renderer->surface, camera,
+                                   &character_strip_model, x, -900, z,
+                                   scale, 1, 0, -1024)) continue;
+        visual_acceptance_pose(&character_strip_model, rf_mode[i]);
+        if (rifle_frame_transform(&character_strip_model, &frame) < 0) continue;
+        if (calibration->left_ik)
+            rifle_solve_hands(&character_strip_model, &frame, calibration,
+                              weapon, scale);
+        active_gallery_facing = 1;
+        active_gallery_sy = 0; active_gallery_cy = -1024;
+        pixels += render_gallery_model(renderer, camera, &character_strip_model,
+                                       x, -900, z, scale);
+        pixels += render_skeletal_rifle(renderer, camera, &character_strip_model,
+                                        &frame, &profile, calibration,
+                                        x, -900, z, 0, -1024,
+                                        TOY_GAME_WEAPON_AK, 0);
+        active_gallery_facing = 0;
+    }
+    return pixels;
+}
+
+static void character_world_capture_camera(struct camera *camera, int distance)
+{
+    memset(camera, 0, sizeof(*camera));
+    camera->body.x = -10000;
+    camera->body.z = -20000 + distance;
+    camera->view.y = -350;
+    camera->view.cy = -1024;
+    camera->view.pitch_cy = 1024;
+}
+
+int rasterfall_render_character_world_capture(const char *output_dir)
+{
+    static const char *names[] = {"near", "mid", "far"};
+    static const int distances[] = {2000, 4000, 8000};
+    int i, result = 1;
+    if (!active_session || !output_dir || !*output_dir) return 1;
+    if (tlibc_recursive_mkdir(output_dir) < 0) return 1;
+    for (i = 0; i < 3; i++) {
+        struct camera camera;
+        struct toy_renderer renderer;
+        struct toy_surface surface;
+        char path[512];
+        uint32_t *pixels;
+        int stage_result;
+        int submitted_commands;
+        unsigned long submitted_triangles;
+        character_world_capture_camera(&camera, distances[i]);
+        memset(&surface, 0, sizeof(surface));
+        surface.width = 1280; surface.height = 720; surface.stride = 1280 * 4;
+        pixels = tlibc_malloc((size_t)surface.stride * surface.height);
+        if (!pixels) return 1;
+        surface.pixels = pixels;
+        toy_renderer_init(&renderer);
+        toy_renderer_set_frame_budget(&renderer, 0);
+        if (toy_renderer_begin(&renderer, &surface, 0x151922) < 0) {
+            toy_renderer_destroy(&renderer); tlibc_free(pixels); return 1;
+        }
+        rasterfall_render_scene(&renderer, &camera);
+        rasterfall_render_flags(&renderer, &camera);
+        rasterfall_render_enemies(&renderer, &camera);
+        rasterfall_render_ai_teammate(&renderer, &camera);
+        rasterfall_render_sign_text(&renderer, &camera);
+        rasterfall_render_flag_text(&renderer, &camera);
+        submitted_commands = renderer.cmd_count;
+        submitted_triangles = renderer.submitted_triangles;
+        stage_result = toy_renderer_flush(&renderer);
+        if (renderer.cmd_overflow || stage_result < 0 ||
+            snprintf(path, sizeof(path), "%s/%s.bmp", output_dir, names[i]) >=
+                (int)sizeof(path) || rasterfall_hud_dump_bmp(path, &surface) < 0) {
+            toy_renderer_destroy(&renderer); tlibc_free(pixels); return 1;
+        }
+        toy_renderer_destroy(&renderer);
+        tlibc_free(pixels);
+        __printf("rasterfall: character world capture distance=%d output=%s\n",
+                 distances[i], path);
+        __printf("rasterfall: character world capture raster commands=%d triangles=%lu pixels=%d\n",
+                 submitted_commands, submitted_triangles, stage_result);
+    }
+    result = 0;
+    return result;
 }
 
 static int visual_acceptance_model_frame(struct toy_renderer *renderer,

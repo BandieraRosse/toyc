@@ -64,6 +64,11 @@ prop crate -14500 -17000 0 1000
 1500 RFU 排列，renderer 与 gameplay primitive 共用各资产 profile 的尺寸契约，避免展示和
 默认碰撞盒重叠。
 
+Character Test Strip 是渲染器拥有的 presentation-only 开发测试带，固定在 `z=-20000`、
+工业 prop 陈列带后方。地图只声明可见 label；旧 procedural 与 RF Humanoid 的位置、姿态和
+AK attachment 由 `render_character_test_strip()` 固定配置，避免把测试角色写入 `toy_game_actor`
+或地图碰撞。`--character-world-capture` 使用该地图和正常 world render path 生成真实场景截图。
+
 `x/z` 使用 RFU，实例落在地面锚点 `y=-900`；`yaw` 为绕世界 Y 轴的角度；`scale=1000`
 表示资产原始设计尺寸。默认根据资产 profile 的 RFU 碰撞盒生成普通 gameplay box；视觉网格
 与该盒体独立。仅在确有需要时可追加 `collision=none`，例如：

@@ -217,12 +217,15 @@ static int render_skeletal_rifle(
     const struct rasterfall_pose_calibration *calibration,
     int actor_x, int base_y, int actor_z, int actor_sy, int actor_cy,
     int weapon, int muzzle_flash);
+static int render_character_test_strip(struct toy_renderer *, const struct camera *);
 
 static struct rasterfall_model_asset gallery_models[RASTERFALL_MODEL_MAX_GALLERY];
 static int gallery_loaded;
 static struct rasterfall_model_asset static_prop_models[RASTERFALL_PROP_ASSET_COUNT];
 static unsigned char static_prop_model_attempted[RASTERFALL_PROP_ASSET_COUNT];
 static struct rasterfall_model_asset private_character_model;
+static struct rasterfall_model_asset character_strip_model;
+static int character_strip_load_attempted;
 /* Process-local model used only by the deterministic character acceptance CLI. */
 static struct rasterfall_model_asset acceptance_capture_model;
 static struct rasterfall_model_asset private_character_lod_model;
@@ -4221,6 +4224,9 @@ static int render_scene(struct toy_renderer *renderer, const struct camera *came
     pixels += render_static_props(renderer, camera);
     pixels += render_model_gallery(renderer, camera);
     scene_stats.gallery_us = render_monotonic_us() - phase_start;
+    phase_start = render_monotonic_us();
+    pixels += render_character_test_strip(renderer, camera);
+    scene_stats.private_model_us += render_monotonic_us() - phase_start;
     phase_start = render_monotonic_us();
     pixels += render_private_character(renderer, camera);
     scene_stats.private_model_us = render_monotonic_us() - phase_start;

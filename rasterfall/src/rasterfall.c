@@ -2626,6 +2626,14 @@ int main(int argc, char **argv)
     if (seed == 0) seed = 1;
     rasterfall_session_reset(&session, &camera, seed);
     rf_windows_log("startup: session reset");
+    if (options.character_world_capture_dir) {
+        int capture_result = rasterfall_render_character_world_capture(
+            options.character_world_capture_dir);
+        if (model_texture.blob) toy_texture_unload(&model_texture);
+        rasterfall_session_unload(&session);
+        toy_renderer_destroy(&renderer);
+        return capture_result;
+    }
     window = toy_window_open("Rasterfall", RASTERFALL_DEFAULT_WIDTH,
                              RASTERFALL_DEFAULT_HEIGHT);
     if (!window) {
