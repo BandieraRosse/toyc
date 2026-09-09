@@ -1,7 +1,7 @@
 # 资源、模型与动画
 
 > 文档更新：2026-09-09
-> 源码核对基线：工作区（Character Asset Contract V1；统一 manifest 驱动的 GLB/PMX、TTEX 与 LOD 离线导入入口；静态 RMESH prop 的 world-space 渲染入口和共享模型缓存）
+> 源码核对基线：工作区（RFCHAR importer 与 RFM2 v14 CHR1 stable humanoid/attachment tables；PMX compatibility path）
 
 新建或生成 Blender 人形资产必须先读 [`character-assets.md`](character-assets.md)。它冻结
 Blender source → Character GLB → importer → runtime character asset → humanoid animation 主线；
@@ -33,10 +33,13 @@ Blender source → Character GLB → importer → runtime character asset → hu
 ## 工具链定位
 
 - 统一离线入口、manifest 与完整性验证：`tools/assets/import_asset.py`；runtime 不读取 manifest。
-- GLB 转 RMESH：`app/glb2rmesh.c`；GLB 检查：`app/glb_inspect.c`。
+- 静态 GLB 转 RMESH：`app/glb2rmesh.c`；skeletal RFCHAR 转换：
+  `tools/assets/rfchar_import.py`；GLB 检查：`app/glb_inspect.c`。
 - PMX 转换：`app/pmx2rmesh.c`、`tools/import-pmx-model.sh`。
 - Blender 角色导出：新资产遵循 `character-assets.md` 输出 canonical GLB；现有
   `tools/blender/export_rasterfall_character.py` 是 Mixamo FBX→PMX/RFM2 兼容桥，不是新标准。
+- 官方正向 fixture 为 `tools/blender/generate_rfchar_fixture.py`，runtime 验证器为
+  `app/rfchar_runtime_test.c`；新资产使用 stable role/attachment API，历史资产才按骨名推断。
 - LOD：统一入口编排 `tools/rmesh_lod.py`；Makefile 的既有 `lod-*` 目标继续可用。
 - 资源许可与发布边界：`asset-sources.md`；历史实验现场仅在 `archive/` 中追溯。
 

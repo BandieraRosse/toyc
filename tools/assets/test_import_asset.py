@@ -5,6 +5,7 @@ import json
 import shutil
 import struct
 import subprocess
+import sys
 import tempfile
 import unittest
 import zlib
@@ -121,7 +122,7 @@ class AssetImporterTest(unittest.TestCase):
             manifest = root / "bad.json"
             manifest.write_text(json.dumps({"schema": 1, "id": "bad", "type": "static_prop",
                                             "source": "bad.glb", "output": "bad.rmesh"}))
-            result = subprocess.run([str(IMPORTER), str(manifest), "--validate-only"],
+            result = subprocess.run([sys.executable, str(IMPORTER), str(manifest), "--validate-only"],
                                     cwd=REPO, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn(b"unknown manifest fields", result.stderr)

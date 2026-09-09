@@ -27,8 +27,8 @@ def validate(data):
     if len(data) < HEADER or data[:4] != b"RFM2":
         raise ValueError("not an RFM2 mesh")
     version = u32(data, 4)
-    if version < 2 or version > 13:
-        raise ValueError("LOD builder requires RFM2 v2-v13")
+    if version < 2 or version > 14:
+        raise ValueError("LOD builder requires RFM2 v2-v14")
     vertices, indices = u32(data, 8), u32(data, 12)
     primitives, materials = u32(data, 44), u32(data, 48)
     material_bytes = 40 if version >= 9 else 24 if version >= 8 else 16

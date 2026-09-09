@@ -1,7 +1,7 @@
 # Rasterfall Character Asset Contract V1 / RF Humanoid V1
 
 > 文档更新：2026-09-09
-> 源码核对基线：工作区（RFM2 v13 / SKN1 BDEF1-BDEF2、`rasterfall_humanoid_bone`、GLB inspector 与 Blender FBX→PMX 兼容导出器）
+> 源码核对基线：工作区（RFM2 v14 / SKN1 + CHR1、正式 RFCHAR importer、runtime stable API 与 Blender reference fixture）
 
 本文是所有新 Rasterfall 人形角色资产的第一入口。V1 冻结 Blender 到离线 importer 的输入门；
 它不承诺任意 glTF 的兼容性，也不要求 runtime 直接读取 GLB。主线固定为：
@@ -124,16 +124,31 @@ build/glb-inspect --self-test
 primitive 属性、joint/weight/count/归一化、attachment 及 TRS/scale；未来 importer 增加能力时必须先
 更新本契约、validator fixture 和诊断，再扩 runtime。
 
+## Character Importer V1 与 reference fixture
+
+正式主链已经可执行：
+
+```sh
+blender --background --factory-startup --python tools/blender/generate_rfchar_fixture.py -- --output tmp/rfchar_fixture.glb
+build/glb-inspect tmp/rfchar_fixture.glb contract
+python3 tools/assets/rfchar_import.py tmp/rfchar_fixture.glb tmp/rfchar_fixture.rmesh
+build/rfchar_runtime_test tmp/rfchar_fixture.rmesh
+build/rasterfall --model-pose-views tmp/rfchar_fixture.rmesh tmp/rfchar-pose rfchar-test
+```
+
+Importer 总是先运行 validator，再合并同一 skin 的全部 mesh/triangle primitive，写入 512 RFU/m
+顶点、法线、UV、材质、SKN1 骨架/BDEF 与 CHR1 stable tables。reference fixture 包含完整 21-role
+T-pose、三个 mesh node、两个 material、BDEF1/BDEF2、`WEAPON_R` 与可选 `BACK`。
+
+RFM2 v14 在完整 SKN1 后追加 CHR1：32-byte header、21 个 role→bone `uint32`，以及每项 40-byte
+attachment `{id,parent bone,local position RFU,local quaternion}`。v2-v13 继续读取；无 CHR1 的 PMX
+仍使用名称 mapper。runtime API 是 `rasterfall_model_humanoid_bone()` 与
+`rasterfall_model_character_attachment_transform()`。固定 `rfchar-test` pose 同时旋转右上臂、
+右前臂和左上腿；model views 额外输出 `three-quarter.bmp`。
+
 ## 当前缺口与下一阶段边界
 
-现有 RFM2 已能表达骨骼父链、绝对 rest position、BDEF1/BDEF2、材质与 CPU skinning，也已有格式
-无关 humanoid role/basis/retarget；这些直接复用。主要缺口是：RFM2 尚无 stable humanoid mapping 与
-attachment table；运行时附件仍按 bone name 查询；GLB preview 只读首个 primitive/skin；静态
-`glb2rmesh` 忽略 node transform 和 skin；Blender 角色工具仍是 Mixamo FBX→日文 PMX 的兼容桥且会
-静默裁掉多余权重；模型 resource/instance 尚未拆分。
-
-下一阶段 skeletal GLB importer 只负责：严格运行本门禁；合并同一 skin 的全部 triangle primitive；
-求值默认 node hierarchy 与 inverse bind；米→RFU；把最多二权重写为 SKN1 BDEF；写材质/纹理；把
-canonical humanoid 与 attachment 映射写入一个版本化 runtime section，并由 loader 暴露稳定 ID
-查询。它不实现通用 glTF、动画导入、IK 自动生成、PMX 名称猜测、玩法角色注册、resource/instance
-重构或 Blender runtime 依赖。
+当前闭环不导入 animation clip，不实现通用 glTF、IK 自动生成、玩法角色注册或 model
+resource/instance 重构。正式 AI 低模制作前还需要角色造型/材质预算、Blender exporter 版本与依赖
+锁定、动画 clip milestone，以及至少一份非 fixture 的 art acceptance asset。PMX mapper 与静态
+`glb2rmesh` 继续作为兼容路径，但不定义新角色契约。

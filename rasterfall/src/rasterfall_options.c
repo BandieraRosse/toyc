@@ -63,7 +63,7 @@ void rasterfall_options_usage(int fd)
         "  --visual-capture <procedural-humanoid|hurd-squad> --visual-output <path.bmp>\n"
         "  --model-views <model> <dir> [--model-views-supersample <1|2>]\n"
         "  --model-static-views <model> <dir>\n"
-        "  --model-pose-views <model> <dir> <bind|right-arm|arms|body>\n"
+        "  --model-pose-views <model> <dir> <bind|right-arm|arms|body|rfchar-test>\n"
         "  --model-material-regression <model> <dir>\n"
         "  --model-performance <model> [iterations] [workers]\n"
         "  --actor-performance [iterations] [frontend-workers] [raster-workers]\n"
@@ -144,6 +144,7 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
             else if(!strcmp(pose,"right-arm"))o->model_pose=RASTERFALL_MODEL_POSE_RIGHT_ARM;
             else if(!strcmp(pose,"arms"))o->model_pose=RASTERFALL_MODEL_POSE_ARMS;
             else if(!strcmp(pose,"body"))o->model_pose=RASTERFALL_MODEL_POSE_BODY_TURN;
+            else if(!strcmp(pose,"rfchar-test"))o->model_pose=RASTERFALL_MODEL_POSE_RFCHAR_TEST;
             else {__fprintf(2,"rasterfall: invalid model pose %s\n",pose);return -1;}
         } else if (!strcmp(option,"--model-bones")) {
             if(require_arguments(argc,argv,arg,1,option)<0)return -1;

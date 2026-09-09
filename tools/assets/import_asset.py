@@ -176,7 +176,7 @@ def rmesh_info(path):
         raise ImportFailure("not an RFM2 mesh: %s" % path)
     version, vertices, indices = struct.unpack_from("<III", data, 4)
     primitives, materials, primitive_at, material_at = struct.unpack_from("<IIII", data, 44)
-    if not 2 <= version <= 13 or not vertices or not indices or indices % 3:
+    if not 2 <= version <= 14 or not vertices or not indices or indices % 3:
         raise ImportFailure("invalid RFM2 counts/version: %s" % path)
     material_bytes = 40 if version >= 9 else 24 if version >= 8 else 16
     vertex_bytes = 36 if version >= 10 else 32 if version >= 6 else 24
@@ -285,8 +285,8 @@ def import_asset(args):
         raise ImportFailure("source must be an existing .glb or .pmx file: %s" % source)
     if manifest["type"] == "static_prop" and source.suffix.lower() != ".glb":
         raise ImportFailure("static_prop requires a standardized GLB source")
-    if manifest["type"] == "character" and source.suffix.lower() != ".pmx":
-        raise ImportFailure("character requires PMX so skeleton/root/bind pose semantics are preserved")
+    if manifest["type"] == "character" and source.suffix.lower() not in (".glb", ".pmx"):
+        raise ImportFailure("character requires an RFCHAR GLB or compatibility PMX source")
     repo = Path(__file__).resolve().parents[2]
     output_root = (args.output_root or repo / "rasterfall/private-assets/models").resolve()
     output_root.mkdir(parents=True, exist_ok=True)
@@ -298,7 +298,10 @@ def import_asset(args):
         print("asset-import: valid", manifest["id"])
         return
     if not args.no_build:
-        targets = ["build/toyasset", "app-glb2rmesh" if source.suffix.lower() == ".glb" else "app-pmx2rmesh"]
+        if manifest["type"] == "character" and source.suffix.lower() == ".glb":
+            targets = ["build/toyasset", "app-glb-inspect"]
+        else:
+            targets = ["build/toyasset", "app-glb2rmesh" if source.suffix.lower() == ".glb" else "app-pmx2rmesh"]
         run([args.make, "-j"] + targets, cwd=repo)
     toyasset = repo / "build/toyasset"
     converter = repo / "build" / ("glb2rmesh" if source.suffix.lower() == ".glb" else "pmx2rmesh")
@@ -311,7 +314,11 @@ def import_asset(args):
         raw.mkdir()
         textures = stage / (asset_id + ".textures")
         if source.suffix.lower() == ".glb":
-            run([converter, source, mesh])
+            if manifest["type"] == "character":
+                run([sys.executable, repo / "tools/assets/rfchar_import.py", source, mesh,
+                     "--validator", repo / "build/glb-inspect"])
+            else:
+                run([converter, source, mesh])
             extract_glb_textures(source, raw)
         else:
             run([converter, source, mesh, raw])

@@ -1,7 +1,7 @@
 # Rasterfall 资产转换与诊断
 
 > 文档更新：2026-09-09
-> 源码核对基线：工作区（Character Asset Contract V1 与 GLB validator；统一 importer 契约；十件 V2 Hybrid GLB 与局部 32×32 sign 经现有入口安装 RMESH/TTEX）
+> 源码核对基线：工作区（RFCHAR validator → skeletal importer → RFM2 v14/SKN1/CHR1；统一 importer 契约）
 
 本文记录可执行的模型、纹理和动画工具链。运行时模块边界见 `assets-animation.md`，动画求值契约
 见 `animation-architecture.md`，资源是否允许发布见 `asset-sources.md`。
@@ -50,8 +50,8 @@ runtime 不解析 JSON。当前 importer 不生成 runtime registry，避免在�
 - `static_prop`：Blender 源场景为真实米制、Z-up、-Y forward；标准化 GLB 为 Y-up、+Z forward，
   pivot 位于底面中心；导出前应用对象变换。
   importer 只接受标准化 GLB，不用末端展示缩放修补源资产空间。
-- `character`：新资产输出 Character GLB Contract V1；当前完整运行时转换仍暂经 PMX compatibility
-  路径。不得为了 static prop 规范烘焙或重置 skeleton、root、bind pose、层级和蒙皮语义。
+- `character`：RFCHAR V1 GLB 由 `tools/assets/rfchar_import.py` 转 RFM2 v14；PMX 仅为
+  compatibility path。manifest `type=character` 同时接受严格 GLB 与历史 PMX。
 - `weapon`：保留 grip/attachment 语义；刚性 GLB 以标准化 origin/manifest attachment 描述表达，
   带骨架武器走 PMX 路径。不要把握持补偿偷偷烘焙成角色专属末端偏移。
 
@@ -120,8 +120,8 @@ RFM2 是演进中的运行时格式，加载器保留多个旧版本兼容分支
 LOD 参数写在 manifest 的 `lods` 中，由统一入口调用 `tools/rmesh_lod.py`。既有 `make lod-*` 目标继续
 保留，不要求迁移已有私有资产。
 
-`tools/rmesh_lod.py` 简化索引并保留顶点、骨骼、蒙皮与材质布局，支持现有 RFM2 v2-v13 输出。
-LOD 与完整模型共享纹理；缺少
+`tools/rmesh_lod.py` 简化索引并保留顶点、骨骼、蒙皮与材质布局，支持现有 RFM2 v2-v14 输出。
+LOD 与完整模型共享纹理；v14 的 CHR1 会随 SKN1 原样保留；缺少
 LOD 文件时运行时应回退完整模型。修改选择阈值或布局假设时同时检查 `rasterfall_render.c`。
 
 ## GLB 与 VMD 检查

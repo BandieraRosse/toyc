@@ -27,6 +27,7 @@ struct rasterfall_vmd_clip;
  *   optional SKN1 section      v11 bone hierarchy + BDEF1/BDEF2 records;
  *                              v12 appends an IK2 metadata section;
  *                              v13 appends grant parent/ratio to bone records
+ *   optional CHR1 section      v14 stable humanoid roles and attachments
  *
  * Header byte 60 is the SKN1 offset in v11.  SKN1 has a 32-byte header
  * (total bytes, bone count/stride, vertex count/stride, name-table bytes),
@@ -50,7 +51,7 @@ struct rasterfall_vmd_clip;
  * the legacy model-profile inference path.
  */
 #define RASTERFALL_MODEL_MAGIC 0x324d4652U /* "RFM2" in little-endian */
-#define RASTERFALL_MODEL_VERSION 13
+#define RASTERFALL_MODEL_VERSION 14
 #define RASTERFALL_MODEL_VERTEX_BYTES 24
 #define RASTERFALL_MODEL_VERTEX_BYTES_ADDITIONAL_UV 32
 #define RASTERFALL_MODEL_VERTEX_BYTES_EDGE_SCALE 36
@@ -78,12 +79,16 @@ struct rasterfall_vmd_clip;
 #define RASTERFALL_MODEL_IK_LINK_BYTES 32
 #define RASTERFALL_MODEL_MAX_BONES 4096
 #define RASTERFALL_MODEL_MAX_BONE_DEPTH 512
+#define RASTERFALL_MODEL_CHARACTER_MAGIC 0x31524843U /* "CHR1" */
+#define RASTERFALL_MODEL_CHARACTER_HEADER_BYTES 32
+#define RASTERFALL_MODEL_ATTACHMENT_BYTES 40
 
 enum rasterfall_model_pose {
     RASTERFALL_MODEL_POSE_BIND,
     RASTERFALL_MODEL_POSE_RIGHT_ARM,
     RASTERFALL_MODEL_POSE_ARMS,
-    RASTERFALL_MODEL_POSE_BODY_TURN
+    RASTERFALL_MODEL_POSE_BODY_TURN,
+    RASTERFALL_MODEL_POSE_RFCHAR_TEST
 };
 
 struct rasterfall_model_bone {
@@ -110,6 +115,13 @@ struct rasterfall_model_bone_transform {
 struct rasterfall_model_attachment_transform {
     double position[3];
     double rotation[9];
+};
+
+struct rasterfall_model_attachment {
+    int present;
+    int parent_bone;
+    int local_position[3];
+    float local_rotation[4];
 };
 
 struct rasterfall_model_two_bone_diagnostics {
@@ -471,6 +483,9 @@ struct rasterfall_model_asset {
     /* Presentation-only Center/Groove offset, in RFM2 units. */
     int animation_offset[3];
     struct rasterfall_model_root_motion_state root_motion;
+    int has_character_contract;
+    int humanoid_bones[RASTERFALL_HUMANOID_BONE_COUNT];
+    struct rasterfall_model_attachment attachments[RASTERFALL_ATTACHMENT_COUNT];
 };
 
 /* Compatibility aliases for inspector diagnostics kept in one-line traces. */
@@ -515,6 +530,13 @@ int rasterfall_model_sample_glb_rotation_clip(
 int rasterfall_model_update_bones(struct rasterfall_model_asset *asset);
 int rasterfall_model_attachment_transform(
     const struct rasterfall_model_asset *asset, const char *bone_name,
+    struct rasterfall_model_attachment_transform *out);
+int rasterfall_model_humanoid_bone(
+    const struct rasterfall_model_asset *asset,
+    enum rasterfall_humanoid_bone role);
+int rasterfall_model_character_attachment_transform(
+    const struct rasterfall_model_asset *asset,
+    enum rasterfall_character_attachment attachment,
     struct rasterfall_model_attachment_transform *out);
 int rasterfall_model_solve_two_bone_attachment(
     struct rasterfall_model_asset *asset, const char *upper_bone,

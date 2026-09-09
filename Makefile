@@ -786,6 +786,13 @@ RASTERFALL_OPT_DEP := $(BUILD)/.rasterfall-opt
 APP_EXTRA_OBJS_vmd_inspect := $(BUILD)/rasterfall_vmd.o $(BUILD)/rasterfall_model.o $(BUILD)/rasterfall_humanoid_basis.o $(BUILD)/rasterfall_humanoid_retarget.o $(BUILD)/rasterfall_glb_animation.o $(BUILD)/rasterfall_game.o
 APP_EXTRA_OBJS_glb_inspect := $(BUILD)/rasterfall_humanoid_basis.o \
 	$(BUILD)/rasterfall_humanoid_retarget.o
+APP_EXTRA_OBJS_rfchar_runtime_test := $(BUILD)/rasterfall_model.o \
+	$(BUILD)/rasterfall_humanoid_basis.o $(BUILD)/rasterfall_humanoid_retarget.o \
+	$(BUILD)/rasterfall_glb_animation.o $(BUILD)/rasterfall_vmd.o $(BUILD)/rasterfall_game.o
+
+.PHONY: test-rfchar-pipeline
+test-rfchar-pipeline:
+	python3 tools/assets/test_rfchar_pipeline.py
 
 # ─── 库编译规则 ────────────────────────────────────────────────
 

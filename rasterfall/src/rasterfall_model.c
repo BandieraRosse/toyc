@@ -29,6 +29,50 @@ static float model_f32(const unsigned char *p)
     return value.f;
 }
 
+static int model_load_character(struct rasterfall_model_asset *asset,
+                                const unsigned char *section,
+                                unsigned int bytes)
+{
+    unsigned int total, version, roles, attachments, record_bytes, i;
+    unsigned long required;
+    if (bytes < RASTERFALL_MODEL_CHARACTER_HEADER_BYTES ||
+        model_u32(section) != RASTERFALL_MODEL_CHARACTER_MAGIC) return -1;
+    total = model_u32(section + 4); version = model_u32(section + 8);
+    roles = model_u32(section + 12); attachments = model_u32(section + 16);
+    record_bytes = model_u32(section + 20);
+    required = RASTERFALL_MODEL_CHARACTER_HEADER_BYTES + roles * 4UL +
+        attachments * (unsigned long)record_bytes;
+    if (total != bytes || version != RASTERFALL_CHARACTER_ASSET_CONTRACT_VERSION ||
+        roles != RASTERFALL_HUMANOID_BONE_COUNT ||
+        attachments > RASTERFALL_ATTACHMENT_COUNT ||
+        record_bytes != RASTERFALL_MODEL_ATTACHMENT_BYTES || required != bytes)
+        return -1;
+    for (i = 0; i < roles; i++) {
+        unsigned int bone = model_u32(section + RASTERFALL_MODEL_CHARACTER_HEADER_BYTES + i * 4);
+        if (bone != 0xffffffffU && bone >= asset->bone_count) return -1;
+        asset->humanoid_bones[i] = bone == 0xffffffffU ? -1 : (int)bone;
+    }
+    for (i = 0; i < attachments; i++) {
+        const unsigned char *r = section + RASTERFALL_MODEL_CHARACTER_HEADER_BYTES +
+            roles * 4 + i * record_bytes;
+        unsigned int id = model_u32(r), parent = model_u32(r + 4), q;
+        if (id >= RASTERFALL_ATTACHMENT_COUNT ||
+            asset->attachments[id].present || parent >= asset->bone_count) return -1;
+        asset->attachments[id].present = 1;
+        asset->attachments[id].parent_bone = (int)parent;
+        asset->attachments[id].local_position[0] = model_i32(r + 8);
+        asset->attachments[id].local_position[1] = model_i32(r + 12);
+        asset->attachments[id].local_position[2] = model_i32(r + 16);
+        for (q = 0; q < 4; q++) {
+            float value = model_f32(r + 20 + q * 4);
+            if (value != value) return -1;
+            asset->attachments[id].local_rotation[q] = value;
+        }
+    }
+    asset->has_character_contract = 1;
+    return 0;
+}
+
 static void matrix_multiply(const double *a, const double *b, double *out)
 {
     double r[9];
@@ -335,10 +379,11 @@ int rasterfall_model_load(struct rasterfall_model_asset *asset,
     uint32_t size;
     uint32_t version, vertex_bytes, material_bytes;
     unsigned long static_bytes;
-    unsigned int skin_offset = 0;
+    unsigned int skin_offset = 0, skin_bytes = 0;
     unsigned char *data;
     if (!asset || !path) return -1;
     __memset(asset, 0, sizeof(*asset));
+    { unsigned int i; for (i = 0; i < RASTERFALL_HUMANOID_BONE_COUNT; i++) asset->humanoid_bones[i] = -1; }
     asset->ik_enabled = 1;
     asset->ik_limits_enabled = 1;
     asset->root_motion.primary_bone = -1;
@@ -402,11 +447,25 @@ int rasterfall_model_load(struct rasterfall_model_asset *asset,
     asset->max_x = *(const int *)(data + 32);
     asset->max_y = *(const int *)(data + 36);
     asset->max_z = *(const int *)(data + 40);
-    if (version >= 11 &&
-        model_load_skin(asset, data + skin_offset, size - skin_offset) < 0) {
+    if (version >= 11 && size - skin_offset >= 8)
+        skin_bytes = model_u32(data + skin_offset + 4);
+    if (version >= 11 && (size - skin_offset < 8 || skin_bytes > size - skin_offset ||
+        model_load_skin(asset, data + skin_offset, skin_bytes) < 0)) {
         __fprintf(2, "rasterfall: invalid RFM2 skeletal section: %s\n", path);
         rasterfall_model_unload(asset);
         return -1;
+    }
+    if (version >= 14 && skin_offset + skin_bytes < size &&
+        model_load_character(asset, data + skin_offset + skin_bytes,
+                             size - skin_offset - skin_bytes) < 0) {
+        __fprintf(2, "rasterfall: invalid RFM2 character section: %s\n", path);
+        rasterfall_model_unload(asset); return -1;
+    }
+    if (asset->has_character_contract) {
+        asset->animation.demo_right_arm = asset->humanoid_bones[RASTERFALL_HUMANOID_RIGHT_UPPER_ARM];
+        asset->animation.demo_left_arm = asset->humanoid_bones[RASTERFALL_HUMANOID_LEFT_UPPER_ARM];
+        asset->animation.demo_body = asset->humanoid_bones[RASTERFALL_HUMANOID_CHEST];
+        rasterfall_model_build_demo_clips(asset);
     }
     {
         unsigned int i, max_texture = 0;
@@ -480,7 +539,7 @@ int rasterfall_model_set_pose(struct rasterfall_model_asset *asset, int pose)
 {
     unsigned int i;
     if (!asset || !asset->bone_count || pose < RASTERFALL_MODEL_POSE_BIND ||
-        pose > RASTERFALL_MODEL_POSE_BODY_TURN) return -1;
+        pose > RASTERFALL_MODEL_POSE_RFCHAR_TEST) return -1;
     for (i = 0; i < asset->bone_count; i++) {
         asset->bones[i].rotate_x = 0;
         asset->bones[i].rotate_y = 0;
@@ -496,6 +555,13 @@ int rasterfall_model_set_pose(struct rasterfall_model_asset *asset, int pose)
     } else if (pose == RASTERFALL_MODEL_POSE_BODY_TURN) {
         if (asset->animation.demo_body < 0) return -1;
         asset->bones[asset->animation.demo_body].rotate_y = 24;
+    } else if (pose == RASTERFALL_MODEL_POSE_RFCHAR_TEST) {
+        int upper=rasterfall_model_humanoid_bone(asset,RASTERFALL_HUMANOID_RIGHT_UPPER_ARM);
+        int fore=rasterfall_model_humanoid_bone(asset,RASTERFALL_HUMANOID_RIGHT_FOREARM);
+        int leg=rasterfall_model_humanoid_bone(asset,RASTERFALL_HUMANOID_LEFT_UPPER_LEG);
+        if(upper<0||fore<0||leg<0)return -1;
+        asset->bones[upper].rotate_z=-32;asset->bones[fore].rotate_z=-48;
+        asset->bones[leg].rotate_x=28;
     }
     asset->animation.pose = pose;
     return rasterfall_model_update_bones(asset);
@@ -3258,6 +3324,38 @@ int rasterfall_model_attachment_transform(
     return 0;
 }
 
+int rasterfall_model_humanoid_bone(const struct rasterfall_model_asset *asset,
+                                   enum rasterfall_humanoid_bone role)
+{
+    if (!asset || role < 0 || role >= RASTERFALL_HUMANOID_BONE_COUNT) return -1;
+    if (asset->has_character_contract) return asset->humanoid_bones[role];
+    { struct rasterfall_humanoid_mapping mapping;
+      rasterfall_model_map_humanoid(asset, &mapping);
+      return mapping.bone_indices[role]; }
+}
+
+int rasterfall_model_character_attachment_transform(
+    const struct rasterfall_model_asset *asset,
+    enum rasterfall_character_attachment attachment,
+    struct rasterfall_model_attachment_transform *out)
+{
+    const struct rasterfall_model_attachment *a;
+    const struct rasterfall_model_bone_transform *p;
+    double x,y,z,qx,qy,qz,qw,local[9];
+    if (!asset || !out || attachment < 0 || attachment >= RASTERFALL_ATTACHMENT_COUNT ||
+        !asset->attachments[attachment].present || !asset->bone_transforms) return -1;
+    a=&asset->attachments[attachment]; p=&asset->bone_transforms[a->parent_bone];
+    qx=a->local_rotation[0];qy=a->local_rotation[1];qz=a->local_rotation[2];qw=a->local_rotation[3];
+    local[0]=1-2*(qy*qy+qz*qz);local[1]=2*(qx*qy-qz*qw);local[2]=2*(qx*qz+qy*qw);
+    local[3]=2*(qx*qy+qz*qw);local[4]=1-2*(qx*qx+qz*qz);local[5]=2*(qy*qz-qx*qw);
+    local[6]=2*(qx*qz-qy*qw);local[7]=2*(qy*qz+qx*qw);local[8]=1-2*(qx*qx+qy*qy);
+    matrix_multiply(p->rotation,local,out->rotation);
+    matrix_vector(p->rotation,a->local_position[0],a->local_position[1],
+                  a->local_position[2],&x,&y,&z);
+    out->position[0]=p->position[0]+x;out->position[1]=p->position[1]+y;
+    out->position[2]=p->position[2]+z;return 0;
+}
+
 int rasterfall_model_solve_two_bone_attachment(
     struct rasterfall_model_asset *asset, const char *upper_bone,
     const char *forearm_bone, const char *hand_bone,
@@ -3775,6 +3873,11 @@ void rasterfall_model_map_humanoid(const struct rasterfall_model_asset *asset,
     int i;
     rasterfall_humanoid_mapping_init(mapping);
     if (!asset || !mapping) return;
+    if (asset->has_character_contract) {
+        for (i = 0; i < RASTERFALL_HUMANOID_BONE_COUNT; i++)
+            mapping->bone_indices[i] = asset->humanoid_bones[i];
+        return;
+    }
     for (i = 0; i < RASTERFALL_HUMANOID_BONE_COUNT; i++) {
         mapping->bone_indices[i] = model_find_exact_bone(asset, names[i][0], 0);
         if (mapping->bone_indices[i] < 0)

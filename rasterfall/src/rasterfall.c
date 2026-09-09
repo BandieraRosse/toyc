@@ -1733,14 +1733,14 @@ static int dump_model_views(const char *model_path, const char *output_dir,
                             int use_material_light,
                             struct model_view_stats *stats, int supersample)
 {
-    static const char *names[3] = {"front", "side", "back"};
-    struct camera cameras[3];
+    static const char *names[4] = {"front", "side", "back", "three-quarter"};
+    struct camera cameras[4];
     struct rasterfall_model_asset model;
     struct toy_surface surface, output_surface;
     struct toy_renderer renderer;
     uint32_t *pixels, *output_pixels = 0;
     char path[512];
-    int i, result = 0;
+    int i, result = 0, view_count = stats ? 3 : 4;
 
     memset(&model, 0, sizeof(model));
     memset(cameras, 0, sizeof(cameras));
@@ -1787,9 +1787,11 @@ static int dump_model_views(const char *model_path, const char *output_dir,
     cameras[0].z = -800; cameras[0].cy = 1024;
     cameras[1].x = -800; cameras[1].sy = 1024;
     cameras[2].z = 800; cameras[2].cy = -1024;
-    for (i = 0; i < 3; i++) cameras[i].pitch_cy = 1024;
+    cameras[3].x = -566; cameras[3].z = -566;
+    cameras[3].sy = 724; cameras[3].cy = 724;
+    for (i = 0; i < 4; i++) cameras[i].pitch_cy = 1024;
 
-    for (i = 0; i < 3; i++) {
+    for (i = 0; i < view_count; i++) {
         struct rasterfall_model_render_stats render_stats;
         if (toy_renderer_begin(&renderer, &surface, 0x30343B) < 0 ||
             rasterfall_render_model_preview(&renderer, &cameras[i], &model,
