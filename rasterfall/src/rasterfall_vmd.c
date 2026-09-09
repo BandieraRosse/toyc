@@ -40,14 +40,18 @@ static int decode_name(const unsigned char *raw,char *out){
   if(ok){for(j=0;j<len;j++){int a=hexval(names[i].hex[j*2]),b=hexval(names[i].hex[j*2+1]);if(hex[j]!=(unsigned char)(a*16+b)){ok=0;break;}}}
   if(ok){strcpy(out,names[i].utf8);return 0;}
  }
- for(i=0;i<bytes&&n<RASTERFALL_VMD_MAX_NAME-1;i++)out[n++]=(raw[i]>=32&&raw[i]<128)?raw[i]:'?';out[n]=0;return 1;
+ for(i=0;i<bytes&&n<RASTERFALL_VMD_MAX_NAME-1;i++)
+  out[n++]=(raw[i]>=32&&raw[i]<128)?raw[i]:'?';
+ out[n]=0;
+ return 1;
 }
 static int track_find(const struct rasterfall_vmd_clip*c,const char*n){int i;for(i=0;i<c->track_count;i++)if(!strcmp(c->tracks[i].name,n))return i;return -1;}
 static int ms(int frame){return frame*1000/30;}
 
 int rasterfall_vmd_load(struct rasterfall_vmd_clip*c,const char*path){
  int size,i,j,t;unsigned char*b;uint32_t asset_size=0;
- if(!c||!path)return -1;memset(c,0,sizeof(*c));
+ if(!c||!path)return -1;
+ memset(c,0,sizeof(*c));
  b=toy_asset_load_file(path,&asset_size);size=(int)asset_size;
  if(!b||size<54||size>64*1024*1024||memcmp(b,"Vocaloid Motion Data 0002",24)!=0||54+(uint64_t)u32(b+50)*111>(uint64_t)size){if(b)tlibc_free(b);return -1;}
  c->version=2;decode_name(b+30,c->model_name);c->motion_count=(int)u32(b+50);c->tracks=tlibc_malloc(RASTERFALL_VMD_MAX_BONES*sizeof(*c->tracks));if(!c->tracks){tlibc_free(b);return -1;}memset(c->tracks,0,RASTERFALL_VMD_MAX_BONES*sizeof(*c->tracks));

@@ -1690,7 +1690,11 @@ static int run_logic_test(void)
      * TOY_GAME_SHOVE_PUSH 并僵直 TOY_GAME_SHOVE_STUN_MS；身后敌人不受
      * 影响。 */
     {
-        struct camera aim = {0, -2100, 0, 1024, 0, 1024, 0};
+        struct camera aim = {
+            .body = { .x = 0, .z = -2100 },
+            .view = { .sy = 0, .cy = 1024,
+                      .pitch_sy = 0, .pitch_cy = 1024, .y = 0 }
+        };
         int i, pushed_z;
         int jx = game.actors[0].x, jz = game.actors[0].z;
         int gx = game.actors[1].x, gz = game.actors[1].z;

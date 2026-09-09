@@ -187,6 +187,7 @@ static int tlibc_mempool_clean_thread()
 /* Background worker: periodically scans and reclaims resources from exited threads */
 void *tlibc_mempool_worker(void* arg)
 {
+    (void)arg;
     while(1){
         if(work_thread_exit == 1)
             __exit(0);

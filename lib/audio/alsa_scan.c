@@ -119,6 +119,12 @@ static void compute_score(struct tlibc_audio_dev *dev,
 {
     int score = 0;
 
+    /* Device enumeration currently does not retain HW_REFINE's format
+     * intervals. Keep the request parameters for the future format scoring
+     * extension without making their lack of use a build warning. */
+    (void)req_rate;
+    (void)req_ch;
+
     /* ── 类型分 ── */
     switch (dev->type) {
     case DEV_TYPE_ANALOG: score += 200; break;

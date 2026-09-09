@@ -322,8 +322,10 @@ static const unsigned char *accessor_data(const struct glb_doc *doc,
 }
 static float read_f32(const unsigned char *p)
 { union { unsigned int u; float f; } value; value.u = read_u32(p); return value.f; }
+#ifndef RASTERFALL_GLB_LIBRARY
 static int valid_float(float value)
 { return value == value && value > -1.0e30f && value < 1.0e30f; }
+#endif
 
 static void node_name(const struct glb_doc *doc, int node, char *name, int size)
 {
@@ -331,6 +333,7 @@ static void node_name(const struct glb_doc *doc, int node, char *name, int size)
         string_copy(object_value(doc->nodes.items[node], "name"), name, size) < 0)
         snprintf(name, size, "node_%d", node);
 }
+#ifndef RASTERFALL_GLB_LIBRARY
 static void print_vector(struct slice value, int count, const double *defaults)
 {
     int i;
@@ -342,7 +345,9 @@ static void print_vector(struct slice value, int count, const double *defaults)
     }
     __printf(")");
 }
+#endif
 
+#ifndef RASTERFALL_GLB_LIBRARY
 static const char *semantic_names[RASTERFALL_HUMANOID_BONE_COUNT] = {
     "ROOT", "HIPS", "SPINE", "CHEST", "UPPER_CHEST", "NECK", "HEAD",
     "LEFT_SHOULDER", "LEFT_UPPER_ARM", "LEFT_FOREARM", "LEFT_HAND",
@@ -350,6 +355,7 @@ static const char *semantic_names[RASTERFALL_HUMANOID_BONE_COUNT] = {
     "LEFT_UPPER_LEG", "LEFT_LOWER_LEG", "LEFT_FOOT",
     "RIGHT_UPPER_LEG", "RIGHT_LOWER_LEG", "RIGHT_FOOT"
 };
+#endif
 static const char *quaternius_names[RASTERFALL_HUMANOID_BONE_COUNT][2] = {
     {"root", "Root"}, {"pelvis", "Pelvis"}, {"spine_01", "Spine1"},
     {"spine_02", "Spine2"}, {"spine_03", "Spine3"}, {"neck_01", "Neck"},
@@ -360,11 +366,13 @@ static const char *quaternius_names[RASTERFALL_HUMANOID_BONE_COUNT][2] = {
     {"thigh_l", "Thigh_L"}, {"calf_l", "Calf_L"}, {"foot_l", "Foot_L"},
     {"thigh_r", "Thigh_R"}, {"calf_r", "Calf_R"}, {"foot_r", "Foot_R"}
 };
+#ifndef RASTERFALL_GLB_LIBRARY
 static const unsigned char semantic_chains[][2] = {
     {0,1},{1,2},{2,3},{3,4},{4,5},{5,6},{4,7},{7,8},{8,9},{9,10},
     {4,11},{11,12},{12,13},{13,14},{1,15},{15,16},{16,17},
     {1,18},{18,19},{19,20}
 };
+#endif
 
 static int find_node_exact(const struct glb_doc *doc, const char *primary,
                            const char *alias)
@@ -382,6 +390,7 @@ static void map_quaternius(const struct glb_doc *doc, int *mapping)
     for (i = 0; i < RASTERFALL_HUMANOID_BONE_COUNT; i++)
         mapping[i] = find_node_exact(doc, quaternius_names[i][0], quaternius_names[i][1]);
 }
+#ifndef RASTERFALL_GLB_LIBRARY
 static int descendant(const struct glb_doc *doc, int child, int parent)
 {
     int steps = 0;
@@ -392,6 +401,8 @@ static int descendant(const struct glb_doc *doc, int child, int parent)
     }
     return 0;
 }
+#endif
+#ifndef RASTERFALL_GLB_LIBRARY
 static void print_mapping(const struct glb_doc *doc, int *mapping)
 {
     int i, j, mapped = 0, missing = 0, duplicates = 0, chain_errors = 0;
@@ -519,6 +530,7 @@ static int inspect_doc(const struct glb_doc *doc, int humanoid_only)
     print_mapping(doc, mapping);
     return inspect_animations(doc, mapping, humanoid_only);
 }
+#endif
 
 static float absolute_float(float value) { return value < 0.0f ? -value : value; }
 
@@ -594,6 +606,7 @@ static int build_global_matrix(const struct glb_doc *doc, int node,
     ready[node] = 1; return 0;
 }
 
+#ifndef RASTERFALL_GLB_LIBRARY
 static int bind_consistency(const struct glb_doc *doc)
 {
     double *globals; unsigned char *ready; int skin_index, checked = 0;
@@ -628,6 +641,7 @@ static int bind_consistency(const struct glb_doc *doc)
              maximum < 0.0001 ? "consistent" : "MISMATCH");
     tlibc_free(globals); tlibc_free(ready); return maximum < 0.0001 ? 0 : 1;
 }
+#endif
 
 static void glb_basis_point(const struct glb_doc *doc, int node,
                             double *globals, unsigned char *ready,
@@ -641,6 +655,7 @@ static void glb_basis_point(const struct glb_doc *doc, int node,
     point->valid = 1;
 }
 
+#ifndef RASTERFALL_GLB_LIBRARY
 static void print_basis_number(double value)
 {
     int scaled = (int)(value * 1000000.0);
@@ -681,7 +696,9 @@ static int inspect_humanoid_bases(const struct glb_doc *doc)
              rasterfall_humanoid_validate_anatomy(bases)==0?"yes":"no");print_basis_number(error);__printf("\n");
     tlibc_free(globals);tlibc_free(ready);return 0;
 }
+#endif
 
+#ifndef RASTERFALL_GLB_LIBRARY
 static int wanted_fact_clip(const char *name)
 {
     return !strcmp(name, "Idle_Loop") || !strcmp(name, "Walk_Loop") ||
@@ -732,7 +749,9 @@ static int inspect_facts(const struct glb_doc *doc)
              (int)maximum_temporal, abs((int)(maximum_temporal * 1000000000.0f)) % 1000000000);
     return bind_consistency(doc);
 }
+#endif
 
+#ifndef RASTERFALL_GLB_LIBRARY
 static void put_u32(unsigned char *p, unsigned int value)
 { p[0] = value; p[1] = value >> 8; p[2] = value >> 16; p[3] = value >> 24; }
 
@@ -784,6 +803,7 @@ static int self_test(void)
     __printf("glb-inspect: self-test passed\n");
     return 0;
 }
+#endif
 
 struct glb_rotation_implementation {
     struct glb_doc doc;int animation;
