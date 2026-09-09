@@ -1,10 +1,12 @@
 # Rasterfall GB2312 16×16 点阵字库
 
-`gb2312-16.rfh` 是 Rasterfall 的固定宽度屏幕字库。ASCII 字符为 8×16，GB2312 双字节字符为
-16×16；运行时和地图排布图导出器都从同一文件读取，不依赖系统字体或 FreeType。
+`gb2312-16.rfh` 是 Rasterfall 的固定宽度屏幕字库。ASCII 字符为恢复的旧版 VGA 8×16 点阵，
+GB2312 双字节字符为 16×16；运行时和地图排布图导出器都从同一文件读取，不依赖系统字体或
+FreeType。
 
 字形来自 WenQuanYi Bitmap Song 1.0 (Hero) RC1：汉字取 `wenquanyi_12pt.bdf`（16×16
-strike），半宽 ASCII 取同包的 `wenquanyi_13px.bdf` 并放入 8×16 单元：
+strike）。半宽 ASCII 沿用加入中文字体库前的 Rasterfall VGA 8×16 字形，源表保存在
+`source/vga8x16.inc`：
 
 - 上游项目：https://sourceforge.net/projects/wqy/
 - 上游归档：`wqy-bitmapsong-bdf-1.0.0-RC1_GPLv2+.tar.gz`

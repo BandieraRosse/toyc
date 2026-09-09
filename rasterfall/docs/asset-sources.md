@@ -34,9 +34,10 @@
 
 ## 公开模型与其他资源
 
-`assets/fonts/gb2312-16.rfh` 由 WenQuanYi Bitmap Song 1.0 (Hero) RC1 的 16×16 BDF strike
-确定性生成，半宽 ASCII 来自同包 13px strike。上游版权、GPL v2+ 字体嵌入例外、归档哈希、完整
-COPYING、对应压缩 BDF 源文件和重建命令均保存在 `assets/fonts/`；该字库允许随公开构建分发，
+`assets/fonts/gb2312-16.rfh` 的 GB2312 字形由 WenQuanYi Bitmap Song 1.0 (Hero) RC1 的 16×16
+BDF strike 确定性生成，半宽 ASCII 恢复为加入中文字体库前的 Rasterfall VGA 8×16 字形，源表为
+`assets/fonts/source/vga8x16.inc`。上游版权、GPL v2+ 字体嵌入例外、归档哈希、完整 COPYING、
+对应压缩 BDF 源文件和重建命令均保存在 `assets/fonts/`；该字库允许随公开构建分发，
 发布包必须保留该目录中的许可和来源文件。
 
 `assets/models/` 下的武器、弹药箱和道具 `.rmesh` 是运行时转换产物；工业 prop 现在位于

@@ -52,6 +52,18 @@ def read_bdf(path):
     return glyphs
 
 
+def read_vga8x16(path):
+    """Read the restored pre-GB2312 95-glyph ASCII table."""
+    import re
+    values = [int(value, 16) for value in
+              re.findall(r"0x([0-9a-fA-F]{2})", path.read_text())]
+    expected = ASCII_COUNT * 16
+    if len(values) != expected:
+        raise SystemExit(f"{path}: expected {expected} VGA glyph bytes, got {len(values)}")
+    return [(8, values[offset:offset + 16])
+            for offset in range(0, expected, 16)]
+
+
 def rasterize(glyph, bitmap, ascent):
     width, height, xoff, yoff = glyph["bbx"]
     cell_width = 8 if glyph["dwidth"] <= 8 else 16
@@ -98,9 +110,15 @@ def main():
     parser.add_argument("output", type=Path)
     parser.add_argument("--ascii-bdf", type=Path,
                         help="optional 8-pixel ASCII strike from the same family")
+    parser.add_argument("--ascii-vga", type=Path,
+                        help="optional restored legacy 8x16 ASCII table")
     args = parser.parse_args()
     glyphs = read_bdf(args.bdf)
-    ascii_glyphs = read_bdf(args.ascii_bdf) if args.ascii_bdf else glyphs
+    if args.ascii_vga:
+        ascii_glyphs = {ASCII_FIRST + index: glyph
+                        for index, glyph in enumerate(read_vga8x16(args.ascii_vga))}
+    else:
+        ascii_glyphs = read_bdf(args.ascii_bdf) if args.ascii_bdf else glyphs
 
     ascii_data = bytearray()
     for codepoint in range(ASCII_FIRST, ASCII_FIRST + ASCII_COUNT):

@@ -68,8 +68,8 @@ portrait 可复用该入口和静态 profile，
 
 其他视觉模块：
 
-- `lib/graphics/fb_font.c`：加载 `assets/fonts/gb2312-16.rfh`，把 UTF-8 字符串映射到半宽 ASCII
-  或全宽 GB2312 16×16 点阵；启动菜单中的“光栅坠落”是游戏内中文显示的常驻验证入口。该资产也供
+- `lib/graphics/fb_font.c`：加载 `assets/fonts/gb2312-16.rfh`，把 UTF-8 字符串映射到恢复的旧版
+  VGA 半宽 ASCII 或全宽 GB2312 16×16 点阵；启动菜单中的“光栅坠落”是游戏内中文显示的常驻验证入口。该资产也供
   地图排布导出器读取，运行时不依赖 FreeType、系统 CJK 字体或宿主 libc 编码转换。
 
 - `rasterfall_hud.c`：玩家、网络、波次、商店 HUD，交互提示和 BMP/帧导出。

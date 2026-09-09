@@ -1125,7 +1125,7 @@ generate-gb2312-font:
 	python3 tools/fonts/build_gb2312_16.py \
 		rasterfall/assets/fonts/source/wenquanyi_12pt.bdf.gz \
 		rasterfall/assets/fonts/gb2312-16.rfh \
-		--ascii-bdf rasterfall/assets/fonts/source/wenquanyi_13px.bdf.gz
+		--ascii-vga rasterfall/assets/fonts/source/vga8x16.inc
 
 setup-map-layout:
 	tools/setup-map-layout.sh
