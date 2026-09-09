@@ -152,3 +152,29 @@ attachment `{id,parent bone,local position RFU,local quaternion}`。v2-v13 继�
 resource/instance 重构。正式 AI 低模制作前还需要角色造型/材质预算、Blender exporter 版本与依赖
 锁定、动画 clip milestone，以及至少一份非 fixture 的 art acceptance asset。PMX mapper 与静态
 `glb2rmesh` 继续作为兼容路径，但不定义新角色契约。
+
+## RF Humanoid Art Acceptance Character V1
+
+第一份非 fixture 的正式候选由 `tools/blender/generate_rasterfall_humanoid.py` 参数化生成，
+manifest 为 `tools/assets/manifests/characters/rf_humanoid_acceptance.asset.json`。它沿用本页
+冻结的 21-role skeleton 与 8 stable attachments，不修改 RFCHAR contract；几何按 pelvis/waist/chest、
+独立 neck/skull/hair shell、tapered upper/lower limbs、放大的 hands/feet 拆分，使用 5 个大色块
+材质。源资产与导入产物在 `rasterfall/private-assets/`（可选本地资产）中生成，不由 runtime 直接读取 GLB。
+
+可重复生成和验收：
+
+```sh
+mkdir -p rasterfall/private-assets/source/characters
+blender --background --factory-startup --python tools/blender/generate_rasterfall_humanoid.py -- \
+  --output rasterfall/private-assets/source/characters/rf_humanoid_acceptance.glb
+build/glb-inspect rasterfall/private-assets/source/characters/rf_humanoid_acceptance.glb contract
+tools/assets/import_asset.py --force tools/assets/manifests/characters/rf_humanoid_acceptance.asset.json
+build/rfchar_runtime_test rasterfall/private-assets/models/rf_humanoid_acceptance.rmesh
+build/rasterfall --model-pose-views rasterfall/private-assets/models/rf_humanoid_acceptance.rmesh tmp/rf-humanoid-acceptance/bind bind
+build/rasterfall --model-pose-views rasterfall/private-assets/models/rf_humanoid_acceptance.rmesh tmp/rf-humanoid-acceptance/posed rfchar-test
+```
+
+当前 acceptance 基线约为 1,680 vertices / 1,032 triangles / 18 mesh nodes / 5 materials；
+导入后为 29 bones（21 humanoid + 8 attachments），其中 1,560 个顶点为 BDEF1、120 个为
+BDEF2。固定 capture 覆盖 bind 与 `rfchar-test` posed 的 front/side/back/three-quarter；
+模型视图不含武器，因此持枪姿态仍需后续接入角色展示场景或真实装备资源复核。

@@ -1,7 +1,7 @@
 # 资源、模型与动画
 
 > 文档更新：2026-09-09
-> 源码核对基线：工作区（RFCHAR importer 与 RFM2 v14 CHR1 stable humanoid/attachment tables；PMX compatibility path）
+> 源码核对基线：工作区（RFCHAR importer 与 RFM2 v14 CHR1 stable humanoid/attachment tables、RF Humanoid Art Acceptance Character V1；PMX compatibility path）
 
 新建或生成 Blender 人形资产必须先读 [`character-assets.md`](character-assets.md)。它冻结
 Blender source → Character GLB → importer → runtime character asset → humanoid animation 主线；
