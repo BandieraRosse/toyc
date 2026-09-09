@@ -30,6 +30,10 @@ Blender source → Character GLB → importer → runtime character asset → hu
 完整求值顺序、格式扩展点和回归要求见
 [`animation-architecture.md`](animation-architecture.md)。
 
+VMD/PMX 运行时预览属于旧资产兼容路径，仅在显式传入 `rasterfall` 的 legacy VMD
+参数时启用；程序正常启动不再默认加载 Eula 的私有 VMD 预览。新角色优先走
+RFCHAR GLB → RFM2 v14 → stable role/attachment API，并使用角色验收和世界截图入口观察。
+
 ## 工具链定位
 
 - 统一离线入口、manifest 与完整性验证：`tools/assets/import_asset.py`；runtime 不读取 manifest。

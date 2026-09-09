@@ -39,13 +39,7 @@
  *   --model-retarget-test <model> <right-arm|left-arm|right-leg|chest>
  *   --model-glb-animation <model> <glb> <clip>
  *   --model-glb-motion-diagnostic <model> <glb>
- *   --vmd-eula-walk <model> <vmd>  direct VMD rotation playback on PMX/RFM2
- *   --vmd-freeze-head            diagnostic: freeze head/neck VMD tracks
- *   --vmd-freeze-torso           diagnostic: freeze upper-body VMD tracks
- *   --vmd-disable-ik             diagnostic: disable PMX leg IK solving
- *   --vmd-disable-grant          diagnostic: disable PMX rotation grants
- *   --vmd-legacy-root-offset     diagnostic: use legacy Center/Groove root offset
- *   --vmd-legacy-leg-ccd         diagnostic: use legacy leg CCD path
+ *   legacy VMD options             old PMX/VMD compatibility diagnostics
  *   --frames <count>               运行指定帧数后退出
  *   --input-test                   输入调试测试
  *   --logic-test                   运行逻辑和网络回归测试
@@ -2555,10 +2549,10 @@ int main(int argc, char **argv)
     render_context.textures_enabled = textures_enabled;
     rf_windows_log("startup: map loaded, binding renderer");
     rasterfall_render_bind(&render_context);
-    if (!vmd_walk_model && !vmd_walk_path) {
-        vmd_walk_model = "rasterfall/private-assets/models/eula.rmesh";
-        vmd_walk_path = "rasterfall/private-assets/animations/walk04_loop5.vmd";
-    }
+    /* Do not auto-load the historical Eula/VMD preview.  The old path is
+     * still available when explicitly requested, but normal startup should
+     * use the current RFCHAR/model presentation path and must not depend on
+     * private assets. */
     if (vmd_walk_model && vmd_walk_path) {
         rasterfall_render_set_vmd_walk(vmd_walk_model, vmd_walk_path);
         /* The direct VMD preview is a real skeletal animation, so start its

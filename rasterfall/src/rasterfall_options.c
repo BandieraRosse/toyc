@@ -74,11 +74,12 @@ void rasterfall_options_usage(int fd)
         "  --model-retarget-test <model> <right-arm|left-arm|right-leg|chest>\n"
         "  --model-glb-animation <model> <glb> <clip>\n"
         "  --model-glb-motion-diagnostic <model> <glb>\n"
-        "  --vmd-eula-walk <model> <vmd>\n"
-        "  --vmd-freeze-head | --vmd-freeze-torso\n"
-        "  --vmd-disable-ik | --vmd-disable-grant\n"
-        "  --vmd-legacy-root-offset | --vmd-legacy-leg-ccd\n"
-        "  --vmd-skin-trace\n");
+        "  legacy VMD diagnostics (old PMX/VMD path):\n"
+        "    --vmd-eula-walk <model> <vmd>\n"
+        "    --vmd-freeze-head | --vmd-freeze-torso\n"
+        "    --vmd-disable-ik | --vmd-disable-grant\n"
+        "    --vmd-legacy-root-offset | --vmd-legacy-leg-ccd\n"
+        "    --vmd-skin-trace\n");
 }
 
 int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv)

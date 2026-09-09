@@ -112,5 +112,8 @@ build/vmd_inspect <walk.vmd> <model.rmesh> --vmd-leg-trace
 build/vmd_inspect <walk.vmd> <model.rmesh> --vmd-walk-final-flips
 ```
 
+`rasterfall` 内置的 `--vmd-*` 参数属于旧 PMX/VMD 兼容诊断，不是新 RFCHAR
+角色的默认运行路径；正常启动不会自动载入 Eula/VMD 私有预览。
+
 如果修改 RFM2 格式、公共重定向数学或构建目标，还需扩大到相关转换工具、Windows 构建
 以及自托管应用构建。

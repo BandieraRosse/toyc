@@ -32,6 +32,11 @@
 场景与离屏输出契约见 [rendering.md](rendering.md) 的 Visual CLI。未知场景、缺少参数、
 资源加载/渲染/文件写入失败均返回非零并输出错误。
 
+旧的 PMX/VMD 预览参数（`--vmd-eula-walk`、`--vmd-freeze-*`、
+`--vmd-disable-*`、`--vmd-legacy-*`、`--vmd-skin-trace`）仅保留为显式
+兼容诊断入口。正常启动不再自动加载 Eula/VMD 私有资产；当前角色观察和验收应使用
+`--model-pose-views`、`--character-acceptance` 和 `--character-world-capture`。
+
 主循环先轮询平台事件和网络，再保留按键边沿；固定 16 ms 逻辑步中构造
 `rasterfall_command`，交给 session 或客户端预测路径；之后同步音频/特效并渲染。排查“偶发吞键”
 时查看 `pending_key_edges`，排查帧率相关玩法差异时查看 accumulator 和逻辑步，而不是只看渲染帧。
