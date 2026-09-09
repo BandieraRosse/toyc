@@ -1,7 +1,7 @@
 # Rasterfall 地图格式
 
 > 文档更新：2026-09-09
-> 源码核对基线：工作区（地图布局 PNG/JSON 导出器使用仓库内 GB2312 16×16 点阵字库；JSON 查询器；空气墙竖直 box 和可站立 platform 通过同组 role 同步切换显示、碰撞与导航；边界 box 显式 blocks_airborne；外围渲染墙与 gameplay 碰撞分离；静态 prop 实例及 profile 碰撞盒接入现有 primitive/nav）
+> 源码核对基线：工作区（地图布局 PNG/JSON 导出器使用仓库内 GB2312 16×16 点阵字库；JSON 查询器；空气墙竖直 box 和可站立 platform 通过同组 role 同步切换显示、碰撞与导航；边界 box 显式 blocks_airborne；外围渲染墙与 gameplay 碰撞分离；Hurd 北侧外围渲染墙在据点范围断开，避免与据点北墙重叠；Hurd 南侧纯渲染墙在入口范围断开，保留 x=-6000..6000 的可见入口；静态 prop 实例及 profile 碰撞盒接入现有 primitive/nav）
 
 > 源码核对补充：北侧通道扩宽为 Hurd 防区，原中央北侧刷怪区拆到左右两翼。
 
