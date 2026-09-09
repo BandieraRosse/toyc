@@ -48,6 +48,14 @@ struct box { int minx, maxx, minz, maxz, height; uint32_t color; };
 
 static struct rasterfall_render_context *render_ctx;
 static struct rasterfall_scene_stats scene_stats;
+struct rasterfall_authored_locomotion_clock {
+    int valid;
+    int animation_id;
+    int last_time_ms;
+    int clip_time_ms;
+};
+static struct rasterfall_authored_locomotion_clock
+    authored_locomotion_clocks[TOY_GAME_MAX_ACTORS];
 struct gallery_cached_vertex;
 #define frontend_state() rasterfall_render_frontend_current(renderer)
 #define frontend_set_override rasterfall_render_frontend_set_override
@@ -77,6 +85,40 @@ struct gallery_cached_vertex;
 #define active_gallery_facing (frontend_state()->gallery_facing)
 #define active_gallery_sy (frontend_state()->gallery_sy)
 #define active_gallery_cy (frontend_state()->gallery_cy)
+
+/* Gameplay locomotion is intentionally a short 400 ms semantic loop.  Keep
+ * the authored skeletal clip on its own presentation clock and accumulate
+ * across the gameplay timer's wrap instead of rescaling one MOVE phase into
+ * the whole clip (which would play a multi-second walk in 400 ms). */
+static int authored_locomotion_time(
+    int actor_index, const struct toy_game_actor *actor,
+    const struct rasterfall_animation_clip *clip)
+{
+    struct rasterfall_authored_locomotion_clock *clock;
+    int move_duration, delta;
+    if (!actor || !clip || clip->duration_ms <= 0 ||
+        actor_index < 0 || actor_index >= TOY_GAME_MAX_ACTORS)
+        return actor ? actor->animation.time_ms : 0;
+    clock = &authored_locomotion_clocks[actor_index];
+    move_duration = toy_game_animation_info(TOY_GAME_ANIM_MOVE)->duration_ms;
+    if (actor->animation.id != TOY_GAME_ANIM_MOVE || move_duration <= 0) {
+        clock->valid = 0;
+        return actor->animation.time_ms;
+    }
+    if (!clock->valid || clock->animation_id != actor->animation.id) {
+        clock->valid = 1;
+        clock->animation_id = actor->animation.id;
+        clock->last_time_ms = actor->animation.time_ms;
+        clock->clip_time_ms = 0;
+        return 0;
+    }
+    delta = actor->animation.time_ms - clock->last_time_ms;
+    if (delta < 0) delta += move_duration;
+    if (delta < 0 || delta > move_duration) delta = 0;
+    clock->clip_time_ms = (clock->clip_time_ms + delta) % clip->duration_ms;
+    clock->last_time_ms = actor->animation.time_ms;
+    return clock->clip_time_ms;
+}
 
 static long render_monotonic_us(void)
 {
@@ -5313,10 +5355,12 @@ static int render_ai_teammate(struct toy_renderer *renderer,
                     maid_character ? 1 : 0, pose_weapon);
             int have_rifle_frame;
             int blend=actor->locomotion_blend_ms*5;
+            int locomotion_time_ms = authored_locomotion_time(
+                i, actor, locomotion_clip);
             if(blend>1000)blend=1000;
             hit.rotation[0][0]=8; hit.rotation[0][2]=-8;
             composition.locomotion=(actor->moving||blend<1000)?locomotion_clip:NULL;
-            composition.locomotion_time_ms=actor->animation.time_ms;
+            composition.locomotion_time_ms=locomotion_time_ms;
             composition.locomotion_weight_milli=actor->moving?blend:1000-blend;
             /* Eula's rifle pose is calibrated in a different local bone
              * basis.  Leave maid in the authored VMD pose until it has its

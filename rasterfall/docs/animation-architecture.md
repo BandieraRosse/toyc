@@ -1,7 +1,7 @@
 # Rasterfall 模型与动画架构
 
 > 文档更新：2026-09-03
-> 源码核对基线：`75a10cd`（将项目协作说明转向 Rasterfall）
+> 源码核对基线：工作区（玩法 MOVE 时钟映射到 authored anime walk clip 的展示时钟）
 
 本文说明运行时模块边界、扩展入口和当前仍需控制的技术债。格式细节仍以各公共头文件和
 转换工具为准。
@@ -69,6 +69,11 @@ rest basis 重定向。不要在 VMD、glTF 解析器里添加目标角色专用
 游戏动作以 `toy_game_animation_id` 为稳定语义层。idle/move/fire/reload/hit、近战、投掷、
 倒地、死亡和复活都先进入同一动作采样入口；角色专属 clip 在目录或后续 animation set
 中覆盖这些语义。导入器仍只负责生成格式无关 clip，不能反向依赖某个游戏动作。
+
+玩法动作时钟与 authored clip 时钟是两个时间域：玩法 `MOVE` 的 400ms 循环服务确定性状态
+和网络同步，动漫角色的 VMD walk 则按自身 clip 时长采样。角色渲染在组合 locomotion 时
+使用独立展示时钟，并跨越 MOVE 计时回卷累计真实经过的时间；不能把 `actor->animation.time_ms`
+映射为整个 clip 的时间，否则多秒 walk 会在一个玩法 MOVE 周期内快速播完。
 
 ## 姿态求值顺序
 

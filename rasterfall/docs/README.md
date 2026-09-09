@@ -1,7 +1,7 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-09
-> 源码核对基线：工作区（Hurd 四职业 presentation profile 与固定 hurd-squad capture；Visual CLI V1 固定 procedural-humanoid 离屏 BMP capture；低模队友使用显式展示状态与 character profile 的 procedural humanoid 入口；地图排布导出与游戏 UI 共用仓库内 GB2312 16×16 点阵字库；十件 V2 Hybrid 程序化几何与静态 prop；actor 统一 gameplay 状态；本地受击四角闪红与八方向提示；player/actor 与敌人空中强制位移均使用确定性分段扫掠）
+> 源码核对基线：工作区（Hurd 四职业 presentation profile 与固定 hurd-squad capture；Visual CLI V1 固定 procedural-humanoid 离屏 BMP capture；低模队友使用显式展示状态与 character profile 的 procedural humanoid 入口；地图排布导出与游戏 UI 共用仓库内 GB2312 16×16 点阵字库；十件 V2 Hybrid 程序化几何与静态 prop；actor 统一 gameplay 状态；本地受击四角闪红与八方向提示；player/actor 与敌人空中强制位移均使用确定性分段扫掠；authored anime walk 使用独立 clip 时钟）
 
 本目录面向接手 Rasterfall 任务的编码代理。目标不是介绍玩法，而是先把问题归到正确的
 状态所有者和文件，再开始搜索。命令、资源导入方法和用户可见特性仍以
