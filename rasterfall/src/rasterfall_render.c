@@ -5465,7 +5465,13 @@ static int render_ai_teammate(struct toy_renderer *renderer,
                                           profile->profession_id
             };
             struct rasterfall_character_profile character = *profile;
-            if (actor->character_id < 0) character.body_color = color;
+            if (actor->character_id < 0) {
+                /* Keep the historical ordinary-AI leg color.  The class tint
+                 * belongs to the torso; profession profiles keep their own
+                 * leg palettes. */
+                character.body_color = color;
+                character.leg_color = 0x25354A;
+            }
             pixels += rasterfall_render_procedural_humanoid(
                 renderer, camera, &state, &character);
         }
