@@ -1,7 +1,7 @@
 # Rasterfall 资源来源与发布限制
 
-> 文档更新：2026-09-08
-> 源码核对基线：工作区（移除开发者区纹理展示墙；加入文泉驿来源的 GB2312 16×16 点阵字库、对应 BDF 源文件与许可）
+> 文档更新：2026-09-09
+> 源码核对基线：工作区（移除开发者区纹理展示墙；加入文泉驿来源的 GB2312 16×16 点阵字库、对应 BDF 源文件与许可；RF Humanoid V2 为项目内生成的私有源资产）
 
 本文是资源来源、许可状态和本地样本身份的活动台账。文件存在或能够构建不代表允许公开分发；
 发布前必须逐项确认原件、作者和许可。`private-assets/` 与 `.claude/` 是本地区域，不进入公开资源
@@ -12,6 +12,7 @@
 | 运行时名称 | 已知原件 | 转换产物 | 当前发布结论 |
 | --- | --- | --- | --- |
 | Eula / 优菈 | 原始 PMX 当前无法核实 | `private-assets/models/eula.rmesh` | 未找回原包和许可前不得公开分发 |
+| RF Humanoid V2 | `tools/blender/generate_rasterfall_humanoid_v2.py` 项目内生成 | `private-assets/source/characters/rf_humanoid_v2.glb`、`private-assets/models/rf_humanoid_v2.rmesh` | 无外部原件；当前为私有验收资产，发布前仍需完成美术签收与发布边界检查 |
 | ST AR-15 | `.claude/AR15/GirlsFrontline AsteriaDefault.pmx` | `st_ar15.rmesh`、LOD 和纹理 | 本地 Readme 禁止二次配布、商业使用和拆取部件 |
 | G11 | `.claude/G11/GirlsFrontline MishtyDefault.pmx` | `g11.rmesh`、LOD 和纹理 | 未见独立许可，按同包最严格限制处理 |
 | Vector | `.claude/Vector/GirlsFrontline VectorDefault.pmx` | `vector.rmesh`、LOD 和纹理 | 未见独立许可，按同包最严格限制处理 |

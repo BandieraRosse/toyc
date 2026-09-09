@@ -152,6 +152,8 @@ static void visual_acceptance_pose(struct rasterfall_model_asset *model, int mod
 /* Fixed presentation-only strip in the existing developer zone. It shares
  * the world renderer, depth buffer, lighting and standard AK path; it never
  * creates gameplay actors or map collision. */
+static const char *character_strip_model_path;
+
 static int render_character_test_strip(struct toy_renderer *renderer,
                                        const struct camera *camera)
 {
@@ -163,15 +165,18 @@ static int render_character_test_strip(struct toy_renderer *renderer,
     const struct rasterfall_weapon_asset_profile *weapon;
     struct rasterfall_model_attachment_transform frame;
     struct rasterfall_procedural_humanoid_state old_state;
+    const char *model_path = character_strip_model_path ?
+        character_strip_model_path :
+        "rasterfall/private-assets/models/rf_humanoid_acceptance.rmesh";
     int i, pixels = 0, scale;
     if (!active_session || active_pose_preview) return 0;
     if (!character_strip_load_attempted) {
         int budget = renderer->frame_budget_ms;
         character_strip_load_attempted = 1;
         toy_renderer_set_frame_budget(renderer, 0);
-        if (rasterfall_model_load(&character_strip_model,
-            "rasterfall/private-assets/models/rf_humanoid_acceptance.rmesh") < 0)
-            __fprintf(2, "rasterfall: character test strip unavailable\n");
+        if (rasterfall_model_load(&character_strip_model, model_path) < 0)
+            __fprintf(2, "rasterfall: character test strip unavailable: %s\n",
+                      model_path);
         toy_renderer_set_frame_budget(renderer, budget);
     }
     memset(&old_state, 0, sizeof(old_state));
@@ -218,13 +223,15 @@ static void character_world_capture_camera(struct camera *camera, int distance)
     camera->view.pitch_cy = 1024;
 }
 
-int rasterfall_render_character_world_capture(const char *output_dir)
+int rasterfall_render_character_world_capture(const char *output_dir,
+                                              const char *model_path)
 {
     static const char *names[] = {"near", "mid", "far"};
     static const int distances[] = {2000, 4000, 8000};
     int i, result = 1;
     if (!active_session || !output_dir || !*output_dir) return 1;
     if (tlibc_recursive_mkdir(output_dir) < 0) return 1;
+    character_strip_model_path = model_path && *model_path ? model_path : NULL;
     for (i = 0; i < 3; i++) {
         struct camera camera;
         struct toy_renderer renderer;

@@ -1,7 +1,7 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-09
-> 源码核对基线：工作区（Hurd 四职业 presentation profile 与固定 hurd-squad capture；Visual CLI V1 procedural BMP capture；RF Humanoid V1.1 AK acceptance capture；开发者区 Character Test Strip 复用真实 world renderer 并提供 near/mid/far capture；其余渲染主线同现有工作区）
+> 源码核对基线：工作区（Hurd 四职业 presentation profile 与固定 hurd-squad capture；Visual CLI V1 procedural BMP capture；RF Humanoid V1.1 对照与 V2 AK acceptance capture；开发者区 Character Test Strip 复用真实 world renderer，并可按 model path 提供 near/mid/far capture；其余渲染主线同现有工作区）
 
 > 源码核对补充：正式 Hurd actor 通过四个专用 character profile 进入职业外观；恢复的四名 Maid 旗卫以 Maid character profile 接入 actor，同时继续由 anime identity 选择骨骼模型；普通 player、Eula、佣兵解析为 NONE。
 
@@ -164,12 +164,17 @@ build/rasterfall --character-acceptance rasterfall/private-assets/models/rf_huma
 
 ```sh
 build/rasterfall --character-world-capture /tmp/rf-world-v11
+# 对照另一套 RFCHAR body，仍走同一个地图、灯光、深度和 Character Test Strip：
+build/rasterfall --character-world-capture /tmp/rf-world-v2 \
+  --character-world-model rasterfall/private-assets/models/rf_humanoid_v2.rmesh
 ```
 
 该入口先加载正式地图并 reset session，再通过正常 `rasterfall_render_scene()` 输出
 `near.bmp`、`mid.bmp`、`far.bmp`。Character Test Strip 位于 `rasterfall.map` 的
 `z=-20000` 展示带：旧 procedural AK、RF rifle idle、RF rifle aim、RF locomotion-like
-pose；它们是 renderer presentation-only entities，不进入 actor、碰撞、AI 或网络状态。
+pose；它们是 renderer presentation-only entities，不进入 actor、碰撞、AI 或网络状态。未提供
+`--character-world-model` 时保持 V1.1 acceptance model 的默认路径；提供时只替换 strip 的
+skeletal body，不改变 camera、AK、地图或 world render path。
 
 数据流：options → main 诊断早退 → 命名场景检查/固定 setup →
 `rasterfall_render_procedural_humanoid()` → 普通 primitive 与武器 helper →

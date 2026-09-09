@@ -1,7 +1,7 @@
 # 资源、模型与动画
 
 > 文档更新：2026-09-09
-> 源码核对基线：工作区（RFCHAR importer 与 RFM2 v14 CHR1 stable humanoid/attachment tables、RF Humanoid V1.1 AK acceptance capture；PMX compatibility path）
+> 源码核对基线：工作区（RFCHAR importer 与 RFM2 v14 CHR1 stable humanoid/attachment tables、RF Humanoid V1.1 对照与 V2 AK acceptance capture；PMX compatibility path）
 
 新建或生成 Blender 人形资产必须先读 [`character-assets.md`](character-assets.md)。它冻结
 Blender source → Character GLB → importer → runtime character asset → humanoid animation 主线；
@@ -40,7 +40,9 @@ RFCHAR GLB → RFM2 v14 → stable role/attachment API，并使用角色验收�
 - 静态 GLB 转 RMESH：`app/glb2rmesh.c`；skeletal RFCHAR 转换：
   `tools/assets/rfchar_import.py`；GLB 检查：`app/glb_inspect.c`。
 - PMX 转换：`app/pmx2rmesh.c`、`tools/import-pmx-model.sh`。
-- Blender 角色导出：新资产遵循 `character-assets.md` 输出 canonical GLB；现有
+- Blender 角色导出：新资产遵循 `character-assets.md` 输出 canonical GLB；RF Humanoid V1.1
+  的对照生成器为 `tools/blender/generate_rasterfall_humanoid.py`，V2 body 生成器为
+  `tools/blender/generate_rasterfall_humanoid_v2.py`；现有
   `tools/blender/export_rasterfall_character.py` 是 Mixamo FBX→PMX/RFM2 兼容桥，不是新标准。
 - 官方正向 fixture 为 `tools/blender/generate_rfchar_fixture.py`，runtime 验证器为
   `app/rfchar_runtime_test.c`；新资产使用 stable role/attachment API，历史资产才按骨名推断。

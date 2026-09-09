@@ -1,0 +1,541 @@
+"""Generate the RF Humanoid V2 proportion and silhouette rebuild.
+
+This is a source generator rather than a hand-edited blend file.  It keeps the
+RFCHAR V1 skeleton and attachment contract, but replaces the V1.1 block-like
+body with a faceted, stylized human built from anatomical lofts:
+
+  pelvis -> pinched waist -> ribcage/chest -> shoulder caps
+  jaw/cheek/temple/crown head mass + separate hair mass
+  shoulder -> upper arm -> elbow -> forearm -> wrist -> hand
+  pelvis -> thigh -> knee -> calf -> ankle -> foot
+
+Source space is Blender metric, Z-up, and -Y forward; the glTF exporter
+performs the standard Y-up conversion.
+
+Run:
+  blender --background --factory-startup --python this_file -- \
+    --output rasterfall/private-assets/source/characters/rf_humanoid_v2.glb
+"""
+
+import argparse
+import json
+import math
+import site
+import struct
+import sys
+from pathlib import Path
+
+# Blender's embedded Python intentionally disables the user site directory.
+# Enable it when present so a normal user-level numpy install is reusable by
+# the stock glTF exporter; this is a no-op on machines with system numpy.
+try:
+    site.addsitedir(site.getusersitepackages())
+except (AttributeError, OSError):
+    pass
+
+import bpy
+from mathutils import Vector
+
+
+SIDES_BODY = 10
+SIDES_LIMB = 8
+
+
+def arguments():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--output", required=True)
+    return parser.parse_args(sys.argv[sys.argv.index("--") + 1:]
+                             if "--" in sys.argv else [])
+
+
+def ring_mesh(name, rings, sides, material, arm, scene, front_cut=False):
+    """Create a capped ring loft.
+
+    Each ring is ``(center, basis_a, basis_b, radius_a, radius_b)``.  The
+    helper deliberately leaves the mesh flat shaded: the broad facets are a
+    feature of the low-poly body, not a missing normal pass.
+    """
+    vertices = []
+    for center, basis_a, basis_b, radius_a, radius_b in rings:
+        center = Vector(center)
+        basis_a = Vector(basis_a)
+        basis_b = Vector(basis_b)
+        for side in range(sides):
+            angle = 2.0 * math.pi * side / sides
+            vertices.append(tuple(
+                center + basis_a * (radius_a * math.cos(angle)) +
+                basis_b * (radius_b * math.sin(angle))))
+
+    faces = []
+    for ring in range(len(rings) - 1):
+        for side in range(sides):
+            next_side = (side + 1) % sides
+            a = ring * sides + side
+            b = ring * sides + next_side
+            c = (ring + 1) * sides + next_side
+            d = (ring + 1) * sides + side
+            for face in ((a, b, c), (a, c, d)):
+                if not front_cut or sum(vertices[index][1] for index in face) / 3.0 >= -0.015:
+                    faces.append(face)
+
+    # End caps are intentionally low-poly n-gons. Blender/glTF triangulates
+    # them on export, giving clean terminal facets without adding dense poles.
+    if not front_cut:
+        faces.append(tuple(range(sides - 1, -1, -1)))
+    last = (len(rings) - 1) * sides
+    faces.append(tuple(last + side for side in range(sides)))
+
+    mesh = bpy.data.meshes.new(name)
+    mesh.from_pydata(vertices, [], faces)
+    mesh.update()
+    mesh.materials.append(material)
+    obj = bpy.data.objects.new(name, mesh)
+    scene.collection.objects.link(obj)
+    obj.parent = arm
+    modifier = obj.modifiers.new("RFCHAR Skin", "ARMATURE")
+    modifier.object = arm
+    return obj
+
+
+def weighted_rings(name, rings, sides, material, arm, scene, weights,
+                   front_cut=False):
+    """Create a ring loft and assign one or two weights to every vertex ring.
+
+    ``weights`` contains one ``[(bone, value), ...]`` entry per ring.  Each
+    entry has at most two non-zero values, so the exported asset stays inside
+    the BDEF1/BDEF2 contract without relying on importer truncation.
+    """
+    obj = ring_mesh(name, rings, sides, material, arm, scene, front_cut)
+    groups = {}
+    for ring_weights in weights:
+        for bone, value in ring_weights:
+            if value > 0.001 and bone not in groups:
+                groups[bone] = obj.vertex_groups.new(name=bone)
+    for ring, ring_weights in enumerate(weights):
+        for side in range(sides):
+            index = ring * sides + side
+            for bone, value in ring_weights:
+                if value > 0.001:
+                    groups[bone].add([index], value, 'REPLACE')
+    return obj
+
+
+def vertical_loft(name, profiles, sides, material, arm, scene, weights,
+                  front_cut=False):
+    """Build a vertical human volume.
+
+    Profiles are ``(z, center_y, width_x, depth_y)``.  The explicit center_y
+    offsets are important for the V2 head: the face, cheek and rear skull no
+    longer collapse to a symmetric ball.
+    """
+    rings = [((0.0, center_y, z), (1, 0, 0), (0, 1, 0), width_x, depth_y)
+             for z, center_y, width_x, depth_y in profiles]
+    return weighted_rings(name, rings, sides, material, arm, scene, weights,
+                          front_cut)
+
+
+def segment_loft(name, p0, p1, profiles, sides, material, arm, scene,
+                 bone_a, bone_b=None):
+    """Build an elliptical segment between two joints.
+
+    Profiles are ``(t, radius_a, radius_b, blend_to_bone_b)``.  The basis is
+    rebuilt from the segment axis, so the same helper works for horizontal
+    arms, vertical legs and the forward-pointing foot.
+    """
+    p0 = Vector(p0)
+    p1 = Vector(p1)
+    axis = (p1 - p0).normalized()
+    helper = Vector((0, 1, 0)) if abs(axis.y) < 0.8 else Vector((0, 0, 1))
+    basis_a = axis.cross(helper).normalized()
+    basis_b = axis.cross(basis_a).normalized()
+    rings = []
+    weights = []
+    for t, radius_a, radius_b, blend in profiles:
+        rings.append((p0.lerp(p1, t), basis_a, basis_b, radius_a, radius_b))
+        if bone_b is None or bone_a == bone_b:
+            weights.append([(bone_a, 1.0)])
+        else:
+            blend = max(0.0, min(1.0, blend))
+            weights.append([(bone_a, 1.0 - blend), (bone_b, blend)])
+    return weighted_rings(name, rings, sides, material, arm, scene, weights)
+
+
+def make_armature(scene):
+    bpy.ops.object.armature_add(enter_editmode=True, location=(0, 0, 0))
+    armature = bpy.context.object
+    armature.name = 'RFCHAR_Armature'
+    edit_bones = armature.data.edit_bones
+    edit_bones.remove(edit_bones[0])
+    bones = {}
+
+    # The role names and direct parent chain are unchanged from RF Humanoid
+    # V1.  The longer leg / slightly shorter torso read is expressed here and
+    # in the mesh, while runtime still sees the same 21 canonical roles.
+    specs = [
+        ('RF_ROOT', None, (0, 0, 0), (0, 0, 0.10)),
+        ('RF_HIPS', 'RF_ROOT', (0, 0, 0.88), (0, 0, 1.03)),
+        ('RF_SPINE', 'RF_HIPS', (0, 0, 1.03), (0, 0, 1.18)),
+        ('RF_CHEST', 'RF_SPINE', (0, 0, 1.18), (0, 0, 1.42)),
+        ('RF_UPPER_CHEST', 'RF_CHEST', (0, 0, 1.42), (0, 0, 1.56)),
+        ('RF_NECK', 'RF_UPPER_CHEST', (0, 0, 1.56), (0, 0, 1.72)),
+        ('RF_HEAD', 'RF_NECK', (0, 0, 1.72), (0, 0, 1.98)),
+        ('RF_L_SHOULDER', 'RF_UPPER_CHEST', (0.12, 0, 1.50),
+         (0.28, 0, 1.50)),
+        ('RF_L_UPPER_ARM', 'RF_L_SHOULDER', (0.28, 0, 1.50),
+         (0.58, 0, 1.50)),
+        ('RF_L_FOREARM', 'RF_L_UPPER_ARM', (0.58, 0, 1.50),
+         (0.83, 0, 1.50)),
+        ('RF_L_HAND', 'RF_L_FOREARM', (0.83, 0, 1.50),
+         (1.01, 0, 1.50)),
+        ('RF_R_SHOULDER', 'RF_UPPER_CHEST', (-0.12, 0, 1.50),
+         (-0.28, 0, 1.50)),
+        ('RF_R_UPPER_ARM', 'RF_R_SHOULDER', (-0.28, 0, 1.50),
+         (-0.58, 0, 1.50)),
+        ('RF_R_FOREARM', 'RF_R_UPPER_ARM', (-0.58, 0, 1.50),
+         (-0.83, 0, 1.50)),
+        ('RF_R_HAND', 'RF_R_FOREARM', (-0.83, 0, 1.50),
+         (-1.01, 0, 1.50)),
+        ('RF_L_UPPER_LEG', 'RF_HIPS', (0.15, 0, 0.88),
+         (0.15, 0, 0.50)),
+        ('RF_L_LOWER_LEG', 'RF_L_UPPER_LEG', (0.15, 0, 0.50),
+         (0.15, 0, 0.12)),
+        ('RF_L_FOOT', 'RF_L_LOWER_LEG', (0.15, 0, 0.12),
+         (0.15, -0.28, 0.07)),
+        ('RF_R_UPPER_LEG', 'RF_HIPS', (-0.15, 0, 0.88),
+         (-0.15, 0, 0.50)),
+        ('RF_R_LOWER_LEG', 'RF_R_UPPER_LEG', (-0.15, 0, 0.50),
+         (-0.15, 0, 0.12)),
+        ('RF_R_FOOT', 'RF_R_LOWER_LEG', (-0.15, 0, 0.12),
+         (-0.15, -0.28, 0.07)),
+    ]
+    for name, parent, head, tail in specs:
+        bone = edit_bones.new(name)
+        bone.head = head
+        bone.tail = tail
+        bone.use_deform = True
+        bones[name] = bone
+        if parent:
+            bone.parent = bones[parent]
+
+    attachments = {
+        'WEAPON_R': ('RF_R_HAND', (-0.94, -0.105, 1.49)),
+        'WEAPON_L': ('RF_L_HAND', (0.94, -0.105, 1.49)),
+        'FOREGRIP': ('RF_L_HAND', (0.86, -0.105, 1.49)),
+        'BACK': ('RF_CHEST', (0, 0.18, 1.36)),
+        'CHEST': ('RF_CHEST', (0, -0.22, 1.36)),
+        'HEAD': ('RF_HEAD', (0, 0.005, 1.99)),
+        'HIP_L': ('RF_L_UPPER_LEG', (0.20, 0, 0.87)),
+        'HIP_R': ('RF_R_UPPER_LEG', (-0.20, 0, 0.87)),
+    }
+    for attachment_id, (parent, head) in attachments.items():
+        bone = edit_bones.new('RF_ATTACH_' + attachment_id)
+        bone.head = head
+        bone.tail = (head[0], head[1], head[2] + 0.08)
+        bone.parent = bones[parent]
+        bone.use_deform = False
+
+    bpy.ops.object.mode_set(mode='OBJECT')
+    return armature
+
+
+def create_materials():
+    def material(name, color):
+        result = bpy.data.materials.new(name)
+        result.diffuse_color = (*color, 1.0)
+        return result
+
+    return {
+        'skin': material('RF_Skin', (0.48, 0.25, 0.16)),
+        'hair': material('RF_Hair', (0.025, 0.035, 0.045)),
+        'shirt': material('RF_Shirt', (0.14, 0.22, 0.25)),
+        'pants': material('RF_Pants', (0.29, 0.34, 0.30)),
+        'boots': material('RF_Boots', (0.045, 0.060, 0.065)),
+    }
+
+
+def create_body(armature, scene, materials):
+    shirt = materials['shirt']
+    pants = materials['pants']
+    skin = materials['skin']
+    hair = materials['hair']
+    boots = materials['boots']
+
+    # Pelvis is a full second volume. Its widest ring is around the hips and
+    # its lower edge narrows into the thighs; this avoids the V1.1 skirt/armor
+    # plate read.
+    vertical_loft(
+        'Pelvis',
+        [
+            (0.70, 0.000, 0.20, 0.14),
+            (0.77, 0.000, 0.28, 0.18),
+            (0.88, 0.000, 0.31, 0.19),
+            (0.98, 0.000, 0.27, 0.17),
+            (1.04, 0.000, 0.23, 0.15),
+        ],
+        SIDES_BODY, pants, armature, scene,
+        [
+            [('RF_HIPS', 1.0)],
+            [('RF_HIPS', 1.0)],
+            [('RF_HIPS', 0.85), ('RF_SPINE', 0.15)],
+            [('RF_HIPS', 0.35), ('RF_SPINE', 0.65)],
+            [('RF_SPINE', 1.0)],
+        ])
+
+    # One continuous shirt loft carries the pinched waist into the ribcage.
+    # Width and depth both change gradually; there is no broad rectangular
+    # chest slab.
+    vertical_loft(
+        'Torso',
+        [
+            (0.96, -0.005, 0.225, 0.145),
+            (1.04, -0.008, 0.215, 0.145),
+            (1.14, -0.010, 0.220, 0.155),
+            (1.25, -0.008, 0.255, 0.180),
+            (1.36, -0.004, 0.300, 0.200),
+            (1.47, 0.000, 0.315, 0.195),
+            (1.56, 0.005, 0.255, 0.160),
+        ],
+        SIDES_BODY, shirt, armature, scene,
+        [
+            [('RF_HIPS', 0.55), ('RF_SPINE', 0.45)],
+            [('RF_HIPS', 0.30), ('RF_SPINE', 0.70)],
+            [('RF_SPINE', 1.0)],
+            [('RF_SPINE', 0.65), ('RF_CHEST', 0.35)],
+            [('RF_CHEST', 0.80), ('RF_UPPER_CHEST', 0.20)],
+            [('RF_CHEST', 0.45), ('RF_UPPER_CHEST', 0.55)],
+            [('RF_UPPER_CHEST', 1.0)],
+        ])
+
+    # A tapered neck bridges the shirt collar and the head instead of ending
+    # in a square peg.
+    vertical_loft(
+        'Neck',
+        [
+            (1.52, 0.005, 0.105, 0.095),
+            (1.59, 0.008, 0.098, 0.090),
+            (1.70, 0.012, 0.082, 0.078),
+            (1.75, 0.015, 0.078, 0.073),
+        ],
+        SIDES_LIMB, skin, armature, scene,
+        [[('RF_NECK', 1.0)]] * 4)
+
+    # Head profile: narrow jaw/chin, broad cheek and temple, then a smaller
+    # crown. Center-y changes expose forehead/face/rear-skull volume from the
+    # side without adding small facial features.
+    vertical_loft(
+        'HeadMass',
+        [
+            (1.65, -0.020, 0.135, 0.105),  # jaw underside
+            (1.70, -0.055, 0.155, 0.135),  # chin
+            (1.76, -0.035, 0.205, 0.175),  # cheek
+            (1.84, 0.000, 0.220, 0.190),  # temple
+            (1.92, 0.018, 0.205, 0.180),  # forehead / upper skull
+            (2.00, 0.020, 0.180, 0.160),  # crown
+            (2.045, 0.010, 0.105, 0.105),
+        ],
+        SIDES_BODY, skin, armature, scene,
+        [[('RF_HEAD', 1.0)]] * 7)
+
+    # Hair is an independent, slightly flared rear/crown mass. The front cut
+    # leaves the forehead and cheek planes readable; two side locks keep the
+    # silhouette from looking like a tight helmet.
+    vertical_loft(
+        'HairCap',
+        [
+            (1.83, 0.050, 0.170, 0.155),
+            (1.90, 0.055, 0.215, 0.190),
+            (1.99, 0.060, 0.230, 0.200),
+            (2.050, 0.050, 0.195, 0.175),
+            (2.095, 0.035, 0.115, 0.115),
+        ],
+        SIDES_BODY, hair, armature, scene,
+        [[('RF_HEAD', 1.0)]] * 5,
+        front_cut=True)
+    # A few front-facing low-poly locks give the hairline a broken, human
+    # silhouette. They are separate from the rear cap, so the forehead stays
+    # visible instead of reading as a fitted helmet.
+    for side, sign in (('L', 1.0), ('R', -1.0)):
+        segment_loft(
+            'HairFringe' + side, (0.17 * sign, -0.16, 1.83),
+            (0.055 * sign, -0.18, 1.89),
+            [(0.0, 0.040, 0.025, 0.0),
+             (0.55, 0.050, 0.030, 0.0),
+             (1.0, 0.032, 0.020, 0.0)],
+            SIDES_LIMB, hair, armature, scene, 'RF_HEAD')
+    segment_loft(
+        'HairFringeCenter', (0.060, -0.18, 1.89), (-0.060, -0.18, 1.89),
+        [(0.0, 0.033, 0.020, 0.0),
+         (0.55, 0.040, 0.024, 0.0),
+         (1.0, 0.033, 0.020, 0.0)],
+        SIDES_LIMB, hair, armature, scene, 'RF_HEAD')
+    for side, sign in (('L', 1.0), ('R', -1.0)):
+        segment_loft(
+            'HairLock' + side, (0.18 * sign, 0.025, 1.78),
+            (0.19 * sign, 0.045, 1.96),
+            [(0.0, 0.055, 0.060, 0.0),
+             (0.45, 0.065, 0.070, 0.0),
+             (1.0, 0.045, 0.050, 0.0)],
+            SIDES_LIMB, hair, armature, scene, 'RF_HEAD')
+
+    # Shoulder caps establish a deltoid volume separate from the ribcage.
+    for side, sign in (('L', 1.0), ('R', -1.0)):
+        segment_loft(
+            side + 'Shoulder', (0.22 * sign, 0.0, 1.49),
+            (0.43 * sign, 0.0, 1.50),
+            [(0.0, 0.145, 0.125, 0.0),
+             (0.35, 0.155, 0.130, 0.0),
+             (0.70, 0.125, 0.105, 0.35),
+             (1.0, 0.105, 0.090, 1.0)],
+            SIDES_LIMB, shirt, armature, scene,
+            'RF_' + side + '_SHOULDER', 'RF_' + side + '_UPPER_ARM')
+
+        # Upper arm tapers into a readable elbow rather than staying a tube.
+        segment_loft(
+            side + 'UpperArm', (0.39 * sign, 0.0, 1.50),
+            (0.61 * sign, 0.0, 1.50),
+            [(0.0, 0.112, 0.105, 0.0),
+             (0.28, 0.112, 0.098, 0.0),
+             (0.70, 0.090, 0.082, 0.0),
+             (0.88, 0.082, 0.075, 0.45),
+             (1.0, 0.078, 0.070, 1.0)],
+            SIDES_LIMB, shirt, armature, scene,
+            'RF_' + side + '_UPPER_ARM', 'RF_' + side + '_FOREARM')
+
+        # Forearm re-widens slightly in the middle and then pinches to a
+        # narrow wrist. It is pants-like undersuit color, not a blocky glove.
+        segment_loft(
+            side + 'Forearm', (0.58 * sign, 0.0, 1.50),
+            (0.84 * sign, 0.0, 1.50),
+            [(0.0, 0.082, 0.075, 0.0),
+             (0.25, 0.086, 0.078, 0.0),
+             (0.60, 0.090, 0.080, 0.0),
+             (0.84, 0.073, 0.068, 0.35),
+             (1.0, 0.065, 0.060, 1.0)],
+            SIDES_LIMB, shirt, armature, scene,
+            'RF_' + side + '_FOREARM', 'RF_' + side + '_HAND')
+
+        segment_loft(
+            side + 'Hand', (0.81 * sign, -0.005, 1.50),
+            (1.00 * sign, -0.015, 1.50),
+            [(0.0, 0.065, 0.060, 0.0),
+             (0.30, 0.078, 0.067, 0.0),
+             (0.78, 0.073, 0.062, 0.0),
+             (1.0, 0.052, 0.048, 0.0)],
+            SIDES_LIMB, skin, armature, scene, 'RF_' + side + '_HAND')
+
+        # Thighs are full at the hip and taper toward an explicit knee volume.
+        segment_loft(
+            side + 'Thigh', (0.15 * sign, 0.0, 0.90),
+            (0.15 * sign, 0.0, 0.51),
+            [(0.0, 0.155, 0.140, 0.0),
+             (0.18, 0.160, 0.145, 0.0),
+             (0.52, 0.140, 0.125, 0.0),
+             (0.80, 0.118, 0.108, 0.35),
+             (1.0, 0.105, 0.098, 1.0)],
+            SIDES_LIMB, pants, armature, scene,
+            'RF_' + side + '_UPPER_LEG', 'RF_' + side + '_LOWER_LEG')
+
+        vertical_loft(
+            side + 'Knee',
+            [(0.46, 0.0, 0.108, 0.100),
+             (0.51, 0.0, 0.116, 0.105),
+             (0.56, 0.0, 0.108, 0.098)],
+            SIDES_LIMB, pants, armature, scene,
+            [[('RF_' + side + '_UPPER_LEG', 0.35),
+              ('RF_' + side + '_LOWER_LEG', 0.65)],
+             [('RF_' + side + '_LOWER_LEG', 1.0)],
+             [('RF_' + side + '_LOWER_LEG', 1.0)]])
+
+        # The calf peaks above mid-shin and narrows clearly at the ankle.
+        segment_loft(
+            side + 'Calf', (0.15 * sign, 0.0, 0.55),
+            (0.15 * sign, 0.0, 0.12),
+            [(0.0, 0.100, 0.094, 0.0),
+             (0.20, 0.116, 0.106, 0.0),
+             (0.48, 0.120, 0.108, 0.0),
+             (0.74, 0.094, 0.088, 0.25),
+             (0.92, 0.073, 0.070, 0.70),
+             (1.0, 0.066, 0.064, 1.0)],
+            SIDES_LIMB, pants, armature, scene,
+            'RF_' + side + '_LOWER_LEG', 'RF_' + side + '_FOOT')
+
+        # A shallow, forward wedge gives the boot a toe/heel read without the
+        # V1.1 rock shape. The lowest ring is close to z=0 so the mesh remains
+        # grounded in the canonical bind pose.
+        segment_loft(
+            side + 'Foot', (0.15 * sign, -0.015, 0.105),
+            (0.15 * sign, -0.31, 0.070),
+            [(0.0, 0.085, 0.080, 0.0),
+             (0.22, 0.108, 0.090, 0.0),
+             (0.72, 0.108, 0.075, 0.0),
+             (1.0, 0.082, 0.060, 0.0)],
+            SIDES_LIMB, boots, armature, scene,
+            'RF_' + side + '_FOOT')
+
+
+def patch_glb_skeleton(path):
+    """Ensure Blender writes the RFCHAR-required skin skeleton node."""
+    raw = path.read_bytes()
+    json_length, json_kind = struct.unpack_from('<II', raw, 12)
+    document = json.loads(raw[20:20 + json_length].rstrip(b' \0'))
+    root = next(index for index, node in enumerate(document['nodes'])
+                if node.get('name') == 'RF_ROOT')
+    document['skins'][0]['skeleton'] = root
+    encoded = json.dumps(document, separators=(',', ':')).encode()
+    encoded += b' ' * (-len(encoded) % 4)
+    binary_at = 20 + json_length
+    binary_length, binary_kind = struct.unpack_from('<II', raw, binary_at)
+    blob = raw[binary_at + 8:binary_at + 8 + binary_length]
+    total = 12 + 8 + len(encoded) + 8 + len(blob)
+    path.write_bytes(
+        b'glTF' + struct.pack('<II', 2, total) +
+        struct.pack('<II', len(encoded), json_kind) + encoded +
+        struct.pack('<II', len(blob), binary_kind) + blob)
+
+
+def main():
+    args = arguments()
+    bpy.ops.object.select_all(action='SELECT')
+    bpy.ops.object.delete(use_global=False)
+    scene = bpy.context.scene
+    scene.unit_settings.system = 'METRIC'
+    scene.unit_settings.scale_length = 1.0
+
+    armature = make_armature(scene)
+    materials = create_materials()
+    create_body(armature, scene, materials)
+
+    # Keep every object at identity TRS; all geometry is authored in armature
+    # space and the canonical GLB exporter handles only the Y-up conversion.
+    for obj in list(scene.objects):
+        obj.select_set(True)
+    bpy.context.view_layer.objects.active = armature
+    bpy.ops.export_scene.gltf(
+        filepath=args.output,
+        export_format='GLB',
+        use_selection=True,
+        export_skins=True,
+        export_influence_nb=4,
+        export_all_influences=True,
+        export_morph=False,
+        export_animations=False,
+        export_yup=True,
+        export_apply=False,
+        export_armature_object_remove=True)
+
+    path = Path(args.output)
+    patch_glb_skeleton(path)
+    vertex_count = sum(len(obj.data.vertices) for obj in scene.objects
+                       if obj.type == 'MESH')
+    triangle_count = 0
+    for obj in scene.objects:
+        if obj.type != 'MESH':
+            continue
+        obj.data.calc_loop_triangles()
+        triangle_count += len(obj.data.loop_triangles)
+    print('rfchar-humanoid-v2: %s source_vertices=%d source_triangles=%d materials=%d' %
+          (args.output, vertex_count, triangle_count, len(materials)))
+
+
+if __name__ == '__main__':
+    main()

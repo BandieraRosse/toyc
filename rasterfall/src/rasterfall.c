@@ -2622,7 +2622,8 @@ int main(int argc, char **argv)
     rf_windows_log("startup: session reset");
     if (options.character_world_capture_dir) {
         int capture_result = rasterfall_render_character_world_capture(
-            options.character_world_capture_dir);
+            options.character_world_capture_dir,
+            options.character_world_capture_model);
         if (model_texture.blob) toy_texture_unload(&model_texture);
         rasterfall_session_unload(&session);
         toy_renderer_destroy(&renderer);

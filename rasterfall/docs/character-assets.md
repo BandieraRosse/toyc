@@ -1,7 +1,7 @@
 # Rasterfall Character Asset Contract V1 / RF Humanoid V1
 
 > 文档更新：2026-09-09
-> 源码核对基线：工作区（RFM2 v14 / SKN1 + CHR1、正式 RFCHAR importer、runtime stable API 与 Blender reference fixture）
+> 源码核对基线：工作区（RFM2 v14 / SKN1 + CHR1、正式 RFCHAR importer、runtime stable API、Blender reference fixture 与 RF Humanoid V2 proportion/silhouette rebuild）
 
 本文是所有新 Rasterfall 人形角色资产的第一入口。V1 冻结 Blender 到离线 importer 的输入门；
 它不承诺任意 glTF 的兼容性，也不要求 runtime 直接读取 GLB。主线固定为：
@@ -185,3 +185,41 @@ build/rasterfall --character-acceptance rasterfall/private-assets/models/rf_huma
 步枪动作通过稳定 humanoid role composition 旋转肩、大臂、前臂和双手，再由现有 rifle hand
 solver 求解握持；capture 根据姿态 bounds 使用稳定 margin framing。当前已验证 rifle motion、
 RFM2 v14 runtime load 与 CPU skinning，仍需在真实 gameplay 镜头中继续观察远距离附件空间。
+
+## RF Humanoid Art Acceptance Character V2
+
+V2 是利用同一 RFCHAR V1 contract 对 V1.1 原型做的大尺度 body rebuild。V1.1 的 GLB/RMESH
+继续保留作并排对照；V2 不新增骨骼角色抽象，也不改变 `RFCHAR`、RFM2 v14、stable role 或
+attachment ID。新的源生成器为 `tools/blender/generate_rasterfall_humanoid_v2.py`，manifest
+为 `tools/assets/manifests/characters/rf_humanoid_v2.asset.json`。
+
+造型策略是长腿、较短的视觉躯干、明确的 pelvis second volume、连续 ribcage → waist → pelvis
+收缩、独立 deltoid/elbow/knee/calf 轮廓，以及 jaw/cheek/temple/crown 分层的头部和独立 hair
+silhouette mass。基础外观只使用 skin、hair、shirt、pants、boots 五个大色块；没有用战术附件
+掩盖人体比例。所有 deform 顶点保持最多两项影响，按现有 BDEF1/BDEF2 输入门导出。
+
+可重复生成、导入和验收：
+
+```sh
+mkdir -p rasterfall/private-assets/source/characters
+blender --background --factory-startup --python tools/blender/generate_rasterfall_humanoid_v2.py -- \
+  --output rasterfall/private-assets/source/characters/rf_humanoid_v2.glb
+build/glb-inspect rasterfall/private-assets/source/characters/rf_humanoid_v2.glb contract
+python3 tools/assets/import_asset.py --force tools/assets/manifests/characters/rf_humanoid_v2.asset.json
+build/rfchar_runtime_test rasterfall/private-assets/models/rf_humanoid_v2.rmesh
+build/rasterfall --character-acceptance \
+  rasterfall/private-assets/models/rf_humanoid_v2.rmesh tmp/rf-humanoid-v2/acceptance
+build/rasterfall --character-world-capture tmp/rf-world-v2 \
+  --character-world-model rasterfall/private-assets/models/rf_humanoid_v2.rmesh
+```
+
+当前生成结果为 GLB source 968 vertices / 1,794 triangles / 26 mesh nodes / 5 materials；导入
+RFM2 为 4,772 vertices / 1,794 triangles / 29 bones（21 humanoid + 8 attachments），其中
+3,758 个顶点为 BDEF1、1,014 个为 BDEF2。源空间从鞋底到 crown 约 2.095m；bind pose 中
+hip 约在总高 42%、shoulder 约在 72%，视觉上把更多高度交给腿和小腿，而不是 V1.1 的短直筒腿。
+
+`--character-acceptance` 继续输出 bind、rifle-idle、rifle-aim 的 front/side/back/three-quarter
+及 near/mid/far A/B；`--character-world-model` 只替换开发者区 Character Test Strip 的 body，
+仍使用正式地图、真实 world renderer、标准 AK、既有相机和深度路径。当前 V2 已通过 contract、
+RFM2 v14 load、CPU skinning 和 rifle attachment motion；最终美术判断仍应以这些 world captures
+和实际运行镜头为准。
