@@ -1,6 +1,8 @@
 #ifndef TOYC_RASTERFALL_HUMANOID_H
 #define TOYC_RASTERFALL_HUMANOID_H
 
+#define RASTERFALL_CHARACTER_ASSET_CONTRACT_VERSION 1
+
 /* Import-format-independent roles.  Mapping entries are indices in the
  * source skeleton and -1 means that the role is absent. */
 enum rasterfall_humanoid_bone {
@@ -26,6 +28,20 @@ enum rasterfall_humanoid_bone {
     RASTERFALL_HUMANOID_RIGHT_LOWER_LEG,
     RASTERFALL_HUMANOID_RIGHT_FOOT,
     RASTERFALL_HUMANOID_BONE_COUNT
+};
+
+/* Stable runtime attachment semantics.  Importers resolve authoring nodes to
+ * these IDs once; gameplay and rendering must not retain Blender node names. */
+enum rasterfall_character_attachment {
+    RASTERFALL_ATTACHMENT_WEAPON_R,
+    RASTERFALL_ATTACHMENT_WEAPON_L,
+    RASTERFALL_ATTACHMENT_FOREGRIP,
+    RASTERFALL_ATTACHMENT_BACK,
+    RASTERFALL_ATTACHMENT_CHEST,
+    RASTERFALL_ATTACHMENT_HEAD,
+    RASTERFALL_ATTACHMENT_HIP_L,
+    RASTERFALL_ATTACHMENT_HIP_R,
+    RASTERFALL_ATTACHMENT_COUNT
 };
 
 struct rasterfall_humanoid_mapping {

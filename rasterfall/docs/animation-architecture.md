@@ -1,10 +1,13 @@
 # Rasterfall 模型与动画架构
 
-> 文档更新：2026-09-03
-> 源码核对基线：工作区（玩法 MOVE 时钟映射到 authored anime walk clip 的展示时钟）
+> 文档更新：2026-09-09
+> 源码核对基线：工作区（RF Humanoid V1 / Character GLB Contract；玩法 MOVE 时钟映射到 authored anime walk clip 的展示时钟）
 
 本文说明运行时模块边界、扩展入口和当前仍需控制的技术债。格式细节仍以各公共头文件和
 转换工具为准。
+
+新角色骨架、rest pose、attachment 和 skinning 的离线输入规范由
+[`character-assets.md`](character-assets.md) 唯一拥有；本页拥有导入后的动画求值顺序。
 
 ## 数据流
 

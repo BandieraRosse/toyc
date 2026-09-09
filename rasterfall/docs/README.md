@@ -26,6 +26,7 @@
 | world-space 静态 RMESH prop、实例变换和开发展示 | [rendering.md](rendering.md) | `include/rasterfall_render.h`、`src/rasterfall_render.c` |
 | 战斗表现事件、muzzle/tracer/impact/camera shake 消费 | [rendering.md](rendering.md) | `include/rasterfall_effect_event.h`、`src/rasterfall_effects.c` |
 | 模型、蒙皮、IK、VMD/GLB、动作重定向 | [assets-animation.md](assets-animation.md) | `src/rasterfall_model.c` |
+| Blender 人形角色、RF Humanoid、Character GLB、附件与蒙皮门禁 | [character-assets.md](character-assets.md) | `include/rasterfall_humanoid.h`、`app/glb_inspect.c` |
 | 导入 PMX/GLB、manifest、纹理、LOD、模型诊断 | [asset-pipeline.md](asset-pipeline.md) | `tools/assets/import_asset.py`、现有转换器、模型加载器 |
 | 程序化工业/军事环境组件、Blender 批量导出 | [industrial-props.md](industrial-props.md)、[asset-pipeline.md](asset-pipeline.md) | `tools/blender/generate_rasterfall_props.py` |
 | 环境组件 V2 风格、palette、几何/纹理预算与验收 | [environment-art.md](environment-art.md)、[industrial-props.md](industrial-props.md) | 十件 static prop 源资产与游戏内展示 |
@@ -88,6 +89,7 @@ player/actor 和敌人的 airborne forced/knockback movement 均由玩法核心�
 - [environment-art.md](environment-art.md)：十件工业 / 军事组件的 V2 light upgrade 风格、逐件要点、预算、验收与试点顺序。
 
 - [animation-architecture.md](animation-architecture.md)：动画数据流、不变量和扩展边界。
+- [character-assets.md](character-assets.md)：RF Humanoid V1、Character GLB、attachment 与 skinning 的冻结契约和 validator 门禁。
 - [network-architecture.md](network-architecture.md)：联机状态分类和房间生命周期。
 - [asset-sources.md](asset-sources.md)：资源身份、许可状态和发布前检查。
 - [asset-pipeline.md](asset-pipeline.md)：资产转换、检查器、LOD 和离屏回归命令。

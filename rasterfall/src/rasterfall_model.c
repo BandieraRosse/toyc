@@ -3760,23 +3760,26 @@ static int model_find_exact_bone(const struct rasterfall_model_asset *asset,
 void rasterfall_model_map_humanoid(const struct rasterfall_model_asset *asset,
                                    struct rasterfall_humanoid_mapping *mapping)
 {
-    static const char *names[RASTERFALL_HUMANOID_BONE_COUNT][2] = {
-        {"全ての親", "操作中心"}, {"腰", "下半身"},
-        {"上半身", "upper body"}, {"上半身3", "upper body 3"},
-        {"上半身2", "upper body 2"}, {"首", "neck"}, {"頭", "head"},
-        {"左肩", "left shoulder"}, {"左腕", "left arm"},
-        {"左ひじ", "left elbow"}, {"左手首", "left wrist"},
-        {"右肩", "right shoulder"}, {"右腕", "right arm"},
-        {"右ひじ", "right elbow"}, {"右手首", "right wrist"},
-        {"左足", "left leg"}, {"左ひざ", "left knee"},
-        {"左足首", "left ankle"}, {"右足", "right leg"},
-        {"右ひざ", "right knee"}, {"右足首", "right ankle"}
+    static const char *names[RASTERFALL_HUMANOID_BONE_COUNT][3] = {
+        {"RF_ROOT", "全ての親", "操作中心"}, {"RF_HIPS", "腰", "下半身"},
+        {"RF_SPINE", "上半身", "upper body"}, {"RF_CHEST", "上半身3", "upper body 3"},
+        {"RF_UPPER_CHEST", "上半身2", "upper body 2"}, {"RF_NECK", "首", "neck"}, {"RF_HEAD", "頭", "head"},
+        {"RF_L_SHOULDER", "左肩", "left shoulder"}, {"RF_L_UPPER_ARM", "左腕", "left arm"},
+        {"RF_L_FOREARM", "左ひじ", "left elbow"}, {"RF_L_HAND", "左手首", "left wrist"},
+        {"RF_R_SHOULDER", "右肩", "right shoulder"}, {"RF_R_UPPER_ARM", "右腕", "right arm"},
+        {"RF_R_FOREARM", "右ひじ", "right elbow"}, {"RF_R_HAND", "右手首", "right wrist"},
+        {"RF_L_UPPER_LEG", "左足", "left leg"}, {"RF_L_LOWER_LEG", "左ひざ", "left knee"},
+        {"RF_L_FOOT", "左足首", "left ankle"}, {"RF_R_UPPER_LEG", "右足", "right leg"},
+        {"RF_R_LOWER_LEG", "右ひざ", "right knee"}, {"RF_R_FOOT", "右足首", "right ankle"}
     };
     int i;
     rasterfall_humanoid_mapping_init(mapping);
     if (!asset || !mapping) return;
-    for (i = 0; i < RASTERFALL_HUMANOID_BONE_COUNT; i++)
-        mapping->bone_indices[i] = model_find_exact_bone(asset, names[i][0], names[i][1]);
+    for (i = 0; i < RASTERFALL_HUMANOID_BONE_COUNT; i++) {
+        mapping->bone_indices[i] = model_find_exact_bone(asset, names[i][0], 0);
+        if (mapping->bone_indices[i] < 0)
+            mapping->bone_indices[i] = model_find_exact_bone(asset, names[i][1], names[i][2]);
+    }
 }
 
 static int model_bone_is_descendant(const struct rasterfall_model_asset *asset,

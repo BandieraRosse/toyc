@@ -1007,12 +1007,139 @@ fail:tlibc_free(t);tlibc_free(r);tlibc_free(s);tlibc_free(global);tlibc_free(ski
 }
 
 #ifndef RASTERFALL_GLB_LIBRARY
+static const char *contract_bone_names[RASTERFALL_HUMANOID_BONE_COUNT] = {
+    "RF_ROOT", "RF_HIPS", "RF_SPINE", "RF_CHEST", "RF_UPPER_CHEST",
+    "RF_NECK", "RF_HEAD", "RF_L_SHOULDER", "RF_L_UPPER_ARM",
+    "RF_L_FOREARM", "RF_L_HAND", "RF_R_SHOULDER", "RF_R_UPPER_ARM",
+    "RF_R_FOREARM", "RF_R_HAND", "RF_L_UPPER_LEG", "RF_L_LOWER_LEG",
+    "RF_L_FOOT", "RF_R_UPPER_LEG", "RF_R_LOWER_LEG", "RF_R_FOOT"
+};
+static const char *contract_attachment_names[RASTERFALL_ATTACHMENT_COUNT] = {
+    "RF_ATTACH_WEAPON_R", "RF_ATTACH_WEAPON_L", "RF_ATTACH_FOREGRIP",
+    "RF_ATTACH_BACK", "RF_ATTACH_CHEST", "RF_ATTACH_HEAD",
+    "RF_ATTACH_HIP_L", "RF_ATTACH_HIP_R"
+};
+static const int contract_attachment_parents[RASTERFALL_ATTACHMENT_COUNT] = {
+    RASTERFALL_HUMANOID_RIGHT_HAND, RASTERFALL_HUMANOID_LEFT_HAND,
+    RASTERFALL_HUMANOID_LEFT_HAND, RASTERFALL_HUMANOID_CHEST,
+    RASTERFALL_HUMANOID_CHEST, RASTERFALL_HUMANOID_HEAD,
+    RASTERFALL_HUMANOID_LEFT_UPPER_LEG, RASTERFALL_HUMANOID_RIGHT_UPPER_LEG
+};
+
+static int contract_find_unique(const struct glb_doc *doc, const char *wanted,
+                                int *duplicates)
+{
+    int i, found = -1; char name[128];
+    *duplicates = 0;
+    for (i = 0; i < doc->nodes.count; i++) {
+        node_name(doc, i, name, sizeof(name));
+        if (!strcmp(name, wanted)) { if (found >= 0) (*duplicates)++; else found = i; }
+    }
+    return found;
+}
+
+static int contract_scale_identity(struct slice node)
+{
+    struct slice scale = object_value(node, "scale"); int i;
+    for (i = 0; i < 3; i++) {
+        double value = json_number(array_value(scale, i), 1.0);
+        if (value < 0.999999 || value > 1.000001) return 0;
+    }
+    return 1;
+}
+
+static int contract_object_identity(struct slice node)
+{
+    static const double td[3] = {0,0,0}, rd[4] = {0,0,0,1};
+    struct slice t = object_value(node,"translation"), r = object_value(node,"rotation");
+    int i;
+    if (object_value(node, "matrix").p || !contract_scale_identity(node)) return 0;
+    for(i=0;i<3;i++){double v=json_number(array_value(t,i),td[i]);if(v < -0.000001 || v > 0.000001)return 0;}
+    for(i=0;i<4;i++){double v=json_number(array_value(r,i),rd[i])-rd[i];if(v < -0.000001 || v > 0.000001)return 0;}
+    return 1;
+}
+
+static int contract_validate_primitive(const struct glb_doc *doc,
+                                       struct slice primitive, int joint_count,
+                                       int mesh_index, int primitive_index)
+{
+    const char *keys[4] = {"POSITION","NORMAL","JOINTS_0","WEIGHTS_0"};
+    struct accessor_info info[4], indices; struct slice attributes=object_value(primitive,"attributes");
+    const unsigned char *jd,*wd; int js,ws,jb,wb,i,c,errors=0,mode;
+    int normalized=0;
+    mode=json_int(object_value(primitive,"mode"),4);
+    if(mode!=4){__printf("RFCHAR V1 ERROR PRIMITIVE_MODE: mesh=%d primitive=%d mode=%d expected=4\n",mesh_index,primitive_index,mode);errors++;}
+    for(i=0;i<4;i++){
+        int a=json_int(object_value(attributes,keys[i]),-1);
+        if(read_accessor_info(doc,a,&info[i])<0){__printf("RFCHAR V1 ERROR ATTRIBUTE_MISSING: mesh=%d primitive=%d attribute=%s\n",mesh_index,primitive_index,keys[i]);errors++;__memset(&info[i],0,sizeof(info[i]));}
+    }
+    if(errors)return errors;
+    if(info[0].component!=5126||info[0].components!=3||info[1].component!=5126||info[1].components!=3||
+       info[2].components!=4||(info[2].component!=5121&&info[2].component!=5123)||info[3].components!=4||
+       (info[3].component!=5126&&info[3].component!=5121&&info[3].component!=5123)){
+        __printf("RFCHAR V1 ERROR ATTRIBUTE_FORMAT: mesh=%d primitive=%d\n",mesh_index,primitive_index);errors++;
+    }
+    if(info[0].count!=info[1].count||info[0].count!=info[2].count||info[0].count!=info[3].count){
+        __printf("RFCHAR V1 ERROR ATTRIBUTE_COUNT: mesh=%d primitive=%d POSITION=%d NORMAL=%d JOINTS_0=%d WEIGHTS_0=%d\n",mesh_index,primitive_index,info[0].count,info[1].count,info[2].count,info[3].count);errors++;
+    }
+    if(read_accessor_info(doc,json_int(object_value(primitive,"indices"),-1),&indices)<0||indices.components!=1||
+       (indices.component!=5121&&indices.component!=5123&&indices.component!=5125)){
+        __printf("RFCHAR V1 ERROR INDICES: mesh=%d primitive=%d requires unsigned SCALAR indices\n",mesh_index,primitive_index);errors++;
+    }
+    if(object_value(attributes,"JOINTS_1").p||object_value(attributes,"WEIGHTS_1").p){__printf("RFCHAR V1 ERROR EXTRA_INFLUENCES: mesh=%d primitive=%d\n",mesh_index,primitive_index);errors++;}
+    {struct slice flag=object_value(doc->accessors.items[json_int(object_value(attributes,"WEIGHTS_0"),-1)],"normalized");if(flag.p&&flag.end-flag.p>=4&&!memcmp(skip_ws(flag.p,flag.end),"true",4))normalized=1;}
+    if(info[3].component!=5126&&!normalized){__printf("RFCHAR V1 ERROR WEIGHT_FORMAT: integer WEIGHTS_0 must be normalized\n");errors++;}
+    jd=accessor_data(doc,&info[2],&js);wd=accessor_data(doc,&info[3],&ws);jb=component_bytes(info[2].component);wb=component_bytes(info[3].component);
+    for(i=0;i<info[0].count;i++){
+        double sum=0;int active=0,invalid=0;
+        for(c=0;c<4;c++){double w=preview_component(wd+i*ws+c*wb,info[3].component,normalized);int j=(int)preview_component(jd+i*js+c*jb,info[2].component,0);if(w<0||!valid_float((float)w))invalid=1;if(w>0.000001){active++;sum+=w;if(j<0||j>=joint_count)invalid=1;}}
+        if(invalid){__printf("RFCHAR V1 ERROR INVALID_INFLUENCE: mesh=%d primitive=%d vertex=%d\n",mesh_index,primitive_index,i);errors++;}
+        if(active==0){__printf("RFCHAR V1 ERROR UNWEIGHTED_VERTEX: mesh=%d primitive=%d vertex=%d\n",mesh_index,primitive_index,i);errors++;}
+        else if(active>2){__printf("RFCHAR V1 ERROR TOO_MANY_WEIGHTS: mesh=%d primitive=%d vertex=%d active=%d\n",mesh_index,primitive_index,i,active);errors++;}
+        if(sum<0.999||sum>1.001){__printf("RFCHAR V1 ERROR WEIGHT_SUM: mesh=%d primitive=%d vertex=%d sum=%d.%06d\n",mesh_index,primitive_index,i,(int)sum,abs((int)(sum*1000000))%1000000);errors++;}
+    }
+    return errors;
+}
+
+static int inspect_character_contract(const struct glb_doc *doc)
+{
+    int bones[RASTERFALL_HUMANOID_BONE_COUNT],i,d,errors=0,warnings=0,joint_count=0;
+    int expected_parent[RASTERFALL_HUMANOID_BONE_COUNT]={-1,0,1,2,3,4,5,4,7,8,9,4,11,12,13,1,15,16,1,18,19};
+    struct slice joints,item; struct accessor_info inverse;
+    double *globals;unsigned char *ready;
+    __printf("RFCHAR V1 validator\n");
+    for(i=0;i<RASTERFALL_HUMANOID_BONE_COUNT;i++){
+        bones[i]=contract_find_unique(doc,contract_bone_names[i],&d);
+        if(d){__printf("RFCHAR V1 ERROR DUPLICATE_ROLE: role=%s extra=%d\n",contract_bone_names[i],d);errors++;}
+        if(bones[i]<0&&i!=RASTERFALL_HUMANOID_UPPER_CHEST){__printf("RFCHAR V1 ERROR MISSING_ROLE: role=%s\n",contract_bone_names[i]);errors++;}
+    }
+    if(bones[RASTERFALL_HUMANOID_UPPER_CHEST]<0){expected_parent[RASTERFALL_HUMANOID_NECK]=RASTERFALL_HUMANOID_CHEST;expected_parent[RASTERFALL_HUMANOID_LEFT_SHOULDER]=RASTERFALL_HUMANOID_CHEST;expected_parent[RASTERFALL_HUMANOID_RIGHT_SHOULDER]=RASTERFALL_HUMANOID_CHEST;}
+    for(i=1;i<RASTERFALL_HUMANOID_BONE_COUNT;i++)if(bones[i]>=0&&bones[expected_parent[i]]>=0&&doc->parents[bones[i]]!=bones[expected_parent[i]]){__printf("RFCHAR V1 ERROR PARENT_CHAIN: role=%s expected_parent=%s\n",contract_bone_names[i],contract_bone_names[expected_parent[i]]);errors++;}
+    if(bones[0]>=0&&doc->parents[bones[0]]>=0){__printf("RFCHAR V1 ERROR ROOT_PARENT: RF_ROOT must have no parent\n");errors++;}
+    globals=tlibc_malloc((doc->nodes.count?doc->nodes.count:1)*16*sizeof(double));ready=tlibc_malloc(doc->nodes.count?doc->nodes.count:1);if(!globals||!ready)return -1;__memset(ready,0,doc->nodes.count);
+    for(i=0;i<RASTERFALL_HUMANOID_BONE_COUNT;i++)if(bones[i]>=0){
+        struct slice n=doc->nodes.items[bones[i]];if(object_value(n,"matrix").p||!contract_scale_identity(n)){__printf("RFCHAR V1 ERROR BONE_SCALE: role=%s requires TRS and unit scale\n",contract_bone_names[i]);errors++;}
+        build_global_matrix(doc,bones[i],globals,ready);
+        if(i&&bones[expected_parent[i]]>=0){double dx=globals[bones[i]*16+12]-globals[bones[expected_parent[i]]*16+12],dy=globals[bones[i]*16+13]-globals[bones[expected_parent[i]]*16+13],dz=globals[bones[i]*16+14]-globals[bones[expected_parent[i]]*16+14];if(dx*dx+dy*dy+dz*dz<0.000001){__printf("RFCHAR V1 ERROR ZERO_LENGTH: role=%s distance_lt=0.001m\n",contract_bone_names[i]);errors++;}}
+    }
+    if(bones[0]>=0){double x=globals[bones[0]*16+12],y=globals[bones[0]*16+13],z=globals[bones[0]*16+14];if(x*x+y*y+z*z>0.000000000001){__printf("RFCHAR V1 ERROR ROOT_ORIGIN: RF_ROOT global translation must be (0,0,0)\n");errors++;}}
+    if(bones[RASTERFALL_HUMANOID_HEAD]>=0&&bones[RASTERFALL_HUMANOID_HIPS]>=0&&globals[bones[RASTERFALL_HUMANOID_HEAD]*16+13]<=globals[bones[RASTERFALL_HUMANOID_HIPS]*16+13]){__printf("RFCHAR V1 ERROR UP_AXIS: RF_HEAD must be above RF_HIPS on +Y\n");errors++;}
+    if(bones[RASTERFALL_HUMANOID_LEFT_HAND]>=0&&bones[RASTERFALL_HUMANOID_RIGHT_HAND]>=0&&(globals[bones[RASTERFALL_HUMANOID_LEFT_HAND]*16+12]<=0||globals[bones[RASTERFALL_HUMANOID_RIGHT_HAND]*16+12]>=0)){__printf("RFCHAR V1 ERROR MIRROR_AXIS: left must be +X and right must be -X\n");errors++;}
+    if(doc->skins.count!=1){__printf("RFCHAR V1 ERROR SKIN_COUNT: found=%d expected=1\n",doc->skins.count);errors++;}
+    if(doc->skins.count==1){struct slice skin=doc->skins.items[0];joints=object_value(skin,"joints");while((item=array_value(joints,joint_count)).p)joint_count++;if(json_int(object_value(skin,"skeleton"),-1)!=bones[0]){__printf("RFCHAR V1 ERROR SKIN_ROOT: skeleton must reference RF_ROOT\n");errors++;}if(read_accessor_info(doc,json_int(object_value(skin,"inverseBindMatrices"),-1),&inverse)<0||inverse.component!=5126||inverse.components!=16||inverse.count!=joint_count){__printf("RFCHAR V1 ERROR INVERSE_BIND: expected FLOAT MAT4 count=%d\n",joint_count);errors++;}}
+    for(i=0;i<RASTERFALL_ATTACHMENT_COUNT;i++){int node=contract_find_unique(doc,contract_attachment_names[i],&d);if(d){__printf("RFCHAR V1 ERROR DUPLICATE_ATTACHMENT: id=%s\n",contract_attachment_names[i]);errors++;}if(node<0){if(i==RASTERFALL_ATTACHMENT_WEAPON_R){__printf("RFCHAR V1 ERROR MISSING_ATTACHMENT: id=WEAPON_R\n");errors++;}continue;}if(!contract_scale_identity(doc->nodes.items[node])||object_value(doc->nodes.items[node],"matrix").p){__printf("RFCHAR V1 ERROR ATTACHMENT_SCALE: id=%s\n",contract_attachment_names[i]);errors++;}if(bones[contract_attachment_parents[i]]>=0&&doc->parents[node]!=bones[contract_attachment_parents[i]]){__printf("RFCHAR V1 ERROR ATTACHMENT_PARENT: id=%s expected_parent=%s\n",contract_attachment_names[i],contract_bone_names[contract_attachment_parents[i]]);errors++;}}
+    for(i=0;i<doc->nodes.count;i++){int mesh=json_int(object_value(doc->nodes.items[i],"mesh"),-1);if(mesh>=0){struct table primitives;int p;if(mesh>=doc->meshes.count){__printf("RFCHAR V1 ERROR MESH_INDEX: node=%d mesh=%d\n",i,mesh);errors++;continue;}if(json_int(object_value(doc->nodes.items[i],"skin"),-1)!=0){__printf("RFCHAR V1 ERROR MESH_SKIN: node=%d must reference skin=0\n",i);errors++;}if(!contract_object_identity(doc->nodes.items[i])){__printf("RFCHAR V1 ERROR MESH_TRANSFORM: node=%d object TRS must be identity\n",i);errors++;}if(table_build(object_value(doc->meshes.items[mesh],"primitives"),&primitives)<0)return -1;for(p=0;p<primitives.count;p++)errors+=contract_validate_primitive(doc,primitives.items[p],joint_count,mesh,p);table_free(&primitives);}}
+    for(i=0;i<doc->animations.count;i++){struct table channels;int c;if(table_build(object_value(doc->animations.items[i],"channels"),&channels)<0)return -1;for(c=0;c<channels.count;c++){char path[20];string_copy(object_value(object_value(channels.items[c],"target"),"path"),path,sizeof(path));if(!strcmp(path,"scale")){__printf("RFCHAR V1 ERROR ANIMATED_SCALE: animation=%d channel=%d\n",i,c);errors++;}}table_free(&channels);}
+    if(bind_consistency(doc)!=0){__printf("RFCHAR V1 ERROR BIND_MISMATCH: joint_global * inverse_bind is not identity\n");errors++;}
+    tlibc_free(globals);tlibc_free(ready);__printf("RFCHAR V1 RESULT errors=%d warnings=%d status=%s\n",errors,warnings,errors?"FAIL":"PASS");return errors?1:0;
+}
+
 int main(int argc, char **argv)
 {
-    struct glb_doc doc; int humanoid_only = 0, facts = 0, basis = 0, result;
+    struct glb_doc doc; int humanoid_only = 0, facts = 0, basis = 0, contract = 0, result;
     if (argc == 2 && !strcmp(argv[1], "--self-test")) return self_test();
-    if (argc < 2 || argc > 3 || (argc == 3 && strcmp(argv[2], "humanoid") && strcmp(argv[2], "facts") && strcmp(argv[2], "basis") && strcmp(argv[2], "preview"))) {
-        __printf("usage: glb-inspect file.glb [humanoid|basis|facts|preview]\n       glb-inspect --self-test\n"); return 2;
+    if (argc < 2 || argc > 3 || (argc == 3 && strcmp(argv[2], "humanoid") && strcmp(argv[2], "facts") && strcmp(argv[2], "basis") && strcmp(argv[2], "preview") && strcmp(argv[2], "contract"))) {
+        __printf("usage: glb-inspect file.glb [humanoid|basis|facts|preview|contract]\n       glb-inspect --self-test\n"); return 2;
     }
     if(argc==3&&!strcmp(argv[2],"preview")){
         static const char *clips[3]={"Idle_Loop","Walk_Loop","Jog_Fwd_Loop"};struct rasterfall_glb_preview preview;int clip;
@@ -1024,9 +1151,10 @@ int main(int argc, char **argv)
     humanoid_only = argc == 3 && !strcmp(argv[2], "humanoid");
     facts = argc == 3 && !strcmp(argv[2], "facts");
     basis = argc == 3 && !strcmp(argv[2], "basis");
+    contract = argc == 3 && !strcmp(argv[2], "contract");
     if (doc_load(&doc, argv[1]) < 0) { __fprintf(2, "glb-inspect: invalid or unsupported GLB: %s\n", argv[1]); return 1; }
-    result = facts ? inspect_facts(&doc) : basis ? inspect_humanoid_bases(&doc) : inspect_doc(&doc, humanoid_only);
+    result = contract ? inspect_character_contract(&doc) : facts ? inspect_facts(&doc) : basis ? inspect_humanoid_bases(&doc) : inspect_doc(&doc, humanoid_only);
     doc_free(&doc);
-    return result < 0 ? 1 : 0;
+    return result < 0 ? 1 : result;
 }
 #endif
