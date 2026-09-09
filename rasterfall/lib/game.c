@@ -601,6 +601,7 @@ void toy_game_init(struct toy_game *g, uint64_t seed)
     g->state = TOY_GAME_PLAYING;
     player->active = 1;
     player->actor_id = 0;
+    player->character_id = -1;
     player->kind = TOY_GAME_ACTOR_PLAYER;
     player->state = TOY_GAME_ACTOR_ALIVE;
     player->hp = TOY_GAME_PLAYER_HP;
@@ -727,7 +728,7 @@ void toy_game_set_ai_teammate_class(struct toy_game *g, int active, int class_id
     memset(a, 0, sizeof(*a));
     a->active = active != 0;
     a->actor_id = 1;
-    a->character_id = a->actor_id % TOY_GAME_CHARACTER_COUNT;
+    a->character_id = -1;
     a->kind = TOY_GAME_ACTOR_AI;
     a->class_id = class_id;
     a->state = TOY_GAME_ACTOR_ALIVE;
@@ -751,16 +752,17 @@ void toy_game_set_ai_teammate(struct toy_game *g, int active, int x, int z,
                                    x, z, name);
 }
 
-int toy_game_add_anime_actor(struct toy_game *g, int character_id,
+int toy_game_add_anime_actor(struct toy_game *g, int anime_character_id,
                              int x, int z, const char *name)
 {
     struct toy_game_actor *a; int i,slot=-1;
-    if(!g||character_id<0)return -1;
+    if(!g||anime_character_id<0)return -1;
     for(i=0;i<TOY_GAME_REMOTE_ACTOR_BASE;i++)if(!g->actors[i].active){slot=i;break;}
     if(slot<0)return -1;
     a=&g->actors[slot];memset(a,0,sizeof(*a));
     a->active=1;a->actor_id=slot+1;a->kind=TOY_GAME_ACTOR_AI;
-    a->anime_character_id=character_id+1;a->class_id=TOY_GAME_AI_LEVEL_2;
+    a->character_id=-1;
+    a->anime_character_id=anime_character_id+1;a->class_id=TOY_GAME_AI_LEVEL_2;
     a->companion=1;
     a->state=TOY_GAME_ACTOR_ALIVE;a->x=x;a->z=z;a->cy=1024;
     a->deployment_x=x;a->deployment_z=z;a->flag_index=-1;
@@ -769,15 +771,41 @@ int toy_game_add_anime_actor(struct toy_game *g, int character_id,
     a->fire_enabled=1;return a->actor_id;
 }
 
-int toy_game_add_anime_flag_guard(struct toy_game *g, int character_id,
-                                  int x, int z, const char *name,
-                                  int flag_index)
+int toy_game_add_anime_flag_guard(struct toy_game *g, int anime_character_id,
+                                  int character_id, int x, int z,
+                                  const char *name, int flag_index)
 {
-    int actor_id = toy_game_add_anime_actor(g, character_id, x, z, name);
+    int actor_id;
     struct toy_game_actor *a;
+    if (character_id < 0 ||
+        character_id >= TOY_GAME_ACTOR_CHARACTER_COUNT) return -1;
+    actor_id = toy_game_add_anime_actor(g, anime_character_id, x, z, name);
     if (actor_id < 0) return -1;
     a = toy_game_actor_by_id(g, actor_id);
     if (!a) return -1;
+    a->character_id = character_id;
+    a->companion = 0;
+    a->flag_guard = 1;
+    a->flag_index = flag_index;
+    return actor_id;
+}
+
+int toy_game_add_character_flag_guard(struct toy_game *g, int character_id,
+                                      int x, int z, const char *name,
+                                      int flag_index)
+{
+    int actor_id;
+    struct toy_game_actor *a;
+    if (character_id < 0 || character_id >= TOY_GAME_ACTOR_CHARACTER_COUNT)
+        return -1;
+    actor_id = toy_game_add_anime_actor(g, 0, x, z, name);
+    if (actor_id < 0) return -1;
+    a = toy_game_actor_by_id(g, actor_id);
+    if (!a) return -1;
+    /* Fixed character guards use the ordinary procedural actor presentation.
+     * character_id remains the sole stable character/profession identity. */
+    a->anime_character_id = 0;
+    a->character_id = character_id;
     a->companion = 0;
     a->flag_guard = 1;
     a->flag_index = flag_index;
@@ -799,7 +827,7 @@ int toy_game_add_ai(struct toy_game *g, int class_id, int x, int z,
     memset(a, 0, sizeof(*a));
     a->active = 1;
     a->actor_id = slot + 1;
-    a->character_id = a->actor_id % TOY_GAME_CHARACTER_COUNT;
+    a->character_id = -1;
     a->kind = TOY_GAME_ACTOR_AI;
     a->class_id = class_id;
     a->state = TOY_GAME_ACTOR_ALIVE;
@@ -906,7 +934,7 @@ int toy_game_set_remote_actor(struct toy_game *g, int player_id,
     if (!a->active || a->kind != TOY_GAME_ACTOR_PLAYER) {
         memset(a, 0, sizeof(*a));
         a->actor_id = 100 + player_id;
-        a->character_id = player_id % TOY_GAME_CHARACTER_COUNT;
+        a->character_id = -1;
         a->kind = TOY_GAME_ACTOR_PLAYER;
         a->class_id = TOY_GAME_AI_LEVEL_2;
         a->state = TOY_GAME_ACTOR_ALIVE;

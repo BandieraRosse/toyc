@@ -16,6 +16,10 @@
 #define RASTERFALL_INTERACT_RANGE 1000
 #define RASTERFALL_MAX_FLAGS 8
 #define RASTERFALL_PAID_REVIVE_COST 20
+#define RASTERFALL_HURD_SQUAD_SIZE 4
+#define RASTERFALL_MAID_SQUAD_SIZE 4
+#define RASTERFALL_MAID_FLAG_INDEX 1
+#define RASTERFALL_HURD_FLAG_INDEX 2
 
 struct rasterfall_flag {
     int active;
@@ -25,6 +29,24 @@ struct rasterfall_flag {
     int color;
     char label[5];
     int slot_offsets[4][2];
+};
+
+/* Fixed session identity/configuration for the Hurd relay.  Assignment is
+ * still owned solely by actor.flag_index; these indices let later mission
+ * orchestration address the four story actors without duplicating it. */
+struct rasterfall_hurd_outpost {
+    int flag_index;
+    int minx, maxx, minz, maxz;
+    int squad_actor_indices[RASTERFALL_HURD_SQUAD_SIZE];
+};
+
+/* Derived gameplay truth.  assigned_count and capable_count deliberately
+ * retain distinct meanings: DOWNED actors remain assigned but not capable. */
+struct rasterfall_hurd_status {
+    int flag_deployed_in_region;
+    int assigned_count;
+    int capable_count;
+    int controlled;
 };
 
 enum rasterfall_command_button {
@@ -136,6 +158,7 @@ struct rasterfall_session {
     int flag_count;
     int carried_flag;
     int assignment_flag;
+    struct rasterfall_hurd_outpost hurd_outpost;
     int skeletal_demo_pose;
     struct rasterfall_animation_player skeletal_demo_player;
     int pose_debug_active, pose_debug_bone, pose_debug_axis, pose_debug_layer;
@@ -202,5 +225,8 @@ int rasterfall_session_shop_request(struct rasterfall_session *session,
                                     int action, int item, int arg);
 int rasterfall_session_shop_actor_at(const struct rasterfall_session *session,
                                      int flag_index, int selection);
+void rasterfall_session_hurd_status(
+    const struct rasterfall_session *session,
+    struct rasterfall_hurd_status *status);
 
 #endif

@@ -10,32 +10,41 @@
  * catalog is the migration seam for per-character RFM2 assets and authored
  * clips; gameplay and networking only retain the stable profile ID. */
 static const struct rasterfall_character_profile characters[] = {
-    { RASTERFALL_CHARACTER_AKARI, RASTERFALL_PROFESSION_GUNSMITH,
+    { RASTERFALL_CHARACTER_HURD_GUNSMITH, RASTERFALL_PROFESSION_GUNSMITH,
       "Akari", NULL, ALL_ACTIONS,
       0xD94F70, 0x542F55, 0xF0C3A5, 0x512B3A },
-    { RASTERFALL_CHARACTER_MIO, RASTERFALL_PROFESSION_LOGISTICS,
+    { RASTERFALL_CHARACTER_HURD_LOGISTICS, RASTERFALL_PROFESSION_LOGISTICS,
       "Mio", NULL, ALL_ACTIONS,
       0x4C78C2, 0x263A63, 0xEBC0A2, 0x25243D },
-    { RASTERFALL_CHARACTER_REN, RASTERFALL_PROFESSION_MEDIC,
+    { RASTERFALL_CHARACTER_HURD_MEDIC, RASTERFALL_PROFESSION_MEDIC,
       "Ren", NULL, ALL_ACTIONS,
       0x4FAF82, 0x294F48, 0xD9A47F, 0x33271F },
-    { RASTERFALL_CHARACTER_YUKI, RASTERFALL_PROFESSION_GUARD,
+    { RASTERFALL_CHARACTER_HURD_GUARD, RASTERFALL_PROFESSION_GUARD,
       "Yuki", NULL, ALL_ACTIONS,
-      0x9B70C7, 0x49365F, 0xF1C8B0, 0xD8DCE8 }
+      0x9B70C7, 0x49365F, 0xF1C8B0, 0xD8DCE8 },
+    { RASTERFALL_CHARACTER_MAID, RASTERFALL_PROFESSION_MAID,
+      "Maid", NULL, ALL_ACTIONS,
+      0x30343B, 0x20242B, 0xF1C8B0, 0x3A302F }
+};
+
+static const struct rasterfall_character_profile ordinary_character = {
+    RASTERFALL_CHARACTER_NONE, RASTERFALL_PROFESSION_NONE,
+    "Ordinary", NULL, ALL_ACTIONS,
+    0xD94F70, 0x542F55, 0xF0C3A5, 0x512B3A
 };
 
 const struct rasterfall_character_profile *rasterfall_character_profile(int id)
 {
     if (id < 0 || id >= RASTERFALL_CHARACTER_COUNT)
-        id = RASTERFALL_CHARACTER_AKARI;
+        return &ordinary_character;
     return &characters[id];
 }
 
 int rasterfall_character_for_actor(int actor_id, int class_id)
 {
-    unsigned int seed = (unsigned int)(actor_id < 0 ? -actor_id : actor_id);
-    seed += (unsigned int)(class_id < 0 ? 0 : class_id) * 3U;
-    return (int)(seed % RASTERFALL_CHARACTER_COUNT);
+    (void)actor_id;
+    (void)class_id;
+    return RASTERFALL_CHARACTER_NONE;
 }
 
 int rasterfall_character_logic_test(void)
@@ -50,7 +59,11 @@ int rasterfall_character_logic_test(void)
             (profile->actions & ALL_ACTIONS) != ALL_ACTIONS)
             return 1;
     }
-    return rasterfall_character_profile(-1)->id != RASTERFALL_CHARACTER_AKARI;
+    return rasterfall_character_profile(RASTERFALL_CHARACTER_NONE)->id !=
+               RASTERFALL_CHARACTER_NONE ||
+           rasterfall_character_profile(RASTERFALL_CHARACTER_NONE)->profession_id !=
+               RASTERFALL_PROFESSION_NONE ||
+           rasterfall_character_for_actor(3, 2) != RASTERFALL_CHARACTER_NONE;
 }
 
 static const struct rasterfall_profession_visual_profile professions[] = {
@@ -58,7 +71,8 @@ static const struct rasterfall_profession_visual_profile professions[] = {
     {0xD28A30, 0x414957, RF_HEAD_GOGGLES, RF_BADGE_TOOL, RF_BAG_TOOLS, 0, 0},
     {0xB5A06C, 0x607384, RF_HEAD_CAP, RF_BADGE_CRATE, RF_BAG_NONE, 1, 0},
     {0x30965C, 0xD3DDD5, RF_HEAD_MEDICAL_BAND, RF_BADGE_CROSS, RF_BAG_MEDICAL, 0, 0},
-    {0x80966A, 0x37483F, RF_HEAD_HELMET_BAND, RF_BADGE_SHIELD, RF_BAG_NONE, 0, 1}
+    {0x80966A, 0x37483F, RF_HEAD_HELMET_BAND, RF_BADGE_SHIELD, RF_BAG_NONE, 0, 1},
+    {0, 0, RF_HEAD_NONE, RF_BADGE_NONE, RF_BAG_NONE, 0, 0}
 };
 
 const struct rasterfall_profession_visual_profile *

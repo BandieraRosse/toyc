@@ -5718,7 +5718,7 @@ static int render_network_teammate(struct toy_renderer *renderer,
                 render_camera->x, render_camera->z, render_camera->sy,
                              render_camera->cy,
                              toy_game_actor_current_weapon(actor), 0,
-                actor->character_id % RASTERFALL_CHARACTER_COUNT, colors[i],
+                actor->character_id, colors[i],
                 actor->state == TOY_GAME_ACTOR_DOWNED,
                 actor->animation.id, actor->animation.time_ms);
             active_actor_lift = 0;
@@ -5741,7 +5741,7 @@ static int render_network_teammate(struct toy_renderer *renderer,
         pixels += render_player_avatar(renderer, camera, client->camera.x,
             client->camera.z, client->camera.sy, client->camera.cy, weapon,
             0,
-            client->client_id % RASTERFALL_CHARACTER_COUNT,
+            actor->character_id,
             colors[client->client_id],
             actor->state == TOY_GAME_ACTOR_DOWNED,
             actor->animation.id, actor->animation.time_ms);

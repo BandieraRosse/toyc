@@ -233,12 +233,12 @@ static int primitive_gameplay_logic_test(void)
                                 level_map.room_limit);
         boundary_player->ground_y = 0;
         /* The north boundary is solid outside the central corridor opening. */
-        boundary_player->x = 4000;
+        boundary_player->x = 7000;
         boundary_player->z = 23800;
         if (!toy_game_try_move_actor(&boundary_game, boundary_player,
                                      boundary_player->x, 24200))
             return 21;
-        /* The x=-800..800 opening must remain traversable into the corridor. */
+        /* The widened x=-6000..6000 opening remains traversable. */
         boundary_player->x = 0;
         boundary_player->z = 23800;
         if (!toy_game_try_move_actor(&boundary_game, boundary_player,
@@ -248,7 +248,7 @@ static int primitive_gameplay_logic_test(void)
         boundary_player->x = 0;
         boundary_player->z = 25000;
         if (!toy_game_position_blocked_at_height(
-                &boundary_game, 900, boundary_player->z,
+                &boundary_game, 6100, boundary_player->z,
                 TOY_GAME_PLAYER_RADIUS, boundary_player->ground_y))
             return 23;
     }
@@ -330,6 +330,125 @@ static int run_logic_test(void)
         RASTERFALL_HUMAN_HEIGHT_RFU != 896 ||
         RASTERFALL_HUMAN_EYE_HEIGHT_RFU != 824 ||
         camera.y != RASTERFALL_STANDING_CAMERA_Y) return 167;
+    {
+        int i;
+        const struct toy_game_actor *player = toy_game_local_player_actor_const(
+            &session.game_state);
+        if (player->character_id != RASTERFALL_CHARACTER_NONE ||
+            rasterfall_character_profile(player->character_id)->profession_id !=
+                RASTERFALL_PROFESSION_NONE)
+            return 221;
+        for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
+            const struct toy_game_actor *actor = &session.game_state.actors[i];
+            if (!actor->active || actor->flag_guard) continue;
+            if (actor->character_id != RASTERFALL_CHARACTER_NONE ||
+                rasterfall_character_profile(actor->character_id)->profession_id !=
+                    RASTERFALL_PROFESSION_NONE)
+                return 222;
+        }
+    }
+    {
+        static const char *maid_names[RASTERFALL_MAID_SQUAD_SIZE] = {
+            "ANIME_GUARD_1", "ANIME_GUARD_2",
+            "ANIME_GUARD_3", "ANIME_GUARD_4"
+        };
+        int i, maid_count = 0;
+        if (session.flags[RASTERFALL_MAID_FLAG_INDEX].x != -12000 ||
+            session.flags[RASTERFALL_MAID_FLAG_INDEX].z != 0)
+            return 223;
+        for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
+            const struct toy_game_actor *actor = &session.game_state.actors[i];
+            int maid_slot;
+            if (!actor->active ||
+                actor->flag_index != RASTERFALL_MAID_FLAG_INDEX) continue;
+            maid_slot = actor->anime_character_id - 2;
+            if (!actor->flag_guard || maid_slot < 0 ||
+                maid_slot >= RASTERFALL_MAID_SQUAD_SIZE ||
+                actor->character_id != RASTERFALL_CHARACTER_MAID ||
+                rasterfall_character_profile(actor->character_id)->profession_id !=
+                    RASTERFALL_PROFESSION_MAID ||
+                strcmp(actor->name, maid_names[maid_slot]))
+                return 224;
+            maid_count++;
+        }
+        if (maid_count != RASTERFALL_MAID_SQUAD_SIZE) return 225;
+    }
+    {
+        static const char *hurd_names[RASTERFALL_HURD_SQUAD_SIZE] = {
+            "GUNSMITH", "LOGISTICS", "MEDIC", "GUARD"
+        };
+        static const int hurd_weapons[RASTERFALL_HURD_SQUAD_SIZE] = {
+            TOY_GAME_WEAPON_PISTOL, TOY_GAME_WEAPON_PISTOL,
+            TOY_GAME_WEAPON_PISTOL, TOY_GAME_WEAPON_SMG
+        };
+        static const int hurd_characters[RASTERFALL_HURD_SQUAD_SIZE] = {
+            RASTERFALL_CHARACTER_HURD_GUNSMITH,
+            RASTERFALL_CHARACTER_HURD_LOGISTICS,
+            RASTERFALL_CHARACTER_HURD_MEDIC,
+            RASTERFALL_CHARACTER_HURD_GUARD
+        };
+        struct rasterfall_hurd_status hurd;
+        int i;
+        rasterfall_session_hurd_status(&session, &hurd);
+        if (!hurd.controlled || !hurd.flag_deployed_in_region ||
+            hurd.assigned_count != RASTERFALL_HURD_SQUAD_SIZE ||
+            hurd.capable_count != RASTERFALL_HURD_SQUAD_SIZE)
+            return 212;
+        for (i = 0; i < RASTERFALL_HURD_SQUAD_SIZE; i++) {
+            int actor_index = session.hurd_outpost.squad_actor_indices[i];
+            struct toy_game_actor *actor;
+            if (actor_index < 0 || actor_index >= TOY_GAME_MAX_ACTORS)
+                return 213;
+            actor = &session.game_state.actors[actor_index];
+            if (!actor->active || !actor->flag_guard ||
+                actor->anime_character_id != 0 ||
+                actor->character_id != hurd_characters[i] ||
+                rasterfall_character_profile(actor->character_id)->profession_id !=
+                    RASTERFALL_PROFESSION_GUNSMITH + i ||
+                actor->flag_index != RASTERFALL_HURD_FLAG_INDEX ||
+                strcmp(actor->name, hurd_names[i]) ||
+                actor->slots[actor->current_slot].weapon != hurd_weapons[i])
+                return 213;
+            if (i > 0) {
+                actor->state = TOY_GAME_ACTOR_DOWNED;
+                actor->hp = 0;
+            }
+        }
+        rasterfall_session_hurd_status(&session, &hurd);
+        if (!hurd.controlled || hurd.assigned_count != 4 ||
+            hurd.capable_count != 1) return 214;
+        {
+            struct toy_game_actor *gunsmith = &session.game_state.actors[
+                session.hurd_outpost.squad_actor_indices[0]];
+            gunsmith->state = TOY_GAME_ACTOR_DOWNED;
+            gunsmith->hp = 0;
+        }
+        rasterfall_session_hurd_status(&session, &hurd);
+        if (hurd.controlled || hurd.assigned_count != 4 ||
+            hurd.capable_count != 0) return 215;
+        if (!toy_game_revive_actor(&session.game_state,
+                session.hurd_outpost.squad_actor_indices[2],
+                TOY_GAME_REVIVE_MS)) return 216;
+        rasterfall_session_hurd_status(&session, &hurd);
+        if (!hurd.controlled || hurd.capable_count != 1) return 216;
+        session.flags[RASTERFALL_HURD_FLAG_INDEX].carried = 1;
+        session.flags[RASTERFALL_HURD_FLAG_INDEX].x = 0;
+        session.flags[RASTERFALL_HURD_FLAG_INDEX].z = 20000;
+        rasterfall_session_hurd_status(&session, &hurd);
+        if (hurd.controlled || hurd.flag_deployed_in_region) return 217;
+        session.flags[RASTERFALL_HURD_FLAG_INDEX].carried = 0;
+        session.flags[RASTERFALL_HURD_FLAG_INDEX].x = 0;
+        session.flags[RASTERFALL_HURD_FLAG_INDEX].z = 28500;
+        rasterfall_session_hurd_status(&session, &hurd);
+        if (!hurd.controlled || !hurd.flag_deployed_in_region) return 218;
+        for (i = 0; i < RASTERFALL_HURD_SQUAD_SIZE; i++) {
+            struct toy_game_actor *actor = &session.game_state.actors[
+                session.hurd_outpost.squad_actor_indices[i]];
+            actor->state = TOY_GAME_ACTOR_ALIVE;
+            actor->hp = actor->max_hp;
+            actor->revive_progress_ms = 0;
+        }
+    }
     {
         int i, found_companion = 0;
         for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
@@ -470,21 +589,37 @@ static int run_logic_test(void)
     }
     {
         struct toy_game anime_follow;
-        int id,before;
+        int id,maid_id,before;
         toy_game_init(&anime_follow,77);
         id=toy_game_add_anime_actor(&anime_follow,0,0,0,"EULA_TEST");
         if(id<0)return 170;
+        maid_id=toy_game_add_anime_actor(&anime_follow,1,300,0,"MAID_TEST");
+        if(maid_id<0 || anime_follow.actors[maid_id-1].anime_character_id != 2 ||
+           anime_follow.actors[maid_id-1].character_id != RASTERFALL_CHARACTER_NONE ||
+           rasterfall_character_profile(
+               anime_follow.actors[maid_id-1].character_id)->profession_id !=
+               RASTERFALL_PROFESSION_NONE)
+            return 219;
         anime_follow.room_limit=10000;
         toy_game_local_player_actor(&anime_follow)->x = 3000;
         toy_game_local_player_actor(&anime_follow)->z = 0;
         before=anime_follow.actors[id-1].x;
         toy_game_update_ai_teammates(&anime_follow,100);
         if(anime_follow.actors[id-1].x<=before||
-           anime_follow.actors[id-1].max_hp<=TOY_CONFIG_AI_LEVEL_3_HP)
+           anime_follow.actors[id-1].max_hp<=TOY_CONFIG_AI_LEVEL_3_HP ||
+           anime_follow.actors[id-1].character_id != RASTERFALL_CHARACTER_NONE)
             return 170;
+        {
+            int hired_id = toy_game_add_hired_ai(
+                &anime_follow, TOY_GAME_WEAPON_PISTOL, 600, 0, "HIRED_TEST");
+            if (hired_id < 0 ||
+                anime_follow.actors[hired_id - 1].character_id !=
+                    RASTERFALL_CHARACTER_NONE)
+                return 220;
+        }
     }
     /* 远端旗帜操作必须由主机状态承接，并随携带者同步位置。 */
-    if (session.flag_count != 2) return 131;
+    if (session.flag_count != 3) return 131;
     camera.x = session.flags[0].x;
     camera.z = session.flags[0].z;
     rasterfall_session_toggle_flag_remote(&session, &camera, 1);

@@ -71,7 +71,9 @@ int rasterfall_render_visual_capture(const char *scenario, const char *output)
             state.weapon = i == 3 ? TOY_GAME_WEAPON_SMG : TOY_GAME_WEAPON_PISTOL;
         }
         if (rasterfall_render_procedural_humanoid(&renderer, &camera, &state,
-                rasterfall_character_profile(RASTERFALL_CHARACTER_AKARI)) < 0) {
+                rasterfall_character_profile(
+                    squad ? RASTERFALL_CHARACTER_HURD_GUNSMITH + i :
+                            RASTERFALL_CHARACTER_HURD_GUNSMITH)) < 0) {
             __fprintf(2, "rasterfall: visual humanoid rendering failed\n");
             goto done;
         }

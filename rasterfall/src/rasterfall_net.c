@@ -1304,8 +1304,8 @@ static void decode_actor(const unsigned char *p, struct rasterfall_net_actor *a)
     a->hired = (p[41] & 1) != 0;
     memcpy(a->name, p + 42, TOY_GAME_MAX_NAME);
     a->name[TOY_GAME_MAX_NAME - 1] = 0;
-    a->character_id = p[42 + TOY_GAME_MAX_NAME] < TOY_GAME_CHARACTER_COUNT ?
-                      p[42 + TOY_GAME_MAX_NAME] : 0;
+    a->character_id = p[42 + TOY_GAME_MAX_NAME] < TOY_GAME_ACTOR_CHARACTER_COUNT ?
+                      p[42 + TOY_GAME_MAX_NAME] : -1;
     if (a->state == TOY_GAME_ACTOR_DOWNED)
         a->revive_progress_ms = p[17] * 12;
     else
@@ -2929,6 +2929,7 @@ int rasterfall_net_pipeline_test(void)
         first->slots[1].weapon = TOY_GAME_WEAPON_AWP;
         first->slots[1].mag = 3; first->slots[1].reserve = 17;
         first->anime_character_id = 2;
+        first->character_id = -1;
         first->hired = 0;
         first->reloading = 1; first->reload_timer_ms = 240;
         first->control_disabled = 1; first->kills = 8;
@@ -2944,7 +2945,8 @@ int rasterfall_net_pipeline_test(void)
             decoded.slots[1].mag != 3 || decoded.slots[1].reserve != 17 ||
             !decoded.reloading || decoded.reload_timer_ms != 240 ||
             !decoded.control_disabled || decoded.kills != 8 ||
-            decoded.anime_character_id != 2 || decoded.hired ||
+            decoded.anime_character_id != 2 ||
+            decoded.character_id != -1 || decoded.hired ||
             decoded.animation.id != TOY_GAME_ANIM_DEATH)
             return 30;
         encode_actor(wire, second, TOY_GAME_REMOTE_ACTOR_BASE + 1, 66);
@@ -3180,6 +3182,7 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
                         index >= TOY_GAME_REMOTE_ACTOR_BASE ?
                         TOY_GAME_ACTOR_PLAYER : TOY_GAME_ACTOR_AI;
             dst->class_id = src->class_id;
+            dst->character_id = src->character_id;
             dst->anime_character_id = src->anime_character_id;
             if (dst->moving != src->moving) {
                 dst->moving = src->moving;

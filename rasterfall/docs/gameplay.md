@@ -1,7 +1,9 @@
 # 玩法、会话、地图与 AI
 
-> 文档更新：2026-09-08
+> 文档更新：2026-09-09
 > 源码核对基线：工作区（静态 prop profile 碰撞盒作为可站立 RFU primitive；所有人类玩家和 AI 的移动/跳跃/airborne/朝向/武器/库存/切枪/reload/动画/special-control/shove/统计均由 `toy_game_actor` 拥有；本地和远端武器意图经 `toy_game_execute_actor_command()` 进入 actor 规则边界；player/actor 与敌人的空中强制位移均使用确定性分段扫掠，逐轴返回阻挡并消除对应击飞速度；玩家击飞冷却由 actor motion/world 路径推进；Smoker 对玩家和 AI 统一使用 4 秒拉拽、8 秒冷却和冷却期间远离；西侧走廊出口旁新增排除 Tank 的 16 敌人随机刷怪按钮；敌人索敌遵守启用中的 `air_gate*` 战斗区域控制线并排除 `developer_only` 角色；客户端展示缓存不参与玩法规则）
+
+> 源码核对补充：正式 Hurd 四人使用专用 character IDs；原 Maid 四人旗卫在 flag 1 原位恢复并使用 Maid character/profession；普通 player、Eula、佣兵为 NONE；固定角色索引、HURD 旗帜 assignment 与派生 control status。
 
 ## 三层职责
 
@@ -24,6 +26,28 @@
 
 session 的本地复活、商店控制锁、交互死亡判断和托管武器决策读取 actor 状态；出生点、付费复活
 和正式 world step 也直接写入或推进 local actor。
+
+## Hurd Relay gameplay foundation
+
+session reset 先在原坐标 `(-12000, 0)` 和原 flag 1 恢复四名 `ANIME_GUARD_*` Maid 旗卫；四人保留
+原 `anime_character_id=2..5`、slot offset、部署和旗卫配置，并统一通过 actor 的
+`character_id=RASTERFALL_CHARACTER_MAID` 解析为 Maid profession。Hurd 改用 flag 2，避免占用 Maid 的
+稳定旧配置。
+
+session reset 在正式 world 中创建固定 Gunsmith、Logistics、Medic、Guard 四名普通 AI actor，并明确
+写入四个 Hurd 专用稳定 `character_id`；前三人初始使用 Pistol，Guard 使用 SMG。普通 player、地图佣兵、
+商店 hired AI 以及 Eula actor 使用 `RASTERFALL_CHARACTER_NONE`，不按 actor slot 或 class 随机
+选择 Hurd identity。四人设置 `flag_guard`，因此不进入
+旧商店重新指派列表，也不受“清除雇佣 AI”影响；其移动、部署、防守、战斗、受伤、DOWNED、REVIVE、
+动画和武器仍全部走现有 actor 规则。`hurd_outpost.squad_actor_indices[]` 只供 session 后续剧情定位固定
+角色，不承担 assignment；唯一 assignment truth 仍是 `actor.flag_index == HURD flag index`。
+
+北侧 HURD 旗帜初始部署于 `(0, 28500)`，固定 control region 为
+`x=-5000..5000, z=25500..31500` RFU。`rasterfall_session_hurd_status()` 是无副作用派生查询：旗帜必须
+active、未被携带且位于区域内；assigned count 沿用普通旗帜语义统计 `actor.flag_index`，capable count 只统计
+`ALIVE && hp > 0`。`controlled = flag_deployed_in_region && capable_count > 0`，不保存第二份 controlled
+状态。DOWNED 仍计入 assigned 但不计 capable；复活任一 assigned guard 会使下一次查询立即恢复控制。
+该查询是下一轮 Tactical Map 和 Hurd pressure 的只读接口，二者不应自行维护控制状态。
 
 击飞由 actor/enemy 的 `vertical_velocity`、`airborne_y` 与恒定水平初速度共同推进：垂直方向逐步施加
 重力，水平方向在落地前保持速度，因此世界空间轨迹为抛物线；最终距离由水平初速度和实际滞空时间

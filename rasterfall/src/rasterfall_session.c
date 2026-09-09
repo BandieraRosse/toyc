@@ -4,6 +4,7 @@
 #include "rasterfall_session.h"
 #include "rasterfall_units.h"
 #include "rasterfall_model.h"
+#include "rasterfall_character.h"
 
 #define INTERACT_AIM_CONE 784
 #define HORDE_COUNT_MIN 15
@@ -12,6 +13,12 @@
 #define QUARTER_TURN 1611
 #define SMOOTH_TURN_STEP 128
 #define MANAGED_AI_TURN_DEG_PER_SEC 480
+#define HURD_CONTROL_MIN_X (-5000)
+#define HURD_CONTROL_MAX_X 5000
+#define HURD_CONTROL_MIN_Z 25500
+#define HURD_CONTROL_MAX_Z 31500
+#define HURD_FLAG_X 0
+#define HURD_FLAG_Z 28500
 static const int hired_ai_positions[][2] = {
     { 1000, 0 }, { 0, -900 }, { -1000, 0 },
     { 1200, 900 }, { -1200, 900 }, { 0, 2100 },
@@ -134,6 +141,36 @@ static void session_init_flag(struct rasterfall_session *s, int fi, int x, int z
     f->slot_offsets[1][0] = -420; f->slot_offsets[1][1] = 420;
     f->slot_offsets[2][0] = -420; f->slot_offsets[2][1] = -420;
     f->slot_offsets[3][0] = 420;  f->slot_offsets[3][1] = -420;
+}
+
+void rasterfall_session_hurd_status(
+    const struct rasterfall_session *s,
+    struct rasterfall_hurd_status *status)
+{
+    const struct rasterfall_hurd_outpost *outpost;
+    const struct rasterfall_flag *flag = NULL;
+    int i;
+    if (!status) return;
+    memset(status, 0, sizeof(*status));
+    if (!s) return;
+    outpost = &s->hurd_outpost;
+    if (outpost->flag_index >= 0 && outpost->flag_index < s->flag_count)
+        flag = &s->flags[outpost->flag_index];
+    status->flag_deployed_in_region = flag && flag->active && !flag->carried &&
+        flag->x >= outpost->minx && flag->x <= outpost->maxx &&
+        flag->z >= outpost->minz && flag->z <= outpost->maxz;
+    for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
+        const struct toy_game_actor *actor = &s->game_state.actors[i];
+        if (!actor->active || actor->kind != TOY_GAME_ACTOR_AI ||
+            actor->base_core || actor->developer_only || actor->companion ||
+            actor->flag_index != outpost->flag_index)
+            continue;
+        status->assigned_count++;
+        if (actor->state == TOY_GAME_ACTOR_ALIVE && actor->hp > 0)
+            status->capable_count++;
+    }
+    status->controlled = status->flag_deployed_in_region &&
+                         status->capable_count > 0;
 }
 
 static int session_near_ai(const struct rasterfall_session *session,
@@ -311,13 +348,26 @@ void rasterfall_session_reset(struct rasterfall_session *session,
             &session->ai_registry, TOY_GAME_PLAYER_ACTOR_INDEX,
             RASTERFALL_AI_CONTROLLER_MANAGED_PLAYER, 100,
             RASTERFALL_AI_POLICY_MANAGED_SIMPLE);
-    session->flag_count = 2;
+    session->flag_count = 3;
     session->carried_flag = -1;
     session->assignment_flag = 0;
     /* Keep the initial flag at the world origin while the player starts
      * 500 units closer to the Eula display. */
     session_init_flag(session, 0, 0, 0);
-    session_init_flag(session, 1, -12000, 0);
+    /* Restore the original Maid guard post and its flag index. */
+    session_init_flag(session, RASTERFALL_MAID_FLAG_INDEX, -12000, 0);
+    session_init_flag(session, RASTERFALL_HURD_FLAG_INDEX,
+                      HURD_FLAG_X, HURD_FLAG_Z);
+    session->flags[RASTERFALL_HURD_FLAG_INDEX].color = 0xD58A2D;
+    strncpy(session->flags[RASTERFALL_HURD_FLAG_INDEX].label, "HURD", 4);
+    session->flags[RASTERFALL_HURD_FLAG_INDEX].label[4] = 0;
+    session->hurd_outpost.flag_index = RASTERFALL_HURD_FLAG_INDEX;
+    session->hurd_outpost.minx = HURD_CONTROL_MIN_X;
+    session->hurd_outpost.maxx = HURD_CONTROL_MAX_X;
+    session->hurd_outpost.minz = HURD_CONTROL_MIN_Z;
+    session->hurd_outpost.maxz = HURD_CONTROL_MAX_Z;
+    for (i = 0; i < RASTERFALL_HURD_SQUAD_SIZE; i++)
+        session->hurd_outpost.squad_actor_indices[i] = -1;
     for (i = 0; i < 3; i++)
         if (session->game_state.actors[i].active &&
             session->game_state.actors[i].kind == TOY_GAME_ACTOR_AI &&
@@ -326,21 +376,63 @@ void rasterfall_session_reset(struct rasterfall_session *session,
                 session->flags[0].x + session->flags[0].slot_offsets[i][0],
                 session->flags[0].z + session->flags[0].slot_offsets[i][1], 0);
     {
-        static const char *guard_names[] = {
+        static const char *maid_names[RASTERFALL_MAID_SQUAD_SIZE] = {
             "ANIME_GUARD_1", "ANIME_GUARD_2",
             "ANIME_GUARD_3", "ANIME_GUARD_4"
         };
-        for (i = 0; i < 4; i++) {
+        for (i = 0; i < RASTERFALL_MAID_SQUAD_SIZE; i++) {
             int actor_id = toy_game_add_anime_flag_guard(
-                &session->game_state, i + 1,
-                session->flags[1].x + session->flags[1].slot_offsets[i][0],
-                session->flags[1].z + session->flags[1].slot_offsets[i][1],
-                guard_names[i], 1);
+                &session->game_state, i + 1, RASTERFALL_CHARACTER_MAID,
+                session->flags[RASTERFALL_MAID_FLAG_INDEX].x +
+                    session->flags[RASTERFALL_MAID_FLAG_INDEX].slot_offsets[i][0],
+                session->flags[RASTERFALL_MAID_FLAG_INDEX].z +
+                    session->flags[RASTERFALL_MAID_FLAG_INDEX].slot_offsets[i][1],
+                maid_names[i], RASTERFALL_MAID_FLAG_INDEX);
             if (actor_id > 0)
                 toy_game_assign_actor_deployment(
                     &session->game_state, actor_id - 1,
-                    session->flags[1].x + session->flags[1].slot_offsets[i][0],
-                    session->flags[1].z + session->flags[1].slot_offsets[i][1], 1);
+                    session->flags[RASTERFALL_MAID_FLAG_INDEX].x +
+                        session->flags[RASTERFALL_MAID_FLAG_INDEX].slot_offsets[i][0],
+                    session->flags[RASTERFALL_MAID_FLAG_INDEX].z +
+                        session->flags[RASTERFALL_MAID_FLAG_INDEX].slot_offsets[i][1],
+                    RASTERFALL_MAID_FLAG_INDEX);
+        }
+    }
+    {
+        static const char *hurd_names[] = {
+            "GUNSMITH", "LOGISTICS", "MEDIC", "GUARD"
+        };
+        static const int hurd_weapons[] = {
+            TOY_GAME_WEAPON_PISTOL, TOY_GAME_WEAPON_PISTOL,
+            TOY_GAME_WEAPON_PISTOL, TOY_GAME_WEAPON_SMG
+        };
+        static const int hurd_character_ids[] = {
+            RASTERFALL_CHARACTER_HURD_GUNSMITH,
+            RASTERFALL_CHARACTER_HURD_LOGISTICS,
+            RASTERFALL_CHARACTER_HURD_MEDIC,
+            RASTERFALL_CHARACTER_HURD_GUARD
+        };
+        for (i = 0; i < 4; i++) {
+            int actor_id = toy_game_add_character_flag_guard(
+                &session->game_state, hurd_character_ids[i],
+                session->flags[RASTERFALL_HURD_FLAG_INDEX].x +
+                    session->flags[RASTERFALL_HURD_FLAG_INDEX].slot_offsets[i][0],
+                session->flags[RASTERFALL_HURD_FLAG_INDEX].z +
+                    session->flags[RASTERFALL_HURD_FLAG_INDEX].slot_offsets[i][1],
+                hurd_names[i], RASTERFALL_HURD_FLAG_INDEX);
+            if (actor_id > 0) {
+                int actor_index = actor_id - 1;
+                session->hurd_outpost.squad_actor_indices[i] = actor_index;
+                toy_game_set_ai_weapon(&session->game_state, actor_index,
+                                       hurd_weapons[i]);
+                toy_game_assign_actor_deployment(
+                    &session->game_state, actor_index,
+                    session->flags[RASTERFALL_HURD_FLAG_INDEX].x +
+                        session->flags[RASTERFALL_HURD_FLAG_INDEX].slot_offsets[i][0],
+                    session->flags[RASTERFALL_HURD_FLAG_INDEX].z +
+                        session->flags[RASTERFALL_HURD_FLAG_INDEX].slot_offsets[i][1],
+                    RASTERFALL_HURD_FLAG_INDEX);
+            }
         }
     }
     toy_game_local_player_actor(&session->game_state)->x = camera->x;

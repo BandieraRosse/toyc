@@ -3,6 +3,8 @@
 > 文档更新：2026-09-09
 > 源码核对基线：工作区（Hurd 四职业 presentation profile 与固定 hurd-squad capture；Visual CLI V1 固定 procedural-humanoid 离屏 BMP capture；控制器命令经 actor API 进入玩法；`game_state.actors[]` 是玩家/AI gameplay truth；world step 独立推进投射物、敌人、波次和地图规则；camera、HUD、网络展示只读取 actor/world 或 derived presentation cache；本地 body 位置驱动 camera）
 
+> 源码核对补充：session reset 在原 flag 1 和原坐标恢复 Maid 四人旗卫，并创建使用 flag 2 的正式 Hurd squad/outpost；Hurd 控制状态保持派生。
+
 ## 状态所有者
 
 `src/rasterfall.c` 是可执行程序入口和最高层编排器。它拥有窗口、输入、摄像机、音频、网络、
@@ -24,7 +26,8 @@
 `--visual-capture <scenario> --visual-output <path>` 必须成对提供。解析后立即进入
 `rasterfall_render_visual_capture()` 并退出，先于字库、网络、session/map、窗口和音频初始化。
 固定场景不读取时钟、不推进 simulation，也不受交互式画面选项影响；不要与其他诊断模式混用。
-支持 `procedural-humanoid` 和 `hurd-squad`；后者只构造四份展示快照，不 spawn actor。
+支持 `procedural-humanoid` 和 `hurd-squad`；后者仍是独立的纯展示 fixture，不读取正式 world actor；
+正式 Hurd 四人另由 session reset 创建，两条路径共享 character/profession profile 和程序化人物绘制入口。
 场景与离屏输出契约见 [rendering.md](rendering.md) 的 Visual CLI。未知场景、缺少参数、
 资源加载/渲染/文件写入失败均返回非零并输出错误。
 

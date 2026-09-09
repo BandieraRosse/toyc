@@ -3,6 +3,8 @@
 > 文档更新：2026-09-09
 > 源码核对基线：工作区（Hurd 四职业 presentation profile 与固定 hurd-squad capture；Visual CLI V1 固定 procedural-humanoid 离屏 BMP capture；低模 AI 使用显式 state/profile 的 procedural humanoid 入口；HUD 与启动菜单使用 UTF-8/GB2312 8×16/16×16 点阵文本；viewmodel、crosshair、effects、managed actor 和客户端远端玩家的 gameplay 展示查询直接读取 actor；远端位置/朝向继续使用纯 derived presentation cache；RAY tracer 短线段/定向线宽投影，通用 emitter preset table，CAMERA_SHAKE 含开火后座与受击摇晃；受击四角浅红边缘与八方向中心箭头；程序化敌人身体组件描述表；world-space 静态 RMESH prop 入口与十件组件不重叠开发场景）
 
+> 源码核对补充：正式 Hurd actor 通过四个专用 character profile 进入职业外观；恢复的四名 Maid 旗卫以 Maid character profile 接入 actor，同时继续由 anime identity 选择骨骼模型；普通 player、Eula、佣兵解析为 NONE。
+
 ## 渲染边界
 
 `src/rasterfall_render.c` 是世界渲染和角色渲染主体：投影/近裁剪、三角形提交、地面与地图图元、
@@ -28,12 +30,18 @@ leg 用于腿，skin 用于头部和脸部，hair 用于脸部矩形；武器 he
 内部保存/恢复 primitive helpers 的 lift/roll 临时状态；仍依赖已绑定 render context 和串行
 helpers，不承诺并发重入。`render_player_avatar()` 仅保留其他现有调用者的参数适配。
 职业身份枚举 `rasterfall_profession_id` 位于 character identity 头文件，与基础 character ID 独立；
-稳定职业身份保存在 `rasterfall_character_profile.profession_id`，不进入 actor 或网络结构。
+稳定职业身份保存在四个 Hurd profile 和一个 Maid profile 的 `profession_id` 中，不作为重复字段进入 actor 或网络结构。
 actor 展示适配器从 `character_id` 解析 profile，并通过
-`rasterfall_procedural_humanoid_state.profession_id` 携带一次绘制的身份；负 character ID 的普通 AI
-兼容路径仍显式传 NONE。`rasterfall_profession_visual_profile()` 在 character
+`rasterfall_procedural_humanoid_state.profession_id` 携带一次程序化绘制的身份；普通 player、地图佣兵、
+hired AI 和远端普通玩家均使用负值 `RASTERFALL_CHARACTER_NONE` 并解析为 NONE。`anime_character_id`
+继续独立选择原有 Eula/Maid 骨骼资产路径；正式 Maid 旗卫同时携带 Maid `character_id`，不再由模型选择器隐含 profession。`rasterfall_profession_visual_profile()` 在 character
 模块解析静态 presentation-only 配置：accent/gear 颜色、head、badge、waist_bag、backpack、vest。
 NONE/无效 ID 返回 NULL，完全跳过装备绘制，基础身体和既有绘制顺序保持原样。
+
+正式 Hurd 四人是 `anime_character_id == 0` 的普通程序化 actor；renderer 与其他低模 AI 一样只读
+actor 的 gameplay state，但从其稳定 `character_id` 解析四个 profession profile。即使工作区存在私有
+骨骼角色资产，也不会把 Hurd actor 错切到 Eula/Maid 模型分支。Visual CLI 的 `hurd-squad` 仍仅是
+离屏 fixture，不是正式 Hurd actor 的状态源。
 
 renderer 内 `render_profession_visual()` 组合相同 actor-local box primitive：Gunsmith 橙色工具侧包、
 露出扳手和护目镜；Logistics 卡其大背包、侧袋、胸袋和帽檐；Medic 灰白医疗箱、绿色十字和头带；

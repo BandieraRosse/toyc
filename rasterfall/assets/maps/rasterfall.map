@@ -103,9 +103,11 @@ floor -23000 -21500 -5600 23000 6E2828
 # 东带：右墙内沿，纵贯南北
 spawn 21500 23000 -5600 23000 6E2828
 floor 21500 23000 -5600 23000 6E2828
-# 正面刷怪区：缩小范围并远离中央基地
-spawn -6000 6000 14000 22000 6E2828
-floor -6000 6000 14000 22000 6E2828
+# 北侧刷怪区拆到据点进路两翼，中央留给 Hurd Relay 防区。
+spawn -20000 -9000 14000 22000 6E2828
+floor -20000 -9000 14000 22000 6E2828
+spawn 9000 20000 14000 22000 6E2828
+floor 9000 20000 14000 22000 6E2828
 
 # ── 世界边界墙（四围）──────────────────────────────────────────────
 # ── 原地图边界缺口与向外走廊（入口可通行，外端有尽头）────────────
@@ -126,9 +128,9 @@ box -24020 -23980 -24000 -2400 5400 5E5965 hidden collision blocks_airborne
 box -24020 -23980 2400 24000 5400 5E5965 hidden collision blocks_airborne
 box 23980 24020 -24000 -800 5400 56515D hidden collision blocks_airborne
 box 23980 24020 800 24000 5400 56515D hidden collision blocks_airborne
-# 北侧内层边界的碰撞体；只在 x=-800..800 留出北走廊入口。
-box -24000 -800 23980 24020 5400 4C5260 hidden collision blocks_airborne
-box 800 24000 23980 24020 5400 4C5260 hidden collision blocks_airborne
+# 北侧内层边界为 Hurd 据点留出 x=-6000..6000 的入口。
+box -24000 -6000 23980 24020 5400 4C5260 hidden collision blocks_airborne
+box 6000 24000 23980 24020 5400 4C5260 hidden collision blocks_airborne
 
 # 西侧走廊：横向宽度扩为原来的 3 倍（z=-2400..2400）；坡度统一为
 # 900/3000=0.30，与南侧可行走测试坡一致。
@@ -157,14 +159,15 @@ wall 24000 33000 -800 -800 5400 56515D
 wall 24000 33000 800 800 5400 56515D
 wall 33000 33000 -800 800 5400 56515D
 
-# 北侧走廊：从 z=24000 向外到 33000。
-floor -800 800 24000 33000 314B43
-box -820 -800 24000 33000 5400 4C5260 hidden collision blocks_airborne
-box 800 820 24000 33000 5400 4C5260 hidden collision blocks_airborne
-box -820 820 33000 33020 5400 4C5260 hidden collision blocks_airborne
-wall -800 -800 24000 33000 5400 4C5260
-wall 800 800 24000 33000 5400 4C5260
-wall -800 800 33000 33000 5400 4C5260
+# 北侧 Hurd 据点：扩宽原走廊，固定控制区位于其中（session 配置
+# x=-5000..5000, z=25500..31500），中央旗帜在 (0,28500)。
+floor -6000 6000 24000 33000 314B43
+box -6020 -6000 24000 33000 5400 4C5260 hidden collision blocks_airborne
+box 6000 6020 24000 33000 5400 4C5260 hidden collision blocks_airborne
+box -6020 6020 33000 33020 5400 4C5260 hidden collision blocks_airborne
+wall -6000 -6000 24000 33000 5400 4C5260
+wall 6000 6000 24000 33000 5400 4C5260
+wall -6000 6000 33000 33000 5400 4C5260
 
 # 新外边界的墙只负责渲染；实际碰撞由走廊两侧墙和端墙提供，避免把
 # 视觉外圈变成第二套 gameplay 边界。

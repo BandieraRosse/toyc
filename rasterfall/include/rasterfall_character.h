@@ -7,10 +7,12 @@
  * asset paths: a profile may start as a procedural actor and later acquire a
  * skeletal model without changing saves or network state. */
 enum rasterfall_character_id {
-    RASTERFALL_CHARACTER_AKARI,
-    RASTERFALL_CHARACTER_MIO,
-    RASTERFALL_CHARACTER_REN,
-    RASTERFALL_CHARACTER_YUKI,
+    RASTERFALL_CHARACTER_NONE = -1,
+    RASTERFALL_CHARACTER_HURD_GUNSMITH,
+    RASTERFALL_CHARACTER_HURD_LOGISTICS,
+    RASTERFALL_CHARACTER_HURD_MEDIC,
+    RASTERFALL_CHARACTER_HURD_GUARD,
+    RASTERFALL_CHARACTER_MAID,
     RASTERFALL_CHARACTER_COUNT
 };
 
@@ -21,6 +23,7 @@ enum rasterfall_profession_id {
     RASTERFALL_PROFESSION_LOGISTICS,
     RASTERFALL_PROFESSION_MEDIC,
     RASTERFALL_PROFESSION_GUARD,
+    RASTERFALL_PROFESSION_MAID,
     RASTERFALL_PROFESSION_COUNT
 };
 
@@ -30,8 +33,8 @@ enum rasterfall_profession_badge { RF_BADGE_NONE, RF_BADGE_TOOL, RF_BADGE_CRATE,
                                   RF_BADGE_CROSS, RF_BADGE_SHIELD };
 enum rasterfall_profession_bag { RF_BAG_NONE, RF_BAG_TOOLS, RF_BAG_MEDICAL };
 
-/* Presentation-only, deliberately limited to the four current silhouettes.
- * Zero/NONE resolves to NULL and leaves base appearance and draw order intact. */
+/* Presentation-only profiles. Zero/NONE resolves to NULL and leaves base
+ * appearance and draw order intact; skeletal Maid keeps its authored gear. */
 struct rasterfall_profession_visual_profile {
     uint32_t accent_color, gear_color;
     int head, badge, waist_bag;
