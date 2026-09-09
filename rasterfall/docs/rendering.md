@@ -1,7 +1,7 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-09
-> 源码核对基线：工作区（Hurd 四职业 presentation profile 与固定 hurd-squad capture；Visual CLI V1 固定 procedural-humanoid 离屏 BMP capture；低模 AI 使用显式 state/profile 的 procedural humanoid 入口；无职业普通 AI 恢复历史腿部颜色 0x25354A，AI 等级颜色仅用于躯干；HUD 与启动菜单使用 UTF-8/GB2312 8×16/16×16 点阵文本；viewmodel、crosshair、effects、managed actor 和客户端远端玩家的 gameplay 展示查询直接读取 actor；远端位置/朝向继续使用纯 derived presentation cache；RAY tracer 短线段/定向线宽投影，通用 emitter preset table，CAMERA_SHAKE 含开火后座与受击摇晃；受击四角浅红边缘与八方向中心箭头；程序化敌人身体组件描述表；world-space 静态 RMESH prop 入口与十件组件不重叠开发场景）
+> 源码核对基线：工作区（Hurd 四职业 presentation profile 与固定 hurd-squad capture；Visual CLI V1 procedural BMP capture；RF Humanoid V1.1 AK acceptance capture、稳定 attachment/role composition 与 near/mid/far A/B；其余渲染主线同现有工作区）
 
 > 源码核对补充：正式 Hurd actor 通过四个专用 character profile 进入职业外观；恢复的四名 Maid 旗卫以 Maid character profile 接入 actor，同时继续由 anime identity 选择骨骼模型；普通 player、Eula、佣兵解析为 NONE。
 
@@ -152,11 +152,13 @@ instance pool、事件和深度测试 flags 不变。
 ```sh
 make app-rasterfall
 build/rasterfall --visual-capture procedural-humanoid --visual-output /tmp/rf-humanoid.bmp
+build/rasterfall --character-acceptance rasterfall/private-assets/models/rf_humanoid_acceptance.rmesh /tmp/rf-humanoid-v11
 ```
 
 输出为 24-bit BMP（单人 800×800，小队 1600×800），路径由调用者指定，父目录须已存在；成功后打印最终路径并退出。
 已有文件会覆盖。可连续 capture 后使用 `cmp` 检查字节一致性，再用图片查看工具观察。
-不依赖窗口、音频、私有角色资源、地图或 gameplay step。
+`--character-acceptance` 是独立的正式角色验收场景，依赖指定私有角色 RMESH 和现有标准 AK，
+输出固定三姿态四视角及 near/mid/far A/B；普通 Visual CLI 仍不依赖窗口、音频、地图或 gameplay step。
 
 数据流：options → main 诊断早退 → 命名场景检查/固定 setup →
 `rasterfall_render_procedural_humanoid()` → 普通 primitive 与武器 helper →

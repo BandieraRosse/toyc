@@ -61,6 +61,7 @@ void rasterfall_options_usage(int fd)
         "  --texture-stats  --frames <count>  --dump-frame <path>\n"
         "  --logic-test  --input-test  --auto\n"
         "  --visual-capture <procedural-humanoid|hurd-squad> --visual-output <path.bmp>\n"
+        "  --character-acceptance <model.rmesh> <output-dir>\n"
         "  --model-views <model> <dir> [--model-views-supersample <1|2>]\n"
         "  --model-static-views <model> <dir>\n"
         "  --model-pose-views <model> <dir> <bind|right-arm|arms|body|rfchar-test>\n"
@@ -124,6 +125,10 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
         } else if (!strcmp(option,"--visual-output")) {
             if(require_arguments(argc,argv,arg,1,option)<0)return -1;
             o->visual_output=argv[++arg];
+        } else if (!strcmp(option,"--character-acceptance")) {
+            if(require_arguments(argc,argv,arg,2,option)<0)return -1;
+            o->character_acceptance_model=argv[++arg];
+            o->character_acceptance_dir=argv[++arg];
         } else if (!strcmp(option,"--model-views")) {
             if(require_arguments(argc,argv,arg,2,option)<0)return -1;
             o->view_model_path=argv[++arg];o->view_output_dir=argv[++arg];

@@ -1,7 +1,7 @@
 # Rasterfall 模型与动画架构
 
 > 文档更新：2026-09-09
-> 源码核对基线：工作区（RF Humanoid V1 / Character GLB Contract；玩法 MOVE 时钟映射到 authored anime walk clip 的展示时钟）
+> 源码核对基线：工作区（RF Humanoid V1.1 stable-role rifle composition / Character GLB Contract；玩法 MOVE 时钟映射到 authored anime walk clip 的展示时钟）
 
 本文说明运行时模块边界、扩展入口和当前仍需控制的技术债。格式细节仍以各公共头文件和
 转换工具为准。

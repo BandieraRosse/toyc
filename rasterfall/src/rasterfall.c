@@ -2451,6 +2451,10 @@ int main(int argc, char **argv)
     if (options.visual_scenario)
         return rasterfall_render_visual_capture(options.visual_scenario,
                                                  options.visual_output);
+    if (options.character_acceptance_model)
+        return rasterfall_render_character_acceptance_capture(
+            options.character_acceptance_model,
+            options.character_acceptance_dir);
     if (fb_font_load("rasterfall/assets/fonts/gb2312-16.rfh") < 0) {
         __fprintf(2, "rasterfall: cannot load GB2312 font asset\n");
         return 1;

@@ -223,6 +223,8 @@ static int gallery_loaded;
 static struct rasterfall_model_asset static_prop_models[RASTERFALL_PROP_ASSET_COUNT];
 static unsigned char static_prop_model_attempted[RASTERFALL_PROP_ASSET_COUNT];
 static struct rasterfall_model_asset private_character_model;
+/* Process-local model used only by the deterministic character acceptance CLI. */
+static struct rasterfall_model_asset acceptance_capture_model;
 static struct rasterfall_model_asset private_character_lod_model;
 static int private_character_lod_loaded;
 static struct rasterfall_model_asset private_character_lod2_model;
@@ -5060,6 +5062,9 @@ static const struct rasterfall_pose_calibration *render_pose_calibration(int wea
 static int rifle_frame_transform(const struct rasterfall_model_asset *model,
                                  struct rasterfall_model_attachment_transform *frame)
 {
+    if (model && model->has_character_contract &&
+        rasterfall_model_character_attachment_transform(
+            model, RASTERFALL_ATTACHMENT_CHEST, frame) == 0) return 0;
     if (rasterfall_model_attachment_transform(model,"上半身2",frame)==0) return 0;
     return rasterfall_model_attachment_transform(model,"上半身",frame);
 }

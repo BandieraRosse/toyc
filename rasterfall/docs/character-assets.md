@@ -149,11 +149,9 @@ attachment `{id,parent bone,local position RFU,local quaternion}`。v2-v13 继�
 ## 当前缺口与下一阶段边界
 
 当前闭环不导入 animation clip，不实现通用 glTF、IK 自动生成、玩法角色注册或 model
-resource/instance 重构。正式 AI 低模制作前还需要角色造型/材质预算、Blender exporter 版本与依赖
-锁定、动画 clip milestone，以及至少一份非 fixture 的 art acceptance asset。PMX mapper 与静态
-`glb2rmesh` 继续作为兼容路径，但不定义新角色契约。
+resource/instance 重构。PMX mapper 与静态 `glb2rmesh` 继续作为兼容路径，但不定义新角色契约。
 
-## RF Humanoid Art Acceptance Character V1
+## RF Humanoid Art Acceptance Character V1.1
 
 第一份非 fixture 的正式候选由 `tools/blender/generate_rasterfall_humanoid.py` 参数化生成，
 manifest 为 `tools/assets/manifests/characters/rf_humanoid_acceptance.asset.json`。它沿用本页
@@ -174,7 +172,16 @@ build/rasterfall --model-pose-views rasterfall/private-assets/models/rf_humanoid
 build/rasterfall --model-pose-views rasterfall/private-assets/models/rf_humanoid_acceptance.rmesh tmp/rf-humanoid-acceptance/posed rfchar-test
 ```
 
-当前 acceptance 基线约为 1,680 vertices / 1,032 triangles / 18 mesh nodes / 5 materials；
-导入后为 29 bones（21 humanoid + 8 attachments），其中 1,560 个顶点为 BDEF1、120 个为
-BDEF2。固定 capture 覆盖 bind 与 `rfchar-test` posed 的 front/side/back/three-quarter；
-模型视图不含武器，因此持枪姿态仍需后续接入角色展示场景或真实装备资源复核。
+当前 acceptance 基线为 1,619 vertices / 1,011 triangles / 18 mesh nodes / 5 materials；
+导入后为 29 bones（21 humanoid + 8 attachments），其中 1,499 个顶点为 BDEF1、120 个为
+BDEF2。`--character-acceptance` 使用稳定 CHEST/WEAPON_R/WEAPON_L/FOREGRIP 接入现有 AK，
+输出 bind、rifle-idle、rifle-aim 的 front/side/back/three-quarter，并输出 near/mid/far 的
+固定 front A/B sheet。它是离屏验收入口，不是新的 runtime character path：
+
+```sh
+build/rasterfall --character-acceptance rasterfall/private-assets/models/rf_humanoid_acceptance.rmesh tmp/rf-humanoid-v11
+```
+
+步枪动作通过稳定 humanoid role composition 旋转肩、大臂、前臂和双手，再由现有 rifle hand
+solver 求解握持；capture 根据姿态 bounds 使用稳定 margin framing。当前已验证 rifle motion、
+RFM2 v14 runtime load 与 CPU skinning，仍需在真实 gameplay 镜头中继续观察远距离附件空间。

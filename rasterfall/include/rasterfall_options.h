@@ -9,6 +9,7 @@ struct rasterfall_options {
     int stats_enabled, texture_stats, frame_limit;
     const char *dump_path;
     const char *visual_scenario, *visual_output;
+    const char *character_acceptance_model, *character_acceptance_dir;
     const char *view_model_path, *view_output_dir;
     int model_views_supersample, model_skinning, model_pose;
     int material_regression;

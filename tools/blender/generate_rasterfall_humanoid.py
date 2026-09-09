@@ -28,7 +28,7 @@ def arguments():
     return p.parse_args(sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else [])
 
 
-def ring_mesh(name, rings, sides, material, weights, arm, scene):
+def ring_mesh(name, rings, sides, material, weights, arm, scene, front_cut=False):
     """Make a capped ring mesh. rings are (center, basis_a, basis_b, radius_a, radius_b)."""
     verts = []
     for center, ba, bb, ra, rb in rings:
@@ -42,8 +42,11 @@ def ring_mesh(name, rings, sides, material, weights, arm, scene):
             n = (s + 1) % sides
             a, b = r * sides + s, r * sides + n
             c, d = (r + 1) * sides + n, (r + 1) * sides + s
-            faces.extend(((a, b, c), (a, c, d)))
-    faces.append(tuple(range(sides - 1, -1, -1)))
+            for face in ((a, b, c), (a, c, d)):
+                if not front_cut or sum(verts[i][1] for i in face) / 3.0 >= -0.015:
+                    faces.append(face)
+    if not front_cut:
+        faces.append(tuple(range(sides - 1, -1, -1)))
     last = (len(rings) - 1) * sides
     faces.append(tuple(last + s for s in range(sides)))
     mesh = bpy.data.meshes.new(name)
@@ -140,16 +143,19 @@ def main():
     secondary=bpy.data.materials.new('RF_ClothingSecondary'); secondary.diffuse_color=(.30,.34,.30,1)
     boot=bpy.data.materials.new('RF_Boots'); boot.diffuse_color=(.055,.07,.075,1)
     # Anatomical torso: pelvis, visibly pinched waist, broad chest.
-    solid_z('Pelvis',.70,1.00,.28,.18,.23,.16,secondary,'RF_HIPS','RF_SPINE',arm,scene)
-    solid_z('Waist',.96,1.18,.23,.16,.20,.15,mainmat,'RF_SPINE','RF_CHEST',arm,scene)
-    solid_z('Chest',1.14,1.54,.27,.17,.34,.21,mainmat,'RF_CHEST','RF_UPPER_CHEST',arm,scene)
+    solid_z('Pelvis',.70,1.00,.27,.18,.24,.17,secondary,'RF_HIPS','RF_SPINE',arm,scene)
+    solid_z('Waist',.96,1.18,.24,.17,.21,.15,mainmat,'RF_SPINE','RF_CHEST',arm,scene)
+    solid_z('Chest',1.14,1.54,.22,.16,.34,.21,mainmat,'RF_CHEST','RF_UPPER_CHEST',arm,scene)
     ring_mesh('Neck', [((0,0,1.52),(1,0,0),(0,1,0),.105,.10),((0,0,1.68),(1,0,0),(0,1,0),.12,.11)], 8, skin, [('RF_NECK',range(16),1)], arm, scene)
     # Skull rings: jaw -> cheek/temple -> cranium -> crown.
     ring_mesh('Skull', [((0,0,1.64),(1,0,0),(0,1,0),.18,.14),((0,0,1.72),(1,0,0),(0,1,0),.27,.19),
                         ((0,0,1.84),(1,0,0),(0,1,0),.30,.22),((0,0,1.96),(1,0,0),(0,1,0),.22,.17)], 8, skin, [], arm, scene)
     ob=bpy.data.objects['Skull']; g=ob.vertex_groups.new(name='RF_HEAD'); g.add(range(len(ob.data.vertices)),1,'REPLACE')
-    ring_mesh('HairShell', [((0,0,1.79),(1,0,0),(0,1,0),.285,.225),((0,0,1.95),(1,0,0),(0,1,0),.23,.18),
-                            ((0,.015,2.00),(1,0,0),(0,1,0),.13,.12)], 8, hair, [('RF_HEAD',range(24),1)], arm, scene)
+    # Keep the forehead lighter than a full helmet, while retaining a broad,
+    # slightly irregular crown and rear/side mass in the silhouette.
+    ring_mesh('HairShell', [((0,.02,1.79),(1,0,0),(0,1,0),.285,.19),((0,.025,1.93),(1,0,0),(0,1,0),.27,.18),
+                            ((0,.02,2.00),(1,0,0),(0,1,0),.20,.13)], 8, hair, [('RF_HEAD',range(24),1)], arm, scene,
+               front_cut=True)
     # Arms, hands, legs, feet. Each joint transition is deliberately BDEF2.
     for side,sgn in (('L',1),('R',-1)):
         segment(side+'UpperArm',(.25*sgn,0,1.50),(.54*sgn,0,1.50),.115,.095,mainmat,'RF_'+side+'_UPPER_ARM','RF_'+side+'_FOREARM',arm,scene)
