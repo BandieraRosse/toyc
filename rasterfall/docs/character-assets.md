@@ -1,7 +1,7 @@
 # Rasterfall Character Asset Contract V1 / RF Humanoid V1
 
-> 文档更新：2026-09-09
-> 源码核对基线：工作区（RFM2 v14 / SKN1 + CHR1、正式 RFCHAR importer、runtime stable API、Blender reference fixture 与 RF Humanoid V2 proportion/silhouette rebuild）
+> 文档更新：2026-09-10
+> 源码核对基线：工作区（RF Humanoid V2 final convergence、CHR1 bind 基底烘焙与双手 socket 握持门禁；RFCHAR V1 / RFM2 v14 不变）
 
 本文是所有新 Rasterfall 人形角色资产的第一入口。V1 冻结 Blender 到离线 importer 的输入门；
 它不承诺任意 glTF 的兼容性，也不要求 runtime 直接读取 GLB。主线固定为：
@@ -213,13 +213,28 @@ build/rasterfall --character-world-capture tmp/rf-world-v2 \
   --character-world-model rasterfall/private-assets/models/rf_humanoid_v2.rmesh
 ```
 
-当前生成结果为 GLB source 968 vertices / 1,794 triangles / 26 mesh nodes / 5 materials；导入
-RFM2 为 4,772 vertices / 1,794 triangles / 29 bones（21 humanoid + 8 attachments），其中
-3,758 个顶点为 BDEF1、1,014 个为 BDEF2。源空间从鞋底到 crown 约 2.095m；bind pose 中
+Final convergence 保留参数化生成源和五大材质色块。骨盆最大半宽 0.275m、腰半宽
+0.235m；肩峰采用更小且偏向上臂权重的渐缩体，收窄胸侧以留出腋下空间。大腿根收窄，
+左右 knee 网格位于各自的 X=±0.15m，calf 峰值上移、脚踝收窄、鞋底共面于地面；hair crown
+闭合并与前缘相接，避免原先开口露出头皮。手部 socket 位于实际掌部，保持现有 stable IDs。
+源空间从鞋底到 crown 约 2.080m；bind pose 中
 hip 约在总高 42%、shoulder 约在 72%，视觉上把更多高度交给腿和小腿，而不是 V1.1 的短直筒腿。
 
 `--character-acceptance` 继续输出 bind、rifle-idle、rifle-aim 的 front/side/back/three-quarter
 及 near/mid/far A/B；`--character-world-model` 只替换开发者区 Character Test Strip 的 body，
-仍使用正式地图、真实 world renderer、标准 AK、既有相机和深度路径。当前 V2 已通过 contract、
-RFM2 v14 load、CPU skinning 和 rifle attachment motion；最终美术判断仍应以这些 world captures
-和实际运行镜头为准。
+仍使用正式地图、真实 world renderer、标准 AK 和深度路径。开发者区默认加载 V2；相机从展示带
+斜正面观察，避开工业 prop 与边界墙对中远景的遮挡，并补充每个角色独立的三档距离截图。
+
+附件 importer 必须将 GLB 的 parent-local TRS 烘焙到 SKN1 的 identity-rest 基底：position 为
+socket 与 parent 的全局 bind 位置差，rotation 为 socket 的全局 bind rotation。不能直接复制
+GLB local TRS；`test_rfchar_pipeline.py` 对导入附件与 GLB bind 变换做交叉检查。
+
+RFCHAR 持枪使用 CHEST 提供稳定枪架、WEAPON_R 和 FOREGRIP（缺失时 WEAPON_L）提供双手接触。
+`rifle_solve_hands()` 按 stable role 获取骨骼，独立求解两臂并迭代扣除 socket 到 wrist 的偏移；
+旧 PMX 分支继续使用原有校准。验收的 `visual_rf_calibration()` 区分低持枪 idle 与平持 aim，
+不套用 Maid 体型姿态；`visual_rf_check_grips()` 超过 4 RFU 误差即返回失败。
+Character Lab 的 front/three-quarter 对应 canonical +Z 正面，所有方向共享相同姿态与 framing。
+
+这套 V2 是后续 AI/NPC 身体与 headgear/职业附件扩展的基线候选。完整运行时资产仍为本地可选
+资源，生成器与 manifest 才是可复现源；本轮不自动替换全部 gameplay actor。最终冻结判断和
+具体截图观察记录见 `archive/rf-humanoid-v2-final-convergence.md`，导航不记录阶段测试数量。

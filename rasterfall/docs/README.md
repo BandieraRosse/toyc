@@ -1,7 +1,7 @@
 # Rasterfall 代码导航
 
-> 文档更新：2026-09-09
-> 源码核对基线：工作区（RFCHAR GLB → RFM2 v14/SKN1/CHR1 → stable API/CPU skinning；RF Humanoid V1.1 保留为对照，V2 proportion/silhouette rebuild 已接入同一 Character Acceptance 与可选 world capture；其余主线同现有工作区）
+> 文档更新：2026-09-10
+> 源码核对基线：工作区（RF Humanoid V2 final convergence；CHR1 附件 bind 基底烘焙、双手 socket IK 门禁、开发者区 V2 默认 body 与逐角色实景距离验收）
 
 本目录面向接手 Rasterfall 任务的编码代理。目标不是介绍玩法，而是先把问题归到正确的
 状态所有者和文件，再开始搜索。命令、资源导入方法和用户可见特性仍以
@@ -32,6 +32,7 @@
 | 战斗表现事件、muzzle/tracer/impact/camera shake 消费 | [rendering.md](rendering.md) | `include/rasterfall_effect_event.h`、`src/rasterfall_effects.c` |
 | 模型、蒙皮、IK、VMD/GLB、动作重定向 | [assets-animation.md](assets-animation.md) | `src/rasterfall_model.c` |
 | Blender 人形角色、RF Humanoid、Character GLB、附件、导入与蒙皮门禁 | [character-assets.md](character-assets.md) | `tools/assets/rfchar_import.py`、`include/rasterfall_model.h`、`app/glb_inspect.c`、`dev-tests/rasterfall_visual_capture.inc` |
+| V2 base body 收敛、AK 双手接触与冻结验收 | [character-assets.md](character-assets.md)、[rendering.md](rendering.md) | `generate_rasterfall_humanoid_v2.py` → importer bind 基底 → `rifle_solve_hands()` → `visual_rf_calibration()` / `visual_rf_check_grips()` → world strip |
 | 导入 PMX/GLB、manifest、纹理、LOD、模型诊断 | [asset-pipeline.md](asset-pipeline.md) | `tools/assets/import_asset.py`、现有转换器、模型加载器 |
 | 程序化工业/军事环境组件、Blender 批量导出 | [industrial-props.md](industrial-props.md)、[asset-pipeline.md](asset-pipeline.md) | `tools/blender/generate_rasterfall_props.py` |
 | 环境组件 V2 风格、palette、几何/纹理预算与验收 | [environment-art.md](environment-art.md)、[industrial-props.md](industrial-props.md) | 十件 static prop 源资产与游戏内展示 |

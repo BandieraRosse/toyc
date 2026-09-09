@@ -1,7 +1,7 @@
 # Rasterfall 资产转换与诊断
 
-> 文档更新：2026-09-09
-> 源码核对基线：工作区（RFCHAR validator → skeletal importer → RFM2 v14/SKN1/CHR1；统一 importer 契约；RF Humanoid V2 仍只替换 source geometry，不改 importer/runtime contract）
+> 文档更新：2026-09-10
+> 源码核对基线：工作区（RFCHAR V1 → RFM2 v14 不变；V2 final convergence 修正 CHR1 附件 bind 基底烘焙，增加 GLB/runtime socket 交叉检查）
 
 本文记录可执行的模型、纹理和动画工具链。运行时模块边界见 `assets-animation.md`，动画求值契约
 见 `animation-architecture.md`，资源是否允许发布见 `asset-sources.md`。

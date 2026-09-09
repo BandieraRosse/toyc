@@ -5136,6 +5136,45 @@ static void rifle_solve_hands(struct rasterfall_model_asset *model,
 {
     double target[3];
     if (!model || !frame || !profile || !asset || !profile->left_ik) return;
+    if (model->has_character_contract) {
+        int side, pass, i;
+        for (side = 0; side < 2; side++) {
+            int upper = rasterfall_model_humanoid_bone(model, side ?
+                RASTERFALL_HUMANOID_LEFT_UPPER_ARM : RASTERFALL_HUMANOID_RIGHT_UPPER_ARM);
+            int forearm = rasterfall_model_humanoid_bone(model, side ?
+                RASTERFALL_HUMANOID_LEFT_FOREARM : RASTERFALL_HUMANOID_RIGHT_FOREARM);
+            int hand = rasterfall_model_humanoid_bone(model, side ?
+                RASTERFALL_HUMANOID_LEFT_HAND : RASTERFALL_HUMANOID_RIGHT_HAND);
+            enum rasterfall_character_attachment socket = side ?
+                RASTERFALL_ATTACHMENT_FOREGRIP : RASTERFALL_ATTACHMENT_WEAPON_R;
+            struct rasterfall_cal_vec3 anchor = side ? profile->foregrip : profile->grip;
+            int local[3], calibrated[3];
+            double pole[3] = {side ? 1.0 : -1.0, -0.7, 0.0};
+            if (upper < 0 || forearm < 0 || hand < 0) continue;
+            if (!model->attachments[socket].present && side)
+                socket = RASTERFALL_ATTACHMENT_WEAPON_L;
+            for (i=0;i<3;i++) local[i]=((int *)&anchor)[i]-((int *)&asset->attachment_grip)[i];
+            weapon_profile_local(profile,local,calibrated);
+            for (i=0;i<3;i++) target[i]=frame->position[i]+
+                (frame->rotation[i*3]*calibrated[0]+
+                 frame->rotation[i*3+1]*calibrated[1]+
+                 frame->rotation[i*3+2]*calibrated[2])*1000.0/character_scale;
+            /* Converge the socket, including its offset from the wrist. Each
+             * arm has an independent pole; capture order must not affect it. */
+            for (pass=0;pass<12;pass++) {
+                struct rasterfall_model_attachment_transform attachment;
+                double wrist[3];
+                if (rasterfall_model_character_attachment_transform(model,socket,&attachment)<0) break;
+                for (i=0;i<3;i++) wrist[i]=target[i]-attachment.position[i]+
+                    model->bone_transforms[hand].position[i];
+                model->attachment_ik_previous_pole_valid=0;
+                if (rasterfall_model_solve_two_bone_attachment(model,
+                    model->bones[upper].name,model->bones[forearm].name,
+                    model->bones[hand].name,wrist,pole)<0) break;
+            }
+        }
+        return;
+    }
     rifle_anchor_model_target(frame,profile,asset,profile->foregrip,target,character_scale);
     rasterfall_model_solve_two_bone_attachment(model,"左腕","左ひじ","左手首",target,(double[3]){-1.0,0.0,0.0});
 }

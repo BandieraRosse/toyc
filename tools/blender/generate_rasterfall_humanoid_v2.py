@@ -1,10 +1,10 @@
-"""Generate the RF Humanoid V2 proportion and silhouette rebuild.
+"""Generate the RF Humanoid V2 final-convergence base body.
 
 This is a source generator rather than a hand-edited blend file.  It keeps the
 RFCHAR V1 skeleton and attachment contract, but replaces the V1.1 block-like
 body with a faceted, stylized human built from anatomical lofts:
 
-  pelvis -> pinched waist -> ribcage/chest -> shoulder caps
+  pelvis -> neutral waist -> ribcage/chest -> tapered deltoids
   jaw/cheek/temple/crown head mass + separate hair mass
   shoulder -> upper arm -> elbow -> forearm -> wrist -> hand
   pelvis -> thigh -> knee -> calf -> ankle -> foot
@@ -75,7 +75,7 @@ def ring_mesh(name, rings, sides, material, arm, scene, front_cut=False):
             c = (ring + 1) * sides + next_side
             d = (ring + 1) * sides + side
             for face in ((a, b, c), (a, c, d)):
-                if not front_cut or sum(vertices[index][1] for index in face) / 3.0 >= -0.015:
+                if not front_cut or ring >= 1 or sum(vertices[index][1] for index in face) / 3.0 >= -0.015:
                     faces.append(face)
 
     # End caps are intentionally low-poly n-gons. Blender/glTF triangulates
@@ -218,9 +218,9 @@ def make_armature(scene):
             bone.parent = bones[parent]
 
     attachments = {
-        'WEAPON_R': ('RF_R_HAND', (-0.94, -0.105, 1.49)),
-        'WEAPON_L': ('RF_L_HAND', (0.94, -0.105, 1.49)),
-        'FOREGRIP': ('RF_L_HAND', (0.86, -0.105, 1.49)),
+        'WEAPON_R': ('RF_R_HAND', (-0.93, -0.025, 1.50)),
+        'WEAPON_L': ('RF_L_HAND', (0.93, -0.025, 1.50)),
+        'FOREGRIP': ('RF_L_HAND', (0.93, -0.025, 1.50)),
         'BACK': ('RF_CHEST', (0, 0.18, 1.36)),
         'CHEST': ('RF_CHEST', (0, -0.22, 1.36)),
         'HEAD': ('RF_HEAD', (0, 0.005, 1.99)),
@@ -267,10 +267,10 @@ def create_body(armature, scene, materials):
         'Pelvis',
         [
             (0.70, 0.000, 0.20, 0.14),
-            (0.77, 0.000, 0.28, 0.18),
-            (0.88, 0.000, 0.31, 0.19),
-            (0.98, 0.000, 0.27, 0.17),
-            (1.04, 0.000, 0.23, 0.15),
+            (0.77, 0.000, 0.255, 0.17),
+            (0.88, 0.000, 0.275, 0.18),
+            (0.98, 0.000, 0.255, 0.16),
+            (1.04, 0.000, 0.215, 0.115),
         ],
         SIDES_BODY, pants, armature, scene,
         [
@@ -281,18 +281,18 @@ def create_body(armature, scene, materials):
             [('RF_SPINE', 1.0)],
         ])
 
-    # One continuous shirt loft carries the pinched waist into the ribcage.
+    # One continuous shirt loft carries the neutral waist into the ribcage.
     # Width and depth both change gradually; there is no broad rectangular
     # chest slab.
     vertical_loft(
         'Torso',
         [
-            (0.96, -0.005, 0.225, 0.145),
-            (1.04, -0.008, 0.215, 0.145),
-            (1.14, -0.010, 0.220, 0.155),
+            (0.96, -0.005, 0.270, 0.190),
+            (1.04, -0.008, 0.235, 0.150),
+            (1.14, -0.010, 0.240, 0.160),
             (1.25, -0.008, 0.255, 0.180),
-            (1.36, -0.004, 0.300, 0.200),
-            (1.47, 0.000, 0.315, 0.195),
+            (1.36, -0.004, 0.280, 0.190),
+            (1.47, 0.000, 0.290, 0.185),
             (1.56, 0.005, 0.255, 0.160),
         ],
         SIDES_BODY, shirt, armature, scene,
@@ -336,21 +336,20 @@ def create_body(armature, scene, materials):
         SIDES_BODY, skin, armature, scene,
         [[('RF_HEAD', 1.0)]] * 7)
 
-    # Hair is an independent, slightly flared rear/crown mass. The front cut
-    # leaves the forehead and cheek planes readable; two side locks keep the
-    # silhouette from looking like a tight helmet.
+    # A closed crown overlaps the fringe; no open front exposes the skull
+    # above the hairline. Two restrained side locks complete the silhouette.
     vertical_loft(
         'HairCap',
         [
-            (1.83, 0.050, 0.170, 0.155),
-            (1.90, 0.055, 0.215, 0.190),
-            (1.99, 0.060, 0.230, 0.200),
+            (1.90, 0.010, 0.215, 0.205),
+            (1.95, 0.020, 0.225, 0.210),
+            (1.99, 0.030, 0.220, 0.200),
             (2.050, 0.050, 0.195, 0.175),
-            (2.095, 0.035, 0.115, 0.115),
+            (2.080, 0.035, 0.120, 0.115),
         ],
         SIDES_BODY, hair, armature, scene,
         [[('RF_HEAD', 1.0)]] * 5,
-        front_cut=True)
+        front_cut=False)
     # A few front-facing low-poly locks give the hairline a broken, human
     # silhouette. They are separate from the rear cap, so the forehead stays
     # visible instead of reading as a fitted helmet.
@@ -372,20 +371,20 @@ def create_body(armature, scene, materials):
         segment_loft(
             'HairLock' + side, (0.18 * sign, 0.025, 1.78),
             (0.19 * sign, 0.045, 1.96),
-            [(0.0, 0.055, 0.060, 0.0),
-             (0.45, 0.065, 0.070, 0.0),
+            [(0.0, 0.040, 0.045, 0.0),
+             (0.45, 0.055, 0.060, 0.0),
              (1.0, 0.045, 0.050, 0.0)],
             SIDES_LIMB, hair, armature, scene, 'RF_HEAD')
 
     # Shoulder caps establish a deltoid volume separate from the ribcage.
     for side, sign in (('L', 1.0), ('R', -1.0)):
         segment_loft(
-            side + 'Shoulder', (0.22 * sign, 0.0, 1.49),
-            (0.43 * sign, 0.0, 1.50),
-            [(0.0, 0.145, 0.125, 0.0),
-             (0.35, 0.155, 0.130, 0.0),
-             (0.70, 0.125, 0.105, 0.35),
-             (1.0, 0.105, 0.090, 1.0)],
+            side + 'Shoulder', (0.23 * sign, 0.0, 1.52),
+            (0.44 * sign, 0.0, 1.50),
+            [(0.0, 0.090, 0.105, 0.0),
+             (0.35, 0.120, 0.115, 0.25),
+             (0.70, 0.110, 0.100, 0.75),
+             (1.0, 0.098, 0.085, 1.0)],
             SIDES_LIMB, shirt, armature, scene,
             'RF_' + side + '_SHOULDER', 'RF_' + side + '_UPPER_ARM')
 
@@ -393,8 +392,8 @@ def create_body(armature, scene, materials):
         segment_loft(
             side + 'UpperArm', (0.39 * sign, 0.0, 1.50),
             (0.61 * sign, 0.0, 1.50),
-            [(0.0, 0.112, 0.105, 0.0),
-             (0.28, 0.112, 0.098, 0.0),
+            [(0.0, 0.103, 0.095, 0.0),
+             (0.28, 0.108, 0.095, 0.0),
              (0.70, 0.090, 0.082, 0.0),
              (0.88, 0.082, 0.075, 0.45),
              (1.0, 0.078, 0.070, 1.0)],
@@ -427,34 +426,37 @@ def create_body(armature, scene, materials):
         segment_loft(
             side + 'Thigh', (0.15 * sign, 0.0, 0.90),
             (0.15 * sign, 0.0, 0.51),
-            [(0.0, 0.155, 0.140, 0.0),
-             (0.18, 0.160, 0.145, 0.0),
-             (0.52, 0.140, 0.125, 0.0),
+            [(0.0, 0.132, 0.135, 0.0),
+             (0.18, 0.138, 0.140, 0.0),
+             (0.52, 0.125, 0.120, 0.0),
              (0.80, 0.118, 0.108, 0.35),
              (1.0, 0.105, 0.098, 1.0)],
             SIDES_LIMB, pants, armature, scene,
             'RF_' + side + '_UPPER_LEG', 'RF_' + side + '_LOWER_LEG')
 
-        vertical_loft(
+        knee = vertical_loft(
             side + 'Knee',
-            [(0.46, 0.0, 0.108, 0.100),
-             (0.51, 0.0, 0.116, 0.105),
-             (0.56, 0.0, 0.108, 0.098)],
+            [(0.46, -0.012, 0.098, 0.092),
+             (0.51, -0.018, 0.108, 0.105),
+             (0.56, -0.010, 0.102, 0.095)],
             SIDES_LIMB, pants, armature, scene,
             [[('RF_' + side + '_UPPER_LEG', 0.35),
               ('RF_' + side + '_LOWER_LEG', 0.65)],
              [('RF_' + side + '_LOWER_LEG', 1.0)],
              [('RF_' + side + '_LOWER_LEG', 1.0)]])
+        # Author in armature space; object TRS must stay identity for RFCHAR.
+        for vertex in knee.data.vertices:
+            vertex.co.x += 0.15 * sign
 
         # The calf peaks above mid-shin and narrows clearly at the ankle.
         segment_loft(
             side + 'Calf', (0.15 * sign, 0.0, 0.55),
             (0.15 * sign, 0.0, 0.12),
             [(0.0, 0.100, 0.094, 0.0),
-             (0.20, 0.116, 0.106, 0.0),
-             (0.48, 0.120, 0.108, 0.0),
-             (0.74, 0.094, 0.088, 0.25),
-             (0.92, 0.073, 0.070, 0.70),
+             (0.25, 0.114, 0.112, 0.0),
+             (0.48, 0.108, 0.106, 0.0),
+             (0.74, 0.084, 0.082, 0.25),
+             (0.92, 0.069, 0.066, 0.70),
              (1.0, 0.066, 0.064, 1.0)],
             SIDES_LIMB, pants, armature, scene,
             'RF_' + side + '_LOWER_LEG', 'RF_' + side + '_FOOT')
@@ -462,7 +464,7 @@ def create_body(armature, scene, materials):
         # A shallow, forward wedge gives the boot a toe/heel read without the
         # V1.1 rock shape. The lowest ring is close to z=0 so the mesh remains
         # grounded in the canonical bind pose.
-        segment_loft(
+        foot = segment_loft(
             side + 'Foot', (0.15 * sign, -0.015, 0.105),
             (0.15 * sign, -0.31, 0.070),
             [(0.0, 0.085, 0.080, 0.0),
@@ -471,6 +473,10 @@ def create_body(armature, scene, materials):
              (1.0, 0.082, 0.060, 0.0)],
             SIDES_LIMB, boots, armature, scene,
             'RF_' + side + '_FOOT')
+        # A planar sole gives both boots an actual canonical ground contact.
+        for vertex in foot.data.vertices:
+            if vertex.co.z < 0.055:
+                vertex.co.z = 0.0
 
 
 def patch_glb_skeleton(path):

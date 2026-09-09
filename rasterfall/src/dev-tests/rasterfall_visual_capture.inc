@@ -107,15 +107,54 @@ static const struct rasterfall_skeletal_actor_profile visual_rf_profile = {
     "rf_humanoid_acceptance", NULL, NULL, 1736, 0, 1024
 };
 
+static const struct rasterfall_pose_calibration *visual_rf_calibration(int mode)
+{
+    static struct rasterfall_pose_calibration calibration;
+    calibration = *rasterfall_pose_calibration_resolve(NULL, 1, TOY_GAME_WEAPON_AK);
+    calibration.offset = (struct rasterfall_cal_vec3){-35, mode == 1 ? -35 : 35, 45};
+    calibration.yaw_offset = 0;
+    calibration.pitch_offset = mode == 1 ? 18 : 0;
+    calibration.roll_offset = 0;
+    calibration.left_ik = 1;
+    return &calibration;
+}
+
+static int visual_rf_check_grips(struct rasterfall_model_asset *model,
+    const struct rasterfall_model_attachment_transform *frame,
+    const struct rasterfall_pose_calibration *calibration, int scale)
+{
+    const struct rasterfall_weapon_asset_profile *weapon = rasterfall_weapon_asset_profile(TOY_GAME_WEAPON_AK);
+    int side, i;
+    for (side=0;side<2;side++) {
+        struct rasterfall_model_attachment_transform socket;
+        struct rasterfall_cal_vec3 anchor=side?calibration->foregrip:calibration->grip;
+        int local[3], calibrated[3];
+        double error=0;
+        if (rasterfall_model_character_attachment_transform(model,side?
+            RASTERFALL_ATTACHMENT_FOREGRIP:RASTERFALL_ATTACHMENT_WEAPON_R,&socket)<0) return -1;
+        for(i=0;i<3;i++) local[i]=((int *)&anchor)[i]-((int *)&weapon->attachment_grip)[i];
+        weapon_profile_local(calibration,local,calibrated);
+        for(i=0;i<3;i++) {
+            double delta=socket.position[i]-frame->position[i]-
+                (frame->rotation[i*3]*calibrated[0]+frame->rotation[i*3+1]*calibrated[1]+
+                 frame->rotation[i*3+2]*calibrated[2])*1000.0/scale;
+            error+=delta*delta;
+        }
+        __printf("rfchar-grip: side=%s error_rfu=%.3f\n",side?"left":"right",sqrt(error));
+        if(error>16.0) return -1;
+    }
+    return 0;
+}
+
 static void visual_acceptance_camera(struct camera *camera, int view, int distance)
 {
     memset(camera, 0, sizeof(*camera));
     if (view == 1) camera->body.x = -distance, camera->view.sy = 1024;
-    else if (view == 2) camera->body.z = distance, camera->view.cy = -1024;
+    else if (view == 2) camera->body.z = -distance, camera->view.cy = 1024;
     else if (view == 3) camera->body.x = -distance * 724 / 1024,
-                         camera->body.z = -distance * 724 / 1024,
-                         camera->view.sy = 724, camera->view.cy = 724;
-    else camera->body.z = -distance, camera->view.cy = 1024;
+                         camera->body.z = distance * 724 / 1024,
+                         camera->view.sy = 724, camera->view.cy = -724;
+    else camera->body.z = distance, camera->view.cy = -1024;
     camera->view.y = -350; camera->view.pitch_cy = 1024;
 }
 
@@ -127,6 +166,15 @@ static void visual_acceptance_pose(struct rasterfall_model_asset *model, int mod
     int i, axis;
     rasterfall_model_set_pose(model, RASTERFALL_MODEL_POSE_BIND);
     if (!mode) return;
+    if (model->has_character_contract) {
+        if (mode == 3) {
+            composition_rotate_role(model, RASTERFALL_HUMANOID_LEFT_UPPER_LEG, "RF_L_UPPER_LEG", -18, 0, 0);
+            composition_rotate_role(model, RASTERFALL_HUMANOID_LEFT_LOWER_LEG, "RF_L_LOWER_LEG", 30, 0, 0);
+            composition_rotate_role(model, RASTERFALL_HUMANOID_RIGHT_UPPER_LEG, "RF_R_UPPER_LEG", 10, 0, 0);
+            rasterfall_model_update_bones(model);
+        }
+        return;
+    }
     calibration = rasterfall_pose_calibration_resolve(NULL, 1, TOY_GAME_WEAPON_AK);
     memcpy(pose.rotation, calibration->body_pose, sizeof(pose.rotation));
     if (mode == 1) {
@@ -167,7 +215,7 @@ static int render_character_test_strip(struct toy_renderer *renderer,
     struct rasterfall_procedural_humanoid_state old_state;
     const char *model_path = character_strip_model_path ?
         character_strip_model_path :
-        "rasterfall/private-assets/models/rf_humanoid_acceptance.rmesh";
+        "rasterfall/private-assets/models/rf_humanoid_v2.rmesh";
     int i, pixels = 0, scale;
     if (!active_session || active_pose_preview) return 0;
     if (!character_strip_load_attempted) {
@@ -182,7 +230,7 @@ static int render_character_test_strip(struct toy_renderer *renderer,
     memset(&old_state, 0, sizeof(old_state));
     old_state.x = -18000; old_state.z = -20000;
     old_state.weapon = TOY_GAME_WEAPON_AK;
-    old_state.sy = 0; old_state.cy = -1024;
+    old_state.sy = 0; old_state.cy = 1024;
     old_state.animation_id = TOY_GAME_ANIM_IDLE;
     pixels += rasterfall_render_procedural_humanoid(renderer, camera, &old_state,
         rasterfall_character_profile(RASTERFALL_CHARACTER_HURD_GUNSMITH));
@@ -192,6 +240,7 @@ static int render_character_test_strip(struct toy_renderer *renderer,
     calibration = rasterfall_pose_calibration_resolve(NULL, 1, TOY_GAME_WEAPON_AK);
     for (i = 0; i < 3; i++) {
         int x = rf_x[i], z = -20000;
+        calibration = visual_rf_calibration(rf_mode[i]);
         if (!gallery_model_visible(&renderer->surface, camera,
                                    &character_strip_model, x, -900, z,
                                    scale, 1, 0, -1024)) continue;
@@ -201,12 +250,12 @@ static int render_character_test_strip(struct toy_renderer *renderer,
             rifle_solve_hands(&character_strip_model, &frame, calibration,
                               weapon, scale);
         active_gallery_facing = 1;
-        active_gallery_sy = 0; active_gallery_cy = -1024;
+        active_gallery_sy = 0; active_gallery_cy = 1024;
         pixels += render_gallery_model(renderer, camera, &character_strip_model,
                                        x, -900, z, scale);
         pixels += render_skeletal_rifle(renderer, camera, &character_strip_model,
                                         &frame, &profile, calibration,
-                                        x, -900, z, 0, -1024,
+                                        x, -900, z, 0, 1024,
                                         TOY_GAME_WEAPON_AK, 0);
         active_gallery_facing = 0;
     }
@@ -216,10 +265,10 @@ static int render_character_test_strip(struct toy_renderer *renderer,
 static void character_world_capture_camera(struct camera *camera, int distance)
 {
     memset(camera, 0, sizeof(*camera));
-    camera->body.x = -10000;
-    camera->body.z = -20000 + distance;
+    camera->body.x = -10000 + distance * 3 / 5;
+    camera->body.z = -20000 + distance * 4 / 5;
     camera->view.y = -350;
-    camera->view.cy = -1024;
+    camera->view.sy = -614; camera->view.cy = -819;
     camera->view.pitch_cy = 1024;
 }
 
@@ -229,10 +278,10 @@ int rasterfall_render_character_world_capture(const char *output_dir,
     static const char *names[] = {"near", "mid", "far"};
     static const int distances[] = {2000, 4000, 8000};
     int i, result = 1;
-    if (!active_session || !output_dir || !*output_dir) return 1;
+    if (!active_session || !output_dir || !*output_dir || strlen(output_dir)>450) return 1;
     if (tlibc_recursive_mkdir(output_dir) < 0) return 1;
     character_strip_model_path = model_path && *model_path ? model_path : NULL;
-    for (i = 0; i < 3; i++) {
+    for (i = 0; i < 15; i++) {
         struct camera camera;
         struct toy_renderer renderer;
         struct toy_surface surface;
@@ -241,7 +290,13 @@ int rasterfall_render_character_world_capture(const char *output_dir,
         int stage_result;
         int submitted_commands;
         unsigned long submitted_triangles;
-        character_world_capture_camera(&camera, distances[i]);
+        int distance_index = i < 3 ? i : (i - 3) / 4;
+        static const char *subjects[] = {"old", "idle", "aim", "motion"};
+        character_world_capture_camera(&camera, distances[distance_index]);
+        if (i >= 3) camera.body.x = -18000 + ((i - 3) % 4) * 4000 + distances[distance_index] * 3 / 5;
+        if (i < 3) snprintf(path, sizeof(path), "%s/%s.bmp", output_dir, names[distance_index]);
+        else snprintf(path, sizeof(path), "%s/%s-%s.bmp", output_dir,
+                      names[distance_index], subjects[(i - 3) % 4]);
         memset(&surface, 0, sizeof(surface));
         surface.width = 1280; surface.height = 720; surface.stride = 1280 * 4;
         pixels = tlibc_malloc((size_t)surface.stride * surface.height);
@@ -262,14 +317,13 @@ int rasterfall_render_character_world_capture(const char *output_dir,
         submitted_triangles = renderer.submitted_triangles;
         stage_result = toy_renderer_flush(&renderer);
         if (renderer.cmd_overflow || stage_result < 0 ||
-            snprintf(path, sizeof(path), "%s/%s.bmp", output_dir, names[i]) >=
-                (int)sizeof(path) || rasterfall_hud_dump_bmp(path, &surface) < 0) {
+            rasterfall_hud_dump_bmp(path, &surface) < 0) {
             toy_renderer_destroy(&renderer); tlibc_free(pixels); return 1;
         }
         toy_renderer_destroy(&renderer);
         tlibc_free(pixels);
         __printf("rasterfall: character world capture distance=%d output=%s\n",
-                 distances[i], path);
+                 distances[distance_index], path);
         __printf("rasterfall: character world capture raster commands=%d triangles=%lu pixels=%d\n",
                  submitted_commands, submitted_triangles, stage_result);
     }
@@ -294,16 +348,17 @@ static int visual_acceptance_model_frame(struct toy_renderer *renderer,
     center_z = actor_z - (int)(((long long)character->min_z + character->max_z) * scale / 2000);
     base_y = -900 - (int)((long long)character->min_y * scale / 1000);
     if (draw_rifle && rifle_frame_transform(character, &frame) == 0) {
-        calibration = rasterfall_pose_calibration_resolve(NULL, 1, TOY_GAME_WEAPON_AK);
+        calibration = visual_rf_calibration(mode);
         if (calibration->left_ik)
             rifle_solve_hands(character, &frame, calibration,
                               rasterfall_weapon_asset_profile(TOY_GAME_WEAPON_AK), scale);
+        if (visual_rf_check_grips(character, &frame, calibration, scale)<0) return -1;
     }
     active_gallery_facing = 1; active_gallery_sy = 0; active_gallery_cy = 1024;
     pixels += render_gallery_model(renderer, camera, character,
                                    center_x, base_y, center_z, scale);
     if (draw_rifle && rifle_frame_transform(character, &frame) == 0) {
-        calibration = rasterfall_pose_calibration_resolve(NULL, 1, TOY_GAME_WEAPON_AK);
+        calibration = visual_rf_calibration(mode);
         pixels += render_skeletal_rifle(renderer, camera, character, &frame,
                                          &visual_rf_profile, calibration,
                                          actor_x, base_y, actor_z, 0, 1024,
@@ -337,10 +392,14 @@ static int visual_acceptance_dump(struct rasterfall_model_asset *character,
         old_state.sy = 0; old_state.cy = 1024; old_state.animation_id = TOY_GAME_ANIM_IDLE;
         rasterfall_render_procedural_humanoid(&renderer, &camera, &old_state,
             rasterfall_character_profile(RASTERFALL_CHARACTER_HURD_GUNSMITH));
-        visual_acceptance_model_frame(&renderer, &camera, &acceptance_capture_model,
-                                      NULL, mode, 500, 0, distance, mode != 0);
-    } else visual_acceptance_model_frame(&renderer, &camera, &acceptance_capture_model,
-                                         NULL, mode, 0, 0, distance, mode != 0);
+        if (visual_acceptance_model_frame(&renderer, &camera, &acceptance_capture_model,
+                                      NULL, mode, 500, 0, distance, mode != 0)<0) {
+            toy_renderer_destroy(&renderer); tlibc_free(pixels); return 1;
+        }
+    } else if (visual_acceptance_model_frame(&renderer, &camera, &acceptance_capture_model,
+                                         NULL, mode, 0, 0, distance, mode != 0)<0) {
+        toy_renderer_destroy(&renderer); tlibc_free(pixels); return 1;
+    }
     if (renderer.cmd_overflow || toy_renderer_flush(&renderer) < 0 ||
         snprintf(path, sizeof(path), "%s/%s/front.bmp", dir, name) >= (int)sizeof(path)) {
         toy_renderer_destroy(&renderer); tlibc_free(pixels); return 1;
@@ -389,7 +448,7 @@ int rasterfall_render_character_acceptance_capture(const char *model_path,
     for (distance = 0; distance < 3; distance++) {
         static const char *names[] = {"near","mid","far"};
         snprintf(path,sizeof(path),"%s/ab-%s",output_dir,names[distance]);
-        if (visual_acceptance_dump(&acceptance_capture_model,path,"sheet",2, distance==0?2100:distance==1?4200:8400,1)<0) { rasterfall_model_unload(&acceptance_capture_model); return 1; }
+        if (visual_acceptance_dump(&acceptance_capture_model,path,"sheet",2, distance==0?2100:distance==1?4200:8400,1)!=0) { rasterfall_model_unload(&acceptance_capture_model); return 1; }
     }
     rasterfall_model_unload(&acceptance_capture_model);
     __printf("rasterfall: character acceptance capture output=%s triangles=%u materials=%u\n",

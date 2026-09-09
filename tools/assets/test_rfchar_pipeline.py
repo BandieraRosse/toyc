@@ -1,7 +1,26 @@
 #!/usr/bin/env python3
 """End-to-end RFCHAR fixture, importer, runtime pose and visual smoke test."""
-import argparse, hashlib, os, subprocess, tempfile
+import argparse, hashlib, os, struct, subprocess, tempfile
 from pathlib import Path
+import rfchar_import
+
+def check_attachment_bind(glb, mesh):
+    document, _ = rfchar_import.glb(glb)
+    nodes=document['nodes']; parents={c:i for i,n in enumerate(nodes) for c in n.get('children',[])}
+    def global_matrix(i):
+        m=rfchar_import.local(nodes[i])
+        return rfchar_import.mm(global_matrix(parents[i]),m) if i in parents else m
+    raw=mesh.read_bytes(); skin=struct.unpack_from('<I',raw,60)[0]
+    char=skin+struct.unpack_from('<I',raw,skin+4)[0]
+    count=struct.unpack_from('<I',raw,char+16)[0]
+    joints=document['skins'][0]['joints']
+    for i in range(count):
+        aid,parent,x,y,z,*tail=struct.unpack_from('<IIiii4fI',raw,char+32+84+i*40)
+        node=next(j for j,n in enumerate(nodes) if n.get('name')=='RF_ATTACH_'+rfchar_import.ATTACH[aid])
+        expected=global_matrix(node); base=global_matrix(joints[parent])
+        actual=rfchar_import.local({'rotation':tail[:4]})
+        assert max(abs(actual[r+4*c]-expected[r+4*c]) for r in range(3) for c in range(3))<1e-5
+        assert max(abs(v+base[12+k]*512-expected[12+k]*512) for k,v in enumerate((x,y,z)))<=0.501
 
 BASELINE = {
     'bind/front.bmp': '78acc24b1adbb56dc6127d499a432ccbfc8e3b187eb68fdf5b0af91749c724c7',
@@ -22,6 +41,7 @@ def main():
         command += ['--python',repo/'tools/blender/generate_rfchar_fixture.py','--','--output',glb]
         run(command,repo);run([repo/'build/glb-inspect',glb,'contract'],repo)
         run(['python3',repo/'tools/assets/rfchar_import.py',glb,mesh],repo)
+        check_attachment_bind(glb,mesh)
         run([repo/'build/rfchar_runtime_test',mesh],repo)
         run([repo/'build/rasterfall','--model-pose-views',mesh,bind,'bind'],repo)
         run([repo/'build/rasterfall','--model-pose-views',mesh,posed,'rfchar-test'],repo)

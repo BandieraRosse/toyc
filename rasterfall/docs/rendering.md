@@ -1,7 +1,7 @@
 # 渲染、HUD、特效与性能
 
-> 文档更新：2026-09-09
-> 源码核对基线：工作区（Hurd 四职业 presentation profile 与固定 hurd-squad capture；Visual CLI V1 procedural BMP capture；RF Humanoid V1.1 对照与 V2 AK acceptance capture；开发者区 Character Test Strip 复用真实 world renderer，并可按 model path 提供 near/mid/far capture；其余渲染主线同现有工作区）
+> 文档更新：2026-09-10
+> 源码核对基线：工作区（V2 final convergence；RFCHAR 双手 socket IK、握持误差门禁、开发者区默认 V2 与逐角色距离 capture；其余渲染主线同现有工作区）
 
 > 源码核对补充：正式 Hurd actor 通过四个专用 character profile 进入职业外观；恢复的四名 Maid 旗卫以 Maid character profile 接入 actor，同时继续由 anime identity 选择骨骼模型；普通 player、Eula、佣兵解析为 NONE。
 
@@ -158,7 +158,9 @@ build/rasterfall --character-acceptance rasterfall/private-assets/models/rf_huma
 输出为 24-bit BMP（单人 800×800，小队 1600×800），路径由调用者指定，父目录须已存在；成功后打印最终路径并退出。
 已有文件会覆盖。可连续 capture 后使用 `cmp` 检查字节一致性，再用图片查看工具观察。
 `--character-acceptance` 是独立的正式角色验收场景，依赖指定私有角色 RMESH 和现有标准 AK，
-输出固定三姿态四视角及 near/mid/far A/B；普通 Visual CLI 仍不依赖窗口、音频、地图或 gameplay step。
+输出固定三姿态四视角及 near/mid/far A/B；RFCHAR 正面为 canonical +Z。CHEST 枪架使用
+`visual_rf_calibration()` 的 idle/aim 参数，双手按 WEAPON_R / FOREGRIP 接触标准 AK；
+`visual_rf_check_grips()` 检查误差并传播失败。普通 Visual CLI 仍不依赖窗口、音频、地图或 gameplay step。
 
 真实地图验收使用：
 
@@ -170,10 +172,13 @@ build/rasterfall --character-world-capture /tmp/rf-world-v2 \
 ```
 
 该入口先加载正式地图并 reset session，再通过正常 `rasterfall_render_scene()` 输出
-`near.bmp`、`mid.bmp`、`far.bmp`。Character Test Strip 位于 `rasterfall.map` 的
+`near.bmp`、`mid.bmp`、`far.bmp`，并输出 `{near,mid,far}-{old,idle,aim,motion}.bmp`。
+固定镜头取相对目标 (0.6d,0,0.8d) 的斜正面位置（d=2000/4000/8000 RFU），
+避免原正前方工业 prop 与负 Z 边界墙挡住距离验收；场景深度和几何均照常绘制。
+Character Test Strip 位于 `rasterfall.map` 的
 `z=-20000` 展示带：旧 procedural AK、RF rifle idle、RF rifle aim、RF locomotion-like
 pose；它们是 renderer presentation-only entities，不进入 actor、碰撞、AI 或网络状态。未提供
-`--character-world-model` 时保持 V1.1 acceptance model 的默认路径；提供时只替换 strip 的
+`--character-world-model` 时使用 `rf_humanoid_v2.rmesh`；提供时只替换 strip 的
 skeletal body，不改变 camera、AK、地图或 world render path。
 
 数据流：options → main 诊断早退 → 命名场景检查/固定 setup →

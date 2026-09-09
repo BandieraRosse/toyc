@@ -25,6 +25,19 @@ def glb(path):
 def mm(a,b):
     return [sum(a[r+4*k]*b[k+4*c] for k in range(4)) for c in range(4) for r in range(4)]
 
+def rotation_quaternion(m):
+    """Unit rotation of a column-major rigid transform (contract validated)."""
+    trace=m[0]+m[5]+m[10]
+    if trace>0:
+        s=math.sqrt(trace+1)*2
+        return [(m[6]-m[9])/s,(m[8]-m[2])/s,(m[1]-m[4])/s,s/4]
+    i=max(range(3),key=lambda k:m[k*5]);j=(i+1)%3;k=(i+2)%3
+    s=math.sqrt(1+m[i*5]-m[j*5]-m[k*5])*2
+    q=[0.,0.,0.,0.];q[i]=s/4
+    q[j]=(m[i+4*j]+m[j+4*i])/s;q[k]=(m[i+4*k]+m[k+4*i])/s
+    q[3]=(m[k+4*j]-m[j+4*k])/s
+    return q
+
 def local(node):
     if "matrix" in node:return node["matrix"]
     x,y,z,w=node.get("rotation",[0,0,0,1]);sx,sy,sz=node.get("scale",[1,1,1]);tx,ty,tz=node.get("translation",[0,0,0])
@@ -99,7 +112,10 @@ def convert(source,output,validator):
     for aid,name in enumerate(ATTACH):
         node=names.get("RF_ATTACH_"+name)
         if node is None:continue
-        p=parent[node];t=nodes[node].get("translation",[0,0,0]);q=nodes[node].get("rotation",[0,0,0,1])
+        # SKN1 stores absolute bind positions with identity rest rotations.
+        # Bake the socket into that basis, not the GLB parent's oriented basis.
+        p=parent[node];g=glob(node);pg=glob(p)
+        t=[g[12+i]-pg[12+i] for i in range(3)];q=rotation_quaternion(g)
         attachments.append(struct.pack("<IIiii4fI",aid,joint_runtime[p],i32(t[0]),i32(t[1]),i32(t[2]),*q,0))
     roles=[joint_runtime[names[x]] if x in names else 0xffffffff for x in ROLES]
     size=32+4*len(roles)+40*len(attachments)

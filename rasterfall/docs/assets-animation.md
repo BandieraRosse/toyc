@@ -1,7 +1,7 @@
 # 资源、模型与动画
 
-> 文档更新：2026-09-09
-> 源码核对基线：工作区（RFCHAR importer 与 RFM2 v14 CHR1 stable humanoid/attachment tables、RF Humanoid V1.1 对照与 V2 AK acceptance capture；PMX compatibility path）
+> 文档更新：2026-09-10
+> 源码核对基线：工作区（V2 final convergence、CHR1 socket 的 identity-rest bind 烘焙、RFCHAR 双手握持；PMX compatibility path）
 
 新建或生成 Blender 人形资产必须先读 [`character-assets.md`](character-assets.md)。它冻结
 Blender source → Character GLB → importer → runtime character asset → humanoid animation 主线；
@@ -37,6 +37,8 @@ RFCHAR GLB → RFM2 v14 → stable role/attachment API，并使用角色验收�
 ## 工具链定位
 
 - 统一离线入口、manifest 与完整性验证：`tools/assets/import_asset.py`；runtime 不读取 manifest。
+  RFCHAR importer 的附件位置/旋转必须转换到 SKN1 identity-rest 基底，不能直接保存 GLB local TRS；
+  `test_rfchar_pipeline.py` 校验附件全局 bind 变换。持枪仍从稳定角色/附件 API 获取接触位置。
 - 静态 GLB 转 RMESH：`app/glb2rmesh.c`；skeletal RFCHAR 转换：
   `tools/assets/rfchar_import.py`；GLB 检查：`app/glb_inspect.c`。
 - PMX 转换：`app/pmx2rmesh.c`、`tools/import-pmx-model.sh`。
