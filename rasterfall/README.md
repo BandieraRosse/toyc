@@ -1,14 +1,14 @@
 # Rasterfall
 
-> 文档更新：2026-09-03
-> 源码核对基线：`75a10cd`（将项目协作说明转向 Rasterfall）
+> 文档更新：2026-09-09
+> 源码核对基线：工作区（用户入口保持稳定；易变参数以 `build/rasterfall --help` 为准）
 
-Rasterfall 是 Toyc 仓库中的 freestanding 第一人称合作射击游戏实验，使用软件光栅器，包含
-地图、战斗、波次、AI 队友、音频、局域网/公网联机以及静态和骨骼模型。Linux 版本使用仓库内
-Tinylibc 与 Wayland/音频后端；Windows 版本使用 MinGW-w64 和 SDL2。
+Rasterfall 是 Toyc 仓库中的 freestanding 第一人称合作射击实验，使用软件光栅器，包含地图、
+战斗、波次、AI 队友、音频、联机和静态/骨骼模型。Linux 版本使用仓库内 Tinylibc 与 Wayland/音频
+后端；Windows 版本使用 MinGW-w64 和 SDL2。
 
-面向代码维护者和 Codex 的模块导航从 [`docs/README.md`](docs/README.md) 开始。资源来源、
-许可状态和发布限制见 [`docs/asset-sources.md`](docs/asset-sources.md)。
+本页是用户入口，只保留构建、启动和稳定工具入口。维护者应从
+[`docs/README.md`](docs/README.md) 开始；资产、模型、地图、网络和平台细节分别见对应专题文档。
 
 ## 构建与运行
 
@@ -38,43 +38,22 @@ make win-rasterfall-package
 生成物分别为 `build/rasterfall.exe` 和 `build/rasterfall-windows.zip`。Windows 程序以 EXE
 所在目录为资源根目录，构建及打包细节见 [`../windows/README.md`](../windows/README.md)。
 
-## 操作
-
-- `WASD`：移动；鼠标或方向键：观察。
-- 鼠标左键或 Enter：射击；空格：跳跃；`R`：换弹；`1`/`2`：切换武器。
-- `E`：交互；`Esc`：暂停或恢复。
-- 波次间可使用商店、拾取武器和弹药，并管理 AI 队友。
-
-游戏启动菜单提供单机、局域网房间和公网房间入口。公网房间 `0000`～`4999` 使用 UDP 打洞，
-`5000`～`9999` 使用 relay；失败时不会在两种模式之间静默回退。联机是可信玩家之间的合作模式，
-不以抵抗恶意客户端为设计目标。完整约束见
-[`docs/network-architecture.md`](docs/network-architecture.md)。
-
-## 资源目录
-
-- `assets/maps/`：文本地图。
-- `assets/models/`：公开 RFM2/RMESH 运行时模型。
-- `assets/textures/`：TTEX 纹理。
-- `assets/audio/`：TSND 音效。
-- `private-assets/`：可选的本地受限资源，不属于公开发布内容。
-
-地图的可见几何与碰撞属性相互独立；格式见 [`docs/map-format.md`](docs/map-format.md)，玩法绑定
-入口见 [`docs/gameplay.md`](docs/gameplay.md)。模型运行时见
-[`docs/assets-animation.md`](docs/assets-animation.md)，PMX/GLB/VMD 工具与诊断命令见
-[`docs/asset-pipeline.md`](docs/asset-pipeline.md)。
-
-## 常用验证
+## 常用运行与验证
 
 ```sh
 build/rasterfall --logic-test
-make app-vmd-inspect app-glb-inspect
+build/rasterfall --help
+build/rasterfall --host --port 28460
+build/rasterfall --connect 127.0.0.1 --port 28460
+make app-glb-inspect app-vmd-inspect
 build/glb-inspect --self-test
-build/rasterfall --actor-performance 30 5 8
+build/rfchar_runtime_test <model.rmesh>
 ```
 
-逻辑测试不能代替模型动画的视觉检查或真实多人联机验收。按修改类型选择完整验证方式，参见
-[`docs/build-platforms.md`](docs/build-platforms.md)。所有命令行诊断选项以
-`build/rasterfall --help` 的当前输出为准。
+角色和模型观察使用 `--model-views`、`--model-pose-views`、`--character-acceptance` 和
+`--character-world-capture`；具体流程见 [`docs/character-assets.md`](docs/character-assets.md)
+和 [`docs/rendering.md`](docs/rendering.md)。所有易变命令行选项以 `build/rasterfall --help` 的
+当前输出为准。逻辑测试不能代替视觉检查或真实多人联机验收。
 
 ## 开发文档
 

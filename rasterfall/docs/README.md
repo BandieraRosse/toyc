@@ -7,6 +7,11 @@
 状态所有者和文件，再开始搜索。命令、资源导入方法和用户可见特性仍以
 [`../README.md`](../README.md) 为准。
 
+文档职责分层如下：根目录 `README.md` 是仓库总览，`rasterfall/README.md` 是稳定的用户入口，
+本目录是维护者导航和模块细节。易变的参数完整清单以 `build/rasterfall --help` 为准；可复核的
+玩法、资产、模型和地图事实优先通过本仓库提供的 CLI 入口获取，详见根目录 `AGENTS.md` 的
+“文档层级与 Agent CLI 事实入口”。
+
 > 源码核对补充：正式 Hurd 四人使用专用 character IDs；原 Maid 四人旗卫已在西侧原位恢复并使用 Maid character/profession；普通 player、Eula 和佣兵为 character NONE；北侧 HURD 旗帜及派生 control status 已接入 session。
 
 ## 先读哪一篇

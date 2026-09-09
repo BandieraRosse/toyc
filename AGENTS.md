@@ -11,6 +11,27 @@
 再按文档给出的状态所有者和入口查源码。** 不要从最大的 `.c` 文件盲目搜索，也不要仅凭文件名
 推断模块边界。
 
+## 文档层级与 Agent CLI 事实入口
+
+Rasterfall 的文档分三层维护：根目录 `README.md` 是仓库总览；`rasterfall/README.md` 是
+Rasterfall 面向用户的稳定入口；`rasterfall/docs/README.md` 及其模块文档是维护者导航、状态
+所有权和工具链细节。不要把 `rasterfall/README.md` 当作历史文件，也不要在它复制易变的完整
+参数表；历史现场只放在 `rasterfall/docs/archive/`。
+
+Agent 获取 Rasterfall 重要事实时，优先使用下面这些可执行 CLI 的实际输出，再用文档解释上下文：
+
+- `build/rasterfall --help`：当前运行参数的唯一完整清单；参数新增、删除或兼容别名变化后，先核对它。
+- `build/rasterfall --logic-test`：玩法、session、地图和网络逻辑的无窗口回归入口。
+- `build/rasterfall --visual-capture ...`、`--model-views`、`--model-pose-views`、
+  `--character-acceptance`、`--character-world-capture`：角色、模型和真实 world render 的离屏观察入口。
+- `build/glb-inspect ... contract`、`build/rfchar_runtime_test <model.rmesh>`：RFCHAR 输入契约和
+  RFM2/RFCHAR runtime 加载门禁。
+- `build/vmd_inspect ...`：仅用于旧 PMX/VMD 兼容诊断，不作为新 RFCHAR 资产主路径。
+- `make map-layout`、`tools/map_layout_query.py`：地图布局 PNG/JSON 导出和精确空间查询。
+
+上述 CLI 的退出码、标准输出和生成物属于可复核事实；文档与实际输出不一致时，先按“文档与代码
+不一致”规则核对 Makefile、参数解析和调用入口，再修正文档。不要仅凭截图或历史归档推断当前状态。
+
 文档索引：
 
 - `rasterfall/docs/README.md`：总入口、任务到文件映射、架构主线。

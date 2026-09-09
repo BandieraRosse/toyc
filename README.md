@@ -41,6 +41,9 @@ Rasterfall 是一个使用仓库内 Tinylibc、由 GCC 构建的第一人称射�
 freestanding 运行时；Windows 版本通过独立平台层使用 SDL2、Win32 线程/同步和
 Winsock，不要求 Toyc 输出 PE/COFF。
 
+Rasterfall 的用户构建和启动入口见 [`rasterfall/README.md`](rasterfall/README.md)；维护者导航和
+模块边界见 [`rasterfall/docs/README.md`](rasterfall/docs/README.md)。
+
 模型、动画格式、重定向与 IK 的模块边界见
 [`rasterfall/docs/animation-architecture.md`](rasterfall/docs/animation-architecture.md)。
 
