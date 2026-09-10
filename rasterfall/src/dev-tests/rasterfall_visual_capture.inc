@@ -427,27 +427,17 @@ static int render_character_test_strip(struct toy_renderer *renderer,
                                        const struct camera *camera)
 {
     static const int rf_x[] = {-14000, -10000, -6000};
-    static const int rf_mode[] = {1, 2, 3};
-    const struct rasterfall_skeletal_actor_profile profile =
-        {"rf_humanoid_acceptance", NULL, NULL, 1736, 0, 1024};
-    const struct rasterfall_pose_calibration *calibration;
-    const struct rasterfall_weapon_asset_profile *weapon;
-    struct rasterfall_model_attachment_transform frame;
+    static const int rf_lower[] = {
+        RASTERFALL_ACTION_LOCOMOTION_IDLE,
+        RASTERFALL_ACTION_LOCOMOTION_IDLE,
+        RASTERFALL_ACTION_LOCOMOTION_WALK};
+    static const int rf_upper[] = {
+        RASTERFALL_ACTION_RIFLE_IDLE,
+        RASTERFALL_ACTION_RIFLE_AIM,
+        RASTERFALL_ACTION_RIFLE_IDLE};
     struct rasterfall_procedural_humanoid_state old_state;
-    const char *model_path = character_strip_model_path ?
-        character_strip_model_path :
-        "rasterfall/private-assets/models/rf_humanoid_v2.rmesh";
-    int i, pixels = 0, scale;
+    int i, pixels = 0, frame_pixels;
     if (!active_session || active_pose_preview) return 0;
-    if (!character_strip_load_attempted) {
-        int budget = renderer->frame_budget_ms;
-        character_strip_load_attempted = 1;
-        toy_renderer_set_frame_budget(renderer, 0);
-        if (rasterfall_model_load(&character_strip_model, model_path) < 0)
-            __fprintf(2, "rasterfall: character test strip unavailable: %s\n",
-                      model_path);
-        toy_renderer_set_frame_budget(renderer, budget);
-    }
     memset(&old_state, 0, sizeof(old_state));
     old_state.x = -18000; old_state.z = -20000;
     old_state.weapon = TOY_GAME_WEAPON_AK;
@@ -455,30 +445,16 @@ static int render_character_test_strip(struct toy_renderer *renderer,
     old_state.animation_id = TOY_GAME_ANIM_IDLE;
     pixels += rasterfall_render_procedural_humanoid(renderer, camera, &old_state,
         rasterfall_character_profile(RASTERFALL_CHARACTER_HURD_GUNSMITH));
-    if (!character_strip_model.data) return pixels;
-    scale = visual_rf_scale(&character_strip_model);
-    weapon = rasterfall_weapon_asset_profile(TOY_GAME_WEAPON_AK);
-    calibration = rasterfall_pose_calibration_resolve(NULL, 1, TOY_GAME_WEAPON_AK);
+    /* A world capture may replace the default V2 body with a contract
+     * variant.  The modular resource loader still resolves its passive gear
+     * beside that body, exactly like the gameplay path. */
+    modular_actor_body_model_path = character_strip_model_path;
     for (i = 0; i < 3; i++) {
-        int x = rf_x[i], z = -20000;
-        calibration = visual_rf_calibration(rf_mode[i]);
-        if (!gallery_model_visible(&renderer->surface, camera,
-                                   &character_strip_model, x, -900, z,
-                                   scale, 1, 0, -1024)) continue;
-        visual_acceptance_pose(&character_strip_model, rf_mode[i]);
-        if (rifle_frame_transform(&character_strip_model, &frame) < 0) continue;
-        if (calibration->left_ik)
-            rifle_solve_hands(&character_strip_model, &frame, calibration,
-                              weapon, scale);
-        active_gallery_facing = 1;
-        active_gallery_sy = 0; active_gallery_cy = 1024;
-        pixels += render_gallery_model(renderer, camera, &character_strip_model,
-                                       x, -900, z, scale);
-        pixels += render_skeletal_rifle(renderer, camera, &character_strip_model,
-                                        &frame, &profile, calibration,
-                                        x, -900, z, 0, 1024,
-                                        TOY_GAME_WEAPON_AK, 0, 0);
-        active_gallery_facing = 0;
+        frame_pixels = render_modular_preview_frame(renderer, camera, rf_x[i],
+            -20000, rf_lower[i], rf_upper[i], i);
+        if (frame_pixels < 0)
+            __fprintf(2, "rasterfall: character test strip modular frame unavailable\n");
+        else pixels += frame_pixels;
     }
     return pixels;
 }

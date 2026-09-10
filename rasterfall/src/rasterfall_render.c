@@ -313,14 +313,14 @@ static int render_modular_passive_equipment(
     struct rasterfall_model_resource *gear,
     const struct rasterfall_rigid_transform *actor_to_world);
 static int render_character_test_strip(struct toy_renderer *, const struct camera *);
+static int render_modular_preview_frame(struct toy_renderer *, const struct camera *,
+                                        int, int, int, int, int);
 
 static struct rasterfall_model_asset gallery_models[RASTERFALL_MODEL_MAX_GALLERY];
 static int gallery_loaded;
 static struct rasterfall_model_asset static_prop_models[RASTERFALL_PROP_ASSET_COUNT];
 static unsigned char static_prop_model_attempted[RASTERFALL_PROP_ASSET_COUNT];
 static struct rasterfall_model_asset private_character_model;
-static struct rasterfall_model_asset character_strip_model;
-static int character_strip_load_attempted;
 static struct rasterfall_model_asset private_character_lod_model;
 static int private_character_lod_loaded;
 static struct rasterfall_model_asset private_character_lod2_model;
@@ -5629,10 +5629,82 @@ static void modular_weapon_world_point(
                    rotated[2] * actor_to_world->scale_milli / 1000.0);
 }
 
+/* The active rifle is authored around PRIMARY_GRIP/FOREGRIP, while the body
+ * owns the WEAPON_R/FOREGRIP character sockets.  Keep the weapon on the right
+ * hand, then solve only the left two-bone chain toward the authored foregrip.
+ * This is shared by the developer action station and gameplay actors, so the
+ * station cannot silently drift into a second hand/weapon placement path. */
+static int modular_solve_left_hand(
+    struct rasterfall_model_instance *instance, int weapon, int character_scale)
+{
+    struct rasterfall_model_attachment_transform weapon_right;
+    struct rasterfall_model_attachment_transform left_attachment;
+    struct rasterfall_weapon_socket_transform primary, foregrip;
+    struct rasterfall_model_asset *pose;
+    double primary_rotation[9], inverse_primary[9], weapon_rotation[9];
+    double origin[3], foregrip_model[3], wrist_target[3];
+    int left_hand_bone, upper_bone, forearm_bone, i, socket;
+    if (!instance || character_scale <= 0 ||
+        rasterfall_model_instance_attachment_transform(instance,
+            RASTERFALL_ATTACHMENT_WEAPON_R, &weapon_right) < 0 ||
+        rasterfall_model_instance_attachment_transform(instance,
+            RASTERFALL_ATTACHMENT_FOREGRIP, &left_attachment) < 0 ||
+        rasterfall_weapon_socket_transform(weapon,
+            RASTERFALL_WEAPON_SOCKET_PRIMARY_GRIP, &primary) < 0 ||
+        rasterfall_weapon_socket_transform(weapon,
+            RASTERFALL_WEAPON_SOCKET_FOREGRIP, &foregrip) < 0)
+        return -1;
+    modular_weapon_quaternion_matrix(primary.rotation, primary_rotation);
+    for (i = 0; i < 3; i++) for (socket = 0; socket < 3; socket++)
+        inverse_primary[i * 3 + socket] = primary_rotation[socket * 3 + i];
+    rigid_matrix_multiply(weapon_right.rotation, inverse_primary,
+                          weapon_rotation);
+    for (i = 0; i < 3; i++) {
+        double primary_local[3] = {
+            primary.position.x * 1000.0 / character_scale,
+            primary.position.y * 1000.0 / character_scale,
+            primary.position.z * 1000.0 / character_scale};
+        double rotated[3];
+        rigid_matrix_vector(weapon_rotation, primary_local, rotated);
+        origin[i] = weapon_right.position[i] - rotated[i];
+    }
+    modular_weapon_model_point(origin, weapon_rotation,
+        (double[3]){foregrip.position.x, foregrip.position.y,
+                     foregrip.position.z}, character_scale, foregrip_model);
+    pose = rasterfall_model_instance_pose(instance);
+    if (!pose) return -1;
+    left_hand_bone = rasterfall_model_humanoid_bone(pose,
+        RASTERFALL_HUMANOID_LEFT_HAND);
+    upper_bone = rasterfall_model_humanoid_bone(pose,
+        RASTERFALL_HUMANOID_LEFT_UPPER_ARM);
+    forearm_bone = rasterfall_model_humanoid_bone(pose,
+        RASTERFALL_HUMANOID_LEFT_FOREARM);
+    if (left_hand_bone < 0 || upper_bone < 0 || forearm_bone < 0)
+        return -1;
+    {
+        const struct rasterfall_model_bone_transform *hand =
+            rasterfall_model_instance_bone_transform(instance,
+                (unsigned int)left_hand_bone);
+        if (!hand) return -1;
+        /* The requested point is the weapon's foregrip. Convert it to the
+         * wrist target by removing the current character FOREGRIP offset. */
+        for (i = 0; i < 3; i++)
+            wrist_target[i] = foregrip_model[i] - left_attachment.position[i] +
+                              hand->position[i];
+    }
+    pose->attachment_ik_previous_pole_valid = 0;
+    if (rasterfall_model_solve_two_bone_attachment(pose,
+            pose->bones[upper_bone].name, pose->bones[forearm_bone].name,
+            pose->bones[left_hand_bone].name, wrist_target,
+            (double[3]){1.0, -0.7, 0.0}) < 0)
+        return -1;
+    return rasterfall_model_instance_update_bones(instance);
+}
+
 /* Active weapon presentation is deliberately independent from passive gear.
  * The finalized character WEAPON_R socket is the only runtime source for the
  * weapon pivot.  The weapon's canonical sockets and mesh remain authored in
- * weapon space; no pose calibration or hand IK is applied here. */
+ * weapon space; hand solving is completed before this draw call. */
 static int render_modular_active_weapon(
     struct toy_renderer *renderer, const struct camera *camera,
     const struct rasterfall_model_instance *instance,
@@ -5867,6 +5939,7 @@ struct rasterfall_modular_actor_runtime {
 
 static struct rasterfall_modular_actor_runtime modular_actor_runtime;
 static const char *modular_actor_model_dir;
+static const char *modular_actor_body_model_path;
 static const struct rasterfall_skeletal_actor_profile modular_rf_profile = {
     /* RFCHAR is canonical +Z forward.  Keep this asset fact in the
      * profile so body, rigid gear, sockets and weapons share one basis. */
@@ -5957,10 +6030,16 @@ static int modular_actor_resources_init(void)
         "rasterfall/private-assets/models";
     if (runtime->load_attempted) return runtime->resources_ready ? 0 : -1;
     runtime->load_attempted = 1;
-    if (!recipe || snprintf(path, sizeof(path), "%s/%s.rmesh", model_dir,
-            rasterfall_character_body_resource_name(recipe->body_resource_id)) >=
-            (int)sizeof(path) ||
-        rasterfall_model_resource_load(&runtime->body, path) < 0)
+    if (!recipe) return -1;
+    if (modular_actor_body_model_path) {
+        if (snprintf(path, sizeof(path), "%s", modular_actor_body_model_path) >=
+                (int)sizeof(path) || rasterfall_model_resource_load(&runtime->body,
+                path) < 0)
+            return -1;
+    } else if (snprintf(path, sizeof(path), "%s/%s.rmesh", model_dir,
+                       rasterfall_character_body_resource_name(
+                           recipe->body_resource_id)) >= (int)sizeof(path) ||
+               rasterfall_model_resource_load(&runtime->body, path) < 0)
         return -1;
     for (i = 0; i < RASTERFALL_GEAR_RESOURCE_COUNT; i++) {
         if (snprintf(path, sizeof(path), "%s/%s.rmesh", model_dir,
@@ -6072,6 +6151,9 @@ static int render_modular_ai_teammate(struct toy_renderer *renderer,
     weapon = actor->current_slot >= 0 &&
         actor->current_slot < TOY_GAME_WEAPON_SLOTS ?
         actor->slots[actor->current_slot].weapon : -1;
+    if (weapon >= 0 &&
+        rasterfall_weapon_asset_profile(weapon)->skeletal)
+        modular_solve_left_hand(instance, weapon, scale);
     have_weapon_source = rasterfall_model_instance_attachment_transform(instance,
         RASTERFALL_ATTACHMENT_WEAPON_R, &weapon_source) == 0;
     if (action_trace_changed)
@@ -6111,6 +6193,56 @@ static int render_modular_ai_teammate(struct toy_renderer *renderer,
         pixels += render_actor_model_weapon(renderer, camera, actor->x, actor->z,
             actor->sy, actor->cy, weapon, actor->muzzle_flash_ms,
             actor->animation.id, actor->animation.time_ms, 0, 0);
+    return pixels;
+}
+
+/* Fixed developer-strip poses use the same RFANIM composition and active
+ * weapon presentation as gameplay.  This keeps the strip a real presentation
+ * observer instead of a second legacy hand/weapon implementation. */
+static int render_modular_preview_frame(struct toy_renderer *renderer,
+    const struct camera *camera, int x, int z, int lower_id, int upper_id,
+    int instance_index)
+{
+    struct rasterfall_modular_actor_runtime *runtime = &modular_actor_runtime;
+    struct rasterfall_model_instance *instance;
+    struct rasterfall_action_composition composition;
+    struct rasterfall_rigid_transform actor_to_world;
+    const struct rasterfall_action_clip *lower = humanoid_action(lower_id);
+    const struct rasterfall_action_clip *upper = humanoid_action(upper_id);
+    const struct rasterfall_character_visual_recipe *recipe =
+        rasterfall_character_visual_recipe(RASTERFALL_MODULAR_RIFLEMAN);
+    int pixels;
+    if (!renderer || !camera || !recipe || instance_index < 0 ||
+        instance_index > TOY_GAME_MAX_ACTORS || modular_actor_resources_init() < 0)
+        return -1;
+    instance = &runtime->instances[instance_index];
+    if (!runtime->instance_ready[instance_index]) {
+        if (rasterfall_model_instance_init(instance, &runtime->body) < 0)
+            return -1;
+        runtime->instance_ready[instance_index] = 1;
+    }
+    memset(&composition, 0, sizeof(composition));
+    composition.layers[RASTERFALL_ACTION_LAYER_LOWER_BODY].clip = lower;
+    composition.layers[RASTERFALL_ACTION_LAYER_LOWER_BODY].time_ms = 180;
+    composition.layers[RASTERFALL_ACTION_LAYER_UPPER_BODY].clip = upper;
+    composition.layers[RASTERFALL_ACTION_LAYER_UPPER_BODY].time_ms = 180;
+    if (!lower || !upper || rasterfall_action_compose(instance, &composition) < 0)
+        return -1;
+    modular_solve_left_hand(instance, TOY_GAME_WEAPON_AK, 835);
+    modular_rigid_identity(&actor_to_world);
+    actor_to_world.translation[0] = x;
+    actor_to_world.translation[1] = -900;
+    actor_to_world.translation[2] = z;
+    actor_to_world.scale_milli = 835;
+    active_gallery_facing = 1;
+    active_gallery_sy = 0;
+    active_gallery_cy = 1024;
+    pixels = rasterfall_render_character_instance(renderer, camera, instance,
+        &actor_to_world, recipe->shirt_color, recipe->pants_color);
+    if (pixels >= 0)
+        pixels += render_modular_active_weapon(renderer, camera, instance,
+            &actor_to_world, TOY_GAME_WEAPON_AK, 0, 0);
+    active_gallery_facing = 0;
     return pixels;
 }
 

@@ -1,7 +1,7 @@
 # 资源、模型与动画
 
 > 文档更新：2026-09-10
-> 源码核对基线：工作区（Humanoid Action Composition V1.1 additive recoil；Model Resource / Model Instance V1；PRIMARY_GRIP weapon presentation）
+> 源码核对基线：工作区（Humanoid Action Composition V1.1 additive recoil；Model Resource / Model Instance V1；双手 RFANIM 持枪轨道；PRIMARY_GRIP weapon presentation；modular world strip）
 
 新建或生成 Blender 人形资产必须先读 [`character-assets.md`](character-assets.md)。它冻结
 Blender source → Character GLB → importer → runtime character asset → humanoid animation 主线；
@@ -25,14 +25,15 @@ Blender source → Character GLB → importer → runtime character asset → hu
 - `rasterfall_action.h` / `.c`：RFANIM V1 的拥有者，保存 gameplay semantic action ID、
   `RF_HUMANOID_V1` 兼容标记、时长、循环、stable humanoid role track、关键帧和 step/linear 插值；
   `rasterfall_action_compose()` 固定按 LOWER_BODY、UPPER_BODY、ADDITIVE 层采样；lower 只写
-  root/hips/legs，upper 只写 spine 到双手，RIFLE_RECOIL 只写 spine/chest、双肩和双臂的局部旋转 delta。
+  root/hips/legs，upper 只写 spine 到双手；RIFLE_IDLE/AIM/FIRE 必须包含左右手轨道，
+  RIFLE_RECOIL 只写 spine/chest、双肩和双臂的局部旋转 delta。
   组合器 reset 一次、逐层写局部旋转、最终统一更新 bones，
   `model_instance` 仍是唯一最终 pose owner。
 - `rasterfall_actor_animation.h`、`rasterfall_animation_composition.h`：玩法动作到角色姿态、持枪和叠加规则。
 - `rasterfall_character.c`：actor/class 到角色资产选择；实际加载与绘制在 render。modular recipe
   的 HEAD/CHEST/BACK/HIP attachments 是被动 equipment；active weapon 不进入 recipe attachment 绘制，
   而由 finalized instance `WEAPON_R` 对齐 authored `PRIMARY_GRIP`，不读取 `pose_calibration_local`，
-  也不执行 FOREGRIP IK。旧 PMX/VMD 的 CHEST/校准路径仍仅用于兼容诊断。
+  再执行模块化左臂的 FOREGRIP attachment IK。旧 PMX/VMD 的 CHEST/校准路径仍仅用于兼容诊断。
 - `rasterfall_prop.h` / `rasterfall_prop.c`：静态 prop asset profile、分类 RMESH 路径与 `512/232`
   presentation 缩放；`rasterfall_render_static_prop()` 负责实例变换和共享模型提交，地图 parser
   独立消费 RFU 碰撞 profile 生成 gameplay primitive。
@@ -62,7 +63,7 @@ resource。新 runtime 不得对 resource definition 调用 pose/IK API，且 re
   `MUZZLE`、`MAGAZINE` canonical weapon-space socket。
 - `--pose-debug <model> <lower.rfanim> <lower-ms> <upper.rfanim> <upper-ms> <role>` 输出 lower/upper/result，
   并从 finalized character `WEAPON_R` 与 canonical AK grip sockets 派生 weapon transform 和左右 hand target；
-  target 只供调试，当前不执行完整 arm IK。
+  target 是模块化左臂 attachment IK 的输入；右手仍由 `WEAPON_R`/`PRIMARY_GRIP` 作为枪械主挂点。
 - `--pose-debug <model> <lower.rfanim> <lower-ms> <upper.rfanim> <upper-ms> <additive.rfanim> <additive-ms> <role>`
   额外输出 ADDITIVE 与 composed result；`--action-composition-capture` 用固定相机生成可重复 BMP。
 - `--pose-debug` 现在还输出 `spine`、双肩、双手的 stable role→bone mapping、local rotation 和 finalized

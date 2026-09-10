@@ -1,7 +1,7 @@
 # Rasterfall Character Asset Contract V1 / RF Humanoid V2.1
 
 > 文档更新：2026-09-10
-> 源码核对基线：工作区（Profession Modularization V1；正式 RF squad roster；RFCHAR V1 / RFM2 v14）
+> 源码核对基线：工作区（Profession Modularization V1；正式 RF squad roster；RFCHAR V1 / RFM2 v14；双手 RFANIM 持枪轨道与 modular world strip）
 
 本文是所有新 Rasterfall 人形角色资产的第一入口。V1 冻结 Blender 到离线 importer 的输入门；
 它不承诺任意 glTF 的兼容性，也不要求 runtime 直接读取 GLB。主线固定为：
@@ -273,10 +273,12 @@ hip 约在总高 42%、shoulder 约在 72%，视觉上把更多高度交给腿�
 socket 与 parent 的全局 bind 位置差，rotation 为 socket 的全局 bind rotation。不能直接复制
 GLB local TRS；`test_rfchar_pipeline.py` 对导入附件与 GLB bind 变换做交叉检查。
 
-RFCHAR 持枪使用 CHEST 提供稳定枪架、WEAPON_R 和 FOREGRIP（缺失时 WEAPON_L）提供双手接触。
-`rifle_solve_hands()` 按 stable role 获取骨骼，独立求解两臂并迭代扣除 socket 到 wrist 的偏移；
-旧 PMX 分支继续使用原有校准。验收的 `visual_rf_calibration()` 区分低持枪 idle 与平持 aim，
-不套用 Maid 体型姿态；`visual_rf_check_grips()` 超过 4 RFU 误差即返回失败。
+RFCHAR 的正式 modular 持枪使用 finalized `WEAPON_R` 对齐武器 `PRIMARY_GRIP`，并从同一
+pose 派生 `FOREGRIP`；`rifle_idle`、`rifle_aim`、`rifle_fire` 都必须同时写入左右手和
+双臂轨道，随后由 modular runtime 的左臂 attachment IK 让左手随前握点保持一致。开发者区 Character Test Strip 通过
+`render_modular_preview_frame()` 复用战斗区的 RFANIM 组合与 active weapon presentation。
+`rifle_solve_hands()`、CHEST 枪架和 `visual_rf_calibration()` 只保留给 legacy carrier/旧 PMX
+验收诊断；`visual_rf_check_grips()` 超过 4 RFU 误差即返回失败。
 Character Lab 的 front/three-quarter 对应 canonical +Z 正面，所有方向共享相同姿态与 framing。
 
 这套 V2 是后续 AI/NPC 身体与 headgear/职业附件扩展的基线候选。完整运行时资产仍为本地可选

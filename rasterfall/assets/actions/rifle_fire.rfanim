@@ -24,6 +24,11 @@ track left_forearm linear
 key 0 0 -36 -50
 key 180 0 -36 -50
 endtrack
+track left_hand linear
+key 0 0 0 -8
+key 60 0 0 -8
+key 180 0 0 -8
+endtrack
 track right_upper_arm linear
 key 0 0 58 36
 key 60 4 56 36

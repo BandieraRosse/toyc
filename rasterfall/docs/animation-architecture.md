@@ -1,7 +1,7 @@
 # Rasterfall 模型与动画架构
 
 > 文档更新：2026-09-10
-> 源码核对基线：工作区（Humanoid Action Composition V1.1 additive recoil；legacy PMX/VMD compatibility；PRIMARY_GRIP weapon presentation）
+> 源码核对基线：工作区（Humanoid Action Composition V1.1 additive recoil；双手 RFANIM 持枪轨道；legacy PMX/VMD compatibility；PRIMARY_GRIP weapon presentation；modular world strip）
 
 本文说明运行时模块边界、扩展入口和当前仍需控制的技术债。格式细节仍以各公共头文件和
 转换工具为准。
@@ -33,8 +33,10 @@ recoil 是局部旋转 delta，不是完整 pose；当前只允许 spine/chest�
 apply ADDITIVE delta → final bone update → socket/attachment/weapon/render。lower mask 是 root、hips 和双腿；
 upper mask 是 spine 至双手，additive mask 是 spine/chest、双肩和双臂。RFANIM track 越界到错误层会失败，
 不允许 upper action 偶然覆盖腿或 recoil 修改 lower ownership。weapon target debug 以
-finalized character `WEAPON_R` 对齐 canonical weapon `PRIMARY_GRIP`，再变换 `FOREGRIP` 得到左手目标；
-它建立未来 IK 数据流但不在本版求解 IK。
+finalized character `WEAPON_R` 对齐 canonical weapon `PRIMARY_GRIP`，再变换 `FOREGRIP` 得到左腕目标；
+正式 RFANIM 的 RIFLE_IDLE/AIM/FIRE 先提供双臂与双手基准姿态，modular presentation 再对左上臂/前臂
+执行两骨骼 attachment IK，使左手跟随同一把枪的前握点。开发者 world strip 复用同一 composition 与
+左臂解算。
 
 ```text
 VMD / glTF / 程序生成动画
@@ -86,8 +88,9 @@ pose，不共享 instance mutable storage，也不进入武器 placement/双手 
 
 active weapon presentation 与被动 rigid follower 分离：modular renderer 从同一个 finalized instance
 读取 `WEAPON_R`，用 authored weapon-local `PRIMARY_GRIP` 求出 weapon origin，再派生
-`FOREGRIP`、`MUZZLE` 和 `MAGAZINE` socket 供 renderer/debug 使用。此路径不使用 CHEST attachment、
-`pose_calibration_local`、FOREGRIP 自动求解或 IK；CHEST/校准仍只属于 legacy acceptance/兼容诊断入口。
+`FOREGRIP`、`MUZZLE` 和 `MAGAZINE` socket 供 renderer/debug 使用。此路径不使用 CHEST attachment 或
+`pose_calibration_local`；active weapon 绘制前只执行基于 finalized `WEAPON_R`/authored `FOREGRIP` 的
+左臂 attachment IK。CHEST/校准仍只属于 legacy acceptance/兼容诊断入口。
 
 ## 扩展新动画格式
 

@@ -347,6 +347,11 @@ static int run_logic_test(void)
             if (!strcmp(actor->name, "Jesus")) {
                 if (actor->character_id != RASTERFALL_CHARACTER_RF_RIFLEMAN)
                     return 222;
+                if (actor->current_slot < 0 ||
+                    actor->current_slot >= TOY_GAME_WEAPON_SLOTS ||
+                    actor->slots[actor->current_slot].weapon !=
+                        TOY_GAME_WEAPON_AK)
+                    return 229;
                 continue;
             }
             if (actor->character_id != RASTERFALL_CHARACTER_NONE &&
@@ -376,6 +381,11 @@ static int run_logic_test(void)
                     !rasterfall_character_visual_recipe_for_character(
                         actor->character_id))
                     return 227;
+                if (actor->current_slot < 0 ||
+                    actor->current_slot >= TOY_GAME_WEAPON_SLOTS ||
+                    actor->slots[actor->current_slot].weapon !=
+                        TOY_GAME_WEAPON_AK)
+                    return 230;
             }
         }
         if (session.flags[RASTERFALL_STANDARD_FLAG_INDEX].x != 0 ||

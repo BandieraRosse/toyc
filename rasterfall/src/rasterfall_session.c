@@ -280,6 +280,15 @@ static void session_spawn_formal_rosters(struct rasterfall_session *session)
             if (actor_index < 0) continue;
             session->game_state.actors[actor_index].character_id =
                 entry->character_id;
+            /* The V2 action station is authored around the AK. Keep every
+             * formal V2 roster actor on that same asset so the battle
+             * renderer uses the same PRIMARY_GRIP / FOREGRIP left-hand IK
+             * path as the station. Legacy/procedural actors retain their
+             * class-selected weapons. */
+            if (rasterfall_character_visual_recipe_for_character(
+                    entry->character_id))
+                toy_game_set_ai_weapon(&session->game_state, actor_index,
+                                       TOY_GAME_WEAPON_AK);
             session->squad_runtime[squad].actor_indices[member] = actor_index;
         }
     }

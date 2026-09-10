@@ -768,10 +768,12 @@ int rasterfall_action_logic_test(void)
         case RASTERFALL_HUMANOID_RIGHT_FOREARM: upper_roles |= 1u << 2; break;
         case RASTERFALL_HUMANOID_LEFT_UPPER_ARM: upper_roles |= 1u << 3; break;
         case RASTERFALL_HUMANOID_LEFT_FOREARM: upper_roles |= 1u << 4; break;
+        case RASTERFALL_HUMANOID_LEFT_HAND: upper_roles |= 1u << 5; break;
+        case RASTERFALL_HUMANOID_RIGHT_HAND: upper_roles |= 1u << 6; break;
         default: break;
         }
     }
-    if (upper_roles != 0x1f) return 6;
+    if (upper_roles != 0x7f) return 6;
     rasterfall_animation_quat_to_euler(sample_track(&lower,&lower.tracks[1],0),&a);
     rasterfall_animation_quat_to_euler(sample_track(&lower,&lower.tracks[1],400),&b);
     if (lower.duration_ms != 800 || a.x != 24 || b.x != -24 ||

@@ -21,7 +21,7 @@ Standard Response Squad 为 Jesus、Squad A Medic、Squad A Engineer、Squad A R
 
 `rasterfall_session_reset()` 保留地图已有 Jesus actor 并把它登记为 Standard Response 的第一位，
 再通过普通 `toy_game_add_ai()` 创建其余七名 actor；session 只保存 squad 到 actor index 的轻量
-运行时定位。AI、武器、动画、伤害、碰撞和网络规则继续使用原有 actor 路径，actor 不携带 model、gear、
+运行时定位。正式 V2 roster 的战斗武器固定为 AK，以便与出生点 V2 动作展示使用同一武器资产和双手挂点；旧模型/程序化角色仍按 AI 等级选择武器。AI、武器、动画、伤害、碰撞和网络规则继续使用原有 actor 路径，actor 不携带 model、gear、
 RMESH 或 attachment 数据。
 
 两套正式小队在 reset 时各自绑定一面固定旗帜：Standard Response 使用 `RESP` 旗帜（`(0,7000)`，
