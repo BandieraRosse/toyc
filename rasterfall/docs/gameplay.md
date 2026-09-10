@@ -1,7 +1,7 @@
 # 玩法、会话、地图与 AI
 
 > 文档更新：2026-09-10
-> 源码核对基线：工作区（Jesus 使用稳定 RF Rifleman identity；两个正式四人 squad roster 已分别编入中央/东部旗帜；model resource/instance/gear/palette 仍只属于 presentation；其余玩法真值不变）
+> 源码核对基线：工作区（敌人 dying slot 生命周期 1000ms；Jesus 使用稳定 RF Rifleman identity；两个正式四人 squad roster 已分别编入中央/东部旗帜；model resource/instance/gear/palette 仍只属于 presentation；其余玩法真值不变）
 
 > 源码核对补充：正式 Hurd 四人使用专用 character IDs；原 Maid 四人旗卫在 flag 1 原位恢复并使用 Maid character/profession；普通 player、Eula、佣兵为 NONE；固定角色索引、HURD 旗帜 assignment 与派生 control status。
 

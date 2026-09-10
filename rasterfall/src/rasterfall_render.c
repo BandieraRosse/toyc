@@ -221,7 +221,10 @@ static int active_textures;
 static int active_fixed_floor_lighting;
 static int active_enemy_lift;
 static int active_enemy_dissolve;
-static unsigned int active_enemy_dissolve_seed;
+static int active_enemy_alpha = 255;
+static int active_enemy_transform;
+static int active_enemy_pivot_x, active_enemy_pivot_y, active_enemy_pivot_z;
+static int active_enemy_roll_sin, active_enemy_roll_cos = 1024;
 static int active_actor_lift;
 static int active_actor_roll_sin;
 static int active_actor_roll_cos = 1024;
@@ -254,6 +257,12 @@ static int draw_world_triangle(struct toy_renderer *renderer,
                                const struct camera *camera,
                                const struct vec3 *a, const struct vec3 *b,
                                const struct vec3 *c, uint32_t color);
+static int draw_world_triangle_alpha(struct toy_renderer *renderer,
+                                     const struct camera *camera,
+                                     const struct vec3 *a,
+                                     const struct vec3 *b,
+                                     const struct vec3 *c,
+                                     uint32_t color, int alpha);
 static int draw_world_triangle_views(struct toy_renderer *renderer,
                                const struct camera *camera,
                                const struct vec3 *a, const struct vec3 *b,
@@ -3043,6 +3052,22 @@ static int draw_world_triangle(struct toy_renderer *renderer,
                                const struct vec3 *a, const struct vec3 *b,
                                const struct vec3 *c, uint32_t color)
 {
+    if (active_enemy_transform) {
+        struct vec3 v[3];
+        const struct vec3 *src[3] = {a, b, c};
+        int i;
+        for (i = 0; i < 3; i++) {
+            int lx = src[i]->x - active_enemy_pivot_x;
+            int ly = src[i]->y - active_enemy_pivot_y;
+            v[i].x = active_enemy_pivot_x +
+                (lx * active_enemy_roll_cos - ly * active_enemy_roll_sin) / 1024;
+            v[i].y = active_enemy_pivot_y +
+                (lx * active_enemy_roll_sin + ly * active_enemy_roll_cos) / 1024;
+            v[i].z = src[i]->z;
+        }
+        return draw_world_triangle_alpha(renderer, camera, &v[0], &v[1],
+                                         &v[2], color, active_enemy_alpha);
+    }
     return draw_world_triangle_views(renderer, camera, a, b, c, 0, 0, 0,
                                      color);
 }
@@ -4582,13 +4607,12 @@ static int render_enemy_body_parts(struct toy_renderer *renderer,
     if (charger_xy_scale < 1) charger_xy_scale = 1;
     for (i = 0; i < count; i++) {
         const struct enemy_body_part *p = &parts[i];
-        unsigned int dissolve_order =
-            (active_enemy_dissolve_seed + (unsigned int)i * 73u) % 256u;
         uint32_t part_color = p->has_fixed_color ? p->fixed_color :
                               color + p->color_delta;
         int x0 = p->a, x1 = p->b, z0 = p->e, z1 = p->f;
-        if (active_enemy_dissolve > 0 &&
-            dissolve_order < (unsigned int)active_enemy_dissolve)
+        /* Death visibility is synchronized for the whole enemy.  Per-part
+         * rejection reads as accidental dismemberment instead of a burst. */
+        if (active_enemy_dissolve >= 256)
             continue;
         if (p->type == ENEMY_BODY_BOX_ACTOR) {
             pixels += draw_actor_box(renderer, camera, e->x, e->z,
@@ -4951,15 +4975,38 @@ static int render_enemies(struct toy_renderer *renderer,
             } else {
                 const struct toy_game_enemy_info *info =
                     toy_game_enemy_info(e->type);
+                static const int roll_sin[8] =
+                    { 0, 392, 724, 946, 1024, 946, 724, 392 };
+                static const int roll_cos[8] =
+                    { 1024, 946, 724, 392, 0, -392, -724, -946 };
+                int elapsed = TOY_GAME_DYING_MS - e->dying_ms;
+                int motion = elapsed * elapsed / TOY_GAME_DYING_MS;
+                int hit_x = effects.enemy_hit_dir_x[i];
+                int hit_z = effects.enemy_hit_dir_z[i];
+                int side = ((i * 37 + e->type * 19) & 127) - 64;
+                int roll_step = elapsed * (3 + ((i + e->type) & 3)) /
+                                TOY_GAME_DYING_MS;
+                if (!hit_x && !hit_z) { hit_x = e->dir_x; hit_z = e->dir_z; }
+                presentation_enemy = *e;
+                presentation_enemy.x += hit_x * motion / 1024 - hit_z * side * elapsed /
+                                        (1024 * TOY_GAME_DYING_MS / 2);
+                presentation_enemy.z += hit_z * motion / 1024 + hit_x * side * elapsed /
+                                        (1024 * TOY_GAME_DYING_MS / 2);
+                draw_enemy = &presentation_enemy;
                 scale = e->type == TOY_GAME_ENEMY_PURSUIT_HEAVY ? 1350 : 1000;
                 color = info->color;
-                active_enemy_dissolve =
-                    (TOY_GAME_DYING_MS - e->dying_ms) * 256 /
-                    TOY_GAME_DYING_MS;
-                if (active_enemy_dissolve < 1) active_enemy_dissolve = 1;
-                if (active_enemy_dissolve > 256) active_enemy_dissolve = 256;
-                active_enemy_dissolve_seed =
-                    (unsigned int)i * 97u + (unsigned int)e->type * 41u;
+                active_enemy_alpha = e->dying_ms >= RASTERFALL_ENEMY_DEATH_FADE_MS ?
+                                     255 : e->dying_ms * 255 /
+                                           RASTERFALL_ENEMY_DEATH_FADE_MS;
+                active_enemy_lift = 4 * 430 * elapsed *
+                                    (TOY_GAME_DYING_MS - elapsed) /
+                                    (TOY_GAME_DYING_MS * TOY_GAME_DYING_MS);
+                active_enemy_transform = 1;
+                active_enemy_pivot_x = draw_enemy->x;
+                active_enemy_pivot_y = -300 + active_enemy_lift;
+                active_enemy_pivot_z = draw_enemy->z;
+                active_enemy_roll_sin = roll_sin[roll_step & 7];
+                active_enemy_roll_cos = roll_cos[roll_step & 7];
             }
         } else {
             const struct toy_game_enemy_info *info = toy_game_enemy_info(e->type);
@@ -4995,8 +5042,8 @@ static int render_enemies(struct toy_renderer *renderer,
                 draw_enemy = &presentation_enemy;
             }
         }
-        active_enemy_lift = draw_enemy->ground_y;
-        if (!active_enemy_dissolve || active_enemy_dissolve < 176)
+        active_enemy_lift += draw_enemy->ground_y;
+        if (active_enemy_dissolve < 256 && !active_enemy_transform)
             pixels += render_blob_shadow(renderer, camera, draw_enemy, scale);
         active_enemy_lift += draw_enemy->airborne_y;
         if (toy_game_enemy_info(e->type)->ability ==
@@ -5018,7 +5065,10 @@ static int render_enemies(struct toy_renderer *renderer,
             pixels += render_round_enemy(renderer, camera, draw_enemy, scale, color);
         active_enemy_lift = 0;
         active_enemy_dissolve = 0;
-        active_enemy_dissolve_seed = 0;
+        active_enemy_alpha = 255;
+        active_enemy_transform = 0;
+        active_enemy_roll_sin = 0;
+        active_enemy_roll_cos = 1024;
     }
     return pixels;
 }
@@ -7457,6 +7507,51 @@ static int render_effect_particle(struct toy_renderer *renderer,
     struct toy_screen_vertex screen;
     int width, height, k;
     if (!p->active) return 0;
+    k = p->alpha;
+    if (k < 0) k = 0;
+    if (k > 256) k = 256;
+    if (p->kind == RASTERFALL_EFFECT_INSTANCE_KIND_ENEMY_DEATH_FRAGMENT) {
+        static const int spin_x[8] = { 1024, 724, 0, -724, -1024, -724, 0, 724 };
+        static const int spin_z[8] = { 0, 724, 1024, 724, 0, -724, -1024, -724 };
+        struct vec3 v[4];
+        int phase = (p->age_ms / 48 + p->source_id * 3) & 7;
+        int radius = p->size / 24;
+        int rx = spin_x[phase], rz = spin_z[phase];
+        if (radius < 28) radius = 28;
+        v[0].x = p->x + rx * radius / 1024;
+        v[0].y = p->y + radius * 3 / 2;
+        v[0].z = p->z + rz * radius / 1024;
+        v[1].x = p->x - rz * radius / 1024;
+        v[1].y = p->y - radius;
+        v[1].z = p->z + rx * radius / 1024;
+        v[2].x = p->x - rx * radius * 5 / 4096;
+        v[2].y = p->y - radius / 2;
+        v[2].z = p->z - rz * radius * 5 / 4096;
+        v[3].x = p->x + rz * radius * 3 / 4096;
+        v[3].y = p->y + radius / 4;
+        v[3].z = p->z - rx * radius * 3 / 4096;
+        return draw_world_triangle_alpha(renderer, camera, &v[0], &v[1], &v[2],
+                                         p->color, k * 255 / 256) +
+               draw_world_triangle_alpha(renderer, camera, &v[0], &v[3], &v[1],
+                                         p->color + 0x101008, k * 255 / 256) +
+               draw_world_triangle_alpha(renderer, camera, &v[0], &v[2], &v[3],
+                                         p->color + 0x201810, k * 255 / 256) +
+               draw_world_triangle_alpha(renderer, camera, &v[1], &v[3], &v[2],
+                                         p->color - 0x101008, k * 255 / 256);
+    }
+    if (p->kind == RASTERFALL_EFFECT_INSTANCE_KIND_ENEMY_DEATH_DUST) {
+        struct vec3 a, b, c, d;
+        int radius = p->size / 32;
+        if (radius < 14) radius = 14;
+        a.x = p->x - camera->cy * radius / 1024; a.y = p->y - radius;
+        a.z = p->z + camera->sy * radius / 1024;
+        b.x = p->x + camera->cy * radius / 1024; b.y = p->y - radius;
+        b.z = p->z - camera->sy * radius / 1024;
+        c.x = b.x; c.y = p->y + radius; c.z = b.z;
+        d.x = a.x; d.y = p->y + radius; d.z = a.z;
+        return draw_quad_alpha(renderer, camera, &a, &b, &c, &d, p->color,
+                               k * 180 / 256);
+    }
     world.x = p->x; world.y = p->y; world.z = p->z;
     world_to_view(camera, &world, &view);
     if (view.z < NEAR_Z) return 0;
@@ -7467,9 +7562,6 @@ static int render_effect_particle(struct toy_renderer *renderer,
     if (height < 1) height = 1;
     if (screen.x < 0 || screen.x + width >= renderer->surface.width ||
         screen.y < 0 || screen.y + height >= renderer->surface.height) return 0;
-    k = p->alpha;
-    if (k < 0) k = 0;
-    if (k > 256) k = 256;
     fill_rect(&renderer->surface, screen.x, screen.y, width, height,
               p->color ? p->color : mix_color(0xFFC860, 0x4A2008, k, 256));
     return 1;
@@ -7484,7 +7576,8 @@ static int render_effect_particles(struct toy_renderer *renderer, const struct c
             (p->kind != RASTERFALL_EFFECT_INSTANCE_KIND_HIT_PARTICLE &&
              p->kind != RASTERFALL_EFFECT_INSTANCE_KIND_FIRE &&
              p->kind != RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION_PARTICLE &&
-             p->kind != RASTERFALL_EFFECT_INSTANCE_KIND_ENEMY_DEATH_FRAGMENT))
+             p->kind != RASTERFALL_EFFECT_INSTANCE_KIND_ENEMY_DEATH_FRAGMENT &&
+             p->kind != RASTERFALL_EFFECT_INSTANCE_KIND_ENEMY_DEATH_DUST))
             continue;
         pixels += render_effect_particle(renderer, camera, p);
     }

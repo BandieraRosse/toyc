@@ -267,16 +267,20 @@ static void spawn_enemy_death_presentation(
 {
     struct rasterfall_effect_emitter emitter;
     struct rasterfall_effect_emitter_child *child;
-    int count, lifetime_ms, spread, size, gravity_y;
+    int fragment_count, dust_count, impulse, fragment_size;
+    int hit_x, hit_z;
     uint32_t color = 0xC43A3A;
     const struct toy_game_enemy_info *info;
     if (!effects || !enemy) return;
     if (enemy->type == TOY_GAME_ENEMY_PURSUIT_FAST) {
-        count = 12; lifetime_ms = 1000; spread = 1350; size = 460; gravity_y = 3;
+        fragment_count = 18; dust_count = 22; impulse = 128;
+        fragment_size = 1350;
     } else if (enemy->type == TOY_GAME_ENEMY_PURSUIT_HEAVY) {
-        count = 22; lifetime_ms = TOY_GAME_DYING_MS; spread = 1900; size = 820; gravity_y = 4;
+        fragment_count = 30; dust_count = 34; impulse = 92;
+        fragment_size = 2300;
     } else {
-        count = 16; lifetime_ms = 1350; spread = 1500; size = 560; gravity_y = 4;
+        fragment_count = 24; dust_count = 28; impulse = 108;
+        fragment_size = 1750;
     }
     info = toy_game_enemy_info_or_null(enemy->type);
     if (info && info->color) color = info->color;
@@ -285,30 +289,53 @@ static void spawn_enemy_death_presentation(
     emitter.x = enemy->x;
     emitter.y = enemy->ground_y + enemy->airborne_y - 520;
     emitter.z = enemy->z;
-    emitter.lifetime_ms = lifetime_ms;
-    emitter.spawn_interval_ms = 16;
-    emitter.burst_count = count;
-    emitter.child_count = 1;
+    /* The final hit direction is presentation state.  Fall back to facing
+     * only when a network snapshot did not carry the hit event locally. */
+    hit_x = effects->enemy_hit_dir_x[enemy_index];
+    hit_z = effects->enemy_hit_dir_z[enemy_index];
+    if (hit_x == 0 && hit_z == 0) {
+        hit_x = enemy->dir_x;
+        hit_z = enemy->dir_z;
+    }
+    emitter.lifetime_ms = 900;
+    emitter.spawn_interval_ms = 28;
+    emitter.burst_count = 1;
+    emitter.child_count = 2;
     emitter.alpha = 256;
-    emitter.size = size;
+    emitter.size = fragment_size;
     emitter.color = color;
-    emitter.vx = enemy->dir_x * (enemy->type == TOY_GAME_ENEMY_PURSUIT_FAST ? 78 : 28) / 1024;
-    emitter.vz = enemy->dir_z * (enemy->type == TOY_GAME_ENEMY_PURSUIT_FAST ? 78 : 28) / 1024;
-    emitter.gravity_y = gravity_y;
+    emitter.vx = hit_x * impulse / 1024;
+    emitter.vy = 22;
+    emitter.vz = hit_z * impulse / 1024;
+    emitter.gravity_y = 1;
     child = &emitter.children[0];
     child->type = RASTERFALL_EFFECT_INSTANCE_PARTICLE;
     child->kind = RASTERFALL_EFFECT_INSTANCE_KIND_ENEMY_DEATH_FRAGMENT;
-    child->spawn_limit = count;
-    child->lifetime_ms = lifetime_ms;
-    child->size = size;
+    child->spawn_limit = fragment_count;
+    child->lifetime_ms = RASTERFALL_ENEMY_DEATH_FRAGMENT_LIFE_MS;
+    child->size = fragment_size;
     child->alpha = 256;
-    child->spread = spread;
+    child->spread = enemy->type == TOY_GAME_ENEMY_PURSUIT_HEAVY ? 30 : 38;
     child->vx = emitter.vx;
-    child->vy = enemy->type == TOY_GAME_ENEMY_PURSUIT_HEAVY ? 24 : 30;
+    child->vy = enemy->type == TOY_GAME_ENEMY_PURSUIT_HEAVY ? 34 : 42;
     child->vz = emitter.vz;
-    child->gravity_y = gravity_y;
-    child->pattern = RASTERFALL_EFFECT_EMITTER_PATTERN_EXPLOSION;
+    child->gravity_y = 3;
+    child->pattern = RASTERFALL_EFFECT_EMITTER_PATTERN_DEFAULT;
     child->color = color;
+    child = &emitter.children[1];
+    child->type = RASTERFALL_EFFECT_INSTANCE_PARTICLE;
+    child->kind = RASTERFALL_EFFECT_INSTANCE_KIND_ENEMY_DEATH_DUST;
+    child->spawn_limit = dust_count;
+    child->lifetime_ms = RASTERFALL_ENEMY_DEATH_DUST_LIFE_MS;
+    child->size = fragment_size * 2 / 3;
+    child->alpha = 208;
+    child->spread = 52;
+    child->vx = hit_x * (impulse * 3 / 4) / 1024;
+    child->vy = 28;
+    child->vz = hit_z * (impulse * 3 / 4) / 1024;
+    child->gravity_y = 2;
+    child->pattern = RASTERFALL_EFFECT_EMITTER_PATTERN_DEFAULT;
+    child->color = color + 0x181010;
     rasterfall_effects_spawn_emitter(effects, &emitter);
     {
         struct rasterfall_effect_instance marker;
@@ -946,8 +973,8 @@ void rasterfall_effects_consume(struct rasterfall_effects *effects,
                                                 event->dir_cy);
         if (event->type == RASTERFALL_EFFECT_EVENT_ENTITY_HIT &&
             event->target_id >= 0 && event->target_id < TOY_GAME_MAX_ENEMIES) {
-            effects->enemy_hit_dir_x[event->target_id] = -event->dir_sy;
-            effects->enemy_hit_dir_z[event->target_id] = -event->dir_cy;
+            effects->enemy_hit_dir_x[event->target_id] = event->dir_sy;
+            effects->enemy_hit_dir_z[event->target_id] = event->dir_cy;
             effects->enemy_hit_strength[event->target_id] = event->damage;
         }
     } else if (event->type == RASTERFALL_EFFECT_EVENT_EXPLOSION) {
@@ -1086,6 +1113,16 @@ void rasterfall_effects_update(struct rasterfall_effects *effects, int dt_ms)
     for (i = 0; i < RASTERFALL_EFFECT_EMITTER_SLOTS; i++) {
         struct rasterfall_effect_emitter *emitter = &effects->emitters[i];
         if (!emitter->active) continue;
+        if (emitter->child_count > 0 &&
+            (emitter->children[0].kind ==
+                 RASTERFALL_EFFECT_INSTANCE_KIND_ENEMY_DEATH_FRAGMENT ||
+             emitter->children[0].kind ==
+                 RASTERFALL_EFFECT_INSTANCE_KIND_ENEMY_DEATH_DUST)) {
+            emitter->x += emitter->vx * steps;
+            emitter->y += emitter->vy * steps;
+            emitter->z += emitter->vz * steps;
+            emitter->vy -= emitter->gravity_y * steps;
+        }
         emitter->age_ms += dt_ms;
         emitter->spawn_accum_ms += dt_ms;
         while (emitter->spawn_accum_ms >= emitter->spawn_interval_ms &&
