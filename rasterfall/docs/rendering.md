@@ -204,6 +204,12 @@ pose；它们是 renderer presentation-only entities，不进入 actor、碰撞�
 `--character-world-model` 时使用 `rf_humanoid_v2.rmesh`；提供时只替换 strip 的
 skeletal body，不改变 camera、AK、地图或 world render path。
 
+角色模型观察以组图为默认工作方式，以便一次比较姿态、角度和距离。V2 角色使用
+`python3 tools/character_lab_sheet.py` 汇总 bind/rifle-idle/rifle-aim 的四视角；真实场景
+使用 `python3 tools/character_world_sheet.py` 汇总 near/mid/far 与 old/idle/aim/motion。
+组图脚本只是对当前 capture CLI 输出的离线拼接层，不改变渲染路径；需要像素级诊断时再打开
+其保留的单张 BMP 原始文件。
+
 数据流：options → main 诊断早退 → 命名场景检查/固定 setup →
 `rasterfall_render_procedural_humanoid()` → 普通 primitive 与武器 helper →
 `toy_renderer_flush()` → `rasterfall_hud_dump_bmp()`。setup 与进程级 capture 实现在

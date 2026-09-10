@@ -24,6 +24,9 @@ Agent 获取 Rasterfall 重要事实时，优先使用下面这些可执行 CLI 
 - `build/rasterfall --logic-test`：玩法、session、地图和网络逻辑的无窗口回归入口。
 - `build/rasterfall --visual-capture ...`、`--model-views`、`--model-pose-views`、
   `--character-acceptance`、`--character-world-capture`：角色、模型和真实 world render 的离屏观察入口。
+- 观察模型时优先使用组图脚本提高审阅效率：`python3 tools/character_lab_sheet.py` 生成当前
+  Humanoid V2 的姿态/四视角合集，`python3 tools/character_world_sheet.py` 生成 near/mid/far
+  实景距离与 old/idle/aim/motion 合集；脚本调用上述 CLI 后再拼接 PNG，原始 BMP 保留在输出目录。
 - `build/glb-inspect ... contract`、`build/rfchar_runtime_test <model.rmesh>`：RFCHAR 输入契约和
   RFM2/RFCHAR runtime 加载门禁。
 - `build/vmd_inspect ...`：仅用于旧 PMX/VMD 兼容诊断，不作为新 RFCHAR 资产主路径。

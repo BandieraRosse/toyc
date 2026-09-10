@@ -225,6 +225,12 @@ hip 约在总高 42%、shoulder 约在 72%，视觉上把更多高度交给腿�
 仍使用正式地图、真实 world renderer、标准 AK 和深度路径。开发者区默认加载 V2；相机从展示带
 斜正面观察，避开工业 prop 与边界墙对中远景的遮挡，并补充每个角色独立的三档距离截图。
 
+观察模型时应优先采用组图方式，减少逐张打开和切换截图的开销。使用
+`tools/character_lab_sheet.py` 将当前 Humanoid V2 的三种姿态和四个角度拼成一张 lab sheet；
+需要检查真实地图中的距离、场景遮挡或角色姿态时，使用 `tools/character_world_sheet.py`
+生成类似 `real.png` 的 near/mid/far × old/idle/aim/motion 实景合集。两个脚本都会先调用当前
+离屏 CLI，再拼接正常光照结果；单张 BMP 仅作为原始证据保留，不作为主要观察交付物。
+
 附件 importer 必须将 GLB 的 parent-local TRS 烘焙到 SKN1 的 identity-rest 基底：position 为
 socket 与 parent 的全局 bind 位置差，rotation 为 socket 的全局 bind rotation。不能直接复制
 GLB local TRS；`test_rfchar_pipeline.py` 对导入附件与 GLB bind 变换做交叉检查。

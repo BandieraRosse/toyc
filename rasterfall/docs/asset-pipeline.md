@@ -154,6 +154,31 @@ build/rasterfall --actor-performance 30 5 8
 form-lighting，Character Acceptance 与 `--visual-capture lighting-props` 提供固定 OFF/V1 画面。
 其他诊断消融模式不代表默认画质。生成物放在 `tmp/` 或 `build/`，不提交。
 
+## 角色观察组图
+
+两个通用脚本负责调用离屏入口并将 BMP 拼成单张 PNG；渲染仍由
+`build/rasterfall` 完成，脚本不生成 Lighting OFF/V1 对比图。角色组图为三行
+`bind`、`rifle-idle`、`rifle-aim`，四列 `front`、`side`、`back`、`three-quarter`：
+
+```sh
+python3 tools/character_lab_sheet.py \
+  --model rasterfall/private-assets/models/rf_humanoid_v2.rmesh \
+  --output tmp/rf-humanoid-v2/humanoid-v2-lab.png
+```
+
+实景组图匹配仓库根目录的 `real.png` 构图，为 near/mid/far 三行和
+old/idle/aim/motion 四列，使用正式地图、灯光、深度和 Character Test Strip：
+
+```sh
+python3 tools/character_world_sheet.py \
+  --model rasterfall/private-assets/models/rf_humanoid_v2.rmesh \
+  --output tmp/rf-humanoid-v2/character-world.png
+```
+
+默认会在输出文件旁的 `captures/` 保存原始 BMP；使用 `--capture-dir` 可跳过重新
+渲染、直接拼接已有 capture。`--cell-width` 控制每个单元的输出宽度，默认 400px。
+脚本只依赖 Python 标准库，读取 24/32-bit BMP 并写 RGB PNG。
+
 ## 单位与边界
 
 玩法世界使用 RFU，`512 RFU = 1 m`。PMX、GLB、VMD 的局部单位只在 presentation/导入边界
