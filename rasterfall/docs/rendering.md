@@ -1,7 +1,7 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-10
-> 源码核对基线：工作区（Humanoid Action System Foundation V1；双正式四人 squad；Lighting V1）
+> 源码核对基线：工作区（Humanoid Action Composition V1；双正式四人 squad；Lighting V1）
 
 > 源码核对补充：正式 Hurd actor 通过四个专用 character profile 进入职业外观；恢复的四名 Maid 旗卫以 Maid character profile 接入 actor，同时继续由 anime identity 选择骨骼模型；普通 player、Eula、佣兵解析为 NONE。
 
@@ -15,6 +15,12 @@ vertical slice：actor 的 stable character ID 解析到 Rifleman recipe，prese
 共享 V2 body 和共享 rigid gear resources；`render_modular_ai_teammate()` 按 actor index 保持独立
 model instance。这个路径不从 actor 读取资源路径、gear list 或 palette override，失败时仍回退到
 既有 procedural actor。
+
+modular actor 在提交 body 前把玩法 animation semantic 适配为固定 action layers：IDLE/MOVE 更新并
+保留 lower IDLE/WALK，FIRE 只替换 upper 为 RIFLE_FIRE，因此移动中开火不会清掉腿部动作；普通持枪
+状态使用 RIFLE_IDLE。AIM clip 已可由 composition/CLI 使用，等待 gameplay 明确 aim semantic 后再由
+adapter 接入，不能从骨骼姿态反推瞄准。组合完成并更新 bones 后，weapon、gear 和 rigid attachment
+继续只读同一 instance finalized pose。
 
 ## 渲染边界
 
@@ -104,6 +110,9 @@ resource，不修改 host pose，也不把 actor/world 状态写入 instance。
 `--rigid-attachment-acceptance <model-dir> <output-dir>` 在同一深度缓冲绘制共享一份 Humanoid
 resource 的 bind/turned 两个 instance，并让二者共享同一份 helmet/backpack resource；右侧额外旋转
 chest 与 head，固定输出 socket 数值和 `rigid-attachment-acceptance.bmp`，可用重复 capture 做逐字节回归。
+
+`--squad-acceptance` 额外以 Jesus WALK+FIRE、Engineer WALK、Heavy WALK+FIRE 压测组合后的 body、
+backpack/hip/chest gear、socket attachment 与八 instance 隔离；三视角仍是固定输入确定性 BMP。
 
 程序化敌人模型采用统一的 `enemy_body_part` 描述：每个条目对应一个基本身体组件，类型包括局部朝向盒、世界盒、圆柱、椭球和面部矩形，尺寸与局部偏移仍使用现有 RFU 数值。通用解释器按描述顺序提交几何，因此可以在不改变玩法状态的前提下继续接入参数化配置。敌人位置以 `toy_game_enemy.x/z` 为水平锚点，垂直基准由地面 `Y=-900`、`ground_y` 和 `airborne_y` 组成；Charger 的水平放大和普通敌人的既有缩放语义保留在解释器中。Tank 的挥臂依赖蓄力时间，是动态组件，继续由专用函数求值后插入静态组件之间，以保持原有遮挡和绘制顺序。
 

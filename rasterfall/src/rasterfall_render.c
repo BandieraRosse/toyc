@@ -61,8 +61,16 @@ struct vec3 { int x, y, z; };
 struct box { int minx, maxx, minz, maxz, height; uint32_t color; };
 
 static struct rasterfall_render_context *render_ctx;
-static struct rasterfall_action_clip rifle_idle_action;
-static int rifle_idle_action_load_attempted, rifle_idle_action_ready;
+static struct rasterfall_action_clip humanoid_actions[RASTERFALL_ACTION_COUNT];
+static unsigned int humanoid_action_ready_mask;
+static int humanoid_actions_load_attempted;
+struct rasterfall_actor_action_layers {
+    int actor_id, valid;
+    enum rasterfall_action_id lower;
+    int lower_time_ms;
+};
+static struct rasterfall_actor_action_layers
+    actor_action_layers[TOY_GAME_MAX_ACTORS];
 static int active_character_palette_override;
 static uint32_t active_character_shirt_color, active_character_pants_color;
 static struct rasterfall_scene_stats scene_stats;
@@ -74,6 +82,32 @@ struct rasterfall_authored_locomotion_clock {
 };
 static struct rasterfall_authored_locomotion_clock
     authored_locomotion_clocks[TOY_GAME_MAX_ACTORS];
+
+static void humanoid_actions_load(void)
+{
+    static const char *const paths[RASTERFALL_ACTION_COUNT] = {
+        NULL,
+        "rasterfall/assets/actions/locomotion_idle.rfanim",
+        "rasterfall/assets/actions/locomotion_walk.rfanim",
+        "rasterfall/assets/actions/rifle_idle.rfanim",
+        "rasterfall/assets/actions/rifle_aim.rfanim",
+        "rasterfall/assets/actions/rifle_fire.rfanim"
+    };
+    int i;
+    if (humanoid_actions_load_attempted) return;
+    humanoid_actions_load_attempted = 1;
+    for (i = 1; i < RASTERFALL_ACTION_COUNT; i++)
+        if (rasterfall_action_load(&humanoid_actions[i], paths[i]) == 0)
+            humanoid_action_ready_mask |= 1u << i;
+}
+
+static const struct rasterfall_action_clip *humanoid_action(
+    enum rasterfall_action_id id)
+{
+    humanoid_actions_load();
+    return id > RASTERFALL_ACTION_NONE && id < RASTERFALL_ACTION_COUNT &&
+        (humanoid_action_ready_mask & (1u << id)) ? &humanoid_actions[id] : NULL;
+}
 struct gallery_cached_vertex;
 #define frontend_state() rasterfall_render_frontend_current(renderer)
 #define frontend_set_override rasterfall_render_frontend_set_override
@@ -5596,6 +5630,8 @@ static int render_modular_ai_teammate(struct toy_renderer *renderer,
     struct rasterfall_model_attachment_transform rifle_frame;
     struct rasterfall_rigid_transform actor_to_world;
     const struct rasterfall_pose_calibration *calibration;
+    struct rasterfall_action_composition composition;
+    enum rasterfall_action_id lower, upper;
     int weapon, have_rifle, pixels, scale = 835;
     unsigned int i;
     profile = actor ? rasterfall_character_profile(actor->character_id) : NULL;
@@ -5611,15 +5647,43 @@ static int render_modular_ai_teammate(struct toy_renderer *renderer,
             return -1;
         runtime->instance_ready[actor_index] = 1;
     }
-    if (rasterfall_model_instance_reset_pose(instance) < 0) return -1;
-    if (!rifle_idle_action_load_attempted) {
-        rifle_idle_action_load_attempted = 1;
-        rifle_idle_action_ready = rasterfall_action_load(&rifle_idle_action,
-            "rasterfall/assets/actions/rifle_idle.rfanim") == 0;
+    if (!actor_action_layers[actor_index].valid ||
+        actor_action_layers[actor_index].actor_id != actor->actor_id) {
+        memset(&actor_action_layers[actor_index], 0,
+               sizeof(actor_action_layers[actor_index]));
+        actor_action_layers[actor_index].valid = 1;
+        actor_action_layers[actor_index].actor_id = actor->actor_id;
+        actor_action_layers[actor_index].lower =
+            RASTERFALL_ACTION_LOCOMOTION_IDLE;
     }
-    if (actor->animation.id == TOY_GAME_ANIM_IDLE && rifle_idle_action_ready &&
-        rasterfall_action_apply(instance, &rifle_idle_action,
-                                actor->animation.time_ms) < 0) return -1;
+    lower = actor_action_layers[actor_index].lower;
+    if (lower != RASTERFALL_ACTION_LOCOMOTION_IDLE &&
+        lower != RASTERFALL_ACTION_LOCOMOTION_WALK)
+        lower = RASTERFALL_ACTION_LOCOMOTION_IDLE;
+    if (actor->animation.id == TOY_GAME_ANIM_MOVE) {
+        lower = RASTERFALL_ACTION_LOCOMOTION_WALK;
+        actor_action_layers[actor_index].lower_time_ms = actor->animation.time_ms;
+    } else if (actor->animation.id == TOY_GAME_ANIM_IDLE ||
+               actor->animation.id == TOY_GAME_ANIM_NONE) {
+        lower = RASTERFALL_ACTION_LOCOMOTION_IDLE;
+        actor_action_layers[actor_index].lower_time_ms = actor->animation.time_ms;
+    }
+    actor_action_layers[actor_index].lower = lower;
+    upper = actor->animation.id == TOY_GAME_ANIM_FIRE ?
+        RASTERFALL_ACTION_RIFLE_FIRE : RASTERFALL_ACTION_RIFLE_IDLE;
+    memset(&composition, 0, sizeof(composition));
+    composition.layers[RASTERFALL_ACTION_LAYER_LOWER_BODY].clip =
+        humanoid_action(lower);
+    composition.layers[RASTERFALL_ACTION_LAYER_LOWER_BODY].time_ms =
+        actor_action_layers[actor_index].lower_time_ms +
+        (actor->animation.id == TOY_GAME_ANIM_FIRE ? actor->animation.time_ms : 0);
+    composition.layers[RASTERFALL_ACTION_LAYER_UPPER_BODY].clip =
+        humanoid_action(upper);
+    composition.layers[RASTERFALL_ACTION_LAYER_UPPER_BODY].time_ms =
+        actor->animation.time_ms;
+    if (!composition.layers[RASTERFALL_ACTION_LAYER_LOWER_BODY].clip ||
+        !composition.layers[RASTERFALL_ACTION_LAYER_UPPER_BODY].clip ||
+        rasterfall_action_compose(instance, &composition) < 0) return -1;
     pose = rasterfall_model_instance_pose(instance);
     weapon = actor->current_slot >= 0 &&
         actor->current_slot < TOY_GAME_WEAPON_SLOTS ?

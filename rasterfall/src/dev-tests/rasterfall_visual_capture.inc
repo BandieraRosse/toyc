@@ -233,6 +233,24 @@ int rasterfall_render_squad_acceptance(const char *model_dir,
     }
     gallery_load();
     memset(runtime->instance_ready, 0, sizeof(runtime->instance_ready));
+    memset(actor_action_layers, 0, sizeof(actor_action_layers));
+    /* Pressure the real composition adapter on Rifleman/Engineer/Heavy.
+     * Rifleman and Heavy retain WALK while FIRE occupies the upper layer;
+     * Engineer exercises a plain WALK with backpack and hip gear. */
+    actor_action_layers[0].lower = RASTERFALL_ACTION_LOCOMOTION_WALK;
+    actor_action_layers[0].actor_id = actors[0].actor_id;
+    actor_action_layers[0].valid = 1;
+    actor_action_layers[0].lower_time_ms = 140;
+    actors[0].animation.id = TOY_GAME_ANIM_FIRE;
+    actors[0].animation.time_ms = 60;
+    actors[2].animation.id = TOY_GAME_ANIM_MOVE;
+    actors[2].animation.time_ms = 200;
+    actor_action_layers[6].lower = RASTERFALL_ACTION_LOCOMOTION_WALK;
+    actor_action_layers[6].actor_id = actors[6].actor_id;
+    actor_action_layers[6].valid = 1;
+    actor_action_layers[6].lower_time_ms = 140;
+    actors[6].animation.id = TOY_GAME_ANIM_FIRE;
+    actors[6].animation.time_ms = 60;
     for (view = 0; view < 3; view++) {
         struct camera camera;
         struct toy_renderer renderer;
@@ -288,7 +306,9 @@ int rasterfall_render_squad_acceptance(const char *model_dir,
         return 1;
     __printf("rasterfall: squad acceptance body_resource_shared=1 "
              "gear_resources_shared=%d model_instances=8 palette_isolated=1 "
-             "attachment_regression=pass\n", RASTERFALL_GEAR_RESOURCE_COUNT);
+             "attachment_regression=pass action_composition="
+             "jesus_walk_fire,engineer_walk,heavy_walk_fire\n",
+             RASTERFALL_GEAR_RESOURCE_COUNT);
     result = 0;
     return result;
 }

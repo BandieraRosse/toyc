@@ -4,8 +4,13 @@
 #include "toy_assets.h"
 #include "rasterfall_action.h"
 #include "rasterfall_model.h"
+#include "rasterfall_calibration.h"
 
-static const char *const action_names[] = {"NONE", "RIFLE_IDLE"};
+static const char *const action_names[] = {
+    "NONE", "LOCOMOTION_IDLE", "LOCOMOTION_WALK", "RIFLE_IDLE",
+    "RIFLE_AIM", "RIFLE_FIRE"
+};
+static const char *const layer_names[] = {"LOWER_BODY", "UPPER_BODY", "ADDITIVE"};
 static const char *const role_names[] = {
     "root", "hips", "spine", "chest", "upper_chest", "neck", "head",
     "left_shoulder", "left_upper_arm", "left_forearm", "left_hand",
@@ -17,6 +22,12 @@ static const char *const role_names[] = {
 const char *rasterfall_action_id_name(enum rasterfall_action_id id)
 {
     return id >= 0 && id < RASTERFALL_ACTION_COUNT ? action_names[id] : "INVALID";
+}
+
+const char *rasterfall_action_layer_name(enum rasterfall_action_layer_id layer)
+{
+    return layer >= 0 && layer < RASTERFALL_ACTION_LAYER_COUNT ?
+        layer_names[layer] : "INVALID";
 }
 
 static int parse_uint(const char **text, int *out)
@@ -182,26 +193,122 @@ static struct rasterfall_animation_quaternion sample_track(
     return rasterfall_animation_quat_nlerp(a->rotation, b->rotation, factor);
 }
 
-int rasterfall_action_apply(struct rasterfall_model_instance *instance,
-                            const struct rasterfall_action_clip *clip,
-                            int time_ms)
+static int action_matches_layer(enum rasterfall_action_id id,
+                                enum rasterfall_action_layer_id layer)
 {
-    struct rasterfall_model_asset *pose;
+    if (layer == RASTERFALL_ACTION_LAYER_LOWER_BODY)
+        return id == RASTERFALL_ACTION_LOCOMOTION_IDLE ||
+               id == RASTERFALL_ACTION_LOCOMOTION_WALK;
+    if (layer == RASTERFALL_ACTION_LAYER_UPPER_BODY)
+        return id == RASTERFALL_ACTION_RIFLE_IDLE ||
+               id == RASTERFALL_ACTION_RIFLE_AIM ||
+               id == RASTERFALL_ACTION_RIFLE_FIRE;
+    return 0;
+}
+
+static int role_in_layer(enum rasterfall_humanoid_bone role,
+                         enum rasterfall_action_layer_id layer)
+{
+    if (layer == RASTERFALL_ACTION_LAYER_LOWER_BODY)
+        return role == RASTERFALL_HUMANOID_ROOT ||
+               role == RASTERFALL_HUMANOID_HIPS ||
+               role >= RASTERFALL_HUMANOID_LEFT_UPPER_LEG;
+    if (layer == RASTERFALL_ACTION_LAYER_UPPER_BODY)
+        return role >= RASTERFALL_HUMANOID_SPINE &&
+               role <= RASTERFALL_HUMANOID_RIGHT_HAND;
+    return 0;
+}
+
+static int apply_layer(struct rasterfall_model_asset *pose,
+    const struct rasterfall_action_layer *layer,
+    enum rasterfall_action_layer_id layer_id)
+{
     unsigned int i;
-    if (!instance || rasterfall_action_validate(clip) < 0 ||
-        rasterfall_model_instance_reset_pose(instance) < 0) return -1;
-    pose = rasterfall_model_instance_pose(instance);
-    if (!pose->has_character_contract) return -1;
+    const struct rasterfall_action_clip *clip = layer->clip;
+    if (!clip) return 0;
+    if (rasterfall_action_validate(clip) < 0 ||
+        !action_matches_layer(clip->id, layer_id)) return -1;
     for (i = 0; i < clip->track_count; i++) {
-        int bone = rasterfall_model_humanoid_bone(pose, clip->tracks[i].target);
+        int bone;
         struct rasterfall_animation_rotation rotation;
+        if (!role_in_layer(clip->tracks[i].target, layer_id)) return -1;
+        bone = rasterfall_model_humanoid_bone(pose, clip->tracks[i].target);
         if (bone < 0 || bone >= (int)pose->bone_count) return -1;
-        rasterfall_animation_quat_to_euler(sample_track(clip, &clip->tracks[i], time_ms), &rotation);
+        rasterfall_animation_quat_to_euler(sample_track(clip, &clip->tracks[i],
+            layer->time_ms), &rotation);
         pose->bones[bone].rotate_x = rotation.x;
         pose->bones[bone].rotate_y = rotation.y;
         pose->bones[bone].rotate_z = rotation.z;
     }
+    return 0;
+}
+
+int rasterfall_action_compose(struct rasterfall_model_instance *instance,
+    const struct rasterfall_action_composition *composition)
+{
+    struct rasterfall_model_asset *pose;
+    int layer;
+    if (!instance || !composition ||
+        rasterfall_model_instance_reset_pose(instance) < 0) return -1;
+    pose = rasterfall_model_instance_pose(instance);
+    if (!pose || !pose->has_character_contract) return -1;
+    for (layer = RASTERFALL_ACTION_LAYER_LOWER_BODY;
+         layer <= RASTERFALL_ACTION_LAYER_UPPER_BODY; layer++)
+        if (apply_layer(pose, &composition->layers[layer], layer) < 0) return -1;
+    /* ADDITIVE is an explicit reserved boundary in V1. A non-empty layer is
+     * rejected until additive quaternion composition has a defined contract. */
+    if (composition->layers[RASTERFALL_ACTION_LAYER_ADDITIVE].clip) return -1;
     return rasterfall_model_instance_update_bones(instance);
+}
+
+int rasterfall_action_apply(struct rasterfall_model_instance *instance,
+                            const struct rasterfall_action_clip *clip,
+                            int time_ms)
+{
+    struct rasterfall_action_composition composition;
+    enum rasterfall_action_layer_id layer;
+    if (!clip) return -1;
+    memset(&composition, 0, sizeof(composition));
+    layer = action_matches_layer(clip->id, RASTERFALL_ACTION_LAYER_LOWER_BODY) ?
+        RASTERFALL_ACTION_LAYER_LOWER_BODY : RASTERFALL_ACTION_LAYER_UPPER_BODY;
+    composition.layers[layer].clip = clip;
+    composition.layers[layer].time_ms = time_ms;
+    return rasterfall_action_compose(instance, &composition);
+}
+
+int rasterfall_action_weapon_target_debug(
+    const struct rasterfall_model_instance *instance, int weapon,
+    struct rasterfall_action_weapon_targets *targets)
+{
+    struct rasterfall_model_attachment_transform grip_target;
+    struct rasterfall_weapon_socket_transform grip, foregrip;
+    const struct rasterfall_model_asset *pose;
+    int i;
+    if (!instance || !targets) return -1;
+    pose = rasterfall_model_instance_final_pose(instance);
+    if (!pose || rasterfall_model_instance_attachment_transform(instance,
+            RASTERFALL_ATTACHMENT_WEAPON_R, &grip_target) < 0 ||
+        rasterfall_weapon_socket_transform(weapon,
+            RASTERFALL_WEAPON_SOCKET_PRIMARY_GRIP, &grip) < 0 ||
+        rasterfall_weapon_socket_transform(weapon,
+            RASTERFALL_WEAPON_SOCKET_FOREGRIP, &foregrip) < 0) return -1;
+    memset(targets, 0, sizeof(*targets));
+    for (i = 0; i < 9; i++)
+        targets->weapon_transform[i] = grip_target.rotation[i];
+    for (i = 0; i < 3; i++) {
+        int row;
+        targets->right_hand_target[i] = grip_target.position[i];
+        targets->weapon_transform[9+i] = grip_target.position[i];
+        for (row = 0; row < 3; row++) {
+            targets->weapon_transform[9+i] -= grip_target.rotation[i*3+row] *
+                ((int *)&grip.position)[row];
+        }
+        targets->left_hand_target[i] = targets->weapon_transform[9+i];
+        for (row = 0; row < 3; row++)
+            targets->left_hand_target[i] += grip_target.rotation[i*3+row] *
+                ((int *)&foregrip.position)[row];
+    }
+    return 0;
 }
 
 void rasterfall_action_dump(const struct rasterfall_action_clip *clip)
@@ -250,7 +357,7 @@ int rasterfall_action_pose_debug(const struct rasterfall_model_instance *instanc
 
 int rasterfall_action_logic_test(void)
 {
-    struct rasterfall_action_clip clip;
+    struct rasterfall_action_clip clip, lower, aim, fire;
     struct rasterfall_animation_rotation a, b;
     if (rasterfall_action_load(&clip, "rasterfall/assets/actions/rifle_idle.rfanim") < 0) return 1;
     if (clip.id != RASTERFALL_ACTION_RIFLE_IDLE || clip.duration_ms != 1200 ||
@@ -258,5 +365,14 @@ int rasterfall_action_logic_test(void)
     rasterfall_animation_quat_to_euler(sample_track(&clip,&clip.tracks[0],600),&a);
     rasterfall_animation_quat_to_euler(sample_track(&clip,&clip.tracks[0],1800),&b);
     if (a.x < 1 || a.x > 3 || b.x != a.x || a.y || a.z) return 3;
+    if (rasterfall_action_load(&lower, "rasterfall/assets/actions/locomotion_walk.rfanim") < 0 ||
+        rasterfall_action_load(&aim, "rasterfall/assets/actions/rifle_aim.rfanim") < 0 ||
+        rasterfall_action_load(&fire, "rasterfall/assets/actions/rifle_fire.rfanim") < 0)
+        return 4;
+    if (!action_matches_layer(lower.id, RASTERFALL_ACTION_LAYER_LOWER_BODY) ||
+        !action_matches_layer(aim.id, RASTERFALL_ACTION_LAYER_UPPER_BODY) ||
+        !action_matches_layer(fire.id, RASTERFALL_ACTION_LAYER_UPPER_BODY) ||
+        role_in_layer(RASTERFALL_HUMANOID_LEFT_UPPER_LEG,
+            RASTERFALL_ACTION_LAYER_UPPER_BODY)) return 5;
     return 0;
 }

@@ -1,7 +1,7 @@
 # 运行时与主循环
 
 > 文档更新：2026-09-10
-> 源码核对基线：工作区（Humanoid Action Foundation V1 CLI；双正式四人 squad runtime；Lighting V1；`game_state.actors[]` 是 gameplay truth）
+> 源码核对基线：工作区（Humanoid Action Composition V1 CLI；双正式四人 squad runtime；Lighting V1；`game_state.actors[]` 是 gameplay truth）
 
 > 源码核对补充：session reset 在原 flag 1 和原坐标恢复 Maid 四人旗卫，并创建使用 flag 2 的正式 Hurd squad/outpost；Hurd 控制状态保持派生。
 
@@ -45,6 +45,8 @@ RFANIM 诊断同样在窗口、音频和 session 初始化前早退：`--action-
 `--action-preview <model> <action> <time-ms> <output.bmp>` 固定渲染一帧，`--pose-debug` 输出指定
 humanoid role 的 finalized transform 及人体/AK socket。独立的 `build/rf_anim_info` 适合资产管线门禁；
 完整参数与顺序仍以 `build/rasterfall --help` 为准。
+`--pose-debug` 的六参数形式同时接收 lower/upper action 与各自时间，输出 composed result、weapon
+transform 和左右 hand target；旧单 action 四参数形式继续可用。
 
 主循环先轮询平台事件和网络，再保留按键边沿；固定 16 ms 逻辑步中构造
 `rasterfall_command`，交给 session 或客户端预测路径；之后同步音频/特效并渲染。排查“偶发吞键”

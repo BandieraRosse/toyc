@@ -1,7 +1,7 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-10
-> 源码核对基线：工作区（Humanoid Action System Foundation V1；双正式四人小队 runtime）
+> 源码核对基线：工作区（Humanoid Action Composition V1；双正式四人小队 runtime）
 
 本目录面向接手 Rasterfall 任务的编码代理。目标不是介绍玩法，而是先把问题归到正确的
 状态所有者和文件，再开始搜索。命令、资源导入方法和用户可见特性仍以
@@ -38,7 +38,7 @@
 | world-space 静态 RMESH prop、实例变换和开发展示 | [rendering.md](rendering.md) | `include/rasterfall_render.h`、`src/rasterfall_render.c` |
 | 战斗表现事件、muzzle/tracer/impact/camera shake 消费 | [rendering.md](rendering.md) | `include/rasterfall_effect_event.h`、`src/rasterfall_effects.c` |
 | 模型、蒙皮、IK、VMD/GLB、动作重定向 | [assets-animation.md](assets-animation.md) | `src/rasterfall_model.c` |
-| RFANIM 动作、关键帧检查、动作预览、pose/socket debug | [assets-animation.md](assets-animation.md)、[animation-architecture.md](animation-architecture.md) | `rasterfall_action` → `rasterfall_model_instance`；`build/rf_anim_info` / `--action-preview` / `--pose-debug` |
+| RFANIM 动作、lower/upper 组合、关键帧检查、动作预览、pose/socket debug | [assets-animation.md](assets-animation.md)、[animation-architecture.md](animation-architecture.md) | `rasterfall_action_composition` → `rasterfall_model_instance`；`build/rf_anim_info` / `--action-preview` / `--pose-debug` |
 | 共享模型资源、独立 pose instance、instance socket/CPU skinning | [assets-animation.md](assets-animation.md)、[animation-architecture.md](animation-architecture.md) | `rasterfall_model_resource` → `rasterfall_model_instance`；`build/rfchar_runtime_test` |
 | 独立 rigid RMESH、full rigid submission、HEAD/BACK assembly | [character-assets.md](character-assets.md)、[rendering.md](rendering.md) | `rasterfall_rigid_attachment_desc` → `rasterfall_render_rigid_attachment()`；`--rigid-attachment-acceptance` |
 | Blender 人形角色、RF Humanoid、Character GLB、附件、导入与蒙皮门禁 | [character-assets.md](character-assets.md) | `tools/assets/rfchar_import.py`、`include/rasterfall_model.h`、`app/glb_inspect.c`、`dev-tests/rasterfall_visual_capture.inc` |
@@ -127,7 +127,8 @@ player/actor 和敌人的 airborne forced/knockback movement 均由玩法核心�
 - 修改地图语义：检查 `toy_map.h`/`lib/map.c` 的解析、`rasterfall_map.c` 的绑定、玩法碰撞和渲染。
 - 修改角色动画：检查角色选择、会话动画状态、模型求值、渲染以及网络动画字段。
 - 新增 humanoid gameplay action：动作数据归 `rasterfall_action`，track 只使用 stable humanoid role；
-  actor 提供语义动作和确定性时间，action evaluator 写 instance pose，socket/附件/renderer 只读 finalized pose。
+  actor 提供语义动作和确定性时间，presentation adapter 选择固定 lower/upper layer，composition evaluator
+  写 instance pose，socket/附件/renderer 只读 finalized pose。actor 不保存 layer、clip 或骨骼状态。
 - 修改模型 runtime ownership：资源定义只由 `rasterfall_model_resource` 拥有；逐实例调用通过
   `rasterfall_model_instance`。同步验证 RFCHAR isolation 门禁与 Character Acceptance 双实例截图。
 - 修改 rigid attachment：资产保持无 skin/无宿主骨架的 metric RMESH；assembly 只能从 finalized

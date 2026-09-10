@@ -80,6 +80,7 @@ void rasterfall_options_usage(int fd)
         "  --action-info <action.rfanim>\n"
         "  --action-preview <model.rmesh> <action.rfanim> <time-ms> <output.bmp>\n"
         "  --pose-debug <model.rmesh> <action.rfanim> <time-ms> <humanoid-role>\n"
+        "  --pose-debug <model.rmesh> <lower.rfanim> <lower-ms> <upper.rfanim> <upper-ms> <humanoid-role>\n"
         "  legacy VMD diagnostics (old PMX/VMD path):\n"
         "    --vmd-eula-walk <model> <vmd>\n"
         "    --vmd-freeze-head | --vmd-freeze-torso\n"
@@ -209,8 +210,16 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
             if(require_arguments(argc,argv,arg,4,option)<0)return -1;
             o->pose_debug_model=argv[++arg];o->pose_debug_action=argv[++arg];
             o->action_time_ms=!strcmp(argv[++arg],"0")?0:positive_int(argv[arg],-1);
-            o->pose_debug_role=argv[++arg];
+            if (arg+3 < argc && argv[arg+1][0] != '-' &&
+                argv[arg+2][0] != '-' && argv[arg+3][0] != '-') {
+                o->pose_debug_upper_action=argv[++arg];
+                o->pose_debug_upper_time_ms=!strcmp(argv[++arg],"0")?0:
+                    positive_int(argv[arg],-1);
+                o->pose_debug_role=argv[++arg];
+            } else o->pose_debug_role=argv[++arg];
             if(o->action_time_ms<0){__fprintf(2,"rasterfall: invalid action time\n");return -1;}
+            if(o->pose_debug_upper_action && o->pose_debug_upper_time_ms<0){
+                __fprintf(2,"rasterfall: invalid upper action time\n");return -1;}
         } else if (!strcmp(option,"--vmd-eula-walk")) {
             if(require_arguments(argc,argv,arg,2,option)<0)return -1;
             o->vmd_walk_model=argv[++arg];o->vmd_walk_path=argv[++arg];

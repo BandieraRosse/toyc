@@ -1,7 +1,7 @@
 # 资源、模型与动画
 
 > 文档更新：2026-09-10
-> 源码核对基线：工作区（Humanoid Action System Foundation V1；Model Resource / Model Instance V1）
+> 源码核对基线：工作区（Humanoid Action Composition V1；Model Resource / Model Instance V1）
 
 新建或生成 Blender 人形资产必须先读 [`character-assets.md`](character-assets.md)。它冻结
 Blender source → Character GLB → importer → runtime character asset → humanoid animation 主线；
@@ -24,7 +24,9 @@ Blender source → Character GLB → importer → runtime character asset → hu
 - `rasterfall_animation.h`：通用 clip/track/player 数据和采样辅助。
 - `rasterfall_action.h` / `.c`：RFANIM V1 的拥有者，保存 gameplay semantic action ID、
   `RF_HUMANOID_V1` 兼容标记、时长、循环、stable humanoid role track、关键帧和 step/linear 插值；
-  解析与确定性采样后只通过 `rasterfall_action_apply()` 形成逐 instance 最终 pose。
+  `rasterfall_action_compose()` 固定按 LOWER_BODY、UPPER_BODY、预留 ADDITIVE 层采样；lower 只写
+  root/hips/legs，upper 只写 spine 到双手。组合器 reset 一次、逐层写局部旋转、最终统一更新 bones，
+  `model_instance` 仍是唯一最终 pose owner。
 - `rasterfall_actor_animation.h`、`rasterfall_animation_composition.h`：玩法动作到角色姿态、持枪和叠加规则。
 - `rasterfall_character.c`：actor/class 到角色资产选择；实际加载与绘制在 render。
 - `rasterfall_prop.h` / `rasterfall_prop.c`：静态 prop asset profile、分类 RMESH 路径与 `512/232`
@@ -54,6 +56,9 @@ resource。新 runtime 不得对 resource definition 调用 pose/IK API，且 re
 - `build/rasterfall --pose-debug <model.rmesh> <action.rfanim> <time-ms> <humanoid-role>` 输出 stable bone ID、
   finalized model-space transform、挂在该骨骼上的人体 socket，以及 AK 的 `PRIMARY_GRIP`、`FOREGRIP`、
   `MUZZLE`、`MAGAZINE` canonical weapon-space socket。
+- `--pose-debug <model> <lower.rfanim> <lower-ms> <upper.rfanim> <upper-ms> <role>` 输出 lower/upper/result，
+  并从 finalized character `WEAPON_R` 与 canonical AK grip sockets 派生 weapon transform 和左右 hand target；
+  target 只供调试，当前不执行完整 arm IK。
 
 - 统一离线入口、manifest 与完整性验证：`tools/assets/import_asset.py`；runtime 不读取 manifest。
   RFCHAR importer 的附件位置/旋转必须转换到 SKN1 identity-rest 基底，不能直接保存 GLB local TRS；

@@ -1,0 +1,34 @@
+RFANIM 1
+action RIFLE_FIRE
+duration 180
+skeleton RF_HUMANOID_V1
+loop 0
+
+track spine linear
+key 0 -4 0 0
+key 60 2 0 0
+key 180 -4 0 0
+endtrack
+track chest linear
+key 0 -7 0 0
+key 60 4 0 0
+key 180 -7 0 0
+endtrack
+track left_upper_arm linear
+key 0 -46 8 -34
+key 60 -42 8 -34
+key 180 -46 8 -34
+endtrack
+track left_forearm linear
+key 0 -66 0 -5
+key 180 -66 0 -5
+endtrack
+track right_upper_arm linear
+key 0 -58 -8 32
+key 60 -52 -8 32
+key 180 -58 -8 32
+endtrack
+track right_forearm linear
+key 0 -60 0 5
+key 180 -60 0 5
+endtrack

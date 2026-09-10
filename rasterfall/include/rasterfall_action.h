@@ -12,8 +12,19 @@
 
 enum rasterfall_action_id {
     RASTERFALL_ACTION_NONE,
+    RASTERFALL_ACTION_LOCOMOTION_IDLE,
+    RASTERFALL_ACTION_LOCOMOTION_WALK,
     RASTERFALL_ACTION_RIFLE_IDLE,
+    RASTERFALL_ACTION_RIFLE_AIM,
+    RASTERFALL_ACTION_RIFLE_FIRE,
     RASTERFALL_ACTION_COUNT
+};
+
+enum rasterfall_action_layer_id {
+    RASTERFALL_ACTION_LAYER_LOWER_BODY,
+    RASTERFALL_ACTION_LAYER_UPPER_BODY,
+    RASTERFALL_ACTION_LAYER_ADDITIVE,
+    RASTERFALL_ACTION_LAYER_COUNT
 };
 
 enum rasterfall_action_interpolation {
@@ -38,6 +49,22 @@ struct rasterfall_action_clip {
     unsigned int key_count;
 };
 
+struct rasterfall_action_layer {
+    const struct rasterfall_action_clip *clip;
+    int time_ms;
+};
+
+struct rasterfall_action_composition {
+    struct rasterfall_action_layer layers[RASTERFALL_ACTION_LAYER_COUNT];
+};
+
+struct rasterfall_action_weapon_targets {
+    /* Row-major 3x3 weapon rotation followed by model-space translation. */
+    double weapon_transform[12];
+    double right_hand_target[3];
+    double left_hand_target[3];
+};
+
 struct rasterfall_model_instance;
 
 const char *rasterfall_action_id_name(enum rasterfall_action_id id);
@@ -46,6 +73,12 @@ int rasterfall_action_validate(const struct rasterfall_action_clip *clip);
 int rasterfall_action_apply(struct rasterfall_model_instance *instance,
                             const struct rasterfall_action_clip *clip,
                             int time_ms);
+int rasterfall_action_compose(struct rasterfall_model_instance *instance,
+    const struct rasterfall_action_composition *composition);
+int rasterfall_action_weapon_target_debug(
+    const struct rasterfall_model_instance *instance, int weapon,
+    struct rasterfall_action_weapon_targets *targets);
+const char *rasterfall_action_layer_name(enum rasterfall_action_layer_id layer);
 void rasterfall_action_dump(const struct rasterfall_action_clip *clip);
 int rasterfall_action_pose_debug(const struct rasterfall_model_instance *instance,
                                  const char *role_name);

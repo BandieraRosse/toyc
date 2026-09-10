@@ -2472,17 +2472,42 @@ int main(int argc, char **argv)
             options.action_preview_path, options.action_time_ms,
             options.action_preview_output);
     if (options.pose_debug_model) {
-        struct rasterfall_action_clip clip;
+        struct rasterfall_action_clip clip, upper;
+        struct rasterfall_action_composition composition;
         struct rasterfall_model_resource resource;
         struct rasterfall_model_instance instance;
-        int result = 1;
+        int result = 1, prepared = 0;
         memset(&resource,0,sizeof(resource));memset(&instance,0,sizeof(instance));
+        memset(&composition,0,sizeof(composition));memset(&upper,0,sizeof(upper));
         if (rasterfall_action_load(&clip,options.pose_debug_action)==0 &&
             rasterfall_model_resource_load(&resource,options.pose_debug_model)==0 &&
             rasterfall_model_instance_init(&instance,&resource)==0 &&
-            rasterfall_action_apply(&instance,&clip,options.action_time_ms)==0 &&
+            (!options.pose_debug_upper_action ||
+             rasterfall_action_load(&upper,options.pose_debug_upper_action)==0)) {
+            if (options.pose_debug_upper_action) {
+                composition.layers[RASTERFALL_ACTION_LAYER_LOWER_BODY].clip=&clip;
+                composition.layers[RASTERFALL_ACTION_LAYER_LOWER_BODY].time_ms=options.action_time_ms;
+                composition.layers[RASTERFALL_ACTION_LAYER_UPPER_BODY].clip=&upper;
+                composition.layers[RASTERFALL_ACTION_LAYER_UPPER_BODY].time_ms=options.pose_debug_upper_time_ms;
+                __printf("LOWER:\n  %s time=%dms\nUPPER:\n  %s time=%dms\nRESULT:\n  composed humanoid pose\n",
+                    clip.name,options.action_time_ms,upper.name,
+                    options.pose_debug_upper_time_ms);
+            } else {
+                enum rasterfall_action_layer_id layer =
+                    clip.id==RASTERFALL_ACTION_LOCOMOTION_IDLE ||
+                    clip.id==RASTERFALL_ACTION_LOCOMOTION_WALK ?
+                    RASTERFALL_ACTION_LAYER_LOWER_BODY :
+                    RASTERFALL_ACTION_LAYER_UPPER_BODY;
+                composition.layers[layer].clip=&clip;
+                composition.layers[layer].time_ms=options.action_time_ms;
+            }
+            prepared=1;
+        }
+        if (prepared &&
+            rasterfall_action_compose(&instance,&composition)==0 &&
             rasterfall_action_pose_debug(&instance,options.pose_debug_role)==0) {
             int socket;
+            struct rasterfall_action_weapon_targets targets;
             __printf("weapon_sockets:\n");
             for(socket=0;socket<RASTERFALL_WEAPON_SOCKET_COUNT;socket++) {
                 struct rasterfall_weapon_socket_transform t;
@@ -2491,6 +2516,14 @@ int main(int argc, char **argv)
                         rasterfall_weapon_socket_name(socket),t.position.x,t.position.y,
                         t.position.z,t.rotation[0],t.rotation[1],t.rotation[2],t.rotation[3]);
             }
+            if(rasterfall_action_weapon_target_debug(&instance,TOY_GAME_WEAPON_AK,
+                                                     &targets)==0)
+                __printf("weapon_transform:\n  %.6f %.6f %.6f\nhand_targets:\n  right %.6f %.6f %.6f\n  left %.6f %.6f %.6f\n",
+                    targets.weapon_transform[9],targets.weapon_transform[10],
+                    targets.weapon_transform[11],targets.right_hand_target[0],
+                    targets.right_hand_target[1],targets.right_hand_target[2],
+                    targets.left_hand_target[0],targets.left_hand_target[1],
+                    targets.left_hand_target[2]);
             result=0;
         }
         rasterfall_model_instance_unload(&instance);

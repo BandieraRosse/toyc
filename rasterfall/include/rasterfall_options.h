@@ -27,7 +27,8 @@ struct rasterfall_options {
     const char *action_info_path;
     const char *action_preview_model, *action_preview_path, *action_preview_output;
     const char *pose_debug_model, *pose_debug_action, *pose_debug_role;
-    int action_time_ms;
+    const char *pose_debug_upper_action;
+    int action_time_ms, pose_debug_upper_time_ms;
     const char *vmd_walk_model, *vmd_walk_path;
     int vmd_freeze_head, vmd_freeze_torso;
     int vmd_disable_ik, vmd_disable_grant;
