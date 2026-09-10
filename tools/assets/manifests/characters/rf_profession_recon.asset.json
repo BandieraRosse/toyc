@@ -1,0 +1,6 @@
+{
+  "schema": 1,
+  "id": "rf_profession_recon",
+  "type": "character",
+  "source": "../../../../rasterfall/private-assets/source/characters/rf_profession_recon.glb"
+}

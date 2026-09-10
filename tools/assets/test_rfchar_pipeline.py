@@ -23,10 +23,12 @@ def check_attachment_bind(glb, mesh):
         assert max(abs(v+base[12+k]*512-expected[12+k]*512) for k,v in enumerate((x,y,z)))<=0.501
 
 BASELINE = {
-    'bind/front.bmp': '78acc24b1adbb56dc6127d499a432ccbfc8e3b187eb68fdf5b0af91749c724c7',
-    'bind/three-quarter.bmp': '287822f6e916d8d5f0b22b75a6a697d6754248fd03e0231d108ba9b9f195208d',
-    'posed/front.bmp': '192edeca5f21b3840bc78983e9393558b67a858778a24c352f4b057b99b5d76f',
-    'posed/three-quarter.bmp': 'dfac02cea3e3ba777f636995b8228eaae7bf4cb951d8ff10d2cfc6cd8728ab20',
+    # Current Lighting V1 output; independently reproduced from the unchanged
+    # pre-V2.1 HEAD as well as the convergence working tree (Blender 4.3.2).
+    'bind/front.bmp': '2a69cc129b0082b32fb3ae68ac64f3967498050453dba57888348be7268c8095',
+    'bind/three-quarter.bmp': 'aeaf0af8491eaf6f0fd044b1d3de6140ef708fa1fc4c132b3921e9fb81a88f7c',
+    'posed/front.bmp': 'e9d9a2bf78067593b8bb4267d0f72dae39516a24e541be6bed1eb0e0e51f0d90',
+    'posed/three-quarter.bmp': '7be124edcfa9180da45f299d63290eb89fa9748ae7b81b07d62ff9da16b50e24',
 }
 
 def run(argv,cwd): subprocess.run([str(x) for x in argv],cwd=cwd,check=True)

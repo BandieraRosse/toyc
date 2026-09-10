@@ -48,12 +48,14 @@ HEADGEAR_NAMES = (
     'bare', 'headset', 'patrol-cap', 'goggles', 'respirator',
     'tactical-helmet', 'engineering-helmet',
 )
+PROFESSIONS = ('rifleman', 'breacher', 'recon', 'medic', 'engineer', 'heavy')
 
 
 def arguments():
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", required=True)
     parser.add_argument("--headgear", choices=HEADGEAR_NAMES, default="bare")
+    parser.add_argument("--profession", choices=PROFESSIONS)
     return parser.parse_args(sys.argv[sys.argv.index("--") + 1:]
                              if "--" in sys.argv else [])
 
@@ -312,8 +314,8 @@ def create_body(armature, scene, materials):
         'Pelvis',
         [
             (0.70, 0.000, 0.20, 0.14),
-            (0.77, 0.000, 0.255, 0.17),
-            (0.88, 0.000, 0.275, 0.18),
+            (0.77, 0.018, 0.255, 0.188),
+            (0.88, 0.025, 0.275, 0.205),
             (0.98, 0.000, 0.255, 0.16),
             (1.04, 0.000, 0.215, 0.115),
         ],
@@ -335,10 +337,10 @@ def create_body(armature, scene, materials):
             (0.96, -0.005, 0.270, 0.190),
             (1.04, -0.008, 0.235, 0.150),
             (1.14, -0.010, 0.240, 0.160),
-            (1.25, -0.008, 0.255, 0.180),
-            (1.36, -0.004, 0.280, 0.190),
-            (1.47, 0.000, 0.290, 0.185),
-            (1.56, 0.005, 0.255, 0.160),
+            (1.25, -0.012, 0.255, 0.195),
+            (1.36, -0.008, 0.280, 0.220),
+            (1.47, 0.004, 0.290, 0.215),
+            (1.56, 0.010, 0.255, 0.175),
         ],
         SIDES_BODY, shirt, armature, scene,
         [
@@ -410,10 +412,10 @@ def create_body(armature, scene, materials):
         segment_loft(
             side + 'Shoulder', (0.23 * sign, 0.0, 1.52),
             (0.44 * sign, 0.0, 1.50),
-            [(0.0, 0.090, 0.105, 0.0),
-             (0.35, 0.120, 0.115, 0.25),
-             (0.70, 0.110, 0.100, 0.75),
-             (1.0, 0.098, 0.085, 1.0)],
+            [(0.0, 0.090, 0.125, 0.0),
+             (0.35, 0.120, 0.135, 0.25),
+             (0.70, 0.110, 0.115, 0.75),
+             (1.0, 0.098, 0.100, 1.0)],
             SIDES_LIMB, shirt, armature, scene,
             'RF_' + side + '_SHOULDER', 'RF_' + side + '_UPPER_ARM')
 
@@ -421,8 +423,8 @@ def create_body(armature, scene, materials):
         segment_loft(
             side + 'UpperArm', (0.39 * sign, 0.0, 1.50),
             (0.61 * sign, 0.0, 1.50),
-            [(0.0, 0.103, 0.095, 0.0),
-             (0.28, 0.108, 0.095, 0.0),
+            [(0.0, 0.103, 0.108, 0.0),
+             (0.28, 0.108, 0.103, 0.0),
              (0.70, 0.090, 0.082, 0.0),
              (0.88, 0.082, 0.075, 0.45),
              (1.0, 0.078, 0.070, 1.0)],
@@ -455,8 +457,8 @@ def create_body(armature, scene, materials):
         segment_loft(
             side + 'Thigh', (0.15 * sign, 0.0, 0.90),
             (0.15 * sign, 0.0, 0.51),
-            [(0.0, 0.132, 0.135, 0.0),
-             (0.18, 0.138, 0.140, 0.0),
+            [(0.0, 0.132, 0.155, 0.0),
+             (0.18, 0.138, 0.155, 0.0),
              (0.52, 0.125, 0.120, 0.0),
              (0.80, 0.118, 0.108, 0.35),
              (1.0, 0.105, 0.098, 1.0)],
@@ -550,8 +552,8 @@ def create_headgear(armature, scene, materials, variant):
     if variant == 'patrol-cap':
         vertical_loft(
             'PatrolCap',
-            [(1.975, 0.028, 0.205, 0.185),
-             (2.035, 0.035, 0.220, 0.190),
+            [(1.975, 0.028, 0.230, 0.215),
+             (2.035, 0.035, 0.235, 0.210),
              (2.090, 0.045, 0.145, 0.135),
              (2.115, 0.040, 0.075, 0.075)],
             SIDES_BODY, gear, armature, scene,
@@ -629,6 +631,83 @@ def create_headgear(armature, scene, materials, variant):
     raise ValueError('unknown RF Humanoid V2 headgear: ' + variant)
 
 
+def create_profession(armature, scene, materials, profession):
+    """V1 visual carriers: a few large masses, weighted to socket parents.
+
+    These are authoring profiles, independent of the legacy Hurd identities.
+    CHEST/BACK use RF_CHEST and HIP gear uses its upper-leg parent; attachment
+    bones remain unweighted. No actor or generic attachment runtime is needed.
+    """
+    palettes = {
+        'rifleman': ((.16, .23, .12), (.23, .28, .16), (.12, .16, .08), (.34, .36, .20)),
+        'breacher': ((.075, .10, .14), (.12, .15, .19), (.07, .09, .12), (.24, .30, .36)),
+        'recon': ((.25, .29, .18), (.19, .23, .13), (.12, .16, .10), (.35, .38, .24)),
+        'medic': ((.20, .28, .29), (.13, .21, .22), (.65, .72, .64), (.72, .14, .055)),
+        'engineer': ((.32, .20, .07), (.20, .18, .13), (.18, .16, .105), (.68, .43, .075)),
+        'heavy': ((.19, .15, .10), (.15, .14, .11), (.13, .115, .08), (.43, .32, .13)),
+    }
+    shirt, pants, gear, accent = palettes[profession]
+    for key, color in (('shirt', shirt), ('pants', pants),
+                       ('headgear', gear), ('headgear_light', accent)):
+        materials[key].diffuse_color = (*color, 1.0)
+    g, a = materials['headgear'], materials['headgear_light']
+
+    def box(name, lo, hi, mat=g, bone='RF_CHEST'):
+        return box_mesh(profession + '_' + name, lo, hi, mat, armature, scene, bone)
+
+    def plate(width, bottom, top, front, mat=g):
+        # Taper at the clavicle leaves the shoulder/upper-arm rotation clear.
+        return vertical_loft(profession + '_Chest',
+            [(bottom, front + .045, width * .86, .065),
+             (bottom + .07, front + .025, width, .075),
+             (top - .07, front + .030, width, .070),
+             (top, front + .045, width * .72, .055)],
+            8, mat, armature, scene, [[('RF_CHEST', 1.0)]] * 4)
+
+    heads = {'rifleman': ('tactical-helmet',), 'breacher': ('tactical-helmet', 'respirator'),
+             'recon': ('patrol-cap', 'headset'), 'medic': ('goggles', 'respirator'),
+             'engineer': ('engineering-helmet',), 'heavy': ('tactical-helmet',)}
+    for head in heads[profession]:
+        create_headgear(armature, scene, materials, head)
+    if profession == 'rifleman':
+        plate(.205, 1.12, 1.46, -.235)
+        box('ShortPack', (-.19, .17, 1.13), (.19, .36, 1.48))
+        box('MagazineBlock', (-.17, -.29, 1.08), (.17, -.23, 1.22), a)
+    elif profession == 'breacher':
+        plate(.255, 1.035, 1.50, -.255)
+        box('Collar', (-.15, -.18, 1.48), (.15, .17, 1.60), a)
+        box('FlatBackPlate', (-.245, .18, 1.08), (.245, .30, 1.50))
+        box('HipShield', (-.20, -.205, .86), (.20, -.15, 1.04), a, 'RF_HIPS')
+    elif profession == 'recon':
+        plate(.16, 1.15, 1.34, -.215)
+        box('NarrowPack', (-.12, .19, 1.20), (.12, .32, 1.58))
+        box('RigBand', (-.19, -.25, 1.12), (.19, -.20, 1.20), a)
+    elif profession == 'medic':
+        plate(.22, 1.12, 1.46, -.235)
+        box('MedicalPack', (-.27, .18, 1.02), (.27, .44, 1.60))
+        # Broad orange panels; identity stays readable without tiny symbols.
+        box('ChestPanel', (-.10, -.29, 1.22), (.10, -.245, 1.42), a)
+        box('BackPanel', (-.15, .435, 1.18), (.15, .455, 1.47), a)
+        for sign in (-1, 1):
+            box('PackSide' + str(sign), (sign * .27 - .025, .23, 1.18),
+                (sign * .27 + .025, .39, 1.46), a)
+    elif profession == 'engineer':
+        plate(.185, 1.14, 1.40, -.225, a)
+        box('ToolCase', (-.23, .19, 1.03), (.21, .40, 1.43))
+        box('ToolHandle', (-.27, .25, 1.39), (-.20, .34, 1.76), a)
+        box('ToolHead', (-.36, .24, 1.65), (-.10, .35, 1.77), a)
+        box('HipToolbox', (.235, -.09, .65), (.40, .18, .94), a, 'RF_L_UPPER_LEG')
+    else:
+        plate(.285, 1.05, 1.51, -.26)
+        box('AmmoBack', (-.32, .19, 1.01), (.32, .48, 1.62))
+        for sign, side in ((-1, 'R'), (1, 'L')):
+            box('AmmoStack' + side, (sign * .30 - .06, .22, 1.12),
+                (sign * .30 + .06, .43, 1.58), a)
+            box('HipAmmo' + side, (sign * .27 - .075, -.08, .70),
+                (sign * .27 + .075, .16, .94), g, 'RF_' + side + '_UPPER_LEG')
+        box('ChestAmmo', (-.22, -.31, 1.10), (.22, -.25, 1.24), a)
+
+
 def patch_glb_skeleton(path):
     """Ensure Blender writes the RFCHAR-required skin skeleton node."""
     raw = path.read_bytes()
@@ -660,7 +739,22 @@ def main():
     armature = make_armature(scene)
     materials = create_materials()
     create_body(armature, scene, materials)
-    create_headgear(armature, scene, materials, args.headgear)
+    if args.profession:
+        if args.headgear != 'bare':
+            raise ValueError('--profession owns its headgear combination')
+        create_profession(armature, scene, materials, args.profession)
+    else:
+        create_headgear(armature, scene, materials, args.headgear)
+
+    # Merge authored pieces before export: RFM2 has a 32-primitive budget.
+    # glTF emits one primitive per material on the joined mesh, retaining
+    # vertex groups and the one armature modifier without changing geometry.
+    bpy.ops.object.select_all(action='DESELECT')
+    meshes = [obj for obj in scene.objects if obj.type == 'MESH']
+    for obj in meshes:
+        obj.select_set(True)
+    bpy.context.view_layer.objects.active = meshes[0]
+    bpy.ops.object.join()
 
     # Keep every object at identity TRS; all geometry is authored in armature
     # space and the canonical GLB exporter handles only the Y-up conversion.

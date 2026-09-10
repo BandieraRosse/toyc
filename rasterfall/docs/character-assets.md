@@ -1,7 +1,7 @@
-# Rasterfall Character Asset Contract V1 / RF Humanoid V1
+# Rasterfall Character Asset Contract V1 / RF Humanoid V2.1
 
 > 文档更新：2026-09-10
-> 源码核对基线：工作区（RF Humanoid V2 final convergence；clean face 与 Headgear / Face Coverage V1 变体；CHR1 bind 基底烘焙与双手 socket 握持门禁；RFCHAR V1 / RFM2 v14 不变）
+> 源码核对基线：工作区（V2.1 Final Body、Profession Visual System V1 六职业 carrier 与 lineup；Headgear V1；RFCHAR V1 / RFM2 v14、CHR1 与双手 socket 门禁不变）
 
 本文是所有新 Rasterfall 人形角色资产的第一入口。V1 冻结 Blender 到离线 importer 的输入门；
 它不承诺任意 glTF 的兼容性，也不要求 runtime 直接读取 GLB。主线固定为：
@@ -298,3 +298,41 @@ three-quarter 和 `--character-world-capture` 的 near / mid / far；主要交�
 提示，中覆盖在近中景最有效，高覆盖的 tactical / engineering helmet 在中远景仍保持强轮廓。
 因此 RF Humanoid 头部扩展 V1 建议正式沿用“clean face + modular headgear”主线，五官系统暂不
 作为下一阶段前置条件。
+
+## RF Humanoid V2.1 Final Body / Profession Visual System V1
+
+当前 `rf_humanoid_v2` 资产 ID 保持不变，生成内容为 V2.1 Final Body。局部收敛只调整
+胸背深度、肩峰到上臂的前后过渡、骨盆后侧与大腿根深度；骨盆最大半宽仍为 0.275m，
+头顶仍为 2.080m，canonical skeleton、八个 attachments 和五色块基础身体保持冻结。
+patrol cap 的下部壳体略扩，以包住原有 hair crown；脸与头发没有重新设计。
+
+六职业通过同一 `create_body()`、现有 Headgear 和少量中大型装备构成；`--profession`
+拥有 palette 与 headgear 组合，不能再指定额外 `--headgear`。资产仍为完整 RFCHAR
+carrier，装备采用单骨骼权重，HEAD 属于 RF_HEAD，CHEST/BACK 属于 RF_CHEST，
+侧面 HIP 装备属于对应上腿；Breacher 中央护腹属于 RF_HIPS。attachment bone 不参与蒙皮。
+导出前合并 mesh，按材质生成 primitive，以遵守现有 RFM2 32 primitive 上限。
+
+| 职业 | 大色块与主要识别体积 |
+| --- | --- |
+| Rifleman | 橄榄绿、战术头盔、标准胸挂和短背包，中等负载 |
+| Breacher | 蓝灰深色、头盔与呼吸器、厚胸甲/护领/护腹、贴身背板 |
+| Recon | 浅卡其绿、帽檐与 headset、轻胸挂和窄高小背包 |
+| Medic | 青灰衣裤、浅色医疗胸背装备、橙色大面板、goggles 与 respirator |
+| Engineer | 赭黄、工程头盔、非对称工具背箱与左髋工具箱 |
+| Heavy | 棕色、最宽弹药背架、厚胸甲与双髋弹药箱 |
+
+源资产为 `rf_profession_<name>.glb`，manifest 为
+`tools/assets/manifests/characters/rf_profession_<name>.asset.json`，运行时产物在
+`rasterfall/private-assets/models/`。六职业名称不复用旧四人 Hurd gameplay profession，
+也不进入 actor、网络或碰撞数据。没有新增 rigid attachment runtime 或模型实例架构。
+
+```sh
+make app-rasterfall app-glb-inspect build/rfchar_runtime_test
+python3 tools/rf_profession_round.py --generate --capture --world --deterministic
+```
+
+该命令重建基础身体、六个 headgear 样本和六职业；每个生成物经过 contract、统一 importer
+与 runtime 检查。Character Lab 覆盖 bind/idle/aim 四方向；world 覆盖 body 和六职业的
+near/mid/far × old/idle/aim/motion。lineup 在同一深度缓冲绘制六人，无职业标签；front 与
+three-quarter 各三档距离，加 side mid。重复 capture 逐字节核对七张 BMP，并记录 SHA-256。
+生成资产、日志、组图和原始 BMP 均为本地产物，不提交。

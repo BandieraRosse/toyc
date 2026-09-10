@@ -2449,6 +2449,9 @@ int main(int argc, char **argv)
     if (options.visual_scenario)
         return rasterfall_render_visual_capture(options.visual_scenario,
                                                  options.visual_output);
+    if (options.profession_lineup_models)
+        return rasterfall_render_profession_lineup(options.profession_lineup_models,
+                                                   options.profession_lineup_dir);
     if (options.character_acceptance_model)
         return rasterfall_render_character_acceptance_capture(
             options.character_acceptance_model,

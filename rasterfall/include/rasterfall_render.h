@@ -127,6 +127,7 @@ int rasterfall_render_actor_benchmark(int iterations, int frontend_workers,
                                       int raster_workers);
 /* Process-only diagnostic: call before runtime initialization, then exit. */
 int rasterfall_render_visual_capture(const char *scenario, const char *output);
+int rasterfall_render_profession_lineup(const char *model_dir, const char *output_dir);
 void rasterfall_render_scene_stats(struct rasterfall_scene_stats *out);
 int rasterfall_render_near_clip_test(void);
 int rasterfall_render_static_prop_culling_logic_test(void);

@@ -1,7 +1,7 @@
 # Rasterfall 资产转换与诊断
 
 > 文档更新：2026-09-10
-> 源码核对基线：工作区（RFCHAR V1 → RFM2 v14 不变；V2 final convergence 修正 CHR1 附件 bind 基底烘焙，增加 GLB/runtime socket 交叉检查；Headgear / Face Coverage V1 变体与组图工具）
+> 源码核对基线：工作区（RFCHAR V1 → RFM2 v14 不变；V2.1 与六职业 carrier、导出前按材质合并 primitive、Profession Lineup 和确定性组图生产线）
 
 本文记录可执行的模型、纹理和动画工具链。运行时模块边界见 `assets-animation.md`，动画求值契约
 见 `animation-architecture.md`，资源是否允许发布见 `asset-sources.md`。
@@ -155,6 +155,18 @@ form-lighting，Character Acceptance 与 `--visual-capture lighting-props` 提�
 其他诊断消融模式不代表默认画质。生成物放在 `tmp/` 或 `build/`，不提交。
 
 ## 角色观察组图
+
+V2.1 与 Profession Visual System V1 的整轮入口为
+`python3 tools/rf_profession_round.py --generate --capture --world --deterministic`。
+脚本复用 Blender 生成器、六份职业 manifest、统一 importer、RFCHAR contract/runtime、
+Character Lab 和 world CLI；新增 lineup 也由游戏 renderer 输出，Python 只拼接 PNG。
+默认产物在 `tmp/rf-v21-professions/`，包括每份资产日志、individual lab/world PNG、
+`lineup-front.png`、`lineup-three-quarter.png`、`lineup-side.png` 和原始七张 BMP。
+`--deterministic` 需要已有本轮 `lineup/` 或同时指定 `--capture`，并与第二次绘制逐字节比较。
+装备和 body 合并为完整 RFCHAR carrier；生成源在导出前 join mesh，使 primitive 数受材质数
+约束，遵守既有 runtime 上限。这些资产仍为可选私有资源，不进入公开 embedded 清单；
+现有 Windows package 会递归复制本机 `private-assets`，所以本地打包会携带已生成的模型，
+本轮无需新增复制规则，也未执行打包或发布。
 
 两个通用脚本负责调用离屏入口并将 BMP 拼成单张 PNG；渲染仍由
 `build/rasterfall` 完成，脚本不生成 Lighting OFF/V1 对比图。角色组图为三行

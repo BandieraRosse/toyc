@@ -1,11 +1,25 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-10
-> 源码核对基线：工作区（Lighting V1 统一 RMESH form-lighting 与确定性 A/B；V2 final convergence；clean face 与 RFCHAR Headgear / Face Coverage V1；RFCHAR 双手 socket IK、握持误差门禁、开发者区默认 V2 与逐角色距离 capture）
+> 源码核对基线：工作区（Lighting V1；V2.1 Final Body 与六职业 Profession Lineup；RFCHAR 固定米制验收缩放、双手 socket IK、Headgear V1 与逐角色 world capture）
 
 > 源码核对补充：正式 Hurd actor 通过四个专用 character profile 进入职业外观；恢复的四名 Maid 旗卫以 Maid character profile 接入 actor，同时继续由 anime identity 选择骨骼模型；普通 player、Eula、佣兵解析为 NONE。
 
 ## 渲染边界
+
+Profession Visual System V1 的 `--profession-lineup <model-dir> <output-dir>` 由 options →
+main 早退 → `rasterfall_render_profession_lineup()` 执行；实现位于
+`dev-tests/rasterfall_visual_capture.inc`，复用 `visual_acceptance_model_frame()` 和标准 AK。
+六人从左到右为 Rifleman、Breacher、Recon、Medic、Engineer、Heavy；同一深度缓冲、同一
+Lighting V1、无名字标签，沿相机水平轴摆放，保证 side 也不重叠。输出 2400×900 BMP：
+front/three-quarter 的 near/mid/far，以及 side-mid；距离为 2200/4400/8800 RFU。
+正面与 3/4 站位间距 440 RFU，side mid 为避免枪管遮住相邻背包，间距为 660 RFU；
+同一方向的角色与间距不随距离变化，远景不会自动放大来伪装可读性。
+
+RFCHAR 的 Character Lab、world strip 与 lineup 统一采用 835 milli-scale（2.080m
+源 body 对应约 1.736m 展示身高）。装备不再影响身体缩放；RFCHAR 使用 canonical 原点，
+不会被非对称背包的包围盒偏移。旧非 RFCHAR 模型仍使用原有高度适配。此校准仅属于诊断展示，
+不修改正式 gameplay actor 渲染或 RFCHAR/RFM2 数据。
 
 `src/rasterfall_render.c` 是世界渲染和角色渲染主体：投影/近裁剪、三角形提交、地面与地图图元、
 拾取物、敌人、玩家/队友、骨骼角色、弹道粒子及模型诊断。公开入口在

@@ -143,6 +143,14 @@ static const struct rasterfall_skeletal_actor_profile visual_rf_profile = {
     "rf_humanoid_acceptance", NULL, NULL, 1736, 0, 1024
 };
 
+/* RFCHAR sources are metric: keep the frozen 2.080m V2 body at 1.736m
+ * presentation height. Gear must not shrink the wearer via mesh bounds. */
+static int visual_rf_scale(const struct rasterfall_model_asset *model)
+{
+    return model->has_character_contract ? 835 :
+        character_model_scale(model, visual_rf_profile.target_height_mm);
+}
+
 static const struct rasterfall_pose_calibration *visual_rf_calibration(int mode)
 {
     static struct rasterfall_pose_calibration calibration;
@@ -271,7 +279,7 @@ static int render_character_test_strip(struct toy_renderer *renderer,
     pixels += rasterfall_render_procedural_humanoid(renderer, camera, &old_state,
         rasterfall_character_profile(RASTERFALL_CHARACTER_HURD_GUNSMITH));
     if (!character_strip_model.data) return pixels;
-    scale = character_model_scale(&character_strip_model, profile.target_height_mm);
+    scale = visual_rf_scale(&character_strip_model);
     weapon = rasterfall_weapon_asset_profile(TOY_GAME_WEAPON_AK);
     calibration = rasterfall_pose_calibration_resolve(NULL, 1, TOY_GAME_WEAPON_AK);
     for (i = 0; i < 3; i++) {
@@ -379,9 +387,10 @@ static int visual_acceptance_model_frame(struct toy_renderer *renderer,
     int scale, center_x, center_z, base_y, pixels = 0;
     (void)rifle;
     visual_acceptance_pose(character, mode);
-    scale = character_model_scale(character, visual_rf_profile.target_height_mm);
+    scale = visual_rf_scale(character);
     center_x = actor_x - (int)(((long long)character->min_x + character->max_x) * scale / 2000);
     center_z = actor_z - (int)(((long long)character->min_z + character->max_z) * scale / 2000);
+    if (character->has_character_contract) center_x = actor_x, center_z = actor_z;
     base_y = -900 - (int)((long long)character->min_y * scale / 1000);
     if (draw_rifle && rifle_frame_transform(character, &frame) == 0) {
         calibration = visual_rf_calibration(mode);
@@ -447,6 +456,69 @@ static int visual_acceptance_dump(struct rasterfall_model_asset *character,
         toy_renderer_destroy(&renderer); tlibc_free(pixels); return 1;
     }
     toy_renderer_destroy(&renderer); tlibc_free(pixels); return 0;
+}
+
+/* Six RFCHAR carriers in one depth buffer, with equal camera distance and
+ * physical body scale. Their screen-horizontal placement avoids overlap in
+ * the side view without rotating the equipment relative to its body. */
+int rasterfall_render_profession_lineup(const char *model_dir, const char *output_dir)
+{
+    static const char *names[] = {"rifleman", "breacher", "recon", "medic", "engineer", "heavy"};
+    static const char *views[] = {"front", "three-quarter", "side"};
+    static const int view_ids[] = {0, 3, 1};
+    static const char *ranges[] = {"near", "mid", "far"};
+    static const int distances[] = {2200, 4400, 8800};
+    struct rasterfall_model_asset models[6];
+    static struct rasterfall_render_context context;
+    char path[512];
+    int i, v, d, result = 1;
+    memset(models, 0, sizeof(models));
+    if (!model_dir || !output_dir || tlibc_recursive_mkdir(output_dir) < 0) return 1;
+    for (i = 0; i < 6; i++) {
+        if (snprintf(path, sizeof(path), "%s/rf_profession_%s.rmesh", model_dir, names[i]) >= (int)sizeof(path) ||
+            rasterfall_model_load(&models[i], path) < 0 || !models[i].has_character_contract) {
+            __fprintf(2, "rasterfall: profession lineup cannot load %s\n", names[i]);
+            goto done;
+        }
+    }
+    memset(&context, 0, sizeof(context));
+    context.fixed_floor_lighting = 1;
+    rasterfall_render_bind(&context);
+    rasterfall_render_set_model_lighting(1);
+    gallery_load();
+    for (v = 0; v < 3; v++) for (d = 0; d < 3; d++) {
+        struct camera camera;
+        struct toy_renderer renderer;
+        struct toy_surface surface;
+        int failed = 0;
+        if (v == 2 && d != 1) continue;
+        visual_acceptance_camera(&camera, view_ids[v], distances[d]);
+        memset(&surface, 0, sizeof(surface));
+        surface.width = 2400; surface.height = 900; surface.stride = surface.width * 4;
+        surface.pixels = tlibc_malloc((size_t)surface.stride * surface.height);
+        if (!surface.pixels) goto done;
+        toy_renderer_init(&renderer);
+        toy_renderer_set_frame_budget(&renderer, 0);
+        if (toy_renderer_begin(&renderer, &surface, 0x30343B) < 0) failed = 1;
+        for (i = 0; i < 6 && !failed; i++) {
+            int offset = (i * 2 - 5) * (v == 2 ? 330 : 220);
+            int x = (int)((long long)camera.view.cy * offset / 1024);
+            int z = -(int)((long long)camera.view.sy * offset / 1024);
+            if (visual_acceptance_model_frame(&renderer, &camera, &models[i], NULL,
+                    1, x, z, distances[d], 1) < 0) failed = 1;
+        }
+        if (!failed && (renderer.cmd_overflow || toy_renderer_flush(&renderer) < 0 ||
+            snprintf(path, sizeof(path), "%s/%s-%s.bmp", output_dir, views[v], ranges[d]) >= (int)sizeof(path) ||
+            rasterfall_hud_dump_bmp(path, &surface) < 0)) failed = 1;
+        toy_renderer_destroy(&renderer);
+        tlibc_free(surface.pixels);
+        if (failed) goto done;
+        __printf("rasterfall: profession lineup view=%s distance=%d output=%s\n", views[v], distances[d], path);
+    }
+    result = 0;
+done:
+    for (i = 0; i < 6; i++) rasterfall_model_unload(&models[i]);
+    return result;
 }
 
 static int visual_lighting_ab_dump(struct rasterfall_model_asset *character,
