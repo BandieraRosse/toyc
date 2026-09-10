@@ -16,20 +16,24 @@ key 60 4 0 0
 key 180 -7 0 0
 endtrack
 track left_upper_arm linear
-key 0 -46 8 -34
-key 60 -42 8 -34
-key 180 -46 8 -34
+key 0 0 -58 -36
+key 60 4 -56 -36
+key 180 0 -58 -36
 endtrack
 track left_forearm linear
-key 0 -66 0 -5
-key 180 -66 0 -5
+key 0 0 -36 -50
+key 180 0 -36 -50
 endtrack
 track right_upper_arm linear
-key 0 -58 -8 32
-key 60 -52 -8 32
-key 180 -58 -8 32
+key 0 0 58 36
+key 60 4 56 36
+key 180 0 58 36
 endtrack
 track right_forearm linear
-key 0 -60 0 5
-key 180 -60 0 5
+key 0 0 36 50
+key 180 0 36 50
+endtrack
+track right_hand linear
+key 0 80 -30 -121
+key 180 80 -30 -121
 endtrack

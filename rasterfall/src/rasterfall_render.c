@@ -67,7 +67,7 @@ static int humanoid_actions_load_attempted;
 struct rasterfall_actor_action_layers {
     int actor_id, valid;
     enum rasterfall_action_id lower;
-    int lower_time_ms;
+    int lower_time_ms, last_gameplay_time_ms, last_gameplay_animation;
 };
 static struct rasterfall_actor_action_layers
     actor_action_layers[TOY_GAME_MAX_ACTORS];
@@ -5868,10 +5868,41 @@ struct rasterfall_modular_actor_runtime {
 static struct rasterfall_modular_actor_runtime modular_actor_runtime;
 static const char *modular_actor_model_dir;
 static const struct rasterfall_skeletal_actor_profile modular_rf_profile = {
-    /* RF Humanoid V2 is authored facing -Z.  Keep this asset fact in the
+    /* RFCHAR is canonical +Z forward.  Keep this asset fact in the
      * profile so body, rigid gear, sockets and weapons share one basis. */
-    "rf_humanoid_v2", NULL, NULL, 1736, 0, -1024
+    "rf_humanoid_v2", NULL, NULL, 1736, 0, 1024
 };
+
+static int modular_locomotion_time(int actor_index,
+    const struct toy_game_actor *actor,
+    const struct rasterfall_action_clip *clip)
+{
+    struct rasterfall_actor_action_layers *layers;
+    int gameplay_duration, delta;
+    if (!actor || !clip || clip->duration_ms <= 0 || actor_index < 0 ||
+        actor_index >= TOY_GAME_MAX_ACTORS) return actor ? actor->animation.time_ms : 0;
+    layers = &actor_action_layers[actor_index];
+    if (actor->animation.id != TOY_GAME_ANIM_MOVE) {
+        layers->last_gameplay_animation = actor->animation.id;
+        return layers->lower_time_ms;
+    }
+    gameplay_duration = toy_game_animation_info(TOY_GAME_ANIM_MOVE)->duration_ms;
+    if (layers->lower != RASTERFALL_ACTION_LOCOMOTION_WALK ||
+        layers->last_gameplay_animation != TOY_GAME_ANIM_MOVE ||
+        gameplay_duration <= 0) {
+        layers->lower_time_ms = (layers->lower_time_ms + actor->animation.time_ms) %
+            clip->duration_ms;
+    } else {
+        delta = actor->animation.time_ms - layers->last_gameplay_time_ms;
+        if (delta < 0) delta += gameplay_duration;
+        if (delta >= 0 && delta <= gameplay_duration)
+            layers->lower_time_ms =
+                (layers->lower_time_ms + delta) % clip->duration_ms;
+    }
+    layers->last_gameplay_time_ms = actor->animation.time_ms;
+    layers->last_gameplay_animation = actor->animation.id;
+    return layers->lower_time_ms;
+}
 
 static void modular_actor_facing(const struct toy_game_actor *actor,
                                  int *sy, int *cy)
@@ -6001,18 +6032,17 @@ static int render_modular_ai_teammate(struct toy_renderer *renderer,
         lower = RASTERFALL_ACTION_LOCOMOTION_IDLE;
     if (!debug_actor && actor->animation.id == TOY_GAME_ANIM_MOVE) {
         lower = RASTERFALL_ACTION_LOCOMOTION_WALK;
-        actor_action_layers[actor_index].lower_time_ms = actor->animation.time_ms;
     } else if (!debug_actor && (actor->animation.id == TOY_GAME_ANIM_IDLE ||
                actor->animation.id == TOY_GAME_ANIM_NONE)) {
         lower = RASTERFALL_ACTION_LOCOMOTION_IDLE;
-        actor_action_layers[actor_index].lower_time_ms = actor->animation.time_ms;
+        actor_action_layers[actor_index].lower_time_ms = 0;
     }
     if (!debug_actor) {
-        actor_action_layers[actor_index].lower = lower;
         upper = actor->animation.id == TOY_GAME_ANIM_FIRE ?
             RASTERFALL_ACTION_RIFLE_AIM : RASTERFALL_ACTION_RIFLE_IDLE;
-        lower_time_ms = actor_action_layers[actor_index].lower_time_ms +
-            (actor->animation.id == TOY_GAME_ANIM_FIRE ? actor->animation.time_ms : 0);
+        lower_time_ms = modular_locomotion_time(actor_index, actor,
+            humanoid_action(lower));
+        actor_action_layers[actor_index].lower = lower;
         upper_time_ms = actor->animation.time_ms;
         additive_time_ms = actor->animation.time_ms;
     }

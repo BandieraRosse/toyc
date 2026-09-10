@@ -739,6 +739,7 @@ int rasterfall_action_logic_test(void)
 {
     struct rasterfall_action_clip clip, lower, aim, fire, recoil;
     struct rasterfall_animation_rotation a, b;
+    unsigned int i, upper_roles = 0;
     if (rasterfall_action_load(&clip, "rasterfall/assets/actions/rifle_idle.rfanim") < 0) return 1;
     if (clip.id != RASTERFALL_ACTION_RIFLE_IDLE || clip.duration_ms != 2400 ||
         clip.track_count < 5 || clip.key_count < 10) return 2;
@@ -760,5 +761,21 @@ int rasterfall_action_logic_test(void)
             RASTERFALL_ACTION_LAYER_ADDITIVE) ||
         role_in_layer(RASTERFALL_HUMANOID_LEFT_UPPER_LEG,
             RASTERFALL_ACTION_LAYER_UPPER_BODY)) return 5;
+    for (i = 0; i < aim.track_count; i++) {
+        switch (aim.tracks[i].target) {
+        case RASTERFALL_HUMANOID_CHEST: upper_roles |= 1u << 0; break;
+        case RASTERFALL_HUMANOID_RIGHT_UPPER_ARM: upper_roles |= 1u << 1; break;
+        case RASTERFALL_HUMANOID_RIGHT_FOREARM: upper_roles |= 1u << 2; break;
+        case RASTERFALL_HUMANOID_LEFT_UPPER_ARM: upper_roles |= 1u << 3; break;
+        case RASTERFALL_HUMANOID_LEFT_FOREARM: upper_roles |= 1u << 4; break;
+        default: break;
+        }
+    }
+    if (upper_roles != 0x1f) return 6;
+    rasterfall_animation_quat_to_euler(sample_track(&lower,&lower.tracks[1],0),&a);
+    rasterfall_animation_quat_to_euler(sample_track(&lower,&lower.tracks[1],400),&b);
+    if (lower.duration_ms != 800 || a.x != 24 || b.x != -24 ||
+        sample_track(&lower,&lower.tracks[1],800).x !=
+        sample_track(&lower,&lower.tracks[1],0).x) return 7;
     return 0;
 }

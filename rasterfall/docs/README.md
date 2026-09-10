@@ -1,7 +1,7 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-10
-> 源码核对基线：工作区（Humanoid Action Composition V1.1 additive recoil；modular action runtime path；RF Humanoid/weapon forward basis；PRIMARY_GRIP weapon presentation；双正式四人小队 runtime）
+> 源码核对基线：工作区（Humanoid Action Composition V1.1 additive recoil；modular RFANIM presentation clock；RFCHAR +Z forward basis；PRIMARY_GRIP weapon presentation；双正式四人小队 runtime）
 
 本目录面向接手 Rasterfall 任务的编码代理。目标不是介绍玩法，而是先把问题归到正确的
 状态所有者和文件，再开始搜索。命令、资源导入方法和用户可见特性仍以

@@ -1,7 +1,7 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-10
-> 源码核对基线：工作区（Humanoid Action Composition V1.1 additive recoil；modular action runtime path；RF Humanoid/weapon forward basis；PRIMARY_GRIP weapon presentation；出生点 V2 action debug station；双正式四人 squad；Lighting V1）
+> 源码核对基线：工作区（Humanoid Action Composition V1.1 additive recoil；modular RFANIM 独立 locomotion 时钟；RFCHAR +Z forward basis；PRIMARY_GRIP weapon presentation；出生点 V2 action debug station；双正式四人 squad；Lighting V1）
 
 > 源码核对补充：正式 Hurd actor 通过四个专用 character profile 进入职业外观；恢复的四名 Maid 旗卫以 Maid character profile 接入 actor，同时继续由 anime identity 选择骨骼模型；普通 player、Eula、佣兵解析为 NONE。
 
@@ -23,6 +23,11 @@ modular actor 在提交 body 前把玩法 animation semantic 适配为固定 act
 adapter 接入，不能从骨骼姿态反推瞄准。组合完成并更新 bones 后，被动 gear 只读 HEAD/CHEST/BACK/HIP
 等 finalized attachment，active weapon 则只读 finalized `WEAPON_R`，以 authored `PRIMARY_GRIP`
 派生 weapon origin 和其他 weapon sockets；两条展示路径都不回写 instance。
+
+RFANIM walk 的 800ms authored 周期不直接复用 gameplay MOVE 的 400ms 回卷值。modular renderer
+按 actor instance 累计跨回卷的展示时间，短暂 upper-body action 期间保留 lower-body 相位；因此动作
+完整走完 800ms 后才循环。RFCHAR body、gear、socket 与 weapon 统一遵循契约的模型 `+Z` 前向，actor
+yaw 不再附加 180 度修正。
 
 出生点附近的 V2 action debug station 是 renderer-only fixture：它使用独立的
 `rasterfall_model_instance`，不进入 `toy_game_actor`。按钮循环选择 `IDLE`、`WALK`、`RIFLE AIM`

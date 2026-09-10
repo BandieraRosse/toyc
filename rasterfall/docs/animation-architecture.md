@@ -127,6 +127,9 @@ rest basis 重定向。不要在 VMD、glTF 解析器里添加目标角色专用
 和网络同步，动漫角色的 VMD walk 则按自身 clip 时长采样。角色渲染在组合 locomotion 时
 使用独立展示时钟，并跨越 MOVE 计时回卷累计真实经过的时间；不能把 `actor->animation.time_ms`
 映射为整个 clip 的时间，否则多秒 walk 会在一个玩法 MOVE 周期内快速播完。
+RF Humanoid modular actor 同样遵守该规则：其 RFANIM WALK 使用逐 actor presentation accumulator，
+400ms gameplay 回卷只贡献 elapsed delta，不直接成为 800ms authored clip 的采样时间；upper-body
+射击覆盖不会重置已经累计的 lower-body 相位。
 
 ## 姿态求值顺序
 
