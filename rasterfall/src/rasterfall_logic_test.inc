@@ -369,11 +369,19 @@ static int run_logic_test(void)
                 if (!actor->active || actor->kind != TOY_GAME_ACTOR_AI ||
                     actor->character_id != roster->members[member].character_id ||
                     strcmp(actor->name, roster->members[member].name) ||
+                    actor->flag_index != (squad == RASTERFALL_SQUAD_STANDARD_RESPONSE ?
+                                          RASTERFALL_STANDARD_FLAG_INDEX :
+                                          RASTERFALL_ASSAULT_FLAG_INDEX) ||
                     !rasterfall_character_visual_recipe_for_character(
                         actor->character_id))
                     return 227;
             }
         }
+        if (session.flags[RASTERFALL_STANDARD_FLAG_INDEX].x != 0 ||
+            session.flags[RASTERFALL_STANDARD_FLAG_INDEX].z != 7000 ||
+            session.flags[RASTERFALL_ASSAULT_FLAG_INDEX].x != 14000 ||
+            session.flags[RASTERFALL_ASSAULT_FLAG_INDEX].z != 0)
+            return 228;
     }
     {
         static const char *maid_names[RASTERFALL_MAID_SQUAD_SIZE] = {
@@ -647,7 +655,7 @@ static int run_logic_test(void)
         }
     }
     /* 远端旗帜操作必须由主机状态承接，并随携带者同步位置。 */
-    if (session.flag_count != 3) return 131;
+    if (session.flag_count != 5) return 131;
     camera.x = session.flags[0].x;
     camera.z = session.flags[0].z;
     rasterfall_session_toggle_flag_remote(&session, &camera, 1);

@@ -1,7 +1,7 @@
 # 玩法、会话、地图与 AI
 
 > 文档更新：2026-09-10
-> 源码核对基线：工作区（Jesus 使用稳定 RF Rifleman identity；两个正式四人 squad roster；model resource/instance/gear/palette 仍只属于 presentation；其余玩法真值不变）
+> 源码核对基线：工作区（Jesus 使用稳定 RF Rifleman identity；两个正式四人 squad roster 已分别编入中央/东部旗帜；model resource/instance/gear/palette 仍只属于 presentation；其余玩法真值不变）
 
 > 源码核对补充：正式 Hurd 四人使用专用 character IDs；原 Maid 四人旗卫在 flag 1 原位恢复并使用 Maid character/profession；普通 player、Eula、佣兵为 NONE；固定角色索引、HURD 旗帜 assignment 与派生 control status。
 
@@ -23,6 +23,11 @@ Standard Response Squad 为 Jesus、Squad A Medic、Squad A Engineer、Squad A R
 再通过普通 `toy_game_add_ai()` 创建其余七名 actor；session 只保存 squad 到 actor index 的轻量
 运行时定位。AI、武器、动画、伤害、碰撞和网络规则继续使用原有 actor 路径，actor 不携带 model、gear、
 RMESH 或 attachment 数据。
+
+两套正式小队在 reset 时各自绑定一面固定旗帜：Standard Response 使用 `RESP` 旗帜（`(0,7000)`，
+战场中部北侧空地），Assault 使用 `ASLT` 旗帜（`(14000,0)`，东部空地）。四名成员分别使用旗帜的
+四角部署槽；这两面旗帜不占用原中央基地、Maid 或 Hurd 的旗帜索引。坐标依据正式地图布局导出核对，
+并避开中央基地、东侧刷怪带和东侧走廊。
 
 ## 三层职责
 

@@ -19,13 +19,17 @@
 #define HURD_CONTROL_MAX_Z 31500
 #define HURD_FLAG_X 0
 #define HURD_FLAG_Z 28500
+#define STANDARD_FLAG_X 0
+#define STANDARD_FLAG_Z 7000
+#define ASSAULT_FLAG_X 14000
+#define ASSAULT_FLAG_Z 0
 static const int roster_spawn_positions[RASTERFALL_SQUAD_COUNT]
                                   [RASTERFALL_SQUAD_SIZE][2] = {
     {
-        { 1000, 0 }, { 1450, 0 }, { 1900, 0 }, { 2350, 0 }
+        { 420, 7420 }, { -420, 7420 }, { -420, 6580 }, { 420, 6580 }
     },
     {
-        { -1000, 2100 }, { -400, 2100 }, { 200, 2100 }, { 800, 2100 }
+        { 14420, 420 }, { 13580, 420 }, { 13580, -420 }, { 14420, -420 }
     }
 };
 static const int hired_ai_positions[][2] = {
@@ -115,6 +119,22 @@ static int session_assign_actor_to_flag(struct rasterfall_session *s,
     return toy_game_assign_actor_deployment(&s->game_state, actor_index,
         s->flags[fi].x + s->flags[fi].slot_offsets[slot][0],
         s->flags[fi].z + s->flags[fi].slot_offsets[slot][1], fi);
+}
+
+static void session_assign_roster_to_flag(struct rasterfall_session *s,
+                                          int squad, int flag_index)
+{
+    int member;
+    if (squad < 0 || squad >= RASTERFALL_SQUAD_COUNT) return;
+    for (member = 0; member < RASTERFALL_SQUAD_SIZE; member++) {
+        int actor_index = s->squad_runtime[squad].actor_indices[member];
+        if (actor_index < 0) continue;
+        toy_game_assign_actor_deployment(
+            &s->game_state, actor_index,
+            s->flags[flag_index].x + s->flags[flag_index].slot_offsets[member][0],
+            s->flags[flag_index].z + s->flags[flag_index].slot_offsets[member][1],
+            flag_index);
+    }
 }
 
 /* The assignment list is deliberately stable: assigned actors first, then
@@ -406,7 +426,7 @@ void rasterfall_session_reset(struct rasterfall_session *session,
             &session->ai_registry, TOY_GAME_PLAYER_ACTOR_INDEX,
             RASTERFALL_AI_CONTROLLER_MANAGED_PLAYER, 100,
             RASTERFALL_AI_POLICY_MANAGED_SIMPLE);
-    session->flag_count = 3;
+    session->flag_count = 5;
     session->carried_flag = -1;
     session->assignment_flag = 0;
     /* Keep the initial flag at the world origin while the player starts
@@ -416,6 +436,16 @@ void rasterfall_session_reset(struct rasterfall_session *session,
     session_init_flag(session, RASTERFALL_MAID_FLAG_INDEX, -12000, 0);
     session_init_flag(session, RASTERFALL_HURD_FLAG_INDEX,
                       HURD_FLAG_X, HURD_FLAG_Z);
+    session_init_flag(session, RASTERFALL_STANDARD_FLAG_INDEX,
+                      STANDARD_FLAG_X, STANDARD_FLAG_Z);
+    session->flags[RASTERFALL_STANDARD_FLAG_INDEX].color = 0x2B765B;
+    strncpy(session->flags[RASTERFALL_STANDARD_FLAG_INDEX].label, "RESP", 4);
+    session->flags[RASTERFALL_STANDARD_FLAG_INDEX].label[4] = 0;
+    session_init_flag(session, RASTERFALL_ASSAULT_FLAG_INDEX,
+                      ASSAULT_FLAG_X, ASSAULT_FLAG_Z);
+    session->flags[RASTERFALL_ASSAULT_FLAG_INDEX].color = 0xB75A2C;
+    strncpy(session->flags[RASTERFALL_ASSAULT_FLAG_INDEX].label, "ASLT", 4);
+    session->flags[RASTERFALL_ASSAULT_FLAG_INDEX].label[4] = 0;
     session->flags[RASTERFALL_HURD_FLAG_INDEX].color = 0xD58A2D;
     strncpy(session->flags[RASTERFALL_HURD_FLAG_INDEX].label, "HURD", 4);
     session->flags[RASTERFALL_HURD_FLAG_INDEX].label[4] = 0;
@@ -433,6 +463,10 @@ void rasterfall_session_reset(struct rasterfall_session *session,
             toy_game_assign_actor_deployment(&session->game_state, i,
                 session->flags[0].x + session->flags[0].slot_offsets[i][0],
                 session->flags[0].z + session->flags[0].slot_offsets[i][1], 0);
+    session_assign_roster_to_flag(session, RASTERFALL_SQUAD_STANDARD_RESPONSE,
+                                  RASTERFALL_STANDARD_FLAG_INDEX);
+    session_assign_roster_to_flag(session, RASTERFALL_SQUAD_ASSAULT,
+                                  RASTERFALL_ASSAULT_FLAG_INDEX);
     {
         static const char *maid_names[RASTERFALL_MAID_SQUAD_SIZE] = {
             "ANIME_GUARD_1", "ANIME_GUARD_2",
