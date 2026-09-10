@@ -135,7 +135,7 @@ backpack/hip/chest gear、socket attachment 与八 instance 隔离；三视角�
 程序化敌人模型采用统一的 `enemy_body_part` 描述：每个条目对应一个基本身体组件，类型包括局部朝向盒、世界盒、圆柱、椭球和面部矩形，尺寸与局部偏移仍使用现有 RFU 数值。通用解释器按描述顺序提交几何，因此可以在不改变玩法状态的前提下继续接入参数化配置。敌人位置以 `toy_game_enemy.x/z` 为水平锚点，垂直基准由地面 `Y=-900`、`ground_y` 和 `airborne_y` 组成；Charger 的水平放大和普通敌人的既有缩放语义保留在解释器中。Tank 的挥臂依赖蓄力时间，是动态组件，继续由专用函数求值后插入静态组件之间，以保持原有遮挡和绘制顺序。
 
 敌人死亡样式由 `rasterfall_effects` 按槽位持有，仅在首次观察到 `active == 2` 时选择：约 10%
-保留原有整体压扁，其他情况在既有 400ms `dying_ms` 窗口内保持身体尺度并按稳定顺序逐步省略
+保留原有整体压扁，其他情况在 1500ms `dying_ms` 窗口内保持身体尺度并按稳定顺序逐步省略
 `enemy_body_part`，同时由固定容量 emitter 生成 raster fragments。Common 使用中等碎片，Fast 使用
 更短、更强前向速度的碎片，Heavy 使用更多、更大且覆盖完整死亡窗口的碎片；玩法仍按原计时清空
 enemy slot，样式、碎片和消隐阈值均不进入 snapshot。受击方向偏移继续读取 effect event payload，

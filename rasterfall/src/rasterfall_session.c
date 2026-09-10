@@ -914,6 +914,8 @@ static void session_client_interact_banner(struct rasterfall_session *session)
         session->banner_text = "WEST CORRIDOR: 16 RANDOM ENEMIES";
     else if (it->kind == TOY_MAP_PICKUP_WEST_CORRIDOR_NO_TANK_BUTTON)
         session->banner_text = "WEST CORRIDOR: 16 RANDOM (NO TANK)";
+    else if (it->kind == TOY_MAP_PICKUP_ENEMY_DEATH_TEST_BUTTON)
+        session->banner_text = "ENEMY DEATH TEST REQUEST SENT";
     else if (it->kind == TOY_MAP_PICKUP_AMMO)
         session->banner_text = "AMMO REFILLED";
     else if (it->kind == TOY_MAP_PICKUP_WEAPON ||
@@ -1024,6 +1026,50 @@ static void session_interact(struct rasterfall_session *session,
         session->banner_ms = 3500;
         session->banner_text = "WEST CORRIDOR: RANDOM HORDE (NO TANK)";
         __printf("rasterfall: west corridor random no-tank horde summoned %d/16 enemies\n", n);
+    } else if (it->kind == TOY_MAP_PICKUP_ENEMY_DEATH_TEST_BUTTON) {
+        static const int types[6] = {
+            TOY_GAME_ENEMY_PURSUIT_COMMON,
+            TOY_GAME_ENEMY_PURSUIT_FAST,
+            TOY_GAME_ENEMY_PURSUIT_HEAVY,
+            TOY_GAME_ENEMY_PURSUIT_COMMON,
+            TOY_GAME_ENEMY_PURSUIT_FAST,
+            TOY_GAME_ENEMY_PURSUIT_HEAVY
+        };
+        struct toy_game_actor *player =
+            toy_game_local_player_actor(&session->game_state);
+        int spawned = 0, killed = 0, row;
+        for (row = 0; row < 6; row++) {
+            struct toy_game_box point = {
+                11000 + row * 1200, 11000 + row * 1200,
+                -13500, -13500, 0, 0
+            };
+            unsigned char occupied[TOY_GAME_MAX_ENEMIES];
+            int enemy_index;
+            for (enemy_index = 0; enemy_index < TOY_GAME_MAX_ENEMIES;
+                 enemy_index++)
+                occupied[enemy_index] =
+                    session->game_state.enemies[enemy_index].active != 0;
+            if (toy_game_spawn_horde_type(&session->game_state, types[row],
+                                          1, 1, &point, 1, 0) != 1)
+                continue;
+            spawned++;
+            for (enemy_index = 0; enemy_index < TOY_GAME_MAX_ENEMIES;
+                 enemy_index++)
+                if (!occupied[enemy_index] &&
+                    session->game_state.enemies[enemy_index].active == 1)
+                    break;
+            if (enemy_index < TOY_GAME_MAX_ENEMIES &&
+                toy_game_apply_reported_hit(&session->game_state, player,
+                    enemy_index,
+                    session->game_state.enemies[enemy_index].hp) == 2)
+                killed++;
+        }
+        session->banner_ms = 2500;
+        session->banner_text = killed == 6 ?
+            "ENEMY DEATH TEST: 6 LETHAL HITS" :
+            "ENEMY DEATH TEST: PARTIAL (ENEMY SLOTS BUSY)";
+        __printf("rasterfall: enemy death test spawned=%d killed=%d\n",
+                 spawned, killed);
     } else if (it->kind == TOY_MAP_PICKUP_ATTACK_X2_BUTTON ||
                it->kind == TOY_MAP_PICKUP_ATTACK_X3_BUTTON ||
                it->kind == TOY_MAP_PICKUP_ATTACK_X4_BUTTON) {

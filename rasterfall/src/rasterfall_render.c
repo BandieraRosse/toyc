@@ -4233,7 +4233,8 @@ static int render_interactables(struct toy_renderer *renderer,
                  it->kind == TOY_MAP_PICKUP_BASE_2_BUTTON ||
                  it->kind == TOY_MAP_PICKUP_WAVE_SKIP_BUTTON ||
                  it->kind == TOY_MAP_PICKUP_WEST_CORRIDOR_BUTTON ||
-                 it->kind == TOY_MAP_PICKUP_WEST_CORRIDOR_NO_TANK_BUTTON)
+                 it->kind == TOY_MAP_PICKUP_WEST_CORRIDOR_NO_TANK_BUTTON ||
+                 it->kind == TOY_MAP_PICKUP_ENEMY_DEATH_TEST_BUTTON)
             pixels += render_button(renderer, camera, it->x, it->y, it->z, on,
                                     it->x < -10000 ? 1 : it->x > 10000 ? 2 : 0);
         else if (it->kind == TOY_MAP_PICKUP_SMOKER_BUTTON ||

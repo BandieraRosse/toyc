@@ -8,7 +8,7 @@ try:
 except ImportError as exc:
     raise SystemExit("map layout export requires Pillow; run: make setup-map-layout") from exc
 
-BUTTONS={"button","button_air","button_alarm","button_heavy","button_fast","button_base1","button_base2","button_smoker","button_charger","button_tank","button_money","button_clear_hired","button_wave_skip","button_attack_x2","button_attack_x3","button_attack_x4","button_pose_reset","button_pose_right_arm","button_pose_arms","button_pose_body","button_anim_idle","button_anim_walk","button_anim_jog","button_glb_idle","button_glb_walk","button_glb_jog","button_vmd_walk","button_vmd_manjusaka","button_animation_composition","button_humanoid_pose_debug","button_west_corridor","button_west_corridor_no_tank"}
+BUTTONS={"button","button_air","button_alarm","button_heavy","button_fast","button_base1","button_base2","button_smoker","button_charger","button_tank","button_money","button_clear_hired","button_wave_skip","button_attack_x2","button_attack_x3","button_attack_x4","button_pose_reset","button_pose_right_arm","button_pose_arms","button_pose_body","button_anim_idle","button_anim_walk","button_anim_jog","button_glb_idle","button_glb_walk","button_glb_jog","button_vmd_walk","button_vmd_manjusaka","button_animation_composition","button_humanoid_pose_debug","button_west_corridor","button_west_corridor_no_tank","button_enemy_death_test"}
 PREFIX={"safe":"SF","base":"B","spawn":"SP","ai_spawn":"SP","ramp":"R","platform":"P","prop":"PR","button":"BTN","air_wall":"AW","box":"BX"}
 LAYOUT_RECORDS={"world","safe","base","spawn","ai_spawn","prop","ramp","platform","platform_roof","box"}|BUTTONS
 def num(s):

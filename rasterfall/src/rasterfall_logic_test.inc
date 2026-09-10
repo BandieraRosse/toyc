@@ -639,6 +639,49 @@ static int run_logic_test(void)
                 session.humanoid_debug_time_ms != 0) return 227;
         }
     }
+    {
+        int item, i, dying = 0, type_counts[3] = { 0, 0, 0 };
+        int kills_before;
+        rasterfall_session_reset(&session, &camera, 1);
+        for (item = 0; item < session.item_count; item++)
+            if (session.items[item].kind ==
+                    TOY_MAP_PICKUP_ENEMY_DEATH_TEST_BUTTON) break;
+        if (item >= session.item_count) return 228;
+        camera.x = session.items[item].x;
+        camera.z = session.items[item].z + 500;
+        camera.sy = 0;
+        camera.cy = -1024;
+        kills_before = toy_game_local_player_actor(&session.game_state)->kills;
+        rasterfall_session_interact_remote(&session, &camera,
+            TOY_MAP_PICKUP_ENEMY_DEATH_TEST_BUTTON);
+        for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
+            const struct toy_game_enemy *enemy = &session.game_state.enemies[i];
+            if (enemy->active != 2 || enemy->z != -13500) continue;
+            dying++;
+            if (enemy->dying_ms != TOY_GAME_DYING_MS) return 229;
+            if (enemy->type >= TOY_GAME_ENEMY_PURSUIT_COMMON &&
+                enemy->type <= TOY_GAME_ENEMY_PURSUIT_FAST)
+                type_counts[enemy->type]++;
+        }
+        if (dying != 6 || type_counts[TOY_GAME_ENEMY_PURSUIT_COMMON] != 2 ||
+            type_counts[TOY_GAME_ENEMY_PURSUIT_HEAVY] != 2 ||
+            type_counts[TOY_GAME_ENEMY_PURSUIT_FAST] != 2 ||
+            toy_game_local_player_actor(&session.game_state)->kills !=
+                kills_before + 6)
+            return 230;
+        rasterfall_effects_reset_fire(&effects);
+        rasterfall_effects_sync_enemy_feedback(&effects, &session.game_state);
+        for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++)
+            if (session.game_state.enemies[i].active == 2 &&
+                effects.enemy_death_seen[i] != 1)
+                return 231;
+        toy_game_update_world(&session.game_state, TOY_GAME_DYING_MS);
+        for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++)
+            if (session.game_state.enemies[i].z == -13500 &&
+                session.game_state.enemies[i].active != 0)
+                return 232;
+        rasterfall_session_reset(&session, &camera, 1);
+    }
     if (session.level.safe_count > 0 &&
         session.game_state.safe_room_count != session.level.safe_count)
         return 126;

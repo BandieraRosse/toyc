@@ -272,11 +272,11 @@ static void spawn_enemy_death_presentation(
     const struct toy_game_enemy_info *info;
     if (!effects || !enemy) return;
     if (enemy->type == TOY_GAME_ENEMY_PURSUIT_FAST) {
-        count = 12; lifetime_ms = 260; spread = 1350; size = 460; gravity_y = 6;
+        count = 12; lifetime_ms = 1000; spread = 1350; size = 460; gravity_y = 3;
     } else if (enemy->type == TOY_GAME_ENEMY_PURSUIT_HEAVY) {
         count = 22; lifetime_ms = TOY_GAME_DYING_MS; spread = 1900; size = 820; gravity_y = 4;
     } else {
-        count = 16; lifetime_ms = 330; spread = 1500; size = 560; gravity_y = 5;
+        count = 16; lifetime_ms = 1350; spread = 1500; size = 560; gravity_y = 4;
     }
     info = toy_game_enemy_info_or_null(enemy->type);
     if (info && info->color) color = info->color;

@@ -1,7 +1,7 @@
 # Rasterfall 地图格式
 
 > 文档更新：2026-09-10
-> 源码核对基线：工作区（地图布局 PNG/JSON 导出器使用仓库内 GB2312 16×16 点阵字库；JSON 查询器；空气墙竖直 box 和可站立 platform 通过同组 role 同步切换显示、碰撞与导航；边界 box 显式 blocks_airborne；外围渲染墙与 gameplay 碰撞分离；Hurd 北侧外围渲染墙在据点范围断开，避免与据点北墙重叠；Hurd 南侧纯渲染墙在入口范围断开，保留 x=-6000..6000 的可见入口；静态 prop 实例及 profile 碰撞盒接入现有 primitive/nav；V2 action debug button remains presentation-only）
+> 源码核对基线：工作区（地图布局 PNG/JSON 导出器使用仓库内 GB2312 16×16 点阵字库；JSON 查询器；开发者区 enemy death test button；空气墙竖直 box 和可站立 platform 通过同组 role 同步切换显示、碰撞与导航；边界 box 显式 blocks_airborne；外围渲染墙与 gameplay 碰撞分离；Hurd 北侧外围渲染墙在据点范围断开，避免与据点北墙重叠；Hurd 南侧纯渲染墙在入口范围断开，保留 x=-6000..6000 的可见入口；静态 prop 实例及 profile 碰撞盒接入现有 primitive/nav；V2 action debug button remains presentation-only）
 
 > 源码核对补充：北侧通道扩宽为 Hurd 防区，原中央北侧刷怪区拆到左右两翼。
 
@@ -57,6 +57,11 @@ ai_spawn name base_id level1|level2|level3 x z downed
 session 的 presentation 状态，不创建 gameplay actor；当前地图将按钮放在
 `(-12600,-12800)`，对应的 V2 Rifleman 由 renderer 固定展示在 `(-11800,-10200)`。
 按钮按 `IDLE → WALK → RIFLE AIM → AIM + RECOIL` 循环。
+
+`button_enemy_death_test 14000 -10500 -250` 位于开发者区东南空地。交互后在其正前方
+`z=-13500` 生成一排六个真实 gameplay enemy（Common/Fast/Heavy 各两个），随即通过正式
+`toy_game_apply_reported_hit()` 入口施加等于当前生命值的伤害。它不维护独立假人或动画时钟；击杀
+统计、死亡状态、effects 同步、网络已有 enemy 状态和最终清槽均沿用正式链路。
 
 静态环境组件使用 registry 中的稳定名称或 ID，不直接引用模型路径：
 

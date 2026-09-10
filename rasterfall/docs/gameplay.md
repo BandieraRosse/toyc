@@ -108,6 +108,10 @@ active、未被携带且位于区域内；assigned count 沿用普通旗帜语�
 
 西侧走廊出口旁墙面的 `button_west_corridor_no_tank` 可一次生成 16 个随机敌人，随机池包含普通、重型、快速、Smoker 和 Charger，不包含 Tank。
 
+开发者区东南侧的 `button_enemy_death_test` 使用现有 typed horde spawn 在固定空地生成 Common、
+Fast、Heavy 各两个，并逐个调用正式 reported-hit 致死入口。该按钮只负责构造可重复测试场景，不
+绕过敌人 HP、击杀事件、`enemies_alive` 或 `dying_ms`；死亡展示仍由 effects 从 gameplay 状态派生。
+
 敌人的主机玩家和 AI/远端 actor 候选都必须通过战斗区域检查。所有启用中的 `air_gate*` primitive
 共同定义一条不可跨越的索敌控制线；即使正式地图的中央开发者门和上墙坡道让两侧仍属于同一导航
 component，敌人也不能索敌到控制线另一侧。关闭整组空气墙后该限制随之解除。标记为
