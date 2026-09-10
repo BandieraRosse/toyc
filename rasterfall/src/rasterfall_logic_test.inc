@@ -295,6 +295,7 @@ static int run_logic_test(void)
     if (rasterfall_humanoid_logic_test() != 0) return 162;
     if (rasterfall_humanoid_basis_logic_test() != 0) return 163;
     if (rasterfall_humanoid_retarget_logic_test() != 0) return 164;
+    if (rasterfall_action_logic_test() != 0) return 227;
     /* Temporarily disabled: this test currently reports the generic error
      * code 161, which is the wrapper for rasterfall_animation_logic_test().
      * The preceding two-bone IK diagnostic is not the failure: its
@@ -1690,13 +1691,11 @@ static int run_logic_test(void)
             if (r->hit_enemy) return 39;
         }
     }
-    /* 新地图没有按钮、武器/弹药拾取物或据点阶段；三名原据点 AI
-     * 是基地防守队伍，尸潮由普通波次自动开始。 */
+    /* 新地图没有按钮、武器/弹药拾取物或据点阶段；正式小队会占用
+     * 后续 actor slots 并绑定各自旗帜，只有本地玩家固定属于基地。 */
     if (game.campaign_mode || game.campaign_stage != 0 ||
         game.actors[1].active == 0 || game.actors[2].active == 0 ||
-        game.actors[0].flag_index != 0 ||
-        game.actors[1].flag_index != 0 ||
-        game.actors[2].flag_index != 0)
+        game.actors[0].flag_index != 0)
         return 32;
     {
         struct toy_game base_test;

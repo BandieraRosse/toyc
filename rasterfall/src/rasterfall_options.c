@@ -77,6 +77,9 @@ void rasterfall_options_usage(int fd)
         "  --model-retarget-test <model> <right-arm|left-arm|right-leg|chest>\n"
         "  --model-glb-animation <model> <glb> <clip>\n"
         "  --model-glb-motion-diagnostic <model> <glb>\n"
+        "  --action-info <action.rfanim>\n"
+        "  --action-preview <model.rmesh> <action.rfanim> <time-ms> <output.bmp>\n"
+        "  --pose-debug <model.rmesh> <action.rfanim> <time-ms> <humanoid-role>\n"
         "  legacy VMD diagnostics (old PMX/VMD path):\n"
         "    --vmd-eula-walk <model> <vmd>\n"
         "    --vmd-freeze-head | --vmd-freeze-torso\n"
@@ -193,6 +196,21 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
         } else if (!strcmp(option,"--model-glb-motion-diagnostic")) {
             if(require_arguments(argc,argv,arg,2,option)<0)return -1;
             o->glb_motion_model=argv[++arg];o->glb_motion_path=argv[++arg];
+        } else if (!strcmp(option,"--action-info")) {
+            if(require_arguments(argc,argv,arg,1,option)<0)return -1;
+            o->action_info_path=argv[++arg];
+        } else if (!strcmp(option,"--action-preview")) {
+            if(require_arguments(argc,argv,arg,4,option)<0)return -1;
+            o->action_preview_model=argv[++arg];o->action_preview_path=argv[++arg];
+            o->action_time_ms=!strcmp(argv[++arg],"0")?0:positive_int(argv[arg],-1);
+            o->action_preview_output=argv[++arg];
+            if(o->action_time_ms<0){__fprintf(2,"rasterfall: invalid action time\n");return -1;}
+        } else if (!strcmp(option,"--pose-debug")) {
+            if(require_arguments(argc,argv,arg,4,option)<0)return -1;
+            o->pose_debug_model=argv[++arg];o->pose_debug_action=argv[++arg];
+            o->action_time_ms=!strcmp(argv[++arg],"0")?0:positive_int(argv[arg],-1);
+            o->pose_debug_role=argv[++arg];
+            if(o->action_time_ms<0){__fprintf(2,"rasterfall: invalid action time\n");return -1;}
         } else if (!strcmp(option,"--vmd-eula-walk")) {
             if(require_arguments(argc,argv,arg,2,option)<0)return -1;
             o->vmd_walk_model=argv[++arg];o->vmd_walk_path=argv[++arg];

@@ -72,6 +72,7 @@
 #include "rasterfall_console.h"
 #include "rasterfall_units.h"
 #include "rasterfall_animation_composition.h"
+#include "rasterfall_action.h"
 #include "rasterfall_options.h"
 #include "math.h"
 
@@ -2458,6 +2459,44 @@ int main(int argc, char **argv)
     if (options.rigid_attachment_models)
         return rasterfall_render_rigid_attachment_acceptance(
             options.rigid_attachment_models, options.rigid_attachment_dir);
+    if (options.action_info_path) {
+        struct rasterfall_action_clip clip;
+        if (rasterfall_action_load(&clip, options.action_info_path) < 0) {
+            __fprintf(2, "rasterfall: invalid action %s\n", options.action_info_path);
+            return 1;
+        }
+        rasterfall_action_dump(&clip); return 0;
+    }
+    if (options.action_preview_model)
+        return rasterfall_render_action_preview(options.action_preview_model,
+            options.action_preview_path, options.action_time_ms,
+            options.action_preview_output);
+    if (options.pose_debug_model) {
+        struct rasterfall_action_clip clip;
+        struct rasterfall_model_resource resource;
+        struct rasterfall_model_instance instance;
+        int result = 1;
+        memset(&resource,0,sizeof(resource));memset(&instance,0,sizeof(instance));
+        if (rasterfall_action_load(&clip,options.pose_debug_action)==0 &&
+            rasterfall_model_resource_load(&resource,options.pose_debug_model)==0 &&
+            rasterfall_model_instance_init(&instance,&resource)==0 &&
+            rasterfall_action_apply(&instance,&clip,options.action_time_ms)==0 &&
+            rasterfall_action_pose_debug(&instance,options.pose_debug_role)==0) {
+            int socket;
+            __printf("weapon_sockets:\n");
+            for(socket=0;socket<RASTERFALL_WEAPON_SOCKET_COUNT;socket++) {
+                struct rasterfall_weapon_socket_transform t;
+                if(rasterfall_weapon_socket_transform(TOY_GAME_WEAPON_AK,socket,&t)==0)
+                    __printf("  %s position=(%d,%d,%d) rotation=(%.3f,%.3f,%.3f,%.3f)\n",
+                        rasterfall_weapon_socket_name(socket),t.position.x,t.position.y,
+                        t.position.z,t.rotation[0],t.rotation[1],t.rotation[2],t.rotation[3]);
+            }
+            result=0;
+        }
+        rasterfall_model_instance_unload(&instance);
+        rasterfall_model_resource_unload(&resource);
+        return result;
+    }
     if (options.character_acceptance_model)
         return rasterfall_render_character_acceptance_capture(
             options.character_acceptance_model,

@@ -7,6 +7,17 @@
 /* Rasterfall canonical weapon space: +X right, +Y up, +Z muzzle/forward.
  * Coordinates are RFU; 512 RFU is one metre. */
 struct rasterfall_cal_vec3 { int x, y, z; };
+enum rasterfall_weapon_socket {
+    RASTERFALL_WEAPON_SOCKET_PRIMARY_GRIP,
+    RASTERFALL_WEAPON_SOCKET_FOREGRIP,
+    RASTERFALL_WEAPON_SOCKET_MUZZLE,
+    RASTERFALL_WEAPON_SOCKET_MAGAZINE,
+    RASTERFALL_WEAPON_SOCKET_COUNT
+};
+struct rasterfall_weapon_socket_transform {
+    struct rasterfall_cal_vec3 position;
+    float rotation[4];
+};
 #define RASTERFALL_POSE_BODY_CHANNEL_COUNT 5
 struct rasterfall_weapon_asset_profile {
     const char *model_path;
@@ -16,6 +27,8 @@ struct rasterfall_weapon_asset_profile {
     /* Fixed source/asset attachment pivot.  Authored pose anchors are
      * evaluated relative to this pivot and must not move the mesh itself. */
     struct rasterfall_cal_vec3 attachment_grip;
+    struct rasterfall_cal_vec3 sockets[RASTERFALL_WEAPON_SOCKET_COUNT];
+    unsigned int socket_mask;
 };
 
 struct rasterfall_pose_calibration {
@@ -75,6 +88,10 @@ void rasterfall_calibration_init(struct rasterfall_calibration_state *state);
 void rasterfall_calibration_reset(struct rasterfall_calibration_state *state);
 const struct rasterfall_weapon_asset_profile *rasterfall_weapon_asset_profile(
     int weapon);
+const char *rasterfall_weapon_socket_name(enum rasterfall_weapon_socket socket);
+int rasterfall_weapon_socket_transform(int weapon,
+    enum rasterfall_weapon_socket socket,
+    struct rasterfall_weapon_socket_transform *transform);
 const struct rasterfall_pose_calibration *rasterfall_pose_calibration_resolve(
     const struct rasterfall_calibration_state *editor,
     int character_id, int weapon);

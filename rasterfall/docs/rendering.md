@@ -1,7 +1,7 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-10
-> 源码核对基线：工作区（Profession Modularization V1；双正式四人 squad；Jesus modular teammate；Lighting V1）
+> 源码核对基线：工作区（Humanoid Action System Foundation V1；双正式四人 squad；Lighting V1）
 
 > 源码核对补充：正式 Hurd actor 通过四个专用 character profile 进入职业外观；恢复的四名 Maid 旗卫以 Maid character profile 接入 actor，同时继续由 anime identity 选择骨骼模型；普通 player、Eula、佣兵解析为 NONE。
 

@@ -26,6 +26,7 @@ GAME_SRCS := rasterfall/src/rasterfall.c \
              rasterfall/src/rasterfall_hud.c \
              rasterfall/src/rasterfall_map.c \
              rasterfall/src/rasterfall_model.c \
+             rasterfall/src/rasterfall_action.c \
              rasterfall/src/rasterfall_humanoid_basis.c \
              rasterfall/src/rasterfall_humanoid_retarget.c \
              rasterfall/src/rasterfall_ai.c \

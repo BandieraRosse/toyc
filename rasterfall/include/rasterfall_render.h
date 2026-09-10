@@ -163,6 +163,9 @@ int rasterfall_render_squad_acceptance(const char *model_dir,
                                        const char *output_dir);
 int rasterfall_render_rigid_attachment_acceptance(const char *model_dir,
                                                   const char *output_dir);
+int rasterfall_render_action_preview(const char *model_path,
+                                     const char *action_path, int time_ms,
+                                     const char *output_path);
 void rasterfall_render_scene_stats(struct rasterfall_scene_stats *out);
 int rasterfall_render_near_clip_test(void);
 int rasterfall_render_static_prop_culling_logic_test(void);

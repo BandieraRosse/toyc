@@ -1,7 +1,7 @@
 # Rasterfall 模型与动画架构
 
 > 文档更新：2026-09-10
-> 源码核对基线：工作区（Generic Rigid Attachment V1；Model Resource / Model Instance V1；legacy PMX/VMD compatibility）
+> 源码核对基线：工作区（Humanoid Action System Foundation V1；legacy PMX/VMD compatibility）
 
 本文说明运行时模块边界、扩展入口和当前仍需控制的技术债。格式细节仍以各公共头文件和
 转换工具为准。
@@ -10,6 +10,22 @@
 [`character-assets.md`](character-assets.md) 唯一拥有；本页拥有导入后的动画求值顺序。
 
 ## 数据流
+
+Humanoid Action Foundation 的正式边界为：
+
+```text
+toy_game_actor animation semantic + deterministic time
+                    ↓
+rasterfall_action_clip（RFANIM、stable humanoid roles）
+                    ↓ rasterfall_action_apply
+rasterfall_model_instance finalized pose
+                    ↓
+human/weapon socket query → attachment / weapon / rendering
+```
+
+`toy_game_actor` 不持有动作资源、track、骨骼索引或最终姿态。action evaluator 是 semantic role 到
+目标骨架 stable ID 的唯一 runtime 适配点；`model_instance` 仍只拥有求值后的可变姿态。当前 proof
+仅迁移 modular RF Humanoid 的 `RIFLE_IDLE`，其余动作和 legacy procedural/PMX 路径不在 V1 扩张。
 
 ```text
 VMD / glTF / 程序生成动画
@@ -122,6 +138,8 @@ rest basis 重定向。不要在 VMD、glTF 解析器里添加目标角色专用
   应把解析与采样移入 `rasterfall/src/`，CLI 只保留输出和测试。
 - 当前 runtime clip 以骨骼局部旋转为主；加入通用骨骼平移、缩放或动画混合时，应增加
   独立 pose buffer 和 channel mask，不要继续增加 VMD 专用旁路状态。
+- RFANIM V1 固定容量、纯旋转、step/linear 插值，尚无分层 mask、混合、IK target 求解或 root motion。
+  `weapon_target` 等非骨骼 semantic channel 应在扩展格式时增加显式 channel kind，不能伪装成骨名。
 
 ## 回归要求
 

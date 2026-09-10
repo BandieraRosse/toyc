@@ -1075,3 +1075,57 @@ fail:
     rasterfall_model_resource_unload(&resource);
     return 1;
 }
+
+int rasterfall_render_action_preview(const char *model_path,
+                                     const char *action_path, int time_ms,
+                                     const char *output_path)
+{
+    struct rasterfall_action_clip clip;
+    struct rasterfall_model_resource resource;
+    struct rasterfall_model_instance instance;
+    struct rasterfall_model_attachment_transform rifle_frame;
+    struct rasterfall_render_context context;
+    struct rasterfall_rigid_transform actor;
+    struct camera camera;
+    struct toy_renderer renderer;
+    struct toy_surface surface;
+    uint32_t *pixels = NULL;
+    int result = 1, scale;
+    memset(&resource,0,sizeof(resource));memset(&instance,0,sizeof(instance));
+    if (!model_path || !action_path || !output_path ||
+        rasterfall_action_load(&clip,action_path)<0 ||
+        rasterfall_model_resource_load(&resource,model_path)<0 ||
+        rasterfall_model_instance_init(&instance,&resource)<0 ||
+        rasterfall_action_apply(&instance,&clip,time_ms)<0) goto done;
+    memset(&context,0,sizeof(context));context.fixed_floor_lighting=1;
+    rasterfall_render_bind(&context);gallery_load();
+    visual_acceptance_camera(&camera,3,1500);
+    memset(&surface,0,sizeof(surface));surface.width=800;surface.height=800;
+    surface.stride=surface.width*4;
+    pixels=tlibc_malloc((size_t)surface.stride*surface.height);
+    if(!pixels)goto done;
+    surface.pixels=pixels;
+    toy_renderer_init(&renderer);toy_renderer_set_frame_budget(&renderer,0);
+    rigid_identity(&actor);scale=visual_rf_scale(&instance.pose);
+    actor.translation[1]=-900-(int)((long long)instance.pose.min_y*scale/1000);
+    actor.scale_milli=scale;
+    if(toy_renderer_begin(&renderer,&surface,0x30343B)<0 ||
+       rasterfall_render_character_instance(&renderer,&camera,&instance,&actor,
+           0x40566F,0x2B3440)<0)goto render_done;
+    if(rifle_frame_transform(&instance.pose,&rifle_frame)==0)
+        render_skeletal_rifle(&renderer,&camera,&instance.pose,&rifle_frame,
+            &visual_rf_profile,visual_rf_calibration(1),0,(int)actor.translation[1],0,
+            0,1024,TOY_GAME_WEAPON_AK,0);
+    if(renderer.cmd_overflow||toy_renderer_flush(&renderer)<0||
+       rasterfall_hud_dump_bmp(output_path,&surface)<0)goto render_done;
+    __printf("rasterfall: action preview action=%s time=%d output=%s\n",
+             clip.name,time_ms,output_path);
+    result=0;
+render_done:
+    toy_renderer_destroy(&renderer);
+done:
+    if(pixels)tlibc_free(pixels);
+    rasterfall_model_instance_unload(&instance);
+    rasterfall_model_resource_unload(&resource);
+    return result;
+}

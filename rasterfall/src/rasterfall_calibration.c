@@ -35,6 +35,16 @@ static void profile_init(void)
     asset_profiles[TOY_GAME_WEAPON_AK].base_scale_milli = 760000;
     asset_profiles[TOY_GAME_WEAPON_AK].attachment_grip =
         (struct rasterfall_cal_vec3){-18, -8, 24};
+    asset_profiles[TOY_GAME_WEAPON_AK].sockets[RASTERFALL_WEAPON_SOCKET_PRIMARY_GRIP] =
+        (struct rasterfall_cal_vec3){-18, -8, 24};
+    asset_profiles[TOY_GAME_WEAPON_AK].sockets[RASTERFALL_WEAPON_SOCKET_FOREGRIP] =
+        (struct rasterfall_cal_vec3){5, 1, 137};
+    asset_profiles[TOY_GAME_WEAPON_AK].sockets[RASTERFALL_WEAPON_SOCKET_MUZZLE] =
+        (struct rasterfall_cal_vec3){-5, 28, 314};
+    asset_profiles[TOY_GAME_WEAPON_AK].sockets[RASTERFALL_WEAPON_SOCKET_MAGAZINE] =
+        (struct rasterfall_cal_vec3){-8, -42, 82};
+    asset_profiles[TOY_GAME_WEAPON_AK].socket_mask =
+        (1u << RASTERFALL_WEAPON_SOCKET_COUNT) - 1u;
     asset_profiles[TOY_GAME_WEAPON_AWP].skeletal = 1;
     asset_profiles[TOY_GAME_WEAPON_AWP].base_scale_milli = 920000;
     pose_profiles[0][TOY_GAME_WEAPON_AK].character_id = 0;
@@ -111,6 +121,26 @@ const struct rasterfall_weapon_asset_profile *rasterfall_weapon_asset_profile(in
     profile_init();
     if (weapon < 0 || weapon >= TOY_GAME_WEAPON_COUNT) weapon = TOY_GAME_WEAPON_PISTOL;
     return &asset_profiles[weapon];
+}
+
+const char *rasterfall_weapon_socket_name(enum rasterfall_weapon_socket socket)
+{
+    static const char *names[] = {"PRIMARY_GRIP", "FOREGRIP", "MUZZLE", "MAGAZINE"};
+    return socket >= 0 && socket < RASTERFALL_WEAPON_SOCKET_COUNT ? names[socket] : "INVALID";
+}
+
+int rasterfall_weapon_socket_transform(int weapon,
+    enum rasterfall_weapon_socket socket,
+    struct rasterfall_weapon_socket_transform *transform)
+{
+    const struct rasterfall_weapon_asset_profile *profile;
+    if (!transform || socket < 0 || socket >= RASTERFALL_WEAPON_SOCKET_COUNT) return -1;
+    profile = rasterfall_weapon_asset_profile(weapon);
+    if (!(profile->socket_mask & (1u << socket))) return -1;
+    memset(transform, 0, sizeof(*transform));
+    transform->position = profile->sockets[socket];
+    transform->rotation[3] = 1.0f;
+    return 0;
 }
 
 const struct rasterfall_pose_calibration *rasterfall_pose_calibration_resolve(

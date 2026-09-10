@@ -26,6 +26,7 @@
 #include "rasterfall_animation.h"
 #include "rasterfall_actor_animation.h"
 #include "rasterfall_animation_composition.h"
+#include "rasterfall_action.h"
 #include "rasterfall_character.h"
 #include "rasterfall_roster.h"
 #include "rasterfall_units.h"
@@ -60,6 +61,8 @@ struct vec3 { int x, y, z; };
 struct box { int minx, maxx, minz, maxz, height; uint32_t color; };
 
 static struct rasterfall_render_context *render_ctx;
+static struct rasterfall_action_clip rifle_idle_action;
+static int rifle_idle_action_load_attempted, rifle_idle_action_ready;
 static int active_character_palette_override;
 static uint32_t active_character_shirt_color, active_character_pants_color;
 static struct rasterfall_scene_stats scene_stats;
@@ -5609,6 +5612,14 @@ static int render_modular_ai_teammate(struct toy_renderer *renderer,
         runtime->instance_ready[actor_index] = 1;
     }
     if (rasterfall_model_instance_reset_pose(instance) < 0) return -1;
+    if (!rifle_idle_action_load_attempted) {
+        rifle_idle_action_load_attempted = 1;
+        rifle_idle_action_ready = rasterfall_action_load(&rifle_idle_action,
+            "rasterfall/assets/actions/rifle_idle.rfanim") == 0;
+    }
+    if (actor->animation.id == TOY_GAME_ANIM_IDLE && rifle_idle_action_ready &&
+        rasterfall_action_apply(instance, &rifle_idle_action,
+                                actor->animation.time_ms) < 0) return -1;
     pose = rasterfall_model_instance_pose(instance);
     weapon = actor->current_slot >= 0 &&
         actor->current_slot < TOY_GAME_WEAPON_SLOTS ?

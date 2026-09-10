@@ -1,0 +1,40 @@
+RFANIM 1
+action RIFLE_IDLE
+duration 1200
+skeleton RF_HUMANOID_V1
+loop 1
+
+track spine linear
+key 0 -2 0 0
+key 600 2 0 0
+key 1200 -2 0 0
+endtrack
+track chest linear
+key 0 -4 0 0
+key 600 -2 0 0
+key 1200 -4 0 0
+endtrack
+track left_upper_arm linear
+key 0 -42 8 -34
+key 1200 -42 8 -34
+endtrack
+track left_forearm linear
+key 0 -64 0 -5
+key 1200 -64 0 -5
+endtrack
+track left_hand linear
+key 0 0 0 -8
+key 1200 0 0 -8
+endtrack
+track right_upper_arm linear
+key 0 -54 -8 32
+key 1200 -54 -8 32
+endtrack
+track right_forearm linear
+key 0 -58 0 5
+key 1200 -58 0 5
+endtrack
+track right_hand linear
+key 0 0 0 8
+key 1200 0 0 8
+endtrack

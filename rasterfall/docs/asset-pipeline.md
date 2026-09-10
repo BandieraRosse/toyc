@@ -1,13 +1,23 @@
 # Rasterfall 资产转换与诊断
 
 > 文档更新：2026-09-10
-> 源码核对基线：工作区（rigid_attachment manifest；RFCHAR V1 → RFM2 v14；V2.1 与六职业 carrier）
+> 源码核对基线：工作区（RFANIM V1 inspection；RFCHAR V1 → RFM2 v14；V2.1 modular body）
 
 本文记录可执行的模型、纹理和动画工具链。运行时模块边界见 `assets-animation.md`，动画求值契约
 见 `animation-architecture.md`，资源是否允许发布见 `asset-sources.md`。
 
 人形角色的 canonical skeleton、GLB、attachment 与 skinning 输入门见
 [`character-assets.md`](character-assets.md)。该契约优先于本页记录的历史 character/PMX 路径。
+
+## RFANIM V1
+
+公开动作位于 `rasterfall/assets/actions/`。文本格式以 `RFANIM 1` 开头，依次声明 `action`、
+毫秒 `duration`、`skeleton RF_HUMANOID_V1`、`loop`，每个 `track` 使用小写 stable humanoid role
+和 `step|linear`，`key` 为 `time-ms rotation-x rotation-y rotation-z`。解析器拒绝未知动作、role、
+插值、逆序/越界关键帧和超出固定容量的数据。源格式骨名只能在离线导入时解析，不得写入 RFANIM。
+
+当前 fixture 为 `rifle_idle.rfanim`。用 `build/rf_anim_info` 检查结构，用 Rasterfall 的
+`--action-preview` 固定输出 BMP；相同模型、动作与毫秒输入必须逐字节一致。
 
 ## 统一导入入口与最终契约
 
