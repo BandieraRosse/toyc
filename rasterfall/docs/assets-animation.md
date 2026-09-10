@@ -1,7 +1,7 @@
 # 资源、模型与动画
 
 > 文档更新：2026-09-10
-> 源码核对基线：工作区（V2 final convergence、CHR1 socket 的 identity-rest bind 烘焙、RFCHAR 双手握持；PMX compatibility path）
+> 源码核对基线：工作区（V2 final convergence、CHR1 socket 的 identity-rest bind 烘焙、RFCHAR 双手握持；Eula actor walk clip lazy-load；PMX compatibility path）
 
 新建或生成 Blender 人形资产必须先读 [`character-assets.md`](character-assets.md)。它冻结
 Blender source → Character GLB → importer → runtime character asset → humanoid animation 主线；
@@ -30,8 +30,9 @@ Blender source → Character GLB → importer → runtime character asset → hu
 完整求值顺序、格式扩展点和回归要求见
 [`animation-architecture.md`](animation-architecture.md)。
 
-VMD/PMX 运行时预览属于旧资产兼容路径，仅在显式传入 `rasterfall` 的 legacy VMD
-参数时启用；程序正常启动不再默认加载 Eula 的私有 VMD 预览。新角色优先走
+VMD/PMX 开发者预览属于旧资产兼容路径，仅在显式传入 `rasterfall` 的 legacy VMD
+参数时启用；程序正常启动不显示 Eula 的私有 VMD 开发者预览。正式 Eula gameplay
+actor 若存在，会按角色 profile 懒加载 walk clip 作为移动表现。新角色优先走
 RFCHAR GLB → RFM2 v14 → stable role/attachment API，并使用角色验收和世界截图入口观察。
 
 ## 工具链定位

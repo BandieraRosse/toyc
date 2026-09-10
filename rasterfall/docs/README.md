@@ -1,7 +1,7 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-10
-> 源码核对基线：工作区（Lighting V1 统一 RMESH form-lighting；RF Humanoid V2 final convergence；CHR1 附件 bind 基底烘焙、双手 socket IK 门禁、开发者区 V2 默认 body 与逐角色实景距离验收）
+> 源码核对基线：工作区（Lighting V1 统一 RMESH form-lighting；RF Humanoid V2 final convergence；CHR1 附件 bind 基底烘焙、双手 socket IK 门禁、Eula gameplay actor 按 profile 懒加载 authored walk clip、开发者区 V2 默认 body 与逐角色实景距离验收）
 
 本目录面向接手 Rasterfall 任务的编码代理。目标不是介绍玩法，而是先把问题归到正确的
 状态所有者和文件，再开始搜索。命令、资源导入方法和用户可见特性仍以

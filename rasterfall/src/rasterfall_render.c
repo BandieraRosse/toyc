@@ -2122,16 +2122,31 @@ static int render_private_character(struct toy_renderer *renderer,
     }
     character_quality = character_distance_policy(
         camera, -13000, -10000, 0, &private_character_frontend);
-    if (character_quality == RASTERFALL_CHARACTER_HIDDEN) return 0;
     character_update = !private_character_frontend.reuse_skinned_vertices;
     {
         const char *requested_vmd = private_character_vmd_path;
+        int has_eula_actor = 0;
+        int actor_index;
+        /* The developer preview is intentionally opt-in, but the actual
+         * Eula gameplay actor needs its locomotion source whenever it exists.
+         * Without this distinction normal startup leaves the actor's clip
+         * NULL, so the renderer can only display the bind/rifle pose. */
+        if (active_session) for (actor_index = 0;
+                                 actor_index < TOY_GAME_MAX_ACTORS;
+                                 actor_index++)
+            if (active_session->game_state.actors[actor_index].active &&
+                active_session->game_state.actors[actor_index].anime_character_id == 1) {
+                has_eula_actor = 1;
+                break;
+            }
         if (active_session &&
             (active_session->skeletal_demo_player.clip_id == 9 ||
              active_session->skeletal_demo_player.clip_id == 11))
             requested_vmd = eula_actor_profile.walk_path;
         if (active_session && active_session->skeletal_demo_player.clip_id == 10)
             requested_vmd = "rasterfall/private-assets/animations/曼珠沙華.vmd";
+        if (!requested_vmd && has_eula_actor)
+            requested_vmd = eula_actor_profile.walk_path;
         if (private_character_vmd_loaded && requested_vmd &&
             strcmp(private_character_vmd_loaded_path, requested_vmd)) {
             rasterfall_vmd_unload(&private_character_vmd);
@@ -2177,6 +2192,10 @@ static int render_private_character(struct toy_renderer *renderer,
             toy_renderer_set_frame_budget(renderer, frame_budget);
     }
     }
+    /* VMD loading above is also needed by a nearby Eula actor.  Do not make
+     * it depend on whether the fixed developer display is currently inside
+     * the camera frustum. */
+    if (character_quality == RASTERFALL_CHARACTER_HIDDEN) return 0;
     if (private_character_model.data && active_session && character_update) {
         struct rasterfall_animation_player *player =
             &active_session->skeletal_demo_player;
@@ -5393,6 +5412,14 @@ static int render_ai_teammate(struct toy_renderer *renderer,
                 frontend_set_override(renderer, 0);
                 continue;
             }
+            /* LOD throttling is safe for a static pose, but not for an
+             * authored locomotion clip.  The skinned vertex cache contains
+             * the complete evaluated pose, so reusing it for mid/far
+             * characters makes walk appear frozen or jump between sparse
+             * samples.  Lighting V1 also consumes the cached normals, which
+             * made that stale-pose failure much more visible. */
+            if (actor->moving)
+                actor_frontend->reuse_skinned_vertices = 0;
             /* Skeletal weapons read the character attachment every frame.
              * Do not reuse a stale skinned body while rifle_solve_hands()
              * moves the same pose; otherwise the AK can visibly oscillate

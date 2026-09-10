@@ -1,7 +1,7 @@
 # 运行时与主循环
 
 > 文档更新：2026-09-10
-> 源码核对基线：工作区（Lighting V1 的 lighting-props 与 Character Acceptance A/B；Hurd 四职业 presentation profile；RF Humanoid V2 world capture；控制器命令经 actor API 进入玩法；`game_state.actors[]` 是玩家/AI gameplay truth；world step 独立推进投射物、敌人、波次和地图规则；camera、HUD、网络展示只读取 actor/world 或 derived presentation cache；本地 body 位置驱动 camera）
+> 源码核对基线：工作区（Lighting V1 的 lighting-props 与 Character Acceptance A/B；Hurd 四职业 presentation profile；RF Humanoid V2 world capture；Eula gameplay actor 按 profile 懒加载 walk clip；控制器命令经 actor API 进入玩法；`game_state.actors[]` 是玩家/AI gameplay truth；world step 独立推进投射物、敌人、波次和地图规则；camera、HUD、网络展示只读取 actor/world 或 derived presentation cache；本地 body 位置驱动 camera）
 
 > 源码核对补充：session reset 在原 flag 1 和原坐标恢复 Maid 四人旗卫，并创建使用 flag 2 的正式 Hurd squad/outpost；Hurd 控制状态保持派生。
 
@@ -33,10 +33,12 @@
 场景与离屏输出契约见 [rendering.md](rendering.md) 的 Visual CLI。未知场景、缺少参数、
 资源加载/渲染/文件写入失败均返回非零并输出错误。
 
-旧的 PMX/VMD 预览参数（`--vmd-eula-walk`、`--vmd-freeze-*`、
+旧的 PMX/VMD 开发者预览参数（`--vmd-eula-walk`、`--vmd-freeze-*`、
 `--vmd-disable-*`、`--vmd-legacy-*`、`--vmd-skin-trace`）仅保留为显式
-兼容诊断入口。正常启动不再自动加载 Eula/VMD 私有资产；当前角色观察和验收应使用
-`--model-pose-views`、`--character-acceptance` 和 `--character-world-capture`。
+兼容诊断入口。正常启动不自动显示 Eula/VMD 开发者预览；若正式 Eula gameplay
+actor 存在，renderer 会按角色 profile 懒加载其 walk clip，供移动中的 actor 使用。
+当前开发者角色观察和验收仍应使用 `--model-pose-views`、`--character-acceptance`
+和 `--character-world-capture`。
 
 主循环先轮询平台事件和网络，再保留按键边沿；固定 16 ms 逻辑步中构造
 `rasterfall_command`，交给 session 或客户端预测路径；之后同步音频/特效并渲染。排查“偶发吞键”

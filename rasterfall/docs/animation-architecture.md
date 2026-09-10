@@ -1,7 +1,7 @@
 # Rasterfall 模型与动画架构
 
-> 文档更新：2026-09-09
-> 源码核对基线：工作区（RF Humanoid V1.1 stable-role rifle composition / Character GLB Contract；玩法 MOVE 时钟映射到 authored anime walk clip 的展示时钟）
+> 文档更新：2026-09-10
+> 源码核对基线：工作区（RF Humanoid V1.1 stable-role rifle composition / Character GLB Contract；Eula actor 按 profile lazy-load authored walk clip；玩法 MOVE 时钟映射到 authored anime walk clip 的展示时钟）
 
 本文说明运行时模块边界、扩展入口和当前仍需控制的技术债。格式细节仍以各公共头文件和
 转换工具为准。
@@ -113,7 +113,8 @@ build/vmd_inspect <walk.vmd> <model.rmesh> --vmd-walk-final-flips
 ```
 
 `rasterfall` 内置的 `--vmd-*` 参数属于旧 PMX/VMD 兼容诊断，不是新 RFCHAR
-角色的默认运行路径；正常启动不会自动载入 Eula/VMD 私有预览。
+角色的默认开发者预览路径；正常启动不会显示 Eula/VMD 私有预览，但正式 Eula
+gameplay actor 存在时仍会按 profile 懒加载 walk clip，保证其 MOVE 展示有动作来源。
 
 如果修改 RFM2 格式、公共重定向数学或构建目标，还需扩大到相关转换工具、Windows 构建
 以及自托管应用构建。
