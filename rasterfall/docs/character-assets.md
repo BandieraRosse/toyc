@@ -1,7 +1,7 @@
 # Rasterfall Character Asset Contract V1 / RF Humanoid V1
 
 > 文档更新：2026-09-10
-> 源码核对基线：工作区（RF Humanoid V2 final convergence、CHR1 bind 基底烘焙与双手 socket 握持门禁；RFCHAR V1 / RFM2 v14 不变）
+> 源码核对基线：工作区（RF Humanoid V2 final convergence；clean face 与 Headgear / Face Coverage V1 变体；CHR1 bind 基底烘焙与双手 socket 握持门禁；RFCHAR V1 / RFM2 v14 不变）
 
 本文是所有新 Rasterfall 人形角色资产的第一入口。V1 冻结 Blender 到离线 importer 的输入门；
 它不承诺任意 glTF 的兼容性，也不要求 runtime 直接读取 GLB。主线固定为：
@@ -244,3 +244,57 @@ Character Lab 的 front/three-quarter 对应 canonical +Z 正面，所有方向�
 这套 V2 是后续 AI/NPC 身体与 headgear/职业附件扩展的基线候选。完整运行时资产仍为本地可选
 资源，生成器与 manifest 才是可复现源；本轮不自动替换全部 gameplay actor。最终冻结判断和
 具体截图观察记录见 `archive/rf-humanoid-v2-final-convergence.md`，导航不记录阶段测试数量。
+
+## RF Humanoid Headgear / Face Coverage V1
+
+Headgear V1 先验证“clean simplified face + HEAD-mounted coverage”这条身份路线，不新增
+humanoid bone、face bone、网络字段或 gameplay identity。裸脸清理将 HairCap 的下缘抬到稳定
+hairline，移除横跨前额的独立 HairFringe，只保留 crown 与两侧 HairLock；因此 face 仍只依赖
+skull / jaw / cheek / chin 的大形，不加入眼鼻口、T 字、十字或符号化脸标。
+
+生成器仍是 `tools/blender/generate_rasterfall_humanoid_v2.py`。`--headgear` 的几何全部使用
+单骨骼 `RF_HEAD` 权重，并沿用已有 `HEAD` attachment；V1 为便于现有 RFCHAR importer 和
+Character Acceptance 验收，每个样本暂时输出为“同一 base body + 一个模块”的完整 RFCHAR
+变体。它是稳定的验证载体，不是最终要求 runtime 复制整个人体；后续拆成独立 head-mounted
+assembly 时不需要改变骨架或 attachment contract。
+
+覆盖率样本如下：
+
+| 变体 | 覆盖率 | 识别语言 |
+| --- | --- | --- |
+| `bare` | 低 | clean face + hair mass 基线 |
+| `headset` | 低 | 侧向耳罩、头顶弧和 mic boom |
+| `patrol-cap` | 低 | crown volume + forward brim |
+| `goggles` | 中 | 双镜片与 strap，保留 jaw/cheek |
+| `respirator` | 中 | 下半脸 shell、双 filter、侧带 |
+| `tactical-helmet` | 高 | dome、brow、ear rail、visor |
+| `engineering-helmet` | 高 | 宽耳罩、前檐与顶部 lamp |
+
+六个模块和基线的源资产/manifest 分别为：
+`rf_humanoid_v2_headset`、`rf_humanoid_v2_patrol_cap`、`rf_humanoid_v2_goggles`、
+`rf_humanoid_v2_respirator`、`rf_humanoid_v2_tactical_helmet`、
+`rf_humanoid_v2_engineering_helmet`，以及原有 `rf_humanoid_v2`。可重复生成单个变体：
+
+```sh
+blender --background --factory-startup --python tools/blender/generate_rasterfall_humanoid_v2.py -- \
+  --output rasterfall/private-assets/source/characters/rf_humanoid_v2_tactical-helmet.glb \
+  --headgear tactical-helmet
+python3 tools/assets/import_asset.py --no-build --force \
+  tools/assets/manifests/characters/rf_humanoid_v2_tactical_helmet.asset.json
+build/rfchar_runtime_test rasterfall/private-assets/models/rf_humanoid_v2_tactical_helmet.rmesh
+```
+
+统一生成 Character Lab 对比和代表性 world strip：
+
+```sh
+python3 tools/rf_humanoid_headgear_sheet.py \
+  --output tmp/rf-headgear-v1/headgear-lab.png --world
+```
+
+该脚本复用 `--character-acceptance` 的 bind / rifle-idle / rifle-aim、front / side / back /
+three-quarter 和 `--character-world-capture` 的 near / mid / far；主要交付图是
+`headgear-lab.png` 与 `headgear-lab/headgear-world-idle.png`，原始 BMP 留在同目录 captures
+下。当前观察结论是：clean face 已足够稳定；低覆盖模块主要在侧面和三分之四角度提供职业
+提示，中覆盖在近中景最有效，高覆盖的 tactical / engineering helmet 在中远景仍保持强轮廓。
+因此 RF Humanoid 头部扩展 V1 建议正式沿用“clean face + modular headgear”主线，五官系统暂不
+作为下一阶段前置条件。

@@ -1,7 +1,7 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-10
-> 源码核对基线：工作区（Lighting V1 统一 RMESH form-lighting 与确定性 A/B；V2 final convergence；RFCHAR 双手 socket IK、握持误差门禁、开发者区默认 V2 与逐角色距离 capture）
+> 源码核对基线：工作区（Lighting V1 统一 RMESH form-lighting 与确定性 A/B；V2 final convergence；clean face 与 RFCHAR Headgear / Face Coverage V1；RFCHAR 双手 socket IK、握持误差门禁、开发者区默认 V2 与逐角色距离 capture）
 
 > 源码核对补充：正式 Hurd actor 通过四个专用 character profile 进入职业外观；恢复的四名 Maid 旗卫以 Maid character profile 接入 actor，同时继续由 anime identity 选择骨骼模型；普通 player、Eula、佣兵解析为 NONE。
 
@@ -50,6 +50,13 @@ Guard 宽厚深绿背心、肩部护片、盾徽和简化头盔带。基础身�
 直立装备，death/revive 使用既有整体翻倒变换。未增加动画状态或附件资产系统。
 portrait 可复用该入口和静态 profile，
 仍需自行提供 camera 和展示状态。
+
+RF Humanoid Headgear / Face Coverage V1 属于 asset-side presentation 扩展：变体模型沿用
+同一 RFCHAR skeleton 和 stable `HEAD` attachment，头盔、goggles、respirator 等几何以
+`RF_HEAD` 刚性权重随角色 pose 求值。renderer 不解释 headgear 名称，也不增加 actor 或网络
+字段；Character Acceptance / world capture 只通过替换 `--character-world-model` 或输入模型
+路径观察不同变体。当前阶段的完整 RFCHAR variant 是验证 carrier，未来若加入通用 rigid HEAD
+assembly，仍应保持 renderer 只消费稳定 attachment transform。
 
 静态环境组件通过 `rasterfall_render_static_prop()` 提交 world-space RMESH。地图 parser 将
 注册表 asset name/id 转为轻量 `toy_map.props` 实例，renderer 遍历该数组；入口消费 RFU

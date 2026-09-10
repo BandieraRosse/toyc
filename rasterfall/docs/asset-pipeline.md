@@ -1,7 +1,7 @@
 # Rasterfall 资产转换与诊断
 
 > 文档更新：2026-09-10
-> 源码核对基线：工作区（RFCHAR V1 → RFM2 v14 不变；V2 final convergence 修正 CHR1 附件 bind 基底烘焙，增加 GLB/runtime socket 交叉检查）
+> 源码核对基线：工作区（RFCHAR V1 → RFM2 v14 不变；V2 final convergence 修正 CHR1 附件 bind 基底烘焙，增加 GLB/runtime socket 交叉检查；Headgear / Face Coverage V1 变体与组图工具）
 
 本文记录可执行的模型、纹理和动画工具链。运行时模块边界见 `assets-animation.md`，动画求值契约
 见 `animation-architecture.md`，资源是否允许发布见 `asset-sources.md`。
@@ -178,6 +178,20 @@ python3 tools/character_world_sheet.py \
 默认会在输出文件旁的 `captures/` 保存原始 BMP；使用 `--capture-dir` 可跳过重新
 渲染、直接拼接已有 capture。`--cell-width` 控制每个单元的输出宽度，默认 400px。
 脚本只依赖 Python 标准库，读取 24/32-bit BMP 并写 RGB PNG。
+
+RF Humanoid V2 的头部覆盖探索使用：
+
+```sh
+python3 tools/rf_humanoid_headgear_sheet.py \
+  --output tmp/rf-headgear-v1/headgear-lab.png --world
+```
+
+它对 `bare`、`headset`、`patrol-cap`、`goggles`、`respirator`、`tactical-helmet`、
+`engineering-helmet` 使用同一 Character Acceptance 相机、姿态和标准 AK，生成每个变体的
+individual lab/world sheet，并生成跨变体 comparison。world 默认只捕获 bare、goggles、
+respirator、tactical-helmet、engineering-helmet 五个代表样本；可用 `--world-variants` 调整。
+这些变体仍是完整 RFCHAR carrier，模块几何绑定 `RF_HEAD`，不改变 importer 或 runtime 的
+stable attachment 表。
 
 ## 单位与边界
 

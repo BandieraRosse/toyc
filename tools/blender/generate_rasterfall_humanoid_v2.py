@@ -1,11 +1,11 @@
-"""Generate the RF Humanoid V2 final-convergence base body.
+"""Generate the RF Humanoid V2 body and headgear coverage variants.
 
 This is a source generator rather than a hand-edited blend file.  It keeps the
 RFCHAR V1 skeleton and attachment contract, but replaces the V1.1 block-like
 body with a faceted, stylized human built from anatomical lofts:
 
   pelvis -> neutral waist -> ribcage/chest -> tapered deltoids
-  jaw/cheek/temple/crown head mass + separate hair mass
+  jaw/cheek/temple/crown head mass + separate clean hair mass
   shoulder -> upper arm -> elbow -> forearm -> wrist -> hand
   pelvis -> thigh -> knee -> calf -> ankle -> foot
 
@@ -15,6 +15,11 @@ performs the standard Y-up conversion.
 Run:
   blender --background --factory-startup --python this_file -- \
     --output rasterfall/private-assets/source/characters/rf_humanoid_v2.glb
+
+The optional ``--headgear`` variants are authored into the same RFCHAR
+character contract for V1 visual validation. Their geometry is rigidly
+weighted to ``RF_HEAD``; this keeps the stable HEAD attachment/socket and
+makes a later split into reusable head-mounted assemblies mechanical.
 """
 
 import argparse
@@ -39,11 +44,16 @@ from mathutils import Vector
 
 SIDES_BODY = 10
 SIDES_LIMB = 8
+HEADGEAR_NAMES = (
+    'bare', 'headset', 'patrol-cap', 'goggles', 'respirator',
+    'tactical-helmet', 'engineering-helmet',
+)
 
 
 def arguments():
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", required=True)
+    parser.add_argument("--headgear", choices=HEADGEAR_NAMES, default="bare")
     return parser.parse_args(sys.argv[sys.argv.index("--") + 1:]
                              if "--" in sys.argv else [])
 
@@ -117,6 +127,37 @@ def weighted_rings(name, rings, sides, material, arm, scene, weights,
             for bone, value in ring_weights:
                 if value > 0.001:
                     groups[bone].add([index], value, 'REPLACE')
+    return obj
+
+
+def box_mesh(name, minimum, maximum, material, arm, scene, bone='RF_HEAD'):
+    """Create a rigid low-poly box in armature space.
+
+    Headgear is intentionally made from a few large boxes and lofts. This is
+    easier to read at Rasterfall distances than a detailed hard-surface mesh,
+    and the single-bone weight makes its HEAD mounting explicit.
+    """
+    x0, y0, z0 = minimum
+    x1, y1, z1 = maximum
+    vertices = [
+        (x0, y0, z0), (x1, y0, z0), (x1, y1, z0), (x0, y1, z0),
+        (x0, y0, z1), (x1, y0, z1), (x1, y1, z1), (x0, y1, z1),
+    ]
+    faces = (
+        (0, 3, 2, 1), (4, 5, 6, 7), (0, 1, 5, 4),
+        (1, 2, 6, 5), (2, 3, 7, 6), (3, 0, 4, 7),
+    )
+    mesh = bpy.data.meshes.new(name)
+    mesh.from_pydata(vertices, [], faces)
+    mesh.update()
+    mesh.materials.append(material)
+    obj = bpy.data.objects.new(name, mesh)
+    scene.collection.objects.link(obj)
+    obj.parent = arm
+    modifier = obj.modifiers.new('RFCHAR Skin', 'ARMATURE')
+    modifier.object = arm
+    group = obj.vertex_groups.new(name=bone)
+    group.add(list(range(len(vertices))), 1.0, 'REPLACE')
     return obj
 
 
@@ -250,6 +291,10 @@ def create_materials():
         'shirt': material('RF_Shirt', (0.14, 0.22, 0.25)),
         'pants': material('RF_Pants', (0.29, 0.34, 0.30)),
         'boots': material('RF_Boots', (0.045, 0.060, 0.065)),
+        'headgear': material('RF_Headgear', (0.075, 0.105, 0.115)),
+        'headgear_light': material('RF_HeadgearLight', (0.22, 0.275, 0.27)),
+        'visor': material('RF_Visor', (0.035, 0.13, 0.16)),
+        'mask': material('RF_Mask', (0.095, 0.125, 0.13)),
     }
 
 
@@ -336,37 +381,21 @@ def create_body(armature, scene, materials):
         SIDES_BODY, skin, armature, scene,
         [[('RF_HEAD', 1.0)]] * 7)
 
-    # A closed crown overlaps the fringe; no open front exposes the skull
-    # above the hairline. Two restrained side locks complete the silhouette.
+    # A closed crown stops at a clean hairline; no independent dark strip is
+    # drawn across the upper face. Two restrained side locks complete the
+    # silhouette while leaving the simplified face as one stable skin plane.
     vertical_loft(
         'HairCap',
         [
-            (1.90, 0.010, 0.215, 0.205),
-            (1.95, 0.020, 0.225, 0.210),
-            (1.99, 0.030, 0.220, 0.200),
-            (2.050, 0.050, 0.195, 0.175),
+            (1.94, 0.025, 0.205, 0.190),
+            (1.98, 0.030, 0.220, 0.200),
+            (2.020, 0.040, 0.215, 0.190),
+            (2.060, 0.050, 0.185, 0.165),
             (2.080, 0.035, 0.120, 0.115),
         ],
         SIDES_BODY, hair, armature, scene,
         [[('RF_HEAD', 1.0)]] * 5,
         front_cut=False)
-    # A few front-facing low-poly locks give the hairline a broken, human
-    # silhouette. They are separate from the rear cap, so the forehead stays
-    # visible instead of reading as a fitted helmet.
-    for side, sign in (('L', 1.0), ('R', -1.0)):
-        segment_loft(
-            'HairFringe' + side, (0.17 * sign, -0.16, 1.83),
-            (0.055 * sign, -0.18, 1.89),
-            [(0.0, 0.040, 0.025, 0.0),
-             (0.55, 0.050, 0.030, 0.0),
-             (1.0, 0.032, 0.020, 0.0)],
-            SIDES_LIMB, hair, armature, scene, 'RF_HEAD')
-    segment_loft(
-        'HairFringeCenter', (0.060, -0.18, 1.89), (-0.060, -0.18, 1.89),
-        [(0.0, 0.033, 0.020, 0.0),
-         (0.55, 0.040, 0.024, 0.0),
-         (1.0, 0.033, 0.020, 0.0)],
-        SIDES_LIMB, hair, armature, scene, 'RF_HEAD')
     for side, sign in (('L', 1.0), ('R', -1.0)):
         segment_loft(
             'HairLock' + side, (0.18 * sign, 0.025, 1.78),
@@ -479,6 +508,127 @@ def create_body(armature, scene, materials):
                 vertex.co.z = 0.0
 
 
+def create_headgear(armature, scene, materials, variant):
+    """Add one intentionally broad HEAD-mounted coverage module.
+
+    Source forward is -Y. All pieces are rigidly weighted to RF_HEAD rather
+    than being loose scene props, so the module follows bind/idle/aim and the
+    existing HEAD attachment remains the one stable authoring seam.
+    """
+    if variant == 'bare':
+        return
+
+    gear = materials['headgear']
+    light = materials['headgear_light']
+    visor = materials['visor']
+    mask = materials['mask']
+
+    if variant == 'headset':
+        for side, sign in (('L', 1.0), ('R', -1.0)):
+            segment_loft(
+                'HeadsetArc' + side,
+                (0.205 * sign, 0.035, 1.91),
+                (0.0, 0.060, 2.105),
+                [(0.0, 0.025, 0.020, 0.0),
+                 (0.55, 0.030, 0.024, 0.0),
+                 (1.0, 0.026, 0.020, 0.0)],
+                SIDES_LIMB, gear, armature, scene, 'RF_HEAD')
+            box_mesh('HeadsetEar' + side,
+                     (0.205 * sign - 0.025, -0.035, 1.78),
+                     (0.205 * sign + 0.025, 0.095, 1.98),
+                     gear, armature, scene)
+        segment_loft(
+            'HeadsetMic', (0.235, -0.015, 1.82), (0.235, -0.275, 1.78),
+            [(0.0, 0.018, 0.014, 0.0),
+             (0.55, 0.015, 0.012, 0.0),
+             (1.0, 0.012, 0.010, 0.0)],
+            SIDES_LIMB, light, armature, scene, 'RF_HEAD')
+        box_mesh('HeadsetMicTip', (0.205, -0.30, 1.76),
+                 (0.265, -0.245, 1.81), light, armature, scene)
+        return
+
+    if variant == 'patrol-cap':
+        vertical_loft(
+            'PatrolCap',
+            [(1.975, 0.028, 0.205, 0.185),
+             (2.035, 0.035, 0.220, 0.190),
+             (2.090, 0.045, 0.145, 0.135),
+             (2.115, 0.040, 0.075, 0.075)],
+            SIDES_BODY, gear, armature, scene,
+            [[('RF_HEAD', 1.0)]] * 4)
+        box_mesh('PatrolCapBrim', (-0.215, -0.330, 1.945),
+                 (0.215, -0.105, 1.985), light, armature, scene)
+        return
+
+    if variant == 'goggles':
+        box_mesh('GoggleLensL', (-0.175, -0.270, 1.785),
+                 (-0.018, -0.185, 1.875), visor, armature, scene)
+        box_mesh('GoggleLensR', (0.018, -0.270, 1.785),
+                 (0.175, -0.185, 1.875), visor, armature, scene)
+        box_mesh('GoggleBridge', (-0.030, -0.265, 1.815),
+                 (0.030, -0.185, 1.850), light, armature, scene)
+        box_mesh('GoggleStrapL', (-0.225, 0.030, 1.805),
+                 (-0.170, 0.085, 1.875), gear, armature, scene)
+        box_mesh('GoggleStrapR', (0.170, 0.030, 1.805),
+                 (0.225, 0.085, 1.875), gear, armature, scene)
+        return
+
+    if variant == 'respirator':
+        box_mesh('RespiratorShell', (-0.145, -0.255, 1.635),
+                 (0.145, -0.130, 1.785), mask, armature, scene)
+        box_mesh('RespiratorFilterL', (-0.185, -0.300, 1.655),
+                 (-0.105, -0.225, 1.735), gear, armature, scene)
+        box_mesh('RespiratorFilterR', (0.105, -0.300, 1.655),
+                 (0.185, -0.225, 1.735), gear, armature, scene)
+        box_mesh('RespiratorStrapL', (-0.225, -0.040, 1.700),
+                 (-0.175, 0.060, 1.755), light, armature, scene)
+        box_mesh('RespiratorStrapR', (0.175, -0.040, 1.700),
+                 (0.225, 0.060, 1.755), light, armature, scene)
+        return
+
+    if variant == 'tactical-helmet':
+        vertical_loft(
+            'TacticalHelmetShell',
+            [(1.895, 0.025, 0.225, 0.195),
+             (1.965, 0.030, 0.245, 0.215),
+             (2.060, 0.040, 0.235, 0.205),
+             (2.145, 0.045, 0.185, 0.170),
+             (2.185, 0.035, 0.095, 0.090)],
+            SIDES_BODY, gear, armature, scene,
+            [[('RF_HEAD', 1.0)]] * 5)
+        box_mesh('TacticalHelmetBrow', (-0.235, -0.285, 1.875),
+                 (0.235, -0.105, 1.935), light, armature, scene)
+        box_mesh('TacticalHelmetEarL', (-0.275, -0.020, 1.765),
+                 (-0.205, 0.105, 1.970), gear, armature, scene)
+        box_mesh('TacticalHelmetEarR', (0.205, -0.020, 1.765),
+                 (0.275, 0.105, 1.970), gear, armature, scene)
+        box_mesh('TacticalHelmetVisor', (-0.190, -0.245, 1.790),
+                 (0.190, -0.185, 1.835), visor, armature, scene)
+        return
+
+    if variant == 'engineering-helmet':
+        vertical_loft(
+            'EngineeringHelmetShell',
+            [(1.910, 0.045, 0.220, 0.185),
+             (1.985, 0.055, 0.255, 0.215),
+             (2.075, 0.065, 0.245, 0.205),
+             (2.135, 0.060, 0.170, 0.150),
+             (2.165, 0.045, 0.075, 0.070)],
+            SIDES_BODY, light, armature, scene,
+            [[('RF_HEAD', 1.0)]] * 5)
+        box_mesh('EngineeringEarL', (-0.285, -0.030, 1.745),
+                 (-0.205, 0.130, 1.950), gear, armature, scene)
+        box_mesh('EngineeringEarR', (0.205, -0.030, 1.745),
+                 (0.285, 0.130, 1.950), gear, armature, scene)
+        box_mesh('EngineeringBrim', (-0.245, -0.300, 1.895),
+                 (0.245, -0.105, 1.945), gear, armature, scene)
+        box_mesh('EngineeringLamp', (-0.055, -0.335, 2.000),
+                 (0.055, -0.265, 2.080), visor, armature, scene)
+        return
+
+    raise ValueError('unknown RF Humanoid V2 headgear: ' + variant)
+
+
 def patch_glb_skeleton(path):
     """Ensure Blender writes the RFCHAR-required skin skeleton node."""
     raw = path.read_bytes()
@@ -510,6 +660,7 @@ def main():
     armature = make_armature(scene)
     materials = create_materials()
     create_body(armature, scene, materials)
+    create_headgear(armature, scene, materials, args.headgear)
 
     # Keep every object at identity TRS; all geometry is authored in armature
     # space and the canonical GLB exporter handles only the Y-up conversion.
@@ -539,8 +690,8 @@ def main():
             continue
         obj.data.calc_loop_triangles()
         triangle_count += len(obj.data.loop_triangles)
-    print('rfchar-humanoid-v2: %s source_vertices=%d source_triangles=%d materials=%d' %
-          (args.output, vertex_count, triangle_count, len(materials)))
+    print('rfchar-humanoid-v2: %s headgear=%s source_vertices=%d source_triangles=%d materials=%d' %
+          (args.output, args.headgear, vertex_count, triangle_count, len(materials)))
 
 
 if __name__ == '__main__':
