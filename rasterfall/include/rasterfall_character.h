@@ -102,6 +102,8 @@ struct rasterfall_character_visual_recipe {
     int body_resource_id;
     uint32_t shirt_color;
     uint32_t pants_color;
+    /* Passive rigid equipment only. Active weapons are resolved from the
+     * actor's weapon slot and the finalized WEAPON_R socket. */
     struct rasterfall_character_attachment_recipe
         attachments[RASTERFALL_CHARACTER_RECIPE_ATTACHMENTS];
     unsigned int attachment_count;

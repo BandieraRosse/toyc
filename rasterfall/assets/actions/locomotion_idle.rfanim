@@ -1,5 +1,6 @@
 RFANIM 1
 action LOCOMOTION_IDLE
+layer LOWER_BODY
 duration 1000
 skeleton RF_HUMANOID_V1
 loop 1

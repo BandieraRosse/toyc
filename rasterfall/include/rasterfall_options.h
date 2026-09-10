@@ -2,7 +2,7 @@
 #define RASTERFALL_OPTIONS_H
 
 struct rasterfall_options {
-    int input_debug, logic_test;
+    int input_debug, logic_test, action_runtime_debug;
     int requested_net_mode, net_port, net_loss_percent;
     const char *net_address;
     int auto_mode, textures_enabled, edge_pass_enabled;
@@ -26,9 +26,15 @@ struct rasterfall_options {
     const char *glb_motion_model, *glb_motion_path;
     const char *action_info_path;
     const char *action_preview_model, *action_preview_path, *action_preview_output;
+    const char *composition_capture_model, *composition_capture_lower;
+    const char *composition_capture_upper, *composition_capture_additive;
+    const char *composition_capture_output;
+    int composition_capture_lower_time, composition_capture_upper_time;
+    int composition_capture_additive_time;
     const char *pose_debug_model, *pose_debug_action, *pose_debug_role;
     const char *pose_debug_upper_action;
-    int action_time_ms, pose_debug_upper_time_ms;
+    const char *pose_debug_additive_action;
+    int action_time_ms, pose_debug_upper_time_ms, pose_debug_additive_time_ms;
     const char *vmd_walk_model, *vmd_walk_path;
     int vmd_freeze_head, vmd_freeze_torso;
     int vmd_disable_ik, vmd_disable_grant;

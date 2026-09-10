@@ -355,6 +355,7 @@ int toy_map_load(const char *path, struct toy_map *m)
                  !strcmp(kind,"button_vmd_manjusaka") ||
                  !strcmp(kind,"button_animation_composition") ||
                  !strcmp(kind,"button_humanoid_pose_debug") ||
+                 !strcmp(kind,"button_humanoid_actions") ||
                  !strcmp(kind,"button_west_corridor") ||
                  !strcmp(kind,"button_west_corridor_no_tank")) && m->pickup_count<TOY_MAP_MAX_PICKUPS){
             char *sx=word(&p),*sz=word(&p),*sy=word(&p);
@@ -409,6 +410,8 @@ int toy_map_load(const char *path, struct toy_map *m)
                     m->pickups[m->pickup_count].kind = TOY_MAP_PICKUP_ANIMATION_COMPOSITION_BUTTON;
                 else if (!strcmp(kind,"button_humanoid_pose_debug"))
                     m->pickups[m->pickup_count].kind = TOY_MAP_PICKUP_HUMANOID_POSE_DEBUG_BUTTON;
+                else if (!strcmp(kind,"button_humanoid_actions"))
+                    m->pickups[m->pickup_count].kind = TOY_MAP_PICKUP_HUMANOID_ACTIONS_BUTTON;
                 else if (!strcmp(kind,"button_west_corridor"))
                     m->pickups[m->pickup_count].kind = TOY_MAP_PICKUP_WEST_CORRIDOR_BUTTON;
                 else if (!strcmp(kind,"button_west_corridor_no_tank"))

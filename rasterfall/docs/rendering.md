@@ -1,12 +1,13 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-10
-> 源码核对基线：工作区（Humanoid Action Composition V1；双正式四人 squad；Lighting V1）
+> 源码核对基线：工作区（Humanoid Action Composition V1.1 additive recoil；modular action runtime path；RF Humanoid/weapon forward basis；PRIMARY_GRIP weapon presentation；出生点 V2 action debug station；双正式四人 squad；Lighting V1）
 
 > 源码核对补充：正式 Hurd actor 通过四个专用 character profile 进入职业外观；恢复的四名 Maid 旗卫以 Maid character profile 接入 actor，同时继续由 anime identity 选择骨骼模型；普通 player、Eula、佣兵解析为 NONE。
 
-Profession Modularization V1 的提交顺序是 finalized shared-body instance → passive rigid gear；武器仍先
-建立 placement/grip targets 并求解双臂。`rasterfall_render_character_instance()` 的 shirt/pants override
+Profession Modularization V1 的提交顺序是 finalized shared-body instance → passive rigid gear → active
+weapon presentation；active weapon 从 finalized instance 的 `WEAPON_R` 对齐 authored `PRIMARY_GRIP`，不
+读取 `pose_calibration_local`，本阶段也不执行 IK 或 FOREGRIP 自动求解。`rasterfall_render_character_instance()` 的 shirt/pants override
 仅在单次 submission 生效，不修改 immutable resource material table。地图初始普通队友 Jesus 是首个
 vertical slice：actor 的 stable character ID 解析到 Rifleman recipe，presentation runtime 按 actor index
 持有独立 instance；`--visual-capture modular-teammate` 固定观察 idle/move/fire/reload/hit。
@@ -19,8 +20,19 @@ model instance。这个路径不从 actor 读取资源路径、gear list 或 pal
 modular actor 在提交 body 前把玩法 animation semantic 适配为固定 action layers：IDLE/MOVE 更新并
 保留 lower IDLE/WALK，FIRE 只替换 upper 为 RIFLE_FIRE，因此移动中开火不会清掉腿部动作；普通持枪
 状态使用 RIFLE_IDLE。AIM clip 已可由 composition/CLI 使用，等待 gameplay 明确 aim semantic 后再由
-adapter 接入，不能从骨骼姿态反推瞄准。组合完成并更新 bones 后，weapon、gear 和 rigid attachment
-继续只读同一 instance finalized pose。
+adapter 接入，不能从骨骼姿态反推瞄准。组合完成并更新 bones 后，被动 gear 只读 HEAD/CHEST/BACK/HIP
+等 finalized attachment，active weapon 则只读 finalized `WEAPON_R`，以 authored `PRIMARY_GRIP`
+派生 weapon origin 和其他 weapon sockets；两条展示路径都不回写 instance。
+
+出生点附近的 V2 action debug station 是 renderer-only fixture：它使用独立的
+`rasterfall_model_instance`，不进入 `toy_game_actor`。按钮循环选择 `IDLE`、`WALK`、`RIFLE AIM`
+和 `AIM + RECOIL`；最后一项按 lower locomotion → upper aim → additive recoil 的顺序组合，
+并从同一 finalized pose 更新 AK socket、PRIMARY_GRIP、FOREGRIP 和 hand target。
+
+RF Humanoid V2 的资产前向事实保存在 modular skeletal profile 中；body world rotation、
+rigid attachments、character sockets 和 skeletal weapon 使用同一 profile basis，不在枪械
+绘制函数内追加独立的 180 度修正。运行时可用 `--action-runtime-debug` 输出 actor、renderer
+path 以及 lower/upper/additive action，确认 RF Humanoid 没有被 legacy anime path 抢占。
 
 ## 渲染边界
 
@@ -235,9 +247,11 @@ build/rasterfall --squad-acceptance rasterfall/private-assets/models /tmp/rf-squ
 输出为 24-bit BMP（单人 800×800，小队 1600×800），路径由调用者指定，父目录须已存在；成功后打印最终路径并退出。
 已有文件会覆盖。可连续 capture 后使用 `cmp` 检查字节一致性，再用图片查看工具观察。
 `--character-acceptance` 是独立的正式角色验收场景，依赖指定私有角色 RMESH 和现有标准 AK，
-输出固定三姿态四视角及 near/mid/far A/B；RFCHAR 正面为 canonical +Z。CHEST 枪架使用
-`visual_rf_calibration()` 的 idle/aim 参数，双手按 WEAPON_R / FOREGRIP 接触标准 AK；
-`visual_rf_check_grips()` 检查误差并传播失败。普通 Visual CLI 仍不依赖窗口、音频、地图或 gameplay step。
+输出固定三姿态四视角及 near/mid/far A/B；RFCHAR 正面为 canonical +Z。该入口保留旧的
+CHEST `visual_rf_calibration()` 枪架和双手 `rifle_solve_hands()`，用于 legacy carrier/校准诊断，
+不代表正式 modular teammate 的持枪来源。正式 modular path 从 finalized `WEAPON_R` 对齐
+authored `PRIMARY_GRIP`，不执行 IK；`visual_rf_check_grips()` 仍只检查 legacy acceptance。
+普通 Visual CLI 仍不依赖窗口、音频、地图或 gameplay step。
 该入口加载一个 `rasterfall_model_resource`，全部 pose、握持 IK、CPU skinning 和 socket 查询来自
 `rasterfall_model_instance`；另输出 `two-instance-isolation.bmp`，在同一 depth buffer 中以共享 resource
 绘制左侧 bind 与右侧 aim 两个独立 instance，作为 deterministic ownership 观察门。

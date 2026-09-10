@@ -1,7 +1,7 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-10
-> 源码核对基线：工作区（Humanoid Action Composition V1；双正式四人小队 runtime）
+> 源码核对基线：工作区（Humanoid Action Composition V1.1 additive recoil；modular action runtime path；RF Humanoid/weapon forward basis；PRIMARY_GRIP weapon presentation；双正式四人小队 runtime）
 
 本目录面向接手 Rasterfall 任务的编码代理。目标不是介绍玩法，而是先把问题归到正确的
 状态所有者和文件，再开始搜索。命令、资源导入方法和用户可见特性仍以
@@ -38,14 +38,15 @@
 | world-space 静态 RMESH prop、实例变换和开发展示 | [rendering.md](rendering.md) | `include/rasterfall_render.h`、`src/rasterfall_render.c` |
 | 战斗表现事件、muzzle/tracer/impact/camera shake 消费 | [rendering.md](rendering.md) | `include/rasterfall_effect_event.h`、`src/rasterfall_effects.c` |
 | 模型、蒙皮、IK、VMD/GLB、动作重定向 | [assets-animation.md](assets-animation.md) | `src/rasterfall_model.c` |
-| RFANIM 动作、lower/upper 组合、关键帧检查、动作预览、pose/socket debug | [assets-animation.md](assets-animation.md)、[animation-architecture.md](animation-architecture.md) | `rasterfall_action_composition` → `rasterfall_model_instance`；`build/rf_anim_info` / `--action-preview` / `--pose-debug` |
+| RFANIM 动作、lower/upper/additive 组合、关键帧检查、动作预览、pose/socket debug | [assets-animation.md](assets-animation.md)、[animation-architecture.md](animation-architecture.md) | `rasterfall_action_compose()` → `rasterfall_model_instance`；`build/rf_anim_info` / `--action-preview` / `--action-composition-capture` / `--pose-debug` |
+| 出生点附近 V2 动作调试模型与切换按钮 | [rendering.md](rendering.md)、[map-format.md](map-format.md) | `button_humanoid_actions` → session presentation state → `render_humanoid_debug()` |
 | 共享模型资源、独立 pose instance、instance socket/CPU skinning | [assets-animation.md](assets-animation.md)、[animation-architecture.md](animation-architecture.md) | `rasterfall_model_resource` → `rasterfall_model_instance`；`build/rfchar_runtime_test` |
 | 独立 rigid RMESH、full rigid submission、HEAD/BACK assembly | [character-assets.md](character-assets.md)、[rendering.md](rendering.md) | `rasterfall_rigid_attachment_desc` → `rasterfall_render_rigid_attachment()`；`--rigid-attachment-acceptance` |
 | Blender 人形角色、RF Humanoid、Character GLB、附件、导入与蒙皮门禁 | [character-assets.md](character-assets.md) | `tools/assets/rfchar_import.py`、`include/rasterfall_model.h`、`app/glb_inspect.c`、`dev-tests/rasterfall_visual_capture.inc` |
 | V2 base body 收敛、AK 双手接触与冻结验收 | [character-assets.md](character-assets.md)、[rendering.md](rendering.md) | `generate_rasterfall_humanoid_v2.py` → importer bind 基底 → `rifle_solve_hands()` → `visual_rf_calibration()` / `visual_rf_check_grips()` → world strip |
 | RF Humanoid clean face、Headgear / Face Coverage V1、覆盖率组图 | [character-assets.md](character-assets.md)、[asset-pipeline.md](asset-pipeline.md) | `generate_rasterfall_humanoid_v2.py --headgear` → `RF_HEAD` → `rf_humanoid_headgear_sheet.py` → Character Lab / world strip |
 | V2.1 Final Body、六职业装备、Profession Lineup | [character-assets.md](character-assets.md)、[rendering.md](rendering.md) | `generate_rasterfall_humanoid_v2.py --profession` → 六份 `rf_profession_*` manifest → `--profession-lineup`；`tools/rf_profession_round.py` |
-| 六职业 modular recipe / rigid gear、carrier A/B、普通队友迁移 | [character-assets.md](character-assets.md)、[rendering.md](rendering.md)、[gameplay.md](gameplay.md) | `rasterfall_character_visual_recipe()` → shared body instance → HEAD/CHEST/BACK/HIP rigid assembly；`--profession-lineup` / `--visual-capture modular-teammate` |
+| 六职业 modular recipe / rigid gear、carrier A/B、普通队友迁移 | [character-assets.md](character-assets.md)、[rendering.md](rendering.md)、[gameplay.md](gameplay.md) | `rasterfall_character_visual_recipe()` → shared body instance → passive HEAD/CHEST/BACK/HIP assembly + active WEAPON_R/PRIMARY_GRIP presentation；`--profession-lineup` / `--visual-capture modular-teammate` |
 | 正式 RF 小队 roster、角色 identity、八人验收 | [gameplay.md](gameplay.md)、[rendering.md](rendering.md)、[runtime.md](runtime.md) | `include/rasterfall_roster.h` / `src/rasterfall_roster.c` → `session_spawn_formal_rosters()` → `render_modular_ai_teammate()`；`--squad-acceptance` |
 | 导入 PMX/GLB、manifest、纹理、LOD、模型诊断 | [asset-pipeline.md](asset-pipeline.md) | `tools/assets/import_asset.py`、现有转换器、模型加载器 |
 | 程序化工业/军事环境组件、Blender 批量导出 | [industrial-props.md](industrial-props.md)、[asset-pipeline.md](asset-pipeline.md) | `tools/blender/generate_rasterfall_props.py` |

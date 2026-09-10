@@ -611,6 +611,24 @@ static int run_logic_test(void)
         if (found != 13 || !session.pose_debug_active) return 158;
         rasterfall_session_reset(&session, &camera, 1);
     }
+    {
+        int item, step;
+        for (item = 0; item < session.item_count; item++)
+            if (session.items[item].kind ==
+                TOY_MAP_PICKUP_HUMANOID_ACTIONS_BUTTON) break;
+        if (item >= session.item_count) return 226;
+        camera.x = session.items[item].x;
+        camera.z = session.items[item].z + 500;
+        camera.sy = 0;
+        camera.cy = -1024;
+        for (step = 0; step < RASTERFALL_HUMANOID_DEBUG_ACTION_COUNT; step++) {
+            rasterfall_session_interact_remote(&session, &camera,
+                TOY_MAP_PICKUP_HUMANOID_ACTIONS_BUTTON);
+            if (session.humanoid_debug_action !=
+                (step + 1) % RASTERFALL_HUMANOID_DEBUG_ACTION_COUNT ||
+                session.humanoid_debug_time_ms != 0) return 227;
+        }
+    }
     if (session.level.safe_count > 0 &&
         session.game_state.safe_room_count != session.level.safe_count)
         return 126;

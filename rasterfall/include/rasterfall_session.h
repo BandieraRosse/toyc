@@ -124,6 +124,7 @@ struct rasterfall_command {
 };
 
 enum rasterfall_pose_debug_action { RASTERFALL_POSE_DEBUG_NONE, RASTERFALL_POSE_DEBUG_PREV_BONE, RASTERFALL_POSE_DEBUG_NEXT_BONE, RASTERFALL_POSE_DEBUG_AXIS_X, RASTERFALL_POSE_DEBUG_AXIS_Y, RASTERFALL_POSE_DEBUG_AXIS_Z, RASTERFALL_POSE_DEBUG_DECREASE, RASTERFALL_POSE_DEBUG_INCREASE, RASTERFALL_POSE_DEBUG_EXPORT, RASTERFALL_POSE_DEBUG_TOGGLE_LAYER };
+enum rasterfall_humanoid_debug_action { RASTERFALL_HUMANOID_DEBUG_IDLE, RASTERFALL_HUMANOID_DEBUG_WALK, RASTERFALL_HUMANOID_DEBUG_AIM, RASTERFALL_HUMANOID_DEBUG_RECOIL, RASTERFALL_HUMANOID_DEBUG_ACTION_COUNT };
 
 struct rasterfall_session {
     struct toy_map level;
@@ -169,6 +170,7 @@ struct rasterfall_session {
     struct rasterfall_squad_runtime squad_runtime[RASTERFALL_SQUAD_COUNT];
     int skeletal_demo_pose;
     struct rasterfall_animation_player skeletal_demo_player;
+    int humanoid_debug_action, humanoid_debug_time_ms;
     int pose_debug_active, pose_debug_bone, pose_debug_axis, pose_debug_layer;
     struct rasterfall_rifle_pose rifle_pose, hit_pose;
     struct rasterfall_calibration_state pose_editor;

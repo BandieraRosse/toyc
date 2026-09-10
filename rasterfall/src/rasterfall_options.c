@@ -59,7 +59,7 @@ void rasterfall_options_usage(int fd)
         "  --host | --connect <ip> [--port <port>] [--net-loss <percent>]\n"
         "  --textures | --no-textures  --no-edge-pass  --no-stats\n"
         "  --texture-stats  --frames <count>  --dump-frame <path>\n"
-        "  --logic-test  --input-test  --auto\n"
+        "  --logic-test  --input-test  --action-runtime-debug  --auto\n"
         "  --visual-capture <procedural-humanoid|hurd-squad|lighting-props|modular-teammate> --visual-output <path.bmp>\n"
         "  --character-acceptance <model.rmesh> <output-dir>\n"
         "  --profession-lineup <model-dir> <output-dir>\n"
@@ -79,8 +79,10 @@ void rasterfall_options_usage(int fd)
         "  --model-glb-motion-diagnostic <model> <glb>\n"
         "  --action-info <action.rfanim>\n"
         "  --action-preview <model.rmesh> <action.rfanim> <time-ms> <output.bmp>\n"
+        "  --action-composition-capture <model.rmesh> <lower.rfanim> <lower-ms> <upper.rfanim> <upper-ms> <additive.rfanim> <additive-ms> <output.bmp>\n"
         "  --pose-debug <model.rmesh> <action.rfanim> <time-ms> <humanoid-role>\n"
         "  --pose-debug <model.rmesh> <lower.rfanim> <lower-ms> <upper.rfanim> <upper-ms> <humanoid-role>\n"
+        "  --pose-debug <model.rmesh> <lower.rfanim> <lower-ms> <upper.rfanim> <upper-ms> <additive.rfanim> <additive-ms> <humanoid-role>\n"
         "  legacy VMD diagnostics (old PMX/VMD path):\n"
         "    --vmd-eula-walk <model> <vmd>\n"
         "    --vmd-freeze-head | --vmd-freeze-torso\n"
@@ -98,6 +100,7 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
             rasterfall_options_usage(1);
             return 1;
         } else if (!strcmp(option, "--input-test")) o->input_debug = 1;
+        else if (!strcmp(option, "--action-runtime-debug")) o->action_runtime_debug = 1;
         else if (!strcmp(option, "--logic-test") ||
                  !strcmp(option, "--net-test")) o->logic_test = 1;
         else if (!strcmp(option, "--host"))
@@ -206,12 +209,34 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
             o->action_time_ms=!strcmp(argv[++arg],"0")?0:positive_int(argv[arg],-1);
             o->action_preview_output=argv[++arg];
             if(o->action_time_ms<0){__fprintf(2,"rasterfall: invalid action time\n");return -1;}
+        } else if (!strcmp(option,"--action-composition-capture")) {
+            if(require_arguments(argc,argv,arg,8,option)<0)return -1;
+            o->composition_capture_model=argv[++arg];
+            o->composition_capture_lower=argv[++arg];
+            o->composition_capture_lower_time=!strcmp(argv[++arg],"0")?0:positive_int(argv[arg],-1);
+            o->composition_capture_upper=argv[++arg];
+            o->composition_capture_upper_time=!strcmp(argv[++arg],"0")?0:positive_int(argv[arg],-1);
+            o->composition_capture_additive=argv[++arg];
+            o->composition_capture_additive_time=!strcmp(argv[++arg],"0")?0:positive_int(argv[arg],-1);
+            o->composition_capture_output=argv[++arg];
+            if(o->composition_capture_lower_time<0 || o->composition_capture_upper_time<0 ||
+               o->composition_capture_additive_time<0)return -1;
         } else if (!strcmp(option,"--pose-debug")) {
             if(require_arguments(argc,argv,arg,4,option)<0)return -1;
             o->pose_debug_model=argv[++arg];o->pose_debug_action=argv[++arg];
             o->action_time_ms=!strcmp(argv[++arg],"0")?0:positive_int(argv[arg],-1);
-            if (arg+3 < argc && argv[arg+1][0] != '-' &&
-                argv[arg+2][0] != '-' && argv[arg+3][0] != '-') {
+            if (arg+5 < argc && argv[arg+1][0] != '-' &&
+                argv[arg+2][0] != '-' && argv[arg+3][0] != '-' &&
+                argv[arg+4][0] != '-' && argv[arg+5][0] != '-') {
+                o->pose_debug_upper_action=argv[++arg];
+                o->pose_debug_upper_time_ms=!strcmp(argv[++arg],"0")?0:
+                    positive_int(argv[arg],-1);
+                o->pose_debug_additive_action=argv[++arg];
+                o->pose_debug_additive_time_ms=!strcmp(argv[++arg],"0")?0:
+                    positive_int(argv[arg],-1);
+                o->pose_debug_role=argv[++arg];
+            } else if (arg+3 < argc && argv[arg+1][0] != '-' &&
+                       argv[arg+2][0] != '-' && argv[arg+3][0] != '-') {
                 o->pose_debug_upper_action=argv[++arg];
                 o->pose_debug_upper_time_ms=!strcmp(argv[++arg],"0")?0:
                     positive_int(argv[arg],-1);
@@ -220,6 +245,8 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
             if(o->action_time_ms<0){__fprintf(2,"rasterfall: invalid action time\n");return -1;}
             if(o->pose_debug_upper_action && o->pose_debug_upper_time_ms<0){
                 __fprintf(2,"rasterfall: invalid upper action time\n");return -1;}
+            if(o->pose_debug_additive_action && o->pose_debug_additive_time_ms<0){
+                __fprintf(2,"rasterfall: invalid additive action time\n");return -1;}
         } else if (!strcmp(option,"--vmd-eula-walk")) {
             if(require_arguments(argc,argv,arg,2,option)<0)return -1;
             o->vmd_walk_model=argv[++arg];o->vmd_walk_path=argv[++arg];

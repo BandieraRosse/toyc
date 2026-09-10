@@ -477,7 +477,7 @@ static int render_character_test_strip(struct toy_renderer *renderer,
         pixels += render_skeletal_rifle(renderer, camera, &character_strip_model,
                                         &frame, &profile, calibration,
                                         x, -900, z, 0, 1024,
-                                        TOY_GAME_WEAPON_AK, 0);
+                                        TOY_GAME_WEAPON_AK, 0, 0);
         active_gallery_facing = 0;
     }
     return pixels;
@@ -584,7 +584,7 @@ static int visual_acceptance_model_frame(struct toy_renderer *renderer,
         pixels += render_skeletal_rifle(renderer, camera, character, &frame,
                                          &visual_rf_profile, calibration,
                                          actor_x, base_y, actor_z, 0, 1024,
-                                         TOY_GAME_WEAPON_AK, 0);
+                                         TOY_GAME_WEAPON_AK, 0, 0);
     }
     active_gallery_facing = 0;
     (void)distance;
@@ -780,23 +780,27 @@ static int visual_modular_profession_frame(
     int x, int z, int distance)
 {
     struct rasterfall_rigid_transform actor;
-    struct rasterfall_model_asset *pose;
-    struct rasterfall_model_attachment_transform rifle_frame;
-    const struct rasterfall_pose_calibration *calibration;
-    unsigned int i;
+    struct rasterfall_action_composition composition;
+    const struct rasterfall_action_clip *lower;
+    const struct rasterfall_action_clip *upper;
+    const struct rasterfall_model_asset *pose;
     int pixels;
-    pose = rasterfall_model_instance_pose(host);
-    if (!pose || rasterfall_model_instance_reset_pose(host) < 0) return -1;
-    visual_acceptance_pose(pose, mode);
-    if (mode && rifle_frame_transform(pose, &rifle_frame) == 0) {
-        calibration = visual_rf_calibration(mode);
-        if (calibration->left_ik)
-            rifle_solve_hands(pose, &rifle_frame, calibration,
-                rasterfall_weapon_asset_profile(TOY_GAME_WEAPON_AK),
-                visual_rf_scale(pose));
-        if (visual_rf_check_grips(pose, &rifle_frame, calibration,
-                                  visual_rf_scale(pose)) < 0) return -1;
-    }
+    if (!host || rasterfall_model_instance_reset_pose(host) < 0) return -1;
+    memset(&composition, 0, sizeof(composition));
+    lower = humanoid_action(mode == 3 ?
+        RASTERFALL_ACTION_LOCOMOTION_WALK :
+        RASTERFALL_ACTION_LOCOMOTION_IDLE);
+    upper = humanoid_action(mode == 2 ?
+        RASTERFALL_ACTION_RIFLE_AIM :
+        RASTERFALL_ACTION_RIFLE_IDLE);
+    composition.layers[RASTERFALL_ACTION_LAYER_LOWER_BODY].clip = lower;
+    composition.layers[RASTERFALL_ACTION_LAYER_LOWER_BODY].time_ms = 180;
+    composition.layers[RASTERFALL_ACTION_LAYER_UPPER_BODY].clip = upper;
+    composition.layers[RASTERFALL_ACTION_LAYER_UPPER_BODY].time_ms = 180;
+    if (!lower || !upper || rasterfall_action_compose(host, &composition) < 0)
+        return -1;
+    pose = rasterfall_model_instance_final_pose(host);
+    if (!pose) return -1;
     rigid_identity(&actor);
     actor.translation[0] = x;
     actor.translation[1] = -900 -
@@ -807,20 +811,14 @@ static int visual_modular_profession_frame(
     pixels = rasterfall_render_character_instance(renderer, camera, host,
         &actor, recipe->shirt_color, recipe->pants_color);
     if (pixels < 0) goto fail;
-    if (mode && rifle_frame_transform(pose, &rifle_frame) == 0) {
-        calibration = visual_rf_calibration(mode);
-        pixels += render_skeletal_rifle(renderer, camera, pose, &rifle_frame,
-            &visual_rf_profile, calibration, x, (int)actor.translation[1], z,
-            0, 1024, TOY_GAME_WEAPON_AK, 0);
-    }
-    for (i = 0; i < recipe->attachment_count; i++) {
-        struct rasterfall_rigid_attachment_desc desc;
-        memset(&desc, 0, sizeof(desc));
-        desc.host_socket = recipe->attachments[i].host_socket;
-        desc.resource = &gear[recipe->attachments[i].gear_resource_id];
-        rigid_identity(&desc.mount_correction);
-        if (rasterfall_render_rigid_attachment(renderer, camera, host,
-                                               &desc, &actor) < 0) goto fail;
+    if (mode)
+        pixels += render_modular_active_weapon(renderer, camera, host, &actor,
+            TOY_GAME_WEAPON_AK, 0, 0);
+    {
+        int passive_pixels = render_modular_passive_equipment(renderer, camera,
+            host, recipe, gear, &actor);
+        if (passive_pixels < 0) goto fail;
+        pixels += passive_pixels;
     }
     active_gallery_facing = 0;
     (void)distance;
@@ -1132,10 +1130,13 @@ int rasterfall_render_action_preview(const char *model_path,
     if(toy_renderer_begin(&renderer,&surface,0x30343B)<0 ||
        rasterfall_render_character_instance(&renderer,&camera,&instance,&actor,
            0x40566F,0x2B3440)<0)goto render_done;
-    if(rifle_frame_transform(&instance.pose,&rifle_frame)==0)
-        render_skeletal_rifle(&renderer,&camera,&instance.pose,&rifle_frame,
-            &visual_rf_profile,visual_rf_calibration(1),0,(int)actor.translation[1],0,
-            0,1024,TOY_GAME_WEAPON_AK,0);
+    if (instance.pose.has_character_contract)
+        render_modular_active_weapon(&renderer, &camera, &instance, &actor,
+            TOY_GAME_WEAPON_AK, 0, 0);
+    else if (rifle_frame_transform(&instance.pose, &rifle_frame) == 0)
+        render_skeletal_rifle(&renderer, &camera, &instance.pose, &rifle_frame,
+            &visual_rf_profile, visual_rf_calibration(1), 0,
+            (int)actor.translation[1], 0, 0, 1024, TOY_GAME_WEAPON_AK, 0, 0);
     if(renderer.cmd_overflow||toy_renderer_flush(&renderer)<0||
        rasterfall_hud_dump_bmp(output_path,&surface)<0)goto render_done;
     __printf("rasterfall: action preview action=%s time=%d output=%s\n",
@@ -1145,6 +1146,73 @@ render_done:
     toy_renderer_destroy(&renderer);
 done:
     if(pixels)tlibc_free(pixels);
+    rasterfall_model_instance_unload(&instance);
+    rasterfall_model_resource_unload(&resource);
+    return result;
+}
+
+int rasterfall_render_action_composition_capture(const char *model_path,
+    const char *lower_path, int lower_time_ms, const char *upper_path,
+    int upper_time_ms, const char *additive_path, int additive_time_ms,
+    const char *output_path)
+{
+    struct rasterfall_action_clip lower, upper, additive;
+    struct rasterfall_action_composition composition;
+    struct rasterfall_model_resource resource;
+    struct rasterfall_model_instance instance;
+    struct rasterfall_model_attachment_transform rifle_frame;
+    struct rasterfall_render_context context;
+    struct rasterfall_rigid_transform actor;
+    struct camera camera;
+    struct toy_renderer renderer;
+    struct toy_surface surface;
+    uint32_t *pixels = NULL;
+    int result = 1, scale;
+    memset(&resource, 0, sizeof(resource)); memset(&instance, 0, sizeof(instance));
+    memset(&composition, 0, sizeof(composition));
+    if (!model_path || !lower_path || !upper_path || !additive_path || !output_path ||
+        rasterfall_action_load(&lower, lower_path) < 0 ||
+        rasterfall_action_load(&upper, upper_path) < 0 ||
+        rasterfall_action_load(&additive, additive_path) < 0 ||
+        rasterfall_model_resource_load(&resource, model_path) < 0 ||
+        rasterfall_model_instance_init(&instance, &resource) < 0) goto done;
+    composition.layers[RASTERFALL_ACTION_LAYER_LOWER_BODY].clip = &lower;
+    composition.layers[RASTERFALL_ACTION_LAYER_LOWER_BODY].time_ms = lower_time_ms;
+    composition.layers[RASTERFALL_ACTION_LAYER_UPPER_BODY].clip = &upper;
+    composition.layers[RASTERFALL_ACTION_LAYER_UPPER_BODY].time_ms = upper_time_ms;
+    composition.layers[RASTERFALL_ACTION_LAYER_ADDITIVE].clip = &additive;
+    composition.layers[RASTERFALL_ACTION_LAYER_ADDITIVE].time_ms = additive_time_ms;
+    if (rasterfall_action_compose(&instance, &composition) < 0) goto done;
+    memset(&context, 0, sizeof(context)); context.fixed_floor_lighting = 1;
+    rasterfall_render_bind(&context); gallery_load();
+    visual_acceptance_camera(&camera, 3, 1500);
+    memset(&surface, 0, sizeof(surface)); surface.width = 800; surface.height = 800;
+    surface.stride = surface.width * 4; pixels = tlibc_malloc((size_t)surface.stride * surface.height);
+    if (!pixels) goto done;
+    surface.pixels = pixels; toy_renderer_init(&renderer);
+    toy_renderer_set_frame_budget(&renderer, 0); rigid_identity(&actor);
+    scale = visual_rf_scale(&instance.pose);
+    actor.translation[1] = -900 - (int)((long long)instance.pose.min_y * scale / 1000);
+    actor.scale_milli = scale;
+    if (toy_renderer_begin(&renderer, &surface, 0x30343B) < 0 ||
+        rasterfall_render_character_instance(&renderer, &camera, &instance, &actor,
+            0x40566F, 0x2B3440) < 0) goto render_done;
+    if (instance.pose.has_character_contract)
+        render_modular_active_weapon(&renderer, &camera, &instance, &actor,
+            TOY_GAME_WEAPON_AK, 0, 0);
+    else if (rifle_frame_transform(&instance.pose, &rifle_frame) == 0)
+        render_skeletal_rifle(&renderer, &camera, &instance.pose, &rifle_frame,
+            &visual_rf_profile, visual_rf_calibration(1), 0,
+            (int)actor.translation[1], 0, 0, 1024, TOY_GAME_WEAPON_AK, 0, 0);
+    if (renderer.cmd_overflow || toy_renderer_flush(&renderer) < 0 ||
+        rasterfall_hud_dump_bmp(output_path, &surface) < 0) goto render_done;
+    __printf("rasterfall: action composition capture lower=%s upper=%s additive=%s output=%s\n",
+        lower.name, upper.name, additive.name, output_path);
+    result = 0;
+render_done:
+    toy_renderer_destroy(&renderer);
+done:
+    if (pixels) tlibc_free(pixels);
     rasterfall_model_instance_unload(&instance);
     rasterfall_model_resource_unload(&resource);
     return result;

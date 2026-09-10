@@ -17,6 +17,7 @@ enum rasterfall_action_id {
     RASTERFALL_ACTION_RIFLE_IDLE,
     RASTERFALL_ACTION_RIFLE_AIM,
     RASTERFALL_ACTION_RIFLE_FIRE,
+    RASTERFALL_ACTION_RIFLE_RECOIL,
     RASTERFALL_ACTION_COUNT
 };
 
@@ -40,6 +41,7 @@ struct rasterfall_action_track {
 
 struct rasterfall_action_clip {
     enum rasterfall_action_id id;
+    enum rasterfall_action_layer_id layer;
     char name[RASTERFALL_ACTION_NAME_BYTES];
     char skeleton[RASTERFALL_ACTION_SKELETON_BYTES];
     int duration_ms, loop;
@@ -82,6 +84,13 @@ const char *rasterfall_action_layer_name(enum rasterfall_action_layer_id layer);
 void rasterfall_action_dump(const struct rasterfall_action_clip *clip);
 int rasterfall_action_pose_debug(const struct rasterfall_model_instance *instance,
                                  const char *role_name);
+int rasterfall_action_pipeline_debug(
+    const struct rasterfall_model_instance *instance, const char *label,
+    int weapon);
+int rasterfall_action_pipeline_compare_debug(
+    const struct rasterfall_model_instance *a, const char *a_label,
+    const struct rasterfall_model_instance *b, const char *b_label,
+    int weapon);
 int rasterfall_action_logic_test(void);
 
 #endif

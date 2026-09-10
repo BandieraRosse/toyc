@@ -124,6 +124,7 @@ void rasterfall_render_set_vmd_legacy_knee_ccd(int enabled);
 void rasterfall_render_set_vmd_skin_trace(int enabled);
 void rasterfall_render_bake_lightmap(void);
 void rasterfall_render_set_coordinate_axes(int enabled);
+void rasterfall_render_set_action_runtime_debug(int enabled);
 int rasterfall_render_model_preview(struct toy_renderer *renderer,
                                     const struct camera *camera,
                                     const struct rasterfall_model_asset *model,
@@ -166,6 +167,10 @@ int rasterfall_render_rigid_attachment_acceptance(const char *model_dir,
 int rasterfall_render_action_preview(const char *model_path,
                                      const char *action_path, int time_ms,
                                      const char *output_path);
+int rasterfall_render_action_composition_capture(const char *model_path,
+    const char *lower_path, int lower_time_ms, const char *upper_path,
+    int upper_time_ms, const char *additive_path, int additive_time_ms,
+    const char *output_path);
 void rasterfall_render_scene_stats(struct rasterfall_scene_stats *out);
 int rasterfall_render_near_clip_test(void);
 int rasterfall_render_static_prop_culling_logic_test(void);

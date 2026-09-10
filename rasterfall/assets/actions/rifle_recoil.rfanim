@@ -1,0 +1,48 @@
+RFANIM 1
+action RIFLE_RECOIL
+layer ADDITIVE
+duration 180
+skeleton RF_HUMANOID_V1
+loop 0
+
+# This clip is a local rotation delta, not a complete rifle pose.
+track spine linear
+key 0 0 0 0
+key 35 7 0 0
+key 180 0 0 0
+endtrack
+track chest linear
+key 0 0 0 0
+key 35 10 0 0
+key 180 0 0 0
+endtrack
+track left_shoulder linear
+key 0 0 0 0
+key 35 5 0 0
+key 180 0 0 0
+endtrack
+track left_upper_arm linear
+key 0 0 0 0
+key 35 4 0 0
+key 180 0 0 0
+endtrack
+track left_forearm linear
+key 0 0 0 0
+key 35 3 0 0
+key 180 0 0 0
+endtrack
+track right_shoulder linear
+key 0 0 0 0
+key 35 5 0 0
+key 180 0 0 0
+endtrack
+track right_upper_arm linear
+key 0 0 0 0
+key 35 4 0 0
+key 180 0 0 0
+endtrack
+track right_forearm linear
+key 0 0 0 0
+key 35 3 0 0
+key 180 0 0 0
+endtrack

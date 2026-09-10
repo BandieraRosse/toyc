@@ -322,6 +322,8 @@ void rasterfall_session_reset(struct rasterfall_session *session,
     camera->y = RASTERFALL_STANDING_CAMERA_Y;
     session->seed = seed ? seed : 1;
     session->skeletal_demo_pose = RASTERFALL_MODEL_POSE_BIND;
+    session->humanoid_debug_action = RASTERFALL_HUMANOID_DEBUG_IDLE;
+    session->humanoid_debug_time_ms = 0;
     session->skeletal_demo_player.clip = NULL;
     /* Fixed developer displays start in the reusable reference pose.  Keeping
      * all five high-detail models in WALK forced full animation, skinning and
@@ -1118,6 +1120,19 @@ static void session_interact(struct rasterfall_session *session,
         session->skeletal_demo_player.loop = 1;
         session->banner_ms = 2200;
         session->banner_text = "EULA AK HUMANOID POSE DEBUGGER";
+    } else if (it->kind == TOY_MAP_PICKUP_HUMANOID_ACTIONS_BUTTON) {
+        session->humanoid_debug_action =
+            (session->humanoid_debug_action + 1) %
+            RASTERFALL_HUMANOID_DEBUG_ACTION_COUNT;
+        session->humanoid_debug_time_ms = 0;
+        session->banner_ms = 1800;
+        session->banner_text =
+            session->humanoid_debug_action == RASTERFALL_HUMANOID_DEBUG_IDLE ?
+                "V2 ACTION: IDLE" :
+            session->humanoid_debug_action == RASTERFALL_HUMANOID_DEBUG_WALK ?
+                "V2 ACTION: WALK" :
+            session->humanoid_debug_action == RASTERFALL_HUMANOID_DEBUG_AIM ?
+                "V2 ACTION: RIFLE AIM" : "V2 ACTION: AIM + RECOIL";
     } else if (it->kind == TOY_MAP_PICKUP_AMMO) {
         toy_game_actor_refill_ammo(&session->game_state, player);
     } else if (it->kind == TOY_MAP_PICKUP_MONEY_BUTTON) {
@@ -2354,6 +2369,19 @@ void rasterfall_session_step(struct rasterfall_session *session,
         return;
     }
     rasterfall_animation_player_update(&session->skeletal_demo_player, dt_ms);
+    if (session->humanoid_debug_action == RASTERFALL_HUMANOID_DEBUG_IDLE)
+        session->humanoid_debug_time_ms =
+            (session->humanoid_debug_time_ms + dt_ms) % 2400;
+    else if (session->humanoid_debug_action == RASTERFALL_HUMANOID_DEBUG_WALK)
+        session->humanoid_debug_time_ms =
+            (session->humanoid_debug_time_ms + dt_ms) % 800;
+    else if (session->humanoid_debug_action == RASTERFALL_HUMANOID_DEBUG_AIM)
+        session->humanoid_debug_time_ms =
+            (session->humanoid_debug_time_ms + dt_ms) % 1000;
+    else if (session->humanoid_debug_time_ms < 180)
+        session->humanoid_debug_time_ms += dt_ms;
+    else
+        session->humanoid_debug_time_ms = 180;
     if (session->pose_debug_active && session->pose_editor.active) {
         /* Capture the advancing clock before applying this frame's editor
          * command.  A paused TIME edit below can then seek the player without

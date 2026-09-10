@@ -1,7 +1,7 @@
 # Rasterfall 模型与动画架构
 
 > 文档更新：2026-09-10
-> 源码核对基线：工作区（Humanoid Action Composition V1；legacy PMX/VMD compatibility）
+> 源码核对基线：工作区（Humanoid Action Composition V1.1 additive recoil；legacy PMX/VMD compatibility；PRIMARY_GRIP weapon presentation）
 
 本文说明运行时模块边界、扩展入口和当前仍需控制的技术债。格式细节仍以各公共头文件和
 转换工具为准。
@@ -16,7 +16,7 @@ Humanoid Action Composition V1 的正式边界为：
 ```text
 toy_game_actor animation semantic + deterministic time
                     ↓
-rasterfall_action_layer（LOWER_BODY / UPPER_BODY / reserved ADDITIVE）
+rasterfall_action_layer（LOWER_BODY / UPPER_BODY / ADDITIVE delta）
                     ↓ rasterfall_action_compose
 rasterfall_model_instance finalized pose
                     ↓
@@ -26,11 +26,13 @@ human/weapon socket query → attachment / weapon / rendering
 `toy_game_actor` 不持有 layer、动作资源、track、骨骼索引或最终姿态。modular presentation adapter
 保留逐 actor lower locomotion，使 gameplay semantic 临时切到 FIRE 时仍能组合 WALK；action evaluator
 是 semantic role 到目标骨架 stable ID 的唯一 runtime 适配点。`model_instance` 仍拥有求值后的可变姿态。
-V1 提供 lower IDLE/WALK 与 upper RIFLE_IDLE/AIM/FIRE；ADDITIVE 仅保留显式空接口，非空输入会被拒绝。
+V1.1 提供 lower IDLE/WALK、upper RIFLE_IDLE/AIM/FIRE，以及 ADDITIVE 的 RIFLE_RECOIL。
+recoil 是局部旋转 delta，不是完整 pose；当前只允许 spine/chest、双肩和双臂，禁止 root、hips、legs。
 
 求值顺序固定为 reset bind/base pose → apply LOWER_BODY role mask → apply UPPER_BODY role mask →
-final bone update → socket/attachment/weapon/render。lower mask 是 root、hips 和双腿；upper mask 是 spine
-至双手。RFANIM track 越界到错误层会失败，不允许 upper action偶然覆盖腿。weapon target debug 以
+apply ADDITIVE delta → final bone update → socket/attachment/weapon/render。lower mask 是 root、hips 和双腿；
+upper mask 是 spine 至双手，additive mask 是 spine/chest、双肩和双臂。RFANIM track 越界到错误层会失败，
+不允许 upper action 偶然覆盖腿或 recoil 修改 lower ownership。weapon target debug 以
 finalized character `WEAPON_R` 对齐 canonical weapon `PRIMARY_GRIP`，再变换 `FOREGRIP` 得到左手目标；
 它建立未来 IK 数据流但不在本版求解 IK。
 
@@ -81,6 +83,11 @@ canonical owner 仍是 resource，后续 Pose Buffer V2 再消除此布局债。
 被动 rigid follower 在上述 finalized pose 之后求值：renderer 从 instance 读取 HEAD/BACK socket，
 组合 attachment mount correction 与 actor/world transform，再提交无骨架 RMESH resource。它不回写
 pose，不共享 instance mutable storage，也不进入武器 placement/双手 IK 的约束求值阶段。
+
+active weapon presentation 与被动 rigid follower 分离：modular renderer 从同一个 finalized instance
+读取 `WEAPON_R`，用 authored weapon-local `PRIMARY_GRIP` 求出 weapon origin，再派生
+`FOREGRIP`、`MUZZLE` 和 `MAGAZINE` socket 供 renderer/debug 使用。此路径不使用 CHEST attachment、
+`pose_calibration_local`、FOREGRIP 自动求解或 IK；CHEST/校准仍只属于 legacy acceptance/兼容诊断入口。
 
 ## 扩展新动画格式
 
@@ -145,8 +152,8 @@ rest basis 重定向。不要在 VMD、glTF 解析器里添加目标角色专用
   应把解析与采样移入 `rasterfall/src/`，CLI 只保留输出和测试。
 - 当前 runtime clip 以骨骼局部旋转为主；加入通用骨骼平移、缩放或动画混合时，应增加
   独立 pose buffer 和 channel mask，不要继续增加 VMD 专用旁路状态。
-- RFANIM V1 固定容量、纯旋转、step/linear 插值；Composition V1 只有固定 role mask，没有权重混合、
-  animator graph、additive 求值、IK target 求解或 root motion。
+- RFANIM V1 固定容量、纯旋转、step/linear 插值；Composition V1.1 仍只有固定 role mask，新增
+  additive 仅进行局部四元数 delta 叠加，没有权重混合、animator graph、IK target 求解或 root motion。
   `weapon_target` 等非骨骼 semantic channel 应在扩展格式时增加显式 channel kind，不能伪装成骨名。
 
 ## 回归要求
@@ -156,6 +163,7 @@ rest basis 重定向。不要在 VMD、glTF 解析器里添加目标角色专用
 ```sh
 build/rfchar_runtime_test <rfchar.rmesh> # 含一 resource / 两 instance isolation
 build/rasterfall --character-acceptance <rfchar.rmesh> <output>
+build/rasterfall --action-composition-capture <model.rmesh> <lower.rfanim> <lower-ms> <upper.rfanim> <upper-ms> <additive.rfanim> <additive-ms> <output.bmp>
 make app-vmd-inspect app-glb-inspect app-rasterfall
 build/vmd_inspect <walk.vmd> <model.rmesh> --vmd-leg-trace
 build/vmd_inspect <walk.vmd> <model.rmesh> --vmd-walk-final-flips

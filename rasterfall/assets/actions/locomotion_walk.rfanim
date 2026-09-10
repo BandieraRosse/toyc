@@ -1,5 +1,6 @@
 RFANIM 1
 action LOCOMOTION_WALK
+layer LOWER_BODY
 duration 800
 skeleton RF_HUMANOID_V1
 loop 1

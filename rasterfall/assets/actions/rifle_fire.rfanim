@@ -1,5 +1,6 @@
 RFANIM 1
 action RIFLE_FIRE
+layer UPPER_BODY
 duration 180
 skeleton RF_HUMANOID_V1
 loop 0

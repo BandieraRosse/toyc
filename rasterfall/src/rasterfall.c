@@ -2357,6 +2357,7 @@ fail:
 }
 
 #define input_debug options.input_debug
+#define action_runtime_debug options.action_runtime_debug
 #define logic_test options.logic_test
 #define requested_net_mode options.requested_net_mode
 #define net_port options.net_port
@@ -2471,27 +2472,46 @@ int main(int argc, char **argv)
         return rasterfall_render_action_preview(options.action_preview_model,
             options.action_preview_path, options.action_time_ms,
             options.action_preview_output);
+    if (options.composition_capture_model)
+        return rasterfall_render_action_composition_capture(
+            options.composition_capture_model, options.composition_capture_lower,
+            options.composition_capture_lower_time, options.composition_capture_upper,
+            options.composition_capture_upper_time, options.composition_capture_additive,
+            options.composition_capture_additive_time, options.composition_capture_output);
     if (options.pose_debug_model) {
-        struct rasterfall_action_clip clip, upper;
-        struct rasterfall_action_composition composition;
+        struct rasterfall_action_clip clip, upper, additive, alternate;
+        struct rasterfall_action_composition composition, alternate_composition;
         struct rasterfall_model_resource resource;
-        struct rasterfall_model_instance instance;
-        int result = 1, prepared = 0;
+        struct rasterfall_model_instance instance, alternate_instance;
+        const struct rasterfall_action_clip *current_upper = NULL;
+        const char *alternate_path = NULL;
+        int result = 1, prepared = 0, alternate_ready = 0;
         memset(&resource,0,sizeof(resource));memset(&instance,0,sizeof(instance));
+        memset(&alternate_instance,0,sizeof(alternate_instance));
         memset(&composition,0,sizeof(composition));memset(&upper,0,sizeof(upper));
+        memset(&additive,0,sizeof(additive));
+        memset(&alternate,0,sizeof(alternate));
         if (rasterfall_action_load(&clip,options.pose_debug_action)==0 &&
             rasterfall_model_resource_load(&resource,options.pose_debug_model)==0 &&
             rasterfall_model_instance_init(&instance,&resource)==0 &&
             (!options.pose_debug_upper_action ||
-             rasterfall_action_load(&upper,options.pose_debug_upper_action)==0)) {
+             rasterfall_action_load(&upper,options.pose_debug_upper_action)==0) &&
+            (!options.pose_debug_additive_action ||
+             rasterfall_action_load(&additive,options.pose_debug_additive_action)==0)) {
             if (options.pose_debug_upper_action) {
                 composition.layers[RASTERFALL_ACTION_LAYER_LOWER_BODY].clip=&clip;
                 composition.layers[RASTERFALL_ACTION_LAYER_LOWER_BODY].time_ms=options.action_time_ms;
                 composition.layers[RASTERFALL_ACTION_LAYER_UPPER_BODY].clip=&upper;
                 composition.layers[RASTERFALL_ACTION_LAYER_UPPER_BODY].time_ms=options.pose_debug_upper_time_ms;
-                __printf("LOWER:\n  %s time=%dms\nUPPER:\n  %s time=%dms\nRESULT:\n  composed humanoid pose\n",
+                if (options.pose_debug_additive_action) {
+                    composition.layers[RASTERFALL_ACTION_LAYER_ADDITIVE].clip=&additive;
+                    composition.layers[RASTERFALL_ACTION_LAYER_ADDITIVE].time_ms=options.pose_debug_additive_time_ms;
+                }
+                __printf("LOWER:\n  %s time=%dms\nUPPER:\n  %s time=%dms\nADDITIVE:\n  %s time=%dms\nRESULT:\n  composed humanoid pose\n",
                     clip.name,options.action_time_ms,upper.name,
-                    options.pose_debug_upper_time_ms);
+                    options.pose_debug_upper_time_ms,
+                    options.pose_debug_additive_action ? additive.name : "NONE",
+                    options.pose_debug_additive_action ? options.pose_debug_additive_time_ms : 0);
             } else {
                 enum rasterfall_action_layer_id layer =
                     clip.id==RASTERFALL_ACTION_LOCOMOTION_IDLE ||
@@ -2506,6 +2526,45 @@ int main(int argc, char **argv)
         if (prepared &&
             rasterfall_action_compose(&instance,&composition)==0 &&
             rasterfall_action_pose_debug(&instance,options.pose_debug_role)==0) {
+            current_upper = options.pose_debug_upper_action ? &upper :
+                clip.layer == RASTERFALL_ACTION_LAYER_UPPER_BODY ? &clip : NULL;
+            if (current_upper &&
+                (current_upper->id == RASTERFALL_ACTION_RIFLE_IDLE ||
+                 current_upper->id == RASTERFALL_ACTION_RIFLE_AIM)) {
+                alternate_path = current_upper->id == RASTERFALL_ACTION_RIFLE_IDLE ?
+                    "rasterfall/assets/actions/rifle_aim.rfanim" :
+                    "rasterfall/assets/actions/rifle_idle.rfanim";
+                alternate_composition = composition;
+                if (rasterfall_action_load(&alternate, alternate_path) == 0 &&
+                    rasterfall_model_instance_init(&alternate_instance,
+                                                   &resource) == 0) {
+                    alternate_composition.layers[
+                        RASTERFALL_ACTION_LAYER_UPPER_BODY].clip = &alternate;
+                    alternate_composition.layers[
+                        RASTERFALL_ACTION_LAYER_UPPER_BODY].time_ms =
+                        options.pose_debug_upper_action ?
+                        options.pose_debug_upper_time_ms : options.action_time_ms;
+                    if (rasterfall_action_compose(&alternate_instance,
+                                                  &alternate_composition) == 0)
+                        alternate_ready = 1;
+                }
+                if (alternate_ready) {
+                    if (current_upper->id == RASTERFALL_ACTION_RIFLE_AIM)
+                        rasterfall_action_pipeline_compare_debug(
+                            &alternate_instance, alternate.name, &instance,
+                            current_upper->name, TOY_GAME_WEAPON_AK);
+                    else
+                        rasterfall_action_pipeline_compare_debug(
+                            &instance, current_upper->name, &alternate_instance,
+                            alternate.name, TOY_GAME_WEAPON_AK);
+                } else {
+                    __printf("ACTION_COMPARE unavailable alternate=%s\n",
+                        alternate_path);
+                    rasterfall_action_pipeline_debug(&instance,
+                        current_upper->name, TOY_GAME_WEAPON_AK);
+                }
+            } else rasterfall_action_pipeline_debug(&instance,
+                "current-composed", TOY_GAME_WEAPON_AK);
             int socket;
             struct rasterfall_action_weapon_targets targets;
             __printf("weapon_sockets:\n");
@@ -2526,6 +2585,7 @@ int main(int argc, char **argv)
                     targets.left_hand_target[2]);
             result=0;
         }
+        rasterfall_model_instance_unload(&alternate_instance);
         rasterfall_model_instance_unload(&instance);
         rasterfall_model_resource_unload(&resource);
         return result;
@@ -2634,6 +2694,7 @@ int main(int argc, char **argv)
     render_context.textures_enabled = textures_enabled;
     rf_windows_log("startup: map loaded, binding renderer");
     rasterfall_render_bind(&render_context);
+    rasterfall_render_set_action_runtime_debug(action_runtime_debug);
     /* Do not auto-load the historical Eula/VMD preview.  The old path is
      * still available when explicitly requested, but normal startup should
      * use the current RFCHAR/model presentation path and must not depend on

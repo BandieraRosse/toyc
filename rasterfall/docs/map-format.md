@@ -1,7 +1,7 @@
 # Rasterfall 地图格式
 
-> 文档更新：2026-09-09
-> 源码核对基线：工作区（地图布局 PNG/JSON 导出器使用仓库内 GB2312 16×16 点阵字库；JSON 查询器；空气墙竖直 box 和可站立 platform 通过同组 role 同步切换显示、碰撞与导航；边界 box 显式 blocks_airborne；外围渲染墙与 gameplay 碰撞分离；Hurd 北侧外围渲染墙在据点范围断开，避免与据点北墙重叠；Hurd 南侧纯渲染墙在入口范围断开，保留 x=-6000..6000 的可见入口；静态 prop 实例及 profile 碰撞盒接入现有 primitive/nav）
+> 文档更新：2026-09-10
+> 源码核对基线：工作区（地图布局 PNG/JSON 导出器使用仓库内 GB2312 16×16 点阵字库；JSON 查询器；空气墙竖直 box 和可站立 platform 通过同组 role 同步切换显示、碰撞与导航；边界 box 显式 blocks_airborne；外围渲染墙与 gameplay 碰撞分离；Hurd 北侧外围渲染墙在据点范围断开，避免与据点北墙重叠；Hurd 南侧纯渲染墙在入口范围断开，保留 x=-6000..6000 的可见入口；静态 prop 实例及 profile 碰撞盒接入现有 primitive/nav；V2 action debug button remains presentation-only）
 
 > 源码核对补充：北侧通道扩宽为 Hurd 防区，原中央北侧刷怪区拆到左右两翼。
 
@@ -52,6 +52,11 @@ ai_spawn name base_id level1|level2|level3 x z downed
 墙上按钮使用 `button_<用途> x z y` 记录并绑定到对应玩法交互；例如
 `button_west_corridor_no_tank -23940 2100 200` 会在西侧走廊出口旁的墙面放置一个按钮，
 一次生成 16 个随机敌人但排除 Tank。
+
+`button_humanoid_actions x z y` 是出生点附近的 RF Humanoid V2 动作调试按钮。它只驱动
+session 的 presentation 状态，不创建 gameplay actor；当前地图将按钮放在
+`(-12600,-12800)`，对应的 V2 Rifleman 由 renderer 固定展示在 `(-11800,-10200)`。
+按钮按 `IDLE → WALK → RIFLE AIM → AIM + RECOIL` 循环。
 
 静态环境组件使用 registry 中的稳定名称或 ID，不直接引用模型路径：
 
