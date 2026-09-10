@@ -1,7 +1,7 @@
 # Rasterfall 代码导航
 
-> 文档更新：2026-09-10
-> 源码核对基线：工作区（Enemy Presentation V1 1000ms ballistic fade / rotating irregular fragments / directional trailing emitter 与开发者死亡测试排；Humanoid Action Composition V1.1 additive recoil；modular RFANIM presentation clock；双手 RFANIM 持枪轨道；RFCHAR +Z forward basis；PRIMARY_GRIP weapon presentation；开发者 world strip 与战斗区共用 modular path；双正式四人小队 runtime）
+> 文档更新：2026-09-11
+> 源码核对基线：工作区（Character Material Lighting Policy V1；Enemy Presentation V1 1000ms ballistic fade / rotating irregular fragments / directional trailing emitter 与开发者死亡测试排；Humanoid Action Composition V1.1 additive recoil；modular RFANIM presentation clock；双手 RFANIM 持枪轨道；RFCHAR +Z forward basis；PRIMARY_GRIP weapon presentation；开发者 world strip 与战斗区共用 modular path；双正式四人小队 runtime）
 
 本目录面向接手 Rasterfall 任务的编码代理。目标不是介绍玩法，而是先把问题归到正确的
 状态所有者和文件，再开始搜索。命令、资源导入方法和用户可见特性仍以
@@ -32,7 +32,7 @@
 | 修改地图排布、导出地图俯视图、agent 可读 JSON 和精确布局查询 | [map-format.md](map-format.md) | `tools/map_layout_export.py`、`tools/map_layout_query.py`、`make map-layout` |
 | 场景、角色、HUD、特效、第一人称武器、性能 | [rendering.md](rendering.md) | `src/rasterfall_render.c`、`src/dev-tests/rasterfall_visual_capture.inc` |
 | 角色 humanoid / 实景距离观察组图 | [asset-pipeline.md](asset-pipeline.md)、[rendering.md](rendering.md) | `tools/character_lab_sheet.py`、`tools/character_world_sheet.py` |
-| RMESH 基础光照、角色可读性下限、Lighting OFF/V1 回归 | [rendering.md](rendering.md) | `model_form_light_q8()` → `render_gallery_model_range()`；`lighting-props` / Character Acceptance |
+| RMESH 基础光照、角色 role 可读性策略、Lighting OFF/V1 回归 | [rendering.md](rendering.md) | `model_form_light_q8()` → `character_render_policy()` → `render_gallery_model_range()`；`lighting-props` / Character Acceptance `lighting-policy` |
 | Hurd 职业外观、低模 AI 人体、RF Humanoid V1/V2、基础外观、指定角色独立绘制入口 | [rendering.md](rendering.md) | `rasterfall_render.h` 的 `rasterfall_procedural_humanoid_state` / `rasterfall_render_procedural_humanoid()`；`rasterfall_character.h` 的基础/职业 profile；`dev-tests/rasterfall_visual_capture.inc` 的角色验收与 world strip |
 | 中文 UI、UTF-8 文本和 GB2312 点阵字库 | [rendering.md](rendering.md)、[asset-sources.md](asset-sources.md) | `lib/graphics/fb_font.c`、`assets/fonts/` |
 | world-space 静态 RMESH prop、实例变换和开发展示 | [rendering.md](rendering.md) | `include/rasterfall_render.h`、`src/rasterfall_render.c` |

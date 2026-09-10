@@ -1,7 +1,7 @@
 # 渲染、HUD、特效与性能
 
-> 文档更新：2026-09-10
-> 源码核对基线：工作区（Enemy Presentation V1 1000ms ballistic body fade / rotating irregular fragments / directional trailing emitter / 10% legacy death；Humanoid Action Composition V1.1 additive recoil；modular RFANIM 独立 locomotion 时钟与双手持枪轨道；RFCHAR +Z forward basis；PRIMARY_GRIP weapon presentation；开发者 world strip 与战斗区共用 modular path；出生点 V2 action debug station；双正式四人 squad；Lighting V1）
+> 文档更新：2026-09-11
+> 源码核对基线：工作区（Character Material Lighting Policy V1；Enemy Presentation V1 1000ms ballistic body fade / rotating irregular fragments / directional trailing emitter / 10% legacy death；Humanoid Action Composition V1.1 additive recoil；modular RFANIM 独立 locomotion 时钟与双手持枪轨道；RFCHAR +Z forward basis；PRIMARY_GRIP weapon presentation；开发者 world strip 与战斗区共用 modular path；出生点 V2 action debug station；双正式四人 squad；Lighting V1）
 
 > 源码核对补充：正式 Hurd actor 通过四个专用 character profile 进入职业外观；恢复的四名 Maid 旗卫以 Maid character profile 接入 actor，同时继续由 anime identity 选择骨骼模型；普通 player、Eula、佣兵解析为 NONE。
 
@@ -158,9 +158,12 @@ form-lighting，覆盖 RFCHAR/skeletal body、static prop 和通过同一模型�
 当前 Q8.8/Q15 参数集中在 `rasterfall_render.c`：世界主光方向为归一化
 `(-0.408, 0.816, -0.408)`（表面指向高处西北主光），ambient 为 `136/256`，directional 为
 `120/256`，因此 `form = max(136, 136 + max(dot(N,L),0) * 120) / 256`，最大为 1.0。
-RFCHAR 或 skeletal 模型使用 `144/256` 的 presentation visibility floor；其他 RMESH 使用
-`136/256`。已有纹理 face/skin 材质继续保留 `224/256` 的近景可读性策略。form 结果随后与已有
-scene/lightmap 亮度相乘，雾仍在原有阶段处理。当前没有 stylized
+RFCHAR 或 skeletal 模型使用 `144/256` 的基础 presentation visibility floor；其他 RMESH 使用
+`136/256`。Character Material Lighting Policy V1 在同一个 `character_render_policy()` 中复用
+RFM2 material role，并在 form 与 scene/lightmap 相乘后对角色材质作最终亮度保护：FACE 与 SKIN
+为 `224/256`，EYES 为 `240/256`，HAIR 为 `176/256`；上限当前统一为 `256/256`，rim 字段预留为
+零且不执行额外 pass。CLOTHING、EQUIPMENT、无 role 材质及全部非角色 RMESH 保持 Lighting V1
+原公式。纯色与纹理 submission 都应用相同策略，雾仍在原有阶段处理。当前没有 stylized
 quantization、point light、shadow、probe 或动态局部光。
 
 `rasterfall_render_set_model_lighting()` 仅供 presentation/诊断消融。`--model-performance` 的
@@ -168,6 +171,9 @@ quantization、point light、shadow、probe 或动态局部光。
 Character Acceptance 额外输出 `lighting-ab/{bind,rifle-idle,rifle-aim}/{front,side,back,three-quarter}.bmp`，
 每张图左侧为 OFF、右侧为 V1；`--visual-capture lighting-props` 以相同方式固定输出 crate、
 workbench、vent unit 和 industrial pillar。两条入口都不读取时钟，适合用 `cmp` 做确定性检查。
+Character Acceptance 还输出 `lighting-policy/{normal-light,back-light,dark-environment}.bmp`：前两张
+从固定 directional key 的正反方向观察，dark 使用固定 `96/256` scene brightness；该 override
+只存在于进程内 capture fixture，不进入 runtime 参数、地图、gameplay 或网络状态。
 
 其他视觉模块：
 

@@ -1008,6 +1008,59 @@ fail:
     toy_renderer_destroy(&renderer); tlibc_free(pixels); return 1;
 }
 
+/* Character Material Lighting Policy V1 acceptance.  The normal and back
+ * cameras sit on opposite sides of the fixed world key light; the dark case
+ * keeps the back-light camera and supplies a deterministic 96/256 scene
+ * brightness override.  No gameplay session, map entity or local light participates. */
+static int visual_material_lighting_dump(
+    struct rasterfall_model_asset *character, const char *output_dir)
+{
+    static const char *names[] = {"normal-light", "back-light", "dark-environment"};
+    struct rasterfall_render_context context;
+    char dir[512], path[512];
+    int condition;
+    if (snprintf(dir, sizeof(dir), "%s/lighting-policy", output_dir) >=
+            (int)sizeof(dir) || tlibc_recursive_mkdir(dir) < 0) return 1;
+    for (condition = 0; condition < 3; condition++) {
+        struct camera camera;
+        struct toy_renderer renderer;
+        struct toy_surface surface;
+        uint32_t *pixels;
+        memset(&camera, 0, sizeof(camera));
+        camera.body.x = condition == 0 ? -1273 : 1273;
+        camera.body.z = condition == 0 ? -1273 : 1273;
+        camera.view.sy = condition == 0 ? 724 : -724;
+        camera.view.cy = condition == 0 ? 724 : -724;
+        camera.view.y = -350;
+        camera.view.pitch_cy = 1024;
+        memset(&context, 0, sizeof(context));
+        context.session = active_session;
+        context.fixed_floor_lighting = 1;
+        rasterfall_render_bind(&context);
+        active_model_scene_light_override_q8 = condition == 2 ? 96 : -1;
+        memset(&surface, 0, sizeof(surface));
+        surface.width = 800; surface.height = 800; surface.stride = 3200;
+        pixels = tlibc_malloc((size_t)surface.stride * surface.height);
+        if (!pixels) return 1;
+        surface.pixels = pixels;
+        toy_renderer_init(&renderer); toy_renderer_set_frame_budget(&renderer, 0);
+        if (toy_renderer_begin(&renderer, &surface, 0x181B22) < 0 ||
+            visual_acceptance_model_frame(&renderer, &camera, character, NULL,
+                0, 0, 0, 1800, 0) < 0 || renderer.cmd_overflow ||
+            toy_renderer_flush(&renderer) < 0 ||
+            snprintf(path, sizeof(path), "%s/%s.bmp", dir, names[condition]) >=
+                (int)sizeof(path) || rasterfall_hud_dump_bmp(path, &surface) < 0) {
+            active_model_scene_light_override_q8 = -1;
+            toy_renderer_destroy(&renderer); tlibc_free(pixels); return 1;
+        }
+        active_model_scene_light_override_q8 = -1;
+        toy_renderer_destroy(&renderer); tlibc_free(pixels);
+        __printf("rasterfall: character material lighting condition=%s output=%s\n",
+                 names[condition], path);
+    }
+    return 0;
+}
+
 int rasterfall_render_character_acceptance_capture(const char *model_path,
                                                     const char *output_dir)
 {
@@ -1053,6 +1106,7 @@ int rasterfall_render_character_acceptance_capture(const char *model_path,
                                     mode, view) != 0) {
             goto fail;
         }
+    if (visual_material_lighting_dump(model, output_dir) != 0) goto fail;
     for (distance = 0; distance < 3; distance++) {
         static const char *names[] = {"near","mid","far"};
         snprintf(path,sizeof(path),"%s/ab-%s",output_dir,names[distance]);

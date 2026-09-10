@@ -56,6 +56,10 @@
 #define RASTERFALL_MODEL_DIRECTIONAL_Q8 120
 #define RASTERFALL_MODEL_MIN_Q8 136
 #define RASTERFALL_CHARACTER_MIN_Q8 144
+#define RASTERFALL_CHARACTER_FACE_MIN_Q8 224
+#define RASTERFALL_CHARACTER_SKIN_MIN_Q8 224
+#define RASTERFALL_CHARACTER_EYES_MIN_Q8 240
+#define RASTERFALL_CHARACTER_HAIR_MIN_Q8 176
 
 struct vec3 { int x, y, z; };
 struct box { int minx, maxx, minz, maxz, height; uint32_t color; };
@@ -156,6 +160,9 @@ struct gallery_cached_vertex;
 #define active_material_specular_level (frontend_state()->material_specular_level)
 #define active_face_material (frontend_state()->face_material)
 #define active_skin_material (frontend_state()->skin_material)
+#define active_material_lighting_min_q8 (frontend_state()->material_lighting_min_q8)
+#define active_material_lighting_max_q8 (frontend_state()->material_lighting_max_q8)
+#define active_material_form_light_q8 (frontend_state()->material_form_light_q8)
 #define active_material_tint (frontend_state()->material_tint)
 #define active_model_triangle_stats (frontend_state()->model_triangle_stats)
 #define gallery_vertex_cache (frontend_state()->vertex_cache)
@@ -231,6 +238,7 @@ static int active_actor_roll_cos = 1024;
 static int active_gallery_lighting;
 static int active_disable_material_light;
 static int active_model_form_lighting = 1;
+static int active_model_scene_light_override_q8 = -1;
 static int active_coordinate_axes;
 static struct rasterfall_model_render_stats model_render_stats;
 static int collect_model_render_stats;
@@ -1393,6 +1401,9 @@ struct rasterfall_character_render_policy {
     int use_edge;
     int base_texture_bilinear;
     int edge_width_milli;
+    int lighting_min_q8;
+    int lighting_max_q8;
+    int rim_q8;
 };
 
 static int character_perceptual_model(
@@ -1470,14 +1481,22 @@ authored_visual_class(const struct rasterfall_model_asset *model,
 static struct rasterfall_character_render_policy
 character_render_policy(enum rasterfall_character_visual_class visual_class)
 {
-    struct rasterfall_character_render_policy policy = {1, 1, 1, 0, 1000};
+    struct rasterfall_character_render_policy policy = {
+        1, 1, 1, 0, 1000, 0, 256, 0
+    };
     if (visual_class == RASTERFALL_VISUAL_FACE ||
         visual_class == RASTERFALL_VISUAL_EYES) {
         policy.use_toon = 0;
         policy.base_texture_bilinear = 1;
+        policy.lighting_min_q8 = visual_class == RASTERFALL_VISUAL_EYES ?
+            RASTERFALL_CHARACTER_EYES_MIN_Q8 :
+            RASTERFALL_CHARACTER_FACE_MIN_Q8;
     } else if (visual_class == RASTERFALL_VISUAL_HAIR) {
         policy.use_sphere = 0;
         policy.use_edge = 0;
+        policy.lighting_min_q8 = RASTERFALL_CHARACTER_HAIR_MIN_Q8;
+    } else if (visual_class == RASTERFALL_VISUAL_SKIN) {
+        policy.lighting_min_q8 = RASTERFALL_CHARACTER_SKIN_MIN_Q8;
     } else if (visual_class == RASTERFALL_VISUAL_CLOTHING ||
                visual_class == RASTERFALL_VISUAL_EQUIPMENT) {
         policy.use_sphere = 0;
@@ -1530,11 +1549,17 @@ static int render_gallery_model_range(struct toy_renderer *renderer,
     int previous_material_specular_level = active_material_specular_level;
     int previous_face_material = active_face_material;
     int previous_skin_material = active_skin_material;
+    int previous_lighting_min = active_material_lighting_min_q8;
+    int previous_lighting_max = active_material_lighting_max_q8;
+    int previous_form_light = active_material_form_light_q8;
     uint32_t previous_material_tint = active_material_tint;
     int previous_base_bilinear =
         renderer->recording_base_texture_bilinear;
     int shared_texture = gallery_model_has_texture(model);
     int perceptual_profile = character_perceptual_model(model);
+    int character_model = model->has_character_contract ||
+                          model->skinning_enabled ||
+                          perceptual_profile != CHARACTER_PERCEPTUAL_NONE;
     if (prepare_vertices) {
         long bone_before, skin_before;
         phase_start = render_monotonic_us();
@@ -1571,6 +1596,10 @@ static int render_gallery_model_range(struct toy_renderer *renderer,
             visual_class = character_visual_class(perceptual_profile, i, material);
         struct rasterfall_character_render_policy policy =
             character_render_policy(visual_class);
+        active_material_lighting_min_q8 = character_model ?
+            policy.lighting_min_q8 : 0;
+        active_material_lighting_max_q8 = character_model ?
+            policy.lighting_max_q8 : 256;
         active_face_material = visual_class == RASTERFALL_VISUAL_FACE ||
             visual_class == RASTERFALL_VISUAL_EYES;
         active_skin_material = visual_class == RASTERFALL_VISUAL_SKIN;
@@ -1728,7 +1757,8 @@ static int render_gallery_model_range(struct toy_renderer *renderer,
                          gallery_vertex_cache[ib].normal[2] +
                          gallery_vertex_cache[ic].normal[2];
                 form_light = model_form_light_q8(nx / 3, ny / 3, nz / 3,
-                    model->has_character_contract || model->skinning_enabled);
+                    character_model);
+                active_material_form_light_q8 = form_light;
                 int dot = (-nx + ny * 2 - nz) / 12;
                 active_toon_level = 160 + dot * 95 / 32767;
                 if (active_toon_level < 0) active_toon_level = 0;
@@ -1759,6 +1789,14 @@ static int render_gallery_model_range(struct toy_renderer *renderer,
                     &ta, &tb, &tc, &gallery_vertex_cache[ia].view,
                     &gallery_vertex_cache[ib].view,
                     &gallery_vertex_cache[ic].view);
+            } else if (active_material_lighting_min_q8 > 0) {
+                a = gallery_vertex_cache[ia].uv.p;
+                b = gallery_vertex_cache[ib].uv.p;
+                c = gallery_vertex_cache[ic].uv.p;
+                drawn += draw_world_triangle_views(renderer, camera,
+                    &a, &b, &c, &gallery_vertex_cache[ia].view,
+                    &gallery_vertex_cache[ib].view,
+                    &gallery_vertex_cache[ic].view, color);
             } else {
                 uint32_t shaded_color;
                 a = gallery_vertex_cache[ia].uv.p;
@@ -1799,6 +1837,9 @@ static int render_gallery_model_range(struct toy_renderer *renderer,
     active_material_specular_level = previous_material_specular_level;
     active_face_material = previous_face_material;
     active_skin_material = previous_skin_material;
+    active_material_lighting_min_q8 = previous_lighting_min;
+    active_material_lighting_max_q8 = previous_lighting_max;
+    active_material_form_light_q8 = previous_form_light;
     active_material_tint = previous_material_tint;
     toy_renderer_set_base_texture_bilinear(renderer,
                                            previous_base_bilinear);
@@ -3027,11 +3068,18 @@ static int draw_world_triangle_views(struct toy_renderer *renderer,
         }
         int center_x = (a->x + b->x + c->x) / 3;
         int center_z = (a->z + b->z + c->z) / 3;
-        int light = active_gallery_lighting ? 256 :
+        int light = active_model_scene_light_override_q8 >= 0 ?
+                    active_model_scene_light_override_q8 :
+                    active_gallery_lighting ? 256 :
                     fixed_floor_lighting ? 256 :
                     baked_light_at(center_x, center_z);
         int fog = active_gallery_lighting ? 0 : fixed_floor_lighting ? 0 :
                   baked_fog_at(world_distance(camera, center_x, center_z));
+        if (active_material_lighting_min_q8 > 0) {
+            light = light * active_material_form_light_q8 / 256;
+            light = clampi(light, active_material_lighting_min_q8,
+                           active_material_lighting_max_q8);
+        }
         /* 区域涂色（fixed_floor_lighting）与地砖仅差 6 个世界单位，掠射角下
          * 插值深度误差会盖过真实差值导致 z-fight；涂色按覆盖层绘制，
          * 依赖"地砖先画、墙后画"的记录顺序保证遮挡正确。 */
@@ -3204,27 +3252,27 @@ static int draw_world_triangle_tex_views(struct toy_renderer *renderer,
         }
         int center_x = (a->p.x + b->p.x + c->p.x) / 3;
         int center_z = (a->p.z + b->p.z + c->p.z) / 3;
-        int scene_light = active_gallery_lighting ? 256 :
+        int scene_light = active_model_scene_light_override_q8 >= 0 ?
+                          active_model_scene_light_override_q8 :
+                          active_gallery_lighting ? 256 :
                           fixed_floor_lighting ? 256 :
                           baked_light_at(center_x, center_z);
         int model_light = (a->light + b->light + c->light) / 3;
         int light = scene_light * model_light / 256;
         int fog = active_gallery_lighting ? 0 :
                   fixed_floor_lighting ? 0 : baked_fog_at(world_distance(camera, center_x, center_z));
-        if (active_face_material || active_skin_material) {
+        if (active_material_lighting_min_q8 > 0) {
             sa.light = clipped[0].light * scene_light / 256;
             sb.light = (reversed ? clipped[i + 1].light : clipped[i].light) *
                        scene_light / 256;
             sc.light = (reversed ? clipped[i].light : clipped[i + 1].light) *
                        scene_light / 256;
-            if (sa.light < 224) sa.light = 224;
-            if (sb.light < 224) sb.light = 224;
-            if (sc.light < 224) sc.light = 224;
-            if (active_skin_material) {
-                if (sa.light > 256) sa.light = 256;
-                if (sb.light > 256) sb.light = 256;
-                if (sc.light > 256) sc.light = 256;
-            }
+            sa.light = clampi(sa.light, active_material_lighting_min_q8,
+                              active_material_lighting_max_q8);
+            sb.light = clampi(sb.light, active_material_lighting_min_q8,
+                              active_material_lighting_max_q8);
+            sc.light = clampi(sc.light, active_material_lighting_min_q8,
+                              active_material_lighting_max_q8);
             sa.fog = sb.fog = sc.fog = active_face_material ? fog / 2 : fog;
         } else {
             sa.light = sb.light = sc.light = light;
@@ -3241,13 +3289,13 @@ static int draw_world_triangle_tex_views(struct toy_renderer *renderer,
                 active_material_specular, active_material_specular_level,
                 active_material_tint,
                 1, 0xFF202020U,
-                active_face_material || active_skin_material ? -1 : light,
+                active_material_lighting_min_q8 > 0 ? -1 : light,
                 active_face_material ? -1 : fog);
         else
             drawn += toy_renderer_triangle_textured_lit(renderer, &sa, &sb, &sc,
                                                          active_texture_view, 1,
                                                          0xFF202020U,
-                                                         active_face_material ? -1 : light,
+                                                         active_material_lighting_min_q8 > 0 ? -1 : light,
                                                          active_face_material ? -1 : fog);
         if (active_model_triangle_stats)
             active_model_triangle_stats->emitted_triangles++;

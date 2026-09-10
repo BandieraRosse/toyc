@@ -27,6 +27,9 @@ struct rasterfall_frontend_state {
     int disable_toon;
     int face_material;
     int skin_material;
+    int material_lighting_min_q8;
+    int material_lighting_max_q8;
+    int material_form_light_q8;
     int gallery_facing, gallery_sy, gallery_cy;
     int rigid_transform_enabled;
     struct rasterfall_rigid_transform rigid_transform;
