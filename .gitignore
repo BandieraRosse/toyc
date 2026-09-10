@@ -8,6 +8,9 @@ tools/.map-layout-fonts/**
 .vscode/*
 tmp/**
 .claude/**
+# Python bytecode caches at any directory depth.
+__pycache__/
+pycache/
 # 本地版权受限模型/纹理，只用于开发机验证，不进入版本库或发布包。
 rasterfall/private-assets/**
 llm/models/**
