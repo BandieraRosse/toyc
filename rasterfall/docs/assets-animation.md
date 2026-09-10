@@ -1,7 +1,7 @@
 # 资源、模型与动画
 
 > 文档更新：2026-09-10
-> 源码核对基线：工作区（V2 final convergence、CHR1 socket 的 identity-rest bind 烘焙、RFCHAR 双手握持；Eula actor walk clip lazy-load；PMX compatibility path）
+> 源码核对基线：工作区（Model Resource / Model Instance V1；Character Acceptance 正式 instance 路径；PMX compatibility path）
 
 新建或生成 Blender 人形资产必须先读 [`character-assets.md`](character-assets.md)。它冻结
 Blender source → Character GLB → importer → runtime character asset → humanoid animation 主线；
@@ -16,7 +16,9 @@ Blender source → Character GLB → importer → runtime character asset → hu
 ## 模型与动画模块
 
 - `rasterfall_model.c` / `.h`：RMESH/RFM2 加载、材质/蒙皮数据、骨骼层级、姿态采样、IK、grant、
-  root motion、附件变换和诊断。它是模型运行时的主要状态所有者。
+  root motion、附件变换和诊断。正式 RFCHAR 路径以 `rasterfall_model_resource` 独占 backing、纹理、
+  mesh、静态 skeleton/IK/grant 与 CHR1 定义；每个 `rasterfall_model_instance` 独占骨骼局部姿态、
+  global transforms、root motion、solver history/cache 与 attachment IK pole 状态。
 - `rasterfall_vmd.c` / `.h`：VMD 读取、骨骼映射、关键帧转换和诊断。
 - `rasterfall_humanoid_basis.c`、`rasterfall_humanoid_retarget.c`：人形静止基底、解剖验证和跨骨架旋转重定向。
 - `rasterfall_animation.h`：通用 clip/track/player 数据和采样辅助。
@@ -34,6 +36,11 @@ VMD/PMX 开发者预览属于旧资产兼容路径，仅在显式传入 `rasterf
 参数时启用；程序正常启动不显示 Eula 的私有 VMD 开发者预览。正式 Eula gameplay
 actor 若存在，会按角色 profile 懒加载 walk clip 作为移动表现。新角色优先走
 RFCHAR GLB → RFM2 v14 → stable role/attachment API，并使用角色验收和世界截图入口观察。
+
+`rasterfall_model_asset` 暂时保留为 evaluator/inspector compatibility view。resource 内的一份 asset
+是加载后冻结的定义；instance 内的 asset 是现有求值器的逐实例 pose view，静态 backing 指针指回
+resource。新 runtime 不得对 resource definition 调用 pose/IK API，且 resource 必须晚于全部 instance
+释放。CPU skinning 与 stable socket 分别通过 instance API 查询。
 
 ## 工具链定位
 

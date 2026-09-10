@@ -1,7 +1,7 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-10
-> 源码核对基线：工作区（Lighting V1；V2.1 Final Body 与六职业 Profession Lineup；RFCHAR 固定米制验收缩放、双手 socket IK、Headgear V1 与逐角色 world capture）
+> 源码核对基线：工作区（Model Resource / Model Instance V1 Character Acceptance；Lighting V1；V2.1 Final Body 与六职业 Profession Lineup）
 
 > 源码核对补充：正式 Hurd actor 通过四个专用 character profile 进入职业外观；恢复的四名 Maid 旗卫以 Maid character profile 接入 actor，同时继续由 anime identity 选择骨骼模型；普通 player、Eula、佣兵解析为 NONE。
 
@@ -205,6 +205,9 @@ build/rasterfall --character-acceptance rasterfall/private-assets/models/rf_huma
 输出固定三姿态四视角及 near/mid/far A/B；RFCHAR 正面为 canonical +Z。CHEST 枪架使用
 `visual_rf_calibration()` 的 idle/aim 参数，双手按 WEAPON_R / FOREGRIP 接触标准 AK；
 `visual_rf_check_grips()` 检查误差并传播失败。普通 Visual CLI 仍不依赖窗口、音频、地图或 gameplay step。
+该入口加载一个 `rasterfall_model_resource`，全部 pose、握持 IK、CPU skinning 和 socket 查询来自
+`rasterfall_model_instance`；另输出 `two-instance-isolation.bmp`，在同一 depth buffer 中以共享 resource
+绘制左侧 bind 与右侧 aim 两个独立 instance，作为 deterministic ownership 观察门。
 
 真实地图验收使用：
 

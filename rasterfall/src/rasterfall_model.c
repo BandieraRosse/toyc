@@ -527,6 +527,212 @@ void rasterfall_model_unload(struct rasterfall_model_asset *asset)
     __memset(asset, 0, sizeof(*asset));
 }
 
+int rasterfall_model_resource_load(struct rasterfall_model_resource *resource,
+                                   const char *path)
+{
+    if (!resource) return -1;
+    __memset(resource, 0, sizeof(*resource));
+    return rasterfall_model_load(&resource->definition, path);
+}
+
+void rasterfall_model_resource_unload(struct rasterfall_model_resource *resource)
+{
+    if (!resource) return;
+    rasterfall_model_unload(&resource->definition);
+}
+
+static void model_instance_fix_animation(struct rasterfall_model_asset *pose)
+{
+    if (!pose || !pose->bone_count) return;
+    /* demo_clips contain pointers into their owning animation state. */
+    rasterfall_model_build_demo_clips(pose);
+}
+
+int rasterfall_model_instance_init(struct rasterfall_model_instance *instance,
+                                   const struct rasterfall_model_resource *resource)
+{
+    struct rasterfall_model_asset *pose;
+    const struct rasterfall_model_asset *definition;
+    if (!instance || !resource || !resource->definition.data) return -1;
+    __memset(instance, 0, sizeof(*instance));
+    instance->resource = resource;
+    pose = &instance->pose;
+    definition = &resource->definition;
+    memcpy(pose, definition, sizeof(*pose));
+    pose->bones = NULL;
+    pose->bone_transforms = NULL;
+    pose->animation.rotations = NULL;
+    if (definition->bone_count) {
+        pose->bones = tlibc_malloc((size_t)definition->bone_count * sizeof(*pose->bones));
+        pose->bone_transforms = tlibc_malloc((size_t)definition->bone_count * sizeof(*pose->bone_transforms));
+        pose->animation.rotations = tlibc_malloc((size_t)definition->bone_count * sizeof(*pose->animation.rotations));
+        if (!pose->bones || !pose->bone_transforms || !pose->animation.rotations) {
+            rasterfall_model_instance_unload(instance);
+            return -1;
+        }
+        memcpy(pose->bones, definition->bones,
+               (size_t)definition->bone_count * sizeof(*pose->bones));
+        memcpy(pose->bone_transforms, definition->bone_transforms,
+               (size_t)definition->bone_count * sizeof(*pose->bone_transforms));
+        memcpy(pose->animation.rotations, definition->animation.rotations,
+               (size_t)definition->bone_count * sizeof(*pose->animation.rotations));
+        model_instance_fix_animation(pose);
+    }
+    return 0;
+}
+
+void rasterfall_model_instance_unload(struct rasterfall_model_instance *instance)
+{
+    if (!instance) return;
+    if (instance->pose.bones) tlibc_free(instance->pose.bones);
+    if (instance->pose.bone_transforms) tlibc_free(instance->pose.bone_transforms);
+    if (instance->pose.animation.rotations)
+        tlibc_free(instance->pose.animation.rotations);
+    __memset(instance, 0, sizeof(*instance));
+}
+
+int rasterfall_model_instance_reset_pose(struct rasterfall_model_instance *instance)
+{
+    struct rasterfall_model_asset *pose;
+    const struct rasterfall_model_asset *definition;
+    struct rasterfall_model_bone *bones;
+    struct rasterfall_model_bone_transform *transforms;
+    struct rasterfall_animation_rotation *rotations;
+    if (!instance || !instance->resource) return -1;
+    pose = &instance->pose;
+    definition = &instance->resource->definition;
+    if (pose->bone_count != definition->bone_count) return -1;
+    bones = pose->bones; transforms = pose->bone_transforms;
+    rotations = pose->animation.rotations;
+    memcpy(pose, definition, sizeof(*pose));
+    pose->bones = bones; pose->bone_transforms = transforms;
+    pose->animation.rotations = rotations;
+    memcpy(bones, definition->bones,
+           (size_t)definition->bone_count * sizeof(*bones));
+    memcpy(transforms, definition->bone_transforms,
+           (size_t)definition->bone_count * sizeof(*transforms));
+    memcpy(rotations, definition->animation.rotations,
+           (size_t)definition->bone_count * sizeof(*rotations));
+    model_instance_fix_animation(pose);
+    return rasterfall_model_update_bones(pose);
+}
+
+int rasterfall_model_instance_set_pose(struct rasterfall_model_instance *instance,
+                                       int pose)
+{
+    return instance ? rasterfall_model_set_pose(&instance->pose, pose) : -1;
+}
+
+int rasterfall_model_instance_update_bones(struct rasterfall_model_instance *instance)
+{
+    return instance ? rasterfall_model_update_bones(&instance->pose) : -1;
+}
+
+const struct rasterfall_model_resource *rasterfall_model_instance_resource(
+    const struct rasterfall_model_instance *instance)
+{
+    return instance ? instance->resource : NULL;
+}
+
+const struct rasterfall_model_asset *rasterfall_model_resource_definition(
+    const struct rasterfall_model_resource *resource)
+{
+    return resource ? &resource->definition : NULL;
+}
+
+struct rasterfall_model_asset *rasterfall_model_instance_pose(
+    struct rasterfall_model_instance *instance)
+{
+    return instance ? &instance->pose : NULL;
+}
+
+const struct rasterfall_model_asset *rasterfall_model_instance_final_pose(
+    const struct rasterfall_model_instance *instance)
+{
+    return instance ? &instance->pose : NULL;
+}
+
+const struct rasterfall_model_bone_transform *rasterfall_model_instance_bone_transform(
+    const struct rasterfall_model_instance *instance, unsigned int bone)
+{
+    if (!instance || bone >= instance->pose.bone_count) return NULL;
+    return &instance->pose.bone_transforms[bone];
+}
+
+int rasterfall_model_instance_attachment_transform(
+    const struct rasterfall_model_instance *instance,
+    enum rasterfall_character_attachment attachment,
+    struct rasterfall_model_attachment_transform *out)
+{
+    return instance ? rasterfall_model_character_attachment_transform(
+        &instance->pose, attachment, out) : -1;
+}
+
+int rasterfall_model_instance_skin_vertex(
+    const struct rasterfall_model_instance *instance, unsigned int index,
+    int position[3], int normal[3])
+{
+    return instance ? rasterfall_model_skin_vertex(&instance->pose, index,
+                                                    position, normal) : -1;
+}
+
+int rasterfall_model_instance_isolation_test(const char *path)
+{
+    struct rasterfall_model_resource resource;
+    struct rasterfall_model_instance a, b;
+    struct rasterfall_model_attachment_transform bind_a, bind_b, posed;
+    int result = 1;
+    if (!path || rasterfall_model_resource_load(&resource, path) < 0) return 1;
+    __memset(&a, 0, sizeof(a)); __memset(&b, 0, sizeof(b));
+    if (!resource.definition.has_character_contract ||
+        rasterfall_model_instance_init(&a, &resource) < 0 ||
+        rasterfall_model_instance_init(&b, &resource) < 0) goto done;
+    if (a.resource != b.resource || a.pose.bones == b.pose.bones ||
+        a.pose.bone_transforms == b.pose.bone_transforms ||
+        a.pose.bones == resource.definition.bones ||
+        a.pose.bone_transforms == resource.definition.bone_transforms) goto done;
+    if (rasterfall_model_instance_attachment_transform(&a,
+            RASTERFALL_ATTACHMENT_WEAPON_R, &bind_a) < 0 ||
+        rasterfall_model_instance_attachment_transform(&b,
+            RASTERFALL_ATTACHMENT_WEAPON_R, &bind_b) < 0 ||
+        rasterfall_model_instance_set_pose(&a,
+            RASTERFALL_MODEL_POSE_RFCHAR_TEST) < 0 ||
+        rasterfall_model_instance_attachment_transform(&a,
+            RASTERFALL_ATTACHMENT_WEAPON_R, &posed) < 0) goto done;
+    if (bind_a.position[0] != bind_b.position[0] ||
+        bind_a.position[1] != bind_b.position[1] ||
+        bind_a.position[2] != bind_b.position[2] ||
+        (posed.position[0] == bind_b.position[0] &&
+         posed.position[1] == bind_b.position[1] &&
+         posed.position[2] == bind_b.position[2])) goto done;
+    if (rasterfall_model_instance_set_pose(&b,
+            RASTERFALL_MODEL_POSE_BODY_TURN) < 0 ||
+        rasterfall_model_instance_reset_pose(&a) < 0 ||
+        rasterfall_model_instance_attachment_transform(&a,
+            RASTERFALL_ATTACHMENT_WEAPON_R, &posed) < 0 ||
+        posed.position[0] != bind_a.position[0] ||
+        posed.position[1] != bind_a.position[1] ||
+        posed.position[2] != bind_a.position[2] ||
+        rasterfall_model_instance_attachment_transform(&b,
+            RASTERFALL_ATTACHMENT_WEAPON_R, &bind_b) < 0 ||
+        (bind_b.position[0] == posed.position[0] &&
+         bind_b.position[1] == posed.position[1] &&
+         bind_b.position[2] == posed.position[2]) ||
+        resource.definition.bones[resource.definition.humanoid_bones[
+            RASTERFALL_HUMANOID_RIGHT_UPPER_ARM]].rotate_z != 0) goto done;
+    __printf("model-instance-isolation: PASS resource=%p instance_a=%p instance_b=%p weapon_delta=(%.3f,%.3f,%.3f)\n",
+             (void *)&resource, (void *)&a, (void *)&b,
+             posed.position[0] - bind_b.position[0],
+             posed.position[1] - bind_b.position[1],
+             posed.position[2] - bind_b.position[2]);
+    result = 0;
+done:
+    rasterfall_model_instance_unload(&b);
+    rasterfall_model_instance_unload(&a);
+    rasterfall_model_resource_unload(&resource);
+    return result;
+}
+
 int rasterfall_model_set_skinning(struct rasterfall_model_asset *asset,
                                   int enabled)
 {

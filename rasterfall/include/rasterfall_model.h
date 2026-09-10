@@ -488,6 +488,23 @@ struct rasterfall_model_asset {
     struct rasterfall_model_attachment attachments[RASTERFALL_ATTACHMENT_COUNT];
 };
 
+/* Model Resource / Model Instance V1.
+ *
+ * The resource owns the loaded RFM2 backing store, textures, mesh tables and
+ * immutable skeleton/CHR1 definitions.  An instance owns an isolated legacy
+ * pose view whose immutable pointers refer back to the resource.  Keeping the
+ * pose view layout-compatible lets the established IK/animation evaluator
+ * remain the implementation engine while new runtime callers use an explicit
+ * ownership boundary. */
+struct rasterfall_model_resource {
+    struct rasterfall_model_asset definition;
+};
+
+struct rasterfall_model_instance {
+    const struct rasterfall_model_resource *resource;
+    struct rasterfall_model_asset pose;
+};
+
 /* Compatibility aliases for inspector diagnostics kept in one-line traces. */
 #define ik_analytic_last_pole_anchor_rejected ik_analytic_last_anchor_rejected
 #define ik_analytic_last_pole_anchor_reject_reason ik_analytic_last_anchor_reject_reason
@@ -573,5 +590,34 @@ int rasterfall_model_glb_motion_diagnostic(struct rasterfall_model_asset *asset,
                                            const char *glb_path);
 int rasterfall_humanoid_logic_test(void);
 int rasterfall_model_skinning_logic_test(void);
+
+int rasterfall_model_resource_load(struct rasterfall_model_resource *resource,
+                                   const char *path);
+void rasterfall_model_resource_unload(struct rasterfall_model_resource *resource);
+int rasterfall_model_instance_init(struct rasterfall_model_instance *instance,
+                                   const struct rasterfall_model_resource *resource);
+void rasterfall_model_instance_unload(struct rasterfall_model_instance *instance);
+int rasterfall_model_instance_reset_pose(struct rasterfall_model_instance *instance);
+int rasterfall_model_instance_set_pose(struct rasterfall_model_instance *instance,
+                                       int pose);
+int rasterfall_model_instance_update_bones(struct rasterfall_model_instance *instance);
+const struct rasterfall_model_resource *rasterfall_model_instance_resource(
+    const struct rasterfall_model_instance *instance);
+const struct rasterfall_model_asset *rasterfall_model_resource_definition(
+    const struct rasterfall_model_resource *resource);
+struct rasterfall_model_asset *rasterfall_model_instance_pose(
+    struct rasterfall_model_instance *instance);
+const struct rasterfall_model_asset *rasterfall_model_instance_final_pose(
+    const struct rasterfall_model_instance *instance);
+const struct rasterfall_model_bone_transform *rasterfall_model_instance_bone_transform(
+    const struct rasterfall_model_instance *instance, unsigned int bone);
+int rasterfall_model_instance_attachment_transform(
+    const struct rasterfall_model_instance *instance,
+    enum rasterfall_character_attachment attachment,
+    struct rasterfall_model_attachment_transform *out);
+int rasterfall_model_instance_skin_vertex(
+    const struct rasterfall_model_instance *instance, unsigned int index,
+    int position[3], int normal[3]);
+int rasterfall_model_instance_isolation_test(const char *path);
 
 #endif

@@ -7,6 +7,7 @@ int main(int argc,char **argv)
     struct rasterfall_model_asset m;struct rasterfall_model_attachment_transform a,b;
     unsigned int i;int p0[3],n0[3],p1[3],n1[3],moved=0,bdef1=0,bdef2=0;
     if(argc!=2){__printf("usage: rfchar-runtime-test character.rmesh\n");return 2;}
+    if(rasterfall_model_instance_isolation_test(argv[1]))return 6;
     if(rasterfall_model_load(&m,argv[1])<0||!m.has_character_contract)return 1;
     for(i=0;i<RASTERFALL_HUMANOID_BONE_COUNT;i++)if(rasterfall_model_humanoid_bone(&m,(enum rasterfall_humanoid_bone)i)<0)return 2;
     for(i=0;i<m.vertex_count;i++){const unsigned char *w=m.skin_vertices+i*8;if(w[6])bdef2++;else bdef1++;}

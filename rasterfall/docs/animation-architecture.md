@@ -1,7 +1,7 @@
 # Rasterfall 模型与动画架构
 
 > 文档更新：2026-09-10
-> 源码核对基线：工作区（RF Humanoid V1.1 stable-role rifle composition / Character GLB Contract；Eula actor 按 profile lazy-load authored walk clip；玩法 MOVE 时钟映射到 authored anime walk clip 的展示时钟）
+> 源码核对基线：工作区（Model Resource / Model Instance V1；RFCHAR independent pose evaluation；legacy PMX/VMD compatibility）
 
 本文说明运行时模块边界、扩展入口和当前仍需控制的技术债。格式细节仍以各公共头文件和
 转换工具为准。
@@ -37,7 +37,23 @@ skinning / rendering
   不直接绑定某个角色。
 - `rasterfall_glb_animation.h`：glTF 动画输入和 humanoid 源姿态。
 - `rasterfall_humanoid*`：格式无关的解剖角色、静止基向量和重定向。
-- `rasterfall_model.*`：RFM2 资源、模型姿态求值、IK、grant、骨骼更新和蒙皮。
+- `rasterfall_model.*`：RFM2 resource、逐角色 model instance、姿态求值、IK、grant、骨骼更新和蒙皮。
+
+正式 RFCHAR 数据流为：
+
+```text
+one rasterfall_model_resource (immutable after load)
+                 ↓ shared read-only by
+many rasterfall_model_instance (isolated pose/solver state)
+                 ↓ finalized instance pose
+CPU skinning / stable attachment query / rendering submission
+```
+
+world position、actor yaw 和 presentation scale 不属于 instance。当前 evaluator 继续使用
+`rasterfall_model_asset` 布局兼容 pose view，以避免 V1 重写 pose representation；每个 instance
+复制 mutable bone records、bone transforms、animation/root-motion 及 inline solver state，网格、纹理、
+bone order 和 IK definition 指针共享 resource。compatibility shadow 会重复静态 bone 字段，静态事实的
+canonical owner 仍是 resource，后续 Pose Buffer V2 再消除此布局债。
 
 ## 扩展新动画格式
 
@@ -92,9 +108,10 @@ rest basis 重定向。不要在 VMD、glTF 解析器里添加目标角色专用
 
 ## 当前约束与后续方向
 
-- `rasterfall_model_asset` 目前同时拥有不可变网格数据与可变姿态状态，适合当前单实例
-  角色，但同一资源的大量角色实例仍会重复资源。下一阶段应拆成可共享
-  `model_resource` 和每角色 `model_instance`，不能只复制现有大结构体。
+- RFCHAR 的 resource/instance ownership 已建立并迁入 Character Acceptance；gameplay actor、Eula
+  高模与 PMX/VMD inspector 仍走 legacy asset API，等待按风险逐条迁移。
+- instance 当前保留完整 inline solver diagnostics/cache，确保所有可变 solver 历史隔离；这比热路径
+  理想布局更大。冷 diagnostics observer 与独立 Pose Buffer 属于后续优化，不在 V1 ownership 中完成。
 - inspector 的详细 IK trace 仍存放在模型结构中。新增诊断应优先放入可选 observer/
   snapshot，避免继续扩大运行时热数据。
 - glTF 动画库实现仍由 `app/glb_inspect.c` 以 library 模式编译。若继续扩展 glTF channel，
@@ -107,6 +124,8 @@ rest basis 重定向。不要在 VMD、glTF 解析器里添加目标角色专用
 涉及上述边界的修改至少验证：
 
 ```sh
+build/rfchar_runtime_test <rfchar.rmesh> # 含一 resource / 两 instance isolation
+build/rasterfall --character-acceptance <rfchar.rmesh> <output>
 make app-vmd-inspect app-glb-inspect app-rasterfall
 build/vmd_inspect <walk.vmd> <model.rmesh> --vmd-leg-trace
 build/vmd_inspect <walk.vmd> <model.rmesh> --vmd-walk-final-flips

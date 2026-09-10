@@ -239,8 +239,6 @@ static unsigned char static_prop_model_attempted[RASTERFALL_PROP_ASSET_COUNT];
 static struct rasterfall_model_asset private_character_model;
 static struct rasterfall_model_asset character_strip_model;
 static int character_strip_load_attempted;
-/* Process-local model used only by the deterministic character acceptance CLI. */
-static struct rasterfall_model_asset acceptance_capture_model;
 static struct rasterfall_model_asset private_character_lod_model;
 static int private_character_lod_loaded;
 static struct rasterfall_model_asset private_character_lod2_model;

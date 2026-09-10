@@ -437,11 +437,11 @@ static int visual_acceptance_dump(struct rasterfall_model_asset *character,
         old_state.sy = 0; old_state.cy = 1024; old_state.animation_id = TOY_GAME_ANIM_IDLE;
         rasterfall_render_procedural_humanoid(&renderer, &camera, &old_state,
             rasterfall_character_profile(RASTERFALL_CHARACTER_HURD_GUNSMITH));
-        if (visual_acceptance_model_frame(&renderer, &camera, &acceptance_capture_model,
+        if (visual_acceptance_model_frame(&renderer, &camera, character,
                                       NULL, mode, 500, 0, distance, mode != 0)<0) {
             toy_renderer_destroy(&renderer); tlibc_free(pixels); return 1;
         }
-    } else if (visual_acceptance_model_frame(&renderer, &camera, &acceptance_capture_model,
+    } else if (visual_acceptance_model_frame(&renderer, &camera, character,
                                          NULL, mode, 0, 0, distance, mode != 0)<0) {
         toy_renderer_destroy(&renderer); tlibc_free(pixels); return 1;
     }
@@ -456,6 +456,44 @@ static int visual_acceptance_dump(struct rasterfall_model_asset *character,
         toy_renderer_destroy(&renderer); tlibc_free(pixels); return 1;
     }
     toy_renderer_destroy(&renderer); tlibc_free(pixels); return 0;
+}
+
+static int visual_instance_isolation_dump(
+    const struct rasterfall_model_resource *resource, const char *output_dir)
+{
+    struct rasterfall_model_instance left, right;
+    struct camera camera; struct toy_renderer renderer; struct toy_surface surface;
+    uint32_t *pixels; char path[512]; int result = 1;
+    __memset(&left, 0, sizeof(left)); __memset(&right, 0, sizeof(right));
+    if (rasterfall_model_instance_init(&left, resource) < 0 ||
+        rasterfall_model_instance_init(&right, resource) < 0) goto done;
+    visual_acceptance_camera(&camera, 0, 1800);
+    __memset(&surface, 0, sizeof(surface));
+    surface.width = 1600; surface.height = 800; surface.stride = 1600 * 4;
+    pixels = tlibc_malloc((size_t)surface.stride * surface.height);
+    if (!pixels) goto done;
+    surface.pixels = pixels;
+    toy_renderer_init(&renderer); toy_renderer_set_frame_budget(&renderer, 0);
+    if (toy_renderer_begin(&renderer, &surface, 0x30343B) < 0 ||
+        visual_acceptance_model_frame(&renderer, &camera, &left.pose, NULL,
+            0, -520, 0, 1800, 0) < 0 ||
+        visual_acceptance_model_frame(&renderer, &camera, &right.pose, NULL,
+            2, 520, 0, 1800, 1) < 0 ||
+        renderer.cmd_overflow || toy_renderer_flush(&renderer) < 0 ||
+        snprintf(path, sizeof(path), "%s/two-instance-isolation.bmp",
+                 output_dir) >= (int)sizeof(path) ||
+        rasterfall_hud_dump_bmp(path, &surface) < 0) {
+        toy_renderer_destroy(&renderer); tlibc_free(pixels); goto done;
+    }
+    toy_renderer_destroy(&renderer); tlibc_free(pixels);
+    __printf("rasterfall: two-instance isolation resource=%p left_pose=%p right_pose=%p output=%s\n",
+             (void *)resource, (void *)left.pose.bones,
+             (void *)right.pose.bones, path);
+    result = 0;
+done:
+    rasterfall_model_instance_unload(&right);
+    rasterfall_model_instance_unload(&left);
+    return result;
 }
 
 /* Six RFCHAR carriers in one depth buffer, with equal camera distance and
@@ -571,46 +609,60 @@ int rasterfall_render_character_acceptance_capture(const char *model_path,
                                                     const char *output_dir)
 {
     static const char *modes[] = {"bind", "rifle-idle", "rifle-aim"};
-    struct rasterfall_render_context context; struct rasterfall_model_asset model;
+    struct rasterfall_render_context context;
+    struct rasterfall_model_resource resource;
+    struct rasterfall_model_instance instance;
+    struct rasterfall_model_asset *model;
     int mode, view, distance; char path[512];
     if (!model_path || !output_dir || !*model_path || !*output_dir) return 1;
-    memset(&model, 0, sizeof(model));
-    if (rasterfall_model_load(&model, model_path) < 0 || !model.has_character_contract) return 1;
+    memset(&resource, 0, sizeof(resource)); memset(&instance, 0, sizeof(instance));
+    if (rasterfall_model_resource_load(&resource, model_path) < 0) return 1;
+    if (!resource.definition.has_character_contract ||
+        rasterfall_model_instance_init(&instance, &resource) < 0) {
+        rasterfall_model_resource_unload(&resource);
+        return 1;
+    }
+    model = rasterfall_model_instance_pose(&instance);
     memset(&context, 0, sizeof(context)); context.fixed_floor_lighting = 1; rasterfall_render_bind(&context);
     /* Warm the standard AK cache once; render_skeletal_rifle resolves it by stable asset path. */
     gallery_load();
-    acceptance_capture_model = model;
     for (mode = 0; mode < 3; mode++) for (view = 0; view < 4; view++) {
         struct camera camera; struct toy_renderer renderer; struct toy_surface surface;
         uint32_t *pixels; int width = 800;
         visual_acceptance_camera(&camera, view, 900);
         memset(&surface, 0, sizeof(surface)); surface.width=width; surface.height=800; surface.stride=width*4;
         pixels=tlibc_malloc((size_t)surface.stride*surface.height); surface.pixels=pixels;
-        if (!pixels) { rasterfall_model_unload(&acceptance_capture_model); return 1; }
+        if (!pixels) goto fail;
         toy_renderer_init(&renderer); toy_renderer_set_frame_budget(&renderer,0);
         if (toy_renderer_begin(&renderer,&surface,0x30343B)<0 ||
-            visual_acceptance_model_frame(&renderer,&camera,&acceptance_capture_model,NULL,mode,0,0,900,mode!=0)<0 ||
-            toy_renderer_flush(&renderer)<0) { toy_renderer_destroy(&renderer); tlibc_free(pixels); rasterfall_model_unload(&acceptance_capture_model); return 1; }
+            visual_acceptance_model_frame(&renderer,&camera,model,NULL,mode,0,0,900,mode!=0)<0 ||
+            toy_renderer_flush(&renderer)<0) { toy_renderer_destroy(&renderer); tlibc_free(pixels); goto fail; }
         snprintf(path,sizeof(path),"%s/%s",output_dir,modes[mode]);
-        if (tlibc_recursive_mkdir(path)<0) { toy_renderer_destroy(&renderer); tlibc_free(pixels); rasterfall_model_unload(&acceptance_capture_model); return 1; }
+        if (tlibc_recursive_mkdir(path)<0) { toy_renderer_destroy(&renderer); tlibc_free(pixels); goto fail; }
         /* The current CLI keeps the model capture contract's fixed view names. */
         { static const char *names[] = {"front","side","back","three-quarter"};
           snprintf(path,sizeof(path),"%s/%s/%s.bmp",output_dir,modes[mode],names[view]);
-          if (rasterfall_hud_dump_bmp(path,&surface)<0) { toy_renderer_destroy(&renderer); tlibc_free(pixels); rasterfall_model_unload(&acceptance_capture_model); return 1; } }
+          if (rasterfall_hud_dump_bmp(path,&surface)<0) { toy_renderer_destroy(&renderer); tlibc_free(pixels); goto fail; } }
         toy_renderer_destroy(&renderer); tlibc_free(pixels);
     }
     for (mode = 0; mode < 3; mode++) for (view = 0; view < 4; view++)
-        if (visual_lighting_ab_dump(&acceptance_capture_model, output_dir,
+        if (visual_lighting_ab_dump(model, output_dir,
                                     mode, view) != 0) {
-            rasterfall_model_unload(&acceptance_capture_model); return 1;
+            goto fail;
         }
     for (distance = 0; distance < 3; distance++) {
         static const char *names[] = {"near","mid","far"};
         snprintf(path,sizeof(path),"%s/ab-%s",output_dir,names[distance]);
-        if (visual_acceptance_dump(&acceptance_capture_model,path,"sheet",2, distance==0?2100:distance==1?4200:8400,1)!=0) { rasterfall_model_unload(&acceptance_capture_model); return 1; }
+        if (visual_acceptance_dump(model,path,"sheet",2, distance==0?2100:distance==1?4200:8400,1)!=0) goto fail;
     }
-    rasterfall_model_unload(&acceptance_capture_model);
+    if (visual_instance_isolation_dump(&resource, output_dir) != 0) goto fail;
     __printf("rasterfall: character acceptance capture output=%s triangles=%u materials=%u\n",
-             output_dir, model.index_count/3, model.material_count);
+             output_dir, model->index_count/3, model->material_count);
+    rasterfall_model_instance_unload(&instance);
+    rasterfall_model_resource_unload(&resource);
     return 0;
+fail:
+    rasterfall_model_instance_unload(&instance);
+    rasterfall_model_resource_unload(&resource);
+    return 1;
 }

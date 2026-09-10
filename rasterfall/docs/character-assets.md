@@ -1,7 +1,7 @@
 # Rasterfall Character Asset Contract V1 / RF Humanoid V2.1
 
 > 文档更新：2026-09-10
-> 源码核对基线：工作区（V2.1 Final Body、Profession Visual System V1 六职业 carrier 与 lineup；Headgear V1；RFCHAR V1 / RFM2 v14、CHR1 与双手 socket 门禁不变）
+> 源码核对基线：工作区（Model Resource / Model Instance V1；V2.1 Final Body、Profession Visual System V1；RFCHAR V1 / RFM2 v14）
 
 本文是所有新 Rasterfall 人形角色资产的第一入口。V1 冻结 Blender 到离线 importer 的输入门；
 它不承诺任意 glTF 的兼容性，也不要求 runtime 直接读取 GLB。主线固定为：
@@ -135,6 +135,10 @@ python3 tools/assets/rfchar_import.py tmp/rfchar_fixture.glb tmp/rfchar_fixture.
 build/rfchar_runtime_test tmp/rfchar_fixture.rmesh
 build/rasterfall --model-pose-views tmp/rfchar_fixture.rmesh tmp/rfchar-pose rfchar-test
 ```
+
+runtime test 同时加载一份 immutable model resource 并创建两份 model instance，验证骨骼 pose/global
+transform 存储不共享、A/B socket 随不同姿态独立变化、互相 finalize 不污染且 reset 恢复 bind。Character
+Acceptance 也走同一 resource/instance 正式路径，并额外输出 `two-instance-isolation.bmp`（左 bind、右 aim）。
 
 Importer 总是先运行 validator，再合并同一 skin 的全部 mesh/triangle primitive，写入 512 RFU/m
 顶点、法线、UV、材质、SKN1 骨架/BDEF 与 CHR1 stable tables。reference fixture 包含完整 21-role
