@@ -97,6 +97,8 @@ struct gallery_cached_vertex;
 #define active_gallery_facing (frontend_state()->gallery_facing)
 #define active_gallery_sy (frontend_state()->gallery_sy)
 #define active_gallery_cy (frontend_state()->gallery_cy)
+#define active_rigid_transform_enabled (frontend_state()->rigid_transform_enabled)
+#define active_rigid_transform (frontend_state()->rigid_transform)
 
 /* Gameplay locomotion is intentionally a short 400 ms semantic loop.  Keep
  * the authored skeletal clip on its own presentation clock and accumulate
@@ -967,8 +969,19 @@ static int prepare_gallery_vertex_cache(
             cached->source_normal[2] = cached->normal[2];
         }
         {
-        int render_x = position[0], render_z = position[2];
-        if (active_gallery_facing) {
+        int render_x = position[0], render_y = position[1], render_z = position[2];
+        if (active_rigid_transform_enabled) {
+            const struct rasterfall_rigid_transform *t = &active_rigid_transform;
+            double x = position[0], y = position[1], z = position[2];
+            double nx = cached->source_normal[0], ny = cached->source_normal[1];
+            double nz = cached->source_normal[2];
+            render_x = (int)(t->rotation[0]*x+t->rotation[1]*y+t->rotation[2]*z);
+            render_y = (int)(t->rotation[3]*x+t->rotation[4]*y+t->rotation[5]*z);
+            render_z = (int)(t->rotation[6]*x+t->rotation[7]*y+t->rotation[8]*z);
+            cached->normal[0]=(short)(t->rotation[0]*nx+t->rotation[1]*ny+t->rotation[2]*nz);
+            cached->normal[1]=(short)(t->rotation[3]*nx+t->rotation[4]*ny+t->rotation[5]*nz);
+            cached->normal[2]=(short)(t->rotation[6]*nx+t->rotation[7]*ny+t->rotation[8]*nz);
+        } else if (active_gallery_facing) {
             int model_x = position[0], model_z = position[2];
             int normal_x = cached->source_normal[0];
             int normal_z = cached->source_normal[2];
@@ -987,8 +1000,8 @@ static int prepare_gallery_vertex_cache(
         }
         cached->uv.p.x = center_x +
             (int)((long long)render_x * scale / 1000);
-        cached->uv.p.y = base_y +
-            (int)((long long)(position[1] - model->min_y) * scale / 1000);
+        cached->uv.p.y = base_y + (int)((long long)
+            (active_rigid_transform_enabled ? render_y : position[1] - model->min_y) * scale / 1000);
         cached->uv.p.z = center_z +
             (int)((long long)render_z * scale / 1000);
         }
@@ -1397,7 +1410,8 @@ static int render_gallery_model_range(struct toy_renderer *renderer,
         primitive_end = (int)model->primitive_count;
     if (prepare_vertices) {
         __sync_fetch_and_add(&scene_stats.models_tested, 1);
-        if (!gallery_model_visible(&renderer->surface, camera, model, center_x,
+        if (!active_rigid_transform_enabled &&
+            !gallery_model_visible(&renderer->surface, camera, model, center_x,
                                    base_y, center_z, scale,
                                    active_gallery_facing, active_gallery_sy,
                                    active_gallery_cy)) {
@@ -1757,6 +1771,106 @@ int rasterfall_render_static_prop(
     active_gallery_cy = previous_cy;
     active_gallery_lighting = previous_lighting;
     return pixels;
+}
+
+static void rigid_matrix_multiply(const double a[9], const double b[9], double out[9])
+{
+    int r, c;
+    for (r = 0; r < 3; r++) for (c = 0; c < 3; c++)
+        out[r*3+c] = a[r*3]*b[c] + a[r*3+1]*b[3+c] + a[r*3+2]*b[6+c];
+}
+
+static void rigid_matrix_vector(const double r[9], const double v[3], double out[3])
+{
+    out[0]=r[0]*v[0]+r[1]*v[1]+r[2]*v[2];
+    out[1]=r[3]*v[0]+r[4]*v[1]+r[5]*v[2];
+    out[2]=r[6]*v[0]+r[7]*v[1]+r[8]*v[2];
+}
+
+int rasterfall_render_rigid_resource(
+    struct toy_renderer *renderer, const struct camera *camera,
+    const struct rasterfall_model_resource *resource,
+    const struct rasterfall_rigid_transform *model_to_world)
+{
+    const struct rasterfall_model_asset *model;
+    struct rasterfall_frontend_state *state;
+    struct rasterfall_rigid_transform saved;
+    int saved_enabled, scale, pixels;
+    if (!renderer || !camera || !resource || !model_to_world ||
+        model_to_world->scale_milli <= 0) return -1;
+    model = rasterfall_model_resource_definition(resource);
+    if (!model || !model->data || !model->position_scale || model->bone_count) return -1;
+    scale = (int)(((long long)RASTERFALL_RFU_PER_METER *
+                   model_to_world->scale_milli + model->position_scale / 2) /
+                  model->position_scale);
+    if (scale <= 0) return -1;
+    state = frontend_state(); saved_enabled = state->rigid_transform_enabled;
+    saved = state->rigid_transform;
+    state->rigid_transform_enabled = 1;
+    state->rigid_transform = *model_to_world;
+    pixels = render_gallery_model(renderer, camera, model,
+        (int)model_to_world->translation[0],
+        (int)model_to_world->translation[1],
+        (int)model_to_world->translation[2], scale);
+    state->rigid_transform = saved;
+    state->rigid_transform_enabled = saved_enabled;
+    return pixels;
+}
+
+static int rigid_attachment_model_to_world(
+    const struct rasterfall_model_instance *host,
+    const struct rasterfall_rigid_attachment_desc *attachment,
+    const struct rasterfall_rigid_transform *actor,
+    struct rasterfall_rigid_transform *out)
+{
+    struct rasterfall_model_attachment_transform socket;
+    double socket_mount[9], local_translation[3], world_translation[3];
+    int i;
+    if (!host || !attachment || !actor || !out || !attachment->resource ||
+        actor->scale_milli <= 0 || attachment->mount_correction.scale_milli <= 0 ||
+        attachment->flags) return -1;
+    if (rasterfall_model_instance_attachment_transform(host,
+            attachment->host_socket, &socket) < 0) return -1;
+    rigid_matrix_multiply(socket.rotation,
+                          attachment->mount_correction.rotation, socket_mount);
+    rigid_matrix_multiply(actor->rotation, socket_mount, out->rotation);
+    rigid_matrix_vector(socket.rotation,
+                        attachment->mount_correction.translation, local_translation);
+    for (i=0;i<3;i++) local_translation[i] += socket.position[i];
+    rigid_matrix_vector(actor->rotation, local_translation, world_translation);
+    for (i=0;i<3;i++) out->translation[i] = actor->translation[i] +
+        world_translation[i] * actor->scale_milli / 1000.0;
+    out->scale_milli = (int)((long long)actor->scale_milli *
+        attachment->mount_correction.scale_milli / 1000);
+    return out->scale_milli > 0 ? 0 : -1;
+}
+
+int rasterfall_render_rigid_attachment(
+    struct toy_renderer *renderer, const struct camera *camera,
+    const struct rasterfall_model_instance *host,
+    const struct rasterfall_rigid_attachment_desc *attachment,
+    const struct rasterfall_rigid_transform *actor_to_world)
+{
+    struct rasterfall_rigid_transform transform;
+    if (rigid_attachment_model_to_world(host, attachment, actor_to_world,
+                                        &transform) < 0) return -1;
+    return rasterfall_render_rigid_resource(renderer, camera,
+                                             attachment->resource, &transform);
+}
+
+int rasterfall_rigid_attachment_transform_logic_test(void)
+{
+    /* Numeric composition itself is exercised with real CHR1 sockets by the
+     * acceptance capture. Keep the standalone invariant focused on row-major
+     * rotation order: Y-quarter-turn after X-quarter-turn. */
+    const double x[9]={1,0,0,0,0,-1,0,1,0};
+    const double y[9]={0,0,1,0,1,0,-1,0,0};
+    double r[9], v[3], out[3];
+    v[0]=0;v[1]=1;v[2]=0;
+    rigid_matrix_multiply(y,x,r); rigid_matrix_vector(r,v,out);
+    return out[0] < -0.999 || out[0] > 1.001 ||
+           out[1] < -0.001 || out[1] > 0.001 ||
+           out[2] < -0.001 || out[2] > 0.001;
 }
 
 static int render_static_props(struct toy_renderer *renderer,

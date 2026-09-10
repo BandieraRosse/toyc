@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "id": "rf_tactical_helmet",
+  "type": "rigid_attachment",
+  "source": "../../../../rasterfall/private-assets/source/attachments/rf_tactical_helmet.glb",
+  "attachment_space": {
+    "origin": "mount_origin",
+    "orientation": "canonical_character",
+    "units": "meters"
+  },
+  "lods": []
+}

@@ -1,7 +1,7 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-10
-> 源码核对基线：工作区（Model Resource / Model Instance V1 Character Acceptance；Lighting V1；V2.1 Final Body 与六职业 Profession Lineup）
+> 源码核对基线：工作区（Generic Rigid Attachment V1；Model Resource / Model Instance V1；Lighting V1）
 
 > 源码核对补充：正式 Hurd actor 通过四个专用 character profile 进入职业外观；恢复的四名 Maid 旗卫以 Maid character profile 接入 actor，同时继续由 anime identity 选择骨骼模型；普通 player、Eula、佣兵解析为 NONE。
 
@@ -81,6 +81,18 @@ assembly，仍应保持 renderer 只消费稳定 attachment transform。
 相邻实例的 profile 碰撞 AABB 保持正间隙，不以视觉网格孔洞替代玩法碰撞。
 地图实例使用 `asset x z yaw scale` 五个字段，`y` 固定为地面锚点 `-900`，`scale=1000`
 表示资产原始设计尺寸。visual mesh 是 presentation-only；碰撞由地图 parser 从 profile 独立生成 gameplay box。
+
+Generic Rigid Attachment V1 使用独立的 `rasterfall_render_rigid_resource()` full-transform submission，
+不走 floor alignment。矩阵为 row-major，求值链为
+`actor/world × finalized socket × mount correction × authored rigid local`；translation、完整 3×3
+rotation 和 uniform scale 同时作用于顶点，rotation 同时作用于法线。RMESH header 的
+`position_scale` 在 submission 边界把 asset meters 换成 512 RFU/m，附件 bounds 不参与角色或附件
+scale。`rasterfall_render_rigid_attachment()` 只查询 instance finalized socket、组合矩阵并提交共享
+resource，不修改 host pose，也不把 actor/world 状态写入 instance。
+
+`--rigid-attachment-acceptance <model-dir> <output-dir>` 在同一深度缓冲绘制共享一份 Humanoid
+resource 的 bind/turned 两个 instance，并让二者共享同一份 helmet/backpack resource；右侧额外旋转
+chest 与 head，固定输出 socket 数值和 `rigid-attachment-acceptance.bmp`，可用重复 capture 做逐字节回归。
 
 程序化敌人模型采用统一的 `enemy_body_part` 描述：每个条目对应一个基本身体组件，类型包括局部朝向盒、世界盒、圆柱、椭球和面部矩形，尺寸与局部偏移仍使用现有 RFU 数值。通用解释器按描述顺序提交几何，因此可以在不改变玩法状态的前提下继续接入参数化配置。敌人位置以 `toy_game_enemy.x/z` 为水平锚点，垂直基准由地面 `Y=-900`、`ground_y` 和 `airborne_y` 组成；Charger 的水平放大和普通敌人的既有缩放语义保留在解释器中。Tank 的挥臂依赖蓄力时间，是动态组件，继续由专用函数求值后插入静态组件之间，以保持原有遮挡和绘制顺序。
 

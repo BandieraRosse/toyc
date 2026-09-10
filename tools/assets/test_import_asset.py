@@ -87,7 +87,7 @@ class AssetImporterTest(unittest.TestCase):
                 "schema": 1, "id": "test_crate", "type": "static_prop",
                 "source": "crate.glb", "lods": [{"level": 1, "ratio": 0.5}]
             }))
-            command = [str(IMPORTER), str(manifest), "--output-root", str(output), "--no-build"]
+            command = [sys.executable, str(IMPORTER), str(manifest), "--output-root", str(output), "--no-build"]
             subprocess.run(command, cwd=REPO, check=True)
             self.assertEqual(struct.unpack_from("<I", (output / "test_crate.rmesh").read_bytes(), 88)[0], 0)
             self.assertTrue((output / "test_crate.textures/texture_000.ttex").is_file())
@@ -104,7 +104,7 @@ class AssetImporterTest(unittest.TestCase):
             manifest.write_text(json.dumps({
                 "schema": 1, "id": "plain_prop", "type": "static_prop", "source": "plain.glb"
             }))
-            command = [str(IMPORTER), str(manifest), "--output-root", str(output), "--no-build"]
+            command = [sys.executable, str(IMPORTER), str(manifest), "--output-root", str(output), "--no-build"]
             subprocess.run(command, cwd=REPO, check=True)
             texture_dir = output / "plain_prop.textures"
             self.assertTrue(texture_dir.is_dir())

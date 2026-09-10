@@ -1,7 +1,7 @@
 # Rasterfall Character Asset Contract V1 / RF Humanoid V2.1
 
 > 文档更新：2026-09-10
-> 源码核对基线：工作区（Model Resource / Model Instance V1；V2.1 Final Body、Profession Visual System V1；RFCHAR V1 / RFM2 v14）
+> 源码核对基线：工作区（Generic Rigid Attachment V1；V2.1 Final Body；RFCHAR V1 / RFM2 v14）
 
 本文是所有新 Rasterfall 人形角色资产的第一入口。V1 冻结 Blender 到离线 importer 的输入门；
 它不承诺任意 glTF 的兼容性，也不要求 runtime 直接读取 GLB。主线固定为：
@@ -96,6 +96,22 @@ importer 将其烘焙为 `{stable attachment id, parent humanoid role/bone index
 local rotation}`；scale 必须为 identity，不进入 runtime 记录。之后 gameplay/render 只能按稳定 ID
 查询，不能使用 Blender 名称或 `find_bone("右手首")`。同一 ID 缺失（仅必需项）、重复、父骨错误或
 参与 vertex weights 均为验证错误。
+
+### Rigid Attachment Asset Contract V1
+
+真正刚性的外置附件复用普通 GLB→RMESH，不引入附件专用二进制格式。manifest 使用
+`type: rigid_attachment`，并固定 `attachment_space` 为 `origin=mount_origin`、
+`orientation=canonical_character`、`units=meters`。因此 GLB/RMESH 只含附件 mesh/material/texture：
+无 body、skin、host skeleton 或 CHR1；局部 `(0,0,0)` 是预期 mount origin，局部轴与本文 canonical
+角色轴一致，大小是 asset-native metric presentation size。当前生成器的
+`--rigid-attachment tactical-helmet|backpack` 分别复用 tactical helmet 与 Rifleman short-pack
+geometry，产物 ID 为 `rf_tactical_helmet`、`rf_backpack`。
+
+runtime recipe 是 `{stable host socket, shared model_resource, full rigid mount correction, flags}`。
+mount correction 只校准“资产 authored origin/basis → socket contract”，其 translation 使用 host
+model RFU、rotation 为 row-major 3×3、uniform scale 以 milli 表示；不得用于 body/bind pose、actor
+world position或武器握持补偿。V1 assembly 只正式支持 HEAD/BACK 的被动 follower，武器仍属于
+preliminary pose→weapon placement→hand targets→IK→final pose 链路。
 
 ## Skinning Contract V1
 

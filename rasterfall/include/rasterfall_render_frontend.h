@@ -28,6 +28,8 @@ struct rasterfall_frontend_state {
     int face_material;
     int skin_material;
     int gallery_facing, gallery_sy, gallery_cy;
+    int rigid_transform_enabled;
+    struct rasterfall_rigid_transform rigid_transform;
 };
 
 struct rasterfall_frontend_state *rasterfall_render_frontend_default(void);

@@ -15,7 +15,7 @@ from pathlib import Path
 
 SCHEMA_VERSION = 1
 ASSET_ID = re.compile(r"^[a-z][a-z0-9_]*$")
-ASSET_TYPES = {"static_prop", "character", "weapon"}
+ASSET_TYPES = {"static_prop", "character", "weapon", "rigid_attachment"}
 IMAGE_FORMATS = {".png": "png", ".jpg": "jpg", ".jpeg": "jpg", ".bmp": "bmp",
                  ".spa": "bmp", ".sph": "bmp"}
 
@@ -39,7 +39,8 @@ def read_manifest(path):
     source = value.get("source")
     if not isinstance(source, str) or not source:
         raise ImportFailure("manifest source must be a non-empty path")
-    unknown = set(value) - {"schema", "id", "type", "source", "lods", "dimensions_m", "attachments"}
+    unknown = set(value) - {"schema", "id", "type", "source", "lods", "dimensions_m", "attachments",
+                            "attachment_space"}
     if unknown:
         raise ImportFailure("unknown manifest fields: %s" % ", ".join(sorted(unknown)))
     if "dimensions_m" in value:
@@ -54,6 +55,14 @@ def read_manifest(path):
                                        not isinstance(node, str) or not node
                                        for name, node in attachments.items())):
             raise ImportFailure("weapon attachments must map semantic names to non-empty node/bone names")
+    if value["type"] == "rigid_attachment":
+        space = value.get("attachment_space")
+        expected = {"origin": "mount_origin", "orientation": "canonical_character",
+                    "units": "meters"}
+        if space != expected:
+            raise ImportFailure("rigid_attachment attachment_space must be %s" % expected)
+    elif "attachment_space" in value:
+        raise ImportFailure("attachment_space is only valid for rigid_attachment")
     lods = value.get("lods", [])
     if not isinstance(lods, list):
         raise ImportFailure("lods must be an array")
@@ -283,8 +292,8 @@ def import_asset(args):
     source = (manifest_path.parent / manifest["source"]).resolve()
     if not source.is_file() or source.suffix.lower() not in (".glb", ".pmx"):
         raise ImportFailure("source must be an existing .glb or .pmx file: %s" % source)
-    if manifest["type"] == "static_prop" and source.suffix.lower() != ".glb":
-        raise ImportFailure("static_prop requires a standardized GLB source")
+    if manifest["type"] in ("static_prop", "rigid_attachment") and source.suffix.lower() != ".glb":
+        raise ImportFailure("%s requires a standardized GLB source" % manifest["type"])
     if manifest["type"] == "character" and source.suffix.lower() not in (".glb", ".pmx"):
         raise ImportFailure("character requires an RFCHAR GLB or compatibility PMX source")
     repo = Path(__file__).resolve().parents[2]

@@ -1,7 +1,7 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-10
-> 源码核对基线：工作区（Model Resource / Model Instance V1；RF Humanoid 双实例隔离；Lighting V1；V2.1 Final Body 与 Profession Visual System V1）
+> 源码核对基线：工作区（Generic Rigid Attachment V1；Model Resource / Model Instance V1；RF Humanoid V2.1）
 
 本目录面向接手 Rasterfall 任务的编码代理。目标不是介绍玩法，而是先把问题归到正确的
 状态所有者和文件，再开始搜索。命令、资源导入方法和用户可见特性仍以
@@ -38,6 +38,7 @@
 | 战斗表现事件、muzzle/tracer/impact/camera shake 消费 | [rendering.md](rendering.md) | `include/rasterfall_effect_event.h`、`src/rasterfall_effects.c` |
 | 模型、蒙皮、IK、VMD/GLB、动作重定向 | [assets-animation.md](assets-animation.md) | `src/rasterfall_model.c` |
 | 共享模型资源、独立 pose instance、instance socket/CPU skinning | [assets-animation.md](assets-animation.md)、[animation-architecture.md](animation-architecture.md) | `rasterfall_model_resource` → `rasterfall_model_instance`；`build/rfchar_runtime_test` |
+| 独立 rigid RMESH、full rigid submission、HEAD/BACK assembly | [character-assets.md](character-assets.md)、[rendering.md](rendering.md) | `rasterfall_rigid_attachment_desc` → `rasterfall_render_rigid_attachment()`；`--rigid-attachment-acceptance` |
 | Blender 人形角色、RF Humanoid、Character GLB、附件、导入与蒙皮门禁 | [character-assets.md](character-assets.md) | `tools/assets/rfchar_import.py`、`include/rasterfall_model.h`、`app/glb_inspect.c`、`dev-tests/rasterfall_visual_capture.inc` |
 | V2 base body 收敛、AK 双手接触与冻结验收 | [character-assets.md](character-assets.md)、[rendering.md](rendering.md) | `generate_rasterfall_humanoid_v2.py` → importer bind 基底 → `rifle_solve_hands()` → `visual_rf_calibration()` / `visual_rf_check_grips()` → world strip |
 | RF Humanoid clean face、Headgear / Face Coverage V1、覆盖率组图 | [character-assets.md](character-assets.md)、[asset-pipeline.md](asset-pipeline.md) | `generate_rasterfall_humanoid_v2.py --headgear` → `RF_HEAD` → `rf_humanoid_headgear_sheet.py` → Character Lab / world strip |
@@ -123,6 +124,8 @@ player/actor 和敌人的 airborne forced/knockback movement 均由玩法核心�
 - 修改角色动画：检查角色选择、会话动画状态、模型求值、渲染以及网络动画字段。
 - 修改模型 runtime ownership：资源定义只由 `rasterfall_model_resource` 拥有；逐实例调用通过
   `rasterfall_model_instance`。同步验证 RFCHAR isolation 门禁与 Character Acceptance 双实例截图。
+- 修改 rigid attachment：资产保持无 skin/无宿主骨架的 metric RMESH；assembly 只能从 finalized
+  instance 查询 stable socket，并在 renderer 内组合 mount correction 与 actor/world transform。
 - 修改离线资产导入契约：从 `tools/assets/import_asset.py` 和 manifest 开始，分别检查
   `glb2rmesh`/`pmx2rmesh`、`toyasset`、`rmesh_lod.py`；不要让 runtime 读取 manifest。
 - 修改敌人外观组件：检查 `src/rasterfall_render.c` 的 `enemy_body_part` 描述表、通用组件解释器和特感动态组件；地面锚点仍由 `toy_game_enemy.ground_y` 与 `airborne_y` 提供。

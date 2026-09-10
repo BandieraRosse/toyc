@@ -317,6 +317,7 @@ static int run_logic_test(void)
     if (toy_map_lifecycle_logic_test() != 0) return 173;
     if (toy_map_prop_logic_test() != 0) return 171;
     if (rasterfall_render_static_prop_culling_logic_test() != 0) return 172;
+    if (rasterfall_rigid_attachment_transform_logic_test() != 0) return 175;
     if (rasterfall_session_load(&session,
                                "rasterfall/assets/maps/rasterfall.map") < 0 ||
         rasterfall_session_load(&session,

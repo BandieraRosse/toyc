@@ -1,7 +1,7 @@
 # Rasterfall 模型与动画架构
 
 > 文档更新：2026-09-10
-> 源码核对基线：工作区（Model Resource / Model Instance V1；RFCHAR independent pose evaluation；legacy PMX/VMD compatibility）
+> 源码核对基线：工作区（Generic Rigid Attachment V1；Model Resource / Model Instance V1；legacy PMX/VMD compatibility）
 
 本文说明运行时模块边界、扩展入口和当前仍需控制的技术债。格式细节仍以各公共头文件和
 转换工具为准。
@@ -54,6 +54,10 @@ world position、actor yaw 和 presentation scale 不属于 instance。当前 ev
 复制 mutable bone records、bone transforms、animation/root-motion 及 inline solver state，网格、纹理、
 bone order 和 IK definition 指针共享 resource。compatibility shadow 会重复静态 bone 字段，静态事实的
 canonical owner 仍是 resource，后续 Pose Buffer V2 再消除此布局债。
+
+被动 rigid follower 在上述 finalized pose 之后求值：renderer 从 instance 读取 HEAD/BACK socket，
+组合 attachment mount correction 与 actor/world transform，再提交无骨架 RMESH resource。它不回写
+pose，不共享 instance mutable storage，也不进入武器 placement/双手 IK 的约束求值阶段。
 
 ## 扩展新动画格式
 

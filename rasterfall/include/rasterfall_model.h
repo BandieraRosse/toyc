@@ -232,6 +232,7 @@ struct rasterfall_model_asset {
     unsigned int material_count;
     unsigned int material_bytes;
     unsigned int vertex_bytes;
+    unsigned int position_scale; /* authored units per meter from RFM2 header */
     const unsigned char *primitives;
     const unsigned char *materials;
     const unsigned char *vertices;

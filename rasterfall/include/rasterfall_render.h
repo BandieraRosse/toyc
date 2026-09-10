@@ -95,6 +95,22 @@ struct rasterfall_scene_stats {
     long character_animation_outside_us;
 };
 
+/* Row-major rotation and RFU translation. scale_milli is uniform and 1000
+ * means authored size. Rigid attachment RMESH vertices are metric at the
+ * asset boundary and are converted using their stored position_scale. */
+struct rasterfall_rigid_transform {
+    double translation[3];
+    double rotation[9];
+    int scale_milli;
+};
+
+struct rasterfall_rigid_attachment_desc {
+    enum rasterfall_character_attachment host_socket;
+    const struct rasterfall_model_resource *resource;
+    struct rasterfall_rigid_transform mount_correction;
+    unsigned int flags;
+};
+
 void rasterfall_render_bind(struct rasterfall_render_context *ctx);
 void rasterfall_render_set_edge_pass(int enabled);
 /* Presentation/diagnostic switch. Runtime default is Lighting V1 enabled. */
@@ -116,6 +132,16 @@ int rasterfall_render_model_preview(struct toy_renderer *renderer,
 int rasterfall_render_static_prop(
     struct toy_renderer *renderer, const struct camera *camera,
     const struct rasterfall_prop_instance *instance);
+int rasterfall_render_rigid_resource(
+    struct toy_renderer *renderer, const struct camera *camera,
+    const struct rasterfall_model_resource *resource,
+    const struct rasterfall_rigid_transform *model_to_world);
+int rasterfall_render_rigid_attachment(
+    struct toy_renderer *renderer, const struct camera *camera,
+    const struct rasterfall_model_instance *host,
+    const struct rasterfall_rigid_attachment_desc *attachment,
+    const struct rasterfall_rigid_transform *actor_to_world);
+int rasterfall_rigid_attachment_transform_logic_test(void);
 void rasterfall_render_model_stats(struct rasterfall_model_render_stats *out);
 void rasterfall_render_model_setup_timing(
     struct rasterfall_model_setup_timing *out);
@@ -128,6 +154,8 @@ int rasterfall_render_actor_benchmark(int iterations, int frontend_workers,
 /* Process-only diagnostic: call before runtime initialization, then exit. */
 int rasterfall_render_visual_capture(const char *scenario, const char *output);
 int rasterfall_render_profession_lineup(const char *model_dir, const char *output_dir);
+int rasterfall_render_rigid_attachment_acceptance(const char *model_dir,
+                                                  const char *output_dir);
 void rasterfall_render_scene_stats(struct rasterfall_scene_stats *out);
 int rasterfall_render_near_clip_test(void);
 int rasterfall_render_static_prop_culling_logic_test(void);

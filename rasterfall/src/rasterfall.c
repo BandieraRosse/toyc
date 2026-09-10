@@ -2452,6 +2452,9 @@ int main(int argc, char **argv)
     if (options.profession_lineup_models)
         return rasterfall_render_profession_lineup(options.profession_lineup_models,
                                                    options.profession_lineup_dir);
+    if (options.rigid_attachment_models)
+        return rasterfall_render_rigid_attachment_acceptance(
+            options.rigid_attachment_models, options.rigid_attachment_dir);
     if (options.character_acceptance_model)
         return rasterfall_render_character_acceptance_capture(
             options.character_acceptance_model,

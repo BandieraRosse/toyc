@@ -20,6 +20,8 @@ The optional ``--headgear`` variants are authored into the same RFCHAR
 character contract for V1 visual validation. Their geometry is rigidly
 weighted to ``RF_HEAD``; this keeps the stable HEAD attachment/socket and
 makes a later split into reusable head-mounted assemblies mechanical.
+``--rigid-attachment`` instead exports only one unskinned, metric rigid GLB
+whose origin and basis are the matching stable socket contract.
 """
 
 import argparse
@@ -49,6 +51,7 @@ HEADGEAR_NAMES = (
     'tactical-helmet', 'engineering-helmet',
 )
 PROFESSIONS = ('rifleman', 'breacher', 'recon', 'medic', 'engineer', 'heavy')
+RIGID_ATTACHMENTS = ('tactical-helmet', 'backpack')
 
 
 def arguments():
@@ -56,6 +59,7 @@ def arguments():
     parser.add_argument("--output", required=True)
     parser.add_argument("--headgear", choices=HEADGEAR_NAMES, default="bare")
     parser.add_argument("--profession", choices=PROFESSIONS)
+    parser.add_argument("--rigid-attachment", choices=RIGID_ATTACHMENTS)
     return parser.parse_args(sys.argv[sys.argv.index("--") + 1:]
                              if "--" in sys.argv else [])
 
@@ -671,7 +675,7 @@ def create_profession(armature, scene, materials, profession):
         create_headgear(armature, scene, materials, head)
     if profession == 'rifleman':
         plate(.205, 1.12, 1.46, -.235)
-        box('ShortPack', (-.19, .17, 1.13), (.19, .36, 1.48))
+        create_rifleman_backpack(armature, scene, g, prefix=profession + '_')
         box('MagazineBlock', (-.17, -.29, 1.08), (.17, -.23, 1.22), a)
     elif profession == 'breacher':
         plate(.255, 1.035, 1.50, -.255)
@@ -708,6 +712,33 @@ def create_profession(armature, scene, materials, profession):
         box('ChestAmmo', (-.22, -.31, 1.10), (.22, -.25, 1.24), a)
 
 
+def create_rifleman_backpack(armature, scene, material, prefix=''):
+    """Shared carrier/rigid geometry for the first modular BACK asset."""
+    return box_mesh(prefix + 'ShortPack', (-.19, .17, 1.13),
+                    (.19, .36, 1.48), material, armature, scene, 'RF_CHEST')
+
+
+def make_rigid_attachment(scene, armature, materials, name):
+    """Build only attachment geometry and rebase it to its stable socket."""
+    before = {obj.name for obj in scene.objects}
+    if name == 'tactical-helmet':
+        create_headgear(armature, scene, materials, name)
+        origin = Vector((0.0, 0.005, 1.99))
+    else:
+        create_rifleman_backpack(armature, scene, materials['headgear'])
+        origin = Vector((0.0, 0.18, 1.36))
+    meshes = [obj for obj in scene.objects
+              if obj.type == 'MESH' and obj.name not in before]
+    for obj in meshes:
+        for vertex in obj.data.vertices:
+            vertex.co -= origin
+        obj.parent = None
+        obj.modifiers.clear()
+        obj.vertex_groups.clear()
+    bpy.data.objects.remove(armature, do_unlink=True)
+    return meshes
+
+
 def patch_glb_skeleton(path):
     """Ensure Blender writes the RFCHAR-required skin skeleton node."""
     raw = path.read_bytes()
@@ -738,12 +769,17 @@ def main():
 
     armature = make_armature(scene)
     materials = create_materials()
-    create_body(armature, scene, materials)
+    if args.rigid_attachment:
+        if args.profession or args.headgear != 'bare':
+            raise ValueError('--rigid-attachment cannot combine with character variants')
+        make_rigid_attachment(scene, armature, materials, args.rigid_attachment)
+    else:
+        create_body(armature, scene, materials)
     if args.profession:
         if args.headgear != 'bare':
             raise ValueError('--profession owns its headgear combination')
         create_profession(armature, scene, materials, args.profession)
-    else:
+    elif not args.rigid_attachment:
         create_headgear(armature, scene, materials, args.headgear)
 
     # Merge authored pieces before export: RFM2 has a 32-primitive budget.
@@ -760,22 +796,23 @@ def main():
     # space and the canonical GLB exporter handles only the Y-up conversion.
     for obj in list(scene.objects):
         obj.select_set(True)
-    bpy.context.view_layer.objects.active = armature
+    bpy.context.view_layer.objects.active = meshes[0] if args.rigid_attachment else armature
     bpy.ops.export_scene.gltf(
         filepath=args.output,
         export_format='GLB',
         use_selection=True,
-        export_skins=True,
+        export_skins=not args.rigid_attachment,
         export_influence_nb=4,
         export_all_influences=True,
         export_morph=False,
         export_animations=False,
         export_yup=True,
         export_apply=False,
-        export_armature_object_remove=True)
+        export_armature_object_remove=not args.rigid_attachment)
 
     path = Path(args.output)
-    patch_glb_skeleton(path)
+    if not args.rigid_attachment:
+        patch_glb_skeleton(path)
     vertex_count = sum(len(obj.data.vertices) for obj in scene.objects
                        if obj.type == 'MESH')
     triangle_count = 0
@@ -784,8 +821,8 @@ def main():
             continue
         obj.data.calc_loop_triangles()
         triangle_count += len(obj.data.loop_triangles)
-    print('rfchar-humanoid-v2: %s headgear=%s source_vertices=%d source_triangles=%d materials=%d' %
-          (args.output, args.headgear, vertex_count, triangle_count, len(materials)))
+    print('rfchar-humanoid-v2: %s headgear=%s rigid=%s source_vertices=%d source_triangles=%d materials=%d' %
+          (args.output, args.headgear, args.rigid_attachment, vertex_count, triangle_count, len(materials)))
 
 
 if __name__ == '__main__':

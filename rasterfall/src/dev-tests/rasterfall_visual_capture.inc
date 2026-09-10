@@ -496,6 +496,105 @@ done:
     return result;
 }
 
+static void rigid_identity(struct rasterfall_rigid_transform *transform)
+{
+    memset(transform,0,sizeof(*transform));
+    transform->rotation[0]=transform->rotation[4]=transform->rotation[8]=1.0;
+    transform->scale_milli=1000;
+}
+
+int rasterfall_render_rigid_attachment_acceptance(const char *model_dir,
+                                                   const char *output_dir)
+{
+    struct rasterfall_model_resource body, helmet, backpack;
+    struct rasterfall_model_instance left, right;
+    struct rasterfall_rigid_attachment_desc head_desc, back_desc;
+    struct rasterfall_rigid_transform left_actor, right_actor, numeric;
+    struct rasterfall_model_attachment_transform rifle_frame;
+    struct rasterfall_render_context context;
+    struct camera camera; struct toy_renderer renderer; struct toy_surface surface;
+    uint32_t *pixels = NULL; char path[512]; int result=1, i;
+    memset(&body,0,sizeof(body));memset(&helmet,0,sizeof(helmet));memset(&backpack,0,sizeof(backpack));
+    memset(&left,0,sizeof(left));memset(&right,0,sizeof(right));
+    if (!model_dir || !output_dir || tlibc_recursive_mkdir(output_dir)<0) goto done;
+    if (snprintf(path,sizeof(path),"%s/rf_humanoid_v2.rmesh",model_dir)>=(int)sizeof(path) ||
+        rasterfall_model_resource_load(&body,path)<0) goto done;
+    if (snprintf(path,sizeof(path),"%s/rf_tactical_helmet.rmesh",model_dir)>=(int)sizeof(path) ||
+        rasterfall_model_resource_load(&helmet,path)<0) goto done;
+    if (snprintf(path,sizeof(path),"%s/rf_backpack.rmesh",model_dir)>=(int)sizeof(path) ||
+        rasterfall_model_resource_load(&backpack,path)<0) goto done;
+    if (!body.definition.has_character_contract || helmet.definition.bone_count ||
+        backpack.definition.bone_count || rasterfall_model_instance_init(&left,&body)<0 ||
+        rasterfall_model_instance_init(&right,&body)<0) goto done;
+    memset(&head_desc,0,sizeof(head_desc));memset(&back_desc,0,sizeof(back_desc));
+    head_desc.host_socket=RASTERFALL_ATTACHMENT_HEAD;head_desc.resource=&helmet;
+    back_desc.host_socket=RASTERFALL_ATTACHMENT_BACK;back_desc.resource=&backpack;
+    rigid_identity(&head_desc.mount_correction);rigid_identity(&back_desc.mount_correction);
+    rigid_identity(&left_actor);rigid_identity(&right_actor);
+    left_actor.scale_milli=right_actor.scale_milli=835;
+    left_actor.translation[0]=-430;right_actor.translation[0]=430;
+    left_actor.translation[1]=right_actor.translation[1]=-900;
+    rasterfall_model_instance_set_pose(&left,RASTERFALL_MODEL_POSE_BIND);
+    for(i=0;i<3;i++) {
+        const struct rasterfall_pose_calibration *calibration;
+        visual_acceptance_pose(&right.pose,i);
+        if(i && rifle_frame_transform(&right.pose,&rifle_frame)==0) {
+            calibration=visual_rf_calibration(i);
+            rifle_solve_hands(&right.pose,&rifle_frame,calibration,
+                rasterfall_weapon_asset_profile(TOY_GAME_WEAPON_AK),835);
+        }
+        if(rigid_attachment_model_to_world(&right,&head_desc,&right_actor,&numeric)<0)goto done;
+        __printf("rigid-attachment: pose=%s HEAD t=(%.3f,%.3f,%.3f) r0=(%.6f,%.6f,%.6f)\n",
+            i==0?"bind":i==1?"rifle-idle":"rifle-aim",numeric.translation[0],
+            numeric.translation[1],numeric.translation[2],numeric.rotation[0],
+            numeric.rotation[1],numeric.rotation[2]);
+        if(rigid_attachment_model_to_world(&right,&back_desc,&right_actor,&numeric)<0)goto done;
+    }
+    rasterfall_model_instance_set_pose(&right,RASTERFALL_MODEL_POSE_BODY_TURN);
+    i=rasterfall_model_humanoid_bone(&right.pose,RASTERFALL_HUMANOID_HEAD);
+    if(i<0)goto done;
+    right.pose.bones[i].rotate_x=18;right.pose.bones[i].rotate_y=-28;
+    if(rasterfall_model_instance_update_bones(&right)<0)goto done;
+    if(rigid_attachment_model_to_world(&right,&head_desc,&right_actor,&numeric)<0)goto done;
+    __printf("rigid-attachment: HEAD world t=(%.3f,%.3f,%.3f) r0=(%.6f,%.6f,%.6f)\n",
+        numeric.translation[0],numeric.translation[1],numeric.translation[2],
+        numeric.rotation[0],numeric.rotation[1],numeric.rotation[2]);
+    if(rigid_attachment_model_to_world(&right,&back_desc,&right_actor,&numeric)<0)goto done;
+    __printf("rigid-attachment: BACK world t=(%.3f,%.3f,%.3f) r0=(%.6f,%.6f,%.6f)\n",
+        numeric.translation[0],numeric.translation[1],numeric.translation[2],
+        numeric.rotation[0],numeric.rotation[1],numeric.rotation[2]);
+    memset(&context,0,sizeof(context));context.fixed_floor_lighting=1;rasterfall_render_bind(&context);
+    visual_acceptance_camera(&camera,3,2200);
+    memset(&surface,0,sizeof(surface));surface.width=1600;surface.height=800;surface.stride=6400;
+    pixels=tlibc_malloc((size_t)surface.stride*surface.height);if(!pixels)goto done;surface.pixels=pixels;
+    toy_renderer_init(&renderer);toy_renderer_set_frame_budget(&renderer,0);
+    if(toy_renderer_begin(&renderer,&surface,0x30343B)<0)goto render_done;
+    rasterfall_render_frontend_current(&renderer)->gallery_facing=1;
+    rasterfall_render_frontend_current(&renderer)->gallery_sy=0;
+    rasterfall_render_frontend_current(&renderer)->gallery_cy=1024;
+    render_gallery_model(&renderer,&camera,&left.pose,-430,-900,0,835);
+    rasterfall_render_rigid_attachment(&renderer,&camera,&left,&head_desc,&left_actor);
+    rasterfall_render_rigid_attachment(&renderer,&camera,&left,&back_desc,&left_actor);
+    render_gallery_model(&renderer,&camera,&right.pose,430,-900,0,835);
+    rasterfall_render_rigid_attachment(&renderer,&camera,&right,&head_desc,&right_actor);
+    rasterfall_render_rigid_attachment(&renderer,&camera,&right,&back_desc,&right_actor);
+    rasterfall_render_frontend_current(&renderer)->gallery_facing=0;
+    if(renderer.cmd_overflow||toy_renderer_flush(&renderer)<0||
+       snprintf(path,sizeof(path),"%s/rigid-attachment-acceptance.bmp",output_dir)>=(int)sizeof(path)||
+       rasterfall_hud_dump_bmp(path,&surface)<0)goto render_done;
+    __printf("rasterfall: rigid attachment acceptance body_resource=%p hosts=(%p,%p) helmet_resource=%p backpack_resource=%p output=%s\n",
+        (void*)&body,(void*)left.pose.bones,(void*)right.pose.bones,
+        (void*)&helmet,(void*)&backpack,path);
+    result=0;
+render_done:
+    toy_renderer_destroy(&renderer);
+done:
+    if(pixels)tlibc_free(pixels);
+    rasterfall_model_instance_unload(&right);
+    rasterfall_model_instance_unload(&left);rasterfall_model_resource_unload(&backpack);
+    rasterfall_model_resource_unload(&helmet);rasterfall_model_resource_unload(&body);return result;
+}
+
 /* Six RFCHAR carriers in one depth buffer, with equal camera distance and
  * physical body scale. Their screen-horizontal placement avoids overlap in
  * the side view without rotating the equipment relative to its body. */

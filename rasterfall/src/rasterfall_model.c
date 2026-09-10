@@ -432,6 +432,7 @@ int rasterfall_model_load(struct rasterfall_model_asset *asset,
     asset->ik_handoff_trace_time_ms = -1;
     asset->ik_handoff_trace_side = -1;
     asset->vertex_bytes = vertex_bytes;
+    asset->position_scale = model_u32(data + 16);
     asset->vertex_count = model_u32(data + 8);
     asset->index_count = model_u32(data + 12);
     asset->primitive_count = model_u32(data + 44);

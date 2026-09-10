@@ -63,6 +63,7 @@ void rasterfall_options_usage(int fd)
         "  --visual-capture <procedural-humanoid|hurd-squad|lighting-props> --visual-output <path.bmp>\n"
         "  --character-acceptance <model.rmesh> <output-dir>\n"
         "  --profession-lineup <model-dir> <output-dir>\n"
+        "  --rigid-attachment-acceptance <model-dir> <output-dir>\n"
         "  --character-world-capture <output-dir> [--character-world-model <model.rmesh>]\n"
         "  --model-views <model> <dir> [--model-views-supersample <1|2>]\n"
         "  --model-static-views <model> <dir>\n"
@@ -132,6 +133,10 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
             if(require_arguments(argc,argv,arg,2,option)<0)return -1;
             o->profession_lineup_models=argv[++arg];
             o->profession_lineup_dir=argv[++arg];
+        } else if (!strcmp(option,"--rigid-attachment-acceptance")) {
+            if(require_arguments(argc,argv,arg,2,option)<0)return -1;
+            o->rigid_attachment_models=argv[++arg];
+            o->rigid_attachment_dir=argv[++arg];
         } else if (!strcmp(option,"--character-acceptance")) {
             if(require_arguments(argc,argv,arg,2,option)<0)return -1;
             o->character_acceptance_model=argv[++arg];

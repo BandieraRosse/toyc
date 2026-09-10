@@ -1,7 +1,7 @@
 # Rasterfall 资产转换与诊断
 
 > 文档更新：2026-09-10
-> 源码核对基线：工作区（RFCHAR V1 → RFM2 v14 不变；V2.1 与六职业 carrier、导出前按材质合并 primitive、Profession Lineup 和确定性组图生产线）
+> 源码核对基线：工作区（rigid_attachment manifest；RFCHAR V1 → RFM2 v14；V2.1 与六职业 carrier）
 
 本文记录可执行的模型、纹理和动画工具链。运行时模块边界见 `assets-animation.md`，动画求值契约
 见 `animation-architecture.md`，资源是否允许发布见 `asset-sources.md`。
@@ -204,6 +204,18 @@ individual lab/world sheet，并生成跨变体 comparison。world 默认只捕�
 respirator、tactical-helmet、engineering-helmet 五个代表样本；可用 `--world-variants` 调整。
 这些变体仍是完整 RFCHAR carrier，模块几何绑定 `RF_HEAD`，不改变 importer 或 runtime 的
 stable attachment 表。
+
+刚性角色附件仍使用统一入口；manifest 的 `rigid_attachment` 类型要求 authored mount origin、
+canonical character orientation 和 meter units，转换结果是无 SKN1/CHR1 的普通 RMESH：
+
+```sh
+blender --background --factory-startup --python tools/blender/generate_rasterfall_humanoid_v2.py -- \
+  --output rasterfall/private-assets/source/attachments/rf_tactical_helmet.glb \
+  --rigid-attachment tactical-helmet
+python3 tools/assets/import_asset.py --force \
+  tools/assets/manifests/attachments/rf_tactical_helmet.asset.json
+build/rasterfall --rigid-attachment-acceptance rasterfall/private-assets/models tmp/rigid-attachment
+```
 
 ## 单位与边界
 
