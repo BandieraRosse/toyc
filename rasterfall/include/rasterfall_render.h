@@ -97,6 +97,8 @@ struct rasterfall_scene_stats {
 
 void rasterfall_render_bind(struct rasterfall_render_context *ctx);
 void rasterfall_render_set_edge_pass(int enabled);
+/* Presentation/diagnostic switch. Runtime default is Lighting V1 enabled. */
+void rasterfall_render_set_model_lighting(int enabled);
 int rasterfall_render_set_vmd_walk(const char *model_path, const char *vmd_path);
 void rasterfall_render_set_vmd_freeze(int freeze_head, int freeze_torso);
 void rasterfall_render_set_vmd_ik_enabled(int enabled);

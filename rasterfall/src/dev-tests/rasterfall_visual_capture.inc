@@ -26,8 +26,10 @@ int rasterfall_render_visual_capture(const char *scenario, const char *output)
     const char *weapon_path;
     int result = 1, i, count;
     int squad = scenario && !strcmp(scenario, "hurd-squad");
-    if (!scenario || (!squad && strcmp(scenario, "procedural-humanoid"))) {
-        __fprintf(2, "rasterfall: unknown visual scenario '%s'; available: procedural-humanoid, hurd-squad\n",
+    int prop_lighting = scenario && !strcmp(scenario, "lighting-props");
+    if (!scenario || (!squad && !prop_lighting &&
+                      strcmp(scenario, "procedural-humanoid"))) {
+        __fprintf(2, "rasterfall: unknown visual scenario '%s'; available: procedural-humanoid, hurd-squad, lighting-props\n",
                   scenario ? scenario : "");
         return 1;
     }
@@ -36,10 +38,14 @@ int rasterfall_render_visual_capture(const char *scenario, const char *output)
         return 1;
     }
     visual_procedural_humanoid_setup(&camera, &state);
-    count = squad ? 4 : 1;
+    count = squad ? 4 : prop_lighting ? 0 : 1;
     if (squad) camera.body.z = -2600;
+    if (prop_lighting) {
+        camera.body.z = -3200;
+        camera.view.y = -450;
+    }
     /* Preload just the fixture weapons, never discover gameplay actors. */
-    for (i = 0; i < (squad ? 2 : 1); i++) {
+    for (i = 0; i < (prop_lighting ? 0 : squad ? 2 : 1); i++) {
         weapon_path = rasterfall_weapon_model_path(
             i ? TOY_GAME_WEAPON_SMG : TOY_GAME_WEAPON_PISTOL);
         if (!weapon_path || rasterfall_model_load(&gallery_models[i], weapon_path) < 0) {
@@ -56,7 +62,7 @@ int rasterfall_render_visual_capture(const char *scenario, const char *output)
     context.effects = active_effects;
     context.fixed_floor_lighting = 1;
     rasterfall_render_bind(&context);
-    surface.width = squad ? 1600 : 800;
+    surface.width = squad || prop_lighting ? 1600 : 800;
     surface.height = 800;
     surface.stride = surface.width * (int)sizeof(uint32_t);
     surface.pixels = tlibc_malloc((size_t)surface.stride * surface.height);
@@ -65,6 +71,29 @@ int rasterfall_render_visual_capture(const char *scenario, const char *output)
     if (!surface.pixels || toy_renderer_begin(&renderer, &surface, 0x30343B) < 0) {
         __fprintf(2, "rasterfall: cannot initialize visual framebuffer\n");
         goto done;
+    }
+    if (prop_lighting) {
+        static const int ids[] = {
+            RASTERFALL_PROP_ASSET_CRATE, RASTERFALL_PROP_ASSET_WORKBENCH,
+            RASTERFALL_PROP_ASSET_VENT_UNIT,
+            RASTERFALL_PROP_ASSET_INDUSTRIAL_PILLAR
+        };
+        for (i = 0; i < 8; i++) {
+            int local = i & 3;
+            struct rasterfall_prop_instance instance;
+            memset(&instance, 0, sizeof(instance));
+            instance.asset_id = ids[local];
+            instance.x = i < 4 ? -1050 + (local & 1) * 620 :
+                                  430 + (local & 1) * 620;
+            instance.y = -900;
+            instance.z = (local / 2) * 850;
+            instance.yaw_degrees = local * 25;
+            instance.scale_milli = 1000;
+            rasterfall_render_set_model_lighting(i >= 4);
+            if (rasterfall_render_static_prop(&renderer, &camera, &instance) < 0)
+                goto done;
+        }
+        rasterfall_render_set_model_lighting(1);
     }
     for (i = 0; i < count; i++) {
         if (squad) {
@@ -85,6 +114,12 @@ int rasterfall_render_visual_capture(const char *scenario, const char *output)
         __fprintf(2, "rasterfall: visual scenario rendering failed\n");
         goto done;
     }
+    if (prop_lighting) {
+        fb_draw_string((unsigned char *)surface.pixels, 24, 24,
+                       "LIGHTING OFF", RF_COLOR_UI_TEXT, surface.stride);
+        fb_draw_string((unsigned char *)surface.pixels, 824, 24,
+                       "LIGHTING V1", RF_COLOR_UI_TEXT, surface.stride);
+    }
     if (rasterfall_hud_dump_bmp(output, &surface) < 0) {
         __fprintf(2, "rasterfall: cannot write visual capture: %s\n", output);
         goto done;
@@ -95,7 +130,8 @@ int rasterfall_render_visual_capture(const char *scenario, const char *output)
 done:
     toy_renderer_destroy(&renderer);
     tlibc_free(surface.pixels);
-    for (i = 0; i < (squad ? 2 : 1); i++)
+    rasterfall_render_set_model_lighting(1);
+    for (i = 0; i < (prop_lighting ? 0 : squad ? 2 : 1); i++)
         rasterfall_model_unload(&gallery_models[i]);
     return result;
 }
@@ -413,6 +449,52 @@ static int visual_acceptance_dump(struct rasterfall_model_asset *character,
     toy_renderer_destroy(&renderer); tlibc_free(pixels); return 0;
 }
 
+static int visual_lighting_ab_dump(struct rasterfall_model_asset *character,
+                                   const char *output_dir, int mode, int view)
+{
+    static const char *modes[] = {"bind", "rifle-idle", "rifle-aim"};
+    static const char *views[] = {"front", "side", "back", "three-quarter"};
+    struct camera camera;
+    struct toy_renderer renderer;
+    struct toy_surface surface;
+    uint32_t *pixels;
+    char dir[512], path[512];
+    int offset = 520, left_x, left_z, right_x, right_z;
+    visual_acceptance_camera(&camera, view, 1800);
+    left_x = -(int)((long long)camera.view.cy * offset / 1024);
+    left_z = (int)((long long)camera.view.sy * offset / 1024);
+    right_x = -left_x;
+    right_z = -left_z;
+    memset(&surface, 0, sizeof(surface));
+    surface.width = 1600; surface.height = 800; surface.stride = 1600 * 4;
+    pixels = tlibc_malloc((size_t)surface.stride * surface.height);
+    if (!pixels) return 1;
+    surface.pixels = pixels;
+    toy_renderer_init(&renderer); toy_renderer_set_frame_budget(&renderer, 0);
+    if (toy_renderer_begin(&renderer, &surface, 0x30343B) < 0) goto fail;
+    rasterfall_render_set_model_lighting(0);
+    if (visual_acceptance_model_frame(&renderer, &camera, character, NULL,
+            mode, left_x, left_z, 1800, mode != 0) < 0) goto fail;
+    rasterfall_render_set_model_lighting(1);
+    if (visual_acceptance_model_frame(&renderer, &camera, character, NULL,
+            mode, right_x, right_z, 1800, mode != 0) < 0) goto fail;
+    if (renderer.cmd_overflow || toy_renderer_flush(&renderer) < 0) goto fail;
+    fb_draw_string((unsigned char *)surface.pixels, 24, 24,
+                   "LIGHTING OFF", RF_COLOR_UI_TEXT, surface.stride);
+    fb_draw_string((unsigned char *)surface.pixels, 824, 24,
+                   "LIGHTING V1", RF_COLOR_UI_TEXT, surface.stride);
+    if (snprintf(dir, sizeof(dir), "%s/lighting-ab/%s", output_dir,
+                 modes[mode]) >= (int)sizeof(dir) ||
+        tlibc_recursive_mkdir(dir) < 0 ||
+        snprintf(path, sizeof(path), "%s/%s.bmp", dir, views[view]) >=
+            (int)sizeof(path) || rasterfall_hud_dump_bmp(path, &surface) < 0)
+        goto fail;
+    toy_renderer_destroy(&renderer); tlibc_free(pixels); return 0;
+fail:
+    rasterfall_render_set_model_lighting(1);
+    toy_renderer_destroy(&renderer); tlibc_free(pixels); return 1;
+}
+
 int rasterfall_render_character_acceptance_capture(const char *model_path,
                                                     const char *output_dir)
 {
@@ -445,6 +527,11 @@ int rasterfall_render_character_acceptance_capture(const char *model_path,
           if (rasterfall_hud_dump_bmp(path,&surface)<0) { toy_renderer_destroy(&renderer); tlibc_free(pixels); rasterfall_model_unload(&acceptance_capture_model); return 1; } }
         toy_renderer_destroy(&renderer); tlibc_free(pixels);
     }
+    for (mode = 0; mode < 3; mode++) for (view = 0; view < 4; view++)
+        if (visual_lighting_ab_dump(&acceptance_capture_model, output_dir,
+                                    mode, view) != 0) {
+            rasterfall_model_unload(&acceptance_capture_model); return 1;
+        }
     for (distance = 0; distance < 3; distance++) {
         static const char *names[] = {"near","mid","far"};
         snprintf(path,sizeof(path),"%s/ab-%s",output_dir,names[distance]);

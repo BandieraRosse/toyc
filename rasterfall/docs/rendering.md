@@ -1,7 +1,7 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-10
-> 源码核对基线：工作区（V2 final convergence；RFCHAR 双手 socket IK、握持误差门禁、开发者区默认 V2 与逐角色距离 capture；其余渲染主线同现有工作区）
+> 源码核对基线：工作区（Lighting V1 统一 RMESH form-lighting 与确定性 A/B；V2 final convergence；RFCHAR 双手 socket IK、握持误差门禁、开发者区默认 V2 与逐角色距离 capture）
 
 > 源码核对补充：正式 Hurd actor 通过四个专用 character profile 进入职业外观；恢复的四名 Maid 旗卫以 Maid character profile 接入 actor，同时继续由 anime identity 选择骨骼模型；普通 player、Eula、佣兵解析为 NONE。
 
@@ -65,6 +65,28 @@ portrait 可复用该入口和静态 profile，
 
 `src/render/rasterfall_render_frontend.c` 是渲染器前端适配，管理默认纹理、覆盖配置和 worker
 绑定；底层光栅器在仓库公共的 `lib/graphics/renderer.c` / `include/toy_renderer.h`。
+
+## Lighting V1：RMESH 形体光照
+
+正式 RMESH 路径在 `render_gallery_model_range()` 统一应用低成本 ambient + directional
+form-lighting，覆盖 RFCHAR/skeletal body、static prop 和通过同一模型入口绘制的第三人称 weapon。
+变形或实例 yaw 后的三个顶点法线先求平均，每个提交三角形只计算一次整数点积；纯色材质在提交前
+调制 base color，纹理材质把同一固定亮度交给已有 textured raster command。没有新增逐像素法线
+计算，也不改变材质色相、饱和度或 gameplay 状态。
+
+当前 Q8.8/Q15 参数集中在 `rasterfall_render.c`：世界主光方向为归一化
+`(-0.408, 0.816, -0.408)`（表面指向高处西北主光），ambient 为 `136/256`，directional 为
+`120/256`，因此 `form = max(136, 136 + max(dot(N,L),0) * 120) / 256`，最大为 1.0。
+RFCHAR 或 skeletal 模型使用 `144/256` 的 presentation visibility floor；其他 RMESH 使用
+`136/256`。已有纹理 face/skin 材质继续保留 `224/256` 的近景可读性策略。form 结果随后与已有
+scene/lightmap 亮度相乘，雾仍在原有阶段处理。当前没有 stylized
+quantization、point light、shadow、probe 或动态局部光。
+
+`rasterfall_render_set_model_lighting()` 仅供 presentation/诊断消融。`--model-performance` 的
+`full` 与 `lighting_off` 保留相同材质功能，只切换上述 form-lighting，能够直接比较成本。
+Character Acceptance 额外输出 `lighting-ab/{bind,rifle-idle,rifle-aim}/{front,side,back,three-quarter}.bmp`，
+每张图左侧为 OFF、右侧为 V1；`--visual-capture lighting-props` 以相同方式固定输出 crate、
+workbench、vent unit 和 industrial pillar。两条入口都不读取时钟，适合用 `cmp` 做确定性检查。
 
 其他视觉模块：
 
@@ -152,6 +174,7 @@ instance pool、事件和深度测试 flags 不变。
 ```sh
 make app-rasterfall
 build/rasterfall --visual-capture procedural-humanoid --visual-output /tmp/rf-humanoid.bmp
+build/rasterfall --visual-capture lighting-props --visual-output /tmp/rf-lighting-props.bmp
 build/rasterfall --character-acceptance rasterfall/private-assets/models/rf_humanoid_acceptance.rmesh /tmp/rf-humanoid-v11
 ```
 

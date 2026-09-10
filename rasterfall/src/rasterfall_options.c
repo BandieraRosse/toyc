@@ -60,7 +60,7 @@ void rasterfall_options_usage(int fd)
         "  --textures | --no-textures  --no-edge-pass  --no-stats\n"
         "  --texture-stats  --frames <count>  --dump-frame <path>\n"
         "  --logic-test  --input-test  --auto\n"
-        "  --visual-capture <procedural-humanoid|hurd-squad> --visual-output <path.bmp>\n"
+        "  --visual-capture <procedural-humanoid|hurd-squad|lighting-props> --visual-output <path.bmp>\n"
         "  --character-acceptance <model.rmesh> <output-dir>\n"
         "  --character-world-capture <output-dir> [--character-world-model <model.rmesh>]\n"
         "  --model-views <model> <dir> [--model-views-supersample <1|2>]\n"

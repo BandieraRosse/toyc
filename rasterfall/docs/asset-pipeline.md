@@ -150,7 +150,9 @@ build/rasterfall --actor-performance 30 5 8
 ```
 
 模型视图和材质回归走游戏内相同的材质与光栅路径。并行度、优化或渲染路径修改后，应比较确定性
-帧缓冲哈希和各阶段统计；诊断消融模式不代表默认画质。生成物放在 `tmp/` 或 `build/`，不提交。
+帧缓冲哈希和各阶段统计；`--model-performance` 的 `full` / `lighting_off` 直接消融统一 RMESH
+form-lighting，Character Acceptance 与 `--visual-capture lighting-props` 提供固定 OFF/V1 画面。
+其他诊断消融模式不代表默认画质。生成物放在 `tmp/` 或 `build/`，不提交。
 
 ## 单位与边界
 

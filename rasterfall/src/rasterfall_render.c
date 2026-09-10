@@ -43,6 +43,18 @@
 #define RASTERFALL_CHARACTER_MID_RFU 4096
 #define RASTERFALL_CHARACTER_FAR_RFU 15360
 
+/* Lighting V1 is deliberately evaluated once per submitted model triangle.
+ * The fixed Q15 direction points from the surface toward a high, north-west
+ * key light.  Keeping the result in Q8.8 lets the existing rasterizer apply
+ * it to flat and textured base colours without a per-pixel dot product. */
+#define RASTERFALL_MODEL_LIGHT_X_Q15 (-13377)
+#define RASTERFALL_MODEL_LIGHT_Y_Q15 26755
+#define RASTERFALL_MODEL_LIGHT_Z_Q15 (-13377)
+#define RASTERFALL_MODEL_AMBIENT_Q8 136
+#define RASTERFALL_MODEL_DIRECTIONAL_Q8 120
+#define RASTERFALL_MODEL_MIN_Q8 136
+#define RASTERFALL_CHARACTER_MIN_Q8 144
+
 struct vec3 { int x, y, z; };
 struct box { int minx, maxx, minz, maxz, height; uint32_t color; };
 
@@ -142,6 +154,7 @@ static int active_actor_roll_sin;
 static int active_actor_roll_cos = 1024;
 static int active_gallery_lighting;
 static int active_disable_material_light;
+static int active_model_form_lighting = 1;
 static int active_coordinate_axes;
 static struct rasterfall_model_render_stats model_render_stats;
 static int collect_model_render_stats;
@@ -627,6 +640,11 @@ void rasterfall_render_set_vmd_skin_trace(int enabled)
     private_character_vmd_skin_trace = enabled ? 1 : 0;
 }
 
+void rasterfall_render_set_model_lighting(int enabled)
+{
+    active_model_form_lighting = enabled ? 1 : 0;
+}
+
 static int render_quaternius_preview(struct toy_renderer *renderer,
                                      const struct camera *camera,int clip_id,
                                      int time_ms)
@@ -734,6 +752,23 @@ static int clampi(int value, int low, int high)
     if (value < low) return low;
     if (value > high) return high;
     return value;
+}
+
+static int model_form_light_q8(int nx, int ny, int nz, int character)
+{
+    long long dot;
+    int light, minimum = character ? RASTERFALL_CHARACTER_MIN_Q8 :
+                                     RASTERFALL_MODEL_MIN_Q8;
+    if (!active_model_form_lighting) return 256;
+    dot = (long long)nx * RASTERFALL_MODEL_LIGHT_X_Q15 +
+          (long long)ny * RASTERFALL_MODEL_LIGHT_Y_Q15 +
+          (long long)nz * RASTERFALL_MODEL_LIGHT_Z_Q15;
+    dot /= 32767;
+    if (dot < 0) dot = 0;
+    if (dot > 32767) dot = 32767;
+    light = RASTERFALL_MODEL_AMBIENT_Q8 +
+            (int)(dot * RASTERFALL_MODEL_DIRECTIONAL_Q8 / 32767);
+    return clampi(light, minimum, 256);
 }
 
 static void fill_rect(struct toy_surface *surface, int x, int y,
@@ -1570,6 +1605,7 @@ static int render_gallery_model_range(struct toy_renderer *renderer,
             unsigned int ic = model_u32(indices + (j + 2) * 4);
             struct vec3 a, b, c;
             struct world_uv_vertex ta, tb, tc;
+            int form_light;
             if (ia >= model->vertex_count || ib >= model->vertex_count || ic >= model->vertex_count) continue;
             {
                 int nx = gallery_vertex_cache[ia].normal[0] +
@@ -1581,6 +1617,8 @@ static int render_gallery_model_range(struct toy_renderer *renderer,
                 int nz = gallery_vertex_cache[ia].normal[2] +
                          gallery_vertex_cache[ib].normal[2] +
                          gallery_vertex_cache[ic].normal[2];
+                form_light = model_form_light_q8(nx / 3, ny / 3, nz / 3,
+                    model->has_character_contract || model->skinning_enabled);
                 int dot = (-nx + ny * 2 - nz) / 12;
                 active_toon_level = 160 + dot * 95 / 32767;
                 if (active_toon_level < 0) active_toon_level = 0;
@@ -1606,18 +1644,30 @@ static int render_gallery_model_range(struct toy_renderer *renderer,
                                   active_sphere_texture ? active_sphere_mode : 0, &tb);
                 gallery_uv_vertex(renderer, model, camera, ic, center_x, base_y, center_z, scale,
                                   active_sphere_texture ? active_sphere_mode : 0, &tc);
+                ta.light = tb.light = tc.light = form_light;
                 drawn += draw_world_triangle_tex_views(renderer, camera,
                     &ta, &tb, &tc, &gallery_vertex_cache[ia].view,
                     &gallery_vertex_cache[ib].view,
                     &gallery_vertex_cache[ic].view);
             } else {
+                uint32_t shaded_color;
                 a = gallery_vertex_cache[ia].uv.p;
                 b = gallery_vertex_cache[ib].uv.p;
                 c = gallery_vertex_cache[ic].uv.p;
+                {
+                    uint32_t alpha = color & 0xff000000U;
+                    unsigned int red = ((color >> 16) & 255U) *
+                                       (unsigned int)form_light / 256U;
+                    unsigned int green = ((color >> 8) & 255U) *
+                                         (unsigned int)form_light / 256U;
+                    unsigned int blue = (color & 255U) *
+                                        (unsigned int)form_light / 256U;
+                    shaded_color = alpha | red << 16 | green << 8 | blue;
+                }
                 drawn += draw_world_triangle_views(renderer, camera,
                     &a, &b, &c, &gallery_vertex_cache[ia].view,
                     &gallery_vertex_cache[ib].view,
-                    &gallery_vertex_cache[ic].view, color);
+                    &gallery_vertex_cache[ic].view, shaded_color);
             }
         }
         body_us = render_monotonic_us() - phase_start;
@@ -2720,7 +2770,8 @@ static int draw_world_triangle_views(struct toy_renderer *renderer,
         int center_x = (a->x + b->x + c->x) / 3;
         int center_z = (a->z + b->z + c->z) / 3;
         int light = active_gallery_lighting ? 256 :
-                    fixed_floor_lighting ? 256 : baked_light_at(center_x, center_z);
+                    fixed_floor_lighting ? 256 :
+                    baked_light_at(center_x, center_z);
         int fog = active_gallery_lighting ? 0 : fixed_floor_lighting ? 0 :
                   baked_fog_at(world_distance(camera, center_x, center_z));
         /* 区域涂色（fixed_floor_lighting）与地砖仅差 6 个世界单位，掠射角下
@@ -2879,35 +2930,28 @@ static int draw_world_triangle_tex_views(struct toy_renderer *renderer,
         }
         int center_x = (a->p.x + b->p.x + c->p.x) / 3;
         int center_z = (a->p.z + b->p.z + c->p.z) / 3;
-        int light = active_gallery_lighting ? 256 :
-                    fixed_floor_lighting ? 256 : baked_light_at(center_x, center_z);
+        int scene_light = active_gallery_lighting ? 256 :
+                          fixed_floor_lighting ? 256 :
+                          baked_light_at(center_x, center_z);
+        int model_light = (a->light + b->light + c->light) / 3;
+        int light = scene_light * model_light / 256;
         int fog = active_gallery_lighting ? 0 :
                   fixed_floor_lighting ? 0 : baked_fog_at(world_distance(camera, center_x, center_z));
-        if (active_face_material) {
-            int face_scene_light = light < 224 ? 224 : light;
-            sa.light = clipped[0].light * face_scene_light / 256;
+        if (active_face_material || active_skin_material) {
+            sa.light = clipped[0].light * scene_light / 256;
             sb.light = (reversed ? clipped[i + 1].light : clipped[i].light) *
-                       face_scene_light / 256;
+                       scene_light / 256;
             sc.light = (reversed ? clipped[i].light : clipped[i + 1].light) *
-                       face_scene_light / 256;
+                       scene_light / 256;
             if (sa.light < 224) sa.light = 224;
             if (sb.light < 224) sb.light = 224;
             if (sc.light < 224) sc.light = 224;
-            sa.fog = sb.fog = sc.fog = fog / 2;
-        } else if (active_skin_material) {
-            int skin_scene_light = light < 224 ? 224 : light;
-            sa.light = clipped[0].light * skin_scene_light / 256;
-            sb.light = (reversed ? clipped[i + 1].light : clipped[i].light) *
-                       skin_scene_light / 256;
-            sc.light = (reversed ? clipped[i].light : clipped[i + 1].light) *
-                       skin_scene_light / 256;
-            if (sa.light < 224) sa.light = 224;
-            if (sb.light < 224) sb.light = 224;
-            if (sc.light < 224) sc.light = 224;
-            if (sa.light > 256) sa.light = 256;
-            if (sb.light > 256) sb.light = 256;
-            if (sc.light > 256) sc.light = 256;
-            sa.fog = sb.fog = sc.fog = fog;
+            if (active_skin_material) {
+                if (sa.light > 256) sa.light = 256;
+                if (sb.light > 256) sb.light = 256;
+                if (sc.light > 256) sc.light = 256;
+            }
+            sa.fog = sb.fog = sc.fog = active_face_material ? fog / 2 : fog;
         } else {
             sa.light = sb.light = sc.light = light;
             sa.fog = sb.fog = sc.fog = fog;

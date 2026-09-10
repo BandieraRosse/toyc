@@ -1973,7 +1973,7 @@ static int benchmark_model_features(const char *model_path, int iterations,
     static const unsigned char sphere[10] = {1, 0, 1, 1, 1, 1, 1, 0, 1, 0};
     static const unsigned char toon[10] = {1, 0, 1, 1, 1, 1, 0, 1, 1, 0};
     static const unsigned char edge[10] = {1, 1, 1, 1, 1, 0, 1, 1, 1, 0};
-    static const unsigned char lighting[10] = {1, 0, 1, 1, 1, 1, 1, 1, 0, 0};
+    static const unsigned char lighting[10] = {1, 0, 1, 1, 1, 1, 1, 1, 1, 0};
     static const unsigned char model_enabled[10] = {1, 1, 1, 1, 1, 1, 1, 1, 1, 0};
     static const int diagnostic[10] = {
         0, 0, TOY_RENDER_DIAG_FORCE_OPAQUE, TOY_RENDER_DIAG_AFFINE_UV,
@@ -2089,6 +2089,7 @@ static int benchmark_model_features(const char *model_path, int iterations,
 
     /* Populate renderer buffers and texture/model caches before measuring. */
     for (configuration = 0; configuration < 10; configuration++) {
+        rasterfall_render_set_model_lighting(configuration != 8);
         toy_renderer_set_texture_diagnostics(&renderer,
                                              diagnostic[configuration]);
         if (toy_renderer_begin(&renderer, &surface, 0x30343B) < 0) goto fail;
@@ -2103,6 +2104,7 @@ static int benchmark_model_features(const char *model_path, int iterations,
          * penalize the same late configuration. */
         for (step = 0; step < 10; step++) {
             configuration = iteration & 1 ? 9 - step : step;
+            rasterfall_render_set_model_lighting(configuration != 8);
             for (view = 0; view < 3; view++) {
                 struct rasterfall_model_setup_timing setup_timing;
                 int64_t start = monotonic_us();
@@ -2214,6 +2216,7 @@ static int benchmark_model_features(const char *model_path, int iterations,
     __printf("rasterfall: model performance path=%s iterations=%d views=3 size=800x800 detected_cpus=%d selected_workers=%d\n",
              model_path, iterations, renderer.detected_cpu_count,
              renderer.worker_count);
+    rasterfall_render_set_model_lighting(1);
     for (configuration = 0; configuration < 10; configuration++) {
         const struct model_performance_result *r = &results[configuration];
         int frames = r->frames ? r->frames : 1;
@@ -2345,6 +2348,7 @@ static int benchmark_model_features(const char *model_path, int iterations,
     rasterfall_model_unload(&model);
     return 0;
 fail:
+    rasterfall_render_set_model_lighting(1);
     toy_renderer_destroy(&renderer);
     tlibc_free(pixels);
     rasterfall_model_unload(&model);
