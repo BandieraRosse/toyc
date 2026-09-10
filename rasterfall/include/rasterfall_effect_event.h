@@ -34,6 +34,7 @@ struct rasterfall_effect_event {
     int ex, ey, ez;
     int x, y, z;
     int dir_sy, dir_cy;
+    int damage; /* optional hit strength; presentation-only */
     int life_ms;
 
     /* Camera-shake amplitudes in view units.  These are presentation-only

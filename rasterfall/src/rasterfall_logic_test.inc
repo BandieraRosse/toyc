@@ -1410,6 +1410,33 @@ static int run_logic_test(void)
         game.enemies[0] = saved_enemy;
     }
     {
+        int i, type, death_count;
+        int expected[] = { 6, 10, 5 };
+        for (type = TOY_GAME_ENEMY_PURSUIT_COMMON;
+             type <= TOY_GAME_ENEMY_PURSUIT_FAST; type++) {
+            memset(&game.enemies[0], 0, sizeof(game.enemies[0]));
+            game.enemies[0].active = 2;
+            game.enemies[0].type = type;
+            game.enemies[0].x = 100;
+            game.enemies[0].z = -1200;
+            game.enemies[0].dir_z = -1024;
+            rasterfall_effects_sync_enemy_feedback(&effects, &game);
+            rasterfall_effects_update(&effects, 16);
+            death_count = 0;
+            for (i = 0; i < RASTERFALL_EFFECT_INSTANCE_SLOTS; i++)
+                if (effects.instances[i].active &&
+                    effects.instances[i].kind ==
+                        RASTERFALL_EFFECT_INSTANCE_KIND_ENEMY_DEATH_FRAGMENT)
+                    death_count++;
+            if (death_count != expected[type]) return 75;
+            rasterfall_effects_sync_enemy_feedback(&effects, &game);
+            if (effects.enemy_death_seen[0] != 1) return 76;
+            memset(&game.enemies[0], 0, sizeof(game.enemies[0]));
+            rasterfall_effects_sync_enemy_feedback(&effects, &game);
+            rasterfall_effects_reset_fire(&effects);
+        }
+    }
+    {
         int i, highlight_count = 0;
         rasterfall_effects_sync_interaction_highlight(&effects, 3,
                                                       100, -900, -2000, 1);

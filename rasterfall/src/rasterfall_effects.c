@@ -261,6 +261,67 @@ static const int explosion_velocity[16][3] = {
     { 18, 42, 18 }, { -18, 42, 18 }, { 18, 42, -18 }, { -18, 42, -18 }
 };
 
+static void spawn_enemy_death_presentation(
+    struct rasterfall_effects *effects, int enemy_index,
+    const struct toy_game_enemy *enemy)
+{
+    struct rasterfall_effect_emitter emitter;
+    struct rasterfall_effect_emitter_child *child;
+    int count, lifetime_ms, spread, size, gravity_y;
+    uint32_t color = 0xC43A3A;
+    const struct toy_game_enemy_info *info;
+    if (!effects || !enemy) return;
+    if (enemy->type == TOY_GAME_ENEMY_PURSUIT_FAST) {
+        count = 5; lifetime_ms = 150; spread = 1050; size = 420; gravity_y = 7;
+    } else if (enemy->type == TOY_GAME_ENEMY_PURSUIT_HEAVY) {
+        count = 10; lifetime_ms = 360; spread = 1800; size = 760; gravity_y = 5;
+    } else {
+        count = 6; lifetime_ms = 210; spread = 1350; size = 500; gravity_y = 6;
+    }
+    info = toy_game_enemy_info_or_null(enemy->type);
+    if (info && info->color) color = info->color;
+    memset(&emitter, 0, sizeof(emitter));
+    emitter.source_id = enemy_index;
+    emitter.x = enemy->x;
+    emitter.y = enemy->ground_y + enemy->airborne_y - 520;
+    emitter.z = enemy->z;
+    emitter.lifetime_ms = lifetime_ms;
+    emitter.spawn_interval_ms = 16;
+    emitter.burst_count = count;
+    emitter.child_count = 1;
+    emitter.alpha = 256;
+    emitter.size = size;
+    emitter.color = color;
+    emitter.vx = enemy->dir_x * (enemy->type == TOY_GAME_ENEMY_PURSUIT_FAST ? 48 : 22) / 1024;
+    emitter.vz = enemy->dir_z * (enemy->type == TOY_GAME_ENEMY_PURSUIT_FAST ? 48 : 22) / 1024;
+    emitter.gravity_y = gravity_y;
+    child = &emitter.children[0];
+    child->type = RASTERFALL_EFFECT_INSTANCE_PARTICLE;
+    child->kind = RASTERFALL_EFFECT_INSTANCE_KIND_ENEMY_DEATH_FRAGMENT;
+    child->spawn_limit = count;
+    child->lifetime_ms = lifetime_ms;
+    child->size = size;
+    child->alpha = 256;
+    child->spread = spread;
+    child->vx = emitter.vx;
+    child->vy = enemy->type == TOY_GAME_ENEMY_PURSUIT_HEAVY ? 24 : 30;
+    child->vz = emitter.vz;
+    child->gravity_y = gravity_y;
+    child->pattern = RASTERFALL_EFFECT_EMITTER_PATTERN_EXPLOSION;
+    child->color = color;
+    rasterfall_effects_spawn_emitter(effects, &emitter);
+    {
+        struct rasterfall_effect_instance marker;
+        memset(&marker, 0, sizeof(marker));
+        marker.type = RASTERFALL_EFFECT_INSTANCE_EMITTER;
+        marker.kind = RASTERFALL_EFFECT_INSTANCE_KIND_ENEMY_DEATH;
+        marker.source_id = enemy_index;
+        marker.x = emitter.x; marker.y = emitter.y; marker.z = emitter.z;
+        marker.lifetime_ms = lifetime_ms;
+        rasterfall_effects_spawn_instance(effects, &marker);
+    }
+}
+
 enum rasterfall_effect_emitter_preset_id {
     RASTERFALL_EFFECT_EMITTER_PRESET_FIRE,
     RASTERFALL_EFFECT_EMITTER_PRESET_EXPLOSION,
@@ -423,6 +484,7 @@ static void spawn_emitter_descriptor(
         instance.vz = child->vz + effect_rand(effects, -spread, spread);
     }
     instance.ex = child->ex; instance.ey = child->ey; instance.ez = child->ez;
+    instance.source_id = emitter->source_id;
     instance.gravity_y = child->gravity_y;
     instance.lifetime_ms = child->lifetime_ms > 0 ? child->lifetime_ms :
                            emitter->lifetime_ms;
@@ -606,6 +668,18 @@ void rasterfall_effects_sync_enemy_feedback(struct rasterfall_effects *effects,
 {
     int i;
     if (!effects || !game) return;
+    for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
+        const struct toy_game_enemy *enemy = &game->enemies[i];
+        if (enemy->active == 0) {
+            effects->enemy_death_seen[i] = 0;
+            effects->enemy_hit_dir_x[i] = 0;
+            effects->enemy_hit_dir_z[i] = 0;
+            effects->enemy_hit_strength[i] = 0;
+        } else if (enemy->active == 2 && !effects->enemy_death_seen[i]) {
+            spawn_enemy_death_presentation(effects, i, enemy);
+            effects->enemy_death_seen[i] = 1;
+        }
+    }
     for (i = 0; i < RASTERFALL_EFFECT_INSTANCE_SLOTS; i++)
         if (effects->instances[i].kind ==
             RASTERFALL_EFFECT_INSTANCE_KIND_ENEMY_HURT_TINT)
@@ -622,6 +696,9 @@ void rasterfall_effects_sync_enemy_feedback(struct rasterfall_effects *effects,
         instance.lifetime_ms = 16;
         instance.alpha = 256;
         instance.color = enemy->hurt > 0 ? 0xBB3333 : 0xDFDFDF;
+        instance.dir_x = effects->enemy_hit_dir_x[i];
+        instance.dir_z = effects->enemy_hit_dir_z[i];
+        instance.size = effects->enemy_hit_strength[i];
         rasterfall_effects_spawn_instance(effects, &instance);
     }
 }
@@ -736,6 +813,10 @@ void rasterfall_effects_reset_fire(struct rasterfall_effects *effects)
     effects->camera_shake_pitch = 0;
     effects->last_player_hp = -1;
     effects->damage_shake_cooldown_ms = 0;
+    memset(effects->enemy_death_seen, 0, sizeof(effects->enemy_death_seen));
+    memset(effects->enemy_hit_dir_x, 0, sizeof(effects->enemy_hit_dir_x));
+    memset(effects->enemy_hit_dir_z, 0, sizeof(effects->enemy_hit_dir_z));
+    memset(effects->enemy_hit_strength, 0, sizeof(effects->enemy_hit_strength));
 }
 
 void rasterfall_effects_spawn_hit_particles(struct rasterfall_effects *effects,
@@ -854,6 +935,12 @@ void rasterfall_effects_consume(struct rasterfall_effects *effects,
         rasterfall_effects_spawn_hit_particles(effects, event->x, event->y,
                                                 event->z, event->dir_sy,
                                                 event->dir_cy);
+        if (event->type == RASTERFALL_EFFECT_EVENT_ENTITY_HIT &&
+            event->target_id >= 0 && event->target_id < TOY_GAME_MAX_ENEMIES) {
+            effects->enemy_hit_dir_x[event->target_id] = -event->dir_sy;
+            effects->enemy_hit_dir_z[event->target_id] = -event->dir_cy;
+            effects->enemy_hit_strength[event->target_id] = event->damage;
+        }
     } else if (event->type == RASTERFALL_EFFECT_EVENT_EXPLOSION) {
         struct rasterfall_effect_emitter emitter;
         init_explosion_emitter(&emitter, event);

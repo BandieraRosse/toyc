@@ -1394,6 +1394,7 @@ static void emit_ray_effects(const struct toy_game_ray *ray,
     event.sx = sx; event.sy = sy; event.sz = sz;
     event.ex = ex; event.ey = ey; event.ez = ez;
     event.x = ex; event.y = ey; event.z = ez;
+    event.damage = ray->damage;
     event.target_id = target_id;
     event.weapon = weapon;
     event.source_id = source_id;

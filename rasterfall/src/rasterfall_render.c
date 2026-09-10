@@ -4882,6 +4882,21 @@ static uint32_t enemy_feedback_color(int target_id)
     return 0;
 }
 
+static const struct rasterfall_effect_instance *enemy_feedback_instance(
+    int target_id)
+{
+    int i;
+    for (i = 0; i < RASTERFALL_EFFECT_INSTANCE_SLOTS; i++) {
+        const struct rasterfall_effect_instance *feedback = &effects.instances[i];
+        if (feedback->active &&
+            feedback->type == RASTERFALL_EFFECT_INSTANCE_MATERIAL &&
+            feedback->kind == RASTERFALL_EFFECT_INSTANCE_KIND_ENEMY_HURT_TINT &&
+            feedback->target_id == target_id)
+            return feedback;
+    }
+    return NULL;
+}
+
 /* 两种低多边形敌人；受击闪红/命中闪白，倒地时整体纵向压扁。 */
 static int render_blob_shadow(struct toy_renderer *renderer,
                               const struct camera *camera,
@@ -4907,6 +4922,9 @@ static int render_enemies(struct toy_renderer *renderer,
     int pixels = 0;
     for (int i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
         const struct toy_game_enemy *e = &game.enemies[i];
+        struct toy_game_enemy presentation_enemy;
+        const struct toy_game_enemy *draw_enemy = e;
+        const struct rasterfall_effect_instance *feedback;
         struct vec3 center, view;
         uint32_t color;
         int scale = 1000;
@@ -4943,27 +4961,34 @@ static int render_enemies(struct toy_renderer *renderer,
                 else if (e->type == TOY_GAME_ENEMY_PURSUIT_FAST)
                     color = RF_COLOR_ENEMY_PURSUIT_FAST;
             }
+            feedback = enemy_feedback_instance(i);
+            if (feedback && (feedback->dir_x || feedback->dir_z)) {
+                presentation_enemy = *e;
+                presentation_enemy.x += feedback->dir_x * 28 / 1024;
+                presentation_enemy.z += feedback->dir_z * 28 / 1024;
+                draw_enemy = &presentation_enemy;
+            }
         }
-        active_enemy_lift = e->ground_y;
-        pixels += render_blob_shadow(renderer, camera, e, scale);
-        active_enemy_lift += e->airborne_y;
+        active_enemy_lift = draw_enemy->ground_y;
+        pixels += render_blob_shadow(renderer, camera, draw_enemy, scale);
+        active_enemy_lift += draw_enemy->airborne_y;
         if (toy_game_enemy_info(e->type)->ability ==
                 TOY_GAME_ENEMY_ABILITY_SMOKER_TONGUE &&
             e->special_target_active)
-            pixels += render_smoker_tongue(renderer, camera, e);
+            pixels += render_smoker_tongue(renderer, camera, draw_enemy);
         if (toy_game_enemy_info(e->type)->ability ==
                 TOY_GAME_ENEMY_ABILITY_TANK_SWEEP)
-            pixels += render_tank_enemy(renderer, camera, e, scale, color);
+            pixels += render_tank_enemy(renderer, camera, draw_enemy, scale, color);
         else if (toy_game_enemy_info(e->type)->ability ==
                 TOY_GAME_ENEMY_ABILITY_CHARGER_RUSH)
-            pixels += render_charger_enemy(renderer, camera, e, scale, color);
+            pixels += render_charger_enemy(renderer, camera, draw_enemy, scale, color);
         else if (toy_game_enemy_info(e->type)->ability ==
                 TOY_GAME_ENEMY_ABILITY_SMOKER_TONGUE)
-            pixels += render_smoker_enemy(renderer, camera, e, scale, color);
+            pixels += render_smoker_enemy(renderer, camera, draw_enemy, scale, color);
         else if (e->type == TOY_GAME_ENEMY_PURSUIT_HEAVY || (i & 1) == 0)
-            pixels += render_block_enemy(renderer, camera, e, scale, color);
+            pixels += render_block_enemy(renderer, camera, draw_enemy, scale, color);
         else
-            pixels += render_round_enemy(renderer, camera, e, scale, color);
+            pixels += render_round_enemy(renderer, camera, draw_enemy, scale, color);
         active_enemy_lift = 0;
     }
     return pixels;
@@ -7429,7 +7454,8 @@ static int render_effect_particles(struct toy_renderer *renderer, const struct c
         if (p->type != RASTERFALL_EFFECT_INSTANCE_PARTICLE ||
             (p->kind != RASTERFALL_EFFECT_INSTANCE_KIND_HIT_PARTICLE &&
              p->kind != RASTERFALL_EFFECT_INSTANCE_KIND_FIRE &&
-             p->kind != RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION_PARTICLE))
+             p->kind != RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION_PARTICLE &&
+             p->kind != RASTERFALL_EFFECT_INSTANCE_KIND_ENEMY_DEATH_FRAGMENT))
             continue;
         pixels += render_effect_particle(renderer, camera, p);
     }

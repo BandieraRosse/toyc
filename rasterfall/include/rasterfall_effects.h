@@ -109,6 +109,8 @@ enum rasterfall_effect_instance_kind {
     RASTERFALL_EFFECT_INSTANCE_KIND_PROJECTILE_FLASH,
     RASTERFALL_EFFECT_INSTANCE_KIND_DAMAGE_FLASH,
     RASTERFALL_EFFECT_INSTANCE_KIND_ENEMY_HURT_TINT,
+    RASTERFALL_EFFECT_INSTANCE_KIND_ENEMY_DEATH,
+    RASTERFALL_EFFECT_INSTANCE_KIND_ENEMY_DEATH_FRAGMENT,
     RASTERFALL_EFFECT_INSTANCE_KIND_INTERACTION_HIGHLIGHT,
     RASTERFALL_EFFECT_INSTANCE_KIND_CAMERA_SHAKE
 };
@@ -225,6 +227,10 @@ struct rasterfall_effects {
     int camera_shake_yaw, camera_shake_pitch;
     int last_player_hp;
     int damage_shake_cooldown_ms;
+    unsigned char enemy_death_seen[TOY_GAME_MAX_ENEMIES];
+    int enemy_hit_dir_x[TOY_GAME_MAX_ENEMIES];
+    int enemy_hit_dir_z[TOY_GAME_MAX_ENEMIES];
+    int enemy_hit_strength[TOY_GAME_MAX_ENEMIES];
 };
 
 void rasterfall_effects_init(struct rasterfall_effects *effects);
