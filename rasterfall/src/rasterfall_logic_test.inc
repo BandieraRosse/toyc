@@ -342,6 +342,11 @@ static int run_logic_test(void)
         for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
             const struct toy_game_actor *actor = &session.game_state.actors[i];
             if (!actor->active || actor->flag_guard) continue;
+            if (!strcmp(actor->name, "Jesus")) {
+                if (actor->character_id != RASTERFALL_CHARACTER_RF_RIFLEMAN)
+                    return 222;
+                continue;
+            }
             if (actor->character_id != RASTERFALL_CHARACTER_NONE ||
                 rasterfall_character_profile(actor->character_id)->profession_id !=
                     RASTERFALL_PROFESSION_NONE)

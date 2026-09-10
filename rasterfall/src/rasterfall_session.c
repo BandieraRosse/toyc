@@ -332,6 +332,9 @@ void rasterfall_session_reset(struct rasterfall_session *session,
                 &session->game_state.actors[actor_index],
                 TOY_GAME_ANIM_IDLE);
         }
+        if (!strcmp(spawn->name, "Jesus"))
+            session->game_state.actors[actor_index].character_id =
+                RASTERFALL_CHARACTER_RF_RIFLEMAN;
         if (spawn->downed) session_down_ai(session, actor_index, spawn->x, spawn->z);
     }
     /* Anime companions are session actors, separate from map-authored

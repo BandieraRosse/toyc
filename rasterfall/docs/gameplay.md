@@ -1,9 +1,15 @@
 # 玩法、会话、地图与 AI
 
-> 文档更新：2026-09-09
-> 源码核对基线：工作区（静态 prop profile 碰撞盒作为可站立 RFU primitive；所有人类玩家和 AI 的移动/跳跃/airborne/朝向/武器/库存/切枪/reload/动画/special-control/shove/统计均由 `toy_game_actor` 拥有；本地和远端武器意图经 `toy_game_execute_actor_command()` 进入 actor 规则边界；player/actor 与敌人的空中强制位移均使用确定性分段扫掠，逐轴返回阻挡并消除对应击飞速度；玩家击飞冷却由 actor motion/world 路径推进；Smoker 对玩家和 AI 统一使用 4 秒拉拽、8 秒冷却和冷却期间远离；西侧走廊出口旁新增排除 Tank 的 16 敌人随机刷怪按钮；敌人索敌遵守启用中的 `air_gate*` 战斗区域控制线并排除 `developer_only` 角色；客户端展示缓存不参与玩法规则）
+> 文档更新：2026-09-10
+> 源码核对基线：工作区（Jesus 使用稳定 RF Rifleman visual identity；model resource/instance/gear/palette 仍只属于 presentation；其余玩法真值不变）
 
 > 源码核对补充：正式 Hurd 四人使用专用 character IDs；原 Maid 四人旗卫在 flag 1 原位恢复并使用 Maid character/profession；普通 player、Eula、佣兵为 NONE；固定角色索引、HURD 旗帜 assignment 与派生 control status。
+
+地图初始普通队友 Jesus 现在携带 `RASTERFALL_CHARACTER_RF_RIFLEMAN` 稳定视觉身份。`toy_game_actor`
+仍只保存 character ID、位置/朝向、武器与 animation semantic/time 等玩法真值；共享 body/gear resource、
+per-actor model instance 和 palette 均由 renderer 的轻量 character presentation runtime 管理。资源缺失、
+recipe 缺失、instance 初始化失败或当前 downed path 不适用时，渲染器回退既有 procedural actor，
+不改变 AI、伤害、网络或 session simulation。
 
 ## 三层职责
 

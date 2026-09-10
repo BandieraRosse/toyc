@@ -1,9 +1,15 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-10
-> 源码核对基线：工作区（Generic Rigid Attachment V1；Model Resource / Model Instance V1；Lighting V1）
+> 源码核对基线：工作区（Profession Modularization V1；Jesus modular teammate；Lighting V1）
 
 > 源码核对补充：正式 Hurd actor 通过四个专用 character profile 进入职业外观；恢复的四名 Maid 旗卫以 Maid character profile 接入 actor，同时继续由 anime identity 选择骨骼模型；普通 player、Eula、佣兵解析为 NONE。
+
+Profession Modularization V1 的提交顺序是 finalized shared-body instance → passive rigid gear；武器仍先
+建立 placement/grip targets 并求解双臂。`rasterfall_render_character_instance()` 的 shirt/pants override
+仅在单次 submission 生效，不修改 immutable resource material table。地图初始普通队友 Jesus 是首个
+vertical slice：actor 的 stable character ID 解析到 Rifleman recipe，presentation runtime 按 actor index
+持有独立 instance；`--visual-capture modular-teammate` 固定观察 idle/move/fire/reload/hit。
 
 ## 渲染边界
 

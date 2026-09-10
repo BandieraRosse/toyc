@@ -51,7 +51,10 @@ HEADGEAR_NAMES = (
     'tactical-helmet', 'engineering-helmet',
 )
 PROFESSIONS = ('rifleman', 'breacher', 'recon', 'medic', 'engineer', 'heavy')
-RIGID_ATTACHMENTS = ('tactical-helmet', 'backpack')
+RIGID_ATTACHMENTS = ('tactical-helmet', 'backpack') + tuple(
+    profession + '-' + slot
+    for profession in PROFESSIONS
+    for slot in ('head', 'chest', 'back', 'hip-l', 'hip-r'))
 
 
 def arguments():
@@ -656,59 +659,71 @@ def create_profession(armature, scene, materials, profession):
         materials[key].diffuse_color = (*color, 1.0)
     g, a = materials['headgear'], materials['headgear_light']
 
-    def box(name, lo, hi, mat=g, bone='RF_CHEST'):
-        return box_mesh(profession + '_' + name, lo, hi, mat, armature, scene, bone)
+    def tagged(obj, slot):
+        obj['rf_attachment_slot'] = slot
+        return obj
+
+    def box(name, lo, hi, mat=g, bone='RF_CHEST', slot='chest'):
+        return tagged(box_mesh(profession + '_' + name, lo, hi, mat,
+                               armature, scene, bone), slot)
 
     def plate(width, bottom, top, front, mat=g):
         # Taper at the clavicle leaves the shoulder/upper-arm rotation clear.
-        return vertical_loft(profession + '_Chest',
+        return tagged(vertical_loft(profession + '_Chest',
             [(bottom, front + .045, width * .86, .065),
              (bottom + .07, front + .025, width, .075),
              (top - .07, front + .030, width, .070),
              (top, front + .045, width * .72, .055)],
-            8, mat, armature, scene, [[('RF_CHEST', 1.0)]] * 4)
+            8, mat, armature, scene, [[('RF_CHEST', 1.0)]] * 4), 'chest')
 
     heads = {'rifleman': ('tactical-helmet',), 'breacher': ('tactical-helmet', 'respirator'),
              'recon': ('patrol-cap', 'headset'), 'medic': ('goggles', 'respirator'),
              'engineer': ('engineering-helmet',), 'heavy': ('tactical-helmet',)}
     for head in heads[profession]:
+        before = {obj.name for obj in scene.objects}
         create_headgear(armature, scene, materials, head)
+        for obj in scene.objects:
+            if obj.type == 'MESH' and obj.name not in before:
+                obj['rf_attachment_slot'] = 'head'
     if profession == 'rifleman':
         plate(.205, 1.12, 1.46, -.235)
-        create_rifleman_backpack(armature, scene, g, prefix=profession + '_')
+        tagged(create_rifleman_backpack(armature, scene, g,
+               prefix=profession + '_'), 'back')
         box('MagazineBlock', (-.17, -.29, 1.08), (.17, -.23, 1.22), a)
     elif profession == 'breacher':
         plate(.255, 1.035, 1.50, -.255)
         box('Collar', (-.15, -.18, 1.48), (.15, .17, 1.60), a)
-        box('FlatBackPlate', (-.245, .18, 1.08), (.245, .30, 1.50))
+        box('FlatBackPlate', (-.245, .18, 1.08), (.245, .30, 1.50), slot='back')
         box('HipShield', (-.20, -.205, .86), (.20, -.15, 1.04), a, 'RF_HIPS')
     elif profession == 'recon':
         plate(.16, 1.15, 1.34, -.215)
-        box('NarrowPack', (-.12, .19, 1.20), (.12, .32, 1.58))
+        box('NarrowPack', (-.12, .19, 1.20), (.12, .32, 1.58), slot='back')
         box('RigBand', (-.19, -.25, 1.12), (.19, -.20, 1.20), a)
     elif profession == 'medic':
         plate(.22, 1.12, 1.46, -.235)
-        box('MedicalPack', (-.27, .18, 1.02), (.27, .44, 1.60))
+        box('MedicalPack', (-.27, .18, 1.02), (.27, .44, 1.60), slot='back')
         # Broad orange panels; identity stays readable without tiny symbols.
         box('ChestPanel', (-.10, -.29, 1.22), (.10, -.245, 1.42), a)
-        box('BackPanel', (-.15, .435, 1.18), (.15, .455, 1.47), a)
+        box('BackPanel', (-.15, .435, 1.18), (.15, .455, 1.47), a, slot='back')
         for sign in (-1, 1):
             box('PackSide' + str(sign), (sign * .27 - .025, .23, 1.18),
-                (sign * .27 + .025, .39, 1.46), a)
+                (sign * .27 + .025, .39, 1.46), a, slot='back')
     elif profession == 'engineer':
         plate(.185, 1.14, 1.40, -.225, a)
-        box('ToolCase', (-.23, .19, 1.03), (.21, .40, 1.43))
-        box('ToolHandle', (-.27, .25, 1.39), (-.20, .34, 1.76), a)
-        box('ToolHead', (-.36, .24, 1.65), (-.10, .35, 1.77), a)
-        box('HipToolbox', (.235, -.09, .65), (.40, .18, .94), a, 'RF_L_UPPER_LEG')
+        box('ToolCase', (-.23, .19, 1.03), (.21, .40, 1.43), slot='back')
+        box('ToolHandle', (-.27, .25, 1.39), (-.20, .34, 1.76), a, slot='back')
+        box('ToolHead', (-.36, .24, 1.65), (-.10, .35, 1.77), a, slot='back')
+        box('HipToolbox', (.235, -.09, .65), (.40, .18, .94), a,
+            'RF_L_UPPER_LEG', 'hip-l')
     else:
         plate(.285, 1.05, 1.51, -.26)
-        box('AmmoBack', (-.32, .19, 1.01), (.32, .48, 1.62))
+        box('AmmoBack', (-.32, .19, 1.01), (.32, .48, 1.62), slot='back')
         for sign, side in ((-1, 'R'), (1, 'L')):
             box('AmmoStack' + side, (sign * .30 - .06, .22, 1.12),
-                (sign * .30 + .06, .43, 1.58), a)
+                (sign * .30 + .06, .43, 1.58), a, slot='back')
             box('HipAmmo' + side, (sign * .27 - .075, -.08, .70),
-                (sign * .27 + .075, .16, .94), g, 'RF_' + side + '_UPPER_LEG')
+                (sign * .27 + .075, .16, .94), g,
+                'RF_' + side + '_UPPER_LEG', 'hip-' + side.lower())
         box('ChestAmmo', (-.22, -.31, 1.10), (.22, -.25, 1.24), a)
 
 
@@ -724,9 +739,26 @@ def make_rigid_attachment(scene, armature, materials, name):
     if name == 'tactical-helmet':
         create_headgear(armature, scene, materials, name)
         origin = Vector((0.0, 0.005, 1.99))
-    else:
+    elif name == 'backpack':
         create_rifleman_backpack(armature, scene, materials['headgear'])
         origin = Vector((0.0, 0.18, 1.36))
+    else:
+        profession, slot = name.rsplit('-', 1)
+        if slot in ('l', 'r'):
+            profession, slot = profession.rsplit('-', 1)[0], 'hip-' + slot
+        create_profession(armature, scene, materials, profession)
+        origins = {
+            'head': (0.0, 0.005, 1.99),
+            'chest': (0.0, -0.22, 1.36),
+            'back': (0.0, 0.18, 1.36),
+            'hip-l': (0.20, 0.0, 0.87),
+            'hip-r': (-0.20, 0.0, 0.87),
+        }
+        origin = Vector(origins[slot])
+        for obj in list(scene.objects):
+            if (obj.type == 'MESH' and obj.name not in before and
+                    obj.get('rf_attachment_slot') != slot):
+                bpy.data.objects.remove(obj, do_unlink=True)
     meshes = [obj for obj in scene.objects
               if obj.type == 'MESH' and obj.name not in before]
     for obj in meshes:

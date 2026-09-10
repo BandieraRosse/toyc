@@ -59,6 +59,8 @@ struct vec3 { int x, y, z; };
 struct box { int minx, maxx, minz, maxz, height; uint32_t color; };
 
 static struct rasterfall_render_context *render_ctx;
+static int active_character_palette_override;
+static uint32_t active_character_shirt_color, active_character_pants_color;
 static struct rasterfall_scene_stats scene_stats;
 struct rasterfall_authored_locomotion_clock {
     int valid;
@@ -1511,6 +1513,13 @@ static int render_gallery_model_range(struct toy_renderer *renderer,
         uint32_t color = material < model->material_count ?
                          model_u32(model->materials + material * model->material_bytes) :
                          RF_COLOR_UI_TEXT_MUTED;
+        /* RF Humanoid V2's frozen imported material slots 0/1 are pants/shirt.
+         * Submission-local replacement keeps geometry and immutable
+         * material tables shared while the presentation profile owns color. */
+        if (active_character_palette_override && material == 1)
+            color = active_character_shirt_color;
+        else if (active_character_palette_override && material == 0)
+            color = active_character_pants_color;
         unsigned int j;
         if (primitive_count == 1 && slice_index_count >= 0) {
             if (first_index > 0) index_begin = (unsigned int)first_index;
@@ -1856,6 +1865,35 @@ int rasterfall_render_rigid_attachment(
                                         &transform) < 0) return -1;
     return rasterfall_render_rigid_resource(renderer, camera,
                                              attachment->resource, &transform);
+}
+
+int rasterfall_render_character_instance(
+    struct toy_renderer *renderer, const struct camera *camera,
+    const struct rasterfall_model_instance *instance,
+    const struct rasterfall_rigid_transform *actor_to_world,
+    uint32_t shirt_color, uint32_t pants_color)
+{
+    const struct rasterfall_model_asset *pose;
+    int saved_enabled, pixels;
+    uint32_t saved_shirt, saved_pants;
+    if (!instance || !actor_to_world || actor_to_world->scale_milli <= 0)
+        return -1;
+    pose = rasterfall_model_instance_final_pose(instance);
+    if (!pose || !pose->has_character_contract) return -1;
+    saved_enabled = active_character_palette_override;
+    saved_shirt = active_character_shirt_color;
+    saved_pants = active_character_pants_color;
+    active_character_palette_override = 1;
+    active_character_shirt_color = shirt_color;
+    active_character_pants_color = pants_color;
+    pixels = render_gallery_model(renderer, camera, pose,
+        (int)actor_to_world->translation[0],
+        (int)actor_to_world->translation[1],
+        (int)actor_to_world->translation[2], actor_to_world->scale_milli);
+    active_character_palette_override = saved_enabled;
+    active_character_shirt_color = saved_shirt;
+    active_character_pants_color = saved_pants;
+    return pixels;
 }
 
 int rasterfall_rigid_attachment_transform_logic_test(void)
@@ -5487,6 +5525,142 @@ static void render_ai_teammate_name(struct toy_renderer *renderer,
     }
 }
 
+struct rasterfall_modular_actor_runtime {
+    int load_attempted, resources_ready;
+    struct rasterfall_model_resource body;
+    struct rasterfall_model_resource gear[3];
+    struct rasterfall_model_instance instances[TOY_GAME_MAX_ACTORS];
+    unsigned char instance_ready[TOY_GAME_MAX_ACTORS];
+};
+
+static struct rasterfall_modular_actor_runtime modular_actor_runtime;
+static const struct rasterfall_skeletal_actor_profile modular_rf_profile = {
+    "rf_humanoid_v2", NULL, NULL, 1736, 0, 1024
+};
+
+static void modular_rigid_identity(struct rasterfall_rigid_transform *transform)
+{
+    memset(transform, 0, sizeof(*transform));
+    transform->rotation[0] = transform->rotation[4] =
+        transform->rotation[8] = 1.0;
+    transform->scale_milli = 1000;
+}
+
+static int modular_actor_resources_init(void)
+{
+    struct rasterfall_modular_actor_runtime *runtime = &modular_actor_runtime;
+    const struct rasterfall_character_visual_recipe *recipe =
+        rasterfall_character_visual_recipe(RASTERFALL_MODULAR_RIFLEMAN);
+    char path[RASTERFALL_MODEL_PATH_BYTES];
+    unsigned int i;
+    if (runtime->load_attempted) return runtime->resources_ready ? 0 : -1;
+    runtime->load_attempted = 1;
+    if (!recipe || snprintf(path, sizeof(path),
+            "rasterfall/private-assets/models/%s.rmesh",
+            rasterfall_character_body_resource_name(recipe->body_resource_id)) >=
+            (int)sizeof(path) ||
+        rasterfall_model_resource_load(&runtime->body, path) < 0)
+        return -1;
+    for (i = 0; i < recipe->attachment_count; i++) {
+        int gear_id = recipe->attachments[i].gear_resource_id;
+        if (i >= 3 || snprintf(path, sizeof(path),
+                "rasterfall/private-assets/models/%s.rmesh",
+                rasterfall_character_gear_resource_name(gear_id)) >=
+                (int)sizeof(path) ||
+            rasterfall_model_resource_load(&runtime->gear[i], path) < 0 ||
+            runtime->gear[i].definition.bone_count)
+            goto fail;
+    }
+    runtime->resources_ready = 1;
+    return 0;
+fail:
+    for (i = 0; i < 3; i++)
+        rasterfall_model_resource_unload(&runtime->gear[i]);
+    rasterfall_model_resource_unload(&runtime->body);
+    return -1;
+}
+
+static int render_modular_ai_teammate(struct toy_renderer *renderer,
+    const struct camera *camera, const struct toy_game_actor *actor,
+    int actor_index)
+{
+    struct rasterfall_modular_actor_runtime *runtime = &modular_actor_runtime;
+    const struct rasterfall_character_visual_recipe *recipe =
+        rasterfall_character_visual_recipe(RASTERFALL_MODULAR_RIFLEMAN);
+    struct rasterfall_model_instance *instance;
+    struct rasterfall_model_asset *pose;
+    struct rasterfall_model_attachment_transform rifle_frame;
+    struct rasterfall_rigid_transform actor_to_world;
+    const struct rasterfall_pose_calibration *calibration;
+    int weapon, have_rifle, pixels, scale = 835;
+    unsigned int i;
+    if (!renderer || !camera || !actor || actor_index < 0 ||
+        actor_index >= TOY_GAME_MAX_ACTORS ||
+        actor->character_id != RASTERFALL_CHARACTER_RF_RIFLEMAN ||
+        actor->state == TOY_GAME_ACTOR_DOWNED ||
+        modular_actor_resources_init() < 0) return -1;
+    instance = &runtime->instances[actor_index];
+    if (!runtime->instance_ready[actor_index]) {
+        if (rasterfall_model_instance_init(instance, &runtime->body) < 0)
+            return -1;
+        runtime->instance_ready[actor_index] = 1;
+    }
+    if (rasterfall_model_instance_reset_pose(instance) < 0) return -1;
+    pose = rasterfall_model_instance_pose(instance);
+    weapon = actor->current_slot >= 0 &&
+        actor->current_slot < TOY_GAME_WEAPON_SLOTS ?
+        actor->slots[actor->current_slot].weapon : -1;
+    have_rifle = rifle_frame_transform(pose, &rifle_frame) == 0;
+    calibration = rasterfall_pose_calibration_resolve(
+        active_session ? &active_session->pose_editor : NULL, 0, weapon);
+    if (have_rifle && weapon >= 0 &&
+        rasterfall_weapon_asset_profile(weapon)->skeletal &&
+        calibration && (actor->animation.id == TOY_GAME_ANIM_IDLE ||
+        actor->animation.id == TOY_GAME_ANIM_MOVE ||
+        actor->animation.id == TOY_GAME_ANIM_FIRE ||
+        actor->animation.id == TOY_GAME_ANIM_RELOAD ||
+        actor->animation.id == TOY_GAME_ANIM_HIT)) {
+        rifle_solve_hands(pose, &rifle_frame, calibration,
+                          rasterfall_weapon_asset_profile(weapon), scale);
+        have_rifle = rifle_frame_transform(pose, &rifle_frame) == 0;
+    }
+    modular_rigid_identity(&actor_to_world);
+    actor_to_world.translation[0] = actor->x;
+    actor_to_world.translation[1] = -900 + actor->ground_y + actor->airborne_y;
+    actor_to_world.translation[2] = actor->z;
+    actor_to_world.rotation[0] = actor->cy / 1024.0;
+    actor_to_world.rotation[2] = actor->sy / 1024.0;
+    actor_to_world.rotation[6] = -actor->sy / 1024.0;
+    actor_to_world.rotation[8] = actor->cy / 1024.0;
+    actor_to_world.scale_milli = scale;
+    active_gallery_facing = 1;
+    active_gallery_sy = actor->sy; active_gallery_cy = actor->cy;
+    pixels = rasterfall_render_character_instance(renderer, camera, instance,
+        &actor_to_world, recipe->shirt_color, recipe->pants_color);
+    active_gallery_facing = 0;
+    if (pixels < 0) return -1;
+    for (i = 0; i < recipe->attachment_count; i++) {
+        struct rasterfall_rigid_attachment_desc desc;
+        memset(&desc, 0, sizeof(desc));
+        desc.host_socket = recipe->attachments[i].host_socket;
+        desc.resource = &runtime->gear[i];
+        modular_rigid_identity(&desc.mount_correction);
+        pixels += rasterfall_render_rigid_attachment(renderer, camera, instance,
+                                                      &desc, &actor_to_world);
+    }
+    if (have_rifle && weapon >= 0 &&
+        rasterfall_weapon_asset_profile(weapon)->skeletal)
+        pixels += render_skeletal_rifle(renderer, camera, pose, &rifle_frame,
+            &modular_rf_profile, calibration, actor->x,
+            (int)actor_to_world.translation[1], actor->z, actor->sy, actor->cy,
+            weapon, actor->muzzle_flash_ms);
+    else if (weapon >= 0)
+        pixels += render_actor_model_weapon(renderer, camera, actor->x, actor->z,
+            actor->sy, actor->cy, weapon, actor->muzzle_flash_ms,
+            actor->animation.id, actor->animation.time_ms, 0, 0);
+    return pixels;
+}
+
 static int render_ai_teammate(struct toy_renderer *renderer,
                               const struct camera *camera)
 {
@@ -5682,6 +5856,16 @@ static int render_ai_teammate(struct toy_renderer *renderer,
             }
             frontend_set_override(renderer, 0);
             active_actor_lift=0;continue;
+        }
+        if (actor->character_id == RASTERFALL_CHARACTER_RF_RIFLEMAN) {
+            int modular_pixels = render_modular_ai_teammate(renderer, camera,
+                                                             actor, i);
+            if (modular_pixels >= 0) {
+                pixels += modular_pixels;
+                continue;
+            }
+            /* Presentation assets are optional. Fall through to the existing
+             * procedural actor without changing simulation or actor state. */
         }
         {
             const struct rasterfall_character_profile *profile =

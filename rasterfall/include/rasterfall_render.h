@@ -141,6 +141,11 @@ int rasterfall_render_rigid_attachment(
     const struct rasterfall_model_instance *host,
     const struct rasterfall_rigid_attachment_desc *attachment,
     const struct rasterfall_rigid_transform *actor_to_world);
+int rasterfall_render_character_instance(
+    struct toy_renderer *renderer, const struct camera *camera,
+    const struct rasterfall_model_instance *instance,
+    const struct rasterfall_rigid_transform *actor_to_world,
+    uint32_t shirt_color, uint32_t pants_color);
 int rasterfall_rigid_attachment_transform_logic_test(void);
 void rasterfall_render_model_stats(struct rasterfall_model_render_stats *out);
 void rasterfall_render_model_setup_timing(

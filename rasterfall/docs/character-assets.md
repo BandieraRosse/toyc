@@ -1,7 +1,7 @@
 # Rasterfall Character Asset Contract V1 / RF Humanoid V2.1
 
 > 文档更新：2026-09-10
-> 源码核对基线：工作区（Generic Rigid Attachment V1；V2.1 Final Body；RFCHAR V1 / RFM2 v14）
+> 源码核对基线：工作区（Profession Modularization V1；RFCHAR V1 / RFM2 v14）
 
 本文是所有新 Rasterfall 人形角色资产的第一入口。V1 冻结 Blender 到离线 importer 的输入门；
 它不承诺任意 glTF 的兼容性，也不要求 runtime 直接读取 GLB。主线固定为：
@@ -165,6 +165,24 @@ attachment `{id,parent bone,local position RFU,local quaternion}`。v2-v13 继�
 仍使用名称 mapper。runtime API 是 `rasterfall_model_humanoid_bone()` 与
 `rasterfall_model_character_attachment_transform()`。固定 `rfchar-test` pose 同时旋转右上臂、
 右前臂和左上腿；model views 额外输出 `three-quarter.bmp`。
+
+## Profession Modularization V1
+
+六个 `rf_profession_*` 继续作为 legacy acceptance carrier。正式 modular 路径只加载一次
+`rf_humanoid_v2` body resource，为六人建立独立 model instance，并由
+`rasterfall_character_visual_recipe()` 解析 shirt/pants presentation palette 与稳定 gear resource ID。
+recipe 和加载后的资源/instance 都不进入 `toy_game_actor` 或网络快照。
+
+生成器的 `--rigid-attachment=<profession>-<slot>` 直接复用 carrier builder 已验收几何，按 HEAD、
+CHEST、BACK、HIP_L、HIP_R socket authored origin 重定位后导出无 body、skin、skeleton、CHR1 的
+metric rigid GLB/RMESH。当前产物为每职业 HEAD/CHEST/BACK，另有 Engineer HIP_L 和 Heavy
+HIP_L/HIP_R，共 21 个 gear resource。Breacher 的前侧 lower armor 与 CHEST 壳构成同一刚体；
+它没有伪造新的 HIPS socket。
+
+`--profession-lineup` 输出 modular 六职业 front/three-quarter near/mid/far、side mid，并输出每职业
+legacy carrier（左）/modular（右）A/B。该入口同时执行 CHEST/HIP_L/HIP_R bind、rifle idle、
+rifle aim、turned 数值回归并报告 body 实际加载份数。`tools/rf_profession_round.py --generate`
+生成并经统一 rigid importer 验证全部 gear；`--deterministic` 比较七张 lineup 的逐字节结果。
 
 ## 当前缺口与下一阶段边界
 

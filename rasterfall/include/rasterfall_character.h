@@ -2,6 +2,7 @@
 #define RASTERFALL_CHARACTER_H
 
 #include "tlibc_types.h"
+#include "rasterfall_humanoid.h"
 
 /* Stable gameplay-facing visual identities.  Keep these IDs independent of
  * asset paths: a profile may start as a procedural actor and later acquire a
@@ -13,6 +14,7 @@ enum rasterfall_character_id {
     RASTERFALL_CHARACTER_HURD_MEDIC,
     RASTERFALL_CHARACTER_HURD_GUARD,
     RASTERFALL_CHARACTER_MAID,
+    RASTERFALL_CHARACTER_RF_RIFLEMAN,
     RASTERFALL_CHARACTER_COUNT
 };
 
@@ -43,6 +45,62 @@ struct rasterfall_profession_visual_profile {
 };
 const struct rasterfall_profession_visual_profile *
 rasterfall_profession_visual_profile(int profession_id);
+
+/* Profession Modularization V1 is a presentation identity catalog, separate
+ * from the older gameplay-facing profession IDs above.  Recipes contain only
+ * stable resource IDs; loaded resources and model instances belong to the
+ * character presentation runtime. */
+enum rasterfall_modular_profession_id {
+    RASTERFALL_MODULAR_RIFLEMAN,
+    RASTERFALL_MODULAR_BREACHER,
+    RASTERFALL_MODULAR_RECON,
+    RASTERFALL_MODULAR_MEDIC,
+    RASTERFALL_MODULAR_ENGINEER,
+    RASTERFALL_MODULAR_HEAVY,
+    RASTERFALL_MODULAR_PROFESSION_COUNT
+};
+
+enum rasterfall_character_body_resource_id {
+    RASTERFALL_BODY_RF_HUMANOID_V2,
+    RASTERFALL_BODY_RESOURCE_COUNT
+};
+
+enum rasterfall_character_gear_resource_id {
+    RASTERFALL_GEAR_RIFLEMAN_HEAD, RASTERFALL_GEAR_RIFLEMAN_CHEST,
+    RASTERFALL_GEAR_RIFLEMAN_BACK,
+    RASTERFALL_GEAR_BREACHER_HEAD, RASTERFALL_GEAR_BREACHER_CHEST,
+    RASTERFALL_GEAR_BREACHER_BACK,
+    RASTERFALL_GEAR_RECON_HEAD, RASTERFALL_GEAR_RECON_CHEST,
+    RASTERFALL_GEAR_RECON_BACK,
+    RASTERFALL_GEAR_MEDIC_HEAD, RASTERFALL_GEAR_MEDIC_CHEST,
+    RASTERFALL_GEAR_MEDIC_BACK,
+    RASTERFALL_GEAR_ENGINEER_HEAD, RASTERFALL_GEAR_ENGINEER_CHEST,
+    RASTERFALL_GEAR_ENGINEER_BACK, RASTERFALL_GEAR_ENGINEER_HIP_L,
+    RASTERFALL_GEAR_HEAVY_HEAD, RASTERFALL_GEAR_HEAVY_CHEST,
+    RASTERFALL_GEAR_HEAVY_BACK, RASTERFALL_GEAR_HEAVY_HIP_L,
+    RASTERFALL_GEAR_HEAVY_HIP_R,
+    RASTERFALL_GEAR_RESOURCE_COUNT
+};
+
+struct rasterfall_character_attachment_recipe {
+    enum rasterfall_character_attachment host_socket;
+    int gear_resource_id;
+};
+
+#define RASTERFALL_CHARACTER_RECIPE_ATTACHMENTS 5
+struct rasterfall_character_visual_recipe {
+    int body_resource_id;
+    uint32_t shirt_color;
+    uint32_t pants_color;
+    struct rasterfall_character_attachment_recipe
+        attachments[RASTERFALL_CHARACTER_RECIPE_ATTACHMENTS];
+    unsigned int attachment_count;
+};
+
+const struct rasterfall_character_visual_recipe *
+rasterfall_character_visual_recipe(int modular_profession_id);
+const char *rasterfall_character_body_resource_name(int body_resource_id);
+const char *rasterfall_character_gear_resource_name(int gear_resource_id);
 
 enum rasterfall_character_action {
     RASTERFALL_CHARACTER_ACTION_LOCOMOTION = 1 << 0,

@@ -27,9 +27,10 @@ int rasterfall_render_visual_capture(const char *scenario, const char *output)
     int result = 1, i, count;
     int squad = scenario && !strcmp(scenario, "hurd-squad");
     int prop_lighting = scenario && !strcmp(scenario, "lighting-props");
-    if (!scenario || (!squad && !prop_lighting &&
+    int modular_teammate = scenario && !strcmp(scenario, "modular-teammate");
+    if (!scenario || (!squad && !prop_lighting && !modular_teammate &&
                       strcmp(scenario, "procedural-humanoid"))) {
-        __fprintf(2, "rasterfall: unknown visual scenario '%s'; available: procedural-humanoid, hurd-squad, lighting-props\n",
+        __fprintf(2, "rasterfall: unknown visual scenario '%s'; available: procedural-humanoid, hurd-squad, lighting-props, modular-teammate\n",
                   scenario ? scenario : "");
         return 1;
     }
@@ -38,15 +39,16 @@ int rasterfall_render_visual_capture(const char *scenario, const char *output)
         return 1;
     }
     visual_procedural_humanoid_setup(&camera, &state);
-    count = squad ? 4 : prop_lighting ? 0 : 1;
+    count = squad ? 4 : prop_lighting || modular_teammate ? 0 : 1;
     if (squad) camera.body.z = -2600;
-    if (prop_lighting) {
+    if (prop_lighting || modular_teammate) {
         camera.body.z = -3200;
         camera.view.y = -450;
     }
     /* Preload just the fixture weapons, never discover gameplay actors. */
-    for (i = 0; i < (prop_lighting ? 0 : squad ? 2 : 1); i++) {
+    for (i = 0; i < (prop_lighting ? 0 : modular_teammate ? 1 : squad ? 2 : 1); i++) {
         weapon_path = rasterfall_weapon_model_path(
+            modular_teammate ? TOY_GAME_WEAPON_AK :
             i ? TOY_GAME_WEAPON_SMG : TOY_GAME_WEAPON_PISTOL);
         if (!weapon_path || rasterfall_model_load(&gallery_models[i], weapon_path) < 0) {
             __fprintf(2, "rasterfall: cannot load visual scenario weapon: %s\n",
@@ -62,7 +64,7 @@ int rasterfall_render_visual_capture(const char *scenario, const char *output)
     context.effects = active_effects;
     context.fixed_floor_lighting = 1;
     rasterfall_render_bind(&context);
-    surface.width = squad || prop_lighting ? 1600 : 800;
+    surface.width = squad || prop_lighting || modular_teammate ? 1600 : 800;
     surface.height = 800;
     surface.stride = surface.width * (int)sizeof(uint32_t);
     surface.pixels = tlibc_malloc((size_t)surface.stride * surface.height);
@@ -94,6 +96,28 @@ int rasterfall_render_visual_capture(const char *scenario, const char *output)
                 goto done;
         }
         rasterfall_render_set_model_lighting(1);
+    }
+    if (modular_teammate) {
+        static const int actions[] = {TOY_GAME_ANIM_IDLE, TOY_GAME_ANIM_MOVE,
+            TOY_GAME_ANIM_FIRE, TOY_GAME_ANIM_RELOAD, TOY_GAME_ANIM_HIT};
+        for (i = 0; i < 5; i++) {
+            struct toy_game_actor actor;
+            const struct toy_game_weapon_info *weapon =
+                toy_game_weapon_info(TOY_GAME_WEAPON_AK);
+            memset(&actor, 0, sizeof(actor));
+            actor.active = 1; actor.actor_id = i + 1;
+            actor.kind = TOY_GAME_ACTOR_AI;
+            actor.character_id = RASTERFALL_CHARACTER_RF_RIFLEMAN;
+            actor.state = TOY_GAME_ACTOR_ALIVE;
+            actor.x = (i * 2 - 4) * 300; actor.cy = 1024;
+            actor.current_slot = weapon->slot;
+            actor.slots[weapon->slot].weapon = TOY_GAME_WEAPON_AK;
+            actor.animation.id = actions[i]; actor.animation.time_ms = 180;
+            actor.moving = actions[i] == TOY_GAME_ANIM_MOVE;
+            actor.muzzle_flash_ms = actions[i] == TOY_GAME_ANIM_FIRE ? 40 : 0;
+            if (render_modular_ai_teammate(&renderer, &camera, &actor, i) < 0)
+                goto done;
+        }
     }
     for (i = 0; i < count; i++) {
         if (squad) {
@@ -131,7 +155,7 @@ done:
     toy_renderer_destroy(&renderer);
     tlibc_free(surface.pixels);
     rasterfall_render_set_model_lighting(1);
-    for (i = 0; i < (prop_lighting ? 0 : squad ? 2 : 1); i++)
+    for (i = 0; i < (prop_lighting ? 0 : modular_teammate ? 1 : squad ? 2 : 1); i++)
         rasterfall_model_unload(&gallery_models[i]);
     return result;
 }
@@ -595,29 +619,147 @@ done:
     rasterfall_model_resource_unload(&helmet);rasterfall_model_resource_unload(&body);return result;
 }
 
-/* Six RFCHAR carriers in one depth buffer, with equal camera distance and
- * physical body scale. Their screen-horizontal placement avoids overlap in
- * the side view without rotating the equipment relative to its body. */
+static int visual_modular_profession_frame(
+    struct toy_renderer *renderer, const struct camera *camera,
+    struct rasterfall_model_instance *host,
+    const struct rasterfall_character_visual_recipe *recipe,
+    struct rasterfall_model_resource *gear, int mode,
+    int x, int z, int distance)
+{
+    struct rasterfall_rigid_transform actor;
+    struct rasterfall_model_asset *pose;
+    struct rasterfall_model_attachment_transform rifle_frame;
+    const struct rasterfall_pose_calibration *calibration;
+    unsigned int i;
+    int pixels;
+    pose = rasterfall_model_instance_pose(host);
+    if (!pose || rasterfall_model_instance_reset_pose(host) < 0) return -1;
+    visual_acceptance_pose(pose, mode);
+    if (mode && rifle_frame_transform(pose, &rifle_frame) == 0) {
+        calibration = visual_rf_calibration(mode);
+        if (calibration->left_ik)
+            rifle_solve_hands(pose, &rifle_frame, calibration,
+                rasterfall_weapon_asset_profile(TOY_GAME_WEAPON_AK),
+                visual_rf_scale(pose));
+        if (visual_rf_check_grips(pose, &rifle_frame, calibration,
+                                  visual_rf_scale(pose)) < 0) return -1;
+    }
+    rigid_identity(&actor);
+    actor.translation[0] = x;
+    actor.translation[1] = -900 -
+        (int)((long long)pose->min_y * visual_rf_scale(pose) / 1000);
+    actor.translation[2] = z;
+    actor.scale_milli = visual_rf_scale(pose);
+    active_gallery_facing = 1; active_gallery_sy = 0; active_gallery_cy = 1024;
+    pixels = rasterfall_render_character_instance(renderer, camera, host,
+        &actor, recipe->shirt_color, recipe->pants_color);
+    if (pixels < 0) goto fail;
+    if (mode && rifle_frame_transform(pose, &rifle_frame) == 0) {
+        calibration = visual_rf_calibration(mode);
+        pixels += render_skeletal_rifle(renderer, camera, pose, &rifle_frame,
+            &visual_rf_profile, calibration, x, (int)actor.translation[1], z,
+            0, 1024, TOY_GAME_WEAPON_AK, 0);
+    }
+    for (i = 0; i < recipe->attachment_count; i++) {
+        struct rasterfall_rigid_attachment_desc desc;
+        memset(&desc, 0, sizeof(desc));
+        desc.host_socket = recipe->attachments[i].host_socket;
+        desc.resource = &gear[recipe->attachments[i].gear_resource_id];
+        rigid_identity(&desc.mount_correction);
+        if (rasterfall_render_rigid_attachment(renderer, camera, host,
+                                               &desc, &actor) < 0) goto fail;
+    }
+    active_gallery_facing = 0;
+    (void)distance;
+    return pixels;
+fail:
+    active_gallery_facing = 0;
+    return -1;
+}
+
+static int visual_modular_attachment_regression(
+    struct rasterfall_model_instance *host,
+    struct rasterfall_model_resource *gear)
+{
+    static const enum rasterfall_character_attachment sockets[] = {
+        RASTERFALL_ATTACHMENT_CHEST, RASTERFALL_ATTACHMENT_HIP_L,
+        RASTERFALL_ATTACHMENT_HIP_R};
+    static const int gear_ids[] = {RASTERFALL_GEAR_HEAVY_CHEST,
+        RASTERFALL_GEAR_HEAVY_HIP_L, RASTERFALL_GEAR_HEAVY_HIP_R};
+    static const char *socket_names[] = {"CHEST", "HIP_L", "HIP_R"};
+    struct rasterfall_rigid_transform actor, out, bind[3];
+    int mode, i;
+    rigid_identity(&actor); actor.scale_milli = 835;
+    for (mode = 0; mode < 4; mode++) {
+        struct rasterfall_model_asset *pose;
+        if (rasterfall_model_instance_reset_pose(host) < 0) return -1;
+        pose = rasterfall_model_instance_pose(host);
+        if (mode < 3) visual_acceptance_pose(pose, mode);
+        else if (rasterfall_model_instance_set_pose(host,
+                     RASTERFALL_MODEL_POSE_BODY_TURN) < 0) return -1;
+        for (i = 0; i < 3; i++) {
+            struct rasterfall_rigid_attachment_desc desc;
+            memset(&desc, 0, sizeof(desc));
+            desc.host_socket = sockets[i]; desc.resource = &gear[gear_ids[i]];
+            rigid_identity(&desc.mount_correction);
+            if (rigid_attachment_model_to_world(host, &desc, &actor, &out) < 0 ||
+                out.scale_milli != 835 || out.translation[0] < -2000 ||
+                out.translation[0] > 2000 || out.translation[1] < -2000 ||
+                out.translation[1] > 2000 || out.translation[2] < -2000 ||
+                out.translation[2] > 2000) return -1;
+            if (!mode) bind[i] = out;
+            __printf("profession-attachment: pose=%s socket=%s t=(%.3f,%.3f,%.3f) r0=(%.6f,%.6f,%.6f)\n",
+                mode==0?"bind":mode==1?"rifle-idle":mode==2?"rifle-aim":"turned",
+                socket_names[i], out.translation[0], out.translation[1],
+                out.translation[2], out.rotation[0], out.rotation[1], out.rotation[2]);
+        }
+    }
+    if (!(bind[1].translation[0] > 0.0 && bind[2].translation[0] < 0.0))
+        return -1;
+    return 0;
+}
+
+/* Six independent instances share one immutable body resource. Gear is
+ * resolved from presentation recipes and every passive follower queries the
+ * finalized host instance socket. Legacy carriers remain loaded only for A/B. */
 int rasterfall_render_profession_lineup(const char *model_dir, const char *output_dir)
 {
-    static const char *names[] = {"rifleman", "breacher", "recon", "medic", "engineer", "heavy"};
     static const char *views[] = {"front", "three-quarter", "side"};
     static const int view_ids[] = {0, 3, 1};
     static const char *ranges[] = {"near", "mid", "far"};
     static const int distances[] = {2200, 4400, 8800};
-    struct rasterfall_model_asset models[6];
+    struct rasterfall_model_resource body, gear[RASTERFALL_GEAR_RESOURCE_COUNT];
+    struct rasterfall_model_instance hosts[RASTERFALL_MODULAR_PROFESSION_COUNT];
+    struct rasterfall_model_asset carriers[RASTERFALL_MODULAR_PROFESSION_COUNT];
+    static const char *profession_names[] = {
+        "rifleman", "breacher", "recon", "medic", "engineer", "heavy"};
     static struct rasterfall_render_context context;
     char path[512];
     int i, v, d, result = 1;
-    memset(models, 0, sizeof(models));
+    memset(&body, 0, sizeof(body)); memset(gear, 0, sizeof(gear));
+    memset(hosts, 0, sizeof(hosts)); memset(carriers, 0, sizeof(carriers));
     if (!model_dir || !output_dir || tlibc_recursive_mkdir(output_dir) < 0) return 1;
-    for (i = 0; i < 6; i++) {
-        if (snprintf(path, sizeof(path), "%s/rf_profession_%s.rmesh", model_dir, names[i]) >= (int)sizeof(path) ||
-            rasterfall_model_load(&models[i], path) < 0 || !models[i].has_character_contract) {
-            __fprintf(2, "rasterfall: profession lineup cannot load %s\n", names[i]);
+    if (snprintf(path, sizeof(path), "%s/%s.rmesh", model_dir,
+                 rasterfall_character_body_resource_name(
+                     RASTERFALL_BODY_RF_HUMANOID_V2)) >= (int)sizeof(path) ||
+        rasterfall_model_resource_load(&body, path) < 0) goto done;
+    for (i = 0; i < RASTERFALL_GEAR_RESOURCE_COUNT; i++) {
+        if (snprintf(path, sizeof(path), "%s/%s.rmesh", model_dir,
+                     rasterfall_character_gear_resource_name(i)) >= (int)sizeof(path) ||
+            rasterfall_model_resource_load(&gear[i], path) < 0 ||
+            gear[i].definition.bone_count) {
+            __fprintf(2, "rasterfall: modular profession cannot load gear %s\n",
+                      rasterfall_character_gear_resource_name(i));
             goto done;
         }
     }
+    for (i = 0; i < RASTERFALL_MODULAR_PROFESSION_COUNT; i++)
+        if (rasterfall_model_instance_init(&hosts[i], &body) < 0 ||
+            snprintf(path, sizeof(path), "%s/rf_profession_%s.rmesh", model_dir,
+                     profession_names[i]) >= (int)sizeof(path) ||
+            rasterfall_model_load(&carriers[i], path) < 0) goto done;
+    if (visual_modular_attachment_regression(&hosts[RASTERFALL_MODULAR_HEAVY],
+                                             gear) < 0) goto done;
     memset(&context, 0, sizeof(context));
     context.fixed_floor_lighting = 1;
     rasterfall_render_bind(&context);
@@ -641,8 +783,9 @@ int rasterfall_render_profession_lineup(const char *model_dir, const char *outpu
             int offset = (i * 2 - 5) * (v == 2 ? 330 : 220);
             int x = (int)((long long)camera.view.cy * offset / 1024);
             int z = -(int)((long long)camera.view.sy * offset / 1024);
-            if (visual_acceptance_model_frame(&renderer, &camera, &models[i], NULL,
-                    1, x, z, distances[d], 1) < 0) failed = 1;
+            if (visual_modular_profession_frame(&renderer, &camera, &hosts[i],
+                    rasterfall_character_visual_recipe(i), gear, 1,
+                    x, z, distances[d]) < 0) failed = 1;
         }
         if (!failed && (renderer.cmd_overflow || toy_renderer_flush(&renderer) < 0 ||
             snprintf(path, sizeof(path), "%s/%s-%s.bmp", output_dir, views[v], ranges[d]) >= (int)sizeof(path) ||
@@ -650,11 +793,45 @@ int rasterfall_render_profession_lineup(const char *model_dir, const char *outpu
         toy_renderer_destroy(&renderer);
         tlibc_free(surface.pixels);
         if (failed) goto done;
-        __printf("rasterfall: profession lineup view=%s distance=%d output=%s\n", views[v], distances[d], path);
+        __printf("rasterfall: modular profession lineup view=%s distance=%d output=%s\n", views[v], distances[d], path);
+    }
+    __printf("rasterfall: modular profession resources body_loads=1 body_resource=%p host_instances=6 gear_resources=%d\n",
+             (void *)&body, RASTERFALL_GEAR_RESOURCE_COUNT);
+    for (i = 0; i < RASTERFALL_MODULAR_PROFESSION_COUNT; i++) {
+        struct camera camera;
+        struct toy_renderer renderer;
+        struct toy_surface surface;
+        int failed = 0;
+        visual_acceptance_camera(&camera, 0, 2200);
+        memset(&surface, 0, sizeof(surface));
+        surface.width = 1600; surface.height = 800; surface.stride = 6400;
+        surface.pixels = tlibc_malloc((size_t)surface.stride * surface.height);
+        if (!surface.pixels) goto done;
+        toy_renderer_init(&renderer); toy_renderer_set_frame_budget(&renderer, 0);
+        if (toy_renderer_begin(&renderer, &surface, 0x30343B) < 0 ||
+            visual_acceptance_model_frame(&renderer, &camera, &carriers[i], NULL,
+                1, -360, 0, 2200, 1) < 0 ||
+            visual_modular_profession_frame(&renderer, &camera, &hosts[i],
+                rasterfall_character_visual_recipe(i), gear, 1,
+                360, 0, 2200) < 0 || renderer.cmd_overflow ||
+            toy_renderer_flush(&renderer) < 0 ||
+            snprintf(path, sizeof(path), "%s/ab-%s.bmp", output_dir,
+                     profession_names[i]) >= (int)sizeof(path) ||
+            rasterfall_hud_dump_bmp(path, &surface) < 0) failed = 1;
+        toy_renderer_destroy(&renderer); tlibc_free(surface.pixels);
+        if (failed) goto done;
+        __printf("rasterfall: profession carrier-modular A/B profession=%s output=%s\n",
+                 profession_names[i], path);
     }
     result = 0;
 done:
-    for (i = 0; i < 6; i++) rasterfall_model_unload(&models[i]);
+    for (i = 0; i < RASTERFALL_MODULAR_PROFESSION_COUNT; i++)
+        rasterfall_model_instance_unload(&hosts[i]);
+    for (i = 0; i < RASTERFALL_GEAR_RESOURCE_COUNT; i++)
+        rasterfall_model_resource_unload(&gear[i]);
+    for (i = 0; i < RASTERFALL_MODULAR_PROFESSION_COUNT; i++)
+        rasterfall_model_unload(&carriers[i]);
+    rasterfall_model_resource_unload(&body);
     return result;
 }
 

@@ -78,7 +78,7 @@ win-deps:
 	@bash scripts/setup-windows-build.sh
 
 win-rasterfall:
-	@$(MAKE) -f windows/Makefile WINDOWS_DEPS="$(if $(WINDOWS_DEPS),$(WINDOWS_DEPS),$(CURDIR)/.windows-deps)"
+	@$(MAKE) -f windows/Makefile all WINDOWS_DEPS="$(if $(WINDOWS_DEPS),$(WINDOWS_DEPS),$(CURDIR)/.windows-deps)"
 
 win-rasterfall-package:
 	@$(MAKE) -f windows/Makefile package WINDOWS_DEPS="$(if $(WINDOWS_DEPS),$(WINDOWS_DEPS),$(CURDIR)/.windows-deps)"

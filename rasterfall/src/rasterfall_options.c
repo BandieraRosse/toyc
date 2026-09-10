@@ -60,7 +60,7 @@ void rasterfall_options_usage(int fd)
         "  --textures | --no-textures  --no-edge-pass  --no-stats\n"
         "  --texture-stats  --frames <count>  --dump-frame <path>\n"
         "  --logic-test  --input-test  --auto\n"
-        "  --visual-capture <procedural-humanoid|hurd-squad|lighting-props> --visual-output <path.bmp>\n"
+        "  --visual-capture <procedural-humanoid|hurd-squad|lighting-props|modular-teammate> --visual-output <path.bmp>\n"
         "  --character-acceptance <model.rmesh> <output-dir>\n"
         "  --profession-lineup <model-dir> <output-dir>\n"
         "  --rigid-attachment-acceptance <model-dir> <output-dir>\n"
