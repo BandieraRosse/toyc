@@ -14,6 +14,12 @@
 #define RASTERFALL_EFFECT_INSTANCE_SLOTS 2048
 #define RASTERFALL_EFFECT_EMITTER_SLOTS 32
 
+enum rasterfall_enemy_death_style {
+    RASTERFALL_ENEMY_DEATH_STYLE_NONE,
+    RASTERFALL_ENEMY_DEATH_STYLE_LEGACY,
+    RASTERFALL_ENEMY_DEATH_STYLE_DISSOLVE
+};
+
 /* Local camera-shake tuning.  Translation values are view-space units;
  * yaw/pitch values use the camera's 1024 fixed-point angular units. */
 #define RASTERFALL_CAMERA_SHAKE_PISTOL_LIFE_MS 110
@@ -228,6 +234,7 @@ struct rasterfall_effects {
     int last_player_hp;
     int damage_shake_cooldown_ms;
     unsigned char enemy_death_seen[TOY_GAME_MAX_ENEMIES];
+    unsigned char enemy_death_style[TOY_GAME_MAX_ENEMIES];
     int enemy_hit_dir_x[TOY_GAME_MAX_ENEMIES];
     int enemy_hit_dir_z[TOY_GAME_MAX_ENEMIES];
     int enemy_hit_strength[TOY_GAME_MAX_ENEMIES];

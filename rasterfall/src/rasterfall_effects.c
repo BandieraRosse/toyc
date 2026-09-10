@@ -272,11 +272,11 @@ static void spawn_enemy_death_presentation(
     const struct toy_game_enemy_info *info;
     if (!effects || !enemy) return;
     if (enemy->type == TOY_GAME_ENEMY_PURSUIT_FAST) {
-        count = 5; lifetime_ms = 150; spread = 1050; size = 420; gravity_y = 7;
+        count = 12; lifetime_ms = 260; spread = 1350; size = 460; gravity_y = 6;
     } else if (enemy->type == TOY_GAME_ENEMY_PURSUIT_HEAVY) {
-        count = 10; lifetime_ms = 360; spread = 1800; size = 760; gravity_y = 5;
+        count = 22; lifetime_ms = TOY_GAME_DYING_MS; spread = 1900; size = 820; gravity_y = 4;
     } else {
-        count = 6; lifetime_ms = 210; spread = 1350; size = 500; gravity_y = 6;
+        count = 16; lifetime_ms = 330; spread = 1500; size = 560; gravity_y = 5;
     }
     info = toy_game_enemy_info_or_null(enemy->type);
     if (info && info->color) color = info->color;
@@ -292,8 +292,8 @@ static void spawn_enemy_death_presentation(
     emitter.alpha = 256;
     emitter.size = size;
     emitter.color = color;
-    emitter.vx = enemy->dir_x * (enemy->type == TOY_GAME_ENEMY_PURSUIT_FAST ? 48 : 22) / 1024;
-    emitter.vz = enemy->dir_z * (enemy->type == TOY_GAME_ENEMY_PURSUIT_FAST ? 48 : 22) / 1024;
+    emitter.vx = enemy->dir_x * (enemy->type == TOY_GAME_ENEMY_PURSUIT_FAST ? 78 : 28) / 1024;
+    emitter.vz = enemy->dir_z * (enemy->type == TOY_GAME_ENEMY_PURSUIT_FAST ? 78 : 28) / 1024;
     emitter.gravity_y = gravity_y;
     child = &emitter.children[0];
     child->type = RASTERFALL_EFFECT_INSTANCE_PARTICLE;
@@ -317,7 +317,7 @@ static void spawn_enemy_death_presentation(
         marker.kind = RASTERFALL_EFFECT_INSTANCE_KIND_ENEMY_DEATH;
         marker.source_id = enemy_index;
         marker.x = emitter.x; marker.y = emitter.y; marker.z = emitter.z;
-        marker.lifetime_ms = lifetime_ms;
+        marker.lifetime_ms = TOY_GAME_DYING_MS;
         rasterfall_effects_spawn_instance(effects, &marker);
     }
 }
@@ -672,11 +672,19 @@ void rasterfall_effects_sync_enemy_feedback(struct rasterfall_effects *effects,
         const struct toy_game_enemy *enemy = &game->enemies[i];
         if (enemy->active == 0) {
             effects->enemy_death_seen[i] = 0;
+            effects->enemy_death_style[i] = RASTERFALL_ENEMY_DEATH_STYLE_NONE;
             effects->enemy_hit_dir_x[i] = 0;
             effects->enemy_hit_dir_z[i] = 0;
             effects->enemy_hit_strength[i] = 0;
         } else if (enemy->active == 2 && !effects->enemy_death_seen[i]) {
-            spawn_enemy_death_presentation(effects, i, enemy);
+            /* Presentation-only choice: keep the old squash death as a rare
+             * variation, while the normal path rasterizes the intact body. */
+            effects->enemy_death_style[i] = effect_rand(effects, 0, 9) == 0 ?
+                RASTERFALL_ENEMY_DEATH_STYLE_LEGACY :
+                RASTERFALL_ENEMY_DEATH_STYLE_DISSOLVE;
+            if (effects->enemy_death_style[i] ==
+                    RASTERFALL_ENEMY_DEATH_STYLE_DISSOLVE)
+                spawn_enemy_death_presentation(effects, i, enemy);
             effects->enemy_death_seen[i] = 1;
         }
     }
@@ -814,6 +822,7 @@ void rasterfall_effects_reset_fire(struct rasterfall_effects *effects)
     effects->last_player_hp = -1;
     effects->damage_shake_cooldown_ms = 0;
     memset(effects->enemy_death_seen, 0, sizeof(effects->enemy_death_seen));
+    memset(effects->enemy_death_style, 0, sizeof(effects->enemy_death_style));
     memset(effects->enemy_hit_dir_x, 0, sizeof(effects->enemy_hit_dir_x));
     memset(effects->enemy_hit_dir_z, 0, sizeof(effects->enemy_hit_dir_z));
     memset(effects->enemy_hit_strength, 0, sizeof(effects->enemy_hit_strength));

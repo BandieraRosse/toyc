@@ -1411,7 +1411,7 @@ static int run_logic_test(void)
     }
     {
         int i, type, death_count;
-        int expected[] = { 6, 10, 5 };
+        int expected[] = { 16, 22, 12 };
         for (type = TOY_GAME_ENEMY_PURSUIT_COMMON;
              type <= TOY_GAME_ENEMY_PURSUIT_FAST; type++) {
             memset(&game.enemies[0], 0, sizeof(game.enemies[0]));
@@ -1420,6 +1420,8 @@ static int run_logic_test(void)
             game.enemies[0].x = 100;
             game.enemies[0].z = -1200;
             game.enemies[0].dir_z = -1024;
+            /* Force the 90% dissolve branch for this per-type contract test. */
+            effects.rng = 1;
             rasterfall_effects_sync_enemy_feedback(&effects, &game);
             rasterfall_effects_update(&effects, 16);
             death_count = 0;
@@ -1431,10 +1433,29 @@ static int run_logic_test(void)
             if (death_count != expected[type]) return 75;
             rasterfall_effects_sync_enemy_feedback(&effects, &game);
             if (effects.enemy_death_seen[0] != 1) return 76;
+            if (effects.enemy_death_style[0] !=
+                    RASTERFALL_ENEMY_DEATH_STYLE_DISSOLVE) return 77;
             memset(&game.enemies[0], 0, sizeof(game.enemies[0]));
             rasterfall_effects_sync_enemy_feedback(&effects, &game);
             rasterfall_effects_reset_fire(&effects);
         }
+    }
+    {
+        int legacy = 0, dissolve = 0, sample;
+        for (sample = 0; sample < 1000; sample++) {
+            memset(&game.enemies[0], 0, sizeof(game.enemies[0]));
+            game.enemies[0].active = 2;
+            effects.enemy_death_seen[0] = 0;
+            effects.rng = (unsigned int)(sample + 1);
+            rasterfall_effects_sync_enemy_feedback(&effects, &game);
+            if (effects.enemy_death_style[0] ==
+                    RASTERFALL_ENEMY_DEATH_STYLE_LEGACY) legacy++;
+            else if (effects.enemy_death_style[0] ==
+                         RASTERFALL_ENEMY_DEATH_STYLE_DISSOLVE) dissolve++;
+            rasterfall_effects_reset_fire(&effects);
+        }
+        if (legacy < 70 || legacy > 130 || legacy + dissolve != 1000)
+            return 78;
     }
     {
         int i, highlight_count = 0;

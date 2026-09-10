@@ -220,6 +220,8 @@ static unsigned short *active_lightmap;
 static int active_textures;
 static int active_fixed_floor_lighting;
 static int active_enemy_lift;
+static int active_enemy_dissolve;
+static unsigned int active_enemy_dissolve_seed;
 static int active_actor_lift;
 static int active_actor_roll_sin;
 static int active_actor_roll_cos = 1024;
@@ -4579,9 +4581,14 @@ static int render_enemy_body_parts(struct toy_renderer *renderer,
     if (charger_xy_scale < 1) charger_xy_scale = 1;
     for (i = 0; i < count; i++) {
         const struct enemy_body_part *p = &parts[i];
+        unsigned int dissolve_order =
+            (active_enemy_dissolve_seed + (unsigned int)i * 73u) % 256u;
         uint32_t part_color = p->has_fixed_color ? p->fixed_color :
                               color + p->color_delta;
         int x0 = p->a, x1 = p->b, z0 = p->e, z1 = p->f;
+        if (active_enemy_dissolve > 0 &&
+            dissolve_order < (unsigned int)active_enemy_dissolve)
+            continue;
         if (p->type == ENEMY_BODY_BOX_ACTOR) {
             pixels += draw_actor_box(renderer, camera, e->x, e->z,
                                      e->dir_x, e->dir_z,
@@ -4935,8 +4942,24 @@ static int render_enemies(struct toy_renderer *renderer,
         world_to_view(camera, &center, &view);
         if (view.z > ENEMY_RENDER_DISTANCE) continue;
         if (e->active == 2) {
-            scale = e->dying_ms * 1000 / TOY_GAME_DYING_MS;
-            color = 0x5A1A1A;
+            int style = effects.enemy_death_style[i];
+            if (style == RASTERFALL_ENEMY_DEATH_STYLE_LEGACY ||
+                style == RASTERFALL_ENEMY_DEATH_STYLE_NONE) {
+                scale = e->dying_ms * 1000 / TOY_GAME_DYING_MS;
+                color = 0x5A1A1A;
+            } else {
+                const struct toy_game_enemy_info *info =
+                    toy_game_enemy_info(e->type);
+                scale = e->type == TOY_GAME_ENEMY_PURSUIT_HEAVY ? 1350 : 1000;
+                color = info->color;
+                active_enemy_dissolve =
+                    (TOY_GAME_DYING_MS - e->dying_ms) * 256 /
+                    TOY_GAME_DYING_MS;
+                if (active_enemy_dissolve < 1) active_enemy_dissolve = 1;
+                if (active_enemy_dissolve > 256) active_enemy_dissolve = 256;
+                active_enemy_dissolve_seed =
+                    (unsigned int)i * 97u + (unsigned int)e->type * 41u;
+            }
         } else {
             const struct toy_game_enemy_info *info = toy_game_enemy_info(e->type);
             color = info->color;
@@ -4963,14 +4986,17 @@ static int render_enemies(struct toy_renderer *renderer,
             }
             feedback = enemy_feedback_instance(i);
             if (feedback && (feedback->dir_x || feedback->dir_z)) {
+                int hit_offset = 18 + feedback->size / 3;
+                if (hit_offset > 70) hit_offset = 70;
                 presentation_enemy = *e;
-                presentation_enemy.x += feedback->dir_x * 28 / 1024;
-                presentation_enemy.z += feedback->dir_z * 28 / 1024;
+                presentation_enemy.x += feedback->dir_x * hit_offset / 1024;
+                presentation_enemy.z += feedback->dir_z * hit_offset / 1024;
                 draw_enemy = &presentation_enemy;
             }
         }
         active_enemy_lift = draw_enemy->ground_y;
-        pixels += render_blob_shadow(renderer, camera, draw_enemy, scale);
+        if (!active_enemy_dissolve || active_enemy_dissolve < 176)
+            pixels += render_blob_shadow(renderer, camera, draw_enemy, scale);
         active_enemy_lift += draw_enemy->airborne_y;
         if (toy_game_enemy_info(e->type)->ability ==
                 TOY_GAME_ENEMY_ABILITY_SMOKER_TONGUE &&
@@ -4990,6 +5016,8 @@ static int render_enemies(struct toy_renderer *renderer,
         else
             pixels += render_round_enemy(renderer, camera, draw_enemy, scale, color);
         active_enemy_lift = 0;
+        active_enemy_dissolve = 0;
+        active_enemy_dissolve_seed = 0;
     }
     return pixels;
 }
