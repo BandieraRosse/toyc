@@ -19,6 +19,15 @@
 #define HURD_CONTROL_MAX_Z 31500
 #define HURD_FLAG_X 0
 #define HURD_FLAG_Z 28500
+static const int roster_spawn_positions[RASTERFALL_SQUAD_COUNT]
+                                  [RASTERFALL_SQUAD_SIZE][2] = {
+    {
+        { 1000, 0 }, { 1450, 0 }, { 1900, 0 }, { 2350, 0 }
+    },
+    {
+        { -1000, 2100 }, { -400, 2100 }, { 200, 2100 }, { 800, 2100 }
+    }
+};
 static const int hired_ai_positions[][2] = {
     { 1000, 0 }, { 0, -900 }, { -1000, 0 },
     { 1200, 900 }, { -1200, 900 }, { 0, 2100 },
@@ -211,6 +220,51 @@ static void session_set_air_walls(struct rasterfall_session *session,
     toy_game_rebuild_navigation(&session->game_state);
 }
 
+static int session_find_character_actor(const struct rasterfall_session *session,
+                                        int character_id)
+{
+    int i;
+    for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
+        const struct toy_game_actor *actor = &session->game_state.actors[i];
+        if (actor->active && actor->kind == TOY_GAME_ACTOR_AI &&
+            actor->character_id == character_id)
+            return i;
+    }
+    return -1;
+}
+
+/* The roster is content data; this adapter only turns its ordered entries
+ * into ordinary AI actors. It does not add squad behavior or visual state to
+ * toy_game_actor. Jesus is resolved from the existing map-authored spawn so
+ * his established vertical slice keeps the same actor path. */
+static void session_spawn_formal_rosters(struct rasterfall_session *session)
+{
+    int squad, member;
+    for (squad = 0; squad < RASTERFALL_SQUAD_COUNT; squad++) {
+        const struct rasterfall_squad_roster *roster =
+            rasterfall_squad_roster(squad);
+        for (member = 0; member < RASTERFALL_SQUAD_SIZE; member++)
+            session->squad_runtime[squad].actor_indices[member] = -1;
+        for (member = 0; member < RASTERFALL_SQUAD_SIZE; member++) {
+            const struct rasterfall_roster_member *entry =
+                &roster->members[member];
+            int actor_index = session_find_character_actor(
+                session, entry->character_id);
+            if (actor_index < 0) {
+                int actor_id = toy_game_add_ai(
+                    &session->game_state, TOY_GAME_AI_LEVEL_2,
+                    roster_spawn_positions[squad][member][0],
+                    roster_spawn_positions[squad][member][1], entry->name);
+                actor_index = actor_id > 0 ? actor_id - 1 : -1;
+            }
+            if (actor_index < 0) continue;
+            session->game_state.actors[actor_index].character_id =
+                entry->character_id;
+            session->squad_runtime[squad].actor_indices[member] = actor_index;
+        }
+    }
+}
+
 int rasterfall_session_load(struct rasterfall_session *session,
                             const char *map_path)
 {
@@ -337,6 +391,7 @@ void rasterfall_session_reset(struct rasterfall_session *session,
                 RASTERFALL_CHARACTER_RF_RIFLEMAN;
         if (spawn->downed) session_down_ai(session, actor_index, spawn->x, spawn->z);
     }
+    session_spawn_formal_rosters(session);
     /* Anime companions are session actors, separate from map-authored
      * low-poly mercenaries and the fixed developer model lineup. */
     toy_game_add_anime_actor(&session->game_state,0,

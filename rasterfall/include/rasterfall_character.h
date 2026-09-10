@@ -15,6 +15,15 @@ enum rasterfall_character_id {
     RASTERFALL_CHARACTER_HURD_GUARD,
     RASTERFALL_CHARACTER_MAID,
     RASTERFALL_CHARACTER_RF_RIFLEMAN,
+    /* Fixed roster identities. These IDs are content identity, not a
+     * profession enum; changing a visual recipe must not rename a character. */
+    RASTERFALL_CHARACTER_SQUAD_A_MEDIC,
+    RASTERFALL_CHARACTER_SQUAD_A_ENGINEER,
+    RASTERFALL_CHARACTER_SQUAD_A_RECON,
+    RASTERFALL_CHARACTER_SQUAD_B_RIFLEMAN,
+    RASTERFALL_CHARACTER_SQUAD_B_BREACHER,
+    RASTERFALL_CHARACTER_SQUAD_B_HEAVY,
+    RASTERFALL_CHARACTER_SQUAD_B_MEDIC,
     RASTERFALL_CHARACTER_COUNT
 };
 
@@ -51,6 +60,7 @@ rasterfall_profession_visual_profile(int profession_id);
  * stable resource IDs; loaded resources and model instances belong to the
  * character presentation runtime. */
 enum rasterfall_modular_profession_id {
+    RASTERFALL_MODULAR_PROFESSION_NONE = -1,
     RASTERFALL_MODULAR_RIFLEMAN,
     RASTERFALL_MODULAR_BREACHER,
     RASTERFALL_MODULAR_RECON,
@@ -113,6 +123,7 @@ enum rasterfall_character_action {
 struct rasterfall_character_profile {
     int id;
     int profession_id; /* Stable identity only; visual details stay in profession profile. */
+    int visual_recipe_id; /* Presentation-only modular recipe selector. */
     const char *name;
     const char *model_path; /* NULL selects the procedural actor renderer. */
     unsigned int actions;
@@ -123,6 +134,8 @@ struct rasterfall_character_profile {
 };
 
 const struct rasterfall_character_profile *rasterfall_character_profile(int id);
+const struct rasterfall_character_visual_recipe *
+rasterfall_character_visual_recipe_for_character(int character_id);
 int rasterfall_character_for_actor(int actor_id, int class_id);
 int rasterfall_character_logic_test(void);
 

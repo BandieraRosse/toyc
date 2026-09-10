@@ -12,36 +12,69 @@
  * clips; gameplay and networking only retain the stable profile ID. */
 static const struct rasterfall_character_profile characters[] = {
     { RASTERFALL_CHARACTER_HURD_GUNSMITH, RASTERFALL_PROFESSION_GUNSMITH,
-      "Akari", NULL, ALL_ACTIONS,
+      RASTERFALL_MODULAR_PROFESSION_NONE, "Akari", NULL, ALL_ACTIONS,
       0xD94F70, 0x542F55, 0xF0C3A5, 0x512B3A },
     { RASTERFALL_CHARACTER_HURD_LOGISTICS, RASTERFALL_PROFESSION_LOGISTICS,
-      "Mio", NULL, ALL_ACTIONS,
+      RASTERFALL_MODULAR_PROFESSION_NONE, "Mio", NULL, ALL_ACTIONS,
       0x4C78C2, 0x263A63, 0xEBC0A2, 0x25243D },
     { RASTERFALL_CHARACTER_HURD_MEDIC, RASTERFALL_PROFESSION_MEDIC,
-      "Ren", NULL, ALL_ACTIONS,
+      RASTERFALL_MODULAR_PROFESSION_NONE, "Ren", NULL, ALL_ACTIONS,
       0x4FAF82, 0x294F48, 0xD9A47F, 0x33271F },
     { RASTERFALL_CHARACTER_HURD_GUARD, RASTERFALL_PROFESSION_GUARD,
-      "Yuki", NULL, ALL_ACTIONS,
+      RASTERFALL_MODULAR_PROFESSION_NONE, "Yuki", NULL, ALL_ACTIONS,
       0x9B70C7, 0x49365F, 0xF1C8B0, 0xD8DCE8 },
     { RASTERFALL_CHARACTER_MAID, RASTERFALL_PROFESSION_MAID,
-      "Maid", NULL, ALL_ACTIONS,
+      RASTERFALL_MODULAR_PROFESSION_NONE, "Maid", NULL, ALL_ACTIONS,
       0x30343B, 0x20242B, 0xF1C8B0, 0x3A302F },
     { RASTERFALL_CHARACTER_RF_RIFLEMAN, RASTERFALL_PROFESSION_NONE,
-      "RF Rifleman", "rf_humanoid_v2", ALL_ACTIONS,
+      RASTERFALL_MODULAR_RIFLEMAN, "RF Rifleman", "rf_humanoid_v2", ALL_ACTIONS,
       0x6F8461, 0x84906F, 0xB07F65, 0x282F36 }
+    ,{ RASTERFALL_CHARACTER_SQUAD_A_MEDIC, RASTERFALL_PROFESSION_NONE,
+      RASTERFALL_MODULAR_MEDIC, "Squad A Medic", "rf_humanoid_v2", ALL_ACTIONS,
+      0x6C8085, 0x687A70, 0xB98570, 0x343C42 }
+    ,{ RASTERFALL_CHARACTER_SQUAD_A_ENGINEER, RASTERFALL_PROFESSION_NONE,
+      RASTERFALL_MODULAR_ENGINEER, "Squad A Engineer", "rf_humanoid_v2", ALL_ACTIONS,
+      0x87784A, 0x716D58, 0xC08B70, 0x413B2C }
+    ,{ RASTERFALL_CHARACTER_SQUAD_A_RECON, RASTERFALL_PROFESSION_NONE,
+      RASTERFALL_MODULAR_RECON, "Squad A Recon", "rf_humanoid_v2", ALL_ACTIONS,
+      0x7A896C, 0x798069, 0xB8826A, 0x2E3838 }
+    ,{ RASTERFALL_CHARACTER_SQUAD_B_RIFLEMAN, RASTERFALL_PROFESSION_NONE,
+      RASTERFALL_MODULAR_RIFLEMAN, "Squad B Rifleman", "rf_humanoid_v2", ALL_ACTIONS,
+      0x657952, 0x788464, 0xB07F65, 0x29342F }
+    ,{ RASTERFALL_CHARACTER_SQUAD_B_BREACHER, RASTERFALL_PROFESSION_NONE,
+      RASTERFALL_MODULAR_BREACHER, "Squad B Breacher", "rf_humanoid_v2", ALL_ACTIONS,
+      0x4D5969, 0x616C79, 0xB07F65, 0x303944 }
+    ,{ RASTERFALL_CHARACTER_SQUAD_B_HEAVY, RASTERFALL_PROFESSION_NONE,
+      RASTERFALL_MODULAR_HEAVY, "Squad B Heavy", "rf_humanoid_v2", ALL_ACTIONS,
+      0x796C59, 0x6C695D, 0xB07F65, 0x3B3028 }
+    ,{ RASTERFALL_CHARACTER_SQUAD_B_MEDIC, RASTERFALL_PROFESSION_NONE,
+      RASTERFALL_MODULAR_MEDIC, "Squad B Medic", "rf_humanoid_v2", ALL_ACTIONS,
+      0x71878A, 0x657E81, 0xB98570, 0x343C42 }
 };
 
 static const struct rasterfall_character_profile ordinary_character = {
     RASTERFALL_CHARACTER_NONE, RASTERFALL_PROFESSION_NONE,
-    "Ordinary", NULL, ALL_ACTIONS,
+    RASTERFALL_MODULAR_PROFESSION_NONE, "Ordinary", NULL, ALL_ACTIONS,
     0xD94F70, 0x542F55, 0xF0C3A5, 0x512B3A
 };
 
 const struct rasterfall_character_profile *rasterfall_character_profile(int id)
 {
-    if (id < 0 || id >= RASTERFALL_CHARACTER_COUNT)
-        return &ordinary_character;
-    return &characters[id];
+    int i;
+    for (i = 0; i < (int)(sizeof(characters) / sizeof(characters[0])); i++)
+        if (characters[i].id == id) return &characters[i];
+    return &ordinary_character;
+}
+
+const struct rasterfall_character_visual_recipe *
+rasterfall_character_visual_recipe_for_character(int character_id)
+{
+    const struct rasterfall_character_profile *profile =
+        rasterfall_character_profile(character_id);
+    if (!profile || profile->id == RASTERFALL_CHARACTER_NONE ||
+        profile->visual_recipe_id == RASTERFALL_MODULAR_PROFESSION_NONE)
+        return NULL;
+    return rasterfall_character_visual_recipe(profile->visual_recipe_id);
 }
 
 int rasterfall_character_for_actor(int actor_id, int class_id)
@@ -60,7 +93,7 @@ int rasterfall_character_logic_test(void)
         if (profile->id != i ||
             (i < RASTERFALL_CHARACTER_RF_RIFLEMAN &&
              profile->profession_id != RASTERFALL_PROFESSION_GUNSMITH + i) ||
-            (i == RASTERFALL_CHARACTER_RF_RIFLEMAN &&
+            (i >= RASTERFALL_CHARACTER_RF_RIFLEMAN &&
              profile->profession_id != RASTERFALL_PROFESSION_NONE) ||
             !profile->name ||
             (profile->actions & ALL_ACTIONS) != ALL_ACTIONS)
@@ -72,6 +105,13 @@ int rasterfall_character_logic_test(void)
                RASTERFALL_PROFESSION_NONE ||
            rasterfall_character_for_actor(3, 2) != RASTERFALL_CHARACTER_NONE)
         return 1;
+    if (rasterfall_character_profile(RASTERFALL_CHARACTER_RF_RIFLEMAN)
+            ->visual_recipe_id != RASTERFALL_MODULAR_RIFLEMAN)
+        return 1;
+    for (i = RASTERFALL_CHARACTER_RF_RIFLEMAN;
+         i < RASTERFALL_CHARACTER_COUNT; i++)
+        if (rasterfall_character_profile(i)->visual_recipe_id < 0 ||
+            !rasterfall_character_visual_recipe_for_character(i)) return 1;
     for (i = 0; i < RASTERFALL_MODULAR_PROFESSION_COUNT; i++) {
         const struct rasterfall_character_visual_recipe *recipe =
             rasterfall_character_visual_recipe(i);

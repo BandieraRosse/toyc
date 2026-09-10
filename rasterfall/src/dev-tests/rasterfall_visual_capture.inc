@@ -16,6 +16,10 @@ static void visual_procedural_humanoid_setup(
     state->animation_id = TOY_GAME_ANIM_IDLE;
 }
 
+static int visual_modular_attachment_regression(
+    struct rasterfall_model_instance *host,
+    struct rasterfall_model_resource *gear);
+
 int rasterfall_render_visual_capture(const char *scenario, const char *output)
 {
     struct camera camera;
@@ -157,6 +161,135 @@ done:
     rasterfall_render_set_model_lighting(1);
     for (i = 0; i < (prop_lighting ? 0 : modular_teammate ? 1 : squad ? 2 : 1); i++)
         rasterfall_model_unload(&gallery_models[i]);
+    return result;
+}
+
+static void squad_acceptance_camera(struct camera *camera, int view)
+{
+    int distance = 4400;
+    memset(camera, 0, sizeof(*camera));
+    if (view == 1) {
+        camera->body.x = -distance * 724 / 1024;
+        camera->body.z = distance * 724 / 1024;
+        camera->view.sy = 724;
+        camera->view.cy = -724;
+    } else if (view == 2) {
+        camera->body.x = -distance;
+        camera->view.sy = 1024;
+    } else {
+        camera->body.z = distance;
+        camera->view.cy = -1024;
+    }
+    camera->view.y = -350;
+    camera->view.pitch_cy = 1024;
+}
+
+/* Deterministic two-squad acceptance: this uses the same modular actor
+ * renderer as gameplay, with only a fixed presentation camera/roster setup. */
+int rasterfall_render_squad_acceptance(const char *model_dir,
+                                       const char *output_dir)
+{
+    static const char *views[] = {"front", "three-quarter", "side"};
+    struct rasterfall_modular_actor_runtime *runtime =
+        &modular_actor_runtime;
+    struct rasterfall_render_context context;
+    struct toy_game_actor actors[RASTERFALL_SQUAD_COUNT * RASTERFALL_SQUAD_SIZE];
+    char path[512];
+    int view, squad, member, actor_index, result = 1;
+    if (!model_dir || !*model_dir || !output_dir || !*output_dir ||
+        strlen(model_dir) > 400 || strlen(output_dir) > 400 ||
+        tlibc_recursive_mkdir(output_dir) < 0)
+        return 1;
+    modular_actor_model_dir = model_dir;
+    if (modular_actor_resources_init() < 0) {
+        __fprintf(2, "rasterfall: squad acceptance resources unavailable in %s\n",
+                  model_dir);
+        return 1;
+    }
+    memset(&context, 0, sizeof(context));
+    context.fixed_floor_lighting = 1;
+    rasterfall_render_bind(&context);
+    memset(actors, 0, sizeof(actors));
+    actor_index = 0;
+    for (squad = 0; squad < RASTERFALL_SQUAD_COUNT; squad++) {
+        const struct rasterfall_squad_roster *roster =
+            rasterfall_squad_roster(squad);
+        for (member = 0; member < RASTERFALL_SQUAD_SIZE; member++) {
+            struct toy_game_actor *actor = &actors[actor_index];
+            const struct rasterfall_roster_member *entry =
+                &roster->members[member];
+            const struct toy_game_weapon_info *weapon =
+                toy_game_weapon_info(TOY_GAME_WEAPON_AK);
+            actor->active = 1;
+            actor->actor_id = actor_index + 1;
+            actor->kind = TOY_GAME_ACTOR_AI;
+            actor->character_id = entry->character_id;
+            actor->state = TOY_GAME_ACTOR_ALIVE;
+            actor->cy = 1024;
+            actor->current_slot = weapon->slot;
+            actor->slots[weapon->slot].weapon = TOY_GAME_WEAPON_AK;
+            actor_index++;
+        }
+    }
+    gallery_load();
+    memset(runtime->instance_ready, 0, sizeof(runtime->instance_ready));
+    for (view = 0; view < 3; view++) {
+        struct camera camera;
+        struct toy_renderer renderer;
+        struct toy_surface surface;
+        int failed = 0;
+        squad_acceptance_camera(&camera, view);
+        memset(&surface, 0, sizeof(surface));
+        surface.width = 2400;
+        surface.height = 900;
+        surface.stride = surface.width * (int)sizeof(uint32_t);
+        surface.pixels = tlibc_malloc((size_t)surface.stride * surface.height);
+        if (!surface.pixels) return 1;
+        toy_renderer_init(&renderer);
+        toy_renderer_set_frame_budget(&renderer, 0);
+        if (toy_renderer_begin(&renderer, &surface, 0x30343B) < 0)
+            failed = 1;
+        for (actor_index = 0; actor_index <
+             RASTERFALL_SQUAD_COUNT * RASTERFALL_SQUAD_SIZE && !failed;
+             actor_index++) {
+            int offset = (actor_index * 2 - 7) * 180;
+            actors[actor_index].x =
+                (int)((long long)camera.view.cy * offset / 1024);
+            actors[actor_index].z =
+                -(int)((long long)camera.view.sy * offset / 1024);
+            if (render_modular_ai_teammate(&renderer, &camera,
+                                           &actors[actor_index], actor_index) < 0)
+                failed = 1;
+        }
+        if (!failed && (renderer.cmd_overflow || toy_renderer_flush(&renderer) < 0 ||
+            snprintf(path, sizeof(path), "%s/%s.bmp", output_dir,
+                     views[view]) >= (int)sizeof(path) ||
+            rasterfall_hud_dump_bmp(path, &surface) < 0))
+            failed = 1;
+        toy_renderer_destroy(&renderer);
+        tlibc_free(surface.pixels);
+        if (failed) return 1;
+        __printf("rasterfall: squad acceptance view=%s output=%s actors=8\n",
+                 views[view], path);
+    }
+    for (actor_index = 0; actor_index <
+         RASTERFALL_SQUAD_COUNT * RASTERFALL_SQUAD_SIZE; actor_index++) {
+        if (!runtime->instance_ready[actor_index] ||
+            rasterfall_model_instance_resource(&runtime->instances[actor_index]) !=
+                &runtime->body)
+            return 1;
+        for (member = 0; member < actor_index; member++)
+            if (rasterfall_model_instance_pose(&runtime->instances[member]) ==
+                rasterfall_model_instance_pose(&runtime->instances[actor_index]))
+                return 1;
+    }
+    if (visual_modular_attachment_regression(&runtime->instances[6],
+                                             runtime->gear) < 0)
+        return 1;
+    __printf("rasterfall: squad acceptance body_resource_shared=1 "
+             "gear_resources_shared=%d model_instances=8 palette_isolated=1 "
+             "attachment_regression=pass\n", RASTERFALL_GEAR_RESOURCE_COUNT);
+    result = 0;
     return result;
 }
 

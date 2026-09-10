@@ -1,7 +1,7 @@
 # 运行时与主循环
 
 > 文档更新：2026-09-10
-> 源码核对基线：工作区（Lighting V1 的 lighting-props 与 Character Acceptance A/B；Hurd 四职业 presentation profile；RF Humanoid V2 world capture；Eula gameplay actor 按 profile 懒加载 walk clip；控制器命令经 actor API 进入玩法；`game_state.actors[]` 是玩家/AI gameplay truth；world step 独立推进投射物、敌人、波次和地图规则；camera、HUD、网络展示只读取 actor/world 或 derived presentation cache；本地 body 位置驱动 camera）
+> 源码核对基线：工作区（双正式四人 squad roster 与 squad acceptance；Lighting V1 的 lighting-props 与 Character Acceptance A/B；Hurd 四职业 presentation profile；RF Humanoid V2 world capture；Eula gameplay actor 按 profile 懒加载 walk clip；控制器命令经 actor API 进入玩法；`game_state.actors[]` 是玩家/AI gameplay truth；world step 独立推进投射物、敌人、波次和地图规则；camera、HUD、网络展示只读取 actor/world 或 derived presentation cache；本地 body 位置驱动 camera）
 
 > 源码核对补充：session reset 在原 flag 1 和原坐标恢复 Maid 四人旗卫，并创建使用 flag 2 的正式 Hurd squad/outpost；Hurd 控制状态保持派生。
 
@@ -26,7 +26,8 @@
 `--visual-capture <scenario> --visual-output <path>` 必须成对提供。解析后立即进入
 `rasterfall_render_visual_capture()` 并退出，先于字库、网络、session/map、窗口和音频初始化。
 固定场景不读取时钟、不推进 simulation，也不受交互式画面选项影响；不要与其他诊断模式混用。
-支持 `procedural-humanoid`、`hurd-squad`、`lighting-props`、`--character-acceptance <model.rmesh> <output-dir>` 和
+支持 `procedural-humanoid`、`hurd-squad`、`lighting-props`、`--character-acceptance <model.rmesh> <output-dir>`、
+`--squad-acceptance <model-dir> <output-dir>` 和
 `--character-world-capture <output-dir> [--character-world-model <model.rmesh>]`；`procedural-humanoid` 与
 `hurd-squad` 仍是独立的纯展示 fixture，不读取正式 world actor；
 正式 Hurd 四人另由 session reset 创建，两条路径共享 character/profession profile 和程序化人物绘制入口。
@@ -62,6 +63,8 @@ camera 的方向仍作为输入视角供移动与瞄准使用。渲染阶段可�
   `render_camera` 的展示态应用；受击 preset 宏也在 `rasterfall_effects.h`；不要修改权威 `camera`
   或网络快照。
 - 改自动化/截图/性能参数：先查 options，再查 `main()` 中窗口创建前的诊断早退和帧尾输出。
+- 正式 squad content/acceptance：查 `rasterfall_roster.c`、session reset 的 roster adapter 和
+  `--squad-acceptance` 早退；不要把验收 fixture 当作 gameplay actor 的额外状态源。
 
 平台 API 不在本目录：窗口与输入分别在 `lib/platform/window_wayland.c`、`lib/input/input.c`，
 Windows 替换实现位于 `windows/src/`。只有跨应用的平台缺陷才应修改这些公共层。

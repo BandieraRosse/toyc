@@ -11,6 +11,7 @@ struct rasterfall_options {
     const char *visual_scenario, *visual_output;
     const char *character_acceptance_model, *character_acceptance_dir;
     const char *profession_lineup_models, *profession_lineup_dir;
+    const char *squad_acceptance_models, *squad_acceptance_dir;
     const char *rigid_attachment_models, *rigid_attachment_dir;
     const char *character_world_capture_dir, *character_world_capture_model;
     const char *view_model_path, *view_output_dir;

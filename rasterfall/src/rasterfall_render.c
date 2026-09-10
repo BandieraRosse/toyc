@@ -27,6 +27,7 @@
 #include "rasterfall_actor_animation.h"
 #include "rasterfall_animation_composition.h"
 #include "rasterfall_character.h"
+#include "rasterfall_roster.h"
 #include "rasterfall_units.h"
 #include "rasterfall_glb_animation.h"
 #include "rasterfall_glb_preview.h"
@@ -5528,12 +5529,13 @@ static void render_ai_teammate_name(struct toy_renderer *renderer,
 struct rasterfall_modular_actor_runtime {
     int load_attempted, resources_ready;
     struct rasterfall_model_resource body;
-    struct rasterfall_model_resource gear[3];
+    struct rasterfall_model_resource gear[RASTERFALL_GEAR_RESOURCE_COUNT];
     struct rasterfall_model_instance instances[TOY_GAME_MAX_ACTORS];
     unsigned char instance_ready[TOY_GAME_MAX_ACTORS];
 };
 
 static struct rasterfall_modular_actor_runtime modular_actor_runtime;
+static const char *modular_actor_model_dir;
 static const struct rasterfall_skeletal_actor_profile modular_rf_profile = {
     "rf_humanoid_v2", NULL, NULL, 1736, 0, 1024
 };
@@ -5553,19 +5555,18 @@ static int modular_actor_resources_init(void)
         rasterfall_character_visual_recipe(RASTERFALL_MODULAR_RIFLEMAN);
     char path[RASTERFALL_MODEL_PATH_BYTES];
     unsigned int i;
+    const char *model_dir = modular_actor_model_dir ? modular_actor_model_dir :
+        "rasterfall/private-assets/models";
     if (runtime->load_attempted) return runtime->resources_ready ? 0 : -1;
     runtime->load_attempted = 1;
-    if (!recipe || snprintf(path, sizeof(path),
-            "rasterfall/private-assets/models/%s.rmesh",
+    if (!recipe || snprintf(path, sizeof(path), "%s/%s.rmesh", model_dir,
             rasterfall_character_body_resource_name(recipe->body_resource_id)) >=
             (int)sizeof(path) ||
         rasterfall_model_resource_load(&runtime->body, path) < 0)
         return -1;
-    for (i = 0; i < recipe->attachment_count; i++) {
-        int gear_id = recipe->attachments[i].gear_resource_id;
-        if (i >= 3 || snprintf(path, sizeof(path),
-                "rasterfall/private-assets/models/%s.rmesh",
-                rasterfall_character_gear_resource_name(gear_id)) >=
+    for (i = 0; i < RASTERFALL_GEAR_RESOURCE_COUNT; i++) {
+        if (snprintf(path, sizeof(path), "%s/%s.rmesh", model_dir,
+                rasterfall_character_gear_resource_name(i)) >=
                 (int)sizeof(path) ||
             rasterfall_model_resource_load(&runtime->gear[i], path) < 0 ||
             runtime->gear[i].definition.bone_count)
@@ -5574,7 +5575,7 @@ static int modular_actor_resources_init(void)
     runtime->resources_ready = 1;
     return 0;
 fail:
-    for (i = 0; i < 3; i++)
+    for (i = 0; i < RASTERFALL_GEAR_RESOURCE_COUNT; i++)
         rasterfall_model_resource_unload(&runtime->gear[i]);
     rasterfall_model_resource_unload(&runtime->body);
     return -1;
@@ -5585,8 +5586,8 @@ static int render_modular_ai_teammate(struct toy_renderer *renderer,
     int actor_index)
 {
     struct rasterfall_modular_actor_runtime *runtime = &modular_actor_runtime;
-    const struct rasterfall_character_visual_recipe *recipe =
-        rasterfall_character_visual_recipe(RASTERFALL_MODULAR_RIFLEMAN);
+    const struct rasterfall_character_profile *profile;
+    const struct rasterfall_character_visual_recipe *recipe;
     struct rasterfall_model_instance *instance;
     struct rasterfall_model_asset *pose;
     struct rasterfall_model_attachment_transform rifle_frame;
@@ -5594,9 +5595,11 @@ static int render_modular_ai_teammate(struct toy_renderer *renderer,
     const struct rasterfall_pose_calibration *calibration;
     int weapon, have_rifle, pixels, scale = 835;
     unsigned int i;
-    if (!renderer || !camera || !actor || actor_index < 0 ||
+    profile = actor ? rasterfall_character_profile(actor->character_id) : NULL;
+    recipe = actor ? rasterfall_character_visual_recipe_for_character(
+        actor->character_id) : NULL;
+    if (!renderer || !camera || !actor || !profile || !recipe || actor_index < 0 ||
         actor_index >= TOY_GAME_MAX_ACTORS ||
-        actor->character_id != RASTERFALL_CHARACTER_RF_RIFLEMAN ||
         actor->state == TOY_GAME_ACTOR_DOWNED ||
         modular_actor_resources_init() < 0) return -1;
     instance = &runtime->instances[actor_index];
@@ -5643,7 +5646,7 @@ static int render_modular_ai_teammate(struct toy_renderer *renderer,
         struct rasterfall_rigid_attachment_desc desc;
         memset(&desc, 0, sizeof(desc));
         desc.host_socket = recipe->attachments[i].host_socket;
-        desc.resource = &runtime->gear[i];
+        desc.resource = &runtime->gear[recipe->attachments[i].gear_resource_id];
         modular_rigid_identity(&desc.mount_correction);
         pixels += rasterfall_render_rigid_attachment(renderer, camera, instance,
                                                       &desc, &actor_to_world);
@@ -5857,7 +5860,8 @@ static int render_ai_teammate(struct toy_renderer *renderer,
             frontend_set_override(renderer, 0);
             active_actor_lift=0;continue;
         }
-        if (actor->character_id == RASTERFALL_CHARACTER_RF_RIFLEMAN) {
+        if (rasterfall_character_visual_recipe_for_character(
+                actor->character_id)) {
             int modular_pixels = render_modular_ai_teammate(renderer, camera,
                                                              actor, i);
             if (modular_pixels >= 0) {

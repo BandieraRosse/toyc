@@ -1,7 +1,7 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-10
-> 源码核对基线：工作区（Profession Modularization V1；Jesus modular teammate；Lighting V1）
+> 源码核对基线：工作区（Profession Modularization V1；双正式四人 squad；Jesus modular teammate；Lighting V1）
 
 > 源码核对补充：正式 Hurd actor 通过四个专用 character profile 进入职业外观；恢复的四名 Maid 旗卫以 Maid character profile 接入 actor，同时继续由 anime identity 选择骨骼模型；普通 player、Eula、佣兵解析为 NONE。
 
@@ -10,6 +10,11 @@ Profession Modularization V1 的提交顺序是 finalized shared-body instance �
 仅在单次 submission 生效，不修改 immutable resource material table。地图初始普通队友 Jesus 是首个
 vertical slice：actor 的 stable character ID 解析到 Rifleman recipe，presentation runtime 按 actor index
 持有独立 instance；`--visual-capture modular-teammate` 固定观察 idle/move/fire/reload/hit。
+
+正式 RF 小队的每个 actor 先由 character ID 解析到 profile，再由 profile 的 modular recipe 选择
+共享 V2 body 和共享 rigid gear resources；`render_modular_ai_teammate()` 按 actor index 保持独立
+model instance。这个路径不从 actor 读取资源路径、gear list 或 palette override，失败时仍回退到
+既有 procedural actor。
 
 ## 渲染边界
 
@@ -215,6 +220,7 @@ make app-rasterfall
 build/rasterfall --visual-capture procedural-humanoid --visual-output /tmp/rf-humanoid.bmp
 build/rasterfall --visual-capture lighting-props --visual-output /tmp/rf-lighting-props.bmp
 build/rasterfall --character-acceptance rasterfall/private-assets/models/rf_humanoid_acceptance.rmesh /tmp/rf-humanoid-v11
+build/rasterfall --squad-acceptance rasterfall/private-assets/models /tmp/rf-squad-acceptance
 ```
 
 输出为 24-bit BMP（单人 800×800，小队 1600×800），路径由调用者指定，父目录须已存在；成功后打印最终路径并退出。
@@ -273,6 +279,12 @@ build/rasterfall --visual-capture hurd-squad --visual-output /tmp/rf-hurd-squad.
 头部、武器和侧后附件。固定背景/光照，串行绘制，预载公开 Pistol/SMG，不初始化 gameplay。
 职业装备与普通人物共用 `rasterfall_render_procedural_humanoid()`，没有人物绘制副本。
 接口不提供 portrait、任意相机控制、回放或图片基线管理。
+
+`--squad-acceptance <model-dir> <output-dir>` 是正式 RF roster 的固定离屏验收：同时构造两套
+四人 roster，共八个 modular actor，输出 `front.bmp`、`three-quarter.bmp`、`side.bmp`。
+三视角均为 2400×900、固定相机和固定横向间距；body 只加载一次，gear 按资源 ID 共享，instance
+按 actor index 独立。该入口同时检查 palette isolation、RFCHAR attachment transform regression
+和 instance resource ownership，重复运行可用 `cmp` 做字节级 deterministic capture 回归。
 
 ## 常见任务落点
 

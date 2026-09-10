@@ -313,6 +313,7 @@ static int run_logic_test(void)
     /* if (rasterfall_animation_logic_test() != 0) return 161; */
     if (rasterfall_animation_composition_logic_test() != 0) return 168;
     if (rasterfall_character_logic_test() != 0) return 166;
+    if (rasterfall_roster_logic_test() != 0) return 226;
     if (rasterfall_prop_asset_logic_test() != 0) return 170;
     if (toy_map_lifecycle_logic_test() != 0) return 173;
     if (toy_map_prop_logic_test() != 0) return 171;
@@ -347,10 +348,31 @@ static int run_logic_test(void)
                     return 222;
                 continue;
             }
-            if (actor->character_id != RASTERFALL_CHARACTER_NONE ||
-                rasterfall_character_profile(actor->character_id)->profession_id !=
-                    RASTERFALL_PROFESSION_NONE)
+            if (actor->character_id != RASTERFALL_CHARACTER_NONE &&
+                !rasterfall_character_visual_recipe_for_character(
+                    actor->character_id))
                 return 222;
+        }
+    }
+    {
+        int squad, member;
+        for (squad = 0; squad < RASTERFALL_SQUAD_COUNT; squad++) {
+            const struct rasterfall_squad_roster *roster =
+                rasterfall_squad_roster(squad);
+            for (member = 0; member < RASTERFALL_SQUAD_SIZE; member++) {
+                int actor_index = session.squad_runtime[squad]
+                    .actor_indices[member];
+                const struct toy_game_actor *actor;
+                if (actor_index < 0 || actor_index >= TOY_GAME_MAX_ACTORS)
+                    return 227;
+                actor = &session.game_state.actors[actor_index];
+                if (!actor->active || actor->kind != TOY_GAME_ACTOR_AI ||
+                    actor->character_id != roster->members[member].character_id ||
+                    strcmp(actor->name, roster->members[member].name) ||
+                    !rasterfall_character_visual_recipe_for_character(
+                        actor->character_id))
+                    return 227;
+            }
         }
     }
     {

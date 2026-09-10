@@ -1,7 +1,7 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-10
-> 源码核对基线：工作区（Profession Modularization V1；首个 gameplay teammate vertical slice）
+> 源码核对基线：工作区（Profession Modularization V1；双正式四人小队 roster；squad acceptance）
 
 本目录面向接手 Rasterfall 任务的编码代理。目标不是介绍玩法，而是先把问题归到正确的
 状态所有者和文件，再开始搜索。命令、资源导入方法和用户可见特性仍以
@@ -13,6 +13,7 @@
 “文档层级与 Agent CLI 事实入口”。
 
 > 源码核对补充：正式 Hurd 四人使用专用 character IDs；原 Maid 四人旗卫已在西侧原位恢复并使用 Maid character/profession；普通 player、Eula 和佣兵为 character NONE；北侧 HURD 旗帜及派生 control status 已接入 session。
+> 源码核对补充：Standard Response Squad 与 Assault Squad 各四人由 `rasterfall_roster` 提供有序 identity；session reset 将其接入普通 AI actor，renderer 再按 character profile 解析 modular recipe；`--squad-acceptance` 输出八人三视角验收。
 
 ## 先读哪一篇
 
@@ -44,6 +45,7 @@
 | RF Humanoid clean face、Headgear / Face Coverage V1、覆盖率组图 | [character-assets.md](character-assets.md)、[asset-pipeline.md](asset-pipeline.md) | `generate_rasterfall_humanoid_v2.py --headgear` → `RF_HEAD` → `rf_humanoid_headgear_sheet.py` → Character Lab / world strip |
 | V2.1 Final Body、六职业装备、Profession Lineup | [character-assets.md](character-assets.md)、[rendering.md](rendering.md) | `generate_rasterfall_humanoid_v2.py --profession` → 六份 `rf_profession_*` manifest → `--profession-lineup`；`tools/rf_profession_round.py` |
 | 六职业 modular recipe / rigid gear、carrier A/B、普通队友迁移 | [character-assets.md](character-assets.md)、[rendering.md](rendering.md)、[gameplay.md](gameplay.md) | `rasterfall_character_visual_recipe()` → shared body instance → HEAD/CHEST/BACK/HIP rigid assembly；`--profession-lineup` / `--visual-capture modular-teammate` |
+| 正式 RF 小队 roster、角色 identity、八人验收 | [gameplay.md](gameplay.md)、[rendering.md](rendering.md)、[runtime.md](runtime.md) | `include/rasterfall_roster.h` / `src/rasterfall_roster.c` → `session_spawn_formal_rosters()` → `render_modular_ai_teammate()`；`--squad-acceptance` |
 | 导入 PMX/GLB、manifest、纹理、LOD、模型诊断 | [asset-pipeline.md](asset-pipeline.md) | `tools/assets/import_asset.py`、现有转换器、模型加载器 |
 | 程序化工业/军事环境组件、Blender 批量导出 | [industrial-props.md](industrial-props.md)、[asset-pipeline.md](asset-pipeline.md) | `tools/blender/generate_rasterfall_props.py` |
 | 环境组件 V2 风格、palette、几何/纹理预算与验收 | [environment-art.md](environment-art.md)、[industrial-props.md](industrial-props.md) | 十件 static prop 源资产与游戏内展示 |
@@ -135,6 +137,9 @@ player/actor 和敌人的 airborne forced/knockback movement 均由玩法核心�
 - 六职业 Profession Modularization V1 由 presentation recipe 解析共享 RF Humanoid V2 body、per-profile shirt/pants palette 与 rigid gear ID；旧 `rf_profession_*` 仅作 legacy acceptance carrier。普通队友 Jesus 使用稳定 RF Rifleman identity 与逐 actor presentation instance；资源失败回退 procedural，actor 不持有资源、路径或附件数组。
 - 修改角色状态：从 `toy_game_actor`、actor API 和
   `rasterfall_session.c` 的本地主循环开始；不要把 camera 的位置字段写回为 gameplay 源。
+- 修改正式小队内容：从 `rasterfall_roster.h/.c` 的 ordered character list 开始，再检查
+  `rasterfall_session.c` 的 reset adapter、character profile/recipe 映射、网络 character byte 和
+  `--squad-acceptance`；不要把 squad 或 visual resource 字段塞进 actor。
 - 修改 Hurd 据点：固定角色索引和 RFU control region 属于 session；assignment 只读
   `actor.flag_index`，capable 只认 ALIVE 且 HP 大于零；旗帜、actor 和 revive 仍是底层玩法真值。
 

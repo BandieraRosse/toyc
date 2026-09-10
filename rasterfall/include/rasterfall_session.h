@@ -10,6 +10,7 @@
 #include "rasterfall_animation.h"
 #include "rasterfall_animation_composition.h"
 #include "rasterfall_calibration.h"
+#include "rasterfall_roster.h"
 
 #define RASTERFALL_PLAYER_RADIUS 180
 #define RASTERFALL_MOVE_STEP TOY_CONFIG_PLAYER_MOVE_STEP
@@ -47,6 +48,10 @@ struct rasterfall_hurd_status {
     int assigned_count;
     int capable_count;
     int controlled;
+};
+
+struct rasterfall_squad_runtime {
+    int actor_indices[RASTERFALL_SQUAD_SIZE];
 };
 
 enum rasterfall_command_button {
@@ -159,6 +164,7 @@ struct rasterfall_session {
     int carried_flag;
     int assignment_flag;
     struct rasterfall_hurd_outpost hurd_outpost;
+    struct rasterfall_squad_runtime squad_runtime[RASTERFALL_SQUAD_COUNT];
     int skeletal_demo_pose;
     struct rasterfall_animation_player skeletal_demo_player;
     int pose_debug_active, pose_debug_bone, pose_debug_axis, pose_debug_layer;

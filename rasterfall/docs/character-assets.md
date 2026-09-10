@@ -1,7 +1,7 @@
 # Rasterfall Character Asset Contract V1 / RF Humanoid V2.1
 
 > 文档更新：2026-09-10
-> 源码核对基线：工作区（Profession Modularization V1；RFCHAR V1 / RFM2 v14）
+> 源码核对基线：工作区（Profession Modularization V1；正式 RF squad roster；RFCHAR V1 / RFM2 v14）
 
 本文是所有新 Rasterfall 人形角色资产的第一入口。V1 冻结 Blender 到离线 importer 的输入门；
 它不承诺任意 glTF 的兼容性，也不要求 runtime 直接读取 GLB。主线固定为：
@@ -374,3 +374,7 @@ python3 tools/rf_profession_round.py --generate --capture --world --deterministi
 near/mid/far × old/idle/aim/motion。lineup 在同一深度缓冲绘制六人，无职业标签；front 与
 three-quarter 各三档距离，加 side mid。重复 capture 逐字节核对七张 BMP，并记录 SHA-256。
 生成资产、日志、组图和原始 BMP 均为本地产物，不提交。
+
+正式 Standard Response / Assault roster 复用这里冻结的同一 body、六职业 gear resource 和
+attachment contract；roster 的 character identity 与 ordered squad content 位于
+`include/rasterfall_roster.h` / `src/rasterfall_roster.c`，不新增资产载体，也不把资源字段复制到 actor。

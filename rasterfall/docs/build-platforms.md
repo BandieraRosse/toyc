@@ -1,7 +1,7 @@
 # 构建、平台与验证
 
 > 文档更新：2026-09-10
-> 源码核对基线：工作区（`make win-rasterfall` 显式进入 Windows `all`；Rasterfall 对象无条件重建规则；GB2312 字库进入 Linux embedded 与 Windows 资产包）
+> 源码核对基线：工作区（`make win-rasterfall` 显式进入 Windows `all`；正式 squad roster 编译单元已纳入 Linux/Windows；Rasterfall 对象无条件重建规则；GB2312 字库进入 Linux embedded 与 Windows 资产包）
 
 ## Linux
 

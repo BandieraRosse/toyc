@@ -1,7 +1,7 @@
 # 玩法、会话、地图与 AI
 
 > 文档更新：2026-09-10
-> 源码核对基线：工作区（Jesus 使用稳定 RF Rifleman visual identity；model resource/instance/gear/palette 仍只属于 presentation；其余玩法真值不变）
+> 源码核对基线：工作区（Jesus 使用稳定 RF Rifleman identity；两个正式四人 squad roster；model resource/instance/gear/palette 仍只属于 presentation；其余玩法真值不变）
 
 > 源码核对补充：正式 Hurd 四人使用专用 character IDs；原 Maid 四人旗卫在 flag 1 原位恢复并使用 Maid character/profession；普通 player、Eula、佣兵为 NONE；固定角色索引、HURD 旗帜 assignment 与派生 control status。
 
@@ -10,6 +10,19 @@
 per-actor model instance 和 palette 均由 renderer 的轻量 character presentation runtime 管理。资源缺失、
 recipe 缺失、instance 初始化失败或当前 downed path 不适用时，渲染器回退既有 procedural actor，
 不改变 AI、伤害、网络或 session simulation。
+
+## Formal RF squad roster
+
+`rasterfall/include/rasterfall_roster.h` 与 `src/rasterfall_roster.c` 保存两套固定有序游戏内容：
+Standard Response Squad 为 Jesus、Squad A Medic、Squad A Engineer、Squad A Recon；Assault Squad
+为 Squad B Rifleman、Squad B Breacher、Squad B Heavy、Squad B Medic。character ID 在
+`rasterfall_character.h` 中独立且稳定，职业只通过 character profile 的 presentation recipe 映射，
+不作为 actor 类型或 gameplay ability。
+
+`rasterfall_session_reset()` 保留地图已有 Jesus actor 并把它登记为 Standard Response 的第一位，
+再通过普通 `toy_game_add_ai()` 创建其余七名 actor；session 只保存 squad 到 actor index 的轻量
+运行时定位。AI、武器、动画、伤害、碰撞和网络规则继续使用原有 actor 路径，actor 不携带 model、gear、
+RMESH 或 attachment 数据。
 
 ## 三层职责
 

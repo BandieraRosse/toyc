@@ -3,6 +3,7 @@
 #include "rasterfall_net.h"
 #include "rasterfall_net_transport.h"
 #include "rasterfall_units.h"
+#include "rasterfall_character.h"
 
 #ifdef TOYC_WINDOWS
 #define net_windows_log toy_windows_log
@@ -1304,7 +1305,8 @@ static void decode_actor(const unsigned char *p, struct rasterfall_net_actor *a)
     a->hired = (p[41] & 1) != 0;
     memcpy(a->name, p + 42, TOY_GAME_MAX_NAME);
     a->name[TOY_GAME_MAX_NAME - 1] = 0;
-    a->character_id = p[42 + TOY_GAME_MAX_NAME] < TOY_GAME_ACTOR_CHARACTER_COUNT ?
+    a->character_id = p[42 + TOY_GAME_MAX_NAME] == 255 ? -1 :
+                      p[42 + TOY_GAME_MAX_NAME] < RASTERFALL_CHARACTER_COUNT ?
                       p[42 + TOY_GAME_MAX_NAME] : -1;
     if (a->state == TOY_GAME_ACTOR_DOWNED)
         a->revive_progress_ms = p[17] * 12;
