@@ -313,6 +313,13 @@ int rasterfall_session_load(struct rasterfall_session *session,
     return 0;
 }
 
+const struct toy_game_actor *rasterfall_session_local_player_const(
+    const struct rasterfall_session *session)
+{
+    if (!session) return NULL;
+    return toy_game_local_player_actor_const(&session->game_state);
+}
+
 void rasterfall_session_unload(struct rasterfall_session *session)
 {
     rasterfall_map_unload(&session->map_ops);

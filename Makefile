@@ -810,7 +810,7 @@ $(BUILD)/rf_core_host.o: rasterfall/src/rf_core_host.c rasterfall/include/rf_cor
 	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
 	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 
-$(BUILD)/rf_game_lifecycle.o: rasterfall/src/rf_game_lifecycle.c rasterfall/include/rf_game_lifecycle.h | $(BUILD)
+$(BUILD)/rf_game_lifecycle.o: rasterfall/src/rf_game_lifecycle.c rasterfall/include/rf_game_lifecycle.h rasterfall/include/rasterfall_session.h | $(BUILD)
 	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
 	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 

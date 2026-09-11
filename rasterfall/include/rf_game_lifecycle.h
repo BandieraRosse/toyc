@@ -19,6 +19,18 @@ struct rf_game_config {
     const char *map_path;
 };
 
+/* Query-only runtime summary for future station/terminal consumers. */
+struct rf_game_runtime_status {
+    int initialized;
+    int running;
+    int paused;
+    int session_active;
+    int network_mode;
+    int local_player_active;
+    int local_player_state;
+    int local_player_hp;
+};
+
 struct rf_game_runtime {
     /* Gameplay/session ownership stays below this object.  The runtime owns
      * the presentation and frame-loop state which used to be implicit in
@@ -81,6 +93,8 @@ int rf_game_update(struct rf_game_runtime *runtime,
 int rf_game_render(struct rf_game_runtime *runtime,
                    struct toy_renderer *renderer,
                    struct toy_surface *surface);
+int rf_game_runtime_get_status(const struct rf_game_runtime *runtime,
+                               struct rf_game_runtime_status *status);
 void rf_game_shutdown(struct rf_game_runtime *runtime);
 int rf_game_runtime_run(const struct rf_game_config *config);
 

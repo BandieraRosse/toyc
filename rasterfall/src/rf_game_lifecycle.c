@@ -64,6 +64,27 @@ int rf_game_render(struct rf_game_runtime *runtime,
     return pixels;
 }
 
+int rf_game_runtime_get_status(const struct rf_game_runtime *runtime,
+                               struct rf_game_runtime_status *status)
+{
+    const struct toy_game_actor *player;
+    if (!status) return -1;
+    memset(status, 0, sizeof(*status));
+    if (!runtime) return -1;
+    status->initialized = runtime->initialized;
+    status->running = runtime->running;
+    status->paused = runtime->paused;
+    status->session_active = runtime->session != NULL;
+    status->network_mode = runtime->net.mode;
+    if (!runtime->session) return 0;
+    player = rasterfall_session_local_player_const(runtime->session);
+    if (!player) return 0;
+    status->local_player_active = player->active;
+    status->local_player_state = player->state;
+    status->local_player_hp = player->hp;
+    return 0;
+}
+
 void rf_game_shutdown(struct rf_game_runtime *runtime)
 {
     if (!runtime || !runtime->initialized) return;

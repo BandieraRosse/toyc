@@ -96,6 +96,9 @@ Game Runtime 不直接包含或调用 toy window implementation，也不直接�
 在 Core Host 初始化前运行，因此使用同一 Core clock service 的无实例入口
 `rf_core_clock_now_us()`；资源格式 loader 仍保留现有兼容路径，未在本阶段迁移。
 
+未来前哨站 / Terminal 的查询基础见 [core-runtime-v0.2.md](core-runtime-v0.2.md)。Core 与 Game
+Runtime 分别提供独立快照；查询调用方不取得生命周期所有权，也不应维护第二份玩法状态。
+
 Input Boundary V0 由 `rf_core_get_input_frame()` 提供。Core 在每次成功事件轮询后生成可复制的
 `rf_input_frame`，包含 key down、pressed/released edge、指针位置/相对移动、锁定状态和鼠标按键；
 Game Runtime 使用该 view 构造原有命令，未引入 action mapping，也未改变键位或 gameplay。
