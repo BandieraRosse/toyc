@@ -83,8 +83,13 @@ void rf_core_shutdown(struct rf_core *core)
 
 int64_t rf_core_time_us(struct rf_core *core)
 {
-    struct timespec now;
     if (!core || !core->initialized) return 0;
+    return rf_core_clock_now_us();
+}
+
+int64_t rf_core_clock_now_us(void)
+{
+    struct timespec now;
     if (__clock_gettime(CLOCK_MONOTONIC, &now) < 0) return 0;
     return (int64_t)now.tv_sec * 1000000 + now.tv_nsec / 1000;
 }

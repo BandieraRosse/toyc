@@ -61,6 +61,8 @@ int rf_core_flush(struct rf_core *core);
 int rf_core_end_frame(struct rf_core *core);
 void rf_core_shutdown(struct rf_core *core);
 int64_t rf_core_time_us(struct rf_core *core);
+/* Clock service entry for pre-host diagnostics that have no Core instance. */
+int64_t rf_core_clock_now_us(void);
 int rf_core_get_status(const struct rf_core *core,
                        struct rf_core_status *status);
 
