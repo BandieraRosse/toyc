@@ -1,7 +1,7 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-11
-> 源码核对基线：工作区（Enemy Visual V2 六份公开 RFM2 / renderer-only family；Enemy Visual Family Mix V1 自动比例 resolver 与强制 family capture；MODEL_DISPLAY style 6--14 的三类型×三家族感染体展示；Character Material Lighting Policy V1；Enemy Presentation V1 1000ms ballistic fade / rotating irregular fragments / directional trailing emitter 与开发者死亡测试排；Humanoid Action Composition V1.1 additive recoil；modular RFANIM presentation clock；双手 RFANIM 持枪轨道；RFCHAR +Z forward basis；PRIMARY_GRIP weapon presentation；开发者 world strip 与战斗区共用 modular path；双正式四人小队 runtime；RF Core Runtime V0.2 `rf_game_runtime` facade 与 status query；Core/Game startup config split；renderer frame ownership cleanup；Core filesystem service V0；唯一 `rf_core` context 与 Core clock service）
+> 源码核对基线：工作区（Enemy Visual V2 六份公开 RFM2 / renderer-only family；Enemy Visual Family Mix V1 自动比例 resolver 与强制 family capture；MODEL_DISPLAY style 6--14 的三类型×三家族感染体展示；Character Material Lighting Policy V1；Enemy Presentation V1 1000ms ballistic fade / rotating irregular fragments / directional trailing emitter 与开发者死亡测试排；Humanoid Action Composition V1.1 additive recoil；modular RFANIM presentation clock；双手 RFANIM 持枪轨道；RFCHAR +Z forward basis；PRIMARY_GRIP weapon presentation；开发者 world strip 与战斗区共用 modular path；双正式四人小队 runtime；RF Core Runtime V0.2 `rf_game_runtime` facade 与 status query；Core/Game startup config split；renderer frame ownership cleanup；Core filesystem service V0；唯一 `rf_core` context 与 Core clock service；Runtime Facade Authority audit）
 
 本目录面向接手 Rasterfall 任务的编码代理。目标不是介绍玩法，而是先把问题归到正确的
 状态所有者和文件，再开始搜索。命令、资源导入方法和用户可见特性仍以
