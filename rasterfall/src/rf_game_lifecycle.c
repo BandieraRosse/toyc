@@ -20,6 +20,7 @@ int rf_game_init(struct rf_game_runtime *runtime,
     rf_app_manager_init(&runtime->app_manager, &runtime->gui);
     rf_gui_set_app_manager(&runtime->gui, &runtime->app_manager);
     if (rf_app_manager_register_defaults(&runtime->app_manager) < 0) {
+        rasterfall_session_unload(session);
         runtime->core = NULL;
         runtime->session = NULL;
         return -1;
