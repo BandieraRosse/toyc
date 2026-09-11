@@ -11,6 +11,7 @@
 #include "rasterfall_render.h"
 #include "rf_core_input.h"
 #include "rasterfall_gui.h"
+#include "rasterfall_app.h"
 
 struct rasterfall_options;
 struct rf_core;
@@ -48,6 +49,7 @@ struct rf_game_runtime {
     struct rasterfall_perf_stats stats_total;
     struct rasterfall_console console;
     struct rf_gui_context gui;
+    struct rf_app_manager app_manager;
     struct camera camera;
     struct camera render_camera;
     struct rasterfall_command command;

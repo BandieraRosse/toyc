@@ -328,6 +328,7 @@ static int run_logic_test(void)
     rasterfall_map_prepare(&session.map_ops);
     if (rasterfall_console_logic_test() != 0) return 169;
     if (rf_gui_logic_test() != 0) return 230;
+    if (rf_app_manager_logic_test() != 0) return 231;
     toy_input_init(&input);
     rasterfall_session_reset(&session, &camera, 1);
     if (RASTERFALL_RFU_FROM_MM(1000) != RASTERFALL_RFU_PER_METER ||

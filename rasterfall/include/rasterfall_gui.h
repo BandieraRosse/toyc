@@ -9,11 +9,13 @@
 #define RF_GUI_MOUSE_LEFT 0x110
 
 struct rf_gui_rect { int x, y, width, height; };
+struct rf_app_manager;
 
 struct rf_gui_window {
     int open;
     int x, y, width, height;
     int dragging;
+    int app_id;
     int drag_x, drag_y;
     char title[32];
     const char *text;
@@ -26,11 +28,17 @@ struct rf_gui_context {
     int cursor_x, cursor_y;
     int hovered_icon;
     int drag_window;
+    struct rf_app_manager *app_manager;
     struct rf_gui_window windows[RF_GUI_MAX_WINDOWS];
 };
 
 void rf_gui_init(struct rf_gui_context *gui);
 void rf_gui_set_active(struct rf_gui_context *gui, int active);
+void rf_gui_set_app_manager(struct rf_gui_context *gui,
+                            struct rf_app_manager *manager);
+int rf_gui_open_window(struct rf_gui_context *gui, int app_id,
+                       const char *title, const char *text,
+                       int screen_width, int screen_height);
 int rf_gui_handle_input(struct rf_gui_context *gui,
                         const struct rf_input_frame *input,
                         int button_pressed, unsigned int button);

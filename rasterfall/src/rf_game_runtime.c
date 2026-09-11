@@ -3316,6 +3316,8 @@ startup_again:
         if (game_runtime.gui.active && !developer_console.open)
             rf_gui_handle_input(&game_runtime.gui, &input,
                                 events.button_pressed, events.button);
+        if (game_runtime.gui.active && !developer_console.open)
+            rf_app_manager_update(&game_runtime.app_manager, &input, 16);
         if (!developer_console.open && pending_key_edges[KEY_GRAVE]) {
             pending_key_edges[KEY_GRAVE] = 0;
             developer_console.open = 1;

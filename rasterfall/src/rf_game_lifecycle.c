@@ -17,6 +17,13 @@ int rf_game_init(struct rf_game_runtime *runtime,
     }
     rasterfall_effects_init(&runtime->effects);
     rf_gui_init(&runtime->gui);
+    rf_app_manager_init(&runtime->app_manager, &runtime->gui);
+    rf_gui_set_app_manager(&runtime->gui, &runtime->app_manager);
+    if (rf_app_manager_register_defaults(&runtime->app_manager) < 0) {
+        runtime->core = NULL;
+        runtime->session = NULL;
+        return -1;
+    }
     rasterfall_net_init(&runtime->net);
     rasterfall_net_discovery_init(&runtime->discovery);
     runtime->lifecycle_paused = 1;
