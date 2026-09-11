@@ -85,11 +85,16 @@ static int command_clear(const struct rf_command_context *context,
   return 0; }
 static int command_help(const struct rf_command_context *context,
                         struct rf_command_output *output, int argc, char **argv)
-{ (void)context; (void)argc; (void)argv; out(output,"GENERAL"); out(output,"  help          show command groups");
-  out(output,"  clear         clear console log"); out(output,"  status        show Core and Game status");
-  out(output,"  killall       kill all active enemies"); out(output,"  give+N        add N money, e.g. give+500"); out(output,"EDITOR");
-  out(output,"  pose          open Eula + AK editor"); out(output,"  pose eula ak  edit this character/weapon pair");
-  out(output,"  pose maid ak  edit maid/AK rifle pose"); return 0;
+{ unsigned int i, count; char line[192];
+  const struct rasterfall_console_command *commands;
+  (void)context; (void)argc; (void)argv; out(output,"COMMANDS");
+  commands = rasterfall_console_commands(&count);
+  for (i=0; i<count; i++) {
+      snprintf(line, sizeof(line), "  %-12s %s", commands[i].name,
+               commands[i].description);
+      out(output, line);
+  }
+  return 0;
 }
 static int command_status(const struct rf_command_context *context,
                           struct rf_command_output *output, int argc, char **argv)
