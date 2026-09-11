@@ -3294,7 +3294,7 @@ startup_again:
             pending_key_edges[KEY_GRAVE] = 0;
             developer_console.open = 1;
             developer_console.was_paused = paused;
-            developer_console.line[0] = 0;
+            developer_console.terminal.input[0] = 0;
             rasterfall_console_log(&developer_console,
                                    RASTERFALL_CONSOLE_INFO,
                                    "developer console opened");

@@ -196,18 +196,16 @@ int rf_terminal_session_execute(struct rf_terminal_session *session,
 }
 static void execute(struct rasterfall_console *c,
                     const struct rf_command_context *context)
-{ struct rf_terminal_session session; unsigned int j;
-  rf_terminal_session_init(&session);
-  rf_terminal_session_set_input(&session, c->line);
-  rf_terminal_session_execute(&session, context);
-  for (j=0; j<session.output.count; j++)
+{ unsigned int j;
+  rf_terminal_session_execute(&c->terminal, context);
+  for (j=0; j<c->terminal.output.count; j++)
       rasterfall_console_log(c,
-          session.output.lines[j].level == RF_COMMAND_OUTPUT_ERROR ?
+          c->terminal.output.lines[j].level == RF_COMMAND_OUTPUT_ERROR ?
               RASTERFALL_CONSOLE_ERROR : RASTERFALL_CONSOLE_INFO,
-          session.output.lines[j].text);
+          c->terminal.output.lines[j].text);
 }
-void rasterfall_console_init(struct rasterfall_console *c){memset(c,0,sizeof(*c));rasterfall_calibration_init(&c->calibration);}
-int rasterfall_console_handle_input_context(struct rasterfall_console *c,struct rf_input_frame *in,unsigned char *pending,const struct rf_command_context *context){int k,ch,len,i;if(take(in,pending,KEY_ESC)){c->open=0;return 1;}if(take(in,pending,KEY_ENTER)){if(c->line[0]){for(i=7;i>0;i--)strcpy(c->history[i],c->history[i-1]);strcpy(c->history[0],c->line);rasterfall_console_log(c,RASTERFALL_CONSOLE_COMMAND,c->line);}c->history_cursor=0;execute(c,context);c->line[0]=0;return 1;}if(take(in,pending,KEY_BACKSPACE)){len=strlen(c->line);if(len)c->line[len-1]=0;return 1;}if(take(in,pending,KEY_UP)){if(c->history_cursor<8&&c->history[c->history_cursor][0]){strcpy(c->line,c->history[c->history_cursor]);c->history_cursor++;}return 1;}if(take(in,pending,KEY_DOWN)){if(c->history_cursor>1)c->history_cursor--;else c->history_cursor=0;if(c->history_cursor==0)c->line[0]=0;else strcpy(c->line,c->history[c->history_cursor-1]);return 1;}for(k=0;k<RF_INPUT_KEY_COUNT;k++)if((ch=chr(k))&&take(in,pending,k)){len=strlen(c->line);if(len<159){c->line[len]=ch;c->line[len+1]=0;}return 1;}return c->open;}
+void rasterfall_console_init(struct rasterfall_console *c){memset(c,0,sizeof(*c));rf_terminal_session_init(&c->terminal);rasterfall_calibration_init(&c->calibration);}
+int rasterfall_console_handle_input_context(struct rasterfall_console *c,struct rf_input_frame *in,unsigned char *pending,const struct rf_command_context *context){int k,ch,len;if(take(in,pending,KEY_ESC)){c->open=0;return 1;}if(take(in,pending,KEY_ENTER)){if(c->terminal.input[0]){rf_terminal_session_push_history(&c->terminal);rasterfall_console_log(c,RASTERFALL_CONSOLE_COMMAND,c->terminal.input);}execute(c,context);c->terminal.input[0]=0;return 1;}if(take(in,pending,KEY_BACKSPACE)){len=strlen(c->terminal.input);if(len)c->terminal.input[len-1]=0;return 1;}if(take(in,pending,KEY_UP)){if(c->terminal.history_cursor<RF_TERMINAL_HISTORY_MAX&&c->terminal.history[c->terminal.history_cursor][0]){strcpy(c->terminal.input,c->terminal.history[c->terminal.history_cursor]);c->terminal.history_cursor++;}return 1;}if(take(in,pending,KEY_DOWN)){if(c->terminal.history_cursor>1)c->terminal.history_cursor--;else c->terminal.history_cursor=0;if(c->terminal.history_cursor==0)c->terminal.input[0]=0;else strcpy(c->terminal.input,c->terminal.history[c->terminal.history_cursor-1]);return 1;}for(k=0;k<RF_INPUT_KEY_COUNT;k++)if((ch=chr(k))&&take(in,pending,k)){len=strlen(c->terminal.input);if(len<RF_TERMINAL_INPUT_MAX-1){c->terminal.input[len]=ch;c->terminal.input[len+1]=0;}return 1;}return c->open;}
 int rasterfall_console_handle_input(struct rasterfall_console *c,struct rf_input_frame *in,unsigned char *pending)
 { return rasterfall_console_handle_input_context(c, in, pending, NULL); }
 static void rect_alpha(struct toy_surface *s,int x,int y,int w,int h,
@@ -256,7 +254,7 @@ void rasterfall_console_draw(struct toy_surface *s,const struct rasterfall_conso
     int i,w=s->width,h=s->height,x=20,y=12;
     int columns = (w - 40) / FB_FONT_W;
     int output_y = y + 28, output_lines = (h - 76) / FB_FONT_H;
-    char prompt[192]; const char *line = c->line;
+    char prompt[192]; const char *line = c->terminal.input;
     rect_alpha(s,0,0,w,h,0x07101C,190);
     draw_wrapped(s,"DEVELOPER CONSOLE  |  INFO  WARN  ERROR  COMMAND",x,y,
                  columns,1,0xF0B35A);

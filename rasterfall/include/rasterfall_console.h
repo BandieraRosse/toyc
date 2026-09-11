@@ -67,9 +67,8 @@ struct rasterfall_console_log_line {
 };
 
 struct rasterfall_console {
-    int open, history_cursor, was_paused;
-    char line[160];
-    char history[8][160];
+    int open, was_paused;
+    struct rf_terminal_session terminal;
     struct rasterfall_console_log_line output[64];
     int output_count;
     int killall_requested;
