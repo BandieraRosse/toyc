@@ -21,6 +21,22 @@ struct rf_core {
     int initialized;
 };
 
+/* Public, read-only snapshot of Core availability.  The snapshot deliberately
+ * contains no service pointers or implementation-owned objects. */
+#define RF_CORE_VERSION "0.2"
+#define RF_CORE_BUILD "RF Core Runtime V0.2"
+
+struct rf_core_status {
+    const char *version;
+    const char *build;
+    int initialized;
+    int window_ready;
+    int renderer_ready;
+    int filesystem_ready;
+    int audio_ready;
+    int clock_ready;
+};
+
 /* Compatibility name for the future public context spelling.  This is an
  * alias, not a second ownership container. */
 typedef struct rf_core rf_core_context;
@@ -45,6 +61,8 @@ int rf_core_flush(struct rf_core *core);
 int rf_core_end_frame(struct rf_core *core);
 void rf_core_shutdown(struct rf_core *core);
 int64_t rf_core_time_us(struct rf_core *core);
+int rf_core_get_status(const struct rf_core *core,
+                       struct rf_core_status *status);
 
 struct toy_window *rf_core_window(struct rf_core *core);
 struct toy_window_events *rf_core_events(struct rf_core *core);

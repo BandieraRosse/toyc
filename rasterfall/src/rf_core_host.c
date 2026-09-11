@@ -89,6 +89,23 @@ int64_t rf_core_time_us(struct rf_core *core)
     return (int64_t)now.tv_sec * 1000000 + now.tv_nsec / 1000;
 }
 
+int rf_core_get_status(const struct rf_core *core,
+                       struct rf_core_status *status)
+{
+    if (!status) return -1;
+    memset(status, 0, sizeof(*status));
+    status->version = RF_CORE_VERSION;
+    status->build = RF_CORE_BUILD;
+    if (!core) return -1;
+    status->initialized = core->initialized;
+    status->window_ready = core->window != NULL;
+    status->renderer_ready = core->renderer != NULL;
+    status->filesystem_ready = core->filesystem.initialized;
+    status->audio_ready = core->audio_ready;
+    status->clock_ready = core->initialized;
+    return 0;
+}
+
 struct toy_window *rf_core_window(struct rf_core *core) { return core ? core->window : NULL; }
 struct toy_window_events *rf_core_events(struct rf_core *core) { return core ? &core->events : NULL; }
 struct toy_input *rf_core_input(struct rf_core *core) { return core ? core->input : NULL; }
