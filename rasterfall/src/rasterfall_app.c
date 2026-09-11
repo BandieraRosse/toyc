@@ -6,6 +6,42 @@
 enum { RF_APP_CORE_STATUS = 1, RF_APP_PERSONNEL = 2, RF_APP_TERMINAL = 3 };
 
 static void render_text(struct rf_app *app, struct toy_surface *surface,
+                        const struct rf_gui_window *window);
+
+static void render_personnel(struct rf_app *app, struct toy_surface *surface,
+                             const struct rf_gui_window *window)
+{
+    struct rf_personnel_snapshot snapshot;
+    char text[96];
+    int i, y = window->y + 44;
+    if (!app->query || rf_application_project_personnel(app->query, &snapshot) < 0) {
+        app->text = "PERSONNEL\n\nPERSONNEL DATA UNAVAILABLE";
+        render_text(app, surface, window);
+        return;
+    }
+    if (!snapshot.available) {
+        app->text = "PERSONNEL\n\nNO ACTIVE SESSION";
+        render_text(app, surface, window);
+        return;
+    }
+    fb_draw_string((unsigned char *)surface->pixels, window->x + 18, y,
+                   "PERSONNEL", 0xD5E0EA, surface->stride);
+    for (i = 0; i < snapshot.count && i < 7; i++) {
+        const struct rf_personnel_record *p = &snapshot.people[i];
+        snprintf(text, sizeof(text), "%s  %s  %s", p->display_name,
+                 p->health_state, p->assignment);
+        fb_draw_string((unsigned char *)surface->pixels, window->x + 18,
+                       y + (i + 2) * FB_FONT_H, text, 0xD5E0EA,
+                       surface->stride);
+        snprintf(text, sizeof(text), "  %s / %s / %s", p->role,
+                 p->department, p->readiness);
+        fb_draw_string((unsigned char *)surface->pixels, window->x + 18,
+                       y + (i + 3) * FB_FONT_H, text, 0xAABBCB,
+                       surface->stride);
+    }
+}
+
+static void render_text(struct rf_app *app, struct toy_surface *surface,
                         const struct rf_gui_window *window)
 {
     const char *p = app->text, *start = p;
@@ -38,6 +74,15 @@ static struct rf_app *find_id(struct rf_app_manager *m, int id)
 void rf_app_manager_init(struct rf_app_manager *m, struct rf_gui_context *gui)
 { if (m) { memset(m, 0, sizeof(*m)); m->gui = gui; } }
 
+void rf_app_manager_set_query_context(
+    struct rf_app_manager *m,
+    const struct rf_application_query_context *query)
+{
+    int i;
+    if (!m) return;
+    for (i = 0; i < m->count; i++) m->apps[i].query = query;
+}
+
 int rf_app_manager_register(struct rf_app_manager *m, int id, int icon,
                             const char *name, const char *text,
                             rf_app_update_fn update, rf_app_render_fn render)
@@ -57,7 +102,7 @@ int rf_app_manager_register_defaults(struct rf_app_manager *m)
     if (rf_app_manager_register(m, RF_APP_CORE_STATUS, 0, "CORE STATUS",
         "CORE RUNTIME\n\nwindow     READY\nrenderer   READY\nfilesystem READY\nclock      READY\naudio      READY\n\nAPPLICATION MODEL: V0", NULL, NULL) < 0) return -1;
     if (rf_app_manager_register(m, RF_APP_PERSONNEL, 1, "PERSONNEL",
-        "PERSONNEL\n\nSQUAD STATUS\n  LOCAL OPERATOR   READY\n  RESPONSE SQUAD   STANDBY\n  ASSAULT SQUAD    STANDBY\n\nNo world entity binding in GUI V0.", NULL, NULL) < 0) return -1;
+        "PERSONNEL DATA UNAVAILABLE", NULL, render_personnel) < 0) return -1;
     if (rf_app_manager_register(m, RF_APP_TERMINAL, 2, "TERMINAL",
         "TERMINAL\n\nRF TERMINAL FRONTEND\n\nUse the developer console for\ncommands and diagnostics.\n\nApplication is display-only here.", NULL, NULL) < 0) return -1;
     return 0;

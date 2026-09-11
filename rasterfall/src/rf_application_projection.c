@@ -1,5 +1,7 @@
-#include "rf_application_projection.h"
 #include "tlibc_everything.h"
+#include "rf_application_projection.h"
+#include "rf_core_host.h"
+#include "rf_game_lifecycle.h"
 
 static void copy_text(char *dst, const char *src, int size)
 {

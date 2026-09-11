@@ -27,6 +27,9 @@ GUI 继续拥有 cursor、icon hit testing、窗口几何、拖动和 close butt
 当前默认注册三个 app：`CORE STATUS`、`PERSONNEL`、`TERMINAL`。它们保持固定文本展示；
 Terminal command execution 仍归既有 Terminal/Console frontend，不在本阶段复制。
 
+Application Projection Layer V0 已为 PERSONNEL 提供只读 snapshot。Application descriptor 仅借用
+query context；GUI 和 Terminal 都通过 projection 读取人员数据，不直接暴露 `toy_game`。
+
 ## 边界与验证
 
 不引入 widget、layout、UI editor、world terminal entity、IPC 或新的 renderer path。

@@ -2,6 +2,7 @@
 #define RASTERFALL_APP_H
 
 #include "rasterfall_gui.h"
+#include "rf_application_projection.h"
 
 #define RF_APP_MAX 8
 
@@ -20,6 +21,7 @@ struct rf_app {
     int window_index;
     char name[32];
     const char *text;
+    const struct rf_application_query_context *query;
     rf_app_update_fn update;
     rf_app_render_fn render;
 };
@@ -32,6 +34,9 @@ struct rf_app_manager {
 
 void rf_app_manager_init(struct rf_app_manager *manager,
                          struct rf_gui_context *gui);
+void rf_app_manager_set_query_context(
+    struct rf_app_manager *manager,
+    const struct rf_application_query_context *query);
 int rf_app_manager_register(struct rf_app_manager *manager,
                             int id, int icon, const char *name,
                             const char *text, rf_app_update_fn update,

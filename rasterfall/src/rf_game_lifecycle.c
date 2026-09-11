@@ -24,6 +24,9 @@ int rf_game_init(struct rf_game_runtime *runtime,
         runtime->session = NULL;
         return -1;
     }
+    rf_application_query_init(&runtime->application_query, core, runtime, NULL);
+    rf_app_manager_set_query_context(&runtime->app_manager,
+                                     &runtime->application_query);
     rasterfall_net_init(&runtime->net);
     rasterfall_net_discovery_init(&runtime->discovery);
     runtime->lifecycle_paused = 1;

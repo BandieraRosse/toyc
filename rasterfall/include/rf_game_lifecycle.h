@@ -50,6 +50,7 @@ struct rf_game_runtime {
     struct rasterfall_console console;
     struct rf_gui_context gui;
     struct rf_app_manager app_manager;
+    struct rf_application_query_context application_query;
     struct camera camera;
     struct camera render_camera;
     struct rasterfall_command command;

@@ -1,6 +1,7 @@
 #include "tlibc_everything.h"
 #include "rf_core_host.h"
 #include "rasterfall_console.h"
+#include "rf_application_projection.h"
 #include "rf_game_lifecycle.h"
 #include "core.h"
 #include "fb_draw.h"
@@ -190,6 +191,40 @@ static int command_services(const struct rf_command_context *context,
   out(output, line);
   return 0;
 }
+
+static int command_personnel(const struct rf_command_context *context,
+                             struct rf_command_output *output,
+                             int argc, char **argv)
+{
+    struct rf_application_query_context query;
+    struct rf_personnel_snapshot snapshot;
+    int i;
+    (void)argc; (void)argv;
+    if (!context || !output) return -1;
+    rf_application_query_init(&query, context->core, context->game_runtime,
+                              context);
+    if (rf_application_project_personnel(&query, &snapshot) < 0) {
+        rf_command_output_write(output, RF_COMMAND_OUTPUT_ERROR,
+                                "personnel unavailable");
+        return -1;
+    }
+    if (!snapshot.available) {
+        rf_command_output_write(output, RF_COMMAND_OUTPUT_INFO,
+                                "personnel: no active session");
+        return 0;
+    }
+    rf_command_output_write(output, RF_COMMAND_OUTPUT_INFO,
+                            "personnel projection:");
+    for (i = 0; i < snapshot.count && i < RF_COMMAND_OUTPUT_MAX_LINES - 1; i++) {
+        char line[192];
+        const struct rf_personnel_record *p = &snapshot.people[i];
+        snprintf(line, sizeof(line), "  %s | %s | %s | %s | %s",
+                 p->display_name, p->role, p->department, p->readiness,
+                 p->assignment);
+        rf_command_output_write(output, RF_COMMAND_OUTPUT_NORMAL, line);
+    }
+    return 0;
+}
 static int command_pose(const struct rf_command_context *context,
                         struct rf_command_output *output, int argc, char **argv)
 { struct rasterfall_console *c=state_console(context); int character; const struct rasterfall_pose_calibration *profile;
@@ -211,6 +246,7 @@ static const struct rasterfall_console_command command_registry[] = {
     { "status", command_status, "show Core and Game status", RF_COMMAND_PERMISSION_USER },
     { "runtime", command_runtime, "show Game runtime status", RF_COMMAND_PERMISSION_USER },
     { "services", command_services, "show Core service status", RF_COMMAND_PERMISSION_USER },
+    { "personnel", command_personnel, "show personnel projection", RF_COMMAND_PERMISSION_USER },
     { "killall", command_killall, "kill all active enemies", RF_COMMAND_PERMISSION_ADMIN },
     { "give+", command_give, "add positive money", RF_COMMAND_PERMISSION_ADMIN },
     { "pose", command_pose, "open rifle pose editor", RF_COMMAND_PERMISSION_ADMIN }

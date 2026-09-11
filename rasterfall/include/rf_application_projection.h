@@ -1,8 +1,11 @@
 #ifndef RASTERFALL_APPLICATION_PROJECTION_H
 #define RASTERFALL_APPLICATION_PROJECTION_H
 
-#include "rf_core_host.h"
-#include "rf_game_lifecycle.h"
+struct rf_core;
+struct rf_core_status;
+struct rf_game_runtime;
+struct rf_game_runtime_status;
+struct rf_command_context;
 
 /* Application data is obtained through snapshots, never through a raw Core,
  * session, or toy_game structure.  The command context is borrowed only for

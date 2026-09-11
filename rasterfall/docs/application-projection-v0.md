@@ -48,3 +48,7 @@ Personnel、Operations、Research snapshot 属于后续 projection；它们必�
 
 该 snapshot 不写回 session，不包含 actor 指针，也不携带窗口、地图、模型或武器资源状态。GUI 和
 Terminal 必须共享 `rf_application_project_personnel()` 的结果。
+
+当前消费原型中，PERSONNEL application 借用 runtime 的 query context；Terminal 的 `personnel` 命令
+从自己的 `rf_command_context` 构造同一 query context。两条路径都调用同一个 projection，不增加
+人员管理或其他 mutation。
