@@ -6,8 +6,8 @@ struct rf_core_status;
 struct rf_game_runtime;
 struct rf_game_runtime_status;
 
-/* Application data is obtained through snapshots, never through a raw Core,
- * session, toy_game, or Command Runtime structure. */
+/* Borrowed for the duration of a query call. It does not transfer ownership
+ * and must not be retained after its source runtime ends. */
 struct rf_application_query_context {
     const struct rf_core *core;
     const struct rf_game_runtime *game_runtime;
@@ -31,8 +31,9 @@ struct rf_personnel_record {
     char assignment[RF_PERSONNEL_TEXT_MAX];
 };
 
-/* Application-owned value snapshot. It contains no gameplay pointers and is
- * safe for GUI and Terminal consumers to read independently. */
+/* Application-owned value snapshot. The projector clears and fills the
+ * caller-provided object on every call; it contains no gameplay pointers and
+ * remains independently readable after the call returns. */
 struct rf_personnel_snapshot {
     int available;
     int count;

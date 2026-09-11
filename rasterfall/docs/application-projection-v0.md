@@ -1,7 +1,7 @@
 # RF Application Projection Layer V0
 
 > 文档更新：2026-09-11
-> 源码核对基线：Application Query Boundary V0；Core/Game query context 已建立，Application API 不暴露 `toy_game`；Application API Stabilization V0 Phase 2 command/application boundary audit
+> 源码核对基线：Application Query Boundary V0；Core/Game query context 已建立，Application API 不暴露 `toy_game`；Application API Stabilization V0 Phase 3 projection boundary audit
 
 本层是 Forward Station Application 与 Core/Game Runtime 之间的只读数据边界。它不拥有 Core、Game
 Runtime、session 或 gameplay 状态，也不执行 command mutation。
@@ -16,6 +16,9 @@ Runtime、session 或 gameplay 状态，也不执行 command mutation。
 `rf_application_query_context` 只借用 Core/Game Runtime。Application 只能通过 query 函数取得 snapshot，
 不能保存或转发 `struct toy_game`、`struct toy_game_actor`、session、Core service 或 Command Runtime
 指针；Command Context 是 frontend/handler 的执行上下文，不属于 application query context。
+Query context 的指针只在单次 query/projection 调用期间有效；调用方不拥有 source runtime，也不能
+把 context 或 source pointer 放进 snapshot。projection 输出由调用方提供并由 projection 每次完整清零、
+重建，函数返回后 snapshot 是独立 value，可分别交给 GUI 和 Terminal。
 
 ## 责任边界
 
