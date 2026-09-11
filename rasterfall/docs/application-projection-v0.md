@@ -39,3 +39,12 @@ GUI Application / Terminal Frontend
 - `rf_application_query_game_status()`：只读取 `rf_game_runtime_status`。
 
 Personnel、Operations、Research snapshot 属于后续 projection；它们必须继续遵守上述边界。
+
+## Personnel Projection V0
+
+`rf_personnel_snapshot` 是 Application-owned value model。它从 session 的 roster/actor/squad 关系
+读取人员事实，再转换为 `person_id`、显示名、角色、部门、readiness、health state 和 assignment。
+开发者展示 actor 不进入人员列表；downed/dead 状态只被投影为文本语义。
+
+该 snapshot 不写回 session，不包含 actor 指针，也不携带窗口、地图、模型或武器资源状态。GUI 和
+Terminal 必须共享 `rf_application_project_personnel()` 的结果。
