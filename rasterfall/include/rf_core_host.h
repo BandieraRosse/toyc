@@ -5,18 +5,25 @@
 #include "toy_input.h"
 #include "toy_renderer.h"
 #include "toy_window.h"
+#include "rf_core_filesystem.h"
 
-/* Internal V0 host.  The game may borrow the objects through the accessors,
- * but does not own their lifetime. */
+/* The single V0 Core context.  The game may borrow the objects through the
+ * accessors, but does not own their lifetime. */
 struct rf_core {
     struct toy_window *window;
     struct toy_window_events events;
     struct toy_input *input;
     struct toy_surface surface;
     struct toy_renderer *renderer;
+    struct rf_core_filesystem filesystem;
     struct toy_audio audio;
     int audio_ready;
+    int initialized;
 };
+
+/* Compatibility name for the future public context spelling.  This is an
+ * alias, not a second ownership container. */
+typedef struct rf_core rf_core_context;
 
 struct rf_core_config {
     const char *title;
@@ -37,12 +44,14 @@ int rf_core_begin_frame(struct rf_core *core, uint32_t clear_color);
 int rf_core_flush(struct rf_core *core);
 int rf_core_end_frame(struct rf_core *core);
 void rf_core_shutdown(struct rf_core *core);
+int64_t rf_core_time_us(struct rf_core *core);
 
 struct toy_window *rf_core_window(struct rf_core *core);
 struct toy_window_events *rf_core_events(struct rf_core *core);
 struct toy_input *rf_core_input(struct rf_core *core);
 struct toy_surface *rf_core_surface(struct rf_core *core);
 struct toy_renderer *rf_core_renderer(struct rf_core *core);
+struct rf_core_filesystem *rf_core_filesystem_service(struct rf_core *core);
 struct toy_audio *rf_core_audio(struct rf_core *core);
 int rf_core_audio_ready(const struct rf_core *core);
 int rf_core_set_pointer_lock(struct rf_core *core, int locked);

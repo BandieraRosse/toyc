@@ -2,13 +2,16 @@
 #include "rf_game_lifecycle.h"
 
 int rf_game_init(struct rf_game_runtime *runtime,
+                 struct rf_core *core,
                  struct rasterfall_session *session,
                  const char *map_path)
 {
-    if (!runtime || !session || !map_path) return -1;
+    if (!runtime || !core || !session || !map_path) return -1;
     memset(runtime, 0, sizeof(*runtime));
+    runtime->core = core;
     runtime->session = session;
     if (rasterfall_session_load(session, map_path) < 0) {
+        runtime->core = NULL;
         runtime->session = NULL;
         return -1;
     }

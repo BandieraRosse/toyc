@@ -12,6 +12,7 @@
 #include "toy_input.h"
 
 struct rasterfall_options;
+struct rf_core;
 
 struct rf_game_config {
     const struct rasterfall_options *options;
@@ -23,6 +24,8 @@ struct rf_game_runtime {
      * the presentation and frame-loop state which used to be implicit in
      * rasterfall.c. */
     struct rasterfall_session *session;
+    /* Borrowed Core context; Core owns the referenced services. */
+    struct rf_core *core;
     struct rasterfall_render_context render_context;
     struct rasterfall_effects effects;
     struct rasterfall_net net;
@@ -69,6 +72,7 @@ struct rf_game_runtime {
 };
 
 int rf_game_init(struct rf_game_runtime *runtime,
+                 struct rf_core *core,
                  struct rasterfall_session *session,
                  const char *map_path);
 int rf_game_update(struct rf_game_runtime *runtime,

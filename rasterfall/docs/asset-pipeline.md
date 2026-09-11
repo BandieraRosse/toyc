@@ -1,10 +1,18 @@
 # Rasterfall 资产转换与诊断
 
 > 文档更新：2026-09-11
-> 源码核对基线：工作区（Enemy Visual V2 六份公开 RFM2 / renderer-only family；RFANIM V1 inspection；RFCHAR V1 → RFM2 v14；V2.1 modular body）
+> 源码核对基线：工作区（Enemy Visual V2 六份公开 RFM2 / renderer-only family；RFANIM V1 inspection；RFCHAR V1 → RFM2 v14；V2.1 modular body；Core filesystem service V0）
 
 本文记录可执行的模型、纹理和动画工具链。运行时模块边界见 `assets-animation.md`，动画求值契约
 见 `animation-architecture.md`，资源是否允许发布见 `asset-sources.md`。
+
+## Runtime filesystem boundary
+
+运行时 Core 提供 `rf_core_filesystem`，只把 logical path 解析为 owned byte blob；embedded 资源查找、
+磁盘 fallback、平台相对路径和文件大小限制沿用 `toy_asset_load_file()`。Core 不解析资源格式，也不
+维护 asset manager、cache、stream、package 或 mod 层。`.map`、RFM2/RFCHAR、RFANIM、VMD、TTEX、
+TSND 和字体格式仍由各自现有 loader 负责；它们未来可以增加 blob/input-stream 入口，但本轮不改变
+现有 loader、资源格式或旁车纹理路径规则。
 
 人形角色的 canonical skeleton、GLB、attachment 与 skinning 输入门见
 [`character-assets.md`](character-assets.md)。该契约优先于本页记录的历史 character/PMX 路径。

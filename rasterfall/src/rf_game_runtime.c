@@ -406,7 +406,7 @@ static void fill_hud_state(struct rasterfall_hud_state *hud,
 #define horde_banner_ms (session.banner_ms)
 #define interaction_banner (session.banner_text)
 
-static int64_t monotonic_us(void)
+static int64_t diagnostic_monotonic_us(void)
 {
     struct timespec now;
     if (__clock_gettime(CLOCK_MONOTONIC, &now) < 0) return 0;
@@ -1124,7 +1124,7 @@ static int run_startup_menu(struct rf_core *core,
     memset(pending_key_edges, 0, sizeof(pending_key_edges));
     while (running) {
         struct toy_surface surface;
-        int64_t now = monotonic_us();
+        int64_t now = rf_core_time_us(core);
         if (rf_core_poll_events(core) < 0) break;
         if (events->keyboard_focus_changed && !events->keyboard_focused)
             memset(pending_key_edges, 0, sizeof(pending_key_edges));
@@ -1306,8 +1306,8 @@ static int wait_for_network_connection(struct rf_core *core,
 {
     struct toy_input *input = rf_core_input(core);
     struct toy_window_events *events = rf_core_events(core);
-    int64_t deadline = monotonic_us() + 6000000;
-    while (monotonic_us() < deadline) {
+    int64_t deadline = rf_core_time_us(core) + 6000000;
+    while (rf_core_time_us(core) < deadline) {
         struct toy_surface surface;
         char line[96];
         int ready;
@@ -2034,14 +2034,14 @@ static int benchmark_model_features(const char *model_path, int iterations,
             for (iteration = 0; iteration < iterations; iteration++)
                 for (view = 0; view < 3; view++) {
                     struct rasterfall_model_setup_timing timing;
-                    int64_t start = monotonic_us(), after_setup, after_flush;
+                    int64_t start = diagnostic_monotonic_us(), after_setup, after_flush;
                     if (toy_renderer_begin(&renderer, &surface, 0x30343B) < 0 ||
                         rasterfall_render_model_preview(&renderer, &cameras[view],
                             &model, 1, 1, 1, 1) < 0) goto fail;
-                    after_setup = monotonic_us();
+                    after_setup = diagnostic_monotonic_us();
                     rasterfall_render_model_setup_timing(&timing);
                     toy_renderer_flush(&renderer);
-                    after_flush = monotonic_us();
+                    after_flush = diagnostic_monotonic_us();
                     full_us[skin_mode] += after_flush - start;
                     hierarchy_us[skin_mode] += timing.bone_hierarchy_us;
                     skinning_us[skin_mode] += timing.skinning_us;
@@ -2073,10 +2073,10 @@ static int benchmark_model_features(const char *model_path, int iterations,
                 const struct rasterfall_animation_clip *clip =
                     animation_id == 0 ? NULL : &model.animation.demo_clips[animation_id-1];
                 for (sample = 0; sample < sample_count; sample++) {
-                    long start = monotonic_us();
+                    long start = diagnostic_monotonic_us();
                     rasterfall_model_sample_clip(&model, clip,
                         clip ? (sample * 17) % clip->duration_ms : 0);
-                    animation_us[animation_id] += monotonic_us() - start;
+                    animation_us[animation_id] += diagnostic_monotonic_us() - start;
                 }
                 __printf("rasterfall: animation benchmark clip=%s samples=%d animation_sample_us_per_sample=%ld\n",
                          animation_names[animation_id], sample_count,
@@ -2107,11 +2107,11 @@ static int benchmark_model_features(const char *model_path, int iterations,
             rasterfall_render_set_model_lighting(configuration != 8);
             for (view = 0; view < 3; view++) {
                 struct rasterfall_model_setup_timing setup_timing;
-                int64_t start = monotonic_us();
+                int64_t start = diagnostic_monotonic_us();
                 int64_t after_begin, after_setup, after_flush;
                 if (toy_renderer_begin(&renderer, &surface, 0x30343B) < 0)
                     goto fail;
-                after_begin = monotonic_us();
+                after_begin = diagnostic_monotonic_us();
                 toy_renderer_set_texture_diagnostics(
                     &renderer, diagnostic[configuration]);
                 if (model_enabled[configuration] &&
@@ -2119,12 +2119,12 @@ static int benchmark_model_features(const char *model_path, int iterations,
                         &model, sphere[configuration], toon[configuration],
                         edge[configuration], lighting[configuration]) < 0)
                     goto fail;
-                after_setup = monotonic_us();
+                after_setup = diagnostic_monotonic_us();
                 memset(&setup_timing, 0, sizeof(setup_timing));
                 if (model_enabled[configuration])
                     rasterfall_render_model_setup_timing(&setup_timing);
                 toy_renderer_flush(&renderer);
-                after_flush = monotonic_us();
+                after_flush = diagnostic_monotonic_us();
                 results[configuration].wall_us += after_flush - start;
                 results[configuration].begin_us += after_begin - start;
                 results[configuration].setup_us += after_setup - after_begin;
@@ -2681,13 +2681,30 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     rasterfall_net_init(&net);
     rasterfall_net_set_loss(&net, net_loss_percent);
     rasterfall_net_discovery_init(&discovery);
+    {
+        struct rf_core_config core_config;
+        core_config.title = "Rasterfall";
+        core_config.width = RASTERFALL_DEFAULT_WIDTH;
+        core_config.height = RASTERFALL_DEFAULT_HEIGHT;
+        core_config.input = &input;
+        core_config.renderer = &renderer;
+        if (rf_core_init_config(&core, &core_config) < 0) {
+            __fprintf(2, "rasterfall: cannot initialize RF Core host\n");
+            rasterfall_net_discovery_close(&discovery);
+            rasterfall_net_close(&net);
+            return 1;
+        }
+    }
     rf_windows_log("startup: loading map");
     strcpy(host_address, "127.0.0.1");
     memset(&game_runtime, 0, sizeof(game_runtime));
-    if (rf_game_init(&game_runtime, &session,
+    if (rf_game_init(&game_runtime, &core, &session,
                      config->map_path ? config->map_path :
                      "rasterfall/assets/maps/rasterfall.map") < 0) {
         __fprintf(2, "rasterfall: cannot load map rasterfall/assets/maps/rasterfall.map\n");
+        rf_core_shutdown(&core);
+        rasterfall_net_discovery_close(&discovery);
+        rasterfall_net_close(&net);
         return 1;
     }
     render_context.session = &session;
@@ -2745,6 +2762,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
         int result = run_logic_test();
         if (model_texture.blob) toy_texture_unload(&model_texture);
         rf_game_shutdown(&game_runtime);
+        rf_core_shutdown(&core);
         return result;
     }
     /* 服务器断开（WSLg 组合器/音频服务重启）时 socket 写会触发 SIGPIPE
@@ -2764,7 +2782,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     rasterfall_render_set_coordinate_axes(coordinate_axes);
     pause_menu.selected = PAUSE_ITEM_RESUME;
     if (__getrandom(&seed, sizeof(seed), 0) < 0)
-        seed = (uint64_t)monotonic_us();
+        seed = (uint64_t)rf_core_time_us(&core);
     if (seed == 0) seed = 1;
     rasterfall_session_reset(&session, &camera, seed);
     rf_windows_log("startup: session reset");
@@ -2776,21 +2794,6 @@ int rf_game_runtime_run(const struct rf_game_config *config)
         rf_game_shutdown(&game_runtime);
         rf_core_shutdown(&core);
         return capture_result;
-    }
-    {
-        struct rf_core_config core_config;
-        core_config.title = "Rasterfall";
-        core_config.width = RASTERFALL_DEFAULT_WIDTH;
-        core_config.height = RASTERFALL_DEFAULT_HEIGHT;
-        core_config.input = &input;
-        core_config.renderer = &renderer;
-        if (rf_core_init_config(&core, &core_config) < 0) {
-            __fprintf(2, "rasterfall: cannot initialize RF Core host\n");
-            if (model_texture.blob) toy_texture_unload(&model_texture);
-            rasterfall_net_close(&net);
-            rf_game_shutdown(&game_runtime);
-            return 1;
-        }
     }
     rf_windows_log("startup: window opened");
 startup_again:
@@ -2929,7 +2932,7 @@ startup_again:
     } else {
         rf_windows_log("startup: audio ready");
     }
-    last_time = monotonic_us();
+    last_time = rf_core_time_us(&core);
     fps_window_start = last_time;
     rasterfall_perf_init(&stats);
     rasterfall_perf_init(&stats_total);
@@ -3137,7 +3140,7 @@ startup_again:
             int up = pending_key_edges[KEY_UP];
             int down = pending_key_edges[KEY_DOWN];
             if (up > 0 || down > 0) {
-                int64_t menu_now = monotonic_us();
+                int64_t menu_now = rf_core_time_us(&core);
                 if (menu_now >= menu_nav_ready_us) {
                     if (up > 0) {
                         pause_menu.selected--;
@@ -3280,7 +3283,7 @@ startup_again:
             last_pointer_y = input.pointer_y;
             have_pointer_position = 1;
         }
-        now = monotonic_us();
+        now = rf_core_time_us(&core);
         elapsed = now - last_time;
         last_time = now;
         if (elapsed < 0) elapsed = 0;
@@ -3541,7 +3544,7 @@ startup_again:
          * 而不渲染，wall 按迭代累计、除以渲染帧数即 1/fps；wait（present
          * 到下一次 begin 的间隔）在 dump 中用 wall − 活跃帧时间推导，
          * 与各阶段统计严格对消。 */
-        t_frame = monotonic_us();
+        t_frame = rf_core_time_us(&core);
         if (prev_begin > 0)
             rasterfall_perf_add_interval(&stats, &stats_total, t_frame - prev_begin);
         prev_begin = t_frame;
@@ -3560,7 +3563,8 @@ startup_again:
             /* stall 从申请缓冲计到等回 buffer release（含 poll 等待），
              * 即 wait 中双缓冲背压的部分。frame callback 只作为组合器
              * 节奏提示，不再阻止 CPU 使用另一个空闲 shm buffer。 */
-            rasterfall_perf_add_stall(&stats, &stats_total, monotonic_us() - t_frame);
+            rasterfall_perf_add_stall(&stats, &stats_total,
+                                      rf_core_time_us(&core) - t_frame);
             /* 等待批次的按键边沿不能丢，也不能重复：菜单块在迭代顶部已
              * 消费过本迭代的事件，此时 key_pressed 里可能残留旧边沿
              * （begin_frame 只在迭代顶部清）——再读 key_pressed 锁存
@@ -3739,7 +3743,7 @@ startup_again:
                            &t_stage, 0, 0);
             rendered_frames++;
             fps_window_frames++;
-            now = monotonic_us();
+            now = rf_core_time_us(&core);
             last_active = now - t_frame;
             rasterfall_perf_record_frame(&stats, &stats_total, last_active);
             fps_elapsed = now - fps_window_start;

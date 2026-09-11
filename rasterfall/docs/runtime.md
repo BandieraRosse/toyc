@@ -1,7 +1,7 @@
 # 运行时与主循环
 
 > 文档更新：2026-09-11
-> 源码核对基线：工作区（Humanoid Action Composition V1 CLI；双正式四人 squad runtime；Lighting V1；`game_state.actors[]` 是 gameplay truth；RF Core Runtime V0 `rf_game_runtime` facade；Core/Game startup config split；renderer frame ownership cleanup）
+> 源码核对基线：工作区（Humanoid Action Composition V1 CLI；双正式四人 squad runtime；Lighting V1；`game_state.actors[]` 是 gameplay truth；RF Core Runtime V0 `rf_game_runtime` facade；Core/Game startup config split；renderer frame ownership cleanup；Core filesystem service V0；唯一 `rf_core` context 与 Core clock service）
 
 > 源码核对补充：session reset 在原 flag 1 和原坐标恢复 Maid 四人旗卫，并创建使用 flag 2 的正式 Hurd squad/outpost；Hurd 控制状态保持派生。
 
@@ -29,8 +29,9 @@ session 外的网络、摄像机、输入边沿、特效、HUD/菜单控制、pe
 
 ## 生命周期
 
-`main()` 的顺序是：解析参数并组装 `rf_game_config` → runtime 初始化网络 → 加载 session/map → 绑定并准备渲染资源
-→ 可选逻辑测试 → 创建窗口 → 启动菜单/建房连接 → 音频启动 → 主循环 → 释放资源。
+`main()` 的顺序是：解析参数并组装 `rf_game_config` → 初始化唯一 `rf_core` context（window、renderer、
+surface、filesystem、audio、input、clock）→ `rf_game_init(core, ...)` 加载 session/map → 绑定并准备渲染资源
+→ 可选逻辑测试 → 启动菜单/建房连接 → 音频 presentation 启动 → 主循环 → 释放资源。
 
 `--visual-capture <scenario> --visual-output <path>` 必须成对提供。解析后立即进入
 `rasterfall_render_visual_capture()` 并退出，先于字库、网络、session/map、窗口和音频初始化。
@@ -73,8 +74,18 @@ camera 的方向仍作为输入视角供移动与瞄准使用。渲染阶段可�
 `rf_core_end_frame()` 执行最终 flush，再由 Core present。Core 同时拥有 window、surface、renderer
 和 audio 的生命周期；Game 不销毁这些资源，也不管理 framebuffer。
 
+`struct rf_core` 是当前唯一的 Core context 和所有 Core service owner；`rf_core_context` 仅是兼容命名别名，
+不创建第二份 service container。`rf_game_runtime` 只保存一个非 owning 的 Core 指针，并通过 Core 提供的服务
+使用 platform resource。正常 Runtime 的 fixed-step、菜单节流、连接等待和帧统计统一使用
+`rf_core_time_us()`；离屏模型/benchmark 诊断仍可使用自己的临时计时路径，不属于正常 Host lifecycle。
+
 模型视图、visual capture、benchmark 和 logic-test 是窗口 Core 初始化前的独立离屏 fixture，仍可
 自建临时 renderer/surface；它们不是交互式 runtime 的 frame ownership 路径。
+
+Core 还拥有独立的 `rf_core_filesystem` service。V0 只提供 `logical path -> owned blob`，内部复用
+现有 `toy_asset_load_file()` 的 embedded lookup、磁盘 fallback、Linux/Windows 相对路径语义和大小
+限制；它不识别 `.map`、`.rmesh`、`.rfanim` 或其他资源格式。现有格式 loader 暂不迁移，继续通过
+兼容 wrapper 工作；未来 parser 可逐步改为消费 blob。
 
 `struct camera` 现以 `body` 和 `view` 两个命名空间表达该边界；旧的扁平字段暂保留为布局兼容
 别名。新代码应使用 `camera.body` 读写派生位置，使用 `camera.view` 读写方向和展示高度。

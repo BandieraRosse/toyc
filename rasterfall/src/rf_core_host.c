@@ -7,6 +7,7 @@ int rf_core_init(struct rf_core *core, const char *title, int width, int height,
 {
     if (!core || !input || !renderer) return -1;
     memset(core, 0, sizeof(*core));
+    if (rf_core_filesystem_init(&core->filesystem) < 0) return -1;
     core->input = input;
     core->renderer = renderer;
     toy_input_init(core->input);
@@ -14,11 +15,13 @@ int rf_core_init(struct rf_core *core, const char *title, int width, int height,
     core->window = toy_window_open(title, width, height);
     if (!core->window) {
         toy_renderer_destroy(core->renderer);
+        rf_core_filesystem_shutdown(&core->filesystem);
         return -1;
     }
     /* Audio is optional, matching the existing Rasterfall startup policy. */
     if (toy_audio_open(&core->audio, 48000, 2) == 0)
         core->audio_ready = 1;
+    core->initialized = 1;
     return 0;
 }
 
@@ -74,7 +77,16 @@ void rf_core_shutdown(struct rf_core *core)
     if (core->audio_ready) toy_audio_close(&core->audio);
     if (core->window) toy_window_close(core->window);
     toy_renderer_destroy(core->renderer);
+    rf_core_filesystem_shutdown(&core->filesystem);
     memset(core, 0, sizeof(*core));
+}
+
+int64_t rf_core_time_us(struct rf_core *core)
+{
+    struct timespec now;
+    if (!core || !core->initialized) return 0;
+    if (__clock_gettime(CLOCK_MONOTONIC, &now) < 0) return 0;
+    return (int64_t)now.tv_sec * 1000000 + now.tv_nsec / 1000;
 }
 
 struct toy_window *rf_core_window(struct rf_core *core) { return core ? core->window : NULL; }
@@ -82,6 +94,10 @@ struct toy_window_events *rf_core_events(struct rf_core *core) { return core ? &
 struct toy_input *rf_core_input(struct rf_core *core) { return core ? core->input : NULL; }
 struct toy_surface *rf_core_surface(struct rf_core *core) { return core ? &core->surface : NULL; }
 struct toy_renderer *rf_core_renderer(struct rf_core *core) { return core ? core->renderer : NULL; }
+struct rf_core_filesystem *rf_core_filesystem_service(struct rf_core *core)
+{
+    return core ? &core->filesystem : NULL;
+}
 struct toy_audio *rf_core_audio(struct rf_core *core) { return core ? &core->audio : NULL; }
 int rf_core_audio_ready(const struct rf_core *core) { return core && core->audio_ready; }
 int rf_core_set_pointer_lock(struct rf_core *core, int locked)
