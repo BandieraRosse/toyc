@@ -144,6 +144,52 @@ static int command_status(const struct rf_command_context *context,
   out(output, line);
   return 0;
 }
+static int command_runtime(const struct rf_command_context *context,
+                           struct rf_command_output *output, int argc,
+                           char **argv)
+{ struct rf_game_runtime_status status; char line[192];
+  (void)argc; (void)argv;
+  if (!context || !context->game_runtime ||
+      rf_game_runtime_get_status(context->game_runtime, &status) < 0) {
+      out_error(output, "runtime unavailable"); return -1;
+  }
+  out(output, "GAME RUNTIME");
+  snprintf(line, sizeof(line), "  initialized=%s running=%s paused=%s",
+           status.initialized ? "yes" : "no", status.running ? "yes" : "no",
+           status.paused ? "yes" : "no");
+  out(output, line);
+  snprintf(line, sizeof(line), "  session=%s network=%d player=%s hp=%d state=%d",
+           status.session_active ? "active" : "inactive", status.network_mode,
+           status.local_player_active ? "active" : "inactive",
+           status.local_player_hp, status.local_player_state);
+  out(output, line);
+  return 0;
+}
+static int command_services(const struct rf_command_context *context,
+                            struct rf_command_output *output, int argc,
+                            char **argv)
+{ struct rf_core_status status; char line[192];
+  (void)argc; (void)argv;
+  if (!context || !context->core ||
+      rf_core_get_status(context->core, &status) < 0) {
+      out_error(output, "services unavailable"); return -1;
+  }
+  out(output, "CORE SERVICES");
+  snprintf(line, sizeof(line), "  version=%s build=%s", status.version,
+           status.build);
+  out(output, line);
+  snprintf(line, sizeof(line), "  window=%s renderer=%s filesystem=%s",
+           status.window_ready ? "ready" : "not-ready",
+           status.renderer_ready ? "ready" : "not-ready",
+           status.filesystem_ready ? "ready" : "not-ready");
+  out(output, line);
+  snprintf(line, sizeof(line), "  audio=%s clock=%s initialized=%s",
+           status.audio_ready ? "ready" : "not-ready",
+           status.clock_ready ? "ready" : "not-ready",
+           status.initialized ? "yes" : "no");
+  out(output, line);
+  return 0;
+}
 static int command_pose(const struct rf_command_context *context,
                         struct rf_command_output *output, int argc, char **argv)
 { struct rasterfall_console *c=state_console(context); int character; const struct rasterfall_pose_calibration *profile;
@@ -163,6 +209,8 @@ static const struct rasterfall_console_command command_registry[] = {
     { "help", command_help, "show command groups", RF_COMMAND_PERMISSION_USER },
     { "clear", command_clear, "clear console log", RF_COMMAND_PERMISSION_USER },
     { "status", command_status, "show Core and Game status", RF_COMMAND_PERMISSION_USER },
+    { "runtime", command_runtime, "show Game runtime status", RF_COMMAND_PERMISSION_USER },
+    { "services", command_services, "show Core service status", RF_COMMAND_PERMISSION_USER },
     { "killall", command_killall, "kill all active enemies", RF_COMMAND_PERMISSION_ADMIN },
     { "give+", command_give, "add positive money", RF_COMMAND_PERMISSION_ADMIN },
     { "pose", command_pose, "open rifle pose editor", RF_COMMAND_PERMISSION_ADMIN }
