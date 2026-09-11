@@ -1,7 +1,7 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-11
-> 源码核对基线：工作区（Enemy Visual V2 六份公开 RFM2 / renderer-only family；Enemy Visual Family Mix V1 自动比例 resolver 与强制 family capture；MODEL_DISPLAY style 6--14 的三类型×三家族感染体展示；Character Material Lighting Policy V1；Enemy Presentation V1 1000ms ballistic fade / rotating irregular fragments / directional trailing emitter 与开发者死亡测试排；Humanoid Action Composition V1.1 additive recoil；modular RFANIM presentation clock；双手 RFANIM 持枪轨道；RFCHAR +Z forward basis；PRIMARY_GRIP weapon presentation；开发者 world strip 与战斗区共用 modular path；双正式四人小队 runtime）
+> 源码核对基线：工作区（Enemy Visual V2 六份公开 RFM2 / renderer-only family；Enemy Visual Family Mix V1 自动比例 resolver 与强制 family capture；MODEL_DISPLAY style 6--14 的三类型×三家族感染体展示；Character Material Lighting Policy V1；Enemy Presentation V1 1000ms ballistic fade / rotating irregular fragments / directional trailing emitter 与开发者死亡测试排；Humanoid Action Composition V1.1 additive recoil；modular RFANIM presentation clock；双手 RFANIM 持枪轨道；RFCHAR +Z forward basis；PRIMARY_GRIP weapon presentation；开发者 world strip 与战斗区共用 modular path；双正式四人小队 runtime；RF Core Runtime V0 `rf_game_runtime` facade）
 
 本目录面向接手 Rasterfall 任务的编码代理。目标不是介绍玩法，而是先把问题归到正确的
 状态所有者和文件，再开始搜索。命令、资源导入方法和用户可见特性仍以
@@ -23,7 +23,7 @@
 
 | 任务或症状 | 首先阅读 | 主要入口 |
 | --- | --- | --- |
-| 启动、参数、输入、暂停、主循环、音画同步 | [runtime.md](runtime.md) | `src/rasterfall.c` |
+| 启动、参数、Core Host、runtime update/render 调度 | [runtime.md](runtime.md) | `src/rasterfall.c`、`src/rf_game_runtime.c`、`include/rf_game_lifecycle.h` |
 | agent 固定视觉场景截图 / Visual CLI | [rendering.md](rendering.md)、[runtime.md](runtime.md) | options → `rasterfall_render_visual_capture()` → `src/dev-tests/rasterfall_visual_capture.inc` |
 | Enemy Visual V2 六资产、家族切换、敌人截图与资产验收 | [enemy-visuals.md](enemy-visuals.md)、[rendering.md](rendering.md) | `rasterfall_enemy_visual.h` → `render/rasterfall_enemy_visual.inc`；`tools/enemy_visual_round.py` |
 | 武器、敌人、碰撞、寻路、波次、商店、AI | [gameplay.md](gameplay.md) | `lib/game.c`、`src/rasterfall_session.c` |
@@ -66,7 +66,8 @@
 ```text
 平台事件/网络包
       ↓
-src/rasterfall.c                 进程、菜单、输入、固定步长帧循环
+src/rasterfall.c                 进程入口（Core Host / Game facade 调度）
+src/rf_game_runtime.c            Game runtime、菜单、输入、固定步长帧循环
       ↓
 src/rasterfall_session.c         单机/主机/客户端会话编排与 controller
       ↓

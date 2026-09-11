@@ -1,18 +1,25 @@
 # 运行时与主循环
 
 > 文档更新：2026-09-10
-> 源码核对基线：工作区（Humanoid Action Composition V1 CLI；双正式四人 squad runtime；Lighting V1；`game_state.actors[]` 是 gameplay truth）
+> 源码核对基线：工作区（Humanoid Action Composition V1 CLI；双正式四人 squad runtime；Lighting V1；`game_state.actors[]` 是 gameplay truth；RF Core Runtime V0 `rf_game_runtime` facade）
 
 > 源码核对补充：session reset 在原 flag 1 和原坐标恢复 Maid 四人旗卫，并创建使用 flag 2 的正式 Hurd squad/outpost；Hurd 控制状态保持派生。
 
 ## 状态所有者
 
-`src/rasterfall.c` 是可执行程序入口和最高层编排器。它拥有窗口、输入、摄像机、音频、网络、
-暂停/启动菜单、固定步长累积器及渲染提交顺序，但具体玩法规则应下沉到 session/game。
+`src/rasterfall.c` 是极薄的可执行程序入口；`src/rf_game_runtime.c` 负责 Core Host 与 Game
+facade 的组合调度。`struct rf_game_runtime` 集中拥有
+session 外的网络、摄像机、输入边沿、特效、HUD/菜单控制、perf/debug、音频和 fixed-step
+运行态；`rf_game_update()` 与 `rf_game_render()` 是 Game facade 的更新/渲染入口，具体玩法规则
+仍下沉到 session/game。
 
 关键配套文件：
 
 - `src/rasterfall_options.c` / `include/rasterfall_options.h`：命令行默认值、解析和 usage。
+- `include/rf_game_lifecycle.h` / `src/rf_game_lifecycle.c`：`rf_game_runtime` 状态上下文及
+  `rf_game_init/update/render/shutdown` facade。
+- `src/rf_game_runtime.c`：实际 fixed-step gameplay/network/effects 更新、world/HUD/debug
+  渲染、菜单与输入边沿处理；`rasterfall.c` 不再直接访问这些 Game 状态。
 - `include/rasterfall_camera.h`：共享摄像机数据结构。
 - `include/rasterfall_units.h`：网络和玩法共用的单位换算。
 - `src/rasterfall_console.c`、`src/rasterfall_calibration.c`：开发控制台与持枪姿态校准。
