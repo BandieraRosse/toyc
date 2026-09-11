@@ -785,6 +785,7 @@ APP_EXTRA_OBJS_rasterfall := $(BUILD)/rf_core_filesystem.o $(BUILD)/rf_core_host
 RASTERFALL_OPT_DEP := $(BUILD)/.rasterfall-opt
 APP_EXTRA_OBJS_rasterfall += $(BUILD)/rasterfall_gui.o
 APP_EXTRA_OBJS_rasterfall += $(BUILD)/rasterfall_app.o
+APP_EXTRA_OBJS_rasterfall += $(BUILD)/rf_application_projection.o
 APP_EXTRA_OBJS_vmd_inspect := $(BUILD)/rasterfall_vmd.o $(BUILD)/rasterfall_model.o $(BUILD)/rasterfall_humanoid_basis.o $(BUILD)/rasterfall_humanoid_retarget.o $(BUILD)/rasterfall_glb_animation.o $(BUILD)/rasterfall_game.o
 APP_EXTRA_OBJS_glb_inspect := $(BUILD)/rasterfall_humanoid_basis.o \
 	$(BUILD)/rasterfall_humanoid_retarget.o
@@ -828,6 +829,11 @@ $(BUILD)/rasterfall_gui.o: $(RASTERFALL_SRC)/rasterfall_gui.c \
 $(BUILD)/rasterfall_app.o: $(RASTERFALL_SRC)/rasterfall_app.c \
                            $(RASTERFALL_INC)/rasterfall_app.h \
                            $(RASTERFALL_INC)/rasterfall_gui.h | $(BUILD)
+	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
+	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
+
+$(BUILD)/rf_application_projection.o: $(RASTERFALL_SRC)/rf_application_projection.c \
+                                      $(RASTERFALL_INC)/rf_application_projection.h | $(BUILD)
 	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
 	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 

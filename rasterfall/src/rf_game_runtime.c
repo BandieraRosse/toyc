@@ -76,6 +76,7 @@
 #include "rasterfall_options.h"
 #include "rf_core_host.h"
 #include "rf_game_lifecycle.h"
+#include "rf_application_projection.h"
 #include "math.h"
 
 #define KEY_ESC   1
