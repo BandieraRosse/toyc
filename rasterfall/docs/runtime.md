@@ -1,7 +1,7 @@
 # 运行时与主循环
 
 > 文档更新：2026-09-11
-> 源码核对基线：工作区（Humanoid Action Composition V1 CLI；双正式四人 squad runtime；Lighting V1；`game_state.actors[]` 是 gameplay truth；RF Core Runtime V0.2 `rf_game_runtime` facade、Core status query、service access cleanup 与 Input view；Core/Game startup config split；renderer frame ownership cleanup；Core filesystem service V0；唯一 `rf_core` context 与 Core clock service；Phase 3A `rf_game_update()` gameplay update authority；Phase 3B-1 world presentation migration；Phase 3B-2 steady-state Game UI presentation authority；RF Command Runtime V0 registry/context/status；Command Runtime Stabilization V0.1 output/metadata/permission）
+> 源码核对基线：工作区（Humanoid Action Composition V1 CLI；双正式四人 squad runtime；Lighting V1；`game_state.actors[]` 是 gameplay truth；RF Core Runtime V0.2 `rf_game_runtime` facade、Core status query、service access cleanup 与 Input view；Core/Game startup config split；renderer frame ownership cleanup；Core filesystem service V0；唯一 `rf_core` context 与 Core clock service；Phase 3A `rf_game_update()` gameplay update authority；Phase 3B-1 world presentation migration；Phase 3B-2 steady-state Game UI presentation authority；RF Command Runtime V0 registry/context/status；Command Runtime Stabilization V0.1 output/metadata/permission；RF Terminal Frontend Prototype V0 session 与 Console frontend）
 
 > 源码核对补充：session reset 在原 flag 1 和原坐标恢复 Maid 四人旗卫，并创建使用 flag 2 的正式 Hurd squad/outpost；Hurd 控制状态保持派生。
 
@@ -26,7 +26,7 @@ session 外的网络、摄像机、输入边沿、特效、HUD/菜单控制、pe
   `rasterfall.c` 不再访问 Game 状态，也不再把 `argc/argv` 传入 runtime。
 - `include/rasterfall_camera.h`：共享摄像机数据结构。
 - `include/rasterfall_units.h`：网络和玩法共用的单位换算。
-- `src/rasterfall_console.c`、`src/rasterfall_calibration.c`：开发控制台、RF Command Runtime V0.1 output/metadata/permission 与持枪姿态校准。
+- `src/rasterfall_console.c`、`include/rasterfall_console.h`、`src/rasterfall_calibration.c`：RF Terminal session、Developer Console frontend、RF Command Runtime V0.1 output/metadata/permission 与持枪姿态校准。
 - `src/rasterfall_logic_test.inc`：由主编译单元包含的聚合逻辑测试入口。
 
 ## 生命周期
@@ -98,11 +98,31 @@ Core status query V0.2 由 `rf_core_get_status()` 提供。调用方得到一份
 只读快照，包含 `RF_CORE_VERSION`/`RF_CORE_BUILD` 以及 window、renderer、filesystem、audio 和
 clock 的 ready 状态；它不创建窗口、不启动终端，也不参与生命周期管理。
 
-RF Command Runtime V0 复用开发者 Console 作为当前输入/输出适配器。`rasterfall_console_command` 注册
-command name、handler、description 和 permission placeholder；handler 通过 `rf_command_context` 借用
-Core 与 Game runtime。当前 `killall`、`give+N`、`pose`、`help`、`clear` 和只读 `status` 均走同一注册/分发
-路径。`status` 只组合 `rf_core_get_status()` 与 `rf_game_runtime_get_status()`，不读取内部 service、session
-或 actor struct；本阶段不引入 Terminal UI、GUI、IPC 或 exec 路径。
+RF Command Runtime V0 由 `rasterfall_console_command` 注册表和 `rf_command_context` 组成，当前由
+Developer Console 这个 frontend 使用。`rf_terminal_session` 持有输入 buffer、history 和最近一次
+`rf_command_output`；session 只负责把命令交给 registry/handler，并不复制 command registry、handler
+或 permission logic。当前 `killall`、`give+N`、`pose`、`help`、`clear`、`status`、`runtime` 和
+`services` 均走同一注册/分发路径。`status` 组合 Core/Game snapshot，`runtime` 只读 Game snapshot，
+`services` 只读 Core snapshot；命令层不读取内部 service、session、actor 或 renderer state。
+
+RF Terminal Frontend Prototype V0 的链路是：
+
+```text
+Frontend UI (当前 Developer Console modal)
+        ↓
+rf_terminal_session
+        ↓
+RF Command Runtime (registry/context/output/permission)
+        ↓
+Core/Game Runtime query 与 command state
+```
+
+session 是 frontend 可复用的 transient interaction layer；UI 只负责打开/关闭、按键编辑和把
+`rf_command_output` 映射为视觉日志。未来 F12 Terminal 可以复用同一 session API；World Terminal
+Device 只需替换输入/显示适配并提供合适的 `rf_command_context`；Super Terminal 可在更高权限
+context 下复用同一 registry。它们不需要复制命令实现，也不需要修改 `toy_game`、地图实体或
+renderer。Prototype V0 不实现 World Terminal Device、GUI framework、IPC、exec、process manager
+或 module loader。
 
 Game Runtime 不直接包含或调用 toy window implementation，也不直接调用平台 clock。正常帧循环
 使用 `rf_core_time_us()`；窗口事件、输入和音频对象通过 Core accessors 借用。模型/性能离屏诊断

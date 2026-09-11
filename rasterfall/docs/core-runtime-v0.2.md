@@ -1,7 +1,7 @@
 # RF Core Runtime V0.2 查询面设计
 
 > 文档更新：2026-09-11
-> 源码核对基线：工作区（Core status query、service access cleanup、Input view、runtime facade、Runtime Facade Authority audit；RF Command Runtime V0 status command）
+> 源码核对基线：工作区（Core status query、service access cleanup、Input view、runtime facade、Runtime Facade Authority audit；RF Command Runtime V0 status command；RF Terminal Frontend Prototype V0 session/frontend）
 
 本文只定义前哨站 GUI、游戏内 Terminal 和 Super Terminal 的后续读取边界，不实现任何 UI、
 terminal、IPC 或额外进程。
@@ -20,6 +20,13 @@ Core status 和 runtime status 应由上层分别查询后组合。Core service 
 
 RF Command Runtime V0 的 `status` 命令是一个组合消费者：通过 `rf_command_context` 获取 Core 与 Game
 runtime，再分别调用上述 snapshot API。命令层不暴露或缓存 Core service、runtime、session 或 actor 的内部指针。
+
+Terminal frontend prototype 的 session 边界如下：`rf_terminal_session` 只拥有输入 buffer、有限
+history 和最近一次 `rf_command_output`。它借用调用方提供的 `rf_command_context`，再调用既有
+command registry/handler；registry、handler、permission 和 Core/Game snapshot 所有权都不下沉到
+session。Developer Console 是当前 frontend，未来 F12 Terminal、World Terminal Device 和 Super
+Terminal 可以替换 UI/输入输出适配，继续共享 `rf_command_context`、`rf_command_output` 与 registry。
+World Terminal Device 属于未来 frontend/世界交互工作，不在本 prototype 中创建 map entity 或修改地图。
 
 ## 后续扩展规则
 
