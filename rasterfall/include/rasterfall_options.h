@@ -5,6 +5,7 @@ struct rasterfall_options {
     int enemy_visual_family;
     const char *enemy_visual_capture_dir;
     int input_debug, logic_test, action_runtime_debug;
+    int legacy_map;
     int requested_net_mode, net_port, net_loss_percent;
     const char *net_address;
     int auto_mode, textures_enabled, edge_pass_enabled;

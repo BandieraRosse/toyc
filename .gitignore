@@ -8,6 +8,8 @@ tools/.map-layout-fonts/**
 .vscode/*
 tmp/**
 .claude/**
+# Git worktrees created inside the repository.
+.worktrees/
 # Python bytecode caches at any directory depth.
 __pycache__/
 pycache/

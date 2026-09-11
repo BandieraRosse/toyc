@@ -308,8 +308,31 @@ int rasterfall_session_load(struct rasterfall_session *session,
                         session->safe_rooms, session->spawn_zones,
                         &session->spawn_count, &session->air_walls_enabled,
                         session->items, &session->item_count);
+    if (rasterfall_map_load_runtime_overlay(&session->map_ops, map_path) < 0)
+        return -1;
+    if (rasterfall_map_apply_runtime_legacy(&session->map_ops) < 0) return -1;
+    __printf("Loading world source: %s\n", map_path);
+    __printf("Map runtime loaded: regions=%d interactions=%d\n",
+             rf_map_runtime_region_count(&session->map_ops.runtime),
+             rf_map_runtime_interaction_count(&session->map_ops.runtime));
+    return 0;
+}
+
+int rasterfall_session_load_legacy(struct rasterfall_session *session,
+                                   const char *map_path)
+{
+    if (!session) return -1;
+    rasterfall_session_unload(session);
+    memset(session, 0, sizeof(struct rasterfall_session));
+    session->air_walls_enabled = 1;
+    session->highlight_index = -1;
+    rasterfall_map_bind(&session->map_ops, &session->level,
+                        session->safe_rooms, session->spawn_zones,
+                        &session->spawn_count, &session->air_walls_enabled,
+                        session->items, &session->item_count);
     if (rasterfall_map_load(&session->map_ops, map_path) < 0) return -1;
     rasterfall_map_prepare(&session->map_ops);
+    __printf("Loading legacy map source: %s\n", map_path);
     return 0;
 }
 
@@ -329,6 +352,8 @@ void rasterfall_session_reset(struct rasterfall_session *session,
                               struct camera *camera, uint64_t seed)
 {
     int i;
+    if (session->map_ops.runtime_loaded)
+        rasterfall_map_apply_runtime_legacy(&session->map_ops);
     camera->x = session->level.start_x;
     camera->z = session->level.start_z;
     camera->sy = session->level.start_sy;

@@ -781,7 +781,7 @@ APP_TARGETS := $(foreach name,$(APP_NAMES),$(BUILD)/$(name))
 RASTERFALL_ASSET_FILES := $(shell find $(RASTERFALL_DIR)/assets -type f -print)
 RASTERFALL_ASSET_SRC := $(BUILD)/rasterfall_assets.c
 RASTERFALL_ASSET_OBJ := $(BUILD)/rasterfall_assets.o
-APP_EXTRA_OBJS_rasterfall := $(BUILD)/rf_core_filesystem.o $(BUILD)/rf_core_host.o $(BUILD)/rf_game_lifecycle.o $(BUILD)/rf_game_runtime.o $(BUILD)/rasterfall_action.o $(BUILD)/rasterfall_character.o $(BUILD)/rasterfall_roster.o $(BUILD)/rasterfall_prop.o $(BUILD)/rasterfall_game.o $(BUILD)/rasterfall_sfx.o $(BUILD)/rasterfall_map_engine.o $(BUILD)/rasterfall_map.o $(BUILD)/rasterfall_session.o $(BUILD)/rasterfall_ai.o $(BUILD)/rasterfall_net.o $(BUILD)/rasterfall_net_transport.o $(BUILD)/rasterfall_net_discovery.o $(BUILD)/rasterfall_hud.o $(BUILD)/rasterfall_audio.o $(BUILD)/rasterfall_effects.o $(BUILD)/rasterfall_perf.o $(BUILD)/rasterfall_sky.o $(BUILD)/rasterfall_viewmodel.o $(BUILD)/rasterfall_calibration.o $(BUILD)/rasterfall_console.o $(BUILD)/rasterfall_options.o $(BUILD)/rasterfall_render.o $(BUILD)/rasterfall_render_frontend.o $(BUILD)/rasterfall_model.o $(BUILD)/rasterfall_humanoid_basis.o $(BUILD)/rasterfall_humanoid_retarget.o $(BUILD)/rasterfall_glb_animation.o $(BUILD)/rasterfall_vmd.o
+APP_EXTRA_OBJS_rasterfall := $(BUILD)/rf_core_filesystem.o $(BUILD)/rf_core_host.o $(BUILD)/rf_game_lifecycle.o $(BUILD)/rf_game_runtime.o $(BUILD)/rasterfall_action.o $(BUILD)/rasterfall_character.o $(BUILD)/rasterfall_roster.o $(BUILD)/rasterfall_prop.o $(BUILD)/rasterfall_game.o $(BUILD)/rasterfall_sfx.o $(BUILD)/rasterfall_map_engine.o $(BUILD)/rasterfall_map.o $(BUILD)/rasterfall_map_runtime.o $(BUILD)/rasterfall_map_parser.o $(BUILD)/rasterfall_session.o $(BUILD)/rasterfall_ai.o $(BUILD)/rasterfall_net.o $(BUILD)/rasterfall_net_transport.o $(BUILD)/rasterfall_net_discovery.o $(BUILD)/rasterfall_hud.o $(BUILD)/rasterfall_audio.o $(BUILD)/rasterfall_effects.o $(BUILD)/rasterfall_perf.o $(BUILD)/rasterfall_sky.o $(BUILD)/rasterfall_viewmodel.o $(BUILD)/rasterfall_calibration.o $(BUILD)/rasterfall_console.o $(BUILD)/rasterfall_options.o $(BUILD)/rasterfall_render.o $(BUILD)/rasterfall_render_frontend.o $(BUILD)/rasterfall_model.o $(BUILD)/rasterfall_humanoid_basis.o $(BUILD)/rasterfall_humanoid_retarget.o $(BUILD)/rasterfall_glb_animation.o $(BUILD)/rasterfall_vmd.o
 RASTERFALL_OPT_DEP := $(BUILD)/.rasterfall-opt
 APP_EXTRA_OBJS_rasterfall += $(BUILD)/rasterfall_gui.o
 APP_EXTRA_OBJS_rasterfall += $(BUILD)/rasterfall_app.o
@@ -795,6 +795,8 @@ APP_EXTRA_OBJS_rfchar_runtime_test := $(BUILD)/rasterfall_model.o \
 APP_EXTRA_OBJS_rf_anim_info := $(BUILD)/rasterfall_action.o $(BUILD)/rasterfall_model.o \
 	$(BUILD)/rasterfall_humanoid_basis.o $(BUILD)/rasterfall_humanoid_retarget.o \
 	$(BUILD)/rasterfall_glb_animation.o $(BUILD)/rasterfall_vmd.o $(BUILD)/rasterfall_game.o
+APP_EXTRA_OBJS_map_inspect := $(BUILD)/rasterfall_map_parser.o $(BUILD)/rasterfall_map_runtime.o
+APP_EXTRA_OBJS_map_runtime_test := $(BUILD)/rasterfall_map_parser.o $(BUILD)/rasterfall_map_runtime.o
 
 .PHONY: test-rfchar-pipeline
 test-rfchar-pipeline:
@@ -907,8 +909,20 @@ $(BUILD)/rasterfall_map_engine.o: $(RASTERFALL_LIB)/map.c \
 	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
 	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 
+$(BUILD)/rasterfall_map_parser.o: $(RASTERFALL_LIB)/rasterfall_map_parser.c \
+	$(RASTERFALL_INC)/rasterfall_map_parser.h | $(BUILD)
+	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
+	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
+
+$(BUILD)/rasterfall_map_runtime.o: $(RASTERFALL_LIB)/rasterfall_map_runtime.c \
+	$(RASTERFALL_INC)/rasterfall_map_runtime.h \
+	$(RASTERFALL_INC)/rasterfall_map_parser.h | $(BUILD)
+	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
+	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
+
 $(BUILD)/rasterfall_map.o: $(RASTERFALL_SRC)/rasterfall_map.c \
                            $(RASTERFALL_INC)/rasterfall_map.h \
+                           $(RASTERFALL_INC)/rasterfall_map_runtime.h \
                            $(RASTERFALL_INC)/toy_map.h \
                            $(RASTERFALL_INC)/toy_game.h | $(BUILD)
 	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
@@ -1181,6 +1195,21 @@ $(BUILD)/glb-inspect: $(BUILD)/glb_inspect | $(BUILD)
 .PHONY: app-vmd-inspect
 app-vmd-inspect: $(BUILD)/vmd_inspect
 
+.PHONY: app-map-inspect test-map-parser app-map-runtime-test test-map-runtime
+app-map-inspect: $(BUILD)/map-inspect
+$(BUILD)/map-inspect: $(BUILD)/map_inspect | $(BUILD)
+	ln -f $< $@
+
+test-map-parser: app-map-inspect
+	tools/test_map_parser.sh
+
+app-map-runtime-test: $(BUILD)/map-runtime-test
+$(BUILD)/map-runtime-test: $(BUILD)/map_runtime_test | $(BUILD)
+	ln -f $< $@
+
+test-map-runtime: app-map-runtime-test
+	tools/test_map_runtime.sh
+
 .PHONY: setup-map-layout map-layout map-layout-query test-map-layout-export test-map-layout-query generate-gb2312-font
 generate-gb2312-font:
 	python3 tools/fonts/build_gb2312_16.py \
@@ -1193,7 +1222,7 @@ setup-map-layout:
 
 map-layout:
 	@if test ! -x .venv/map-layout/bin/python; then echo "run 'make setup-map-layout' first" >&2; exit 2; fi
-	.venv/map-layout/bin/python tools/map_layout_export.py rasterfall/assets/maps/rasterfall.map --output-dir tmp/map-layout
+	.venv/map-layout/bin/python tools/map_layout_export.py rasterfall/assets/maps/rasterfall_legacy.map --output-dir tmp/map-layout
 
 map-layout-query:
 	python3 tools/map_layout_query.py tmp/map-layout/output.json summary
@@ -1270,7 +1299,7 @@ SELF_LIBC_OBJS     := $(SELF_LIBC_C_OBJS) $(SELF_LIBC_ASM_OBJS)
 SELF_APP_NAMES   := $(filter-out rasterfall,$(APP_NAMES))
 SELF_APP_OBJS    := $(foreach name,$(SELF_APP_NAMES),$(BUILD)/$(name)_self.o)
 SELF_APP_TARGETS := $(foreach name,$(SELF_APP_NAMES),$(BUILD)/$(name)_self)
-SELF_APP_EXTRA_OBJS_rasterfall := $(BUILD)/rasterfall_game_self.o $(BUILD)/rasterfall_sfx_self.o $(BUILD)/rasterfall_map_engine_self.o $(BUILD)/rasterfall_map_self.o $(BUILD)/rasterfall_session_self.o $(BUILD)/rasterfall_ai_self.o $(BUILD)/rasterfall_net_self.o $(BUILD)/rasterfall_net_transport_self.o $(BUILD)/rasterfall_net_discovery_self.o $(BUILD)/rasterfall_hud_self.o $(BUILD)/rasterfall_audio_self.o $(BUILD)/rasterfall_effects_self.o $(BUILD)/rasterfall_perf_self.o $(BUILD)/rasterfall_sky_self.o $(BUILD)/rasterfall_viewmodel_self.o $(BUILD)/rasterfall_options_self.o $(BUILD)/rasterfall_render_self.o $(BUILD)/rasterfall_render_frontend_self.o $(BUILD)/rasterfall_model_self.o $(BUILD)/rasterfall_humanoid_basis_self.o $(BUILD)/rasterfall_humanoid_retarget_self.o
+SELF_APP_EXTRA_OBJS_rasterfall := $(BUILD)/rasterfall_game_self.o $(BUILD)/rasterfall_sfx_self.o $(BUILD)/rasterfall_map_engine_self.o $(BUILD)/rasterfall_map_parser_self.o $(BUILD)/rasterfall_map_runtime_self.o $(BUILD)/rasterfall_map_self.o $(BUILD)/rasterfall_session_self.o $(BUILD)/rasterfall_ai_self.o $(BUILD)/rasterfall_net_self.o $(BUILD)/rasterfall_net_transport_self.o $(BUILD)/rasterfall_net_discovery_self.o $(BUILD)/rasterfall_hud_self.o $(BUILD)/rasterfall_audio_self.o $(BUILD)/rasterfall_effects_self.o $(BUILD)/rasterfall_perf_self.o $(BUILD)/rasterfall_sky_self.o $(BUILD)/rasterfall_viewmodel_self.o $(BUILD)/rasterfall_options_self.o $(BUILD)/rasterfall_render_self.o $(BUILD)/rasterfall_render_frontend_self.o $(BUILD)/rasterfall_model_self.o $(BUILD)/rasterfall_humanoid_basis_self.o $(BUILD)/rasterfall_humanoid_retarget_self.o
 SELF_APP_EXTRA_OBJS_glb_inspect := $(BUILD)/rasterfall_humanoid_basis_self.o \
 	$(BUILD)/rasterfall_humanoid_retarget_self.o
 
@@ -1318,8 +1347,20 @@ $(BUILD)/rasterfall_map_engine_self.o: $(RASTERFALL_LIB)/map.c \
 	@printf "  $(BLUE)  CC(s)  %s\n" "$<"
 	$(SELF_CC) $(SELF_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 
+$(BUILD)/rasterfall_map_parser_self.o: $(RASTERFALL_LIB)/rasterfall_map_parser.c \
+                                      $(RASTERFALL_INC)/rasterfall_map_parser.h $(SELF_CC) | $(BUILD)
+	@printf "  $(BLUE)  CC(s)  %s\n" "$<"
+	$(SELF_CC) $(SELF_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
+
+$(BUILD)/rasterfall_map_runtime_self.o: $(RASTERFALL_LIB)/rasterfall_map_runtime.c \
+                                       $(RASTERFALL_INC)/rasterfall_map_runtime.h \
+                                       $(RASTERFALL_INC)/rasterfall_map_parser.h $(SELF_CC) | $(BUILD)
+	@printf "  $(BLUE)  CC(s)  %s\n" "$<"
+	$(SELF_CC) $(SELF_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
+
 $(BUILD)/rasterfall_map_self.o: $(RASTERFALL_SRC)/rasterfall_map.c \
                                 $(RASTERFALL_INC)/rasterfall_map.h \
+                                $(RASTERFALL_INC)/rasterfall_map_runtime.h \
                                 $(RASTERFALL_INC)/toy_map.h \
                                 $(RASTERFALL_INC)/toy_game.h $(SELF_CC) | $(BUILD)
 	@printf "  $(BLUE)  CC(s)  %s\n" "$<"

@@ -69,6 +69,7 @@ void rasterfall_options_usage(int fd)
         "usage: rasterfall [runtime options]\n"
         "  --host | --connect <ip> [--port <port>] [--net-loss <percent>]\n"
         "  --textures | --no-textures  --no-edge-pass  --no-stats\n"
+        "  --legacy-map  (force legacy map loader)\n"
         "  --texture-stats  --frames <count>  --dump-frame <path>\n"
         "  --logic-test  --input-test  --action-runtime-debug  --auto\n"
         "  --enemy-visual-capture <output-dir> (mixed or forced family; bind/idle/move, world, death)\n"
@@ -113,6 +114,7 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
             rasterfall_options_usage(1);
             return 1;
         } else if (!strcmp(option, "--input-test")) o->input_debug = 1;
+        else if (!strcmp(option, "--legacy-map")) o->legacy_map = 1;
         else if (!strcmp(option, "--action-runtime-debug")) o->action_runtime_debug = 1;
         else if (!strcmp(option, "--logic-test") ||
                  !strcmp(option, "--net-test")) o->logic_test = 1;

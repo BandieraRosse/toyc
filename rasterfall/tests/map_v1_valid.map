@@ -1,0 +1,10 @@
+map version=1 units=rfu
+world min_x=-1000 max_x=1000 min_z=-800 max_z=800 room_limit=1200
+interaction id=wave_skip action=wave_skip x=0 y=0 z=-400
+render id=arena kind=box min_x=-900 max_x=900 min_z=-700 max_z=700 color=294B45 height=0
+surface id=arena_floor kind=ground min_x=-900 max_x=900 min_z=-700 max_z=700 height=0 material=294B45
+collision id=north_wall shape=box min_x=-900 max_x=900 min_z=650 max_z=700 height=300 visible=false walkable=false blocks_airborne=true attr.group=outer_wall
+region id=start_area kind=safe min_x=-300 max_x=300 min_z=-700 max_z=-400 attr.role=start
+actor_spawn id=test_actor class=level1 base_id=0 x=100 y=0 z=100 downed=0 attr.legacy_index=0
+pickup id=test_pickup kind=smg x=-100 y=0 z=100 attr.legacy_index=0
+object id=test_object kind=crate x=200 y=0 z=200 yaw=0 scale=1000 attr.legacy_index=0

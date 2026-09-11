@@ -1,0 +1,11 @@
+map version=1 units=rfu
+world min_x=-2000 max_x=2000 min_z=-2000 max_z=2000
+render id=arena kind=box min_x=-1800 max_x=1800 min_z=-1800 max_z=1800 height=900 color=294B45 attr.legacy_index=0
+surface id=test_ground kind=ground min_x=-1800 max_x=1800 min_z=-1800 max_z=1800 height=0 material=272B31 attr.legacy_index=0
+collision id=north_wall shape=box min_x=-1900 max_x=1900 min_z=1500 max_z=1600 height=300 collision=true visible=false walkable=false blocks_airborne=true
+region id=base_main kind=base min_x=-1000 max_x=-400 min_z=-900 max_z=-300
+region id=spawn_east kind=spawn min_x=400 max_x=900 min_z=-900 max_z=-300
+region id=start_area kind=safe min_x=-300 max_x=300 min_z=-900 max_z=-300
+interaction id=wave_skip action=wave_skip x=0 y=200 z=0
+interaction id=death_test action=enemy_death_test x=100 y=200 z=0
+interaction id=humanoid_lab action=humanoid_actions x=200 y=200 z=0

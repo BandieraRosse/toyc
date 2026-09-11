@@ -10,7 +10,9 @@ int rf_game_init(struct rf_game_runtime *runtime,
     memset(runtime, 0, sizeof(*runtime));
     runtime->core = core;
     runtime->session = session;
-    if (rasterfall_session_load(session, map_path) < 0) {
+    if ((!strcmp(map_path, "rasterfall/assets/maps/rasterfall_legacy.map") ?
+         rasterfall_session_load_legacy(session, map_path) :
+         rasterfall_session_load(session, map_path)) < 0) {
         runtime->core = NULL;
         runtime->session = NULL;
         return -1;

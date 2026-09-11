@@ -1,13 +1,68 @@
 # Rasterfall 地图格式
 
-> 文档更新：2026-09-10
-> 源码核对基线：工作区（地图布局 PNG/JSON 导出器使用仓库内 GB2312 16×16 点阵字库；JSON 查询器识别 MODEL_DISPLAY；开发者区 enemy death test button；空气墙竖直 box 和可站立 platform 通过同组 role 同步切换显示、碰撞与导航；边界 box 显式 blocks_airborne；外围渲染墙与 gameplay 碰撞分离；Hurd 北侧外围渲染墙在据点范围断开，避免与据点北墙重叠；Hurd 南侧纯渲染墙在入口范围断开，保留 x=-6000..6000 的可见入口；静态 prop 实例及 profile 碰撞盒接入现有 primitive/nav；V2 action debug button remains presentation-only）
+> 文档更新：2026-09-11
+> 源码核对基线：工作区（正式 `rasterfall.map` 已为完整 V1 world/region/interaction/actor_spawn/pickup/object/collision/surface/render source；Runtime Map adapter 转为现有 gameplay、primitive 和 draw records；`rasterfall_legacy.map` 仅保留 fallback；布局导出器仍使用 legacy source）
 
 > 源码核对补充：北侧通道扩宽为 Hurd 防区，原中央北侧刷怪区拆到左右两翼。
 
-正式地图位于 `rasterfall/assets/maps/*.map`。磁盘结构定义在 `include/toy_map.h`，文本解析在
-`lib/map.c`，`src/rasterfall_map.c` 再把结果绑定到玩法盒体、图元、可交互物和安全区。修改语法时
-必须同时检查解析、玩法绑定、碰撞/导航、渲染和逻辑测试。
+## Map Compiler V1
+
+Map Compiler V1 是新的 World Description Language 和运行时无关 Map IR 的独立链路。
+正式地图的所有运行时记录都由 V1 source 提供，并通过 Runtime Map adapter 生成原有 gameplay
+数组、`toy_map` primitive/draw records；renderer 保持原有输入结构，`rasterfall_legacy.map` 仅作为明确的
+fallback 输入。
+
+入口为 `build/map-inspect <map-v1-file>`，实现位于
+`rasterfall/lib/rasterfall_map_parser.c` 与 `rasterfall/include/rasterfall_map_parser.h`。
+语法使用单行 `key=value` record、全局唯一稳定 `id`，记录顺序没有语义。未知 record、未知字段、
+重复 ID、非法数字、越界坐标和容量超限都会带源文件行号失败；`attr.<name>=<value>` 是为后续
+扩展保留的显式属性命名空间。
+
+最小示例：
+
+```text
+map version=1 units=rfu
+world min_x=-1000 max_x=1000 min_z=-800 max_z=800 room_limit=1200
+region id=start_area kind=safe min_x=-300 max_x=300 min_z=-700 max_z=-400 attr.role=start
+collision id=north_wall shape=box min_x=-900 max_x=900 min_z=650 max_z=700 height=300 visible=false walkable=false blocks_airborne=true
+surface id=arena_floor kind=ground min_x=-900 max_x=900 min_z=-700 max_z=700 height=0 material=294B45
+render id=arena kind=box min_x=-900 max_x=900 min_z=-700 max_z=700 color=294B45 height=0
+interaction id=wave_skip action=wave_skip x=0 y=0 z=-400
+```
+
+Map IR 包含 world、regions、collisions、surfaces、renders、interactions、actor_spawn、pickup 和 object，
+不引用 `toy_game` 或 `rasterfall_session`。`build/map-inspect` 输出 world bounds、各类数量和稳定 ID；
+`make test-map-parser` 覆盖成功解析、未知 record/字段、非法数字、重复 ID、缺字段、世界越界和容量上限。
+
+## Surface V1
+
+正式地图中的地面、平台和坡道使用独立的 V1 `surface` 记录，不再从 legacy 文本的
+`ground`/`floor`/`platform`/`ramp` 行读取 surface 数据。`id`、`kind`、bounds、height/height2、
+axis 和 material 原样保存在 Map IR/Runtime；parser 不解释 `kind` 或 `material`，`attr.*` 继续
+作为扩展字段保存。坡道必须保存 `axis` 与起止高度；平台/地面使用单一 `height`。
+
+`attr.legacy_index` 只供迁移 adapter 把 surface 几何写入现有 `toy_map_primitive`，不改变
+collision record 的碰撞标志和路径。当前正式地图 surface 为 32/32，render 为 98/98；两者都由
+V1 Runtime adapter 写入现有 primitive/draw 兼容结构。
+
+## Map IR Runtime Bridge
+
+`rasterfall/lib/rasterfall_map_runtime.c` 将 V1 parser 的结果复制为不暴露 parser 内部结构的运行时视图，
+公开 region、interaction、actor spawn、pickup、object 和 collision 的稳定 ID 查询；各类记录按稳定 ID 规范化，
+调用方不依赖文本行顺序。
+interaction 的 `action` 仍是字符串，runtime registry 再把它解析为 action ID；parser 不包含 gameplay callback。
+
+`src/rasterfall_map.c` 提供兼容 adapter，把 V1 region、interaction、actor_spawn、pickup、object、collision、
+surface 和 render 转换到 gameplay/renderer 现有数组。因此 collision primitive、collision engine、spawn 算法、
+AI、prop 和 renderer 行为保持不变；默认流程只加载 V1 Runtime Map，`--legacy-map` 可强制只走旧 loader。
+`legacy_index` 只用于兼容数组的稳定排列，不是 V1 record 的顺序语义。
+
+`build/map-runtime-test` 与 `make test-map-runtime` 覆盖 V1 runtime 加载、稳定 ID 查询和 action registry。
+
+正式地图源位于 `rasterfall/assets/maps/rasterfall.map`；旧兼容源为同目录的
+`rasterfall_legacy.map`。旧源的磁盘结构定义在 `include/toy_map.h`，文本解析在 `lib/map.c`，仅供 fallback/reference
+使用。V1 的 parser、IR、Runtime Map 和 adapter 是默认输入链路；修改语法时必须同时检查 parser、runtime、玩法绑定、
+碰撞/导航、渲染和逻辑测试。
 
 ## 几何与碰撞
 
@@ -37,6 +92,19 @@ box minx maxx minz maxz height color hidden collision blocks_airborne
 会同时移除整组的渲染、碰撞和导航阻挡，不能留下无形顶面。
 
 ## 玩法声明
+
+V1 的玩法与世界对象记录使用单行 `key=value` 字段，稳定 `id` 不承载文本顺序语义：
+
+```text
+actor_spawn id=Jesus class=level2 base_id=2 x=1000 y=0 z=0 downed=0
+pickup id=pickup_smg kind=smg x=-250 y=-235 z=-7450
+object id=object_crate kind=crate x=-14500 y=0 z=-17000 yaw=0 scale=1000
+```
+
+`actor_spawn` 的 `class`/`type` 二选一，另外需要 `base_id`、三轴坐标和 `downed`；`weapon` 可选。
+`pickup` 描述真实可拾取物，不描述按钮；按钮继续使用 `interaction action=...`。`object` 只描述
+静态对象的稳定 kind 和 placement，不能把 renderer 类型、模型路径或碰撞 primitive 塞入该记录。
+兼容数组顺序由 `attr.legacy_index` 显式保存，仅供 adapter 使用，不是 V1 的语义顺序。
 
 ```text
 safe minx maxx minz maxz start
@@ -85,6 +153,25 @@ Character Test Strip 是渲染器拥有的 presentation-only 开发测试带，�
 AK attachment 由 `render_character_test_strip()` 固定配置，避免把测试角色写入 `toy_game_actor`
 或地图碰撞。`--character-world-capture` 使用该地图和正常 world render path 生成真实场景截图。
 
+## V1 render 记录
+
+地图视觉描述使用独立的 `render` 记录，由 `rasterfall_map_parser` 解析为 Map IR，再由
+`rasterfall_map_runtime` 暴露给 runtime。运行时 adapter 将它转换为既有 `toy_map_draw`，因此
+renderer 不读取 parser 内部结构，也不拥有地图文本解析逻辑：
+
+```text
+render id=crate_display kind=model min_x=-3200 max_x=-2000 min_z=-8700 max_z=-8100 height=-900 color=B66A35 asset=rf_crate attr.style=1
+render id=outer_wall kind=wall min_x=-45000 max_x=33000 min_z=-45000 max_z=-45000 height=5400 color=555B68 attr.legacy_index=91
+```
+
+基础字段是稳定 `id`、`kind`、bounds、可选 `height` 和 `color`；位置由 bounds 的中心表达。
+`attr.*` 只承载地图层扩展，例如迁移期的 `legacy_index`、style、文字和附加高度。模型记录只
+引用 registry asset ID，不放 mesh、texture、material 或 rasterizer 状态。视觉装饰可以超出
+gameplay `world` bounds（正式地图外围墙保留了这一旧行为）；collision/surface 仍必须位于 world 内。
+
+正式 `rasterfall.map` 当前包含完整的 98 个 render records；`rasterfall_legacy.map` 仍保留
+作为 fallback，但正式启动路径的 draw data 来自 V1 render → runtime → draw adapter。
+
 `x/z` 使用 RFU，实例落在地面锚点 `y=-900`；`yaw` 为绕世界 Y 轴的角度；`scale=1000`
 表示资产原始设计尺寸。默认根据资产 profile 的 RFU 碰撞盒生成普通 gameplay box；视觉网格
 与该盒体独立。仅在确有需要时可追加 `collision=none`，例如：
@@ -109,13 +196,15 @@ flag 1 也继续由 session 生成，Hurd 因此使用 flag 2。若以后正式�
 
 ## 修改地图排布的必经流程
 
-地图排布以 `.map` 文本为唯一输入。调整区域、墙体、出生点、按钮或 `prop` 的位置后，必须使用
-现有布局导出接口同时生成俯视图和 JSON 信息，再据此检查相对位置、边界和语义对象；不能只凭肉眼阅读
-`.map`，也不能手工维护另一份坐标表或 JSON。
+地图排布以 `.map` 文本为唯一输入。当前布局导出器仍解析旧语法，因此正式 V1 源中的 region/interaction
+迁移期间，排布诊断使用同目录的 `rasterfall_legacy.map` 兼容侧车；这不是第二份手工坐标表，而是尚未迁移
+的 surface/render/AI/prop 记录的暂存源。调整区域、墙体、出生点、按钮或 `prop` 的位置后，必须使用
+现有布局导出接口同时生成俯视图和 JSON 信息，再据此检查相对位置、边界和语义对象。
 
 推荐流程如下：
 
-1. 修改 `rasterfall/assets/maps/*.map`，保持玩法碰撞、可见几何和交互声明分别表达。
+1. 修改对应地图源；当前涉及旧布局对象时修改 `rasterfall/assets/maps/rasterfall_legacy.map`，V1
+   region/interaction 则修改 `rasterfall/assets/maps/rasterfall.map`，保持玩法碰撞、可见几何和交互声明分别表达。
 2. 运行 `make map-layout`（或对指定地图调用 `tools/map_layout_export.py`），生成配套的
    `output.png` 与 `output.json`。
 3. 打开 PNG 检查整体排布，再用 `tools/map_layout_query.py` 查询对象的精确中心点、bounds、类型和邻近关系；

@@ -1,0 +1,3 @@
+map version=1 units=rfu
+world min_x=-100 max_x=100 min_z=-100 max_z=100
+interaction id=bad action=test x=not_a_number y=0 z=0

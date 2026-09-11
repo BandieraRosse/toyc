@@ -2,6 +2,7 @@
 #define RASTERFALL_MAP_H
 
 #include "toy_map.h"
+#include "rasterfall_map_runtime.h"
 
 struct rasterfall_interactable { int kind; int weapon; int x, z, y; };
 
@@ -15,6 +16,8 @@ struct rasterfall_map_state {
     int *air_walls_enabled;
     struct rasterfall_interactable *interactables;
     int *interactable_count;
+    struct rf_map_runtime runtime;
+    int runtime_loaded;
 };
 
 void rasterfall_map_bind(struct rasterfall_map_state *map,
@@ -30,5 +33,8 @@ void rasterfall_map_unload(struct rasterfall_map_state *map);
 void rasterfall_map_prepare(struct rasterfall_map_state *map);
 void rasterfall_map_set_air_walls(struct rasterfall_map_state *map, int enabled);
 void rasterfall_map_reset_interactables(struct rasterfall_map_state *map);
+int rasterfall_map_load_runtime_overlay(struct rasterfall_map_state *map,
+                                        const char *path);
+int rasterfall_map_apply_runtime_legacy(struct rasterfall_map_state *map);
 
 #endif
