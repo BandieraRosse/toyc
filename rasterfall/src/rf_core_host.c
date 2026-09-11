@@ -22,6 +22,14 @@ int rf_core_init(struct rf_core *core, const char *title, int width, int height,
     return 0;
 }
 
+int rf_core_init_config(struct rf_core *core,
+                        const struct rf_core_config *config)
+{
+    if (!config) return -1;
+    return rf_core_init(core, config->title, config->width, config->height,
+                        config->input, config->renderer);
+}
+
 int rf_core_poll_events(struct rf_core *core)
 {
     return rf_core_poll_events_timeout(core, 0);

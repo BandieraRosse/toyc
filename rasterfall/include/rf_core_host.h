@@ -18,8 +18,18 @@ struct rf_core {
     int audio_ready;
 };
 
+struct rf_core_config {
+    const char *title;
+    int width;
+    int height;
+    struct toy_input *input;
+    struct toy_renderer *renderer;
+};
+
 int rf_core_init(struct rf_core *core, const char *title, int width, int height,
                  struct toy_input *input, struct toy_renderer *renderer);
+int rf_core_init_config(struct rf_core *core,
+                        const struct rf_core_config *config);
 int rf_core_poll_events(struct rf_core *core);
 int rf_core_poll_events_timeout(struct rf_core *core, int timeout_ms);
 int rf_core_begin_frame(struct rf_core *core, uint32_t clear_color);

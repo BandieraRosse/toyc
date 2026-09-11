@@ -11,6 +11,13 @@
 #include "rasterfall_render.h"
 #include "toy_input.h"
 
+struct rasterfall_options;
+
+struct rf_game_config {
+    const struct rasterfall_options *options;
+    const char *map_path;
+};
+
 struct rf_game_runtime {
     /* Gameplay/session ownership stays below this object.  The runtime owns
      * the presentation and frame-loop state which used to be implicit in
@@ -71,6 +78,6 @@ int rf_game_render(struct rf_game_runtime *runtime,
                    struct toy_renderer *renderer,
                    struct toy_surface *surface);
 void rf_game_shutdown(struct rf_game_runtime *runtime);
-int rf_game_runtime_main(int argc, char **argv);
+int rf_game_runtime_run(const struct rf_game_config *config);
 
 #endif

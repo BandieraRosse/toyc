@@ -2398,7 +2398,7 @@ fail:
 #define actor_performance options.actor_performance
 #define actor_raster_workers options.actor_raster_workers
 
-int rf_game_runtime_main(int argc, char **argv)
+int rf_game_runtime_run(const struct rf_game_config *config)
 {
     struct rf_core core;
     struct rf_game_runtime game_runtime;
@@ -2439,15 +2439,13 @@ int rf_game_runtime_main(int argc, char **argv)
     char host_address[16];
     uint64_t seed;
     struct rasterfall_options options;
-    int options_result;
     int public_room = 0, public_room_id = 0;
     int managed_spectator = 0, managed_third_person = 0;
     const char *startup_error = NULL;
     char selected_address[64];
 
-    rasterfall_options_init(&options, textures_enabled);
-    options_result = rasterfall_options_parse(&options, argc, argv);
-    if (options_result != 0) return options_result < 0 ? 2 : 0;
+    if (!config || !config->options) return 2;
+    options = *config->options;
     rasterfall_render_set_enemy_visual_family(options.enemy_visual_family);
     if (options.enemy_visual_capture_dir)
         return rasterfall_render_enemy_visual_capture(options.enemy_visual_capture_dir);
@@ -2687,6 +2685,7 @@ int rf_game_runtime_main(int argc, char **argv)
     strcpy(host_address, "127.0.0.1");
     memset(&game_runtime, 0, sizeof(game_runtime));
     if (rf_game_init(&game_runtime, &session,
+                     config->map_path ? config->map_path :
                      "rasterfall/assets/maps/rasterfall.map") < 0) {
         __fprintf(2, "rasterfall: cannot load map rasterfall/assets/maps/rasterfall.map\n");
         return 1;
@@ -2778,13 +2777,20 @@ int rf_game_runtime_main(int argc, char **argv)
         rf_core_shutdown(&core);
         return capture_result;
     }
-    if (rf_core_init(&core, "Rasterfall", RASTERFALL_DEFAULT_WIDTH,
-                     RASTERFALL_DEFAULT_HEIGHT, &input, &renderer) < 0) {
-        __fprintf(2, "rasterfall: cannot initialize RF Core host\n");
-        if (model_texture.blob) toy_texture_unload(&model_texture);
-        rasterfall_net_close(&net);
-        rf_game_shutdown(&game_runtime);
-        return 1;
+    {
+        struct rf_core_config core_config;
+        core_config.title = "Rasterfall";
+        core_config.width = RASTERFALL_DEFAULT_WIDTH;
+        core_config.height = RASTERFALL_DEFAULT_HEIGHT;
+        core_config.input = &input;
+        core_config.renderer = &renderer;
+        if (rf_core_init_config(&core, &core_config) < 0) {
+            __fprintf(2, "rasterfall: cannot initialize RF Core host\n");
+            if (model_texture.blob) toy_texture_unload(&model_texture);
+            rasterfall_net_close(&net);
+            rf_game_shutdown(&game_runtime);
+            return 1;
+        }
     }
     rf_windows_log("startup: window opened");
 startup_again:

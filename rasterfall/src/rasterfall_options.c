@@ -17,6 +17,15 @@ static int positive_int(const char *text, int fallback)
     return *text || value <= 0 ? fallback : value;
 }
 
+int rasterfall_options_default_textures_enabled(void)
+{
+#ifdef TOYC_WINDOWS
+    return 1;
+#else
+    return 0;
+#endif
+}
+
 static int numeric_argument(int argc, char **argv, int arg)
 {
     return arg + 1 < argc && argv[arg + 1][0] >= '0' &&

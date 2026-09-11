@@ -47,6 +47,7 @@ struct rasterfall_options {
 
 void rasterfall_options_init(struct rasterfall_options *options,
                              int textures_enabled);
+int rasterfall_options_default_textures_enabled(void);
 int rasterfall_options_parse(struct rasterfall_options *options,
                              int argc, char **argv);
 void rasterfall_options_usage(int fd);

@@ -1,14 +1,15 @@
 # 运行时与主循环
 
-> 文档更新：2026-09-10
-> 源码核对基线：工作区（Humanoid Action Composition V1 CLI；双正式四人 squad runtime；Lighting V1；`game_state.actors[]` 是 gameplay truth；RF Core Runtime V0 `rf_game_runtime` facade）
+> 文档更新：2026-09-11
+> 源码核对基线：工作区（Humanoid Action Composition V1 CLI；双正式四人 squad runtime；Lighting V1；`game_state.actors[]` 是 gameplay truth；RF Core Runtime V0 `rf_game_runtime` facade；Core/Game startup config split）
 
 > 源码核对补充：session reset 在原 flag 1 和原坐标恢复 Maid 四人旗卫，并创建使用 flag 2 的正式 Hurd squad/outpost；Hurd 控制状态保持派生。
 
 ## 状态所有者
 
-`src/rasterfall.c` 是极薄的可执行程序入口；`src/rf_game_runtime.c` 负责 Core Host 与 Game
-facade 的组合调度。`struct rf_game_runtime` 集中拥有
+`src/rasterfall.c` 是可执行程序入口，负责命令行解析并组装 `rf_game_config`；
+`src/rf_game_runtime.c` 负责 Game facade 的运行调度，Core Host 由 `rf_core_config` 接收启动参数。
+`struct rf_game_runtime` 集中拥有
 session 外的网络、摄像机、输入边沿、特效、HUD/菜单控制、perf/debug、音频和 fixed-step
 运行态；`rf_game_update()` 与 `rf_game_render()` 是 Game facade 的更新/渲染入口，具体玩法规则
 仍下沉到 session/game。
@@ -19,7 +20,8 @@ session 外的网络、摄像机、输入边沿、特效、HUD/菜单控制、pe
 - `include/rf_game_lifecycle.h` / `src/rf_game_lifecycle.c`：`rf_game_runtime` 状态上下文及
   `rf_game_init/update/render/shutdown` facade。
 - `src/rf_game_runtime.c`：实际 fixed-step gameplay/network/effects 更新、world/HUD/debug
-  渲染、菜单与输入边沿处理；`rasterfall.c` 不再直接访问这些 Game 状态。
+  渲染、菜单与输入边沿处理；`rasterfall.c` 不再访问 Game 状态，也不再把 `argc/argv` 传入
+  runtime。
 - `include/rasterfall_camera.h`：共享摄像机数据结构。
 - `include/rasterfall_units.h`：网络和玩法共用的单位换算。
 - `src/rasterfall_console.c`、`src/rasterfall_calibration.c`：开发控制台与持枪姿态校准。
@@ -27,7 +29,7 @@ session 外的网络、摄像机、输入边沿、特效、HUD/菜单控制、pe
 
 ## 生命周期
 
-`main()` 的顺序是：解析参数和诊断早退 → 初始化网络 → 加载 session/map → 绑定并准备渲染资源
+`main()` 的顺序是：解析参数并组装 `rf_game_config` → runtime 初始化网络 → 加载 session/map → 绑定并准备渲染资源
 → 可选逻辑测试 → 创建窗口 → 启动菜单/建房连接 → 音频启动 → 主循环 → 释放资源。
 
 `--visual-capture <scenario> --visual-output <path>` 必须成对提供。解析后立即进入
@@ -69,7 +71,8 @@ camera 的方向仍作为输入视角供移动与瞄准使用。渲染阶段可�
 
 ## 常见任务落点
 
-- 新增启动参数：options 头文件字段、`rasterfall_options_init/parse/usage`，再接入 `main()`。
+- 新增启动参数：options 头文件字段、`rasterfall_options_init/parse/usage`，在 `main()` 解析后
+  通过 `rf_game_config` 传给 runtime。
 - 改键位或鼠标：`build_game_command()`、`consume_game_command_edges()` 及主循环的菜单/控制台分流。
 - 改启动或暂停界面：`run_startup_menu()`、`draw_pause_overlay()`；HUD 主界面在 `rasterfall_hud.c`。
 - 改射击视听同步：`sync_*_fire_effects()`、`emit_ray_effects()`，并核对网络序列号与游戏事件。
