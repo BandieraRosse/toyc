@@ -2409,6 +2409,129 @@ fail:
 #define actor_performance options.actor_performance
 #define actor_raster_workers options.actor_raster_workers
 
+#undef effects
+
+/* The fixed-step gameplay authority.  The host loop owns platform polling and
+ * rendering cadence, but it must not own a second simulation path. */
+int rf_game_update(struct rf_game_runtime *runtime,
+                   const struct rasterfall_command *command,
+                   int dt_ms)
+{
+    struct rasterfall_session *game_session;
+    struct rasterfall_net *game_net;
+    struct rasterfall_effects *game_effects;
+    struct camera *game_camera;
+    int is_client;
+
+    if (!runtime || !runtime->initialized || !runtime->session) return -1;
+    if (dt_ms < 0) dt_ms = 0;
+    if (dt_ms > 250) dt_ms = 250;
+    game_session = runtime->session;
+    game_net = &runtime->net;
+    game_effects = &runtime->effects;
+    game_camera = &runtime->camera;
+    is_client = game_net->mode == RASTERFALL_NET_CLIENT;
+
+    rasterfall_effects_update(game_effects, dt_ms);
+    if (command) {
+        runtime->command = *command;
+        if (!runtime->lifecycle_paused) {
+            if (game_session->game_state.state == TOY_GAME_PLAYING &&
+                !(is_client && (!game_net->connected || !game_net->world_ready))) {
+                if (game_net->mode == RASTERFALL_NET_HOST)
+                    rasterfall_net_prepare_host_step(
+                        game_net, &game_session->game_state);
+                if (is_client)
+                    rasterfall_session_step_client(
+                        game_session, game_camera, &runtime->command, dt_ms);
+                else
+                    rasterfall_session_step(
+                        game_session, game_camera, &runtime->command, dt_ms);
+                if (game_net->mode == RASTERFALL_NET_HOST)
+                    rasterfall_net_apply_local_rescue(
+                        game_net, game_session, game_camera,
+                        (runtime->command.buttons & RASTERFALL_CMD_INTERACT) != 0,
+                        dt_ms);
+                if (is_client) {
+                    if ((runtime->command.buttons & RASTERFALL_CMD_INTERACT) &&
+                        game_session->highlight_index >= 0 &&
+                        game_session->highlight_index < game_session->item_count)
+                        runtime->command.shop_arg =
+                            game_session->items[game_session->highlight_index].kind + 1;
+                    rasterfall_net_send_command(
+                        game_net, &runtime->command, game_camera,
+                        &game_session->game_state, runtime->command.jump_dx,
+                        runtime->command.jump_dz);
+                }
+            } else if (runtime->command.buttons & RASTERFALL_CMD_RESET) {
+                if (is_client)
+                    rasterfall_net_send_command(
+                        game_net, &runtime->command, game_camera,
+                        &game_session->game_state, 0, 0);
+                else {
+                    rasterfall_session_step(
+                        game_session, game_camera, &runtime->command, dt_ms);
+                    if (game_net->mode == RASTERFALL_NET_HOST)
+                        rasterfall_net_reset_host(game_net);
+                }
+            }
+        }
+    }
+
+    rasterfall_effects_sync_fire_zones(game_effects,
+                                       &game_session->game_state);
+    rasterfall_effects_sync_projectile_flashes(
+        game_effects, &game_session->game_state);
+    rasterfall_effects_sync_damage_flash(
+        game_effects, &game_session->game_state, game_camera);
+    rasterfall_effects_sync_enemy_feedback(
+        game_effects, &game_session->game_state);
+    if (game_session->highlight_index >= 0 &&
+        game_session->highlight_index < game_session->item_count) {
+        const struct rasterfall_interactable *highlight =
+            &game_session->items[game_session->highlight_index];
+        rasterfall_effects_sync_interaction_highlight(
+            game_effects, game_session->highlight_index, highlight->x,
+            highlight->y, highlight->z, 1);
+    } else {
+        rasterfall_effects_sync_interaction_highlight(
+            game_effects, -1, 0, 0, 0, 0);
+    }
+    if (game_net->mode == RASTERFALL_NET_HOST) {
+        rasterfall_net_apply_clients(game_net, game_session, game_camera);
+        rasterfall_net_capture_events(game_net, &game_session->game_state);
+        /* Remote fire state is advanced by apply_clients().  Replay the
+         * guarded sequence here so the host presentation observes the shot
+         * in the same fixed step as the authoritative update. */
+        for (int i = 0; i < RASTERFALL_NET_CLIENT_MAX; i++) {
+            const struct rasterfall_net_client *client = &game_net->clients[i];
+            int actor_index = TOY_GAME_REMOTE_ACTOR_BASE +
+                              client->client_id - 1;
+            const struct toy_game_actor *actor;
+            if (!client->active || !client->connected || actor_index < 0 ||
+                actor_index >= TOY_GAME_MAX_ACTORS)
+                continue;
+            actor = &game_session->game_state.actors[actor_index];
+            if (!actor->active || actor->kind != TOY_GAME_ACTOR_PLAYER)
+                continue;
+            sync_network_fire_effects(
+                game_camera, &client->camera, client->client_id,
+                toy_game_actor_current_weapon(actor), actor->fire_seq,
+                actor->ray_count, actor->rays,
+                runtime->audio.running ? &runtime->audio : NULL);
+        }
+        if ((game_net->tick % 4) == 0)
+            rasterfall_net_send_snapshot(
+                game_net, game_session, game_camera,
+                &game_session->game_state, game_session->air_walls_enabled,
+                game_session->manual_alarm_on,
+                game_session->manual_alarm_timer);
+    }
+    return 0;
+}
+
+#define effects (*active_effects)
+
 int rf_game_runtime_run(const struct rf_game_config *config)
 {
     struct rf_core core;
@@ -2440,9 +2563,6 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     struct rasterfall_perf_stats stats, stats_total;
     unsigned int last_key = 0;
     int last_key_pressed = 0;
-    struct rasterfall_audio audio;
-    struct rasterfall_net net;
-    struct rasterfall_net_discovery discovery;
     /* 按键按压边沿跨帧保留位：逻辑步（E/R 及切枪换弹）可能因
      * accumulator 不足而整帧不跑（长 stall 后连续几帧都不跑），边沿若
      * 只在 key_pressed 里会被下一轮 begin_frame 清掉。这里逐键记录
@@ -3309,7 +3429,6 @@ startup_again:
                 int shop_page_before = session.shop_page;
                 int shop_selected_before = session.shop_selected;
                 session.shop_request_only = net.mode == RASTERFALL_NET_CLIENT;
-                rasterfall_effects_update(&effects, FIXED_STEP_US / 1000);
                 if (shop_input) {
                     rasterfall_session_shop_input(
                         &session,
@@ -3418,35 +3537,11 @@ startup_again:
                         }
                     }
                     capture_jump_vector(&command, &camera);
-                    if (net.mode == RASTERFALL_NET_CLIENT)
-                        rasterfall_session_step_client(&session, &camera,
-                                                       &command,
-                                                       FIXED_STEP_US / 1000);
-                    else {
-                        /* Feed the last authoritative client position into
-                         * the host AI before this tick chooses its target. */
-                        if (net.mode == RASTERFALL_NET_HOST)
-                            rasterfall_net_prepare_host_step(&net, &game);
-                        rasterfall_session_step(&session, &camera, &command,
-                                                FIXED_STEP_US / 1000);
-                        if (net.mode == RASTERFALL_NET_HOST)
-                            rasterfall_net_apply_local_rescue(
-                                &net, &session, &camera,
-                                (command.buttons & RASTERFALL_CMD_INTERACT) != 0,
-                                FIXED_STEP_US / 1000);
-                    }
-                    if (net.mode == RASTERFALL_NET_CLIENT)
-                    {
-                        if ((command.buttons & RASTERFALL_CMD_INTERACT) &&
-                            session.highlight_index >= 0 &&
-                            session.highlight_index < session.item_count)
-                            command.shop_arg =
-                                session.items[session.highlight_index].kind + 1;
-                        rasterfall_net_send_command(
-                            &net, &command, &camera, &game,
-                            command.jump_dx,
-                            command.jump_dz);
-                    }
+                    game_runtime.camera = camera;
+                    game_runtime.lifecycle_paused = paused;
+                    rf_game_update(&game_runtime, &command,
+                                   FIXED_STEP_US / 1000);
+                    camera = game_runtime.camera;
                     consume_game_command_edges(&input, pending_key_edges);
                     pointer_turn_pending = 0;
                     pointer_pitch_pending = 0;
@@ -3456,70 +3551,16 @@ startup_again:
                     /* 死亡或通关结算：R 重开 */
                     memset(&command, 0, sizeof(command));
                     command.buttons = RASTERFALL_CMD_RESET;
-                    if (net.mode == RASTERFALL_NET_CLIENT) {
-                        /* Reset is host-authoritative; wait for its snapshot. */
-                        rasterfall_net_send_command(&net, &command, &camera, &game,
-                                                    0, 0);
-                    } else {
-                        rasterfall_session_step(&session, &camera, &command,
-                                                FIXED_STEP_US / 1000);
-                        if (net.mode == RASTERFALL_NET_HOST)
-                            rasterfall_net_reset_host(&net);
-                    }
+                    /* Reset is host-authoritative; the update facade owns
+                     * both the client request and host reset path. */
+                    game_runtime.camera = camera;
+                    game_runtime.lifecycle_paused = paused;
+                    rf_game_update(&game_runtime, &command,
+                                   FIXED_STEP_US / 1000);
+                    camera = game_runtime.camera;
                     input.key_pressed[KEY_R] = 0;
                     fire_edge = 0;
                     shove_edge = 0;
-                }
-                rasterfall_effects_sync_fire_zones(&effects, &game);
-                rasterfall_effects_sync_projectile_flashes(&effects, &game);
-                rasterfall_effects_sync_damage_flash(&effects, &game, &camera);
-                rasterfall_effects_sync_enemy_feedback(&effects, &game);
-                if (session.highlight_index >= 0 &&
-                    session.highlight_index < session.item_count) {
-                    const struct rasterfall_interactable *highlight =
-                        &session.items[session.highlight_index];
-                    rasterfall_effects_sync_interaction_highlight(
-                        &effects, session.highlight_index, highlight->x,
-                        highlight->y, highlight->z, 1);
-                } else {
-                    rasterfall_effects_sync_interaction_highlight(
-                        &effects, -1, 0, 0, 0, 0);
-                }
-                if (net.mode == RASTERFALL_NET_HOST) {
-                    rasterfall_net_apply_clients(&net, &session, &camera);
-                    rasterfall_net_capture_events(&net, &game);
-                    /* Remote fire state is advanced by apply_remote().  The
-                     * pre-step visual pass cannot observe that shot until
-                     * the next frame; replay the guarded sequence here so
-                     * the host hears it immediately and never loses a burst
-                     * between snapshots. */
-                    for (int i = 0; i < RASTERFALL_NET_CLIENT_MAX; i++) {
-                        const struct rasterfall_net_client *client =
-                            &net.clients[i];
-                        const struct toy_game_actor *actor;
-                        int actor_index = TOY_GAME_REMOTE_ACTOR_BASE +
-                                          client->client_id - 1;
-                        int weapon;
-                        if (!client->active || !client->connected ||
-                            actor_index < 0 ||
-                            actor_index >= TOY_GAME_MAX_ACTORS) continue;
-                        actor = &game.actors[actor_index];
-                        if (!actor->active ||
-                            actor->kind != TOY_GAME_ACTOR_PLAYER) continue;
-                        weapon = toy_game_actor_current_weapon(actor);
-                        sync_network_fire_effects(&camera, &client->camera,
-                                                  client->client_id, weapon,
-                                                  actor->fire_seq,
-                                                  actor->ray_count, actor->rays,
-                                                  &audio);
-                    }
-                    /* 15 Hz authoritative snapshots are sufficient once
-                     * clients interpolate enemy positions between updates. */
-                    if ((net.tick % 4) == 0)
-                        rasterfall_net_send_snapshot(&net, &session, &camera, &game,
-                                                     session.air_walls_enabled,
-                                                     session.manual_alarm_on,
-                                                     session.manual_alarm_timer);
                 }
             }
             accumulator -= FIXED_STEP_US;

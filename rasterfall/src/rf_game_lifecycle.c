@@ -28,26 +28,6 @@ int rf_game_init(struct rf_game_runtime *runtime,
     return 0;
 }
 
-int rf_game_update(struct rf_game_runtime *runtime,
-                   const struct rasterfall_command *command,
-                   int dt_ms)
-{
-    if (!runtime || !runtime->initialized || !runtime->session) return -1;
-    if (dt_ms < 0) dt_ms = 0;
-    if (dt_ms > 250) dt_ms = 250;
-    if (!runtime->lifecycle_paused && command) {
-        runtime->command = *command;
-        if (runtime->net.mode == RASTERFALL_NET_CLIENT)
-            rasterfall_session_step_client(runtime->session, &runtime->camera,
-                                            &runtime->command, dt_ms);
-        else
-            rasterfall_session_step(runtime->session, &runtime->camera,
-                                     &runtime->command, dt_ms);
-    }
-    rasterfall_effects_update(&runtime->effects, dt_ms);
-    return 0;
-}
-
 int rf_game_render(struct rf_game_runtime *runtime,
                    struct toy_renderer *renderer,
                    struct toy_surface *surface)
