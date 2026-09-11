@@ -131,7 +131,7 @@ static int render_infected_enemy(struct toy_renderer *renderer,
         enemy_visual_failures++;
         return -1;
     }
-    if (enemy_visual_motion[slot].valid) {
+    if (slot >= 0 && enemy_visual_motion[slot].valid) {
         int dx = source->x - enemy_visual_motion[slot].x;
         int dz = source->z - enemy_visual_motion[slot].z;
         int distance = (dx < 0 ? -dx : dx) + (dz < 0 ? -dz : dz);
@@ -148,10 +148,14 @@ static int render_infected_enemy(struct toy_renderer *renderer,
         moving = source->active == 1 && enemy_visual_motion[slot].moved_us &&
                  (unsigned long)render_monotonic_us() - enemy_visual_motion[slot].moved_us < 100000;
     }
-    enemy_visual_motion[slot].valid = source->active == 1;
-    enemy_visual_motion[slot].x = source->x;
-    enemy_visual_motion[slot].z = source->z;
-    phase = enemy_visual_motion[slot].phase;
+    if (slot >= 0) {
+        enemy_visual_motion[slot].valid = source->active == 1;
+        enemy_visual_motion[slot].x = source->x;
+        enemy_visual_motion[slot].z = source->z;
+        phase = enemy_visual_motion[slot].phase;
+    } else {
+        phase = 0;
+    }
     if (enemy_visual_capture_pose >= 0) {
         moving = enemy_visual_capture_pose == 2;
         phase = 100;
@@ -194,4 +198,25 @@ static int render_infected_enemy(struct toy_renderer *renderer,
     active_infected_tint = 0;
     enemy_visual_submissions++;
     return pixels;
+}
+
+static int render_infected_display_model(struct toy_renderer *renderer,
+    const struct camera *camera, int family, int type, int x, int z)
+{
+    struct toy_game_enemy model;
+    memset(&model, 0, sizeof(model));
+    model.active = 1;
+    model.type = type;
+    model.x = x; model.z = z; model.dir_z = -1024;
+    if (family == RASTERFALL_ENEMY_VISUAL_LEGACY) {
+        uint32_t color = type == TOY_GAME_ENEMY_PURSUIT_HEAVY ?
+            RF_COLOR_ENEMY_PURSUIT_HEAVY : type == TOY_GAME_ENEMY_PURSUIT_FAST ?
+            RF_COLOR_ENEMY_PURSUIT_FAST : RF_COLOR_ENEMY_PURSUIT_COMMON;
+        return type == TOY_GAME_ENEMY_PURSUIT_FAST ?
+            render_round_enemy(renderer, camera, &model, 1000, color) :
+            render_block_enemy(renderer, camera, &model,
+                type == TOY_GAME_ENEMY_PURSUIT_HEAVY ? 1350 : 1000, color);
+    }
+    return render_infected_enemy(renderer, camera, &model, &model, -1,
+                                 1000, 0, family);
 }

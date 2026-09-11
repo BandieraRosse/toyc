@@ -1,7 +1,7 @@
 # Rasterfall 地图格式
 
 > 文档更新：2026-09-10
-> 源码核对基线：工作区（地图布局 PNG/JSON 导出器使用仓库内 GB2312 16×16 点阵字库；JSON 查询器；开发者区 enemy death test button；空气墙竖直 box 和可站立 platform 通过同组 role 同步切换显示、碰撞与导航；边界 box 显式 blocks_airborne；外围渲染墙与 gameplay 碰撞分离；Hurd 北侧外围渲染墙在据点范围断开，避免与据点北墙重叠；Hurd 南侧纯渲染墙在入口范围断开，保留 x=-6000..6000 的可见入口；静态 prop 实例及 profile 碰撞盒接入现有 primitive/nav；V2 action debug button remains presentation-only）
+> 源码核对基线：工作区（地图布局 PNG/JSON 导出器使用仓库内 GB2312 16×16 点阵字库；JSON 查询器识别 MODEL_DISPLAY；开发者区 enemy death test button；空气墙竖直 box 和可站立 platform 通过同组 role 同步切换显示、碰撞与导航；边界 box 显式 blocks_airborne；外围渲染墙与 gameplay 碰撞分离；Hurd 北侧外围渲染墙在据点范围断开，避免与据点北墙重叠；Hurd 南侧纯渲染墙在入口范围断开，保留 x=-6000..6000 的可见入口；静态 prop 实例及 profile 碰撞盒接入现有 primitive/nav；V2 action debug button remains presentation-only）
 
 > 源码核对补充：北侧通道扩宽为 Hurd 防区，原中央北侧刷怪区拆到左右两翼。
 
@@ -73,6 +73,12 @@ prop crate -14500 -17000 0 1000
 当前开发地图的 `z=-17000` 陈列带使用同一 `prop` 记录接入十件工业组件；实例中心沿 X 轴每
 1500 RFU 排列，renderer 与 gameplay primitive 共用各资产 profile 的尺寸契约，避免展示和
 默认碰撞盒重叠。
+
+模型陈列台的 `model` 记录只属于 renderer 展示，不创建玩法实体或碰撞。现有 style 1--5 是旧
+敌人/特感展示；style 6--8、9--11、12--14 分别按 COMMON、FAST、HEAVY 展示
+LEGACY / BLOCK_INFECTED / HUMANOID_INFECTED，沿同一 `z=-8700` 展示线向右排列。
+布局导出器会输出 `type=model`，保留 style、颜色、高度和源行号，供
+`map_layout_query.py ... type model` 复核。
 
 Character Test Strip 是渲染器拥有的 presentation-only 开发测试带，固定在 `z=-20000`、
 工业 prop 陈列带后方。地图只声明可见 label；旧 procedural 与 RF Humanoid 的位置、姿态和

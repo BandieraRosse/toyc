@@ -48,6 +48,11 @@ RFM2；默认 AUTO 按 COMMON 70/20/10、FAST 40/40/20、HEAVY 30/40/30 混合�
 不进入 gameplay 或 snapshot。新身体通过既有三角形入口保留受击、死亡旋转和渐隐；
 入口、预算、远裁剪和验收见 [enemy-visuals.md](enemy-visuals.md)。
 
+正式地图的 `MODEL_DISPLAY` 陈列台继续使用旧 style 1--5 的程序化敌人展示，并在右侧增加
+style 6--14 的三组展示：COMMON、FAST、HEAVY 各自依次绘制 LEGACY、BLOCK_INFECTED、
+HUMANOID_INFECTED。V2 两个家族由地图 draw record 触发同一感染模型 recipe，位置、姿态和
+地面锚点属于 renderer；不会创建 enemy、碰撞体、AI 或网络状态。
+
 ## 渲染边界
 
 Profession Visual System V1 的 `--profession-lineup <model-dir> <output-dir>` 由 options →

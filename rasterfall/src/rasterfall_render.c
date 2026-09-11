@@ -338,6 +338,8 @@ static int render_modular_passive_equipment(
 static int render_character_test_strip(struct toy_renderer *, const struct camera *);
 static int render_modular_preview_frame(struct toy_renderer *, const struct camera *,
                                         int, int, int, int, int);
+static int render_infected_display_model(struct toy_renderer *, const struct camera *,
+                                         int, int, int, int);
 
 static struct rasterfall_model_asset gallery_models[RASTERFALL_MODEL_MAX_GALLERY];
 static int gallery_loaded;
@@ -4576,6 +4578,20 @@ static int render_scene(struct toy_renderer *renderer, const struct camera *came
                     model.type = TOY_GAME_ENEMY_TANK;
                     pixels += render_tank_enemy(renderer, camera, &model,
                                                 1600, x->color);
+                } else if (x->style >= 6 && x->style <= 14) {
+                    int display_index = x->style - 6;
+                    int display_family = display_index % 3;
+                    int display_type = display_index / 3 == 0 ?
+                        TOY_GAME_ENEMY_PURSUIT_COMMON :
+                        display_index / 3 == 1 ?
+                        TOY_GAME_ENEMY_PURSUIT_FAST :
+                        TOY_GAME_ENEMY_PURSUIT_HEAVY;
+                    pixels += render_infected_display_model(renderer, camera,
+                        display_family == 0 ? RASTERFALL_ENEMY_VISUAL_LEGACY :
+                        display_family == 1 ? RASTERFALL_ENEMY_VISUAL_BLOCK_INFECTED :
+                        RASTERFALL_ENEMY_VISUAL_HUMANOID_INFECTED,
+                        display_type,
+                        model.x, model.z);
                 }
             } else {
                 struct box model={x->a,x->b,x->c,x->d,x->f,x->color};

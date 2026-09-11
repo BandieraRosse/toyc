@@ -9,8 +9,8 @@ except ImportError as exc:
     raise SystemExit("map layout export requires Pillow; run: make setup-map-layout") from exc
 
 BUTTONS={"button","button_air","button_alarm","button_heavy","button_fast","button_base1","button_base2","button_smoker","button_charger","button_tank","button_money","button_clear_hired","button_wave_skip","button_attack_x2","button_attack_x3","button_attack_x4","button_pose_reset","button_pose_right_arm","button_pose_arms","button_pose_body","button_anim_idle","button_anim_walk","button_anim_jog","button_glb_idle","button_glb_walk","button_glb_jog","button_vmd_walk","button_vmd_manjusaka","button_animation_composition","button_humanoid_pose_debug","button_west_corridor","button_west_corridor_no_tank","button_enemy_death_test"}
-PREFIX={"safe":"SF","base":"B","spawn":"SP","ai_spawn":"SP","ramp":"R","platform":"P","prop":"PR","button":"BTN","air_wall":"AW","box":"BX"}
-LAYOUT_RECORDS={"world","safe","base","spawn","ai_spawn","prop","ramp","platform","platform_roof","box"}|BUTTONS
+PREFIX={"safe":"SF","base":"B","spawn":"SP","ai_spawn":"SP","ramp":"R","platform":"P","prop":"PR","button":"BTN","air_wall":"AW","box":"BX","model":"MD"}
+LAYOUT_RECORDS={"world","safe","base","spawn","ai_spawn","prop","ramp","platform","platform_roof","box","model"}|BUTTONS
 def num(s):
     try:return int(s)
     except ValueError:return 0
@@ -38,6 +38,8 @@ def parse(path):
             x,z,y=map(num,f[:3]); typ="button"; o={"type":typ,"button_kind":kind,"x":x,"z":z,"y":y,"bounds":box([x,x,z,z]),"center":{"x":x,"z":z}}
         elif kind=="prop" and len(f)>=5:
             x,z=num(f[1]),num(f[2]); typ="prop"; o={"type":typ,"asset":f[0],"x":x,"z":z,"yaw_degrees":num(f[3]),"scale_milli":num(f[4]),"options":f[5:],"bounds":box([x,x,z,z]),"center":{"x":x,"z":z}}
+        elif kind=="model" and len(f)>=8:
+            b=box(list(map(num,f[:4]))); typ="model"; o={"type":typ,"style":num(f[7]),"y_min":num(f[4]),"y_max":num(f[5]),"color":f[6],"bounds":b,"center":centre(b)}
         elif kind in ("ramp","platform","platform_roof") and len(f)>=5:
             b=box(list(map(num,f[:4]))); typ="ramp" if kind=="ramp" else "platform"; o={"type":typ,"record":kind,"bounds":b,"center":centre(b),"height_fields":list(map(num,f[4:6] if kind=="ramp" else f[4:5]))}
             if kind=="ramp" and len(f)>6:o["axis"]=f[6]
@@ -132,7 +134,7 @@ def render(doc,path,w,h):
     step=min([512,1024,2048,4096,5120,10240,20480],key=lambda v:abs(v-(x1-x0)/8))
     for x in range(math.ceil(x0/step)*step,x1+1,step):px,_=pt(x,z0);c.line(px,round(oy),px,round(oy+(z1-z0)*s),(54,61,70));c.text(px+2,h-margin+8,x,(130,143,155),1)
     for z in range(math.ceil(z0/step)*step,z1+1,step):_,py=pt(x0,z);c.line(round(ox),py,round(ox+(x1-x0)*s),py,(54,61,70));c.text(4,py-3,z,(130,143,155),1)
-    pal={"box":((83,91,104),(172,181,193)),"air_wall":(None,(232,101,101)),"safe":((48,125,83),(110,231,159)),"base":((42,101,122),(84,205,235)),"spawn":((121,50,55),(240,108,108)),"ramp":((132,94,50),(244,177,91)),"platform":((74,80,127),(157,166,249)),"prop":((125,87,127),(232,160,238)),"button":((147,119,38),(255,220,94)),"ai_spawn":((77,117,146),(139,211,255))};order=list(pal)
+    pal={"box":((83,91,104),(172,181,193)),"air_wall":(None,(232,101,101)),"safe":((48,125,83),(110,231,159)),"base":((42,101,122),(84,205,235)),"spawn":((121,50,55),(240,108,108)),"ramp":((132,94,50),(244,177,91)),"platform":((74,80,127),(157,166,249)),"prop":((125,87,127),(232,160,238)),"button":((147,119,38),(255,220,94)),"ai_spawn":((77,117,146),(139,211,255)),"model":((67,88,99),(190,225,230))};order=list(pal)
     placed=[]
     for o in sorted(doc["objects"],key=lambda x:order.index(x["type"])):
         b=o["bounds"];x,y=pt(b["min_x"],b["max_z"]);u,v=pt(b["max_x"],b["min_z"]);x,u=(x-3,u+3) if x==u else (x,u);y,v=(y-3,v+3) if y==v else (y,v);fill,stroke=pal[o["type"]];c.rect(x,y,u,v,fill,stroke)
@@ -154,7 +156,7 @@ def render(doc,path,w,h):
             c.star(px,py,13,(255,193,54),(255,239,145))
     # Semantic areas win label space. Dense point clusters retain every ID in
     # JSON, while the PNG suppresses labels that would collide.
-    priority={"safe":0,"base":1,"spawn":2,"ramp":3,"platform":4,"prop":5,"button":6,"ai_spawn":7,"air_wall":8,"box":9}; occupied=[]
+    priority={"safe":0,"base":1,"spawn":2,"ramp":3,"platform":4,"prop":5,"model":6,"button":7,"ai_spawn":8,"air_wall":9,"box":10}; occupied=[]
     for o,x,y,u,v in sorted(placed,key=lambda q:priority[q[0]["type"]]):
         label=o.get("export_id")
         if not label:continue
@@ -168,7 +170,7 @@ def render(doc,path,w,h):
         ("区域 AREAS",[("安全区 SAFE","safe"),("刷怪区 SPAWN ZONE","spawn")]),
         ("角色 ACTORS",[("基地核心 BASE CORE","base"),("AI 出生点 AI SPAWN","ai_spawn")]),
         ("通行 TRAVERSAL",[("坡道 RAMP","ramp"),("平台 PLATFORM","platform")]),
-        ("世界 WORLD",[("组件 COMPONENT","prop"),("空气墙 AIR WALL","air_wall"),("重点碰撞 KEY BOX","box")]),
+        ("世界 WORLD",[("组件 COMPONENT","prop"),("模型展示 MODEL","model"),("空气墙 AIR WALL","air_wall"),("重点碰撞 KEY BOX","box")]),
         ("交互 INTERACTION",[("按钮 BUTTON","button")]),
     ]
     y=100
