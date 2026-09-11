@@ -526,7 +526,7 @@ static void accumulate_mouse_look(int *pending_turn, int *pending_pitch,
 }
 
 static void build_game_command(struct rasterfall_command *command,
-                               const struct toy_input *input,
+                               const struct rf_input_frame *input,
                                const struct control_settings *settings,
                                const unsigned char *pending_key_edges,
                                int fire_edge, int shove_edge,
@@ -622,7 +622,7 @@ static void capture_jump_vector(struct rasterfall_command *command,
                        RASTERFALL_MOVE_STEP / 1024;
 }
 
-static void consume_game_command_edges(struct toy_input *input,
+static void consume_game_command_edges(struct rf_input_frame *input,
                                        unsigned char *pending_key_edges)
 {
     input->key_pressed[KEY_R] = 0;
@@ -907,7 +907,7 @@ static int managed_terminal_key_char(unsigned int key)
     return 0;
 }
 
-static int managed_terminal_take_key(struct toy_input *input,
+static int managed_terminal_take_key(struct rf_input_frame *input,
                                      unsigned char *pending,
                                      unsigned int key)
 {
@@ -945,7 +945,7 @@ static void managed_terminal_execute(struct managed_terminal *terminal,
 }
 
 static void managed_terminal_input(struct managed_terminal *terminal,
-                                   struct toy_input *input,
+                                   struct rf_input_frame *input,
                                    unsigned char *pending,
                                    struct rasterfall_session *session,
                                    struct camera *camera)
@@ -1106,7 +1106,8 @@ static int run_startup_menu(struct rf_core *core,
                             const char *error,
                             struct rasterfall_net_discovery *discovery)
 {
-    struct toy_input *input = rf_core_input(core);
+    struct rf_input_frame input_frame;
+    struct rf_input_frame *input = &input_frame;
     struct toy_window_events *events = rf_core_events(core);
     int screen = RASTERFALL_STARTUP_MAIN, selected = 0, running = 1;
     int editing_port = 0;
@@ -1123,6 +1124,7 @@ static int run_startup_menu(struct rf_core *core,
         struct toy_surface surface;
         int64_t now = rf_core_time_us(core);
         if (rf_core_poll_events(core) < 0) break;
+        if (rf_core_get_input_frame(core, input) < 0) break;
         if (events->keyboard_focus_changed && !events->keyboard_focused)
             memset(pending_key_edges, 0, sizeof(pending_key_edges));
         for (int i = 0; i < events->key_event_count; i++) {
@@ -1301,7 +1303,8 @@ static int wait_for_network_connection(struct rf_core *core,
                                        struct rasterfall_net *net,
                                        const char *address, int port)
 {
-    struct toy_input *input = rf_core_input(core);
+    struct rf_input_frame input_frame;
+    struct rf_input_frame *input = &input_frame;
     struct toy_window_events *events = rf_core_events(core);
     int64_t deadline = rf_core_time_us(core) + 6000000;
     while (rf_core_time_us(core) < deadline) {
@@ -1309,6 +1312,7 @@ static int wait_for_network_connection(struct rf_core *core,
         char line[96];
         int ready;
         if (rf_core_poll_events(core) < 0) return -2;
+        if (rf_core_get_input_frame(core, input) < 0) return -2;
         if (events->close_requested || toy_input_pressed(input, KEY_ESC))
             return -2;
         rasterfall_net_poll(net);
@@ -1643,7 +1647,7 @@ static void draw_level_won_panel(struct toy_surface *surface, int network_client
 }
 
 static void draw_input_debug(struct toy_surface *surface,
-                             const struct toy_input *input,
+                             const struct rf_input_frame *input,
                              unsigned int last_key, int last_pressed,
                              int event_count)
 {
@@ -1675,7 +1679,13 @@ static void draw_input_debug(struct toy_surface *surface,
                    line, 0xD8B060, surface->stride);
 }
 
+#undef toy_input_down
+#undef toy_input_pressed
+#undef toy_input_released
 #include "rasterfall_logic_test.inc"
+#define toy_input_down rf_input_down
+#define toy_input_pressed rf_input_pressed
+#define toy_input_released rf_input_released
 
 #include "rasterfall_perf.h"
 
@@ -2400,7 +2410,8 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     struct rf_core core;
     struct rf_game_runtime game_runtime;
     struct toy_window_events events;
-    struct toy_input input;
+    struct toy_input platform_input;
+    struct rf_input_frame input;
     struct toy_surface surface;
     struct toy_renderer renderer;
     struct camera camera;
@@ -2683,7 +2694,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
         core_config.title = "Rasterfall";
         core_config.width = RASTERFALL_DEFAULT_WIDTH;
         core_config.height = RASTERFALL_DEFAULT_HEIGHT;
-        core_config.input = &input;
+        core_config.input = &platform_input;
         core_config.renderer = &renderer;
         if (rf_core_init_config(&core, &core_config) < 0) {
             __fprintf(2, "rasterfall: cannot initialize RF Core host\n");
@@ -2944,6 +2955,7 @@ startup_again:
         unsigned char game_events[TOY_GAME_MAX_EVENTS];
         int game_event_count;
         if (rf_core_poll_events(&core) < 0) break;
+        if (rf_core_get_input_frame(&core, &input) < 0) break;
         /* 非阻塞收输入：present 后立刻开始下一帧 CPU 工作，组合器处理
          * 已提交缓冲的时间被渲染流水线掩盖（双缓冲）。 */
         events = *rf_core_events(&core);

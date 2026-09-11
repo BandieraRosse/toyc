@@ -94,6 +94,44 @@ int64_t rf_core_clock_now_us(void)
     return (int64_t)now.tv_sec * 1000000 + now.tv_nsec / 1000;
 }
 
+int rf_core_get_input_frame(const struct rf_core *core,
+                            struct rf_input_frame *frame)
+{
+    if (!frame) return -1;
+    memset(frame, 0, sizeof(*frame));
+    if (!core || !core->input) return -1;
+    memcpy(frame->key_down, core->input->key_down,
+           sizeof(frame->key_down));
+    memcpy(frame->key_pressed, core->input->key_pressed,
+           sizeof(frame->key_pressed));
+    memcpy(frame->key_released, core->input->key_released,
+           sizeof(frame->key_released));
+    frame->keyboard_focused = core->input->keyboard_focused;
+    frame->pointer_x = core->input->pointer_x;
+    frame->pointer_y = core->input->pointer_y;
+    frame->pointer_moved = core->input->pointer_moved;
+    frame->relative_x = core->input->relative_x;
+    frame->relative_y = core->input->relative_y;
+    frame->pointer_locked = core->input->pointer_locked;
+    frame->mouse_buttons = core->input->mouse_buttons;
+    return 0;
+}
+
+int rf_input_down(const struct rf_input_frame *input, unsigned int key)
+{
+    return input && key < RF_INPUT_KEY_COUNT && input->key_down[key];
+}
+
+int rf_input_pressed(const struct rf_input_frame *input, unsigned int key)
+{
+    return input && key < RF_INPUT_KEY_COUNT && input->key_pressed[key];
+}
+
+int rf_input_released(const struct rf_input_frame *input, unsigned int key)
+{
+    return input && key < RF_INPUT_KEY_COUNT && input->key_released[key];
+}
+
 int rf_core_get_status(const struct rf_core *core,
                        struct rf_core_status *status)
 {

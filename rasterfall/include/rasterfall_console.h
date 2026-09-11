@@ -1,6 +1,6 @@
 #ifndef RASTERFALL_CONSOLE_H
 #define RASTERFALL_CONSOLE_H
-#include "toy_input.h"
+#include "rf_core_input.h"
 #include "toy_renderer.h"
 #include "rasterfall_calibration.h"
 
@@ -33,7 +33,7 @@ void rasterfall_console_log(struct rasterfall_console *console,
                             enum rasterfall_console_log_level level,
                             const char *message);
 int rasterfall_console_handle_input(struct rasterfall_console *console,
-                                    struct toy_input *input, unsigned char *pending);
+                                    struct rf_input_frame *input, unsigned char *pending);
 void rasterfall_console_draw(struct toy_surface *surface,
                              const struct rasterfall_console *console);
 int rasterfall_console_logic_test(void);

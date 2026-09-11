@@ -9,7 +9,7 @@
 #include "rasterfall_console.h"
 #include "rasterfall_audio.h"
 #include "rasterfall_render.h"
-#include "toy_input.h"
+#include "rf_core_input.h"
 
 struct rasterfall_options;
 struct rf_core;

@@ -6,6 +6,7 @@
 #include "toy_renderer.h"
 #include "toy_window.h"
 #include "rf_core_filesystem.h"
+#include "rf_core_input.h"
 
 /* The single V0 Core context.  The game may borrow the objects through the
  * accessors, but does not own their lifetime. */
@@ -63,6 +64,8 @@ void rf_core_shutdown(struct rf_core *core);
 int64_t rf_core_time_us(struct rf_core *core);
 /* Clock service entry for pre-host diagnostics that have no Core instance. */
 int64_t rf_core_clock_now_us(void);
+int rf_core_get_input_frame(const struct rf_core *core,
+                            struct rf_input_frame *frame);
 int rf_core_get_status(const struct rf_core *core,
                        struct rf_core_status *status);
 
