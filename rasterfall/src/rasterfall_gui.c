@@ -35,12 +35,12 @@ static int hit_icon(int x, int y)
 }
 
 int rf_gui_open_window(struct rf_gui_context *gui, int app_id,
-                       const char *title, const char *value,
+                       const char *title,
                        int screen_w, int screen_h)
 {
     int slot;
     struct rf_gui_window *w;
-    if (!gui || !title || !value) return -1;
+    if (!gui || !title) return -1;
     for (slot = 0; slot < RF_GUI_MAX_WINDOWS; slot++) if (!gui->windows[slot].open) break;
     if (slot >= RF_GUI_MAX_WINDOWS) return -1;
     w = &gui->windows[slot];
@@ -52,7 +52,6 @@ int rf_gui_open_window(struct rf_gui_context *gui, int app_id,
     if (w->y + w->height > screen_h - 8) w->y = screen_h - w->height - 8;
     strncpy(w->title, title, sizeof(w->title) - 1);
     w->title[sizeof(w->title) - 1] = 0;
-    w->text = value;
     return slot;
 }
 

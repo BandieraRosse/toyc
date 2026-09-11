@@ -18,7 +18,6 @@ struct rf_gui_window {
     int app_id;
     int drag_x, drag_y;
     char title[32];
-    const char *text;
 };
 
 /* Screen-space presentation state. It owns no game, map, renderer, or asset
@@ -37,7 +36,7 @@ void rf_gui_set_active(struct rf_gui_context *gui, int active);
 void rf_gui_set_app_manager(struct rf_gui_context *gui,
                             struct rf_app_manager *manager);
 int rf_gui_open_window(struct rf_gui_context *gui, int app_id,
-                       const char *title, const char *text,
+                       const char *title,
                        int screen_width, int screen_height);
 int rf_gui_handle_input(struct rf_gui_context *gui,
                         const struct rf_input_frame *input,

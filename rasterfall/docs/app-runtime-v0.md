@@ -1,7 +1,7 @@
 # RF Application Runtime V0
 
 > 文档更新：2026-09-11
-> 源码核对基线：工作区（`rf_app` / `rf_app_manager` registration、open/close/update/render；CORE STATUS、PERSONNEL、TERMINAL 迁移）
+> 源码核对基线：工作区（`rf_app` / `rf_app_manager` registration、open/close/update/render；CORE STATUS、PERSONNEL、TERMINAL 迁移；Application API Stabilization V0 Phase 1 ownership audit）
 
 RF Application Runtime V0 是 GUI Runtime 上层的最小 application model。它不是完整 UI
 framework，不拥有窗口、输入、renderer、地图或玩法状态。
@@ -15,6 +15,9 @@ callbacks 和 presentation text；manager 通过既有 `rf_gui_context` 创建/�
 GUI 继续拥有 cursor、icon hit testing、窗口几何、拖动和 close button。点击 icon 后由 GUI
 转发到 `rf_app_manager_open_icon()`；窗口内容由 `rf_app_manager_render_window()` 调用 app
 的 render callback。每帧 active app 的 update callback 由 runtime 调用。
+
+窗口只保存屏幕几何、标题和 application identity；正文及其它 application presentation state
+由 app manager/application callback 保持，GUI 不保存 application-owned 文本或 snapshot。
 
 ## V0 API
 

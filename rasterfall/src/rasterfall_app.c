@@ -113,7 +113,7 @@ int rf_app_manager_open(struct rf_app_manager *m, int id, int sw, int sh)
     struct rf_app *a; int slot;
     if (!m || !m->gui || !(a = find_id(m, id))) return -1;
     if (a->open) return 0;
-    slot = rf_gui_open_window(m->gui, a->id, a->name, a->text, sw, sh);
+    slot = rf_gui_open_window(m->gui, a->id, a->name, sw, sh);
     if (slot < 0) return -1;
     a->open = 1; a->window_index = slot; return 0;
 }
