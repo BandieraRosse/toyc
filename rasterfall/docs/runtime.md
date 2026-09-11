@@ -1,7 +1,7 @@
 # 运行时与主循环
 
 > 文档更新：2026-09-11
-> 源码核对基线：工作区（Humanoid Action Composition V1 CLI；双正式四人 squad runtime；Lighting V1；`game_state.actors[]` 是 gameplay truth；RF Core Runtime V0.2 `rf_game_runtime` facade、Core status query、service access cleanup 与 Input view；Core/Game startup config split；renderer frame ownership cleanup；Core filesystem service V0；唯一 `rf_core` context 与 Core clock service；Phase 3A `rf_game_update()` gameplay update authority；Phase 3B-1 world presentation migration；Phase 3B-2 steady-state Game UI presentation authority；RF Command Runtime V0 registry/context/status）
+> 源码核对基线：工作区（Humanoid Action Composition V1 CLI；双正式四人 squad runtime；Lighting V1；`game_state.actors[]` 是 gameplay truth；RF Core Runtime V0.2 `rf_game_runtime` facade、Core status query、service access cleanup 与 Input view；Core/Game startup config split；renderer frame ownership cleanup；Core filesystem service V0；唯一 `rf_core` context 与 Core clock service；Phase 3A `rf_game_update()` gameplay update authority；Phase 3B-1 world presentation migration；Phase 3B-2 steady-state Game UI presentation authority；RF Command Runtime V0 registry/context/status；Command Runtime Stabilization V0.1 output/metadata/permission）
 
 > 源码核对补充：session reset 在原 flag 1 和原坐标恢复 Maid 四人旗卫，并创建使用 flag 2 的正式 Hurd squad/outpost；Hurd 控制状态保持派生。
 
@@ -26,7 +26,7 @@ session 外的网络、摄像机、输入边沿、特效、HUD/菜单控制、pe
   `rasterfall.c` 不再访问 Game 状态，也不再把 `argc/argv` 传入 runtime。
 - `include/rasterfall_camera.h`：共享摄像机数据结构。
 - `include/rasterfall_units.h`：网络和玩法共用的单位换算。
-- `src/rasterfall_console.c`、`src/rasterfall_calibration.c`：开发控制台、RF Command Runtime V0 registry/context 与持枪姿态校准。
+- `src/rasterfall_console.c`、`src/rasterfall_calibration.c`：开发控制台、RF Command Runtime V0.1 output/metadata/permission 与持枪姿态校准。
 - `src/rasterfall_logic_test.inc`：由主编译单元包含的聚合逻辑测试入口。
 
 ## 生命周期

@@ -143,12 +143,12 @@ static int command_pose(const struct rf_command_context *context,
   out(output,character?"Rifle Pose Editor: Maid + AK":"Rifle Pose Editor: Eula + AK"); return 0;
 }
 static const struct rasterfall_console_command command_registry[] = {
-    { "help", command_help, "show command groups", "developer" },
-    { "clear", command_clear, "clear console log", "developer" },
-    { "status", command_status, "show Core and Game status", "developer" },
-    { "killall", command_killall, "kill all active enemies", "developer" },
-    { "give+", command_give, "add positive money", "developer" },
-    { "pose", command_pose, "open rifle pose editor", "developer" }
+    { "help", command_help, "show command groups", RF_COMMAND_PERMISSION_USER },
+    { "clear", command_clear, "clear console log", RF_COMMAND_PERMISSION_USER },
+    { "status", command_status, "show Core and Game status", RF_COMMAND_PERMISSION_USER },
+    { "killall", command_killall, "kill all active enemies", RF_COMMAND_PERMISSION_ADMIN },
+    { "give+", command_give, "add positive money", RF_COMMAND_PERMISSION_ADMIN },
+    { "pose", command_pose, "open rifle pose editor", RF_COMMAND_PERMISSION_ADMIN }
 };
 const struct rasterfall_console_command *rasterfall_console_commands(unsigned int *count)
 { if (count) *count = sizeof(command_registry) / sizeof(command_registry[0]); return command_registry; }
@@ -161,6 +161,9 @@ static void execute(struct rasterfall_console *c,
   for (i=0; i<count; i++) {
       if (!strcmp(w[0], commands[i].name) ||
           (!strcmp(commands[i].name, "give+") && !strncmp(w[0], "give+", 5))) {
+          if (context && context->permission_level < commands[i].permission) {
+              out_error(&output, "permission denied"); break;
+          }
           if (!strcmp(commands[i].name, "give+")) {
               (void)commands[i].handler(context, &output, 1, w); break;
           }
