@@ -21,4 +21,7 @@
 之后调用 `rf_gui_render()`。V0 不包含布局系统、UI editor、前哨站实体、Terminal query
 adapter 或 IPC。
 
+GUI icon 的 application dispatch 已迁移到 `rf_app_manager`；窗口系统仍由本模块拥有。
+application lifecycle 和三个默认入口见 [app-runtime-v0.md](app-runtime-v0.md)。
+
 `rf_gui_logic_test()` 由 `build/rasterfall --logic-test` 聚合执行。
