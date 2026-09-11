@@ -1,7 +1,7 @@
 # 运行时与主循环
 
 > 文档更新：2026-09-11
-> 源码核对基线：工作区（Humanoid Action Composition V1 CLI；双正式四人 squad runtime；Lighting V1；`game_state.actors[]` 是 gameplay truth；RF Core Runtime V0.2 `rf_game_runtime` facade、Core status query、service access cleanup 与 Input view；Core/Game startup config split；renderer frame ownership cleanup；Core filesystem service V0；唯一 `rf_core` context 与 Core clock service）
+> 源码核对基线：工作区（Humanoid Action Composition V1 CLI；双正式四人 squad runtime；Lighting V1；`game_state.actors[]` 是 gameplay truth；RF Core Runtime V0.2 `rf_game_runtime` facade、Core status query、service access cleanup 与 Input view；Core/Game startup config split；renderer frame ownership cleanup；Core filesystem service V0；唯一 `rf_core` context 与 Core clock service；Phase 3A `rf_game_update()` gameplay update authority）
 
 > 源码核对补充：session reset 在原 flag 1 和原坐标恢复 Maid 四人旗卫，并创建使用 flag 2 的正式 Hurd squad/outpost；Hurd 控制状态保持派生。
 
@@ -19,9 +19,10 @@ session 外的网络、摄像机、输入边沿、特效、HUD/菜单控制、pe
 - `src/rasterfall_options.c` / `include/rasterfall_options.h`：命令行默认值、解析和 usage。
 - `include/rf_game_lifecycle.h` / `src/rf_game_lifecycle.c`：`rf_game_runtime` 状态上下文及
   `rf_game_init/update/render/shutdown` facade。
-- `src/rf_game_runtime.c`：实际 fixed-step gameplay/network/effects 更新、world/HUD/debug
-  渲染、菜单与输入边沿处理；`rasterfall.c` 不再访问 Game 状态，也不再把 `argc/argv` 传入
-  runtime。
+- `src/rf_game_runtime.c`：fixed-step facade 的 gameplay/session/network/effects 更新、world/HUD/debug
+  渲染、菜单与输入边沿处理；其中 `rf_game_update()` 是唯一 gameplay update 入口，
+  `rf_game_runtime_run()` 只编排 Core lifecycle、平台输入/网络轮询、fixed-step 节拍和 render。
+  `rasterfall.c` 不再访问 Game 状态，也不再把 `argc/argv` 传入 runtime。
 - `include/rasterfall_camera.h`：共享摄像机数据结构。
 - `include/rasterfall_units.h`：网络和玩法共用的单位换算。
 - `src/rasterfall_console.c`、`src/rasterfall_calibration.c`：开发控制台与持枪姿态校准。
@@ -59,7 +60,9 @@ humanoid role 的 finalized transform 及人体/AK socket。独立的 `build/rf_
 transform 和左右 hand target；旧单 action 四参数形式继续可用。
 
 主循环先轮询平台事件和网络，再保留按键边沿；固定 16 ms 逻辑步中构造
-`rasterfall_command`，交给 session 或客户端预测路径；之后同步音频/特效并渲染。排查“偶发吞键”
+`rasterfall_command`，交给 `rf_game_update()`；该 facade 按原顺序推进 session/client prediction、
+host remote apply/rescue、gameplay timers、effects sync 和 authoritative snapshot/command bookkeeping，
+之后同步音频/特效并渲染。排查“偶发吞键”
 时查看 `pending_key_edges`，排查帧率相关玩法差异时查看 accumulator 和逻辑步，而不是只看渲染帧。
 
 本地 session/client prediction 把控制器命令交给 actor API；actor 先更新 gameplay body，随后
