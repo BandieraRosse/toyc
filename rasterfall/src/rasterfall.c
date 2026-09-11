@@ -75,6 +75,8 @@
 #include "rasterfall_animation_composition.h"
 #include "rasterfall_action.h"
 #include "rasterfall_options.h"
+#include "rf_core_host.h"
+#include "rf_game_lifecycle.h"
 #include "math.h"
 
 #define KEY_ESC   1
@@ -1100,15 +1102,15 @@ static void draw_startup_menu(struct toy_surface *surface, int screen,
     }
 }
 
-static int run_startup_menu(struct toy_window *window, struct toy_renderer *renderer,
-                            struct toy_input *input,
-                            struct toy_window_events *events,
+static int run_startup_menu(struct rf_core *core,
                             int *net_mode, char *address, int address_size,
                             int *port, int *public_room, int *room_id,
                             int *managed_spectator,
                             const char *error,
                             struct rasterfall_net_discovery *discovery)
 {
+    struct toy_input *input = rf_core_input(core);
+    struct toy_window_events *events = rf_core_events(core);
     int screen = RASTERFALL_STARTUP_MAIN, selected = 0, running = 1;
     int editing_port = 0;
     int discovery_active = 0;
@@ -1123,9 +1125,7 @@ static int run_startup_menu(struct toy_window *window, struct toy_renderer *rend
     while (running) {
         struct toy_surface surface;
         int64_t now = monotonic_us();
-        toy_input_begin_frame(input);
-        if (toy_window_poll(window, events, 0) < 0) break;
-        toy_input_apply(input, events);
+        if (rf_core_poll_events(core) < 0) break;
         if (events->keyboard_focus_changed && !events->keyboard_focused)
             memset(pending_key_edges, 0, sizeof(pending_key_edges));
         for (int i = 0; i < events->key_event_count; i++) {
@@ -1137,7 +1137,7 @@ static int run_startup_menu(struct toy_window *window, struct toy_renderer *rend
          * 菜单顶部保留为可拖拽区域，不影响下方按钮操作。 */
         if (events->button_pressed && events->button == BTN_LEFT &&
             events->button_serial && events->pointer_y < 70)
-            toy_window_move(window, events->button_serial);
+            rf_core_move_window(core, events->button_serial);
         if (events->close_requested) break;
         if (screen == RASTERFALL_STARTUP_LAN_ROOMS && discovery_active)
             rasterfall_net_discovery_poll(discovery, NULL, 0, 0, 0, 0);
@@ -1286,13 +1286,13 @@ static int run_startup_menu(struct toy_window *window, struct toy_renderer *rend
                 }
             }
         }
-        int ready = toy_window_begin_frame(window, &surface);
+        int ready = rf_core_begin_frame(core, 0x10151D);
+        surface = *rf_core_surface(core);
         if (ready < 0) break;
         if (ready > 0) {
-            if (toy_renderer_begin(renderer, &surface, 0x10151D) < 0) break;
             draw_startup_menu(&surface, screen, selected, address, port_text,
                               editing_port, room_text, error, discovery);
-            if (toy_window_present(window) < 0) break;
+            if (rf_core_end_frame(core) < 0) break;
         }
         memset(input->key_pressed, 0, sizeof(input->key_pressed));
     }
@@ -1300,31 +1300,28 @@ static int run_startup_menu(struct toy_window *window, struct toy_renderer *rend
     return 0;
 }
 
-static int wait_for_network_connection(struct toy_window *window,
-                                       struct toy_renderer *renderer,
-                                       struct toy_input *input,
-                                       struct toy_window_events *events,
+static int wait_for_network_connection(struct rf_core *core,
                                        struct rasterfall_net *net,
                                        const char *address, int port)
 {
+    struct toy_input *input = rf_core_input(core);
+    struct toy_window_events *events = rf_core_events(core);
     int64_t deadline = monotonic_us() + 6000000;
     while (monotonic_us() < deadline) {
         struct toy_surface surface;
         char line[96];
         int ready;
-        toy_input_begin_frame(input);
-        if (toy_window_poll(window, events, 0) < 0) return -2;
-        toy_input_apply(input, events);
+        if (rf_core_poll_events(core) < 0) return -2;
         if (events->close_requested || toy_input_pressed(input, KEY_ESC))
             return -2;
         rasterfall_net_poll(net);
         rasterfall_net_update_connection(net);
         if (net->public_error) return -3;
         if (net->connected) return 0;
-        ready = toy_window_begin_frame(window, &surface);
+        ready = rf_core_begin_frame(core, 0x10151D);
+        surface = *rf_core_surface(core);
         if (ready < 0) return -2;
         if (ready == 0) continue;
-        if (toy_renderer_begin(renderer, &surface, 0x10151D) < 0) return -2;
         fb_draw_string((unsigned char *)surface.pixels, 226, 92,
                        "CONNECTING...", RF_COLOR_UI_ACCENT, surface.stride);
         snprintf(line, sizeof(line), "%s:%d", address, port);
@@ -1335,7 +1332,7 @@ static int wait_for_network_connection(struct toy_window *window,
                        surface.stride);
         fb_draw_string((unsigned char *)surface.pixels, 220, 260,
                        "ESC CANCEL", RF_COLOR_UI_TEXT_MUTED, surface.stride);
-        if (toy_window_present(window) < 0) return -2;
+        if (rf_core_end_frame(core) < 0) return -2;
         memset(input->key_pressed, 0, sizeof(input->key_pressed));
     }
     return -1;
@@ -2403,7 +2400,8 @@ fail:
 
 int main(int argc, char **argv)
 {
-    struct toy_window *window;
+    struct rf_core core;
+    struct rf_game game_runtime;
     struct toy_window_events events;
     struct toy_input input;
     struct toy_surface surface;
@@ -2687,7 +2685,9 @@ int main(int argc, char **argv)
     rasterfall_net_discovery_init(&discovery);
     rf_windows_log("startup: loading map");
     strcpy(host_address, "127.0.0.1");
-    if (rasterfall_session_load(&session, "rasterfall/assets/maps/rasterfall.map") < 0) {
+    memset(&game_runtime, 0, sizeof(game_runtime));
+    if (rf_game_init(&game_runtime, &session,
+                     "rasterfall/assets/maps/rasterfall.map") < 0) {
         __fprintf(2, "rasterfall: cannot load map rasterfall/assets/maps/rasterfall.map\n");
         return 1;
     }
@@ -2745,14 +2745,13 @@ int main(int argc, char **argv)
     if (logic_test) {
         int result = run_logic_test();
         if (model_texture.blob) toy_texture_unload(&model_texture);
-        rasterfall_session_unload(&session);
+        rf_game_shutdown(&game_runtime);
         return result;
     }
     /* 服务器断开（WSLg 组合器/音频服务重启）时 socket 写会触发 SIGPIPE
      * 并默认杀死进程；忽略后写返回 EPIPE，由既有错误路径接管（音频线程
      * 静默停声、wayland 发送失败则主循环干净退出）。SIG_IGN 值为 1。 */
     tlibc_sigaction(SIGPIPE, (void (*)(int))1);
-    toy_input_init(&input);
     memset(&managed_terminal, 0, sizeof(managed_terminal));
     rasterfall_console_init(&developer_console);
     if (!textures_enabled)
@@ -2760,7 +2759,6 @@ int main(int argc, char **argv)
                                RASTERFALL_CONSOLE_WARNING,
                                "textures disabled; using pure colors");
     memset(pending_key_edges, 0, sizeof(pending_key_edges));
-    toy_renderer_init(&renderer);
     rasterfall_viewmodel_set_texture(&model_texture_view);
     settings.mouse_level = 3;
     settings.keyboard_level = 5;
@@ -2776,18 +2774,16 @@ int main(int argc, char **argv)
             options.character_world_capture_dir,
             options.character_world_capture_model);
         if (model_texture.blob) toy_texture_unload(&model_texture);
-        rasterfall_session_unload(&session);
-        toy_renderer_destroy(&renderer);
+        rf_game_shutdown(&game_runtime);
+        rf_core_shutdown(&core);
         return capture_result;
     }
-    window = toy_window_open("Rasterfall", RASTERFALL_DEFAULT_WIDTH,
-                             RASTERFALL_DEFAULT_HEIGHT);
-    if (!window) {
-        __fprintf(2, "rasterfall: cannot create Wayland window\n");
+    if (rf_core_init(&core, "Rasterfall", RASTERFALL_DEFAULT_WIDTH,
+                     RASTERFALL_DEFAULT_HEIGHT, &input, &renderer) < 0) {
+        __fprintf(2, "rasterfall: cannot initialize RF Core host\n");
         if (model_texture.blob) toy_texture_unload(&model_texture);
         rasterfall_net_close(&net);
-        rasterfall_session_unload(&session);
-        toy_renderer_destroy(&renderer);
+        rf_game_shutdown(&game_runtime);
         return 1;
     }
     rf_windows_log("startup: window opened");
@@ -2796,8 +2792,7 @@ startup_again:
         int menu_selected = requested_net_mode != RASTERFALL_NET_OFF ||
                             frame_limit > 0 || auto_mode || dump_path;
         strcpy(selected_address, net_address ? net_address : "127.0.0.1");
-        if (!menu_selected && !run_startup_menu(window, &renderer, &input,
-                                                &events,
+        if (!menu_selected && !run_startup_menu(&core,
                                                 &requested_net_mode,
                                                 selected_address,
                                                 sizeof(selected_address),
@@ -2805,10 +2800,9 @@ startup_again:
                                                 &public_room_id, &managed_spectator,
                                                 startup_error,
                                                 &discovery)) {
-            toy_window_close(window);
+            rf_core_shutdown(&core);
             if (model_texture.blob) toy_texture_unload(&model_texture);
-            rasterfall_session_unload(&session);
-            toy_renderer_destroy(&renderer);
+            rf_game_shutdown(&game_runtime);
             return 0;
         }
         rf_windows_log("startup: menu completed");
@@ -2828,9 +2822,7 @@ startup_again:
             goto startup_again;
         }
         {
-            int connect_result = wait_for_network_connection(window, &renderer,
-                                                             &input, &events,
-                                                             &net, "PUBLIC ROOM",
+            int connect_result = wait_for_network_connection(&core, &net, "PUBLIC ROOM",
                                                              RASTERFALL_NET_PUNCH_PORT);
             if (connect_result != 0) {
                 startup_error = connect_result == -2 ?
@@ -2857,9 +2849,7 @@ startup_again:
                  public_room_id, RASTERFALL_NET_PUNCH_SERVER,
                  RASTERFALL_NET_PUNCH_PORT);
         {
-            int connect_result = wait_for_network_connection(window, &renderer,
-                                                             &input, &events,
-                                                             &net, host_address,
+            int connect_result = wait_for_network_connection(&core, &net, host_address,
                                                              RASTERFALL_NET_PUNCH_PORT);
             if (connect_result != 0) {
                 startup_error = connect_result == -2 ?
@@ -2880,10 +2870,9 @@ startup_again:
         client_spawn.x += 350;
         if (rasterfall_net_host(&net, net_port, &client_spawn) < 0) {
             __fprintf(2, "rasterfall: cannot host UDP port %d\n", net_port);
-            toy_window_close(window);
+            rf_core_shutdown(&core);
             if (model_texture.blob) toy_texture_unload(&model_texture);
-            rasterfall_session_unload(&session);
-            toy_renderer_destroy(&renderer);
+            rf_game_shutdown(&game_runtime);
             return 1;
         }
         rasterfall_net_local_address(host_address, sizeof(host_address));
@@ -2902,9 +2891,7 @@ startup_again:
         __printf("rasterfall: connecting to %s:%d over UDP\n",
                  net_address, net_port);
         {
-            int connect_result = wait_for_network_connection(window, &renderer,
-                                                             &input, &events,
-                                                             &net, net_address,
+            int connect_result = wait_for_network_connection(&core, &net, net_address,
                                                              net_port);
             if (connect_result != 0) {
                 startup_error = connect_result == -2 ?
@@ -2926,7 +2913,8 @@ startup_again:
         __printf("rasterfall: input debug HUD enabled; test chords and focus changes\n");
     memset(&audio, 0, sizeof(audio));
     rasterfall_audio_load_assets(&audio);
-    if (rasterfall_audio_start(&audio) < 0) {
+    if (!rf_core_audio_ready(&core) ||
+        rasterfall_audio_start(&audio, rf_core_audio(&core)) < 0) {
         __printf("rasterfall: audio unavailable, playing silent\n");
         rasterfall_console_log(&developer_console,
                                RASTERFALL_CONSOLE_WARNING,
@@ -2949,11 +2937,10 @@ startup_again:
         static int logged_first_frame;
         unsigned char game_events[TOY_GAME_MAX_EVENTS];
         int game_event_count;
-        toy_input_begin_frame(&input);
+        if (rf_core_poll_events(&core) < 0) break;
         /* 非阻塞收输入：present 后立刻开始下一帧 CPU 工作，组合器处理
          * 已提交缓冲的时间被渲染流水线掩盖（双缓冲）。 */
-        if (toy_window_poll(window, &events, 0) < 0) break;
-        toy_input_apply(&input, &events);
+        events = *rf_core_events(&core);
         rasterfall_net_poll(&net);
         if (net.mode == RASTERFALL_NET_HOST && discovery.fd >= 0) {
             int players = 1;
@@ -3046,7 +3033,7 @@ startup_again:
             rasterfall_console_log(&developer_console,
                                    RASTERFALL_CONSOLE_INFO,
                                    "developer console opened");
-            toy_window_set_pointer_lock(window, 0);
+            rf_core_set_pointer_lock(&core, 0);
             pointer_lock_requested = 0;
         }
         {
@@ -3078,7 +3065,7 @@ startup_again:
                 rasterfall_console_log(&developer_console,
                                        RASTERFALL_CONSOLE_INFO,
                                        "developer console closed");
-                int capture_result = toy_window_set_pointer_lock(window, 1);
+                int capture_result = rf_core_set_pointer_lock(&core, 1);
                 pointer_lock_requested = capture_result > 0;
                 paused = developer_console.was_paused;
             }
@@ -3117,7 +3104,7 @@ startup_again:
             managed_terminal.open = 1;
             managed_terminal.line[0] = 0;
             strcpy(managed_terminal.message, "TYPE HELP");
-            toy_window_set_pointer_lock(window, 0);
+            rf_core_set_pointer_lock(&core, 0);
             pointer_lock_requested = 0;
             paused = 1;
         }
@@ -3129,7 +3116,7 @@ startup_again:
                 managed_terminal_input(&managed_terminal, &input,
                                        pending_key_edges, &session, &camera);
             if (terminal_was_open && !managed_terminal.open) {
-                int capture_result = toy_window_set_pointer_lock(window, 1);
+                int capture_result = rf_core_set_pointer_lock(&core, 1);
                 pointer_lock_requested = capture_result > 0;
                 paused = 0;
                 pointer_turn_pending = 0;
@@ -3194,7 +3181,7 @@ startup_again:
                 resume_requested = 1;
             }
             if (resume_requested) {
-            int capture_result = toy_window_set_pointer_lock(window, 1);
+            int capture_result = rf_core_set_pointer_lock(&core, 1);
             pointer_lock_requested = capture_result > 0;
             paused = 0;
             pointer_turn_pending = 0;
@@ -3212,7 +3199,7 @@ startup_again:
             if (game.state == TOY_GAME_OVER || game.state == TOY_GAME_WON)
                 running = 0;
             else {
-                toy_window_set_pointer_lock(window, 0);
+                rf_core_set_pointer_lock(&core, 0);
                 pointer_lock_requested = 0;
                 paused = 1;
                 pointer_turn_pending = 0;
@@ -3553,7 +3540,8 @@ startup_again:
             rasterfall_perf_add_interval(&stats, &stats_total, t_frame - prev_begin);
         prev_begin = t_frame;
         t_stage = t_frame;
-        ready = toy_window_begin_frame(window, &surface);
+        ready = rf_core_begin_frame(&core, 0x151922);
+        surface = *rf_core_surface(&core);
         if (ready < 0) break;
         if (ready == 0) {
             struct toy_window_events stall_events;
@@ -3561,12 +3549,12 @@ startup_again:
              * 继续收输入。等待批次必须立即并入输入状态——若沿用共用
              * events，下一轮 poll 会覆盖这批事件，按键释放事件丢失后
              * key_down 无法清零，角色会持续移动不受控制（粘键）。 */
-            if (toy_window_poll(window, &stall_events, 1000) < 0) break;
+            if (rf_core_poll_events_timeout(&core, 1000) < 0) break;
+            stall_events = *rf_core_events(&core);
             /* stall 从申请缓冲计到等回 buffer release（含 poll 等待），
              * 即 wait 中双缓冲背压的部分。frame callback 只作为组合器
              * 节奏提示，不再阻止 CPU 使用另一个空闲 shm buffer。 */
             rasterfall_perf_add_stall(&stats, &stats_total, monotonic_us() - t_frame);
-            toy_input_apply(&input, &stall_events);
             /* 等待批次的按键边沿不能丢，也不能重复：菜单块在迭代顶部已
              * 消费过本迭代的事件，此时 key_pressed 里可能残留旧边沿
              * （begin_frame 只在迭代顶部清）——再读 key_pressed 锁存
@@ -3604,7 +3592,8 @@ startup_again:
                 rf_windows_log("startup: first frame begin");
                 logged_first_frame = 1;
             }
-            if (toy_renderer_begin(&renderer, &surface, 0x151922) < 0) break;
+            if (rf_core_begin_frame(&core, 0x151922) < 0) break;
+            surface = *rf_core_surface(&core);
             rasterfall_perf_end_stage(&stats, &stats_total, RASTERFALL_STATS_BEGIN,
                            &t_stage, 0, 0);
             prev_tris = renderer.submitted_triangles;
@@ -3738,7 +3727,7 @@ startup_again:
             rasterfall_perf_end_stage(&stats, &stats_total, RASTERFALL_STATS_OVERLAY,
                            &t_stage, renderer.submitted_triangles - prev_tris,
                            (unsigned long)stage_pixels);
-            present_result = toy_window_present(window);
+            present_result = rf_core_end_frame(&core);
             if (present_result < 0) break;
             rasterfall_perf_end_stage(&stats, &stats_total, RASTERFALL_STATS_PRESENT,
                            &t_stage, 0, 0);
@@ -3790,8 +3779,8 @@ startup_again:
         pause_menu.selected = PAUSE_ITEM_RESUME;
         memset(pending_key_edges, 0, sizeof(pending_key_edges));
         memset(&input, 0, sizeof(input));
-        toy_input_init(&input);
-        toy_window_set_pointer_lock(window, 0);
+        rf_core_reset_input(&core);
+        rf_core_set_pointer_lock(&core, 0);
         pointer_lock_requested = 0;
         goto startup_again;
     }
@@ -3803,14 +3792,13 @@ startup_again:
     if (model_texture.blob) toy_texture_unload(&model_texture);
     if (dump_path) rasterfall_hud_dump_frame(dump_path, &surface);
     rasterfall_net_close(&net);
-    rasterfall_session_unload(&session);
-    toy_window_close(window);
+    rf_game_shutdown(&game_runtime);
     __printf("rasterfall: %d frames, %d scene pixels, position=(%d,%d)\n",
              rendered_frames, scene_pixels, camera.x, camera.z);
     if (texture_stats)
         __printf("rasterfall: texture stats triangles=%lu pixels=%lu fallback=%lu\n",
                  renderer.textured_triangles, renderer.textured_pixels,
                  renderer.texture_fallback_pixels);
-    toy_renderer_destroy(&renderer);
+    rf_core_shutdown(&core);
     return rendered_frames > 0 && scene_pixels == 0 ? 2 : 0;
 }

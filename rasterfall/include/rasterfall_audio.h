@@ -9,7 +9,7 @@
 #define RASTERFALL_AUDIO_EVENT_RING 32
 
 struct rasterfall_audio {
-    struct toy_audio output;
+    struct toy_audio *output;
     struct toy_sfx sfx;
     unsigned char events[RASTERFALL_AUDIO_EVENT_RING];
     volatile unsigned int event_wpos;
@@ -22,7 +22,8 @@ struct rasterfall_audio {
 };
 
 void rasterfall_audio_load_assets(struct rasterfall_audio *audio);
-int rasterfall_audio_start(struct rasterfall_audio *audio);
+int rasterfall_audio_start(struct rasterfall_audio *audio,
+                           struct toy_audio *output);
 void rasterfall_audio_stop(struct rasterfall_audio *audio);
 void rasterfall_audio_play_events(struct rasterfall_audio *audio,
                                   const unsigned char *events, int count);
