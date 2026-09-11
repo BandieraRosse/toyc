@@ -54,8 +54,8 @@ struct rf_game_runtime {
     int pointer_pitch_pending;
     int fire_edge;
     int shove_edge;
-    int paused;
-    int running;
+    int lifecycle_paused;
+    int lifecycle_running;
     int coordinate_axes;
     int display_fps;
     int fps_window_frames;

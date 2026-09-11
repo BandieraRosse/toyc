@@ -18,8 +18,8 @@ int rf_game_init(struct rf_game_runtime *runtime,
     rasterfall_effects_init(&runtime->effects);
     rasterfall_net_init(&runtime->net);
     rasterfall_net_discovery_init(&runtime->discovery);
-    runtime->paused = 1;
-    runtime->running = 1;
+    runtime->lifecycle_paused = 1;
+    runtime->lifecycle_running = 1;
     runtime->initialized = 1;
     runtime->render_context.session = session;
     runtime->render_context.effects = &runtime->effects;
@@ -35,7 +35,7 @@ int rf_game_update(struct rf_game_runtime *runtime,
     if (!runtime || !runtime->initialized || !runtime->session) return -1;
     if (dt_ms < 0) dt_ms = 0;
     if (dt_ms > 250) dt_ms = 250;
-    if (!runtime->paused && command) {
+    if (!runtime->lifecycle_paused && command) {
         runtime->command = *command;
         if (runtime->net.mode == RASTERFALL_NET_CLIENT)
             rasterfall_session_step_client(runtime->session, &runtime->camera,
@@ -72,8 +72,8 @@ int rf_game_runtime_get_status(const struct rf_game_runtime *runtime,
     memset(status, 0, sizeof(*status));
     if (!runtime) return -1;
     status->initialized = runtime->initialized;
-    status->running = runtime->running;
-    status->paused = runtime->paused;
+    status->running = runtime->lifecycle_running;
+    status->paused = runtime->lifecycle_paused;
     status->session_active = runtime->session != NULL;
     status->network_mode = runtime->net.mode;
     if (!runtime->session) return 0;

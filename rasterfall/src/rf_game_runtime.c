@@ -2425,6 +2425,8 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     struct rasterfall_console developer_console;
     int64_t last_time, fps_window_start, fps_elapsed;
     int64_t last_active = 0;   /* 帧间隔统计 */
+    int return_to_menu = 0;
+    int64_t menu_nav_ready_us = 0;
     int64_t accumulator = 0, prev_begin = 0;
     int running = 1, pointer_lock_requested = 0, paused = 1;
     int coordinate_axes = 0;
@@ -2438,8 +2440,9 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     struct rasterfall_perf_stats stats, stats_total;
     unsigned int last_key = 0;
     int last_key_pressed = 0;
-    int return_to_menu = 0;
-    int64_t menu_nav_ready_us = 0;
+    struct rasterfall_audio audio;
+    struct rasterfall_net net;
+    struct rasterfall_net_discovery discovery;
     /* 按键按压边沿跨帧保留位：逻辑步（E/R 及切枪换弹）可能因
      * accumulator 不足而整帧不跑（长 stall 后连续几帧都不跑），边沿若
      * 只在 key_pressed 里会被下一轮 begin_frame 清掉。这里逐键记录
