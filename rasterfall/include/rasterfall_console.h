@@ -17,10 +17,25 @@ struct rf_game_runtime;
 struct rf_command_context {
     struct rf_core *core;
     struct rf_game_runtime *game_runtime;
+    void *command_state;
+};
+enum rf_command_output_level {
+    RF_COMMAND_OUTPUT_NORMAL,
+    RF_COMMAND_OUTPUT_INFO,
+    RF_COMMAND_OUTPUT_ERROR
+};
+#define RF_COMMAND_OUTPUT_MAX_LINES 16
+struct rf_command_output_line {
+    enum rf_command_output_level level;
+    char text[192];
+};
+struct rf_command_output {
+    struct rf_command_output_line lines[RF_COMMAND_OUTPUT_MAX_LINES];
+    unsigned int count;
 };
 typedef int (*rasterfall_console_command_handler)(
     const struct rf_command_context *context,
-    struct rasterfall_console *console, int argc, char **argv);
+    struct rf_command_output *output, int argc, char **argv);
 
 struct rasterfall_console_command {
     const char *name;
@@ -48,6 +63,10 @@ struct rasterfall_console {
 };
 const struct rasterfall_console_command *rasterfall_console_commands(
     unsigned int *count);
+void rf_command_output_init(struct rf_command_output *output);
+void rf_command_output_write(struct rf_command_output *output,
+                             enum rf_command_output_level level,
+                             const char *text);
 void rasterfall_console_init(struct rasterfall_console *console);
 void rasterfall_console_log(struct rasterfall_console *console,
                             enum rasterfall_console_log_level level,

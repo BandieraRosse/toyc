@@ -43,82 +43,99 @@ void rasterfall_console_log(struct rasterfall_console *c,
     __printf("console: %s\n", s);
 }
 
-static void out(struct rasterfall_console *c, const char *s)
-{ rasterfall_console_log(c, RASTERFALL_CONSOLE_INFO, s); }
-static void out_error(struct rasterfall_console *c, const char *s)
-{ rasterfall_console_log(c, RASTERFALL_CONSOLE_ERROR, s); }
+void rf_command_output_init(struct rf_command_output *output)
+{ if (output) memset(output, 0, sizeof(*output)); }
+void rf_command_output_write(struct rf_command_output *output,
+                             enum rf_command_output_level level,
+                             const char *text)
+{ struct rf_command_output_line *line;
+  if (!output || !text || output->count >= RF_COMMAND_OUTPUT_MAX_LINES) return;
+  line = &output->lines[output->count++]; line->level = level;
+  strncpy(line->text, text, sizeof(line->text) - 1);
+  line->text[sizeof(line->text) - 1] = 0;
+}
+static struct rasterfall_console *state_console(const struct rf_command_context *context)
+{ return context ? (struct rasterfall_console *)context->command_state : NULL; }
+static void out(struct rf_command_output *output, const char *s)
+{ rf_command_output_write(output, RF_COMMAND_OUTPUT_NORMAL, s); }
+static void out_error(struct rf_command_output *output, const char *s)
+{ rf_command_output_write(output, RF_COMMAND_OUTPUT_ERROR, s); }
 static int num(const char *s, int *v, int *relative)
 { int sign=1,n=0; *relative=0; if(*s=='+'||*s=='-'){*relative=1;if(*s++=='-')sign=-1;} if(!*s)return 0; while(*s>='0'&&*s<='9'){n=n*10+*s++-'0';} if(*s)return 0; *v=n*sign; return 1; }
 static int words(char *s,char **w,int max){int n=0;while(*s&&n<max){while(*s==' ')s++;if(!*s)break;w[n++]=s;while(*s&&*s!=' ')s++;if(*s)*s++=0;}return n;}
 static int command_killall(const struct rf_command_context *context,
-                           struct rasterfall_console *c, int argc, char **argv)
-{ (void)context; (void)argc; (void)argv; c->killall_requested=1; out(c,"killall requested"); return 0; }
+                           struct rf_command_output *output, int argc, char **argv)
+{ struct rasterfall_console *c=state_console(context); (void)argc; (void)argv;
+  if (!c) { out_error(output,"command state unavailable"); return -1; }
+  c->killall_requested=1; out(output,"killall requested"); return 0; }
 static int command_give(const struct rf_command_context *context,
-                        struct rasterfall_console *c, int argc, char **argv)
-{ int v,r; (void)context; if (argc != 1 || strncmp(argv[0], "give+", 5) != 0 ||
+                        struct rf_command_output *output, int argc, char **argv)
+{ struct rasterfall_console *c=state_console(context); int v,r; if (!c) {
+      out_error(output, "command state unavailable"); return -1; }
+  if (argc != 1 || strncmp(argv[0], "give+", 5) != 0 ||
       !num(argv[0] + 5, &v, &r) || r || v <= 0) {
-      out_error(c, "usage: give+<positive amount>"); return -1;
+      out_error(output, "usage: give+<positive amount>"); return -1;
   }
-  c->give_requested = v; out(c, "money grant requested"); return 0;
+  c->give_requested = v; out(output, "money grant requested"); return 0;
 }
 static int command_clear(const struct rf_command_context *context,
-                         struct rasterfall_console *c, int argc, char **argv)
-{ (void)context; (void)argc; (void)argv; c->output_count=0; return 0; }
+                         struct rf_command_output *output, int argc, char **argv)
+{ struct rasterfall_console *c=state_console(context); (void)output; (void)argc; (void)argv;
+  if (c) c->output_count=0;
+  return 0; }
 static int command_help(const struct rf_command_context *context,
-                        struct rasterfall_console *c, int argc, char **argv)
-{ (void)context; (void)argc; (void)argv; out(c,"GENERAL"); out(c,"  help          show command groups");
-  out(c,"  clear         clear console log"); out(c,"  status        show Core and Game status");
-  out(c,"  killall       kill all active enemies");
-  out(c,"  give+N        add N money, e.g. give+500"); out(c,"EDITOR");
-  out(c,"  pose          open Eula + AK editor"); out(c,"  pose eula ak  edit this character/weapon pair");
-  out(c,"  pose maid ak  edit maid/AK rifle pose"); return 0;
+                        struct rf_command_output *output, int argc, char **argv)
+{ (void)context; (void)argc; (void)argv; out(output,"GENERAL"); out(output,"  help          show command groups");
+  out(output,"  clear         clear console log"); out(output,"  status        show Core and Game status");
+  out(output,"  killall       kill all active enemies"); out(output,"  give+N        add N money, e.g. give+500"); out(output,"EDITOR");
+  out(output,"  pose          open Eula + AK editor"); out(output,"  pose eula ak  edit this character/weapon pair");
+  out(output,"  pose maid ak  edit maid/AK rifle pose"); return 0;
 }
 static int command_status(const struct rf_command_context *context,
-                          struct rasterfall_console *c, int argc, char **argv)
+                          struct rf_command_output *output, int argc, char **argv)
 { struct rf_core_status core_status; struct rf_game_runtime_status game_status;
   char line[192]; (void)argc; (void)argv;
   if (!context || !context->core || !context->game_runtime ||
       rf_core_get_status(context->core, &core_status) < 0 ||
       rf_game_runtime_get_status(context->game_runtime, &game_status) < 0) {
-      out_error(c, "status unavailable"); return -1;
+      out_error(output, "status unavailable"); return -1;
   }
-  out(c, "CORE");
+  out(output, "CORE");
   snprintf(line, sizeof(line), "  window=%s filesystem=%s renderer=%s",
            core_status.window_ready ? "ready" : "not-ready",
            core_status.filesystem_ready ? "ready" : "not-ready",
            core_status.renderer_ready ? "ready" : "not-ready");
-  out(c, line);
+  out(output, line);
   snprintf(line, sizeof(line), "  clock=%s audio=%s initialized=%s",
            core_status.clock_ready ? "ready" : "not-ready",
            core_status.audio_ready ? "ready" : "not-ready",
            core_status.initialized ? "yes" : "no");
-  out(c, line);
-  out(c, "GAME");
+  out(output, line); out(output, "GAME");
   snprintf(line, sizeof(line), "  runtime=%s running=%s paused=%s session=%s network=%d",
            game_status.initialized ? "initialized" : "not-initialized",
            game_status.running ? "yes" : "no", game_status.paused ? "yes" : "no",
            game_status.session_active ? "active" : "inactive", game_status.network_mode);
-  out(c, line);
+  out(output, line);
   snprintf(line, sizeof(line), "  player=active:%s state:%d hp:%d",
            game_status.local_player_active ? "yes" : "no",
            game_status.local_player_state, game_status.local_player_hp);
-  out(c, line);
+  out(output, line);
   return 0;
 }
 static int command_pose(const struct rf_command_context *context,
-                        struct rasterfall_console *c, int argc, char **argv)
-{ int character; const struct rasterfall_pose_calibration *profile;
-  (void)context;
+                        struct rf_command_output *output, int argc, char **argv)
+{ struct rasterfall_console *c=state_console(context); int character; const struct rasterfall_pose_calibration *profile;
+  if (!c) { out_error(output, "command state unavailable"); return -1; }
   if (!(argc == 0 || (argc == 2 && (!strcmp(argv[0],"eula") ||
                                     !strcmp(argv[0],"maid")) && !strcmp(argv[1],"ak"))))
-      { out_error(c,"unknown command; type help"); return -1; }
+      { out_error(output,"unknown command; type help"); return -1; }
   character=argc==2&&!strcmp(argv[0],"maid")?1:0;
   profile=rasterfall_pose_calibration_resolve(NULL,character,TOY_GAME_WEAPON_AK);
   c->calibration.active=1;c->calibration.character=character;c->calibration.weapon=TOY_GAME_WEAPON_AK;
   memcpy(&c->calibration.pose,profile,sizeof(c->calibration.pose));c->calibration.left_ik=c->calibration.pose.left_ik;
   c->calibration.axes=1;c->calibration.anchors=1;c->calibration.upper_body_lock=1;c->calibration.animation_base=0;
   c->calibration.animation_playing=0;c->pose_hud_request=1;c->close_requested=1;
-  out(c,character?"Rifle Pose Editor: Maid + AK":"Rifle Pose Editor: Eula + AK"); return 0;
+  out(output,character?"Rifle Pose Editor: Maid + AK":"Rifle Pose Editor: Eula + AK"); return 0;
 }
 static const struct rasterfall_console_command command_registry[] = {
     { "help", command_help, "show command groups", "developer" },
@@ -132,18 +149,25 @@ const struct rasterfall_console_command *rasterfall_console_commands(unsigned in
 { if (count) *count = sizeof(command_registry) / sizeof(command_registry[0]); return command_registry; }
 static void execute(struct rasterfall_console *c,
                     const struct rf_command_context *context)
-{ char *w[6],line[160]; unsigned int i,count; int n; const struct rasterfall_console_command *commands;
+{ char *w[6],line[160]; unsigned int i,count,j; int n; struct rf_command_output output;
+  const struct rasterfall_console_command *commands;
   strcpy(line,c->line); n=words(line,w,6); if(!n)return; commands=rasterfall_console_commands(&count);
+  rf_command_output_init(&output);
   for (i=0; i<count; i++) {
       if (!strcmp(w[0], commands[i].name) ||
           (!strcmp(commands[i].name, "give+") && !strncmp(w[0], "give+", 5))) {
           if (!strcmp(commands[i].name, "give+")) {
-              (void)commands[i].handler(context, c, 1, w); return;
+              (void)commands[i].handler(context, &output, 1, w); break;
           }
-          (void)commands[i].handler(context, c, n - 1, w + 1); return;
+          (void)commands[i].handler(context, &output, n - 1, w + 1); break;
       }
   }
-  out_error(c,"unknown command; type help");
+  if (i == count) out_error(&output,"unknown command; type help");
+  for (j=0; j<output.count; j++)
+      rasterfall_console_log(c,
+          output.lines[j].level == RF_COMMAND_OUTPUT_ERROR ?
+              RASTERFALL_CONSOLE_ERROR : RASTERFALL_CONSOLE_INFO,
+          output.lines[j].text);
 }
 void rasterfall_console_init(struct rasterfall_console *c){memset(c,0,sizeof(*c));rasterfall_calibration_init(&c->calibration);}
 int rasterfall_console_handle_input_context(struct rasterfall_console *c,struct rf_input_frame *in,unsigned char *pending,const struct rf_command_context *context){int k,ch,len,i;if(take(in,pending,KEY_ESC)){c->open=0;return 1;}if(take(in,pending,KEY_ENTER)){if(c->line[0]){for(i=7;i>0;i--)strcpy(c->history[i],c->history[i-1]);strcpy(c->history[0],c->line);rasterfall_console_log(c,RASTERFALL_CONSOLE_COMMAND,c->line);}c->history_cursor=0;execute(c,context);c->line[0]=0;return 1;}if(take(in,pending,KEY_BACKSPACE)){len=strlen(c->line);if(len)c->line[len-1]=0;return 1;}if(take(in,pending,KEY_UP)){if(c->history_cursor<8&&c->history[c->history_cursor][0]){strcpy(c->line,c->history[c->history_cursor]);c->history_cursor++;}return 1;}if(take(in,pending,KEY_DOWN)){if(c->history_cursor>1)c->history_cursor--;else c->history_cursor=0;if(c->history_cursor==0)c->line[0]=0;else strcpy(c->line,c->history[c->history_cursor-1]);return 1;}for(k=0;k<RF_INPUT_KEY_COUNT;k++)if((ch=chr(k))&&take(in,pending,k)){len=strlen(c->line);if(len<159){c->line[len]=ch;c->line[len+1]=0;}return 1;}return c->open;}

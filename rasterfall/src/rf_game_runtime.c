@@ -3024,6 +3024,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     rasterfall_console_init(&developer_console);
     command_context.core = &core;
     command_context.game_runtime = &game_runtime;
+    command_context.command_state = &developer_console;
     if (!textures_enabled)
         rasterfall_console_log(&developer_console,
                                RASTERFALL_CONSOLE_WARNING,
