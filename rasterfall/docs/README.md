@@ -1,7 +1,7 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-11
-> 源码核对基线：工作区（Character Material Lighting Policy V1；Enemy Presentation V1 1000ms ballistic fade / rotating irregular fragments / directional trailing emitter 与开发者死亡测试排；Humanoid Action Composition V1.1 additive recoil；modular RFANIM presentation clock；双手 RFANIM 持枪轨道；RFCHAR +Z forward basis；PRIMARY_GRIP weapon presentation；开发者 world strip 与战斗区共用 modular path；双正式四人小队 runtime）
+> 源码核对基线：工作区（Enemy Visual V2 六份公开 RFM2 / renderer-only family；Character Material Lighting Policy V1；Enemy Presentation V1 1000ms ballistic fade / rotating irregular fragments / directional trailing emitter 与开发者死亡测试排；Humanoid Action Composition V1.1 additive recoil；modular RFANIM presentation clock；双手 RFANIM 持枪轨道；RFCHAR +Z forward basis；PRIMARY_GRIP weapon presentation；开发者 world strip 与战斗区共用 modular path；双正式四人小队 runtime）
 
 本目录面向接手 Rasterfall 任务的编码代理。目标不是介绍玩法，而是先把问题归到正确的
 状态所有者和文件，再开始搜索。命令、资源导入方法和用户可见特性仍以
@@ -25,6 +25,7 @@
 | --- | --- | --- |
 | 启动、参数、输入、暂停、主循环、音画同步 | [runtime.md](runtime.md) | `src/rasterfall.c` |
 | agent 固定视觉场景截图 / Visual CLI | [rendering.md](rendering.md)、[runtime.md](runtime.md) | options → `rasterfall_render_visual_capture()` → `src/dev-tests/rasterfall_visual_capture.inc` |
+| Enemy Visual V2 六资产、家族切换、敌人截图与资产验收 | [enemy-visuals.md](enemy-visuals.md)、[rendering.md](rendering.md) | `rasterfall_enemy_visual.h` → `render/rasterfall_enemy_visual.inc`；`tools/enemy_visual_round.py` |
 | 武器、敌人、碰撞、寻路、波次、商店、AI | [gameplay.md](gameplay.md) | `lib/game.c`、`src/rasterfall_session.c` |
 | Hurd 固定小队、北侧据点、旗帜控制真值 | [gameplay.md](gameplay.md)、[map-format.md](map-format.md) | `rasterfall_session.h` 的 Hurd config/status → `rasterfall_session_hurd_status()` |
 | 地图格式、关卡实体、拾取物、静态 prop、出生点 | [map-format.md](map-format.md) | `lib/map.c`、`src/rasterfall_map.c` |
@@ -137,6 +138,7 @@ player/actor 和敌人的 airborne forced/knockback movement 均由玩法核心�
   instance 查询 stable socket，并在 renderer 内组合 mount correction 与 actor/world transform。
 - 修改离线资产导入契约：从 `tools/assets/import_asset.py` 和 manifest 开始，分别检查
   `glb2rmesh`/`pmx2rmesh`、`toyasset`、`rmesh_lod.py`；不要让 runtime 读取 manifest。
+- 修改敌人模型家族：从 `rasterfall_enemy_visual.h`、`render/rasterfall_enemy_visual.inc` 的 recipe 与 cache 开始；同步六份 manifest、公开资源、options、capture 与 embedded/package 边界，禁止把 family 写入 enemy/snapshot。详见 [enemy-visuals.md](enemy-visuals.md)。
 - 修改敌人外观组件：检查 `src/rasterfall_render.c` 的 `enemy_body_part` 描述表、通用组件解释器和特感动态组件；地面锚点仍由 `toy_game_enemy.ground_y` 与 `airborne_y` 提供。
 - 修改命令行或诊断模式：从 `rasterfall_options.c` 到 `rasterfall.c` 的早退分支一起核对。
 - 修改职业外观：四个 Hurd profile 与 Maid profile 保存 profession identity；普通 player、Eula、佣兵的 `character_id` 为 NONE。Maid 旗卫仍由 `anime_character_id` 选择各自骨骼模型，同时由 `character_id` 标识共同 Maid 职业。静态 presentation profile 保存附件配置；actor 展示适配器从 `character_id` 解析职业。actor 和网络不携带重复的职业或附件字段；Visual CLI 提供固定 Hurd 小队。

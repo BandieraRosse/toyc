@@ -1,3 +1,4 @@
+#include "rasterfall_enemy_visual.h"
 /*
  * rasterfall — Toyc 软件渲染第一人称僵尸射击游戏
  *
@@ -2449,6 +2450,9 @@ int main(int argc, char **argv)
     rasterfall_options_init(&options, textures_enabled);
     options_result = rasterfall_options_parse(&options, argc, argv);
     if (options_result != 0) return options_result < 0 ? 2 : 0;
+    rasterfall_render_set_enemy_visual_family(options.enemy_visual_family);
+    if (options.enemy_visual_capture_dir)
+        return rasterfall_render_enemy_visual_capture(options.enemy_visual_capture_dir);
     if (options.visual_scenario)
         return rasterfall_render_visual_capture(options.visual_scenario,
                                                  options.visual_output);

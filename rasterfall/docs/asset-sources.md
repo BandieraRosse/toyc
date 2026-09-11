@@ -1,7 +1,7 @@
 # Rasterfall 资源来源与发布限制
 
-> 文档更新：2026-09-09
-> 源码核对基线：工作区（移除开发者区纹理展示墙；加入文泉驿来源的 GB2312 16×16 点阵字库、对应 BDF 源文件与许可；RF Humanoid V2 为项目内生成的私有源资产）
+> 文档更新：2026-09-11
+> 源码核对基线：工作区（Enemy Visual V2 六份公开 RFM2 / renderer-only family；移除开发者区纹理展示墙；加入文泉驿来源的 GB2312 16×16 点阵字库、对应 BDF 源文件与许可；RF Humanoid V2 为项目内生成的私有源资产）
 
 本文是资源来源、许可状态和本地样本身份的活动台账。文件存在或能够构建不代表允许公开分发；
 发布前必须逐项确认原件、作者和许可。`private-assets/` 与 `.claude/` 是本地区域，不进入公开资源
@@ -11,6 +11,7 @@
 
 | 运行时名称 | 已知原件 | 转换产物 | 当前发布结论 |
 | --- | --- | --- | --- |
+| Enemy Visual V2 六份 infected | 项目内 `generate_rasterfall_infected.py`，复用 V2 源生成器 | 公开 `assets/models/enemies/rf_infected_*.rmesh`；GLB 为可重建本地产物 | 本轮公开运行资源，无第三方几何或纹理；生成源、材质与重建命令见 [enemy-visuals.md](enemy-visuals.md) |
 | Eula / 优菈 | 原始 PMX 当前无法核实 | `private-assets/models/eula.rmesh` | 未找回原包和许可前不得公开分发 |
 | RF Humanoid V2 | `tools/blender/generate_rasterfall_humanoid_v2.py` 项目内生成 | `private-assets/source/characters/rf_humanoid_v2.glb`、`private-assets/models/rf_humanoid_v2.rmesh` | 无外部原件；当前为私有验收资产，发布前仍需完成美术签收与发布边界检查 |
 | ST AR-15 | `.claude/AR15/GirlsFrontline AsteriaDefault.pmx` | `st_ar15.rmesh`、LOD 和纹理 | 本地 Readme 禁止二次配布、商业使用和拆取部件 |

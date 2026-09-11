@@ -1,0 +1,6 @@
+{
+  "schema": 1,
+  "id": "rf_infected_humanoid_heavy",
+  "type": "character",
+  "source": "../../../../rasterfall/private-assets/source/enemies/rf_infected_humanoid_heavy.glb"
+}

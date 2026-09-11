@@ -1,7 +1,7 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-11
-> 源码核对基线：工作区（Character Material Lighting Policy V1；Enemy Presentation V1 1000ms ballistic body fade / rotating irregular fragments / directional trailing emitter / 10% legacy death；Humanoid Action Composition V1.1 additive recoil；modular RFANIM 独立 locomotion 时钟与双手持枪轨道；RFCHAR +Z forward basis；PRIMARY_GRIP weapon presentation；开发者 world strip 与战斗区共用 modular path；出生点 V2 action debug station；双正式四人 squad；Lighting V1）
+> 源码核对基线：工作区（Enemy Visual V2 六份公开 RFM2 / renderer-only family；Character Material Lighting Policy V1；Enemy Presentation V1 1000ms ballistic body fade / rotating irregular fragments / directional trailing emitter / 10% legacy death；Humanoid Action Composition V1.1 additive recoil；modular RFANIM 独立 locomotion 时钟与双手持枪轨道；RFCHAR +Z forward basis；PRIMARY_GRIP weapon presentation；开发者 world strip 与战斗区共用 modular path；出生点 V2 action debug station；双正式四人 squad；Lighting V1）
 
 > 源码核对补充：正式 Hurd actor 通过四个专用 character profile 进入职业外观；恢复的四名 Maid 旗卫以 Maid character profile 接入 actor，同时继续由 anime identity 选择骨骼模型；普通 player、Eula、佣兵解析为 NONE。
 
@@ -39,6 +39,13 @@ RF Humanoid V2 的资产前向事实保存在 modular skeletal profile 中；bod
 rigid attachments、character sockets 和 skeletal weapon 使用同一 profile basis，不在枪械
 绘制函数内追加独立的 180 度修正。运行时可用 `--action-runtime-debug` 输出 actor、renderer
 path 以及 lower/upper/additive action，确认 RF Humanoid 没有被 legacy anime path 抢占。
+
+## Enemy Visual V2
+
+普通敌人的可选 BLOCK_INFECTED / HUMANOID_INFECTED 家族由 renderer-only recipe 选择六份公开
+RFM2；默认 LEGACY，特感沿用旧路径。资源、串行 scratch pose 与逐槽位步幅均归 renderer，
+不进入 gameplay 或 snapshot。新身体通过既有三角形入口保留受击、死亡旋转和渐隐；
+入口、预算、远裁剪和验收见 [enemy-visuals.md](enemy-visuals.md)。
 
 ## 渲染边界
 

@@ -1,7 +1,7 @@
 # Rasterfall Character Asset Contract V1 / RF Humanoid V2.1
 
-> 文档更新：2026-09-10
-> 源码核对基线：工作区（Profession Modularization V1；正式 RF squad roster；RFCHAR V1 / RFM2 v14；双手 RFANIM 持枪轨道与 modular world strip）
+> 文档更新：2026-09-11
+> 源码核对基线：工作区（Enemy Visual V2 六份公开 RFM2 / renderer-only family；Profession Modularization V1；正式 RF squad roster；RFCHAR V1 / RFM2 v14；双手 RFANIM 持枪轨道与 modular world strip）
 
 本文是所有新 Rasterfall 人形角色资产的第一入口。V1 冻结 Blender 到离线 importer 的输入门；
 它不承诺任意 glTF 的兼容性，也不要求 runtime 直接读取 GLB。主线固定为：
@@ -14,6 +14,13 @@ Blender source → Character GLB Contract V1 → offline importer/validator
 Blender 是离线创作与生成环境，GLB 是主要交换格式，RFM2 是当前运行时格式。runtime 不依赖
 Blender；PMX/VMD 仅是兼容输入，不定义 canonical 名称、空间或附件。玩法只认识 actor、character、
 animation 与稳定枚举，不认识 GLB node name。
+
+## Infected carriers
+
+Enemy Visual V2 的两套三类型 carrier 使用同一 RFCHAR V1 / RFM2 v14 契约。Humanoid 复用
+V2 身体，Block 使用方块身体；源比例修改同时作用于 mesh、rest skeleton 和八个 attachment。
+基础感染姿态按 stable roles 在独立 instance 中求值，不更改 character recipe 或 humanoid
+contract。公开资源与完整生成/验收入口见 [enemy-visuals.md](enemy-visuals.md)。
 
 ## RF Humanoid V1
 

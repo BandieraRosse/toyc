@@ -60,6 +60,8 @@ void rasterfall_options_usage(int fd)
         "  --textures | --no-textures  --no-edge-pass  --no-stats\n"
         "  --texture-stats  --frames <count>  --dump-frame <path>\n"
         "  --logic-test  --input-test  --action-runtime-debug  --auto\n"
+        "  --enemy-visual-capture <output-dir> (requires infected family; bind/idle/move, world, death)\n"
+        "  --enemy-visual-family <legacy|block-infected|humanoid-infected>\n"
         "  --visual-capture <procedural-humanoid|hurd-squad|lighting-props|modular-teammate> --visual-output <path.bmp>\n"
         "  --character-acceptance <model.rmesh> <output-dir>\n"
         "  --profession-lineup <model-dir> <output-dir>\n"
@@ -131,6 +133,16 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
         else if (!strcmp(option,"--dump-frame")) {
             if(require_arguments(argc,argv,arg,1,option)<0)return -1;
             o->dump_path=argv[++arg];
+        } else if (!strcmp(option,"--enemy-visual-capture")) {
+            if (require_arguments(argc, argv, arg, 1, option) < 0) return -1;
+            o->enemy_visual_capture_dir = argv[++arg];
+        } else if (!strcmp(option,"--enemy-visual-family")) {
+            if (require_arguments(argc, argv, arg, 1, option) < 0) return -1;
+            const char *family = argv[++arg];
+            if (!strcmp(family, "legacy")) o->enemy_visual_family = 0;
+            else if (!strcmp(family, "block-infected")) o->enemy_visual_family = 1;
+            else if (!strcmp(family, "humanoid-infected")) o->enemy_visual_family = 2;
+            else { __fprintf(2, "rasterfall: invalid enemy visual family: %s\n", family); return -1; }
         } else if (!strcmp(option,"--visual-capture")) {
             if(require_arguments(argc,argv,arg,1,option)<0)return -1;
             o->visual_scenario=argv[++arg];

@@ -1,7 +1,7 @@
 # 构建、平台与验证
 
-> 文档更新：2026-09-10
-> 源码核对基线：工作区（`make win-rasterfall` 显式进入 Windows `all`；正式 squad roster 编译单元已纳入 Linux/Windows；Rasterfall 对象无条件重建规则；GB2312 字库进入 Linux embedded 与 Windows 资产包）
+> 文档更新：2026-09-11
+> 源码核对基线：工作区（Enemy Visual V2 六份公开 RFM2 / renderer-only family；`make win-rasterfall` 显式进入 Windows `all`；正式 squad roster 编译单元已纳入 Linux/Windows；Rasterfall 对象无条件重建规则；GB2312 字库进入 Linux embedded 与 Windows 资产包）
 
 ## Linux
 
@@ -35,6 +35,10 @@ Windows package 复制整个 `rasterfall/assets`，因此会同时携带字库�
 新增 Rasterfall `.c` 文件通常必须同时加入根 Makefile 的对象/规则及 `windows/Makefile` 的源列表；
 若该文件要求 Toyc 自托管，还要核对 self 对象规则。新增公开运行时资源要检查默认文件加载、内嵌资源
 依赖和 Windows package 的复制规则；模型展示扫描必须覆盖 `rasterfall/assets/models/` 下的分类子目录。
+
+Enemy Visual V2 的六份公开 RFM2 自动进入现有递归 embedded 依赖及 Windows assets 复制；
+其 renderer `.inc` 已加入 Linux/self 显式依赖，Windows 使用 `-MMD` 跟踪，不新增平台编译单元。
+详见 [enemy-visuals.md](enemy-visuals.md)。
 
 ## 最小验证矩阵
 

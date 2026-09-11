@@ -2,6 +2,8 @@
 #define RASTERFALL_OPTIONS_H
 
 struct rasterfall_options {
+    int enemy_visual_family;
+    const char *enemy_visual_capture_dir;
     int input_debug, logic_test, action_runtime_debug;
     int requested_net_mode, net_port, net_loss_percent;
     const char *net_address;

@@ -1,11 +1,14 @@
 # 资源、模型与动画
 
-> 文档更新：2026-09-10
-> 源码核对基线：工作区（Humanoid Action Composition V1.1 additive recoil；Model Resource / Model Instance V1；双手 RFANIM 持枪轨道；PRIMARY_GRIP weapon presentation；modular world strip）
+> 文档更新：2026-09-11
+> 源码核对基线：工作区（Enemy Visual V2 六份公开 RFM2 / renderer-only family；Humanoid Action Composition V1.1 additive recoil；Model Resource / Model Instance V1；双手 RFANIM 持枪轨道；PRIMARY_GRIP weapon presentation；modular world strip）
 
 新建或生成 Blender 人形资产必须先读 [`character-assets.md`](character-assets.md)。它冻结
 Blender source → Character GLB → importer → runtime character asset → humanoid animation 主线；
 本文继续说明既有运行时模块。
+
+Enemy Visual V2 六份感染模型复用本页的 resource/instance 与 RFCHAR runtime。敌人 family、
+轻量位移相位和基础站立/步姿仅属于 renderer；完整入口见 [enemy-visuals.md](enemy-visuals.md)。
 
 ## 运行时资源
 

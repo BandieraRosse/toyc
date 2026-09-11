@@ -1,13 +1,20 @@
 # Rasterfall 资产转换与诊断
 
-> 文档更新：2026-09-10
-> 源码核对基线：工作区（RFANIM V1 inspection；RFCHAR V1 → RFM2 v14；V2.1 modular body）
+> 文档更新：2026-09-11
+> 源码核对基线：工作区（Enemy Visual V2 六份公开 RFM2 / renderer-only family；RFANIM V1 inspection；RFCHAR V1 → RFM2 v14；V2.1 modular body）
 
 本文记录可执行的模型、纹理和动画工具链。运行时模块边界见 `assets-animation.md`，动画求值契约
 见 `animation-architecture.md`，资源是否允许发布见 `asset-sources.md`。
 
 人形角色的 canonical skeleton、GLB、attachment 与 skinning 输入门见
 [`character-assets.md`](character-assets.md)。该契约优先于本页记录的历史 character/PMX 路径。
+
+## Enemy Visual V2
+
+六份公开 infected RFM2 使用现有 character manifest → RFCHAR importer → runtime 门禁；
+`tools/enemy_visual_round.py --generate --capture --deterministic` 复用 Blender V2 导出，生成并验证
+Block/Humanoid 的 Common/Fast/Heavy。公开产物不依赖私有模型；重建命令、来源、预算与
+真实 enemy renderer 截图入口见 [enemy-visuals.md](enemy-visuals.md)。
 
 ## RFANIM V1
 

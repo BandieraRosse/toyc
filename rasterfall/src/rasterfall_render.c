@@ -1,3 +1,4 @@
+#include "rasterfall_enemy_visual.h"
 #include "core.h"
 #include "string.h"
 #include "tlibc_everything.h"
@@ -226,6 +227,9 @@ static const struct toy_texture_view *active_model_texture;
 static unsigned short *active_lightmap;
 static int active_textures;
 static int active_fixed_floor_lighting;
+static int active_infected_model;
+static int active_infected_squash = 1000;
+static uint32_t active_infected_tint;
 static int active_enemy_lift;
 static int active_enemy_dissolve;
 static int active_enemy_alpha = 255;
@@ -1104,6 +1108,8 @@ static int prepare_gallery_vertex_cache(
         cached->uv.p.z = center_z +
             (int)((long long)render_z * scale / 1000);
         }
+        if (active_infected_model)
+            cached->uv.p.y = base_y + (cached->uv.p.y - base_y) * active_infected_squash / 1000;
         world_to_view(camera, &cached->uv.p, &cached->view);
         cached->uv.u = *(const unsigned short *)(p + 18);
         cached->uv.v = *(const unsigned short *)(p + 20);
@@ -1520,7 +1526,7 @@ static int render_gallery_model_range(struct toy_renderer *renderer,
         primitive_end = (int)model->primitive_count;
     if (prepare_vertices) {
         __sync_fetch_and_add(&scene_stats.models_tested, 1);
-        if (!active_rigid_transform_enabled &&
+        if (!active_rigid_transform_enabled && !(active_infected_model && active_enemy_transform) &&
             !gallery_model_visible(&renderer->surface, camera, model, center_x,
                                    base_y, center_z, scale,
                                    active_gallery_facing, active_gallery_sy,
@@ -1777,7 +1783,18 @@ static int render_gallery_model_range(struct toy_renderer *renderer,
                     active_material_specular_level = active_material_specular_level *
                         active_material_specular_level / 255;
             }
-            if (texture || shared_texture) {
+            if (active_infected_model) {
+                a = gallery_vertex_cache[ia].uv.p;
+                b = gallery_vertex_cache[ib].uv.p;
+                c = gallery_vertex_cache[ic].uv.p;
+                uint32_t infected_color = active_infected_tint ? active_infected_tint : color;
+                if (!active_material_lighting_min_q8)
+                    infected_color = (infected_color & 0xff000000U) |
+                        ((((infected_color >> 16) & 255U) * form_light / 256U) << 16) |
+                        ((((infected_color >> 8) & 255U) * form_light / 256U) << 8) |
+                        ((infected_color & 255U) * form_light / 256U);
+                drawn += draw_world_triangle(renderer, camera, &a, &b, &c, infected_color);
+            } else if (texture || shared_texture) {
                 gallery_uv_vertex(renderer, model, camera, ia, center_x, base_y, center_z, scale,
                                   active_sphere_texture ? active_sphere_mode : 0, &ta);
                 gallery_uv_vertex(renderer, model, camera, ib, center_x, base_y, center_z, scale,
@@ -4996,6 +5013,8 @@ static int render_blob_shadow(struct toy_renderer *renderer,
     return draw_quad(renderer, camera, &a, &b, &c, &d, 0x17151A);
 }
 
+#include "render/rasterfall_enemy_visual.inc"
+
 static int render_enemies(struct toy_renderer *renderer,
                           const struct camera *camera)
 {
@@ -5008,12 +5027,12 @@ static int render_enemies(struct toy_renderer *renderer,
         struct vec3 center, view;
         uint32_t color;
         int scale = 1000;
-        if (e->active == 0) continue;
+        if (e->active == 0) { enemy_visual_motion[i].valid = 0; continue; }
         center.x = e->x;
         center.y = 0;
         center.z = e->z;
         world_to_view(camera, &center, &view);
-        if (view.z > ENEMY_RENDER_DISTANCE) continue;
+        if (view.z > (enemy_visual_family && e->type <= TOY_GAME_ENEMY_PURSUIT_FAST ? 56000 : ENEMY_RENDER_DISTANCE)) continue;
         if (e->active == 2) {
             int style = effects.enemy_death_style[i];
             if (style == RASTERFALL_ENEMY_DEATH_STYLE_LEGACY ||
@@ -5098,7 +5117,12 @@ static int render_enemies(struct toy_renderer *renderer,
                 TOY_GAME_ENEMY_ABILITY_SMOKER_TONGUE &&
             e->special_target_active)
             pixels += render_smoker_tongue(renderer, camera, draw_enemy);
-        if (toy_game_enemy_info(e->type)->ability ==
+        int infected_pixels = enemy_visual_family ?
+            render_infected_enemy(renderer, camera, draw_enemy, e, i, scale,
+                                  enemy_feedback_color(i)) : -1;
+        if (infected_pixels >= 0)
+            pixels += infected_pixels;
+        else if (toy_game_enemy_info(e->type)->ability ==
                 TOY_GAME_ENEMY_ABILITY_TANK_SWEEP)
             pixels += render_tank_enemy(renderer, camera, draw_enemy, scale, color);
         else if (toy_game_enemy_info(e->type)->ability ==
@@ -7797,3 +7821,5 @@ int rasterfall_render_overlays(struct toy_renderer *renderer)
         pixels += render_effect_overlay(renderer, &active_effects->instances[i]);
     return pixels;
 }
+
+#include "dev-tests/rasterfall_enemy_visual_capture.inc"
