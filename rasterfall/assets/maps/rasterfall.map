@@ -1,257 +1,277 @@
-# Rasterfall map v2
-# world minx maxx minz maxz room_limit
-# 单一基地防守地图：玩家、三名原据点 AI 和 BASE 核心在中央区域守住尸潮。
-# 刷怪区贴近世界四边，尸潮从远方边缘涌来。
-world -45000 33000 -33000 33000 45000
-# ground is the actual walkable surface; world above is only the maximum extent.
-# This explicit base preserves the legacy arena until later map passes carve its
-# west/north/east channels into separate ground regions.
-ground -33000 33000 -33000 33000 272B31
-start -13000 -12000 0 1024
-
-# 出生点附近的 RF Humanoid V2 动作调试台；模型是渲染层展示，不是玩法实体。
-label -12200 -11200 -10300 -10100 9FE8C8 RF_HUMANOID_V2_ACTION_DEBUG
-button_humanoid_actions -12600 -12800 -250
-
-# ── 单一基地防守区 ────────────────────────────────────────────────
-floor -3000 3000 -3000 3000 294B45
-label -1700 1700 -3300 -3100 80E0A0 BASE DEFENSE
-
-# ── 起点安全屋（不变）───────────────────────────────────────────────
-safe -1800 1800 -5700 -4000 start
-button_wave_skip -1740 -4800 0
-floor -1800 1800 -5700 -4000 245238
-box -2000 -1800 -5700 -3800 1300 3F6751 visible collision
-box 1800 2000 -5700 -3800 1300 3F6751 visible collision
-# 保留门框墙体，中央门洞扩大到 x=-900..900，避免玩家碰撞半径卡门。
-box -1800 -900 -4000 -3800 1300 3F6751 visible collision
-box 900 1800 -4000 -3800 1300 3F6751 visible collision
-box -1800 -600 -5700 -5680 1300 3F6751 visible collision
-box 600 1800 -5700 -5680 1300 3F6751 visible collision
-model -1800 1800 -5700 -4000 1300 1500 3F6751 0
-# 安全屋屋顶只在屋顶高度提供可站立表面；屋顶下方不形成实体阻挡。
-platform_roof -2180 2180 -5880 -3620 2400 opaque
-
-# ── 开发者区（测试按钮、武器桌和陈列台）──────────────────────────
-# 空气墙与起点后墙同线；中心为开发者门。
-# x=-20000 处为通往空气墙顶部的开发者快捷坡道，坡道进入墙体前达到
-# 墙顶高度；坡尾略高于墙顶，使玩家碰撞圆接触墙侧前即可跨上顶部。
-box -24000 -1800 -5900 -5700 3000 48C8E0 visible collision walkable role=air_gate_left
-ramp -21000 -19000 -15000 -5900 0 3979 z 477A66
-label -21000 -19000 -14600 -14400 9FE8C8 DEV_RAMP_SLOPE_0.44
-# 空气墙是完整的三维实体：顶面覆盖整段墙体，并向四周扩展一个玩家
-# 碰撞半径。坡道侧的地面边界为 z=-6260，使整个碰撞圆在坡面完整
-# 支撑结束处恰好切换到墙顶，避免提前抬升后被墙侧卡住。
-platform -24180 -1620 -6260 -5520 3900 3B5550 transparent role=air_gate_left_top
-box 1800 24000 -5900 -5700 3000 48C8E0 visible collision walkable role=air_gate_right
-platform 1620 24180 -6260 -5520 3900 3B5550 transparent role=air_gate_right_top
-floor -24000 -1800 -5900 -5700 26394A
-floor 1800 24000 -5900 -5700 26394A
-label -23000 23000 -6200 -6000 70D8FF AIR WALL CONTROL LINE
-
-# 模型陈列台（装饰与调试用）。
-floor -3600 -1400 -9000 -7800 343B48
-floor 1400 17000 -9200 -7800 343B48
-platform -900 900 -10800 -9000 500
-model -900 900 -10800 -9000 -550 -400 6A5538 0
-sign 1200 2800 -10070 -9980 -650 -250 765A3A FROM HARRAN CITY
-model -3200 -2000 -8700 -8100 -900 700 B66A35 1
-model 2000 3200 -8700 -8100 -900 900 3F8FBA 2
-model 3900 4500 -9000 -8400 -900 650 76513A 3
-model 4700 5300 -9000 -8400 -900 650 8B5A35 4
-model 6600 7600 -9000 -8400 -900 650 65713D 5
-model 8000 9000 -9000 -8400 -900 650 6A5538 6
-model 9000 10000 -9000 -8400 -900 650 8A4F9B 7
-model 10000 11000 -9000 -8400 -900 650 4F8AA8 8
-model 11000 12000 -9000 -8400 -900 650 6A5538 9
-model 12000 13000 -9000 -8400 -900 650 8A4F9B 10
-model 13000 14000 -9000 -8400 -900 650 4F8AA8 11
-model 14000 15000 -9000 -8400 -900 650 6A5538 12
-model 15000 16000 -9000 -8400 -900 650 8A4F9B 13
-model 16000 17000 -9000 -8400 -900 650 4F8AA8 14
-label -4000 4000 -9700 -9200 90D0FF MODEL_DISPLAY
-label 7900 17000 -9700 -9200 FFD060 ENEMY_VISUAL_FAMILY_3X3
-prop crate -14500 -17000 0 1000
-prop barrier -13000 -17000 90 1000
-prop lamp_post -11500 -17000 45 1000
-prop short_wall -10000 -17000 0 1000
-prop railing -8500 -17000 0 1000
-prop vent_unit -7000 -17000 0 1000
-prop workbench -5500 -17000 0 1000
-prop ammo_container -4000 -17000 0 1000
-prop industrial_pillar -2500 -17000 0 1000
-prop pipe_module -1000 -17000 0 1000
-label -16500 1500 -20400 -20200 9FE8C8 CHARACTER_TEST_STRIP
-label 3800 7800 -9800 -9400 FFD060 SPECIAL_INFECTED
-label 3000 6000 -11100 -10900 FFD060 ATTACK_POINTS
-label 4050 4350 -11400 -11250 FFD060 *2
-label 4550 4850 -11400 -11250 FFD060 *3
-label 5050 5350 -11400 -11250 FFD060 *4
-button_attack_x2 4200 -11600 -250
-button_attack_x3 4700 -11600 -250
-button_attack_x4 5200 -11600 -250
-# 南侧空旷地带：ground query / 斜坡移动与渲染测试。
-# ramp minx maxx minz maxz start_height end_height axis color
-ramp 7000 10000 -19000 -17500 0 900 x 477A66
-ramp 11000 12500 -19000 -16000 0 1200 z 526F91
-ramp 14000 17000 -19000 -17500 900 0 x 8A6648
-label 7000 17000 -19600 -19200 9FE8C8 RAMP_GROUND_QUERY
-
-# 武器桌：SMG 西半、霰弹枪东半；弹药箱在东侧木托上。
-box -700 700 -7600 -7300 -250 5A3E28 hidden collision
-# 实体桌面与弹药箱顶部均为可站立碰撞面；范围按玩家半径外扩，使角色
-# 走到可见边缘时仍由顶面承载，而不会穿入侧面。
-platform -880 880 -7780 -7120 650
-model -700 700 -7600 -7300 -750 -250 6A4A30
-model -700 -610 -7600 -7510 -900 -250 5A3E28
-model 610 700 -7600 -7510 -900 -250 5A3E28
-model -700 -610 -7390 -7300 -900 -250 5A3E28
-model 610 700 -7390 -7300 -900 -250 5A3E28
-box 820 940 -7570 -7390 -560 6A5538 hidden collision
-platform 640 1120 -7750 -7210 340
-model 820 940 -7570 -7390 -900 -560 6A5538
-
-# ── 刷怪区（贴近世界四边的带状区；彩色地面标记）──────────────────────
-# 西带：左墙内沿，纵贯南北
-spawn -23000 -21500 -5600 23000 6E2828
-floor -23000 -21500 -5600 23000 6E2828
-# 东带：右墙内沿，纵贯南北
-spawn 21500 23000 -5600 23000 6E2828
-floor 21500 23000 -5600 23000 6E2828
-# 北侧刷怪区拆到据点进路两翼，中央留给 Hurd Relay 防区。
-spawn -20000 -9000 14000 22000 6E2828
-floor -20000 -9000 14000 22000 6E2828
-spawn 9000 20000 14000 22000 6E2828
-floor 9000 20000 14000 22000 6E2828
-
-# ── 世界边界墙（四围）──────────────────────────────────────────────
-# ── 原地图边界缺口与向外走廊（入口可通行，外端有尽头）────────────
-# 旧边界仍在 ±24000；三个边界走廊各自向外延伸 9000 RFU。
-# 每个走廊由一块地面、两侧墙和一个封头组成，不使用空气墙。
-wall -24000 24000 -24000 -24000 5400 555B68
-wall -24000 -6000 24000 24000 5400 4C5260
-wall 6000 24000 24000 24000 5400 4C5260
-wall -24000 -24000 -24000 -2400 5400 5E5965
-wall -24000 -24000 2400 24000 5400 5E5965
-wall 24000 24000 -24000 -800 5400 56515D
-wall 24000 24000 800 24000 5400 56515D
-# 内层边界墙的碰撞体；保留西/东/北走廊的开口。
-box -24000 24000 -24020 -23980 5400 555B68 hidden collision blocks_airborne
-box -24020 -23980 24000 24020 5400 4C5260 hidden collision blocks_airborne
-box 23980 24020 24000 24020 5400 4C5260 hidden collision blocks_airborne
-box -24020 -23980 -24000 -2400 5400 5E5965 hidden collision blocks_airborne
-box -24020 -23980 2400 24000 5400 5E5965 hidden collision blocks_airborne
-box 23980 24020 -24000 -800 5400 56515D hidden collision blocks_airborne
-box 23980 24020 800 24000 5400 56515D hidden collision blocks_airborne
-# 北侧内层边界为 Hurd 据点留出 x=-6000..6000 的入口。
-box -24000 -6000 23980 24020 5400 4C5260 hidden collision blocks_airborne
-box 6000 24000 23980 24020 5400 4C5260 hidden collision blocks_airborne
-
-# 西侧走廊：横向宽度扩为原来的 3 倍（z=-2400..2400）；坡度统一为
-# 900/3000=0.30，与南侧可行走测试坡一致。
-# 从西端向主区域入口依次为上坡、平地、下坡、平地、上坡、平地、下坡。
-ramp -39000 -36000 -2400 2400 0 900 x 314B43
-platform -36000 -35000 -2400 2400 900 3B5550 opaque
-ramp -35000 -32000 -2400 2400 900 0 x 314B43
-floor -32000 -31000 -2400 2400 314B43
-ramp -31000 -28000 -2400 2400 0 900 x 314B43
-platform -28000 -27000 -2400 2400 900 3B5550 opaque
-ramp -27000 -24000 -2400 2400 900 0 x 314B43
-floor -45000 -39000 -2400 2400 314B43
-box -45000 -24000 -2420 -2400 5400 5E5965 hidden collision blocks_airborne
-box -45000 -24000 2400 2420 5400 5E5965 hidden collision blocks_airborne
-box -45020 -45000 -2420 2420 5400 5E5965 hidden collision blocks_airborne
-wall -45000 -24000 -2400 -2400 5400 5E5965
-wall -45000 -24000 2400 2400 5400 5E5965
-wall -45000 -45000 -2400 2400 5400 5E5965
-
-# 东侧走廊：从 x=24000 向外到 33000。
-floor 24000 33000 -800 800 314B43
-box 24000 33000 -820 -800 5400 56515D hidden collision blocks_airborne
-box 24000 33000 800 820 5400 56515D hidden collision blocks_airborne
-box 33000 33020 -820 820 5400 56515D hidden collision blocks_airborne
-wall 24000 33000 -800 -800 5400 56515D
-wall 24000 33000 800 800 5400 56515D
-wall 33000 33000 -800 800 5400 56515D
-
-# 北侧 Hurd 据点：扩宽原走廊，固定控制区位于其中（session 配置
-# x=-5000..5000, z=25500..31500），中央旗帜在 (0,28500)。
-floor -6000 6000 24000 33000 314B43
-box -6020 -6000 24000 33000 5400 4C5260 hidden collision blocks_airborne
-box 6000 6020 24000 33000 5400 4C5260 hidden collision blocks_airborne
-box -6020 6020 33000 33020 5400 4C5260 hidden collision blocks_airborne
-wall -6000 -6000 24000 33000 5400 4C5260
-wall 6000 6000 24000 33000 5400 4C5260
-wall -6000 6000 33000 33000 5400 4C5260
-
-# 新外边界的墙只负责渲染；实际碰撞由走廊两侧墙和端墙提供，避免把
-# 视觉外圈变成第二套 gameplay 边界。北侧在 Hurd 据点范围内断开，
-# 避免与据点北墙重叠。
-wall -45000 33000 -45000 -45000 5400 555B68
-wall -45000 -6000 33000 33000 5400 4C5260
-wall 6000 33000 33000 33000 5400 4C5260
-wall -45000 -45000 -33000 33000 5400 5E5965
-wall 33000 33000 -33000 33000 5400 56515D
-
-# 西侧走廊尽头刷怪区；横向范围同步扩大为原来的 3 倍。
-spawn -44400 -43400 -1650 1650 9B2F32
-floor -44400 -43400 -1650 1650 9B2F32
-
-# ── 可交互物（顺序即 interactables 索引，逻辑测试依赖）─────────────
-pickup smg -250 -7450 -235
-pickup shotgun 250 -7450 -235
-pickup ammo 880 -7480 -520
-pickup ammo 450 900 -500
-pickup shop 1740 -4800 0
-pickup ak -700 -7450 -235
-pickup awp 700 -7450 -235
-pickup axe -1050 -7450 -235
-pickup bomb 1050 -7450 -235
-pickup molotov 1350 -7450 -235
-pickup pill 1650 -7450 -235
-button -23940 -10000 200
-button_air -23940 -7600 200
-button_alarm -23940 -3000 200
-button_heavy -23940 -8500 200
-button_fast -23940 -9000 200
-# 开发者区域东侧：特感测试按钮共用圆柱底座，按东西紧密排列。
-button_smoker 4200 -7600 -250
-button_charger 4700 -7600 -250
-button_tank 5200 -7600 -250
-button_money 5600 -8600 -250
-button_clear_hired 5600 -9200 -250
-# 敌人死亡表现测试：按钮前方空地生成 Common/Fast/Heavy 各两只并立即走正式致死伤害路径。
-label 10500 17500 -14100 -13900 FFD060 ENEMY_DEATH_PRESENTATION
-button_enemy_death_test 14000 -10500 -250
-button_air 23940 -7600 -250
-# 优菈骨骼蒙皮第一阶段：模型正前方四个本地程序化 pose 按钮。
-button_pose_reset -14250 -11300 -250
-button_humanoid_pose_debug -15100 -11300 -250
-button_pose_right_arm -13400 -11300 -250
-button_pose_arms -12600 -11300 -250
-button_pose_body -11750 -11300 -250
-button_anim_idle -10900 -11300 -250
-button_anim_walk -10050 -11300 -250
-button_anim_jog -9200 -11300 -250
-# Quaternius 原始 GLB 预览按钮，与 Eula retarget 按钮分开。
-button_glb_idle -10900 -12100 -250
-button_glb_walk -10050 -12100 -250
-button_glb_jog -9200 -12100 -250
-# MMD 原生 VMD 直连 Eula PMX/RFM2；与 GLB 预览按钮同排。
-button_vmd_walk -8350 -12100 -250
-button_vmd_manjusaka -7500 -12100 -250
-button_animation_composition -6650 -12100 -250
-button_west_corridor -23940 -2100 200
-# 西侧走廊出口旁的西墙：16 个随机敌人，但随机池排除 Tank。
-button_west_corridor_no_tank -23940 2100 200
-# 三名原据点 AI 保持普通队友规则；BASE 是基地核心目标。
-ai_spawn Jesus 2 level2 1000 0 0
-ai_spawn GUARD 1 level1 0 -900 0
-ai_spawn ELITE 2 level3 -1000 0 0
-ai_spawn BASE 0 level1 0 900 0 pistol
-ai_spawn DEV_GUNNER 0 level1 5600 -7400 0
-ai_spawn PLATFORM_GUARD 0 level2 0 -9900 0
-ai_spawn HIT_TEST 0 level1 -9000 -8500 0
-ai_spawn ANIM_TEST 0 level2 600 -9900 0
-ai_spawn AK_TEST 0 level3 -9000 -10800 0 ak
-ai_spawn AWP_TEST 0 level3 -8000 -10000 0 awp
+# Rasterfall World Description Language V1.
+# This is the complete V1 source for the default runtime map.
+map version=1 units=rfu
+world min_x=-45020 max_x=33020 min_z=-33000 max_z=33020 room_limit=45000
+surface id=surface_ground_world kind=ground min_x=-33000 max_x=33000 min_z=-33000 max_z=33000 height=0 material=272B31 attr.legacy_index=0
+surface id=surface_floor_base kind=floor min_x=-3000 max_x=3000 min_z=-3000 max_z=3000 height=0 material=294B45 attr.legacy_index=1
+surface id=surface_floor_safe kind=floor min_x=-1800 max_x=1800 min_z=-5700 max_z=-4000 height=0 material=245238 attr.legacy_index=2
+surface id=surface_roof_safe kind=platform_roof min_x=-2180 max_x=2180 min_z=-5880 max_z=-3620 height=2400 material=3B5550 attr.legacy_index=9
+surface id=surface_ramp_dev_exit kind=ramp min_x=-21000 max_x=-19000 min_z=-15000 max_z=-5900 height=0 height2=3979 axis=z material=477A66 attr.legacy_index=11
+surface id=surface_platform_air_gate_left kind=platform min_x=-24180 max_x=-1620 min_z=-6260 max_z=-5520 height=3900 material=3B5550 attr.legacy_index=12 attr.role=air_gate_left_top
+surface id=surface_platform_air_gate_right kind=platform min_x=1620 max_x=24180 min_z=-6260 max_z=-5520 height=3900 material=3B5550 attr.legacy_index=14 attr.role=air_gate_right_top
+surface id=surface_floor_air_gate_left kind=floor min_x=-24000 max_x=-1800 min_z=-5900 max_z=-5700 height=0 material=26394A attr.legacy_index=15
+surface id=surface_floor_air_gate_right kind=floor min_x=1800 max_x=24000 min_z=-5900 max_z=-5700 height=0 material=26394A attr.legacy_index=16
+surface id=surface_floor_display_left kind=floor min_x=-3600 max_x=-1400 min_z=-9000 max_z=-7800 height=0 material=343B48 attr.legacy_index=17
+surface id=surface_floor_display_right kind=floor min_x=1400 max_x=17000 min_z=-9200 max_z=-7800 height=0 material=343B48 attr.legacy_index=18
+surface id=surface_platform_display kind=platform min_x=-900 max_x=900 min_z=-10800 max_z=-9000 height=500 material=3B5550 attr.legacy_index=19
+surface id=surface_ramp_south_west kind=ramp min_x=7000 max_x=10000 min_z=-19000 max_z=-17500 height=0 height2=900 axis=x material=477A66 attr.legacy_index=30
+surface id=surface_ramp_south_center kind=ramp min_x=11000 max_x=12500 min_z=-19000 max_z=-16000 height=0 height2=1200 axis=z material=526F91 attr.legacy_index=31
+surface id=surface_ramp_south_east kind=ramp min_x=14000 max_x=17000 min_z=-19000 max_z=-17500 height=900 height2=0 axis=x material=8A6648 attr.legacy_index=32
+surface id=surface_platform_weapon_table kind=platform min_x=-880 max_x=880 min_z=-7780 max_z=-7120 height=650 material=3B5550 attr.legacy_index=34
+surface id=surface_platform_ammo_container kind=platform min_x=640 max_x=1120 min_z=-7750 max_z=-7210 height=340 material=3B5550 attr.legacy_index=36
+surface id=surface_floor_spawn_west kind=floor min_x=-23000 max_x=-21500 min_z=-5600 max_z=23000 height=0 material=6E2828 attr.legacy_index=37
+surface id=surface_floor_spawn_east kind=floor min_x=21500 max_x=23000 min_z=-5600 max_z=23000 height=0 material=6E2828 attr.legacy_index=38
+surface id=surface_floor_spawn_north_west kind=floor min_x=-20000 max_x=-9000 min_z=14000 max_z=22000 height=0 material=6E2828 attr.legacy_index=39
+surface id=surface_floor_spawn_north_east kind=floor min_x=9000 max_x=20000 min_z=14000 max_z=22000 height=0 material=6E2828 attr.legacy_index=40
+surface id=surface_ramp_west_outer kind=ramp min_x=-39000 max_x=-36000 min_z=-2400 max_z=2400 height=0 height2=900 axis=x material=314B43 attr.legacy_index=50
+surface id=surface_platform_west_outer kind=platform min_x=-36000 max_x=-35000 min_z=-2400 max_z=2400 height=900 material=3B5550 attr.legacy_index=51
+surface id=surface_ramp_west_down kind=ramp min_x=-35000 max_x=-32000 min_z=-2400 max_z=2400 height=900 height2=0 axis=x material=314B43 attr.legacy_index=52
+surface id=surface_floor_west_mid kind=floor min_x=-32000 max_x=-31000 min_z=-2400 max_z=2400 height=0 material=314B43 attr.legacy_index=53
+surface id=surface_ramp_west_inner kind=ramp min_x=-31000 max_x=-28000 min_z=-2400 max_z=2400 height=0 height2=900 axis=x material=314B43 attr.legacy_index=54
+surface id=surface_platform_west_inner kind=platform min_x=-28000 max_x=-27000 min_z=-2400 max_z=2400 height=900 material=3B5550 attr.legacy_index=55
+surface id=surface_ramp_west_inner_down kind=ramp min_x=-27000 max_x=-24000 min_z=-2400 max_z=2400 height=900 height2=0 axis=x material=314B43 attr.legacy_index=56
+surface id=surface_floor_west_outer kind=floor min_x=-45000 max_x=-39000 min_z=-2400 max_z=2400 height=0 material=314B43 attr.legacy_index=57
+surface id=surface_floor_east_corridor kind=floor min_x=24000 max_x=33000 min_z=-800 max_z=800 height=0 material=314B43 attr.legacy_index=61
+surface id=surface_floor_hurd_base kind=floor min_x=-6000 max_x=6000 min_z=24000 max_z=33000 height=0 material=314B43 attr.legacy_index=65
+surface id=surface_floor_spawn_west_end kind=floor min_x=-44400 max_x=-43400 min_z=-1650 max_z=1650 height=0 material=9B2F32 attr.legacy_index=69
+region id=safe_start kind=safe min_x=-1800 max_x=1800 min_z=-5700 max_z=-4000 attr.legacy_index=0 attr.role=start
+region id=base_main kind=base min_x=-3000 max_x=3000 min_z=-3000 max_z=3000 attr.legacy_index=1
+region id=spawn_west kind=spawn min_x=-23000 max_x=-21500 min_z=-5600 max_z=23000 attr.legacy_index=2
+region id=spawn_east kind=spawn min_x=21500 max_x=23000 min_z=-5600 max_z=23000 attr.legacy_index=3
+region id=spawn_north_west kind=spawn min_x=-20000 max_x=-9000 min_z=14000 max_z=22000 attr.legacy_index=4
+region id=spawn_north_east kind=spawn min_x=9000 max_x=20000 min_z=14000 max_z=22000 attr.legacy_index=5
+region id=spawn_west_end kind=spawn min_x=-44400 max_x=-43400 min_z=-1650 max_z=1650 attr.legacy_index=6
+region id=alarm_control kind=alarm min_x=-23940 max_x=-23940 min_z=-3000 max_z=-3000 attr.legacy_index=7
+region id=player_start kind=start min_x=-13000 max_x=-13000 min_z=-12000 max_z=-12000 attr.sy=0 attr.cy=1024
+collision id=ground_world shape=flat min_x=-33000 max_x=33000 min_z=-33000 max_z=33000 height=0 collision=false visible=false walkable=true color=272B31 attr.legacy_index=0
+collision id=floor_base shape=flat min_x=-3000 max_x=3000 min_z=-3000 max_z=3000 height=0 collision=false visible=true walkable=true color=294B45 attr.legacy_index=1
+collision id=floor_safe shape=flat min_x=-1800 max_x=1800 min_z=-5700 max_z=-4000 height=0 collision=false visible=true walkable=true color=245238 attr.legacy_index=2
+collision id=box_safe_left shape=box min_x=-2000 max_x=-1800 min_z=-5700 max_z=-3800 height=2200 collision=true visible=true walkable=false color=3F6751 attr.legacy_index=3
+collision id=box_safe_right shape=box min_x=1800 max_x=2000 min_z=-5700 max_z=-3800 height=2200 collision=true visible=true walkable=false color=3F6751 attr.legacy_index=4
+collision id=box_safe_door_left shape=box min_x=-1800 max_x=-900 min_z=-4000 max_z=-3800 height=2200 collision=true visible=true walkable=false color=3F6751 attr.legacy_index=5
+collision id=box_safe_door_right shape=box min_x=900 max_x=1800 min_z=-4000 max_z=-3800 height=2200 collision=true visible=true walkable=false color=3F6751 attr.legacy_index=6
+collision id=box_safe_back_left shape=box min_x=-1800 max_x=-600 min_z=-5700 max_z=-5680 height=2200 collision=true visible=true walkable=false color=3F6751 attr.legacy_index=7
+collision id=box_safe_back_right shape=box min_x=600 max_x=1800 min_z=-5700 max_z=-5680 height=2200 collision=true visible=true walkable=false color=3F6751 attr.legacy_index=8
+collision id=roof_safe shape=flat min_x=-2180 max_x=2180 min_z=-5880 max_z=-3620 height=2400 collision=false visible=false walkable=true color=3B5550 attr.legacy_index=9
+collision id=box_air_gate_left shape=box min_x=-24000 max_x=-1800 min_z=-5900 max_z=-5700 height=3900 collision=true visible=true walkable=true blocks_airborne=false role=air_gate_left color=48C8E0 attr.legacy_index=10
+collision id=ramp_dev_exit shape=ramp_z min_x=-21000 max_x=-19000 min_z=-15000 max_z=-5900 height=0 height2=3979 collision=true visible=true walkable=true color=477A66 attr.legacy_index=11
+collision id=platform_air_gate_left shape=flat min_x=-24180 max_x=-1620 min_z=-6260 max_z=-5520 height=3900 collision=true visible=false walkable=true role=air_gate_left_top color=3B5550 attr.legacy_index=12
+collision id=box_air_gate_right shape=box min_x=1800 max_x=24000 min_z=-5900 max_z=-5700 height=3900 collision=true visible=true walkable=true role=air_gate_right color=48C8E0 attr.legacy_index=13
+collision id=platform_air_gate_right shape=flat min_x=1620 max_x=24180 min_z=-6260 max_z=-5520 height=3900 collision=true visible=false walkable=true role=air_gate_right_top color=3B5550 attr.legacy_index=14
+collision id=floor_air_gate_left shape=flat min_x=-24000 max_x=-1800 min_z=-5900 max_z=-5700 height=0 collision=false visible=true walkable=true color=26394A attr.legacy_index=15
+collision id=floor_air_gate_right shape=flat min_x=1800 max_x=24000 min_z=-5900 max_z=-5700 height=0 collision=false visible=true walkable=true color=26394A attr.legacy_index=16
+collision id=floor_display_left shape=flat min_x=-3600 max_x=-1400 min_z=-9000 max_z=-7800 height=0 collision=false visible=true walkable=true color=343B48 attr.legacy_index=17
+collision id=floor_display_right shape=flat min_x=1400 max_x=17000 min_z=-9200 max_z=-7800 height=0 collision=false visible=true walkable=true color=343B48 attr.legacy_index=18
+collision id=platform_display shape=flat min_x=-900 max_x=900 min_z=-10800 max_z=-9000 height=500 collision=true visible=false walkable=true color=3B5550 attr.legacy_index=19
+collision id=prop_crate_collision shape=box min_x=-14807 max_x=-14193 min_z=-17256 max_z=-16744 height=512 collision=true visible=false walkable=true attr.legacy_index=20
+collision id=prop_barrier_collision shape=box min_x=-13205 max_x=-12795 min_z=-17614 max_z=-16385 height=512 collision=true visible=false walkable=true attr.legacy_index=21
+collision id=prop_lamp_post_collision shape=box min_x=-11790 max_x=-11210 min_z=-17290 max_z=-16710 height=1638 collision=true visible=false walkable=true attr.legacy_index=22
+collision id=prop_short_wall_collision shape=box min_x=-10615 max_x=-9385 min_z=-17128 max_z=-16872 height=717 collision=true visible=false walkable=true attr.legacy_index=23
+collision id=prop_railing_collision shape=box min_x=-9115 max_x=-7885 min_z=-17077 max_z=-16923 height=563 collision=true visible=false walkable=true attr.legacy_index=24
+collision id=prop_vent_unit_collision shape=box min_x=-7359 max_x=-6641 min_z=-17307 max_z=-16693 height=461 collision=true visible=false walkable=true attr.legacy_index=25
+collision id=prop_workbench_collision shape=box min_x=-5961 max_x=-5039 min_z=-17205 max_z=-16795 height=461 collision=true visible=false walkable=true attr.legacy_index=26
+collision id=prop_ammo_container_collision shape=box min_x=-4231 max_x=-3769 min_z=-17128 max_z=-16872 height=307 collision=true visible=false walkable=true attr.legacy_index=27
+collision id=prop_industrial_pillar_collision shape=box min_x=-2705 max_x=-2295 min_z=-17205 max_z=-16795 height=1434 collision=true visible=false walkable=true attr.legacy_index=28
+collision id=prop_pipe_module_collision shape=box min_x=-1410 max_x=-589 min_z=-17205 max_z=-16795 height=717 collision=true visible=false walkable=true attr.legacy_index=29
+collision id=ramp_south_west shape=ramp_x min_x=7000 max_x=10000 min_z=-19000 max_z=-17500 height=0 height2=900 collision=true visible=true walkable=true color=477A66 attr.legacy_index=30
+collision id=ramp_south_center shape=ramp_z min_x=11000 max_x=12500 min_z=-19000 max_z=-16000 height=0 height2=1200 collision=true visible=true walkable=true color=526F91 attr.legacy_index=31
+collision id=ramp_south_east shape=ramp_x min_x=14000 max_x=17000 min_z=-19000 max_z=-17500 height=900 height2=0 collision=true visible=true walkable=true color=8A6648 attr.legacy_index=32
+collision id=box_weapon_table shape=box min_x=-700 max_x=700 min_z=-7600 max_z=-7300 height=650 collision=true visible=false walkable=false color=5A3E28 attr.legacy_index=33
+collision id=platform_weapon_table shape=flat min_x=-880 max_x=880 min_z=-7780 max_z=-7120 height=650 collision=true visible=false walkable=true color=3B5550 attr.legacy_index=34
+collision id=box_ammo_container shape=box min_x=820 max_x=940 min_z=-7570 max_z=-7390 height=340 collision=true visible=false walkable=false color=6A5538 attr.legacy_index=35
+collision id=platform_ammo_container shape=flat min_x=640 max_x=1120 min_z=-7750 max_z=-7210 height=340 collision=true visible=false walkable=true color=3B5550 attr.legacy_index=36
+collision id=floor_spawn_west shape=flat min_x=-23000 max_x=-21500 min_z=-5600 max_z=23000 height=0 collision=false visible=true walkable=true color=6E2828 attr.legacy_index=37
+collision id=floor_spawn_east shape=flat min_x=21500 max_x=23000 min_z=-5600 max_z=23000 height=0 collision=false visible=true walkable=true color=6E2828 attr.legacy_index=38
+collision id=floor_spawn_north_west shape=flat min_x=-20000 max_x=-9000 min_z=14000 max_z=22000 height=0 collision=false visible=true walkable=true color=6E2828 attr.legacy_index=39
+collision id=floor_spawn_north_east shape=flat min_x=9000 max_x=20000 min_z=14000 max_z=22000 height=0 collision=false visible=true walkable=true color=6E2828 attr.legacy_index=40
+collision id=box_boundary_south shape=box min_x=-24000 max_x=24000 min_z=-24020 max_z=-23980 height=6300 collision=true visible=false walkable=false blocks_airborne=true color=555B68 attr.legacy_index=41
+collision id=box_boundary_north_left shape=box min_x=-24020 max_x=-23980 min_z=24000 max_z=24020 height=6300 collision=true visible=false walkable=false blocks_airborne=true color=4C5260 attr.legacy_index=42
+collision id=box_boundary_north_right shape=box min_x=23980 max_x=24020 min_z=24000 max_z=24020 height=6300 collision=true visible=false walkable=false blocks_airborne=true color=4C5260 attr.legacy_index=43
+collision id=box_boundary_west_south shape=box min_x=-24020 max_x=-23980 min_z=-24000 max_z=-2400 height=6300 collision=true visible=false walkable=false blocks_airborne=true color=5E5965 attr.legacy_index=44
+collision id=box_boundary_west_north shape=box min_x=-24020 max_x=-23980 min_z=2400 max_z=24000 height=6300 collision=true visible=false walkable=false blocks_airborne=true color=5E5965 attr.legacy_index=45
+collision id=box_boundary_east_south shape=box min_x=23980 max_x=24020 min_z=-24000 max_z=-800 height=6300 collision=true visible=false walkable=false blocks_airborne=true color=56515D attr.legacy_index=46
+collision id=box_boundary_east_north shape=box min_x=23980 max_x=24020 min_z=800 max_z=24000 height=6300 collision=true visible=false walkable=false blocks_airborne=true color=56515D attr.legacy_index=47
+collision id=box_boundary_hurd_left shape=box min_x=-24000 max_x=-6000 min_z=23980 max_z=24020 height=6300 collision=true visible=false walkable=false blocks_airborne=true color=4C5260 attr.legacy_index=48
+collision id=box_boundary_hurd_right shape=box min_x=6000 max_x=24000 min_z=23980 max_z=24020 height=6300 collision=true visible=false walkable=false blocks_airborne=true color=4C5260 attr.legacy_index=49
+collision id=ramp_west_outer shape=ramp_x min_x=-39000 max_x=-36000 min_z=-2400 max_z=2400 height=0 height2=900 collision=true visible=true walkable=true color=314B43 attr.legacy_index=50
+collision id=platform_west_outer shape=flat min_x=-36000 max_x=-35000 min_z=-2400 max_z=2400 height=900 collision=true visible=false walkable=true color=3B5550 attr.legacy_index=51
+collision id=ramp_west_down shape=ramp_x min_x=-35000 max_x=-32000 min_z=-2400 max_z=2400 height=900 height2=0 collision=true visible=true walkable=true color=314B43 attr.legacy_index=52
+collision id=floor_west_mid shape=flat min_x=-32000 max_x=-31000 min_z=-2400 max_z=2400 height=0 collision=false visible=true walkable=true color=314B43 attr.legacy_index=53
+collision id=ramp_west_inner shape=ramp_x min_x=-31000 max_x=-28000 min_z=-2400 max_z=2400 height=0 height2=900 collision=true visible=true walkable=true color=314B43 attr.legacy_index=54
+collision id=platform_west_inner shape=flat min_x=-28000 max_x=-27000 min_z=-2400 max_z=2400 height=900 collision=true visible=false walkable=true color=3B5550 attr.legacy_index=55
+collision id=ramp_west_inner_down shape=ramp_x min_x=-27000 max_x=-24000 min_z=-2400 max_z=2400 height=900 height2=0 collision=true visible=true walkable=true color=314B43 attr.legacy_index=56
+collision id=floor_west_outer shape=flat min_x=-45000 max_x=-39000 min_z=-2400 max_z=2400 height=0 collision=false visible=true walkable=true color=314B43 attr.legacy_index=57
+collision id=box_west_wall_south shape=box min_x=-45000 max_x=-24000 min_z=-2420 max_z=-2400 height=6300 collision=true visible=false walkable=false blocks_airborne=true color=5E5965 attr.legacy_index=58
+collision id=box_west_wall_north shape=box min_x=-45000 max_x=-24000 min_z=2400 max_z=2420 height=6300 collision=true visible=false walkable=false blocks_airborne=true color=5E5965 attr.legacy_index=59
+collision id=box_west_wall_end shape=box min_x=-45020 max_x=-45000 min_z=-2420 max_z=2420 height=6300 collision=true visible=false walkable=false blocks_airborne=true color=5E5965 attr.legacy_index=60
+collision id=floor_east_corridor shape=flat min_x=24000 max_x=33000 min_z=-800 max_z=800 height=0 collision=false visible=true walkable=true color=314B43 attr.legacy_index=61
+collision id=box_east_wall_south shape=box min_x=24000 max_x=33000 min_z=-820 max_z=-800 height=6300 collision=true visible=false walkable=false blocks_airborne=true color=56515D attr.legacy_index=62
+collision id=box_east_wall_north shape=box min_x=24000 max_x=33000 min_z=800 max_z=820 height=6300 collision=true visible=false walkable=false blocks_airborne=true color=56515D attr.legacy_index=63
+collision id=box_east_wall_end shape=box min_x=33000 max_x=33020 min_z=-820 max_z=820 height=6300 collision=true visible=false walkable=false blocks_airborne=true color=56515D attr.legacy_index=64
+collision id=floor_hurd_base shape=flat min_x=-6000 max_x=6000 min_z=24000 max_z=33000 height=0 collision=false visible=true walkable=true color=314B43 attr.legacy_index=65
+collision id=box_hurd_wall_left shape=box min_x=-6020 max_x=-6000 min_z=24000 max_z=33000 height=6300 collision=true visible=false walkable=false blocks_airborne=true color=4C5260 attr.legacy_index=66
+collision id=box_hurd_wall_right shape=box min_x=6000 max_x=6020 min_z=24000 max_z=33000 height=6300 collision=true visible=false walkable=false blocks_airborne=true color=4C5260 attr.legacy_index=67
+collision id=box_hurd_wall_end shape=box min_x=-6020 max_x=6020 min_z=33000 max_z=33020 height=6300 collision=true visible=false walkable=false blocks_airborne=true color=4C5260 attr.legacy_index=68
+collision id=floor_spawn_west_end shape=flat min_x=-44400 max_x=-43400 min_z=-1650 max_z=1650 height=0 collision=false visible=true walkable=true color=9B2F32 attr.legacy_index=69
+render id=legacy_render_000 kind=ground min_x=-33000 max_x=33000 min_z=-33000 max_z=33000 height=0 color=272B31 attr.legacy_index=0
+render id=legacy_render_001 kind=label min_x=-12200 max_x=-11200 min_z=-10300 max_z=-10100 color=9FE8C8 attr.text=RF_HUMANOID_V2_ACTION_DEBUG attr.legacy_index=1
+render id=legacy_render_002 kind=floor min_x=-3000 max_x=3000 min_z=-3000 max_z=3000 height=0 color=294B45 attr.legacy_index=2
+render id=legacy_render_003 kind=label min_x=-1700 max_x=1700 min_z=-3300 max_z=-3100 color=80E0A0 attr.text=BASE attr.legacy_index=3
+render id=legacy_render_004 kind=floor min_x=-1800 max_x=1800 min_z=-5700 max_z=-4000 height=0 color=245238 attr.legacy_index=4
+render id=legacy_render_005 kind=box min_x=-2000 max_x=-1800 min_z=-5700 max_z=-3800 height=2200 color=3F6751 attr.legacy_index=5
+render id=legacy_render_006 kind=box min_x=1800 max_x=2000 min_z=-5700 max_z=-3800 height=2200 color=3F6751 attr.legacy_index=6
+render id=legacy_render_007 kind=box min_x=-1800 max_x=-900 min_z=-4000 max_z=-3800 height=2200 color=3F6751 attr.legacy_index=7
+render id=legacy_render_008 kind=box min_x=900 max_x=1800 min_z=-4000 max_z=-3800 height=2200 color=3F6751 attr.legacy_index=8
+render id=legacy_render_009 kind=box min_x=-1800 max_x=-600 min_z=-5700 max_z=-5680 height=2200 color=3F6751 attr.legacy_index=9
+render id=legacy_render_010 kind=box min_x=600 max_x=1800 min_z=-5700 max_z=-5680 height=2200 color=3F6751 attr.legacy_index=10
+render id=legacy_render_011 kind=model min_x=-1800 max_x=1800 min_z=-5700 max_z=-4000 height=1300 color=3F6751 attr.height2=1500 attr.legacy_index=11
+render id=legacy_render_012 kind=platform min_x=-2180 max_x=2180 min_z=-5880 max_z=-3620 height=2400 color=0 attr.style=0 attr.legacy_index=12
+render id=legacy_render_013 kind=box min_x=-24000 max_x=-1800 min_z=-5900 max_z=-5700 height=3900 color=48C8E0 attr.legacy_index=13
+render id=legacy_render_014 kind=ramp min_x=-21000 max_x=-19000 min_z=-15000 max_z=-5900 height=0 color=477A66 attr.height2=3979 attr.style=3 attr.axis=z attr.legacy_index=14
+render id=legacy_render_015 kind=label min_x=-21000 max_x=-19000 min_z=-14600 max_z=-14400 color=9FE8C8 attr.text=DEV_RAMP_SLOPE_0.44 attr.legacy_index=15
+render id=legacy_render_016 kind=platform min_x=-24180 max_x=-1620 min_z=-6260 max_z=-5520 height=3900 color=3B5550 attr.style=1 attr.role=air_gate_left_top attr.legacy_index=16
+render id=legacy_render_017 kind=box min_x=1800 max_x=24000 min_z=-5900 max_z=-5700 height=3900 color=48C8E0 attr.legacy_index=17
+render id=legacy_render_018 kind=platform min_x=1620 max_x=24180 min_z=-6260 max_z=-5520 height=3900 color=3B5550 attr.style=1 attr.role=air_gate_right_top attr.legacy_index=18
+render id=legacy_render_019 kind=floor min_x=-24000 max_x=-1800 min_z=-5900 max_z=-5700 height=0 color=26394A attr.legacy_index=19
+render id=legacy_render_020 kind=floor min_x=1800 max_x=24000 min_z=-5900 max_z=-5700 height=0 color=26394A attr.legacy_index=20
+render id=legacy_render_021 kind=label min_x=-23000 max_x=23000 min_z=-6200 max_z=-6000 color=70D8FF attr.text=AIR attr.legacy_index=21
+render id=legacy_render_022 kind=floor min_x=-3600 max_x=-1400 min_z=-9000 max_z=-7800 height=0 color=343B48 attr.legacy_index=22
+render id=legacy_render_023 kind=floor min_x=1400 max_x=17000 min_z=-9200 max_z=-7800 height=0 color=343B48 attr.legacy_index=23
+render id=legacy_render_024 kind=platform min_x=-900 max_x=900 min_z=-10800 max_z=-9000 height=500 color=3B5550 attr.style=0 attr.legacy_index=24
+render id=legacy_render_025 kind=model min_x=-900 max_x=900 min_z=-10800 max_z=-9000 height=-550 color=6A5538 attr.height2=-400 attr.legacy_index=25
+render id=legacy_render_026 kind=sign min_x=1200 max_x=2800 min_z=-10070 max_z=-9980 height=-650 color=765A3A attr.height2=-250 attr.text=FROM_HARRAN_CITY attr.legacy_index=26
+render id=legacy_render_027 kind=model min_x=-3200 max_x=-2000 min_z=-8700 max_z=-8100 height=-900 color=B66A35 attr.height2=700 attr.style=1 attr.legacy_index=27
+render id=legacy_render_028 kind=model min_x=2000 max_x=3200 min_z=-8700 max_z=-8100 height=-900 color=3F8FBA attr.height2=900 attr.style=2 attr.legacy_index=28
+render id=legacy_render_029 kind=model min_x=3900 max_x=4500 min_z=-9000 max_z=-8400 height=-900 color=76513A attr.height2=650 attr.style=3 attr.legacy_index=29
+render id=legacy_render_030 kind=model min_x=4700 max_x=5300 min_z=-9000 max_z=-8400 height=-900 color=8B5A35 attr.height2=650 attr.style=4 attr.legacy_index=30
+render id=legacy_render_031 kind=model min_x=6600 max_x=7600 min_z=-9000 max_z=-8400 height=-900 color=65713D attr.height2=650 attr.style=5 attr.legacy_index=31
+render id=legacy_render_032 kind=model min_x=8000 max_x=9000 min_z=-9000 max_z=-8400 height=-900 color=6A5538 attr.height2=650 attr.style=6 attr.legacy_index=32
+render id=legacy_render_033 kind=model min_x=9000 max_x=10000 min_z=-9000 max_z=-8400 height=-900 color=8A4F9B attr.height2=650 attr.style=7 attr.legacy_index=33
+render id=legacy_render_034 kind=model min_x=10000 max_x=11000 min_z=-9000 max_z=-8400 height=-900 color=4F8AA8 attr.height2=650 attr.style=8 attr.legacy_index=34
+render id=legacy_render_035 kind=model min_x=11000 max_x=12000 min_z=-9000 max_z=-8400 height=-900 color=6A5538 attr.height2=650 attr.style=9 attr.legacy_index=35
+render id=legacy_render_036 kind=model min_x=12000 max_x=13000 min_z=-9000 max_z=-8400 height=-900 color=8A4F9B attr.height2=650 attr.style=10 attr.legacy_index=36
+render id=legacy_render_037 kind=model min_x=13000 max_x=14000 min_z=-9000 max_z=-8400 height=-900 color=4F8AA8 attr.height2=650 attr.style=11 attr.legacy_index=37
+render id=legacy_render_038 kind=model min_x=14000 max_x=15000 min_z=-9000 max_z=-8400 height=-900 color=6A5538 attr.height2=650 attr.style=12 attr.legacy_index=38
+render id=legacy_render_039 kind=model min_x=15000 max_x=16000 min_z=-9000 max_z=-8400 height=-900 color=8A4F9B attr.height2=650 attr.style=13 attr.legacy_index=39
+render id=legacy_render_040 kind=model min_x=16000 max_x=17000 min_z=-9000 max_z=-8400 height=-900 color=4F8AA8 attr.height2=650 attr.style=14 attr.legacy_index=40
+render id=legacy_render_041 kind=label min_x=-4000 max_x=4000 min_z=-9700 max_z=-9200 color=90D0FF attr.text=MODEL_DISPLAY attr.legacy_index=41
+render id=legacy_render_042 kind=label min_x=7900 max_x=17000 min_z=-9700 max_z=-9200 color=FFD060 attr.text=ENEMY_VISUAL_FAMILY_3X3 attr.legacy_index=42
+render id=legacy_render_043 kind=label min_x=-16500 max_x=1500 min_z=-20400 max_z=-20200 color=9FE8C8 attr.text=CHARACTER_TEST_STRIP attr.legacy_index=43
+render id=legacy_render_044 kind=label min_x=3800 max_x=7800 min_z=-9800 max_z=-9400 color=FFD060 attr.text=SPECIAL_INFECTED attr.legacy_index=44
+render id=legacy_render_045 kind=label min_x=3000 max_x=6000 min_z=-11100 max_z=-10900 color=FFD060 attr.text=ATTACK_POINTS attr.legacy_index=45
+render id=legacy_render_046 kind=label min_x=4050 max_x=4350 min_z=-11400 max_z=-11250 color=FFD060 attr.text=*2 attr.legacy_index=46
+render id=legacy_render_047 kind=label min_x=4550 max_x=4850 min_z=-11400 max_z=-11250 color=FFD060 attr.text=*3 attr.legacy_index=47
+render id=legacy_render_048 kind=label min_x=5050 max_x=5350 min_z=-11400 max_z=-11250 color=FFD060 attr.text=*4 attr.legacy_index=48
+render id=legacy_render_049 kind=ramp min_x=7000 max_x=10000 min_z=-19000 max_z=-17500 height=0 color=477A66 attr.height2=900 attr.style=2 attr.axis=x attr.legacy_index=49
+render id=legacy_render_050 kind=ramp min_x=11000 max_x=12500 min_z=-19000 max_z=-16000 height=0 color=526F91 attr.height2=1200 attr.style=3 attr.axis=z attr.legacy_index=50
+render id=legacy_render_051 kind=ramp min_x=14000 max_x=17000 min_z=-19000 max_z=-17500 height=900 color=8A6648 attr.height2=0 attr.style=2 attr.axis=x attr.legacy_index=51
+render id=legacy_render_052 kind=label min_x=7000 max_x=17000 min_z=-19600 max_z=-19200 color=9FE8C8 attr.text=RAMP_GROUND_QUERY attr.legacy_index=52
+render id=legacy_render_053 kind=platform min_x=-880 max_x=880 min_z=-7780 max_z=-7120 height=650 color=3B5550 attr.style=0 attr.legacy_index=53
+render id=legacy_render_054 kind=model min_x=-700 max_x=700 min_z=-7600 max_z=-7300 height=-750 color=6A4A30 attr.height2=-250 attr.legacy_index=54
+render id=legacy_render_055 kind=model min_x=-700 max_x=-610 min_z=-7600 max_z=-7510 height=-900 color=5A3E28 attr.height2=-250 attr.legacy_index=55
+render id=legacy_render_056 kind=model min_x=610 max_x=700 min_z=-7600 max_z=-7510 height=-900 color=5A3E28 attr.height2=-250 attr.legacy_index=56
+render id=legacy_render_057 kind=model min_x=-700 max_x=-610 min_z=-7390 max_z=-7300 height=-900 color=5A3E28 attr.height2=-250 attr.legacy_index=57
+render id=legacy_render_058 kind=model min_x=610 max_x=700 min_z=-7390 max_z=-7300 height=-900 color=5A3E28 attr.height2=-250 attr.legacy_index=58
+render id=legacy_render_059 kind=platform min_x=640 max_x=1120 min_z=-7750 max_z=-7210 height=340 color=3B5550 attr.style=0 attr.legacy_index=59
+render id=legacy_render_060 kind=model min_x=820 max_x=940 min_z=-7570 max_z=-7390 height=-900 color=6A5538 attr.height2=-560 attr.legacy_index=60
+render id=legacy_render_061 kind=floor min_x=-23000 max_x=-21500 min_z=-5600 max_z=23000 height=0 color=6E2828 attr.legacy_index=61
+render id=legacy_render_062 kind=floor min_x=21500 max_x=23000 min_z=-5600 max_z=23000 height=0 color=6E2828 attr.legacy_index=62
+render id=legacy_render_063 kind=floor min_x=-20000 max_x=-9000 min_z=14000 max_z=22000 height=0 color=6E2828 attr.legacy_index=63
+render id=legacy_render_064 kind=floor min_x=9000 max_x=20000 min_z=14000 max_z=22000 height=0 color=6E2828 attr.legacy_index=64
+render id=legacy_render_065 kind=wall min_x=-24000 max_x=24000 min_z=-24000 max_z=-24000 height=5400 color=555B68 attr.legacy_index=65
+render id=legacy_render_066 kind=wall min_x=-24000 max_x=-6000 min_z=24000 max_z=24000 height=5400 color=4C5260 attr.legacy_index=66
+render id=legacy_render_067 kind=wall min_x=6000 max_x=24000 min_z=24000 max_z=24000 height=5400 color=4C5260 attr.legacy_index=67
+render id=legacy_render_068 kind=wall min_x=-24000 max_x=-24000 min_z=-24000 max_z=-2400 height=5400 color=5E5965 attr.legacy_index=68
+render id=legacy_render_069 kind=wall min_x=-24000 max_x=-24000 min_z=2400 max_z=24000 height=5400 color=5E5965 attr.legacy_index=69
+render id=legacy_render_070 kind=wall min_x=24000 max_x=24000 min_z=-24000 max_z=-800 height=5400 color=56515D attr.legacy_index=70
+render id=legacy_render_071 kind=wall min_x=24000 max_x=24000 min_z=800 max_z=24000 height=5400 color=56515D attr.legacy_index=71
+render id=legacy_render_072 kind=ramp min_x=-39000 max_x=-36000 min_z=-2400 max_z=2400 height=0 color=314B43 attr.height2=900 attr.style=2 attr.axis=x attr.legacy_index=72
+render id=legacy_render_073 kind=platform min_x=-36000 max_x=-35000 min_z=-2400 max_z=2400 height=900 color=3B5550 attr.style=2 attr.legacy_index=73
+render id=legacy_render_074 kind=ramp min_x=-35000 max_x=-32000 min_z=-2400 max_z=2400 height=900 color=314B43 attr.height2=0 attr.style=2 attr.axis=x attr.legacy_index=74
+render id=legacy_render_075 kind=floor min_x=-32000 max_x=-31000 min_z=-2400 max_z=2400 height=0 color=314B43 attr.legacy_index=75
+render id=legacy_render_076 kind=ramp min_x=-31000 max_x=-28000 min_z=-2400 max_z=2400 height=0 color=314B43 attr.height2=900 attr.style=2 attr.axis=x attr.legacy_index=76
+render id=legacy_render_077 kind=platform min_x=-28000 max_x=-27000 min_z=-2400 max_z=2400 height=900 color=3B5550 attr.style=2 attr.legacy_index=77
+render id=legacy_render_078 kind=ramp min_x=-27000 max_x=-24000 min_z=-2400 max_z=2400 height=900 color=314B43 attr.height2=0 attr.style=2 attr.axis=x attr.legacy_index=78
+render id=legacy_render_079 kind=floor min_x=-45000 max_x=-39000 min_z=-2400 max_z=2400 height=0 color=314B43 attr.legacy_index=79
+render id=legacy_render_080 kind=wall min_x=-45000 max_x=-24000 min_z=-2400 max_z=-2400 height=5400 color=5E5965 attr.legacy_index=80
+render id=legacy_render_081 kind=wall min_x=-45000 max_x=-24000 min_z=2400 max_z=2400 height=5400 color=5E5965 attr.legacy_index=81
+render id=legacy_render_082 kind=wall min_x=-45000 max_x=-45000 min_z=-2400 max_z=2400 height=5400 color=5E5965 attr.legacy_index=82
+render id=legacy_render_083 kind=floor min_x=24000 max_x=33000 min_z=-800 max_z=800 height=0 color=314B43 attr.legacy_index=83
+render id=legacy_render_084 kind=wall min_x=24000 max_x=33000 min_z=-800 max_z=-800 height=5400 color=56515D attr.legacy_index=84
+render id=legacy_render_085 kind=wall min_x=24000 max_x=33000 min_z=800 max_z=800 height=5400 color=56515D attr.legacy_index=85
+render id=legacy_render_086 kind=wall min_x=33000 max_x=33000 min_z=-800 max_z=800 height=5400 color=56515D attr.legacy_index=86
+render id=legacy_render_087 kind=floor min_x=-6000 max_x=6000 min_z=24000 max_z=33000 height=0 color=314B43 attr.legacy_index=87
+render id=legacy_render_088 kind=wall min_x=-6000 max_x=-6000 min_z=24000 max_z=33000 height=5400 color=4C5260 attr.legacy_index=88
+render id=legacy_render_089 kind=wall min_x=6000 max_x=6000 min_z=24000 max_z=33000 height=5400 color=4C5260 attr.legacy_index=89
+render id=legacy_render_090 kind=wall min_x=-6000 max_x=6000 min_z=33000 max_z=33000 height=5400 color=4C5260 attr.legacy_index=90
+render id=legacy_render_091 kind=wall min_x=-45000 max_x=33000 min_z=-45000 max_z=-45000 height=5400 color=555B68 attr.legacy_index=91
+render id=legacy_render_092 kind=wall min_x=-45000 max_x=-6000 min_z=33000 max_z=33000 height=5400 color=4C5260 attr.legacy_index=92
+render id=legacy_render_093 kind=wall min_x=6000 max_x=33000 min_z=33000 max_z=33000 height=5400 color=4C5260 attr.legacy_index=93
+render id=legacy_render_094 kind=wall min_x=-45000 max_x=-45000 min_z=-33000 max_z=33000 height=5400 color=5E5965 attr.legacy_index=94
+render id=legacy_render_095 kind=wall min_x=33000 max_x=33000 min_z=-33000 max_z=33000 height=5400 color=56515D attr.legacy_index=95
+render id=legacy_render_096 kind=floor min_x=-44400 max_x=-43400 min_z=-1650 max_z=1650 height=0 color=9B2F32 attr.legacy_index=96
+render id=legacy_render_097 kind=label min_x=10500 max_x=17500 min_z=-14100 max_z=-13900 color=FFD060 attr.text=ENEMY_DEATH_PRESENTATION attr.legacy_index=97
+actor_spawn id=Jesus class=level2 base_id=2 x=1000 y=0 z=0 downed=0 attr.legacy_index=0
+actor_spawn id=GUARD class=level1 base_id=1 x=0 y=0 z=-900 downed=0 attr.legacy_index=1
+actor_spawn id=ELITE class=level3 base_id=2 x=-1000 y=0 z=0 downed=0 attr.legacy_index=2
+actor_spawn id=BASE class=level1 base_id=0 x=0 y=0 z=900 downed=0 weapon=pistol attr.legacy_index=3
+actor_spawn id=DEV_GUNNER class=level1 base_id=0 x=5600 y=0 z=-7400 downed=0 attr.legacy_index=4
+actor_spawn id=PLATFORM_GUARD class=level2 base_id=0 x=0 y=0 z=-9900 downed=0 attr.legacy_index=5
+actor_spawn id=HIT_TEST class=level1 base_id=0 x=-9000 y=0 z=-8500 downed=0 attr.legacy_index=6
+actor_spawn id=ANIM_TEST class=level2 base_id=0 x=600 y=0 z=-9900 downed=0 attr.legacy_index=7
+actor_spawn id=AK_TEST class=level3 base_id=0 x=-9000 y=0 z=-10800 downed=0 weapon=ak attr.legacy_index=8
+actor_spawn id=AWP_TEST class=level3 base_id=0 x=-8000 y=0 z=-10000 downed=0 weapon=awp attr.legacy_index=9
+pickup id=pickup_smg kind=smg x=-250 y=-235 z=-7450 attr.legacy_index=0
+pickup id=pickup_shotgun kind=shotgun x=250 y=-235 z=-7450 attr.legacy_index=1
+pickup id=pickup_ammo_1 kind=ammo x=880 y=-520 z=-7480 attr.legacy_index=2
+pickup id=pickup_ammo_2 kind=ammo x=450 y=-500 z=900 attr.legacy_index=3
+pickup id=pickup_shop kind=shop x=1740 y=0 z=-4800 attr.legacy_index=4
+pickup id=pickup_ak kind=ak x=-700 y=-235 z=-7450 attr.legacy_index=5
+pickup id=pickup_awp kind=awp x=700 y=-235 z=-7450 attr.legacy_index=6
+pickup id=pickup_axe kind=axe x=-1050 y=-235 z=-7450 attr.legacy_index=7
+pickup id=pickup_bomb kind=bomb x=1050 y=-235 z=-7450 attr.legacy_index=8
+pickup id=pickup_molotov kind=molotov x=1350 y=-235 z=-7450 attr.legacy_index=9
+pickup id=pickup_pill kind=pill x=1650 y=-235 z=-7450 attr.legacy_index=10
+object id=object_crate kind=crate x=-14500 y=0 z=-17000 yaw=0 scale=1000 attr.legacy_index=0
+object id=object_barrier kind=barrier x=-13000 y=0 z=-17000 yaw=90 scale=1000 attr.legacy_index=1
+object id=object_lamp_post kind=lamp_post x=-11500 y=0 z=-17000 yaw=45 scale=1000 attr.legacy_index=2
+object id=object_short_wall kind=short_wall x=-10000 y=0 z=-17000 yaw=0 scale=1000 attr.legacy_index=3
+object id=object_railing kind=railing x=-8500 y=0 z=-17000 yaw=0 scale=1000 attr.legacy_index=4
+object id=object_vent_unit kind=vent_unit x=-7000 y=0 z=-17000 yaw=0 scale=1000 attr.legacy_index=5
+object id=object_workbench kind=workbench x=-5500 y=0 z=-17000 yaw=0 scale=1000 attr.legacy_index=6
+object id=object_ammo_container kind=ammo_container x=-4000 y=0 z=-17000 yaw=0 scale=1000 attr.legacy_index=7
+object id=object_industrial_pillar kind=industrial_pillar x=-2500 y=0 z=-17000 yaw=0 scale=1000 attr.legacy_index=8
+object id=object_pipe_module kind=pipe_module x=-1000 y=0 z=-17000 yaw=0 scale=1000 attr.legacy_index=9
+interaction id=humanoid_actions action=humanoid_actions x=-12600 y=-250 z=-12800 attr.legacy_index=11
+interaction id=wave_skip action=wave_skip x=-1740 y=0 z=-4800 attr.legacy_index=12
+interaction id=attack_x2 action=attack_x2 x=4200 y=-250 z=-11600 attr.legacy_index=13
+interaction id=attack_x3 action=attack_x3 x=4700 y=-250 z=-11600 attr.legacy_index=14
+interaction id=attack_x4 action=attack_x4 x=5200 y=-250 z=-11600 attr.legacy_index=15
+interaction id=horde action=horde x=-23940 y=200 z=-10000 attr.legacy_index=16
+interaction id=air_left action=air x=-23940 y=200 z=-7600 attr.legacy_index=17
+interaction id=alarm action=alarm x=-23940 y=200 z=-3000 attr.legacy_index=18
+interaction id=heavy action=heavy x=-23940 y=200 z=-8500 attr.legacy_index=19
+interaction id=fast action=fast x=-23940 y=200 z=-9000 attr.legacy_index=20
+interaction id=smoker action=smoker x=4200 y=-250 z=-7600 attr.legacy_index=21
+interaction id=charger action=charger x=4700 y=-250 z=-7600 attr.legacy_index=22
+interaction id=tank action=tank x=5200 y=-250 z=-7600 attr.legacy_index=23
+interaction id=money action=money x=5600 y=-250 z=-8600 attr.legacy_index=24
+interaction id=clear_hired action=clear_hired x=5600 y=-250 z=-9200 attr.legacy_index=25
+interaction id=enemy_death_test action=enemy_death_test x=14000 y=-250 z=-10500 attr.legacy_index=26
+interaction id=air_right action=air x=23940 y=-250 z=-7600 attr.legacy_index=27
+interaction id=pose_reset action=pose x=-14250 y=-250 z=-11300 attr.legacy_index=28
+interaction id=humanoid_pose_debug action=humanoid_pose_debug x=-15100 y=-250 z=-11300 attr.legacy_index=29
+interaction id=pose_right_arm action=pose_prev_bone x=-13400 y=-250 z=-11300 attr.legacy_index=30
+interaction id=pose_arms action=pose_next_bone x=-12600 y=-250 z=-11300 attr.legacy_index=31
+interaction id=pose_body action=pose_axis_x x=-11750 y=-250 z=-11300 attr.legacy_index=32
+interaction id=anim_idle action=anim_idle x=-10900 y=-250 z=-11300 attr.legacy_index=33
+interaction id=anim_walk action=anim_walk x=-10050 y=-250 z=-11300 attr.legacy_index=34
+interaction id=anim_jog action=anim_jog x=-9200 y=-250 z=-11300 attr.legacy_index=35
+interaction id=glb_idle action=glb_idle x=-10900 y=-250 z=-12100 attr.legacy_index=36
+interaction id=glb_walk action=glb_walk x=-10050 y=-250 z=-12100 attr.legacy_index=37
+interaction id=glb_jog action=glb_jog x=-9200 y=-250 z=-12100 attr.legacy_index=38
+interaction id=vmd_walk action=vmd_walk x=-8350 y=-250 z=-12100 attr.legacy_index=39
+interaction id=vmd_manjusaka action=vmd_manjusaka x=-7500 y=-250 z=-12100 attr.legacy_index=40
+interaction id=animation_composition action=animation_composition x=-6650 y=-250 z=-12100 attr.legacy_index=41
+interaction id=west_corridor action=west_corridor x=-23940 y=200 z=-2100 attr.legacy_index=42
+interaction id=west_corridor_no_tank action=west_corridor_no_tank x=-23940 y=200 z=2100 attr.legacy_index=43

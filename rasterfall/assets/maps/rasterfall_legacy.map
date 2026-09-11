@@ -1,0 +1,258 @@
+# Rasterfall map v2
+# world minx maxx minz maxz room_limit
+# 单一基地防守地图：玩家、三名原据点 AI 和 BASE 核心在中央区域守住尸潮。
+# 刷怪区贴近世界四边，尸潮从远方边缘涌来。
+world -45000 33000 -33000 33000 45000
+# ground is the actual walkable surface; world above is only the maximum extent.
+# This explicit base preserves the legacy arena until later map passes carve its
+# west/north/east channels into separate ground regions.
+ground -33000 33000 -33000 33000 272B31
+start -13000 -12000 0 1024
+
+# 出生点附近的 RF Humanoid V2 动作调试台；模型是渲染层展示，不是玩法实体。
+label -12200 -11200 -10300 -10100 9FE8C8 RF_HUMANOID_V2_ACTION_DEBUG
+button_humanoid_actions -12600 -12800 -250
+
+# ── 单一基地防守区 ────────────────────────────────────────────────
+floor -3000 3000 -3000 3000 294B45
+label -1700 1700 -3300 -3100 80E0A0 BASE DEFENSE
+
+# ── 起点安全屋（不变）───────────────────────────────────────────────
+safe -1800 1800 -5700 -4000 start
+button_wave_skip -1740 -4800 0
+floor -1800 1800 -5700 -4000 245238
+box -2000 -1800 -5700 -3800 1300 3F6751 visible collision
+box 1800 2000 -5700 -3800 1300 3F6751 visible collision
+# 保留门框墙体，中央门洞扩大到 x=-900..900，避免玩家碰撞半径卡门。
+box -1800 -900 -4000 -3800 1300 3F6751 visible collision
+box 900 1800 -4000 -3800 1300 3F6751 visible collision
+box -1800 -600 -5700 -5680 1300 3F6751 visible collision
+box 600 1800 -5700 -5680 1300 3F6751 visible collision
+model -1800 1800 -5700 -4000 1300 1500 3F6751 0
+# 安全屋屋顶只在屋顶高度提供可站立表面；屋顶下方不形成实体阻挡。
+platform_roof -2180 2180 -5880 -3620 2400 opaque
+
+# ── 开发者区（测试按钮、武器桌和陈列台）──────────────────────────
+# 空气墙与起点后墙同线；中心为开发者门。
+# x=-20000 处为通往空气墙顶部的开发者快捷坡道，坡道进入墙体前达到
+# 墙顶高度；坡尾略高于墙顶，使玩家碰撞圆接触墙侧前即可跨上顶部。
+box -24000 -1800 -5900 -5700 3000 48C8E0 visible collision walkable role=air_gate_left
+ramp -21000 -19000 -15000 -5900 0 3979 z 477A66
+label -21000 -19000 -14600 -14400 9FE8C8 DEV_RAMP_SLOPE_0.44
+# 空气墙是完整的三维实体：顶面覆盖整段墙体，并向四周扩展一个玩家
+# 碰撞半径。坡道侧的地面边界为 z=-6260，使整个碰撞圆在坡面完整
+# 支撑结束处恰好切换到墙顶，避免提前抬升后被墙侧卡住。
+platform -24180 -1620 -6260 -5520 3900 3B5550 transparent role=air_gate_left_top
+box 1800 24000 -5900 -5700 3000 48C8E0 visible collision walkable role=air_gate_right
+platform 1620 24180 -6260 -5520 3900 3B5550 transparent role=air_gate_right_top
+floor -24000 -1800 -5900 -5700 26394A
+floor 1800 24000 -5900 -5700 26394A
+label -23000 23000 -6200 -6000 70D8FF AIR WALL CONTROL LINE
+
+# 模型陈列台（装饰与调试用）。
+floor -3600 -1400 -9000 -7800 343B48
+floor 1400 17000 -9200 -7800 343B48
+platform -900 900 -10800 -9000 500
+model -900 900 -10800 -9000 -550 -400 6A5538 0
+sign 1200 2800 -10070 -9980 -650 -250 765A3A FROM HARRAN CITY
+model -3200 -2000 -8700 -8100 -900 700 B66A35 1
+model 2000 3200 -8700 -8100 -900 900 3F8FBA 2
+model 3900 4500 -9000 -8400 -900 650 76513A 3
+model 4700 5300 -9000 -8400 -900 650 8B5A35 4
+model 6600 7600 -9000 -8400 -900 650 65713D 5
+model 8000 9000 -9000 -8400 -900 650 6A5538 6
+model 9000 10000 -9000 -8400 -900 650 8A4F9B 7
+model 10000 11000 -9000 -8400 -900 650 4F8AA8 8
+model 11000 12000 -9000 -8400 -900 650 6A5538 9
+model 12000 13000 -9000 -8400 -900 650 8A4F9B 10
+model 13000 14000 -9000 -8400 -900 650 4F8AA8 11
+model 14000 15000 -9000 -8400 -900 650 6A5538 12
+model 15000 16000 -9000 -8400 -900 650 8A4F9B 13
+model 16000 17000 -9000 -8400 -900 650 4F8AA8 14
+label -4000 4000 -9700 -9200 90D0FF MODEL_DISPLAY
+label 7900 17000 -9700 -9200 FFD060 ENEMY_VISUAL_FAMILY_3X3
+prop crate -14500 -17000 0 1000
+prop barrier -13000 -17000 90 1000
+prop lamp_post -11500 -17000 45 1000
+prop short_wall -10000 -17000 0 1000
+prop railing -8500 -17000 0 1000
+prop vent_unit -7000 -17000 0 1000
+prop workbench -5500 -17000 0 1000
+prop ammo_container -4000 -17000 0 1000
+prop industrial_pillar -2500 -17000 0 1000
+prop pipe_module -1000 -17000 0 1000
+label -16500 1500 -20400 -20200 9FE8C8 CHARACTER_TEST_STRIP
+label 3800 7800 -9800 -9400 FFD060 SPECIAL_INFECTED
+label 3000 6000 -11100 -10900 FFD060 ATTACK_POINTS
+label 4050 4350 -11400 -11250 FFD060 *2
+label 4550 4850 -11400 -11250 FFD060 *3
+label 5050 5350 -11400 -11250 FFD060 *4
+button_attack_x2 4200 -11600 -250
+button_attack_x3 4700 -11600 -250
+button_attack_x4 5200 -11600 -250
+# 南侧空旷地带：ground query / 斜坡移动与渲染测试。
+# ramp minx maxx minz maxz start_height end_height axis color
+ramp 7000 10000 -19000 -17500 0 900 x 477A66
+ramp 11000 12500 -19000 -16000 0 1200 z 526F91
+ramp 14000 17000 -19000 -17500 900 0 x 8A6648
+label 7000 17000 -19600 -19200 9FE8C8 RAMP_GROUND_QUERY
+
+# 武器桌：SMG 西半、霰弹枪东半；弹药箱在东侧木托上。
+box -700 700 -7600 -7300 -250 5A3E28 hidden collision
+# 实体桌面与弹药箱顶部均为可站立碰撞面；范围按玩家半径外扩，使角色
+# 走到可见边缘时仍由顶面承载，而不会穿入侧面。
+platform -880 880 -7780 -7120 650
+model -700 700 -7600 -7300 -750 -250 6A4A30
+model -700 -610 -7600 -7510 -900 -250 5A3E28
+model 610 700 -7600 -7510 -900 -250 5A3E28
+model -700 -610 -7390 -7300 -900 -250 5A3E28
+model 610 700 -7390 -7300 -900 -250 5A3E28
+box 820 940 -7570 -7390 -560 6A5538 hidden collision
+platform 640 1120 -7750 -7210 340
+model 820 940 -7570 -7390 -900 -560 6A5538
+
+# ── 刷怪区（贴近世界四边的带状区；彩色地面标记）──────────────────────
+# 西带：左墙内沿，纵贯南北
+spawn -23000 -21500 -5600 23000 6E2828
+floor -23000 -21500 -5600 23000 6E2828
+# 东带：右墙内沿，纵贯南北
+spawn 21500 23000 -5600 23000 6E2828
+floor 21500 23000 -5600 23000 6E2828
+# 北侧刷怪区拆到据点进路两翼，中央留给 Hurd Relay 防区。
+spawn -20000 -9000 14000 22000 6E2828
+floor -20000 -9000 14000 22000 6E2828
+spawn 9000 20000 14000 22000 6E2828
+floor 9000 20000 14000 22000 6E2828
+
+# ── 世界边界墙（四围）──────────────────────────────────────────────
+# ── 原地图边界缺口与向外走廊（入口可通行，外端有尽头）────────────
+# 旧边界仍在 ±24000；三个边界走廊各自向外延伸 9000 RFU。
+# 每个走廊由一块地面、两侧墙和一个封头组成，不使用空气墙。
+wall -24000 24000 -24000 -24000 5400 555B68
+wall -24000 -6000 24000 24000 5400 4C5260
+wall 6000 24000 24000 24000 5400 4C5260
+wall -24000 -24000 -24000 -2400 5400 5E5965
+wall -24000 -24000 2400 24000 5400 5E5965
+wall 24000 24000 -24000 -800 5400 56515D
+wall 24000 24000 800 24000 5400 56515D
+# 内层边界墙的碰撞体；保留西/东/北走廊的开口。
+box -24000 24000 -24020 -23980 5400 555B68 hidden collision blocks_airborne
+box -24020 -23980 24000 24020 5400 4C5260 hidden collision blocks_airborne
+box 23980 24020 24000 24020 5400 4C5260 hidden collision blocks_airborne
+box -24020 -23980 -24000 -2400 5400 5E5965 hidden collision blocks_airborne
+box -24020 -23980 2400 24000 5400 5E5965 hidden collision blocks_airborne
+box 23980 24020 -24000 -800 5400 56515D hidden collision blocks_airborne
+box 23980 24020 800 24000 5400 56515D hidden collision blocks_airborne
+# 北侧内层边界为 Hurd 据点留出 x=-6000..6000 的入口。
+box -24000 -6000 23980 24020 5400 4C5260 hidden collision blocks_airborne
+box 6000 24000 23980 24020 5400 4C5260 hidden collision blocks_airborne
+
+# 西侧走廊：横向宽度扩为原来的 3 倍（z=-2400..2400）；坡度统一为
+# 900/3000=0.30，与南侧可行走测试坡一致。
+# 从西端向主区域入口依次为上坡、平地、下坡、平地、上坡、平地、下坡。
+ramp -39000 -36000 -2400 2400 0 900 x 314B43
+platform -36000 -35000 -2400 2400 900 3B5550 opaque
+ramp -35000 -32000 -2400 2400 900 0 x 314B43
+floor -32000 -31000 -2400 2400 314B43
+ramp -31000 -28000 -2400 2400 0 900 x 314B43
+platform -28000 -27000 -2400 2400 900 3B5550 opaque
+ramp -27000 -24000 -2400 2400 900 0 x 314B43
+floor -45000 -39000 -2400 2400 314B43
+box -45000 -24000 -2420 -2400 5400 5E5965 hidden collision blocks_airborne
+box -45000 -24000 2400 2420 5400 5E5965 hidden collision blocks_airborne
+box -45020 -45000 -2420 2420 5400 5E5965 hidden collision blocks_airborne
+wall -45000 -24000 -2400 -2400 5400 5E5965
+wall -45000 -24000 2400 2400 5400 5E5965
+wall -45000 -45000 -2400 2400 5400 5E5965
+
+# 东侧走廊：从 x=24000 向外到 33000。
+floor 24000 33000 -800 800 314B43
+box 24000 33000 -820 -800 5400 56515D hidden collision blocks_airborne
+box 24000 33000 800 820 5400 56515D hidden collision blocks_airborne
+box 33000 33020 -820 820 5400 56515D hidden collision blocks_airborne
+wall 24000 33000 -800 -800 5400 56515D
+wall 24000 33000 800 800 5400 56515D
+wall 33000 33000 -800 800 5400 56515D
+
+# 北侧 Hurd 据点：扩宽原走廊，固定控制区位于其中（session 配置
+# x=-5000..5000, z=25500..31500），中央旗帜在 (0,28500)。
+floor -6000 6000 24000 33000 314B43
+box -6020 -6000 24000 33000 5400 4C5260 hidden collision blocks_airborne
+box 6000 6020 24000 33000 5400 4C5260 hidden collision blocks_airborne
+box -6020 6020 33000 33020 5400 4C5260 hidden collision blocks_airborne
+wall -6000 -6000 24000 33000 5400 4C5260
+wall 6000 6000 24000 33000 5400 4C5260
+wall -6000 6000 33000 33000 5400 4C5260
+
+# 新外边界的墙只负责渲染；实际碰撞由走廊两侧墙和端墙提供，避免把
+# 视觉外圈变成第二套 gameplay 边界。北侧在 Hurd 据点范围内断开，
+# 避免与据点北墙重叠。
+wall -45000 33000 -45000 -45000 5400 555B68
+wall -45000 -6000 33000 33000 5400 4C5260
+wall 6000 33000 33000 33000 5400 4C5260
+wall -45000 -45000 -33000 33000 5400 5E5965
+wall 33000 33000 -33000 33000 5400 56515D
+
+# 西侧走廊尽头刷怪区；横向范围同步扩大为原来的 3 倍。
+spawn -44400 -43400 -1650 1650 9B2F32
+floor -44400 -43400 -1650 1650 9B2F32
+
+# ── 可交互物（顺序即 interactables 索引，逻辑测试依赖）─────────────
+pickup smg -250 -7450 -235
+pickup shotgun 250 -7450 -235
+pickup ammo 880 -7480 -520
+pickup ammo 450 900 -500
+pickup shop 1740 -4800 0
+pickup ak -700 -7450 -235
+pickup awp 700 -7450 -235
+pickup axe -1050 -7450 -235
+pickup bomb 1050 -7450 -235
+pickup molotov 1350 -7450 -235
+pickup pill 1650 -7450 -235
+button -23940 -10000 200
+button_air -23940 -7600 200
+button_alarm -23940 -3000 200
+button_heavy -23940 -8500 200
+button_fast -23940 -9000 200
+# 开发者区域东侧：特感测试按钮共用圆柱底座，按东西紧密排列。
+button_smoker 4200 -7600 -250
+button_charger 4700 -7600 -250
+button_tank 5200 -7600 -250
+button_money 5600 -8600 -250
+button_clear_hired 5600 -9200 -250
+# 敌人死亡表现测试：按钮前方空地生成 Common/Fast/Heavy 各两只并立即走正式致死伤害路径。
+label 10500 17500 -14100 -13900 FFD060 ENEMY_DEATH_PRESENTATION
+button_enemy_death_test 14000 -10500 -250
+button_air 23940 -7600 -250
+# 优菈骨骼蒙皮第一阶段：模型正前方四个本地程序化 pose 按钮。
+button_pose_reset -14250 -11300 -250
+button_humanoid_pose_debug -15100 -11300 -250
+button_pose_right_arm -13400 -11300 -250
+button_pose_arms -12600 -11300 -250
+button_pose_body -11750 -11300 -250
+button_anim_idle -10900 -11300 -250
+button_anim_walk -10050 -11300 -250
+button_anim_jog -9200 -11300 -250
+# Quaternius 原始 GLB 预览按钮，与 Eula retarget 按钮分开。
+button_glb_idle -10900 -12100 -250
+button_glb_walk -10050 -12100 -250
+button_glb_jog -9200 -12100 -250
+# MMD 原生 VMD 直连 Eula PMX/RFM2；与 GLB 预览按钮同排。
+button_vmd_walk -8350 -12100 -250
+button_vmd_manjusaka -7500 -12100 -250
+button_animation_composition -6650 -12100 -250
+button_west_corridor -23940 -2100 200
+# 西侧走廊出口旁的西墙：16 个随机敌人，但随机池排除 Tank。
+button_west_corridor_no_tank -23940 2100 200
+# 三名原据点 AI 保持普通队友规则；BASE 是基地核心目标。
+ai_spawn Jesus 2 level2 1000 0 0
+ai_spawn GUARD 1 level1 0 -900 0
+ai_spawn ELITE 2 level3 -1000 0 0
+ai_spawn BASE 0 level1 0 900 0 pistol
+ai_spawn DEV_GUNNER 0 level1 5600 -7400 0
+ai_spawn PLATFORM_GUARD 0 level2 0 -9900 0
+ai_spawn HIT_TEST 0 level1 -9000 -8500 0
+ai_spawn ANIM_TEST 0 level2 600 -9900 0
+ai_spawn AK_TEST 0 level3 -9000 -10800 0 ak
+ai_spawn AWP_TEST 0 level3 -8000 -10000 0 awp
+

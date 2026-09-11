@@ -456,11 +456,11 @@ int toy_map_lifecycle_logic_test(void)
     struct toy_map m;
     int props, primitives;
     memset(&m, 0, sizeof(m));
-    if (toy_map_load("rasterfall/assets/maps/rasterfall.map", &m) < 0)
+    if (toy_map_load("rasterfall/assets/maps/rasterfall_legacy.map", &m) < 0)
         return 1;
     props = m.prop_count;
     primitives = m.primitive_count;
-    if (toy_map_load("rasterfall/assets/maps/rasterfall.map", &m) < 0 ||
+    if (toy_map_load("rasterfall/assets/maps/rasterfall_legacy.map", &m) < 0 ||
         m.prop_count != props || m.primitive_count != primitives) {
         toy_map_unload(&m);
         return 2;

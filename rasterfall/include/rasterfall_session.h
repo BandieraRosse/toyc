@@ -179,6 +179,8 @@ struct rasterfall_session {
 
 int rasterfall_session_load(struct rasterfall_session *session,
                             const char *map_path);
+int rasterfall_session_load_legacy(struct rasterfall_session *session,
+                                   const char *map_path);
 const struct toy_game_actor *rasterfall_session_local_player_const(
     const struct rasterfall_session *session);
 void rasterfall_session_unload(struct rasterfall_session *session);

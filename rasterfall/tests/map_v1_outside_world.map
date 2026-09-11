@@ -1,0 +1,3 @@
+map version=1 units=rfu
+world min_x=-100 max_x=100 min_z=-100 max_z=100
+region id=outside kind=safe min_x=-110 max_x=90 min_z=-90 max_z=90

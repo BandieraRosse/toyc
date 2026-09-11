@@ -2826,6 +2826,8 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     strcpy(host_address, "127.0.0.1");
     memset(&game_runtime, 0, sizeof(game_runtime));
     if (rf_game_init(&game_runtime, &core, &session,
+                     config->options && config->options->legacy_map ?
+                     "rasterfall/assets/maps/rasterfall_legacy.map" :
                      config->map_path ? config->map_path :
                      "rasterfall/assets/maps/rasterfall.map") < 0) {
         __fprintf(2, "rasterfall: cannot load map rasterfall/assets/maps/rasterfall.map\n");
