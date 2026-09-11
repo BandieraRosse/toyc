@@ -58,6 +58,14 @@ struct rf_game_runtime {
     int lifecycle_running;
     int coordinate_axes;
     int display_fps;
+    int debug_input_enabled;
+    int mouse_level;
+    int keyboard_level;
+    int pause_menu_selected;
+    int managed_terminal_open;
+    char managed_terminal_line[32];
+    char managed_terminal_message[96];
+    struct rf_input_frame input_frame;
     int fps_window_frames;
     int rendered_frames;
     int scene_pixels;
@@ -73,6 +81,7 @@ struct rf_game_runtime {
     int have_pointer_position;
     int last_pointer_x;
     int last_pointer_y;
+    int host_port;
     int64_t accumulator;
     int64_t last_time;
     int64_t previous_begin;

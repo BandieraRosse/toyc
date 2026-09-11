@@ -1,7 +1,7 @@
 # 运行时与主循环
 
 > 文档更新：2026-09-11
-> 源码核对基线：工作区（Humanoid Action Composition V1 CLI；双正式四人 squad runtime；Lighting V1；`game_state.actors[]` 是 gameplay truth；RF Core Runtime V0.2 `rf_game_runtime` facade、Core status query、service access cleanup 与 Input view；Core/Game startup config split；renderer frame ownership cleanup；Core filesystem service V0；唯一 `rf_core` context 与 Core clock service；Phase 3A `rf_game_update()` gameplay update authority；Phase 3B-1 world presentation migration）
+> 源码核对基线：工作区（Humanoid Action Composition V1 CLI；双正式四人 squad runtime；Lighting V1；`game_state.actors[]` 是 gameplay truth；RF Core Runtime V0.2 `rf_game_runtime` facade、Core status query、service access cleanup 与 Input view；Core/Game startup config split；renderer frame ownership cleanup；Core filesystem service V0；唯一 `rf_core` context 与 Core clock service；Phase 3A `rf_game_update()` gameplay update authority；Phase 3B-1 world presentation migration；Phase 3B-2 steady-state Game UI presentation authority）
 
 > 源码核对补充：session reset 在原 flag 1 和原坐标恢复 Maid 四人旗卫，并创建使用 flag 2 的正式 Hurd squad/outpost；Hurd 控制状态保持派生。
 
@@ -21,7 +21,7 @@ session 外的网络、摄像机、输入边沿、特效、HUD/菜单控制、pe
   `rf_game_init/update/render/shutdown` facade。
 - `src/rf_game_runtime.c`：fixed-step facade 的 gameplay/session/network/effects 更新、world/HUD/debug
   渲染、菜单与输入边沿处理；其中 `rf_game_update()` 是唯一 gameplay update 入口，
-  `rf_game_render()` 是 steady-state world/presentation submission 入口，
+  `rf_game_render()` 是 steady-state world/presentation/UI submission 入口，
   `rf_game_runtime_run()` 只编排 Core lifecycle、平台输入/网络轮询、fixed-step 节拍和 render。
   `rasterfall.c` 不再访问 Game 状态，也不再把 `argc/argv` 传入 runtime。
 - `include/rasterfall_camera.h`：共享摄像机数据结构。
@@ -64,7 +64,8 @@ transform 和左右 hand target；旧单 action 四参数形式继续可用。
 `rasterfall_command`，交给 `rf_game_update()`；该 facade 按原顺序推进 session/client prediction、
 host remote apply/rescue、gameplay timers、effects sync 和 authoritative snapshot/command bookkeeping，
 之后由 `rf_game_render()` 派生 render camera，并按原顺序提交 world、entities、interactables、
-world effects 和 viewmodel；HUD、pause、scoreboard、debug overlay 仍由 run 保持原路径。排查“偶发吞键”
+world effects、viewmodel、HUD、pause、scoreboard、debug overlay、labels 和 console；Core startup
+与 connection bootstrap UI 仍保持独立路径。排查“偶发吞键”
 时查看 `pending_key_edges`，排查帧率相关玩法差异时查看 accumulator 和逻辑步，而不是只看渲染帧。
 
 本地 session/client prediction 把控制器命令交给 actor API；actor 先更新 gameplay body，随后
@@ -73,7 +74,8 @@ camera 的方向仍作为输入视角供移动与瞄准使用。渲染阶段可�
 回写 gameplay 位置。
 
 窗口运行时的一帧由 Core Host 完整包住：`rf_core_begin_frame()` 获取 surface 并调用
-`toy_renderer_begin()`；`rf_game_render()` 提交世界、交互物、第一人称模型和 world effects，
+`toy_renderer_begin()`；`rf_game_render()` 提交世界、交互物、第一人称模型、world effects 和
+steady-state Game UI，
 并通过 Core 提供的 `rf_core_flush()` 保留内部 ordering barrier。现有画面依赖世界深度层、
 直接 framebuffer overlay 与 viewmodel 的既定顺序。最后
 `rf_core_end_frame()` 执行最终 flush，再由 Core present。Core 同时拥有 window、surface、renderer

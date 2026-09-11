@@ -2537,6 +2537,10 @@ int rf_game_render(struct rf_game_runtime *runtime,
     struct rasterfall_session *game_session;
     struct camera *body_camera;
     struct camera *render_camera;
+    struct control_settings settings;
+    struct pause_menu pause_menu;
+    struct managed_terminal managed_terminal;
+    struct rasterfall_hud_state hud;
     int pixels = 0;
     int flushed;
 
@@ -2573,6 +2577,12 @@ int rf_game_render(struct rf_game_runtime *runtime,
     if (flushed < 0) return -1;
     pixels += flushed;
 
+    if (runtime->coordinate_axes)
+        rasterfall_render_coordinate_labels(surface, render_camera);
+#if TOY_CONFIG_SHOW_MODEL_PATHS
+    rasterfall_render_gallery_selection(surface, render_camera);
+#endif
+
     if (game_session->game_state.state == TOY_GAME_PLAYING &&
         !runtime->lifecycle_paused && !game_session->shop_open) {
         pixels += rasterfall_render_interactables(renderer, render_camera);
@@ -2590,6 +2600,52 @@ int rf_game_render(struct rf_game_runtime *runtime,
     flushed = rf_core_flush(runtime->core);
     if (flushed < 0) return -1;
     pixels += flushed;
+
+    settings.mouse_level = runtime->mouse_level;
+    settings.keyboard_level = runtime->keyboard_level;
+    pause_menu.selected = runtime->pause_menu_selected;
+    memset(&managed_terminal, 0, sizeof(managed_terminal));
+    managed_terminal.open = runtime->managed_terminal_open;
+    strcpy(managed_terminal.line, runtime->managed_terminal_line);
+    strcpy(managed_terminal.message, runtime->managed_terminal_message);
+    if (game_session->game_state.state == TOY_GAME_OVER) {
+        draw_game_over_panel(surface, runtime->net.mode == RASTERFALL_NET_CLIENT);
+    } else if (game_session->game_state.state == TOY_GAME_WON) {
+        draw_level_won_panel(surface, runtime->net.mode == RASTERFALL_NET_CLIENT);
+    } else if (runtime->console.open) {
+        /* Developer console is drawn after every other overlay. */
+    } else if (managed_terminal.open) {
+        draw_managed_terminal(surface, &managed_terminal);
+    } else if (runtime->lifecycle_paused) {
+        draw_pause_overlay(surface, &pause_menu, &settings,
+                           runtime->coordinate_axes);
+    } else {
+        draw_crosshair(surface, &game_session->game_state);
+        fill_hud_state(&hud, &runtime->net, runtime->host_address,
+                       runtime->host_port, body_camera);
+        rasterfall_hud_render(surface, runtime->display_fps, &hud);
+    }
+    if (game_session->game_state.state == TOY_GAME_PLAYING &&
+        !runtime->lifecycle_paused && !game_session->shop_open) {
+        fill_hud_state(&hud, &runtime->net, runtime->host_address,
+                       runtime->host_port, body_camera);
+        rasterfall_hud_draw_interact_prompt(renderer, &hud);
+    }
+    rasterfall_render_ai_teammate_name(renderer, render_camera);
+    rasterfall_render_network_teammate_status(
+        renderer, render_camera, &runtime->net, &game_session->game_state);
+    pixels += rasterfall_render_overlays(renderer);
+    if (game_session->game_state.state == TOY_GAME_PLAYING &&
+        !runtime->lifecycle_paused && !game_session->pose_editor.active &&
+        toy_input_down(&runtime->input_frame, KEY_TAB))
+        draw_scoreboard(surface, &runtime->net);
+    if (runtime->debug_input_enabled)
+        draw_input_debug(surface, &runtime->input_frame,
+                         runtime->have_last_key ? runtime->last_key : 0,
+                         runtime->have_last_key ? runtime->last_key_pressed : 0,
+                         runtime->input_event_count);
+    if (runtime->console.open)
+        rasterfall_console_draw(surface, &runtime->console);
     runtime->scene_pixels = pixels;
     return pixels;
 }
@@ -3710,7 +3766,6 @@ startup_again:
         }
         if (ready > 0) {
             int present_result;
-            struct camera render_camera;
             /* Local movement is client-authoritative; host position
              * corrections are intentionally not applied to the camera. */
             if (!logged_first_frame) {
@@ -3725,66 +3780,31 @@ startup_again:
             game_runtime.lifecycle_paused = paused;
             game_runtime.managed_spectator = managed_spectator;
             game_runtime.managed_third_person = managed_third_person;
+            game_runtime.coordinate_axes = coordinate_axes;
+            game_runtime.display_fps = display_fps;
+            game_runtime.debug_input_enabled = input_debug;
+            game_runtime.mouse_level = settings.mouse_level;
+            game_runtime.keyboard_level = settings.keyboard_level;
+            game_runtime.pause_menu_selected = pause_menu.selected;
+            game_runtime.managed_terminal_open = managed_terminal.open;
+            strcpy(game_runtime.managed_terminal_line, managed_terminal.line);
+            strcpy(game_runtime.managed_terminal_message,
+                   managed_terminal.message);
+            game_runtime.input_frame = input;
+            game_runtime.host_port = net_port;
+            game_runtime.last_key = last_key;
+            game_runtime.last_key_pressed = last_key_pressed;
+            game_runtime.have_last_key = have_last_key;
+            game_runtime.input_event_count = input_event_count;
+            game_runtime.console = developer_console;
             if (rf_game_render(&game_runtime, &renderer, &surface) < 0) {
                 __fprintf(2,
                     "rasterfall: skipped frame after renderer watchdog timeout\n");
                 continue;
             }
             scene_pixels = game_runtime.scene_pixels;
-            render_camera = game_runtime.render_camera;
             prev_tris = renderer.submitted_triangles;
             stage_pixels = 0;
-            /* These diagnostics intentionally remain outside the Game render
-             * facade; their placement after the world barrier is unchanged. */
-            if (coordinate_axes)
-                rasterfall_render_coordinate_labels(&surface, &render_camera);
-#if TOY_CONFIG_SHOW_MODEL_PATHS
-            rasterfall_render_gallery_selection(&surface, &render_camera);
-#endif
-            if (game.state == TOY_GAME_OVER) {
-                draw_game_over_panel(&surface,
-                                     net.mode == RASTERFALL_NET_CLIENT);
-            } else if (game.state == TOY_GAME_WON) {
-                draw_level_won_panel(&surface,
-                                     net.mode == RASTERFALL_NET_CLIENT);
-            } else if (developer_console.open) {
-                /* Developer console is drawn after every other overlay. */
-            } else if (managed_terminal.open) {
-                draw_managed_terminal(&surface, &managed_terminal);
-            } else if (paused) {
-                draw_pause_overlay(&surface, &pause_menu, &settings,
-                                   coordinate_axes);
-            } else {
-                draw_crosshair(&surface, &game);
-                {
-                    struct rasterfall_hud_state hud;
-                    fill_hud_state(&hud, &net, host_address, net_port, &camera);
-                    rasterfall_hud_render(&surface, display_fps, &hud);
-                }
-            }
-            if (game.state == TOY_GAME_PLAYING && !paused &&
-                !session.shop_open) {
-                struct rasterfall_hud_state hud;
-                fill_hud_state(&hud, &net, host_address, net_port, &camera);
-                /* The interaction prompt is direct framebuffer text and is
-                 * intentionally above world buttons and the viewmodel. */
-                rasterfall_hud_draw_interact_prompt(&renderer, &hud);
-            }
-            scene_pixels += stage_pixels;
-            rasterfall_render_ai_teammate_name(&renderer, &render_camera);
-            rasterfall_render_network_teammate_status(
-                &renderer, &render_camera, &net, &game);
-            stage_pixels += rasterfall_render_overlays(&renderer);
-            if (game.state == TOY_GAME_PLAYING && !paused &&
-                !session.pose_editor.active && toy_input_down(&input, KEY_TAB))
-                draw_scoreboard(&surface, &net);
-            if (input_debug)
-                draw_input_debug(&surface, &input,
-                                 have_last_key ? last_key : 0,
-                                 have_last_key ? last_key_pressed : 0,
-                                 input_event_count);
-            if (developer_console.open)
-                rasterfall_console_draw(&surface, &developer_console);
             rasterfall_perf_end_stage(&stats, &stats_total, RASTERFALL_STATS_OVERLAY,
                            &t_stage, renderer.submitted_triangles - prev_tris,
                            (unsigned long)stage_pixels);
