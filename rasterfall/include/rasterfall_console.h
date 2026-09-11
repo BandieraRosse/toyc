@@ -12,7 +12,14 @@ enum rasterfall_console_log_level {
 };
 
 struct rasterfall_console;
+struct rf_core;
+struct rf_game_runtime;
+struct rf_command_context {
+    struct rf_core *core;
+    struct rf_game_runtime *game_runtime;
+};
 typedef int (*rasterfall_console_command_handler)(
+    const struct rf_command_context *context,
     struct rasterfall_console *console, int argc, char **argv);
 
 struct rasterfall_console_command {
@@ -47,6 +54,9 @@ void rasterfall_console_log(struct rasterfall_console *console,
                             const char *message);
 int rasterfall_console_handle_input(struct rasterfall_console *console,
                                     struct rf_input_frame *input, unsigned char *pending);
+int rasterfall_console_handle_input_context(
+    struct rasterfall_console *console, struct rf_input_frame *input,
+    unsigned char *pending, const struct rf_command_context *context);
 void rasterfall_console_draw(struct toy_surface *surface,
                              const struct rasterfall_console *console);
 int rasterfall_console_logic_test(void);

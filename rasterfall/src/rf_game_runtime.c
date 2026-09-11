@@ -2666,6 +2666,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     struct pause_menu pause_menu;
     struct managed_terminal managed_terminal;
     struct rasterfall_console developer_console;
+    struct rf_command_context command_context;
     int64_t last_time, fps_window_start, fps_elapsed;
     int64_t last_active = 0;   /* 帧间隔统计 */
     int return_to_menu = 0;
@@ -3021,6 +3022,8 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     tlibc_sigaction(SIGPIPE, (void (*)(int))1);
     memset(&managed_terminal, 0, sizeof(managed_terminal));
     rasterfall_console_init(&developer_console);
+    command_context.core = &core;
+    command_context.game_runtime = &game_runtime;
     if (!textures_enabled)
         rasterfall_console_log(&developer_console,
                                RASTERFALL_CONSOLE_WARNING,
@@ -3299,8 +3302,9 @@ startup_again:
         {
             int console_was_open = developer_console.open;
             if (developer_console.open)
-                rasterfall_console_handle_input(&developer_console, &input,
-                                                pending_key_edges);
+                rasterfall_console_handle_input_context(
+                    &developer_console, &input, pending_key_edges,
+                    &command_context);
             if (developer_console.pose_hud_request != 0) {
                 session.pose_debug_active =
                     developer_console.pose_hud_request > 0;
