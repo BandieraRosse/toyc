@@ -23,7 +23,7 @@
 
 | 任务或症状 | 首先阅读 | 主要入口 |
 | --- | --- | --- |
-| 启动、参数、Core Host、runtime update/render 调度 | [runtime.md](runtime.md) | `src/rasterfall.c`、`src/rf_game_runtime.c`、`include/rf_game_lifecycle.h`；gameplay update 入口为 `rf_game_update()` |
+| 启动、参数、Core Host、runtime update/render 调度 | [runtime.md](runtime.md) | `src/rasterfall.c`、`src/rf_game_runtime.c`、`include/rf_game_lifecycle.h`；gameplay update 入口为 `rf_game_update()`，world presentation 入口为 `rf_game_render()` |
 | Core/Runtime 查询面与前哨站接口准备 | [core-runtime-v0.2.md](core-runtime-v0.2.md) | `include/rf_core_host.h`、`include/rf_game_lifecycle.h`、`include/rasterfall_session.h` |
 | agent 固定视觉场景截图 / Visual CLI | [rendering.md](rendering.md)、[runtime.md](runtime.md) | options → `rasterfall_render_visual_capture()` → `src/dev-tests/rasterfall_visual_capture.inc` |
 | Enemy Visual V2 六资产、家族切换、敌人截图与资产验收 | [enemy-visuals.md](enemy-visuals.md)、[rendering.md](rendering.md) | `rasterfall_enemy_visual.h` → `render/rasterfall_enemy_visual.inc`；`tools/enemy_visual_round.py` |

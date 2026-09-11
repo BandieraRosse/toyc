@@ -2530,6 +2530,70 @@ int rf_game_update(struct rf_game_runtime *runtime,
     return 0;
 }
 
+int rf_game_render(struct rf_game_runtime *runtime,
+                   struct toy_renderer *renderer,
+                   struct toy_surface *surface)
+{
+    struct rasterfall_session *game_session;
+    struct camera *body_camera;
+    struct camera *render_camera;
+    int pixels = 0;
+    int flushed;
+
+    if (!runtime || !runtime->initialized || !runtime->session ||
+        !runtime->core || !renderer || !surface)
+        return -1;
+    game_session = runtime->session;
+    body_camera = &runtime->camera;
+    render_camera = &runtime->render_camera;
+
+    /* Preserve the existing render-only camera derivation order. */
+    *render_camera = *body_camera;
+    set_network_spectator_camera(render_camera, &runtime->net);
+    if (runtime->managed_spectator)
+        set_managed_spectator_camera(render_camera, body_camera,
+                                     runtime->managed_third_person);
+    rasterfall_effects_apply_camera_shake(&runtime->effects, render_camera);
+
+    /* World and actor submission order is intentionally unchanged. */
+    pixels += rasterfall_render_scene(renderer, render_camera);
+    pixels += rasterfall_render_flags(renderer, render_camera);
+    pixels += rasterfall_render_enemies(renderer, render_camera);
+    pixels += rasterfall_render_ai_teammate(renderer, render_camera);
+    if (runtime->managed_spectator && runtime->managed_third_person)
+        pixels += rasterfall_render_managed_player(
+            renderer, render_camera, body_camera);
+    pixels += rasterfall_render_network_teammate(
+        renderer, render_camera, &runtime->net, &game_session->game_state);
+    pixels += rasterfall_render_sign_text(renderer, render_camera);
+    pixels += rasterfall_render_flag_text(renderer, render_camera);
+
+    /* Existing world-to-overlay ordering barrier. */
+    flushed = rf_core_flush(runtime->core);
+    if (flushed < 0) return -1;
+    pixels += flushed;
+
+    if (game_session->game_state.state == TOY_GAME_PLAYING &&
+        !runtime->lifecycle_paused && !game_session->shop_open) {
+        pixels += rasterfall_render_interactables(renderer, render_camera);
+        flushed = rf_core_flush(runtime->core);
+        if (flushed < 0) return -1;
+        pixels += flushed;
+    }
+    pixels += rasterfall_render_effects(renderer, render_camera);
+    if (toy_game_local_player_actor_const(&game_session->game_state)->state !=
+        TOY_GAME_ACTOR_DOWNED)
+        pixels += rasterfall_viewmodel_render(
+            renderer, &game_session->game_state, &runtime->effects);
+
+    /* Existing viewmodel-to-framebuffer ordering barrier. */
+    flushed = rf_core_flush(runtime->core);
+    if (flushed < 0) return -1;
+    pixels += flushed;
+    runtime->scene_pixels = pixels;
+    return pixels;
+}
+
 #define effects (*active_effects)
 
 int rf_game_runtime_run(const struct rf_game_config *config)
@@ -3647,7 +3711,6 @@ startup_again:
         if (ready > 0) {
             int present_result;
             struct camera render_camera;
-            struct rasterfall_scene_stats scene_detail;
             /* Local movement is client-authoritative; host position
              * corrections are intentionally not applied to the camera. */
             if (!logged_first_frame) {
@@ -3658,90 +3721,26 @@ startup_again:
             surface = *rf_core_surface(&core);
             rasterfall_perf_end_stage(&stats, &stats_total, RASTERFALL_STATS_BEGIN,
                            &t_stage, 0, 0);
-            prev_tris = renderer.submitted_triangles;
-            /* Spectating after a network death is render-only.  Never mutate
-             * the authoritative body camera: it is reported to the host on
-             * the next input packet and must remain at the death position. */
-            render_camera = camera;
-            set_network_spectator_camera(&render_camera, &net);
-            if (managed_spectator)
-                set_managed_spectator_camera(&render_camera, &camera,
-                                             managed_third_person);
-            rasterfall_effects_apply_camera_shake(&effects, &render_camera);
-            scene_pixels = rasterfall_render_scene(&renderer, &render_camera);
-            rasterfall_render_scene_stats(&scene_detail);
-            rasterfall_perf_add_scene(&stats, &stats_total, &scene_detail);
-            scene_pixels += rasterfall_render_flags(&renderer, &render_camera);
-            rasterfall_perf_end_stage(&stats, &stats_total, RASTERFALL_STATS_SCENE, &t_stage,
-                           renderer.submitted_triangles - prev_tris, 0);
-            prev_tris = renderer.submitted_triangles;
-            scene_pixels += rasterfall_render_enemies(&renderer, &render_camera);
-            scene_pixels += rasterfall_render_ai_teammate(&renderer, &render_camera);
-            if (managed_spectator && managed_third_person)
-                scene_pixels += rasterfall_render_managed_player(
-                    &renderer, &render_camera, &camera);
-            scene_pixels += rasterfall_render_network_teammate(
-                &renderer, &render_camera, &net, &game);
-            rasterfall_perf_end_stage(&stats, &stats_total, RASTERFALL_STATS_ENEMIES, &t_stage,
-                           renderer.submitted_triangles - prev_tris, 0);
-            /* World lettering is submitted before the flush, so it follows
-             * the sign/flag plane and participates in depth testing. */
-            scene_pixels += rasterfall_render_sign_text(&renderer, &render_camera);
-            scene_pixels += rasterfall_render_flag_text(&renderer, &render_camera);
-            /* 世界几何并行光栅化；弹道/粒子/枪模随后直接写屏覆盖 */
-            prev_tris = (unsigned long)renderer.cmd_count;
-            stage_pixels = rf_core_flush(&core);
-            if (stage_pixels < 0) {
+            game_runtime.camera = camera;
+            game_runtime.lifecycle_paused = paused;
+            game_runtime.managed_spectator = managed_spectator;
+            game_runtime.managed_third_person = managed_third_person;
+            if (rf_game_render(&game_runtime, &renderer, &surface) < 0) {
                 __fprintf(2,
                     "rasterfall: skipped frame after renderer watchdog timeout\n");
                 continue;
             }
-            scene_pixels += stage_pixels;
+            scene_pixels = game_runtime.scene_pixels;
+            render_camera = game_runtime.render_camera;
+            prev_tris = renderer.submitted_triangles;
+            stage_pixels = 0;
+            /* These diagnostics intentionally remain outside the Game render
+             * facade; their placement after the world barrier is unchanged. */
             if (coordinate_axes)
                 rasterfall_render_coordinate_labels(&surface, &render_camera);
 #if TOY_CONFIG_SHOW_MODEL_PATHS
             rasterfall_render_gallery_selection(&surface, &render_camera);
 #endif
-            rasterfall_perf_end_stage(&stats, &stats_total, RASTERFALL_STATS_RASTER,
-                           &t_stage, prev_tris, (unsigned long)stage_pixels);
-            rasterfall_perf_add_raster(&stats, &stats_total, &renderer, prev_tris,
-                            (unsigned long)stage_pixels);
-            /* 直接写屏与第二次光栅化（拾取物）都归入 overlay 阶段 */
-            prev_tris = renderer.submitted_triangles;
-            stage_pixels = 0;
-            /* World interactables must finish before the first-person layer
-             * and all direct framebuffer HUD overlays.  They are submitted
-             * and flushed here so map buttons/weapons cannot cover the
-             * viewmodel or Pose Editor. */
-            if (game.state == TOY_GAME_PLAYING && !paused &&
-                !session.shop_open) {
-                stage_pixels += rasterfall_render_interactables(
-                    &renderer, &render_camera);
-                present_result = rf_core_flush(&core);
-                if (present_result < 0) {
-                    __fprintf(2,
-                        "rasterfall: skipped frame after renderer watchdog timeout\n");
-                    continue;
-                }
-                stage_pixels += present_result;
-            }
-            stage_pixels += rasterfall_render_effects(&renderer, &render_camera);
-            /* 第一人称武器：最后画，叠加在世界之上 */
-            if (toy_game_local_player_actor_const(&game)->state !=
-                TOY_GAME_ACTOR_DOWNED)
-                stage_pixels += rasterfall_viewmodel_render(&renderer, &game,
-                                                            &effects);
-            /* Viewmodel meshes use the renderer command path (unlike the
-             * procedural pill and hands). Flush this layer before drawing
-             * the remaining direct framebuffer overlays; otherwise textured
-             * melee/throwable commands never reach the rasterizer. */
-            present_result = rf_core_flush(&core);
-            if (present_result < 0) {
-                __fprintf(2,
-                    "rasterfall: skipped frame after renderer watchdog timeout\n");
-                continue;
-            }
-            stage_pixels += present_result;
             if (game.state == TOY_GAME_OVER) {
                 draw_game_over_panel(&surface,
                                      net.mode == RASTERFALL_NET_CLIENT);

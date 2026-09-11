@@ -28,22 +28,6 @@ int rf_game_init(struct rf_game_runtime *runtime,
     return 0;
 }
 
-int rf_game_render(struct rf_game_runtime *runtime,
-                   struct toy_renderer *renderer,
-                   struct toy_surface *surface)
-{
-    int pixels;
-    (void)surface;
-    if (!runtime || !runtime->initialized || !runtime->session || !renderer)
-        return -1;
-    pixels = rasterfall_render_scene(renderer, &runtime->render_camera);
-    pixels += rasterfall_render_flags(renderer, &runtime->render_camera);
-    pixels += rasterfall_render_enemies(renderer, &runtime->render_camera);
-    pixels += rasterfall_render_ai_teammate(renderer, &runtime->render_camera);
-    runtime->scene_pixels = pixels;
-    return pixels;
-}
-
 int rf_game_runtime_get_status(const struct rf_game_runtime *runtime,
                                struct rf_game_runtime_status *status)
 {
