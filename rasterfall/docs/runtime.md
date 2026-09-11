@@ -1,7 +1,7 @@
 # 运行时与主循环
 
 > 文档更新：2026-09-12
-> 源码核对补充：RF Core lifecycle boundary 已覆盖 poll/exit、tick clock 与 frame begin/end；Runtime Environment V1 ownership audit 已完成。
+> 源码核对补充：RF Core lifecycle boundary 已覆盖 poll/exit、tick clock 与 frame begin/end；Runtime Environment V1 ownership audit 与 checkpoint 已完成。
 > 源码核对基线：工作区（Humanoid Action Composition V1 CLI；双正式四人 squad runtime；Lighting V1；`game_state.actors[]` 是 gameplay truth；RF Core Runtime V0.2 `rf_game_runtime` facade、Core status query、service access cleanup 与 Input view；Core/Game startup config split；renderer frame ownership cleanup；Core filesystem service V0；唯一 `rf_core` context 与 Core clock service；Phase 3A `rf_game_update()` gameplay update authority；Phase 3B-1 world presentation migration；Phase 3B-2 steady-state Game UI presentation authority；RF Command Runtime V0 registry/context/status；Command Runtime Stabilization V0.1 output/metadata/permission；RF Terminal Frontend Prototype V0 session 与 Console frontend；RF GUI Runtime Prototype V0）
 
 > 源码核对补充：session reset 在原 flag 1 和原坐标恢复 Maid 四人旗卫，并创建使用 flag 2 的正式 Hurd squad/outpost；Hurd 控制状态保持派生。
@@ -20,6 +20,8 @@ Runtime Environment 的上层边界保持分层：Core 拥有平台资源及 ser
 拥有 GUI context 和窗口生命周期，Application Runtime 由 runtime 持有 app manager，Projection Layer
 只生成独立 snapshot。Map/level 的加载、绑定、reset 和 unload 仍由 `rasterfall_session` 持有；这些层
 只能借用或读取对应接口，不复制 gameplay、session、Core service 或地图真值。
+
+完整的 V1 运行时边界、排除项和验证入口见 [runtime-environment-v1.md](runtime-environment-v1.md)。
 
 关键配套文件：
 
