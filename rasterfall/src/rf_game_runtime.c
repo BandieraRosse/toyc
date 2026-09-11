@@ -170,7 +170,6 @@ enum rasterfall_startup_screen {
 };
 
 static struct rasterfall_session session;
-static struct rasterfall_render_context render_context;
 #define level_map (session.level)
 #define map_safe_rooms (session.safe_rooms)
 #define map_spawn_zones (session.spawn_zones)
@@ -194,7 +193,11 @@ static int textures_enabled = 1;
 #else
 static int textures_enabled = 0;
 #endif
-static struct rasterfall_effects effects;
+/* The active effect pool is owned by rf_game_runtime.  Helpers in this
+ * translation unit use the active facade during the host loop; keeping the
+ * indirection here avoids creating a second presentation pool. */
+static struct rasterfall_effects *active_effects;
+#define effects (*active_effects)
 
 /* 主循环仍需要少量坐标和特效同步辅助；几何绘制本身位于
  * rasterfall_render.c。 */
@@ -1993,6 +1996,7 @@ static int benchmark_model_features(const char *model_path, int iterations,
     struct rasterfall_model_asset model;
     struct toy_surface surface;
     struct toy_renderer renderer;
+    struct camera camera;
     struct camera cameras[3];
     uint32_t *pixels;
     int configuration, iteration, view, step;
@@ -2419,31 +2423,28 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     struct pause_menu pause_menu;
     struct managed_terminal managed_terminal;
     struct rasterfall_console developer_console;
-    int64_t last_time, accumulator = 0, fps_window_start, fps_elapsed;
-    int64_t prev_begin = 0, last_active = 0;   /* 帧间隔统计 */
+    int64_t last_time, fps_window_start, fps_elapsed;
+    int64_t last_active = 0;   /* 帧间隔统计 */
+    int64_t accumulator = 0, prev_begin = 0;
     int running = 1, pointer_lock_requested = 0, paused = 1;
     int coordinate_axes = 0;
-    int return_to_menu = 0;
     int last_pointer_x = 0, last_pointer_y = 0, have_pointer_position = 0;
     int rendered_frames = 0, scene_pixels = 0;
     int display_fps = 0, fps_window_frames = 0;
-    int fire_edge = 0;
-    int shove_edge = 0;
+    int fire_edge = 0, shove_edge = 0;
     int pointer_turn_pending = 0, pointer_pitch_pending = 0;
+    unsigned char pending_key_edges[TOY_INPUT_KEY_COUNT];
+    int input_event_count = 0, have_last_key = 0;
+    struct rasterfall_perf_stats stats, stats_total;
+    unsigned int last_key = 0;
+    int last_key_pressed = 0;
+    int return_to_menu = 0;
     int64_t menu_nav_ready_us = 0;
     /* 按键按压边沿跨帧保留位：逻辑步（E/R 及切枪换弹）可能因
      * accumulator 不足而整帧不跑（长 stall 后连续几帧都不跑），边沿若
      * 只在 key_pressed 里会被下一轮 begin_frame 清掉。这里逐键记录
      * 到达的按压，每帧合入 key_pressed 供消费方读取；逻辑步跑过的那
      * 帧末尾统一清除。 */
-    unsigned char pending_key_edges[TOY_INPUT_KEY_COUNT];
-    int input_event_count = 0, have_last_key = 0;
-    struct rasterfall_perf_stats stats, stats_total;
-    unsigned int last_key = 0;
-    int last_key_pressed = 0;
-    struct rasterfall_audio audio;
-    struct rasterfall_net net;
-    struct rasterfall_net_discovery discovery;
     char host_address[16];
     uint64_t seed;
     struct rasterfall_options options;
@@ -2686,9 +2687,6 @@ int rf_game_runtime_run(const struct rf_game_config *config)
         return dump_model_views(view_model_path, view_output_dir,
                                 1, 1, 1, 1, 0, model_views_supersample);
     }
-    rasterfall_net_init(&net);
-    rasterfall_net_set_loss(&net, net_loss_percent);
-    rasterfall_net_discovery_init(&discovery);
     {
         struct rf_core_config core_config;
         core_config.title = "Rasterfall";
@@ -2698,8 +2696,6 @@ int rf_game_runtime_run(const struct rf_game_config *config)
         core_config.renderer = &renderer;
         if (rf_core_init_config(&core, &core_config) < 0) {
             __fprintf(2, "rasterfall: cannot initialize RF Core host\n");
-            rasterfall_net_discovery_close(&discovery);
-            rasterfall_net_close(&net);
             return 1;
         }
     }
@@ -2711,18 +2707,21 @@ int rf_game_runtime_run(const struct rf_game_config *config)
                      "rasterfall/assets/maps/rasterfall.map") < 0) {
         __fprintf(2, "rasterfall: cannot load map rasterfall/assets/maps/rasterfall.map\n");
         rf_core_shutdown(&core);
-        rasterfall_net_discovery_close(&discovery);
-        rasterfall_net_close(&net);
         return 1;
     }
-    render_context.session = &session;
-    render_context.effects = &effects;
-    render_context.net = &net;
-    render_context.wall_texture = NULL;
-    render_context.model_texture = &model_texture_view;
-    render_context.textures_enabled = textures_enabled;
+    /* The effects macro names the active pool for the helper functions below;
+     * temporarily suspend it while naming the facade member itself. */
+#undef effects
+    active_effects = &game_runtime.effects;
+#define effects (*active_effects)
+#define net game_runtime.net
+#define discovery game_runtime.discovery
+#define audio game_runtime.audio
+    game_runtime.render_context.wall_texture = NULL;
+    game_runtime.render_context.model_texture = &model_texture_view;
+    game_runtime.render_context.textures_enabled = textures_enabled;
     rf_windows_log("startup: map loaded, binding renderer");
-    rasterfall_render_bind(&render_context);
+    rasterfall_render_bind(&game_runtime.render_context);
     rasterfall_render_set_action_runtime_debug(action_runtime_debug);
     /* Do not auto-load the historical Eula/VMD preview.  The old path is
      * still available when explicitly requested, but normal startup should
