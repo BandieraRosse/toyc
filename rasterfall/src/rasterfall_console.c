@@ -1,9 +1,11 @@
+#include "tlibc_everything.h"
+#include "rf_core_host.h"
 #include "rasterfall_console.h"
+#include "rf_game_lifecycle.h"
 #include "core.h"
 #include "fb_draw.h"
 #include "fb_font.h"
 #include "string.h"
-#include "tlibc_everything.h"
 
 #define KEY_ESC 1
 #define KEY_ENTER 28
@@ -65,10 +67,43 @@ static int command_clear(const struct rf_command_context *context,
 static int command_help(const struct rf_command_context *context,
                         struct rasterfall_console *c, int argc, char **argv)
 { (void)context; (void)argc; (void)argv; out(c,"GENERAL"); out(c,"  help          show command groups");
-  out(c,"  clear         clear console log"); out(c,"  killall       kill all active enemies");
+  out(c,"  clear         clear console log"); out(c,"  status        show Core and Game status");
+  out(c,"  killall       kill all active enemies");
   out(c,"  give+N        add N money, e.g. give+500"); out(c,"EDITOR");
   out(c,"  pose          open Eula + AK editor"); out(c,"  pose eula ak  edit this character/weapon pair");
   out(c,"  pose maid ak  edit maid/AK rifle pose"); return 0;
+}
+static int command_status(const struct rf_command_context *context,
+                          struct rasterfall_console *c, int argc, char **argv)
+{ struct rf_core_status core_status; struct rf_game_runtime_status game_status;
+  char line[192]; (void)argc; (void)argv;
+  if (!context || !context->core || !context->game_runtime ||
+      rf_core_get_status(context->core, &core_status) < 0 ||
+      rf_game_runtime_get_status(context->game_runtime, &game_status) < 0) {
+      out_error(c, "status unavailable"); return -1;
+  }
+  out(c, "CORE");
+  snprintf(line, sizeof(line), "  window=%s filesystem=%s renderer=%s",
+           core_status.window_ready ? "ready" : "not-ready",
+           core_status.filesystem_ready ? "ready" : "not-ready",
+           core_status.renderer_ready ? "ready" : "not-ready");
+  out(c, line);
+  snprintf(line, sizeof(line), "  clock=%s audio=%s initialized=%s",
+           core_status.clock_ready ? "ready" : "not-ready",
+           core_status.audio_ready ? "ready" : "not-ready",
+           core_status.initialized ? "yes" : "no");
+  out(c, line);
+  out(c, "GAME");
+  snprintf(line, sizeof(line), "  runtime=%s running=%s paused=%s session=%s network=%d",
+           game_status.initialized ? "initialized" : "not-initialized",
+           game_status.running ? "yes" : "no", game_status.paused ? "yes" : "no",
+           game_status.session_active ? "active" : "inactive", game_status.network_mode);
+  out(c, line);
+  snprintf(line, sizeof(line), "  player=active:%s state:%d hp:%d",
+           game_status.local_player_active ? "yes" : "no",
+           game_status.local_player_state, game_status.local_player_hp);
+  out(c, line);
+  return 0;
 }
 static int command_pose(const struct rf_command_context *context,
                         struct rasterfall_console *c, int argc, char **argv)
@@ -88,6 +123,7 @@ static int command_pose(const struct rf_command_context *context,
 static const struct rasterfall_console_command command_registry[] = {
     { "help", command_help, "show command groups", "developer" },
     { "clear", command_clear, "clear console log", "developer" },
+    { "status", command_status, "show Core and Game status", "developer" },
     { "killall", command_killall, "kill all active enemies", "developer" },
     { "give+", command_give, "add positive money", "developer" },
     { "pose", command_pose, "open rifle pose editor", "developer" }
@@ -100,8 +136,10 @@ static void execute(struct rasterfall_console *c,
   strcpy(line,c->line); n=words(line,w,6); if(!n)return; commands=rasterfall_console_commands(&count);
   for (i=0; i<count; i++) {
       if (!strcmp(w[0], commands[i].name) ||
-          (i == 3 && !strncmp(w[0], "give+", 5))) {
-          if (i == 3) { (void)commands[i].handler(context, c, 1, w); return; }
+          (!strcmp(commands[i].name, "give+") && !strncmp(w[0], "give+", 5))) {
+          if (!strcmp(commands[i].name, "give+")) {
+              (void)commands[i].handler(context, c, 1, w); return;
+          }
           (void)commands[i].handler(context, c, n - 1, w + 1); return;
       }
   }

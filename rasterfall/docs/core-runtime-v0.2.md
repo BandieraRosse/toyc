@@ -1,7 +1,7 @@
 # RF Core Runtime V0.2 查询面设计
 
 > 文档更新：2026-09-11
-> 源码核对基线：工作区（Core status query、service access cleanup、Input view、runtime facade、Runtime Facade Authority audit）
+> 源码核对基线：工作区（Core status query、service access cleanup、Input view、runtime facade、Runtime Facade Authority audit；RF Command Runtime V0 status command）
 
 本文只定义前哨站 GUI、游戏内 Terminal 和 Super Terminal 的后续读取边界，不实现任何 UI、
 terminal、IPC 或额外进程。
@@ -17,6 +17,9 @@ terminal、IPC 或额外进程。
 
 Core status 和 runtime status 应由上层分别查询后组合。Core service 状态不应复制到 Game，
 玩家状态不应写入 Core。所有入口都是无副作用查询；返回的指针只借用当前 session 生命周期。
+
+RF Command Runtime V0 的 `status` 命令是一个组合消费者：通过 `rf_command_context` 获取 Core 与 Game
+runtime，再分别调用上述 snapshot API。命令层不暴露或缓存 Core service、runtime、session 或 actor 的内部指针。
 
 ## 后续扩展规则
 
