@@ -3634,7 +3634,7 @@ startup_again:
             scene_pixels += rasterfall_render_flag_text(&renderer, &render_camera);
             /* 世界几何并行光栅化；弹道/粒子/枪模随后直接写屏覆盖 */
             prev_tris = (unsigned long)renderer.cmd_count;
-            stage_pixels = toy_renderer_flush(&renderer);
+            stage_pixels = rf_core_flush(&core);
             if (stage_pixels < 0) {
                 __fprintf(2,
                     "rasterfall: skipped frame after renderer watchdog timeout\n");
@@ -3661,7 +3661,7 @@ startup_again:
                 !session.shop_open) {
                 stage_pixels += rasterfall_render_interactables(
                     &renderer, &render_camera);
-                present_result = toy_renderer_flush(&renderer);
+                present_result = rf_core_flush(&core);
                 if (present_result < 0) {
                     __fprintf(2,
                         "rasterfall: skipped frame after renderer watchdog timeout\n");
@@ -3679,7 +3679,7 @@ startup_again:
              * procedural pill and hands). Flush this layer before drawing
              * the remaining direct framebuffer overlays; otherwise textured
              * melee/throwable commands never reach the rasterizer. */
-            present_result = toy_renderer_flush(&renderer);
+            present_result = rf_core_flush(&core);
             if (present_result < 0) {
                 __fprintf(2,
                     "rasterfall: skipped frame after renderer watchdog timeout\n");

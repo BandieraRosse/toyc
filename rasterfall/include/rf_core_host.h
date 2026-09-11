@@ -33,6 +33,8 @@ int rf_core_init_config(struct rf_core *core,
 int rf_core_poll_events(struct rf_core *core);
 int rf_core_poll_events_timeout(struct rf_core *core, int timeout_ms);
 int rf_core_begin_frame(struct rf_core *core, uint32_t clear_color);
+/* Core-owned submission point for layered rendering within one frame. */
+int rf_core_flush(struct rf_core *core);
 int rf_core_end_frame(struct rf_core *core);
 void rf_core_shutdown(struct rf_core *core);
 

@@ -1,7 +1,7 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-11
-> 源码核对基线：工作区（Enemy Visual V2 六份公开 RFM2 / renderer-only family；Character Material Lighting Policy V1；Enemy Presentation V1 1000ms ballistic body fade / rotating irregular fragments / directional trailing emitter / 10% legacy death；Humanoid Action Composition V1.1 additive recoil；modular RFANIM 独立 locomotion 时钟与双手持枪轨道；RFCHAR +Z forward basis；PRIMARY_GRIP weapon presentation；开发者 world strip 与战斗区共用 modular path；出生点 V2 action debug station；双正式四人 squad；Lighting V1）
+> 源码核对基线：工作区（Enemy Visual V2 六份公开 RFM2 / renderer-only family；Character Material Lighting Policy V1；Enemy Presentation V1 1000ms ballistic body fade / rotating irregular fragments / directional trailing emitter / 10% legacy death；Humanoid Action Composition V1.1 additive recoil；modular RFANIM 独立 locomotion 时钟与双手持枪轨道；RFCHAR +Z forward basis；PRIMARY_GRIP weapon presentation；开发者 world strip 与战斗区共用 modular path；出生点 V2 action debug station；双正式四人 squad；Lighting V1；renderer frame ownership cleanup）
 
 > 源码核对补充：正式 Hurd actor 通过四个专用 character profile 进入职业外观；恢复的四名 Maid 旗卫以 Maid character profile 接入 actor，同时继续由 anime identity 选择骨骼模型；普通 player、Eula、佣兵解析为 NONE。
 
@@ -215,8 +215,16 @@ Character Acceptance 还输出 `lighting-policy/{normal-light,back-light,dark-en
 HP、武器、downed、动画和统计也从对应 actor 读取。网络连接状态来自 `clients[]`，远端位置/朝向
 插值来自 derived presentation cache，不作为远端 gameplay 展示源；不从 `toy_game` 顶层玩家字段
 取 HUD、第一人称武器或受击效果数据。
-底层 renderer 收集/光栅化几何；随后绘制 HUD、菜单和调试叠层并 present。客户端角色展示可能使用
+底层 renderer 收集/光栅化几何；Core Host 负责 begin、分层 flush、最终 flush 和 present；随后绘制 HUD、菜单和调试叠层。客户端角色展示可能使用
 网络插值状态，不应误读为权威 `toy_game` 状态。
+
+Renderer frame ownership：Core 拥有 renderer/window/surface 的创建、初始化、生命周期和销毁，
+并通过 `rf_core_begin_frame()`、`rf_core_flush()`、`rf_core_end_frame()` 管理一帧。Game runtime
+只更新 camera、准备 presentation state 并提交 draw commands；Rasterfall renderer 只负责
+rasterization、commands 和 render cache/state。renderer 内的 `rasterfall_render_bind()` 全局绑定
+是现有串行 presentation context：它把 session/effects/net/纹理/lightmap 提供给旧的绘制 helper；
+并行模型录制则优先使用 `toy_renderer.recording_context` 对应的 frontend state。该绑定不拥有
+window、surface、present 或 Core 资源生命周期。
 
 战斗事件链路为：规则结果/网络展示适配器 → `rasterfall_effect_event` →
 `rasterfall_effects_consume()` → runtime instance pool。tracer、命中火花、

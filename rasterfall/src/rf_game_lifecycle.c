@@ -57,7 +57,6 @@ int rf_game_render(struct rf_game_runtime *runtime,
     pixels += rasterfall_render_flags(renderer, &runtime->render_camera);
     pixels += rasterfall_render_enemies(renderer, &runtime->render_camera);
     pixels += rasterfall_render_ai_teammate(renderer, &runtime->render_camera);
-    if (toy_renderer_flush(renderer) < 0) return -1;
     runtime->scene_pixels = pixels;
     return pixels;
 }

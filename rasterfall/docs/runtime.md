@@ -1,7 +1,7 @@
 # 运行时与主循环
 
 > 文档更新：2026-09-11
-> 源码核对基线：工作区（Humanoid Action Composition V1 CLI；双正式四人 squad runtime；Lighting V1；`game_state.actors[]` 是 gameplay truth；RF Core Runtime V0 `rf_game_runtime` facade；Core/Game startup config split）
+> 源码核对基线：工作区（Humanoid Action Composition V1 CLI；双正式四人 squad runtime；Lighting V1；`game_state.actors[]` 是 gameplay truth；RF Core Runtime V0 `rf_game_runtime` facade；Core/Game startup config split；renderer frame ownership cleanup）
 
 > 源码核对补充：session reset 在原 flag 1 和原坐标恢复 Maid 四人旗卫，并创建使用 flag 2 的正式 Hurd squad/outpost；Hurd 控制状态保持派生。
 
@@ -65,6 +65,16 @@ transform 和左右 hand target；旧单 action 四参数形式继续可用。
 world step 推进共享世界规则，再由 `session_sync_special_motion()` 派生 camera 的位置和高度。
 camera 的方向仍作为输入视角供移动与瞄准使用。渲染阶段可复制 camera 叠加纯展示效果，但不得
 回写 gameplay 位置。
+
+窗口运行时的一帧由 Core Host 完整包住：`rf_core_begin_frame()` 获取 surface 并调用
+`toy_renderer_begin()`；Game/runtime 只提交世界、交互物、第一人称模型和 HUD 所需的绘制内容。
+现有画面依赖世界深度层、直接 framebuffer overlay 与 viewmodel 的既定顺序，分层之间可调用
+`rf_core_flush()` 作为 Core-owned ordering barrier；runtime 不直接调用底层 flush。最后
+`rf_core_end_frame()` 执行最终 flush，再由 Core present。Core 同时拥有 window、surface、renderer
+和 audio 的生命周期；Game 不销毁这些资源，也不管理 framebuffer。
+
+模型视图、visual capture、benchmark 和 logic-test 是窗口 Core 初始化前的独立离屏 fixture，仍可
+自建临时 renderer/surface；它们不是交互式 runtime 的 frame ownership 路径。
 
 `struct camera` 现以 `body` 和 `view` 两个命名空间表达该边界；旧的扁平字段暂保留为布局兼容
 别名。新代码应使用 `camera.body` 读写派生位置，使用 `camera.view` 读写方向和展示高度。

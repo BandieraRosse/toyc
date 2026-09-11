@@ -58,7 +58,14 @@ int rf_core_begin_frame(struct rf_core *core, uint32_t clear_color)
 int rf_core_end_frame(struct rf_core *core)
 {
     if (!core || !core->window) return -1;
+    if (toy_renderer_flush(core->renderer) < 0) return -1;
     return toy_window_present(core->window);
+}
+
+int rf_core_flush(struct rf_core *core)
+{
+    if (!core || !core->window || !core->renderer) return -1;
+    return toy_renderer_flush(core->renderer);
 }
 
 void rf_core_shutdown(struct rf_core *core)
