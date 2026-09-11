@@ -48,29 +48,57 @@ static void out_error(struct rasterfall_console *c, const char *s)
 static int num(const char *s, int *v, int *relative)
 { int sign=1,n=0; *relative=0; if(*s=='+'||*s=='-'){*relative=1;if(*s++=='-')sign=-1;} if(!*s)return 0; while(*s>='0'&&*s<='9'){n=n*10+*s++-'0';} if(*s)return 0; *v=n*sign; return 1; }
 static int words(char *s,char **w,int max){int n=0;while(*s&&n<max){while(*s==' ')s++;if(!*s)break;w[n++]=s;while(*s&&*s!=' ')s++;if(*s)*s++=0;}return n;}
+static int command_killall(struct rasterfall_console *c, int argc, char **argv)
+{ (void)argc; (void)argv; c->killall_requested=1; out(c,"killall requested"); return 0; }
+static int command_give(struct rasterfall_console *c, int argc, char **argv)
+{ int v,r; if (argc != 1 || strncmp(argv[0], "give+", 5) != 0 ||
+      !num(argv[0] + 5, &v, &r) || r || v <= 0) {
+      out_error(c, "usage: give+<positive amount>"); return -1;
+  }
+  c->give_requested = v; out(c, "money grant requested"); return 0;
+}
+static int command_clear(struct rasterfall_console *c, int argc, char **argv)
+{ (void)argc; (void)argv; c->output_count=0; return 0; }
+static int command_help(struct rasterfall_console *c, int argc, char **argv)
+{ (void)argc; (void)argv; out(c,"GENERAL"); out(c,"  help          show command groups");
+  out(c,"  clear         clear console log"); out(c,"  killall       kill all active enemies");
+  out(c,"  give+N        add N money, e.g. give+500"); out(c,"EDITOR");
+  out(c,"  pose          open Eula + AK editor"); out(c,"  pose eula ak  edit this character/weapon pair");
+  out(c,"  pose maid ak  edit maid/AK rifle pose"); return 0;
+}
+static int command_pose(struct rasterfall_console *c, int argc, char **argv)
+{ int character; const struct rasterfall_pose_calibration *profile;
+  if (!(argc == 0 || (argc == 2 && (!strcmp(argv[0],"eula") ||
+                                    !strcmp(argv[0],"maid")) && !strcmp(argv[1],"ak"))))
+      { out_error(c,"unknown command; type help"); return -1; }
+  character=argc==2&&!strcmp(argv[0],"maid")?1:0;
+  profile=rasterfall_pose_calibration_resolve(NULL,character,TOY_GAME_WEAPON_AK);
+  c->calibration.active=1;c->calibration.character=character;c->calibration.weapon=TOY_GAME_WEAPON_AK;
+  memcpy(&c->calibration.pose,profile,sizeof(c->calibration.pose));c->calibration.left_ik=c->calibration.pose.left_ik;
+  c->calibration.axes=1;c->calibration.anchors=1;c->calibration.upper_body_lock=1;c->calibration.animation_base=0;
+  c->calibration.animation_playing=0;c->pose_hud_request=1;c->close_requested=1;
+  out(c,character?"Rifle Pose Editor: Maid + AK":"Rifle Pose Editor: Eula + AK"); return 0;
+}
+static const struct rasterfall_console_command command_registry[] = {
+    { "help", command_help, "show command groups", "developer" },
+    { "clear", command_clear, "clear console log", "developer" },
+    { "killall", command_killall, "kill all active enemies", "developer" },
+    { "give+", command_give, "add positive money", "developer" },
+    { "pose", command_pose, "open rifle pose editor", "developer" }
+};
+const struct rasterfall_console_command *rasterfall_console_commands(unsigned int *count)
+{ if (count) *count = sizeof(command_registry) / sizeof(command_registry[0]); return command_registry; }
 static void execute(struct rasterfall_console *c)
-{ char *w[6],line[160]; int n,v,r; strcpy(line,c->line); n=words(line,w,6); if(!n)return;
-  if(!strcmp(w[0],"killall")){c->killall_requested=1;out(c,"killall requested");return;}
-  if (!strncmp(w[0], "give+", 5)) {
-      if (!num(w[0] + 5, &v, &r) || r || v <= 0) {
-          out_error(c, "usage: give+<positive amount>"); return;
+{ char *w[6],line[160]; unsigned int i,count; int n; const struct rasterfall_console_command *commands;
+  strcpy(line,c->line); n=words(line,w,6); if(!n)return; commands=rasterfall_console_commands(&count);
+  for (i=0; i<count; i++) {
+      if (!strcmp(w[0], commands[i].name) ||
+          (i == 3 && !strncmp(w[0], "give+", 5))) {
+          if (i == 3) { (void)commands[i].handler(c, 1, w); return; }
+          if (i == 4) { (void)commands[i].handler(c, n - 1, w + 1); return; }
+          (void)commands[i].handler(c, n - 1, w + 1); return;
       }
-      c->give_requested = v; out(c, "money grant requested"); return;
   }
-  if(!strcmp(w[0],"clear")){c->output_count=0;return;}
-  if(!strcmp(w[0],"help")){
-      out(c,"GENERAL");
-      out(c,"  help          show command groups");
-      out(c,"  clear         clear console log");
-      out(c,"  killall       kill all active enemies");
-      out(c,"  give+N        add N money, e.g. give+500");
-      out(c,"EDITOR");
-      out(c,"  pose          open Eula + AK editor");
-      out(c,"  pose eula ak  edit this character/weapon pair");
-      out(c,"  pose maid ak  edit maid/AK rifle pose");
-      return;
-  }
-if(!strcmp(w[0],"pose") && (n==1 || (n>=3&&(!strcmp(w[1],"eula")||!strcmp(w[1],"maid"))&&!strcmp(w[2],"ak")))){int character=n>=3&&!strcmp(w[1],"maid")?1:0;const struct rasterfall_pose_calibration *profile=rasterfall_pose_calibration_resolve(NULL,character,TOY_GAME_WEAPON_AK);c->calibration.active=1;c->calibration.character=character;c->calibration.weapon=TOY_GAME_WEAPON_AK;memcpy(&c->calibration.pose,profile,sizeof(c->calibration.pose));c->calibration.left_ik=c->calibration.pose.left_ik;c->calibration.axes=1;c->calibration.anchors=1;c->calibration.upper_body_lock=1;c->calibration.animation_base=0;c->calibration.animation_playing=0;c->pose_hud_request=1;c->close_requested=1;out(c,character?"Rifle Pose Editor: Maid + AK":"Rifle Pose Editor: Eula + AK");return;}
   out_error(c,"unknown command; type help");
 }
 void rasterfall_console_init(struct rasterfall_console *c){memset(c,0,sizeof(*c));rasterfall_calibration_init(&c->calibration);}

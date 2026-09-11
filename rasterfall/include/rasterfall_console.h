@@ -11,6 +11,17 @@ enum rasterfall_console_log_level {
     RASTERFALL_CONSOLE_COMMAND
 };
 
+struct rasterfall_console;
+typedef int (*rasterfall_console_command_handler)(
+    struct rasterfall_console *console, int argc, char **argv);
+
+struct rasterfall_console_command {
+    const char *name;
+    rasterfall_console_command_handler handler;
+    const char *description;
+    const char *permission;
+};
+
 struct rasterfall_console_log_line {
     char text[192];
     unsigned int color;
@@ -28,6 +39,8 @@ struct rasterfall_console {
     int close_requested;
     struct rasterfall_calibration_state calibration;
 };
+const struct rasterfall_console_command *rasterfall_console_commands(
+    unsigned int *count);
 void rasterfall_console_init(struct rasterfall_console *console);
 void rasterfall_console_log(struct rasterfall_console *console,
                             enum rasterfall_console_log_level level,
