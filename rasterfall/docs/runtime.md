@@ -1,6 +1,7 @@
 # 运行时与主循环
 
-> 文档更新：2026-09-11
+> 文档更新：2026-09-12
+> 源码核对补充：RF Core lifecycle boundary 已覆盖 poll/exit、tick clock 与 frame begin/end。
 > 源码核对基线：工作区（Humanoid Action Composition V1 CLI；双正式四人 squad runtime；Lighting V1；`game_state.actors[]` 是 gameplay truth；RF Core Runtime V0.2 `rf_game_runtime` facade、Core status query、service access cleanup 与 Input view；Core/Game startup config split；renderer frame ownership cleanup；Core filesystem service V0；唯一 `rf_core` context 与 Core clock service；Phase 3A `rf_game_update()` gameplay update authority；Phase 3B-1 world presentation migration；Phase 3B-2 steady-state Game UI presentation authority；RF Command Runtime V0 registry/context/status；Command Runtime Stabilization V0.1 output/metadata/permission；RF Terminal Frontend Prototype V0 session 与 Console frontend；RF GUI Runtime Prototype V0）
 
 > 源码核对补充：session reset 在原 flag 1 和原坐标恢复 Maid 四人旗卫，并创建使用 flag 2 的正式 Hurd squad/outpost；Hurd 控制状态保持派生。
@@ -61,7 +62,8 @@ humanoid role 的 finalized transform 及人体/AK socket。独立的 `build/rf_
 `--pose-debug` 的六参数形式同时接收 lower/upper action 与各自时间，输出 composed result、weapon
 transform 和左右 hand target；旧单 action 四参数形式继续可用。
 
-主循环先轮询平台事件和网络，再保留按键边沿；固定 16 ms 逻辑步中构造
+主循环由 `rf_core_poll_events()` 捕获平台关闭请求，以 `rf_core_should_exit()` 形成退出边界，
+并在每轮通过 `rf_core_begin_tick()` 读取 Core 单调时钟；随后轮询网络并保留按键边沿。固定 16 ms 逻辑步中构造
 `rasterfall_command`，交给 `rf_game_update()`；该 facade 按原顺序推进 session/client prediction、
 host remote apply/rescue、gameplay timers、effects sync 和 authoritative snapshot/command bookkeeping，
 之后由 `rf_game_render()` 派生 render camera，并按原顺序提交 world、entities、interactables、
@@ -74,7 +76,7 @@ world step 推进共享世界规则，再由 `session_sync_special_motion()` 派
 camera 的方向仍作为输入视角供移动与瞄准使用。渲染阶段可复制 camera 叠加纯展示效果，但不得
 回写 gameplay 位置。
 
-窗口运行时的一帧由 Core Host 完整包住：`rf_core_begin_frame()` 获取 surface 并调用
+窗口运行时的一帧由 Core Host 完整包住：每个成功提交帧只调用一次 `rf_core_begin_frame()` 获取 surface 并调用
 `toy_renderer_begin()`；`rf_game_render()` 提交世界、交互物、第一人称模型、world effects 和
 steady-state Game UI，
 并通过 Core 提供的 `rf_core_flush()` 保留内部 ordering barrier。现有画面依赖世界深度层、
@@ -88,7 +90,8 @@ steady-state Game UI，
 `rf_core_time_us()`；离屏模型/benchmark 诊断仍可使用自己的临时计时路径，不属于正常 Host lifecycle。
 
 模型视图、visual capture、benchmark 和 logic-test 是窗口 Core 初始化前的独立离屏 fixture，仍可
-自建临时 renderer/surface；它们不是交互式 runtime 的 frame ownership 路径。
+自建临时 renderer/surface；`--logic-test` 使用 Core 的 headless 初始化，仅准备 filesystem、input
+和 renderer service，不创建 window/audio。它们不是交互式 runtime 的 frame ownership 路径。
 
 Core 还拥有独立的 `rf_core_filesystem` service。V0 只提供 `logical path -> owned blob`，内部复用
 现有 `toy_asset_load_file()` 的 embedded lookup、磁盘 fallback、Linux/Windows 相对路径语义和大小

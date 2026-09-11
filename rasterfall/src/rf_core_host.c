@@ -33,6 +33,20 @@ int rf_core_init_config(struct rf_core *core,
                         config->input, config->renderer);
 }
 
+int rf_core_init_headless(struct rf_core *core, struct toy_input *input,
+                          struct toy_renderer *renderer)
+{
+    if (!core || !input || !renderer) return -1;
+    memset(core, 0, sizeof(*core));
+    if (rf_core_filesystem_init(&core->filesystem) < 0) return -1;
+    core->input = input;
+    core->renderer = renderer;
+    toy_input_init(core->input);
+    toy_renderer_init(core->renderer);
+    core->initialized = 1;
+    return 0;
+}
+
 int rf_core_poll_events(struct rf_core *core)
 {
     return rf_core_poll_events_timeout(core, 0);
@@ -44,7 +58,18 @@ int rf_core_poll_events_timeout(struct rf_core *core, int timeout_ms)
     toy_input_begin_frame(core->input);
     if (toy_window_poll(core->window, &core->events, timeout_ms) < 0) return -1;
     toy_input_apply(core->input, &core->events);
+    if (core->events.close_requested) core->exit_requested = 1;
     return 0;
+}
+
+int64_t rf_core_begin_tick(struct rf_core *core)
+{
+    return rf_core_time_us(core);
+}
+
+int rf_core_should_exit(const struct rf_core *core)
+{
+    return !core || !core->initialized || core->exit_requested;
 }
 
 int rf_core_begin_frame(struct rf_core *core, uint32_t clear_color)
@@ -76,7 +101,7 @@ void rf_core_shutdown(struct rf_core *core)
     if (!core) return;
     if (core->audio_ready) toy_audio_close(&core->audio);
     if (core->window) toy_window_close(core->window);
-    toy_renderer_destroy(core->renderer);
+    if (core->renderer) toy_renderer_destroy(core->renderer);
     rf_core_filesystem_shutdown(&core->filesystem);
     memset(core, 0, sizeof(*core));
 }

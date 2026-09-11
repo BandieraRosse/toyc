@@ -1142,7 +1142,7 @@ static int run_startup_menu(struct rf_core *core,
         if (events->button_pressed && events->button == BTN_LEFT &&
             events->button_serial && events->pointer_y < 70)
             rf_core_move_window(core, events->button_serial);
-        if (events->close_requested) break;
+        if (rf_core_should_exit(core)) break;
         if (screen == RASTERFALL_STARTUP_LAN_ROOMS && discovery_active)
             rasterfall_net_discovery_poll(discovery, NULL, 0, 0, 0, 0);
         if (screen == RASTERFALL_STARTUP_PUBLIC_ROOM) {
@@ -1310,7 +1310,6 @@ static int wait_for_network_connection(struct rf_core *core,
 {
     struct rf_input_frame input_frame;
     struct rf_input_frame *input = &input_frame;
-    struct toy_window_events *events = rf_core_events(core);
     int64_t deadline = rf_core_time_us(core) + 6000000;
     while (rf_core_time_us(core) < deadline) {
         struct toy_surface surface;
@@ -1318,7 +1317,7 @@ static int wait_for_network_connection(struct rf_core *core,
         int ready;
         if (rf_core_poll_events(core) < 0) return -2;
         if (rf_core_get_input_frame(core, input) < 0) return -2;
-        if (events->close_requested || toy_input_pressed(input, KEY_ESC))
+        if (rf_core_should_exit(core) || toy_input_pressed(input, KEY_ESC))
             return -2;
         rasterfall_net_poll(net);
         rasterfall_net_update_connection(net);
@@ -2943,7 +2942,9 @@ int rf_game_runtime_run(const struct rf_game_config *config)
         core_config.height = RASTERFALL_DEFAULT_HEIGHT;
         core_config.input = &platform_input;
         core_config.renderer = &renderer;
-        if (rf_core_init_config(&core, &core_config) < 0) {
+        if ((logic_test ?
+             rf_core_init_headless(&core, &platform_input, &renderer) :
+             rf_core_init_config(&core, &core_config)) < 0) {
             __fprintf(2, "rasterfall: cannot initialize RF Core host\n");
             return 1;
         }
@@ -3196,11 +3197,11 @@ startup_again:
     } else {
         rf_windows_log("startup: audio ready");
     }
-    last_time = rf_core_time_us(&core);
+    last_time = rf_core_begin_tick(&core);
     fps_window_start = last_time;
     rasterfall_perf_init(&stats);
     rasterfall_perf_init(&stats_total);
-    while (running) {
+    while (running && !rf_core_should_exit(&core)) {
         int64_t now, elapsed, t_frame, t_stage;
         unsigned long prev_tris;
         int logic_steps = 0;
@@ -3514,7 +3515,7 @@ startup_again:
         /* 推开输入：右键与开火同一套边沿锁存（恢复点击帧不算） */
         if (!paused && !resumed && events.button_pressed && events.button == BTN_RIGHT)
             shove_edge = 1;
-        if (events.close_requested) running = 0;
+        if (rf_core_should_exit(&core)) running = 0;
         if (!running) break;
         /* --auto：炮弹幕压测（复现崩溃用）。瞬移到关键区域（起点室/
          * 开发者区/中心/刷怪区），快速转枪口持续轰击：弹道终点大量落
@@ -3571,7 +3572,7 @@ startup_again:
             last_pointer_y = input.pointer_y;
             have_pointer_position = 1;
         }
-        now = rf_core_time_us(&core);
+        now = rf_core_begin_tick(&core);
         elapsed = now - last_time;
         last_time = now;
         if (elapsed < 0) elapsed = 0;
@@ -3809,8 +3810,6 @@ startup_again:
                 rf_windows_log("startup: first frame begin");
                 logged_first_frame = 1;
             }
-            if (rf_core_begin_frame(&core, 0x151922) < 0) break;
-            surface = *rf_core_surface(&core);
             rasterfall_perf_end_stage(&stats, &stats_total, RASTERFALL_STATS_BEGIN,
                            &t_stage, 0, 0);
             game_runtime.camera = camera;

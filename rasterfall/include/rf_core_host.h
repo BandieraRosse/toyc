@@ -19,6 +19,7 @@ struct rf_core {
     struct rf_core_filesystem filesystem;
     struct toy_audio audio;
     int audio_ready;
+    int exit_requested;
     int initialized;
 };
 
@@ -54,8 +55,12 @@ int rf_core_init(struct rf_core *core, const char *title, int width, int height,
                  struct toy_input *input, struct toy_renderer *renderer);
 int rf_core_init_config(struct rf_core *core,
                         const struct rf_core_config *config);
+int rf_core_init_headless(struct rf_core *core, struct toy_input *input,
+                          struct toy_renderer *renderer);
 int rf_core_poll_events(struct rf_core *core);
 int rf_core_poll_events_timeout(struct rf_core *core, int timeout_ms);
+int64_t rf_core_begin_tick(struct rf_core *core);
+int rf_core_should_exit(const struct rf_core *core);
 int rf_core_begin_frame(struct rf_core *core, uint32_t clear_color);
 /* Core-owned submission point for layered rendering within one frame. */
 int rf_core_flush(struct rf_core *core);
