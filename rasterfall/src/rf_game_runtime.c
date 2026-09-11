@@ -121,6 +121,7 @@
 #define KEY_SLASH 53
 #define KEY_BACKSPACE 14
 #define KEY_F2      60
+#define KEY_F12     88
 #define KEY_UP    103
 #define KEY_LEFT  105
 #define KEY_RIGHT 106
@@ -2612,7 +2613,7 @@ int rf_game_render(struct rf_game_runtime *runtime,
         draw_game_over_panel(surface, runtime->net.mode == RASTERFALL_NET_CLIENT);
     } else if (game_session->game_state.state == TOY_GAME_WON) {
         draw_level_won_panel(surface, runtime->net.mode == RASTERFALL_NET_CLIENT);
-    } else if (runtime->console.open) {
+    } else if (runtime->console.open || runtime->gui.active) {
         /* Developer console is drawn after every other overlay. */
     } else if (managed_terminal.open) {
         draw_managed_terminal(surface, &managed_terminal);
@@ -2646,6 +2647,8 @@ int rf_game_render(struct rf_game_runtime *runtime,
                          runtime->input_event_count);
     if (runtime->console.open)
         rasterfall_console_draw(surface, &runtime->console);
+    else if (runtime->gui.active)
+        rf_gui_render(surface, &runtime->gui);
     runtime->scene_pixels = pixels;
     return pixels;
 }
@@ -2670,6 +2673,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     int64_t last_time, fps_window_start, fps_elapsed;
     int64_t last_active = 0;   /* 帧间隔统计 */
     int return_to_menu = 0;
+    int gui_paused_before = 1;
     int64_t menu_nav_ready_us = 0;
     int64_t accumulator = 0, prev_begin = 0;
     int running = 1, pointer_lock_requested = 0, paused = 1;
@@ -3022,6 +3026,8 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     tlibc_sigaction(SIGPIPE, (void (*)(int))1);
     memset(&managed_terminal, 0, sizeof(managed_terminal));
     rasterfall_console_init(&developer_console);
+    rf_gui_init(&game_runtime.gui);
+    rf_gui_set_active(&game_runtime.gui, input_debug);
     command_context.core = &core;
     command_context.game_runtime = &game_runtime;
     command_context.command_state = &developer_console;
@@ -3290,6 +3296,26 @@ startup_again:
                 pointer_lock_requested = 0;
             }
         }
+        if (!developer_console.open && pending_key_edges[KEY_F12]) {
+            pending_key_edges[KEY_F12] = 0;
+            if (game_runtime.gui.active) {
+                rf_gui_set_active(&game_runtime.gui, 0);
+                paused = gui_paused_before;
+                if (!paused) {
+                    int capture_result = rf_core_set_pointer_lock(&core, 1);
+                    pointer_lock_requested = capture_result > 0;
+                }
+            } else {
+                gui_paused_before = paused;
+                paused = 1;
+                rf_gui_set_active(&game_runtime.gui, 1);
+                rf_core_set_pointer_lock(&core, 0);
+                pointer_lock_requested = 0;
+            }
+        }
+        if (game_runtime.gui.active && !developer_console.open)
+            rf_gui_handle_input(&game_runtime.gui, &input,
+                                events.button_pressed, events.button);
         if (!developer_console.open && pending_key_edges[KEY_GRAVE]) {
             pending_key_edges[KEY_GRAVE] = 0;
             developer_console.open = 1;

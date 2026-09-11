@@ -16,6 +16,7 @@ int rf_game_init(struct rf_game_runtime *runtime,
         return -1;
     }
     rasterfall_effects_init(&runtime->effects);
+    rf_gui_init(&runtime->gui);
     rasterfall_net_init(&runtime->net);
     rasterfall_net_discovery_init(&runtime->discovery);
     runtime->lifecycle_paused = 1;

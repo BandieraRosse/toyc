@@ -19,6 +19,8 @@ LDLIBS := -L$(SDL_PREFIX)/lib -lSDL2 -lws2_32 -lwinmm \
 
 GAME_SRCS := rasterfall/src/rasterfall.c \
              rasterfall/src/rf_game_runtime.c \
+             rasterfall/src/rasterfall_gui.c \
+             rasterfall/src/rasterfall_gui.c \
              rasterfall/src/rasterfall_character.c \
              rasterfall/src/rasterfall_roster.c \
              rasterfall/src/rasterfall_prop.c \
