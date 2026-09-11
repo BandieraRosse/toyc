@@ -1,7 +1,7 @@
 # RF Application Projection Layer V0
 
 > 文档更新：2026-09-11
-> 源码核对基线：Application Query Boundary V0；Core/Game query context 已建立，Application API 不暴露 `toy_game`。
+> 源码核对基线：Application Query Boundary V0；Core/Game query context 已建立，Application API 不暴露 `toy_game`；Application API Stabilization V0 Phase 2 command/application boundary audit
 
 本层是 Forward Station Application 与 Core/Game Runtime 之间的只读数据边界。它不拥有 Core、Game
 Runtime、session 或 gameplay 状态，也不执行 command mutation。
@@ -13,9 +13,9 @@ Runtime、session 或 gameplay 状态，也不执行 command mutation。
 | Core Application | `rf_core_status` | Core 版本、构建标识、window、renderer、filesystem、audio、clock readiness |
 | Game Application | Game Runtime Query | runtime lifecycle、session active、network mode、本地玩家摘要及后续 application snapshots |
 
-`rf_application_query_context` 只借用 Core/Game Runtime 和 Command Context。Application 只能通过 query
-函数取得 snapshot，不能保存或转发 `struct toy_game`、`struct toy_game_actor`、session 或 Core service
-指针。
+`rf_application_query_context` 只借用 Core/Game Runtime。Application 只能通过 query 函数取得 snapshot，
+不能保存或转发 `struct toy_game`、`struct toy_game_actor`、session、Core service 或 Command Runtime
+指针；Command Context 是 frontend/handler 的执行上下文，不属于 application query context。
 
 ## 责任边界
 
@@ -32,9 +32,17 @@ GUI Application / Terminal Frontend
 - Command Runtime 是未来 mutation 的唯一行为入口；本层 V0 不增加 mutation。
 - GUI 与 Terminal 应消费同一个 projection，不能各自从 gameplay struct 拼装数据。
 
+Terminal frontend 的调用边界固定为：输入交给 `rf_terminal_session`，再由 Command Runtime registry
+分发；查询型 handler 可调用 projection 生成输出，mutation handler 只能经 command state/runtime
+请求变更。Application GUI 不执行 command，也不把 Command Context 传入 projection。
+
+当前 F2 managed terminal 是旧的 runtime 内部 debug interaction path，直接由 Game Runtime 编排，
+不属于 RF Application API；未来 World Terminal Device 应复用 `rf_terminal_session` 与 Command Runtime，
+而不是复制该 legacy path。
+
 ## 当前 API
 
-- `rf_application_query_init()`：绑定借用的 Core/Game/Command context。
+- `rf_application_query_init()`：绑定借用的 Core/Game runtime query context。
 - `rf_application_query_core_status()`：只读取 `rf_core_status`。
 - `rf_application_query_game_status()`：只读取 `rf_game_runtime_status`。
 
@@ -50,5 +58,5 @@ Personnel、Operations、Research snapshot 属于后续 projection；它们必�
 Terminal 必须共享 `rf_application_project_personnel()` 的结果。
 
 当前消费原型中，PERSONNEL application 借用 runtime 的 query context；Terminal 的 `personnel` 命令
-从自己的 `rf_command_context` 构造同一 query context。两条路径都调用同一个 projection，不增加
-人员管理或其他 mutation。
+在 handler 内从自己的 command context 读取 Core/Game runtime，再构造同一 query context。两条路径
+都调用同一个 projection，不增加人员管理或其他 mutation。

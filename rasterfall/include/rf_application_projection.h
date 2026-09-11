@@ -5,15 +5,12 @@ struct rf_core;
 struct rf_core_status;
 struct rf_game_runtime;
 struct rf_game_runtime_status;
-struct rf_command_context;
 
 /* Application data is obtained through snapshots, never through a raw Core,
- * session, or toy_game structure.  The command context is borrowed only for
- * later read-only/command projection consumers. */
+ * session, toy_game, or Command Runtime structure. */
 struct rf_application_query_context {
     const struct rf_core *core;
     const struct rf_game_runtime *game_runtime;
-    const struct rf_command_context *command;
 };
 
 enum rf_application_data_source {
@@ -45,8 +42,7 @@ struct rf_personnel_snapshot {
 void rf_application_query_init(
     struct rf_application_query_context *context,
     const struct rf_core *core,
-    const struct rf_game_runtime *game_runtime,
-    const struct rf_command_context *command);
+    const struct rf_game_runtime *game_runtime);
 
 int rf_application_query_core_status(
     const struct rf_application_query_context *context,

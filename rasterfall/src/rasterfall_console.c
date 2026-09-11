@@ -201,8 +201,7 @@ static int command_personnel(const struct rf_command_context *context,
     int i;
     (void)argc; (void)argv;
     if (!context || !output) return -1;
-    rf_application_query_init(&query, context->core, context->game_runtime,
-                              context);
+    rf_application_query_init(&query, context->core, context->game_runtime);
     if (rf_application_project_personnel(&query, &snapshot) < 0) {
         rf_command_output_write(output, RF_COMMAND_OUTPUT_ERROR,
                                 "personnel unavailable");

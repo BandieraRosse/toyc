@@ -20,6 +20,8 @@ enum rf_command_permission_level {
     RF_COMMAND_PERMISSION_SUPER
 };
 struct rf_command_context {
+    /* Command Runtime input: handlers may query snapshots or request a
+     * mutation through command_state; applications must not retain this. */
     struct rf_core *core;
     struct rf_game_runtime *game_runtime;
     void *command_state;
