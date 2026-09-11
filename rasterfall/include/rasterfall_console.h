@@ -39,6 +39,17 @@ struct rf_command_output {
     struct rf_command_output_line lines[RF_COMMAND_OUTPUT_MAX_LINES];
     unsigned int count;
 };
+/* Frontend-neutral terminal session state.  The session owns transient input,
+ * history, and the latest command result; command registration, handlers, and
+ * permission checks remain owned by the Command Runtime. */
+#define RF_TERMINAL_INPUT_MAX 160
+#define RF_TERMINAL_HISTORY_MAX 8
+struct rf_terminal_session {
+    char input[RF_TERMINAL_INPUT_MAX];
+    char history[RF_TERMINAL_HISTORY_MAX][RF_TERMINAL_INPUT_MAX];
+    int history_cursor;
+    struct rf_command_output output;
+};
 typedef int (*rasterfall_console_command_handler)(
     const struct rf_command_context *context,
     struct rf_command_output *output, int argc, char **argv);
@@ -73,6 +84,12 @@ void rf_command_output_init(struct rf_command_output *output);
 void rf_command_output_write(struct rf_command_output *output,
                              enum rf_command_output_level level,
                              const char *text);
+void rf_terminal_session_init(struct rf_terminal_session *session);
+int rf_terminal_session_set_input(struct rf_terminal_session *session,
+                                   const char *input);
+void rf_terminal_session_push_history(struct rf_terminal_session *session);
+int rf_terminal_session_execute(struct rf_terminal_session *session,
+                                const struct rf_command_context *context);
 void rasterfall_console_init(struct rasterfall_console *console);
 void rasterfall_console_log(struct rasterfall_console *console,
                             enum rasterfall_console_log_level level,

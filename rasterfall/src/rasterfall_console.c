@@ -54,6 +54,23 @@ void rf_command_output_write(struct rf_command_output *output,
   strncpy(line->text, text, sizeof(line->text) - 1);
   line->text[sizeof(line->text) - 1] = 0;
 }
+void rf_terminal_session_init(struct rf_terminal_session *session)
+{ if (!session) return; memset(session, 0, sizeof(*session)); }
+int rf_terminal_session_set_input(struct rf_terminal_session *session,
+                                   const char *input)
+{ if (!session || !input) return -1;
+  strncpy(session->input, input, sizeof(session->input) - 1);
+  session->input[sizeof(session->input) - 1] = 0;
+  return 0;
+}
+void rf_terminal_session_push_history(struct rf_terminal_session *session)
+{ int i;
+  if (!session || !session->input[0]) return;
+  for (i = RF_TERMINAL_HISTORY_MAX - 1; i > 0; i--)
+      strcpy(session->history[i], session->history[i - 1]);
+  strcpy(session->history[0], session->input);
+  session->history_cursor = 0;
+}
 static struct rasterfall_console *state_console(const struct rf_command_context *context)
 { return context ? (struct rasterfall_console *)context->command_state : NULL; }
 static void out(struct rf_command_output *output, const char *s)
@@ -152,30 +169,42 @@ static const struct rasterfall_console_command command_registry[] = {
 };
 const struct rasterfall_console_command *rasterfall_console_commands(unsigned int *count)
 { if (count) *count = sizeof(command_registry) / sizeof(command_registry[0]); return command_registry; }
-static void execute(struct rasterfall_console *c,
-                    const struct rf_command_context *context)
-{ char *w[6],line[160]; unsigned int i,count,j; int n; struct rf_command_output output;
+int rf_terminal_session_execute(struct rf_terminal_session *session,
+                                const struct rf_command_context *context)
+{ char *w[6],line[RF_TERMINAL_INPUT_MAX]; unsigned int i,count; int n, result = 0;
   const struct rasterfall_console_command *commands;
-  strcpy(line,c->line); n=words(line,w,6); if(!n)return; commands=rasterfall_console_commands(&count);
-  rf_command_output_init(&output);
+  if (!session) return -1;
+  strcpy(line, session->input); n=words(line,w,6); if(!n) {
+      rf_command_output_init(&session->output); return 0;
+  }
+  commands=rasterfall_console_commands(&count);
+  rf_command_output_init(&session->output);
   for (i=0; i<count; i++) {
       if (!strcmp(w[0], commands[i].name) ||
           (!strcmp(commands[i].name, "give+") && !strncmp(w[0], "give+", 5))) {
           if (context && context->permission_level < commands[i].permission) {
-              out_error(&output, "permission denied"); break;
+              out_error(&session->output, "permission denied"); break;
           }
           if (!strcmp(commands[i].name, "give+")) {
-              (void)commands[i].handler(context, &output, 1, w); break;
+              result = commands[i].handler(context, &session->output, 1, w); break;
           }
-          (void)commands[i].handler(context, &output, n - 1, w + 1); break;
+          result = commands[i].handler(context, &session->output, n - 1, w + 1); break;
       }
   }
-  if (i == count) out_error(&output,"unknown command; type help");
-  for (j=0; j<output.count; j++)
+  if (i == count) out_error(&session->output,"unknown command; type help");
+  return i == count ? -1 : result;
+}
+static void execute(struct rasterfall_console *c,
+                    const struct rf_command_context *context)
+{ struct rf_terminal_session session; unsigned int j;
+  rf_terminal_session_init(&session);
+  rf_terminal_session_set_input(&session, c->line);
+  rf_terminal_session_execute(&session, context);
+  for (j=0; j<session.output.count; j++)
       rasterfall_console_log(c,
-          output.lines[j].level == RF_COMMAND_OUTPUT_ERROR ?
+          session.output.lines[j].level == RF_COMMAND_OUTPUT_ERROR ?
               RASTERFALL_CONSOLE_ERROR : RASTERFALL_CONSOLE_INFO,
-          output.lines[j].text);
+          session.output.lines[j].text);
 }
 void rasterfall_console_init(struct rasterfall_console *c){memset(c,0,sizeof(*c));rasterfall_calibration_init(&c->calibration);}
 int rasterfall_console_handle_input_context(struct rasterfall_console *c,struct rf_input_frame *in,unsigned char *pending,const struct rf_command_context *context){int k,ch,len,i;if(take(in,pending,KEY_ESC)){c->open=0;return 1;}if(take(in,pending,KEY_ENTER)){if(c->line[0]){for(i=7;i>0;i--)strcpy(c->history[i],c->history[i-1]);strcpy(c->history[0],c->line);rasterfall_console_log(c,RASTERFALL_CONSOLE_COMMAND,c->line);}c->history_cursor=0;execute(c,context);c->line[0]=0;return 1;}if(take(in,pending,KEY_BACKSPACE)){len=strlen(c->line);if(len)c->line[len-1]=0;return 1;}if(take(in,pending,KEY_UP)){if(c->history_cursor<8&&c->history[c->history_cursor][0]){strcpy(c->line,c->history[c->history_cursor]);c->history_cursor++;}return 1;}if(take(in,pending,KEY_DOWN)){if(c->history_cursor>1)c->history_cursor--;else c->history_cursor=0;if(c->history_cursor==0)c->line[0]=0;else strcpy(c->line,c->history[c->history_cursor-1]);return 1;}for(k=0;k<RF_INPUT_KEY_COUNT;k++)if((ch=chr(k))&&take(in,pending,k)){len=strlen(c->line);if(len<159){c->line[len]=ch;c->line[len+1]=0;}return 1;}return c->open;}
@@ -244,4 +273,4 @@ void rasterfall_console_draw(struct toy_surface *s,const struct rasterfall_conso
     draw_wrapped(s,"INPUT   ENTER execute   UP/DOWN history   ESC close",x,h-16,
                  columns,1,0xD88A32);
 }
-int rasterfall_console_logic_test(void){struct rasterfall_console c;rasterfall_console_init(&c);if(c.calibration.weapon!=TOY_GAME_WEAPON_AK)return 1;return rasterfall_calibration_logic_test();}
+int rasterfall_console_logic_test(void){struct rasterfall_console c; struct rf_terminal_session t; rasterfall_console_init(&c); rf_terminal_session_init(&t); if(c.calibration.weapon!=TOY_GAME_WEAPON_AK)return 1; if(rf_terminal_session_set_input(&t,"help")<0||rf_terminal_session_execute(&t,NULL)<0||t.output.count<2)return 2; rf_terminal_session_set_input(&t,"status"); if(rf_terminal_session_execute(&t,NULL)==0)return 3; return rasterfall_calibration_logic_test();}
