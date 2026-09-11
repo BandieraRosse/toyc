@@ -5027,12 +5027,14 @@ static int render_enemies(struct toy_renderer *renderer,
         struct vec3 center, view;
         uint32_t color;
         int scale = 1000;
+        int visual_family = enemy_visual_family_for_enemy(e->type, i);
         if (e->active == 0) { enemy_visual_motion[i].valid = 0; continue; }
         center.x = e->x;
         center.y = 0;
         center.z = e->z;
         world_to_view(camera, &center, &view);
-        if (view.z > (enemy_visual_family && e->type <= TOY_GAME_ENEMY_PURSUIT_FAST ? 56000 : ENEMY_RENDER_DISTANCE)) continue;
+        if (view.z > (visual_family != RASTERFALL_ENEMY_VISUAL_LEGACY ?
+                      56000 : ENEMY_RENDER_DISTANCE)) continue;
         if (e->active == 2) {
             int style = effects.enemy_death_style[i];
             if (style == RASTERFALL_ENEMY_DEATH_STYLE_LEGACY ||
@@ -5117,9 +5119,9 @@ static int render_enemies(struct toy_renderer *renderer,
                 TOY_GAME_ENEMY_ABILITY_SMOKER_TONGUE &&
             e->special_target_active)
             pixels += render_smoker_tongue(renderer, camera, draw_enemy);
-        int infected_pixels = enemy_visual_family ?
+        int infected_pixels = visual_family != RASTERFALL_ENEMY_VISUAL_LEGACY ?
             render_infected_enemy(renderer, camera, draw_enemy, e, i, scale,
-                                  enemy_feedback_color(i)) : -1;
+                                  enemy_feedback_color(i), visual_family) : -1;
         if (infected_pixels >= 0)
             pixels += infected_pixels;
         else if (toy_game_enemy_info(e->type)->ability ==

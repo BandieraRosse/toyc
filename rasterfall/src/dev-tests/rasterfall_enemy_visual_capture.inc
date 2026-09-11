@@ -13,10 +13,6 @@ int rasterfall_render_enemy_visual_capture(const char *output)
     struct rasterfall_render_context context;
     struct camera camera;
     int result = 1, subject, frame, spawned = 0;
-    if (!enemy_visual_family) {
-        __fprintf(2, "enemy visual: capture requires --enemy-visual-family block-infected or humanoid-infected\n");
-        return 1;
-    }
     if (!output || !*output || strlen(output) > 400) return 1;
     if (tlibc_recursive_mkdir(output) < 0 ||
         rasterfall_session_load(&session, "rasterfall/assets/maps/rasterfall.map") < 0)
@@ -43,8 +39,9 @@ int rasterfall_render_enemy_visual_capture(const char *output)
     if (game.enemies[0].x == initial_x && game.enemies[0].z == initial_z) {
         __fprintf(2,"enemy visual: spawn movement failed\n"); goto done;
     }
-    __printf("enemy visual: spawn API=%d simulation=192ms movement=PASS family=%d\n",
-             spawned,enemy_visual_family);
+    __printf("enemy visual: spawn API=%d simulation=192ms movement=PASS mode=%s\n",
+             spawned, enemy_visual_family == RASTERFALL_ENEMY_VISUAL_AUTO ?
+             "AUTO" : enemy_visual_family_name(enemy_visual_family));
     /* Isolated views still draw the spawned enemy slots through render_enemies. */
     for (frame = 0; frame < 33; frame++) {
         struct toy_renderer renderer;
@@ -56,6 +53,7 @@ int rasterfall_render_enemy_visual_capture(const char *output)
         int view = frame < 27 ? frame % 3 : 0;
         int pose_id = frame < 27 ? frame / 3 % 3 : 2;
         subject = frame < 27 ? frame / 9 : 1;
+        int expected_infected = 0;
         for (int i = 0; i < 3; i++) {
             struct toy_game_enemy *e = &game.enemies[i];
             e->active = world || death || i == subject ? 1 : 0;
@@ -75,6 +73,9 @@ int rasterfall_render_enemy_visual_capture(const char *output)
                 visual_effects.enemy_hit_dir_x[i] = 650;
                 visual_effects.enemy_hit_dir_z[i] = 800;
             }
+            if (e->active && enemy_visual_family_for_enemy(e->type, i) !=
+                    RASTERFALL_ENEMY_VISUAL_LEGACY)
+                expected_infected++;
         }
         if (death) distance = 3800;
         memset(&camera, 0, sizeof(camera));
@@ -114,7 +115,7 @@ int rasterfall_render_enemy_visual_capture(const char *output)
         int submissions_before = enemy_visual_submissions;
         render_enemies(&renderer,&camera);
         int unchanged = !memcmp(&before,&game,sizeof(game));
-        int expected = world || death ? 3 : 1;
+        int expected = expected_infected;
         int submitted = enemy_visual_submissions-submissions_before;
         int commands = renderer.cmd_count;
         int failed = renderer.cmd_overflow || !commands || !unchanged ||
@@ -122,14 +123,18 @@ int rasterfall_render_enemy_visual_capture(const char *output)
                      toy_renderer_flush(&renderer)<0;
         if (world) {
             snprintf(path,sizeof(path),"%s/%s-%dm.bmp",output,frame == 29 ? "distance" : "world",distance/512);
-            snprintf(label,sizeof(label),"%s COMMON / FAST / HEAVY - %dm - FAMILY %d",
-                     frame == 29 ? "UNOBSTRUCTED DISTANCE" : "WORLD SPAWN",distance/512,enemy_visual_family);
+            snprintf(label,sizeof(label),"%s COMMON / BLOCK_INFECTED / HUMANOID_INFECTED - %dm - %s",
+                     frame == 29 ? "UNOBSTRUCTED DISTANCE" : "WORLD SPAWN",distance/512,
+                     enemy_visual_family == RASTERFALL_ENEMY_VISUAL_AUTO ? "MIXED" :
+                     enemy_visual_family_name(enemy_visual_family));
         } else if (death) {
             snprintf(path,sizeof(path),"%s/death-%d.bmp",output,frame-30);
             snprintf(label,sizeof(label),"EXISTING DEATH PRESENTATION %d",frame-30);
         } else {
             snprintf(path,sizeof(path),"%s/%s-%s-%s.bmp",output,names[subject],poses[pose_id],views[view]);
-            snprintf(label,sizeof(label),"%s / %s / %s - FAMILY %d",names[subject],poses[pose_id],views[view],enemy_visual_family);
+            snprintf(label,sizeof(label),"%s / %s / %s - %s / %s",names[subject],poses[pose_id],views[view],
+                     enemy_visual_type_name(types[subject]),
+                     enemy_visual_family_name(enemy_visual_family_for_enemy(types[subject], subject)));
         }
         fb_draw_string((unsigned char *)surface.pixels,24,24,label,0xE7E7DB,surface.stride);
         if (!failed && rasterfall_hud_dump_bmp(path,&surface)<0) failed=1;

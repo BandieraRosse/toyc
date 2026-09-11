@@ -3,6 +3,7 @@
 #include "tlibc_everything.h"
 #include "rasterfall_net.h"
 #include "rasterfall_model.h"
+#include "rasterfall_enemy_visual.h"
 #include "rasterfall_options.h"
 
 static int positive_int(const char *text, int fallback)
@@ -43,6 +44,7 @@ void rasterfall_options_init(struct rasterfall_options *o,
     o->requested_net_mode = RASTERFALL_NET_OFF;
     o->net_port = RASTERFALL_NET_DEFAULT_PORT;
     o->textures_enabled = textures_enabled;
+    o->enemy_visual_family = RASTERFALL_ENEMY_VISUAL_AUTO;
     o->edge_pass_enabled = 1;
     o->stats_enabled = 1;
     o->model_views_supersample = 1;
@@ -60,8 +62,8 @@ void rasterfall_options_usage(int fd)
         "  --textures | --no-textures  --no-edge-pass  --no-stats\n"
         "  --texture-stats  --frames <count>  --dump-frame <path>\n"
         "  --logic-test  --input-test  --action-runtime-debug  --auto\n"
-        "  --enemy-visual-capture <output-dir> (requires infected family; bind/idle/move, world, death)\n"
-        "  --enemy-visual-family <legacy|block-infected|humanoid-infected>\n"
+        "  --enemy-visual-capture <output-dir> (mixed or forced family; bind/idle/move, world, death)\n"
+        "  --enemy-visual-family <legacy|block-infected|humanoid-infected> (default: mixed)\n"
         "  --visual-capture <procedural-humanoid|hurd-squad|lighting-props|modular-teammate> --visual-output <path.bmp>\n"
         "  --character-acceptance <model.rmesh> <output-dir>\n"
         "  --profession-lineup <model-dir> <output-dir>\n"

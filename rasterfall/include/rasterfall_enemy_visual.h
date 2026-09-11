@@ -3,6 +3,7 @@
 
 /* Local presentation selection. Never serialized or stored in toy_game. */
 enum rasterfall_enemy_visual_family {
+    RASTERFALL_ENEMY_VISUAL_AUTO = -1,
     RASTERFALL_ENEMY_VISUAL_LEGACY,
     RASTERFALL_ENEMY_VISUAL_BLOCK_INFECTED,
     RASTERFALL_ENEMY_VISUAL_HUMANOID_INFECTED

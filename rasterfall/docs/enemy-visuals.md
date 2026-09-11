@@ -1,14 +1,18 @@
 # Enemy Visual V2：第一阶段
 
 > 文档更新：2026-09-11
-> 源码核对基线：工作区（六份公开 infected RFM2；renderer-only family/recipe；正式 spawn API 离屏验收；既有 Enemy Death Presentation）
+> 源码核对基线：工作区（六份公开 infected RFM2；renderer-only family/recipe；Enemy Visual Family Mix V1；正式 spawn API 离屏验收；既有 Enemy Death Presentation）
 
 ## 状态与接入入口
 
 `toy_game_enemy.type` 仍由玩法拥有。COMMON、FAST、HEAVY 对应现有
 `TOY_GAME_ENEMY_PURSUIT_*`；AI、spawn、伤害、波次、snapshot 与地图均不增加字段或分支。
-`rasterfall_enemy_visual.h` 定义本地展示选择 LEGACY / BLOCK_INFECTED / HUMANOID_INFECTED。
-默认 LEGACY，进程启动参数只改变本机 renderer；联机双方可以选择不同外观。
+`rasterfall_enemy_visual.h` 定义本地展示选择 AUTO / LEGACY / BLOCK_INFECTED / HUMANOID_INFECTED。
+默认 AUTO 由 renderer 按 enemy type 混合家族，进程启动参数只改变本机 renderer；联机双方可以选择不同外观。
+
+AUTO 的比例为 COMMON 70/20/10、FAST 40/40/20、HEAVY 30/40/30，顺序均为
+LEGACY / BLOCK_INFECTED / HUMANOID_INFECTED。slot 只作为 renderer 稳定选择的种子，避免帧间
+闪烁；结果不写入 gameplay enemy 或 network snapshot。特感继续使用旧 renderer。
 
 `rasterfall_render.c::render_enemies()` 继续拥有可见性、地面/空中锚点、受击位移和死亡表现编排。
 它在旧身体分支前调用 `render/rasterfall_enemy_visual.inc::render_infected_enemy()`。
@@ -64,6 +68,8 @@ make app-rasterfall app-glb-inspect build/rfchar_runtime_test
 build/rasterfall --enemy-visual-family block-infected
 build/rasterfall --enemy-visual-family humanoid-infected
 build/rasterfall --enemy-visual-family legacy
+build/rasterfall --enemy-visual-capture tmp/enemy-visual-mix-v1/mixed
+build/rasterfall --enemy-visual-family legacy --enemy-visual-capture tmp/enemy-visual-mix-v1/legacy
 
 # 重新生成六个源模型、统一导入、验证及截图
 python3 tools/enemy_visual_round.py --generate --capture --deterministic
@@ -72,7 +78,8 @@ python3 tools/enemy_visual_round.py --capture --deterministic
 build/rasterfall --logic-test
 ```
 
-独立 capture 入口为 `--enemy-visual-capture <output-dir>`，需显式选择 infected family。
+独立 capture 入口为 `--enemy-visual-capture <output-dir>`，默认捕获 AUTO mixed；也可与三个
+family 参数组合进行强制家族验收。捕获标签会显示 `COMMON / BLOCK_INFECTED` 这类实际选择。
 实现位于 `dev-tests/rasterfall_enemy_visual_capture.inc`：加载正式地图，用
 `toy_game_spawn_horde_type()` 生成三种真实 enemy slot，调用 `toy_game_update_world()` 验证移动，
 随后冻结 fixture 以便比较 bind/idle/move × front/side/three-quarter。

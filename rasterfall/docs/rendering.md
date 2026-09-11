@@ -43,7 +43,8 @@ path 以及 lower/upper/additive action，确认 RF Humanoid 没有被 legacy an
 ## Enemy Visual V2
 
 普通敌人的可选 BLOCK_INFECTED / HUMANOID_INFECTED 家族由 renderer-only recipe 选择六份公开
-RFM2；默认 LEGACY，特感沿用旧路径。资源、串行 scratch pose 与逐槽位步幅均归 renderer，
+RFM2；默认 AUTO 按 COMMON 70/20/10、FAST 40/40/20、HEAVY 30/40/30 混合，特感沿用旧路径。
+资源、串行 scratch pose 与逐槽位步幅均归 renderer，
 不进入 gameplay 或 snapshot。新身体通过既有三角形入口保留受击、死亡旋转和渐隐；
 入口、预算、远裁剪和验收见 [enemy-visuals.md](enemy-visuals.md)。
 

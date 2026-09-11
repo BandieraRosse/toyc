@@ -64,6 +64,6 @@ build/rfchar_runtime_test <model.rmesh>
 - [`docs/archive/project-handoff-2026-09.md`](docs/archive/project-handoff-2026-09.md)：历史现场记录，
   不代表当前实现。
 
-普通感染敌人可使用 `--enemy-visual-family block-infected` 或
-`--enemy-visual-family humanoid-infected` 测试新外观；默认 `legacy` 保留现有外观。
+普通感染敌人默认按 enemy type 混合 LEGACY、BLOCK_INFECTED、HUMANOID_INFECTED；可使用
+`--enemy-visual-family legacy|block-infected|humanoid-infected` 强制单一家族进行截图、性能和资产验证。
 六份模型为公开资源，重建、展示截图与验收见 [Enemy Visual V2](docs/enemy-visuals.md)。

@@ -21,16 +21,71 @@ static struct {
     struct rasterfall_model_resource resource;
     struct rasterfall_model_instance instance;
 } enemy_visual_cache[6];
-static int enemy_visual_family;
+/* AUTO is a renderer policy. The selected family is derived per enemy and is
+ * deliberately not stored in toy_game or a network snapshot. */
+static int enemy_visual_family = RASTERFALL_ENEMY_VISUAL_AUTO;
 static struct { int valid, x, z, phase; unsigned long moved_us; } enemy_visual_motion[TOY_GAME_MAX_ENEMIES];
 static int enemy_visual_capture_pose = -1; /* -1 runtime, 0 bind, 1 idle, 2 move */
 static int enemy_visual_submissions, enemy_visual_failures;
 
 void rasterfall_render_set_enemy_visual_family(int family)
 {
-    enemy_visual_family = family >= RASTERFALL_ENEMY_VISUAL_LEGACY &&
+    enemy_visual_family = family >= RASTERFALL_ENEMY_VISUAL_AUTO &&
         family <= RASTERFALL_ENEMY_VISUAL_HUMANOID_INFECTED ? family : 0;
     memset(enemy_visual_motion, 0, sizeof(enemy_visual_motion));
+}
+
+static const char *enemy_visual_family_name(int family)
+{
+    switch (family) {
+    case RASTERFALL_ENEMY_VISUAL_BLOCK_INFECTED: return "BLOCK_INFECTED";
+    case RASTERFALL_ENEMY_VISUAL_HUMANOID_INFECTED: return "HUMANOID_INFECTED";
+    default: return "LEGACY";
+    }
+}
+
+static const char *enemy_visual_type_name(int type)
+{
+    switch (type) {
+    case TOY_GAME_ENEMY_PURSUIT_FAST: return "FAST";
+    case TOY_GAME_ENEMY_PURSUIT_HEAVY: return "HEAVY";
+    default: return "COMMON";
+    }
+}
+
+static unsigned enemy_visual_mix_bucket(int type, int slot)
+{
+    uint32_t value = (uint32_t)(slot + 1) * 0x9E3779B9u;
+    value ^= (uint32_t)(type + 1) * 0x85EBCA6Bu;
+    value ^= value >> 16;
+    value *= 0x7FEB352Du;
+    value ^= value >> 15;
+    return value % 100u;
+}
+
+/* The slot is only a presentation seed. It keeps a visible enemy stable
+ * across frames while remaining outside the gameplay state. */
+static int enemy_visual_family_for_enemy(int type, int slot)
+{
+    unsigned bucket;
+    int legacy, block;
+    if (type < TOY_GAME_ENEMY_PURSUIT_COMMON ||
+        type > TOY_GAME_ENEMY_PURSUIT_FAST)
+        return RASTERFALL_ENEMY_VISUAL_LEGACY;
+    if (enemy_visual_family != RASTERFALL_ENEMY_VISUAL_AUTO)
+        return enemy_visual_family;
+    bucket = enemy_visual_mix_bucket(type, slot);
+    if (type == TOY_GAME_ENEMY_PURSUIT_FAST) {
+        legacy = 40; block = 40;
+    } else if (type == TOY_GAME_ENEMY_PURSUIT_HEAVY) {
+        legacy = 30; block = 40;
+    } else {
+        legacy = 70; block = 20;
+    }
+    if (bucket < (unsigned)legacy) return RASTERFALL_ENEMY_VISUAL_LEGACY;
+    if (bucket < (unsigned)(legacy + block))
+        return RASTERFALL_ENEMY_VISUAL_BLOCK_INFECTED;
+    return RASTERFALL_ENEMY_VISUAL_HUMANOID_INFECTED;
 }
 
 static void enemy_visual_rotate(struct rasterfall_model_asset *pose,
@@ -46,13 +101,13 @@ static void enemy_visual_rotate(struct rasterfall_model_asset *pose,
 static int render_infected_enemy(struct toy_renderer *renderer,
     const struct camera *camera, const struct toy_game_enemy *enemy,
     const struct toy_game_enemy *source, int slot, int death_scale,
-    uint32_t feedback)
+    uint32_t feedback, int family)
 {
     int index, moving = 0, phase, swing, scale, pixels;
     struct rasterfall_model_instance *instance;
     struct rasterfall_model_asset *pose;
     for (index = 0; index < 6; index++)
-        if (enemy_visual_recipes[index].family == enemy_visual_family &&
+        if (enemy_visual_recipes[index].family == family &&
             enemy_visual_recipes[index].type == enemy->type) break;
     if (index == 6) return -1;
     if (!enemy_visual_cache[index].status) {
