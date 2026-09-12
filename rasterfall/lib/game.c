@@ -3824,7 +3824,7 @@ static void tank_sweep_entities(struct toy_game *g,
         if (tank->ability.charge_hit_actor_mask & (1ULL << i)) continue;
         if (apply_entity_impact_with_knockback(g, TOY_GAME_ENTITY_ACTOR, i,
                                            actor_dx[i], actor_dz[i], damage,
-                                           TOY_CONFIG_TANK_KNOCKBACK, 0))
+                                           TOY_CONFIG_TANK_KNOCKBACK, 1))
             tank->ability.charge_hit_actor_mask |= 1ULL << i;
     }
 }

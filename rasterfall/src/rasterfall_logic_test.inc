@@ -3199,6 +3199,36 @@ static int run_logic_test(void)
             !(second_charger->ability.charge_hit_actor_mask & 1ULL))
             return 226;
     }
+    /* Tank sweep must refresh player knockback even while the player's
+     * ordinary knockback cooldown is active.  Tank damage and launch share
+     * the same authoritative impact, so this catches the regression where
+     * only the damage landed. */
+    {
+        struct toy_game_actor *local;
+        struct toy_game_enemy *tank;
+        int hp;
+        toy_game_init(&game, 227);
+        game.primitive_count = 0;
+        game.room_limit = 12000;
+        game.to_spawn = 0;
+        local = toy_game_local_player_actor(&game);
+        local->x = 0; local->z = 0;
+        local->knockback_cooldown_ms = 5000;
+        hp = local->hp;
+        tank = &game.enemies[0];
+        memset(tank, 0, sizeof(*tank));
+        tank->active = 1;
+        tank->type = TOY_GAME_ENEMY_TANK;
+        tank->hp = TOY_CONFIG_TANK_HP;
+        tank->x = 0; tank->z = -1000;
+        tank->dir_z = 1024;
+        tank->ground_y = 0;
+        game.enemies_alive = 1;
+        for (int frame = 0; frame < 40; frame++)
+            toy_game_update_world(&game, 16);
+        if (local->hp >= hp || local->airborne_ms <= 0 ||
+            !(tank->ability.charge_hit_actor_mask & 1ULL)) return 227;
+    }
     /* 敌人高速击飞同样分段扫掠，撞墙后保留切向速度。 */
     {
         struct toy_game swept_game;

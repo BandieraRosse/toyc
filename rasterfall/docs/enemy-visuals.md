@@ -72,7 +72,8 @@ Tank 的 `charge_elapsed_ms` 直接采样五个姿态关键点：开始、蓄势
 sampler 不使用命中 mask 决定是否挥空，挥空仍走完整动作。
 
 `rasterfall_effects_sync_enemy_feedback()` 对 Charger/Tank 的新增命中 mask 位，在实际目标位置
-调用现有 hit particle runtime，重复同步去重。目标击飞仍是 gameplay 原有行为；本地受伤
+调用现有 hit particle runtime，并从击飞初始速度生成保留 3000ms 的抛物线轨迹，重复同步去重。
+目标击飞仍是 gameplay 原有行为；本地受伤
 camera shake / 屏幕反馈继续消费现有 HP edge。没有新增音频资源或攻击音频 hook。
 网络协议 43 仅给 enemy snapshot 增加既有权威 mask 的 8 字节显式编码，客户端 apply 原样复制；
 pose、model profile、observer 与粒子不入网。快照到达才可观察到远端命中，不承诺本地亚帧同步。

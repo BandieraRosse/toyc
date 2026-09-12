@@ -349,6 +349,51 @@ static void spawn_enemy_death_presentation(
     }
 }
 
+/* The gameplay impulse is authoritative; this is a presentation-only guide
+ * showing the hit-time parabola for three seconds.  It is intentionally
+ * materialized as short depth-tested rays so the curve remains visible while
+ * the actor itself continues to be rendered from live gameplay state. */
+static void spawn_knockback_trajectory(struct rasterfall_effects *effects,
+                                       const struct toy_game_actor *actor,
+                                       int enemy_type)
+{
+    int i, segments = 12, total_steps, step0, step1;
+    int origin_x, origin_y, origin_z;
+    uint32_t color;
+    if (!effects || !actor || actor->airborne_ms <= 0 ||
+        (!actor->knockback_x && !actor->knockback_z)) return;
+    total_steps = actor->airborne_ms / 16;
+    if (total_steps < 1) total_steps = 1;
+    origin_x = actor->x;
+    origin_y = -900 + actor->ground_y + actor->airborne_y;
+    origin_z = actor->z;
+    color = enemy_type == TOY_GAME_ENEMY_TANK ? 0xD878E8 : 0xF0B040;
+    for (i = 0; i < segments; i++) {
+        struct rasterfall_effect_instance ray;
+        int y0, y1;
+        step0 = total_steps * i / segments;
+        step1 = total_steps * (i + 1) / segments;
+        y0 = actor->vertical_velocity * step0 -
+             TOY_GAME_AIRBORNE_GRAVITY * step0 * (step0 - 1) / 2;
+        y1 = actor->vertical_velocity * step1 -
+             TOY_GAME_AIRBORNE_GRAVITY * step1 * (step1 - 1) / 2;
+        memset(&ray, 0, sizeof(ray));
+        ray.type = RASTERFALL_EFFECT_INSTANCE_RAY;
+        ray.kind = RASTERFALL_EFFECT_INSTANCE_KIND_KNOCKBACK_TRAJECTORY;
+        ray.flags = RASTERFALL_EFFECT_EVENT_DEPTH_TEST;
+        ray.x = origin_x + actor->knockback_x * step0;
+        ray.y = origin_y + y0;
+        ray.z = origin_z + actor->knockback_z * step0;
+        ray.ex = origin_x + actor->knockback_x * step1;
+        ray.ey = origin_y + y1;
+        ray.ez = origin_z + actor->knockback_z * step1;
+        ray.lifetime_ms = RASTERFALL_KNOCKBACK_TRAJECTORY_LIFE_MS;
+        ray.ray_width = 3;
+        ray.color = color;
+        rasterfall_effects_spawn_instance(effects, &ray);
+    }
+}
+
 enum rasterfall_effect_emitter_preset_id {
     RASTERFALL_EFFECT_EMITTER_PRESET_FIRE,
     RASTERFALL_EFFECT_EMITTER_PRESET_EXPLOSION,
@@ -700,6 +745,11 @@ void rasterfall_effects_sync_enemy_feedback(struct rasterfall_effects *effects,
         if (enemy->active == 1 &&
             (enemy->type == TOY_GAME_ENEMY_CHARGER || enemy->type == TOY_GAME_ENEMY_TANK)) {
             uint64_t mask=enemy->ability.charge_hit_actor_mask;
+            /* Charger/Tank clear this mask at the start of every attack.
+             * Treat a bit removal as a new attack generation so repeated
+             * hits from the same enemy can retrigger particles and the arc. */
+            if ((mask & effects->enemy_special_hit_seen[i]) != mask)
+                effects->enemy_special_hit_seen[i] = 0;
             uint64_t hits=mask & ~effects->enemy_special_hit_seen[i];
             /* Only authoritative successful hits produce target particles.
              * Camera shake remains the local player's existing HP-edge hook. */
@@ -708,6 +758,7 @@ void rasterfall_effects_sync_enemy_feedback(struct rasterfall_effects *effects,
                     const struct toy_game_actor *a=&game->actors[target];
                     rasterfall_effects_spawn_hit_particles(effects,a->x,
                         a->ground_y+a->airborne_y-350,a->z,enemy->dir_x,enemy->dir_z);
+                    spawn_knockback_trajectory(effects, a, enemy->type);
                 }
             effects->enemy_special_hit_seen[i]=mask;
         } else effects->enemy_special_hit_seen[i]=0;

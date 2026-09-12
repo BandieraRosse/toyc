@@ -1,7 +1,7 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-12
-> 源码核对基线补充：Enemy Procedural Rig V1；三特感 profile/pose 分离、posed tongue socket、真实命中 particles 与固定 world/silhouette capture。
+> 源码核对基线补充：Enemy Procedural Rig V1；三特感 profile/pose 分离、posed tongue socket、真实命中 particles、Charger/Tank 击飞抛物线轨迹与固定 world/silhouette capture。
 > 源码核对基线：工作区（Enemy Visual V2 六份公开 RFM2 / renderer-only family；Character Material Lighting Policy V1；Enemy Presentation V1 1000ms ballistic body fade / rotating irregular fragments / directional trailing emitter / 10% legacy death；Humanoid Action Composition V1.1 additive recoil；modular RFANIM 独立 locomotion 时钟与双手持枪轨道；RFCHAR +Z forward basis；PRIMARY_GRIP weapon presentation；开发者 world strip 与战斗区共用 modular path；出生点 V2 action debug station；双正式四人 squad；Lighting V1；renderer frame ownership cleanup）
 
 > 源码核对补充：正式 Hurd actor 通过四个专用 character profile 进入职业外观；恢复的四名 Maid 旗卫以 Maid character profile 接入 actor，同时继续由 anime identity 选择骨骼模型；普通 player、Eula、佣兵解析为 NONE。
@@ -210,7 +210,9 @@ Character Acceptance 还输出 `lighting-policy/{normal-light,back-light,dark-en
   事件消费现在还会登记到固定容量的 `rasterfall_effect_instance` runtime 池；instance 将底层
   组件类型（particle/ray/billboard/overlay/emitter/material/camera_shake）与语义 kind 分离。tracer、命中火花、分层 muzzle flash 和 Molotov 火焰已迁移到统一
   `RAY`/`PARTICLE`/`BILLBOARD` 组件；`ENTITY_HIT` 生成命中粒子但不再额外生成整条 hit ray，炸弹 fuse flash 使用 billboard；玩家伤害闪屏使用 `OVERLAY`，敌人受击颜色使用 `MATERIAL` feedback，交互高亮已登记为短生命周期 `INTERACTION_HIGHLIGHT` billboard 并驱动现有高亮绘制，屏幕空间效果通过 `render_effect_overlay()` 和
-  `rasterfall_render_overlays()` 提供统一入口，因此本阶段不改变已有效果画面。`CAMERA_SHAKE`
+  `rasterfall_render_overlays()` 提供统一入口，因此本阶段不改变已有效果画面。Charger/Tank 命中
+  actor 后，effects 从击飞时的初始速度生成 12 段深度测试世界射线，组成抛物线轨迹并保留 3000ms；
+  轨迹是 presentation-only，不替代 actor 的实时位置。`CAMERA_SHAKE`
   组件不修改权威摄像机，只在渲染阶段复制出的 `render_camera` 上叠加视空间平移、偏航和俯仰扰动；当前仅本地 `WEAPON_FIRE` 事件生成该组件，AI/远端开火事件通过 `LOCAL_VIEW` 标志隔离。多个组件先按轴叠加，再按每轴最大值限幅，并用短时插值追踪目标值。`EXPLOSION`
   现在由固定生命周期的 emitter 生成 16 个通用 `EXPLOSION_PARTICLE` 子实例；事件类型统一定义在
   `include/rasterfall_effect_event.h`，该模块不反写 gameplay。

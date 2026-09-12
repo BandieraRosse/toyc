@@ -7206,17 +7206,22 @@ static int render_effect_rays(struct toy_renderer *renderer, const struct camera
         if (!t->active || t->type != RASTERFALL_EFFECT_INSTANCE_RAY ||
             (t->kind != RASTERFALL_EFFECT_INSTANCE_KIND_TRACER &&
              t->kind != RASTERFALL_EFFECT_INSTANCE_KIND_ENTITY_HIT_RAY &&
-             t->kind != RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION_RAY)) continue;
+             t->kind != RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION_RAY &&
+             t->kind != RASTERFALL_EFFECT_INSTANCE_KIND_KNOCKBACK_TRAJECTORY)) continue;
         remaining = t->lifetime_ms - t->age_ms;
         if (remaining < 0) remaining = 0;
         fade = remaining * 256 /
                (t->lifetime_ms > 0 ? t->lifetime_ms : 1);
         color = mix_color(t->kind == RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION_RAY ?
-                              0xFFF0A0 : 0xFFE060,
+                              0xFFF0A0 :
+                              t->kind == RASTERFALL_EFFECT_INSTANCE_KIND_KNOCKBACK_TRAJECTORY ?
+                              t->color : 0xFFE060,
                           t->kind == RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION_RAY ?
-                              0x8A2408 : 0x3A2C14,
+                              0x8A2408 :
+                              t->kind == RASTERFALL_EFFECT_INSTANCE_KIND_KNOCKBACK_TRAJECTORY ?
+                              0x302020 : 0x3A2C14,
                           fade, 256);
-        width = 2;
+        width = t->kind == RASTERFALL_EFFECT_INSTANCE_KIND_KNOCKBACK_TRAJECTORY ? 3 : 2;
         if (t->kind == RASTERFALL_EFFECT_INSTANCE_KIND_TRACER) {
             int head_t, tail_t, tail_percent;
             int hx, hy, hz, tx, ty, tz;

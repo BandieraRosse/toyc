@@ -89,7 +89,9 @@ active、未被携带且位于区域内；assigned count 沿用普通旗帜语�
 `toy_game_update_held()`，本地主机 world step 与客户端 actor motion 都会推进它。击飞扫掠一旦某个轴
 受阻就锁定该轴，不能在后续子步越过障碍；敌人击飞按自身碰撞半径分段扫掠，在逻辑步的新旧高度间
 插值，撞墙时仅清除受阻轴的水平速度。Charger 的每轮 `charge_hit_actor_mask` 只负责同一 Charger
-去重；来自不同 Charger 的撞击不受玩家击飞冷却阻挡。Charger 和 Tank 的击飞水平目标距离分别为 9m 和 6m。
+去重；来自不同 Charger 的撞击不受玩家击飞冷却阻挡。Tank 的挥击也强制刷新击飞，不被玩家击飞冷却
+吞掉。Charger 和 Tank 的击飞水平目标距离分别为 9m 和 6m；命中后的世界空间抛物线轨迹由展示层保留
+3000ms，不进入玩法真值或网络快照。
 
 ## 地图链路
 

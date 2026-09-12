@@ -1,7 +1,7 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-12
-> 源码核对基线补充：Enemy Procedural Rig V1 的 profile / truth adapter / pose / generic renderer；特感关键帧、轮廓与 world 验收；普通敌人新模型混合比例与 Charger 新冲锋碰撞代理；协议 43 命中 mask。
+> 源码核对基线补充：Enemy Procedural Rig V1 的 profile / truth adapter / pose / generic renderer；特感关键帧、轮廓与 world 验收；普通敌人新模型混合比例、Charger 新冲锋碰撞代理、Tank 击飞与 3 秒抛物线轨迹效果；协议 43 命中 mask。
 > 源码核对补充：RF Core lifecycle boundary 已覆盖 poll/exit、tick clock 与 frame begin/end；Runtime Environment V1 ownership audit 与 checkpoint 已完成。
 > 源码核对补充：Outpost V0 已接入默认 Game landing、world identity/switch lifecycle 与三终端交互。
 > 源码核对基线：工作区（Runtime Map V1 projection ownership cleanup；RF Application Projection Layer V0 query boundary；Phase 4.4 render IR/runtime/legacy draw adapter；Enemy Visual V2 六份公开 RFM2 / renderer-only family；Enemy Visual Family Mix V1 自动比例 resolver 与强制 family capture；MODEL_DISPLAY style 6--14 的三类型×三家族感染体展示；Character Material Lighting Policy V1；Enemy Presentation V1 1000ms ballistic fade / rotating irregular fragments / directional trailing emitter 与开发者死亡测试排；Humanoid Action Composition V1.1 additive recoil；modular RFANIM presentation clock；双手 RFANIM 持枪轨道；RFCHAR +Z forward basis；PRIMARY_GRIP weapon presentation；开发者 world strip 与战斗区共用 modular path；双正式四人小队 runtime；RF Core Runtime V0.2 `rf_game_runtime` facade 与 status query；Core/Game startup config split；renderer frame ownership cleanup；Core filesystem service V0；唯一 `rf_core` context 与 Core clock service；Runtime Facade Authority audit；Phase 3A `rf_game_update()` gameplay update authority；Phase 3B-1 world presentation migration；Phase 3B-2 steady-state Game UI presentation authority；Phase 4.3 surface IR/runtime/legacy primitive adapter）
