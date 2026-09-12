@@ -14,7 +14,10 @@
 #define RASTERFALL_ENEMY_DEATH_FRAGMENT_LIFE_MS 1350
 #define RASTERFALL_ENEMY_DEATH_DUST_LIFE_MS 1550
 #define RASTERFALL_MUZZLE_FLASH_LIFE_MS 70
-#define RASTERFALL_KNOCKBACK_TRAJECTORY_LIFE_MS 3000
+#define RASTERFALL_KNOCKBACK_TRAJECTORY_HISTORY_MS 400
+#define RASTERFALL_KNOCKBACK_TRAIL_FADE_MS 200
+#define RASTERFALL_KNOCKBACK_TRAIL_POINTS 16
+#define RASTERFALL_KNOCKBACK_TRAIL_SAMPLE_MS 24
 #define RASTERFALL_EFFECT_TRAJECTORY_IN_FLIGHT (1 << 2)
 #define RASTERFALL_EFFECT_INSTANCE_SLOTS 2048
 #define RASTERFALL_EFFECT_EMITTER_SLOTS 32
@@ -154,6 +157,11 @@ struct rasterfall_effect_emitter_child {
     uint32_t color;
 };
 
+struct rasterfall_knockback_trail_point {
+    int x, y, z;
+    int age_ms;
+};
+
 /* Fixed-point runtime state.  Positions and velocities use the same integer
  * world units as the existing effect pools; velocity and gravity are applied
  * in Rasterfall's fixed 16ms simulation ticks.  Size is milli-scale and alpha
@@ -185,6 +193,10 @@ struct rasterfall_effect_instance {
     int gravity_y;
     int curve_duration_ms;
     int curve_flight_ms;
+    int trail_count;
+    int trail_head;
+    struct rasterfall_knockback_trail_point
+        trail[RASTERFALL_KNOCKBACK_TRAIL_POINTS];
     int stretch_y;
     uint32_t color;
     int lifetime_ms;

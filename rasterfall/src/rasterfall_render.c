@@ -7196,36 +7196,45 @@ static int ray_lerp(int a, int b, int t)
     return a + (int)((long long)(b - a) * t / 65536);
 }
 
-static void render_knockback_curve(struct toy_renderer *renderer,
+static void render_knockback_trail(struct toy_renderer *renderer,
                                    const struct camera *camera,
-                                   const struct rasterfall_effect_instance *t,
-                                   uint32_t color, int width)
+                                   const struct rasterfall_effect_instance *t)
 {
-    int segment;
-    int previous_x = t->x, previous_y = t->y, previous_z = t->z;
-    int samples = 32;
-    int duration = t->curve_duration_ms > 0 ? t->curve_duration_ms : 16;
-    int flight = t->curve_flight_ms;
-    if (flight < 1) flight = 1;
-    if (flight > duration) flight = duration;
-    for (segment = 1; segment <= samples; segment++) {
-        int elapsed = flight * segment / samples;
-        int steps = elapsed / 16;
-        int x = t->x + t->vx * steps;
-        int y = t->y + t->vy * steps -
-                t->gravity_y * steps * (steps - 1) / 2;
-        int z = t->z + t->vz * steps;
-        if (segment == samples) {
-            /* The final point is the live actor position, so collision
-             * correction and a non-16ms landing step cannot leave a gap. */
-            x = t->ex; y = t->ey; z = t->ez;
-        }
-        render_effect_ray(renderer, camera, previous_x, previous_y, previous_z,
-                          x, y, z, color,
-                          (t->flags & RASTERFALL_EFFECT_EVENT_DEPTH_TEST) != 0,
-                          width);
-        previous_x = x; previous_y = y; previous_z = z;
+    int i, count = t->trail_count;
+    int right_x = camera->cy, right_z = -camera->sy;
+    int old_double_sided = active_material_double_sided;
+    if (count < 2) return;
+    if (count > RASTERFALL_KNOCKBACK_TRAIL_POINTS)
+        count = RASTERFALL_KNOCKBACK_TRAIL_POINTS;
+    active_material_double_sided = 1;
+    for (i = 1; i < count; i++) {
+        int ia = (t->trail_head + RASTERFALL_KNOCKBACK_TRAIL_POINTS - count + i - 1) %
+                 RASTERFALL_KNOCKBACK_TRAIL_POINTS;
+        int ib = (ia + 1) % RASTERFALL_KNOCKBACK_TRAIL_POINTS;
+        const struct rasterfall_knockback_trail_point *a = &t->trail[ia];
+        const struct rasterfall_knockback_trail_point *b = &t->trail[ib];
+        int age = a->age_ms > b->age_ms ? a->age_ms : b->age_ms;
+        int fade = (RASTERFALL_KNOCKBACK_TRAJECTORY_HISTORY_MS - age) * 256 /
+                   RASTERFALL_KNOCKBACK_TRAJECTORY_HISTORY_MS;
+        int width_a = 3 + (i - 1) * 5 / (count - 1);
+        int width_b = 3 + i * 5 / (count - 1);
+        struct vec3 va, vb, ca, cb;
+        uint32_t segment_color;
+        if (fade <= 0) continue;
+        if (fade > 256) fade = 256;
+        segment_color = mix_color(0xFFFFFF, 0x606060, fade, 256);
+        va.x = a->x + right_x * width_a / 1024;
+        va.y = a->y; va.z = a->z + right_z * width_a / 1024;
+        vb.x = b->x + right_x * width_b / 1024;
+        vb.y = b->y; vb.z = b->z + right_z * width_b / 1024;
+        ca.x = a->x - right_x * width_a / 1024;
+        ca.y = a->y; ca.z = a->z - right_z * width_a / 1024;
+        cb.x = b->x - right_x * width_b / 1024;
+        cb.y = b->y; cb.z = b->z - right_z * width_b / 1024;
+        draw_world_triangle(renderer, camera, &ca, &va, &vb, segment_color);
+        draw_world_triangle(renderer, camera, &ca, &vb, &cb, segment_color);
     }
+    active_material_double_sided = old_double_sided;
 }
 
 static int render_effect_rays(struct toy_renderer *renderer, const struct camera *camera)
@@ -7247,15 +7256,15 @@ static int render_effect_rays(struct toy_renderer *renderer, const struct camera
         color = mix_color(t->kind == RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION_RAY ?
                               0xFFF0A0 :
                               t->kind == RASTERFALL_EFFECT_INSTANCE_KIND_KNOCKBACK_TRAJECTORY ?
-                              t->color : 0xFFE060,
+                              0xFFFFFF : 0xFFE060,
                           t->kind == RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION_RAY ?
                               0x8A2408 :
-                              t->kind == RASTERFALL_EFFECT_INSTANCE_KIND_KNOCKBACK_TRAJECTORY ?
+                          t->kind == RASTERFALL_EFFECT_INSTANCE_KIND_KNOCKBACK_TRAJECTORY ?
                               0x302020 : 0x3A2C14,
                           fade, 256);
-        width = t->kind == RASTERFALL_EFFECT_INSTANCE_KIND_KNOCKBACK_TRAJECTORY ? 3 : 2;
+        width = t->ray_width > 0 ? t->ray_width : 1;
         if (t->kind == RASTERFALL_EFFECT_INSTANCE_KIND_KNOCKBACK_TRAJECTORY) {
-            render_knockback_curve(renderer, camera, t, color, width);
+            render_knockback_trail(renderer, camera, t);
             pixels++;
             continue;
         }

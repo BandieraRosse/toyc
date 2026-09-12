@@ -349,43 +349,62 @@ static void spawn_enemy_death_presentation(
     }
 }
 
-/* The gameplay impulse is authoritative; this is a presentation-only guide
- * carrying the hit-time parabola to the renderer.  The renderer samples this
- * one curve continuously while the actor is airborne, then starts its
- * post-landing lifetime. */
+static void knockback_trail_push(struct rasterfall_effect_instance *trajectory,
+                                 int x, int y, int z)
+{
+    struct rasterfall_knockback_trail_point *point;
+    int next;
+    if (!trajectory) return;
+    if (trajectory->trail_count > 0) {
+        int last = (trajectory->trail_head +
+                    RASTERFALL_KNOCKBACK_TRAIL_POINTS - 1) %
+                   RASTERFALL_KNOCKBACK_TRAIL_POINTS;
+        point = &trajectory->trail[last];
+        if (point->age_ms < RASTERFALL_KNOCKBACK_TRAIL_SAMPLE_MS)
+            return;
+    }
+    next = trajectory->trail_head;
+    point = &trajectory->trail[next];
+    point->x = x; point->y = y; point->z = z; point->age_ms = 0;
+    trajectory->trail_head = (next + 1) % RASTERFALL_KNOCKBACK_TRAIL_POINTS;
+    if (trajectory->trail_count < RASTERFALL_KNOCKBACK_TRAIL_POINTS)
+        trajectory->trail_count++;
+}
+
+/* The gameplay impulse remains authoritative.  This presentation-only
+ * instance now follows the actor's actual sampled world position instead of
+ * reconstructing a future parabola. */
 static void spawn_knockback_trajectory(struct rasterfall_effects *effects,
                                        const struct toy_game_actor *actor,
                                        int actor_index, int enemy_type)
 {
     struct rasterfall_effect_instance trajectory;
-    int initial_airborne_ms;
-    uint32_t color;
+    int i;
     if (!effects || !actor || actor->airborne_ms <= 0 ||
         (!actor->knockback_x && !actor->knockback_z)) return;
-    initial_airborne_ms = actor->airborne_ms + 16;
-    color = enemy_type == TOY_GAME_ENEMY_TANK ? 0xD878E8 : 0xF0B040;
+    (void)enemy_type;
+    for (i = 0; i < RASTERFALL_EFFECT_INSTANCE_SLOTS; i++)
+        if (effects->instances[i].active &&
+            effects->instances[i].kind ==
+                RASTERFALL_EFFECT_INSTANCE_KIND_KNOCKBACK_TRAJECTORY &&
+            effects->instances[i].target_id == actor_index)
+            effects->instances[i].active = 0;
     memset(&trajectory, 0, sizeof(trajectory));
     trajectory.type = RASTERFALL_EFFECT_INSTANCE_RAY;
     trajectory.kind = RASTERFALL_EFFECT_INSTANCE_KIND_KNOCKBACK_TRAJECTORY;
     trajectory.flags = RASTERFALL_EFFECT_EVENT_DEPTH_TEST |
                        RASTERFALL_EFFECT_TRAJECTORY_IN_FLIGHT;
     trajectory.target_id = actor_index;
-    /* Reconstruct the hit-time origin from the first 16ms gameplay step. */
-    trajectory.x = actor->x - actor->knockback_x;
-    trajectory.y = -900 + actor->ground_y;
-    trajectory.z = actor->z - actor->knockback_z;
+    trajectory.x = actor->x;
+    trajectory.y = -900 + actor->ground_y + actor->airborne_y;
+    trajectory.z = actor->z;
     trajectory.ex = actor->x;
-    trajectory.ey = -900 + actor->ground_y + actor->airborne_y;
+    trajectory.ey = trajectory.y;
     trajectory.ez = actor->z;
-    trajectory.vx = actor->knockback_x;
-    trajectory.vy = actor->vertical_velocity + TOY_GAME_AIRBORNE_GRAVITY;
-    trajectory.vz = actor->knockback_z;
-    trajectory.gravity_y = TOY_GAME_AIRBORNE_GRAVITY;
-    trajectory.curve_duration_ms = initial_airborne_ms;
-    trajectory.curve_flight_ms = 16;
-    trajectory.lifetime_ms = RASTERFALL_KNOCKBACK_TRAJECTORY_LIFE_MS;
-    trajectory.ray_width = 3;
-    trajectory.color = color;
+    trajectory.lifetime_ms = RASTERFALL_KNOCKBACK_TRAIL_FADE_MS;
+    trajectory.ray_width = 7;
+    trajectory.color = 0xFFFFFF;
+    knockback_trail_push(&trajectory, trajectory.x, trajectory.y, trajectory.z);
     rasterfall_effects_spawn_instance(effects, &trajectory);
 }
 
@@ -397,7 +416,6 @@ static void sync_knockback_trajectories(struct rasterfall_effects *effects,
     for (i = 0; i < RASTERFALL_EFFECT_INSTANCE_SLOTS; i++) {
         struct rasterfall_effect_instance *trajectory = &effects->instances[i];
         const struct toy_game_actor *actor;
-        int flight_ms;
         if (!trajectory->active ||
             trajectory->kind != RASTERFALL_EFFECT_INSTANCE_KIND_KNOCKBACK_TRAJECTORY)
             continue;
@@ -416,12 +434,9 @@ static void sync_knockback_trajectories(struct rasterfall_effects *effects,
         trajectory->ez = actor->z;
         if (trajectory->flags & RASTERFALL_EFFECT_TRAJECTORY_IN_FLIGHT) {
             if (actor->airborne_ms > 0) {
-                flight_ms = trajectory->curve_duration_ms - actor->airborne_ms;
-                if (flight_ms < trajectory->curve_flight_ms)
-                    flight_ms = trajectory->curve_flight_ms;
-                trajectory->curve_flight_ms = flight_ms;
+                knockback_trail_push(trajectory, trajectory->ex,
+                                     trajectory->ey, trajectory->ez);
             } else {
-                trajectory->curve_flight_ms = trajectory->curve_duration_ms;
                 trajectory->flags &= ~RASTERFALL_EFFECT_TRAJECTORY_IN_FLIGHT;
                 trajectory->age_ms = 0;
             }
@@ -1198,8 +1213,13 @@ void rasterfall_effects_update(struct rasterfall_effects *effects, int dt_ms)
     for (i = 0; i < RASTERFALL_EFFECT_INSTANCE_SLOTS; i++) {
         struct rasterfall_effect_instance *instance = &effects->instances[i];
         if (!instance->active) continue;
-        /* The three-second display lifetime begins only after the target has
-         * landed.  Its live endpoint is synchronized by the gameplay pass. */
+        if (instance->kind ==
+                RASTERFALL_EFFECT_INSTANCE_KIND_KNOCKBACK_TRAJECTORY) {
+            int p;
+            for (p = 0; p < instance->trail_count; p++)
+                instance->trail[p].age_ms += dt_ms;
+        }
+        /* The short post-landing lifetime begins only after the target lands. */
         if (instance->kind == RASTERFALL_EFFECT_INSTANCE_KIND_KNOCKBACK_TRAJECTORY &&
             (instance->flags & RASTERFALL_EFFECT_TRAJECTORY_IN_FLIGHT))
             continue;

@@ -132,14 +132,20 @@ static int primitive_gameplay_logic_test(void)
     }
     world[0]=test_flat_primitive(-1200,1200,-1200,1200,0);
     world[1]=test_box_primitive(200,400,-1000,1000,0,1000,TOY_MAP_PRIMITIVE_COLLISION);
-    toy_game_set_primitives(&g,world,2,1200);player->x=0;player->z=0;player->ground_y=0;
+    /* Leave enough room for the current navigation footprint expansion on
+     * both sides of the box; the test is about components, not room edges. */
+    toy_game_set_primitives(&g,world,2,2400);player->x=0;player->z=0;player->ground_y=0;
     if(toy_game_try_move_actor(&g,player,100,0))return 6;
     world[1].flags&=~TOY_MAP_PRIMITIVE_COLLISION;toy_game_rebuild_navigation(&g);
     if(!toy_game_try_move_actor(&g,player,100,0))return 7;
     world[1]=test_box_primitive(-100,100,-1200,1200,0,1000,TOY_MAP_PRIMITIVE_COLLISION);
     toy_game_rebuild_navigation(&g);
-    left=((150-g.nav_origin)/g.nav_cell_size)*g.nav_width+(-750-g.nav_origin)/g.nav_cell_size;
-    right=((150-g.nav_origin)/g.nav_cell_size)*g.nav_width+(750-g.nav_origin)/g.nav_cell_size;
+    /* Navigation cells include the actor footprint.  With the current
+     * charger-radius expansion, +/-750 still overlaps this box; use the
+     * neighboring +/-1050 cells to test the split rather than the old
+     * pre-expansion sample points. */
+    left=((150-g.nav_origin)/g.nav_cell_size)*g.nav_width+(-1050-g.nav_origin)/g.nav_cell_size;
+    right=((150-g.nav_origin)/g.nav_cell_size)*g.nav_width+(1050-g.nav_origin)/g.nav_cell_size;
     if(!g.nav_walkable[left]||!g.nav_walkable[right]||!g.nav_component[left]||!g.nav_component[right]||g.nav_component[left]==g.nav_component[right]){
         __printf("primitive nav split: walk=%d/%d component=%d/%d\n",
                  g.nav_walkable[left],g.nav_walkable[right],
