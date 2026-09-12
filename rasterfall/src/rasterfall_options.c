@@ -72,7 +72,7 @@ void rasterfall_options_usage(int fd)
         "  --legacy-map  (force legacy map loader)\n"
         "  --texture-stats  --frames <count>  --dump-frame <path>\n"
         "  --logic-test  --input-test  --action-runtime-debug  --auto\n"
-        "  --enemy-visual-capture <output-dir> (mixed or forced family; bind/idle/move, world, death)\n"
+        "  --enemy-visual-capture <output-dir> (families + rigid specials; attack keys, silhouette, world, death)\n"
         "  --enemy-visual-family <legacy|block-infected|humanoid-infected> (default: mixed)\n"
         "  --visual-capture <desktop-v1|procedural-humanoid|hurd-squad|lighting-props|modular-teammate> --visual-output <path.bmp>\n"
         "  --character-acceptance <model.rmesh> <output-dir>\n"

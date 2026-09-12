@@ -1,6 +1,7 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-12
+> 源码核对基线补充：Enemy Procedural Rig V1 的 profile / truth adapter / pose / generic renderer；特感关键帧、轮廓与 world 验收；协议 43 命中 mask。
 > 源码核对补充：RF Core lifecycle boundary 已覆盖 poll/exit、tick clock 与 frame begin/end；Runtime Environment V1 ownership audit 与 checkpoint 已完成。
 > 源码核对补充：Outpost V0 已接入默认 Game landing、world identity/switch lifecycle 与三终端交互。
 > 源码核对基线：工作区（Runtime Map V1 projection ownership cleanup；RF Application Projection Layer V0 query boundary；Phase 4.4 render IR/runtime/legacy draw adapter；Enemy Visual V2 六份公开 RFM2 / renderer-only family；Enemy Visual Family Mix V1 自动比例 resolver 与强制 family capture；MODEL_DISPLAY style 6--14 的三类型×三家族感染体展示；Character Material Lighting Policy V1；Enemy Presentation V1 1000ms ballistic fade / rotating irregular fragments / directional trailing emitter 与开发者死亡测试排；Humanoid Action Composition V1.1 additive recoil；modular RFANIM presentation clock；双手 RFANIM 持枪轨道；RFCHAR +Z forward basis；PRIMARY_GRIP weapon presentation；开发者 world strip 与战斗区共用 modular path；双正式四人小队 runtime；RF Core Runtime V0.2 `rf_game_runtime` facade 与 status query；Core/Game startup config split；renderer frame ownership cleanup；Core filesystem service V0；唯一 `rf_core` context 与 Core clock service；Runtime Facade Authority audit；Phase 3A `rf_game_update()` gameplay update authority；Phase 3B-1 world presentation migration；Phase 3B-2 steady-state Game UI presentation authority；Phase 4.3 surface IR/runtime/legacy primitive adapter）
@@ -36,6 +37,7 @@
 | Core/Runtime 查询面与前哨站接口准备 | [core-runtime-v0.2.md](core-runtime-v0.2.md) | `include/rf_core_host.h`、`include/rf_game_lifecycle.h`、`include/rasterfall_session.h` |
 | agent 固定视觉场景截图 / Visual CLI | [rendering.md](rendering.md)、[runtime.md](runtime.md) | options → `rasterfall_render_visual_capture()` → `src/dev-tests/rasterfall_visual_capture.inc` |
 | Enemy Visual V2 六资产、家族切换、敌人截图与资产验收 | [enemy-visuals.md](enemy-visuals.md)、[rendering.md](rendering.md) | `rasterfall_enemy_visual.h` → `render/rasterfall_enemy_visual.inc`；`tools/enemy_visual_round.py` |
+| 特感 rigid 模型、程序化步态、Charger/Tank attack 与新敌人扩展 | [enemy-visuals.md](enemy-visuals.md) | `rasterfall_enemy_rig.h` → `render/rasterfall_enemy_rig.inc`；`dev-tests/rasterfall_enemy_visual_capture.inc`；真实命中 VFX 在 `rasterfall_effects.c` |
 | 武器、敌人、碰撞、寻路、波次、商店、AI | [gameplay.md](gameplay.md) | `lib/game.c`、`src/rasterfall_session.c` |
 | Hurd 固定小队、北侧据点、旗帜控制真值 | [gameplay.md](gameplay.md)、[map-format.md](map-format.md) | `rasterfall_session.h` 的 Hurd config/status → `rasterfall_session_hurd_status()` |
 | 地图格式、关卡实体、拾取物、静态 prop、出生点、render records、Outpost | [map-format.md](map-format.md) | `assets/maps/outpost.map`、`lib/rasterfall_map_parser.c`、`lib/rasterfall_map_runtime.c`、`src/rasterfall_map.c` |
@@ -167,7 +169,7 @@ player/actor 和敌人的 airborne forced/knockback movement 均由玩法核心�
 - 修改离线资产导入契约：从 `tools/assets/import_asset.py` 和 manifest 开始，分别检查
   `glb2rmesh`/`pmx2rmesh`、`toyasset`、`rmesh_lod.py`；不要让 runtime 读取 manifest。
 - 修改敌人模型家族：从 `rasterfall_enemy_visual.h`、`render/rasterfall_enemy_visual.inc` 的 recipe 与 cache 开始；同步六份 manifest、公开资源、options、capture 与 embedded/package 边界，禁止把 family 写入 enemy/snapshot。详见 [enemy-visuals.md](enemy-visuals.md)。
-- 修改敌人外观组件：检查 `src/rasterfall_render.c` 的 `enemy_body_part` 描述表、通用组件解释器和特感动态组件；地面锚点仍由 `toy_game_enemy.ground_y` 与 `airborne_y` 提供。
+- 修改敌人外观组件：特感先查 `rasterfall_enemy_rig.h` 与 `render/rasterfall_enemy_rig.inc` 的 profile/adapter/pose；旧普通敌人查 `src/rasterfall_render.c` 的 `enemy_body_part`。动态舌头从 posed HEAD 取起点；命中粒子消费权威 mask，地面锚点仍由 `ground_y` 与 `airborne_y` 提供。
 - 修改命令行或诊断模式：从 `rasterfall_options.c` 到 `rasterfall.c` 的早退分支一起核对。
 - 修改职业外观：四个 Hurd profile 与 Maid profile 保存 profession identity；普通 player、Eula、佣兵的 `character_id` 为 NONE。Maid 旗卫仍由 `anime_character_id` 选择各自骨骼模型，同时由 `character_id` 标识共同 Maid 职业。静态 presentation profile 保存附件配置；actor 展示适配器从 `character_id` 解析职业。actor 和网络不携带重复的职业或附件字段；Visual CLI 提供固定 Hurd 小队。
 - 六职业 Profession Modularization V1 由 presentation recipe 解析共享 RF Humanoid V2 body、per-profile shirt/pants palette 与 rigid gear ID；旧 `rf_profession_*` 仅作 legacy acceptance carrier。普通队友 Jesus 使用稳定 RF Rifleman identity 与逐 actor presentation instance；资源失败回退 procedural，actor 不持有资源、路径或附件数组。

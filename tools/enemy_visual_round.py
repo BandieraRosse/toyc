@@ -85,7 +85,7 @@ def main():
             run(['build/rasterfall','--enemy-visual-family',family+'-infected',
                  '--enemy-visual-capture',other],output/(family+'-repeat.log'))
             original = sorted((output/family).glob('*.bmp'))
-            assert len(original) == 33
+            assert len(original) == 145
             for path in original:
                 if path.read_bytes() != (other/path.name).read_bytes():
                     raise RuntimeError(f'Non-deterministic capture: {path}')
@@ -100,6 +100,21 @@ def main():
             sheet([output/family/f'death-{i}.bmp' for i in range(3)],1,
                   output/f'{family}-death.png',1200)
     if args.capture or args.deterministic:
+        rig = output/'block'
+        for kind, poses in (
+            ('smoker', ('idle','walk')),
+            ('charger', ('idle','windup','charge','impact','recover')),
+            ('tank', ('idle','windup','pre-impact','impact','follow-through','recover'))):
+            sheet([rig/f'rig-{kind}-{pose}-{view}.bmp' for view in
+                   ('front','three-quarter','side') for pose in poses],len(poses),
+                  output/f'rig-{kind}-poses.png',400)
+            sheet([rig/f'rig-{kind}-{pose}-world-{distance}.bmp'
+                   for distance in ('near','mid','far') for pose in poses],len(poses),
+                  output/f'rig-{kind}-world.png',500)
+        sheet([rig/f'rig-{kind}-idle-three-quarter.bmp'
+               for kind in (*KINDS,'smoker','charger','tank')],6,output/'rig-lineup.png',400)
+        sheet([rig/f'rig-{kind}-idle-silhouette.bmp'
+               for kind in ('smoker','charger','tank')],3,output/'rig-silhouettes.png',500)
         sheet([output/family/f'{kind}-idle-three-quarter.bmp'
                for family in FAMILIES for kind in KINDS],3,output/'six-infected.png',600)
     (output/'asset-report.json').write_text(json.dumps(report,indent=2)+'\n')

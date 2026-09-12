@@ -12,7 +12,7 @@
 #define RASTERFALL_NET_MAX_SNAPSHOT 8192
 /* Keep protocol changes explicit: clients with a different snapshot layout
  * must fail during discovery/handshake instead of decoding shifted data. */
-#define RASTERFALL_NET_PROTOCOL_VERSION 42
+#define RASTERFALL_NET_PROTOCOL_VERSION 43
 #define RASTERFALL_NET_MAX_ACTORS 32
 #define RASTERFALL_NET_PLAYER_MAX 4
 #define RASTERFALL_NET_CLIENT_MAX (RASTERFALL_NET_PLAYER_MAX - 1)

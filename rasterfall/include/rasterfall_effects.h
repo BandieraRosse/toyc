@@ -238,6 +238,7 @@ struct rasterfall_effects {
     int last_player_hp;
     int damage_shake_cooldown_ms;
     unsigned char enemy_death_seen[TOY_GAME_MAX_ENEMIES];
+    uint64_t enemy_special_hit_seen[TOY_GAME_MAX_ENEMIES];
     unsigned char enemy_death_style[TOY_GAME_MAX_ENEMIES];
     int enemy_hit_dir_x[TOY_GAME_MAX_ENEMIES];
     int enemy_hit_dir_z[TOY_GAME_MAX_ENEMIES];

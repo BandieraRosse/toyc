@@ -1,6 +1,7 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-12
+> 源码核对基线补充：Enemy Procedural Rig V1；三特感 profile/pose 分离、posed tongue socket、真实命中 particles 与固定 world/silhouette capture。
 > 源码核对基线：工作区（Enemy Visual V2 六份公开 RFM2 / renderer-only family；Character Material Lighting Policy V1；Enemy Presentation V1 1000ms ballistic body fade / rotating irregular fragments / directional trailing emitter / 10% legacy death；Humanoid Action Composition V1.1 additive recoil；modular RFANIM 独立 locomotion 时钟与双手持枪轨道；RFCHAR +Z forward basis；PRIMARY_GRIP weapon presentation；开发者 world strip 与战斗区共用 modular path；出生点 V2 action debug station；双正式四人 squad；Lighting V1；renderer frame ownership cleanup）
 
 > 源码核对补充：正式 Hurd actor 通过四个专用 character profile 进入职业外观；恢复的四名 Maid 旗卫以 Maid character profile 接入 actor，同时继续由 anime identity 选择骨骼模型；普通 player、Eula、佣兵解析为 NONE。
@@ -48,7 +49,11 @@ path 以及 lower/upper/additive action，确认 RF Humanoid 没有被 legacy an
 ## Enemy Visual V2
 
 普通敌人的可选 BLOCK_INFECTED / HUMANOID_INFECTED 家族由 renderer-only recipe 选择六份公开
-RFM2；默认 AUTO 按 COMMON 70/20/10、FAST 40/40/20、HEAVY 30/40/30 混合，特感沿用旧路径。
+RFM2；默认 AUTO 按 COMMON 70/20/10、FAST 40/40/20、HEAVY 30/40/30 混合。
+Smoker / Charger / Tank 使用 `rasterfall_enemy_rig.h` / `render/rasterfall_enemy_rig.inc` 的
+procedural rigid profile → truth adapter → pose → generic renderer；几何和计时不再混在专用绘制函数。
+Charger 的命中边沿与 Tank 的 625ms 峰值只消费 gameplay；模型尺寸由 profile 拥有。
+新增敌人的默认路线、固定关键帧、轮廓与 near/mid/far 验收见下方专题入口。
 资源、串行 scratch pose 与逐槽位步幅均归 renderer，
 不进入 gameplay 或 snapshot。新身体通过既有三角形入口保留受击、死亡旋转和渐隐；
 入口、预算、远裁剪和验收见 [enemy-visuals.md](enemy-visuals.md)。

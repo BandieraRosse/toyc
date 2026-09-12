@@ -1,7 +1,7 @@
 # Rasterfall
 
-> 文档更新：2026-09-11
-> 源码核对基线：工作区（Enemy Visual V2 可选家族；用户入口保持稳定；易变参数以 `build/rasterfall --help` 为准）
+> 文档更新：2026-09-12
+> 源码核对基线：工作区（Enemy Visual V2 可选家族；Enemy Procedural Rig V1 特感与固定视觉验收；易变参数以 `build/rasterfall --help` 为准）
 
 Rasterfall 是 Toyc 仓库中的 freestanding 第一人称合作射击实验，使用软件光栅器，包含地图、
 战斗、波次、AI 队友、音频、联机和静态/骨骼模型。Linux 版本使用仓库内 Tinylibc 与 Wayland/音频
@@ -66,4 +66,5 @@ build/rfchar_runtime_test <model.rmesh>
 
 普通感染敌人默认按 enemy type 混合 LEGACY、BLOCK_INFECTED、HUMANOID_INFECTED；可使用
 `--enemy-visual-family legacy|block-infected|humanoid-infected` 强制单一家族进行截图、性能和资产验证。
-六份模型为公开资源，重建、展示截图与验收见 [Enemy Visual V2](docs/enemy-visuals.md)。
+六份模型为公开资源。Smoker、Charger、Tank 使用独立程序化刚性模型与攻击姿态；
+重建、关键帧、轮廓和实景验收见 [Enemy Visual / Procedural Animation](docs/enemy-visuals.md)。

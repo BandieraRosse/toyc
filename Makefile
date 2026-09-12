@@ -1023,6 +1023,8 @@ $(BUILD)/rasterfall_render.o: $(RASTERFALL_SRC)/rasterfall_render.c \
                               $(RASTERFALL_INC)/rasterfall_render_frontend.h \
                               $(RASTERFALL_SRC)/dev-tests/rasterfall_actor_benchmark.inc \
                               $(RASTERFALL_SRC)/render/rasterfall_enemy_visual.inc \
+                              $(RASTERFALL_SRC)/render/rasterfall_enemy_rig.inc \
+                              $(RASTERFALL_INC)/rasterfall_enemy_rig.h \
                               $(RASTERFALL_INC)/rasterfall_enemy_visual.h \
                               $(RASTERFALL_SRC)/dev-tests/rasterfall_enemy_visual_capture.inc \
                               $(RASTERFALL_SRC)/dev-tests/rasterfall_visual_capture.inc \
@@ -1477,6 +1479,8 @@ $(BUILD)/rasterfall_render_self.o: $(RASTERFALL_SRC)/rasterfall_render.c \
                                    $(RASTERFALL_INC)/rasterfall_render_frontend.h \
                                    $(RASTERFALL_SRC)/dev-tests/rasterfall_actor_benchmark.inc \
                                    $(RASTERFALL_SRC)/render/rasterfall_enemy_visual.inc \
+                                   $(RASTERFALL_SRC)/render/rasterfall_enemy_rig.inc \
+                                   $(RASTERFALL_INC)/rasterfall_enemy_rig.h \
                                    $(RASTERFALL_INC)/rasterfall_enemy_visual.h \
                                    $(RASTERFALL_SRC)/dev-tests/rasterfall_enemy_visual_capture.inc \
                                    $(RASTERFALL_SRC)/dev-tests/rasterfall_visual_capture.inc \

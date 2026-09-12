@@ -697,6 +697,20 @@ void rasterfall_effects_sync_enemy_feedback(struct rasterfall_effects *effects,
     if (!effects || !game) return;
     for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
         const struct toy_game_enemy *enemy = &game->enemies[i];
+        if (enemy->active == 1 &&
+            (enemy->type == TOY_GAME_ENEMY_CHARGER || enemy->type == TOY_GAME_ENEMY_TANK)) {
+            uint64_t mask=enemy->ability.charge_hit_actor_mask;
+            uint64_t hits=mask & ~effects->enemy_special_hit_seen[i];
+            /* Only authoritative successful hits produce target particles.
+             * Camera shake remains the local player's existing HP-edge hook. */
+            for (int target=0;target<TOY_GAME_MAX_ACTORS;target++)
+                if ((hits & (1ULL<<target)) && game->actors[target].active) {
+                    const struct toy_game_actor *a=&game->actors[target];
+                    rasterfall_effects_spawn_hit_particles(effects,a->x,
+                        a->ground_y+a->airborne_y-350,a->z,enemy->dir_x,enemy->dir_z);
+                }
+            effects->enemy_special_hit_seen[i]=mask;
+        } else effects->enemy_special_hit_seen[i]=0;
         if (enemy->active == 0) {
             effects->enemy_death_seen[i] = 0;
             effects->enemy_death_style[i] = RASTERFALL_ENEMY_DEATH_STYLE_NONE;
@@ -849,6 +863,7 @@ void rasterfall_effects_reset_fire(struct rasterfall_effects *effects)
     effects->last_player_hp = -1;
     effects->damage_shake_cooldown_ms = 0;
     memset(effects->enemy_death_seen, 0, sizeof(effects->enemy_death_seen));
+    memset(effects->enemy_special_hit_seen, 0, sizeof(effects->enemy_special_hit_seen));
     memset(effects->enemy_death_style, 0, sizeof(effects->enemy_death_style));
     memset(effects->enemy_hit_dir_x, 0, sizeof(effects->enemy_hit_dir_x));
     memset(effects->enemy_hit_dir_z, 0, sizeof(effects->enemy_hit_dir_z));

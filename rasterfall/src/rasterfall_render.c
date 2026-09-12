@@ -4788,165 +4788,30 @@ static int render_round_enemy(struct toy_renderer *renderer,
                                    adjusted, sizeof(adjusted) / sizeof(adjusted[0]));
 }
 
-static int render_charger_enemy(struct toy_renderer *renderer,
-                                const struct camera *camera,
-                                const struct toy_game_enemy *e, int scale,
-                                uint32_t color)
-{
-    static const struct enemy_body_part parts[] = {
-        ENEMY_FIXED_BOX(ENEMY_BODY_BOX_ORIENTED, -135, -20, -900, -760, -150, 110, 0x30261F),
-        ENEMY_FIXED_BOX(ENEMY_BODY_BOX_ORIENTED, 20, 135, -900, -760, -150, 110, 0x30261F),
-        ENEMY_BOX(ENEMY_BODY_BOX_ORIENTED, -235, 235, -760, 95, -135, 135, 0),
-        ENEMY_BOX(ENEMY_BODY_BOX_ORIENTED, -205, 205, 75, 360, -145, 145, 0x18100A),
-        ENEMY_FIXED_FACE(150, -120, -82, 105, 315, 0x000000),
-        ENEMY_FIXED_FACE(150, -82, 100, 280, 315, 0x000000),
-        ENEMY_FIXED_FACE(150, -82, 100, 105, 140, 0x000000)
-    };
-    struct enemy_body_part adjusted[sizeof(parts) / sizeof(parts[0])];
-    int i;
-    for (i = 0; i < (int)(sizeof(parts) / sizeof(parts[0])); i++) {
-        adjusted[i] = parts[i];
-        if (adjusted[i].type == ENEMY_BODY_BOX_ORIENTED)
-            adjusted[i].scale_xy = 1;
-    }
-    return render_enemy_body_parts(renderer, camera, e, scale, color,
-                                   adjusted, sizeof(adjusted) / sizeof(adjusted[0]));
-}
+#include "render/rasterfall_enemy_rig.inc"
 
-static int draw_tank_arm_box(struct toy_renderer *renderer,
-                             const struct camera *camera, int x, int z,
-                             int sy, int cy, int scale, int side_x,
-                             int shoulder_y, int shoulder_z,
-                             int fist_y, int fist_z, uint32_t color)
+static int render_charger_enemy(struct toy_renderer *renderer,
+    const struct camera *camera, const struct toy_game_enemy *e,
+    int scale, uint32_t color)
 {
-    static const int faces[36] = {
-        0,1,2, 0,2,3, 4,6,5, 4,7,6,
-        0,4,5, 0,5,1, 3,2,6, 3,6,7,
-        0,3,7, 0,7,4, 1,5,6, 1,6,2
-    };
-    struct vec3 vertices[8];
-    int local_x[8], local_y[8], local_z[8];
-    int dy = fist_y - shoulder_y, dz = fist_z - shoulder_z;
-    int length = isqrt((long long)dy * dy + (long long)dz * dz);
-    int py, pz, i, pixels = 0;
-    const int half_width = 165, half_thickness = 150;
-    if (length < 1) length = 1;
-    py = -dz * half_thickness / length;
-    pz = dy * half_thickness / length;
-    for (i = 0; i < 8; i++) {
-        int endpoint = i >= 4;
-        int corner = i & 3;
-        int center_y = endpoint ? fist_y : shoulder_y;
-        int center_z = endpoint ? fist_z : shoulder_z;
-        local_x[i] = side_x +
-            ((corner == 0 || corner == 3) ? -half_width : half_width);
-        local_y[i] = center_y + (corner < 2 ? -py : py);
-        local_z[i] = center_z + (corner < 2 ? -pz : pz);
-        oriented_world_point(x, z, sy, cy, local_x[i], local_y[i],
-                             local_z[i], scale, &vertices[i]);
-    }
-    for (i = 0; i < 36; i += 3)
-        pixels += draw_world_triangle(renderer, camera,
-                                      &vertices[faces[i]],
-                                      &vertices[faces[i + 1]],
-                                      &vertices[faces[i + 2]], color);
-    return pixels;
+    (void)color;
+    return render_enemy_rig(renderer,camera,e,scale,0);
 }
 
 static int render_tank_enemy(struct toy_renderer *renderer,
-                             const struct camera *camera,
-                             const struct toy_game_enemy *e, int scale,
-                             uint32_t color)
+    const struct camera *camera, const struct toy_game_enemy *e,
+    int scale, uint32_t color)
 {
-    static const struct enemy_body_part parts[] = {
-        ENEMY_FIXED_BOX(ENEMY_BODY_BOX_WORLD, -150, -35, -900, -700, -175, 120, 0x29291F),
-        ENEMY_FIXED_BOX(ENEMY_BODY_BOX_WORLD, 35, 150, -900, -700, -175, 120, 0x29291F),
-        ENEMY_BOX(ENEMY_BODY_BOX_WORLD, -285, 285, -720, 170, -210, 210, 0),
-        ENEMY_ELLIPSOID(330, 225, 0, 0x18180C),
-        ENEMY_FIXED_FACE(225, -125, 125, 360, 410, 0x000000),
-        ENEMY_FIXED_FACE(225, -28, 28, 180, 410, 0x000000)
-    };
-    struct enemy_body_part adjusted[sizeof(parts) / sizeof(parts[0])];
-    int x = e->x, z = e->z, pixels, i;
-    int swing = 0, fist_y, fist_z;
-    if (e->charge_active) {
-        swing = e->charge_elapsed_ms * 1000 / TOY_CONFIG_TANK_WINDUP_MS;
-        if (swing > 1000) swing = 1000;
-    }
-    fist_y = -500 + swing * 800 / 1000;
-    fist_z = 80 + swing * 720 / 1000;
-    /* A broad torso, high shoulders and two oversized arms distinguish the
-     * boss even at long range.  During windup each arm rotates from a hanging
-     * pose into the facing direction; its height rises instead of translating
-     * the whole rectangular arm downward. */
-    for (i = 0; i < (int)(sizeof(parts) / sizeof(parts[0])); i++) {
-        adjusted[i] = parts[i];
-        if (adjusted[i].type == ENEMY_BODY_ELLIPSOID)
-            adjusted[i].c = (enemy_y(570, scale) - enemy_y(140, scale)) / 2;
-    }
-    /* Preserve the original submission order: torso, dynamic arms, head and
-     * face.  Ordering is part of the visual contract because depth ties are
-     * resolved by submission order in the software renderer. */
-    pixels = render_enemy_body_parts(renderer, camera, e, scale, color,
-                                      adjusted, 3);
-    active_actor_lift = active_enemy_lift;
-    pixels += draw_tank_arm_box(renderer, camera, x, z,
-                                e->dir_x, e->dir_z, 1000, -390,
-                                450, 0, fist_y, fist_z,
-                                color + 0x101008);
-    pixels += draw_tank_arm_box(renderer, camera, x, z,
-                                e->dir_x, e->dir_z, 1000, 390,
-                                450, 0, fist_y, fist_z,
-                                color + 0x101008);
-    active_actor_lift = 0;
-    pixels += render_enemy_body_parts(renderer, camera, e, scale, color,
-                                      adjusted + 3, 3);
-    return pixels;
+    (void)color;
+    return render_enemy_rig(renderer,camera,e,scale,0);
 }
 
 static int render_smoker_enemy(struct toy_renderer *renderer,
-                               const struct camera *camera,
-                               const struct toy_game_enemy *e, int scale,
-                               uint32_t color)
+    const struct camera *camera, const struct toy_game_enemy *e,
+    int scale, uint32_t color)
 {
-    static const struct enemy_body_part parts[] = {
-        ENEMY_FIXED_BOX(ENEMY_BODY_BOX_WORLD, -105, -25, -900, -760, -105, 75, 0x30261F),
-        ENEMY_FIXED_BOX(ENEMY_BODY_BOX_WORLD, 25, 105, -900, -760, -105, 75, 0x30261F),
-        ENEMY_CYLINDER(145, -770, 180, 0),
-        ENEMY_ELLIPSOID(315, 165, 0, 0x18100A)
-    };
-    struct enemy_body_part adjusted[sizeof(parts) / sizeof(parts[0])];
-    int i, pixels;
-    for (i = 0; i < (int)(sizeof(parts) / sizeof(parts[0])); i++) {
-        adjusted[i] = parts[i];
-        if (adjusted[i].type == ENEMY_BODY_ELLIPSOID)
-            adjusted[i].c = (enemy_y(560, scale) - enemy_y(130, scale)) / 2;
-    }
-    pixels = render_enemy_body_parts(renderer, camera, e, scale, color,
-                                      adjusted, sizeof(adjusted) / sizeof(adjusted[0]));
-    /* 5x7 像素字模，保证 SM 在正常体型的脸上仍完整可辨。 */
-    {
-        static const char *letters[2][7] = {
-            { "11111", "10000", "10000", "11111", "00001", "00001", "11111" },
-            { "10001", "11011", "10101", "10101", "10001", "10001", "10001" }
-        };
-        int letter, row, col;
-        for (letter = 0; letter < 2; letter++)
-            for (row = 0; row < 7; row++)
-                for (col = 0; col < 5; col++)
-                    if (letters[letter][row][col] == '1') {
-                        /* 面部平面从外侧看会发生镜像，反向布置列才能让
-                         * 玩家看到正常顺序的 S 和 M。 */
-                        int h0 = -145 + (letter * 6 + col) * 24;
-                        pixels += draw_face_rect(renderer, camera, e->x, e->z, 165,
-                                                 e->dir_x, e->dir_z,
-                                                 h0, h0 + 17,
-                                                 enemy_y(170 + (6 - row) * 38, scale),
-                                                 enemy_y(200 + (6 - row) * 38, scale),
-                                                 0xFFD070);
-                    }
-    }
-    return pixels;
+    (void)color;
+    return render_enemy_rig(renderer,camera,e,scale,0);
 }
 
 static int render_smoker_tongue(struct toy_renderer *renderer,
@@ -4977,7 +4842,16 @@ static int render_smoker_tongue(struct toy_renderer *renderer,
         target_z = player->z;
         target_lift = player->airborne_y;
     }
-    pixels = draw_tongue_segment(renderer, camera, e->x, 270, e->z,
+    const struct enemy_rig_profile *profile=enemy_rig_profile(e->type);
+    struct enemy_rig_input input=enemy_rig_adapt(e);
+    struct enemy_rig_pose pose;
+    struct vec3 mouth={0,15,125};
+    enemy_rig_sample(profile,&input,&pose);
+    mouth=enemy_rig_point(profile,&pose,ER_HEAD,mouth);
+    pixels = draw_tongue_segment(renderer, camera,
+                                 e->x+(e->dir_z*mouth.x+e->dir_x*mouth.z)/1024,
+                                 mouth.y+active_enemy_lift,
+                                 e->z+(-e->dir_x*mouth.x+e->dir_z*mouth.z)/1024,
                                  target_x, -360 + target_lift, target_z);
     /* 两个水平束缚圈表现舌头在目标身上的缠绕。 */
     pixels += draw_cylinder(renderer, camera, target_x, target_z, 225,
@@ -5050,6 +4924,8 @@ static int render_enemies(struct toy_renderer *renderer,
         uint32_t color;
         int scale = 1000;
         int visual_family = enemy_visual_family_for_enemy(e->type, i);
+        enemy_rig_observe(e,i);
+        enemy_rig_slot=i;
         if (e->active == 0) { enemy_visual_motion[i].valid = 0; continue; }
         center.x = e->x;
         center.y = 0;
@@ -5146,15 +5022,8 @@ static int render_enemies(struct toy_renderer *renderer,
                                   enemy_feedback_color(i), visual_family) : -1;
         if (infected_pixels >= 0)
             pixels += infected_pixels;
-        else if (toy_game_enemy_info(e->type)->ability ==
-                TOY_GAME_ENEMY_ABILITY_TANK_SWEEP)
-            pixels += render_tank_enemy(renderer, camera, draw_enemy, scale, color);
-        else if (toy_game_enemy_info(e->type)->ability ==
-                TOY_GAME_ENEMY_ABILITY_CHARGER_RUSH)
-            pixels += render_charger_enemy(renderer, camera, draw_enemy, scale, color);
-        else if (toy_game_enemy_info(e->type)->ability ==
-                TOY_GAME_ENEMY_ABILITY_SMOKER_TONGUE)
-            pixels += render_smoker_enemy(renderer, camera, draw_enemy, scale, color);
+        else if (enemy_rig_profile(e->type))
+            pixels += render_enemy_rig(renderer,camera,draw_enemy,scale,enemy_feedback_color(i));
         else if (e->type == TOY_GAME_ENEMY_PURSUIT_HEAVY || (i & 1) == 0)
             pixels += render_block_enemy(renderer, camera, draw_enemy, scale, color);
         else
@@ -5166,6 +5035,7 @@ static int render_enemies(struct toy_renderer *renderer,
         active_enemy_roll_sin = 0;
         active_enemy_roll_cos = 1024;
     }
+    enemy_rig_slot=-1;
     return pixels;
 }
 
@@ -7687,6 +7557,10 @@ static int render_effect_particles(struct toy_renderer *renderer, const struct c
 #include "dev-tests/rasterfall_visual_capture.inc"
 void rasterfall_render_bind(struct rasterfall_render_context *ctx)
 {
+    if (!render_ctx || active_session!=ctx->session) {
+        memset(enemy_rig_observers,0,sizeof(enemy_rig_observers));
+        enemy_rig_slot=-1;
+    }
     render_ctx = ctx;
     active_session = ctx->session;
     active_effects = ctx->effects;

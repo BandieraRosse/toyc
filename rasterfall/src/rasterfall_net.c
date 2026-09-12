@@ -30,7 +30,7 @@ static void net_windows_log(const char *message) { (void)message; }
  * bytes per player even when nobody is shooting. */
 #define NET_ENTITY_CHUNK_BASE 8
 #define NET_ACTOR_SIZE (43 + TOY_GAME_MAX_NAME + 32)
-#define NET_ENEMY_SIZE 47
+#define NET_ENEMY_SIZE 55
 #define NET_WORLD_BASE_SIZE 52
 #define NET_WORLD_FLAG_SIZE 12
 #define NET_WORLD_FIXED_SIZE (NET_WORLD_BASE_SIZE + 4 + 4 + \
@@ -1188,6 +1188,8 @@ static void encode_enemy(unsigned char *p, const struct toy_game_enemy *e,
     put_i16(p + 42, e->airborne_ms);
     put_i16(p + 44, e->airborne_y);
     p[46] = (unsigned char)index;
+    put_u32(p + 47, (uint32_t)e->ability.charge_hit_actor_mask);
+    put_u32(p + 51, (uint32_t)(e->ability.charge_hit_actor_mask >> 32));
 }
 
 static void decode_enemy(const unsigned char *p, struct rasterfall_net_enemy *e)
@@ -1215,6 +1217,8 @@ static void decode_enemy(const unsigned char *p, struct rasterfall_net_enemy *e)
     e->ability.charge_elapsed_ms = get_i16(p + 40);
     e->airborne_ms = get_i16(p + 42);
     e->airborne_y = get_i16(p + 44);
+    e->ability.charge_hit_actor_mask = (uint64_t)get_u32(p + 47) |
+        ((uint64_t)get_u32(p + 51) << 32);
 }
 
 static void encode_actor(unsigned char *p, const struct toy_game_actor *a,
@@ -2686,6 +2690,21 @@ void rasterfall_net_apply_clients(struct rasterfall_net *net,
 
 int rasterfall_net_pipeline_test(void)
 {
+    /* Enemy snapshot keeps the complete authoritative hit mask, including
+     * high actor slots; presentation must not infer hits from charge timers. */
+    {
+        unsigned char encoded[NET_ENEMY_SIZE];
+        struct toy_game_enemy source;
+        struct rasterfall_net_enemy decoded;
+        memset(&source,0,sizeof(source));
+        source.type=TOY_GAME_ENEMY_CHARGER; source.active=1;
+        source.ability.charge_hit_actor_mask=(1ULL<<63)|(1ULL<<32)|1;
+        source.ability.charge_elapsed_ms=640;
+        encode_enemy(encoded,&source,7); decode_enemy(encoded,&decoded);
+        if (decoded.index!=7 || decoded.ability.charge_hit_actor_mask!=
+            source.ability.charge_hit_actor_mask || decoded.ability.charge_elapsed_ms!=640)
+            return 90;
+    }
     struct rasterfall_net net;
     struct rasterfall_net_client *client;
     unsigned char packet[NET_HEADER_SIZE + NET_INPUT_SIZE];
@@ -3363,6 +3382,7 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
             dst->ability.special_target_active = src->ability.special_target_active;
             dst->ability.charge_active = src->ability.charge_active;
             dst->ability.special_timer_ms = src->ability.special_timer_ms;
+            dst->ability.charge_hit_actor_mask = src->ability.charge_hit_actor_mask;
             dst->ability.special_windup_ms = src->ability.special_windup_ms;
             dst->ability.special_target_kind = src->ability.special_target_kind;
             dst->ability.special_target_index = src->ability.special_target_index;
