@@ -625,6 +625,108 @@ static int run_logic_test(void)
         if (ramp_actor->x < -28000 || ramp_actor->ground_y < 800)
             return 176;
     }
+    /* Real west-corridor ramps: the large Charger footprint must be allowed
+     * to straddle each ramp/platform seam only when the surfaces are truly
+     * continuous.  Exercise both ordinary pursuit and the locked charge
+     * path, which share enemy_try_step() underneath. */
+    {
+        static const int ramp_starts[2] = {-38900, -30900};
+        static const int platform_ends[2] = {-35000, -27000};
+        int case_index;
+        for (case_index = 0; case_index < 2; case_index++) {
+            struct toy_game charger_game;
+            struct toy_game_enemy *charger;
+            struct toy_game_actor *target;
+            int i;
+            toy_game_init(&charger_game, 214 + case_index);
+            charger_game.to_spawn = 0;
+            toy_game_set_primitives(&charger_game, session.level.primitives,
+                                    session.level.primitive_count,
+                                    session.level.room_limit);
+            target = toy_game_local_player_actor(&charger_game);
+            target->x = 0;
+            target->z = 0;
+            target->ground_y = 0;
+            toy_game_place_enemy(&charger_game, ramp_starts[case_index], 0);
+            charger = &charger_game.enemies[0];
+            if (!charger->active) return 211 + case_index;
+            charger->type = TOY_GAME_ENEMY_CHARGER;
+            charger->ground_y = toy_game_query_ground(
+                &charger_game, charger->x, charger->z, 0, 0).support_y;
+            for (i = 0; i < 220 && charger->x < platform_ends[case_index];
+                 i++)
+                toy_game_update_world(&charger_game, 16);
+            if (charger->x < platform_ends[case_index] ||
+                charger->ground_y < 800)
+                return 213 + case_index;
+        }
+        for (case_index = 0; case_index < 2; case_index++) {
+            struct toy_game charger_game;
+            struct toy_game_enemy *charger;
+            struct toy_game_actor *target;
+            int i;
+            toy_game_init(&charger_game, 216 + case_index);
+            charger_game.to_spawn = 0;
+            toy_game_set_primitives(&charger_game, session.level.primitives,
+                                    session.level.primitive_count,
+                                    session.level.room_limit);
+            target = toy_game_local_player_actor(&charger_game);
+            target->x = 0;
+            target->z = 0;
+            target->ground_y = 0;
+            toy_game_place_enemy(&charger_game, ramp_starts[case_index], 0);
+            charger = &charger_game.enemies[0];
+            if (!charger->active) return 215 + case_index;
+            charger->type = TOY_GAME_ENEMY_CHARGER;
+            charger->ground_y = toy_game_query_ground(
+                &charger_game, charger->x, charger->z, 0, 0).support_y;
+            charger->charge_active = 1;
+            charger->ability.charge_dir_x = 1024;
+            charger->ability.charge_dir_z = 0;
+            charger->ability.special_timer_ms = 0;
+            charger->ability.charge_elapsed_ms = 0;
+            for (i = 0; i < 100 && charger->x < platform_ends[case_index];
+                 i++)
+                toy_game_update_world(&charger_game, 16);
+            if (charger->x < platform_ends[case_index] ||
+                charger->ground_y < 800)
+                return 217 + case_index;
+        }
+    }
+    /* A real discontinuity with the same ramp height must remain blocked: a
+     * 1200-high platform is not a continuation of the 900-high ramp. */
+    {
+        struct toy_game discontinuous_game;
+        struct toy_game_enemy *charger;
+        struct toy_game_actor *target;
+        struct toy_map_primitive terrain[3] = {
+            test_flat_primitive(-5000, 6000, -1000, 1000, 0),
+            test_ramp_primitive(TOY_MAP_PRIMITIVE_RAMP_X,
+                                0, 2400, -1000, 1000, 0, 900),
+            test_flat_primitive(2400, 5000, -1000, 1000, 1200)
+        };
+        int i;
+        toy_game_init(&discontinuous_game, 218);
+        discontinuous_game.to_spawn = 0;
+        toy_game_set_primitives(&discontinuous_game, terrain, 3, 6000);
+        target = toy_game_local_player_actor(&discontinuous_game);
+        target->x = 5000;
+        target->z = 0;
+        target->ground_y = 1200;
+        toy_game_place_enemy(&discontinuous_game, 1800, 0);
+        charger = &discontinuous_game.enemies[0];
+        if (!charger->active) return 219;
+        charger->type = TOY_GAME_ENEMY_CHARGER;
+        charger->ground_y = toy_game_query_ground(
+            &discontinuous_game, charger->x, charger->z, 0, 0).support_y;
+        charger->charge_active = 1;
+        charger->ability.charge_dir_x = 1024;
+        charger->ability.charge_dir_z = 0;
+        charger->ability.special_timer_ms = 0;
+        for (i = 0; i < 30; i++)
+            toy_game_update_world(&discontinuous_game, 16);
+        if (charger->x >= 2400) return 220;
+    }
     {
         static const int kinds[13] = {
             TOY_MAP_PICKUP_POSE_RESET_BUTTON,

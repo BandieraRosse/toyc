@@ -1087,31 +1087,66 @@ struct toy_game_ground_query toy_game_query_ground(
 
 static int ground_has_ramp_surface_transition(
     const struct toy_game *g, int x, int z, int radius,
-    const struct toy_game_ground_query *ground,
+    int current_ground_y, const struct toy_game_ground_query *ground,
     const struct toy_map_primitive *surface)
 {
     int i;
-    if (!g || !ground || !surface || !ground->has_support ||
-        !ground->support_is_ramp ||
+    if (!g || !ground || !surface ||
         surface->shape != TOY_MAP_PRIMITIVE_FLAT)
         return 0;
     for (i = 0; i < g->primitive_count; i++) {
         const struct toy_map_primitive *ramp = &g->primitives[i];
-        int supported, endpoint_delta;
+        int overlaps, supported, endpoint_delta, adjacent = 0;
         if (!(ramp->flags & TOY_MAP_PRIMITIVE_WALKABLE) ||
             (ramp->shape != TOY_MAP_PRIMITIVE_RAMP_X &&
              ramp->shape != TOY_MAP_PRIMITIVE_RAMP_Z)) continue;
+        if (!(surface->flags & TOY_MAP_PRIMITIVE_WALKABLE)) continue;
+        overlaps = x + radius > ramp->minx && x - radius < ramp->maxx &&
+                   z + radius > ramp->minz && z - radius < ramp->maxz;
+        if (!overlaps) continue;
+        /* The center must still be on the ramp.  Footprint overlap alone
+         * would let an entity approach the platform from the ramp's side and
+         * use the seam rule as a side-climb. */
+        if (x < ramp->minx || x > ramp->maxx ||
+            z < ramp->minz || z > ramp->maxz)
+            continue;
         supported = x - radius >= ramp->minx &&
                     x + radius <= ramp->maxx &&
                     z - radius >= ramp->minz &&
                     z + radius <= ramp->maxz;
-        if (!supported || primitive_surface_height(ramp, x, z) !=
-                              ground->support_y)
+        /* The platform must touch the ramp at its high endpoint along the
+         * ramp axis.  Merely overlapping two walkable primitives is not
+         * enough: this keeps a large footprint from climbing a platform
+         * through its side or bridging an actual gap. */
+        if (ramp->shape == TOY_MAP_PRIMITIVE_RAMP_X) {
+            if (surface->minx == ramp->maxx || surface->maxx == ramp->minx) {
+                int ramp_end = surface->minx == ramp->maxx ?
+                    ramp->surface_y1 : ramp->surface_y0;
+                endpoint_delta = ramp_end - surface->surface_y0;
+                if (endpoint_delta < 0) endpoint_delta = -endpoint_delta;
+                adjacent = endpoint_delta <= TOY_CONFIG_GROUND_STEP_HEIGHT &&
+                           surface->maxz > ramp->minz &&
+                           surface->minz < ramp->maxz;
+            }
+        } else if (ramp->shape == TOY_MAP_PRIMITIVE_RAMP_Z) {
+            if (surface->minz == ramp->maxz || surface->maxz == ramp->minz) {
+                int ramp_end = surface->minz == ramp->maxz ?
+                    ramp->surface_y1 : ramp->surface_y0;
+                endpoint_delta = ramp_end - surface->surface_y0;
+                if (endpoint_delta < 0) endpoint_delta = -endpoint_delta;
+                adjacent = endpoint_delta <= TOY_CONFIG_GROUND_STEP_HEIGHT &&
+                           surface->maxx > ramp->minx &&
+                           surface->minx < ramp->maxx;
+            }
+        }
+        if (!adjacent || (!supported &&
+                          primitive_surface_height(ramp, x, z) !=
+                              current_ground_y) ||
+            (supported && (!ground->has_support ||
+                           primitive_surface_height(ramp, x, z) !=
+                               ground->support_y)))
             continue;
-        endpoint_delta = ramp->surface_y1 - surface->surface_y0;
-        if (endpoint_delta < 0) endpoint_delta = -endpoint_delta;
-        if (endpoint_delta <= TOY_CONFIG_GROUND_STEP_HEIGHT)
-            return 1;
+        return 1;
     }
     return 0;
 }
@@ -1178,7 +1213,7 @@ static int position_blocked_at_height(const struct toy_game *g,
          * on the ramp until the destination footprint is fully supported by
          * the platform; the transactional move then changes ground_y. */
         if (ground_has_ramp_surface_transition(g, x, z, radius,
-                                               &ground, p))
+                                               ground_height, &ground, p))
             continue;
         if (x + radius > p->minx && x - radius < p->maxx &&
             z + radius > p->minz && z - radius < p->maxz) return 1;
