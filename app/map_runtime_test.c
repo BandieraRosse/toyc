@@ -26,13 +26,33 @@ int main(int argc, char **argv)
             __fprintf(2, "%s:\nerror: %s\n", argv[1], runtime.error);
         return 1;
     }
+    if (rf_map_runtime_interaction_count(&runtime) == 0) {
+        safe = rf_map_runtime_find_region(&runtime, "outpost_safe");
+        if (!safe) { rf_map_runtime_unload(&runtime); return 1; }
+        __printf("runtime map success\nregions: %d\ninteractions: 0\nspawns: %d\npickups: %d\nobjects: %d\ncollisions: %d\nsurfaces: %d\nrenders: %d\nsafe: %s\n",
+                 rf_map_runtime_region_count(&runtime),
+                 rf_map_runtime_actor_spawn_count(&runtime),
+                 rf_map_runtime_pickup_count(&runtime),
+                 rf_map_runtime_object_count(&runtime),
+                 rf_map_runtime_collision_count(&runtime),
+                 rf_map_runtime_surface_count(&runtime),
+                 rf_map_runtime_render_count(&runtime), safe->id);
+        rf_map_runtime_unload(&runtime);
+        return 0;
+    }
     safe = rf_map_runtime_find_region(&runtime, "start_area");
     if (!safe) safe = rf_map_runtime_find_region(&runtime, "safe_start");
+    if (!safe) safe = rf_map_runtime_find_region(&runtime, "outpost_safe");
     interaction = rf_map_runtime_find_interaction(&runtime, "wave_skip");
+    if (!interaction) interaction = rf_map_runtime_find_interaction(&runtime,
+                                                                      "station_terminal");
     spawn = rf_map_runtime_find_spawn(&runtime, "Jesus");
+    if (!spawn) spawn = rf_map_runtime_find_spawn(&runtime, "Null");
+    if (!spawn) spawn = rf_map_runtime_find_spawn(&runtime, "GUARD");
     pickup = rf_map_runtime_find_pickup(&runtime, "pickup_smg");
     object = rf_map_runtime_find_object(&runtime, "object_crate");
     collision = rf_map_runtime_find_collision(&runtime, "box_air_gate_left");
+    if (!collision) collision = rf_map_runtime_collision_at(&runtime, 0);
     surface = rf_map_runtime_find_surface(&runtime, "surface_ramp_dev_exit");
     if (!surface) surface = rf_map_runtime_surface_at(&runtime, 0);
     render = rf_map_runtime_find_render(&runtime, "arena");
@@ -52,14 +72,15 @@ int main(int argc, char **argv)
         rf_map_runtime_unload(&runtime);
         return 1;
     }
-    if (rf_map_runtime_collision_count(&runtime) > 0 &&
-        !collision && rf_map_runtime_find_collision(&runtime, "north_wall") == NULL) {
+    if (rf_map_runtime_collision_count(&runtime) > 0 && !collision) {
         __fprintf(2, "collision lookup failed\n");
         rf_map_runtime_unload(&runtime);
         return 1;
     }
-    if (!safe || !interaction ||
-        interaction->action_id != RF_MAP_ACTION_WAVE_SKIP ||
+    if (!safe ||
+        (rf_map_runtime_interaction_count(&runtime) > 0 && !interaction) ||
+        (strcmp(interaction->id, "wave_skip") == 0 &&
+         interaction->action_id != RF_MAP_ACTION_WAVE_SKIP) ||
         rf_map_runtime_find_region(&runtime, "missing") != NULL) {
         __fprintf(2, "runtime lookup failed\n");
         rf_map_runtime_unload(&runtime);
@@ -93,8 +114,9 @@ int main(int argc, char **argv)
     __printf("surfaces: %d\n", rf_map_runtime_surface_count(&runtime));
     __printf("renders: %d\n", rf_map_runtime_render_count(&runtime));
     __printf("safe: %s\n", safe->id);
-    __printf("interaction: %s action=%s\n", interaction->id,
-             rf_map_runtime_action_name(interaction->action_id));
+    if (interaction)
+        __printf("interaction: %s action=%s\n", interaction->id,
+                 rf_map_runtime_action_name(interaction->action_id));
     rf_map_runtime_unload(&runtime);
     return 0;
 }

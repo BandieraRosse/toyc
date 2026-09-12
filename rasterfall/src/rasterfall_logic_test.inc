@@ -326,6 +326,50 @@ static int run_logic_test(void)
                                 "rasterfall/assets/maps/rasterfall.map") < 0)
         return 174;
     if (!rasterfall_map_projection_counts_match(&session.map_ops)) return 233;
+    if (rasterfall_session_load(&session,
+        "rasterfall/assets/maps/outpost.map") < 0 ||
+        session.world_id != RASTERFALL_WORLD_OUTPOST ||
+        !rasterfall_map_projection_counts_match(&session.map_ops))
+        return 234;
+    rasterfall_session_reset(&session, &camera, 1);
+    {
+        int has_null = 0, has_station = 0, has_operations = 0,
+            has_super = 0, i;
+        for (i = 0; i < session.item_count; i++) {
+            has_station |= session.items[i].kind == TOY_MAP_PICKUP_STATION_TERMINAL;
+            has_operations |= session.items[i].kind == TOY_MAP_PICKUP_OPERATIONS_TERMINAL;
+            has_super |= session.items[i].kind == TOY_MAP_PICKUP_SUPER_TERMINAL;
+        }
+        for (i = 0; i < TOY_GAME_MAX_ACTORS; i++)
+            if (session.game_state.actors[i].active &&
+                !strcmp(session.game_state.actors[i].name, "Null")) has_null = 1;
+        if (!has_null || !has_station || !has_operations || !has_super ||
+            session.flag_count != 0 ||
+            session.content.model_gallery_enabled ||
+            session.content.character_test_strip_enabled ||
+            session.content.campaign_fixture_enabled)
+            return 235;
+        for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
+            const struct toy_game_actor *actor = &session.game_state.actors[i];
+            if (!actor->active) continue;
+            if (!strcmp(actor->name, "EULA") ||
+                !strcmp(actor->name, "Jesus") ||
+                !strcmp(actor->name, "ANIME_GUARD_1") ||
+                !strcmp(actor->name, "ANIME_GUARD_2") ||
+                !strcmp(actor->name, "ANIME_GUARD_3") ||
+                !strcmp(actor->name, "ANIME_GUARD_4") ||
+                !strcmp(actor->name, "GUNSMITH") ||
+                !strcmp(actor->name, "LOGISTICS") ||
+                !strcmp(actor->name, "MEDIC") ||
+                !strcmp(actor->name, "GUARD"))
+            return 236;
+        }
+    }
+    if (rasterfall_session_load(&session,
+                                "rasterfall/assets/maps/rasterfall.map") < 0 ||
+        session.world_id != RASTERFALL_WORLD_CAMPAIGN_01 ||
+        !rasterfall_map_projection_counts_match(&session.map_ops))
+        return 234;
     rasterfall_map_prepare(&session.map_ops);
     if (rasterfall_console_logic_test() != 0) return 169;
     if (rf_gui_logic_test() != 0) return 230;
@@ -333,12 +377,20 @@ static int run_logic_test(void)
     if (rf_application_projection_logic_test() != 0) return 232;
     toy_input_init(&input);
     rasterfall_session_reset(&session, &camera, 1);
+    if (!session.content.spawn_campaign_roster ||
+        !session.content.spawn_maid_squad ||
+        !session.content.campaign_flags_enabled ||
+        !session.content.model_gallery_enabled ||
+        !session.content.character_test_strip_enabled ||
+        session.content.formation_count != 1 ||
+        strcmp(session.content.formations[0].id, "maid_squad"))
+        return 237;
     if (RASTERFALL_RFU_FROM_MM(1000) != RASTERFALL_RFU_PER_METER ||
         RASTERFALL_HUMAN_HEIGHT_RFU != 896 ||
         RASTERFALL_HUMAN_EYE_HEIGHT_RFU != 824 ||
         camera.y != RASTERFALL_STANDING_CAMERA_Y) return 167;
     {
-        int i;
+        int has_jesus = 0, has_eula = 0, i;
         const struct toy_game_actor *player = toy_game_local_player_actor_const(
             &session.game_state);
         if (player->character_id != RASTERFALL_CHARACTER_NONE ||
@@ -349,6 +401,7 @@ static int run_logic_test(void)
             const struct toy_game_actor *actor = &session.game_state.actors[i];
             if (!actor->active || actor->flag_guard) continue;
             if (!strcmp(actor->name, "Jesus")) {
+                has_jesus = 1;
                 if (actor->character_id != RASTERFALL_CHARACTER_RF_RIFLEMAN)
                     return 222;
                 if (actor->current_slot < 0 ||
@@ -358,11 +411,13 @@ static int run_logic_test(void)
                     return 229;
                 continue;
             }
+            if (!strcmp(actor->name, "EULA")) has_eula = 1;
             if (actor->character_id != RASTERFALL_CHARACTER_NONE &&
                 !rasterfall_character_visual_recipe_for_character(
                     actor->character_id))
                 return 222;
         }
+        if (!has_jesus || !has_eula) return 223;
     }
     {
         int squad, member;
@@ -799,10 +854,11 @@ static int run_logic_test(void)
         struct toy_game throwable_test;
         int i;
         int ai_id;
+        int jesus_index = -1, guard_index = -1, elite_index = -1;
+        int base_index = -1;
         struct toy_game_actor *throwable_player;
         struct toy_game_actor *throwable_ai;
-        const struct toy_game_actor *actor =
-            toy_game_actor_by_id_const(&game, 1);
+        const struct toy_game_actor *actor;
         const struct toy_game_enemy_info *pursuit_common =
             toy_game_enemy_info(TOY_GAME_ENEMY_PURSUIT_COMMON);
         const struct toy_game_enemy_info *brute =
@@ -829,11 +885,23 @@ static int run_logic_test(void)
             toy_game_weapon_info(TOY_GAME_WEAPON_AK);
         const struct toy_game_weapon_info *awp =
             toy_game_weapon_info(TOY_GAME_WEAPON_AWP);
+        for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
+            const struct toy_game_actor *candidate = &game.actors[i];
+            if (!candidate->active) continue;
+            if (!strcmp(candidate->name, "Jesus")) jesus_index = i;
+            else if (!strcmp(candidate->name, "GUARD") && guard_index < 0)
+                guard_index = i;
+            else if (!strcmp(candidate->name, "ELITE") && elite_index < 0)
+                elite_index = i;
+            else if (!strcmp(candidate->name, "BASE") && base_index < 0)
+                base_index = i;
+        }
+        actor = jesus_index >= 0 ? &game.actors[jesus_index] : NULL;
         toy_game_init(&ai_observe_test, 151);
         if (toy_game_add_ai(&ai_observe_test, TOY_GAME_AI_LEVEL_2,
                             0, 0, "OBSERVE") < 0 ||
-            !toy_game_ai_observe(&ai_observe_test, 2, &ai_observation) ||
-            ai_observation.actor_id != ai_observe_test.actors[2].actor_id ||
+            !toy_game_ai_observe(&ai_observe_test, 1, &ai_observation) ||
+            ai_observation.actor_id != ai_observe_test.actors[1].actor_id ||
             ai_observation.health_percent <= 0 ||
             ai_observation.current_weapon < 0 ||
             ai_observation.nearest_enemy_index != -1 ||
@@ -844,16 +912,16 @@ static int run_logic_test(void)
             ai_decision.shop_action != 0) return 145;
         rasterfall_ai_registry_init(&ai_registry);
         rasterfall_ai_registry_sync(&ai_registry, &ai_observe_test);
-        if (ai_registry.count != 2 ||
+        if (ai_registry.count != 1 ||
             rasterfall_ai_registry_add(
                 &ai_registry, TOY_GAME_PLAYER_ACTOR_INDEX,
                 RASTERFALL_AI_CONTROLLER_MANAGED_PLAYER, 1,
                 RASTERFALL_AI_POLICY_IDLE) < 0 ||
-            ai_registry.count != 3) return 146;
+            ai_registry.count != 2) return 146;
         rasterfall_ai_registry_think(&ai_registry, &ai_observe_test, 1);
-        if (ai_registry.agents[2].controller !=
+        if (ai_registry.agents[1].controller !=
                 RASTERFALL_AI_CONTROLLER_MANAGED_PLAYER ||
-            ai_registry.agents[2].decision.target_enemy != -1) return 147;
+            ai_registry.agents[1].decision.target_enemy != -1) return 147;
         if (!actor || actor->kind != TOY_GAME_ACTOR_AI ||
             actor->class_id != TOY_GAME_AI_LEVEL_2 ||
             smg->damage != 25 || shotgun->damage != 25 ||
@@ -909,10 +977,10 @@ static int run_logic_test(void)
             smg->alert_range <= TOY_GAME_DETECT_RANGE ||
             pistol->alert_range <= TOY_GAME_DETECT_RANGE ||
             shotgun->alert_range != TOY_GAME_DETECT_RANGE) return 116;
-        toy_game_actor_set_animation(&game.actors[1], TOY_GAME_ANIM_IDLE);
-        toy_game_actor_update_animation(&game.actors[1], 160);
-        if (game.actors[1].animation.id != TOY_GAME_ANIM_IDLE ||
-            game.actors[1].animation.time_ms != 160 ||
+        toy_game_actor_set_animation(&game.actors[jesus_index], TOY_GAME_ANIM_IDLE);
+        toy_game_actor_update_animation(&game.actors[jesus_index], 160);
+        if (game.actors[jesus_index].animation.id != TOY_GAME_ANIM_IDLE ||
+            game.actors[jesus_index].animation.time_ms != 160 ||
             toy_game_animation_info(TOY_GAME_ANIM_FIRE)->duration_ms != 180 ||
             toy_game_animation_info(TOY_GAME_ANIM_FIRE)->loop ||
             toy_game_animation_info(99)->duration_ms != 0) return 59;
@@ -947,25 +1015,24 @@ static int run_logic_test(void)
                 TOY_GAME_AMMO_INFINITE ||
             ai_reload_test.actors[ai_id - 1].slots[
                 ai_reload_test.actors[ai_id - 1].current_slot].mag <= 0) return 63;
-        if (!game.actors[2].active ||
-            game.actors[2].class_id != TOY_GAME_AI_LEVEL_1 ||
-            game.actors[2].slots[game.actors[2].current_slot].weapon != TOY_GAME_WEAPON_PISTOL ||
-            !game.actors[3].active ||
-            game.actors[3].class_id != TOY_GAME_AI_LEVEL_3 ||
-            (game.actors[3].slots[game.actors[3].current_slot].weapon != TOY_GAME_WEAPON_AK &&
-             game.actors[3].slots[game.actors[3].current_slot].weapon != TOY_GAME_WEAPON_AWP) ||
-            game.actors[1].hp != 120 || game.actors[1].max_hp != 120 ||
-            game.actors[1].state != TOY_GAME_ACTOR_ALIVE ||
-            game.actors[2].state != TOY_GAME_ACTOR_ALIVE ||
-            game.actors[3].state != TOY_GAME_ACTOR_ALIVE ||
-            game.actors[1].x != 1000 || game.actors[1].z != 0 ||
-            game.actors[2].x != 0 || game.actors[2].z != -900 ||
-            game.actors[3].x != -1000 || game.actors[3].z != 0 ||
-            !game.actors[4].active || !game.actors[4].base_core ||
-            game.actors[4].hp != TOY_CONFIG_BASE_HP ||
-            game.actors[4].max_hp != TOY_CONFIG_BASE_HP ||
-            game.actors[4].slots[0].weapon != TOY_GAME_WEAPON_PISTOL ||
-            game.actors[4].state != TOY_GAME_ACTOR_ALIVE) return 51;
+        if (guard_index < 0 || game.actors[guard_index].class_id != TOY_GAME_AI_LEVEL_1 ||
+            game.actors[guard_index].slots[game.actors[guard_index].current_slot].weapon != TOY_GAME_WEAPON_PISTOL ||
+            elite_index < 0 || game.actors[elite_index].class_id != TOY_GAME_AI_LEVEL_3 ||
+            (game.actors[elite_index].slots[game.actors[elite_index].current_slot].weapon != TOY_GAME_WEAPON_AK &&
+             game.actors[elite_index].slots[game.actors[elite_index].current_slot].weapon != TOY_GAME_WEAPON_AWP) ||
+            jesus_index < 0 || game.actors[jesus_index].hp != 120 ||
+            game.actors[jesus_index].max_hp != 120 ||
+            game.actors[jesus_index].state != TOY_GAME_ACTOR_ALIVE ||
+            game.actors[guard_index].state != TOY_GAME_ACTOR_ALIVE ||
+            game.actors[elite_index].state != TOY_GAME_ACTOR_ALIVE ||
+            game.actors[jesus_index].x != 1000 || game.actors[jesus_index].z != 0 ||
+            game.actors[guard_index].x != 0 || game.actors[guard_index].z != -900 ||
+            game.actors[elite_index].x != -1000 || game.actors[elite_index].z != 0 ||
+            base_index < 0 || !game.actors[base_index].base_core ||
+            game.actors[base_index].hp != TOY_CONFIG_BASE_HP ||
+            game.actors[base_index].max_hp != TOY_CONFIG_BASE_HP ||
+            game.actors[base_index].slots[0].weapon != TOY_GAME_WEAPON_PISTOL ||
+            game.actors[base_index].state != TOY_GAME_ACTOR_ALIVE) return 51;
         toy_game_init(&actor_test, 3);
         if (toy_game_set_remote_actor(&actor_test, 1, 1,
                                        2400, -3000, "REMOTE") !=
@@ -1059,10 +1126,10 @@ static int run_logic_test(void)
             actor_test.actors[TOY_GAME_REMOTE_ACTOR_BASE + 2].slots[1].mag == 11)
             return 56;
         if (toy_game_add_ai(&actor_test, TOY_GAME_AI_LEVEL_3,
-                            1200, -3000, "ELITE") != 3 ||
-            !toy_game_actor_by_id(&actor_test, 3) ||
-            toy_game_actor_by_id(&actor_test, 3)->hp != 160 ||
-            toy_game_actor_by_id(&actor_test, 3)->slots[0].reserve !=
+                            1200, -3000, "ELITE") != 2 ||
+            !toy_game_actor_by_id(&actor_test, 2) ||
+            toy_game_actor_by_id(&actor_test, 2)->hp != 160 ||
+            toy_game_actor_by_id(&actor_test, 2)->slots[0].reserve !=
                 TOY_GAME_AMMO_INFINITE) return 50;
         actor_test.actors[0].state = TOY_GAME_ACTOR_DOWNED;
         actor_test.actors[0].hp = 0;
@@ -2081,6 +2148,7 @@ static int run_logic_test(void)
         game.campaign_mode = 0;
         game.to_spawn = 0;
         toy_game_set_primitives(&game, &floor, 1, 5000);
+        toy_game_set_ai_teammate(&game, 1, 1200, 0, "IMPACT_TEST");
         game.actors[1].x = 1200;
         game.actors[1].z = 0;
         game.actors[1].deployment_x = 0;

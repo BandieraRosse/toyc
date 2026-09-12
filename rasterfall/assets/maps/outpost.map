@@ -1,0 +1,25 @@
+# Rasterfall Outpost V0: compact station room and its fixed devices.
+map version=1 units=rfu
+world min_x=-7000 max_x=7000 min_z=-6000 max_z=6000 room_limit=9000
+
+surface id=outpost_floor kind=ground min_x=-6000 max_x=6000 min_z=-5000 max_z=5000 height=0 material=294B45 attr.legacy_index=0
+region id=outpost_safe kind=safe min_x=-6000 max_x=6000 min_z=-5000 max_z=5000 attr.legacy_index=0
+region id=player_start kind=start min_x=0 max_x=0 min_z=-3000 max_z=-3000 attr.sy=0 attr.cy=1024
+
+collision id=outpost_floor_collision shape=flat min_x=-6000 max_x=6000 min_z=-5000 max_z=5000 height=0 collision=false visible=true walkable=true color=294B45 attr.legacy_index=0
+collision id=wall_south shape=box min_x=-6000 max_x=6000 min_z=-5200 max_z=-5000 height=2600 collision=true visible=true walkable=false color=3F4F5A attr.legacy_index=1
+collision id=wall_north shape=box min_x=-6000 max_x=6000 min_z=5000 max_z=5200 height=2600 collision=true visible=true walkable=false color=3F4F5A attr.legacy_index=2
+collision id=wall_west shape=box min_x=-6200 max_x=-6000 min_z=-5000 max_z=5000 height=2600 collision=true visible=true walkable=false color=3F4F5A attr.legacy_index=3
+collision id=wall_east shape=box min_x=6000 max_x=6200 min_z=-5000 max_z=5000 height=2600 collision=true visible=true walkable=false color=3F4F5A attr.legacy_index=4
+
+render id=room_floor kind=ground min_x=-6000 max_x=6000 min_z=-5000 max_z=5000 height=0 color=294B45 attr.legacy_index=0
+render id=room_south kind=wall min_x=-6000 max_x=6000 min_z=-5200 max_z=-5000 height=2600 color=3F4F5A attr.legacy_index=1
+render id=room_north kind=wall min_x=-6000 max_x=6000 min_z=5000 max_z=5200 height=2600 color=3F4F5A attr.legacy_index=2
+render id=room_west kind=wall min_x=-6200 max_x=-6000 min_z=-5000 max_z=5000 height=2600 color=3F4F5A attr.legacy_index=3
+render id=room_east kind=wall min_x=6000 max_x=6200 min_z=-5000 max_z=5000 height=2600 color=3F4F5A attr.legacy_index=4
+render id=station_label kind=label min_x=-5000 max_x=-2400 min_z=3600 max_z=3800 height=2100 color=F6C35B attr.text=STATION_GUI_TERMINAL attr.legacy_index=5
+render id=operations_label kind=label min_x=-1300 max_x=1300 min_z=3600 max_z=3800 height=2100 color=F6C35B attr.text=OPERATIONS_TERMINAL attr.legacy_index=6
+render id=super_label kind=label min_x=2400 max_x=5000 min_z=3600 max_z=3800 height=2100 color=FF8A80 attr.text=SUPER_TERMINAL attr.legacy_index=7
+render id=research_door kind=sign min_x=-5400 max_x=-3000 min_z=4850 max_z=5000 height=1800 color=6E8294 attr.text=RESEARCH attr.legacy_index=8
+render id=quarters_door kind=sign min_x=3000 max_x=5400 min_z=4850 max_z=5000 height=1800 color=6E8294 attr.text=QUARTERS attr.legacy_index=9
+render id=outpost_title kind=label min_x=-2200 max_x=2200 min_z=-800 max_z=-600 height=2200 color=9FE8C8 attr.text=RASTERFALL_OUTPOST attr.legacy_index=10

@@ -625,7 +625,10 @@ void toy_game_init(struct toy_game *g, uint64_t seed)
     g->spawn_timer_ms = TOY_GAME_WAVE_FIRST_DELAY_MS;
     g->campaign_phase = TOY_GAME_PHASE_CALM;
     g->wave_attack_multiplier = 1;
-    toy_game_set_ai_teammate(g, 1, -11000, -5800, "Jesus");
+    /* World-specific actors are instantiated by the Game/session content
+     * layer.  Core gameplay initialization only creates the local player and
+     * generic simulation state. */
+    g->ai_context_actor_index = -1;
 }
 
 void toy_game_set_wave_attack_multiplier(struct toy_game *g, int multiplier)
@@ -741,7 +744,7 @@ void toy_game_set_ai_teammate_class(struct toy_game *g, int active, int class_id
     a->slots[w->slot].mag = w->mag_size;
     a->slots[w->slot].reserve = TOY_GAME_AMMO_INFINITE;
     a->current_slot = w->slot;
-    copy_name(a->name, name ? name : "Jesus");
+    copy_name(a->name, name ? name : "AI");
     g->ai_context_actor_index = 0;
 }
 
@@ -767,7 +770,7 @@ int toy_game_add_anime_actor(struct toy_game *g, int anime_character_id,
     a->state=TOY_GAME_ACTOR_ALIVE;a->x=x;a->z=z;a->cy=1024;
     a->deployment_x=x;a->deployment_z=z;a->flag_index=-1;
     a->hp=a->max_hp=190;a->anime_wander_timer_ms=2000;
-    copy_name(a->name,name?name:"EULA");actor_set_weapon(a,TOY_GAME_WEAPON_AK);
+    copy_name(a->name,name?name:"ANIME_ACTOR");actor_set_weapon(a,TOY_GAME_WEAPON_AK);
     a->fire_enabled=1;return a->actor_id;
 }
 

@@ -44,6 +44,7 @@ GAME_SRCS := rasterfall/src/rasterfall.c \
              rasterfall/src/rasterfall_render.c \
              rasterfall/src/render/rasterfall_render_frontend.c \
              rasterfall/src/rasterfall_session.c \
+             rasterfall/src/rasterfall_world_content.c \
              rasterfall/src/rasterfall_sky.c \
              rasterfall/src/rasterfall_viewmodel.c
 ANIMATION_SRCS := app/glb_inspect.c rasterfall/src/rasterfall_vmd.c

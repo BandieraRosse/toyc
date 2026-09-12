@@ -1,6 +1,29 @@
 #include "tlibc_everything.h"
 #include "rf_game_lifecycle.h"
 
+static const char *world_path(enum rasterfall_world_id world)
+{
+    return rasterfall_world_map_path(world);
+}
+
+int rf_game_request_world(struct rf_game_runtime *runtime,
+                          enum rasterfall_world_id world)
+{
+    uint64_t seed;
+    if (!runtime || !runtime->initialized || !runtime->session) return -1;
+    if (world != RASTERFALL_WORLD_OUTPOST &&
+        world != RASTERFALL_WORLD_CAMPAIGN_01) return -1;
+    if (rasterfall_session_load(runtime->session, world_path(world)) < 0)
+        return -1;
+    runtime->session->world_id = world;
+    seed = runtime->session->seed;
+    rasterfall_session_reset(runtime->session, &runtime->camera,
+                             seed ? seed : 1);
+    rasterfall_render_bake_lightmap();
+    runtime->render_camera = runtime->camera;
+    return 0;
+}
+
 int rf_game_init(struct rf_game_runtime *runtime,
                  struct rf_core *core,
                  struct rasterfall_session *session,

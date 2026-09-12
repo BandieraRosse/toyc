@@ -4623,13 +4623,19 @@ static int render_scene(struct toy_renderer *renderer, const struct camera *came
     scene_stats.map_us = render_monotonic_us() - phase_start;
     phase_start = render_monotonic_us();
     pixels += render_static_props(renderer, camera);
-    pixels += render_model_gallery(renderer, camera);
+    if (active_session->content.model_gallery_enabled)
+        pixels += render_model_gallery(renderer, camera);
     scene_stats.gallery_us = render_monotonic_us() - phase_start;
     phase_start = render_monotonic_us();
-    pixels += render_character_test_strip(renderer, camera);
+    if (active_session->content.character_test_strip_enabled)
+        pixels += render_character_test_strip(renderer, camera);
     scene_stats.private_model_us += render_monotonic_us() - phase_start;
     phase_start = render_monotonic_us();
-    pixels += render_private_character(renderer, camera);
+    /* Eula and the developer character strip are Campaign Content fixtures.
+     * Diagnostic capture entry points still use a campaign fixture policy,
+     * while normal Outpost rendering never enters this path. */
+    if (active_session->content.campaign_fixture_enabled)
+        pixels += render_private_character(renderer, camera);
     scene_stats.private_model_us = render_monotonic_us() - phase_start;
     phase_start = render_monotonic_us();
     pixels += render_projectiles(renderer, camera);
@@ -6702,7 +6708,8 @@ static int render_ai_teammate(struct toy_renderer *renderer,
                 renderer, camera, &state, &character);
         }
     }
-    pixels += render_humanoid_debug(renderer, camera);
+    if (active_session && active_session->content.campaign_fixture_enabled)
+        pixels += render_humanoid_debug(renderer, camera);
     return pixels;
 }
 

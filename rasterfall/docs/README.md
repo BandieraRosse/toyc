@@ -2,6 +2,7 @@
 
 > 文档更新：2026-09-12
 > 源码核对补充：RF Core lifecycle boundary 已覆盖 poll/exit、tick clock 与 frame begin/end；Runtime Environment V1 ownership audit 与 checkpoint 已完成。
+> 源码核对补充：Outpost V0 已接入默认 Game landing、world identity/switch lifecycle 与三终端交互。
 > 源码核对基线：工作区（Runtime Map V1 projection ownership cleanup；RF Application Projection Layer V0 query boundary；Phase 4.4 render IR/runtime/legacy draw adapter；Enemy Visual V2 六份公开 RFM2 / renderer-only family；Enemy Visual Family Mix V1 自动比例 resolver 与强制 family capture；MODEL_DISPLAY style 6--14 的三类型×三家族感染体展示；Character Material Lighting Policy V1；Enemy Presentation V1 1000ms ballistic fade / rotating irregular fragments / directional trailing emitter 与开发者死亡测试排；Humanoid Action Composition V1.1 additive recoil；modular RFANIM presentation clock；双手 RFANIM 持枪轨道；RFCHAR +Z forward basis；PRIMARY_GRIP weapon presentation；开发者 world strip 与战斗区共用 modular path；双正式四人小队 runtime；RF Core Runtime V0.2 `rf_game_runtime` facade 与 status query；Core/Game startup config split；renderer frame ownership cleanup；Core filesystem service V0；唯一 `rf_core` context 与 Core clock service；Runtime Facade Authority audit；Phase 3A `rf_game_update()` gameplay update authority；Phase 3B-1 world presentation migration；Phase 3B-2 steady-state Game UI presentation authority；Phase 4.3 surface IR/runtime/legacy primitive adapter）
 
 本目录面向接手 Rasterfall 任务的编码代理。目标不是介绍玩法，而是先把问题归到正确的
@@ -14,6 +15,7 @@
 “文档层级与 Agent CLI 事实入口”。
 
 > 源码核对补充：正式 Hurd 四人使用专用 character IDs；原 Maid 四人旗卫已在西侧原位恢复并使用 Maid character/profession；普通 player、Eula 和佣兵为 character NONE；北侧 HURD 旗帜及派生 control status 已接入 session。
+> 源码核对补充：World Content V0 已将 Outpost/Campaign 的 actor、flag、formation 和正常 renderer fixture 策略集中到 Game-owned `rasterfall_world_content`。
 > 源码核对补充：Standard Response Squad 与 Assault Squad 各四人由 `rasterfall_roster` 提供有序 identity；session reset 将其接入普通 AI actor，并分别绑定中部 `RESP` 与东部 `ASLT` 旗帜部署位，renderer 再按 character profile 解析 modular recipe；`--squad-acceptance` 输出八人三视角验收。
 
 ## 先读哪一篇
@@ -24,7 +26,7 @@
 
 | 任务或症状 | 首先阅读 | 主要入口 |
 | --- | --- | --- |
-| 启动、参数、Core Host、runtime update/render 调度 | [runtime.md](runtime.md) | `src/rasterfall.c`、`src/rf_game_runtime.c`、`include/rf_game_lifecycle.h`；gameplay update 入口为 `rf_game_update()`，world presentation 入口为 `rf_game_render()` |
+| 启动、参数、Core Host、runtime update/render 调度、Outpost landing | [runtime.md](runtime.md) | `src/rasterfall.c`、`src/rf_game_runtime.c`、`src/rf_game_lifecycle.c`、`include/rf_game_lifecycle.h`；world switch 入口为 `rf_game_request_world()` |
 | Runtime Environment V1 总体边界与 checkpoint | [runtime-environment-v1.md](runtime-environment-v1.md) | Core、Game、Command、GUI、Application、Projection 与 Map Runtime 的 ownership relationship |
 | Console command registry/context/status | [runtime.md](runtime.md)、[core-runtime-v0.2.md](core-runtime-v0.2.md) | `include/rasterfall_console.h`、`src/rasterfall_console.c`、`src/rf_game_runtime.c` |
 | GUI desktop、icon/window presentation | [gui-runtime-v0.md](gui-runtime-v0.md)、[runtime.md](runtime.md) | `include/rasterfall_gui.h`、`src/rasterfall_gui.c`、`src/rf_game_runtime.c` |
@@ -36,7 +38,7 @@
 | Enemy Visual V2 六资产、家族切换、敌人截图与资产验收 | [enemy-visuals.md](enemy-visuals.md)、[rendering.md](rendering.md) | `rasterfall_enemy_visual.h` → `render/rasterfall_enemy_visual.inc`；`tools/enemy_visual_round.py` |
 | 武器、敌人、碰撞、寻路、波次、商店、AI | [gameplay.md](gameplay.md) | `lib/game.c`、`src/rasterfall_session.c` |
 | Hurd 固定小队、北侧据点、旗帜控制真值 | [gameplay.md](gameplay.md)、[map-format.md](map-format.md) | `rasterfall_session.h` 的 Hurd config/status → `rasterfall_session_hurd_status()` |
-| 地图格式、关卡实体、拾取物、静态 prop、出生点、render records | [map-format.md](map-format.md) | `lib/rasterfall_map_parser.c`、`lib/rasterfall_map_runtime.c`、`src/rasterfall_map.c` |
+| 地图格式、关卡实体、拾取物、静态 prop、出生点、render records、Outpost | [map-format.md](map-format.md) | `assets/maps/outpost.map`、`lib/rasterfall_map_parser.c`、`lib/rasterfall_map_runtime.c`、`src/rasterfall_map.c` |
 | Map Compiler V1、Runtime Map ownership、Gameplay Projection Adapter、legacy fallback 边界 | [map-format.md](map-format.md) | `assets/maps/rasterfall.map`、`assets/maps/rasterfall_legacy.map`、`lib/rasterfall_map_parser.c`、`lib/rasterfall_map_runtime.c`、`src/rasterfall_map.c`、`src/rasterfall_session.c` |
 | 编写或扩展 `.map` 文本格式 | [map-format.md](map-format.md) | `lib/map.c`、`include/toy_map.h` |
 | 修改地图排布、导出地图俯视图、agent 可读 JSON 和精确布局查询 | [map-format.md](map-format.md) | `tools/map_layout_export.py`、`tools/map_layout_query.py`、`make map-layout` |
@@ -72,13 +74,18 @@
 
 ## 地图 V1 输入链路
 
-默认启动只加载 `rasterfall/assets/maps/rasterfall.map`：C parser 生成 Map IR，Runtime Map 持有
+默认启动加载 Game 选择的 `RASTERFALL_WORLD_OUTPOST`（`outpost.map` + `outpost.content`）；C parser 生成 Map IR，Runtime Map 持有
 authoritative world data，`src/rasterfall_map.c` 的 Gameplay Projection Adapter 再创建现有
 gameplay、collision 和 renderer 接口所需的数据视图。`toy_map`、`session.level` 的 primitives、
 safe_rooms、spawn_zones、props、interactables 都属于迁移期 compatibility/runtime view，不是地图真相。
+World Content V1 由 Game-owned parser 单独加载，描述 actor、terminal、flag、formation 和 fixture；
+它不进入 Map Runtime。`world-layout` 将两者合并为工程视图，`map-layout` 仍只输出 Spatial Map。
 稳定 ID 是查询边界，record 文本顺序不承载语义。`--legacy-map` 显式启用 `rasterfall_legacy.map`，
 仅用于 legacy compatibility fallback/reference；它不参与默认加载。`map-inspect`、`map-runtime-test`
 和 projection count check 均通过 C parser/Runtime Map 链路验证地图。
+Normal world 的 actor 与 renderer-only fixture 还必须经过当前 World Content policy；`toy_game_init()`
+不创建 Jesus 或其他命名队友，固定 Eula/developer strip 与 Humanoid debug 也不会在 Outpost
+normal render 中进入。诊断 CLI 保留自己的独立 fixture 路径。
 
 ## 架构主线
 

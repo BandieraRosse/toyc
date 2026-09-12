@@ -43,6 +43,8 @@ region id=spawn_north_east kind=spawn min_x=9000 max_x=20000 min_z=14000 max_z=2
 region id=spawn_west_end kind=spawn min_x=-44400 max_x=-43400 min_z=-1650 max_z=1650 attr.legacy_index=6
 region id=alarm_control kind=alarm min_x=-23940 max_x=-23940 min_z=-3000 max_z=-3000 attr.legacy_index=7
 region id=player_start kind=start min_x=-13000 max_x=-13000 min_z=-12000 max_z=-12000 attr.sy=0 attr.cy=1024
+interaction id=return_outpost action=return_outpost x=-13000 y=0 z=-11000 attr.legacy_index=44
+render id=return_outpost_label kind=label min_x=-14500 max_x=-11500 min_z=-10800 max_z=-10600 height=1800 color=9FE8C8 attr.text=RETURN_TO_OUTPOST attr.legacy_index=98
 collision id=ground_world shape=flat min_x=-33000 max_x=33000 min_z=-33000 max_z=33000 height=0 collision=false visible=false walkable=true color=272B31 attr.legacy_index=0
 collision id=floor_base shape=flat min_x=-3000 max_x=3000 min_z=-3000 max_z=3000 height=0 collision=false visible=true walkable=true color=294B45 attr.legacy_index=1
 collision id=floor_safe shape=flat min_x=-1800 max_x=1800 min_z=-5700 max_z=-4000 height=0 collision=false visible=true walkable=true color=245238 attr.legacy_index=2
@@ -211,16 +213,15 @@ render id=legacy_render_094 kind=wall min_x=-45000 max_x=-45000 min_z=-33000 max
 render id=legacy_render_095 kind=wall min_x=33000 max_x=33000 min_z=-33000 max_z=33000 height=5400 color=56515D attr.legacy_index=95
 render id=legacy_render_096 kind=floor min_x=-44400 max_x=-43400 min_z=-1650 max_z=1650 height=0 color=9B2F32 attr.legacy_index=96
 render id=legacy_render_097 kind=label min_x=10500 max_x=17500 min_z=-14100 max_z=-13900 color=FFD060 attr.text=ENEMY_DEATH_PRESENTATION attr.legacy_index=97
-actor_spawn id=Jesus class=level2 base_id=2 x=1000 y=0 z=0 downed=0 attr.legacy_index=0
-actor_spawn id=GUARD class=level1 base_id=1 x=0 y=0 z=-900 downed=0 attr.legacy_index=1
-actor_spawn id=ELITE class=level3 base_id=2 x=-1000 y=0 z=0 downed=0 attr.legacy_index=2
-actor_spawn id=BASE class=level1 base_id=0 x=0 y=0 z=900 downed=0 weapon=pistol attr.legacy_index=3
-actor_spawn id=DEV_GUNNER class=level1 base_id=0 x=5600 y=0 z=-7400 downed=0 attr.legacy_index=4
-actor_spawn id=PLATFORM_GUARD class=level2 base_id=0 x=0 y=0 z=-9900 downed=0 attr.legacy_index=5
-actor_spawn id=HIT_TEST class=level1 base_id=0 x=-9000 y=0 z=-8500 downed=0 attr.legacy_index=6
-actor_spawn id=ANIM_TEST class=level2 base_id=0 x=600 y=0 z=-9900 downed=0 attr.legacy_index=7
-actor_spawn id=AK_TEST class=level3 base_id=0 x=-9000 y=0 z=-10800 downed=0 weapon=ak attr.legacy_index=8
-actor_spawn id=AWP_TEST class=level3 base_id=0 x=-8000 y=0 z=-10000 downed=0 weapon=awp attr.legacy_index=9
+actor_spawn id=GUARD class=level1 base_id=1 x=0 y=0 z=-900 downed=0 attr.legacy_index=0
+actor_spawn id=ELITE class=level3 base_id=2 x=-1000 y=0 z=0 downed=0 attr.legacy_index=1
+actor_spawn id=BASE class=level1 base_id=0 x=0 y=0 z=900 downed=0 weapon=pistol attr.legacy_index=2
+actor_spawn id=DEV_GUNNER class=level1 base_id=0 x=5600 y=0 z=-7400 downed=0 attr.legacy_index=3
+actor_spawn id=PLATFORM_GUARD class=level2 base_id=0 x=0 y=0 z=-9900 downed=0 attr.legacy_index=4
+actor_spawn id=HIT_TEST class=level1 base_id=0 x=-9000 y=0 z=-8500 downed=0 attr.legacy_index=5
+actor_spawn id=ANIM_TEST class=level2 base_id=0 x=600 y=0 z=-9900 downed=0 attr.legacy_index=6
+actor_spawn id=AK_TEST class=level3 base_id=0 x=-9000 y=0 z=-10800 downed=0 weapon=ak attr.legacy_index=7
+actor_spawn id=AWP_TEST class=level3 base_id=0 x=-8000 y=0 z=-10000 downed=0 weapon=awp attr.legacy_index=8
 pickup id=pickup_smg kind=smg x=-250 y=-235 z=-7450 attr.legacy_index=0
 pickup id=pickup_shotgun kind=shotgun x=250 y=-235 z=-7450 attr.legacy_index=1
 pickup id=pickup_ammo_1 kind=ammo x=880 y=-520 z=-7480 attr.legacy_index=2

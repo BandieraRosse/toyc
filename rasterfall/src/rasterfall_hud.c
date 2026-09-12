@@ -868,6 +868,14 @@ void rasterfall_hud_draw_interact_prompt(struct toy_renderer *renderer,
         snprintf(label, sizeof(label), "E: PLAY ANIMATION COMPOSITION");
     else if (it->kind == TOY_MAP_PICKUP_HUMANOID_POSE_DEBUG_BUTTON)
         snprintf(label, sizeof(label), "E: EULA AK POSE DEBUGGER");
+    else if (it->kind == TOY_MAP_PICKUP_STATION_TERMINAL)
+        snprintf(label, sizeof(label), "E OPEN STATION GUI");
+    else if (it->kind == TOY_MAP_PICKUP_OPERATIONS_TERMINAL)
+        snprintf(label, sizeof(label), "E DEPLOY CAMPAIGN 01");
+    else if (it->kind == TOY_MAP_PICKUP_SUPER_TERMINAL)
+        snprintf(label, sizeof(label), "E SUPER TERMINAL (RESTRICTED)");
+    else if (it->kind == TOY_MAP_PICKUP_RETURN_OUTPOST)
+        snprintf(label, sizeof(label), "E RETURN TO OUTPOST");
     else if (it->kind == TOY_MAP_PICKUP_WEAPON ||
              it->kind == TOY_MAP_PICKUP_SMG ||
              it->kind == TOY_MAP_PICKUP_SHOTGUN) {

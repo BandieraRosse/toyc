@@ -46,6 +46,7 @@ static const int hired_ai_positions[][2] = {
 static const int flag_colors[] = { 0x173A70, 0x9E302B, 0xC78A24, 0x2B765B,
                                    0x704A91, 0xB75A2C };
 static const char *flag_names[] = { "TOYC", "GNU", "LLVM", "GCC", "NASA", "UNIX" };
+
 static int session_is_developer_ai(const char *name)
 {
     return name && (!strcmp(name, "DEV_GUNNER") ||
@@ -240,25 +241,67 @@ static void session_set_air_walls(struct rasterfall_session *session,
     toy_game_rebuild_navigation(&session->game_state);
 }
 
-static int session_find_character_actor(const struct rasterfall_session *session,
-                                        int character_id)
+static int session_content_actor_position(
+    const struct rasterfall_session *session, const char *id, int *x, int *z)
 {
     int i;
-    for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
-        const struct toy_game_actor *actor = &session->game_state.actors[i];
-        if (actor->active && actor->kind == TOY_GAME_ACTOR_AI &&
-            actor->character_id == character_id)
-            return i;
-    }
+    for (i = 0; i < session->content.actor_count; i++)
+        if (!strcmp(session->content.actors[i].id, id)) {
+            *x = session->content.actors[i].x;
+            *z = session->content.actors[i].z;
+            return 1;
+        }
+    return 0;
+}
+
+static int session_content_flag_position(
+    const struct rasterfall_session *session, const char *id, int *x, int *z)
+{
+    int i;
+    for (i = 0; i < session->content.flag_definition_count; i++)
+        if (!strcmp(session->content.flag_definitions[i].id, id)) {
+            *x = session->content.flag_definitions[i].x;
+            *z = session->content.flag_definitions[i].z;
+            return 1;
+        }
+    return 0;
+}
+
+static int session_content_terminal_kind(const char *kind)
+{
+    if (!strcmp(kind, "station")) return TOY_MAP_PICKUP_STATION_TERMINAL;
+    if (!strcmp(kind, "operations")) return TOY_MAP_PICKUP_OPERATIONS_TERMINAL;
+    if (!strcmp(kind, "super")) return TOY_MAP_PICKUP_SUPER_TERMINAL;
     return -1;
+}
+
+static void session_add_content_terminals(struct rasterfall_session *session)
+{
+    int i, kind;
+    for (i = 0; i < session->content.terminal_count; i++) {
+        const struct rasterfall_content_terminal *def =
+            &session->content.terminals[i];
+        kind = session_content_terminal_kind(def->kind);
+        if (kind < 0 || session->item_count >= TOY_MAP_MAX_PICKUPS) continue;
+        session->items[session->item_count].kind = kind;
+        session->items[session->item_count].weapon = -1;
+        session->items[session->item_count].x = def->x;
+        session->items[session->item_count].y = def->y;
+        session->items[session->item_count].z = def->z;
+        session->item_count++;
+    }
 }
 
 /* The roster is content data; this adapter only turns its ordered entries
  * into ordinary AI actors. It does not add squad behavior or visual state to
- * toy_game_actor. Jesus is resolved from the existing map-authored spawn so
- * his established vertical slice keeps the same actor path. */
+ * toy_game_actor. All formal members, including Jesus, are instantiated from
+ * campaign content rather than a map-authored/default actor. */
 static void session_spawn_formal_rosters(struct rasterfall_session *session)
 {
+    static const char *content_ids[RASTERFALL_SQUAD_COUNT][RASTERFALL_SQUAD_SIZE] = {
+        { "jesus", "standard_medic", "standard_engineer", "standard_recon" },
+        { "assault_rifleman", "assault_breacher", "assault_heavy", "assault_medic" }
+    };
     int squad, member;
     for (squad = 0; squad < RASTERFALL_SQUAD_COUNT; squad++) {
         const struct rasterfall_squad_roster *roster =
@@ -268,13 +311,16 @@ static void session_spawn_formal_rosters(struct rasterfall_session *session)
         for (member = 0; member < RASTERFALL_SQUAD_SIZE; member++) {
             const struct rasterfall_roster_member *entry =
                 &roster->members[member];
-            int actor_index = session_find_character_actor(
-                session, entry->character_id);
+            int actor_index = -1;
             if (actor_index < 0) {
-                int actor_id = toy_game_add_ai(
+                int x = roster_spawn_positions[squad][member][0];
+                int z = roster_spawn_positions[squad][member][1];
+                int actor_id;
+                session_content_actor_position(session,
+                    content_ids[squad][member], &x, &z);
+                actor_id = toy_game_add_ai(
                     &session->game_state, TOY_GAME_AI_LEVEL_2,
-                    roster_spawn_positions[squad][member][0],
-                    roster_spawn_positions[squad][member][1], entry->name);
+                    x, z, entry->name);
                 actor_index = actor_id > 0 ? actor_id - 1 : -1;
             }
             if (actor_index < 0) continue;
@@ -302,6 +348,12 @@ int rasterfall_session_load(struct rasterfall_session *session,
      * the containing object so load -> load cannot orphan the old map. */
     rasterfall_session_unload(session);
     memset(session, 0, sizeof(struct rasterfall_session));
+    session->world_id = (strstr(map_path, "outpost.map") != NULL) ?
+        RASTERFALL_WORLD_OUTPOST : RASTERFALL_WORLD_CAMPAIGN_01;
+    if (rasterfall_world_content_load(&session->content, session->world_id,
+                                      rasterfall_world_content_path(session->world_id)) < 0)
+        return -1;
+    session->world_request = session->world_id;
     session->air_walls_enabled = 1;
     session->highlight_index = -1;
     rasterfall_map_bind(&session->map_ops, &session->level,
@@ -324,6 +376,11 @@ int rasterfall_session_load_legacy(struct rasterfall_session *session,
     if (!session) return -1;
     rasterfall_session_unload(session);
     memset(session, 0, sizeof(struct rasterfall_session));
+    session->world_id = RASTERFALL_WORLD_CAMPAIGN_01;
+    if (rasterfall_world_content_load(&session->content, session->world_id,
+                                      rasterfall_world_content_path(session->world_id)) < 0)
+        return -1;
+    session->world_request = session->world_id;
     session->air_walls_enabled = 1;
     session->highlight_index = -1;
     rasterfall_map_bind(&session->map_ops, &session->level,
@@ -345,7 +402,28 @@ const struct toy_game_actor *rasterfall_session_local_player_const(
 
 void rasterfall_session_unload(struct rasterfall_session *session)
 {
+    if (!session) return;
+    rasterfall_world_content_clear(&session->content);
     rasterfall_map_unload(&session->map_ops);
+}
+
+int rasterfall_session_request_world(struct rasterfall_session *session,
+                                     enum rasterfall_world_id world)
+{
+    if (!session || (world != RASTERFALL_WORLD_OUTPOST &&
+                     world != RASTERFALL_WORLD_CAMPAIGN_01)) return -1;
+    session->world_request = world;
+    session->world_request_pending = 1;
+    return 0;
+}
+
+int rasterfall_session_take_world_request(struct rasterfall_session *session,
+                                          enum rasterfall_world_id *world)
+{
+    if (!session || !world || !session->world_request_pending) return 0;
+    *world = session->world_request;
+    session->world_request_pending = 0;
+    return 1;
 }
 
 void rasterfall_session_reset(struct rasterfall_session *session,
@@ -449,16 +527,49 @@ void rasterfall_session_reset(struct rasterfall_session *session,
                 &session->game_state.actors[actor_index],
                 TOY_GAME_ANIM_IDLE);
         }
+        if (!strcmp(spawn->name, "Null")) {
+            struct toy_game_actor *null_actor =
+                &session->game_state.actors[actor_index];
+            null_actor->fire_enabled = 0;
+            null_actor->control_disabled = 1;
+            null_actor->companion = 1;
+        }
         if (!strcmp(spawn->name, "Jesus"))
             session->game_state.actors[actor_index].character_id =
                 RASTERFALL_CHARACTER_RF_RIFLEMAN;
         if (spawn->downed) session_down_ai(session, actor_index, spawn->x, spawn->z);
     }
-    session_spawn_formal_rosters(session);
+    if (session->content.spawn_null) {
+        for (i = 0; i < session->content.actor_count; i++) {
+            struct rasterfall_content_actor *def = &session->content.actors[i];
+            if (strcmp(def->id, "null")) continue;
+            {
+                int actor_id = toy_game_add_ai(&session->game_state,
+                    TOY_GAME_AI_LEVEL_2, def->x, def->z, def->name);
+                if (actor_id > 0) {
+                    struct toy_game_actor *a =
+                        &session->game_state.actors[actor_id - 1];
+                    a->fire_enabled = 0;
+                    a->control_disabled = 1;
+                    a->companion = 1;
+                }
+            }
+            break;
+        }
+    }
+    if (session->content.spawn_campaign_roster)
+        session_spawn_formal_rosters(session);
     /* Anime companions are session actors, separate from map-authored
      * low-poly mercenaries and the fixed developer model lineup. */
-    toy_game_add_anime_actor(&session->game_state,0,
-                             camera->x-800,camera->z,"EULA");
+    if (session->content.spawn_campaign_support) {
+        for (i = 0; i < session->content.actor_count; i++) {
+            struct rasterfall_content_actor *def = &session->content.actors[i];
+            if (strcmp(def->id, "eula")) continue;
+            toy_game_add_anime_actor(&session->game_state, 0,
+                                     def->x, def->z, def->name);
+            break;
+        }
+    }
     /* Registration is separate from simulation: the existing teammate
      * executor remains authoritative while policies are introduced. */
     rasterfall_ai_registry_init(&session->ai_registry);
@@ -469,23 +580,33 @@ void rasterfall_session_reset(struct rasterfall_session *session,
             &session->ai_registry, TOY_GAME_PLAYER_ACTOR_INDEX,
             RASTERFALL_AI_CONTROLLER_MANAGED_PLAYER, 100,
             RASTERFALL_AI_POLICY_MANAGED_SIMPLE);
-    session->flag_count = 5;
+    session->flag_count = 0;
     session->carried_flag = -1;
     session->assignment_flag = 0;
+    session->hurd_outpost.flag_index = -1;
+    for (i = 0; i < RASTERFALL_HURD_SQUAD_SIZE; i++)
+        session->hurd_outpost.squad_actor_indices[i] = -1;
+    if (session->content.campaign_flags_enabled) {
+    session->flag_count = 5;
     /* Keep the initial flag at the world origin while the player starts
      * 500 units closer to the Eula display. */
     session_init_flag(session, 0, 0, 0);
     /* Restore the original Maid guard post and its flag index. */
-    session_init_flag(session, RASTERFALL_MAID_FLAG_INDEX, -12000, 0);
-    session_init_flag(session, RASTERFALL_HURD_FLAG_INDEX,
-                      HURD_FLAG_X, HURD_FLAG_Z);
-    session_init_flag(session, RASTERFALL_STANDARD_FLAG_INDEX,
-                      STANDARD_FLAG_X, STANDARD_FLAG_Z);
+    { int fx = -12000, fz = 0;
+      session_content_flag_position(session, "maid_alpha", &fx, &fz);
+      session_init_flag(session, RASTERFALL_MAID_FLAG_INDEX, fx, fz); }
+    { int fx = HURD_FLAG_X, fz = HURD_FLAG_Z;
+      session_content_flag_position(session, "hurd", &fx, &fz);
+      session_init_flag(session, RASTERFALL_HURD_FLAG_INDEX, fx, fz); }
+    { int fx = STANDARD_FLAG_X, fz = STANDARD_FLAG_Z;
+      session_content_flag_position(session, "standard_response", &fx, &fz);
+      session_init_flag(session, RASTERFALL_STANDARD_FLAG_INDEX, fx, fz); }
     session->flags[RASTERFALL_STANDARD_FLAG_INDEX].color = 0x2B765B;
     strncpy(session->flags[RASTERFALL_STANDARD_FLAG_INDEX].label, "RESP", 4);
     session->flags[RASTERFALL_STANDARD_FLAG_INDEX].label[4] = 0;
-    session_init_flag(session, RASTERFALL_ASSAULT_FLAG_INDEX,
-                      ASSAULT_FLAG_X, ASSAULT_FLAG_Z);
+    { int fx = ASSAULT_FLAG_X, fz = ASSAULT_FLAG_Z;
+      session_content_flag_position(session, "assault", &fx, &fz);
+      session_init_flag(session, RASTERFALL_ASSAULT_FLAG_INDEX, fx, fz); }
     session->flags[RASTERFALL_ASSAULT_FLAG_INDEX].color = 0xB75A2C;
     strncpy(session->flags[RASTERFALL_ASSAULT_FLAG_INDEX].label, "ASLT", 4);
     session->flags[RASTERFALL_ASSAULT_FLAG_INDEX].label[4] = 0;
@@ -497,8 +618,6 @@ void rasterfall_session_reset(struct rasterfall_session *session,
     session->hurd_outpost.maxx = HURD_CONTROL_MAX_X;
     session->hurd_outpost.minz = HURD_CONTROL_MIN_Z;
     session->hurd_outpost.maxz = HURD_CONTROL_MAX_Z;
-    for (i = 0; i < RASTERFALL_HURD_SQUAD_SIZE; i++)
-        session->hurd_outpost.squad_actor_indices[i] = -1;
     for (i = 0; i < 3; i++)
         if (session->game_state.actors[i].active &&
             session->game_state.actors[i].kind == TOY_GAME_ACTOR_AI &&
@@ -510,7 +629,7 @@ void rasterfall_session_reset(struct rasterfall_session *session,
                                   RASTERFALL_STANDARD_FLAG_INDEX);
     session_assign_roster_to_flag(session, RASTERFALL_SQUAD_ASSAULT,
                                   RASTERFALL_ASSAULT_FLAG_INDEX);
-    {
+    if (session->content.spawn_maid_squad) {
         static const char *maid_names[RASTERFALL_MAID_SQUAD_SIZE] = {
             "ANIME_GUARD_1", "ANIME_GUARD_2",
             "ANIME_GUARD_3", "ANIME_GUARD_4"
@@ -518,22 +637,18 @@ void rasterfall_session_reset(struct rasterfall_session *session,
         for (i = 0; i < RASTERFALL_MAID_SQUAD_SIZE; i++) {
             int actor_id = toy_game_add_anime_flag_guard(
                 &session->game_state, i + 1, RASTERFALL_CHARACTER_MAID,
-                session->flags[RASTERFALL_MAID_FLAG_INDEX].x +
-                    session->flags[RASTERFALL_MAID_FLAG_INDEX].slot_offsets[i][0],
-                session->flags[RASTERFALL_MAID_FLAG_INDEX].z +
-                    session->flags[RASTERFALL_MAID_FLAG_INDEX].slot_offsets[i][1],
+                session->content.actors[i].x,
+                session->content.actors[i].z,
                 maid_names[i], RASTERFALL_MAID_FLAG_INDEX);
             if (actor_id > 0)
                 toy_game_assign_actor_deployment(
                     &session->game_state, actor_id - 1,
-                    session->flags[RASTERFALL_MAID_FLAG_INDEX].x +
-                        session->flags[RASTERFALL_MAID_FLAG_INDEX].slot_offsets[i][0],
-                    session->flags[RASTERFALL_MAID_FLAG_INDEX].z +
-                        session->flags[RASTERFALL_MAID_FLAG_INDEX].slot_offsets[i][1],
+                    session->content.actors[i].x,
+                    session->content.actors[i].z,
                     RASTERFALL_MAID_FLAG_INDEX);
         }
     }
-    {
+    if (session->content.spawn_campaign_support) {
         static const char *hurd_names[] = {
             "GUNSMITH", "LOGISTICS", "MEDIC", "GUARD"
         };
@@ -550,10 +665,8 @@ void rasterfall_session_reset(struct rasterfall_session *session,
         for (i = 0; i < 4; i++) {
             int actor_id = toy_game_add_character_flag_guard(
                 &session->game_state, hurd_character_ids[i],
-                session->flags[RASTERFALL_HURD_FLAG_INDEX].x +
-                    session->flags[RASTERFALL_HURD_FLAG_INDEX].slot_offsets[i][0],
-                session->flags[RASTERFALL_HURD_FLAG_INDEX].z +
-                    session->flags[RASTERFALL_HURD_FLAG_INDEX].slot_offsets[i][1],
+                session->content.actors[4 + i].x,
+                session->content.actors[4 + i].z,
                 hurd_names[i], RASTERFALL_HURD_FLAG_INDEX);
             if (actor_id > 0) {
                 int actor_index = actor_id - 1;
@@ -562,13 +675,12 @@ void rasterfall_session_reset(struct rasterfall_session *session,
                                        hurd_weapons[i]);
                 toy_game_assign_actor_deployment(
                     &session->game_state, actor_index,
-                    session->flags[RASTERFALL_HURD_FLAG_INDEX].x +
-                        session->flags[RASTERFALL_HURD_FLAG_INDEX].slot_offsets[i][0],
-                    session->flags[RASTERFALL_HURD_FLAG_INDEX].z +
-                        session->flags[RASTERFALL_HURD_FLAG_INDEX].slot_offsets[i][1],
+                    session->content.actors[4 + i].x,
+                    session->content.actors[4 + i].z,
                     RASTERFALL_HURD_FLAG_INDEX);
             }
         }
+    }
     }
     toy_game_local_player_actor(&session->game_state)->x = camera->x;
     toy_game_local_player_actor(&session->game_state)->z = camera->z;
@@ -610,6 +722,7 @@ void rasterfall_session_reset(struct rasterfall_session *session,
     session->shop_request_only = 0;
     session_set_air_walls(session, 1);
     rasterfall_map_reset_interactables(&session->map_ops);
+    session_add_content_terminals(session);
 }
 
 void rasterfall_camera_rotate(struct camera *camera, int turn, int pitch)
@@ -957,6 +1070,14 @@ static void session_client_interact_banner(struct rasterfall_session *session)
         session->banner_text = "WEAPON PICKED UP";
     else if (it->kind == TOY_MAP_PICKUP_PILL)
         session->banner_text = "PILL PICKED UP";
+    else if (it->kind == TOY_MAP_PICKUP_STATION_TERMINAL)
+        session->banner_text = "STATION TERMINAL OPENING";
+    else if (it->kind == TOY_MAP_PICKUP_OPERATIONS_TERMINAL)
+        session->banner_text = "OPERATIONS: CAMPAIGN 01 READY";
+    else if (it->kind == TOY_MAP_PICKUP_SUPER_TERMINAL)
+        session->banner_text = "SUPER TERMINAL ACCESS RESTRICTED";
+    else if (it->kind == TOY_MAP_PICKUP_RETURN_OUTPOST)
+        session->banner_text = "RETURNING TO OUTPOST";
     else
         session->banner_text = "INTERACTION SENT TO HOST";
 }
@@ -981,6 +1102,31 @@ static void session_interact(struct rasterfall_session *session,
         session->banner_ms = 0;
         session->banner_text = NULL;
         toy_game_local_player_actor(&session->game_state)->control_disabled = 1;
+        return;
+    }
+    if (it->kind == TOY_MAP_PICKUP_STATION_TERMINAL) {
+        session->station_gui_request = 1;
+        session->banner_ms = 0;
+        session->banner_text = NULL;
+        return;
+    }
+    if (it->kind == TOY_MAP_PICKUP_OPERATIONS_TERMINAL) {
+        rasterfall_session_request_world(session,
+                                         RASTERFALL_WORLD_CAMPAIGN_01);
+        session->banner_ms = 800;
+        session->banner_text = "DEPLOYING CAMPAIGN 01";
+        return;
+    }
+    if (it->kind == TOY_MAP_PICKUP_SUPER_TERMINAL) {
+        session->banner_ms = 2200;
+        session->banner_success = 0;
+        session->banner_text = "SUPER TERMINAL: ACCESS RESTRICTED";
+        return;
+    }
+    if (it->kind == TOY_MAP_PICKUP_RETURN_OUTPOST) {
+        rasterfall_session_request_world(session, RASTERFALL_WORLD_OUTPOST);
+        session->banner_ms = 800;
+        session->banner_text = "RETURNING TO OUTPOST";
         return;
     }
     if (it->kind == TOY_MAP_PICKUP_BUTTON) {

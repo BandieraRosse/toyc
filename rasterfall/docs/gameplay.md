@@ -1,11 +1,20 @@
 # 玩法、会话、地图与 AI
 
-> 文档更新：2026-09-10
+> 文档更新：2026-09-12
 > 源码核对基线：工作区（敌人 dying slot 生命周期 1000ms；Jesus 使用稳定 RF Rifleman identity；两个正式四人 squad roster 已分别编入中央/东部旗帜；model resource/instance/gear/palette 仍只属于 presentation；其余玩法真值不变）
 
 > 源码核对补充：正式 Hurd 四人使用专用 character IDs；原 Maid 四人旗卫在 flag 1 原位恢复并使用 Maid character/profession；普通 player、Eula、佣兵为 NONE；固定角色索引、HURD 旗帜 assignment 与派生 control status。
 
-地图初始普通队友 Jesus 现在携带 `RASTERFALL_CHARACTER_RF_RIFLEMAN` 稳定视觉身份。`toy_game_actor`
+## World Content V0
+
+Spatial Map remains authoritative for terrain, collision and neutral spatial
+data. Rasterfall Game keeps a small `rasterfall_world_content` policy in the
+session: Outpost builds Null and station content, while Campaign 01 builds
+the campaign roster, Maid formation, flags and support actors. Campaign-only
+actors are not created in Outpost gameplay state. The policy is Game-owned and
+is rebuilt when a world loads; it is not part of RF Core or Map Runtime.
+
+Campaign Content 创建的普通队友 Jesus 现在携带 `RASTERFALL_CHARACTER_RF_RIFLEMAN` 稳定视觉身份。`toy_game_actor`
 仍只保存 character ID、位置/朝向、武器与 animation semantic/time 等玩法真值；共享 body/gear resource、
 per-actor model instance 和 palette 均由 renderer 的轻量 character presentation runtime 管理。资源缺失、
 recipe 缺失、instance 初始化失败或当前 downed path 不适用时，渲染器回退既有 procedural actor，

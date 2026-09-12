@@ -4,6 +4,14 @@
 > 源码核对基线：工作区（Runtime Map V1 projection ownership cleanup；正式 `rasterfall.map` 为完整 V1 source；`rasterfall_legacy.map` 仅保留显式 fallback；layout exporter 默认读取 V1 source）
 
 > 源码核对补充：北侧通道扩宽为 Hurd 防区，原中央北侧刷怪区拆到左右两翼。
+> 源码核对补充：独立 `outpost.map` 使用 V1 Runtime Map；三终端与 Null 已由对应 World Content 定义提供。
+
+## World Definition V1
+
+`.map` 只描述 Spatial Map 的空间事实；`assets/worlds/*.content` 由
+Game-owned World Content parser 单独加载，描述 actor、terminal、flag、
+formation 与 fixture。静态 world identity 将两者绑定，但 content 不进入
+Runtime Map。`map-layout` 仍只导出 Spatial Map，`world-layout` 才叠加内容层。
 
 ## Map Compiler V1
 
@@ -65,6 +73,11 @@ AI、prop 和 renderer 行为保持不变；Runtime Map 是 authoritative world 
 使用。`--legacy-map` 和 `rasterfall_session_load_legacy()` 是当前保留的 legacy compatibility entry。V1 的 parser、IR、
 Runtime Map 和 projection adapter 是默认输入链路；修改语法时必须同时检查 parser、runtime、玩法绑定、
 碰撞/导航、渲染和逻辑测试。
+
+Outpost V0 使用同一 V1 链路，源文件为 `assets/maps/outpost.map`。`station_terminal`、
+`operations_terminal`、`super_terminal` 和 `return_outpost` 是 Game-owned interaction vocabulary，分别
+映射为 Station GUI 请求、Campaign 01 world request、锁定反馈和返回请求；它们不是 Core API，也不改变
+Runtime Map ownership。
 
 ## 几何与碰撞
 

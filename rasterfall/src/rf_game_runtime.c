@@ -2479,6 +2479,25 @@ int rf_game_update(struct rf_game_runtime *runtime,
         }
     }
 
+    {
+        enum rasterfall_world_id requested_world;
+        if (rasterfall_session_take_world_request(game_session,
+                                                  &requested_world)) {
+            if (rf_game_request_world(runtime, requested_world) < 0) {
+                game_session->banner_ms = 2200;
+                game_session->banner_success = 0;
+                game_session->banner_text = "WORLD LOAD FAILED";
+            }
+        }
+    }
+    if (game_session->station_gui_request) {
+        game_session->station_gui_request = 0;
+        rf_gui_set_active(&runtime->gui, 1);
+        rf_core_set_pointer_lock(runtime->core, 0);
+        rf_app_manager_open_icon(&runtime->app_manager, 2, 1024, 720);
+        runtime->lifecycle_paused = 1;
+    }
+
     rasterfall_effects_sync_fire_zones(game_effects,
                                        &game_session->game_state);
     rasterfall_effects_sync_projectile_flashes(
@@ -2955,6 +2974,8 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     if (rf_game_init(&game_runtime, &core, &session,
                      config->options && config->options->legacy_map ?
                      "rasterfall/assets/maps/rasterfall_legacy.map" :
+                     logic_test ?
+                     "rasterfall/assets/maps/rasterfall.map" :
                      config->map_path ? config->map_path :
                      "rasterfall/assets/maps/rasterfall.map") < 0) {
         __fprintf(2, "rasterfall: cannot load map rasterfall/assets/maps/rasterfall.map\n");
@@ -3063,8 +3084,9 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     rf_windows_log("startup: window opened");
 startup_again:
     {
-        int menu_selected = requested_net_mode != RASTERFALL_NET_OFF ||
-                            frame_limit > 0 || auto_mode || dump_path;
+        /* The Game policy owns the default landing world.  Network and
+         * diagnostic modes still bypass the old selection screen explicitly. */
+        int menu_selected = 1;
         strcpy(selected_address, net_address ? net_address : "127.0.0.1");
         if (!menu_selected && !run_startup_menu(&core,
                                                 &requested_net_mode,
@@ -3700,6 +3722,11 @@ startup_again:
                     rf_game_update(&game_runtime, &command,
                                    FIXED_STEP_US / 1000);
                     camera = game_runtime.camera;
+                    if (game_runtime.gui.active) {
+                        paused = 1;
+                        rf_core_set_pointer_lock(&core, 0);
+                        pointer_lock_requested = 0;
+                    }
                     consume_game_command_edges(&input, pending_key_edges);
                     pointer_turn_pending = 0;
                     pointer_pitch_pending = 0;

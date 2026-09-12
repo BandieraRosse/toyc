@@ -104,6 +104,8 @@ int rf_game_init(struct rf_game_runtime *runtime,
 int rf_game_update(struct rf_game_runtime *runtime,
                    const struct rasterfall_command *command,
                    int dt_ms);
+int rf_game_request_world(struct rf_game_runtime *runtime,
+                          enum rasterfall_world_id world);
 int rf_game_render(struct rf_game_runtime *runtime,
                    struct toy_renderer *renderer,
                    struct toy_surface *surface);

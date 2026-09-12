@@ -11,6 +11,7 @@
 #include "rasterfall_animation_composition.h"
 #include "rasterfall_calibration.h"
 #include "rasterfall_roster.h"
+#include "rasterfall_world_content.h"
 
 #define RASTERFALL_PLAYER_RADIUS 180
 #define RASTERFALL_MOVE_STEP TOY_CONFIG_PLAYER_MOVE_STEP
@@ -127,6 +128,11 @@ enum rasterfall_pose_debug_action { RASTERFALL_POSE_DEBUG_NONE, RASTERFALL_POSE_
 enum rasterfall_humanoid_debug_action { RASTERFALL_HUMANOID_DEBUG_IDLE, RASTERFALL_HUMANOID_DEBUG_WALK, RASTERFALL_HUMANOID_DEBUG_AIM, RASTERFALL_HUMANOID_DEBUG_RECOIL, RASTERFALL_HUMANOID_DEBUG_ACTION_COUNT };
 
 struct rasterfall_session {
+    enum rasterfall_world_id world_id;
+    struct rasterfall_world_content content;
+    enum rasterfall_world_id world_request;
+    int world_request_pending;
+    int station_gui_request;
     /* Existing gameplay view projected from map_ops.runtime.  Do not treat
      * this toy_map storage as the authoritative map representation. */
     struct toy_map level;
@@ -188,6 +194,10 @@ int rasterfall_session_load_legacy(struct rasterfall_session *session,
 const struct toy_game_actor *rasterfall_session_local_player_const(
     const struct rasterfall_session *session);
 void rasterfall_session_unload(struct rasterfall_session *session);
+int rasterfall_session_request_world(struct rasterfall_session *session,
+                                     enum rasterfall_world_id world);
+int rasterfall_session_take_world_request(struct rasterfall_session *session,
+                                          enum rasterfall_world_id *world);
 void rasterfall_session_reset(struct rasterfall_session *session,
                               struct camera *camera, uint64_t seed);
 /* 单人托管玩家开关。启用后，step 会用最小托管策略生成玩家命令。 */

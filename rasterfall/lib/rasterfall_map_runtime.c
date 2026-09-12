@@ -78,7 +78,11 @@ static const struct action_name action_names[] = {
     {"animation_composition", RF_MAP_ACTION_ANIMATION_COMPOSITION},
     {"humanoid_pose_debug", RF_MAP_ACTION_HUMANOID_POSE_DEBUG},
     {"west_corridor", RF_MAP_ACTION_WEST_CORRIDOR},
-    {"west_corridor_no_tank", RF_MAP_ACTION_WEST_CORRIDOR_NO_TANK}
+    {"west_corridor_no_tank", RF_MAP_ACTION_WEST_CORRIDOR_NO_TANK},
+    {"station_terminal", RF_MAP_ACTION_STATION_TERMINAL},
+    {"operations_terminal", RF_MAP_ACTION_OPERATIONS_TERMINAL},
+    {"super_terminal", RF_MAP_ACTION_SUPER_TERMINAL},
+    {"return_outpost", RF_MAP_ACTION_RETURN_OUTPOST}
 };
 
 int rf_map_runtime_action_from_name(const char *name)

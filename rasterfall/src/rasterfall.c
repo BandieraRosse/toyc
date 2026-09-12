@@ -17,6 +17,6 @@ int main(int argc, char **argv)
     if (result != 0) return result < 0 ? 2 : 0;
 
     game_config.options = &options;
-    game_config.map_path = "rasterfall/assets/maps/rasterfall.map";
+    game_config.map_path = "rasterfall/assets/maps/outpost.map";
     return rf_game_runtime_run(&game_config);
 }

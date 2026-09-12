@@ -1,9 +1,14 @@
 # 渲染、HUD、特效与性能
 
-> 文档更新：2026-09-11
+> 文档更新：2026-09-12
 > 源码核对基线：工作区（Enemy Visual V2 六份公开 RFM2 / renderer-only family；Character Material Lighting Policy V1；Enemy Presentation V1 1000ms ballistic body fade / rotating irregular fragments / directional trailing emitter / 10% legacy death；Humanoid Action Composition V1.1 additive recoil；modular RFANIM 独立 locomotion 时钟与双手持枪轨道；RFCHAR +Z forward basis；PRIMARY_GRIP weapon presentation；开发者 world strip 与战斗区共用 modular path；出生点 V2 action debug station；双正式四人 squad；Lighting V1；renderer frame ownership cleanup）
 
 > 源码核对补充：正式 Hurd actor 通过四个专用 character profile 进入职业外观；恢复的四名 Maid 旗卫以 Maid character profile 接入 actor，同时继续由 anime identity 选择骨骼模型；普通 player、Eula、佣兵解析为 NONE。
+
+正常 world render 的开发展示由 Game-owned World Content policy 控制：
+`model_gallery` 与 `Character Test Strip` 只在 Campaign 01 启用，Outpost
+不会调用这些 Campaign fixture（包括固定 Eula、developer strip 与 Humanoid debug）。明确的 visual/model diagnostic CLI 仍
+使用各自的离屏 fixture，不受正常 world policy 影响。
 
 Profession Modularization V1 的提交顺序是 finalized shared-body instance → passive rigid gear → active
 weapon presentation；active weapon 从 finalized instance 的 `WEAPON_R` 对齐 authored `PRIMARY_GRIP`，不

@@ -104,7 +104,7 @@ int rf_app_manager_register_defaults(struct rf_app_manager *m)
     if (rf_app_manager_register(m, RF_APP_PERSONNEL, 1, "PERSONNEL",
         "PERSONNEL DATA UNAVAILABLE", NULL, render_personnel) < 0) return -1;
     if (rf_app_manager_register(m, RF_APP_TERMINAL, 2, "TERMINAL",
-        "TERMINAL\n\nRF TERMINAL FRONTEND\n\nUse the developer console for\ncommands and diagnostics.\n\nApplication is display-only here.", NULL, NULL) < 0) return -1;
+        "TERMINAL\n\nSTATION TERMINAL VIEW\n\nRF TERMINAL FRONTEND\n\nUse the developer console for\ncommands and diagnostics.\n\nApplication is display-only here.", NULL, NULL) < 0) return -1;
     return 0;
 }
 

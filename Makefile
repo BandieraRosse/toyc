@@ -783,6 +783,7 @@ RASTERFALL_ASSET_SRC := $(BUILD)/rasterfall_assets.c
 RASTERFALL_ASSET_OBJ := $(BUILD)/rasterfall_assets.o
 APP_EXTRA_OBJS_rasterfall := $(BUILD)/rf_core_filesystem.o $(BUILD)/rf_core_host.o $(BUILD)/rf_game_lifecycle.o $(BUILD)/rf_game_runtime.o $(BUILD)/rasterfall_action.o $(BUILD)/rasterfall_character.o $(BUILD)/rasterfall_roster.o $(BUILD)/rasterfall_prop.o $(BUILD)/rasterfall_game.o $(BUILD)/rasterfall_sfx.o $(BUILD)/rasterfall_map_engine.o $(BUILD)/rasterfall_map.o $(BUILD)/rasterfall_map_runtime.o $(BUILD)/rasterfall_map_parser.o $(BUILD)/rasterfall_session.o $(BUILD)/rasterfall_ai.o $(BUILD)/rasterfall_net.o $(BUILD)/rasterfall_net_transport.o $(BUILD)/rasterfall_net_discovery.o $(BUILD)/rasterfall_hud.o $(BUILD)/rasterfall_audio.o $(BUILD)/rasterfall_effects.o $(BUILD)/rasterfall_perf.o $(BUILD)/rasterfall_sky.o $(BUILD)/rasterfall_viewmodel.o $(BUILD)/rasterfall_calibration.o $(BUILD)/rasterfall_console.o $(BUILD)/rasterfall_options.o $(BUILD)/rasterfall_render.o $(BUILD)/rasterfall_render_frontend.o $(BUILD)/rasterfall_model.o $(BUILD)/rasterfall_humanoid_basis.o $(BUILD)/rasterfall_humanoid_retarget.o $(BUILD)/rasterfall_glb_animation.o $(BUILD)/rasterfall_vmd.o
 RASTERFALL_OPT_DEP := $(BUILD)/.rasterfall-opt
+APP_EXTRA_OBJS_rasterfall += $(BUILD)/rasterfall_world_content.o
 APP_EXTRA_OBJS_rasterfall += $(BUILD)/rasterfall_gui.o
 APP_EXTRA_OBJS_rasterfall += $(BUILD)/rasterfall_app.o
 APP_EXTRA_OBJS_rasterfall += $(BUILD)/rf_application_projection.o
@@ -930,12 +931,23 @@ $(BUILD)/rasterfall_map.o: $(RASTERFALL_SRC)/rasterfall_map.c \
 
 $(BUILD)/rasterfall_session.o: $(RASTERFALL_SRC)/rasterfall_session.c \
                                $(RASTERFALL_INC)/rasterfall_session.h \
+                               $(RASTERFALL_INC)/rasterfall_world_content.h \
                                $(RASTERFALL_INC)/rasterfall_model.h \
                                $(RASTERFALL_INC)/toy_game.h \
                                $(RASTERFALL_INC)/rasterfall_camera.h \
                                $(RASTERFALL_INC)/rasterfall_map.h | $(BUILD)
 	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
 	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
+
+$(BUILD)/rasterfall_world_content.o: $(RASTERFALL_SRC)/rasterfall_world_content.c \
+                                    $(RASTERFALL_INC)/rasterfall_world_content.h | $(BUILD)
+	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
+	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
+
+$(BUILD)/rasterfall_world_content_self.o: $(RASTERFALL_SRC)/rasterfall_world_content.c \
+                                         $(RASTERFALL_INC)/rasterfall_world_content.h | $(BUILD)
+	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
+	$(GCC) $(SELF_LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 
 $(BUILD)/rasterfall_ai.o: $(RASTERFALL_SRC)/rasterfall_ai.c \
                           $(RASTERFALL_INC)/rasterfall_ai.h \
@@ -1210,7 +1222,7 @@ $(BUILD)/map-runtime-test: $(BUILD)/map_runtime_test | $(BUILD)
 test-map-runtime: app-map-runtime-test
 	tools/test_map_runtime.sh
 
-.PHONY: setup-map-layout map-layout map-layout-query test-map-layout-export test-map-layout-query generate-gb2312-font
+.PHONY: setup-map-layout map-layout map-layout-query test-map-layout-export test-map-layout-query world-layout test-world-content generate-gb2312-font
 generate-gb2312-font:
 	python3 tools/fonts/build_gb2312_16.py \
 		rasterfall/assets/fonts/source/wenquanyi_12pt.bdf.gz \
@@ -1226,6 +1238,14 @@ map-layout:
 
 map-layout-query:
 	python3 tools/map_layout_query.py tmp/map-layout/output.json summary
+
+world-layout:
+	@test -n "$(WORLD)" || (echo "usage: make world-layout WORLD=outpost" >&2; exit 2)
+	@case "$(WORLD)" in outpost) map=rasterfall/assets/maps/outpost.map; content=rasterfall/assets/worlds/outpost.content;; campaign_01) map=rasterfall/assets/maps/rasterfall.map; content=rasterfall/assets/worlds/campaign_01.content;; *) echo "unknown WORLD=$(WORLD)" >&2; exit 2;; esac; \
+		python3 tools/world_layout_export.py "$$map" "$$content" --output-dir "tmp/world-layout/$(WORLD)"
+
+test-world-content:
+	python3 tools/test_world_content.py
 
 test-map-layout-export:
 	@if test ! -x .venv/map-layout/bin/python; then echo "run 'make setup-map-layout' first" >&2; exit 2; fi
@@ -1300,6 +1320,7 @@ SELF_APP_NAMES   := $(filter-out rasterfall,$(APP_NAMES))
 SELF_APP_OBJS    := $(foreach name,$(SELF_APP_NAMES),$(BUILD)/$(name)_self.o)
 SELF_APP_TARGETS := $(foreach name,$(SELF_APP_NAMES),$(BUILD)/$(name)_self)
 SELF_APP_EXTRA_OBJS_rasterfall := $(BUILD)/rasterfall_game_self.o $(BUILD)/rasterfall_sfx_self.o $(BUILD)/rasterfall_map_engine_self.o $(BUILD)/rasterfall_map_parser_self.o $(BUILD)/rasterfall_map_runtime_self.o $(BUILD)/rasterfall_map_self.o $(BUILD)/rasterfall_session_self.o $(BUILD)/rasterfall_ai_self.o $(BUILD)/rasterfall_net_self.o $(BUILD)/rasterfall_net_transport_self.o $(BUILD)/rasterfall_net_discovery_self.o $(BUILD)/rasterfall_hud_self.o $(BUILD)/rasterfall_audio_self.o $(BUILD)/rasterfall_effects_self.o $(BUILD)/rasterfall_perf_self.o $(BUILD)/rasterfall_sky_self.o $(BUILD)/rasterfall_viewmodel_self.o $(BUILD)/rasterfall_options_self.o $(BUILD)/rasterfall_render_self.o $(BUILD)/rasterfall_render_frontend_self.o $(BUILD)/rasterfall_model_self.o $(BUILD)/rasterfall_humanoid_basis_self.o $(BUILD)/rasterfall_humanoid_retarget_self.o
+SELF_APP_EXTRA_OBJS_rasterfall += $(BUILD)/rasterfall_world_content_self.o
 SELF_APP_EXTRA_OBJS_glb_inspect := $(BUILD)/rasterfall_humanoid_basis_self.o \
 	$(BUILD)/rasterfall_humanoid_retarget_self.o
 
