@@ -68,7 +68,7 @@
     ((TOY_CONFIG_CHARGER_KNOCKBACK_DISTANCE + \
       TOY_CONFIG_AIRBORNE_FLIGHT_STEPS / 2) / \
      TOY_CONFIG_AIRBORNE_FLIGHT_STEPS)
-#define TOY_CONFIG_PLAYER_KNOCKBACK_COOLDOWN_MS 5000 /* 玩家击飞冷却 */
+#define TOY_CONFIG_PLAYER_KNOCKBACK_COOLDOWN_MS 5000 /* 玩家击飞敌人的技能冷却；不代表玩家被击飞限制 */
 
 /* Pistol: magazine, reserve, cooldown, reload, automatic, pellets, spread, slot, damage. */
 #define TOY_CONFIG_PISTOL_MAG                  15  /* 弹匣容量 */
