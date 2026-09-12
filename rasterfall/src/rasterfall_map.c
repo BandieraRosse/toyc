@@ -177,7 +177,7 @@ static int runtime_action_to_pickup(int action_id, int *weapon)
     }
 }
 
-static const struct rf_map_runtime_interaction *runtime_interaction_legacy_at(
+static const struct rf_map_runtime_interaction *runtime_interaction_projection_at(
     const struct rf_map_runtime *runtime, int index)
 {
     int i;
@@ -190,7 +190,7 @@ static const struct rf_map_runtime_interaction *runtime_interaction_legacy_at(
     return NULL;
 }
 
-static const struct rf_map_runtime_region *runtime_region_legacy_at(
+static const struct rf_map_runtime_region *runtime_region_projection_at(
     const struct rf_map_runtime *runtime, int index)
 {
     const struct rf_map_runtime_region *fallback = NULL;
@@ -207,7 +207,7 @@ static const struct rf_map_runtime_region *runtime_region_legacy_at(
     return fallback;
 }
 
-static const struct rf_map_runtime_actor_spawn *runtime_spawn_legacy_at(
+static const struct rf_map_runtime_actor_spawn *runtime_spawn_projection_at(
     const struct rf_map_runtime *runtime, int index)
 {
     int i;
@@ -219,7 +219,7 @@ static const struct rf_map_runtime_actor_spawn *runtime_spawn_legacy_at(
     return NULL;
 }
 
-static const struct rf_map_runtime_pickup *runtime_pickup_legacy_at(
+static const struct rf_map_runtime_pickup *runtime_pickup_projection_at(
     const struct rf_map_runtime *runtime, int index)
 {
     int i;
@@ -231,7 +231,7 @@ static const struct rf_map_runtime_pickup *runtime_pickup_legacy_at(
     return NULL;
 }
 
-static const struct rf_map_runtime_object *runtime_object_legacy_at(
+static const struct rf_map_runtime_object *runtime_object_projection_at(
     const struct rf_map_runtime *runtime, int index)
 {
     int i;
@@ -243,7 +243,7 @@ static const struct rf_map_runtime_object *runtime_object_legacy_at(
     return NULL;
 }
 
-static const struct rf_map_runtime_collision *runtime_collision_legacy_at(
+static const struct rf_map_runtime_collision *runtime_collision_projection_at(
     const struct rf_map_runtime *runtime, int index)
 {
     int i;
@@ -255,7 +255,7 @@ static const struct rf_map_runtime_collision *runtime_collision_legacy_at(
     return NULL;
 }
 
-static const struct rf_map_runtime_surface *runtime_surface_legacy_at(
+static const struct rf_map_runtime_surface *runtime_surface_projection_at(
     const struct rf_map_runtime *runtime, int index)
 {
     int i;
@@ -267,7 +267,7 @@ static const struct rf_map_runtime_surface *runtime_surface_legacy_at(
     return NULL;
 }
 
-static const struct rf_map_runtime_render *runtime_render_legacy_at(
+static const struct rf_map_runtime_render *runtime_render_projection_at(
     const struct rf_map_runtime *runtime, int index)
 {
     int i;
@@ -327,7 +327,46 @@ static int runtime_ai_class(const char *name)
     return (int)strtol(name, NULL, 10);
 }
 
-int rasterfall_map_apply_runtime_legacy(struct rasterfall_map_state *map)
+static int runtime_projection_count_kind(const struct rf_map_runtime *runtime,
+                                         const char *kind)
+{
+    int i, count = 0;
+    for (i = 0; i < rf_map_runtime_region_count(runtime); i++) {
+        const struct rf_map_runtime_region *region =
+            rf_map_runtime_region_at(runtime, i);
+        if (region && !strcmp(region->kind, kind)) count++;
+    }
+    return count;
+}
+
+int rasterfall_map_projection_counts_match(
+    const struct rasterfall_map_state *map)
+{
+    if (!map || !map->level || !map->runtime_loaded || !map->interactable_count)
+        return 0;
+    const struct rf_map_runtime *runtime = &map->runtime;
+    int interactables = rf_map_runtime_pickup_count(runtime) +
+                        rf_map_runtime_interaction_count(runtime);
+    return map->level->primitive_count ==
+               rf_map_runtime_collision_count(runtime) &&
+           map->level->draw_count == rf_map_runtime_render_count(runtime) &&
+           map->level->safe_count == runtime_projection_count_kind(runtime, "safe") &&
+           map->level->spawn_count == runtime_projection_count_kind(runtime, "spawn") &&
+           map->level->ai_spawn_count == rf_map_runtime_actor_spawn_count(runtime) &&
+           map->level->pickup_count == interactables &&
+           *map->interactable_count == interactables;
+}
+
+/*
+ * Runtime Map projection layer.
+ * Runtime Map is authoritative world representation.
+ * This creates the current gameplay-facing view.
+ *
+ * The projection retains explicit legacy_index lookups only because the
+ * existing toy_map/gameplay-facing arrays still require stable slots.
+ * This function is not a legacy loader.
+ */
+int rasterfall_map_project_runtime(struct rasterfall_map_state *map)
 {
     int i, surface_adapter_count = 0;
     const struct rf_map_runtime_region *region;
@@ -360,7 +399,7 @@ int rasterfall_map_apply_runtime_legacy(struct rasterfall_map_state *map)
     for (i = 0; i < rf_map_runtime_render_count(&map->runtime) &&
                 map->level->draw_count < TOY_MAP_MAX_DRAW; i++) {
         const struct rf_map_runtime_render *render =
-            runtime_render_legacy_at(&map->runtime, i);
+            runtime_render_projection_at(&map->runtime, i);
         struct toy_map_draw *draw;
         int type;
         const char *text;
@@ -396,9 +435,9 @@ int rasterfall_map_apply_runtime_legacy(struct rasterfall_map_state *map)
     for (i = 0; i < rf_map_runtime_collision_count(&map->runtime) &&
                 map->level->primitive_count < TOY_MAP_MAX_PRIMITIVES; i++) {
         const struct rf_map_runtime_collision *collision =
-            runtime_collision_legacy_at(&map->runtime, i);
+            runtime_collision_projection_at(&map->runtime, i);
         const struct rf_map_runtime_surface *surface =
-            runtime_surface_legacy_at(&map->runtime, i);
+            runtime_surface_projection_at(&map->runtime, i);
         struct toy_map_primitive *primitive;
         int shape;
         if (!collision) continue;
@@ -459,7 +498,7 @@ int rasterfall_map_apply_runtime_legacy(struct rasterfall_map_state *map)
     /* V1 source order has no semantics.  legacy_index is explicit adapter
      * metadata used only while old gameplay arrays still require an order. */
     for (i = 0; i < rf_map_runtime_region_count(&map->runtime); i++) {
-        region = runtime_region_legacy_at(&map->runtime, i);
+        region = runtime_region_projection_at(&map->runtime, i);
         if (!region) continue;
         if (!strcmp(region->kind, "safe") &&
             map->level->safe_count < TOY_MAP_MAX_ZONES) {
@@ -479,7 +518,7 @@ int rasterfall_map_apply_runtime_legacy(struct rasterfall_map_state *map)
 
     map->level->spawn_count = 0;
     for (i = 0; i < rf_map_runtime_region_count(&map->runtime); i++) {
-        region = runtime_region_legacy_at(&map->runtime, i);
+        region = runtime_region_projection_at(&map->runtime, i);
         if (!region) continue;
         if (!strcmp(region->kind, "spawn") &&
             map->level->spawn_count < TOY_MAP_MAX_ZONES) {
@@ -501,7 +540,7 @@ int rasterfall_map_apply_runtime_legacy(struct rasterfall_map_state *map)
 
     map->level->base_count = 0;
     for (i = 0; i < rf_map_runtime_region_count(&map->runtime); i++) {
-        region = runtime_region_legacy_at(&map->runtime, i);
+        region = runtime_region_projection_at(&map->runtime, i);
         if (!region) continue;
         if (!strcmp(region->kind, "base") &&
             map->level->base_count < TOY_MAP_MAX_BASES) {
@@ -523,7 +562,7 @@ int rasterfall_map_apply_runtime_legacy(struct rasterfall_map_state *map)
     for (i = 0; i < rf_map_runtime_actor_spawn_count(&map->runtime) &&
                 map->level->ai_spawn_count < TOY_MAP_MAX_AI_SPAWNS; i++) {
         const struct rf_map_runtime_actor_spawn *spawn =
-            runtime_spawn_legacy_at(&map->runtime, i);
+            runtime_spawn_projection_at(&map->runtime, i);
         struct toy_map_ai_spawn *old;
         if (!spawn) continue;
         old = &map->level->ai_spawns[map->level->ai_spawn_count++];
@@ -542,7 +581,7 @@ int rasterfall_map_apply_runtime_legacy(struct rasterfall_map_state *map)
     for (i = 0; i < rf_map_runtime_object_count(&map->runtime) &&
                 map->level->prop_count < TOY_MAP_MAX_PROPS; i++) {
         const struct rf_map_runtime_object *object =
-            runtime_object_legacy_at(&map->runtime, i);
+            runtime_object_projection_at(&map->runtime, i);
         const struct rasterfall_prop_asset_profile *profile;
         struct toy_map_prop *prop;
         if (!object) continue;
@@ -562,8 +601,8 @@ int rasterfall_map_apply_runtime_legacy(struct rasterfall_map_state *map)
     for (i = 0; i < TOY_MAP_MAX_PICKUPS; i++) {
         int kind, weapon;
         const struct rf_map_runtime_pickup *pickup =
-            runtime_pickup_legacy_at(&map->runtime, i);
-        interaction = runtime_interaction_legacy_at(&map->runtime, i);
+            runtime_pickup_projection_at(&map->runtime, i);
+        interaction = runtime_interaction_projection_at(&map->runtime, i);
         if (pickup) {
             weapon = toy_game_weapon_from_name(pickup->kind);
             if (weapon == TOY_GAME_WEAPON_PILL) kind = TOY_MAP_PICKUP_PILL;
@@ -590,5 +629,5 @@ int rasterfall_map_apply_runtime_legacy(struct rasterfall_map_state *map)
     }
     rasterfall_map_prepare(map);
     rasterfall_map_reset_interactables(map);
-    return 0;
+    return rasterfall_map_projection_counts_match(map) ? 0 : -1;
 }

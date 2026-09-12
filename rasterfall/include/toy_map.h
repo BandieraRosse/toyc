@@ -99,6 +99,8 @@ struct toy_map_draw {
 };
 
 struct toy_map {
+    /* Migration-era gameplay-facing projection.  Runtime Map owns the
+     * authoritative V1 world data; these arrays remain for existing APIs. */
     int minx, maxx, minz, maxz, room_limit;
     int start_x, start_z, start_sy, start_cy;
     struct toy_map_primitive primitives[TOY_MAP_MAX_PRIMITIVES];

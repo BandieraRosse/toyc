@@ -17,7 +17,58 @@ def num(s):
 def box(v): return {"min_x":v[0],"max_x":v[1],"min_z":v[2],"max_z":v[3]}
 def centre(b): return {"x":(b["min_x"]+b["max_x"])/2,"z":(b["min_z"]+b["max_z"])/2}
 
+def v1_fields(fields):
+    return {item.split("=",1)[0]:item.split("=",1)[1] for item in fields if "=" in item}
+
+def parse_v1(path):
+    stat=path.stat(); doc={"schema":"rasterfall-map-layout-v1","source_map":str(path),"source_file":{"path":str(path),"size":stat.st_size,"mtime_ns":stat.st_mtime_ns},"coordinate_system":{"plane":"x/z","up":"y","unit":"RFU","rfu_per_meter":512,"note":"512 RFU = 1 m"},"world":None,"objects":[]}; counts={}; candidates=[]; warnings=[]
+    for line_no,line in enumerate(path.read_text(encoding="utf-8").splitlines(),1):
+        words=line.split("#",1)[0].split()
+        if not words: continue
+        kind, f = words[0], v1_fields(words[1:]); raw={"line":line_no,"record":kind,"fields":words[1:]}; typ=None; o=None
+        if kind=="world":
+            b={"min_x":num(f.get("min_x","0")),"max_x":num(f.get("max_x","0")),"min_z":num(f.get("min_z","0")),"max_z":num(f.get("max_z","0"))}; doc["world"]={**b,"room_limit":num(f.get("room_limit","0")),"source":raw}; continue
+        if kind=="region":
+            typ={"safe":"safe","spawn":"spawn","base":"base"}.get(f.get("kind"));
+            if typ:
+                b={"min_x":num(f.get("min_x","0")),"max_x":num(f.get("max_x","0")),"min_z":num(f.get("min_z","0")),"max_z":num(f.get("max_z","0"))}; o={"type":typ,"role":f.get("attr.role",f.get("role",f.get("id"))),"bounds":b,"center":centre(b)}
+        elif kind=="actor_spawn":
+            x,z=num(f.get("x","0")),num(f.get("z","0")); typ="ai_spawn"; o={"type":typ,"name":f.get("id",""),"base_id":num(f.get("base_id","0")),"class":f.get("class",f.get("type","")),"x":x,"z":z,"downed":bool(num(f.get("downed","1"))),"bounds":box([x,x,z,z]),"center":{"x":x,"z":z}}
+        elif kind=="interaction":
+            x,z,y=num(f.get("x","0")),num(f.get("z","0")),num(f.get("y","0")); typ="button"; o={"type":typ,"button_kind":"button_"+f.get("action","unknown"),"x":x,"z":z,"y":y,"bounds":box([x,x,z,z]),"center":{"x":x,"z":z}}
+        elif kind=="object":
+            x,z=num(f.get("x","0")),num(f.get("z","0")); typ="prop"; o={"type":typ,"asset":f.get("kind",""),"x":x,"z":z,"yaw_degrees":num(f.get("yaw","0")),"scale_milli":num(f.get("scale","1000")),"bounds":box([x,x,z,z]),"center":{"x":x,"z":z}}
+        elif kind=="render":
+            typ={"model":"model","box":"box"}.get(f.get("kind"),"box"); b={"min_x":num(f.get("min_x","0")),"max_x":num(f.get("max_x","0")),"min_z":num(f.get("min_z","0")),"max_z":num(f.get("max_z","0"))}; o={"type":typ,"style":num(f.get("attr.style","0")),"color":f.get("color","000000"),"height":num(f.get("height","0")),"bounds":b,"center":centre(b)}
+        elif kind=="surface":
+            typ={"ramp":"ramp","platform":"platform","platform_roof":"platform"}.get(f.get("kind"));
+            if typ:
+                b={"min_x":num(f.get("min_x","0")),"max_x":num(f.get("max_x","0")),"min_z":num(f.get("min_z","0")),"max_z":num(f.get("max_z","0"))}; o={"type":typ,"record":f.get("kind"),"bounds":b,"center":centre(b),"height_fields":[num(f.get("height","0")),num(f.get("height2",f.get("height","0")))]}
+                if f.get("axis"): o["axis"]=f["axis"]
+        elif kind=="collision":
+            b={"min_x":num(f.get("min_x","0")),"max_x":num(f.get("max_x","0")),"min_z":num(f.get("min_z","0")),"max_z":num(f.get("max_z","0"))}; visible=f.get("visible","true")=="true"; collision=f.get("collision","true")=="true"; typ="air_wall" if collision and not visible else "box"; o={"type":typ,"height":num(f.get("height","0")),"color":f.get("color","000000"),"visible":visible,"collision":collision,"walkable":f.get("walkable","false")=="true","role":f.get("role"),"bounds":b,"center":centre(b)}
+        if o:
+            family=PREFIX[typ]; counts[family]=counts.get(family,0)+1; o["export_id"]=family+str(counts[family]); o["source"]=raw; doc["objects"].append(o)
+            if typ=="box" and o.get("collision"): candidates.append((len(doc["objects"])-1,(o["bounds"]["max_x"]-o["bounds"]["min_x"])*(o["bounds"]["max_z"]-o["bounds"]["min_z"]),bool(o.get("role"))))
+        elif kind not in {"map","world","region","interaction","actor_spawn","pickup","object","render","surface","collision"}:
+            warnings.append(f"line {line_no}: ignored record '{kind}' (not represented in layout JSON)")
+    if not doc["world"]: raise ValueError("map has no valid world record")
+    chosen={i for i,_,role in candidates if role}
+    for i,_,_ in sorted(candidates,key=lambda x:x[1],reverse=True):
+        if len(chosen)>=8: break
+        chosen.add(i)
+    bx=0
+    for i,_,_ in candidates:
+        if i in chosen: bx+=1; doc["objects"][i].update(export_id=f"BX{bx}",key_box=True)
+        else: doc["objects"][i].update(export_id=None,key_box=False)
+    if warnings:
+        print(f"map layout: {len(warnings)} record(s) are not represented:",file=sys.stderr)
+        for warning in warnings: print(f"  warning: {warning}",file=sys.stderr)
+    return doc
+
 def parse(path):
+    if any(line.split("#",1)[0].strip().startswith("map version=1") for line in path.read_text(encoding="utf-8").splitlines()):
+        return parse_v1(path)
     stat=path.stat()
     doc={"schema":"rasterfall-map-layout-v1","source_map":str(path),"source_file":{"path":str(path),"size":stat.st_size,"mtime_ns":stat.st_mtime_ns},"coordinate_system":{"plane":"x/z","up":"y","unit":"RFU","rfu_per_meter":512,"note":"512 RFU = 1 m"},"world":None,"objects":[]}; counts={}; candidates=[]; warnings=[]
     for line_no,line in enumerate(path.read_text(encoding="utf-8").splitlines(),1):

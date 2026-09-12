@@ -1,7 +1,7 @@
 # Rasterfall 地图格式
 
-> 文档更新：2026-09-11
-> 源码核对基线：工作区（正式 `rasterfall.map` 已为完整 V1 world/region/interaction/actor_spawn/pickup/object/collision/surface/render source；Runtime Map adapter 转为现有 gameplay、primitive 和 draw records；`rasterfall_legacy.map` 仅保留 fallback；布局导出器仍使用 legacy source）
+> 文档更新：2026-09-12
+> 源码核对基线：工作区（Runtime Map V1 projection ownership cleanup；正式 `rasterfall.map` 为完整 V1 source；`rasterfall_legacy.map` 仅保留显式 fallback；layout exporter 默认读取 V1 source）
 
 > 源码核对补充：北侧通道扩宽为 Hurd 防区，原中央北侧刷怪区拆到左右两翼。
 
@@ -52,16 +52,18 @@ V1 Runtime adapter 写入现有 primitive/draw 兼容结构。
 调用方不依赖文本行顺序。
 interaction 的 `action` 仍是字符串，runtime registry 再把它解析为 action ID；parser 不包含 gameplay callback。
 
-`src/rasterfall_map.c` 提供兼容 adapter，把 V1 region、interaction、actor_spawn、pickup、object、collision、
-surface 和 render 转换到 gameplay/renderer 现有数组。因此 collision primitive、collision engine、spawn 算法、
-AI、prop 和 renderer 行为保持不变；默认流程只加载 V1 Runtime Map，`--legacy-map` 可强制只走旧 loader。
+`src/rasterfall_map.c` 提供 Gameplay Projection Adapter，把 V1 region、interaction、actor_spawn、pickup、object、
+collision、surface 和 render 转换到 gameplay/renderer 现有数组。因此 collision primitive、collision engine、spawn 算法、
+AI、prop 和 renderer 行为保持不变；Runtime Map 是 authoritative world representation，projection 只是迁移期接口，
+默认流程只加载 V1 Runtime Map。
 `legacy_index` 只用于兼容数组的稳定排列，不是 V1 record 的顺序语义。
 
 `build/map-runtime-test` 与 `make test-map-runtime` 覆盖 V1 runtime 加载、稳定 ID 查询和 action registry。
 
 正式地图源位于 `rasterfall/assets/maps/rasterfall.map`；旧兼容源为同目录的
-`rasterfall_legacy.map`。旧源的磁盘结构定义在 `include/toy_map.h`，文本解析在 `lib/map.c`，仅供 fallback/reference
-使用。V1 的 parser、IR、Runtime Map 和 adapter 是默认输入链路；修改语法时必须同时检查 parser、runtime、玩法绑定、
+`rasterfall_legacy.map`。旧源的磁盘结构定义在 `include/toy_map.h`，文本解析在 `lib/map.c`，仅供显式 fallback/reference
+使用。`--legacy-map` 和 `rasterfall_session_load_legacy()` 是当前保留的 legacy compatibility entry。V1 的 parser、IR、
+Runtime Map 和 projection adapter 是默认输入链路；修改语法时必须同时检查 parser、runtime、玩法绑定、
 碰撞/导航、渲染和逻辑测试。
 
 ## 几何与碰撞
@@ -196,20 +198,18 @@ flag 1 也继续由 session 生成，Hurd 因此使用 flag 2。若以后正式�
 
 ## 修改地图排布的必经流程
 
-地图排布以 `.map` 文本为唯一输入。当前布局导出器仍解析旧语法，因此正式 V1 源中的 region/interaction
-迁移期间，排布诊断使用同目录的 `rasterfall_legacy.map` 兼容侧车；这不是第二份手工坐标表，而是尚未迁移
-的 surface/render/AI/prop 记录的暂存源。调整区域、墙体、出生点、按钮或 `prop` 的位置后，必须使用
+地图排布以 `.map` 文本为唯一输入。布局导出器默认读取正式 V1 source，旧语法解析仅保留为离线兼容能力，不参与运行时。
+调整区域、墙体、出生点、按钮或 `prop` 的位置后，必须使用
 现有布局导出接口同时生成俯视图和 JSON 信息，再据此检查相对位置、边界和语义对象。
 
 推荐流程如下：
 
-1. 修改对应地图源；当前涉及旧布局对象时修改 `rasterfall/assets/maps/rasterfall_legacy.map`，V1
-   region/interaction 则修改 `rasterfall/assets/maps/rasterfall.map`，保持玩法碰撞、可见几何和交互声明分别表达。
+1. 修改 `rasterfall/assets/maps/rasterfall.map` V1 source，保持玩法碰撞、可见几何和交互声明分别表达。
 2. 运行 `make map-layout`（或对指定地图调用 `tools/map_layout_export.py`），生成配套的
    `output.png` 与 `output.json`。
 3. 打开 PNG 检查整体排布，再用 `tools/map_layout_query.py` 查询对象的精确中心点、bounds、类型和邻近关系；
    PNG 用于空间理解，JSON/query 用于可复核的精确事实。
-4. 若排布发生变化，重新导出两份结果并复查，不要继续使用旧的 PNG/JSON。导出的 JSON 是派生诊断资料，
+4. 若排布发生变化，重新导出结果并复查，不要继续使用旧的 PNG/JSON。导出的 JSON 是派生诊断资料，
    不能反向编辑来修改地图。
 
 若现有导出器无法表达排布检查所需的信息，应先扩展导出器/schema 和查询接口，再修改地图；不要绕过接口
@@ -218,7 +218,7 @@ flag 1 也继续由 session 生成，Hurd 因此使用 flag 2。若以后正式�
 
 ## 俯视布局导出
 
-零依赖离线工具 `tools/map_layout_export.py` 把现有 `.map` 导出为开发用俯视 PNG 和 JSON sidecar，
+零依赖离线工具 `tools/map_layout_export.py` 把 V1 `.map`（并兼容旧语法）导出为开发用俯视 PNG 和 JSON sidecar，
 不引入新地图语法，也不进入游戏运行时：
 
 ```sh

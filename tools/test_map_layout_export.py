@@ -9,7 +9,7 @@ with tempfile.TemporaryDirectory() as tmp:
     assert magic==b"RFHZK16\0" and version==1 and rows==87 and count==7445
     lead,trail="图".encode("gb2312");slot=(lead-0xa1)*94+trail-0xa1
     assert any(font[gb_offset+slot*32:gb_offset+(slot+1)*32])
-    out=Path(tmp);subprocess.run([PYTHON,str(ROOT/"tools/map_layout_export.py"),str(ROOT/"rasterfall/assets/maps/rasterfall_legacy.map"),"--output-dir",str(out)],check=True)
+    out=Path(tmp);subprocess.run([PYTHON,str(ROOT/"tools/map_layout_export.py"),str(ROOT/"rasterfall/assets/maps/rasterfall.map"),"--output-dir",str(out)],check=True)
     png=(out/"output.png").read_bytes();doc=json.loads((out/"output.json").read_text());objects=doc["objects"]
     assert png[:8]==b"\x89PNG\r\n\x1a\n" and struct.unpack(">II",png[16:24])==(1400,1000)
     assert doc["coordinate_system"]["rfu_per_meter"]==512

@@ -7,6 +7,8 @@
 struct rasterfall_interactable { int kind; int weapon; int x, z, y; };
 
 struct rasterfall_map_state {
+    /* Compatibility/runtime view consumed by existing gameplay, collision,
+     * and renderer interfaces.  The Runtime Map below remains authoritative. */
     struct toy_map *level;
     struct toy_game_box *safe_rooms;
     struct toy_game_box *spawn_zones;
@@ -35,6 +37,11 @@ void rasterfall_map_set_air_walls(struct rasterfall_map_state *map, int enabled)
 void rasterfall_map_reset_interactables(struct rasterfall_map_state *map);
 int rasterfall_map_load_runtime_overlay(struct rasterfall_map_state *map,
                                         const char *path);
-int rasterfall_map_apply_runtime_legacy(struct rasterfall_map_state *map);
+/* Runtime Map projection layer.  Runtime Map is authoritative world data;
+ * this creates the current gameplay-facing view.  It is not a legacy loader. */
+int rasterfall_map_project_runtime(struct rasterfall_map_state *map);
+/* Count-only migration guard; does not inspect gameplay behavior. */
+int rasterfall_map_projection_counts_match(
+    const struct rasterfall_map_state *map);
 
 #endif

@@ -1222,7 +1222,7 @@ setup-map-layout:
 
 map-layout:
 	@if test ! -x .venv/map-layout/bin/python; then echo "run 'make setup-map-layout' first" >&2; exit 2; fi
-	.venv/map-layout/bin/python tools/map_layout_export.py rasterfall/assets/maps/rasterfall_legacy.map --output-dir tmp/map-layout
+	.venv/map-layout/bin/python tools/map_layout_export.py rasterfall/assets/maps/rasterfall.map --output-dir tmp/map-layout
 
 map-layout-query:
 	python3 tools/map_layout_query.py tmp/map-layout/output.json summary

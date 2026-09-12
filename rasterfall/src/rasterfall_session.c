@@ -310,7 +310,7 @@ int rasterfall_session_load(struct rasterfall_session *session,
                         session->items, &session->item_count);
     if (rasterfall_map_load_runtime_overlay(&session->map_ops, map_path) < 0)
         return -1;
-    if (rasterfall_map_apply_runtime_legacy(&session->map_ops) < 0) return -1;
+    if (rasterfall_map_project_runtime(&session->map_ops) < 0) return -1;
     __printf("Loading world source: %s\n", map_path);
     __printf("Map runtime loaded: regions=%d interactions=%d\n",
              rf_map_runtime_region_count(&session->map_ops.runtime),
@@ -353,7 +353,7 @@ void rasterfall_session_reset(struct rasterfall_session *session,
 {
     int i;
     if (session->map_ops.runtime_loaded)
-        rasterfall_map_apply_runtime_legacy(&session->map_ops);
+        rasterfall_map_project_runtime(&session->map_ops);
     camera->x = session->level.start_x;
     camera->z = session->level.start_z;
     camera->sy = session->level.start_sy;

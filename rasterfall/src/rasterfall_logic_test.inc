@@ -325,6 +325,7 @@ static int run_logic_test(void)
         rasterfall_session_load(&session,
                                 "rasterfall/assets/maps/rasterfall.map") < 0)
         return 174;
+    if (!rasterfall_map_projection_counts_match(&session.map_ops)) return 233;
     rasterfall_map_prepare(&session.map_ops);
     if (rasterfall_console_logic_test() != 0) return 169;
     if (rf_gui_logic_test() != 0) return 230;

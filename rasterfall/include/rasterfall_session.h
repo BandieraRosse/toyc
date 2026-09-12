@@ -127,11 +127,15 @@ enum rasterfall_pose_debug_action { RASTERFALL_POSE_DEBUG_NONE, RASTERFALL_POSE_
 enum rasterfall_humanoid_debug_action { RASTERFALL_HUMANOID_DEBUG_IDLE, RASTERFALL_HUMANOID_DEBUG_WALK, RASTERFALL_HUMANOID_DEBUG_AIM, RASTERFALL_HUMANOID_DEBUG_RECOIL, RASTERFALL_HUMANOID_DEBUG_ACTION_COUNT };
 
 struct rasterfall_session {
+    /* Existing gameplay view projected from map_ops.runtime.  Do not treat
+     * this toy_map storage as the authoritative map representation. */
     struct toy_map level;
     struct toy_game game_state;
+    /* Gameplay-facing projection arrays retained until gameplay migrates. */
     struct toy_game_box safe_rooms[TOY_MAP_MAX_ZONES];
     struct toy_game_box spawn_zones[TOY_MAP_MAX_ZONES];
     int spawn_count;
+    /* Projection of Runtime Map pickups/interactions for current session UI. */
     struct rasterfall_interactable items[TOY_MAP_MAX_PICKUPS];
     int item_count;
     struct rasterfall_map_state map_ops;
