@@ -4,6 +4,7 @@
 #include "fb_font.h"
 #include "fb_draw.h"
 #include "string.h"
+#include "rasterfall_hud.h"
 
 static void fill(struct toy_surface *s, int x, int y, int w, int h,
                  unsigned int color)
@@ -30,8 +31,31 @@ static int hit_icon(const struct rf_gui_context *gui, int x, int y)
 {
     int i;
     for (i = 0; gui && i < gui->icon_count; i++)
-        if (inside(32, 72 + i * 82, 190, 62, x, y)) return i;
+        if (inside(32 + i * 152, 72, 136, 78, x, y)) return i;
     return -1;
+}
+
+static void focus_window(struct rf_gui_context *gui, int index)
+{
+    int i;
+    if (!gui || index < 0 || index >= RF_GUI_MAX_WINDOWS ||
+        !gui->windows[index].open) return;
+    for (i = 0; i < RF_GUI_MAX_WINDOWS; i++) gui->windows[i].focused = 0;
+    gui->windows[index].focused = 1;
+    gui->windows[index].minimized = 0;
+    gui->windows[index].z_order = gui->next_z_order++;
+}
+
+static int hit_window(const struct rf_gui_context *gui, int x, int y)
+{
+    int i, best = -1, best_z = -1;
+    for (i = 0; gui && i < RF_GUI_MAX_WINDOWS; i++) {
+        const struct rf_gui_window *w = &gui->windows[i];
+        if (w->open && !w->minimized &&
+            inside(w->x, w->y, w->width, w->height, x, y) &&
+            w->z_order > best_z) { best = i; best_z = w->z_order; }
+    }
+    return best;
 }
 
 int rf_gui_open_window(struct rf_gui_context *gui, int app_id,
@@ -44,7 +68,8 @@ int rf_gui_open_window(struct rf_gui_context *gui, int app_id,
     for (slot = 0; slot < RF_GUI_MAX_WINDOWS; slot++) if (!gui->windows[slot].open) break;
     if (slot >= RF_GUI_MAX_WINDOWS) return -1;
     w = &gui->windows[slot];
-    w->open = 1; w->width = 390; w->height = 230;
+    w->open = 1; w->minimized = 0; w->maximized = 0;
+    w->width = 480; w->height = 286;
     w->app_id = app_id;
     w->x = (screen_w - w->width) / 2 + slot * 18;
     w->y = (screen_h - w->height) / 2 + slot * 12;
@@ -52,11 +77,15 @@ int rf_gui_open_window(struct rf_gui_context *gui, int app_id,
     if (w->y + w->height > screen_h - 8) w->y = screen_h - w->height - 8;
     strncpy(w->title, title, sizeof(w->title) - 1);
     w->title[sizeof(w->title) - 1] = 0;
+    w->restore_x = w->x; w->restore_y = w->y;
+    w->restore_width = w->width; w->restore_height = w->height;
+    w->z_order = gui->next_z_order++;
+    focus_window(gui, slot);
     return slot;
 }
 
 void rf_gui_init(struct rf_gui_context *gui)
-{ if (gui) { memset(gui, 0, sizeof(*gui)); gui->drag_window = -1; gui->hovered_icon = -1; gui->icon_count = RF_GUI_ICON_COUNT; } }
+{ if (gui) { memset(gui, 0, sizeof(*gui)); gui->drag_window = -1; gui->hovered_icon = -1; gui->icon_count = RF_GUI_ICON_COUNT; gui->screen_width = 1024; gui->screen_height = 720; gui->next_z_order = 1; } }
 
 void rf_gui_set_active(struct rf_gui_context *gui, int active)
 { if (gui) { gui->active = active != 0; if (!gui->active) gui->drag_window = -1; } }
@@ -64,11 +93,14 @@ void rf_gui_set_active(struct rf_gui_context *gui, int active)
 void rf_gui_set_icon_count(struct rf_gui_context *gui, int count)
 { if (gui) { if (count < 0) count = 0; if (count > RF_GUI_ICON_COUNT) count = RF_GUI_ICON_COUNT; gui->icon_count = count; gui->hovered_icon = -1; } }
 
+void rf_gui_set_screen_size(struct rf_gui_context *gui, int width, int height)
+{ if (gui) { if (width > 0) gui->screen_width = width; if (height > 0) gui->screen_height = height; } }
+
 void rf_gui_close_all_windows(struct rf_gui_context *gui)
 {
     int i;
     if (!gui) return;
-    for (i = 0; i < RF_GUI_MAX_WINDOWS; i++) gui->windows[i].open = 0;
+    for (i = 0; i < RF_GUI_MAX_WINDOWS; i++) { gui->windows[i].open = 0; gui->windows[i].focused = 0; }
     gui->drag_window = -1;
 }
 
@@ -80,7 +112,7 @@ int rf_gui_handle_input(struct rf_gui_context *gui,
                         const struct rf_input_frame *input,
                         int button_pressed, unsigned int button)
 {
-    int i, icon;
+    int i, icon, window;
     if (!gui || !input || !gui->active) return 0;
     gui->cursor_x = input->pointer_x; gui->cursor_y = input->pointer_y;
     gui->hovered_icon = hit_icon(gui, gui->cursor_x, gui->cursor_y);
@@ -89,63 +121,117 @@ int rf_gui_handle_input(struct rf_gui_context *gui,
         if (input->mouse_buttons & 1) {
             w->x = gui->cursor_x - w->drag_x;
             w->y = gui->cursor_y - w->drag_y;
+            if (w->x < 8) w->x = 8;
+            if (w->y < 8) w->y = 8;
+            if (w->x + w->width > gui->screen_width - 8)
+                w->x = gui->screen_width - w->width - 8;
+            if (w->y + w->height > gui->screen_height - 48)
+                w->y = gui->screen_height - w->height - 48;
+            w->restore_x = w->x; w->restore_y = w->y;
             return 1;
         }
         w->dragging = 0; gui->drag_window = -1;
     }
     if (!button_pressed || button != RF_GUI_MOUSE_LEFT) return 1;
-    for (i = RF_GUI_MAX_WINDOWS - 1; i >= 0; i--) {
-        struct rf_gui_window *w = &gui->windows[i];
-        if (!w->open || !inside(w->x, w->y, w->width, w->height,
-                                 gui->cursor_x, gui->cursor_y)) continue;
-        if (inside(w->x + w->width - 30, w->y, 30, 28,
-                   gui->cursor_x, gui->cursor_y)) {
-            w->open = 0;
+    window = hit_window(gui, gui->cursor_x, gui->cursor_y);
+    if (window >= 0) {
+        struct rf_gui_window *w = &gui->windows[window];
+        int button_x = w->x + w->width - 84;
+        focus_window(gui, window);
+        if (inside(button_x, w->y, 28, 28, gui->cursor_x, gui->cursor_y)) {
+            w->minimized = 1; w->focused = 0; gui->drag_window = -1;
+            return 1;
+        }
+        if (inside(button_x + 28, w->y, 28, 28, gui->cursor_x, gui->cursor_y)) {
+            if (w->maximized) {
+                w->x = w->restore_x; w->y = w->restore_y;
+                w->width = w->restore_width; w->height = w->restore_height;
+                w->maximized = 0;
+            } else {
+                w->restore_x = w->x; w->restore_y = w->y;
+                w->restore_width = w->width; w->restore_height = w->height;
+                w->x = 8; w->y = 8; w->width = gui->screen_width - 16;
+                w->height = gui->screen_height - 64; w->maximized = 1;
+            }
+            return 1;
+        }
+        if (inside(button_x + 56, w->y, 28, 28, gui->cursor_x, gui->cursor_y)) {
             if (gui->app_manager) rf_app_manager_close(gui->app_manager, w->app_id);
             return 1;
         }
-        if (inside(w->x, w->y, w->width, 28, gui->cursor_x, gui->cursor_y)) {
-            gui->drag_window = i; w->dragging = 1;
+        if (inside(w->x, w->y, w->width - 84, 28, gui->cursor_x, gui->cursor_y) &&
+            !w->maximized) {
+            gui->drag_window = window; w->dragging = 1;
             w->drag_x = gui->cursor_x - w->x; w->drag_y = gui->cursor_y - w->y;
         }
         return 1;
     }
+    /* The strip is a second launcher for running applications. */
+    { int strip = 0;
+    for (i = 0; i < RF_GUI_MAX_WINDOWS; i++) {
+        struct rf_gui_window *w = &gui->windows[i];
+        int x = 104 + strip * 156;
+        if (w->open && inside(x, gui->screen_height - 38, 144, 28,
+                              gui->cursor_x, gui->cursor_y)) {
+            focus_window(gui, i); return 1;
+        }
+        if (w->open) strip++;
+    }
+    }
     icon = gui->hovered_icon;
     if (icon >= 0 && gui->app_manager)
-        return rf_app_manager_open_icon(gui->app_manager, icon, 1024, 720) == 0;
+        return rf_app_manager_open_icon(gui->app_manager, icon,
+                                        gui->screen_width, gui->screen_height) == 0;
     return 1;
 }
 
 static void draw_window(struct toy_surface *s, const struct rf_gui_window *w)
 {
-    fill(s, w->x - 2, w->y - 2, w->width + 4, w->height + 4, 0xD8B87A);
+    unsigned int border = w->focused ? 0xF6C35B : 0x52687A;
+    fill(s, w->x - 2, w->y - 2, w->width + 4, w->height + 4, border);
     fill(s, w->x, w->y, w->width, w->height, 0x172332);
     fill(s, w->x, w->y, w->width, 28, 0x30465A);
     text(s, w->x + 12, w->y + 6, w->title, 0xF6C35B);
-    fill(s, w->x + w->width - 27, w->y + 5, 20, 18, 0xD94B5B);
-    text(s, w->x + w->width - 21, w->y + 7, "X", 0xFFFFFF);
+    text(s, w->x + w->width - 78, w->y + 7, "_", 0xC4D0D9);
+    text(s, w->x + w->width - 50, w->y + 7, w->maximized ? "<>" : "[]", 0xC4D0D9);
+    text(s, w->x + w->width - 22, w->y + 7, "X", 0xC4D0D9);
 }
 
 void rf_gui_render(struct toy_surface *s, const struct rf_gui_context *gui)
 {
     int i;
     if (!s || !gui || !gui->active) return;
+    int z, max_z;
+    rf_gui_set_screen_size((struct rf_gui_context *)gui, s->width, s->height);
     fill(s, 0, 0, s->width, s->height, 0x0B1420);
-    text(s, 32, 24, "RF GUI DESKTOP  //  CORE PRESENTATION", 0xF6C35B);
-    text(s, 32, 46, "ESC exit    click icon open    drag title bar    red X close", 0x91A5B8);
+    fill(s, 0, 0, s->width, 48, 0x101D2A);
+    text(s, 24, 14, "RF DESKTOP  //  WORKSTATION", 0xF6C35B);
+    text(s, 24, 32, "ESC  CLOSE DESKTOP", 0x8195A7);
     for (i = 0; i < gui->icon_count; i++) {
         const char *name = gui->app_manager ? rf_app_manager_icon_name(gui->app_manager, i) : "APPLICATION";
         unsigned int border = i == gui->hovered_icon ? 0xF6C35B : 0x557087;
-        fill(s, 30, 70 + i * 82, 194, 66, border);
-        fill(s, 34, 74 + i * 82, 186, 58, 0x1D2E3E);
-        fill(s, 45, 87 + i * 82, 30, 30, i == 0 ? 0x4DA3D9 : i == 1 ? 0x6BCB8B : 0xD88A32);
-        text(s, 88, 94 + i * 82, name, 0xE9F0F5);
-        text(s, 88, 112 + i * 82, "OPEN PANEL", 0x91A5B8);
+        fill(s, 32 + i * 152, 72, 136, 78, border);
+        fill(s, 34 + i * 152, 74, 132, 74, 0x1D2E3E);
+        fill(s, 48 + i * 152, 88, 32, 32, i == 0 ? 0x4DA3D9 : 0xD88A32);
+        text(s, 48 + i * 152, 124, name, 0xE9F0F5);
     }
-    for (i = 0; i < RF_GUI_MAX_WINDOWS; i++) if (gui->windows[i].open) {
-        draw_window(s, &gui->windows[i]);
-        if (gui->app_manager)
-            rf_app_manager_render_window(gui->app_manager, s, &gui->windows[i]);
+    max_z = 0;
+    for (z = 0; z < RF_GUI_MAX_WINDOWS; z++) if (gui->windows[z].z_order > max_z) max_z = gui->windows[z].z_order;
+    for (z = 1; z <= max_z; z++) for (i = 0; i < RF_GUI_MAX_WINDOWS; i++) {
+        if (gui->windows[i].open && !gui->windows[i].minimized && gui->windows[i].z_order == z) {
+            draw_window(s, &gui->windows[i]);
+            if (gui->app_manager) rf_app_manager_render_window(gui->app_manager, s, &gui->windows[i]);
+        }
+    }
+    fill(s, 0, s->height - 46, s->width, 46, 0x101D2A);
+    text(s, 24, s->height - 34, "RUNNING", 0x8195A7);
+    { int strip = 0;
+      for (i = 0; i < RF_GUI_MAX_WINDOWS; i++) if (gui->windows[i].open) {
+        unsigned int c = gui->windows[i].focused ? 0xF6C35B : 0x718394;
+        fill(s, 104 + strip * 156, s->height - 38, 144, 28, c);
+        fill(s, 106 + strip * 156, s->height - 36, 140, 24, gui->windows[i].minimized ? 0x23313D : 0x1D2E3E);
+        text(s, 114 + strip * 156, s->height - 30, gui->windows[i].title, c); strip++;
+      }
     }
     fill(s, gui->cursor_x, gui->cursor_y, 2, 14, 0xFFFFFF);
     fill(s, gui->cursor_x, gui->cursor_y, 10, 2, 0xFFFFFF);
@@ -171,4 +257,29 @@ int rf_gui_logic_test(void)
     rf_gui_handle_input(&g, &in, 1, RF_GUI_MOUSE_LEFT);
     if (g.windows[0].open || m.apps[0].open) return 4;
     return 0;
+}
+
+int rf_gui_visual_capture(const char *output)
+{
+    struct toy_surface surface;
+    struct rf_gui_context gui;
+    struct rf_app_manager manager;
+    int result = -1;
+    memset(&surface, 0, sizeof(surface));
+    surface.width = 1024; surface.height = 720;
+    surface.stride = surface.width * (int)sizeof(uint32_t);
+    surface.pixels = tlibc_malloc((size_t)surface.stride * surface.height);
+    if (!surface.pixels || !output || !*output) goto done;
+    rf_gui_init(&gui); rf_gui_set_active(&gui, 1);
+    rf_app_manager_init(&manager, &gui);
+    if (rf_app_manager_register_defaults(&manager) < 0) goto done;
+    rf_gui_set_app_manager(&gui, &manager);
+    rf_gui_render(&surface, &gui);
+    result = rasterfall_hud_dump_bmp(output, &surface);
+    if (result == 0)
+        __printf("rasterfall: visual capture scenario=desktop-v1 size=%dx%d format=BMP output=%s\n",
+                 surface.width, surface.height, output);
+done:
+    tlibc_free(surface.pixels);
+    return result;
 }

@@ -2728,8 +2728,11 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     if (options.enemy_visual_capture_dir)
         return rasterfall_render_enemy_visual_capture(options.enemy_visual_capture_dir);
     if (options.visual_scenario)
+        if (!strcmp(options.visual_scenario, "desktop-v1"))
+            return rf_gui_visual_capture(options.visual_output);
+    if (options.visual_scenario)
         return rasterfall_render_visual_capture(options.visual_scenario,
-                                                 options.visual_output);
+                                                options.visual_output);
     if (options.profession_lineup_models)
         return rasterfall_render_profession_lineup(options.profession_lineup_models,
                                                    options.profession_lineup_dir);

@@ -3,10 +3,19 @@
 #include "tlibc_everything.h"
 #include "string.h"
 
-enum { RF_APP_CORE_STATUS = 1, RF_APP_PERSONNEL = 2, RF_APP_TERMINAL = 3 };
+enum { RF_APP_PERSONNEL = 1, RF_APP_TERMINAL = 2 };
 
 static void render_text(struct rf_app *app, struct toy_surface *surface,
                         const struct rf_gui_window *window);
+
+static void render_terminal(struct rf_app *app, struct toy_surface *surface,
+                            const struct rf_gui_window *window)
+{
+    render_text(app, surface, window);
+    fb_draw_string((unsigned char *)surface->pixels, window->x + 18,
+                   window->y + window->height - 24, "> _", 0xF6C35B,
+                   surface->stride);
+}
 
 static void render_personnel(struct rf_app *app, struct toy_surface *surface,
                              const struct rf_gui_window *window)
@@ -101,12 +110,10 @@ int rf_app_manager_register_defaults(struct rf_app_manager *m)
     if (!m) return -1;
     memset(m->apps, 0, sizeof(m->apps));
     m->count = 0;
-    if (rf_app_manager_register(m, RF_APP_CORE_STATUS, 0, "CORE STATUS",
-        "CORE RUNTIME\n\nwindow     READY\nrenderer   READY\nfilesystem READY\nclock      READY\naudio      READY\n\nAPPLICATION MODEL: V0", NULL, NULL) < 0) return -1;
-    if (rf_app_manager_register(m, RF_APP_PERSONNEL, 1, "PERSONNEL",
+    if (rf_app_manager_register(m, RF_APP_PERSONNEL, 0, "PERSONNEL",
         "PERSONNEL DATA UNAVAILABLE", NULL, render_personnel) < 0) return -1;
-    if (rf_app_manager_register(m, RF_APP_TERMINAL, 2, "TERMINAL",
-        "TERMINAL\n\nSTATION TERMINAL VIEW\n\nRF TERMINAL FRONTEND\n\nUse the developer console for\ncommands and diagnostics.\n\nApplication is display-only here.", NULL, NULL) < 0) return -1;
+    if (rf_app_manager_register(m, RF_APP_TERMINAL, 1, "TERMINAL",
+        "TERMINAL\n\nRF DESKTOP TERMINAL\n\nSESSION: LOCAL\nBACKEND: NOT CONNECTED\n\nThis V1 surface is ready for a\nfuture PTY / command backend.", NULL, render_terminal) < 0) return -1;
     return 0;
 }
 
@@ -124,7 +131,15 @@ int rf_app_manager_open(struct rf_app_manager *m, int id, int sw, int sh)
 {
     struct rf_app *a; int slot;
     if (!m || !m->gui || !(a = find_id(m, id))) return -1;
-    if (a->open) return 0;
+    if (a->open) {
+        if (a->window_index >= 0 && a->window_index < RF_GUI_MAX_WINDOWS) {
+            struct rf_gui_window *w = &m->gui->windows[a->window_index];
+            w->minimized = 0; w->focused = 1; w->z_order = m->gui->next_z_order++;
+            for (slot = 0; slot < RF_GUI_MAX_WINDOWS; slot++)
+                if (slot != a->window_index) m->gui->windows[slot].focused = 0;
+        }
+        return 0;
+    }
     slot = rf_gui_open_window(m->gui, a->id, a->name, sw, sh);
     if (slot < 0) return -1;
     a->open = 1; a->window_index = slot; return 0;
@@ -152,9 +167,9 @@ int rf_app_manager_logic_test(void)
 {
     struct rf_gui_context g; struct rf_app_manager m;
     rf_gui_init(&g); rf_app_manager_init(&m, &g);
-    if (rf_app_manager_register_defaults(&m) < 0 || m.count != 3) return 1;
-    if (rf_app_manager_open(&m, RF_APP_CORE_STATUS, 1024, 720) < 0 || !m.apps[0].open) return 2;
-    if (rf_app_manager_close(&m, RF_APP_CORE_STATUS) < 0 || m.apps[0].open) return 3;
+    if (rf_app_manager_register_defaults(&m) < 0 || m.count != 2) return 1;
+    if (rf_app_manager_open(&m, RF_APP_PERSONNEL, 1024, 720) < 0 || !m.apps[0].open) return 2;
+    if (rf_app_manager_close(&m, RF_APP_PERSONNEL) < 0 || m.apps[0].open) return 3;
     if (rf_app_manager_register_station(&m) < 0 || m.count != 1 ||
         m.apps[0].id != RF_APP_PERSONNEL || m.apps[0].icon != 0) return 4;
     return 0;

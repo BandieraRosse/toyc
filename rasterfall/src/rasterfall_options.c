@@ -74,7 +74,7 @@ void rasterfall_options_usage(int fd)
         "  --logic-test  --input-test  --action-runtime-debug  --auto\n"
         "  --enemy-visual-capture <output-dir> (mixed or forced family; bind/idle/move, world, death)\n"
         "  --enemy-visual-family <legacy|block-infected|humanoid-infected> (default: mixed)\n"
-        "  --visual-capture <procedural-humanoid|hurd-squad|lighting-props|modular-teammate> --visual-output <path.bmp>\n"
+        "  --visual-capture <desktop-v1|procedural-humanoid|hurd-squad|lighting-props|modular-teammate> --visual-output <path.bmp>\n"
         "  --character-acceptance <model.rmesh> <output-dir>\n"
         "  --profession-lineup <model-dir> <output-dir>\n"
         "  --squad-acceptance <model-dir> <output-dir>\n"
