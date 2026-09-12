@@ -5,7 +5,7 @@
 
 > 源码核对补充：正式 Hurd 四人使用专用 character IDs；原 Maid 四人旗卫在 flag 1 原位恢复并使用 Maid character/profession；普通 player、Eula、佣兵为 NONE；固定角色索引、HURD 旗帜 assignment 与派生 control status。
 
-## World Content V0
+## World Content V1
 
 Spatial Map remains authoritative for terrain, collision and neutral spatial
 data. Rasterfall Game keeps a small `rasterfall_world_content` policy in the

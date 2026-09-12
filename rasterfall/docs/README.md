@@ -15,7 +15,7 @@
 “文档层级与 Agent CLI 事实入口”。
 
 > 源码核对补充：正式 Hurd 四人使用专用 character IDs；原 Maid 四人旗卫已在西侧原位恢复并使用 Maid character/profession；普通 player、Eula 和佣兵为 character NONE；北侧 HURD 旗帜及派生 control status 已接入 session。
-> 源码核对补充：World Content V0 已将 Outpost/Campaign 的 actor、flag、formation 和正常 renderer fixture 策略集中到 Game-owned `rasterfall_world_content`。
+> 源码核对补充：World Content V1 已将 Outpost/Campaign 的 actor、flag、formation 和正常 renderer fixture 策略集中到 Game-owned `rasterfall_world_content`。
 > 源码核对补充：Standard Response Squad 与 Assault Squad 各四人由 `rasterfall_roster` 提供有序 identity；session reset 将其接入普通 AI actor，并分别绑定中部 `RESP` 与东部 `ASLT` 旗帜部署位，renderer 再按 character profile 解析 modular recipe；`--squad-acceptance` 输出八人三视角验收。
 
 ## 先读哪一篇

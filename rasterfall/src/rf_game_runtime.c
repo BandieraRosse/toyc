@@ -1997,7 +1997,6 @@ static int benchmark_model_features(const char *model_path, int iterations,
     struct rasterfall_model_asset model;
     struct toy_surface surface;
     struct toy_renderer renderer;
-    struct camera camera;
     struct camera cameras[3];
     uint32_t *pixels;
     int configuration, iteration, view, step;

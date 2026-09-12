@@ -1222,7 +1222,7 @@ $(BUILD)/map-runtime-test: $(BUILD)/map_runtime_test | $(BUILD)
 test-map-runtime: app-map-runtime-test
 	tools/test_map_runtime.sh
 
-.PHONY: setup-map-layout map-layout map-layout-query test-map-layout-export test-map-layout-query world-layout test-world-content generate-gb2312-font
+.PHONY: setup-map-layout map-layout map-layout-query test-map-layout-export test-map-layout-query world-layout test-world-content test-world-layout generate-gb2312-font
 generate-gb2312-font:
 	python3 tools/fonts/build_gb2312_16.py \
 		rasterfall/assets/fonts/source/wenquanyi_12pt.bdf.gz \
@@ -1240,12 +1240,18 @@ map-layout-query:
 	python3 tools/map_layout_query.py tmp/map-layout/output.json summary
 
 world-layout:
+	@if test ! -x .venv/map-layout/bin/python; then echo "run 'make setup-map-layout' first" >&2; exit 2; fi
 	@test -n "$(WORLD)" || (echo "usage: make world-layout WORLD=outpost" >&2; exit 2)
 	@case "$(WORLD)" in outpost) map=rasterfall/assets/maps/outpost.map; content=rasterfall/assets/worlds/outpost.content;; campaign_01) map=rasterfall/assets/maps/rasterfall.map; content=rasterfall/assets/worlds/campaign_01.content;; *) echo "unknown WORLD=$(WORLD)" >&2; exit 2;; esac; \
-		python3 tools/world_layout_export.py "$$map" "$$content" --output-dir "tmp/world-layout/$(WORLD)"
+		.venv/map-layout/bin/python tools/world_layout_export.py "$$map" "$$content" --output-dir "tmp/world-layout/$(WORLD)"
 
 test-world-content:
-	python3 tools/test_world_content.py
+	@if test ! -x .venv/map-layout/bin/python; then echo "run 'make setup-map-layout' first" >&2; exit 2; fi
+	.venv/map-layout/bin/python tools/test_world_content.py
+
+test-world-layout:
+	@if test ! -x .venv/map-layout/bin/python; then echo "run 'make setup-map-layout' first" >&2; exit 2; fi
+	.venv/map-layout/bin/python tools/test_world_layout.py
 
 test-map-layout-export:
 	@if test ! -x .venv/map-layout/bin/python; then echo "run 'make setup-map-layout' first" >&2; exit 2; fi

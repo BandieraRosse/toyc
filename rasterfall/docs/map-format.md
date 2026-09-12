@@ -50,8 +50,8 @@ axis 和 material 原样保存在 Map IR/Runtime；parser 不解释 `kind` 或 `
 作为扩展字段保存。坡道必须保存 `axis` 与起止高度；平台/地面使用单一 `height`。
 
 `attr.legacy_index` 只供迁移 adapter 把 surface 几何写入现有 `toy_map_primitive`，不改变
-collision record 的碰撞标志和路径。当前正式地图 surface 为 32/32，render 为 98/98；两者都由
-V1 Runtime adapter 写入现有 primitive/draw 兼容结构。
+collision record 的碰撞标志和路径。正式地图的 surface/render 记录均由 V1 Runtime adapter
+写入现有 primitive/draw 兼容结构；具体数量以 `map-inspect` 和 `map-runtime-test` 的当前输出为准。
 
 ## Map IR Runtime Bridge
 
@@ -74,7 +74,7 @@ AI、prop 和 renderer 行为保持不变；Runtime Map 是 authoritative world 
 Runtime Map 和 projection adapter 是默认输入链路；修改语法时必须同时检查 parser、runtime、玩法绑定、
 碰撞/导航、渲染和逻辑测试。
 
-Outpost V0 使用同一 V1 链路，源文件为 `assets/maps/outpost.map`。`station_terminal`、
+Outpost V1 使用同一 V1 链路，源文件为 `assets/maps/outpost.map`。`station_terminal`、
 `operations_terminal`、`super_terminal` 和 `return_outpost` 是 Game-owned interaction vocabulary，分别
 映射为 Station GUI 请求、Campaign 01 world request、锁定反馈和返回请求；它们不是 Core API，也不改变
 Runtime Map ownership。
@@ -184,7 +184,7 @@ render id=outer_wall kind=wall min_x=-45000 max_x=33000 min_z=-45000 max_z=-4500
 引用 registry asset ID，不放 mesh、texture、material 或 rasterizer 状态。视觉装饰可以超出
 gameplay `world` bounds（正式地图外围墙保留了这一旧行为）；collision/surface 仍必须位于 world 内。
 
-正式 `rasterfall.map` 当前包含完整的 98 个 render records；`rasterfall_legacy.map` 仍保留
+正式 `rasterfall.map` 的 render records 由 V1 source 完整提供；`rasterfall_legacy.map` 仍保留
 作为 fallback，但正式启动路径的 draw data 来自 V1 render → runtime → draw adapter。
 
 `x/z` 使用 RFU，实例落在地面锚点 `y=-900`；`yaw` 为绕世界 Y 轴的角度；`scale=1000`
