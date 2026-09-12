@@ -20,6 +20,7 @@ struct rasterfall_content_actor {
     char id[RASTERFALL_CONTENT_ID_SIZE];
     char name[RASTERFALL_CONTENT_ID_SIZE];
     char character[RASTERFALL_CONTENT_KIND_SIZE];
+    char weapon[RASTERFALL_CONTENT_KIND_SIZE];
     int x, y, z, yaw;
     int line;
 };

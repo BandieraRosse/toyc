@@ -539,6 +539,21 @@ int rasterfall_map_project_runtime(struct rasterfall_map_state *map)
             map->level->spawn_zones[map->level->spawn_count].box.maxz =
                 region->bounds.max_z;
             map->level->spawn_zones[map->level->spawn_count].color = 0;
+            {
+                int j;
+                for (j = 0; j < map->level->draw_count; j++) {
+                    const struct toy_map_draw *draw = &map->level->draw[j];
+                    if (draw->type != TOY_MAP_DRAW_FLOOR ||
+                        draw->a != region->bounds.min_x ||
+                        draw->b != region->bounds.max_x ||
+                        draw->c != region->bounds.min_z ||
+                        draw->d != region->bounds.max_z)
+                        continue;
+                    map->level->spawn_zones[map->level->spawn_count].color =
+                        draw->color;
+                    break;
+                }
+            }
             map->spawn_zones[map->level->spawn_count] =
                 map->level->spawn_zones[map->level->spawn_count].box;
             map->level->spawn_count++;

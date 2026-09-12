@@ -79,12 +79,6 @@ void rasterfall_world_content_clear(struct rasterfall_world_content *content)
 void rasterfall_world_content_build(struct rasterfall_world_content *content,
                                     enum rasterfall_world_id world)
 {
-    int i;
-    static const char *maid_members[] = {
-        "ANIME_GUARD_1", "ANIME_GUARD_2",
-        "ANIME_GUARD_3", "ANIME_GUARD_4"
-    };
-
     rasterfall_world_content_clear(content);
     if (!content) return;
     if (world == RASTERFALL_WORLD_OUTPOST) {
@@ -101,11 +95,6 @@ void rasterfall_world_content_build(struct rasterfall_world_content *content,
     content->model_gallery_enabled = 1;
     content->character_test_strip_enabled = 1;
     content->campaign_fixture_enabled = 1;
-    content->formation_count = 1;
-    strcpy(content->formations[0].id, "maid_squad");
-    content->formations[0].member_count = 4;
-    for (i = 0; i < 4; i++)
-        strcpy(content->formations[0].member_ids[i], maid_members[i]);
 }
 
 int rasterfall_world_content_load(struct rasterfall_world_content *content,
@@ -155,7 +144,7 @@ int rasterfall_world_content_load(struct rasterfall_world_content *content,
                     struct rasterfall_content_actor *a;
                     if (content->actor_count >= RASTERFALL_CONTENT_MAX_ACTORS) goto capacity;
                     a = &content->actors[content->actor_count++]; __memset(a, 0, sizeof(*a));
-                    strcpy(a->id, id); { const char *v = get(keys, values, count, "name"); strcpy(a->name, v ? v : id); v = get(keys, values, count, "character"); if (v) strcpy(a->character, v); }
+                    strcpy(a->id, id); { const char *v = get(keys, values, count, "name"); strcpy(a->name, v ? v : id); v = get(keys, values, count, "character"); if (v) strcpy(a->character, v); v = get(keys, values, count, "weapon"); if (v) strcpy(a->weapon, v); }
                     if (number(get(keys, values, count, "x"), &a->x) < 0 || number(get(keys, values, count, "y"), &a->y) < 0 || number(get(keys, values, count, "z"), &a->z) < 0) goto malformed;
                     { const char *v = get(keys, values, count, "yaw"); if (v && number(v, &a->yaw) < 0) goto malformed; }
                     a->line = line_no;

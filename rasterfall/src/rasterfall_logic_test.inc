@@ -382,8 +382,9 @@ static int run_logic_test(void)
         !session.content.campaign_flags_enabled ||
         !session.content.model_gallery_enabled ||
         !session.content.character_test_strip_enabled ||
-        session.content.formation_count != 1 ||
-        strcmp(session.content.formations[0].id, "maid_squad"))
+        session.content.formation_count != 2 ||
+        strcmp(session.content.formations[0].id, "maid_squad") ||
+        strcmp(session.content.formations[1].id, "hurd_squad"))
         return 237;
     if (RASTERFALL_RFU_FROM_MM(1000) != RASTERFALL_RFU_PER_METER ||
         RASTERFALL_HUMAN_HEIGHT_RFU != 896 ||

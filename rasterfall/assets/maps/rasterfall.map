@@ -128,11 +128,11 @@ render id=legacy_render_009 kind=box min_x=-1800 max_x=-600 min_z=-5700 max_z=-5
 render id=legacy_render_010 kind=box min_x=600 max_x=1800 min_z=-5700 max_z=-5680 height=2200 color=3F6751 attr.legacy_index=10
 render id=legacy_render_011 kind=model min_x=-1800 max_x=1800 min_z=-5700 max_z=-4000 height=1300 color=3F6751 attr.height2=1500 attr.legacy_index=11
 render id=legacy_render_012 kind=platform min_x=-2180 max_x=2180 min_z=-5880 max_z=-3620 height=2400 color=0 attr.style=0 attr.legacy_index=12
-render id=legacy_render_013 kind=box min_x=-24000 max_x=-1800 min_z=-5900 max_z=-5700 height=3900 color=48C8E0 attr.legacy_index=13
+render id=legacy_render_013 kind=box min_x=-24000 max_x=-1800 min_z=-5900 max_z=-5700 height=3900 color=48C8E0 attr.role=air_gate_left attr.legacy_index=13
 render id=legacy_render_014 kind=ramp min_x=-21000 max_x=-19000 min_z=-15000 max_z=-5900 height=0 color=477A66 attr.height2=3979 attr.style=3 attr.axis=z attr.legacy_index=14
 render id=legacy_render_015 kind=label min_x=-21000 max_x=-19000 min_z=-14600 max_z=-14400 color=9FE8C8 attr.text=DEV_RAMP_SLOPE_0.44 attr.legacy_index=15
 render id=legacy_render_016 kind=platform min_x=-24180 max_x=-1620 min_z=-6260 max_z=-5520 height=3900 color=3B5550 attr.style=1 attr.role=air_gate_left_top attr.legacy_index=16
-render id=legacy_render_017 kind=box min_x=1800 max_x=24000 min_z=-5900 max_z=-5700 height=3900 color=48C8E0 attr.legacy_index=17
+render id=legacy_render_017 kind=box min_x=1800 max_x=24000 min_z=-5900 max_z=-5700 height=3900 color=48C8E0 attr.role=air_gate_right attr.legacy_index=17
 render id=legacy_render_018 kind=platform min_x=1620 max_x=24180 min_z=-6260 max_z=-5520 height=3900 color=3B5550 attr.style=1 attr.role=air_gate_right_top attr.legacy_index=18
 render id=legacy_render_019 kind=floor min_x=-24000 max_x=-1800 min_z=-5900 max_z=-5700 height=0 color=26394A attr.legacy_index=19
 render id=legacy_render_020 kind=floor min_x=1800 max_x=24000 min_z=-5900 max_z=-5700 height=0 color=26394A attr.legacy_index=20

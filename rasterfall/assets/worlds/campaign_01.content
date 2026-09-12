@@ -1,14 +1,14 @@
 # Rasterfall Campaign 01 World Content V1
 actor id=jesus name=Jesus character=RF_RIFLEMAN x=1000 y=0 z=0 yaw=0
 actor id=eula name=EULA character=EULA x=-13800 y=0 z=-12000 yaw=0
-actor id=maid_1 name=ANIME_GUARD_1 character=MAID x=-12000 y=0 z=0 yaw=0
-actor id=maid_2 name=ANIME_GUARD_2 character=MAID x=-11100 y=0 z=0 yaw=0
-actor id=maid_3 name=ANIME_GUARD_3 character=MAID x=-12000 y=0 z=900 yaw=0
-actor id=maid_4 name=ANIME_GUARD_4 character=MAID x=-11100 y=0 z=900 yaw=0
-actor id=hurd_gunsmith name=GUNSMITH character=HURD_GUNSMITH x=-900 y=0 z=28500 yaw=0
-actor id=hurd_logistics name=LOGISTICS character=HURD_LOGISTICS x=900 y=0 z=28500 yaw=0
-actor id=hurd_medic name=MEDIC character=HURD_MEDIC x=-900 y=0 z=29400 yaw=0
-actor id=hurd_guard name=GUARD character=HURD_GUARD x=900 y=0 z=29400 yaw=0
+actor id=maid_1 name=ANIME_GUARD_1 character=MAID weapon=pistol x=-12000 y=0 z=0 yaw=0
+actor id=maid_2 name=ANIME_GUARD_2 character=MAID weapon=pistol x=-11100 y=0 z=0 yaw=0
+actor id=maid_3 name=ANIME_GUARD_3 character=MAID weapon=pistol x=-12000 y=0 z=900 yaw=0
+actor id=maid_4 name=ANIME_GUARD_4 character=MAID weapon=pistol x=-11100 y=0 z=900 yaw=0
+actor id=hurd_gunsmith name=GUNSMITH character=HURD_GUNSMITH weapon=pistol x=-900 y=0 z=28500 yaw=0
+actor id=hurd_logistics name=LOGISTICS character=HURD_LOGISTICS weapon=pistol x=900 y=0 z=28500 yaw=0
+actor id=hurd_medic name=MEDIC character=HURD_MEDIC weapon=pistol x=-900 y=0 z=29400 yaw=0
+actor id=hurd_guard name=GUARD character=HURD_GUARD weapon=smg x=900 y=0 z=29400 yaw=0
 actor id=standard_medic name=Squad_A_Medic character=SQUAD_A_MEDIC x=420 y=0 z=7420 yaw=0
 actor id=standard_engineer name=Squad_A_Engineer character=SQUAD_A_ENGINEER x=-420 y=0 z=7420 yaw=0
 actor id=standard_recon name=Squad_A_Recon character=SQUAD_A_RECON x=-420 y=0 z=6580 yaw=0
@@ -21,5 +21,6 @@ flag id=hurd x=0 y=0 z=28500
 flag id=standard_response x=0 y=0 z=7000
 flag id=assault x=14000 y=0 z=0
 formation id=maid_squad members=maid_1,maid_2,maid_3,maid_4
+formation id=hurd_squad members=hurd_gunsmith,hurd_logistics,hurd_medic,hurd_guard
 fixture id=model_gallery kind=model_gallery x=-5200 y=0 z=-13200 yaw=0
 fixture id=character_test_strip kind=character_test_strip x=0 y=0 z=-13200 yaw=0

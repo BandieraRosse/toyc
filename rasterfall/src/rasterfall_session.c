@@ -254,6 +254,39 @@ static int session_content_actor_position(
     return 0;
 }
 
+static const struct rasterfall_content_actor *session_content_actor(
+    const struct rasterfall_session *session, const char *id)
+{
+    int i;
+    if (!session || !id) return NULL;
+    for (i = 0; i < session->content.actor_count; i++)
+        if (!strcmp(session->content.actors[i].id, id))
+            return &session->content.actors[i];
+    return NULL;
+}
+
+static const struct rasterfall_content_formation *session_content_formation(
+    const struct rasterfall_session *session, const char *id)
+{
+    int i;
+    if (!session || !id) return NULL;
+    for (i = 0; i < session->content.formation_count; i++)
+        if (!strcmp(session->content.formations[i].id, id))
+            return &session->content.formations[i];
+    return NULL;
+}
+
+static int session_content_character_id(const char *name)
+{
+    if (!name) return RASTERFALL_CHARACTER_NONE;
+    if (!strcmp(name, "MAID")) return RASTERFALL_CHARACTER_MAID;
+    if (!strcmp(name, "HURD_GUNSMITH")) return RASTERFALL_CHARACTER_HURD_GUNSMITH;
+    if (!strcmp(name, "HURD_LOGISTICS")) return RASTERFALL_CHARACTER_HURD_LOGISTICS;
+    if (!strcmp(name, "HURD_MEDIC")) return RASTERFALL_CHARACTER_HURD_MEDIC;
+    if (!strcmp(name, "HURD_GUARD")) return RASTERFALL_CHARACTER_HURD_GUARD;
+    return RASTERFALL_CHARACTER_NONE;
+}
+
 static int session_content_flag_position(
     const struct rasterfall_session *session, const char *id, int *x, int *z)
 {
@@ -630,53 +663,55 @@ void rasterfall_session_reset(struct rasterfall_session *session,
     session_assign_roster_to_flag(session, RASTERFALL_SQUAD_ASSAULT,
                                   RASTERFALL_ASSAULT_FLAG_INDEX);
     if (session->content.spawn_maid_squad) {
-        static const char *maid_names[RASTERFALL_MAID_SQUAD_SIZE] = {
-            "ANIME_GUARD_1", "ANIME_GUARD_2",
-            "ANIME_GUARD_3", "ANIME_GUARD_4"
-        };
-        for (i = 0; i < RASTERFALL_MAID_SQUAD_SIZE; i++) {
+        const struct rasterfall_content_formation *formation =
+            session_content_formation(session, "maid_squad");
+        for (i = 0; formation && i < formation->member_count; i++) {
+            const struct rasterfall_content_actor *def =
+                session_content_actor(session, formation->member_ids[i]);
+            if (!def || session_content_character_id(def->character) !=
+                RASTERFALL_CHARACTER_MAID) continue;
             int actor_id = toy_game_add_anime_flag_guard(
-                &session->game_state, i + 1, RASTERFALL_CHARACTER_MAID,
-                session->content.actors[i].x,
-                session->content.actors[i].z,
-                maid_names[i], RASTERFALL_MAID_FLAG_INDEX);
-            if (actor_id > 0)
+                &session->game_state, i + 1,
+                session_content_character_id(def->character),
+                def->x, def->z, def->name, RASTERFALL_MAID_FLAG_INDEX);
+            if (actor_id > 0) {
+                int weapon = toy_game_weapon_from_name(def->weapon);
+                if (weapon >= 0)
+                    toy_game_set_ai_weapon(&session->game_state, actor_id - 1,
+                                           weapon);
                 toy_game_assign_actor_deployment(
                     &session->game_state, actor_id - 1,
-                    session->content.actors[i].x,
-                    session->content.actors[i].z,
+                    def->x, def->z,
                     RASTERFALL_MAID_FLAG_INDEX);
+            }
         }
     }
     if (session->content.spawn_campaign_support) {
-        static const char *hurd_names[] = {
-            "GUNSMITH", "LOGISTICS", "MEDIC", "GUARD"
-        };
-        static const int hurd_weapons[] = {
-            TOY_GAME_WEAPON_PISTOL, TOY_GAME_WEAPON_PISTOL,
-            TOY_GAME_WEAPON_PISTOL, TOY_GAME_WEAPON_SMG
-        };
-        static const int hurd_character_ids[] = {
-            RASTERFALL_CHARACTER_HURD_GUNSMITH,
-            RASTERFALL_CHARACTER_HURD_LOGISTICS,
-            RASTERFALL_CHARACTER_HURD_MEDIC,
-            RASTERFALL_CHARACTER_HURD_GUARD
-        };
-        for (i = 0; i < 4; i++) {
+        const struct rasterfall_content_formation *formation =
+            session_content_formation(session, "hurd_squad");
+        for (i = 0; formation && i < formation->member_count; i++) {
+            const struct rasterfall_content_actor *def =
+                session_content_actor(session, formation->member_ids[i]);
+            int character_id = def ?
+                session_content_character_id(def->character) :
+                RASTERFALL_CHARACTER_NONE;
+            if (!def || character_id < RASTERFALL_CHARACTER_HURD_GUNSMITH ||
+                character_id > RASTERFALL_CHARACTER_HURD_GUARD) continue;
             int actor_id = toy_game_add_character_flag_guard(
-                &session->game_state, hurd_character_ids[i],
-                session->content.actors[4 + i].x,
-                session->content.actors[4 + i].z,
-                hurd_names[i], RASTERFALL_HURD_FLAG_INDEX);
+                &session->game_state, character_id,
+                def->x, def->z, def->name, RASTERFALL_HURD_FLAG_INDEX);
             if (actor_id > 0) {
                 int actor_index = actor_id - 1;
                 session->hurd_outpost.squad_actor_indices[i] = actor_index;
-                toy_game_set_ai_weapon(&session->game_state, actor_index,
-                                       hurd_weapons[i]);
+                {
+                    int weapon = toy_game_weapon_from_name(def->weapon);
+                    if (weapon >= 0)
+                        toy_game_set_ai_weapon(&session->game_state, actor_index,
+                                               weapon);
+                }
                 toy_game_assign_actor_deployment(
                     &session->game_state, actor_index,
-                    session->content.actors[4 + i].x,
-                    session->content.actors[4 + i].z,
+                    def->x, def->z,
                     RASTERFALL_HURD_FLAG_INDEX);
             }
         }
