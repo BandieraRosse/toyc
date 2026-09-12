@@ -24,6 +24,7 @@ struct rf_gui_window {
  * state; the context is deliberately small enough to copy per frame. */
 struct rf_gui_context {
     int active;
+    int icon_count;
     int cursor_x, cursor_y;
     int hovered_icon;
     int drag_window;
@@ -33,6 +34,8 @@ struct rf_gui_context {
 
 void rf_gui_init(struct rf_gui_context *gui);
 void rf_gui_set_active(struct rf_gui_context *gui, int active);
+void rf_gui_set_icon_count(struct rf_gui_context *gui, int count);
+void rf_gui_close_all_windows(struct rf_gui_context *gui);
 void rf_gui_set_app_manager(struct rf_gui_context *gui,
                             struct rf_app_manager *manager);
 int rf_gui_open_window(struct rf_gui_context *gui, int app_id,

@@ -107,7 +107,8 @@ int rf_application_project_personnel(
     for (i = 0; i < TOY_GAME_MAX_ACTORS && snapshot->count < RF_PERSONNEL_MAX; i++) {
         const struct toy_game_actor *actor = &session->game_state.actors[i];
         struct rf_personnel_record *person;
-        if (!actor->active || actor->developer_only) continue;
+        if (!actor->active || actor->developer_only ||
+            actor->kind != TOY_GAME_ACTOR_AI) continue;
         person = &snapshot->people[snapshot->count++];
         person->person_id = actor->actor_id;
         copy_text(person->display_name, actor->name, RF_PERSONNEL_TEXT_MAX);

@@ -1,6 +1,6 @@
 # RF Application Runtime V0
 
-> 文档更新：2026-09-11
+> 文档更新：2026-09-12
 > 源码核对基线：工作区（`rf_app` / `rf_app_manager` registration、open/close/update/render；CORE STATUS、PERSONNEL、TERMINAL 迁移；Application API Stabilization V0 Phase 1 ownership audit）
 
 RF Application Runtime V0 是 GUI Runtime 上层的最小 application model。它不是完整 UI
@@ -27,7 +27,8 @@ GUI 继续拥有 cursor、icon hit testing、窗口几何、拖动和 close butt
 - `rf_app_manager_update()`：更新已打开 application。
 - `rf_app_manager_render_window()`：将 application 内容提交到既有 window。
 
-当前默认注册三个 app：`CORE STATUS`、`PERSONNEL`、`TERMINAL`。它们保持固定文本展示；
+正常 debug desktop 默认注册三个 app：`CORE STATUS`、`PERSONNEL`、`TERMINAL`。Station Terminal
+进入时切换为单应用模式，仅注册 `PERSONNEL`，并从当前 session projection 读取人员信息；
 Terminal command execution 仍归既有 Terminal/Console frontend，不在本阶段复制。
 
 Application Projection Layer V0 已为 PERSONNEL 提供只读 snapshot。Application descriptor 仅借用

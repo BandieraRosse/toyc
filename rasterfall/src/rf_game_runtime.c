@@ -2492,8 +2492,12 @@ int rf_game_update(struct rf_game_runtime *runtime,
     if (game_session->station_gui_request) {
         game_session->station_gui_request = 0;
         rf_gui_set_active(&runtime->gui, 1);
+        rf_gui_set_icon_count(&runtime->gui, 1);
         rf_core_set_pointer_lock(runtime->core, 0);
-        rf_app_manager_open_icon(&runtime->app_manager, 2, 1024, 720);
+        rf_app_manager_register_station(&runtime->app_manager);
+        rf_app_manager_set_query_context(&runtime->app_manager,
+                                         &runtime->application_query);
+        rf_app_manager_open_icon(&runtime->app_manager, 0, 1024, 720);
         runtime->lifecycle_paused = 1;
     }
 
@@ -2691,7 +2695,6 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     int64_t last_time, fps_window_start, fps_elapsed;
     int64_t last_active = 0;   /* 帧间隔统计 */
     int return_to_menu = 0;
-    int gui_paused_before = 1;
     int64_t menu_nav_ready_us = 0;
     int64_t accumulator = 0, prev_begin = 0;
     int running = 1, pointer_lock_requested = 0, paused = 1;
@@ -3323,20 +3326,25 @@ startup_again:
         }
         if (!developer_console.open && pending_key_edges[KEY_F12]) {
             pending_key_edges[KEY_F12] = 0;
-            if (game_runtime.gui.active) {
-                rf_gui_set_active(&game_runtime.gui, 0);
-                paused = gui_paused_before;
-                if (!paused) {
-                    int capture_result = rf_core_set_pointer_lock(&core, 1);
-                    pointer_lock_requested = capture_result > 0;
-                }
-            } else {
-                gui_paused_before = paused;
+            if (!game_runtime.gui.active) {
                 paused = 1;
                 rf_gui_set_active(&game_runtime.gui, 1);
                 rf_core_set_pointer_lock(&core, 0);
                 pointer_lock_requested = 0;
             }
+        }
+        if (!developer_console.open && game_runtime.gui.active &&
+            pending_key_edges[KEY_ESC]) {
+            pending_key_edges[KEY_ESC] = 0;
+            rf_gui_close_all_windows(&game_runtime.gui);
+            rf_gui_set_active(&game_runtime.gui, 0);
+            rf_gui_set_icon_count(&game_runtime.gui, RF_GUI_ICON_COUNT);
+            rf_app_manager_register_defaults(&game_runtime.app_manager);
+            rf_app_manager_set_query_context(&game_runtime.app_manager,
+                                             &game_runtime.application_query);
+            paused = 0;
+            rf_core_set_pointer_lock(&core, 1);
+            pointer_lock_requested = 1;
         }
         if (game_runtime.gui.active && !developer_console.open)
             rf_gui_handle_input(&game_runtime.gui, &input,

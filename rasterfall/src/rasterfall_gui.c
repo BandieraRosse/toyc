@@ -26,10 +26,10 @@ static void text(struct toy_surface *s, int x, int y, const char *value,
                  unsigned int color)
 { fb_draw_string((unsigned char *)s->pixels, x, y, value, color, s->stride); }
 
-static int hit_icon(int x, int y)
+static int hit_icon(const struct rf_gui_context *gui, int x, int y)
 {
     int i;
-    for (i = 0; i < RF_GUI_ICON_COUNT; i++)
+    for (i = 0; gui && i < gui->icon_count; i++)
         if (inside(32, 72 + i * 82, 190, 62, x, y)) return i;
     return -1;
 }
@@ -56,10 +56,21 @@ int rf_gui_open_window(struct rf_gui_context *gui, int app_id,
 }
 
 void rf_gui_init(struct rf_gui_context *gui)
-{ if (gui) { memset(gui, 0, sizeof(*gui)); gui->drag_window = -1; gui->hovered_icon = -1; } }
+{ if (gui) { memset(gui, 0, sizeof(*gui)); gui->drag_window = -1; gui->hovered_icon = -1; gui->icon_count = RF_GUI_ICON_COUNT; } }
 
 void rf_gui_set_active(struct rf_gui_context *gui, int active)
 { if (gui) { gui->active = active != 0; if (!gui->active) gui->drag_window = -1; } }
+
+void rf_gui_set_icon_count(struct rf_gui_context *gui, int count)
+{ if (gui) { if (count < 0) count = 0; if (count > RF_GUI_ICON_COUNT) count = RF_GUI_ICON_COUNT; gui->icon_count = count; gui->hovered_icon = -1; } }
+
+void rf_gui_close_all_windows(struct rf_gui_context *gui)
+{
+    int i;
+    if (!gui) return;
+    for (i = 0; i < RF_GUI_MAX_WINDOWS; i++) gui->windows[i].open = 0;
+    gui->drag_window = -1;
+}
 
 void rf_gui_set_app_manager(struct rf_gui_context *gui,
                             struct rf_app_manager *manager)
@@ -72,7 +83,7 @@ int rf_gui_handle_input(struct rf_gui_context *gui,
     int i, icon;
     if (!gui || !input || !gui->active) return 0;
     gui->cursor_x = input->pointer_x; gui->cursor_y = input->pointer_y;
-    gui->hovered_icon = hit_icon(gui->cursor_x, gui->cursor_y);
+    gui->hovered_icon = hit_icon(gui, gui->cursor_x, gui->cursor_y);
     if (gui->drag_window >= 0) {
         struct rf_gui_window *w = &gui->windows[gui->drag_window];
         if (input->mouse_buttons & 1) {
@@ -111,7 +122,8 @@ static void draw_window(struct toy_surface *s, const struct rf_gui_window *w)
     fill(s, w->x, w->y, w->width, w->height, 0x172332);
     fill(s, w->x, w->y, w->width, 28, 0x30465A);
     text(s, w->x + 12, w->y + 6, w->title, 0xF6C35B);
-    text(s, w->x + w->width - 20, w->y + 6, "X", 0xFF8A80);
+    fill(s, w->x + w->width - 27, w->y + 5, 20, 18, 0xD94B5B);
+    text(s, w->x + w->width - 21, w->y + 7, "X", 0xFFFFFF);
 }
 
 void rf_gui_render(struct toy_surface *s, const struct rf_gui_context *gui)
@@ -120,8 +132,8 @@ void rf_gui_render(struct toy_surface *s, const struct rf_gui_context *gui)
     if (!s || !gui || !gui->active) return;
     fill(s, 0, 0, s->width, s->height, 0x0B1420);
     text(s, 32, 24, "RF GUI DESKTOP  //  CORE PRESENTATION", 0xF6C35B);
-    text(s, 32, 46, "F12 close    click icon open    drag title bar    X close", 0x91A5B8);
-    for (i = 0; i < RF_GUI_ICON_COUNT; i++) {
+    text(s, 32, 46, "ESC exit    click icon open    drag title bar    red X close", 0x91A5B8);
+    for (i = 0; i < gui->icon_count; i++) {
         const char *name = gui->app_manager ? rf_app_manager_icon_name(gui->app_manager, i) : "APPLICATION";
         unsigned int border = i == gui->hovered_icon ? 0xF6C35B : 0x557087;
         fill(s, 30, 70 + i * 82, 194, 66, border);
@@ -153,5 +165,10 @@ int rf_gui_logic_test(void)
     rf_gui_handle_input(&g, &in, 0, 0);
     in.mouse_buttons = 0; rf_gui_handle_input(&g, &in, 0, 0);
     if (!g.windows[0].open || g.windows[0].x == (1024 - 390) / 2) return 3;
+    in.pointer_x = g.windows[0].x + g.windows[0].width - 18;
+    in.pointer_y = g.windows[0].y + 12;
+    in.mouse_buttons = 1;
+    rf_gui_handle_input(&g, &in, 1, RF_GUI_MOUSE_LEFT);
+    if (g.windows[0].open || m.apps[0].open) return 4;
     return 0;
 }

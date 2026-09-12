@@ -42,6 +42,7 @@ int rf_app_manager_register(struct rf_app_manager *manager,
                             const char *text, rf_app_update_fn update,
                             rf_app_render_fn render);
 int rf_app_manager_register_defaults(struct rf_app_manager *manager);
+int rf_app_manager_register_station(struct rf_app_manager *manager);
 int rf_app_manager_open(struct rf_app_manager *manager, int id,
                         int screen_width, int screen_height);
 int rf_app_manager_open_icon(struct rf_app_manager *manager, int icon,

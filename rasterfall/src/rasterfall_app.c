@@ -99,6 +99,8 @@ int rf_app_manager_register(struct rf_app_manager *m, int id, int icon,
 int rf_app_manager_register_defaults(struct rf_app_manager *m)
 {
     if (!m) return -1;
+    memset(m->apps, 0, sizeof(m->apps));
+    m->count = 0;
     if (rf_app_manager_register(m, RF_APP_CORE_STATUS, 0, "CORE STATUS",
         "CORE RUNTIME\n\nwindow     READY\nrenderer   READY\nfilesystem READY\nclock      READY\naudio      READY\n\nAPPLICATION MODEL: V0", NULL, NULL) < 0) return -1;
     if (rf_app_manager_register(m, RF_APP_PERSONNEL, 1, "PERSONNEL",
@@ -106,6 +108,16 @@ int rf_app_manager_register_defaults(struct rf_app_manager *m)
     if (rf_app_manager_register(m, RF_APP_TERMINAL, 2, "TERMINAL",
         "TERMINAL\n\nSTATION TERMINAL VIEW\n\nRF TERMINAL FRONTEND\n\nUse the developer console for\ncommands and diagnostics.\n\nApplication is display-only here.", NULL, NULL) < 0) return -1;
     return 0;
+}
+
+int rf_app_manager_register_station(struct rf_app_manager *m)
+{
+    if (!m) return -1;
+    memset(m->apps, 0, sizeof(m->apps));
+    m->count = 0;
+    return rf_app_manager_register(m, RF_APP_PERSONNEL, 0, "PERSONNEL",
+                                   "PERSONNEL DATA UNAVAILABLE", NULL,
+                                   render_personnel);
 }
 
 int rf_app_manager_open(struct rf_app_manager *m, int id, int sw, int sh)
@@ -143,5 +155,7 @@ int rf_app_manager_logic_test(void)
     if (rf_app_manager_register_defaults(&m) < 0 || m.count != 3) return 1;
     if (rf_app_manager_open(&m, RF_APP_CORE_STATUS, 1024, 720) < 0 || !m.apps[0].open) return 2;
     if (rf_app_manager_close(&m, RF_APP_CORE_STATUS) < 0 || m.apps[0].open) return 3;
+    if (rf_app_manager_register_station(&m) < 0 || m.count != 1 ||
+        m.apps[0].id != RF_APP_PERSONNEL || m.apps[0].icon != 0) return 4;
     return 0;
 }
