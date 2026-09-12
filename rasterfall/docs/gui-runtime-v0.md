@@ -1,7 +1,7 @@
 # RF GUI Runtime Prototype V0
 
 > 文档更新：2026-09-12
-> 源码核对基线：工作区（Desktop V1 window state/z-order/chrome；GUI context、icon hit testing、window drag/close/text presentation）
+> 源码核对基线：Desktop V1 window state/z-order/chrome；F12 与前哨站共用双应用桌面；GUI icon hit testing、连续拖动、window drag/close/text presentation
 
 本原型是 Game Presentation 上层的最小屏幕空间 GUI，不是 HUD、地图实体或通用 UI framework。
 `rf_game_runtime` 持有 `struct rf_gui_context`，GUI 只消费 Core 的输入 view 和当前 surface，
@@ -9,9 +9,9 @@
 
 ## V0 范围（历史原型边界）
 
-- `F12` 仅用于打开 debug desktop；Station Terminal 使用 `ESC` 退出 desktop。
+- `F12` 和 Station Terminal 使用同一套 desktop；`ESC` 退出 desktop。
 - Desktop V1 的固定 icon 为 `PERSONNEL`、`TERMINAL`；旧 CORE STATUS 入口已移除。
-- Station Terminal 进入时切换为单应用 desktop，仅显示 `PERSONNEL` icon；左键命中 icon 打开人员窗口。
+- Station Terminal 进入时打开同一套双应用 desktop，并默认打开 `TERMINAL`；`PERSONNEL` 从 live actor projection 读取角色信息。
 - 统一窗口 chrome 支持最小化、最大化/恢复、关闭、焦点和 z-order；窗口关闭后回到 desktop。
 - GUI 打开时暂停玩法并释放 pointer lock，关闭时恢复原暂停状态。
 

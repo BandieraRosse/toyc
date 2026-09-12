@@ -7196,6 +7196,38 @@ static int ray_lerp(int a, int b, int t)
     return a + (int)((long long)(b - a) * t / 65536);
 }
 
+static void render_knockback_curve(struct toy_renderer *renderer,
+                                   const struct camera *camera,
+                                   const struct rasterfall_effect_instance *t,
+                                   uint32_t color, int width)
+{
+    int segment;
+    int previous_x = t->x, previous_y = t->y, previous_z = t->z;
+    int samples = 32;
+    int duration = t->curve_duration_ms > 0 ? t->curve_duration_ms : 16;
+    int flight = t->curve_flight_ms;
+    if (flight < 1) flight = 1;
+    if (flight > duration) flight = duration;
+    for (segment = 1; segment <= samples; segment++) {
+        int elapsed = flight * segment / samples;
+        int steps = elapsed / 16;
+        int x = t->x + t->vx * steps;
+        int y = t->y + t->vy * steps -
+                t->gravity_y * steps * (steps - 1) / 2;
+        int z = t->z + t->vz * steps;
+        if (segment == samples) {
+            /* The final point is the live actor position, so collision
+             * correction and a non-16ms landing step cannot leave a gap. */
+            x = t->ex; y = t->ey; z = t->ez;
+        }
+        render_effect_ray(renderer, camera, previous_x, previous_y, previous_z,
+                          x, y, z, color,
+                          (t->flags & RASTERFALL_EFFECT_EVENT_DEPTH_TEST) != 0,
+                          width);
+        previous_x = x; previous_y = y; previous_z = z;
+    }
+}
+
 static int render_effect_rays(struct toy_renderer *renderer, const struct camera *camera)
 {
     int i, pixels = 0;
@@ -7222,6 +7254,11 @@ static int render_effect_rays(struct toy_renderer *renderer, const struct camera
                               0x302020 : 0x3A2C14,
                           fade, 256);
         width = t->kind == RASTERFALL_EFFECT_INSTANCE_KIND_KNOCKBACK_TRAJECTORY ? 3 : 2;
+        if (t->kind == RASTERFALL_EFFECT_INSTANCE_KIND_KNOCKBACK_TRAJECTORY) {
+            render_knockback_curve(renderer, camera, t, color, width);
+            pixels++;
+            continue;
+        }
         if (t->kind == RASTERFALL_EFFECT_INSTANCE_KIND_TRACER) {
             int head_t, tail_t, tail_percent;
             int hx, hy, hz, tx, ty, tz;

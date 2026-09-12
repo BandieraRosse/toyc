@@ -35,17 +35,18 @@ static void render_personnel(struct rf_app *app, struct toy_surface *surface,
     }
     fb_draw_string((unsigned char *)surface->pixels, window->x + 18, y,
                    "PERSONNEL", 0xD5E0EA, surface->stride);
-    for (i = 0; i < snapshot.count && i < 7; i++) {
+    for (i = 0; i < snapshot.count && i < 4; i++) {
         const struct rf_personnel_record *p = &snapshot.people[i];
+        int row_y = y + i * 46;
         snprintf(text, sizeof(text), "%s  %s  %s", p->display_name,
                  p->health_state, p->assignment);
         fb_draw_string((unsigned char *)surface->pixels, window->x + 18,
-                       y + (i + 2) * FB_FONT_H, text, 0xD5E0EA,
+                       row_y, text, 0xD5E0EA,
                        surface->stride);
         snprintf(text, sizeof(text), "  %s / %s / %s", p->role,
                  p->department, p->readiness);
         fb_draw_string((unsigned char *)surface->pixels, window->x + 18,
-                       y + (i + 3) * FB_FONT_H, text, 0xAABBCB,
+                       row_y + FB_FONT_H, text, 0xAABBCB,
                        surface->stride);
     }
 }
@@ -119,12 +120,9 @@ int rf_app_manager_register_defaults(struct rf_app_manager *m)
 
 int rf_app_manager_register_station(struct rf_app_manager *m)
 {
-    if (!m) return -1;
-    memset(m->apps, 0, sizeof(m->apps));
-    m->count = 0;
-    return rf_app_manager_register(m, RF_APP_PERSONNEL, 0, "PERSONNEL",
-                                   "PERSONNEL DATA UNAVAILABLE", NULL,
-                                   render_personnel);
+    /* A station is the same workstation shell as F12.  Keep both apps
+     * registered so TERMINAL is not hidden by the old station-only setup. */
+    return rf_app_manager_register_defaults(m);
 }
 
 int rf_app_manager_open(struct rf_app_manager *m, int id, int sw, int sh)
@@ -170,7 +168,8 @@ int rf_app_manager_logic_test(void)
     if (rf_app_manager_register_defaults(&m) < 0 || m.count != 2) return 1;
     if (rf_app_manager_open(&m, RF_APP_PERSONNEL, 1024, 720) < 0 || !m.apps[0].open) return 2;
     if (rf_app_manager_close(&m, RF_APP_PERSONNEL) < 0 || m.apps[0].open) return 3;
-    if (rf_app_manager_register_station(&m) < 0 || m.count != 1 ||
-        m.apps[0].id != RF_APP_PERSONNEL || m.apps[0].icon != 0) return 4;
+    if (rf_app_manager_register_station(&m) < 0 || m.count != 2 ||
+        m.apps[0].id != RF_APP_PERSONNEL || m.apps[1].id != RF_APP_TERMINAL)
+        return 4;
     return 0;
 }

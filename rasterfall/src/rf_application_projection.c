@@ -25,6 +25,7 @@ static const char *person_role(int character_id, int class_id)
         return "Breacher";
     if (character_id == RASTERFALL_CHARACTER_SQUAD_B_HEAVY)
         return "Heavy";
+    if (character_id == RASTERFALL_CHARACTER_NONE) return "NULL Operative";
     if (class_id == TOY_GAME_AI_LEVEL_1) return "Recruit";
     if (class_id == TOY_GAME_AI_LEVEL_3) return "Veteran";
     return "Rifleman";
@@ -36,6 +37,8 @@ static const char *person_department(int character_id)
         rasterfall_character_profile(character_id);
     if (profile && profile->profession_id == RASTERFALL_PROFESSION_MEDIC)
         return "Medical";
+    if (character_id == RASTERFALL_CHARACTER_NONE)
+        return "Unassigned";
     if (character_id == RASTERFALL_CHARACTER_SQUAD_A_ENGINEER)
         return "Engineering";
     return "Operations";
@@ -111,14 +114,19 @@ int rf_application_project_personnel(
             actor->kind != TOY_GAME_ACTOR_AI) continue;
         person = &snapshot->people[snapshot->count++];
         person->person_id = actor->actor_id;
-        copy_text(person->display_name, actor->name, RF_PERSONNEL_TEXT_MAX);
+        copy_text(person->display_name, actor->name[0] ? actor->name : "NULL",
+                  RF_PERSONNEL_TEXT_MAX);
         copy_text(person->role, person_role(actor->character_id, actor->class_id),
                   RF_PERSONNEL_TEXT_MAX);
         copy_text(person->department, person_department(actor->character_id),
                   RF_PERSONNEL_TEXT_MAX);
         copy_text(person->readiness, person_readiness(actor), RF_PERSONNEL_TEXT_MAX);
         copy_text(person->health_state, person_health(actor), RF_PERSONNEL_TEXT_MAX);
-        person_assignment(actor, person->assignment, RF_PERSONNEL_TEXT_MAX);
+        if (actor->character_id == RASTERFALL_CHARACTER_NONE)
+            copy_text(person->assignment, "UNASSIGNED / MAP ACTOR",
+                      RF_PERSONNEL_TEXT_MAX);
+        else
+            person_assignment(actor, person->assignment, RF_PERSONNEL_TEXT_MAX);
     }
     return 0;
 }

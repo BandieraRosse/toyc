@@ -15,6 +15,7 @@
 #define RASTERFALL_ENEMY_DEATH_DUST_LIFE_MS 1550
 #define RASTERFALL_MUZZLE_FLASH_LIFE_MS 70
 #define RASTERFALL_KNOCKBACK_TRAJECTORY_LIFE_MS 3000
+#define RASTERFALL_EFFECT_TRAJECTORY_IN_FLIGHT (1 << 2)
 #define RASTERFALL_EFFECT_INSTANCE_SLOTS 2048
 #define RASTERFALL_EFFECT_EMITTER_SLOTS 32
 
@@ -182,6 +183,8 @@ struct rasterfall_effect_instance {
     int dir_x, dir_y, dir_z;
     int vx, vy, vz;
     int gravity_y;
+    int curve_duration_ms;
+    int curve_flight_ms;
     int stretch_y;
     uint32_t color;
     int lifetime_ms;

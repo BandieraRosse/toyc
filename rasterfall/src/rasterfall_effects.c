@@ -350,47 +350,82 @@ static void spawn_enemy_death_presentation(
 }
 
 /* The gameplay impulse is authoritative; this is a presentation-only guide
- * showing the hit-time parabola for three seconds.  It is intentionally
- * materialized as short depth-tested rays so the curve remains visible while
- * the actor itself continues to be rendered from live gameplay state. */
+ * carrying the hit-time parabola to the renderer.  The renderer samples this
+ * one curve continuously while the actor is airborne, then starts its
+ * post-landing lifetime. */
 static void spawn_knockback_trajectory(struct rasterfall_effects *effects,
                                        const struct toy_game_actor *actor,
-                                       int enemy_type)
+                                       int actor_index, int enemy_type)
 {
-    int i, segments = 12, total_steps, step0, step1;
-    int origin_x, origin_y, origin_z;
+    struct rasterfall_effect_instance trajectory;
+    int initial_airborne_ms;
     uint32_t color;
     if (!effects || !actor || actor->airborne_ms <= 0 ||
         (!actor->knockback_x && !actor->knockback_z)) return;
-    total_steps = actor->airborne_ms / 16;
-    if (total_steps < 1) total_steps = 1;
-    origin_x = actor->x;
-    origin_y = -900 + actor->ground_y + actor->airborne_y;
-    origin_z = actor->z;
+    initial_airborne_ms = actor->airborne_ms + 16;
     color = enemy_type == TOY_GAME_ENEMY_TANK ? 0xD878E8 : 0xF0B040;
-    for (i = 0; i < segments; i++) {
-        struct rasterfall_effect_instance ray;
-        int y0, y1;
-        step0 = total_steps * i / segments;
-        step1 = total_steps * (i + 1) / segments;
-        y0 = actor->vertical_velocity * step0 -
-             TOY_GAME_AIRBORNE_GRAVITY * step0 * (step0 - 1) / 2;
-        y1 = actor->vertical_velocity * step1 -
-             TOY_GAME_AIRBORNE_GRAVITY * step1 * (step1 - 1) / 2;
-        memset(&ray, 0, sizeof(ray));
-        ray.type = RASTERFALL_EFFECT_INSTANCE_RAY;
-        ray.kind = RASTERFALL_EFFECT_INSTANCE_KIND_KNOCKBACK_TRAJECTORY;
-        ray.flags = RASTERFALL_EFFECT_EVENT_DEPTH_TEST;
-        ray.x = origin_x + actor->knockback_x * step0;
-        ray.y = origin_y + y0;
-        ray.z = origin_z + actor->knockback_z * step0;
-        ray.ex = origin_x + actor->knockback_x * step1;
-        ray.ey = origin_y + y1;
-        ray.ez = origin_z + actor->knockback_z * step1;
-        ray.lifetime_ms = RASTERFALL_KNOCKBACK_TRAJECTORY_LIFE_MS;
-        ray.ray_width = 3;
-        ray.color = color;
-        rasterfall_effects_spawn_instance(effects, &ray);
+    memset(&trajectory, 0, sizeof(trajectory));
+    trajectory.type = RASTERFALL_EFFECT_INSTANCE_RAY;
+    trajectory.kind = RASTERFALL_EFFECT_INSTANCE_KIND_KNOCKBACK_TRAJECTORY;
+    trajectory.flags = RASTERFALL_EFFECT_EVENT_DEPTH_TEST |
+                       RASTERFALL_EFFECT_TRAJECTORY_IN_FLIGHT;
+    trajectory.target_id = actor_index;
+    /* Reconstruct the hit-time origin from the first 16ms gameplay step. */
+    trajectory.x = actor->x - actor->knockback_x;
+    trajectory.y = -900 + actor->ground_y;
+    trajectory.z = actor->z - actor->knockback_z;
+    trajectory.ex = actor->x;
+    trajectory.ey = -900 + actor->ground_y + actor->airborne_y;
+    trajectory.ez = actor->z;
+    trajectory.vx = actor->knockback_x;
+    trajectory.vy = actor->vertical_velocity + TOY_GAME_AIRBORNE_GRAVITY;
+    trajectory.vz = actor->knockback_z;
+    trajectory.gravity_y = TOY_GAME_AIRBORNE_GRAVITY;
+    trajectory.curve_duration_ms = initial_airborne_ms;
+    trajectory.curve_flight_ms = 16;
+    trajectory.lifetime_ms = RASTERFALL_KNOCKBACK_TRAJECTORY_LIFE_MS;
+    trajectory.ray_width = 3;
+    trajectory.color = color;
+    rasterfall_effects_spawn_instance(effects, &trajectory);
+}
+
+static void sync_knockback_trajectories(struct rasterfall_effects *effects,
+                                        const struct toy_game *game)
+{
+    int i;
+    if (!effects || !game) return;
+    for (i = 0; i < RASTERFALL_EFFECT_INSTANCE_SLOTS; i++) {
+        struct rasterfall_effect_instance *trajectory = &effects->instances[i];
+        const struct toy_game_actor *actor;
+        int flight_ms;
+        if (!trajectory->active ||
+            trajectory->kind != RASTERFALL_EFFECT_INSTANCE_KIND_KNOCKBACK_TRAJECTORY)
+            continue;
+        if (trajectory->target_id < 0 ||
+            trajectory->target_id >= TOY_GAME_MAX_ACTORS) {
+            trajectory->active = 0;
+            continue;
+        }
+        actor = &game->actors[trajectory->target_id];
+        if (!actor->active) {
+            trajectory->active = 0;
+            continue;
+        }
+        trajectory->ex = actor->x;
+        trajectory->ey = -900 + actor->ground_y + actor->airborne_y;
+        trajectory->ez = actor->z;
+        if (trajectory->flags & RASTERFALL_EFFECT_TRAJECTORY_IN_FLIGHT) {
+            if (actor->airborne_ms > 0) {
+                flight_ms = trajectory->curve_duration_ms - actor->airborne_ms;
+                if (flight_ms < trajectory->curve_flight_ms)
+                    flight_ms = trajectory->curve_flight_ms;
+                trajectory->curve_flight_ms = flight_ms;
+            } else {
+                trajectory->curve_flight_ms = trajectory->curve_duration_ms;
+                trajectory->flags &= ~RASTERFALL_EFFECT_TRAJECTORY_IN_FLIGHT;
+                trajectory->age_ms = 0;
+            }
+        }
     }
 }
 
@@ -758,7 +793,7 @@ void rasterfall_effects_sync_enemy_feedback(struct rasterfall_effects *effects,
                     const struct toy_game_actor *a=&game->actors[target];
                     rasterfall_effects_spawn_hit_particles(effects,a->x,
                         a->ground_y+a->airborne_y-350,a->z,enemy->dir_x,enemy->dir_z);
-                    spawn_knockback_trajectory(effects, a, enemy->type);
+                    spawn_knockback_trajectory(effects, a, target, enemy->type);
                 }
             effects->enemy_special_hit_seen[i]=mask;
         } else effects->enemy_special_hit_seen[i]=0;
@@ -801,6 +836,7 @@ void rasterfall_effects_sync_enemy_feedback(struct rasterfall_effects *effects,
         instance.size = effects->enemy_hit_strength[i];
         rasterfall_effects_spawn_instance(effects, &instance);
     }
+    sync_knockback_trajectories(effects, game);
 }
 
 void rasterfall_effects_sync_interaction_highlight(
@@ -1162,6 +1198,11 @@ void rasterfall_effects_update(struct rasterfall_effects *effects, int dt_ms)
     for (i = 0; i < RASTERFALL_EFFECT_INSTANCE_SLOTS; i++) {
         struct rasterfall_effect_instance *instance = &effects->instances[i];
         if (!instance->active) continue;
+        /* The three-second display lifetime begins only after the target has
+         * landed.  Its live endpoint is synchronized by the gameplay pass. */
+        if (instance->kind == RASTERFALL_EFFECT_INSTANCE_KIND_KNOCKBACK_TRAJECTORY &&
+            (instance->flags & RASTERFALL_EFFECT_TRAJECTORY_IN_FLIGHT))
+            continue;
         instance->age_ms += dt_ms;
         instance->x += instance->vx * steps;
         instance->y += instance->vy * steps;

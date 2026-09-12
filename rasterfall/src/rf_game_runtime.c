@@ -2492,12 +2492,14 @@ int rf_game_update(struct rf_game_runtime *runtime,
     if (game_session->station_gui_request) {
         game_session->station_gui_request = 0;
         rf_gui_set_active(&runtime->gui, 1);
-        rf_gui_set_icon_count(&runtime->gui, 1);
+        rf_gui_set_icon_count(&runtime->gui, RF_GUI_ICON_COUNT);
         rf_core_set_pointer_lock(runtime->core, 0);
         rf_app_manager_register_station(&runtime->app_manager);
         rf_app_manager_set_query_context(&runtime->app_manager,
                                          &runtime->application_query);
-        rf_app_manager_open_icon(&runtime->app_manager, 0, 1024, 720);
+        /* Use the same terminal desktop as F12; PERSONNEL remains available
+         * beside it and reads the live actor projection. */
+        rf_app_manager_open_icon(&runtime->app_manager, 1, 1024, 720);
         runtime->lifecycle_paused = 1;
     }
 
