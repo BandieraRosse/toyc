@@ -4847,7 +4847,12 @@ static int render_smoker_tongue(struct toy_renderer *renderer,
     struct enemy_rig_pose pose;
     struct vec3 mouth={0,15,125};
     enemy_rig_sample(profile,&input,&pose);
-    mouth=enemy_rig_point(profile,&pose,ER_HEAD,mouth);
+    enemy_rig_finalize(profile,&pose,&enemy_rig_cached_final);
+    enemy_rig_cached_enemy=e;
+    enemy_rig_cached_profile=profile;
+    enemy_rig_cached_pose=pose;
+    enemy_rig_cached_valid=1;
+    mouth=enemy_rig_final_point(profile,&enemy_rig_cached_final,ER_HEAD,mouth);
     pixels = draw_tongue_segment(renderer, camera,
                                  e->x+(e->dir_z*mouth.x+e->dir_x*mouth.z)/1024,
                                  mouth.y+active_enemy_lift,
@@ -4924,6 +4929,7 @@ static int render_enemies(struct toy_renderer *renderer,
         uint32_t color;
         int scale = 1000;
         int visual_family = enemy_visual_family_for_enemy(e->type, i);
+        enemy_rig_cached_valid=0;
         enemy_rig_observe(e,i);
         enemy_rig_slot=i;
         if (e->active == 0) { enemy_visual_motion[i].valid = 0; continue; }

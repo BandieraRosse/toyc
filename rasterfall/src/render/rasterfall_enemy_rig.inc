@@ -230,6 +230,14 @@ static void enemy_rig_sample(const struct enemy_rig_profile *p,
 /* Finalize the tiny rigid hierarchy once per enemy submission, not once per
  * vertex. Affine matrices are transient presentation data, never skinning. */
 struct enemy_rig_final { double m[ER_COUNT][12]; };
+/* Smoker's tongue is submitted before its body.  Reuse the exact pose and
+ * finalized hierarchy for that body's later submission in the same frame. */
+static const struct toy_game_enemy *enemy_rig_cached_enemy;
+static const struct enemy_rig_profile *enemy_rig_cached_profile;
+static struct enemy_rig_pose enemy_rig_cached_pose;
+static struct enemy_rig_final enemy_rig_cached_final;
+static int enemy_rig_cached_valid;
+
 static void enemy_rig_finalize(const struct enemy_rig_profile *p,
     const struct enemy_rig_pose *pose,struct enemy_rig_final *out)
 {
@@ -281,8 +289,15 @@ static int render_enemy_rig(struct toy_renderer *renderer,const struct camera *c
     struct enemy_rig_final final;
     int pixels=0;
     if (!p || active_enemy_dissolve>=256) return 0;
-    enemy_rig_sample(p,&in,&pose);
-    enemy_rig_finalize(p,&pose,&final);
+    if (enemy_rig_cached_valid && enemy_rig_cached_enemy==e &&
+        enemy_rig_cached_profile==p) {
+        pose=enemy_rig_cached_pose;
+        final=enemy_rig_cached_final;
+        enemy_rig_cached_valid=0;
+    } else {
+        enemy_rig_sample(p,&in,&pose);
+        enemy_rig_finalize(p,&pose,&final);
+    }
     /* Profile owns living dimensions, scale only carries legacy death squash. */
     int squash=e->active==2 && !active_enemy_transform ? scale:1000;
     for (int i=0;i<p->count;i++) {
