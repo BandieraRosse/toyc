@@ -22,7 +22,7 @@ make map-layout
 
 环境安装在 `.venv/map-layout/`；导出不再探测、安装或覆盖系统字体。
 
-World Content 与地图的合并工程视图使用同一环境：
+内容地图（空间地图与 World Content 的合并工程视图）使用同一环境：
 
 ```sh
 make world-layout WORLD=outpost
@@ -31,7 +31,7 @@ make test-world-content
 make test-world-layout
 ```
 
-`world-layout` 输出合并后的 `output.json` 和 `layout.png`；`map-layout` 只输出 Spatial Map。
+`world-layout` 输出内容地图的 `output.json` 和 `layout.png`；`map-layout` 只输出空间地图。
 
 ```sh
 tools/assets/import_asset.py path/to/asset.json

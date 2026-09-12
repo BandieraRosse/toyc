@@ -8,10 +8,11 @@
 
 ## World Definition V1
 
-`.map` 只描述 Spatial Map 的空间事实；`assets/worlds/*.content` 由
+`.map` 只描述空间地图的空间事实；`assets/worlds/*.content` 由
 Game-owned World Content parser 单独加载，描述 actor、terminal、flag、
 formation 与 fixture。静态 world identity 将两者绑定，但 content 不进入
-Runtime Map。`map-layout` 仍只导出 Spatial Map，`world-layout` 才叠加内容层。
+Runtime Map。对外统一称呼为“空间地图”和“内容地图”：`map-layout` 输出空间地图，
+`world-layout` 将空间地图与 World Content 合并后输出内容地图。
 
 ## Map Compiler V1
 

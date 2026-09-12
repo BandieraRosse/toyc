@@ -7,7 +7,7 @@
 
 ## World Content V1
 
-Spatial Map remains authoritative for terrain, collision and neutral spatial
+空间地图（Spatial Map）remains authoritative for terrain, collision and neutral spatial
 data. Rasterfall Game keeps a small `rasterfall_world_content` policy in the
 session: Outpost builds Null and station content, while Campaign 01 builds
 the campaign roster, Maid formation, flags and support actors. Campaign-only

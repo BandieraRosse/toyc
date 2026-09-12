@@ -137,7 +137,7 @@ class GB2312Font:
 
 class Canvas:
     def __init__(self,w,h):
-        self.w=w;self.h=h;self.image=Image.new("RGB",(w,h),(25,29,35));self.draw=ImageDraw.Draw(self.image)
+        self.w=w;self.h=h;self.image=Image.new("RGB",(w,h),(17,21,27));self.draw=ImageDraw.Draw(self.image)
         self.font=GB2312Font()
     def pixel(self,x,y,c):
         if 0<=x<self.w and 0<=y<self.h:self.draw.point((x,y),fill=c)
@@ -183,12 +183,21 @@ def render(doc,path,w,h):
     c=Canvas(w,h);margin=70;legend=310;world=doc["world"];x0,x1,z0,z1=[world[k] for k in ("min_x","max_x","min_z","max_z")];pw=w-legend-margin*2;ph=h-margin*2;s=min(pw/(x1-x0),ph/(z1-z0));ox=margin+(pw-(x1-x0)*s)/2;oy=margin+(ph-(z1-z0)*s)/2
     def pt(x,z):return round(ox+(x-x0)*s),round(oy+(z1-z)*s)
     step=min([512,1024,2048,4096,5120,10240,20480],key=lambda v:abs(v-(x1-x0)/8))
-    for x in range(math.ceil(x0/step)*step,x1+1,step):px,_=pt(x,z0);c.line(px,round(oy),px,round(oy+(z1-z0)*s),(54,61,70));c.text(px+2,h-margin+8,x,(130,143,155),1)
-    for z in range(math.ceil(z0/step)*step,z1+1,step):_,py=pt(x0,z);c.line(round(ox),py,round(ox+(x1-x0)*s),py,(54,61,70));c.text(4,py-3,z,(130,143,155),1)
-    pal={"box":((83,91,104),(172,181,193)),"air_wall":(None,(232,101,101)),"safe":((48,125,83),(110,231,159)),"base":((42,101,122),(84,205,235)),"spawn":((121,50,55),(240,108,108)),"ramp":((132,94,50),(244,177,91)),"platform":((74,80,127),(157,166,249)),"prop":((125,87,127),(232,160,238)),"button":((147,119,38),(255,220,94)),"ai_spawn":((77,117,146),(139,211,255)),"model":((67,88,99),(190,225,230))};order=list(pal)
+    for x in range(math.ceil(x0/step)*step,x1+1,step):px,_=pt(x,z0);c.line(px,round(oy),px,round(oy+(z1-z0)*s),(43,49,58));c.text(px+2,h-margin+8,x,(130,143,155),1)
+    for z in range(math.ceil(z0/step)*step,z1+1,step):_,py=pt(x0,z);c.line(round(ox),py,round(ox+(x1-x0)*s),py,(43,49,58));c.text(4,py-3,z,(130,143,155),1)
+    # ``render kind=ground`` is a world substrate, not a gameplay collision
+    # box.  Keep it visually quiet so the semantic regions remain legible.
+    ground_fill=(35,41,49)
+    ground_stroke=None
+    pal={"box":((63,70,82),(158,169,184)),"air_wall":(None,(232,101,101)),"safe":((48,125,83),(110,231,159)),"base":((42,101,122),(84,205,235)),"spawn":((121,50,55),(240,108,108)),"ramp":((132,94,50),(244,177,91)),"platform":((74,80,127),(157,166,249)),"prop":((125,87,127),(232,160,238)),"button":((147,119,38),(255,220,94)),"ai_spawn":((77,117,146),(139,211,255)),"model":((67,88,99),(190,225,230))};order=list(pal)
+    def is_ground(o):
+        source=o.get("source",{})
+        return o["type"]=="box" and source.get("record")=="render" and "kind=ground" in source.get("fields",[])
     placed=[]
     for o in sorted(doc["objects"],key=lambda x:order.index(x["type"])):
-        b=o["bounds"];x,y=pt(b["min_x"],b["max_z"]);u,v=pt(b["max_x"],b["min_z"]);x,u=(x-3,u+3) if x==u else (x,u);y,v=(y-3,v+3) if y==v else (y,v);fill,stroke=pal[o["type"]];c.rect(x,y,u,v,fill,stroke)
+        b=o["bounds"];x,y=pt(b["min_x"],b["max_z"]);u,v=pt(b["max_x"],b["min_z"]);x,u=(x-3,u+3) if x==u else (x,u);y,v=(y-3,v+3) if y==v else (y,v);fill,stroke=pal[o["type"]]
+        if is_ground(o): c.rect(x,y,u,v,ground_fill,ground_stroke)
+        else: c.rect(x,y,u,v,fill,stroke)
         placed.append((o,x,y,u,v))
     # Collision and semantic overlays are deliberately drawn after filled
     # geometry so platforms/props cannot hide important map boundaries.
@@ -199,10 +208,12 @@ def render(doc,path,w,h):
             c.rect(x,y,u,v,None,(255,116,116));c.line(x,y,u,v,(255,116,116));c.line(x,v,u,y,(255,116,116))
         elif o["type"]=="box" and o.get("key_box"):
             c.rect(x,y,u,v,None,(244,244,244));c.line(x,y,u,v,(244,244,244));c.line(x,v,u,y,(244,244,244))
-    # Keep the base as a high-priority semantic anchor, even when it overlaps
-    # actors, buttons, or dense test-area labels.
+    # Keep the base region as a high-priority semantic anchor, even when it
+    # overlaps actors, buttons, or dense test-area labels.  An actor named
+    # BASE is an AI spawn, not a second base region; its type remains
+    # ``ai_spawn`` and it must use the normal AI-spawn marker.
     for o,x,y,u,v in placed:
-        if o["type"]=="base" or (o["type"]=="ai_spawn" and o.get("name")=="BASE"):
+        if o["type"]=="base":
             px,py=pt(o["center"]["x"],o["center"]["z"])
             c.star(px,py,13,(255,193,54),(255,239,145))
     # Semantic areas win label space. Dense point clusters retain every ID in
@@ -216,7 +227,6 @@ def render(doc,path,w,h):
         c.text(tx,ty,label);occupied.append(area)
     lx=w-legend+20;c.text(lx,30,"RASTERFALL 地图",(240,244,248),2);c.text(lx,58,"X/Z 俯视图",(160,175,190),2)
     counts={typ:sum(1 for o in doc["objects"] if o["type"]==typ) for typ in pal}
-    counts["base"]+=sum(1 for o in doc["objects"] if o["type"]=="ai_spawn" and o.get("name")=="BASE")
     groups=[
         ("区域 AREAS",[("安全区 SAFE","safe"),("刷怪区 SPAWN ZONE","spawn")]),
         ("角色 ACTORS",[("基地核心 BASE CORE","base"),("AI 出生点 AI SPAWN","ai_spawn")]),

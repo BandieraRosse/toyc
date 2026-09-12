@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Export the Spatial Map plus World Content V1 as an engineering view."""
+"""Export the Content Map: Spatial Map plus World Content V1."""
 import argparse, json
 from pathlib import Path
 from PIL import Image, ImageDraw

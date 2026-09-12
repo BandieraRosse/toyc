@@ -29,7 +29,7 @@
 | 启动、参数、Core Host、runtime update/render 调度、Outpost landing | [runtime.md](runtime.md) | `src/rasterfall.c`、`src/rf_game_runtime.c`、`src/rf_game_lifecycle.c`、`include/rf_game_lifecycle.h`；world switch 入口为 `rf_game_request_world()` |
 | Runtime Environment V1 总体边界与 checkpoint | [runtime-environment-v1.md](runtime-environment-v1.md) | Core、Game、Command、GUI、Application、Projection 与 Map Runtime 的 ownership relationship |
 | Console command registry/context/status | [runtime.md](runtime.md)、[core-runtime-v0.2.md](core-runtime-v0.2.md) | `include/rasterfall_console.h`、`src/rasterfall_console.c`、`src/rf_game_runtime.c` |
-| GUI desktop、icon/window presentation | [gui-runtime-v0.md](gui-runtime-v0.md)、[runtime.md](runtime.md) | `include/rasterfall_gui.h`、`src/rasterfall_gui.c`、`src/rf_game_runtime.c` |
+| GUI desktop、icon/window presentation | [desktop-v1.md](desktop-v1.md)、[gui-runtime-v0.md](gui-runtime-v0.md)、[runtime.md](runtime.md) | `include/rasterfall_gui.h`、`src/rasterfall_gui.c`、`src/rf_game_runtime.c` |
 | Application registration/open/close/update/render | [app-runtime-v0.md](app-runtime-v0.md)、[gui-runtime-v0.md](gui-runtime-v0.md) | `include/rasterfall_app.h`、`src/rasterfall_app.c`、`include/rasterfall_gui.h` |
 | Application/Core/Game 查询边界、projection snapshot | [application-projection-v0.md](application-projection-v0.md)、[core-runtime-v0.2.md](core-runtime-v0.2.md) | `include/rf_application_projection.h`、`src/rf_application_projection.c` |
 | Terminal frontend/session、Console modal 接入和查询命令 | [runtime.md](runtime.md)、[core-runtime-v0.2.md](core-runtime-v0.2.md) | `include/rasterfall_console.h`、`src/rasterfall_console.c`、`src/rf_game_runtime.c` |
@@ -79,7 +79,8 @@ authoritative world data，`src/rasterfall_map.c` 的 Gameplay Projection Adapte
 gameplay、collision 和 renderer 接口所需的数据视图。`toy_map`、`session.level` 的 primitives、
 safe_rooms、spawn_zones、props、interactables 都属于迁移期 compatibility/runtime view，不是地图真相。
 World Content V1 由 Game-owned parser 单独加载，描述 actor、terminal、flag、formation 和 fixture；
-它不进入 Map Runtime。`world-layout` 将两者合并为工程视图，`map-layout` 仍只输出 Spatial Map。
+它不进入 Map Runtime。对外统一称呼为“空间地图”和“内容地图”：`map-layout` 输出空间地图，
+`world-layout` 将空间地图与 World Content 合并后输出内容地图。
 稳定 ID 是查询边界，record 文本顺序不承载语义。`--legacy-map` 显式启用 `rasterfall_legacy.map`，
 仅用于 legacy compatibility fallback/reference；它不参与默认加载。`map-inspect`、`map-runtime-test`
 和 projection count check 均通过 C parser/Runtime Map 链路验证地图。
