@@ -22,7 +22,9 @@ static struct {
     struct rasterfall_model_instance instance;
 } enemy_visual_cache[6];
 /* AUTO is a renderer policy. The selected family is derived per enemy and is
- * deliberately not stored in toy_game or a network snapshot. */
+ * deliberately not stored in toy_game or a network snapshot. The legacy
+ * block/round renderer remains only as an explicit special-story presentation
+ * choice; it is not a version-compatibility path for the new enemy models. */
 static int enemy_visual_family = RASTERFALL_ENEMY_VISUAL_AUTO;
 static struct { int valid, x, z, phase; unsigned long moved_us; } enemy_visual_motion[TOY_GAME_MAX_ENEMIES];
 static int enemy_visual_capture_pose = -1; /* -1 runtime, 0 bind, 1 idle, 2 move */
@@ -68,22 +70,22 @@ static unsigned enemy_visual_mix_bucket(int type, int slot)
 static int enemy_visual_family_for_enemy(int type, int slot)
 {
     unsigned bucket;
-    int legacy, block;
+    int block;
     if (type < TOY_GAME_ENEMY_PURSUIT_COMMON ||
-        type > TOY_GAME_ENEMY_PURSUIT_FAST)
-        return RASTERFALL_ENEMY_VISUAL_LEGACY;
+        type > TOY_GAME_ENEMY_PURSUIT_HEAVY)
+        /* Special infected always use their procedural new-model rig. */
+        return RASTERFALL_ENEMY_VISUAL_HUMANOID_INFECTED;
     if (enemy_visual_family != RASTERFALL_ENEMY_VISUAL_AUTO)
         return enemy_visual_family;
     bucket = enemy_visual_mix_bucket(type, slot);
     if (type == TOY_GAME_ENEMY_PURSUIT_FAST) {
-        legacy = 40; block = 40;
+        block = 30;
     } else if (type == TOY_GAME_ENEMY_PURSUIT_HEAVY) {
-        legacy = 30; block = 40;
+        block = 40;
     } else {
-        legacy = 70; block = 20;
+        block = 60;
     }
-    if (bucket < (unsigned)legacy) return RASTERFALL_ENEMY_VISUAL_LEGACY;
-    if (bucket < (unsigned)(legacy + block))
+    if (bucket < (unsigned)block)
         return RASTERFALL_ENEMY_VISUAL_BLOCK_INFECTED;
     return RASTERFALL_ENEMY_VISUAL_HUMANOID_INFECTED;
 }

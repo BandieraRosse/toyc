@@ -1,7 +1,7 @@
 # Enemy Visual / Procedural Animation Framework V1
 
 > 文档更新：2026-09-12
-> 源码核对基线：工作区（Smoker / Charger / Tank rigid profiles、truth adapter、procedural pose 与 generic prism renderer；固定关键帧/轮廓/world capture；协议 43 显式命中 mask；保留六份普通感染体 RFM2）
+> 源码核对基线：工作区（普通感染体新模型混合比例 V1；Smoker / Charger / Tank rigid profiles、truth adapter、procedural pose 与 generic prism renderer；Charger 新冲锋包围盒判定；固定关键帧/轮廓/world capture；协议 43 显式命中 mask；保留六份普通感染体 RFM2）
 
 ## Enemy visual pipeline 与所有权
 
@@ -111,10 +111,11 @@ fixture 用正式 typed spawn 创建敌人，然后冻结明确的能力字段�
 
 ## 保留的普通感染体家族（Enemy Visual V2）
 
-本轮迁移仅 Smoker / Charger / Tank。Common/Fast/Heavy 的 legacy block/round
-body-part table 继续使用原 primitive 路径；BLOCK_INFECTED / HUMANOID_INFECTED 继续使用
+本轮迁移仅 Smoker / Charger / Tank。Common/Fast/Heavy 默认不再使用 legacy block/round
+body-part table；BLOCK_INFECTED / HUMANOID_INFECTED 继续使用
 已存在的 RFCHAR + procedural bone pose + CPU skinning。后者并非 procedural rigid-part animation，
-不得因为外观低模就把它记录成 rigid rig。它们不是新增特感的默认实现模板。
+不得因为外观低模就把它记录成 rigid rig。旧模型仅保留给显式的特殊剧情展示入口，不承担旧版本
+兼容加载；它们不是新增特感的默认实现模板。
 
 ## 状态与接入入口
 
@@ -123,9 +124,12 @@ body-part table 继续使用原 primitive 路径；BLOCK_INFECTED / HUMANOID_INF
 `rasterfall_enemy_visual.h` 定义本地展示选择 AUTO / LEGACY / BLOCK_INFECTED / HUMANOID_INFECTED。
 默认 AUTO 由 renderer 按 enemy type 混合家族，进程启动参数只改变本机 renderer；联机双方可以选择不同外观。
 
-AUTO 的比例为 COMMON 70/20/10、FAST 40/40/20、HEAVY 30/40/30，顺序均为
-LEGACY / BLOCK_INFECTED / HUMANOID_INFECTED。slot 只作为 renderer 稳定选择的种子，避免帧间
+AUTO 的比例为 COMMON 60/40、FAST 30/70、HEAVY 40/60，顺序均为
+BLOCK_INFECTED / HUMANOID_INFECTED。slot 只作为 renderer 稳定选择的种子，避免帧间
 闪烁；结果不写入 gameplay enemy 或 network snapshot。特感独立走上面的 procedural rigid rig。
+
+Charger 的玩法碰撞半径和冲锋撞击范围均按新模型冲锋姿态的刚体包围盒扩大到 620 RFU；这是
+玩法碰撞代理，不把渲染几何直接带入 `toy_game`。
 
 `rasterfall_render.c::render_enemies()` 继续拥有可见性、地面/空中锚点、受击位移和死亡表现编排。
 它在旧身体分支前调用 `render/rasterfall_enemy_visual.inc::render_infected_enemy()`。

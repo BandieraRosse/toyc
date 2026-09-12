@@ -177,7 +177,7 @@
 #define TOY_CONFIG_CHARGER_SPEED              95  /* 冲锋速度 */
 #define TOY_CONFIG_CHARGER_DAMAGE              6  /* 撞击伤害 */
 #define TOY_CONFIG_CHARGER_IMPACT_DAMAGE       6  /* 范围撞击伤害 */
-#define TOY_CONFIG_CHARGER_IMPACT_RANGE      320  /* 撞击范围 */
+#define TOY_CONFIG_CHARGER_IMPACT_RANGE      620  /* 新 Charger 冲锋包围盒对应的撞击范围 */
 
 /* Tank arm-sweep tuning.  Impact occurs near the end of the windup. */
 #define TOY_CONFIG_TANK_ATTACK_RANGE         2850  /* 挥击伤害扇形半径 */

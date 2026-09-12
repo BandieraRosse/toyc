@@ -57,7 +57,7 @@
 #define TOY_GAME_SECONDARY_PLAYER_HP TOY_CONFIG_SECONDARY_PLAYER_HP
 
 #define TOY_GAME_ENEMY_RADIUS   130     /* 敌人碰撞半径 */
-#define TOY_GAME_CHARGER_RADIUS 145    /* Charger 略大的专用碰撞半径 */
+#define TOY_GAME_CHARGER_RADIUS 620    /* 新 Charger 冲锋刚体包围盒的玩法代理半径 */
 #define TOY_GAME_TANK_RADIUS    210    /* Tank 宽大的专用碰撞半径 */
 #define TOY_GAME_PLAYER_RADIUS  180
 #define TOY_GAME_HIT_RADIUS     150     /* 命中判定半径（覆盖渲染 box 半宽） */
