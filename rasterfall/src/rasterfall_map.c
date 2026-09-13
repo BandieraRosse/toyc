@@ -398,8 +398,8 @@ int rasterfall_map_project_runtime(struct rasterfall_map_state *map)
             world->room_limit : 45000;
         map->level->start_x = start->bounds.min_x;
         map->level->start_z = start->bounds.min_z;
-        map->level->start_sy = 0;
-        map->level->start_cy = 1024;
+        map->level->start_sy = start->start_sy;
+        map->level->start_cy = start->start_cy;
     }
 
     /* Render records are the only presentation input in the V1 path.  Keep

@@ -84,6 +84,8 @@ struct rasterfall_world_content {
 /* Game-owned V1 world definition.  RF Core never consumes these paths. */
 const char *rasterfall_world_map_path(enum rasterfall_world_id world);
 const char *rasterfall_world_content_path(enum rasterfall_world_id world);
+/* Minimal presentation policy: legacy checkerboard or authored ground paint. */
+int rasterfall_world_uses_authored_ground(enum rasterfall_world_id world);
 
 void rasterfall_world_content_build(struct rasterfall_world_content *content,
                                     enum rasterfall_world_id world);

@@ -775,7 +775,8 @@ static int capture_map_world(const char *output_dir,
     if (!active_session || !output_dir || !*output_dir || strlen(output_dir)>450) return 1;
     if (tlibc_recursive_mkdir(output_dir) < 0) return 1;
     character_strip_model_path = model_path && *model_path ? model_path : NULL;
-    for (i = 0; i < (environment ? 12 : 15); i++) {
+    int whu = environment && active_session->world_id == RASTERFALL_WORLD_RETURN_TO_WHU_V0;
+    for (i = 0; i < (whu ? 4 : environment ? 12 : 15); i++) {
         struct camera camera;
         struct toy_renderer renderer;
         struct toy_surface surface;
@@ -815,6 +816,22 @@ static int capture_map_world(const char *output_dir,
             camera.body.x = views[i].x; camera.body.z = views[i].z;
             camera.view.sy = views[i].sy; camera.view.cy = views[i].cy;
             camera.view.y = -350; camera.view.pitch_cy = 1024;
+            snprintf(path, sizeof(path), "%s/%s.bmp", output_dir, views[i].name);
+        }
+        if (whu) {
+            static const struct { const char *name; int x, z, sy, cy; } views[] = {
+                {"a18-start", 0, 0, 0, 0},
+                {"b-west-plaza", -64000, 8000, 819, -614},
+                {"library-forecourt", 32000, -43000, 614, 819},
+                {"d-to-ef", 74000, -48000, 0, -1024}
+            };
+            memset(&camera, 0, sizeof(camera));
+            camera.x = i ? views[i].x : active_session->level.start_x;
+            camera.z = i ? views[i].z : active_session->level.start_z;
+            camera.sy = i ? views[i].sy : active_session->level.start_sy;
+            camera.cy = i ? views[i].cy : active_session->level.start_cy;
+            camera.y = RASTERFALL_STANDING_CAMERA_Y;
+            camera.pitch_cy = 1024;
             snprintf(path, sizeof(path), "%s/%s.bmp", output_dir, views[i].name);
         }
         memset(&surface, 0, sizeof(surface));

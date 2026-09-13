@@ -3454,6 +3454,8 @@ static int draw_partitioned_floor(struct toy_renderer *renderer,
                                   const struct camera *camera)
 {
     int base_x, base_z, i, j, k, pixels = 0;
+    int authored_ground = active_session &&
+        rasterfall_world_uses_authored_ground(active_session->world_id);
     int xs[FLOOR_SPLIT_MAX], zs[FLOOR_SPLIT_MAX];
     for (base_z = level_map.minz; base_z < level_map.maxz; base_z += 1000) {
         for (base_x = level_map.minx; base_x < level_map.maxx; base_x += 1000) {
@@ -3521,14 +3523,16 @@ static int draw_partitioned_floor(struct toy_renderer *renderer,
                             struct toy_map_draw *draw = &level_map.draw[k];
                             if (draw->type != TOY_MAP_DRAW_FLOOR &&
                                 draw->type != TOY_MAP_DRAW_BORDER) continue;
-                            /* A ground directive supplies coverage only.  It
-                             * deliberately leaves the checkerboard visible;
-                             * floor remains the authored colour-paint layer. */
-                            if (draw->type == TOY_MAP_DRAW_FLOOR &&
+                            /* Legacy ground supplies coverage only; WHU ground
+                             * also supplies its authored base colour. */
+                            if (!authored_ground && draw->type == TOY_MAP_DRAW_FLOOR &&
                                 draw->style == TOY_MAP_FLOOR_GROUND) continue;
                             if (floor_draw_contains(draw, center_x, center_z)) {
                                 color = draw->color;
-                                break;
+                                /* WHU paint follows projection submission order:
+                                 * later road/plaza/track paint replaces earlier paint
+                                 * on this one plane, without depth competition. */
+                                if (!authored_ground) break;
                             }
                         }
                     }

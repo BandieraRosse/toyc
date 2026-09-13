@@ -1,6 +1,7 @@
 # 运行时与主循环
 
-> 文档更新：2026-09-12
+> 文档更新：2026-09-14
+> 源码核对基线补充：Return-to-WHU session identity 来自 Runtime Map 的 world attr.identity；content 和地面 policy 均使用已有 world ID。player_start 的 position 与 sy/cy 由 projection 写入 level，session 复用原有 reset/respawn 初始化链。`--map` 指定的 WHU 地图可配合 `--environment-capture` 做四个眼高离屏视角，其他 world 保持现有 Campaign capture 行为。
 > 源码核对补充：RF Core lifecycle boundary 已覆盖 poll/exit、tick clock 与 frame begin/end；Runtime Environment V1 ownership audit 与 checkpoint 已完成。
 > 源码核对基线：工作区（Humanoid Action Composition V1 CLI；双正式四人 squad runtime；Lighting V1；`game_state.actors[]` 是 gameplay truth；RF Core Runtime V0.2 `rf_game_runtime` facade、Core status query、service access cleanup 与 Input view；Core/Game startup config split；renderer frame ownership cleanup；Core filesystem service V0；唯一 `rf_core` context 与 Core clock service；Phase 3A `rf_game_update()` gameplay update authority；Phase 3B-1 world presentation migration；Phase 3B-2 steady-state Game UI presentation authority；RF Command Runtime V0 registry/context/status；Command Runtime Stabilization V0.1 output/metadata/permission；RF Terminal Frontend Prototype V0 session 与 Console frontend；RF GUI Runtime Prototype V0）
 
@@ -57,7 +58,7 @@ surface、filesystem、audio、input、clock）→ `rf_game_init(core, ...)` 加
 `--visual-capture <scenario> --visual-output <path>` 必须成对提供。解析后立即进入
 `rasterfall_render_visual_capture()` 并退出，先于字库、网络、session/map、窗口和音频初始化。
 固定场景不读取时钟、不推进 simulation，也不受交互式画面选项影响；不要与其他诊断模式混用。
-支持 `--map <path>` 加载一次性的本地 V1 空间地图进行第一人称检查；它不改变默认 world policy，也不加载实验专属 World Content。另支持 `procedural-humanoid`、`hurd-squad`、`lighting-props`、`--character-acceptance <model.rmesh> <output-dir>`、
+支持 `--map <path>` 加载本地 V1 空间地图进行第一人称检查；session 按地图显式 identity 加载既有 World Content，无 identity 时沿用 Campaign policy。另支持 `procedural-humanoid`、`hurd-squad`、`lighting-props`、`--character-acceptance <model.rmesh> <output-dir>`、
 `--squad-acceptance <model-dir> <output-dir>` 和
 `--character-world-capture <output-dir> [--character-world-model <model.rmesh>]`；`procedural-humanoid` 与
 `hurd-squad` 仍是独立的纯展示 fixture，不读取正式 world actor；

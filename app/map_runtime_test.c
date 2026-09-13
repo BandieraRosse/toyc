@@ -26,6 +26,14 @@ int main(int argc, char **argv)
             __fprintf(2, "%s:\nerror: %s\n", argv[1], runtime.error);
         return 1;
     }
+    {
+        const struct rf_map_runtime_world *world = rf_map_runtime_world_info(&runtime);
+        const struct rf_map_runtime_region *start = rf_map_runtime_find_region(&runtime, "player_start");
+        __printf("identity: %s\n", world->identity);
+        if (start) __printf("player_start: %d %d facing=%d %d\n",
+                            start->bounds.min_x, start->bounds.min_z,
+                            start->start_sy, start->start_cy);
+    }
     if (rf_map_runtime_interaction_count(&runtime) == 0) {
         safe = rf_map_runtime_find_region(&runtime, "outpost_safe");
         if (!safe) safe = rf_map_runtime_find_region(&runtime, "area_a18");

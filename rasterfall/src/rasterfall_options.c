@@ -87,7 +87,7 @@ void rasterfall_options_usage(int fd)
         "  --squad-acceptance <model-dir> <output-dir>\n"
         "  --rigid-attachment-acceptance <model-dir> <output-dir>\n"
         "  --character-world-capture <output-dir> [--character-world-model <model.rmesh>]\n"
-        "  --environment-capture <output-dir> (Campaign facility world views)\n"
+        "  --environment-capture <output-dir> (Campaign views; WHU views with --map)\n"
         "  --model-views <model> <dir> [--model-views-supersample <1|2>]\n"
         "  --model-static-views <model> <dir>\n"
         "  --model-pose-views <model> <dir> <bind|right-arm|arms|body|rfchar-test>\n"

@@ -1,6 +1,7 @@
 # Rasterfall 代码导航
 
-> 文档更新：2026-09-13
+> 文档更新：2026-09-14
+> 源码核对基线补充：Return-to-WHU compatibility/readability 入口：`world attr.identity` → session world ID → `rasterfall_world_uses_authored_ground()`；WHU floor paint 复用单平面分区，出生方向由 Runtime region sy/cy 投影。四个眼高视角用 `--map ... --environment-capture ...`。
 > 源码核对基线补充：Temporary Campus Kit V0 的库存audit、12件米制临时构件和隔离campus-*验收；见temporary-campus-kit-v0.md，未改WHU Reference JSON或正式地图。
 > 源码核对基线补充：新增《重返武汉大学》信息学部核心区 V0 资料参考入口；仅核对米制/RFU契约，未改正式地图或运行时，高程与道路宽度仍未核实。
 > 源码核对基线补充：Architectural V1 最终 panel/hatch 与 arch-* runtime 视觉签收完成，VISUALLY FROZEN；工程 checkpoint 待 Sol，边界及证据见 architectural-environment-v1.md。
@@ -51,6 +52,7 @@
 | Map Compiler V1、Runtime Map ownership、Gameplay Projection Adapter、legacy fallback 边界 | [map-format.md](map-format.md) | `assets/maps/rasterfall.map`、`assets/maps/rasterfall_legacy.map`、`lib/rasterfall_map_parser.c`、`lib/rasterfall_map_runtime.c`、`src/rasterfall_map.c`、`src/rasterfall_session.c` |
 | 编写或扩展 `.map` 文本格式 | [map-format.md](map-format.md) | `lib/map.c`、`include/toy_map.h` |
 | 修改地图排布、导出地图俯视图、agent 可读 JSON 和精确布局查询 | [map-format.md](map-format.md) | `tools/map_layout_export.py`、`tools/map_layout_query.py`、`make map-layout` |
+| Return-to-WHU runtime compatibility、地面可读性、出生朝向与眼高验收 | [map-format.md](map-format.md)、[rendering.md](rendering.md)、[runtime.md](runtime.md) | `world attr.identity` → `rasterfall_session.c`；`rasterfall_world_content.c` 的单布尔 ground policy → `draw_partitioned_floor()`；`player_start` → Runtime region sy/cy → projection → session；`--map ... --environment-capture ...` |
 | 《重返武汉大学》真实地点底图、坐标、尺寸来源与白盒前置调查 | [V0 计划](reference/return-to-whu-core/return-to-whu-core-v0-plan.md)、[调查报告](reference/return-to-whu-core/investigation-report.md)、[来源台账](reference/return-to-whu-core/sources.md)、[资料补充 V1](reference/return-to-whu-core/evidence-addendum-v1.md) | `reference/return-to-whu-core/whu-info-core-reference.json` 与同名 SVG/PNG；仅资料层，未知高程/宽度不得作为正式地图事实 |
 | 场景、角色、HUD、特效、第一人称武器、性能 | [rendering.md](rendering.md) | `src/rasterfall_render.c`、`src/dev-tests/rasterfall_visual_capture.inc` |
 | 角色 humanoid / 实景距离观察组图 | [asset-pipeline.md](asset-pipeline.md)、[rendering.md](rendering.md) | `tools/character_lab_sheet.py`、`tools/character_world_sheet.py` |

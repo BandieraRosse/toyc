@@ -1,6 +1,7 @@
 # Rasterfall 地图格式
 
-> 文档更新：2026-09-13
+> 文档更新：2026-09-14
+> 源码核对基线补充：World record 保留已有 `attr.*` 扩展到 IR；`attr.identity=outpost|campaign_01|return_to_whu_v0` 经 Runtime Map 暴露，由 session 解析为已有 world ID。未知显式 identity 加载失败；无 identity 的实验地图仍使用历史 Campaign policy。身份不再来自文件名，改名不会改变 world behavior。`player_start` region 的既有 `attr.sy`/`attr.cy` 是 Q10 facing 向量（+Z 为 0/1024）；Runtime 保存并检查整数范围和非零方向，projection → level.start_sy/cy → session actor/camera 初始化及 reset/respawn。缺省仍为 0/1024，WHU 明确为 -724/-724（yaw 225°），坐标仍为 A18 设计占位。道路、广场和 E/F 是 presentation floor paint，不新增 gameplay surface type。
 > 源码核对基线补充：正式 Campaign 环境 object 组合；V1 object 连续 projection index、独立 collision 真值；多区域 environment capture。
 > 源码核对基线补充：保留既有开发坡道/墙顶几何，玩法连续性补充高端重叠衔接，规则见 gameplay.md。
 > 源码核对基线：工作区（Runtime Map V1 projection ownership cleanup；正式 `rasterfall.map` 为完整 V1 source；`rasterfall_legacy.map` 仅保留显式 fallback；layout exporter 默认读取 V1 source）
@@ -79,7 +80,7 @@ Runtime Map 和 projection adapter 是默认输入链路；修改语法时必须
 碰撞/导航、渲染和逻辑测试。
 
 本地实验布局可通过 `build/rasterfall --map path/to/experiment.map` 启动。该参数只覆盖本次进程
-的启动地图，不改变默认 Outpost/Campaign world 选择，也不会把实验地图接入 World Content。
+的启动地图；地图显式 `attr.identity` 决定本次 session 的既有 world/content policy，无 identity 时沿用 Campaign policy。
 
 Outpost V1 使用同一 V1 链路，源文件为 `assets/maps/outpost.map`。`station_terminal`、
 `operations_terminal`、`super_terminal`、`return_outpost` 和 `return_to_whu_v0` 是 Game-owned interaction vocabulary，分别

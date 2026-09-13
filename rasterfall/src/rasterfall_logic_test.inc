@@ -380,6 +380,20 @@ static int run_logic_test(void)
         session.level.primitive_count != 17 ||
         session.level.prop_count != 22)
         return 238;
+    rasterfall_session_reset(&session, &camera, 1);
+    if (camera.x != -7000 || camera.z != 8000 ||
+        camera.sy != -724 || camera.cy != -724 ||
+        rasterfall_session_local_player_const(&session)->sy != camera.sy ||
+        rasterfall_session_local_player_const(&session)->cy != camera.cy ||
+        !rasterfall_world_uses_authored_ground(session.world_id) ||
+        rasterfall_world_uses_authored_ground(RASTERFALL_WORLD_OUTPOST) ||
+        rasterfall_world_uses_authored_ground(RASTERFALL_WORLD_CAMPAIGN_01) ||
+        session.level.draw[0].color != 0x6D756F ||
+        session.level.draw[1].type != TOY_MAP_DRAW_FLOOR ||
+        session.level.draw[8].type != TOY_MAP_DRAW_BOX ||
+        session.level.draw[8].e != 16370 ||
+        session.level.primitives[0].surface_y0 != 0)
+        return 239;
     if (rasterfall_session_load(&session,
                                 "rasterfall/assets/maps/rasterfall.map") < 0 ||
         session.world_id != RASTERFALL_WORLD_CAMPAIGN_01 ||

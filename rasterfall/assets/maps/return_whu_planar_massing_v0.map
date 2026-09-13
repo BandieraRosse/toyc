@@ -1,12 +1,14 @@
 # Return to WHU Planar Massing V0 — experimental spatial map.
 # Heights, widths and footprints are design placeholders, not survey facts.
 map version=1 units=rfu
-world min_x=-90000 max_x=110000 min_z=-160000 max_z=30000 room_limit=240000
+world min_x=-90000 max_x=110000 min_z=-160000 max_z=30000 room_limit=240000 attr.identity=return_to_whu_v0
 
 surface id=whu_ground kind=ground min_x=-88000 max_x=108000 min_z=-158000 max_z=28000 height=0 material=6D756F attr.role=design_placeholder attr.legacy_index=0
 
 region id=area_a18 kind=start min_x=-9000 max_x=9000 min_z=-3000 max_z=8000 attr.role=A18
-region id=player_start kind=start min_x=-7000 max_x=-7000 min_z=2000 max_z=2000 attr.role=A18_START attr.sy=0 attr.cy=1024
+# Map-defined A18 design-placeholder spawn; facing southwest (-X/-Z), yaw 225 degrees.
+# Reads 18 dormitory on the left and the western plaza/open access on the right.
+region id=player_start kind=start min_x=-7000 max_x=-7000 min_z=8000 max_z=8000 attr.role=A18_START attr.sy=-724 attr.cy=-724
 region id=area_b_plaza kind=route min_x=-72000 max_x=-36000 min_z=-12000 max_z=18000 attr.role=B
 region id=area_c_side_road kind=route min_x=-70000 max_x=-42000 min_z=-36000 max_z=-12000 attr.role=C
 region id=area_d_forecourt kind=route min_x=30000 max_x=78000 min_z=-44000 max_z=-12000 attr.role=D
@@ -33,13 +35,13 @@ collision id=outer_south shape=box min_x=-88000 max_x=108000 min_z=-160000 max_z
 collision id=outer_north shape=box min_x=-88000 max_x=108000 min_z=28000 max_z=30000 height=6000 collision=true visible=false walkable=false blocks_airborne=true color=3F4F5A attr.role=world_boundary attr.legacy_index=16
 
 render id=ground_visual kind=ground min_x=-88000 max_x=108000 min_z=-158000 max_z=28000 height=0 color=6D756F attr.role=design_placeholder attr.legacy_index=0
-render id=west_access_visual kind=box min_x=-70000 max_x=12000 min_z=-9000 max_z=9000 height=0 color=666D72 attr.role=road_placeholder attr.legacy_index=1
-render id=central_access_visual kind=box min_x=-68000 max_x=70000 min_z=-33000 max_z=-21000 height=0 color=666D72 attr.role=road_placeholder attr.legacy_index=2
-render id=east_access_visual kind=box min_x=68000 max_x=76000 min_z=-76000 max_z=-27000 height=0 color=666D72 attr.role=road_placeholder attr.legacy_index=3
-render id=plaza_visual kind=box min_x=-72000 max_x=-36000 min_z=-12000 max_z=18000 height=0 color=959B91 attr.role=plaza_placeholder attr.legacy_index=4
-render id=forecourt_visual kind=box min_x=30000 max_x=78000 min_z=-44000 max_z=-12000 height=0 color=959B91 attr.role=forecourt_placeholder attr.legacy_index=5
-render id=field_visual kind=box min_x=48000 max_x=100000 min_z=-148000 max_z=-70000 height=0 color=607D57 attr.role=field_background attr.legacy_index=6
-render id=track_visual kind=box min_x=42000 max_x=106000 min_z=-72000 max_z=-64000 height=0 color=986D60 attr.role=track_placeholder attr.legacy_index=7
+render id=west_access_visual kind=floor min_x=-70000 max_x=12000 min_z=-9000 max_z=9000 height=0 color=48535F attr.role=road_placeholder attr.legacy_index=1
+render id=central_access_visual kind=floor min_x=-68000 max_x=70000 min_z=-33000 max_z=-21000 height=0 color=48535F attr.role=road_placeholder attr.legacy_index=2
+render id=east_access_visual kind=floor min_x=68000 max_x=76000 min_z=-76000 max_z=-27000 height=0 color=48535F attr.role=road_placeholder attr.legacy_index=3
+render id=plaza_visual kind=floor min_x=-72000 max_x=-36000 min_z=-12000 max_z=18000 height=0 color=B8AD91 attr.role=plaza_placeholder attr.legacy_index=4
+render id=forecourt_visual kind=floor min_x=30000 max_x=78000 min_z=-44000 max_z=-12000 height=0 color=B8AD91 attr.role=forecourt_placeholder attr.legacy_index=5
+render id=field_visual kind=floor min_x=48000 max_x=100000 min_z=-148000 max_z=-70000 height=0 color=527E50 attr.role=field_background attr.legacy_index=6
+render id=track_visual kind=floor min_x=42000 max_x=106000 min_z=-72000 max_z=-64000 height=0 color=B66B50 attr.role=track_placeholder attr.legacy_index=7
 render id=b18_mass kind=box min_x=-12000 max_x=12000 min_z=-16000 max_z=-4000 height=16370 color=DCE7EF attr.role=building_18 attr.legacy_index=8
 render id=b17_mass kind=box min_x=-62000 max_x=-42000 min_z=-30000 max_z=-14000 height=13096 color=DCE7EF attr.role=building_17 attr.legacy_index=9
 render id=library_mass kind=box min_x=36000 max_x=68000 min_z=-38000 max_z=-22000 height=8192 color=DCE7EF attr.role=library_placeholder attr.legacy_index=10

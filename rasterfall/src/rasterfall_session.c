@@ -381,14 +381,6 @@ int rasterfall_session_load(struct rasterfall_session *session,
      * the containing object so load -> load cannot orphan the old map. */
     rasterfall_session_unload(session);
     memset(session, 0, sizeof(struct rasterfall_session));
-    session->world_id = strstr(map_path, "outpost.map") != NULL ?
-        RASTERFALL_WORLD_OUTPOST :
-        strstr(map_path, "return_whu_planar_massing_v0.map") != NULL ?
-        RASTERFALL_WORLD_RETURN_TO_WHU_V0 : RASTERFALL_WORLD_CAMPAIGN_01;
-    if (rasterfall_world_content_load(&session->content, session->world_id,
-                                      rasterfall_world_content_path(session->world_id)) < 0)
-        return -1;
-    session->world_request = session->world_id;
     session->air_walls_enabled = 1;
     session->highlight_index = -1;
     rasterfall_map_bind(&session->map_ops, &session->level,
@@ -397,6 +389,18 @@ int rasterfall_session_load(struct rasterfall_session *session,
                         session->items, &session->item_count);
     if (rasterfall_map_load_runtime_overlay(&session->map_ops, map_path) < 0)
         return -1;
+    {
+        const char *identity = rf_map_runtime_world_info(&session->map_ops.runtime)->identity;
+        session->world_id = RASTERFALL_WORLD_CAMPAIGN_01;
+        if (!strcmp(identity, "outpost")) session->world_id = RASTERFALL_WORLD_OUTPOST;
+        else if (!strcmp(identity, "return_to_whu_v0"))
+            session->world_id = RASTERFALL_WORLD_RETURN_TO_WHU_V0;
+        else if (*identity && strcmp(identity, "campaign_01")) return -1;
+    }
+    if (rasterfall_world_content_load(&session->content, session->world_id,
+                                      rasterfall_world_content_path(session->world_id)) < 0)
+        return -1;
+    session->world_request = session->world_id;
     if (rasterfall_map_project_runtime(&session->map_ops) < 0) return -1;
     __printf("Loading world source: %s\n", map_path);
     __printf("Map runtime loaded: regions=%d interactions=%d\n",
@@ -722,6 +726,8 @@ void rasterfall_session_reset(struct rasterfall_session *session,
     }
     toy_game_local_player_actor(&session->game_state)->x = camera->x;
     toy_game_local_player_actor(&session->game_state)->z = camera->z;
+    toy_game_local_player_actor(&session->game_state)->sy = camera->sy;
+    toy_game_local_player_actor(&session->game_state)->cy = camera->cy;
     toy_game_local_player_actor(&session->game_state)->pitch_sy =
         camera->pitch_sy;
     toy_game_local_player_actor(&session->game_state)->pitch_cy =
@@ -991,6 +997,8 @@ int rasterfall_session_paid_revive(struct rasterfall_session *session,
     camera->y = RASTERFALL_STANDING_CAMERA_Y;
     player->x = camera->x;
     player->z = camera->z;
+    player->sy = camera->sy;
+    player->cy = camera->cy;
     toy_game_actor_set_animation(player, TOY_GAME_ANIM_REVIVE);
     toy_game_emit_event(game, TOY_GAME_EV_REVIVE);
     toy_game_emit_event(game, TOY_GAME_EV_ACTOR_REVIVE);
@@ -2025,6 +2033,8 @@ int rasterfall_session_recover_managed_actor(
     camera->y = RASTERFALL_STANDING_CAMERA_Y;
     toy_game_local_player_actor(&session->game_state)->x = x;
     toy_game_local_player_actor(&session->game_state)->z = z;
+    toy_game_local_player_actor(&session->game_state)->sy = camera->sy;
+    toy_game_local_player_actor(&session->game_state)->cy = camera->cy;
     {
         struct toy_game_actor *player =
             toy_game_local_player_actor(&session->game_state);

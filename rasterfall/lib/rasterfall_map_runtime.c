@@ -122,6 +122,7 @@ static int extension_int(const struct rasterfall_map_ir_attribute *attributes,
         if (!*text) return -1;
         while (*text) {
             if (*text < '0' || *text > '9') return -1;
+            if (number > 214748364 || (number == 214748364 && *text > '7')) return -1;
             number = number * 10 + (*text++ - '0');
         }
         *value = number * sign;
@@ -278,6 +279,10 @@ int rf_map_runtime_load(struct rf_map_runtime *runtime, const char *path)
     impl->world.bounds.max_z = parsed.world.bounds.max_z;
     impl->world.room_limit = parsed.world.room_limit;
     impl->world.has_room_limit = parsed.world.has_room_limit;
+    for (i = 0; i < parsed.world.attribute_count; i++)
+        if (!strcmp(parsed.world.attributes[i].key, "identity"))
+            copy_string(impl->world.identity, sizeof(impl->world.identity),
+                        parsed.world.attributes[i].value);
     impl->collision_count = parsed.collision_count;
     impl->surface_count = parsed.surface_count;
     impl->render_count = parsed.render_count;
@@ -347,6 +352,21 @@ int rf_map_runtime_load(struct rf_map_runtime *runtime, const char *path)
         impl->regions[i].bounds.max_x = parsed.regions[i].bounds.max_x;
         impl->regions[i].bounds.min_z = parsed.regions[i].bounds.min_z;
         impl->regions[i].bounds.max_z = parsed.regions[i].bounds.max_z;
+        impl->regions[i].start_cy = 1024;
+        if (extension_int(parsed.regions[i].attributes,
+                          parsed.regions[i].attribute_count, "sy",
+                          &impl->regions[i].start_sy) < 0 ||
+            extension_int(parsed.regions[i].attributes,
+                          parsed.regions[i].attribute_count, "cy",
+                          &impl->regions[i].start_cy) < 0 ||
+            impl->regions[i].start_sy < -1024 || impl->regions[i].start_sy > 1024 ||
+            impl->regions[i].start_cy < -1024 || impl->regions[i].start_cy > 1024 ||
+            (!impl->regions[i].start_sy && !impl->regions[i].start_cy)) {
+            tlibc_free(impl);
+            copy_string(runtime->error, sizeof(runtime->error), "invalid region facing sy/cy");
+            runtime->error_line = parsed.regions[i].line;
+            return -1;
+        }
         if (extension_int(parsed.regions[i].attributes,
                           parsed.regions[i].attribute_count, "legacy_index",
                           &impl->regions[i].legacy_index) == 0)

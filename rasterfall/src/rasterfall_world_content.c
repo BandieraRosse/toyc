@@ -4,6 +4,11 @@
 
 #define CONTENT_MAX_FILE (256 * 1024)
 
+int rasterfall_world_uses_authored_ground(enum rasterfall_world_id world)
+{
+    return world == RASTERFALL_WORLD_RETURN_TO_WHU_V0;
+}
+
 const char *rasterfall_world_map_path(enum rasterfall_world_id world)
 {
     if (world == RASTERFALL_WORLD_OUTPOST)

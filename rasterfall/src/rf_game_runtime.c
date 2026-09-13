@@ -3083,6 +3083,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     rasterfall_session_reset(&session, &camera, seed);
     rf_windows_log("startup: session reset");
     if (options.environment_capture_dir &&
+        session.world_id != RASTERFALL_WORLD_RETURN_TO_WHU_V0 &&
         rf_game_request_world(&game_runtime, RASTERFALL_WORLD_CAMPAIGN_01) < 0) {
         if (model_texture.blob) toy_texture_unload(&model_texture);
         rf_game_shutdown(&game_runtime);

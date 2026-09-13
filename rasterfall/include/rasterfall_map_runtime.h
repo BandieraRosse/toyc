@@ -18,6 +18,7 @@ struct rf_map_runtime_world {
     struct rf_map_runtime_bounds bounds;
     int room_limit;
     int has_room_limit;
+    char identity[RF_MAP_RUNTIME_ID_CAP];
 };
 
 struct rf_map_runtime_collision {
@@ -60,6 +61,7 @@ struct rf_map_runtime_region {
     char id[RF_MAP_RUNTIME_ID_CAP];
     char kind[RF_MAP_RUNTIME_KIND_CAP];
     struct rf_map_runtime_bounds bounds;
+    int start_sy, start_cy;
     int legacy_index;
     int has_legacy_index;
     int line;

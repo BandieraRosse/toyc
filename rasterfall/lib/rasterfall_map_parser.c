@@ -231,6 +231,7 @@ static int parse_record(struct rasterfall_map_ir *ir, int line, struct map_line 
         if (!value_of(record, "max_z", &value) || int_value(value, &b.max_z) < 0) return fail(ir, line, "world missing or invalid max_z");
         if (b.min_x > b.max_x || b.min_z > b.max_z) return fail(ir, line, "invalid world bounds");
         if (value_of(record, "room_limit", &value)) { if (int_value(value, &ir->world.room_limit) < 0 || ir->world.room_limit < 0) return fail(ir, line, "invalid room_limit"); have_room = 1; }
+        if (copy_extensions(ir->world.attributes, &ir->world.attribute_count, record) < 0) return fail(ir, line, "too many world attributes");
         ir->world.bounds = b; ir->world.has_room_limit = have_room; ir->has_world = 1; return 0;
     }
     if (!strcmp(record->record, "region") || !strcmp(record->record, "collision") ||

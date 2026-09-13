@@ -1,7 +1,7 @@
 # Rasterfall World Description Language V1.
 # This is the complete V1 source for the default runtime map.
 map version=1 units=rfu
-world min_x=-45020 max_x=33020 min_z=-33000 max_z=33020 room_limit=45000
+world min_x=-45020 max_x=33020 min_z=-33000 max_z=33020 room_limit=45000 attr.identity=campaign_01
 surface id=surface_ground_world kind=ground min_x=-33000 max_x=33000 min_z=-33000 max_z=33000 height=0 material=272B31 attr.legacy_index=0
 surface id=surface_floor_base kind=floor min_x=-3000 max_x=3000 min_z=-3000 max_z=3000 height=0 material=294B45 attr.legacy_index=1
 surface id=surface_floor_safe kind=floor min_x=-1800 max_x=1800 min_z=-5700 max_z=-4000 height=0 material=245238 attr.legacy_index=2
