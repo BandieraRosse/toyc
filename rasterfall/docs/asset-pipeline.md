@@ -1,6 +1,7 @@
 # Rasterfall 资产转换与诊断
 
 > 文档更新：2026-09-13
+> 源码核对基线补充：tools/architecture_round.py 编排同一 Builder、industrial manifest 和 importer；rf_arch_* 为零纹理双材质公开 RMESH，GLB/截图确定性比较。
 > 源码核对基线补充：power_unit / gate_frame / control_cabinet 沿用工业 Builder、GLB、manifest、统一 import、公开 RMESH/TTEX 和 registry；递归 embedded/package 规则涵盖新资源。
 > 源码核对基线：工作区（Enemy Visual V2 六份公开 RFM2 / renderer-only family；RFANIM V1 inspection；RFCHAR V1 → RFM2 v14；V2.1 modular body；Core filesystem service V0）
 
@@ -109,6 +110,11 @@ TTEX；`glb2rmesh` 本身不实现图片解码。运行时仍只读 RMESH/TTEX�
 米制环境源资产保持真实尺寸，展示绑定时按已有目标尺寸规则换算。
 
 ## 静态 prop asset registry
+
+建筑套件 `rf_arch_*` 同样安装到公开 industrial 目录并追加稳定 ID；两种 flat 材质、零纹理。
+使用 `python3 tools/architecture_round.py --generate --capture --deterministic` 重现资产与两个隔离原型；
+套件、源保留、端口和 Surface V1 交接见 [architectural-environment-v1.md](architectural-environment-v1.md)。
+脚本先构建转换器一次，再调用 importer `--no-build`，避免重复构建；不改 importer 格式。
 
 `include/rasterfall_prop.h` / `src/rasterfall_prop.c` 保存静态组件的 presentation 资产 profile。
 当前注册首批工业组件（`crate`、`barrier`、`short_wall`、`railing`、`lamp_post`、

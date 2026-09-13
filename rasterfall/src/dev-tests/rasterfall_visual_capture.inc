@@ -20,6 +20,179 @@ static int visual_modular_attachment_regression(
     struct rasterfall_model_instance *host,
     struct rasterfall_model_resource *gear);
 
+/* Architectural acceptance uses the actual prop, actor and enemy submission
+ * paths. All placements below are isolated presentation fixtures, in metres;
+ * no Campaign map, collision, actor roster or simulation is modified. */
+static int architecture_prop(struct toy_renderer *r, const struct camera *c,
+                             int id, double x, double y, double z, int yaw)
+{
+    struct rasterfall_prop_instance p = {id, (int)(x*512),
+        -900+(int)(y*512), (int)(z*512), yaw, 1000};
+    if (!static_prop_model(id)) return -1;
+    return rasterfall_render_static_prop(r,c,&p);
+}
+
+static int architecture_capture(const char *scenario, const char *output)
+{
+    struct camera camera;
+    struct rasterfall_render_context context;
+    static struct rasterfall_session session;
+    static struct rasterfall_effects fixture_effects;
+    struct toy_renderer renderer;
+    struct toy_surface surface;
+    int family=!strcmp(scenario,"arch-family");
+    int detail=!strncmp(scenario,"arch-asset-",11);
+    const struct rasterfall_prop_asset_profile *subject=NULL;
+    int hall=!strncmp(scenario,"arch-hall",9);
+    int far=strstr(scenario,"far")!=NULL;
+    int inside=strstr(scenario,"inside")!=NULL;
+    int reverse=strstr(scenario,"reverse")!=NULL;
+    int result=1, instances=0, failed=0;
+    int environment_commands;
+    long flush_start;
+    double width=hall?14:8, length=hall?20:16;
+    memset(&session,0,sizeof(session)); memset(&context,0,sizeof(context));
+    memset(&fixture_effects,0,sizeof(fixture_effects));
+    context.session=&session; context.effects=&fixture_effects;
+    context.fixed_floor_lighting=1; context.textures_enabled=1;
+    rasterfall_render_bind(&context);
+    memset(&camera,0,sizeof(camera));
+    camera.body.x=(int)((family?0:inside?-2.5:far?-5:-2)*512);
+    camera.body.z=(int)((family?-19:inside?-3:far?-29:-17)*512);
+    camera.view.y=-900+(int)((family?4:inside?1.7:far?4:2.8)*512);
+    camera.view.sy=family||inside?0:100; camera.view.cy=family||inside?1024:1019;
+    camera.view.pitch_cy=1024;
+    camera.view.pitch_sy=family?-120:inside?0:-80;
+    if(reverse) { camera.body.x=-2.8*512; camera.body.z=7.5*512;
+        camera.view.sy=180; camera.view.cy=-1008; camera.view.y=-30; camera.view.pitch_sy=0; }
+    if(detail) {
+        char name[64]; int extent; double dy, distance, hyp;
+        if(snprintf(name,sizeof(name),"arch_%s",scenario+11)>=(int)sizeof(name)) return 1;
+        subject=rasterfall_prop_asset_by_name(name);
+        if(!subject || subject->id<RASTERFALL_PROP_ASSET_ARCH_BEAM) return 1;
+        extent=subject->collision_size.x;
+        if(subject->collision_size.y>extent) extent=subject->collision_size.y;
+        if(subject->collision_size.z>extent) extent=subject->collision_size.z;
+        distance=extent*2.5;
+        camera.body.x=-distance*.6; camera.body.z=-distance*.8;
+        camera.view.sy=614; camera.view.cy=819;
+        camera.view.y=-900+extent*1.1;
+        dy=subject->collision_size.y*.5-extent*1.1;
+        hyp=sqrt(distance*distance+dy*dy);
+        camera.view.pitch_sy=dy*1024/hyp; camera.view.pitch_cy=distance*1024/hyp;
+    }
+    memset(&surface,0,sizeof(surface));
+    surface.width=1280; surface.height=800; surface.stride=1280*4;
+    surface.pixels=tlibc_malloc((size_t)surface.stride*surface.height);
+    toy_renderer_init(&renderer); toy_renderer_set_frame_budget(&renderer,0);
+    if(!surface.pixels || toy_renderer_begin(&renderer,&surface,0x929DA5)<0) goto done;
+    {
+        struct vec3 a={-12288,-940,-16384}, b={12288,-940,-16384};
+        struct vec3 c={12288,-940,14336}, d={-12288,-940,14336};
+        draw_quad(&renderer,&camera,&a,&b,&c,&d,0x505A5D);
+    }
+    /* Surface study: untextured 4 m slabs with 16 mm low-contrast joints.
+     * Kept in this fixture; Sol can batch the same language in map surfaces. */
+    for(int x=-24;x<24;x+=4) for(int z=-32;z<28;z+=4) {
+        struct toy_game_box slab={x*512+4,(x+4)*512-4,z*512+4,(z+4)*512-4,0,0};
+        uint32_t color=(x>=-width/2 && x<width/2 && z>=-length/2 && z<length/2)?0x626D71:0x555F62;
+        draw_floor_zone(&renderer,&camera,&slab,color);
+    }
+#define AP(id,x,y,z,yaw) do { instances++; if(architecture_prop(&renderer,&camera,RASTERFALL_PROP_ASSET_##id,x,y,z,yaw)<0) failed=1; } while(0)
+    if(detail) {
+        instances++;
+        if(architecture_prop(&renderer,&camera,subject->id,0,0,0,180)<0) failed=1;
+    } else if(family) {
+        for(int i=0;i<10;i++) {
+            instances++;
+            if(architecture_prop(&renderer,&camera,14+i,
+                i<4?(i*6-9):((i-4)*4-10),0,i<4?8:0,180)<0) failed=1;
+        }
+        AP(POWER_UNIT,-6,0,12,0); AP(CONTROL_CABINET,0,0,12,0); AP(PIPE_MODULE,4,0,12,0);
+    } else {
+        for(int side=-1;side<=1;side+=2) {
+            for(double z=-length/2+2;z<length/2;z+=4) {
+                AP(ARCH_WALL,side*width/2,0,z,side<0?90:270);
+            }
+            // Repetition belongs to structural bays, not to every wall panel.
+            for(double z=-6;z<=6;z+=6) {
+                AP(INDUSTRIAL_PILLAR,side*(width/2-.55),0,z,0);
+                if(z<6) { AP(ARCH_BEAM,side*(width/2-.55),2.8,z+3,90); }
+            }
+            AP(ARCH_SERVICE_PANEL,side*(width/2-.24),1.1,-3,side<0?90:270);
+            AP(ARCH_CABLE_TRAY,side*(width/2-.27),2.1,-3,side<0?90:270);
+            AP(ARCH_CABLE_TRAY,side*(width/2-.27),2.1,1,side<0?90:270);
+        }
+        if(hall) {
+            for(int end=-1;end<=1;end+=2) {
+                AP(ARCH_DOORWAY,0,0,end*10,0);
+                AP(ARCH_WALL,-5,0,end*10,end>0?180:0);
+                AP(ARCH_WALL,5,0,end*10,end>0?180:0);
+            }
+            AP(ARCH_SUPPORT,5,0,3,0); AP(ARCH_SUPPORT,5,0,7,0);
+            {
+                struct vec3 a={1946,534,1536}, b={3174,534,1536};
+                struct vec3 c={3174,534,3584}, d={1946,534,3584};
+                draw_quad(&renderer,&camera,&a,&b,&c,&d,0x66747A);
+            }
+            AP(WORKBENCH,-5,0,1,90);
+        } else {
+            AP(GATE_FRAME,0,0,-8,0); AP(ARCH_DOORWAY,0,0,8,180);
+            AP(ARCH_WALL,-5,0,8,180); AP(ARCH_WALL,5,0,8,180);
+        }
+        AP(POWER_UNIT,width/2-1.4,0,3,270);
+        AP(CONTROL_CABINET,width/2-1.65,0,0,270);
+        AP(VENT_UNIT,width/2-.75,0,-4,270);
+        AP(PIPE_MODULE,-width/2+.8,0,-1,90);
+        AP(LAMP_POST,width/2-.6,0,7,180);
+        AP(ARCH_FLOOR_HATCH,-width/2+1.7,.012,0,0);
+        // Horizontal service trunk, radius/flange shared with pipe_module.
+        for(int z=-4;z<=4;z+=2) {
+            if(z) { AP(ARCH_PIPE_STRAIGHT,width/2-.55,.85,z,90); }
+        }
+        AP(ARCH_PIPE_ELBOW,width/2-.895,.85,5.655,0);
+        AP(ARCH_PIPE_TEE,width/2-.895,.85,0,90);
+        AP(VENT_UNIT,width/2-1.55,0,6.35,180);
+    }
+    if(failed) goto done;
+    environment_commands=renderer.cmd_count;
+    /* Actual canonical modular body and the real enemy profiles provide scale. */
+    for(int i=0;i<(detail?0:2);i++) {
+        struct toy_game_actor actor;
+        const struct toy_game_weapon_info *weapon=toy_game_weapon_info(TOY_GAME_WEAPON_AK);
+        memset(&actor,0,sizeof(actor)); actor.active=1; actor.actor_id=i+1;
+        actor.kind=TOY_GAME_ACTOR_AI; actor.character_id=RASTERFALL_CHARACTER_RF_RIFLEMAN;
+        actor.state=TOY_GAME_ACTOR_ALIVE; actor.x=(i?1:-1)*512; actor.z=(i?3:-3)*512;
+        actor.cy=-1024; actor.current_slot=weapon->slot;
+        actor.slots[weapon->slot].weapon=TOY_GAME_WEAPON_AK;
+        actor.animation.id=TOY_GAME_ANIM_IDLE;
+        if(render_modular_ai_teammate(&renderer,&camera,&actor,i)<0) goto done;
+    }
+    if(!family && !detail) {
+        for(int i=0;i<3;i++) {
+            struct toy_game_enemy *enemy=&session.game_state.enemies[i];
+            enemy->active=1; enemy->type=i==2?TOY_GAME_ENEMY_PURSUIT_COMMON:
+                i?TOY_GAME_ENEMY_TANK:TOY_GAME_ENEMY_CHARGER;
+            enemy->x=(i?1:-1)*650; enemy->z=(i?6:2)*512;
+            enemy->dir_z=-1024; enemy->hp=100; enemy->ground_y=0;
+            if(i==2) { enemy->x=-1100; enemy->z=5*512; }
+        }
+        rasterfall_render_enemies(&renderer,&camera);
+    }
+    __printf("architecture: %s instances=%d environment_commands=%d commands=%d triangles=%lu resolution=1280x800\n",
+        scenario,instances,environment_commands,renderer.cmd_count,renderer.submitted_triangles);
+    flush_start=render_monotonic_us();
+    if(renderer.cmd_overflow || toy_renderer_flush(&renderer)<0) goto done;
+    __printf("architecture: raster_flush_us=%ld (single cold capture; not gameplay FPS)\n",
+        render_monotonic_us()-flush_start);
+    if(rasterfall_hud_dump_bmp(output,&surface)<0) goto done;
+    result=0;
+done:
+    toy_renderer_destroy(&renderer); tlibc_free(surface.pixels);
+    return result;
+#undef AP
+}
+
 int rasterfall_render_visual_capture(const char *scenario, const char *output)
 {
     struct camera camera;
@@ -32,6 +205,12 @@ int rasterfall_render_visual_capture(const char *scenario, const char *output)
     int squad = scenario && !strcmp(scenario, "hurd-squad");
     int prop_lighting = scenario && !strcmp(scenario, "lighting-props");
     int modular_teammate = scenario && !strcmp(scenario, "modular-teammate");
+    if(scenario && output && (!strncmp(scenario,"arch-asset-",11) || !strcmp(scenario,"arch-family") ||
+       !strcmp(scenario,"arch-alley") || !strcmp(scenario,"arch-alley-inside") ||
+       !strcmp(scenario,"arch-alley-far") || !strcmp(scenario,"arch-alley-reverse") ||
+       !strcmp(scenario,"arch-hall") || !strcmp(scenario,"arch-hall-inside") ||
+       !strcmp(scenario,"arch-hall-far") || !strcmp(scenario,"arch-hall-reverse")))
+        return architecture_capture(scenario,output);
     if (!scenario || (!squad && !prop_lighting && !modular_teammate &&
                       strcmp(scenario, "procedural-humanoid"))) {
         __fprintf(2, "rasterfall: unknown visual scenario '%s'; available: procedural-humanoid, hurd-squad, lighting-props, modular-teammate\n",

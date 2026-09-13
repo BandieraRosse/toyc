@@ -1,6 +1,9 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-13
+> 源码核对基线补充：Architectural V1 最终 panel/hatch 与 arch-* runtime 视觉签收完成，VISUALLY FROZEN；工程 checkpoint 待 Sol，边界及证据见 architectural-environment-v1.md。
+> 源码核对基线补充：Architectural 闭合 prop scoped backface culling 位于 static prop renderer / frontend state，处理旧 static RFM2 v2 的双面薄墙穿透。
+> 源码核对基线补充：Architectural Environment V1 的 Builder/registry、Wall/Floor Surface 与独立 arch-* 原型验收；设计冻结入口见 architectural-environment-v1.md。
 > 源码核对基线补充：Campaign 环境设施组合、power_unit / gate_frame / control_cabinet；`--environment-capture` 与 `tools/environment_sheet.py` 复用正常 world render 验收。
 > 源码核对基线补充：旧开发坡道/墙顶平台高端重叠衔接修复；未更改地图碰撞记录或 AI/波次/spawn 配置，边界见 gameplay.md。
 > 源码核对基线补充：Enemy Procedural Rig V1 的 profile / truth adapter / pose / generic renderer；特感关键帧、轮廓与 world 验收；普通敌人新模型混合比例、Charger 新冲锋碰撞代理、Tank 击飞真实位置历史 ribbon；协议 43 命中 mask。
@@ -67,6 +70,7 @@
 | 正式 RF 小队 roster、角色 identity、八人验收 | [gameplay.md](gameplay.md)、[rendering.md](rendering.md)、[runtime.md](runtime.md) | `include/rasterfall_roster.h` / `src/rasterfall_roster.c` → `session_spawn_formal_rosters()` → `render_modular_ai_teammate()`；`--squad-acceptance` |
 | 导入 PMX/GLB、manifest、纹理、LOD、模型诊断 | [asset-pipeline.md](asset-pipeline.md) | `tools/assets/import_asset.py`、现有转换器、模型加载器 |
 | 程序化工业/军事环境组件、Blender 批量导出 | [industrial-props.md](industrial-props.md)、[asset-pipeline.md](asset-pipeline.md) | `tools/blender/generate_rasterfall_props.py` |
+| 建筑模块、管线端口、墙地语言、服务巷/开放厂房原型 | [architectural-environment-v1.md](architectural-environment-v1.md) | 同一 Builder 的 `build_architecture()` → industrial manifests / prop registry → `architecture_capture()`；`tools/architecture_round.py` |
 | 正式 Campaign 环境组合与固定多区域实景验收 | [industrial-props.md](industrial-props.md)、[map-format.md](map-format.md)、[rendering.md](rendering.md) | `assets/maps/rasterfall.map` → runtime object projection；`--environment-capture` → `tools/environment_sheet.py` |
 | 环境组件 V2 风格、palette、几何/纹理预算与验收 | [environment-art.md](environment-art.md)、[industrial-props.md](industrial-props.md) | 十件 static prop 源资产与游戏内展示 |
 | 整套 V2 Hybrid 生成、flat/局部 sign 分配 | [industrial-props.md](industrial-props.md)、[asset-pipeline.md](asset-pipeline.md) | 生成器 `PILOT`、`ACCENTS`、`Builder.box()`、`hybrid_prop()`；crate 沿用 `hybrid_crate()` |

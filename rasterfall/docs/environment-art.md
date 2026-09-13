@@ -1,6 +1,7 @@
 # 环境资产艺术约束
 
 > 文档更新：2026-09-13
+> 源码核对基线补充：Architectural Environment V1 冻结厚梁、薄墙壳、服务带与低对比墙地表面；新件采用两种 flat 材质。
 > 源码核对基线补充：正式地图压力测试新增动力机组、开放门架、控制柜；沿用 V2 Hybrid 低饱和主体、暗框、局部功能色和 32×32 编号，规格见 industrial-props.md。
 > 源码核对基线：工作区（整套十件 V2 Hybrid：geometry + flat materials + 局部 32×32 sign；runtime/地图/registry 不变）
 
@@ -9,6 +10,10 @@
 [industrial-props.md](industrial-props.md)，技术导入契约见 [asset-pipeline.md](asset-pipeline.md)。
 
 ## 整体约束
+
+建筑、连接和墙地大面的生产规范补充于
+[Architectural Environment V1](architectural-environment-v1.md)。它沿用本文 palette/轮廓语言，
+但建筑件允许低于旧道具的三角形下限；禁止为填预算增加细节。墙地不沿用道具的全表面纹理候选。
 
 - 风格为 **stylized industrial / military**：形体结实、分区清楚、略带使用痕迹。环境负责建立场所
   语义、掩体和路径边界，应衬托动漫角色、敌人与战斗反馈，不以高频细节或高对比花纹抢主体。

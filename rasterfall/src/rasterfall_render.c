@@ -1625,6 +1625,8 @@ static int render_gallery_model_range(struct toy_renderer *renderer,
         active_material_double_sided = material < model->material_count &&
             model->format_version >= 7 ?
             (model->materials[material * model->material_bytes + 7] & 1) != 0 : 1;
+        if (frontend_state()->force_model_backface_culling)
+            active_material_double_sided = 0;
         active_material_ambient = !active_disable_material_light &&
             material < model->material_count &&
             model->format_version >= 9 ?
@@ -1903,7 +1905,7 @@ int rasterfall_render_static_prop(
 {
     struct rasterfall_model_asset *model;
     const struct rasterfall_prop_asset_profile *profile;
-    int previous_facing, previous_sy, previous_cy, previous_lighting;
+    int previous_facing, previous_sy, previous_cy, previous_lighting, previous_culling;
     int yaw, scale, pixels;
     if (!renderer || !camera || !instance || instance->scale_milli <= 0)
         return -1;
@@ -1918,6 +1920,13 @@ int rasterfall_render_static_prop(
     previous_sy = active_gallery_sy;
     previous_cy = active_gallery_cy;
     previous_lighting = active_gallery_lighting;
+    previous_culling = frontend_state()->force_model_backface_culling;
+    /* These authored solids are closed. The legacy static converter emits v2
+     * without sidedness; drawing their hidden backs leaks dark triangles
+     * through thin walls at quantized far depth and wastes raster work. */
+    frontend_state()->force_model_backface_culling =
+        instance->asset_id >= RASTERFALL_PROP_ASSET_ARCH_BEAM &&
+        instance->asset_id <= RASTERFALL_PROP_ASSET_ARCH_FLOOR_HATCH;
     active_gallery_facing = 1;
     active_gallery_sy = (int)(sin((double)yaw * 3.141592653589793 / 180.0) * 1024.0);
     active_gallery_cy = (int)(cos((double)yaw * 3.141592653589793 / 180.0) * 1024.0);
@@ -1928,6 +1937,7 @@ int rasterfall_render_static_prop(
     active_gallery_sy = previous_sy;
     active_gallery_cy = previous_cy;
     active_gallery_lighting = previous_lighting;
+    frontend_state()->force_model_backface_culling = previous_culling;
     return pixels;
 }
 

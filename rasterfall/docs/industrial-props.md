@@ -1,6 +1,7 @@
 # 第一套程序化工业 / 军事组件
 
 > 文档更新：2026-09-13
+> 源码核对基线补充：Architectural V1 在同一 Builder 下新增 rf_arch_*；复用管径/法兰、米制与 registry 契约，独立原型不改 Campaign。
 > 源码核对基线补充：正式 Campaign 设施组合；动力机组、开放门架、控制柜沿用 Builder / V2 Hybrid / manifest importer。
 > 源码核对基线：工作区（十件 V2 Hybrid 的程序化几何、flat surface role、局部 32×32 sign 与统一 importer；空间与运行时契约不变）
 
@@ -132,8 +133,10 @@ build/rasterfall --environment-capture tmp/environment-review --textures
 python3 tools/environment_sheet.py tmp/environment-review
 ```
 
-管弯头、栏杆端头、楼梯暂不生产：当前场景中设施主体和结构的收益高于连接细节。
-后续优先检查墙面功能区、坡道支撑、真正可拼接的管线以及设备簇中距离可读性。
+管线直段、弯头和 T 接头以及结构、墙壳、服务件现由
+[Architectural Environment V1](architectural-environment-v1.md) 冻结；仍使用本页 Builder 与 importer。
+`pipe_module` 是双立管设备而非可延长直段，拼接必须采用该文的端口坐标。
+栏杆端头、楼梯尚未生产。
 
 ### 米制轴向
 

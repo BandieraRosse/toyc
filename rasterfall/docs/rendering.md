@@ -1,6 +1,8 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-13
+> 源码核对基线补充：闭合 Architectural V1 prop 的 scoped backface culling 修复旧 static RFM2 双面薄墙穿透；frontend state 保存并恢复提交策略，其他模型不变。
+> 源码核对基线补充：Visual CLI arch-family / arch-alley / arch-hall 与 inside/far/reverse 使用实际 prop、modular actor 和 enemy renderer；隔离表面研究不改正式场景。
 > 源码核对基线补充：`--environment-capture` 固定 seed、headless Core、显式 Campaign world request；共享现有 world BMP capture，十二个设施/路线视角。
 > 源码核对基线补充：Enemy Procedural Rig V1；三特感 profile/pose 分离、posed tongue socket、真实命中 particles、Charger/Tank 击飞真实位置历史 ribbon 与固定 world/silhouette capture。
 > 源码核对基线：工作区（Enemy Visual V2 六份公开 RFM2 / renderer-only family；Character Material Lighting Policy V1；Enemy Presentation V1 1000ms ballistic body fade / rotating irregular fragments / directional trailing emitter / 10% legacy death；Humanoid Action Composition V1.1 additive recoil；modular RFANIM 独立 locomotion 时钟与双手持枪轨道；RFCHAR +Z forward basis；PRIMARY_GRIP weapon presentation；开发者 world strip 与战斗区共用 modular path；出生点 V2 action debug station；双正式四人 squad；Lighting V1；renderer frame ownership cleanup）
@@ -289,6 +291,13 @@ AI/远端 tracer 使用世界空间小方柱，避免沿射线方向观察时固
 instance pool、事件和深度测试 flags 不变。
 
 ## Visual CLI V1：固定场景观察
+
+Architectural V1 使用 `--visual-capture arch-family|arch-alley|arch-hall --visual-output <bmp>`，
+两个原型还有 `-inside`、`-far`、`-reverse` 视角。`tools/architecture_round.py --capture` 生成组图；
+`architecture_capture()` 只拥有隔离 fixture，调用正常 prop、modular Rifleman 和 enemy renderer。
+场景日志区分环境与总提交；墙地研究使用便宜 flat quad。
+`arch-asset-<name>` 为低矮件提供俯斜 metric 单件视图；通过实际 prop registry 启用建筑闭合网格剔除。
+冻结范围及正式集成边界见 [Architectural Environment V1](architectural-environment-v1.md)。
 
 环境地图验收使用 `build/rasterfall --environment-capture tmp/environment-review --textures`，
 再用 `python3 tools/environment_sheet.py tmp/environment-review` 查看十二视角组图和 PNG。

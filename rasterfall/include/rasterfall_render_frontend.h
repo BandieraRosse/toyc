@@ -14,6 +14,8 @@ struct rasterfall_frontend_state {
     const struct toy_texture_view *toon_texture;
     int sphere_mode, toon_shared, toon_level;
     int material_alpha, material_double_sided;
+    /* Scoped submission override for closed architectural v2 RMESH solids. */
+    int force_model_backface_culling;
     uint32_t material_ambient, material_specular, material_tint;
     int material_specular_power, material_specular_level;
     struct rasterfall_model_triangle_stats *model_triangle_stats;

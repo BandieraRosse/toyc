@@ -32,6 +32,16 @@ SPECS = [
     ("rf_power_unit", (4.8, 2.4, 2.6), 800),
     ("rf_gate_frame", (6.0, .8, 4.2), 600),
     ("rf_control_cabinet", (1.2, .6, 1.8), 600),
+    ("rf_arch_beam", (6, .5, .6), 180),
+    ("rf_arch_support", (2.4, .8, 2.8), 240),
+    ("rf_arch_wall", (4, .24, 4.2), 180),
+    ("rf_arch_doorway", (6, .3, 4.2), 180),
+    ("rf_arch_pipe_straight", (2, .62, .62), 160),
+    ("rf_arch_pipe_elbow", (1.31, 1.31, .62), 200),
+    ("rf_arch_pipe_tee", (2, 1.31, .62), 240),
+    ("rf_arch_service_panel", (1.6, .16, 1.2), 180),
+    ("rf_arch_cable_tray", (4, .24, .32), 120),
+    ("rf_arch_floor_hatch", (1.6, 1.2, .04), 120),
 ]
 
 # Industrial palette in sRGB. Full atlases remain only as pilot A/B sources;
@@ -313,7 +323,7 @@ class Builder:
         expected_hi = [dimensions[0]/2, dimensions[1]/2, dimensions[2]]
         assert all(abs(a-b) < 1e-5 for a, b in
                    zip(lo + hi, expected_lo + expected_hi)), (name, lo, hi)
-        assert 200 <= triangles <= budget <= 1200, (name, triangles, budget)
+        assert (12 if name.startswith('rf_arch_') else 200) <= triangles <= budget <= 1200, (name, triangles, budget)
         assert all(p.area > 1e-10 for p in obj.data.polygons), name
         assert not obj.modifiers and not obj.animation_data
         obj['dimensions_m'] = list(dimensions)
@@ -328,7 +338,9 @@ class Builder:
 def build(name, mats):
     b = Builder(mats)
     box = b.box
-    if name == 'rf_crate':
+    if name.startswith('rf_arch_'):
+        build_architecture(name, b)
+    elif name == 'rf_crate':
         box((0, 0, .5), (1.12, .92, .84), bevel=.07)
         for z in (.06, .94):
             if len(mats) == 1 and z == .94:
@@ -509,6 +521,94 @@ def build(name, mats):
     else:
         raise ValueError(name)
     return b
+
+
+def build_architecture(name, b):
+    """Architectural V1, same Builder and metric contract; two flat roles.
+
+    No bevel padding, UV signs or hidden microstructure on building surfaces.
+    Pipe sockets use the existing equipment's .24 radius / .31 flange.
+    """
+    def box(c, s, frame=False):
+        return b.box(c, s, frame, bevel=0)
+    if name == 'rf_arch_beam':
+        box((0, 0, .3), (6, .26, .36))
+        for z in (.06, .54):
+            box((0, 0, z), (6, .5, .12), True)
+        for x in (-2.88, 2.88):
+            box((x, 0, .3), (.24, .46, .36), True)
+    elif name == 'rf_arch_support':
+        for x in (-1, 1):
+            box((x, 0, .1), (.4, .8, .2), True)
+            box((x, 0, 1.4), (.28, .38, 2.4))
+        box((0, 0, 2.68), (2.4, .6, .24), True)
+        # One broad knee per side, not a lattice of thin diagonals.
+        for x in (-.75, .75):
+            b.box((x, 0, 2.25), (.22, .36, .85), True, bevel=0,
+                  tilt=(-1 if x < 0 else 1)*math.pi/4)
+    elif name == 'rf_arch_wall':
+        # Partition the surface instead of overlaying close parallel shells.
+        box((0, 0, .38), (4, .24, .76), True)
+        box((0, .03, 2.34), (3.76, .18, 3.16))
+        for x in (-1.94, 1.94):
+            box((x, 0, 2.48), (.12, .24, 3.44), True)
+        box((0, 0, 3.98), (3.76, .24, .12), True)
+        box((0, .03, 4.12), (3.76, .18, .16))
+    elif name == 'rf_arch_doorway':
+        # 4.8 m clear opening, 3.6 m clear head: wide industrial opening.
+        for x in (-2.7, 2.7):
+            box((x, 0, 2.1), (.6, .24, 4.2))
+            box((x, -.135, .38), (.6, .03, .76), True)
+        box((0, 0, 3.9), (4.8, .24, .6))
+        box((0, -.135, 3.68), (4.8, .03, .16), True)
+        box((0, .135, 3.68), (4.8, .03, .16), True)
+    elif name.startswith('rf_arch_pipe_'):
+        def tube(a, c, r=.24, frame=False):
+            delta = Vector(c)-Vector(a)
+            b.cylinder((Vector(a)+Vector(c))/2, r, delta.length, frame)
+            b.parts[-1].rotation_euler = delta.to_track_quat('Z', 'Y').to_euler()
+        def flange(p, axis):
+            a, c = list(p), list(p)
+            a[axis] -= .06; c[axis] += .06
+            tube(a, c, .31, True)
+        if name.endswith('straight'):
+            tube((-1, 0, .31), (1, 0, .31))
+            for x in (-.94, .94): flange((x, 0, .31), 0)
+        elif name.endswith('elbow'):
+            tube((-1, 0, .31), (0, 0, .31))
+            tube((0, 0, .31), (0, 1, .31))
+            flange((-.94, 0, .31), 0); flange((0, .94, .31), 1)
+            box((0, 0, .31), (.48, .48, .48))
+        else:
+            tube((-1, 0, .31), (1, 0, .31))
+            tube((0, 0, .31), (0, 1, .31))
+            for x in (-.94, .94): flange((x, 0, .31), 0)
+            flange((0, .94, .31), 1)
+        # Preserve bottom-centre contract; socket offsets are documented.
+        if not name.endswith('straight'):
+            for obj in b.parts:
+                obj.location.y -= .345
+                if name.endswith('elbow'): obj.location.x += .345
+    elif name == 'rf_arch_service_panel':
+        # Coplanar partitions, no backing face behind a shallow door overlay.
+        for x in (-.77, .77): box((x, 0, .6), (.06, .16, 1.2), True)
+        for z in (.04, 1.16): box((0, 0, z), (1.48, .16, .08), True)
+        box((.34, 0, .6), (.08, .16, 1.04), True)
+        box((-.22, 0, .6), (1.04, .16, 1.04))
+        for z in (.3, .6, .9):
+            box((.56, 0, z), (.36, .16, .14))
+        for lo, hi in ((.08,.23),(.37,.53),(.67,.83),(.97,1.12)):
+            box((.56, 0, (lo+hi)/2), (.36, .16, hi-lo), True)
+    elif name == 'rf_arch_cable_tray':
+        box((0, .09, .16), (4, .06, .32), True)
+        for z in (.04, .28): box((0, -.03, z), (4, .18, .08), True)
+        box((0, .025, .16), (4, .07, .12))
+    elif name == 'rf_arch_floor_hatch':
+        box((0, 0, .02), (1.44, 1.04, .04))
+        for x in (-.76, .76): box((x, 0, .02), (.08, 1.2, .04), True)
+        for y in (-.56, .56): box((0, y, .02), (1.44, .08, .04), True)
+    else:
+        raise ValueError(name)
 
 
 def inspect_glb(path, objects):
@@ -728,6 +828,18 @@ def main():
     for name, dimensions, budget in specs:
         hybrid = name != 'rf_crate' or args.crate_material == 'hybrid'
         asset_mats = albedo_material(name, out, label_only=hybrid) if name in PILOT else mats
+        if name.startswith('rf_arch_'):
+            rgb = ((102, 125, 139) if name.endswith('service_panel') else
+                   (80, 89, 91) if 'pipe_' in name else
+                   (145, 154, 154) if name.endswith(('wall', 'doorway')) else
+                   (85, 99, 108))
+            def linear(c):
+                return tuple((v/255/12.92 if v/255 <= .04045 else
+                              ((v/255+.055)/1.055)**2.4) for v in c)
+            asset_mats = [material(name+'_body', linear(rgb)),
+                          material(name+'_frame', linear((80, 89, 91) if
+                                   name.endswith(('wall', 'doorway')) else STRUCTURE))]
+            hybrid = False
         obj = build(name, asset_mats).finish(name, dimensions, budget)
         if hybrid:
             if name == 'rf_crate':
