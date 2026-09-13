@@ -51,7 +51,7 @@
 | Map Compiler V1、Runtime Map ownership、Gameplay Projection Adapter、legacy fallback 边界 | [map-format.md](map-format.md) | `assets/maps/rasterfall.map`、`assets/maps/rasterfall_legacy.map`、`lib/rasterfall_map_parser.c`、`lib/rasterfall_map_runtime.c`、`src/rasterfall_map.c`、`src/rasterfall_session.c` |
 | 编写或扩展 `.map` 文本格式 | [map-format.md](map-format.md) | `lib/map.c`、`include/toy_map.h` |
 | 修改地图排布、导出地图俯视图、agent 可读 JSON 和精确布局查询 | [map-format.md](map-format.md) | `tools/map_layout_export.py`、`tools/map_layout_query.py`、`make map-layout` |
-| 《重返武汉大学》真实地点底图、坐标、尺寸来源与白盒前置调查 | [V0 计划](reference/return-to-whu-core/return-to-whu-core-v0-plan.md)、[调查报告](reference/return-to-whu-core/investigation-report.md)、[来源台账](reference/return-to-whu-core/sources.md) | `reference/return-to-whu-core/whu-info-core-reference.json` 与同名 SVG/PNG；仅资料层，未知高程/宽度不得作为正式地图事实 |
+| 《重返武汉大学》真实地点底图、坐标、尺寸来源与白盒前置调查 | [V0 计划](reference/return-to-whu-core/return-to-whu-core-v0-plan.md)、[调查报告](reference/return-to-whu-core/investigation-report.md)、[来源台账](reference/return-to-whu-core/sources.md)、[资料补充 V1](reference/return-to-whu-core/evidence-addendum-v1.md) | `reference/return-to-whu-core/whu-info-core-reference.json` 与同名 SVG/PNG；仅资料层，未知高程/宽度不得作为正式地图事实 |
 | 场景、角色、HUD、特效、第一人称武器、性能 | [rendering.md](rendering.md) | `src/rasterfall_render.c`、`src/dev-tests/rasterfall_visual_capture.inc` |
 | 角色 humanoid / 实景距离观察组图 | [asset-pipeline.md](asset-pipeline.md)、[rendering.md](rendering.md) | `tools/character_lab_sheet.py`、`tools/character_world_sheet.py` |
 | RMESH 基础光照、角色 role 可读性策略、Lighting OFF/V1 回归 | [rendering.md](rendering.md) | `model_form_light_q8()` → `character_render_policy()` → `render_gallery_model_range()`；`lighting-props` / Character Acceptance `lighting-policy` |
