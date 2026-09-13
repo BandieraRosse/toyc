@@ -1,6 +1,7 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-13
+> 源码核对基线补充：Temporary Campus Kit V0 的库存audit、12件米制临时构件和隔离campus-*验收；见temporary-campus-kit-v0.md，未改WHU Reference JSON或正式地图。
 > 源码核对基线补充：新增《重返武汉大学》信息学部核心区 V0 资料参考入口；仅核对米制/RFU契约，未改正式地图或运行时，高程与道路宽度仍未核实。
 > 源码核对基线补充：Architectural V1 最终 panel/hatch 与 arch-* runtime 视觉签收完成，VISUALLY FROZEN；工程 checkpoint 待 Sol，边界及证据见 architectural-environment-v1.md。
 > 源码核对基线补充：Architectural 闭合 prop scoped backface culling 位于 static prop renderer / frontend state，处理旧 static RFM2 v2 的双面薄墙穿透。
@@ -73,6 +74,7 @@
 | 导入 PMX/GLB、manifest、纹理、LOD、模型诊断 | [asset-pipeline.md](asset-pipeline.md) | `tools/assets/import_asset.py`、现有转换器、模型加载器 |
 | 程序化工业/军事环境组件、Blender 批量导出 | [industrial-props.md](industrial-props.md)、[asset-pipeline.md](asset-pipeline.md) | `tools/blender/generate_rasterfall_props.py` |
 | 建筑模块、管线端口、墙地语言、服务巷/开放厂房原型 | [architectural-environment-v1.md](architectural-environment-v1.md) | 同一 Builder 的 `build_architecture()` → industrial manifests / prop registry → `architecture_capture()`；`tools/architecture_round.py` |
+| WHU资产清点、临时校园墙窗/台阶/树代理、独立街角验收 | [temporary-campus-kit-v0.md](temporary-campus-kit-v0.md) | `tools/blender/generate_campus_kit.py` → campus manifests / prop registry → `campus_capture()`；`tools/campus_kit_round.py` |
 | 正式 Campaign 环境组合与固定多区域实景验收 | [industrial-props.md](industrial-props.md)、[map-format.md](map-format.md)、[rendering.md](rendering.md) | `assets/maps/rasterfall.map` → runtime object projection；`--environment-capture` → `tools/environment_sheet.py` |
 | 环境组件 V2 风格、palette、几何/纹理预算与验收 | [environment-art.md](environment-art.md)、[industrial-props.md](industrial-props.md) | 十件 static prop 源资产与游戏内展示 |
 | 整套 V2 Hybrid 生成、flat/局部 sign 分配 | [industrial-props.md](industrial-props.md)、[asset-pipeline.md](asset-pipeline.md) | 生成器 `PILOT`、`ACCENTS`、`Builder.box()`、`hybrid_prop()`；crate 沿用 `hybrid_crate()` |

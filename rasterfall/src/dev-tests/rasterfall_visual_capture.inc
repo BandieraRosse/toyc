@@ -193,6 +193,119 @@ done:
 #undef AP
 }
 
+/* Temporary Campus Kit: isolated visual composition, dimensions are synthetic
+ * module exercises, never measurements of WHU. No map/session simulation. */
+static void campus_camera(struct camera *c, double x, double y, double z,
+                          double tx, double ty, double tz)
+{
+    double dx=tx-x,dz=tz-z,dy=ty-y;
+    double h=sqrt(dx*dx+dz*dz),d=sqrt(h*h+dy*dy);
+    memset(c,0,sizeof(*c));
+    c->body.x=x*512; c->body.z=z*512; c->view.y=-900+y*512;
+    c->view.sy=dx*1024/h; c->view.cy=dz*1024/h;
+    c->view.pitch_sy=dy*1024/d; c->view.pitch_cy=h*1024/d;
+}
+static void campus_surface(struct toy_renderer *r,const struct camera *c,
+                           double x,double z,double w,double d,double y,uint32_t color)
+{
+    struct vec3 a={(x-w/2)*512,-900+y*512,(z-d/2)*512};
+    struct vec3 b={(x+w/2)*512,-900+y*512,(z-d/2)*512};
+    struct vec3 e={(x+w/2)*512,-900+y*512,(z+d/2)*512};
+    struct vec3 f={(x-w/2)*512,-900+y*512,(z+d/2)*512};
+    draw_quad(r,c,&a,&b,&e,&f,color);
+}
+static int campus_capture(const char *scenario,const char *output)
+{
+    struct camera camera;
+    struct rasterfall_render_context context;
+    static struct rasterfall_session session;
+    struct toy_renderer renderer;
+    struct toy_surface surface;
+    int failed=0,instances=0,result=1;
+    int detail=!strncmp(scenario,"campus-asset-",13);
+    /* 3.2 m -> 742 RMESH units -> 1637 RFU. Snap vertical joins to
+     * realized integer dimensions, rather than accumulating metre rounding. */
+    double story=1637/512.0;
+    const struct rasterfall_prop_asset_profile *subject=NULL;
+    memset(&context,0,sizeof(context)); memset(&session,0,sizeof(session));
+    context.session=&session; context.fixed_floor_lighting=1;
+    rasterfall_render_bind(&context);
+    campus_camera(&camera,-18,12,-24,0,2,5);
+    if(!strcmp(scenario,"campus-corner-near")) campus_camera(&camera,-8,1.7,-7,0,1.8,7);
+    if(!strcmp(scenario,"campus-corner-mid")) campus_camera(&camera,-13,6,-17,0,2,5);
+    if(!strcmp(scenario,"campus-corner-far")) campus_camera(&camera,-25,12,-35,0,2,5);
+    if(!strcmp(scenario,"campus-corner-ground")) campus_camera(&camera,27,10,-15,12,0,4);
+    if(detail) {
+        char name[64];
+        if(snprintf(name,sizeof(name),"campus_%s",scenario+13)>=(int)sizeof(name)) return 1;
+        subject=rasterfall_prop_asset_by_name(name);
+        if(!subject || subject->id<RASTERFALL_PROP_ASSET_CAMPUS_WALL_PLAIN) return 1;
+        campus_camera(&camera,-6,4,-8,0,1.3,0);
+    }
+    memset(&surface,0,sizeof(surface)); surface.width=1280; surface.height=800;
+    surface.stride=1280*4; surface.pixels=tlibc_malloc((size_t)surface.stride*surface.height);
+    toy_renderer_init(&renderer); toy_renderer_set_frame_budget(&renderer,0);
+    if(!surface.pixels || toy_renderer_begin(&renderer,&surface,0xB3C2CA)<0) goto done;
+    campus_surface(&renderer,&camera,0,0,70,70,-.5,0x959B91);
+#define CP(id,x,y,z,yaw) do { instances++; if(architecture_prop(&renderer,&camera,RASTERFALL_PROP_ASSET_##id,x,y,z,yaw)<0) failed=1; } while(0)
+    if(detail) {
+        instances++;
+        if(architecture_prop(&renderer,&camera,subject->id,0,0,0,180)<0) failed=1;
+    } else {
+        /* Continuous 4 m facade: two floors, entrance replacing a wall. */
+        for(int x=-10;x<=10;x+=4) {
+            if(x==-2) { CP(CAMPUS_ENTRANCE,x,.15,8,180); }
+            else { CP(CAMPUS_WALL_WINDOW,x,.15,8,180); }
+            CP(CAMPUS_WALL_WINDOW,x,.15+story,8,180);
+            CP(CAMPUS_ROOF_EDGE,x,.15+2*story,8,0);
+            CP(CAMPUS_SIDEWALK,x,0,6,0);
+            CP(CAMPUS_CURB,x,0,4.9,0);
+        }
+        for(int z=10;z<=18;z+=4) {
+            CP(CAMPUS_WALL_PLAIN,-12,.15,z,90);
+            CP(CAMPUS_WALL_PLAIN,-12,.15+story,z,90);
+        }
+        /* Road uses existing flat surface, width only a synthetic kit test. */
+        campus_surface(&renderer,&camera,0,1.8,24,6,0,0x666D72);
+        campus_surface(&renderer,&camera,0,-3.5,24,4.6,0,0xABB0AD);
+        campus_surface(&renderer,&camera,15,10,6,14,0,0x607D57);
+        campus_surface(&renderer,&camera,20,10,4,14,0,0x986D60);
+        /* Track edge: single lane line directly partitioned, no overlay. */
+        campus_surface(&renderer,&camera,22.06,10,.12,14,0,0xD5D1C6);
+        CP(CAMPUS_TREE_PROXY,15,0,5,0); CP(CAMPUS_TREE_PROXY,15,0,15,0);
+        CP(LAMP_POST,-10,.15,6,180);
+        CP(RAILING,18,0,4,0); CP(RAILING,20.4,0,4,0);
+        CP(CAMPUS_STAIR_SHORT,8,0,-5,180);
+        CP(CAMPUS_STAIR_LONG,12,0,-5,180);
+        CP(CAMPUS_RETAINING_WALL,16,0,-3.8,0);
+        CP(CAMPUS_RETAINING_WALL,20,0,-3.8,0);
+        campus_surface(&renderer,&camera,12,-1.5,4,4.6,1.2,0xADB2AF);
+        campus_surface(&renderer,&camera,18,-1.4,8,4.4,1.2,0xADB2AF);
+        campus_surface(&renderer,&camera,8,-3.7,4,1.4,.6,0xADB2AF);
+        CP(CAMPUS_COLUMN,-3.6,.15,7.4,0);
+        CP(CAMPUS_COLUMN,-.4,.15,7.4,0);
+        /* Free strip exercises end-to-end repetition independently of wall. */
+        CP(CAMPUS_WINDOW_STRIP,6,0,15,180);
+        CP(CAMPUS_WINDOW_STRIP,10,0,15,180);
+        /* 1.7 m upright scale gauge, fixture primitive only. */
+        {
+            struct vec3 a={-512,-900,-1536}, b={-307,-900,-1536};
+            struct vec3 c={-307,-30,-1536}, d={-512,-30,-1536};
+            draw_quad(&renderer,&camera,&a,&b,&c,&d,0x606D79);
+        }
+    }
+    if(failed || renderer.cmd_overflow) goto done;
+    __printf("campus: %s instances=%d commands=%d triangles=%lu metric fixture; no collision\n",
+        scenario,instances,renderer.cmd_count,renderer.submitted_triangles);
+    if(toy_renderer_flush(&renderer)<0 || rasterfall_hud_dump_bmp(output,&surface)<0) goto done;
+    result=0;
+done:
+    toy_renderer_destroy(&renderer); tlibc_free(surface.pixels);
+    return result;
+#undef CP
+}
+
+
 int rasterfall_render_visual_capture(const char *scenario, const char *output)
 {
     struct camera camera;
@@ -203,6 +316,11 @@ int rasterfall_render_visual_capture(const char *scenario, const char *output)
     const char *weapon_path;
     int result = 1, i, count;
     int squad = scenario && !strcmp(scenario, "hurd-squad");
+    if(scenario && output && (!strncmp(scenario,"campus-asset-",13) ||
+       !strcmp(scenario,"campus-corner") || !strcmp(scenario,"campus-corner-near") ||
+       !strcmp(scenario,"campus-corner-mid") || !strcmp(scenario,"campus-corner-far") ||
+       !strcmp(scenario,"campus-corner-ground")))
+        return campus_capture(scenario,output);
     int prop_lighting = scenario && !strcmp(scenario, "lighting-props");
     int modular_teammate = scenario && !strcmp(scenario, "modular-teammate");
     if(scenario && output && (!strncmp(scenario,"arch-asset-",11) || !strcmp(scenario,"arch-family") ||

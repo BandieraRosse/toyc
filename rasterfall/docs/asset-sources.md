@@ -1,6 +1,7 @@
 # Rasterfall 资源来源与发布限制
 
 > 文档更新：2026-09-13
+> 源码核对基线补充：Temporary Campus Kit V0为项目内程序化临时几何、零新纹理；公开campus RMESH可由generator/manifest重建，来源和边界见temporary-campus-kit-v0.md。
 > 源码核对基线补充：rf_arch_* 为项目内 Builder 生成的原创建筑套件，公开 RMESH、无外部几何/图片/字体；源保留见 architectural-environment-v1.md。
 > 源码核对基线补充：新增工业动力机组、门架、控制柜由项目内 Blender Builder 和程序化编号生成，无外部 mesh、图片或字体输入。
 > 源码核对基线：工作区（Enemy Visual V2 六份公开 RFM2 / renderer-only family；移除开发者区纹理展示墙；加入文泉驿来源的 GB2312 16×16 点阵字库、对应 BDF 源文件与许可；RF Humanoid V2 为项目内生成的私有源资产）

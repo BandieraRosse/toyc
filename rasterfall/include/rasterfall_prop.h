@@ -31,7 +31,19 @@ enum rasterfall_prop_asset_id {
     RASTERFALL_PROP_ASSET_ARCH_SERVICE_PANEL = 21,
     RASTERFALL_PROP_ASSET_ARCH_CABLE_TRAY = 22,
     RASTERFALL_PROP_ASSET_ARCH_FLOOR_HATCH = 23,
-    RASTERFALL_PROP_ASSET_COUNT = 23
+    RASTERFALL_PROP_ASSET_CAMPUS_WALL_PLAIN = 24,
+    RASTERFALL_PROP_ASSET_CAMPUS_WALL_WINDOW = 25,
+    RASTERFALL_PROP_ASSET_CAMPUS_WINDOW_STRIP = 26,
+    RASTERFALL_PROP_ASSET_CAMPUS_ENTRANCE = 27,
+    RASTERFALL_PROP_ASSET_CAMPUS_ROOF_EDGE = 28,
+    RASTERFALL_PROP_ASSET_CAMPUS_COLUMN = 29,
+    RASTERFALL_PROP_ASSET_CAMPUS_STAIR_SHORT = 30,
+    RASTERFALL_PROP_ASSET_CAMPUS_STAIR_LONG = 31,
+    RASTERFALL_PROP_ASSET_CAMPUS_RETAINING_WALL = 32,
+    RASTERFALL_PROP_ASSET_CAMPUS_CURB = 33,
+    RASTERFALL_PROP_ASSET_CAMPUS_SIDEWALK = 34,
+    RASTERFALL_PROP_ASSET_CAMPUS_TREE_PROXY = 35,
+    RASTERFALL_PROP_ASSET_COUNT = 35
 };
 
 struct rasterfall_prop_dimensions {
@@ -46,7 +58,8 @@ struct rasterfall_prop_asset_profile {
     const char *model_path;
     /* milli-scale from RMESH units into RFU at the presentation edge. */
     int render_scale_milli;
-/* Default AABB dimensions in RFU for gameplay collision and walkable tops. */
+    /* Default AABB in RFU. Temporary campus visual assets use all zeros:
+     * collision_dimensions rejects them; no implicit gameplay collision. */
     struct rasterfall_prop_dimensions collision_size;
 };
 

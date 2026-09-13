@@ -1,6 +1,7 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-13
+> 源码核对基线补充：campus-corner与near/mid/far、campus-asset-*复用dev-tests实际static prop/quad；资产开放视觉壳处理旧双面薄板深度竞争，未改renderer。
 > 源码核对基线补充：闭合 Architectural V1 prop 的 scoped backface culling 修复旧 static RFM2 双面薄墙穿透；frontend state 保存并恢复提交策略，其他模型不变。
 > 源码核对基线补充：Visual CLI arch-family / arch-alley / arch-hall 与 inside/far/reverse 使用实际 prop、modular actor 和 enemy renderer；隔离表面研究不改正式场景。
 > 源码核对基线补充：`--environment-capture` 固定 seed、headless Core、显式 Campaign world request；共享现有 world BMP capture，十二个设施/路线视角。
@@ -67,6 +68,11 @@ HUMANOID_INFECTED。V2 两个家族由地图 draw record 触发同一感染模�
 地面锚点属于 renderer；不会创建 enemy、碰撞体、AI 或网络状态。
 
 ## 渲染边界
+
+Temporary Campus Kit的`--visual-capture campus-corner`支持`-near`、`-mid`、`-far`；
+`campus-asset-<name>`观察单件。全部位于process-only dev-tests fixture，复用已有
+static prop/quad，不改变正常world。组图及开放视觉壳限制见
+[temporary-campus-kit-v0.md](temporary-campus-kit-v0.md)。
 
 Profession Visual System V1 的 `--profession-lineup <model-dir> <output-dir>` 由 options →
 main 早退 → `rasterfall_render_profession_lineup()` 执行；实现位于

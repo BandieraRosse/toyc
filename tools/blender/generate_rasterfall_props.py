@@ -323,7 +323,7 @@ class Builder:
         expected_hi = [dimensions[0]/2, dimensions[1]/2, dimensions[2]]
         assert all(abs(a-b) < 1e-5 for a, b in
                    zip(lo + hi, expected_lo + expected_hi)), (name, lo, hi)
-        assert (12 if name.startswith('rf_arch_') else 200) <= triangles <= budget <= 1200, (name, triangles, budget)
+        assert (2 if name.startswith('rf_campus_') else 12 if name.startswith('rf_arch_') else 200) <= triangles <= budget <= 1200, (name, triangles, budget)
         assert all(p.area > 1e-10 for p in obj.data.polygons), name
         assert not obj.modifiers and not obj.animation_data
         obj['dimensions_m'] = list(dimensions)
@@ -633,7 +633,7 @@ def inspect_glb(path, objects):
         vertices = triangles = 0
         lows, highs = [], []
         assert len(mesh['primitives']) == len(obj.data.materials)
-        assert len(mesh['primitives']) <= (4 if obj.get('hybrid') else (3 if obj.get('crate_material') == 'hybrid' else 2))
+        assert len(mesh['primitives']) <= (3 if obj.name.startswith('rf_campus_') else (4 if obj.get('hybrid') else (3 if obj.get('crate_material') == 'hybrid' else 2)))
         for material in obj.data.materials:
             if 'albedo_path' not in material:
                 continue

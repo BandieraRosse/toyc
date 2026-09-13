@@ -77,7 +77,43 @@ static const struct rasterfall_prop_asset_profile prop_assets[] = {
       RASTERFALL_PROP_RENDER_SCALE_MILLI, { 2048, 164, 123 } },
     { RASTERFALL_PROP_ASSET_ARCH_FLOOR_HATCH, "arch_floor_hatch",
       "rasterfall/assets/models/props/industrial/rf_arch_floor_hatch.rmesh",
-      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 819, 20, 614 } }
+      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 819, 20, 614 } },
+    { RASTERFALL_PROP_ASSET_CAMPUS_WALL_PLAIN, "campus_wall_plain",
+      "rasterfall/assets/models/props/campus/rf_campus_wall_plain.rmesh",
+      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 0, 0, 0 } },
+    { RASTERFALL_PROP_ASSET_CAMPUS_WALL_WINDOW, "campus_wall_window",
+      "rasterfall/assets/models/props/campus/rf_campus_wall_window.rmesh",
+      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 0, 0, 0 } },
+    { RASTERFALL_PROP_ASSET_CAMPUS_WINDOW_STRIP, "campus_window_strip",
+      "rasterfall/assets/models/props/campus/rf_campus_window_strip.rmesh",
+      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 0, 0, 0 } },
+    { RASTERFALL_PROP_ASSET_CAMPUS_ENTRANCE, "campus_entrance",
+      "rasterfall/assets/models/props/campus/rf_campus_entrance.rmesh",
+      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 0, 0, 0 } },
+    { RASTERFALL_PROP_ASSET_CAMPUS_ROOF_EDGE, "campus_roof_edge",
+      "rasterfall/assets/models/props/campus/rf_campus_roof_edge.rmesh",
+      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 0, 0, 0 } },
+    { RASTERFALL_PROP_ASSET_CAMPUS_COLUMN, "campus_column",
+      "rasterfall/assets/models/props/campus/rf_campus_column.rmesh",
+      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 0, 0, 0 } },
+    { RASTERFALL_PROP_ASSET_CAMPUS_STAIR_SHORT, "campus_stair_short",
+      "rasterfall/assets/models/props/campus/rf_campus_stair_short.rmesh",
+      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 0, 0, 0 } },
+    { RASTERFALL_PROP_ASSET_CAMPUS_STAIR_LONG, "campus_stair_long",
+      "rasterfall/assets/models/props/campus/rf_campus_stair_long.rmesh",
+      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 0, 0, 0 } },
+    { RASTERFALL_PROP_ASSET_CAMPUS_RETAINING_WALL, "campus_retaining_wall",
+      "rasterfall/assets/models/props/campus/rf_campus_retaining_wall.rmesh",
+      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 0, 0, 0 } },
+    { RASTERFALL_PROP_ASSET_CAMPUS_CURB, "campus_curb",
+      "rasterfall/assets/models/props/campus/rf_campus_curb.rmesh",
+      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 0, 0, 0 } },
+    { RASTERFALL_PROP_ASSET_CAMPUS_SIDEWALK, "campus_sidewalk",
+      "rasterfall/assets/models/props/campus/rf_campus_sidewalk.rmesh",
+      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 0, 0, 0 } },
+    { RASTERFALL_PROP_ASSET_CAMPUS_TREE_PROXY, "campus_tree_proxy",
+      "rasterfall/assets/models/props/campus/rf_campus_tree_proxy.rmesh",
+      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 0, 0, 0 } },
 };
 
 static const struct rasterfall_prop_asset_profile *find_id(int id)
@@ -147,9 +183,11 @@ int rasterfall_prop_asset_logic_test(void)
         const struct rasterfall_prop_asset_profile *asset = prop_assets + i;
         if (asset->id != i + 1 || !asset->name || !asset->model_path ||
             asset->render_scale_milli != RASTERFALL_PROP_RENDER_SCALE_MILLI ||
-            asset->collision_size.x <= 0 ||
-            asset->collision_size.y <= 0 ||
-            asset->collision_size.z <= 0)
+            (asset->id < RASTERFALL_PROP_ASSET_CAMPUS_WALL_PLAIN &&
+             (asset->collision_size.x <= 0 || asset->collision_size.y <= 0 ||
+              asset->collision_size.z <= 0)) ||
+            (asset->id >= RASTERFALL_PROP_ASSET_CAMPUS_WALL_PLAIN &&
+             (asset->collision_size.x || asset->collision_size.y || asset->collision_size.z)))
             return 1;
     }
     crate = rasterfall_prop_asset_profile(RASTERFALL_PROP_ASSET_CRATE);
@@ -181,6 +219,12 @@ int rasterfall_prop_asset_logic_test(void)
         return 5;
     {
         struct rasterfall_prop_dimensions dimensions;
+        for (i = RASTERFALL_PROP_ASSET_CAMPUS_WALL_PLAIN;
+             i <= RASTERFALL_PROP_ASSET_COUNT; i++) {
+            if (rasterfall_prop_collision_dimensions(find_id(i), 0, 1000,
+                                                     &dimensions) == 0)
+                return 8;
+        }
         if (rasterfall_prop_collision_dimensions(barrier, 0, 1000,
                                                   &dimensions) != 0 ||
             dimensions.x != 1229 || dimensions.y != 512 || dimensions.z != 410 ||
