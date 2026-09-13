@@ -82,7 +82,8 @@ static const struct action_name action_names[] = {
     {"station_terminal", RF_MAP_ACTION_STATION_TERMINAL},
     {"operations_terminal", RF_MAP_ACTION_OPERATIONS_TERMINAL},
     {"super_terminal", RF_MAP_ACTION_SUPER_TERMINAL},
-    {"return_outpost", RF_MAP_ACTION_RETURN_OUTPOST}
+    {"return_outpost", RF_MAP_ACTION_RETURN_OUTPOST},
+    {"return_to_whu_v0", RF_MAP_ACTION_RETURN_TO_WHU_V0}
 };
 
 int rf_map_runtime_action_from_name(const char *name)

@@ -7,6 +7,7 @@
 
 > 源码核对补充：北侧通道扩宽为 Hurd 防区，原中央北侧刷怪区拆到左右两翼。
 > 源码核对补充：独立 `outpost.map` 使用 V1 Runtime Map；三终端与 Null 已由对应 World Content 定义提供。
+> 源码核对补充：`--map <path>` 可在不改变默认世界的情况下加载任意本地 V1 空间地图，供实验布局第一人称检查；Return-to-WHU Planar Massing V0 使用该入口。
 
 ## World Definition V1
 
@@ -77,9 +78,12 @@ AI、prop 和 renderer 行为保持不变；Runtime Map 是 authoritative world 
 Runtime Map 和 projection adapter 是默认输入链路；修改语法时必须同时检查 parser、runtime、玩法绑定、
 碰撞/导航、渲染和逻辑测试。
 
+本地实验布局可通过 `build/rasterfall --map path/to/experiment.map` 启动。该参数只覆盖本次进程
+的启动地图，不改变默认 Outpost/Campaign world 选择，也不会把实验地图接入 World Content。
+
 Outpost V1 使用同一 V1 链路，源文件为 `assets/maps/outpost.map`。`station_terminal`、
-`operations_terminal`、`super_terminal` 和 `return_outpost` 是 Game-owned interaction vocabulary，分别
-映射为 Station GUI 请求、Campaign 01 world request、锁定反馈和返回请求；它们不是 Core API，也不改变
+`operations_terminal`、`super_terminal`、`return_outpost` 和 `return_to_whu_v0` 是 Game-owned interaction vocabulary，分别
+映射为 Station GUI 请求、Campaign 01 world request、锁定反馈、返回请求和 Return-to-WHU Planar Massing V0 world request；它们不是 Core API，也不改变
 Runtime Map ownership。
 
 ## 几何与碰撞

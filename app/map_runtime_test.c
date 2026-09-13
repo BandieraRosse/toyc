@@ -28,6 +28,7 @@ int main(int argc, char **argv)
     }
     if (rf_map_runtime_interaction_count(&runtime) == 0) {
         safe = rf_map_runtime_find_region(&runtime, "outpost_safe");
+        if (!safe) safe = rf_map_runtime_find_region(&runtime, "area_a18");
         if (!safe) { rf_map_runtime_unload(&runtime); return 1; }
         __printf("runtime map success\nregions: %d\ninteractions: 0\nspawns: %d\npickups: %d\nobjects: %d\ncollisions: %d\nsurfaces: %d\nrenders: %d\nsafe: %s\n",
                  rf_map_runtime_region_count(&runtime),
@@ -45,12 +46,16 @@ int main(int argc, char **argv)
     if (!safe) safe = rf_map_runtime_find_region(&runtime, "outpost_safe");
     interaction = rf_map_runtime_find_interaction(&runtime, "wave_skip");
     if (!interaction) interaction = rf_map_runtime_find_interaction(&runtime,
+                                                                      "return_to_whu_v0");
+    if (!interaction) interaction = rf_map_runtime_find_interaction(&runtime,
                                                                       "station_terminal");
     spawn = rf_map_runtime_find_spawn(&runtime, "Jesus");
     if (!spawn) spawn = rf_map_runtime_find_spawn(&runtime, "Null");
     if (!spawn) spawn = rf_map_runtime_find_spawn(&runtime, "GUARD");
     pickup = rf_map_runtime_find_pickup(&runtime, "pickup_smg");
     object = rf_map_runtime_find_object(&runtime, "object_crate");
+    if (!object) object = rf_map_runtime_find_object(&runtime,
+                                                      "return_to_whu_console");
     collision = rf_map_runtime_find_collision(&runtime, "box_air_gate_left");
     if (!collision) collision = rf_map_runtime_collision_at(&runtime, 0);
     surface = rf_map_runtime_find_surface(&runtime, "surface_ramp_dev_exit");

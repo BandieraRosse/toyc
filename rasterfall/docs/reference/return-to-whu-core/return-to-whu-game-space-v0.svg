@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="900" viewBox="0 0 1200 900">
+  <rect width="1200" height="900" fill="#f7f8fa"/>
+  <style>
+    .title{font:700 26px sans-serif;fill:#263746}.sub{font:15px sans-serif;fill:#52616d}.label{font:700 16px sans-serif;fill:#263746}.small{font:13px sans-serif;fill:#52616d}.tiny{font:12px sans-serif;fill:#657581}.zone{stroke:#344b5c;stroke-width:2}.road{fill:none;stroke:#b3bec5;stroke-width:12;stroke-linecap:round}.walk{fill:none;stroke:#d3a24e;stroke-width:5;stroke-dasharray:10 8}.route{fill:none;stroke:#d14f32;stroke-width:5;stroke-dasharray:13 9;stroke-linecap:round;stroke-linejoin:round}.building{fill:#dce7ef;stroke:#687f8f;stroke-width:2}.plaza{fill:#eee8c9;stroke:#b18d37;stroke-width:2}.sports{fill:#d9ead1;stroke:#7ca46b;stroke-width:2}.overlay{fill:#f2d4cc;stroke:#b84e39;stroke-width:2}.poi{fill:#d14f32;stroke:#fff;stroke-width:3}.north{stroke:#263746;stroke-width:3;fill:none}.dim{stroke:#71808a;stroke-width:1.5;stroke-dasharray:5 5}.boundary{fill:none;stroke:#168aa3;stroke-width:2;stroke-dasharray:10 7}.note{fill:#fff7ec;stroke:#c66e32;stroke-width:1.5}
+  </style>
+  <text x="48" y="48" class="title">《重返武汉大学》信息学部核心区 · 游戏空间 V0</text>
+  <text x="48" y="75" class="sub">平面体量白盒示意｜X向东、Z向北｜1 m = 512 RFU｜不是实测地形，也不是正式 .map</text>
+
+  <!-- map frame: x -160..180, z -305..65, schematic only -->
+  <rect x="55" y="120" width="720" height="700" class="boundary"/>
+  <text x="68" y="112" class="small">参考调查范围约 340 × 370 m（非最终可玩边界）</text>
+  <line x1="75" y1="785" x2="755" y2="785" class="dim"/>
+  <line x1="75" y1="785" x2="75" y2="145" class="dim"/>
+  <text x="50" y="790" class="tiny">南</text><text x="50" y="145" class="tiny">北</text>
+  <text x="730" y="810" class="tiny">东</text><text x="70" y="810" class="tiny">西</text>
+
+  <!-- simplified road skeleton -->
+  <path d="M95 220 L720 220 M115 350 L720 350 M175 480 L720 480 M240 620 L720 620 M655 130 L655 800 M470 170 L470 800" class="road"/>
+  <path d="M120 305 L275 260 L420 270 L535 345 L650 405 L690 520" class="walk"/>
+  <path d="M440 245 L515 330 L520 420 L650 520" class="route"/>
+  <path d="M440 245 L320 275 L215 330" class="route"/>
+  <path d="M650 520 L650 680" class="route"/>
+
+  <!-- landmarks -->
+  <rect x="155" y="265" width="155" height="55" rx="3" class="building"/>
+  <text x="182" y="298" class="label">17舍</text><text x="182" y="316" class="tiny">外部体量代理</text>
+  <rect x="390" y="205" width="160" height="50" rx="3" class="building"/>
+  <text x="420" y="235" class="label">18舍</text><text x="420" y="251" class="tiny">A18出生/整备</text>
+  <rect x="535" y="330" width="185" height="75" rx="3" class="building"/>
+  <text x="562" y="365" class="label">信息科学分馆</text><text x="562" y="385" class="tiny">D区目标外壳</text>
+  <rect x="100" y="165" width="205" height="100" rx="12" class="plaza"/>
+  <text x="147" y="211" class="label">B 西侧广场</text><text x="143" y="230" class="tiny">开阔交战 / 分叉</text>
+  <rect x="540" y="500" width="180" height="260" rx="7" class="sports"/>
+  <rect x="575" y="545" width="110" height="160" rx="4" fill="none" stroke="#8bb27b" stroke-width="2"/>
+  <text x="583" y="640" class="label">E/F 操场</text><text x="566" y="660" class="tiny">终局/撤离背景</text>
+
+  <!-- optional flank -->
+  <rect x="120" y="345" width="195" height="62" rx="5" class="overlay"/>
+  <text x="143" y="373" class="label">C 17舍侧路</text><text x="143" y="392" class="tiny">可选绕行 / 近战压迫</text>
+
+  <!-- POIs -->
+  <circle cx="470" cy="270" r="8" class="poi"/><text x="483" y="274" class="small">A18 安全出生</text>
+  <circle cx="215" cy="230" r="8" class="poi"/><text x="228" y="234" class="small">B 首次接触</text>
+  <circle cx="520" cy="420" r="8" class="poi"/><text x="533" y="424" class="small">D 前场主目标</text>
+  <circle cx="650" cy="520" r="8" class="poi"/><text x="663" y="524" class="small">E 集结/撤离</text>
+  <rect x="610" y="445" width="24" height="18" class="overlay"/><text x="640" y="458" class="tiny">临时设备链</text>
+  <rect x="585" y="425" width="24" height="18" class="overlay"/><text x="615" y="438" class="tiny">power/control</text>
+
+  <!-- dimensions only as design rhythm -->
+  <line x1="475" y1="260" x2="620" y2="360" class="dim"/><text x="505" y="306" class="tiny">约 71 m 直线参考</text>
+  <line x1="470" y1="260" x2="210" y2="305" class="dim"/><text x="310" y="276" class="tiny">约 117 m 直线参考</text>
+  <line x1="620" y1="405" x2="650" y2="510" class="dim"/><text x="650" y="460" class="tiny">约 71 m 参考</text>
+
+  <!-- north -->
+  <path d="M735 175 L735 130 M735 130 L724 148 M735 130 L746 148" class="north"/><text x="727" y="120" class="label">N</text>
+
+  <!-- legend / notes -->
+  <rect x="815" y="120" width="345" height="700" rx="8" fill="#ffffff" stroke="#c7d0d6"/>
+  <text x="842" y="155" class="label">建议游戏路线</text>
+  <text x="842" y="183" class="small">A18出生 → B广场接触</text>
+  <text x="842" y="207" class="small">→ D分馆前场目标</text>
+  <text x="842" y="231" class="small">→ E操场北缘撤离</text>
+  <text x="842" y="255" class="small">C区为可选侧翼，F区为扩展</text>
+  <line x1="840" y1="275" x2="1135" y2="275" stroke="#d7dfe4"/>
+  <text x="842" y="310" class="label">图例</text>
+  <rect x="842" y="330" width="22" height="16" class="building"/><text x="875" y="343" class="small">现实建筑体量代理</text>
+  <rect x="842" y="360" width="22" height="16" class="plaza"/><text x="875" y="373" class="small">广场/开敞 surface</text>
+  <rect x="842" y="390" width="22" height="16" class="sports"/><text x="875" y="403" class="small">操场/绿地 surface</text>
+  <rect x="842" y="420" width="22" height="16" class="overlay"/><text x="875" y="433" class="small">玩法覆盖/临时设施</text>
+  <line x1="842" y1="463" x2="864" y2="463" class="route"/><text x="875" y="468" class="small">推荐主路线</text>
+  <line x1="842" y1="493" x2="864" y2="493" class="walk"/><text x="875" y="498" class="small">步行/空间联系参考</text>
+  <line x1="840" y1="525" x2="1135" y2="525" stroke="#d7dfe4"/>
+  <text x="842" y="560" class="label">必须保留的未知项</text>
+  <text x="842" y="588" class="small">• 所有非A18高程</text>
+  <text x="842" y="612" class="small">• 道路净宽与连续坡度</text>
+  <text x="842" y="636" class="small">• 广场硬质边界</text>
+  <text x="842" y="660" class="small">• 图书馆高度与入口实况</text>
+  <text x="842" y="684" class="small">• 操场跑道/围栏精确边线</text>
+  <rect x="840" y="716" width="295" height="74" class="note"/>
+  <text x="855" y="741" class="small">当前结论：可做可撤回白盒，</text>
+  <text x="855" y="762" class="small">不可据此签收真实地形或正式地图。</text>
+</svg>

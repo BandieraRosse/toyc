@@ -155,6 +155,8 @@ static int runtime_action_to_pickup(int action_id, int *weapon)
         return TOY_MAP_PICKUP_SUPER_TERMINAL;
     case RF_MAP_ACTION_RETURN_OUTPOST:
         return TOY_MAP_PICKUP_RETURN_OUTPOST;
+    case RF_MAP_ACTION_RETURN_TO_WHU_V0:
+        return TOY_MAP_PICKUP_RETURN_TO_WHU_V0;
     case RF_MAP_ACTION_PICKUP_SMG:
         if (weapon) *weapon = TOY_GAME_WEAPON_SMG;
         return TOY_MAP_PICKUP_WEAPON;

@@ -5,7 +5,7 @@
 > 源码核对基线：工作区（Humanoid Action Composition V1 CLI；双正式四人 squad runtime；Lighting V1；`game_state.actors[]` 是 gameplay truth；RF Core Runtime V0.2 `rf_game_runtime` facade、Core status query、service access cleanup 与 Input view；Core/Game startup config split；renderer frame ownership cleanup；Core filesystem service V0；唯一 `rf_core` context 与 Core clock service；Phase 3A `rf_game_update()` gameplay update authority；Phase 3B-1 world presentation migration；Phase 3B-2 steady-state Game UI presentation authority；RF Command Runtime V0 registry/context/status；Command Runtime Stabilization V0.1 output/metadata/permission；RF Terminal Frontend Prototype V0 session 与 Console frontend；RF GUI Runtime Prototype V0）
 
 > 源码核对补充：session reset 在原 flag 1 和原坐标恢复 Maid 四人旗卫，并创建使用 flag 2 的正式 Hurd squad/outpost；Hurd 控制状态保持派生。
-> 源码核对补充：Outpost V0 默认 landing、world switch 与 station terminal request 已接入。
+> 源码核对补充：Outpost V0 默认 landing、world switch、station terminal request 与 Return-to-WHU Planar Massing V0 入口已接入。
 
 ## 状态所有者
 
@@ -46,8 +46,8 @@ Runtime Environment 的上层边界保持分层：Core 拥有平台资源及 ser
 ## 生命周期
 
 默认 Game policy 加载 `RASTERFALL_WORLD_OUTPOST`（`assets/maps/outpost.map`），不让 Core 选择或解析
-Rasterfall world。Outpost 的 Operations Terminal 请求 `RASTERFALL_WORLD_CAMPAIGN_01`，战役返回设备请求
-Outpost；`rf_game_request_world()` 按 unload → Runtime Map load → projection → session reset → lightmap
+Rasterfall world。Outpost 的 Operations Terminal 请求 `RASTERFALL_WORLD_CAMPAIGN_01`，新增 Return-to-WHU 入口请求
+`RASTERFALL_WORLD_RETURN_TO_WHU_V0`；战役返回设备请求 Outpost；`rf_game_request_world()` 按 unload → Runtime Map load → projection → session reset → lightmap
 rebuild 顺序完成一次完整重建。普通离线启动直接落地前哨站，显式网络/诊断路径仍可使用旧启动菜单。
 
 `main()` 的顺序是：解析参数并组装 `rf_game_config` → 初始化唯一 `rf_core` context（window、renderer、
@@ -57,7 +57,7 @@ surface、filesystem、audio、input、clock）→ `rf_game_init(core, ...)` 加
 `--visual-capture <scenario> --visual-output <path>` 必须成对提供。解析后立即进入
 `rasterfall_render_visual_capture()` 并退出，先于字库、网络、session/map、窗口和音频初始化。
 固定场景不读取时钟、不推进 simulation，也不受交互式画面选项影响；不要与其他诊断模式混用。
-支持 `procedural-humanoid`、`hurd-squad`、`lighting-props`、`--character-acceptance <model.rmesh> <output-dir>`、
+支持 `--map <path>` 加载一次性的本地 V1 空间地图进行第一人称检查；它不改变默认 world policy，也不加载实验专属 World Content。另支持 `procedural-humanoid`、`hurd-squad`、`lighting-props`、`--character-acceptance <model.rmesh> <output-dir>`、
 `--squad-acceptance <model-dir> <output-dir>` 和
 `--character-world-capture <output-dir> [--character-world-model <model.rmesh>]`；`procedural-humanoid` 与
 `hurd-squad` 仍是独立的纯展示 fixture，不读取正式 world actor；

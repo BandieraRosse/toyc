@@ -6,16 +6,20 @@
 
 const char *rasterfall_world_map_path(enum rasterfall_world_id world)
 {
-    return world == RASTERFALL_WORLD_OUTPOST ?
-        "rasterfall/assets/maps/outpost.map" :
-        "rasterfall/assets/maps/rasterfall.map";
+    if (world == RASTERFALL_WORLD_OUTPOST)
+        return "rasterfall/assets/maps/outpost.map";
+    if (world == RASTERFALL_WORLD_RETURN_TO_WHU_V0)
+        return "rasterfall/assets/maps/return_whu_planar_massing_v0.map";
+    return "rasterfall/assets/maps/rasterfall.map";
 }
 
 const char *rasterfall_world_content_path(enum rasterfall_world_id world)
 {
-    return world == RASTERFALL_WORLD_OUTPOST ?
-        "rasterfall/assets/worlds/outpost.content" :
-        "rasterfall/assets/worlds/campaign_01.content";
+    if (world == RASTERFALL_WORLD_OUTPOST)
+        return "rasterfall/assets/worlds/outpost.content";
+    if (world == RASTERFALL_WORLD_RETURN_TO_WHU_V0)
+        return "rasterfall/assets/worlds/return_whu_planar_massing_v0.content";
+    return "rasterfall/assets/worlds/campaign_01.content";
 }
 
 static char *trim(char *s)
@@ -86,6 +90,7 @@ void rasterfall_world_content_build(struct rasterfall_world_content *content,
         content->spawn_terminals = 1;
         return;
     }
+    if (world == RASTERFALL_WORLD_RETURN_TO_WHU_V0) return;
     if (world != RASTERFALL_WORLD_CAMPAIGN_01) return;
 
     content->spawn_campaign_roster = 1;

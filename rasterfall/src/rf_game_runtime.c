@@ -2983,6 +2983,8 @@ int rf_game_runtime_run(const struct rf_game_config *config)
                      "rasterfall/assets/maps/rasterfall_legacy.map" :
                      logic_test ?
                      "rasterfall/assets/maps/rasterfall.map" :
+                     config->options && config->options->map_path ?
+                     config->options->map_path :
                      config->map_path ? config->map_path :
                      "rasterfall/assets/maps/rasterfall.map") < 0) {
         __fprintf(2, "rasterfall: cannot load map rasterfall/assets/maps/rasterfall.map\n");

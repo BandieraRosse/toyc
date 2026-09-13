@@ -381,8 +381,10 @@ int rasterfall_session_load(struct rasterfall_session *session,
      * the containing object so load -> load cannot orphan the old map. */
     rasterfall_session_unload(session);
     memset(session, 0, sizeof(struct rasterfall_session));
-    session->world_id = (strstr(map_path, "outpost.map") != NULL) ?
-        RASTERFALL_WORLD_OUTPOST : RASTERFALL_WORLD_CAMPAIGN_01;
+    session->world_id = strstr(map_path, "outpost.map") != NULL ?
+        RASTERFALL_WORLD_OUTPOST :
+        strstr(map_path, "return_whu_planar_massing_v0.map") != NULL ?
+        RASTERFALL_WORLD_RETURN_TO_WHU_V0 : RASTERFALL_WORLD_CAMPAIGN_01;
     if (rasterfall_world_content_load(&session->content, session->world_id,
                                       rasterfall_world_content_path(session->world_id)) < 0)
         return -1;
@@ -444,7 +446,8 @@ int rasterfall_session_request_world(struct rasterfall_session *session,
                                      enum rasterfall_world_id world)
 {
     if (!session || (world != RASTERFALL_WORLD_OUTPOST &&
-                     world != RASTERFALL_WORLD_CAMPAIGN_01)) return -1;
+                     world != RASTERFALL_WORLD_CAMPAIGN_01 &&
+                     world != RASTERFALL_WORLD_RETURN_TO_WHU_V0)) return -1;
     session->world_request = world;
     session->world_request_pending = 1;
     return 0;
@@ -1162,6 +1165,13 @@ static void session_interact(struct rasterfall_session *session,
         rasterfall_session_request_world(session, RASTERFALL_WORLD_OUTPOST);
         session->banner_ms = 800;
         session->banner_text = "RETURNING TO OUTPOST";
+        return;
+    }
+    if (it->kind == TOY_MAP_PICKUP_RETURN_TO_WHU_V0) {
+        rasterfall_session_request_world(session,
+                                         RASTERFALL_WORLD_RETURN_TO_WHU_V0);
+        session->banner_ms = 1200;
+        session->banner_text = "DEPLOYING RETURN TO WHU V0";
         return;
     }
     if (it->kind == TOY_MAP_PICKUP_BUTTON) {

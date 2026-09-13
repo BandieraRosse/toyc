@@ -373,6 +373,14 @@ static int run_logic_test(void)
         }
     }
     if (rasterfall_session_load(&session,
+        "rasterfall/assets/maps/return_whu_planar_massing_v0.map") < 0 ||
+        session.world_id != RASTERFALL_WORLD_RETURN_TO_WHU_V0 ||
+        !rasterfall_map_projection_counts_match(&session.map_ops) ||
+        session.level.draw_count != 17 ||
+        session.level.primitive_count != 17 ||
+        session.level.prop_count != 22)
+        return 238;
+    if (rasterfall_session_load(&session,
                                 "rasterfall/assets/maps/rasterfall.map") < 0 ||
         session.world_id != RASTERFALL_WORLD_CAMPAIGN_01 ||
         !rasterfall_map_projection_counts_match(&session.map_ops))
