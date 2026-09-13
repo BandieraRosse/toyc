@@ -361,6 +361,7 @@ int rasterfall_map_projection_counts_match(
            map->level->safe_count == runtime_projection_count_kind(runtime, "safe") &&
            map->level->spawn_count == runtime_projection_count_kind(runtime, "spawn") &&
            map->level->ai_spawn_count == rf_map_runtime_actor_spawn_count(runtime) &&
+           map->level->prop_count == rf_map_runtime_object_count(runtime) &&
            map->level->pickup_count == interactables &&
            *map->interactable_count == interactables;
 }

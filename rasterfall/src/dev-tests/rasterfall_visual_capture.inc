@@ -469,8 +469,8 @@ static void character_world_capture_camera(struct camera *camera, int distance)
     camera->view.pitch_cy = 1024;
 }
 
-int rasterfall_render_character_world_capture(const char *output_dir,
-                                              const char *model_path)
+static int capture_map_world(const char *output_dir,
+                             const char *model_path, int environment)
 {
     static const char *names[] = {"near", "mid", "far"};
     static const int distances[] = {2000, 4000, 8000};
@@ -478,7 +478,7 @@ int rasterfall_render_character_world_capture(const char *output_dir,
     if (!active_session || !output_dir || !*output_dir || strlen(output_dir)>450) return 1;
     if (tlibc_recursive_mkdir(output_dir) < 0) return 1;
     character_strip_model_path = model_path && *model_path ? model_path : NULL;
-    for (i = 0; i < 15; i++) {
+    for (i = 0; i < (environment ? 12 : 15); i++) {
         struct camera camera;
         struct toy_renderer renderer;
         struct toy_surface surface;
@@ -494,6 +494,32 @@ int rasterfall_render_character_world_capture(const char *output_dir,
         if (i < 3) snprintf(path, sizeof(path), "%s/%s.bmp", output_dir, names[distance_index]);
         else snprintf(path, sizeof(path), "%s/%s-%s.bmp", output_dir,
                       names[distance_index], subjects[(i - 3) % 4]);
+        if (environment) {
+            /* RFU eye-level views, looking along clear existing routes.
+             * No simulation tick or alternate environment renderer. */
+            static const struct {
+                const char *name;
+                int x, z, sy, cy;
+            } views[] = {
+                {"base", 0, -3400, 0, 1024},
+                {"north", 0, 9000, 0, 1024},
+                {"west-facility", -10500, 2000, -819, 614},
+                {"east-facility", 11500, 1000, 724, 724},
+                {"west-route", -44200, 0, 1024, 0},
+                {"east-route", 23500, 0, 1024, 0},
+                {"hurd", 0, 18000, 0, 1024},
+                {"south", -3000, -18000, -819, 614},
+                {"ramp", -15000, -17000, -614, 819},
+                {"spawn", 0, -4850, 0, 1024},
+                {"power-yard", 22000, -17000, -614, -819},
+                {"north-facility", -3500, 7500, -724, 724}
+            };
+            memset(&camera, 0, sizeof(camera));
+            camera.body.x = views[i].x; camera.body.z = views[i].z;
+            camera.view.sy = views[i].sy; camera.view.cy = views[i].cy;
+            camera.view.y = -350; camera.view.pitch_cy = 1024;
+            snprintf(path, sizeof(path), "%s/%s.bmp", output_dir, views[i].name);
+        }
         memset(&surface, 0, sizeof(surface));
         surface.width = 1280; surface.height = 720; surface.stride = 1280 * 4;
         pixels = tlibc_malloc((size_t)surface.stride * surface.height);
@@ -519,8 +545,8 @@ int rasterfall_render_character_world_capture(const char *output_dir,
         }
         toy_renderer_destroy(&renderer);
         tlibc_free(pixels);
-        __printf("rasterfall: character world capture distance=%d output=%s\n",
-                 distances[distance_index], path);
+        __printf("rasterfall: %s world capture camera=(%d,%d) output=%s\n",
+                 environment ? "environment" : "character", camera.body.x, camera.body.z, path);
         __printf("rasterfall: character world capture raster commands=%d triangles=%lu pixels=%d\n",
                  submitted_commands, submitted_triangles, stage_result);
     }
@@ -647,6 +673,17 @@ done:
     rasterfall_model_instance_unload(&right);
     rasterfall_model_instance_unload(&left);
     return result;
+}
+
+int rasterfall_render_character_world_capture(const char *output_dir,
+                                              const char *model_path)
+{
+    return capture_map_world(output_dir, model_path, 0);
+}
+
+int rasterfall_render_environment_capture(const char *output_dir)
+{
+    return capture_map_world(output_dir, NULL, 1);
 }
 
 static void rigid_identity(struct rasterfall_rigid_transform *transform)

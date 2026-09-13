@@ -80,6 +80,7 @@ void rasterfall_options_usage(int fd)
         "  --squad-acceptance <model-dir> <output-dir>\n"
         "  --rigid-attachment-acceptance <model-dir> <output-dir>\n"
         "  --character-world-capture <output-dir> [--character-world-model <model.rmesh>]\n"
+        "  --environment-capture <output-dir> (Campaign facility world views)\n"
         "  --model-views <model> <dir> [--model-views-supersample <1|2>]\n"
         "  --model-static-views <model> <dir>\n"
         "  --model-pose-views <model> <dir> <bind|right-arm|arms|body|rfchar-test>\n"
@@ -178,6 +179,9 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
             if(require_arguments(argc,argv,arg,2,option)<0)return -1;
             o->character_acceptance_model=argv[++arg];
             o->character_acceptance_dir=argv[++arg];
+        } else if (!strcmp(option,"--environment-capture")) {
+            if(require_arguments(argc,argv,arg,1,option)<0)return -1;
+            o->environment_capture_dir=argv[++arg];
         } else if (!strcmp(option,"--character-world-capture")) {
             if(require_arguments(argc,argv,arg,1,option)<0)return -1;
             o->character_world_capture_dir=argv[++arg];

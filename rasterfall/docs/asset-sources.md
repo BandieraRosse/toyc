@@ -1,6 +1,7 @@
 # Rasterfall 资源来源与发布限制
 
-> 文档更新：2026-09-11
+> 文档更新：2026-09-13
+> 源码核对基线补充：新增工业动力机组、门架、控制柜由项目内 Blender Builder 和程序化编号生成，无外部 mesh、图片或字体输入。
 > 源码核对基线：工作区（Enemy Visual V2 六份公开 RFM2 / renderer-only family；移除开发者区纹理展示墙；加入文泉驿来源的 GB2312 16×16 点阵字库、对应 BDF 源文件与许可；RF Humanoid V2 为项目内生成的私有源资产）
 
 本文是资源来源、许可状态和本地样本身份的活动台账。文件存在或能够构建不代表允许公开分发；
@@ -35,6 +36,11 @@
 帧区间和输出哈希。
 
 ## 公开模型与其他资源
+
+`rf_power_unit`、`rf_gate_frame`、`rf_control_cabinet` 是项目内程序化环境组件，源定义位于
+`tools/blender/generate_rasterfall_props.py`；GLB 与编号 PNG 完全由 Builder / palette / sign
+生成，不引入第三方资产。公开 RMESH/TTEX 经对应 industrial manifest 和统一 importer 安装；
+本地 GLB/Blend 不提交，可由生成脚本重建。这三件的来源不适用下述旧样本来源未明结论。
 
 `assets/fonts/gb2312-16.rfh` 的 GB2312 字形由 WenQuanYi Bitmap Song 1.0 (Hero) RC1 的 16×16
 BDF strike 确定性生成，半宽 ASCII 恢复为加入中文字体库前的 Rasterfall VGA 8×16 字形，源表为

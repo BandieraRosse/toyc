@@ -153,6 +153,7 @@ void rasterfall_render_model_setup_timing(
     struct rasterfall_model_setup_timing *out);
 int rasterfall_render_character_acceptance_capture(const char *model_path,
                                                     const char *output_dir);
+int rasterfall_render_environment_capture(const char *output_dir);
 int rasterfall_render_character_world_capture(const char *output_dir,
                                               const char *model_path);
 int rasterfall_render_actor_benchmark(int iterations, int frontend_workers,

@@ -29,6 +29,9 @@ SPECS = [
     ("rf_ammo_container", (.9, .5, .6), 600),
     ("rf_industrial_pillar", (.8, .8, 2.8), 600),
     ("rf_pipe_module", (1.6, .8, 1.4), 800),
+    ("rf_power_unit", (4.8, 2.4, 2.6), 800),
+    ("rf_gate_frame", (6.0, .8, 4.2), 600),
+    ("rf_control_cabinet", (1.2, .6, 1.8), 600),
 ]
 
 # Industrial palette in sRGB. Full atlases remain only as pilot A/B sources;
@@ -42,12 +45,17 @@ PILOT = {'rf_crate': (128, (118, 125, 99), '01'),
          'rf_lamp_post': (128, (93, 111, 121), '07'),
          'rf_ammo_container': (128, (105, 119, 93), '08'),
          'rf_industrial_pillar': (128, (85, 99, 108), '09'),
-         'rf_pipe_module': (128, (80, 89, 91), '10')}
+         'rf_pipe_module': (128, (80, 89, 91), '10'),
+         'rf_power_unit': (128, (102, 120, 109), '11'),
+         'rf_gate_frame': (128, (85, 99, 108), '12'),
+         'rf_control_cabinet': (128, (102, 125, 139), '13')}
 STRUCTURE = (57, 65, 68)
 INK = (213, 211, 191)
 ACCENTS = {'rf_barrier': (177, 92, 71), 'rf_railing': INK,
            'rf_lamp_post': (229, 214, 172), 'rf_ammo_container': (156, 76, 64),
-           'rf_industrial_pillar': (173, 133, 73), 'rf_pipe_module': (180, 112, 66)}
+           'rf_industrial_pillar': (173, 133, 73), 'rf_pipe_module': (180, 112, 66),
+           'rf_power_unit': (180, 112, 66), 'rf_gate_frame': (173, 133, 73),
+           'rf_control_cabinet': (112, 160, 155)}
 
 
 def albedo_material(name, out, label_only=False):
@@ -252,7 +260,7 @@ class Builder:
                 axis = max(range(3), key=lambda i: abs(poly.normal[i]))
                 axes = ((1, 2), (0, 2), (0, 1))[axis]
                 chosen = (1 if accent else 0) if tile is None else tile
-                if face is not None and (axis, int(poly.normal[axis])) != face:
+                if face is not None and (axis, 1 if poly.normal[axis] > 0 else -1) != face:
                     chosen = 1 if accent else 0
                 for li in poly.loop_indices:
                     v = obj.data.vertices[obj.data.loops[li].vertex_index].co
@@ -462,6 +470,42 @@ def build(name, mats):
         box((0, -.23, .17), (.50, .28, .06), True, bevel=0)
         box((0, -.183, .67), (.30, .022, .17), tile=3, face=(1, -1), bevel=0)
         box((0, .26, .76), (.32, .14, .08), tile=5, bevel=0)
+    elif name == 'rf_power_unit':
+        # Broad skid, chamfered housing, cooling bank and two exhaust stacks.
+        # A facility anchor; no fine grilles, bolts or texture weathering.
+        box((0, 0, .12), (4.8, 2.4, .24), True)
+        box((-.45, 0, 1.10), (3.5, 2.12, 1.72), bevel=.14)
+        box((1.58, 0, .97), (1.1, 2.08, 1.46), True, bevel=.07)
+        for z in (.55, .88, 1.21, 1.54):
+            box((1.58, -1.07, z), (.86, .12, .16), True, bevel=.02)
+        for x in (-1.5, -.55):
+            b.cylinder((x, .55, 2.19), .20, .70, True)
+            b.cylinder((x, .55, 2.54), .29, .12, True)
+        box((-.55, -1.095, 1.1), (1.5, .07, .95), True, bevel=.03)
+        box((-.55, -1.14, 1.24), (.46, .02, .28), tile=3, face=(1, -1), bevel=0)
+        box((.55, -1.1, .61), (.32, .06, .25), tile=5, bevel=0)
+    elif name == 'rf_gate_frame':
+        # Open centre remains a real opening. Use with existing collision
+        # shoulders, never the profile's whole AABB as a passage collider.
+        for x in (-2.68, 2.68):
+            box((x, 0, .12), (.64, .8, .24), True)
+            box((x, 0, 2.0), (.44, .46, 3.76), bevel=.045)
+            box((x, 0, .53), (.56, .60, .20), True)
+            box((x, 0, 3.52), (.56, .60, .20), True)
+            box((x, -.255, .9), (.30, .05, .36), tile=5, bevel=0)
+        box((0, 0, 3.96), (6.0, .60, .48), True, bevel=.045)
+        box((0, -.32, 3.96), (2.1, .06, .28), bevel=.015)
+        box((0, -.363, 3.96), (.48, .02, .24), tile=3, face=(1, -1), bevel=0)
+    elif name == 'rf_control_cabinet':
+        box((0, 0, .08), (1.2, .6, .16), True)
+        box((0, .02, .95), (1.10, .52, 1.7), bevel=.045)
+        box((0, -.255, .95), (.94, .05, 1.40), True, bevel=.018)
+        box((0, -.288, 1.25), (.65, .016, .30), tile=5, bevel=0)
+        box((0, -.288, .70), (.34, .016, .20), tile=3, face=(1, -1), bevel=0)
+        for x in (-.24, .24):
+            box((x, -.282, .97), (.13, .03, .09), bevel=0)
+        box((.40, -.280, .63), (.06, .035, .30), bevel=0)
+        box((0, 0, 1.76), (1.2, .6, .08), True, bevel=.012)
     else:
         raise ValueError(name)
     return b

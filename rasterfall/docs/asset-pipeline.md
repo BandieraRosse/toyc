@@ -1,6 +1,7 @@
 # Rasterfall 资产转换与诊断
 
-> 文档更新：2026-09-11
+> 文档更新：2026-09-13
+> 源码核对基线补充：power_unit / gate_frame / control_cabinet 沿用工业 Builder、GLB、manifest、统一 import、公开 RMESH/TTEX 和 registry；递归 embedded/package 规则涵盖新资源。
 > 源码核对基线：工作区（Enemy Visual V2 六份公开 RFM2 / renderer-only family；RFANIM V1 inspection；RFCHAR V1 → RFM2 v14；V2.1 modular body；Core filesystem service V0）
 
 本文记录可执行的模型、纹理和动画工具链。运行时模块边界见 `assets-animation.md`，动画求值契约
@@ -110,8 +111,9 @@ TTEX；`glb2rmesh` 本身不实现图片解码。运行时仍只读 RMESH/TTEX�
 ## 静态 prop asset registry
 
 `include/rasterfall_prop.h` / `src/rasterfall_prop.c` 保存静态组件的 presentation 资产 profile。
-当前注册首批十件工业组件（`crate`、`barrier`、`short_wall`、`railing`、`lamp_post`、
-`vent_unit`、`workbench`、`ammo_container`、`industrial_pillar`、`pipe_module`），每项包含稳定 asset ID、名称、RMESH 路径、默认
+当前注册首批工业组件（`crate`、`barrier`、`short_wall`、`railing`、`lamp_post`、
+`vent_unit`、`workbench`、`ammo_container`、`industrial_pillar`、`pipe_module`）及正式地图装配
+新增的 `power_unit`、`gate_frame`、`control_cabinet`，每项包含稳定 asset ID、名称、RMESH 路径、默认
 展示缩放和 RFU 碰撞尺寸，运行时产物位于 `rasterfall/assets/models/props/industrial/`。
 对应 manifest 位于 `tools/assets/manifests/props/industrial/`，源 GLB/Blend 位于本地
 `rasterfall/private-assets/source/props/industrial/`。profile 使用 `512 RFU/m ÷ 232 RMESH units/m` 的 milli-scale；该换算

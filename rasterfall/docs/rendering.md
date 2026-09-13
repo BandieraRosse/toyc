@@ -1,6 +1,7 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-13
+> 源码核对基线补充：`--environment-capture` 固定 seed、headless Core、显式 Campaign world request；共享现有 world BMP capture，十二个设施/路线视角。
 > 源码核对基线补充：Enemy Procedural Rig V1；三特感 profile/pose 分离、posed tongue socket、真实命中 particles、Charger/Tank 击飞真实位置历史 ribbon 与固定 world/silhouette capture。
 > 源码核对基线：工作区（Enemy Visual V2 六份公开 RFM2 / renderer-only family；Character Material Lighting Policy V1；Enemy Presentation V1 1000ms ballistic body fade / rotating irregular fragments / directional trailing emitter / 10% legacy death；Humanoid Action Composition V1.1 additive recoil；modular RFANIM 独立 locomotion 时钟与双手持枪轨道；RFCHAR +Z forward basis；PRIMARY_GRIP weapon presentation；开发者 world strip 与战斗区共用 modular path；出生点 V2 action debug station；双正式四人 squad；Lighting V1；renderer frame ownership cleanup）
 
@@ -288,6 +289,12 @@ AI/远端 tracer 使用世界空间小方柱，避免沿射线方向观察时固
 instance pool、事件和深度测试 flags 不变。
 
 ## Visual CLI V1：固定场景观察
+
+环境地图验收使用 `build/rasterfall --environment-capture tmp/environment-review --textures`，
+再用 `python3 tools/environment_sheet.py tmp/environment-review` 查看十二视角组图和 PNG。
+原始 BMP 保留。入口显式加载正式 Campaign 并复用正常 scene、actor、flag 和深度渲染，
+使用固定 seed 且不进行 simulation tick；覆盖基地、北区、东西设施、东西路线、Hurd、南侧、坡道、出生室、南侧动力场和北侧动力端站。
+角色测试带 capture 的行为不变。实景设施组合与碰撞边界见 industrial-props.md / map-format.md。
 
 从仓库根目录运行：
 

@@ -38,7 +38,16 @@ static const struct rasterfall_prop_asset_profile prop_assets[] = {
       RASTERFALL_PROP_RENDER_SCALE_MILLI, { 410, 1434, 410 } },
     { RASTERFALL_PROP_ASSET_PIPE_MODULE, "pipe_module",
       "rasterfall/assets/models/props/industrial/rf_pipe_module.rmesh",
-      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 819, 717, 410 } }
+      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 819, 717, 410 } },
+    { RASTERFALL_PROP_ASSET_POWER_UNIT, "power_unit",
+      "rasterfall/assets/models/props/industrial/rf_power_unit.rmesh",
+      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 2458, 1331, 1229 } },
+    { RASTERFALL_PROP_ASSET_GATE_FRAME, "gate_frame",
+      "rasterfall/assets/models/props/industrial/rf_gate_frame.rmesh",
+      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 3072, 2150, 410 } },
+    { RASTERFALL_PROP_ASSET_CONTROL_CABINET, "control_cabinet",
+      "rasterfall/assets/models/props/industrial/rf_control_cabinet.rmesh",
+      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 614, 922, 307 } }
 };
 
 static const struct rasterfall_prop_asset_profile *find_id(int id)

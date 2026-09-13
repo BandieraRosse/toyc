@@ -1,6 +1,7 @@
 # 玩法、会话、地图与 AI
 
-> 文档更新：2026-09-12
+> 文档更新：2026-09-13
+> 源码核对基线补充：环境整合期间恢复旧开发坡道与墙顶平台的高端重叠连续性；坡面出生与 Tank impact 的逻辑 fixture 修正；地图权威碰撞、AI、波次和 spawn 配置不变。
 > 源码核对基线：工作区（普通敌人新模型混合比例 V1；Charger 新冲锋碰撞代理；敌人 dying slot 生命周期 1000ms；Jesus 使用稳定 RF Rifleman identity；两个正式四人 squad roster 已分别编入中央/东部旗帜；model resource/instance/gear/palette 仍只属于 presentation；其余玩法真值不变）
 
 > 源码核对补充：正式 Hurd 四人使用专用 character IDs；原 Maid 四人旗卫在 flag 1 原位恢复并使用 Maid character/profession；普通 player、Eula、佣兵为 NONE；固定角色索引、HURD 旗帜 assignment 与派生 control status。
@@ -94,6 +95,14 @@ active、未被携带且位于区域内；assigned count 沿用普通旗帜语�
 3000ms，不进入玩法真值或网络快照。
 
 ## 地图链路
+
+坡道与平台的连续性允许平台覆盖坡道高端并向高端外侧延伸，适用于正式地图
+开发坡道与空气墙顶面的既有重叠布局。仍需中心位于坡道、有效坡面支撑和不超过
+正常 step 的端点高差；侧向攀爬、真正高度断层及间隙保持阻挡。具体判断在
+`game.c` 的 `ground_has_ramp_surface_transition()`，不从视觉 prop 推导。
+
+V1 `object` 环境组合只投影到静态展示实例，碰撞由既有独立 collision records 拥有。
+Legacy `prop` 文本的 profile 默认碰撞规则不等于 V1 object 规则，详见 map-format.md。
 
 - `include/toy_map.h`：磁盘地图解析后的通用结构。
 - `lib/map.c`：文本 `.map` 解析器；新增语法或字段从这里开始。

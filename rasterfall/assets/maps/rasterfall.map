@@ -276,3 +276,77 @@ interaction id=vmd_manjusaka action=vmd_manjusaka x=-7500 y=-250 z=-12100 attr.l
 interaction id=animation_composition action=animation_composition x=-6650 y=-250 z=-12100 attr.legacy_index=41
 interaction id=west_corridor action=west_corridor x=-23940 y=200 z=-2100 attr.legacy_index=42
 interaction id=west_corridor_no_tank action=west_corridor_no_tank x=-23940 y=200 z=2100 attr.legacy_index=43
+
+# Facility compositions. Spatial/gameplay records above remain intact.
+# West maintenance island: equipment faces the broad central combat apron.
+object id=env_west_vent_1 kind=vent_unit x=-15500 y=0 z=6200 yaw=90 scale=1000 attr.legacy_index=10
+object id=env_west_vent_2 kind=vent_unit x=-15500 y=0 z=7600 yaw=90 scale=1000 attr.legacy_index=11
+object id=env_west_pipe_1 kind=pipe_module x=-17200 y=0 z=6200 yaw=90 scale=1000 attr.legacy_index=12
+object id=env_west_pipe_2 kind=pipe_module x=-17200 y=0 z=7600 yaw=90 scale=1000 attr.legacy_index=13
+object id=env_west_pillar_1 kind=industrial_pillar x=-18200 y=0 z=5300 yaw=0 scale=1000 attr.legacy_index=14
+object id=env_west_pillar_2 kind=industrial_pillar x=-18200 y=0 z=8800 yaw=0 scale=1000 attr.legacy_index=15
+object id=env_west_bench kind=workbench x=-14300 y=0 z=8800 yaw=90 scale=1000 attr.legacy_index=16
+object id=env_west_ammo kind=ammo_container x=-14300 y=0 z=10100 yaw=90 scale=1000 attr.legacy_index=17
+object id=env_west_crate kind=crate x=-15700 y=0 z=10100 yaw=90 scale=1000 attr.legacy_index=18
+object id=env_west_lamp kind=lamp_post x=-13000 y=0 z=5300 yaw=90 scale=1000 attr.legacy_index=19
+# East service island: wider apron, repeated blue-grey ventilation rhythm.
+object id=env_east_vent_1 kind=vent_unit x=17100 y=0 z=7700 yaw=270 scale=1000 attr.legacy_index=20
+object id=env_east_vent_2 kind=vent_unit x=17100 y=0 z=9300 yaw=270 scale=1000 attr.legacy_index=21
+object id=env_east_pipe kind=pipe_module x=18700 y=0 z=8500 yaw=270 scale=1000 attr.legacy_index=22
+object id=env_east_pillar_1 kind=industrial_pillar x=18700 y=0 z=6500 yaw=0 scale=1000 attr.legacy_index=23
+object id=env_east_pillar_2 kind=industrial_pillar x=18700 y=0 z=10700 yaw=0 scale=1000 attr.legacy_index=24
+object id=env_east_wall_1 kind=short_wall x=15600 y=0 z=11100 yaw=0 scale=1000 attr.legacy_index=25
+object id=env_east_wall_2 kind=short_wall x=18000 y=0 z=11100 yaw=0 scale=1000 attr.legacy_index=26
+object id=env_east_lamp kind=lamp_post x=14700 y=0 z=6500 yaw=270 scale=1000 attr.legacy_index=27
+# North gate shoulders leave the central Hurd approach completely open.
+object id=env_north_barrier_w kind=barrier x=-7300 y=0 z=23000 yaw=0 scale=1000 attr.legacy_index=28
+object id=env_north_barrier_e kind=barrier x=7300 y=0 z=23000 yaw=0 scale=1000 attr.legacy_index=29
+object id=env_north_lamp_w kind=lamp_post x=-4700 y=0 z=24800 yaw=0 scale=1000 attr.legacy_index=30
+object id=env_north_lamp_e kind=lamp_post x=4700 y=0 z=24800 yaw=0 scale=1000 attr.legacy_index=31
+object id=env_hurd_bench kind=workbench x=-4300 y=0 z=31200 yaw=90 scale=1000 attr.legacy_index=32
+object id=env_hurd_crate kind=crate x=4300 y=0 z=31200 yaw=270 scale=1000 attr.legacy_index=33
+object id=env_hurd_ammo kind=ammo_container x=4300 y=0 z=29900 yaw=270 scale=1000 attr.legacy_index=34
+# South maintenance apron, outside the existing actor/interaction strip.
+object id=env_south_bench_1 kind=workbench x=-5800 y=0 z=-15000 yaw=180 scale=1000 attr.legacy_index=35
+object id=env_south_crate kind=crate x=-9200 y=0 z=-15000 yaw=0 scale=1000 attr.legacy_index=36
+object id=env_south_ammo kind=ammo_container x=-5800 y=0 z=-15900 yaw=0 scale=1000 attr.legacy_index=37
+object id=env_south_lamp kind=lamp_post x=-10300 y=0 z=-15300 yaw=180 scale=1000 attr.legacy_index=38
+# Ramp-side service equipment stays clear of the ramp footprint.
+object id=env_ramp_rail_1 kind=railing x=-18100 y=0 z=-14000 yaw=90 scale=1000 attr.legacy_index=39
+object id=env_ramp_rail_2 kind=railing x=-18100 y=0 z=-12700 yaw=90 scale=1000 attr.legacy_index=40
+object id=env_ramp_vent kind=vent_unit x=-17000 y=0 z=-14000 yaw=180 scale=1000 attr.legacy_index=41
+object id=env_ramp_lamp kind=lamp_post x=-18100 y=0 z=-15400 yaw=180 scale=1000 attr.legacy_index=42
+
+# Facility grammar: repeated anchor, open frame and control interface.
+object id=env_west_power kind=power_unit x=-16500 y=0 z=3900 yaw=90 scale=1250 attr.legacy_index=43
+object id=env_east_power kind=power_unit x=17600 y=0 z=4500 yaw=270 scale=1250 attr.legacy_index=44
+object id=env_south_power kind=power_unit x=19000 y=0 z=-21000 yaw=0 scale=1000 attr.legacy_index=45
+object id=env_west_control kind=control_cabinet x=-14700 y=0 z=4200 yaw=90 scale=1000 attr.legacy_index=46
+object id=env_east_control kind=control_cabinet x=15700 y=0 z=4400 yaw=270 scale=1000 attr.legacy_index=47
+object id=env_south_control kind=control_cabinet x=-7600 y=0 z=-15900 yaw=180 scale=1000 attr.legacy_index=48
+object id=env_hurd_control kind=control_cabinet x=-4300 y=0 z=29800 yaw=90 scale=1000 attr.legacy_index=49
+object id=env_west_gate kind=gate_frame x=-40500 y=0 z=0 yaw=90 scale=1250 attr.legacy_index=50
+object id=env_hurd_gate kind=gate_frame x=0 y=0 z=24700 yaw=0 scale=2000 attr.legacy_index=51
+object id=env_south_gate kind=gate_frame x=-6900 y=0 z=-14300 yaw=180 scale=1000 attr.legacy_index=52
+object id=env_east_route_gate kind=gate_frame x=28000 y=0 z=0 yaw=90 scale=500 attr.legacy_index=53
+object id=env_east_route_control kind=control_cabinet x=29500 y=0 z=580 yaw=180 scale=1000 attr.legacy_index=54
+object id=env_west_route_control kind=control_cabinet x=-42000 y=0 z=1800 yaw=180 scale=1000 attr.legacy_index=55
+object id=env_west_route_lamp kind=lamp_post x=-42000 y=0 z=-1800 yaw=90 scale=1000 attr.legacy_index=56
+object id=env_base_lamp_w kind=lamp_post x=-4400 y=0 z=3200 yaw=0 scale=1000 attr.legacy_index=57
+object id=env_base_lamp_e kind=lamp_post x=4400 y=0 z=3200 yaw=0 scale=1000 attr.legacy_index=58
+object id=env_base_barrier_w kind=barrier x=-4800 y=0 z=-1500 yaw=90 scale=1000 attr.legacy_index=59
+object id=env_base_barrier_e kind=barrier x=4800 y=0 z=-1500 yaw=90 scale=1000 attr.legacy_index=60
+object id=env_north_power kind=power_unit x=-7500 y=0 z=11500 yaw=180 scale=1500 attr.legacy_index=61
+object id=env_north_control kind=control_cabinet x=-5000 y=0 z=10200 yaw=180 scale=1000 attr.legacy_index=62
+object id=env_north_pipe kind=pipe_module x=-9800 y=0 z=11500 yaw=180 scale=1000 attr.legacy_index=63
+object id=env_north_vent kind=vent_unit x=-7500 y=0 z=13000 yaw=180 scale=1000 attr.legacy_index=64
+object id=env_power_yard_pipe kind=pipe_module x=17300 y=0 z=-21500 yaw=0 scale=1000 attr.legacy_index=65
+object id=env_power_yard_vent kind=vent_unit x=21000 y=0 z=-21000 yaw=0 scale=1000 attr.legacy_index=66
+object id=env_power_yard_control kind=control_cabinet x=19000 y=0 z=-19900 yaw=0 scale=1000 attr.legacy_index=67
+
+# Visual service pads: presentation only, existing surfaces/collision unchanged.
+render id=env_pad_west kind=floor min_x=-19000 max_x=-13000 min_z=2500 max_z=11500 height=0 color=303B3A attr.legacy_index=99
+render id=env_pad_east kind=floor min_x=14000 max_x=20000 min_z=2800 max_z=12000 height=0 color=30393F attr.legacy_index=100
+render id=env_pad_north kind=floor min_x=-10800 max_x=-4500 min_z=9800 max_z=13700 height=0 color=353D37 attr.legacy_index=101
+render id=env_pad_south kind=floor min_x=-10500 max_x=-4200 min_z=-16400 max_z=-14000 height=0 color=3C3A32 attr.legacy_index=102
+render id=env_pad_power_yard kind=floor min_x=16500 max_x=22000 min_z=-22500 max_z=-19500 height=0 color=353D37 attr.legacy_index=103

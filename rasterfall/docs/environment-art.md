@@ -1,6 +1,7 @@
 # 环境资产艺术约束
 
-> 文档更新：2026-09-08
+> 文档更新：2026-09-13
+> 源码核对基线补充：正式地图压力测试新增动力机组、开放门架、控制柜；沿用 V2 Hybrid 低饱和主体、暗框、局部功能色和 32×32 编号，规格见 industrial-props.md。
 > 源码核对基线：工作区（整套十件 V2 Hybrid：geometry + flat materials + 局部 32×32 sign；runtime/地图/registry 不变）
 
 本文是首批十件工业 / 军事 static prop 的 **V2 light upgrade** 生产规范。目标是在不重做资产的

@@ -1,6 +1,7 @@
 # 第一套程序化工业 / 军事组件
 
-> 文档更新：2026-09-08
+> 文档更新：2026-09-13
+> 源码核对基线补充：正式 Campaign 设施组合；动力机组、开放门架、控制柜沿用 Builder / V2 Hybrid / manifest importer。
 > 源码核对基线：工作区（十件 V2 Hybrid 的程序化几何、flat surface role、局部 32×32 sign 与统一 importer；空间与运行时契约不变）
 
 ## V2 Hybrid 生成
@@ -104,6 +105,37 @@ done
 区不会发生实例或默认碰撞盒重叠。
 
 ## 统一空间约定
+
+正式 `rasterfall.map` 在西侧维护岛、东侧设备岛、北门/Hurd 防区和南侧维修区组合既有
+组件；中央 BASE 和中轴保持开阔。V1 object projection 当前要求连续
+`attr.legacy_index`，仅有 parser/layout 记录不能证明已进入实际 world render。
+V1 object 不自动生成碰撞，现有碰撞记录独立保留；旧 `prop` 语法的默认盒体规则不能套用于 V1。
+
+实际远距离装配暴露出小设备缺少主机体、孤立立柱缺少跨向结构、维修区缺少控制界面。
+对应新增三件组件，沿用底面中心 pivot、米制空间、flat 主体和局部 32×32 编号：
+
+| 组件 | Blender X/Y/Z 尺寸 m | 用途 |
+| --- | --- | --- |
+| `rf_power_unit` | 4.8 / 2.4 / 2.6 | 宽底座、倒角主机、粗散热片和双排气筒；组合 vent/pipe 的设施主体 |
+| `rf_gate_frame` | 6.0 / 0.8 / 4.2 | 双立柱和粗横梁；通道及维修区入口节奏，中央开放 |
+| `rf_control_cabinet` | 1.2 / 0.6 / 1.8 | 独立柜体、面板和低对比显示区；机组、工位、据点控制界面 |
+
+门架 profile 的外包围盒只是尺寸元数据，不能作为整块通道碰撞；正式地图使用原有独立
+碰撞真值，不新增复杂碰撞。生成器面 UV 的朝向用法线符号判断，避免近似单位法线经
+整数截断丢失标牌。导入命令可用 `python3 tools/assets/import_asset.py`，避免本地 CRLF shebang。
+
+```sh
+blender -b --python-exit-code 1 --python tools/blender/generate_rasterfall_props.py -- \
+  --output tmp/environment-kit --assets rf_power_unit rf_gate_frame rf_control_cabinet
+# 将独立 GLB 安装到 manifest 指向的本地 source 目录，再逐件统一 import。
+build/rasterfall --environment-capture tmp/environment-review --textures
+python3 tools/environment_sheet.py tmp/environment-review
+```
+
+管弯头、栏杆端头、楼梯暂不生产：当前场景中设施主体和结构的收益高于连接细节。
+后续优先检查墙面功能区、坡道支撑、真正可拼接的管线以及设备簇中距离可读性。
+
+### 米制轴向
 
 以下尺寸均为米，顺序为 **宽 X × 深 Y × 高 Z（Blender）**。
 全部 object 的 pivot 为占地包围盒底面中心 `(0,0,0)`，不是几何重心。

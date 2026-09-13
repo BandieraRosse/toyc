@@ -171,7 +171,8 @@ static int primitive_gameplay_logic_test(void)
            (level_map.primitives[i].flags&TOY_MAP_PRIMITIVE_COLLISION))
             return 19;
     rasterfall_map_set_air_walls(&session.map_ops,1);
-    if (level_map.prop_count != 10 ||
+    if (level_map.prop_count < 10 ||
+        level_map.prop_count != rf_map_runtime_object_count(&session.map_ops.runtime) ||
         level_map.props[0].asset_id != RASTERFALL_PROP_ASSET_CRATE ||
         level_map.props[0].x != -14500 || level_map.props[0].z != -17000 ||
         level_map.props[0].yaw_degrees != 0 ||
@@ -630,7 +631,10 @@ static int run_logic_test(void)
      * continuous.  Exercise both ordinary pursuit and the locked charge
      * path, which share enemy_try_step() underneath. */
     {
-        static const int ramp_starts[2] = {-38900, -30900};
+        /* place_enemy() tests a zero-height spawn. Start on the adjoining
+         * flat apron, not inside an elevated ramp that rejects that spawn;
+         * pursuit still crosses the full ramp/platform seam below. */
+        static const int ramp_starts[2] = {-39500, -31500};
         static const int platform_ends[2] = {-35000, -27000};
         int case_index;
         for (case_index = 0; case_index < 2; case_index++) {
@@ -713,9 +717,12 @@ static int run_logic_test(void)
         target->x = 5000;
         target->z = 0;
         target->ground_y = 1200;
-        toy_game_place_enemy(&discontinuous_game, 1800, 0);
+        /* Seed through the zero-height spawn API on flat ground, then set
+         * the elevated fixture pose used to test the discontinuity. */
+        toy_game_place_enemy(&discontinuous_game, -500, 0);
         charger = &discontinuous_game.enemies[0];
         if (!charger->active) return 219;
+        charger->x = 1800;
         charger->type = TOY_GAME_ENEMY_CHARGER;
         charger->ground_y = toy_game_query_ground(
             &discontinuous_game, charger->x, charger->z, 0, 0).support_y;
@@ -2392,8 +2399,11 @@ static int run_logic_test(void)
                 while (player->z < -5700) {
                     int next_z = player->z + TOY_CONFIG_PLAYER_MOVE_STEP;
                     if (next_z > -5700) next_z = -5700;
-                    if (!toy_game_try_move_actor(&game, player, player->x, next_z))
+                    if (!toy_game_try_move_actor(&game, player, player->x, next_z)) {
+                        __printf("ramp top movement blocked current_z=%d next_z=%d ground=%d\n",
+                                 player->z, next_z, player->ground_y);
                         return 198;
+                    }
                 }
                 if (player->ground_y != 3900) return 200;
                 if (toy_game_position_blocked_at_height(
@@ -3332,7 +3342,10 @@ static int run_logic_test(void)
         tank->dir_z = 1024;
         tank->ground_y = 0;
         game.enemies_alive = 1;
-        for (int frame = 0; frame < 40; frame++)
+        /* Observe the actual impact with a bounded timeout. Forty ticks
+         * leave only 624ms after the attack-start tick, before the 625ms hit. */
+        for (int frame = 0; frame < 100 &&
+             !(tank->ability.charge_hit_actor_mask & 1ULL); frame++)
             toy_game_update_world(&game, 16);
         if (local->hp >= hp || local->airborne_ms <= 0 ||
             !(tank->ability.charge_hit_actor_mask & 1ULL)) return 227;

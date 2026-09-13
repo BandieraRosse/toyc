@@ -1,6 +1,8 @@
 # Rasterfall 地图格式
 
-> 文档更新：2026-09-12
+> 文档更新：2026-09-13
+> 源码核对基线补充：正式 Campaign 环境 object 组合；V1 object 连续 projection index、独立 collision 真值；多区域 environment capture。
+> 源码核对基线补充：保留既有开发坡道/墙顶几何，玩法连续性补充高端重叠衔接，规则见 gameplay.md。
 > 源码核对基线：工作区（Runtime Map V1 projection ownership cleanup；正式 `rasterfall.map` 为完整 V1 source；`rasterfall_legacy.map` 仅保留显式 fallback；layout exporter 默认读取 V1 source）
 
 > 源码核对补充：北侧通道扩宽为 Hurd 防区，原中央北侧刷怪区拆到左右两翼。
@@ -211,6 +213,15 @@ flag 1 也继续由 session 生成，Hurd 因此使用 flag 2。若以后正式�
 绑定、布局导出和 query schema。
 
 ## 修改地图排布的必经流程
+
+正式 Campaign 设施组合记录位于 `rasterfall.map` 的 `env_*` object 段，沿用既有
+空间和 World Content。当前 adapter 只投影有连续 `attr.legacy_index` 的 object；新增实例
+必须检查 runtime/projection 数量和真实 render，不能只看布局导出。V1 object placement
+仅进入 `level.props`，不按 profile 自动添加 collision；原有碰撞体继续独立拥有玩法阻挡。
+
+`--environment-capture <dir>` 以固定 seed 加载 Campaign，输出基地、北区、东西设施、
+东西路线、Hurd、南侧、坡道、出生室与南侧动力场视角；`tools/environment_sheet.py <dir>` 拼接原始 BMP。
+该入口使用正常 scene/actor/flag renderer，不进行 gameplay tick。
 
 地图排布以 `.map` 文本为唯一输入。布局导出器默认读取正式 V1 source，旧语法解析仅保留为离线兼容能力，不参与运行时。
 调整区域、墙体、出生点、按钮或 `prop` 的位置后，必须使用

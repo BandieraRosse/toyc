@@ -17,6 +17,7 @@ struct rasterfall_options {
     const char *squad_acceptance_models, *squad_acceptance_dir;
     const char *rigid_attachment_models, *rigid_attachment_dir;
     const char *character_world_capture_dir, *character_world_capture_model;
+    const char *environment_capture_dir;
     const char *view_model_path, *view_output_dir;
     int model_views_supersample, model_skinning, model_pose;
     int material_regression;

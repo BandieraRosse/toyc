@@ -1114,13 +1114,20 @@ static int ground_has_ramp_surface_transition(
                     x + radius <= ramp->maxx &&
                     z - radius >= ramp->minz &&
                     z + radius <= ramp->maxz;
-        /* The platform must touch the ramp at its high endpoint along the
-         * ramp axis.  Merely overlapping two walkable primitives is not
+        /* The platform must meet or cover the ramp's high endpoint along
+         * the ramp axis. The legacy wall-top overlaps the ramp end rather
+         * than sharing an exact edge. Merely overlapping two primitives is not
          * enough: this keeps a large footprint from climbing a platform
          * through its side or bridging an actual gap. */
         if (ramp->shape == TOY_MAP_PRIMITIVE_RAMP_X) {
-            if (surface->minx == ramp->maxx || surface->maxx == ramp->minx) {
-                int ramp_end = surface->minx == ramp->maxx ?
+            int joins_max = surface->minx == ramp->maxx ||
+                (ramp->surface_y1 > ramp->surface_y0 &&
+                 surface->minx < ramp->maxx && surface->maxx > ramp->maxx);
+            int joins_min = surface->maxx == ramp->minx ||
+                (ramp->surface_y0 > ramp->surface_y1 &&
+                 surface->minx < ramp->minx && surface->maxx > ramp->minx);
+            if (joins_max || joins_min) {
+                int ramp_end = joins_max ?
                     ramp->surface_y1 : ramp->surface_y0;
                 endpoint_delta = ramp_end - surface->surface_y0;
                 if (endpoint_delta < 0) endpoint_delta = -endpoint_delta;
@@ -1129,8 +1136,14 @@ static int ground_has_ramp_surface_transition(
                            surface->minz < ramp->maxz;
             }
         } else if (ramp->shape == TOY_MAP_PRIMITIVE_RAMP_Z) {
-            if (surface->minz == ramp->maxz || surface->maxz == ramp->minz) {
-                int ramp_end = surface->minz == ramp->maxz ?
+            int joins_max = surface->minz == ramp->maxz ||
+                (ramp->surface_y1 > ramp->surface_y0 &&
+                 surface->minz < ramp->maxz && surface->maxz > ramp->maxz);
+            int joins_min = surface->maxz == ramp->minz ||
+                (ramp->surface_y0 > ramp->surface_y1 &&
+                 surface->minz < ramp->minz && surface->maxz > ramp->minz);
+            if (joins_max || joins_min) {
+                int ramp_end = joins_max ?
                     ramp->surface_y1 : ramp->surface_y0;
                 endpoint_delta = ramp_end - surface->surface_y0;
                 if (endpoint_delta < 0) endpoint_delta = -endpoint_delta;
