@@ -1,6 +1,7 @@
 # Static World Lighting V2 — Phase C2
 
 > 文档更新：2026-09-14
+> 源码核对基线补充：Phase C3 将共用 scene override 更名为 `active_scene_light_override_q8`，V1 转为独立诊断 owner；本页其余内容记录该阶段的接入边界。
 > 源码核对基线：Phase C1 工作区基础上的动态实体接入；核对 `rf_game_render()`、actor/enemy normal submission、独立 viewmodel 与材质命令回归。
 
 ## 正常消费链与所有权
@@ -21,7 +22,7 @@ actor、RFCHAR instance、session 权威状态或协议。本地玩家按 gamepl
 | 无 owner 的地图武器拾取物 / 投出的 bomb、molotov 主体 | `render_interactables()` / `render_projectiles()` 每实体位置采样 | 现有模型/material；不包括 explosion/fire VFX |
 | 第一人称武器、手臂与 procedural pill | `rasterfall_viewmodel_render(..., scene_light_q8)` | 原屏幕空间 flat/textured submission；scene clamp 192..256 保留可读性 |
 
-场景 factor 通过现有 `active_model_scene_light_override_q8` 进入 RMESH 与 primitive helpers，
+场景 factor 通过现有 `active_scene_light_override_q8` 进入 RMESH 与 primitive helpers，
 每 owner 提交结束恢复。武器不查询 field，没有 weapon cache/API。现有 form lighting 不变；
 角色 material policy 在 scene × form 后夹取 FACE/SKIN/EYES/HAIR 下限（原 224/224/240/176 不变），CLOTHING/EQUIPMENT
 保留 form 与完整环境响应。死亡透明主体也消费同一 sample；死亡 presentation 偏移不重新采样。

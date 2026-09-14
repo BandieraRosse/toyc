@@ -7,43 +7,43 @@
 static int world_light_logic_test(void)
 {
     static struct toy_map map;
-    struct rasterfall_world_lighting lighting;
+    struct rasterfall_diagnostic_world_lighting_v1 lighting;
     struct rasterfall_world_light light;
     int i;
     memset(&map, 0, sizeof(map));
     map.minx = -32000; map.maxx = -28800;
     map.minz = -24000; map.maxz = -21600;
-    rasterfall_world_light_bake(&lighting, &map);
+    rasterfall_diagnostic_world_light_bake_v1(&lighting, &map);
     /* No nearby geometry or east boost: preserve V1's overbright gradient. */
-    light = rasterfall_world_light_at_v1(&lighting, map.minx, -900, map.minz);
+    light = rasterfall_diagnostic_world_light_at_v1(&lighting, map.minx, -900, map.minz);
     if (light.environment_q8 != 270 || light.sun_visibility_q8 != 256 ||
-        light.contact_q8 != 256 || rasterfall_world_light_q8(light) != 270)
+        light.contact_q8 != 256 || rasterfall_diagnostic_world_light_q8(light) != 270)
         return 1;
     map.primitive_count = 1;
     map.primitives[0].shape = TOY_MAP_PRIMITIVE_BOX;
     map.primitives[0].minx = map.minx; map.primitives[0].maxx = map.maxx;
     map.primitives[0].minz = map.minz; map.primitives[0].maxz = map.maxz;
-    rasterfall_world_light_bake(&lighting, &map);
+    rasterfall_diagnostic_world_light_bake_v1(&lighting, &map);
     if (lighting.environment[0] != 246) return 2;
     strcpy(map.primitives[0].role, "air_gate_test");
-    rasterfall_world_light_bake(&lighting, &map);
+    rasterfall_diagnostic_world_light_bake_v1(&lighting, &map);
     if (lighting.environment[0] != 270) return 3;
     /* Known values distinguish nearest-cell, edge clamp and Y independence. */
     for (i = 0; i < RASTERFALL_BAKED_LM_W * RASTERFALL_BAKED_LM_H; i++)
         lighting.environment[i] = (unsigned short)(150 + i % 137);
-    if (rasterfall_world_light_at_v1(&lighting, -31901, -900, -23901).environment_q8 != 150 ||
-        rasterfall_world_light_at_v1(&lighting, -31900, 4000, -23900).environment_q8 != 183 ||
-        rasterfall_world_light_at_v1(&lighting, -33000, 0, -25000).environment_q8 != 150 ||
-        rasterfall_world_light_at_v1(&lighting, -28000, 0, -21000).environment_q8 !=
+    if (rasterfall_diagnostic_world_light_at_v1(&lighting, -31901, -900, -23901).environment_q8 != 150 ||
+        rasterfall_diagnostic_world_light_at_v1(&lighting, -31900, 4000, -23900).environment_q8 != 183 ||
+        rasterfall_diagnostic_world_light_at_v1(&lighting, -33000, 0, -25000).environment_q8 != 150 ||
+        rasterfall_diagnostic_world_light_at_v1(&lighting, -28000, 0, -21000).environment_q8 !=
             lighting.environment[RASTERFALL_BAKED_LM_W * RASTERFALL_BAKED_LM_H - 1])
         return 4;
     light.environment_q8 = 286; light.sun_visibility_q8 = 128; light.contact_q8 = 192;
-    if (rasterfall_world_light_q8(light) != 107) return 5;
+    if (rasterfall_diagnostic_world_light_q8(light) != 107) return 5;
     /* A new bake replaces bounds; degenerate bounds retain V1 denominator=1. */
     map.primitive_count = 0;
     map.minx = map.maxx = 4000; map.minz = map.maxz = -160;
-    rasterfall_world_light_bake(&lighting, &map);
-    if (rasterfall_world_light_at_v1(&lighting, 4000, -900, -160).environment_q8 != 286)
+    rasterfall_diagnostic_world_light_bake_v1(&lighting, &map);
+    if (rasterfall_diagnostic_world_light_at_v1(&lighting, 4000, -900, -160).environment_q8 != 286)
         return 6;
     if (rasterfall_world_light_logic_test()) return 7;
     return 0;
@@ -436,6 +436,7 @@ static int run_logic_test(void)
     if (rasterfall_render_static_prop_culling_logic_test() != 0) return 172;
     if (rasterfall_render_static_prop_lighting_logic_test() != 0) return 242;
     if (world_light_logic_test() != 0) return 241;
+    if (rasterfall_render_world_light_source_logic_test() != 0) return 243;
     __printf("rasterfall: world light sampling test passed\n");
     if (rasterfall_rigid_attachment_transform_logic_test() != 0) return 175;
     if (rasterfall_session_load(&session,

@@ -1,6 +1,7 @@
 # Static World Lighting V2 — Phase C1
 
 > 文档更新：2026-09-14
+> 源码核对基线补充：Phase C3 将共用 scene override 更名为 `active_scene_light_override_q8`，V1 转为独立诊断 owner；本页其余内容记录该阶段的接入边界。
 > 源码核对基线：Phase B checkpoint `629c318` 后的 Phase C1；核对正常 map static prop submission、模型 form/material helper 与 environment capture。
 
 ## 路径与所有权
@@ -22,7 +23,7 @@
 `rasterfall_world_light_v2_q8()` 合成为 scene 因子；Y 是既有 `-900 + map_prop.y`。
 field 仍为 Phase B 的 ground-following XZ field，传 Y 不增加采样层。
 
-scene 因子临时通过已有 `active_model_scene_light_override_q8` 进入模型 helper，提交后恢复。
+scene 因子临时通过已有 `active_scene_light_override_q8` 进入模型 helper，提交后恢复。
 它优先于 gallery 的固定 256。纹理 RMESH 使用 scene × form；无 role flat 材质保留原
 form 调色再乘 scene 的两阶段整数舍入。form、material policy、fog 的职责与原实现不变；
 static prop 原 gallery 无雾策略保留。

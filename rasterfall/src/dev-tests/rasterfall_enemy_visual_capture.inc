@@ -139,7 +139,7 @@ static int enemy_rig_acceptance(const char *output)
                 toy_renderer_destroy(&renderer); tlibc_free(surface.pixels); goto done;
             }
             enemy_rig_silhouette=shot==3;
-            active_fixed_floor_lighting=!world;
+            active_diagnostic_fixed_lighting=active_floor_submission=!world;
             before=game;
             if (world) rasterfall_render_scene(&renderer,&camera);
             else draw_partitioned_floor(&renderer,&camera);
@@ -161,6 +161,7 @@ static int enemy_rig_acceptance(const char *output)
     }
     result=0;
 done:
+    active_diagnostic_world_light_v1 = 0;
     enemy_rig_capture_move=-1; enemy_rig_capture_hit_age=-1; enemy_rig_silhouette=0;
     return result;
 }
@@ -187,9 +188,11 @@ int rasterfall_render_enemy_visual_capture(const char *output)
     memset(&context, 0, sizeof(context));
     context.session = &session;
     context.effects = &visual_effects;
-    context.fixed_floor_lighting = 1;
+    context.diagnostic_fixed_lighting = 1;
     rasterfall_render_bind(&context);
     rasterfall_render_bake_lightmap();
+    prepare_diagnostic_world_light_v1();
+    active_diagnostic_world_light_v1 = 1;
     memset(game.enemies, 0, sizeof(game.enemies));
     game.enemies_alive = 0;
     for (subject = 0; subject < 3; subject++) {
@@ -259,7 +262,7 @@ int rasterfall_render_enemy_visual_capture(const char *output)
             camera.view.y = 0; /* FPS eye height: 900 RFU above ground. */
         }
         enemy_visual_capture_pose = pose_id;
-        active_fixed_floor_lighting = !world;
+        active_diagnostic_fixed_lighting = active_floor_submission = !world;
         surface.width = world || death ? 1600 : 800; surface.height = 800;
         surface.stride = surface.width*4;
         surface.pixels = tlibc_malloc((size_t)surface.stride*surface.height);
@@ -274,7 +277,7 @@ int rasterfall_render_enemy_visual_capture(const char *output)
             /* The real map has perimeter walls before 100m. Keep a separate,
              * explicitly labelled unoccluded distance check, with true scale. */
             rasterfall_sky_draw(&renderer.surface,&camera);
-            active_fixed_floor_lighting = 1;
+            active_diagnostic_fixed_lighting = active_floor_submission = 1;
             draw_partitioned_floor(&renderer,&camera);
         }
         int submissions_before = enemy_visual_submissions;
@@ -310,6 +313,7 @@ int rasterfall_render_enemy_visual_capture(const char *output)
     }
     result = enemy_rig_acceptance(output);
 done:
+    active_diagnostic_world_light_v1 = 0;
     enemy_visual_capture_pose = -1;
     rasterfall_session_unload(&session);
     return result;

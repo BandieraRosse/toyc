@@ -1,6 +1,7 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-14
+> 源码核对基线补充：Static World Lighting V2 Phase C3：V2 为唯一正常 runtime world-light source；V1 独立 diagnostic owner、显式 fixed override 与统一 scene factor，见 [Phase C3](static-world-lighting-phase-c3.md)。
 > 源码核对基线补充：Static World Lighting V2 Phase C2：正常 actor/enemy root 单点采样，世界武器继承 owner，本地第三人称/viewmodel 共用 sample，保留 form/material policy；固定诊断例外见 [Phase C2](static-world-lighting-phase-c2.md)。
 > 源码核对基线补充：Static World Lighting V2 Phase C1：正常 map static RMESH 在 `render_static_props()` 按实例世界原点采样一次 V2，通过已有 scene override 与原 form lighting 组合；诊断/gallery 不变。见 [Phase C1](static-world-lighting-phase-c1.md)。
 > 源码核对基线补充：Static World Lighting V2 Phase B：64×48 Runtime collision ray/AABB field；主地面、primitive architecture、boundary walls、ramp/platform 接入，既有顶点亮度光栅路径平滑建筑平面；static RMESH/actor 保留 V1/bypass 策略。
@@ -190,7 +191,7 @@ event payload，位移幅度按 damage 限幅缩放。
 
 World/environment lighting 的 owner 为 `include/rasterfall_world_light.h` 与
 `src/rasterfall_world_light.c`。`rasterfall_render_context.world_lighting` 持有每个 world 的缓存；
-`rasterfall_render_bake_lightmap()` 在 world load/switch 后生成独立 V1 cache 和 V2 field。
+`rasterfall_render_bake_lightmap()` 在 world load/switch 后只生成 V2 field，失效独立诊断 V1 cache。
 `rasterfall_world_light_bake_v2()` 只读 Runtime Map collision/surface；64×48 sample 使用地面相对
 高度沿 canonical form-light 方向测试三维 AABB。`rasterfall_world_light_at(lighting,x,y,z)` 对
 三个分量分别做 Q8 bilinear，并 clamp bounds；它是一层 ground-following XZ field，不是 3D volume。
@@ -199,10 +200,12 @@ World/environment lighting 的 owner 为 `include/rasterfall_world_light.h` 与
 现有 textured rasterizer 的 flat fallback/vertex light 插值，近裁剪同时插值光照。
 正常 partitioned ground/floor paint 消费 V2 并保留原无雾策略；map wall/texture/box/ramp/platform
 及独立 boundary wall visual boxes 消费 V2，原 form、面调色和 fog 数学不变。
-static RMESH（含建筑 RMESH）仍为 gallery 256/无雾；actor/enemy、model display、武器、VFX
-与诊断未扩大接入，原消费者用 `rasterfall_world_light_at_v1()` 和原 V1 compose。
-V1 混合 field 仅服务这些延期消费者，永不叠加 V2。高度与遮挡限制见
-[Phase B 说明](static-world-lighting-phase-b.md)；原始审计见 [Phase A 开发记录](static-world-lighting-phase-a.md)。
+Static World Lighting V2 is the sole normal-runtime world-light source.
+正常 static RMESH、players/AI/RFCHAR、普通/特殊感染体、世界武器和投掷物、viewmodel
+均消费 V2；默认 `world_brightness_at()` 也只查询 V2，覆盖 sign/交互物等辅助 world geometry。
+只有显式 diagnostic scope 可以查询 V1。V1 的 32×24 cache 不在正常 render context 中，
+独立诊断 owner 按需 bake；固定诊断例外与架构回归见 [Phase C3](static-world-lighting-phase-c3.md)。
+高度与遮挡限制仍见 [Phase B](static-world-lighting-phase-b.md)。
 
 正式 RMESH 路径在 `render_gallery_model_range()` 统一应用低成本 ambient + directional
 form-lighting，覆盖 RFCHAR/skeletal body、static prop 和通过同一模型入口绘制的第三人称 weapon。
@@ -438,11 +441,11 @@ renderer 不修改玩法。墙脚、主体、压顶不叠共面大板；扶壁�
 正常地图的工业设备、facility/power-yard 及 `env_arch_*` 都经 `render_static_props()` →
 `rasterfall_render_static_prop()` → `render_gallery_model_range()`。地图遍历按实例世界原点
 （`x, -900 + map_prop.y, z`）查询一次 `rasterfall_world_light_at()`，将 V2 Q8 因子临时放入
-已有 `active_model_scene_light_override_q8`，提交后恢复。RMESH 不开启 planar V2 scope，
+已有 `active_scene_light_override_q8`，提交后恢复。RMESH 不开启 planar V2 scope，
 不在三角形/顶点热循环重复查询。boundary wall 保留 Phase B 的独立 procedural 路径。
 
 环境因子与原 normal/form 因子相乘，纹理提交直接组合 Q8；无 role 的 flat 材质保留
 原 form 调色再乘 scene 的整数舍入。material policy 与 fog 仍属于已有提交层；static prop
-保留原 gallery 无雾策略。gallery、独立诊断、actors、RFCHAR 和 viewmodel 不迁移。
+保留原 gallery 无雾策略。gallery 与独立诊断保留专用策略；actors、RFCHAR 和 viewmodel 已在 C2 接入。
 设施由多个实例构件组成，第一版不引入大型 RMESH 细采样；证据和边界见
 [Phase C1](static-world-lighting-phase-c1.md)。`--logic-test` 包含实际模型命令的 scene × form 回归。

@@ -4,7 +4,7 @@
 #include "math.h"
 #include "rasterfall_map_runtime.h"
 
-void rasterfall_world_light_bake(struct rasterfall_world_lighting *lighting,
+void rasterfall_diagnostic_world_light_bake_v1(struct rasterfall_diagnostic_world_lighting_v1 *lighting,
                                 const struct toy_map *map)
 {
     int x, z, i;
@@ -44,8 +44,8 @@ void rasterfall_world_light_bake(struct rasterfall_world_lighting *lighting,
     }
 }
 
-struct rasterfall_world_light rasterfall_world_light_at_v1(
-    const struct rasterfall_world_lighting *lighting, int x, int y, int z)
+struct rasterfall_world_light rasterfall_diagnostic_world_light_at_v1(
+    const struct rasterfall_diagnostic_world_lighting_v1 *lighting, int x, int y, int z)
 {
     struct rasterfall_world_light light;
     int ix = (x - lighting->minx) * RASTERFALL_BAKED_LM_W /
@@ -63,7 +63,7 @@ struct rasterfall_world_light rasterfall_world_light_at_v1(
     return light;
 }
 
-int rasterfall_world_light_q8(struct rasterfall_world_light light)
+int rasterfall_diagnostic_world_light_q8(struct rasterfall_world_light light)
 {
     return (int)((long long)light.environment_q8 * light.sun_visibility_q8 / 256 *
                  light.contact_q8 / 256);

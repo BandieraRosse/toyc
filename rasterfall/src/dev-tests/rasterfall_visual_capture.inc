@@ -54,7 +54,7 @@ static int architecture_capture(const char *scenario, const char *output)
     memset(&session,0,sizeof(session)); memset(&context,0,sizeof(context));
     memset(&fixture_effects,0,sizeof(fixture_effects));
     context.session=&session; context.effects=&fixture_effects;
-    context.fixed_floor_lighting=1; context.textures_enabled=1;
+    context.diagnostic_fixed_lighting=1; context.textures_enabled=1;
     rasterfall_render_bind(&context);
     memset(&camera,0,sizeof(camera));
     camera.body.x=(int)((family?0:inside?-2.5:far?-5:-2)*512);
@@ -228,7 +228,7 @@ static int campus_capture(const char *scenario,const char *output)
     double story=1637/512.0;
     const struct rasterfall_prop_asset_profile *subject=NULL;
     memset(&context,0,sizeof(context)); memset(&session,0,sizeof(session));
-    context.session=&session; context.fixed_floor_lighting=1;
+    context.session=&session; context.diagnostic_fixed_lighting=1;
     rasterfall_render_bind(&context);
     campus_camera(&camera,-18,12,-24,0,2,5);
     if(!strcmp(scenario,"campus-corner-near")) campus_camera(&camera,-8,1.7,-7,0,1.8,7);
@@ -363,7 +363,7 @@ int rasterfall_render_visual_capture(const char *scenario, const char *output)
     memset(&context, 0, sizeof(context));
     context.session = active_session;
     context.effects = active_effects;
-    context.fixed_floor_lighting = 1;
+    context.diagnostic_fixed_lighting = 1;
     rasterfall_render_bind(&context);
     surface.width = squad || prop_lighting || modular_teammate ? 1600 : 800;
     surface.height = 800;
@@ -504,7 +504,7 @@ int rasterfall_render_squad_acceptance(const char *model_dir,
         return 1;
     }
     memset(&context, 0, sizeof(context));
-    context.fixed_floor_lighting = 1;
+    context.diagnostic_fixed_lighting = 1;
     rasterfall_render_bind(&context);
     memset(actors, 0, sizeof(actors));
     actor_index = 0;
@@ -740,6 +740,9 @@ static int render_character_test_strip(struct toy_renderer *renderer,
     old_state.weapon = TOY_GAME_WEAPON_AK;
     old_state.sy = 0; old_state.cy = 1024;
     old_state.animation_id = TOY_GAME_ANIM_IDLE;
+    prepare_diagnostic_world_light_v1();
+    int saved_diagnostic = active_diagnostic_world_light_v1;
+    active_diagnostic_world_light_v1 = 1;
     pixels += rasterfall_render_procedural_humanoid(renderer, camera, &old_state,
         rasterfall_character_profile(RASTERFALL_CHARACTER_HURD_GUNSMITH));
     /* A world capture may replace the default V2 body with a contract
@@ -753,6 +756,7 @@ static int render_character_test_strip(struct toy_renderer *renderer,
             __fprintf(2, "rasterfall: character test strip modular frame unavailable\n");
         else pixels += frame_pixels;
     }
+    active_diagnostic_world_light_v1 = saved_diagnostic;
     return pixels;
 }
 
@@ -911,6 +915,8 @@ static int capture_map_world(const char *output_dir,
                 for (int repeat=0; repeat<6; repeat++) {
                     toy_renderer_begin(&renderer,&surface,0x151922);
                     long start=render_monotonic_us();
+                    prepare_diagnostic_world_light_v1();
+                    active_diagnostic_world_light_v1 = !mode;
                     int local=mode ? rasterfall_render_begin_dynamic_lighting() : 256;
                     rasterfall_render_scene(&renderer,&camera);
                     long entity_start=render_monotonic_us();
@@ -919,6 +925,7 @@ static int capture_map_world(const char *output_dir,
                     rasterfall_render_managed_player(&renderer,&camera,&c2_body_camera);
                     long entity_time=render_monotonic_us()-entity_start;
                     if(mode) rasterfall_render_end_dynamic_lighting();
+                    active_diagnostic_world_light_v1 = 0;
                     commands=renderer.cmd_count;
                     long raster_start=render_monotonic_us();
                     if(toy_renderer_flush(&renderer)<0) return 1;
@@ -1037,7 +1044,7 @@ static int visual_acceptance_dump(struct rasterfall_model_asset *character,
     (void)character;
     __printf("rasterfall: acceptance A/B distance=%d dir=%s\n", distance, dir);
     visual_acceptance_camera(&camera, view, distance);
-    memset(&context, 0, sizeof(context)); context.fixed_floor_lighting = 1;
+    memset(&context, 0, sizeof(context)); context.diagnostic_fixed_lighting = 1;
     rasterfall_render_bind(&context); memset(&surface, 0, sizeof(surface));
     surface.width = width; surface.height = 800; surface.stride = width * (int)sizeof(uint32_t);
     pixels = tlibc_malloc((size_t)surface.stride * surface.height); surface.pixels = pixels;
@@ -1186,7 +1193,7 @@ int rasterfall_render_rigid_attachment_acceptance(const char *model_dir,
     __printf("rigid-attachment: BACK world t=(%.3f,%.3f,%.3f) r0=(%.6f,%.6f,%.6f)\n",
         numeric.translation[0],numeric.translation[1],numeric.translation[2],
         numeric.rotation[0],numeric.rotation[1],numeric.rotation[2]);
-    memset(&context,0,sizeof(context));context.fixed_floor_lighting=1;rasterfall_render_bind(&context);
+    memset(&context,0,sizeof(context));context.diagnostic_fixed_lighting=1;rasterfall_render_bind(&context);
     visual_acceptance_camera(&camera,3,2200);
     memset(&surface,0,sizeof(surface));surface.width=1600;surface.height=800;surface.stride=6400;
     pixels=tlibc_malloc((size_t)surface.stride*surface.height);if(!pixels)goto done;surface.pixels=pixels;
@@ -1358,7 +1365,7 @@ int rasterfall_render_profession_lineup(const char *model_dir, const char *outpu
     if (visual_modular_attachment_regression(&hosts[RASTERFALL_MODULAR_HEAVY],
                                              gear) < 0) goto done;
     memset(&context, 0, sizeof(context));
-    context.fixed_floor_lighting = 1;
+    context.diagnostic_fixed_lighting = 1;
     rasterfall_render_bind(&context);
     rasterfall_render_set_model_lighting(1);
     gallery_load();
@@ -1505,9 +1512,9 @@ static int visual_material_lighting_dump(
         camera.view.pitch_cy = 1024;
         memset(&context, 0, sizeof(context));
         context.session = active_session;
-        context.fixed_floor_lighting = 1;
+        context.diagnostic_fixed_lighting = 1;
         rasterfall_render_bind(&context);
-        active_model_scene_light_override_q8 = condition == 2 ? 96 : -1;
+        active_scene_light_override_q8 = condition == 2 ? 96 : -1;
         memset(&surface, 0, sizeof(surface));
         surface.width = 800; surface.height = 800; surface.stride = 3200;
         pixels = tlibc_malloc((size_t)surface.stride * surface.height);
@@ -1520,10 +1527,10 @@ static int visual_material_lighting_dump(
             toy_renderer_flush(&renderer) < 0 ||
             snprintf(path, sizeof(path), "%s/%s.bmp", dir, names[condition]) >=
                 (int)sizeof(path) || rasterfall_hud_dump_bmp(path, &surface) < 0) {
-            active_model_scene_light_override_q8 = -1;
+            active_scene_light_override_q8 = -1;
             toy_renderer_destroy(&renderer); tlibc_free(pixels); return 1;
         }
-        active_model_scene_light_override_q8 = -1;
+        active_scene_light_override_q8 = -1;
         toy_renderer_destroy(&renderer); tlibc_free(pixels);
         __printf("rasterfall: character material lighting condition=%s output=%s\n",
                  names[condition], path);
@@ -1549,7 +1556,7 @@ int rasterfall_render_character_acceptance_capture(const char *model_path,
         return 1;
     }
     model = rasterfall_model_instance_pose(&instance);
-    memset(&context, 0, sizeof(context)); context.fixed_floor_lighting = 1; rasterfall_render_bind(&context);
+    memset(&context, 0, sizeof(context)); context.diagnostic_fixed_lighting = 1; rasterfall_render_bind(&context);
     /* Warm the standard AK cache once; render_skeletal_rifle resolves it by stable asset path. */
     gallery_load();
     for (mode = 0; mode < 3; mode++) for (view = 0; view < 4; view++) {
@@ -1615,7 +1622,7 @@ int rasterfall_render_action_preview(const char *model_path,
         rasterfall_model_resource_load(&resource,model_path)<0 ||
         rasterfall_model_instance_init(&instance,&resource)<0 ||
         rasterfall_action_apply(&instance,&clip,time_ms)<0) goto done;
-    memset(&context,0,sizeof(context));context.fixed_floor_lighting=1;
+    memset(&context,0,sizeof(context));context.diagnostic_fixed_lighting=1;
     rasterfall_render_bind(&context);gallery_load();
     visual_acceptance_camera(&camera,3,1500);
     memset(&surface,0,sizeof(surface));surface.width=800;surface.height=800;
@@ -1683,7 +1690,7 @@ int rasterfall_render_action_composition_capture(const char *model_path,
     composition.layers[RASTERFALL_ACTION_LAYER_ADDITIVE].clip = &additive;
     composition.layers[RASTERFALL_ACTION_LAYER_ADDITIVE].time_ms = additive_time_ms;
     if (rasterfall_action_compose(&instance, &composition) < 0) goto done;
-    memset(&context, 0, sizeof(context)); context.fixed_floor_lighting = 1;
+    memset(&context, 0, sizeof(context)); context.diagnostic_fixed_lighting = 1;
     rasterfall_render_bind(&context); gallery_load();
     visual_acceptance_camera(&camera, 3, 1500);
     memset(&surface, 0, sizeof(surface)); surface.width = 800; surface.height = 800;

@@ -20,7 +20,7 @@ struct rasterfall_render_context {
     const struct toy_texture_view *model_texture;
     struct rasterfall_world_lighting world_lighting;
     int textures_enabled;
-    int fixed_floor_lighting;
+    int diagnostic_fixed_lighting; /* Fixed lighting override for isolated captures only. */
 };
 
 struct rasterfall_character_profile;
@@ -174,6 +174,7 @@ void rasterfall_render_scene_stats(struct rasterfall_scene_stats *out);
 int rasterfall_render_near_clip_test(void);
 int rasterfall_render_static_prop_culling_logic_test(void);
 int rasterfall_render_static_prop_lighting_logic_test(void);
+int rasterfall_render_world_light_source_logic_test(void);
 
 int rasterfall_render_scene(struct toy_renderer *renderer,
                             const struct camera *camera);

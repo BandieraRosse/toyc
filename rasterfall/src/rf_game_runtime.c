@@ -137,8 +137,6 @@
 #define NEAR_Z 192
 #define ENEMY_RENDER_DISTANCE 24000 /* 3x the old 8000-unit enemy cutoff */
 #define UV_ONE 65536
-#define BAKED_LM_W 32
-#define BAKED_LM_H 24
 
 struct vec3 { int x, y, z; };
 /* 朝向：sy/cy = 偏航 sin/cos，pitch_sy/pitch_cy = 俯仰 sin/cos（均 1024 定点）。 */
@@ -3033,7 +3031,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     rasterfall_render_bake_lightmap();
     rf_windows_log("startup: lightmap baked");
     rasterfall_effects_init(&effects);
-    __printf("rasterfall: baked lightmap %dx%d\n", BAKED_LM_W, BAKED_LM_H);
+    __printf("rasterfall: baked lightmap %dx%d\n", RF_WORLD_LIGHT_W, RF_WORLD_LIGHT_H);
     memset(&model_texture, 0, sizeof(model_texture));
     memset(&model_texture_view, 0, sizeof(model_texture_view));
     if (toy_texture_load("rasterfall/assets/textures/model_diffuse.ttex",
