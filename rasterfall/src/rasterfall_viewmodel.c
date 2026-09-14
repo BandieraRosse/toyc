@@ -88,9 +88,20 @@ static void rotate_view_xz(int x, int z, int degrees, int *out_x, int *out_z)
     *out_z = (x * s + z * c) / 1024;
 }
 
+static int viewmodel_scene_light_q8 = 256;
+
+static uint32_t viewmodel_lit_color(uint32_t color)
+{
+    return (color & 0xff000000U) |
+        (((color >> 16 & 255U) * viewmodel_scene_light_q8 / 256) << 16) |
+        (((color >> 8 & 255U) * viewmodel_scene_light_q8 / 256) << 8) |
+        ((color & 255U) * viewmodel_scene_light_q8 / 256);
+}
+
 static void viewmodel_fill_rect(struct toy_surface *surface, int x, int y,
                                 int width, int height, uint32_t color)
 {
+    color = viewmodel_lit_color(color);
     int yy, xx;
     for (yy = y; yy < y + height; yy++) {
         if (yy < 0 || yy >= surface->height) continue;
@@ -222,6 +233,7 @@ static int fill_triangle_2d(struct toy_surface *surface,
                             int x0, int y0, int x1, int y1, int x2, int y2,
                             uint32_t color)
 {
+    color = viewmodel_lit_color(color);
     int y, tmp, xa, xb, ymin, ymax, drawn = 0;
     long dx01 = 0, dx02, dx12 = 0, xl, xr, lt;
     if (y0 > y1) { tmp=x0; x0=x1; x1=tmp; tmp=y0; y0=y1; y1=tmp; }
@@ -599,7 +611,7 @@ static int render_model_weapon(struct toy_renderer *renderer,
                     sv[n].inv_z = (long)1048576 / v[n].z;
                     sv[n].u_over_z = (long)sv[n].u * 1048576L / v[n].z;
                     sv[n].v_over_z = (long)sv[n].v * 1048576L / v[n].z;
-                    sv[n].light = 256; sv[n].fog = 0;
+                    sv[n].light = viewmodel_scene_light_q8; sv[n].fog = 0;
                 }
                 if (n == 3) {
                     /* Axe, bomb, and molotov use the shared extracted model
@@ -622,11 +634,11 @@ static int render_model_weapon(struct toy_renderer *renderer,
                         if (area <= 0)
                             drawn += toy_renderer_triangle_textured_lit(
                                 renderer, &sv[0], &sv[2], &sv[1],
-                                viewmodel_texture, 1, color, 256, 0);
+                                viewmodel_texture, 1, color, viewmodel_scene_light_q8, 0);
                         else
                             drawn += toy_renderer_triangle_textured_lit(
                                 renderer, &sv[0], &sv[1], &sv[2],
-                                viewmodel_texture, 1, color, 256, 0);
+                                viewmodel_texture, 1, color, viewmodel_scene_light_q8, 0);
                     } else
                         drawn += fill_triangle_2d(surface, sx[0], sy[0],
                                                   sx[1], sy[1], sx[2], sy[2],
@@ -670,7 +682,7 @@ static int render_pill_viewmodel(struct toy_surface *surface, int bob_x,
 
 int rasterfall_viewmodel_render(struct toy_renderer *renderer,
                                 const struct toy_game *game,
-                                const struct rasterfall_effects *effects)
+                                const struct rasterfall_effects *effects, int scene_light_q8)
 {
     const struct toy_game_actor *player =
         toy_game_local_player_actor_const(game);
@@ -678,6 +690,9 @@ int rasterfall_viewmodel_render(struct toy_renderer *renderer,
     int kick = effects->weapon_kick;
     int bob_x, bob_y, switch_pitch = 0;
     int drawn = 0;
+    /* Bound environment darkening to retain screen-space readability. */
+    viewmodel_scene_light_q8 = scene_light_q8 < 192 ? 192 :
+                               scene_light_q8 > 256 ? 256 : scene_light_q8;
     viewmodel_load_models();
     viewmodel_bob(game, &bob_x, &bob_y);
     if (player && player->weapon_switch_timer_ms > 0)

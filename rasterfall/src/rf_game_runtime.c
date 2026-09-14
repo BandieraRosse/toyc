@@ -2584,6 +2584,8 @@ int rf_game_render(struct rf_game_runtime *runtime,
                                      runtime->managed_third_person);
     rasterfall_effects_apply_camera_shake(&runtime->effects, render_camera);
 
+    int local_scene_light = rasterfall_render_begin_dynamic_lighting();
+
     /* World and actor submission order is intentionally unchanged. */
     pixels += rasterfall_render_scene(renderer, render_camera);
     pixels += rasterfall_render_flags(renderer, render_camera);
@@ -2615,11 +2617,12 @@ int rf_game_render(struct rf_game_runtime *runtime,
         if (flushed < 0) return -1;
         pixels += flushed;
     }
+    rasterfall_render_end_dynamic_lighting();
     pixels += rasterfall_render_effects(renderer, render_camera);
     if (toy_game_local_player_actor_const(&game_session->game_state)->state !=
         TOY_GAME_ACTOR_DOWNED)
         pixels += rasterfall_viewmodel_render(
-            renderer, &game_session->game_state, &runtime->effects);
+            renderer, &game_session->game_state, &runtime->effects, local_scene_light);
 
     /* Existing viewmodel-to-framebuffer ordering barrier. */
     flushed = rf_core_flush(runtime->core);

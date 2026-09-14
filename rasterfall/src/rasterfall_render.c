@@ -240,6 +240,10 @@ static int active_gallery_lighting;
 static int active_disable_material_light;
 static int active_model_form_lighting = 1;
 static int active_model_scene_light_override_q8 = -1;
+/* Frame-local presentation only. Diagnostics never enable this scope. */
+static int active_dynamic_world_lighting;
+static int local_player_scene_light_q8 = 256;
+static int dynamic_world_light_queries;
 static int active_coordinate_axes;
 static struct rasterfall_model_render_stats model_render_stats;
 static int collect_model_render_stats;
@@ -2078,6 +2082,7 @@ static int render_static_props(struct toy_renderer *renderer,
     {
         const struct toy_map_prop *map_prop = &level_map.props[i];
         struct rasterfall_prop_instance instance;
+        int previous_scene_light = active_model_scene_light_override_q8;
         instance.asset_id = map_prop->asset_id;
         instance.x = map_prop->x;
         instance.y = -900 + map_prop->y;
@@ -2087,7 +2092,16 @@ static int render_static_props(struct toy_renderer *renderer,
         instance.length = map_prop->length;
         active_world_light_v2 = active_session->map_ops.runtime_loaded &&
             instance.asset_id == RASTERFALL_PROP_ASSET_BOUNDARY_WALL;
+        /* Only normal map RMESH consumes the field here. Keep the model's
+         * gallery/form/material policy, and avoid V2 planar vertex sampling
+         * in its triangle helpers. Diagnostics retain their own override. */
+        if (active_session->map_ops.runtime_loaded &&
+            instance.asset_id != RASTERFALL_PROP_ASSET_BOUNDARY_WALL)
+            active_model_scene_light_override_q8 = rasterfall_world_light_v2_q8(
+                rasterfall_world_light_at(active_world_lighting,
+                    instance.x, instance.y, instance.z));
         pixels += rasterfall_render_static_prop(renderer, camera, &instance);
+        active_model_scene_light_override_q8 = previous_scene_light;
         active_world_light_v2 = 0;
     }
     return pixels;
@@ -2806,6 +2820,27 @@ static int world_brightness_at(int x, int y, int z)
         rasterfall_world_light_at_v1(active_world_lighting, x, y, z));
 }
 
+static int dynamic_scene_light(int x, int ground_y, int z)
+{
+    if (active_dynamic_world_lighting) dynamic_world_light_queries++;
+    return active_dynamic_world_lighting ? rasterfall_world_light_v2_q8(
+        rasterfall_world_light_at(active_world_lighting, x, -900 + ground_y, z)) : -1;
+}
+
+int rasterfall_render_begin_dynamic_lighting(void)
+{
+    const struct toy_game_actor *player = toy_game_local_player_actor_const(&game);
+    dynamic_world_light_queries = 0;
+    active_dynamic_world_lighting = 1;
+    local_player_scene_light_q8 = dynamic_scene_light(player->x, player->ground_y, player->z);
+    return local_player_scene_light_q8;
+}
+
+void rasterfall_render_end_dynamic_lighting(void)
+{
+    active_dynamic_world_lighting = 0;
+}
+
 static int baked_fog_at(int distance)
 {
     if (distance <= 12000) return 0;
@@ -3174,6 +3209,11 @@ static int draw_world_triangle_alpha(struct toy_renderer *renderer,
         }
         drawn += toy_renderer_triangle_lit_alpha(
             renderer, &screen[0], &screen[1], &screen[2], color,
+            active_model_scene_light_override_q8 >= 0 ?
+                (active_material_lighting_min_q8 > 0 ?
+                 clampi(active_model_scene_light_override_q8 * active_material_form_light_q8 / 256,
+                    active_material_lighting_min_q8, active_material_lighting_max_q8) :
+                 active_model_scene_light_override_q8) :
             (fixed_floor_lighting && !active_world_light_v2) ? 256 : world_brightness_at(
                 (a->x + b->x + c->x) / 3, (a->y + b->y + c->y) / 3,
                 (a->z + b->z + c->z) / 3),
@@ -3324,6 +3364,86 @@ static int draw_world_triangle_tex_views(struct toy_renderer *renderer,
             active_model_triangle_stats->emitted_triangles++;
     }
     return drawn;
+}
+
+int rasterfall_render_static_prop_lighting_logic_test(void)
+{
+    struct toy_renderer renderer;
+    struct toy_surface surface;
+    struct camera camera;
+    struct world_uv_vertex v[3];
+    uint32_t pixels[64 * 64];
+    int saved_scene = active_model_scene_light_override_q8;
+    int saved_gallery = active_gallery_lighting;
+    int saved_v2 = active_world_light_v2;
+    int result = 0;
+    memset(&surface, 0, sizeof(surface));
+    memset(&camera, 0, sizeof(camera));
+    memset(v, 0, sizeof(v));
+    surface.width = surface.height = 64; surface.stride = 64 * 4;
+    surface.pixels = pixels;
+    camera.cy = camera.pitch_cy = 1024;
+    v[0].p = (struct vec3){-100, -100, 1000};
+    v[1].p = (struct vec3){0, 100, 1000};
+    v[2].p = (struct vec3){100, -100, 1000};
+    toy_renderer_init(&renderer);
+    toy_renderer_set_frame_budget(&renderer, 0);
+    if (toy_renderer_begin(&renderer, &surface, 0) < 0) result = 1;
+    active_gallery_lighting = 1;
+    active_world_light_v2 = 0;
+    /* Exercise the actual textured RMESH command composition, including
+     * the gallery bypass that formerly forced scene brightness to 256. */
+    for (int scene = 256; !result && scene >= 192; scene -= 64) {
+        active_model_scene_light_override_q8 = scene;
+        for (int form = 136; form <= 256; form += 120) {
+            int count = renderer.cmd_count;
+            v[0].light = v[1].light = v[2].light = form;
+            draw_world_triangle_tex_views(&renderer, &camera,
+                &v[0], &v[1], &v[2], NULL, NULL, NULL);
+            if (renderer.cmd_count != count + 1 ||
+                renderer.cmds[count].light != scene * form / 256)
+                result = 2;
+        }
+    }
+    {
+        int saved_min = rasterfall_render_frontend_current(&renderer)->material_lighting_min_q8;
+        int saved_max = rasterfall_render_frontend_current(&renderer)->material_lighting_max_q8;
+        int saved_form = rasterfall_render_frontend_current(&renderer)->material_form_light_q8;
+        static const int roles[] = {RASTERFALL_VISUAL_FACE, RASTERFALL_VISUAL_SKIN,
+            RASTERFALL_VISUAL_EYES, RASTERFALL_VISUAL_HAIR};
+        for (int r = 0; r < 4 && !result; r++) {
+            struct rasterfall_character_render_policy policy = character_render_policy(roles[r]);
+            rasterfall_render_frontend_current(&renderer)->material_lighting_min_q8 = policy.lighting_min_q8;
+            rasterfall_render_frontend_current(&renderer)->material_lighting_max_q8 = policy.lighting_max_q8;
+            for (int scene = 256; scene >= 192; scene -= 64) {
+                for (int form = 136; form <= 256; form += 120) {
+                    int expected = clampi(scene * form / 256,
+                        policy.lighting_min_q8, policy.lighting_max_q8);
+                    int count = renderer.cmd_count;
+                    active_model_scene_light_override_q8 = scene;
+                    rasterfall_render_frontend_current(&renderer)->material_form_light_q8 = form;
+                    v[0].light = v[1].light = v[2].light = form;
+                    draw_world_triangle_tex_views(&renderer, &camera,
+                        &v[0], &v[1], &v[2], NULL, NULL, NULL);
+                    if (renderer.cmd_count != count + 1 || renderer.cmds[count].a.light != expected)
+                        result = 3;
+                    count = renderer.cmd_count;
+                    draw_world_triangle_views(&renderer, &camera,
+                        &v[0].p, &v[1].p, &v[2].p, NULL, NULL, NULL, 0xffffff);
+                    if (renderer.cmd_count != count + 1 || renderer.cmds[count].light != expected)
+                        result = 4;
+                }
+            }
+        }
+        rasterfall_render_frontend_current(&renderer)->material_lighting_min_q8 = saved_min;
+        rasterfall_render_frontend_current(&renderer)->material_lighting_max_q8 = saved_max;
+        rasterfall_render_frontend_current(&renderer)->material_form_light_q8 = saved_form;
+    }
+    active_model_scene_light_override_q8 = saved_scene;
+    active_gallery_lighting = saved_gallery;
+    active_world_light_v2 = saved_v2;
+    toy_renderer_destroy(&renderer);
+    return result;
 }
 
 static int draw_world_triangle_tex(struct toy_renderer *renderer,
@@ -4356,8 +4476,14 @@ static int render_interactables(struct toy_renderer *renderer,
                                 const struct camera *camera)
 {
     int i, pixels = 0;
+    int saved_scene = active_model_scene_light_override_q8;
     for (i = 0; i < interactable_count; i++) {
         const interactable *it = &interactables[i];
+        active_model_scene_light_override_q8 = saved_scene;
+        if (active_dynamic_world_lighting &&
+            (it->kind == TOY_MAP_PICKUP_SMG || it->kind == TOY_MAP_PICKUP_SHOTGUN ||
+             it->kind == TOY_MAP_PICKUP_WEAPON || it->kind == TOY_MAP_PICKUP_THROWABLE))
+            active_model_scene_light_override_q8 = dynamic_scene_light(it->x,it->y+900,it->z);
         int on = 0;
         for (int effect_index = 0;
              effect_index < RASTERFALL_EFFECT_INSTANCE_SLOTS; effect_index++) {
@@ -4467,6 +4593,7 @@ static int render_interactables(struct toy_renderer *renderer,
         else
             pixels += render_ammo_box(renderer, camera, it->x, it->y, it->z, on);
     }
+    active_model_scene_light_override_q8 = saved_scene;
     return pixels;
 }
 
@@ -4477,6 +4604,7 @@ static int render_projectiles(struct toy_renderer *renderer,
 {
     const struct toy_texture_view *previous_texture = active_texture_view;
     int i, pixels = 0;
+    int saved_scene = active_model_scene_light_override_q8;
     /* World gallery rendering temporarily selects the model texture.  This
      * pass runs later, so select it explicitly before submitting projectile
      * triangles; otherwise the UV path would sample the wall texture. */
@@ -4493,6 +4621,8 @@ static int render_projectiles(struct toy_renderer *renderer,
                "rasterfall/assets/models/molotov.rmesh";
         model = gallery_model_named(path, NULL);
         if (!model) continue;
+        if (active_dynamic_world_lighting)
+            active_model_scene_light_override_q8 = dynamic_scene_light(p->x,p->y,p->z);
         width = model->max_x - model->min_x;
         height = model->max_y - model->min_y;
         depth = model->max_z - model->min_z;
@@ -4542,6 +4672,7 @@ static int render_projectiles(struct toy_renderer *renderer,
                             const unsigned char *q = model->vertices +
                                 ids[m] * model->vertex_bytes;
                             uv[m].p = v[m];
+                            uv[m].light = 256;
                             uv[m].u = *(const unsigned short *)(q + 18);
                             uv[m].v = *(const unsigned short *)(q + 20);
                         }
@@ -4557,6 +4688,7 @@ static int render_projectiles(struct toy_renderer *renderer,
             }
         }
     }
+    active_model_scene_light_override_q8 = saved_scene;
     active_texture_view = previous_texture;
     return pixels;
 }
@@ -5012,6 +5144,7 @@ static int render_enemies(struct toy_renderer *renderer,
                           const struct camera *camera)
 {
     int pixels = 0;
+    int saved_scene = active_model_scene_light_override_q8;
     for (int i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
         const struct toy_game_enemy *e = &game.enemies[i];
         struct toy_game_enemy presentation_enemy;
@@ -5115,6 +5248,8 @@ static int render_enemies(struct toy_renderer *renderer,
                 TOY_GAME_ENEMY_ABILITY_SMOKER_TONGUE &&
             e->special_target_active)
             pixels += render_smoker_tongue(renderer, camera, draw_enemy);
+        active_model_scene_light_override_q8 = active_dynamic_world_lighting ?
+            dynamic_scene_light(e->x, e->ground_y, e->z) : saved_scene;
         int infected_pixels = visual_family != RASTERFALL_ENEMY_VISUAL_LEGACY ?
             render_infected_enemy(renderer, camera, draw_enemy, e, i, scale,
                                   enemy_feedback_color(i), visual_family) : -1;
@@ -5126,6 +5261,7 @@ static int render_enemies(struct toy_renderer *renderer,
             pixels += render_block_enemy(renderer, camera, draw_enemy, scale, color);
         else
             pixels += render_round_enemy(renderer, camera, draw_enemy, scale, color);
+        active_model_scene_light_override_q8 = saved_scene;
         active_enemy_lift = 0;
         active_enemy_dissolve = 0;
         active_enemy_alpha = 255;
@@ -5440,9 +5576,14 @@ static int render_actor_model_weapon(struct toy_renderer *renderer,
         }
     }
     if (muzzle_flash > 0)
+    {
+        int saved_flash_scene = active_model_scene_light_override_q8;
+        active_model_scene_light_override_q8 = -1;
         pixels += draw_actor_box(renderer, camera, x, z, sy, cy,
                                  163, 227, -395, -355, 420, 495,
                                  RF_COLOR_UI_ACCENT);
+        active_model_scene_light_override_q8 = saved_flash_scene;
+    }
     /* Two overlapping cuboids per arm.  Both segments remain in the arm's
      * local Y-Z plane; draw_limb_segment performs the actor yaw transform. */
     if (draw_arms) {
@@ -6048,9 +6189,14 @@ static int render_modular_active_weapon(
         }
     }
     if (muzzle_flash > 0 && has_muzzle)
+    {
+        int saved_flash_scene = active_model_scene_light_override_q8;
+        active_model_scene_light_override_q8 = -1;
         pixels += draw_cuboid(renderer, camera, muzzle_world.x - 32,
             muzzle_world.x + 32, muzzle_world.y - 32, muzzle_world.y + 32,
             muzzle_world.z - 32, muzzle_world.z + 32, RF_COLOR_UI_ACCENT);
+        active_model_scene_light_override_q8 = saved_flash_scene;
+    }
     return pixels;
 }
 
@@ -6443,7 +6589,9 @@ static int render_ai_teammate(struct toy_renderer *renderer,
                               const struct camera *camera)
 {
     int i, pixels = 0;
+    int saved_scene = active_model_scene_light_override_q8;
     for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
+        active_model_scene_light_override_q8 = saved_scene;
         const struct toy_game_actor *actor = &game.actors[i];
         struct vec3 center, view;
         uint32_t color;
@@ -6453,6 +6601,9 @@ static int render_ai_teammate(struct toy_renderer *renderer,
         if (view.z < NEAR_Z ||
             (view.z > ENEMY_RENDER_DISTANCE && !actor->anime_character_id))
             continue;
+        if (active_dynamic_world_lighting)
+            active_model_scene_light_override_q8 = dynamic_scene_light(
+                actor->x, actor->ground_y, actor->z);
         color = actor->class_id == TOY_GAME_AI_LEVEL_3 ? RF_COLOR_AI_HEAVY :
                 actor->class_id == TOY_GAME_AI_LEVEL_2 ? RF_COLOR_AI_RIFLE :
                 RF_COLOR_AI_BASIC;
@@ -6676,6 +6827,7 @@ static int render_ai_teammate(struct toy_renderer *renderer,
                 renderer, camera, &state, &character);
         }
     }
+    active_model_scene_light_override_q8 = saved_scene;
     if (active_session && active_session->content.campaign_fixture_enabled)
         pixels += render_humanoid_debug(renderer, camera);
     return pixels;
@@ -6925,9 +7077,14 @@ int rasterfall_render_procedural_humanoid(
     if (muzzle_flash > 0 &&
         ((animation_id != TOY_GAME_ANIM_DEATH &&
           animation_id != TOY_GAME_ANIM_REVIVE) || show_fall_gear))
+    {
+        int saved_flash_scene = active_model_scene_light_override_q8;
+        active_model_scene_light_override_q8 = -1;
         pixels += draw_cuboid(renderer, camera, pose_x - 45, pose_x + 45,
                               -560 + active_actor_lift, -430 + active_actor_lift,
                               pose_z - 120, pose_z + 120, RF_COLOR_UI_ACCENT);
+        active_model_scene_light_override_q8 = saved_flash_scene;
+    }
     active_actor_lift = saved_lift;
     active_actor_roll_sin = saved_roll_sin;
     active_actor_roll_cos = saved_roll_cos;
@@ -6966,6 +7123,10 @@ static int render_network_teammate(struct toy_renderer *renderer,
             active_actor_lift = network_actor_lift(render_camera->x,
                                                    render_camera->z,
                                                    render_airborne);
+            int saved_scene = active_model_scene_light_override_q8;
+            if (active_dynamic_world_lighting)
+                active_model_scene_light_override_q8 = dynamic_scene_light(
+                    actor->x, actor->ground_y, actor->z);
             pixels += render_player_avatar(renderer, camera,
                 render_camera->x, render_camera->z, render_camera->sy,
                              render_camera->cy,
@@ -6973,6 +7134,7 @@ static int render_network_teammate(struct toy_renderer *renderer,
                 actor->character_id, colors[i],
                 actor->state == TOY_GAME_ACTOR_DOWNED,
                 actor->animation.id, actor->animation.time_ms);
+            active_model_scene_light_override_q8 = saved_scene;
             active_actor_lift = 0;
         }
         return pixels;
@@ -6990,6 +7152,10 @@ static int render_network_teammate(struct toy_renderer *renderer,
         active_actor_lift = network_actor_lift(client->camera.x,
                                                client->camera.z,
                                                actor->airborne_y);
+        int saved_scene = active_model_scene_light_override_q8;
+        if (active_dynamic_world_lighting)
+            active_model_scene_light_override_q8 = dynamic_scene_light(
+                actor->x, actor->ground_y, actor->z);
         pixels += render_player_avatar(renderer, camera, client->camera.x,
             client->camera.z, client->camera.sy, client->camera.cy, weapon,
             0,
@@ -6997,6 +7163,7 @@ static int render_network_teammate(struct toy_renderer *renderer,
             colors[client->client_id],
             actor->state == TOY_GAME_ACTOR_DOWNED,
             actor->animation.id, actor->animation.time_ms);
+        active_model_scene_light_override_q8 = saved_scene;
         active_actor_lift = 0;
     }
     return pixels;
@@ -7824,14 +7991,18 @@ int rasterfall_render_managed_player(struct toy_renderer *renderer,
     const struct toy_game_actor *player =
         toy_game_local_player_actor_const(&game);
     int pixels;
+    int saved_scene = active_model_scene_light_override_q8;
     if (!renderer || !viewer || !body_camera ||
         player->state == TOY_GAME_ACTOR_DOWNED) return 0;
+    if (active_dynamic_world_lighting)
+        active_model_scene_light_override_q8 = local_player_scene_light_q8;
     active_actor_lift = player->ground_y + player->airborne_y;
     pixels = render_player_avatar(renderer, viewer, body_camera->x,
                                   body_camera->z, body_camera->sy,
                                   body_camera->cy, -1, 0, -1,
                                   RF_COLOR_UI_PLAYER, 0, player->animation.id,
                                   player->animation.time_ms);
+    active_model_scene_light_override_q8 = saved_scene;
     active_actor_lift = 0;
     return pixels;
 }

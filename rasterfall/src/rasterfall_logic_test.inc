@@ -434,6 +434,7 @@ static int run_logic_test(void)
     if (toy_map_lifecycle_logic_test() != 0) return 173;
     if (toy_map_prop_logic_test() != 0) return 171;
     if (rasterfall_render_static_prop_culling_logic_test() != 0) return 172;
+    if (rasterfall_render_static_prop_lighting_logic_test() != 0) return 242;
     if (world_light_logic_test() != 0) return 241;
     __printf("rasterfall: world light sampling test passed\n");
     if (rasterfall_rigid_attachment_transform_logic_test() != 0) return 175;
@@ -1951,7 +1952,7 @@ static int run_logic_test(void)
         rasterfall_effects_update(&effects, 16);
         rasterfall_render_effects(&renderer, &camera);
         /* 第一人称武器模型冒烟：SMG 几何进入光栅器 */
-        rasterfall_viewmodel_render(&renderer, &game, &effects);
+        rasterfall_viewmodel_render(&renderer, &game, &effects, 256);
         rasterfall_effects_reset_fire(&effects);
     }
     toy_renderer_destroy(&renderer);

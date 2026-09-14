@@ -173,6 +173,7 @@ int rasterfall_render_action_composition_capture(const char *model_path,
 void rasterfall_render_scene_stats(struct rasterfall_scene_stats *out);
 int rasterfall_render_near_clip_test(void);
 int rasterfall_render_static_prop_culling_logic_test(void);
+int rasterfall_render_static_prop_lighting_logic_test(void);
 
 int rasterfall_render_scene(struct toy_renderer *renderer,
                             const struct camera *camera);
@@ -210,5 +211,9 @@ void rasterfall_render_network_teammate_status(
 int rasterfall_render_effects(struct toy_renderer *renderer,
                               const struct camera *camera);
 int rasterfall_render_overlays(struct toy_renderer *renderer);
+
+/* Normal world frame scope; shared local-player sample for the viewmodel. */
+int rasterfall_render_begin_dynamic_lighting(void);
+void rasterfall_render_end_dynamic_lighting(void);
 
 #endif

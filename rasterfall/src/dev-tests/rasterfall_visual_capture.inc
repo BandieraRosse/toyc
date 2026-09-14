@@ -776,7 +776,7 @@ static int capture_map_world(const char *output_dir,
     if (tlibc_recursive_mkdir(output_dir) < 0) return 1;
     character_strip_model_path = model_path && *model_path ? model_path : NULL;
     int whu = environment && active_session->world_id == RASTERFALL_WORLD_RETURN_TO_WHU_V0;
-    for (i = 0; i < (whu ? 4 : environment ? 12 : 15); i++) {
+    for (i = 0; i < (whu ? 4 : environment ? 21 : 15); i++) {
         struct camera camera;
         struct toy_renderer renderer;
         struct toy_surface surface;
@@ -784,7 +784,14 @@ static int capture_map_world(const char *output_dir,
         uint32_t *pixels;
         int stage_result;
         int submitted_commands;
+        long frame_start, raster_start, raster_us, frame_us;
         unsigned long submitted_triangles;
+        struct toy_game *saved_fixture_game = NULL;
+        int c2_fixture = environment && !whu && i >= 12;
+        struct camera c2_body_camera;
+        int preflush_commands=0;
+        long preflush_raster_us=0;
+        uint64_t fixture_hash=1469598103934665603ULL;
         int distance_index = i < 3 ? i : (i - 3) / 4;
         static const char *subjects[] = {"old", "idle", "aim", "motion"};
         character_world_capture_camera(&camera, distances[distance_index]);
@@ -792,7 +799,7 @@ static int capture_map_world(const char *output_dir,
         if (i < 3) snprintf(path, sizeof(path), "%s/%s.bmp", output_dir, names[distance_index]);
         else snprintf(path, sizeof(path), "%s/%s-%s.bmp", output_dir,
                       names[distance_index], subjects[(i - 3) % 4]);
-        if (environment) {
+        if (environment && !c2_fixture) {
             /* RFU eye-level views, looking along clear existing routes.
              * No simulation tick or alternate environment renderer. */
             static const struct {
@@ -834,6 +841,57 @@ static int capture_map_world(const char *output_dir,
             camera.pitch_cy = 1024;
             snprintf(path, sizeof(path), "%s/%s.bmp", output_dir, views[i].name);
         }
+        if (c2_fixture) {
+            int root_x = -30000, root_z = -10000, best = 256;
+            static const int types[] = {TOY_GAME_ENEMY_PURSUIT_COMMON,
+                TOY_GAME_ENEMY_PURSUIT_FAST, TOY_GAME_ENEMY_PURSUIT_HEAVY,
+                TOY_GAME_ENEMY_SMOKER, TOY_GAME_ENEMY_CHARGER, TOY_GAME_ENEMY_TANK};
+            if (i == 13 || i >= 15) {
+                for (int z = -20000; z <= 20000; z += 256)
+                    for (int x = -22000; x <= 22000; x += 256) {
+                        int light = rasterfall_world_light_v2_q8(
+                            rasterfall_world_light_at(active_world_lighting,x,-900,z));
+                        if (light < best && !toy_game_position_blocked(&game,x,z,900)) {
+                            best = light; root_x = x; root_z = z;
+                        }
+                    }
+            }
+            saved_fixture_game = tlibc_malloc(sizeof(game));
+            if (!saved_fixture_game) return 1;
+            *saved_fixture_game = game;
+            memset(game.actors,0,sizeof(game.actors));
+            memset(game.enemies,0,sizeof(game.enemies));
+            for (int a = 0; a < 3; a++) {
+                struct toy_game_actor *actor = &game.actors[a];
+                actor->active=1; actor->actor_id=a; actor->kind=a ? TOY_GAME_ACTOR_AI : TOY_GAME_ACTOR_PLAYER;
+                actor->state=TOY_GAME_ACTOR_ALIVE;
+                actor->x=root_x+(i>=15 && a ? a*1500 : (a-1)*800); actor->z=root_z;
+                actor->cy=-1024; actor->character_id=a==1 ? RASTERFALL_CHARACTER_RF_RIFLEMAN : RASTERFALL_CHARACTER_NONE;
+                actor->animation.id=TOY_GAME_ANIM_IDLE;
+                actor->current_slot=toy_game_weapon_info(TOY_GAME_WEAPON_AK)->slot;
+                actor->slots[actor->current_slot].weapon=TOY_GAME_WEAPON_AK;
+            }
+            for (int e = 0; e < (i >= 15 ? 1 : 6); e++) {
+                game.enemies[e].active=1; game.enemies[e].type=types[i >= 15 ? i-15 : e];
+                game.enemies[e].x=root_x+(i>=15 ? 0 : (e-3)*900);
+                game.enemies[e].z=root_z+(i>=15 ? 0 : 1200);
+                game.enemies[e].dir_z=-1024; game.enemies[e].hp=100;
+            }
+            memset(&c2_body_camera,0,sizeof(c2_body_camera));
+            c2_body_camera.x=game.actors[0].x; c2_body_camera.z=game.actors[0].z;
+            c2_body_camera.cy=-1024;
+            memset(&camera,0,sizeof(camera)); camera.x=root_x; camera.z=root_z-6500;
+            camera.y=-350; camera.cy=camera.pitch_cy=1024;
+            snprintf(path,sizeof(path),"%s/c2-%s.bmp",output_dir,
+                i==13 ? "shadow" : i==14 ? "reopen" : "open");
+            if(i>=15) snprintf(path,sizeof(path),"%s/c2-shadow-enemy-%d.bmp",output_dir,i-15);
+            __printf("C2 fixture root=(%d,%d) root_light=%d\n",root_x,root_z,best);
+        }
+        if(c2_fixture) {
+            const unsigned char *truth=(const unsigned char *)&game;
+            for(size_t byte=0;byte<sizeof(game);byte++)
+                fixture_hash=(fixture_hash^truth[byte])*1099511628211ULL;
+        }
         memset(&surface, 0, sizeof(surface));
         surface.width = 1280; surface.height = 720; surface.stride = 1280 * 4;
         pixels = tlibc_malloc((size_t)surface.stride * surface.height);
@@ -844,15 +902,74 @@ static int capture_map_world(const char *output_dir,
         if (toy_renderer_begin(&renderer, &surface, 0x151922) < 0) {
             toy_renderer_destroy(&renderer); tlibc_free(pixels); return 1;
         }
+        if (c2_fixture && i < 15) {
+            /* Same fixed entities, warm caches, repeated before/after throughput.
+             * Includes world, actors, enemies and viewmodel; excludes IO/pacing. */
+            for (int mode = 0; mode < 2; mode++) {
+                long frame_total=0, raster_total=0, entity_total=0;
+                int commands=0;
+                for (int repeat=0; repeat<6; repeat++) {
+                    toy_renderer_begin(&renderer,&surface,0x151922);
+                    long start=render_monotonic_us();
+                    int local=mode ? rasterfall_render_begin_dynamic_lighting() : 256;
+                    rasterfall_render_scene(&renderer,&camera);
+                    long entity_start=render_monotonic_us();
+                    rasterfall_render_enemies(&renderer,&camera);
+                    rasterfall_render_ai_teammate(&renderer,&camera);
+                    rasterfall_render_managed_player(&renderer,&camera,&c2_body_camera);
+                    long entity_time=render_monotonic_us()-entity_start;
+                    if(mode) rasterfall_render_end_dynamic_lighting();
+                    commands=renderer.cmd_count;
+                    long raster_start=render_monotonic_us();
+                    if(toy_renderer_flush(&renderer)<0) return 1;
+                    long raster_time=render_monotonic_us()-raster_start;
+                    rasterfall_viewmodel_render(&renderer,&game,active_effects,local);
+                    commands+=renderer.cmd_count;
+                    raster_start=render_monotonic_us();
+                    if(toy_renderer_flush(&renderer)<0) return 1;
+                    raster_time+=render_monotonic_us()-raster_start;
+                    if(repeat) { frame_total+=render_monotonic_us()-start;
+                        raster_total+=raster_time; entity_total+=entity_time; }
+                }
+                __printf("C2 benchmark %s mode=%s frame_us=%ld raster_us=%ld actor_enemy_us=%ld commands=%d queries=%d\n",
+                    i==13 ? "shadow" : i==14 ? "reopen" : "open",mode ? "V2" : "baseline",
+                    frame_total/5,raster_total/5,entity_total/5,commands,
+                    mode ? dynamic_world_light_queries : 0);
+            }
+            toy_renderer_begin(&renderer,&surface,0x151922);
+        }
+        frame_start = render_monotonic_us();
+        int local_scene = environment ? rasterfall_render_begin_dynamic_lighting() : 256;
         rasterfall_render_scene(&renderer, &camera);
         rasterfall_render_flags(&renderer, &camera);
         rasterfall_render_enemies(&renderer, &camera);
         rasterfall_render_ai_teammate(&renderer, &camera);
+        if (c2_fixture) rasterfall_render_managed_player(&renderer,&camera,&c2_body_camera);
+        if (environment) rasterfall_render_end_dynamic_lighting();
         rasterfall_render_sign_text(&renderer, &camera);
         rasterfall_render_flag_text(&renderer, &camera);
-        submitted_commands = renderer.cmd_count;
+        if (c2_fixture) {
+            __printf("C2 sample queries=%d local_scene=%d\n",dynamic_world_light_queries,local_scene);
+            preflush_commands=renderer.cmd_count;
+            long preflush_start=render_monotonic_us();
+            if (toy_renderer_flush(&renderer)<0) return 1;
+            preflush_raster_us=render_monotonic_us()-preflush_start;
+            rasterfall_viewmodel_render(&renderer,&game,active_effects,local_scene);
+            uint64_t after=1469598103934665603ULL;
+            const unsigned char *truth=(const unsigned char *)&game;
+            for(size_t byte=0;byte<sizeof(game);byte++)
+                after=(after^truth[byte])*1099511628211ULL;
+            if(after!=fixture_hash || dynamic_world_light_queries!=(i>=15 ? 4 : 9)) return 1;
+            __printf("C2 gameplay=UNCHANGED query-budget=PASS\n");
+            game = *saved_fixture_game;
+            tlibc_free(saved_fixture_game);
+        }
+        submitted_commands = renderer.cmd_count + preflush_commands;
         submitted_triangles = renderer.submitted_triangles;
+        raster_start = render_monotonic_us();
         stage_result = toy_renderer_flush(&renderer);
+        raster_us = render_monotonic_us() - raster_start + preflush_raster_us;
+        frame_us = render_monotonic_us() - frame_start;
         if (renderer.cmd_overflow || stage_result < 0 ||
             rasterfall_hud_dump_bmp(path, &surface) < 0) {
             toy_renderer_destroy(&renderer); tlibc_free(pixels); return 1;
@@ -863,6 +980,8 @@ static int capture_map_world(const char *output_dir,
                  environment ? "environment" : "character", camera.body.x, camera.body.z, path);
         __printf("rasterfall: character world capture raster commands=%d triangles=%lu pixels=%d\n",
                  submitted_commands, submitted_triangles, stage_result);
+        __printf("rasterfall: world capture frame_us=%ld raster_us=%ld (cold headless frame; no present or pacing)\n",
+                 frame_us, raster_us);
     }
     result = 0;
     return result;

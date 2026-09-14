@@ -1,6 +1,8 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-14
+> 源码核对基线补充：Static World Lighting V2 Phase C2：正常 actor/enemy root 单点采样，世界武器继承 owner，本地第三人称/viewmodel 共用 sample，保留 form/material policy；固定诊断例外见 [Phase C2](static-world-lighting-phase-c2.md)。
+> 源码核对基线补充：Static World Lighting V2 Phase C1：正常 map static RMESH 在 `render_static_props()` 按实例世界原点采样一次 V2，通过已有 scene override 与原 form lighting 组合；诊断/gallery 不变。见 [Phase C1](static-world-lighting-phase-c1.md)。
 > 源码核对基线补充：Static World Lighting V2 Phase B：64×48 Runtime collision ray/AABB field；主地面、primitive architecture、boundary walls、ramp/platform 接入，既有顶点亮度光栅路径平滑建筑平面；static RMESH/actor 保留 V1/bypass 策略。
 > 源码核对基线补充：Static World Lighting V2 Phase A：world-light bake/sample 移入独立模块，保持 V1 算法与原 triangle helper 的策略/舍入；static RMESH 与主地面仍 bypass。
 > 源码核对基线补充：Campaign Continuous Wall / Floor 与 Component Collision：`boundary_wall` 为长度参数化 RFU 墙体；`attr.collision=component|boundary|none` 在 Runtime Map 展开独立碰撞，保留 object owner ID；布局导出调用 C inspector 获取实际碰撞。
@@ -430,3 +432,17 @@ renderer 不修改玩法。墙脚、主体、压顶不叠共面大板；扶壁�
 地面 `draw_partitioned_floor()` 改为 2048 RFU 大板和低对比接缝，边缘裁到 world bounds，
 继续与区域 paint 在同一平面分区；WHU authored-ground 保留颜色，不添加接缝。
 未新增纹理或 floor mesh。观察入口仍为 `--environment-capture` / environment_sheet.py。
+
+## Static RMESH 的 V2 环境光
+
+正常地图的工业设备、facility/power-yard 及 `env_arch_*` 都经 `render_static_props()` →
+`rasterfall_render_static_prop()` → `render_gallery_model_range()`。地图遍历按实例世界原点
+（`x, -900 + map_prop.y, z`）查询一次 `rasterfall_world_light_at()`，将 V2 Q8 因子临时放入
+已有 `active_model_scene_light_override_q8`，提交后恢复。RMESH 不开启 planar V2 scope，
+不在三角形/顶点热循环重复查询。boundary wall 保留 Phase B 的独立 procedural 路径。
+
+环境因子与原 normal/form 因子相乘，纹理提交直接组合 Q8；无 role 的 flat 材质保留
+原 form 调色再乘 scene 的整数舍入。material policy 与 fog 仍属于已有提交层；static prop
+保留原 gallery 无雾策略。gallery、独立诊断、actors、RFCHAR 和 viewmodel 不迁移。
+设施由多个实例构件组成，第一版不引入大型 RMESH 细采样；证据和边界见
+[Phase C1](static-world-lighting-phase-c1.md)。`--logic-test` 包含实际模型命令的 scene × form 回归。
