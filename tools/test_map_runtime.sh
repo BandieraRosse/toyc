@@ -1,6 +1,9 @@
 #!/bin/sh
 set -eu
 
+# Catch capacity-sized Map IR locals overflowing the Windows startup stack.
+ulimit -s 512
+
 root=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 runtime="$root/build/map-runtime-test"
 map="$root/rasterfall/tests/map_v1_runtime.map"

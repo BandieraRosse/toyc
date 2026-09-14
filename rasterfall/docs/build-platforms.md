@@ -1,6 +1,7 @@
 # 构建、平台与验证
 
 > 文档更新：2026-09-14
+> 源码核对基线补充：Windows 启动地图加载的容量型 Map IR 改为临时堆分配，成功与失败均释放；不依赖扩大线程栈，详见 map-format.md 的 Runtime Bridge。
 > 源码核对基线补充：Static World Lighting V2 Phase D Linux GCC freestanding / Windows MinGW 构建通过；Linux headless capture 验收，Windows仅build，Wayland交互环境不可用，见 [Phase D](static-world-lighting-phase-d.md)。
 > 源码核对基线补充：Static World Lighting Phase B 复用现有编译单元与顶点亮度 rasterizer；Linux/self world-light 规则补 Runtime Map header 依赖，Windows 既有 GAME_SRCS/-MMD 覆盖；ray slab 的 double 仅用于 bake，不引入宿主 libc。
 > 源码核对基线补充：Static World Lighting Phase A 的 `rasterfall_world_light.c` 已接入 Linux Game 对象、适用 self 规则与 Windows GAME_SRCS；无宿主 libc 或新资源依赖。

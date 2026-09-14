@@ -356,209 +356,217 @@ bad:
 
 int rf_map_runtime_load(struct rf_map_runtime *runtime, const char *path)
 {
-    struct rasterfall_map_ir parsed;
+    struct rasterfall_map_ir *parsed;
     struct rf_map_runtime_impl *impl;
     int i;
     if (!runtime || !path) return -1;
     rf_map_runtime_unload(runtime);
-    if (rasterfall_map_ir_parse_file(path, &parsed) < 0) {
-        runtime->error_line = parsed.error_line;
-        copy_string(runtime->error, sizeof(runtime->error), parsed.error);
+    /* The capacity-sized IR is about 1 MiB: keep it off the Windows stack. */
+    parsed = (struct rasterfall_map_ir *)tlibc_malloc(sizeof(*parsed));
+    if (!parsed) {
+        copy_string(runtime->error, sizeof(runtime->error),
+                    "out of memory allocating map IR");
         return -1;
+    }
+    if (rasterfall_map_ir_parse_file(path, parsed) < 0) {
+        runtime->error_line = parsed->error_line;
+        copy_string(runtime->error, sizeof(runtime->error), parsed->error);
+        tlibc_free(parsed); return -1;
     }
     impl = (struct rf_map_runtime_impl *)tlibc_malloc(sizeof(*impl));
     if (!impl) {
         runtime->error_line = 0;
         copy_string(runtime->error, sizeof(runtime->error),
                     "out of memory allocating runtime map");
-        return -1;
+        tlibc_free(parsed); return -1;
     }
     __memset(impl, 0, sizeof(*impl));
-    impl->world.bounds.min_x = parsed.world.bounds.min_x;
-    impl->world.bounds.max_x = parsed.world.bounds.max_x;
-    impl->world.bounds.min_z = parsed.world.bounds.min_z;
-    impl->world.bounds.max_z = parsed.world.bounds.max_z;
-    impl->world.room_limit = parsed.world.room_limit;
-    impl->world.has_room_limit = parsed.world.has_room_limit;
-    for (i = 0; i < parsed.world.attribute_count; i++)
-        if (!strcmp(parsed.world.attributes[i].key, "identity"))
+    impl->world.bounds.min_x = parsed->world.bounds.min_x;
+    impl->world.bounds.max_x = parsed->world.bounds.max_x;
+    impl->world.bounds.min_z = parsed->world.bounds.min_z;
+    impl->world.bounds.max_z = parsed->world.bounds.max_z;
+    impl->world.room_limit = parsed->world.room_limit;
+    impl->world.has_room_limit = parsed->world.has_room_limit;
+    for (i = 0; i < parsed->world.attribute_count; i++)
+        if (!strcmp(parsed->world.attributes[i].key, "identity"))
             copy_string(impl->world.identity, sizeof(impl->world.identity),
-                        parsed.world.attributes[i].value);
-    impl->collision_count = parsed.collision_count;
-    impl->surface_count = parsed.surface_count;
-    impl->render_count = parsed.render_count;
+                        parsed->world.attributes[i].value);
+    impl->collision_count = parsed->collision_count;
+    impl->surface_count = parsed->surface_count;
+    impl->render_count = parsed->render_count;
     for (i = 0; i < impl->collision_count; i++) {
         copy_string(impl->collisions[i].id, RF_MAP_RUNTIME_ID_CAP,
-                    parsed.collisions[i].id);
+                    parsed->collisions[i].id);
         copy_string(impl->collisions[i].shape, RF_MAP_RUNTIME_KIND_CAP,
-                    parsed.collisions[i].shape);
-        impl->collisions[i].bounds.min_x = parsed.collisions[i].bounds.min_x;
-        impl->collisions[i].bounds.max_x = parsed.collisions[i].bounds.max_x;
-        impl->collisions[i].bounds.min_z = parsed.collisions[i].bounds.min_z;
-        impl->collisions[i].bounds.max_z = parsed.collisions[i].bounds.max_z;
-        impl->collisions[i].height = parsed.collisions[i].height;
-        impl->collisions[i].height2 = parsed.collisions[i].height2;
-        impl->collisions[i].has_height2 = parsed.collisions[i].has_height2;
-        impl->collisions[i].collision = parsed.collisions[i].collision;
-        impl->collisions[i].visible = parsed.collisions[i].visible;
-        impl->collisions[i].walkable = parsed.collisions[i].walkable;
-        impl->collisions[i].blocks_airborne = parsed.collisions[i].blocks_airborne;
-        impl->collisions[i].has_color = parsed.collisions[i].has_color;
+                    parsed->collisions[i].shape);
+        impl->collisions[i].bounds.min_x = parsed->collisions[i].bounds.min_x;
+        impl->collisions[i].bounds.max_x = parsed->collisions[i].bounds.max_x;
+        impl->collisions[i].bounds.min_z = parsed->collisions[i].bounds.min_z;
+        impl->collisions[i].bounds.max_z = parsed->collisions[i].bounds.max_z;
+        impl->collisions[i].height = parsed->collisions[i].height;
+        impl->collisions[i].height2 = parsed->collisions[i].height2;
+        impl->collisions[i].has_height2 = parsed->collisions[i].has_height2;
+        impl->collisions[i].collision = parsed->collisions[i].collision;
+        impl->collisions[i].visible = parsed->collisions[i].visible;
+        impl->collisions[i].walkable = parsed->collisions[i].walkable;
+        impl->collisions[i].blocks_airborne = parsed->collisions[i].blocks_airborne;
+        impl->collisions[i].has_color = parsed->collisions[i].has_color;
         if (impl->collisions[i].has_color)
             copy_string(impl->collisions[i].color, RF_MAP_RUNTIME_KIND_CAP,
-                        parsed.collisions[i].color);
-        impl->collisions[i].has_role = parsed.collisions[i].has_role;
+                        parsed->collisions[i].color);
+        impl->collisions[i].has_role = parsed->collisions[i].has_role;
         if (impl->collisions[i].has_role)
             copy_string(impl->collisions[i].role, RF_MAP_RUNTIME_KIND_CAP,
-                        parsed.collisions[i].role);
-        if (extension_int(parsed.collisions[i].attributes,
-                          parsed.collisions[i].attribute_count, "legacy_index",
+                        parsed->collisions[i].role);
+        if (extension_int(parsed->collisions[i].attributes,
+                          parsed->collisions[i].attribute_count, "legacy_index",
                           &impl->collisions[i].legacy_index) == 0)
             impl->collisions[i].has_legacy_index = 1;
-        impl->collisions[i].line = parsed.collisions[i].line;
+        impl->collisions[i].line = parsed->collisions[i].line;
     }
     for (i = 0; i < impl->surface_count; i++) {
         copy_string(impl->surfaces[i].id, RF_MAP_RUNTIME_ID_CAP,
-                    parsed.surfaces[i].id);
+                    parsed->surfaces[i].id);
         copy_string(impl->surfaces[i].kind, RF_MAP_RUNTIME_KIND_CAP,
-                    parsed.surfaces[i].kind);
-        impl->surfaces[i].bounds.min_x = parsed.surfaces[i].bounds.min_x;
-        impl->surfaces[i].bounds.max_x = parsed.surfaces[i].bounds.max_x;
-        impl->surfaces[i].bounds.min_z = parsed.surfaces[i].bounds.min_z;
-        impl->surfaces[i].bounds.max_z = parsed.surfaces[i].bounds.max_z;
-        impl->surfaces[i].height = parsed.surfaces[i].height;
-        impl->surfaces[i].height2 = parsed.surfaces[i].height2;
-        impl->surfaces[i].has_height2 = parsed.surfaces[i].has_height2;
-        impl->surfaces[i].has_axis = parsed.surfaces[i].has_axis;
+                    parsed->surfaces[i].kind);
+        impl->surfaces[i].bounds.min_x = parsed->surfaces[i].bounds.min_x;
+        impl->surfaces[i].bounds.max_x = parsed->surfaces[i].bounds.max_x;
+        impl->surfaces[i].bounds.min_z = parsed->surfaces[i].bounds.min_z;
+        impl->surfaces[i].bounds.max_z = parsed->surfaces[i].bounds.max_z;
+        impl->surfaces[i].height = parsed->surfaces[i].height;
+        impl->surfaces[i].height2 = parsed->surfaces[i].height2;
+        impl->surfaces[i].has_height2 = parsed->surfaces[i].has_height2;
+        impl->surfaces[i].has_axis = parsed->surfaces[i].has_axis;
         if (impl->surfaces[i].has_axis)
             copy_string(impl->surfaces[i].axis, RF_MAP_RUNTIME_KIND_CAP,
-                        parsed.surfaces[i].axis);
-        impl->surfaces[i].has_material = parsed.surfaces[i].has_material;
+                        parsed->surfaces[i].axis);
+        impl->surfaces[i].has_material = parsed->surfaces[i].has_material;
         if (impl->surfaces[i].has_material)
             copy_string(impl->surfaces[i].material, RF_MAP_RUNTIME_KIND_CAP,
-                        parsed.surfaces[i].material);
+                        parsed->surfaces[i].material);
         {
-            const char *ref = extension_text(parsed.surfaces[i].attributes,
-                parsed.surfaces[i].attribute_count, "collision_id");
-            if (extension_text(parsed.surfaces[i].attributes,
-                    parsed.surfaces[i].attribute_count, "legacy_index")) {
-                runtime->error_line = parsed.surfaces[i].line;
+            const char *ref = extension_text(parsed->surfaces[i].attributes,
+                parsed->surfaces[i].attribute_count, "collision_id");
+            if (extension_text(parsed->surfaces[i].attributes,
+                    parsed->surfaces[i].attribute_count, "legacy_index")) {
+                runtime->error_line = parsed->surfaces[i].line;
                 copy_string(runtime->error, sizeof(runtime->error),
                             "surface legacy_index removed; use collision_id");
-                tlibc_free(impl); return -1;
+                tlibc_free(impl); tlibc_free(parsed); return -1;
             }
             if (ref && (!ref[0] || strlen(ref) >= RF_MAP_RUNTIME_ID_CAP)) {
-                runtime->error_line = parsed.surfaces[i].line;
+                runtime->error_line = parsed->surfaces[i].line;
                 copy_string(runtime->error, sizeof(runtime->error), "invalid surface collision_id");
-                tlibc_free(impl); return -1;
+                tlibc_free(impl); tlibc_free(parsed); return -1;
             }
             if (ref) copy_string(impl->surfaces[i].collision_id,
                                  RF_MAP_RUNTIME_ID_CAP, ref);
         }
-        impl->surfaces[i].line = parsed.surfaces[i].line;
+        impl->surfaces[i].line = parsed->surfaces[i].line;
     }
-    impl->region_count = parsed.region_count;
+    impl->region_count = parsed->region_count;
     for (i = 0; i < impl->region_count; i++) {
         copy_string(impl->regions[i].id, RF_MAP_RUNTIME_ID_CAP,
-                    parsed.regions[i].id);
+                    parsed->regions[i].id);
         copy_string(impl->regions[i].kind, RF_MAP_RUNTIME_KIND_CAP,
-                    parsed.regions[i].kind);
-        impl->regions[i].bounds.min_x = parsed.regions[i].bounds.min_x;
-        impl->regions[i].bounds.max_x = parsed.regions[i].bounds.max_x;
-        impl->regions[i].bounds.min_z = parsed.regions[i].bounds.min_z;
-        impl->regions[i].bounds.max_z = parsed.regions[i].bounds.max_z;
+                    parsed->regions[i].kind);
+        impl->regions[i].bounds.min_x = parsed->regions[i].bounds.min_x;
+        impl->regions[i].bounds.max_x = parsed->regions[i].bounds.max_x;
+        impl->regions[i].bounds.min_z = parsed->regions[i].bounds.min_z;
+        impl->regions[i].bounds.max_z = parsed->regions[i].bounds.max_z;
         impl->regions[i].start_cy = 1024;
-        if (extension_int(parsed.regions[i].attributes,
-                          parsed.regions[i].attribute_count, "sy",
+        if (extension_int(parsed->regions[i].attributes,
+                          parsed->regions[i].attribute_count, "sy",
                           &impl->regions[i].start_sy) < 0 ||
-            extension_int(parsed.regions[i].attributes,
-                          parsed.regions[i].attribute_count, "cy",
+            extension_int(parsed->regions[i].attributes,
+                          parsed->regions[i].attribute_count, "cy",
                           &impl->regions[i].start_cy) < 0 ||
             impl->regions[i].start_sy < -1024 || impl->regions[i].start_sy > 1024 ||
             impl->regions[i].start_cy < -1024 || impl->regions[i].start_cy > 1024 ||
             (!impl->regions[i].start_sy && !impl->regions[i].start_cy)) {
             tlibc_free(impl);
             copy_string(runtime->error, sizeof(runtime->error), "invalid region facing sy/cy");
-            runtime->error_line = parsed.regions[i].line;
-            return -1;
+            runtime->error_line = parsed->regions[i].line;
+            tlibc_free(impl);
+            tlibc_free(parsed); return -1;
         }
-        if (extension_int(parsed.regions[i].attributes,
-                          parsed.regions[i].attribute_count, "legacy_index",
+        if (extension_int(parsed->regions[i].attributes,
+                          parsed->regions[i].attribute_count, "legacy_index",
                           &impl->regions[i].legacy_index) == 0)
             impl->regions[i].has_legacy_index = 1;
-        impl->regions[i].line = parsed.regions[i].line;
+        impl->regions[i].line = parsed->regions[i].line;
     }
-    impl->interaction_count = parsed.interaction_count;
+    impl->interaction_count = parsed->interaction_count;
     for (i = 0; i < impl->interaction_count; i++) {
         copy_string(impl->interactions[i].id, RF_MAP_RUNTIME_ID_CAP,
-                    parsed.interactions[i].id);
+                    parsed->interactions[i].id);
         copy_string(impl->interactions[i].action, RF_MAP_RUNTIME_ACTION_CAP,
-                    parsed.interactions[i].action);
+                    parsed->interactions[i].action);
         impl->interactions[i].action_id = rf_map_runtime_action_from_name(
             impl->interactions[i].action);
         if (impl->interactions[i].action_id == RF_MAP_ACTION_UNKNOWN) {
-            runtime->error_line = parsed.interactions[i].line;
+            runtime->error_line = parsed->interactions[i].line;
             snprintf(runtime->error, sizeof(runtime->error),
                        "unknown interaction action %s",
                        impl->interactions[i].action);
             tlibc_free(impl);
-            return -1;
+            tlibc_free(parsed); return -1;
         }
-        if (extension_int(parsed.interactions[i].attributes,
-                          parsed.interactions[i].attribute_count, "legacy_index",
+        if (extension_int(parsed->interactions[i].attributes,
+                          parsed->interactions[i].attribute_count, "legacy_index",
                           &impl->interactions[i].legacy_index) == 0)
             impl->interactions[i].has_legacy_index = 1;
-        impl->interactions[i].x = parsed.interactions[i].x;
-        impl->interactions[i].y = parsed.interactions[i].y;
-        impl->interactions[i].z = parsed.interactions[i].z;
-        impl->interactions[i].line = parsed.interactions[i].line;
+        impl->interactions[i].x = parsed->interactions[i].x;
+        impl->interactions[i].y = parsed->interactions[i].y;
+        impl->interactions[i].z = parsed->interactions[i].z;
+        impl->interactions[i].line = parsed->interactions[i].line;
     }
-    impl->actor_spawn_count = parsed.actor_spawn_count;
+    impl->actor_spawn_count = parsed->actor_spawn_count;
     for (i = 0; i < impl->actor_spawn_count; i++) {
-        copy_string(impl->actor_spawns[i].id, RF_MAP_RUNTIME_ID_CAP, parsed.actor_spawns[i].id);
-        copy_string(impl->actor_spawns[i].class_name, RF_MAP_RUNTIME_KIND_CAP, parsed.actor_spawns[i].class_name);
-        impl->actor_spawns[i].base_id = parsed.actor_spawns[i].base_id;
-        impl->actor_spawns[i].x = parsed.actor_spawns[i].x;
-        impl->actor_spawns[i].y = parsed.actor_spawns[i].y;
-        impl->actor_spawns[i].z = parsed.actor_spawns[i].z;
-        impl->actor_spawns[i].downed = parsed.actor_spawns[i].downed;
-        impl->actor_spawns[i].has_weapon = parsed.actor_spawns[i].has_weapon;
-        if (parsed.actor_spawns[i].has_weapon)
-            copy_string(impl->actor_spawns[i].weapon, RF_MAP_RUNTIME_KIND_CAP, parsed.actor_spawns[i].weapon);
-        if (extension_int(parsed.actor_spawns[i].attributes, parsed.actor_spawns[i].attribute_count, "legacy_index", &impl->actor_spawns[i].legacy_index) == 0)
+        copy_string(impl->actor_spawns[i].id, RF_MAP_RUNTIME_ID_CAP, parsed->actor_spawns[i].id);
+        copy_string(impl->actor_spawns[i].class_name, RF_MAP_RUNTIME_KIND_CAP, parsed->actor_spawns[i].class_name);
+        impl->actor_spawns[i].base_id = parsed->actor_spawns[i].base_id;
+        impl->actor_spawns[i].x = parsed->actor_spawns[i].x;
+        impl->actor_spawns[i].y = parsed->actor_spawns[i].y;
+        impl->actor_spawns[i].z = parsed->actor_spawns[i].z;
+        impl->actor_spawns[i].downed = parsed->actor_spawns[i].downed;
+        impl->actor_spawns[i].has_weapon = parsed->actor_spawns[i].has_weapon;
+        if (parsed->actor_spawns[i].has_weapon)
+            copy_string(impl->actor_spawns[i].weapon, RF_MAP_RUNTIME_KIND_CAP, parsed->actor_spawns[i].weapon);
+        if (extension_int(parsed->actor_spawns[i].attributes, parsed->actor_spawns[i].attribute_count, "legacy_index", &impl->actor_spawns[i].legacy_index) == 0)
             impl->actor_spawns[i].has_legacy_index = 1;
-        impl->actor_spawns[i].line = parsed.actor_spawns[i].line;
+        impl->actor_spawns[i].line = parsed->actor_spawns[i].line;
     }
-    impl->pickup_count = parsed.pickup_count;
+    impl->pickup_count = parsed->pickup_count;
     for (i = 0; i < impl->pickup_count; i++) {
-        copy_string(impl->pickups[i].id, RF_MAP_RUNTIME_ID_CAP, parsed.pickups[i].id);
-        copy_string(impl->pickups[i].kind, RF_MAP_RUNTIME_KIND_CAP, parsed.pickups[i].kind);
-        impl->pickups[i].x = parsed.pickups[i].x;
-        impl->pickups[i].y = parsed.pickups[i].y;
-        impl->pickups[i].z = parsed.pickups[i].z;
-        if (extension_int(parsed.pickups[i].attributes, parsed.pickups[i].attribute_count, "legacy_index", &impl->pickups[i].legacy_index) == 0)
+        copy_string(impl->pickups[i].id, RF_MAP_RUNTIME_ID_CAP, parsed->pickups[i].id);
+        copy_string(impl->pickups[i].kind, RF_MAP_RUNTIME_KIND_CAP, parsed->pickups[i].kind);
+        impl->pickups[i].x = parsed->pickups[i].x;
+        impl->pickups[i].y = parsed->pickups[i].y;
+        impl->pickups[i].z = parsed->pickups[i].z;
+        if (extension_int(parsed->pickups[i].attributes, parsed->pickups[i].attribute_count, "legacy_index", &impl->pickups[i].legacy_index) == 0)
             impl->pickups[i].has_legacy_index = 1;
-        impl->pickups[i].line = parsed.pickups[i].line;
+        impl->pickups[i].line = parsed->pickups[i].line;
     }
-    impl->object_count = parsed.object_count;
+    impl->object_count = parsed->object_count;
     for (i = 0; i < impl->object_count; i++) {
-        const char *mode = extension_text(parsed.objects[i].attributes,
-                                          parsed.objects[i].attribute_count, "collision");
-        copy_string(impl->objects[i].id, RF_MAP_RUNTIME_ID_CAP, parsed.objects[i].id);
-        copy_string(impl->objects[i].kind, RF_MAP_RUNTIME_KIND_CAP, parsed.objects[i].kind);
-        impl->objects[i].x = parsed.objects[i].x;
-        impl->objects[i].y = parsed.objects[i].y;
-        impl->objects[i].z = parsed.objects[i].z;
-        impl->objects[i].yaw = parsed.objects[i].yaw;
-        impl->objects[i].scale = parsed.objects[i].scale;
-        if (extension_int(parsed.objects[i].attributes, parsed.objects[i].attribute_count, "legacy_index", &impl->objects[i].legacy_index) == 0)
+        const char *mode = extension_text(parsed->objects[i].attributes,
+                                          parsed->objects[i].attribute_count, "collision");
+        copy_string(impl->objects[i].id, RF_MAP_RUNTIME_ID_CAP, parsed->objects[i].id);
+        copy_string(impl->objects[i].kind, RF_MAP_RUNTIME_KIND_CAP, parsed->objects[i].kind);
+        impl->objects[i].x = parsed->objects[i].x;
+        impl->objects[i].y = parsed->objects[i].y;
+        impl->objects[i].z = parsed->objects[i].z;
+        impl->objects[i].yaw = parsed->objects[i].yaw;
+        impl->objects[i].scale = parsed->objects[i].scale;
+        if (extension_int(parsed->objects[i].attributes, parsed->objects[i].attribute_count, "legacy_index", &impl->objects[i].legacy_index) == 0)
             impl->objects[i].has_legacy_index = 1;
-        impl->objects[i].line = parsed.objects[i].line;
-        if (extension_int(parsed.objects[i].attributes, parsed.objects[i].attribute_count,
+        impl->objects[i].line = parsed->objects[i].line;
+        if (extension_int(parsed->objects[i].attributes, parsed->objects[i].attribute_count,
                           "length", &impl->objects[i].length) < 0 ||
             (mode && strcmp(mode, "none") && strcmp(mode, "component") && strcmp(mode, "boundary"))) {
             component_error(runtime, impl->objects + i, "invalid collision mode or length");
-            tlibc_free(impl); return -1;
+            tlibc_free(impl); tlibc_free(parsed); return -1;
         }
         impl->objects[i].collision_mode = !mode || !strcmp(mode, "none") ? 0 :
                                          !strcmp(mode, "boundary") ? 2 : 1;
@@ -567,60 +575,60 @@ int rf_map_runtime_load(struct rf_map_runtime *runtime, const char *path)
             if (impl->objects[i].yaw % 90 || impl->objects[i].scale != 1000 ||
                 rf_map_wall_visual_boxes(impl->objects[i].length, parts) < 0) {
                 component_error(runtime, impl->objects + i, "boundary_wall requires valid length, cardinal yaw and scale=1000");
-                tlibc_free(impl); return -1;
+                tlibc_free(impl); tlibc_free(parsed); return -1;
             }
         }
         if (expand_object_collision(runtime, impl, impl->objects + i) < 0) {
-            tlibc_free(impl); return -1;
+            tlibc_free(impl); tlibc_free(parsed); return -1;
         }
     }
-    impl->render_count = parsed.render_count;
+    impl->render_count = parsed->render_count;
     for (i = 0; i < impl->render_count; i++) {
         int j;
         copy_string(impl->renders[i].id, RF_MAP_RUNTIME_ID_CAP,
-                    parsed.renders[i].id);
+                    parsed->renders[i].id);
         copy_string(impl->renders[i].kind, RF_MAP_RUNTIME_KIND_CAP,
-                    parsed.renders[i].kind);
-        impl->renders[i].bounds.min_x = parsed.renders[i].bounds.min_x;
-        impl->renders[i].bounds.max_x = parsed.renders[i].bounds.max_x;
-        impl->renders[i].bounds.min_z = parsed.renders[i].bounds.min_z;
-        impl->renders[i].bounds.max_z = parsed.renders[i].bounds.max_z;
-        impl->renders[i].has_position = parsed.renders[i].has_position;
-        impl->renders[i].x = parsed.renders[i].x;
-        impl->renders[i].y = parsed.renders[i].y;
-        impl->renders[i].z = parsed.renders[i].z;
-        impl->renders[i].has_asset = parsed.renders[i].has_asset;
+                    parsed->renders[i].kind);
+        impl->renders[i].bounds.min_x = parsed->renders[i].bounds.min_x;
+        impl->renders[i].bounds.max_x = parsed->renders[i].bounds.max_x;
+        impl->renders[i].bounds.min_z = parsed->renders[i].bounds.min_z;
+        impl->renders[i].bounds.max_z = parsed->renders[i].bounds.max_z;
+        impl->renders[i].has_position = parsed->renders[i].has_position;
+        impl->renders[i].x = parsed->renders[i].x;
+        impl->renders[i].y = parsed->renders[i].y;
+        impl->renders[i].z = parsed->renders[i].z;
+        impl->renders[i].has_asset = parsed->renders[i].has_asset;
         if (impl->renders[i].has_asset)
             copy_string(impl->renders[i].asset, RF_MAP_RUNTIME_VALUE_CAP,
-                        parsed.renders[i].asset);
-        impl->renders[i].height = parsed.renders[i].height;
-        impl->renders[i].has_height = parsed.renders[i].has_height;
-        impl->renders[i].has_color = parsed.renders[i].has_color;
+                        parsed->renders[i].asset);
+        impl->renders[i].height = parsed->renders[i].height;
+        impl->renders[i].has_height = parsed->renders[i].has_height;
+        impl->renders[i].has_color = parsed->renders[i].has_color;
         if (impl->renders[i].has_color)
             copy_string(impl->renders[i].color, RF_MAP_RUNTIME_VALUE_CAP,
-                        parsed.renders[i].color);
-        impl->renders[i].attribute_count = parsed.renders[i].attribute_count;
+                        parsed->renders[i].color);
+        impl->renders[i].attribute_count = parsed->renders[i].attribute_count;
         for (j = 0; j < impl->renders[i].attribute_count; j++) {
             copy_string(impl->renders[i].attributes[j].key,
                         RF_MAP_RUNTIME_KIND_CAP,
-                        parsed.renders[i].attributes[j].key);
+                        parsed->renders[i].attributes[j].key);
             copy_string(impl->renders[i].attributes[j].value,
                         RF_MAP_RUNTIME_VALUE_CAP,
-                        parsed.renders[i].attributes[j].value);
+                        parsed->renders[i].attributes[j].value);
         }
-        if (extension_int(parsed.renders[i].attributes,
-                          parsed.renders[i].attribute_count, "legacy_index",
+        if (extension_int(parsed->renders[i].attributes,
+                          parsed->renders[i].attribute_count, "legacy_index",
                           &impl->renders[i].legacy_index) == 0)
             impl->renders[i].has_legacy_index = 1;
-        impl->renders[i].line = parsed.renders[i].line;
+        impl->renders[i].line = parsed->renders[i].line;
     }
     /* Generated IDs occupy the same stable-ID namespace as source records. */
-    for (i = parsed.collision_count; i < impl->collision_count; i++) {
+    for (i = parsed->collision_count; i < impl->collision_count; i++) {
         int j;
         const struct rf_map_runtime_collision *c = impl->collisions + i;
 #define CHECK_SOURCE_ID(field, count) \
-        for (j = 0; j < parsed.count; j++) \
-            if (!strcmp(c->id, parsed.field[j].id)) goto conflicting_generated_id;
+        for (j = 0; j < parsed->count; j++) \
+            if (!strcmp(c->id, parsed->field[j].id)) goto conflicting_generated_id;
         CHECK_SOURCE_ID(collisions, collision_count)
         CHECK_SOURCE_ID(regions, region_count)
         CHECK_SOURCE_ID(surfaces, surface_count)
@@ -634,7 +642,7 @@ int rf_map_runtime_load(struct rf_map_runtime *runtime, const char *path)
 conflicting_generated_id:
         runtime->error_line = c->line;
         copy_string(runtime->error, sizeof(runtime->error), "generated collision ID conflicts with source record");
-        tlibc_free(impl); return -1;
+        tlibc_free(impl); tlibc_free(parsed); return -1;
     }
     /* Resolve surface ownership after component collisions have expanded. */
     for (i = 0; i < impl->surface_count; i++) {
@@ -657,15 +665,16 @@ conflicting_generated_id:
         continue;
 invalid_surface_reference:
         runtime->error_line = surface->line;
-        tlibc_free(impl); return -1;
+        tlibc_free(impl); tlibc_free(parsed); return -1;
     }
     if (validate_projection_slots(runtime, impl) < 0) {
-        tlibc_free(impl); return -1;
+        tlibc_free(impl); tlibc_free(parsed); return -1;
     }
     sort_runtime_records(impl);
     runtime->impl = impl;
     runtime->error_line = 0;
     runtime->error[0] = '\0';
+    tlibc_free(parsed);
     return 0;
 }
 

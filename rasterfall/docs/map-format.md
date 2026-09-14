@@ -1,6 +1,7 @@
 # Rasterfall 地图格式
 
 > 文档更新：2026-09-14
+> 源码核对基线补充：Windows 启动地图加载的容量型 Map IR 改为临时堆分配，成功与失败均释放；不依赖扩大线程栈，详见 map-format.md 的 Runtime Bridge。
 > 源码核对基线补充：Static World Lighting Phase B 只读 Runtime collision 的 bounds/base_y/height 和 surface 的 kind/height/height2/axis 烘焙；未改地图格式、稳定 ID 或 collision/gameplay 语义。单层高度选择限制见 static-world-lighting-phase-b.md。
 > 源码核对基线补充：Surface 以 `attr.collision_id` 绑定 Runtime collision 稳定 ID；加载检查引用与唯一绑定，Gameplay Projection 按 ID 合并几何，不再使用 surface legacy_index。
 > 源码核对基线补充：Campaign Continuous Wall / Floor 与 Component Collision：`boundary_wall` 为长度参数化 RFU 墙体；`attr.collision=component|boundary|none` 在 Runtime Map 展开独立碰撞，保留 object owner ID；布局导出调用 C inspector 获取实际碰撞。
@@ -64,6 +65,9 @@ collision record 的碰撞标志和路径。例如 `attr.collision_id=ground_wor
 写入现有 primitive/draw 兼容结构；具体数量以 `map-inspect` 和 `map-runtime-test` 的当前输出为准。
 
 ## Map IR Runtime Bridge
+
+`rf_map_runtime_load()` 在堆上分配容量型临时 Map IR，转换完成或失败后释放；
+Runtime Map 继续独立持有运行时数据。避免约 1 MiB 的局部 IR 占用 Windows 启动调用栈。
 
 `rasterfall/lib/rasterfall_map_runtime.c` 将 V1 parser 的结果复制为不暴露 parser 内部结构的运行时视图，
 公开 region、interaction、actor spawn、pickup、object 和 collision 的稳定 ID 查询；各类记录按稳定 ID 规范化，
