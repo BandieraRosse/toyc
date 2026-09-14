@@ -1,6 +1,7 @@
 # Rasterfall 资产转换与诊断
 
-> 文档更新：2026-09-13
+> 文档更新：2026-09-14
+> 源码核对基线补充：动漫角色正常 world/展示渲染统一优先 LOD2，缺失时按 LOD1 → 原模型回退；距离仅控制可见性与姿态更新。Campaign Maid 四人内容武器为 AK。
 > 源码核对基线补充：Temporary Campus Kit V0复用Builder/GLB/importer，campus IDs 24–35无默认碰撞；tools/campus_kit_round.py提供米制完整性、确定性和独立组图。
 > 源码核对基线补充：tools/architecture_round.py 编排同一 Builder、industrial manifest 和 importer；rf_arch_* 为零纹理双材质公开 RMESH，GLB/截图确定性比较。
 > 源码核对基线补充：power_unit / gate_frame / control_cabinet 沿用工业 Builder、GLB、manifest、统一 import、公开 RMESH/TTEX 和 registry；递归 embedded/package 规则涵盖新资源。

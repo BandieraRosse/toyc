@@ -1,6 +1,7 @@
 # 玩法、会话、地图与 AI
 
 > 文档更新：2026-09-14
+> 源码核对基线补充：动漫角色正常 world/展示渲染统一优先 LOD2，缺失时按 LOD1 → 原模型回退；距离仅控制可见性与姿态更新。Campaign Maid 四人内容武器为 AK。
 > 源码核对基线补充：Surface 以 `attr.collision_id` 绑定 Runtime collision 稳定 ID；加载检查引用与唯一绑定，Gameplay Projection 按 ID 合并几何，不再使用 surface legacy_index。
 > 源码核对基线补充：Campaign Continuous Wall / Floor 与 Component Collision：`boundary_wall` 为长度参数化 RFU 墙体；`attr.collision=component|boundary|none` 在 Runtime Map 展开独立碰撞，保留 object owner ID；布局导出调用 C inspector 获取实际碰撞。
 > 源码核对基线补充：环境整合期间恢复旧开发坡道与墙顶平台的高端重叠连续性；坡面出生与 Tank impact 的逻辑 fixture 修正；地图权威碰撞、AI、波次和 spawn 配置不变。
@@ -67,7 +68,7 @@ session 的本地复活、商店控制锁、交互死亡判断和托管武器决
 ## Hurd Relay gameplay foundation
 
 session reset 先在原坐标 `(-12000, 0)` 和原 flag 1 恢复四名 `ANIME_GUARD_*` Maid 旗卫；四人保留
-原 `anime_character_id=2..5`、slot offset、部署和旗卫配置，并统一通过 actor 的
+原 `anime_character_id=2..5`、slot offset、部署和旗卫配置，四人由 Campaign Content 统一配置 AK，并通过 actor 的
 `character_id=RASTERFALL_CHARACTER_MAID` 解析为 Maid profession。Hurd 改用 flag 2，避免占用 Maid 的
 稳定旧配置。
 

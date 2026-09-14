@@ -615,7 +615,10 @@ static int run_logic_test(void)
                 actor->character_id != RASTERFALL_CHARACTER_MAID ||
                 rasterfall_character_profile(actor->character_id)->profession_id !=
                     RASTERFALL_PROFESSION_MAID ||
-                strcmp(actor->name, maid_names[maid_slot]))
+                strcmp(actor->name, maid_names[maid_slot]) ||
+                actor->current_slot < 0 ||
+                actor->current_slot >= TOY_GAME_WEAPON_SLOTS ||
+                actor->slots[actor->current_slot].weapon != TOY_GAME_WEAPON_AK)
                 return 224;
             maid_count++;
         }

@@ -1,10 +1,10 @@
 # Rasterfall Campaign 01 World Content V1
 actor id=jesus name=Jesus character=RF_RIFLEMAN x=1000 y=0 z=0 yaw=0
 actor id=eula name=EULA character=EULA x=-13800 y=0 z=-12000 yaw=0
-actor id=maid_1 name=ANIME_GUARD_1 character=MAID weapon=pistol x=-12000 y=0 z=0 yaw=0
-actor id=maid_2 name=ANIME_GUARD_2 character=MAID weapon=pistol x=-11100 y=0 z=0 yaw=0
-actor id=maid_3 name=ANIME_GUARD_3 character=MAID weapon=pistol x=-12000 y=0 z=900 yaw=0
-actor id=maid_4 name=ANIME_GUARD_4 character=MAID weapon=pistol x=-11100 y=0 z=900 yaw=0
+actor id=maid_1 name=ANIME_GUARD_1 character=MAID weapon=ak x=-12000 y=0 z=0 yaw=0
+actor id=maid_2 name=ANIME_GUARD_2 character=MAID weapon=ak x=-11100 y=0 z=0 yaw=0
+actor id=maid_3 name=ANIME_GUARD_3 character=MAID weapon=ak x=-12000 y=0 z=900 yaw=0
+actor id=maid_4 name=ANIME_GUARD_4 character=MAID weapon=ak x=-11100 y=0 z=900 yaw=0
 actor id=hurd_gunsmith name=GUNSMITH character=HURD_GUNSMITH weapon=pistol x=-900 y=0 z=28500 yaw=0
 actor id=hurd_logistics name=LOGISTICS character=HURD_LOGISTICS weapon=pistol x=900 y=0 z=28500 yaw=0
 actor id=hurd_medic name=MEDIC character=HURD_MEDIC weapon=pistol x=-900 y=0 z=29400 yaw=0
