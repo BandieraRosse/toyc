@@ -1,6 +1,7 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-14
+> 源码核对基线补充：Static World Lighting V2 — FROZEN；64×48、ambient/sun 192/64、contact 8/320 RFU、1024 RFU平面细分保持；契约与验收见 [Phase D](static-world-lighting-phase-d.md)。
 > 源码核对基线补充：Static World Lighting V2 Phase C3：V2 为唯一正常 runtime world-light source；V1 独立 diagnostic owner、显式 fixed override 与统一 scene factor，见 [Phase C3](static-world-lighting-phase-c3.md)。
 > 源码核对基线补充：Static World Lighting V2 Phase C2：正常 actor/enemy root 单点采样，世界武器继承 owner，本地第三人称/viewmodel 共用 sample，保留 form/material policy；固定诊断例外见 [Phase C2](static-world-lighting-phase-c2.md)。
 > 源码核对基线补充：Static World Lighting V2 Phase C1：正常 map static RMESH 在 `render_static_props()` 按实例世界原点采样一次 V2，通过已有 scene override 与原 form lighting 组合；诊断/gallery 不变。见 [Phase C1](static-world-lighting-phase-c1.md)。
@@ -187,7 +188,7 @@ event payload，位移幅度按 damage 限幅缩放。
 `src/render/rasterfall_render_frontend.c` 是渲染器前端适配，管理默认纹理、覆盖配置和 worker
 绑定；底层光栅器在仓库公共的 `lib/graphics/renderer.c` / `include/toy_renderer.h`。
 
-## Lighting V1：RMESH 形体光照
+## Static World Lighting V2 与 RMESH 形体光照
 
 World/environment lighting 的 owner 为 `include/rasterfall_world_light.h` 与
 `src/rasterfall_world_light.c`。`rasterfall_render_context.world_lighting` 持有每个 world 的缓存；
@@ -205,7 +206,9 @@ Static World Lighting V2 is the sole normal-runtime world-light source.
 均消费 V2；默认 `world_brightness_at()` 也只查询 V2，覆盖 sign/交互物等辅助 world geometry。
 只有显式 diagnostic scope 可以查询 V1。V1 的 32×24 cache 不在正常 render context 中，
 独立诊断 owner 按需 bake；固定诊断例外与架构回归见 [Phase C3](static-world-lighting-phase-c3.md)。
-高度与遮挡限制仍见 [Phase B](static-world-lighting-phase-b.md)。
+最终 field 世界尺度、bake/contact/interpolation、性能与冻结边界见 [Phase D](static-world-lighting-phase-d.md)。
+组合顺序为 `world light × form lighting × material policy → final color → fog`；material policy
+在 scene×form 后应用材质下限，原地面无雾与专用 VFX 策略保留。
 
 正式 RMESH 路径在 `render_gallery_model_range()` 统一应用低成本 ambient + directional
 form-lighting，覆盖 RFCHAR/skeletal body、static prop 和通过同一模型入口绘制的第三人称 weapon。

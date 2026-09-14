@@ -1,11 +1,12 @@
 # Static World Lighting V2 — Phase C3
 
 > 文档更新：2026-09-14
+> 源码核对基线补充：Phase D 冻结保持本页 consumer/ownership 契约，见最终冻结记录。
 > 源码核对基线：Phase C2 后的 Runtime Lighting Consumer Cleanup；核对默认 world adapter、正常帧内 scene scope、diagnostic V1 owner、固定 capture 与 world-light source logic regression。
 
 Static World Lighting V2 is the sole normal-runtime world-light source.
 本阶段仅清理 consumer 与所有权，不新增 lighting 能力，不改参数、field、bake/ray、细分或 bilinear。
-Phase D 尚未开始。
+后续 Phase D 已完成冻结，最终状态与验收边界见 [Phase D](static-world-lighting-phase-d.md)。
 
 ## Consumer audit 与正常路径
 

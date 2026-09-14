@@ -1,6 +1,7 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-14
+> 源码核对基线补充：Static World Lighting V2 — FROZEN；最终64×48世界尺度、参数、consumer、验收与平台覆盖边界见 [Phase D](static-world-lighting-phase-d.md)。
 > 源码核对基线补充：Static World Lighting V2 Phase C3：V2 为唯一正常 runtime world-light source；V1 独立 diagnostic owner、显式 fixed override 与统一 scene factor，见 [Phase C3](static-world-lighting-phase-c3.md)。
 > 源码核对基线补充：Static World Lighting V2 Phase C2：正常 actor/enemy root 单点采样，世界武器继承 owner，本地第三人称/viewmodel 共用 sample，保留 form/material policy；固定诊断例外见 [Phase C2](static-world-lighting-phase-c2.md)。
 > 源码核对基线补充：Static World Lighting V2 Phase C1：正常 map static RMESH 在 `render_static_props()` 按实例世界原点采样一次 V2，通过已有 scene override 与原 form lighting 组合；诊断/gallery 不变。见 [Phase C1](static-world-lighting-phase-c1.md)。
@@ -97,6 +98,8 @@
 | 网络状态所有权、协议和房间生命周期 | [network-architecture.md](network-architecture.md) | `src/rasterfall_net.c`、公共协议头 |
 | 资源来源、许可和发布检查 | [asset-sources.md](asset-sources.md) | 资源目录与导入工具 |
 
+世界光照最终冻结、世界尺度、性能与验收边界见 [Phase D](static-world-lighting-phase-d.md)。
+已有 Character world capture 的固定输入/headless 配置归 `rf_game_runtime.c`，不改变 renderer 测试带光照。
 世界光照 consumer 清理、诊断边界与回归入口见 [Phase C3](static-world-lighting-phase-c3.md)：
 `rasterfall_world_light.h/.c` 拥有 V2 field；`rasterfall_render.c` 的默认 world adapter、scene override
 及 `src/dev-tests/` 的显式诊断 scope 共同定义消费边界。

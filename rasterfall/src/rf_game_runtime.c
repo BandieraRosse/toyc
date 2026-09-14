@@ -2969,7 +2969,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
         core_config.height = RASTERFALL_DEFAULT_HEIGHT;
         core_config.input = &platform_input;
         core_config.renderer = &renderer;
-        if ((logic_test || options.environment_capture_dir ?
+        if ((logic_test || options.environment_capture_dir || options.character_world_capture_dir ?
              rf_core_init_headless(&core, &platform_input, &renderer) :
              rf_core_init_config(&core, &core_config)) < 0) {
             __fprintf(2, "rasterfall: cannot initialize RF Core host\n");
@@ -3077,13 +3077,13 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     settings.keyboard_level = 5;
     rasterfall_render_set_coordinate_axes(coordinate_axes);
     pause_menu.selected = PAUSE_ITEM_RESUME;
-    if (options.environment_capture_dir) seed = 1;
+    if (options.environment_capture_dir || options.character_world_capture_dir) seed = 1;
     else if (__getrandom(&seed, sizeof(seed), 0) < 0)
         seed = (uint64_t)rf_core_time_us(&core);
     if (seed == 0) seed = 1;
     rasterfall_session_reset(&session, &camera, seed);
     rf_windows_log("startup: session reset");
-    if (options.environment_capture_dir &&
+    if ((options.environment_capture_dir || options.character_world_capture_dir) &&
         session.world_id != RASTERFALL_WORLD_RETURN_TO_WHU_V0 &&
         rf_game_request_world(&game_runtime, RASTERFALL_WORLD_CAMPAIGN_01) < 0) {
         if (model_texture.blob) toy_texture_unload(&model_texture);
