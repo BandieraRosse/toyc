@@ -24,13 +24,33 @@ static void dump_map(const struct rf_map_runtime *map)
     __printf("Objects: %d\n", rf_map_runtime_object_count(map));
 }
 
+static void dump_collisions_json(const struct rf_map_runtime *map)
+{
+    int i;
+    __printf("[\n");
+    for (i = 0; i < rf_map_runtime_collision_count(map); i++) {
+        const struct rf_map_runtime_collision *c = rf_map_runtime_collision_at(map, i);
+        /* IDs/shapes are validated ASCII names; no arbitrary strings here. */
+        __printf("%s{\"id\":\"%s\",\"owner_id\":\"%s\",\"shape\":\"%s\","
+                 "\"min_x\":%d,\"max_x\":%d,\"min_z\":%d,\"max_z\":%d,"
+                 "\"base_y\":%d,\"height\":%d,\"collision\":%s,\"walkable\":%s,"
+                 "\"blocks_airborne\":%s,\"line\":%d}",
+                 i ? ",\n" : "", c->id, c->owner_id, c->shape,
+                 c->bounds.min_x, c->bounds.max_x, c->bounds.min_z, c->bounds.max_z,
+                 c->base_y, c->height, c->collision ? "true" : "false",
+                 c->walkable ? "true" : "false", c->blocks_airborne ? "true" : "false", c->line);
+    }
+    __printf("\n]\n");
+}
+
 int main(int argc, char **argv)
 {
     struct rf_map_runtime map;
-    const char *path = argc == 1 ? "rasterfall/assets/maps/rasterfall.map" :
+    int json = argc == 3 && !strcmp(argv[1], "--collision-json");
+    const char *path = json ? argv[2] : argc == 1 ? "rasterfall/assets/maps/rasterfall.map" :
                        argc == 2 ? argv[1] : NULL;
     if (!path) {
-        __fprintf(2, "usage: map-inspect [map-file]\n");
+        __fprintf(2, "usage: map-inspect [--collision-json] [map-file]\n");
         return 2;
     }
     __memset(&map, 0, sizeof(map));
@@ -41,7 +61,8 @@ int main(int argc, char **argv)
             __fprintf(2, "%s:\nerror: %s\n", path, map.error);
         return 1;
     }
-    dump_map(&map);
+    if (json) dump_collisions_json(&map);
+    else dump_map(&map);
     rf_map_runtime_unload(&map);
     return 0;
 }

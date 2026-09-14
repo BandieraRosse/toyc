@@ -3,7 +3,7 @@
 map version=1 units=rfu
 world min_x=-90000 max_x=110000 min_z=-160000 max_z=30000 room_limit=240000 attr.identity=return_to_whu_v0
 
-surface id=whu_ground kind=ground min_x=-88000 max_x=108000 min_z=-158000 max_z=28000 height=0 material=6D756F attr.role=design_placeholder attr.legacy_index=0
+surface id=whu_ground kind=ground min_x=-88000 max_x=108000 min_z=-158000 max_z=28000 height=0 material=6D756F attr.role=design_placeholder attr.collision_id=ground_collision
 
 region id=area_a18 kind=start min_x=-9000 max_x=9000 min_z=-3000 max_z=8000 attr.role=A18
 # Map-defined A18 design-placeholder spawn; facing southwest (-X/-Z), yaw 225 degrees.

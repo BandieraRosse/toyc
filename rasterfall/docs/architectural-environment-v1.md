@@ -1,6 +1,7 @@
 # Architectural Environment V1
 
 > 文档更新：2026-09-14
+> 源码核对基线补充：Campaign Continuous Wall / Floor 与 Component Collision：`boundary_wall` 为长度参数化 RFU 墙体；`attr.collision=component|boundary|none` 在 Runtime Map 展开独立碰撞，保留 object owner ID；布局导出调用 C inspector 获取实际碰撞。
 > 源码核对基线：2026-09-14 Campaign `rasterfall.map` 的 `env_arch_*` 与 object.y projection；资产沿用 2026-09-13 最终 panel/hatch、industrial RMESH、registry 与 scoped culling。
 
 **Visual design = VISUALLY FROZEN。Engineering checkpoint = pending Sol。**
@@ -186,3 +187,10 @@ Sol 的优先接入顺序：先选择一个现有设施岛，把机组/柜/vent 
 正式碰撞、平台/坡道承载、Charger/Tank 穿门与转向、Campaign 地图数据、密集尸潮性能
 和 Windows package 最终发布由 Sol 完成。V1 object 仍需连续 projection index；门洞、
 支架、管线和线槽不能自动按 profile AABB 生成实体碰撞。
+
+## Campaign 连续墙与碰撞接入补充
+
+原十件 arch 资产保持不变；新 `boundary_wall` 是 Map RFU contract 的参数化代码组件，
+不增加 Blender/RMESH 库存。Campaign 长墙与地面已接入统一分带/同色大板，旧视觉墙记录
+被替换，组件碰撞由 `attr.collision` 显式启用；原文的“正式碰撞待接入”描述属于此前冻结边界。
+门洞、支架、管件使用 multipart 模板，梁/线槽保留架空高度；详细契约见 map-format.md。

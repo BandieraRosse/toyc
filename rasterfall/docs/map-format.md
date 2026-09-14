@@ -1,6 +1,8 @@
 # Rasterfall 地图格式
 
 > 文档更新：2026-09-14
+> 源码核对基线补充：Surface 以 `attr.collision_id` 绑定 Runtime collision 稳定 ID；加载检查引用与唯一绑定，Gameplay Projection 按 ID 合并几何，不再使用 surface legacy_index。
+> 源码核对基线补充：Campaign Continuous Wall / Floor 与 Component Collision：`boundary_wall` 为长度参数化 RFU 墙体；`attr.collision=component|boundary|none` 在 Runtime Map 展开独立碰撞，保留 object owner ID；布局导出调用 C inspector 获取实际碰撞。
 > 源码核对基线补充：Campaign `env_arch_*` 的局部建筑接入；`toy_map_prop.y` 保留 V1 object.y，renderer 使用 `-900 + y`，legacy prop 初始化 y=0；未新增碰撞或玩法 surface。
 > 源码核对基线补充：World record 保留已有 `attr.*` 扩展到 IR；`attr.identity=outpost|campaign_01|return_to_whu_v0` 经 Runtime Map 暴露，由 session 解析为已有 world ID。未知显式 identity 加载失败；无 identity 的实验地图仍使用历史 Campaign policy。身份不再来自文件名，改名不会改变 world behavior。`player_start` region 的既有 `attr.sy`/`attr.cy` 是 Q10 facing 向量（+Z 为 0/1024）；Runtime 保存并检查整数范围和非零方向，projection → level.start_sy/cy → session actor/camera 初始化及 reset/respawn。缺省仍为 0/1024，WHU 明确为 -724/-724（yaw 225°），坐标仍为 A18 设计占位。道路、广场和 E/F 是 presentation floor paint，不新增 gameplay surface type。
 > 源码核对基线补充：正式 Campaign 环境 object 组合；V1 object 连续 projection index、独立 collision 真值；多区域 environment capture。
@@ -55,8 +57,9 @@ Map IR 包含 world、regions、collisions、surfaces、renders、interactions�
 axis 和 material 原样保存在 Map IR/Runtime；parser 不解释 `kind` 或 `material`，`attr.*` 继续
 作为扩展字段保存。坡道必须保存 `axis` 与起止高度；平台/地面使用单一 `height`。
 
-`attr.legacy_index` 只供迁移 adapter 把 surface 几何写入现有 `toy_map_primitive`，不改变
-collision record 的碰撞标志和路径。正式地图的 surface/render 记录均由 V1 Runtime adapter
+`attr.collision_id=<collision稳定ID>` 供 adapter 把 surface 几何写入对应 `toy_map_primitive`，不改变
+collision record 的碰撞标志和路径。例如 `attr.collision_id=ground_world`；引用必须存在且唯一。
+正式地图的 surface/render 记录均由 V1 Runtime adapter
 写入现有 primitive/draw 兼容结构；具体数量以 `map-inspect` 和 `map-runtime-test` 的当前输出为准。
 
 ## Map IR Runtime Bridge
@@ -221,14 +224,15 @@ flag 1 也继续由 session 生成，Hurd 因此使用 flag 2。若以后正式�
 ## 修改地图排布的必经流程
 
 正式 Campaign 设施组合记录位于 `rasterfall.map` 的 `env_*` object 段，沿用既有
-空间和 World Content。当前 adapter 只投影有连续 `attr.legacy_index` 的 object；新增实例
+空间和 World Content。当前 adapter 投影全部 object；显式 `attr.legacy_index` 保留迁移排列，无索引 object 按稳定 ID 追加。新增实例
 必须检查 runtime/projection 数量和真实 render，不能只看布局导出。V1 object placement
-仅进入 `level.props`，不按 profile 自动添加 collision；原有碰撞体继续独立拥有玩法阻挡。
+进入 `level.props`；显式 `attr.collision` 选择独立的 Map component collision contract，原有
+collision records 与生成结果都由 Runtime Map 拥有。
 
 V1 object 的 `y` 是相对地面基准的 RFU 高度，经 `toy_map_prop.y` 传给 static prop renderer，
 最终 pivot 为 `-900 + y`；它不查询或自动吸附 gameplay surface。Campaign 的 `env_arch_*`
 用于西侧维修巷、东侧双入口设施和南侧动力区，梁、面板、管线及线槽必须显式填写高度。
-这些局部视觉壳可穿越，不表示新增实体围合；碰撞、出生区和路线仍由原记录决定。
+Campaign 现已显式启用组件碰撞；门洞使用两肩和架空上梁，不能用整块 AABB 封门。
 
 `--environment-capture <dir>` 以固定 seed 加载 Campaign，输出基地、北区、东西设施、
 东西路线、Hurd、南侧、坡道、出生室与南侧动力场视角；`tools/environment_sheet.py <dir>` 拼接原始 BMP。
@@ -289,3 +293,38 @@ Exporter 会记录源 `.map` 文件指纹，源文件变化时 query 在 stderr 
 最小人工验收是在正式地图上运行 `make map-layout`，打开 `tmp/map-layout/output.png`，抽查 safe、
 spawn、button、prop 的相对位置，再用相同导出 ID 对照 `output.json` 的中心点与 bounds。当前正式地图
 没有 `base` 或 `safe goal` 记录；这两类由自动化覆盖用例验证，待正式地图实际声明后再加入人工抽查。
+
+## Continuous Wall / Floor 与 Component Collision
+
+Campaign 长墙使用 `object kind=boundary_wall`，高度 2150 RFU（约 4.2 m）、厚度
+124 RFU，墙脚/主体/压顶相邻分区，扶壁约每 4096 RFU 一处。长度按墙段生成，
+只支持 cardinal yaw 与 scale=1000；不新增 RMESH 或纹理资产。原 12.3 m 可见长墙已替换，
+开发坡道和可站立 air gate 保留。旧南侧背景墙从世界外 z=-45000 移到 z=-33000，
+world bounds 留出墙厚，外墙显式阻止 airborne 越界。
+
+```text
+object id=yard_wall kind=boundary_wall x=0 y=0 z=6000 yaw=0 scale=1000 attr.length=8192 attr.collision=boundary
+object id=yard_gate kind=gate_frame x=0 y=0 z=2000 yaw=0 scale=1000 attr.collision=component
+object id=overhead_beam kind=arch_beam x=0 y=1434 z=0 yaw=0 scale=1000 attr.collision=component
+```
+
+`attr.collision` 缺省/none 不生成碰撞；component 使用独立的 RFU 模板，boundary
+额外阻止 airborne 越界。模板拥有简化实体形状、multipart 门洞/管件、底部高度和 walkable
+策略，不读取视觉网格或 presentation registry 的 AABB。生成结果保存 `owner_id` 与源行号；
+ID 为 `<object_id>_col_<part_index>`，冲突、越界、非法尺寸与容量超限加载失败。
+未知 component kind 加载失败。新增模板主要修改 `rasterfall_map_components.c`；
+新增视觉资产身份仍需检查 prop registry 与平台构建/资源规则。
+
+新 collision/object/render 无需 legacy_index，按稳定 ID 排在已有迁移槽之后；
+collision/render/object 的迁移槽要求连续且唯一，pickup/interaction 共用槽并允许保留空位。
+Surface 通过 `attr.collision_id` 关联碰撞稳定 ID，不能再填写 surface `attr.legacy_index`。
+Runtime 允许独立未绑定 Surface；当前 Gameplay Projection 要求每个 Surface 绑定一个 collision。
+不存在的引用、非 collision ID 与多个 Surface 绑定同一 collision 均带源行号加载失败。
+
+地面继续由 surface 与 floor paint 提供，非 authored-ground 世界使用约 4 m 同色大板和
+很浅接缝，直接在同一平面分区，不增加 floor RMESH 或叠层。WHU 保留已有 authored paint。
+
+`build/map-inspect --collision-json <map>` 输出 Runtime Map 实际碰撞，包括 owner、bounds、
+base_y、height 和 flags。组件地图的 layout exporter 调用它，JSON 保留生成碰撞与组件
+collision_bounds，source_file 增加 SHA256；`make map-layout` 自动构建 inspector。
+验证入口为 `make test-map-components`、`make test-map-runtime` 与 `--logic-test`。

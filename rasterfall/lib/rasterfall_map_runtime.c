@@ -1,10 +1,11 @@
 #include "tlibc_everything.h"
 #include "rasterfall_map_runtime.h"
 #include "rasterfall_map_parser.h"
+#include "rasterfall_map_components.h"
 
 struct rf_map_runtime_impl {
     struct rf_map_runtime_world world;
-    struct rf_map_runtime_collision collisions[RASTERFALL_MAP_IR_MAX_COLLISIONS];
+    struct rf_map_runtime_collision collisions[RF_MAP_COMPONENT_MAX_COLLISIONS];
     int collision_count;
     struct rf_map_runtime_surface surfaces[RASTERFALL_MAP_IR_MAX_SURFACES];
     int surface_count;
@@ -106,6 +107,63 @@ static void copy_string(char *dst, int capacity, const char *src)
 {
     strncpy(dst, src, capacity - 1);
     dst[capacity - 1] = '\0';
+}
+
+static const char *extension_text(const struct rasterfall_map_ir_attribute *a,
+                                  int count, const char *key)
+{
+    int i;
+    for (i = 0; i < count; i++) if (!strcmp(a[i].key, key)) return a[i].value;
+    return NULL;
+}
+
+static int component_error(struct rf_map_runtime *runtime,
+                           const struct rf_map_runtime_object *object,
+                           const char *message)
+{
+    runtime->error_line = object->line;
+    snprintf(runtime->error, sizeof(runtime->error), "%s: %s", object->id, message);
+    return -1;
+}
+
+static int expand_object_collision(struct rf_map_runtime *runtime,
+                                    struct rf_map_runtime_impl *impl,
+                                    const struct rf_map_runtime_object *object)
+{
+    struct rf_map_component_box parts[RF_MAP_COMPONENT_MAX_PARTS], world;
+    int i, j, count;
+    if (!object->collision_mode) return 0;
+    count = rf_map_component_collision_boxes(object->kind, object->length, parts);
+    if (count < 0) return component_error(runtime, object, "unknown collision component or invalid length");
+    if (impl->collision_count + count > RF_MAP_COMPONENT_MAX_COLLISIONS)
+        return component_error(runtime, object, "expanded collision capacity exceeded");
+    for (i = 0; i < count; i++) {
+        struct rf_map_runtime_collision *c = impl->collisions + impl->collision_count;
+        int length = snprintf(c->id, sizeof(c->id), "%s_col_%d", object->id, i);
+        if (length < 0 || length >= (int)sizeof(c->id))
+            return component_error(runtime, object, "generated collision ID too long");
+        for (j = 0; j < impl->collision_count; j++)
+            if (!strcmp(c->id, impl->collisions[j].id))
+                return component_error(runtime, object, "generated collision ID conflicts with existing collision");
+        if (rf_map_component_transform(parts + i, object->x, object->y,
+                                        object->z, object->yaw, object->scale, &world) < 0)
+            return component_error(runtime, object, "invalid component transform");
+        if (world.min_x < impl->world.bounds.min_x || world.max_x > impl->world.bounds.max_x ||
+            world.min_z < impl->world.bounds.min_z || world.max_z > impl->world.bounds.max_z)
+            return component_error(runtime, object, "component collision outside world");
+        copy_string(c->owner_id, sizeof(c->owner_id), object->id);
+        copy_string(c->shape, sizeof(c->shape), "box");
+        c->bounds.min_x = world.min_x; c->bounds.max_x = world.max_x;
+        c->bounds.min_z = world.min_z; c->bounds.max_z = world.max_z;
+        c->height = world.max_y;
+        c->base_y = world.min_y;
+        c->collision = 1;
+        c->walkable = parts[i].walkable;
+        c->blocks_airborne = object->collision_mode == 2;
+        c->line = object->line;
+        impl->collision_count++;
+    }
+    return 0;
 }
 
 static int extension_int(const struct rasterfall_map_ir_attribute *attributes,
@@ -253,6 +311,49 @@ static void sort_runtime_records(struct rf_map_runtime_impl *impl)
     }
 }
 
+/* Migration slots, when present, must be unique and contiguous. New records
+ * are stable-ID ordered after those slots. Surfaces reference collision slots
+ * rather than owning a separate contiguous array. */
+static int validate_projection_slots(struct rf_map_runtime *runtime,
+                                      const struct rf_map_runtime_impl *impl)
+{
+    int i, j, count;
+#define CHECK_SLOTS(field, size) \
+    count = 0; \
+    for (i = 0; i < impl->size; i++) count += impl->field[i].has_legacy_index; \
+    for (i = 0; i < impl->size; i++) { \
+        if (!impl->field[i].has_legacy_index) continue; \
+        if (impl->field[i].legacy_index < 0 || impl->field[i].legacy_index >= count) goto bad; \
+        for (j = 0; j < i; j++) \
+            if (impl->field[j].has_legacy_index && \
+                impl->field[j].legacy_index == impl->field[i].legacy_index) goto bad; \
+    }
+    CHECK_SLOTS(collisions, collision_count)
+    CHECK_SLOTS(renders, render_count)
+    CHECK_SLOTS(objects, object_count)
+    CHECK_SLOTS(actor_spawns, actor_spawn_count)
+#undef CHECK_SLOTS
+    /* Pickups and interactions share the gameplay-facing pickup array. */
+    count = 0;
+    for (i = 0; i < impl->pickup_count; i++) count += impl->pickups[i].has_legacy_index;
+    for (i = 0; i < impl->interaction_count; i++) count += impl->interactions[i].has_legacy_index;
+    for (i = 0; i < impl->pickup_count + impl->interaction_count; i++) {
+        int index = i < impl->pickup_count ? impl->pickups[i].legacy_index : impl->interactions[i-impl->pickup_count].legacy_index;
+        int present = i < impl->pickup_count ? impl->pickups[i].has_legacy_index : impl->interactions[i-impl->pickup_count].has_legacy_index;
+        if (!present) continue;
+        if (index < 0 || index >= RASTERFALL_MAP_IR_MAX_PICKUPS + RASTERFALL_MAP_IR_MAX_INTERACTIONS) goto bad;
+        for (j = 0; j < i; j++) {
+            int other = j < impl->pickup_count ? impl->pickups[j].legacy_index : impl->interactions[j-impl->pickup_count].legacy_index;
+            int has = j < impl->pickup_count ? impl->pickups[j].has_legacy_index : impl->interactions[j-impl->pickup_count].has_legacy_index;
+            if (has && other == index) goto bad;
+        }
+    }
+    return 0;
+bad:
+    copy_string(runtime->error, sizeof(runtime->error), "duplicate or noncontiguous projection legacy_index");
+    return -1;
+}
+
 int rf_map_runtime_load(struct rf_map_runtime *runtime, const char *path)
 {
     struct rasterfall_map_ir parsed;
@@ -336,10 +437,24 @@ int rf_map_runtime_load(struct rf_map_runtime *runtime, const char *path)
         if (impl->surfaces[i].has_material)
             copy_string(impl->surfaces[i].material, RF_MAP_RUNTIME_KIND_CAP,
                         parsed.surfaces[i].material);
-        if (extension_int(parsed.surfaces[i].attributes,
-                          parsed.surfaces[i].attribute_count, "legacy_index",
-                          &impl->surfaces[i].legacy_index) == 0)
-            impl->surfaces[i].has_legacy_index = 1;
+        {
+            const char *ref = extension_text(parsed.surfaces[i].attributes,
+                parsed.surfaces[i].attribute_count, "collision_id");
+            if (extension_text(parsed.surfaces[i].attributes,
+                    parsed.surfaces[i].attribute_count, "legacy_index")) {
+                runtime->error_line = parsed.surfaces[i].line;
+                copy_string(runtime->error, sizeof(runtime->error),
+                            "surface legacy_index removed; use collision_id");
+                tlibc_free(impl); return -1;
+            }
+            if (ref && (!ref[0] || strlen(ref) >= RF_MAP_RUNTIME_ID_CAP)) {
+                runtime->error_line = parsed.surfaces[i].line;
+                copy_string(runtime->error, sizeof(runtime->error), "invalid surface collision_id");
+                tlibc_free(impl); return -1;
+            }
+            if (ref) copy_string(impl->surfaces[i].collision_id,
+                                 RF_MAP_RUNTIME_ID_CAP, ref);
+        }
         impl->surfaces[i].line = parsed.surfaces[i].line;
     }
     impl->region_count = parsed.region_count;
@@ -427,6 +542,8 @@ int rf_map_runtime_load(struct rf_map_runtime *runtime, const char *path)
     }
     impl->object_count = parsed.object_count;
     for (i = 0; i < impl->object_count; i++) {
+        const char *mode = extension_text(parsed.objects[i].attributes,
+                                          parsed.objects[i].attribute_count, "collision");
         copy_string(impl->objects[i].id, RF_MAP_RUNTIME_ID_CAP, parsed.objects[i].id);
         copy_string(impl->objects[i].kind, RF_MAP_RUNTIME_KIND_CAP, parsed.objects[i].kind);
         impl->objects[i].x = parsed.objects[i].x;
@@ -437,6 +554,25 @@ int rf_map_runtime_load(struct rf_map_runtime *runtime, const char *path)
         if (extension_int(parsed.objects[i].attributes, parsed.objects[i].attribute_count, "legacy_index", &impl->objects[i].legacy_index) == 0)
             impl->objects[i].has_legacy_index = 1;
         impl->objects[i].line = parsed.objects[i].line;
+        if (extension_int(parsed.objects[i].attributes, parsed.objects[i].attribute_count,
+                          "length", &impl->objects[i].length) < 0 ||
+            (mode && strcmp(mode, "none") && strcmp(mode, "component") && strcmp(mode, "boundary"))) {
+            component_error(runtime, impl->objects + i, "invalid collision mode or length");
+            tlibc_free(impl); return -1;
+        }
+        impl->objects[i].collision_mode = !mode || !strcmp(mode, "none") ? 0 :
+                                         !strcmp(mode, "boundary") ? 2 : 1;
+        if (!strcmp(impl->objects[i].kind, "boundary_wall")) {
+            struct rf_map_component_box parts[RF_MAP_COMPONENT_MAX_PARTS];
+            if (impl->objects[i].yaw % 90 || impl->objects[i].scale != 1000 ||
+                rf_map_wall_visual_boxes(impl->objects[i].length, parts) < 0) {
+                component_error(runtime, impl->objects + i, "boundary_wall requires valid length, cardinal yaw and scale=1000");
+                tlibc_free(impl); return -1;
+            }
+        }
+        if (expand_object_collision(runtime, impl, impl->objects + i) < 0) {
+            tlibc_free(impl); return -1;
+        }
     }
     impl->render_count = parsed.render_count;
     for (i = 0; i < impl->render_count; i++) {
@@ -477,6 +613,54 @@ int rf_map_runtime_load(struct rf_map_runtime *runtime, const char *path)
                           &impl->renders[i].legacy_index) == 0)
             impl->renders[i].has_legacy_index = 1;
         impl->renders[i].line = parsed.renders[i].line;
+    }
+    /* Generated IDs occupy the same stable-ID namespace as source records. */
+    for (i = parsed.collision_count; i < impl->collision_count; i++) {
+        int j;
+        const struct rf_map_runtime_collision *c = impl->collisions + i;
+#define CHECK_SOURCE_ID(field, count) \
+        for (j = 0; j < parsed.count; j++) \
+            if (!strcmp(c->id, parsed.field[j].id)) goto conflicting_generated_id;
+        CHECK_SOURCE_ID(collisions, collision_count)
+        CHECK_SOURCE_ID(regions, region_count)
+        CHECK_SOURCE_ID(surfaces, surface_count)
+        CHECK_SOURCE_ID(renders, render_count)
+        CHECK_SOURCE_ID(objects, object_count)
+        CHECK_SOURCE_ID(interactions, interaction_count)
+        CHECK_SOURCE_ID(actor_spawns, actor_spawn_count)
+        CHECK_SOURCE_ID(pickups, pickup_count)
+#undef CHECK_SOURCE_ID
+        continue;
+conflicting_generated_id:
+        runtime->error_line = c->line;
+        copy_string(runtime->error, sizeof(runtime->error), "generated collision ID conflicts with source record");
+        tlibc_free(impl); return -1;
+    }
+    /* Resolve surface ownership after component collisions have expanded. */
+    for (i = 0; i < impl->surface_count; i++) {
+        int j;
+        const struct rf_map_runtime_surface *surface = impl->surfaces + i;
+        if (!surface->collision_id[0]) continue;
+        for (j = 0; j < impl->collision_count; j++)
+            if (!strcmp(surface->collision_id, impl->collisions[j].id)) break;
+        if (j == impl->collision_count) {
+            copy_string(runtime->error, sizeof(runtime->error),
+                        "surface collision_id does not reference a collision");
+            goto invalid_surface_reference;
+        }
+        for (j = 0; j < i; j++)
+            if (!strcmp(surface->collision_id, impl->surfaces[j].collision_id)) {
+                copy_string(runtime->error, sizeof(runtime->error),
+                            "duplicate surface collision_id binding");
+                goto invalid_surface_reference;
+            }
+        continue;
+invalid_surface_reference:
+        runtime->error_line = surface->line;
+        tlibc_free(impl); return -1;
+    }
+    if (validate_projection_slots(runtime, impl) < 0) {
+        tlibc_free(impl); return -1;
     }
     sort_runtime_records(impl);
     runtime->impl = impl;

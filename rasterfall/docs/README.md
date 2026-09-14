@@ -1,6 +1,8 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-14
+> 源码核对基线补充：Surface 以 `attr.collision_id` 绑定 Runtime collision 稳定 ID；加载检查引用与唯一绑定，Gameplay Projection 按 ID 合并几何，不再使用 surface legacy_index。
+> 源码核对基线补充：Campaign Continuous Wall / Floor 与 Component Collision：`boundary_wall` 为长度参数化 RFU 墙体；`attr.collision=component|boundary|none` 在 Runtime Map 展开独立碰撞，保留 object owner ID；布局导出调用 C inspector 获取实际碰撞。
 > 源码核对基线补充：Campaign `env_arch_*` 接入西侧维修巷、东侧开放设施与南侧动力区；V1 object.y → toy_map_prop.y → static prop 的地面相对高度，既有 collision/surface/region 不变。
 > 源码核对基线补充：Return-to-WHU compatibility/readability 入口：`world attr.identity` → session world ID → `rasterfall_world_uses_authored_ground()`；WHU floor paint 复用单平面分区，出生方向由 Runtime region sy/cy 投影。四个眼高视角用 `--map ... --environment-capture ...`。
 > 源码核对基线补充：Temporary Campus Kit V0 的库存audit、12件米制临时构件和隔离campus-*验收；见temporary-campus-kit-v0.md，未改WHU Reference JSON或正式地图。
@@ -51,6 +53,7 @@
 | Hurd 固定小队、北侧据点、旗帜控制真值 | [gameplay.md](gameplay.md)、[map-format.md](map-format.md) | `rasterfall_session.h` 的 Hurd config/status → `rasterfall_session_hurd_status()` |
 | 地图格式、关卡实体、拾取物、静态 prop、出生点、render records、Outpost | [map-format.md](map-format.md) | `assets/maps/outpost.map`、`lib/rasterfall_map_parser.c`、`lib/rasterfall_map_runtime.c`、`src/rasterfall_map.c` |
 | Map Compiler V1、Runtime Map ownership、Gameplay Projection Adapter、legacy fallback 边界 | [map-format.md](map-format.md) | `assets/maps/rasterfall.map`、`assets/maps/rasterfall_legacy.map`、`lib/rasterfall_map_parser.c`、`lib/rasterfall_map_runtime.c`、`src/rasterfall_map.c`、`src/rasterfall_session.c` |
+| 连续外围墙、同色地面、组件碰撞模板与布局查询 | [map-format.md](map-format.md)、[rendering.md](rendering.md) | `include/rasterfall_map_components.h`、`lib/rasterfall_map_components.c` → Runtime Map collision expansion → gameplay projection；`map-inspect --collision-json` |
 | 编写或扩展 `.map` 文本格式 | [map-format.md](map-format.md) | `lib/map.c`、`include/toy_map.h` |
 | 修改地图排布、导出地图俯视图、agent 可读 JSON 和精确布局查询 | [map-format.md](map-format.md) | `tools/map_layout_export.py`、`tools/map_layout_query.py`、`make map-layout` |
 | Return-to-WHU runtime compatibility、地面可读性、出生朝向与眼高验收 | [map-format.md](map-format.md)、[rendering.md](rendering.md)、[runtime.md](runtime.md) | `world attr.identity` → `rasterfall_session.c`；`rasterfall_world_content.c` 的单布尔 ground policy → `draw_partitioned_floor()`；`player_start` → Runtime region sy/cy → projection → session；`--map ... --environment-capture ...` |

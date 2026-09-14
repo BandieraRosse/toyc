@@ -34,6 +34,53 @@ static struct toy_map_primitive test_box_primitive(
     return p;
 }
 
+#include "rasterfall_map_components.h"
+
+/* Gameplay behavior, not just profile dimensions: a multipart gate remains
+ * open, grounded equipment is solid, and a perimeter blocks airborne escape. */
+static int map_component_gameplay_logic_test(void)
+{
+    struct toy_game g;
+    struct rf_map_component_box parts[RF_MAP_COMPONENT_MAX_PARTS], b;
+    struct toy_map_primitive world[RF_MAP_COMPONENT_MAX_PARTS + 1];
+    const char *kinds[] = {"gate_frame", "arch_doorway", "power_unit", "boundary_wall", "arch_beam"};
+    int k, i, n;
+    for (k = 0; k < 5; k++) {
+        n = rf_map_component_collision_boxes(kinds[k], 8192, parts);
+        if (n <= 0) return 1;
+        world[0] = test_flat_primitive(-5000, 5000, -5000, 5000, 0);
+        for (i = 0; i < n; i++) {
+            if (rf_map_component_transform(parts+i, 0, k == 4 ? 1434 : 0, 0, 0, 1000, &b) < 0) return 2;
+            world[i+1] = test_box_primitive(b.min_x, b.max_x, b.min_z, b.max_z,
+                b.min_y, b.max_y, TOY_MAP_PRIMITIVE_COLLISION |
+                (parts[i].walkable ? TOY_MAP_PRIMITIVE_WALKABLE : 0) |
+                (k == 3 ? TOY_MAP_PRIMITIVE_BLOCKS_AIRBORNE : 0));
+        }
+        toy_game_init(&g, 220 + k);
+        toy_game_set_primitives(&g, world, n+1, 5000);
+        if (k < 2) {
+            if (toy_game_position_blocked_at_height(&g, 0, 0, TOY_GAME_PLAYER_RADIUS, 0) ||
+                toy_game_position_blocked_at_height(&g, 0, 0, 300, 0) ||
+                !toy_game_position_blocked_at_height(&g, 1400, 0, TOY_GAME_PLAYER_RADIUS, 0)) return 3;
+            if (!toy_game_position_blocked_at_height(&g, 0, 0, TOY_GAME_PLAYER_RADIUS, 1100)) return 7;
+        } else if (k < 4 && !toy_game_position_blocked_at_height(&g, 0, 0, TOY_GAME_PLAYER_RADIUS, 0)) return 4;
+        if (k == 3 && !toy_game_position_blocked_at_height(&g, 0, 0, TOY_GAME_PLAYER_RADIUS, 5000)) return 5;
+        if (k == 2 && toy_game_position_blocked_at_height(&g, 0, 0, TOY_GAME_PLAYER_RADIUS, 1331)) return 6;
+        if (k == 4) {
+            struct toy_game_actor *a = toy_game_local_player_actor(&g);
+            if (toy_game_position_blocked_at_height(&g, 0, 0, TOY_GAME_PLAYER_RADIUS, 0) ||
+                !toy_game_position_blocked_at_height(&g, 0, 0, TOY_GAME_PLAYER_RADIUS, 600) ||
+                toy_game_query_ground(&g, 0, 0, TOY_GAME_PLAYER_RADIUS, 0).support_y != 0) return 8;
+            a->x = 0; a->z = -1000; a->ground_y = 0;
+            if (!toy_game_try_move_actor(&g, a, 0, 0) || a->ground_y != 0) return 9;
+            a->airborne_ms = 1000; a->airborne_y = 500; a->vertical_velocity = 200;
+            toy_game_update_actor_motion(&g, TOY_GAME_PLAYER_ACTOR_INDEX, 16);
+            if (a->airborne_y != 1434 - RASTERFALL_HUMAN_HEIGHT_RFU || a->vertical_velocity > 0) return 10;
+        }
+    }
+    return 0;
+}
+
 static int primitive_gameplay_logic_test(void)
 {
     struct toy_game g;
@@ -176,7 +223,13 @@ static int primitive_gameplay_logic_test(void)
         const struct rf_map_runtime_object *object =
             rf_map_runtime_object_at(&session.map_ops.runtime, i);
         int slot = object->legacy_index;
-        if (!object->has_legacy_index || slot < 0 || slot >= level_map.prop_count ||
+        if (!object->has_legacy_index) {
+            slot = -1;
+            for (int j = 0; j < level_map.prop_count; j++)
+                if (level_map.props[j].x == object->x && level_map.props[j].z == object->z &&
+                    level_map.props[j].length == object->length) { slot = j; break; }
+        }
+        if (slot < 0 || slot >= level_map.prop_count ||
             level_map.props[slot].y != object->y) return 18;
     }
     if (level_map.prop_count < 10 ||
@@ -206,7 +259,7 @@ static int primitive_gameplay_logic_test(void)
                 p->minz == -17256 && p->maxz == -16744 && p->surface_y0 == 512)
                 crate_box = 1;
             if (p->minx == -13205 && p->maxx == -12795 &&
-                p->minz == -17614 && p->maxz == -16385 && p->surface_y0 == 512)
+                p->minz == -17615 && p->maxz == -16386 && p->surface_y0 == 512)
                 barrier_box = 1;
         }
         if (!crate_box || !barrier_box) return 19;
@@ -250,8 +303,8 @@ static int primitive_gameplay_logic_test(void)
         /* The north boundary is solid outside the central corridor opening. */
         boundary_player->x = 7000;
         boundary_player->z = 23800;
-        if (!toy_game_try_move_actor(&boundary_game, boundary_player,
-                                     boundary_player->x, 24200))
+        if (toy_game_try_move_actor(&boundary_game, boundary_player,
+                                    boundary_player->x, 24200))
             return 21;
         /* The widened x=-6000..6000 opening remains traversable. */
         boundary_player->x = 0;
@@ -306,6 +359,8 @@ static int run_logic_test(void)
     { int primitive_result=primitive_gameplay_logic_test();
       if(primitive_result){__printf("primitive gameplay failure: %d\n",primitive_result);return 211;} }
     __printf("rasterfall: primitive gameplay test passed\n");
+    if (map_component_gameplay_logic_test() != 0) return 240;
+    __printf("rasterfall: component collision gameplay test passed\n");
     if (rasterfall_model_skinning_logic_test() != 0) return 157;
     if (rasterfall_humanoid_logic_test() != 0) return 162;
     if (rasterfall_humanoid_basis_logic_test() != 0) return 163;

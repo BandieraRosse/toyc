@@ -190,12 +190,23 @@ static int runtime_action_to_pickup(int action_id, int *weapon)
 static const struct rf_map_runtime_interaction *runtime_interaction_projection_at(
     const struct rf_map_runtime *runtime, int index)
 {
-    int i;
+    int i, indexed = 0, unindexed = 0;
     for (i = 0; i < rf_map_runtime_interaction_count(runtime); i++) {
-        const struct rf_map_runtime_interaction *item =
-            rf_map_runtime_interaction_at(runtime, i);
-        if (!item->has_legacy_index) continue;
-        if (item->legacy_index == index) return item;
+        const struct rf_map_runtime_interaction *item = rf_map_runtime_interaction_at(runtime, i);
+        if (item->has_legacy_index) {
+            if (item->legacy_index >= indexed) indexed = item->legacy_index + 1;
+            if (item->legacy_index == index) return item;
+        }
+    }
+    for (i = 0; i < rf_map_runtime_pickup_count(runtime); i++) {
+        const struct rf_map_runtime_pickup *item = rf_map_runtime_pickup_at(runtime, i);
+        if (item->has_legacy_index && item->legacy_index >= indexed) indexed = item->legacy_index + 1;
+    }
+    for (i = 0; i < rf_map_runtime_pickup_count(runtime); i++)
+        indexed += !rf_map_runtime_pickup_at(runtime, i)->has_legacy_index;
+    for (i = 0; i < rf_map_runtime_interaction_count(runtime); i++) {
+        const struct rf_map_runtime_interaction *item = rf_map_runtime_interaction_at(runtime, i);
+        if (!item->has_legacy_index && indexed + unindexed++ == index) return item;
     }
     return NULL;
 }
@@ -220,11 +231,17 @@ static const struct rf_map_runtime_region *runtime_region_projection_at(
 static const struct rf_map_runtime_actor_spawn *runtime_spawn_projection_at(
     const struct rf_map_runtime *runtime, int index)
 {
-    int i;
+    int i, indexed = 0, unindexed = 0;
     for (i = 0; i < rf_map_runtime_actor_spawn_count(runtime); i++) {
-        const struct rf_map_runtime_actor_spawn *item =
-            rf_map_runtime_actor_spawn_at(runtime, i);
-        if (item->has_legacy_index && item->legacy_index == index) return item;
+        const struct rf_map_runtime_actor_spawn *item = rf_map_runtime_actor_spawn_at(runtime, i);
+        if (item->has_legacy_index) {
+            indexed++;
+            if (item->legacy_index == index) return item;
+        }
+    }
+    for (i = 0; i < rf_map_runtime_actor_spawn_count(runtime); i++) {
+        const struct rf_map_runtime_actor_spawn *item = rf_map_runtime_actor_spawn_at(runtime, i);
+        if (!item->has_legacy_index && indexed + unindexed++ == index) return item;
     }
     return NULL;
 }
@@ -232,11 +249,21 @@ static const struct rf_map_runtime_actor_spawn *runtime_spawn_projection_at(
 static const struct rf_map_runtime_pickup *runtime_pickup_projection_at(
     const struct rf_map_runtime *runtime, int index)
 {
-    int i;
+    int i, indexed = 0, unindexed = 0;
     for (i = 0; i < rf_map_runtime_pickup_count(runtime); i++) {
-        const struct rf_map_runtime_pickup *item =
-            rf_map_runtime_pickup_at(runtime, i);
-        if (item->has_legacy_index && item->legacy_index == index) return item;
+        const struct rf_map_runtime_pickup *item = rf_map_runtime_pickup_at(runtime, i);
+        if (item->has_legacy_index) {
+            if (item->legacy_index >= indexed) indexed = item->legacy_index + 1;
+            if (item->legacy_index == index) return item;
+        }
+    }
+    for (i = 0; i < rf_map_runtime_interaction_count(runtime); i++) {
+        const struct rf_map_runtime_interaction *item = rf_map_runtime_interaction_at(runtime, i);
+        if (item->has_legacy_index && item->legacy_index >= indexed) indexed = item->legacy_index + 1;
+    }
+    for (i = 0; i < rf_map_runtime_pickup_count(runtime); i++) {
+        const struct rf_map_runtime_pickup *item = rf_map_runtime_pickup_at(runtime, i);
+        if (!item->has_legacy_index && indexed + unindexed++ == index) return item;
     }
     return NULL;
 }
@@ -244,11 +271,17 @@ static const struct rf_map_runtime_pickup *runtime_pickup_projection_at(
 static const struct rf_map_runtime_object *runtime_object_projection_at(
     const struct rf_map_runtime *runtime, int index)
 {
-    int i;
+    int i, indexed = 0, unindexed = 0;
     for (i = 0; i < rf_map_runtime_object_count(runtime); i++) {
-        const struct rf_map_runtime_object *item =
-            rf_map_runtime_object_at(runtime, i);
-        if (item->has_legacy_index && item->legacy_index == index) return item;
+        const struct rf_map_runtime_object *item = rf_map_runtime_object_at(runtime, i);
+        if (item->has_legacy_index) {
+            indexed++;
+            if (item->legacy_index == index) return item;
+        }
+    }
+    for (i = 0; i < rf_map_runtime_object_count(runtime); i++) {
+        const struct rf_map_runtime_object *item = rf_map_runtime_object_at(runtime, i);
+        if (!item->has_legacy_index && indexed + unindexed++ == index) return item;
     }
     return NULL;
 }
@@ -256,23 +289,29 @@ static const struct rf_map_runtime_object *runtime_object_projection_at(
 static const struct rf_map_runtime_collision *runtime_collision_projection_at(
     const struct rf_map_runtime *runtime, int index)
 {
-    int i;
+    int i, indexed = 0, unindexed = 0;
     for (i = 0; i < rf_map_runtime_collision_count(runtime); i++) {
-        const struct rf_map_runtime_collision *item =
-            rf_map_runtime_collision_at(runtime, i);
-        if (item->has_legacy_index && item->legacy_index == index) return item;
+        const struct rf_map_runtime_collision *item = rf_map_runtime_collision_at(runtime, i);
+        if (item->has_legacy_index) {
+            indexed++;
+            if (item->legacy_index == index) return item;
+        }
+    }
+    for (i = 0; i < rf_map_runtime_collision_count(runtime); i++) {
+        const struct rf_map_runtime_collision *item = rf_map_runtime_collision_at(runtime, i);
+        if (!item->has_legacy_index && indexed + unindexed++ == index) return item;
     }
     return NULL;
 }
 
-static const struct rf_map_runtime_surface *runtime_surface_projection_at(
-    const struct rf_map_runtime *runtime, int index)
+static const struct rf_map_runtime_surface *runtime_surface_for_collision(
+    const struct rf_map_runtime *runtime, const char *collision_id)
 {
     int i;
     for (i = 0; i < rf_map_runtime_surface_count(runtime); i++) {
         const struct rf_map_runtime_surface *item =
             rf_map_runtime_surface_at(runtime, i);
-        if (item->has_legacy_index && item->legacy_index == index) return item;
+        if (!strcmp(item->collision_id, collision_id)) return item;
     }
     return NULL;
 }
@@ -280,11 +319,17 @@ static const struct rf_map_runtime_surface *runtime_surface_projection_at(
 static const struct rf_map_runtime_render *runtime_render_projection_at(
     const struct rf_map_runtime *runtime, int index)
 {
-    int i;
+    int i, indexed = 0, unindexed = 0;
     for (i = 0; i < rf_map_runtime_render_count(runtime); i++) {
-        const struct rf_map_runtime_render *item =
-            rf_map_runtime_render_at(runtime, i);
-        if (item->has_legacy_index && item->legacy_index == index) return item;
+        const struct rf_map_runtime_render *item = rf_map_runtime_render_at(runtime, i);
+        if (item->has_legacy_index) {
+            indexed++;
+            if (item->legacy_index == index) return item;
+        }
+    }
+    for (i = 0; i < rf_map_runtime_render_count(runtime); i++) {
+        const struct rf_map_runtime_render *item = rf_map_runtime_render_at(runtime, i);
+        if (!item->has_legacy_index && indexed + unindexed++ == index) return item;
     }
     return NULL;
 }
@@ -448,7 +493,7 @@ int rasterfall_map_project_runtime(struct rasterfall_map_state *map)
         const struct rf_map_runtime_collision *collision =
             runtime_collision_projection_at(&map->runtime, i);
         const struct rf_map_runtime_surface *surface =
-            runtime_surface_projection_at(&map->runtime, i);
+            collision ? runtime_surface_for_collision(&map->runtime, collision->id) : NULL;
         struct toy_map_primitive *primitive;
         int shape;
         if (!collision) continue;
@@ -461,7 +506,7 @@ int rasterfall_map_project_runtime(struct rasterfall_map_state *map)
         primitive->maxx = collision->bounds.max_x;
         primitive->minz = collision->bounds.min_z;
         primitive->maxz = collision->bounds.max_z;
-        primitive->base_y = 0;
+        primitive->base_y = collision->base_y;
         primitive->surface_y0 = collision->height;
         primitive->surface_y1 = collision->has_height2 ?
             collision->height2 : collision->height;
@@ -480,6 +525,7 @@ int rasterfall_map_project_runtime(struct rasterfall_map_state *map)
             primitive->minx = surface->bounds.min_x;
             primitive->maxx = surface->bounds.max_x;
             primitive->minz = surface->bounds.min_z;
+            primitive->maxz = surface->bounds.max_z;
             primitive->surface_y0 = surface->height;
             primitive->surface_y1 = surface->has_height2 ?
                 surface->height2 : surface->height;
@@ -620,6 +666,7 @@ int rasterfall_map_project_runtime(struct rasterfall_map_state *map)
         prop->z = object->z;
         prop->yaw_degrees = object->yaw;
         prop->scale_milli = object->scale;
+        prop->length = object->length;
     }
 
     /* Interactions are deliberately translated only at this compatibility

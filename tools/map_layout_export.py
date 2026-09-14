@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Export a Rasterfall .map as a compact top-down PNG and JSON sidecar."""
-import argparse, json, math, struct, sys
+import argparse, hashlib, json, math, struct, subprocess, sys
 from pathlib import Path
 
 try:
@@ -21,7 +21,7 @@ def v1_fields(fields):
     return {item.split("=",1)[0]:item.split("=",1)[1] for item in fields if "=" in item}
 
 def parse_v1(path):
-    stat=path.stat(); doc={"schema":"rasterfall-map-layout-v1","source_map":str(path),"source_file":{"path":str(path),"size":stat.st_size,"mtime_ns":stat.st_mtime_ns},"coordinate_system":{"plane":"x/z","up":"y","unit":"RFU","rfu_per_meter":512,"note":"512 RFU = 1 m"},"world":None,"objects":[]}; counts={}; candidates=[]; warnings=[]
+    stat=path.stat(); doc={"schema":"rasterfall-map-layout-v1","source_map":str(path),"source_file":{"path":str(path),"size":stat.st_size,"mtime_ns":stat.st_mtime_ns,"sha256":hashlib.sha256(path.read_bytes()).hexdigest()},"coordinate_system":{"plane":"x/z","up":"y","unit":"RFU","rfu_per_meter":512,"note":"512 RFU = 1 m"},"world":None,"objects":[]}; counts={}; candidates=[]; warnings=[]
     for line_no,line in enumerate(path.read_text(encoding="utf-8").splitlines(),1):
         words=line.split("#",1)[0].split()
         if not words: continue
@@ -37,7 +37,7 @@ def parse_v1(path):
         elif kind=="interaction":
             x,z,y=num(f.get("x","0")),num(f.get("z","0")),num(f.get("y","0")); typ="button"; o={"type":typ,"button_kind":"button_"+f.get("action","unknown"),"x":x,"z":z,"y":y,"bounds":box([x,x,z,z]),"center":{"x":x,"z":z}}
         elif kind=="object":
-            x,z=num(f.get("x","0")),num(f.get("z","0")); typ="prop"; o={"type":typ,"asset":f.get("kind",""),"x":x,"z":z,"yaw_degrees":num(f.get("yaw","0")),"scale_milli":num(f.get("scale","1000")),"bounds":box([x,x,z,z]),"center":{"x":x,"z":z}}
+            x,z=num(f.get("x","0")),num(f.get("z","0")); typ="prop"; o={"type":typ,"asset":f.get("kind",""),"source_id":f.get("id",""),"y":num(f.get("y","0")),"length":num(f.get("attr.length","0")),"collision_mode":f.get("attr.collision","none"),"x":x,"z":z,"yaw_degrees":num(f.get("yaw","0")),"scale_milli":num(f.get("scale","1000")),"bounds":box([x,x,z,z]),"center":{"x":x,"z":z}}
         elif kind=="render":
             typ={"model":"model","box":"box"}.get(f.get("kind"),"box"); b={"min_x":num(f.get("min_x","0")),"max_x":num(f.get("max_x","0")),"min_z":num(f.get("min_z","0")),"max_z":num(f.get("max_z","0"))}; o={"type":typ,"style":num(f.get("attr.style","0")),"color":f.get("color","000000"),"height":num(f.get("height","0")),"bounds":b,"center":centre(b)}
         elif kind=="surface":
@@ -52,6 +52,32 @@ def parse_v1(path):
             if typ=="box" and o.get("collision"): candidates.append((len(doc["objects"])-1,(o["bounds"]["max_x"]-o["bounds"]["min_x"])*(o["bounds"]["max_z"]-o["bounds"]["min_z"]),bool(o.get("role"))))
         elif kind not in {"map","world","region","interaction","actor_spawn","pickup","object","render","surface","collision"}:
             warnings.append(f"line {line_no}: ignored record '{kind}' (not represented in layout JSON)")
+    # Ask the actual C Runtime Map to expand component collisions. Never copy
+    # its profile table/transform algorithm into an independent Python parser.
+    components=[o for o in doc["objects"] if o["type"]=="prop" and o.get("collision_mode") in {"component","boundary"}]
+    if components:
+        inspector=Path(__file__).resolve().parents[1]/"build/map-inspect"
+        if not inspector.exists(): raise ValueError("component collision export requires: make app-map-inspect")
+        result=subprocess.run([str(inspector),"--collision-json",str(path)],capture_output=True,text=True)
+        if result.returncode: raise ValueError(result.stderr.strip())
+        runtime_collisions=json.loads(result.stdout)
+        owners={o["source_id"]:o for o in components}
+        for collider in runtime_collisions:
+            owner=owners.get(collider["owner_id"])
+            if not owner: continue
+            b={k:collider[k] for k in ("min_x","max_x","min_z","max_z")}
+            counts["AW"]=counts.get("AW",0)+1
+            doc["objects"].append({"export_id":"AW"+str(counts["AW"]),"type":"air_wall",
+                "source_id":collider["id"],"owner_id":collider["owner_id"],"generated":True,
+                "base_y":collider["base_y"],"height":collider["height"],"visible":False,"collision":True,
+                "walkable":collider["walkable"],"blocks_airborne":collider["blocks_airborne"],
+                "bounds":b,"center":centre(b),"source":owner["source"]})
+            if "collision_bounds" not in owner: owner["collision_bounds"]=dict(b)
+            else:
+                for k in b:
+                    owner["collision_bounds"][k]=(min if k.startswith("min") else max)(owner["collision_bounds"][k],b[k])
+        for owner in components:
+            if "collision_bounds" in owner: owner["bounds"]=dict(owner["collision_bounds"])
     if not doc["world"]: raise ValueError("map has no valid world record")
     chosen={i for i,_,role in candidates if role}
     for i,_,_ in sorted(candidates,key=lambda x:x[1],reverse=True):
@@ -70,7 +96,7 @@ def parse(path):
     if any(line.split("#",1)[0].strip().startswith("map version=1") for line in path.read_text(encoding="utf-8").splitlines()):
         return parse_v1(path)
     stat=path.stat()
-    doc={"schema":"rasterfall-map-layout-v1","source_map":str(path),"source_file":{"path":str(path),"size":stat.st_size,"mtime_ns":stat.st_mtime_ns},"coordinate_system":{"plane":"x/z","up":"y","unit":"RFU","rfu_per_meter":512,"note":"512 RFU = 1 m"},"world":None,"objects":[]}; counts={}; candidates=[]; warnings=[]
+    doc={"schema":"rasterfall-map-layout-v1","source_map":str(path),"source_file":{"path":str(path),"size":stat.st_size,"mtime_ns":stat.st_mtime_ns,"sha256":hashlib.sha256(path.read_bytes()).hexdigest()},"coordinate_system":{"plane":"x/z","up":"y","unit":"RFU","rfu_per_meter":512,"note":"512 RFU = 1 m"},"world":None,"objects":[]}; counts={}; candidates=[]; warnings=[]
     for line_no,line in enumerate(path.read_text(encoding="utf-8").splitlines(),1):
         words=line.split("#",1)[0].split()
         if not words:continue

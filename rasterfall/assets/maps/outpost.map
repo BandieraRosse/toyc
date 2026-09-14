@@ -2,7 +2,7 @@
 map version=1 units=rfu
 world min_x=-7000 max_x=7000 min_z=-6000 max_z=6000 room_limit=9000 attr.identity=outpost
 
-surface id=outpost_floor kind=ground min_x=-6000 max_x=6000 min_z=-5000 max_z=5000 height=0 material=294B45 attr.legacy_index=0
+surface id=outpost_floor kind=ground min_x=-6000 max_x=6000 min_z=-5000 max_z=5000 height=0 material=294B45 attr.collision_id=outpost_floor_collision
 region id=outpost_safe kind=safe min_x=-6000 max_x=6000 min_z=-5000 max_z=5000 attr.legacy_index=0
 region id=player_start kind=start min_x=0 max_x=0 min_z=-3000 max_z=-3000 attr.sy=0 attr.cy=1024
 

@@ -97,7 +97,7 @@ static int add_prop(struct toy_map *m, int asset_id, int x, int z,
 {
     const struct rasterfall_prop_asset_profile *profile;
     struct rasterfall_prop_dimensions dimensions;
-    struct toy_map_prop prop;
+    struct toy_map_prop prop = {0};
     struct toy_map_primitive *box;
 
     if (!m || m->prop_count >= TOY_MAP_MAX_PROPS || scale_milli <= 0)

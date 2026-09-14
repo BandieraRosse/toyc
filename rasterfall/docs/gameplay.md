@@ -1,6 +1,8 @@
 # 玩法、会话、地图与 AI
 
-> 文档更新：2026-09-13
+> 文档更新：2026-09-14
+> 源码核对基线补充：Surface 以 `attr.collision_id` 绑定 Runtime collision 稳定 ID；加载检查引用与唯一绑定，Gameplay Projection 按 ID 合并几何，不再使用 surface legacy_index。
+> 源码核对基线补充：Campaign Continuous Wall / Floor 与 Component Collision：`boundary_wall` 为长度参数化 RFU 墙体；`attr.collision=component|boundary|none` 在 Runtime Map 展开独立碰撞，保留 object owner ID；布局导出调用 C inspector 获取实际碰撞。
 > 源码核对基线补充：环境整合期间恢复旧开发坡道与墙顶平台的高端重叠连续性；坡面出生与 Tank impact 的逻辑 fixture 修正；地图权威碰撞、AI、波次和 spawn 配置不变。
 > 源码核对基线：工作区（普通敌人新模型混合比例 V1；Charger 新冲锋碰撞代理；敌人 dying slot 生命周期 1000ms；Jesus 使用稳定 RF Rifleman identity；两个正式四人 squad roster 已分别编入中央/东部旗帜；model resource/instance/gear/palette 仍只属于 presentation；其余玩法真值不变）
 
@@ -102,7 +104,8 @@ active、未被携带且位于区域内；assigned count 沿用普通旗帜语�
 正常 step 的端点高差；侧向攀爬、真正高度断层及间隙保持阻挡。具体判断在
 `game.c` 的 `ground_has_ramp_surface_transition()`，不从视觉 prop 推导。
 
-V1 `object` 环境组合只投影到静态展示实例，碰撞由既有独立 collision records 拥有。
+V1 `object` 环境组合投影到静态实例；显式 component collision 在 Runtime Map 展开为独立 collision，
+与既有 collision records 一起投影到玩法。
 Legacy `prop` 文本的 profile 默认碰撞规则不等于 V1 object 规则，详见 map-format.md。
 
 - `include/toy_map.h`：磁盘地图解析后的通用结构。
@@ -156,3 +159,11 @@ component，敌人也不能索敌到控制线另一侧。关闭整组空气墙�
 游戏事件同时被音频、特效和网络消费；增加事件时搜索 `TOY_GAME_EVENT_`。结构或枚举若进入网络包，
 不要直接依赖 C 布局，需在 `rasterfall_net.c` 显式编码并考虑协议兼容。新增地图实体通常要同时完成
 解析、绑定、玩法交互、渲染和测试五处。
+
+## Component collision 高度区间
+
+生成组件碰撞保留 base_y 和顶部高度；水平 body query 允许从架空体下方通过，ground query
+不会把架空盒顶当成下方地面。上升运动对架空体底部做头部扫掠并限制高度，local/remote
+player、AI actor 与 enemy 共用 clamp。当前 body 高度统一使用 1750 mm 契约，未细分特感身高。
+现有 2D perception/fire/auto-aim 查询按源眼高排除更高的架空体，仍不等价于完整 3D hitscan。
+外围 boundary 模式保留独立 BLOCKS_AIRBORNE，普通设备允许从顶部高度越过。

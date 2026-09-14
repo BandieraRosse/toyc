@@ -23,8 +23,10 @@ struct rf_map_runtime_world {
 
 struct rf_map_runtime_collision {
     char id[RF_MAP_RUNTIME_ID_CAP];
+    char owner_id[RF_MAP_RUNTIME_ID_CAP]; /* empty for explicit records */
     char shape[RF_MAP_RUNTIME_KIND_CAP];
     struct rf_map_runtime_bounds bounds;
+    int base_y; /* RFU above ground; generated component lower face */
     int height;
     int height2;
     int has_height2;
@@ -52,8 +54,7 @@ struct rf_map_runtime_surface {
     int has_axis;
     char material[RF_MAP_RUNTIME_KIND_CAP];
     int has_material;
-    int legacy_index;
-    int has_legacy_index;
+    char collision_id[RF_MAP_RUNTIME_ID_CAP];
     int line;
 };
 
@@ -107,6 +108,8 @@ struct rf_map_runtime_object {
     int scale;
     int legacy_index;
     int has_legacy_index;
+    int length; /* RFU, only for dimensioned component kinds */
+    int collision_mode; /* 0=none, 1=component, 2=boundary */
     int line;
 };
 

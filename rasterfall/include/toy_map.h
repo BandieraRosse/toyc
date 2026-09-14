@@ -3,13 +3,13 @@
 
 #include "toy_game.h"
 
-#define TOY_MAP_MAX_PRIMITIVES 128
+#define TOY_MAP_MAX_PRIMITIVES 512
 #define TOY_MAP_MAX_ZONES 16
 #define TOY_MAP_MAX_DRAW 128
 #define TOY_MAP_MAX_PICKUPS 48
 #define TOY_MAP_MAX_BASES 8
 #define TOY_MAP_MAX_AI_SPAWNS 32
-#define TOY_MAP_MAX_PROPS 128
+#define TOY_MAP_MAX_PROPS 256
 #define TOY_MAP_ROLE_SIZE 32
 #define TOY_MAP_TEXT_SIZE 64
 
@@ -93,7 +93,7 @@ enum toy_map_pickup_kind {
 struct toy_map_pickup { int kind; int weapon; int x, z, y; };
 /* Presentation-only map record.  The parser stores a registry asset ID, not
  * a model path; the renderer adapts this to rasterfall_prop_instance. */
-struct toy_map_prop { int asset_id; int x, y, z, yaw_degrees, scale_milli; };
+struct toy_map_prop { int asset_id; int x, y, z, yaw_degrees, scale_milli, length; };
 struct toy_map_draw {
     int type;
     int a, b, c, d, e, f;

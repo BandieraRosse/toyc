@@ -1,6 +1,7 @@
 # 构建、平台与验证
 
-> 文档更新：2026-09-11
+> 文档更新：2026-09-14
+> 源码核对基线补充：Campaign Continuous Wall / Floor 与 Component Collision：`boundary_wall` 为长度参数化 RFU 墙体；`attr.collision=component|boundary|none` 在 Runtime Map 展开独立碰撞，保留 object owner ID；布局导出调用 C inspector 获取实际碰撞。
 > 源码核对基线：工作区（Enemy Visual V2 六份公开 RFM2 / renderer-only family；`make win-rasterfall` 显式进入 Windows `all`；正式 squad roster 编译单元已纳入 Linux/Windows；Rasterfall 对象无条件重建规则；GB2312 字库进入 Linux embedded 与 Windows 资产包）
 
 ## Linux
@@ -50,3 +51,7 @@ Enemy Visual V2 的六份公开 RFM2 自动进入现有递归 embedded 依赖及
 
 具体可用命令以 `rasterfall/README.md`、根 README 和 `--help` 为准。不要在本导航记录会变化的测试
 通过数量。Rasterfall 不要求由 Toyc 编译；除非改动触及工具链或公共自托管路径，不必扩大到编译器全套测试。
+
+Component collision 新编译单元 `rasterfall/lib/rasterfall_map_components.c` 纳入 Linux Game、
+map inspector/runtime test、Windows GAME_LIB_SRCS 与适用 self 规则。没有新增公开资源，
+既有 embedded/package 地图复制继续适用；map-layout 依赖 C inspector。

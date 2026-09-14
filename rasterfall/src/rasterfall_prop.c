@@ -114,6 +114,8 @@ static const struct rasterfall_prop_asset_profile prop_assets[] = {
     { RASTERFALL_PROP_ASSET_CAMPUS_TREE_PROXY, "campus_tree_proxy",
       "rasterfall/assets/models/props/campus/rf_campus_tree_proxy.rmesh",
       RASTERFALL_PROP_RENDER_SCALE_MILLI, { 0, 0, 0 } },
+    { RASTERFALL_PROP_ASSET_BOUNDARY_WALL, "boundary_wall",
+      "", RASTERFALL_PROP_RENDER_SCALE_MILLI, { 0, 0, 0 } },
 };
 
 static const struct rasterfall_prop_asset_profile *find_id(int id)

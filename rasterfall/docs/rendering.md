@@ -1,6 +1,7 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-14
+> 源码核对基线补充：Campaign Continuous Wall / Floor 与 Component Collision：`boundary_wall` 为长度参数化 RFU 墙体；`attr.collision=component|boundary|none` 在 Runtime Map 展开独立碰撞，保留 object owner ID；布局导出调用 C inspector 获取实际碰撞。
 > 源码核对基线补充：Campaign `env_arch_*` 复用正常 static prop renderer；V1 object.y 经 projection 保存，pivot 为 `-900 + map_prop->y`，旧 prop 的 y 为 0。
 > 源码核对基线补充：Return-to-WHU 地面策略仅为 `rasterfall_world_uses_authored_ground(world_id)` 一个布尔查询，owner 为 world content 模块。旧 world 保持 checkerboard、spawn 优先和首个 floor paint 优先；WHU ground 使用地图颜色，后提交 floor paint 覆盖先提交颜色。道路/广场/操场使用 floor 而非零高度 box，所有颜色在同一 y=-900 presentation 平面分区，不增加深度层或修改玩法高度。WHU `--map ... --environment-capture <dir>` 复用正常 renderer 输出 A18、B 广场、分馆前场、D→E/F 四个站立眼高 BMP；A18 camera 读取地图定义。
 > 源码核对基线补充：campus-corner与near/mid/far、campus-asset-*复用dev-tests实际static prop/quad；资产开放视觉壳处理旧双面薄板深度竞争，未改renderer。
@@ -401,3 +402,13 @@ build/rasterfall --visual-capture hurd-squad --visual-output /tmp/rf-hurd-squad.
 
 模型和动画的求值边界见 [assets-animation.md](assets-animation.md)。改可见结果时保留确定性截图/像素
 测试的价值；改并行路径时还要比较单 worker 和多 worker 的画面与统计。
+
+## Continuous Wall / Floor
+
+`boundary_wall` 是 prop registry 的代码生成组件，长度来自 V1 object `attr.length`，
+经 runtime object → toy_map_prop → prop instance 传递；`render_boundary_wall()` 使用
+Map component 的闭合分带几何并在提交前剔除不可见面。碰撞仍由 Map Runtime 拥有，
+renderer 不修改玩法。墙脚、主体、压顶不叠共面大板；扶壁与 collision contract 共用位置。
+地面 `draw_partitioned_floor()` 改为 2048 RFU 大板和低对比接缝，边缘裁到 world bounds，
+继续与区域 paint 在同一平面分区；WHU authored-ground 保留颜色，不添加接缝。
+未新增纹理或 floor mesh。观察入口仍为 `--environment-capture` / environment_sheet.py。

@@ -34,6 +34,7 @@
 #include "rasterfall_glb_animation.h"
 #include "rasterfall_glb_preview.h"
 #include "rasterfall_prop.h"
+#include "rasterfall_map_components.h"
 #include "rasterfall_vmd.h"
 #include "math.h"
 
@@ -1899,6 +1900,9 @@ static struct rasterfall_model_asset *static_prop_model(int asset_id)
     return static_prop_models[index].data ? &static_prop_models[index] : 0;
 }
 
+static int render_boundary_wall(struct toy_renderer *, const struct camera *,
+                                 const struct rasterfall_prop_instance *);
+
 int rasterfall_render_static_prop(
     struct toy_renderer *renderer, const struct camera *camera,
     const struct rasterfall_prop_instance *instance)
@@ -1909,6 +1913,8 @@ int rasterfall_render_static_prop(
     int yaw, scale, pixels;
     if (!renderer || !camera || !instance || instance->scale_milli <= 0)
         return -1;
+    if (instance->asset_id == RASTERFALL_PROP_ASSET_BOUNDARY_WALL)
+        return render_boundary_wall(renderer, camera, instance);
     profile = rasterfall_prop_asset_profile(instance->asset_id);
     model = static_prop_model(instance->asset_id);
     if (!profile || !model) return 0;
@@ -2084,6 +2090,7 @@ static int render_static_props(struct toy_renderer *renderer,
         instance.z = map_prop->z;
         instance.yaw_degrees = map_prop->yaw_degrees;
         instance.scale_milli = map_prop->scale_milli;
+        instance.length = map_prop->length;
         pixels += rasterfall_render_static_prop(renderer, camera, &instance);
     }
     return pixels;
@@ -3379,6 +3386,43 @@ static int draw_quad(struct toy_renderer *renderer, const struct camera *camera,
            draw_world_triangle(renderer, camera, a, c, d, color);
 }
 
+/* Dimensioned wall component: generate a few closed RFU boxes, cull hidden
+ * faces before submission, and retain the shared map collision dimensions. */
+static int render_boundary_wall(struct toy_renderer *renderer,
+                                 const struct camera *camera,
+                                 const struct rasterfall_prop_instance *instance)
+{
+    struct rf_map_component_box parts[RF_MAP_COMPONENT_MAX_PARTS], b;
+    int i, count = rf_map_wall_visual_boxes(instance->length, parts), pixels = 0;
+    if (count < 0) return -1;
+    for (i = 0; i < count; i++) {
+        struct vec3 v[8];
+        unsigned int color = parts[i].color;
+        int k;
+        if (rf_map_component_transform(parts + i, instance->x, 0, instance->z,
+                                        instance->yaw_degrees, instance->scale_milli, &b) < 0)
+            return -1;
+        for (k = 0; k < 8; k++) {
+            v[k].x = (k & 1) ? b.max_x : b.min_x;
+            v[k].y = instance->y + ((k & 2) ? b.max_y : b.min_y);
+            v[k].z = (k & 4) ? b.max_z : b.min_z;
+        }
+        if (camera->z < b.min_z)
+            pixels += draw_quad(renderer, camera, v, v+1, v+3, v+2, color);
+        if (camera->z > b.max_z)
+            pixels += draw_quad(renderer, camera, v+4, v+6, v+7, v+5, color);
+        if (camera->x < b.min_x)
+            pixels += draw_quad(renderer, camera, v, v+2, v+6, v+4, color - 0x080808);
+        if (camera->x > b.max_x)
+            pixels += draw_quad(renderer, camera, v+1, v+5, v+7, v+3, color - 0x080808);
+        if (camera->y > instance->y + b.max_y)
+            pixels += draw_quad(renderer, camera, v+2, v+3, v+7, v+6, color + 0x080808);
+        if (camera->y < instance->y + b.min_y)
+            pixels += draw_quad(renderer, camera, v, v+4, v+5, v+1, color - 0x080808);
+    }
+    return pixels;
+}
+
 static int draw_floor_zone(struct toy_renderer *renderer,
                            const struct camera *camera,
                            const struct toy_game_box *zone, uint32_t color)
@@ -3447,7 +3491,7 @@ static int map_has_floor_ground(int x, int z)
     return 0;
 }
 
-/* Render the checkerboard and authored floor colours as one tessellated
+/* Render continuous slab colours and authored floor paint as one tessellated
  * plane.  A colour region changes the colour of the affected sub-rectangles;
  * it never creates a second, nearly coplanar surface. */
 static int draw_partitioned_floor(struct toy_renderer *renderer,
@@ -3456,43 +3500,50 @@ static int draw_partitioned_floor(struct toy_renderer *renderer,
     int base_x, base_z, i, j, k, pixels = 0;
     int authored_ground = active_session &&
         rasterfall_world_uses_authored_ground(active_session->world_id);
+    int slab = 2048, joint = authored_ground ? 0 : 10;
     int xs[FLOOR_SPLIT_MAX], zs[FLOOR_SPLIT_MAX];
-    for (base_z = level_map.minz; base_z < level_map.maxz; base_z += 1000) {
-        for (base_x = level_map.minx; base_x < level_map.maxx; base_x += 1000) {
+    for (base_z = level_map.minz; base_z < level_map.maxz; base_z += slab) {
+        for (base_x = level_map.minx; base_x < level_map.maxx; base_x += slab) {
+            int tile_max_x = base_x + slab < level_map.maxx ? base_x + slab : level_map.maxx;
+            int tile_max_z = base_z + slab < level_map.maxz ? base_z + slab : level_map.maxz;
             int x_count = 0, z_count = 0;
             xs[x_count++] = base_x;
-            xs[x_count++] = base_x + 1000;
+            xs[x_count++] = tile_max_x;
             zs[z_count++] = base_z;
-            zs[z_count++] = base_z + 1000;
+            zs[z_count++] = tile_max_z;
+            if (joint) {
+                floor_split_add(xs, &x_count, base_x + joint, base_x, tile_max_x);
+                floor_split_add(zs, &z_count, base_z + joint, base_z, tile_max_z);
+            }
             for (i = 0; i < level_map.draw_count; i++) {
                 struct toy_map_draw *draw = &level_map.draw[i];
                 if (draw->type != TOY_MAP_DRAW_FLOOR &&
                     draw->type != TOY_MAP_DRAW_BORDER) continue;
-                if (draw->b <= base_x || draw->a >= base_x + 1000 ||
-                    draw->d <= base_z || draw->c >= base_z + 1000) continue;
-                floor_split_add(xs, &x_count, draw->a, base_x, base_x + 1000);
-                floor_split_add(xs, &x_count, draw->b, base_x, base_x + 1000);
-                floor_split_add(zs, &z_count, draw->c, base_z, base_z + 1000);
-                floor_split_add(zs, &z_count, draw->d, base_z, base_z + 1000);
+                if (draw->b <= base_x || draw->a >= tile_max_x ||
+                    draw->d <= base_z || draw->c >= tile_max_z) continue;
+                floor_split_add(xs, &x_count, draw->a, base_x, tile_max_x);
+                floor_split_add(xs, &x_count, draw->b, base_x, tile_max_x);
+                floor_split_add(zs, &z_count, draw->c, base_z, tile_max_z);
+                floor_split_add(zs, &z_count, draw->d, base_z, tile_max_z);
                 if (draw->type == TOY_MAP_DRAW_BORDER) {
                     floor_split_add(xs, &x_count, draw->a + draw->e,
-                                    base_x, base_x + 1000);
+                                    base_x, tile_max_x);
                     floor_split_add(xs, &x_count, draw->b - draw->e,
-                                    base_x, base_x + 1000);
+                                    base_x, tile_max_x);
                     floor_split_add(zs, &z_count, draw->c + draw->e,
-                                    base_z, base_z + 1000);
+                                    base_z, tile_max_z);
                     floor_split_add(zs, &z_count, draw->d - draw->e,
-                                    base_z, base_z + 1000);
+                                    base_z, tile_max_z);
                 }
             }
             for (i = 0; i < level_map.spawn_count; i++) {
                 struct toy_game_box *spawn = &level_map.spawn_zones[i].box;
-                if (spawn->maxx <= base_x || spawn->minx >= base_x + 1000 ||
-                    spawn->maxz <= base_z || spawn->minz >= base_z + 1000) continue;
-                floor_split_add(xs, &x_count, spawn->minx, base_x, base_x + 1000);
-                floor_split_add(xs, &x_count, spawn->maxx, base_x, base_x + 1000);
-                floor_split_add(zs, &z_count, spawn->minz, base_z, base_z + 1000);
-                floor_split_add(zs, &z_count, spawn->maxz, base_z, base_z + 1000);
+                if (spawn->maxx <= base_x || spawn->minx >= tile_max_x ||
+                    spawn->maxz <= base_z || spawn->minz >= tile_max_z) continue;
+                floor_split_add(xs, &x_count, spawn->minx, base_x, tile_max_x);
+                floor_split_add(xs, &x_count, spawn->maxx, base_x, tile_max_x);
+                floor_split_add(zs, &z_count, spawn->minz, base_z, tile_max_z);
+                floor_split_add(zs, &z_count, spawn->maxz, base_z, tile_max_z);
             }
             floor_split_sort(xs, x_count);
             floor_split_sort(zs, z_count);
@@ -3503,8 +3554,7 @@ static int draw_partitioned_floor(struct toy_renderer *renderer,
                     int center_x = (minx + maxx) / 2;
                     int center_z = (minz + maxz) / 2;
                     int has_spawn = 0;
-                    uint32_t base_color = (((base_x + base_z) / 1000) & 1) ?
-                                           0x30343A : 0x272B31;
+                    uint32_t base_color = 0x414B53;
                     uint32_t color = base_color;
                     /* The world rectangle is only an extent.  Do not paint
                      * its uncovered cells as a default floor. */
@@ -3535,6 +3585,11 @@ static int draw_partitioned_floor(struct toy_renderer *renderer,
                                 if (!authored_ground) break;
                             }
                         }
+                    }
+                    if (joint && (minx == base_x || minz == base_z)) {
+                        /* Three-channel modulation preserves each region hue. */
+                        unsigned int r = (color >> 16) & 255, g = (color >> 8) & 255, b = color & 255;
+                        color = ((r * 244 / 256) << 16) | ((g * 244 / 256) << 8) | (b * 244 / 256);
                     }
                     {
                         struct toy_game_box patch;

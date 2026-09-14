@@ -14,6 +14,7 @@
  */
 
 #include "toy_game.h"
+#include "rasterfall_units.h"
 #include "string.h"
 #include "math.h"
 #include "tlibc_compat.h"
@@ -1056,6 +1057,11 @@ struct toy_game_ground_query toy_game_query_ground(
         int supported = x - radius >= p->minx && x + radius <= p->maxx &&
                         z - radius >= p->minz && z + radius <= p->maxz;
         int height = primitive_surface_height(p, x, z);
+        /* A suspended solid's top is not the floor beneath it. It becomes
+         * a candidate once the query reaches the solid's lower elevation. */
+        if (p->shape == TOY_MAP_PRIMITIVE_BOX && p->base_y > 0 &&
+            current_ground_y + TOY_CONFIG_GROUND_STEP_HEIGHT < p->base_y)
+            continue;
         if (radius == 0) overlaps = supported;
         if (supported &&
             ((p->flags & TOY_MAP_PRIMITIVE_COLLISION) ||
@@ -1193,6 +1199,9 @@ static int position_blocked_at_height(const struct toy_game *g,
         const struct toy_map_primitive *b = &g->primitives[i];
         if (!(b->flags & TOY_MAP_PRIMITIVE_COLLISION) ||
             b->shape != TOY_MAP_PRIMITIVE_BOX) continue;
+        if (!(b->flags & TOY_MAP_PRIMITIVE_BLOCKS_AIRBORNE) &&
+            b->base_y >= collision_height + RASTERFALL_HUMAN_HEIGHT_RFU)
+            continue;
         /* Finite boxes are ordinary solid cuboids: once the player's feet
          * reach the top, the box no longer blocks horizontal movement.  A
          * zero vertical range preserves the legacy fixture behavior for
@@ -2760,6 +2769,7 @@ static int enemy_has_line_of_sight(const struct toy_game *g,
         struct toy_game_box box;
         if (!(p->flags & TOY_MAP_PRIMITIVE_COLLISION) ||
             p->shape != TOY_MAP_PRIMITIVE_BOX) continue;
+        if (p->base_y > e->ground_y + e->airborne_y + RASTERFALL_HUMAN_EYE_HEIGHT_RFU) continue;
         box.minx=p->minx; box.maxx=p->maxx; box.minz=p->minz; box.maxz=p->maxz;
         box.miny=p->base_y; box.maxy=p->surface_y0;
         if (segment_hits_box(e->x, e->z, target_x, target_z, &box))
@@ -3036,7 +3046,7 @@ void toy_game_update_actor_special_control(struct toy_game *g,
 /* Direct-segment checks and grid waypoints for AI teammates.  A selected
  * waypoint is retained until reached to prevent wall-edge jitter. */
 static int actor_segment_blocked(const struct toy_game *g,
-                                 int x0, int z0, int x1, int z1, int padding)
+                                 int x0, int z0, int x1, int z1, int padding, int ground_y)
 {
     int i;
     for (i = 0; i < g->primitive_count; i++) {
@@ -3044,6 +3054,7 @@ static int actor_segment_blocked(const struct toy_game *g,
         struct toy_game_box box;
         if (!(p->flags & TOY_MAP_PRIMITIVE_COLLISION) ||
             p->shape != TOY_MAP_PRIMITIVE_BOX) continue;
+        if (p->base_y > ground_y + RASTERFALL_HUMAN_HEIGHT_RFU) continue;
         box.minx=p->minx; box.maxx=p->maxx; box.minz=p->minz; box.maxz=p->maxz;
         box.miny=p->base_y; box.maxy=p->surface_y0;
         box.minx -= padding; box.maxx += padding;
@@ -3120,7 +3131,7 @@ static int nav_next_waypoint(const struct toy_game *g,
                          g->nav_cell_size + g->nav_cell_size / 2;
         int waypoint_z = g->nav_origin + (current / g->nav_width) *
                          g->nav_cell_size + g->nav_cell_size / 2;
-        if (!actor_segment_blocked(g, x, z, waypoint_x, waypoint_z, radius) &&
+        if (!actor_segment_blocked(g, x, z, waypoint_x, waypoint_z, radius, ground_y) &&
             nav_segment_allowed(g, x, z, waypoint_x, waypoint_z,
                                 radius, ground_y)) {
             *out_x = waypoint_x;
@@ -3144,7 +3155,7 @@ static void actor_path_toward(struct toy_game *g, struct toy_game_actor *a,
     }
     if (!a->nav_active &&
         (actor_segment_blocked(g, a->x, a->z, target_x, target_z,
-                               TOY_GAME_PLAYER_RADIUS) ||
+                               TOY_GAME_PLAYER_RADIUS, a->ground_y) ||
          !nav_segment_allowed(g, a->x, a->z, target_x, target_z,
                               TOY_GAME_PLAYER_RADIUS, a->ground_y))) {
         if (nav_next_waypoint(g, a->x, a->z, target_x, target_z,
@@ -3157,6 +3168,28 @@ static void actor_path_toward(struct toy_game *g, struct toy_game_actor *a,
     distance = isqrt((long long)dx * dx + (long long)dz * dz);
     if (distance > 0)
         move_actor_forced(g, a, dx * speed / distance, dz * speed / distance);
+}
+
+/* Upward movement sweeps the body's head against suspended box undersides.
+ * The same clamp is used by local/remote actors, AI actors and enemies. */
+static int resolve_motion_ceiling(const struct toy_game *g, int x, int z,
+                                  int radius, int ground_y, int old_height,
+                                  int *airborne_y, int *velocity)
+{
+    int i, proposed = ground_y + *airborne_y, result = proposed;
+    if (proposed <= old_height) return proposed;
+    for (i = 0; i < g->primitive_count; i++) {
+        const struct toy_map_primitive *p = g->primitives + i;
+        int limit = p->base_y - RASTERFALL_HUMAN_HEIGHT_RFU;
+        if (!(p->flags & TOY_MAP_PRIMITIVE_COLLISION) ||
+            p->shape != TOY_MAP_PRIMITIVE_BOX || p->base_y <= 0 ||
+            old_height > limit || proposed <= limit) continue;
+        if (x + radius > p->minx && x - radius < p->maxx &&
+            z + radius > p->minz && z - radius < p->maxz && limit < result)
+            result = limit;
+    }
+    if (result < proposed) { *airborne_y = result - ground_y; *velocity = 0; }
+    return result;
 }
 
 static void update_motion_values(struct toy_game *g,
@@ -3176,7 +3209,8 @@ static void update_motion_values(struct toy_game *g,
     actor->vertical_velocity -= TOY_GAME_AIRBORNE_GRAVITY;
     if (actor->vertical_velocity < -TOY_GAME_FALL_TERMINAL_VELOCITY)
         actor->vertical_velocity = -TOY_GAME_FALL_TERMINAL_VELOCITY;
-    new_height = actor->ground_y + actor->airborne_y;
+    new_height = resolve_motion_ceiling(g, actor->x, actor->z, TOY_GAME_PLAYER_RADIUS,
+            actor->ground_y, old_height, &actor->airborne_y, &actor->vertical_velocity);
     if (actor->knockback_x || actor->knockback_z) {
         blocked = toy_game_move_actor_forced_swept(
             g, actor, actor->knockback_x, actor->knockback_z,
@@ -3185,7 +3219,7 @@ static void update_motion_values(struct toy_game *g,
         if (blocked & TOY_GAME_FORCED_MOVE_BLOCKED_Z) actor->knockback_z = 0;
     }
     ground = toy_game_query_ground(g, actor->x, actor->z,
-                                   TOY_GAME_PLAYER_RADIUS, actor->ground_y);
+                                   TOY_GAME_PLAYER_RADIUS, actor->ground_y + actor->airborne_y);
     landing_ground = ground.landing_y;
     /* A fall can end on a ramp above the actor's previous ground_y.  Landing
      * at absolute height zero leaves the actor inside the ramp and the next
@@ -3225,7 +3259,8 @@ static void update_actor_special_motion(struct toy_game *g, int dt_ms)
                 -TOY_GAME_FALL_TERMINAL_VELOCITY)
             actor->vertical_velocity =
                 -TOY_GAME_FALL_TERMINAL_VELOCITY;
-        new_height = actor->ground_y + actor->airborne_y;
+        new_height = resolve_motion_ceiling(g, actor->x, actor->z, TOY_GAME_PLAYER_RADIUS,
+            actor->ground_y, old_height, &actor->airborne_y, &actor->vertical_velocity);
         /* Apply horizontal jump momentum before checking the landing surface,
          * so a jump can reach a platform during this frame. */
         if (actor->air_x || actor->air_z)
@@ -3236,7 +3271,7 @@ static void update_actor_special_motion(struct toy_game *g, int dt_ms)
          * collision circle still intersects the platform side and gets stuck. */
         ground = toy_game_query_ground(g, actor->x, actor->z,
                                        TOY_GAME_PLAYER_RADIUS,
-                                       actor->ground_y);
+                                       actor->ground_y + actor->airborne_y);
         landing_ground = ground.landing_y;
         if ((!g->primitives || ground.has_landing) &&
             actor->vertical_velocity < 0 &&
@@ -3281,12 +3316,13 @@ static void update_remote_player_motion(struct toy_game *g,
     actor->vertical_velocity -= TOY_GAME_AIRBORNE_GRAVITY;
     if (actor->vertical_velocity < -TOY_GAME_FALL_TERMINAL_VELOCITY)
         actor->vertical_velocity = -TOY_GAME_FALL_TERMINAL_VELOCITY;
-    new_height = actor->ground_y + actor->airborne_y;
+    new_height = resolve_motion_ceiling(g, actor->x, actor->z, TOY_GAME_PLAYER_RADIUS,
+            actor->ground_y, old_height, &actor->airborne_y, &actor->vertical_velocity);
     if (actor->air_x || actor->air_z)
         toy_game_move_actor_forced_swept(g, actor, actor->air_x, actor->air_z,
                                           old_height, new_height);
     ground = toy_game_query_ground(g, actor->x, actor->z,
-                                   TOY_GAME_PLAYER_RADIUS, actor->ground_y);
+                                   TOY_GAME_PLAYER_RADIUS, actor->ground_y + actor->airborne_y);
     landing_ground = ground.landing_y;
     if (actor->vertical_velocity < 0 &&
         actor->airborne_y <= landing_ground - actor->ground_y) {
@@ -3732,7 +3768,8 @@ static void update_enemy_airborne(struct toy_game *g,
     e->vertical_velocity -= TOY_GAME_AIRBORNE_GRAVITY;
     if (e->vertical_velocity < -TOY_GAME_FALL_TERMINAL_VELOCITY)
         e->vertical_velocity = -TOY_GAME_FALL_TERMINAL_VELOCITY;
-    new_height = e->ground_y + e->airborne_y;
+    new_height = resolve_motion_ceiling(g, e->x, e->z, enemy_radius(e),
+        e->ground_y, old_height, &e->airborne_y, &e->vertical_velocity);
     if (e->knockback_x || e->knockback_z) {
         blocked = move_enemy_forced_swept(g, e, e->knockback_x,
                                           e->knockback_z,
@@ -3741,7 +3778,7 @@ static void update_enemy_airborne(struct toy_game *g,
         if (blocked & TOY_GAME_FORCED_MOVE_BLOCKED_Z) e->knockback_z = 0;
     }
     ground = toy_game_query_ground(g, e->x, e->z, enemy_radius(e),
-                                   e->ground_y);
+                                   e->ground_y + e->airborne_y);
     landing_ground = ground.landing_y;
     if (e->vertical_velocity < 0 &&
         e->airborne_y <= landing_ground - e->ground_y) {
@@ -4180,6 +4217,7 @@ static int fire_ray(struct toy_game *g, int source_x, int source_z,
                     int *out_enemy_index, int *out_damage)
 {
     int best = -1, best_t = 0, i;
+    int ray_y = actor ? actor->ground_y + actor->airborne_y + RASTERFALL_HUMAN_EYE_HEIGHT_RFU : RASTERFALL_HUMAN_EYE_HEIGHT_RFU;
     int radius_times_1024 = TOY_GAME_HIT_RADIUS * 1024;
     long long world_t = (long long)range << 20; /* 世界距离定点 */
     *out_enemy_index = -1;
@@ -4190,6 +4228,7 @@ static int fire_ray(struct toy_game *g, int source_x, int source_z,
         long long entry_u;
         if (!(p->flags & TOY_MAP_PRIMITIVE_COLLISION) ||
             p->shape != TOY_MAP_PRIMITIVE_BOX) continue;
+        if (p->base_y > ray_y) continue;
         box.minx=p->minx; box.maxx=p->maxx; box.minz=p->minz; box.maxz=p->maxz;
         box.miny=p->base_y; box.maxy=p->surface_y0;
         if (ray_box_entry(source_x, source_z, sy, cy,
@@ -4218,6 +4257,7 @@ static int fire_ray(struct toy_game *g, int source_x, int source_z,
             struct toy_game_box box;
             if (!(p->flags & TOY_MAP_PRIMITIVE_COLLISION) ||
                 p->shape != TOY_MAP_PRIMITIVE_BOX) continue;
+            if (p->base_y > ray_y) continue;
             box.minx=p->minx; box.maxx=p->maxx; box.minz=p->minz; box.maxz=p->maxz;
             box.miny=p->base_y; box.maxy=p->surface_y0;
             if (segment_hits_box(source_x, source_z, hit_x, hit_z,
@@ -5232,6 +5272,7 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
             struct toy_game_box box;
             if (!(p->flags & TOY_MAP_PRIMITIVE_COLLISION) ||
                 p->shape != TOY_MAP_PRIMITIVE_BOX) continue;
+            if (p->base_y > actor->ground_y + actor->airborne_y + RASTERFALL_HUMAN_EYE_HEIGHT_RFU) continue;
             box.minx=p->minx; box.maxx=p->maxx; box.minz=p->minz; box.maxz=p->maxz;
             box.miny=p->base_y; box.maxy=p->surface_y0;
             if (segment_hits_box(actor->x, actor->z, e->x, e->z,

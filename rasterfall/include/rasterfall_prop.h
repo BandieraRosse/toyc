@@ -43,7 +43,8 @@ enum rasterfall_prop_asset_id {
     RASTERFALL_PROP_ASSET_CAMPUS_CURB = 33,
     RASTERFALL_PROP_ASSET_CAMPUS_SIDEWALK = 34,
     RASTERFALL_PROP_ASSET_CAMPUS_TREE_PROXY = 35,
-    RASTERFALL_PROP_ASSET_COUNT = 35
+    RASTERFALL_PROP_ASSET_BOUNDARY_WALL = 36,
+    RASTERFALL_PROP_ASSET_COUNT = 36
 };
 
 struct rasterfall_prop_dimensions {
@@ -72,6 +73,7 @@ struct rasterfall_prop_instance {
     int z;
     int yaw_degrees;
     int scale_milli;
+    int length; /* RFU for procedural boundary_wall; ignored by meshes */
 };
 
 const struct rasterfall_prop_asset_profile *
