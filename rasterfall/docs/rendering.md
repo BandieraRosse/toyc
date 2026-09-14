@@ -1,6 +1,7 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-14
+> 源码核对基线补充：Static World Lighting V2 Phase B：64×48 Runtime collision ray/AABB field；主地面、primitive architecture、boundary walls、ramp/platform 接入，既有顶点亮度光栅路径平滑建筑平面；static RMESH/actor 保留 V1/bypass 策略。
 > 源码核对基线补充：Static World Lighting V2 Phase A：world-light bake/sample 移入独立模块，保持 V1 算法与原 triangle helper 的策略/舍入；static RMESH 与主地面仍 bypass。
 > 源码核对基线补充：Campaign Continuous Wall / Floor 与 Component Collision：`boundary_wall` 为长度参数化 RFU 墙体；`attr.collision=component|boundary|none` 在 Runtime Map 展开独立碰撞，保留 object owner ID；布局导出调用 C inspector 获取实际碰撞。
 > 源码核对基线补充：Campaign `env_arch_*` 复用正常 static prop renderer；V1 object.y 经 projection 保存，pivot 为 `-900 + map_prop->y`，旧 prop 的 y 为 0。
@@ -187,19 +188,19 @@ event payload，位移幅度按 damage 限幅缩放。
 
 World/environment lighting 的 owner 为 `include/rasterfall_world_light.h` 与
 `src/rasterfall_world_light.c`。`rasterfall_render_context.world_lighting` 持有每个 world 的缓存；
-旧 `rasterfall_render_bake_lightmap()` 生命周期入口委托模块 bake，查询
-`rasterfall_world_light_at(lighting,x,y,z)` 不依赖绑定 session。Phase A 保留 32×24 XZ 单格
-采样，Y 接口使用 renderer-space RFU（地面 -900），目前忽略 Y。`environment_q8` 保留 V1
-已合并的基础/east gradient、proximity 减亮与固定东侧增亮（150..286），`sun_visibility_q8`
-和 `contact_q8` 均为 256；没有新增遮挡算法，也不把旧 proximity 再乘一次。
-`rasterfall_world_light_q8()` 依次组合 environment × visibility / 256 × contact / 256；
-triangle helper 随后沿用 form/material policy/final color/fog 的既有计算与整数舍入。
-flat/textured/alpha 的既有网格消费已通过该边界，包含 primitive architecture、ramp/platform
-和原本使用这些 helper 的 actor/enemy；没有增加对象采样或改写角色入口。
-正常 partitioned ground/floor paint 保留固定 256 与无雾；static RMESH prop（含建筑 RMESH）
-保留 gallery lighting 的 256/无雾策略。gallery、scene override、fixed floor 与角色 material role
-均留在 renderer presentation 层，world API 不解释这些语义。编码前审计见
-[Phase A 开发记录](static-world-lighting-phase-a.md)。
+`rasterfall_render_bake_lightmap()` 在 world load/switch 后生成独立 V1 cache 和 V2 field。
+`rasterfall_world_light_bake_v2()` 只读 Runtime Map collision/surface；64×48 sample 使用地面相对
+高度沿 canonical form-light 方向测试三维 AABB。`rasterfall_world_light_at(lighting,x,y,z)` 对
+三个分量分别做 Q8 bilinear，并 clamp bounds；它是一层 ground-following XZ field，不是 3D volume。
+`rasterfall_world_light_v2_q8()` 组合 environment × (192 + visibility×64/256)/256 × contact/256；
+开放区 environment 为 256，旧 gradient/proximity/east boost 不进入 V2。建筑平面细分并复用
+现有 textured rasterizer 的 flat fallback/vertex light 插值，近裁剪同时插值光照。
+正常 partitioned ground/floor paint 消费 V2 并保留原无雾策略；map wall/texture/box/ramp/platform
+及独立 boundary wall visual boxes 消费 V2，原 form、面调色和 fog 数学不变。
+static RMESH（含建筑 RMESH）仍为 gallery 256/无雾；actor/enemy、model display、武器、VFX
+与诊断未扩大接入，原消费者用 `rasterfall_world_light_at_v1()` 和原 V1 compose。
+V1 混合 field 仅服务这些延期消费者，永不叠加 V2。高度与遮挡限制见
+[Phase B 说明](static-world-lighting-phase-b.md)；原始审计见 [Phase A 开发记录](static-world-lighting-phase-a.md)。
 
 正式 RMESH 路径在 `render_gallery_model_range()` 统一应用低成本 ambient + directional
 form-lighting，覆盖 RFCHAR/skeletal body、static prop 和通过同一模型入口绘制的第三人称 weapon。

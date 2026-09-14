@@ -1,6 +1,7 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-14
+> 源码核对基线补充：Static World Lighting V2 Phase B：64×48 ground-following field，Runtime Map 三维 AABB 太阳遮挡、独立弱 contact 与 Q8 bilinear；主地面/建筑平面/边界墙消费 V2，角色与 static RMESH 保留原策略。见 static-world-lighting-phase-b.md。
 > 源码核对基线补充：Static World Lighting V2 Phase A：独立 world-light owner 与显式 position sample；V1 32×24 bake/nearest-cell 和 renderer bypass 保持原行为。
 > 源码核对基线补充：Surface 以 `attr.collision_id` 绑定 Runtime collision 稳定 ID；加载检查引用与唯一绑定，Gameplay Projection 按 ID 合并几何，不再使用 surface legacy_index。
 > 源码核对基线补充：Campaign Continuous Wall / Floor 与 Component Collision：`boundary_wall` 为长度参数化 RFU 墙体；`attr.collision=component|boundary|none` 在 Runtime Map 展开独立碰撞，保留 object owner ID；布局导出调用 C inspector 获取实际碰撞。
@@ -62,7 +63,7 @@
 | 场景、角色、HUD、特效、第一人称武器、性能 | [rendering.md](rendering.md) | `src/rasterfall_render.c`、`src/dev-tests/rasterfall_visual_capture.inc` |
 | 角色 humanoid / 实景距离观察组图 | [asset-pipeline.md](asset-pipeline.md)、[rendering.md](rendering.md) | `tools/character_lab_sheet.py`、`tools/character_world_sheet.py` |
 | RMESH 基础光照、角色 role 可读性策略、Lighting OFF/V1 回归 | [rendering.md](rendering.md) | `model_form_light_q8()` → `character_render_policy()` → `render_gallery_model_range()`；`lighting-props` / Character Acceptance `lighting-policy` |
-| 世界位置光照查询、static field bake 与 Phase A 边界 | [rendering.md](rendering.md)、[Phase A 开发记录](static-world-lighting-phase-a.md) | `include/rasterfall_world_light.h` / `src/rasterfall_world_light.c` 拥有 sample/bake；render context 持有缓存，triangle helper 消费；form/material/fog 仍归原层 |
+| 世界位置光照查询、静态太阳遮挡、ground/architecture 接入 | [rendering.md](rendering.md)、[Phase B 说明](static-world-lighting-phase-b.md)、[Phase A 开发记录](static-world-lighting-phase-a.md) | `include/rasterfall_world_light.h` / `src/rasterfall_world_light.c` 拥有 field/bake/bilinear/compose；Runtime Map collision/surface 只读进入 bake；renderer 持有缓存并限定 V2 消费范围；form/material/fog 仍归原层 |
 | Hurd 职业外观、低模 AI 人体、RF Humanoid V1/V2、基础外观、指定角色独立绘制入口 | [rendering.md](rendering.md) | `rasterfall_render.h` 的 `rasterfall_procedural_humanoid_state` / `rasterfall_render_procedural_humanoid()`；`rasterfall_character.h` 的基础/职业 profile；`dev-tests/rasterfall_visual_capture.inc` 的角色验收与 world strip |
 | 中文 UI、UTF-8 文本和 GB2312 点阵字库 | [rendering.md](rendering.md)、[asset-sources.md](asset-sources.md) | `lib/graphics/fb_font.c`、`assets/fonts/` |
 | world-space 静态 RMESH prop、实例变换和开发展示 | [rendering.md](rendering.md) | `include/rasterfall_render.h`、`src/rasterfall_render.c` |

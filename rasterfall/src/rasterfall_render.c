@@ -49,9 +49,6 @@
  * The fixed Q15 direction points from the surface toward a high, north-west
  * key light.  Keeping the result in Q8.8 lets the existing rasterizer apply
  * it to flat and textured base colours without a per-pixel dot product. */
-#define RASTERFALL_MODEL_LIGHT_X_Q15 (-13377)
-#define RASTERFALL_MODEL_LIGHT_Y_Q15 26755
-#define RASTERFALL_MODEL_LIGHT_Z_Q15 (-13377)
 #define RASTERFALL_MODEL_AMBIENT_Q8 136
 #define RASTERFALL_MODEL_DIRECTIONAL_Q8 120
 #define RASTERFALL_MODEL_MIN_Q8 136
@@ -224,6 +221,7 @@ static const struct rasterfall_net *active_net;
 static const struct toy_texture_view *active_wall_texture;
 static const struct toy_texture_view *active_model_texture;
 static struct rasterfall_world_lighting *active_world_lighting;
+static int active_world_light_v2;
 static int active_textures;
 static int active_fixed_floor_lighting;
 static int active_infected_model;
@@ -2087,7 +2085,10 @@ static int render_static_props(struct toy_renderer *renderer,
         instance.yaw_degrees = map_prop->yaw_degrees;
         instance.scale_milli = map_prop->scale_milli;
         instance.length = map_prop->length;
+        active_world_light_v2 = active_session->map_ops.runtime_loaded &&
+            instance.asset_id == RASTERFALL_PROP_ASSET_BOUNDARY_WALL;
         pixels += rasterfall_render_static_prop(renderer, camera, &instance);
+        active_world_light_v2 = 0;
     }
     return pixels;
 }
@@ -2798,8 +2799,11 @@ static void render_gallery_selection(struct toy_surface *surface,
 /* Renderer adapter: world sampling has no gallery/material/fog policy. */
 static int world_brightness_at(int x, int y, int z)
 {
+    if (active_world_light_v2)
+        return rasterfall_world_light_v2_q8(
+            rasterfall_world_light_at(active_world_lighting, x, y, z));
     return rasterfall_world_light_q8(
-        rasterfall_world_light_at(active_world_lighting, x, y, z));
+        rasterfall_world_light_at_v1(active_world_lighting, x, y, z));
 }
 
 static int baked_fog_at(int distance)
@@ -3015,6 +3019,7 @@ static int draw_world_triangle_views(struct toy_renderer *renderer,
                                const struct vec3 *vc, uint32_t color)
 {
     struct vec3 input[3], clipped[4];
+    struct world_uv_vertex light_input[3], light_clipped[4];
     int count, drawn = 0;
     if (va && vb && vc) {
         input[0] = *va; input[1] = *vb; input[2] = *vc;
@@ -3023,7 +3028,17 @@ static int draw_world_triangle_views(struct toy_renderer *renderer,
         world_to_view(camera, b, &input[1]);
         world_to_view(camera, c, &input[2]);
     }
-    if (input[0].z >= NEAR_Z && input[1].z >= NEAR_Z &&
+    if (active_world_light_v2) {
+        const struct vec3 *world[3] = {a,b,c};
+        for (int k = 0; k < 3; k++) {
+            light_input[k].p = input[k];
+            light_input[k].u = light_input[k].v = 0;
+            light_input[k].su = light_input[k].sv = 0;
+            light_input[k].light = world_brightness_at(world[k]->x,world[k]->y,world[k]->z);
+        }
+        count = clip_near_uv(light_input,3,light_clipped);
+        for (int k = 0; k < count; k++) clipped[k] = light_clipped[k].p;
+    } else if (input[0].z >= NEAR_Z && input[1].z >= NEAR_Z &&
         input[2].z >= NEAR_Z) {
         clipped[0] = input[0]; clipped[1] = input[1]; clipped[2] = input[2];
         count = 3;
@@ -3038,6 +3053,7 @@ static int draw_world_triangle_views(struct toy_renderer *renderer,
     for (int i = 1; i + 1 < count; i++) {
         struct toy_screen_vertex sa, sb, sc;
         long long area;
+        int reversed = 0;
         project_vertex(&renderer->surface, &clipped[0], &sa);
         project_vertex(&renderer->surface, &clipped[i], &sb);
         project_vertex(&renderer->surface, &clipped[i + 1], &sc);
@@ -3058,13 +3074,14 @@ static int draw_world_triangle_views(struct toy_renderer *renderer,
             sb.inv_z = sc.inv_z;
             sc.x = swap.x; sc.y = swap.y; sc.z = swap.z;
             sc.inv_z = swap.inv_z;
+            reversed = 1;
         }
         int center_x = (a->x + b->x + c->x) / 3;
         int center_z = (a->z + b->z + c->z) / 3;
         int light = active_model_scene_light_override_q8 >= 0 ?
                     active_model_scene_light_override_q8 :
                     active_gallery_lighting ? 256 :
-                    fixed_floor_lighting ? 256 :
+                    (fixed_floor_lighting && !active_world_light_v2) ? 256 :
                     world_brightness_at(center_x, (a->y + b->y + c->y) / 3,
                                         center_z);
         int fog = active_gallery_lighting ? 0 : fixed_floor_lighting ? 0 :
@@ -3077,7 +3094,17 @@ static int draw_world_triangle_views(struct toy_renderer *renderer,
         /* 区域涂色（fixed_floor_lighting）与地砖仅差 6 个世界单位，掠射角下
          * 插值深度误差会盖过真实差值导致 z-fight；涂色按覆盖层绘制，
          * 依赖"地砖先画、墙后画"的记录顺序保证遮挡正确。 */
-        if (fixed_floor_lighting)
+        if (active_world_light_v2) {
+            sa.light = light_clipped[0].light;
+            sb.light = light_clipped[reversed ? i+1 : i].light;
+            sc.light = light_clipped[reversed ? i : i+1].light;
+            sa.u = sa.v = sb.u = sb.v = sc.u = sc.v = 0;
+            sa.u_over_z = sa.v_over_z = sb.u_over_z = sb.v_over_z = sc.u_over_z = sc.v_over_z = 0;
+            /* The existing textured rasterizer supports vertex light and a
+             * flat fallback colour. No texture or new shading mathematics. */
+            drawn += toy_renderer_triangle_textured_lit(renderer,&sa,&sb,&sc,
+                                                        NULL,0,color | 0xFF000000U,-1,fog);
+        } else if (fixed_floor_lighting)
             drawn += toy_renderer_triangle_lit(renderer, &sa, &sb, &sc,
                                                color, light, fog);
         else
@@ -3147,7 +3174,7 @@ static int draw_world_triangle_alpha(struct toy_renderer *renderer,
         }
         drawn += toy_renderer_triangle_lit_alpha(
             renderer, &screen[0], &screen[1], &screen[2], color,
-            fixed_floor_lighting ? 256 : world_brightness_at(
+            (fixed_floor_lighting && !active_world_light_v2) ? 256 : world_brightness_at(
                 (a->x + b->x + c->x) / 3, (a->y + b->y + c->y) / 3,
                 (a->z + b->z + c->z) / 3),
             fixed_floor_lighting ? 0 : baked_fog_at(world_distance(
@@ -3250,7 +3277,7 @@ static int draw_world_triangle_tex_views(struct toy_renderer *renderer,
         int scene_light = active_model_scene_light_override_q8 >= 0 ?
                           active_model_scene_light_override_q8 :
                           active_gallery_lighting ? 256 :
-                          fixed_floor_lighting ? 256 :
+                          (fixed_floor_lighting && !active_world_light_v2) ? 256 :
                           world_brightness_at(center_x,
                               (a->p.y + b->p.y + c->p.y) / 3, center_z);
         int model_light = (a->light + b->light + c->light) / 3;
@@ -3337,11 +3364,41 @@ static int draw_position_quad_tex(struct toy_renderer *renderer,
     return draw_quad_tex(renderer, camera, &wa, &wb, &wc, &wd, color);
 }
 
+static struct vec3 light_quad_position(const struct vec3 *a, const struct vec3 *b,
+                                       const struct vec3 *c, const struct vec3 *d,
+                                       int u, int v, int nu, int nv)
+{
+    struct vec3 p;
+#define QUAD_COORD(k) p.k = (int)(((long long)a->k * (nu-u) * (nv-v) + (long long)b->k * u * (nv-v) + (long long)c->k * u * v + (long long)d->k * (nu-u) * v) / ((long long)nu * nv))
+    QUAD_COORD(x); QUAD_COORD(y); QUAD_COORD(z);
+#undef QUAD_COORD
+    return p;
+}
+
 static int draw_quad(struct toy_renderer *renderer, const struct camera *camera,
                      const struct vec3 *a, const struct vec3 *b,
                      const struct vec3 *c, const struct vec3 *d,
                      uint32_t color)
 {
+    if (active_world_light_v2) {
+        int u, v, pixels = 0;
+        int du = abs(b->x-a->x) > abs(b->z-a->z) ? abs(b->x-a->x) : abs(b->z-a->z);
+        int dv = abs(d->x-a->x) > abs(d->z-a->z) ? abs(d->x-a->x) : abs(d->z-a->z);
+        int nu = (du + 1023) / 1024, nv = (dv + 1023) / 1024;
+        if (nu < 1) nu = 1;
+        if (nv < 1) nv = 1;
+        /* Subdivide V2 planes for local field variation, then use existing
+         * vertex light interpolation rather than constant triangle bands. */
+        for (v = 0; v < nv; v++) for (u = 0; u < nu; u++) {
+            struct vec3 p = light_quad_position(a,b,c,d,u,v,nu,nv);
+            struct vec3 q = light_quad_position(a,b,c,d,u+1,v,nu,nv);
+            struct vec3 r = light_quad_position(a,b,c,d,u+1,v+1,nu,nv);
+            struct vec3 s = light_quad_position(a,b,c,d,u,v+1,nu,nv);
+            pixels += draw_world_triangle(renderer,camera,&p,&q,&r,color);
+            pixels += draw_world_triangle(renderer,camera,&p,&r,&s,color);
+        }
+        return pixels;
+    }
     return draw_world_triangle(renderer, camera, a, b, c, color) +
            draw_world_triangle(renderer, camera, a, c, d, color);
 }
@@ -4571,6 +4628,7 @@ static int render_scene(struct toy_renderer *renderer, const struct camera *came
     phase_start = render_monotonic_us();
     /* 自由俯仰下先铺天空/地面：地平线由俯仰角决定，墙面与地板随后覆盖 */
     rasterfall_sky_draw(&renderer->surface, camera);
+    active_world_light_v2 = active_session->map_ops.runtime_loaded;
     fixed_floor_lighting = 1;
     pixels += draw_partitioned_floor(renderer, camera);
     fixed_floor_lighting = 0;
@@ -4580,6 +4638,10 @@ static int render_scene(struct toy_renderer *renderer, const struct camera *came
     phase_start = render_monotonic_us();
     for (int i=0; i<level_map.draw_count; i++) {
         struct toy_map_draw *x=&level_map.draw[i];
+        active_world_light_v2 = active_session->map_ops.runtime_loaded &&
+            (x->type == TOY_MAP_DRAW_WALL || x->type == TOY_MAP_DRAW_TEXTURE ||
+             x->type == TOY_MAP_DRAW_RAMP || x->type == TOY_MAP_DRAW_PLATFORM ||
+             x->type == TOY_MAP_DRAW_BOX);
         if (x->type==TOY_MAP_DRAW_FLOOR || x->type==TOY_MAP_DRAW_BORDER) {
             /* Floor colours are already part of the tessellated base plane.
              * Keeping a second floor command here would reintroduce the
@@ -4649,6 +4711,7 @@ static int render_scene(struct toy_renderer *renderer, const struct camera *came
             pixels += render_world_sign(renderer, camera, x);
         }
     }
+    active_world_light_v2 = 0;
     scene_stats.map_us = render_monotonic_us() - phase_start;
     phase_start = render_monotonic_us();
     pixels += render_static_props(renderer, camera);
@@ -7655,6 +7718,7 @@ void rasterfall_render_bind(struct rasterfall_render_context *ctx)
     rasterfall_render_frontend_set_default_texture(active_wall_texture);
     active_model_texture = ctx->model_texture;
     active_world_lighting = &ctx->world_lighting;
+    active_world_light_v2 = 0;
     active_textures = ctx->textures_enabled;
     active_fixed_floor_lighting = ctx->fixed_floor_lighting;
 }
@@ -7684,7 +7748,12 @@ void rasterfall_render_set_action_runtime_debug(int enabled)
 
 void rasterfall_render_bake_lightmap(void)
 {
+    long start = render_monotonic_us();
     rasterfall_world_light_bake(active_world_lighting, &level_map);
+    rasterfall_world_light_bake_v2(active_world_lighting, &active_session->map_ops.runtime);
+    __printf("rasterfall: world-light V2 samples=%d occluders=%d ray-tests=%lld bake-us=%ld\n",
+             RF_WORLD_LIGHT_W * RF_WORLD_LIGHT_H, active_world_lighting->occluder_count,
+             active_world_lighting->ray_tests, render_monotonic_us() - start);
 }
 
 int rasterfall_render_scene(struct toy_renderer *renderer,

@@ -1045,10 +1045,10 @@ $(BUILD)/rasterfall_render_frontend.o: $(RASTERFALL_SRC)/render/rasterfall_rende
 	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
 	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 
-$(BUILD)/rasterfall_world_light.o: $(RASTERFALL_SRC)/rasterfall_world_light.c $(RASTERFALL_INC)/rasterfall_world_light.h $(RASTERFALL_INC)/toy_map.h | $(BUILD)
+$(BUILD)/rasterfall_world_light.o: $(RASTERFALL_SRC)/rasterfall_world_light.c $(RASTERFALL_INC)/rasterfall_world_light.h $(RASTERFALL_INC)/toy_map.h $(RASTERFALL_INC)/rasterfall_map_runtime.h | $(BUILD)
 	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 
-$(BUILD)/rasterfall_world_light_self.o: $(RASTERFALL_SRC)/rasterfall_world_light.c $(RASTERFALL_INC)/rasterfall_world_light.h $(RASTERFALL_INC)/toy_map.h $(SELF_CC) | $(BUILD)
+$(BUILD)/rasterfall_world_light_self.o: $(RASTERFALL_SRC)/rasterfall_world_light.c $(RASTERFALL_INC)/rasterfall_world_light.h $(RASTERFALL_INC)/toy_map.h $(RASTERFALL_INC)/rasterfall_map_runtime.h $(SELF_CC) | $(BUILD)
 	$(SELF_CC) $(SELF_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 
 $(BUILD)/rasterfall_options.o: $(RASTERFALL_SRC)/rasterfall_options.c \

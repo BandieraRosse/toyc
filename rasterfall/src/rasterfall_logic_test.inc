@@ -15,7 +15,7 @@ static int world_light_logic_test(void)
     map.minz = -24000; map.maxz = -21600;
     rasterfall_world_light_bake(&lighting, &map);
     /* No nearby geometry or east boost: preserve V1's overbright gradient. */
-    light = rasterfall_world_light_at(&lighting, map.minx, -900, map.minz);
+    light = rasterfall_world_light_at_v1(&lighting, map.minx, -900, map.minz);
     if (light.environment_q8 != 270 || light.sun_visibility_q8 != 256 ||
         light.contact_q8 != 256 || rasterfall_world_light_q8(light) != 270)
         return 1;
@@ -31,10 +31,10 @@ static int world_light_logic_test(void)
     /* Known values distinguish nearest-cell, edge clamp and Y independence. */
     for (i = 0; i < RASTERFALL_BAKED_LM_W * RASTERFALL_BAKED_LM_H; i++)
         lighting.environment[i] = (unsigned short)(150 + i % 137);
-    if (rasterfall_world_light_at(&lighting, -31901, -900, -23901).environment_q8 != 150 ||
-        rasterfall_world_light_at(&lighting, -31900, 4000, -23900).environment_q8 != 183 ||
-        rasterfall_world_light_at(&lighting, -33000, 0, -25000).environment_q8 != 150 ||
-        rasterfall_world_light_at(&lighting, -28000, 0, -21000).environment_q8 !=
+    if (rasterfall_world_light_at_v1(&lighting, -31901, -900, -23901).environment_q8 != 150 ||
+        rasterfall_world_light_at_v1(&lighting, -31900, 4000, -23900).environment_q8 != 183 ||
+        rasterfall_world_light_at_v1(&lighting, -33000, 0, -25000).environment_q8 != 150 ||
+        rasterfall_world_light_at_v1(&lighting, -28000, 0, -21000).environment_q8 !=
             lighting.environment[RASTERFALL_BAKED_LM_W * RASTERFALL_BAKED_LM_H - 1])
         return 4;
     light.environment_q8 = 286; light.sun_visibility_q8 = 128; light.contact_q8 = 192;
@@ -43,8 +43,9 @@ static int world_light_logic_test(void)
     map.primitive_count = 0;
     map.minx = map.maxx = 4000; map.minz = map.maxz = -160;
     rasterfall_world_light_bake(&lighting, &map);
-    if (rasterfall_world_light_at(&lighting, 4000, -900, -160).environment_q8 != 286)
+    if (rasterfall_world_light_at_v1(&lighting, 4000, -900, -160).environment_q8 != 286)
         return 6;
+    if (rasterfall_world_light_logic_test()) return 7;
     return 0;
 }
 

@@ -1,6 +1,7 @@
 # Rasterfall 地图格式
 
 > 文档更新：2026-09-14
+> 源码核对基线补充：Static World Lighting Phase B 只读 Runtime collision 的 bounds/base_y/height 和 surface 的 kind/height/height2/axis 烘焙；未改地图格式、稳定 ID 或 collision/gameplay 语义。单层高度选择限制见 static-world-lighting-phase-b.md。
 > 源码核对基线补充：Surface 以 `attr.collision_id` 绑定 Runtime collision 稳定 ID；加载检查引用与唯一绑定，Gameplay Projection 按 ID 合并几何，不再使用 surface legacy_index。
 > 源码核对基线补充：Campaign Continuous Wall / Floor 与 Component Collision：`boundary_wall` 为长度参数化 RFU 墙体；`attr.collision=component|boundary|none` 在 Runtime Map 展开独立碰撞，保留 object owner ID；布局导出调用 C inspector 获取实际碰撞。
 > 源码核对基线补充：Campaign `env_arch_*` 的局部建筑接入；`toy_map_prop.y` 保留 V1 object.y，renderer 使用 `-900 + y`，legacy prop 初始化 y=0；未新增碰撞或玩法 surface。
