@@ -41,8 +41,6 @@
 #define NEAR_Z RASTERFALL_NEAR_Z
 #define ENEMY_RENDER_DISTANCE 24000
 #define UV_ONE 65536
-#define BAKED_LM_W 32
-#define BAKED_LM_H 24
 #define RASTERFALL_CHARACTER_NEAR_RFU 1536
 #define RASTERFALL_CHARACTER_MID_RFU 4096
 #define RASTERFALL_CHARACTER_FAR_RFU 15360
@@ -225,7 +223,7 @@ static struct rasterfall_effects *active_effects;
 static const struct rasterfall_net *active_net;
 static const struct toy_texture_view *active_wall_texture;
 static const struct toy_texture_view *active_model_texture;
-static unsigned short *active_lightmap;
+static struct rasterfall_world_lighting *active_world_lighting;
 static int active_textures;
 static int active_fixed_floor_lighting;
 static int active_infected_model;
@@ -252,8 +250,6 @@ static int collect_model_render_stats;
 #define game active_session->game_state
 #define interactables active_session->items
 #define interactable_count active_session->item_count
-#define baked_lightmap active_lightmap
-#define baked_light_at_render(x, z) baked_light_at(x, z)
 #define fixed_floor_lighting active_fixed_floor_lighting
 #define textures_enabled active_textures
 #define active_texture_view (frontend_state()->texture_view)
@@ -2799,50 +2795,11 @@ static void render_gallery_selection(struct toy_surface *surface,
                    RF_COLOR_UI_ACCENT_BRIGHT, surface->stride);
 }
 
-static void bake_static_lightmap(void)
+/* Renderer adapter: world sampling has no gallery/material/fog policy. */
+static int world_brightness_at(int x, int y, int z)
 {
-    int x, z, i;
-    for (z = 0; z < BAKED_LM_H; z++) for (x = 0; x < BAKED_LM_W; x++) {
-        int wx = level_map.minx + (level_map.maxx - level_map.minx) * (x * 2 + 1) /
-                 (BAKED_LM_W * 2);
-        int wz = level_map.minz + (level_map.maxz - level_map.minz) * (z * 2 + 1) /
-                 (BAKED_LM_H * 2);
-        int light = 270 + (wx - level_map.minx) * 4 /
-                    (level_map.maxx - level_map.minx ? level_map.maxx - level_map.minx : 1);
-        for (i = 0; i < level_map.primitive_count; i++) {
-            const struct toy_map_primitive *b = &level_map.primitives[i];
-            int dx = wx < b->minx ? b->minx - wx : wx > b->maxx ? wx - b->maxx : 0;
-            int dz = wz < b->minz ? b->minz - wz : wz > b->maxz ? wz - b->maxz : 0;
-            int dist = dx > dz ? dx : dz;
-            if (b->shape == TOY_MAP_PRIMITIVE_BOX &&
-                strncmp(b->role, "air_gate", 8) && dist < 900)
-                light -= (900 - dist) * 24 / 900;
-        }
-        /* Warm point light baked from the small lamp in the east corner. */
-        {
-            int ldx = wx - 4000, ldz = wz - 160;
-            int ldist = (int)isqrt((long long)ldx * ldx +
-                                   (long long)ldz * ldz);
-            if (ldist < 2600)
-                light += (2600 - ldist) * 26 / 2600;
-        }
-        if (light < 150) light = 150;
-        if (light > 286) light = 286;
-        baked_lightmap[z * BAKED_LM_W + x] = (unsigned short)light;
-    }
-}
-
-static int baked_light_at(int x, int z)
-{
-    int ix = (x - level_map.minx) * BAKED_LM_W /
-             (level_map.maxx - level_map.minx ? level_map.maxx - level_map.minx : 1);
-    int iz = (z - level_map.minz) * BAKED_LM_H /
-             (level_map.maxz - level_map.minz ? level_map.maxz - level_map.minz : 1);
-    if (ix < 0) ix = 0;
-    if (ix >= BAKED_LM_W) ix = BAKED_LM_W - 1;
-    if (iz < 0) iz = 0;
-    if (iz >= BAKED_LM_H) iz = BAKED_LM_H - 1;
-    return baked_lightmap[iz * BAKED_LM_W + ix];
+    return rasterfall_world_light_q8(
+        rasterfall_world_light_at(active_world_lighting, x, y, z));
 }
 
 static int baked_fog_at(int distance)
@@ -3108,7 +3065,8 @@ static int draw_world_triangle_views(struct toy_renderer *renderer,
                     active_model_scene_light_override_q8 :
                     active_gallery_lighting ? 256 :
                     fixed_floor_lighting ? 256 :
-                    baked_light_at(center_x, center_z);
+                    world_brightness_at(center_x, (a->y + b->y + c->y) / 3,
+                                        center_z);
         int fog = active_gallery_lighting ? 0 : fixed_floor_lighting ? 0 :
                   baked_fog_at(world_distance(camera, center_x, center_z));
         if (active_material_lighting_min_q8 > 0) {
@@ -3189,8 +3147,9 @@ static int draw_world_triangle_alpha(struct toy_renderer *renderer,
         }
         drawn += toy_renderer_triangle_lit_alpha(
             renderer, &screen[0], &screen[1], &screen[2], color,
-            fixed_floor_lighting ? 256 : baked_light_at((a->x + b->x + c->x) / 3,
-                                                        (a->z + b->z + c->z) / 3),
+            fixed_floor_lighting ? 256 : world_brightness_at(
+                (a->x + b->x + c->x) / 3, (a->y + b->y + c->y) / 3,
+                (a->z + b->z + c->z) / 3),
             fixed_floor_lighting ? 0 : baked_fog_at(world_distance(
                 camera, (a->x + b->x + c->x) / 3,
                 (a->z + b->z + c->z) / 3)), alpha);
@@ -3292,7 +3251,8 @@ static int draw_world_triangle_tex_views(struct toy_renderer *renderer,
                           active_model_scene_light_override_q8 :
                           active_gallery_lighting ? 256 :
                           fixed_floor_lighting ? 256 :
-                          baked_light_at(center_x, center_z);
+                          world_brightness_at(center_x,
+                              (a->p.y + b->p.y + c->p.y) / 3, center_z);
         int model_light = (a->light + b->light + c->light) / 3;
         int light = scene_light * model_light / 256;
         int fog = active_gallery_lighting ? 0 :
@@ -7694,7 +7654,7 @@ void rasterfall_render_bind(struct rasterfall_render_context *ctx)
     active_wall_texture = ctx->wall_texture;
     rasterfall_render_frontend_set_default_texture(active_wall_texture);
     active_model_texture = ctx->model_texture;
-    active_lightmap = ctx->lightmap;
+    active_world_lighting = &ctx->world_lighting;
     active_textures = ctx->textures_enabled;
     active_fixed_floor_lighting = ctx->fixed_floor_lighting;
 }
@@ -7724,7 +7684,7 @@ void rasterfall_render_set_action_runtime_debug(int enabled)
 
 void rasterfall_render_bake_lightmap(void)
 {
-    bake_static_lightmap();
+    rasterfall_world_light_bake(active_world_lighting, &level_map);
 }
 
 int rasterfall_render_scene(struct toy_renderer *renderer,

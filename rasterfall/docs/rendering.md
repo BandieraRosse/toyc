@@ -1,6 +1,7 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-14
+> 源码核对基线补充：Static World Lighting V2 Phase A：world-light bake/sample 移入独立模块，保持 V1 算法与原 triangle helper 的策略/舍入；static RMESH 与主地面仍 bypass。
 > 源码核对基线补充：Campaign Continuous Wall / Floor 与 Component Collision：`boundary_wall` 为长度参数化 RFU 墙体；`attr.collision=component|boundary|none` 在 Runtime Map 展开独立碰撞，保留 object owner ID；布局导出调用 C inspector 获取实际碰撞。
 > 源码核对基线补充：Campaign `env_arch_*` 复用正常 static prop renderer；V1 object.y 经 projection 保存，pivot 为 `-900 + map_prop->y`，旧 prop 的 y 为 0。
 > 源码核对基线补充：Return-to-WHU 地面策略仅为 `rasterfall_world_uses_authored_ground(world_id)` 一个布尔查询，owner 为 world content 模块。旧 world 保持 checkerboard、spawn 优先和首个 floor paint 优先；WHU ground 使用地图颜色，后提交 floor paint 覆盖先提交颜色。道路/广场/操场使用 floor 而非零高度 box，所有颜色在同一 y=-900 presentation 平面分区，不增加深度层或修改玩法高度。WHU `--map ... --environment-capture <dir>` 复用正常 renderer 输出 A18、B 广场、分馆前场、D→E/F 四个站立眼高 BMP；A18 camera 读取地图定义。
@@ -183,6 +184,22 @@ event payload，位移幅度按 damage 限幅缩放。
 绑定；底层光栅器在仓库公共的 `lib/graphics/renderer.c` / `include/toy_renderer.h`。
 
 ## Lighting V1：RMESH 形体光照
+
+World/environment lighting 的 owner 为 `include/rasterfall_world_light.h` 与
+`src/rasterfall_world_light.c`。`rasterfall_render_context.world_lighting` 持有每个 world 的缓存；
+旧 `rasterfall_render_bake_lightmap()` 生命周期入口委托模块 bake，查询
+`rasterfall_world_light_at(lighting,x,y,z)` 不依赖绑定 session。Phase A 保留 32×24 XZ 单格
+采样，Y 接口使用 renderer-space RFU（地面 -900），目前忽略 Y。`environment_q8` 保留 V1
+已合并的基础/east gradient、proximity 减亮与固定东侧增亮（150..286），`sun_visibility_q8`
+和 `contact_q8` 均为 256；没有新增遮挡算法，也不把旧 proximity 再乘一次。
+`rasterfall_world_light_q8()` 依次组合 environment × visibility / 256 × contact / 256；
+triangle helper 随后沿用 form/material policy/final color/fog 的既有计算与整数舍入。
+flat/textured/alpha 的既有网格消费已通过该边界，包含 primitive architecture、ramp/platform
+和原本使用这些 helper 的 actor/enemy；没有增加对象采样或改写角色入口。
+正常 partitioned ground/floor paint 保留固定 256 与无雾；static RMESH prop（含建筑 RMESH）
+保留 gallery lighting 的 256/无雾策略。gallery、scene override、fixed floor 与角色 material role
+均留在 renderer presentation 层，world API 不解释这些语义。编码前审计见
+[Phase A 开发记录](static-world-lighting-phase-a.md)。
 
 正式 RMESH 路径在 `render_gallery_model_range()` 统一应用低成本 ambient + directional
 form-lighting，覆盖 RFCHAR/skeletal body、static prop 和通过同一模型入口绘制的第三人称 weapon。

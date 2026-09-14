@@ -8,9 +8,8 @@
 #include "rasterfall_net.h"
 #include "rasterfall_prop.h"
 #include "rasterfall_model.h"
+#include "rasterfall_world_light.h"
 
-#define RASTERFALL_BAKED_LM_W 32
-#define RASTERFALL_BAKED_LM_H 24
 #define RASTERFALL_NEAR_Z 64
 
 struct rasterfall_render_context {
@@ -19,8 +18,7 @@ struct rasterfall_render_context {
     const struct rasterfall_net *net;
     struct toy_texture_view *wall_texture;
     const struct toy_texture_view *model_texture;
-    unsigned short lightmap[RASTERFALL_BAKED_LM_W *
-                            RASTERFALL_BAKED_LM_H];
+    struct rasterfall_world_lighting world_lighting;
     int textures_enabled;
     int fixed_floor_lighting;
 };

@@ -42,6 +42,7 @@ GAME_SRCS := rasterfall/src/rasterfall.c \
              rasterfall/src/rasterfall_console.c \
              rasterfall/src/rasterfall_options.c \
              rasterfall/src/rasterfall_render.c \
+             rasterfall/src/rasterfall_world_light.c \
              rasterfall/src/render/rasterfall_render_frontend.c \
              rasterfall/src/rasterfall_session.c \
              rasterfall/src/rasterfall_world_content.c \
