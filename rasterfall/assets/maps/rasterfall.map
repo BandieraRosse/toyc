@@ -283,8 +283,8 @@ object id=env_west_vent_1 kind=vent_unit x=-15500 y=0 z=6200 yaw=90 scale=1000 a
 object id=env_west_vent_2 kind=vent_unit x=-15500 y=0 z=7600 yaw=90 scale=1000 attr.legacy_index=11
 object id=env_west_pipe_1 kind=pipe_module x=-17200 y=0 z=6200 yaw=90 scale=1000 attr.legacy_index=12
 object id=env_west_pipe_2 kind=pipe_module x=-17200 y=0 z=7600 yaw=90 scale=1000 attr.legacy_index=13
-object id=env_west_pillar_1 kind=industrial_pillar x=-18200 y=0 z=5300 yaw=0 scale=1000 attr.legacy_index=14
-object id=env_west_pillar_2 kind=industrial_pillar x=-18200 y=0 z=8800 yaw=0 scale=1000 attr.legacy_index=15
+object id=env_west_pillar_1 kind=industrial_pillar x=-18500 y=0 z=3500 yaw=0 scale=1000 attr.legacy_index=14
+object id=env_west_pillar_2 kind=industrial_pillar x=-18500 y=0 z=6572 yaw=0 scale=1000 attr.legacy_index=15
 object id=env_west_bench kind=workbench x=-14300 y=0 z=8800 yaw=90 scale=1000 attr.legacy_index=16
 object id=env_west_ammo kind=ammo_container x=-14300 y=0 z=10100 yaw=90 scale=1000 attr.legacy_index=17
 object id=env_west_crate kind=crate x=-15700 y=0 z=10100 yaw=90 scale=1000 attr.legacy_index=18
@@ -292,9 +292,9 @@ object id=env_west_lamp kind=lamp_post x=-13000 y=0 z=5300 yaw=90 scale=1000 att
 # East service island: wider apron, repeated blue-grey ventilation rhythm.
 object id=env_east_vent_1 kind=vent_unit x=17100 y=0 z=7700 yaw=270 scale=1000 attr.legacy_index=20
 object id=env_east_vent_2 kind=vent_unit x=17100 y=0 z=9300 yaw=270 scale=1000 attr.legacy_index=21
-object id=env_east_pipe kind=pipe_module x=18700 y=0 z=8500 yaw=270 scale=1000 attr.legacy_index=22
-object id=env_east_pillar_1 kind=industrial_pillar x=18700 y=0 z=6500 yaw=0 scale=1000 attr.legacy_index=23
-object id=env_east_pillar_2 kind=industrial_pillar x=18700 y=0 z=10700 yaw=0 scale=1000 attr.legacy_index=24
+object id=env_east_pipe kind=pipe_module x=18200 y=0 z=8500 yaw=270 scale=1000 attr.legacy_index=22
+object id=env_east_pillar_1 kind=industrial_pillar x=19200 y=0 z=6000 yaw=0 scale=1000 attr.legacy_index=23
+object id=env_east_pillar_2 kind=industrial_pillar x=19200 y=0 z=9072 yaw=0 scale=1000 attr.legacy_index=24
 object id=env_east_wall_1 kind=short_wall x=15600 y=0 z=11100 yaw=0 scale=1000 attr.legacy_index=25
 object id=env_east_wall_2 kind=short_wall x=18000 y=0 z=11100 yaw=0 scale=1000 attr.legacy_index=26
 object id=env_east_lamp kind=lamp_post x=14700 y=0 z=6500 yaw=270 scale=1000 attr.legacy_index=27
@@ -318,7 +318,7 @@ object id=env_ramp_vent kind=vent_unit x=-17000 y=0 z=-14000 yaw=180 scale=1000 
 object id=env_ramp_lamp kind=lamp_post x=-18100 y=0 z=-15400 yaw=180 scale=1000 attr.legacy_index=42
 
 # Facility grammar: repeated anchor, open frame and control interface.
-object id=env_west_power kind=power_unit x=-16500 y=0 z=3900 yaw=90 scale=1250 attr.legacy_index=43
+object id=env_west_power kind=power_unit x=-17700 y=0 z=3900 yaw=90 scale=1250 attr.legacy_index=43
 object id=env_east_power kind=power_unit x=17600 y=0 z=4500 yaw=270 scale=1250 attr.legacy_index=44
 object id=env_south_power kind=power_unit x=19000 y=0 z=-21000 yaw=0 scale=1000 attr.legacy_index=45
 object id=env_west_control kind=control_cabinet x=-14700 y=0 z=4200 yaw=90 scale=1000 attr.legacy_index=46
@@ -350,3 +350,59 @@ render id=env_pad_east kind=floor min_x=14000 max_x=20000 min_z=2800 max_z=12000
 render id=env_pad_north kind=floor min_x=-10800 max_x=-4500 min_z=9800 max_z=13700 height=0 color=353D37 attr.legacy_index=101
 render id=env_pad_south kind=floor min_x=-10500 max_x=-4200 min_z=-16400 max_z=-14000 height=0 color=3C3A32 attr.legacy_index=102
 render id=env_pad_power_yard kind=floor min_x=16500 max_x=22000 min_z=-22500 max_z=-19500 height=0 color=353D37 attr.legacy_index=103
+
+# Architectural V1 Campaign integration. All objects are visual-only: no new
+# collision, surface, spawn or route records. Side shells mark equipment edges;
+# open shoulders and doorway openings preserve the existing movement network.
+# West: south entrance, western service edge, short eastern return, open north.
+# Wall panels are 2048 RFU; side beams are 3072 RFU, seated at 1434 RFU.
+object id=env_arch_west_entry kind=arch_doorway x=-15500 y=0 z=2200 yaw=0 scale=1000 attr.legacy_index=68
+object id=env_arch_west_entry_wall kind=arch_wall x=-18060 y=0 z=2200 yaw=0 scale=1000 attr.legacy_index=69
+object id=env_arch_west_wall_1 kind=arch_wall x=-19084 y=0 z=3224 yaw=90 scale=1000 attr.legacy_index=70
+object id=env_arch_west_wall_2 kind=arch_wall x=-19084 y=0 z=5272 yaw=90 scale=1000 attr.legacy_index=71
+object id=env_arch_west_wall_3 kind=arch_wall x=-19084 y=0 z=7320 yaw=90 scale=1000 attr.legacy_index=72
+object id=env_arch_west_return kind=arch_wall x=-13200 y=0 z=9000 yaw=270 scale=1000 attr.legacy_index=73
+object id=env_arch_west_pillar_3 kind=industrial_pillar x=-18500 y=0 z=9644 yaw=0 scale=1000 attr.legacy_index=74
+object id=env_arch_west_beam_1 kind=arch_beam x=-18500 y=1434 z=5036 yaw=90 scale=1000 attr.legacy_index=75
+object id=env_arch_west_beam_2 kind=arch_beam x=-18500 y=1434 z=8108 yaw=90 scale=1000 attr.legacy_index=76
+object id=env_arch_west_support kind=arch_support x=-18500 y=0 z=8108 yaw=90 scale=1000 attr.legacy_index=77
+object id=env_arch_west_panel_1 kind=arch_service_panel x=-18980 y=600 z=4248 yaw=90 scale=1000 attr.legacy_index=78
+object id=env_arch_west_panel_2 kind=arch_service_panel x=-18980 y=600 z=7320 yaw=90 scale=1000 attr.legacy_index=79
+object id=env_arch_west_tray_1 kind=arch_cable_tray x=-18940 y=1700 z=4248 yaw=90 scale=1000 attr.legacy_index=80
+object id=env_arch_west_tray_2 kind=arch_cable_tray x=-18940 y=1700 z=6296 yaw=90 scale=1000 attr.legacy_index=81
+# Horizontal mechanical line: terminal cabinet -> tee -> elbow -> power casing.
+# At yaw=90 local +X points -Z; fittings use port centres, not AABBs.
+object id=env_arch_west_pipe_1 kind=arch_pipe_straight x=-18900 y=600 z=6808 yaw=90 scale=1000 attr.legacy_index=82
+object id=env_arch_west_tee kind=arch_pipe_tee x=-18723 y=600 z=5784 yaw=270 scale=1000 attr.legacy_index=83
+object id=env_arch_west_pipe_2 kind=arch_pipe_straight x=-18900 y=600 z=4760 yaw=90 scale=1000 attr.legacy_index=84
+object id=env_arch_west_elbow kind=arch_pipe_elbow x=-18723 y=600 z=3913 yaw=180 scale=1000 attr.legacy_index=85
+object id=env_arch_west_power_feed kind=arch_pipe_straight x=-17876 y=600 z=3736 yaw=0 scale=1000 attr.legacy_index=86
+object id=env_arch_west_branch_control kind=control_cabinet x=-18234 y=0 z=5784 yaw=270 scale=1000 attr.legacy_index=87
+object id=env_arch_west_hatch kind=arch_floor_hatch x=-17700 y=4 z=9000 yaw=0 scale=1000 attr.legacy_index=88
+# East: two openings and a wide centre; independent north/south equipment bands.
+object id=env_arch_east_entry_s kind=arch_doorway x=15500 y=0 z=2500 yaw=0 scale=1000 attr.legacy_index=89
+object id=env_arch_east_entry_n kind=arch_doorway x=15500 y=0 z=12300 yaw=180 scale=1000 attr.legacy_index=90
+object id=env_arch_east_s_wall kind=arch_wall x=18060 y=0 z=2500 yaw=0 scale=1000 attr.legacy_index=91
+object id=env_arch_east_n_wall kind=arch_wall x=18060 y=0 z=12300 yaw=180 scale=1000 attr.legacy_index=92
+object id=env_arch_east_wall_1 kind=arch_wall x=19800 y=0 z=6000 yaw=270 scale=1000 attr.legacy_index=93
+object id=env_arch_east_wall_2 kind=arch_wall x=19800 y=0 z=8048 yaw=270 scale=1000 attr.legacy_index=94
+object id=env_arch_east_wall_3 kind=arch_wall x=19800 y=0 z=10096 yaw=270 scale=1000 attr.legacy_index=95
+object id=env_arch_east_beam kind=arch_beam x=19200 y=1434 z=7536 yaw=90 scale=1000 attr.legacy_index=96
+object id=env_arch_east_support kind=arch_support x=19200 y=0 z=7536 yaw=90 scale=1000 attr.legacy_index=97
+object id=env_arch_east_panel kind=arch_service_panel x=19690 y=600 z=10096 yaw=270 scale=1000 attr.legacy_index=98
+object id=env_arch_east_tray_1 kind=arch_cable_tray x=19660 y=1700 z=7024 yaw=270 scale=1000 attr.legacy_index=99
+object id=env_arch_east_tray_2 kind=arch_cable_tray x=19660 y=1700 z=9072 yaw=270 scale=1000 attr.legacy_index=100
+# Straight main joins the wall interface to the existing double-pipe equipment.
+object id=env_arch_east_pipe_1 kind=arch_pipe_straight x=19550 y=400 z=9584 yaw=90 scale=1000 attr.legacy_index=101
+object id=env_arch_east_elbow kind=arch_pipe_elbow x=19373 y=400 z=8737 yaw=90 scale=1000 attr.legacy_index=102
+object id=env_arch_east_feed kind=arch_pipe_straight x=18526 y=400 z=8560 yaw=0 scale=1000 attr.legacy_index=103
+object id=env_arch_east_hatch kind=arch_floor_hatch x=18000 y=4 z=6500 yaw=90 scale=1000 attr.legacy_index=104
+# South power yard: one rear service wall and an open entrance, no route walls.
+object id=env_arch_power_wall_1 kind=arch_wall x=17976 y=0 z=-22600 yaw=0 scale=1000 attr.legacy_index=105
+object id=env_arch_power_wall_2 kind=arch_wall x=20024 y=0 z=-22600 yaw=0 scale=1000 attr.legacy_index=106
+object id=env_arch_power_entry kind=arch_doorway x=19000 y=0 z=-19100 yaw=180 scale=1000 attr.legacy_index=107
+object id=env_arch_power_panel kind=arch_service_panel x=20024 y=600 z=-22500 yaw=0 scale=1000 attr.legacy_index=108
+object id=env_arch_power_tray kind=arch_cable_tray x=20024 y=1700 z=-22460 yaw=0 scale=1000 attr.legacy_index=109
+object id=env_arch_power_hatch kind=arch_floor_hatch x=21100 y=4 z=-21900 yaw=0 scale=1000 attr.legacy_index=110
+object id=env_arch_west_pipe_terminal kind=control_cabinet x=-18900 y=0 z=7474 yaw=180 scale=1000 attr.legacy_index=111
+object id=env_arch_east_pipe_terminal kind=control_cabinet x=19550 y=0 z=10250 yaw=180 scale=1000 attr.legacy_index=112

@@ -93,7 +93,7 @@ enum toy_map_pickup_kind {
 struct toy_map_pickup { int kind; int weapon; int x, z, y; };
 /* Presentation-only map record.  The parser stores a registry asset ID, not
  * a model path; the renderer adapts this to rasterfall_prop_instance. */
-struct toy_map_prop { int asset_id; int x, z, yaw_degrees, scale_milli; };
+struct toy_map_prop { int asset_id; int x, y, z, yaw_degrees, scale_milli; };
 struct toy_map_draw {
     int type;
     int a, b, c, d, e, f;

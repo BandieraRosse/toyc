@@ -2080,7 +2080,7 @@ static int render_static_props(struct toy_renderer *renderer,
         struct rasterfall_prop_instance instance;
         instance.asset_id = map_prop->asset_id;
         instance.x = map_prop->x;
-        instance.y = -900;
+        instance.y = -900 + map_prop->y;
         instance.z = map_prop->z;
         instance.yaw_degrees = map_prop->yaw_degrees;
         instance.scale_milli = map_prop->scale_milli;

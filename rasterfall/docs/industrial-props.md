@@ -1,7 +1,7 @@
 # 第一套程序化工业 / 军事组件
 
-> 文档更新：2026-09-13
-> 源码核对基线补充：Architectural V1 在同一 Builder 下新增 rf_arch_*；复用管径/法兰、米制与 registry 契约，独立原型不改 Campaign。
+> 文档更新：2026-09-14
+> 源码核对基线补充：Architectural V1 在同一 Builder 下新增 rf_arch_*；正式 Campaign 已通过 env_arch_* 接入局部建筑与服务带，原碰撞和玩法空间保持不变。
 > 源码核对基线补充：正式 Campaign 设施组合；动力机组、开放门架、控制柜沿用 Builder / V2 Hybrid / manifest importer。
 > 源码核对基线：工作区（十件 V2 Hybrid 的程序化几何、flat surface role、局部 32×32 sign 与统一 importer；空间与运行时契约不变）
 

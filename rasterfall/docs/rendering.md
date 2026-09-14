@@ -1,6 +1,7 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-14
+> 源码核对基线补充：Campaign `env_arch_*` 复用正常 static prop renderer；V1 object.y 经 projection 保存，pivot 为 `-900 + map_prop->y`，旧 prop 的 y 为 0。
 > 源码核对基线补充：Return-to-WHU 地面策略仅为 `rasterfall_world_uses_authored_ground(world_id)` 一个布尔查询，owner 为 world content 模块。旧 world 保持 checkerboard、spawn 优先和首个 floor paint 优先；WHU ground 使用地图颜色，后提交 floor paint 覆盖先提交颜色。道路/广场/操场使用 floor 而非零高度 box，所有颜色在同一 y=-900 presentation 平面分区，不增加深度层或修改玩法高度。WHU `--map ... --environment-capture <dir>` 复用正常 renderer 输出 A18、B 广场、分馆前场、D→E/F 四个站立眼高 BMP；A18 camera 读取地图定义。
 > 源码核对基线补充：campus-corner与near/mid/far、campus-asset-*复用dev-tests实际static prop/quad；资产开放视觉壳处理旧双面薄板深度竞争，未改renderer。
 > 源码核对基线补充：闭合 Architectural V1 prop 的 scoped backface culling 修复旧 static RFM2 双面薄墙穿透；frontend state 保存并恢复提交策略，其他模型不变。

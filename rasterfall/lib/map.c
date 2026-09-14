@@ -122,6 +122,7 @@ static int add_prop(struct toy_map *m, int asset_id, int x, int z,
     }
     prop.asset_id = asset_id;
     prop.x = x;
+    prop.y = 0;
     prop.z = z;
     prop.yaw_degrees = yaw_degrees;
     prop.scale_milli = scale_milli;

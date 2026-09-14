@@ -1,6 +1,7 @@
 # Rasterfall 地图格式
 
 > 文档更新：2026-09-14
+> 源码核对基线补充：Campaign `env_arch_*` 的局部建筑接入；`toy_map_prop.y` 保留 V1 object.y，renderer 使用 `-900 + y`，legacy prop 初始化 y=0；未新增碰撞或玩法 surface。
 > 源码核对基线补充：World record 保留已有 `attr.*` 扩展到 IR；`attr.identity=outpost|campaign_01|return_to_whu_v0` 经 Runtime Map 暴露，由 session 解析为已有 world ID。未知显式 identity 加载失败；无 identity 的实验地图仍使用历史 Campaign policy。身份不再来自文件名，改名不会改变 world behavior。`player_start` region 的既有 `attr.sy`/`attr.cy` 是 Q10 facing 向量（+Z 为 0/1024）；Runtime 保存并检查整数范围和非零方向，projection → level.start_sy/cy → session actor/camera 初始化及 reset/respawn。缺省仍为 0/1024，WHU 明确为 -724/-724（yaw 225°），坐标仍为 A18 设计占位。道路、广场和 E/F 是 presentation floor paint，不新增 gameplay surface type。
 > 源码核对基线补充：正式 Campaign 环境 object 组合；V1 object 连续 projection index、独立 collision 真值；多区域 environment capture。
 > 源码核对基线补充：保留既有开发坡道/墙顶几何，玩法连续性补充高端重叠衔接，规则见 gameplay.md。
@@ -223,6 +224,11 @@ flag 1 也继续由 session 生成，Hurd 因此使用 flag 2。若以后正式�
 空间和 World Content。当前 adapter 只投影有连续 `attr.legacy_index` 的 object；新增实例
 必须检查 runtime/projection 数量和真实 render，不能只看布局导出。V1 object placement
 仅进入 `level.props`，不按 profile 自动添加 collision；原有碰撞体继续独立拥有玩法阻挡。
+
+V1 object 的 `y` 是相对地面基准的 RFU 高度，经 `toy_map_prop.y` 传给 static prop renderer，
+最终 pivot 为 `-900 + y`；它不查询或自动吸附 gameplay surface。Campaign 的 `env_arch_*`
+用于西侧维修巷、东侧双入口设施和南侧动力区，梁、面板、管线及线槽必须显式填写高度。
+这些局部视觉壳可穿越，不表示新增实体围合；碰撞、出生区和路线仍由原记录决定。
 
 `--environment-capture <dir>` 以固定 seed 加载 Campaign，输出基地、北区、东西设施、
 东西路线、Hurd、南侧、坡道、出生室与南侧动力场视角；`tools/environment_sheet.py <dir>` 拼接原始 BMP。

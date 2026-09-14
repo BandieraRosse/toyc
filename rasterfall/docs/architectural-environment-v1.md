@@ -1,7 +1,7 @@
 # Architectural Environment V1
 
-> 文档更新：2026-09-13
-> 源码核对基线：2026-09-13 当前工作区 Builder 最终 panel/hatch 分区几何、industrial RMESH、registry 与 scoped culling 的 `arch-*` 实际截图；正式 Campaign 未改动。
+> 文档更新：2026-09-14
+> 源码核对基线：2026-09-14 Campaign `rasterfall.map` 的 `env_arch_*` 与 object.y projection；资产沿用 2026-09-13 最终 panel/hatch、industrial RMESH、registry 与 scoped culling。
 
 **Visual design = VISUALLY FROZEN。Engineering checkpoint = pending Sol。**
 最终 service panel / floor hatch 已完成 runtime 视觉签收；保留原十件 CANONICAL，不再扩展或打磨。
@@ -100,6 +100,18 @@ GLB 真实米制，RMESH 232 units/m，registry 在展示边界换算到 512 RFU
 坡面 shader/材质绑定及正式地图效果留给 Sol，不声称本轮已经验证全套坡道材质。
 
 ## 组合原型与验收入口
+
+正式 Campaign 现在通过 `rasterfall.map` 的 `env_arch_*` 使用本套件：西侧是南向宽入口、
+西侧连续服务带与短东侧回墙的半开放维修巷；东侧用南北双入口、东侧梁柱与设备带保留较宽
+中央空地；南侧动力场只设局部后墙和开放入口。没有完整屋顶或校园构件，也不在原实心墙前
+满铺墙壳。少量原设备和立柱重新落位，墙模数保持 2048 RFU、梁跨度保持 3072 RFU，
+梁底由 1434 RFU 高柱/支撑承接。
+
+这些建筑仅为视觉边界，不新增实体阻挡：原 collision、surface、region、交互和 actor spawn
+保持不变，玩家及敌人仍可穿过视觉壳。若后续需要实体围合，必须另行设计左右门肩 collision
+并验收导航，不能由 profile AABB 自动生成。地图 object 的 y 为相对地面的 RFU 高度；
+projection 保留它，renderer 在 `-900 + y` 放置梁、管线、面板和线槽。
+正式接入验收使用 `--environment-capture`，独立 `arch-*` fixture 仍仅验证资产和原型。
 
 `arch-*` 是 process-only Visual CLI fixture，使用正常 static prop、modular Rifleman 和
 真实 Common/Charger/Tank renderer；背景为独立 surface study，没有 session tick、碰撞、

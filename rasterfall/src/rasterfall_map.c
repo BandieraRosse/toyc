@@ -616,6 +616,7 @@ int rasterfall_map_project_runtime(struct rasterfall_map_state *map)
         prop = &map->level->props[map->level->prop_count++];
         prop->asset_id = profile->id;
         prop->x = object->x;
+        prop->y = object->y;
         prop->z = object->z;
         prop->yaw_degrees = object->yaw;
         prop->scale_milli = object->scale;

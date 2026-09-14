@@ -1,6 +1,7 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-14
+> 源码核对基线补充：Campaign `env_arch_*` 接入西侧维修巷、东侧开放设施与南侧动力区；V1 object.y → toy_map_prop.y → static prop 的地面相对高度，既有 collision/surface/region 不变。
 > 源码核对基线补充：Return-to-WHU compatibility/readability 入口：`world attr.identity` → session world ID → `rasterfall_world_uses_authored_ground()`；WHU floor paint 复用单平面分区，出生方向由 Runtime region sy/cy 投影。四个眼高视角用 `--map ... --environment-capture ...`。
 > 源码核对基线补充：Temporary Campus Kit V0 的库存audit、12件米制临时构件和隔离campus-*验收；见temporary-campus-kit-v0.md，未改WHU Reference JSON或正式地图。
 > 源码核对基线补充：新增《重返武汉大学》信息学部核心区 V0 资料参考入口；仅核对米制/RFU契约，未改正式地图或运行时，高程与道路宽度仍未核实。
@@ -77,7 +78,7 @@
 | 程序化工业/军事环境组件、Blender 批量导出 | [industrial-props.md](industrial-props.md)、[asset-pipeline.md](asset-pipeline.md) | `tools/blender/generate_rasterfall_props.py` |
 | 建筑模块、管线端口、墙地语言、服务巷/开放厂房原型 | [architectural-environment-v1.md](architectural-environment-v1.md) | 同一 Builder 的 `build_architecture()` → industrial manifests / prop registry → `architecture_capture()`；`tools/architecture_round.py` |
 | WHU资产清点、临时校园墙窗/台阶/树代理、独立街角验收 | [temporary-campus-kit-v0.md](temporary-campus-kit-v0.md) | `tools/blender/generate_campus_kit.py` → campus manifests / prop registry → `campus_capture()`；`tools/campus_kit_round.py` |
-| 正式 Campaign 环境组合与固定多区域实景验收 | [industrial-props.md](industrial-props.md)、[map-format.md](map-format.md)、[rendering.md](rendering.md) | `assets/maps/rasterfall.map` → runtime object projection；`--environment-capture` → `tools/environment_sheet.py` |
+| 正式 Campaign 建筑/环境组合与固定多区域实景验收 | [architectural-environment-v1.md](architectural-environment-v1.md)、[industrial-props.md](industrial-props.md)、[map-format.md](map-format.md)、[rendering.md](rendering.md) | `assets/maps/rasterfall.map` 的 `env_arch_*` → runtime object projection（保留 y）；`--environment-capture` → `tools/environment_sheet.py` |
 | 环境组件 V2 风格、palette、几何/纹理预算与验收 | [environment-art.md](environment-art.md)、[industrial-props.md](industrial-props.md) | 十件 static prop 源资产与游戏内展示 |
 | 整套 V2 Hybrid 生成、flat/局部 sign 分配 | [industrial-props.md](industrial-props.md)、[asset-pipeline.md](asset-pipeline.md) | 生成器 `PILOT`、`ACCENTS`、`Builder.box()`、`hybrid_prop()`；crate 沿用 `hybrid_crate()` |
 | 静态 prop 资产 ID、路径、展示缩放和默认尺寸 | [asset-pipeline.md](asset-pipeline.md) | `include/rasterfall_prop.h`、`src/rasterfall_prop.c` |

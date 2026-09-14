@@ -171,6 +171,14 @@ static int primitive_gameplay_logic_test(void)
            (level_map.primitives[i].flags&TOY_MAP_PRIMITIVE_COLLISION))
             return 19;
     rasterfall_map_set_air_walls(&session.map_ops,1);
+    /* Non-ground props must survive the Runtime Map presentation projection. */
+    for (int i = 0; i < rf_map_runtime_object_count(&session.map_ops.runtime); i++) {
+        const struct rf_map_runtime_object *object =
+            rf_map_runtime_object_at(&session.map_ops.runtime, i);
+        int slot = object->legacy_index;
+        if (!object->has_legacy_index || slot < 0 || slot >= level_map.prop_count ||
+            level_map.props[slot].y != object->y) return 18;
+    }
     if (level_map.prop_count < 10 ||
         level_map.prop_count != rf_map_runtime_object_count(&session.map_ops.runtime) ||
         level_map.props[0].asset_id != RASTERFALL_PROP_ASSET_CRATE ||
