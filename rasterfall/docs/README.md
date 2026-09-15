@@ -1,11 +1,12 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-15
+> 源码核对基线补充：Eula 正常 world/展示在 near/mid 使用 Gameplay Hybrid `eula_lod3.rmesh`，仅 FAR（4096 RFU 起）使用 compact LOD2；Hybrid 缺失时回退原模型。
 > 源码核对基线补充：Eula Animation Acceptance V1 提供 legacy VMD carrier 的固定离屏姿态组图；统一 `--character-performance[-suite]` 保留 model/actor/world benchmark 的原职责并提供单角色、固定资产族及常见实例组合的同口径统计。
 > 源码核对基线补充：Anime Gameplay Hybrid LOD V1 的 Eula pilot 使用离线 region descriptor、按骨长定义的关节邻域与 BDEF pair/weight 分区生成普通 compact RFM2；runtime、renderer 与 skinning 不增加角色特判。
 > 源码核对基线补充：True Vertex-Reduced Character LOD 在离线索引简化后 compact 实际引用 vertex 与对应 SKN1 BDEF；不改变 skeleton、CHR1 attachment、动画或 renderer skinning 算法。
 > 源码核对基线补充：2026-09-15 工作区；V2 Planar Raster Optimization 为 V2 无纹理细分平面增加专用 solid + interpolated vertex light + fog + depth command/worker 路径；`--render-performance` 保留 `generic-planar` A/B，输出 framebuffer/depth 差异、专用/回退 command 及路径耗时。
-> 源码核对基线补充：动漫角色正常 world/展示渲染统一优先 LOD2，缺失时按 LOD1 → 原模型回退；距离仅控制可见性与姿态更新。Campaign Maid 四人内容武器为 AK。
+> 源码核对基线补充：Maid 正常 world/展示仍优先 LOD2；Eula 已改为 near/mid Hybrid、FAR compact LOD2。Campaign Maid 四人内容武器为 AK。
 > 源码核对基线补充：Windows 启动地图加载的容量型 Map IR 改为临时堆分配，成功与失败均释放；不依赖扩大线程栈，详见 map-format.md 的 Runtime Bridge。
 > 源码核对基线补充：Static World Lighting V2 — FROZEN；最终64×48世界尺度、参数、consumer、验收与平台覆盖边界见 [Phase D](static-world-lighting-phase-d.md)。
 > 源码核对基线补充：Static World Lighting V2 Phase C3：V2 为唯一正常 runtime world-light source；V1 独立 diagnostic owner、显式 fixed override 与统一 scene factor，见 [Phase C3](static-world-lighting-phase-c3.md)。

@@ -1026,6 +1026,10 @@ static int prepare_gallery_vertex_cache(
 {
     unsigned int i;
     long phase_start;
+    if (frontend_state()->skinned_model != model) {
+        frontend_state()->skinned_model = model;
+        frontend_state()->skinned_vertices_valid = 0;
+    }
     if (gallery_vertex_cache_capacity < model->vertex_count) {
         struct gallery_cached_vertex *vertices =
             tlibc_malloc((size_t)model->vertex_count * sizeof(*vertices));
@@ -1231,14 +1235,27 @@ int rasterfall_render_static_prop_culling_logic_test(void)
     return result ? 0 : 1;
 }
 
-/* Anime characters always submit the cheapest available mesh.  Distance still
- * controls visibility and pose update cadence, but never promotes geometry. */
+/* Legacy anime characters always submit the cheapest available mesh. */
 static struct rasterfall_model_asset *anime_render_model(
     struct rasterfall_model_asset *model,
     struct rasterfall_model_asset *lod1, int lod1_loaded,
     struct rasterfall_model_asset *lod2, int lod2_loaded)
 {
     return lod2_loaded ? lod2 : (lod1_loaded ? lod1 : model);
+}
+
+/* Eula keeps the joint/face protected gameplay Hybrid mesh through the near
+ * and mid bands.  The aggressive compact LOD2 is only suitable for the far
+ * band (4096 RFU / roughly 8 m and beyond). */
+static struct rasterfall_model_asset *eula_render_model(
+    enum rasterfall_character_distance_quality quality,
+    struct rasterfall_model_asset *model,
+    struct rasterfall_model_asset *hybrid, int hybrid_loaded,
+    struct rasterfall_model_asset *lod2, int lod2_loaded)
+{
+    if (quality == RASTERFALL_CHARACTER_FAR && lod2_loaded)
+        return lod2;
+    return hybrid_loaded ? hybrid : model;
 }
 
 static void gallery_edge_vertex(struct toy_renderer *renderer,
@@ -2264,18 +2281,21 @@ static int render_characters_parallel(struct toy_renderer *renderer,
                                       const struct camera *camera)
 {
     struct character_frontend_dispatch dispatch;
+    enum rasterfall_character_distance_quality eula_quality;
     const struct toy_renderer *command_sources[5];
     int i, source_count = 0, drawn = 0;
     long pipeline_start, merge_start;
     dispatch.camera = camera;
     dispatch.surface = &renderer->surface;
     dispatch.depth = renderer->depth;
-    dispatch.models[0] = anime_render_model(&private_character_model,
+    eula_quality = character_distance_policy(camera, -13000, -10000, 0,
+        &private_character_frontend);
+    dispatch.models[0] = eula_render_model(eula_quality,
+        &private_character_model,
         &private_character_lod_model, private_character_lod_loaded,
         &private_character_lod2_model, private_character_lod2_loaded);
     dispatch.visible[0] = !active_pose_preview && private_character_model.data &&
-        character_distance_policy(camera, -13000, -10000, 0,
-            &private_character_frontend) != RASTERFALL_CHARACTER_HIDDEN &&
+        eula_quality != RASTERFALL_CHARACTER_HIDDEN &&
         gallery_model_visible(dispatch.surface, camera,
             &private_character_model, -13000, -900, -10000,
             character_model_scale(&private_character_model,
@@ -2360,11 +2380,11 @@ static int render_private_character(struct toy_renderer *renderer,
              * Custom model overrides retain their existing full-model path. */
             if (!strcmp(path, eula_actor_profile.model_path) &&
                 rasterfall_model_load(&private_character_lod_model,
-                    "rasterfall/private-assets/models/eula_lod1.rmesh") == 0 &&
+                    "rasterfall/private-assets/models/eula_lod3.rmesh") == 0 &&
                 private_character_lod_model.bone_count ==
                     private_character_model.bone_count) {
                 private_character_lod_loaded = 1;
-                __printf("rasterfall: Eula LOD vertices=%u triangles=%u\n",
+                __printf("rasterfall: Eula Hybrid vertices=%u triangles=%u\n",
                          private_character_lod_model.vertex_count,
                          private_character_lod_model.index_count / 3);
             }
@@ -6635,7 +6655,7 @@ static int render_ai_teammate(struct toy_renderer *renderer,
                     &maid_entry->lod_model, maid_entry->lod_loaded,
                     &maid_entry->lod2_model, maid_entry->lod2_loaded);
             else
-                actor_model = anime_render_model(actor_model,
+                actor_model = eula_render_model(character_quality, actor_model,
                     &private_character_lod_model, private_character_lod_loaded,
                     &private_character_lod2_model, private_character_lod2_loaded);
             const struct rasterfall_animation_clip *locomotion_clip =

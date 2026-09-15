@@ -1,9 +1,10 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-15
+> 源码核对基线补充：Eula 正常 world/展示在 near/mid 使用 Gameplay Hybrid `eula_lod3.rmesh`，仅 FAR（4096 RFU 起）切换 compact LOD2；Maid 保持原策略。
 > 源码核对基线补充：`--eula-animation-acceptance` 在 UI/Core/window 前早退，复用 legacy VMD evaluator、model instance、CPU skinning、Lighting V1 与标准 AK submission；`--character-performance[-suite]` 统一输出模型 CPU、raster wall 与 total wall 的 mean/median。
 > 源码核对基线补充：2026-09-15 工作区；V2 Planar Raster Optimization 为 V2 无纹理平面建立专用不透明 solid/interpolated-light/fog/depth 路径，不再用 NULL texture/material fallback；旧路径仅作 `--render-performance` 的 `generic-planar` 逐像素 A/B。
-> 源码核对基线补充：动漫角色正常 world/展示渲染统一优先 LOD2，缺失时按 LOD1 → 原模型回退；距离仅控制可见性与姿态更新。Campaign Maid 四人内容武器为 AK。
+> 源码核对基线补充：Maid 正常 world/展示仍优先 LOD2；Eula 按距离选择 Hybrid/compact LOD2。Campaign Maid 四人内容武器为 AK。
 > 源码核对基线补充：Static World Lighting V2 — FROZEN；64×48、ambient/sun 192/64、contact 8/320 RFU、1024 RFU平面细分保持；契约与验收见 [Phase D](static-world-lighting-phase-d.md)。
 > 源码核对基线补充：Static World Lighting V2 Phase C3：V2 为唯一正常 runtime world-light source；V1 独立 diagnostic owner、显式 fixed override 与统一 scene factor，见 [Phase C3](static-world-lighting-phase-c3.md)。
 > 源码核对基线补充：Static World Lighting V2 Phase C2：正常 actor/enemy root 单点采样，世界武器继承 owner，本地第三人称/viewmodel 共用 sample，保留 form/material policy；固定诊断例外见 [Phase C2](static-world-lighting-phase-c2.md)。

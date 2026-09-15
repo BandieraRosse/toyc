@@ -1,10 +1,11 @@
 # Rasterfall 资产转换与诊断
 
 > 文档更新：2026-09-15
+> 源码核对基线补充：Eula Gameplay Hybrid 已接入正常 world/展示：near/mid 使用 `eula_lod3.rmesh`，FAR（4096 RFU 起）才使用 compact `eula_lod2.rmesh`。
 > 源码核对基线补充：新增 Eula 4×11 动画 comparison sheet 与统一 character performance suite；不改变 simplifier、资产格式或正常 gameplay LOD 选择。
 > 源码核对基线补充：Anime Gameplay Hybrid LOD V1 Eula pilot 在既有聚类简化器上增加离线 region descriptor、humanoid bone influence、按相邻骨长缩放的 joint zone，以及 dominant bone + 完整 BDEF2 pair + weight bucket 约束；输出仍为普通 compact RFM2。
 > 源码核对基线补充：True Vertex-Reduced Character LOD 在索引简化后压缩实际引用的 vertex 与对应 SKN1 权重；骨架、IK、CHR1、材质和 primitive 语义保持不变。
-> 源码核对基线补充：动漫角色正常 world/展示渲染统一优先 LOD2，缺失时按 LOD1 → 原模型回退；距离仅控制可见性与姿态更新。Campaign Maid 四人内容武器为 AK。
+> 源码核对基线补充：Maid 正常 world/展示仍优先 LOD2；Eula 使用按距离选择的 Hybrid/compact LOD2。Campaign Maid 四人内容武器为 AK。
 > 源码核对基线补充：Temporary Campus Kit V0复用Builder/GLB/importer，campus IDs 24–35无默认碰撞；tools/campus_kit_round.py提供米制完整性、确定性和独立组图。
 > 源码核对基线补充：tools/architecture_round.py 编排同一 Builder、industrial manifest 和 importer；rf_arch_* 为零纹理双材质公开 RMESH，GLB/截图确定性比较。
 > 源码核对基线补充：power_unit / gate_frame / control_cabinet 沿用工业 Builder、GLB、manifest、统一 import、公开 RMESH/TTEX 和 registry；递归 embedded/package 规则涵盖新资源。
@@ -180,8 +181,9 @@ make lod-eula-gameplay
 ```
 
 profile 位于 `tools/assets/lod_profiles/eula_gameplay.json`，输出 `eula_lod3.rmesh`；数字 `_lod`
-后缀是现有共享 `eula.textures/` 路径契约，不表示 runtime 需要新的 LOD 类型。该 pilot 不接入
-Maid，也不修改 renderer、动画求值或 CPU skinning。
+后缀是现有共享 `eula.textures/` 路径契约，不表示 runtime 需要新的 LOD 类型。正常 Eula world/展示
+在 near/mid 距离档使用该 Hybrid，FAR（4096 RFU，约 8 米起）使用 compact `eula_lod2.rmesh`；
+Hybrid 缺失时回退完整模型。该路径不接入 Maid，也不修改动画求值或 CPU skinning。
 
 ## GLB 与 VMD 检查
 

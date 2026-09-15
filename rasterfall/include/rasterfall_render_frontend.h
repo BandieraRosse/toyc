@@ -21,6 +21,7 @@ struct rasterfall_frontend_state {
     struct rasterfall_model_triangle_stats *model_triangle_stats;
     struct gallery_cached_vertex *vertex_cache;
     unsigned int vertex_cache_capacity;
+    const struct rasterfall_model_asset *skinned_model;
     struct rasterfall_model_setup_timing timing;
     int reuse_skinned_vertices;
     int skinned_vertices_valid;
