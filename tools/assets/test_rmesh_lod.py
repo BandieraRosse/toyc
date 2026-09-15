@@ -14,6 +14,19 @@ SPEC.loader.exec_module(LOD)
 
 
 class RmeshLodTest(unittest.TestCase):
+    def test_region_profile_skin_key_separates_weight_discontinuity(self):
+        profile = {"weights": [(1, 2, 30000, 1), (1, 2, 38000, 1)],
+                   "high": set(), "medium": set(), "joints": [],
+                   "high_primitives": set(), "medium_primitives": set(),
+                   "high_divisor": 4, "medium_divisor": 2,
+                   "weight_step": 4096, "protection": [0, 0]}
+        vertex = struct.pack("<iii", 0, 0, 0) + bytes(6) + struct.pack("<HH", 0, 0) + bytes(10)
+        data = bytes(64 + 16 + 40) + vertex + vertex
+        info = {"version": 10, "vertices": 2, "vertex_at": 120,
+                "vertex_bytes": 32}
+        mapped = LOD.cluster_map(data, info, 4, profile=profile)
+        self.assertEqual(mapped, [0, 1])
+
     def test_compacts_matching_vertex_and_skin_records_and_preserves_chr1(self):
         vertex_bytes = 36
         vertices = b"".join(bytes([value]) * vertex_bytes for value in range(4))

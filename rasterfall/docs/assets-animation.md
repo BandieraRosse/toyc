@@ -1,6 +1,7 @@
 # 资源、模型与动画
 
 > 文档更新：2026-09-15
+> 源码核对基线补充：Eula Gameplay Hybrid LOD 只改变离线 vertex/index 选择与对应 SKN1 vertex records；bone hierarchy、IK 和运行时 pose/skinning 求值保持不变。
 > 源码核对基线补充：角色 LOD 会压缩未引用 vertex 及其一一对应的 SKN1 BDEF 记录，不改变 skeleton、IK、CHR1 role/attachment 或运行时 skinning 算法。
 > 源码核对基线补充：动漫角色正常 world/展示渲染统一优先 LOD2，缺失时按 LOD1 → 原模型回退；距离仅控制可见性与姿态更新。Campaign Maid 四人内容武器为 AK。
 > 源码核对基线：工作区（Enemy Visual V2 六份公开 RFM2 / renderer-only family；Humanoid Action Composition V1.1 additive recoil；Model Resource / Model Instance V1；双手 RFANIM 持枪轨道；PRIMARY_GRIP weapon presentation；modular world strip）

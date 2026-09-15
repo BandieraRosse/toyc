@@ -1,6 +1,7 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-15
+> 源码核对基线补充：Anime Gameplay Hybrid LOD V1 的 Eula pilot 使用离线 region descriptor、按骨长定义的关节邻域与 BDEF pair/weight 分区生成普通 compact RFM2；runtime、renderer 与 skinning 不增加角色特判。
 > 源码核对基线补充：True Vertex-Reduced Character LOD 在离线索引简化后 compact 实际引用 vertex 与对应 SKN1 BDEF；不改变 skeleton、CHR1 attachment、动画或 renderer skinning 算法。
 > 源码核对基线补充：2026-09-15 工作区；V2 Planar Raster Optimization 为 V2 无纹理细分平面增加专用 solid + interpolated vertex light + fog + depth command/worker 路径；`--render-performance` 保留 `generic-planar` A/B，输出 framebuffer/depth 差异、专用/回退 command 及路径耗时。
 > 源码核对基线补充：动漫角色正常 world/展示渲染统一优先 LOD2，缺失时按 LOD1 → 原模型回退；距离仅控制可见性与姿态更新。Campaign Maid 四人内容武器为 AK。
@@ -89,6 +90,7 @@
 | 六职业 modular recipe / rigid gear、carrier A/B、普通队友迁移 | [character-assets.md](character-assets.md)、[rendering.md](rendering.md)、[gameplay.md](gameplay.md) | `rasterfall_character_visual_recipe()` → shared body instance → passive HEAD/CHEST/BACK/HIP assembly + active WEAPON_R/PRIMARY_GRIP presentation；`--profession-lineup` / `--visual-capture modular-teammate` |
 | 正式 RF 小队 roster、角色 identity、八人验收 | [gameplay.md](gameplay.md)、[rendering.md](rendering.md)、[runtime.md](runtime.md) | `include/rasterfall_roster.h` / `src/rasterfall_roster.c` → `session_spawn_formal_rosters()` → `render_modular_ai_teammate()`；`--squad-acceptance` |
 | 导入 PMX/GLB、manifest、纹理、LOD、模型诊断 | [asset-pipeline.md](asset-pipeline.md) | `tools/assets/import_asset.py`、现有转换器、模型加载器 |
+| Eula Gameplay Hybrid LOD、区域/关节/skin-weight 保护 | [asset-pipeline.md](asset-pipeline.md)、[assets-animation.md](assets-animation.md) | `tools/rmesh_lod.py --region-profile`、`tools/assets/lod_profiles/eula_gameplay.json`、`make lod-eula-gameplay` |
 | 程序化工业/军事环境组件、Blender 批量导出 | [industrial-props.md](industrial-props.md)、[asset-pipeline.md](asset-pipeline.md) | `tools/blender/generate_rasterfall_props.py` |
 | 建筑模块、管线端口、墙地语言、服务巷/开放厂房原型 | [architectural-environment-v1.md](architectural-environment-v1.md) | 同一 Builder 的 `build_architecture()` → industrial manifests / prop registry → `architecture_capture()`；`tools/architecture_round.py` |
 | WHU资产清点、临时校园墙窗/台阶/树代理、独立街角验收 | [temporary-campus-kit-v0.md](temporary-campus-kit-v0.md) | `tools/blender/generate_campus_kit.py` → campus manifests / prop registry → `campus_capture()`；`tools/campus_kit_round.py` |

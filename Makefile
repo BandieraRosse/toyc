@@ -1159,7 +1159,7 @@ $(BUILD)/wayland_fps: $(BUILD)/rasterfall
 	@ln -sf rasterfall $@
 
 .PHONY: rasterfall rasterfall-embedded wayland_fps app-rasterfall-embedded \
-	lod-characters lod-eula lod-eula2 lod-maid lod-maid2 lod-ar15 lod-ump45 lod-vector lod-g11 \
+	lod-characters lod-eula lod-eula2 lod-eula-gameplay lod-maid lod-maid2 lod-ar15 lod-ump45 lod-vector lod-g11 \
 	rasterfall-blender-deps import-maid
 rasterfall:
 	# 默认按本机 nproc 并行；调用方无需额外传递 -j 参数。
@@ -1185,6 +1185,11 @@ lod-eula:
 lod-eula2:
 	tools/rmesh_lod.py rasterfall/private-assets/models/eula.rmesh \
 		rasterfall/private-assets/models/eula_lod2.rmesh --ratio 0.04 --aggressive
+
+lod-eula-gameplay:
+	tools/rmesh_lod.py rasterfall/private-assets/models/eula.rmesh \
+		rasterfall/private-assets/models/eula_lod3.rmesh --ratio 0.12 \
+		--region-profile tools/assets/lod_profiles/eula_gameplay.json
 
 lod-maid:
 	tools/rmesh_lod.py rasterfall/private-assets/models/maid.rmesh \

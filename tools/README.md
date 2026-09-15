@@ -96,6 +96,9 @@ primitive 继续使用 `--ratio` 简化；优菈的 `make lod-eula` 会保留头
 `rmesh_lod.py` 对每个材质 primitive 做确定性的蒙皮/UV 感知顶点聚类，重建简化索引后默认
 收集实际引用顶点并同步压缩 position/normal/UV 与 SKN1 权重记录。骨架、IK、CHR1、材质和
 primitive 语义保持不变；`--keep-unused-vertices` 仅用于生成旧式完整顶点表的诊断 A/B。
+`--region-profile <json>` 可为 gameplay character 提供 high/medium bone、material primitive 和按
+骨长缩放的 joint zone；hybrid key 同时约束 dominant bone、完整 BDEF2 pair 与 weight bucket。
+Eula pilot 使用 `make lod-eula-gameplay`，输出共享 `eula.textures/` 的 `eula_lod3.rmesh`。
 `name_lodN.rmesh` 在运行时共享
 `name.textures/`，避免为各级 LOD 复制纹理。输出三角形比例是目标值；为了保护
 UV 接缝和骨骼边界，实际最接近比例会随模型拓扑略有变化。
