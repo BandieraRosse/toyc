@@ -1,6 +1,7 @@
 # 运行时与主循环
 
 > 文档更新：2026-09-15
+> 源码核对基线补充：Eula animation acceptance 与 unified character performance 均在字体、Core、startup/pause UI、session、window/audio 之前早退。
 > 源码核对基线补充：2026-09-15 工作区；`--render-performance` 使用 headless Core、固定 seed 与 Campaign request；Game render 内记录互不重叠的 scene/enemies/raster/overlay，外层只记录 begin/present。V2 planar 诊断同时跑正常专用路径与 `generic-planar` 旧回退，逐元素比较 framebuffer/depth。
 > 源码核对基线补充：Phase D 补齐 Character world capture 的既有 headless 初始化、固定 seed=1 与 Campaign 选择；正常窗口启动不变，冻结验收边界见 [Phase D](static-world-lighting-phase-d.md)。
 > 源码核对基线补充：Return-to-WHU session identity 来自 Runtime Map 的 world attr.identity；content 和地面 policy 均使用已有 world ID。player_start 的 position 与 sy/cy 由 projection 写入 level，session 复用原有 reset/respawn 初始化链。`--map` 指定的 WHU 地图可配合 `--environment-capture` 做四个眼高离屏视角，其他 world 保持现有 Campaign capture 行为。

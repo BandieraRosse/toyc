@@ -2925,6 +2925,16 @@ int rf_game_runtime_run(const struct rf_game_config *config)
         return rasterfall_render_character_acceptance_capture(
             options.character_acceptance_model,
             options.character_acceptance_dir);
+    if (options.eula_acceptance_models)
+        return rasterfall_render_eula_animation_acceptance(
+            options.eula_acceptance_models, options.eula_acceptance_dir);
+    if (options.character_performance_model ||
+        options.character_performance_suite)
+        return rasterfall_render_character_performance(
+            options.character_performance_model,
+            options.character_performance_suite,
+            options.performance_warmup, performance_iterations,
+            options.performance_repeats, performance_workers);
     if (fb_font_load("rasterfall/assets/fonts/gb2312-16.rfh") < 0) {
         __fprintf(2, "rasterfall: cannot load GB2312 font asset\n");
         return 1;

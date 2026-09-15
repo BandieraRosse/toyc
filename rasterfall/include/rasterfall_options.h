@@ -14,6 +14,7 @@ struct rasterfall_options {
     const char *dump_path;
     const char *visual_scenario, *visual_output;
     const char *character_acceptance_model, *character_acceptance_dir;
+    const char *eula_acceptance_models, *eula_acceptance_dir;
     const char *profession_lineup_models, *profession_lineup_dir;
     const char *squad_acceptance_models, *squad_acceptance_dir;
     const char *rigid_attachment_models, *rigid_attachment_dir;
@@ -47,6 +48,9 @@ struct rasterfall_options {
     int performance_iterations, performance_workers;
     int actor_performance, actor_raster_workers;
     int render_performance;
+    const char *character_performance_model;
+    int character_performance_suite;
+    int performance_warmup, performance_repeats;
 };
 
 void rasterfall_options_init(struct rasterfall_options *options,

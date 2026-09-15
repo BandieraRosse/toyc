@@ -151,6 +151,12 @@ void rasterfall_render_model_setup_timing(
     struct rasterfall_model_setup_timing *out);
 int rasterfall_render_character_acceptance_capture(const char *model_path,
                                                     const char *output_dir);
+int rasterfall_render_eula_animation_acceptance(const char *model_dir,
+                                                const char *output_dir);
+int rasterfall_render_character_performance(const char *model_path,
+                                            int suite, int warmup,
+                                            int frames, int repeats,
+                                            int workers);
 int rasterfall_render_environment_capture(const char *output_dir);
 int rasterfall_render_character_world_capture(const char *output_dir,
                                               const char *model_path);

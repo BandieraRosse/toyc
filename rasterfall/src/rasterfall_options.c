@@ -60,6 +60,8 @@ void rasterfall_options_init(struct rasterfall_options *o,
     o->model_skinning = -1;
     o->model_pose = RASTERFALL_MODEL_POSE_BIND;
     o->performance_iterations = 5;
+    o->performance_warmup = 3;
+    o->performance_repeats = 3;
     o->actor_raster_workers = 8;
 }
 
@@ -83,6 +85,7 @@ void rasterfall_options_usage(int fd)
         "    arch-alley / arch-hall also accept -inside, -far, -reverse suffixes\n"
         "    arch-asset-<name> captures one architectural module at an elevated metric view\n"
         "  --character-acceptance <model.rmesh> <output-dir>\n"
+        "  --eula-animation-acceptance <model-dir> <output-dir>\n"
         "  --profession-lineup <model-dir> <output-dir>\n"
         "  --squad-acceptance <model-dir> <output-dir>\n"
         "  --rigid-attachment-acceptance <model-dir> <output-dir>\n"
@@ -93,6 +96,8 @@ void rasterfall_options_usage(int fd)
         "  --model-pose-views <model> <dir> <bind|right-arm|arms|body|rfchar-test>\n"
         "  --model-material-regression <model> <dir>\n"
         "  --model-performance <model> [iterations] [workers]\n"
+        "  --character-performance <model> [warmup] [frames] [repeats] [workers]\n"
+        "  --character-performance-suite [warmup] [frames] [repeats] [workers]\n"
         "  --render-performance [iterations] (headless world/enemy cost ablations)\n"
         "  --actor-performance [iterations] [frontend-workers] [raster-workers]\n"
         "  --model-bones <model> [search]  --model-humanoid <model>\n"
@@ -191,6 +196,10 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
             if(require_arguments(argc,argv,arg,2,option)<0)return -1;
             o->character_acceptance_model=argv[++arg];
             o->character_acceptance_dir=argv[++arg];
+        } else if (!strcmp(option,"--eula-animation-acceptance")) {
+            if(require_arguments(argc,argv,arg,2,option)<0)return -1;
+            o->eula_acceptance_models=argv[++arg];
+            o->eula_acceptance_dir=argv[++arg];
         } else if (!strcmp(option,"--render-performance")) {
             o->render_performance=1;
             if(numeric_argument(argc,argv,arg))o->performance_iterations=positive_int(argv[++arg],o->performance_iterations);
@@ -309,6 +318,17 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
             if(require_arguments(argc,argv,arg,1,option)<0)return -1;
             o->performance_model_path=argv[++arg];
             if(numeric_argument(argc,argv,arg))o->performance_iterations=positive_int(argv[++arg],o->performance_iterations);
+            if(numeric_argument(argc,argv,arg))o->performance_workers=positive_int(argv[++arg],o->performance_workers);
+        } else if (!strcmp(option,"--character-performance") ||
+                   !strcmp(option,"--character-performance-suite")) {
+            o->character_performance_suite=!strcmp(option,"--character-performance-suite");
+            if(!o->character_performance_suite){
+                if(require_arguments(argc,argv,arg,1,option)<0)return -1;
+                o->character_performance_model=argv[++arg];
+            }
+            if(numeric_argument(argc,argv,arg))o->performance_warmup=positive_int(argv[++arg],o->performance_warmup);
+            if(numeric_argument(argc,argv,arg))o->performance_iterations=positive_int(argv[++arg],o->performance_iterations);
+            if(numeric_argument(argc,argv,arg))o->performance_repeats=positive_int(argv[++arg],o->performance_repeats);
             if(numeric_argument(argc,argv,arg))o->performance_workers=positive_int(argv[++arg],o->performance_workers);
         } else if (!strcmp(option,"--actor-performance")) {
             o->actor_performance=1;

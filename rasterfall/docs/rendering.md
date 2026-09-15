@@ -1,6 +1,7 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-15
+> 源码核对基线补充：`--eula-animation-acceptance` 在 UI/Core/window 前早退，复用 legacy VMD evaluator、model instance、CPU skinning、Lighting V1 与标准 AK submission；`--character-performance[-suite]` 统一输出模型 CPU、raster wall 与 total wall 的 mean/median。
 > 源码核对基线补充：2026-09-15 工作区；V2 Planar Raster Optimization 为 V2 无纹理平面建立专用不透明 solid/interpolated-light/fog/depth 路径，不再用 NULL texture/material fallback；旧路径仅作 `--render-performance` 的 `generic-planar` 逐像素 A/B。
 > 源码核对基线补充：动漫角色正常 world/展示渲染统一优先 LOD2，缺失时按 LOD1 → 原模型回退；距离仅控制可见性与姿态更新。Campaign Maid 四人内容武器为 AK。
 > 源码核对基线补充：Static World Lighting V2 — FROZEN；64×48、ambient/sun 192/64、contact 8/320 RFU、1024 RFU平面细分保持；契约与验收见 [Phase D](static-world-lighting-phase-d.md)。
@@ -457,6 +458,18 @@ renderer 不修改玩法。墙脚、主体、压顶不叠共面大板；扶壁�
 
 
 ## 敌人波次性能诊断
+
+Eula 固定动画签收使用 `--eula-animation-acceptance <model-dir> <output-dir>`，输出 Full、LOD1、
+compact LOD2、Hybrid 的 bind/idle、三个 walk 采样、四个 head/neck deformation pose 和 rifle
+idle/aim。head/neck 是 presentation-only 形变检查，不是 gameplay action。Python 组图入口为
+`tools/eula_animation_acceptance_sheet.py`，原始 BMP 全部保留。
+
+统一角色微基准使用 `--character-performance <model> [warmup] [frames] [repeats] [workers]` 或
+`--character-performance-suite ...`。suite 对 optional private assets 缺失打印 SKIP；每个实例共享
+resource、持有独立 instance pose。输出规模、pose hierarchy、skinning、vertex cache、model CPU
+submission、raster wall 和 total wall 的 mean/median。`submit` 是模型阶段 CPU 累计口径，不能与
+并行 wall time直接相减。历史 `--model-performance` 继续负责材质/光栅消融，`--actor-performance`
+继续负责固定五角色并发路径，`--render-performance` 继续回答 Campaign world 一帧成本。
 
 `build/rasterfall --render-performance 12 --textures` 使用固定 Campaign 世界与内容，
 在 1280×720 离屏表面比较近／中距离的 0、10、30、60 个普通敌人。保留地图 actor、

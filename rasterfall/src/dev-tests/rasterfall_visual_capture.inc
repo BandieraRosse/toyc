@@ -1005,7 +1005,7 @@ static int visual_acceptance_model_frame(struct toy_renderer *renderer,
     const struct rasterfall_pose_calibration *calibration;
     int scale, center_x, center_z, base_y, pixels = 0;
     (void)rifle;
-    visual_acceptance_pose(character, mode);
+    if (mode >= 0) visual_acceptance_pose(character, mode);
     scale = visual_rf_scale(character);
     center_x = actor_x - (int)(((long long)character->min_x + character->max_x) * scale / 2000);
     center_z = actor_z - (int)(((long long)character->min_z + character->max_z) * scale / 2000);
@@ -1535,6 +1535,212 @@ static int visual_material_lighting_dump(
         __printf("rasterfall: character material lighting condition=%s output=%s\n",
                  names[condition], path);
     }
+    return 0;
+}
+
+static int eula_acceptance_pose(struct rasterfall_model_asset *model,
+                                const struct rasterfall_animation_clip *walk,
+                                int pose)
+{
+    static const int walk_ms[] = {0, 200, 600, 400};
+    if (pose >= 1 && pose <= 4) {
+        if (rasterfall_model_sample_clip(model, walk,
+                walk_ms[pose - 1]) < 0) return -1;
+        return 0;
+    }
+    visual_acceptance_pose(model, pose == 9 ? 1 : pose == 10 ? 2 : 0);
+    if (pose >= 5 && pose <= 8) {
+        int yaw = pose == 5 ? -28 : pose == 6 ? 28 : 0;
+        int pitch = pose == 7 ? -20 : pose == 8 ? 20 : 0;
+        composition_rotate_role(model, RASTERFALL_HUMANOID_NECK,
+                                "首", pitch / 3, yaw / 3, 0);
+        composition_rotate_role(model, RASTERFALL_HUMANOID_HEAD,
+                                "頭", pitch, yaw, 0);
+        return rasterfall_model_update_bones(model);
+    }
+    return 0;
+}
+
+static int eula_acceptance_dump(struct rasterfall_model_asset *model,
+    const struct rasterfall_animation_clip *walk, const char *output_dir,
+    const char *model_name, const char *pose_name, int pose)
+{
+    struct rasterfall_render_context context;
+    struct camera camera; struct toy_renderer renderer; struct toy_surface surface;
+    uint32_t *pixels; char dir[512], path[512]; int result = 1;
+    memset(&context, 0, sizeof(context)); context.diagnostic_fixed_lighting = 1;
+    rasterfall_render_bind(&context);
+    /* Legacy Eula faces -Z, so the standard back camera is its authored
+     * front.  Keep this explicit instead of adding a model-space correction. */
+    visual_acceptance_camera(&camera, 2, 600);
+    memset(&surface, 0, sizeof(surface)); surface.width=800; surface.height=800;
+    surface.stride=3200; pixels=tlibc_malloc((size_t)surface.stride*surface.height);
+    if (!pixels) return 1;
+    surface.pixels=pixels;
+    toy_renderer_init(&renderer); toy_renderer_set_frame_budget(&renderer,0);
+    if (eula_acceptance_pose(model,walk,pose)<0 ||
+        toy_renderer_begin(&renderer,&surface,0x30343B)<0 ||
+        visual_acceptance_model_frame(&renderer,&camera,model,NULL,
+            -1,0,0,600,0)<0) goto done;
+    if (pose >= 9) {
+        struct rasterfall_model_attachment_transform frame;
+        int scale=visual_rf_scale(model);
+        int base_y=-900-(int)((long long)model->min_y*scale/1000);
+        if (rifle_frame_transform(model,&frame)<0) goto done;
+        render_skeletal_rifle(&renderer,&camera,model,&frame,&visual_rf_profile,
+            visual_rf_calibration(pose-8),0,base_y,0,0,1024,
+            TOY_GAME_WEAPON_AK,0,0);
+    }
+    if (toy_renderer_flush(&renderer)<0) goto done;
+    if (snprintf(dir,sizeof(dir),"%s/%s",output_dir,model_name)>=(int)sizeof(dir) ||
+        tlibc_recursive_mkdir(dir)<0 ||
+        snprintf(path,sizeof(path),"%s/%s.bmp",dir,pose_name)>=(int)sizeof(path) ||
+        rasterfall_hud_dump_bmp(path,&surface)<0) goto done;
+    __printf("EULA-ACCEPT model=%s pose=%s output=%s\n",model_name,pose_name,path);
+    result=0;
+done:
+    toy_renderer_destroy(&renderer); tlibc_free(pixels); return result;
+}
+
+int rasterfall_render_eula_animation_acceptance(const char *model_dir,
+                                                const char *output_dir)
+{
+    static const char *files[]={"eula.rmesh","eula_lod1.rmesh","eula_lod2.rmesh","eula_lod3.rmesh"};
+    static const char *models[]={"full","lod1","compact-lod2","hybrid"};
+    static const char *poses[]={"bind","idle","walk-left","walk-right","knee-bend","head-left","head-right","head-up","head-down","rifle-idle","rifle-aim"};
+    struct rasterfall_vmd_clip vmd; int m,p,result=1; char path[512];
+    memset(&vmd,0,sizeof(vmd));
+    if(!model_dir||!output_dir||tlibc_recursive_mkdir(output_dir)<0 ||
+       rasterfall_vmd_load(&vmd,"rasterfall/private-assets/animations/walk04_loop5.vmd")<0) return 1;
+    gallery_load();
+    for(m=0;m<4;m++){
+        struct rasterfall_model_resource resource; struct rasterfall_model_instance instance;
+        struct rasterfall_animation_clip clip; struct rasterfall_animation_track tracks[RASTERFALL_VMD_MAX_BONES];
+        memset(&resource,0,sizeof(resource)); memset(&instance,0,sizeof(instance));
+        if(snprintf(path,sizeof(path),"%s/%s",model_dir,files[m])>=(int)sizeof(path) ||
+           rasterfall_model_resource_load(&resource,path)<0){
+            __printf("EULA-ACCEPT model=%s status=SKIP reason=missing\n",models[m]); continue;
+        }
+        if(rasterfall_model_instance_init(&instance,&resource)<0) goto model_fail;
+        rasterfall_vmd_map_model(&vmd,&instance.pose);
+        if(rasterfall_vmd_build_animation(&vmd,&clip,tracks,RASTERFALL_VMD_MAX_BONES)<0) goto model_fail;
+        for(p=0;p<11;p++) if(eula_acceptance_dump(&instance.pose,&clip,output_dir,models[m],poses[p],p)!=0) goto model_fail;
+        __printf("EULA-ACCEPT model=%s vertices=%u triangles=%u bones=%u materials=%u status=PASS\n",
+            models[m],instance.pose.vertex_count,instance.pose.index_count/3,
+            instance.pose.bone_count,instance.pose.material_count);
+        rasterfall_model_instance_unload(&instance); rasterfall_model_resource_unload(&resource); continue;
+model_fail:
+        rasterfall_model_instance_unload(&instance); rasterfall_model_resource_unload(&resource); goto done;
+    }
+    result=0;
+done:
+    rasterfall_vmd_unload(&vmd); return result;
+}
+
+#define CHARACTER_BENCH_MAX_SAMPLES 2000
+struct character_bench_sample { long pose,skin,vertex,submit,raster,total; };
+
+static long character_bench_stat(struct character_bench_sample *samples,
+                                 int count, int field, int median)
+{
+    long values[CHARACTER_BENCH_MAX_SAMPLES],sum=0,x; int i,j;
+    if(count<1)return 0;
+    for(i=0;i<count;i++){
+        const long *p=(const long *)&samples[i]; values[i]=p[field]; sum+=p[field];
+    }
+    if(!median)return sum/count;
+    for(i=1;i<count;i++){x=values[i];j=i-1;while(j>=0&&values[j]>x){values[j+1]=values[j];j--;}values[j+1]=x;}
+    return count&1?values[count/2]:(values[count/2-1]+values[count/2])/2;
+}
+
+static int character_benchmark_one(const char *name,const char *path,int instances,
+                                   int warmup,int frames,int repeats,int workers)
+{
+    struct rasterfall_model_resource resource; struct rasterfall_model_instance instance[8];
+    struct character_bench_sample samples[CHARACTER_BENCH_MAX_SAMPLES];
+    struct rasterfall_render_context context; struct camera camera;
+    struct toy_renderer renderer_storage, *renderer=&renderer_storage;
+    struct toy_surface surface; uint32_t *pixels;
+    int i,f,r,count=0,result=1; long start,after_submit,after_flush;
+    memset(&resource,0,sizeof(resource));memset(instance,0,sizeof(instance));
+    if(rasterfall_model_resource_load(&resource,path)<0){
+        __printf("CHAR-PERF | %s | SKIP | missing=%s\n",name,path);return 0;
+    }
+    if(instances<1)instances=1;
+    if(instances>8)instances=8;
+    for(i=0;i<instances;i++)if(rasterfall_model_instance_init(&instance[i],&resource)<0)goto done;
+    memset(&context,0,sizeof(context));context.diagnostic_fixed_lighting=1;rasterfall_render_bind(&context);
+    memset(&camera,0,sizeof(camera));camera.body.z=2600;camera.view.cy=-1024;camera.view.y=-350;camera.view.pitch_cy=1024;
+    memset(&surface,0,sizeof(surface));surface.width=1280;surface.height=720;surface.stride=5120;
+    pixels=tlibc_malloc((size_t)surface.stride*surface.height);if(!pixels)goto done;surface.pixels=pixels;
+    toy_renderer_init(renderer);toy_renderer_set_worker_count(renderer,workers);toy_renderer_set_frame_budget(renderer,0);
+    if(frames<1)frames=1;
+    if(repeats<1)repeats=1;
+    if(warmup<0)warmup=0;
+    if(frames*repeats>CHARACTER_BENCH_MAX_SAMPLES)frames=CHARACTER_BENCH_MAX_SAMPLES/repeats;
+    for(r=-1;r<repeats;r++)for(f=0;f<(r<0?warmup:frames);f++){
+        struct rasterfall_model_setup_timing before, timing;
+        if(toy_renderer_begin(renderer,&surface,0x30343B)<0)goto render_done;
+        before=rasterfall_render_frontend_current(renderer)->timing;
+        start=render_monotonic_us();
+        for(i=0;i<instances;i++){
+            int x=(i*2-instances+1)*360;
+            rasterfall_model_set_pose(&instance[i].pose,RASTERFALL_MODEL_POSE_BIND);
+            active_gallery_facing=1;active_gallery_sy=0;active_gallery_cy=1024;
+            render_gallery_model(renderer,&camera,&instance[i].pose,x,
+                -900-(int)((long long)instance[i].pose.min_y*visual_rf_scale(&instance[i].pose)/1000),
+                0,visual_rf_scale(&instance[i].pose));active_gallery_facing=0;
+        }
+        after_submit=render_monotonic_us();
+        timing=rasterfall_render_frontend_current(renderer)->timing;
+        timing.total_us-=before.total_us;
+        timing.bone_hierarchy_us-=before.bone_hierarchy_us;
+        timing.skinning_us-=before.skinning_us;
+        timing.vertex_cache_us-=before.vertex_cache_us;
+        if(toy_renderer_flush(renderer)<0)goto render_done;
+        after_flush=render_monotonic_us();
+        if(r>=0){samples[count].pose=timing.bone_hierarchy_us;samples[count].skin=timing.skinning_us;
+            samples[count].vertex=timing.vertex_cache_us;samples[count].submit=timing.total_us;
+            samples[count].raster=after_flush-after_submit;samples[count].total=after_flush-start;count++;}
+    }
+    __printf("CHAR-PERF | %s | instances=%d | vertices=%u | indices=%u | tris=%u | bones=%u | primitives=%u | warmup=%d | frames=%d | repeats=%d\n",
+        name,instances,resource.definition.vertex_count*instances,resource.definition.index_count*instances,
+        resource.definition.index_count/3*instances,resource.definition.bone_count*instances,
+        resource.definition.material_count*instances,warmup,frames,repeats);
+    __printf("CHAR-PERF-STATS | %s | stat=mean | pose=%ld | skin=%ld | vertex=%ld | submit=%ld | raster=%ld | total=%ld\n",
+        name,character_bench_stat(samples,count,0,0),character_bench_stat(samples,count,1,0),character_bench_stat(samples,count,2,0),character_bench_stat(samples,count,3,0),character_bench_stat(samples,count,4,0),character_bench_stat(samples,count,5,0));
+    __printf("CHAR-PERF-STATS | %s | stat=median | pose=%ld | skin=%ld | vertex=%ld | submit=%ld | raster=%ld | total=%ld\n",
+        name,character_bench_stat(samples,count,0,1),character_bench_stat(samples,count,1,1),character_bench_stat(samples,count,2,1),character_bench_stat(samples,count,3,1),character_bench_stat(samples,count,4,1),character_bench_stat(samples,count,5,1));
+    result=0;
+render_done: toy_renderer_destroy(renderer);tlibc_free(pixels);
+done: for(i=0;i<instances;i++)rasterfall_model_instance_unload(&instance[i]);rasterfall_model_resource_unload(&resource);return result;
+}
+
+int rasterfall_render_character_performance(const char *model_path,int suite,
+                                            int warmup,int frames,int repeats,int workers)
+{
+    static const struct {const char *name,*path;int count;} models[]={
+      {"Eula Full","rasterfall/private-assets/models/eula.rmesh",1},
+      {"Eula LOD1","rasterfall/private-assets/models/eula_lod1.rmesh",1},
+      {"Eula compact LOD2","rasterfall/private-assets/models/eula_lod2.rmesh",1},
+      {"Eula Hybrid","rasterfall/private-assets/models/eula_lod3.rmesh",1},
+      {"RF Humanoid V2","rasterfall/private-assets/models/rf_humanoid_v2.rmesh",1},
+      {"RF modular Rifleman","rasterfall/private-assets/models/rf_profession_rifleman.rmesh",1},
+      {"Maid Full","rasterfall/private-assets/models/maid.rmesh",1},
+      {"Maid LOD1","rasterfall/private-assets/models/maid_lod1.rmesh",1},
+      {"Maid compact LOD2","rasterfall/private-assets/models/maid_lod2.rmesh",1},
+      {"Anime squad (1 Eula Hybrid)","rasterfall/private-assets/models/eula_lod3.rmesh",1},
+      {"Anime squad (4 Maid low)","rasterfall/private-assets/models/maid_lod2.rmesh",4},
+      {"RF squad","rasterfall/private-assets/models/rf_profession_rifleman.rmesh",4},
+      {"Mixed squad (Eula)","rasterfall/private-assets/models/eula_lod3.rmesh",1},
+      {"Mixed squad (RF)","rasterfall/private-assets/models/rf_humanoid_v2.rmesh",2},
+      {"Mixed squad (Maid)","rasterfall/private-assets/models/maid_lod2.rmesh",2},
+      {"Stress 8 RF","rasterfall/private-assets/models/rf_humanoid_v2.rmesh",8}};
+    int i;
+    __printf("CHAR-PERF-SCHEMA us | Model | Vertices | Tris | Pose | Skin | Vertex | Submit | Raster | Total\n");
+    if(!suite)return character_benchmark_one(model_path,model_path,1,warmup,frames,repeats,workers);
+    for(i=0;i<(int)(sizeof(models)/sizeof(models[0]));i++)
+        if(character_benchmark_one(models[i].name,models[i].path,models[i].count,warmup,frames,repeats,workers)!=0)return 1;
     return 0;
 }
 

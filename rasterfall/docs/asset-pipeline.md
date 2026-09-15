@@ -1,6 +1,7 @@
 # Rasterfall 资产转换与诊断
 
 > 文档更新：2026-09-15
+> 源码核对基线补充：新增 Eula 4×11 动画 comparison sheet 与统一 character performance suite；不改变 simplifier、资产格式或正常 gameplay LOD 选择。
 > 源码核对基线补充：Anime Gameplay Hybrid LOD V1 Eula pilot 在既有聚类简化器上增加离线 region descriptor、humanoid bone influence、按相邻骨长缩放的 joint zone，以及 dominant bone + 完整 BDEF2 pair + weight bucket 约束；输出仍为普通 compact RFM2。
 > 源码核对基线补充：True Vertex-Reduced Character LOD 在索引简化后压缩实际引用的 vertex 与对应 SKN1 权重；骨架、IK、CHR1、材质和 primitive 语义保持不变。
 > 源码核对基线补充：动漫角色正常 world/展示渲染统一优先 LOD2，缺失时按 LOD1 → 原模型回退；距离仅控制可见性与姿态更新。Campaign Maid 四人内容武器为 AK。
@@ -205,6 +206,9 @@ build/rasterfall --model-views model.rmesh tmp/model-views
 build/rasterfall --model-material-regression model.rmesh tmp/material-regression
 build/rasterfall --model-performance model.rmesh 5 8
 build/rasterfall --actor-performance 30 5 8
+build/rasterfall --character-performance model.rmesh 3 20 3 8
+build/rasterfall --character-performance-suite 3 20 3 8
+python3 tools/eula_animation_acceptance_sheet.py
 ```
 
 模型视图和材质回归走游戏内相同的材质与光栅路径。并行度、优化或渲染路径修改后，应比较确定性
