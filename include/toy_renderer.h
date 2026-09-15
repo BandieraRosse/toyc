@@ -40,6 +40,8 @@ typedef void (*toy_renderer_parallel_fn)(int worker_id, int task_index,
  * 缓存，工作线程按自己的扫描行带直接消费，无需重算顶点级数据。 */
 struct toy_raster_cmd {
     int textured;
+    /* Solid opaque color with screen-space interpolated vertex light. */
+    int planar_vertex_lit;
     int repeat;
     /* 覆盖层：跳过深度比较与深度写入，按记录顺序后画者直接覆盖先画者。
      * 用于与底层几乎共面、仅靠画家算法分层的区域涂色（如地板刷色），
@@ -94,6 +96,7 @@ struct toy_render_worker {
     unsigned long shaded_px;
     unsigned long written_px;
     unsigned long flat_pixels;
+    unsigned long planar_pixels;
     unsigned long alpha_blended_pixels;
     unsigned long alpha_zero_pixels;
     unsigned long depth_divisions;
@@ -109,6 +112,7 @@ struct toy_render_worker {
     unsigned long bbox_px;    /* 包围盒内实际扫描像素（逐条带精确） */
     unsigned long inside_px;  /* 通过边函数覆盖测试的像素 */
     long flat_us;             /* 纯色路径光栅化累计耗时（us，路径段计时） */
+    long planar_us;           /* 平面顶点光插值路径累计耗时 */
     long tex_us;              /* 纹理路径光栅化累计耗时（us） */
     long active_us;           /* 完整 raster job 墙钟活跃时间 */
     long cpu_us;              /* CLOCK_THREAD_CPUTIME_ID */
@@ -139,8 +143,12 @@ struct toy_renderer {
     unsigned long last_inside_px;
     unsigned long last_tex_px;
     unsigned long last_tex_tris;
+    unsigned long last_planar_px;
+    unsigned long last_planar_tris;
+    unsigned long last_texture_fallback_cmds;
     long last_flat_us;
     long last_tex_us;
+    long last_planar_us;
     long last_sort_us;
     long last_classify_us;
     long last_merge_copy_us;
@@ -151,6 +159,11 @@ struct toy_renderer {
     unsigned long last_sorted_cmds;
     long last_worker_wait_us;
     unsigned long tex_tris_mark;   /* textured_triangles 的 flush 分界点 */
+    unsigned long planar_vertex_lit_triangles;
+    unsigned long planar_constant_lit_triangles;
+    unsigned long planar_tris_mark;
+    unsigned long planar_constant_tris_mark;
+    unsigned long last_planar_constant_tris;
     /* 命令列表（记录阶段） */
     struct toy_raster_cmd *cmds;
     struct toy_raster_cmd *sort_cmds;
@@ -208,6 +221,14 @@ int toy_renderer_triangle_lit(struct toy_renderer *renderer,
                               const struct toy_screen_vertex *b,
                               const struct toy_screen_vertex *c,
                               uint32_t color, int light, int fog);
+/* Opaque solid triangle with barycentrically interpolated Q8.8 vertex light.
+ * Depth, coverage, fog and color rounding match textured_lit's solid fallback. */
+int toy_renderer_triangle_planar_vertex_lit(
+                              struct toy_renderer *renderer,
+                              const struct toy_screen_vertex *a,
+                              const struct toy_screen_vertex *b,
+                              const struct toy_screen_vertex *c,
+                              uint32_t color, int fog);
 int toy_renderer_triangle_lit_alpha(struct toy_renderer *renderer,
                                     const struct toy_screen_vertex *a,
                                     const struct toy_screen_vertex *b,

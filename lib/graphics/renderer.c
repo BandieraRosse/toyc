@@ -48,6 +48,8 @@ struct toy_raster_sampler {
     int valid;
 };
 
+static uint32_t shade_color(uint32_t color, int light, int fog);
+
 static long long edge(const struct toy_screen_vertex *a,
                  const struct toy_screen_vertex *b, int px, int py)
 {
@@ -85,10 +87,71 @@ static void close_runs(struct toy_render_worker *worker)
 {
     if (worker->last_path >= 0) {
         long dt = renderer_monotonic_us() - worker->path_start;
-        if (worker->last_path) worker->tex_us += dt;
+        if (worker->last_path == 1) worker->tex_us += dt;
+        else if (worker->last_path == 2) worker->planar_us += dt;
         else worker->flat_us += dt;
         worker->last_path = -1;
     }
+}
+
+static long raster_planar_vertex_lit(struct toy_renderer *renderer,
+                        struct toy_render_worker *worker,
+                        const struct toy_screen_vertex *a,
+                        const struct toy_screen_vertex *b,
+                        const struct toy_screen_vertex *c,
+                        long long area, int minx, int maxx,
+                        int y0, int y1, uint32_t color, int fog_factor)
+{
+    struct toy_surface *surface = &renderer->surface;
+    int *depth = renderer->depth;
+    int width = surface->width;
+    int y, x, drawn = 0;
+    unsigned long inside = 0;
+    long long dEx0 = (long long)c->y - b->y;
+    long long dEx1 = (long long)a->y - c->y;
+    long long dEx2 = (long long)b->y - a->y;
+    long long dEy0 = (long long)b->x - c->x;
+    long long dEy1 = (long long)c->x - a->x;
+    long long dEy2 = (long long)a->x - b->x;
+    long long w0 = edge(b, c, minx, y0);
+    long long w1 = edge(c, a, minx, y0);
+    long long w2 = edge(a, b, minx, y0);
+    for (y = y0; y <= y1; y++) {
+        if ((y & 7) == 0 && __atomic_load_n(
+                &renderer->job_cancelled, __ATOMIC_ACQUIRE)) break;
+        uint32_t *row = (uint32_t *)((unsigned char *)surface->pixels +
+                                     y * surface->stride);
+        int base = y * width;
+        long long e0 = w0, e1 = w1, e2 = w2;
+        for (x = minx; x <= maxx; x++) {
+            if (e0 <= 0 && e1 <= 0 && e2 <= 0) {
+                long long inv64, inv_norm;
+                int at;
+                inside++;
+                worker->depth_divisions++;
+                inv64 = (long long)e0 * a->inv_z +
+                        (long long)e1 * b->inv_z +
+                        (long long)e2 * c->inv_z;
+                inv_norm = inv64 / area;
+                at = base + x;
+                if (inv_norm >= depth[at]) {
+                    long light = (e0 * a->light + e1 * b->light +
+                                  e2 * c->light) / area;
+                    worker->depth_pass_px++;
+                    worker->shaded_px++;
+                    depth[at] = (int)inv_norm;
+                    row[x] = shade_color(color, (int)light, fog_factor);
+                    worker->written_px++;
+                    worker->planar_pixels++;
+                    drawn++;
+                }
+            }
+            e0 += dEx0; e1 += dEx1; e2 += dEx2;
+        }
+        w0 += dEy0; w1 += dEy1; w2 += dEy2;
+    }
+    worker->inside_px += inside;
+    return drawn;
 }
 
 void toy_renderer_init(struct toy_renderer *renderer)
@@ -768,13 +831,15 @@ static void rasterize_cmd(struct toy_renderer *renderer,
     if (cmd->area >= 0) return;
     /* 路径段计时：命令类型翻转时才取一次钟（见 renderer_monotonic_us
      * 注释）；同段内两条带的光栅化都累计进该路径。 */
-    if (cmd->textured != worker->last_path) {
+    int path = cmd->textured ? 1 : cmd->planar_vertex_lit ? 2 : 0;
+    if (path != worker->last_path) {
         if (worker->last_path >= 0) {
             long dt = renderer_monotonic_us() - worker->path_start;
-            if (worker->last_path) worker->tex_us += dt;
+            if (worker->last_path == 1) worker->tex_us += dt;
+            else if (worker->last_path == 2) worker->planar_us += dt;
             else worker->flat_us += dt;
         }
-        worker->last_path = cmd->textured;
+        worker->last_path = path;
         worker->path_start = renderer_monotonic_us();
     }
     /* 包围盒扫描像素：内层循环的精确迭代数（x 全宽 × 本带裁剪后行数） */
@@ -797,6 +862,24 @@ static void rasterize_cmd(struct toy_renderer *renderer,
                                      cmd->fallback, cmd->light, cmd->fog,
                                      &worker->textured_pixels,
                                      &worker->texture_fallback_pixels);
+    else if (cmd->planar_vertex_lit)
+    {
+        long pixels;
+        if (cmd->a.light == cmd->b.light && cmd->a.light == cmd->c.light) {
+            pixels = raster_flat(renderer, worker, &cmd->a, &cmd->b, &cmd->c,
+                                 cmd->area, cmd->bbox_minx, cmd->bbox_maxx,
+                                 y0, y1,
+                                 shade_color(cmd->color, cmd->a.light, cmd->fog),
+                                 0, 255);
+            worker->flat_pixels -= (unsigned long)pixels;
+            worker->planar_pixels += (unsigned long)pixels;
+        } else
+            pixels = raster_planar_vertex_lit(
+                                      renderer, worker, &cmd->a, &cmd->b, &cmd->c,
+                                      cmd->area, cmd->bbox_minx, cmd->bbox_maxx,
+                                      y0, y1, cmd->color, cmd->fog);
+        worker->pixels += pixels;
+    }
     else
         worker->pixels += raster_flat(renderer, worker, &cmd->a, &cmd->b, &cmd->c,
                                       cmd->area, cmd->bbox_minx,
@@ -848,6 +931,7 @@ static int record_cmd(struct toy_renderer *renderer, int textured,
     }
     cmd = &renderer->cmds[renderer->cmd_count++];
     cmd->textured = textured;
+    cmd->planar_vertex_lit = 0;
     cmd->overlay = overlay;
     cmd->repeat = repeat;
     cmd->color = color;
@@ -919,6 +1003,30 @@ int toy_renderer_triangle_lit(struct toy_renderer *renderer,
         renderer->submitted_triangles++;
         renderer->submitted_vertices += 3;
     }
+    return 0;
+}
+
+int toy_renderer_triangle_planar_vertex_lit(
+                              struct toy_renderer *renderer,
+                              const struct toy_screen_vertex *a,
+                              const struct toy_screen_vertex *b,
+                              const struct toy_screen_vertex *c,
+                              uint32_t color, int fog)
+{
+    long long area;
+    struct toy_raster_cmd *cmd;
+    if (!renderer || !renderer->depth || !a || !b || !c) return 0;
+    area = edge(a, b, c->x, c->y);
+    if (area >= 0) return 0;
+    if (!record_cmd(renderer, 0, a, b, c, area, color, NULL, 0, 0,
+                    -1, fog, 0)) return 0;
+    cmd = &renderer->cmds[renderer->cmd_count - 1];
+    cmd->planar_vertex_lit = 1;
+    renderer->planar_vertex_lit_triangles++;
+    if (a->light == b->light && a->light == c->light)
+        renderer->planar_constant_lit_triangles++;
+    renderer->submitted_triangles++;
+    renderer->submitted_vertices += 3;
     return 0;
 }
 
@@ -1299,6 +1407,7 @@ static void *render_worker_main(void *arg)
         worker->shaded_px = 0;
         worker->written_px = 0;
         worker->flat_pixels = 0;
+        worker->planar_pixels = 0;
         worker->alpha_blended_pixels = 0;
         worker->alpha_zero_pixels = 0;
         worker->depth_divisions = 0;
@@ -1315,6 +1424,7 @@ static void *render_worker_main(void *arg)
         worker->bbox_px = 0;
         worker->inside_px = 0;
         worker->flat_us = 0;
+        worker->planar_us = 0;
         worker->tex_us = 0;
         worker->active_us = 0;
         worker->cpu_us = 0;
@@ -1519,6 +1629,10 @@ int toy_renderer_merge_commands(struct toy_renderer *renderer,
     renderer->submitted_triangles += source->submitted_triangles;
     renderer->submitted_vertices += source->submitted_vertices;
     renderer->textured_triangles += source->textured_triangles;
+    renderer->planar_vertex_lit_triangles +=
+        source->planar_vertex_lit_triangles;
+    renderer->planar_constant_lit_triangles +=
+        source->planar_constant_lit_triangles;
     renderer->textured_pixels += source->textured_pixels;
     renderer->texture_fallback_pixels += source->texture_fallback_pixels;
     renderer->cmd_overflow += source->cmd_overflow;
@@ -1596,6 +1710,10 @@ int toy_renderer_merge_command_batch(
         renderer->submitted_triangles += source->submitted_triangles;
         renderer->submitted_vertices += source->submitted_vertices;
         renderer->textured_triangles += source->textured_triangles;
+        renderer->planar_vertex_lit_triangles +=
+            source->planar_vertex_lit_triangles;
+        renderer->planar_constant_lit_triangles +=
+            source->planar_constant_lit_triangles;
         renderer->textured_pixels += source->textured_pixels;
         renderer->texture_fallback_pixels += source->texture_fallback_pixels;
         renderer->cmd_overflow += source->cmd_overflow;
@@ -1647,6 +1765,8 @@ int toy_renderer_begin(struct toy_renderer *renderer,
     renderer->cmd_overflow = 0;
     renderer->textured_pixels = 0;
     renderer->textured_triangles = 0;
+    renderer->planar_vertex_lit_triangles = 0;
+    renderer->planar_constant_lit_triangles = 0;
     renderer->texture_fallback_pixels = 0;
     renderer->submitted_triangles = 0;
     renderer->submitted_vertices = 0;
@@ -1654,9 +1774,16 @@ int toy_renderer_begin(struct toy_renderer *renderer,
     renderer->last_inside_px = 0;
     renderer->last_tex_px = 0;
     renderer->last_tex_tris = 0;
+    renderer->last_planar_px = 0;
+    renderer->last_planar_tris = 0;
+    renderer->last_texture_fallback_cmds = 0;
     renderer->tex_tris_mark = 0;
+    renderer->planar_tris_mark = 0;
+    renderer->planar_constant_tris_mark = 0;
+    renderer->last_planar_constant_tris = 0;
     renderer->last_flat_us = 0;
     renderer->last_tex_us = 0;
+    renderer->last_planar_us = 0;
     renderer->last_sort_us = 0;
     renderer->last_classify_us = 0;
     renderer->last_merge_copy_us = 0;
@@ -1664,6 +1791,7 @@ int toy_renderer_begin(struct toy_renderer *renderer,
     renderer->last_opaque_cmds = 0;
     renderer->last_transparent_cmds = 0;
     renderer->last_edge_cmds = 0;
+    renderer->last_texture_fallback_cmds = 0;
     renderer->last_sorted_cmds = 0;
     renderer->last_worker_wait_us = 0;
     renderer->recording_edge = 0;
@@ -1714,8 +1842,8 @@ static void sort_transparent_commands(struct toy_raster_cmd *commands,
 int toy_renderer_flush(struct toy_renderer *renderer)
 {
     long total = 0;
-    unsigned long tex = 0, fallback = 0, bbox = 0, inside = 0;
-    long flat_us = 0, tex_us = 0;
+    unsigned long tex = 0, planar = 0, fallback = 0, bbox = 0, inside = 0;
+    long flat_us = 0, tex_us = 0, planar_us = 0;
     long sort_start, phase_start;
     if (!renderer) return 0;
     if (toy_renderer_job_cancelled(renderer)) {
@@ -1746,6 +1874,9 @@ int toy_renderer_flush(struct toy_renderer *renderer)
             else
                 renderer->last_opaque_cmds++;
             if (renderer->cmds[i].edge) renderer->last_edge_cmds++;
+            if (renderer->cmds[i].textured &&
+                !renderer->cmds[i].base_texture_valid)
+                renderer->last_texture_fallback_cmds++;
         }
     }
     renderer->last_classify_us = renderer_monotonic_us() - phase_start;
@@ -1793,11 +1924,13 @@ int toy_renderer_flush(struct toy_renderer *renderer)
         for (int i = 0; i < renderer->worker_count; i++) {
             total += renderer->workers[i].pixels;
             tex += renderer->workers[i].textured_pixels;
+            planar += renderer->workers[i].planar_pixels;
             fallback += renderer->workers[i].texture_fallback_pixels;
             bbox += renderer->workers[i].bbox_px;
             inside += renderer->workers[i].inside_px;
             flat_us += renderer->workers[i].flat_us;
             tex_us += renderer->workers[i].tex_us;
+            planar_us += renderer->workers[i].planar_us;
         }
     } else {
         /* 单线程降级：整屏一条带，统计进栈上 worker 壳。 */
@@ -1813,11 +1946,13 @@ int toy_renderer_flush(struct toy_renderer *renderer)
         close_runs(&local);
         total = local.pixels;
         tex = local.textured_pixels;
+        planar = local.planar_pixels;
         fallback = local.texture_fallback_pixels;
         bbox = local.bbox_px;
         inside = local.inside_px;
         flat_us = local.flat_us;
         tex_us = local.tex_us;
+        planar_us = local.planar_us;
         renderer->cmd_count = 0;
     }
     renderer->textured_pixels += tex;
@@ -1827,11 +1962,21 @@ int toy_renderer_flush(struct toy_renderer *renderer)
     renderer->last_bbox_px = bbox;
     renderer->last_inside_px = inside;
     renderer->last_tex_px = tex;
+    renderer->last_planar_px = planar;
     renderer->last_tex_tris = renderer->textured_triangles -
                               renderer->tex_tris_mark;
     renderer->tex_tris_mark = renderer->textured_triangles;
+    renderer->last_planar_tris = renderer->planar_vertex_lit_triangles -
+                                 renderer->planar_tris_mark;
+    renderer->planar_tris_mark = renderer->planar_vertex_lit_triangles;
+    renderer->last_planar_constant_tris =
+        renderer->planar_constant_lit_triangles -
+        renderer->planar_constant_tris_mark;
+    renderer->planar_constant_tris_mark =
+        renderer->planar_constant_lit_triangles;
     renderer->last_flat_us = flat_us;
     renderer->last_tex_us = tex_us;
+    renderer->last_planar_us = planar_us;
     return (int)total;
 }
 

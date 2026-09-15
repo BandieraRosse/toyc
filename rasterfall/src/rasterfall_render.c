@@ -228,7 +228,8 @@ static int active_diagnostic_world_light_v1;
 static void prepare_diagnostic_world_light_v1(void);
 static int active_world_light_v2;
 /* Process-local headless benchmark ablations; always zero in gameplay. */
-static int diagnostic_no_planar_v2, diagnostic_constant_world, diagnostic_flat_planar;
+static int diagnostic_no_planar_v2, diagnostic_constant_world,
+           diagnostic_flat_planar, diagnostic_generic_planar;
 static int active_textures;
 static int active_floor_submission;
 static int active_diagnostic_fixed_lighting;
@@ -3096,10 +3097,13 @@ static int draw_world_triangle_views(struct toy_renderer *renderer,
             sc.light = light_clipped[reversed ? i : i+1].light;
             sa.u = sa.v = sb.u = sb.v = sc.u = sc.v = 0;
             sa.u_over_z = sa.v_over_z = sb.u_over_z = sb.v_over_z = sc.u_over_z = sc.v_over_z = 0;
-            /* The existing textured rasterizer supports vertex light and a
-             * flat fallback colour. No texture or new shading mathematics. */
-            drawn += toy_renderer_triangle_textured_lit(renderer,&sa,&sb,&sc,
-                                                        NULL,0,color | 0xFF000000U,-1,fog);
+            if (diagnostic_generic_planar)
+                drawn += toy_renderer_triangle_textured_lit(
+                    renderer, &sa, &sb, &sc, NULL, 0,
+                    color | 0xFF000000U, -1, fog);
+            else
+                drawn += toy_renderer_triangle_planar_vertex_lit(
+                    renderer, &sa, &sb, &sc, color | 0xFF000000U, fog);
         } else if (floor_submission)
             drawn += toy_renderer_triangle_lit(renderer, &sa, &sb, &sc,
                                                color, light, fog);

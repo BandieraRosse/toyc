@@ -1,7 +1,7 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-15
-> 源码核对基线补充：2026-09-15 工作区；Render Cost Investigation 冻结；`--render-performance` 提供正常世界压力消融，Game render 内恢复 scene/enemies/raster/overlay 计时及 scene/raster 明细。下一阶段 P0 为 V2 planar interpolated raster fast path。
+> 源码核对基线补充：2026-09-15 工作区；V2 Planar Raster Optimization 为 V2 无纹理平面建立专用不透明 solid/interpolated-light/fog/depth 路径，不再用 NULL texture/material fallback；旧路径仅作 `--render-performance` 的 `generic-planar` 逐像素 A/B。
 > 源码核对基线补充：动漫角色正常 world/展示渲染统一优先 LOD2，缺失时按 LOD1 → 原模型回退；距离仅控制可见性与姿态更新。Campaign Maid 四人内容武器为 AK。
 > 源码核对基线补充：Static World Lighting V2 — FROZEN；64×48、ambient/sun 192/64、contact 8/320 RFU、1024 RFU平面细分保持；契约与验收见 [Phase D](static-world-lighting-phase-d.md)。
 > 源码核对基线补充：Static World Lighting V2 Phase C3：V2 为唯一正常 runtime world-light source；V1 独立 diagnostic owner、显式 fixed override 与统一 scene factor，见 [Phase C3](static-world-lighting-phase-c3.md)。
@@ -465,11 +465,29 @@ static props 和 Campaign fixture；不运行真实波次。每项预热两帧�
 实现包含于 `src/dev-tests/rasterfall_world_benchmark.inc`；Linux/self 显式依赖与 Windows
 自动 header 依赖覆盖该文件，不新增编译单元或资源。
 
-`normal` 保留正常 V2；`constant-world` 把 helper world/root 查询替换为 256，
+`normal` 保留正常 V2 专用 planar path；`generic-planar` 只把同一批平面回退到旧
+NULL-texture `textured_lit` 路径作 A/B；`constant-world` 把 helper world/root 查询替换为 256，
 保留几何和逐像素路径（static RMESH 的直接 sample 仍保留）；`flat-planar` 保留细分，
 仅把无纹理平面的顶点光照路径改为每三角形恒定光照；`no-planar-v2` 关闭平面细分与顶点路径，
 其他 consumer 仍使用 V2；`legacy-enemies` 只替换普通敌人身体；`no-actors` 跳过 AI actor
 提交，地图陈列角色仍保留。这些只用于诊断，不是正常游戏选项，也不启用 V1。
+
+V2 planar normal 由 `draw_world_triangle_views()` 提交
+`toy_renderer_triangle_planar_vertex_lit()`。该 command 只携带投影顶点、不透明 base
+color、逐顶点 Q8.8 light 和三角形常量 fog；worker 保留与旧路径完全相同的
+边函数覆盖、屏幕空间 light 重心插值、逆深度 `>=` 比较/写入、
+`shade_color()` 光照后 fog 及整数舍入。它不携带 UV、texture sampler、material、
+alpha 或 blend 分支。近裁剪与 light 插值仍在 world frontend 完成，1024 RFU
+平面细分和 world-light sample 未改。三顶点 light 完全相同时，同一 planar command
+可在 command 粒度先计算一次 `shade_color()` 再复用 flat 内循环；非相同 light 仍必定走
+专用逐像素插值路径，`planar_constant_tris` 单独计数。
+
+benchmark 在两种路径各自 flush 后比较完整 framebuffer 和 depth buffer，输出
+hash、differing pixels/elements 与最大 RGB/depth 误差。`WORLD-PERF` 额外输出
+`planar_tris/planar_constant_tris/planar_px/planar_us`、
+`tex_tris/texture_fallback_cmds/tex_us` 与原
+bbox/inside/raster wall 统计。路径 `*_us` 是各 worker 重叠活跃时间之和，
+`raster_us` 才是主线程观察的 wall time。
 
 frame 包括世界／实体提交与两次 flush，不含逻辑、begin、截图 IO、present、HUD、
 交互层和战斗 effects；raster 是 flush 墙钟，含命令分类／排序／worker 等待。

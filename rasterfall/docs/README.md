@@ -1,7 +1,7 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-15
-> 源码核对基线补充：2026-09-15 工作区；Render Cost Investigation 冻结入口：`--render-performance` → `dev-tests/rasterfall_world_benchmark.inc`；窗口阶段统计由 `rf_game_runtime.c` 的 profiled render 维护。下一阶段唯一推荐入口为 V2 Planar Raster Optimization，详见 rendering.md 与归档调查。
+> 源码核对基线补充：2026-09-15 工作区；V2 Planar Raster Optimization 为 V2 无纹理细分平面增加专用 solid + interpolated vertex light + fog + depth command/worker 路径；`--render-performance` 保留 `generic-planar` A/B，输出 framebuffer/depth 差异、专用/回退 command 及路径耗时。
 > 源码核对基线补充：动漫角色正常 world/展示渲染统一优先 LOD2，缺失时按 LOD1 → 原模型回退；距离仅控制可见性与姿态更新。Campaign Maid 四人内容武器为 AK。
 > 源码核对基线补充：Windows 启动地图加载的容量型 Map IR 改为临时堆分配，成功与失败均释放；不依赖扩大线程栈，详见 map-format.md 的 Runtime Bridge。
 > 源码核对基线补充：Static World Lighting V2 — FROZEN；最终64×48世界尺度、参数、consumer、验收与平台覆盖边界见 [Phase D](static-world-lighting-phase-d.md)。
