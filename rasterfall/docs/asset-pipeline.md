@@ -1,6 +1,7 @@
 # Rasterfall 资产转换与诊断
 
-> 文档更新：2026-09-14
+> 文档更新：2026-09-15
+> 源码核对基线补充：True Vertex-Reduced Character LOD 在索引简化后压缩实际引用的 vertex 与对应 SKN1 权重；骨架、IK、CHR1、材质和 primitive 语义保持不变。
 > 源码核对基线补充：动漫角色正常 world/展示渲染统一优先 LOD2，缺失时按 LOD1 → 原模型回退；距离仅控制可见性与姿态更新。Campaign Maid 四人内容武器为 AK。
 > 源码核对基线补充：Temporary Campus Kit V0复用Builder/GLB/importer，campus IDs 24–35无默认碰撞；tools/campus_kit_round.py提供米制完整性、确定性和独立组图。
 > 源码核对基线补充：tools/architecture_round.py 编排同一 Builder、industrial manifest 和 importer；rf_arch_* 为零纹理双材质公开 RMESH，GLB/截图确定性比较。
@@ -160,8 +161,10 @@ RFM2 是演进中的运行时格式，加载器保留多个旧版本兼容分支
 LOD 参数写在 manifest 的 `lods` 中，由统一入口调用 `tools/rmesh_lod.py`。既有 `make lod-*` 目标继续
 保留，不要求迁移已有私有资产。
 
-`tools/rmesh_lod.py` 简化索引并保留顶点、骨骼、蒙皮与材质布局，支持现有 RFM2 v2-v14 输出。
-LOD 与完整模型共享纹理；v14 的 CHR1 会随 SKN1 原样保留；缺少
+`tools/rmesh_lod.py` 简化索引后建立 old→new vertex remap，只保留实际被 index 引用的
+position/normal/UV/edge 数据和对应 SKN1 BDEF1/BDEF2 记录，支持现有 RFM2 v2-v14 输出。
+骨架、bone hierarchy、IK、SKN1 names/metadata、材质和 primitive 不重排；v14 CHR1 原样保留。
+`--keep-unused-vertices` 仅供旧 index-only LOD 的诊断 A/B。LOD 与完整模型共享纹理；缺少
 LOD 文件时运行时应回退完整模型。修改选择阈值或布局假设时同时检查 `rasterfall_render.c`。
 
 ## GLB 与 VMD 检查

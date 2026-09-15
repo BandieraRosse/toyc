@@ -93,8 +93,10 @@ tools/rmesh_lod.py input.rmesh output_lod1.rmesh --ratio 0.4
 primitive 继续使用 `--ratio` 简化；优菈的 `make lod-eula` 会保留头发和脸部相关组。
 `--aggressive` 用于 8 米以上的 LOD2，会放宽 UV/次要骨骼保护以获得约 1000 面的激进减面。
 
-`rmesh_lod.py` 对每个材质 primitive 做确定性的蒙皮/UV 感知顶点聚类，保留原始
-顶点表、骨骼、动画和材质数据，只重建简化索引。`name_lodN.rmesh` 在运行时共享
+`rmesh_lod.py` 对每个材质 primitive 做确定性的蒙皮/UV 感知顶点聚类，重建简化索引后默认
+收集实际引用顶点并同步压缩 position/normal/UV 与 SKN1 权重记录。骨架、IK、CHR1、材质和
+primitive 语义保持不变；`--keep-unused-vertices` 仅用于生成旧式完整顶点表的诊断 A/B。
+`name_lodN.rmesh` 在运行时共享
 `name.textures/`，避免为各级 LOD 复制纹理。输出三角形比例是目标值；为了保护
 UV 接缝和骨骼边界，实际最接近比例会随模型拓扑略有变化。
 

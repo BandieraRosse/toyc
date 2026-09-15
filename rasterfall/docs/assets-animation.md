@@ -1,6 +1,7 @@
 # 资源、模型与动画
 
-> 文档更新：2026-09-14
+> 文档更新：2026-09-15
+> 源码核对基线补充：角色 LOD 会压缩未引用 vertex 及其一一对应的 SKN1 BDEF 记录，不改变 skeleton、IK、CHR1 role/attachment 或运行时 skinning 算法。
 > 源码核对基线补充：动漫角色正常 world/展示渲染统一优先 LOD2，缺失时按 LOD1 → 原模型回退；距离仅控制可见性与姿态更新。Campaign Maid 四人内容武器为 AK。
 > 源码核对基线：工作区（Enemy Visual V2 六份公开 RFM2 / renderer-only family；Humanoid Action Composition V1.1 additive recoil；Model Resource / Model Instance V1；双手 RFANIM 持枪轨道；PRIMARY_GRIP weapon presentation；modular world strip）
 
@@ -92,7 +93,8 @@ resource。新 runtime 不得对 resource definition 调用 pose/IK API，且 re
   `tools/blender/export_rasterfall_character.py` 是 Mixamo FBX→PMX/RFM2 兼容桥，不是新标准。
 - 官方正向 fixture 为 `tools/blender/generate_rfchar_fixture.py`，runtime 验证器为
   `app/rfchar_runtime_test.c`；新资产使用 stable role/attachment API，历史资产才按骨名推断。
-- LOD：统一入口编排 `tools/rmesh_lod.py`；Makefile 的既有 `lod-*` 目标继续可用。
+- LOD：统一入口编排 `tools/rmesh_lod.py`；索引简化后同步 compact vertex/SKN1 BDEF 表，
+  skeleton、IK 和 CHR1 保持原样；Makefile 的既有 `lod-*` 目标继续可用。
 - 资源许可与发布边界：`asset-sources.md`；历史实验现场仅在 `archive/` 中追溯。
 
 ## 修改提示

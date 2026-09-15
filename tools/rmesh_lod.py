@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Build a deterministic, skin-compatible RFM2 index LOD.
+"""Build a deterministic, skin-compatible RFM2 vertex/index LOD.
 
-The output keeps the source vertex and SKN1 data byte-for-byte.  Vertices are
-clustered by position, UV and primary skin influences; triangles collapsing to
-an edge or point are removed per material primitive.  Keeping the vertex table
-stable means animation tracks and bone indices remain directly compatible.
+Vertices are clustered by position, UV and primary skin influences; triangles
+collapsing to an edge or point are removed per material primitive.  The output
+then compacts the vertex table and matching SKN1 weight records to the vertices
+referenced by those indices.  Skeleton, IK, CHR1, materials and primitives keep
+their existing layouts and semantics.
 """
 
 import argparse
@@ -127,6 +128,51 @@ def simplify(data, info, divisions, aggressive=False):
     return output, counts
 
 
+def compact_vertices(data, info, indices):
+    """Return remapped indices, compact vertex bytes and a compact SKN1 tail."""
+    referenced = sorted(set(indices))
+    if any(index >= info["vertices"] for index in referenced):
+        raise ValueError("index out of range")
+    remap = {old: new for new, old in enumerate(referenced)}
+    compact_indices = [remap[index] for index in indices]
+    vertices = b"".join(
+        data[info["vertex_at"] + old * info["vertex_bytes"]:
+             info["vertex_at"] + (old + 1) * info["vertex_bytes"]]
+        for old in referenced
+    )
+    if info["version"] < 11:
+        return referenced, compact_indices, vertices, b""
+
+    skin_at = info["skin_at"]
+    if skin_at + 32 > len(data) or data[skin_at:skin_at + 4] != b"SKN1":
+        raise ValueError("invalid SKN1 section")
+    skin_bytes = u32(data, skin_at + 4)
+    bone_count = u32(data, skin_at + 8)
+    bone_bytes = u32(data, skin_at + 12)
+    skin_vertex_count = u32(data, skin_at + 16)
+    skin_vertex_bytes = u32(data, skin_at + 20)
+    if (skin_vertex_count != info["vertices"] or skin_vertex_bytes != 8 or
+            skin_at + skin_bytes > len(data)):
+        raise ValueError("invalid SKN1 vertex layout")
+    weights_at = skin_at + 32 + bone_count * bone_bytes
+    weights_end = weights_at + skin_vertex_count * skin_vertex_bytes
+    if weights_end > skin_at + skin_bytes:
+        raise ValueError("truncated SKN1 vertex records")
+    weights = b"".join(
+        data[weights_at + old * skin_vertex_bytes:
+             weights_at + (old + 1) * skin_vertex_bytes]
+        for old in referenced
+    )
+    skin_header = bytearray(data[skin_at:skin_at + 32])
+    new_skin_bytes = skin_bytes - (skin_vertex_count - len(referenced)) * skin_vertex_bytes
+    struct.pack_into("<I", skin_header, 4, new_skin_bytes)
+    struct.pack_into("<I", skin_header, 16, len(referenced))
+    skin = (bytes(skin_header) + data[skin_at + 32:weights_at] + weights +
+            data[weights_end:skin_at + skin_bytes] +
+            data[skin_at + skin_bytes:])
+    return referenced, compact_indices, vertices, skin
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("input", type=Path)
@@ -145,6 +191,10 @@ def main():
     parser.add_argument(
         "--aggressive", action="store_true",
         help="use LOD2 clustering: drop UV/secondary-weight protection",
+    )
+    parser.add_argument(
+        "--keep-unused-vertices", action="store_true",
+        help="retain the legacy full vertex/SKN1 tables",
     )
     args = parser.parse_args()
     if not 0.01 <= args.ratio < 1.0:
@@ -221,9 +271,17 @@ def main():
             if best is None or score < best[0]:
                 best = score, divisions, indices, counts
         _, divisions, indices, counts = best
+    source_vertices = info["vertices"]
+    if args.keep_unused_vertices:
+        referenced = list(range(source_vertices))
+        vertices = data[info["vertex_at"]:info["index_at"]]
+        tail = data[info["skin_at"]:]
+    else:
+        referenced, indices, vertices, tail = compact_vertices(data, info, indices)
     header = bytearray(data[:HEADER])
+    struct.pack_into("<I", header, 8, len(referenced))
     struct.pack_into("<I", header, 12, len(indices))
-    new_skin_at = (info["index_at"] + len(indices) * 4)
+    new_skin_at = info["vertex_at"] + len(vertices) + len(indices) * 4
     if info["version"] >= 11:
         struct.pack_into("<I", header, 60, new_skin_at)
     primitives = bytearray(data[info["primitive_at"]:info["material_at"]])
@@ -233,14 +291,18 @@ def main():
         first += count
     index_data = struct.pack("<%dI" % len(indices), *indices)
     output = (bytes(header) + bytes(primitives) +
-              data[info["material_at"]:info["index_at"]] + index_data +
-              data[info["skin_at"]:])
-    validate(output)
+              data[info["material_at"]:info["vertex_at"]] + vertices +
+              index_data + tail)
+    output_info = validate(output)
+    if output_info["vertices"] != len(referenced):
+        raise ValueError("compacted vertex count mismatch")
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_bytes(output)
-    print("rmesh-lod: %s -> %s divisions=%s triangles=%d -> %d ratio=%.3f" %
+    print("rmesh-lod: %s -> %s divisions=%s triangles=%d -> %d ratio=%.3f "
+          "vertices=%d -> %d" %
           (args.input, args.output, divisions, info["indices"] // 3,
-           len(indices) // 3, len(indices) / info["indices"]))
+           len(indices) // 3, len(indices) / info["indices"],
+           source_vertices, len(referenced)))
 
 
 if __name__ == "__main__":
