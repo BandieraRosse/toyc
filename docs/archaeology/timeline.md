@@ -22,7 +22,7 @@
 | 2026-05-29 | Tinylibc | `45adc6b` | tmake 已能调用外部工具编译并链接所有程序 | 提交内容与说明 |
 | 2026-06-22 | Tinylibc | `c985e5b` | 开始以 Claude Code 客户端接入 DeepSeek API 的密集 agent 重构 | 提交内容、元数据与作者回忆 |
 | 2026-06-30 | Tinylibc | `4670d9f` | 加入最小可行的自举编译器 Phase 1 | 提交内容与说明 |
-| 2026-07-01 | Tinylibc | `9921705` | 提交说明记录 `tcc.c` 自编译通过 | 提交说明，能力仍待复现 |
+| 2026-07-01 | Tinylibc | `9921705` | 提交说明记录 `tcc.c` 自编译通过 | 提交说明；本轮未复现该历史状态 |
 | 2026-07-02 | Tinylibc | `4437887` | 合并 compiler-test-suite 工作线，测试开始成为自举推进单位 | 提交 DAG、内容与作者回忆 |
 | 2026-07-02 | Tinylibc | `2213ae5` | `tmake -T` 开始以 tcc/tas 替代 gcc | 提交内容与说明 |
 | 2026-07-04 | ToyCCompiler / Toyc | `22ffcc8` | 以 Tinylibc `87d61e0` 编译器子树为基底选择性提取，建立独立仓库 | 跨仓库 blob 与逐文件 diff |

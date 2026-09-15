@@ -118,18 +118,18 @@ Tinylibc、不得使用标准库”的限制，初始框架由 Claude Code 客�
 作者回忆，直接要求 agent 自举会反复陷入难定位的段错误，因此由他提出先覆盖自举所需常见与边缘
 情况，再逐项通过。提交顺序与策略落地一致，但不能单独证明思想来源。
 
-## 来源与许可待核
+## 来源与许可的证据边界
 
 - 作者确认 `7586050:arch/x86_64/syscall.h.in` 的系统调用号直接借用 musl。
 - `syscall_arch.h` 保存 `__syscall0` 至 `__syscall6`；作者称理解后加入，尚未固定 musl 对象逐行比较。
 - pthread/clone 大量参考 musl 和 glibc，当前没有文件级来源表。
-- 同期文章明确称 `cal_absolute_path` 来自 SC7 队友，仍需定位 SC7 blob 与迁移提交。
+- 同期文章明确称 `cal_absolute_path` 来自 SC7 队友；本轮没有定位到可固定的 SC7 blob 与迁移提交。
 - 早期 printf 由网页 AI 辅助形成，相关会话和原型未保存。
 
 在上游快照固定前，不把调用号文件的直接借用扩张成整个 syscall 层来自 musl，也不把 Linux ABI
 约束下的相似代码自动视为复制。
 
-## 复查入口与待取材料
+## 复查入口
 
 ```sh
 git -C ../Tinylibc show --stat --summary 34fcd9e
@@ -141,5 +141,6 @@ git -C ../Tinylibc log --reverse --since=2026-06-22 --until=2026-06-30 \
 git -C ../Tinylibc show --stat 2e03788 4437887 ff396cb
 ```
 
-仍需取得：课程材料；论文原文和输出；当时的 musl 快照；未提交音频实验（若仍存在）；agent 会话；
-文章旧 Git 对象；以及 Tinylibc 编译器树到 ToyCCompiler 根提交的逐文件对照。
+本轮未纳入课程材料、论文原文和输出、当时的 musl 快照、未提交音频实验、agent 会话及文章旧
+Git 对象。Tinylibc 编译器树到 ToyCCompiler 根提交的逐文件对照已经完成，见
+[ToyCCompiler 证据表](toy-c-compiler.md)。
