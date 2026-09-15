@@ -63,6 +63,7 @@ Toyc（“two parents”整合时期）
 - [ToyCCompiler 时期](periods/toy-c-compiler.md)：独立仓库、自举、汇编器与链接器闭环。
 - [ToyCCompiler 提交级证据表](evidence/toy-c-compiler.md)：提取来源、stage 语义、种子、工具依赖与复查结果。
 - [Toyc 时期](periods/toyc.md)：双重来源、命名统一、Tinylibc 回归及后续扩展。
+- [Toyc 整合期提交级证据表](evidence/toyc.md)：双向移植、准确来源快照、渐进兼容与项目身份。
 - [初步时间线](timeline.md)：跨仓库的关键边界提交。
 - [证据与方法](sources.md)：资料优先级、引用格式、待核问题和复查命令。
 - [关键问题台账](questions.md)：跨会话逐题回答、核查和写入专题文档的工作入口。
@@ -72,10 +73,12 @@ Toyc（“two parents”整合时期）
 - [SC7 与系统工程的边界](essays/sc7-engineering-boundaries.md)：不重复编年和提交表，而是用
   架构、接口、内存模型、运行环境和项目范围五类边界，解释这段经历可以支持哪些
   工程结论，又不能支持哪些自我评价。
+- [从逐行掌握到风险驱动理解](essays/agent-and-project-scale.md)：解释个人开发中 agent 如何扩大
+  可达规模，以及按需理解、验证边界、少量失控和边际成本之间的取舍。
 
 ## 当前结论的范围
 
-当前已完成 SC7、Tinylibc 与 ToyCCompiler 三个时期的阶段划分、连续叙事和提交级证据表；SC7 另有工程边界专题。
+当前已完成 SC7、Tinylibc、ToyCCompiler、Toyc 初始整合及 Rasterfall 转向的阶段划分、连续叙事和提交级证据表；SC7 另有工程边界专题。
 Tinylibc 已区分课程与兴趣起点、手写终端应用、pthread/论文实验、网络与构建工具、agent 转型和
 编译器冲刺，并纳入作者提供的同期文章。作者确认末期以 Claude Code 为客户端、全部接入 DeepSeek
 API；`Co-Authored-By: Claude` 因而不能证明使用过 Claude 模型，也不能量化贡献或证明未署名提交
@@ -83,11 +86,18 @@ API；`Co-Authored-By: Claude` 因而不能证明使用过 Claude 模型，也�
 为从 Tinylibc `87d61e0` 的编译器子树有选择提取，并区分自身编译、可运行下一阶段、多阶段收敛、
 tas/tld 接管以及种子驱动默认构建；独立建仓是为集中上下文先完成自举，并已有之后重新整合
 Tinylibc 的计划。`687ed29` 中“没有 AI”指作者平静后亲手删去自举成功时写下的过度抒情文字。
+Toyc 的 “two parents” 定位先于实际目录整合：自举工具链被视为生态核心，Tinylibc 提供库与应用；
+两者统一是编译器最初目标的回归，而非无关项目的事后拼接。初次直接融合遇到现实兼容距离后，开发
+转为在 Toyc 中按 Tinylibc 库模块逐项建立编译和功能测试，再进行双向选择性移植。Toyc 的 standalone
+是理论上的生态闭环目标；后续为工程效率仍经常使用 GCC，不能把该目标理解成永久排斥宿主工具。
+独立 Tinylibc 在首次整合后只再维护约 13.5 小时，最后共有修复由 Toyc 选择性吸收；`a5b959c` 首次用 toyc
+编译完整库的 C 源，但仍用系统 `as/ar/ld`，随后默认工具链构建回到 GCC。Rasterfall 从
+GCC/Toyc 双路径图形验证中长出，8 月形成独立游戏工程，8 月 31 日退出 Toyc 兼容范围，9 月 3 日
+成为仓库治理主线；它是继承 Tinylibc/Toyc 设施的新项目，而非编译器第四阶段。
 
 ## 下一阶段
 
 - 补齐 SC7 外部来源快照、完整赛果和原始测试材料，继续收窄驱动来源与赛事评价的不确定性。
 - 固定 Tinylibc 参考的 musl 快照，核对 syscall、clone/pthread 的文件级来源和许可证边界。
 - 找回 `fca878f` 前未提交种子与原始 stage 日志，补全最初来源和当时复现记录。
-- 找出 Toyc 引入 Tinylibc 时的准确源快照，而不只依赖提交说明。
 - 建立“作者回忆待访谈”清单，记录工具使用、关键决策、失败尝试与情绪背景。

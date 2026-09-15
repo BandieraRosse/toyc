@@ -67,8 +67,11 @@ Toyc（“two parents”整合时期）
 - [SC7 前史](periods/sc7.md)：团队操作系统竞赛、内核经验与 Tinylibc 的分离背景。
 - [SC7 提交级证据表](evidence/sc7.md)：SC7 的提交锚点、协作边界、冲突记录和待核对象。
 - [Tinylibc 时期](periods/tinylibc.md)：手写阶段、libc/应用生态、仓库内编译器的诞生。
+- [Tinylibc 提交级证据表](evidence/tinylibc.md)：阶段锚点、pthread、网络、文章、AI 工作流与来源边界。
 - [ToyCCompiler 时期](periods/toy-c-compiler.md)：独立仓库、自举、汇编器与链接器闭环。
+- [ToyCCompiler 提交级证据表](evidence/toy-c-compiler.md)：提取来源、stage 语义、种子、工具依赖与复查结果。
 - [Toyc 时期](periods/toyc.md)：双重来源、命名统一、Tinylibc 回归及后续扩展。
+- [Toyc 整合期提交级证据表](evidence/toyc.md)：双向移植、准确来源快照、渐进兼容与项目身份。
 - [初步时间线](timeline.md)：跨仓库的关键边界提交。
 - [证据与方法](sources.md)：资料优先级、引用格式、待核问题和复查命令。
 - [关键问题台账](questions.md)：跨会话逐题回答、核查和写入专题文档的工作入口。
@@ -78,22 +81,110 @@ Toyc（“two parents”整合时期）
 - [SC7 与系统工程的边界](essays/sc7-engineering-boundaries.md)：不重复编年和提交表，而是用
   架构、接口、内存模型、运行环境和项目范围五类边界，解释这段经历可以支持哪些
   工程结论，又不能支持哪些自我评价。
+- [从逐行掌握到风险驱动理解](essays/agent-and-project-scale.md)：解释个人开发中 agent 如何扩大
+  可达规模，以及按需理解、验证边界、少量失控和边际成本之间的取舍。
 
 ## 当前结论的范围
 
-本轮只建立框架并确认仓库级传承。关于 AI 参与强度和个人开发方式，当前依据主要是作者口述；
-提交中的 `Co-Authored-By` 可证明部分提交显式记录了 Claude，但不能单独量化 AI 贡献，也不能
-证明未署名提交没有使用 AI。DeepSeek API 和网页对话的具体使用过程仍需聊天记录、脚本、账单、
-本地日志或作者访谈等材料交叉验证。
+当前已完成 SC7、Tinylibc、ToyCCompiler、Toyc 初始整合及 Rasterfall 转向的阶段划分、连续叙事和提交级证据表；SC7 另有工程边界专题。
+Tinylibc 已区分课程与兴趣起点、手写终端应用、pthread/论文实验、网络与构建工具、agent 转型和
+编译器冲刺，并纳入作者提供的同期文章。作者确认末期以 Claude Code 为客户端、全部接入 DeepSeek
+API；`Co-Authored-By: Claude` 因而不能证明使用过 Claude 模型，也不能量化贡献或证明未署名提交
+没有使用 AI。作者进一步确认为节省费用主要使用 DeepSeek-V4-Flash，仅两天多使用 Pro。ToyCCompiler 已固定
+为从 Tinylibc `87d61e0` 的编译器子树有选择提取，并区分自身编译、可运行下一阶段、多阶段收敛、
+tas/tld 接管以及种子驱动默认构建；独立建仓是为集中上下文先完成自举，并已有之后重新整合
+Tinylibc 的计划。`687ed29` 中“没有 AI”指作者平静后亲手删去自举成功时写下的过度抒情文字。
+Toyc 的 “two parents” 定位先于实际目录整合：自举工具链被视为生态核心，Tinylibc 提供库与应用；
+两者统一是编译器最初目标的回归，而非无关项目的事后拼接。初次直接融合遇到现实兼容距离后，开发
+转为在 Toyc 中按 Tinylibc 库模块逐项建立编译和功能测试，再进行双向选择性移植。Toyc 的 standalone
+是理论上的生态闭环目标；后续为工程效率仍经常使用 GCC，不能把该目标理解成永久排斥宿主工具。
+独立 Tinylibc 在首次整合后只再维护约 13.5 小时，最后共有修复由 Toyc 选择性吸收；`a5b959c` 首次用 toyc
+编译完整库的 C 源，但仍用系统 `as/ar/ld`，随后默认工具链构建回到 GCC。Rasterfall 从
+GCC/Toyc 双路径图形验证中长出，8 月形成独立游戏工程，8 月 31 日退出 Toyc 兼容范围，9 月 3 日
+成为仓库治理主线；它是继承 Tinylibc/Toyc 设施的新项目，而非编译器第四阶段。
 
 ## 下一阶段
 
-- 为 Tinylibc 建立阶段划分，先覆盖编译器出现前的手写主线。
-- 对照 SC7 的 `tlibc` 分支与 Tinylibc 根提交，确认分离时继承的代码和设计。
-- 对照 Tinylibc `87d61e0` 附近源码与 ToyCCompiler 根提交，形成文件级来源表。
-- 按提交重建 ToyCCompiler 从最小编译器到 stage-10 收敛的过程。
-- 找出 Toyc 引入 Tinylibc 时的准确源快照，而不只依赖提交说明。
+- 补齐 SC7 外部来源快照、完整赛果和原始测试材料，继续收窄驱动来源与赛事评价的不确定性。
+- 固定 Tinylibc 参考的 musl 快照，核对 syscall、clone/pthread 的文件级来源和许可证边界。
+- 找回 `fca878f` 前未提交种子与原始 stage 日志，补全最初来源和当时复现记录。
 - 建立“作者回忆待访谈”清单，记录工具使用、关键决策、失败尝试与情绪背景。
+
+---
+
+## 文件：`docs/archaeology/essays/agent-and-project-scale.md`
+
+# 从逐行掌握到风险驱动理解
+
+## 问题不是“何时学会做项目”
+
+Toyc 主线从 SC7、Tinylibc 到 ToyCCompiler、Toyc 和 Rasterfall，不能写成作者在某个时点突然从
+“会写 C”升级为“会做项目”。更准确的问题是：第一次接触陌生系统软件、个人时间和已有经验有限
+时，什么开发方式能把项目推进到多大规模，以及作者愿意为扩大规模放弃什么。
+
+作者于 2026-09-16 回顾：在没有写过相关软件、缺少领域知识的第一次实践中，使用网页 AI 辅助，
+仍由自己实现和测试，大概率只能达到早期 Tinylibc 的程度。standalone C 编译器本来就被感受到不
+现实、很困难；若保持同一种工作方式，ToyCCompiler、Toyc 乃至当前规模的任务都难以完成。这是对
+现实条件和个人开发上限的判断，不是说手写阶段没有工程价值。
+
+## 转变是逐渐发生的
+
+Git 能给出工作流变化的对象锚点，但不能给意识变化指定唯一日期。2026-06-22 的 Tinylibc
+`c985e5b` 后，提交规模和节奏明显变化：连续发生命名统一、边界检查、并行构建、测试框架、网络
+程序、pthread 重写和大文件拆分。作者确认此时使用 Claude Code 客户端接入 DeepSeek API，工作
+逐渐从直接编码、printf 和 strace 排错，转为提出目标、写 prompt、判断异常、让 agent 阅读和修改
+代码，并按需亲自测试。
+
+但作者并非到 6 月 22 日才突然得出结论。早期已经感到 standalone 编译器靠原有方式并不现实；
+agent 带来的效率让长期愿望首次成为可以投入的目标，随后在实际开发中才逐渐明确这种方式改变的
+意义。因此 `c985e5b` 是仓库可见的工作流边界，不是思想转变的精确瞬间。
+
+## 放弃的是什么，保留的是什么
+
+作者所说的“放弃对每个细节的掌握”不是不再理解项目，而是改变理解的覆盖方式：
+
+- 不要求预先阅读并掌握每一行实现；
+- 必要时进入对应模块，主要借助 agent 解读代码；
+- 保留对总体目标、结果判断和关键技术选择的关注；
+- 对已有经验覆盖的领域，能更敏感地发现不合理选择；
+- 用测试、分解和模块边界降低没有逐行掌握带来的风险。
+
+Tinylibc 末期直接冲击自举时反复出现“编译自身、运行段错误、再艰难追踪”，作者转而提出先建立
+测试框架；Toyc 整合 Tinylibc 时也没有坚持一次完成，而是按 lib 模块建立编译和功能测试。这两次
+都说明 agent 扩大实现能力后，作者仍需要决定验证单位和推进策略。项目能力在这里体现为选择需要
+亲自掌握的层次，而不是代码全部由谁敲入。
+
+## 规模、控制和边际成本
+
+作者确认 agent 带来的代码规模有时略微超出控制，Rasterfall 中也出现过事先没有预期的效果；当前
+认为这对个人开发可以接受。理由不是失控本身有价值，而是完全掌握同样需要成本：理解覆盖达到一定
+程度后，继续追求每个细节的边际收益可能低于时间成本。个人开发需要抓住主要部分并继续向前。
+
+这项取舍同时带来收益与债务：
+
+| 选择 | 获得 | 承担 |
+|---|---|---|
+| 亲自掌握每个细节 | 更直接的局部理解和控制 | 陌生大型目标可能在现实时间内不可达 |
+| agent 扩大实现范围 | standalone 工具链、更完整生态和更大应用成为可行 | 局部理解不足、意外行为和维护复杂度 |
+| 按风险深入并建立验证边界 | 在速度与控制之间取得个人可接受的平衡 | 仍需持续判断哪些部分属于“主要部分” |
+
+这里不能把项目规模本身等同于能力，也不能把 agent 生成结果自动算作作者已经掌握的知识。能够由
+现有材料支持的结论是：作者逐渐接受有限理解覆盖，以目标选择、关键技术敏感度、按需阅读、测试和
+模块化来管理风险；这种方法变化使此前不现实的项目规模成为可能，也引入了作者愿意接受的少量失控。
+
+## 跨时期的位置
+
+- **SC7**：团队、架构、硬件和截止时间已经要求范围决策；放弃多核投入是早期例子。
+- **早期 Tinylibc**：网页 AI 主要讲解知识和调试信息，作者亲自实现验证，形成系统调用、终端、
+  线程和 libc 的直接经验，也显露个人规模上限。
+- **Tinylibc 后期**：coding agent 接管更多仓库操作和实现，长期的编译器愿望开始成为现实目标。
+- **ToyCCompiler/Toyc**：作者把整体失败拆成测试阶段和库模块，并在 standalone 理想与 GCC 工程
+  效率之间反复取舍。
+- **Rasterfall**：规模进一步扩大，少量超出预期的结果被视为个人开发中可接受的代价；具体案例
+  仍需在考证 Rasterfall 转向时落到提交和模块。
+
+因此，从 C 编程到 C 项目能力不是离开代码细节，而是开始管理目标规模、理解成本、验证边界和推进
+速度之间的关系。
 
 ---
 
@@ -274,9 +365,34 @@ VisionFive 三步重移植及 BSS 修复，第二父线包含 `git help` 等现�
 | 文件相关系统调用 | `e86f184`、`e23f00a`、`8436f13`、`03855b4`、`f0d02af`、`57567e9`、`3df36c0`、`4c92f0f` | 实现或修复路径、目录、链接、偏移、写入限制及测试错误处理 | 作者负责 ext4 内部实现；全部用例持续通过 |
 | VisionFive/2K1000 | `974c487`、`460709c`、`7d99e47`、`5bbdf4d`、`d389233`、`df580fe` | 推进启动、虚拟内存、文件系统和板端适配 | 每项均由作者独立完成 |
 | VisionFive SD | `74aee85`、`df580fe` | 提交说明记录虚拟内存下读写测试正常，代码进入仓库 | 队友协助比例、代码具体来源、长期稳定性 |
-| `tlibc` 用户态 | `e2eef7f` 至 `d2363da`，重点包括 `5aa1cb2`、`4457898` | 逐步加入库构建、Shell、文件操作命令与系统调用封装 | 与独立 Tinylibc 根树完全一致 |
+| `tlibc` 用户态 | `e2eef7f` 至 `d2363da`，重点包括 `5aa1cb2`、`4457898` | 逐步加入库构建、Shell、文件操作命令与系统调用封装；末端子树是独立 Tinylibc 根树的精确来源 | 开发过程中未提交的工作、讨论和外部代码来源 |
 
 说明：旧稿中的 `460709e` 不是有效提交号；公开仓库对应对象为 `460709c`。
+
+### SC7 结论复查入口
+
+下列命令固定当前叙事使用的完整对象，不依赖已删除的赛事分支名：
+
+```sh
+git -C ../SC7 show --stat --summary 524e2ef948f26270a344264a96f62fd519b8c576
+git -C ../SC7 show --stat --summary 64d9400fc491c0be34c4f0e724ca9190bee19070
+git -C ../SC7 show -s --format='%H %P %aI %s' \
+  bcfab951a0dca822064211c7ce3b6cdaa6bde965 \
+  b927bc12480bc4feee0e59c015de4d0c8fe4dcbb \
+  696310e1bf3fa84b7b5a0ba1911ac9cdaefbcb13
+git -C ../SC7 merge-base \
+  1a668a3f165e76aed255b8220ffcd07769491db6 \
+  d2363daedef0a2027978f0a5bb2f4f0f037c4952
+git -C ../SC7 ls-tree -r \
+  d2363daedef0a2027978f0a5bb2f4f0f037c4952 user/include/Tinylibc/
+git -C ../Tinylibc ls-tree -r \
+  fce216ca20d42c15fc89118a7e30d491f1c882e9
+```
+
+最后两条输出用于逐路径比较 SC7 子树与 Tinylibc 根树；比较时去掉前者的
+`user/include/Tinylibc/` 前缀。29 个路径中 26 个 blob ID 相同，其余三个 Markdown 应继续查看
+双方内容，不能只由文件数量推断继承关系。动态链接、多核和驱动来源等结论还需按下文列出的提交链
+分别检查，单条 `show` 输出不足以证明完整因果关系。
 
 ## 团队协作边界
 
@@ -423,6 +539,378 @@ oscomp 的获奖作品汇总只列 2025 年一等奖八队，没有二等奖或�
 2. 取得 XN6、AVX 与 SD Rust 源实现快照，完成逐文件相似度与许可证对照。
 3. 取得完整正式赛果、项目语言和同期排行榜，验证赛事评价与影响关系。
 4. 取得 BusyBox/libctest/LTP 原始比赛镜像和输出，避免把测试数组与提交说明当成独立运行结果。
+
+---
+
+## 文件：`docs/archaeology/evidence/tinylibc.md`
+
+# Tinylibc 提交级证据表
+
+## 使用说明
+
+本表为 [Tinylibc 时期](../periods/tinylibc.md) 提供可复核依据，不重复连续叙事。提交号属于公开仓库
+`WHU-SC7/Tinylibc`；调查缓存为 `../Tinylibc`，当前可见历史截至 `a566206`。
+
+“代码记录”只确认改动进入 Git；提交说明、README 和 `tlibc_commit_log.md` 是同期陈述；
+`C:\Users\15259\Desktop\draft` 中的文章是作者提供的同期外部材料；2026-09-15 的回答是事后
+回忆。功能通过、贡献比例和因果关系不能由提交数或署名自动推出。
+
+## 阶段锚点
+
+| 阶段 | 代表对象 | 日期 | 可确认内容 | 限制 |
+|---|---|---|---|---|
+| SC7 支线起点 | SC7 `e2eef7f` | 2025-09-24 | 说明为 TinyLibc 第一次提交 | 仍位于团队仓库和内核运行环境 |
+| 分离快照 | SC7 `d2363da` / `fce216c` | 2025-10-17 | 29 个路径对应，26 个 blob 相同，只改三个 Markdown | 无 Git 祖先关系 |
+| x86_64 可运行 | `7586050` | 2025-10-17 | 加入 syscall、输入和 ABI 适配，说明可在 PC 运行 | 未复现当时环境 |
+| 独立项目布局 | `34fcd9e` | 2025-11-12 | 形成 `app/include/lib/arch` 分层 | 仍链接成单个大程序 |
+| 手写阶段末端 | `6c396aa` | 2025-11-16 | top 加入 CPU 显示和排序 | 空档动机来自作者回忆 |
+| pthread 重启 | `4778563` | 2026-03-05 | 最小 pthread_create、clone | 不等于完整 pthread 语义 |
+| 程序/库分离 | `d82fe5d` | 2026-03-14 | 单独编译程序与静态库 | 与 11 月目录重组不同 |
+| 异步回收 | `3dae4be` | 2026-03-27 | 后台回收线程栈和项目 malloc 内存 | 锁、join 和兼容性未收敛 |
+| 网络与 Shell | `2931f99`—`0747dfd` | 2026-05-02—06-01 | HTTP、server、文件传输、补全、PATH | 验证范围主要来自同期记录 |
+| agent 转型 | `c985e5b` 起 | 2026-06-22 | Claude Code 接入 DeepSeek API 后密集重构，提交普遍署名 Claude | 署名不能证明使用 Claude 模型 |
+| 编译器起点 | `4670d9f` | 2026-06-30 | 最小编译器 Phase 1 | 框架来源仍需会话材料 |
+| 测试策略转折 | `2e03788`、`4437887`、`ff396cb` | 2026-07-02 | 测试支线合并、阶段式 runner | 决策来源含作者回忆 |
+| 独立前锚点 | `87d61e0` | 2026-07-04 | 修复对齐和字符串初始化 | 未证明恰为新仓库源快照 |
+
+## 课程交付与终端程序
+
+根提交 README 把项目定位为学习用途，`项目计划.md` 把 x86_64 和网络列为第二阶段。`ae1d107`
+加入终端游戏；`cdf60b3` 至 `95aa5f2` 推进简化版 vim；`79fd5fd` 至 `6c396aa` 让 top 从进程列表
+推进到内存、时间和 CPU 排序。提交日志同时记录 vim 中文显示限制和 top 段错误等边界。
+
+作者说明它也是 2025 年下半年软件工程小组作业，主要由本人推进；教师要求成果不能只实现库接口，
+促使终端应用成为交付形式。课程材料尚未取得，所以不记录成员、课程名或评分，也不推断其他成员缺席。
+
+## `34fcd9e` 的准确边界
+
+该提交把 `app.c` 改为 `app/shell.c`，`core.c/test.c` 移入 `lib/`，`internal/` 与 `external/`
+下的头文件移入 `include/`。Makefile 最终仍链接到 `build/tlibc_x64`。对象支持“摆脱 SC7 目录
+习惯、建立 Tinylibc 独立布局”的作者解释；各命令独立链接首次明确见 `d82fe5d`。
+
+## pthread、mempool 与论文
+
+| 对象 | 同期记录 | 限制或反例 |
+|---|---|---|
+| `4778563`、`a324f05` | 最小 create 与 join | 初期 join 仍简单 |
+| `a4fc67a` | mempool 按线程管理内存 | 同时仍在修 clone 参数 |
+| `973b761`、`6da8668` | 预分配并记录线程栈 | 只覆盖项目接口管理的资源 |
+| `3dae4be` | 工作线程异步回收资源 | 日志留下锁问题，join 暂不清理 |
+| `2907eb3` README | 宣称创新性修改，提供 glibc 对比入口 | 不是优势已复现的证据 |
+| `26b003e` | 修复旧程序退出兼容，memtest 原因不明 | 显示全局 mempool 的副作用 |
+| 支线 `3d5b976` | 完整 pthread 需要大改，分支不合并 | 同期失败记录 |
+| `9274c1c`、`5d98067` | agent 阶段重写 pthread，默认关闭自动回收 | 后续完善不抹去早期实验 |
+
+`app/paper/` 保存 pthread、mempool、memtest 和 glibc 对比入口。作者说明毕业论文研究线程资源
+异步回收机制，并认为是否优于 glibc 有待商榷、需要继续优化。论文原文和原始输出尚未纳入。
+
+## 网络、Shell 与构建工具
+
+| 主题 | 提交 | 对象可确认内容 |
+|---|---|---|
+| HTTP | `2931f99` | HTTP 程序；日志写明 `getaddrinfo` 暂缓 |
+| server/client | `5a58201`、`e697a41` | 本机收发与多线程服务端 |
+| 文件传输 | `7281774`、`f83544e` | 交互下载与分片发送 |
+| Shell 补全 | `8a185ed`、`291bef7` | 补全、PATH 配置与 fd 修复 |
+| PATH 执行 | `0747dfd` | 去掉补全状态 workaround，执行时独立搜索 |
+| tmake | `33afdb3`、`45adc6b`、`8924b42` | 编译、链接和安装各程序；仍调用外部工具 |
+
+作者回忆这些网络程序主要由自己手写。2026 年 3 月前还尝试手写音频但失败且未提交；7 月
+`78ba482`、`067efc3` 的 ALSA/PulseAudio 成功属于 agent 阶段另一轮实现。
+
+## 同期文章与旧对象号
+
+仓库外 `draft` 的文件系统时间集中在 2026-07-11，不能直接作为写作或发布日期。
+
+| 文件 | 内容与边界 |
+|---|---|
+| `000_draft_shell_v0.md`、v1.0 | 解释补全与终端；声明主体代码手写，`cal_absolute_path` 来自 SC7 队友 |
+| `001_what_is_rm_doing.md` | 用递归删除说明 syscall 组合；作者写作，AI 只建议润色 |
+| `002_use_tmake_toreplace_make.md` | 解释 tmake，并在实现前提出未来简化 C 编译器 |
+| `003_CLAUDE_shell_path_search.md` | 保存原始 prompt；从本篇起文章由 Claude Code 客户端接入的 DeepSeek 模型生成，对应代码仍主要手写 |
+
+`000` 引用的 `820b680...`、`003` 引用的 `dfc7a9f...` 当前均不可解析；日期和主题分别与现历史
+`291bef7`、`0747dfd` 匹配。这只支持可能存在历史改写后的映射，找回旧对象前不能宣称 blob 相同。
+
+## AI 工作方式与提交日志
+
+手写时期主要使用 DeepSeek 网页端讲解 musl、syscall、终端 flag 和调试输出。同期日志在
+2025-11-07 记录 `termios` 字段类型曾被 AI 误导，最终改查 Linux UAPI，说明网页回答并非权威入口。
+作者另将 GLM-5.2 首次使用回忆为 2026 年 7 月的“ToyCCompiler 迁移幽默声明”会话，将 ChatGPT
+使用放在 7 月底及 8 月订阅；当前没有会话或 Git 文本交叉验证。
+
+6 月 22 日后，大多数代表性提交显式署名 Claude，包括 tmake 并行构建 `423fbed`、测试框架
+`c424382`、远程 Shell `ef82e39`、HTTP 服务 `3941b9d`、嗅探器 `f5162d3`、pthread 重写
+`9274c1c`、库拆分 `ef11c99`。作者逐渐改为写 prompt、定方向、判断异常和让 agent 总结代码，
+偶尔亲自测试；具体目标仍常来自作者兴趣或旧计划。
+
+作者确认 Claude Code 只是客户端，模型请求全部接入 DeepSeek API，没有同时使用 Claude 模型。
+因此 trailer 记录的是客户端工作流产生的身份文本，不能作为模型供应方证据。作者推测客户端内嵌
+提示词使 DeepSeek 自我识别为 Claude，但配置、system prompt 和会话尚未取得，该解释仍属推测。
+
+`tlibc_commit_log.md` 延续 SC7 的线性日志习惯。6 月 22—23 日连续尝试用多种 Git hook 自动维护
+`CLAUDE_COMMITS.md`，`b082c74` 放弃自动写入，`d6997df` 删除文件。作者解释，线性文件便于人读，
+agent 则可直接查询 Git；继续维护汇总反而低效。
+
+## 编译器与测试策略
+
+`002_use_tmake_toreplace_make.md` 已在 5 月留下未来编译器设想。作者说明自己给出“依赖全部位于
+Tinylibc、不得使用标准库”的限制，初始框架由 Claude Code 客户端接入的 DeepSeek API 模型设计。
+
+`4670d9f` 至 `a85c789` 一天内推进 Phase 1—4；`e457e6b` 说明编译 22/27 个库文件；`d996c17`
+和 `9921705` 分别声明 9/9 与 `tcc.c` 自编译。`2e03788` 加入测试套件，`4437887` 合并
+`compiler-test-suite`，`fddf85c`、`ff396cb` 形成阶段式 runner，随后出现密集语义和代码生成修复。
+
+作者回忆，直接要求 agent 自举会反复陷入难定位的段错误，因此由他提出先覆盖自举所需常见与边缘
+情况，再逐项通过。提交顺序与策略落地一致，但不能单独证明思想来源。
+
+## 来源与许可待核
+
+- 作者确认 `7586050:arch/x86_64/syscall.h.in` 的系统调用号直接借用 musl。
+- `syscall_arch.h` 保存 `__syscall0` 至 `__syscall6`；作者称理解后加入，尚未固定 musl 对象逐行比较。
+- pthread/clone 大量参考 musl 和 glibc，当前没有文件级来源表。
+- 同期文章明确称 `cal_absolute_path` 来自 SC7 队友，仍需定位 SC7 blob 与迁移提交。
+- 早期 printf 由网页 AI 辅助形成，相关会话和原型未保存。
+
+在上游快照固定前，不把调用号文件的直接借用扩张成整个 syscall 层来自 musl，也不把 Linux ABI
+约束下的相似代码自动视为复制。
+
+## 复查入口与待取材料
+
+```sh
+git -C ../Tinylibc show --stat --summary 34fcd9e
+git -C ../Tinylibc diff 34fcd9e^ 34fcd9e -- README.md Makefile
+git -C ../Tinylibc log --all --follow -- app/paper/pthread.c
+git -C ../Tinylibc show 6c396aa:tlibc_commit_log.md
+git -C ../Tinylibc log --reverse --since=2026-06-22 --until=2026-06-30 \
+  --format='%H %aI %s%n%(trailers:key=Co-Authored-By,valueonly)'
+git -C ../Tinylibc show --stat 2e03788 4437887 ff396cb
+```
+
+仍需取得：课程材料；论文原文和输出；当时的 musl 快照；未提交音频实验（若仍存在）；agent 会话；
+文章旧 Git 对象；以及 Tinylibc 编译器树到 ToyCCompiler 根提交的逐文件对照。
+
+---
+
+## 文件：`docs/archaeology/evidence/toy-c-compiler.md`
+
+# ToyCCompiler 提交级证据表
+
+## 使用说明
+
+本表为 [ToyCCompiler 时期](../periods/toy-c-compiler.md) 提供可复核依据。提交号属于
+`BandieraRosse/ToyCCompiler`；本地缓存为 `../ToyCCompiler`，可见历史从 `22ffcc8` 到
+`58ac389`。提交说明、README、`CLAUDE.md` 和 draft/004—007 都是同期陈述，不自动证明功能。
+
+## 提取来源表
+
+比较端点为 Tinylibc `87d61e0` 与 ToyCCompiler `22ffcc8`。
+
+| ToyCCompiler 根路径 | Tinylibc 来源 | 对照结果 |
+|---|---|---|
+| `app/{cgen,cgen_asm,cgen_expr,elf_write,lex,parse,preproc,tas,tcc,tpp}.c` | `app/compiler/` 同名路径 | 10 个 blob 完全相同，只移动目录 |
+| `app/tcc_rt_start.S` | `app/compiler/tcc_rt_start.S` | blob 完全相同 |
+| `app/elf_write.h`、`app/tcc.h` | `app/compiler/` 同名路径 | 只把 Tinylibc 总头替换为独立头 |
+| `app/tcc_rt.c` | `app/compiler/tcc_rt.c` | 改用 `tcc_need.h`，删除重复定义，并将固定参数 `__printf` 改为变参实现 |
+| `include/elf.h` | Tinylibc 同路径 | 只把 `tlibc_types.h` 换成 `tcc_need.h` |
+| `ld.script` | Tinylibc 同路径 | blob 完全相同 |
+| `include/tcc_need.h` | 多个 Tinylibc 头的所需子集 | 根提交新文件；组合类型、常量、syscall 与运行时声明 |
+| `compiler-tests/01`—`13` | Tinylibc 细粒度测试 | 不是改名或相同 blob；重写成 13 个聚合测试 |
+| `Makefile`、`.gitignore` | 独立工程入口 | 根提交新文件 |
+
+根提交晚于 `87d61e0` 约十小时，11 个核心 blob 与该末端完全相同，差异文件又是明确的独立化修改，
+故可把 `87d61e0` 固定为提取基底，而不是只称“附近快照”。
+
+## 自举层级与工具依赖
+
+| 对象 | 对象可确认行为 | 当时仍依赖或限制 |
+|---|---|---|
+| `22ffcc8` | 独立 Makefile 构建 tcc/tpp/tas | C 与 `.S` 均由 GCC 处理，系统 `ld` 链接 |
+| `0252321` | GCC→stage 1；stage 1 编译九个 C 文件并生成 stage 2 | `.S` 用 GCC，链接和测试用系统 `ld` |
+| `961fbf6` | 新增 stage 1—10 脚本 | stage 1=GCC；每级 `.S`=GCC；每级链接=`ld` |
+| `8b2ea1f` | README 记录 stage 3—10 tcc 二进制一致 | 同期宣言；不是 tas/tld 闭环，不证明 C 正确性 |
+| `fca878f` | 让 tas 源码适合 tcc；说明称种子退役、Makefile 回 GCC | 此前无受跟踪 `bootstrap/`，旧种子不可复查 |
+| `7adcf8f` | 首次提交种子 tcc/tas；默认 CC/AS 改为种子 | 默认链接仍用系统 `ld` |
+| `c951c79` | 新增 tld 与测试 | `TLD_CC=gcc` 暂绕 tcc bug |
+| `b3c5145` | tcc 编译 tld，tld 两次自链接输出相同 | 默认项目链接尚未全部切到 tld |
+| `9948ea0` | 首次提交 tld 种子，默认 Makefile 改用它 | shell/make/宿主命令、Linux 与三种子仍在 TCB |
+| `bf518d5` | 修复负成员偏移符号扩展；清理脚本 workaround | 最终 stage 脚本仍硬编码 `LD="ld"` |
+| `46119c1` | 更新三个种子；说明记录 stage 9→10 一致 | 最初种子的可信来源仍无独立证明 |
+
+## stage、种子与链接器边界
+
+- `0252321` 的“完整自身”指九个 C 编译单元加运行时；tpp、tas 不链接进 tcc。
+- `961fbf6` 的 stage 1 是 GCC 产物；`7adcf8f` 后 stage 1 改为复制预置种子。
+- 最终脚本只测试 stage 1、2、10；中间阶段只记录 tcc 可执行文件 MD5。
+- `bootstrap-to-10.sh` 的 `SEED_TAS` 消除了 GCC 对 `.S` 的处理，但 `LD="ld"` 保留到末端。
+
+受 Git 跟踪的 `bootstrap/` 历史只有三个节点：`7adcf8f` 加入 tcc（357736 bytes）与 tas
+（75192 bytes）；`9948ea0` 加入 tld（32832 bytes）；`46119c1` 更新三个种子，并记录 tcc 为
+403592 bytes、MD5 前缀 `abdc0b42`。`fca878f` 所说的更早种子未进入 Git，当前不能恢复。
+
+`b3c5145` 的 `test-tld-self` 以同一组对象连续链接两代 tld 并 `cmp`；`9948ea0` 则改变正常构建
+依赖图。二者分别回答“链接器能否复制自身”和“默认构建是否还调用 GNU ld”。
+
+作者于 2026-09-15 回忆，随项目附带种子有一定“为了证明不需要 GCC”的意气成分。初版种子
+已能自举，但仍有一些可修复的小问题；用有问题的种子继续修复比借助 GCC 更麻烦。这解释了构建策略
+为何会在“证明可以离开 GCC”与“借助 GCC 更方便地修正工具链”之间反复；作者已记不清旧种子的
+具体生成与恢复过程。
+
+三个种子的 Git mode 均为 `100644`。Linux 普通检出后不能直接执行，需先补执行位；这与“新检出
+后只运行 make”的字面声明冲突，是否源于当时 Windows 文件系统环境仍待确认。
+
+## README、署名与文章
+
+| 对象 | 同期陈述 | 使用限制 |
+|---|---|---|
+| `8b2ea1f` | 自举成功、stage 3—10 收敛；署名 Claude Opus 4.8 | 作者确认实际模型为 DeepSeek，trailer 不能作为模型证据 |
+| `687ed29` | “这一次提交没有 AI”，删去引语、拟人化文字与若干段落 | 作者确认是在自举后激动写下抒情文字，平静后未调用 AI、亲手删除 |
+| `58ac389` | HTTP 301 风格迁往 Toyc；仍署名 Claude | 只能确认作者想留下幽默的迁移声明，不向特定模型归因 |
+| draft/004 | 将收敛描述成可发现隐藏后门 | AI 生成初稿；技术结论错误，后文已修订 |
+| draft/005 | fixed point 不等于正确性或可信性 | AI 生成；bug 提交号可与 Git 对照 |
+| draft/006 | 稳定 Trusting Trust 后门也会收敛 | AI 生成；外部安全史与数量断言未在本轮核查 |
+| draft/007 | “零依赖自举 C 编译器”提纲 | 未完成，不当作实现说明 |
+
+## 2026-09-15 隔离复查
+
+从 `e61c83f` 以 `git archive` 解出临时树：
+
+- 未改权限直接 `make`：`bootstrap/tcc: Permission denied`。
+- 补三个种子的执行位后：默认 `make` 成功，命令显示 tcc、tas、tld 分别承担编译、汇编、链接。
+- `make test` 为 29/29；`make test-tld-self` 的两次自链接文件字节一致。
+- `bootstrap-to-10.sh` 产出 stage 1—10，均为 403592 bytes，MD5 均为
+  `abdc0b42b2c36677b514e951a58179ef`；脚本同时确认链接仍由系统 `ld` 执行。
+- selfhost 为 36/38；两个失败假设不存在路径的 `renameat2` 必须返回 `ENOENT`，受限环境实际返回
+  `EROFS`。其余 syscall 参数路径通过，故记录为环境敏感测试，不改写为编译器回归。
+
+## 复查命令
+
+```sh
+git -C ../Tinylibc ls-tree -r 87d61e0 app/compiler compiler-tests include/elf.h ld.script
+git -C ../ToyCCompiler ls-tree -r 22ffcc8
+git -C ../ToyCCompiler diff 8b2ea1f 687ed29 -- README.md
+git -C ../ToyCCompiler show 0252321:bootstrap-selfhost.sh
+git -C ../ToyCCompiler show 961fbf6:bootstrap-to-10.sh
+git -C ../ToyCCompiler show bf518d5:bootstrap-to-10.sh
+git -C ../ToyCCompiler log --reverse -- bootstrap/
+git -C ../ToyCCompiler show 9948ea0:Makefile
+```
+
+## 待取材料
+
+- `fca878f` 前未提交种子的二进制、生成命令或日志。
+- 2026-07-08 至 10 日原始 stage 输出。
+
+---
+
+## 文件：`docs/archaeology/evidence/toyc.md`
+
+# Toyc 初始整合期提交级证据表
+
+## 使用说明
+
+本表为 [Toyc 时期](../periods/toyc.md) 的初始整合及 Rasterfall 转向提供可复核依据。Toyc
+直接延续 ToyCCompiler 的 Git 链；Tinylibc 是另一仓库，二者之间发生的是文件复制与适配，不是
+Git merge。提交说明和 README 属于同期陈述，整合动机与 standalone 含义另由作者于 2026-09-16
+回忆确认。
+
+## 定位与准备
+
+| 对象 | 可确认内容 | 证据边界 |
+|---|---|---|
+| `58ac389` | ToyCCompiler README 以 HTTP 301 形式指向新的 `toyc` 仓库 | 只确认迁移和新名称已决定 |
+| `643287b` | 称 tcc 是 toyc 生态核心，项目由 ToyCCompiler 与 Tinylibc 合并而生，将成为独立系统软件生态 | “two parents” 首次明确出现；此时尚未复制 Tinylibc 树 |
+| `a26e7a6` | 将 `app/` 移到 `compiler/`，提交说明明确为未来依赖库的应用腾出 `app/` | 作者日期为 7 月 11 日，提交者日期为 7 月 15 日 |
+| `015b236`、`b8fb22f` | 新增 `tar`/归档链接支持，说明明确服务 Tinylibc 静态库 | 归档器后来随工具链统一改名 `toyar` |
+| `6ce3490` | 不复制库源码，直接对外部 Tinylibc 各模块建立声明式编译与功能测试 | 标志渐进整合策略落地 |
+| `5bffca4` | `tcc/tas/tld/tpp/tar` 统一改名为 `toyc/toyas/toyld/toypp/toyar` | 避免 TinyCC 混淆，也落实更宽的项目身份 |
+
+## 两次选择性移植
+
+Tinylibc `32436f1` 于 2026-07-23 20:43 将工具链放入 `app/compiler/`。把该目录映射回 Toyc 的
+`compiler/` 后，连同 `include/toyc_need.h`、`include/elf.h` 共 19 个可比文件，与 Toyc
+`0a7800f` 的 blob 全部相同。`0a7800f` 的时间为 19:59，因此来源是当时最新 Toyc 工具链，而非
+泛指旧 ToyCCompiler 快照。Tinylibc 随后用 `5a27733`、`2c3f585`、`384a71c`、`6a86e5f` 调整
+构建和 `va_list` 兼容。
+
+Toyc `af6bc30` 于次日 00:09 新增 108 个路径；这些路径与 Tinylibc `6a86e5f` 同路径 blob
+108/108 相同，故可将 `6a86e5f` 固定为准确复制快照。它晚于该 Tinylibc 提交约 23 分钟。
+
+这不是完整仓库的双向镜像：
+
+- Tinylibc 接收工具链源码，并在自己的 Makefile、脚本、shell 与 tmake 中做适配。
+- Toyc 接收完整的 `lib/`、x86_64 架构头和公共头，但只选择部分 `app/`。
+- `af6bc30` 所称 “full app tree” 不符合树对象：未引入 `app/net/` 15 个、`app/graphics/` 10 个、
+  `app/term/` 4 个、`app/audio/` 2 个、`app/paper/` 4 个、`app/elf/` 3 个文件，也没有重复引入
+  Tinylibc 的 `app/compiler/` 18 个文件；`arch/riscv64/` 3 个文件亦未进入。
+
+因此准确表述是：**先把最新 Toyc 工具链移入 Tinylibc 做整体构建探索和适配，再把验证后的
+Tinylibc 库及较易验证的应用子集移入 Toyc。** 文件流向是双向的，但项目权威主线最终指向 Toyc。
+
+## 动机与 standalone 的含义
+
+作者于 2026-09-16 确认，编译器最初目的就是编译自己的 Tinylibc 库并取代 GCC 的部分功能；
+ToyCCompiler 成熟后继续分仓没有意义，统一是原目标的延续。`toyc` 是借统一机会确定的新名称，
+既避免旧名问题，也表示项目不再只是编译器，而是包含较完整 C 生态的“有点功能的玩具”。
+
+自举成功与编译 Tinylibc 之间仍有现实距离。早期曾尝试一次性融合并立即用 toyc 编译整个库，后来
+转为更可行的路径：在 Toyc 中按 Tinylibc 的 lib 模块建立测试，逐个解决编译和功能问题。部分
+应用难迁移，初次只选择容易验证的部分；另一些老程序被认为意义有限，留在 Tinylibc 仓库。
+
+作者认可 `643287b` 的同期结构表达了 “two parents” 的主要含义：ToyCCompiler 提供 standalone
+编译工具链，Tinylibc 提供库和应用。只有 standalone 的库并不完整；有了 standalone 编译器，
+toyc 生态在理论上形成能够创造自身并继续创造其他程序的闭环。作者将这视为项目成熟和重要进步，
+同时明确这只是“时间足够时”的理论能力方向，工程上未必值得彻底执行；后续维护 Toyc 时，为效率
+仍经常使用 GCC。
+
+这里必须区分三层：
+
+1. ToyCCompiler 已证明编译器工具链可自举；
+2. 初始整合期通过逐模块测试缩短了 toyc 与编译 Tinylibc 的能力距离；
+3. “创造自己并创造一切”是作者对 standalone 生态潜力的概括，不等于 `af6bc30` 已证明所有库、
+   应用和后续软件均由 toyc 完整构建。
+
+## 复查命令
+
+```sh
+git show 643287b -- README.md README_en.md
+git show --stat a26e7a6 6ce3490 5bffca4 af6bc30
+git -C ../Tinylibc show --stat 32436f1 5a27733 2c3f585 384a71c 6a86e5f
+git ls-tree -r 0a7800f compiler include/toyc_need.h include/elf.h
+git -C ../Tinylibc ls-tree -r 32436f1 app/compiler include/toyc_need.h include/elf.h
+git diff-tree --no-commit-id --name-only --diff-filter=A -r af6bc30
+git -C ../Tinylibc ls-tree -r 6a86e5f
+git -C ../Tinylibc log --all --decorate --oneline 6a86e5f..
+git show a5b959c:Makefile
+git diff a5b959c^ a5b959c -- Makefile
+git diff 976f5e3 989b938 -- Makefile lib/stdio/printf.c lib/stdio/snprintf.c
+git show --stat a37c4fb 410dac6 e6d1e37 deecddd a41c580 2d7edb7 75a10cd
+```
+
+## 整合收尾与完整库构建
+
+| 对象 | 可确认内容 | 证据边界 |
+|---|---|---|
+| Tinylibc `83a32fd`、`a566206` | `af6bc30` 后仅有的两个主线提交；末次提交为 7 月 24 日 13:39 | `main`/`origin/main` 同停于 `a566206`；没有显式停更宣言 |
+| Toyc `989b938` | 13:44 把库测试源从 `../Tinylibc` 切到内部 `lib/`，并吸收末次提交的 `%.0f` 修复 | 未复制临时测试、`.o` 及 `83a32fd` 的全部格式分支改法，不是完整镜像 |
+| Toyc `a5b959c` | 首次加入 `self-lib`，以 `build/toyc` 编译全部 Tinylibc C 源并归档完整库 | `.S`、归档、应用链接仍用系统 `as/ar/ld` |
+| Toyc `1f2a625` | 默认工具链构建改回 GCC，`self-*` 定位为代码生成验证 | 普通 `lib/app` 也一直保留 GCC 路径 |
+
+由此可把独立 Tinylibc 的权威边界定在 `989b938`：首次复制后两仓又并行约 13.5 小时，独立仓库
+最后一次共有库修复五分钟后被选择性吸收，此后不再提交，Toyc 测试也不再依赖外部源码。
+
+## Rasterfall 转向锚点
+
+| 对象 | 可确认内容 | 证据边界 |
+|---|---|---|
+| `a37c4fb`、`410dac6` | Wayland 软件 3D、公共光栅器和 FPS 灰盒同时以 GCC/Toyc 验证，并加入 Toyc pending 用例 | 起点兼具真实应用与工具链验证性质 |
+| `e6d1e37` | 灰盒扩为包含独立规则、敌人、HUD、音频的僵尸潮游戏 | 此时尚未使用 Rasterfall 名称 |
+| `deecddd`、`a41c580` | 8 月 6 日首次命名并模块化 Rasterfall；8 月 9 日形成顶层独立目录 | 项目边界由连续迁移建立，不是单提交诞生 |
+| `2d7edb7` | 从 `self-app` 排除 Rasterfall，README/AGENTS 明确以 GCC 为准 | 复杂游戏实现不再受 Toyc 兼容范围约束；提交同时处理真实线程原子状态 |
+| `75a10cd` | 根协作说明转向 Rasterfall，编译器时期说明归档 | 仓库治理层面的主线切换锚点 |
+
+当前文件延续关系证明代码继承；“模块化测试等工程经验”属于对连续构建与验证方式的归纳，
+不应写成某一提交的原话。
 
 ---
 
@@ -576,61 +1064,191 @@ SC7 始终是团队成果。后续文档引用它时，应分别标注团队能�
 
 # Tinylibc 时期
 
-## 研究范围
+## 本章定位
 
-从 SC7 的用户态与 libc 实验、Tinylibc 根提交开始，研究 libc、系统调用封装、用户程序、自托管
-构建工具，以及 2026-06-30 起仓库内 tcc 的快速形成。重点区分团队项目遗产、个人手写代码、
-参考原型、网页对话辅助和后期 Claude 署名提交。
+Tinylibc 从 SC7 的用户态子树分离，但它不只是把旧代码搬到 x86_64。这个时期先后经历课程作业、
+独立项目成形、手写开发中断、pthread 与论文实验、网络及构建工具扩展，以及 coding agent 参与后
+突然启动的编译器冲刺。本章保留能够形成连续叙事的结论；逐提交依据、同期文章和来源限制见
+[Tinylibc 证据表](../evidence/tinylibc.md)，尚未跨时期回答的问题见[关键问题台账](../questions.md)。
 
-## 已确认锚点
+## 从 SC7 子树到课程项目
 
-- SC7 `d2363da`：`tlibc` 分支末端，其 `user/include/Tinylibc/` 是独立仓库的精确源快照。
-- `fce216c`：Tinylibc 根提交；29 个文件中 26 个 blob 原样继承，只修改三个 Markdown，此时仍
-  只有 RISC-V 代码。
-- `7586050`：加入 x86_64 syscall、调用约定和 shell 适配，提交说明首次记录在作者 PC 运行。
-- `4670d9f`：加入最小编译器 Phase 1，提交元数据含 Claude 共同作者。
-- `d996c17`：提交说明记录 9/9 自编译通过。
-- `9921705`：提交说明记录 `tcc.c` 自编译通过。
-- `2213ae5`：`tmake -T` 引入以 tcc/tas 替代 gcc 的路径。
-- `87d61e0`：ToyCCompiler 独立前夕的重要编译器修复锚点。
+SC7 `tlibc` 支线在 2025-09-24 开始独立发展用户态库。到 `d2363da`，它已经保存基本文件操作、
+Shell 和库函数。2025-10-17 的 Tinylibc 根提交 `fce216c` 没有保留 SC7 的 Git 祖先关系，但其
+29 个路径与该支线末端逐项对应：26 个 blob 相同，只修改 README、提交日志和项目计划三个
+Markdown。根树仍只有 RISC-V 实现；`7586050` 才加入 x86_64 系统调用入口、调用号、`stat`
+布局和终端输入适配，提交说明首次记录程序能在作者的 Ubuntu PC 直接运行。
 
-## SC7 分离边界
+作者于 2026-09-15 回忆，项目也是 2025 年下半年一门软件工程课程的小组作业，实现主要由作者
+推进，但本文不据此推断或评价其他成员的参与。项目最初源于作者对 libc 的好奇：此前已有操作系统
+内核经验，对 libc 本身了解较少，也不知道最终能做到什么程度。教师只要求成果达到大作业的工作量，
+不能停在逐项实现库接口；这个交付条件促使作者用终端交互程序展示库的实际用途。项目最终以这批程序
+通过课程验收，作者当时仍不确定工作量是否充分。
 
-独立仓库没有保留 SC7 的 Git 祖先关系，但树级来源没有歧义：`fce216c` 与 26 分钟前 SC7 `tlibc`
-末端 `d2363da` 的用户态子树都有 29 个相同路径；除 `README.md`、`tlibc_commit_log.md`、
-`项目计划.md` 外全部 blob 相同。“只修改三个 md 文件”描述复制后的差异，不是说根树只有三份文档。
+根提交的同期 README 也把项目定位为学习用途，目标是精简地实现尽可能多的 libc 功能；同期
+`项目计划.md` 则把 x86_64 和网络功能列为第二阶段。课程、兴趣和学习目标同时存在，不能只用其中
+一个解释项目起点。
 
-分离时保留 `arch/riscv64/` 和全部 RISC-V 用户态假设，没有 x86_64 目录。`7586050` 才完成第一轮
-x86_64 syscall/ABI 适配并宣称各命令可在 Ubuntu 主机运行，`19b683e` 随后整理 freestanding
-链接。项目意图从根提交开始转向 x86_64，可运行主线则从 `7586050` 开始。
+## 第一阶段：应用驱动的手写开发
 
-## 待写章节
+### 从宿主运行到终端应用
 
-- SC7 前史与 Tinylibc 的分离动机
-- freestanding libc 的最早结构
-- 应用驱动的库扩展方式
-- `tmake` 与自包含愿景
-- 最初编译器的五阶段推进
-- 手写、参考原型与对话辅助的边界
-- 失败分支、合并提交与未进入主线的实验
+`19b683e` 用 freestanding、静态链接和自定义链接脚本整理了不依赖宿主标准库的构建路径。10 月末
+取得终端尺寸后，11 月连续出现吃豆人、简化版 vim 和 top。库并非先按 POSIX 清单补齐再供应用
+调用；提交日志显示，终端模式、文件读写、字符串、进程信息和时间等能力往往由具体程序反向推动。
+例如 top 为排序和展示进程信息补充字符串及 `/proc` 处理，vim 则推动 raw terminal、光标和文件
+修改路径。
 
-## 待核问题
+这一阶段的主要调试方法不是熟练使用 GDB 或反汇编。作者通常用 `printf` 逐步缩小错误位置，其次
+用 `strace` 查看系统调用参数；少数需要 GDB 或反汇编时，会先让网页 AI 说明用法，再把输出交给
+AI 辅助解释。`tlibc_commit_log.md` 同期保存了失败与误判，例如 2025-11-07 的记录明确说
+`termios` 字段类型曾受 AI 错误解释影响，最终改为直接核对 Linux UAPI 头文件。
 
-- “手写时期”的准确时间范围和判断标准是什么？
-- 复制过哪些代码原型，来自何处，后来保留、改写或移除了哪些部分？
-- 2026-06-30 前后开发工具发生了什么变化？
-- Tinylibc 仓库中的 compiler 分支与主线合并过程如何还原？
+### `34fcd9e`：摆脱 SC7 的目录习惯
 
-## 作者回忆补充
+2025-11-12 的 `34fcd9e` 将 `core.c`、`test.c` 移到 `lib/`，把 `internal/`、`external/` 合并为
+`include/`，把 `app.c` 改名为 `app/shell.c`，并同步更新 README 和 Makefile。作者回忆，所谓
+“Tinylibc 进入新阶段”是指摆脱继承自 SC7 的目录组织，确立独立项目结构。
 
-作者于 2026-09-15 回忆，比赛后仍对 C 感兴趣，但认为继续开发内核难度太高、成果周期不明确，
-于是转向更容易获得反馈的用户态。最初 `tlibc` 仍在 SC7、QEMU 和非 x86_64 架构上运行；后来
-为了在原生 Ubuntu 和个人电脑上直接运行、摆脱 QEMU，而迁移整个 SC7 到 x86_64 又过于困难，
-才把 Tinylibc 分离并逐步迁向 x86_64。早期独立仓库仍保留 RISC-V 部分，后来不再使用。
+这次提交仍把所有源文件链接成单个 `tlibc_x64`，不能误写为各程序独立链接。后者直到 2026-03-14
+的 `d82fe5d` 才出现：该提交开始生成独立用户程序和静态库。`34fcd9e` 的意义主要是项目身份和模块
+布局，而不是进程模型或链接方式变化。
 
-作者还回忆，SC7 和早期 Tinylibc 阶段主要依靠自己编写、编译和调试，通过网页端 AI 提问、查阅
-文档并提炼重点；详细提交说明和长篇提交日志也由自己维护。大量使用 coding agent 后，这种记录和
-开发方式才发生变化。以上仍需与 `tlibc_commit_log.md`、提交说明和后续工具使用记录交叉验证。
+### 第一次暂停
+
+`6c396aa` 在 2025-11-16 记录 top 已能显示 CPU 占用并排序，此后主线到 2026-03-05 没有提交。
+作者把这段空档解释为第一次中断：终端交互程序已经达到课程交付所需的形态，而继续完全手写开始遇到
+较大困难。Git 能确认提交间隔，不能单独证明暂停的动机或期间是否存在未提交实验。
+
+## 第二阶段：pthread 与论文实验
+
+2026-03-05 的 `4778563` 加入最小 `pthread_create` 和 x86_64 `clone.S`，随后补充
+`pthread_join`、独立的线程库文件和第一个多线程示例。3 月 18 日起，代码开始把线程栈和线程申请的
+内存纳入 mempool；3 月 27 日的 `3dae4be` 记录后台线程扫描已退出线程，并异步回收线程栈与通过
+项目 malloc 接口申请的内存。
+
+作者把这项机制作为毕业论文的一部分。仓库的 `app/paper/` 保存 pthread、mempool、memtest 和
+与 glibc 对照的 `exp.c`；4 月提交也明确记录函数改名、`printf %f` 和对比实验。这里能确认实验
+入口和实现演化，不能仅凭 README 当时的“创新性修改”断言性能优势。作者当前的评价是：这是一种
+新的线程资源异步回收方法，但是否优于 glibc 仍有待商榷，也需要进一步优化。
+
+仓库同时保存了局限。提交日志在引入异步回收时记录旧程序退出方式受到破坏、`pthread_join`
+暂时不做实际清理，并留下锁问题；`26b003e` 又记录旧程序与 memtest 的兼容问题。未合并的
+`glibc_pthread` 支线末端 `3d5b976` 直言完整 pthread 需要大改、当前方案仍不理想。因此，多线程
+“跑起来”、论文提出新机制和完整 pthread 语义尚未收敛，是三个不同层次的结论。
+
+作者回忆，pthread 很大程度参考 musl 和 glibc。虽然此前在 SC7 已接触线程和 `clone`，但 clone
+flag、线程栈和资源控制仍是手写时期的重要门槛；早期即使用 `strace` 看到参数，也不容易理解完整
+机制。6 月 27 日 agent 参与的 `9274c1c` 又按 glibc/musl 语义重写精简 pthread，随后默认关闭
+mempool 自动回收。这应理解为对既有项目的完善和取舍，不应倒推为早期实验没有价值。
+
+## 第三阶段：网络程序、Shell 与自包含构建
+
+5 月的 `2931f99` 加入 HTTP 实验，随后出现 server/client、多线程服务器、分片文件传输，以及在
+云服务器运行的配置。与此同时，Shell 增加补全、配置文件和 PATH 搜索。`45adc6b` 记录 `tmake`
+已经能编译并链接所有程序，`8924b42` 又把程序安装到用户目录。这条线把 Tinylibc 从“一组库接口”
+推进为库、应用、Shell 和构建工具互相驱动的用户态环境。
+
+作者提供的同期文章进一步说明了开发过程。`000_draft_shell_v0.md` 与 v1.0 把 Shell 补全拆为
+绝对路径计算、目录遍历、终端 raw mode 和 PATH 匹配，并明确说补全主体代码主要由作者手写；其中
+`cal_absolute_path` 来自 SC7 队友贡献。`001_what_is_rm_doing.md` 用递归删除解释
+`openat/getdents64/unlinkat/mmap` 的组合。`002_use_tmake_toreplace_make.md` 解释 `tmake` 如何以
+`fork/execve` 驱动 gcc、ar、ld，并在编译器真正启动之前写下未来可用简化 C 编译器让项目完全
+自包含的设想。
+
+这些文章不是 Git 对象，但内部引用的功能、日期可与提交链对应。它们还说明 Shell、补全、vim、top
+主要由作者反复开发和调试；网络程序也是作者希望探索和学习的方向。作者曾在 2026 年 3 月前尝试
+手写自包含音频程序，在网页 DeepSeek 辅助下仍未成功，也没有留下提交；7 月的 ALSA/PulseAudio
+实现属于后续 agent 阶段的另一轮工作，不能用后来的成功覆盖早期失败。
+
+## 参考代码与网页 AI
+
+手写时期大量使用 DeepSeek 网页端，其他模型很少。它主要用于阅读和提炼资料、解释系统调用与终端
+flag、提供最小原型，以及辅助解释调试输出，而不是直接接管仓库。作者先让 DeepSeek 阅读 musl
+README 并讲解目录结构，再逐渐定位可复用部分；x86_64 系统调用号头文件由作者回忆为直接借用
+musl，系统调用内联汇编与宏机制则是在理解后加入并留下详细注释。当前尚未固定当时参考的 musl
+commit，逐文件复制和改写比例仍需对照。
+
+作者回忆直到 2026 年 7 月才开始使用 GLM-5.2，第一个相关会话主题是“ToyCCompiler 迁移幽默
+声明”；ChatGPT 则始于后续项目，约在 7 月底使用、8 月正式订阅。当前 Git 没有相应模型或会话
+记录，这组日期暂只作为工具使用时间线的口述锚点。
+
+其他模块的边界也不相同：malloc 建立在 SC7 已接触的 `brk/mmap` 上；早期 printf 的可变参数机制
+由作者理解后在网页 AI 辅助下写成，能运行但曾有 bug、结构也不理想；终端控制 flag 由 AI 讲解，
+实际效果由作者多次调试；pthread 则大量参考 musl/glibc。不能把“使用 AI”“参考 musl”和“主要
+由作者手写调试”视为互斥标签，必须落实到文件、机制和阶段。
+
+## 第四阶段：coding agent 改变开发节奏
+
+2026-06-22 起，提交节奏和内容明显变化。连续提交统一 `tlibc_` 命名、清理旧注释、补边界检查、
+为 tmake 加并行构建并建立测试框架，提交元数据普遍显式署名 Claude。随后几天又出现远程 Shell、
+HTTP 文件服务、网络嗅探、端口扫描、DNS、I/O 多路复用、pthread 重写、头文件分层和大型
+`core.c` 拆分。
+
+作者说明，这些方向并非 agent 凭空产生：清理、网络探索和拆分 core 本来就在自己的兴趣或计划中，
+只是手工完成成本太高；agent 更快理解既有架构、标准做法和大型代码，让更复杂的程序成为可行。
+这时作者逐渐从直接写代码和调试，转向写 prompt、决定方向、判断哪里不对、让 agent 总结代码并
+据此思考，偶尔亲自测试。作者确认当时把 Claude Code 作为客户端，但全部请求实际接入 DeepSeek
+API，并未同时使用 Claude 模型。因此 `Co-Authored-By: Claude` 只能确认工作流留下了 Claude
+身份署名，不能证明代码由 Claude 模型生成，也不能量化 DeepSeek 与作者各自的贡献。
+
+作者推测 Claude Code 的内嵌提示词使接入的 DeepSeek 模型把自己识别为 Claude，进而产生该署名；
+当前尚未取得客户端配置、system prompt 或原始会话验证这个机制，所以这里只保存为作者推测。
+
+提交日志的退场保存了另一条工作流证据。SC7 和早期 Tinylibc 长期把所有提交按时间汇总到一个文件，
+便于作者连续阅读。6 月 22 至 23 日先尝试用多种 Git hook 自动维护 `CLAUDE_COMMITS.md`，反复修正
+后又在 `b082c74` 放弃。作者解释，线性日志面向人阅读很方便，但 agent 可以直接高效查询 Git；为
+agent 继续维护汇总文件既不方便也不高效。这是事实入口随协作对象变化的具体例子，不代表旧日志
+失去考古价值。
+
+作者提供的文章也记录了写作方式切换：`002` 及以前总体由作者撰写，AI 只提供润色建议；从
+`003_CLAUDE_shell_path_search.md` 开始，文章由 Claude Code 客户端接入的 DeepSeek 模型根据已有
+代码、旧文风格和作者 prompt 生成。`003` 对应的代码仍主要属于手写阶段，因此代码作者与文章作者
+必须分别记录。
+
+## 第五阶段：长期愿望转为编译器冲刺
+
+作者把写 C 编译器描述为长期愿望：C 的简洁、较少抽象、调用约定、栈和机器细节都具有吸引力；早期
+编译器由汇编实现、再用核心子集自举到更完整 C 的历史想象也影响了目标。`002` 在 5 月底已经留下
+“以后或许写个简化的 C 编译器”的同期文字，证明这个目标早于 6 月末的实现。直接触发因素则是
+Claude Code 与 DeepSeek API 带来的效率提升，使此前不敢投入的目标看起来可行。
+
+作者给出“所有文件和依赖必须位于 Tinylibc、不能使用标准库”的核心限制，最初框架主要由
+Claude Code 客户端接入的 DeepSeek API 模型设计。2026-06-30 的 `4670d9f` 加入 Phase 1，当天继续到
+算术与控制流、struct/typedef、内联汇编与 register；7 月 1 日又推进到编译库源码、9/9 自编译用例
+和 `tcc.c` 自编译。架构虽不完善，却延续到后来的 ToyCCompiler。
+
+最初直接要求 agent 修改编译器并实现自举时，开发反复落入“编译自身、运行段错误、再艰难追踪”的
+循环。作者据此提出先建立测试框架，覆盖自举所需的常见模式和边缘情况，再逐项通过。`2e03788`
+加入编译器测试套件，`4437887` 合并 `compiler-test-suite` 工作线，`fddf85c`、`ff396cb` 整理阶段式
+运行器，7 月 3 日随后出现针对短路求值、指针算术、参数、typedef、多维数组和库编译的密集修复。
+这里不能仅由提交顺序证明所有因果，但顺序与作者回忆一致，支持“把整体崩溃拆成可定位回归问题”是
+一次关键工程策略转折。
+
+7 月 4 日，编译器以 `22ffcc8` 提取为无 Tinylibc Git 祖先的新仓库。Tinylibc 内的 Phase 1、
+自编译、tas、tmake 和测试套件不是 ToyCCompiler 的序章摘要，而是 Tinylibc 自包含愿景真正孕育
+编译器的桥接阶段；准确源码快照和为何舍弃祖先链，将在 ToyCCompiler 时期继续考证。
+
+## 这一时期说明了什么
+
+Tinylibc 的变化不是单一路径上的“功能越来越多”。课程要求促使库接口转化为可展示的应用；
+`34fcd9e` 首次主动切断 SC7 的目录习惯；pthread 把问题推到 ABI、线程栈和资源生命周期；网络、
+Shell 与 tmake 又把注意力扩大到多个程序、安装路径和整体构建。到 agent 阶段，作者的工作从亲手
+实现和 printf 排错转向目标分解、prompt、结果判断和测试策略。
+
+这支持 Tinylibc 是从 C 编程向 C 项目能力过渡的重要时期，但不宜把变化简化成“手写低效、agent
+高效”。手写阶段积累了 syscall、终端、进程和调试经验，也留下了对失败与限制的详细同期记录；
+agent 扩大了可处理范围，同时促使代码归属、验证方式和信息入口发生变化。两者共同解释了编译器为何
+在 6 月末突然启动，也解释了为什么最初的整体自举策略仍需要作者主动改造成测试驱动的推进方式。
+
+## 仍待核查
+
+1. 固定 2025 年参考的 musl 快照，对照 syscall 号、内联汇编、pthread/clone 等文件与许可证。
+2. 取得课程提交包或报告，仅用于固定交付范围；不记录小组成员隐私或推断未参与情况。
+3. 取得毕业论文原文与实验输出，区分机制设计、当时声明和可复现性能结果。
+4. 查找 2026 年 3 月前未提交的音频实验；若材料已丢失，只保留作者回忆。
+5. 取得 6 月末 Claude Code 配置与 DeepSeek API 会话，核对模型版本、提示词和 Claude 署名来源。
+6. 对照 Tinylibc `87d61e0` 附近源码与 ToyCCompiler 根提交，固定提取快照和文件级差异。
 
 ---
 
@@ -638,41 +1256,138 @@ x86_64 syscall/ABI 适配并宣称各命令可在 Ubuntu 主机运行，`19b683e
 
 # ToyCCompiler 时期
 
-## 研究范围
+## 本章定位
 
-从 2026-07-04 的独立根提交到 2026-07-11 的仓库重定向，研究编译器如何脱离 Tinylibc 的应用
-语境，集中完成自身编译、汇编、链接和多阶段收敛。另设开发工具线索，考察 Claude Code 与
-DeepSeek API 的实际分工，而不从提交署名直接推断贡献比例。
+ToyCCompiler 的独立历史只有一周：从 2026-07-04 的根提交 `22ffcc8` 到 7 月 11 日以 README
+重定向迁往 Toyc 的 `58ac389`。编译器 Phase 1、自编译源码、`tas` 和测试套件都已在 Tinylibc 内
+发生；本章从“怎样提取”开始，研究独立后怎样把“能编译自身源码”推进为可运行的下一阶段、多阶段
+收敛，以及由 `tcc`、`tas`、`tld` 和预置种子组成的默认构建闭环。
 
-## 已确认锚点
+逐提交和脚本依据见 [ToyCCompiler 证据表](../evidence/toy-c-compiler.md)。本章将 Git 可确认事实、
+同期 README/提交说明、AI 生成文章和作者回忆分开处理。
 
-- `22ffcc8`：从 Tinylibc 提取 tcc，创建独立 Git 历史；也是当前 Toyc 的根提交。
-- `0252321`：加入自举自托管测试脚本。
-- `961fbf6`：提交说明记录自举到 stage 10。
-- `8b2ea1f`：自举成功宣言。
-- `687ed29`：提交说明称该次 README 修改“没有 AI”，是研究署名与工具使用认知的重要材料。
-- `7adcf8f`：种子、gcc-free 构建与 tas 自举。
-- `c951c79`、`b3c5145`、`9948ea0`：tld 出现并完成链接器自举闭环。
-- `58ac389`：原仓库以 README 重定向形式退役。
+## `22ffcc8`：从 `87d61e0` 有选择地提取
 
-## 待写章节
+ToyCCompiler 没有 Tinylibc 的 Git 祖先链，但根提交的来源快照现在可以精确到 Tinylibc
+`87d61e0`。将根提交的 `app/` 对应到 `87d61e0:app/compiler/` 后，14 个编译器与运行时源文件中，
+11 个 blob 完全相同：`cgen.c`、`cgen_asm.c`、`cgen_expr.c`、`elf_write.c`、`lex.c`、`parse.c`、
+`preproc.c`、`tas.c`、`tcc.c`、`tcc_rt_start.S`、`tpp.c`。另外三个不是另一时期的快照：
+`elf_write.h` 与 `tcc.h` 只把 Tinylibc 总头替换成独立头，`tcc_rt.c` 则改用该头并把固定参数
+`__printf` 改为变参实现。`include/elf.h` 也只替换 include，`ld.script` blob 完全相同。
 
-- 从 Tinylibc 提取时的代码快照
-- 自编译阻塞问题与密集修复节奏
-- 测试套件如何塑造编译器能力
-- stage 2 到 stage 10 的收敛含义
-- toyas 与 toyld 如何替代 GNU 工具
-- 种子二进制的建立、退役和重新引入
-- Claude Code 工作流、DeepSeek API 工作流及人工调试
-- README 宣言、修订与项目身份变化
+根提交不是整树复制。它删去 libc、应用和大部分工程设施，新写独立 Makefile 与
+`include/tcc_need.h`；后者从 Tinylibc 类型、常量、系统调用宏和声明中摘出编译器所需子集。
+Tinylibc 当时约百个细粒度测试也没有原样搬入，而被改写为 13 个聚合的自举导向测试。因此准确
+表述是：**以 `87d61e0` 的编译器目录为代码基底，移动路径并做最小独立化，另建测试与构建入口**。
 
-## 待核问题
+作者于 2026-09-15 补充：当时编译器功能较弱，编译测例的表现已不理想，编译 Tinylibc 更差；
+因此将编译器迁入新仓库，用更集中的上下文专注自举。当时的判断是，只有先完成自举，才有希望
+继续到“编译 Tinylibc”这一更大目标。所以独立建仓首先是开发与目标收窄决策，而非为公开展示单独
+制作一份作品。当时已计划日后重新整合 Tinylibc；`Toyc` 这个名称则是之后经过几次讨论才确定。
 
-- 独立仓库为何选择新根提交，而不是保留 Tinylibc 历史？
-- 哪些任务主要由 Claude Code 承担，哪些由 DeepSeek API 承担？
-- “高强度使用”可由哪些会话、日志和提交模式量化？
-- 自举成功的每个阶段在当时实际使用了哪些外部工具？
+## 独立后继续暴露的自举阻塞
 
+`22ffcc8` 已包含能编译自身各源码文件的编译器，却不等于完整自举。根提交的 Makefile 仍以 GCC
+编译 C 和汇编启动文件、以系统 `ld` 链接。7 月 4 日当天，聚合测试被再次改写为直接针对自身源码
+模式，随后连续修复栈寻址、符号扩展、signed/unsigned、短类型存储、函数参数和内联汇编约束。
+7 月 5—6 日又按 `lex.c`、`preproc.c`、`elf_write.c`、代码生成器和 `parse.c` 建立源码级测试，
+struct 返回、全局初始化、作用域链等问题继续被单独暴露。
+
+这延续了 Tinylibc 末期的测试策略：不再只运行一次“编译自身然后追段错误”，而是将自举所需模式、
+模块源码和跨翻译单元行为拆成回归入口。提交顺序能确认测试怎样落地；“先建测试框架”由作者提出，
+则仍是作者回忆，不能从 Git trailer 倒推。
+
+## “自举成功”不是一个瞬间
+
+| 层级 | 本时期的证据边界 |
+|---|---|
+| 编译自身源码 | Tinylibc `9921705` 已声明 `tcc.c` 自编译；这不是 ToyCCompiler 才获得的能力 |
+| 生成可运行下一阶段 | `0252321`：GCC 生成 stage 1，再由它编译九个 C 文件；启动汇编仍由 GCC 处理，系统 `ld` 生成 stage 2 |
+| 连续多 stage | `961fbf6` 加入 stage 1—10 脚本；当时 stage 1 来自 GCC，每一阶段仍用 GCC 汇编、系统 `ld` 链接 |
+| 编译器输出收敛 | `8b2ea1f` README 记录 stage 3—10 的 tcc 可执行文件字节相同；它验证固定点，不证明完整 C 正确性或可信性 |
+| 消除 GCC 编译 C | `7adcf8f` 提交预置 `bootstrap/tcc`，默认 C 编译不再调用 GCC |
+| 消除 GNU `as` | 同一提交加入 `bootstrap/tas`，默认启动汇编改由它处理 |
+| 消除 GNU `ld` | `9948ea0` 加入 `bootstrap/tld` 并让默认 Makefile 的链接规则使用它 |
+| 三工具种子更新 | `46119c1` 更新 `tcc/tas/tld`，提交说明称种子来自收敛链并记录 stage 9/10 一致 |
+
+`961fbf6` 与 `8b2ea1f` 的“自举成功”因而是**编译器本体在宿主汇编器、链接器辅助下生成可运行的
+后续代并收敛**，不是三件套闭环。`7adcf8f` 才使默认构建离开 GCC/GNU as，`9948ea0` 才使默认
+Makefile 离开 GNU ld。这些成果是递进关系，不能用最终状态重写早期宣言。
+
+最初 stage 1 是 GCC 构建的 tcc；`8b2ea1f` 记录 stage 3—10 收敛。加入预置种子后，脚本把种子
+复制为 stage 1，`7adcf8f` 称收敛点提前到 stage 2。最终 `46119c1` 的种子本身就是收敛链产物；
+隔离复查时 stage 1—10 的 tcc 都得到同一 MD5。因此 stage 编号不是脱离脚本版本即可比较的概念。
+
+脚本比较的是各 stage 的 **tcc 可执行文件** MD5，而不是每一阶段所有 `.o`、`tas`、`tld` 和测试
+产物的全树比较。最终脚本只对 stage 1、2、10 跑完整 selfhost 测试，中间阶段只比较 MD5。相邻
+输出一致说明确定性构建映射达到固定点；它不能证明实现符合完整 C 标准，也不能排除不同输入上的
+共同错误，更不能抵御会稳定复制自身的 Trusting Trust 后门。
+
+draft/004 的初稿曾把收敛写成能发现隐藏恶意逻辑，draft/005 已改为“fixed point，不是正确性”，
+draft/006 又明确说明稳定后门同样可以收敛。这组三篇均由 Claude Code 客户端接入 DeepSeek 模型
+生成，应作为叙述修订过程保留，技术结论仍以脚本和通行的信任边界判断。
+
+## tas、tld 与种子
+
+`tas` 早在 Tinylibc `608f4a3` 出现。独立后，`fca878f` 为让 `tas.c` 被 tcc 编译而改写二维数组
+和表驱动代码，同时提交说明称“自举种子退役”、Makefile 回归 GCC。仓库中没有在该提交之前受 Git
+跟踪的 `bootstrap/` 文件，所以这里的“退役”只证明构建策略曾反复，不能重建未提交种子的内容。
+数小时后的 `7adcf8f` 又首次提交 `bootstrap/tcc` 与 `bootstrap/tas`，恢复种子驱动的默认构建。
+
+`c951c79` 新增 `tld.c`，但 Makefile 暂以 GCC 编译它；`b3c5145` 修复阻塞后，改由 tcc 编译 tld，
+并让 tld 两次自链接结果字节一致。`9948ea0` 再把 `bootstrap/tld` 纳入仓库，令默认 Makefile 的
+所有链接规则使用它。这里要区分“tld 能链接自己”和“项目默认所有链接均由 tld 接管”。
+
+最终 `bootstrap-to-10.sh` 仍硬编码 `LD="ld"`，所以它验证的是 tcc 多阶段收敛，不是最终默认
+Makefile 的三工具无 GNU 链路；`make test-tld-self` 才单独验证 tld 自链接收敛。两条门禁应并列
+阅读，不能用其中一条替代另一条。
+
+## “零外部依赖（仅 make）”的准确边界
+
+`9948ea0` 后，从一份正常检出的仓库运行默认 `make`，C 编译、启动汇编和链接分别由预置的
+`bootstrap/tcc`、`bootstrap/tas`、`bootstrap/tld` 完成；生成物通过 Linux x86_64 syscall 运行，
+不链接宿主 libc。这个意义下，GCC、GNU as、GNU ld 和宿主 libc 已退出默认工具链路径。
+
+但它不是从纯源码或裸机开始：仍需要 Linux x86_64 内核、shell、make、文件系统、CPU，并信任
+Git 中预置的三个可执行种子。脚本还调用多种宿主用户态工具，`bootstrap-to-10.sh` 最终仍调用
+GNU `ld`。更准确的短语是：**默认 Makefile 的编译、汇编、链接阶段不调用 GCC/binutils 或宿主
+libc，但构建环境和二进制种子并非零依赖。** `tmake` 当时也未接管默认入口。
+
+隔离复查还发现三个种子在 Git 树中模式均为 `100644`；Linux 新检出后须先补执行位，否则默认
+Makefile 报 `Permission denied`。补执行位后，最终快照默认构建、29 个 basic 测试与 tld 自链接
+均可运行；38 个 selfhost 中两个以 `renameat2` 必须返回 `ENOENT` 为假设的用例，在本次受限环境中
+因返回 `EROFS` 而失败，属于环境敏感断言。stage 1—10 的 tcc 仍全部生成且 MD5 一致。
+
+## Claude Code、DeepSeek 与提交署名
+
+作者确认 Claude Code 是客户端和工具执行环境，模型请求全部发送到 DeepSeek API，没有同时使用
+Anthropic Claude 模型。为节省费用，当时全部使用 DeepSeek-V4-Flash；只有两天多使用 Pro，其余时间均以
+Flash 开发。后期作者主要写 prompt、设定目标与限制、判断异常，让 agent 阅读、修改、
+运行命令、调试并总结；作者偶尔亲自测试。Git 能看到提交密度、文件改动和大量
+`Co-Authored-By: Claude Opus 4.8`，但看不到客户端怎样解析模型输出、谁发起每次工具调用、或
+trailer 由哪一层生成。
+
+这些 trailer 因而只能作为 Claude Code 工作流留下的文本痕迹，不能归因为 Claude 模型。作者当时
+没有留意 trailer，事后认为它使观众误以为项目使用了昂贵的 Claude 模型；而实际选择 Flash 正是出于
+成本考虑。`687ed29` 没有共同作者 trailer，
+提交说明称“这一次提交没有 AI”，diff 确实只是删去 README 中引语、拟人化段落、代码风貌和若干
+限制文字。作者于 2026-09-15 确认：这里的“没有 AI”指该次删改由作者亲手完成，没有让 AI/agent
+修改文件。被删段落写于完成自举后；作者回想过程中的困难，情绪激动，因而写得较为抒情。平静后
+认为这种文字不适合放在 README，遂主动删去。
+
+作者后来关于 GLM-5.2 的回忆，只能说明当时曾用它讨论项目迁移的想法；最终留下了一份刻意幽默的
+迁移提交。该细节不用于建立准确模型切换时间线，也不把 `58ac389` 的文字归因给特定模型。
+
+## README 宣言与项目身份
+
+`8b2ea1f` 首次加入 README，把 stage 3—10 收敛写成“自举成功”。数小时后的 `687ed29` 主动删去
+较夸张和拟人化部分。随后种子、tas 与 tld 改变了“闭环”的技术边界，README 又随实现更新。
+7 月 11 日 `58ac389` 把原仓库 README 改成 HTTP 301 风格的迁移说明；Toyc 直接继承 `22ffcc8`
+起的全部 Git 历史。因此 ToyCCompiler 不是被导入 Toyc 的外部快照，而是同一提交链继续发展。
+
+## 仍待作者访谈与材料核查
+
+1. `fca878f` 前未入 Git 的初版种子是否还有可恢复的二进制、生成命令或日志。
 
 ---
 
@@ -680,37 +1395,136 @@ DeepSeek API 的实际分工，而不从提交署名直接推断贡献比例。
 
 # Toyc 时期
 
-## 研究范围
+## 本章定位
 
-从 2026-07-11 的 “new beginning, two parents” 开始，研究 Toyc 如何在 ToyCCompiler 的 Git
-主线上重新整合 Tinylibc，并扩展工具链、库、应用和后来的 Rasterfall。该时期跨度较大，后续
-可能拆成“整合期”“工具链扩展期”“Rasterfall 主线期”。
+Toyc 直接延续 ToyCCompiler 的 Git 历史，但项目身份不再只是独立编译器。从 2026-07-11 的
+“new beginning, two parents” 开始，自举工具链被放在生态核心，Tinylibc 的库和应用则重新进入
+同一主线。本章覆盖 7 月的初始整合与独立 Tinylibc 终点，并追到 8—9 月 Rasterfall 转向边界；
+工具链其余扩展仍可后续分章。
 
-## 已确认锚点
+逐提交、跨仓库 blob 对照和选择性复制范围见 [Toyc 初始整合期证据表](../evidence/toyc.md)。
 
-- `643287b`：首次以 Toyc 名义描述来自 ToyCCompiler 与 Tinylibc 的双重来源。
-- `a26e7a6`：将 `app/` 改为 `compiler/`，为后续应用目录腾出边界。
-- `5bffca4`：工具链统一采用 `toy*` 命名，避免与 TinyCC 混淆。
-- `af6bc30`：引入 Tinylibc 的完整库、应用、架构头和 GCC 构建规则。
-- `2698c81`、`75a10cd`：2026-09-03 前后，仓库协作说明和文档主线转向 Rasterfall。
+## 为什么重新统一
 
-## 待写章节
+作者于 2026-09-16 确认，写 toyc 编译器最初就是为了编译自己的 Tinylibc 库、取代 GCC 的部分
+功能。ToyCCompiler 独立建仓是编译器能力较弱时为集中上下文、先完成自举而采取的阶段性收缩，
+不是永久分家方案。工具链成熟后继续维护两个仓库已经没有理由；统一因而是返回原始目标，而不是
+把两个无关成果事后拼接。
 
-- “two parents”的项目定位
-- Tinylibc 回归时的文件来源和差异
-- tcc/tas/tld 到 toyc/toyas/toyld 的命名统一
-- `toyar`、浮点、库兼容与应用生态扩展
-- Toyc 编译器维护与 Tinylibc 上游的后续关系
-- Rasterfall 的诞生及仓库重心迁移
-- 从编译器实验到长期工程化的工作流变化
+新名称 `toyc` 借这次统一确定。它既优于旧名、避免与 TinyCC 混淆，也表达更宽的项目身份：一个
+不只包含编译器，而且开始具有运行库、构建工具和应用的玩具 C 生态。
 
-## 待核问题
+## “two parents”先于代码合并
 
-- `af6bc30` 引入的 Tinylibc 对应哪个上游提交或工作树状态？
-- 2026-07-23 Tinylibc 自身又引入 ToyCCompiler 时，两仓是否形成双向移植？
-- 何时可以认为项目名称、二进制名称和仓库身份都完成了 Toyc 化？
-- Rasterfall 与工具链之间是能力验证、应用生态，还是逐渐独立的新项目主线？
+`58ac389` 于 7 月 11 日把 ToyCCompiler README 写成指向 `toyc` 的 HTTP 301。11 分钟后的
+`643287b` 首次明确写出：tcc 是 toyc 生态的核心，项目由 ToyCCompiler 与 Tinylibc 合并而生，
+并将在二者之上成为独立的系统软件生态。此时 Tinylibc 目录尚未进入 Git 树，所以 “two parents”
+首先是面向未来的项目定位。
 
+作者认可这份同期结构符合当时的主要意图：ToyCCompiler 提供 standalone 编译工具链，Tinylibc
+提供库和应用。只有 standalone 的库并不完整；编译器也能 standalone 后，生态才在理论上形成
+“创造自己，并继续创造其他程序”的闭环。作者把它视为 toyc 成熟的重要进步。
+
+这个闭环是能力目标，不是对当时所有构建路径的夸大声明。它依赖已有种子和宿主环境，初始整合也
+没有立即证明全部 Tinylibc 应用均由 toyc 构建。作者进一步说明，即使时间足够理论上可以继续扩大
+自包含范围，工程上也未必可行或值得；后续更新 toyc 时仍经常为效率使用 GCC。
+
+## 从直接融合转向逐模块验证
+
+自举完成不代表已经能顺利编译 Tinylibc。作者回忆，初期曾探索把两边一次性融合并让 toyc 立即
+编译整个库，但二者之间仍有能力距离。最终采用的成熟路径是在 Toyc 中为 Tinylibc 各个 lib 模块
+建立独立编译和功能测试，再逐个完成。
+
+Git 与这段回忆吻合。`a26e7a6` 先把编译器从 `app/` 移到 `compiler/`，为未来依赖库的应用腾出
+命名空间；`015b236` 与 `b8fb22f` 加入生成和链接 `.a` 的能力；`6ce3490` 不复制库，而是直接引用
+外部 Tinylibc 源码建立模块化测试。随后围绕 math、stdio、string、core、time、misc、poll、
+procfs、net、tty 和 thread 逐步扩大测试，并由真实库代码暴露编译器的数组、符号扩展、`va_list`、
+柔性数组等问题。
+
+这说明 Tinylibc 在统一前不仅是待搬运资产，也是编译器能力的真实工作负载。测试数字只代表相应
+提交当时的记录；关键变化是验证单位从“尝试整库”缩小为可定位的库模块和语言模式。
+
+## 双向移植如何发生
+
+7 月 23 日 19:59 的 Toyc `0a7800f` 修复柔性数组成员访问，并说明 Tinylibc 的 procfs 修复在另仓
+提交。20:43，Tinylibc `32436f1` 把最新 Toyc 工具链复制到 `app/compiler/`；19 个映射文件与
+`0a7800f` blob 全同。随后 Tinylibc 连续调整整套构建、shell、tmake 和 `va_list` 兼容，至
+23:46 的 `6a86e5f`。
+
+7 月 24 日 00:09，Toyc `af6bc30` 又从 `6a86e5f` 精确复制 108 个文件：完整 `lib/`、x86_64
+架构与公共头，以及一部分 coreutils、测试、shell 和 tmake。全部新增路径的 blob 均可与该快照
+逐一对应。因此“两仓双向移植”成立，但不是双向完整同步，更不是 Git merge。
+
+`af6bc30` 提交说明中的 “full app tree” 也不能照录为对象事实。网络、图形、终端、音频、论文
+实验、ELF 工具等应用没有在该提交进入 Toyc。作者记得部分应用难迁移，所以先迁容易验证的部分；
+另一些老程序被认为意义有限，继续留在旧仓库。更准确的表述是：**Tinylibc 先接收最新工具链用于
+整体验证和适配，Toyc 再接收验证后的完整库与经过选择的应用子集。**
+
+## 项目身份的完成
+
+`643287b` 给出名称和 “two parents” 定位，`a26e7a6` 预留目录边界，`5bffca4` 才把各工具及源码
+统一改为 `toy*` 名称，`af6bc30` 则让库与应用实际进入 Toyc。因而“Toyc 化”不是一个提交：
+
+1. 7 月 11 日完成仓库迁移与新生态宣言；
+2. 7 月 11 至 23 日准备目录、归档能力和真实库测试；
+3. 7 月 23 日统一二进制与源码名称；
+4. 7 月 24 日形成工具链、库和部分应用共存的实际仓库。
+
+从这一刻起，Toyc 同时拥有 ToyCCompiler 的 Git 祖先和 Tinylibc 的代码/项目祖先；所谓 “two
+parents” 描述的是两类项目能力在一条主线中的重新会合，不表示 Git DAG 有两个父提交。
+
+## 独立 Tinylibc 主线的终点
+
+`af6bc30` 之后，独立 Tinylibc 只再提交了两次：7 月 24 日 13:06 的 `83a32fd` 修复
+`printf/snprintf` 的无符号长整数格式，13:39 的 `a566206` 又修复 `%.0f` 输出并加入诊断程序。
+后者是其 `main` 与 `origin/main` 的共同终点；另一个 `toyc_adapt` 分支停在更早的 `ba004d5`。
+
+Toyc 同日 13:44 的 `989b938` 把 `test-lib` 从外部 `../Tinylibc` 切到仓库自身 `lib/`，并同步了
+`a566206` 的 `%.0f` 修复。它没有复制独立仓库里的临时测试源、已跟踪 `.o`，也没有照搬
+`83a32fd` 的全部 `%u/%x` 分支改法，因此仍是选择性吸收。Git 没有“停止维护 Tinylibc”的宣言；
+可确认的边界是：两仓在首次整合后又并行约 13.5 小时，最后一项共有库修复在五分钟内进入 Toyc，
+此后独立仓库再无提交，内部库测试也不再读取它。
+自 `989b938` 起，Toyc 是可观察到的唯一维护主线。
+
+## 首次以 toyc 构建完整 Tinylibc
+
+`a5b959c` 于 7 月 24 日 09:36 首次加入 `self-lib`：它枚举当时仓库 `lib/` 的全部 C 与汇编源，
+用 `build/toyc` 编译所有 C 文件并生成 `build/toyc_self.a`。这是首次真正存在“用 toyc 编译完整
+Tinylibc C 源码”的整库目标；此前 `test-lib` 是按模块编译和运行测试，不能等同于生成完整库。
+
+这个目标仍不是全 Toyc 工具链闭环。`build/toyc` 当时由版本库内种子构建；`.S` 继续交给系统
+`as`，静态库由系统 `ar` 归档，`self-app` 再由系统 `ld` 链接。普通 `lib`、`app` 路径仍保留
+GCC 构建。7 月 25 日 `1f2a625` 更把默认工具链构建明确改回 GCC，并说明 `self-*` 只用于验证
+toyc 代码生成；随后 LLM、离线资产工具及 Rasterfall 的正常构建也继续使用 GCC。因此
+`a5b959c` 证明的是完整库的 C 编译覆盖，不是消除了 GCC、GNU binutils 或宿主构建环境。
+
+## 从工具链验证到 Rasterfall
+
+Rasterfall 的源头既有能力验证属性，也很快形成了独立游戏目标，不能只选其一。8 月 4 日
+`a37c4fb` 新增 Wayland 软件 3D 窗口与光栅器，同时加入 Toyc pending 回归，并明确同时验证 GCC
+和 Toyc 自托管版本；`410dac6` 的第一人称灰盒 Demo 也继续双路径验证。这个起点直接检验了
+Tinylibc 的 syscall、窗口、输入和 Toyc 对较大真实程序的编译能力。
+
+8 月 5 日 `e6d1e37` 已把 demo 扩为带确定性规则、敌人、HUD 和音频的僵尸潮游戏；8 月 6 日
+`deecddd` 首次命名 Rasterfall，并迁入独立目录、拆分地图和诊断入口；8 月 9 日 `a41c580` 又把
+玩法、头文件、源码和资产整体集中到顶层 `rasterfall/`。这些提交说明它不再只是一次编译器样例，
+而是有自身玩法、架构和资源边界的游戏工程。
+
+主线转移也分两步发生。功能演进从 8 月 5 日起已经明显集中于游戏；8 月 31 日 `2d7edb7` 在解决
+并行渲染真实线程原子状态后，把 Rasterfall 从 `self-app` 范围移除，明确正常路径只以 GCC 验证，
+不再为 Toyc 兼容限制实现或被动扩张编译器特性。9 月 3 日 `75a10cd` 再把根 `AGENTS.md` 改为
+Rasterfall 项目协作说明，并将旧工具链规则归档，构成仓库治理层面的正式主线切换。改用 GCC
+不是放弃 freestanding：Linux 版仍使用仓库 Tinylibc、直接系统调用及公共 Wayland、输入、软件
+渲染、音频、线程和资产设施；Windows 则复用玩法与渲染源码并另设平台层。
+
+因此更准确的分期是：Rasterfall 从 Toyc 生态的真实负载和能力验证中长出，继承了 Tinylibc/Toyc
+的代码、平台设施、无宿主 libc 的 Linux 运行边界，以及自举时期形成的模块化测试和可复核构建
+经验；但在拥有独立目录、跨平台目标、玩法架构和 GCC 基准后，它已成为从 Toyc 仓库长出的新项目，
+而不是 Toyc 编译器能力线的“第四阶段”。仓库历史连续，项目目标已经分流。
+
+## 后续章节
+
+- `toyar`、浮点、库兼容与应用生态的继续扩展。
 
 ---
 
@@ -726,7 +1540,7 @@ DeepSeek API 的实际分工，而不从提交署名直接推断贡献比例。
 
 ## Q00：整条主线意味着什么？
 
-**状态：已有概述**
+**状态：已写入**
 
 作者总述：这条 C 语言项目的演进，是逐渐深入理解计算机底层世界、提高 C 语言项目能力
 （已不只是 C 编程能力），并逐渐使用 coding agent 的过程。
@@ -774,77 +1588,77 @@ x86_64。早期 Tinylibc 仍保留 RISC-V 部分，后来不再使用。作者�
 SC7 不支持 x86_64，作者当时认为旧架构历史对新的 libc 主线没有保留必要。这是当时的取舍，
 不作为那段历史客观上没有技术或考古价值的结论。
 
-- SC7 的 `tlibc` 分支是什么，何时创建，由谁主要开发？
-- Tinylibc 根提交来自哪个 SC7 提交、分支或工作树？
-- 分离时复制了哪些目录，放弃了哪些内核依赖？
+原始问题及当前答案：
 
-对象级答案：独立根 `fce216c` 精确复制 SC7 `tlibc` 末端 `d2363da` 的
-`user/include/Tinylibc/`。两端均为 29 个相同路径，26 个 blob 相同，仅 README、提交日志和项目
-计划三个 Markdown 变化；根树仍只有 RISC-V，x86_64 可运行适配始于 `7586050`。
+- `tlibc` 分支何时开始、由谁主要开发：`e2eef7f` 于 2025-09-24 开始独立发展用户态库；主要开发者
+  身份由作者口述确认，提交对象只能确认相应身份完成的改动。
+- Tinylibc 根提交来自哪个 SC7 状态：来自 `tlibc` 末端 `d2363da` 的
+  `user/include/Tinylibc/`。
+- 分离时复制和放弃了什么：复制该目录的完整 29 文件子树，没有复制 SC7 内核；其中 26 个 blob
+  相同，只修改三个 Markdown。根提交仍只有 RISC-V 实现，x86_64 可运行适配始于 `7586050`。
 
 落点：`periods/sc7.md`、`periods/tinylibc.md` 和 `timeline.md`。
 
 ## Q03：Tinylibc 的手写时期如何工作？
 
-**状态：已有概述**
+**状态：已写入**
 
-已知口述：该时期主要手写，通过网页端对话学习和复制部分代码原型，调试与主要开发由作者进行。
-
-后续追问：
-
-- 大致起止时间和阶段划分是什么？
-- 使用哪些网页服务或模型，主要用于学习什么？
-- 复制过哪些代码原型，来源和后续改写情况如何？
-- 哪些模块最能代表作者独立设计与调试？
-- 什么时候开始从单个功能开发转向整体构建、测试和项目组织？
-
-落点：`periods/tinylibc.md`，未来可增设开发方法专题。
+已将课程与终端应用、首次暂停、pthread/论文实验、网络与构建工具、agent 转型和编译器冲刺写入
+`periods/tinylibc.md`，逐提交依据见 `evidence/tinylibc.md`。手写时期主要使用 DeepSeek 网页端
+讲解资料、接口和调试输出，作者主要以 printf 和 strace 亲自调试；6 月下旬以后逐渐转为 prompt、
+方向判断和让 agent 读写代码。musl 文件级来源、课程材料和未提交音频实验仍列为证据缺口。
 
 ## Q04：为什么开始写 C 编译器？
 
-**状态：待回答**
+**状态：已写入**
 
-- 直接动机是编译 Tinylibc、自举、学习编译原理，还是其他目标？
-- 第一个编译器阶段开始前做过哪些准备或失败实验？
-- 当时如何选择 lexer、parser、代码生成和 ELF writer 的结构？
-- 最初怎样定义“成功”？
+写 C 编译器是作者长期愿望；C 的简洁、机器细节和早期自举历史构成吸引力，coding agent 带来的
+效率提升是 2026-06-30 真正启动的直接触发。同期文章 `002_use_tmake_toreplace_make.md` 在实现前
+已经提出未来以简化编译器实现完全自包含。最初框架由 DeepSeek API 在 Claude Code 工作流中设计，
+作者给出依赖必须全部位于 Tinylibc、不得使用标准库的限制；具体会话和框架来源仍待取得。
 
-SC7 最初选择 C 的原因已经写入 Q01 和 `periods/sc7.md`，但这不能回答后来“为什么写 C 编译器”。
-这里仍需确定从 libc/用户程序开发转向编译器实验的直接触发事件。
-
-落点：`periods/tinylibc.md`。
+落点：`periods/tinylibc.md`；证据台账：`evidence/tinylibc.md`。
 
 ## Q05：为什么建立独立的 ToyCCompiler 仓库？
 
-**状态：待回答**
+**状态：已写入**
 
-- 为什么选择新根提交而不是保留 Tinylibc Git 历史？
-- `22ffcc8` 对应 Tinylibc 的哪个源码状态？
-- 独立是为了隔离目标、提高 agent 效率，还是准备公开展示？
-- 当时是否已经计划之后建立 Toyc？
+文件级来源已经写入：`22ffcc8` 以 Tinylibc `87d61e0` 的编译器目录为精确基底。作者于
+2026-09-15 补充：当时编译器连测例编译都表现不佳，编译 Tinylibc 更差，因而迁移到新仓库，
+用更集中的上下文专注自举。自举被视为将来编译 Tinylibc 的前提，而非与 Tinylibc 永久分家。
+当时已计划之后重新整合 Tinylibc，`Toyc` 名称则在后续几次讨论后才确定。
 
-落点：`periods/toy-c-compiler.md`。
+已回答的原始问题包括：为何选择新根、提取对应哪个 Tinylibc 状态、独立的主要动机，以及当时
+是否已计划重新整合。“为何没有保留祖先链”没有独立的同期记录，当前将它放在集中上下文的整体迁移
+决策中理解，不再另行推断工具或展示动机。
+
+落点：`periods/toy-c-compiler.md`；证据台账：`evidence/toy-c-compiler.md`。
 
 ## Q06：Claude Code 与 DeepSeek API 如何分工？
 
-**状态：已有概述**
+**状态：已写入**
 
-已知口述：ToyCCompiler 时期高强度使用 Claude Code 和 DeepSeek API。
+已知口述：ToyCCompiler 时期以 Claude Code 为客户端，但模型请求全部接入 DeepSeek API，并未同时
+使用 Claude 模型。作者为节省费用全程使用 DeepSeek-V4-Flash，仅有两天多使用 Pro，其余时间均以
+Flash 开发。提交里的 Claude 共同作者署名不能用来判断实际模型；作者当时没有在意该署名，
+事后认为它确实容易使观众误以为项目使用了昂贵的 Claude 模型。
 
-后续追问：
+Git 进一步确认 `687ed29` 没有 trailer，且只删改 README。作者于 2026-09-15 确认，该次改动是亲手
+完成，没有让 AI/agent 修改文件。被删文字是完成自举后因回想过程困难、情绪激动而写；平静后认为
+过于抒情，不适合 README，遂手动删除。GLM-5.2 只作为当时讨论迁移想法的背景；最终的
+幽默迁移提交表达了作者想要更幽默的方向，不再追究精确模型归因或首次会话映射。
 
-- 两者分别负责设计、实现、调试、测试、审查或文档中的哪些部分？
-- 是否存在稳定的多模型工作流？作者怎样验证和取舍输出？
-- 哪些关键突破主要来自作者判断，哪些明显受 agent 推动？
-- `Co-Authored-By` 的添加规则是什么？未署名提交是否也可能使用 AI？
-- `687ed29` 所说“这一次提交没有 AI”具体表达什么？
-- 还保留哪些会话、脚本、日志或账单，公开边界是什么？
+Claude Code 的具体配置、trailer 生成链和 GLM 会话映射不作为本题主要考证目标。
 
-落点：`periods/toy-c-compiler.md`，未来可增设 agent 协作专题。
+落点：`periods/toy-c-compiler.md`；证据台账：`evidence/toy-c-compiler.md`；未来可增设 agent 协作专题。
 
 ## Q07：“自举成功”包含哪些阶段？
 
-**状态：待回答**
+**状态：已写入**
+
+已区分 Tinylibc 内源码自编译、GCC/GNU 工具辅助的可运行 stage 2、stage 1—10 与 tcc 二进制
+收敛、种子 tcc/tas 接管、tld 自链接及默认 Makefile 接管。最终 stage 脚本仍调用系统 `ld`；“仅
+make”只表示默认编译/汇编/链接规则由预置三种子承担，仍依赖 Linux、shell、make、宿主命令和种子。
 
 - 编译单个自身源文件、构建可运行自身、多 TU 自编译分别何时完成？
 - toyas 与 toyld 分别在何时消除 GNU `as` 和 `ld` 依赖？
@@ -852,43 +1666,68 @@ SC7 最初选择 C 的原因已经写入 Q01 和 `periods/sc7.md`，但这不能
 - stage 2–10 字节级收敛在当时具体比较哪些文件？
 - “零外部依赖”采用什么边界定义？
 
-落点：`periods/toy-c-compiler.md` 和未来的自举专题。
+落点：`periods/toy-c-compiler.md`；证据台账：`evidence/toy-c-compiler.md`。
 
 ## Q08：Toyc 为什么重新整合 Tinylibc？
 
-**状态：待回答**
+**状态：已写入**
 
-- “two parents”是在什么时候形成的项目定位？
-- 为什么不继续维持两个独立仓库？
-- `af6bc30` 引入的 Tinylibc 对应哪个快照？
-- Tinylibc 同期以 `32436f1` 引入 ToyCCompiler，为何发生双向移植？
-- 改名 Toyc 除避免 TinyCC 混淆外，是否代表新的项目身份？
+作者于 2026-09-16 确认，toyc 编译器最初目的就是编译自己的 Tinylibc 库并取代 GCC 的部分功能；
+ToyCCompiler 独立建仓只是集中完成自举的阶段，因此成熟后没有理由继续分仓。`toyc` 借统一确定为
+新名称，既避免旧名混淆，也表示项目已从单一编译器扩展为包含较完整 C 生态的“有点功能的玩具”。
 
-落点：`periods/toyc.md`。
+作者认可 `643287b` 的同期表述代表 “two parents” 的主要意图：standalone 编译工具链是核心，
+Tinylibc 提供库和应用；二者结合后，生态在理论上形成能创造自身并继续创造其他程序的闭环。这是
+作者所说的成熟与重大进步，但不等于初始整合时已经由 toyc 构建所有内容。工程上彻底实现未必可行，
+后续维护也常为效率使用 GCC。
+
+Git 对照确认，Tinylibc `32436f1` 的 19 个映射工具链文件精确来自 Toyc `0a7800f`；Tinylibc
+连续适配后，Toyc `af6bc30` 新增的 108 个文件又全部精确来自 `6a86e5f`。这构成数小时内的双向
+选择性移植，不是 Git merge 或完整镜像。直接融合仍有现实困难，开发因而先在 Toyc 中按各 lib
+模块建立测试、逐个补齐能力。`af6bc30` 只迁入较易验证的应用；难迁移或意义有限的老应用留在旧仓库，
+所以提交说明的 “full app tree” 不能按字面采用。
+
+落点：`periods/toyc.md`；证据台账：`evidence/toyc.md`。
 
 ## Q09：何时从 C 编程转向 C 项目能力？
 
-**状态：待回答**
+**状态：已写入**
 
-- 哪些经历让关注点从函数实现转向模块边界、构建、测试和维护？
-- 自举、跨架构、跨平台、网络或大型重构分别带来什么能力变化？
-- 是否存在“代码能跑，但项目不可维护”的明确转折事件？
-- coding agent 是否促使项目规模扩大，也是否制造过新的复杂度？
+作者于 2026-09-16 将问题修正为现实条件下的规模取舍：第一次接触陌生系统软件、缺少经验时，以
+网页 AI 辅助、自己实现和测试，大概率只能推进到早期 Tinylibc 的程度；沿用这种方式实现 standalone
+C 编译器并达到 ToyCCompiler、Toyc 或当前任务规模并不现实。作者早期已经感觉到该限制，但开发方式
+的意义是在使用 coding agent 的过程中逐渐明确的，不能固定成某个突然转变的日期。
 
-阶段性落点：[SC7 与系统工程的边界](essays/sc7-engineering-boundaries.md) 已归纳 SC7 中的
-五类边界，并把多核停止投入和 Tinylibc 分离视为项目范围决策；与后续三个时期的对照仍待完成。
+改变方式意味着不再要求掌握每一行实现，而非放弃理解。作者仍掌握总体目标并关注关键技术选择；
+必要时进入对应模块，主要借助 agent 解读。对有既往经验的领域，作者会更敏感地审查选择。测试、
+任务分解和模块边界则用于约束扩大规模后的风险。
+
+作者确认 agent 产出的规模有时略微超出控制，Rasterfall 中也出现过意料之外的效果；目前认为这在
+个人开发中可以接受。完全掌握同样有成本，理解到一定程度后继续覆盖所有细节的边际成本并不划算，
+因此选择抓住主要部分、接受有限风险并继续推进。这不把规模等同于能力，也不表示 agent 产出的每个
+细节都已成为作者知识。
+
+落点：[从逐行掌握到风险驱动理解](essays/agent-and-project-scale.md)；SC7 的早期范围决策另见
+[SC7 与系统工程的边界](essays/sc7-engineering-boundaries.md)。
 
 ## Q10：Rasterfall 属于哪条历史？
 
-**状态：待回答**
+**状态：已写入**
 
-- 最初是 Toyc/Tinylibc 的能力验证，还是独立游戏目标？
-- 何时成为仓库开发主线？
-- 为什么明确以 GCC 为参考构建，不再要求 Toyc 兼容？
-- 它继承了此前哪些底层设施和项目经验？
-- 应视为 Toyc 第四阶段，还是从 Toyc 长出的新项目？
+Git 证据表明它的起点兼具两种属性：8 月 4 日的 Wayland 3D/FPS 灰盒同时验证 GCC 与 Toyc，直接
+承担真实负载和编译器回归；8 月 5 日已经发展为有独立规则、敌人、HUD 与音频的游戏，8 月 6 日
+命名 Rasterfall 并模块化，8 月 9 日形成顶层独立目录。
 
-落点：`periods/toyc.md`，必要时新增 Rasterfall 转向专题。
+功能重心从 8 月 5 日起实际转向游戏；`2d7edb7` 于 8 月 31 日将 Rasterfall 移出 Toyc `self-app`
+范围，明确复杂游戏实现不再为编译器兼容受限，正常构建以 GCC 为准；`75a10cd` 于 9 月 3 日把根
+协作说明正式转向 Rasterfall，是仓库治理层面的主线切换。Linux 版仍继承 Tinylibc 的 freestanding
+运行时、syscall、Wayland、输入、软件渲染、音频和线程设施，也延续真实负载、模块测试和可复核
+构建的工程经验。
+
+结论：Rasterfall 是从 Toyc 生态能力验证中长出的新项目；它与 Toyc/Tinylibc 有连续代码和仓库
+历史，但独立的玩法、资产、跨平台与构建目标使其不宜称为 Toyc 编译器发展的第四阶段。
+
+落点：`periods/toyc.md`；证据台账：`evidence/toyc.md`。
 
 ## 单题处理流程
 
@@ -936,7 +1775,7 @@ SC7 最初选择 C 的原因已经写入 Q01 和 `periods/sc7.md`，但这不能
 | SC7 | 可选缓存 `../SC7` | `https://github.com/WHU-SC7/SC7.git` | `ec37618` 至主分支 `1a668a3`；另有 `tlibc` 等支线 |
 | Tinylibc | `../Tinylibc` | `WHU-SC7/Tinylibc` | `fce216c` 至 `a566206`，211 个提交 |
 | ToyCCompiler | `../ToyCCompiler` | 上游公开仓库 | `22ffcc8` 至 `58ac389`，96 个提交 |
-| Toyc | `.` | 上游公开仓库 | `22ffcc8` 至本轮 HEAD `cf8c5cd`，773 个提交 |
+| Toyc | `.` | 上游公开仓库 | `22ffcc8` 至本轮核查前 HEAD `f4e4127`，782 个提交 |
 
 本地缓存并非仓库组成部分，可能不存在；提交数量和 HEAD 只记录调查现场，后续仓库推进后不作为
 永久统计结论。引用历史事实时应记录远端、分支和完整提交对象，不能只记录本地相对路径。
@@ -969,10 +1808,29 @@ git blame <commit> -- <path>
 - SC7 是作者在 2025 年参加操作系统内核比赛时的团队作品。
 - Tinylibc 主要属于手写时期；学习依赖网页端对话，也复制过部分代码原型，调试和主要开发由
   作者自己进行。
-- ToyCCompiler 时期高强度使用 Claude Code 和 DeepSeek API，并完成自己的 C 编译器。
+- ToyCCompiler 时期高强度使用 Claude Code 客户端接入 DeepSeek API，并完成自己的 C 编译器；
+  作者确认没有同时使用 Claude 模型。
 - Toyc 保存了大部分提交信息；两个历史项目的公开仓库已克隆在当前仓库上级目录。
 - 整条 C 项目主线体现了作者逐渐深入计算机底层、从 C 编程提升到 C 项目能力，并逐渐使用
   coding agent 的过程。
+
+## 作者提供的同期文章
+
+2026-09-15，作者允许考古计划参考 `C:\Users\15259\Desktop\draft` 中的文章草稿和发布稿。
+`000` 至 `002` 总体由作者撰写、AI 只给润色建议；从 `003_CLAUDE_shell_path_search.md` 起，文章
+由 Claude Code 客户端接入的 DeepSeek 模型根据作者 prompt、项目代码和旧文风格生成。`003`
+对应的代码仍主要属于手写阶段，故文章写作归属不能代替代码归属。
+
+这些文件不在仓库内，文件系统时间集中在 2026-07-11，不能直接视为创作或发布日期。文章内引用的
+提交号、日期、代码行和技术说明应分别与 Git 核对；其中两个原始提交号在当前 Tinylibc 缓存已不可
+解析，只能按日期和主题建立候选映射。引用时不大段复制正文，并区分作者同期自述、AI 生成说明和
+对象级事实。
+
+ToyCCompiler 阶段重点阅读 `004_CLAUDE_初稿_bootstrap_self_healing.md`、
+`005_CLAUDE_bootstrap_real_bug_fix.md`、`006_CLAUDE_trusting_trust_bootstrap_security.md` 与
+`007_零依赖自举C编译器完全手册_开篇.md`。004—006 展示同一技术叙述的修订：004 误称收敛能
+排除隐藏后门，005 将结论收窄为 fixed point 不等于正确性，006 明确稳定后门同样会收敛；007 只是
+未完成提纲。它们适合研究同期解释怎样形成，不可替代 stage 脚本的实际调用链。
 
 ## 外部赛程材料
 
@@ -985,11 +1843,14 @@ git blame <commit> -- <path>
 ## 待收集材料
 
 - 四个 GitHub 仓库的创建时间、默认分支变化、release、tag、issue 和仓库描述历史。
-- SC7 各比赛阶段的分支、团队分工，以及 `tlibc` 分支与 Tinylibc 的关系。
-- Tinylibc 从 SC7 分离前的代码来源和授权边界。
+- SC7 已删除 `offline` 分支的确切 tip，以及各阶段未进入 Git 的协作与测试材料。
+- XN6、AVX 和 VisionFive SD Rust 实现的固定上游快照、逐文件来源及许可证边界。
+- 2025 年赛事的完整赛果、参赛项目语言和可用于验证项目影响关系的同期材料。
 - 网页端对话的服务、时间范围、保留形式和可公开范围。
-- Claude Code 会话、本地配置、命令历史和显式署名策略。
-- DeepSeek API 调用脚本、模型版本、提示词、输出与费用记录。
+- Claude Code 会话、本地配置、内嵌提示词、命令历史和显式署名策略。
+- DeepSeek API 模型版本、提示词、输出与费用记录。
+- 软件工程课程交付材料、毕业论文原文与线程实验原始输出。
+- Tinylibc 当时参考的 musl 快照，以及 syscall、clone/pthread 的文件级来源和许可对照。
 - 未进入 Git 的失败实现、临时文件、截图、构建日志和二进制产物。
 
 ---
@@ -1013,25 +1874,40 @@ git blame <commit> -- <path>
 | 2025-10-17 | SC7 | `d2363da` | `tlibc` 末端；独立仓库根树的精确来源快照 | 跨仓库逐路径 blob 对照 |
 | 2025-10-17 | Tinylibc | `fce216c` | 从 SC7 分离；只改三个 Markdown，源码仍为 RISC-V | 根提交、树对照 |
 | 2025-10-17 | Tinylibc | `7586050` | 首次加入 x86_64 适配并声明在作者 PC 可运行 | 提交内容与说明 |
+| 2025-11-12 | Tinylibc | `34fcd9e` | 重组为 `app/include/lib/arch`，摆脱 SC7 遗留目录习惯 | 提交内容；动机来自作者回忆 |
+| 2025-11-16 | Tinylibc | `6c396aa` | top 加入 CPU 占用与排序；首次开发中断前的主线末端 | 提交对象；中断解释来自作者回忆 |
+| 2026-03-05 | Tinylibc | `4778563` | 以最小 pthread_create 和 clone 重新启动开发 | 提交内容与说明 |
+| 2026-03-27 | Tinylibc | `3dae4be` | 加入线程栈与内存的异步回收实验 | 提交内容、同期日志 |
+| 2026-05-29 | Tinylibc | `45adc6b` | tmake 已能调用外部工具编译并链接所有程序 | 提交内容与说明 |
+| 2026-06-22 | Tinylibc | `c985e5b` | 开始以 Claude Code 客户端接入 DeepSeek API 的密集 agent 重构 | 提交内容、元数据与作者回忆 |
 | 2026-06-30 | Tinylibc | `4670d9f` | 加入最小可行的自举编译器 Phase 1 | 提交内容与说明 |
 | 2026-07-01 | Tinylibc | `9921705` | 提交说明记录 `tcc.c` 自编译通过 | 提交说明，能力仍待复现 |
+| 2026-07-02 | Tinylibc | `4437887` | 合并 compiler-test-suite 工作线，测试开始成为自举推进单位 | 提交 DAG、内容与作者回忆 |
 | 2026-07-02 | Tinylibc | `2213ae5` | `tmake -T` 开始以 tcc/tas 替代 gcc | 提交内容与说明 |
-| 2026-07-04 | ToyCCompiler / Toyc | `22ffcc8` | 从 Tinylibc 提取 tcc，建立独立仓库 | 两仓共享根提交；提交说明 |
+| 2026-07-04 | ToyCCompiler / Toyc | `22ffcc8` | 以 Tinylibc `87d61e0` 编译器子树为基底选择性提取，建立独立仓库 | 跨仓库 blob 与逐文件 diff |
+| 2026-07-07 | ToyCCompiler / Toyc | `0252321` | 首个可运行 stage-2 脚本：stage 1 编译自身，GCC 汇编、GNU ld 链接 | 脚本实际调用链 |
 | 2026-07-08 | ToyCCompiler / Toyc | `961fbf6` | 提交说明记录自举到 stage 10 | 提交说明，脚本与产物待复现 |
 | 2026-07-08 | ToyCCompiler / Toyc | `8b2ea1f` | 发布“自举成功宣言” | 提交说明与 README 历史 |
 | 2026-07-09 | ToyCCompiler / Toyc | `7adcf8f` | 提交说明记录种子、gcc-free 构建和 tas 闭环 | 提交内容与说明 |
+| 2026-07-10 | ToyCCompiler / Toyc | `b3c5145` | tld 改由 tcc 编译并完成两代自链接字节一致 | Makefile、源码与说明 |
 | 2026-07-10 | ToyCCompiler / Toyc | `9948ea0` | tld 接管链接，形成工具链自举闭环 | 提交内容与说明 |
+| 2026-07-10 | ToyCCompiler / Toyc | `46119c1` | 更新三个收敛版种子，说明记录 stage 9/10 一致 | 二进制 blob、说明与隔离复查 |
 | 2026-07-11 | ToyCCompiler | `58ac389` | README 以 HTTP 301 形式宣告迁往 Toyc | 提交内容 |
 | 2026-07-11 | Toyc | `643287b` | README 将项目描述为来自 ToyCCompiler 与 Tinylibc 的 “two parents” | 提交内容 |
 | 2026-07-11 | Toyc | `a26e7a6` | 编译器源码由 `app/` 移到 `compiler/`，为 Tinylibc 整合留出目录 | 提交内容与说明 |
 | 2026-07-23 | Toyc | `5bffca4` | 工具链由 tcc/tas/tld 等统一改名为 toyc/toyas/toyld | 提交内容 |
-| 2026-07-24 | Toyc | `af6bc30` | 引入 Tinylibc 的完整库与应用树及 GCC 构建规则 | 提交内容与说明 |
+| 2026-07-23 | Tinylibc | `32436f1` | 将 Toyc `0a7800f` 的最新工具链选择性复制到 `app/compiler/` | 跨仓库逐路径 blob 对照 |
+| 2026-07-24 | Toyc | `af6bc30` | 从 Tinylibc `6a86e5f` 引入完整库、公共头与经过选择的应用子集 | 跨仓库 108 个新增路径 blob 对照 |
+| 2026-07-24 | Toyc | `a5b959c` | 首次加入以 toyc 编译完整 Tinylibc C 源的 `self-lib`；系统 `as/ar/ld` 仍参与 | Makefile 实际规则 |
+| 2026-07-24 | Tinylibc / Toyc | `a566206` / `989b938` | 独立 Tinylibc 最后共有库修复五分钟后被 Toyc 选择性吸收，内部测试停止读取外部仓库 | 分支终点、内容与 Makefile 对照 |
+| 2026-08-04 | Toyc | `a37c4fb`、`410dac6` | Wayland 软件 3D 与 FPS 灰盒作为 GCC/Toyc 双路径真实负载起步 | 提交内容与验证说明 |
+| 2026-08-06 | Toyc | `deecddd` | 游戏首次命名 Rasterfall 并迁入模块化独立目录 | 提交内容与路径变更 |
+| 2026-08-31 | 当前仓库 | `2d7edb7` | Rasterfall 移出 Toyc 自托管应用范围，明确以 GCC 构建为准 | Makefile、README、AGENTS 同步修改 |
+| 2026-09-03 | 当前仓库 | `75a10cd` | 根协作说明转向 Rasterfall，工具链时期说明归档 | 仓库治理入口变更 |
 
-## 尚未定论的边界
+## 分期结论
 
-- Tinylibc 的“手写时期”应从 SC7 前史算起，还是从独立仓库根提交算起。
-- ToyCCompiler 根提交对应 Tinylibc 的准确源提交；目前只能确定提取发生在 2026-07-04，且
-  Tinylibc 在 2026-07-03 已有接近的编译器树。
-- Toyc 在 2026-07-24 引入的 Tinylibc 文件对应上游哪个快照，之后两仓是否发生双向同步。
-- Rasterfall 应作为 Toyc 第四时期，还是作为 Toyc 时期内部的第二条项目主线。
+独立 Tinylibc 在 `af6bc30` 后只延续到 7 月 24 日 13:39，`989b938` 后 Toyc 成为唯一可观察维护
+主线。Rasterfall 则从 Toyc 的真实应用验证中长出，8 月形成独立工程，8 月 31 日划出 Toyc 兼容
+范围，9 月 3 日成为仓库治理主线；应视为共享历史和底层设施的新项目，而非编译器第四阶段。
 

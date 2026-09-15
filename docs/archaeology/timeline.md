@@ -37,9 +37,17 @@
 | 2026-07-11 | Toyc | `643287b` | README 将项目描述为来自 ToyCCompiler 与 Tinylibc 的 “two parents” | 提交内容 |
 | 2026-07-11 | Toyc | `a26e7a6` | 编译器源码由 `app/` 移到 `compiler/`，为 Tinylibc 整合留出目录 | 提交内容与说明 |
 | 2026-07-23 | Toyc | `5bffca4` | 工具链由 tcc/tas/tld 等统一改名为 toyc/toyas/toyld | 提交内容 |
-| 2026-07-24 | Toyc | `af6bc30` | 引入 Tinylibc 的完整库与应用树及 GCC 构建规则 | 提交内容与说明 |
+| 2026-07-23 | Tinylibc | `32436f1` | 将 Toyc `0a7800f` 的最新工具链选择性复制到 `app/compiler/` | 跨仓库逐路径 blob 对照 |
+| 2026-07-24 | Toyc | `af6bc30` | 从 Tinylibc `6a86e5f` 引入完整库、公共头与经过选择的应用子集 | 跨仓库 108 个新增路径 blob 对照 |
+| 2026-07-24 | Toyc | `a5b959c` | 首次加入以 toyc 编译完整 Tinylibc C 源的 `self-lib`；系统 `as/ar/ld` 仍参与 | Makefile 实际规则 |
+| 2026-07-24 | Tinylibc / Toyc | `a566206` / `989b938` | 独立 Tinylibc 最后共有库修复五分钟后被 Toyc 选择性吸收，内部测试停止读取外部仓库 | 分支终点、内容与 Makefile 对照 |
+| 2026-08-04 | Toyc | `a37c4fb`、`410dac6` | Wayland 软件 3D 与 FPS 灰盒作为 GCC/Toyc 双路径真实负载起步 | 提交内容与验证说明 |
+| 2026-08-06 | Toyc | `deecddd` | 游戏首次命名 Rasterfall 并迁入模块化独立目录 | 提交内容与路径变更 |
+| 2026-08-31 | 当前仓库 | `2d7edb7` | Rasterfall 移出 Toyc 自托管应用范围，明确以 GCC 构建为准 | Makefile、README、AGENTS 同步修改 |
+| 2026-09-03 | 当前仓库 | `75a10cd` | 根协作说明转向 Rasterfall，工具链时期说明归档 | 仓库治理入口变更 |
 
-## 尚未定论的边界
+## 分期结论
 
-- Toyc 在 2026-07-24 引入的 Tinylibc 文件对应上游哪个快照，之后两仓是否发生双向同步。
-- Rasterfall 应作为 Toyc 第四时期，还是作为 Toyc 时期内部的第二条项目主线。
+独立 Tinylibc 在 `af6bc30` 后只延续到 7 月 24 日 13:39，`989b938` 后 Toyc 成为唯一可观察维护
+主线。Rasterfall 则从 Toyc 的真实应用验证中长出，8 月形成独立工程，8 月 31 日划出 Toyc 兼容
+范围，9 月 3 日成为仓库治理主线；应视为共享历史和底层设施的新项目，而非编译器第四阶段。
