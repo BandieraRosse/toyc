@@ -31,7 +31,7 @@ Toyc 为主体，同时追溯 Tinylibc 从 SC7 团队操作系统项目分离的
 
 ```text
 SC7（2025 年三人团队操作系统竞赛项目）
-    │  基于 MIT XV6，支持 RISC-V 与 LoongArch
+    │  参考 XV6、XN6 等项目，支持 RISC-V 与 LoongArch
     │  2025-10-17 Tinylibc 根提交说明从 SC7 分离
     ▼
 Tinylibc（项目与代码源头）
@@ -57,12 +57,19 @@ Toyc（“two parents”整合时期）
 ## 时期入口
 
 - [SC7 前史](periods/sc7.md)：团队操作系统竞赛、内核经验与 Tinylibc 的分离背景。
+- [SC7 提交级证据表](evidence/sc7.md)：SC7 的提交锚点、协作边界、冲突记录和待核对象。
 - [Tinylibc 时期](periods/tinylibc.md)：手写阶段、libc/应用生态、仓库内编译器的诞生。
 - [ToyCCompiler 时期](periods/toy-c-compiler.md)：独立仓库、自举、汇编器与链接器闭环。
 - [Toyc 时期](periods/toyc.md)：双重来源、命名统一、Tinylibc 回归及后续扩展。
 - [初步时间线](timeline.md)：跨仓库的关键边界提交。
 - [证据与方法](sources.md)：资料优先级、引用格式、待核问题和复查命令。
 - [关键问题台账](questions.md)：跨会话逐题回答、核查和写入专题文档的工作入口。
+
+## 专题解读
+
+- [SC7 与系统工程的边界](essays/sc7-engineering-boundaries.md)：不重复编年和提交表，而是用
+  架构、接口、内存模型、运行环境和项目范围五类边界，解释这段经历可以支持哪些
+  工程结论，又不能支持哪些自我评价。
 
 ## 当前结论的范围
 
