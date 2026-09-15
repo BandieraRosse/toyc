@@ -5,7 +5,7 @@
 Toyc 直接延续 ToyCCompiler 的 Git 历史，但项目身份不再只是独立编译器。从 2026-07-11 的
 “new beginning, two parents” 开始，自举工具链被放在生态核心，Tinylibc 的库和应用则重新进入
 同一主线。本章覆盖 7 月的初始整合与独立 Tinylibc 终点，并追到 8—9 月 Rasterfall 转向边界；
-工具链其余扩展仍可后续分章。
+工具链其余扩展与核心传承关系不大，不再作为本轮单独分章。
 
 逐提交、跨仓库 blob 对照和选择性复制范围见 [Toyc 初始整合期证据表](../evidence/toyc.md)。
 

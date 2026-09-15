@@ -163,7 +163,7 @@ Claude Code 客户端接入的 DeepSeek API 模型设计。2026-06-30 的 `4670d
 
 7 月 4 日，编译器以 `22ffcc8` 提取为无 Tinylibc Git 祖先的新仓库。Tinylibc 内的 Phase 1、
 自编译、tas、tmake 和测试套件不是 ToyCCompiler 的序章摘要，而是 Tinylibc 自包含愿景真正孕育
-编译器的桥接阶段；准确源码快照和为何舍弃祖先链，将在 ToyCCompiler 时期继续考证。
+编译器的桥接阶段；准确源码快照和独立建仓背景见 [ToyCCompiler 时期](toy-c-compiler.md)。
 
 ## 这一时期说明了什么
 
