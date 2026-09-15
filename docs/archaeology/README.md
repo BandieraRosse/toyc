@@ -59,6 +59,7 @@ Toyc（“two parents”整合时期）
 - [SC7 前史](periods/sc7.md)：团队操作系统竞赛、内核经验与 Tinylibc 的分离背景。
 - [SC7 提交级证据表](evidence/sc7.md)：SC7 的提交锚点、协作边界、冲突记录和待核对象。
 - [Tinylibc 时期](periods/tinylibc.md)：手写阶段、libc/应用生态、仓库内编译器的诞生。
+- [Tinylibc 提交级证据表](evidence/tinylibc.md)：阶段锚点、pthread、网络、文章、AI 工作流与来源边界。
 - [ToyCCompiler 时期](periods/toy-c-compiler.md)：独立仓库、自举、汇编器与链接器闭环。
 - [Toyc 时期](periods/toyc.md)：双重来源、命名统一、Tinylibc 回归及后续扩展。
 - [初步时间线](timeline.md)：跨仓库的关键边界提交。
@@ -73,16 +74,16 @@ Toyc（“two parents”整合时期）
 
 ## 当前结论的范围
 
-当前已完成 SC7 时期的阶段锚点、主要协作边界、关键冲突和 Tinylibc 分离快照核查，并形成时期叙事、
-提交级证据表与工程边界专题。关于 AI 参与强度和个人开发方式，当前依据主要是作者口述；
-提交中的 `Co-Authored-By` 可证明部分提交显式记录了 Claude，但不能单独量化 AI 贡献，也不能
-证明未署名提交没有使用 AI。DeepSeek API 和网页对话的具体使用过程仍需聊天记录、脚本、账单、
-本地日志或作者访谈等材料交叉验证。
+当前已完成 SC7 与 Tinylibc 两个时期的阶段划分、连续叙事和提交级证据表；SC7 另有工程边界专题。
+Tinylibc 已区分课程与兴趣起点、手写终端应用、pthread/论文实验、网络与构建工具、agent 转型和
+编译器冲刺，并纳入作者提供的同期文章。作者确认末期以 Claude Code 为客户端、全部接入 DeepSeek
+API；`Co-Authored-By: Claude` 因而不能证明使用过 Claude 模型，也不能量化贡献或证明未署名提交
+没有使用 AI。具体模型版本、客户端提示词和会话内容仍需配置或日志交叉验证。
 
 ## 下一阶段
 
-- 为 Tinylibc 建立阶段划分，先覆盖编译器出现前的手写主线。
 - 补齐 SC7 外部来源快照、完整赛果和原始测试材料，继续收窄驱动来源与赛事评价的不确定性。
+- 固定 Tinylibc 参考的 musl 快照，核对 syscall、clone/pthread 的文件级来源和许可证边界。
 - 对照 Tinylibc `87d61e0` 附近源码与 ToyCCompiler 根提交，形成文件级来源表。
 - 按提交重建 ToyCCompiler 从最小编译器到 stage-10 收敛的过程。
 - 找出 Toyc 引入 Tinylibc 时的准确源快照，而不只依赖提交说明。
