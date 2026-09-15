@@ -66,9 +66,34 @@ VisionFive 三步重移植及 BSS 修复，第二父线包含 `git help` 等现�
 | 文件相关系统调用 | `e86f184`、`e23f00a`、`8436f13`、`03855b4`、`f0d02af`、`57567e9`、`3df36c0`、`4c92f0f` | 实现或修复路径、目录、链接、偏移、写入限制及测试错误处理 | 作者负责 ext4 内部实现；全部用例持续通过 |
 | VisionFive/2K1000 | `974c487`、`460709c`、`7d99e47`、`5bbdf4d`、`d389233`、`df580fe` | 推进启动、虚拟内存、文件系统和板端适配 | 每项均由作者独立完成 |
 | VisionFive SD | `74aee85`、`df580fe` | 提交说明记录虚拟内存下读写测试正常，代码进入仓库 | 队友协助比例、代码具体来源、长期稳定性 |
-| `tlibc` 用户态 | `e2eef7f` 至 `d2363da`，重点包括 `5aa1cb2`、`4457898` | 逐步加入库构建、Shell、文件操作命令与系统调用封装 | 与独立 Tinylibc 根树完全一致 |
+| `tlibc` 用户态 | `e2eef7f` 至 `d2363da`，重点包括 `5aa1cb2`、`4457898` | 逐步加入库构建、Shell、文件操作命令与系统调用封装；末端子树是独立 Tinylibc 根树的精确来源 | 开发过程中未提交的工作、讨论和外部代码来源 |
 
 说明：旧稿中的 `460709e` 不是有效提交号；公开仓库对应对象为 `460709c`。
+
+### SC7 结论复查入口
+
+下列命令固定当前叙事使用的完整对象，不依赖已删除的赛事分支名：
+
+```sh
+git -C ../SC7 show --stat --summary 524e2ef948f26270a344264a96f62fd519b8c576
+git -C ../SC7 show --stat --summary 64d9400fc491c0be34c4f0e724ca9190bee19070
+git -C ../SC7 show -s --format='%H %P %aI %s' \
+  bcfab951a0dca822064211c7ce3b6cdaa6bde965 \
+  b927bc12480bc4feee0e59c015de4d0c8fe4dcbb \
+  696310e1bf3fa84b7b5a0ba1911ac9cdaefbcb13
+git -C ../SC7 merge-base \
+  1a668a3f165e76aed255b8220ffcd07769491db6 \
+  d2363daedef0a2027978f0a5bb2f4f0f037c4952
+git -C ../SC7 ls-tree -r \
+  d2363daedef0a2027978f0a5bb2f4f0f037c4952 user/include/Tinylibc/
+git -C ../Tinylibc ls-tree -r \
+  fce216ca20d42c15fc89118a7e30d491f1c882e9
+```
+
+最后两条输出用于逐路径比较 SC7 子树与 Tinylibc 根树；比较时去掉前者的
+`user/include/Tinylibc/` 前缀。29 个路径中 26 个 blob ID 相同，其余三个 Markdown 应继续查看
+双方内容，不能只由文件数量推断继承关系。动态链接、多核和驱动来源等结论还需按下文列出的提交链
+分别检查，单条 `show` 输出不足以证明完整因果关系。
 
 ## 团队协作边界
 

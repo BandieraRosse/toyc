@@ -81,8 +81,9 @@ git blame <commit> -- <path>
 ## 待收集材料
 
 - 四个 GitHub 仓库的创建时间、默认分支变化、release、tag、issue 和仓库描述历史。
-- SC7 各比赛阶段的分支、团队分工，以及 `tlibc` 分支与 Tinylibc 的关系。
-- Tinylibc 从 SC7 分离前的代码来源和授权边界。
+- SC7 已删除 `offline` 分支的确切 tip，以及各阶段未进入 Git 的协作与测试材料。
+- XN6、AVX 和 VisionFive SD Rust 实现的固定上游快照、逐文件来源及许可证边界。
+- 2025 年赛事的完整赛果、参赛项目语言和可用于验证项目影响关系的同期材料。
 - 网页端对话的服务、时间范围、保留形式和可公开范围。
 - Claude Code 会话、本地配置、命令历史和显式署名策略。
 - DeepSeek API 调用脚本、模型版本、提示词、输出与费用记录。
