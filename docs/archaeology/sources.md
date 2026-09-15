@@ -17,6 +17,7 @@
 
 | 项目 | 本地路径 | 远端 | 本轮观察到的提交范围 |
 |---|---|---|---|
+| SC7 | `../SC7` | `WHU-SC7/SC7` | `ec37618` 至主分支 `1a668a3`，620 个提交 |
 | Tinylibc | `../Tinylibc` | `WHU-SC7/Tinylibc` | `fce216c` 至 `a566206`，211 个提交 |
 | ToyCCompiler | `../ToyCCompiler` | `BandieraRosse/ToyCCompiler` | `22ffcc8` 至 `58ac389`，96 个提交 |
 | Toyc | `.` | `BandieraRosse/toyc` | `22ffcc8` 至本轮 HEAD `cf8c5cd`，773 个提交 |
@@ -26,6 +27,7 @@
 ## 常用复查命令
 
 ```sh
+git -C ../SC7 log --all --reverse --date=iso-strict
 git -C ../Tinylibc log --reverse --date=iso-strict
 git -C ../ToyCCompiler log --reverse --date=iso-strict
 git log --reverse --date=iso-strict
@@ -43,19 +45,22 @@ git blame <commit> -- <path>
 以下内容来自本计划启动时的作者说明，尚未全部得到外部材料佐证：
 
 - 项目主线为 Tinylibc → ToyCCompiler → Toyc，三个项目存在传承关系。
+- SC7 是作者在 2025 年参加操作系统内核比赛时的团队作品。
 - Tinylibc 主要属于手写时期；学习依赖网页端对话，也复制过部分代码原型，调试和主要开发由
   作者自己进行。
 - ToyCCompiler 时期高强度使用 Claude Code 和 DeepSeek API，并完成自己的 C 编译器。
 - Toyc 保存了大部分提交信息；两个历史项目的公开仓库已克隆在当前仓库上级目录。
+- 整条 C 项目主线体现了作者逐渐深入计算机底层、从 C 编程提升到 C 项目能力，并逐渐使用
+  coding agent 的过程。
 
 后续引用作者口述时应标注访谈日期、问题原文、回答原文或摘要，以及作者是否在事后修订。
 
 ## 待收集材料
 
-- 三个 GitHub 仓库的创建时间、默认分支变化、release、tag、issue 和仓库描述历史。
+- 四个 GitHub 仓库的创建时间、默认分支变化、release、tag、issue 和仓库描述历史。
+- SC7 各比赛阶段的分支、团队分工，以及 `tlibc` 分支与 Tinylibc 的关系。
 - Tinylibc 从 SC7 分离前的代码来源和授权边界。
 - 网页端对话的服务、时间范围、保留形式和可公开范围。
 - Claude Code 会话、本地配置、命令历史和显式署名策略。
 - DeepSeek API 调用脚本、模型版本、提示词、输出与费用记录。
 - 未进入 Git 的失败实现、临时文件、截图、构建日志和二进制产物。
-

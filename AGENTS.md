@@ -5,6 +5,13 @@
 `docs/AGENTS-toyc-history.md`；用户文档和语言特性仍分别以 `README.md`、`README_en.md` 和
 `toyc-c-features.md` 为准。
 
+## 了解 Toyc 历史时
+
+需要了解 SC7、Tinylibc、ToyCCompiler、Toyc 的项目传承、历史时间线或开发方式时，先阅读
+`docs/README.md` 和 `docs/archaeology/README.md`。继续考证具体时期前，再从
+`docs/archaeology/questions.md` 选择问题，并按其中链接进入对应时期文档与证据索引；不要只凭
+当前目录结构、单条提交说明或事后 README 推断历史结论。
+
 ## 开始 Rasterfall 任务前
 
 **阅读代码之前，必须先打开 `rasterfall/docs/README.md`，根据任务类型进入对应模块文档，
