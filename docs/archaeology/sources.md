@@ -19,8 +19,8 @@
 |---|---|---|---|
 | SC7 | `../SC7` | `WHU-SC7/SC7` | `ec37618` 至主分支 `1a668a3`，620 个提交 |
 | Tinylibc | `../Tinylibc` | `WHU-SC7/Tinylibc` | `fce216c` 至 `a566206`，211 个提交 |
-| ToyCCompiler | `../ToyCCompiler` | `BandieraRosse/ToyCCompiler` | `22ffcc8` 至 `58ac389`，96 个提交 |
-| Toyc | `.` | `BandieraRosse/toyc` | `22ffcc8` 至本轮 HEAD `cf8c5cd`，773 个提交 |
+| ToyCCompiler | `../ToyCCompiler` | 上游公开仓库 | `22ffcc8` 至 `58ac389`，96 个提交 |
+| Toyc | `.` | 上游公开仓库 | `22ffcc8` 至本轮 HEAD `cf8c5cd`，773 个提交 |
 
 提交数量和 HEAD 只记录本轮调查现场，后续仓库推进后不作为永久统计结论。
 
@@ -52,6 +52,12 @@ git blame <commit> -- <path>
 - Toyc 保存了大部分提交信息；两个历史项目的公开仓库已克隆在当前仓库上级目录。
 - 整条 C 项目主线体现了作者逐渐深入计算机底层、从 C 编程提升到 C 项目能力，并逐渐使用
   coding agent 的过程。
+
+## 外部赛程材料
+
+- [2025 年内核实现赛道比赛平台记录](https://course.educg.net/pages/contest/contest.jsp?contestCID=0&contestID=R0LIpo5ERIA&my=false&tabDocID=4681822)：记录初赛截止 2025-06-30、决赛阶段和 2025-08-20 的 QEMU/开发板测试安排。
+- [全国大学生操作系统比赛公开信息](https://github.com/oscomp)：记录 2025-06-30 初赛结束和 2025-07-09 决赛名单公布。
+- [赛事通知（地方高校转载）](https://cxcy.ysu.edu.cn/info/1043/2752.htm)：给出决赛阶段 1、阶段 2 的日期切分。
 
 后续引用作者口述时应标注访谈日期、问题原文、回答原文或摘要，以及作者是否在事后修订。
 
