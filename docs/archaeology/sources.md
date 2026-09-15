@@ -83,6 +83,12 @@ git blame <commit> -- <path>
 解析，只能按日期和主题建立候选映射。引用时不大段复制正文，并区分作者同期自述、AI 生成说明和
 对象级事实。
 
+ToyCCompiler 阶段重点阅读 `004_CLAUDE_初稿_bootstrap_self_healing.md`、
+`005_CLAUDE_bootstrap_real_bug_fix.md`、`006_CLAUDE_trusting_trust_bootstrap_security.md` 与
+`007_零依赖自举C编译器完全手册_开篇.md`。004—006 展示同一技术叙述的修订：004 误称收敛能
+排除隐藏后门，005 将结论收窄为 fixed point 不等于正确性，006 明确稳定后门同样会收敛；007 只是
+未完成提纲。它们适合研究同期解释怎样形成，不可替代 stage 脚本的实际调用链。
+
 ## 外部赛程材料
 
 - [2025 年内核实现赛道比赛平台记录](https://course.educg.net/pages/contest/contest.jsp?contestCID=0&contestID=R0LIpo5ERIA&my=false&tabDocID=4681822)：记录初赛截止 2025-06-30、决赛阶段和 2025-08-20 的 QEMU/开发板测试安排。

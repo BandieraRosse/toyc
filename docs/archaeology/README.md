@@ -61,6 +61,7 @@ Toyc（“two parents”整合时期）
 - [Tinylibc 时期](periods/tinylibc.md)：手写阶段、libc/应用生态、仓库内编译器的诞生。
 - [Tinylibc 提交级证据表](evidence/tinylibc.md)：阶段锚点、pthread、网络、文章、AI 工作流与来源边界。
 - [ToyCCompiler 时期](periods/toy-c-compiler.md)：独立仓库、自举、汇编器与链接器闭环。
+- [ToyCCompiler 提交级证据表](evidence/toy-c-compiler.md)：提取来源、stage 语义、种子、工具依赖与复查结果。
 - [Toyc 时期](periods/toyc.md)：双重来源、命名统一、Tinylibc 回归及后续扩展。
 - [初步时间线](timeline.md)：跨仓库的关键边界提交。
 - [证据与方法](sources.md)：资料优先级、引用格式、待核问题和复查命令。
@@ -74,17 +75,19 @@ Toyc（“two parents”整合时期）
 
 ## 当前结论的范围
 
-当前已完成 SC7 与 Tinylibc 两个时期的阶段划分、连续叙事和提交级证据表；SC7 另有工程边界专题。
+当前已完成 SC7、Tinylibc 与 ToyCCompiler 三个时期的阶段划分、连续叙事和提交级证据表；SC7 另有工程边界专题。
 Tinylibc 已区分课程与兴趣起点、手写终端应用、pthread/论文实验、网络与构建工具、agent 转型和
 编译器冲刺，并纳入作者提供的同期文章。作者确认末期以 Claude Code 为客户端、全部接入 DeepSeek
 API；`Co-Authored-By: Claude` 因而不能证明使用过 Claude 模型，也不能量化贡献或证明未署名提交
-没有使用 AI。具体模型版本、客户端提示词和会话内容仍需配置或日志交叉验证。
+没有使用 AI。作者进一步确认为节省费用主要使用 DeepSeek-V4-Flash，仅两天多使用 Pro。ToyCCompiler 已固定
+为从 Tinylibc `87d61e0` 的编译器子树有选择提取，并区分自身编译、可运行下一阶段、多阶段收敛、
+tas/tld 接管以及种子驱动默认构建；独立建仓是为集中上下文先完成自举，并已有之后重新整合
+Tinylibc 的计划。`687ed29` 中“没有 AI”指作者平静后亲手删去自举成功时写下的过度抒情文字。
 
 ## 下一阶段
 
 - 补齐 SC7 外部来源快照、完整赛果和原始测试材料，继续收窄驱动来源与赛事评价的不确定性。
 - 固定 Tinylibc 参考的 musl 快照，核对 syscall、clone/pthread 的文件级来源和许可证边界。
-- 对照 Tinylibc `87d61e0` 附近源码与 ToyCCompiler 根提交，形成文件级来源表。
-- 按提交重建 ToyCCompiler 从最小编译器到 stage-10 收敛的过程。
+- 找回 `fca878f` 前未提交种子与原始 stage 日志，补全最初来源和当时复现记录。
 - 找出 Toyc 引入 Tinylibc 时的准确源快照，而不只依赖提交说明。
 - 建立“作者回忆待访谈”清单，记录工具使用、关键决策、失败尝试与情绪背景。
