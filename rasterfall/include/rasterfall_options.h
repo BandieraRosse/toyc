@@ -46,6 +46,7 @@ struct rasterfall_options {
     int vmd_legacy_root_offset, vmd_legacy_knee_ccd, vmd_skin_trace;
     int performance_iterations, performance_workers;
     int actor_performance, actor_raster_workers;
+    int render_performance;
 };
 
 void rasterfall_options_init(struct rasterfall_options *options,

@@ -1028,6 +1028,7 @@ $(BUILD)/rasterfall_render.o: $(RASTERFALL_SRC)/rasterfall_render.c \
                               $(RASTERFALL_INC)/rasterfall_character.h \
                               $(RASTERFALL_INC)/rasterfall_model.h \
                               $(RASTERFALL_INC)/rasterfall_render_frontend.h \
+                              $(RASTERFALL_SRC)/dev-tests/rasterfall_world_benchmark.inc \
                               $(RASTERFALL_SRC)/dev-tests/rasterfall_actor_benchmark.inc \
                               $(RASTERFALL_SRC)/render/rasterfall_enemy_visual.inc \
                               $(RASTERFALL_SRC)/render/rasterfall_enemy_rig.inc \
@@ -1499,6 +1500,7 @@ $(BUILD)/rasterfall_render_self.o: $(RASTERFALL_SRC)/rasterfall_render.c \
                                    $(RASTERFALL_INC)/rasterfall_actor_animation.h \
                                    $(RASTERFALL_INC)/rasterfall_model.h \
                                    $(RASTERFALL_INC)/rasterfall_render_frontend.h \
+                                   $(RASTERFALL_SRC)/dev-tests/rasterfall_world_benchmark.inc \
                                    $(RASTERFALL_SRC)/dev-tests/rasterfall_actor_benchmark.inc \
                                    $(RASTERFALL_SRC)/render/rasterfall_enemy_visual.inc \
                                    $(RASTERFALL_SRC)/render/rasterfall_enemy_rig.inc \

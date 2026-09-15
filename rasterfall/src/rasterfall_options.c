@@ -93,6 +93,7 @@ void rasterfall_options_usage(int fd)
         "  --model-pose-views <model> <dir> <bind|right-arm|arms|body|rfchar-test>\n"
         "  --model-material-regression <model> <dir>\n"
         "  --model-performance <model> [iterations] [workers]\n"
+        "  --render-performance [iterations] (headless world/enemy cost ablations)\n"
         "  --actor-performance [iterations] [frontend-workers] [raster-workers]\n"
         "  --model-bones <model> [search]  --model-humanoid <model>\n"
         "  --model-humanoid-basis <model>\n"
@@ -190,6 +191,9 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
             if(require_arguments(argc,argv,arg,2,option)<0)return -1;
             o->character_acceptance_model=argv[++arg];
             o->character_acceptance_dir=argv[++arg];
+        } else if (!strcmp(option,"--render-performance")) {
+            o->render_performance=1;
+            if(numeric_argument(argc,argv,arg))o->performance_iterations=positive_int(argv[++arg],o->performance_iterations);
         } else if (!strcmp(option,"--environment-capture")) {
             if(require_arguments(argc,argv,arg,1,option)<0)return -1;
             o->environment_capture_dir=argv[++arg];

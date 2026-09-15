@@ -154,6 +154,7 @@ int rasterfall_render_character_acceptance_capture(const char *model_path,
 int rasterfall_render_environment_capture(const char *output_dir);
 int rasterfall_render_character_world_capture(const char *output_dir,
                                               const char *model_path);
+int rasterfall_render_world_benchmark(int iterations);
 int rasterfall_render_actor_benchmark(int iterations, int frontend_workers,
                                       int raster_workers);
 /* Process-only diagnostic: call before runtime initialization, then exit. */

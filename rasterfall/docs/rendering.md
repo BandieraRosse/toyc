@@ -1,6 +1,7 @@
 # 渲染、HUD、特效与性能
 
-> 文档更新：2026-09-14
+> 文档更新：2026-09-15
+> 源码核对基线补充：2026-09-15 工作区；Render Cost Investigation 冻结；`--render-performance` 提供正常世界压力消融，Game render 内恢复 scene/enemies/raster/overlay 计时及 scene/raster 明细。下一阶段 P0 为 V2 planar interpolated raster fast path。
 > 源码核对基线补充：动漫角色正常 world/展示渲染统一优先 LOD2，缺失时按 LOD1 → 原模型回退；距离仅控制可见性与姿态更新。Campaign Maid 四人内容武器为 AK。
 > 源码核对基线补充：Static World Lighting V2 — FROZEN；64×48、ambient/sun 192/64、contact 8/320 RFU、1024 RFU平面细分保持；契约与验收见 [Phase D](static-world-lighting-phase-d.md)。
 > 源码核对基线补充：Static World Lighting V2 Phase C3：V2 为唯一正常 runtime world-light source；V1 独立 diagnostic owner、显式 fixed override 与统一 scene factor，见 [Phase C3](static-world-lighting-phase-c3.md)。
@@ -453,3 +454,32 @@ renderer 不修改玩法。墙脚、主体、压顶不叠共面大板；扶壁�
 保留原 gallery 无雾策略。gallery 与独立诊断保留专用策略；actors、RFCHAR 和 viewmodel 已在 C2 接入。
 设施由多个实例构件组成，第一版不引入大型 RMESH 细采样；证据和边界见
 [Phase C1](static-world-lighting-phase-c1.md)。`--logic-test` 包含实际模型命令的 scene × form 回归。
+
+
+## 敌人波次性能诊断
+
+`build/rasterfall --render-performance 12 --textures` 使用固定 Campaign 世界与内容，
+在 1280×720 离屏表面比较近／中距离的 0、10、30、60 个普通敌人。保留地图 actor、
+static props 和 Campaign fixture；不运行真实波次。每项预热两帧，随后输出指定帧数的均值。
+入口由 options → Game runtime headless 初始化 → `rasterfall_render_world_benchmark()` 编排，
+实现包含于 `src/dev-tests/rasterfall_world_benchmark.inc`；Linux/self 显式依赖与 Windows
+自动 header 依赖覆盖该文件，不新增编译单元或资源。
+
+`normal` 保留正常 V2；`constant-world` 把 helper world/root 查询替换为 256，
+保留几何和逐像素路径（static RMESH 的直接 sample 仍保留）；`flat-planar` 保留细分，
+仅把无纹理平面的顶点光照路径改为每三角形恒定光照；`no-planar-v2` 关闭平面细分与顶点路径，
+其他 consumer 仍使用 V2；`legacy-enemies` 只替换普通敌人身体；`no-actors` 跳过 AI actor
+提交，地图陈列角色仍保留。这些只用于诊断，不是正常游戏选项，也不启用 V1。
+
+frame 包括世界／实体提交与两次 flush，不含逻辑、begin、截图 IO、present、HUD、
+交互层和战斗 effects；raster 是 flush 墙钟，含命令分类／排序／worker 等待。
+敌人 skin/vertex/body/bones 明细是模型提交计时差值，不能视作所有敌人姿态适配的完整拆分。
+独立 `WORLD-LOGIC` 对同一快照执行 16ms world tick，复制在计时外，排除 session/network/effects；
+不代表持续 AI／导航缓存状态或完整 gameplay 帧。不同消融可能改变遮挡，不应把各项节省简单相加。
+
+真实窗口统计保留 `scene`（动态光照 frame scope 开始、世界与 flags 提交）、`enemies`
+（敌人、队友及 world label 提交）、`raster`（首个世界 flush）、`overlay`（交互、effects、
+viewmodel、HUD 与后续 flush）。`begin` 只拥有 Core frame acquire/clear，`present` 只拥有最终
+Core end/present；两者均在 Game render 外计时。阶段墙钟不重叠；`raster` 的命令、像素与路径
+明细只覆盖首个世界 flush，后续 flush 的墙钟和像素归 `overlay`。
+现场调查记录见 [2026-09-14 开销调查](archive/render-cost-investigation-2026-09-14.md)。

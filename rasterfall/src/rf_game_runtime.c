@@ -2553,9 +2553,11 @@ int rf_game_update(struct rf_game_runtime *runtime,
     return 0;
 }
 
-int rf_game_render(struct rf_game_runtime *runtime,
+static int rf_game_render_profiled(struct rf_game_runtime *runtime,
                    struct toy_renderer *renderer,
-                   struct toy_surface *surface)
+                   struct toy_surface *surface,
+                   struct rasterfall_perf_stats *perf_window,
+                   struct rasterfall_perf_stats *perf_total)
 {
     struct rasterfall_session *game_session;
     struct camera *body_camera;
@@ -2566,6 +2568,10 @@ int rf_game_render(struct rf_game_runtime *runtime,
     struct rasterfall_hud_state hud;
     int pixels = 0;
     int flushed;
+    int64_t perf_start = 0;
+    unsigned long perf_tris = renderer ? renderer->submitted_triangles : 0;
+    unsigned long raster_commands = 0;
+    unsigned long overlay_pixels = 0;
 
     if (!runtime || !runtime->initialized || !runtime->session ||
         !runtime->core || !renderer || !surface)
@@ -2582,11 +2588,20 @@ int rf_game_render(struct rf_game_runtime *runtime,
                                      runtime->managed_third_person);
     rasterfall_effects_apply_camera_shake(&runtime->effects, render_camera);
 
+    if (perf_window) perf_start = rf_core_clock_now_us();
     int local_scene_light = rasterfall_render_begin_dynamic_lighting();
 
     /* World and actor submission order is intentionally unchanged. */
     pixels += rasterfall_render_scene(renderer, render_camera);
     pixels += rasterfall_render_flags(renderer, render_camera);
+    if (perf_window) {
+        struct rasterfall_scene_stats detail;
+        rasterfall_render_scene_stats(&detail);
+        rasterfall_perf_add_scene(perf_window, perf_total, &detail);
+        rasterfall_perf_end_stage(perf_window, perf_total, RASTERFALL_STATS_SCENE,
+            &perf_start, renderer->submitted_triangles-perf_tris, 0);
+        perf_tris=renderer->submitted_triangles;
+    }
     pixels += rasterfall_render_enemies(renderer, render_camera);
     pixels += rasterfall_render_ai_teammate(renderer, render_camera);
     if (runtime->managed_spectator && runtime->managed_third_person)
@@ -2597,10 +2612,23 @@ int rf_game_render(struct rf_game_runtime *runtime,
     pixels += rasterfall_render_sign_text(renderer, render_camera);
     pixels += rasterfall_render_flag_text(renderer, render_camera);
 
+    if (perf_window) {
+        rasterfall_perf_end_stage(perf_window, perf_total, RASTERFALL_STATS_ENEMIES,
+            &perf_start, renderer->submitted_triangles-perf_tris, 0);
+        perf_tris=renderer->submitted_triangles;
+    }
     /* Existing world-to-overlay ordering barrier. */
+    raster_commands = (unsigned long)renderer->cmd_count;
     flushed = rf_core_flush(runtime->core);
     if (flushed < 0) return -1;
     pixels += flushed;
+    if (perf_window) {
+        rasterfall_perf_add_raster(perf_window, perf_total, renderer,
+            raster_commands, (unsigned long)flushed);
+        rasterfall_perf_end_stage(perf_window, perf_total, RASTERFALL_STATS_RASTER,
+            &perf_start, raster_commands, (unsigned long)flushed);
+        perf_tris=renderer->submitted_triangles;
+    }
 
     if (runtime->coordinate_axes)
         rasterfall_render_coordinate_labels(surface, render_camera);
@@ -2614,18 +2642,25 @@ int rf_game_render(struct rf_game_runtime *runtime,
         flushed = rf_core_flush(runtime->core);
         if (flushed < 0) return -1;
         pixels += flushed;
+        overlay_pixels += (unsigned long)flushed;
     }
     rasterfall_render_end_dynamic_lighting();
-    pixels += rasterfall_render_effects(renderer, render_camera);
+    flushed = rasterfall_render_effects(renderer, render_camera);
+    pixels += flushed;
+    overlay_pixels += (unsigned long)flushed;
     if (toy_game_local_player_actor_const(&game_session->game_state)->state !=
-        TOY_GAME_ACTOR_DOWNED)
-        pixels += rasterfall_viewmodel_render(
+        TOY_GAME_ACTOR_DOWNED) {
+        flushed = rasterfall_viewmodel_render(
             renderer, &game_session->game_state, &runtime->effects, local_scene_light);
+        pixels += flushed;
+        overlay_pixels += (unsigned long)flushed;
+    }
 
     /* Existing viewmodel-to-framebuffer ordering barrier. */
     flushed = rf_core_flush(runtime->core);
     if (flushed < 0) return -1;
     pixels += flushed;
+    overlay_pixels += (unsigned long)flushed;
 
     settings.mouse_level = runtime->mouse_level;
     settings.keyboard_level = runtime->keyboard_level;
@@ -2660,7 +2695,9 @@ int rf_game_render(struct rf_game_runtime *runtime,
     rasterfall_render_ai_teammate_name(renderer, render_camera);
     rasterfall_render_network_teammate_status(
         renderer, render_camera, &runtime->net, &game_session->game_state);
-    pixels += rasterfall_render_overlays(renderer);
+    flushed = rasterfall_render_overlays(renderer);
+    pixels += flushed;
+    overlay_pixels += (unsigned long)flushed;
     if (game_session->game_state.state == TOY_GAME_PLAYING &&
         !runtime->lifecycle_paused && !game_session->pose_editor.active &&
         toy_input_down(&runtime->input_frame, KEY_TAB))
@@ -2674,8 +2711,17 @@ int rf_game_render(struct rf_game_runtime *runtime,
         rasterfall_console_draw(surface, &runtime->console);
     else if (runtime->gui.active)
         rf_gui_render(surface, &runtime->gui);
+    if (perf_window)
+        rasterfall_perf_end_stage(perf_window, perf_total, RASTERFALL_STATS_OVERLAY,
+            &perf_start, renderer->submitted_triangles-perf_tris, overlay_pixels);
     runtime->scene_pixels = pixels;
     return pixels;
+}
+
+int rf_game_render(struct rf_game_runtime *runtime, struct toy_renderer *renderer,
+                   struct toy_surface *surface)
+{
+    return rf_game_render_profiled(runtime, renderer, surface, NULL, NULL);
 }
 
 #define effects (*active_effects)
@@ -2969,7 +3015,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
         core_config.height = RASTERFALL_DEFAULT_HEIGHT;
         core_config.input = &platform_input;
         core_config.renderer = &renderer;
-        if ((logic_test || options.environment_capture_dir || options.character_world_capture_dir ?
+        if ((logic_test || options.render_performance || options.environment_capture_dir || options.character_world_capture_dir ?
              rf_core_init_headless(&core, &platform_input, &renderer) :
              rf_core_init_config(&core, &core_config)) < 0) {
             __fprintf(2, "rasterfall: cannot initialize RF Core host\n");
@@ -3077,13 +3123,13 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     settings.keyboard_level = 5;
     rasterfall_render_set_coordinate_axes(coordinate_axes);
     pause_menu.selected = PAUSE_ITEM_RESUME;
-    if (options.environment_capture_dir || options.character_world_capture_dir) seed = 1;
+    if (options.render_performance || options.environment_capture_dir || options.character_world_capture_dir) seed = 1;
     else if (__getrandom(&seed, sizeof(seed), 0) < 0)
         seed = (uint64_t)rf_core_time_us(&core);
     if (seed == 0) seed = 1;
     rasterfall_session_reset(&session, &camera, seed);
     rf_windows_log("startup: session reset");
-    if ((options.environment_capture_dir || options.character_world_capture_dir) &&
+    if ((options.render_performance || options.environment_capture_dir || options.character_world_capture_dir) &&
         session.world_id != RASTERFALL_WORLD_RETURN_TO_WHU_V0 &&
         rf_game_request_world(&game_runtime, RASTERFALL_WORLD_CAMPAIGN_01) < 0) {
         if (model_texture.blob) toy_texture_unload(&model_texture);
@@ -3091,8 +3137,10 @@ int rf_game_runtime_run(const struct rf_game_config *config)
         rf_core_shutdown(&core);
         return 1;
     }
-    if (options.character_world_capture_dir || options.environment_capture_dir) {
-        int capture_result = options.environment_capture_dir ?
+    if (options.render_performance || options.character_world_capture_dir || options.environment_capture_dir) {
+        int capture_result = options.render_performance ?
+            rasterfall_render_world_benchmark(performance_iterations) :
+            options.environment_capture_dir ?
             rasterfall_render_environment_capture(options.environment_capture_dir) :
             rasterfall_render_character_world_capture(
             options.character_world_capture_dir,
@@ -3246,10 +3294,8 @@ startup_again:
     rasterfall_perf_init(&stats_total);
     while (running && !rf_core_should_exit(&core)) {
         int64_t now, elapsed, t_frame, t_stage;
-        unsigned long prev_tris;
         int logic_steps = 0;
         int resumed = 0;
-        int stage_pixels;
         int ready;
         static int logged_first_frame;
         unsigned char game_events[TOY_GAME_MAX_EVENTS];
@@ -3886,17 +3932,14 @@ startup_again:
             game_runtime.have_last_key = have_last_key;
             game_runtime.input_event_count = input_event_count;
             game_runtime.console = developer_console;
-            if (rf_game_render(&game_runtime, &renderer, &surface) < 0) {
+            if (rf_game_render_profiled(&game_runtime, &renderer, &surface,
+                                        &stats, &stats_total) < 0) {
                 __fprintf(2,
                     "rasterfall: skipped frame after renderer watchdog timeout\n");
                 continue;
             }
             scene_pixels = game_runtime.scene_pixels;
-            prev_tris = renderer.submitted_triangles;
-            stage_pixels = 0;
-            rasterfall_perf_end_stage(&stats, &stats_total, RASTERFALL_STATS_OVERLAY,
-                           &t_stage, renderer.submitted_triangles - prev_tris,
-                           (unsigned long)stage_pixels);
+            t_stage = rf_core_time_us(&core);
             present_result = rf_core_end_frame(&core);
             if (present_result < 0) break;
             rasterfall_perf_end_stage(&stats, &stats_total, RASTERFALL_STATS_PRESENT,

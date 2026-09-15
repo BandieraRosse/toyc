@@ -227,6 +227,8 @@ static int diagnostic_world_lighting_v1_ready;
 static int active_diagnostic_world_light_v1;
 static void prepare_diagnostic_world_light_v1(void);
 static int active_world_light_v2;
+/* Process-local headless benchmark ablations; always zero in gameplay. */
+static int diagnostic_no_planar_v2, diagnostic_constant_world, diagnostic_flat_planar;
 static int active_textures;
 static int active_floor_submission;
 static int active_diagnostic_fixed_lighting;
@@ -2043,7 +2045,7 @@ static int render_static_props(struct toy_renderer *renderer,
         instance.yaw_degrees = map_prop->yaw_degrees;
         instance.scale_milli = map_prop->scale_milli;
         instance.length = map_prop->length;
-        active_world_light_v2 = active_session->map_ops.runtime_loaded &&
+        active_world_light_v2 = !diagnostic_no_planar_v2 && active_session->map_ops.runtime_loaded &&
             instance.asset_id == RASTERFALL_PROP_ASSET_BOUNDARY_WALL;
         /* Only normal map RMESH consumes the field here. Keep the model's
          * gallery/form/material policy, and avoid V2 planar vertex sampling
@@ -2744,6 +2746,7 @@ static void render_gallery_selection(struct toy_surface *surface,
 /* Renderer adapter: world sampling has no gallery/material/fog policy. */
 static int world_brightness_at(int x, int y, int z)
 {
+    if (diagnostic_constant_world) return 256;
     if (active_diagnostic_world_light_v1 && !active_world_light_v2)
         return rasterfall_diagnostic_world_light_q8(
             rasterfall_diagnostic_world_light_at_v1(&diagnostic_world_lighting_v1,x,y,z));
@@ -2754,6 +2757,7 @@ static int world_brightness_at(int x, int y, int z)
 static int dynamic_scene_light(int x, int ground_y, int z)
 {
     if (active_dynamic_world_lighting) dynamic_world_light_queries++;
+    if (diagnostic_constant_world) return active_dynamic_world_lighting ? 256 : -1;
     return active_dynamic_world_lighting ? rasterfall_world_light_v2_q8(
         rasterfall_world_light_at(active_world_lighting, x, -900 + ground_y, z)) : -1;
 }
@@ -3020,7 +3024,7 @@ static int draw_world_triangle_views(struct toy_renderer *renderer,
         world_to_view(camera, b, &input[1]);
         world_to_view(camera, c, &input[2]);
     }
-    if (active_world_light_v2) {
+    if (active_world_light_v2 && !diagnostic_flat_planar) {
         const struct vec3 *world[3] = {a,b,c};
         for (int k = 0; k < 3; k++) {
             light_input[k].p = input[k];
@@ -3086,7 +3090,7 @@ static int draw_world_triangle_views(struct toy_renderer *renderer,
         /* 区域涂色（floor_submission）与地砖仅差 6 个世界单位，掠射角下
          * 插值深度误差会盖过真实差值导致 z-fight；涂色按覆盖层绘制，
          * 依赖"地砖先画、墙后画"的记录顺序保证遮挡正确。 */
-        if (active_world_light_v2) {
+        if (active_world_light_v2 && !diagnostic_flat_planar) {
             sa.light = light_clipped[0].light;
             sb.light = light_clipped[reversed ? i+1 : i].light;
             sc.light = light_clipped[reversed ? i : i+1].light;
@@ -4717,7 +4721,7 @@ static int render_scene(struct toy_renderer *renderer, const struct camera *came
     phase_start = render_monotonic_us();
     /* 自由俯仰下先铺天空/地面：地平线由俯仰角决定，墙面与地板随后覆盖 */
     rasterfall_sky_draw(&renderer->surface, camera);
-    active_world_light_v2 = active_session->map_ops.runtime_loaded;
+    active_world_light_v2 = !diagnostic_no_planar_v2 && active_session->map_ops.runtime_loaded;
     floor_submission = 1;
     pixels += draw_partitioned_floor(renderer, camera);
     floor_submission = 0;
@@ -4727,7 +4731,7 @@ static int render_scene(struct toy_renderer *renderer, const struct camera *came
     phase_start = render_monotonic_us();
     for (int i=0; i<level_map.draw_count; i++) {
         struct toy_map_draw *x=&level_map.draw[i];
-        active_world_light_v2 = active_session->map_ops.runtime_loaded &&
+        active_world_light_v2 = !diagnostic_no_planar_v2 && active_session->map_ops.runtime_loaded &&
             (x->type == TOY_MAP_DRAW_WALL || x->type == TOY_MAP_DRAW_TEXTURE ||
              x->type == TOY_MAP_DRAW_RAMP || x->type == TOY_MAP_DRAW_PLATFORM ||
              x->type == TOY_MAP_DRAW_BOX);
@@ -8018,3 +8022,5 @@ int rasterfall_render_overlays(struct toy_renderer *renderer)
 }
 
 #include "dev-tests/rasterfall_enemy_visual_capture.inc"
+
+#include "dev-tests/rasterfall_world_benchmark.inc"
