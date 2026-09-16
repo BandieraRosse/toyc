@@ -73,7 +73,12 @@ NVIDIA RTX 3050 Laptop GPU，discrete-first 策略明确选择 NVIDIA，compute/
 Windows 当次观测为 upload 0.005 ms、submit 0.260 ms、execution-wait 0.134 ms、readback
 0.002 ms；total 233.853 ms 包含资源、descriptor 与 pipeline 首次创建，不能当作稳态 dispatch
 耗时。探针尚未建立 surface 或 swapchain，也没有接入正常 Rasterfall 可执行文件。下一步应先
-定义 optional/required fallback policy，再把实现收敛为 RF Core 持有的 GPU service。
+GPU-2A 已新增 `rasterfall/include/rf_gpu.h` 与 `rasterfall/src/rf_gpu.c`：RF Core 现在持有
+平台无关 GPU service，拥有 disabled/optional/required policy、明确的 unavailable/failed/ready
+状态、只读 adapter snapshot 和 backend shutdown 生命周期。`make gpu-service-test` 验证 optional
+fallback、required failure 与 READY-only shutdown。正常游戏仍显式 disabled，CPU renderer 不变。
+下一步 GPU-2B 是把本文件中的 Vulkan instance/device/queue 实现从 probe 拆成持久 backend；在此
+完成前，不能把 GPU-2 或正常 runtime Vulkan 接入标为完成。
 
 ## 注意事项
 

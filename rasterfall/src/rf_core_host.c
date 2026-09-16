@@ -28,9 +28,17 @@ int rf_core_init(struct rf_core *core, const char *title, int width, int height,
 int rf_core_init_config(struct rf_core *core,
                         const struct rf_core_config *config)
 {
+    int result;
     if (!config) return -1;
-    return rf_core_init(core, config->title, config->width, config->height,
-                        config->input, config->renderer);
+    result = rf_core_init(core, config->title, config->width, config->height,
+                          config->input, config->renderer);
+    if (result < 0) return result;
+    if (rf_gpu_init(&core->gpu, config->gpu_policy, config->gpu_backend,
+                    config->gpu_backend_context) < 0) {
+        rf_core_shutdown(core);
+        return -1;
+    }
+    return 0;
 }
 
 int rf_core_init_headless(struct rf_core *core, struct toy_input *input,
@@ -99,6 +107,7 @@ int rf_core_flush(struct rf_core *core)
 void rf_core_shutdown(struct rf_core *core)
 {
     if (!core) return;
+    rf_gpu_shutdown(&core->gpu);
     if (core->audio_ready) toy_audio_close(&core->audio);
     if (core->window) toy_window_close(core->window);
     if (core->renderer) toy_renderer_destroy(core->renderer);
@@ -171,7 +180,16 @@ int rf_core_get_status(const struct rf_core *core,
     status->filesystem_ready = core->filesystem.initialized;
     status->audio_ready = core->audio_ready;
     status->clock_ready = core->initialized;
+    status->gpu_ready = core->gpu.state == RF_GPU_STATE_READY;
+    status->gpu_policy = core->gpu.policy;
+    status->gpu_state = core->gpu.state;
     return 0;
+}
+
+int rf_core_get_gpu_status(const struct rf_core *core,
+                           struct rf_gpu_status *status)
+{
+    return core ? rf_gpu_get_status(&core->gpu, status) : -1;
 }
 
 struct toy_window *rf_core_window(struct rf_core *core) { return core ? core->window : NULL; }

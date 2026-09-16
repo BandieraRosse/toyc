@@ -1,7 +1,7 @@
 # RF Core Runtime V0.2 查询面设计
 
-> 文档更新：2026-09-11
-> 源码核对基线：工作区（Core status query、service access cleanup、Input view、runtime facade、Runtime Facade Authority audit；RF Command Runtime V0 status command；RF Terminal Frontend Prototype V0 session/frontend）
+> 文档更新：2026-09-16
+> 源码核对基线：工作区（Core status query、service access cleanup、Input view、runtime facade、Runtime Facade Authority audit；RF Command Runtime V0 status command；RF Terminal Frontend Prototype V0 session/frontend；GPU-2A Core-owned service contract 与 fallback policy）
 
 本文只定义前哨站 GUI、游戏内 Terminal 和 Super Terminal 的后续读取边界，不实现任何 UI、
 terminal、IPC 或额外进程。
@@ -10,13 +10,18 @@ terminal、IPC 或额外进程。
 
 | 查询对象 | 入口 | 所有者 | 允许内容 |
 | --- | --- | --- | --- |
-| Core service | `rf_core_get_status()` | `struct rf_core` | 版本/构建标识、window、renderer、filesystem、audio、clock ready 状态 |
+| Core service | `rf_core_get_status()` | `struct rf_core` | 版本/构建标识、window、renderer、filesystem、audio、clock、GPU 概要状态 |
+| GPU service | `rf_core_get_gpu_status()` | `struct rf_core` 内的 `rf_gpu` | policy/state、adapter 定宽摘要与错误信息；不暴露 Vulkan handle |
 | Game runtime | `rf_game_runtime_get_status()` | `struct rf_game_runtime` | runtime initialized/running/paused、session active、network mode、本地玩家摘要 |
 | Active session | `rf_game_runtime_status.session_active` | `rf_game_runtime` | 是否存在活动 session；不转移 session 所有权 |
 | Local player | `rasterfall_session_local_player_const()` | `rasterfall_session` / `toy_game` | 只读 player actor access point；调用方不得写入或缓存为第二份真值 |
 
 Core status 和 runtime status 应由上层分别查询后组合。Core service 状态不应复制到 Game，
 玩家状态不应写入 Core。所有入口都是无副作用查询；返回的指针只借用当前 session 生命周期。
+
+GPU-2A 的 service policy 为 disabled / optional / required。optional 初始化不可用或失败时 Core 保持
+可用并继续 CPU renderer；required 返回初始化失败；disabled 不触碰 backend。当前正常游戏显式
+disabled，Vulkan backend 尚未从 hosted probe 拆入。Game 不读取任何 Vulkan 对象。
 
 RF Command Runtime V0 的 `status` 命令是一个组合消费者：通过 `rf_command_context` 获取 Core 与 Game
 runtime，再分别调用上述 snapshot API。命令层不暴露或缓存 Core service、runtime、session 或 actor 的内部指针。

@@ -13,12 +13,12 @@
 | GPU-0 Vulkan Probe | 已完成 | 自有最小 Vulkan 1.0 ABI、动态 loader、adapter / device / queue 生命周期 |
 | GPU-0.5 Windows Hardware Bring-up | 已完成 | Windows 原生枚举 AMD integrated 与 NVIDIA RTX 3050 Laptop GPU，discrete-first 选中 NVIDIA |
 | GPU-1 Compute Ownership | 已完成 | WSL llvmpipe 与 Windows RTX 3050 均通过 storage-buffer compute/readback：`1 2 3 4 -> 4 7 10 13` |
-| GPU-2 RF GPU Core Service | 下一任务 | 先定义 optional/required fallback policy，再将 hosted 实验代码收敛为 Core-owned service |
+| GPU-2 RF GPU Core Service | 进行中（2A 完成） | Core-owned service contract、optional/required policy、状态查询与生命周期已落地；下一步为持久 Vulkan backend |
 | Windows Native Platform | 未开始 | 正常 Windows Rasterfall 仍使用 MinGW + SDL2，本阶段未改窗口、输入、音频或 presentation |
 
 当前边界：
 
-* GPU probe 仍是独立 hosted 工具，未接入 RF Core、Game、window 或 renderer；
+* GPU probe 仍是独立 hosted 工具；Core 已拥有平台无关 `rf_gpu` service，但 Vulkan backend 尚未从 probe 拆入；
 * CPU renderer 仍是唯一正常游戏渲染路径；
 * 尚无 GPU framebuffer、raster command ABI、surface 或 swapchain；
 * Windows `total` 首次观测包含 resource / descriptor / pipeline 创建，不作为稳态 GPU 性能结论。
@@ -418,6 +418,14 @@ total
 ---
 
 # 8. GPU Phase 2 — RF GPU Core Service
+
+> 实现状态（2026-09-16）：**GPU-2A 已完成，GPU-2B 待完成。** `rf_gpu` 已由
+> `struct rf_core` 持有，定义 disabled / optional / required policy、disabled /
+> unavailable / ready / failed 状态、无 Vulkan 类型的 adapter/status snapshot、backend
+> 生命周期与逆序 shutdown。optional backend 缺失或失败时继续 CPU renderer；required
+> 返回启动失败。正常 Rasterfall 当前显式使用 disabled，Vulkan probe 仍是 hosted 独立程序。
+> `make gpu-service-test` 覆盖 policy、失败分类与 READY-only shutdown。GPU-2B 必须把 probe
+> 中 Vulkan instance/device/queue 的持久 ownership 收敛为 backend，之后才能宣告 GPU-2 完成。
 
 经过 probe 和 compute smoke 验证后，再把实验代码收敛为正式 Core service。
 

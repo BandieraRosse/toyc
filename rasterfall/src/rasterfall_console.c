@@ -133,7 +133,12 @@ static int command_status(const struct rf_command_context *context,
            core_status.clock_ready ? "ready" : "not-ready",
            core_status.audio_ready ? "ready" : "not-ready",
            core_status.initialized ? "yes" : "no");
-  out(output, line); out(output, "GAME");
+  out(output, line);
+  snprintf(line, sizeof(line), "  gpu=%s policy=%s",
+           rf_gpu_state_name(core_status.gpu_state),
+           rf_gpu_policy_name(core_status.gpu_policy));
+  out(output, line);
+  out(output, "GAME");
   snprintf(line, sizeof(line), "  runtime=%s running=%s paused=%s session=%s network=%d",
            game_status.initialized ? "initialized" : "not-initialized",
            game_status.running ? "yes" : "no", game_status.paused ? "yes" : "no",
@@ -188,6 +193,10 @@ static int command_services(const struct rf_command_context *context,
            status.audio_ready ? "ready" : "not-ready",
            status.clock_ready ? "ready" : "not-ready",
            status.initialized ? "yes" : "no");
+  out(output, line);
+  snprintf(line, sizeof(line), "  gpu=%s policy=%s",
+           rf_gpu_state_name(status.gpu_state),
+           rf_gpu_policy_name(status.gpu_policy));
   out(output, line);
   return 0;
 }

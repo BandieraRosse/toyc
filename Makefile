@@ -781,7 +781,7 @@ APP_TARGETS := $(foreach name,$(APP_NAMES),$(BUILD)/$(name))
 RASTERFALL_ASSET_FILES := $(shell find $(RASTERFALL_DIR)/assets -type f -print)
 RASTERFALL_ASSET_SRC := $(BUILD)/rasterfall_assets.c
 RASTERFALL_ASSET_OBJ := $(BUILD)/rasterfall_assets.o
-APP_EXTRA_OBJS_rasterfall := $(BUILD)/rf_core_filesystem.o $(BUILD)/rf_core_host.o $(BUILD)/rf_game_lifecycle.o $(BUILD)/rf_game_runtime.o $(BUILD)/rasterfall_action.o $(BUILD)/rasterfall_character.o $(BUILD)/rasterfall_roster.o $(BUILD)/rasterfall_prop.o $(BUILD)/rasterfall_game.o $(BUILD)/rasterfall_sfx.o $(BUILD)/rasterfall_map_engine.o $(BUILD)/rasterfall_map.o $(BUILD)/rasterfall_map_runtime.o $(BUILD)/rasterfall_map_components.o $(BUILD)/rasterfall_map_parser.o $(BUILD)/rasterfall_session.o $(BUILD)/rasterfall_ai.o $(BUILD)/rasterfall_net.o $(BUILD)/rasterfall_net_transport.o $(BUILD)/rasterfall_net_discovery.o $(BUILD)/rasterfall_hud.o $(BUILD)/rasterfall_audio.o $(BUILD)/rasterfall_effects.o $(BUILD)/rasterfall_perf.o $(BUILD)/rasterfall_sky.o $(BUILD)/rasterfall_viewmodel.o $(BUILD)/rasterfall_calibration.o $(BUILD)/rasterfall_console.o $(BUILD)/rasterfall_options.o $(BUILD)/rasterfall_render.o $(BUILD)/rasterfall_render_frontend.o $(BUILD)/rasterfall_model.o $(BUILD)/rasterfall_humanoid_basis.o $(BUILD)/rasterfall_humanoid_retarget.o $(BUILD)/rasterfall_glb_animation.o $(BUILD)/rasterfall_vmd.o $(BUILD)/rasterfall_world_light.o
+APP_EXTRA_OBJS_rasterfall := $(BUILD)/rf_core_filesystem.o $(BUILD)/rf_gpu.o $(BUILD)/rf_core_host.o $(BUILD)/rf_game_lifecycle.o $(BUILD)/rf_game_runtime.o $(BUILD)/rasterfall_action.o $(BUILD)/rasterfall_character.o $(BUILD)/rasterfall_roster.o $(BUILD)/rasterfall_prop.o $(BUILD)/rasterfall_game.o $(BUILD)/rasterfall_sfx.o $(BUILD)/rasterfall_map_engine.o $(BUILD)/rasterfall_map.o $(BUILD)/rasterfall_map_runtime.o $(BUILD)/rasterfall_map_components.o $(BUILD)/rasterfall_map_parser.o $(BUILD)/rasterfall_session.o $(BUILD)/rasterfall_ai.o $(BUILD)/rasterfall_net.o $(BUILD)/rasterfall_net_transport.o $(BUILD)/rasterfall_net_discovery.o $(BUILD)/rasterfall_hud.o $(BUILD)/rasterfall_audio.o $(BUILD)/rasterfall_effects.o $(BUILD)/rasterfall_perf.o $(BUILD)/rasterfall_sky.o $(BUILD)/rasterfall_viewmodel.o $(BUILD)/rasterfall_calibration.o $(BUILD)/rasterfall_console.o $(BUILD)/rasterfall_options.o $(BUILD)/rasterfall_render.o $(BUILD)/rasterfall_render_frontend.o $(BUILD)/rasterfall_model.o $(BUILD)/rasterfall_humanoid_basis.o $(BUILD)/rasterfall_humanoid_retarget.o $(BUILD)/rasterfall_glb_animation.o $(BUILD)/rasterfall_vmd.o $(BUILD)/rasterfall_world_light.o
 RASTERFALL_OPT_DEP := $(BUILD)/.rasterfall-opt
 APP_EXTRA_OBJS_rasterfall += $(BUILD)/rasterfall_world_content.o
 APP_EXTRA_OBJS_rasterfall += $(BUILD)/rasterfall_gui.o
@@ -813,6 +813,10 @@ $(BUILD)/rf_core_filesystem.o: rasterfall/src/rf_core_filesystem.c rasterfall/in
 	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 
 $(BUILD)/rf_core_host.o: rasterfall/src/rf_core_host.c rasterfall/include/rf_core_host.h rasterfall/include/rf_core_input.h | $(BUILD)
+	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
+	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
+
+$(BUILD)/rf_gpu.o: rasterfall/src/rf_gpu.c rasterfall/include/rf_gpu.h | $(BUILD)
 	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
 	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 
@@ -1170,9 +1174,14 @@ wayland_fps: $(BUILD)/wayland_fps
 # Hosted, SDK-free Vulkan discovery tool.  This target intentionally stays
 # outside the freestanding Rasterfall link until the optional Core GPU service
 # has a stable ABI and fallback policy.
-.PHONY: gpu-probe win-gpu-probe
+.PHONY: gpu-probe gpu-service-test win-gpu-probe
 gpu-probe: $(BUILD)/rf-gpu-probe
+gpu-service-test: $(BUILD)/rf-gpu-service-test
 win-gpu-probe: $(BUILD)/rf-gpu-probe.exe
+
+$(BUILD)/rf-gpu-service-test: gpu/src/rf_gpu_service_test.c rasterfall/src/rf_gpu.c rasterfall/include/rf_gpu.h | $(BUILD)
+	$(GCC) -std=c11 -O2 -Wall -Wextra -Werror -I rasterfall/include \
+		gpu/src/rf_gpu_service_test.c rasterfall/src/rf_gpu.c -o $@
 
 $(BUILD)/rf-gpu-probe: gpu/src/rf_gpu_probe.c gpu/include/rf_vulkan_min.h | $(BUILD)
 	$(GCC) -std=c11 -O2 -Wall -Wextra -Werror -I gpu/include $< -ldl -o $@

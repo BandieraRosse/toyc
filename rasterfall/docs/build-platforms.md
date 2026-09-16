@@ -1,6 +1,7 @@
 # 构建、平台与验证
 
 > 文档更新：2026-09-16
+> 源码核对基线补充：GPU-2A 已建立 Core-owned `rf_gpu` 服务契约、disabled/optional/required fallback policy、状态快照与 backend 生命周期；Linux/Windows 正常构建已接入平台无关服务，但正常 runtime 显式 disabled，Vulkan backend 仍待从 hosted probe 拆分。
 > 源码核对基线补充：GPU Phase 1 hosted probe 已覆盖 Linux/Windows 共用的 storage-buffer compute、descriptor/pipeline、command/fence 与 readback 校验，并采用 discrete-first adapter selection；WSL llvmpipe 与 Windows RTX 3050 compute/readback 均已通过；正常 freestanding Rasterfall 和 Windows 游戏构建未接入 GPU。
 > 源码核对基线补充：Windows 启动地图加载的容量型 Map IR 改为临时堆分配，成功与失败均释放；不依赖扩大线程栈，详见 map-format.md 的 Runtime Bridge。
 > 源码核对基线补充：Static World Lighting V2 Phase D Linux GCC freestanding / Windows MinGW 构建通过；Linux headless capture 验收，Windows仅build，Wayland交互环境不可用，见 [Phase D](static-world-lighting-phase-d.md)。
@@ -52,6 +53,12 @@ readback verification 的完整最小闭环。它没有 surface 或 swapchain。
 包含首次 descriptor/pipeline/command resource 创建，不代表稳态 GPU dispatch 时间。
 后续 GPU service 接入 Core 前必须继续保持正常 CPU renderer 为默认路径，并为 loader/device
 不可用定义可复核的 fallback。
+
+GPU-2A 已将 fallback 语义固化在 `rf_gpu`：optional 对 unavailable/failed 返回成功并保留状态，
+required 对两者返回失败，disabled 不调用 backend；只有 READY backend 会在 Core shutdown 时释放。
+`rf_core_get_status()` 提供概要状态，`rf_core_get_gpu_status()` 提供 adapter/message snapshot，均不暴露
+Vulkan handle。当前正常 runtime 显式 disabled；`make gpu-service-test` 是该契约的 hosted 门禁。
+GPU-2B 仍需把 probe 的 Vulkan ownership 拆为持久 backend。
 
 ## 改文件列表时
 

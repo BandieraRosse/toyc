@@ -3025,6 +3025,9 @@ int rf_game_runtime_run(const struct rf_game_config *config)
         core_config.height = RASTERFALL_DEFAULT_HEIGHT;
         core_config.input = &platform_input;
         core_config.renderer = &renderer;
+        core_config.gpu_policy = RF_GPU_POLICY_DISABLED;
+        core_config.gpu_backend = NULL;
+        core_config.gpu_backend_context = NULL;
         if ((logic_test || options.render_performance || options.environment_capture_dir || options.character_world_capture_dir ?
              rf_core_init_headless(&core, &platform_input, &renderer) :
              rf_core_init_config(&core, &core_config)) < 0) {

@@ -6,6 +6,7 @@
 #include "toy_renderer.h"
 #include "toy_window.h"
 #include "rf_core_filesystem.h"
+#include "rf_gpu.h"
 #include "rf_core_input.h"
 
 /* The single V0 Core context.  The game may borrow the objects through the
@@ -17,6 +18,7 @@ struct rf_core {
     struct toy_surface surface;
     struct toy_renderer *renderer;
     struct rf_core_filesystem filesystem;
+    struct rf_gpu gpu;
     struct toy_audio audio;
     int audio_ready;
     int exit_requested;
@@ -37,6 +39,9 @@ struct rf_core_status {
     int filesystem_ready;
     int audio_ready;
     int clock_ready;
+    int gpu_ready;
+    int gpu_policy;
+    int gpu_state;
 };
 
 /* Compatibility name for the future public context spelling.  This is an
@@ -49,6 +54,9 @@ struct rf_core_config {
     int height;
     struct toy_input *input;
     struct toy_renderer *renderer;
+    enum rf_gpu_policy gpu_policy;
+    const struct rf_gpu_backend *gpu_backend;
+    void *gpu_backend_context;
 };
 
 int rf_core_init(struct rf_core *core, const char *title, int width, int height,
@@ -73,6 +81,8 @@ int rf_core_get_input_frame(const struct rf_core *core,
                             struct rf_input_frame *frame);
 int rf_core_get_status(const struct rf_core *core,
                        struct rf_core_status *status);
+int rf_core_get_gpu_status(const struct rf_core *core,
+                           struct rf_gpu_status *status);
 
 struct toy_window *rf_core_window(struct rf_core *core);
 struct toy_window_events *rf_core_events(struct rf_core *core);
