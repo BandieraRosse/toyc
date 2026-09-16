@@ -8,6 +8,7 @@ tools/.map-layout-fonts/**
 .vscode/*
 tmp/**
 .claude/**
+/local/agent-history/
 # Git worktrees created inside the repository.
 .worktrees/
 # Python bytecode caches at any directory depth.
