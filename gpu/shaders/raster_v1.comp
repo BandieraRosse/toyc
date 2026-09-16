@@ -1,0 +1,118 @@
+#version 450
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+
+#ifndef RF_RASTER_LOCAL_SIZE
+#define RF_RASTER_LOCAL_SIZE 16
+#endif
+
+layout(local_size_x = RF_RASTER_LOCAL_SIZE,
+       local_size_y = RF_RASTER_LOCAL_SIZE,
+       local_size_z = 1) in;
+
+/* GPU-4 is a frozen little-endian byte ABI.  Read it as 32-bit words so the
+ * shader never depends on a GLSL structure layout matching a C structure. */
+layout(set = 0, binding = 0, std430) readonly buffer CommandStream {
+    uint words[];
+} stream;
+layout(set = 0, binding = 1, std430) writeonly buffer ColorBuffer {
+    uint pixels[];
+} color_out;
+layout(set = 0, binding = 2, std430) writeonly buffer DepthBuffer {
+    int values[];
+} depth_out;
+
+const uint HEADER_WORDS = 8u;
+const uint COMMAND_WORDS = 24u;
+const uint CMD_CLEAR_COLOR = 1u;
+const uint CMD_CLEAR_DEPTH = 2u;
+const uint CMD_FLAT_TRIANGLE = 3u;
+
+int64_t s64(uint low, uint high)
+{
+    uint64_t bits = uint64_t(low) | (uint64_t(high) << 32);
+    return int64_t(bits);
+}
+
+int64_t edge(int ax, int ay, int bx, int by, int px, int py)
+{
+    return (int64_t(px) - int64_t(ax)) * (int64_t(by) - int64_t(ay)) -
+           (int64_t(py) - int64_t(ay)) * (int64_t(bx) - int64_t(ax));
+}
+
+uint shade(uint packed, int light, int fog)
+{
+    int r = int((packed >> 16) & 255u);
+    int g = int((packed >> 8) & 255u);
+    int b = int(packed & 255u);
+    light = clamp(light, 0, 384);
+    r = min(r * light / 256, 255);
+    g = min(g * light / 256, 255);
+    b = min(b * light / 256, 255);
+    fog = clamp(fog, 0, 256);
+    r = (r * (256 - fog) + 28 * fog) / 256;
+    g = (g * (256 - fog) + 33 * fog) / 256;
+    b = (b * (256 - fog) + 40 * fog) / 256;
+    return 0xff000000u | (uint(r) << 16) | (uint(g) << 8) | uint(b);
+}
+
+void main()
+{
+    uint x = gl_GlobalInvocationID.x;
+    uint y = gl_GlobalInvocationID.y;
+    uint width = stream.words[5];
+    uint height = stream.words[6];
+    if (x >= width || y >= height)
+        return;
+
+    uint color = 0xff000000u;
+    int depth = 0;
+    uint command_count = stream.words[4];
+    for (uint command_index = 0u; command_index < command_count;
+         ++command_index) {
+        uint base = HEADER_WORDS + command_index * COMMAND_WORDS;
+        uint kind = stream.words[base];
+        if (kind == CMD_CLEAR_COLOR) {
+            color = stream.words[base + 4u] | 0xff000000u;
+        } else if (kind == CMD_CLEAR_DEPTH) {
+            depth = int(stream.words[base + 4u]);
+        } else if (kind == CMD_FLAT_TRIANGLE) {
+            int minx = int(stream.words[base + 15u]);
+            int maxx = int(stream.words[base + 16u]);
+            int miny = int(stream.words[base + 17u]);
+            int maxy = int(stream.words[base + 18u]);
+            if (int(x) < minx || int(x) > maxx ||
+                int(y) < miny || int(y) > maxy)
+                continue;
+            int ax = int(stream.words[base + 6u]);
+            int ay = int(stream.words[base + 7u]);
+            int bx = int(stream.words[base + 9u]);
+            int by = int(stream.words[base + 10u]);
+            int cx = int(stream.words[base + 12u]);
+            int cy = int(stream.words[base + 13u]);
+            int64_t area = s64(stream.words[base + 4u],
+                               stream.words[base + 5u]);
+            /* Valid GPU-4 streams reject zero/positive area.  Keep the guard
+             * here as a final defense against division by zero. */
+            if (area >= int64_t(0))
+                continue;
+            int64_t e0 = edge(bx, by, cx, cy, int(x), int(y));
+            int64_t e1 = edge(cx, cy, ax, ay, int(x), int(y));
+            int64_t e2 = edge(ax, ay, bx, by, int(x), int(y));
+            if (e0 <= int64_t(0) && e1 <= int64_t(0) && e2 <= int64_t(0)) {
+                int64_t weighted = e0 * int64_t(int(stream.words[base + 8u])) +
+                    e1 * int64_t(int(stream.words[base + 11u])) +
+                    e2 * int64_t(int(stream.words[base + 14u]));
+                int candidate = int(weighted / area);
+                if (candidate >= depth) {
+                    depth = candidate;
+                    color = shade(stream.words[base + 19u],
+                                  int(stream.words[base + 20u]),
+                                  int(stream.words[base + 21u]));
+                }
+            }
+        }
+    }
+    uint index = y * width + x;
+    color_out.pixels[index] = color;
+    depth_out.values[index] = depth;
+}

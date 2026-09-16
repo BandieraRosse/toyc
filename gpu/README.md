@@ -1,7 +1,7 @@
 # GPU 目录概览
 
 > 文档更新：2026-09-16
-> 源码核对基线：GPU Capability Contract V1 已完成；GPU-5 尚未开始。
+> 源码核对基线：GPU-5 Compute Rasterizer V1 已完成；WSL llvmpipe / Windows Intel Iris Xe fixed fixtures 的 color/depth hash 一致并通过。
 
 本目录用于保存 GPU 相关的外部项目和实验代码。当前主要项目是
 [`wgpu-native`](wgpu-native/)，用于参考其 C API、GPU 设备发现和基础 GPU
@@ -113,7 +113,29 @@ make win-gpu-raster-abi-test
 ```
 
 测试覆盖静态 layout、确定性重复 pack、容量/unsupported 拒绝与 corruption validation。ABI 尚未由
-Vulkan framebuffer 消费；compute triangle rasterization 属于 GPU-5。
+Vulkan framebuffer 消费；GPU-5 已在独立 hosted raster owner 中消费该 ABI。
+
+## GPU-5 Compute Rasterizer V1
+
+`rf_gpu_raster` 独立于 GPU-3 gradient framebuffer smoke。Vulkan backend 直接上传并
+验证 GPU-4 binary stream，compute shader 以 `uint32 words[]` 和固定 word offset 解码，
+不建立 shadow command struct。每个 invocation 对应一个 pixel，按 command order
+在局部执行 clear/triangle/depth/light/fog，最后写出 canonical `0xffRRGGBB`
+color 和 signed-32 inverse depth。两个内嵌 SPIR-V 变体分别使用 16×16 和
+8×8 local size，与 capability contract 选择一致。
+
+```sh
+make gpu-raster-test
+build/rf-gpu-raster-test
+make win-gpu-raster-test
+# Windows PowerShell: .\\build\\rf-gpu-raster-test.exe
+```
+
+upload/readback 覆盖 coherent 与 non-coherent memory，显式 flush/invalidate，并有
+host→compute、compute→transfer barrier 与 5 秒 fence timeout。测试使用固定
+color/depth hash，包含 stride、resize、command upload growth、capability rejection 和
+cleanup。WSL llvmpipe 与 Windows Intel Iris Xe 实机均已通过，五组固定
+color/depth hash 完全一致。
 
 ## GPU Capability Contract V1
 

@@ -1,0 +1,270 @@
+#include "rf_gpu.h"
+#include "rf_gpu_raster_pack.h"
+#include "rf_gpu_vulkan_backend.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#define CHECK(c) do { if (!(c)) { fprintf(stderr, "raster test failed:%d\n", \
+    __LINE__); goto done; } } while (0)
+
+struct fixture {
+    unsigned char *bytes;
+    size_t size;
+    struct rf_gpu_raster_stream_header_v1 *header;
+    struct rf_gpu_raster_cmd_v1 *commands;
+};
+
+static int fixture_init(struct fixture *f, uint32_t width, uint32_t height,
+                        uint32_t triangle_capacity, uint32_t clear_color)
+{
+    uint32_t count = triangle_capacity + 2;
+    memset(f, 0, sizeof(*f));
+    f->size = rf_gpu_raster_stream_size_v1(count);
+    f->bytes = calloc(1, f->size);
+    if (!f->bytes) return -1;
+    f->header = (void *)f->bytes;
+    f->commands = (void *)(f->header + 1);
+    f->header->magic = RF_GPU_RASTER_ABI_MAGIC;
+    f->header->version = RF_GPU_RASTER_ABI_VERSION;
+    f->header->header_size = RF_GPU_RASTER_STREAM_HEADER_V1_SIZE;
+    f->header->command_size = RF_GPU_RASTER_CMD_V1_SIZE;
+    f->header->command_count = count;
+    f->header->framebuffer_width = width;
+    f->header->framebuffer_height = height;
+    f->header->endian_tag = RF_GPU_RASTER_ENDIAN_LITTLE;
+    f->commands[0].kind = RF_GPU_RASTER_CMD_CLEAR_COLOR_V1;
+    f->commands[0].byte_size = RF_GPU_RASTER_CMD_V1_SIZE;
+    f->commands[0].payload.clear.value = clear_color;
+    f->commands[1].kind = RF_GPU_RASTER_CMD_CLEAR_DEPTH_V1;
+    f->commands[1].byte_size = RF_GPU_RASTER_CMD_V1_SIZE;
+    f->commands[1].payload.clear.value = 0;
+    return 0;
+}
+
+static void triangle(struct fixture *f, uint32_t index,
+                     int ax, int ay, int az, int bx, int by, int bz,
+                     int cx, int cy, int cz, uint32_t color,
+                     int light, int fog)
+{
+    struct rf_gpu_raster_cmd_v1 *cmd = &f->commands[index + 2];
+    struct rf_gpu_raster_flat_triangle_v1 *t = &cmd->payload.flat_triangle;
+    int minx = ax < bx ? (ax < cx ? ax : cx) : (bx < cx ? bx : cx);
+    int maxx = ax > bx ? (ax > cx ? ax : cx) : (bx > cx ? bx : cx);
+    int miny = ay < by ? (ay < cy ? ay : cy) : (by < cy ? by : cy);
+    int maxy = ay > by ? (ay > cy ? ay : cy) : (by > cy ? by : cy);
+    int width = (int)f->header->framebuffer_width;
+    int height = (int)f->header->framebuffer_height;
+    cmd->kind = RF_GPU_RASTER_CMD_FLAT_TRIANGLE_V1;
+    cmd->byte_size = RF_GPU_RASTER_CMD_V1_SIZE;
+    cmd->flags = RF_GPU_RASTER_FLAG_DEPTH_TEST_V1 |
+                 RF_GPU_RASTER_FLAG_DEPTH_WRITE_V1 |
+                 RF_GPU_RASTER_FLAG_OPAQUE_V1;
+    if (fog) cmd->flags |= RF_GPU_RASTER_FLAG_FOG_V1;
+    t->a.x = ax; t->a.y = ay; t->a.inv_z = az;
+    t->b.x = bx; t->b.y = by; t->b.inv_z = bz;
+    t->c.x = cx; t->c.y = cy; t->c.inv_z = cz;
+    t->area = ((int64_t)cx - ax) * ((int64_t)by - ay) -
+              ((int64_t)cy - ay) * ((int64_t)bx - ax);
+    t->bbox_minx = minx < 0 ? 0 : minx;
+    t->bbox_maxx = maxx >= width ? width - 1 : maxx;
+    t->bbox_miny = miny < 0 ? 0 : miny;
+    t->bbox_maxy = maxy >= height ? height - 1 : maxy;
+    t->color = color; t->light_q8 = light; t->fog_q8 = fog;
+}
+
+static uint64_t hash_words(const uint32_t *words, uint32_t width,
+                           uint32_t height, uint32_t stride)
+{
+    uint64_t hash = 1469598103934665603ULL;
+    uint32_t x, y, byte;
+    for (y = 0; y < height; ++y) for (x = 0; x < width; ++x) {
+        uint32_t value = words[(size_t)y * stride + x];
+        for (byte = 0; byte < 4; ++byte) {
+            hash ^= (value >> (byte * 8)) & 255u;
+            hash *= 1099511628211ULL;
+        }
+    }
+    return hash;
+}
+
+static int execute(struct rf_gpu *gpu, struct rf_gpu_raster *raster,
+                   struct fixture *f, uint32_t **color_out, int32_t **depth_out,
+                   uint64_t *color_hash, uint64_t *depth_hash)
+{
+    uint32_t width = f->header->framebuffer_width;
+    uint32_t height = f->header->framebuffer_height;
+    uint32_t stride = width + 5;
+    uint32_t *color = malloc((size_t)stride * height * 4);
+    int32_t *depth = malloc((size_t)stride * height * 4);
+    uint32_t x, y;
+    if (!color || !depth) { free(color); free(depth); return -1; }
+    for (y = 0; y < height; ++y) for (x = 0; x < stride; ++x) {
+        color[(size_t)y * stride + x] = 0x13579bdfu;
+        depth[(size_t)y * stride + x] = 0x12345678;
+    }
+    if (rf_gpu_raster_render(gpu, raster, f->bytes, f->size, color, depth,
+                             width, height, stride, stride) < 0) {
+        free(color); free(depth); return -1;
+    }
+    for (y = 0; y < height; ++y) for (x = width; x < stride; ++x)
+        if (color[(size_t)y * stride + x] != 0x13579bdfu ||
+            depth[(size_t)y * stride + x] != 0x12345678) {
+            free(color); free(depth); return -1;
+        }
+    *color_hash = hash_words(color, width, height, stride);
+    *depth_hash = hash_words((const uint32_t *)depth, width, height, stride);
+    *color_out = color; *depth_out = depth;
+    return (int)stride;
+}
+
+static uint32_t expected_shade(uint32_t color, int light, int fog)
+{
+    int r = (color >> 16) & 255, g = (color >> 8) & 255, b = color & 255;
+    if (light < 0) light = 0;
+    if (light > 384) light = 384;
+    r = r * light / 256; g = g * light / 256; b = b * light / 256;
+    if (r > 255) r = 255;
+    if (g > 255) g = 255;
+    if (b > 255) b = 255;
+    if (fog < 0) fog = 0;
+    if (fog > 256) fog = 256;
+    r = (r * (256 - fog) + 28 * fog) / 256;
+    g = (g * (256 - fog) + 33 * fog) / 256;
+    b = (b * (256 - fog) + 40 * fog) / 256;
+    return 0xff000000u | (uint32_t)r << 16 | (uint32_t)g << 8 | (uint32_t)b;
+}
+
+int main(void)
+{
+    struct rf_gpu gpu;
+    struct rf_gpu_vulkan_context context;
+    struct rf_gpu_raster raster;
+    struct rf_gpu_status status;
+    struct fixture f;
+    uint32_t *color = NULL;
+    int32_t *depth = NULL;
+    uint64_t ch, dh;
+    int stride;
+    int result = 1;
+    memset(&context, 0, sizeof(context)); memset(&raster, 0, sizeof(raster));
+    memset(&f, 0, sizeof(f));
+    CHECK(rf_gpu_init(&gpu, RF_GPU_POLICY_REQUIRED, &rf_gpu_vulkan_backend,
+                      &context) == 0);
+    CHECK(rf_gpu_get_status(&gpu, &status) == 0 && status.renderer.raster_v1);
+    CHECK(status.info.capabilities.shader_int64);
+    CHECK((status.renderer.raster_work_group_x == 16 &&
+           status.renderer.raster_work_group_y == 16) ||
+          (status.renderer.raster_work_group_x == 8 &&
+           status.renderer.raster_work_group_y == 8));
+    CHECK(rf_gpu_raster_init(&gpu, &raster, 19, 13) == 0);
+    CHECK(raster.work_group_x == status.renderer.raster_work_group_x);
+
+    CHECK(fixture_init(&f, 19, 13, 0, 0x00102030u) == 0);
+    CHECK(rf_gpu_raster_validate_v1(f.bytes, f.size) == 0);
+    stride = execute(&gpu, &raster, &f, &color, &depth, &ch, &dh);
+    CHECK(stride > 0 && color[0] == 0xff102030u && depth[0] == 0);
+    CHECK(ch == 0xd6503e0cf0c79d4aULL && dh == 0x387963cacae7df53ULL);
+    printf("clear: color=%016llx depth=%016llx PASS\n",
+           (unsigned long long)ch, (unsigned long long)dh);
+    free(color); free(depth); color = NULL; depth = NULL; free(f.bytes);
+
+    CHECK(fixture_init(&f, 19, 13, 5, 0x00010203u) == 0);
+    triangle(&f, 0, 2, 2, 100, 16, 2, 200, 2, 10, 300,
+             0x004080c0u, 256, 0);
+    triangle(&f, 1, 4, 3, 50, 14, 3, 50, 4, 9, 50,
+             0x00ff0000u, 256, 0);
+    triangle(&f, 2, 4, 3, 400, 14, 3, 400, 4, 9, 400,
+             0x0000ff00u, 256, 0);
+    triangle(&f, 3, 4, 3, 400, 14, 3, 400, 4, 9, 400,
+             0x000000ffu, 256, 0);
+    triangle(&f, 4, -5, 5, 250, 5, 5, 250, 0, 12, 250,
+             0x00ffffffu, 256, 0);
+    CHECK(rf_gpu_raster_validate_v1(f.bytes, f.size) == 0);
+    stride = execute(&gpu, &raster, &f, &color, &depth, &ch, &dh);
+    CHECK(stride > 0);
+    CHECK(color[0] == 0xff010203u && depth[0] == 0);
+    CHECK(color[3 * stride + 4] == 0xff0000ffu &&
+          depth[3 * stride + 4] == 400);
+    CHECK(depth[2 * stride + 2] == 100);
+    CHECK(depth[3 * stride + 3] == 132);
+    CHECK(color[5 * stride] == 0xffffffffu && depth[5 * stride] == 250);
+    CHECK(ch == 0xdd6142f5b6ad5c67ULL && dh == 0x16119c6f707d5b59ULL);
+    printf("geometry-depth-order: color=%016llx depth=%016llx PASS\n",
+           (unsigned long long)ch, (unsigned long long)dh);
+    free(color); free(depth); color = NULL; depth = NULL; free(f.bytes);
+
+    CHECK(fixture_init(&f, 19, 13, 2, 0) == 0);
+    triangle(&f, 0, 2, 2, 77, 12, 2, 77, 2, 10, 77,
+             0x00ff0000u, 256, 0);
+    triangle(&f, 1, 12, 2, 77, 12, 10, 77, 2, 10, 77,
+             0x0000ff00u, 256, 0);
+    CHECK(rf_gpu_raster_validate_v1(f.bytes, f.size) == 0);
+    stride = execute(&gpu, &raster, &f, &color, &depth, &ch, &dh);
+    CHECK(stride > 0);
+    CHECK(color[3 * stride + 3] == 0xffff0000u);
+    CHECK(color[9 * stride + 11] == 0xff00ff00u);
+    CHECK(color[6 * stride + 7] == 0xff00ff00u &&
+          depth[6 * stride + 7] == 77);
+    CHECK(ch == 0xee38b1413d008f3bULL && dh == 0x3375accfe7333fbeULL);
+    printf("shared-edge: color=%016llx depth=%016llx PASS\n",
+           (unsigned long long)ch, (unsigned long long)dh);
+    free(color); free(depth); color = NULL; depth = NULL; free(f.bytes);
+
+    CHECK(fixture_init(&f, 19, 13, 5, 0) == 0);
+    triangle(&f, 0, 0, 0, 10, 8, 0, 10, 0, 8, 10,
+             0x0080c0ffu, 0, 0);
+    triangle(&f, 1, 9, 0, 20, 17, 0, 20, 9, 8, 20,
+             0x0080c0ffu, 256, 128);
+    triangle(&f, 2, 0, 9, 30, 8, 9, 30, 0, 12, 30,
+             0x00c08040u, 384, 0);
+    triangle(&f, 3, 9, 9, 40, 17, 9, 40, 9, 12, 40,
+             0x00abcdefu, 999, 999);
+    triangle(&f, 4, 1, 8, 60, 17, 8, 60, 1, 9, 60,
+             0x00ffffffu, 256, 0);
+    CHECK(rf_gpu_raster_validate_v1(f.bytes, f.size) == 0);
+    stride = execute(&gpu, &raster, &f, &color, &depth, &ch, &dh);
+    CHECK(stride > 0);
+    CHECK(color[0] == expected_shade(0x0080c0ffu, 0, 0));
+    CHECK(color[9] == expected_shade(0x0080c0ffu, 256, 128));
+    CHECK(color[9 * stride] == expected_shade(0x00c08040u, 384, 0));
+    CHECK(color[9 * stride + 9] == expected_shade(0x00abcdefu, 999, 999));
+    CHECK(color[8 * stride + 1] == 0xffffffffu);
+    CHECK(ch == 0x4667c8a436021fa5ULL && dh == 0x0eec6dc089548671ULL);
+    printf("light-fog-thin: color=%016llx depth=%016llx PASS\n",
+           (unsigned long long)ch, (unsigned long long)dh);
+    free(color); free(depth); color = NULL; depth = NULL; free(f.bytes);
+
+    CHECK(rf_gpu_raster_resize(&gpu, &raster, 37, 23) == 0);
+    CHECK(fixture_init(&f, 37, 23, 50, 0x00334455u) == 0);
+    for (uint32_t i = 0; i < 50; ++i)
+        triangle(&f, i, 1, 1, 100 + (int)i, 35, 1, 100 + (int)i,
+                 1, 21, 100 + (int)i, 0x00010200u + i, 256, 0);
+    CHECK(f.size > 4096 && rf_gpu_raster_validate_v1(f.bytes, f.size) == 0);
+    stride = execute(&gpu, &raster, &f, &color, &depth, &ch, &dh);
+    CHECK(stride > 0 && depth[stride + 1] == 149 &&
+          color[stride + 1] == (0xff010200u | 49u));
+    CHECK(ch == 0x2e350fa4265ec3e4ULL && dh == 0xe448d03e52c4c816ULL);
+    printf("resize-growth: color=%016llx depth=%016llx PASS\n",
+           (unsigned long long)ch, (unsigned long long)dh);
+    free(color); free(depth); color = NULL; depth = NULL; free(f.bytes);
+
+    CHECK(fixture_init(&f, 37, 23, 1, 0) == 0);
+    triangle(&f, 0, 2, 2, 1, 3, 3, 1, 4, 4, 1, 0xffffffu, 256, 0);
+    CHECK(f.commands[2].payload.flat_triangle.area == 0);
+    CHECK(rf_gpu_raster_validate_v1(f.bytes, f.size) != 0);
+    CHECK(rf_gpu_raster_render(&gpu, &raster, f.bytes, f.size,
+                               (unsigned int *)f.bytes, (int *)f.bytes,
+                               37, 23, 37, 37) < 0);
+    puts("degenerate-rejection: PASS");
+    free(f.bytes); f.bytes = NULL;
+    result = 0;
+done:
+    free(color); free(depth); free(f.bytes);
+    rf_gpu_raster_shutdown(&raster);
+    rf_gpu_shutdown(&gpu);
+    if (context.implementation) result = 1;
+    puts(result ? "GPU Raster V1: FAIL" : "shutdown: PASS\nGPU Raster V1: PASS");
+    return result;
+}

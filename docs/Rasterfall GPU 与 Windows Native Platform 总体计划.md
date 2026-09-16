@@ -1,9 +1,10 @@
 # Rasterfall GPU 与 Windows Native Platform 总体计划
 
-> 状态：执行中（GPU-0、GPU-0.5、GPU-1、GPU-2、GPU-3、GPU-4 及 GPU Capability Contract V1 已完成）
+> 状态：执行中（GPU-0、GPU-0.5、GPU-1、GPU-2、GPU-3、GPU-4、GPU-5 及 GPU Capability Contract V1 已完成）
 > 进展同步：2026-09-16
 > 源码核对基线：GPU-4 Raster Command ABI V1 / deterministic pack-validation
 > 源码核对基线：GPU-5 前 portability gate 已建立无 Vulkan handle capability snapshot、独立 Raster V1 gate 与 limit-driven 16x16/8x8 workgroup policy；WSL llvmpipe / Windows Intel Iris Xe 实测通过。
+> 源码核对基线补充：GPU-5 已完成 GPU-4 word-stream 显式解码、逐像素 64-bit integer triangle/depth/light/fog 与 deterministic color/depth readback；WSL llvmpipe / Windows Intel Iris Xe fixed fixtures 的 color/depth hash 一致并通过。
 > 方向：Vulkan GPU Runtime / Compute Rasterizer / Windows Native Platform
 > 原则：保持 CPU renderer 与现有 Linux 路径稳定，以渐进方式引入 GPU 算力，并逐步收回 Windows 平台层所有权。
 
@@ -18,13 +19,14 @@
 | GPU-3 Frame Ownership | 已完成 | hosted smoke 复用持久 backend；device-local XRGB8888 output 经 compute、barrier、host-visible readback 进入 `toy_surface`，覆盖 stride、hash、resize 与逆序 shutdown |
 | GPU-4 Raster Command ABI V1 | 已完成 | 32-byte versioned stream header + 96-byte pointer-free commands；CPU `toy_raster_cmd` 显式 pack/validation，覆盖 clear color/depth 与 opaque flat triangle 的 depth/fog 输入；独立 layout/packing 双平台构建门禁 |
 | GPU Capability Contract V1 | 已完成 | GPU-5 前 portability gate；service/renderer capability 分层、无 handle snapshot、`shaderInt64` Raster V1 requirement、limit-driven workgroup 与通用 memory property selection |
+| GPU-5 Compute Rasterizer V1 | 已完成 | GPU 直接消费 GPU-4 binary stream；WSL llvmpipe / Windows Intel Iris Xe 的 color/depth fixed fixtures、resize/growth/shutdown 已通过且 hash 一致 |
 | Windows Native Platform | 未开始 | 正常 Windows Rasterfall 仍使用 MinGW + SDL2，本阶段未改窗口、输入、音频或 presentation |
 
 当前边界：
 
 * GPU probe 是 hosted service frontend；Vulkan loader、instance、physical/logical device 与 queue 由持久 backend 拥有，正常 runtime 尚未选择该 hosted backend；
 * CPU renderer 仍是唯一正常游戏渲染路径；
-* 已有 hosted GPU framebuffer、CPU-visible `toy_surface` readback 与 GPU raster command ABI V1；尚无 compute triangle rasterizer、Vulkan surface 或 swapchain；
+* 已有 hosted GPU framebuffer、GPU raster command ABI V1 与 Compute Rasterizer V1；正常 runtime 尚未消费 GPU raster，也尚无 Vulkan surface 或 swapchain；
 * Windows `total` 首次观测包含 resource / descriptor / pipeline 创建，不作为稳态 GPU 性能结论。
 
 当前复核入口：
@@ -596,7 +598,7 @@ rasterization，也不接正常 runtime。`make gpu-raster-abi-test` 验证 dete
 
 ---
 
-# 11. GPU Phase 5 — Compute Rasterizer V1
+# 11. GPU Phase 5 — Compute Rasterizer V1（已完成）
 
 第一版 GPU rasterizer 使用 compute，而不是立即转为传统 Vulkan graphics pipeline。
 
@@ -653,6 +655,20 @@ GPU preprocessing
 ```
 
 但不能成为 V1 正确性的前置条件。
+
+当前实现使用独立 `rf_gpu_raster` owner。shader 将 GPU-4 stream 作为
+little-endian `uint32 words[]` 并按冻结 word offset 解码，不依赖 GLSL/C struct
+layout。16×16 与 8×8 两个固定 SPIR-V 变体由 capability 选择；每个
+invocation 按 stream order 在局部持有 color/depth，最后各写一次
+device-local buffer。color 存储 canonical `0xffRRGGBB`，depth 为 signed 32-bit
+inverse depth。
+
+upload 支持 coherent 与 non-coherent host-visible memory；后者按 allocation range
+flush，readback 对 non-coherent memory invalidate。command buffer 显式记录 host-write →
+compute-read 与 shader-write → transfer-read barrier，fence 有 5 秒上限。
+`build/rf-gpu-raster-test` 覆盖 fixed color/depth hash、coverage/shared edge、depth
+interpolation/overlap/equality order、offscreen/thin/degenerate、light/fog、stride、resize、
+upload growth 与 shutdown。GPU-6 仍拥有通用 CPU↔GPU differential authority。
 
 ---
 
@@ -1028,9 +1044,9 @@ Completed portability gate:
 GPU Capability Contract V1
             │
             ▼
-Current:
-GPU-5
-Flat Compute Rasterizer
+Completed:
+GPU-5 Flat Compute Rasterizer
+WSL llvmpipe / Windows Iris Xe matching hashes
             │
             ▼
 GPU-6

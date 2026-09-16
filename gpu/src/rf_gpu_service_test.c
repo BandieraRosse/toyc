@@ -8,6 +8,9 @@ struct fake_backend {
     int init_count;
     int shutdown_count;
     unsigned int adapter_type;
+    int raster_create_count;
+    int raster_destroy_count;
+    int raster_fail;
 };
 
 static int fake_init(void *context, struct rf_gpu_backend_info *info,
@@ -52,9 +55,48 @@ static void fake_shutdown(void *context)
     ++fake->shutdown_count;
 }
 
+static int fake_raster_create(void *context, unsigned int width,
+                              unsigned int height, unsigned int work_group_x,
+                              unsigned int work_group_y, void **raster,
+                              char *message, unsigned long message_capacity)
+{
+    struct fake_backend *fake = context;
+    (void)width; (void)height; (void)work_group_x; (void)work_group_y;
+    (void)message; (void)message_capacity;
+    ++fake->raster_create_count;
+    if (fake->raster_fail) return -1;
+    *raster = fake;
+    return 0;
+}
+
+static void fake_raster_destroy(void *context, void *raster)
+{
+    struct fake_backend *fake = context;
+    (void)raster;
+    ++fake->raster_destroy_count;
+}
+
+static int fake_raster_render(void *context, void *raster,
+                              const void *stream, unsigned long stream_size,
+                              unsigned int *color, int *depth,
+                              unsigned int width, unsigned int height,
+                              unsigned int color_stride,
+                              unsigned int depth_stride,
+                              char *message, unsigned long message_capacity)
+{
+    (void)context; (void)raster; (void)stream; (void)stream_size;
+    (void)color; (void)depth; (void)width; (void)height;
+    (void)color_stride; (void)depth_stride; (void)message;
+    (void)message_capacity;
+    return 0;
+}
+
 static const struct rf_gpu_backend backend = {
     .init = fake_init,
-    .shutdown = fake_shutdown
+    .shutdown = fake_shutdown,
+    .raster_create = fake_raster_create,
+    .raster_destroy = fake_raster_destroy,
+    .raster_render = fake_raster_render
 };
 
 #define CHECK(condition) do {                                                \
@@ -108,6 +150,19 @@ int main(void)
     CHECK(status.renderer.raster_v1);
     CHECK(status.renderer.raster_work_group_x == 16 &&
           status.renderer.raster_work_group_y == 16);
+    {
+        struct rf_gpu_raster raster;
+        void *old_implementation;
+        CHECK(rf_gpu_raster_init(&gpu, &raster, 16, 16) == 0);
+        old_implementation = raster.implementation;
+        fake.raster_fail = 1;
+        CHECK(rf_gpu_raster_resize(&gpu, &raster, 32, 24) < 0);
+        CHECK(raster.implementation == old_implementation &&
+              raster.width == 16 && raster.height == 16 &&
+              fake.raster_destroy_count == 0);
+        rf_gpu_raster_shutdown(&raster);
+        CHECK(fake.raster_destroy_count == 1);
+    }
     rf_gpu_shutdown(&gpu);
     CHECK(fake.shutdown_count == 1);
 
@@ -119,6 +174,10 @@ int main(void)
     CHECK(rf_gpu_get_status(&gpu, &status) == 0);
     CHECK(status.ready && status.renderer.compute && status.renderer.framebuffer);
     CHECK(!status.renderer.raster_v1);
+    {
+        struct rf_gpu_raster raster;
+        CHECK(rf_gpu_raster_init(&gpu, &raster, 16, 16) < 0);
+    }
     rf_gpu_shutdown(&gpu);
 
     memset(&caps, 0, sizeof(caps));

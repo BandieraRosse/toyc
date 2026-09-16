@@ -112,6 +112,18 @@ struct rf_gpu_backend {
                               unsigned int *pixels, unsigned int width,
                               unsigned int height, unsigned int stride,
                               char *message, unsigned long message_capacity);
+    int (*raster_create)(void *context, unsigned int width,
+                         unsigned int height, unsigned int work_group_x,
+                         unsigned int work_group_y, void **raster,
+                         char *message, unsigned long message_capacity);
+    void (*raster_destroy)(void *context, void *raster);
+    int (*raster_render)(void *context, void *raster,
+                         const void *stream, unsigned long stream_size,
+                         unsigned int *color, int *depth,
+                         unsigned int width, unsigned int height,
+                         unsigned int color_stride,
+                         unsigned int depth_stride,
+                         char *message, unsigned long message_capacity);
 };
 
 struct rf_gpu_framebuffer {
@@ -122,6 +134,17 @@ struct rf_gpu_framebuffer {
     unsigned int width;
     unsigned int height;
     unsigned int stride;
+};
+
+struct rf_gpu_raster {
+    const struct rf_gpu_backend *backend;
+    void *backend_context;
+    void *implementation;
+    unsigned int format;
+    unsigned int width;
+    unsigned int height;
+    unsigned int work_group_x;
+    unsigned int work_group_y;
 };
 
 struct rf_gpu {
@@ -161,5 +184,16 @@ int rf_gpu_framebuffer_render(struct rf_gpu *gpu,
                               unsigned int *pixels, unsigned int width,
                               unsigned int height, unsigned int stride);
 void rf_gpu_framebuffer_shutdown(struct rf_gpu_framebuffer *framebuffer);
+int rf_gpu_raster_init(struct rf_gpu *gpu, struct rf_gpu_raster *raster,
+                       unsigned int width, unsigned int height);
+int rf_gpu_raster_resize(struct rf_gpu *gpu, struct rf_gpu_raster *raster,
+                         unsigned int width, unsigned int height);
+int rf_gpu_raster_render(struct rf_gpu *gpu, struct rf_gpu_raster *raster,
+                         const void *stream, unsigned long stream_size,
+                         unsigned int *color, int *depth,
+                         unsigned int width, unsigned int height,
+                         unsigned int color_stride,
+                         unsigned int depth_stride);
+void rf_gpu_raster_shutdown(struct rf_gpu_raster *raster);
 
 #endif

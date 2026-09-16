@@ -1175,14 +1175,34 @@ wayland_fps: $(BUILD)/wayland_fps
 # outside the freestanding Rasterfall link until the optional Core GPU service
 # has a stable ABI and fallback policy.
 .PHONY: gpu-probe gpu-service-test gpu-framebuffer-test gpu-raster-abi-test \
-	win-gpu-probe win-gpu-framebuffer-test win-gpu-raster-abi-test
+	gpu-raster-test win-gpu-probe win-gpu-framebuffer-test \
+	win-gpu-raster-abi-test win-gpu-raster-test
 gpu-probe: $(BUILD)/rf-gpu-probe
 gpu-service-test: $(BUILD)/rf-gpu-service-test
 gpu-framebuffer-test: $(BUILD)/rf-gpu-framebuffer-test
 gpu-raster-abi-test: $(BUILD)/rf-gpu-raster-pack-test
+gpu-raster-test: $(BUILD)/rf-gpu-raster-test
 win-gpu-probe: $(BUILD)/rf-gpu-probe.exe
 win-gpu-framebuffer-test: $(BUILD)/rf-gpu-framebuffer-test.exe
 win-gpu-raster-abi-test: $(BUILD)/rf-gpu-raster-pack-test.exe
+win-gpu-raster-test: $(BUILD)/rf-gpu-raster-test.exe
+
+GPU_RASTER_TEST_SRCS := gpu/src/rf_gpu_raster_test.c \
+	gpu/src/rf_gpu_vulkan_backend.c gpu/src/rf_gpu_raster_pack.c \
+	rasterfall/src/rf_gpu.c
+GPU_RASTER_TEST_DEPS := gpu/include/rf_vulkan_min.h \
+	gpu/include/rf_gpu_vulkan_backend.h gpu/src/rf_gpu_raster_v1_spirv.inc \
+	gpu/shaders/raster_v1.comp rasterfall/include/rf_gpu.h \
+	rasterfall/include/rf_gpu_raster_abi.h rasterfall/include/rf_gpu_raster_pack.h
+
+$(BUILD)/rf-gpu-raster-test: $(GPU_RASTER_TEST_SRCS) $(GPU_RASTER_TEST_DEPS) | $(BUILD)
+	$(GCC) -std=c11 -O2 -Wall -Wextra -Werror -I include -I include/tlibc \
+		-I gpu/include -I rasterfall/include $(GPU_RASTER_TEST_SRCS) -ldl -o $@
+
+$(BUILD)/rf-gpu-raster-test.exe: $(GPU_RASTER_TEST_SRCS) $(GPU_RASTER_TEST_DEPS) | $(BUILD)
+	x86_64-w64-mingw32-gcc -std=c11 -O2 -Wall -Wextra -Werror \
+		-I windows/include -I include -I include/tlibc -I gpu/include \
+		-I rasterfall/include $(GPU_RASTER_TEST_SRCS) -o $@
 
 $(BUILD)/rf-gpu-raster-pack-test: gpu/src/rf_gpu_raster_pack_test.c gpu/src/rf_gpu_raster_pack.c rasterfall/include/rf_gpu_raster_abi.h rasterfall/include/rf_gpu_raster_pack.h include/toy_renderer.h | $(BUILD)
 	$(GCC) -std=c11 -O2 -Wall -Wextra -Werror -I include -I include/tlibc \
@@ -1198,25 +1218,25 @@ $(BUILD)/rf-gpu-service-test: gpu/src/rf_gpu_service_test.c rasterfall/src/rf_gp
 	$(GCC) -std=c11 -O2 -Wall -Wextra -Werror -I rasterfall/include \
 		gpu/src/rf_gpu_service_test.c rasterfall/src/rf_gpu.c -o $@
 
-$(BUILD)/rf-gpu-probe: gpu/src/rf_gpu_probe.c gpu/src/rf_gpu_vulkan_backend.c gpu/include/rf_vulkan_min.h gpu/include/rf_gpu_vulkan_backend.h rasterfall/src/rf_gpu.c rasterfall/include/rf_gpu.h | $(BUILD)
-	$(GCC) -std=c11 -O2 -Wall -Wextra -Werror -I gpu/include -I rasterfall/include \
+$(BUILD)/rf-gpu-probe: gpu/src/rf_gpu_probe.c gpu/src/rf_gpu_vulkan_backend.c gpu/src/rf_gpu_raster_pack.c gpu/include/rf_vulkan_min.h gpu/include/rf_gpu_vulkan_backend.h rasterfall/src/rf_gpu.c rasterfall/include/rf_gpu.h | $(BUILD)
+	$(GCC) -std=c11 -O2 -Wall -Wextra -Werror -I include -I include/tlibc -I gpu/include -I rasterfall/include \
 		gpu/src/rf_gpu_probe.c gpu/src/rf_gpu_vulkan_backend.c \
-		rasterfall/src/rf_gpu.c -ldl -o $@
+		gpu/src/rf_gpu_raster_pack.c rasterfall/src/rf_gpu.c -ldl -o $@
 
-$(BUILD)/rf-gpu-probe.exe: gpu/src/rf_gpu_probe.c gpu/src/rf_gpu_vulkan_backend.c gpu/include/rf_vulkan_min.h gpu/include/rf_gpu_vulkan_backend.h rasterfall/src/rf_gpu.c rasterfall/include/rf_gpu.h | $(BUILD)
+$(BUILD)/rf-gpu-probe.exe: gpu/src/rf_gpu_probe.c gpu/src/rf_gpu_vulkan_backend.c gpu/src/rf_gpu_raster_pack.c gpu/include/rf_vulkan_min.h gpu/include/rf_gpu_vulkan_backend.h rasterfall/src/rf_gpu.c rasterfall/include/rf_gpu.h | $(BUILD)
 	x86_64-w64-mingw32-gcc -std=c11 -O2 -Wall -Wextra -Werror \
-		-I gpu/include -I rasterfall/include gpu/src/rf_gpu_probe.c \
-		gpu/src/rf_gpu_vulkan_backend.c rasterfall/src/rf_gpu.c -o $@
+		-I windows/include -I include -I include/tlibc -I gpu/include -I rasterfall/include gpu/src/rf_gpu_probe.c \
+		gpu/src/rf_gpu_vulkan_backend.c gpu/src/rf_gpu_raster_pack.c rasterfall/src/rf_gpu.c -o $@
 
-$(BUILD)/rf-gpu-framebuffer-test: gpu/src/rf_gpu_framebuffer_test.c gpu/src/rf_gpu_vulkan_backend.c gpu/include/rf_vulkan_min.h gpu/include/rf_gpu_vulkan_backend.h rasterfall/src/rf_gpu.c rasterfall/include/rf_gpu.h | $(BUILD)
-	$(GCC) -std=c11 -O2 -Wall -Wextra -Werror -I gpu/include -I rasterfall/include \
+$(BUILD)/rf-gpu-framebuffer-test: gpu/src/rf_gpu_framebuffer_test.c gpu/src/rf_gpu_vulkan_backend.c gpu/src/rf_gpu_raster_pack.c gpu/include/rf_vulkan_min.h gpu/include/rf_gpu_vulkan_backend.h rasterfall/src/rf_gpu.c rasterfall/include/rf_gpu.h | $(BUILD)
+	$(GCC) -std=c11 -O2 -Wall -Wextra -Werror -I include -I include/tlibc -I gpu/include -I rasterfall/include \
 		gpu/src/rf_gpu_framebuffer_test.c gpu/src/rf_gpu_vulkan_backend.c \
-		rasterfall/src/rf_gpu.c -ldl -o $@
+		gpu/src/rf_gpu_raster_pack.c rasterfall/src/rf_gpu.c -ldl -o $@
 
-$(BUILD)/rf-gpu-framebuffer-test.exe: gpu/src/rf_gpu_framebuffer_test.c gpu/src/rf_gpu_vulkan_backend.c gpu/include/rf_vulkan_min.h gpu/include/rf_gpu_vulkan_backend.h rasterfall/src/rf_gpu.c rasterfall/include/rf_gpu.h | $(BUILD)
+$(BUILD)/rf-gpu-framebuffer-test.exe: gpu/src/rf_gpu_framebuffer_test.c gpu/src/rf_gpu_vulkan_backend.c gpu/src/rf_gpu_raster_pack.c gpu/include/rf_vulkan_min.h gpu/include/rf_gpu_vulkan_backend.h rasterfall/src/rf_gpu.c rasterfall/include/rf_gpu.h | $(BUILD)
 	x86_64-w64-mingw32-gcc -std=c11 -O2 -Wall -Wextra -Werror \
-		-I gpu/include -I rasterfall/include gpu/src/rf_gpu_framebuffer_test.c \
-		gpu/src/rf_gpu_vulkan_backend.c rasterfall/src/rf_gpu.c -o $@
+		-I windows/include -I include -I include/tlibc -I gpu/include -I rasterfall/include gpu/src/rf_gpu_framebuffer_test.c \
+		gpu/src/rf_gpu_vulkan_backend.c gpu/src/rf_gpu_raster_pack.c rasterfall/src/rf_gpu.c -o $@
 
 rasterfall-blender-deps:
 	python3 -m pip install --target .blender-python numpy

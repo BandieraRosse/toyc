@@ -2,7 +2,8 @@
 
 > 文档更新：2026-09-16
 > 源码核对基线补充：GPU-5 前的 GPU Capability Contract V1 已完成；Core status 分开 service READY 与 compute/framebuffer/raster_v1，并公开无 Vulkan handle 的 adapter/limit/memory snapshot。
-> 源码核对基线补充：GPU-4 已完成独立 Raster Command ABI V1 与 CPU `toy_raster_cmd` 显式 deterministic pack/validation；只覆盖 clear color/depth、opaque flat triangle 及 depth/fog 输入，正常 CPU renderer 与 GPU framebuffer smoke 不变，GPU-5 尚未开始。
+> 源码核对基线补充：GPU-5 Compute Rasterizer V1 已完成 GPU-4 binary stream 的逐像素 compute raster、deterministic color/depth readback 与 16×16/8×8 实际 pipeline 选择；WSL llvmpipe / Windows Intel Iris Xe fixed hashes 一致并通过。
+> 源码核对基线补充：GPU-4 的独立 Raster Command ABI V1 与 CPU `toy_raster_cmd` deterministic pack/validation 仍为 GPU-5 唯一输入；只覆盖 clear color/depth、opaque flat triangle 及 depth/fog，正常 CPU renderer 与 GPU framebuffer smoke 不变。
 > 源码核对基线补充：GPU-3 已完成 Core-owned GPU framebuffer resource：复用持久 backend，compute 写 device-local XRGB8888，经有限 fence/readback 进入 `toy_surface`，覆盖 stride、resize 与逆序 shutdown；正常 runtime 仍 disabled/CPU renderer，GPU-4 未开始。
 > 源码核对基线补充：原生 C Vulkan Phase 1 hosted probe 已实现 Linux/Windows 共用的 storage-buffer compute ownership、discrete-first adapter selection 与 readback 校验；WSL llvmpipe 与 Windows RTX 3050 compute/readback 均已通过；仍不接正常 Core、window 或 renderer，详见 `gpu/README.md` 与 build-platforms.md。
 > 源码核对基线补充：Eula 正常 world/展示在 near/mid 使用 Gameplay Hybrid `eula_lod3.rmesh`，仅 FAR（4096 RFU 起）使用 compact LOD2；Hybrid 缺失时回退原模型。

@@ -9,6 +9,10 @@
 #include <string.h>
 #include <time.h>
 
+/* Kept opaque here because the hosted Vulkan translation unit uses the host
+ * stdint ABI while GPU-4's public header uses Tinylibc fixed-width aliases. */
+int rf_gpu_raster_validate_v1(const void *stream, size_t stream_size);
+
 #if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -40,6 +44,7 @@ struct rf_vk_api {
     rf_vk_map_memory_fn map_memory;
     rf_vk_unmap_memory_fn unmap_memory;
     rf_vk_invalidate_mapped_memory_ranges_fn invalidate_mapped_memory_ranges;
+    rf_vk_flush_mapped_memory_ranges_fn flush_mapped_memory_ranges;
     rf_vk_create_descriptor_set_layout_fn create_descriptor_set_layout;
     rf_vk_destroy_descriptor_set_layout_fn destroy_descriptor_set_layout;
     rf_vk_create_descriptor_pool_fn create_descriptor_pool;
@@ -54,6 +59,7 @@ struct rf_vk_api {
     rf_vk_destroy_pipeline_fn destroy_pipeline;
     rf_vk_create_command_pool_fn create_command_pool;
     rf_vk_destroy_command_pool_fn destroy_command_pool;
+    rf_vk_reset_command_pool_fn reset_command_pool;
     rf_vk_allocate_command_buffers_fn allocate_command_buffers;
     rf_vk_begin_command_buffer_fn begin_command_buffer;
     rf_vk_end_command_buffer_fn end_command_buffer;
@@ -188,6 +194,7 @@ static int api_load_instance(struct rf_vk_api *api, rf_vk_instance instance)
     RF_LOAD_DEVICE(unmap_memory, "vkUnmapMemory");
     RF_LOAD_DEVICE(invalidate_mapped_memory_ranges,
                    "vkInvalidateMappedMemoryRanges");
+    RF_LOAD_DEVICE(flush_mapped_memory_ranges, "vkFlushMappedMemoryRanges");
     RF_LOAD_DEVICE(create_descriptor_set_layout, "vkCreateDescriptorSetLayout");
     RF_LOAD_DEVICE(destroy_descriptor_set_layout, "vkDestroyDescriptorSetLayout");
     RF_LOAD_DEVICE(create_descriptor_pool, "vkCreateDescriptorPool");
@@ -202,6 +209,7 @@ static int api_load_instance(struct rf_vk_api *api, rf_vk_instance instance)
     RF_LOAD_DEVICE(destroy_pipeline, "vkDestroyPipeline");
     RF_LOAD_DEVICE(create_command_pool, "vkCreateCommandPool");
     RF_LOAD_DEVICE(destroy_command_pool, "vkDestroyCommandPool");
+    RF_LOAD_DEVICE(reset_command_pool, "vkResetCommandPool");
     RF_LOAD_DEVICE(allocate_command_buffers, "vkAllocateCommandBuffers");
     RF_LOAD_DEVICE(begin_command_buffer, "vkBeginCommandBuffer");
     RF_LOAD_DEVICE(end_command_buffer, "vkEndCommandBuffer");
@@ -533,6 +541,8 @@ struct rf_gpu_vulkan_impl {
     rf_vk_device device;
     rf_vk_queue queue;
     uint32_t queue_family;
+    uint32_t shader_int64_enabled;
+    uint64_t max_storage_buffer_range;
 };
 
 struct rf_gpu_vulkan_framebuffer {
@@ -850,6 +860,426 @@ cleanup:
     return -1;
 }
 
+#include "rf_gpu_raster_v1_spirv.inc"
+
+struct rf_gpu_vulkan_raster_buffer {
+    rf_vk_buffer buffer;
+    rf_vk_device_memory memory;
+    uint64_t size;
+    uint64_t allocation_size;
+    rf_vk_flags memory_flags;
+};
+
+struct rf_gpu_vulkan_raster {
+    struct rf_gpu_vulkan_impl *owner;
+    struct rf_gpu_vulkan_raster_buffer color;
+    struct rf_gpu_vulkan_raster_buffer depth;
+    struct rf_gpu_vulkan_raster_buffer command;
+    struct rf_gpu_vulkan_raster_buffer color_readback;
+    struct rf_gpu_vulkan_raster_buffer depth_readback;
+    rf_vk_descriptor_set_layout set_layout;
+    rf_vk_descriptor_pool descriptor_pool;
+    rf_vk_descriptor_set descriptor_set;
+    rf_vk_shader_module shader;
+    rf_vk_pipeline_layout pipeline_layout;
+    rf_vk_pipeline pipeline;
+    rf_vk_command_pool command_pool;
+    rf_vk_command_buffer command_buffer;
+    uint32_t width, height;
+    uint32_t work_group_x, work_group_y;
+};
+
+static int raster_buffer_create(struct rf_gpu_vulkan_impl *impl,
+                                uint64_t size, rf_vk_flags usage,
+                                rf_vk_flags required, rf_vk_flags preferred,
+                                struct rf_gpu_vulkan_raster_buffer *out)
+{
+    struct rf_vk_buffer_create_info info;
+    struct rf_vk_memory_requirements requirements;
+    struct rf_vk_memory_allocate_info allocation;
+    int memory_type;
+    memset(out, 0, sizeof(*out));
+    memset(&info, 0, sizeof(info));
+    info.s_type = RF_VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    info.size = size; info.usage = usage;
+    info.sharing_mode = RF_VK_SHARING_MODE_EXCLUSIVE;
+    if (impl->api.create_buffer(impl->device, &info, NULL, &out->buffer) !=
+        RF_VK_SUCCESS) return -1;
+    memset(&requirements, 0, sizeof(requirements));
+    impl->api.get_buffer_memory_requirements(impl->device, out->buffer,
+                                              &requirements);
+    memory_type = framebuffer_memory_type(impl, requirements.memory_type_bits,
+                                          required, preferred,
+                                          &out->memory_flags);
+    if (memory_type < 0) return -1;
+    memset(&allocation, 0, sizeof(allocation));
+    allocation.s_type = RF_VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocation.allocation_size = requirements.size;
+    allocation.memory_type_index = (uint32_t)memory_type;
+    if (impl->api.allocate_memory(impl->device, &allocation, NULL,
+                                  &out->memory) != RF_VK_SUCCESS) return -1;
+    if (impl->api.bind_buffer_memory(impl->device, out->buffer, out->memory, 0) !=
+        RF_VK_SUCCESS) return -1;
+    out->size = size;
+    out->allocation_size = requirements.size;
+    return 0;
+}
+
+static void raster_buffer_destroy(struct rf_gpu_vulkan_impl *impl,
+                                  struct rf_gpu_vulkan_raster_buffer *buffer)
+{
+    if (buffer->buffer)
+        impl->api.destroy_buffer(impl->device, buffer->buffer, NULL);
+    if (buffer->memory)
+        impl->api.free_memory(impl->device, buffer->memory, NULL);
+    memset(buffer, 0, sizeof(*buffer));
+}
+
+static void raster_destroy(void *context, void *raster)
+{
+    struct rf_gpu_vulkan_context *backend_context = context;
+    struct rf_gpu_vulkan_raster *r = raster;
+    struct rf_gpu_vulkan_impl *impl = backend_context
+        ? backend_context->implementation : NULL;
+    if (!r) return;
+    if (!impl || r->owner != impl) { free(r); return; }
+    if (r->command_pool)
+        impl->api.destroy_command_pool(impl->device, r->command_pool, NULL);
+    if (r->pipeline) impl->api.destroy_pipeline(impl->device, r->pipeline, NULL);
+    if (r->pipeline_layout)
+        impl->api.destroy_pipeline_layout(impl->device, r->pipeline_layout, NULL);
+    if (r->shader)
+        impl->api.destroy_shader_module(impl->device, r->shader, NULL);
+    if (r->descriptor_pool)
+        impl->api.destroy_descriptor_pool(impl->device, r->descriptor_pool, NULL);
+    if (r->set_layout)
+        impl->api.destroy_descriptor_set_layout(impl->device, r->set_layout, NULL);
+    raster_buffer_destroy(impl, &r->command);
+    raster_buffer_destroy(impl, &r->depth_readback);
+    raster_buffer_destroy(impl, &r->color_readback);
+    raster_buffer_destroy(impl, &r->depth);
+    raster_buffer_destroy(impl, &r->color);
+    free(r);
+}
+
+static int raster_create(void *context, unsigned int width,
+                         unsigned int height, unsigned int work_group_x,
+                         unsigned int work_group_y, void **raster,
+                         char *message, unsigned long message_capacity)
+{
+    struct rf_gpu_vulkan_context *backend_context = context;
+    struct rf_gpu_vulkan_impl *impl = backend_context
+        ? backend_context->implementation : NULL;
+    struct rf_gpu_vulkan_raster *r = NULL;
+    uint64_t byte_size = (uint64_t)width * height * 4;
+    const unsigned char *spirv;
+    unsigned int spirv_size;
+    unsigned int i;
+    if (!impl || !raster || !width || !height ||
+        !((work_group_x == 16 && work_group_y == 16) ||
+          (work_group_x == 8 && work_group_y == 8))) return -1;
+    *raster = NULL;
+    r = calloc(1, sizeof(*r));
+    if (!r) goto failed;
+    r->owner = impl; r->width = width; r->height = height;
+    r->work_group_x = work_group_x; r->work_group_y = work_group_y;
+    if (raster_buffer_create(impl, byte_size,
+            RF_VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+            RF_VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+            RF_VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0, &r->color) < 0 ||
+        raster_buffer_create(impl, byte_size,
+            RF_VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+            RF_VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+            RF_VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0, &r->depth) < 0 ||
+        raster_buffer_create(impl, byte_size, RF_VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+            RF_VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+            RF_VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+            &r->color_readback) < 0 ||
+        raster_buffer_create(impl, byte_size, RF_VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+            RF_VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+            RF_VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+            &r->depth_readback) < 0) goto failed;
+    {
+        struct rf_vk_descriptor_set_layout_binding bindings[3];
+        struct rf_vk_descriptor_set_layout_create_info info;
+        memset(bindings, 0, sizeof(bindings));
+        for (i = 0; i < 3; ++i) {
+            bindings[i].binding = i;
+            bindings[i].descriptor_type = RF_VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            bindings[i].descriptor_count = 1;
+            bindings[i].stage_flags = RF_VK_SHADER_STAGE_COMPUTE_BIT;
+        }
+        memset(&info, 0, sizeof(info));
+        info.s_type = RF_VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        info.binding_count = 3; info.bindings = bindings;
+        if (impl->api.create_descriptor_set_layout(impl->device, &info, NULL,
+                                                   &r->set_layout) != RF_VK_SUCCESS)
+            goto failed;
+    }
+    {
+        struct rf_vk_descriptor_pool_size size;
+        struct rf_vk_descriptor_pool_create_info pool_info;
+        struct rf_vk_descriptor_set_allocate_info allocation;
+        size.type = RF_VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        size.descriptor_count = 3;
+        memset(&pool_info, 0, sizeof(pool_info));
+        pool_info.s_type = RF_VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        pool_info.max_sets = 1; pool_info.pool_size_count = 1;
+        pool_info.pool_sizes = &size;
+        if (impl->api.create_descriptor_pool(impl->device, &pool_info, NULL,
+                                             &r->descriptor_pool) != RF_VK_SUCCESS)
+            goto failed;
+        memset(&allocation, 0, sizeof(allocation));
+        allocation.s_type = RF_VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        allocation.descriptor_pool = r->descriptor_pool;
+        allocation.descriptor_set_count = 1;
+        allocation.set_layouts = &r->set_layout;
+        if (impl->api.allocate_descriptor_sets(impl->device, &allocation,
+                                               &r->descriptor_set) != RF_VK_SUCCESS)
+            goto failed;
+    }
+    spirv = work_group_x == 16 ? rf_gpu_raster_v1_16_spirv
+                               : rf_gpu_raster_v1_8_spirv;
+    spirv_size = work_group_x == 16 ? rf_gpu_raster_v1_16_spirv_len
+                                    : rf_gpu_raster_v1_8_spirv_len;
+    {
+        struct rf_vk_shader_module_create_info shader_info;
+        struct rf_vk_pipeline_layout_create_info layout_info;
+        struct rf_vk_compute_pipeline_create_info pipeline_info;
+        memset(&shader_info, 0, sizeof(shader_info));
+        shader_info.s_type = RF_VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+        shader_info.code_size = spirv_size;
+        shader_info.code = (const uint32_t *)(const void *)spirv;
+        if (impl->api.create_shader_module(impl->device, &shader_info, NULL,
+                                           &r->shader) != RF_VK_SUCCESS) goto failed;
+        memset(&layout_info, 0, sizeof(layout_info));
+        layout_info.s_type = RF_VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        layout_info.set_layout_count = 1; layout_info.set_layouts = &r->set_layout;
+        if (impl->api.create_pipeline_layout(impl->device, &layout_info, NULL,
+                                             &r->pipeline_layout) != RF_VK_SUCCESS)
+            goto failed;
+        memset(&pipeline_info, 0, sizeof(pipeline_info));
+        pipeline_info.s_type = RF_VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+        pipeline_info.stage.s_type =
+            RF_VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        pipeline_info.stage.stage = RF_VK_SHADER_STAGE_COMPUTE_BIT;
+        pipeline_info.stage.module = r->shader;
+        pipeline_info.stage.name = "main";
+        pipeline_info.layout = r->pipeline_layout;
+        pipeline_info.base_pipeline_index = -1;
+        if (impl->api.create_compute_pipelines(impl->device, NULL, 1,
+                &pipeline_info, NULL, &r->pipeline) != RF_VK_SUCCESS) goto failed;
+    }
+    {
+        struct rf_vk_command_pool_create_info pool_info;
+        struct rf_vk_command_buffer_allocate_info allocation;
+        memset(&pool_info, 0, sizeof(pool_info));
+        pool_info.s_type = RF_VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+        pool_info.flags = RF_VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+        pool_info.queue_family_index = impl->queue_family;
+        if (impl->api.create_command_pool(impl->device, &pool_info, NULL,
+                                          &r->command_pool) != RF_VK_SUCCESS)
+            goto failed;
+        memset(&allocation, 0, sizeof(allocation));
+        allocation.s_type = RF_VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        allocation.command_pool = r->command_pool;
+        allocation.level = RF_VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        allocation.command_buffer_count = 1;
+        if (impl->api.allocate_command_buffers(impl->device, &allocation,
+                                               &r->command_buffer) != RF_VK_SUCCESS)
+            goto failed;
+    }
+    *raster = r;
+    snprintf(message, message_capacity, "GPU Raster V1 ready (%ux%u, %ux%u)",
+             width, height, work_group_x, work_group_y);
+    return 0;
+failed:
+    snprintf(message, message_capacity, "Vulkan Raster V1 creation failed");
+    raster_destroy(context, r);
+    return -1;
+}
+
+static int raster_command_grow(struct rf_gpu_vulkan_impl *impl,
+                               struct rf_gpu_vulkan_raster *r,
+                               uint64_t required)
+{
+    struct rf_gpu_vulkan_raster_buffer replacement;
+    uint64_t capacity = r->command.size ? r->command.size : 4096;
+    if (r->command.size >= required) return 0;
+    while (capacity < required) {
+        if (capacity > UINT64_MAX / 2) { capacity = required; break; }
+        capacity *= 2;
+    }
+    if (raster_buffer_create(impl, capacity,
+            RF_VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+            RF_VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+            RF_VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &replacement) < 0)
+        return -1;
+    raster_buffer_destroy(impl, &r->command);
+    r->command = replacement;
+    return 0;
+}
+
+static int raster_invalidate(struct rf_gpu_vulkan_impl *impl,
+                             struct rf_gpu_vulkan_raster_buffer *buffer)
+{
+    struct rf_vk_mapped_memory_range range;
+    if (buffer->memory_flags & RF_VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) return 0;
+    memset(&range, 0, sizeof(range));
+    range.s_type = RF_VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
+    range.memory = buffer->memory; range.offset = 0;
+    range.size = buffer->allocation_size;
+    return impl->api.invalidate_mapped_memory_ranges(impl->device, 1, &range) ==
+        RF_VK_SUCCESS ? 0 : -1;
+}
+
+static int raster_render(void *context, void *raster,
+                         const void *stream, unsigned long stream_size,
+                         unsigned int *color, int *depth,
+                         unsigned int width, unsigned int height,
+                         unsigned int color_stride, unsigned int depth_stride,
+                         char *message, unsigned long message_capacity)
+{
+    struct rf_gpu_vulkan_context *backend_context = context;
+    struct rf_gpu_vulkan_impl *impl = backend_context
+        ? backend_context->implementation : NULL;
+    struct rf_gpu_vulkan_raster *r = raster;
+    rf_vk_fence fence = NULL;
+    void *mapped_command = NULL, *mapped_color = NULL, *mapped_depth = NULL;
+    uint64_t byte_size = (uint64_t)width * height * 4;
+    unsigned int y;
+    rf_vk_result result;
+    if (!impl || !r || r->owner != impl || r->width != width ||
+        r->height != height || !stream_size ||
+        stream_size > impl->max_storage_buffer_range ||
+        rf_gpu_raster_validate_v1(stream, stream_size) ||
+        ((const uint32_t *)stream)[5] != width ||
+        ((const uint32_t *)stream)[6] != height)
+        return -1;
+    if (raster_command_grow(impl, r, stream_size) < 0) goto failed;
+    if (impl->api.map_memory(impl->device, r->command.memory, 0,
+                             r->command.allocation_size, 0,
+                             &mapped_command) != RF_VK_SUCCESS) goto failed;
+    memcpy(mapped_command, stream, stream_size);
+    if (!(r->command.memory_flags & RF_VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) {
+        struct rf_vk_mapped_memory_range range;
+        memset(&range, 0, sizeof(range));
+        range.s_type = RF_VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
+        range.memory = r->command.memory; range.offset = 0;
+        range.size = r->command.allocation_size;
+        if (impl->api.flush_mapped_memory_ranges(impl->device, 1, &range) !=
+            RF_VK_SUCCESS) goto failed;
+    }
+    impl->api.unmap_memory(impl->device, r->command.memory);
+    mapped_command = NULL;
+    {
+        struct rf_vk_descriptor_buffer_info infos[3];
+        struct rf_vk_write_descriptor_set writes[3];
+        memset(infos, 0, sizeof(infos)); memset(writes, 0, sizeof(writes));
+        infos[0].buffer = r->command.buffer; infos[0].range = stream_size;
+        infos[1].buffer = r->color.buffer; infos[1].range = byte_size;
+        infos[2].buffer = r->depth.buffer; infos[2].range = byte_size;
+        for (y = 0; y < 3; ++y) {
+            writes[y].s_type = RF_VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writes[y].dst_set = r->descriptor_set; writes[y].dst_binding = y;
+            writes[y].descriptor_count = 1;
+            writes[y].descriptor_type = RF_VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            writes[y].buffer_info = &infos[y];
+        }
+        impl->api.update_descriptor_sets(impl->device, 3, writes, 0, NULL);
+    }
+    if (impl->api.reset_command_pool(impl->device, r->command_pool, 0) !=
+        RF_VK_SUCCESS) goto failed;
+    {
+        struct rf_vk_command_buffer_begin_info begin;
+        struct rf_vk_memory_barrier barrier;
+        struct rf_vk_buffer_copy copies[2];
+        memset(&begin, 0, sizeof(begin));
+        begin.s_type = RF_VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        if (impl->api.begin_command_buffer(r->command_buffer, &begin) !=
+            RF_VK_SUCCESS) goto failed;
+        memset(&barrier, 0, sizeof(barrier));
+        barrier.s_type = RF_VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+        barrier.src_access_mask = RF_VK_ACCESS_HOST_WRITE_BIT;
+        barrier.dst_access_mask = RF_VK_ACCESS_SHADER_READ_BIT;
+        impl->api.cmd_pipeline_barrier(r->command_buffer,
+            RF_VK_PIPELINE_STAGE_HOST_BIT, RF_VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            0, 1, &barrier, 0, NULL, 0, NULL);
+        impl->api.cmd_bind_pipeline(r->command_buffer,
+                                   RF_VK_PIPELINE_BIND_POINT_COMPUTE, r->pipeline);
+        impl->api.cmd_bind_descriptor_sets(r->command_buffer,
+            RF_VK_PIPELINE_BIND_POINT_COMPUTE, r->pipeline_layout, 0, 1,
+            &r->descriptor_set, 0, NULL);
+        impl->api.cmd_dispatch(r->command_buffer,
+            (width + r->work_group_x - 1) / r->work_group_x,
+            (height + r->work_group_y - 1) / r->work_group_y, 1);
+        memset(&barrier, 0, sizeof(barrier));
+        barrier.s_type = RF_VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+        barrier.src_access_mask = RF_VK_ACCESS_SHADER_WRITE_BIT;
+        barrier.dst_access_mask = RF_VK_ACCESS_TRANSFER_READ_BIT;
+        impl->api.cmd_pipeline_barrier(r->command_buffer,
+            RF_VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, RF_VK_PIPELINE_STAGE_TRANSFER_BIT,
+            0, 1, &barrier, 0, NULL, 0, NULL);
+        memset(copies, 0, sizeof(copies));
+        copies[0].size = byte_size; copies[1].size = byte_size;
+        impl->api.cmd_copy_buffer(r->command_buffer, r->color.buffer,
+                                  r->color_readback.buffer, 1, &copies[0]);
+        impl->api.cmd_copy_buffer(r->command_buffer, r->depth.buffer,
+                                  r->depth_readback.buffer, 1, &copies[1]);
+        if (impl->api.end_command_buffer(r->command_buffer) != RF_VK_SUCCESS)
+            goto failed;
+    }
+    {
+        struct rf_vk_fence_create_info fence_info;
+        struct rf_vk_submit_info submit;
+        memset(&fence_info, 0, sizeof(fence_info));
+        fence_info.s_type = RF_VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+        if (impl->api.create_fence(impl->device, &fence_info, NULL, &fence) !=
+            RF_VK_SUCCESS) goto failed;
+        memset(&submit, 0, sizeof(submit));
+        submit.s_type = RF_VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submit.command_buffer_count = 1;
+        submit.command_buffers = &r->command_buffer;
+        if (impl->api.queue_submit(impl->queue, 1, &submit, fence) != RF_VK_SUCCESS)
+            goto failed;
+        result = impl->api.wait_for_fences(impl->device, 1, &fence, RF_VK_TRUE,
+                                           5000000000ULL);
+        if (result == RF_VK_TIMEOUT) {
+            snprintf(message, message_capacity,
+                     "GPU Raster V1 fence timed out after 5 seconds");
+            goto cleanup;
+        }
+        if (result != RF_VK_SUCCESS) goto failed;
+    }
+    if (impl->api.map_memory(impl->device, r->color_readback.memory, 0,
+            r->color_readback.allocation_size, 0, &mapped_color) != RF_VK_SUCCESS ||
+        impl->api.map_memory(impl->device, r->depth_readback.memory, 0,
+            r->depth_readback.allocation_size, 0, &mapped_depth) != RF_VK_SUCCESS ||
+        raster_invalidate(impl, &r->color_readback) < 0 ||
+        raster_invalidate(impl, &r->depth_readback) < 0) goto failed;
+    for (y = 0; y < height; ++y) {
+        memcpy(color + (uint64_t)y * color_stride,
+               (const uint32_t *)mapped_color + (uint64_t)y * width,
+               (size_t)width * 4);
+        memcpy(depth + (uint64_t)y * depth_stride,
+               (const int32_t *)mapped_depth + (uint64_t)y * width,
+               (size_t)width * 4);
+    }
+    impl->api.unmap_memory(impl->device, r->depth_readback.memory);
+    impl->api.unmap_memory(impl->device, r->color_readback.memory);
+    impl->api.destroy_fence(impl->device, fence, NULL);
+    snprintf(message, message_capacity, "GPU Raster V1 rendered");
+    return 0;
+failed:
+    snprintf(message, message_capacity, "Vulkan Raster V1 operation failed");
+cleanup:
+    if (mapped_depth) impl->api.unmap_memory(impl->device, r->depth_readback.memory);
+    if (mapped_color) impl->api.unmap_memory(impl->device, r->color_readback.memory);
+    if (mapped_command) impl->api.unmap_memory(impl->device, r->command.memory);
+    if (fence) impl->api.destroy_fence(impl->device, fence, NULL);
+    return -1;
+}
+
 static unsigned int adapter_type(uint32_t type)
 {
     switch (type) {
@@ -865,6 +1295,7 @@ static void snapshot_capabilities(struct rf_vk_api *api,
                                   rf_vk_physical_device device,
                                   rf_vk_device logical_device,
                                   unsigned int adapter_index,
+                                  unsigned int shader_int64_enabled,
                                   struct rf_gpu_capabilities *caps)
 {
     struct rf_vk_physical_device_properties properties;
@@ -913,7 +1344,9 @@ static void snapshot_capabilities(struct rf_vk_api *api,
     caps->min_storage_buffer_offset_alignment =
         properties.limits.min_storage_buffer_offset_alignment;
     caps->non_coherent_atom_size = properties.limits.non_coherent_atom_size;
-    caps->shader_int64 = features.shader_int64 != 0;
+    /* Raster capability is a logical-device fact.  Advertised support alone
+     * is insufficient if device creation policy did not enable the feature. */
+    caps->shader_int64 = features.shader_int64 && shader_int64_enabled;
     caps->memory_heap_count = memory.memory_heap_count;
     if (caps->memory_heap_count > RF_GPU_MAX_MEMORY_HEAPS)
         caps->memory_heap_count = RF_GPU_MAX_MEMORY_HEAPS;
@@ -1107,6 +1540,7 @@ static int backend_init(void *context, struct rf_gpu_backend_info *info,
         if (result != RF_VK_SUCCESS || !impl->device) goto done;
         api->get_device_queue(impl->device, selected_family, 0, &impl->queue);
         if (!impl->queue) goto done;
+        impl->shader_int64_enabled = enabled_features.shader_int64 != 0;
     }
     impl->physical_device = selected_device;
     impl->queue_family = selected_family;
@@ -1117,7 +1551,10 @@ static int backend_init(void *context, struct rf_gpu_backend_info *info,
     info->adapter_type = adapter_type(selected_type);
     info->queue_family = selected_family;
     snapshot_capabilities(api, selected_device, impl->device, selected_index,
+                          impl->shader_int64_enabled,
                           &info->capabilities);
+    impl->max_storage_buffer_range =
+        info->capabilities.max_storage_buffer_range;
     snprintf(message, message_capacity, "Vulkan ready; compute/readback passed");
     backend_context->implementation = impl;
     impl = NULL;
@@ -1144,5 +1581,8 @@ const struct rf_gpu_backend rf_gpu_vulkan_backend = {
     backend_shutdown,
     framebuffer_create,
     framebuffer_destroy,
-    framebuffer_render
+    framebuffer_render,
+    raster_create,
+    raster_destroy,
+    raster_render
 };

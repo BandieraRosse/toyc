@@ -148,6 +148,84 @@ void rf_gpu_framebuffer_shutdown(struct rf_gpu_framebuffer *framebuffer)
     zero_bytes(framebuffer, sizeof(*framebuffer));
 }
 
+static int raster_create(struct rf_gpu *gpu, struct rf_gpu_raster *raster,
+                         unsigned int width, unsigned int height)
+{
+    struct rf_gpu_status status;
+    void *implementation = 0;
+    if (!gpu || !raster || gpu->state != RF_GPU_STATE_READY || !width ||
+        !height || width > 16384 || height > 16384 ||
+        rf_gpu_get_status(gpu, &status) < 0 || !status.renderer.raster_v1 ||
+        !gpu->backend || !gpu->backend->raster_create ||
+        !gpu->backend->raster_destroy || !gpu->backend->raster_render)
+        return -1;
+    if (gpu->backend->raster_create(
+            gpu->backend_context, width, height,
+            status.renderer.raster_work_group_x,
+            status.renderer.raster_work_group_y, &implementation,
+            gpu->message, sizeof(gpu->message)) < 0)
+        return -1;
+    zero_bytes(raster, sizeof(*raster));
+    raster->backend = gpu->backend;
+    raster->backend_context = gpu->backend_context;
+    raster->implementation = implementation;
+    raster->format = RF_GPU_FRAMEBUFFER_FORMAT_XRGB8888;
+    raster->width = width;
+    raster->height = height;
+    raster->work_group_x = status.renderer.raster_work_group_x;
+    raster->work_group_y = status.renderer.raster_work_group_y;
+    return 0;
+}
+
+int rf_gpu_raster_init(struct rf_gpu *gpu, struct rf_gpu_raster *raster,
+                       unsigned int width, unsigned int height)
+{
+    if (!raster) return -1;
+    zero_bytes(raster, sizeof(*raster));
+    return raster_create(gpu, raster, width, height);
+}
+
+int rf_gpu_raster_resize(struct rf_gpu *gpu, struct rf_gpu_raster *raster,
+                         unsigned int width, unsigned int height)
+{
+    struct rf_gpu_raster replacement;
+    if (!raster || !raster->implementation) return -1;
+    if (raster->width == width && raster->height == height) return 0;
+    if (raster_create(gpu, &replacement, width, height) < 0) return -1;
+    rf_gpu_raster_shutdown(raster);
+    *raster = replacement;
+    return 0;
+}
+
+int rf_gpu_raster_render(struct rf_gpu *gpu, struct rf_gpu_raster *raster,
+                         const void *stream, unsigned long stream_size,
+                         unsigned int *color, int *depth,
+                         unsigned int width, unsigned int height,
+                         unsigned int color_stride,
+                         unsigned int depth_stride)
+{
+    if (!gpu || gpu->state != RF_GPU_STATE_READY || !raster ||
+        raster->backend != gpu->backend || !raster->implementation ||
+        !stream || !stream_size || !color || !depth ||
+        width != raster->width || height != raster->height ||
+        color_stride < width || depth_stride < width)
+        return -1;
+    return raster->backend->raster_render(
+        raster->backend_context, raster->implementation, stream, stream_size,
+        color, depth, width, height, color_stride, depth_stride,
+        gpu->message, sizeof(gpu->message));
+}
+
+void rf_gpu_raster_shutdown(struct rf_gpu_raster *raster)
+{
+    if (!raster) return;
+    if (raster->implementation && raster->backend &&
+        raster->backend->raster_destroy)
+        raster->backend->raster_destroy(raster->backend_context,
+                                        raster->implementation);
+    zero_bytes(raster, sizeof(*raster));
+}
+
 int rf_gpu_init(struct rf_gpu *gpu, enum rf_gpu_policy policy,
                 const struct rf_gpu_backend *backend, void *backend_context)
 {
