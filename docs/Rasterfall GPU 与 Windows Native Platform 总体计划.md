@@ -1,8 +1,38 @@
 # Rasterfall GPU 与 Windows Native Platform 总体计划
 
-> 状态：规划阶段
+> 状态：执行中（GPU-0、GPU-0.5、GPU-1 已完成）
+> 进展同步：2026-09-16
+> 源码核对基线：`7d550df` 完成 GPU Compute 第一阶段
 > 方向：Vulkan GPU Runtime / Compute Rasterizer / Windows Native Platform
 > 原则：保持 CPU renderer 与现有 Linux 路径稳定，以渐进方式引入 GPU 算力，并逐步收回 Windows 平台层所有权。
+
+## 当前进展
+
+| Checkpoint | 状态 | 可复核事实 |
+| --- | --- | --- |
+| GPU-0 Vulkan Probe | 已完成 | 自有最小 Vulkan 1.0 ABI、动态 loader、adapter / device / queue 生命周期 |
+| GPU-0.5 Windows Hardware Bring-up | 已完成 | Windows 原生枚举 AMD integrated 与 NVIDIA RTX 3050 Laptop GPU，discrete-first 选中 NVIDIA |
+| GPU-1 Compute Ownership | 已完成 | WSL llvmpipe 与 Windows RTX 3050 均通过 storage-buffer compute/readback：`1 2 3 4 -> 4 7 10 13` |
+| GPU-2 RF GPU Core Service | 下一任务 | 先定义 optional/required fallback policy，再将 hosted 实验代码收敛为 Core-owned service |
+| Windows Native Platform | 未开始 | 正常 Windows Rasterfall 仍使用 MinGW + SDL2，本阶段未改窗口、输入、音频或 presentation |
+
+当前边界：
+
+* GPU probe 仍是独立 hosted 工具，未接入 RF Core、Game、window 或 renderer；
+* CPU renderer 仍是唯一正常游戏渲染路径；
+* 尚无 GPU framebuffer、raster command ABI、surface 或 swapchain；
+* Windows `total` 首次观测包含 resource / descriptor / pipeline 创建，不作为稳态 GPU 性能结论。
+
+当前复核入口：
+
+```sh
+make gpu-probe
+build/rf-gpu-probe
+make win-gpu-probe
+# Windows PowerShell: .\build\rf-gpu-probe.exe
+```
+
+---
 
 ## 1. 背景
 
@@ -266,7 +296,11 @@ device / queue lifecycle:
 
 # 6. GPU Phase 0.5 — Windows Hardware Bring-up
 
-下一步应优先让现有 probe 在 Windows 原生运行。
+> 实现状态（2026-09-16）：**已完成。** Windows 原生 loader 枚举 RTX 3050
+> Laptop GPU，device type 为 discrete，compute-capable queue、VkDevice、VkQueue 和清理
+> 生命周期均已由同一份共用 probe 验证。
+
+该阶段要求现有 probe 在 Windows 原生运行。
 
 平台差异只允许存在于 Vulkan loader 边界。
 
@@ -940,22 +974,15 @@ RF 自己负责：
 
 # 21. 近期关键路径
 
-从当前状态开始，优先级固定为：
+截至 2026-09-16，GPU-0.5 与 GPU-1 已完成，当前优先级为：
 
 ```text
+Completed:
+GPU-0 / GPU-0.5 / GPU-1
+WSL llvmpipe + Windows RTX 3050
+            │
+            ▼
 Current:
-WSL Vulkan / llvmpipe probe
-            │
-            ▼
-GPU-0.5
-Windows NVIDIA Vulkan probe
-            │
-            ▼
-GPU-1
-Storage-buffer compute
-WSL + Windows dual validation
-            │
-            ▼
 GPU-2
 RF GPU Core Service
             │
