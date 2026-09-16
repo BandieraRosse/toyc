@@ -1176,26 +1176,34 @@ wayland_fps: $(BUILD)/wayland_fps
 # has a stable ABI and fallback policy.
 .PHONY: gpu-probe gpu-service-test gpu-framebuffer-test gpu-raster-abi-test \
 	gpu-raster-test gpu-raster-diff-test win-gpu-probe win-gpu-framebuffer-test \
-	win-gpu-raster-abi-test win-gpu-raster-test win-gpu-raster-diff-test
+	gpu-raster-binning-test win-gpu-raster-abi-test win-gpu-raster-test win-gpu-raster-diff-test
 gpu-probe: $(BUILD)/rf-gpu-probe
 gpu-service-test: $(BUILD)/rf-gpu-service-test
 gpu-framebuffer-test: $(BUILD)/rf-gpu-framebuffer-test
 gpu-raster-abi-test: $(BUILD)/rf-gpu-raster-pack-test
 gpu-raster-test: $(BUILD)/rf-gpu-raster-test
 gpu-raster-diff-test: $(BUILD)/rf-gpu-raster-diff-test
+gpu-raster-binning-test: $(BUILD)/rf-gpu-raster-binning-test
 win-gpu-probe: $(BUILD)/rf-gpu-probe.exe
 win-gpu-framebuffer-test: $(BUILD)/rf-gpu-framebuffer-test.exe
 win-gpu-raster-abi-test: $(BUILD)/rf-gpu-raster-pack-test.exe
 win-gpu-raster-test: $(BUILD)/rf-gpu-raster-test.exe
 win-gpu-raster-diff-test: $(BUILD)/rf-gpu-raster-diff-test.exe
 
+$(BUILD)/rf-gpu-raster-binning-test: gpu/src/rf_gpu_raster_bin_test.c gpu/src/rf_gpu_raster_bin.c gpu/src/rf_gpu_raster_pack.c rasterfall/include/rf_gpu_raster_bin.h rasterfall/include/rf_gpu_raster_abi.h | $(BUILD)
+	$(GCC) -std=c11 -O2 -Wall -Wextra -Werror -DRF_GPU_RASTER_BIN_TESTING -I include -I include/tlibc -I rasterfall/include gpu/src/rf_gpu_raster_bin_test.c gpu/src/rf_gpu_raster_bin.c gpu/src/rf_gpu_raster_pack.c -o $@
+
 GPU_RASTER_TEST_SRCS := gpu/src/rf_gpu_raster_test.c \
 	gpu/src/rf_gpu_vulkan_backend.c gpu/src/rf_gpu_raster_pack.c \
+	gpu/src/rf_gpu_raster_bin.c \
 	rasterfall/src/rf_gpu.c
 GPU_RASTER_TEST_DEPS := gpu/include/rf_vulkan_min.h \
 	gpu/include/rf_gpu_vulkan_backend.h gpu/src/rf_gpu_raster_v1_spirv.inc \
-	gpu/shaders/raster_v1.comp rasterfall/include/rf_gpu.h \
+	gpu/src/rf_gpu_raster_v1_full_spirv.inc gpu/shaders/raster_v1.comp \
+	gpu/shaders/raster_v1_full_scan.comp rasterfall/include/rf_gpu.h \
 	rasterfall/include/rf_gpu_raster_abi.h rasterfall/include/rf_gpu_raster_pack.h
+
+GPU_RASTER_TEST_DEPS += rasterfall/include/rf_gpu_raster_bin.h
 
 GPU_RASTER_DIFF_SRCS := gpu/src/rf_gpu_raster_diff_test.c \
 	gpu/src/rf_gpu_raster_cpu_ref.c gpu/src/rf_gpu_renderer_hosted_shim.c \
@@ -1237,25 +1245,25 @@ $(BUILD)/rf-gpu-service-test: gpu/src/rf_gpu_service_test.c rasterfall/src/rf_gp
 	$(GCC) -std=c11 -O2 -Wall -Wextra -Werror -I rasterfall/include \
 		gpu/src/rf_gpu_service_test.c rasterfall/src/rf_gpu.c -o $@
 
-$(BUILD)/rf-gpu-probe: gpu/src/rf_gpu_probe.c gpu/src/rf_gpu_vulkan_backend.c gpu/src/rf_gpu_raster_pack.c gpu/include/rf_vulkan_min.h gpu/include/rf_gpu_vulkan_backend.h rasterfall/src/rf_gpu.c rasterfall/include/rf_gpu.h | $(BUILD)
+$(BUILD)/rf-gpu-probe: gpu/src/rf_gpu_probe.c gpu/src/rf_gpu_vulkan_backend.c gpu/src/rf_gpu_raster_pack.c gpu/src/rf_gpu_raster_bin.c gpu/include/rf_vulkan_min.h gpu/include/rf_gpu_vulkan_backend.h rasterfall/src/rf_gpu.c rasterfall/include/rf_gpu.h | $(BUILD)
 	$(GCC) -std=c11 -O2 -Wall -Wextra -Werror -I include -I include/tlibc -I gpu/include -I rasterfall/include \
 		gpu/src/rf_gpu_probe.c gpu/src/rf_gpu_vulkan_backend.c \
-		gpu/src/rf_gpu_raster_pack.c rasterfall/src/rf_gpu.c -ldl -o $@
+		gpu/src/rf_gpu_raster_pack.c gpu/src/rf_gpu_raster_bin.c rasterfall/src/rf_gpu.c -ldl -o $@
 
-$(BUILD)/rf-gpu-probe.exe: gpu/src/rf_gpu_probe.c gpu/src/rf_gpu_vulkan_backend.c gpu/src/rf_gpu_raster_pack.c gpu/include/rf_vulkan_min.h gpu/include/rf_gpu_vulkan_backend.h rasterfall/src/rf_gpu.c rasterfall/include/rf_gpu.h | $(BUILD)
+$(BUILD)/rf-gpu-probe.exe: gpu/src/rf_gpu_probe.c gpu/src/rf_gpu_vulkan_backend.c gpu/src/rf_gpu_raster_pack.c gpu/src/rf_gpu_raster_bin.c gpu/include/rf_vulkan_min.h gpu/include/rf_gpu_vulkan_backend.h rasterfall/src/rf_gpu.c rasterfall/include/rf_gpu.h | $(BUILD)
 	x86_64-w64-mingw32-gcc -std=c11 -O2 -Wall -Wextra -Werror \
 		-I windows/include -I include -I include/tlibc -I gpu/include -I rasterfall/include gpu/src/rf_gpu_probe.c \
-		gpu/src/rf_gpu_vulkan_backend.c gpu/src/rf_gpu_raster_pack.c rasterfall/src/rf_gpu.c -o $@
+		gpu/src/rf_gpu_vulkan_backend.c gpu/src/rf_gpu_raster_pack.c gpu/src/rf_gpu_raster_bin.c rasterfall/src/rf_gpu.c -o $@
 
-$(BUILD)/rf-gpu-framebuffer-test: gpu/src/rf_gpu_framebuffer_test.c gpu/src/rf_gpu_vulkan_backend.c gpu/src/rf_gpu_raster_pack.c gpu/include/rf_vulkan_min.h gpu/include/rf_gpu_vulkan_backend.h rasterfall/src/rf_gpu.c rasterfall/include/rf_gpu.h | $(BUILD)
+$(BUILD)/rf-gpu-framebuffer-test: gpu/src/rf_gpu_framebuffer_test.c gpu/src/rf_gpu_vulkan_backend.c gpu/src/rf_gpu_raster_pack.c gpu/src/rf_gpu_raster_bin.c gpu/include/rf_vulkan_min.h gpu/include/rf_gpu_vulkan_backend.h rasterfall/src/rf_gpu.c rasterfall/include/rf_gpu.h | $(BUILD)
 	$(GCC) -std=c11 -O2 -Wall -Wextra -Werror -I include -I include/tlibc -I gpu/include -I rasterfall/include \
 		gpu/src/rf_gpu_framebuffer_test.c gpu/src/rf_gpu_vulkan_backend.c \
-		gpu/src/rf_gpu_raster_pack.c rasterfall/src/rf_gpu.c -ldl -o $@
+		gpu/src/rf_gpu_raster_pack.c gpu/src/rf_gpu_raster_bin.c rasterfall/src/rf_gpu.c -ldl -o $@
 
-$(BUILD)/rf-gpu-framebuffer-test.exe: gpu/src/rf_gpu_framebuffer_test.c gpu/src/rf_gpu_vulkan_backend.c gpu/src/rf_gpu_raster_pack.c gpu/include/rf_vulkan_min.h gpu/include/rf_gpu_vulkan_backend.h rasterfall/src/rf_gpu.c rasterfall/include/rf_gpu.h | $(BUILD)
+$(BUILD)/rf-gpu-framebuffer-test.exe: gpu/src/rf_gpu_framebuffer_test.c gpu/src/rf_gpu_vulkan_backend.c gpu/src/rf_gpu_raster_pack.c gpu/src/rf_gpu_raster_bin.c gpu/include/rf_vulkan_min.h gpu/include/rf_gpu_vulkan_backend.h rasterfall/src/rf_gpu.c rasterfall/include/rf_gpu.h | $(BUILD)
 	x86_64-w64-mingw32-gcc -std=c11 -O2 -Wall -Wextra -Werror \
 		-I windows/include -I include -I include/tlibc -I gpu/include -I rasterfall/include gpu/src/rf_gpu_framebuffer_test.c \
-		gpu/src/rf_gpu_vulkan_backend.c gpu/src/rf_gpu_raster_pack.c rasterfall/src/rf_gpu.c -o $@
+		gpu/src/rf_gpu_vulkan_backend.c gpu/src/rf_gpu_raster_pack.c gpu/src/rf_gpu_raster_bin.c rasterfall/src/rf_gpu.c -o $@
 
 rasterfall-blender-deps:
 	python3 -m pip install --target .blender-python numpy

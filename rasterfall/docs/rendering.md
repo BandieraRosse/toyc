@@ -1,6 +1,7 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-16
+> 源码核对基线补充：GPU-6.5 hosted Raster V1 以 runtime-selected 16×16/8×8 workgroup 同时作为 tile，CPU bbox binning 生成保序 index lists；WSL/Intel differential 门禁通过并冻结，不改变 raster semantics、ABI 或正常 CPU world renderer。
 > 源码核对基线补充：GPU-6 以正式 `toy_renderer` flat opaque path 作为 Raster V1 differential oracle；仅 hosted test 使用 ABI adapter 与强制 inline reference，正常 world renderer 仍为 CPU，未接 GPU。
 > 源码核对基线补充：Eula 正常 world/展示在 near/mid 使用 Gameplay Hybrid `eula_lod3.rmesh`，仅 FAR（4096 RFU 起）切换 compact LOD2；Maid 保持原策略。
 > 源码核对基线补充：`--eula-animation-acceptance` 在 UI/Core/window 前早退，复用 legacy VMD evaluator、model instance、CPU skinning、Lighting V1 与标准 AK submission；`--character-performance[-suite]` 统一输出模型 CPU、raster wall 与 total wall 的 mean/median。

@@ -1,6 +1,7 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-16
+> 源码核对基线补充：GPU-6.5 CPU tile command binning 已完成并冻结；WSL llvmpipe / Windows Intel Iris Xe 的 CPU/full-scan/binned differential 均为 0 mismatch，正常 world 仍为 CPU，GPU-7 尚未开始。
 > 源码核对基线补充：GPU-6 CPU/GPU Differential Authority 已完成并冻结；同一 Raster ABI V1 stream 经正式 CPU renderer adapter 与 Vulkan Raster V1 逐像素/深度比较，支持 deterministic stress、mismatch artifact 与 replay，正常 runtime 仍为 CPU。
 > 源码核对基线补充：GPU-5 前的 GPU Capability Contract V1 已完成；Core status 分开 service READY 与 compute/framebuffer/raster_v1，并公开无 Vulkan handle 的 adapter/limit/memory snapshot。
 > 源码核对基线补充：GPU-5 Compute Rasterizer V1 已完成 GPU-4 binary stream 的逐像素 compute raster、deterministic color/depth readback 与 16×16/8×8 实际 pipeline 选择；WSL llvmpipe / Windows Intel Iris Xe fixed hashes 一致并通过。

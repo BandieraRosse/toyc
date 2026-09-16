@@ -1,6 +1,7 @@
 # 构建、平台与验证
 
 > 文档更新：2026-09-16
+> 源码核对基线补充：GPU-6.5 CPU tile binning 已通过 WSL llvmpipe 与 Windows Intel Iris Xe 的 CPU/full-scan/binned 0 mismatch 及 stress A/B，MinGW differential 构建通过；GPU-6.5 DONE / FROZEN。
 > 源码核对基线补充：GPU-6 Differential Authority 已完成；hosted CPU `toy_renderer` reference、Vulkan Raster V1、artifact/replay 与 deterministic stress 已建立，WSL llvmpipe / Windows Intel Iris Xe 均为 color/depth 0 mismatch。
 > 源码核对基线补充：GPU-4 已完成 pointer-free、fixed-width、versioned Raster Command ABI V1；现有 CPU command pool 通过显式 deterministic pack/validation 生成 clear color/depth 与 opaque flat triangle command，独立 Linux runtime test 与 Windows LLP64 layout build gate 已接入，尚不执行 GPU rasterization。
 > 源码核对基线补充：GPU-3 已完成；Core-owned `rf_gpu_framebuffer` 复用持久 Vulkan backend，以 compute 生成 device-local XRGB8888 framebuffer，经有限 fence、readback 与 stride-aware copy 进入 `toy_surface`；正常 runtime 仍显式 disabled/CPU renderer。
@@ -99,6 +100,13 @@ GPU-6 的无窗口入口为 `make gpu-raster-diff-test` / `build/rf-gpu-raster-d
 adapter 与 GPU-5 compute path，逐 RGB24 与完整 signed depth 比较，并支持
 `--replay-raster-stream commands.bin`。mismatch 默认产生可重放 stream、CPU/GPU/diff BMP、depth
 binary 和文本报告；正常 Rasterfall 链接、renderer selection 与 CPU fallback 均未改变。
+
+GPU-6.5 新增 `make gpu-raster-binning-test` 的纯 CPU acceleration-structure 测试。GPU differential
+默认对同一 stream 执行 CPU、diagnostic full-scan 与 tile-binned pipeline；输出 CPU binning、
+tile-list/command upload、submit、两种 execution-wait、readback 和 tile ref 统计。Windows 通过
+`make win-gpu-raster-diff-test` 构建同一测试；Intel Iris Xe 已完成全部 fixture/stress/replay，最大
+1279×719 / 1026-command stress 的 full-scan / binned execution-wait 为 230.272 / 163.568 ms，
+CPU binning 8.343 ms，color/depth 均 0 mismatch。
 
 ## 改文件列表时
 

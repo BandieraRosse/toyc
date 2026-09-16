@@ -230,6 +230,17 @@ int rf_gpu_raster_render_timed(struct rf_gpu *gpu, struct rf_gpu_raster *raster,
         gpu->message, sizeof(gpu->message));
 }
 
+int rf_gpu_raster_set_full_scan_diagnostic(struct rf_gpu_raster *raster,
+                                            int enabled)
+{
+    if(!raster||!raster->implementation||!raster->backend||
+       !raster->backend->raster_set_full_scan_diagnostic)return -1;
+    raster->backend->raster_set_full_scan_diagnostic(raster->backend_context,
+                                                       raster->implementation,
+                                                       enabled);
+    return 0;
+}
+
 void rf_gpu_raster_shutdown(struct rf_gpu_raster *raster)
 {
     if (!raster) return;

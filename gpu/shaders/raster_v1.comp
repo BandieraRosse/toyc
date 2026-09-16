@@ -20,6 +20,12 @@ layout(set = 0, binding = 1, std430) writeonly buffer ColorBuffer {
 layout(set = 0, binding = 2, std430) writeonly buffer DepthBuffer {
     int values[];
 } depth_out;
+layout(set = 0, binding = 3, std430) readonly buffer TileOffsets {
+    uint offsets[];
+} tile_offsets;
+layout(set = 0, binding = 4, std430) readonly buffer TileCommandIndices {
+    uint indices[];
+} tile_commands;
 
 const uint HEADER_WORDS = 8u;
 const uint COMMAND_WORDS = 24u;
@@ -66,9 +72,12 @@ void main()
 
     uint color = 0xff000000u;
     int depth = 0;
-    uint command_count = stream.words[4];
-    for (uint command_index = 0u; command_index < command_count;
-         ++command_index) {
+    uint tiles_x = (width + RF_RASTER_LOCAL_SIZE - 1u) / RF_RASTER_LOCAL_SIZE;
+    uint tile_id = gl_WorkGroupID.y * tiles_x + gl_WorkGroupID.x;
+    uint list_begin = tile_offsets.offsets[tile_id];
+    uint list_end = tile_offsets.offsets[tile_id + 1u];
+    for (uint list_index = list_begin; list_index < list_end; ++list_index) {
+        uint command_index = tile_commands.indices[list_index];
         uint base = HEADER_WORDS + command_index * COMMAND_WORDS;
         uint kind = stream.words[base];
         if (kind == CMD_CLEAR_COLOR) {

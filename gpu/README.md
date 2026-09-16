@@ -1,7 +1,7 @@
 # GPU 目录概览
 
 > 文档更新：2026-09-16
-> 源码核对基线：GPU-6 CPU/GPU Differential Authority 已完成；正式 `toy_renderer` reference 与 Vulkan Raster V1 在 WSL llvmpipe / Windows Intel Iris Xe 的 fixed、stress、replay fixtures 均为 color/depth 0 mismatch。
+> 源码核对基线：GPU-6.5 Tile Command Binning 已完成并冻结；WSL llvmpipe 与 Windows Intel Iris Xe 的 CPU/full-scan/tile-binned differential 均为 color/depth 0 mismatch，GPU-6 authority 持续约束 Raster V1。
 
 本目录用于保存 GPU 相关的外部项目和实验代码。当前主要项目是
 [`wgpu-native`](wgpu-native/)，用于参考其 C API、GPU 设备发现和基础 GPU
@@ -188,6 +188,29 @@ grid、equal-depth/near-far、offscreen/frame edges/thin/mixed size、light/fog�
 
 GPU-6 冻结规则：Raster V1 correctness 持续由 CPU reference differential test 约束；以后每新增
 Raster ABI command 或 shading semantics，必须同时增加对应 differential fixture。
+
+## GPU-6.5 CPU Tile Command Binning
+
+正常 hosted GPU raster 仍为一个 workgroup 对应一个 tile、一个 invocation 对应一个 pixel，tile 尺寸
+直接使用 capability contract 选出的 16×16 或 8×8。CPU 从冻结的 Raster ABI V1 bbox 构造
+`tile_offsets[tile_count+1]` 和 `tile_command_indices[total_refs]`；indices 指向原 command stream，
+不复制 payload。两遍 count/prefix/fill 按原 command index 填充，因此每个 tile 严格保持 stream order。
+V1 的两个前导 clear 被加入所有 tile；当前 ABI validator 不允许中途或额外 clear，因此不存在提升
+clear 的状态变换。
+
+offset/index 的 CPU 和 Vulkan buffer 分别持有 capacity，增长采用 replacement-first，所有 tile/ref
+算术检查溢出和 storage-buffer limit，失败不截断 command。`make gpu-raster-binning-test` 覆盖 tile
+边界、单/多/full/thin 覆盖、8×8/16×16、顺序、增长和非法 stream；differential test 对同一 stream
+依次运行 CPU、保留的 diagnostic full-scan pipeline 与正常 tile-binned pipeline，并输出 binning、两类
+upload、submit、两种 execution-wait、readback 以及 command/tile/ref 统计。
+
+WSL llvmpipe 的 1279×719 / 1026 commands stress 实测为 3600 tiles、1,540,976 refs、平均
+428.049、最大 591；CPU binning 7.073 ms，full-scan / binned execution-wait 为 1321.763 /
+635.771 ms，CPU/full-scan/binned 三方 color/depth 均 0 mismatch。该数值只代表当次软件 Vulkan
+运行。Windows Intel Iris Xe 同一 workload 为 CPU raster 457.160 ms、CPU binning 8.343 ms、
+tile-list upload 1.280 ms、full-scan / binned execution-wait 230.272 / 163.568 ms、readback
+35.739 ms；全部 fixture、stress 与 replay 的 CPU/full-scan/binned color/depth 均 0 mismatch。
+因此 GPU-6.5 标记 DONE / FROZEN，并具备进入 GPU-7 Normal World Migration 的性能基础。
 
 ## 注意事项
 

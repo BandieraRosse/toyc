@@ -98,11 +98,18 @@ struct rf_gpu_backend_info {
  * execution_wait_ms includes GPU execution plus the blocking fence wait. */
 struct rf_gpu_raster_timing {
     double pack_validation_ms;
+    double cpu_binning_ms;
+    double tile_upload_ms;
+    double command_upload_ms;
     double upload_ms;
     double submit_ms;
     double execution_wait_ms;
     double readback_ms;
     double total_ms;
+    unsigned int command_count;
+    unsigned int tile_count;
+    unsigned long long total_refs;
+    unsigned int max_refs_per_tile;
 };
 
 /* Backend return values distinguish ordinary absence from a backend that was
@@ -136,6 +143,8 @@ struct rf_gpu_backend {
                          unsigned int depth_stride,
                          struct rf_gpu_raster_timing *timing,
                          char *message, unsigned long message_capacity);
+    void (*raster_set_full_scan_diagnostic)(void *context, void *raster,
+                                             int enabled);
 };
 
 struct rf_gpu_framebuffer {
@@ -213,6 +222,8 @@ int rf_gpu_raster_render_timed(struct rf_gpu *gpu, struct rf_gpu_raster *raster,
                          unsigned int color_stride,
                          unsigned int depth_stride,
                          struct rf_gpu_raster_timing *timing);
+int rf_gpu_raster_set_full_scan_diagnostic(struct rf_gpu_raster *raster,
+                                            int enabled);
 void rf_gpu_raster_shutdown(struct rf_gpu_raster *raster);
 
 #endif

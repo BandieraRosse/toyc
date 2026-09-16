@@ -1,6 +1,6 @@
 # Rasterfall GPU 与 Windows Native Platform 总体计划
 
-> 状态：执行中（GPU-0 至 GPU-6 及 GPU Capability Contract V1 已完成；GPU-6 FROZEN）
+> 状态：执行中（GPU-0 至 GPU-6.5 及 GPU Capability Contract V1 已完成并冻结；GPU-7 尚未开始）
 > 进展同步：2026-09-16
 > 源码核对基线：GPU-4 Raster Command ABI V1 / deterministic pack-validation
 > 源码核对基线：GPU-5 前 portability gate 已建立无 Vulkan handle capability snapshot、独立 Raster V1 gate 与 limit-driven 16x16/8x8 workgroup policy；WSL llvmpipe / Windows Intel Iris Xe 实测通过。
@@ -22,6 +22,7 @@
 | GPU Capability Contract V1 | 已完成 | GPU-5 前 portability gate；service/renderer capability 分层、无 handle snapshot、`shaderInt64` Raster V1 requirement、limit-driven workgroup 与通用 memory property selection |
 | GPU-5 Compute Rasterizer V1 | 已完成 | GPU 直接消费 GPU-4 binary stream；WSL llvmpipe / Windows Intel Iris Xe 的 color/depth fixed fixtures、resize/growth/shutdown 已通过且 hash 一致 |
 | GPU-6 Differential Authority | 已完成 / FROZEN | 同一 Raster ABI V1 stream 经正式 CPU renderer 与 Vulkan Raster V1；fixed/stress/replay 在 llvmpipe / Intel Iris Xe 均为 color/depth 0 mismatch |
+| GPU-6.5 Tile Command Binning | 已完成 / FROZEN | CPU bbox 两遍保序 binning，workgroup=tile，full-scan A/B；WSL/Intel Iris Xe 全部 differential 0 mismatch，stress execution-wait 明显下降 |
 | Windows Native Platform | 未开始 | 正常 Windows Rasterfall 仍使用 MinGW + SDL2，本阶段未改窗口、输入、音频或 presentation |
 
 当前边界：
@@ -1103,6 +1104,14 @@ GPU 第一次消费 RF raster commands 并正确执行 depth-tested triangle ras
 ## GPU-6 — Differential Authority
 
 CPU renderer 成为自动化 GPU raster correctness reference。
+
+## GPU-6.5 — Raster Scalability / Tile Command Binning
+
+CPU 按 Raster ABI V1 bbox 建立保序 tile offsets/command indices，tile 尺寸等于 capability contract
+选择的 workgroup。正常 hosted raster 只扫描本 tile list；保留同 shader semantics 的 full-scan
+diagnostic A/B。WSL llvmpipe 与 Windows Intel Iris Xe 已完成全部 differential、stress 与 replay，
+color/depth 均 0 mismatch；Intel 最大 stress execution-wait 从 230.272 ms 降至 163.568 ms，CPU
+binning 为 8.343 ms。GPU-6.5 DONE / FROZEN，下一阶段可进入 GPU-7，但本阶段未迁移正常 world。
 
 ## GPU-7 — Playable GPU World
 

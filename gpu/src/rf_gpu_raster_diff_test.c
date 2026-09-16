@@ -199,14 +199,18 @@ static int compare_case(struct rf_gpu *gpu, struct rf_gpu_raster *raster,
 {
     const struct rf_gpu_raster_stream_header_v1 *h=(const void*)s->data;
     struct outputs o; struct rf_gpu_cpu_reference_timing ct;
-    struct rf_gpu_raster_timing gt; size_t n=(size_t)h->framebuffer_width*h->framebuffer_height;
-    uint64_t ch,gh,cdh,gdh; uint64_t cm=0,dm=0; uint32_t firstx=0,firsty=0;
+    struct rf_gpu_raster_timing gt,ft; size_t n=(size_t)h->framebuffer_width*h->framebuffer_height;
+    uint64_t ch,gh,cdh,gdh; uint64_t cm=0,dm=0,fcm=0,fdm=0; uint32_t firstx=0,firsty=0;
     int have_first=0,maxr=0,maxg=0,maxb=0; int64_t maxd=0; char report[2048];
     memset(&o,0,sizeof(o));o.width=h->framebuffer_width;o.height=h->framebuffer_height;
     o.cpu_color=malloc(n*4);o.gpu_color=malloc(n*4);o.cpu_depth=malloc(n*4);o.gpu_depth=malloc(n*4);
     if(!o.cpu_color||!o.gpu_color||!o.cpu_depth||!o.gpu_depth)return -1;
     if(raster->width!=o.width||raster->height!=o.height)if(rf_gpu_raster_resize(gpu,raster,o.width,o.height)<0)return -1;
     if(rf_gpu_raster_cpu_reference_v1(s->data,s->size,o.cpu_color,o.cpu_depth,o.width,o.width,&ct)<0 ||
+       rf_gpu_raster_set_full_scan_diagnostic(raster,1)<0 ||
+       rf_gpu_raster_render_timed(gpu,raster,s->data,s->size,o.gpu_color,o.gpu_depth,o.width,o.height,o.width,o.width,&ft)<0)return -1;
+    for(size_t i=0;i<n;i++){if((o.cpu_color[i]&0xffffffu)!=(o.gpu_color[i]&0xffffffu))fcm++;if(o.cpu_depth[i]!=o.gpu_depth[i])fdm++;}
+    if(rf_gpu_raster_set_full_scan_diagnostic(raster,0)<0 ||
        rf_gpu_raster_render_timed(gpu,raster,s->data,s->size,o.gpu_color,o.gpu_depth,o.width,o.height,o.width,o.width,&gt)<0)return -1;
     for(size_t i=0;i<n;i++){
         uint32_t cc=o.cpu_color[i]&0xffffffu,gc=o.gpu_color[i]&0xffffffu;
@@ -215,15 +219,16 @@ static int compare_case(struct rf_gpu *gpu, struct rf_gpu_raster *raster,
     }
     ch=hash_bytes(o.cpu_color,n*4);gh=hash_bytes(o.gpu_color,n*4);cdh=hash_bytes(o.cpu_depth,n*4);gdh=hash_bytes(o.gpu_depth,n*4);
     snprintf(report,sizeof(report),
-      "fixture: %s\ncolor mismatches: %llu\ndepth mismatches: %llu\nfirst mismatch coordinate: %s%u,%u\nCPU color: 0x%08x\nGPU color: 0x%08x\nCPU depth: %d\nGPU depth: %d\nmax R delta: %d\nmax G delta: %d\nmax B delta: %d\nmax depth delta: %lld\nCPU color hash: %016llx\nGPU color hash: %016llx\nCPU depth hash: %016llx\nGPU depth hash: %016llx\nCPU raster ms: %.3f\nGPU pack/validation ms: %.3f\nGPU upload ms: %.3f\nGPU submit ms: %.3f\nGPU execution-wait ms: %.3f\nGPU readback ms: %.3f\nGPU total ms: %.3f\n",
-      name,(unsigned long long)cm,(unsigned long long)dm,have_first?"":"none ",firstx,firsty,
+      "fixture: %s\nfull-scan color mismatches: %llu\nfull-scan depth mismatches: %llu\ncolor mismatches: %llu\ndepth mismatches: %llu\nfirst mismatch coordinate: %s%u,%u\nCPU color: 0x%08x\nGPU color: 0x%08x\nCPU depth: %d\nGPU depth: %d\nmax R delta: %d\nmax G delta: %d\nmax B delta: %d\nmax depth delta: %lld\nCPU color hash: %016llx\nGPU color hash: %016llx\nCPU depth hash: %016llx\nGPU depth hash: %016llx\nframe size: %ux%u\ncommand count: %u\ntile count: %u\ntotal refs: %llu\naverage refs/tile: %.3f\nmaximum refs/tile: %u\nCPU raster ms: %.3f\nCPU tile binning ms: %.3f\ntile-list upload ms: %.3f\ncommand upload ms: %.3f\nGPU validation ms: %.3f\nGPU upload ms: %.3f\nGPU submit ms: %.3f\nfull-scan execution-wait ms: %.3f\ntile-binned execution-wait ms: %.3f\nGPU readback ms: %.3f\nGPU total ms: %.3f\n",
+      name,(unsigned long long)fcm,(unsigned long long)fdm,(unsigned long long)cm,(unsigned long long)dm,have_first?"":"none ",firstx,firsty,
       have_first?o.cpu_color[(size_t)firsty*o.width+firstx]:0,have_first?o.gpu_color[(size_t)firsty*o.width+firstx]:0,
       have_first?o.cpu_depth[(size_t)firsty*o.width+firstx]:0,have_first?o.gpu_depth[(size_t)firsty*o.width+firstx]:0,
       maxr,maxg,maxb,(long long)maxd,(unsigned long long)ch,(unsigned long long)gh,(unsigned long long)cdh,(unsigned long long)gdh,
-      ct.raster_ms,gt.pack_validation_ms,gt.upload_ms,gt.submit_ms,gt.execution_wait_ms,gt.readback_ms,gt.total_ms);
+      o.width,o.height,gt.command_count,gt.tile_count,gt.total_refs,gt.tile_count?(double)gt.total_refs/gt.tile_count:0.0,gt.max_refs_per_tile,
+      ct.raster_ms,gt.cpu_binning_ms,gt.tile_upload_ms,gt.command_upload_ms,gt.pack_validation_ms,gt.upload_ms,gt.submit_ms,ft.execution_wait_ms,gt.execution_wait_ms,gt.readback_ms,gt.total_ms);
     fputs(report,stdout);
     if(cm||dm){save_artifacts(artifact_dir,s,&o,report);fprintf(stderr,"mismatch artifacts: %s\n",artifact_dir);}
-    free(o.cpu_color);free(o.gpu_color);free(o.cpu_depth);free(o.gpu_depth);return (cm||dm)?-1:0;
+    free(o.cpu_color);free(o.gpu_color);free(o.cpu_depth);free(o.gpu_depth);return (cm||dm||fcm||fdm)?-1:0;
 }
 
 int main(int argc,char **argv)
