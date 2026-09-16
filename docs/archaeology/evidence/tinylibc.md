@@ -6,7 +6,7 @@
 `https://github.com/WHU-SC7/Tinylibc.git`；调查快照的当前可见历史截至 `a566206`。
 
 “代码记录”只确认改动进入 Git；提交说明、README 和 `tlibc_commit_log.md` 是同期陈述；
-`C:\Users\15259\Desktop\draft` 中的文章是作者提供的同期外部材料；2026-09-15 的回答是事后
+本机旧文档目录 `draft/` 中的文章是作者提供的同期外部材料；2026-09-15 的回答是事后
 回忆。功能通过、贡献比例和因果关系不能由提交数或署名自动推出。
 
 ## 阶段锚点
@@ -141,6 +141,7 @@ git -C <Tinylibc-repo> log --reverse --since=2026-06-22 --until=2026-06-30 \
 git -C <Tinylibc-repo> show --stat 2e03788 4437887 ff396cb
 ```
 
-本轮未纳入课程材料、论文原文和输出、当时的 musl 快照、未提交音频实验、agent 会话及文章旧
-Git 对象。Tinylibc 编译器树到 ToyCCompiler 根提交的逐文件对照已经完成，见
+本轮未纳入课程材料、论文原文和输出、当时的 musl 快照、未提交音频实验、完整关键 agent 开发
+会话及文章旧 Git 对象。可恢复的少量 prompt index、`.claude/` 同期资料和事后作者访谈已经检查；
+它们仍不能恢复完整开发对话。Tinylibc 编译器树到 ToyCCompiler 根提交的逐文件对照已经完成，见
 [ToyCCompiler 证据表](toy-c-compiler.md)。

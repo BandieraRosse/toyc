@@ -78,7 +78,8 @@ SC7 不支持 x86_64，作者当时认为旧架构历史对新的 libc 主线没
 写 C 编译器是作者长期愿望；C 的简洁、机器细节和早期自举历史构成吸引力，coding agent 带来的
 效率提升是 2026-06-30 真正启动的直接触发。同期文章 `002_use_tmake_toreplace_make.md` 在实现前
 已经提出未来以简化编译器实现完全自包含。最初框架由 DeepSeek API 在 Claude Code 工作流中设计，
-作者给出依赖必须全部位于 Tinylibc、不得使用标准库的限制；具体会话和框架来源未纳入本轮材料。
+作者给出依赖必须全部位于 Tinylibc、不得使用标准库的限制；本轮已归档这项 attribution 的事后
+访谈原文，但最初生成框架的完整开发会话仍未恢复。
 
 落点：`periods/tinylibc.md`；证据台账：`evidence/tinylibc.md`。
 
