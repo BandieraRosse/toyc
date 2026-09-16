@@ -48,6 +48,33 @@ const char *rf_gpu_state_name(int state)
     }
 }
 
+void rf_gpu_evaluate_capabilities(const struct rf_gpu_capabilities *caps,
+                                  struct rf_gpu_renderer_capabilities *renderer)
+{
+    unsigned int x = 0, y = 0;
+    if (!renderer) return;
+    zero_bytes(renderer, sizeof(*renderer));
+    if (!caps) return;
+    renderer->compute = caps->compute_queue != 0;
+    renderer->framebuffer = renderer->compute &&
+        caps->device_local_output_memory &&
+        caps->host_visible_readback_memory &&
+        (caps->coherent_readback || caps->non_coherent_readback);
+    if (caps->max_compute_work_group_invocations >= 256 &&
+        caps->max_compute_work_group_size[0] >= 16 &&
+        caps->max_compute_work_group_size[1] >= 16) {
+        x = 16; y = 16;
+    } else if (caps->max_compute_work_group_invocations >= 64 &&
+               caps->max_compute_work_group_size[0] >= 8 &&
+               caps->max_compute_work_group_size[1] >= 8) {
+        x = 8; y = 8;
+    }
+    renderer->raster_work_group_x = x;
+    renderer->raster_work_group_y = y;
+    renderer->raster_v1 = renderer->framebuffer && caps->shader_int64 &&
+        caps->max_storage_buffer_range && x && y;
+}
+
 static int framebuffer_create(struct rf_gpu *gpu,
                               struct rf_gpu_framebuffer *framebuffer,
                               unsigned int width, unsigned int height)
@@ -178,6 +205,9 @@ int rf_gpu_get_status(const struct rf_gpu *gpu, struct rf_gpu_status *status)
     status->state = gpu->state;
     status->ready = gpu->state == RF_GPU_STATE_READY;
     status->info = gpu->info;
+    if (status->ready)
+        rf_gpu_evaluate_capabilities(&status->info.capabilities,
+                                     &status->renderer);
     copy_bytes(status->message, gpu->message, sizeof(status->message));
     return 0;
 }

@@ -3,8 +3,13 @@
 
 #define RF_GPU_ADAPTER_NAME_CAPACITY 256
 #define RF_GPU_MESSAGE_CAPACITY 192
+#define RF_GPU_MAX_MEMORY_HEAPS 16
+#define RF_GPU_MAX_MEMORY_TYPES 32
 
 #define RF_GPU_FRAMEBUFFER_FORMAT_XRGB8888 1
+
+_Static_assert(sizeof(unsigned int) == 4 && sizeof(unsigned long long) == 8,
+               "RF GPU capability snapshot requires 32/64-bit integers");
 
 enum rf_gpu_policy {
     RF_GPU_POLICY_DISABLED = 0,
@@ -27,12 +32,66 @@ enum rf_gpu_adapter_type {
     RF_GPU_ADAPTER_CPU = 4
 };
 
+enum rf_gpu_capability_state {
+    RF_GPU_CAPABILITY_UNSUPPORTED = 0,
+    RF_GPU_CAPABILITY_SUPPORTED = 1
+};
+
+/* Values intentionally match Vulkan 1.0 property bits, but this public
+ * snapshot contains no Vulkan types or handles. */
+#define RF_GPU_MEMORY_DEVICE_LOCAL 0x00000001U
+#define RF_GPU_MEMORY_HOST_VISIBLE 0x00000002U
+#define RF_GPU_MEMORY_HOST_COHERENT 0x00000004U
+#define RF_GPU_MEMORY_HOST_CACHED 0x00000008U
+#define RF_GPU_MEMORY_LAZILY_ALLOCATED 0x00000010U
+#define RF_GPU_MEMORY_HEAP_DEVICE_LOCAL 0x00000001U
+
+struct rf_gpu_memory_heap_capability {
+    unsigned long long size;
+    unsigned int property_flags;
+};
+
+struct rf_gpu_memory_type_capability {
+    unsigned int property_flags;
+    unsigned int heap_index;
+};
+
+struct rf_gpu_capabilities {
+    unsigned int api_version;
+    unsigned int adapter_index;
+    unsigned int compute_queue;
+    unsigned int max_compute_work_group_invocations;
+    unsigned int max_compute_work_group_size[3];
+    unsigned int max_compute_work_group_count[3];
+    unsigned long long max_storage_buffer_range;
+    unsigned long long min_storage_buffer_offset_alignment;
+    unsigned long long non_coherent_atom_size;
+    unsigned int shader_int64;
+    unsigned int memory_heap_count;
+    struct rf_gpu_memory_heap_capability memory_heaps[RF_GPU_MAX_MEMORY_HEAPS];
+    unsigned int memory_type_count;
+    struct rf_gpu_memory_type_capability memory_types[RF_GPU_MAX_MEMORY_TYPES];
+    unsigned int device_local_output_memory;
+    unsigned int host_visible_readback_memory;
+    unsigned int coherent_readback;
+    unsigned int non_coherent_readback;
+};
+
+struct rf_gpu_renderer_capabilities {
+    unsigned int compute;
+    unsigned int framebuffer;
+    unsigned int raster_v1;
+    unsigned int raster_work_group_x;
+    unsigned int raster_work_group_y;
+};
+
 struct rf_gpu_backend_info {
     char adapter_name[RF_GPU_ADAPTER_NAME_CAPACITY];
     unsigned int adapter_type;
     unsigned int vendor_id;
     unsigned int device_id;
     unsigned int queue_family;
+    struct rf_gpu_capabilities capabilities;
 };
 
 /* Backend return values distinguish ordinary absence from a backend that was
@@ -79,6 +138,7 @@ struct rf_gpu_status {
     int state;
     int ready;
     struct rf_gpu_backend_info info;
+    struct rf_gpu_renderer_capabilities renderer;
     char message[RF_GPU_MESSAGE_CAPACITY];
 };
 
@@ -86,6 +146,8 @@ int rf_gpu_init(struct rf_gpu *gpu, enum rf_gpu_policy policy,
                 const struct rf_gpu_backend *backend, void *backend_context);
 void rf_gpu_shutdown(struct rf_gpu *gpu);
 int rf_gpu_get_status(const struct rf_gpu *gpu, struct rf_gpu_status *status);
+void rf_gpu_evaluate_capabilities(const struct rf_gpu_capabilities *capabilities,
+                                  struct rf_gpu_renderer_capabilities *renderer);
 const char *rf_gpu_policy_name(int policy);
 const char *rf_gpu_state_name(int state);
 int rf_gpu_framebuffer_init(struct rf_gpu *gpu,

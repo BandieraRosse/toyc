@@ -1,8 +1,9 @@
 # Rasterfall GPU 与 Windows Native Platform 总体计划
 
-> 状态：执行中（GPU-0、GPU-0.5、GPU-1、GPU-2、GPU-3、GPU-4 已完成）
+> 状态：执行中（GPU-0、GPU-0.5、GPU-1、GPU-2、GPU-3、GPU-4 及 GPU Capability Contract V1 已完成）
 > 进展同步：2026-09-16
 > 源码核对基线：GPU-4 Raster Command ABI V1 / deterministic pack-validation
+> 源码核对基线：GPU-5 前 portability gate 已建立无 Vulkan handle capability snapshot、独立 Raster V1 gate 与 limit-driven 16x16/8x8 workgroup policy；WSL llvmpipe / Windows Intel Iris Xe 实测通过。
 > 方向：Vulkan GPU Runtime / Compute Rasterizer / Windows Native Platform
 > 原则：保持 CPU renderer 与现有 Linux 路径稳定，以渐进方式引入 GPU 算力，并逐步收回 Windows 平台层所有权。
 
@@ -16,6 +17,7 @@
 | GPU-2 RF GPU Core Service | 已完成 | Core-owned service contract 与持久 Vulkan loader/instance/device/queue backend；hosted probe 经正式 service 完成 compute/readback 和逆序 shutdown |
 | GPU-3 Frame Ownership | 已完成 | hosted smoke 复用持久 backend；device-local XRGB8888 output 经 compute、barrier、host-visible readback 进入 `toy_surface`，覆盖 stride、hash、resize 与逆序 shutdown |
 | GPU-4 Raster Command ABI V1 | 已完成 | 32-byte versioned stream header + 96-byte pointer-free commands；CPU `toy_raster_cmd` 显式 pack/validation，覆盖 clear color/depth 与 opaque flat triangle 的 depth/fog 输入；独立 layout/packing 双平台构建门禁 |
+| GPU Capability Contract V1 | 已完成 | GPU-5 前 portability gate；service/renderer capability 分层、无 handle snapshot、`shaderInt64` Raster V1 requirement、limit-driven workgroup 与通用 memory property selection |
 | Windows Native Platform | 未开始 | 正常 Windows Rasterfall 仍使用 MinGW + SDL2，本阶段未改窗口、输入、音频或 presentation |
 
 当前边界：
@@ -1014,12 +1016,16 @@ RF 自己负责：
 
 # 21. 近期关键路径
 
-截至 2026-09-16，GPU-0 至 GPU-4 已完成，当前优先级为：
+截至 2026-09-16，GPU-0 至 GPU-4 与 GPU Capability Contract V1 已完成，当前优先级为：
 
 ```text
 Completed:
 GPU-0 / GPU-0.5 / GPU-1 / GPU-2 / GPU-3 / GPU-4
 WSL llvmpipe framebuffer smoke
+            │
+            ▼
+Completed portability gate:
+GPU Capability Contract V1
             │
             ▼
 Current:

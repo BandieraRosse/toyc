@@ -1,7 +1,7 @@
 # RF Core Runtime V0.2 查询面设计
 
 > 文档更新：2026-09-16
-> 源码核对基线：工作区（Core status query、service access cleanup、Input view、runtime facade、Runtime Facade Authority audit；RF Command Runtime V0 status command；RF Terminal Frontend Prototype V0 session/frontend；GPU-3 framebuffer resource/readback contract）
+> 源码核对基线：工作区（Core status query、service access cleanup、Input view、runtime facade、Runtime Facade Authority audit；RF Command Runtime V0 status command；RF Terminal Frontend Prototype V0 session/frontend；GPU Capability Contract V1）
 
 本文只定义前哨站 GUI、游戏内 Terminal 和 Super Terminal 的后续读取边界，不实现任何 UI、
 terminal、IPC 或额外进程。
@@ -11,7 +11,7 @@ terminal、IPC 或额外进程。
 | 查询对象 | 入口 | 所有者 | 允许内容 |
 | --- | --- | --- | --- |
 | Core service | `rf_core_get_status()` | `struct rf_core` | 版本/构建标识、window、renderer、filesystem、audio、clock、GPU 概要状态 |
-| GPU service | `rf_core_get_gpu_status()` | `struct rf_core` 内的 `rf_gpu` | policy/state、adapter 定宽摘要与错误信息；不暴露 Vulkan handle |
+| GPU service | `rf_core_get_gpu_status()` | `struct rf_core` 内的 `rf_gpu` | policy/state、adapter/capability 定宽 snapshot、compute/framebuffer/raster_v1 独立状态与错误信息；不暴露 Vulkan handle |
 | Game runtime | `rf_game_runtime_get_status()` | `struct rf_game_runtime` | runtime initialized/running/paused、session active、network mode、本地玩家摘要 |
 | Active session | `rf_game_runtime_status.session_active` | `rf_game_runtime` | 是否存在活动 session；不转移 session 所有权 |
 | Local player | `rasterfall_session_local_player_const()` | `rasterfall_session` / `toy_game` | 只读 player actor access point；调用方不得写入或缓存为第二份真值 |
@@ -24,6 +24,11 @@ GPU-2A 的 service policy 为 disabled / optional / required。optional 初始�
 disabled。hosted Vulkan backend 已持久拥有 instance/device/queue；GPU-3 framebuffer 仍是 Core GPU
 service resource，不进入 Game，也不暴露 Vulkan 对象。正常 runtime 默认 CPU renderer 与启动行为不变；
 framebuffer resource 的关闭先于 backend/device shutdown。
+
+Capability Contract V1 不用一个 `ready` 代替 renderer 能力。service READY 只说明
+backend/device/queue 与 compute smoke 可用；`renderer.compute`、`framebuffer`、`raster_v1`
+由平台无关 snapshot 派生。缺少 `shaderInt64` 或 workgroup limit 只使 Raster V1
+unsupported，不将 service 改为 FAILED，也不影响正常 CPU renderer fallback。
 
 RF Command Runtime V0 的 `status` 命令是一个组合消费者：通过 `rf_command_context` 获取 Core 与 Game
 runtime，再分别调用上述 snapshot API。命令层不暴露或缓存 Core service、runtime、session 或 actor 的内部指针。

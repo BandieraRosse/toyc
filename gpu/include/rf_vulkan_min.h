@@ -148,15 +148,71 @@ struct rf_vk_device_create_info {
     const void *enabled_features;
 };
 
-/* Stable prefix of VkPhysicalDeviceProperties. */
-struct rf_vk_physical_device_properties_prefix {
+struct rf_vk_physical_device_features {
+    rf_vk_bool32 values_before_shader_int64[40];
+    rf_vk_bool32 shader_int64;
+    rf_vk_bool32 values_after_shader_int64[14];
+};
+
+/* Vulkan 1.0 VkPhysicalDeviceLimits. Keep the complete layout: the driver
+ * writes this as part of VkPhysicalDeviceProperties. */
+struct rf_vk_physical_device_limits {
+    uint32_t max_image_dimension_1d, max_image_dimension_2d;
+    uint32_t max_image_dimension_3d, max_image_dimension_cube;
+    uint32_t max_image_array_layers, max_texel_buffer_elements;
+    uint32_t max_uniform_buffer_range, max_storage_buffer_range;
+    uint32_t max_push_constants_size, max_memory_allocation_count;
+    uint32_t max_sampler_allocation_count;
+    uint64_t buffer_image_granularity, sparse_address_space_size;
+    uint32_t descriptor_limits[16];
+    uint32_t vertex_tessellation_geometry_fragment_limits[22];
+    uint32_t max_compute_shared_memory_size;
+    uint32_t max_compute_work_group_count[3];
+    uint32_t max_compute_work_group_invocations;
+    uint32_t max_compute_work_group_size[3];
+    uint32_t precision_and_draw_limits[5];
+    float max_sampler_lod_bias, max_sampler_anisotropy;
+    uint32_t max_viewports, max_viewport_dimensions[2];
+    float viewport_bounds_range[2];
+    uint32_t viewport_sub_pixel_bits;
+    size_t min_memory_map_alignment;
+    uint64_t min_texel_buffer_offset_alignment;
+    uint64_t min_uniform_buffer_offset_alignment;
+    uint64_t min_storage_buffer_offset_alignment;
+    int32_t min_texel_offset;
+    uint32_t max_texel_offset;
+    int32_t min_texel_gather_offset;
+    uint32_t max_texel_gather_offset;
+    float min_interpolation_offset, max_interpolation_offset;
+    uint32_t sub_pixel_interpolation_offset_bits;
+    uint32_t framebuffer_and_sample_limits[14];
+    rf_vk_bool32 timestamp_compute_and_graphics;
+    float timestamp_period;
+    uint32_t clip_cull_priority_limits[4];
+    float point_size_range[2], line_width_range[2];
+    float point_size_granularity, line_width_granularity;
+    rf_vk_bool32 strict_lines, standard_sample_locations;
+    uint64_t optimal_buffer_copy_offset_alignment;
+    uint64_t optimal_buffer_copy_row_pitch_alignment;
+    uint64_t non_coherent_atom_size;
+};
+
+struct rf_vk_physical_device_properties {
     uint32_t api_version;
     uint32_t driver_version;
     uint32_t vendor_id;
     uint32_t device_id;
     uint32_t device_type;
     char device_name[RF_VK_MAX_PHYSICAL_DEVICE_NAME_SIZE];
+    uint8_t pipeline_cache_uuid[16];
+    struct rf_vk_physical_device_limits limits;
+    rf_vk_bool32 sparse_properties[5];
 };
+
+_Static_assert(sizeof(struct rf_vk_physical_device_features) == 220,
+               "Vulkan 1.0 physical device features ABI");
+_Static_assert(sizeof(struct rf_vk_physical_device_properties) == 824,
+               "Vulkan 1.0 physical device properties ABI");
 
 struct rf_vk_queue_family_properties {
     rf_vk_flags queue_flags;
@@ -289,6 +345,8 @@ typedef rf_vk_result (RF_VK_CALL *rf_vk_enumerate_physical_devices_fn)(
     rf_vk_physical_device *devices);
 typedef void (RF_VK_CALL *rf_vk_get_physical_device_properties_fn)(
     rf_vk_physical_device device, void *properties);
+typedef void (RF_VK_CALL *rf_vk_get_physical_device_features_fn)(
+    rf_vk_physical_device device, struct rf_vk_physical_device_features *features);
 typedef void (RF_VK_CALL *rf_vk_get_physical_device_queue_family_properties_fn)(
     rf_vk_physical_device device, uint32_t *count,
     struct rf_vk_queue_family_properties *properties);

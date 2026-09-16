@@ -1,6 +1,7 @@
 # 构建、平台与验证
 
 > 文档更新：2026-09-16
+> 源码核对基线补充：GPU Capability Contract V1 已完成；WSL llvmpipe 与 Windows Intel Iris Xe 的 snapshot、compute/readback、framebuffer smoke 已实测通过，GPU-5 尚未开始。
 > 源码核对基线补充：GPU-4 已完成 pointer-free、fixed-width、versioned Raster Command ABI V1；现有 CPU command pool 通过显式 deterministic pack/validation 生成 clear color/depth 与 opaque flat triangle command，独立 Linux runtime test 与 Windows LLP64 layout build gate 已接入，尚不执行 GPU rasterization。
 > 源码核对基线补充：GPU-3 已完成；Core-owned `rf_gpu_framebuffer` 复用持久 Vulkan backend，以 compute 生成 device-local XRGB8888 framebuffer，经有限 fence、readback 与 stride-aware copy 进入 `toy_surface`；正常 runtime 仍显式 disabled/CPU renderer。
 > 源码核对基线补充：GPU Phase 1 hosted probe 已覆盖 Linux/Windows 共用的 storage-buffer compute、descriptor/pipeline、command/fence 与 readback 校验，并采用 discrete-first adapter selection；WSL llvmpipe 与 Windows RTX 3050 compute/readback 均已通过；正常 freestanding Rasterfall 和 Windows 游戏构建未接入 GPU。
@@ -78,6 +79,13 @@ GPU-4 的 ABI 定义在 `rasterfall/include/rf_gpu_raster_abi.h`，CPU adapter �
 运行 layout、deterministic packing、validation/rejection 测试；`make win-gpu-raster-abi-test` 验证
 同一固定布局可由 MinGW LLP64 编译。该路径是 hosted GPU 开发设施，不进入正常 Rasterfall link；
 GPU framebuffer smoke 与 CPU renderer 行为均未改变。GPU-5 compute rasterizer 尚未开始。
+
+GPU Capability Contract V1 将 Vulkan properties/features/memory properties 复制为无 handle 的
+`rf_gpu_capabilities`，并在 status 中分开 service READY 与 compute/framebuffer/raster_v1。
+`make gpu-service-test` 覆盖 READY+支持/不支持 Raster V1、16x16/8x8 选择、coherent/
+non-coherent readback capability、integrated/discrete/CPU adapter snapshot 和 CPU fallback 边界。
+probe 输出 adapter index、API/compute/storage limits、`shaderInt64`、heap/type flags 和派生能力。
+Linux 与 Windows 仍共用 backend，选 memory type 只依据 `memoryTypeBits` 与 property flags。
 
 ## 改文件列表时
 

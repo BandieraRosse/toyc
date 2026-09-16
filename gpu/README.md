@@ -1,5 +1,8 @@
 # GPU 目录概览
 
+> 文档更新：2026-09-16
+> 源码核对基线：GPU Capability Contract V1 已完成；GPU-5 尚未开始。
+
 本目录用于保存 GPU 相关的外部项目和实验代码。当前主要项目是
 [`wgpu-native`](wgpu-native/)，用于参考其 C API、GPU 设备发现和基础 GPU
 计算流程。
@@ -111,6 +114,32 @@ make win-gpu-raster-abi-test
 
 测试覆盖静态 layout、确定性重复 pack、容量/unsupported 拒绝与 corruption validation。ABI 尚未由
 Vulkan framebuffer 消费；compute triangle rasterization 属于 GPU-5。
+
+## GPU Capability Contract V1
+
+GPU-5 前的 portability gate 已收敛到 `rf_gpu_status`：GPU service READY 与
+compute/framebuffer/raster_v1 独立 capability 分开。snapshot 仅含定宽整数、数组和
+定长字符，不暴露 Vulkan handle/type。它记录 API version、adapter index/type/ID、
+compute queue/workgroup limits、storage-buffer range/alignment、`shaderInt64`、
+`nonCoherentAtomSize` 以及 memory heap/type size/flags，并派生 device-local output、
+host-visible readback 与 coherent/non-coherent 可用性。
+
+Raster V1 要求 compute、GPU-3 framebuffer memory path、非零 storage-buffer range、可用
+workgroup 与 `shaderInt64`。CPU reference 的 edge/area 与 `edge * inv_z` 重心插值使用
+64-bit integer，GPU-4 ABI 也以 `int64_t area` 冻结；在已允许的 framebuffer/坐标范围
+不能将中间值证明为 signed 32-bit，因此不以 float 或溢出语义代替。
+workgroup 按 limit 选择：满足 256 invocations 且 X/Y >= 16 时用 16x16；否则
+满足 64 且 X/Y >= 8 时用 8x8；再不满足则仅 `raster_v1 unsupported`。
+
+2026-09-16 实测：WSL llvmpipe（CPU）为 Vulkan 1.4.335、1024 invocations、
+1024x1024x1024、128 MiB storage range/alignment 16、atom 64、单个
+device-local+host-visible+coherent+cached type；Windows Intel Iris Xe（integrated）为
+Vulkan 1.3.297、1024 invocations、1024x1024x64、1073741820-byte storage range/alignment 64、
+atom 1，一个 device-local heap 与三个 type（包含 device-local+host-visible+coherent 组合）。
+两者 `shaderInt64`、16x16、compute/readback 和 framebuffer smoke 均通过。RTX 3050 保留
+GPU-1/GPU-3 历史验收，新 snapshot 待回到该机器复测。memory selection 仍为
+`memoryTypeBits + required/preferred flags`；GPU-3 继续 device-local output → host-visible readback，
+未引入 UMA zero-copy 或 vendor-specific path。
 
 ## 注意事项
 

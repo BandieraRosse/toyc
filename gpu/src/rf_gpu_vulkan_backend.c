@@ -24,6 +24,7 @@ struct rf_vk_api {
     rf_vk_destroy_instance_fn destroy_instance;
     rf_vk_enumerate_physical_devices_fn enumerate_physical_devices;
     rf_vk_get_physical_device_properties_fn get_physical_device_properties;
+    rf_vk_get_physical_device_features_fn get_physical_device_features;
     rf_vk_get_physical_device_queue_family_properties_fn
         get_physical_device_queue_family_properties;
     rf_vk_create_device_fn create_device;
@@ -165,6 +166,8 @@ static int api_load_instance(struct rf_vk_api *api, rf_vk_instance instance)
             "vkEnumeratePhysicalDevices");
     RF_LOAD(api->get_physical_device_properties, load_instance, instance,
             "vkGetPhysicalDeviceProperties");
+    RF_LOAD(api->get_physical_device_features, load_instance, instance,
+            "vkGetPhysicalDeviceFeatures");
     RF_LOAD(api->get_physical_device_queue_family_properties, load_instance,
             instance, "vkGetPhysicalDeviceQueueFamilyProperties");
     RF_LOAD(api->create_device, load_instance, instance, "vkCreateDevice");
@@ -858,6 +861,90 @@ static unsigned int adapter_type(uint32_t type)
     }
 }
 
+static void snapshot_capabilities(struct rf_vk_api *api,
+                                  rf_vk_physical_device device,
+                                  rf_vk_device logical_device,
+                                  unsigned int adapter_index,
+                                  struct rf_gpu_capabilities *caps)
+{
+    struct rf_vk_physical_device_properties properties;
+    struct rf_vk_physical_device_features features;
+    struct rf_vk_physical_device_memory_properties memory;
+    struct rf_vk_buffer_create_info buffer_info;
+    struct rf_vk_memory_requirements output_requirements, readback_requirements;
+    rf_vk_buffer output_buffer = NULL, readback_buffer = NULL;
+    uint32_t i;
+    memset(caps, 0, sizeof(*caps));
+    memset(&properties, 0, sizeof(properties));
+    memset(&features, 0, sizeof(features));
+    memset(&memory, 0, sizeof(memory));
+    api->get_physical_device_properties(device, &properties);
+    api->get_physical_device_features(device, &features);
+    api->get_memory_properties(device, &memory);
+    memset(&buffer_info, 0, sizeof(buffer_info));
+    memset(&output_requirements, 0, sizeof(output_requirements));
+    memset(&readback_requirements, 0, sizeof(readback_requirements));
+    buffer_info.s_type = RF_VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    buffer_info.size = 4;
+    buffer_info.sharing_mode = RF_VK_SHARING_MODE_EXCLUSIVE;
+    buffer_info.usage = RF_VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                        RF_VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+    if (api->create_buffer(logical_device, &buffer_info, NULL, &output_buffer) ==
+        RF_VK_SUCCESS)
+        api->get_buffer_memory_requirements(logical_device, output_buffer,
+                                            &output_requirements);
+    buffer_info.usage = RF_VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    if (api->create_buffer(logical_device, &buffer_info, NULL, &readback_buffer) ==
+        RF_VK_SUCCESS)
+        api->get_buffer_memory_requirements(logical_device, readback_buffer,
+                                            &readback_requirements);
+    caps->api_version = properties.api_version;
+    caps->adapter_index = adapter_index;
+    caps->compute_queue = 1;
+    caps->max_compute_work_group_invocations =
+        properties.limits.max_compute_work_group_invocations;
+    memcpy(caps->max_compute_work_group_size,
+           properties.limits.max_compute_work_group_size,
+           sizeof(caps->max_compute_work_group_size));
+    memcpy(caps->max_compute_work_group_count,
+           properties.limits.max_compute_work_group_count,
+           sizeof(caps->max_compute_work_group_count));
+    caps->max_storage_buffer_range = properties.limits.max_storage_buffer_range;
+    caps->min_storage_buffer_offset_alignment =
+        properties.limits.min_storage_buffer_offset_alignment;
+    caps->non_coherent_atom_size = properties.limits.non_coherent_atom_size;
+    caps->shader_int64 = features.shader_int64 != 0;
+    caps->memory_heap_count = memory.memory_heap_count;
+    if (caps->memory_heap_count > RF_GPU_MAX_MEMORY_HEAPS)
+        caps->memory_heap_count = RF_GPU_MAX_MEMORY_HEAPS;
+    for (i = 0; i < caps->memory_heap_count; ++i) {
+        caps->memory_heaps[i].size = memory.memory_heaps[i].size;
+        caps->memory_heaps[i].property_flags = memory.memory_heaps[i].flags;
+    }
+    caps->memory_type_count = memory.memory_type_count;
+    if (caps->memory_type_count > RF_GPU_MAX_MEMORY_TYPES)
+        caps->memory_type_count = RF_GPU_MAX_MEMORY_TYPES;
+    for (i = 0; i < caps->memory_type_count; ++i) {
+        rf_vk_flags flags = memory.memory_types[i].property_flags;
+        caps->memory_types[i].property_flags = flags;
+        caps->memory_types[i].heap_index = memory.memory_types[i].heap_index;
+        if ((output_requirements.memory_type_bits & (1U << i)) &&
+            (flags & RF_VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT))
+            caps->device_local_output_memory = 1;
+        if ((readback_requirements.memory_type_bits & (1U << i)) &&
+            (flags & RF_VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)) {
+            caps->host_visible_readback_memory = 1;
+            if (flags & RF_VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
+                caps->coherent_readback = 1;
+            else
+                caps->non_coherent_readback = 1;
+        }
+    }
+    if (output_buffer) api->destroy_buffer(logical_device, output_buffer, NULL);
+    if (readback_buffer)
+        api->destroy_buffer(logical_device, readback_buffer, NULL);
+}
+
 static void backend_cleanup(struct rf_gpu_vulkan_impl *impl)
 {
     if (!impl) return;
@@ -885,6 +972,7 @@ static int backend_init(void *context, struct rf_gpu_backend_info *info,
     rf_vk_physical_device selected_device = NULL;
     uint32_t selected_family = 0;
     uint32_t selected_type = RF_VK_PHYSICAL_DEVICE_TYPE_OTHER;
+    uint32_t selected_index = 0;
     char selected_name[RF_VK_MAX_PHYSICAL_DEVICE_NAME_SIZE] = {0};
     uint32_t i;
 
@@ -952,8 +1040,8 @@ static int backend_init(void *context, struct rf_gpu_backend_info *info,
             unsigned char bytes[
                 RF_VK_PHYSICAL_DEVICE_PROPERTIES_STORAGE_SIZE];
         } property_storage;
-        struct rf_vk_physical_device_properties_prefix *properties =
-            (struct rf_vk_physical_device_properties_prefix *)
+        struct rf_vk_physical_device_properties *properties =
+            (struct rf_vk_physical_device_properties *)
                 property_storage.bytes;
         struct rf_vk_queue_family_properties *families = NULL;
         uint32_t family_count = 0;
@@ -981,6 +1069,7 @@ static int backend_init(void *context, struct rf_gpu_backend_info *info,
             selected_device = devices[i];
             selected_family = (uint32_t)selected_queue;
             selected_type = properties->device_type;
+            selected_index = i;
             snprintf(selected_name, sizeof(selected_name), "%s",
                      properties->device_name);
             info->vendor_id = properties->vendor_id;
@@ -997,15 +1086,22 @@ static int backend_init(void *context, struct rf_gpu_backend_info *info,
         float priority = 1.0f;
         struct rf_vk_device_queue_create_info queue_info;
         struct rf_vk_device_create_info device_info;
+        struct rf_vk_physical_device_features supported_features;
+        struct rf_vk_physical_device_features enabled_features;
         memset(&queue_info, 0, sizeof(queue_info));
         queue_info.s_type = RF_VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
         queue_info.queue_family_index = selected_family;
         queue_info.queue_count = 1;
         queue_info.queue_priorities = &priority;
         memset(&device_info, 0, sizeof(device_info));
+        memset(&supported_features, 0, sizeof(supported_features));
+        memset(&enabled_features, 0, sizeof(enabled_features));
+        api->get_physical_device_features(selected_device, &supported_features);
+        enabled_features.shader_int64 = supported_features.shader_int64;
         device_info.s_type = RF_VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
         device_info.queue_create_info_count = 1;
         device_info.queue_create_infos = &queue_info;
+        device_info.enabled_features = &enabled_features;
         result = api->create_device(selected_device, &device_info, NULL,
                                     &impl->device);
         if (result != RF_VK_SUCCESS || !impl->device) goto done;
@@ -1020,6 +1116,8 @@ static int backend_init(void *context, struct rf_gpu_backend_info *info,
     snprintf(info->adapter_name, sizeof(info->adapter_name), "%s", selected_name);
     info->adapter_type = adapter_type(selected_type);
     info->queue_family = selected_family;
+    snapshot_capabilities(api, selected_device, impl->device, selected_index,
+                          &info->capabilities);
     snprintf(message, message_capacity, "Vulkan ready; compute/readback passed");
     backend_context->implementation = impl;
     impl = NULL;
