@@ -14,6 +14,13 @@
  * stdint ABI while GPU-4's public header uses Tinylibc fixed-width aliases. */
 int rf_gpu_raster_validate_v1(const void *stream, size_t stream_size);
 
+struct rf_gpu_texture_desc_host_v1 {
+    uint32_t texel_offset, width, height, stride, format, sampling;
+};
+#define RF_GPU_TEXTURE_FORMAT_RGB8_HOST_V1 1U
+#define RF_GPU_TEXTURE_FORMAT_RGBA8_HOST_V1 2U
+#define RF_GPU_TEXTURE_SAMPLING_NEAREST_HOST_V1 1U
+
 #if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -879,6 +886,8 @@ struct rf_gpu_vulkan_raster {
     struct rf_gpu_vulkan_raster_buffer command;
     struct rf_gpu_vulkan_raster_buffer tile_offsets;
     struct rf_gpu_vulkan_raster_buffer tile_indices;
+    struct rf_gpu_vulkan_raster_buffer texture_descs;
+    struct rf_gpu_vulkan_raster_buffer texture_texels;
     struct rf_gpu_vulkan_raster_buffer color_readback;
     struct rf_gpu_vulkan_raster_buffer depth_readback;
     rf_vk_descriptor_set_layout set_layout;
@@ -968,6 +977,8 @@ static void raster_destroy(void *context, void *raster)
     raster_buffer_destroy(impl, &r->command);
     raster_buffer_destroy(impl, &r->tile_indices);
     raster_buffer_destroy(impl, &r->tile_offsets);
+    raster_buffer_destroy(impl, &r->texture_descs);
+    raster_buffer_destroy(impl, &r->texture_texels);
     raster_buffer_destroy(impl, &r->depth_readback);
     raster_buffer_destroy(impl, &r->color_readback);
     raster_buffer_destroy(impl, &r->depth);
@@ -1014,10 +1025,10 @@ static int raster_create(void *context, unsigned int width,
             RF_VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
             &r->depth_readback) < 0) goto failed;
     {
-        struct rf_vk_descriptor_set_layout_binding bindings[5];
+        struct rf_vk_descriptor_set_layout_binding bindings[7];
         struct rf_vk_descriptor_set_layout_create_info info;
         memset(bindings, 0, sizeof(bindings));
-        for (i = 0; i < 5; ++i) {
+        for (i = 0; i < 7; ++i) {
             bindings[i].binding = i;
             bindings[i].descriptor_type = RF_VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
             bindings[i].descriptor_count = 1;
@@ -1025,7 +1036,7 @@ static int raster_create(void *context, unsigned int width,
         }
         memset(&info, 0, sizeof(info));
         info.s_type = RF_VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        info.binding_count = 5; info.bindings = bindings;
+        info.binding_count = 7; info.bindings = bindings;
         if (impl->api.create_descriptor_set_layout(impl->device, &info, NULL,
                                                    &r->set_layout) != RF_VK_SUCCESS)
             goto failed;
@@ -1035,7 +1046,7 @@ static int raster_create(void *context, unsigned int width,
         struct rf_vk_descriptor_pool_create_info pool_info;
         struct rf_vk_descriptor_set_allocate_info allocation;
         size.type = RF_VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        size.descriptor_count = 5;
+        size.descriptor_count = 7;
         memset(&pool_info, 0, sizeof(pool_info));
         pool_info.s_type = RF_VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
         pool_info.max_sets = 1; pool_info.pool_size_count = 1;
@@ -1177,6 +1188,8 @@ static int raster_invalidate(struct rf_gpu_vulkan_impl *impl,
 
 static int raster_render(void *context, void *raster,
                          const void *stream, unsigned long stream_size,
+                         const void *texture_descs, unsigned int texture_count,
+                         const void *texture_texels, unsigned long texture_bytes,
                          unsigned int *color, int *depth,
                          unsigned int width, unsigned int height,
                          unsigned int color_stride, unsigned int depth_stride,
@@ -1193,6 +1206,8 @@ static int raster_render(void *context, void *raster,
     unsigned int y;
     rf_vk_result result;
     double total_start = now_ms(), segment_start;
+    static const uint32_t empty_texture[6] = {0, 1, 1, 4, 2, 1};
+    static const uint32_t empty_texel = 0xffffffffU;
     if (timing) memset(timing, 0, sizeof(*timing));
     segment_start = now_ms();
     if (!impl || !r || r->owner != impl || r->width != width ||
@@ -1202,6 +1217,37 @@ static int raster_render(void *context, void *raster,
         ((const uint32_t *)stream)[5] != width ||
         ((const uint32_t *)stream)[6] != height)
         return -1;
+    if ((texture_count && (!texture_descs || !texture_texels || !texture_bytes)) ||
+        (uint64_t)texture_count * sizeof(struct rf_gpu_texture_desc_host_v1) >
+            impl->max_storage_buffer_range ||
+        texture_bytes > impl->max_storage_buffer_range)
+        return -1;
+    {
+        const uint32_t *words = stream;
+        uint32_t ci, command_count = words[4];
+        for (ci = 0; ci < command_count; ++ci) {
+            uint32_t base = 8U + ci * 24U;
+            if (words[base] == 5U &&
+                (!words[base + 3U] || words[base + 3U] > texture_count))
+                return -1;
+        }
+    }
+    if (texture_count) {
+        const struct rf_gpu_texture_desc_host_v1 *descs = texture_descs;
+        unsigned int ti;
+        for (ti = 0; ti < texture_count; ++ti) {
+            uint64_t row_bytes = (uint64_t)descs[ti].width *
+                (descs[ti].format == RF_GPU_TEXTURE_FORMAT_RGBA8_HOST_V1 ? 4 : 3);
+            uint64_t end = (uint64_t)descs[ti].texel_offset +
+                (uint64_t)descs[ti].stride * descs[ti].height;
+            if (!descs[ti].width || !descs[ti].height ||
+                (descs[ti].format != RF_GPU_TEXTURE_FORMAT_RGB8_HOST_V1 &&
+                 descs[ti].format != RF_GPU_TEXTURE_FORMAT_RGBA8_HOST_V1) ||
+                descs[ti].sampling != RF_GPU_TEXTURE_SAMPLING_NEAREST_HOST_V1 ||
+                descs[ti].stride < row_bytes || end > texture_bytes)
+                return -1;
+        }
+    }
     if (timing) timing->pack_validation_ms = now_ms() - segment_start;
     segment_start = now_ms();
     if(!r->full_scan_diagnostic && rf_gpu_raster_bin_v1(stream,stream_size,r->work_group_x,r->work_group_y,
@@ -1225,9 +1271,23 @@ static int raster_render(void *context, void *raster,
         r->tile_lists.indices,r->tile_lists.stats.total_refs*4)<0)))goto failed;
     if(timing){timing->tile_upload_ms=now_ms()-segment_start;
         timing->upload_ms=timing->command_upload_ms+timing->tile_upload_ms;}
+    segment_start=now_ms();
+    if (raster_upload(impl, &r->texture_descs,
+            texture_count ? texture_descs : empty_texture,
+            texture_count ? (uint64_t)texture_count * sizeof(struct rf_gpu_texture_desc_host_v1) : sizeof(empty_texture)) < 0 ||
+        raster_upload(impl, &r->texture_texels,
+            texture_count ? texture_texels : &empty_texel,
+            texture_count ? texture_bytes : sizeof(empty_texel)) < 0)
+        goto failed;
+    if (timing) {
+        timing->texture_upload_ms=now_ms()-segment_start;
+        timing->texture_count=texture_count;
+        timing->texture_bytes=texture_bytes;
+        timing->upload_ms+=timing->texture_upload_ms;
+    }
     {
-        struct rf_vk_descriptor_buffer_info infos[5];
-        struct rf_vk_write_descriptor_set writes[5];
+        struct rf_vk_descriptor_buffer_info infos[7];
+        struct rf_vk_write_descriptor_set writes[7];
         memset(infos, 0, sizeof(infos)); memset(writes, 0, sizeof(writes));
         infos[0].buffer = r->command.buffer; infos[0].range = stream_size;
         infos[1].buffer = r->color.buffer; infos[1].range = byte_size;
@@ -1236,14 +1296,19 @@ static int raster_render(void *context, void *raster,
         infos[3].range = ((uint64_t)r->tile_lists.stats.tile_count+1)*4;
         infos[4].buffer = r->tile_indices.buffer;
         infos[4].range = r->tile_lists.stats.total_refs*4;
-        for (y = 0; y < 5; ++y) {
+        infos[5].buffer = r->texture_descs.buffer;
+        infos[5].range = texture_count ?
+            (uint64_t)texture_count * sizeof(struct rf_gpu_texture_desc_host_v1) : sizeof(empty_texture);
+        infos[6].buffer = r->texture_texels.buffer;
+        infos[6].range = texture_count ? texture_bytes : sizeof(empty_texel);
+        for (y = 0; y < 7; ++y) {
             writes[y].s_type = RF_VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             writes[y].dst_set = r->descriptor_set; writes[y].dst_binding = y;
             writes[y].descriptor_count = 1;
             writes[y].descriptor_type = RF_VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
             writes[y].buffer_info = &infos[y];
         }
-        impl->api.update_descriptor_sets(impl->device, r->full_scan_diagnostic?3:5, writes, 0, NULL);
+        impl->api.update_descriptor_sets(impl->device, r->full_scan_diagnostic?7:7, writes, 0, NULL);
     }
     if (impl->api.reset_command_pool(impl->device, r->command_pool, 0) !=
         RF_VK_SUCCESS) goto failed;

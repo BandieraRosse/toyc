@@ -7,7 +7,34 @@
 #include "toy_window.h"
 #include "rf_core_filesystem.h"
 #include "rf_gpu.h"
+#include "rf_gpu_raster_pack.h"
 #include "rf_core_input.h"
+
+enum rf_core_renderer {
+    RF_CORE_RENDERER_CPU = 0,
+    RF_CORE_RENDERER_GPU_COMPUTE = 1
+};
+
+struct rf_core_gpu_frame_stats {
+    unsigned long long frames_attempted, gpu_frames, cpu_fallback_frames;
+    unsigned long long unsupported_texture, unsupported_transparent;
+    unsigned long long unsupported_overlay, unsupported_edge, unsupported_other;
+    unsigned long long texture_commands, texture_upload_bytes;
+    unsigned int unique_textures;
+    struct rf_gpu_raster_timing last_timing;
+};
+
+struct rf_core_gpu_frame {
+    struct rf_gpu_raster raster;
+    unsigned char *stream;
+    unsigned long stream_capacity;
+    struct rf_gpu_texture_desc_v1 *texture_descs;
+    unsigned int texture_desc_capacity;
+    unsigned char *texture_texels;
+    unsigned long texture_texel_capacity;
+    struct rf_core_gpu_frame_stats stats;
+    int renderer, armed, initialized;
+};
 
 /* The single V0 Core context.  The game may borrow the objects through the
  * accessors, but does not own their lifetime. */
@@ -19,6 +46,7 @@ struct rf_core {
     struct toy_renderer *renderer;
     struct rf_core_filesystem filesystem;
     struct rf_gpu gpu;
+    struct rf_core_gpu_frame gpu_frame;
     struct toy_audio audio;
     int audio_ready;
     int exit_requested;
@@ -42,6 +70,10 @@ struct rf_core_status {
     int gpu_ready;
     int gpu_policy;
     int gpu_state;
+    int renderer_mode;
+    unsigned long long gpu_frames_attempted;
+    unsigned long long gpu_frames_rendered;
+    unsigned long long gpu_frames_fallback;
 };
 
 /* Compatibility name for the future public context spelling.  This is an
@@ -55,6 +87,7 @@ struct rf_core_config {
     struct toy_input *input;
     struct toy_renderer *renderer;
     enum rf_gpu_policy gpu_policy;
+    enum rf_core_renderer renderer_mode;
     const struct rf_gpu_backend *gpu_backend;
     void *gpu_backend_context;
 };
@@ -73,6 +106,10 @@ int rf_core_begin_frame(struct rf_core *core, uint32_t clear_color);
 /* Core-owned submission point for layered rendering within one frame. */
 int rf_core_flush(struct rf_core *core);
 int rf_core_end_frame(struct rf_core *core);
+void rf_core_gpu_world_flush(struct rf_core *core);
+int rf_core_get_gpu_frame_stats(const struct rf_core *core,
+                                struct rf_core_gpu_frame_stats *stats);
+const char *rf_core_renderer_name(int renderer);
 void rf_core_shutdown(struct rf_core *core);
 int64_t rf_core_time_us(struct rf_core *core);
 /* Clock service entry for pre-host diagnostics that have no Core instance. */

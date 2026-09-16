@@ -1,6 +1,8 @@
 # 构建、平台与验证
 
 > 文档更新：2026-09-16
+> 源码核对基线补充：GPU-7C 的 Windows normal binary 已链接共用 Vulkan backend、Raster V1 packer/binner；显式 `--renderer gpu-compute` 使用 Core-owned whole-world-batch GPU execution/readback，默认 CPU 不变。freestanding Linux normal binary 保留 optional-unavailable CPU fallback，WSL correctness 继续由 hosted differential 验证。
+> 源码核对基线补充：RTX 3050 normal required short run 已确认 Texture V1 Outpost 3/3 GPU frames；首帧 access violation 根因为 readback stride 字节/元素单位错配，修正后 attempted=3、rendered=3、fallback=0。
 > 源码核对基线补充：GPU-7A 增加正常 world selected-stream capture；Linux/Windows 游戏编译 GPU-4 packer，但 Vulkan backend 仍只在 hosted test 中。real-world replay 默认 tile-binned，跳过大 stream 的 full-scan。
 > 源码核对基线补充：GPU-7B 的 Linux/MinGW ABI 与 differential 构建已通过；WSL/Windows RTX 3050 vertex-lit fixtures、stress、combined-world replay 全部 0 mismatch，GPU-7B DONE / FROZEN。
 > 源码核对基线补充：Windows package-layout console diagnostic 仅用于本次 frontend timing；三份 Windows capture stream 与 Linux stream 逐字节一致，不改变正常 GUI subsystem 或发布内容。

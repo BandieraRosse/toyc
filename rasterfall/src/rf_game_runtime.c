@@ -77,6 +77,9 @@
 #include "rf_core_host.h"
 #include "rf_game_lifecycle.h"
 #include "rf_application_projection.h"
+#ifdef TOYC_WINDOWS
+#include "rf_gpu_vulkan_backend.h"
+#endif
 #include "math.h"
 
 #define KEY_ESC   1
@@ -2619,6 +2622,7 @@ static int rf_game_render_profiled(struct rf_game_runtime *runtime,
     }
     /* Existing world-to-overlay ordering barrier. */
     raster_commands = (unsigned long)renderer->cmd_count;
+    rf_core_gpu_world_flush(runtime->core);
     flushed = rf_core_flush(runtime->core);
     if (flushed < 0) return -1;
     pixels += flushed;
@@ -2733,6 +2737,9 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     struct toy_window_events events;
     struct toy_input platform_input;
     struct rf_input_frame input;
+#ifdef TOYC_WINDOWS
+    struct rf_gpu_vulkan_context gpu_vulkan_context;
+#endif
     struct toy_surface surface;
     struct toy_renderer renderer;
     struct camera camera;
@@ -3025,15 +3032,40 @@ int rf_game_runtime_run(const struct rf_game_config *config)
         core_config.height = RASTERFALL_DEFAULT_HEIGHT;
         core_config.input = &platform_input;
         core_config.renderer = &renderer;
-        core_config.gpu_policy = RF_GPU_POLICY_DISABLED;
+        core_config.renderer_mode = options.renderer_mode ?
+            RF_CORE_RENDERER_GPU_COMPUTE : RF_CORE_RENDERER_CPU;
+        core_config.gpu_policy = options.renderer_mode ?
+            (options.gpu_required ? RF_GPU_POLICY_REQUIRED : RF_GPU_POLICY_OPTIONAL) :
+            RF_GPU_POLICY_DISABLED;
         core_config.gpu_backend = NULL;
         core_config.gpu_backend_context = NULL;
+#ifdef TOYC_WINDOWS
+        memset(&gpu_vulkan_context, 0, sizeof(gpu_vulkan_context));
+        if (options.renderer_mode) {
+            core_config.gpu_backend = &rf_gpu_vulkan_backend;
+            core_config.gpu_backend_context = &gpu_vulkan_context;
+        }
+#endif
         if ((logic_test || options.render_performance || options.gpu_world_raster_view || options.environment_capture_dir || options.character_world_capture_dir ?
              rf_core_init_headless(&core, &platform_input, &renderer) :
              rf_core_init_config(&core, &core_config)) < 0) {
             __fprintf(2, "rasterfall: cannot initialize RF Core host\n");
             return 1;
         }
+        __printf("Rasterfall renderer=%s gpu_policy=%s\n",
+            rf_core_renderer_name(core.gpu_frame.renderer),
+            rf_gpu_policy_name(core.gpu.policy));
+#ifdef TOYC_WINDOWS
+        {
+            char gpu_log[192];
+            snprintf(gpu_log, sizeof(gpu_log),
+                     "renderer=%s gpu-policy=%s gpu-state=%s adapter=%s",
+                     rf_core_renderer_name(core.gpu_frame.renderer),
+                     rf_gpu_policy_name(core.gpu.policy),
+                     rf_gpu_state_name(core.gpu.state), core.gpu.info.adapter_name);
+            rf_windows_log(gpu_log);
+        }
+#endif
     }
     rf_windows_log("startup: loading map");
     strcpy(host_address, "127.0.0.1");
@@ -4029,6 +4061,23 @@ startup_again:
         __printf("rasterfall: texture stats triangles=%lu pixels=%lu fallback=%lu\n",
                  renderer.textured_triangles, renderer.textured_pixels,
                  renderer.texture_fallback_pixels);
+    {
+        struct rf_core_gpu_frame_stats gpu_stats;
+        if (rf_core_get_gpu_frame_stats(&core, &gpu_stats) == 0 &&
+            gpu_stats.frames_attempted) {
+            char gpu_log[192];
+            snprintf(gpu_log, sizeof(gpu_log),
+                     "gpu-frame attempted=%llu rendered=%llu fallback=%llu texture=%llu transparent=%llu exec=%.3fms readback=%.3fms total=%.3fms",
+                     gpu_stats.frames_attempted, gpu_stats.gpu_frames,
+                     gpu_stats.cpu_fallback_frames,
+                     gpu_stats.unsupported_texture,
+                     gpu_stats.unsupported_transparent,
+                     gpu_stats.last_timing.execution_wait_ms,
+                     gpu_stats.last_timing.readback_ms,
+                     gpu_stats.last_timing.total_ms);
+            rf_windows_log(gpu_log);
+        }
+    }
     rf_core_shutdown(&core);
     return rendered_frames > 0 && scene_pixels == 0 ? 2 : 0;
 }

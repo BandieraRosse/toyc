@@ -7,7 +7,7 @@ SDL_PREFIX ?= $(WINDOWS_DEPS)/x86_64-w64-mingw32
 CPPFLAGS := -DTOYC_WINDOWS \
             -I$(CURDIR)/windows/include -Iinclude \
             -idirafter include/posix -idirafter include/tlibc \
-            -Irasterfall/include -Irasterfall/lib \
+            -Irasterfall/include -Irasterfall/lib -Igpu/include \
             -I$(SDL_PREFIX)/include -I$(SDL_PREFIX)/include/SDL2 \
             -include windows/include/windows_stdlib.h
 CFLAGS := -std=c11 -O2 -Wall -Wextra -ffunction-sections -fdata-sections \
@@ -49,6 +49,7 @@ GAME_SRCS := rasterfall/src/rasterfall.c \
              rasterfall/src/rasterfall_sky.c \
              rasterfall/src/rasterfall_viewmodel.c
 GAME_SRCS += gpu/src/rf_gpu_raster_pack.c
+GAME_SRCS += gpu/src/rf_gpu_raster_bin.c gpu/src/rf_gpu_vulkan_backend.c
 ANIMATION_SRCS := app/glb_inspect.c rasterfall/src/rasterfall_vmd.c
 GAME_LIB_SRCS := rasterfall/lib/game.c rasterfall/lib/map.c rasterfall/lib/sfx.c \
                  rasterfall/lib/rasterfall_map_parser.c \

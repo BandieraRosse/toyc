@@ -1862,6 +1862,16 @@ int toy_renderer_flush(struct toy_renderer *renderer)
     if (renderer->command_observer && renderer->cmd_count > 0)
         renderer->command_observer(renderer->cmds, renderer->cmd_count,
                                    renderer->command_observer_context);
+    if (renderer->command_consumer && renderer->cmd_count > 0) {
+        int consumed = renderer->command_consumer(
+            renderer, renderer->cmds, renderer->cmd_count,
+            renderer->command_consumer_context);
+        if (consumed >= 0) {
+            renderer->last_opaque_cmds = (unsigned long)renderer->cmd_count;
+            renderer->cmd_count = 0;
+            return consumed;
+        }
+    }
     sort_start = renderer_monotonic_us();
     phase_start = sort_start;
     if (renderer->cmd_count > 0) {
@@ -1991,6 +2001,15 @@ void toy_renderer_set_command_observer(
     if (!renderer) return;
     renderer->command_observer = observer;
     renderer->command_observer_context = context;
+}
+
+void toy_renderer_set_command_consumer(
+    struct toy_renderer *renderer, toy_renderer_command_consumer_fn consumer,
+    void *context)
+{
+    if (!renderer) return;
+    renderer->command_consumer = consumer;
+    renderer->command_consumer_context = context;
 }
 
 void toy_renderer_destroy(struct toy_renderer *renderer)

@@ -15,6 +15,7 @@
     __LINE__, #c); goto done; } } while (0)
 
 struct stream { unsigned char *data; size_t size; };
+struct texture_bundle { struct rf_gpu_texture_desc_v1 *descs; uint32_t count; unsigned char *texels; size_t bytes; };
 struct outputs {
     uint32_t *cpu_color, *gpu_color;
     int32_t *cpu_depth, *gpu_depth;
@@ -60,6 +61,21 @@ static void add_vertex_lit_triangle(struct toy_renderer *r,
     b.x=bx; b.y=by; b.inv_z=bz; b.light=bl;
     c.x=cx; c.y=cy; c.inv_z=cz; c.light=cl;
     toy_renderer_triangle_planar_vertex_lit(r,&a,&b,&c,color,fog);
+}
+
+static void add_textured_triangle(struct toy_renderer *r,
+                         int ax,int ay,int az,int au,int av,
+                         int bx,int by,int bz,int bu,int bv,
+                         int cx,int cy,int cz,int cu,int cv,
+                         const struct toy_texture_view *texture,
+                         int repeat,int light,int fog)
+{
+    struct toy_screen_vertex a,b,c;
+    memset(&a,0,sizeof(a));memset(&b,0,sizeof(b));memset(&c,0,sizeof(c));
+    a.x=ax;a.y=ay;a.inv_z=az;a.u_over_z=(long)au*az;a.v_over_z=(long)av*az;
+    b.x=bx;b.y=by;b.inv_z=bz;b.u_over_z=(long)bu*bz;b.v_over_z=(long)bv*bz;
+    c.x=cx;c.y=cy;c.inv_z=cz;c.u_over_z=(long)cu*cz;c.v_over_z=(long)cv*cz;
+    toy_renderer_triangle_textured_lit(r,&a,&b,&c,texture,repeat,0,light,fog);
 }
 
 static int stream_from_renderer(struct toy_renderer *r, uint32_t clear,
@@ -185,6 +201,20 @@ static int read_file(const char *path, struct stream *stream)
     fclose(f); return 0;
 }
 
+static int read_texture_bundle(const char *path,struct texture_bundle *bundle)
+{
+    FILE *f=fopen(path,"rb");uint32_t h[4];size_t desc_bytes;
+    if(!f)return 1;
+    if(fread(h,1,sizeof(h),f)!=sizeof(h)||h[0]!=0x31544652U||
+       h[2]!=sizeof(struct rf_gpu_texture_desc_v1)){fclose(f);return -1;}
+    desc_bytes=(size_t)h[1]*sizeof(*bundle->descs);
+    bundle->descs=malloc(desc_bytes);bundle->texels=malloc(h[3]);
+    if((desc_bytes&&!bundle->descs)||(h[3]&&!bundle->texels)||
+       fread(bundle->descs,1,desc_bytes,f)!=desc_bytes||
+       fread(bundle->texels,1,h[3],f)!=h[3]||fgetc(f)!=EOF){fclose(f);return -1;}
+    fclose(f);bundle->count=h[1];bundle->bytes=h[3];return 0;
+}
+
 static int write_bmp(const char *path, const uint32_t *pixels, uint32_t w, uint32_t h)
 {
     unsigned char header[54] = { 'B','M' };
@@ -221,7 +251,8 @@ static void save_artifacts(const char *dir, const struct stream *s,
 
 static int compare_case(struct rf_gpu *gpu, struct rf_gpu_raster *raster,
                         const char *name, const struct stream *s,
-                        const char *artifact_dir, int run_full_scan)
+                        const char *artifact_dir, int run_full_scan,
+                        const struct texture_bundle *textures)
 {
     const struct rf_gpu_raster_stream_header_v1 *h=(const void*)s->data;
     struct outputs o; struct rf_gpu_cpu_reference_timing ct;
@@ -233,14 +264,18 @@ static int compare_case(struct rf_gpu *gpu, struct rf_gpu_raster *raster,
     if(!o.cpu_color||!o.gpu_color||!o.cpu_depth||!o.gpu_depth)return -1;
     memset(&ft,0,sizeof(ft));
     if(raster->width!=o.width||raster->height!=o.height)if(rf_gpu_raster_resize(gpu,raster,o.width,o.height)<0)return -1;
-    if(rf_gpu_raster_cpu_reference_v1(s->data,s->size,o.cpu_color,o.cpu_depth,o.width,o.width,&ct)<0)return -1;
+    if(textures&&textures->count){
+      if(rf_gpu_raster_cpu_reference_textured_v1(s->data,s->size,textures->descs,textures->count,textures->texels,textures->bytes,o.cpu_color,o.cpu_depth,o.width,o.width,&ct)<0)return -1;
+      run_full_scan=0;
+    }else if(rf_gpu_raster_cpu_reference_v1(s->data,s->size,o.cpu_color,o.cpu_depth,o.width,o.width,&ct)<0)return -1;
     if(run_full_scan){
       if(rf_gpu_raster_set_full_scan_diagnostic(raster,1)<0 ||
          rf_gpu_raster_render_timed(gpu,raster,s->data,s->size,o.gpu_color,o.gpu_depth,o.width,o.height,o.width,o.width,&ft)<0)return -1;
       for(size_t i=0;i<n;i++){if((o.cpu_color[i]&0xffffffu)!=(o.gpu_color[i]&0xffffffu))fcm++;if(o.cpu_depth[i]!=o.gpu_depth[i])fdm++;}
     }
-    if(rf_gpu_raster_set_full_scan_diagnostic(raster,0)<0 ||
-       rf_gpu_raster_render_timed(gpu,raster,s->data,s->size,o.gpu_color,o.gpu_depth,o.width,o.height,o.width,o.width,&gt)<0)return -1;
+    if(rf_gpu_raster_set_full_scan_diagnostic(raster,0)<0)return -1;
+    if(textures&&textures->count){if(rf_gpu_raster_render_textured_timed(gpu,raster,s->data,s->size,textures->descs,textures->count,textures->texels,textures->bytes,o.gpu_color,o.gpu_depth,o.width,o.height,o.width,o.width,&gt)<0)return -1;}
+    else if(rf_gpu_raster_render_timed(gpu,raster,s->data,s->size,o.gpu_color,o.gpu_depth,o.width,o.height,o.width,o.width,&gt)<0)return -1;
     for(size_t i=0;i<n;i++){
         uint32_t cc=o.cpu_color[i]&0xffffffu,gc=o.gpu_color[i]&0xffffffu;
         if(cc!=gc){int dr=abs((int)(cc>>16&255)-(int)(gc>>16&255));int dg=abs((int)(cc>>8&255)-(int)(gc>>8&255));int db=abs((int)(cc&255)-(int)(gc&255));cm++;if(dr>maxr)maxr=dr;if(dg>maxg)maxg=dg;if(db>maxb)maxb=db;if(!have_first){firstx=i%o.width;firsty=i/o.width;have_first=1;}}
@@ -260,6 +295,74 @@ static int compare_case(struct rf_gpu *gpu, struct rf_gpu_raster *raster,
     free(o.cpu_color);free(o.gpu_color);free(o.cpu_depth);free(o.gpu_depth);return (cm||dm||fcm||fdm)?-1:0;
 }
 
+static int texture_fixture(struct rf_gpu *gpu,struct rf_gpu_raster *raster)
+{
+    static const unsigned char texels_a[16]={
+        255,0,0,255, 0,255,0,255, 0,0,255,255, 255,255,255,255};
+    static const unsigned char texels_b[64]={
+        8,16,24,255, 32,40,48,255, 56,64,72,255, 80,88,96,255,
+        104,112,120,255, 128,136,144,255, 152,160,168,255, 176,184,192,255,
+        200,208,216,255, 224,232,240,255, 248,128,64,255, 64,128,248,255,
+        255,255,0,255, 0,255,255,255, 255,0,255,255, 20,30,40,255};
+    struct toy_texture_view ta={texels_a,2,2,sizeof(texels_a),4,0};
+    struct toy_texture_view tb={texels_b,4,4,sizeof(texels_b),4,0};
+    struct toy_renderer r;struct toy_surface surface;struct stream s={0};
+    struct rf_gpu_texture_resources_v1 resources;uint32_t *pixels=NULL,*cc=NULL,*gc=NULL;
+    int32_t *cd=NULL,*gd=NULL;size_t n=37u*29u,cap;uint32_t unique;size_t bytes;int result=-1;
+    memset(&r,0,sizeof(r));memset(&resources,0,sizeof(resources));
+    pixels=calloc(n,4);cc=malloc(n*4);gc=malloc(n*4);cd=malloc(n*4);gd=malloc(n*4);
+    if(!pixels||!cc||!gc||!cd||!gd)goto done;
+    surface.pixels=pixels;surface.width=37;surface.height=29;surface.stride=37*4;
+    toy_renderer_init(&r);if(toy_renderer_begin(&r,&surface,0x101820)<0)goto done;
+    /* exact texels, wrap/clamp edges, perspective, light/fog, overlap/equal
+     * depth, shared edge, offscreen and thin, repeated and second handles. */
+    add_textured_triangle(&r,1,1,128,0,0, 14,1,128,65535,0, 1,12,128,0,65535,&ta,0,256,0);
+    add_textured_triangle(&r,16,1,64,-65536,-1, 34,1,256,131072,0, 16,13,128,0,131072,&ta,1,256,0);
+    add_textured_triangle(&r,1,14,100,0,0, 18,14,300,65535,0, 1,27,500,0,65535,&tb,0,192,96);
+    add_textured_triangle(&r,20,15,300,0,0, 35,15,300,65535,0, 20,27,300,0,65535,&ta,0,256,0);
+    add_textured_triangle(&r,20,15,300,65535,65535, 35,15,300,0,65535, 20,27,300,65535,0,&tb,0,256,0);
+    add_textured_triangle(&r,-8,4,700,0,0, 8,4,900,65535,0, 0,20,1100,0,65535,&ta,1,384,180);
+    add_textured_triangle(&r,2,27,1200,0,0, 35,27,1200,65535,0, 2,28,1200,0,65535,&ta,0,256,0);
+    add_triangle(&r,5,5,40,12,5,40,5,11,40,0xabcdef,256,0);
+    add_vertex_lit_triangle(&r,24,3,500,0,35,3,500,384,24,12,500,256,0xffffff,64);
+    CHECK(rf_gpu_raster_measure_textures_toy_v1(&r,&unique,&bytes)==0&&unique==2&&bytes==80);
+    resources.descs=calloc(unique,sizeof(*resources.descs));resources.desc_capacity=unique;
+    resources.texels=malloc(bytes);resources.texel_capacity=bytes;
+    cap=rf_gpu_raster_stream_size_v1((uint32_t)r.cmd_count+2);s.data=malloc(cap);
+    CHECK(resources.descs&&resources.texels&&s.data);
+    CHECK(rf_gpu_raster_pack_toy_textured_v1(&r,0x101820,0,s.data,cap,&s.size,&resources)==0);
+    CHECK(resources.desc_count==2&&resources.texel_size==80);
+    CHECK(rf_gpu_raster_cpu_reference_textured_v1(s.data,s.size,resources.descs,
+        resources.desc_count,resources.texels,resources.texel_size,cc,cd,37,37,NULL)==0);
+    CHECK(rf_gpu_raster_resize(gpu,raster,37,29)==0);
+    CHECK(rf_gpu_raster_set_full_scan_diagnostic(raster,0)==0);
+    CHECK(rf_gpu_raster_render_textured_timed(gpu,raster,s.data,s.size,
+        resources.descs,resources.desc_count,resources.texels,resources.texel_size,
+        gc,gd,37,29,37,37,NULL)==0);
+    for(size_t i=0;i<n;i++)if((cc[i]&0xffffffu)!=(gc[i]&0xffffffu)||cd[i]!=gd[i]){
+        fprintf(stderr,"texture mismatch at %zu (%zu,%zu) cpu=%08x/%d gpu=%08x/%d\n",
+            i,i%37,i/37,cc[i],cd[i],gc[i],gd[i]);goto done;}
+    { struct rf_gpu_texture_desc_v1 saved=resources.descs[0];
+      struct rf_gpu_raster_cmd_v1 *cmds=(void*)((struct rf_gpu_raster_stream_header_v1*)s.data+1);
+      uint32_t saved_handle=cmds[2].resource_handle;cmds[2].resource_handle=resources.desc_count+1;
+      CHECK(rf_gpu_raster_render_textured_timed(gpu,raster,s.data,s.size,
+        resources.descs,resources.desc_count,resources.texels,resources.texel_size,
+        gc,gd,37,29,37,37,NULL)<0);cmds[2].resource_handle=saved_handle;
+      resources.descs[0].texel_offset=(uint32_t)resources.texel_size;
+      CHECK(rf_gpu_raster_render_textured_timed(gpu,raster,s.data,s.size,
+        resources.descs,resources.desc_count,resources.texels,resources.texel_size,
+        gc,gd,37,29,37,37,NULL)<0);resources.descs[0]=saved;
+      CHECK(rf_gpu_raster_render_textured_timed(gpu,raster,s.data,s.size,
+        resources.descs,resources.desc_count,resources.texels,resources.texel_size-1,
+        gc,gd,37,29,37,37,NULL)<0);
+    }
+    puts("fixture: texture-v1 color mismatches: 0 depth mismatches: 0 max delta: 0 invalid-handle/table/bounds: PASS");
+    result=0;
+done:
+    toy_renderer_destroy(&r);free(pixels);free(cc);free(gc);free(cd);free(gd);
+    free(s.data);free(resources.descs);free(resources.texels);return result;
+}
+
 int main(int argc,char **argv)
 {
     struct rf_gpu gpu;struct rf_gpu_vulkan_context context;struct rf_gpu_raster raster;
@@ -275,8 +378,8 @@ int main(int argc,char **argv)
     CHECK(rf_gpu_init(&gpu,RF_GPU_POLICY_REQUIRED,&rf_gpu_vulkan_backend,&context)==0);
     CHECK(rf_gpu_get_status(&gpu,&status)==0&&status.renderer.raster_v1);
     printf("adapter: %s\n",status.info.adapter_name);
-    if(replay){CHECK(read_file(replay,&s)==0);CHECK(rf_gpu_raster_validate_v1(s.data,s.size)==0);const struct rf_gpu_raster_stream_header_v1*h=(void*)s.data;CHECK(rf_gpu_raster_init(&gpu,&raster,h->framebuffer_width,h->framebuffer_height)==0);CHECK(compare_case(&gpu,&raster,"replay",&s,artifacts,0)==0);free(s.data);s.data=NULL;}
-    else {CHECK(rf_gpu_raster_init(&gpu,&raster,19,13)==0);for(size_t i=0;i<sizeof(cases)/sizeof(cases[0]);i++){CHECK(make_fixture(cases[i].name,cases[i].w,cases[i].h,cases[i].n,cases[i].seed,&s)==0);CHECK(compare_case(&gpu,&raster,cases[i].name,&s,artifacts,1)==0);if(i==1)CHECK(write_file("build/gpu-raster-diff-replay.bin",s.data,s.size)==0);free(s.data);s.data=NULL;}CHECK(read_file("build/gpu-raster-diff-replay.bin",&s)==0);CHECK(compare_case(&gpu,&raster,"replay-self-check",&s,artifacts,1)==0);free(s.data);s.data=NULL;
+    if(replay){struct texture_bundle tb={0};char tp[1024];int tr;CHECK(read_file(replay,&s)==0);CHECK(rf_gpu_raster_validate_v1(s.data,s.size)==0);snprintf(tp,sizeof(tp),"%s.textures",replay);tr=read_texture_bundle(tp,&tb);CHECK(tr>=0);const struct rf_gpu_raster_stream_header_v1*h=(void*)s.data;CHECK(rf_gpu_raster_init(&gpu,&raster,h->framebuffer_width,h->framebuffer_height)==0);CHECK(compare_case(&gpu,&raster,"replay",&s,artifacts,0,tr==0?&tb:NULL)==0);free(tb.descs);free(tb.texels);free(s.data);s.data=NULL;}
+    else {CHECK(rf_gpu_raster_init(&gpu,&raster,19,13)==0);for(size_t i=0;i<sizeof(cases)/sizeof(cases[0]);i++){CHECK(make_fixture(cases[i].name,cases[i].w,cases[i].h,cases[i].n,cases[i].seed,&s)==0);CHECK(compare_case(&gpu,&raster,cases[i].name,&s,artifacts,1,NULL)==0);if(i==1)CHECK(write_file("build/gpu-raster-diff-replay.bin",s.data,s.size)==0);free(s.data);s.data=NULL;}CHECK(read_file("build/gpu-raster-diff-replay.bin",&s)==0);CHECK(compare_case(&gpu,&raster,"replay-self-check",&s,artifacts,1,NULL)==0);free(s.data);s.data=NULL;CHECK(texture_fixture(&gpu,&raster)==0);
       /* Failure authority: no partial output and all malformed classes reject. */
       CHECK(make_fixture("clear",19,13,0,0,&s)==0);unsigned char saved=s.data[0];uint32_t guard_color[19*13];int32_t guard_depth[19*13];for(size_t j=0;j<19*13;j++){guard_color[j]=0x13579bdfu;guard_depth[j]=0x12345678;}s.data[0]^=1;CHECK(rf_gpu_raster_validate_v1(s.data,s.size)!=0);CHECK(rf_gpu_raster_render(&gpu,&raster,s.data,s.size,guard_color,guard_depth,19,13,19,19)<0);for(size_t j=0;j<19*13;j++)CHECK(guard_color[j]==0x13579bdfu&&guard_depth[j]==0x12345678);s.data[0]=saved;((struct rf_gpu_raster_stream_header_v1*)s.data)->version++;CHECK(rf_gpu_raster_validate_v1(s.data,s.size)!=0);((struct rf_gpu_raster_stream_header_v1*)s.data)->version--;CHECK(rf_gpu_raster_validate_v1(s.data,s.size-1)!=0);((struct rf_gpu_raster_stream_header_v1*)s.data)->command_count=0xffffffffu;CHECK(rf_gpu_raster_validate_v1(s.data,s.size)!=0);((struct rf_gpu_raster_stream_header_v1*)s.data)->command_count=2;((struct rf_gpu_raster_cmd_v1*)((struct rf_gpu_raster_stream_header_v1*)s.data+1))[0].kind=999;CHECK(rf_gpu_raster_validate_v1(s.data,s.size)!=0);puts("failure-cases: invalid/version/truncated/unsupported/oversized/corrupt/no-partial-output PASS");free(s.data);s.data=NULL;}
     result=0;

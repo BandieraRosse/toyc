@@ -28,10 +28,19 @@ static int command_tiles(const struct rf_gpu_raster_cmd_v1 *cmd,
         return 1;
     }
     if (cmd->kind == RF_GPU_RASTER_CMD_FLAT_TRIANGLE_V1 ||
-        cmd->kind == RF_GPU_RASTER_CMD_VERTEX_LIT_TRIANGLE_V1) {
+        cmd->kind == RF_GPU_RASTER_CMD_VERTEX_LIT_TRIANGLE_V1 ||
+        cmd->kind == RF_GPU_RASTER_CMD_TEXTURED_TRIANGLE_V1) {
         const struct rf_gpu_raster_flat_triangle_v1 *t = &cmd->payload.flat_triangle;
-        int64_t minx=t->bbox_minx, maxx=t->bbox_maxx;
-        int64_t miny=t->bbox_miny, maxy=t->bbox_maxy;
+        int64_t minx, maxx, miny, maxy;
+        if (cmd->kind == RF_GPU_RASTER_CMD_TEXTURED_TRIANGLE_V1) {
+            minx=t->a.x<t->b.x?(t->a.x<t->c.x?t->a.x:t->c.x):(t->b.x<t->c.x?t->b.x:t->c.x);
+            maxx=(t->a.x>t->b.x?(t->a.x>t->c.x?t->a.x:t->c.x):(t->b.x>t->c.x?t->b.x:t->c.x))+1;
+            miny=t->a.y<t->b.y?(t->a.y<t->c.y?t->a.y:t->c.y):(t->b.y<t->c.y?t->b.y:t->c.y);
+            maxy=(t->a.y>t->b.y?(t->a.y>t->c.y?t->a.y:t->c.y):(t->b.y>t->c.y?t->b.y:t->c.y))+1;
+        } else {
+            minx=t->bbox_minx; maxx=t->bbox_maxx;
+            miny=t->bbox_miny; maxy=t->bbox_maxy;
+        }
         if (maxx < 0 || maxy < 0 || minx >= width || miny >= height) return 0;
         if (minx < 0) minx=0;
         if (miny < 0) miny=0;

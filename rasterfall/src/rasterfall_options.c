@@ -71,6 +71,7 @@ void rasterfall_options_usage(int fd)
         "usage: rasterfall [runtime options]\n"
         "  --host | --connect <ip> [--port <port>] [--net-loss <percent>]\n"
         "  --textures | --no-textures  --no-edge-pass  --no-stats\n"
+        "  --renderer <cpu|gpu-compute> [--gpu-required]\n"
         "  --legacy-map  (force legacy map loader)\n"
         "  --map <path>  (load an explicit V1 map for local inspection)\n"
         "  --texture-stats  --frames <count>  --dump-frame <path>\n"
@@ -156,6 +157,14 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
                 __fprintf(2,"rasterfall: invalid net loss percent\n");return -1;
             }
         } else if (!strcmp(option,"--auto")) o->auto_mode=1;
+        else if (!strcmp(option,"--renderer")) {
+            if(require_arguments(argc,argv,arg,1,option)<0)return -1;
+            arg++;
+            if(!strcmp(argv[arg],"cpu"))o->renderer_mode=0;
+            else if(!strcmp(argv[arg],"gpu-compute"))o->renderer_mode=1;
+            else {__fprintf(2,"rasterfall: renderer must be cpu or gpu-compute\n");return -1;}
+        }
+        else if (!strcmp(option,"--gpu-required")) o->gpu_required=1;
         else if (!strcmp(option,"--textures")) o->textures_enabled=1;
         else if (!strcmp(option,"--no-textures")) o->textures_enabled=0;
         else if (!strcmp(option,"--edge-pass")) o->edge_pass_enabled=1;

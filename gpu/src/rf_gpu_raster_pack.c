@@ -28,11 +28,97 @@ static int pack_clear(struct rf_gpu_raster_cmd_v1 *out, uint32_t kind,
     return RF_GPU_RASTER_PACK_OK;
 }
 
-static int pack_triangle(struct rf_gpu_raster_cmd_v1 *out,
-                         const struct toy_raster_cmd *in)
+static int texture_command_supported(const struct toy_raster_cmd *in)
 {
+    const struct toy_texture_view *t = in->texture;
+    if (!in->textured || in->transparent || in->overlay || in->edge ||
+        in->material_alpha != 255 || !in->base_texture_valid || !t ||
+        t->has_transparency || in->base_texture_bilinear ||
+        in->material_features || in->has_toon || in->texture2 || in->texture3 ||
+        in->material_add || in->material_tint != 0x00ffffffU ||
+        in->light < 0 || in->fog < 0 ||
+        (t->channels != 3 && t->channels != 4) ||
+        in->a.u_over_z < INT_MIN || in->a.u_over_z > INT_MAX ||
+        in->a.v_over_z < INT_MIN || in->a.v_over_z > INT_MAX ||
+        in->b.u_over_z < INT_MIN || in->b.u_over_z > INT_MAX ||
+        in->b.v_over_z < INT_MIN || in->b.v_over_z > INT_MAX ||
+        in->c.u_over_z < INT_MIN || in->c.u_over_z > INT_MAX ||
+        in->c.v_over_z < INT_MIN || in->c.v_over_z > INT_MAX)
+        return 0;
+    return 1;
+}
+
+int rf_gpu_raster_measure_textures_toy_v1(const struct toy_renderer *renderer,
+                                          uint32_t *unique_count,
+                                          size_t *texel_size)
+{
+    uint32_t unique = 0;
+    size_t bytes = 0;
+    int i, j;
+    if (unique_count) *unique_count = 0;
+    if (texel_size) *texel_size = 0;
+    if (!renderer || renderer->cmd_count < 0) return RF_GPU_RASTER_PACK_INVALID;
+    for (i = 0; i < renderer->cmd_count; ++i) {
+        const struct toy_raster_cmd *cmd = &renderer->cmds[i];
+        if (!cmd->textured) continue;
+        if (!texture_command_supported(cmd)) return RF_GPU_RASTER_PACK_UNSUPPORTED;
+        for (j = 0; j < i; ++j)
+            if (renderer->cmds[j].textured &&
+                renderer->cmds[j].texture == cmd->texture) break;
+        if (j == i) {
+            if (unique == UINT_MAX || bytes > (size_t)-1 - cmd->texture->data_size)
+                return RF_GPU_RASTER_PACK_CAPACITY;
+            unique++;
+            bytes += cmd->texture->data_size;
+        }
+    }
+    if (unique_count) *unique_count = unique;
+    if (texel_size) *texel_size = bytes;
+    return RF_GPU_RASTER_PACK_OK;
+}
+
+static int texture_handle(const struct toy_renderer *renderer, int command_index,
+                          struct rf_gpu_texture_resources_v1 *resources,
+                          uint32_t *handle)
+{
+    const struct toy_texture_view *texture = renderer->cmds[command_index].texture;
+    uint32_t index = 0;
+    int i, j;
+    for (i = 0; i < command_index; ++i) {
+        if (!renderer->cmds[i].textured) continue;
+        if (renderer->cmds[i].texture == texture) { *handle = index + 1; return 0; }
+        for (j = 0; j < i; ++j)
+            if (renderer->cmds[j].textured &&
+                renderer->cmds[j].texture == renderer->cmds[i].texture) break;
+        if (j == i) index++;
+    }
+    if (!resources || index >= resources->desc_capacity ||
+        resources->texel_size > resources->texel_capacity - texture->data_size ||
+        resources->texel_size > UINT_MAX ||
+        texture->width > UINT_MAX / texture->channels)
+        return -1;
+    resources->descs[index].texel_offset = (uint32_t)resources->texel_size;
+    resources->descs[index].width = texture->width;
+    resources->descs[index].height = texture->height;
+    resources->descs[index].stride = texture->width * texture->channels;
+    resources->descs[index].format = texture->channels == 4 ?
+        RF_GPU_TEXTURE_FORMAT_RGBA8_V1 : RF_GPU_TEXTURE_FORMAT_RGB8_V1;
+    resources->descs[index].sampling = RF_GPU_TEXTURE_SAMPLING_NEAREST_V1;
+    memcpy(resources->texels + resources->texel_size, texture->data,
+           texture->data_size);
+    resources->texel_size += texture->data_size;
+    resources->desc_count = index + 1;
+    *handle = index + 1;
+    return 0;
+}
+
+static int pack_triangle(struct rf_gpu_raster_cmd_v1 *out,
+                         const struct toy_renderer *renderer, int command_index,
+                         struct rf_gpu_texture_resources_v1 *resources)
+{
+    const struct toy_raster_cmd *in = &renderer->cmds[command_index];
     struct rf_gpu_raster_flat_triangle_v1 *triangle;
-    if (in->textured || in->overlay ||
+    if ((!resources && in->textured) || in->overlay ||
         in->transparent || in->material_alpha != 255)
         return RF_GPU_RASTER_PACK_UNSUPPORTED;
     if (in->area >= 0 || in->a.inv_z < INT_MIN || in->a.inv_z > INT_MAX ||
@@ -40,7 +126,8 @@ static int pack_triangle(struct rf_gpu_raster_cmd_v1 *out,
         in->c.inv_z < INT_MIN || in->c.inv_z > INT_MAX)
         return RF_GPU_RASTER_PACK_INVALID;
     memset(out, 0, sizeof(*out));
-    out->kind = in->planar_vertex_lit ?
+    out->kind = in->textured ? RF_GPU_RASTER_CMD_TEXTURED_TRIANGLE_V1 :
+        in->planar_vertex_lit ?
         RF_GPU_RASTER_CMD_VERTEX_LIT_TRIANGLE_V1 :
         RF_GPU_RASTER_CMD_FLAT_TRIANGLE_V1;
     out->byte_size = sizeof(*out);
@@ -69,14 +156,32 @@ static int pack_triangle(struct rf_gpu_raster_cmd_v1 *out,
         vertex_lit->light_a_q8 = in->a.light;
         vertex_lit->light_b_q8 = in->b.light;
         vertex_lit->light_c_q8 = in->c.light;
+    } else if (in->textured) {
+        struct rf_gpu_raster_textured_triangle_v1 *textured =
+            &out->payload.textured_triangle;
+        uint32_t handle;
+        if (!texture_command_supported(in) ||
+            texture_handle(renderer, command_index, resources, &handle) < 0)
+            return RF_GPU_RASTER_PACK_UNSUPPORTED;
+        out->resource_handle = handle;
+        if (in->repeat) out->flags |= RF_GPU_RASTER_FLAG_TEXTURE_REPEAT_V1;
+        textured->a_u_over_z = (int32_t)in->a.u_over_z;
+        textured->a_v_over_z = (int32_t)in->a.v_over_z;
+        textured->b_u_over_z = (int32_t)in->b.u_over_z;
+        textured->b_v_over_z = (int32_t)in->b.v_over_z;
+        textured->c_u_over_z = (int32_t)in->c.u_over_z;
+        textured->c_v_over_z = (int32_t)in->c.v_over_z;
+        textured->light_q8 = in->light;
+        textured->fog_q8 = in->fog;
     }
     return RF_GPU_RASTER_PACK_OK;
 }
 
-int rf_gpu_raster_pack_toy_v1(const struct toy_renderer *renderer,
+static int pack_toy(const struct toy_renderer *renderer,
                               uint32_t clear_color, int32_t clear_depth,
                               void *destination, size_t destination_size,
-                              size_t *written_size)
+                              size_t *written_size,
+                              struct rf_gpu_texture_resources_v1 *resources)
 {
     struct rf_gpu_raster_stream_header_v1 *header;
     struct rf_gpu_raster_cmd_v1 *commands;
@@ -108,7 +213,7 @@ int rf_gpu_raster_pack_toy_v1(const struct toy_renderer *renderer,
     pack_clear(&commands[1], RF_GPU_RASTER_CMD_CLEAR_DEPTH_V1,
                (uint32_t)clear_depth);
     for (i = 0; i < renderer->cmd_count; ++i) {
-        result = pack_triangle(&commands[i + 2], &renderer->cmds[i]);
+        result = pack_triangle(&commands[i + 2], renderer, i, resources);
         if (result != RF_GPU_RASTER_PACK_OK) {
             memset(destination, 0, required);
             return result;
@@ -121,6 +226,30 @@ int rf_gpu_raster_pack_toy_v1(const struct toy_renderer *renderer,
     }
     if (written_size) *written_size = required;
     return RF_GPU_RASTER_PACK_OK;
+}
+
+int rf_gpu_raster_pack_toy_v1(const struct toy_renderer *renderer,
+                              uint32_t clear_color, int32_t clear_depth,
+                              void *destination, size_t destination_size,
+                              size_t *written_size)
+{
+    return pack_toy(renderer, clear_color, clear_depth, destination,
+                    destination_size, written_size, NULL);
+}
+
+int rf_gpu_raster_pack_toy_textured_v1(
+                              const struct toy_renderer *renderer,
+                              uint32_t clear_color, int32_t clear_depth,
+                              void *destination, size_t destination_size,
+                              size_t *written_size,
+                              struct rf_gpu_texture_resources_v1 *resources)
+{
+    if (!resources || (resources->desc_capacity && !resources->descs) ||
+        (resources->texel_capacity && !resources->texels))
+        return RF_GPU_RASTER_PACK_INVALID;
+    resources->desc_count = 0; resources->texel_size = 0;
+    return pack_toy(renderer, clear_color, clear_depth, destination,
+                    destination_size, written_size, resources);
 }
 
 static int bytes_are_zero(const void *memory, size_t count)
@@ -156,11 +285,11 @@ int rf_gpu_raster_validate_v1(const void *stream, size_t stream_size)
         return RF_GPU_RASTER_PACK_INVALID;
     for (i = 0; i < header->command_count; ++i) {
         const struct rf_gpu_raster_cmd_v1 *cmd = &commands[i];
-        if (cmd->byte_size != sizeof(*cmd) || cmd->resource_handle != 0)
+        if (cmd->byte_size != sizeof(*cmd))
             return RF_GPU_RASTER_PACK_INVALID;
         if (cmd->kind == RF_GPU_RASTER_CMD_CLEAR_COLOR_V1 ||
             cmd->kind == RF_GPU_RASTER_CMD_CLEAR_DEPTH_V1) {
-            if (i > 1 || cmd->flags ||
+            if (i > 1 || cmd->flags || cmd->resource_handle ||
                 !bytes_are_zero(cmd->payload.clear.reserved,
                                 sizeof(cmd->payload.clear.reserved)))
                 return RF_GPU_RASTER_PACK_INVALID;
@@ -168,7 +297,8 @@ int rf_gpu_raster_validate_v1(const void *stream, size_t stream_size)
                 (int32_t)cmd->payload.clear.value != 0)
                 return RF_GPU_RASTER_PACK_INVALID;
         } else if (cmd->kind == RF_GPU_RASTER_CMD_FLAT_TRIANGLE_V1 ||
-                   cmd->kind == RF_GPU_RASTER_CMD_VERTEX_LIT_TRIANGLE_V1) {
+                   cmd->kind == RF_GPU_RASTER_CMD_VERTEX_LIT_TRIANGLE_V1 ||
+                   cmd->kind == RF_GPU_RASTER_CMD_TEXTURED_TRIANGLE_V1) {
             const struct rf_gpu_raster_flat_triangle_v1 *t =
                 &cmd->payload.flat_triangle;
             __int128 area_wide = ((__int128)t->c.x - t->a.x) *
@@ -178,16 +308,27 @@ int rf_gpu_raster_validate_v1(const void *stream, size_t stream_size)
             uint32_t expected = RF_GPU_RASTER_FLAG_DEPTH_TEST_V1 |
                                 RF_GPU_RASTER_FLAG_DEPTH_WRITE_V1 |
                                 RF_GPU_RASTER_FLAG_OPAQUE_V1;
-            if (t->fog_q8 != 0) expected |= RF_GPU_RASTER_FLAG_FOG_V1;
+            if ((cmd->kind == RF_GPU_RASTER_CMD_TEXTURED_TRIANGLE_V1 ?
+                 cmd->payload.textured_triangle.fog_q8 : t->fog_q8) != 0)
+                expected |= RF_GPU_RASTER_FLAG_FOG_V1;
+            if (cmd->kind == RF_GPU_RASTER_CMD_TEXTURED_TRIANGLE_V1 &&
+                (cmd->flags & RF_GPU_RASTER_FLAG_TEXTURE_REPEAT_V1))
+                expected |= RF_GPU_RASTER_FLAG_TEXTURE_REPEAT_V1;
             if (i < 2 || cmd->flags != expected || t->area >= 0 ||
                 area_wide < -9223372036854775807LL - 1 ||
                 area_wide > 9223372036854775807LL ||
                 t->area != (int64_t)area_wide ||
-                t->bbox_minx < 0 || t->bbox_miny < 0 ||
-                t->bbox_maxx < t->bbox_minx ||
-                t->bbox_maxy < t->bbox_miny ||
-                (uint32_t)t->bbox_maxx >= header->framebuffer_width ||
-                (uint32_t)t->bbox_maxy >= header->framebuffer_height ||
+                (cmd->kind != RF_GPU_RASTER_CMD_TEXTURED_TRIANGLE_V1 &&
+                 (t->bbox_minx < 0 || t->bbox_miny < 0 ||
+                  t->bbox_maxx < t->bbox_minx ||
+                  t->bbox_maxy < t->bbox_miny ||
+                  (uint32_t)t->bbox_maxx >= header->framebuffer_width ||
+                  (uint32_t)t->bbox_maxy >= header->framebuffer_height)) ||
+                (cmd->kind == RF_GPU_RASTER_CMD_TEXTURED_TRIANGLE_V1 &&
+                 (!cmd->resource_handle ||
+                  cmd->payload.textured_triangle.reserved != 0)) ||
+                (cmd->kind != RF_GPU_RASTER_CMD_TEXTURED_TRIANGLE_V1 &&
+                 cmd->resource_handle != 0) ||
                 (cmd->kind == RF_GPU_RASTER_CMD_FLAT_TRIANGLE_V1 &&
                  !bytes_are_zero(t->reserved, sizeof(t->reserved))))
                 return RF_GPU_RASTER_PACK_INVALID;

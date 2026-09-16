@@ -1,6 +1,6 @@
 # Rasterfall GPU 与 Windows Native Platform 总体计划
 
-> 状态：执行中（GPU-0 至 GPU-7B 及 GPU Capability Contract V1 已完成并冻结）
+> 状态：执行中（GPU-0 至 GPU-7B 已冻结；GPU-7C 已实现但未冻结；GPU-7D Texture V1 已实现并通过 hosted differential，normal RTX 已解除首帧崩溃，其余门禁待完成）
 > 进展同步：2026-09-16
 > 源码核对基线：GPU-4 Raster Command ABI V1 / deterministic pack-validation
 > 源码核对基线：GPU-5 前 portability gate 已建立无 Vulkan handle capability snapshot、独立 Raster V1 gate 与 limit-driven 16x16/8x8 workgroup policy；WSL llvmpipe / Windows Intel Iris Xe 实测通过。
@@ -25,6 +25,8 @@
 | GPU-6.5 Tile Command Binning | 已完成 / FROZEN | CPU bbox 两遍保序 binning，workgroup=tile，full-scan A/B；WSL/Intel Iris Xe 全部 differential 0 mismatch，stress execution-wait 明显下降 |
 | GPU-7A Normal World Flat-Opaque Slice | 已完成 / FROZEN | WSL llvmpipe、Windows Iris Xe、Windows RTX 3050 三平台 replay 均 0 mismatch；RTX execution-wait 3.851--4.519 ms，GPU total 含约 49--51 ms readback |
 | GPU-7B Vertex-Lit Planar Extension | 已完成 / FROZEN | V1 96-byte 新 command kind；CPU/GPU 共享 raster truth，WSL/RTX fixed、stress、combined-world 全部 0 mismatch，world coverage 99.85--99.91% |
+| GPU-7C Normal GPU Frame Integration | 已实现 / 未冻结 | Core-owned normal world frame resource；RTX normal Outpost 3/3 GPU frames；同帧 CPU oracle 与完整 timing 门禁待完成；默认 CPU |
+| GPU-7D Texture V1 | 已实现 / 未冻结 | buffer-backed nearest RGB8/RGBA8 texture table；WSL/RTX hosted differential 0 mismatch；RTX normal Outpost 3/3 GPU frames，CPU oracle/full-scan textured/完整 timing 仍待补齐 |
 | Windows Native Platform | 未开始 | 正常 Windows Rasterfall 仍使用 MinGW + SDL2，本阶段未改窗口、输入、音频或 presentation |
 
 当前边界：
@@ -1154,6 +1156,33 @@ Windows normal frontend capture 的 frontend/classification/pack 分别为 near/
 13.629/5.481/1.388 ms、near/30 19.415/8.866/1.747 ms、mid/30 21.555/6.453/2.082 ms；
 三份 Windows stream 与 Linux stream 逐字节一致。Windows fixed/stress/vertex-lit/replay 与 WSL
 同为 0 mismatch；GPU-7B DONE / FROZEN。正常 renderer 继续 disabled/CPU。
+
+### GPU-7C — Normal GPU Frame Integration Contract
+
+Core 拥有 renderer selection、Raster V1 stream、Vulkan raster resource、tile lists、GPU color/depth、
+readback 与 CPU presentation surface 的交接。Game/session 只使用既有 world ordering barrier，不持有
+Vulkan object。`--renderer gpu-compute` 为显式 optional 模式；`--gpu-required` 将其提升为 required；
+默认 `renderer=cpu + GPU_DISABLED` 不变。
+
+每个 normal world flush 在消费前完整分类。只有 opaque flat / vertex-lit planar 全部可表达时，完整
+batch 才经 GPU-4 pack → GPU-6.5 binning → GPU-5/7B compute raster，并同时回读 XRGB8888 color 与
+signed inverse-depth；texture、transparent、overlay、edge 或 other 任一出现时，原始 batch 完整交给
+CPU。不会用 CPU 补画 GPU stream 中遗漏的命令。当前 presentation 仍为 readback → `toy_surface` →
+现有 window present；GPU-8 前不建立 VkImage/swapchain。
+
+WSL 重新捕获 near/0、near/30、mid/30 后 eligibility 分别为 26802/26832、34961/34991、
+36161/36213，因 texture 30/30/28（mid/30 另有 transparent 24）均 whole-batch fallback；三份 selected
+stream 的 hosted llvmpipe color/depth differential 均为 0 mismatch。Windows normal binary 已交叉
+构建并在 RTX 3050 以 gpu-compute optional 启动，service READY 且正确选择 NVIDIA；两帧 Outpost
+normal world 原先因每帧 2 条 texture command whole-batch fallback。GPU-7D 已在同一 96-byte
+Raster V1 record 上加入 buffer-backed Texture V1，WSL llvmpipe 三份 combined-world replay 与
+RTX 3050 hosted suite 均为 color/depth 0 mismatch。RTX normal Outpost 首帧崩溃的根因为
+`toy_surface.stride` 的字节单位被误传给以 32-bit 元素为单位的 GPU readback API，导致逐行
+拷贝越界。修正单位换算并在 surface 尺寸变化时 resize raster resource 后，`--frames 3`
+实测 attempted=3、rendered=3、fallback=0；每帧 1093 commands、2 textured commands、1 unique
+texture、4096 texel bytes。当次 execution-wait 1.760 ms、readback 47.889 ms、GPU total 49.848 ms，
+仅作 normal readback 路径观测。normal 同帧 CPU oracle、更完整的 timing 拆分与 full-scan textured
+diagnostic 仍未完成，因此 GPU-7C/GPU-7D 均不标记 DONE/FROZEN。
 
 ## WIN-1 — Native Windows Platform
 

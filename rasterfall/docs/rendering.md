@@ -1,6 +1,7 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-16
+> 源码核对基线补充：GPU-7D 在同一 complete-batch consumer/raster kernel 加入 buffer-backed nearest Texture V1。Windows RTX Outpost 修正 readback stride 单位错配后 3/3 normal GPU frames；transparent 仍为 whole-batch fallback，默认 renderer 仍为 CPU。
 > 源码核对基线补充：GPU-7A 复用正常 Campaign world frontend，在 `toy_renderer_flush()` 分类/排序前观察并跨 flush 保序累计 flat opaque command；unsupported 不降级，输出 partial-world Raster V1 stream，正常 renderer selection 不变。
 > 源码核对基线补充：GPU-7B 将同一 observer 的无纹理 vertex-lit planar 加入 selected stream；CPU 的屏幕空间 signed-64 edge-weight light interpolation、toward-zero 除法、0--384 light clamp、base modulation、fog 顺序由共享 differential oracle 约束，不建立第二套 raster kernel 或 binning。
 > 源码核对基线补充：GPU-6.5 hosted Raster V1 以 runtime-selected 16×16/8×8 workgroup 同时作为 tile，CPU bbox binning 生成保序 index lists；WSL/Intel differential 门禁通过并冻结，不改变 raster semantics、ABI 或正常 CPU world renderer。
@@ -99,6 +100,14 @@ build/rf-gpu-raster-diff-test --replay-raster-stream build/world.bin
 前者录制、分类并用 GPU-4 packer 写 stream；后者用 GPU-6 CPU oracle 与 GPU-6.5 tile-binned GPU
 比较同一 stream。真实 world replay 默认跳过成本不成比例的 full-scan。这是 partial world diagnostic，
 不是完整 normal GPU frame 或 FPS。
+
+GPU-7C/7D 复用同一边界，ownership 位于 Core：normal frontend 只遍历一次并生成唯一
+command pool。Core 对 world flush 完整分类；flat、vertex-lit planar 与 Texture V1 opaque 可进入 GPU，
+transparent、overlay、edge 或 other 任一出现则 CPU 消费原始完整 batch。Texture V1 使用每帧
+pointer-identity dedupe、1-based handle、descriptor table 与 packed texels，不把 CPU pointer 写入 ABI。
+eligible batch 经既有 pack、CPU tile binning 与共享 raster backend；readback 同时覆盖 color surface 与
+renderer depth。normal 路径传入 GPU API 的 stride 单位为 32-bit 元素，`toy_surface.stride` 在 Core
+边界从字节显式换算；surface 尺寸改变时先 resize raster resource。
 
 Temporary Campus Kit的`--visual-capture campus-corner`支持`-near`、`-mid`、`-far`；
 `campus-asset-<name>`观察单件。全部位于process-only dev-tests fixture，复用已有

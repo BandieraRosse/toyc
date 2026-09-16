@@ -26,6 +26,12 @@ layout(set = 0, binding = 3, std430) readonly buffer TileOffsets {
 layout(set = 0, binding = 4, std430) readonly buffer TileCommandIndices {
     uint indices[];
 } tile_commands;
+layout(set = 0, binding = 5, std430) readonly buffer TextureDescriptors {
+    uint words[];
+} texture_descs;
+layout(set = 0, binding = 6, std430) readonly buffer TextureTexels {
+    uint words[];
+} texture_texels;
 
 const uint HEADER_WORDS = 8u;
 const uint COMMAND_WORDS = 24u;
@@ -33,6 +39,33 @@ const uint CMD_CLEAR_COLOR = 1u;
 const uint CMD_CLEAR_DEPTH = 2u;
 const uint CMD_FLAT_TRIANGLE = 3u;
 const uint CMD_VERTEX_LIT_TRIANGLE = 4u;
+const uint CMD_TEXTURED_TRIANGLE = 5u;
+const uint FLAG_TEXTURE_REPEAT = 16u;
+
+uint texture_byte(uint offset)
+{
+    return (texture_texels.words[offset >> 2u] >> ((offset & 3u) * 8u)) & 255u;
+}
+
+uint sample_texture(uint handle, int64_t u, int64_t v, bool repeat)
+{
+    uint d = (handle - 1u) * 6u;
+    uint offset = texture_descs.words[d], width = texture_descs.words[d + 1u];
+    uint height = texture_descs.words[d + 2u], stride = texture_descs.words[d + 3u];
+    uint format = texture_descs.words[d + 4u];
+    if (repeat) {
+        u &= int64_t(65535); v &= int64_t(65535);
+    } else {
+        u = clamp(u, int64_t(0), int64_t(65535));
+        v = clamp(v, int64_t(0), int64_t(65535));
+    }
+    uint tx = uint((u * int64_t(width)) / int64_t(65536));
+    uint ty = uint((v * int64_t(height)) / int64_t(65536));
+    uint channels = format == 2u ? 4u : 3u;
+    uint at = offset + ty * stride + tx * channels;
+    return 0xff000000u | (texture_byte(at) << 16) |
+           (texture_byte(at + 1u) << 8) | texture_byte(at + 2u);
+}
 
 int64_t s64(uint low, uint high)
 {
@@ -86,20 +119,21 @@ void main()
         } else if (kind == CMD_CLEAR_DEPTH) {
             depth = int(stream.words[base + 4u]);
         } else if (kind == CMD_FLAT_TRIANGLE ||
-                   kind == CMD_VERTEX_LIT_TRIANGLE) {
-            int minx = int(stream.words[base + 15u]);
-            int maxx = int(stream.words[base + 16u]);
-            int miny = int(stream.words[base + 17u]);
-            int maxy = int(stream.words[base + 18u]);
-            if (int(x) < minx || int(x) > maxx ||
-                int(y) < miny || int(y) > maxy)
-                continue;
+                   kind == CMD_VERTEX_LIT_TRIANGLE ||
+                   kind == CMD_TEXTURED_TRIANGLE) {
             int ax = int(stream.words[base + 6u]);
             int ay = int(stream.words[base + 7u]);
             int bx = int(stream.words[base + 9u]);
             int by = int(stream.words[base + 10u]);
             int cx = int(stream.words[base + 12u]);
             int cy = int(stream.words[base + 13u]);
+            int minx = kind == CMD_TEXTURED_TRIANGLE ? min(ax, min(bx, cx)) : int(stream.words[base + 15u]);
+            int maxx = kind == CMD_TEXTURED_TRIANGLE ? max(ax, max(bx, cx)) + 1 : int(stream.words[base + 16u]);
+            int miny = kind == CMD_TEXTURED_TRIANGLE ? min(ay, min(by, cy)) : int(stream.words[base + 17u]);
+            int maxy = kind == CMD_TEXTURED_TRIANGLE ? max(ay, max(by, cy)) + 1 : int(stream.words[base + 18u]);
+            if (int(x) < minx || int(x) > maxx ||
+                int(y) < miny || int(y) > maxy)
+                continue;
             int64_t area = s64(stream.words[base + 4u],
                                stream.words[base + 5u]);
             /* Valid GPU-4 streams reject zero/positive area.  Keep the guard
@@ -124,9 +158,23 @@ void main()
                         light = int(light_weighted / area);
                     }
                     depth = candidate;
-                    color = shade(stream.words[base + 19u],
-                                  light,
-                                  int(stream.words[base + 21u]));
+                    if (kind == CMD_TEXTURED_TRIANGLE) {
+                        int64_t uoz = e0 * int64_t(int(stream.words[base + 15u])) +
+                            e1 * int64_t(int(stream.words[base + 17u])) +
+                            e2 * int64_t(int(stream.words[base + 19u]));
+                        int64_t voz = e0 * int64_t(int(stream.words[base + 16u])) +
+                            e1 * int64_t(int(stream.words[base + 18u])) +
+                            e2 * int64_t(int(stream.words[base + 20u]));
+                        uint sampled = sample_texture(stream.words[base + 3u],
+                            weighted != int64_t(0) ? uoz / weighted : int64_t(0),
+                            weighted != int64_t(0) ? voz / weighted : int64_t(0),
+                            (stream.words[base + 2u] & FLAG_TEXTURE_REPEAT) != 0u);
+                        color = shade(sampled, int(stream.words[base + 21u]),
+                                      int(stream.words[base + 22u]));
+                    } else {
+                        color = shade(stream.words[base + 19u], light,
+                                      int(stream.words[base + 21u]));
+                    }
                 }
             }
         }

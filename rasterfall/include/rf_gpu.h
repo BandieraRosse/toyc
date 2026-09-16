@@ -101,6 +101,7 @@ struct rf_gpu_raster_timing {
     double cpu_binning_ms;
     double tile_upload_ms;
     double command_upload_ms;
+    double texture_upload_ms;
     double upload_ms;
     double submit_ms;
     double execution_wait_ms;
@@ -110,6 +111,8 @@ struct rf_gpu_raster_timing {
     unsigned int tile_count;
     unsigned long long total_refs;
     unsigned int max_refs_per_tile;
+    unsigned int texture_count;
+    unsigned long long texture_bytes;
 };
 
 /* Backend return values distinguish ordinary absence from a backend that was
@@ -137,6 +140,8 @@ struct rf_gpu_backend {
     void (*raster_destroy)(void *context, void *raster);
     int (*raster_render)(void *context, void *raster,
                          const void *stream, unsigned long stream_size,
+                         const void *texture_descs, unsigned int texture_count,
+                         const void *texture_texels, unsigned long texture_bytes,
                          unsigned int *color, int *depth,
                          unsigned int width, unsigned int height,
                          unsigned int color_stride,
@@ -221,6 +226,15 @@ int rf_gpu_raster_render_timed(struct rf_gpu *gpu, struct rf_gpu_raster *raster,
                          unsigned int width, unsigned int height,
                          unsigned int color_stride,
                          unsigned int depth_stride,
+                         struct rf_gpu_raster_timing *timing);
+int rf_gpu_raster_render_textured_timed(
+                         struct rf_gpu *gpu, struct rf_gpu_raster *raster,
+                         const void *stream, unsigned long stream_size,
+                         const void *texture_descs, unsigned int texture_count,
+                         const void *texture_texels, unsigned long texture_bytes,
+                         unsigned int *color, int *depth,
+                         unsigned int width, unsigned int height,
+                         unsigned int color_stride, unsigned int depth_stride,
                          struct rf_gpu_raster_timing *timing);
 int rf_gpu_raster_set_full_scan_diagnostic(struct rf_gpu_raster *raster,
                                             int enabled);

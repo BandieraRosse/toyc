@@ -225,8 +225,33 @@ int rf_gpu_raster_render_timed(struct rf_gpu *gpu, struct rf_gpu_raster *raster,
         return -1;
     return raster->backend->raster_render(
         raster->backend_context, raster->implementation, stream, stream_size,
+        0, 0, 0, 0,
         color, depth, width, height, color_stride, depth_stride,
         timing,
+        gpu->message, sizeof(gpu->message));
+}
+
+int rf_gpu_raster_render_textured_timed(
+                         struct rf_gpu *gpu, struct rf_gpu_raster *raster,
+                         const void *stream, unsigned long stream_size,
+                         const void *texture_descs, unsigned int texture_count,
+                         const void *texture_texels, unsigned long texture_bytes,
+                         unsigned int *color, int *depth,
+                         unsigned int width, unsigned int height,
+                         unsigned int color_stride, unsigned int depth_stride,
+                         struct rf_gpu_raster_timing *timing)
+{
+    if (!gpu || gpu->state != RF_GPU_STATE_READY || !raster ||
+        raster->backend != gpu->backend || !raster->implementation ||
+        !stream || !stream_size || !color || !depth ||
+        (texture_count && (!texture_descs || !texture_texels || !texture_bytes)) ||
+        width != raster->width || height != raster->height ||
+        color_stride < width || depth_stride < width)
+        return -1;
+    return raster->backend->raster_render(
+        raster->backend_context, raster->implementation, stream, stream_size,
+        texture_descs, texture_count, texture_texels, texture_bytes,
+        color, depth, width, height, color_stride, depth_stride, timing,
         gpu->message, sizeof(gpu->message));
 }
 

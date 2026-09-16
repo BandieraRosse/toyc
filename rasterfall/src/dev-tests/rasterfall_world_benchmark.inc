@@ -184,9 +184,17 @@ cleanup:
 struct gpu_world_capture {
     struct toy_raster_cmd *selected;
     int selected_count, selected_capacity, failed;
-    unsigned long total, flat_opaque, planar_solid, textured, vertex_lit;
+    unsigned long total, flat_opaque, planar_solid, textured, textured_supported, vertex_lit;
     unsigned long transparent, overlay, edge, other;
     unsigned long long selected_bbox_pixels;
+    const struct toy_texture_view *texture_views[64];
+    unsigned long long texture_bytes;
+    unsigned long long largest_texture_bytes;
+    unsigned int texture_count, nearest_count, bilinear_count;
+    unsigned int repeat_count, clamp_count, texture_rgb_count, texture_rgba_count;
+    unsigned int texture_material_count, texture_invalid_count;
+    unsigned int texture_vertex_light_count, texture_vertex_fog_count;
+    unsigned long long max_abs_u_over_z, max_abs_v_over_z;
     long classify_us;
 };
 
@@ -197,7 +205,19 @@ static void gpu_world_observe(const struct toy_raster_cmd *commands, int count,
     long start = render_monotonic_us();
     for (int i = 0; i < count; ++i) {
         const struct toy_raster_cmd *cmd = &commands[i];
-        int supported = !cmd->textured &&
+        int texture_supported = cmd->textured && cmd->base_texture_valid &&
+            !cmd->base_texture_bilinear && cmd->texture &&
+            !cmd->texture->has_transparency && !cmd->material_features &&
+            !cmd->has_toon && !cmd->texture2 && !cmd->texture3 &&
+            !cmd->material_add && cmd->material_tint == 0x00ffffffU &&
+            cmd->light >= 0 && cmd->fog >= 0 &&
+            cmd->a.u_over_z >= -2147483647L-1 && cmd->a.u_over_z <= 2147483647L &&
+            cmd->a.v_over_z >= -2147483647L-1 && cmd->a.v_over_z <= 2147483647L &&
+            cmd->b.u_over_z >= -2147483647L-1 && cmd->b.u_over_z <= 2147483647L &&
+            cmd->b.v_over_z >= -2147483647L-1 && cmd->b.v_over_z <= 2147483647L &&
+            cmd->c.u_over_z >= -2147483647L-1 && cmd->c.u_over_z <= 2147483647L &&
+            cmd->c.v_over_z >= -2147483647L-1 && cmd->c.v_over_z <= 2147483647L;
+        int supported = (!cmd->textured || texture_supported) &&
             !cmd->transparent && !cmd->overlay && !cmd->edge &&
             cmd->material_alpha == 255 && cmd->area < 0;
         capture->total++;
@@ -205,12 +225,56 @@ static void gpu_world_observe(const struct toy_raster_cmd *commands, int count,
         else if (cmd->overlay) capture->overlay++;
         else if (cmd->transparent || cmd->material_alpha != 255)
             capture->transparent++;
-        else if (cmd->textured) capture->textured++;
+        else if (cmd->textured) { capture->textured++; if (texture_supported) capture->textured_supported++; }
         else if (cmd->planar_vertex_lit) {
             capture->planar_solid++;
             capture->vertex_lit++;
         } else if (supported) capture->flat_opaque++;
         else capture->other++;
+        if (cmd->textured && !cmd->transparent && !cmd->overlay && !cmd->edge &&
+            cmd->material_alpha == 255) {
+            unsigned int found = 0, t;
+            unsigned long long bytes = cmd->texture ? cmd->texture->data_size : 0;
+            if (cmd->base_texture_bilinear) capture->bilinear_count++;
+            else capture->nearest_count++;
+            if (cmd->repeat) capture->repeat_count++;
+            else capture->clamp_count++;
+            if (!cmd->base_texture_valid) capture->texture_invalid_count++;
+            if (cmd->material_features || cmd->has_toon || cmd->texture2 ||
+                cmd->texture3 || cmd->material_add ||
+                cmd->material_tint != 0x00ffffffU)
+                capture->texture_material_count++;
+            if (cmd->light < 0) capture->texture_vertex_light_count++;
+            if (cmd->fog < 0) capture->texture_vertex_fog_count++;
+            {
+                const struct toy_screen_vertex *vertices[3] = {
+                    &cmd->a, &cmd->b, &cmd->c
+                };
+                for (t = 0; t < 3; ++t) {
+                    unsigned long long au = vertices[t]->u_over_z < 0 ?
+                        (unsigned long long)(-(vertices[t]->u_over_z + 1)) + 1 :
+                        (unsigned long long)vertices[t]->u_over_z;
+                    unsigned long long av = vertices[t]->v_over_z < 0 ?
+                        (unsigned long long)(-(vertices[t]->v_over_z + 1)) + 1 :
+                        (unsigned long long)vertices[t]->v_over_z;
+                    if (au > capture->max_abs_u_over_z)
+                        capture->max_abs_u_over_z = au;
+                    if (av > capture->max_abs_v_over_z)
+                        capture->max_abs_v_over_z = av;
+                }
+            }
+            if (cmd->texture && cmd->texture->channels == 4)
+                capture->texture_rgba_count++;
+            else if (cmd->texture) capture->texture_rgb_count++;
+            for (t = 0; t < capture->texture_count; ++t)
+                if (capture->texture_views[t] == cmd->texture) found = 1;
+            if (!found && cmd->texture && capture->texture_count < 64) {
+                capture->texture_views[capture->texture_count++] = cmd->texture;
+                capture->texture_bytes += bytes;
+                if (bytes > capture->largest_texture_bytes)
+                    capture->largest_texture_bytes = bytes;
+            }
+        }
         if (!supported) continue;
         if (capture->selected_count == capture->selected_capacity) {
             int new_capacity = capture->selected_capacity ?
@@ -242,6 +306,9 @@ int rasterfall_render_gpu_world_capture(const char *view, int enemy_count,
     struct camera camera;
     struct toy_game *saved = NULL;
     unsigned char *stream = NULL;
+    struct rf_gpu_texture_resources_v1 resources;
+    uint32_t texture_count = 0;
+    size_t texture_bytes = 0;
     size_t stream_capacity, written = 0;
     long frontend_start, frontend_us, pack_start, pack_us;
     int fd = -1, result = 1;
@@ -254,6 +321,7 @@ int rasterfall_render_gpu_world_capture(const char *view, int enemy_count,
     memset(&packed_renderer, 0, sizeof(packed_renderer));
     memset(&surface, 0, sizeof(surface));
     memset(&camera, 0, sizeof(camera));
+    memset(&resources, 0, sizeof(resources));
     failure = "allocate game snapshot";
     saved = tlibc_malloc(sizeof(game));
     if (!saved) goto cleanup;
@@ -323,8 +391,21 @@ int rasterfall_render_gpu_world_capture(const char *view, int enemy_count,
     stream = tlibc_malloc(stream_capacity);
     if (!stream) { failure = "allocate ABI stream"; goto cleanup; }
     pack_start = render_monotonic_us();
-    if (rf_gpu_raster_pack_toy_v1(&packed_renderer, 0x151922, 0, stream,
-            stream_capacity, &written) != RF_GPU_RASTER_PACK_OK) {
+    if (rf_gpu_raster_measure_textures_toy_v1(&packed_renderer,
+            &texture_count, &texture_bytes) != RF_GPU_RASTER_PACK_OK) {
+        failure = "measure Texture V1 resources"; goto cleanup;
+    }
+    if (texture_count) {
+        resources.descs = tlibc_malloc((size_t)texture_count * sizeof(*resources.descs));
+        resources.texels = tlibc_malloc(texture_bytes);
+        if (!resources.descs || !resources.texels) {
+            failure = "allocate Texture V1 resources"; goto cleanup;
+        }
+        resources.desc_capacity = texture_count;
+        resources.texel_capacity = texture_bytes;
+    }
+    if (rf_gpu_raster_pack_toy_textured_v1(&packed_renderer, 0x151922, 0,
+            stream, stream_capacity, &written, &resources) != RF_GPU_RASTER_PACK_OK) {
         failure = "GPU-4 pack selected stream"; goto cleanup;
     }
     pack_us = render_monotonic_us() - pack_start;
@@ -339,6 +420,20 @@ int rasterfall_render_gpu_world_capture(const char *view, int enemy_count,
         }
     }
     __close(fd); fd = -1;
+    if (resources.desc_count) {
+        char texture_path[512];
+        uint32_t texture_header[4] = {0x31544652U, resources.desc_count,
+            sizeof(struct rf_gpu_texture_desc_v1), (uint32_t)resources.texel_size};
+        snprintf(texture_path, sizeof(texture_path), "%s.textures", output_path);
+        fd = __openat(AT_FDCWD, texture_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        if (fd < 0 || __write(fd, texture_header, sizeof(texture_header)) != sizeof(texture_header) ||
+            __write(fd, resources.descs, (size_t)resources.desc_count * sizeof(*resources.descs)) !=
+                (long)((size_t)resources.desc_count * sizeof(*resources.descs)) ||
+            __write(fd, resources.texels, resources.texel_size) != (long)resources.texel_size) {
+            failure = "write Texture V1 resources"; goto cleanup;
+        }
+        __close(fd); fd = -1;
+    }
     __printf("GPU-WORLD partial-world-diagnostic view=%s enemies=%d size=1280x720 output=%s\n", view, enemy_count, output_path);
     __printf("GPU-WORLD commands total=%lu flat_supported=%lu vertex_lit_supported=%lu combined_supported=%d unsupported=%lu supported_percent=%lu.%02lu clear=2 unsupported_textured=%lu unsupported_transparent=%lu unsupported_overlay=%lu unsupported_edge=%lu other=%lu\n",
         capture.total + 2UL, capture.flat_opaque + 2UL,
@@ -349,11 +444,19 @@ int rasterfall_render_gpu_world_capture(const char *view, int enemy_count,
             (capture.total + 2UL),
         ((unsigned long)(capture.selected_count + 2) * 10000UL /
             (capture.total + 2UL)) % 100UL,
-        capture.textured, capture.transparent, capture.overlay,
+        capture.textured - capture.textured_supported, capture.transparent, capture.overlay,
         capture.edge, capture.other);
     __printf("GPU-WORLD timing frontend_recording_us=%ld classification_us=%ld pack_us=%ld selected_bbox_pixels=%llu stream_bytes=%lu\n",
         frontend_us, capture.classify_us, pack_us,
         capture.selected_bbox_pixels, (unsigned long)written);
+    __printf("GPU-WORLD textures commands=%lu unique=%u bytes=%llu largest=%llu nearest=%u bilinear=%u repeat=%u clamp=%u rgb_commands=%u rgba_commands=%u material_commands=%u invalid=%u vertex_light=%u vertex_fog=%u max_abs_uoz=%llu max_abs_voz=%llu\n",
+        capture.textured, capture.texture_count, capture.texture_bytes,
+        capture.largest_texture_bytes, capture.nearest_count,
+        capture.bilinear_count, capture.repeat_count, capture.clamp_count,
+        capture.texture_rgb_count, capture.texture_rgba_count,
+        capture.texture_material_count, capture.texture_invalid_count,
+        capture.texture_vertex_light_count, capture.texture_vertex_fog_count,
+        capture.max_abs_u_over_z, capture.max_abs_v_over_z);
     result = 0;
 cleanup:
     if (result) __fprintf(2, "GPU-WORLD capture failed: %s\n", failure);
@@ -364,5 +467,7 @@ cleanup:
     tlibc_free(surface.pixels);
     tlibc_free(stream);
     tlibc_free(capture.selected);
+    tlibc_free(resources.descs);
+    tlibc_free(resources.texels);
     return result;
 }

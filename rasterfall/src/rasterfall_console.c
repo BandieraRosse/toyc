@@ -194,9 +194,14 @@ static int command_services(const struct rf_command_context *context,
            status.clock_ready ? "ready" : "not-ready",
            status.initialized ? "yes" : "no");
   out(output, line);
-  snprintf(line, sizeof(line), "  gpu=%s policy=%s",
+  snprintf(line, sizeof(line), "  gpu=%s policy=%s renderer=%s",
            rf_gpu_state_name(status.gpu_state),
-           rf_gpu_policy_name(status.gpu_policy));
+           rf_gpu_policy_name(status.gpu_policy),
+           rf_core_renderer_name(status.renderer_mode));
+  out(output, line);
+  snprintf(line, sizeof(line), "  gpu-world attempted=%llu rendered=%llu fallback=%llu",
+           status.gpu_frames_attempted, status.gpu_frames_rendered,
+           status.gpu_frames_fallback);
   out(output, line);
   return 0;
 }
