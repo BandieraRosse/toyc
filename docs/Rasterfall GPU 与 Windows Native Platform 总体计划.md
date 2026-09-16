@@ -1,8 +1,8 @@
 # Rasterfall GPU 与 Windows Native Platform 总体计划
 
-> 状态：执行中（GPU-0、GPU-0.5、GPU-1、GPU-2 已完成）
+> 状态：执行中（GPU-0、GPU-0.5、GPU-1、GPU-2、GPU-3 已完成）
 > 进展同步：2026-09-16
-> 源码核对基线：GPU-2B 持久 Vulkan backend 与 Core service hosted bring-up
+> 源码核对基线：GPU-3 Frame Ownership / GPU Framebuffer Smoke
 > 方向：Vulkan GPU Runtime / Compute Rasterizer / Windows Native Platform
 > 原则：保持 CPU renderer 与现有 Linux 路径稳定，以渐进方式引入 GPU 算力，并逐步收回 Windows 平台层所有权。
 
@@ -14,13 +14,14 @@
 | GPU-0.5 Windows Hardware Bring-up | 已完成 | Windows 原生枚举 AMD integrated 与 NVIDIA RTX 3050 Laptop GPU，discrete-first 选中 NVIDIA |
 | GPU-1 Compute Ownership | 已完成 | WSL llvmpipe 与 Windows RTX 3050 均通过 storage-buffer compute/readback：`1 2 3 4 -> 4 7 10 13` |
 | GPU-2 RF GPU Core Service | 已完成 | Core-owned service contract 与持久 Vulkan loader/instance/device/queue backend；hosted probe 经正式 service 完成 compute/readback 和逆序 shutdown |
+| GPU-3 Frame Ownership | 已完成 | hosted smoke 复用持久 backend；device-local XRGB8888 output 经 compute、barrier、host-visible readback 进入 `toy_surface`，覆盖 stride、hash、resize 与逆序 shutdown |
 | Windows Native Platform | 未开始 | 正常 Windows Rasterfall 仍使用 MinGW + SDL2，本阶段未改窗口、输入、音频或 presentation |
 
 当前边界：
 
 * GPU probe 是 hosted service frontend；Vulkan loader、instance、physical/logical device 与 queue 由持久 backend 拥有，正常 runtime 尚未选择该 hosted backend；
 * CPU renderer 仍是唯一正常游戏渲染路径；
-* 尚无 GPU framebuffer、raster command ABI、surface 或 swapchain；
+* 已有 hosted GPU framebuffer 与 CPU-visible `toy_surface` readback；尚无 raster command ABI、Vulkan surface 或 swapchain；
 * Windows `total` 首次观测包含 resource / descriptor / pipeline 创建，不作为稳态 GPU 性能结论。
 
 当前复核入口：
@@ -28,8 +29,11 @@
 ```sh
 make gpu-probe
 build/rf-gpu-probe
+make gpu-framebuffer-test
+build/rf-gpu-framebuffer-test
 make win-gpu-probe
-# Windows PowerShell: .\build\rf-gpu-probe.exe
+make win-gpu-framebuffer-test
+# Windows PowerShell: .\build\rf-gpu-framebuffer-test.exe
 ```
 
 ---
@@ -482,6 +486,16 @@ Renderer:
 ---
 
 # 9. GPU Phase 3 — GPU Framebuffer Smoke
+
+> 实现状态（2026-09-16）：**已完成。** `rf_gpu_framebuffer` 是 service 层无 Vulkan
+> handle 的 resource。Vulkan backend 复用 GPU-2 持久 instance/device/queue，为 framebuffer
+> 独占 device-local storage/transfer-src output、host-visible transfer-dst readback、compute
+> pipeline、descriptor、command pool/buffer。固定 compute 图案为 XRGB8888 线性渐变，提交后以
+> compute-write → transfer-read barrier 和 buffer copy 回读，再按目标 stride 复制至 `toy_surface`。
+> readback 优先 coherent memory，否则 map 后显式 invalidate；fence timeout 固定为 5 秒。
+> resize 先建立 replacement，成功后释放旧资源，不重建 persistent backend；partial failure
+> 统一逆序清理。WSL llvmpipe 与 Windows RTX 3050 均通过 64×48 → 400×240 完整像素/hash、
+> stride padding、resize 与 shutdown；Windows probe 同时确认 discrete adapter 为 RTX 3050。
 
 下一步让 GPU 第一次参与 Rasterfall frame lifecycle。
 
@@ -984,23 +998,15 @@ RF 自己负责：
 
 # 21. 近期关键路径
 
-截至 2026-09-16，GPU-0.5 与 GPU-1 已完成，当前优先级为：
+截至 2026-09-16，GPU-0 至 GPU-3 已完成，当前优先级为：
 
 ```text
 Completed:
-GPU-0 / GPU-0.5 / GPU-1
-WSL llvmpipe + Windows RTX 3050
+GPU-0 / GPU-0.5 / GPU-1 / GPU-2 / GPU-3
+WSL llvmpipe framebuffer smoke
             │
             ▼
 Current:
-GPU-2
-RF GPU Core Service
-            │
-            ▼
-GPU-3
-GPU framebuffer smoke
-            │
-            ▼
 GPU-4
 Raster Command ABI V1
             │

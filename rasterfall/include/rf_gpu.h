@@ -4,6 +4,8 @@
 #define RF_GPU_ADAPTER_NAME_CAPACITY 256
 #define RF_GPU_MESSAGE_CAPACITY 192
 
+#define RF_GPU_FRAMEBUFFER_FORMAT_XRGB8888 1
+
 enum rf_gpu_policy {
     RF_GPU_POLICY_DISABLED = 0,
     RF_GPU_POLICY_OPTIONAL = 1,
@@ -43,6 +45,24 @@ struct rf_gpu_backend {
     int (*init)(void *context, struct rf_gpu_backend_info *info,
                 char *message, unsigned long message_capacity);
     void (*shutdown)(void *context);
+    int (*framebuffer_create)(void *context, unsigned int width,
+                              unsigned int height, void **framebuffer,
+                              char *message, unsigned long message_capacity);
+    void (*framebuffer_destroy)(void *context, void *framebuffer);
+    int (*framebuffer_render)(void *context, void *framebuffer,
+                              unsigned int *pixels, unsigned int width,
+                              unsigned int height, unsigned int stride,
+                              char *message, unsigned long message_capacity);
+};
+
+struct rf_gpu_framebuffer {
+    const struct rf_gpu_backend *backend;
+    void *backend_context;
+    void *implementation;
+    unsigned int format;
+    unsigned int width;
+    unsigned int height;
+    unsigned int stride;
 };
 
 struct rf_gpu {
@@ -68,5 +88,16 @@ void rf_gpu_shutdown(struct rf_gpu *gpu);
 int rf_gpu_get_status(const struct rf_gpu *gpu, struct rf_gpu_status *status);
 const char *rf_gpu_policy_name(int policy);
 const char *rf_gpu_state_name(int state);
+int rf_gpu_framebuffer_init(struct rf_gpu *gpu,
+                            struct rf_gpu_framebuffer *framebuffer,
+                            unsigned int width, unsigned int height);
+int rf_gpu_framebuffer_resize(struct rf_gpu *gpu,
+                              struct rf_gpu_framebuffer *framebuffer,
+                              unsigned int width, unsigned int height);
+int rf_gpu_framebuffer_render(struct rf_gpu *gpu,
+                              struct rf_gpu_framebuffer *framebuffer,
+                              unsigned int *pixels, unsigned int width,
+                              unsigned int height, unsigned int stride);
+void rf_gpu_framebuffer_shutdown(struct rf_gpu_framebuffer *framebuffer);
 
 #endif

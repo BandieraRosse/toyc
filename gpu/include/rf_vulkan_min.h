@@ -46,8 +46,13 @@
 #define RF_VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO 39
 #define RF_VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO 40
 #define RF_VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO 42
+#define RF_VK_STRUCTURE_TYPE_MEMORY_BARRIER 46
+#define RF_VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE 6
 
 #define RF_VK_BUFFER_USAGE_STORAGE_BUFFER_BIT 0x00000020U
+#define RF_VK_BUFFER_USAGE_TRANSFER_SRC_BIT 0x00000001U
+#define RF_VK_BUFFER_USAGE_TRANSFER_DST_BIT 0x00000002U
+#define RF_VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT 0x00000001U
 #define RF_VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT 0x00000002U
 #define RF_VK_MEMORY_PROPERTY_HOST_COHERENT_BIT 0x00000004U
 #define RF_VK_DESCRIPTOR_TYPE_STORAGE_BUFFER 7
@@ -58,6 +63,10 @@
 #define RF_VK_WHOLE_SIZE (~(uint64_t)0)
 #define RF_VK_TRUE 1
 #define RF_VK_TIMEOUT 2
+#define RF_VK_ACCESS_SHADER_WRITE_BIT 0x00000040U
+#define RF_VK_ACCESS_TRANSFER_READ_BIT 0x00000800U
+#define RF_VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT 0x00000800U
+#define RF_VK_PIPELINE_STAGE_TRANSFER_BIT 0x00001000U
 
 #define RF_VK_QUEUE_GRAPHICS_BIT 0x00000001U
 #define RF_VK_QUEUE_COMPUTE_BIT  0x00000002U
@@ -180,6 +189,15 @@ struct rf_vk_memory_allocate_info {
     uint32_t s_type; const void *next; uint64_t allocation_size;
     uint32_t memory_type_index;
 };
+struct rf_vk_mapped_memory_range {
+    uint32_t s_type; const void *next; rf_vk_device_memory memory;
+    uint64_t offset; uint64_t size;
+};
+struct rf_vk_memory_barrier {
+    uint32_t s_type; const void *next; rf_vk_flags src_access_mask;
+    rf_vk_flags dst_access_mask;
+};
+struct rf_vk_buffer_copy { uint64_t src_offset; uint64_t dst_offset; uint64_t size; };
 struct rf_vk_descriptor_set_layout_binding {
     uint32_t binding; uint32_t descriptor_type; uint32_t descriptor_count;
     rf_vk_flags stage_flags; const void *immutable_samplers;
@@ -302,6 +320,8 @@ typedef rf_vk_result (RF_VK_CALL *rf_vk_map_memory_fn)(rf_vk_device,
     rf_vk_device_memory, uint64_t, uint64_t, rf_vk_flags, void **);
 typedef void (RF_VK_CALL *rf_vk_unmap_memory_fn)(rf_vk_device,
     rf_vk_device_memory);
+typedef rf_vk_result (RF_VK_CALL *rf_vk_invalidate_mapped_memory_ranges_fn)(
+    rf_vk_device, uint32_t, const struct rf_vk_mapped_memory_range *);
 typedef rf_vk_result (RF_VK_CALL *rf_vk_create_descriptor_set_layout_fn)(
     rf_vk_device, const struct rf_vk_descriptor_set_layout_create_info *,
     const void *, rf_vk_descriptor_set_layout *);
@@ -348,6 +368,12 @@ typedef void (RF_VK_CALL *rf_vk_cmd_bind_descriptor_sets_fn)(rf_vk_command_buffe
     const rf_vk_descriptor_set *, uint32_t, const uint32_t *);
 typedef void (RF_VK_CALL *rf_vk_cmd_dispatch_fn)(rf_vk_command_buffer,
     uint32_t, uint32_t, uint32_t);
+typedef void (RF_VK_CALL *rf_vk_cmd_pipeline_barrier_fn)(rf_vk_command_buffer,
+    rf_vk_flags, rf_vk_flags, rf_vk_flags, uint32_t,
+    const struct rf_vk_memory_barrier *, uint32_t, const void *, uint32_t,
+    const void *);
+typedef void (RF_VK_CALL *rf_vk_cmd_copy_buffer_fn)(rf_vk_command_buffer,
+    rf_vk_buffer, rf_vk_buffer, uint32_t, const struct rf_vk_buffer_copy *);
 typedef rf_vk_result (RF_VK_CALL *rf_vk_create_fence_fn)(rf_vk_device,
     const struct rf_vk_fence_create_info *, const void *, rf_vk_fence *);
 typedef void (RF_VK_CALL *rf_vk_destroy_fence_fn)(rf_vk_device, rf_vk_fence,

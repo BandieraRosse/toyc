@@ -1,7 +1,7 @@
 # RF Core Runtime V0.2 查询面设计
 
 > 文档更新：2026-09-16
-> 源码核对基线：工作区（Core status query、service access cleanup、Input view、runtime facade、Runtime Facade Authority audit；RF Command Runtime V0 status command；RF Terminal Frontend Prototype V0 session/frontend；GPU-2A Core-owned service contract 与 fallback policy）
+> 源码核对基线：工作区（Core status query、service access cleanup、Input view、runtime facade、Runtime Facade Authority audit；RF Command Runtime V0 status command；RF Terminal Frontend Prototype V0 session/frontend；GPU-3 framebuffer resource/readback contract）
 
 本文只定义前哨站 GUI、游戏内 Terminal 和 Super Terminal 的后续读取边界，不实现任何 UI、
 terminal、IPC 或额外进程。
@@ -21,7 +21,9 @@ Core status 和 runtime status 应由上层分别查询后组合。Core service 
 
 GPU-2A 的 service policy 为 disabled / optional / required。optional 初始化不可用或失败时 Core 保持
 可用并继续 CPU renderer；required 返回初始化失败；disabled 不触碰 backend。当前正常游戏显式
-disabled，Vulkan backend 尚未从 hosted probe 拆入。Game 不读取任何 Vulkan 对象。
+disabled。hosted Vulkan backend 已持久拥有 instance/device/queue；GPU-3 framebuffer 仍是 Core GPU
+service resource，不进入 Game，也不暴露 Vulkan 对象。正常 runtime 默认 CPU renderer 与启动行为不变；
+framebuffer resource 的关闭先于 backend/device shutdown。
 
 RF Command Runtime V0 的 `status` 命令是一个组合消费者：通过 `rf_command_context` 获取 Core 与 Game
 runtime，再分别调用上述 snapshot API。命令层不暴露或缓存 Core service、runtime、session 或 actor 的内部指针。

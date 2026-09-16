@@ -1,7 +1,7 @@
 # 构建、平台与验证
 
 > 文档更新：2026-09-16
-> 源码核对基线补充：GPU-2 已完成；Core-owned `rf_gpu` 服务具有 disabled/optional/required fallback、状态快照和持久 Vulkan loader/instance/device/queue backend，hosted probe 通过正式 service 验证 compute/readback 与 shutdown；正常 runtime 仍显式 disabled。
+> 源码核对基线补充：GPU-3 已完成；Core-owned `rf_gpu_framebuffer` 复用持久 Vulkan backend，以 compute 生成 device-local XRGB8888 framebuffer，经有限 fence、readback 与 stride-aware copy 进入 `toy_surface`；正常 runtime 仍显式 disabled/CPU renderer。
 > 源码核对基线补充：GPU Phase 1 hosted probe 已覆盖 Linux/Windows 共用的 storage-buffer compute、descriptor/pipeline、command/fence 与 readback 校验，并采用 discrete-first adapter selection；WSL llvmpipe 与 Windows RTX 3050 compute/readback 均已通过；正常 freestanding Rasterfall 和 Windows 游戏构建未接入 GPU。
 > 源码核对基线补充：Windows 启动地图加载的容量型 Map IR 改为临时堆分配，成功与失败均释放；不依赖扩大线程栈，详见 map-format.md 的 Runtime Bridge。
 > 源码核对基线补充：Static World Lighting V2 Phase D Linux GCC freestanding / Windows MinGW 构建通过；Linux headless capture 验收，Windows仅build，Wayland交互环境不可用，见 [Phase D](static-world-lighting-phase-d.md)。
@@ -62,6 +62,15 @@ Vulkan handle。GPU-2B 的 `rf_gpu_vulkan_backend` 持久拥有 loader、instanc
 logical device 与 queue；init 继续执行 compute/readback 门禁，shutdown 逆序释放。当前正常 runtime
 显式 disabled；`make gpu-service-test` 验证平台无关契约，`make gpu-probe && build/rf-gpu-probe`
 验证真实 backend 生命周期。GPU framebuffer、surface 与 swapchain 不属于 GPU-2。
+
+GPU-3 的无窗口入口为 `make gpu-framebuffer-test` / `build/rf-gpu-framebuffer-test`，Windows
+交叉构建为 `make win-gpu-framebuffer-test`。它验证固定尺寸全像素/hash、非紧密 destination stride、
+resize 及 framebuffer-before-backend shutdown。output 是 device-local storage/transfer-src buffer，
+readback 是 host-visible transfer-dst buffer；优先 coherent，否则 invalidate。command buffer 固定记录
+compute → barrier → copy，fence 最长等待 5 秒。resize 仅 replacement-first 重建 framebuffer 资源。
+WSL llvmpipe correctness、Windows MinGW build 与 RTX 3050 实机 smoke 均已通过；Windows probe
+确认选中 NVIDIA GeForce RTX 3050 Laptop GPU（discrete）。
+正常 Rasterfall 未链接 hosted backend，CPU renderer 与 optional/required 启动语义不变；GPU-4 未开始。
 
 ## 改文件列表时
 

@@ -1174,10 +1174,13 @@ wayland_fps: $(BUILD)/wayland_fps
 # Hosted, SDK-free Vulkan discovery tool.  This target intentionally stays
 # outside the freestanding Rasterfall link until the optional Core GPU service
 # has a stable ABI and fallback policy.
-.PHONY: gpu-probe gpu-service-test win-gpu-probe
+.PHONY: gpu-probe gpu-service-test gpu-framebuffer-test win-gpu-probe \
+	win-gpu-framebuffer-test
 gpu-probe: $(BUILD)/rf-gpu-probe
 gpu-service-test: $(BUILD)/rf-gpu-service-test
+gpu-framebuffer-test: $(BUILD)/rf-gpu-framebuffer-test
 win-gpu-probe: $(BUILD)/rf-gpu-probe.exe
+win-gpu-framebuffer-test: $(BUILD)/rf-gpu-framebuffer-test.exe
 
 $(BUILD)/rf-gpu-service-test: gpu/src/rf_gpu_service_test.c rasterfall/src/rf_gpu.c rasterfall/include/rf_gpu.h | $(BUILD)
 	$(GCC) -std=c11 -O2 -Wall -Wextra -Werror -I rasterfall/include \
@@ -1191,6 +1194,16 @@ $(BUILD)/rf-gpu-probe: gpu/src/rf_gpu_probe.c gpu/src/rf_gpu_vulkan_backend.c gp
 $(BUILD)/rf-gpu-probe.exe: gpu/src/rf_gpu_probe.c gpu/src/rf_gpu_vulkan_backend.c gpu/include/rf_vulkan_min.h gpu/include/rf_gpu_vulkan_backend.h rasterfall/src/rf_gpu.c rasterfall/include/rf_gpu.h | $(BUILD)
 	x86_64-w64-mingw32-gcc -std=c11 -O2 -Wall -Wextra -Werror \
 		-I gpu/include -I rasterfall/include gpu/src/rf_gpu_probe.c \
+		gpu/src/rf_gpu_vulkan_backend.c rasterfall/src/rf_gpu.c -o $@
+
+$(BUILD)/rf-gpu-framebuffer-test: gpu/src/rf_gpu_framebuffer_test.c gpu/src/rf_gpu_vulkan_backend.c gpu/include/rf_vulkan_min.h gpu/include/rf_gpu_vulkan_backend.h rasterfall/src/rf_gpu.c rasterfall/include/rf_gpu.h | $(BUILD)
+	$(GCC) -std=c11 -O2 -Wall -Wextra -Werror -I gpu/include -I rasterfall/include \
+		gpu/src/rf_gpu_framebuffer_test.c gpu/src/rf_gpu_vulkan_backend.c \
+		rasterfall/src/rf_gpu.c -ldl -o $@
+
+$(BUILD)/rf-gpu-framebuffer-test.exe: gpu/src/rf_gpu_framebuffer_test.c gpu/src/rf_gpu_vulkan_backend.c gpu/include/rf_vulkan_min.h gpu/include/rf_gpu_vulkan_backend.h rasterfall/src/rf_gpu.c rasterfall/include/rf_gpu.h | $(BUILD)
+	x86_64-w64-mingw32-gcc -std=c11 -O2 -Wall -Wextra -Werror \
+		-I gpu/include -I rasterfall/include gpu/src/rf_gpu_framebuffer_test.c \
 		gpu/src/rf_gpu_vulkan_backend.c rasterfall/src/rf_gpu.c -o $@
 
 rasterfall-blender-deps:

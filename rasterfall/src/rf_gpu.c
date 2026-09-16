@@ -48,6 +48,79 @@ const char *rf_gpu_state_name(int state)
     }
 }
 
+static int framebuffer_create(struct rf_gpu *gpu,
+                              struct rf_gpu_framebuffer *framebuffer,
+                              unsigned int width, unsigned int height)
+{
+    void *implementation = 0;
+    if (!gpu || !framebuffer || gpu->state != RF_GPU_STATE_READY ||
+        !width || !height || width > 16384 || height > 16384 ||
+        !gpu->backend || !gpu->backend->framebuffer_create ||
+        !gpu->backend->framebuffer_destroy ||
+        !gpu->backend->framebuffer_render)
+        return -1;
+    if (gpu->backend->framebuffer_create(gpu->backend_context, width, height,
+                                         &implementation, gpu->message,
+                                         sizeof(gpu->message)) < 0)
+        return -1;
+    zero_bytes(framebuffer, sizeof(*framebuffer));
+    framebuffer->backend = gpu->backend;
+    framebuffer->backend_context = gpu->backend_context;
+    framebuffer->implementation = implementation;
+    framebuffer->format = RF_GPU_FRAMEBUFFER_FORMAT_XRGB8888;
+    framebuffer->width = width;
+    framebuffer->height = height;
+    framebuffer->stride = width;
+    return 0;
+}
+
+int rf_gpu_framebuffer_init(struct rf_gpu *gpu,
+                            struct rf_gpu_framebuffer *framebuffer,
+                            unsigned int width, unsigned int height)
+{
+    if (!framebuffer) return -1;
+    zero_bytes(framebuffer, sizeof(*framebuffer));
+    return framebuffer_create(gpu, framebuffer, width, height);
+}
+
+int rf_gpu_framebuffer_resize(struct rf_gpu *gpu,
+                              struct rf_gpu_framebuffer *framebuffer,
+                              unsigned int width, unsigned int height)
+{
+    struct rf_gpu_framebuffer replacement;
+    if (!framebuffer || !framebuffer->implementation) return -1;
+    if (framebuffer->width == width && framebuffer->height == height) return 0;
+    if (framebuffer_create(gpu, &replacement, width, height) < 0) return -1;
+    rf_gpu_framebuffer_shutdown(framebuffer);
+    *framebuffer = replacement;
+    return 0;
+}
+
+int rf_gpu_framebuffer_render(struct rf_gpu *gpu,
+                              struct rf_gpu_framebuffer *framebuffer,
+                              unsigned int *pixels, unsigned int width,
+                              unsigned int height, unsigned int stride)
+{
+    if (!gpu || gpu->state != RF_GPU_STATE_READY || !framebuffer ||
+        framebuffer->backend != gpu->backend || !framebuffer->implementation ||
+        !pixels || width != framebuffer->width ||
+        height != framebuffer->height || stride < width)
+        return -1;
+    return framebuffer->backend->framebuffer_render(
+        framebuffer->backend_context, framebuffer->implementation, pixels,
+        width, height, stride, gpu->message, sizeof(gpu->message));
+}
+
+void rf_gpu_framebuffer_shutdown(struct rf_gpu_framebuffer *framebuffer)
+{
+    if (!framebuffer) return;
+    if (framebuffer->implementation && framebuffer->backend &&
+        framebuffer->backend->framebuffer_destroy)
+        framebuffer->backend->framebuffer_destroy(framebuffer->backend_context,
+                                                   framebuffer->implementation);
+    zero_bytes(framebuffer, sizeof(*framebuffer));
+}
+
 int rf_gpu_init(struct rf_gpu *gpu, enum rf_gpu_policy policy,
                 const struct rf_gpu_backend *backend, void *backend_context)
 {

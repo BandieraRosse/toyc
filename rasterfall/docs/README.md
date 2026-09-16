@@ -1,7 +1,7 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-16
-> 源码核对基线补充：GPU-2 已完成 Core-owned `rf_gpu` contract 与持久 Vulkan loader/instance/device/queue backend；hosted probe 经正式 service 验证 compute/readback 和 shutdown，正常 runtime 仍 disabled/CPU renderer，GPU framebuffer 属于 GPU-3。
+> 源码核对基线补充：GPU-3 已完成 Core-owned GPU framebuffer resource：复用持久 backend，compute 写 device-local XRGB8888，经有限 fence/readback 进入 `toy_surface`，覆盖 stride、resize 与逆序 shutdown；正常 runtime 仍 disabled/CPU renderer，GPU-4 未开始。
 > 源码核对基线补充：原生 C Vulkan Phase 1 hosted probe 已实现 Linux/Windows 共用的 storage-buffer compute ownership、discrete-first adapter selection 与 readback 校验；WSL llvmpipe 与 Windows RTX 3050 compute/readback 均已通过；仍不接正常 Core、window 或 renderer，详见 `gpu/README.md` 与 build-platforms.md。
 > 源码核对基线补充：Eula 正常 world/展示在 near/mid 使用 Gameplay Hybrid `eula_lod3.rmesh`，仅 FAR（4096 RFU 起）使用 compact LOD2；Hybrid 缺失时回退原模型。
 > 源码核对基线补充：Eula Animation Acceptance V1 提供 legacy VMD carrier 的固定离屏姿态组图；统一 `--character-performance[-suite]` 保留 model/actor/world benchmark 的原职责并提供单角色、固定资产族及常见实例组合的同口径统计。
@@ -105,7 +105,7 @@
 | 静态 prop 资产 ID、路径、展示缩放和默认尺寸 | [asset-pipeline.md](asset-pipeline.md) | `include/rasterfall_prop.h`、`src/rasterfall_prop.c` |
 | 联机协议、快照、预测、可靠事件、房间发现 | [networking.md](networking.md) | `src/rasterfall_net.c` |
 | Linux/Windows 平台差异、构建、测试 | [build-platforms.md](build-platforms.md) | `Makefile`、`windows/Makefile` |
-| GPU 枚举、Core GPU service、持久 Vulkan backend、compute ownership 与 fallback | [build-platforms.md](build-platforms.md)、[`../../gpu/README.md`](../../gpu/README.md) | `include/rf_gpu.h`、`src/rf_gpu.c`、`gpu/src/rf_gpu_vulkan_backend.c`、`gpu/src/rf_gpu_probe.c`；`make gpu-service-test` / `make gpu-probe` / `make win-gpu-probe`，当前不接正常 renderer |
+| GPU 枚举、Core GPU service、持久 Vulkan backend、framebuffer/readback 与 fallback | [build-platforms.md](build-platforms.md)、[`../../gpu/README.md`](../../gpu/README.md) | `include/rf_gpu.h`、`src/rf_gpu.c`、`gpu/src/rf_gpu_vulkan_backend.c`、`gpu/src/rf_gpu_framebuffer_test.c`；`make gpu-service-test` / `make gpu-probe` / `make gpu-framebuffer-test` / Windows 对应目标，正常 renderer 仍为 CPU |
 | 动画求值顺序、格式/角色扩展契约 | [animation-architecture.md](animation-architecture.md) | `src/rasterfall_model.c`、动画头文件 |
 | 网络状态所有权、协议和房间生命周期 | [network-architecture.md](network-architecture.md) | `src/rasterfall_net.c`、公共协议头 |
 | 资源来源、许可和发布检查 | [asset-sources.md](asset-sources.md) | 资源目录与导入工具 |

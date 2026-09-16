@@ -79,8 +79,24 @@ GPU-2A 已新增 `rasterfall/include/rf_gpu.h` 与 `rasterfall/src/rf_gpu.c`：R
 状态、只读 adapter snapshot 和 backend shutdown 生命周期。`make gpu-service-test` 验证 optional
 fallback、required failure 与 READY-only shutdown。正常游戏仍显式 disabled，CPU renderer 不变。
 GPU-2B 已将 Vulkan ownership 从 probe 拆入 `rf_gpu_vulkan_backend`；probe 现在通过正式 service
-启动 required backend、读取无 Vulkan handle 的状态快照并验证 shutdown。GPU-2 至此完成；下一步
-GPU-3 是 GPU framebuffer smoke，正常 renderer 仍保持 CPU。
+启动 required backend、读取无 Vulkan handle 的状态快照并验证 shutdown。
+
+GPU-3 新增平台无关 `rf_gpu_framebuffer` resource/API 与 Vulkan framebuffer 实现：每个 framebuffer
+拥有 device-local XRGB8888 output、host-visible readback、compute pipeline、descriptor 和 command
+buffer；固定 shader 写线性渐变，barrier 后 copy/readback，再按 stride 复制进现有 `toy_surface`。
+coherent readback 直接读取，non-coherent readback 显式 invalidate；fence 使用 5 秒有限 timeout。
+resize 以 replacement-first 方式只重建 framebuffer 资源，resource 必须先于 backend shutdown 释放。
+
+```sh
+make gpu-framebuffer-test
+build/rf-gpu-framebuffer-test
+make win-gpu-framebuffer-test
+# Windows PowerShell: .\build\rf-gpu-framebuffer-test.exe
+```
+
+WSL llvmpipe 与 Windows RTX 3050 均已通过全像素/hash、非紧密 stride、resize 与 shutdown 检查；
+Windows probe 确认 discrete adapter 为 NVIDIA GeForce RTX 3050 Laptop GPU。正常 renderer 仍为 CPU；GPU-4 command ABI、triangle/depth/world、
+surface/swapchain 均未开始。GPU-3 不输出性能统计，避免把临时 readback 当成 native renderer 结论。
 
 ## 注意事项
 

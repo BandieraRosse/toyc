@@ -38,6 +38,7 @@ struct rf_vk_api {
     rf_vk_bind_buffer_memory_fn bind_buffer_memory;
     rf_vk_map_memory_fn map_memory;
     rf_vk_unmap_memory_fn unmap_memory;
+    rf_vk_invalidate_mapped_memory_ranges_fn invalidate_mapped_memory_ranges;
     rf_vk_create_descriptor_set_layout_fn create_descriptor_set_layout;
     rf_vk_destroy_descriptor_set_layout_fn destroy_descriptor_set_layout;
     rf_vk_create_descriptor_pool_fn create_descriptor_pool;
@@ -58,6 +59,8 @@ struct rf_vk_api {
     rf_vk_cmd_bind_pipeline_fn cmd_bind_pipeline;
     rf_vk_cmd_bind_descriptor_sets_fn cmd_bind_descriptor_sets;
     rf_vk_cmd_dispatch_fn cmd_dispatch;
+    rf_vk_cmd_pipeline_barrier_fn cmd_pipeline_barrier;
+    rf_vk_cmd_copy_buffer_fn cmd_copy_buffer;
     rf_vk_create_fence_fn create_fence;
     rf_vk_destroy_fence_fn destroy_fence;
     rf_vk_queue_submit_fn queue_submit;
@@ -180,6 +183,8 @@ static int api_load_instance(struct rf_vk_api *api, rf_vk_instance instance)
     RF_LOAD_DEVICE(bind_buffer_memory, "vkBindBufferMemory");
     RF_LOAD_DEVICE(map_memory, "vkMapMemory");
     RF_LOAD_DEVICE(unmap_memory, "vkUnmapMemory");
+    RF_LOAD_DEVICE(invalidate_mapped_memory_ranges,
+                   "vkInvalidateMappedMemoryRanges");
     RF_LOAD_DEVICE(create_descriptor_set_layout, "vkCreateDescriptorSetLayout");
     RF_LOAD_DEVICE(destroy_descriptor_set_layout, "vkDestroyDescriptorSetLayout");
     RF_LOAD_DEVICE(create_descriptor_pool, "vkCreateDescriptorPool");
@@ -200,6 +205,8 @@ static int api_load_instance(struct rf_vk_api *api, rf_vk_instance instance)
     RF_LOAD_DEVICE(cmd_bind_pipeline, "vkCmdBindPipeline");
     RF_LOAD_DEVICE(cmd_bind_descriptor_sets, "vkCmdBindDescriptorSets");
     RF_LOAD_DEVICE(cmd_dispatch, "vkCmdDispatch");
+    RF_LOAD_DEVICE(cmd_pipeline_barrier, "vkCmdPipelineBarrier");
+    RF_LOAD_DEVICE(cmd_copy_buffer, "vkCmdCopyBuffer");
     RF_LOAD_DEVICE(create_fence, "vkCreateFence");
     RF_LOAD_DEVICE(destroy_fence, "vkDestroyFence");
     RF_LOAD_DEVICE(queue_submit, "vkQueueSubmit");
@@ -525,6 +532,321 @@ struct rf_gpu_vulkan_impl {
     uint32_t queue_family;
 };
 
+struct rf_gpu_vulkan_framebuffer {
+    struct rf_gpu_vulkan_impl *owner;
+    rf_vk_buffer output_buffer;
+    rf_vk_device_memory output_memory;
+    rf_vk_buffer readback_buffer;
+    rf_vk_device_memory readback_memory;
+    int readback_coherent;
+    rf_vk_descriptor_set_layout set_layout;
+    rf_vk_descriptor_pool descriptor_pool;
+    rf_vk_descriptor_set descriptor_set;
+    rf_vk_shader_module shader;
+    rf_vk_pipeline_layout pipeline_layout;
+    rf_vk_pipeline pipeline;
+    rf_vk_command_pool command_pool;
+    rf_vk_command_buffer command_buffer;
+    uint32_t width, height;
+    uint64_t byte_size;
+    uint64_t storage_size;
+    uint32_t dispatch_x, dispatch_y;
+};
+
+/* One invocation writes one XRGB8888 pixel. */
+static const uint32_t framebuffer_spirv[] = {
+    0x07230203, 0x00010000, 0x00000000, 26, 0,
+    0x00020011, 1, 0x0003000e, 0, 1,
+    0x0006000f, 5, 15, 0x6e69616d, 0, 6,
+    0x00060010, 15, 17, 1, 1, 1,
+    0x00040047, 6, 11, 28, 0x00040047, 7, 6, 4,
+    0x00050048, 8, 0, 35, 0, 0x00030047, 8, 3,
+    0x00040047, 10, 34, 0, 0x00040047, 10, 33, 0,
+    0x00020013, 1, 0x00030021, 2, 1,
+    0x00040015, 3, 32, 0, 0x00040017, 4, 3, 3,
+    0x00040020, 5, 1, 4, 0x0004003b, 5, 6, 1,
+    0x0003001d, 7, 3, 0x0003001e, 8, 7,
+    0x00040020, 9, 2, 8, 0x0004003b, 9, 10, 2,
+    0x0004002b, 3, 11, 0, 0x00040020, 12, 2, 3,
+    0x0004002b, 3, 13, 0x00010101,
+    0x0004002b, 3, 14, 0xff000000,
+    0x0004002b, 3, 23, 65535,
+    0x00050036, 1, 15, 0, 2, 0x000200f8, 16,
+    0x0004003d, 4, 17, 6, 0x00050051, 3, 18, 17, 0,
+    0x00050051, 3, 22, 17, 1,
+    0x00050084, 3, 24, 22, 23,
+    0x00050080, 3, 25, 24, 18,
+    0x00060041, 12, 19, 10, 11, 25,
+    0x00050084, 3, 20, 25, 13,
+    0x00050080, 3, 21, 20, 14,
+    0x0003003e, 19, 21, 0x000100fd, 0x00010038
+};
+
+static int framebuffer_memory_type(struct rf_gpu_vulkan_impl *impl,
+                                   uint32_t allowed, rf_vk_flags required,
+                                   rf_vk_flags preferred,
+                                   rf_vk_flags *selected_flags)
+{
+    struct rf_vk_physical_device_memory_properties properties;
+    int fallback = -1;
+    uint32_t i;
+    memset(&properties, 0, sizeof(properties));
+    impl->api.get_memory_properties(impl->physical_device, &properties);
+    for (i = 0; i < properties.memory_type_count; ++i) {
+        rf_vk_flags flags = properties.memory_types[i].property_flags;
+        if (!(allowed & (1U << i)) || (flags & required) != required) continue;
+        if (fallback < 0) fallback = (int)i;
+        if ((flags & preferred) == preferred) {
+            if (selected_flags) *selected_flags = flags;
+            return (int)i;
+        }
+    }
+    if (fallback >= 0 && selected_flags)
+        *selected_flags = properties.memory_types[fallback].property_flags;
+    return fallback;
+}
+
+static int framebuffer_buffer(struct rf_gpu_vulkan_impl *impl, uint64_t size,
+                              rf_vk_flags usage, rf_vk_flags required,
+                              rf_vk_flags preferred, rf_vk_buffer *buffer,
+                              rf_vk_device_memory *memory,
+                              rf_vk_flags *memory_flags)
+{
+    struct rf_vk_buffer_create_info info;
+    struct rf_vk_memory_requirements requirements;
+    struct rf_vk_memory_allocate_info allocation;
+    int memory_type;
+    memset(&info, 0, sizeof(info));
+    info.s_type = RF_VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    info.size = size; info.usage = usage;
+    info.sharing_mode = RF_VK_SHARING_MODE_EXCLUSIVE;
+    if (impl->api.create_buffer(impl->device, &info, NULL, buffer) != RF_VK_SUCCESS)
+        return -1;
+    impl->api.get_buffer_memory_requirements(impl->device, *buffer, &requirements);
+    memory_type = framebuffer_memory_type(impl, requirements.memory_type_bits,
+                                          required, preferred, memory_flags);
+    if (memory_type < 0) return -1;
+    memset(&allocation, 0, sizeof(allocation));
+    allocation.s_type = RF_VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocation.allocation_size = requirements.size;
+    allocation.memory_type_index = (uint32_t)memory_type;
+    if (impl->api.allocate_memory(impl->device, &allocation, NULL, memory) != RF_VK_SUCCESS)
+        return -1;
+    return impl->api.bind_buffer_memory(impl->device, *buffer, *memory, 0) ==
+        RF_VK_SUCCESS ? 0 : -1;
+}
+
+static void framebuffer_destroy(void *context, void *framebuffer)
+{
+    struct rf_gpu_vulkan_context *backend_context = context;
+    struct rf_gpu_vulkan_framebuffer *fb = framebuffer;
+    struct rf_gpu_vulkan_impl *impl = backend_context
+        ? backend_context->implementation : NULL;
+    if (!fb) return;
+    if (!impl || fb->owner != impl) { free(fb); return; }
+    if (fb->command_pool) impl->api.destroy_command_pool(impl->device, fb->command_pool, NULL);
+    if (fb->pipeline) impl->api.destroy_pipeline(impl->device, fb->pipeline, NULL);
+    if (fb->pipeline_layout) impl->api.destroy_pipeline_layout(impl->device, fb->pipeline_layout, NULL);
+    if (fb->shader) impl->api.destroy_shader_module(impl->device, fb->shader, NULL);
+    if (fb->descriptor_pool) impl->api.destroy_descriptor_pool(impl->device, fb->descriptor_pool, NULL);
+    if (fb->set_layout) impl->api.destroy_descriptor_set_layout(impl->device, fb->set_layout, NULL);
+    if (fb->readback_buffer) impl->api.destroy_buffer(impl->device, fb->readback_buffer, NULL);
+    if (fb->readback_memory) impl->api.free_memory(impl->device, fb->readback_memory, NULL);
+    if (fb->output_buffer) impl->api.destroy_buffer(impl->device, fb->output_buffer, NULL);
+    if (fb->output_memory) impl->api.free_memory(impl->device, fb->output_memory, NULL);
+    free(fb);
+}
+
+static int framebuffer_create(void *context, unsigned int width,
+                              unsigned int height, void **framebuffer,
+                              char *message, unsigned long message_capacity)
+{
+    struct rf_gpu_vulkan_context *backend_context = context;
+    struct rf_gpu_vulkan_impl *impl = backend_context ? backend_context->implementation : NULL;
+    struct rf_gpu_vulkan_framebuffer *fb = NULL;
+    rf_vk_flags readback_flags = 0;
+    if (!impl || !framebuffer || !width || !height) return -1;
+    *framebuffer = NULL;
+    fb = calloc(1, sizeof(*fb));
+    if (!fb) goto failed;
+    fb->owner = impl; fb->width = width; fb->height = height;
+    fb->byte_size = (uint64_t)width * height * 4;
+    fb->dispatch_x = width * height > 65535U ? 65535U : width * height;
+    fb->dispatch_y = (width * height + fb->dispatch_x - 1) / fb->dispatch_x;
+    fb->storage_size = (uint64_t)fb->dispatch_x * fb->dispatch_y * 4;
+    if (framebuffer_buffer(impl, fb->storage_size,
+            RF_VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | RF_VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+            RF_VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0,
+            &fb->output_buffer, &fb->output_memory, NULL) < 0) goto failed;
+    if (framebuffer_buffer(impl, fb->byte_size, RF_VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+            RF_VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+            RF_VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+            &fb->readback_buffer, &fb->readback_memory, &readback_flags) < 0)
+        goto failed;
+    fb->readback_coherent = !!(readback_flags & RF_VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    {
+        struct rf_vk_descriptor_set_layout_binding binding;
+        struct rf_vk_descriptor_set_layout_create_info info;
+        memset(&binding, 0, sizeof(binding));
+        binding.descriptor_type = RF_VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        binding.descriptor_count = 1; binding.stage_flags = RF_VK_SHADER_STAGE_COMPUTE_BIT;
+        memset(&info, 0, sizeof(info));
+        info.s_type = RF_VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        info.binding_count = 1; info.bindings = &binding;
+        if (impl->api.create_descriptor_set_layout(impl->device, &info, NULL,
+                                                   &fb->set_layout) != RF_VK_SUCCESS)
+            goto failed;
+    }
+    {
+        struct rf_vk_descriptor_pool_size size;
+        struct rf_vk_descriptor_pool_create_info info;
+        struct rf_vk_descriptor_set_allocate_info allocation;
+        struct rf_vk_descriptor_buffer_info buffer_info;
+        struct rf_vk_write_descriptor_set write;
+        size.type = RF_VK_DESCRIPTOR_TYPE_STORAGE_BUFFER; size.descriptor_count = 1;
+        memset(&info, 0, sizeof(info));
+        info.s_type = RF_VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        info.max_sets = 1; info.pool_size_count = 1; info.pool_sizes = &size;
+        if (impl->api.create_descriptor_pool(impl->device, &info, NULL,
+                                             &fb->descriptor_pool) != RF_VK_SUCCESS)
+            goto failed;
+        memset(&allocation, 0, sizeof(allocation));
+        allocation.s_type = RF_VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        allocation.descriptor_pool = fb->descriptor_pool;
+        allocation.descriptor_set_count = 1; allocation.set_layouts = &fb->set_layout;
+        if (impl->api.allocate_descriptor_sets(impl->device, &allocation,
+                                               &fb->descriptor_set) != RF_VK_SUCCESS)
+            goto failed;
+        buffer_info.buffer = fb->output_buffer; buffer_info.offset = 0; buffer_info.range = fb->storage_size;
+        memset(&write, 0, sizeof(write));
+        write.s_type = RF_VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        write.dst_set = fb->descriptor_set; write.descriptor_count = 1;
+        write.descriptor_type = RF_VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        write.buffer_info = &buffer_info;
+        impl->api.update_descriptor_sets(impl->device, 1, &write, 0, NULL);
+    }
+    {
+        struct rf_vk_shader_module_create_info shader_info;
+        struct rf_vk_pipeline_layout_create_info layout_info;
+        struct rf_vk_compute_pipeline_create_info pipeline_info;
+        memset(&shader_info, 0, sizeof(shader_info));
+        shader_info.s_type = RF_VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+        shader_info.code_size = sizeof(framebuffer_spirv); shader_info.code = framebuffer_spirv;
+        if (impl->api.create_shader_module(impl->device, &shader_info, NULL,
+                                           &fb->shader) != RF_VK_SUCCESS) goto failed;
+        memset(&layout_info, 0, sizeof(layout_info));
+        layout_info.s_type = RF_VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        layout_info.set_layout_count = 1; layout_info.set_layouts = &fb->set_layout;
+        if (impl->api.create_pipeline_layout(impl->device, &layout_info, NULL,
+                                             &fb->pipeline_layout) != RF_VK_SUCCESS) goto failed;
+        memset(&pipeline_info, 0, sizeof(pipeline_info));
+        pipeline_info.s_type = RF_VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+        pipeline_info.stage.s_type = RF_VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        pipeline_info.stage.stage = RF_VK_SHADER_STAGE_COMPUTE_BIT;
+        pipeline_info.stage.module = fb->shader; pipeline_info.stage.name = "main";
+        pipeline_info.layout = fb->pipeline_layout; pipeline_info.base_pipeline_index = -1;
+        if (impl->api.create_compute_pipelines(impl->device, NULL, 1,
+                &pipeline_info, NULL, &fb->pipeline) != RF_VK_SUCCESS) goto failed;
+    }
+    {
+        struct rf_vk_command_pool_create_info pool_info;
+        struct rf_vk_command_buffer_allocate_info allocation;
+        struct rf_vk_command_buffer_begin_info begin;
+        struct rf_vk_memory_barrier barrier;
+        struct rf_vk_buffer_copy copy;
+        memset(&pool_info, 0, sizeof(pool_info));
+        pool_info.s_type = RF_VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+        pool_info.queue_family_index = impl->queue_family;
+        if (impl->api.create_command_pool(impl->device, &pool_info, NULL,
+                                          &fb->command_pool) != RF_VK_SUCCESS) goto failed;
+        memset(&allocation, 0, sizeof(allocation));
+        allocation.s_type = RF_VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        allocation.command_pool = fb->command_pool; allocation.level = RF_VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        allocation.command_buffer_count = 1;
+        if (impl->api.allocate_command_buffers(impl->device, &allocation,
+                                               &fb->command_buffer) != RF_VK_SUCCESS) goto failed;
+        memset(&begin, 0, sizeof(begin)); begin.s_type = RF_VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        if (impl->api.begin_command_buffer(fb->command_buffer, &begin) != RF_VK_SUCCESS) goto failed;
+        impl->api.cmd_bind_pipeline(fb->command_buffer, RF_VK_PIPELINE_BIND_POINT_COMPUTE, fb->pipeline);
+        impl->api.cmd_bind_descriptor_sets(fb->command_buffer, RF_VK_PIPELINE_BIND_POINT_COMPUTE,
+            fb->pipeline_layout, 0, 1, &fb->descriptor_set, 0, NULL);
+        impl->api.cmd_dispatch(fb->command_buffer, fb->dispatch_x,
+                               fb->dispatch_y, 1);
+        memset(&barrier, 0, sizeof(barrier)); barrier.s_type = RF_VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+        barrier.src_access_mask = RF_VK_ACCESS_SHADER_WRITE_BIT;
+        barrier.dst_access_mask = RF_VK_ACCESS_TRANSFER_READ_BIT;
+        impl->api.cmd_pipeline_barrier(fb->command_buffer,
+            RF_VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, RF_VK_PIPELINE_STAGE_TRANSFER_BIT,
+            0, 1, &barrier, 0, NULL, 0, NULL);
+        copy.src_offset = 0; copy.dst_offset = 0; copy.size = fb->byte_size;
+        impl->api.cmd_copy_buffer(fb->command_buffer, fb->output_buffer,
+                                  fb->readback_buffer, 1, &copy);
+        if (impl->api.end_command_buffer(fb->command_buffer) != RF_VK_SUCCESS) goto failed;
+    }
+    *framebuffer = fb;
+    snprintf(message, message_capacity, "GPU framebuffer ready (%ux%u XRGB8888)", width, height);
+    return 0;
+failed:
+    snprintf(message, message_capacity, "Vulkan framebuffer creation failed");
+    framebuffer_destroy(context, fb);
+    return -1;
+}
+
+static int framebuffer_render(void *context, void *framebuffer,
+                              unsigned int *pixels, unsigned int width,
+                              unsigned int height, unsigned int stride,
+                              char *message, unsigned long message_capacity)
+{
+    struct rf_gpu_vulkan_context *backend_context = context;
+    struct rf_gpu_vulkan_impl *impl = backend_context ? backend_context->implementation : NULL;
+    struct rf_gpu_vulkan_framebuffer *fb = framebuffer;
+    rf_vk_fence fence = NULL;
+    void *mapped = NULL;
+    rf_vk_result result;
+    unsigned int y;
+    if (!impl || !fb || fb->owner != impl || fb->width != width || fb->height != height)
+        return -1;
+    {
+        struct rf_vk_fence_create_info fence_info;
+        struct rf_vk_submit_info submit;
+        memset(&fence_info, 0, sizeof(fence_info)); fence_info.s_type = RF_VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+        if (impl->api.create_fence(impl->device, &fence_info, NULL, &fence) != RF_VK_SUCCESS) goto failed;
+        memset(&submit, 0, sizeof(submit)); submit.s_type = RF_VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submit.command_buffer_count = 1; submit.command_buffers = &fb->command_buffer;
+        result = impl->api.queue_submit(impl->queue, 1, &submit, fence);
+        if (result != RF_VK_SUCCESS) goto failed;
+        result = impl->api.wait_for_fences(impl->device, 1, &fence, RF_VK_TRUE, 5000000000ULL);
+        if (result == RF_VK_TIMEOUT) {
+            snprintf(message, message_capacity, "GPU framebuffer fence timed out after 5 seconds");
+            goto cleanup;
+        }
+        if (result != RF_VK_SUCCESS) goto failed;
+    }
+    if (impl->api.map_memory(impl->device, fb->readback_memory, 0, RF_VK_WHOLE_SIZE,
+                             0, &mapped) != RF_VK_SUCCESS) goto failed;
+    if (!fb->readback_coherent) {
+        struct rf_vk_mapped_memory_range range;
+        memset(&range, 0, sizeof(range)); range.s_type = RF_VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
+        range.memory = fb->readback_memory; range.offset = 0; range.size = RF_VK_WHOLE_SIZE;
+        if (impl->api.invalidate_mapped_memory_ranges(impl->device, 1, &range) != RF_VK_SUCCESS)
+            goto failed;
+    }
+    for (y = 0; y < height; ++y)
+        memcpy(pixels + (uint64_t)y * stride,
+               (const uint32_t *)mapped + (uint64_t)y * width,
+               (size_t)width * sizeof(*pixels));
+    impl->api.unmap_memory(impl->device, fb->readback_memory);
+    impl->api.destroy_fence(impl->device, fence, NULL);
+    snprintf(message, message_capacity, "GPU framebuffer rendered");
+    return 0;
+failed:
+    snprintf(message, message_capacity, "Vulkan framebuffer operation failed");
+cleanup:
+    if (mapped) impl->api.unmap_memory(impl->device, fb->readback_memory);
+    if (fence) impl->api.destroy_fence(impl->device, fence, NULL);
+    return -1;
+}
+
 static unsigned int adapter_type(uint32_t type)
 {
     switch (type) {
@@ -721,5 +1043,8 @@ static void backend_shutdown(void *context)
 
 const struct rf_gpu_backend rf_gpu_vulkan_backend = {
     backend_init,
-    backend_shutdown
+    backend_shutdown,
+    framebuffer_create,
+    framebuffer_destroy,
+    framebuffer_render
 };

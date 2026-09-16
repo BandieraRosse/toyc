@@ -35,7 +35,10 @@ static void fake_shutdown(void *context)
     ++fake->shutdown_count;
 }
 
-static const struct rf_gpu_backend backend = {fake_init, fake_shutdown};
+static const struct rf_gpu_backend backend = {
+    .init = fake_init,
+    .shutdown = fake_shutdown
+};
 
 #define CHECK(condition) do {                                                \
     if (!(condition)) {                                                      \
