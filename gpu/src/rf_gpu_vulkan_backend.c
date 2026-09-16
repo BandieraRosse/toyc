@@ -1138,6 +1138,7 @@ static int raster_render(void *context, void *raster,
                          unsigned int *color, int *depth,
                          unsigned int width, unsigned int height,
                          unsigned int color_stride, unsigned int depth_stride,
+                         struct rf_gpu_raster_timing *timing,
                          char *message, unsigned long message_capacity)
 {
     struct rf_gpu_vulkan_context *backend_context = context;
@@ -1149,6 +1150,9 @@ static int raster_render(void *context, void *raster,
     uint64_t byte_size = (uint64_t)width * height * 4;
     unsigned int y;
     rf_vk_result result;
+    double total_start = now_ms(), segment_start;
+    if (timing) memset(timing, 0, sizeof(*timing));
+    segment_start = now_ms();
     if (!impl || !r || r->owner != impl || r->width != width ||
         r->height != height || !stream_size ||
         stream_size > impl->max_storage_buffer_range ||
@@ -1156,6 +1160,8 @@ static int raster_render(void *context, void *raster,
         ((const uint32_t *)stream)[5] != width ||
         ((const uint32_t *)stream)[6] != height)
         return -1;
+    if (timing) timing->pack_validation_ms = now_ms() - segment_start;
+    segment_start = now_ms();
     if (raster_command_grow(impl, r, stream_size) < 0) goto failed;
     if (impl->api.map_memory(impl->device, r->command.memory, 0,
                              r->command.allocation_size, 0,
@@ -1172,6 +1178,7 @@ static int raster_render(void *context, void *raster,
     }
     impl->api.unmap_memory(impl->device, r->command.memory);
     mapped_command = NULL;
+    if (timing) timing->upload_ms = now_ms() - segment_start;
     {
         struct rf_vk_descriptor_buffer_info infos[3];
         struct rf_vk_write_descriptor_set writes[3];
@@ -1240,8 +1247,11 @@ static int raster_render(void *context, void *raster,
         submit.s_type = RF_VK_STRUCTURE_TYPE_SUBMIT_INFO;
         submit.command_buffer_count = 1;
         submit.command_buffers = &r->command_buffer;
+        segment_start = now_ms();
         if (impl->api.queue_submit(impl->queue, 1, &submit, fence) != RF_VK_SUCCESS)
             goto failed;
+        if (timing) timing->submit_ms = now_ms() - segment_start;
+        segment_start = now_ms();
         result = impl->api.wait_for_fences(impl->device, 1, &fence, RF_VK_TRUE,
                                            5000000000ULL);
         if (result == RF_VK_TIMEOUT) {
@@ -1250,7 +1260,9 @@ static int raster_render(void *context, void *raster,
             goto cleanup;
         }
         if (result != RF_VK_SUCCESS) goto failed;
+        if (timing) timing->execution_wait_ms = now_ms() - segment_start;
     }
+    segment_start = now_ms();
     if (impl->api.map_memory(impl->device, r->color_readback.memory, 0,
             r->color_readback.allocation_size, 0, &mapped_color) != RF_VK_SUCCESS ||
         impl->api.map_memory(impl->device, r->depth_readback.memory, 0,
@@ -1268,6 +1280,10 @@ static int raster_render(void *context, void *raster,
     impl->api.unmap_memory(impl->device, r->depth_readback.memory);
     impl->api.unmap_memory(impl->device, r->color_readback.memory);
     impl->api.destroy_fence(impl->device, fence, NULL);
+    if (timing) {
+        timing->readback_ms = now_ms() - segment_start;
+        timing->total_ms = now_ms() - total_start;
+    }
     snprintf(message, message_capacity, "GPU Raster V1 rendered");
     return 0;
 failed:

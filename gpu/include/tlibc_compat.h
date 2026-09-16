@@ -1,0 +1,3 @@
+#ifndef RF_GPU_HOSTED_TLIBC_COMPAT_H
+#define RF_GPU_HOSTED_TLIBC_COMPAT_H
+#endif

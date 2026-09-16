@@ -1,7 +1,7 @@
 # GPU 目录概览
 
 > 文档更新：2026-09-16
-> 源码核对基线：GPU-5 Compute Rasterizer V1 已完成；WSL llvmpipe / Windows Intel Iris Xe fixed fixtures 的 color/depth hash 一致并通过。
+> 源码核对基线：GPU-6 CPU/GPU Differential Authority 已完成；正式 `toy_renderer` reference 与 Vulkan Raster V1 在 WSL llvmpipe / Windows Intel Iris Xe 的 fixed、stress、replay fixtures 均为 color/depth 0 mismatch。
 
 本目录用于保存 GPU 相关的外部项目和实验代码。当前主要项目是
 [`wgpu-native`](wgpu-native/)，用于参考其 C API、GPU 设备发现和基础 GPU
@@ -162,6 +162,32 @@ atom 1，一个 device-local heap 与三个 type（包含 device-local+host-visi
 GPU-1/GPU-3 历史验收，新 snapshot 待回到该机器复测。memory selection 仍为
 `memoryTypeBits + required/preferred flags`；GPU-3 继续 device-local output → host-visible readback，
 未引入 UMA zero-copy 或 vendor-specific path。
+
+## GPU-6 CPU/GPU Differential Authority
+
+`rf-gpu-raster-diff-test` 的 fixture 先由正式 `toy_renderer_triangle_lit()` 记录，再由 GPU-4
+packer 产生唯一 Raster Command ABI V1 stream。比较阶段同一 stream 一路经薄 adapter 解码回
+`toy_renderer` 的 flat triangle API 并执行正式 CPU raster，另一路由 Vulkan Compute Raster V1
+执行并 readback；CPU X byte canonicalize 为 `0xff`，RGB24 与完整 signed 32-bit inverse depth
+逐像素比较。hash 只用于快速确认，pixel/depth compare 是 correctness authority。
+
+```sh
+make gpu-raster-diff-test
+build/rf-gpu-raster-diff-test
+build/rf-gpu-raster-diff-test --replay-raster-stream commands.bin
+make win-gpu-raster-diff-test
+```
+
+输出包含 mismatch count、首个坐标及 CPU/GPU 值、最大 RGB/depth delta、双方 color/depth hash，
+以及 CPU raster 与 GPU validation/upload/submit/execution-wait/readback/total wall time。当前 fence
+只能诚实报告 combined `execution-wait`；`GPU total` 包含 readback，不能解释为未来 native frame
+time。发生 mismatch 时默认写入 `build/gpu-raster-diff-mismatch/`：完整 ABI `commands.bin`、
+CPU/GPU/diff BMP、双方 depth binary 与 `report.txt`。fixture 覆盖 GPU-5 fixed cases、shared-edge
+grid、equal-depth/near-far、offscreen/frame edges/thin/mixed size、light/fog、resize/command growth，
+以及固定 seed `1`、`2`、`0x5246` 的 deterministic stress。
+
+GPU-6 冻结规则：Raster V1 correctness 持续由 CPU reference differential test 约束；以后每新增
+Raster ABI command 或 shading semantics，必须同时增加对应 differential fixture。
 
 ## 注意事项
 

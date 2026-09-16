@@ -1,10 +1,11 @@
 # Rasterfall GPU 与 Windows Native Platform 总体计划
 
-> 状态：执行中（GPU-0、GPU-0.5、GPU-1、GPU-2、GPU-3、GPU-4、GPU-5 及 GPU Capability Contract V1 已完成）
+> 状态：执行中（GPU-0 至 GPU-6 及 GPU Capability Contract V1 已完成；GPU-6 FROZEN）
 > 进展同步：2026-09-16
 > 源码核对基线：GPU-4 Raster Command ABI V1 / deterministic pack-validation
 > 源码核对基线：GPU-5 前 portability gate 已建立无 Vulkan handle capability snapshot、独立 Raster V1 gate 与 limit-driven 16x16/8x8 workgroup policy；WSL llvmpipe / Windows Intel Iris Xe 实测通过。
 > 源码核对基线补充：GPU-5 已完成 GPU-4 word-stream 显式解码、逐像素 64-bit integer triangle/depth/light/fog 与 deterministic color/depth readback；WSL llvmpipe / Windows Intel Iris Xe fixed fixtures 的 color/depth hash 一致并通过。
+> 源码核对基线补充：GPU-6 建立正式 `toy_renderer` CPU oracle、逐 RGB24/signed-depth differential、mismatch artifact、ABI replay 与三组 deterministic stress；WSL llvmpipe / Windows Intel Iris Xe 实测均 0 mismatch，GPU hashes 继续 bit-exact。
 > 方向：Vulkan GPU Runtime / Compute Rasterizer / Windows Native Platform
 > 原则：保持 CPU renderer 与现有 Linux 路径稳定，以渐进方式引入 GPU 算力，并逐步收回 Windows 平台层所有权。
 
@@ -20,6 +21,7 @@
 | GPU-4 Raster Command ABI V1 | 已完成 | 32-byte versioned stream header + 96-byte pointer-free commands；CPU `toy_raster_cmd` 显式 pack/validation，覆盖 clear color/depth 与 opaque flat triangle 的 depth/fog 输入；独立 layout/packing 双平台构建门禁 |
 | GPU Capability Contract V1 | 已完成 | GPU-5 前 portability gate；service/renderer capability 分层、无 handle snapshot、`shaderInt64` Raster V1 requirement、limit-driven workgroup 与通用 memory property selection |
 | GPU-5 Compute Rasterizer V1 | 已完成 | GPU 直接消费 GPU-4 binary stream；WSL llvmpipe / Windows Intel Iris Xe 的 color/depth fixed fixtures、resize/growth/shutdown 已通过且 hash 一致 |
+| GPU-6 Differential Authority | 已完成 / FROZEN | 同一 Raster ABI V1 stream 经正式 CPU renderer 与 Vulkan Raster V1；fixed/stress/replay 在 llvmpipe / Intel Iris Xe 均为 color/depth 0 mismatch |
 | Windows Native Platform | 未开始 | 正常 Windows Rasterfall 仍使用 MinGW + SDL2，本阶段未改窗口、输入、音频或 presentation |
 
 当前边界：
@@ -708,6 +710,12 @@ GPU readback time
 之后每增加一种 GPU raster capability，都必须经过该入口。
 
 这一阶段把 CPU renderer 正式确立为 GPU V1 的 reference implementation。
+
+状态：**DONE / FROZEN（2026-09-16）**。实现不建立第二套 raster truth：fixture 使用正式 renderer
+记录并 pack，CPU 比较路径仅把 ABI 字段适配回正式 flat triangle API。报告同时给出逐像素定位与
+hash；mismatch 自动保存 ABI stream、颜色/depth 与报告，可由 `--replay-raster-stream` 重放。
+WSL llvmpipe 与 Windows Intel Iris Xe 的 fixed、组合、三组固定 seed stress 和 replay 均为 0
+mismatch。计时为 wall-clock 分段，当前仅能报告 combined execution-wait，GPU total 包含 readback。
 
 ---
 

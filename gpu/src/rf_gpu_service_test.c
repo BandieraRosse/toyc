@@ -82,11 +82,12 @@ static int fake_raster_render(void *context, void *raster,
                               unsigned int width, unsigned int height,
                               unsigned int color_stride,
                               unsigned int depth_stride,
+                              struct rf_gpu_raster_timing *timing,
                               char *message, unsigned long message_capacity)
 {
     (void)context; (void)raster; (void)stream; (void)stream_size;
     (void)color; (void)depth; (void)width; (void)height;
-    (void)color_stride; (void)depth_stride; (void)message;
+    (void)color_stride; (void)depth_stride; (void)timing; (void)message;
     (void)message_capacity;
     return 0;
 }

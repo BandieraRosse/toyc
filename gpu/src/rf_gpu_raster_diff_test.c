@@ -1,0 +1,249 @@
+#include "rf_gpu.h"
+#include "rf_gpu_raster_abi.h"
+#include "rf_gpu_raster_cpu_ref.h"
+#include "rf_gpu_raster_pack.h"
+#include "rf_gpu_vulkan_backend.h"
+#include "toy_renderer.h"
+
+#include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+
+#define CHECK(c) do { if (!(c)) { fprintf(stderr, "diff test failed:%d: %s\n", \
+    __LINE__, #c); goto done; } } while (0)
+
+struct stream { unsigned char *data; size_t size; };
+struct outputs {
+    uint32_t *cpu_color, *gpu_color;
+    int32_t *cpu_depth, *gpu_depth;
+    uint32_t width, height;
+};
+
+static uint64_t hash_bytes(const void *memory, size_t size)
+{
+    const unsigned char *p = memory;
+    uint64_t h = 1469598103934665603ULL;
+    while (size--) { h ^= *p++; h *= 1099511628211ULL; }
+    return h;
+}
+
+static uint32_t rng_next(uint32_t *state)
+{
+    uint32_t x = *state;
+    x ^= x << 13; x ^= x >> 17; x ^= x << 5;
+    return *state = x;
+}
+
+static void add_triangle(struct toy_renderer *r, int ax, int ay, int az,
+                         int bx, int by, int bz, int cx, int cy, int cz,
+                         uint32_t color, int light, int fog)
+{
+    struct toy_screen_vertex a, b, c;
+    memset(&a, 0, sizeof(a)); memset(&b, 0, sizeof(b)); memset(&c, 0, sizeof(c));
+    a.x = ax; a.y = ay; a.inv_z = az;
+    b.x = bx; b.y = by; b.inv_z = bz;
+    c.x = cx; c.y = cy; c.inv_z = cz;
+    toy_renderer_triangle_lit(r, &a, &b, &c, color, light, fog);
+}
+
+static int stream_from_renderer(struct toy_renderer *r, uint32_t clear,
+                                struct stream *out)
+{
+    size_t capacity = rf_gpu_raster_stream_size_v1((uint32_t)r->cmd_count + 2);
+    out->data = malloc(capacity);
+    if (!out->data) return -1;
+    if (rf_gpu_raster_pack_toy_v1(r, clear, 0, out->data, capacity,
+                                  &out->size) != RF_GPU_RASTER_PACK_OK) {
+        free(out->data); memset(out, 0, sizeof(*out)); return -1;
+    }
+    return 0;
+}
+
+static int make_fixture(const char *name, uint32_t width, uint32_t height,
+                        uint32_t count, uint32_t seed, struct stream *out)
+{
+    struct toy_renderer r;
+    struct toy_surface surface;
+    uint32_t *pixels = calloc((size_t)width * height, 4);
+    uint32_t clear = 0x00102030u, i;
+    int result = -1;
+    if (!pixels) return -1;
+    memset(&r, 0, sizeof(r));
+    surface.pixels = pixels; surface.width = (int)width;
+    surface.height = (int)height; surface.stride = (int)(width * 4);
+    toy_renderer_init(&r);
+    if (toy_renderer_begin(&r, &surface, clear) < 0) goto done;
+    if (!strcmp(name, "clear")) {
+        /* no geometry */
+    } else if (!strcmp(name, "geometry-depth-order")) {
+        add_triangle(&r, 2,2,100, 16,2,200, 2,10,300, 0x4080c0,256,0);
+        add_triangle(&r, 4,3,50, 14,3,50, 4,9,50, 0xff0000,256,0);
+        add_triangle(&r, 4,3,400, 14,3,400, 4,9,400, 0x00ff00,256,0);
+        add_triangle(&r, 4,3,400, 14,3,400, 4,9,400, 0x0000ff,256,0);
+    } else if (!strcmp(name, "shared-edge")) {
+        add_triangle(&r, 2,2,77, 12,2,77, 2,10,77, 0xff0000,256,0);
+        add_triangle(&r, 12,2,77, 12,10,77, 2,10,77, 0x00ff00,256,0);
+    } else if (!strcmp(name, "light-fog-thin")) {
+        add_triangle(&r, 0,0,10, 8,0,10, 0,8,10, 0x80c0ff,0,0);
+        add_triangle(&r, 9,0,20, 17,0,20, 9,8,20, 0x80c0ff,256,128);
+        add_triangle(&r, 0,9,30, 8,9,30, 0,12,30, 0xc08040,384,0);
+        add_triangle(&r, 9,9,40, 17,9,40, 9,12,40, 0xabcdef,999,999);
+        add_triangle(&r, 1,8,60, 17,8,60, 1,9,60, 0xffffff,256,0);
+    } else if (!strcmp(name, "grid")) {
+        int y, x, cell = 7;
+        for (y = 0; y < (int)height; y += cell) for (x = 0; x < (int)width; x += cell) {
+            int x1 = x + cell < (int)width ? x + cell : (int)width - 1;
+            int y1 = y + cell < (int)height ? y + cell : (int)height - 1;
+            add_triangle(&r,x,y,100,x1,y,100,x,y1,100,0x224466,256,0);
+            add_triangle(&r,x1,y,100,x1,y1,100,x,y1,100,0x6688aa,256,0);
+        }
+    } else if (!strcmp(name, "edges-mixed")) {
+        add_triangle(&r,-30,-20,30,(int)width+20,0,400,0,(int)height+30,90,0xff00ff,192,64);
+        add_triangle(&r,0,0,500,(int)width-1,0,500,0,(int)height-1,500,0xffff00,384,0);
+        add_triangle(&r,(int)width-2,0,600,(int)width-1,(int)height-1,600,0,(int)height-1,600,0x00ffff,256,220);
+        add_triangle(&r,1,(int)height/2,700,(int)width-2,(int)height/2,700,1,(int)height/2+1,700,0xffffff,256,0);
+    } else if (!strcmp(name, "equal-near-far")) {
+        for (i = 0; i < count; ++i) {
+            int z = (i % 3 == 0) ? 200 : (i % 3 == 1 ? 900 : 200);
+            add_triangle(&r,1,1,z,(int)width-2,1,z,1,(int)height-2,z,
+                         (i * 0x10203u) & 0xffffffu, 64 + (int)(i%7)*64,
+                         (int)(i%5)*64);
+        }
+    } else { /* deterministic stress */
+        uint32_t state = seed ? seed : 1;
+        for (i = 0; i < count; ++i) {
+            int margin_x = (int)width / 4 + 1, margin_y = (int)height / 4 + 1;
+            int ax = (int)(rng_next(&state) % (width + 2u*margin_x)) - margin_x;
+            int ay = (int)(rng_next(&state) % (height + 2u*margin_y)) - margin_y;
+            int bx = (int)(rng_next(&state) % (width + 2u*margin_x)) - margin_x;
+            int by = (int)(rng_next(&state) % (height + 2u*margin_y)) - margin_y;
+            int cx = (int)(rng_next(&state) % (width + 2u*margin_x)) - margin_x;
+            int cy = (int)(rng_next(&state) % (height + 2u*margin_y)) - margin_y;
+            int az = 1 + (int)(rng_next(&state) % 2000000u);
+            int bz = 1 + (int)(rng_next(&state) % 2000000u);
+            int cz = 1 + (int)(rng_next(&state) % 2000000u);
+            int64_t area = ((int64_t)cx-ax)*(by-ay)-((int64_t)cy-ay)*(bx-ax);
+            if (area >= 0) { int tx=bx,ty=by,tz=bz; bx=cx;by=cy;bz=cz;cx=tx;cy=ty;cz=tz; }
+            add_triangle(&r,ax,ay,az,bx,by,bz,cx,cy,cz,rng_next(&state)&0xffffffu,
+                         (int)(rng_next(&state)%513u), (int)(rng_next(&state)%257u));
+        }
+    }
+    result = stream_from_renderer(&r, clear, out);
+done:
+    toy_renderer_destroy(&r); free(pixels); return result;
+}
+
+static int write_file(const char *path, const void *data, size_t size)
+{
+    FILE *f = fopen(path, "wb");
+    int ok;
+    if (!f) return -1;
+    ok = fwrite(data, 1, size, f) == size;
+    if (fclose(f) != 0) ok = 0;
+    return ok ? 0 : -1;
+}
+
+static int read_file(const char *path, struct stream *stream)
+{
+    FILE *f = fopen(path, "rb"); long size;
+    if (!f || fseek(f,0,SEEK_END) || (size=ftell(f)) < 0 || fseek(f,0,SEEK_SET)) {
+        if (f) fclose(f);
+        return -1;
+    }
+    stream->data = malloc((size_t)size); stream->size = (size_t)size;
+    if (!stream->data || fread(stream->data,1,stream->size,f) != stream->size) {
+        free(stream->data); memset(stream,0,sizeof(*stream)); fclose(f); return -1;
+    }
+    fclose(f); return 0;
+}
+
+static int write_bmp(const char *path, const uint32_t *pixels, uint32_t w, uint32_t h)
+{
+    unsigned char header[54] = { 'B','M' };
+    uint32_t file_size = 54 + w*h*4, offset=54, dib=40, planes_bpp=0x00200001u;
+    int32_t sw=(int32_t)w, sh=-(int32_t)h; FILE *f;
+    memcpy(header+2,&file_size,4); memcpy(header+10,&offset,4); memcpy(header+14,&dib,4);
+    memcpy(header+18,&sw,4); memcpy(header+22,&sh,4); memcpy(header+26,&planes_bpp,4);
+    f=fopen(path,"wb"); if(!f)return -1;
+    if(fwrite(header,1,54,f)!=54 || fwrite(pixels,4,(size_t)w*h,f)!=(size_t)w*h){fclose(f);return -1;}
+    return fclose(f);
+}
+
+static void save_artifacts(const char *dir, const struct stream *s,
+                           const struct outputs *o, const char *report)
+{
+    char path[512]; uint32_t *diff = malloc((size_t)o->width*o->height*4);
+#if defined(_WIN32)
+    char command[600]; snprintf(command,sizeof(command),"mkdir \"%s\" 2>NUL",dir);
+    if (system(command) != 0 && errno != EEXIST) return;
+#else
+    char command[600]; snprintf(command,sizeof(command),"mkdir -p \"%s\"",dir);
+    if (system(command) != 0) return;
+#endif
+    snprintf(path,sizeof(path),"%s/commands.bin",dir); write_file(path,s->data,s->size);
+    snprintf(path,sizeof(path),"%s/cpu-color.bmp",dir); write_bmp(path,o->cpu_color,o->width,o->height);
+    snprintf(path,sizeof(path),"%s/gpu-color.bmp",dir); write_bmp(path,o->gpu_color,o->width,o->height);
+    if(diff){for(size_t i=0;i<(size_t)o->width*o->height;i++) diff[i]=
+        ((o->cpu_color[i]^o->gpu_color[i])&0xffffffu)?0xffff00ffu:0xff000000u;
+        snprintf(path,sizeof(path),"%s/diff-color.bmp",dir);write_bmp(path,diff,o->width,o->height);free(diff);}
+    snprintf(path,sizeof(path),"%s/cpu-depth.bin",dir);write_file(path,o->cpu_depth,(size_t)o->width*o->height*4);
+    snprintf(path,sizeof(path),"%s/gpu-depth.bin",dir);write_file(path,o->gpu_depth,(size_t)o->width*o->height*4);
+    snprintf(path,sizeof(path),"%s/report.txt",dir);write_file(path,report,strlen(report));
+}
+
+static int compare_case(struct rf_gpu *gpu, struct rf_gpu_raster *raster,
+                        const char *name, const struct stream *s,
+                        const char *artifact_dir)
+{
+    const struct rf_gpu_raster_stream_header_v1 *h=(const void*)s->data;
+    struct outputs o; struct rf_gpu_cpu_reference_timing ct;
+    struct rf_gpu_raster_timing gt; size_t n=(size_t)h->framebuffer_width*h->framebuffer_height;
+    uint64_t ch,gh,cdh,gdh; uint64_t cm=0,dm=0; uint32_t firstx=0,firsty=0;
+    int have_first=0,maxr=0,maxg=0,maxb=0; int64_t maxd=0; char report[2048];
+    memset(&o,0,sizeof(o));o.width=h->framebuffer_width;o.height=h->framebuffer_height;
+    o.cpu_color=malloc(n*4);o.gpu_color=malloc(n*4);o.cpu_depth=malloc(n*4);o.gpu_depth=malloc(n*4);
+    if(!o.cpu_color||!o.gpu_color||!o.cpu_depth||!o.gpu_depth)return -1;
+    if(raster->width!=o.width||raster->height!=o.height)if(rf_gpu_raster_resize(gpu,raster,o.width,o.height)<0)return -1;
+    if(rf_gpu_raster_cpu_reference_v1(s->data,s->size,o.cpu_color,o.cpu_depth,o.width,o.width,&ct)<0 ||
+       rf_gpu_raster_render_timed(gpu,raster,s->data,s->size,o.gpu_color,o.gpu_depth,o.width,o.height,o.width,o.width,&gt)<0)return -1;
+    for(size_t i=0;i<n;i++){
+        uint32_t cc=o.cpu_color[i]&0xffffffu,gc=o.gpu_color[i]&0xffffffu;
+        if(cc!=gc){int dr=abs((int)(cc>>16&255)-(int)(gc>>16&255));int dg=abs((int)(cc>>8&255)-(int)(gc>>8&255));int db=abs((int)(cc&255)-(int)(gc&255));cm++;if(dr>maxr)maxr=dr;if(dg>maxg)maxg=dg;if(db>maxb)maxb=db;if(!have_first){firstx=i%o.width;firsty=i/o.width;have_first=1;}}
+        if(o.cpu_depth[i]!=o.gpu_depth[i]){int64_t d=(int64_t)o.cpu_depth[i]-o.gpu_depth[i];if(d<0)d=-d;dm++;if(d>maxd)maxd=d;if(!have_first){firstx=i%o.width;firsty=i/o.width;have_first=1;}}
+    }
+    ch=hash_bytes(o.cpu_color,n*4);gh=hash_bytes(o.gpu_color,n*4);cdh=hash_bytes(o.cpu_depth,n*4);gdh=hash_bytes(o.gpu_depth,n*4);
+    snprintf(report,sizeof(report),
+      "fixture: %s\ncolor mismatches: %llu\ndepth mismatches: %llu\nfirst mismatch coordinate: %s%u,%u\nCPU color: 0x%08x\nGPU color: 0x%08x\nCPU depth: %d\nGPU depth: %d\nmax R delta: %d\nmax G delta: %d\nmax B delta: %d\nmax depth delta: %lld\nCPU color hash: %016llx\nGPU color hash: %016llx\nCPU depth hash: %016llx\nGPU depth hash: %016llx\nCPU raster ms: %.3f\nGPU pack/validation ms: %.3f\nGPU upload ms: %.3f\nGPU submit ms: %.3f\nGPU execution-wait ms: %.3f\nGPU readback ms: %.3f\nGPU total ms: %.3f\n",
+      name,(unsigned long long)cm,(unsigned long long)dm,have_first?"":"none ",firstx,firsty,
+      have_first?o.cpu_color[(size_t)firsty*o.width+firstx]:0,have_first?o.gpu_color[(size_t)firsty*o.width+firstx]:0,
+      have_first?o.cpu_depth[(size_t)firsty*o.width+firstx]:0,have_first?o.gpu_depth[(size_t)firsty*o.width+firstx]:0,
+      maxr,maxg,maxb,(long long)maxd,(unsigned long long)ch,(unsigned long long)gh,(unsigned long long)cdh,(unsigned long long)gdh,
+      ct.raster_ms,gt.pack_validation_ms,gt.upload_ms,gt.submit_ms,gt.execution_wait_ms,gt.readback_ms,gt.total_ms);
+    fputs(report,stdout);
+    if(cm||dm){save_artifacts(artifact_dir,s,&o,report);fprintf(stderr,"mismatch artifacts: %s\n",artifact_dir);}
+    free(o.cpu_color);free(o.gpu_color);free(o.cpu_depth);free(o.gpu_depth);return (cm||dm)?-1:0;
+}
+
+int main(int argc,char **argv)
+{
+    struct rf_gpu gpu;struct rf_gpu_vulkan_context context;struct rf_gpu_raster raster;
+    struct rf_gpu_status status;struct stream s={0};const char *replay=NULL,*artifacts="build/gpu-raster-diff-mismatch";
+    const struct {const char *name;uint32_t w,h,n,seed;} cases[]={
+      {"clear",19,13,0,0},{"geometry-depth-order",19,13,0,0},{"shared-edge",19,13,0,0},
+      {"light-fog-thin",19,13,0,0},{"grid",53,29,0,0},{"edges-mixed",37,23,0,0},
+      {"equal-near-far",73,41,96,0},{"stress-seed-1",320,180,64,1},
+      {"stress-seed-2",641,359,256,2},{"stress-seed-0x5246",1279,719,1024,0x5246}};
+    int result=1;memset(&context,0,sizeof(context));memset(&raster,0,sizeof(raster));
+    for(int i=1;i<argc;i++){if(!strcmp(argv[i],"--replay-raster-stream")&&i+1<argc)replay=argv[++i];else if(!strcmp(argv[i],"--artifact-dir")&&i+1<argc)artifacts=argv[++i];else{fprintf(stderr,"usage: %s [--replay-raster-stream commands.bin] [--artifact-dir dir]\n",argv[0]);return 2;}}
+    CHECK(rf_gpu_init(&gpu,RF_GPU_POLICY_REQUIRED,&rf_gpu_vulkan_backend,&context)==0);
+    CHECK(rf_gpu_get_status(&gpu,&status)==0&&status.renderer.raster_v1);
+    printf("adapter: %s\n",status.info.adapter_name);
+    if(replay){CHECK(read_file(replay,&s)==0);CHECK(rf_gpu_raster_validate_v1(s.data,s.size)==0);const struct rf_gpu_raster_stream_header_v1*h=(void*)s.data;CHECK(rf_gpu_raster_init(&gpu,&raster,h->framebuffer_width,h->framebuffer_height)==0);CHECK(compare_case(&gpu,&raster,"replay",&s,artifacts)==0);free(s.data);s.data=NULL;}
+    else {CHECK(rf_gpu_raster_init(&gpu,&raster,19,13)==0);for(size_t i=0;i<sizeof(cases)/sizeof(cases[0]);i++){CHECK(make_fixture(cases[i].name,cases[i].w,cases[i].h,cases[i].n,cases[i].seed,&s)==0);CHECK(compare_case(&gpu,&raster,cases[i].name,&s,artifacts)==0);if(i==1)CHECK(write_file("build/gpu-raster-diff-replay.bin",s.data,s.size)==0);free(s.data);s.data=NULL;}CHECK(read_file("build/gpu-raster-diff-replay.bin",&s)==0);CHECK(compare_case(&gpu,&raster,"replay-self-check",&s,artifacts)==0);free(s.data);s.data=NULL;
+      /* Failure authority: no partial output and all malformed classes reject. */
+      CHECK(make_fixture("clear",19,13,0,0,&s)==0);unsigned char saved=s.data[0];uint32_t guard_color[19*13];int32_t guard_depth[19*13];for(size_t j=0;j<19*13;j++){guard_color[j]=0x13579bdfu;guard_depth[j]=0x12345678;}s.data[0]^=1;CHECK(rf_gpu_raster_validate_v1(s.data,s.size)!=0);CHECK(rf_gpu_raster_render(&gpu,&raster,s.data,s.size,guard_color,guard_depth,19,13,19,19)<0);for(size_t j=0;j<19*13;j++)CHECK(guard_color[j]==0x13579bdfu&&guard_depth[j]==0x12345678);s.data[0]=saved;((struct rf_gpu_raster_stream_header_v1*)s.data)->version++;CHECK(rf_gpu_raster_validate_v1(s.data,s.size)!=0);((struct rf_gpu_raster_stream_header_v1*)s.data)->version--;CHECK(rf_gpu_raster_validate_v1(s.data,s.size-1)!=0);((struct rf_gpu_raster_stream_header_v1*)s.data)->command_count=0xffffffffu;CHECK(rf_gpu_raster_validate_v1(s.data,s.size)!=0);((struct rf_gpu_raster_stream_header_v1*)s.data)->command_count=2;((struct rf_gpu_raster_cmd_v1*)((struct rf_gpu_raster_stream_header_v1*)s.data+1))[0].kind=999;CHECK(rf_gpu_raster_validate_v1(s.data,s.size)!=0);puts("failure-cases: invalid/version/truncated/unsupported/oversized/corrupt/no-partial-output PASS");free(s.data);s.data=NULL;}
+    result=0;
+done:free(s.data);rf_gpu_raster_shutdown(&raster);rf_gpu_shutdown(&gpu);if(context.implementation)result=1;puts(result?"GPU Raster Differential: FAIL":"GPU Raster Differential: PASS");return result;
+}

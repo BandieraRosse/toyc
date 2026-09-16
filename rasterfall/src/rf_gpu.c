@@ -204,6 +204,19 @@ int rf_gpu_raster_render(struct rf_gpu *gpu, struct rf_gpu_raster *raster,
                          unsigned int color_stride,
                          unsigned int depth_stride)
 {
+    return rf_gpu_raster_render_timed(gpu, raster, stream, stream_size,
+                                      color, depth, width, height,
+                                      color_stride, depth_stride, 0);
+}
+
+int rf_gpu_raster_render_timed(struct rf_gpu *gpu, struct rf_gpu_raster *raster,
+                         const void *stream, unsigned long stream_size,
+                         unsigned int *color, int *depth,
+                         unsigned int width, unsigned int height,
+                         unsigned int color_stride,
+                         unsigned int depth_stride,
+                         struct rf_gpu_raster_timing *timing)
+{
     if (!gpu || gpu->state != RF_GPU_STATE_READY || !raster ||
         raster->backend != gpu->backend || !raster->implementation ||
         !stream || !stream_size || !color || !depth ||
@@ -213,6 +226,7 @@ int rf_gpu_raster_render(struct rf_gpu *gpu, struct rf_gpu_raster *raster,
     return raster->backend->raster_render(
         raster->backend_context, raster->implementation, stream, stream_size,
         color, depth, width, height, color_stride, depth_stride,
+        timing,
         gpu->message, sizeof(gpu->message));
 }
 

@@ -1,7 +1,7 @@
 # 构建、平台与验证
 
 > 文档更新：2026-09-16
-> 源码核对基线补充：GPU-5 Compute Rasterizer V1 已完成；WSL llvmpipe / Windows Intel Iris Xe fixed fixtures 的 color/depth hash 一致并通过。
+> 源码核对基线补充：GPU-6 Differential Authority 已完成；hosted CPU `toy_renderer` reference、Vulkan Raster V1、artifact/replay 与 deterministic stress 已建立，WSL llvmpipe / Windows Intel Iris Xe 均为 color/depth 0 mismatch。
 > 源码核对基线补充：GPU-4 已完成 pointer-free、fixed-width、versioned Raster Command ABI V1；现有 CPU command pool 通过显式 deterministic pack/validation 生成 clear color/depth 与 opaque flat triangle command，独立 Linux runtime test 与 Windows LLP64 layout build gate 已接入，尚不执行 GPU rasterization。
 > 源码核对基线补充：GPU-3 已完成；Core-owned `rf_gpu_framebuffer` 复用持久 Vulkan backend，以 compute 生成 device-local XRGB8888 framebuffer，经有限 fence、readback 与 stride-aware copy 进入 `toy_surface`；正常 runtime 仍显式 disabled/CPU renderer。
 > 源码核对基线补充：GPU Phase 1 hosted probe 已覆盖 Linux/Windows 共用的 storage-buffer compute、descriptor/pipeline、command/fence 与 readback 校验，并采用 discrete-first adapter selection；WSL llvmpipe 与 Windows RTX 3050 compute/readback 均已通过；正常 freestanding Rasterfall 和 Windows 游戏构建未接入 GPU。
@@ -93,6 +93,12 @@ GPU-5 的无窗口入口为 `make gpu-raster-test` / `build/rf-gpu-raster-test`�
 signed-32 depth，覆盖固定 hash、stride、resize、upload growth、capability rejection
 和 cleanup。shader 是两个固定 16×16/8×8 SPIR-V 变体，不需要 runtime
 shader compiler。正常 Rasterfall 仍为 disabled/CPU renderer。
+
+GPU-6 的无窗口入口为 `make gpu-raster-diff-test` / `build/rf-gpu-raster-diff-test`，Windows
+交叉构建为 `make win-gpu-raster-diff-test`。它让同一 GPU-4 stream 同时进入正式软件 renderer
+adapter 与 GPU-5 compute path，逐 RGB24 与完整 signed depth 比较，并支持
+`--replay-raster-stream commands.bin`。mismatch 默认产生可重放 stream、CPU/GPU/diff BMP、depth
+binary 和文本报告；正常 Rasterfall 链接、renderer selection 与 CPU fallback 均未改变。
 
 ## 改文件列表时
 

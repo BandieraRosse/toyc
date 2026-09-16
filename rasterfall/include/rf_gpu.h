@@ -94,6 +94,17 @@ struct rf_gpu_backend_info {
     struct rf_gpu_capabilities capabilities;
 };
 
+/* Hosted differential diagnostics only.  These are wall-clock segments;
+ * execution_wait_ms includes GPU execution plus the blocking fence wait. */
+struct rf_gpu_raster_timing {
+    double pack_validation_ms;
+    double upload_ms;
+    double submit_ms;
+    double execution_wait_ms;
+    double readback_ms;
+    double total_ms;
+};
+
 /* Backend return values distinguish ordinary absence from a backend that was
  * found but failed during initialization. */
 #define RF_GPU_BACKEND_READY 0
@@ -123,6 +134,7 @@ struct rf_gpu_backend {
                          unsigned int width, unsigned int height,
                          unsigned int color_stride,
                          unsigned int depth_stride,
+                         struct rf_gpu_raster_timing *timing,
                          char *message, unsigned long message_capacity);
 };
 
@@ -194,6 +206,13 @@ int rf_gpu_raster_render(struct rf_gpu *gpu, struct rf_gpu_raster *raster,
                          unsigned int width, unsigned int height,
                          unsigned int color_stride,
                          unsigned int depth_stride);
+int rf_gpu_raster_render_timed(struct rf_gpu *gpu, struct rf_gpu_raster *raster,
+                         const void *stream, unsigned long stream_size,
+                         unsigned int *color, int *depth,
+                         unsigned int width, unsigned int height,
+                         unsigned int color_stride,
+                         unsigned int depth_stride,
+                         struct rf_gpu_raster_timing *timing);
 void rf_gpu_raster_shutdown(struct rf_gpu_raster *raster);
 
 #endif

@@ -1228,7 +1228,7 @@ void toy_renderer_set_base_texture_bilinear(struct toy_renderer *renderer,
 void toy_renderer_set_worker_count(struct toy_renderer *renderer, int count)
 {
     if (!renderer || renderer->workers) return;
-    if (count < 0) count = 0;
+    if (count < -1) count = -1;
     if (count > TOY_RENDER_MAX_WORKERS) count = TOY_RENDER_MAX_WORKERS;
     renderer->requested_worker_count = count;
 }
@@ -1474,6 +1474,7 @@ static int ensure_workers(struct toy_renderer *renderer)
 {
     int n, i;
     if (renderer->workers) return 0;
+    if (renderer->requested_worker_count < 0) return -1;
     renderer->detected_cpu_count = count_processors();
     n = renderer->requested_worker_count > 0 ?
         renderer->requested_worker_count : renderer->detected_cpu_count;

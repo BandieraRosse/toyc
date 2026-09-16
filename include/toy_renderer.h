@@ -283,7 +283,8 @@ void toy_renderer_set_recording_edge(struct toy_renderer *renderer, int edge);
 /* 随后记录的命令仅对 base texture 使用双线性采样；sphere/toon 保持原路径。 */
 void toy_renderer_set_base_texture_bilinear(struct toy_renderer *renderer,
                                             int enabled);
-/* 仅在 worker 池创建前生效；0 使用自动 CPU 数，诊断可固定为 1..8。 */
+/* 仅在 worker 池创建前生效；0 使用自动 CPU 数，诊断可固定为 1..8；
+ * -1 强制 inline 单线程，供 hosted reference test 使用。 */
 void toy_renderer_set_worker_count(struct toy_renderer *renderer, int count);
 /* Reuse the renderer's parked workers for independent frontend tasks. */
 int toy_renderer_parallel_for(struct toy_renderer *renderer, int task_count,

@@ -1175,17 +1175,19 @@ wayland_fps: $(BUILD)/wayland_fps
 # outside the freestanding Rasterfall link until the optional Core GPU service
 # has a stable ABI and fallback policy.
 .PHONY: gpu-probe gpu-service-test gpu-framebuffer-test gpu-raster-abi-test \
-	gpu-raster-test win-gpu-probe win-gpu-framebuffer-test \
-	win-gpu-raster-abi-test win-gpu-raster-test
+	gpu-raster-test gpu-raster-diff-test win-gpu-probe win-gpu-framebuffer-test \
+	win-gpu-raster-abi-test win-gpu-raster-test win-gpu-raster-diff-test
 gpu-probe: $(BUILD)/rf-gpu-probe
 gpu-service-test: $(BUILD)/rf-gpu-service-test
 gpu-framebuffer-test: $(BUILD)/rf-gpu-framebuffer-test
 gpu-raster-abi-test: $(BUILD)/rf-gpu-raster-pack-test
 gpu-raster-test: $(BUILD)/rf-gpu-raster-test
+gpu-raster-diff-test: $(BUILD)/rf-gpu-raster-diff-test
 win-gpu-probe: $(BUILD)/rf-gpu-probe.exe
 win-gpu-framebuffer-test: $(BUILD)/rf-gpu-framebuffer-test.exe
 win-gpu-raster-abi-test: $(BUILD)/rf-gpu-raster-pack-test.exe
 win-gpu-raster-test: $(BUILD)/rf-gpu-raster-test.exe
+win-gpu-raster-diff-test: $(BUILD)/rf-gpu-raster-diff-test.exe
 
 GPU_RASTER_TEST_SRCS := gpu/src/rf_gpu_raster_test.c \
 	gpu/src/rf_gpu_vulkan_backend.c gpu/src/rf_gpu_raster_pack.c \
@@ -1194,6 +1196,23 @@ GPU_RASTER_TEST_DEPS := gpu/include/rf_vulkan_min.h \
 	gpu/include/rf_gpu_vulkan_backend.h gpu/src/rf_gpu_raster_v1_spirv.inc \
 	gpu/shaders/raster_v1.comp rasterfall/include/rf_gpu.h \
 	rasterfall/include/rf_gpu_raster_abi.h rasterfall/include/rf_gpu_raster_pack.h
+
+GPU_RASTER_DIFF_SRCS := gpu/src/rf_gpu_raster_diff_test.c \
+	gpu/src/rf_gpu_raster_cpu_ref.c gpu/src/rf_gpu_renderer_hosted_shim.c \
+	lib/graphics/renderer.c $(GPU_RASTER_TEST_SRCS)
+GPU_RASTER_DIFF_DEPS := $(GPU_RASTER_TEST_DEPS) \
+	rasterfall/include/rf_gpu_raster_cpu_ref.h include/toy_renderer.h
+
+$(BUILD)/rf-gpu-raster-diff-test: $(GPU_RASTER_DIFF_SRCS) $(GPU_RASTER_DIFF_DEPS) | $(BUILD)
+	$(GCC) -std=c11 -O2 -Wall -Wextra -Werror -D_POSIX_C_SOURCE=200809L -I gpu/include -I include \
+		-I include/tlibc -I rasterfall/include \
+		$(filter-out gpu/src/rf_gpu_raster_test.c,$(GPU_RASTER_DIFF_SRCS)) -ldl -o $@
+
+$(BUILD)/rf-gpu-raster-diff-test.exe: $(GPU_RASTER_DIFF_SRCS) $(GPU_RASTER_DIFF_DEPS) | $(BUILD)
+	x86_64-w64-mingw32-gcc -std=c11 -O2 -Wall -Wextra -Werror \
+		-I gpu/include -I windows/include -I include -I include/tlibc \
+		-I rasterfall/include \
+		$(filter-out gpu/src/rf_gpu_raster_test.c,$(GPU_RASTER_DIFF_SRCS)) -o $@
 
 $(BUILD)/rf-gpu-raster-test: $(GPU_RASTER_TEST_SRCS) $(GPU_RASTER_TEST_DEPS) | $(BUILD)
 	$(GCC) -std=c11 -O2 -Wall -Wextra -Werror -I include -I include/tlibc \
