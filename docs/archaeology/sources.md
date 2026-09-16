@@ -35,34 +35,35 @@ SC7、赛事、课程、论文和上游参考实现只调查到能够约束 Toyc
 当新增材料只会增加旁支细节，不会明显改变 Toyc 的谱系、关键阶段或工程解释时，可以明确记录缺口
 后停止。未来自然出现重要材料时仍可修订，但缺少旁支档案本身不构成未完成状态。
 
-## 本地资料
+## Git 仓库与调查快照
 
-| 项目 | 本地路径 | 远端 | 本轮观察到的提交范围 |
-|---|---|---|---|
-| SC7 | 可选缓存 `../SC7` | `https://github.com/WHU-SC7/SC7.git` | `ec37618` 至主分支 `1a668a3`；另有 `tlibc` 等支线 |
-| Tinylibc | `../Tinylibc` | `WHU-SC7/Tinylibc` | `fce216c` 至 `a566206`，211 个提交 |
-| ToyCCompiler | `../ToyCCompiler` | 上游公开仓库 | `22ffcc8` 至 `58ac389`，96 个提交 |
-| Toyc | `.` | 上游公开仓库 | `22ffcc8` 至本轮核查前 HEAD `f4e4127`，782 个提交 |
+| 项目 | Git 仓库地址 | 本轮调查快照 |
+|---|---|---|
+| SC7 | `https://github.com/WHU-SC7/SC7.git` | `main`：`1a668a3`；另有 `tlibc` 等支线和已删除的赛事阶段分支 |
+| Tinylibc | `https://github.com/WHU-SC7/Tinylibc.git` | `main`：`a566206`；调查范围从 `fce216c` 起，共 211 个提交 |
+| ToyCCompiler | `https://github.com/BandieraRosse/ToyCCompiler.git` | `main`：`58ac389`；调查范围从 `22ffcc8` 起，共 96 个提交 |
+| Toyc | `https://github.com/BandieraRosse/toyc.git` | 调查时 HEAD：`f4e4127`，范围从 `22ffcc8` 起，共 782 个提交 |
 
-本地缓存并非仓库组成部分，可能不存在；提交数量和 HEAD 只记录调查现场，后续仓库推进后不作为
-永久统计结论。引用历史事实时应记录远端、分支和完整提交对象，不能只记录本地相对路径。
+上表的提交号和数量是本轮调查时的快照，不是对远端仓库当前状态的永久统计。当前仓库在考古收尾后
+又产生了文档提交；这不改变上述历史对象的含义。外部仓库不属于本仓库的 Git 历史，复查者应从表中
+的公开地址获取对应仓库，并固定到所需分支和完整提交对象；文档不假设这些仓库位于某个特定本地目录。
 
 ## 常用复查命令
 
 ```sh
-git clone --no-checkout https://github.com/WHU-SC7/SC7.git ../SC7
-git -C ../SC7 log --all --reverse --date=iso-strict
-git -C ../Tinylibc log --reverse --date=iso-strict
-git -C ../ToyCCompiler log --reverse --date=iso-strict
-git log --reverse --date=iso-strict
+git clone --no-checkout https://github.com/WHU-SC7/SC7.git <SC7-repo>
+git -C <SC7-repo> log --all --reverse --date=iso-strict
+git -C <Tinylibc-repo> log --reverse --date=iso-strict
+git -C <ToyCCompiler-repo> log --reverse --date=iso-strict
+git -C <Toyc-repo> log --reverse --date=iso-strict
 git show --stat --summary <commit>
 git diff --no-index <old-tree-path> <new-tree-path>
-git log --follow -- <path>
-git blame <commit> -- <path>
+git -C <repo> log --follow -- <path>
+git -C <repo> blame <commit> -- <path>
 ```
 
-克隆命令只用于说明如何建立可选缓存；执行前应确认目标目录不存在。已存在缓存时先核对 `remote -v`
-和目标分支，不应假定它自动包含远端后来新增的对象。
+尖括号路径只是复查者自行选择的本地目录占位符，不是仓库约定。克隆前应确认目标目录不存在；已存在
+缓存时先核对 `remote -v` 和目标分支，不应假定它自动包含远端后来新增的对象。
 
 跨仓库比较不能只看文件名。应先固定两端提交，再对目录树做 hash、相似度和语义对照，并记录
 重命名、格式化、生成文件与二进制种子等干扰因素。
@@ -77,7 +78,8 @@ git blame <commit> -- <path>
   作者自己进行。
 - ToyCCompiler 时期高强度使用 Claude Code 客户端接入 DeepSeek API，并完成自己的 C 编译器；
   作者确认没有同时使用 Claude 模型。
-- Toyc 保存了大部分提交信息；两个历史项目的公开仓库已克隆在当前仓库上级目录。
+- Toyc 保存了大部分提交信息；SC7、Tinylibc 和 ToyCCompiler 的公开仓库地址见上表，调查时另行取得了
+  它们的本地副本。
 - 整条 C 项目主线体现了作者逐渐深入计算机底层、从 C 编程提升到 C 项目能力，并逐渐使用
   coding agent 的过程。
 

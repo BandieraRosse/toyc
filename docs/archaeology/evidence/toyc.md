@@ -4,7 +4,9 @@
 
 本表为 [Toyc 时期](../periods/toyc.md) 的初始整合及 Rasterfall 转向提供可复核依据。Toyc
 直接延续 ToyCCompiler 的 Git 链；Tinylibc 是另一仓库，二者之间发生的是文件复制与适配，不是
-Git merge。提交说明和 README 属于同期陈述，整合动机与 standalone 含义另由作者于 2026-09-16
+Git merge。相关公开仓库分别为 `https://github.com/BandieraRosse/toyc.git`、
+`https://github.com/BandieraRosse/ToyCCompiler.git` 和 `https://github.com/WHU-SC7/Tinylibc.git`。
+提交说明和 README 属于同期陈述，整合动机与 standalone 含义另由作者于 2026-09-16
 回忆确认。
 
 ## 定位与准备
@@ -68,12 +70,12 @@ toyc 生态在理论上形成能够创造自身并继续创造其他程序的闭
 ```sh
 git show 643287b -- README.md README_en.md
 git show --stat a26e7a6 6ce3490 5bffca4 af6bc30
-git -C ../Tinylibc show --stat 32436f1 5a27733 2c3f585 384a71c 6a86e5f
+git -C <Tinylibc-repo> show --stat 32436f1 5a27733 2c3f585 384a71c 6a86e5f
 git ls-tree -r 0a7800f compiler include/toyc_need.h include/elf.h
-git -C ../Tinylibc ls-tree -r 32436f1 app/compiler include/toyc_need.h include/elf.h
+git -C <Tinylibc-repo> ls-tree -r 32436f1 app/compiler include/toyc_need.h include/elf.h
 git diff-tree --no-commit-id --name-only --diff-filter=A -r af6bc30
-git -C ../Tinylibc ls-tree -r 6a86e5f
-git -C ../Tinylibc log --all --decorate --oneline 6a86e5f..
+git -C <Tinylibc-repo> ls-tree -r 6a86e5f
+git -C <Tinylibc-repo> log --all --decorate --oneline 6a86e5f..
 git show a5b959c:Makefile
 git diff a5b959c^ a5b959c -- Makefile
 git diff 976f5e3 989b938 -- Makefile lib/stdio/printf.c lib/stdio/snprintf.c

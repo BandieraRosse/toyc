@@ -3,7 +3,8 @@
 ## 使用说明
 
 本表为 [SC7 前史](../periods/sc7.md) 提供可复核依据，不承担连续叙事。提交号均属于公开仓库
-`WHU-SC7/SC7`；核查时应固定完整提交对象，并同时查看父提交、变更路径和内容。
+`https://github.com/WHU-SC7/SC7.git`；核查时应从该地址取得仓库，固定完整提交对象，并同时查看父提交、
+变更路径和内容。
 
 “同期陈述”主要来自 commit message 或当时 README，只证明提交者当时作出过该声明；“代码记录”
 表示已确认相关改动进入 Git，不自动证明功能通过独立复现；“作者回忆”是事后口述。
@@ -75,18 +76,18 @@ VisionFive 三步重移植及 BSS 修复，第二父线包含 `git help` 等现�
 下列命令固定当前叙事使用的完整对象，不依赖已删除的赛事分支名：
 
 ```sh
-git -C ../SC7 show --stat --summary 524e2ef948f26270a344264a96f62fd519b8c576
-git -C ../SC7 show --stat --summary 64d9400fc491c0be34c4f0e724ca9190bee19070
-git -C ../SC7 show -s --format='%H %P %aI %s' \
+git -C <SC7-repo> show --stat --summary 524e2ef948f26270a344264a96f62fd519b8c576
+git -C <SC7-repo> show --stat --summary 64d9400fc491c0be34c4f0e724ca9190bee19070
+git -C <SC7-repo> show -s --format='%H %P %aI %s' \
   bcfab951a0dca822064211c7ce3b6cdaa6bde965 \
   b927bc12480bc4feee0e59c015de4d0c8fe4dcbb \
   696310e1bf3fa84b7b5a0ba1911ac9cdaefbcb13
-git -C ../SC7 merge-base \
+git -C <SC7-repo> merge-base \
   1a668a3f165e76aed255b8220ffcd07769491db6 \
   d2363daedef0a2027978f0a5bb2f4f0f037c4952
-git -C ../SC7 ls-tree -r \
+git -C <SC7-repo> ls-tree -r \
   d2363daedef0a2027978f0a5bb2f4f0f037c4952 user/include/Tinylibc/
-git -C ../Tinylibc ls-tree -r \
+git -C <Tinylibc-repo> ls-tree -r \
   fce216ca20d42c15fc89118a7e30d491f1c882e9
 ```
 

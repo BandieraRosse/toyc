@@ -3,7 +3,7 @@
 ## 使用说明
 
 本表为 [Tinylibc 时期](../periods/tinylibc.md) 提供可复核依据，不重复连续叙事。提交号属于公开仓库
-`WHU-SC7/Tinylibc`；调查缓存为 `../Tinylibc`，当前可见历史截至 `a566206`。
+`https://github.com/WHU-SC7/Tinylibc.git`；调查快照的当前可见历史截至 `a566206`。
 
 “代码记录”只确认改动进入 Git；提交说明、README 和 `tlibc_commit_log.md` 是同期陈述；
 `C:\Users\15259\Desktop\draft` 中的文章是作者提供的同期外部材料；2026-09-15 的回答是事后
@@ -132,13 +132,13 @@ Tinylibc、不得使用标准库”的限制，初始框架由 Claude Code 客�
 ## 复查入口
 
 ```sh
-git -C ../Tinylibc show --stat --summary 34fcd9e
-git -C ../Tinylibc diff 34fcd9e^ 34fcd9e -- README.md Makefile
-git -C ../Tinylibc log --all --follow -- app/paper/pthread.c
-git -C ../Tinylibc show 6c396aa:tlibc_commit_log.md
-git -C ../Tinylibc log --reverse --since=2026-06-22 --until=2026-06-30 \
+git -C <Tinylibc-repo> show --stat --summary 34fcd9e
+git -C <Tinylibc-repo> diff 34fcd9e^ 34fcd9e -- README.md Makefile
+git -C <Tinylibc-repo> log --all --follow -- app/paper/pthread.c
+git -C <Tinylibc-repo> show 6c396aa:tlibc_commit_log.md
+git -C <Tinylibc-repo> log --reverse --since=2026-06-22 --until=2026-06-30 \
   --format='%H %aI %s%n%(trailers:key=Co-Authored-By,valueonly)'
-git -C ../Tinylibc show --stat 2e03788 4437887 ff396cb
+git -C <Tinylibc-repo> show --stat 2e03788 4437887 ff396cb
 ```
 
 本轮未纳入课程材料、论文原文和输出、当时的 musl 快照、未提交音频实验、agent 会话及文章旧

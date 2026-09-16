@@ -2,8 +2,8 @@
 
 ## 使用说明
 
-本表为 [ToyCCompiler 时期](../periods/toy-c-compiler.md) 提供可复核依据。提交号属于
-`BandieraRosse/ToyCCompiler`；本地缓存为 `../ToyCCompiler`，可见历史从 `22ffcc8` 到
+本表为 [ToyCCompiler 时期](../periods/toy-c-compiler.md) 提供可复核依据。提交号属于公开仓库
+`https://github.com/BandieraRosse/ToyCCompiler.git`；调查快照的可见历史从 `22ffcc8` 到
 `58ac389`。提交说明、README、`CLAUDE.md` 和 draft/004—007 都是同期陈述，不自动证明功能。
 
 ## 提取来源表
@@ -90,14 +90,14 @@
 ## 复查命令
 
 ```sh
-git -C ../Tinylibc ls-tree -r 87d61e0 app/compiler compiler-tests include/elf.h ld.script
-git -C ../ToyCCompiler ls-tree -r 22ffcc8
-git -C ../ToyCCompiler diff 8b2ea1f 687ed29 -- README.md
-git -C ../ToyCCompiler show 0252321:bootstrap-selfhost.sh
-git -C ../ToyCCompiler show 961fbf6:bootstrap-to-10.sh
-git -C ../ToyCCompiler show bf518d5:bootstrap-to-10.sh
-git -C ../ToyCCompiler log --reverse -- bootstrap/
-git -C ../ToyCCompiler show 9948ea0:Makefile
+git -C <Tinylibc-repo> ls-tree -r 87d61e0 app/compiler compiler-tests include/elf.h ld.script
+git -C <ToyCCompiler-repo> ls-tree -r 22ffcc8
+git -C <ToyCCompiler-repo> diff 8b2ea1f 687ed29 -- README.md
+git -C <ToyCCompiler-repo> show 0252321:bootstrap-selfhost.sh
+git -C <ToyCCompiler-repo> show 961fbf6:bootstrap-to-10.sh
+git -C <ToyCCompiler-repo> show bf518d5:bootstrap-to-10.sh
+git -C <ToyCCompiler-repo> log --reverse -- bootstrap/
+git -C <ToyCCompiler-repo> show 9948ea0:Makefile
 ```
 
 ## 未纳入的材料
