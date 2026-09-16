@@ -1183,12 +1183,15 @@ $(BUILD)/rf-gpu-service-test: gpu/src/rf_gpu_service_test.c rasterfall/src/rf_gp
 	$(GCC) -std=c11 -O2 -Wall -Wextra -Werror -I rasterfall/include \
 		gpu/src/rf_gpu_service_test.c rasterfall/src/rf_gpu.c -o $@
 
-$(BUILD)/rf-gpu-probe: gpu/src/rf_gpu_probe.c gpu/include/rf_vulkan_min.h | $(BUILD)
-	$(GCC) -std=c11 -O2 -Wall -Wextra -Werror -I gpu/include $< -ldl -o $@
+$(BUILD)/rf-gpu-probe: gpu/src/rf_gpu_probe.c gpu/src/rf_gpu_vulkan_backend.c gpu/include/rf_vulkan_min.h gpu/include/rf_gpu_vulkan_backend.h rasterfall/src/rf_gpu.c rasterfall/include/rf_gpu.h | $(BUILD)
+	$(GCC) -std=c11 -O2 -Wall -Wextra -Werror -I gpu/include -I rasterfall/include \
+		gpu/src/rf_gpu_probe.c gpu/src/rf_gpu_vulkan_backend.c \
+		rasterfall/src/rf_gpu.c -ldl -o $@
 
-$(BUILD)/rf-gpu-probe.exe: gpu/src/rf_gpu_probe.c gpu/include/rf_vulkan_min.h | $(BUILD)
+$(BUILD)/rf-gpu-probe.exe: gpu/src/rf_gpu_probe.c gpu/src/rf_gpu_vulkan_backend.c gpu/include/rf_vulkan_min.h gpu/include/rf_gpu_vulkan_backend.h rasterfall/src/rf_gpu.c rasterfall/include/rf_gpu.h | $(BUILD)
 	x86_64-w64-mingw32-gcc -std=c11 -O2 -Wall -Wextra -Werror \
-		-I gpu/include $< -o $@
+		-I gpu/include -I rasterfall/include gpu/src/rf_gpu_probe.c \
+		gpu/src/rf_gpu_vulkan_backend.c rasterfall/src/rf_gpu.c -o $@
 
 rasterfall-blender-deps:
 	python3 -m pip install --target .blender-python numpy

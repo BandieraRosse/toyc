@@ -1,7 +1,7 @@
 # 构建、平台与验证
 
 > 文档更新：2026-09-16
-> 源码核对基线补充：GPU-2A 已建立 Core-owned `rf_gpu` 服务契约、disabled/optional/required fallback policy、状态快照与 backend 生命周期；Linux/Windows 正常构建已接入平台无关服务，但正常 runtime 显式 disabled，Vulkan backend 仍待从 hosted probe 拆分。
+> 源码核对基线补充：GPU-2 已完成；Core-owned `rf_gpu` 服务具有 disabled/optional/required fallback、状态快照和持久 Vulkan loader/instance/device/queue backend，hosted probe 通过正式 service 验证 compute/readback 与 shutdown；正常 runtime 仍显式 disabled。
 > 源码核对基线补充：GPU Phase 1 hosted probe 已覆盖 Linux/Windows 共用的 storage-buffer compute、descriptor/pipeline、command/fence 与 readback 校验，并采用 discrete-first adapter selection；WSL llvmpipe 与 Windows RTX 3050 compute/readback 均已通过；正常 freestanding Rasterfall 和 Windows 游戏构建未接入 GPU。
 > 源码核对基线补充：Windows 启动地图加载的容量型 Map IR 改为临时堆分配，成功与失败均释放；不依赖扩大线程栈，详见 map-format.md 的 Runtime Bridge。
 > 源码核对基线补充：Static World Lighting V2 Phase D Linux GCC freestanding / Windows MinGW 构建通过；Linux headless capture 验收，Windows仅build，Wayland交互环境不可用，见 [Phase D](static-world-lighting-phase-d.md)。
@@ -45,7 +45,8 @@ Windows 控制台程序 `build/rf-gpu-probe.exe`。两者都是 hosted 开发工
 Vulkan ABI 声明分别加载系统 `libvulkan.so.1` / `vulkan-1.dll`，不需要 Vulkan SDK，但运行机器
 仍必须提供 Vulkan loader 与可用 ICD/驱动。
 
-当前探针枚举 adapter/queue family 后创建 device/queue，并完成 storage buffer、host-visible
+当前 probe 通过 `rf_gpu` 正式 service 启动 hosted Vulkan backend。backend 枚举 adapter/queue
+family 后持久创建 device/queue，并完成 storage buffer、host-visible
 memory、descriptor、内嵌 SPIR-V compute pipeline、command buffer、dispatch、fence wait 和
 readback verification 的完整最小闭环。它没有 surface 或 swapchain。WSL llvmpipe correctness
 已验收；Windows 原生枚举 AMD integrated 与 NVIDIA RTX 3050 Laptop GPU，discrete-first
@@ -57,8 +58,10 @@ readback verification 的完整最小闭环。它没有 surface 或 swapchain。
 GPU-2A 已将 fallback 语义固化在 `rf_gpu`：optional 对 unavailable/failed 返回成功并保留状态，
 required 对两者返回失败，disabled 不调用 backend；只有 READY backend 会在 Core shutdown 时释放。
 `rf_core_get_status()` 提供概要状态，`rf_core_get_gpu_status()` 提供 adapter/message snapshot，均不暴露
-Vulkan handle。当前正常 runtime 显式 disabled；`make gpu-service-test` 是该契约的 hosted 门禁。
-GPU-2B 仍需把 probe 的 Vulkan ownership 拆为持久 backend。
+Vulkan handle。GPU-2B 的 `rf_gpu_vulkan_backend` 持久拥有 loader、instance、选中 physical device、
+logical device 与 queue；init 继续执行 compute/readback 门禁，shutdown 逆序释放。当前正常 runtime
+显式 disabled；`make gpu-service-test` 验证平台无关契约，`make gpu-probe && build/rf-gpu-probe`
+验证真实 backend 生命周期。GPU framebuffer、surface 与 swapchain 不属于 GPU-2。
 
 ## 改文件列表时
 
