@@ -1,6 +1,7 @@
 # 构建、平台与验证
 
 > 文档更新：2026-09-16
+> 源码核对基线补充：GPU-4 已完成 pointer-free、fixed-width、versioned Raster Command ABI V1；现有 CPU command pool 通过显式 deterministic pack/validation 生成 clear color/depth 与 opaque flat triangle command，独立 Linux runtime test 与 Windows LLP64 layout build gate 已接入，尚不执行 GPU rasterization。
 > 源码核对基线补充：GPU-3 已完成；Core-owned `rf_gpu_framebuffer` 复用持久 Vulkan backend，以 compute 生成 device-local XRGB8888 framebuffer，经有限 fence、readback 与 stride-aware copy 进入 `toy_surface`；正常 runtime 仍显式 disabled/CPU renderer。
 > 源码核对基线补充：GPU Phase 1 hosted probe 已覆盖 Linux/Windows 共用的 storage-buffer compute、descriptor/pipeline、command/fence 与 readback 校验，并采用 discrete-first adapter selection；WSL llvmpipe 与 Windows RTX 3050 compute/readback 均已通过；正常 freestanding Rasterfall 和 Windows 游戏构建未接入 GPU。
 > 源码核对基线补充：Windows 启动地图加载的容量型 Map IR 改为临时堆分配，成功与失败均释放；不依赖扩大线程栈，详见 map-format.md 的 Runtime Bridge。
@@ -70,7 +71,13 @@ readback 是 host-visible transfer-dst buffer；优先 coherent，否则 invalid
 compute → barrier → copy，fence 最长等待 5 秒。resize 仅 replacement-first 重建 framebuffer 资源。
 WSL llvmpipe correctness、Windows MinGW build 与 RTX 3050 实机 smoke 均已通过；Windows probe
 确认选中 NVIDIA GeForce RTX 3050 Laptop GPU（discrete）。
-正常 Rasterfall 未链接 hosted backend，CPU renderer 与 optional/required 启动语义不变；GPU-4 未开始。
+正常 Rasterfall 未链接 hosted backend，CPU renderer 与 optional/required 启动语义不变。
+
+GPU-4 的 ABI 定义在 `rasterfall/include/rf_gpu_raster_abi.h`，CPU adapter 定义在
+`rasterfall/include/rf_gpu_raster_pack.h` / `gpu/src/rf_gpu_raster_pack.c`。`make gpu-raster-abi-test`
+运行 layout、deterministic packing、validation/rejection 测试；`make win-gpu-raster-abi-test` 验证
+同一固定布局可由 MinGW LLP64 编译。该路径是 hosted GPU 开发设施，不进入正常 Rasterfall link；
+GPU framebuffer smoke 与 CPU renderer 行为均未改变。GPU-5 compute rasterizer 尚未开始。
 
 ## 改文件列表时
 

@@ -1174,13 +1174,25 @@ wayland_fps: $(BUILD)/wayland_fps
 # Hosted, SDK-free Vulkan discovery tool.  This target intentionally stays
 # outside the freestanding Rasterfall link until the optional Core GPU service
 # has a stable ABI and fallback policy.
-.PHONY: gpu-probe gpu-service-test gpu-framebuffer-test win-gpu-probe \
-	win-gpu-framebuffer-test
+.PHONY: gpu-probe gpu-service-test gpu-framebuffer-test gpu-raster-abi-test \
+	win-gpu-probe win-gpu-framebuffer-test win-gpu-raster-abi-test
 gpu-probe: $(BUILD)/rf-gpu-probe
 gpu-service-test: $(BUILD)/rf-gpu-service-test
 gpu-framebuffer-test: $(BUILD)/rf-gpu-framebuffer-test
+gpu-raster-abi-test: $(BUILD)/rf-gpu-raster-pack-test
 win-gpu-probe: $(BUILD)/rf-gpu-probe.exe
 win-gpu-framebuffer-test: $(BUILD)/rf-gpu-framebuffer-test.exe
+win-gpu-raster-abi-test: $(BUILD)/rf-gpu-raster-pack-test.exe
+
+$(BUILD)/rf-gpu-raster-pack-test: gpu/src/rf_gpu_raster_pack_test.c gpu/src/rf_gpu_raster_pack.c rasterfall/include/rf_gpu_raster_abi.h rasterfall/include/rf_gpu_raster_pack.h include/toy_renderer.h | $(BUILD)
+	$(GCC) -std=c11 -O2 -Wall -Wextra -Werror -I include -I include/tlibc \
+		-I rasterfall/include gpu/src/rf_gpu_raster_pack_test.c \
+		gpu/src/rf_gpu_raster_pack.c -o $@
+
+$(BUILD)/rf-gpu-raster-pack-test.exe: gpu/src/rf_gpu_raster_pack_test.c gpu/src/rf_gpu_raster_pack.c rasterfall/include/rf_gpu_raster_abi.h rasterfall/include/rf_gpu_raster_pack.h include/toy_renderer.h | $(BUILD)
+	x86_64-w64-mingw32-gcc -std=c11 -O2 -Wall -Wextra -Werror \
+		-I windows/include -I include -I include/tlibc -I rasterfall/include \
+		gpu/src/rf_gpu_raster_pack_test.c gpu/src/rf_gpu_raster_pack.c -o $@
 
 $(BUILD)/rf-gpu-service-test: gpu/src/rf_gpu_service_test.c rasterfall/src/rf_gpu.c rasterfall/include/rf_gpu.h | $(BUILD)
 	$(GCC) -std=c11 -O2 -Wall -Wextra -Werror -I rasterfall/include \

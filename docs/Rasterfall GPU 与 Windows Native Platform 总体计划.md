@@ -1,8 +1,8 @@
 # Rasterfall GPU 与 Windows Native Platform 总体计划
 
-> 状态：执行中（GPU-0、GPU-0.5、GPU-1、GPU-2、GPU-3 已完成）
+> 状态：执行中（GPU-0、GPU-0.5、GPU-1、GPU-2、GPU-3、GPU-4 已完成）
 > 进展同步：2026-09-16
-> 源码核对基线：GPU-3 Frame Ownership / GPU Framebuffer Smoke
+> 源码核对基线：GPU-4 Raster Command ABI V1 / deterministic pack-validation
 > 方向：Vulkan GPU Runtime / Compute Rasterizer / Windows Native Platform
 > 原则：保持 CPU renderer 与现有 Linux 路径稳定，以渐进方式引入 GPU 算力，并逐步收回 Windows 平台层所有权。
 
@@ -15,13 +15,14 @@
 | GPU-1 Compute Ownership | 已完成 | WSL llvmpipe 与 Windows RTX 3050 均通过 storage-buffer compute/readback：`1 2 3 4 -> 4 7 10 13` |
 | GPU-2 RF GPU Core Service | 已完成 | Core-owned service contract 与持久 Vulkan loader/instance/device/queue backend；hosted probe 经正式 service 完成 compute/readback 和逆序 shutdown |
 | GPU-3 Frame Ownership | 已完成 | hosted smoke 复用持久 backend；device-local XRGB8888 output 经 compute、barrier、host-visible readback 进入 `toy_surface`，覆盖 stride、hash、resize 与逆序 shutdown |
+| GPU-4 Raster Command ABI V1 | 已完成 | 32-byte versioned stream header + 96-byte pointer-free commands；CPU `toy_raster_cmd` 显式 pack/validation，覆盖 clear color/depth 与 opaque flat triangle 的 depth/fog 输入；独立 layout/packing 双平台构建门禁 |
 | Windows Native Platform | 未开始 | 正常 Windows Rasterfall 仍使用 MinGW + SDL2，本阶段未改窗口、输入、音频或 presentation |
 
 当前边界：
 
 * GPU probe 是 hosted service frontend；Vulkan loader、instance、physical/logical device 与 queue 由持久 backend 拥有，正常 runtime 尚未选择该 hosted backend；
 * CPU renderer 仍是唯一正常游戏渲染路径；
-* 已有 hosted GPU framebuffer 与 CPU-visible `toy_surface` readback；尚无 raster command ABI、Vulkan surface 或 swapchain；
+* 已有 hosted GPU framebuffer、CPU-visible `toy_surface` readback 与 GPU raster command ABI V1；尚无 compute triangle rasterizer、Vulkan surface 或 swapchain；
 * Windows `total` 首次观测包含 resource / descriptor / pipeline 创建，不作为稳态 GPU 性能结论。
 
 当前复核入口：
@@ -31,8 +32,11 @@ make gpu-probe
 build/rf-gpu-probe
 make gpu-framebuffer-test
 build/rf-gpu-framebuffer-test
+make gpu-raster-abi-test
+build/rf-gpu-raster-pack-test
 make win-gpu-probe
 make win-gpu-framebuffer-test
+make win-gpu-raster-abi-test
 # Windows PowerShell: .\build\rf-gpu-framebuffer-test.exe
 ```
 
@@ -535,7 +539,7 @@ existing window present
 
 ---
 
-# 10. GPU Phase 4 — Raster Command ABI V1
+# 10. GPU Phase 4 — Raster Command ABI V1（已完成）
 
 GPU renderer 不直接依赖 `toy_renderer` 的内部 C command layout。
 
@@ -575,6 +579,18 @@ rf_gpu_raster_cmd_v1
 * depth write；
 * fixed color；
 * fog。
+
+当前 V1 实现位于 `rasterfall/include/rf_gpu_raster_abi.h` 与
+`gpu/src/rf_gpu_raster_pack.c`。stream 固定为 little-endian，header 为 32 bytes，command 为
+96 bytes；所有 reserved bytes 在 pack 时清零并在 validation 时检查。V1 resource handle 字段
+显式存在，但 flat triangle 不依赖外部资源，因此必须为零。
+
+pack 输入是 CPU renderer 已裁剪并记录的 command pool，加上该 frame 的 clear color 和固定
+depth clear 0。它只接受 opaque、constant-light、non-overlay flat triangle，保存三顶点屏幕坐标、
+Q16 inverse depth、负 winding area、clamped bbox、fixed color、Q8 light/fog，并声明 depth test
+与 depth write；纹理、透明、逐顶点光、overlay 均明确返回 unsupported。GPU-4 不执行任何
+rasterization，也不接正常 runtime。`make gpu-raster-abi-test` 验证 deterministic byte packing、
+拒绝路径、stream corruption 与静态 layout；`make win-gpu-raster-abi-test` 是 LLP64 layout 构建门禁。
 
 ---
 
@@ -998,19 +1014,15 @@ RF 自己负责：
 
 # 21. 近期关键路径
 
-截至 2026-09-16，GPU-0 至 GPU-3 已完成，当前优先级为：
+截至 2026-09-16，GPU-0 至 GPU-4 已完成，当前优先级为：
 
 ```text
 Completed:
-GPU-0 / GPU-0.5 / GPU-1 / GPU-2 / GPU-3
+GPU-0 / GPU-0.5 / GPU-1 / GPU-2 / GPU-3 / GPU-4
 WSL llvmpipe framebuffer smoke
             │
             ▼
 Current:
-GPU-4
-Raster Command ABI V1
-            │
-            ▼
 GPU-5
 Flat Compute Rasterizer
             │

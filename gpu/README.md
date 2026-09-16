@@ -95,8 +95,22 @@ make win-gpu-framebuffer-test
 ```
 
 WSL llvmpipe 与 Windows RTX 3050 均已通过全像素/hash、非紧密 stride、resize 与 shutdown 检查；
-Windows probe 确认 discrete adapter 为 NVIDIA GeForce RTX 3050 Laptop GPU。正常 renderer 仍为 CPU；GPU-4 command ABI、triangle/depth/world、
+Windows probe 确认 discrete adapter 为 NVIDIA GeForce RTX 3050 Laptop GPU。正常 renderer 仍为 CPU；triangle execution/depth buffer/world、
 surface/swapchain 均未开始。GPU-3 不输出性能统计，避免把临时 readback 当成 native renderer 结论。
+
+GPU-4 已建立独立 Raster Command ABI V1：32-byte little-endian versioned header 后接固定 96-byte、
+无指针 command。CPU adapter 只 pack clear color、depth clear 0 与 opaque flat triangle，显式携带
+screen vertex/Q16 inverse-depth、area/bbox、fixed color、Q8 light/fog 和 depth-test/write flags；所有
+reserved bytes 清零。纹理、透明、overlay 与逐顶点光命令明确拒绝，不会静默降级。
+
+```sh
+make gpu-raster-abi-test
+build/rf-gpu-raster-pack-test
+make win-gpu-raster-abi-test
+```
+
+测试覆盖静态 layout、确定性重复 pack、容量/unsupported 拒绝与 corruption validation。ABI 尚未由
+Vulkan framebuffer 消费；compute triangle rasterization 属于 GPU-5。
 
 ## 注意事项
 
