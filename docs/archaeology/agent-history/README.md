@@ -27,3 +27,19 @@ python3 tools/archaeology/unify_agent_history.py
 Machine B 的 Claude 与 Codex source 形态不同，使用同目录下的 recovery 与 boundary repair 工具；Claude project boundary 按 event-level `sessionId` 处理，不能把文件数当作 session 数。source path 与 output root 相互独立，不要求相同用户名、home 或项目绝对路径。
 
 Unify V1 以 `(provider namespace, native session ID)` 建立确定性的 logical session ID。867 个 archive session record 映射为 549 个 logical full session；3,394 条 full-session prompt 在同一 logical session 内只按“时间戳与正文均完全相同”折叠为 2,179 条阅读记录，所有物理 pointer 仍保留。1,492 条 `prompt_only` 和 2,278 条 `file-history-snapshot` 始终与完整会话分层。统一报告与验证结果见 `local/agent-history/reports/unified/`。
+
+## Querying the unified history
+
+查询工具只读取 unified 派生数据和已脱敏的 session mirror，不修改 archive、unified 数据或 logical identity：
+
+```sh
+python3 tools/archaeology/query_agent_history.py --stats
+python3 tools/archaeology/query_agent_history.py --text "自举"
+python3 tools/archaeology/query_agent_history.py --text "测试" --since 2026-06-29 --until 2026-07-04 --provider claude
+python3 tools/archaeology/query_agent_history.py --list-sessions --project Tinylibc
+python3 tools/archaeology/query_agent_history.py --session <logical-session-id>
+python3 tools/archaeology/query_agent_history.py --session <logical-session-id> --provenance
+```
+
+默认查询 `full_session`；需要查询未绑定的 global history 时显式使用 `--class prompt_only`。`auxiliary` 是
+file-history bookkeeping，不作为普通会话或 prompt 搜索结果。支持 `--json` 输出机器可读结果。

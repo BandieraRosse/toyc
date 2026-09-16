@@ -91,12 +91,16 @@ Toyc（“two parents”整合时期）
 
 当前已完成 SC7、Tinylibc、ToyCCompiler、Toyc 初始整合及 Rasterfall 转向的阶段划分、连续叙事和提交级证据表；SC7 另有工程边界专题。
 Tinylibc 已区分课程与兴趣起点、手写终端应用、pthread/论文实验、网络与构建工具、agent 转型和
-编译器冲刺，并纳入作者提供的同期文章。作者确认末期以 Claude Code 为客户端、全部接入 DeepSeek
+编译器冲刺，并纳入作者提供的同期文章与关键 Agent History 会话。6 月 29 日同期材料现已直接确认
+compiler 的 Tinylibc self-host 动机、项目哲学和“AI 速度超过理解速度”问题；6 月 30 日至 7 月 4 日
+的会话则固定了测试从功能证据、能力边界和 failure isolation 收缩到 self-host 实际语言模式的过程。
+作者确认末期以 Claude Code 为客户端、全部接入 DeepSeek
 API；`Co-Authored-By: Claude` 因而不能证明使用过 Claude 模型，也不能量化贡献或证明未署名提交
 没有使用 AI。作者进一步确认为节省费用主要使用 DeepSeek-V4-Flash，仅两天多使用 Pro。ToyCCompiler 已固定
 为从 Tinylibc `87d61e0` 的编译器子树有选择提取，并区分自身编译、可运行下一阶段、多阶段收敛、
-tas/tld 接管以及种子驱动默认构建；独立建仓是为集中上下文先完成自举，并已有之后重新整合
-Tinylibc 的计划。`687ed29` 中“没有 AI”指作者平静后亲手删去自举成功时写下的过度抒情文字。
+tas/tld 接管以及种子驱动默认构建；同期会话确认作者主动建仓、建立最小依赖边界并继续 self-host，
+而“集中上下文是主因”“拆分时已计划合回”只保留为后期回忆。`687ed29` 中“没有 AI”指作者平静后
+亲手删去自举成功时写下的过度抒情文字。
 Toyc 的 “two parents” 定位先于实际目录整合：自举工具链被视为生态核心，Tinylibc 提供库与应用；
 两者统一是编译器最初目标的回归，而非无关项目的事后拼接。初次直接融合遇到现实兼容距离后，开发
 转为在 Toyc 中按 Tinylibc 库模块逐项建立编译和功能测试，再进行双向选择性移植。Toyc 的 standalone

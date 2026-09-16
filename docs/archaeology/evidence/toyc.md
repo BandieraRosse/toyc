@@ -6,8 +6,8 @@
 直接延续 ToyCCompiler 的 Git 链；Tinylibc 是另一仓库，二者之间发生的是文件复制与适配，不是
 Git merge。相关公开仓库分别为 `https://github.com/BandieraRosse/toyc.git`、
 `https://github.com/BandieraRosse/ToyCCompiler.git` 和 `https://github.com/WHU-SC7/Tinylibc.git`。
-提交说明和 README 属于同期陈述，整合动机与 standalone 含义另由作者于 2026-09-16
-回忆确认。
+提交说明和 README 属于同期陈述；2026-07-11 agent session 已补充整合意图的同期证据，
+standalone 的更完整含义另由作者于 2026-09-16 回忆确认。
 
 ## 定位与准备
 
@@ -15,6 +15,7 @@ Git merge。相关公开仓库分别为 `https://github.com/BandieraRosse/toyc.g
 |---|---|---|
 | `58ac389` | ToyCCompiler README 以 HTTP 301 形式指向新的 `toyc` 仓库 | 只确认迁移和新名称已决定 |
 | `643287b` | 称 tcc 是 toyc 生态核心，项目由 ToyCCompiler 与 Tinylibc 合并而生，将成为独立系统软件生态 | “two parents” 首次明确出现；此时尚未复制 Tinylibc 树 |
+| `ls-d1bf96ba7a8f02510e526f28` | 作者要求简介列出两个旧仓库，明确 Toyc 将与 Tinylibc 合并、成为独立生态，tcc 是重要组成部分 | 目前找到的最早强 agent-session 证据；不证明想法首次产生于此日，也未出现 literal “two parents” |
 | `a26e7a6` | 将 `app/` 移到 `compiler/`，提交说明明确为未来依赖库的应用腾出 `app/` | 作者日期为 7 月 11 日，提交者日期为 7 月 15 日 |
 | `015b236`、`b8fb22f` | 新增 `tar`/归档链接支持，说明明确服务 Tinylibc 静态库 | 归档器后来随工具链统一改名 `toyar` |
 | `6ce3490` | 不复制库源码，直接对外部 Tinylibc 各模块建立声明式编译与功能测试 | 标志渐进整合策略落地 |
@@ -44,8 +45,9 @@ Tinylibc 库及较易验证的应用子集移入 Toyc。** 文件流向是双向
 
 ## 动机与 standalone 的含义
 
-作者于 2026-09-16 确认，编译器最初目的就是编译自己的 Tinylibc 库并取代 GCC 的部分功能；
-ToyCCompiler 成熟后继续分仓没有意义，统一是原目标的延续。`toyc` 是借统一机会确定的新名称，
+6 月 29 日 session 已直接确认编译器最初服务于 Tinylibc self-host；7 月 11 日
+`ls-d1bf96ba7a8f02510e526f28` 已直接确认合并与独立生态计划。作者于 2026-09-16 对“成熟后继续
+分仓没有意义”的解释仍属后期回忆。`toyc` 是借统一机会确定的新名称，
 既避免旧名问题，也表示项目不再只是编译器，而是包含较完整 C 生态的“有点功能的玩具”。
 
 自举成功与编译 Tinylibc 之间仍有现实距离。早期曾尝试一次性融合并立即用 toyc 编译整个库，后来

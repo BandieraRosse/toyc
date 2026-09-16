@@ -1,7 +1,7 @@
 # 核心时间线
 
-本时间线只列已经由本地仓库提交记录核对的边界事件。提交日期使用提交对象记录的 `+08:00`
-时间；未来若补充新的边界事件，仍应核对作者日期、提交者日期、分支和文件内容。
+本时间线列出由本地仓库提交记录或已归档完整 agent session 核对的边界事件。提交日期使用提交对象
+记录的 `+08:00` 时间；session 日期按记录时间归入当地开发日。未来补充事件仍应注明证据类别。
 
 | 日期 | 仓库 | 提交 | 事件 | 证据性质 |
 |---|---|---|---|---|
@@ -21,11 +21,15 @@
 | 2026-03-27 | Tinylibc | `3dae4be` | 加入线程栈与内存的异步回收实验 | 提交内容、同期日志 |
 | 2026-05-29 | Tinylibc | `45adc6b` | tmake 已能调用外部工具编译并链接所有程序 | 提交内容与说明 |
 | 2026-06-22 | Tinylibc | `c985e5b` | 开始以 Claude Code 客户端接入 DeepSeek API 的密集 agent 重构 | 提交内容、元数据与作者回忆 |
+| 2026-06-29 | Tinylibc | `ls-712f9fec88e391ac0047bd5c` | 明确 compiler 为 Tinylibc self-host 缺失环节，并形成透明、可读、独立的项目取向 | 同期完整 agent session |
 | 2026-06-30 | Tinylibc | `4670d9f` | 加入最小可行的自举编译器 Phase 1 | 提交内容与说明 |
+| 2026-06-30 | Tinylibc | `ls-f602149a47d21b50e15a5c66` | 拒绝无测试的 feature 完成声明；`test_va` 实跑暴露严重错误 | 同期完整 agent session |
 | 2026-07-01 | Tinylibc | `9921705` | 提交说明记录 `tcc.c` 自编译通过 | 提交说明；本轮未复现该历史状态 |
 | 2026-07-02 | Tinylibc | `4437887` | 合并 compiler-test-suite 工作线，测试开始成为自举推进单位 | 提交 DAG、内容与作者回忆 |
+| 2026-07-02 | Tinylibc | `ls-b92a5a5a9dcee2d0ef1d0c95` | 以文档和小测试把失控复杂度转成可观察的能力边界 | 同期完整 agent session |
 | 2026-07-02 | Tinylibc | `2213ae5` | `tmake -T` 开始以 tcc/tas 替代 gcc | 提交内容与说明 |
 | 2026-07-04 | ToyCCompiler / Toyc | `22ffcc8` | 以 Tinylibc `87d61e0` 编译器子树为基底选择性提取，建立独立仓库 | 跨仓库 blob 与逐文件 diff |
+| 2026-07-04 | ToyCCompiler / Toyc | `ls-ae12d0ff80d1bb2004f69072` | 作者主动建新项目，并将约 94 个 generic tests 收缩到 self-host 实际语言模式 | 同期完整 agent session |
 | 2026-07-07 | ToyCCompiler / Toyc | `0252321` | 首个可运行 stage-2 脚本：stage 1 编译自身，GCC 汇编、GNU ld 链接 | 脚本实际调用链 |
 | 2026-07-08 | ToyCCompiler / Toyc | `961fbf6` | 提交说明记录自举到 stage 10 | 提交说明，脚本与产物待复现 |
 | 2026-07-08 | ToyCCompiler / Toyc | `8b2ea1f` | 发布“自举成功宣言” | 提交说明与 README 历史 |
@@ -35,6 +39,7 @@
 | 2026-07-10 | ToyCCompiler / Toyc | `46119c1` | 更新三个收敛版种子，说明记录 stage 9/10 一致 | 二进制 blob、说明与隔离复查 |
 | 2026-07-11 | ToyCCompiler | `58ac389` | README 以 HTTP 301 形式宣告迁往 Toyc | 提交内容 |
 | 2026-07-11 | Toyc | `643287b` | README 将项目描述为来自 ToyCCompiler 与 Tinylibc 的 “two parents” | 提交内容 |
+| 2026-07-11 | Toyc | `ls-d1bf96ba7a8f02510e526f28` | 明确提出合并两个旧项目、建立独立生态且 tcc 为重要组成 | 同期完整 agent session；目前最早强会话证据 |
 | 2026-07-11 | Toyc | `a26e7a6` | 编译器源码由 `app/` 移到 `compiler/`，为 Tinylibc 整合留出目录 | 提交内容与说明 |
 | 2026-07-23 | Toyc | `5bffca4` | 工具链由 tcc/tas/tld 等统一改名为 toyc/toyas/toyld | 提交内容 |
 | 2026-07-23 | Tinylibc | `32436f1` | 将 Toyc `0a7800f` 的最新工具链选择性复制到 `app/compiler/` | 跨仓库逐路径 blob 对照 |
