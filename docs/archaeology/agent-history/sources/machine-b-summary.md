@@ -1,7 +1,7 @@
 # Machine B source summary
 
 - machine_id: `machine-b`
-- recovery status: complete after Claude event-level session-boundary normalization and unbound-event audit
+- recovery status: complete after Claude event-level session-boundary normalization and unbound-event audit; incorporated into Conservative Unify V1
 - previous provisional model: one Claude project JSONL file = one session
 - correction: previous Machine B session counts invalidated because event files can contain multiple sessionId values
 - Claude project sources: `308` JSONL files, `206` logical sessions, `57` cross-file sessions, `2,278` retained unbound events
@@ -31,6 +31,7 @@ normalized event report is in `reports/machine-b/unbound-events.jsonl`.
 
 The complete Machine B corpus is ignored under `local/agent-history/`; Machine A remains unchanged.
 The final pre-unify relation report records 185 `same_native_session` aliases, 268
-`exact_source_duplicate` relations, and no probable/weak duplicate relations. Prompt-only matches
-remain candidates only; no semantic merge, deletion, development episode, or unified corpus was
-generated.
+`exact_source_duplicate` relations, and no probable/weak duplicate relations. Conservative Unify V1
+has generated identity, membership, relation and prompt-reading views without semantic merge or
+deletion. Prompt-only matches remain candidates only; development episodes and attribution have not
+been generated.

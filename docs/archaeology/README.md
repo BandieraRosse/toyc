@@ -77,6 +77,7 @@ Toyc（“two parents”整合时期）
 - [证据与方法](sources.md)：资料优先级、引用格式、证据边界和复查命令。
 - [考古问题与结论索引](questions.md)：本轮核心问题、结论落点和证据边界的归档索引。
 - [口述史料](oral-history/README.md)：保留 Git 无法重建的作者原话，并与后续交叉核对分开排版。
+- [Agent History Corpus](agent-history/README.md)：两台 source machine 的开发会话恢复方法、证据分层和 Conservative Unify V1；完整 corpus 位于被 Git 忽略的本地数据区。
 
 ## 专题解读
 

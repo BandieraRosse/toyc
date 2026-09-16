@@ -60,7 +60,10 @@ ACQUISITION FROZEN
 READY FOR CONSERVATIVE UNIFY
 ```
 
-## 尚未执行的阶段
+## Conservative Unify V1
 
-本记录完成时没有创建 `unified/sessions.jsonl` 或 `unified/prompts.jsonl`，没有删除 duplicate，没有 canonicalize 原始 archive session，也没有建立 Git commit/session correlation。下一阶段只能在保留全部物理记录、分离 evidence class、维护 alias/duplicate relation 的前提下执行 conservative unify。
+预处理封账后运行 `tools/archaeology/unify_agent_history.py`，在不修改 machine 层的前提下生成各类 `unified/` 派生视图。867 个 indexed session record 全部映射到 549 个 logical full session；3,394 条 full-session prompt 在同一 logical session 内按完全相同的时间戳与正文折叠为 2,179 条阅读记录，每条仍保存全部物理 pointer。1,492 条 prompt-only record 保持未绑定，2,278 条 file-history-snapshot 不进入 conversational view。
 
+统一层继续保留 185 个 `same_native_session`、268 个 `exact_source_duplicate` 和 1,912 个 `prompt_only_candidate` relation。duplicate 两端没有删除，原始 archive session 没有 canonicalize；`preferred_archive_id` 只是显示选择。验证报告位于 `local/agent-history/reports/unified/validation.json`，manifest 位于 `local/agent-history/manifests/unified/manifest.json`。
+
+Unify V1 仍未建立 Git commit/session correlation，也没有执行语义 session merge、development episode 或贡献归因。这些任务必须以 unified identity 和 relation 为输入另行开展，不能反向改写本层记录。
