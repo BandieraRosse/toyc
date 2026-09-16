@@ -1,0 +1,1094 @@
+# Rasterfall GPU 与 Windows Native Platform 总体计划
+
+> 状态：规划阶段
+> 方向：Vulkan GPU Runtime / Compute Rasterizer / Windows Native Platform
+> 原则：保持 CPU renderer 与现有 Linux 路径稳定，以渐进方式引入 GPU 算力，并逐步收回 Windows 平台层所有权。
+
+## 1. 背景
+
+Rasterfall 当前以自研 C 软件栅格器为主要渲染后端。
+
+现有 CPU renderer 已能够支持：
+
+* world geometry；
+* static props；
+* skeletal / modular characters；
+* infected enemy models；
+* Static World Lighting V2；
+* texture / material；
+* HUD、GUI、Desktop、Terminal；
+* 离屏 capture、logic test 和固定性能 benchmark。
+
+随着场景复杂度、角色数量和视觉系统增加，CPU 光栅化已经逐渐接近当前目标帧预算。
+
+GPU 因此进入 Rasterfall 的正式演进路线。
+
+本计划的目标不是一次性用 Vulkan 重写 renderer，而是建立一条可验证、可回退、可以逐步理解和控制的 GPU 路线：
+
+```text
+发现 GPU
+    ↓
+创建 device / queue
+    ↓
+执行 compute program
+    ↓
+管理 GPU memory
+    ↓
+生成 framebuffer
+    ↓
+消费 RF raster command
+    ↓
+接管 world rasterization
+    ↓
+原生 GPU presentation
+    ↓
+GPU-native visual features
+```
+
+同时，Windows 将从目前的 MinGW + SDL2 平台逐步演进为由 RF Core 自己管理的 Win32 平台后端。
+
+---
+
+# 2. 总体目标
+
+最终希望形成以下结构：
+
+```text
+                    Rasterfall Game
+                          │
+                    RF Game Runtime
+                          │
+                       RF Core
+          ┌───────────────┴────────────────┐
+          │                                │
+      RF Graphics                      RF Platform
+   ┌──────┴──────┐                 ┌───────┴───────┐
+CPU Raster    GPU Raster          Linux           Windows
+   │              │                │                │
+Reference        rf_gpu         existing        RF Win32
+Renderer           │            platform         platform
+                   │
+                Vulkan
+          ┌────────┴────────┐
+          │                 │
+        WSL              Windows
+      llvmpipe          physical GPU
+```
+
+核心原则：
+
+1. CPU renderer 长期保留。
+2. GPU 是 RF Core 的可选能力，而不是 Game 状态。
+3. GPU service 与 GPU renderer 分离。
+4. Vulkan backend 不直接污染 gameplay / session。
+5. WSL 继续作为主要开发环境。
+6. Windows 成为当前机器上的 GPU hardware / performance truth。
+7. Windows 平台逐步移除 SDL2，而不是为 GPU 一次性重写。
+8. 原生 Vulkan surface / swapchain 不作为早期 GPU 开发前置条件。
+
+---
+
+# 3. CPU Renderer 的长期定位
+
+GPU 接入不意味着淘汰软件渲染器。
+
+CPU renderer 后续承担三个角色：
+
+```text
+Compatibility Renderer
+Reference Renderer
+GPU Differential Oracle
+```
+
+## Compatibility Renderer
+
+在以下情况继续运行：
+
+* GPU 不存在；
+* Vulkan 不可用；
+* GPU backend 初始化失败；
+* 用户显式选择 CPU；
+* GPU command 尚未覆盖某些诊断路径。
+
+## Reference Renderer
+
+CPU renderer 已经定义了一套经过长期验证的 Rasterfall raster semantics。
+
+GPU V1 应优先复刻这些规则，而不是立即建立完全不同的视觉系统。
+
+## Differential Oracle
+
+固定 command stream 可以分别交给 CPU 与 GPU：
+
+```text
+same render input
+      │
+ ┌────┴────┐
+ CPU      GPU
+ │          │
+color     color
+depth     depth
+ └────┬────┘
+      ↓
+ differential test
+```
+
+这将成为 GPU backend 后续扩展的重要验证基础。
+
+---
+
+# 4. 开发环境职责
+
+## 4.1 WSL：Primary Development Environment
+
+当前 WSL：
+
+```text
+/dev/dxg available
+NVIDIA CUDA/NVML available
+Vulkan → llvmpipe
+```
+
+Vulkan 当前只能通过 Mesa software implementation 执行。
+
+因此 WSL 的定位是：
+
+> Vulkan correctness environment，而不是 GPU performance environment。
+
+WSL 负责：
+
+* 日常 Codex / C 开发；
+* Vulkan API 生命周期；
+* ABI 验证；
+* resource ownership；
+* buffer / memory；
+* descriptor；
+* pipeline；
+* command buffer；
+* synchronization；
+* shader correctness；
+* CPU/GPU differential tests；
+* error path；
+* deterministic tests；
+* normal Linux Rasterfall regression。
+
+llvmpipe 的性能数据不用于判断 RF GPU renderer 是否有效。
+
+---
+
+## 4.2 Windows：GPU Hardware Truth
+
+当前机器真实 NVIDIA GPU 从 Windows 原生 Vulkan 路径访问。
+
+Windows 负责：
+
+* physical GPU detection；
+* NVIDIA Vulkan driver 验证；
+* compute correctness；
+* GPU execution timing；
+* upload / download cost；
+* workgroup / tile tuning；
+* memory bandwidth behavior；
+* renderer performance；
+* native presentation；
+* GPU stress testing。
+
+因此：
+
+```text
+WSL asks:
+    Is it correct?
+
+Windows asks:
+    Is it really running on GPU?
+    Is it fast?
+```
+
+---
+
+## 4.3 Native Linux GPU
+
+原生 Linux + hardware Vulkan 是未来发布验证环境。
+
+它不是当前 GPU bring-up 的前置条件。
+
+未来形成：
+
+```text
+WSL llvmpipe
+    development / correctness
+
+Windows NVIDIA
+    hardware / performance
+
+Native Linux GPU
+    Linux release validation
+```
+
+---
+
+# 5. GPU Phase 0 — Vulkan Probe
+
+第一阶段已经建立最小 Vulkan hosted probe。
+
+当前已完成：
+
+* minimal Vulkan ABI；
+* dynamic Vulkan loader；
+* VkInstance；
+* physical-device enumeration；
+* adapter information；
+* queue-family enumeration；
+* compute-capable adapter selection；
+* VkDevice；
+* VkQueue；
+* clean destruction；
+* no Vulkan SDK dependency；
+* no VMA / Volk / wgpu-native；
+* existing freestanding Rasterfall build unaffected。
+
+WSL 当前结果为：
+
+```text
+Vulkan implementation:
+    Mesa llvmpipe
+
+device type:
+    CPU
+
+device / queue lifecycle:
+    PASS
+```
+
+该结果证明 Vulkan API 链路正确，但不代表真实 GPU 性能。
+
+---
+
+# 6. GPU Phase 0.5 — Windows Hardware Bring-up
+
+下一步应优先让现有 probe 在 Windows 原生运行。
+
+平台差异只允许存在于 Vulkan loader 边界。
+
+```text
+Linux:
+    libvulkan.so.1
+
+Windows:
+    vulkan-1.dll
+```
+
+其余 Vulkan runtime 代码应尽可能共享。
+
+目标：
+
+```text
+Windows
+   ↓
+vulkan-1.dll
+   ↓
+NVIDIA Vulkan ICD
+   ↓
+physical NVIDIA GPU
+```
+
+验收：
+
+* 正确枚举 NVIDIA GPU；
+* device type 为 discrete / hardware GPU；
+* 找到 compute-capable queue；
+* VkDevice 创建成功；
+* VkQueue 获取成功；
+* clean destruction；
+* 与 WSL 使用相同 Vulkan ABI。
+
+此 checkpoint 完成后，RF 才拥有第一个真实 GPU Vulkan execution environment。
+
+---
+
+# 7. GPU Phase 1 — Compute Ownership
+
+> 实现状态（2026-09-16）：**GPU-0.5 / GPU-1 双平台验收完成。** 共用 hosted probe 已完成 storage buffer、host-visible/
+> coherent memory、descriptor、内嵌 SPIR-V pipeline、command buffer、dispatch、fence 和
+> readback verification；WSL llvmpipe 已通过。Windows 原生枚举 AMD integrated 与 NVIDIA
+> RTX 3050 Laptop GPU，discrete-first 策略明确选择 NVIDIA，compute/readback PASS。
+> 当次 Windows 观测：upload 0.005 ms、submit 0.260 ms、execution-wait 0.134 ms、
+> readback 0.002 ms；total 233.853 ms 包含首次资源与 pipeline 创建，不作为稳态
+> dispatch 性能结论。
+
+这一阶段首次真正让 Rasterfall 提交 GPU 工作。
+
+需要建立：
+
+```text
+buffer
+device memory
+
+descriptor set layout
+descriptor pool
+descriptor set
+
+shader module
+compute pipeline
+
+command pool
+command buffer
+
+dispatch
+fence
+
+readback
+verification
+```
+
+测试应保持极简。
+
+例如：
+
+```text
+input:
+    1 2 3 4
+
+compute:
+    x = x * 3 + 1
+
+expected:
+    4 7 10 13
+```
+
+必须同时在：
+
+```text
+WSL / llvmpipe
+Windows / NVIDIA
+```
+
+通过。
+
+这个 checkpoint 的意义是：
+
+> Rasterfall 已经可以自行创建 GPU resources、运行自己的 GPU program，并读取和验证结果。
+
+Windows 同时开始记录：
+
+```text
+upload
+GPU execution
+wait
+readback
+total
+```
+
+从这一阶段开始，Windows 性能数据具有正式意义。
+
+---
+
+# 8. GPU Phase 2 — RF GPU Core Service
+
+经过 probe 和 compute smoke 验证后，再把实验代码收敛为正式 Core service。
+
+推荐边界：
+
+```text
+RF Core
+   │
+   └── rf_gpu
+        │
+        └── Vulkan backend
+```
+
+`rf_gpu` 负责：
+
+* GPU availability；
+* adapter selection；
+* device；
+* queue；
+* memory；
+* buffer；
+* command submission；
+* synchronization；
+* status / error reporting。
+
+Game 不允许看到：
+
+```text
+VkInstance
+VkPhysicalDevice
+VkDevice
+VkQueue
+VkBuffer
+VkDeviceMemory
+VkFence
+```
+
+GPU 此时仍不等于 renderer。
+
+允许出现：
+
+```text
+GPU:
+    READY
+
+Renderer:
+    CPU
+```
+
+这是一种正常、重要的运行状态。
+
+---
+
+# 9. GPU Phase 3 — GPU Framebuffer Smoke
+
+下一步让 GPU 第一次参与 Rasterfall frame lifecycle。
+
+compute shader 输出固定测试图案：
+
+```text
+GPU framebuffer
+      ↓
+readback
+      ↓
+toy_surface
+      ↓
+existing window present
+```
+
+暂时不渲染 world。
+
+此阶段确定：
+
+* framebuffer format；
+* width / height；
+* stride；
+* resize；
+* staging buffer；
+* device-local memory；
+* host-visible memory；
+* coherent / non-coherent rules；
+* fence timeout；
+* multi-frame resource lifetime。
+
+此阶段仍不要求：
+
+* Vulkan surface；
+* swapchain；
+* graphics pipeline；
+* normal Rasterfall scene。
+
+---
+
+# 10. GPU Phase 4 — Raster Command ABI V1
+
+GPU renderer 不直接依赖 `toy_renderer` 的内部 C command layout。
+
+建立独立、定宽、无指针 GPU command representation，例如：
+
+```text
+rf_gpu_raster_cmd_v1
+```
+
+要求：
+
+* fixed-width fields；
+* no CPU pointer；
+* explicit resource handle；
+* explicit command kind；
+* versioned layout；
+* deterministic packing。
+
+初期允许：
+
+```text
+existing CPU frontend
+        ↓
+toy raster semantics
+        ↓ pack
+rf_gpu_raster_cmd_v1
+```
+
+而不是立即重写完整 render frontend。
+
+第一批支持：
+
+* framebuffer clear；
+* depth clear；
+* opaque flat triangle；
+* depth test；
+* depth write；
+* fixed color；
+* fog。
+
+---
+
+# 11. GPU Phase 5 — Compute Rasterizer V1
+
+第一版 GPU rasterizer 使用 compute，而不是立即转为传统 Vulkan graphics pipeline。
+
+主要原因：
+
+* 更容易复刻 CPU integer raster semantics；
+* 更容易验证 exact output；
+* 更容易观察内部算法；
+* 不需要过早建立完整 graphics pipeline architecture。
+
+推荐初始模型：
+
+```text
+screen
+  ↓
+tiles
+
+one workgroup
+  =
+one tile
+
+one invocation
+  =
+one pixel
+```
+
+最初每个 tile 可以直接扫描 command list：
+
+```text
+for command:
+    bbox reject
+
+    coverage test
+
+    depth test
+
+    shade
+```
+
+每个 invocation 独占一个 pixel 的 color/depth ownership。
+
+这样第一版避免复杂的：
+
+* color write races；
+* depth atomics；
+* triangle ordering races。
+
+后续性能优化可以增加：
+
+```text
+tile binning
+command compaction
+GPU preprocessing
+```
+
+但不能成为 V1 正确性的前置条件。
+
+---
+
+# 12. GPU Phase 6 — Differential Raster Testing
+
+建立正式 CPU ↔ GPU raster differential test。
+
+输入：
+
+```text
+same command stream
+same framebuffer
+same camera
+same lighting
+same fog
+```
+
+输出至少包括：
+
+```text
+color mismatch count
+depth mismatch count
+
+first mismatch coordinate
+
+maximum RGB difference
+maximum depth difference
+
+CPU raster time
+
+GPU upload time
+GPU execution time
+GPU wait time
+GPU readback time
+```
+
+之后每增加一种 GPU raster capability，都必须经过该入口。
+
+这一阶段把 CPU renderer 正式确立为 GPU V1 的 reference implementation。
+
+---
+
+# 13. GPU Phase 7 — World Raster Migration
+
+正常 world 按价值逐项迁移。
+
+推荐顺序：
+
+```text
+flat opaque
+    ↓
+planar vertex lighting
+    ↓
+fog
+    ↓
+nearest texture
+    ↓
+bilinear texture
+    ↓
+static props
+    ↓
+infected
+    ↓
+RF humanoid
+    ↓
+anime characters
+    ↓
+advanced materials
+    ↓
+transparent / edge / special passes
+```
+
+第一版正常 GPU world 不需要立即 GPU 化 HUD。
+
+允许：
+
+```text
+GPU:
+    world
+    props
+    characters
+    enemies
+    depth effects
+
+readback
+
+CPU:
+    HUD
+    GUI
+    Desktop
+    Terminal
+    screen-space overlays
+
+present
+```
+
+这样 GPU 可以更早接管真正昂贵的 world rasterization。
+
+---
+
+# 14. Windows Platform Phase 1 — Native Window Layer
+
+GPU compute 与基础 raster 跑通之后，再开始正式替换 SDL。
+
+不要与 GPU bring-up 同时大规模改平台层。
+
+第一阶段优先替换：
+
+```text
+SDL window
+SDL input
+SDL framebuffer presentation
+```
+
+为：
+
+```text
+Win32 window
+Win32 input
+Win32 CPU framebuffer present
+```
+
+建立：
+
+```text
+RF Core
+   ↓
+RF Windows Platform
+   ↓
+Win32
+```
+
+目标包括：
+
+* native window creation；
+* message loop；
+* keyboard / mouse；
+* resize；
+* focus；
+* framebuffer present；
+* native HWND ownership。
+
+获得 HWND 后，也为未来：
+
+```text
+VK_KHR_win32_surface
+```
+
+建立正式平台基础。
+
+---
+
+# 15. Windows Platform Phase 2 — SDL Removal
+
+之后逐项收回平台能力。
+
+推荐顺序：
+
+```text
+Window
+    ↓
+Input
+    ↓
+Clock
+    ↓
+Dynamic library
+    ↓
+Filesystem
+    ↓
+Threads / synchronization
+    ↓
+Audio
+```
+
+目标 API：
+
+```text
+Win32 Window API
+Raw Input / Windows Messages
+QueryPerformanceCounter
+LoadLibrary / GetProcAddress
+CreateFile / ReadFile
+Win32 thread / event / SRW
+WASAPI
+Winsock
+```
+
+网络已有 Windows 平台实现时应尽量复用，不做无意义重写。
+
+Audio 放在最后，因为其迁移复杂度明显高于窗口、输入、时钟和文件系统。
+
+---
+
+# 16. Windows Platform Phase 3 — SDL-free Rasterfall
+
+该阶段建立一个独立 checkpoint：
+
+> Rasterfall Windows runtime no longer requires SDL2.
+
+目标结构：
+
+```text
+Rasterfall.exe
+    │
+    ├── RF Game
+    ├── RF Core
+    ├── RF Win32 Platform
+    ├── CPU Renderer
+    └── RF GPU Vulkan
+```
+
+主要外部边界仅保留操作系统和设备 ABI，例如：
+
+```text
+Windows system libraries
+Winsock
+Windows audio
+Vulkan loader
+GPU driver
+```
+
+目标不是消灭操作系统依赖，而是：
+
+> 除正式 OS / driver ABI 外，Rasterfall 的用户态运行基础尽可能由自己的 C 代码拥有。
+
+---
+
+# 17. GPU Phase 8 — Native Vulkan Presentation
+
+Windows Native Platform 建立后，才能自然进入 Vulkan surface。
+
+```text
+HWND
+ ↓
+VK_KHR_win32_surface
+ ↓
+VkSurfaceKHR
+ ↓
+VkSwapchainKHR
+```
+
+最终：
+
+```text
+GPU raster
+    ↓
+GPU image
+    ↓
+swapchain
+    ↓
+present
+```
+
+删除：
+
+```text
+GPU
+ ↓
+CPU readback
+ ↓
+software window present
+```
+
+这是 Windows GPU renderer 性能真正释放的重要节点。
+
+Linux Vulkan native surface 留到 Linux GPU/backend 条件成熟后单独处理。
+
+---
+
+# 18. GPU Phase 9 — GPU-native Visual Renderer
+
+GPU V1 的目标是：
+
+> 复刻并加速现有 Rasterfall rendering semantics。
+
+当 V1 稳定后，可以开始 GPU V2。
+
+V2 不再要求所有效果都能由 CPU renderer 完整复制。
+
+候选方向：
+
+* GPU skinning；
+* GPU vertex transform；
+* tile binning；
+* dynamic lighting；
+* shadow；
+* large particle systems；
+* GPU light field；
+* post-processing；
+* screen-space effects；
+* higher internal resolution；
+* advanced material model。
+
+届时：
+
+```text
+CPU Renderer
+    =
+compatibility + reference
+
+GPU Renderer
+    =
+primary high-end visual backend
+```
+
+---
+
+# 19. Vulkan Loader 边界
+
+当前动态加载系统 Vulkan loader 是可接受的正式设计。
+
+Linux：
+
+```text
+libvulkan.so.1
+```
+
+Windows：
+
+```text
+vulkan-1.dll
+```
+
+RF 自己负责：
+
+* Vulkan ABI declarations；
+* dispatch table；
+* device ownership；
+* resource ownership；
+* synchronization；
+* renderer implementation。
+
+不把重新实现完整 Vulkan loader、ICD discovery 或 ELF dynamic linker 作为 GPU 项目前置任务。
+
+这些可以作为未来独立的 Tinylibc / RF Core 低层研究方向。
+
+---
+
+# 20. 非目标
+
+当前路线明确不要求：
+
+* 一次性删除 CPU renderer；
+* 一次性 Vulkan 化整个 renderer；
+* 立即建立 Vulkan swapchain；
+* 立即 GPU 化 HUD / Desktop / Terminal；
+* WSL 获得真实 NVIDIA Vulkan；
+* 为 WSL 自编 Mesa / Dozen；
+* 在 WSL 安装普通 Linux NVIDIA display driver；
+* 开始就使用 bindless；
+* VMA；
+* Volk；
+* wgpu；
+* Rust GPU runtime；
+* runtime shader compiler；
+* 自己实现完整 GLSL compiler；
+* 自己实现完整 Vulkan loader；
+* 同时重写 Windows platform 和 GPU renderer。
+
+---
+
+# 21. 近期关键路径
+
+从当前状态开始，优先级固定为：
+
+```text
+Current:
+WSL Vulkan / llvmpipe probe
+            │
+            ▼
+GPU-0.5
+Windows NVIDIA Vulkan probe
+            │
+            ▼
+GPU-1
+Storage-buffer compute
+WSL + Windows dual validation
+            │
+            ▼
+GPU-2
+RF GPU Core Service
+            │
+            ▼
+GPU-3
+GPU framebuffer smoke
+            │
+            ▼
+GPU-4
+Raster Command ABI V1
+            │
+            ▼
+GPU-5
+Flat Compute Rasterizer
+            │
+            ▼
+GPU-6
+CPU / GPU Differential Test
+            │
+            ▼
+GPU-7
+Normal World Migration
+            │
+            ├───────────────┐
+            │               │
+            ▼               ▼
+      GPU World         WIN-1
+                       Native Win32 Platform
+                            │
+                            ▼
+                       SDL-free Runtime
+                            │
+                            ▼
+                       Vulkan Swapchain
+                            │
+                            ▼
+                   GPU-native Rasterfall
+```
+
+---
+
+# 22. 关键 checkpoint 定义
+
+## GPU-0.5 — Hardware Bring-up
+
+Windows 原生 Vulkan 成功枚举并创建真实 NVIDIA GPU device。
+
+## GPU-1 — Compute Ownership
+
+RF 自己创建 GPU memory、pipeline 和 command buffer，并在物理 GPU 上执行并验证 compute result。
+
+## GPU-3 — Frame Ownership
+
+GPU 第一次真正进入 Rasterfall frame lifecycle，并生成可显示 framebuffer。
+
+## GPU-5 — Raster Ownership
+
+GPU 第一次消费 RF raster commands 并正确执行 depth-tested triangle rasterization。
+
+## GPU-6 — Differential Authority
+
+CPU renderer 成为自动化 GPU raster correctness reference。
+
+## GPU-7 — Playable GPU World
+
+正常 Rasterfall world 的主要 raster workload 从 CPU 转移到 GPU。
+
+## WIN-1 — Native Windows Platform
+
+Windows Rasterfall 的窗口、输入与 framebuffer presentation 不再依赖 SDL。
+
+## WIN-2 — SDL-free Runtime
+
+正常 Windows Rasterfall 不再要求 SDL runtime。
+
+## GPU-8 — Native Presentation
+
+Vulkan renderer 直接向 Windows swapchain present，不再执行 GPU → CPU framebuffer readback。
+
+## GPU-9 — Native Visual Renderer
+
+GPU backend 开始支持超出现有 CPU renderer 能力范围的高级视觉效果。
+
+---
+
+# 23. 最终方向
+
+这条路线不是简单的：
+
+> “把 Rasterfall 从 CPU renderer 换成 Vulkan。”
+
+最终目标是：
+
+> Rasterfall 同时拥有一个可验证的软件参考 renderer、一个由 RF Core 管理的 GPU runtime、一套自己的 GPU raster architecture，以及逐步脱离第三方平台封装的 Windows native runtime。
+
+开发环境也不再要求所有能力必须存在于同一系统中：
+
+```text
+WSL
+    high-efficiency development
+    correctness
+    deterministic regression
+
+Windows
+    physical GPU
+    hardware behavior
+    performance
+    native presentation
+
+Native Linux
+    future release validation
+```
+
+这样 GPU 算力的加入不会破坏 Rasterfall 已有的底层自主性。
+
+相反，它把原来已经建立的：
+
+```text
+RF Core
+CPU renderer
+platform abstraction
+render frontend
+diagnostic infrastructure
+```
+
+继续向下一层扩展到：
+
+```text
+GPU device
+GPU memory
+GPU program
+GPU rasterization
+native presentation
+```
+
+最终形成一套真正属于 Rasterfall 的跨 CPU / GPU 图形运行环境。

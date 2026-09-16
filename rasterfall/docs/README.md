@@ -1,6 +1,7 @@
 # Rasterfall 代码导航
 
-> 文档更新：2026-09-15
+> 文档更新：2026-09-16
+> 源码核对基线补充：原生 C Vulkan Phase 1 hosted probe 已实现 Linux/Windows 共用的 storage-buffer compute ownership、discrete-first adapter selection 与 readback 校验；WSL llvmpipe 与 Windows RTX 3050 compute/readback 均已通过；仍不接正常 Core、window 或 renderer，详见 `gpu/README.md` 与 build-platforms.md。
 > 源码核对基线补充：Eula 正常 world/展示在 near/mid 使用 Gameplay Hybrid `eula_lod3.rmesh`，仅 FAR（4096 RFU 起）使用 compact LOD2；Hybrid 缺失时回退原模型。
 > 源码核对基线补充：Eula Animation Acceptance V1 提供 legacy VMD carrier 的固定离屏姿态组图；统一 `--character-performance[-suite]` 保留 model/actor/world benchmark 的原职责并提供单角色、固定资产族及常见实例组合的同口径统计。
 > 源码核对基线补充：Anime Gameplay Hybrid LOD V1 的 Eula pilot 使用离线 region descriptor、按骨长定义的关节邻域与 BDEF pair/weight 分区生成普通 compact RFM2；runtime、renderer 与 skinning 不增加角色特判。
@@ -103,6 +104,7 @@
 | 静态 prop 资产 ID、路径、展示缩放和默认尺寸 | [asset-pipeline.md](asset-pipeline.md) | `include/rasterfall_prop.h`、`src/rasterfall_prop.c` |
 | 联机协议、快照、预测、可靠事件、房间发现 | [networking.md](networking.md) | `src/rasterfall_net.c` |
 | Linux/Windows 平台差异、构建、测试 | [build-platforms.md](build-platforms.md) | `Makefile`、`windows/Makefile` |
+| GPU 枚举、Vulkan compute ownership 探针与后续可选 Core GPU 服务 | [build-platforms.md](build-platforms.md)、[`../../gpu/README.md`](../../gpu/README.md) | `gpu/include/rf_vulkan_min.h`、`gpu/src/rf_gpu_probe.c`；`make gpu-probe` / `make win-gpu-probe`，当前不接正常 renderer |
 | 动画求值顺序、格式/角色扩展契约 | [animation-architecture.md](animation-architecture.md) | `src/rasterfall_model.c`、动画头文件 |
 | 网络状态所有权、协议和房间生命周期 | [network-architecture.md](network-architecture.md) | `src/rasterfall_net.c`、公共协议头 |
 | 资源来源、许可和发布检查 | [asset-sources.md](asset-sources.md) | 资源目录与导入工具 |

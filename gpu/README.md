@@ -1,0 +1,83 @@
+# GPU 目录概览
+
+本目录用于保存 GPU 相关的外部项目和实验代码。当前主要项目是
+[`wgpu-native`](wgpu-native/)，用于参考其 C API、GPU 设备发现和基础 GPU
+计算流程。
+
+## wgpu-native
+
+`wgpu-native` 是基于 Rust `wgpu-core` 的 native WebGPU 实现，对外提供 C
+接口。它可以在不同平台后端上完成：
+
+- GPU adapter 枚举和设备信息查询；
+- adapter、device 和 queue 创建；
+- buffer、texture、shader 和 pipeline 管理；
+- render/compute command 提交；
+- Wayland、Windows 等平台的 surface 渲染。
+
+主要入口：
+
+- [`README.md`](wgpu-native/README.md)：项目说明；
+- [`ffi/wgpu.h`](wgpu-native/ffi/wgpu.h)：wgpu-native 扩展 C API；
+- [`ffi/webgpu-headers/webgpu.h`](wgpu-native/ffi/webgpu-headers/webgpu.h)：WebGPU C API；
+- [`examples/enumerate_adapters/main.c`](wgpu-native/examples/enumerate_adapters/main.c)：枚举 GPU；
+- [`examples/compute/main.c`](wgpu-native/examples/compute/main.c)：最小 compute 示例；
+- [`Cargo.toml`](wgpu-native/Cargo.toml)：Rust 构建和 backend 配置。
+
+## 与 Rasterfall 的关系
+
+当前 Rasterfall 使用自有 CPU 软件光栅器。`wgpu-native` 先作为学习和验证
+参考，不直接替换现有 renderer。后续如接入 Rf，建议从 Core 层的可选 GPU
+服务开始：
+
+```text
+GPU 枚举 → 设备信息 → device/queue → compute 冒烟测试
+```
+
+完整 GPU renderer 需要另外处理 GPU surface、资源上传、pipeline、同步和
+现有 framebuffer 的迁移。
+
+## 原生 C Vulkan 探针
+
+`gpu/src/rf_gpu_probe.c` 是 Rasterfall GPU 路线的第一个自有实现。它不使用
+`wgpu-native`，也不要求安装 Vulkan SDK：`gpu/include/rf_vulkan_min.h` 只保存当前
+探针实际使用的 Vulkan 1.0 ABI 声明，程序在运行时加载系统 `libvulkan.so.1`。
+
+```sh
+make gpu-probe
+build/rf-gpu-probe
+```
+
+探针输出 loader API 版本、物理设备、设备类型、vendor/device ID 和 queue family，
+随后优先选择具有 compute queue 的 discrete GPU；没有独显时回退到其他 compute adapter，
+并建立完整 Phase 1 compute ownership：创建
+host-visible/coherent storage buffer、descriptor、内嵌 SPIR-V compute pipeline、command
+pool/buffer 与 fence，执行 `x = x * 3 + 1`，并 readback 验证 `1 2 3 4` 得到
+`4 7 10 13`。没有 Vulkan loader、没有 physical device、无法建立 queue/resource，或结果
+不一致时均返回非零；所有资源按依赖逆序释放。
+
+同一源码可交叉编译为 Windows 原生控制台探针：
+
+```sh
+make win-gpu-probe
+# 在 Windows 中运行 build\\rf-gpu-probe.exe
+```
+
+平台差异仅在动态 loader 与单调计时边界：Linux 使用 `libvulkan.so.1`，Windows 使用
+`vulkan-1.dll`；Vulkan ABI、SPIR-V、资源生命周期和结果验证完全共享。输出同时记录 upload、
+submit、execution/fence wait、readback 与 total 的 wall-clock 观测值。它们用于 bring-up；
+精确 GPU-only timing 后续应使用 Vulkan timestamp query。
+
+Phase 1 已完成双平台验收：WSL llvmpipe correctness 通过；Windows 原生枚举 AMD integrated 与
+NVIDIA RTX 3050 Laptop GPU，discrete-first 策略明确选择 NVIDIA，compute/readback PASS。
+Windows 当次观测为 upload 0.005 ms、submit 0.260 ms、execution-wait 0.134 ms、readback
+0.002 ms；total 233.853 ms 包含资源、descriptor 与 pipeline 首次创建，不能当作稳态 dispatch
+耗时。探针尚未建立 surface 或 swapchain，也没有接入正常 Rasterfall 可执行文件。下一步应先
+定义 optional/required fallback policy，再把实现收敛为 RF Core 持有的 GPU service。
+
+## 注意事项
+
+- `wgpu-native` 依赖 Rust 标准库和多个系统图形 backend；
+- 它与 Rasterfall 当前的 freestanding/Tinylibc 构建路径不是直接兼容关系；
+- `ffi/webgpu-headers` 和 `examples/vendor/glfw` 是项目子模块；
+- GPU 试验优先使用 hosted 构建目标，不影响 Rasterfall 现有 CPU 路径。

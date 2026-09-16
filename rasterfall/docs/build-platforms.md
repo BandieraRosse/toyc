@@ -1,6 +1,7 @@
 # 构建、平台与验证
 
-> 文档更新：2026-09-14
+> 文档更新：2026-09-16
+> 源码核对基线补充：GPU Phase 1 hosted probe 已覆盖 Linux/Windows 共用的 storage-buffer compute、descriptor/pipeline、command/fence 与 readback 校验，并采用 discrete-first adapter selection；WSL llvmpipe 与 Windows RTX 3050 compute/readback 均已通过；正常 freestanding Rasterfall 和 Windows 游戏构建未接入 GPU。
 > 源码核对基线补充：Windows 启动地图加载的容量型 Map IR 改为临时堆分配，成功与失败均释放；不依赖扩大线程栈，详见 map-format.md 的 Runtime Bridge。
 > 源码核对基线补充：Static World Lighting V2 Phase D Linux GCC freestanding / Windows MinGW 构建通过；Linux headless capture 验收，Windows仅build，Wayland交互环境不可用，见 [Phase D](static-world-lighting-phase-d.md)。
 > 源码核对基线补充：Static World Lighting Phase B 复用现有编译单元与顶点亮度 rasterizer；Linux/self world-light 规则补 Runtime Map header 依赖，Windows 既有 GAME_SRCS/-MMD 覆盖；ray slab 的 double 仅用于 bake，不引入宿主 libc。
@@ -34,6 +35,23 @@ WinSock、SDL 窗口/音频、线程和 WinMain 适配。平台契约头在 `win
 `windows/README.md`；对象同样依赖无条件重建目标，确保共享头文件变化不会留下旧的 Windows 对象；
 不要把 Windows 修复硬编码进共享玩法，优先修平台适配层。
 Windows package 复制整个 `rasterfall/assets`，因此会同时携带字库、BDF 源文件和许可。
+
+## GPU 探针
+
+`make gpu-probe` 构建 Linux `build/rf-gpu-probe`；`make win-gpu-probe` 使用 MinGW 构建
+Windows 控制台程序 `build/rf-gpu-probe.exe`。两者都是 hosted 开发工具，不进入 `LIBC_A`、
+`APP_EXTRA_OBJS_rasterfall`、embedded 目标、正常 Windows 游戏或 package。它们通过仓库内最小
+Vulkan ABI 声明分别加载系统 `libvulkan.so.1` / `vulkan-1.dll`，不需要 Vulkan SDK，但运行机器
+仍必须提供 Vulkan loader 与可用 ICD/驱动。
+
+当前探针枚举 adapter/queue family 后创建 device/queue，并完成 storage buffer、host-visible
+memory、descriptor、内嵌 SPIR-V compute pipeline、command buffer、dispatch、fence wait 和
+readback verification 的完整最小闭环。它没有 surface 或 swapchain。WSL llvmpipe correctness
+已验收；Windows 原生枚举 AMD integrated 与 NVIDIA RTX 3050 Laptop GPU，discrete-first
+策略明确选择 NVIDIA，compute/readback 结果通过。探针的 `total` 从 upload 前计至 readback 后，
+包含首次 descriptor/pipeline/command resource 创建，不代表稳态 GPU dispatch 时间。
+后续 GPU service 接入 Core 前必须继续保持正常 CPU renderer 为默认路径，并为 loader/device
+不可用定义可复核的 fallback。
 
 ## 改文件列表时
 

@@ -1167,6 +1167,20 @@ rasterfall:
 rasterfall-embedded app-rasterfall-embedded: $(BUILD)/rasterfall-embedded
 wayland_fps: $(BUILD)/wayland_fps
 
+# Hosted, SDK-free Vulkan discovery tool.  This target intentionally stays
+# outside the freestanding Rasterfall link until the optional Core GPU service
+# has a stable ABI and fallback policy.
+.PHONY: gpu-probe win-gpu-probe
+gpu-probe: $(BUILD)/rf-gpu-probe
+win-gpu-probe: $(BUILD)/rf-gpu-probe.exe
+
+$(BUILD)/rf-gpu-probe: gpu/src/rf_gpu_probe.c gpu/include/rf_vulkan_min.h | $(BUILD)
+	$(GCC) -std=c11 -O2 -Wall -Wextra -Werror -I gpu/include $< -ldl -o $@
+
+$(BUILD)/rf-gpu-probe.exe: gpu/src/rf_gpu_probe.c gpu/include/rf_vulkan_min.h | $(BUILD)
+	x86_64-w64-mingw32-gcc -std=c11 -O2 -Wall -Wextra -Werror \
+		-I gpu/include $< -o $@
+
 rasterfall-blender-deps:
 	python3 -m pip install --target .blender-python numpy
 

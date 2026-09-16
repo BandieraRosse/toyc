@@ -26,3 +26,4 @@ assets/generated/*
 !assets/generated/test.tmesh
 !assets/generated/uv_test.ttex
 !assets/generated/sfx_*.tsnd
+gpu/wgpu-native/**
