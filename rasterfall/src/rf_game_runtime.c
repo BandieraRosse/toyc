@@ -3028,7 +3028,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
         core_config.gpu_policy = RF_GPU_POLICY_DISABLED;
         core_config.gpu_backend = NULL;
         core_config.gpu_backend_context = NULL;
-        if ((logic_test || options.render_performance || options.environment_capture_dir || options.character_world_capture_dir ?
+        if ((logic_test || options.render_performance || options.gpu_world_raster_view || options.environment_capture_dir || options.character_world_capture_dir ?
              rf_core_init_headless(&core, &platform_input, &renderer) :
              rf_core_init_config(&core, &core_config)) < 0) {
             __fprintf(2, "rasterfall: cannot initialize RF Core host\n");
@@ -3136,13 +3136,13 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     settings.keyboard_level = 5;
     rasterfall_render_set_coordinate_axes(coordinate_axes);
     pause_menu.selected = PAUSE_ITEM_RESUME;
-    if (options.render_performance || options.environment_capture_dir || options.character_world_capture_dir) seed = 1;
+    if (options.render_performance || options.gpu_world_raster_view || options.environment_capture_dir || options.character_world_capture_dir) seed = 1;
     else if (__getrandom(&seed, sizeof(seed), 0) < 0)
         seed = (uint64_t)rf_core_time_us(&core);
     if (seed == 0) seed = 1;
     rasterfall_session_reset(&session, &camera, seed);
     rf_windows_log("startup: session reset");
-    if ((options.render_performance || options.environment_capture_dir || options.character_world_capture_dir) &&
+    if ((options.render_performance || options.gpu_world_raster_view || options.environment_capture_dir || options.character_world_capture_dir) &&
         session.world_id != RASTERFALL_WORLD_RETURN_TO_WHU_V0 &&
         rf_game_request_world(&game_runtime, RASTERFALL_WORLD_CAMPAIGN_01) < 0) {
         if (model_texture.blob) toy_texture_unload(&model_texture);
@@ -3150,9 +3150,13 @@ int rf_game_runtime_run(const struct rf_game_config *config)
         rf_core_shutdown(&core);
         return 1;
     }
-    if (options.render_performance || options.character_world_capture_dir || options.environment_capture_dir) {
+    if (options.render_performance || options.gpu_world_raster_view || options.character_world_capture_dir || options.environment_capture_dir) {
         int capture_result = options.render_performance ?
             rasterfall_render_world_benchmark(performance_iterations) :
+            options.gpu_world_raster_view ?
+            rasterfall_render_gpu_world_capture(options.gpu_world_raster_view,
+                options.gpu_world_raster_enemies,
+                options.gpu_world_raster_output) :
             options.environment_capture_dir ?
             rasterfall_render_environment_capture(options.environment_capture_dir) :
             rasterfall_render_character_world_capture(

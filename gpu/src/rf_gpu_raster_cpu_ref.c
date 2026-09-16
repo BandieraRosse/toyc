@@ -61,8 +61,18 @@ int rf_gpu_raster_cpu_reference_v1(const void *stream, size_t stream_size,
         a.x = t->a.x; a.y = t->a.y; a.inv_z = t->a.inv_z;
         b.x = t->b.x; b.y = t->b.y; b.inv_z = t->b.inv_z;
         c.x = t->c.x; c.y = t->c.y; c.inv_z = t->c.inv_z;
-        toy_renderer_triangle_lit(&renderer, &a, &b, &c, t->color,
-                                  t->light_q8, t->fog_q8);
+        if (commands[i].kind == RF_GPU_RASTER_CMD_VERTEX_LIT_TRIANGLE_V1) {
+            const struct rf_gpu_raster_vertex_lit_triangle_v1 *v =
+                &commands[i].payload.vertex_lit_triangle;
+            a.light = v->light_a_q8;
+            b.light = v->light_b_q8;
+            c.light = v->light_c_q8;
+            toy_renderer_triangle_planar_vertex_lit(
+                &renderer, &a, &b, &c, v->color, v->fog_q8);
+        } else {
+            toy_renderer_triangle_lit(&renderer, &a, &b, &c, t->color,
+                                      t->light_q8, t->fog_q8);
+        }
     }
     if (toy_renderer_flush(&renderer) < 0) goto done;
     for (y = 0; y < header->framebuffer_height; ++y) {

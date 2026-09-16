@@ -81,6 +81,9 @@ struct toy_raster_cmd {
     struct toy_screen_vertex c;
 };
 
+typedef void (*toy_renderer_command_observer_fn)(
+    const struct toy_raster_cmd *commands, int command_count, void *context);
+
 /* 渲染工作线程。job 期间只写本线程字段，主线程在 job_done_count 到齐后
  * 汇总，避免逐像素原子操作。 */
 struct toy_render_worker {
@@ -176,6 +179,10 @@ struct toy_renderer {
     /* Optional caller-owned state used while recording commands.  The core
      * renderer never dereferences it. */
     void *recording_context;
+    /* Diagnostic-only, read-only observation immediately before a flush
+     * consumes/reorders the recorded command list. */
+    toy_renderer_command_observer_fn command_observer;
+    void *command_observer_context;
     int requested_worker_count;
     int detected_cpu_count;
     int texture_diagnostic_flags;
@@ -209,6 +216,9 @@ void toy_renderer_init(struct toy_renderer *renderer);
 /* Set the interactive frame watchdog budget; 0 disables it for offline tests. */
 void toy_renderer_set_frame_budget(struct toy_renderer *renderer, int budget_ms);
 void toy_renderer_destroy(struct toy_renderer *renderer);
+void toy_renderer_set_command_observer(
+    struct toy_renderer *renderer, toy_renderer_command_observer_fn observer,
+    void *context);
 int toy_renderer_begin(struct toy_renderer *renderer,
                        const struct toy_surface *surface, uint32_t clear_color);
 int toy_renderer_triangle(struct toy_renderer *renderer,

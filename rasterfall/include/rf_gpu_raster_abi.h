@@ -12,7 +12,10 @@
 enum rf_gpu_raster_cmd_kind_v1 {
     RF_GPU_RASTER_CMD_CLEAR_COLOR_V1 = 1,
     RF_GPU_RASTER_CMD_CLEAR_DEPTH_V1 = 2,
-    RF_GPU_RASTER_CMD_FLAT_TRIANGLE_V1 = 3
+    RF_GPU_RASTER_CMD_FLAT_TRIANGLE_V1 = 3,
+    /* V1-compatible extension: same frozen 96-byte record and triangle
+     * offsets, with the final three Q8 words interpreted as vertex lights. */
+    RF_GPU_RASTER_CMD_VERTEX_LIT_TRIANGLE_V1 = 4
 };
 
 enum rf_gpu_raster_cmd_flags_v1 {
@@ -57,6 +60,22 @@ struct rf_gpu_raster_flat_triangle_v1 {
     uint32_t reserved[2];
 };
 
+struct rf_gpu_raster_vertex_lit_triangle_v1 {
+    int64_t area;
+    struct rf_gpu_raster_vertex_v1 a;
+    struct rf_gpu_raster_vertex_v1 b;
+    struct rf_gpu_raster_vertex_v1 c;
+    int32_t bbox_minx;
+    int32_t bbox_maxx;
+    int32_t bbox_miny;
+    int32_t bbox_maxy;
+    uint32_t color;
+    int32_t light_a_q8;
+    int32_t fog_q8;
+    int32_t light_b_q8;
+    int32_t light_c_q8;
+};
+
 struct rf_gpu_raster_clear_v1 {
     uint32_t value;
     uint32_t reserved[19];
@@ -65,6 +84,7 @@ struct rf_gpu_raster_clear_v1 {
 union rf_gpu_raster_payload_v1 {
     struct rf_gpu_raster_clear_v1 clear;
     struct rf_gpu_raster_flat_triangle_v1 flat_triangle;
+    struct rf_gpu_raster_vertex_lit_triangle_v1 vertex_lit_triangle;
 };
 
 struct rf_gpu_raster_cmd_v1 {
@@ -85,6 +105,8 @@ _Static_assert(sizeof(struct rf_gpu_raster_stream_header_v1) ==
 _Static_assert(sizeof(struct rf_gpu_raster_vertex_v1) == 12, "GPU raster vertex V1 layout");
 _Static_assert(sizeof(struct rf_gpu_raster_flat_triangle_v1) == 80,
                "GPU flat triangle V1 layout");
+_Static_assert(sizeof(struct rf_gpu_raster_vertex_lit_triangle_v1) == 80,
+               "GPU vertex-lit triangle V1 layout");
 _Static_assert(sizeof(union rf_gpu_raster_payload_v1) == 80,
                "GPU raster payload V1 layout");
 _Static_assert(sizeof(struct rf_gpu_raster_cmd_v1) == RF_GPU_RASTER_CMD_V1_SIZE,
@@ -95,5 +117,8 @@ _Static_assert(RF_GPU_RASTER_OFFSETOF(struct rf_gpu_raster_flat_triangle_v1, a) 
                "GPU flat triangle V1 vertex offset");
 _Static_assert(RF_GPU_RASTER_OFFSETOF(struct rf_gpu_raster_flat_triangle_v1, color) == 60,
                "GPU flat triangle V1 color offset");
+_Static_assert(RF_GPU_RASTER_OFFSETOF(struct rf_gpu_raster_vertex_lit_triangle_v1,
+                                     light_b_q8) == 72,
+               "GPU vertex-lit triangle V1 light offset");
 
 #endif

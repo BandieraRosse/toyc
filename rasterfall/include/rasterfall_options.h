@@ -48,6 +48,8 @@ struct rasterfall_options {
     int performance_iterations, performance_workers;
     int actor_performance, actor_raster_workers;
     int render_performance;
+    const char *gpu_world_raster_view, *gpu_world_raster_output;
+    int gpu_world_raster_enemies;
     const char *character_performance_model;
     int character_performance_suite;
     int performance_warmup, performance_repeats;

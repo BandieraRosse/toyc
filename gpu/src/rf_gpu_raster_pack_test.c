@@ -72,6 +72,19 @@ int main(void)
                                 RF_GPU_RASTER_FLAG_OPAQUE_V1 |
                                 RF_GPU_RASTER_FLAG_FOG_V1));
 
+    source.planar_vertex_lit = 1;
+    source.a.light = 0; source.b.light = 256; source.c.light = 384;
+    CHECK(rf_gpu_raster_pack_toy_v1(&renderer, 0, 0, first, sizeof(first),
+                                    &written) == RF_GPU_RASTER_PACK_OK);
+    header = (struct rf_gpu_raster_stream_header_v1 *)first;
+    commands = (struct rf_gpu_raster_cmd_v1 *)(header + 1);
+    CHECK(commands[2].kind == RF_GPU_RASTER_CMD_VERTEX_LIT_TRIANGLE_V1 &&
+          commands[2].payload.vertex_lit_triangle.light_a_q8 == 0 &&
+          commands[2].payload.vertex_lit_triangle.light_b_q8 == 256 &&
+          commands[2].payload.vertex_lit_triangle.light_c_q8 == 384 &&
+          commands[2].payload.vertex_lit_triangle.fog_q8 == 48);
+    source.planar_vertex_lit = 0;
+
     CHECK(rf_gpu_raster_pack_toy_v1(&renderer, 0, 0, first,
                                     sizeof(first) - 1, &written) ==
           RF_GPU_RASTER_PACK_CAPACITY && written == 0);

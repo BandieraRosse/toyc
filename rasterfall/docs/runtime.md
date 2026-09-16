@@ -1,6 +1,7 @@
 # 运行时与主循环
 
-> 文档更新：2026-09-15
+> 文档更新：2026-09-16
+> 源码核对基线补充：`--gpu-world-raster-test <near|mid> <0|30> <commands.bin>` 是窗口前的固定 Campaign world capture；它不选择 GPU renderer，正常 `RF_GPU_POLICY_DISABLED` 不变。
 > 源码核对基线补充：Eula animation acceptance 与 unified character performance 均在字体、Core、startup/pause UI、session、window/audio 之前早退。
 > 源码核对基线补充：2026-09-15 工作区；`--render-performance` 使用 headless Core、固定 seed 与 Campaign request；Game render 内记录互不重叠的 scene/enemies/raster/overlay，外层只记录 begin/present。V2 planar 诊断同时跑正常专用路径与 `generic-planar` 旧回退，逐元素比较 framebuffer/depth。
 > 源码核对基线补充：Phase D 补齐 Character world capture 的既有 headless 初始化、固定 seed=1 与 Campaign 选择；正常窗口启动不变，冻结验收边界见 [Phase D](static-world-lighting-phase-d.md)。
@@ -113,6 +114,8 @@ steady-state Game UI，
 模型视图、visual capture、benchmark 和 logic-test 是窗口 Core 初始化前的独立离屏 fixture，仍可
 自建临时 renderer/surface；`--logic-test` 使用 Core 的 headless 初始化，仅准备 filesystem、input
 和 renderer service，不创建 window/audio。它们不是交互式 runtime 的 frame ownership 路径。
+GPU world raster capture 同属此类 headless fixture：固定 seed/world/camera，只输出 selected stream
+与 coverage/frontend/pack 数据；实际 Vulkan differential 由 hosted replay 工具执行。
 
 Core 还拥有独立的 `rf_core_filesystem` service。V0 只提供 `logical path -> owned blob`，内部复用
 现有 `toy_asset_load_file()` 的 embedded lookup、磁盘 fallback、Linux/Windows 相对路径语义和大小

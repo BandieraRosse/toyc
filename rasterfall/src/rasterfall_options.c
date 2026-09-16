@@ -99,6 +99,7 @@ void rasterfall_options_usage(int fd)
         "  --character-performance <model> [warmup] [frames] [repeats] [workers]\n"
         "  --character-performance-suite [warmup] [frames] [repeats] [workers]\n"
         "  --render-performance [iterations] (headless world/enemy cost ablations)\n"
+        "  --gpu-world-raster-test <near|mid> <0|30> <commands.bin>\n"
         "  --actor-performance [iterations] [frontend-workers] [raster-workers]\n"
         "  --model-bones <model> [search]  --model-humanoid <model>\n"
         "  --model-humanoid-basis <model>\n"
@@ -203,6 +204,18 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
         } else if (!strcmp(option,"--render-performance")) {
             o->render_performance=1;
             if(numeric_argument(argc,argv,arg))o->performance_iterations=positive_int(argv[++arg],o->performance_iterations);
+        } else if (!strcmp(option,"--gpu-world-raster-test")) {
+            if(require_arguments(argc,argv,arg,3,option)<0)return -1;
+            o->gpu_world_raster_view=argv[++arg];
+            o->gpu_world_raster_enemies=atoi(argv[++arg]);
+            o->gpu_world_raster_output=argv[++arg];
+            if ((strcmp(o->gpu_world_raster_view,"near") &&
+                 strcmp(o->gpu_world_raster_view,"mid")) ||
+                (o->gpu_world_raster_enemies != 0 &&
+                 o->gpu_world_raster_enemies != 30)) {
+                __fprintf(2,"rasterfall: --gpu-world-raster-test expects near|mid and 0|30\n");
+                return -1;
+            }
         } else if (!strcmp(option,"--environment-capture")) {
             if(require_arguments(argc,argv,arg,1,option)<0)return -1;
             o->environment_capture_dir=argv[++arg];

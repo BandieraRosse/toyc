@@ -16,6 +16,7 @@
 #include "rasterfall_render.h"
 #include "rasterfall_hud.h"
 #include "rasterfall_render_frontend.h"
+#include "rf_gpu_raster_pack.h"
 
 #define special_target_active ability.special_target_active
 #define charge_active ability.charge_active

@@ -32,6 +32,7 @@ const uint COMMAND_WORDS = 24u;
 const uint CMD_CLEAR_COLOR = 1u;
 const uint CMD_CLEAR_DEPTH = 2u;
 const uint CMD_FLAT_TRIANGLE = 3u;
+const uint CMD_VERTEX_LIT_TRIANGLE = 4u;
 
 int64_t s64(uint low, uint high)
 {
@@ -84,7 +85,8 @@ void main()
             color = stream.words[base + 4u] | 0xff000000u;
         } else if (kind == CMD_CLEAR_DEPTH) {
             depth = int(stream.words[base + 4u]);
-        } else if (kind == CMD_FLAT_TRIANGLE) {
+        } else if (kind == CMD_FLAT_TRIANGLE ||
+                   kind == CMD_VERTEX_LIT_TRIANGLE) {
             int minx = int(stream.words[base + 15u]);
             int maxx = int(stream.words[base + 16u]);
             int miny = int(stream.words[base + 17u]);
@@ -113,9 +115,17 @@ void main()
                     e2 * int64_t(int(stream.words[base + 14u]));
                 int candidate = int(weighted / area);
                 if (candidate >= depth) {
+                    int light = int(stream.words[base + 20u]);
+                    if (kind == CMD_VERTEX_LIT_TRIANGLE) {
+                        int64_t light_weighted =
+                            e0 * int64_t(int(stream.words[base + 20u])) +
+                            e1 * int64_t(int(stream.words[base + 22u])) +
+                            e2 * int64_t(int(stream.words[base + 23u]));
+                        light = int(light_weighted / area);
+                    }
                     depth = candidate;
                     color = shade(stream.words[base + 19u],
-                                  int(stream.words[base + 20u]),
+                                  light,
                                   int(stream.words[base + 21u]));
                 }
             }

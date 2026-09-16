@@ -1859,6 +1859,9 @@ int toy_renderer_flush(struct toy_renderer *renderer)
     renderer->last_transparent_cmds = 0;
     renderer->last_edge_cmds = 0;
     renderer->last_sorted_cmds = 0;
+    if (renderer->command_observer && renderer->cmd_count > 0)
+        renderer->command_observer(renderer->cmds, renderer->cmd_count,
+                                   renderer->command_observer_context);
     sort_start = renderer_monotonic_us();
     phase_start = sort_start;
     if (renderer->cmd_count > 0) {
@@ -1979,6 +1982,15 @@ int toy_renderer_flush(struct toy_renderer *renderer)
     renderer->last_tex_us = tex_us;
     renderer->last_planar_us = planar_us;
     return (int)total;
+}
+
+void toy_renderer_set_command_observer(
+    struct toy_renderer *renderer, toy_renderer_command_observer_fn observer,
+    void *context)
+{
+    if (!renderer) return;
+    renderer->command_observer = observer;
+    renderer->command_observer_context = context;
 }
 
 void toy_renderer_destroy(struct toy_renderer *renderer)

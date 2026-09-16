@@ -2,7 +2,7 @@
 #include "toy_renderer.h"
 
 #include <limits.h>
-#include <string.h>
+#include "string.h"
 
 static int host_is_little_endian(void)
 {
@@ -32,7 +32,7 @@ static int pack_triangle(struct rf_gpu_raster_cmd_v1 *out,
                          const struct toy_raster_cmd *in)
 {
     struct rf_gpu_raster_flat_triangle_v1 *triangle;
-    if (in->textured || in->planar_vertex_lit || in->overlay ||
+    if (in->textured || in->overlay ||
         in->transparent || in->material_alpha != 255)
         return RF_GPU_RASTER_PACK_UNSUPPORTED;
     if (in->area >= 0 || in->a.inv_z < INT_MIN || in->a.inv_z > INT_MAX ||
@@ -40,7 +40,9 @@ static int pack_triangle(struct rf_gpu_raster_cmd_v1 *out,
         in->c.inv_z < INT_MIN || in->c.inv_z > INT_MAX)
         return RF_GPU_RASTER_PACK_INVALID;
     memset(out, 0, sizeof(*out));
-    out->kind = RF_GPU_RASTER_CMD_FLAT_TRIANGLE_V1;
+    out->kind = in->planar_vertex_lit ?
+        RF_GPU_RASTER_CMD_VERTEX_LIT_TRIANGLE_V1 :
+        RF_GPU_RASTER_CMD_FLAT_TRIANGLE_V1;
     out->byte_size = sizeof(*out);
     out->flags = RF_GPU_RASTER_FLAG_DEPTH_TEST_V1 |
                  RF_GPU_RASTER_FLAG_DEPTH_WRITE_V1 |
@@ -61,6 +63,13 @@ static int pack_triangle(struct rf_gpu_raster_cmd_v1 *out,
     triangle->color = in->color;
     triangle->light_q8 = in->light;
     triangle->fog_q8 = in->fog;
+    if (in->planar_vertex_lit) {
+        struct rf_gpu_raster_vertex_lit_triangle_v1 *vertex_lit =
+            &out->payload.vertex_lit_triangle;
+        vertex_lit->light_a_q8 = in->a.light;
+        vertex_lit->light_b_q8 = in->b.light;
+        vertex_lit->light_c_q8 = in->c.light;
+    }
     return RF_GPU_RASTER_PACK_OK;
 }
 
@@ -158,7 +167,8 @@ int rf_gpu_raster_validate_v1(const void *stream, size_t stream_size)
             if (cmd->kind == RF_GPU_RASTER_CMD_CLEAR_DEPTH_V1 &&
                 (int32_t)cmd->payload.clear.value != 0)
                 return RF_GPU_RASTER_PACK_INVALID;
-        } else if (cmd->kind == RF_GPU_RASTER_CMD_FLAT_TRIANGLE_V1) {
+        } else if (cmd->kind == RF_GPU_RASTER_CMD_FLAT_TRIANGLE_V1 ||
+                   cmd->kind == RF_GPU_RASTER_CMD_VERTEX_LIT_TRIANGLE_V1) {
             const struct rf_gpu_raster_flat_triangle_v1 *t =
                 &cmd->payload.flat_triangle;
             __int128 area_wide = ((__int128)t->c.x - t->a.x) *
@@ -178,7 +188,8 @@ int rf_gpu_raster_validate_v1(const void *stream, size_t stream_size)
                 t->bbox_maxy < t->bbox_miny ||
                 (uint32_t)t->bbox_maxx >= header->framebuffer_width ||
                 (uint32_t)t->bbox_maxy >= header->framebuffer_height ||
-                !bytes_are_zero(t->reserved, sizeof(t->reserved)))
+                (cmd->kind == RF_GPU_RASTER_CMD_FLAT_TRIANGLE_V1 &&
+                 !bytes_are_zero(t->reserved, sizeof(t->reserved))))
                 return RF_GPU_RASTER_PACK_INVALID;
         } else return RF_GPU_RASTER_PACK_INVALID;
     }

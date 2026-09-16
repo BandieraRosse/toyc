@@ -1,6 +1,8 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-16
+> 源码核对基线补充：GPU-7A 与 GPU-7B 已完成并冻结；vertex-lit planar V1 command-kind extension 在 WSL/RTX fixtures、stress、combined-world 均 0 mismatch，coverage 99.85--99.91%。正常 renderer 仍为 CPU。
+> 源码核对基线补充：GPU-7A 已接入正常 world frontend 的 flush 前只读 command observer；固定 near/mid、0/30 enemy 诊断经 GPU-4 packer 导出 selected Raster V1 stream，再由 GPU-6/6.5 hosted differential 执行。正常游戏仍为 CPU renderer。
 > 源码核对基线补充：GPU-6.5 CPU tile command binning 已完成并冻结；WSL llvmpipe / Windows Intel Iris Xe 的 CPU/full-scan/binned differential 均为 0 mismatch，正常 world 仍为 CPU，GPU-7 尚未开始。
 > 源码核对基线补充：GPU-6 CPU/GPU Differential Authority 已完成并冻结；同一 Raster ABI V1 stream 经正式 CPU renderer adapter 与 Vulkan Raster V1 逐像素/深度比较，支持 deterministic stress、mismatch artifact 与 replay，正常 runtime 仍为 CPU。
 > 源码核对基线补充：GPU-5 前的 GPU Capability Contract V1 已完成；Core status 分开 service READY 与 compute/framebuffer/raster_v1，并公开无 Vulkan handle 的 adapter/limit/memory snapshot。
@@ -110,7 +112,7 @@
 | 静态 prop 资产 ID、路径、展示缩放和默认尺寸 | [asset-pipeline.md](asset-pipeline.md) | `include/rasterfall_prop.h`、`src/rasterfall_prop.c` |
 | 联机协议、快照、预测、可靠事件、房间发现 | [networking.md](networking.md) | `src/rasterfall_net.c` |
 | Linux/Windows 平台差异、构建、测试 | [build-platforms.md](build-platforms.md) | `Makefile`、`windows/Makefile` |
-| GPU service/capability、framebuffer、Raster ABI/compute 与 CPU↔GPU differential/replay | [build-platforms.md](build-platforms.md)、[`../../gpu/README.md`](../../gpu/README.md) | `rf_gpu.h`、`rf_gpu_raster_abi.h`、`rf_gpu_raster_pack.h`、`rf_gpu_raster_cpu_ref.h`；`make gpu-raster-diff-test` / `make win-gpu-raster-diff-test`，正常 renderer 仍为 CPU |
+| GPU service/capability、normal world selected-stream 与 CPU↔GPU differential/replay | [build-platforms.md](build-platforms.md)、[rendering.md](rendering.md)、[`../../gpu/README.md`](../../gpu/README.md) | flush 前 command observer → `--gpu-world-raster-test` → GPU-4 packer → hosted replay；正常 renderer 仍为 CPU |
 | 动画求值顺序、格式/角色扩展契约 | [animation-architecture.md](animation-architecture.md) | `src/rasterfall_model.c`、动画头文件 |
 | 网络状态所有权、协议和房间生命周期 | [network-architecture.md](network-architecture.md) | `src/rasterfall_net.c`、公共协议头 |
 | 资源来源、许可和发布检查 | [asset-sources.md](asset-sources.md) | 资源目录与导入工具 |

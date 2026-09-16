@@ -1,6 +1,6 @@
 # Rasterfall GPU 与 Windows Native Platform 总体计划
 
-> 状态：执行中（GPU-0 至 GPU-6.5 及 GPU Capability Contract V1 已完成并冻结；GPU-7 尚未开始）
+> 状态：执行中（GPU-0 至 GPU-7B 及 GPU Capability Contract V1 已完成并冻结）
 > 进展同步：2026-09-16
 > 源码核对基线：GPU-4 Raster Command ABI V1 / deterministic pack-validation
 > 源码核对基线：GPU-5 前 portability gate 已建立无 Vulkan handle capability snapshot、独立 Raster V1 gate 与 limit-driven 16x16/8x8 workgroup policy；WSL llvmpipe / Windows Intel Iris Xe 实测通过。
@@ -23,6 +23,8 @@
 | GPU-5 Compute Rasterizer V1 | 已完成 | GPU 直接消费 GPU-4 binary stream；WSL llvmpipe / Windows Intel Iris Xe 的 color/depth fixed fixtures、resize/growth/shutdown 已通过且 hash 一致 |
 | GPU-6 Differential Authority | 已完成 / FROZEN | 同一 Raster ABI V1 stream 经正式 CPU renderer 与 Vulkan Raster V1；fixed/stress/replay 在 llvmpipe / Intel Iris Xe 均为 color/depth 0 mismatch |
 | GPU-6.5 Tile Command Binning | 已完成 / FROZEN | CPU bbox 两遍保序 binning，workgroup=tile，full-scan A/B；WSL/Intel Iris Xe 全部 differential 0 mismatch，stress execution-wait 明显下降 |
+| GPU-7A Normal World Flat-Opaque Slice | 已完成 / FROZEN | WSL llvmpipe、Windows Iris Xe、Windows RTX 3050 三平台 replay 均 0 mismatch；RTX execution-wait 3.851--4.519 ms，GPU total 含约 49--51 ms readback |
+| GPU-7B Vertex-Lit Planar Extension | 已完成 / FROZEN | V1 96-byte 新 command kind；CPU/GPU 共享 raster truth，WSL/RTX fixed、stress、combined-world 全部 0 mismatch，world coverage 99.85--99.91% |
 | Windows Native Platform | 未开始 | 正常 Windows Rasterfall 仍使用 MinGW + SDL2，本阶段未改窗口、输入、音频或 presentation |
 
 当前边界：
@@ -1116,6 +1118,42 @@ binning 为 8.343 ms。GPU-6.5 DONE / FROZEN，下一阶段可进入 GPU-7，但
 ## GPU-7 — Playable GPU World
 
 正常 Rasterfall world 的主要 raster workload 从 CPU 转移到 GPU。
+
+GPU-7A 先完成 diagnostic-only flat opaque slice：正常 frontend → existing `toy_raster_cmd` → 分类 →
+GPU-4 packer → 同一 selected Raster V1 stream 的 CPU/GPU differential。固定 near/mid 与 0/30 enemy
+场景由 `--gpu-world-raster-test` 录制；hosted replay 默认使用 tile binning。它不做完整 CPU/GPU
+hybrid depth、不扩 Raster ABI、不启用 normal GPU renderer。开发和验收以当前机器实际可用 adapter
+为准，不再把某台 Intel Iris Xe 作为固定基线；缺少物理 GPU 时明确保留硬件 timing 门禁。
+
+GPU-7A 于 Windows RTX 3050 Laptop GPU 完成最终门禁：near/0、near/30、mid/30 的
+color/depth mismatch 与 max delta 全为 0；execution-wait 分别 3.851、4.519、4.517 ms，GPU total
+分别 57.094、58.949、56.055 ms，其中包含 49.829、50.887、49.112 ms readback，不代表未来 native
+frame time。hardware matrix 为 WSL llvmpipe PASS、Windows Iris Xe PASS、Windows RTX 3050 PASS，
+GPU-7A DONE / FROZEN。
+
+迁移前（Linux normal default 为 textures disabled）：near/0 为
+16658/26832 supported（62.08%），near/30 为 24817/34991（70.92%），mid/30 为
+25061/36213（69.20%），均包含两条 clear。三组 llvmpipe tile-binned replay 均 color/depth 0 mismatch；refs 分别为
+41293、83833、72763，CPU reference 为 34.051、49.100、45.286 ms，llvmpipe GPU total 为
+260.200、360.305、365.134 ms。该软件 Vulkan timing 不代表物理 GPU 收益。最大 unsupported family
+是 vertex-lit planar（10144--11100 commands），远高于 texture（28--30），因此 GPU-7B 数据驱动
+优先项为 vertex-lit planar，而不是 texture。MinGW normal game 与 differential tool 构建通过；当前
+GPU-7B 在不改变 V1 header、96-byte record 或 flat command 的前提下新增 vertex-lit command kind；
+原 flat payload 的最后三个 Q8 words 在新 kind 中表达 a/b/c light。shader 复用相同 coverage、edge、
+depth、order、fog 与 framebuffer write，仅按 kind 选择 constant light 或 signed 64-bit edge-weighted、
+toward-zero vertex-light interpolation。WSL fixed/stress/replay 与三组 combined-world differential 均为
+0 mismatch。combined coverage 为 near/0 26802/26832（99.88%）、near/30 34961/34991（99.91%）、
+mid/30 36161/36213（99.85%）；剩余为 texture 30/30/28，另有 mid transparent 24。RTX 3050
+三组 combined replay 的 refs 为 90575/133115/134701，平均 25.160/36.976/37.417，最大
+2585/2709/2277；CPU raster 为 15.609/28.657/38.716 ms，CPU binning 为
+1.072/1.778/1.489 ms，tile upload 为 0.358/0.429/0.338 ms，command upload 为
+0.490/0.551/0.474 ms，submit 为 0.095/0.108/0.080 ms，execution-wait 为
+5.192/5.494/5.046 ms，readback 为 48.990/49.584/49.472 ms，GPU total 为
+56.621/58.697/57.472 ms。GPU total 包含 readback，不是完整 normal frame 或未来 native frame time。
+Windows normal frontend capture 的 frontend/classification/pack 分别为 near/0
+13.629/5.481/1.388 ms、near/30 19.415/8.866/1.747 ms、mid/30 21.555/6.453/2.082 ms；
+三份 Windows stream 与 Linux stream 逐字节一致。Windows fixed/stress/vertex-lit/replay 与 WSL
+同为 0 mismatch；GPU-7B DONE / FROZEN。正常 renderer 继续 disabled/CPU。
 
 ## WIN-1 — Native Windows Platform
 

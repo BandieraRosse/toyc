@@ -180,3 +180,189 @@ cleanup:
     tlibc_free(fixture); tlibc_free(saved);
     return result;
 }
+
+struct gpu_world_capture {
+    struct toy_raster_cmd *selected;
+    int selected_count, selected_capacity, failed;
+    unsigned long total, flat_opaque, planar_solid, textured, vertex_lit;
+    unsigned long transparent, overlay, edge, other;
+    unsigned long long selected_bbox_pixels;
+    long classify_us;
+};
+
+static void gpu_world_observe(const struct toy_raster_cmd *commands, int count,
+                              void *opaque)
+{
+    struct gpu_world_capture *capture = opaque;
+    long start = render_monotonic_us();
+    for (int i = 0; i < count; ++i) {
+        const struct toy_raster_cmd *cmd = &commands[i];
+        int supported = !cmd->textured &&
+            !cmd->transparent && !cmd->overlay && !cmd->edge &&
+            cmd->material_alpha == 255 && cmd->area < 0;
+        capture->total++;
+        if (cmd->edge) capture->edge++;
+        else if (cmd->overlay) capture->overlay++;
+        else if (cmd->transparent || cmd->material_alpha != 255)
+            capture->transparent++;
+        else if (cmd->textured) capture->textured++;
+        else if (cmd->planar_vertex_lit) {
+            capture->planar_solid++;
+            capture->vertex_lit++;
+        } else if (supported) capture->flat_opaque++;
+        else capture->other++;
+        if (!supported) continue;
+        if (capture->selected_count == capture->selected_capacity) {
+            int new_capacity = capture->selected_capacity ?
+                capture->selected_capacity * 2 : 1024;
+            struct toy_raster_cmd *grown = tlibc_malloc(
+                (size_t)new_capacity * sizeof(*grown));
+            if (!grown) { capture->failed = 1; break; }
+            if (capture->selected_count)
+                memcpy(grown, capture->selected,
+                    (size_t)capture->selected_count * sizeof(*grown));
+            tlibc_free(capture->selected);
+            capture->selected = grown;
+            capture->selected_capacity = new_capacity;
+        }
+        capture->selected[capture->selected_count++] = *cmd;
+        capture->selected_bbox_pixels +=
+            (unsigned long long)(cmd->bbox_maxx - cmd->bbox_minx + 1) *
+            (unsigned long long)(cmd->bbox_maxy - cmd->bbox_miny + 1);
+    }
+    capture->classify_us += render_monotonic_us() - start;
+}
+
+int rasterfall_render_gpu_world_capture(const char *view, int enemy_count,
+                                        const char *output_path)
+{
+    struct gpu_world_capture capture;
+    struct toy_renderer renderer, packed_renderer;
+    struct toy_surface surface;
+    struct camera camera;
+    struct toy_game *saved = NULL;
+    unsigned char *stream = NULL;
+    size_t stream_capacity, written = 0;
+    long frontend_start, frontend_us, pack_start, pack_us;
+    int fd = -1, result = 1;
+    const char *failure = "invalid arguments";
+    if (!active_session || !view || !output_path ||
+        (strcmp(view, "near") && strcmp(view, "mid")) ||
+        (enemy_count != 0 && enemy_count != 30)) return 1;
+    memset(&capture, 0, sizeof(capture));
+    memset(&renderer, 0, sizeof(renderer));
+    memset(&packed_renderer, 0, sizeof(packed_renderer));
+    memset(&surface, 0, sizeof(surface));
+    memset(&camera, 0, sizeof(camera));
+    failure = "allocate game snapshot";
+    saved = tlibc_malloc(sizeof(game));
+    if (!saved) goto cleanup;
+    *saved = game;
+    memset(game.enemies, 0, sizeof(game.enemies));
+    surface.width = 1280; surface.height = 720; surface.stride = 1280 * 4;
+    surface.pixels = tlibc_malloc((size_t)surface.stride * surface.height);
+    if (!surface.pixels) { failure = "allocate surface"; goto cleanup; }
+    camera.z = !strcmp(view, "mid") ? -8400 : -3400;
+    camera.y = -350; camera.cy = camera.pitch_cy = 1024;
+    for (int e = 0; e < enemy_count; ++e) {
+        struct toy_game_enemy *enemy = &game.enemies[e];
+        enemy->active = 1; enemy->hp = 100;
+        enemy->type = e % 10 == 8 ? TOY_GAME_ENEMY_PURSUIT_FAST :
+            e % 10 == 9 ? TOY_GAME_ENEMY_PURSUIT_HEAVY :
+                           TOY_GAME_ENEMY_PURSUIT_COMMON;
+        enemy->x = (e % 10 - 5) * 600 + 300;
+        enemy->z = -1800 + (e / 10) * 800;
+        enemy->dir_z = -1024;
+    }
+    game.state = TOY_GAME_PLAYING;
+    toy_renderer_init(&renderer);
+    toy_renderer_set_frame_budget(&renderer, 0);
+    /* Warm lazy model/animation caches before measuring or observing the
+     * deterministic frame.  This mirrors the existing world benchmark's
+     * warmup and keeps asset IO out of frontend recording time. */
+    if (toy_renderer_begin(&renderer, &surface, 0x151922) < 0) goto cleanup;
+    {
+        int warm_local = rasterfall_render_begin_dynamic_lighting();
+        rasterfall_render_scene(&renderer, &camera);
+        rasterfall_render_flags(&renderer, &camera);
+        rasterfall_render_enemies(&renderer, &camera);
+        rasterfall_render_ai_teammate(&renderer, &camera);
+        rasterfall_render_end_dynamic_lighting();
+        if (toy_renderer_flush(&renderer) < 0) goto cleanup;
+        rasterfall_viewmodel_render(&renderer, &game, active_effects,
+                                    warm_local);
+        if (toy_renderer_flush(&renderer) < 0) goto cleanup;
+    }
+    failure = "renderer begin";
+    if (toy_renderer_begin(&renderer, &surface, 0x151922) < 0) goto cleanup;
+    toy_renderer_set_command_observer(&renderer, gpu_world_observe, &capture);
+    frontend_us = 0;
+    frontend_start = render_monotonic_us();
+    {
+        int local = rasterfall_render_begin_dynamic_lighting();
+        rasterfall_render_scene(&renderer, &camera);
+        rasterfall_render_flags(&renderer, &camera);
+        rasterfall_render_enemies(&renderer, &camera);
+        rasterfall_render_ai_teammate(&renderer, &camera);
+        rasterfall_render_end_dynamic_lighting();
+        frontend_us += render_monotonic_us() - frontend_start;
+        failure = "world flush";
+        if (toy_renderer_flush(&renderer) < 0) goto cleanup;
+        frontend_start = render_monotonic_us();
+        rasterfall_viewmodel_render(&renderer, &game, active_effects, local);
+        frontend_us += render_monotonic_us() - frontend_start;
+        failure = "viewmodel flush";
+        if (toy_renderer_flush(&renderer) < 0) goto cleanup;
+    }
+    if (capture.failed) { failure = "grow selected commands"; goto cleanup; }
+    packed_renderer.surface = surface;
+    packed_renderer.cmds = capture.selected;
+    packed_renderer.cmd_count = capture.selected_count;
+    stream_capacity = rf_gpu_raster_stream_size_v1(
+        (uint32_t)capture.selected_count + 2U);
+    stream = tlibc_malloc(stream_capacity);
+    if (!stream) { failure = "allocate ABI stream"; goto cleanup; }
+    pack_start = render_monotonic_us();
+    if (rf_gpu_raster_pack_toy_v1(&packed_renderer, 0x151922, 0, stream,
+            stream_capacity, &written) != RF_GPU_RASTER_PACK_OK) {
+        failure = "GPU-4 pack selected stream"; goto cleanup;
+    }
+    pack_us = render_monotonic_us() - pack_start;
+    fd = __openat(AT_FDCWD, output_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd < 0) { failure = "open ABI stream"; goto cleanup; }
+    {
+        size_t offset = 0;
+        while (offset < written) {
+            long n = __write(fd, stream + offset, written - offset);
+            if (n <= 0) { failure = "write ABI stream"; goto cleanup; }
+            offset += (size_t)n;
+        }
+    }
+    __close(fd); fd = -1;
+    __printf("GPU-WORLD partial-world-diagnostic view=%s enemies=%d size=1280x720 output=%s\n", view, enemy_count, output_path);
+    __printf("GPU-WORLD commands total=%lu flat_supported=%lu vertex_lit_supported=%lu combined_supported=%d unsupported=%lu supported_percent=%lu.%02lu clear=2 unsupported_textured=%lu unsupported_transparent=%lu unsupported_overlay=%lu unsupported_edge=%lu other=%lu\n",
+        capture.total + 2UL, capture.flat_opaque + 2UL,
+        capture.vertex_lit,
+        capture.selected_count + 2,
+        capture.total - (unsigned long)capture.selected_count,
+        (unsigned long)(capture.selected_count + 2) * 100UL /
+            (capture.total + 2UL),
+        ((unsigned long)(capture.selected_count + 2) * 10000UL /
+            (capture.total + 2UL)) % 100UL,
+        capture.textured, capture.transparent, capture.overlay,
+        capture.edge, capture.other);
+    __printf("GPU-WORLD timing frontend_recording_us=%ld classification_us=%ld pack_us=%ld selected_bbox_pixels=%llu stream_bytes=%lu\n",
+        frontend_us, capture.classify_us, pack_us,
+        capture.selected_bbox_pixels, (unsigned long)written);
+    result = 0;
+cleanup:
+    if (result) __fprintf(2, "GPU-WORLD capture failed: %s\n", failure);
+    if (fd >= 0) __close(fd);
+    if (saved) { game = *saved; tlibc_free(saved); }
+    toy_renderer_set_command_observer(&renderer, NULL, NULL);
+    toy_renderer_destroy(&renderer);
+    tlibc_free(surface.pixels);
+    tlibc_free(stream);
+    tlibc_free(capture.selected);
+    return result;
+}

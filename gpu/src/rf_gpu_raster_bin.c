@@ -27,7 +27,8 @@ static int command_tiles(const struct rf_gpu_raster_cmd_v1 *cmd,
         *x0 = *y0 = 0; *x1 = (width - 1) / tw; *y1 = (height - 1) / th;
         return 1;
     }
-    if (cmd->kind == RF_GPU_RASTER_CMD_FLAT_TRIANGLE_V1) {
+    if (cmd->kind == RF_GPU_RASTER_CMD_FLAT_TRIANGLE_V1 ||
+        cmd->kind == RF_GPU_RASTER_CMD_VERTEX_LIT_TRIANGLE_V1) {
         const struct rf_gpu_raster_flat_triangle_v1 *t = &cmd->payload.flat_triangle;
         int64_t minx=t->bbox_minx, maxx=t->bbox_maxx;
         int64_t miny=t->bbox_miny, maxy=t->bbox_maxy;

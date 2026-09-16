@@ -1,6 +1,9 @@
 # 构建、平台与验证
 
 > 文档更新：2026-09-16
+> 源码核对基线补充：GPU-7A 增加正常 world selected-stream capture；Linux/Windows 游戏编译 GPU-4 packer，但 Vulkan backend 仍只在 hosted test 中。real-world replay 默认 tile-binned，跳过大 stream 的 full-scan。
+> 源码核对基线补充：GPU-7B 的 Linux/MinGW ABI 与 differential 构建已通过；WSL/Windows RTX 3050 vertex-lit fixtures、stress、combined-world replay 全部 0 mismatch，GPU-7B DONE / FROZEN。
+> 源码核对基线补充：Windows package-layout console diagnostic 仅用于本次 frontend timing；三份 Windows capture stream 与 Linux stream 逐字节一致，不改变正常 GUI subsystem 或发布内容。
 > 源码核对基线补充：GPU-6.5 CPU tile binning 已通过 WSL llvmpipe 与 Windows Intel Iris Xe 的 CPU/full-scan/binned 0 mismatch 及 stress A/B，MinGW differential 构建通过；GPU-6.5 DONE / FROZEN。
 > 源码核对基线补充：GPU-6 Differential Authority 已完成；hosted CPU `toy_renderer` reference、Vulkan Raster V1、artifact/replay 与 deterministic stress 已建立，WSL llvmpipe / Windows Intel Iris Xe 均为 color/depth 0 mismatch。
 > 源码核对基线补充：GPU-4 已完成 pointer-free、fixed-width、versioned Raster Command ABI V1；现有 CPU command pool 通过显式 deterministic pack/validation 生成 clear color/depth 与 opaque flat triangle command，独立 Linux runtime test 与 Windows LLP64 layout build gate 已接入，尚不执行 GPU rasterization。
@@ -107,6 +110,18 @@ tile-list/command upload、submit、两种 execution-wait、readback 和 tile re
 `make win-gpu-raster-diff-test` 构建同一测试；Intel Iris Xe 已完成全部 fixture/stress/replay，最大
 1279×719 / 1026-command stress 的 full-scan / binned execution-wait 为 230.272 / 163.568 ms，
 CPU binning 8.343 ms，color/depth 均 0 mismatch。
+
+GPU-7A 使用两段式无窗口入口，避免把 hosted Vulkan/宿主 libc 引入 freestanding normal game：
+
+```sh
+build/rasterfall --gpu-world-raster-test near 30 build/world-near-30.bin
+build/rf-gpu-raster-diff-test --replay-raster-stream build/world-near-30.bin
+```
+
+前者复用正常 Campaign frontend，报告 composition、supported ratio、bbox 与 frontend/classification/
+pack timing；后者复用 GPU-6 oracle 和 GPU-6.5 binning，报告 mismatch/hash、tile refs、upload、
+execution-wait 与 readback。结果是 partial selected stream，不与完整 CPU normal frame 比较。硬件性能
+结论以当前实际可用 physical adapter 为准；只有 llvmpipe 时仅作 correctness 观测。
 
 ## 改文件列表时
 

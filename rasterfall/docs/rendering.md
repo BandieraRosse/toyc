@@ -1,6 +1,8 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-16
+> 源码核对基线补充：GPU-7A 复用正常 Campaign world frontend，在 `toy_renderer_flush()` 分类/排序前观察并跨 flush 保序累计 flat opaque command；unsupported 不降级，输出 partial-world Raster V1 stream，正常 renderer selection 不变。
+> 源码核对基线补充：GPU-7B 将同一 observer 的无纹理 vertex-lit planar 加入 selected stream；CPU 的屏幕空间 signed-64 edge-weight light interpolation、toward-zero 除法、0--384 light clamp、base modulation、fog 顺序由共享 differential oracle 约束，不建立第二套 raster kernel 或 binning。
 > 源码核对基线补充：GPU-6.5 hosted Raster V1 以 runtime-selected 16×16/8×8 workgroup 同时作为 tile，CPU bbox binning 生成保序 index lists；WSL/Intel differential 门禁通过并冻结，不改变 raster semantics、ABI 或正常 CPU world renderer。
 > 源码核对基线补充：GPU-6 以正式 `toy_renderer` flat opaque path 作为 Raster V1 differential oracle；仅 hosted test 使用 ABI adapter 与强制 inline reference，正常 world renderer 仍为 CPU，未接 GPU。
 > 源码核对基线补充：Eula 正常 world/展示在 near/mid 使用 Gameplay Hybrid `eula_lod3.rmesh`，仅 FAR（4096 RFU 起）切换 compact LOD2；Maid 保持原策略。
@@ -83,6 +85,20 @@ HUMANOID_INFECTED。V2 两个家族由地图 draw record 触发同一感染模�
 地面锚点属于 renderer；不会创建 enemy、碰撞体、AI 或网络状态。
 
 ## 渲染边界
+
+GPU-7A 的捕获边界是 `toy_renderer_flush()` 消费和透明排序命令前的只读 observer。诊断不建立
+第二套 traversal/camera/culling/lighting；它使用固定 Campaign near/mid camera 与 0/30 enemies，按
+真实 `toy_raster_cmd` 分类，只复制可无损表达为 Raster V1 的 flat opaque command。world/viewmodel
+多次 flush 的 selected command 保持原相对顺序并只加入一次 clear：
+
+```sh
+build/rasterfall --gpu-world-raster-test near 30 build/world.bin
+build/rf-gpu-raster-diff-test --replay-raster-stream build/world.bin
+```
+
+前者录制、分类并用 GPU-4 packer 写 stream；后者用 GPU-6 CPU oracle 与 GPU-6.5 tile-binned GPU
+比较同一 stream。真实 world replay 默认跳过成本不成比例的 full-scan。这是 partial world diagnostic，
+不是完整 normal GPU frame 或 FPS。
 
 Temporary Campus Kit的`--visual-capture campus-corner`支持`-near`、`-mid`、`-far`；
 `campus-asset-<name>`观察单件。全部位于process-only dev-tests fixture，复用已有

@@ -48,6 +48,20 @@ static void add_triangle(struct toy_renderer *r, int ax, int ay, int az,
     toy_renderer_triangle_lit(r, &a, &b, &c, color, light, fog);
 }
 
+static void add_vertex_lit_triangle(struct toy_renderer *r,
+                         int ax, int ay, int az, int al,
+                         int bx, int by, int bz, int bl,
+                         int cx, int cy, int cz, int cl,
+                         uint32_t color, int fog)
+{
+    struct toy_screen_vertex a, b, c;
+    memset(&a, 0, sizeof(a)); memset(&b, 0, sizeof(b)); memset(&c, 0, sizeof(c));
+    a.x=ax; a.y=ay; a.inv_z=az; a.light=al;
+    b.x=bx; b.y=by; b.inv_z=bz; b.light=bl;
+    c.x=cx; c.y=cy; c.inv_z=cz; c.light=cl;
+    toy_renderer_triangle_planar_vertex_lit(r,&a,&b,&c,color,fog);
+}
+
 static int stream_from_renderer(struct toy_renderer *r, uint32_t clear,
                                 struct stream *out)
 {
@@ -111,6 +125,18 @@ static int make_fixture(const char *name, uint32_t width, uint32_t height,
                          (i * 0x10203u) & 0xffffffu, 64 + (int)(i%7)*64,
                          (int)(i%5)*64);
         }
+    } else if (!strcmp(name, "vertex-lit-fixed")) {
+        /* equal/different/extreme lights, interpolated center, varying depth,
+         * fog, shared edge, overlap/equal-depth order, flat mix, offscreen and thin. */
+        add_vertex_lit_triangle(&r,1,1,100,256, 14,1,100,256, 1,10,100,256,0x804020,0);
+        add_vertex_lit_triangle(&r,16,1,100,0, 31,1,300,256, 16,11,500,384,0x90c0f0,0);
+        add_vertex_lit_triangle(&r,1,12,200,0, 16,12,400,384, 1,23,600,256,0xff8040,128);
+        add_vertex_lit_triangle(&r,18,13,300,0, 31,13,300,256, 18,23,300,384,0xff0000,0);
+        add_vertex_lit_triangle(&r,31,13,300,384, 31,23,300,256, 18,23,300,0,0x00ff00,0);
+        add_vertex_lit_triangle(&r,20,15,300,384, 29,15,300,0, 20,22,300,256,0x0000ff,64);
+        add_triangle(&r,20,15,300,29,15,300,20,22,300,0xffff00,192,0);
+        add_vertex_lit_triangle(&r,-12,2,700,0, 12,2,900,384, 2,20,1100,256,0xabcdef,0);
+        add_vertex_lit_triangle(&r,2,25,1200,0, 34,25,1200,384, 2,26,1200,256,0xffffff,0);
     } else { /* deterministic stress */
         uint32_t state = seed ? seed : 1;
         for (i = 0; i < count; ++i) {
@@ -195,7 +221,7 @@ static void save_artifacts(const char *dir, const struct stream *s,
 
 static int compare_case(struct rf_gpu *gpu, struct rf_gpu_raster *raster,
                         const char *name, const struct stream *s,
-                        const char *artifact_dir)
+                        const char *artifact_dir, int run_full_scan)
 {
     const struct rf_gpu_raster_stream_header_v1 *h=(const void*)s->data;
     struct outputs o; struct rf_gpu_cpu_reference_timing ct;
@@ -205,11 +231,14 @@ static int compare_case(struct rf_gpu *gpu, struct rf_gpu_raster *raster,
     memset(&o,0,sizeof(o));o.width=h->framebuffer_width;o.height=h->framebuffer_height;
     o.cpu_color=malloc(n*4);o.gpu_color=malloc(n*4);o.cpu_depth=malloc(n*4);o.gpu_depth=malloc(n*4);
     if(!o.cpu_color||!o.gpu_color||!o.cpu_depth||!o.gpu_depth)return -1;
+    memset(&ft,0,sizeof(ft));
     if(raster->width!=o.width||raster->height!=o.height)if(rf_gpu_raster_resize(gpu,raster,o.width,o.height)<0)return -1;
-    if(rf_gpu_raster_cpu_reference_v1(s->data,s->size,o.cpu_color,o.cpu_depth,o.width,o.width,&ct)<0 ||
-       rf_gpu_raster_set_full_scan_diagnostic(raster,1)<0 ||
-       rf_gpu_raster_render_timed(gpu,raster,s->data,s->size,o.gpu_color,o.gpu_depth,o.width,o.height,o.width,o.width,&ft)<0)return -1;
-    for(size_t i=0;i<n;i++){if((o.cpu_color[i]&0xffffffu)!=(o.gpu_color[i]&0xffffffu))fcm++;if(o.cpu_depth[i]!=o.gpu_depth[i])fdm++;}
+    if(rf_gpu_raster_cpu_reference_v1(s->data,s->size,o.cpu_color,o.cpu_depth,o.width,o.width,&ct)<0)return -1;
+    if(run_full_scan){
+      if(rf_gpu_raster_set_full_scan_diagnostic(raster,1)<0 ||
+         rf_gpu_raster_render_timed(gpu,raster,s->data,s->size,o.gpu_color,o.gpu_depth,o.width,o.height,o.width,o.width,&ft)<0)return -1;
+      for(size_t i=0;i<n;i++){if((o.cpu_color[i]&0xffffffu)!=(o.gpu_color[i]&0xffffffu))fcm++;if(o.cpu_depth[i]!=o.gpu_depth[i])fdm++;}
+    }
     if(rf_gpu_raster_set_full_scan_diagnostic(raster,0)<0 ||
        rf_gpu_raster_render_timed(gpu,raster,s->data,s->size,o.gpu_color,o.gpu_depth,o.width,o.height,o.width,o.width,&gt)<0)return -1;
     for(size_t i=0;i<n;i++){
@@ -219,8 +248,8 @@ static int compare_case(struct rf_gpu *gpu, struct rf_gpu_raster *raster,
     }
     ch=hash_bytes(o.cpu_color,n*4);gh=hash_bytes(o.gpu_color,n*4);cdh=hash_bytes(o.cpu_depth,n*4);gdh=hash_bytes(o.gpu_depth,n*4);
     snprintf(report,sizeof(report),
-      "fixture: %s\nfull-scan color mismatches: %llu\nfull-scan depth mismatches: %llu\ncolor mismatches: %llu\ndepth mismatches: %llu\nfirst mismatch coordinate: %s%u,%u\nCPU color: 0x%08x\nGPU color: 0x%08x\nCPU depth: %d\nGPU depth: %d\nmax R delta: %d\nmax G delta: %d\nmax B delta: %d\nmax depth delta: %lld\nCPU color hash: %016llx\nGPU color hash: %016llx\nCPU depth hash: %016llx\nGPU depth hash: %016llx\nframe size: %ux%u\ncommand count: %u\ntile count: %u\ntotal refs: %llu\naverage refs/tile: %.3f\nmaximum refs/tile: %u\nCPU raster ms: %.3f\nCPU tile binning ms: %.3f\ntile-list upload ms: %.3f\ncommand upload ms: %.3f\nGPU validation ms: %.3f\nGPU upload ms: %.3f\nGPU submit ms: %.3f\nfull-scan execution-wait ms: %.3f\ntile-binned execution-wait ms: %.3f\nGPU readback ms: %.3f\nGPU total ms: %.3f\n",
-      name,(unsigned long long)fcm,(unsigned long long)fdm,(unsigned long long)cm,(unsigned long long)dm,have_first?"":"none ",firstx,firsty,
+      "fixture: %s\nfull-scan diagnostic: %s\nfull-scan color mismatches: %llu\nfull-scan depth mismatches: %llu\ncolor mismatches: %llu\ndepth mismatches: %llu\nfirst mismatch coordinate: %s%u,%u\nCPU color: 0x%08x\nGPU color: 0x%08x\nCPU depth: %d\nGPU depth: %d\nmax R delta: %d\nmax G delta: %d\nmax B delta: %d\nmax depth delta: %lld\nCPU color hash: %016llx\nGPU color hash: %016llx\nCPU depth hash: %016llx\nGPU depth hash: %016llx\nframe size: %ux%u\ncommand count: %u\ntile count: %u\ntotal refs: %llu\naverage refs/tile: %.3f\nmaximum refs/tile: %u\nCPU raster ms: %.3f\nCPU tile binning ms: %.3f\ntile-list upload ms: %.3f\ncommand upload ms: %.3f\nGPU validation ms: %.3f\nGPU upload ms: %.3f\nGPU submit ms: %.3f\nfull-scan execution-wait ms: %.3f\ntile-binned execution-wait ms: %.3f\nGPU readback ms: %.3f\nGPU total ms: %.3f\n",
+      name,run_full_scan?"executed":"skipped for real-world replay",(unsigned long long)fcm,(unsigned long long)fdm,(unsigned long long)cm,(unsigned long long)dm,have_first?"":"none ",firstx,firsty,
       have_first?o.cpu_color[(size_t)firsty*o.width+firstx]:0,have_first?o.gpu_color[(size_t)firsty*o.width+firstx]:0,
       have_first?o.cpu_depth[(size_t)firsty*o.width+firstx]:0,have_first?o.gpu_depth[(size_t)firsty*o.width+firstx]:0,
       maxr,maxg,maxb,(long long)maxd,(unsigned long long)ch,(unsigned long long)gh,(unsigned long long)cdh,(unsigned long long)gdh,
@@ -239,14 +268,15 @@ int main(int argc,char **argv)
       {"clear",19,13,0,0},{"geometry-depth-order",19,13,0,0},{"shared-edge",19,13,0,0},
       {"light-fog-thin",19,13,0,0},{"grid",53,29,0,0},{"edges-mixed",37,23,0,0},
       {"equal-near-far",73,41,96,0},{"stress-seed-1",320,180,64,1},
+      {"vertex-lit-fixed",37,29,0,0},
       {"stress-seed-2",641,359,256,2},{"stress-seed-0x5246",1279,719,1024,0x5246}};
     int result=1;memset(&context,0,sizeof(context));memset(&raster,0,sizeof(raster));
     for(int i=1;i<argc;i++){if(!strcmp(argv[i],"--replay-raster-stream")&&i+1<argc)replay=argv[++i];else if(!strcmp(argv[i],"--artifact-dir")&&i+1<argc)artifacts=argv[++i];else{fprintf(stderr,"usage: %s [--replay-raster-stream commands.bin] [--artifact-dir dir]\n",argv[0]);return 2;}}
     CHECK(rf_gpu_init(&gpu,RF_GPU_POLICY_REQUIRED,&rf_gpu_vulkan_backend,&context)==0);
     CHECK(rf_gpu_get_status(&gpu,&status)==0&&status.renderer.raster_v1);
     printf("adapter: %s\n",status.info.adapter_name);
-    if(replay){CHECK(read_file(replay,&s)==0);CHECK(rf_gpu_raster_validate_v1(s.data,s.size)==0);const struct rf_gpu_raster_stream_header_v1*h=(void*)s.data;CHECK(rf_gpu_raster_init(&gpu,&raster,h->framebuffer_width,h->framebuffer_height)==0);CHECK(compare_case(&gpu,&raster,"replay",&s,artifacts)==0);free(s.data);s.data=NULL;}
-    else {CHECK(rf_gpu_raster_init(&gpu,&raster,19,13)==0);for(size_t i=0;i<sizeof(cases)/sizeof(cases[0]);i++){CHECK(make_fixture(cases[i].name,cases[i].w,cases[i].h,cases[i].n,cases[i].seed,&s)==0);CHECK(compare_case(&gpu,&raster,cases[i].name,&s,artifacts)==0);if(i==1)CHECK(write_file("build/gpu-raster-diff-replay.bin",s.data,s.size)==0);free(s.data);s.data=NULL;}CHECK(read_file("build/gpu-raster-diff-replay.bin",&s)==0);CHECK(compare_case(&gpu,&raster,"replay-self-check",&s,artifacts)==0);free(s.data);s.data=NULL;
+    if(replay){CHECK(read_file(replay,&s)==0);CHECK(rf_gpu_raster_validate_v1(s.data,s.size)==0);const struct rf_gpu_raster_stream_header_v1*h=(void*)s.data;CHECK(rf_gpu_raster_init(&gpu,&raster,h->framebuffer_width,h->framebuffer_height)==0);CHECK(compare_case(&gpu,&raster,"replay",&s,artifacts,0)==0);free(s.data);s.data=NULL;}
+    else {CHECK(rf_gpu_raster_init(&gpu,&raster,19,13)==0);for(size_t i=0;i<sizeof(cases)/sizeof(cases[0]);i++){CHECK(make_fixture(cases[i].name,cases[i].w,cases[i].h,cases[i].n,cases[i].seed,&s)==0);CHECK(compare_case(&gpu,&raster,cases[i].name,&s,artifacts,1)==0);if(i==1)CHECK(write_file("build/gpu-raster-diff-replay.bin",s.data,s.size)==0);free(s.data);s.data=NULL;}CHECK(read_file("build/gpu-raster-diff-replay.bin",&s)==0);CHECK(compare_case(&gpu,&raster,"replay-self-check",&s,artifacts,1)==0);free(s.data);s.data=NULL;
       /* Failure authority: no partial output and all malformed classes reject. */
       CHECK(make_fixture("clear",19,13,0,0,&s)==0);unsigned char saved=s.data[0];uint32_t guard_color[19*13];int32_t guard_depth[19*13];for(size_t j=0;j<19*13;j++){guard_color[j]=0x13579bdfu;guard_depth[j]=0x12345678;}s.data[0]^=1;CHECK(rf_gpu_raster_validate_v1(s.data,s.size)!=0);CHECK(rf_gpu_raster_render(&gpu,&raster,s.data,s.size,guard_color,guard_depth,19,13,19,19)<0);for(size_t j=0;j<19*13;j++)CHECK(guard_color[j]==0x13579bdfu&&guard_depth[j]==0x12345678);s.data[0]=saved;((struct rf_gpu_raster_stream_header_v1*)s.data)->version++;CHECK(rf_gpu_raster_validate_v1(s.data,s.size)!=0);((struct rf_gpu_raster_stream_header_v1*)s.data)->version--;CHECK(rf_gpu_raster_validate_v1(s.data,s.size-1)!=0);((struct rf_gpu_raster_stream_header_v1*)s.data)->command_count=0xffffffffu;CHECK(rf_gpu_raster_validate_v1(s.data,s.size)!=0);((struct rf_gpu_raster_stream_header_v1*)s.data)->command_count=2;((struct rf_gpu_raster_cmd_v1*)((struct rf_gpu_raster_stream_header_v1*)s.data+1))[0].kind=999;CHECK(rf_gpu_raster_validate_v1(s.data,s.size)!=0);puts("failure-cases: invalid/version/truncated/unsupported/oversized/corrupt/no-partial-output PASS");free(s.data);s.data=NULL;}
     result=0;
