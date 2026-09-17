@@ -1,21 +1,8 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-17
-> 源码核对基线补充：GPU-9A IMPLEMENTATION COMPLETE / LOCAL CORRECTNESS PASS / NORMAL-FRAME ACCEPTANCE BLOCKED；暂停 freeze 与新 GPU 功能。先用 `--frame-audit` 在 Windows 真实坏现场记录 world、完整 camera pose、extent、fixed-step/update/render/GPU present timing，再以 `--normal-frame-audit` 复用 exact pose；不再把固定 sy/cy 当“北方”。Humanoid 根因已收敛到 Blender material → GLB → importer，runtime 不增加特判。
-> 源码核对基线补充：GPU-9A Post-Raster Compute Pass V1 已建立独立 raster color/depth → second device-local post color contract；identity 与 inverse-depth Fog V0 经显式 oracle 验证，overlay 仍在 post 之后，normal native-present 不读回。
-> 源码核对基线补充：GPU-8B1 已接入 Core-owned XRGB8888 color + 8-bit coverage overlay；现有 HUD/Console/GUI CPU truth 经 Vulkan compute 合成到 device-local world color。Console alpha=190 保留；post-world renderer layers 仍归 GPU-8B2。
-> 源码核对基线补充：GPU-8A Windows native presentation world-only diagnostic 已完成并冻结；共享/Linux 与 MinGW 门禁通过，Intel Iris Xe native 10/10、resize 300/300、零 fallback/readback/copy。入口、timing 与 frame layering 见 runtime.md、rendering.md、build-platforms.md。
-> 源码核对基线补充：GPU-7C/7D 已完成并冻结；Intel Iris Xe normal Outpost、Campaign near/0、near/30 的同帧 CPU oracle 均 3/3 GPU frames 且 color/depth 0 mismatch，mid/30 的 transparent command 继续按契约 whole-batch CPU fallback。下一阶段选择 GPU-8 native presentation。
-> 源码核对基线补充：GPU-7D Texture V1 已进入 Core-owned normal frame 路径；Windows RTX Outpost 修正 readback stride 单位错配后 3/3 GPU frames。默认 renderer 仍为 CPU，冻结状态以上方最新基线为准。
-> 源码核对基线补充：GPU-7A 与 GPU-7B 已完成并冻结；vertex-lit planar V1 command-kind extension 在 WSL/RTX fixtures、stress、combined-world 均 0 mismatch，coverage 99.85--99.91%。正常 renderer 仍为 CPU。
-> 源码核对基线补充：GPU-7A 已接入正常 world frontend 的 flush 前只读 command observer；固定 near/mid、0/30 enemy 诊断经 GPU-4 packer 导出 selected Raster V1 stream，再由 GPU-6/6.5 hosted differential 执行。正常游戏仍为 CPU renderer。
-> 源码核对基线补充：GPU-6.5 CPU tile command binning 已完成并冻结；WSL llvmpipe / Windows Intel Iris Xe 的 CPU/full-scan/binned differential 均为 0 mismatch，正常 world 仍为 CPU，GPU-7 尚未开始。
-> 源码核对基线补充：GPU-6 CPU/GPU Differential Authority 已完成并冻结；同一 Raster ABI V1 stream 经正式 CPU renderer adapter 与 Vulkan Raster V1 逐像素/深度比较，支持 deterministic stress、mismatch artifact 与 replay，正常 runtime 仍为 CPU。
-> 源码核对基线补充：GPU-5 前的 GPU Capability Contract V1 已完成；Core status 分开 service READY 与 compute/framebuffer/raster_v1，并公开无 Vulkan handle 的 adapter/limit/memory snapshot。
-> 源码核对基线补充：GPU-5 Compute Rasterizer V1 已完成 GPU-4 binary stream 的逐像素 compute raster、deterministic color/depth readback 与 16×16/8×8 实际 pipeline 选择；WSL llvmpipe / Windows Intel Iris Xe fixed hashes 一致并通过。
-> 源码核对基线补充：GPU-4 的独立 Raster Command ABI V1 与 CPU `toy_raster_cmd` deterministic pack/validation 仍为 GPU-5 唯一输入；只覆盖 clear color/depth、opaque flat triangle 及 depth/fog，正常 CPU renderer 与 GPU framebuffer smoke 不变。
-> 源码核对基线补充：GPU-3 已完成 Core-owned GPU framebuffer resource：复用持久 backend，compute 写 device-local XRGB8888，经有限 fence/readback 进入 `toy_surface`，覆盖 stride、resize 与逆序 shutdown；正常 runtime 仍 disabled/CPU renderer，GPU-4 未开始。
-> 源码核对基线补充：原生 C Vulkan Phase 1 hosted probe 已实现 Linux/Windows 共用的 storage-buffer compute ownership、discrete-first adapter selection 与 readback 校验；WSL llvmpipe 与 Windows RTX 3050 compute/readback 均已通过；仍不接正常 Core、window 或 renderer，详见 `gpu/README.md` 与 build-platforms.md。
+> 源码核对基线：GPU-0 ～ GPU-8A 已完成相应 checkpoint；GPU-8B1 已实现未冻结，GPU-8B2 未开始，GPU-9A 实现与局部正确性通过但 normal-frame 验收阻塞。
+> 当前 GPU 优先级：暂停新功能；Windows 实机先用 `--frame-audit` 捕获坏姿态，再用 `--normal-frame-audit` 精确重放。详见 [GPU 与 Windows Native Platform 阶段计划](../../docs/Rasterfall%20GPU%20%E4%B8%8E%20Windows%20Native%20Platform%20%E6%80%BB%E4%BD%93%E8%AE%A1%E5%88%92.md)。
 > 源码核对基线补充：Eula 正常 world/展示在 near/mid 使用 Gameplay Hybrid `eula_lod3.rmesh`，仅 FAR（4096 RFU 起）使用 compact LOD2；Hybrid 缺失时回退原模型。
 > 源码核对基线补充：Eula Animation Acceptance V1 提供 legacy VMD carrier 的固定离屏姿态组图；统一 `--character-performance[-suite]` 保留 model/actor/world benchmark 的原职责并提供单角色、固定资产族及常见实例组合的同口径统计。
 > 源码核对基线补充：Anime Gameplay Hybrid LOD V1 的 Eula pilot 使用离线 region descriptor、按骨长定义的关节邻域与 BDEF pair/weight 分区生成普通 compact RFM2；runtime、renderer 与 skinning 不增加角色特判。
@@ -193,6 +180,7 @@ player/actor 和敌人的 airborne forced/knockback movement 均由玩法核心�
 
 专题设计和活动台账：
 
+- [Rasterfall GPU 与 Windows Native Platform 阶段计划](../../docs/Rasterfall%20GPU%20%E4%B8%8E%20Windows%20Native%20Platform%20%E6%80%BB%E4%BD%93%E8%AE%A1%E5%88%92.md)：GPU checkpoint、已冻结契约、normal-frame 阻塞、剩余问题与最终目标。
 - [industrial-props.md](industrial-props.md)：十件 V2 Hybrid 规格、flat/decal 分工、米制轴向、碰撞建议与生成/统一导入流程。
 - [environment-art.md](environment-art.md)：十件工业 / 军事组件的 V2 light upgrade 风格、逐件要点、预算、验收与试点顺序。
 

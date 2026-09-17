@@ -1,12 +1,8 @@
 # 运行时与主循环
 
 > 文档更新：2026-09-17
-> 源码核对基线补充：normal-frame acceptance 使用两级入口：Windows 正常运行加 `--frame-audit`，稳定时每 60 个 rendered frame 取一次 heartbeat，frame interval 达 50ms 时连续记录 world、camera x/z、sy/cy、pitch、extent、fixed-step ticks/accumulator、update/render/present/whole-loop 以及 GPU submit/fence/native-present；取得真实坏现场后，以 `--normal-frame-audit <x> <z> <sy> <cy> <pitch-sy> <pitch-cy> <width> <height> <output.bmp>` 在同一地图复测 normal frontend。固定方位 capture 不充当坏现场证据。
-> 源码核对基线补充：`--gpu-post-fog` 仅可与 `--renderer gpu-compute --gpu-native-present` 共用，显式启用 GPU-9A inverse-depth Fog V0；默认视觉与 CPU/software-present 路径不变。
-> 源码核对基线补充：GPU-8B1 将 native present 延后到 Core end-frame：world batch 在 barrier 冻结，直接 screen-space producer 改画独立 overlay，帧尾 full upload、compute composite、copy/present。CPU renderer 与 GPU-8B2 renderer command 边界不变。
-> 源码核对基线补充：GPU-8A Windows native-present world-only diagnostic 已接入 `--renderer gpu-compute --gpu-native-present`；它在 world barrier 直接执行 buffer→swapchain present，明确跳过最终 software present，HUD/GUI 等 CPU-only 层不进入可见帧。Intel Iris Xe 10/10 与 resize 300/300 实机帧均零 fallback、零 color readback/CPU copy。
-> 源码核对基线补充：GPU-7C/7D DONE / FROZEN。Windows Intel normal same-frame oracle 在 Outpost、Campaign near/0、near/30 均 3/3 GPU frames 且逐 color/depth 0 mismatch；`--gpu-normal-scene <near|mid> <0|30>` 固定 seed、Campaign、camera/enemy fixture，但仍执行正常 window/Core/present 主循环。mid/30 的透明命令按契约整批 CPU fallback。
-> 源码核对基线补充：GPU-7D Texture V1 已接入显式 `--renderer gpu-compute` normal world batch。Windows RTX Outpost 修正 GPU readback stride 字节/元素单位错配后 3/3 frames；默认仍为 CPU，冻结状态以上方最新基线为准。
+> 源码核对基线：默认 CPU；显式 `--renderer gpu-compute` 启用 Core-owned normal GPU frame，`--gpu-native-present` 启用零 readback swapchain 路径，`--gpu-post-fog` 再启用 Post-Raster Fog V0。
+> 当前验收边界：GPU-8B1 与 GPU-9A 尚未冻结。Windows 正常运行用 `--frame-audit` 取得真实坏帧，再用 `--normal-frame-audit <x> <z> <sy> <cy> <pitch-sy> <pitch-cy> <width> <height> <output.bmp>` 重放；固定 fixture 不替代该证据。
 > 源码核对基线补充：`--gpu-world-raster-test <near|mid> <0|30> <commands.bin>` 是窗口前的固定 Campaign world capture；它不选择 GPU renderer，正常 `RF_GPU_POLICY_DISABLED` 不变。
 > 源码核对基线补充：Eula animation acceptance 与 unified character performance 均在字体、Core、startup/pause UI、session、window/audio 之前早退。
 > 源码核对基线补充：2026-09-15 工作区；`--render-performance` 使用 headless Core、固定 seed 与 Campaign request；Game render 内记录互不重叠的 scene/enemies/raster/overlay，外层只记录 begin/present。V2 planar 诊断同时跑正常专用路径与 `generic-planar` 旧回退，逐元素比较 framebuffer/depth。

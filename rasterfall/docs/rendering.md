@@ -1,16 +1,8 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-17
-> 源码核对基线补充：GPU-9A IMPLEMENTATION COMPLETE / LOCAL CORRECTNESS PASS / NORMAL-FRAME ACCEPTANCE BLOCKED；当前 renderer normal-frame regression audit 优先于后续 GPU 功能。`--frame-audit` 负责捕获真实 Windows 坏姿态与整帧阶段耗时；`--normal-frame-audit` 消费 exact pose/extent，输出 command coverage/fog/source、sky draw 后到 world flush 后的上半屏 unchanged 统计和 BMP。现有 Raster differential 只证明同一 packed command/data 的 CPU/GPU 执行一致，不覆盖 Game normal renderer → frontend semantic resolution → command packing 的上游错误，也不证明 native present 前 sky ownership。
-> 源码核对基线补充：GPU-9A 使用独立 device-local `post_color`，Post V1 只读 Raster V1 color 与 signed Q20 inverse-Z depth、只写 presentation color。默认 bypass；`--gpu-post-fog` 显式启用 Fog V0。overlay composite 随后写 presentation color，HUD/Console/Desktop 不进入 post。
-> 源码核对基线补充：GPU-8B1 保留 fb_draw/fb_font、HUD、Console、GUI 与 runtime panels 为唯一 screen-space truth。native path 使用 XRGB8888 + 8-bit coverage；普通写入为 255，空白为 0，Console 背景保留 190；compute 在 Raster V1 device-local color buffer 原位 source-over。独立 diagnostic API 允许测试模式读回 composite 结果，7×5 odd-size/non-tight-stride 的 Intel 与 Linux Vulkan differential 均为 0 mismatch；normal native path 不调用该 API。
-> 源码核对基线补充：GPU-8A 增加 Windows native-present world-only proof。正常 GPU software-present 与 CPU oracle 保留；native diagnostic 不 readback color/depth，也不声称包含 world barrier 后的 viewmodel、effects、HUD、scoreboard、console 或 GUI。
-> 源码核对基线补充：GPU-7C/7D DONE / FROZEN。Intel normal same-frame CPU/GPU oracle 覆盖 Outpost 与 Campaign near/0、near/30，均逐 color/depth 0 mismatch；mid/30 的透明命令保持 whole-batch CPU fallback。normal mismatch 以 CPU oracle 完整恢复并保存可 replay artifact。
-> 源码核对基线补充：GPU-7D 在同一 complete-batch consumer/raster kernel 加入 buffer-backed nearest Texture V1。Windows RTX Outpost 修正 readback stride 单位错配后 3/3 normal GPU frames；transparent 仍为 whole-batch fallback，默认 renderer 仍为 CPU。
-> 源码核对基线补充：GPU-7A 复用正常 Campaign world frontend，在 `toy_renderer_flush()` 分类/排序前观察并跨 flush 保序累计 flat opaque command；unsupported 不降级，输出 partial-world Raster V1 stream，正常 renderer selection 不变。
-> 源码核对基线补充：GPU-7B 将同一 observer 的无纹理 vertex-lit planar 加入 selected stream；CPU 的屏幕空间 signed-64 edge-weight light interpolation、toward-zero 除法、0--384 light clamp、base modulation、fog 顺序由共享 differential oracle 约束，不建立第二套 raster kernel 或 binning。
-> 源码核对基线补充：GPU-6.5 hosted Raster V1 以 runtime-selected 16×16/8×8 workgroup 同时作为 tile，CPU bbox binning 生成保序 index lists；WSL/Intel differential 门禁通过并冻结，不改变 raster semantics、ABI 或正常 CPU world renderer。
-> 源码核对基线补充：GPU-6 以正式 `toy_renderer` flat opaque path 作为 Raster V1 differential oracle；仅 hosted test 使用 ABI adapter 与强制 inline reference，正常 world renderer 仍为 CPU，未接 GPU。
+> 源码核对基线：GPU-7C/7D 与 GPU-8A 已冻结；GPU-8B1 已实现未冻结，GPU-8B2 未开始。GPU-9A 的独立 `post_color`、identity 与 inverse-depth Fog V0 已通过局部 oracle，但 normal-frame 实机验收仍阻塞。
+> 当前调试原则：Raster differential 只证明同一 packed input 的 CPU/GPU 执行一致；上游 frontend/packing、sky/world submission 和 present ownership 必须用 `--frame-audit` 取证后再以 `--normal-frame-audit` 重放。
 > 源码核对基线补充：Eula 正常 world/展示在 near/mid 使用 Gameplay Hybrid `eula_lod3.rmesh`，仅 FAR（4096 RFU 起）切换 compact LOD2；Maid 保持原策略。
 > 源码核对基线补充：`--eula-animation-acceptance` 在 UI/Core/window 前早退，复用 legacy VMD evaluator、model instance、CPU skinning、Lighting V1 与标准 AK submission；`--character-performance[-suite]` 统一输出模型 CPU、raster wall 与 total wall 的 mean/median。
 > 源码核对基线补充：2026-09-15 工作区；V2 Planar Raster Optimization 为 V2 无纹理平面建立专用不透明 solid/interpolated-light/fog/depth 路径，不再用 NULL texture/material fallback；旧路径仅作 `--render-performance` 的 `generic-planar` 逐像素 A/B。

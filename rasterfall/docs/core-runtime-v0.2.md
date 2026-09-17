@@ -1,7 +1,7 @@
 # RF Core Runtime V0.2 查询面设计
 
-> 文档更新：2026-09-16
-> 源码核对基线：工作区（Core status query、service access cleanup、Input view、runtime facade、Runtime Facade Authority audit；RF Command Runtime V0 status command；RF Terminal Frontend Prototype V0 session/frontend；GPU Capability Contract V1）
+> 文档更新：2026-09-17
+> 源码核对基线：Core status/query ownership；GPU service policy、capability snapshot 与 normal renderer status。
 
 本文只定义前哨站 GUI、游戏内 Terminal 和 Super Terminal 的后续读取边界，不实现任何 UI、
 terminal、IPC 或额外进程。
@@ -19,11 +19,11 @@ terminal、IPC 或额外进程。
 Core status 和 runtime status 应由上层分别查询后组合。Core service 状态不应复制到 Game，
 玩家状态不应写入 Core。所有入口都是无副作用查询；返回的指针只借用当前 session 生命周期。
 
-GPU-2A 的 service policy 为 disabled / optional / required。optional 初始化不可用或失败时 Core 保持
-可用并继续 CPU renderer；required 返回初始化失败；disabled 不触碰 backend。当前正常游戏显式
-disabled。hosted Vulkan backend 已持久拥有 instance/device/queue；GPU-3 framebuffer 仍是 Core GPU
-service resource，不进入 Game，也不暴露 Vulkan 对象。正常 runtime 默认 CPU renderer 与启动行为不变；
-framebuffer resource 的关闭先于 backend/device shutdown。
+GPU service policy 为 disabled / optional / required。optional 初始化不可用或失败时 Core 保持
+可用并回退 CPU renderer；required 返回初始化失败；disabled 不触碰 backend。normal runtime
+默认 disabled/CPU，显式 `--renderer gpu-compute` 启用 optional/required GPU frame。Vulkan backend
+持久拥有 instance/device/queue，framebuffer/raster/presentation resource 归 Core，不进入 Game，也不暴露 Vulkan 对象；
+frame resource 的关闭先于 backend/device shutdown。
 
 Capability Contract V1 不用一个 `ready` 代替 renderer 能力。service READY 只说明
 backend/device/queue 与 compute smoke 可用；`renderer.compute`、`framebuffer`、`raster_v1`

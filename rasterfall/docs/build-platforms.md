@@ -1,20 +1,8 @@
 # 构建、平台与验证
 
 > 文档更新：2026-09-17
-> 源码核对基线补充：GPU-9A 共享 Vulkan backend 已加入 optional Post-Raster V1 second-color-buffer path；Linux hosted `gpu-overlay-test` 同时覆盖 overlay、identity 与 fog differential，Windows 对应 `win-gpu-overlay-test`。
-> 源码核对基线补充：GPU-8B1 在既有 BGRA8 transfer-dst swapchain 前增加 host-visible overlay color/packed coverage upload 与 compute composite；swapchain 不要求 STORAGE，single-frame sync 与 replacement-first resize 不变。Windows SDL key contract 同步映射 F12/Grave，供 Desktop 与 Console 实机验收；overlay diagnostic 的 MinGW executable 已在 Intel Iris Xe 得到 0 mismatch。
-> 源码核对基线补充：GPU-8A 建立 `toy_window_get_native_handle()` 的 Win32 HWND/HINSTANCE 无 SDL 类型契约，并以 `--gpu-native-present` 启用独立 Native Presentation V1。Intel Iris Xe 实机 10/10 帧 PASS，resize 后 300/300 PASS；BGRA8/FIFO/3 images，最终 984×661，color readback 与 CPU framebuffer copy 均为零。
-> 源码核对基线补充：GPU-7C/7D 已完成并冻结。Windows package 在 Intel Iris Xe 上完成 optional/required Outpost 及 required Campaign normal oracle；Outpost、near/0、near/30 均 3/3 GPU frames、零 fallback、color/depth 0 mismatch，mid/30 因透明命令按契约整批 CPU fallback。readback 58.529--64.471 ms，明显高于 9.027--27.813 ms execution-wait，下一阶段选择 GPU-8。
-> 源码核对基线补充：GPU-7C 的 Windows normal binary 已链接共用 Vulkan backend、Raster V1 packer/binner；显式 `--renderer gpu-compute` 使用 Core-owned whole-world-batch GPU execution/readback，默认 CPU 不变。freestanding Linux normal binary 保留 optional-unavailable CPU fallback，WSL correctness 继续由 hosted differential 验证。
-> 源码核对基线补充：RTX 3050 normal required short run 已确认 Texture V1 Outpost 3/3 GPU frames；首帧 access violation 根因为 readback stride 字节/元素单位错配，修正后 attempted=3、rendered=3、fallback=0。
-> 源码核对基线补充：GPU-7A 增加正常 world selected-stream capture；Linux/Windows 游戏编译 GPU-4 packer，但 Vulkan backend 仍只在 hosted test 中。real-world replay 默认 tile-binned，跳过大 stream 的 full-scan。
-> 源码核对基线补充：GPU-7B 的 Linux/MinGW ABI 与 differential 构建已通过；WSL/Windows RTX 3050 vertex-lit fixtures、stress、combined-world replay 全部 0 mismatch，GPU-7B DONE / FROZEN。
-> 源码核对基线补充：Windows package-layout console diagnostic 仅用于本次 frontend timing；三份 Windows capture stream 与 Linux stream 逐字节一致，不改变正常 GUI subsystem 或发布内容。
-> 源码核对基线补充：GPU-6.5 CPU tile binning 已通过 WSL llvmpipe 与 Windows Intel Iris Xe 的 CPU/full-scan/binned 0 mismatch 及 stress A/B，MinGW differential 构建通过；GPU-6.5 DONE / FROZEN。
-> 源码核对基线补充：GPU-6 Differential Authority 已完成；hosted CPU `toy_renderer` reference、Vulkan Raster V1、artifact/replay 与 deterministic stress 已建立，WSL llvmpipe / Windows Intel Iris Xe 均为 color/depth 0 mismatch。
-> 源码核对基线补充：GPU-4 已完成 pointer-free、fixed-width、versioned Raster Command ABI V1；现有 CPU command pool 通过显式 deterministic pack/validation 生成 clear color/depth 与 opaque flat triangle command，独立 Linux runtime test 与 Windows LLP64 layout build gate 已接入，尚不执行 GPU rasterization。
-> 源码核对基线补充：GPU-3 已完成；Core-owned `rf_gpu_framebuffer` 复用持久 Vulkan backend，以 compute 生成 device-local XRGB8888 framebuffer，经有限 fence、readback 与 stride-aware copy 进入 `toy_surface`；正常 runtime 仍显式 disabled/CPU renderer。
-> 源码核对基线补充：GPU Phase 1 hosted probe 已覆盖 Linux/Windows 共用的 storage-buffer compute、descriptor/pipeline、command/fence 与 readback 校验，并采用 discrete-first adapter selection；WSL llvmpipe 与 Windows RTX 3050 compute/readback 均已通过；正常 freestanding Rasterfall 和 Windows 游戏构建未接入 GPU。
+> 源码核对基线：Windows normal binary 已链接共享 Vulkan backend、Raster V1、Texture V1、Post-Raster V1、overlay composite 和 Win32 swapchain presentation；默认仍为 CPU，GPU 由命令行显式选择。
+> 当前平台边界：GPU-8A 已冻结，GPU-8B1/GPU-9A 待 normal-frame 实机冻结；Windows window/input/audio 仍由 SDL2 提供，尚未进入 SDL-free Native Platform 阶段。
 > 源码核对基线补充：Windows 启动地图加载的容量型 Map IR 改为临时堆分配，成功与失败均释放；不依赖扩大线程栈，详见 map-format.md 的 Runtime Bridge。
 > 源码核对基线补充：Static World Lighting V2 Phase D Linux GCC freestanding / Windows MinGW 构建通过；Linux headless capture 验收，Windows仅build，Wayland交互环境不可用，见 [Phase D](static-world-lighting-phase-d.md)。
 > 源码核对基线补充：Static World Lighting Phase B 复用现有编译单元与顶点亮度 rasterizer；Linux/self world-light 规则补 Runtime Map header 依赖，Windows 既有 GAME_SRCS/-MMD 覆盖；ray slab 的 double 仅用于 bake，不引入宿主 libc。
@@ -85,16 +73,16 @@ readback verification 的完整最小闭环。它没有 surface 或 swapchain。
 已验收；Windows 原生枚举 AMD integrated 与 NVIDIA RTX 3050 Laptop GPU，discrete-first
 策略明确选择 NVIDIA，compute/readback 结果通过。探针的 `total` 从 upload 前计至 readback 后，
 包含首次 descriptor/pipeline/command resource 创建，不代表稳态 GPU dispatch 时间。
-后续 GPU service 接入 Core 前必须继续保持正常 CPU renderer 为默认路径，并为 loader/device
-不可用定义可复核的 fallback。
+该 probe 本身不创建 surface/swapchain；normal runtime 由同一 backend 的 Core-owned 路径另行管理
+framebuffer、Raster V1 与 native presentation。CPU 仍为默认 renderer，loader/device 不可用时按 optional/required policy 处理。
 
 GPU-2A 已将 fallback 语义固化在 `rf_gpu`：optional 对 unavailable/failed 返回成功并保留状态，
 required 对两者返回失败，disabled 不调用 backend；只有 READY backend 会在 Core shutdown 时释放。
 `rf_core_get_status()` 提供概要状态，`rf_core_get_gpu_status()` 提供 adapter/message snapshot，均不暴露
 Vulkan handle。GPU-2B 的 `rf_gpu_vulkan_backend` 持久拥有 loader、instance、选中 physical device、
-logical device 与 queue；init 继续执行 compute/readback 门禁，shutdown 逆序释放。当前正常 runtime
-显式 disabled；`make gpu-service-test` 验证平台无关契约，`make gpu-probe && build/rf-gpu-probe`
-验证真实 backend 生命周期。GPU framebuffer、surface 与 swapchain 不属于 GPU-2。
+logical device 与 queue；init 继续执行 compute/readback 门禁，shutdown 逆序释放。默认 normal runtime
+选择 disabled/CPU，显式 `--renderer gpu-compute` 选择 optional/required GPU 路径。`make gpu-service-test`
+验证平台无关契约，`make gpu-probe && build/rf-gpu-probe` 验证 hosted backend 生命周期。
 
 GPU-3 的无窗口入口为 `make gpu-framebuffer-test` / `build/rf-gpu-framebuffer-test`，Windows
 交叉构建为 `make win-gpu-framebuffer-test`。它验证固定尺寸全像素/hash、非紧密 destination stride、
@@ -103,14 +91,13 @@ readback 是 host-visible transfer-dst buffer；优先 coherent，否则 invalid
 compute → barrier → copy，fence 最长等待 5 秒。resize 仅 replacement-first 重建 framebuffer 资源。
 WSL llvmpipe correctness、Windows MinGW build 与 RTX 3050 实机 smoke 均已通过；Windows probe
 确认选中 NVIDIA GeForce RTX 3050 Laptop GPU（discrete）。
-正常 Rasterfall 未链接 hosted backend，CPU renderer 与 optional/required 启动语义不变。
+该无窗口 fixture 与 normal frame resource 分离；normal Windows GPU 路径链接同一共享 backend。
 
 GPU-4 的 ABI 定义在 `rasterfall/include/rf_gpu_raster_abi.h`，CPU adapter 定义在
 `rasterfall/include/rf_gpu_raster_pack.h` / `gpu/src/rf_gpu_raster_pack.c`。`make gpu-raster-abi-test`
 运行 layout、deterministic packing、validation/rejection 测试；`make win-gpu-raster-abi-test` 验证
-同一固定布局可由 MinGW LLP64 编译。该路径是 hosted GPU 开发设施，不进入正常 Rasterfall link；
-GPU framebuffer smoke 与 CPU renderer 行为均未改变。GPU-5 通过独立
-`rf_gpu_raster` owner 消费该 stream，不进入正常 Rasterfall link。
+同一固定布局可由 MinGW LLP64 编译。该 ABI 同时由 hosted differential 和显式 normal
+`gpu-compute` 路径消费；默认 CPU renderer 不依赖它。
 
 GPU Capability Contract V1 将 Vulkan properties/features/memory properties 复制为无 handle 的
 `rf_gpu_capabilities`，并在 status 中分开 service READY 与 compute/framebuffer/raster_v1。
@@ -123,13 +110,13 @@ GPU-5 的无窗口入口为 `make gpu-raster-test` / `build/rf-gpu-raster-test`�
 交叉构建为 `make win-gpu-raster-test`。它输出 canonical XRGB8888 color 和
 signed-32 depth，覆盖固定 hash、stride、resize、upload growth、capability rejection
 和 cleanup。shader 是两个固定 16×16/8×8 SPIR-V 变体，不需要 runtime
-shader compiler。正常 Rasterfall 仍为 disabled/CPU renderer。
+shader compiler。该无窗口入口作为 normal GPU raster 所用共享 kernel/resource 的独立门禁。
 
 GPU-6 的无窗口入口为 `make gpu-raster-diff-test` / `build/rf-gpu-raster-diff-test`，Windows
 交叉构建为 `make win-gpu-raster-diff-test`。它让同一 GPU-4 stream 同时进入正式软件 renderer
 adapter 与 GPU-5 compute path，逐 RGB24 与完整 signed depth 比较，并支持
 `--replay-raster-stream commands.bin`。mismatch 默认产生可重放 stream、CPU/GPU/diff BMP、depth
-binary 和文本报告；正常 Rasterfall 链接、renderer selection 与 CPU fallback 均未改变。
+binary 和文本报告；normal GPU frame 复用同一 packed stream/oracle 契约，renderer selection 与 CPU fallback 由 Core 管理。
 
 GPU-6.5 新增 `make gpu-raster-binning-test` 的纯 CPU acceleration-structure 测试。GPU differential
 默认对同一 stream 执行 CPU、diagnostic full-scan 与 tile-binned pipeline；输出 CPU binning、
