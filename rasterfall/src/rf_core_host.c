@@ -164,6 +164,12 @@ static int gpu_world_consume(struct toy_renderer *renderer,
     frame->stats.last_overlay_commands = overlay;
     frame->stats.last_edge_commands = edge;
     frame->stats.last_other_commands = other;
+    if (transparent)
+        core->render_frame.pre_post_fallback_reason |=
+            RF_PRE_POST_FALLBACK_TRANSPARENT;
+    if (overlay || edge || other)
+        core->render_frame.pre_post_fallback_reason |=
+            RF_PRE_POST_FALLBACK_UNSUPPORTED_COMMAND;
     snprintf(diagnostic, sizeof(diagnostic),
              "gpu-world: classification end commands=%d texture=%lu transparent=%lu overlay=%lu edge=%lu other=%lu",
              count, texture, transparent, overlay, edge, other);
@@ -495,11 +501,12 @@ static int gpu_pre_post_finalize(struct rf_core *core)
     int unsupported_post_world;
     int consumed = -1;
     frame->retaining_pre_post = 0;
+    core->render_frame.pre_post_fallback_reason |=
+        rf_core_render_frame_fallback_reason_v1(&core->render_frame);
     unsupported_post_world =
-        core->render_frame.command_count[RF_RENDER_LAYER_EFFECTS] != 0 ||
-        core->render_frame.pixel_count[RF_RENDER_LAYER_EFFECTS] != 0 ||
+        core->render_frame.direct_pixel_count[RF_RENDER_LAYER_EFFECTS] != 0 ||
         core->render_frame.command_count[RF_RENDER_LAYER_VIEWMODEL] != 0 ||
-        core->render_frame.pixel_count[RF_RENDER_LAYER_VIEWMODEL] != 0;
+        core->render_frame.direct_pixel_count[RF_RENDER_LAYER_VIEWMODEL] != 0;
     if (!unsupported_post_world && frame->retained_command_count) {
         frame->armed = 1;
         consumed = gpu_world_consume(core->renderer,
@@ -513,6 +520,9 @@ static int gpu_pre_post_finalize(struct rf_core *core)
     if (consumed < 0) {
         frame->native_prepared = 0;
         core->render_frame.pre_post_cpu_fallback = 1;
+        if (!core->render_frame.pre_post_fallback_reason)
+            core->render_frame.pre_post_fallback_reason |=
+                RF_PRE_POST_FALLBACK_CONSUMER_FAILURE;
         return gpu_pre_post_replay_cpu(core) < 0 ? -1 : 0;
     }
     return 0;
@@ -707,6 +717,18 @@ void rf_core_render_frame_record_v1(struct rf_core *core,
     core->render_frame.pixel_count[layer] += pixels;
 }
 
+void rf_core_render_frame_record_direct_pixels_v1(
+    struct rf_core *core, enum rf_render_layer_v1 layer,
+    unsigned long pixels)
+{
+    if (!core || layer < 0 || layer >= RF_RENDER_LAYER_COUNT) return;
+    if ((unsigned int)layer != core->render_frame.current_layer) {
+        core->render_frame.invalid_layer_transitions++;
+        return;
+    }
+    core->render_frame.direct_pixel_count[layer] += pixels;
+}
+
 void rf_core_render_frame_record_world_v1(
     struct rf_core *core, const struct toy_raster_cmd *commands, int count)
 {
@@ -746,6 +768,22 @@ int rf_core_get_render_frame_v1(const struct rf_core *core,
     if (!core || !frame) return -1;
     *frame = core->render_frame;
     return 0;
+}
+
+unsigned int rf_core_render_frame_fallback_reason_v1(
+    const struct rf_render_frame_v1 *frame)
+{
+    unsigned int reason = RF_PRE_POST_FALLBACK_NONE;
+    if (!frame) return reason;
+    if (frame->command_count[RF_RENDER_LAYER_TRANSPARENT])
+        reason |= RF_PRE_POST_FALLBACK_TRANSPARENT;
+    if (frame->direct_pixel_count[RF_RENDER_LAYER_EFFECTS])
+        reason |= RF_PRE_POST_FALLBACK_EFFECTS_DIRECT_PIXELS;
+    if (frame->command_count[RF_RENDER_LAYER_VIEWMODEL])
+        reason |= RF_PRE_POST_FALLBACK_VIEWMODEL_COMMANDS;
+    if (frame->direct_pixel_count[RF_RENDER_LAYER_VIEWMODEL])
+        reason |= RF_PRE_POST_FALLBACK_VIEWMODEL_DIRECT_PIXELS;
+    return reason;
 }
 
 struct toy_surface *rf_core_begin_screen_overlay(struct rf_core *core)

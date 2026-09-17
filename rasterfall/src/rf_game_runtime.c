@@ -2656,10 +2656,13 @@ static int rf_game_render_profiled(struct rf_game_runtime *runtime,
             runtime->core, RF_RENDER_LAYER_EFFECTS) < 0) return -1;
     raster_commands = (unsigned long)renderer->cmd_count;
     flushed = rasterfall_render_effects(renderer, render_camera);
+    if (flushed < 0) return -1;
     pixels += flushed;
     rf_core_render_frame_record_v1(runtime->core, RF_RENDER_LAYER_EFFECTS,
         (unsigned long)renderer->cmd_count - raster_commands,
         (unsigned long)flushed);
+    rf_core_render_frame_record_direct_pixels_v1(runtime->core,
+        RF_RENDER_LAYER_EFFECTS, (unsigned long)flushed);
     flushed = rf_core_flush(runtime->core);
     if (flushed < 0) return -1;
     pixels += flushed;
@@ -2673,11 +2676,14 @@ static int rf_game_render_profiled(struct rf_game_runtime *runtime,
         raster_commands = (unsigned long)renderer->cmd_count;
         flushed = rasterfall_viewmodel_render(
             renderer, &game_session->game_state, &runtime->effects, local_scene_light);
+        if (flushed < 0) return -1;
         pixels += flushed;
         rf_core_render_frame_record_v1(runtime->core,
             RF_RENDER_LAYER_VIEWMODEL,
             (unsigned long)renderer->cmd_count - raster_commands,
             (unsigned long)flushed);
+        rf_core_render_frame_record_direct_pixels_v1(runtime->core,
+            RF_RENDER_LAYER_VIEWMODEL, (unsigned long)flushed);
     }
 
     /* Viewmodel is the last post-world scene layer and therefore the final
@@ -4110,19 +4116,22 @@ startup_again:
                 __printf("%s\n", audit_line);
                 rf_windows_log(audit_line);
                 snprintf(audit_line, sizeof(audit_line),
-                    "FRAME-AUDIT layers sky=%lu world=%lu transparent=%lu effects=%lu/%lu viewmodel=%lu/%lu overlay_pixels=%lu cursor=%u invalid_transitions=%u retained_pre_post=%lu pre_post_cpu_fallback=%u classification texture=%lu overlay=%lu edge=%lu other=%lu",
+                    "FRAME-AUDIT layers sky=%lu world=%lu transparent=%lu effects=%lu/%lu/direct=%lu viewmodel=%lu/%lu/direct=%lu overlay_pixels=%lu cursor=%u invalid_transitions=%u retained_pre_post=%lu pre_post_cpu_fallback=%u fallback_reason=0x%x classification texture=%lu overlay=%lu edge=%lu other=%lu",
                     frame_audit.command_count[RF_RENDER_LAYER_SKY],
                     frame_audit.command_count[RF_RENDER_LAYER_WORLD],
                     frame_audit.command_count[RF_RENDER_LAYER_TRANSPARENT],
                     frame_audit.command_count[RF_RENDER_LAYER_EFFECTS],
                     frame_audit.pixel_count[RF_RENDER_LAYER_EFFECTS],
+                    frame_audit.direct_pixel_count[RF_RENDER_LAYER_EFFECTS],
                     frame_audit.command_count[RF_RENDER_LAYER_VIEWMODEL],
                     frame_audit.pixel_count[RF_RENDER_LAYER_VIEWMODEL],
+                    frame_audit.direct_pixel_count[RF_RENDER_LAYER_VIEWMODEL],
                     frame_audit.pixel_count[RF_RENDER_LAYER_OVERLAY],
                     frame_audit.current_layer,
                     frame_audit.invalid_layer_transitions,
                     frame_audit.retained_pre_post_commands,
                     frame_audit.pre_post_cpu_fallback,
+                    frame_audit.pre_post_fallback_reason,
                     gpu_audit.last_texture_commands,
                     gpu_audit.last_overlay_commands,
                     gpu_audit.last_edge_commands,

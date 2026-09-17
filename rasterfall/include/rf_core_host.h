@@ -33,6 +33,16 @@ enum rf_render_layer_backend_v1 {
     RF_RENDER_BACKEND_UNSUPPORTED
 };
 
+enum rf_pre_post_fallback_reason_v1 {
+    RF_PRE_POST_FALLBACK_NONE = 0,
+    RF_PRE_POST_FALLBACK_TRANSPARENT = 1U << 0,
+    RF_PRE_POST_FALLBACK_EFFECTS_DIRECT_PIXELS = 1U << 1,
+    RF_PRE_POST_FALLBACK_VIEWMODEL_COMMANDS = 1U << 2,
+    RF_PRE_POST_FALLBACK_VIEWMODEL_DIRECT_PIXELS = 1U << 3,
+    RF_PRE_POST_FALLBACK_UNSUPPORTED_COMMAND = 1U << 4,
+    RF_PRE_POST_FALLBACK_CONSUMER_FAILURE = 1U << 5
+};
+
 struct rf_render_frame_v1 {
     unsigned long long frame_id;
     int camera_x, camera_z;
@@ -41,11 +51,13 @@ struct rf_render_frame_v1 {
     int width, height;
     unsigned long command_count[RF_RENDER_LAYER_COUNT];
     unsigned long pixel_count[RF_RENDER_LAYER_COUNT];
+    unsigned long direct_pixel_count[RF_RENDER_LAYER_COUNT];
     unsigned int layer_backend[RF_RENDER_LAYER_COUNT];
     unsigned int current_layer;
     unsigned int invalid_layer_transitions;
     unsigned long retained_pre_post_commands;
     unsigned int pre_post_cpu_fallback;
+    unsigned int pre_post_fallback_reason;
     int sky_enabled;
 };
 
@@ -181,6 +193,9 @@ void rf_core_render_frame_record_v1(struct rf_core *core,
                                     enum rf_render_layer_v1 layer,
                                     unsigned long commands,
                                     unsigned long pixels);
+void rf_core_render_frame_record_direct_pixels_v1(
+    struct rf_core *core, enum rf_render_layer_v1 layer,
+    unsigned long pixels);
 /* Classify one pending world batch into the opaque world and transparent
  * RenderFrame layers without changing renderer command order. */
 void rf_core_render_frame_record_world_v1(
@@ -191,6 +206,8 @@ int rf_core_render_frame_enter_layer_v1(
     struct rf_core *core, enum rf_render_layer_v1 layer);
 int rf_core_get_render_frame_v1(const struct rf_core *core,
                                 struct rf_render_frame_v1 *frame);
+unsigned int rf_core_render_frame_fallback_reason_v1(
+    const struct rf_render_frame_v1 *frame);
 /* Core-owned submission point for layered rendering within one frame. */
 int rf_core_flush(struct rf_core *core);
 int rf_core_end_frame(struct rf_core *core);

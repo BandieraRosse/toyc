@@ -419,13 +419,26 @@ static int run_logic_test(void)
         if (frame_core.render_frame.command_count[RF_RENDER_LAYER_WORLD] != 2 ||
             frame_core.render_frame.command_count[RF_RENDER_LAYER_TRANSPARENT] != 2)
             return 244;
+        rf_core_render_frame_record_direct_pixels_v1(
+            &frame_core, RF_RENDER_LAYER_WORLD, 7);
+        if (frame_core.render_frame.direct_pixel_count[RF_RENDER_LAYER_WORLD] != 7)
+            return 247;
         if (rf_core_render_frame_enter_layer_v1(
                 &frame_core, RF_RENDER_LAYER_TRANSPARENT) < 0)
             return 245;
         if (rf_core_render_frame_enter_layer_v1(
                 &frame_core, RF_RENDER_LAYER_EFFECTS) < 0 ||
+            (rf_core_render_frame_record_direct_pixels_v1(
+                &frame_core, RF_RENDER_LAYER_EFFECTS, 3), 0) ||
             rf_core_render_frame_enter_layer_v1(
                 &frame_core, RF_RENDER_LAYER_VIEWMODEL) < 0 ||
+            (rf_core_render_frame_record_v1(&frame_core,
+                RF_RENDER_LAYER_VIEWMODEL, 2, 0), 0) ||
+            rf_core_render_frame_fallback_reason_v1(
+                &frame_core.render_frame) !=
+                (RF_PRE_POST_FALLBACK_TRANSPARENT |
+                 RF_PRE_POST_FALLBACK_EFFECTS_DIRECT_PIXELS |
+                 RF_PRE_POST_FALLBACK_VIEWMODEL_COMMANDS) ||
             rf_core_begin_screen_overlay(&frame_core) != &frame_core.surface ||
             frame_core.render_frame.current_layer != RF_RENDER_LAYER_OVERLAY ||
             rf_core_render_frame_enter_layer_v1(

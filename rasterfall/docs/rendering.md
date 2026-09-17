@@ -1,7 +1,7 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-17
-> 源码核对基线：RenderFrame V1 已拥有 camera snapshot、固定层枚举与单调 submission cursor；normal frame 显式执行 world、effects、viewmodel 各层 barrier，随后才把 renderer 与直接 framebuffer producer 统一切到 screen-overlay target。GPU-8B1/GPU-9A 仍待 Windows normal-frame 冻结。
+> 源码核对基线：RenderFrame V1 已拥有 camera snapshot、固定层枚举与单调 submission cursor；Core 在 viewmodel barrier 统一决策 GPU 或整帧 CPU replay。frame audit 独立记录 effects/viewmodel direct pixels 和 fallback reason；纯 Raster V1 effects command 可随 retained stream 消费，direct producer、viewmodel 和 transparent 仍是当前 debt。GPU-8B1/GPU-9A 仍待 Windows normal-frame 冻结。
 > 当前调试原则：`--frame-audit` 同时输出到控制台和 Windows `rasterfall.log`，记录 frame ID、最终路径、层计数、fallback 分类、timing 与传输字节；Windows 实机仍是 native present 与 resize 的最终验收环境。
 > 源码核对基线补充：Eula 正常 world/展示在 near/mid 使用 Gameplay Hybrid `eula_lod3.rmesh`，仅 FAR（4096 RFU 起）切换 compact LOD2；Maid 保持原策略。
 > 源码核对基线补充：`--eula-animation-acceptance` 在 UI/Core/window 前早退，复用 legacy VMD evaluator、model instance、CPU skinning、Lighting V1 与标准 AK submission；`--character-performance[-suite]` 统一输出模型 CPU、raster wall 与 total wall 的 mean/median。
@@ -124,7 +124,16 @@ GPU-8B2 retained pre-post consumer 使 Core 在 world、effects 和 viewmodel �
 不会 present 的 CPU surface 这种半帧状态。只有全部 pre-post 输入可无损表达时才进入
 Raster V1/Post/native present。frame audit 的 `retained_pre_post` 和 `pre_post_cpu_fallback`
 分别记录本帧保留命令数和整帧回退决策。这是消费与 fallback 契约，不代表
-effects/viewmodel 已获得 GPU backend。
+effects/viewmodel 已获得 GPU backend。后续 B2a 将审计拆为每层 command 和 direct pixels：
+`pixel_count` 继续表示层的总绘制结果，`direct_pixel_count` 只表示绕过 command consumer 的
+surface 写入，`pre_post_fallback_reason` 记录 transparent、effects direct pixels、viewmodel
+commands/direct pixels、generic unsupported 或 consumer failure。已能无损表达的 effects command
+不再因层名被禁止，但任一 direct producer 或 unsupported command 仍使整帧回放。
+
+GPU-8B2 的后续顺序固定为：先收敛 opaque world effects，再将 effects 的 direct framebuffer
+producer 分成 pre-post raster input 或真正的 post-overlay，然后迁移 opaque viewmodel 与 hands/pill，
+最后扩展 transparent Raster V1。transparent V1 必须显式冻结 source-over、material/texture alpha、
+depth test/write 与原始顺序，不以 OIT 或重排作为首版前提。
 
 ### GPU-9A Post-Raster Compute Pass V1
 

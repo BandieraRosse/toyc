@@ -1,7 +1,7 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-17
-> 源码核对基线：GPU-0 ～ GPU-8A 已完成；RenderFrame V1 已建立单调层 cursor，normal frame 按 sky/world/transparent/effects/viewmodel/overlay 契约提交；interactables 已并入唯一 world consumer，Core 已按层保留 pre-post command 并在 viewmodel barrier 统一决定 GPU 提交或整帧 CPU replay，之后才切换到唯一 screen-overlay target。GPU-8B1、GPU-9A 仍待 Windows normal-frame 冻结，effects/viewmodel GPU consumer 尚未迁移。
+> 源码核对基线：GPU-0 ～ GPU-8A 已完成；RenderFrame V1 已建立单调层 cursor，normal frame 按 sky/world/transparent/effects/viewmodel/overlay 契约提交；Core 在 viewmodel barrier 统一决定 GPU 提交或整帧 CPU replay。GPU-8B2 审计已区分每层 command、direct pixels 和 fallback reason，纯 Raster V1 effects command 可随 retained stream 消费；transparent、effects direct producer 与 viewmodel 仍待迁移。GPU-8B1、GPU-9A 仍待 Windows normal-frame 冻结。
 > 当前 GPU 优先级：在 Windows 实机验收 sky 的 CPU/GPU 路径切换一致性，并继续迁移 transparent、effects、viewmodel；`--frame-audit` 已同时写入 `rasterfall.log`。详见 [GPU 与 Windows Native Platform 阶段计划](../../docs/Rasterfall%20GPU%20%E4%B8%8E%20Windows%20Native%20Platform%20%E6%80%BB%E4%BD%93%E8%AE%A1%E5%88%92.md)。
 > 源码核对基线补充：Eula 正常 world/展示在 near/mid 使用 Gameplay Hybrid `eula_lod3.rmesh`，仅 FAR（4096 RFU 起）使用 compact LOD2；Hybrid 缺失时回退原模型。
 > 源码核对基线补充：Eula Animation Acceptance V1 提供 legacy VMD carrier 的固定离屏姿态组图；统一 `--character-performance[-suite]` 保留 model/actor/world benchmark 的原职责并提供单角色、固定资产族及常见实例组合的同口径统计。

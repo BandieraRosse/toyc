@@ -2,7 +2,7 @@
 
 > 文档更新：2026-09-17
 > 源码核对基线：`4c1ac6a` + GPU-8B2 retained pre-post consumer 工作区
-> 当前状态：A-AUDIT、B1-CONTRACT、B2-SKY、B3-WORLD 与 B4-POST-WORLD submission contract 已实现；GPU-8B2 interactables vertical slice 已并入唯一 world consumer，Core 已建立按层 retained pre-post command 与整帧 CPU replay 契约。transparent 与 effects/viewmodel GPU consumer 仍未实现。等待 Windows Intel normal-frame、路径切换与 resize 实机验收。GPU-8B1/GPU-9A 尚未冻结。
+> 当前状态：A-AUDIT、B1-CONTRACT、B2-SKY、B3-WORLD 与 B4-POST-WORLD submission contract 已实现；GPU-8B2 retained consumer 已消除半帧提交，当前切片正在把 producer debt 分解为 transparent、effects direct pixels、viewmodel commands/direct pixels 与 generic unsupported command。纯 Raster V1 effects command 不再因所属层被拒绝；transparent、direct producer 和 viewmodel 仍整帧 CPU replay。GPU-8B1/GPU-9A 等待 Windows Intel normal-frame 冻结。
 
 本文档是 GPU renderer 与 Windows Native Platform 的当前阶段入口。它只保留已冻结的能力边界、
 当前架构、最终目标和待解决问题，不再记录逐次 bring-up 日志和过期性能数字。可复核的运行事实
@@ -46,7 +46,7 @@ normal world frontend
 | RenderFrame B1 / B2 | IMPLEMENTED / LOCAL PASS | camera 与六层有序描述已建立；sky 参数背景命令在 CPU reference/full-scan/tile-binned GPU 零差异，待 Windows 实机冻结 |
 | RenderFrame B3 | IMPLEMENTED / LOCAL PASS | normal world batch 的 opaque/transparent command 已显式写入各自层；不改变排序或 fallback，透明 GPU blend 仍属 GPU-8B2 |
 | RenderFrame B4 | IMPLEMENTED / LOCAL PASS | 逐层 cursor 拒绝跳层/逆序；effects/viewmodel 分别 flush 且位于 post 前；overlay 入口统一 surface/renderer target。GPU consumer 仍明确 unsupported |
-| GPU-8B2 | IN PROGRESS / LOCAL PASS | interactables 已并入唯一 world consumer；Core 按层保留 pre-post command，未迁移层触发整帧 CPU replay；transparent、viewmodel 和 world effects 尚未进入 native GPU frame |
+| GPU-8B2 | IN PROGRESS / LOCAL PASS | retained consumer 和整帧 replay 已建立；frame audit 区分各层 command/direct-pixel debt 并记录 fallback reason；纯 Raster V1 effects command 可随 retained stream 消费，transparent、effects direct pixels 与 viewmodel 仍待迁移 |
 | GPU-9A | IMPLEMENTATION COMPLETE / LOCAL PASS / ACCEPTANCE BLOCKED | 独立 device-local `post_color`；identity 和 inverse-depth Fog V0 通过 oracle；尚未冻结 |
 | WIN-1 / WIN-2 | NOT STARTED | 仍为 MinGW + SDL2；未建立自有 Win32 window/input/audio/runtime |
 
@@ -85,7 +85,25 @@ raster color + signed Q20 inverse-Z depth
 - Fog V0 使用 `inv_z = 1048576 / camera_z` 的反深度阈值，不把 depth 当线性米制距离。
 - HUD、Console 和 Desktop 在 post 之后 composite，不进入 post effect。
 
-## 当前优先任务：Windows Sky/RenderFrame 验收
+## 当前执行计划
+
+GPU-8B2 以“逐类消除 `pre_post_cpu_fallback`”为主线，不改变 viewmodel barrier 的
+唯一整帧决策权，也不允许 GPU 先消费后由 CPU 补画未迁移层。
+
+1. **B2a — producer debt 审计与 opaque effects：** frame audit 分别记录 effects/viewmodel
+   command 与 direct pixels，并输出 transparent、direct producer、viewmodel 和 generic unsupported
+   的 reason mask。已能被 Raster V1 表达的 opaque effects command 直接进入 retained stream。
+2. **B2b — effects producer 收敛：** world-space ray、ribbon、billboard、particle 按实际 depth/
+   blend 语义转成明确 raster input；damage vignette 等 Post 之后效果显式归 overlay。完成标志为
+   `effects_direct_pixels=0`。
+3. **B2c — viewmodel：** 依次迁移 opaque weapon geometry、hands/pill/attachments 和
+   viewmodel-local effects；保留独立层、投影/depth policy 和既有 animation/frontend 所有权。
+4. **B2d — transparent consumer：** Raster V1 显式表达 material/texture alpha、source-over、
+   depth test 与 depth-write policy；透明 pass 保持 frontend 原始顺序，不在首版引入 OIT 或自动重排。
+5. **normal-frame 冻结：** 在 Windows Intel 实机完成 GPU-8B1/GPU-9A 的视觉、Console/
+   Desktop、resize、timing 和零 readback 验收；之后才开始 SDL-free Windows Native Platform。
+
+### Windows 证据闭环
 
 GPU-9A 暂不冻结。A-AUDIT 已使日志独立包含 frame/path/pose/layers/timing，B1/B2 已把 sky 从隐式
 CPU framebuffer 写入迁为显式参数层。下一步在 Windows 真实异常现场完成以下闭环：
@@ -107,7 +125,7 @@ CPU framebuffer 写入迁为显式参数层。下一步在 Windows 真实异常�
 验收完成条件：坏姿态可精确重放，根因已定位并修复，normal native frame 视觉正确，帧分层无遗失，
 color readback 和 CPU framebuffer copy 仍为零，且重新通过相关 differential、resize 和 normal-frame 门禁。
 
-## 剩余问题
+## 验收与后续边界
 
 ### P0：阻塞当前冻结
 
@@ -116,14 +134,12 @@ color readback 和 CPU framebuffer copy 仍为零，且重新通过相关 differ
 - sky 未提交、world coverage 不完整与 present ownership 异常尚未用同一坏帧证据排除。
 - 约 200 ms 的 frame wall time 尚未归属到具体阶段，不能据此宣称 native GPU frame 达到性能目标。
 
-### P1：完成 native GPU frame
+### GPU-8B2 完成门禁
 
-- 完成 GPU-8B1 的 normal gameplay 视觉、Console/Desktop、resize 和 timing 冻结门禁。
-- 继续 GPU-8B2，将 viewmodel 和 world effects 等 renderer command layers 纳入 GPU frame（interactables
-  已通过唯一 world consumer 覆盖），
-  保持它们与 screen-space overlay 的顺序。
-- 处理 transparent batch；当前 mid/30 会按契约整批 CPU fallback，不是完整 playable GPU world。
-- 将 GPU-9A 从显式 diagnostic 能力推进到经 normal-frame 验收的可用 post stage。
+- 正常第一人称 gameplay 不再因 effects/viewmodel/transparent 的已知路径整帧回放。
+- 每类 producer 都有固定 fixture，断言最终 path、retained count、direct debt、reason mask 和 layer cursor。
+- unsupported fixture 仍按原层顺序完整 CPU replay，不存在部分 GPU 成功。
+- transparent 的 CPU/GPU oracle 覆盖重叠面、texture alpha、tile 边界和 resize。
 
 ### P2：Windows Native Platform
 
