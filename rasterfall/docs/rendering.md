@@ -94,13 +94,19 @@ sky → world → transparent → effects → viewmodel → overlay。当前 ver
 背景；不上传 CPU 天空，也不把 sky 伪装成 screen overlay。CPU reference、full-scan 与 tile-binned
 shader 消费同一命令，sky 不写 depth。
 
-B3 通过 `rf_core_render_frame_record_world_v1()` 在不改变 command pool 与提交顺序的前提下，对每个正常
+B3 通过 `rf_core_render_frame_record_world_v1()` 在不改变 command pool 与提交顺序的前提下，对正常
 world batch 按 `transparent || material_alpha != 255` 分类：`world` 只记录 opaque command，
 `transparent` 记录透明 command，CPU 与 GPU fallback 的 frame audit 因而使用同一层真值。这个 checkpoint
 只冻结层边界，不把透明命令误当 opaque：transparent 仍按既有契约使完整 world batch 回退 CPU，因为
 Raster V1 尚未表达禁止 depth write、材质 alpha 与 texture alpha blend。effects/viewmodel 当前也只进入
 RenderFrame 审计，尚未迁入 native GPU frame。`rf_core_begin_screen_overlay()` 之后的 renderer-command debt
 因而仍是 GPU-8B2 后续工作，不能把已建立层描述误称为 native GPU 覆盖。
+
+GPU-8B2 的 interactables vertical slice 已将拾取物、按钮等 depth-tested world geometry
+移入首个 world flush 之前；Core 现在对 normal world 与 interactables 执行一次完整分类、
+pack 和 fallback 决策。这使 native GPU 帧不再遗失 interactables，且其透明材质仍会使
+完整 batch 回退 CPU；本切片没有实现 transparent blend，也没有改变 effects/viewmodel 的
+unsupported 边界。
 
 B4 submission contract 不再允许调用位置隐式决定层序。`rf_core_render_frame_enter_layer_v1()` 持有逐层
 cursor，跳层或退回旧层的提交都会失败并增加 `invalid_layer_transitions`；frame audit 必须为

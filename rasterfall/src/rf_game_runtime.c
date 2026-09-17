@@ -2624,6 +2624,13 @@ static int rf_game_render_profiled(struct rf_game_runtime *runtime,
             &perf_start, renderer->submitted_triangles-perf_tris, 0);
         perf_tris=renderer->submitted_triangles;
     }
+    /* Interactables are depth-tested world geometry.  Submit them before the
+     * one normal-world consumer so native GPU frames and CPU fallback classify
+     * and consume the same complete batch.  Keep this after the enemies timing
+     * boundary so their triangles remain owned by the raster stage. */
+    if (game_session->game_state.state == TOY_GAME_PLAYING &&
+        !runtime->lifecycle_paused && !game_session->shop_open)
+        pixels += rasterfall_render_interactables(renderer, render_camera);
     /* Existing world-to-overlay ordering barrier. */
     if (rf_core_render_frame_enter_layer_v1(
             runtime->core, RF_RENDER_LAYER_WORLD) < 0) return -1;
@@ -2642,17 +2649,6 @@ static int rf_game_render_profiled(struct rf_game_runtime *runtime,
         perf_tris=renderer->submitted_triangles;
     }
 
-    if (game_session->game_state.state == TOY_GAME_PLAYING &&
-        !runtime->lifecycle_paused && !game_session->shop_open) {
-        raster_commands = (unsigned long)renderer->cmd_count;
-        pixels += rasterfall_render_interactables(renderer, render_camera);
-        rf_core_render_frame_record_world_v1(runtime->core,
-            renderer->cmds + raster_commands,
-            renderer->cmd_count - (int)raster_commands);
-        flushed = rf_core_flush(runtime->core);
-        if (flushed < 0) return -1;
-        pixels += flushed;
-    }
     rasterfall_render_end_dynamic_lighting();
     if (rf_core_render_frame_enter_layer_v1(
             runtime->core, RF_RENDER_LAYER_TRANSPARENT) < 0) return -1;
