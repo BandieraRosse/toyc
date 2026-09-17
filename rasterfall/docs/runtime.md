@@ -1,7 +1,7 @@
 # 运行时与主循环
 
 > 文档更新：2026-09-17
-> 源码核对基线：默认 CPU；显式 `--renderer gpu-compute` 启用 Core-owned normal GPU frame，`--gpu-native-present` 启用零 readback swapchain 路径；RenderFrame V1 已显式描述 camera 与六个有序层，sky 已进入 native GPU frame，normal world batch 已将 opaque/transparent 计数拆入各自层。
+> 源码核对基线：默认 CPU；显式 `--renderer gpu-compute` 启用 Core-owned normal GPU frame，`--gpu-native-present` 启用零 readback swapchain 路径；RenderFrame V1 以单调 cursor 强制六层顺序，effects/viewmodel 独立 flush 后才进入统一 screen overlay target。
 > 当前验收边界：GPU-8B1 与 GPU-9A 尚未冻结。Windows `--frame-audit` 已同步写 `rasterfall.log`，可用 frame ID、path、pose、extent、层计数和 timing 独立重建现场；`--normal-frame-audit` 仍用于精确重放。
 > 源码核对基线补充：`--gpu-world-raster-test <near|mid> <0|30> <commands.bin>` 是窗口前的固定 Campaign world capture；它不选择 GPU renderer，正常 `RF_GPU_POLICY_DISABLED` 不变。
 > 源码核对基线补充：Eula animation acceptance 与 unified character performance 均在字体、Core、startup/pause UI、session、window/audio 之前早退。
@@ -103,8 +103,9 @@ camera 的方向仍作为输入视角供移动与瞄准使用。渲染阶段可�
 窗口运行时的一帧由 Core Host 完整包住：每个成功提交帧只调用一次 `rf_core_begin_frame()` 获取 surface 并调用
 `toy_renderer_begin()`；`rf_game_render()` 提交世界、交互物、第一人称模型、world effects 和
 steady-state Game UI，
-并通过 Core 提供的 `rf_core_flush()` 保留内部 ordering barrier。现有画面依赖世界深度层、
-直接 framebuffer overlay 与 viewmodel 的既定顺序。最后
+并通过 Core 提供的 `rf_core_flush()` 保留显式 layer barrier。effects 与 viewmodel 分别完成 pre-post
+submission，随后 `rf_core_begin_screen_overlay()` 同时切换 surface 与 renderer target；HUD、Console、
+Desktop 只能在该边界之后提交。最后
 `rf_core_end_frame()` 执行最终 flush，再由 Core present。Core 同时拥有 window、surface、renderer
 和 audio 的生命周期；Game 不销毁这些资源，也不管理 framebuffer。
 

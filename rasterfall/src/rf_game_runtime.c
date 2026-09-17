@@ -2625,6 +2625,8 @@ static int rf_game_render_profiled(struct rf_game_runtime *runtime,
         perf_tris=renderer->submitted_triangles;
     }
     /* Existing world-to-overlay ordering barrier. */
+    if (rf_core_render_frame_enter_layer_v1(
+            runtime->core, RF_RENDER_LAYER_WORLD) < 0) return -1;
     raster_commands = (unsigned long)renderer->cmd_count;
     rf_core_render_frame_record_world_v1(runtime->core, renderer->cmds,
                                          renderer->cmd_count);
@@ -2640,17 +2642,6 @@ static int rf_game_render_profiled(struct rf_game_runtime *runtime,
         perf_tris=renderer->submitted_triangles;
     }
 
-    /* Direct screen-space producers below use this surface.  Renderer command
-     * producers continue targeting renderer->surface and remain GPU-8B2. */
-    surface = rf_core_begin_screen_overlay(runtime->core);
-    if (!surface) return -1;
-
-    if (runtime->coordinate_axes)
-        rasterfall_render_coordinate_labels(surface, render_camera);
-#if TOY_CONFIG_SHOW_MODEL_PATHS
-    rasterfall_render_gallery_selection(surface, render_camera);
-#endif
-
     if (game_session->game_state.state == TOY_GAME_PLAYING &&
         !runtime->lifecycle_paused && !game_session->shop_open) {
         raster_commands = (unsigned long)renderer->cmd_count;
@@ -2661,37 +2652,54 @@ static int rf_game_render_profiled(struct rf_game_runtime *runtime,
         flushed = rf_core_flush(runtime->core);
         if (flushed < 0) return -1;
         pixels += flushed;
-        overlay_pixels += (unsigned long)flushed;
     }
     rasterfall_render_end_dynamic_lighting();
+    if (rf_core_render_frame_enter_layer_v1(
+            runtime->core, RF_RENDER_LAYER_TRANSPARENT) < 0) return -1;
+    if (rf_core_render_frame_enter_layer_v1(
+            runtime->core, RF_RENDER_LAYER_EFFECTS) < 0) return -1;
     raster_commands = (unsigned long)renderer->cmd_count;
     flushed = rasterfall_render_effects(renderer, render_camera);
     pixels += flushed;
-    overlay_pixels += (unsigned long)flushed;
     rf_core_render_frame_record_v1(runtime->core, RF_RENDER_LAYER_EFFECTS,
         (unsigned long)renderer->cmd_count - raster_commands,
         (unsigned long)flushed);
+    flushed = rf_core_flush(runtime->core);
+    if (flushed < 0) return -1;
+    pixels += flushed;
+    rf_core_render_frame_record_v1(runtime->core, RF_RENDER_LAYER_EFFECTS,
+                                   0, (unsigned long)flushed);
 
+    if (rf_core_render_frame_enter_layer_v1(
+            runtime->core, RF_RENDER_LAYER_VIEWMODEL) < 0) return -1;
     if (toy_game_local_player_actor_const(&game_session->game_state)->state !=
         TOY_GAME_ACTOR_DOWNED) {
         raster_commands = (unsigned long)renderer->cmd_count;
         flushed = rasterfall_viewmodel_render(
             renderer, &game_session->game_state, &runtime->effects, local_scene_light);
         pixels += flushed;
-        overlay_pixels += (unsigned long)flushed;
         rf_core_render_frame_record_v1(runtime->core,
             RF_RENDER_LAYER_VIEWMODEL,
             (unsigned long)renderer->cmd_count - raster_commands,
             (unsigned long)flushed);
     }
 
-    /* Existing viewmodel-to-framebuffer ordering barrier. */
+    /* Viewmodel is the last post-world scene layer and therefore the final
+     * input to Post V1. Screen-space UI starts only after this barrier. */
     flushed = rf_core_flush(runtime->core);
     if (flushed < 0) return -1;
     pixels += flushed;
-    overlay_pixels += (unsigned long)flushed;
-    rf_core_render_frame_record_v1(runtime->core, RF_RENDER_LAYER_OVERLAY,
-                                   0, overlay_pixels);
+    rf_core_render_frame_record_v1(runtime->core, RF_RENDER_LAYER_VIEWMODEL,
+                                   0, (unsigned long)flushed);
+
+    surface = rf_core_begin_screen_overlay(runtime->core);
+    if (!surface) return -1;
+
+    if (runtime->coordinate_axes)
+        rasterfall_render_coordinate_labels(surface, render_camera);
+#if TOY_CONFIG_SHOW_MODEL_PATHS
+    rasterfall_render_gallery_selection(surface, render_camera);
+#endif
 
     settings.mouse_level = runtime->mouse_level;
     settings.keyboard_level = runtime->keyboard_level;
@@ -2729,6 +2737,8 @@ static int rf_game_render_profiled(struct rf_game_runtime *runtime,
     flushed = rasterfall_render_overlays(renderer);
     pixels += flushed;
     overlay_pixels += (unsigned long)flushed;
+    rf_core_render_frame_record_v1(runtime->core, RF_RENDER_LAYER_OVERLAY,
+                                   0, overlay_pixels);
     if (game_session->game_state.state == TOY_GAME_PLAYING &&
         !runtime->lifecycle_paused && !game_session->pose_editor.active &&
         toy_input_down(&runtime->input_frame, KEY_TAB))
@@ -4104,13 +4114,17 @@ startup_again:
                 __printf("%s\n", audit_line);
                 rf_windows_log(audit_line);
                 snprintf(audit_line, sizeof(audit_line),
-                    "FRAME-AUDIT layers sky=%lu world=%lu transparent=%lu effects=%lu viewmodel=%lu overlay_pixels=%lu classification texture=%lu overlay=%lu edge=%lu other=%lu",
+                    "FRAME-AUDIT layers sky=%lu world=%lu transparent=%lu effects=%lu/%lu viewmodel=%lu/%lu overlay_pixels=%lu cursor=%u invalid_transitions=%u classification texture=%lu overlay=%lu edge=%lu other=%lu",
                     frame_audit.command_count[RF_RENDER_LAYER_SKY],
                     frame_audit.command_count[RF_RENDER_LAYER_WORLD],
                     frame_audit.command_count[RF_RENDER_LAYER_TRANSPARENT],
                     frame_audit.command_count[RF_RENDER_LAYER_EFFECTS],
+                    frame_audit.pixel_count[RF_RENDER_LAYER_EFFECTS],
                     frame_audit.command_count[RF_RENDER_LAYER_VIEWMODEL],
+                    frame_audit.pixel_count[RF_RENDER_LAYER_VIEWMODEL],
                     frame_audit.pixel_count[RF_RENDER_LAYER_OVERLAY],
+                    frame_audit.current_layer,
+                    frame_audit.invalid_layer_transitions,
                     gpu_audit.last_texture_commands,
                     gpu_audit.last_overlay_commands,
                     gpu_audit.last_edge_commands,

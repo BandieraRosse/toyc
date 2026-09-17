@@ -583,6 +583,7 @@ void rf_core_render_frame_begin_v1(struct rf_core *core, int camera_x,
     core->render_frame.pitch_cy = pitch_cy;
     core->render_frame.width = core->surface.width;
     core->render_frame.height = core->surface.height;
+    core->render_frame.current_layer = RF_RENDER_LAYER_SKY;
     core->render_frame.sky_enabled = 1;
 }
 
@@ -592,6 +593,10 @@ void rf_core_render_frame_record_v1(struct rf_core *core,
                                     unsigned long pixels)
 {
     if (!core || layer < 0 || layer >= RF_RENDER_LAYER_COUNT) return;
+    if ((unsigned int)layer != core->render_frame.current_layer) {
+        core->render_frame.invalid_layer_transitions++;
+        return;
+    }
     core->render_frame.command_count[layer] += commands;
     core->render_frame.pixel_count[layer] += pixels;
 }
@@ -602,6 +607,10 @@ void rf_core_render_frame_record_world_v1(
     unsigned long transparent = 0;
     int i;
     if (!core || !commands || count <= 0) return;
+    if (core->render_frame.current_layer != RF_RENDER_LAYER_WORLD) {
+        core->render_frame.invalid_layer_transitions++;
+        return;
+    }
     for (i = 0; i < count; ++i)
         if (commands[i].transparent || commands[i].material_alpha != 255)
             transparent++;
@@ -609,6 +618,20 @@ void rf_core_render_frame_record_world_v1(
         (unsigned long)count - transparent;
     core->render_frame.command_count[RF_RENDER_LAYER_TRANSPARENT] +=
         transparent;
+}
+
+int rf_core_render_frame_enter_layer_v1(
+    struct rf_core *core, enum rf_render_layer_v1 layer)
+{
+    if (!core || layer < RF_RENDER_LAYER_SKY ||
+        layer >= RF_RENDER_LAYER_COUNT) return -1;
+    if ((unsigned int)layer < core->render_frame.current_layer ||
+        (unsigned int)layer > core->render_frame.current_layer + 1U) {
+        core->render_frame.invalid_layer_transitions++;
+        return -1;
+    }
+    core->render_frame.current_layer = (unsigned int)layer;
+    return 0;
 }
 
 int rf_core_get_render_frame_v1(const struct rf_core *core,
@@ -623,8 +646,13 @@ struct toy_surface *rf_core_begin_screen_overlay(struct rf_core *core)
 {
     struct rf_core_gpu_frame *frame;
     unsigned long pixels;
-    if (!core || !core->gpu_frame.native_present ||
-        !core->gpu_frame.native_prepared) return core ? &core->surface : NULL;
+    if (!core || rf_core_render_frame_enter_layer_v1(
+            core, RF_RENDER_LAYER_OVERLAY) < 0) return NULL;
+    if (!core->gpu_frame.native_present ||
+        !core->gpu_frame.native_prepared) {
+        core->renderer->surface = core->surface;
+        return &core->surface;
+    }
     frame = &core->gpu_frame;
     pixels = (unsigned long)core->surface.width * core->surface.height;
     if (!pixels) return NULL;
@@ -650,6 +678,9 @@ struct toy_surface *rf_core_begin_screen_overlay(struct rf_core *core)
                      core->surface.height, core->surface.width);
     frame->overlay_active = 1;
     frame->overlay_draw_begin_us = rf_core_clock_now_us();
+    /* Overlay helpers historically receive either a surface or the renderer.
+     * Make both routes target the one Core-owned post-stage overlay truth. */
+    core->renderer->surface = frame->overlay_surface;
     return &frame->overlay_surface;
 }
 

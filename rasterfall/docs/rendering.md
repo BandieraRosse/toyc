@@ -1,7 +1,7 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-17
-> 源码核对基线：RenderFrame V1 已拥有 camera snapshot 与 sky/world/transparent/effects/viewmodel/overlay 固定层枚举；sky 已作为 Raster V1 参数背景命令进入 CPU reference、tile binning 与 GPU shader；B3 将每个正常 world batch 的 opaque 与 transparent command 计数写入各自层。GPU-8B1/GPU-9A 仍待 Windows normal-frame 冻结。
+> 源码核对基线：RenderFrame V1 已拥有 camera snapshot、固定层枚举与单调 submission cursor；normal frame 显式执行 world、effects、viewmodel 各层 barrier，随后才把 renderer 与直接 framebuffer producer 统一切到 screen-overlay target。GPU-8B1/GPU-9A 仍待 Windows normal-frame 冻结。
 > 当前调试原则：`--frame-audit` 同时输出到控制台和 Windows `rasterfall.log`，记录 frame ID、最终路径、层计数、fallback 分类、timing 与传输字节；Windows 实机仍是 native present 与 resize 的最终验收环境。
 > 源码核对基线补充：Eula 正常 world/展示在 near/mid 使用 Gameplay Hybrid `eula_lod3.rmesh`，仅 FAR（4096 RFU 起）切换 compact LOD2；Maid 保持原策略。
 > 源码核对基线补充：`--eula-animation-acceptance` 在 UI/Core/window 前早退，复用 legacy VMD evaluator、model instance、CPU skinning、Lighting V1 与标准 AK submission；`--character-performance[-suite]` 统一输出模型 CPU、raster wall 与 total wall 的 mean/median。
@@ -101,6 +101,15 @@ world batch 按 `transparent || material_alpha != 255` 分类：`world` 只记�
 Raster V1 尚未表达禁止 depth write、材质 alpha 与 texture alpha blend。effects/viewmodel 当前也只进入
 RenderFrame 审计，尚未迁入 native GPU frame。`rf_core_begin_screen_overlay()` 之后的 renderer-command debt
 因而仍是 GPU-8B2 后续工作，不能把已建立层描述误称为 native GPU 覆盖。
+
+B4 submission contract 不再允许调用位置隐式决定层序。`rf_core_render_frame_enter_layer_v1()` 持有逐层
+cursor，跳层或退回旧层的提交都会失败并增加 `invalid_layer_transitions`；frame audit 必须为
+`cursor=overlay invalid_transitions=0`。normal frame 先完成 world/transparent barrier，再分别提交并 flush
+effects、viewmodel，二者都是 Post V1 之前的 scene layer。只有这些 barrier 全部完成后才能调用
+`rf_core_begin_screen_overlay()`；该入口同时切换返回的 surface 与 `renderer->surface`，使 HUD、Console、
+Desktop、名字/提示和 effect overlay 共享同一 Core-owned color+coverage truth。禁止把 effects/viewmodel
+的直接 framebuffer 部分归入 screen overlay 来规避 GPU consumer 缺口；native GPU 仍将这两层标为
+unsupported，直到它们的 renderer-command 与 direct producer 都迁入明确的 pre-post consumer。
 
 ### GPU-9A Post-Raster Compute Pass V1
 
@@ -337,30 +346,36 @@ Character Acceptance 还输出 `lighting-policy/{normal-light,back-light,dark-en
 
 ## 一帧的数据流
 
-GPU-8B1 后的正常帧 layering 为：
+GPU-8B1/B4 后的正常帧 layering 为：
 
 ```text
 Core begin: software toy_surface + renderer clear
   ↓
 world command stream（scene / flags / enemies / actors / world labels）
-  ↓ world ordering barrier
+  ↓ world/transparent ordering barrier
 GPU Raster V1 eligible batch
   ├─ software-present：GPU color+depth readback → toy_surface/depth
   └─ native path：world stream/resource 冻结，暂不 present
   ↓
-后续 renderer flush：interactables / world effects / viewmodel / prompt / name/status overlays
+interactables
+  ↓ effects 独立 submission + flush（pre-post）
+viewmodel
+  ↓ viewmodel 独立 submission + flush（pre-post）
+Post V1 semantic boundary
   ↓
-CPU direct writes：crosshair / HUD / pause / game-over / scoreboard /
+Core begin screen overlay，同时切换 renderer.surface
+  ↓ CPU direct writes：prompt / name/status / crosshair / HUD / pause / game-over / scoreboard /
                   input debug / console / GUI desktop
   ├─ CPU renderer：原 toy_surface
   └─ native GPU：独立 XRGB8888 color + 8-bit coverage overlay
        ↓ full upload + compute source-over 到 device-local world color
   ↓
-Core end：final renderer flush → software present，或 buffer→swapchain native present
+Core end：overlay final flush → software present，或 overlay composite → swapchain native present
 ```
 
-GPU-8B1 只恢复直接 framebuffer screen-space 层。后续 renderer flush 的 interactables、world effects、
-viewmodel 及其 depth/order 语义仍不可见，明确留给 GPU-8B2；它们没有被伪装成 CPU overlay。
+GPU-8B1 只恢复 post 之后的 screen-space 层。interactables、world effects、viewmodel 均明确位于 post
+之前；其 GPU consumer 尚未实现时保持 unsupported，不能因其中存在直接 framebuffer producer 就把它们
+上传为 overlay。B4 冻结的是 submission/target/order 契约，不宣称 GPU-8B2 完成。
 
 主循环更新 session/net/effects 后，展示层从 `actors[TOY_GAME_PLAYER_ACTOR_INDEX]` 和其他 actor
 读取玩家状态，再设置 `rasterfall_render_context`，调用场景及实体公开入口；客户端远端玩家的

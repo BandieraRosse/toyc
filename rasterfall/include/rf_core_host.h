@@ -42,6 +42,8 @@ struct rf_render_frame_v1 {
     unsigned long command_count[RF_RENDER_LAYER_COUNT];
     unsigned long pixel_count[RF_RENDER_LAYER_COUNT];
     unsigned int layer_backend[RF_RENDER_LAYER_COUNT];
+    unsigned int current_layer;
+    unsigned int invalid_layer_transitions;
     int sky_enabled;
 };
 
@@ -176,6 +178,10 @@ void rf_core_render_frame_record_v1(struct rf_core *core,
  * RenderFrame layers without changing renderer command order. */
 void rf_core_render_frame_record_world_v1(
     struct rf_core *core, const struct toy_raster_cmd *commands, int count);
+/* Advance the frame submission cursor by exactly one layer. The current
+ * layer may be revisited; skipping or moving backwards is invalid. */
+int rf_core_render_frame_enter_layer_v1(
+    struct rf_core *core, enum rf_render_layer_v1 layer);
 int rf_core_get_render_frame_v1(const struct rf_core *core,
                                 struct rf_render_frame_v1 *frame);
 /* Core-owned submission point for layered rendering within one frame. */
