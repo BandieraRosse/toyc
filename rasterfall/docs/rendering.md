@@ -1,7 +1,7 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-17
-> 源码核对基线：RenderFrame V1 已拥有 camera snapshot、固定层枚举与单调 submission cursor；Core 在 viewmodel barrier 统一决策 GPU 或整帧 CPU replay。frame audit 独立记录 effects/viewmodel direct pixels 和 fallback reason；纯 Raster V1 effects command 可随 retained stream 消费，billboard、普通 particle 与屏幕线 ray 已迁入带逆深度的 opaque commands，`effects_direct_pixels=0` 门禁已建立；viewmodel 和 transparent 仍是当前 debt。GPU-8B1/GPU-9A 仍待 Windows normal-frame 冻结。
+> 源码核对基线：RenderFrame V1 已拥有 camera snapshot、固定层枚举与单调 submission cursor；Core 在 viewmodel barrier 统一决策 GPU 或整帧 CPU replay。frame audit 独立记录 effects/viewmodel direct pixels 和 fallback reason；纯 Raster V1 effects command 可随 retained stream 消费，billboard、普通 particle 与屏幕线 ray 已迁入带逆深度的 opaque commands，`effects_direct_pixels=0` 门禁已建立；Viewmodel Render Contract V1 已冻结 near=192、focal=3/4、真近平面裁剪、独立 inverse-Z depth 与 coverage mask，CPU/reference consumer 已按 VIEWMODEL span 切换域；weapon/hands/pill producer 和 GPU consumer 仍是后续 debt，transparent 仍未迁移。GPU-8B1/GPU-9A 仍待 Windows normal-frame 冻结。
 > 当前调试原则：`--frame-audit` 同时输出到控制台和 Windows `rasterfall.log`，记录 frame ID、最终路径、层计数、fallback 分类、timing 与传输字节；Windows 实机仍是 native present 与 resize 的最终验收环境。
 > 源码核对基线补充：Eula 正常 world/展示在 near/mid 使用 Gameplay Hybrid `eula_lod3.rmesh`，仅 FAR（4096 RFU 起）切换 compact LOD2；Maid 保持原策略。
 > 源码核对基线补充：`--eula-animation-acceptance` 在 UI/Core/window 前早退，复用 legacy VMD evaluator、model instance、CPU skinning、Lighting V1 与标准 AK submission；`--character-performance[-suite]` 统一输出模型 CPU、raster wall 与 total wall 的 mean/median。

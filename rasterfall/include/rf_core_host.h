@@ -9,6 +9,7 @@
 #include "rf_gpu.h"
 #include "rf_gpu_raster_pack.h"
 #include "rf_core_input.h"
+#include "rf_viewmodel_contract.h"
 
 enum rf_core_renderer {
     RF_CORE_RENDERER_CPU = 0,
@@ -59,6 +60,8 @@ struct rf_render_frame_v1 {
     unsigned int pre_post_cpu_fallback;
     unsigned int pre_post_fallback_reason;
     int sky_enabled;
+    int viewmodel_near_z;
+    unsigned long viewmodel_coverage_pixels;
 };
 
 struct rf_core_gpu_frame_stats {
@@ -124,6 +127,12 @@ struct rf_core {
     struct rf_gpu gpu;
     struct rf_core_gpu_frame gpu_frame;
     struct rf_render_frame_v1 render_frame;
+    int *viewmodel_depth;
+    unsigned char *viewmodel_coverage;
+    unsigned long viewmodel_pixel_capacity;
+    unsigned long viewmodel_pixel_count;
+    int *world_depth;
+    int viewmodel_active;
     struct toy_audio audio;
     int audio_ready;
     int exit_requested;
@@ -196,6 +205,12 @@ void rf_core_render_frame_record_v1(struct rf_core *core,
 void rf_core_render_frame_record_direct_pixels_v1(
     struct rf_core *core, enum rf_render_layer_v1 layer,
     unsigned long pixels);
+/* Core-owned independent depth domain and Post coverage for VIEWMODEL. */
+int rf_core_viewmodel_begin_v1(struct rf_core *core);
+int rf_core_viewmodel_end_v1(struct rf_core *core);
+const int *rf_core_viewmodel_depth_v1(const struct rf_core *core);
+const unsigned char *rf_core_viewmodel_coverage_v1(const struct rf_core *core);
+unsigned long rf_core_viewmodel_coverage_count_v1(const struct rf_core *core);
 /* Classify one pending world batch into the opaque world and transparent
  * RenderFrame layers without changing renderer command order. */
 void rf_core_render_frame_record_world_v1(

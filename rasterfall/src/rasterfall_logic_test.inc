@@ -446,6 +446,9 @@ static int run_logic_test(void)
             frame_core.render_frame.invalid_layer_transitions != 1)
             return 246;
     }
+    { int viewmodel_result = rf_viewmodel_contract_logic_test();
+      if (viewmodel_result) { __printf("viewmodel contract failure: %d\n",
+                                          viewmodel_result); return 248; } }
     { int primitive_result=primitive_gameplay_logic_test();
       if(primitive_result){__printf("primitive gameplay failure: %d\n",primitive_result);return 211;} }
     __printf("rasterfall: primitive gameplay test passed\n");

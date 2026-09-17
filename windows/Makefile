@@ -49,6 +49,7 @@ GAME_SRCS := rasterfall/src/rasterfall.c \
              rasterfall/src/rasterfall_sky.c \
              rasterfall/src/rasterfall_viewmodel.c
 GAME_SRCS += gpu/src/rf_gpu_raster_pack.c
+GAME_SRCS += rasterfall/src/rf_viewmodel_contract.c
 GAME_SRCS += gpu/src/rf_gpu_raster_bin.c gpu/src/rf_gpu_vulkan_backend.c
 ANIMATION_SRCS := app/glb_inspect.c rasterfall/src/rasterfall_vmd.c
 GAME_LIB_SRCS := rasterfall/lib/game.c rasterfall/lib/map.c rasterfall/lib/sfx.c \

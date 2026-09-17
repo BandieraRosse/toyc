@@ -473,6 +473,12 @@ static int gpu_pre_post_replay_cpu(struct rf_core *core)
         unsigned long count = frame->retained_batch_count[layer];
         int flushed;
         if (!count) continue;
+        if (layer == RF_RENDER_LAYER_VIEWMODEL &&
+            rf_core_viewmodel_begin_v1(core) < 0) {
+            toy_renderer_set_command_consumer(renderer,
+                gpu_pre_post_retain_consume, core);
+            return -1;
+        }
         if (count > (unsigned long)renderer->cmd_cap) {
             toy_renderer_set_command_consumer(renderer,
                 gpu_pre_post_retain_consume, core);
@@ -489,6 +495,8 @@ static int gpu_pre_post_replay_cpu(struct rf_core *core)
         }
         total += flushed;
         offset += count;
+        if (layer == RF_RENDER_LAYER_VIEWMODEL)
+            rf_core_viewmodel_end_v1(core);
     }
     toy_renderer_set_command_consumer(renderer, gpu_pre_post_retain_consume,
                                       core);
@@ -666,10 +674,13 @@ int rf_core_begin_frame(struct rf_core *core, uint32_t clear_color)
 {
     int ready;
     if (!core || !core->window) return -1;
+    if (core->viewmodel_active) rf_core_viewmodel_end_v1(core);
     ready = toy_window_begin_frame(core->window, &core->surface);
     if (ready <= 0) return ready;
     if (toy_renderer_begin(core->renderer, &core->surface, clear_color) < 0)
         return -1;
+    core->world_depth = core->renderer->depth;
+    core->viewmodel_active = 0;
     core->gpu_frame.frame_begin_us = rf_core_clock_now_us();
     core->gpu_frame.native_prepared = 0;
     core->gpu_frame.overlay_active = 0;
@@ -701,6 +712,7 @@ void rf_core_render_frame_begin_v1(struct rf_core *core, int camera_x,
     core->render_frame.height = core->surface.height;
     core->render_frame.current_layer = RF_RENDER_LAYER_SKY;
     core->render_frame.sky_enabled = 1;
+    core->render_frame.viewmodel_near_z = RF_VIEWMODEL_NEAR_Z_V1;
 }
 
 void rf_core_render_frame_record_v1(struct rf_core *core,
@@ -727,6 +739,73 @@ void rf_core_render_frame_record_direct_pixels_v1(
         return;
     }
     core->render_frame.direct_pixel_count[layer] += pixels;
+}
+
+int rf_core_viewmodel_begin_v1(struct rf_core *core)
+{
+    unsigned long pixels;
+    unsigned long i;
+    if (!core || !core->renderer) return -1;
+    if (!core->renderer->surface.pixels || core->renderer->surface.width <= 0 ||
+        core->renderer->surface.height <= 0)
+        return 0; /* Metadata-only frame tests have no raster target. */
+    pixels = (unsigned long)core->renderer->surface.width *
+             (unsigned long)core->renderer->surface.height;
+    if (!pixels) return -1;
+    if (pixels > core->viewmodel_pixel_capacity) {
+        int *depth = tlibc_malloc(pixels * sizeof(*depth));
+        unsigned char *coverage = tlibc_malloc(pixels);
+        if (!depth || !coverage) {
+            tlibc_free(depth); tlibc_free(coverage); return -1;
+        }
+        tlibc_free(core->viewmodel_depth);
+        tlibc_free(core->viewmodel_coverage);
+        core->viewmodel_depth = depth;
+        core->viewmodel_coverage = coverage;
+        core->viewmodel_pixel_capacity = pixels;
+    }
+    for (i = 0; i < pixels; ++i) core->viewmodel_depth[i] = 0;
+    memset(core->viewmodel_coverage, 0, pixels);
+    core->viewmodel_pixel_count = pixels;
+    if (!core->world_depth) core->world_depth = core->renderer->depth;
+    core->renderer->depth = core->viewmodel_depth;
+    toy_renderer_bind_coverage(core->renderer, core->viewmodel_coverage,
+                                core->renderer->surface.width);
+    core->viewmodel_active = 1;
+    core->render_frame.viewmodel_near_z = RF_VIEWMODEL_NEAR_Z_V1;
+    return 0;
+}
+
+int rf_core_viewmodel_end_v1(struct rf_core *core)
+{
+    if (!core || !core->renderer) return -1;
+    if (!core->viewmodel_active) return 0;
+    core->renderer->depth = core->world_depth ? core->world_depth :
+                            core->renderer->depth;
+    toy_renderer_bind_coverage(core->renderer, NULL, 0);
+    core->viewmodel_active = 0;
+    core->render_frame.viewmodel_coverage_pixels =
+        rf_core_viewmodel_coverage_count_v1(core);
+    return 0;
+}
+
+const int *rf_core_viewmodel_depth_v1(const struct rf_core *core)
+{
+    return core ? core->viewmodel_depth : NULL;
+}
+
+const unsigned char *rf_core_viewmodel_coverage_v1(const struct rf_core *core)
+{
+    return core ? core->viewmodel_coverage : NULL;
+}
+
+unsigned long rf_core_viewmodel_coverage_count_v1(const struct rf_core *core)
+{
+    unsigned long count = 0, i;
+    if (!core || !core->viewmodel_coverage) return 0;
+    for (i = 0; i < core->viewmodel_pixel_count; ++i)
+        if (core->viewmodel_coverage[i]) ++count;
+    return count;
 }
 
 void rf_core_render_frame_record_world_v1(
@@ -759,6 +838,11 @@ int rf_core_render_frame_enter_layer_v1(
         return -1;
     }
     core->render_frame.current_layer = (unsigned int)layer;
+    if (layer == RF_RENDER_LAYER_VIEWMODEL &&
+        rf_core_viewmodel_begin_v1(core) < 0) {
+        core->render_frame.invalid_layer_transitions++;
+        return -1;
+    }
     return 0;
 }
 
@@ -792,6 +876,7 @@ struct toy_surface *rf_core_begin_screen_overlay(struct rf_core *core)
     unsigned long pixels;
     if (!core || core->render_frame.current_layer != RF_RENDER_LAYER_VIEWMODEL)
         return NULL;
+    if (rf_core_viewmodel_end_v1(core) < 0) return NULL;
     if (core->gpu_frame.retaining_pre_post &&
         gpu_pre_post_finalize(core) < 0) return NULL;
     if (rf_core_render_frame_enter_layer_v1(
@@ -936,6 +1021,9 @@ int rf_core_flush(struct rf_core *core)
 void rf_core_shutdown(struct rf_core *core)
 {
     if (!core) return;
+    /* A failed frame may leave the renderer bound to the borrowed VM domain;
+     * restore the renderer-owned depth before freeing Core-owned buffers. */
+    rf_core_viewmodel_end_v1(core);
     if (core->gpu_frame.stats.frames_attempted) {
         struct rf_core_gpu_frame_stats *s = &core->gpu_frame.stats;
         __printf("GPU-FRAME attempted=%llu rendered=%llu cpu_fallback=%llu "
@@ -1003,6 +1091,8 @@ void rf_core_shutdown(struct rf_core *core)
     tlibc_free(core->gpu_frame.overlay_surface.pixels);
     tlibc_free(core->gpu_frame.overlay_coverage);
     tlibc_free(core->gpu_frame.retained_commands);
+    tlibc_free(core->viewmodel_depth);
+    tlibc_free(core->viewmodel_coverage);
     rf_gpu_shutdown(&core->gpu);
     if (core->audio_ready) toy_audio_close(&core->audio);
     if (core->window) toy_window_close(core->window);

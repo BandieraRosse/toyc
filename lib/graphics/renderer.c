@@ -141,6 +141,8 @@ static long raster_planar_vertex_lit(struct toy_renderer *renderer,
                     worker->shaded_px++;
                     depth[at] = (int)inv_norm;
                     row[x] = shade_color(color, (int)light, fog_factor);
+                    if (renderer->coverage && renderer->coverage_stride > 0)
+                        renderer->coverage[y * renderer->coverage_stride + x] = 255;
                     worker->written_px++;
                     worker->planar_pixels++;
                     drawn++;
@@ -232,6 +234,8 @@ static long raster_flat(struct toy_renderer *renderer,
                     if (!overlay && cmd_alpha == 255) depth[at] = (int)inv;
                     if (cmd_alpha == 255) {
                         row[x] = color;
+                        if (renderer->coverage && renderer->coverage_stride > 0)
+                            renderer->coverage[y * renderer->coverage_stride + x] = 255;
                     } else if (cmd_alpha > 0) {
                         uint32_t under = row[x];
                         int ur = (under >> 16) & 255;
@@ -659,6 +663,8 @@ static long raster_tex(struct toy_renderer *renderer,
                         color = shade_color(color, (int)light, (int)fog);
                         depth[at] = (int)inv_norm;
                         row[x] = color;
+                        if (renderer->coverage && renderer->coverage_stride > 0)
+                            renderer->coverage[y * renderer->coverage_stride + x] = 255;
                         if (light_factor < 0) pixel_divisions++;
                         if (fog_factor < 0) pixel_divisions++;
                         pixel_divisions += 6;
@@ -763,6 +769,8 @@ static long raster_tex(struct toy_renderer *renderer,
                         if (alpha == 255) {
                             depth[at] = (int)inv_norm;
                             row[x] = color;
+                            if (renderer->coverage && renderer->coverage_stride > 0)
+                                renderer->coverage[y * renderer->coverage_stride + x] = 255;
                         } else {
                             pixel_divisions += 3;
                             worker->blend_divisions += 3;
@@ -1237,6 +1245,14 @@ void toy_renderer_set_texture_diagnostics(struct toy_renderer *renderer,
                                           int flags)
 {
     if (renderer) renderer->texture_diagnostic_flags = flags;
+}
+
+void toy_renderer_bind_coverage(struct toy_renderer *renderer,
+                                unsigned char *coverage, int stride)
+{
+    if (!renderer) return;
+    renderer->coverage = coverage;
+    renderer->coverage_stride = coverage && stride > 0 ? stride : 0;
 }
 
 /* ── 工作线程池：futex 等待 job_generation，主线程分发后自旋等 done ── */

@@ -137,6 +137,11 @@ struct toy_renderer {
      * 透视校正，避免仿射插值在掠射角下对近共面判错遮挡。 */
     int *depth;
     size_t depth_size;
+    /* Optional presentation coverage target.  When bound, opaque command
+     * writes mark the corresponding pixel; the target is never owned by the
+     * renderer and is not cleared by toy_renderer_begin(). */
+    unsigned char *coverage;
+    int coverage_stride;
     unsigned long textured_pixels;
     unsigned long textured_triangles;
     unsigned long texture_fallback_pixels;
@@ -329,6 +334,10 @@ int toy_renderer_merge_command_batch(
 #define TOY_RENDER_DIAG_SIMPLE_ADDRESS  4
 void toy_renderer_set_texture_diagnostics(struct toy_renderer *renderer,
                                           int flags);
+/* Bind a caller-owned depth/coverage domain for a subsequent flush.  The
+ * normal renderer depth remains available to callers for domain switching. */
+void toy_renderer_bind_coverage(struct toy_renderer *renderer,
+                                unsigned char *coverage, int stride);
 /* 把记录阶段的三角形命令并行光栅化到 surface；返回实际写入像素数
  * （接替 toy_renderer_triangle 系列的返回值语义）。 */
 int toy_renderer_flush(struct toy_renderer *renderer);
